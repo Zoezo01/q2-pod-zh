@@ -552,7 +552,7 @@ static void flush(int loud) {
     if (g->dirty & 2)
         games_seal(&g->sol, sizeof g->sol, SOL_MAGIC), ok &= BLOB_IO(GAMES_SOLITAIRE, g->sol, 1);
     g->dirty = 0;
-    if (!ok && loud) toast("Couldn't save");
+    if (!ok && loud) toast("无法保存");
 }
 
 static int save_due(const void *unused) {
@@ -582,7 +582,7 @@ static void game_over(void) {
     b->score = (unsigned)score;
     games_seal(b, sizeof *b, snake ? SNAKE_MAGIC : BEST_MAGIC);
     if (!(snake ? BLOB_IO(GAMES_SNAKE, g->sn_best, 1) : BLOB_IO(GAMES_VORTEX, g->best, 1)))
-        toast("Couldn't save");
+        toast("无法保存");
 }
 
 /* Snake's steps, each its period of the time passed (2 a frame at most); 1 when it ended. */
@@ -942,11 +942,11 @@ static void vortex_paint(void *canvas, unsigned tone) {
                 rgba(0xaaaaaa, 255));
         vgcanvas_restore(vg);
     }
-    tk_snprintf(line, sizeof line, "Score %d", v->score);
+    tk_snprintf(line, sizeof line, "得分 %d", v->score);
     caption(canvas, line, HUD_X, 6, 110, 24, 16, SPOT_GREY);
-    tk_snprintf(line, sizeof line, "Best %u", g->best.score);
+    tk_snprintf(line, sizeof line, "最高 %u", g->best.score);
     caption(canvas, line, 375 - HUD_X - 110, 6, 110, 24, 16, SPOT_GREY);
-    tk_snprintf(line, sizeof line, "Level %d", v->level + 1);
+    tk_snprintf(line, sizeof line, "关卡 %d", v->level + 1);
     caption(canvas, line, HUD_X, g->h - 30, 110, 24, 16, SPOT_GREY);
     if (g->paused == MENU)
         banner(canvas, tone, "Continue", g->choice ? 0xaaaaaa : tone, "Quit",
@@ -1051,9 +1051,9 @@ static void snake_paint(void *canvas, unsigned tone) {
             SN_CELL / 2.0f - 1, rgba(0xe04848, 255));
         vgcanvas_restore(vg);
     }
-    tk_snprintf(line, sizeof line, "Score %d", s->score);
+    tk_snprintf(line, sizeof line, "得分 %d", s->score);
     caption(canvas, line, HUD_X, 6, 110, 24, 16, SPOT_GREY);
-    tk_snprintf(line, sizeof line, "Best %u", g->sn_best.score);
+    tk_snprintf(line, sizeof line, "最高 %u", g->sn_best.score);
     caption(canvas, line, 375 - HUD_X - 110, 6, 110, 24, 16, SPOT_GREY);
     if (g->paused == MENU)
         banner(canvas, tone, "Continue", g->choice ? 0xaaaaaa : tone, "Quit",
@@ -1104,11 +1104,11 @@ int games_open(void *ctx, void *event) {
     g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     g->sheet = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     widget_set_visible(g->sheet, 0, 0);
-    g->view = page_list(page, g->list, 0, "Games", 4, 48);
-    page_row_into(g->view, 0, "Sudoku", pick_game);
-    page_row_into(g->view, 1, "Vortex", pick_game);
-    page_row_into(g->view, 2, "Solitaire", pick_game);
-    page_row_into(g->view, 3, "Snake", pick_game);
+    g->view = page_list(page, g->list, 0, "游戏", 4, 48);
+    page_row_into(g->view, 0, "数独", pick_game);
+    page_row_into(g->view, 1, "旋涡", pick_game);
+    page_row_into(g->view, 2, "纸牌", pick_game);
+    page_row_into(g->view, 3, "贪吃蛇", pick_game);
     if (!BLOB_IO(GAMES_SUDOKU, g->sud, 0) || !games_ok(&g->sud, sizeof g->sud, SUD_MAGIC) ||
         g->sud.cur > 80)
         sud_new(&g->sud);

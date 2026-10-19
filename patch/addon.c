@@ -90,7 +90,7 @@ int addon_scan(void) {
         field(raw, "name", a->name, sizeof a->name);
         if (!a->name[0]) tk_snprintf(a->name, sizeof a->name, "%s", a->id);
         field(raw, "search", a->tips, sizeof a->tips);
-        if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "Search");
+        if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "搜索");
         a->qr = number(raw, "qr") == 1;
         a->present = !access(a->bin, 0);
         /* the edition's size first, the other scaled to fit (navigation.c set_child), else
@@ -508,7 +508,7 @@ static int stoppable(void) {
 
 static void stop_row(int i) {
     char t[48];
-    tk_snprintf(t, sizeof t, "Stop %s", app()->name);
+    tk_snprintf(t, sizeof t, "停止 %s", app()->name);
     page_row_detail(pg.view, i, t, 0, clicked);
 }
 
@@ -520,11 +520,11 @@ static void show(void) {
     if (l->state == K_LOAD && !((req.running || req.done) && !pg.act && req.id == l->id)) fetch(l);
     if (l->state == K_LOAD || l->state == K_WAIT) {
         char t[48];
-        tk_snprintf(t, sizeof t, "Starting %s…", app()->name);
+        tk_snprintf(t, sizeof t, "正在启动 %s…", app()->name);
         if (!l->since) l->since = time_now_ms() | 1;
         l->slow = (int)(time_now_ms() - l->since) >= SLOW_MS && stoppable(); /* since: now + 1 */
         void *v =
-            page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "Loading…", n = l->slow, 48);
+            page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "加载中…", n = l->slow, 48);
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
         pg.view = page_list(pg.page, pg.page, 0, l->note, n = 1 + stoppable(), 48);

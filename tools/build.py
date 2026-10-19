@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Reproducibly patch only the audited Q2 V1.32 ZIP. Requires LLVM and squashfs-tools, and ImageMagick for --ipod.
+"""Reproducibly patch only the audited Q2 V1.32 ZIP (or its update.tar). Requires LLVM and squashfs-tools, and ImageMagick for --ipod.
 
 --logo swaps the boot splash JPEG (320x375); it defaults to assets/boot-logo.jpg.
 """
 import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarfile, zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
+# The same V1.32 package as update.tar on its own, for a machine that has the vendor tarball but not
+# the ZIP it came in (-- with no ZIP, this is the only input build() accepts).
+TAR_SHA = '0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
 VERSION = '1.5.0'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
@@ -1250,9 +1253,16 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
         version = dev_tag(dev, version[-1])
     source = source_sha256()
     raw = zip_path.read_bytes()
-    check(sha(raw) == ZIP_SHA, 'Unsupported ZIP: SHA-256 differs from audited original')
-    with zipfile.ZipFile(io.BytesIO(raw)) as z:
-        tarbytes = z.read('Q2 Firmware V1.32/update.tar')
+    if zip_path.suffix.lower() == '.tar':
+        # An update.tar already out of the vendor ZIP: the same audited V1.32 base, pinned by its own
+        # SHA-256 because a repacked ZIP can never match the vendor one's. Not a release input.
+        check(sha(raw) == TAR_SHA, 'Unsupported update.tar: SHA-256 differs from the audited V1.32 one')
+        tarbytes, input_kind, input_sha = raw, 'tar', TAR_SHA
+    else:
+        check(sha(raw) == ZIP_SHA, 'Unsupported ZIP: SHA-256 differs from audited original')
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            tarbytes = z.read('Q2 Firmware V1.32/update.tar')
+        input_kind, input_sha = 'zip', ZIP_SHA
     with tarfile.open(fileobj=io.BytesIO(tarbytes)) as t:
         meta = t.getmembers()
         check([m.name for m in meta] == ['firmware_v20.info','recovery-update',
@@ -1651,7 +1661,8 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
             data = blobs.get(m.name)
             if data is not None: m.size=len(data)
             t.addfile(m,io.BytesIO(data) if data is not None else None)
-    manifest = dict(input_zip_sha256=ZIP_SHA, stock_demo_sha256=DEMO_SHA, source_sha256=source,
+    manifest = dict(input_zip_sha256=ZIP_SHA, input_kind=input_kind, input_sha256=input_sha,
+        stock_demo_sha256=DEMO_SHA, source_sha256=source,
         demo_sha256=sha(patched), patch_sha256=sha(payload), update_sha256=sha((out/'update.tar').read_bytes()),
         rootfs_sha256=sha(newsq.read_bytes()), kernel_sha256=sha(blobs['recovery-update/xImage']),
         **({'aic_notifier': aic_notifier} if aic_notifier else {}),
@@ -1668,7 +1679,8 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
 
 if __name__ == '__main__':
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('zip',type=pathlib.Path)
+    ap.add_argument('zip',type=pathlib.Path,
+                    help='Q2 Firmware V1.32.zip, or the V1.32 update.tar it contains')
     ap.add_argument('--out',type=pathlib.Path,default=ROOT/'build')
     ap.add_argument('--logo',type=pathlib.Path,default=ROOT/'assets/boot-logo.jpg',
                     help='320x375 JPEG boot splash (default: assets/boot-logo.jpg)')

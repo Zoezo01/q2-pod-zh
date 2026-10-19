@@ -348,7 +348,7 @@ int ringnav_speed(int mode) {
     if (!blob_io(path, tmp, &saved, sizeof saved, 1)) {
         unlink(tmp);
         playback_speed_start();
-        toast("Could not save folder speed");
+        toast("无法保存文件夹播放速度");
         return stock_speed_trampoline(g_playspeed_mode);
     }
     g_playspeed_mode = (unsigned char)mode;

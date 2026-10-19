@@ -45,8 +45,8 @@ static void settings(void) {
 }
 
 static void row_text(void *label) {
-    char t[32] = "Crossfade: Off";
-    if (xf.on) tk_snprintf(t, sizeof t, "Crossfade: %d s", xf.seconds);
+    char t[32] = "交叉淡化：关闭";
+    if (xf.on) tk_snprintf(t, sizeof t, "交叉淡化：%d s", xf.seconds);
     widget_set_text_utf8(label, t);
 }
 
@@ -59,7 +59,7 @@ void xfade_row(void *label) {
 
 static void wheel_text(void *label) {
     char t[32];
-    tk_snprintf(t, sizeof t, "Wheel Sensitivity: %d%%", wheel_pct());
+    tk_snprintf(t, sizeof t, "滚轮灵敏度：%d%%", wheel_pct());
     widget_set_text_utf8(label, t);
 }
 
@@ -84,8 +84,8 @@ int resume_min(void) {
 }
 
 static void rs_text(void *label) {
-    char t[32] = "Resume Songs: Off";
-    if (resume_min()) tk_snprintf(t, sizeof t, "Resume Songs: %d min", resume_min());
+    char t[32] = "断点续播：关闭";
+    if (resume_min()) tk_snprintf(t, sizeof t, "断点续播：%d 分钟", resume_min());
     widget_set_text_utf8(label, t);
 }
 
@@ -141,7 +141,7 @@ void mono_sync(void) {
     if (xf.mono) peq_chain();
 }
 
-static void mono_text(void *label) { list_toggle(label, "Mono Audio", mono_on()); }
+static void mono_text(void *label) { list_toggle(label, "单声道音频", mono_on()); }
 
 /* Audio settings' row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
 void mono_row(void *label) {
@@ -156,7 +156,7 @@ int mono_click(void *ctx, void *event) {
     return 0;
 }
 
-static void swap_text(void) { list_toggle(xf.swap_label, "Swap L/R", swap_on()); }
+static void swap_text(void) { list_toggle(xf.swap_label, "左右声道互换", swap_on()); }
 void swap_row(void *label) {
     xf.swap_label = label;
     swap_text();
@@ -221,9 +221,9 @@ static void refresh(int save) {
     if (xf.ctx == 1)
         tk_snprintf(t, sizeof t, "%d%%", wheel_pct());
     else if (xf.ctx == 2)
-        tk_snprintf(t, sizeof t, xf.rs_min ? "%d min" : "Off", xf.rs_min);
+        tk_snprintf(t, sizeof t, xf.rs_min ? "%d 分钟" : "关闭", xf.rs_min);
     else {
-        tk_snprintf(t, sizeof t, xf.on ? "%d s" : "Off", xf.seconds);
+        tk_snprintf(t, sizeof t, xf.on ? "%d s" : "关闭", xf.seconds);
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
     widget_set_text_utf8(xf.label, t);
@@ -302,9 +302,9 @@ int xfade_open(void *ctx, void *event) {
     widget_on(xf.slider, EVT_VALUE_CHANGING, slid, 0);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
-    widget_set_text_utf8(title, mode == 2 ? "Resume Songs"
-                                : wheel   ? "Wheel Sensitivity"
-                                          : "Crossfade");
+    widget_set_text_utf8(title, mode == 2 ? "断点续播"
+                                : wheel   ? "滚轮灵敏度"
+                                          : "交叉淡化");
     widget_set_visible(xf.view, 1, 0); /* stock shows it only while Boot volume's switch is on */
     if (mode) widget_set_visible(xf.sw, 0, 0);
     slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);

@@ -408,27 +408,27 @@ static void show(const char *text) {
 
 static int wait_done(const void *unused) {
     static const char *const said[] = {
-        [NU_LATEST] = "Latest firmware installed", [NU_NET] = "Can't reach GitHub",
-        [NU_MISSING] = "No update for this build", [NU_CARD] = "Can't write to the card",
-        [NU_CANCELLED] = "Download cancelled",
+        [NU_LATEST] = "已是最新上游版本", [NU_NET] = "无法连接 GitHub",
+        [NU_MISSING] = "此版本暂无更新", [NU_CARD] = "无法写入存储卡",
+        [NU_CANCELLED] = "已取消下载",
     };
     char s[32];
     if (nu.state == NU_RUNNING) {
         reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
-        tk_snprintf(s, sizeof s, "Downloading %d%%", nu.percent);
-        show(nu.cancel ? "Cancelling…" : nu.percent ? s : "Checking…");
+        tk_snprintf(s, sizeof s, "正在下载 %d%%", nu.percent);
+        show(nu.cancel ? "正在取消…" : nu.percent ? s : "正在检查…");
         return 8; /* RET_REPEAT */
     }
     pthread_join(nu.thread, 0);
     int state = nu.state;
     nu.state = NU_IDLE;
-    if (nu.label) widget_set_tr_text(nu.label, "update_online");
+    if (nu.label) show("上游英文固件更新");
     if (state != NU_DONE)
         toast(said[state]);
     else if (nu.label)
         fwupdate_tf(); /* stock's TF card update: its battery check and confirm */
     else
-        toast("Update downloaded: use TF card update");
+        toast("上游英文固件已下载，请使用 TF 卡升级");
     return 0;
 }
 
@@ -436,19 +436,19 @@ static int wait_done(const void *unused) {
 static int online_click(void *ctx, void *event) {
     if (nu.state == NU_RUNNING) {
         nu.cancel = 1;
-        show("Cancelling…");
+        show("正在取消…");
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
     } else if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+        toast("请先连接 Wi-Fi");
     } else {
         nu.cancel = nu.percent = 0;
         nu.state = NU_RUNNING;
         if (pthread_create(&nu.thread, 0, worker, 0)) {
             nu.state = NU_IDLE;
-            toast("Can't start the download");
+            toast("无法开始下载");
         } else {
-            show("Checking…");
+            show("正在检查…");
             timer_add(wait_done, (void *)0, 500);
         }
     }
@@ -473,7 +473,7 @@ int ringnav_fwupdate(void *win, void *ctx) {
         widget_on(button, EVT_CLICK, online_click, 0);
         nu.label = widget_get_child(button, 0);
         widget_on(nu.label, EVT_DESTROY, label_gone, nu.label);
-        if (nu.state == NU_RUNNING) show("Downloading…");
+        show(nu.state == NU_RUNNING ? "正在下载…" : "上游英文固件更新");
     }
     return result;
 }
@@ -653,29 +653,29 @@ static int sh_state(int i) {
 }
 
 static void sh_text(int r) {
-    static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…", "Installing…",
-                                          "Removing…" };
-    static const char *const states[] = { "Install", "Update", "Installed" };
+    static const char *const stages[] = { "检查中…", "下载中", "解包中…", "安装中…",
+                                          "移除中…" };
+    static const char *const states[] = { "安装", "更新", "已安装" };
     int i = sh.map[r], armed = sh.armed == r + 1,
         busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
     char s[40];
     const char *t = s;
     if (i == ROW_NONE)
-        t = sh.job == JOB_CHECK ? "Loading…" : "Connect to Wi-Fi to load the list";
+        t = sh.job == JOB_CHECK ? "加载中…" : "请先连接 Wi-Fi 以加载列表";
     else if (i == ROW_ERASE && sh.job == JOB_ERASE)
-        t = "Erasing…";
+        t = "正在清除…";
     else if (i == ROW_ERASE)
-        t = armed ? "Press again to erase the login and cache" : "Login and cache";
+        t = armed ? "再按一次以清除登录信息与缓存" : "登录信息与缓存";
     else if (busy && sh.cancel)
-        t = "Cancelling…";
+        t = "正在取消…";
     else if (busy && sh.stage == 1 && sh.percent)
-        snprintf(s, sizeof s, "Downloading %d%%", sh.percent);
+        snprintf(s, sizeof s, "正在下载 %d%%", sh.percent);
     else if (busy)
         t = stages[sh.stage];
     else if (armed && sh_state(i) == ST_INSTALLED)
-        t = "Press again to remove";
+        t = "再按一次以移除";
     else if (armed) /* docs/boot.md#rockbox */
-        t = "Starts at power-on; Boot to changes that. Press again to install";
+        t = "开机自动启动，可在“默认启动”中更改。再按一次以安装";
     else
         t = states[sh_state(i)];
     widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
@@ -688,9 +688,9 @@ static void sh_refresh(void) {
 
 static int sh_wait(const void *unused) {
     static const char *const said[] = {
-        [SH_NET] = "Can't reach GitHub",           [SH_CARD] = "Can't write to the card",
-        [SH_MISSING] = "No update for this build", [SH_BAD] = "The download is not a usable app",
-        [SH_CANCELLED] = "Download cancelled",     [SH_BUSY] = "GitHub is busy, try later",
+        [SH_NET] = "无法连接 GitHub",              [SH_CARD] = "无法写入存储卡",
+        [SH_MISSING] = "此版本暂无更新",           [SH_BAD] = "下载内容不是可用的应用",
+        [SH_CANCELLED] = "已取消下载",             [SH_BUSY] = "GitHub 繁忙，请稍后再试",
     };
     char s[64];
     if (sh.running) {
@@ -706,20 +706,20 @@ static int sh_wait(const void *unused) {
     if (job != JOB_CHECK && is(i, "spotify")) spot_stop(); /* spotify.c forgets the old one */
     sh_rows();
     if (job == JOB_INSTALL && r == SH_SPACE)
-        snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
+        snprintf(s, sizeof s, "还需 %u MB 空间", sh.need), toast(s);
     else if (job == JOB_INSTALL && r)
         toast(said[r]);
     else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast(IPOD ? "Rockbox is ready. Find it on Home"
-                   : "Rockbox is ready. It starts at power-on");
+        toast(IPOD ? "Rockbox 已就绪，可在主菜单找到"
+                   : "Rockbox 已就绪，开机自动启动");
     else if (job == JOB_INSTALL && is(i, "themes"))
-        toast("Rockbox Themes are ready in Rockbox's Theme Settings");
+        toast("Rockbox 主题已就绪，可在 Rockbox 的主题设置中选择");
     else if (job == JOB_INSTALL)
-        snprintf(s, sizeof s, "%s is ready in Streaming", apps[i].name), toast(s);
+        snprintf(s, sizeof s, "%s 已就绪，可在流媒体中找到", apps[i].name), toast(s);
     else if (job == JOB_REMOVE)
-        snprintf(s, sizeof s, "%s removed", apps[i].name), toast(s);
+        snprintf(s, sizeof s, "%s 已移除", apps[i].name), toast(s);
     else if (job == JOB_ERASE)
-        toast("Spotify's login and cache erased");
+        toast("Spotify 登录信息与缓存已清除");
     return 0;
 }
 
@@ -731,7 +731,7 @@ static void sh_start(int job, int i) {
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
         sh.job = sh.running = 0;
-        toast("Can't start the download");
+        toast("无法开始下载");
     } else
         timer_add(sh_wait, (void *)0, 500);
 }
@@ -746,12 +746,12 @@ static int sh_click(void *ctx, void *event) {
         /* loading it already */
     } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
         sh.cancel = 1;
-        toast("Stopped checking for updates");
+        toast("已停止检查更新");
     } else if (sh.job) {
         if (sh.job == JOB_INSTALL && sh.app == i && sh.stage < 3)
             sh.cancel = 1; /* not once moving */
         else if (sh.job != JOB_INSTALL || sh.app != i)
-            toast("Wait for the one in progress");
+            toast("请等待当前任务完成");
     } else if (i != ROW_NONE && (i == ROW_ERASE || sh_state(i) == ST_INSTALLED)) {
         if (!armed)
             sh.armed = r + 1;
@@ -759,11 +759,11 @@ static int sh_click(void *ctx, void *event) {
             sh_start(i == ROW_ERASE ? JOB_ERASE : JOB_REMOVE,
                      i == ROW_ERASE ? sh_find("spotify") : i);
     } else if (get_wifisignal() <= 0)
-        toast("Connect to Wi-Fi first");
+        toast("请先连接 Wi-Fi");
     else if (i == ROW_NONE)
         sh_start(JOB_CHECK, 0);
     else if (is(i, "themes") && !rockbox_available())
-        toast("Install Rockbox first");
+        toast("请先安装 Rockbox");
     else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
         sh.armed = r + 1;
     else
@@ -791,11 +791,11 @@ static void sh_rows(void) {
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
-        void *view = page_list(sh.page, sh.page, 0, "Q2 App Store", n, 64);
+        void *view = page_list(sh.page, sh.page, 0, "Q2 应用商店", n, 64);
         for (int r = 0; r < n; ++r)
             sh.row[r] = page_row_detail(view, r,
-                                        map[r] == ROW_ERASE  ? "Erase Spotify Data"
-                                        : map[r] == ROW_NONE ? "App list"
+                                        map[r] == ROW_ERASE  ? "清除 Spotify 数据"
+                                        : map[r] == ROW_NONE ? "应用列表"
                                                              : apps[map[r]].name,
                                         "", sh_click);
         sh.rows = n;

@@ -233,16 +233,16 @@ int album_lyrics(lyr_job *job, const lyr_track *t, int n,
 
 /* The toast that sums up job, into out. */
 void album_note(char *out, unsigned n, const lyr_job *job) {
-    static const char *const head[] = { "Album lyrics", "LRCLIB stopped answering", "Can't write to the card",
-                                        "Cancelled" };
-    static const char *const what[] = { "saved", "not found", "already had lyrics", "failed" };
+    static const char *const head[] = { "专辑歌词", "LRCLIB 无响应", "无法写入存储卡",
+                                        "已取消" };
+    static const char *const what[] = { "已保存", "未找到", "已有歌词", "失败" };
     const int count[] = { job->saved, job->none, job->had, job->failed };
     int answered = job->saved || job->none, any = answered || job->had || job->failed;
-    unsigned at = (unsigned)snprintf(out, n, "%s", job->state == LJ_OFFLINE && !answered ? "Can't reach LRCLIB"
+    unsigned at = (unsigned)snprintf(out, n, "%s", job->state == LJ_OFFLINE && !answered ? "无法连接 LRCLIB"
                                                                                          : head[job->state]);
     for (int i = 0, first = 1; i < 4 && at < n && (job->state != LJ_OFFLINE || answered); ++i)
-        if (count[i]) at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? ": " : ", ", count[i], what[i]), first = 0;
-    if (!any && job->state == LJ_DONE && at < n) snprintf(out + at, n - at, ": no songs on the card");
+        if (count[i]) at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? "：" : "，", count[i], what[i]), first = 0;
+    if (!any && job->state == LJ_DONE && at < n) snprintf(out + at, n - at, "：卡上没有歌曲");
 }
 
 #ifndef PEQ_HOST
@@ -459,9 +459,9 @@ static void al_show(void) {
         return;
     }
     if (al.job.cancel)
-        snprintf(s, sizeof s, "Cancelling…");
+        snprintf(s, sizeof s, "正在取消…");
     else
-        snprintf(s, sizeof s, "Downloading %d of %d", al.job.done + (al.job.done < al.job.total), al.job.total);
+        snprintf(s, sizeof s, "正在下载 %d / %d", al.job.done + (al.job.done < al.job.total), al.job.total);
     widget_set_text_utf8(al.label, s);
 }
 
@@ -508,7 +508,7 @@ static int al_click(void *ctx, void *event) {
         return 0;
     }
     if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+        toast("请先连接 Wi-Fi");
         return 0;
     }
     void *r = al_playing(), *list = r ? coverflow_album_tracks(r) : 0;
@@ -529,7 +529,7 @@ static int al_click(void *ctx, void *event) {
     if (list) deque_destroy(list);
     if (!k) {
         free(t);
-        toast("No album songs on the card");
+        toast("卡上没有该专辑的歌曲");
         return 0;
     }
     memset(&al.job, 0, sizeof al.job);
@@ -537,7 +537,7 @@ static int al_click(void *ctx, void *event) {
     if (pthread_create(&al.thread, 0, al_worker, 0)) {
         al.thread = 0, al.running = 0;
         free(t), al.tracks = 0;
-        toast("Can't start the download");
+        toast("无法开始下载");
         return 0;
     }
     timer_add(al_wait, (void *)0, 500);
