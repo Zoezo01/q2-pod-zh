@@ -555,7 +555,7 @@ static int render(const void *unused) {
     widget_set_prop_int(view, "yslidable", 1);
     widget_set_prop_int(view, "xslidable", 0);
     widget_set_prop_int(view, "_ringnav_index", ui.tabs && ui.screen == HOME ? -1 : selection);
-    char text[160], value[32];
+    char text[160], value[40]; /* Auto's two cuts with a three-byte 自动 need 33 bytes, not 31 */
     int n = 0;
     static const char *const types[] = {"峰值", "低架滤波", "高架滤波"};
     /* No Back row: Return steps back on every screen (keyup). */

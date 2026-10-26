@@ -106,33 +106,36 @@ def parser_check(lib, tmp):
     assert parse(lib, single).preamp == 0
     assert parse(lib, 'Preamp: 24 dB\nPreamp: 24 dB\nPreamp: -48 dB').preamp == 0
     assert parse(lib, single * 30).count == 30
-    assert parse(lib, single + 'Filter 2: OFF PK Fc 0 Hz 增益 0.0 dB Q 0.000').count == 1  # blank slot
+    assert parse(lib, single + 'Filter 2: OFF PK Fc 0 Hz Gain 0.0 dB Q 0.000').count == 1  # blank slot
     assert parse(lib, '').count == 0
     # Import is pure. Saving succeeds only after validation and explicit collision confirmation.
     active, saved = tmp/'active', tmp/'preset'
     for path in (active, saved): assert lib.peq_save(bytes(path), C.byref(p), 0) == 1
     baseline = bytes(p)
     failures = [
-        (single * 30 + single.replace('ON', 'OFF'), 31, '30 bands'),
-        ('Preamp: 24 dB\nPreamp: 1 dB', 2, 'summed'),
-        ('前级增益: -61 dB', 1, 'preamp'),
-        ('前级增益: -3', 1, 'expected'),
-        ('\nGraphicEQ: 20 0; 20000 0', 2, 'unsupported'),
-        ('Include: other.txt', 1, 'unsupported'), ('Channel: C', 1, 'only channels'), ('Channel:', 1, 'expected Channel'),
-        ('Channel: L\nPreamp: -13 dB', 2, 'differ'),
-        ('Eval: x=1', 1, 'unsupported'), ('garbage', 1, 'unsupported'),
-        (single.replace(' Q .7', ''), 1, 'requires Q'),
-        (single.replace('PK', 'HP'), 1, 'type'),
-        (single.replace('PK', 'LS 6dB'), 1, 'form'),
-        (single.replace('Q .7', 'BW Oct 1'), 1, 'form'),
-        (single.replace('1e3', '`1000`'), 1, 'number'),
-        (single.replace('Filter:', 'Filter x:'), 1, 'label'),
-        (single + 'Filter: ON PK Fc 19 Hz 增益 0 dB Q 1', 2, 'range'),
-        (b'\0', 1, 'NUL'), (b'#' * 513, 1, 'line'), (b'#' * 16385, 1, 'file'),
+        (single * 30 + single.replace('ON', 'OFF'), 31, '超过 30 个频段'),
+        ('Preamp: 24 dB\nPreamp: 1 dB', 2, '前级增益总和超出'),
+        ('Preamp: -61 dB', 1, '前级增益超出'),
+        ('Preamp: -3', 1, '应为 Preamp'),
+        ('\nGraphicEQ: 20 0; 20000 0', 2, '不支持的命令'),
+        ('Include: other.txt', 1, '不支持的命令'), ('Channel: C', 1, '仅支持声道'), ('Channel:', 1, '应为 Channel'),
+        ('Channel: L\nPreamp: -13 dB', 2, '相差超过'),
+        ('Eval: x=1', 1, '不支持的命令'), ('garbage', 1, '不支持的命令'),
+        (single.replace(' Q .7', ''), 1, '峰值滤波器需要 Q'),
+        (single.replace('PK', 'HP'), 1, '不支持的滤波器类型'),
+        (single.replace('PK', 'LS 6dB'), 1, '不支持的滤波器格式'),
+        (single.replace('Q .7', 'BW Oct 1'), 1, '不支持的滤波器格式'),
+        (single.replace('1e3', '`1000`'), 1, '数值无效'),
+        (single.replace('Filter:', 'Filter x:'), 1, '滤波器编号无效'),
+        (single + 'Filter: ON PK Fc 19 Hz Gain 0 dB Q 1', 2, '范围：'),
+        (b'\0', 1, 'NUL'), (b'#' * 513, 1, '行超过'), (b'#' * 16385, 1, '文件超过'),
     ]
-    for old, values in [('1e3', ['nan', 'inf', '-inf', '1e999', '20junk', '0x100', '20001', '-20']),
-                        ('+6.0', ['nan', '25', '-25']), ('.7', ['NaN', '0', '-1', '10.1'])]:
-        failures += [(single.replace(old, value), 1, 'number' if value in ('nan', 'inf', '-inf', '1e999', '20junk', '0x100', 'NaN') else 'range') for value in values]
+    # peq_number rejects these, so a frequency or gain reports 数值无效 and a Q 应为 Q
+    for old, values, not_a_number in [('1e3', ['nan', 'inf', '-inf', '1e999', '20junk', '0x100'], '数值无效'),
+                                      ('1e3', ['20001', '-20'], '范围：'),
+                                      ('+6.0', ['nan'], '数值无效'), ('+6.0', ['25', '-25'], '范围：'),
+                                      ('.7', ['NaN'], '应为 Q'), ('.7', ['0', '-1', '10.1'], '范围：')]:
+        failures += [(single.replace(old, value), 1, not_a_number) for value in values]
     for text, line, reason in failures:
         data = text.encode() if isinstance(text, str) else text
         error = Error()
@@ -162,7 +165,7 @@ def parser_check(lib, tmp):
     scoped = parse(lib, 'Preamp: -3 dB\nChannel: L\nPreamp: -1.5 dB\n' + single + 'Channel: R\nPreamp: -0.5 dB\n'
                         + single + 'Channel: L R\n' + single + 'Channel: all\n' + single.replace('ON', 'OFF'))
     assert [b.enabled for b in scoped.bands[:4]] == [2, 3, 1, 0]
-    assert parse(lib, single * 30 + 'Filter: OFF PK Fc 0 Hz 增益 0 dB Q 0').count == 30  # blank slots do not count
+    assert parse(lib, single * 30 + 'Filter: OFF PK Fc 0 Hz Gain 0 dB Q 0').count == 30  # blank slots do not count
     assert scoped.preamp == -3.5 and scoped.balance == 1  # left 1 dB below right
     # A file's Preamp line is kept as picked (2); without one the preamp stays Auto (1), so boosts never clip.
     assert scoped.automatic == 2 and parse(lib, single).automatic == 1
@@ -274,7 +277,7 @@ def dsp_check(lib):
     fade = [1 - (1 - 10**(-6/20)) * min(i + 1, 960) / 960 for i in range(10000)]
     assert max(abs(x - r*f) for x, r, f in zip(after, reference, fade)) < 1e-6
     # A band switched off mid-play drains its carried memory before it is skipped, then passes x through.
-    p = parse(lib, 'Filter: ON PK Fc 100 Hz 增益 6 dB Q 1'); p.automatic = 2  # 0 dB picked, as below
+    p = parse(lib, 'Filter: ON PK Fc 100 Hz Gain 6 dB Q 1'); p.automatic = 2  # 0 dB picked, as below
     lib.peq_reset(C.byref(a), 48000, 1, C.byref(p))
     process(lib, a, tone[:10000])
     p.bands[0].gain = 0; assert lib.peq_update(C.byref(a), C.byref(p))
@@ -296,11 +299,11 @@ def dsp_check(lib):
     p.bands[0].enabled = 2; assert lib.peq_update(C.byref(a), C.byref(p)); process(lib, a, [0., 0.] * 2000, 2)
     assert a.current.z[1][0][0] == a.current.z[1][0][1] == 0 and a.current.z[0][0][0]
     # Non-finite input is still sanitized while EQ is on.
-    p = parse(lib, '前级增益: 6 dB')
+    p = parse(lib, 'Preamp: 6 dB')
     lib.peq_reset(C.byref(a), 48000, 1, C.byref(p))
     assert process(lib, a, [math.nan, math.inf, -math.inf, 0.25]) == [0, 0, 0, C.c_float(.25*10**(.3)).value]
     # A preamp/bypass transition also retains float headroom, with no flattened peaks.
-    bypass = parse(lib, '前级增益: 0 dB'); bypass.bypass = 1
+    bypass = parse(lib, 'Preamp: 0 dB'); bypass.bypass = 1
     assert lib.peq_update(C.byref(a), C.byref(bypass))
     ramp = process(lib, a, [1.5] * 1000)
     assert min(ramp) == 1.5 and max(ramp) > 2.9
@@ -396,10 +399,10 @@ def headroom_check(lib, ui):
                    for f in [0] + [(rate/2)**(i/4095) for i in range(4096)] for ch in range(2))
         assert peak <= 1.00001, (rate, peak, auto)
     # Flat/cut-only Auto stays +0; shelves include DC and Nyquist outside the old 20..20k grid.
-    for source, want in (('', 0), ('Filter: ON PK Fc 1000 Hz 增益 -12 dB Q 1', 0),
-                         ('Filter: ON LSC Fc 20 Hz 增益 6 dB Q 0.707', -6),
-                         ('Filter: ON HSC Fc 20000 Hz 增益 6 dB Q 0.707', -6),
-                         ('Filter: ON PK Fc 3999 Hz 增益 12 dB Q 10', -12)):
+    for source, want in (('', 0), ('Filter: ON PK Fc 1000 Hz Gain -12 dB Q 1', 0),
+                         ('Filter: ON LSC Fc 20 Hz Gain 6 dB Q 0.707', -6),
+                         ('Filter: ON HSC Fc 20000 Hz Gain 6 dB Q 0.707', -6),
+                         ('Filter: ON PK Fc 3999 Hz Gain 12 dB Q 10', -12)):
         p = parse(lib, source); actual = ui.check_headroom(C.byref(p))
         assert abs(actual-want) < .0001, (source, actual)
         if not want: assert math.copysign(1, actual) == 1
