@@ -57,7 +57,11 @@ export PATH="$PWD/work/toolchain/bin:$PATH"
 
 `test/chinese.py` 会扫描 `patch/*.c` 与 `tools/ipod.py` 里的全部汉字，要求它们在固件实际打包的 `fonts/default.ttf` 中都有字形，并抽查主菜单、确认框和载荷里的中文标签；卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）必须仍是英文。
 
-本次合并没有在原机环境构建或运行上述测试：本机没有 C 编译器，也没有 WSL/Docker 可用的 Linux 工具链，因此没有 `update.tar` 成品。改动只做到源码与测试一致，C 侧只做了括号/字面量配平与 `tools/*.py`、`test/*.py` 的语法检查；实机仍需确认各菜单、滚动标题、蓝牙/流媒体流程和中文换行。
+本次合并没有产出 `update.tar`：整包构建需要 LLVM 14 的 MIPS 目标、squashfs-tools 4.6.1 与 ImageMagick，以及一个能跑 `mksquashfs` 的 Linux 环境；本次只在 Windows 上工作，没有可用的 WSL/Docker。
+
+在 Windows 上用 MinGW-w64（gcc 16.2）配合 host shim 跑过能独立运行的那部分 C 测试：`books.c`、`games.c`、`visualizer.c` 与 3EQ（`peq.c` + `peq_ui.c` 的 shim）用例全部通过，其中 books 与 visualizer 覆盖 UTF-8 文本与自绘 caption。`patch/peq_ui.c` 在相同编译选项下与上游 HEAD 的诊断完全一致，即汉化没有引入新的编译问题。`test/peq.py` 其余用例（编辑器、播放器、抓取）依赖 LP64 指针与 `mmap`，Windows 的 LLP64 下无法运行；`test/patch.py`、`test/coverflow.py`、`test/playback.py`、`test/build.py` 需要先有构建产物。因此实机仍需确认各菜单、滚动标题、蓝牙/流媒体流程和中文换行。
+
+C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通过 `py_compile`。
 
 ## 安装和回滚
 
