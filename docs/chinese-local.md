@@ -25,7 +25,7 @@
 - **无耳机不播放**（`patch/headset.c`，设置行在 播放设置 → 无耳机不播放，默认开）：没有 3.5 mm / 4.4 mm 耳机、没连蓝牙耳机、也没接 USB DAC 时，按播放键或切歌键不开始播放，只提示「未连接耳机」。拦截点在 `ringnav_play_pause()`、`media_key()` 与 `playback.c` 的 `ringnav_change()`，配置键 `HEADSETGUARD`。
 - **状态栏「播放中 / 已暂停」**（`patch/navigation.c`，`bar_word_sync()` + `label_playword`）：图标只有两种位图，暂停又可能来自屏幕外（拔耳机时 `config_po_output` 自己 `mclSetPause`），所以旁边加文字说明；与图标共用上游 `bar_repaint` 的 0 ms 定时器，EQ 标记出现时让位，不压中间时钟。
 
-改动清单与刷机说明见仓库根目录的 [README.zh-CN.md](../README.zh-CN.md)。
+改动清单与刷机说明见仓库首页 [README.md](../README.md)。
 
 ## 上游基线
 
