@@ -41,9 +41,9 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 同时 `tools/build.py` 支持直接输入山灵的 `update.tar`（不是官方 ZIP），用独立的 pinned SHA-256 校验，`manifest.json` 记 `input_kind: "tar"`；`tools/release.py` 拒绝把这类构建当作正式发布包。
 
-### 3. 版本标记 `V150D`
+### 3. 版本标记 `V150E`
 
-上游英文版是 `V150I`，本分支是 `V150D`（`tools/build.py` 里 `VERSIONS['ipod']` 用 `C`、`D`…，上游用 `I`）。
+上游英文版是 `V150I`，本分支是 `V150E`（`tools/build.py` 里 `VERSIONS['ipod']` 用 `C`、`D`、`E`…，上游用 `I`）。
 
 原因：升级器（`update_firmware`，0x4f8440）只在"包内标记与设备已安装标记**完全相同**"时提示"已是最新版本"，并不比较版本高低。与上游英文版区分开，才能在一台刷过英文 1.5.0 的设备上直接升级到中文版；以后重新构建把字母往后挪一位就能再刷。
 
@@ -66,14 +66,34 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 - `patch/navigation.c`：`bar_word_sync()` 在状态变化时写 `label_playword`，与图标共用上游 `bar_repaint` 那个 0 ms 定时器强制整条状态栏重画；文字宽 48 px，EQ 标记（`label_eq`）出现时自动让位，不压中间时钟。
 - 上游 1.5.0 的 `a783c29`（Fixes #116）已经修了"图标不跟随"本身，本分支在此基础上只加了文字。
 
+### 6. 新功能：一键补全封面与歌词
+
+```text
+主菜单 → 设置 → 播放设置 → 补全封面与歌词
+```
+
+原厂只有「正在播放 → ⋯ → 动态获取封面与歌词」，一次一首歌、封面还要自己挑。这一行把整张卡扫一遍：
+
+- **第一段抓歌词**：每张专辑逐首问 LRCLIB，找到带时间轴的版本就写成歌曲同目录的同名 `.lrc`（与「下载专辑歌词」同一套 `album_lyrics`），已有 `.lrc` 的歌跳过。
+- **第二段抓封面**：文件夹里没有任何封面文件时，取 MusicBrainz 前四个发行组的 Cover Art Archive 前置封面（500 px），取不到再试 iTunes 的 600 px，存成 `cover.jpg`；已有 `cover.jpg` / `folder.jpg` 的跳过。跑完调用 `coverflow_refresh_art()`，下次进 Cover Flow 就重建。
+- **进度就显示在这一行上**：`补全歌词 128/312` → `补全封面 37/312`；再按一次变成「正在停止…」，已下的不会丢。
+- **为什么天然能续**：全靠「缺什么补什么」，所以中断、重启、再按一次都从没补到的地方接着走。
+- **不占线程**：原厂的歌曲记录只允许 UI 线程碰，所以按「UI 线程取一张专辑 → 工作线程联网」一次一张地推进（`library_fill_tick`，挂在 `ringnav_sleep`），界面不卡，取消也能在两张专辑之间落地。
+
+需要 Wi-Fi。LRCLIB 与 MusicBrainz 都约 1 请求/秒，2000 首歌词约 35–40 分钟、300 张专辑的封面约 10–15 分钟，建议插着电跑。封面按「搜索到的第一张」自动选定，同名专辑（一堆 *Greatest Hits*）可能配错，删掉 `cover.jpg` 重来即可。
+
+- `patch/onlinematch.c`：`library_fill_*`（枚举、两段任务、进度、取消），`lf_cover_save()` 复用 `mb_url()` / `caa()` / `itunes_url()`。
+- `patch/navigation.c`：导出 `ringnav_fill_albums()`（全库专辑 SQL，复用年代页的 `ERA_ALBUMS`）与 `ringnav_album_tracks()`（单张专辑曲目），新增枚举 `POD_LIBRARY_FILL` 与设置行。
+
 ### 差异一览
 
 | 项 | 上游 1.5.0 | 本分支 |
 |---|---|---|
 | 界面语言 | 英文 | 简体中文（`CHINESE_UI = True`） |
-| 版本标记 | `V150I` | `V150D` |
+| 版本标记 | `V150I` | `V150E` |
 | 无耳机时播放/切歌 | 照常开始播放 | 拒绝并提示，可在播放设置关闭 |
 | 状态栏播放状态 | 只有图标 | 图标 +「播放中」/「已暂停」 |
+| 补全封面与歌词 | 一次一首，封面上手挑 | 播放设置里一键扫全卡 |
 | 汉化来源 | — | Ericwyn/q2-pod 的汉化，按 1.5.0 结构重做 |
 
 其余全部保持上游行为：浅色模式、滚轮快捷手势、封面/歌词/信息页、Spotify、Tidal、网络电台、AirPods、评分、交叉淡化、断点续播、80% 充电上限、待机时限、应用商店与网络更新。
@@ -119,7 +139,7 @@ uv pip install -r requirements.txt
 .venv/bin/python tools/build.py /path/update.tar --out build-cn --ipod
 ```
 
-`--out` 目录必须不存在。产出约 50.6 MiB、载荷 451,528 B（上限 512 KB），标记 `V150D`；加 `--dev` 会得到递增的开发标记（`V001c`…），附带需要密钥的远程调试服务。
+`--out` 目录必须不存在。产出约 50.6 MiB、载荷见构建日志（上限 512 KB），标记 `V150E`；加 `--dev` 会得到递增的开发标记（`V001c`…），附带需要密钥的远程调试服务。
 
 ## 测试
 
@@ -136,7 +156,7 @@ uv pip install -r requirements.txt
 
 把 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
-- 本版标记 `V150D`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
+- 本版标记 `V150E`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
 - 回滚用山灵官方 V1.32 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.32`，自建包约 51 MB。
 - 网络更新（应用商店）下载的仍是 DiamondBond 的**英文**固件，所以更新行标题写成「上游英文固件更新」。装了会失去汉化，要保留中文请用 TF 卡刷本分支的包。

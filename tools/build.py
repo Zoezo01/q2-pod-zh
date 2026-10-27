@@ -21,7 +21,7 @@ TAG = 'V' + VERSION.replace('.', '')
 # turned away by a player already on it, while V150C installs over it and over stock V1.32 in one
 # flash. A later Chinese build moves on to D, E…, since a player already on C would turn C away.
 # --dev still numbers builds.
-VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'D'}
+VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'E'}
 
 def dev_tag(number, edition):
     """--dev build number's tag: V and three base-36 digits, the edition lowercase (V00Ai), so no

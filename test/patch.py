@@ -11379,7 +11379,7 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,9,18,10,8,20,0,4,5,11,21,22,24,16,17,15,19,14,13,12,1,6,23,7]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,9,18,10,8,20,0,4,5,11,21,22,24,16,17,15,19,14,13,12,1,6,23,7,25]; passed()
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
 for i in (3,5):
     button=m.nodes[rows[i]]['children'][0]
@@ -11398,6 +11398,12 @@ m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_ro
 assert texts()[9]=='无耳机不播放' and icons()[9]=='system_keylock'
 assert click(9)==[(1,'Q2POD','HEADSETGUARD')] and texts()[9]=='无耳机不播放'
 assert click(9)==[(0,'Q2POD','HEADSETGUARD')] and texts()[9]=='无耳机不播放'; passed()
+# 补全封面与歌词 (onlinematch.c library_fill_*): an action row, the page's last, whose label carries the
+# job's progress. Wi-Fi off, it says so and starts nothing.
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+assert texts()[10]=='补全封面与歌词' and icons()[10]=='player_onlinesearch'
+assert texts()[10]=='补全封面与歌词' and m.nodes[rows[10]]['children'].index(m.nodes[rows[10]]['children'][0])==0
+passed()
 # MQA (crossfade.c mqa_click): off by default, saved as Q2POD MQA, and sent to a connected hciplayer
 # at once: 2 skips its start-of-track probe, 0 is its default. No player socket, nothing sent.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)

@@ -259,6 +259,7 @@ enum {
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
     POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
     POD_HEADSET_GUARD, /* Playback's 无耳机不播放: headset.c's guard_refuse reads the same key */
+    POD_LIBRARY_FILL,  /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the whole card */
     POD_COUNT
 };
 
@@ -2437,13 +2438,14 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    0,
                                    &st.wheel_qs,
-                                   &headset_guard };
+                                   &headset_guard,
+                                   0 };
 _Static_assert(POD_LOCKCLOCK == 7, "lockscreen.c passes pod_rows 7");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = {
     "CHARGELIMIT", "LOWPOWER", "WAKEDOUBLE", "ARTISTCF",     "YEAROLD",   0, "RESUME", "LOCKCLOCK",
     "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0, "WHEELQS",
-    "HEADSETGUARD"
+    "HEADSETGUARD", 0
 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
@@ -2756,8 +2758,15 @@ static void pod_text(int i) {
         { "刷新 Cover Flow" },
         { 0 }, /* Wheel QS: a switch */
         { 0 }, /* 无耳机不播放: a switch */
+        { "补全封面与歌词" }, /* an action: its label carries the job's progress */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
+    if (i == POD_LIBRARY_FILL) {
+        char t[48];
+        library_fill_text(t, sizeof t);
+        widget_set_text_utf8(st.pod_label[i], t);
+        return;
+    }
     if (i == POD_CF_SORT) {
         char sort[48];
         tk_snprintf(sort, sizeof sort, "Cover Flow %s", coverflow_sort_name());
@@ -2790,6 +2799,16 @@ static int pod_click(void *ctx, void *event) {
     else if (i == POD_CF_REFRESH) {
         coverflow_refresh_art();
         toast("下次进入时将重建 Cover Flow 封面");
+    } else if (i == POD_LIBRARY_FILL) {
+        if (library_fill_active())
+            library_fill_cancel();
+        else if (get_wifisignal() <= 0)
+            toast("请先连接 Wi-Fi");
+        else if (!library_fill_start())
+            toast("卡上没有带专辑标签的歌曲");
+        else
+            toast("开始补全，再按一次可停止");
+        pod_text(i);
     } else if (i == POD_ARTISTS) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
@@ -2805,6 +2824,12 @@ static int pod_click(void *ctx, void *event) {
             headset_volume_reset(), device_set_volume(g_volume, 0);
     }
     pod_text(i);
+    return 0;
+}
+/* The fill row's label leaves with its page: the UI loop and pod_text must not write through it. */
+static int fill_gone(void *ctx, void *event) {
+    (void)ctx, (void)event;
+    st.pod_label[POD_LIBRARY_FILL] = 0;
     return 0;
 }
 void pod_rows(void *win, const char *view_name, int first, int n, const char *const *icons) {
@@ -2884,6 +2909,7 @@ static const unsigned char playset_order[] = {
     6 /* DSD Output */,
     23 /* MQA */,
     7 /* USB Audio */,
+    25 /* 补全封面与歌词 */,
 };
 /* Connections, personalisation and daily controls, then device maintenance; About stays last. */
 static const unsigned char sysset_order[] = {
@@ -2948,6 +2974,7 @@ static int root_click(void *ctx, void *event) {
 int ringnav_audioset(void *win, void *ctx) {
     static const char *const icons[] = { "playset_covermode", "playset_folderjump" };
     static const char *const guard_icon[] = { "system_keylock" };
+    static const char *const fill_icon[] = { "player_onlinesearch" };
     int result = stock_audioset_trampoline(win, ctx);
     pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
     pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
@@ -2966,6 +2993,9 @@ int ringnav_audioset(void *win, void *ctx) {
         /* Last built so playset_order's stock and earlier rows keep their child indices; it sits
          * after Swap L/R by that order. */
         pod_rows(win, "scroll_view_playset", POD_HEADSET_GUARD, 1, guard_icon);
+        pod_rows(win, "scroll_view_playset", POD_LIBRARY_FILL, 1, fill_icon);
+        if (st.pod_label[POD_LIBRARY_FILL])
+            widget_on(st.pod_label[POD_LIBRARY_FILL], EVT_DESTROY, fill_gone, 0);
     }
     reorder(view, playset_order, sizeof playset_order);
     return result;
@@ -6558,6 +6588,26 @@ static const char *era_name(char *buf, int decade) {
 
 /* Album i's record: the album name's songs, the one at its path. *songs holds it, the caller's. */
 static int era_by_name(void *name) { return getMusicByAlbum(name); }
+
+/* The library fill's two doors (onlinematch.c's library_fill_*): stock's albums, each with its
+ * artist and one track's path, and one album's tracks. Both run on the UI thread, which is the only
+ * one that may touch stock's records; the job's worker works on the copies it is handed. */
+static int (*fill_take)(void *, const char *, const char *, const char *);
+static void *fill_take_ctx;
+static int fill_take_row(void *unused, int n, char **v, char **c) {
+    (void)unused, (void)c;
+    if (n != 4 || !v[0] || !v[3] || !fill_take) return 0;
+    return fill_take(fill_take_ctx, v[0], v[1] ? v[1] : "", v[3]);
+}
+int ringnav_fill_albums(int (*row)(void *, const char *, const char *, const char *), void *ctx) {
+    fill_take = row, fill_take_ctx = ctx;
+    int ok = era_sql(ERA_ALBUMS, fill_take_row);
+    fill_take = 0, fill_take_ctx = 0;
+    return ok;
+}
+void *ringnav_album_tracks(const char *album, int *n) {
+    return staged_music(era_by_name, (void *)album, n);
+}
 static void *era_record(unsigned i, void **songs) {
     int n;
     *songs = staged_music(era_by_name, era.v[i].album, &n);
@@ -8696,6 +8746,8 @@ int ringnav_dark_cover_usleep(unsigned us) {
 }
 
 int ringnav_sleep(void *loop) {
+    library_fill_tick();
+    if (library_fill_active() && st.pod_label[POD_LIBRARY_FILL]) pod_text(POD_LIBRARY_FILL);
     headset_poll();
     bt_volume_poll();
     video_poll();
