@@ -8,6 +8,8 @@
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
 ![许可](https://img.shields.io/badge/license-MIT-B99AC8?style=flat-square)
 
+**直接刷机：[下载 `update.tar`](https://github.com/hqzt/q2-pod-zh/releases/latest)**（见 [Releases](https://github.com/hqzt/q2-pod-zh/releases)，附 SHA256 与刷机说明）
+
 ## 参考了哪两个项目
 
 | 项目 | 是什么 | 本分支用了什么 |
@@ -79,7 +81,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 ## 仓库里没有的东西
 
 - **不含山灵官方固件**（`xImage`、`rootfs.squashfs`、官方 `update.tar` 一个都没有）。构建需要你自己下载官方 V1.32。
-- **不含构建产物**。`update.tar` 里是山灵的二进制，本仓库只发布源码与文档。
+- **git 树里不含构建产物**（`.gitignore` 挡住了）。编译好的 `update.tar` 作为附件放在 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里，不占仓库体积。
 - 不含卡内应用（Soulseek、Deezer、File Browser 等由 `q2app` 自带），它们自己画的行名与状态文字不由本固件翻译。
 
 ## 构建
