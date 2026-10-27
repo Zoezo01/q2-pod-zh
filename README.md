@@ -8,7 +8,7 @@
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
 ![许可](https://img.shields.io/badge/license-MIT-B99AC8?style=flat-square)
 
-**直接刷机：[下载 `update.tar`](https://github.com/hqzt/q2-pod-zh/releases/latest)**（见 [Releases](https://github.com/hqzt/q2-pod-zh/releases)，附 SHA256 与刷机说明）
+**直接刷机：[下载 `update.tar`](https://github.com/Zoezo01/q2-pod-zh/releases/latest)**（见 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases)，附 SHA256 与刷机说明）
 
 ## 参考了哪两个项目
 
@@ -101,7 +101,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 ## 仓库里有什么
 
 - **全部源码**：`patch/`（钩子与载荷 C 代码）、`tools/`（构建与打包）、`test/`（约 1.2 万行行为测试）、`docs/`。
-- **可以刷的固件**：`update.tar` 在 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里，不放进 git（`.gitignore` 挡着，50 MB 的东西不该进版本库）。
+- **可以刷的固件**：`update.tar` 在 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里，不放进 git（`.gitignore` 挡着，50 MB 的东西不该进版本库）。
 - **不含山灵官方固件**（`xImage`、`rootfs.squashfs`、官方 `update.tar`）：这些是山灵的版权文件，本仓库不转发；想自己编译，要先去山灵官网下官方 V1.32。
 - **不含卡内应用**（Soulseek、Deezer、File Browser 等由 `q2app` 自带），它们自己画的行名与状态文字不由本固件翻译。
 
@@ -154,7 +154,7 @@ uv pip install -r requirements.txt
 
 ## 刷机与回滚
 
-把 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
+把 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
 - 本版标记 `V150E`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
