@@ -2764,7 +2764,8 @@ static void pod_text(int i) {
     if (i == POD_LIBRARY_FILL) {
         char t[48];
         library_fill_text(t, sizeof t);
-        widget_set_text_utf8(st.pod_label[i], t);
+        /* Set only on a new text: the loop asks every pass for the spinner's turn. */
+        if (text_differs(st.pod_label[i], t)) widget_set_text_utf8(st.pod_label[i], t);
         return;
     }
     if (i == POD_CF_SORT) {
@@ -2805,7 +2806,7 @@ static int pod_click(void *ctx, void *event) {
         else if (get_wifisignal() <= 0)
             toast("请先连接 Wi-Fi");
         else if (!library_fill_start())
-            toast("卡上没有带专辑标签的歌曲");
+            toast("卡上没有可补全的歌曲");
         else
             toast("开始补全，再按一次可停止");
         pod_text(i);
@@ -6607,6 +6608,24 @@ int ringnav_fill_albums(int (*row)(void *, const char *, const char *, const cha
 }
 void *ringnav_album_tracks(const char *album, int *n) {
     return staged_music(era_by_name, (void *)album, n);
+}
+/* The fill's third pass: the card's songs without an album tag (stock groups them under Unknown
+ * Album, whose folder has no cover to fetch), one row each. A CUE segment is left out as the album
+ * pass leaves its tracks out, and so are audiobooks, podcasts and M4B (MUSIC_WHERE). */
+static int (*fill_song_take)(void *, const char *, const char *, const char *);
+static void *fill_song_ctx;
+static int fill_song_row(void *unused, int n, char **v, char **c) {
+    (void)unused, (void)c;
+    if (n != 3 || !v[2] || !*v[2] || !fill_song_take) return 0;
+    return fill_song_take(fill_song_ctx, v[0] ? v[0] : "", v[1] ? v[1] : "", v[2]);
+}
+int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char *), void *ctx) {
+    fill_song_take = row, fill_song_ctx = ctx;
+    int ok = era_sql("select name,songer,fileurl from songtable where " MUSIC_WHERE
+                     " and ifnull(album,'')='' and ifnull(time,0)=0 and ifnull(time_end,0)=0",
+                     fill_song_row);
+    fill_song_take = 0, fill_song_ctx = 0;
+    return ok;
 }
 static void *era_record(unsigned i, void **songs) {
     int n;

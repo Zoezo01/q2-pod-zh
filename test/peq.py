@@ -797,7 +797,7 @@ def editor_check(lib, tmp):
     assert (saved/'HD650.peq').exists()
     click('HD650.peq'); click('删除 HD650.peq？确认')
     assert not (saved/'HD650.peq').exists() and active.read_bytes() == before
-    assert title() == 'Deleted HD650.peq; active EQ unchanged' and not ui.shim_click(b'HD650.peq', 0)
+    assert title() == '已删除 HD650.peq，当前均衡器未变' and not ui.shim_click(b'HD650.peq', 0)
     # Stock presets are built in: picking one loads stock's curve, writes nothing until Apply.
     files, before = sorted(saved.iterdir()), active.read_bytes()
     ui.shim_return(); click('内置预设'); click('摇滚')
@@ -816,7 +816,7 @@ def editor_check(lib, tmp):
     click(auto(read())); click('应用更改')
     assert abs(read().preamp + 12.5) < 0.05 and read().automatic == 1, read().preamp
     # Rows that open a screen or picker end in list_into; the switches and cyclers don't.
-    got = [ui.shim_chevron(t) for t in ('声道平衡'.encode(), '前级增益'.encode(), '预设'.encode(), b'1  ', '启用'.encode(), b'Reset')]; assert got == [1, 1, 1, 1, 0, 0], got
+    got = [ui.shim_chevron(t) for t in ('声道平衡'.encode(), '前级增益'.encode(), '预设'.encode(), b'1  ', '启用'.encode(), '恢复默认设置'.encode())]; assert got == [1, 1, 1, 1, 0, 0], got
     click('1  ')
     assert [ui.shim_chevron(t) for t in ('频段'.encode(), '类型'.encode(), '频率'.encode(), '增益'.encode(), b'Q ')] == [0, 0, 1, 1, 1]
     click('频段 On'); ui.shim_return(); click('2  '); click('频段 On'); ui.shim_return(); click('应用更改')
@@ -958,7 +958,7 @@ def editor_check(lib, tmp):
         assert ui.shim_click(f'Headphone {start:04}.txt'.encode(), 2)
         assert ui.shim_click(f'Headphone {min(start + 127, 8849):04}.txt'.encode(), 2)
         assert not ui.shim_click(f'Headphone {start + 128:04}.txt'.encode(), 2)
-        assert title() == f'Presets {start // 128 + 1}/70'
+        assert title() == f'预设 {start // 128 + 1}/70'
         assert ui.shim_selection() == ui.shim_offset() == 0
         if start < 8832: click('下一页')
     assert not ui.shim_click('下一页'.encode(), 2)
@@ -966,9 +966,9 @@ def editor_check(lib, tmp):
     imported = Preset()
     assert lib.peq_load(bytes(saved/'Headphone 8849.peq'), C.byref(imported)) and imported.preamp == -3
     assert active.read_bytes() == before  # importing only saves a copy
-    click('上一页'); assert title() == 'Presets 69/70'
+    click('上一页'); assert title() == '预设 69/70'
     ui.shim_return(); click('从 SD /EQ 导入')
-    assert title() == 'Presets 1/70' and not ui.shim_click('上一页'.encode(), 2)
+    assert title() == '预设 1/70' and not ui.shim_click('上一页'.encode(), 2)
     click('Headphone 0000.txt'); assert (saved/'Headphone 0000.peq').exists()
     click('Headphone 0000.txt'); assert title() == '预设'  # existing preset asks before replacement
     assert ui.shim_click('替换现有预设？确认'.encode(), 2)

@@ -11404,6 +11404,79 @@ m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_ro
 assert texts()[10]=='补全封面与歌词' and icons()[10]=='player_onlinesearch'
 assert texts()[10]=='补全封面与歌词' and m.nodes[rows[10]]['children'].index(m.nodes[rows[10]]['children'][0])==0
 passed()
+# The fill's three passes: every album's lyrics, every album's cover, then the songs without an album
+# tag — searched by their own title and artist, from their own row here — with the album's counts
+# named as albums (张) and the songs' as songs (首), and a spinner turning while the job waits on the
+# network, so a row that has not moved for a while still looks alive. Stock's database at its ABI.
+class FillMachine(QueueMachine):
+    def __init__(self,rows=()):
+        super().__init__()
+        self.db=sqlite3.connect(':memory:',isolation_level=None)
+        self.db.execute('create table songtable(id integer primary key,filename,fileurl,album,songer,style,'
+                        'name,composer,albumsonger,year,track,cd_num,time,time_end,time_create,Initial)')
+        self.db.executemany('insert into songtable(filename,fileurl,album,songer,style,name,composer,'
+                            'albumsonger,year,track,cd_num,time,time_end,time_create,Initial) '
+                            'values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',rows)
+        for n in ('sqlite3_open','sqlite3_close','sqlite3_exec'): self.handlers[syms[n]]='fill:'+n
+        self.handlers[syms['get_wifisignal']]='fill:wifi'
+        self.sql=[]; self.closed_db=0; self.wifi=3
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('fill:'): return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]; name=name[5:]; ret=0
+        if name=='wifi': ret=self.wifi
+        elif name=='sqlite3_open': self.word(b,123)
+        elif name=='sqlite3_close': self.closed_db+=1
+        elif name=='sqlite3_exec':
+            assert a==123; self.sql.append(self.text(b))
+            try:
+                cur=self.db.execute(self.text(b))
+                for row in cur.fetchall() if cur.description and c else ():
+                    values=self.alloc(4*len(row)); names=self.alloc(4*len(row))
+                    for i,v in enumerate(row): self.word(values+4*i,0 if v is None else self.string(str(v)))
+                    if self.nested(c,d,len(row),values,names): raise sqlite3.OperationalError('aborted')
+            except sqlite3.Error: ret=1
+        self.returns(ret,clobber=True)
+def fill_rows():
+    """One tagged album, one albumless song, and what the albumless pass leaves out: a CUE segment
+    (time/time_end) and an audiobook."""
+    return [('1.flac','/mnt/mmc/m/a/1.flac','Alpha','Al','','A1','','',1990,1,1,0,0,0,0),
+            ('s.flac','/mnt/mmc/misc/s.flac','','Solo','','S1','','',0,0,0,0,0,0,0),
+            ('c.flac','/mnt/mmc/misc/c.flac','','Solo','','C1','','',0,0,0,10,20,0,0),
+            ('b.mp3','/mnt/mmc/audiobooks/b.mp3','','Nar','','B1','','',0,0,0,0,0,0,0)]
+def fill_text(m):
+    out=m.alloc(48); m.call(address=payload_syms['library_fill_text'],args=(out,48,0,0),gap=0); return m.text(out)
+def fill_page(rows=None,wifi=3):
+    r=fill_rows() if rows is None else rows
+    m,rows_,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,
+                                            cls=lambda:FillMachine(r))
+    if wifi!=3: m.wifi=wifi
+    return m,texts,click
+m,texts,click=fill_page()
+assert texts()[10]=='补全封面与歌词'
+assert click(10)==[] and m.toasts[-1][3]=='开始补全，再按一次可停止'
+assert texts()[10]=='专辑歌词 0/1 张 ◐' and m.closed_db==2 and len(m.threads)==0; passed()
+# An albumless library: one song, the CUE segment and the audiobook left out.
+m,texts,click=fill_page(fill_rows()[1:])
+assert click(10)==[] and texts()[10]=='单曲歌词 0/1 首 ◐'; passed()
+# A tick starts the song's own search and the spinner turns with it, waiting or not.
+SPIN='◐◓◑◒'
+assert m.call(address=payload_syms['library_fill_tick'],args=(0,0,0,0),gap=0)==0
+first=fill_text(m)
+assert len(m.threads)==1 and first[:-1]=='单曲歌词 1/1 首 ' and first[-1] in SPIN,first
+m.now+=400; m.call(address=payload_syms['library_fill_tick'],args=(0,0,0,0),gap=0)
+turned=fill_text(m)
+assert turned[:-1]=='单曲歌词 1/1 首 ' and turned[-1]!=first[-1],(first,turned); passed()  # the worker still runs: the row keeps turning
+# A second press stops it at once in the row's text.
+assert click(10)==[] and texts()[10]=='正在停止…'; passed()
+# Wi-Fi off starts nothing; an empty card and one whose only albumless songs are left out say so.
+m,texts,click=fill_page(wifi=-1)
+assert click(10)==[] and m.toasts[-1][3]=='请先连接 Wi-Fi' and texts()[10]=='补全封面与歌词' and not m.threads
+passed()
+for rows,note in ((fill_rows(),'开始补全，再按一次可停止'),([],'卡上没有可补全的歌曲'),
+                  ([('a.mp3','/mnt/mmc/audiobooks/a.mp3','','N','','A','','',0,0,0,0,0,0,0)],'卡上没有可补全的歌曲')):
+    m,texts,click=fill_page(rows); click(10); assert m.toasts[-1][3]==note,(rows,texts()[10])
+passed()
 # MQA (crossfade.c mqa_click): off by default, saved as Q2POD MQA, and sent to a connected hciplayer
 # at once: 2 skips its start-of-track probe, 0 is its default. No player socket, nothing sent.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)

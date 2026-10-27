@@ -319,6 +319,8 @@ void album_lyrics_stop(void);           /* onlinematch.c: Download Album Lyrics 
 /* onlinematch.c: Playback settings' 补全封面与歌词 over the whole card, stepped from ringnav_sleep. */
 void library_fill_tick(void), library_fill_cancel(void), library_fill_text(char *out, unsigned n);
 int library_fill_start(void), library_fill_active(void);
+/* navigation.c: the songs without an album tag, title, artist and path one row each. */
+int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char *), void *ctx);
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */

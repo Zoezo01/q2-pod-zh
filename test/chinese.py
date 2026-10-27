@@ -29,6 +29,11 @@ def check(directory):
         chars.update(re.findall(r'[\u3400-\u9fff\uff00-\uffef]', path.read_text()))
     missing = sorted(c for c in chars if ord(c) not in cmap)
     assert not missing, f'Missing font glyphs: {"".join(missing)}'
+    # onlinematch.c's fill-row spinner (lf_spinner) turns through four quarter circles: its own
+    # characters, outside the Han range the sweep above keeps.
+    spinner = '\u25d0\u25d3\u25d1\u25d2'
+    missing = [c for c in spinner if ord(c) not in cmap]
+    assert not missing, f'Missing spinner glyphs: {"".join(missing)}'
 
     home = decode(asset('ui/' + HOME_PAGE))
 
