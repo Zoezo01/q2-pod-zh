@@ -1,6 +1,6 @@
 # 本地简体中文版
 
-这是基于本仓库 Q2 Pod 1.4.8、用于 Shanling Q2 的个人自用固定简体中文版，不是山灵官方固件，也不是上游发布的正式中文版本。
+这是基于本仓库 Q2 Pod 1.5.0、用于 Shanling Q2 的个人自用固定简体中文版，不是山灵官方固件，也不是上游发布的正式中文版本。
 
 ## 翻译范围
 
@@ -18,9 +18,18 @@
 
 自绘 caption 原先仅按 ASCII 字节绘制，现已支持 UTF-8 解码为 Unicode 码点再交给 `draw_centred`，缓冲随上游扩到 32 码点，并保留非法编码替换。自绘音量文字使用中文码点。
 
+## 本分支新增的两个功能
+
+除了汉化，本分支在上游 1.5.0 之上加了两个自用功能，都在 `patch/` 里，与汉化改动互不影响：
+
+- **无耳机不播放**（`patch/headset.c`，设置行在 播放设置 → 无耳机不播放，默认开）：没有 3.5 mm / 4.4 mm 耳机、没连蓝牙耳机、也没接 USB DAC 时，按播放键或切歌键不开始播放，只提示「未连接耳机」。拦截点在 `ringnav_play_pause()`、`media_key()` 与 `playback.c` 的 `ringnav_change()`，配置键 `HEADSETGUARD`。
+- **状态栏「播放中 / 已暂停」**（`patch/navigation.c`，`bar_word_sync()` + `label_playword`）：图标只有两种位图，暂停又可能来自屏幕外（拔耳机时 `config_po_output` 自己 `mclSetPause`），所以旁边加文字说明；与图标共用上游 `bar_repaint` 的 0 ms 定时器，EQ 标记出现时让位，不压中间时钟。
+
+改动清单与刷机说明见仓库根目录的 [README.zh-CN.md](../README.zh-CN.md)。
+
 ## 上游基线
 
-汉化重放到 upstream 正式 `1.4.8` 之后（本仓库合并时的 HEAD 为 `89dd850`），保留上游全部逻辑改动：应用商店、Spotify 下载管理、年代浏览、Tidal 2000 首上限与标签、网络更新的“上游英文固件更新”标记、2038 年问题修复、强调色 Green、外观圆角选项、熄屏省电与蓝牙音量开关等。上游在 1.3.8 之后新增的界面文案本轮一并补译；同时新增的 `list_toggle` 开关行、`row_dim` 标志位、`rate_saved` 只报失败、`auto_text` 双语格式等结构差异按上游写法处理，不沿用旧版实现。
+汉化重放到 upstream 正式 `1.5.0`（tag `1.5.0`，提交 `d774d76`）之后。汉化起点是 Ericwyn/q2-pod 基于 `1.3.8`（`3744dac`）的简体中文提交，因 1.4.8 → 1.5.0 之间结构变化较大，本轮按 1.5.0 的新写法逐文件重建，并补译 1.4.9 / 1.5.0 新增文案（浅色模式、滚轮快捷、视频文件夹视图、断点续播、关于页新位置、时区偏移等）。保留上游全部逻辑改动：应用商店、Spotify 下载管理、年代浏览、Tidal 2000 首上限与标签、网络更新的“上游英文固件更新”标记、2038 年问题修复、强调色 Green、外观圆角选项、熄屏省电与蓝牙音量开关等。上游在 1.3.8 之后新增的界面文案本轮一并补译；同时新增的 `list_toggle` 开关行、`row_dim` 标志位、`rate_saved` 只报失败、`auto_text` 双语格式等结构差异按上游写法处理，不沿用旧版实现。
 
 ## 构建
 
@@ -48,9 +57,9 @@ make -C squashfs-tools-4.6.1/squashfs-tools install
 
 uv python install 3.12 && uv venv --python 3.12 .venv && \
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python tools/build.py /path/update.tar --out build-cn-148 --ipod
+.venv/bin/python tools/build.py /path/update.tar --out build-cn --ipod
 # 或
-.venv/bin/python tools/build.py '/path/Q2 Firmware V1.32.zip' --out build-cn-148 --ipod
+.venv/bin/python tools/build.py '/path/Q2 Firmware V1.32.zip' --out build-cn --ipod
 ```
 
 输出目录必须不存在；重复构建请换一个新目录。不带 `--dev` 的固件没有新增 q2remote 远程调试服务，适合日常使用。
@@ -60,19 +69,19 @@ uv python install 3.12 && uv venv --python 3.12 .venv && \
 可运行的中文专项检查与主要测试：
 
 ```bash
-.venv/bin/python test/chinese.py build-cn-148
+.venv/bin/python test/chinese.py build-cn
 .venv/bin/python test/peq.py
 .venv/bin/python test/coverflow.py
-.venv/bin/python test/playback.py build-cn-148
-.venv/bin/python test/patch.py build-cn-148
-.venv/bin/python test/build.py --build build-cn-148
+.venv/bin/python test/playback.py build-cn
+.venv/bin/python test/patch.py build-cn
+.venv/bin/python test/build.py --build build-cn
 ```
 
 `test/chinese.py` 会扫描 `patch/*.c` 与 `tools/ipod.py` 里的全部汉字，要求它们在固件实际打包的 `fonts/default.ttf` 中都有字形，并抽查主菜单、确认框和载荷里的中文标签；卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）必须仍是英文。
 
-本次合并没有产出 `update.tar`：整包构建需要 LLVM 14 的 MIPS 目标、squashfs-tools 4.6.1 与 ImageMagick，以及一个能跑 `mksquashfs` 的 Linux 环境；本次只在 Windows 上工作，没有可用的 WSL/Docker。
+整包构建在 Debian 12 / arm64 上完成：LLVM 14 的 MIPS 目标、自编的 squashfs-tools 4.6.1、ImageMagick，以及 Python 3.12。产出 `update.tar` 约 50.6 MiB、标记 `V150C`，载荷 451,464 B（上限 512 KB，余约 60 KB）。`test/chinese.py`（442 个字形）与 `test/patch.py` 的全量行为测试都跑在构建产物上，测试脚本的断言已随汉化逐条改中文。
 
-在 Windows 上用 MinGW-w64（gcc 16.2）配合 host shim 跑过能独立运行的那部分 C 测试：`books.c`、`games.c`、`visualizer.c` 与 3EQ（`peq.c` + `peq_ui.c` 的 shim）用例全部通过，其中 books 与 visualizer 覆盖 UTF-8 文本与自绘 caption。`patch/peq_ui.c` 在相同编译选项下与上游 HEAD 的诊断完全一致，即汉化没有引入新的编译问题。`test/peq.py` 其余用例（编辑器、播放器、抓取）依赖 LP64 指针与 `mmap`，Windows 的 LLP64 下无法运行；`test/patch.py`、`test/coverflow.py`、`test/playback.py`、`test/build.py` 需要先有构建产物。因此实机仍需确认各菜单、滚动标题、蓝牙/流媒体流程和中文换行。
+本次构建前在 Windows 上做的先行验证仍然有效：用 MinGW-w64（gcc 16.2）配合 host shim 跑过能独立运行的那部分 C 测试——`books.c`、`games.c`、`visualizer.c` 与 3EQ（`peq.c` + `peq_ui.c` 的 shim）全部通过，其中 books 与 visualizer 覆盖 UTF-8 文本与自绘 caption。`patch/peq_ui.c` 在相同编译选项下与上游 HEAD 的诊断完全一致，即汉化没有引入新的编译问题。
 
 C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通过 `py_compile`。
 
@@ -80,11 +89,11 @@ C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通�
 
 先备份卡内资料，设备充足电。将安装包中的 `update.tar` 放入存储卡根目录，安全弹出后通过系统设置的 TF 卡升级安装。不要在刷机期间断电或拔卡。
 
-本版的版本标记是 `V148C`（关于页面仍显示 1.4.8 Pod），与上游英文 1.4.8 的 `V148I` 不同。设备只有在**已安装标记与包内标记完全相同**时才会提示“已是最新版本”（`update_firmware`，见 [Building](building.md)），所以本包可以直接刷在官方 V1.32 或上游英文 1.4.8 之上。
+本版的版本标记是 `V150C`，与上游英文 1.5.0 的 `V150I` 不同（`tools/build.py` 里 `VERSIONS['ipod']` 由 `I` 改为 `C`）。设备只有在**已安装标记与包内标记完全相同**时才会提示“已是最新版本”（`update_firmware`，见 [Building](building.md)），所以本包可以直接刷在官方 V1.32 或上游英文 1.5.0 之上。
 
-同一个标记只能刷一次：以后重新构建的中文包如果还是 `V148C`，已在本版上的设备同样会被拒绝。这时用 `--dev` 构建（每次生成递增的标记，如 `V001c`、`V002c`），或把 `tools/build.py` 里 `VERSIONS['ipod']` 的字母往后换一个（C→D）。开发包会额外安装需要密钥的远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
+同一个标记只能刷一次：以后重新构建的中文包如果还是 `V150C`，已在本版上的设备同样会被拒绝。这时用 `--dev` 构建（每次生成递增的标记，如 `V001c`、`V002c`），或把 `tools/build.py` 里 `VERSIONS['ipod']` 的字母往后换一个（C→D）。开发包会额外安装需要密钥的远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
 
-刷机前务必确认拿的是**本次构建的包**（`build-cn-148/update.tar`，约 51 MB），而不是山灵官方 V1.32 原包（约 54 MB，`firmware_v20.info` 第二行是 `V1.32`）——把原包刷回原厂固件，升级器会因标记相同而拒绝。
+刷机前务必确认拿的是**本次构建的包**（`build-cn/update.tar`，约 51 MB），而不是山灵官方 V1.32 原包（约 54 MB，`firmware_v20.info` 第二行是 `V1.32`）——把原包刷回原厂固件，升级器会因标记相同而拒绝。
 
 需要回滚时，按山灵官方说明使用 Q2 官方 V1.32 固件从 TF 卡升级。本地中文修改不影响这一恢复途径。卡内文件通常不因正常升级而格式化，但设置、评分、续播记录等内部数据不保证被原厂固件保留或识别。
 

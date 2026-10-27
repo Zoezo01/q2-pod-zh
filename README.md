@@ -1,3 +1,17 @@
+<div align="center">
+
+**简体中文分支 · Simplified Chinese fork**
+
+本仓库是 [DiamondBond/q2-pod](https://github.com/DiamondBond/q2-pod)（MIT）的简体中文个人分支，基线为上游 **1.5.0**。
+汉化起点是 [Ericwyn/q2-pod](https://github.com/Ericwyn/q2-pod) 的简体中文提交，已按 1.5.0 的新结构重做，
+并加了两个自用功能（无耳机不播放、状态栏「播放中 / 已暂停」）。
+
+**改动清单、构建方法与刷机说明：[README.zh-CN.md](README.zh-CN.md)**
+
+</div>
+
+---
+
 <p align="center">
   <a href="https://www.youtube.com/watch?v=cc581MRAtp0" title="Watch the Q2 Pod video on YouTube">
     <img src="assets/banner.png" alt="Q2 Pod: the iPod firmware mod for the Shanling Q2" width="100%">
