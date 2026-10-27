@@ -78,11 +78,12 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 其余全部保持上游行为：浅色模式、滚轮快捷手势、封面/歌词/信息页、Spotify、Tidal、网络电台、AirPods、评分、交叉淡化、断点续播、80% 充电上限、待机时限、应用商店与网络更新。
 
-## 仓库里没有的东西
+## 仓库里有什么
 
-- **不含山灵官方固件**（`xImage`、`rootfs.squashfs`、官方 `update.tar` 一个都没有）。构建需要你自己下载官方 V1.32。
-- **git 树里不含构建产物**（`.gitignore` 挡住了）。编译好的 `update.tar` 作为附件放在 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里，不占仓库体积。
-- 不含卡内应用（Soulseek、Deezer、File Browser 等由 `q2app` 自带），它们自己画的行名与状态文字不由本固件翻译。
+- **全部源码**：`patch/`（钩子与载荷 C 代码）、`tools/`（构建与打包）、`test/`（约 1.2 万行行为测试）、`docs/`。
+- **可以刷的固件**：`update.tar` 在 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里，不放进 git（`.gitignore` 挡着，50 MB 的东西不该进版本库）。
+- **不含山灵官方固件**（`xImage`、`rootfs.squashfs`、官方 `update.tar`）：这些是山灵的版权文件，本仓库不转发；想自己编译，要先去山灵官网下官方 V1.32。
+- **不含卡内应用**（Soulseek、Deezer、File Browser 等由 `q2app` 自带），它们自己画的行名与状态文字不由本固件翻译。
 
 ## 构建
 
@@ -133,7 +134,7 @@ uv pip install -r requirements.txt
 
 ## 刷机与回滚
 
-把构建出的 `update.tar` 放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。
+把 [Releases](https://github.com/hqzt/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
 - 本版标记 `V150D`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
