@@ -802,14 +802,14 @@ else:
     # the bar's own repaint (stock repaints it each second) or the top window's, whatever the page.
     def clock(): return s.nodes[title].get('text')
     def writes(): return [c for c in s.calls if c[0]=='widget_set_text_utf8']
-    assert clock()=='6:14 PM'; passed()  # written by the gradient check's paint above
-    for h,mi,want in ((0,0,'12:00 AM'),(0,5,'12:05 AM'),(9,7,'9:07 AM'),(11,59,'11:59 AM'),(12,0,'12:00 PM'),
-                      (12,59,'12:59 PM'),(13,0,'1:00 PM'),(23,59,'11:59 PM')):
+    assert clock()=='6:14 下午'; passed()  # written by the gradient check's paint above
+    for h,mi,want in ((0,0,'12:00 上午'),(0,5,'12:05 上午'),(9,7,'9:07 上午'),(11,59,'11:59 上午'),(12,0,'12:00 下午'),
+                      (12,59,'12:59 下午'),(13,0,'1:00 下午'),(23,59,'11:59 下午')):
         s.clock=(h,mi); bg(bar); assert clock()==want,(h,mi,clock())
     passed()
     # Repaints within the minute leave the label alone; the next minute rewrites it.
     bg(bar); assert not writes(); passed()
-    s.clock=(0,0); bg(bar); assert clock()=='12:00 AM' and len(writes())==1; passed()
+    s.clock=(0,0); bg(bar); assert clock()=='12:00 上午' and len(writes())==1; passed()
     # Stock's 24-hour toggle updates within the same minute, including leading zeroes.
     s.u.mem_write(syms['g_time24h_flag'], b'\x01')
     bg(bar); assert clock()=='00:00' and len(writes())==1
@@ -817,17 +817,17 @@ else:
     for h,mi,want in ((0,5,'00:05'),(9,7,'09:07'),(12,0,'12:00'),(18,14,'18:14'),(23,59,'23:59')):
         s.clock=(h,mi); bg(bar); assert clock()==want,(h,mi,clock())
     s.u.mem_write(syms['g_time24h_flag'], b'\x00')
-    bg(bar); assert clock()=='11:59 PM' and len(writes())==1
+    bg(bar); assert clock()=='11:59 下午' and len(writes())==1
     bg(bar); assert not writes(); passed()
     # A failed time or localtime shows --:-- once; the clock comes back when it reads again.
     for fail in ('time','localtime'):
         s.clock=fail; bg(bar); assert clock()=='--:--' and len(writes())==1
         bg(bar); assert not writes()
-        s.clock=(7,30); bg(bar); assert clock()=='7:30 AM'
+        s.clock=(7,30); bg(bar); assert clock()=='7:30 上午'
     passed()
     # Past 2038 time() wraps; read unsigned and taken 28 years back, localtime keeps the 32-bit range.
-    s.wall=(86400+3*883612800,86400+2*883612800); s.clock=(7,31); bg(bar); assert clock()=='7:31 AM'
-    s.wall=(86400,86400); s.clock=(7,30); bg(bar); assert clock()=='7:30 AM'; passed()
+    s.wall=(86400+3*883612800,86400+2*883612800); s.clock=(7,31); bg(bar); assert clock()=='7:31 上午'
+    s.wall=(86400,86400); s.clock=(7,30); bg(bar); assert clock()=='7:30 上午'; passed()
     # Pages, a dialog on top and pages with their own navbar all keep the clock; only a minute change
     # writes it, from any top-level paint.
     heading=s.node('hscroll_label',text='System Setting')
@@ -836,9 +836,9 @@ else:
            ('sysset_page','home_page','playing_page','coverflow_page','tidal_main_page')]+[top_level('dialog','sortselect_dialog')]
     for pg in pages:
         s.top=pg; bg(pg)
-        assert clock()=='7:30 AM' and not writes()
+        assert clock()=='7:30 上午' and not writes()
     passed()
-    s.clock=(19,31); s.top=pages[-1]; bg(pages[-1]); assert clock()=='7:31 PM' and len(writes())==1; passed()
+    s.clock=(19,31); s.top=pages[-1]; bg(pages[-1]); assert clock()=='7:31 下午' and len(writes())==1; passed()
     # The codec badge and the Battery setting (bar_sync, on each bar paint): stock sets img_bt's image
     # each second; a new badge shows CODEC_MS, fades out and BT_GLYPH fades in over CODEC_STEPS steps
     # each way, and BT_GLYPH then replaces the badge stock sets again. The battery shows the icon, the
