@@ -634,9 +634,9 @@ static void spot_restarting(void) { br.until = time_now_ms() + SPOT_SIGNOUT_MS; 
 static level_t *top(void) { return &br.lv[br.depth - 1]; }
 static const char *cell(const level_t *l, int i, int k) { return l->f[4 + 6 * i + k]; }
 static int has_track(void) { return sp.track[0] && strcmp(sp.state, "none"); }
-static const char *const MENU[] = { "正在播放", "喜欢的歌曲", "歌单", "专辑", "艺人",
+static const char *const MENU[] = { "正在播放", "喜欢的歌曲", "歌单", "专辑", "表演者",
                                     "搜索", "播放队列", "播放设置", "账号", "已下载歌曲", "下载管理" };
-static const char *const CATS[] = { "歌曲", "专辑", "艺人", "歌单" };
+static const char *const CATS[] = { "歌曲", "专辑", "表演者", "歌单" };
 
 /* "\t" and s escaped appended to out (size bytes); 0 when it doesn't fit. */
 static int put(char *out, unsigned size, const char *s) {
@@ -1034,7 +1034,7 @@ static int go(const void *unused) {
         if (r == M_PLAYING)
             spot_np();
         else if (r == M_DOWNLOADS)
-            push(L_DOWNLOADS, "", "", "", "Downloads");
+            push(L_DOWNLOADS, "", "", "", "下载");
         else if (r != M_SEARCH)
             push(L_LIST, ops[r], "", "", MENU[r]);
         else { /* peq_ui.c's T9 edit over the title, its keyboard open */
@@ -1051,11 +1051,11 @@ static int go(const void *unused) {
         if (put(a, sizeof a, cats[i]) && put(a, sizeof a, br.term)) push(L_LIST, "search", a, "", CATS[i]);
     } else if (l->kind == L_DOWNLOADS) {
         if (!br.downloads) {
-            if (!i) push(L_LIST, "downloaded", "", "", "Downloaded Tracks");
+            if (!i) push(L_LIST, "downloaded", "", "", "已下载歌曲");
             else if (i == 1 && br.can_download) request("downloadstatus", "", A_DOWNLOAD);
         }
-        else if (i == 3) push(L_STORAGE, "", "", "", "Storage Management");
-        else push(L_LIST, i == 0 ? "collections" : i == 1 ? "downloaded" : "jobs", "", "", i == 0 ? "Downloaded Playlists" : i == 1 ? "Downloaded Tracks" : "Download Progress");
+        else if (i == 3) push(L_STORAGE, "", "", "", "存储管理");
+        else push(L_LIST, i == 0 ? "collections" : i == 1 ? "downloaded" : "jobs", "", "", i == 0 ? "已下载歌单" : i == 1 ? "已下载歌曲" : "下载进度");
     } else if (l->kind == L_STORAGE) {
         br.selected[0] = 0;
         tk_snprintf(br.remove_kind, sizeof br.remove_kind, "%s", i == 0 ? "collections" : i == 1 ? "tracks" : "all");

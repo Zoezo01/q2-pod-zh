@@ -14,6 +14,8 @@
 
 原厂页面继续使用原厂语言机制。建议在设备的系统设置中选择简体中文；切换到英文或其他语言时，本次新增文案仍然显示中文。品牌、音频单位、歌曲/艺术家/专辑/文件名、外部服务回复及部分底层错误保持原文；没有修改存储卡目录名、配置键或协议字段。卡内应用（Soulseek、Deezer、File Browser 等由 `q2app` 自行提供的界面）的文字由应用本身给出，不在此固件内翻译。
 
+界面文字有两个来源：载荷 C 代码自绘的（`patch/*.c`），以及原厂 UI 资产里的（`home_page.bin`、确认框、键盘、原厂页面）。原厂资产本身是中文，上游为了让界面变成英文，在构建时用 `english_ui` 把每个资产里的中文逐条换成英文。本版要的是中文界面，所以 `tools/build.py` 增加了 `CHINESE_UI = True`：资产按 `patch_asset` 的结果原样打包，不再做英文化改写，只保留它的解码/编码往返校验；`ENGLISH`/`ENGLISH_IN` 两张表仍在，Home 的中文标签也已补上对应英文项，改成 `False` 就得到上游的英文界面。这样资产里的原厂中文、本版新增的中文标签和载荷中文是同一套，不会出现半中文半英文。
+
 自绘 caption 原先仅按 ASCII 字节绘制，现已支持 UTF-8 解码为 Unicode 码点再交给 `draw_centred`，缓冲随上游扩到 32 码点，并保留非法编码替换。自绘音量文字使用中文码点。
 
 ## 上游基线
@@ -29,15 +31,26 @@
 
 `update.tar` 入口同样是审计过的基线：校验包内 `firmware_v20.info` 必须是 `Shanling Q2` / `V1.32`，成员必须仍是那四个。用它构建的成品 `manifest.json` 记 `input_kind: "tar"`，`tools/release.py` 会拒绝把这类构建当作发布包，正式发布仍只认原厂 ZIP。
 
-工具链为 LLVM 14、SquashFS 4.6.1（含 LZO 支持）与 ImageMagick；版本低于项目的 squashfs-tools 4.5 不能代替。使用 Python 3.12 虚拟环境（既有 MIPS 测试有 3.12 的 f-string 语法）：
+工具链为 LLVM 14、SquashFS 4.6.1（含 LZO 支持）与 ImageMagick；版本低于项目的 squashfs-tools 4.5 不能代替，Debian 12 仓库里的 4.5.1 必须换成 4.6.1。使用 Python 3.12（既有 MIPS 测试有 3.12 的 f-string 语法；Debian 12 自带的 3.11 会报 `f-string: expecting '}'`）。
+
+以下是实际用来构建出成品的环境（Debian 12 / arm64 均可，clang 跨到 MIPS 目标即可）：
 
 ```bash
-uv venv .venv
-uv pip install --python .venv/bin/python -r requirements.txt
-export PATH="$PWD/work/toolchain/bin:$PATH"
-.venv/bin/python tools/build.py '/path/Q2 Firmware V1.32.zip' --out build-cn-148 --ipod
-# 或
+apt-get install -y clang-14 lld-14 llvm-14 imagemagick build-essential \
+                   zlib1g-dev liblzo2-dev liblzma-dev liblz4-dev libzstd-dev
+for p in clang clang++ llvm-objcopy llvm-objdump ld.lld llvm-strip; do ln -sf /usr/bin/$p-14 /usr/local/bin/$p; done
+
+# squashfs-tools 4.6.1（Debian 12 只有 4.5.1）
+curl -L https://github.com/plougher/squashfs-tools/archive/refs/tags/4.6.1.tar.gz | tar xz
+make -C squashfs-tools-4.6.1/squashfs-tools -j4 \
+     GZIP_SUPPORT=1 LZO_SUPPORT=1 XZ_SUPPORT=1 LZ4_SUPPORT=1 ZSTD_SUPPORT=1 && \
+make -C squashfs-tools-4.6.1/squashfs-tools install
+
+uv python install 3.12 && uv venv --python 3.12 .venv && \
+.venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python tools/build.py /path/update.tar --out build-cn-148 --ipod
+# 或
+.venv/bin/python tools/build.py '/path/Q2 Firmware V1.32.zip' --out build-cn-148 --ipod
 ```
 
 输出目录必须不存在；重复构建请换一个新目录。不带 `--dev` 的固件没有新增 q2remote 远程调试服务，适合日常使用。
@@ -67,7 +80,11 @@ C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通�
 
 先备份卡内资料，设备充足电。将安装包中的 `update.tar` 放入存储卡根目录，安全弹出后通过系统设置的 TF 卡升级安装。不要在刷机期间断电或拔卡。
 
-本版与上游 1.4.8 使用同一个版本标记 `V148I`（关于页面版本 1.4.8）。设备已经是上游英文 1.4.8 时，直接刷日常包可能被判为同版本；先刷带 `--dev` 的版本标记不同的包，再刷日常包。从官方 V1.32 升级则不受影响。开发包包含新增的密钥保护远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
+本版的版本标记是 `V148C`（关于页面仍显示 1.4.8 Pod），与上游英文 1.4.8 的 `V148I` 不同。设备只有在**已安装标记与包内标记完全相同**时才会提示“已是最新版本”（`update_firmware`，见 [Building](building.md)），所以本包可以直接刷在官方 V1.32 或上游英文 1.4.8 之上。
+
+同一个标记只能刷一次：以后重新构建的中文包如果还是 `V148C`，已在本版上的设备同样会被拒绝。这时用 `--dev` 构建（每次生成递增的标记，如 `V001c`、`V002c`），或把 `tools/build.py` 里 `VERSIONS['ipod']` 的字母往后换一个（C→D）。开发包会额外安装需要密钥的远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
+
+刷机前务必确认拿的是**本次构建的包**（`build-cn-148/update.tar`，约 51 MB），而不是山灵官方 V1.32 原包（约 54 MB，`firmware_v20.info` 第二行是 `V1.32`）——把原包刷回原厂固件，升级器会因标记相同而拒绝。
 
 需要回滚时，按山灵官方说明使用 Q2 官方 V1.32 固件从 TF 卡升级。本地中文修改不影响这一恢复途径。卡内文件通常不因正常升级而格式化，但设置、评分、续播记录等内部数据不保证被原厂固件保留或识别。
 

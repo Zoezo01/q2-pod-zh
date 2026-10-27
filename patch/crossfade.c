@@ -46,7 +46,7 @@ static void settings(void) {
 
 static void row_text(void *label) {
     char t[32] = "交叉淡化：关闭";
-    if (xf.on) tk_snprintf(t, sizeof t, "交叉淡化：%d s", xf.seconds);
+    if (xf.on) tk_snprintf(t, sizeof t, "交叉淡化：%d 秒", xf.seconds);
     widget_set_text_utf8(label, t);
 }
 

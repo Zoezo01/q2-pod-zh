@@ -757,7 +757,7 @@ def editor_check(lib, tmp):
     click('启用 On')
     assert read().bypass == 1 and read().bands[0].gain == 0 and ui.shim_flag() == 0
     click('应用更改')
-    assert read().bands[0].gain == 1 and read().bypass == 1 and title() == 'Applied'
+    assert read().bands[0].gain == 1 and read().bypass == 1 and title() == '已应用'
     # A band edit sets the preamp to minus the combined response's peak: here the one +1 dB band.
     assert abs(read().preamp + 1) < 0.01, read().preamp
     # A message takes the title bar; the list keeps every row.

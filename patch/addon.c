@@ -537,7 +537,7 @@ static void show(void) {
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + more, 64);
         for (int i = 0; i < l->n; ++i)
             (opens(l, i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(l, i, 2), cell(l, i, 3), clicked);
-        if (more) page_row_detail(pg.view, l->n, "More…", "", clicked);
+        if (more) page_row_detail(pg.view, l->n, "更多…", "", clicked);
     }
     if (n) ringnav_select(pg.view, l->sel < n ? l->sel : n - 1, n);
 }
