@@ -4752,6 +4752,7 @@ if variant=='ipod':
     assert len(found)==1 and m.nodes[found[0]]['type']=='label', found
     word=found[0]
     def pass_():
+        m.advance(1,clear=False)  # the pass before: consume whatever it armed
         m.calls=[]
         paint_live_bar(); m.advance(1,clear=False)
         return (m.nodes[word]['text'],m.nodes[word]['visible'],
@@ -6325,7 +6326,7 @@ assert m.run(4) is None; heart=m.nodes[m.panel()]['children'][2]; f,ctx=m.handle
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.panel() is None and m.kept()==[(a1&~7)|2]; passed()
 # Kept across boots, apart from the songs' table.
 m2=AlbumRateMachine(files={ALBUM_RATES:m.files[ALBUM_RATES]}); m2.open(); m2.word(m2.slide+O['SLIDE_INDEX'],1)
-assert m2.menu()[4]=='Rate Album  ♥♥♡♡♡' and '/mnt/data/ringnav-ratings' not in m2.files; passed()
+assert m2.menu()[4]=='专辑评价  ♥♥♡♡♡' and '/mnt/data/ringnav-ratings' not in m2.files; passed()
 # Another cover centred, or the page gone, before Centre: nothing is saved.
 assert m.run(4) is None; m.call(); m.word(m.slide+O['SLIDE_INDEX'],0)
 assert m.call(O['KEY_CENTER'])==11 and m.toasts[-1][3]=='专辑已变更' and m.kept()==[(a1&~7)|2]
@@ -6452,7 +6453,7 @@ SONGS=[('Alpha','A1','','/mnt/mmc/m/a/1.mp3',1990),('Beta','B1','Beta Band','/mn
        ('Delta','D1','','/mnt/mmc/m/d/1.mp3',0),('Eta','E1','','/mnt/mmc/m/e/1.mp3',1989),
        ('Book','W1','','/mnt/mmc/audiobooks/w/1.mp3',1995),('Tale','T1','','/mnt/mmc/m/t.m4b',1993),
        ('Pod','P1','','/mnt/mmc/podcasts/p/1.mp3',1996),('','U1','','/mnt/mmc/m/u.mp3',1994)]
-m=EraMachine(SONGS); assert m.open_era()==['年代','80s','1 album','90s','2 albums','2000s','1 album']
+m=EraMachine(SONGS); assert m.open_era()==['年代','80s','1 张专辑','90s','2 张专辑','2000s','1 张专辑']
 assert m.nodes[m.top]['name']=='era_page' and m.closed_db==1; passed()
 into=lambda: [m.nodes[m.nodes[r]['children'][-1]].get('image')=='list_into' for r in m.nodes[m.find('scroll_view')]['children']]
 assert into()==[True]*3  # a decade opens its albums
@@ -6460,7 +6461,7 @@ assert m.decade(1)==['90s','顺序播放','2 张专辑','随机播放','全部�
 assert m.nodes[m.top]['name']=='era_albums_page' and into()==[False,False,True,True]; passed()  # an album opens Coverflow
 # The full library is counted past stock's old 20,000-song limit, with a bounded SQLite cache.
 m=EraMachine((f'Large {i//10}','Artist','Artist',f'/mnt/mmc/music/large/{i}.flac',2020) for i in range(65000))
-assert m.open_era()==['年代','2020s','6500 albums']
+assert m.open_era()==['年代','2020s','6500 张专辑']
 assert m.db.execute('PRAGMA cache_size').fetchone()==(64,)
 assert m.db.execute('PRAGMA temp_store').fetchone()==(1,); passed()
 for failure in ('open','PRAGMA','select'):
@@ -6472,7 +6473,7 @@ dates=[('Dates','Artist','','/mnt/mmc/music/d1.flac',20220510),
        ('ISO','Artist','','/mnt/mmc/music/i.flac','2021-05-10'),
        ('Month','Artist','','/mnt/mmc/music/m.flac',202004),
        ('Bad','Artist','','/mnt/mmc/music/b.flac','unknown')]
-m=EraMachine(dates); assert m.open_era()==['年代','2020s','3 albums']
+m=EraMachine(dates); assert m.open_era()==['年代','2020s','3 张专辑']
 assert m.decade(0)==['2020s','顺序播放','3 张专辑','随机播放','全部歌曲，随机播放',
                      'Month','Artist \u2022 2020','ISO','Artist \u2022 2021','Dates','Artist \u2022 2023']; passed()
 # Play All plays the decade's albums from the first song, each in album order; an album opens its tracks in Coverflow.
@@ -6749,7 +6750,7 @@ for sizes in ((2,2,1,1),(1,1,1,1)):
         assert m.nodes[m.songlabel]['text']==path.rsplit('/',1)[1]
         if variant=='ipod':
             assert m.nodes[m.art]['image']==want
-            assert m.nodes[m.poslabel]['text']==f"{m.mcl('MCL_POS')+1} of {len(m.names())}"
+            assert m.nodes[m.poslabel]['text']==f"{m.mcl('MCL_POS')+1} / {len(m.names())}"
         queue=m.items(m.get(syms['mcl_pdeqplaylist']))
         assert all(not m.get(r+O['REC_ALBUM']) for r in queue) # tags came from parsing, not library rows
         assert ('tags',path) in m.trace and ('decoder_start',path) in m.trace
@@ -7462,7 +7463,7 @@ if variant=='ipod':
     assert m.icons_set==['playset_covermode','playset_covermode','system_update']
     ctl=display_page(m,3); shortcut,hold,qs,wheel=m.nodes[ctl]['children']
     assert m.icons_set==['playset_covermode','playset_folderjump','system_display','switch_off','system_display','list_into']
-    assert [row_text(r) for r in (shortcut,hold,qs)]==['Shortcut: Rockbox','长按返回：最近页面','滚轮快捷']; passed()
+    assert [row_text(r) for r in (shortcut,hold,qs)]==['快捷入口：Rockbox','长按返回：最近页面','滚轮快捷']; passed()
     view=display_page(m,1); rows=setting_rows(m,view)
     kids=m.nodes[view]['children']; light,corners=kids[1],kids[3]
     assert kids==[rows[3],light,rows[0],corners,rows[1],rows[2]] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Light Mode, Accent, Corners, Home, Battery
@@ -7538,10 +7539,10 @@ if variant=='ipod':
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[corners_label]['text']=='外观：圆角'
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'ROUNDED')] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
     # Light Mode: no key is Off; a click saves On, drops the cached images and repaints, and back.
-    light_label=m.nodes[m.nodes[light]['children'][0]]['children'][1]; assert m.nodes[light_label]['text']=='Light Mode: Off'
+    light_label=m.nodes[m.nodes[light]['children'][0]]['children'][1]; assert m.nodes[light_label]['text']=='浅色模式：关'
     f,ctx=m.handler(m.nodes[light]['children'][0],O['EVT_CLICK'])
-    for value,text in ((1,'On'),(0,'Off')):
-        m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[light_label]['text']=='Light Mode: '+text
+    for value,text in ((1,'开'),(0,'关')):
+        m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[light_label]['text']=='浅色模式：'+text
         assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'LIGHT')]
         assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
     passed()
@@ -8318,7 +8319,7 @@ m.counts=b''.join(struct.pack('<2I',*e) for e in slots).ljust(8*O['PLAYS_SLOTS']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0; m.page=m.top
 ranked=['T3','T7','T1']+[f'T{i}' for i in range(8,130)][:O['PLAYS_TOP']-3]
 # Each 64px row: the title over its artist (when tagged) and play count, in 16px stock grey.
-details=['Artist · 播放 5 次','Artist · 播放 5 次','2 plays']+['Artist · 播放 1 次']*(O['PLAYS_TOP']-3)
+details=['Artist · 播放 5 次','Artist · 播放 5 次','播放 2 次']+['Artist · 播放 1 次']*(O['PLAYS_TOP']-3)
 assert m.texts()==['播放最多']+[x for p in zip(ranked,details) for x in p]
 rows=m.nodes[m.find('scroll_view')]['children']; assert len(rows)==O['PLAYS_TOP']
 assert [(m.get(rows[1]+O['W_Y']),m.get(rows[1]+O['W_H']))]==[(64,64)]
@@ -9705,7 +9706,7 @@ assert m.key(O['KEY_PLAY'])==11; m.files[RSTATE]=bytearray(b'state=error\n'); m.
 m.advance(500); assert m.labels(np)[4]=="无法播放此电台" and 'reset_poweroptions_timer' not in [c[0] for c in m.calls]
 # Its ALSA reason, when it had no device, is shown.
 assert m.key(O['KEY_PLAY'])==11; m.files[RSTATE]=bytearray(b'state=error\nerror=open: Device or resource busy\n'); m.waited=4343; m.poll()
-m.advance(500); assert m.labels(np)[4]=="Can't play: open: Device or resource busy"
+m.advance(500); assert m.labels(np)[4]=="无法播放：open: Device or resource busy"
 # Holding Play/Pause on Now Playing saves the station playing, and again takes it out.
 m.top=np; m.status=m.alloc(0x200); m.press(77)
 playing=last().encode(); before=bytes(m.files[RDIR+'/favourites.m3u']); assert playing in before  # http://two/b, a favourite
@@ -10401,7 +10402,7 @@ assert m.labels()==["Soulseek isn't on the card",'Install it again in System set
 m.row(0); assert not m.threads; m.poll(); assert not m.systems; m.close(); passed()
 # With it: started, the menu asked; no socket yet is the add-on starting, asked again; its rows.
 m=SlskMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==['加载中…']
-m.worker(); assert m.labels()==['Starting Soulseek…']; m.advance(500)
+m.worker(); assert m.labels()==['正在启动 Soulseek…']; m.advance(500)
 m.answer('ok','refresh','',SMENU); assert m.requests[-1]==('menu',) and m.labels()==SLABELS; passed()
 # A live level is asked again every 2 s while on top; the same rows aren't rebuilt, changed ones are,
 # their selected row kept.
@@ -10492,7 +10493,7 @@ m.close(); m.files.pop(SPID); m.poll(); m.poll(); assert m.systems==[SKILL]; pas
 # Retry there restarts it: its loop asked to end, the page waiting as for a start, and the app started
 # again once the loop's pid file is gone; then its rows.
 m=slsk_gone(); m.systems=[]; m.row(0); m.worker()
-assert m.systems==[SKILL] and m.labels()==['Starting Soulseek…'],(m.systems,m.labels())
+assert m.systems==[SKILL] and m.labels()==['正在启动 Soulseek…'],(m.systems,m.labels())
 m.poll(); assert m.systems==[SKILL]  # the old loop still there
 m.files.pop(SPID); m.poll(); assert m.systems==[SKILL,'/bin/sh /mnt/mmc/.soulseek/run'],m.systems
 m.advance(500); m.answer('ok','refresh','',SMENU); assert m.labels()==SLABELS,m.labels(); passed()
@@ -10522,7 +10523,7 @@ FLABELS=['File Browser','Open on Your Phone','http://192.168.1.23:8000 · PIN 54
 m=FileBrowserMachine(); m.gone(); m.open()
 assert m.labels()==["File Browser isn't on the card",'Install it again in System settings → Apps'] and not m.systems; m.close(); passed()
 m=FileBrowserMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.filebrowser/run'] and m.labels()==['加载中…']
-m.worker(); assert m.labels()==['Starting File Browser…']; m.advance(500)
+m.worker(); assert m.labels()==['正在启动 File Browser…']; m.advance(500)
 m.files[FSTATE]=bytearray(f"addr=192.168.1.23:8000\nhold=0\nnote=Manage the card's files there\npin=548001\nqr={hexed}\nqrsize=21\nversion=q2f-v1.0\n".encode())
 m.answer('ok','refresh','',FMENU); assert m.requests[-1]==('menu',) and m.labels()==FLABELS
 qp=m.top; assert m.nodes[qp]['name']=='qrcode_page'
@@ -10552,7 +10553,7 @@ assert m.labels()==["Deezer isn't on the card",'Install it again in System setti
 # Started, the menu asked; signed out, its sign-in row opens the code over its status file (and only
 # then: Deezer's row doesn't open it by itself).
 m=DeezerMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.deezer/run'] and m.labels()==['加载中…']
-m.worker(); assert m.labels()==['Starting Deezer…']; m.advance(500)
+m.worker(); assert m.labels()==['正在启动 Deezer…']; m.advance(500)
 DZOUT=[('remote','','Sign In from Your Phone','Press to show the code','',''),('action','stop','Stop Deezer','Downloads carry on next time','','')]
 m.files[DZSTATE]=bytearray(f"addr=192.168.1.23:8090\nhold=0\nnote=Paste your Deezer ARL there\npin=135790\nqr={hexed}\nqrsize=21\n".encode())
 m.answer('ok','refresh','',DZOUT); assert m.requests[-1]==('menu',) and m.top==m.page
@@ -10792,7 +10793,7 @@ m.files[SPOT_TAG]=bytearray(b'q2-v1.9'); m.close(); m.wifi=-1; apps_open(m); ass
 m.row(2); assert m.labels()[6]=='再按一次以移除' and len(m.threads)==3
 m.row(3); assert m.labels()[6]=='已安装' and m.labels()[8]=='再按一次以清除登录信息与缓存'  # one row armed at a time
 m.row(2); m.row(2); assert m.labels()[6]=='移除中…' and m.labels()[8]=='登录信息与缓存'; shelf_job(m)
-assert m.toasts[-1][3]=='Spotify removed' and KILL in m.systems[-3] and m.systems[-2]=='sync' and KILL in m.systems[-1]  # spot_stop: before and after
+assert m.toasts[-1][3]=='Spotify 已移除' and KILL in m.systems[-3] and m.systems[-2]=='sync' and KILL in m.systems[-1]  # spot_stop: before and after
 assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/librespot'}&set(m.files) and m.labels()[6]=='安装'; passed()
 m.row(3); assert m.labels()[8]=='再按一次以清除登录信息与缓存'; m.row(3)
 assert m.labels()[6]=='安装' and m.labels()[8]=='正在清除…'; shelf_job(m)
@@ -11129,7 +11130,7 @@ assert click(0)==[(1,'Q2POD','CHARGELIMIT')] and texts()[0]==f"充电上限 ({O[
 assert click(1)==[(1,'Q2POD','LOWPOWER')] and texts()[1]=='低功耗模式' and switch_image(m,rows[1])=='switch_on'
 assert click(0)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['充电上限 (80%)','低功耗模式','唤醒：单击','音量防误触','待机时限：关闭']; passed()
 # Standby limit (its alarm with the power poll's tests): each click steps to the next limit, then Off.
-limits=[f"Standby Limit: {O[f'STANDBY_LIMIT_{i}']} h" for i in (1,2,3)]
+limits=[f"待机时限：{O[f'STANDBY_LIMIT_{i}']} 小时" for i in (1,2,3)]
 for v,want in ((1,limits[0]),(2,limits[1]),(3,limits[2]),(0,'待机时限：关闭')):
     assert click(4)==[(v,'Q2POD','STANDBYLIMIT')] and texts()[4]==want
 passed()
@@ -12254,7 +12255,7 @@ for state in (2,3):
     assert '正在加载章节…' in m.texts()
     m.advance(50); view=m.find('scroll_view'); m.paint(view)
     assert m.nodes[view]['_ringnav_index']==1
-    assert 'Chapter 2' in m.texts() and '0:01:00' in m.texts() and '日本語' in m.texts()
+    assert '第 2 章' in m.texts() and '0:01:00' in m.texts() and '日本語' in m.texts()
     m.choose(2)
     seeks=[c for c in m.calls if c[0] in ('player_seek_time','mclSetSeek','mclSetResume')]
     assert [(c[0],c[1]) for c in seeks]==[('player_seek_time' if state==2 else 'mclSetSeek',120)]
