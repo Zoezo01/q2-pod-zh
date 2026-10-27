@@ -4,7 +4,7 @@
 
 这不是山灵官方固件，也不是上游的官方中文版，而是个人自用分支：把上游的固件补丁做成中文界面，并加了两个自己需要的功能。
 
-![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V150D-3D424B?style=flat-square)
+![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V150F-3D424B?style=flat-square)
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
 ![许可](https://img.shields.io/badge/license-MIT-B99AC8?style=flat-square)
 
@@ -41,9 +41,9 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 同时 `tools/build.py` 支持直接输入山灵的 `update.tar`（不是官方 ZIP），用独立的 pinned SHA-256 校验，`manifest.json` 记 `input_kind: "tar"`；`tools/release.py` 拒绝把这类构建当作正式发布包。
 
-### 3. 版本标记 `V150E`
+### 3. 版本标记 `V150F`
 
-上游英文版是 `V150I`，本分支是 `V150E`（`tools/build.py` 里 `VERSIONS['ipod']` 用 `C`、`D`、`E`…，上游用 `I`）。
+上游英文版是 `V150I`，本分支是 `V150F`（`tools/build.py` 里 `VERSIONS['ipod']` 用 `C`、`D`、`E`、`F`…，上游用 `I`）。
 
 原因：升级器（`update_firmware`，0x4f8440）只在"包内标记与设备已安装标记**完全相同**"时提示"已是最新版本"，并不比较版本高低。与上游英文版区分开，才能在一台刷过英文 1.5.0 的设备上直接升级到中文版；以后重新构建把字母往后挪一位就能再刷。
 
@@ -76,21 +76,24 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 - **第一段抓歌词**：每张专辑逐首问 LRCLIB，找到带时间轴的版本就写成歌曲同目录的同名 `.lrc`（与「下载专辑歌词」同一套 `album_lyrics`），已有 `.lrc` 的歌跳过。
 - **第二段抓封面**：文件夹里没有任何封面文件时，取 MusicBrainz 前四个发行组的 Cover Art Archive 前置封面（500 px），取不到再试 iTunes 的 600 px，存成 `cover.jpg`；已有 `cover.jpg` / `folder.jpg` 的跳过。跑完调用 `coverflow_refresh_art()`，下次进 Cover Flow 就重建。
-- **进度就显示在这一行上**：`补全歌词 128/312` → `补全封面 37/312`；再按一次变成「正在停止…」，已下的不会丢。
+- **第三段抓单曲**：没有专辑标签的歌（原厂归到 Unknown Album）没有所属文件夹可放封面，所以只逐首补歌词，按各自的标题 + 歌手问 LRCLIB；没写标题的用文件名去掉扩展名去搜。
+- **进度就显示在这一行上**，计数写清了单位：`专辑歌词 12/174 张`（174 是专辑数）→ `专辑封面 3/174 张` → `单曲歌词 8/56 首`；再按一次变成「正在停止…」，已下的不会丢。
+- **行尾的转动小点**（`◐ ◓ ◑ ◒`，每 0.3 秒一格）表示后台还在跑：专辑之间可能要等好几秒，数字不动时看它就知道没卡死。
+- **后台跑**：`library_fill_tick` 挂在主循环的 `ringnav_sleep` 上，退出这个页面、去听歌、熄屏都照旧推进，回到页面看到的是当前进度，跑完弹一句「补全完成：歌词 N 首，封面 N 张」。
 - **为什么天然能续**：全靠「缺什么补什么」，所以中断、重启、再按一次都从没补到的地方接着走。
 - **不占线程**：原厂的歌曲记录只允许 UI 线程碰，所以按「UI 线程取一张专辑 → 工作线程联网」一次一张地推进（`library_fill_tick`，挂在 `ringnav_sleep`），界面不卡，取消也能在两张专辑之间落地。
 
 需要 Wi-Fi。LRCLIB 与 MusicBrainz 都约 1 请求/秒，2000 首歌词约 35–40 分钟、300 张专辑的封面约 10–15 分钟，建议插着电跑。封面按「搜索到的第一张」自动选定，同名专辑（一堆 *Greatest Hits*）可能配错，删掉 `cover.jpg` 重来即可。
 
-- `patch/onlinematch.c`：`library_fill_*`（枚举、两段任务、进度、取消），`lf_cover_save()` 复用 `mb_url()` / `caa()` / `itunes_url()`。
-- `patch/navigation.c`：导出 `ringnav_fill_albums()`（全库专辑 SQL，复用年代页的 `ERA_ALBUMS`）与 `ringnav_album_tracks()`（单张专辑曲目），新增枚举 `POD_LIBRARY_FILL` 与设置行。
+- `patch/onlinematch.c`：`library_fill_*`（枚举、三段任务、带单位的进度、转动的指示、取消），`lf_cover_save()` 复用 `mb_url()` / `caa()` / `itunes_url()`，`lf_song_take()` / `lf_song_collect()` 处理没有专辑标签的单曲。
+- `patch/navigation.c`：导出 `ringnav_fill_albums()`（全库专辑 SQL，复用年代页的 `ERA_ALBUMS`）、`ringnav_album_tracks()`（单张专辑曲目）与 `ringnav_fill_songs()`（无专辑标签的歌），新增枚举 `POD_LIBRARY_FILL` 与设置行。
 
 ### 差异一览
 
 | 项 | 上游 1.5.0 | 本分支 |
 |---|---|---|
 | 界面语言 | 英文 | 简体中文（`CHINESE_UI = True`） |
-| 版本标记 | `V150I` | `V150E` |
+| 版本标记 | `V150I` | `V150F` |
 | 无耳机时播放/切歌 | 照常开始播放 | 拒绝并提示，可在播放设置关闭 |
 | 状态栏播放状态 | 只有图标 | 图标 +「播放中」/「已暂停」 |
 | 补全封面与歌词 | 一次一首，封面上手挑 | 播放设置里一键扫全卡 |
@@ -139,7 +142,7 @@ uv pip install -r requirements.txt
 .venv/bin/python tools/build.py /path/update.tar --out build-cn --ipod
 ```
 
-`--out` 目录必须不存在。产出约 50.6 MiB、载荷见构建日志（上限 512 KB），标记 `V150E`；加 `--dev` 会得到递增的开发标记（`V001c`…），附带需要密钥的远程调试服务。
+`--out` 目录必须不存在。产出约 50.6 MiB、载荷见构建日志（上限 512 KB），标记 `V150F`；加 `--dev` 会得到递增的开发标记（`V001c`…），附带需要密钥的远程调试服务。
 
 ## 测试
 
@@ -156,7 +159,7 @@ uv pip install -r requirements.txt
 
 把 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
-- 本版标记 `V150E`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
+- 本版标记 `V150F`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
 - 回滚用山灵官方 V1.32 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.32`，自建包约 51 MB。
 - 网络更新（应用商店）下载的仍是 DiamondBond 的**英文**固件，所以更新行标题写成「上游英文固件更新」。装了会失去汉化，要保留中文请用 TF 卡刷本分支的包。
