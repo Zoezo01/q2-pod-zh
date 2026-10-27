@@ -17,10 +17,11 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
 TAG = 'V' + VERSION.replace('.', '')
 # The Chinese fork's iPod build carries its own edition letter, C: the updater refuses only a literal
-# identical to the installed one (docs/building.md), so V148I (upstream's English 1.4.8) would be
-# turned away by a player already on it, while V148C installs over it and over stock V1.32 in one
-# flash. --dev still numbers builds.
-VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'C'}
+# identical to the installed one (docs/building.md), so V150I (upstream's English 1.5.0) would be
+# turned away by a player already on it, while V150C installs over it and over stock V1.32 in one
+# flash. A later Chinese build moves on to D, E…, since a player already on C would turn C away.
+# --dev still numbers builds.
+VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'D'}
 
 def dev_tag(number, edition):
     """--dev build number's tag: V and three base-36 digits, the edition lowercase (V00Ai), so no

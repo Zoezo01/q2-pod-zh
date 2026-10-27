@@ -420,7 +420,7 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
  * album, found as that search finds them, on a thread of its own that outlives the page. */
 extern void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
 extern void *coverflow_album_tracks(void *r);
-static const char AL_TITLE[] = "Download Album Lyrics";
+static const char AL_TITLE[] = "下载专辑歌词";
 static struct {
     lyr_job job;
     lyr_track *tracks;

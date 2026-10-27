@@ -79,7 +79,7 @@ uv python install 3.12 && uv venv --python 3.12 .venv && \
 
 `test/chinese.py` 会扫描 `patch/*.c` 与 `tools/ipod.py` 里的全部汉字，要求它们在固件实际打包的 `fonts/default.ttf` 中都有字形，并抽查主菜单、确认框和载荷里的中文标签；卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）必须仍是英文。
 
-整包构建在 Debian 12 / arm64 上完成：LLVM 14 的 MIPS 目标、自编的 squashfs-tools 4.6.1、ImageMagick，以及 Python 3.12。产出 `update.tar` 约 50.6 MiB、标记 `V150C`，载荷 451,464 B（上限 512 KB，余约 60 KB）。`test/chinese.py`（442 个字形）与 `test/patch.py` 的全量行为测试都跑在构建产物上，测试脚本的断言已随汉化逐条改中文。
+整包构建在 Debian 12 / arm64 上完成：LLVM 14 的 MIPS 目标、自编的 squashfs-tools 4.6.1、ImageMagick，以及 Python 3.12。产出 `update.tar` 约 50.6 MiB、标记 `V150D`，载荷 451,528 B（上限 512 KB，余约 60 KB）。`test/chinese.py`（463 个字形）与 `test/patch.py` 的全量行为测试都跑在构建产物上，测试脚本的断言已随汉化逐条改中文。
 
 本次构建前在 Windows 上做的先行验证仍然有效：用 MinGW-w64（gcc 16.2）配合 host shim 跑过能独立运行的那部分 C 测试——`books.c`、`games.c`、`visualizer.c` 与 3EQ（`peq.c` + `peq_ui.c` 的 shim）全部通过，其中 books 与 visualizer 覆盖 UTF-8 文本与自绘 caption。`patch/peq_ui.c` 在相同编译选项下与上游 HEAD 的诊断完全一致，即汉化没有引入新的编译问题。
 
@@ -89,9 +89,9 @@ C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通�
 
 先备份卡内资料，设备充足电。将安装包中的 `update.tar` 放入存储卡根目录，安全弹出后通过系统设置的 TF 卡升级安装。不要在刷机期间断电或拔卡。
 
-本版的版本标记是 `V150C`，与上游英文 1.5.0 的 `V150I` 不同（`tools/build.py` 里 `VERSIONS['ipod']` 由 `I` 改为 `C`）。设备只有在**已安装标记与包内标记完全相同**时才会提示“已是最新版本”（`update_firmware`，见 [Building](building.md)），所以本包可以直接刷在官方 V1.32 或上游英文 1.5.0 之上。
+本版的版本标记是 `V150D`（补全卡内应用与游戏文案前的版本是 `V150C`），与上游英文 1.5.0 的 `V150I` 不同（`tools/build.py` 里 `VERSIONS['ipod']` 用 `C`、`D`…，上游用 `I`）。设备只有在**已安装标记与包内标记完全相同**时才会提示“已是最新版本”（`update_firmware`，见 [Building](building.md)），所以本包可以直接刷在官方 V1.32 或上游英文 1.5.0 之上。
 
-同一个标记只能刷一次：以后重新构建的中文包如果还是 `V150C`，已在本版上的设备同样会被拒绝。这时用 `--dev` 构建（每次生成递增的标记，如 `V001c`、`V002c`），或把 `tools/build.py` 里 `VERSIONS['ipod']` 的字母往后换一个（C→D）。开发包会额外安装需要密钥的远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
+同一个标记只能刷一次：以后重新构建的中文包如果还是 `V150D`，已在本版上的设备同样会被拒绝。这时用 `--dev` 构建（每次生成递增的标记，如 `V001c`、`V002c`），或把 `tools/build.py` 里 `VERSIONS['ipod']` 的字母往后换一个（D→E）。开发包会额外安装需要密钥的远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
 
 刷机前务必确认拿的是**本次构建的包**（`build-cn/update.tar`，约 51 MB），而不是山灵官方 V1.32 原包（约 54 MB，`firmware_v20.info` 第二行是 `V1.32`）——把原包刷回原厂固件，升级器会因标记相同而拒绝。
 

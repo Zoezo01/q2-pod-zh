@@ -3148,7 +3148,7 @@ static void clock_sync(void *bar) {
         tk_snprintf(s, sizeof s, "%02d:%02d", tm[2], tm[1]);
     else if (ok)
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
-                    tm[2] < 12 ? "AM" : "PM");
+                    tm[2] < 12 ? "上午" : "下午");
     widget_set_text_utf8(label, s);
 }
 
@@ -4428,7 +4428,7 @@ int ringnav_np_info(void *win) {
         else
             continue;
         while (*v == ' ') ++v;
-        if (!strcmp(v, "Unknown Artist")) v = "Unknown";
+        if (!strcmp(v, "Unknown Artist")) v = "未知";
         const char *unit = *units[i] ? units[i] + 1 : units[i];
         int len = (int)strlen(v), u = (int)strlen(unit);
         int split = u && len > u && !strcmp(v + len - u, unit) && v[len - u - 1] >= '0' &&
@@ -4459,7 +4459,7 @@ static int display_open(void *ctx, void *event) {
  * value rows show it in the label and have no chevron, since they change in place.
  * ponytail: stock's page opened over itself; its own rows' state is never touched on a sub-page. */
 int ringnav_display(void *win, void *ctx) {
-    static const char *const titles[] = { 0, "Appearance", "Coverflow", "Controls" },
+    static const char *const titles[] = { 0, "外观", "Coverflow", "控制" },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
@@ -5992,7 +5992,7 @@ static int songs_page(const char *window, const char *dir, const char *title, in
 }
 static int tidal_downloads(void *ctx, void *event) {
     (void)ctx, (void)event;
-    return songs_page("tidal_downloads", TIDAL_DIR, "Tidal Downloads", 1, 0);
+    return songs_page("tidal_downloads", TIDAL_DIR, "Tidal 下载", 1, 0);
 }
 /* A card app's local row (addon.c): a folder ("/" last) lists its songs; a song plays its folder
  * from it, as Tidal Downloads does. album: the folder is an album's, listed and played in track
@@ -6055,8 +6055,8 @@ static void sc_text(int i) {
  * app stays hidden whatever its place. Missing, every row shows. Configuration is never hidden. */
 static const char *const svc_fixed[][2] = { { "TIDAL", "TIDAL" },
                                             { "SPOTIFY", "Spotify" },
-                                            { "DOWNLOADS", "Tidal Downloads" },
-                                            { "RADIO", "Internet Radio" },
+                                            { "DOWNLOADS", "Tidal 下载" },
+                                            { "RADIO", "网络电台" },
                                             { "AIRPLAY", "AirPlay" } };
 /* Service i's key (label 0) or row label (1), as Streaming last listed them. */
 static const char *svc(int i, int label) {
@@ -6552,7 +6552,7 @@ static int era_closed(void *ctx, void *event) {
 }
 /* "60s" to "90s", then "2000s" on. */
 static const char *era_name(char *buf, int decade) {
-    tk_snprintf(buf, 16, decade < 2000 ? "%02ds" : "%ds", decade < 2000 ? decade % 100 : decade);
+    tk_snprintf(buf, 16, decade < 2000 ? "%02d 年代" : "%d 年代", decade < 2000 ? decade % 100 : decade);
     return buf;
 }
 

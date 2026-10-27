@@ -6009,7 +6009,7 @@ button=m.nodes[row]['children'][0]; icon,label=m.nodes[button]['children']
 assert m.nodes[button]['style']=='s_btn_listitem' and not m.nodes[button].get('name')
 assert [m.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,70]
 assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k in ('W_X','W_W','W_H')]==[10,52,70]
-assert m.nodes[label]['style']=='s_scrlabel_white20l' and m.nodes[label]['text']=='Download Album Lyrics'
+assert m.nodes[label]['style']=='s_scrlabel_white20l' and m.nodes[label]['text']=='下载专辑歌词'
 assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
 m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==8; passed()  # an online queue
 for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no album tag, no path
@@ -6038,10 +6038,10 @@ assert len(m.toasts)==n+1 and m.toasts[-1][3]=='专辑歌词：2 已有歌词' a
 press_count=len(m.threads); m.advance(1000); assert len(m.threads)==press_count and len(m.toasts)==n+1; passed()  # the timer has ended
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; press()  # cancelled before its first song
 assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0 and not m.accessed
-m.advance(500,clear=False); assert m.toasts[-1][3]=='已取消' and m.nodes[label]['text']=='Download Album Lyrics'; passed()
+m.advance(500,clear=False); assert m.toasts[-1][3]=='已取消' and m.nodes[label]['text']=='下载专辑歌词'; passed()
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; n=len(m.toasts)
 assert m.call(address=payload_syms['album_lyrics_stop'],args=(0,0,0,0),gap=0)==0 and m.joins==[77]  # USB storage: joined first
-m.advance(500,clear=False); assert len(m.toasts)==n and m.nodes[label]['text']=='Download Album Lyrics'; passed()
+m.advance(500,clear=False); assert len(m.toasts)==n and m.nodes[label]['text']=='下载专辑歌词'; passed()
 m.found=[]; press(); assert m.toasts[-1][3]=='卡上没有该专辑的歌曲' and len(m.threads)==1; passed()
 
 # Sparse populated initials: one destination per sustained tick, both directions, utilities
@@ -6453,15 +6453,15 @@ SONGS=[('Alpha','A1','','/mnt/mmc/m/a/1.mp3',1990),('Beta','B1','Beta Band','/mn
        ('Delta','D1','','/mnt/mmc/m/d/1.mp3',0),('Eta','E1','','/mnt/mmc/m/e/1.mp3',1989),
        ('Book','W1','','/mnt/mmc/audiobooks/w/1.mp3',1995),('Tale','T1','','/mnt/mmc/m/t.m4b',1993),
        ('Pod','P1','','/mnt/mmc/podcasts/p/1.mp3',1996),('','U1','','/mnt/mmc/m/u.mp3',1994)]
-m=EraMachine(SONGS); assert m.open_era()==['年代','80s','1 张专辑','90s','2 张专辑','2000s','1 张专辑']
+m=EraMachine(SONGS); assert m.open_era()==['年代','80 年代','1 张专辑','90 年代','2 张专辑','2000 年代','1 张专辑']
 assert m.nodes[m.top]['name']=='era_page' and m.closed_db==1; passed()
 into=lambda: [m.nodes[m.nodes[r]['children'][-1]].get('image')=='list_into' for r in m.nodes[m.find('scroll_view')]['children']]
 assert into()==[True]*3  # a decade opens its albums
-assert m.decade(1)==['90s','顺序播放','2 张专辑','随机播放','全部歌曲，随机播放','Alpha','A1 \u2022 1990','Beta','Beta Band \u2022 1999']
+assert m.decade(1)==['90 年代','顺序播放','2 张专辑','随机播放','全部歌曲，随机播放','Alpha','A1 \u2022 1990','Beta','Beta Band \u2022 1999']
 assert m.nodes[m.top]['name']=='era_albums_page' and into()==[False,False,True,True]; passed()  # an album opens Coverflow
 # The full library is counted past stock's old 20,000-song limit, with a bounded SQLite cache.
 m=EraMachine((f'Large {i//10}','Artist','Artist',f'/mnt/mmc/music/large/{i}.flac',2020) for i in range(65000))
-assert m.open_era()==['年代','2020s','6500 张专辑']
+assert m.open_era()==['年代','2020 年代','6500 张专辑']
 assert m.db.execute('PRAGMA cache_size').fetchone()==(64,)
 assert m.db.execute('PRAGMA temp_store').fetchone()==(1,); passed()
 for failure in ('open','PRAGMA','select'):
@@ -6473,8 +6473,8 @@ dates=[('Dates','Artist','','/mnt/mmc/music/d1.flac',20220510),
        ('ISO','Artist','','/mnt/mmc/music/i.flac','2021-05-10'),
        ('Month','Artist','','/mnt/mmc/music/m.flac',202004),
        ('Bad','Artist','','/mnt/mmc/music/b.flac','unknown')]
-m=EraMachine(dates); assert m.open_era()==['年代','2020s','3 张专辑']
-assert m.decade(0)==['2020s','顺序播放','3 张专辑','随机播放','全部歌曲，随机播放',
+m=EraMachine(dates); assert m.open_era()==['年代','2020 年代','3 张专辑']
+assert m.decade(0)==['2020 年代','顺序播放','3 张专辑','随机播放','全部歌曲，随机播放',
                      'Month','Artist \u2022 2020','ISO','Artist \u2022 2021','Dates','Artist \u2022 2023']; passed()
 # Play All plays the decade's albums from the first song, each in album order; an album opens its tracks in Coverflow.
 class EraPlay(EraMachine):
@@ -7454,7 +7454,7 @@ if variant=='ipod':
     def row_text(r): return m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][1]]['text']
     m,main,_=display({},sub=0)
     kids=m.nodes[main]['children']
-    assert len(kids)==6 and [row_text(r) for r in kids[3:]]==['Appearance','Coverflow','Controls']
+    assert len(kids)==6 and [row_text(r) for r in kids[3:]]==['外观','Coverflow','控制']
     assert m.icons_set==['system_display','list_into','playset_covermode','list_into','playset_folderjump','list_into']
     f,ctx=m.handler(m.nodes[kids[4]]['children'][0],O['EVT_CLICK']); m.calls=[]
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
@@ -10398,7 +10398,7 @@ SLABELS=['Soulseek','Phone Remote','192.168.1.23:8080','Search','Online as alice
          'Nothing is shared','Stop Soulseek','']
 # Gone from the card since Streaming listed it: the page says so and nothing starts.
 m=SlskMachine(); m.gone(); m.open()
-assert m.labels()==["Soulseek isn't on the card",'Install it again in System settings → Apps'] and not m.systems and not m.threads
+assert m.labels()==['存储卡上没有 Soulseek','请前往系统设置 → 应用重新安装'] and not m.systems and not m.threads
 m.row(0); assert not m.threads; m.poll(); assert not m.systems; m.close(); passed()
 # With it: started, the menu asked; no socket yet is the add-on starting, asked again; its rows.
 m=SlskMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==['加载中…']
@@ -10444,7 +10444,7 @@ code=[[(x*7+y*3)%5<2 for x in range(21)] for y in range(21)]
 hexed=''.join(''.join('%x'%sum(8>>b for b in range(4) if d*4+b<21 and row[d*4+b]) for d in range(6)) for row in code)
 m.files[SSTATE]=bytearray(f'addr=192.168.1.23:8080\ndl=0\nhold=0\nnote=Online as alice\npin=548001\nqr={hexed}\nqrsize=21\n'.encode())
 m.pick(0); qp=m.top; assert m.nodes[qp]['name']=='qrcode_page'
-assert {'Soulseek','192.168.1.23:8080','548 001','Online as alice','Scan with your',"phone's camera"}<=set(texts(qp)),texts(qp)
+assert {'Soulseek','192.168.1.23:8080','548 001','Online as alice','使用手机','相机扫描'}<=set(texts(qp)),texts(qp)
 qr=next(w for w in m.nodes if m.nodes[w]['type']=='view' and m.get(w+O['W_PARENT'])==qp and cf_geometry(m,w)==(16,40,186,186))
 m.bands.clear(); m.rounded.clear(); m.call(address=HOOKS['widget_on_paint_border'][0],args=(qr,m.canvas,0,0))
 mod,off=186//25,(186-186//25*21)//2; want=[]
@@ -10458,7 +10458,7 @@ for y,row in enumerate(code):
 assert [b[:4] for b in m.bands]==want and {b[4] for b in m.bands}=={color_t(0)} and m.rounded[0]['rect']==(0,0,186,186),(m.bands[:3],want[:3],m.rounded[:1]); passed()
 # No address (no Wi-Fi): the code hides and the page says so; a second later it follows the file.
 m.files[SSTATE]=bytearray(b'dl=0\nhold=0\nnote=Connect the Q2 to Wi-Fi\npin=548001\nqr=\nqrsize=0\n'); m.advance(1000)
-assert not m.nodes[qr]['visible'] and 'Connect the Q2 to Wi-Fi' in texts(qp),texts(qp); m.destroy(qp); m.top=m.page; passed()
+assert not m.nodes[qr]['visible'] and '请将 Q2 连接到 Wi-Fi' in texts(qp),texts(qp); m.destroy(qp); m.top=m.page; passed()
 # Holding standby off: while the add-on asks (hold=1), each poll resets standby and auto power-off
 # (not the screen's); once it stops by itself (its loop's pid gone), it is let go.
 m.files[SSTATE]=bytearray(b'addr=x\ndl=1\nhold=1\n'); names=m.poll()
@@ -10486,9 +10486,9 @@ def slsk_gone():
     """Soulseek's menu, then its loop still running (its pid file) but its socket gone."""
     m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.files[SPID]=bytearray(b'123')
     m.serve=None; m.advance(10000); m.worker(); return m
-m=slsk_gone(); assert m.labels()==["Soulseek isn't running",'重试','Stop Soulseek'],m.labels()
+m=slsk_gone(); assert m.labels()==['Soulseek 未运行','重试','Stop Soulseek'],m.labels()
 m.systems=[]; m.row(1)
-assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek stopped' and 'navigator_back' in [c[0] for c in m.calls],(m.systems,m.toasts[-1:])
+assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek 已停止' and 'navigator_back' in [c[0] for c in m.calls],(m.systems,m.toasts[-1:])
 m.close(); m.files.pop(SPID); m.poll(); m.poll(); assert m.systems==[SKILL]; passed()
 # Retry there restarts it: its loop asked to end, the page waiting as for a start, and the app started
 # again once the loop's pid file is gone; then its rows.
@@ -10502,11 +10502,11 @@ m.advance(500); m.answer('ok','refresh','',SMENU); assert m.labels()==SLABELS,m.
 m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.files[SPID]=bytearray(b'123'); m.pick(2)
 assert m.labels()==['加载中…']; m.advance(2900); assert m.labels()==['加载中…']
 m.advance(400); assert m.labels()==['加载中…','Stop Soulseek'],m.labels()  # the page's next 250 ms tick
-m.systems=[]; m.row(0); assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek stopped' and 'navigator_back' in [c[0] for c in m.calls]
+m.systems=[]; m.row(0); assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek 已停止' and 'navigator_back' in [c[0] for c in m.calls]
 m.close(); passed()
 # An app that isn't running (it stopped by itself) has nothing to stop: Retry alone, which starts it.
 m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.serve=None; m.advance(10000); m.poll(); m.worker()
-assert m.labels()==["Soulseek isn't running",'重试'],m.labels()
+assert m.labels()==['Soulseek 未运行','重试'],m.labels()
 m.systems=[]; m.row(0); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'],m.systems; m.close(); passed()
 
 # File Browser: q2-filebrowser from the card's .filebrowser folder, the same page on its own socket.
@@ -10521,13 +10521,13 @@ FMENU=[('remote','','Open on Your Phone','http://192.168.1.23:8000 · PIN 548 00
 FLABELS=['File Browser','Open on Your Phone','http://192.168.1.23:8000 · PIN 548 001','Card: 12.3 GB free','of 59.4 GB','Read Only: Off',
          'The phone can upload, rename, move and delete','Turn Off File Browser','It also turns off after 15 minutes unused']
 m=FileBrowserMachine(); m.gone(); m.open()
-assert m.labels()==["File Browser isn't on the card",'Install it again in System settings → Apps'] and not m.systems; m.close(); passed()
+assert m.labels()==['存储卡上没有 File Browser','请前往系统设置 → 应用重新安装'] and not m.systems; m.close(); passed()
 m=FileBrowserMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.filebrowser/run'] and m.labels()==['加载中…']
 m.worker(); assert m.labels()==['正在启动 File Browser…']; m.advance(500)
 m.files[FSTATE]=bytearray(f"addr=192.168.1.23:8000\nhold=0\nnote=Manage the card's files there\npin=548001\nqr={hexed}\nqrsize=21\nversion=q2f-v1.0\n".encode())
 m.answer('ok','refresh','',FMENU); assert m.requests[-1]==('menu',) and m.labels()==FLABELS
 qp=m.top; assert m.nodes[qp]['name']=='qrcode_page'
-assert {'File Browser','192.168.1.23:8000','548 001',"Manage the card's files there",'Scan with your'}<=set(texts(qp)),texts(qp)
+assert {'File Browser','192.168.1.23:8000','548 001',"Manage the card's files there",'使用手机'}<=set(texts(qp)),texts(qp)
 m.destroy(qp); m.top=m.page
 # Asked again while on top: the same rows, and no second code page.
 m.advance(2000); m.worker(); assert m.requests[-1]==('menu',) and m.top==m.page and m.labels()==FLABELS; passed()

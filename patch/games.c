@@ -891,9 +891,9 @@ static void sudoku_paint(void *canvas, unsigned tone) {
     frame_rect(canvas, x0 + s->cur % 9 * CELL, y0 + s->cur / 9 * CELL, CELL, CELL,
                g->picking ? 0xffffff : tone, 0);
     if (g->confirm)
-        banner(canvas, tone, "New game?", 0xffffff, "Centre: yes   Return: no", 0xaaaaaa);
+        banner(canvas, tone, "开始新游戏？", 0xffffff, "中心键：是  返回键：否", 0xaaaaaa);
     else if (sud_done(s))
-        banner(canvas, tone, "Solved!", tone, "Play/Pause: new game", 0xaaaaaa);
+        banner(canvas, tone, "解答完成！", tone, "播放/暂停键：新游戏", 0xaaaaaa);
 }
 
 static void arc(void *vg, float cx, float cy, int r, int a0, int a1, int width, unsigned color) {
@@ -949,15 +949,15 @@ static void vortex_paint(void *canvas, unsigned tone) {
     tk_snprintf(line, sizeof line, "关卡 %d", v->level + 1);
     caption(canvas, line, HUD_X, g->h - 30, 110, 24, 16, SPOT_GREY);
     if (g->paused == MENU)
-        banner(canvas, tone, "Continue", g->choice ? 0xaaaaaa : tone, "Quit",
+        banner(canvas, tone, "继续", g->choice ? 0xaaaaaa : tone, "退出",
                g->choice ? tone : 0xaaaaaa);
     else if (v->state == OVER)
-        banner(canvas, tone, g->record ? "New best!" : "Game over", 0xffffff, "Centre: play again",
+        banner(canvas, tone, g->record ? "新纪录！" : "游戏结束", 0xffffff, "中心键：再玩一次",
                0xaaaaaa);
     else if (g->paused)
-        banner(canvas, tone, "Paused", 0xffffff, "Play/Pause: resume", 0xaaaaaa);
+        banner(canvas, tone, "已暂停", 0xffffff, "播放/暂停键：继续", 0xaaaaaa);
     else if (v->state == AIM)
-        caption(canvas, "Centre", (int)cx - 40, (int)cy - 12, 80, 24, 16, SPOT_GREY);
+        caption(canvas, "中心键", (int)cx - 40, (int)cy - 12, 80, 24, 16, SPOT_GREY);
 }
 
 #define CARD_W 45
@@ -1025,9 +1025,9 @@ static void solitaire_paint(void *canvas, unsigned tone) {
                        7);
     }
     if (g->confirm)
-        banner(canvas, tone, "New game?", 0xffffff, "Centre: yes   Return: no", 0xaaaaaa);
+        banner(canvas, tone, "开始新游戏？", 0xffffff, "中心键：是  返回键：否", 0xaaaaaa);
     else if (sol_won(s))
-        banner(canvas, tone, "You win!", tone, "Play/Pause: new game", 0xaaaaaa);
+        banner(canvas, tone, "你赢了！", tone, "播放/暂停键：新游戏", 0xaaaaaa);
 }
 
 /* The board dark in a grey frame, the body rounded in the tone, the head brighter, the apple round
@@ -1056,13 +1056,13 @@ static void snake_paint(void *canvas, unsigned tone) {
     tk_snprintf(line, sizeof line, "最高 %u", g->sn_best.score);
     caption(canvas, line, 375 - HUD_X - 110, 6, 110, 24, 16, SPOT_GREY);
     if (g->paused == MENU)
-        banner(canvas, tone, "Continue", g->choice ? 0xaaaaaa : tone, "Quit",
+        banner(canvas, tone, "继续", g->choice ? 0xaaaaaa : tone, "退出",
                g->choice ? tone : 0xaaaaaa);
     else if (s->state == OVER)
-        banner(canvas, tone, g->record ? "New best!" : "Game over", 0xffffff, "Centre: play again",
+        banner(canvas, tone, g->record ? "新纪录！" : "游戏结束", 0xffffff, "中心键：再玩一次",
                0xaaaaaa);
     else if (g->paused)
-        banner(canvas, tone, "Paused", 0xffffff, "Play/Pause: resume", 0xaaaaaa);
+        banner(canvas, tone, "已暂停", 0xffffff, "播放/暂停键：继续", 0xaaaaaa);
 }
 
 /* ringnav_paint: a game's sheet, after stock painted it. */

@@ -529,7 +529,7 @@ static void show(void) {
     } else if (l->state == K_ERROR) {
         pg.view = page_list(pg.page, pg.page, 0, l->note, n = 1 + stoppable(), 48);
         page_row_detail(pg.view, 0,
-                        l->retry ? "Retry" : "Install it again in System settings → Apps", 0,
+                        l->retry ? "重试" : "请前往系统设置 → 应用重新安装", 0,
                         clicked);
         if (n > 1) stop_row(1);
     } else {
@@ -596,7 +596,7 @@ static void got(void) {
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
-    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s isn't running" : "%s didn't answer",
+    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s 未运行" : "%s 未响应",
                 app()->name);
     pg.act = 0;
     if (act) {
@@ -681,7 +681,7 @@ static int go(const void *unused) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
-        tk_snprintf(t, sizeof t, "%s stopped", app()->name);
+        tk_snprintf(t, sizeof t, "%s 已停止", app()->name);
         app_stop(app(), 0);
         toast(t);
         navigator_back();
@@ -788,7 +788,7 @@ int addon_open(void *ctx, void *event) {
     tk_snprintf(l->title, sizeof l->title, "%s", a->name);
     if (missing) {
         l->state = K_ERROR;
-        tk_snprintf(l->note, sizeof l->note, "%s isn't on the card", a->name);
+        tk_snprintf(l->note, sizeof l->note, "存储卡上没有 %s", a->name);
     }
     pg.timer = timer_add(tick, 0, 250);
     show();
@@ -840,8 +840,8 @@ static void qr_refresh(void) {
     widget_set_visible(qp.col, code, 0);
     widget_set_visible(qp.msg, !code, 0);
     if (!code) {
-        set(qp.say, !n ? "Not running" : addr[0] ? "No code yet" : "Connect the Q2 to Wi-Fi");
-        set(qp.sub, !n ? "Open it again" : addr[0] ? "Wait a moment" : "Then come back here");
+        set(qp.say, !n ? "未运行" : addr[0] ? "暂无二维码" : "请将 Q2 连接到 Wi-Fi");
+        set(qp.sub, !n ? "请重新打开" : addr[0] ? "请稍候" : "然后返回此页面");
         return;
     }
     if (strlen(pin) == 6) /* 548 001 */
@@ -894,14 +894,14 @@ static void qr_open(const char *state, const char *title) {
     qp.qr = widget_factory_create_widget(f, "view", page, 16, 40, QR_PX, QR_PX);
     qp.col = widget_factory_create_widget(f, "view", page, QR_COL, 40, 375 - QR_COL - 12, QR_PX);
     widget_set_text_utf8(label(qp.col, 0, 2, 140, 22, "s_scrlabel_white20l", 18, 0xffffffffu),
-                         "Scan with your");
+                         "使用手机");
     widget_set_text_utf8(label(qp.col, 0, 24, 140, 22, "s_scrlabel_white20l", 18, 0xffffffffu),
-                         "phone's camera");
+                         "相机扫描");
     widget_set_text_utf8(label(qp.col, 0, 60, 140, 18, "s_scrlabel_white20l", 14, SPOT_GREY),
-                         "or open");
+                         "或打开");
     qp.addr = label(qp.col, 0, 78, 375 - QR_COL - 12, 22, "s_scrlabel_white20l", 16, 0xffffffffu);
     widget_set_text_utf8(label(qp.col, 0, 112, 140, 18, "s_scrlabel_white20l", 14, SPOT_GREY),
-                         "PIN");
+                         "配对码");
     qp.pin = label(qp.col, 0, 130, 140, 28, "s_scrlabel_white20l", 24, 0xffffffffu);
     qp.note = label(qp.col, 0, 172, 375 - QR_COL - 12, 20, "s_scrlabel_white20l", 14, SPOT_GREY);
     void *scroll[] = { qp.addr, qp.note };
