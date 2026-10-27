@@ -2,7 +2,7 @@
 
 山灵 Q2 的 iPod classic 风格固件补丁，**简体中文分支**。
 
-这不是山灵官方固件，也不是上游的官方中文版，而是个人自用分支：把上游的固件补丁做成中文界面，并加了两个自己需要的功能。
+这不是山灵官方固件，也不是上游的官方中文版，而是个人自用分支：把上游的固件补丁做成中文界面，并加了三个自己需要的功能。
 
 ![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V150F-3D424B?style=flat-square)
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
