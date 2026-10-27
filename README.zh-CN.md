@@ -4,7 +4,7 @@
 
 这不是山灵官方固件，也不是上游的官方中文版，而是个人自用分支：把上游的固件补丁做成中文界面，并加了两个自己需要的功能。
 
-![版本](https://img.shields.io/badge/基线-upstream%201.5.0-3D424B?style=flat-square)
+![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V150D-3D424B?style=flat-square)
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
 ![许可](https://img.shields.io/badge/license-MIT-B99AC8?style=flat-square)
 
@@ -13,18 +13,19 @@
 | 项目 | 是什么 | 本分支用了什么 |
 |---|---|---|
 | [**DiamondBond/q2-pod**](https://github.com/DiamondBond/q2-pod) | 固件补丁本体（MIT）：不重编固件，而是往山灵官方 V1.32 二进制里挂钩子，在 `0xb00000` 载荷区跑自己的 C 代码，换来 iPod classic 界面、Coverflow、PEQ、Spotify、Rockbox 等。 | **全部功能与绝大部分代码**。本分支的基线是它的 tag `1.5.0`（`d774d76`），上游历史完整保留在 git log 里。 |
-| [**Ericwyn/q2-pod**](https://github.com/Ericwyn/q2-pod) | 同一项目的**简体中文汉化**分支，两条：`main` 是 1.3.8 + 汉化（`bb68635`），`update-1.4.8` 是 1.4.8 + 汉化（`d0b3f81`）。 | **汉化的来源**：术语表、翻译风格、`caption()` 支持 UTF-8 码点的做法。最早从 `main`（1.3.8）的汉化起步；上游升到 1.5.0 后按新结构重做；**第二轮又照他的 `update-1.4.8` 逐条补齐**我们第一轮漏翻的 50 条（卡内应用页、游戏横幅、`下载专辑歌词`、`80 年代` 等）。 |
+| [**Ericwyn/q2-pod**](https://github.com/Ericwyn/q2-pod) | 同一项目的**简体中文汉化**分支（`main` 上是 1.3.8 + 汉化，`update-1.4.8` 上是 1.4.8 + 汉化）。 | **汉化的底子**：术语表、翻译风格、`caption()` 支持 UTF-8 码点的做法都来自这里，译法也基本沿用它的用词。上游升到 1.5.0 后界面结构变化很大，汉化是**按 1.5.0 重做的**，不是直接 cherry-pick。 |
 
 ## 相对上游 1.5.0 改了什么
 
 ### 1. 界面简体中文
 
-- 汉化重放到 1.5.0：把 Ericwyn 的汉化（1.3.8 起点）按 1.5.0 的新写法逐文件重建（`list_toggle` 开关行只给标题、`row_dim` 标志位、`rate_saved` 只报失败、`auto_text` 双采样率格式等），解决 12 处合并冲突；之后又照他的 `update-1.4.8` 分支补齐漏翻的 50 条。
-- 补译 1.4.9 / 1.5.0 新增文案：浅色模式、滚轮快捷、视频文件夹视图、断点续播、关于页新位置、时区偏移、Wheel QS 等。
-- 术语按 Apple《iPod classic 简体中文使用手册》：主菜单「音乐」，保留 Cover Flow，用「表演者」「有声读物」「评价」「重复播放」。品牌、音频单位、歌曲/艺术家/文件名、外部服务回复保持原文。
-- 自绘文字支持 UTF-8：`caption()` 把 UTF-8 解码成 Unicode 码点再交给 `draw_centred`，缓冲随上游扩到 32 码点。
-- 第二轮补齐（对照 Ericwyn 的 `update-1.4.8` 分支逐条核对）：卡内应用页（`patch/addon.c` 的 `Soulseek 未运行`、`未响应`、`存储卡上没有 %s`、二维码页提示、`配对码`）、四个游戏的横幅（`开始新游戏？`、`游戏结束`、`新纪录！`、`你赢了！`、`继续`/`退出`）、`下载专辑歌词`、`网络电台`、`Tidal 下载`、信息页的 `位置`/`未知`、时钟的 `上午`/`下午`、年代页的 `80 年代`。这些原本是我们第一轮漏掉的英文。
-- 汉字字形校验：`test/chinese.py` 要求界面用到的每个汉字在打包的 `fonts/default.ttf` 里都有字形（当前 442 个），卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）保持英文。
+- **自绘界面全中文**：主菜单、正在播放、Coverflow、歌词页、PEQ、流媒体（Spotify / Tidal / 网络电台）、书籍 / 视频 / 照片、年代浏览、评分、播放队列、随机与重复、游戏、应用商店、下载与存储管理、在线歌词与封面下载——`patch/*.c` 里的界面文字全部译成简体中文。
+- **卡内应用页**也翻了：Soulseek、Deezer、File Browser 的加载与错误提示（`%s 未运行`、`%s 未响应`、`存储卡上没有 %s`、`停止 %s`）、配对二维码页（`使用手机` / `相机扫描` / `配对码`）。
+- **游戏的横幅**（数独、贪吃蛇、旋涡、纸牌）：`开始新游戏？`、`中心键：是  返回键：否`、`游戏结束`、`新纪录！`、`你赢了！`、`继续` / `退出`。
+- **1.4.9 / 1.5.0 新增的文案一并翻译**：浅色模式、滚轮快捷、视频文件夹视图、断点续播、关于页新位置、时区偏移、`网络电台`、`Tidal 下载`、`下载专辑歌词`、年代页的 `80 年代`、信息页的 `位置` / `未知`、12 小时制的 `上午` / `下午`。
+- **术语**按 Apple《iPod classic 简体中文使用手册》：主菜单「音乐」，保留 Cover Flow，用「表演者」「有声读物」「评价」「重复播放」。品牌、音频单位、歌曲 / 艺术家 / 文件名、外部服务回复保持原文。
+- **自绘文字支持 UTF-8**：`caption()` 把 UTF-8 解码成 Unicode 码点再交给 `draw_centred`，缓冲随上游扩到 32 码点。
+- **字形校验**：`test/chinese.py` 要求界面用到的每个汉字在打包的 `fonts/default.ttf` 里都有字形（当前 463 个），卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）保持英文。
 
 ### 2. 构建脚本：不再把原厂中文改回英文
 
@@ -38,11 +39,11 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 同时 `tools/build.py` 支持直接输入山灵的 `update.tar`（不是官方 ZIP），用独立的 pinned SHA-256 校验，`manifest.json` 记 `input_kind: "tar"`；`tools/release.py` 拒绝把这类构建当作正式发布包。
 
-### 3. 版本标记 `V150C` / `V150D`
+### 3. 版本标记 `V150D`
 
-上游英文版是 `V150I`，本分支是 `V150C`（第一批）、`V150D`（补全 add-on 与游戏文案之后）（`tools/build.py` 里 `VERSIONS['ipod']` 由 `I` 改成 `C`/`D`）。
+上游英文版是 `V150I`，本分支是 `V150D`（`tools/build.py` 里 `VERSIONS['ipod']` 用 `C`、`D`…，上游用 `I`）。
 
-原因：升级器（`update_firmware`，0x4f8440）只在"包内标记与设备已安装标记**完全相同**"时提示"已是最新版本"，并不比较版本高低。标记与上游英文版区分开，才能在一台刷过英文 1.5.0 的设备上直接升级到中文版。
+原因：升级器（`update_firmware`，0x4f8440）只在"包内标记与设备已安装标记**完全相同**"时提示"已是最新版本"，并不比较版本高低。与上游英文版区分开，才能在一台刷过英文 1.5.0 的设备上直接升级到中文版；以后重新构建把字母往后挪一位就能再刷。
 
 ### 4. 新功能：无耳机不播放
 
@@ -61,17 +62,17 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 左上角的播放/暂停图标只有两种位图，暂停又可能来自屏幕上没人按下的操作（拔 3.5 mm 耳机时 `config_po_output` 会自己 `mclSetPause`），一帧画完就分辨不出"在放"还是"已停"。所以图标右边加文字说明：
 
 - `patch/navigation.c`：`bar_word_sync()` 在状态变化时写 `label_playword`，与图标共用上游 `bar_repaint` 那个 0 ms 定时器强制整条状态栏重画；文字宽 48 px，EQ 标记（`label_eq`）出现时自动让位，不压中间时钟。
-- 上游 1.5.0 的 `a783c29`（Fixes #116）已经修了"图标不跟随"本身，本分支在此基础上只加了文字，没有保留自己那套 100 ms 轮询。
+- 上游 1.5.0 的 `a783c29`（Fixes #116）已经修了"图标不跟随"本身，本分支在此基础上只加了文字。
 
 ### 差异一览
 
 | 项 | 上游 1.5.0 | 本分支 |
 |---|---|---|
 | 界面语言 | 英文 | 简体中文（`CHINESE_UI = True`） |
-| 版本标记 | `V150I` | `V150C` / `V150D` |
+| 版本标记 | `V150I` | `V150D` |
 | 无耳机时播放/切歌 | 照常开始播放 | 拒绝并提示，可在播放设置关闭 |
 | 状态栏播放状态 | 只有图标 | 图标 +「播放中」/「已暂停」 |
-| 汉化来源 | — | Ericwyn/q2-pod（1.3.8 起点 + `update-1.4.8` 补全），按 1.5.0 结构重做 |
+| 汉化来源 | — | Ericwyn/q2-pod 的汉化，按 1.5.0 结构重做 |
 
 其余全部保持上游行为：浅色模式、滚轮快捷手势、封面/歌词/信息页、Spotify、Tidal、网络电台、AirPods、评分、交叉淡化、断点续播、80% 充电上限、待机时限、应用商店与网络更新。
 
@@ -79,7 +80,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 - **不含山灵官方固件**（`xImage`、`rootfs.squashfs`、官方 `update.tar` 一个都没有）。构建需要你自己下载官方 V1.32。
 - **不含构建产物**。`update.tar` 里是山灵的二进制，本仓库只发布源码与文档。
-- 不含卡内应用（Soulseek、Deezer、File Browser 等由 `q2app` 自带），它们的界面文字不由本固件翻译。
+- 不含卡内应用（Soulseek、Deezer、File Browser 等由 `q2app` 自带），它们自己画的行名与状态文字不由本固件翻译。
 
 ## 构建
 
@@ -115,12 +116,12 @@ uv pip install -r requirements.txt
 .venv/bin/python tools/build.py /path/update.tar --out build-cn --ipod
 ```
 
-`--out` 目录必须不存在。不加 `--dev` 得到正式标记（`V150D`），加上会得到递增的开发标记（`V001c`…，附带需要密钥的远程调试服务）。
+`--out` 目录必须不存在。产出约 50.6 MiB、载荷 451,528 B（上限 512 KB），标记 `V150D`；加 `--dev` 会得到递增的开发标记（`V001c`…），附带需要密钥的远程调试服务。
 
 ## 测试
 
 ```bash
-.venv/bin/python test/chinese.py build-cn     # 汉字字形覆盖
+.venv/bin/python test/chinese.py build-cn     # 汉字字形覆盖（463 个）
 .venv/bin/python test/patch.py build-cn       # 全量行为场景（约 45 分钟）
 .venv/bin/python test/peq.py
 .venv/bin/python test/coverflow.py
@@ -132,7 +133,7 @@ uv pip install -r requirements.txt
 
 把构建出的 `update.tar` 放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。
 
-- 本版标记 `V150D`（上一版 `V150C`），与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
+- 本版标记 `V150D`，与官方 `V1.32`、上游英文 `V150I` 都不同，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
 - 回滚用山灵官方 V1.32 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.32`，自建包约 51 MB。
 - 网络更新（应用商店）下载的仍是 DiamondBond 的**英文**固件，所以更新行标题写成「上游英文固件更新」。装了会失去汉化，要保留中文请用 TF 卡刷本分支的包。
@@ -158,7 +159,7 @@ uv pip install -r requirements.txt
 ## 许可与致谢
 
 - [DiamondBond/q2-pod](https://github.com/DiamondBond/q2-pod)：MIT，`LICENSE` 原样保留，Copyright (c) 2026 Diamond Bond。这个项目的钩子框架、偏移表、测试体系全部是他们的工作，本仓库只是在此基础上做中文与两个自用功能。
-- [Ericwyn/q2-pod](https://github.com/Ericwyn/q2-pod)：简体中文汉化的起点，感谢把术语和翻译风格先趟了一遍。
+- [Ericwyn/q2-pod](https://github.com/Ericwyn/q2-pod)：简体中文汉化，感谢把术语和翻译风格先趟了一遍。
 - 本分支的改动同样以 MIT 发布。
 
 文档：[汉化范围与构建细节](docs/chinese-local.md) · [上游更新日志](docs/changelog.md) · [内部机制](docs/internals.md)
