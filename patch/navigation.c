@@ -258,6 +258,7 @@ enum {
     POD_CF_SORT,    /* Display's Coverflow Sort: coverflow.c's SORT_FILE, not config.ini */
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
     POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
+    POD_HEADSET_GUARD, /* Playback's 无耳机不播放: headset.c's guard_refuse reads the same key */
     POD_COUNT
 };
 
@@ -392,6 +393,10 @@ typedef struct {
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq;
     int codec, codec_step, batt_mode;
     unsigned codec_timer, batt_key, bar_timer;
+    /* The play state's word beside the glyph (bar_word_sync), the status it was written for, and
+     * what the bar was last repainted for (0 nothing shown, bit 3 the word's own room). */
+    void *play_word;
+    int bar_word, bar_key;
     int pct_digit, pct_sign; /* BATT_PX advances of '0' and '%', measured on the first paint */
     unsigned letter_timer;   /* the fast-scroll letter shows while this runs */
     /* Now Playing's window and payload-filled widgets, and the sources they last showed. */
@@ -2412,6 +2417,8 @@ int ringnav_quick_settings(void *win, void *ctx) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
+/* Playback's 无耳机不播放: start only with an output connected (headset.c guard_refuse). */
+static int headset_guard __attribute__((section(".scratch")));
 #define STR_(x) #x
 #define STR(x) STR_(x)
 static int *const pod_values[] = { &st.charge_limit,
@@ -2429,12 +2436,14 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &bt_vol_link,
                                    0,
                                    0,
-                                   &st.wheel_qs };
+                                   &st.wheel_qs,
+                                   &headset_guard };
 _Static_assert(POD_LOCKCLOCK == 7, "lockscreen.c passes pod_rows 7");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = {
     "CHARGELIMIT", "LOWPOWER", "WAKEDOUBLE", "ARTISTCF",     "YEAROLD",   0, "RESUME", "LOCKCLOCK",
-    "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0,        "WHEELQS"
+    "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0, "WHEELQS",
+    "HEADSETGUARD"
 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
@@ -2442,8 +2451,9 @@ static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_ST
 static void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* Artist albums defaults to Coverflow */
-            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i), i == POD_ARTIST_CF);
+        if (pod_keys[i]) /* Artist albums defaults to Coverflow; 无耳机不播放 to on */
+            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i),
+                                          i == POD_ARTIST_CF || i == POD_HEADSET_GUARD);
     st.pod_read = 1;
 }
 /* Wheel QS on (Q2POD WHEELQS, default off; playback.c's swipe). */
@@ -2745,6 +2755,7 @@ static void pod_text(int i) {
         { 0 }, /* Coverflow Sort's from coverflow.c */
         { "刷新 Cover Flow" },
         { 0 }, /* Wheel QS: a switch */
+        { 0 }, /* 无耳机不播放: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -2760,6 +2771,7 @@ static void pod_text(int i) {
                          : i == POD_VOL_GUARD ? "音量防误触"
                          : i == POD_BT_LINK   ? "联动设备音量"
                          : i == POD_WHEEL_QS  ? "滚轮快捷"
+                         : i == POD_HEADSET_GUARD ? "无耳机不播放"
                                               : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -2860,6 +2872,7 @@ static const unsigned char playset_order[] = {
     11 /* Balance */,
     21 /* Mono Audio */,
     22 /* Swap L/R */,
+    24 /* 无耳机不播放 */,
     16 /* Artists */,
     17 /* Artist album order */,
     15 /* Year order */,
@@ -2934,6 +2947,7 @@ static int root_click(void *ctx, void *event) {
 
 int ringnav_audioset(void *win, void *ctx) {
     static const char *const icons[] = { "playset_covermode", "playset_folderjump" };
+    static const char *const guard_icon[] = { "system_keylock" };
     int result = stock_audioset_trampoline(win, ctx);
     pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
     pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
@@ -2949,6 +2963,9 @@ int ringnav_audioset(void *win, void *ctx) {
         mono_row(list_row(view, "playset_balance", mono_click, 0));
         swap_row(list_row(view, "playset_balance", swap_click, 0));
         mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
+        /* Last built so playset_order's stock and earlier rows keep their child indices; it sits
+         * after Swap L/R by that order. */
+        pod_rows(win, "scroll_view_playset", POD_HEADSET_GUARD, 1, guard_icon);
     }
     reorder(view, playset_order, sizeof playset_order);
     return result;
@@ -3206,13 +3223,61 @@ static int bar_repaint(const void *info) {
     return 0;
 }
 
+/* The glyph alone says which of two bitmaps it is, so a pause nothing on screen asked for — the
+ * 3.5 mm jack pulled (config_po_output's mclSetPause) or a Bluetooth link dropped — would read as
+ * playing until the glyph was painted again. The state therefore also gets a word beside the glyph
+ * ("播放中", "已暂停"), written from the same status by bar_word_sync, and the bar repaints through
+ * bar_repaint when either moves, from whatever the pause came from. The word takes the room after
+ * the glyph, and steps aside while the EQ badge (label_eq) holds it: the bar is 375 px with the
+ * clock centred from CLOCK_EDGE on. */
+#define PLAY_WORD_W 48
+#define PLAY_WORD_PX 15
+
+/* The word's label, created once as the last child of the glyph's view: that view lays its
+ * children out in order (stock's own margin and spacing), so the word follows the glyph, and the
+ * EQ badge when it shows. */
+static void play_word_create(void *bar) {
+    if (st.play_word || !st.bar_state) return;
+    void *left = P(st.bar_state, W_PARENT);
+    if (!left) return;
+    st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
+    if (!st.play_word) return;
+    widget_set_name(st.play_word, "label_playword");
+    widget_use_style(st.play_word, "s_label_white16c");
+    widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
+    widget_set_prop_int(st.play_word, "style:normal:text_color", (int)0xffffffffu);
+    widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
+    widget_set_visible(st.play_word, 0, 0);
+    widget_layout_children(left);
+}
+
+/* What the word should say, from the same status bar_state_sync applies, and its room: returns
+ * whether what the bar shows moved, so bar_sync repaints it along with a moved glyph. */
+static int bar_word_sync(void *bar) {
+    int status = media_owner() == 1 ? mclGetPlayStatus() :
+                 video_status() ?: radio_status() ?: spot_status();
+    play_word_create(bar);
+    if (!st.play_word) return 0;
+    int show = (status == 2 || status == 3) && !(st.bar_eq && widget_get_visible(st.bar_eq));
+    /* What the bar shows: the glyph's state, and whether the word has its room (bit 3). */
+    int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
+    if (key == st.bar_key) return 0;
+    st.bar_key = key, st.bar_word = status;
+    widget_set_text_utf8(st.play_word, status == 2 ? "播放中" : status == 3 ? "已暂停" : "");
+    widget_set_visible(st.play_word, show, 0);
+    return 1;
+}
+
 /* The status bar's codec badge, then the Battery setting (docs/ipod.md#status-bar-and-clock):
  * view_battery paints the charge-level icon, the percentage, both, or the percentage inside, sized
  * to its ink so every gap is STATUS_GAP, and the icon wherever the group's ink would reach more
  * than BATT_ROOM (a wide badge while it shows). widget_set_visible does nothing for an unchanged
  * state and relayouts the view for a new one. */
 static void bar_sync(void *bar) {
-    if (bar_state_sync(bar) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
+    int glyph = bar_state_sync(bar);   /* looks the widgets up first: the word needs img_state */
+    int word = bar_word_sync(bar);
+    if ((glyph || word) && !st.bar_timer)
+        st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     if (!st.bar_bt || !st.bar_wifi || !st.bar_pct || !st.bar_slot || !st.bar_icon) return;
     int shown = widget_get_visible(st.bar_bt), c = 0;
     const char *image = shown ? widget_get_prop_str(st.bar_bt, "image", "") : "";
@@ -5889,7 +5954,7 @@ static void *songs_rows(const char *dir, const char *title, int tidal, int album
         song_label(P(deque_at(st.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);
         page_row_detail(view, i, name, 0, td_play);
     }
-    if (tidal && n) page_row_detail(view, n, "Clear All Downloads…", 0, td_clear);
+    if (tidal && n) page_row_detail(view, n, "清除全部下载…", 0, td_clear);
     return view;
 }
 /* Clear All Downloads' confirmation in the list's place, as Spotify's Remove Downloads?, on Cancel;
@@ -5899,7 +5964,7 @@ static int td_show(const void *unused) {
     if (!st.td_page) return 0;
     unsigned n = deque_size(st.td_list);
     if (!st.td_asking) {
-        void *view = songs_rows(TIDAL_DIR, "Tidal Downloads", 1, 0);
+        void *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
         if ((n = deque_size(st.td_list))) ringnav_select(view, (int)n, (int)n + 1);
         return 0;
     }
@@ -6548,9 +6613,9 @@ static int era_open_decade(void *ctx, void *event) {
     era.cap = era.v ? (unsigned)era.count[k] : 0;
     era_sql(sql, era_album_row);
     void *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
-    tk_snprintf(detail, sizeof detail, era.m == 1 ? "%u album" : "%u albums", era.m);
-    page_row_detail(view, 0, "Play All", detail, era_pick);
-    page_row_detail(view, 1, "Shuffle", "Every song, shuffled", era_pick);
+    tk_snprintf(detail, sizeof detail, "%u 张专辑", era.m);
+    page_row_detail(view, 0, "全部播放", detail, era_pick);
+    page_row_detail(view, 1, "随机播放", "全部歌曲，随机播放", era_pick);
     for (unsigned i = 0; i < era.m; ++i) {
         tk_snprintf(detail, sizeof detail, *era.v[i].artist ? "%s \xe2\x80\xa2 %d" : "%s%d",
                     era.v[i].artist, era.v[i].year);

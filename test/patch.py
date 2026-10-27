@@ -3333,7 +3333,7 @@ def playing_menu(**kw):
 for state in (3,2):  # paused and playing both expose the same actions
     m=playing_menu(); m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa3beac,state)
     m.press(5000); assert m.release()==1
-    m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['查看队列']+SONG_MENU[2:]+["Shuffle","Repeat","分组：专辑"]
+    m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['查看队列']+SONG_MENU[2:]+["随机播放","重复播放","分组：专辑"]
     assert m.nodes[m.title]['text']=='B' and m.release()==0
     m.press(7000); assert m.release()==1 and m.get(0xa3beac)==state; passed()
 # A tagged song's menu is titled by its tag, not its file name.
@@ -3586,7 +3586,7 @@ assert m.query==('getMusicByAlbumAndSonger','Album','Artist',1); passed()
 def menu(m,setup=None):
     if setup: setup(m)
     m.press(5); assert m.hold()==11; t=m.nodes[m.title]['text']; got=m.labels(); m.release(); return t,got
-GROUP=['下一首播放','加入播放队列','Shuffle','加入播放列表']
+GROUP=['下一首播放','加入播放队列','随机播放','加入播放列表']
 for kw,setup,want in (({},None,('Row 0',SONG_MENU)),
         ({},lambda m:m.favs.add('Row 0'),('Row 0',[*SONG_MENU[:2],'取消收藏',*SONG_MENU[3:]])),
         ({},lambda m:m.open_pages.update({'artistinfo_page','playerjumpinfo_page'}),('Row 0',SONG_MENU[:4])),
@@ -4740,6 +4740,35 @@ if variant=='ipod':
     assert m.call(address=IPOD_HOOKS['systembar_showface'][0],args=(bar,0,0,0),gap=0)==0
     assert ('stock_showface',bar) in [c[:2] for c in m.calls] and m.nodes[state]['visible']==1 and m.nodes[state]['image']=='bar_play'
     passed()
+    # The glyph says playing from paused by a bitmap alone, so a pause nothing on screen asked
+    # for (the 3.5 mm jack pulled: config_po_output's mclSetPause) reads as playing until the bar
+    # is painted again. The state therefore also gets a word beside the glyph, written by
+    # bar_sync and repainted with the bar through bar_repaint's 0 ms timer. Stock's EQ badge holds
+    # that room, so the word steps aside.
+    m.byte(syms['g_backlight_status'],1)
+    m.nodes[eq]['visible']=0; m.word(0xa3beac,2)
+    paint_live_bar()
+    found=[c for c in m.nodes[views[0]]['children'] if m.nodes[c]['name']=='label_playword']
+    assert len(found)==1 and m.nodes[found[0]]['type']=='label', found
+    word=found[0]
+    def pass_():
+        m.calls=[]
+        paint_live_bar(); m.advance(1,clear=False)
+        return (m.nodes[word]['text'],m.nodes[word]['visible'],
+                ('widget_invalidate_force',bar) in [c[:2] for c in m.calls])
+    assert pass_()==('播放中',1,False)  # nothing moved: no repaint
+    m.word(0xa3beac,3); assert pass_()==('已暂停',1,True)
+    m.word(0xa3beac,1); assert pass_()==('',0,True)
+    m.word(0xa3beac,2); m.nodes[eq]['visible']=1; assert pass_()==('播放中',0,True)  # the EQ badge's room
+    assert pass_()==('播放中',0,False)
+    m.nodes[eq]['visible']=0; assert pass_()==('播放中',1,True)
+    # Laid out by the view's own row layouter, the word takes the cell after the glyph and ends
+    # clear of the centred clock (x 133), the room stock's margin and spacing leave it.
+    native_row_layout(m,views[0])
+    glyph=[c for c in m.nodes[views[0]]['children'] if m.nodes[c]['name']=='img_state'][0]
+    gx,wx=signed(m.get(glyph+O['W_X'])),signed(m.get(word+O['W_X']))
+    assert wx>=gx+m.get(glyph+O['W_W']) and wx+m.get(word+O['W_W'])<=133, (gx,wx)
+    passed()
     for mode in (1,2,3,0,1,2,3,0):
         m.call(address=payload_syms['setting_click'],args=(2,m.event,0,0),gap=0)
         m.calls=[]; paint_live_bar()
@@ -5043,7 +5072,7 @@ assert m.confirm()==11 and m.showlabels()==['上移','下移','从播放列表�
 assert m.key()==11 and m.selected(m.find('scroll_view'))==3
 m.close()
 m=PlaylistEditMachine(); m.open_editor()
-assert m.showlabels()==['添加歌曲','Done','A','B','C']
+assert m.showlabels()==['添加歌曲','完成','A','B','C']
 assert m.nodes[m.nodes[m.page]['children'][0]]['text']=='正在编辑：Mix'
 # A repeat and long press cannot move again, and releases never reach playback.
 for key,want in ((O['KEY_FWD_BTN'],['B','A','C']),(O['KEY_FWD_BTN'],['B','C','A']),(O['KEY_BACK_BTN'],['B','A','C'])):
@@ -5057,21 +5086,21 @@ for key,want in ((O['KEY_FWD_BTN'],['B','A','C']),(O['KEY_FWD_BTN'],['B','C','A'
 assert m.names()==m.before_queue and not m.playback(); passed()
 # Touch actions and confirmation; cancel and Back leave the entry intact.
 m.choose(3); assert m.showlabels()==['上移','下移','从播放列表移除']
-m.choose(2); assert m.showlabels()==['从播放列表移除','Cancel']; m.choose(1)
+m.choose(2); assert m.showlabels()==['从播放列表移除','取消']; m.choose(1)
 assert m.order()==['B','A','C']; m.choose(3); m.choose(0); assert m.order()==['A','B','C']
 m.choose(2); m.choose(1); assert m.order()==['B','A','C']
 m.choose(3); m.choose(2); m.choose(0); assert m.order()==['B','C'] and m.selected(m.view)==3
 assert m.order(1)==['Other']; passed()
 # The fixed destination picker stays open; failed writes never report success.
 saved=m.alloc(16); m.word(saved,0x12345678); m.word(syms['p_vector_select_record'],saved)
-m.choose(0); assert m.showlabels()==['Search','T1','T2']; m.choose(1)
+m.choose(0); assert m.showlabels()==['搜索','T1','T2']; m.choose(1)
 assert m.get(syms['p_vector_select_record'])==saved and m.get(saved)==0x12345678
 assert not any(c[0].startswith('batch_') for c in m.calls)
-assert m.toasts[-1][3]=='已加入播放列表' and m.showlabels()==['Search','T1','T2']
+assert m.toasts[-1][3]=='已加入播放列表' and m.showlabels()==['搜索','T1','T2']
 m.choose(1); assert m.toasts[-1][3]=='已在播放列表中'
 m.fail='write'; m.choose(2); assert m.toasts[-1][3]=='无法保存播放列表'; m.fail=''
 assert m.ticks()==[False,True,False]  # ticked on add, not on a failed write
-assert m.key()==11 and m.showlabels()==['添加歌曲','Done','B','C','T1']
+assert m.key()==11 and m.showlabels()==['添加歌曲','完成','B','C','T1']
 m.choose(1); assert m.top!=m.page and not m.get(payload_syms['ple'])
 assert m.names()==m.before_queue; passed()
 # Add Songs' Search row filters by tagged title, artist or album, case-insensitively; the query
@@ -5085,7 +5114,7 @@ def ple_search(m,text,event='EVT_IM_ACTION'):
     m.view=m.find('scroll_view')
 m=PlaylistEditMachine(); m.word(m.found[0]+O['REC_ARTIST'],m.string('Beatles'))
 m.word(m.found[1]+O['REC_ALBUM'],m.string('Zebra')); m.open_editor(); m.choose(0)
-assert m.showlabels()==['Search','T1','T2']
+assert m.showlabels()==['搜索','T1','T2']
 ple_search(m,'T2'); assert m.showlabels()==['搜索：T2','T2'] and not m.find('edit')
 m.choose(0); assert m.nodes[m.find('edit')]['text']=='T2'  # prefilled for editing
 m.nodes[m.find('edit')]['text']='beat'; f,ctx=m.handler(m.find('edit'),O['EVT_IM_ACTION'])
@@ -5093,7 +5122,7 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0; m.advance(0); m.view=m
 assert m.showlabels()==['搜索：beat','T1']
 m.choose(1); assert m.toasts[-1][3]=='已加入播放列表' and m.showlabels()==['搜索：beat','T1']
 ple_search(m,'zeb'); assert m.showlabels()==['搜索：zeb','T2']
-ple_search(m,''); assert m.showlabels()==['Search','T1','T2'] and m.ticks()==[False,True,False]
+ple_search(m,''); assert m.showlabels()==['搜索','T1','T2'] and m.ticks()==[False,True,False]
 ple_search(m,'zzz'); assert m.showlabels()==['搜索：zzz','无匹配歌曲']
 # Return from the box applies its text, and a filtered pick can close the page cleanly.
 m.choose(0); m.nodes[m.find('edit')]['text']='t1'; assert m.key()==11
@@ -5134,14 +5163,14 @@ m.db.execute("insert into playlist values(150,0,'/hidden',0,0,'Hidden')")
 assert m.mutate(101,103)==1 and m.order()==['C','B','A','Hidden']
 assert m.mutate(102,0)==1 and m.order()==['C','A','Hidden'] and m.order(1)==['Other']
 # Reopening uses the database order and leaves the live queue unchanged.
-m.open_editor(); assert m.showlabels()==['添加歌曲','Done','C','A','Hidden'] and m.names()==m.before_queue
+m.open_editor(); assert m.showlabels()==['添加歌曲','完成','C','A','Hidden'] and m.names()==m.before_queue
 assert m.mutate(101,200,0)==0
 m.db.execute('update playlist set id=2147483647 where id=200'); assert m.mutate(101,103)==0
 passed()
 # Back cancels a deferred confirmation before returning to the editor.
 m=PlaylistEditMachine(); m.open_editor(); m.choose(2); m.choose(2)
 m.pick(0); assert m.key()==11 and m.order()==list('ABC')
-assert m.showlabels()==['添加歌曲','Done','A','B','C']; passed()
+assert m.showlabels()==['添加歌曲','完成','A','B','C']; passed()
 # A side press during a deferred click cannot change the row that click refers to.
 m.choose(2); assert m.key()==11
 m.view=m.find('scroll_view')
@@ -5256,10 +5285,10 @@ if variant=='ipod':
     def written(): return [m.nodes[c[1]]['name'] for c in m.calls if c[0]=='widget_set_text_utf8']
     def repaint(w=win): m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0)); return written()
     assert m.call(address=playing,args=(win,7,0,0),gap=0)==0 and m.calls[0][:3]==('stock_playing',win,7)
-    assert shown()==['2 of 3','Album 1','-2:05']; passed()
+    assert shown()==['2 / 3','Album 1','-2:05']; passed()
     assert repaint()==[] and repaint(bar)==[]; passed()
     m.nodes[slider]['value']=101; assert repaint()==['label_ipod_remain'] and shown()[2]=='-2:04'; passed()
-    m.word(O['MCL_POS'],2); assert repaint(bar)==['label_ipod_pos','label_ipod_album'] and shown()[:2]==['3 of 3','Album 2']; passed()
+    m.word(O['MCL_POS'],2); assert repaint(bar)==['label_ipod_pos','label_ipod_album'] and shown()[:2]==['3 / 3','Album 2']; passed()
     # A rebuilt queue can reuse the same string address with new text; the text itself is hashed.
     m.u.mem_write(m.get(m.items(m.get(syms['mcl_pdeqplaylist']))[2]+O['REC_ALBUM']),b'Other\0')
     assert 'label_ipod_album' in repaint() and shown()[1]=='Other'; passed()
@@ -5273,7 +5302,7 @@ if variant=='ipod':
         m.nodes[slider].update(max=mx,value=v); repaint(); assert shown()[2]==want,(mx,v)
     passed()
     queue=m.deqs[m.get(syms['mcl_pdeqplaylist'])][1]
-    del queue[1:]; m.word(O['MCL_POS'],0); repaint(); assert shown()[:2]==['1 of 1','Album 0']
+    del queue[1:]; m.word(O['MCL_POS'],0); repaint(); assert shown()[:2]==['1 / 1','Album 0']
     queue.clear(); repaint(); assert shown()[:2]==['','']; passed()
     # Another top window, or the page once destroyed, leaves the labels alone.
     queue.append(m.copy('stSongInfo',m.song('X'))); m.top=m.node('window','home_page'); m.word(m.top+O['W_PARENT'],m.wm)
@@ -6008,11 +6037,11 @@ assert len(m.toasts)==n+1 and m.toasts[-1][3]=='专辑歌词：2 已有歌词' a
 press_count=len(m.threads); m.advance(1000); assert len(m.threads)==press_count and len(m.toasts)==n+1; passed()  # the timer has ended
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; press()  # cancelled before its first song
 assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0 and not m.accessed
-m.advance(500,clear=False); assert m.toasts[-1][3]=='Cancelled' and m.nodes[label]['text']=='Download Album Lyrics'; passed()
+m.advance(500,clear=False); assert m.toasts[-1][3]=='已取消' and m.nodes[label]['text']=='Download Album Lyrics'; passed()
 m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; n=len(m.toasts)
 assert m.call(address=payload_syms['album_lyrics_stop'],args=(0,0,0,0),gap=0)==0 and m.joins==[77]  # USB storage: joined first
 m.advance(500,clear=False); assert len(m.toasts)==n and m.nodes[label]['text']=='Download Album Lyrics'; passed()
-m.found=[]; press(); assert m.toasts[-1][3]=='No album songs on the card' and len(m.threads)==1; passed()
+m.found=[]; press(); assert m.toasts[-1][3]=='卡上没有该专辑的歌曲' and len(m.threads)==1; passed()
 
 # Sparse populated initials: one destination per sustained tick, both directions, utilities
 # and wrap edges. Album and Artist share article handling; nonalphabetical sorts stay single-step.
@@ -6158,7 +6187,7 @@ for writer in WRITERS:
     m.calls=[]; m.open(); assert not m.queried(); m.close(); passed()
 # Albums without art start the thread behind a progress screen; destroy joins it and drops the poll.
 m=CoverflowMachine(cached=False); page=m.open()
-assert len(m.threads)==1 and m.timers and any((t or '').startswith('Preparing artwork') for t in m.texts()) and 'Cancel' in m.texts()
+assert len(m.threads)==1 and m.timers and any((t or '').startswith('正在准备封面') for t in m.texts()) and '取消' in m.texts()
 f,ctx=m.handler(page,O['EVT_DESTROY']); m.freed=0; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
 assert m.joins==[77] and not m.timers and m.freed==4; passed()  # three job paths and the job array
 # Tracks list and play in album order (disc, track, then path, then CUE start), named without
@@ -6176,7 +6205,7 @@ for found,want in (((('b.mp3','/p/b.mp3',2,1),('a.mp3','/p/a.mp3',1,2),('c.mp3',
     f,ctx=m.handler(m.nodes[view]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
     assert [n.rsplit('.',1)[0] if n.endswith(('.mp3','.flac')) else n for n in m.names(m.plays[-1][1]&0xffffffff)]==want; passed()
 
-COVER_ALBUM=['下一首播放','加入播放队列','Shuffle','加入收藏','专辑评价']  # a cover's menu, Go to artist aside
+COVER_ALBUM=['下一首播放','加入播放队列','随机播放','加入收藏','专辑评价']  # a cover's menu, Go to artist aside
 # Album holds use the live carousel before tracks have ever been opened, and the same ordering.
 for action,want in ((0,['A','early','late','B','C']),(1,['A','B','C','early','late'])):
     m=CoverflowMachine(); m.found=[track(m,'late','/p/z',2,1),track(m,'early','/p/a',1,2)]
@@ -6277,7 +6306,7 @@ m.word(m.slide+O['SLIDE_INDEX'],1); passed()
 # The picker over the covers, on the album's hearts; the wheel moves the rating, never the covers.
 assert m.run(4) is None and m.caption()=='未评价' and m.hearts()==['play_unfav']*5
 for _ in range(3): assert m.call()==11
-assert m.caption()=='3 of 5' and m.hearts()==['play_fav']*3+['play_unfav']*2 and m.get(m.slide+O['SLIDE_INDEX'])==1 and not m.slides
+assert m.caption()=='3 / 5' and m.hearts()==['play_fav']*3+['play_unfav']*2 and m.get(m.slide+O['SLIDE_INDEX'])==1 and not m.slides
 # Hold Play/Pause meanwhile opens nothing, and its release does not toggle playback.
 m.press(9000); assert m.hold()==11 and m.top==m.page and m.release()==0 and m.panel(); passed()
 # Return leaves it as it was (taken before the page's own Return), and Coverflow stays; Centre saves, without opening
@@ -6427,7 +6456,7 @@ m=EraMachine(SONGS); assert m.open_era()==['年代','80s','1 album','90s','2 alb
 assert m.nodes[m.top]['name']=='era_page' and m.closed_db==1; passed()
 into=lambda: [m.nodes[m.nodes[r]['children'][-1]].get('image')=='list_into' for r in m.nodes[m.find('scroll_view')]['children']]
 assert into()==[True]*3  # a decade opens its albums
-assert m.decade(1)==['90s','顺序播放','2 albums','Shuffle','Every song, shuffled','Alpha','A1 \u2022 1990','Beta','Beta Band \u2022 1999']
+assert m.decade(1)==['90s','顺序播放','2 张专辑','随机播放','全部歌曲，随机播放','Alpha','A1 \u2022 1990','Beta','Beta Band \u2022 1999']
 assert m.nodes[m.top]['name']=='era_albums_page' and into()==[False,False,True,True]; passed()  # an album opens Coverflow
 # The full library is counted past stock's old 20,000-song limit, with a bounded SQLite cache.
 m=EraMachine((f'Large {i//10}','Artist','Artist',f'/mnt/mmc/music/large/{i}.flac',2020) for i in range(65000))
@@ -6436,7 +6465,7 @@ assert m.db.execute('PRAGMA cache_size').fetchone()==(64,)
 assert m.db.execute('PRAGMA temp_store').fetchone()==(1,); passed()
 for failure in ('open','PRAGMA','select'):
     m=EraMachine(SONGS); m.fail=failure; top=m.top; m.open_era()
-    assert m.top==top and m.toasts[-1][3]=='Era unavailable' and m.closed_db==1; passed()
+    assert m.top==top and m.toasts[-1][3]=='年代不可用' and m.closed_db==1; passed()
 # Full-date tags belong to their year; normalize each track before picking the album's latest.
 dates=[('Dates','Artist','','/mnt/mmc/music/d1.flac',20220510),
        ('Dates','Artist','','/mnt/mmc/music/d2.flac',2023),
@@ -6444,7 +6473,7 @@ dates=[('Dates','Artist','','/mnt/mmc/music/d1.flac',20220510),
        ('Month','Artist','','/mnt/mmc/music/m.flac',202004),
        ('Bad','Artist','','/mnt/mmc/music/b.flac','unknown')]
 m=EraMachine(dates); assert m.open_era()==['年代','2020s','3 albums']
-assert m.decade(0)==['2020s','顺序播放','3 albums','Shuffle','Every song, shuffled',
+assert m.decade(0)==['2020s','顺序播放','3 张专辑','随机播放','全部歌曲，随机播放',
                      'Month','Artist \u2022 2020','ISO','Artist \u2022 2021','Dates','Artist \u2022 2023']; passed()
 # Play All plays the decade's albums from the first song, each in album order; an album opens its tracks in Coverflow.
 class EraPlay(EraMachine):
@@ -6461,8 +6490,8 @@ f,ctx=row(0); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.plays[-1][2:]==(0,0xf001,2) and m.play_names==['a1','b1','b2']; passed()
 f,ctx=row(3); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:3]==['Beta','b1','b2']; passed()
-m=EraMachine(); top=m.top; assert m.open_era() is not None and m.top==top and m.toasts[-1][3]=='No dated albums yet'; passed()
-m=EraMachine([s for s in SONGS if s[4]==0]); top=m.top; m.open_era(); assert m.top==top and m.toasts[-1][3]=='No dated albums yet'; passed()
+m=EraMachine(); top=m.top; assert m.open_era() is not None and m.top==top and m.toasts[-1][3]=='暂无带年份的专辑'; passed()
+m=EraMachine([s for s in SONGS if s[4]==0]); top=m.top; m.open_era(); assert m.top==top and m.toasts[-1][3]=='暂无带年份的专辑'; passed()
 # Library > Ratings > Albums: the rated albums as Coverflow, most hearts first, with the rated Sort card alone
 # (Rating, Album, Artist, Year, kept); closing it brings the library's covers back, with no card.
 def ratings_albums(m):
@@ -7457,7 +7486,7 @@ if variant=='ipod':
     sort_label,refresh_label=(m.nodes[m.nodes[r]['children'][0]]['children'][1] for r in (cf_sort,cf_refresh))
     assert m.nodes[sort_label]['text']=='Cover Flow 排序：专辑' and m.nodes[refresh_label]['text']=='刷新 Cover Flow'
     f,ctx=m.handler(m.nodes[cf_refresh]['children'][0],O['EVT_CLICK']); m.mock('opendir@GLIBC_2.0'); m.calls=[]
-    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Coverflow rebuilds its artwork next time'
+    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='下次进入时将重建 Cover Flow 封面'
     assert [m.text(c[1]) for c in m.calls if c[0]=='opendir@GLIBC_2.0']==['/mnt/mmc/.coverflow'] and m.nodes[refresh_label]['text']=='刷新 Cover Flow'; passed()
     # Shortcut: no key is Rockbox on a card with it, else Favorites.
     for card,first in ((True,'Rockbox'),(False,'收藏')):
@@ -7493,7 +7522,7 @@ if variant=='ipod':
         assert tuple(signed(m.get(art+O[k])) for k in ('W_X','W_Y','W_W','W_H'))==(split,0,375-split,290)
     shortcut_button=m.nodes[shortcut]['children'][0]
     sf,sc=m.handler(shortcut_button,O['EVT_CLICK'])
-    for label in ('收藏','Shuffle','已评价专辑','表演者','专辑','游戏','Rockbox'):
+    for label in ('收藏','随机播放','已评价专辑','表演者','专辑','游戏','Rockbox'):
         m.call(address=sf,args=(sc,m.event,0,0),gap=0)
         assert m.nodes[named(m,home,'label_rockbox')]['text']==label
     home_bounds(False)
@@ -7819,6 +7848,57 @@ for entry,stock in (('device_reboot','reboot'),('dialog_checkfw_dialog_init','ch
         assert stock!='checkfw' or got[-1][1:3]==(0x1234,0x5678)
 passed()
 
+# 无耳机不播放 (headset.c headset_guard_refuse, called from ringnav_play_pause, playback.c's
+# ringnav_change and media_key): a start with nothing listening is refused, so a pocket press of Play,
+# Next or Previous cannot run a queue nobody hears; a pause always passes. What listens is either jack
+# (g_po_status, g_bal_status), a USB DAC (output way 2), or a Bluetooth device behind output way 1 —
+# the link list's 3, since the way alone only says Bluetooth is the chosen output. Q2POD HEADSETGUARD
+# off lifts the gate, and a dark screen (a pocket) says nothing.
+class GuardMachine(Machine):
+    def __init__(self,links=(0,),config={}):
+        super().__init__(); self.links=list(links); self.status=3; self.way=0; self.started=[]
+        self.config.update(config)
+        self.handlers[syms['mclGetPlayStatus']]='guard:status'
+        self.handlers[syms['mclGetOutputWay']]='guard:way'
+        self.handlers[syms['getBtLinkSize']]='guard:size'
+        self.handlers[syms['getBtLinkItem']]='guard:item'
+        for n in ('video_status','radio_status','spot_status'): self.handlers[payload_syms[n]]='guard:zero'
+        for n in ('stock_pause_trampoline','stock_change_trampoline'):
+            self.handlers[int(manifest['patch_symbols'][n],16)]='guard:'+n
+        self.mock('navigator_to_with_context')
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('guard:'): return super().hook(u,address,size,unused)
+        name=name[6:]; a,b=u.reg_read(REGS[0]),u.reg_read(REGS[1]); ret=0
+        if name=='status': ret=self.status
+        elif name=='way': ret=self.way
+        elif name=='size': ret=len(self.links)
+        elif name=='item':
+            if 0<=a<len(self.links): self.word(b,self.links[a])
+        elif name!='zero': self.started.append(name)
+        self.returns(ret)
+    def play(self): return self.call(address=payload_syms['ringnav_play_pause'],args=(0,0,0,0),gap=0)
+    def change(self): return self.call(address=payload_syms['ringnav_change'],args=(1,0,0,0),gap=0)
+    def said(self):
+        return [self.text(c[2]+8) for c in self.calls
+                if c[0]=='navigator_to_with_context' and self.text(c[1])=='dialog/msginfo_dialog']
+def guarded(go,po=0,bal=0,way=0,status=3,links=(0,),light=1,config={}):
+    m=GuardMachine(links=links,config=config); m.way=way; m.status=status
+    m.byte(syms['g_po_status'],po); m.byte(syms['g_bal_status'],bal)
+    m.byte(syms['g_backlight_status'],light)
+    go(m)
+    return m
+for kw,want in (({},[]),({'status':2},['stock_pause_trampoline']),({'po':1},['stock_pause_trampoline']),
+                ({'bal':1},['stock_pause_trampoline']),({'way':2},['stock_pause_trampoline']),
+                ({'way':1},[]),({'way':1,'links':(1,)},[]),({'way':1,'links':(3,)},['stock_pause_trampoline'])):
+    assert guarded(lambda m: m.play(),**kw).started==want,kw
+for kw,want in (({},[]),({'po':1},['stock_change_trampoline']),({'way':2},['stock_change_trampoline']),
+                ({'way':1,'links':(3,)},['stock_change_trampoline']),({'status':2},['stock_change_trampoline'])):
+    assert guarded(lambda m: m.change(),**kw).started==want,kw
+assert guarded(lambda m: m.play(),config={'HEADSETGUARD':'0'}).started==['stock_pause_trampoline']
+assert guarded(lambda m: m.play()).said()==['未连接耳机']
+assert guarded(lambda m: m.play(),light=0).said()==[]; passed()
+
 if variant=='ipod':
     def long_list(n=40,m=None):
         m=m or Machine(); w,es=m.page_list(n,extent=n*48,name='allmusic_page'); m.paint(w); return m,w,es
@@ -8096,7 +8176,7 @@ def library_geometry(m,k):
     assert [m.get(icon+O[f]) for f in ('W_X','W_Y','W_W','W_H')]==[library_icon_x,0,library_icon_w,library_body] and m.nodes[icon]['draw_type']==library_draw_type
     assert all(m.get(c+O['W_H'])==library_body for c in [b,*m.nodes[b]['children']])
 for k in (row,rated,top,long): library_geometry(m,k)
-assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='Shuffle' and not m.nodes[button].get('name')
+assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='随机播放' and not m.nodes[button].get('name')
 assert m.nodes[into]['image']=='list_into' and [m.get(into+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[282,0,50,library_body]
 f,ctx=m.handler(button,O['EVT_CLICK'])
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
@@ -8107,7 +8187,7 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.top==page
 m.page=page; menu=m.find('scroll_view'); rows=m.nodes[menu]['children']
 def caption(r): return m.nodes[m.nodes[r]['children'][0]]['text']
 assert [m.get(r+O['W_H']) for r in rows]==[48]*3 and [caption(r) for r in rows]==['随机播放歌曲','随机播放专辑','随机播放文件夹']
-assert m.texts()==['Shuffle']+[caption(r) for r in rows]+['专辑和文件夹随机排序需要片刻']
+assert m.texts()==['随机播放']+[caption(r) for r in rows]+['专辑和文件夹随机排序需要片刻']
 note=m.nodes[page]['children'][-1]
 assert m.nodes[note]['type']=='hscroll_label' and m.nodes[note]['style:normal:text_color']==-0x555556 and m.nodes[note]['style:normal:font_size']==16 and not m.nodes[note].get('handlers')
 # Shuffle Songs from the menu: the stock play-mode save, a random start, the staging deque kept.
@@ -8360,12 +8440,12 @@ assert m.tap()==0 and m.favs==set(); passed()
 def aborts(): return [c for c in m.calls if c[0]=='widget_dispatch_event_to_target_recursive' and m.get(c[2])==O['EVT_POINTER_ABORT']]
 m.calls=[]; m.heart(O['RATE_HOLD_MS']-1); assert m.panel() is None and not aborts() and m.tap(press=False)==0 and m.favs=={'B'}; passed()
 # A hold opens the picker on 5 (My Fav), aborting the press so the slide_view drops its grab; its release's click does nothing.
-m.calls=[]; m.heart(); assert m.hearts()==['play_fav']*5 and m.caption()=='5 of 5' and [c[1] for c in aborts()]==[m.np]
+m.calls=[]; m.heart(); assert m.hearts()==['play_fav']*5 and m.caption()=='5 / 5' and [c[1] for c in aborts()]==[m.np]
 assert m.tap(press=False)==0 and m.favs=={'B'}; passed()
 # The wheel moves the rating within 0-5; Return leaves it as it was.
 m.top=m.np
 for k,want in ((O['KEY_NEXT'],5),(O['KEY_PREV'],4),(O['KEY_PREV'],3)): assert m.call(k)==11
-assert m.hearts()==['play_fav']*3+['play_unfav']*2 and m.caption()=='3 of 5' and m.favs=={'B'}
+assert m.hearts()==['play_fav']*3+['play_unfav']*2 and m.caption()=='3 / 5' and m.favs=={'B'}
 assert m.call(O['KEY_RETURN'])==11 and m.panel() is None and m.favs=={'B'} and m.kept()==[]; passed()
 # Centre saves 3: My Fav out through stock's own click, 3 kept, the badge on the empty heart.
 m.heart()
@@ -8388,7 +8468,7 @@ m2.word(O['MCL_POS'],0); m2.advance(500); assert m2.badge() is None; passed()
 # Hold Play/Pause on Now Playing: Rate last, with the hearts, and no Next/Previous album outside Shuffle Albums/Folders; its row opens the same picker.
 m2.word(O['MCL_POS'],1); m2.handlers[syms['navigator_to']]='q:navigator_to'; m2.press(100)
 assert m2.hold()==11 and m2.labels()[-2:]==['分组：专辑','评价  ♥♥♡♡♡'] and m2.release()==0
-m2.pick(len(m2.labels())-1); m2.advance(0); m2.top=m2.np; assert m2.caption()=='2 of 5' and m2.call(O['KEY_RETURN'])==11; passed()
+m2.pick(len(m2.labels())-1); m2.advance(0); m2.top=m2.np; assert m2.caption()=='2 / 5' and m2.call(O['KEY_RETURN'])==11; passed()
 # Ratings: Top Rated (4-5), Loved (5), All Rated and Disliked (1), most hearts first, then title order.
 m=RateMachine(b''.join(struct.pack('<I',(fnv(path)&~7)|h) for path,h in (('/p/A',1),('/mnt/mmc/Audiobooks/C.m4b',4),('/mnt/mmc/Podcasts/E.mp3',2))).ljust(4*O['RATE_SLOTS'],b'\0'))
 m.found=[m.song(n) for n in ('A','B','C','D','E')]; m.fav_songs=[m.song('D')]
@@ -8425,7 +8505,7 @@ m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view
 m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
 f,ctx=m.handler(m.nodes[m.nodes[view]['children'][14]]['children'][0],O['EVT_CLICK'])
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0; m.page=m.top
-assert m.nodes[m.page]['name']=='longsongs_page' and m.texts()==['Measuring songs…','Cancel'] and len(m.threads)==1
+assert m.nodes[m.page]['name']=='longsongs_page' and m.texts()==['正在检测时长…','取消'] and len(m.threads)==1
 worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0)==0 and m.probed==['/p/A','/p/B','/p/D']
 m.advance(250)
 want=['长曲目','E','Artist · 20:00','C','Artist · 15:00','A','Artist · 11:40']
@@ -8649,7 +8729,7 @@ assert m.opened[-1][0]=='folder_page' and m.u.mem_read(syms['g_folder_layer'],1)
 assert m.open()==('/mnt/mmc',2); passed()
 # Now Playing: the playing song's row sits after Go to Artist, before the play modes.
 m=playing_menu(); m.dirs.add('/mnt/mmc/Music'); m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[1]+O['REC_PATH'],m.string('/mnt/mmc/Music/B'))
-m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['查看队列']+SONG_MENU[2:]+['前往文件夹','Shuffle','Repeat','分组：专辑']
+m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['查看队列']+SONG_MENU[2:]+['前往文件夹','随机播放','重复播放','分组：专辑']
 passed()
 
 # Photos (patch/photos.c): the helpers first. Names: .jpg, .jpeg and .png, case aside, not hidden.
@@ -8809,7 +8889,7 @@ info=[x for x in m.nodes[viewer]['children'] if m.nodes[x]['type']=='hscroll_lab
 x,y,bw,bh=cf_geometry(m,info); inset=max(corner_inset(30+y),corner_inset(30+y+bh))
 assert not m.nodes[info]['visible'] and inset<=x and x+bw<=375-inset  # the whole rounded band clears the glass
 f,ctx=m.handler(m.nodes[s]['children'][1],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
-assert m.nodes[info]['visible'] and m.nodes[info]['text']=='2 of 4  b.jpg' and m.nodes[info]['style:normal:bg_color']==signed(0xb3000000)
+assert m.nodes[info]['visible'] and m.nodes[info]['text']=='2 / 4  b.jpg' and m.nodes[info]['style:normal:bg_color']==signed(0xb3000000)
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert not m.nodes[info]['visible']
 m.word(s+O['SLIDE_INDEX'],2); f,ctx=m.handler(s,O['EVT_VALUE_CHANGED']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.nodes[info]['visible'] and m.nodes[info]['text']=="无法打开此照片"; passed()
@@ -9000,7 +9080,7 @@ if variant=='ipod':
     m.page=m.top; assert m.nodes[m.page]['name']=='games_page'
     m.close()
     chooser,sheet=games_open(); G=m.get(payload_syms['g'])
-    assert labels(chooser)==['游戏','Sudoku','Vortex','Solitaire','Snake'] and not m.nodes[sheet]['visible']
+    assert labels(chooser)==['游戏','数独','旋涡','纸牌','贪吃蛇'] and not m.nodes[sheet]['visible']
     rows=m.nodes[m.find('scroll_view',chooser)]['children']
     def pick(i):
         f,ctx=m.handler(rows[i],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
@@ -9867,13 +9947,13 @@ def track(uri,title,ctx='',pos=''): return ('track',uri,title,'An Artist',ctx,po
 # signed in, the menu: Now Playing, Queue and Playback settings only with a track.
 m=BrowseMachine(); m.open(); assert m.labels()==['加载中…'] and m.systems==['/bin/sh /mnt/mmc/.spotify/run']
 m.answer(*ME); assert m.wire==[b'Q2SPOT/1\n1\taccount\n',b'Q2SPOT/1\n2\tcaps\n']
-MENU=['Spotify','喜欢的歌曲','歌单','专辑','表演者','Search','账号','已下载歌曲','下载管理']
+MENU=['Spotify','喜欢的歌曲','歌单','专辑','表演者','搜索','账号','已下载歌曲','下载管理']
 assert m.labels()==MENU
 m.state('playing'); m.poll(); m.advance(250)
-assert m.labels()==['Spotify','正在播放','喜欢的歌曲','歌单','专辑','表演者','Search','Queue','播放设置','账号','已下载歌曲','下载管理']
+assert m.labels()==['Spotify','正在播放','喜欢的歌曲','歌单','专辑','表演者','搜索','播放队列','播放设置','账号','已下载歌曲','下载管理']
 m.row(0); assert m.nodes[m.top]['name']=='spotify_page'; m.destroy(m.top); m.top=m.page; m.state('none',track=''); m.poll(); m.advance(250); assert m.labels()==MENU; passed()
 m.row(7)  # an older add-on: its message-only Download Status stays reachable
-assert m.labels()==['下载管理','已下载歌曲','','Download Status',"The latest download's progress",'请更新卡上的 Spotify','for saved playlists and download controls']
+assert m.labels()==['下载管理','已下载歌曲','','下载状态',"最近一次下载的进度",'请更新卡上的 Spotify','以支持保存歌单与下载管理']
 assert [chevron(m,i) for i in range(3)]==[True,False,False]
 m.row(1); assert m.asked()==('downloadstatus',); m.answer('ok','Mix B: 3 of 10 saved','',[])
 assert m.toasts[-1][3]=='Mix B: 3 of 10 saved' and m.labels()[0]=='下载管理'
@@ -9886,26 +9966,26 @@ m.row(0); assert m.asked()==('playdownload','spotify:track:cached')
 m.answer(*OK,[]); assert m.nodes[m.top]['name']=='spotify_page'; m.destroy(m.top); m.top=m.page; m.back(); passed()
 # Loading, an error with Retry (offline, throttled, error, or no answer), one without, and empty.
 m.row(0); assert m.labels()==['加载中…'] and m.asked()==('liked',)
-m.answer('offline',"Spotify can't be reached",'',[]); assert m.labels()==["Spotify can't be reached",'Retry']
+m.answer('offline',"Spotify can't be reached",'',[]); assert m.labels()==["Spotify can't be reached",'重试']
 m.row(0); assert m.labels()==['加载中…']; m.answer('premium','Spotify Premium is needed','',[]); assert m.labels()==['Spotify Premium is needed']
 m.back(); m.row(0); m.answer(*OK,[]); assert m.labels()==['暂无内容']
 # A short or empty page with a cursor (the backend's paging cap) still offers More….
-m.back(); m.row(0); m.answer('ok','','c%251',[]); assert m.labels()==['喜欢的歌曲','More…','']
+m.back(); m.row(0); m.answer('ok','','c%251',[]); assert m.labels()==['喜欢的歌曲','更多…','']
 m.row(0); assert m.asked()==('liked','c%251'); m.answer(*OK,[track('spotify:track:9','Nine','spotify:user:alice:collection','50')])
 assert m.labels()==['喜欢的歌曲','Nine','An Artist']; passed()
 # A reply without the request's id (a late one, or id 0 from a backend that couldn't read it) is
 # dropped: its rows never show.
 m.back(); m.back(); m.row(0); m.answer(b'Q2SPOT/1\n0\tok\t\t\ntrack\tspotify:track:1\tOne\tA\t\t\n')
-assert m.labels()==["Spotify 未响应",'Retry']
+assert m.labels()==["Spotify 未响应",'重试']
 # Malformed or oversized ones too.
-m.row(0); m.answer(b'Q2SPOT/1\n{id}\tok\t%zz\t\n'); assert m.labels()==["Spotify 未响应",'Retry']
-m.row(0); m.answer(b'x'*(65537)); assert m.labels()==["Spotify 未响应",'Retry']; m.back(); passed()
+m.row(0); m.answer(b'Q2SPOT/1\n{id}\tok\t%zz\t\n'); assert m.labels()==["Spotify 未响应",'重试']
+m.row(0); m.answer(b'x'*(65537)); assert m.labels()==["Spotify 未响应",'重试']; m.back(); passed()
 # Playlists, a playlist's tracks by its URI exactly as received, More… by the cursor, and Back
 # through them to the row each was left on. A track plays in its context at its position (and its
 # URI), and once it plays Now Playing opens; a failure is toasted. Alone (empty context), by its URI.
 m.row(1); assert m.asked()==('playlists',)
 m.answer('ok','','next%09page',[('playlist','spotify:playlist:a','Mix A','alice','',''),('playlist','spotify:playlist:b%25','Mix B','bob','','')])
-assert m.labels()==['歌单','Mix A','alice','Mix B','bob','More…','']
+assert m.labels()==['歌单','Mix A','alice','Mix B','bob','更多…','']
 m.pick(1); assert m.asked()==('playlist','spotify:playlist:b%25')
 m.answer(*OK,[track('spotify:track:1','One','spotify:playlist:b%25','0'),track('spotify:track:1','One','spotify:playlist:b%25','1'),track('spotify:track:3','Three')])
 assert m.labels()==['Mix B','One','An Artist','One','An Artist','Three','An Artist','下载歌单','供离线收听']
@@ -9948,7 +10028,7 @@ m=BrowseMachine({STATE:bytearray(b'state=none\n')}); m.open(); m.worker(); asser
 m.advance(500); m.worker(); assert m.labels()==['加载中…']
 m.advance(2500); m.worker(); assert m.labels()==['Spotify','正在播放','','请更新卡上的 Spotify','即可在 Q2 上浏览']
 m.row(0); assert m.nodes[m.top]['name']=='spotify_page'; m.destroy(m.top); m.top=m.page; passed()
-m=BrowseMachine(); m.open(); m.advance(3000); m.worker(); assert m.labels()==["Spotify 未运行",'Retry']
+m=BrowseMachine(); m.open(); m.advance(3000); m.worker(); assert m.labels()==["Spotify 未运行",'重试']
 m.row(0); m.answer(*ME); assert m.labels()==MENU; passed()
 # Search: the T9 box over the title, run on its OK only. Empty, left or Returned from, the menu as it was; else
 # the term's categories, each searched by its name and the term, escaped.
@@ -9983,15 +10063,15 @@ m.state('playing'); m.poll(); m.advance(250); m.row(6); assert m.asked()==('queu
 m.answer(*OK,[track('spotify:track:q','Q',pos='3')]); m.row(0); assert m.asked()==('skip','3','spotify:track:q')
 m.answer(*OK,[]); assert m.nodes[m.top]['name']=='spotify_page'; m.destroy(m.top); m.top=m.page; m.back()
 m.row(7); m.answer(*OK,[('setting','shuffle','off','','',''),('setting','repeat','context','','','')])
-assert m.labels()==['播放设置','Shuffle','','Repeat','All'] and switch(m,0)=='switch_off' and switch(m,1)!='switch_off'
+assert m.labels()==['播放设置','随机播放','','重复播放','全部'] and switch(m,0)=='switch_off' and switch(m,1)!='switch_off'
 m.row(0); assert m.asked()==('shuffle','on'); m.answer(*OK,[]); assert m.labels()==['加载中…'] and m.asked()==('settings',)
 freed=m.freed
-m.answer(*OK,[('setting','shuffle','on','','',''),('setting','repeat','track','','','')]); assert m.labels()==['播放设置','Shuffle','','Repeat','One'] and switch(m,0)=='switch_on' and m.freed==freed+1
+m.answer(*OK,[('setting','shuffle','on','','',''),('setting','repeat','track','','','')]); assert m.labels()==['播放设置','随机播放','','重复播放','单曲'] and switch(m,0)=='switch_on' and m.freed==freed+1
 m.row(1); assert m.asked()==('repeat','off'); t=len(m.threads); m.answer('offline',"Spotify didn't answer in time",'',[]); m.advance(1000)
-assert m.toasts[-1][3]=="Spotify didn't answer in time" and len(m.threads)==t and m.labels()[1]=='Shuffle'; m.back(); passed()
+assert m.toasts[-1][3]=="Spotify didn't answer in time" and len(m.threads)==t and m.labels()[1]=='随机播放'; m.back(); passed()
 # Account: the name, Premium, and Sign out after a confirmation; then the pairing prompt.
 m.row(8); assert m.asked()==('account',); m.answer(*ME); assert m.labels()==['账号','Alice','Premium','退出账号','']
-m.row(1); assert m.labels()==['退出 Spotify 账号？','Cancel','退出账号']; m.row(0); assert m.labels()[:2]==['账号','Alice']
+m.row(1); assert m.labels()==['退出 Spotify 账号？','取消','退出账号']; m.row(0); assert m.labels()[:2]==['账号','Alice']
 t=len(m.threads); m.row(1); m.row(1); assert m.asked()==('signout',) and len(m.threads)==t+1
 m.answer(*OK,[]); assert m.labels()==PAIR
 # librespot exits on signout and its launcher restarts it: meanwhile no socket is no old add-on.
@@ -10047,7 +10127,7 @@ for i in range(12):
 m.answer(*OK,[]); m.back(); assert m.labels()[0]=='Album A'; passed()
 # A stalled write times out without sending the operation; Back also abandons a pending play.
 m=BrowseMachine(); m.open(); m.stalled=True; start=m.now; m.answer(*ME)
-assert m.now-start>=15000 and not m.wire and m.labels()==["Spotify 未响应",'Retry']
+assert m.now-start>=15000 and not m.wire and m.labels()==["Spotify 未响应",'重试']
 m.stalled=False; m.row(0); m.answer(*ME); m.row(0); m.answer(*OK,[track('spotify:track:1','One')])
 m.row(0); assert m.asked()==('play','spotify:track:1'); m.back(); assert m.labels()==MENU
 assert m.get(payload_syms['wk']+32)==0; m.advance(1000); assert m.top==m.page; passed()
@@ -10142,11 +10222,11 @@ def run(m,name,*args): return m.call(address=payload_syms[name],args=(*args,0,0,
 # Saved-collection capabilities replace the legacy flat Downloads action with a persistent hub.
 m=BrowseMachine(); m.caps=('collections','collection','playcollection','downloadliked','jobs','job','remove','download')
 m.open(); m.answer(*ME)
-assert m.labels()==['Spotify','喜欢的歌曲','歌单','专辑','表演者','Search','账号','下载管理']
+assert m.labels()==['Spotify','喜欢的歌曲','歌单','专辑','表演者','搜索','账号','下载管理']
 m.row(0); m.answer(*OK,[])
 assert m.labels()==['喜欢的歌曲','下载喜欢的歌曲','供离线收听']
 m.row(0); assert m.asked()==('downloadliked',); m.answer('ok','Queued','',[]); m.back()
-m.row(6); assert m.labels()==['下载管理','Downloaded Playlists','','已下载歌曲','','Download Progress','','Storage Management','']
+m.row(6); assert m.labels()==['下载管理','已下载歌单','','已下载歌曲','','下载进度','','存储管理','']
 assert all(chevron(m,i) for i in range(4))  # each opens a page
 m.row(0); assert m.asked()==('collections',)
 m.answer(*OK,[('collection','liked','喜欢的歌曲','2/3 · partial','','')]); m.row(0)
@@ -10156,7 +10236,7 @@ m.row(2); assert m.asked()==('playcollection','liked','51')
 m.answer(*OK,[]); m.destroy(m.top); m.top=m.page
 m.row(1); assert m.toasts[-1][3]=='Unavailable'
 m.row(3); assert m.asked()==('collection','liked','next'); m.answer(*OK,[])
-m.back(); m.row(4); assert m.labels()==['下载管理','Pause','继续播放','Cancel Download','Retry Failed','Update Download']
+m.back(); m.row(4); assert m.labels()==['下载管理','暂停','继续','取消下载','重试失败项','更新下载']
 assert [(m.get(r+O['W_Y']),m.get(r+O['W_H'])) for r in m.rows()]==[(48*i,48) for i in range(5)]
 m.row(3); assert m.asked()==('job','liked','retry'); m.answer('ok','Retry queued','',[])
 m.back(); m.back(); m.back()
@@ -10168,11 +10248,11 @@ m.answer('ok','','p2',[('job','liked','downloading','2/3 · Saving 3','喜欢的
 # A failed refresh keeps the list, its fields (the cursor too) still on the reply it shows, not the
 # failed one, which is freed.
 shown=m.labels(); m.poison={}; m.advance(2250); assert m.asked()==('jobs',); m.answer('offline','未连接 Wi-Fi','',[])
-assert m.labels()==shown and shown[-2]=='More…'; del m.poison
+assert m.labels()==shown and shown[-2]=='更多…'; del m.poison
 m.row(1); assert m.asked()==('jobs','p2'); m.answer(*OK,[]); m.back()
 m.row(0); m.row(0)
 assert m.asked()==('job','liked','pause'); m.answer('ok','Paused','',[])
-m.back(); m.back(); m.row(3); assert m.labels()[0]=='Storage Management'
+m.back(); m.back(); m.row(3); assert m.labels()[0]=='存储管理'
 m.row(0); assert m.asked()==('collections',)
 m.answer('ok','','p2',[('collection','a','A','1/1','',''),('collection','b','B','1/1','','')])
 m.row(0); assert '已选择' in m.labels()
@@ -10181,32 +10261,32 @@ m.row(2); assert m.asked()==('collections','p2')
 m.answer(*OK,[('collection','c','C','1/1','','')]); m.row(0); m.row(1)
 assert m.asked()==('remove','collections','b,c')
 m.answer('ok','Remove 2 playlists, 1 tracks?','',[])
-assert m.labels()[0]=='Remove Downloads?' and 'Remove 2 playlists, 1 tracks?' in m.labels()
+assert m.labels()[0]=='移除下载？' and 'Remove 2 playlists, 1 tracks?' in m.labels()
 m.row(2); assert m.asked()==('remove','collections','b,c','confirm')
-m.answer('ok','Removed','',[]); assert m.labels()[0]=='Storage Management'
+m.answer('ok','Removed','',[]); assert m.labels()[0]=='存储管理'
 m.row(2); assert m.asked()==('remove','all','')
 m.answer('ok','Remove 1 playlists, 3 tracks?','',[]); m.row(1)  # Cancel preserves downloads
-assert m.labels()[0]=='Storage Management'
+assert m.labels()[0]=='存储管理'
 # Return before Clear All's preview answers: a later action's ok reply never opens Remove Downloads?.
 m.row(2); assert m.asked()==('remove','all',''); m.back(); assert m.labels()[0]=='下载管理'
 m.row(2); m.answer(*OK,[('job','liked','paused','2/3','喜欢的歌曲','2')]); assert chevron(m,0); m.row(0); m.row(0)
 assert m.asked()==('job','liked','pause'); m.answer('ok','Paused','',[])
 assert m.labels()[0]=='喜欢的歌曲' and m.toasts[-1][3]=='Paused'
-m.back(); m.back(); m.row(3); assert m.labels()[0]=='Storage Management'
+m.back(); m.back(); m.row(3); assert m.labels()[0]=='存储管理'
 m.row(1); m.answer(*OK,[track('spotify:track:a','A')]); m.row(0); m.row(1)
 assert m.asked()==('remove','tracks','spotify:track:a')
 m.answer('ok','Remove 0 playlists, 1 tracks? 2 playlists may become incomplete','',[])
-assert 'Track removal can make playlists incomplete' in m.labels(); m.row(1); passed()
+assert '移除歌曲可能使歌单不完整' in m.labels(); m.row(1); passed()
 # caps answered after Downloads opened (asked again once the base was idle, a request having cancelled
 # it): the open level is laid out again, so its rows and what a press opens agree.
 HUB=('collections','collection','playcollection','downloadliked','jobs','job','remove','download')
 m=BrowseMachine(); m.caps=HUB; m.open(); m.answer(*ME)
 br=payload_syms['br']; m.word(br+96,0); m.word(br+100,0)  # caps_checked, downloads: as a cancelled caps leaves them
 m.advance(2250); assert m.asked()==('caps',)
-m.row(6); assert m.labels()[:4]==['下载管理','已下载歌曲','','Download Status']
+m.row(6); assert m.labels()[:4]==['下载管理','已下载歌曲','','下载状态']
 m.serve=lambda op,args: ('ok','','',[('op',n,'','','','') for n in HUB]); m.worker()
-assert m.labels()==['下载管理','Downloaded Playlists','','已下载歌曲','','Download Progress','','Storage Management',''],m.labels()
-m.row(3); assert m.labels()[0]=='Storage Management'; passed()
+assert m.labels()==['下载管理','已下载歌单','','已下载歌曲','','下载进度','','存储管理',''],m.labels()
+m.row(3); assert m.labels()[0]=='存储管理'; passed()
 # A transport or temporary caps failure retries after two seconds; a valid unsupported response
 # is terminal for an older add-on, without repeatedly probing it.
 for failure in (None, b'Q2SPOT/1\nmalformed', ('offline','Starting','',[]), ('throttled','Wait','',[])):
@@ -10216,7 +10296,7 @@ for failure in (None, b'Q2SPOT/1\nmalformed', ('offline','Starting','',[]), ('th
     threads=len(m.threads); m.advance(1750); assert len(m.threads)==threads
     m.advance(250); assert len(m.threads)==threads+1 and m.asked()==('caps',)
     m.serve=lambda op,args: ('ok','','',[('op',n,'','','','') for n in HUB]); m.worker()
-    m.row(6); assert m.labels()[1]=='Downloaded Playlists'; passed()
+    m.row(6); assert m.labels()[1]=='已下载歌单'; passed()
 m=BrowseMachine(); m.open(); m.serve=lambda op,args: ME; m.worker()
 m.serve=lambda op,args: ('error','Unsupported operation','',[]); m.worker()
 threads=len(m.threads); m.advance(5000); assert m.get(br+96)==1 and len(m.threads)==threads; passed()
@@ -10228,7 +10308,7 @@ f,ctx=m.handler(m.rows()[1],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,
 m.serve=lambda op,args: (*OK,jobs[:1]); worker,arg=m.threads[-1]
 m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)
 m.call(address=payload_syms['br_tick'],args=(0,0,0,0),gap=0); m.advance(0)
-assert m.labels()==['Download Progress','paused','1/2'] and m.get(br+16)==0; passed()
+assert m.labels()==['下载进度','paused','1/2'] and m.get(br+16)==0; passed()
 # Backends that don't advertise download support hide the action, with an update explanation in Downloads.
 m=BrowseMachine(); m.caps=(); m.open(); m.answer(*ME); m.row(1)
 m.answer(*OK,[('playlist','spotify:playlist:a','A','','','')]); m.row(0); m.answer(*OK,[])
@@ -10345,7 +10425,7 @@ m.nodes[edit]['text']='aphex\ttwin'; f,ctx=m.handler(edit,O['EVT_VALUE_CHANGED']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0; m.advance(0,clear=False)
 m.answer('ok','refresh','50',[('action','download','01 Xtal.flac','bob · FLAC 16/44.1 · 31 MB · free','12.3','downloadfolder')])
 assert m.wire[-1].endswith(b'\tsearch\taphex%09twin\n'),m.wire[-1]
-assert m.labels()==['aphex\ttwin','01 Xtal.flac','bob · FLAC 16/44.1 · 31 MB · free','More…',''],m.labels()
+assert m.labels()==['aphex\ttwin','01 Xtal.flac','bob · FLAC 16/44.1 · 31 MB · free','更多…',''],m.labels()
 # A press downloads the file; Play/Pause held, the hold op (its whole folder); More… the next page.
 m.pick(0); m.answer('ok','Downloading 01 Xtal.flac','',[]); assert m.requests[-1]==('download','12.3') and m.toasts[-1][3]=='Downloading 01 Xtal.flac'
 m.answer('ok','refresh','50',[('action','download','01 Xtal.flac','bob','12.3','downloadfolder')])
@@ -10405,7 +10485,7 @@ def slsk_gone():
     """Soulseek's menu, then its loop still running (its pid file) but its socket gone."""
     m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.files[SPID]=bytearray(b'123')
     m.serve=None; m.advance(10000); m.worker(); return m
-m=slsk_gone(); assert m.labels()==["Soulseek isn't running",'Retry','Stop Soulseek'],m.labels()
+m=slsk_gone(); assert m.labels()==["Soulseek isn't running",'重试','Stop Soulseek'],m.labels()
 m.systems=[]; m.row(1)
 assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek stopped' and 'navigator_back' in [c[0] for c in m.calls],(m.systems,m.toasts[-1:])
 m.close(); m.files.pop(SPID); m.poll(); m.poll(); assert m.systems==[SKILL]; passed()
@@ -10425,7 +10505,7 @@ m.systems=[]; m.row(0); assert m.systems==[SKILL] and m.toasts[-1][3]=='Soulseek
 m.close(); passed()
 # An app that isn't running (it stopped by itself) has nothing to stop: Retry alone, which starts it.
 m=SlskMachine(); m.open(); m.answer('ok','refresh','',SMENU); m.serve=None; m.advance(10000); m.poll(); m.worker()
-assert m.labels()==["Soulseek isn't running",'Retry'],m.labels()
+assert m.labels()==["Soulseek isn't running",'重试'],m.labels()
 m.systems=[]; m.row(0); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'],m.systems; m.close(); passed()
 
 # File Browser: q2-filebrowser from the card's .filebrowser folder, the same page on its own socket.
@@ -10514,7 +10594,7 @@ m.click(m.nodes[m.find('scroll_view',songs)]['children'][1])
 assert [p[2:4] for p in m.plays]==[(1,0xf001)] and m.play_names==['Corporeal - Broadcast [6].flac','Valerie - Broadcast [5].flac'],(m.plays,m.play_names)
 m.destroy(songs); m.top=m.page; m.found=recs[:1]; m.advance(2000); m.answer('ok','refresh','',DZMENU)
 m.pick(1); m.answer('ok','refresh','',LIKED); n=len(m.toasts); m.pick(2)
-assert m.toasts[n:] and m.toasts[-1][3]=="It isn't on the card any more",m.toasts[n:]; passed()
+assert m.toasts[n:] and m.toasts[-1][3]=="卡上已不存在",m.toasts[n:]; passed()
 # Tidal Downloads ends in Clear All Downloads…, which asks first, as Spotify's Storage Management does:
 # Cancel or Return keeps the songs; Remove deletes the files in .tidal, a .tmp too, but not .cache-size
 # (Configuration's cap), and the page lists what is left: none.
@@ -10524,9 +10604,9 @@ for r,n,t in zip(recs,names,(100,200)):
 m.files[T+'/13-2 C.flac.tmp']=bytearray(); m.files[T+'/.cache-size']=bytearray(b'2048M'); m.files['/mnt/mmc/Music/keep.flac']=bytearray()
 m.tree[T]=[(n,8) for n in (*names,'13-2 C.flac.tmp','.cache-size')]; m.found=recs
 assert run(m,'tidal_downloads',0,0)==0; td=m.top; tdrows=lambda: m.nodes[m.find('scroll_view',td)]['children']
-LIST=['Tidal 下载','B - Two','A - One','Clear All Downloads…']
+LIST=['Tidal 下载','B - Two','A - One','清除全部下载…']
 assert m.nodes[td]['name']=='tidal_downloads' and [l for l in m.labels(td) if l]==LIST,m.labels(td)
-ASK=['Remove Downloads?','2 tracks','Keeps settings','Cancel','Remove']
+ASK=['移除下载？','2 首歌曲','保留设置','取消','移除']
 m.click(tdrows()[2]); assert [l for l in m.labels(td) if l]==ASK,m.labels(td)
 m.click(tdrows()[1]); assert [l for l in m.labels(td) if l]==LIST  # Cancel, back on the Clear row
 assert m.nodes[m.find('scroll_view',td)]['_ringnav_index']==2
@@ -10696,59 +10776,59 @@ LIST='/mnt/mmc/.q2/sources.list'
 m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:bytearray(b'q2-v1.8'),SPOT_FILES:bytearray(b'.spotify/run\n.spotify/librespot\n'),
                 '/mnt/mmc/.spotify/run':bytearray(b'sh'),'/mnt/mmc/.spotify/librespot':bytearray(b'ELF')})
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
-assert m.labels()==['Q2 App Store','Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
+assert m.labels()==['Q2 应用商店','Rockbox','安装','Spotify','已安装','Deezer','安装','Soulseek','安装','File Browser','安装'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['Q2 App Store','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Erase Spotify Data','Login and cache','Deezer','Install','Soulseek','Install','File Browser','Install']
+assert m.labels()==['Q2 应用商店','Rockbox','更新','Rockbox Themes','安装','Spotify','已安装','清除 Spotify 数据','登录信息与缓存','Deezer','安装','Soulseek','安装','File Browser','安装']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
 assert m.opts[10002]=='https://api.github.com/repos/group-a-study/q2-filebrowser/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of six
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
-assert m.labels()[6]=='Update' and '/tmp/q2-shelf.json' not in m.files; passed()  # q2-v1.8 against the latest q2-v1.9
-m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.threads)==1 and m.labels()[6]=='Update'; passed()  # still fresh: no requests
+assert m.labels()[6]=='更新' and '/tmp/q2-shelf.json' not in m.files; passed()  # q2-v1.8 against the latest q2-v1.9
+m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.threads)==1 and m.labels()[6]=='更新'; passed()  # still fresh: no requests
 m.row(2); assert m.labels()[6]=='正在检查…' and len(m.threads)==2 and KILL in m.systems[-1]; m.row(2); assert m.labels()[6]=='正在取消…'
-shelf_job(m); assert m.toasts[-1][3]=='已取消下载' and m.labels()[6]=='Update'; passed()
+shelf_job(m); assert m.toasts[-1][3]=='已取消下载' and m.labels()[6]=='更新'; passed()
 m.wifi=-1; m.row(2); assert m.toasts[-1][3]=='请先连接 Wi-Fi' and len(m.threads)==2; m.wifi=3; passed()
-m.codes=[403]; m.row(2); shelf_job(m); assert m.toasts[-1][3]=='GitHub is busy, try later'; passed()  # the API's rate limit
-m.files[SPOT_TAG]=bytearray(b'q2-v1.9'); m.close(); m.wifi=-1; apps_open(m); assert m.labels()[6]=='Installed' and len(m.threads)==3
-m.row(2); assert m.labels()[6]=='Press again to remove' and len(m.threads)==3
-m.row(3); assert m.labels()[6]=='Installed' and m.labels()[8]=='Press again to erase the login and cache'  # one row armed at a time
-m.row(2); m.row(2); assert m.labels()[6]=='Removing…' and m.labels()[8]=='Login and cache'; shelf_job(m)
+m.codes=[403]; m.row(2); shelf_job(m); assert m.toasts[-1][3]=='GitHub 繁忙，请稍后再试'; passed()  # the API's rate limit
+m.files[SPOT_TAG]=bytearray(b'q2-v1.9'); m.close(); m.wifi=-1; apps_open(m); assert m.labels()[6]=='已安装' and len(m.threads)==3
+m.row(2); assert m.labels()[6]=='再按一次以移除' and len(m.threads)==3
+m.row(3); assert m.labels()[6]=='已安装' and m.labels()[8]=='再按一次以清除登录信息与缓存'  # one row armed at a time
+m.row(2); m.row(2); assert m.labels()[6]=='移除中…' and m.labels()[8]=='登录信息与缓存'; shelf_job(m)
 assert m.toasts[-1][3]=='Spotify removed' and KILL in m.systems[-3] and m.systems[-2]=='sync' and KILL in m.systems[-1]  # spot_stop: before and after
-assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/librespot'}&set(m.files) and m.labels()[6]=='Install'; passed()
-m.row(3); assert m.labels()[8]=='Press again to erase the login and cache'; m.row(3)
-assert m.labels()[6]=='Install' and m.labels()[8]=='Erasing…'; shelf_job(m)
-assert 'rm -rf /mnt/mmc/.spotify/cache /mnt/mmc/.spotify/.cache-size' in m.systems and m.toasts[-1][3]=="Spotify's login and cache erased"; passed()
+assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/librespot'}&set(m.files) and m.labels()[6]=='安装'; passed()
+m.row(3); assert m.labels()[8]=='再按一次以清除登录信息与缓存'; m.row(3)
+assert m.labels()[6]=='安装' and m.labels()[8]=='正在清除…'; shelf_job(m)
+assert 'rm -rf /mnt/mmc/.spotify/cache /mnt/mmc/.spotify/.cache-size' in m.systems and m.toasts[-1][3]=="Spotify 登录信息与缓存已清除"; passed()
 # A stale check, stopped by a press (it needs no answer); then Rockbox from its release to "ready".
 m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==6
-m.row(1); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==6; passed()
+m.row(1); assert m.toasts[-1][3]=='已停止检查更新'; shelf_job(m); assert len(m.threads)==6; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
-apps_open(m); shelf_job(m); assert m.labels()==['Q2 App Store','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install']  # not stopped: checked again
-m.row(0); assert m.labels()[2]=='Starts at power-on; Boot to changes that. Press again to install' and len(m.threads)==7
+apps_open(m); shelf_job(m); assert m.labels()==['Q2 应用商店','Rockbox','安装','Spotify','安装','Deezer','安装','Soulseek','安装','File Browser','安装']  # not stopped: checked again
+m.row(0); assert m.labels()[2]=='开机自动启动，可在“默认启动”中更改。再按一次以安装' and len(m.threads)==7
 m.row(0); assert len(m.threads)==8 and m.labels()[2]=='正在检查…'; m.row(0); shelf_job(m); assert m.toasts[-1][3]=='已取消下载'
 m.free=10<<20; m.row(0); m.row(0); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
-assert m.toasts[-1][3]==f'Needs {(13018581+(54<<20)+(1<<20)-1)>>20} MB more space' and not [f for f in m.files if '.q2/staging/' in f]; passed()
+assert m.toasts[-1][3]==f'还需 {(13018581+(54<<20)+(1<<20)-1)>>20} MB 空间' and not [f for f in m.files if '.q2/staging/' in f]; passed()
 m.free=1<<32; m.staged=[('.rockbox/rockbox',b'ELF3.2'),('.rockbox/codecs/flac.codec',b'c'),('.rockbox/fonts/a b.fnt',b'f')]
 m.listing=''.join(f'{len(d):9}  10-06-2026 13:18   {f}\n' for f,d in m.staged)
 m.row(0); m.row(0); m.rockbox_mode=0o100755; m.moves=[]; shelf_job(m)  # Rockbox on the card by the end
-assert m.toasts[-1][3]==('Rockbox is ready. Find it on Home' if variant=='ipod' else 'Rockbox is ready. It starts at power-on')
+assert m.toasts[-1][3]==('Rockbox 已就绪，可在主菜单找到' if variant=='ipod' else 'Rockbox 已就绪，开机自动启动')
 assert [x for x in m.moves if x.startswith('/mnt/mmc/.rockbox/')][-1]=='/mnt/mmc/.rockbox/rockbox'  # the binary last
 assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockbox.tag'] and m.files['/mnt/mmc/.q2/apps/rockbox.tag']==b'v3.2'
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['Q2 App Store','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install']; passed()  # the rows built again
+assert m.labels()==['Q2 应用商店','Rockbox','已安装','Rockbox Themes','安装','Spotify','安装','Deezer','安装','Soulseek','安装','File Browser','安装']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(0); shelf_job(m)
-assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
+assert m.toasts[-1][3]=='下载内容不是可用的应用' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
 # No list on the card yet: one row, which loads it with Wi-Fi. The fetched list (its bad lines
 # skipped) is kept on the card and its rows shown; a list with no app leaves the one in use.
 m=ShelfMachine(); m.rockbox_mode=0; m.wifi=-1; apps_open(m)
-assert m.labels()==['Q2 App Store','App list','Connect to Wi-Fi to load the list'] and not m.threads
+assert m.labels()==['Q2 应用商店','应用列表','请先连接 Wi-Fi 以加载列表'] and not m.threads
 m.row(0); assert m.toasts[-1][3]=='请先连接 Wi-Fi' and not m.threads; passed()
 m.wifi=3; m.row(0); assert m.labels()[2]=='加载中…' and len(m.threads)==1; m.row(0); assert len(m.threads)==1  # loading already
 m.reply=b'# apps\nme/q2-foo Foo\nme/q2-Bad\n'; shelf_job(m)
-assert m.labels()==['Q2 App Store','Foo','Install'] and m.files[LIST]==b'me/q2-foo Foo\n'; passed()
+assert m.labels()==['Q2 应用商店','Foo','安装'] and m.files[LIST]==b'me/q2-foo Foo\n'; passed()
 m.close(); m.now+=11*60*1000; m.reply=b'nothing'; apps_open(m); shelf_job(m)
-assert m.labels()==['Q2 App Store','Foo','Install'] and m.files[LIST]==b'me/q2-foo Foo\n'; m.close(); passed()
+assert m.labels()==['Q2 应用商店','Foo','安装'] and m.files[LIST]==b'me/q2-foo Foo\n'; m.close(); passed()
 
 # Resume: once a second the UI loop polls the playing track; one of Q2POD RESUMEMIN minutes (30) or
 # longer keeps its place in a ring written whole to /mnt/data (a .tmp, renamed), every RESUME_SAVE_S
@@ -10926,7 +11006,7 @@ m=ResumeMachine({'/mnt/data/ringnav-plays':b''.join(struct.pack('<II',*e) for e 
 playing(m,0,200,pos=0,n=110); assert counts(m)==[(fnv('/p/A'),1)]+full[:5]+full[6:]; passed()
 
 # Both lock UIs use stock's persistent flag/mode, and the existing key gates enforce each choice.
-LOCK_NAMES=['Off','全部锁定','仅按键','仅音量']
+LOCK_NAMES=['关闭','全部锁定','仅按键','仅音量']
 m=QueueMachine(); view=m.node('scroll_view','scroll_view_keylock')
 m.byte(syms['g_keylock_flag'],1); m.byte(syms['g_keylock_mode'],2)  # stock's buttons-only is kept
 m.top=m.node('window','keylock_page',[view])
@@ -11044,10 +11124,10 @@ def switch_image(m,row):
     return m.nodes[images[0]]['image']
 assert all(switch_image(m,rows[i])=='switch_off' for i in (0,1,3))
 assert len(rows)==5 and icons==['usb_chargeswitch','system_powermanager','system_keylock','system_keylock','system_powermanager'] and all(m.nodes[r]['style']=='s_listitem_black' for r in rows)
-assert texts()==['Charge Limit (80%)','Low Power','唤醒：单击','Volume Guard','待机时限：关闭']
-assert click(0)==[(1,'Q2POD','CHARGELIMIT')] and texts()[0]==f"Charge Limit ({O['CHARGE_STOP']}%)"
-assert click(1)==[(1,'Q2POD','LOWPOWER')] and texts()[1]=='Low Power' and switch_image(m,rows[1])=='switch_on'
-assert click(0)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Charge Limit (80%)','Low Power','唤醒：单击','Volume Guard','待机时限：关闭']; passed()
+assert texts()==['充电上限 (80%)','低功耗模式','唤醒：单击','音量防误触','待机时限：关闭']
+assert click(0)==[(1,'Q2POD','CHARGELIMIT')] and texts()[0]==f"充电上限 ({O['CHARGE_STOP']}%)"
+assert click(1)==[(1,'Q2POD','LOWPOWER')] and texts()[1]=='低功耗模式' and switch_image(m,rows[1])=='switch_on'
+assert click(0)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['充电上限 (80%)','低功耗模式','唤醒：单击','音量防误触','待机时限：关闭']; passed()
 # Standby limit (its alarm with the power poll's tests): each click steps to the next limit, then Off.
 limits=[f"Standby Limit: {O[f'STANDBY_LIMIT_{i}']} h" for i in (1,2,3)]
 for v,want in ((1,limits[0]),(2,limits[1]),(3,limits[2]),(0,'待机时限：关闭')):
@@ -11056,8 +11136,8 @@ passed()
 # Volume guard (#46; its wheel engine in test/playback.py): off by default, the dark wheel as stock;
 # the row saves VOLGUARD and sets wheel_guard, which the encoder thread reads.
 guard=lambda: m.get(payload_syms['wheel_guard'])
-assert guard()==0 and click(3)==[(1,'Q2POD','VOLGUARD')] and texts()[3]=='Volume Guard' and guard()==1
-assert click(3)==[(0,'Q2POD','VOLGUARD')] and texts()[3]=='Volume Guard' and guard()==0; passed()
+assert guard()==0 and click(3)==[(1,'Q2POD','VOLGUARD')] and texts()[3]=='音量防误触' and guard()==1
+assert click(3)==[(0,'Q2POD','VOLGUARD')] and texts()[3]=='音量防误触' and guard()==0; passed()
 # Wake (docs/internals.md#wake): screen off, a lone centre press and its release never reach the UI;
 # a second press within WAKE_MS passes, press and release. Other keys, the screen on, or the
 # setting off pass untouched, except one more centre press within WAKE_MS of the waking one (#45).
@@ -11202,13 +11282,13 @@ for double in ('0','1'):
     assert not press(DOWN,0) and not press(UP,50) and press(DOWN,O['WAKE_MS']) and press(UP,50),double
 passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'CHARGELIMIT':'1','LOWPOWER':'1','WAKEDOUBLE':'1','VOLGUARD':'1','STANDBYLIMIT':'2'})
-assert texts()==[f"Charge Limit ({O['CHARGE_STOP']}%)",'Low Power','唤醒：双击','Volume Guard',limits[1]]
+assert texts()==[f"充电上限 ({O['CHARGE_STOP']}%)",'低功耗模式','唤醒：双击','音量防误触',limits[1]]
 assert m.get(payload_syms['wheel_guard'])==1; passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'STANDBYLIMIT':'4'})
 assert texts()[4]=='待机时限：关闭'; passed()  # out of range: Off
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
 assert len(rows)==9 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_gapless','playset_folderjump','playset_memplay','playset_balance','playset_balance','playset_dsdoutput']
-assert texts()==['年份顺序：从新到旧','表演者分类：曲目表演者','表演者专辑排序：年份','交叉淡化：关闭','Folder Root: Card','Resume Songs: 30 min','单声道音频','左右声道互换','MQA']
+assert texts()==['年份顺序：从新到旧','表演者分类：曲目表演者','表演者专辑排序：年份','交叉淡化：关闭','文件夹起点：存储卡','断点续播：30 分钟','单声道音频','左右声道互换','MQA']
 assert click(2)==[(1,'Q2POD','ARTISTAZ')] and texts()[2]=='表演者专辑排序：名称'
 assert click(2)==[(0,'Q2POD','ARTISTAZ')] and texts()[2]=='表演者专辑排序：年份'
 assert click(0)==[(1,'Q2POD','YEAROLD')] and texts()[0]=='年份顺序：从旧到新'
@@ -11298,7 +11378,7 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,9,18,10,8,20,0,4,5,11,21,22,16,17,15,19,14,13,12,1,6,23,7]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,9,18,10,8,20,0,4,5,11,21,22,24,16,17,15,19,14,13,12,1,6,23,7]; passed()
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
 for i in (3,5):
     button=m.nodes[rows[i]]['children'][0]
@@ -11311,6 +11391,12 @@ assert click(7)==[(1,'Q2POD','SWAPLR')] and texts()[7]=='左右声道互换' and
 assert click(7)==[(0,'Q2POD','SWAPLR')] and texts()[7]=='左右声道互换' and m.get(m.flag)==0
 m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'SWAPLR':'1'},stock_rows=15)
 assert texts()[7]=='左右声道互换'; passed()
+# 无耳机不播放 (headset.c headset_guard_refuse reads Q2POD HEADSETGUARD, on unless saved off): a switch
+# built last so the rows above keep their child indices, and shown after Swap L/R by playset_order.
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+assert texts()[9]=='无耳机不播放' and icons()[9]=='system_keylock'
+assert click(9)==[(1,'Q2POD','HEADSETGUARD')] and texts()[9]=='无耳机不播放'
+assert click(9)==[(0,'Q2POD','HEADSETGUARD')] and texts()[9]=='无耳机不播放'; passed()
 # MQA (crossfade.c mqa_click): off by default, saved as Q2POD MQA, and sent to a connected hciplayer
 # at once: 2 skips its start-of-track probe, 0 is its default. No player socket, nothing sent.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
@@ -11327,23 +11413,23 @@ assert texts()[8]=='MQA'; passed()
 # config.ini line can't keep them). A saved folder gone moves on to the next name after it.
 card=[('Zeta',4),('.Trash',4),('Música ñ',4),('alpha',4),('notes.txt',8),(' Edge',4),('B'*200,4),('C'*201,4),('Unknown',0)]
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',{'FOLDERROOT':'Deleted'},stock_rows=15,cls=lambda:RootMachine(card=card))
-assert texts()[4]=='Folder Root: Deleted'
+assert texts()[4]=='文件夹起点：Deleted'
 saved=[]
 for _ in range(6):
     assert click(4)==[] and [(m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='toolsWriteConfig']==[('Q2POD','FOLDERROOT')]
     saved.append((m.config['FOLDERROOT'],texts()[4]))
 assert [v for v,_ in saved]==['Música ñ','Unknown','Zeta','','alpha','B'*200]
-assert [t for _,t in saved]==['Folder Root: '+(v or 'Card') for v,_ in saved]; passed()
+assert [t for _,t in saved]==['文件夹起点：'+(v or '存储卡') for v,_ in saved]; passed()
 # Crossfade (crossfade.c): the row shows the saved length while on; an unreadable one is the default.
-for config,text in (({'XFADE':'1','XFADESEC':'7'},'Crossfade: 7 s'),({'XFADE':'1','XFADESEC':'11'},'Crossfade: 5 s'),({'XFADESEC':'7'},'交叉淡化：关闭')):
+for config,text in (({'XFADE':'1','XFADESEC':'7'},'交叉淡化：7 秒'),({'XFADE':'1','XFADESEC':'11'},'交叉淡化：5 秒'),({'XFADESEC':'7'},'交叉淡化：关闭')):
     m,rows,texts,*_=settings_page('audioset','scroll_view_playset',config,stock_rows=15)
     assert texts()[3]==text and m.nodes[m.nodes[m.nodes[rows[3]]['children'][0]]['children'][1]].get('name')=='label_xfade'
 passed()
 # Resume Songs (crossfade.c resume_min): the row shows Q2POD RESUMEMIN, 30 min unless 0 or a five in 20-120.
-for config,text in (({},'30 min'),({'RESUMEMIN':'0'},'Off'),({'RESUMEMIN':'120'},'120 min'),({'RESUMEMIN':'125'},'30 min'),
-                    ({'RESUMEMIN':'22'},'30 min'),({'RESUMEMIN':'15'},'30 min'),({'RESUMEMIN':'x'},'30 min')):
+for config,text in (({},'30 分钟'),({'RESUMEMIN':'0'},'关闭'),({'RESUMEMIN':'120'},'120 分钟'),({'RESUMEMIN':'125'},'30 分钟'),
+                    ({'RESUMEMIN':'22'},'30 分钟'),({'RESUMEMIN':'15'},'30 分钟'),({'RESUMEMIN':'x'},'30 分钟')):
     m,rows,texts,*_=settings_page('audioset','scroll_view_playset',config,stock_rows=15)
-    assert texts()[5]=='Resume Songs: '+text and m.nodes[m.nodes[m.nodes[rows[5]]['children'][0]]['children'][1]].get('name')=='label_resumemin',config
+    assert texts()[5]=='断点续播：'+text and m.nodes[m.nodes[m.nodes[rows[5]]['children'][0]]['children'][1]].get('name')=='label_resumemin',config
 passed()
 # Wheel sensitivity (playback.c wheel_pct, test/playback.py's travel): Display → Controls' last row in both
 # builds, Q2POD WHEELSENSITIVITY as 1.0.6 saved it, 50% unless a canonical ten in 50-200.
@@ -11351,7 +11437,7 @@ for config,pct in (({},50),({'WHEELSENSITIVITY':'130'},130),({'WHEELSENSITIVITY'
                    ({'WHEELSENSITIVITY':'135'},50),({'WHEELSENSITIVITY':'210'},50),({'WHEELSENSITIVITY':'x'},50)):
     m,rows,texts,icons,click=settings_page('display','scroll_view_display',config,stock_rows=3,sub=3)
     label=m.nodes[m.nodes[rows[-1]]['children'][0]]['children'][1]
-    assert texts()[-1]==f'Wheel Sensitivity: {pct}%' and icons[-1]=='system_display' and m.nodes[label]['name']=='label_wheel'
+    assert texts()[-1]==f'滚轮灵敏度：{pct}%' and icons[-1]=='system_display' and m.nodes[label]['name']=='label_wheel'
     assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][-1]==rows[-1],config  # the list's end
 passed()
 # Hold Return (Q2POD HOLDRETURN; compact_now_playing): Controls' row before Wheel QS and Wheel
@@ -11385,26 +11471,26 @@ def press(w,kind=O['EVT_CLICK']):
 def turn(key=O['KEY_NEXT']):
     assert m.call(key)==11; return [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
 W='Q2POD','WHEELSENSITIVITY'
-assert turn()==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[-1]=='Wheel Sensitivity: 60%'
+assert turn()==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[-1]=='滚轮灵敏度：60%'
 assert turn(O['KEY_PREV'])==[(50,*W)] and m.nodes[m.vol]['text']=='50%' and turn(O['KEY_PREV'])==[]  # 50% is the bottom
-assert press(m.add)==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[-1]=='Wheel Sensitivity: 60%'
-assert press(m.dec)==[(50,*W)] and press(m.dec)==[] and texts()[-1]=='Wheel Sensitivity: 50%'
+assert press(m.add)==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[-1]=='滚轮灵敏度：60%'
+assert press(m.dec)==[(50,*W)] and press(m.dec)==[] and texts()[-1]=='滚轮灵敏度：50%'
 m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(130,*W)] and m.nodes[m.vol]['text']=='130%'
 m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[(200,*W)] and press(m.add)==[] and turn()==[]
-assert texts()[-1]=='Wheel Sensitivity: 200%' and m.nodes[m.switch]['visible']==0
+assert texts()[-1]=='滚轮灵敏度：200%' and m.nodes[m.switch]['visible']==0
 assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; passed()
 # Resume Songs' row opens the same page: no switch, Off below 20, then 20-120 min in fives, live and
 # saved; Centre goes back.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(5)==[] and m.nodes[m.top]['name']=='bootvol_page' and m.nodes[m.title]['text']=='断点续播'
-assert m.nodes[m.switch]['visible']==0 and m.nodes[m.vol]['text']=='30 min'
+assert m.nodes[m.switch]['visible']==0 and m.nodes[m.vol]['text']=='30 分钟'
 R='Q2POD','RESUMEMIN'
-assert turn()==[(35,*R)] and m.nodes[m.vol]['text']=='35 min' and texts()[5]=='Resume Songs: 35 min'
+assert turn()==[(35,*R)] and m.nodes[m.vol]['text']=='35 分钟' and texts()[5]=='断点续播：35 分钟'
 assert press(m.dec)==[(30,*R)] and turn(O['KEY_PREV'])==[(25,*R)] and turn(O['KEY_PREV'])==[(20,*R)]
-assert turn(O['KEY_PREV'])==[(0,*R)] and m.nodes[m.vol]['text']=='Off' and texts()[5]=='断点续播：关闭'
+assert turn(O['KEY_PREV'])==[(0,*R)] and m.nodes[m.vol]['text']=='关闭' and texts()[5]=='断点续播：关闭'
 assert turn(O['KEY_PREV'])==[] and press(m.add)==[(20,*R)]  # Off is the bottom; up from it is 20
-m.nodes[m.slider]['value']=63; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(65,*R)] and m.nodes[m.vol]['text']=='65 min'
+m.nodes[m.slider]['value']=63; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(65,*R)] and m.nodes[m.vol]['text']=='65 分钟'
 m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[(120,*R)] and turn()==[]
 m.nodes[m.slider]['value']=15; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(0,*R)] and texts()[5]=='断点续播：关闭'
 assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; passed()
@@ -11413,7 +11499,7 @@ assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; p
 # 78 high. Both off unless Q2POD RESUME / BTVOLLINK is 1 (docs/internals.md#resume-on-connect,
 # #headset-controls-and-volume); off, the Q2's volume is its own gain and the device keeps its own volume.
 m,rows,texts,icons,click=settings_page('btrows','scroll_view_bluetooth',stock_rows=7)  # 5 rows, 2 devices
-assert len(rows)==2 and icons==[None,None] and texts()==['Resume on Connect','Control Device Volume']
+assert len(rows)==2 and icons==[None,None] and texts()==['连接后续播','联动设备音量']
 for k,row in enumerate(rows):
     kids=m.nodes[m.nodes[row]['children'][0]]['children']  # the label and its switch
     assert len(kids)==2 and m.get(kids[0]+O['W_X'])==10 and m.get(row+O['W_H'])==78 and switch_image(m,row)=='switch_off'
@@ -11422,7 +11508,7 @@ assert click(0)==[(1,'Q2POD','RESUME')] and switch_image(m,rows[0])=='switch_on'
 assert click(0)==[(0,'Q2POD','RESUME')] and switch_image(m,rows[0])=='switch_off'
 assert click(1)==[(1,'Q2POD','BTVOLLINK')] and switch_image(m,rows[1])=='switch_on'
 assert click(1)==[(0,'Q2POD','BTVOLLINK')] and switch_image(m,rows[1])=='switch_off'
-assert texts()==['Resume on Connect','Control Device Volume']; passed()
+assert texts()==['连接后续播','联动设备音量']; passed()
 m,rows,texts,*_=settings_page('btrows','scroll_view_bluetooth',{'RESUME':'1','BTVOLLINK':'1'},stock_rows=7)
 assert [switch_image(m,r) for r in rows]==['switch_on','switch_on']; passed()
 m,rows,*_=settings_page('btrows','scroll_view_bluetooth',stock_rows=1,bt=0)  # just the switch
@@ -11831,7 +11917,7 @@ def boot_row(value=None,mode=0o100755):
     if mode!=0o100755:  # Apps (System Update's icon, netupdate.c's page) before Update; no Boot to
         assert kids[:9]+kids[10:]==[entries[i] for i in (1,2,3,4,8,7,5,0,6,9,10,11)]
         apps=m.nodes[kids[9]]['children'][0]; icon,label=m.nodes[apps]['children'][:2]
-        assert m.nodes[icon]['image']=='system_update' and m.nodes[label]['text']=='App Store' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
+        assert m.nodes[icon]['image']=='system_update' and m.nodes[label]['text']=='应用商店' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
         return m,None,None
     assert len(kids)==14
     assert kids[:9]+kids[11:]==[entries[i] for i in (1,2,3,4,8,7,5,0,6,9,10,11)]
@@ -11956,6 +12042,16 @@ for owner in (1,2,3,4):
     m.ears(1); m.fn('headset_manual'); m.ears(3); assert not m.playing
     passed()
 
+# 无耳机不播放 on a streaming source (headset.c media_key): its Play, Next and Previous are refused
+# too while nothing listens, and pass once a jack is in.
+m=HeadsetMachine(2); m.playing=False
+m.word(OUTPUT_WAY,0); m.byte(syms['g_po_status'],0); m.byte(syms['g_bal_status'],0)
+m.byte(syms['g_backlight_status'],1)
+for key in (O['KEY_PLAY'],O['KEY_FWD_BTN'],O['KEY_BACK_BTN']):
+    m.fn('media_key',key); assert not m.actions,key
+m.byte(syms['g_po_status'],1); m.fn('media_key',O['KEY_PLAY'])
+assert m.actions==[(2,O['KEY_PLAY'])]; passed()
+
 for absolute,limit,want in ((127,40,40),(0,100,0),(64,100,50),(1,100,1),(126,100,99)):
     b=BtVolumeMachine(); b.poll(); b.byte(syms['g_maxvolume'],limit)
     b.absolute=absolute; b.poll()
@@ -12006,9 +12102,9 @@ conf=m.nodes[m.nodes[view]['children'][5]]['children'][0]; icon,label=m.nodes[co
 assert m.nodes[icon]['image']=='stream_config' and m.nodes[label]['text']=='流媒体设置'
 m.click(conf); m.page=m.top; assert m.nodes[m.page]['name']=='streamconf_page'
 assert m.labels()==['流媒体设置','Tidal 缓存：2 GB','Spotify 缓存：2 GB','停止流媒体服务','TIDAL','Spotify','Tidal 下载','网络电台','AirPlay']
-m.row(0); assert m.files[TCAP]==b'4096M' and m.labels()[1]=='Tidal Cache: 4 GB' and endpoint(m,'stream_cache',0)==3
-m.row(0); m.row(0); assert m.files[TCAP]==b'512M' and m.labels()[1]=='Tidal Cache: 512 MB'
-m.row(1); assert m.files[SCAP]==b'4096M' and m.labels()[2]=='Spotify Cache: 4 GB' and endpoint(m,'stream_cache',1)==3
+m.row(0); assert m.files[TCAP]==b'4096M' and m.labels()[1]=='Tidal 缓存：4 GB' and endpoint(m,'stream_cache',0)==3
+m.row(0); m.row(0); assert m.files[TCAP]==b'512M' and m.labels()[1]=='Tidal 缓存：512 MB'
+m.row(1); assert m.files[SCAP]==b'4096M' and m.labels()[2]=='Spotify 缓存：4 GB' and endpoint(m,'stream_cache',1)==3
 m.files[SCAP]=bytearray(b'9G'); assert endpoint(m,'stream_cache',1)==2  # not a choice: 2 GB
 m.word(O['MCL_TYPE'],5); m.play=2; m.waited=m.forked
 m.row(2); m.top=m.node('window','home_page')

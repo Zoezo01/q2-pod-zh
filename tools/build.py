@@ -16,7 +16,11 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
 TAG = 'V' + VERSION.replace('.', '')
-VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'I'}
+# The Chinese fork's iPod build carries its own edition letter, C: the updater refuses only a literal
+# identical to the installed one (docs/building.md), so V148I (upstream's English 1.4.8) would be
+# turned away by a player already on it, while V148C installs over it and over stock V1.32 in one
+# flash. --dev still numbers builds.
+VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'C'}
 
 def dev_tag(number, edition):
     """--dev build number's tag: V and three base-36 digits, the edition lowercase (V00Ai), so no
@@ -572,8 +576,22 @@ ENGLISH = {
     '共0首': '0 songs',
 }
 ENGLISH_IN = {'testmode/test_key.bin': {'中': 'Centre'}, 'kb_default_t9.bin': {'中': 'abc', '《》': '«»'},
+              # This fork's Chinese Home labels, for the English build CHINESE_UI = False produces.
+              'home_page.bin': {'音乐': 'Library', '设置': 'Settings', '播放设置': 'Playback',
+                                '系统设置': 'System'},
               'dialog/search_dialog.bin': {'专辑': 'Albums', '风格': 'Genres'},
               'systemset/screensaver_about.bin': {}}
+
+# This fork ships the Chinese interface: stock's own UI assets are Chinese and the payload's strings are
+# translated, so english_ui's rewrite of every stock asset into English is what an English build wants, not
+# this one; the assets are packaged as they come out of patch_asset. Set False to build upstream's English
+# interface (the tables above then apply unchanged).
+CHINESE_UI = True
+
+def ui_round_trip(rel, data):
+    """english_ui's first check on its own: the asset is exactly what decode/encode understand."""
+    from ipod import decode, encode
+    check(encode(decode(data)) == data, f'{rel}: UI round trip differs')
 
 def english_ui(rel, data):
     """rel's widgets' Chinese text in English, and the T9 keyboard's Chinese page out of reach."""
@@ -1632,7 +1650,10 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
                  status_icon(name, original) if name in STATUS_ICONS else quiet_icon(name, original) if name in QUIET_ICONS else settings_icon(name, original)) if kind == 'images' else
                 patch_asset(name, original, ipod) if name in patched_ui else original)
         if kind == 'ui' and name in chinese:
-            data = english_ui(name, data)
+            if CHINESE_UI:  # packaged as patch_asset leaves it; see CHINESE_UI
+                ui_round_trip(name, data)
+            else:
+                data = english_ui(name, data)
         target = out/rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)

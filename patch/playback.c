@@ -816,6 +816,10 @@ int ringnav_prev(void) {
  * Skip every branch calls mclNextSong(0)/mclPrevSong, so advanced order applies. MCL_MODE is
  * written directly: mclSetPlayMode would end advanced play. */
 int ringnav_change(int next) {
+    /* 无耳机不播放 (headset.c): a pocket press of Next or Previous must not start a stopped queue
+     * either. Refused whole, so the queue keeps the track it had; -1 and -5 stay the caller's
+     * failures (no storage). */
+    if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
     if (!s.active) {
         if (!next || !list_end()) return stock_change_trampoline(next);

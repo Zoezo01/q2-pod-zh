@@ -285,6 +285,7 @@ void headset_volume_reset(void);
 void headset_poll(void), headset_manual(void);
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
+int headset_guard_refuse(void); /* 无耳机不播放: a start with no output is refused here */
 void video_key(unsigned key);
 int radio_media(unsigned key), spot_media(unsigned key);
 int headset_gain(void);
