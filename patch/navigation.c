@@ -4517,7 +4517,7 @@ static void setting_text(int i) {
         return;
     }
     if (i == 5) {
-        list_toggle(st.setting_label[i], "Rounded Corners", st.rounded);
+        list_toggle(st.setting_label[i], "圆角", st.rounded);
         return;
     }
     widget_set_text_utf8(st.setting_label[i], names[i]);
@@ -6047,7 +6047,7 @@ static int chapter_poll(const void *unused) {
 static void chapters_open(void *r) {
     if (st.ch || !chapter_file(P(r, REC_PATH))) return;
     if (!mp4_fits(P(r, REC_PATH))) {
-        toast("Too long to read chapters on the Q2");
+        toast("这本书太长，Q2 无法显示章节");
         return;
     }
     st.ch_track = np_track();

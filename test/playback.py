@@ -970,7 +970,7 @@ r=m.items(m.get(syms['mcl_pdeqplaylist']))[2]
 m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
 assert m.fn('ringnav_start_player')==-1 and m.mp4_checks==['/A/book.m4b']
 m.fn('playback_poll'); m.fn('playback_poll')
-assert m.toasts==['Too long to play on the Q2: split it into parts']
+assert m.toasts==['这本书太长，Q2 无法播放：请拆分成几段']
 m.fits=1; assert m.fn('playback_start_fits')==1
 m.word(r+O['REC_TYPE'],0)
 m.fits=0; m.mp4_checks=[]

@@ -12451,7 +12451,7 @@ for state in (2,3):
 # A book whose MP4 index would not fit in RAM: a toast, and no ffmpeg.
 m=ChapterMachine(); m.fits=0; m.press(6000); assert m.hold()==11; m.release()
 m.pick(m.labels().index('Chapters')); m.advance(0)
-assert m.nodes[m.top]['name']!='chapters_page' and m.toasts[-1][3]=='Too long to read chapters on the Q2'; passed()
+assert m.nodes[m.top]['name']!='chapters_page' and m.toasts[-1][3]=='这本书太长，Q2 无法显示章节'; passed()
 m=ChapterMachine(); m.open_chapters(); m.advance(50); m.word(O['MCL_POS'],2); m.choose(1)
 assert not any(c[0] in ('player_seek_time','mclSetSeek') for c in m.calls)
 assert any(c[0]=='navigator_back' for c in m.calls); passed()
