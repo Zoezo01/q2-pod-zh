@@ -285,6 +285,7 @@ void headset_volume_reset(void);
 void headset_poll(void), headset_manual(void);
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
+int headset_guard_refuse(void); /* 无耳机不播放: a start with no output is refused here */
 void video_key(unsigned key);
 int radio_media(unsigned key), spot_media(unsigned key);
 int headset_gain(void);
@@ -315,6 +316,11 @@ int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
 const char *shelf_busy(void);           /* netupdate.c: the app folder a job replaces */
 void album_lyrics_stop(void);           /* onlinematch.c: Download Album Lyrics before USB storage */
+/* onlinematch.c: Playback settings' 补全封面与歌词 over the whole card, stepped from ringnav_sleep. */
+void library_fill_tick(void), library_fill_cancel(void), library_fill_text(char *out, unsigned n);
+int library_fill_start(void), library_fill_active(void);
+/* navigation.c: the songs without an album tag, title, artist and path one row each. */
+int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char *), void *ctx);
 
 /* 2038 (docs/internals.md#2038). glibc 2.28's time() truncates the kernel's 64-bit seconds to 32
  * bits, so read unsigned it is right until 2106; -1 still means it failed. */

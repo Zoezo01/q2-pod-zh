@@ -248,10 +248,10 @@ static int to_grid(const void *unused) {
     widget_set_visible(ph.albums, 0, 0);
     widget_destroy_children(ph.grid);
     widget_set_visible(ph.grid, 1, 0);
-    page_title(ph.grid, !n           ? "No photos"
+    page_title(ph.grid, !n           ? "暂无照片"
                         : a >= 0     ? ph.album[a]
-                        : ph.nalbums ? "All Photos"
-                                     : "Photos");
+                        : ph.nalbums ? "所有照片"
+                                     : "照片");
     /* A bare scroll view: a list_view would lay its children out as full-width rows. */
     int rows = (n + PH_COLS - 1) / PH_COLS;
     ph.view = scroll_view_create(ph.grid, 0, 48, 375, 240);
@@ -286,9 +286,9 @@ static void info(void) {
     char caption[300];
     if (!s || s == PH_BAD)
         tk_snprintf(caption, sizeof caption, "%s",
-                    s ? "Can't open this photo" : "Loading\xe2\x80\xa6");
+                    s ? "无法打开此照片" : "加载中…");
     else
-        tk_snprintf(caption, sizeof caption, "%d of %d  %s", ph.current + 1, ph.n, name);
+        tk_snprintf(caption, sizeof caption, "%d / %d  %s", ph.current + 1, ph.n, name);
     if (text_differs(ph.info, caption)) { /* a decode redraws the same */
         widget_set_text_utf8(ph.info, caption);
         widget_set_prop_int(ph.info, "xoffset", 0); /* a long caption's scroll would shift this one left */
@@ -512,7 +512,7 @@ void photos_open(const char *root) {
         return;
     }
     ph.screen = ALBUMS;
-    void *view = page_list(page, ph.albums, 0, "Photos", ph.nalbums + 1, 48);
-    page_row_into(view, 0, "All Photos", open_album);
+    void *view = page_list(page, ph.albums, 0, "照片", ph.nalbums + 1, 48);
+    page_row_into(view, 0, "所有照片", open_album);
     for (int k = 0; k < ph.nalbums; ++k) page_row_into(view, k + 1, ph.album[k], open_album);
 }
