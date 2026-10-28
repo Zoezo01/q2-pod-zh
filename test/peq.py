@@ -424,6 +424,8 @@ vgcanvas_begin_path vgcanvas_close_path vgcanvas_move_to vgcanvas_line_to vgcanv
 vgcanvas_set_fill_color vgcanvas_set_stroke_color vgcanvas_set_fill_linear_gradient vgcanvas_set_line_width
 widget_to_local on_wm_keyup_fun
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
+/* peq_ui.c paints through the stock wrapper, which firmware maps to the real call. */
+#define stock_canvas_set_fill_color canvas_set_fill_color
 """
 SHIM = r"""
 static struct { int parent, h, bg; char text[160]; handler click, destroy, keyup, change, focus, down, move, up; void *ctx; } w[4096];

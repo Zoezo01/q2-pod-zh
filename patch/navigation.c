@@ -286,6 +286,9 @@ typedef struct {
     int wheel_ctx;
     /* iPod: a Return by button ends touch mode once stock has handled it */
     unsigned untouch_timer;
+    /* iPod: the row pressed_pill last drew grey, and the repaint once it is released */
+    void *press_row;
+    unsigned press_timer;
     /* wheel ticks held while a page slides or loads (hold_wheel), replayed into it */
     int held;
     unsigned held_at, held_timer;
@@ -397,9 +400,9 @@ typedef struct {
     /* Now Playing's window and payload-filled widgets, and the sources they last showed. */
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover;
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* The full-screen art's song name and its shade, the fade's step and timer (ringnav_bigcover)
-     */
-    void *bc[2];
+    /* The full-screen art's song name, its shade and its window, the fade's step and timer
+     * (ringnav_bigcover) */
+    void *bc[3];
     int bc_step;
     unsigned bc_timer, bc_track;
     /* Volume: the dialog vol_paint last drew, its value and the redraw timer */
@@ -429,9 +432,10 @@ typedef struct {
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
     int settings_read, accent, minimal_accent, home_full, battery, home_rockbox, classic, shortcut,
-        rounded, light;
-    void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
-    int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
+        rounded, light, light_day; /* light_day: Auto's answer for now (LIGHT=2) */
+    long long light_wall;          /* the second light_poll last read the clock */
+    void *sel_accent;              /* the row on a coloured selection, for Light Mode's ink */
+    int style_depth;               /* nested style hooks (a mutable style's fallback) map nothing */
     void *setting_label[7];
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
@@ -701,6 +705,12 @@ static int home_menu(void *top) {
 }
 
 #if IPOD
+/* A list row: a list_item or table_row. */
+static int is_row(void *w) {
+    const char *t = w ? widget_get_type(w) : "";
+    return !tk_strcmp(t, "list_item") || !tk_strcmp(t, "table_row");
+}
+
 /* A widget's own window: the top-level widget it sits in. */
 static void *window_of(void *w) {
     void *wm = window_manager();
@@ -1564,9 +1574,34 @@ _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name
  * 4 Shortcut, 5 Corners, 6 Light Mode. */
 static const char *const setting_keys[] = { "ACCENT",   "HOME",    "BATTERY", "THEME",
                                             "SHORTCUT", "ROUNDED", "LIGHT" };
-static const int setting_counts[] = { ACCENT_N, 2, 4, 2, 7, 2, 2 };
+static const int setting_counts[] = { ACCENT_N, 2, 4, 2, 7, 2, 3 };
 static int *const setting_values[] = { &st.accent,   &st.home_full, &st.battery, &st.classic,
                                        &st.shortcut, &st.rounded,   &st.light };
+/* Light Mode's Auto (LIGHT=2) is light from 7:00 to 19:00 by the clock. Under Auto only,
+ * light_poll runs each UI pass, checks the hour once a second and, when Auto crosses either time,
+ * drops the cached images (ringnav_image_add bakes the mode into them) and repaints, as
+ * setting_click does. */
+#define LIGHT_FROM 7
+#define LIGHT_UNTIL 19
+static int light_day(void) {
+    long long wall = wall_time();
+    long now = clock_back(wall);
+    const int *tm = wall == -1 ? (void *)0 : localtime(&now); /* struct tm: tm_hour @8 */
+    return tm && tm[2] >= LIGHT_FROM && tm[2] < LIGHT_UNTIL;
+}
+static void np_fill(int scrub);
+static void light_poll(void) {
+    if (st.light != 2) return;
+    long long wall = wall_time();
+    if (wall == st.light_wall) return;
+    st.light_wall = wall;
+    int day = light_day();
+    if (day == st.light_day) return;
+    st.light_day = day;
+    np_fill(0);
+    image_manager_unload_all(image_manager());
+    widget_invalidate_force(window_manager(), (void *)0);
+}
 static int accent(void) {
     if (!st.settings_read) {
         for (int i = 0; i < 4; ++i)
@@ -1576,7 +1611,8 @@ static int accent(void) {
         st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
         st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
         st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
-        st.light = config_value("IPOD", "LIGHT", 2, 0);     /* dark unless chosen */
+        st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
+        st.light_day = light_day();
         st.settings_read = 1;
     }
     return st.classic ? st.accent : st.minimal_accent;
@@ -1599,7 +1635,7 @@ int ipod_home_full(void) {
 }
 int ipod_light(void) {
     accent();
-    return st.light;
+    return st.light == 2 ? st.light_day : st.light;
 }
 int ipod_battery(void) {
     accent();
@@ -1685,20 +1721,57 @@ unsigned accent_map(unsigned c, int preset, int tone) {
     return preset == CRIMSON ? c : red_map(c, accents[preset][tone], 0xffffff, 0);
 }
 
+/* A pill's end radius on a list row (h tall, its card inset px from the row's left): h / 2, less
+ * where the round end would cut across a leading cover's square corner (search results' art, which
+ * sits closer to the edge than the Library's), so the cover stays inside the card.
+ * ponytail: only the row's direct, non-centred image children on the left; nested or right-hand
+ * art is not checked. */
+static int pill_radius(void *row, int h, int inset) {
+    int r = h / 2;
+    for (unsigned i = 0; row && i < widget_count_children(row); ++i) {
+        void *c = widget_get_child(row, i);
+        if (tk_strcmp(widget_get_type(c), "image") ||
+            widget_get_prop_int(c, "draw_type", 0) == IMAGE_DRAW_CENTER) /* icons: discs */
+            continue;
+        int x = I(c, W_X) - inset, y = I(c, W_Y), ch = I(c, W_H);
+        if (I(c, W_W) <= 0 || ch <= 0 || x < 0 || x >= r) continue;
+        if (h - y - ch < y) y = h - y - ch; /* the nearer of its top and bottom corners */
+        while (r > 2 && y >= 0 && y < r && (r - x) * (r - x) + (r - y) * (r - y) > r * r) --r;
+    }
+    return r;
+}
+
 /* A vertical gradient in one-pixel bands, then a one-pixel top highlight; equal ends give a solid
- * fill. r.h is at least 2. A pill insets each band to a circle of diameter r.h at either end.
- * Plain fills keep this off the stock gradient_t ABI, which is not audited.
- * ponytail: the pill's ends are not antialiased (whole-pixel bands). */
-static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsigned hi, int pill) {
+ * fill. r.h is at least 2. A pill (radius, at most r.h / 2) insets the bands at either end to that
+ * radius's circle; 0 is square. Plain fills keep this off the stock gradient_t ABI, which is not
+ * audited. */
+static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsigned hi,
+                     int radius) {
     for (int j = 0; j < r.h; ++j) {
-        int in = 0;
-        if (pill) { /* half-pixel units: d from the centre, k = sqrt(h^2 - d^2) the band's chord */
-            int d = 2 * j + 1 - r.h, v = r.h * r.h - d * d, k = 0;
-            while ((k + 1) * (k + 1) <= v) ++k;
-            in = (r.h - k) / 2;
+        int out = 0, D = 2 * radius, d = 2 * j + 1 - r.h;
+        d = (d < 0 ? -d : d) - (r.h - D); /* half pixels past the end circle's centre */
+        if (radius && d > 0) {            /* 1/16-pixel chord, sampled at the band's centre. */
+            int v = (D * D - d * d) * 64, k = 0;
+            int end = 8 * D;
+            while (k < end) {
+                int mid = (k + end + 1) / 2;
+                if (mid * mid <= v)
+                    k = mid;
+                else
+                    end = mid - 1;
+            }
+            out = 8 * D - k;
         }
-        canvas_set_fill_color(canvas, RGBA(j ? mix(top, bottom, j, r.h - 1) : hi));
+        int in = (out + 15) / 16;
+        unsigned color = RGBA(j ? mix(top, bottom, j, r.h - 1) : hi);
+        canvas_set_fill_color(canvas, color);
         canvas_fill_rect(canvas, r.x + in, r.y + j, r.w - 2 * in, 1);
+        if (out & 15) {
+            canvas_set_fill_color(canvas,
+                                  (color & 0xffffff) | (unsigned)(16 - (out & 15)) * 17 << 24);
+            canvas_fill_rect(canvas, r.x + in - 1, r.y + j, 1, 1);
+            canvas_fill_rect(canvas, r.x + r.w - in, r.y + j, 1, 1);
+        }
     }
 }
 #endif
@@ -1860,21 +1933,30 @@ static void paint_letter(void *w, void *canvas) {
     canvas_set_clip_rect(canvas, &old);
 }
 
-/* Now Playing's art, and Spotify's, gets NP_ART_RADIUS corners, painted over it in the page's
+/* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
+ * NP_ART_RADIUS at 166px, painted over it in the page's
  * black: each corner row outside the arc, then its edge pixel at the alpha of its uncovered part
  * (1/16 px). */
 static void paint_cover(void *w, void *canvas) {
-    if (!w || (w != st.np_cover && w != spot_art()) || !P(canvas, CANVAS_LCD)) return;
+    if (!w || !P(canvas, CANVAS_LCD)) return;
+    int x = 0, y0 = 0;
+    if (w == st.bc[2]) {
+        w = widget_lookup(w, "img_bigcover", 1);
+        if (!w) return;
+        x = I(w, W_X), y0 = I(w, W_Y); /* after the title's shade, in the page's canvas */
+    } else if (w != st.np_cover && w != spot_art())
+        return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    int r = NP_ART_RADIUS, ww = I(w, W_W), h = I(w, W_H);
+    int ww = I(w, W_W), h = I(w, W_H);
+    int r = (ww < h ? ww : h) * NP_ART_RADIUS / 166;
     for (int i = 0; i < r; ++i) {
         int out = arc_out(r, i), n = out >> 4;
         for (int c = 0; c < 4; ++c) {
             int y = c & 1 ? h - 1 - i : i, left = !(c & 2);
             canvas_set_fill_color(canvas, RGBA(0));
-            canvas_fill_rect(canvas, left ? 0 : ww - n, y, n, 1);
+            canvas_fill_rect(canvas, x + (left ? 0 : ww - n), y0 + y, n, 1);
             canvas_set_fill_color(canvas, (unsigned)(out & 15) * 17 << 24);
-            canvas_fill_rect(canvas, left ? n : ww - n - 1, y, 1, 1);
+            canvas_fill_rect(canvas, x + (left ? n : ww - n - 1), y0 + y, 1, 1);
         }
     }
     stock_canvas_set_fill_color(canvas, fill);
@@ -2018,6 +2100,10 @@ static void paint_selection(void *w, void *canvas) {
     if (!tile) {
         r.x = 0;
         r.w = I(g_menu.w, W_W);
+        /* The Library's row is a button over the top BODY of its pitch: the bar takes the whole
+         * row, or the last row's leaves a strip at the screen's bottom. */
+        void *row = P(g_menu.at[i], W_PARENT);
+        if (!I(g_menu.at[i], W_Y) && is_row(row) && I(row, W_H) > r.h) r.h = I(row, W_H);
     }
     /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
@@ -2032,7 +2118,7 @@ static void paint_selection(void *w, void *canvas) {
         const unsigned *a = accents[accent()];
         /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
         rect_t bar = r;
-        int pill = !tile && st.rounded;
+        int pill = !tile && st.rounded ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
         if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
         gradient(canvas, bar, a[0], a[1], a[4], pill);
     } else if (home) {
@@ -2043,7 +2129,7 @@ static void paint_selection(void *w, void *canvas) {
         int square = !tile && !st.rounded;   /* Corners: Square, a full-width bar as Classic's */
         int in = grid ? TILE_INSET : square ? 0 : SEL_INSET, vertical = grid ? TILE_INSET : 0;
         rect_t card = { r.x + in, r.y + vertical, r.w - 2 * in, r.h - 2 * vertical };
-        int radius = !st.rounded ? 0 : tile ? SEL_RADIUS : card.h / 2;
+        int radius = !st.rounded ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
         fill_box(canvas, &card, RGBA(minimal_card() ? MINIMAL_FILL : accents[accent()][0]), radius);
     }
     st.sel_w = w;
@@ -2144,9 +2230,11 @@ static void paint_into(void *w, void *canvas) {
         tk_strcmp(widget_get_prop_str(w, "image", ""), "list_into") ||
         !painting_in(st.sel_accent) || widget_load_image(w, LIST_INTO_WHITE, bitmap))
         return;
+    /* Only the middle half is cleared, where the glyph's ink is (rows 16-33 of 50): the whole
+     * 50 px image would cross a 48 px row's top, over the bar's highlight and the row above. */
     int x = I(w, W_W) / 2, y = I(w, W_H) / 2;
-    rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 2, (int)bitmap[0],
-                     (int)bitmap[1] };
+    rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 4, (int)bitmap[0],
+                     (int)bitmap[1] / 2 };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     fill_box(canvas, &clear, RGBA(accents[accent()][0]), 0);
     canvas_draw_icon(canvas, bitmap, x, y);
@@ -3368,13 +3456,15 @@ static void np_sync(void *top) {
  * on exit in track seconds (it adds a CUE track's start), and the timer restarts. */
 /* The accent's light tone (Minimal's own accent: MINIMAL_FILL) fills the progress bar in every
  * state a touch passes through; a white fill (Minimal: a thicker line) marks the scrub. */
-static void np_fill(int scrub) {
-    if (!st.np_slider) return;
+static void slider_fill(void *slider, unsigned color) {
     static const char *const fill[] = { "style:normal:fg_color", "style:pressed:fg_color",
                                         "style:over:fg_color", "style:focused:fg_color" };
-    unsigned color = scrub ? 0xffffffff : RGBA(accent_tone(TONE_LIGHT));
     for (unsigned i = 0; i < sizeof fill / sizeof *fill; ++i)
-        widget_set_prop_int(st.np_slider, fill[i], (int)color);
+        widget_set_prop_int(slider, fill[i], (int)color);
+}
+static void np_fill(int scrub) {
+    if (!st.np_slider) return;
+    slider_fill(st.np_slider, scrub ? 0xffffffff : RGBA(accent_tone(TONE_LIGHT)));
     /* Minimal's fill is near white already: its scrub thickens the line to Classic's. */
     if (!ipod_classic())
         widget_set_prop_int(st.np_slider, "bar_size", scrub ? NP_BAR_CLASSIC : np_bar_h());
@@ -3730,7 +3820,7 @@ static int bc_fade(const void *info) {
 
 static int bc_gone(void *win, void *event) {
     stop_timer(&st.bc_timer);
-    st.bc[0] = st.bc[1] = (void *)0;
+    st.bc[0] = st.bc[1] = st.bc[2] = (void *)0;
     return 0;
 }
 
@@ -3752,6 +3842,7 @@ int ringnav_bigcover(void *win, void *ctx) {
     if (!win) return result;
     st.bc[0] = widget_lookup(win, "scrlabel_title", 1);
     st.bc[1] = widget_lookup(win, "view_shade", 1);
+    st.bc[2] = win;
     bc_show();
     widget_on(win, EVT_DESTROY, bc_gone, win);
     return result;
@@ -3863,19 +3954,85 @@ static void album_tile(void *w) {
     if (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "artistinfo_page")) album_children(w, 0);
 }
 
-/* Corners: Rounded: a touched list row's grey (ipod.json's pressed s_btn_listitem, #333333) is the
- * selection's inset pill, not stock's full-width box. 1 if drawn in place of stock's background. */
+#if IPOD
+/* Quick Settings' brightness slider fills as Now Playing's bar does (np_fill), set before its
+ * paint; QFILL holds the fill it last got, so a new accent or Light Mode reaches it. */
+#define QFILL "_ringnav_fill"
+static void quick_fill(void *w) {
+    void *win = w && !tk_strcmp(widget_get_prop_str(w, "name", ""), "slider_backlight")
+                    ? window_of(w)
+                    : (void *)0;
+    if (!win || tk_strcmp(widget_get_prop_str(win, "name", ""), "statusbar_dialog")) return;
+    int color = (int)RGBA(accent_tone(TONE_LIGHT));
+    if (widget_get_prop_int(w, QFILL, 0) == color) return;
+    widget_set_prop_int(w, QFILL, color);
+    slider_fill(w, (unsigned)color);
+}
+/* The confirm pop-up's prompt (stock's own child, "Shut Down?"): CONFIRM_PROMPT_PX, centred in the
+ * space above its rows. ponytail: by position, any non-button child above CONFIRM_TOP. */
+static void confirm_prompt(void *w) {
+    if (tk_strcmp(widget_get_prop_str(w, "name", ""), "confirminfo_dialog")) return;
+    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
+        void *c = widget_get_child(w, i);
+        if (!tk_strcmp(widget_get_type(c), "button") || I(c, W_Y) + I(c, W_H) > CONFIRM_TOP ||
+            (!I(c, W_X) && !I(c, W_Y) && I(c, W_W) == I(w, W_W)))
+            continue;
+        widget_move_resize(c, 0, 0, I(w, W_W), CONFIRM_TOP);
+        widget_set_prop_int(c, "style:normal:font_size", CONFIRM_PROMPT_PX);
+        widget_set_prop_str(c, "style:normal:text_align_h", "center");
+        widget_set_prop_str(c, "style:normal:text_align_v", "middle");
+    }
+}
+/* A list row's touch target: its own (page rows), else a button over its top (the Library's,
+ * Settings', the More menu's); pressed with its grey (ipod.json's pressed #333333) or none. */
+static int pressed_row(void *b) {
+    const char *s = widget_get_prop_str(b, "style", "");
+    return !tk_strcmp(widget_get_prop_str(b, "state_for_style", ""), "pressed") &&
+           (!tk_strcmp(s, "s_btn_listitem") || !tk_strcmp(s, "s_btn_forwardspeed") ||
+            !tk_strcmp(s, "s_listitem_black"));
+}
+static void *touch_target(void *row) {
+    void *b = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+    return b && !tk_strcmp(widget_get_type(b), "button") && !I(b, W_Y) ? b : row;
+}
+static int press_repaint(const void *info) {
+    st.press_timer = 0;
+    void *top = window_manager_get_top_window(window_manager());
+    if (top) widget_invalidate_force(top, (void *)0);
+    return 0;
+}
+#endif
+
+/* A touched list row's grey is the selection's shape: the whole row, as Classic's bar (the
+ * Library's button leaves x 0-20, 355-375 and the pitch's last 4 px), or under Rounded Corners the
+ * inset pill. Drawn as the row's background; the button's own box is skipped (1). The press
+ * invalidates the whole surface (ringnav_touch), its release only the button, so the row's edges
+ * repaint once after it (press_repaint). */
 static int pressed_pill(void *w, void *canvas) {
 #if IPOD
-    if (w && (accent(), st.rounded) && I(w, W_W) > 2 * SEL_INSET + I(w, W_H) &&
-        !tk_strcmp(widget_get_prop_str(w, "state_for_style", ""), "pressed") &&
-        !tk_strcmp(widget_get_prop_str(w, "style", ""), "s_btn_listitem")) {
-        rect_t pill = { SEL_INSET, 0, I(w, W_W) - 2 * SEL_INSET, I(w, W_H) };
-        fill_box(canvas, &pill, PH_GREY, pill.h / 2);
-        return 1;
+    if (!w) return 0;
+    if (!is_row(w)) { /* the row drew it: skip its button's box */
+        void *row = P(w, W_PARENT);
+        return is_row(row) && touch_target(row) == w && pressed_row(w) &&
+               I(row, W_W) > 2 * SEL_INSET + I(row, W_H);
     }
-#endif
+    void *b = touch_target(w);
+    /* childless: not a row but a page, such as Now Playing's visualizer */
+    if (!pressed_row(b) || !widget_count_children(w) || I(w, W_W) <= 2 * SEL_INSET + I(w, W_H)) {
+        if (w == st.press_row) {
+            st.press_row = (void *)0;
+            rearm(&st.press_timer, press_repaint, 0);
+        }
+        return 0;
+    }
+    st.press_row = w;
+    int in = (accent(), st.rounded) ? SEL_INSET : 0;
+    rect_t pill = { in, 0, I(w, W_W) - 2 * in, I(w, W_H) };
+    fill_box(canvas, &pill, PH_GREY, in ? pill_radius(b, pill.h, SEL_INSET) : 0);
+    return b == w; /* a page row's own (clear) background */
+#else
     return 0;
+#endif
 }
 
 /* Stock paints a widget's background before its children, so the bar sits behind the rows.
@@ -3887,6 +4044,10 @@ static int pressed_pill(void *w, void *canvas) {
  * under another window. */
 int ringnav_paint_bg(void *w, void *canvas) {
     st.paint_w = w;
+#if IPOD
+    quick_fill(w);
+    confirm_prompt(w);
+#endif
     album_tile(w);
     int result = pressed_pill(w, canvas) ? 0 : stock_paint_bg_trampoline(w, canvas);
     void *wm = window_manager(), *bar = *(void *const *)system_bar;
@@ -4044,12 +4205,11 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
              preset = accent();
     unsigned char *data = (void *)0;
     /* Before the manager copies bitmap_t: cached flags must agree with the new alpha. These
-     * paths are stock's album/artist thumbnails and its three local/online playing covers. */
+     * paths are stock's album/artist thumbnails and Folder view's (.downpic/fd*, its cover
+     * thread's); playing covers are rounded after scaling. */
     if (format < 4 && name &&
         (tk_str_start_with(name, "file:///mnt/mmc/.sldp/") ||
-         !tk_strcmp(name, "file:///tmp/coverpic.jpg") ||
-         !tk_strcmp(name, "file:///tmp/externpic.jpg") ||
-         !tk_strcmp(name, "file:///tmp/album_tidal.jpg"))) {
+         tk_str_start_with(name, "file:///mnt/mmc/.downpic/fd"))) {
         int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
         if (w > 0 && h > 0 && w <= 4096 && h <= 4096 && stride >= w * 4) {
             unsigned char *px = bitmap_lock_buffer_for_write(bitmap);
@@ -4244,20 +4404,24 @@ static void setting_text(int i) {
                                                   "Battery: Icon + Percent",
                                                   "Battery: Percent Inside" },
                              *const theme[] = { "Theme: Minimal", "Theme: Classic" },
-                             *const corners[] = { "Corners: Square", "Corners: Rounded" },
-                             *const light[] = { "Light Mode: Off", "Light Mode: On" };
+                             *const light[] = { "Light Mode: Off", "Light Mode: On",
+                                                "Light Mode: Auto" };
     accent(); /* reads the settings */
     const char *const names[] = { accent_names[st.classic ? st.accent : st.minimal_accent],
                                   home[st.home_full],
                                   battery[st.battery],
                                   theme[st.classic],
                                   (const char *)0,
-                                  corners[st.rounded],
+                                  (const char *)0,
                                   light[st.light] };
     char shortcut[64];
     if (i == 4) {
         tk_snprintf(shortcut, sizeof shortcut, "Shortcut: %s", ipod_home_shortcut());
         widget_set_text_utf8(st.setting_label[i], shortcut);
+        return;
+    }
+    if (i == 5) {
+        list_toggle(st.setting_label[i], "Rounded Corners", st.rounded);
         return;
     }
     widget_set_text_utf8(st.setting_label[i], names[i]);
@@ -4300,6 +4464,7 @@ static int setting_click(void *ctx, void *event) {
     else
         *value = accent_next[*value] == MINIMAL_ACCENT && !minimal ? 0 : accent_next[*value];
     write_int_config(*value, "IPOD", key);
+    if (i == 6) st.light_day = light_day(); /* Auto applies from this click */
     if (i == 2)
         widget_invalidate_force(*(void *const *)system_bar, (void *)0); /* bar_sync applies it */
     else if (i == 1 || i == 4)
@@ -5422,7 +5587,7 @@ static void folder_tracks(const char *path, void *add, int depth) {
     for (unsigned i = 0; i < deque_size(rows); ++i) {
         void *t = deque_at(rows, i);
         const char *name = P(t, REC_NAME);
-        if (I(t, REC_TYPE) == 8)
+        if (I(t, REC_TYPE) == 8 && !playback_video(t))
             _deque_push_back(add, t);
         else if (I(t, REC_TYPE) == 4 && depth < 8 && name && *name != '.') {
             char sub[1024];
@@ -5458,9 +5623,9 @@ static void *qm_collect(void *r) {
         return coverflow_album_tracks(r);
     void *add = _create_deque("stSongInfo");
     deque_init(add);
-    if (st.qm_kind == QM_SONG || st.qm_kind == QM_COVERFLOW || st.qm_kind == QM_PLAYING)
-        _deque_push_back(add, r);
-    else
+    if (st.qm_kind == QM_SONG || st.qm_kind == QM_COVERFLOW || st.qm_kind == QM_PLAYING) {
+        if (!playback_video(r)) _deque_push_back(add, r);
+    } else
         qm_tracks(r, add);
     return add;
 }
@@ -5785,6 +5950,10 @@ static int chapter_poll(const void *unused) {
 }
 static void chapters_open(void *r) {
     if (st.ch || !chapter_file(P(r, REC_PATH))) return;
+    if (!mp4_fits(P(r, REC_PATH))) {
+        toast("Too long to read chapters on the Q2");
+        return;
+    }
     st.ch_track = np_track();
     st.ch = chapters_start(P(r, REC_PATH), time_now_ms());
     if (!st.ch) {
@@ -6063,7 +6232,8 @@ static int stream_config(void *ctx, void *event) {
     for (int i = 0; i < 2; ++i)
         st.sc_row[i] = page_row_detail(view, i, "", 0, sc_click), sc_text(i);
     page_row_detail(view, 2, "Stop Streaming Services", 0, sc_click);
-    list_item_create(view, 0, 3 * 48, 375, 48); /* a gap before the toggles */
+    /* a gap before the toggles, clear as the rows (the theme's default list_item fills) */
+    widget_use_style(list_item_create(view, 0, 3 * 48, 375, 48), "s_listitem_black");
     char hide[SVC_HIDE];
     svc_hidden(hide);
     for (int i = 0; i < n; ++i) {
@@ -6514,12 +6684,66 @@ static void *era_songs(void) {
     }
     return all;
 }
+/* Shuffle's songs: one query for the decade's files, then the library filtered by them; its
+ * order is about to be shuffled, so era_songs' two queries an album would only cost time. */
+static struct {
+    unsigned *v, n, cap;
+} era_keys __attribute__((section(".scratch")));
+static int era_key_row(void *ctx, int n, char **v, char **c) {
+    if (n != 1 || !v[0]) return 0;
+    if (era_keys.n == era_keys.cap) {
+        unsigned cap = era_keys.cap ? era_keys.cap * 2 : 1024, *p = calloc(cap, sizeof *p);
+        if (!p) return 1;
+        if (era_keys.n) memcpy(p, era_keys.v, era_keys.n * sizeof *p);
+        free(era_keys.v);
+        era_keys.v = p, era_keys.cap = cap;
+    }
+    era_keys.v[era_keys.n++] = (unsigned)atoi(v[0]);
+    return 0;
+}
+static int era_key_cmp(const void *a, const void *b) {
+    unsigned x = *(const unsigned *)a, y = *(const unsigned *)b;
+    return x < y ? -1 : x > y;
+}
+static void *era_shuffle_songs(void) {
+    char sql[2048];
+    int from = era.m ? era.v[0].year / 10 * 10 : 0, n;
+    void *out = _create_deque("stSongInfo");
+    deque_init(out);
+    /* The songs of ERA_ALBUMS' groups dated in the decade, matched on ALBUM_GROUP's keys. */
+    tk_snprintf(
+        sql, sizeof sql,
+        "%s from songtable s join (select album a,ifnull(albumsonger,'') b,case "
+        "ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end d,"
+        "%s as y from songtable where %s and ifnull(album,'')<>''%s having y between %d and %d) g "
+        "on s.album=g.a COLLATE NOCASE and ifnull(s.albumsonger,'')=g.b COLLATE NOCASE and "
+        "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
+        "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, ALBUM_GROUP, from, from + 9);
+    era_keys.n = 0;
+    if (era.m && era_sql(sql, era_key_row) && era_keys.n) {
+        qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, era_key_cmp);
+        void *all = staged(songs_unsorted, (void *)1, &n);
+        for (unsigned i = 0; i < deque_size(all); ++i) {
+            unsigned key = (unsigned)I(deque_at(all, i), REC_ID), lo = 0, hi = era_keys.n;
+            while (lo < hi) /* the first key not below this one */
+                if (era_keys.v[(lo + hi) / 2] < key)
+                    lo = (lo + hi) / 2 + 1;
+                else
+                    hi = (lo + hi) / 2;
+            if (lo < era_keys.n && era_keys.v[lo] == key) _deque_push_back(out, deque_at(all, i));
+        }
+        deque_destroy(all);
+    }
+    free(era_keys.v);
+    era_keys.v = 0, era_keys.n = era_keys.cap = 0;
+    return out;
+}
 /* Play All from the first song as a library queue, as Coverflow's All albums; Shuffle is Shuffle
  * Songs over them; an album opens its tracks in Coverflow. */
 static int era_pick(void *ctx, void *event) {
     int i = (int)(long)ctx;
     if (i < 2) {
-        void *all = era_songs();
+        void *all = i ? era_shuffle_songs() : era_songs();
         if (!deque_size(all) || access(P(deque_at(all, 0), REC_PATH), 0))
             toast("Storage unavailable");
         else if (i)
@@ -6809,6 +7033,13 @@ static int media_kind(const char *s) {
     return 0;
 }
 
+/* Folder view lists, in the card's Videos folder, its videos (playback.c ringnav_audio_extension):
+ * stock lists audio files only, so their rows never reached ringnav_folder_click. */
+int folder_videos(void) {
+    const char *p = (const char *)g_folder_path;
+    return tk_str_start_with(p, "/mnt/mmc/") && media_kind(p + 9) == VIDEOS;
+}
+
 /* A track in Podcasts or Audiobooks: always resumed, never counted or scrobbled. */
 static int spoken(const char *path) {
     const char *ext = path ? strrchr(path, '.') : 0;
@@ -7093,8 +7324,9 @@ int ringnav_usbmode(void *a, void *b, void *c, void *d) {
 }
 
 /* mclStartPlayer, every local track's start: a playing librespot or radio station lets the DAC's
- * PCM go first. */
+ * PCM go first. A track too long for RAM fails as stock's own checks do, with -1. */
 int ringnav_start_player(void) {
+    if (!playback_start_fits()) return -1;
     headset_manual();
     spot_yield();
     radio_stop();
@@ -7915,7 +8147,7 @@ static int qm_hold(void) {
      * (0xff07 songs, 0xff01 albums) but not g_class_type. */
     unsigned cls = (unsigned)(tk_strcmp(name, "artistinfo_page") ? I(g_class_type, 0)
                                                                  : I(g_local_classinfo_save, 0));
-    if (!r || !key) return 0;
+    if (!r || !key || playback_video(r)) return 0;
     st.qm_kind = I(r, REC_TYPE) == 8 ? QM_SONG : 0;
     if (coverflow) {
         if (st.qm_kind) st.qm_kind = QM_COVERFLOW;
@@ -7985,6 +8217,22 @@ int ringnav_keylong(void *ctx, void *event) {
     }
     if (qm_hold()) return STOP;
     return stock_keylong_trampoline(ctx, event);
+}
+
+/* Hold time (HOLD_KEYS in tools/build.py; docs/internals.md#queue-menu): Play/Pause and Return fire
+ * their long press after KEY_HOLD_MS, every other key stock's 1000 ms (500 for key 232, unused on
+ * the Q2). ringnav_hold_timer replaces the key-down's timer_add, ringnav_hold_info the timer's
+ * threshold lookup. */
+#define KEY_HOLD_MS 700
+static const int hold_info[][2] = { { KEY_PLAY, KEY_HOLD_MS }, { KEY_RETURN, KEY_HOLD_MS } };
+const int *ringnav_hold_info(void *ids, int key) {
+    for (unsigned i = 0; i < sizeof hold_info / sizeof *hold_info; i++)
+        if (hold_info[i][0] == key) return hold_info[i];
+    return ((const int *(*)(void *, int))0x6a027c)(
+        ids, key); /* input_device_status_find_key_long_press_info */
+}
+unsigned ringnav_hold_timer(int (*fn)(const void *), void *ids, unsigned ms, int key) {
+    return timer_add(fn, ids, key == KEY_PLAY || key == KEY_RETURN ? KEY_HOLD_MS : ms);
 }
 
 /* Replaces mclNextSong's shuffle pick call: stock picks and bookkeeps, then a pending Play next
@@ -8642,6 +8890,7 @@ int ringnav_sleep(void *loop) {
 #if IPOD
     lyric_poll();
     if (st.bc[0] && np_track() != st.bc_track) bc_show();
+    light_poll();
 #endif
     if (!g_backlight_status) {
         st.dark |= 1;

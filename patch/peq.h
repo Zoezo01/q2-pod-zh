@@ -329,6 +329,7 @@ static inline long long wall_time(void) {
  * ponytail: an expired server certificate is accepted too; the firmware has no revocation anyway.
  */
 static inline int tls_untimed(void *curl, void *ctx, void *unused) {
+    (void)curl, (void)unused;
     (*(unsigned **)((char *)ctx + 0x100))[3] |= 0x200000;
     return 0; /* CURLE_OK */
 }

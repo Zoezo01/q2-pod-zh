@@ -61,7 +61,8 @@ def validate(directory, variant):
     for test, *args in (('peq',), ('build', '--build', directory), ('patch', directory),
                         ('playback', directory), ('m4b', directory), ('ldac', directory),
                         ('id3', directory), ('headset_io', directory), ('bluealsa', directory),
-                        ('coverflow',), ('mp3',), ('remote',)):
+                        ('coverflow',), ('mp3',), ('mp3_gapless',),
+                        ('mp3_gapless_player', directory), ('remote',)):
         subprocess.run([sys.executable, ROOT/f'test/{test}.py', *map(str, args)], check=True)
 
 

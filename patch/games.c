@@ -1101,8 +1101,9 @@ int games_open(void *ctx, void *event) {
     }
     void *f = widget_factory();
     g->h = widget_get_prop_int(page, "h", 290);
-    g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
+    /* The sheet first, under the list: hidden, it still took the chooser's taps above it. */
     g->sheet = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
+    g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     widget_set_visible(g->sheet, 0, 0);
     g->view = page_list(page, g->list, 0, "Games", 4, 48);
     page_row_into(g->view, 0, "Sudoku", pick_game);

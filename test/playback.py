@@ -89,6 +89,7 @@ class PlaybackMachine(QueueMachine):
         elif name=='access': ret=-1 if self.text(a) in self.missing else 0
         elif name=='speed': self.sent_speed=a; ret=1
         elif name=='toast': self.toasts.append(self.text(a))
+        elif name=='mp4_fits': self.mp4_checks.append(self.text(a)); ret=self.fits
         elif name=='mclGetPlayTime': self.time_reads+=1; self.word(a,self.elapsed); self.word(b,300)
         elif name=='mclStartPlayer': self.starts.append(self.mcl('MCL_POS')); ret=1
         elif name=='mclStop': self.stops+=1; ret=1
@@ -958,6 +959,39 @@ r=PlaybackMachine({'/mnt/data/ringnav-queue':full,'/mnt/data/ringnav-queue-elaps
 r.byte(syms['g_memory_play'],2)
 assert r.fn('ringnav_memory',r.deque([]))>=0 and r.seek==37
 
+# MP4 admission uses the requested queue row; a refused start reports once, and a later
+# fitting track can start. Nonlocal records never inspect a local file.
+m=PlaybackMachine(); m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
+r=m.items(m.get(syms['mcl_pdeqplaylist']))[2]
+m.word(r+O['REC_PATH'],m.string('/A/book.m4b'))
+assert m.fn('ringnav_start_player')==-1 and m.mp4_checks==['/A/book.m4b']
+m.fn('playback_poll'); m.fn('playback_poll')
+assert m.toasts==['Too long to play on the Q2: split it into parts']
+m.fits=1; assert m.fn('playback_start_fits')==1
+m.word(r+O['REC_TYPE'],0)
+m.fits=0; m.mp4_checks=[]
+assert m.fn('playback_start_fits')==1 and not m.mp4_checks
+m.fn('playback_poll'); assert len(m.toasts)==1
+# Equal-speed gapless preloads inspect the successor, not the current track. Refusal
+# marks stock's failed-preload state; fitting successors still reach the stock opener.
+for fits,want in ((0,-1),(1,1)):
+    m=PlaybackMachine(); m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=fits; m.mp4_checks=[]
+    m.word(O['MCL_PREPOS'],1); m.word(O['MCL_PRELOAD'],0)
+    assert m.fn('ringnav_open_preload')==1
+    assert m.mp4_checks==['/B/01.flac'] and m.mcl('MCL_PRELOAD')==want
+    m.fn('playback_poll'); assert not m.toasts
+# Stock's final-five-seconds gate must not retry a refused successor on every player tick.
+m=PlaybackMachine(); m.options(0,5,0)
+m.handlers[ps['mp4_fits']]='p:mp4_fits'; m.fits=0; m.mp4_checks=[]
+m.handlers.pop(syms['mcl_open_preload'])
+m.byte(O['MCL_GAPLESS'],1); m.byte(0xa3be55,1); m.elapsed=296  # stock CUE end-time path
+rows=m.items(m.get(syms['mcl_pdeqplaylist']))
+m.word(rows[m.current()]+O['REC_CUE_END'],300)
+m.word(rows[m.fn('playback_successor',1)]+O['REC_PATH'],m.string('/A/book.m4b'))
+for _ in range(10): m.call(address=syms['mclAutoChange'],args=(0,0,0,0),gap=0)
+assert m.mp4_checks==['/A/book.m4b'] and m.mcl('MCL_PRELOAD')==-1 and not m.starts
+print('MP4 admission: start refusal/recovery, nonlocal bypass, one-shot toast and gapless admission passed')
+
 # Folder speed follows the file, including mixed queues, CUE entries and fresh processes.
 def speed_at(m, at):
     m.word(O['MCL_POS'], at); m.fn('playback_speed_start')
@@ -989,7 +1023,7 @@ before=dict(m.files)
 m.call(address=pc,args=(3,0,0,0),gap=0)
 assert m.sent_speed==2 and m.files==before
 # Speed boundaries cannot inherit the old gapless decoder; equal speeds still preload.
-for next_at,want in ((1,0),(2,1)):
+for next_at,want in ((1,-1),(2,1)):
     m.word(O['MCL_PREPOS'],next_at); m.word(O['MCL_PRELOAD'],0)
     m.fn('ringnav_open_preload'); assert m.mcl('MCL_PRELOAD')==want
 # Changing speed closes an existing preload.

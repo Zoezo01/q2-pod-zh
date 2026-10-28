@@ -318,6 +318,8 @@
         ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "00000000", 4],
         ["button", "s_btn_listitem", "bg_color", "3d1920ff", "333333ff", 1],
         ["button", "s_btn_listitem", "round_radius", "0e000000", "00000000", 5],
+        ["button", "s_btn_forwardspeed", "bg_color", "2b2b2bff", "00000000", 5],
+        ["button", "s_btn_forwardspeed", "round_radius", "23000000", "00000000", 5],
         ["button", "s_btn_listblack", "bg_color", "000000ff", "00000000", 5],
         ["list_item", "s_listitem_black", "bg_color", "000000ff", "00000000", 5],
         ["table_row", "s_tablerow_black", "bg_color", "000000ff", "00000000", 28],

@@ -15,6 +15,8 @@ PAUSE_SLEEP = (0x430234, 0x24044e20, 0x3404c350)
 SEEK_SLOT, STOCK_SEEK = 0x89fdbc, 0x48d1ac
 # demux_audio_open's calls to the ID3v2 frame walker (0x48e6b0) that feeds ReplayGain; see docs/internals.md.
 ID3_CALLS, STOCK_ID3 = (0x48f704, 0x4923d8), 0x48e6b0
+# Audio private allocation, pre-filter PCM call, and audio demuxer close slot.
+MP3_ALLOC, MP3_FILTER, MP3_CLOSE = 0x48fb90, 0x47f8e0, 0x89fdb8
 # The equalizer filter's descriptor (pinned) and its open slot, which becomes peq_open.
 EQ_DESC, EQ_OPEN_SLOT = 0x893df8, 0x893e0c
 # Stock skips the equalizer above 48 kHz (address, stock word, patched word); see docs/internals.md.
@@ -44,6 +46,7 @@ LIBC = {
     'fputs': ('int', 'const char *, void *'),
     'calloc': ('void *', 'unsigned, unsigned'),
     'free': ('void', 'void *'),
+    'memmove': ('void *', 'void *, const void *, unsigned'),
     'pow': ('double', 'double, double'), 'cos': ('double', 'double'),
     'sin': ('double', 'double'), 'log': ('double', 'double'),
     'fopen': ('void *', 'const char *, const char *'),
@@ -143,12 +146,16 @@ def compile_common(out, binary, player=False, ipod=False, flac_experiments=()):
                 header.append(f'#define {name} (({ret} (*)({args}))0x{syms[name]:x}u)')
         # build.py has already checked each is a one-byte global.
         header += [f'#define {name} (*(volatile unsigned char *)0x{syms[name]:x}u)' for name in GLOBALS]
+    else:
+        # filter_n_bytes keeps sh_audio in $fp; af_play's two arguments stay intact.
+        asm += ['.section .text.mp3_filter_entry,"ax",@progbits', '.globl mp3_filter_entry',
+                'mp3_filter_entry:', 'move $a2, $fp', 'j mp3_filter', 'nop']
     (out/'peq_platform.h').write_text('\n'.join(header)+'\n')
     (out/'peq_imports.S').write_text('\n'.join(asm)+'\n')
     flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections', f'-DIPOD={int(ipod)}']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)
@@ -172,6 +179,7 @@ def patch_player(raw, out, flac_experiments=()):
                       '__end = .; /DISCARD/ : { *(.comment) *(.note*) *(.pdr) *(.mdebug*) '
                       '*(.MIPS.abiflags) *(.reginfo) } }')
     run('ld.lld', '-m', 'elf32ltsmip', '--gc-sections', '-T', script, '-e', 'peq_open', '--undefined=mp3_seek', '--undefined=id3_gain',
+        '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close',
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -187,6 +195,9 @@ def patch_player(raw, out, flac_experiments=()):
     for address, stock, patched in (*MQA_GATE, *MQA_PROBE):
         patch_word(data, address, stock, patched, 'MQA side chain')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
+    patch_word(data, MP3_ALLOC, jal(0xadaf00), jal(ps['mp3_private_alloc']), 'MP3 gapless private state')
+    patch_word(data, MP3_FILTER, jal(0x44d350), jal(ps['mp3_filter_entry']), 'MP3 gapless PCM')
+    patch_word(data, MP3_CLOSE, 0x48b7e4, ps['mp3_close'], 'MP3 gapless cleanup')
     for address in ID3_CALLS:
         patch_word(data, address, jal(STOCK_ID3), jal(ps['id3_gain']), 'MP3 ReplayGain')
     for address, stock, patched in patch_words(flac_experiments, ps):

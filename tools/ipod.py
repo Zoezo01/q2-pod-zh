@@ -492,7 +492,7 @@ def playing_page(root):
 # iPod only. The full-screen art (a tap on Now Playing's opens it, any tap closes it): stock's art, shade and
 # song name, the art a centred BC_ART square on the window's black (bigcover_page_init only loads its image
 # and sets its draw type, scale_auto as here), the shade and the name on its foot as stock has them on the
-# screen's. The covers it shows are the playing ones ringnav_image_add rounds.
+# screen's. paint_cover rounds the playing art after scaling.
 BIGCOVER = 'bigcover_page.bin'
 BC_TITLE_PAD = 12
 
@@ -523,7 +523,6 @@ QS_TOP, QS_ICON, QS_LABEL_GAP, QS_LABEL_H, QS_ROW_GAP, QS_LABEL_W = 20, 60, 6, 4
 QS_PITCH = QS_ICON + QS_LABEL_GAP + QS_LABEL_H + QS_ROW_GAP
 QS_SUN, QS_BAR, QS_TOUCH = 26, 6, 48
 QS_EDGE = 30                     # the suns line up with the first and last icon columns
-QS_TRACK = '#3A3A3A'  # a grey that reads on the black dialog
 QS_GRID = {'wifiswitch': 'wifi', 'btswitch': 'bt', 'lock': 'lock', 'gain': 'gain',
            'usbmode': 'usbmode', 'po': 'outputway', 'playset': 'playset', 'sysset': 'sysset'}
 
@@ -552,7 +551,7 @@ def quick_settings(root):
     bright[1] = [375 - QS_EDGE - QS_SUN, (QS_TOUCH - QS_SUN) // 2, QS_SUN, QS_SUN]
     track = [QS_EDGE + QS_SUN + 12, 0, 375 - 2 * (QS_EDGE + QS_SUN + 12), QS_TOUCH]
     check(slider[2].get('slide_with_bar') == 'true', 'Unexpected brightness slider')
-    props = plain_slider(slider[2], QS_TRACK, '#FFFFFF', QS_BAR)
+    props = plain_slider(slider[2], NP_TRACK, NP_FILL, QS_BAR)  # Now Playing's; the accent at runtime (quick_fill)
     props.update(self_layout='default(x={},y=0,w={},h={})'.format(*track[::2], QS_TOUCH), dragger_size=str(QS_TOUCH))
     slider[1], slider[2] = track, props
 
@@ -561,12 +560,14 @@ def quick_settings(root):
 # full-width text rows, Cancel and OK (after maks112v/qpod).
 CONFIRM = 'dialog/confirminfo_dialog.bin'
 CONFIRM_TILE = 80
-CONFIRM_TOP, CONFIRM_ROW = 208, 48  # Cancel and OK, under the prompt
+CONFIRM_TOP, CONFIRM_ROW = inc('CONFIRM_TOP'), 48  # Cancel and OK, under the prompt
 
 
 def confirm_dialog(root):
     check([n[2].get('name') for n in root[3]] == ['img_cancel', 'img_enter'] and
             all(n[1][2:] == [CONFIRM_TILE, CONFIRM_TILE] for n in root[3]), 'Unexpected confirm dialog')
+    # Clear, as the status bar's: the dialog's border is drawn over the bar's ends, paper in Light Mode.
+    root[2].update({f'style:{s}:border_color': '#00000000' for s in ('normal', 'disable', 'focused')})
     # Two full-width text rows under the prompt instead of the disc tiles, so the wheel's selection
     # is the lists' own bar or card. Stock looks both up by name and binds the same callbacks.
     for i, n in enumerate(root[3]):
@@ -704,6 +705,11 @@ def slider_plain(path, root):
     named, imageless and empty, as stock looks them up."""
     if path not in SETTINGS_SLIDERS:
         return
+    slider, = [n for n in walk(root) if n[0] == 'slider']
+    slider[2] = plain_slider(slider[2], NP_TRACK, NP_FILL, 8)
+    for state in ('normal', 'pressed', 'over', 'disable', 'focused'):
+        slider[2].update({f'style:{state}:round_radius': '4',
+                          f'style:{state}:border_color': '#00000000'})
     endpoints = [n for n in walk(root) if n[0] == 'image' and n[2].get('image') in (
         'drop_lighleft', 'drop_lightright', 'balance_left', 'balance_right', 'vol_left', 'vol_right')]
     check(len(endpoints) == 2, f'{path}: unexpected slider endpoints')

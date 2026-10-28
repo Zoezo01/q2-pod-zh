@@ -148,3 +148,60 @@ int chapters_poll(chapters *c, unsigned long long now) {
     c->failed = c->count < 0;
     return c->done = 1;
 }
+
+static unsigned long long be(const unsigned char *p, int n) {
+    unsigned long long v = 0;
+    while (n--) v = v << 8 | *p++;
+    return v;
+}
+
+/* Samples in the stsz/stz2 tables under [at, end): moov, trak, mdia, minf and stbl are walked. */
+static unsigned long long mp4_samples(void *f, unsigned long long at, unsigned long long end, int depth) {
+    unsigned long long n = 0;
+    while (end - at >= 8) {
+        unsigned char h[16];
+        /* fseek's long: a file stock's fopen opens (no O_LARGEFILE) is under 2 GB anyway */
+        if (at > 0x7fffffff || fseek(f, (long)at, 0) || fread(h, 1, 8, f) != 8) break;
+        unsigned long long size = be(h, 4), head = 8;
+        if (size == 1) {
+            if (fread(h + 8, 1, 8, f) != 8) break;
+            size = be(h + 8, 8);
+            head = 16;
+        } else if (!size)
+            size = end - at;
+        if (size < head || size > end - at) break;
+        if (depth < 5 && (!memcmp(h + 4, "moov", 4) || !memcmp(h + 4, "trak", 4) ||
+                          !memcmp(h + 4, "mdia", 4) || !memcmp(h + 4, "minf", 4) ||
+                          !memcmp(h + 4, "stbl", 4)))
+            n += mp4_samples(f, at + head, at + size, depth + 1);
+        else if ((!memcmp(h + 4, "stsz", 4) || !memcmp(h + 4, "stz2", 4)) && size >= head + 12 &&
+                 fread(h, 1, 12, f) == 12)
+            n += be(h + 8, 4); /* version/flags, sample size (stz2: field size), count */
+        at += size;
+    }
+    return n;
+}
+
+unsigned long long mp4_index_bytes(const char *path) {
+    const char *ext = path ? strrchr(path, '.') : 0;
+    if (!ext || (strcasecmp(ext, ".m4b") && strcasecmp(ext, ".m4a") && strcasecmp(ext, ".mp4")))
+        return 0;
+    void *f = fopen(path, "rb");
+    if (!f) return *__errno_location() == MP4_EOVERFLOW ? ~0ULL : 0;
+    unsigned long long n = mp4_samples(f, 0, ~0ULL, 0);
+    fclose(f);
+    return n * MP4_SAMPLE_BYTES;
+}
+
+int mp4_fits(const char *path) {
+    unsigned long long need = mp4_index_bytes(path);
+    if (!need) return 1;
+    char buf[512];
+    void *f = fopen("/proc/meminfo", "rb");
+    unsigned n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+    if (f) fclose(f);
+    buf[n] = 0;
+    const char *p = strstr(buf, "MemAvailable:");
+    if (!p) return 1; /* no estimate: play as stock does */
+    return need / 1024 + MP4_SPARE_KB <= (unsigned long long)atoi(p + 13);
+}

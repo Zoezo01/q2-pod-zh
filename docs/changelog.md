@@ -1,5 +1,25 @@
 # Changelog
 
+- **1.5.2**:
+  - MP3: removes encoder delay and trailing padding from files with supported Xing/Info and LAME-compatible tags, preserving intentional silence. Keep Audio settings → Gapless on for continuous playback between tracks. Files without usable tags keep stock playback.
+
+- **1.5.1**:
+  - iPod: Light Mode has a third setting, **Auto**: the interface is light from 7:00 to 19:00 by the clock and dark the rest of the day, switching by itself. The Light Mode row cycles Off, On and Auto on each click. The boot logo follows it too, by the UTC hour at power-on.
+  - iPod: Corners, under Settings → Display → Appearance, is now a **Rounded Corners** switch, like stock's on/off settings, instead of a row reading Square or Rounded.
+  - Audiobooks: a book too long for the Q2's memory, such as a single 40-hour `.m4b`, no longer freezes the Q2, at start or again at boot (#121). It isn't played, and a message asks you to split it into parts. Opening its Chapters is refused the same way.
+  - iPod: under Rounded Corners, a selected or pressed row's pill no longer cuts across its cover's corners, as it did in Search's results; the pill's ends round less on those rows.
+  - Era: a decade's **Shuffle** starts in about the time Shuffle Songs takes, instead of looking frozen for a long while on a decade with many albums.
+  - Controls: holding Return now acts after 0.7 seconds, the same as holding Play/Pause, instead of a full second.
+  - iPod: a selected row now fills its whole row, so with the last row of a list selected no strip of background shows at the bottom of the screen (Library, Folders, Cover Flow's tracks and the apps' lists, #127).
+  - iPod: a touched row's grey now has the selection's shape in every list: the whole row, or the rounded pill under Rounded Corners. The Library and Folders showed a narrower box, and Shuffle, Games and the apps' lists showed none (#127).
+  - iPod: Light Mode fixes (#127): the Shut Down prompt's highlighted row reaches both edges of the screen; the Now Playing More menu's Speed row no longer shows a rounded box under Square corners; Cover Flow's no-cover disc has no dark specks at its corners.
+  - iPod: the Shut Down prompt's text is larger and centred above Cancel (#127).
+  - iPod: Folder view's album and track thumbnails have rounded corners, as the Library's do (#127).
+  - iPod: Quick Settings' brightness slider uses Now Playing's colours, filled with your Highlight Colour (#127).
+  - Games: tapping a game in the list opens it. Only the wheel and Centre did (#127).
+  - iPod: Light Mode fixes (#127): the selected row's `>` in Games, Spotify, Configuration and the other app lists no longer shows a small box at its top edge; Configuration's gap above the service switches is no longer a black bar.
+  - Videos: videos play again (#128). The Videos folder, from the Library or Folder view, showed "File Not Found" because Folder view didn't list video files; it now lists them in the Videos folder and its subfolders.
+
 - **1.5.0**:
   - Quick Settings from the wheel: swipe straight across the wheel, as on a touchpad, to open or close Quick Settings. The pull-down follows the speed of your swipe. Turning the wheel never triggers it. Turn it on under Settings → Display → Controls → Wheel QS. It is off by default.
   - FLAC: local FLAC files play through faster decode paths, on by default.

@@ -33,7 +33,7 @@
 - **Scrobbling:** send your listens to Last.fm or ListenBrainz over Wi-Fi.
 - **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums.
 - **Browsing and playback:** favourites, playlists, Most Played, Long Songs, Crossfade, and shuffle by song, album or folder.
-- **Podcasts and audiobooks:** `.m4b` audiobooks (including ones split by a CUE sheet) and podcasts resume where you stopped.
+- **Podcasts and audiobooks:** `.m4b` audiobooks (including ones split by a CUE sheet) and podcasts resume where you stopped. A book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
 - **AirPods:** stem controls, ear detection and two-way volume sync.
 - **Battery:** an optional 80% charge limit, Low Power mode, and a Standby limit that powers off a Q2 left asleep.
 

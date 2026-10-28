@@ -105,6 +105,10 @@ def logo_check():
         user.write_bytes(b'')
         config.write_text('[IPOD]\nLIGHT=1\n')
         assert shown() == str(user)  # the card's logo wins in either mode
+        user.unlink()
+        config.write_text('[IPOD]\nLIGHT=2\n')  # Auto: light from 07:00 to 18:59 by the clock
+        def at(hour): return subprocess.run(['sh', '-c', script.replace('$(date +%H)', hour)], check=True, capture_output=True, text=True).stdout.strip()
+        assert at('06') == str(dark) and at('07') == str(light) and at('18') == str(light) and at('19') == str(dark)
     print('Boot logo: the saved card logo, else the light splash under Light Mode, else the built-in one, passed.')
 logo_check()
 
@@ -329,17 +333,26 @@ def validate_assets(directory):
     assert struct.unpack_from('<I', demo, off)[0] == jal(symbols(directory/'patch.elf')['ringnav_ts_read'])
     # hciplayer's code (.text) differs from stock only in the VBR scan branch, now a nop, the 48 kHz EQ gates,
     # the ID3v2 walker calls, now id3_gain (MP3 ReplayGain), the MQA side chain's gate and probe length and
-    # the pause loop's sleep.
-    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_SLEEP
+    # the pause loop's sleep and gapless MP3 allocation/pre-filter hooks.
+    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_SLEEP, MP3_ALLOC, MP3_FILTER, MP3_CLOSE
     old, new = read('stock.squashfs', 'usr/bin/hciplayer'), read('rootfs.squashfs', 'usr/bin/hciplayer')
     off = fileoff(old, VBR_SCAN)
     words = (*EQ_RATE_GATES, *MQA_GATE, *MQA_PROBE, PAUSE_SLEEP)
-    gates = [fileoff(old, a) for a in (*(a for a, _, _ in words), *ID3_CALLS)]
+    gates = [fileoff(old, a) for a in (*(a for a, _, _ in words), *ID3_CALLS, MP3_ALLOC, MP3_FILTER)]
+    # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
+    from flac import patch_words as flac_words
+    flac = flac_words('sync,lpc,output', symbols(directory/'peq'/'peq.elf'))
+    gates += [fileoff(old, a) for a, _, _ in flac]
     differ = [i for i in range(0x3e40, 0x485250) if old[i] != new[i]]
     assert set(differ) <= {*range(off, off+4), *(i for g in gates for i in range(g, g+4))} and not any(new[off:off+4])
     assert [struct.unpack_from('<I', new, fileoff(old, a))[0] for a, _, _ in words] == [p for _, _, p in words]
+    assert [struct.unpack_from('<I', new, fileoff(old, a))[0] for a, _, _ in flac] == [p for _, _, p in flac]
     id3_gain = symbols(directory/'peq'/'peq.elf')['id3_gain']
     assert {struct.unpack_from('<I', new, fileoff(old, a))[0] for a in ID3_CALLS} == {jal(id3_gain)}
+    ps = symbols(directory/'peq'/'peq.elf')
+    for address, value in ((MP3_ALLOC, jal(ps['mp3_private_alloc'])),
+                           (MP3_FILTER, jal(ps['mp3_filter_entry'])), (MP3_CLOSE, ps['mp3_close'])):
+        assert struct.unpack_from('<I', new, fileoff(old, address))[0] == value
     # Include every excluded UI screen and saved-preference defaults in byte parity checks.
     paths = [l.removeprefix('squashfs-root/') for l in run('unsquashfs', '-l', directory/'stock.squashfs').splitlines()
              if ('/raw/ui/' in l or '/raw/styles/' in l) and l.endswith('.bin') or l.endswith('/config.ini')]
@@ -479,7 +492,21 @@ def validate_assets(directory):
             gone = [n for n in walk(root) if n[2].get('name') in before and before[n[2]['name']][2].get('image')]
             assert len(gone) == 2 and all(n[1][2:] == [0, 0] and n[1][:2] == before[n[2]['name']][1][:2] for n in gone)
             for n in walk(root):
-                if n[0] == 'slider' or n[2].get('name') in ('img_add', 'img_dec'):
+                if n[0] == 'slider':
+                    props = n[2]
+                    old = before[props['name']]
+                    assert n[1] == old[1] and props['bar_size'] == '8'
+                    assert not [k for k in props if k.endswith((':bg_image', ':fg_image', ':icon', ':y_offset'))]
+                    assert props['style'] == 's_ipod_progress'
+                    for state in ('normal', 'pressed', 'over', 'disable', 'focused'):
+                        assert props[f'style:{state}:bg_color'] == '#1c1c1c'
+                        assert props[f'style:{state}:fg_color'] == '#6e6e6e'
+                        assert props[f'style:{state}:round_radius'] == '4'
+                        assert props[f'style:{state}:border_color'] == '#00000000'
+                    assert {k: v for k, v in props.items() if not k.startswith('style') and k != 'bar_size'} == {
+                        k: v for k, v in old[2].items() if not k.startswith('style') and k != 'bar_size'}
+                    continue
+                if n[2].get('name') in ('img_add', 'img_dec'):
                     assert n == before[n[2]['name']]  # ranges, touch and wheel controls stay stock
         if short == VOLUME:  # Hidden before the first paint, including transition snapshots.
             plain = decode(original); del plain[2]['highlight']
@@ -650,7 +677,7 @@ def validate_assets(directory):
         if short == ARTIST_PAGE:
             assert [n[2]['value'] for n in walk(root) if n[0] == 'pages'] == ['1'], 'Artist page must show Albums'
         if short in AUDIT['slide_only'] or short in TOOLBAR_SWITCHES:
-            # nothing but the hint changes (and Startup volume's slider glyphs go)
+            # Only the hint and settings slider styling change.
             root[2].pop('anim_hint')
             kept = decode(original)
             slider_plain(short, kept)
@@ -680,6 +707,8 @@ def validate_assets(directory):
         assert len(old_nodes) == len(new_nodes)
         for old, node in zip(old_nodes, new_nodes):
             for key, value in old[2].items():
+                if ipod and short in SETTINGS_SLIDERS and node[0] == 'slider' and key == 'style':
+                    value = 's_ipod_progress'
                 if 'font' in key or key == 'style': assert node[2][key] == value
         if short in ('folder_page.bin', 'localmusic_page.bin', 'localmusic/localclass_page.bin', 'localmusic/playlist_page.bin'):
             surface = next(n for n in root[3] if n[0] in ('list_view', 'table_view'))
