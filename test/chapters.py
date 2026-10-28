@@ -118,4 +118,27 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
     c = lib.chapters_start(str(fifo).encode(), now())
     c.contents.used = 256*1024
     assert finish(c)[0] == 1
-print('Chapters: parser, QuickTime, Nero, literal filenames, empty/error, timeout, cancellation and output cap passed.')
+    # MP4 index estimate: stsz/stz2 counts under moov's sample tables, any atom order.
+    lib.mp4_index_bytes.argtypes = [C.c_char_p]
+    lib.mp4_index_bytes.restype = C.c_ulonglong
+    lib.mp4_fits.argtypes = [C.c_char_p]
+    def atom(kind, body, large=False):
+        return struct.pack('>I4sQ', 1, kind, len(body)+16) + body if large else struct.pack('>I4s', len(body)+8, kind) + body
+    def trak(table, count):
+        return atom(b'trak', atom(b'mdia', atom(b'minf', atom(b'stbl', atom(table, struct.pack('>4xII', 0, count))))))
+    def index(name, raw):
+        (d/name).write_bytes(raw)
+        return lib.mp4_index_bytes(str(d/name).encode())
+    ftyp = atom(b'ftyp', b'M4B \0\0\0\0')
+    moov = atom(b'moov', trak(b'stsz', 5000000) + trak(b'stz2', 7))
+    assert index('big.m4b', ftyp + atom(b'mdat', b'\0'*64, large=True) + moov) == 5000007*28
+    assert index('first.M4A', ftyp + moov + atom(b'mdat', b'')) == 5000007*28
+    assert index('open.mp4', ftyp + moov + struct.pack('>I4s', 0, b'mdat') + b'\0'*8) == 5000007*28
+    assert index('cut.m4b', ftyp + moov[:-6]) == 5000000*28  # nothing past the cut
+    assert index('bad.m4b', struct.pack('>I4s', 4, b'ftyp') + moov) == 0
+    assert index('song.mp3', ftyp + moov) == 0
+    assert lib.mp4_index_bytes(str(d/'missing.m4b').encode()) == 0
+    assert lib.mp4_fits(str(d/'big.m4b').encode()) == (5000007*28//1024 + 16*1024 <= int(
+        [l for l in open('/proc/meminfo') if l.startswith('MemAvailable:')][0].split()[1]))
+    assert lib.mp4_fits(str(bare).encode()) and 0 < lib.mp4_index_bytes(str(bare).encode()) < 100*28
+print('Chapters: parser, QuickTime, Nero, literal filenames, empty/error, timeout, cancellation, output cap and MP4 index estimate passed.')

@@ -359,6 +359,7 @@ void id3_gain(void *s, int size) {
  * in tools/peq.py. */
 #define STOCK_SEEK ((void (*)(void *, float, float, int))0x48d1acu)
 #define HR_MP3_SEEK (*(volatile int *)0xb152b8u)
+void mp3_gapless_seek(void *demuxer, int at_start);
 void mp3_seek(void *demuxer, float rel, float delay, int flags) {
     unsigned char h[192];
     void *priv = AT(demuxer, 0xc70, void *), *s = AT(demuxer, 0x20, void *);
@@ -377,9 +378,11 @@ void mp3_seek(void *demuxer, float rel, float delay, int flags) {
             if (t > length) t = length;
             STOCK_SEEK(demuxer, (float)frac, delay, 3);
             AT(priv, 8, double) = t;
+            mp3_gapless_seek(demuxer, t <= 0);
             return;
         }
     }
     STOCK_SEEK(demuxer, rel, delay, flags);
+    if (priv && AT(priv, 0, int) == 1) mp3_gapless_seek(demuxer, AT(priv, 8, double) <= 0);
 }
 #endif

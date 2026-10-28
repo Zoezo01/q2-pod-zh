@@ -495,14 +495,17 @@ static struct {
     } marks[MARKS_N];
 } bk __attribute__((section(".scratch")));
 
-/* 1 for a .txt, 2 for an .epub, 3 for a video, not hidden; else 0. */
-static int book_kind(const char *name) {
-    const char *dot = strrchr(name, '.');
-    if (name[0] == '.' || !dot) return 0;
+/* 1 for .txt, 2 for .epub, 3 for a video, by the extension from its dot; else 0. */
+static int ext_kind(const char *dot) {
+    if (!dot) return 0;
     for (const char *v = "mp4\0m4v\0mkv\0avi\0mov\0mpg\0"; *v; v += 4)
         if (!strcasecmp(dot + 1, v)) return 3;
     return !strcasecmp(dot + 1, "txt") ? 1 : !strcasecmp(dot + 1, "epub") ? 2 : 0;
 }
+/* ext_kind of a file name, not hidden. */
+static int book_kind(const char *name) { return name[0] == '.' ? 0 : ext_kind(strrchr(name, '.')); }
+/* Folder view's listing (playback.c ringnav_audio_extension): ext, from its dot, is a video's. */
+int video_ext(const char *ext) { return ext_kind(ext) == 3; }
 
 /* dir's books, and with depth those of its subfolders, as full paths. */
 static void scan(const char *dir, int depth) {

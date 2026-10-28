@@ -273,6 +273,10 @@ class Machine:
             if a and ret!=-1: self.word(a,ret)
         elif name=='localtime@GLIBC_2.0':  # struct tm: sec, min, hour, ...
             ret=0
+            if hasattr(self,'epoch'): # ResumeMachine's time(): navigation.c's clock_back of it
+                back=self.epoch
+                while back>0x7fffffff: back-=883612800
+                self.wall=(self.epoch,back)
             if self.clock!='localtime':
                 assert self.get(a)==self.wall[1]; ret=self.alloc(44)
                 for i,v in enumerate((59,self.clock[1],self.clock[0])): self.word(ret+4*i,v)
@@ -760,10 +764,22 @@ else:
     k=Machine(); k.config['THEME']='1'; kw,_=k.page_list(5,extent=1000); k.paint(kw)
     assert [b[:3] for b in k.bands]==[(0,j,240) for j in range(48)]
     k=Machine(); k.config.update(THEME='1',ROUNDED='1'); kw,_=k.page_list(5,extent=1000); k.paint(kw)
-    assert len(k.bands)==48 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[0][i]) for i in (4,0,1)]
-    def chord(j,h): v=h*h-(2*j+1-h)**2; return (h-math.isqrt(v))//2
-    assert [b[:3] for b in k.bands]==[(inset+chord(j,48),j,240-2*inset-2*chord(j,48)) for j in range(48)]
-    assert k.bands[24][0]==inset and k.bands[0][0]>inset+15; passed()
+    def chord(j,h):
+        out=8*h-math.isqrt((h*h-(2*j+1-h)**2)*64)
+        return (out+15)//16, out&15
+    want=[]
+    for band_y in range(48):
+        n,frac=chord(band_y,48)
+        color=color_t(ACCENTS[0][4 if band_y==0 else 0])
+        want.append((inset+n,band_y,240-2*inset-2*n,1,color))
+        if frac:
+            edge=(color&0xffffff)|((16-frac)*17<<24)
+            want.extend([(inset+n-1,band_y,1,1,edge),(240-inset-n,band_y,1,1,edge)])
+    assert [b[:5] for b in k.bands]==want
+    # Coverage and geometry mirror at both ends and across the horizontal centre.
+    assert any(0<b[4]>>24<255 for b in k.bands)
+    assert [b[:4] for b in k.bands if b[1]==0]==[(inset+20,0,240-2*inset-40,1),(inset+19,0,1,1),(240-inset-20,0,1,1)]
+    passed()
     # Cards stay two pixels inside all three columns, including scrolled first/last rows.
     for classic in (0,1):
         for offset in (0, 24):
@@ -1656,6 +1672,15 @@ if variant=='ipod':
     m.paint(d); assert m.selected(d)==0 and m.sel()==(0,208,375,48) and not m.strokes
     assert m.call()==11 and m.selected(d)==1; m.paint(d); assert m.sel()==(0,256,375,48)
     assert m.confirm()==11 and m.clicks==[rows[1]]; passed()
+    # A runtime prompt is styled once: stock's style setters invalidate even equal values.
+    prompt=m.node('label','prompt'); m.word(prompt+O['W_H'],40)
+    m.nodes[d]['children'].append(prompt)
+    m.paint(d)
+    assert tuple(m.get(prompt+O[k]) for k in ('W_X','W_Y','W_W','W_H'))==(0,0,375,O['CONFIRM_TOP'])
+    assert m.nodes[prompt]['style:normal:font_size']==O['CONFIRM_PROMPT_PX']
+    assert m.nodes[prompt]['style:normal:text_align_h']=='center' and m.nodes[prompt]['style:normal:text_align_v']=='middle'
+    m.paint(d)
+    assert not [c for c in m.calls if c[0].startswith('widget_set_prop') and c[1]==prompt]; passed()
 else:
     assert m.call()==0 and m.call(O['KEY_CENTER'])==0 and not m.moved(); passed()
 
@@ -2336,7 +2361,13 @@ if variant=='stock':
     assert m.strokes[1][4:]==((10,30,220,86),OUTLINE)
 else:
     # The bands reach the LCD only for the row pixels inside the clip.
-    assert [(c[2],c[3]) for c in m.calls if c[0]==sink]==[(7+O['SEL_INSET']+chord(j,20),20+j) for j in range(10,20)]
+    want=[]
+    for band_y in range(10,20):
+        n,frac=chord(band_y,20)
+        want.append((7+O['SEL_INSET']+n,20+band_y))
+        if frac: want.extend([(7+O['SEL_INSET']+n-1,20+band_y),(7+240-O['SEL_INSET']-n,20+band_y)])
+    want=[(x,y) for x,y in want if 10<=x<=229]
+    assert [(c[2],c[3]) for c in m.calls if c[0]==sink]==want
 assert [m.get(m.canvas+off) for off in (0x10,0x14,0x18,0x1c)]==[10,30,229,199]
 assert m.lcd_colors()==LCD_COLORS; passed()
 # Wheel selection is immediate even when restoration animations would still be running.
@@ -3540,6 +3571,17 @@ for cls,artist_type,page,query in ((0xff01,1,'album_page',('getMusicByAlbumAndAl
     assert page!='folder_page' or [m.text(c[1]) for c in m.calls if c[0]=='toolsLoadDirectory']==['/mnt/sd/Music/Row 0','/mnt/sd/Music/Row 0/dir']
     assert m.names(m.get(syms['tools_pdeq_directory']))==['staged'] and m.pool()==list(range(len(want)))
     passed()
+# Videos never enter an audio queue, including through a folder's hold menu.
+for action in (0,1):
+    m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_TYPE'],4)
+    m.found=[m.song('film.mp4'),m.song('song.flac'),m.song('film.MKV')]
+    assert m.run(action) is None
+    assert m.names()==(['A','song.flac','B','C'] if action==0 else ['A','B','C','song.flac']); passed()
+m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_PATH'],m.string('/mnt/mmc/Videos/film.mp4'))
+m.press(100); m.hold(); assert m.nodes[m.top]['name']=='folder_page' and m.names()==['A','B','C']; passed()
+m=QueueMachine(page='folder_page'); m.word(m.row(0)+O['REC_TYPE'],4)
+m.word(m.row(0)+O['REC_PATH'],m.string('/mnt/mmc/Videos/Album.mp4'))
+m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog'; passed()
 # Artist, composer and genre rows, and their album lists, use batch_add_file's per-class queries.
 for cls,artist_type,query in ((0xf004,0,('getMusicBySonger','Artist',None)),(0xf004,1,('getMusicByAlbumArtist','Artist',None)),
         (0xf005,0,('getMusicByComposer','Comp',None)),(0xf006,0,('getMusicByGenre','流行',None)),
@@ -5216,6 +5258,16 @@ assert m.names()==m.before_queue
 songs=m.get(payload_syms['ple']+8)
 m.call(address=syms['mclLoadPlayList'],args=(songs,0,0xff13,0),gap=0)
 assert m.names()==['B','A','C']; passed()
+# A Videos folder's listed videos never join a queue (#128): stock loads a copy without them, its start
+# on the same song, or the next after a video; the caller's list stays whole. Videos alone leave an empty queue.
+for names,at,queued,pos in ((('a.mp3','v.mp4','b.flac','w.MKV'),2,['a.mp3','b.flac'],1),
+                            (('a.mp3','v.mp4','b.flac'),1,['a.mp3','b.flac'],1),
+                            (('v.mp4','a.mp3'),0,['a.mp3'],0),(('a.mp3','b.flac'),1,['a.mp3','b.flac'],1),
+                            (('v.mp4','w.mkv'),1,[],0)):
+    m=QueueMachine(); src=m.deque([m.song(n) for n in names])
+    m.call(address=syms['mclLoadPlayList'],args=(src,at,1,0),gap=0)
+    assert m.names()==queued and m.get(O['MCL_POS'])==pos and len(m.items(src))==len(names),(names,m.names(),m.get(O['MCL_POS']))
+    passed()
 # Explicit stock loading order also reaches export and later playback loads through the shared query hook.
 m=LibraryQueryMachine(); m.db.execute('create table playlist(id,cd_num)')
 m.db.executemany('insert into playlist values(?,?)',[(103,0),(101,0),(102,0),(100,0),(104,1)])
@@ -5467,6 +5519,25 @@ if variant=='ipod':
     assert [b[:5] for b in m.bands]==want and want[0][2]==8 and want[-2][2]==0,want[:2]
     assert m.get(m.lcd+O['LCD_FILL_COLOR'])==0x12345678; passed()  # restored
     m.bands.clear(); m.call(address=HOOKS['widget_on_paint_border'][0],args=(win,m.canvas,0,0)); assert not m.bands; passed()
+
+    # Full-screen corners use destination pixels, independent of source-image scaling.
+    from ipod import BC_ART
+    bigart=m.node('image','img_bigcover')
+    bx,by=(375-BC_ART)//2,(320-BC_ART)//2
+    put(bigart,bx,by,BC_ART,BC_ART)
+    bigwin=m.node('window','bigcover_page',[bigart]); m.handlers[big+12]='stock_bigcover'
+    m.call(address=big,args=(bigwin,7,0,0),gap=0)  # ringnav_bigcover keeps the window
+    m.bands.clear(); m.call(address=HOOKS['widget_on_paint_border'][0],args=(bigart,m.canvas,0,0))
+    assert not m.bands  # rounded after all children, including the title's shade
+    m.call(address=HOOKS['widget_on_paint_border'][0],args=(bigwin,m.canvas,0,0))
+    pixels={}
+    for x,y,w,h,color,*_ in m.bands:
+        for xx in range(x,x+w): pixels[xx-bx,y-by]=color>>24
+    assert any(0<a<255 for a in pixels.values())
+    for (x,y),alpha in pixels.items():
+        assert pixels.get((BC_ART-1-x,y))==alpha
+        assert pixels.get((x,BC_ART-1-y))==alpha
+    assert m.get(m.lcd+O['LCD_FILL_COLOR'])==0x12345678; passed()
 
     # Scrub: a double centre press toggles it; the wheel then moves a target of SCRUB_STEP
     # seconds times the ramp, previewed on the slider and both labels however far apart the ticks,
@@ -6491,6 +6562,16 @@ f,ctx=row(0); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.plays[-1][2:]==(0,0xf001,2) and m.play_names==['a1','b1','b2']; passed()
 f,ctx=row(3); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top
 assert m.nodes[m.top]['name']=='coverflow_page' and m.texts()[:3]==['Beta','b1','b2']; passed()
+# Two valid paths collide under the old FNV32 membership check: only the dated song belongs.
+paths=('/mnt/mmc/Music/z4dmr4cvs8lw.flac','/mnt/mmc/Music/mhf1gqxzbiuf.flac')
+m=EraMachine([('Old','Artist','Artist',paths[0],1990),('New','Artist','Artist',paths[1],2020)])
+m.found=[m.song('old'),m.song('new')]
+for ident,(r,path) in enumerate(zip(m.found,paths),1):
+    m.word(r+O['REC_ID'],ident); m.word(r+O['REC_PATH'],m.string(path))
+m.open_era(); m.decade(0)
+f,ctx=m.handler(m.nodes[m.find('scroll_view')]['children'][1],O['EVT_CLICK'])
+m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+assert m.play_names==['old'] and m.names(m.get(syms['tools_pdeq_directory']))==['staged']; passed()
 m=EraMachine(); top=m.top; assert m.open_era() is not None and m.top==top and m.toasts[-1][3]=='暂无带年份的专辑'; passed()
 m=EraMachine([s for s in SONGS if s[4]==0]); top=m.top; m.open_era(); assert m.top==top and m.toasts[-1][3]=='暂无带年份的专辑'; passed()
 # Library > Ratings > Albums: the rated albums as Coverflow, most hearts first, with the rated Sort card alone
@@ -7266,7 +7347,7 @@ if variant=='ipod':
             args=(0x1000500,m.string(name),bm,0)
             m.call(address=IPOD_HOOKS['image_manager_add'][0],args=args,gap=0)
             rounded=bytes(m.u.mem_read(data,stride*h))
-            if name.endswith('photo.jpg'):
+            if not name.startswith('file:///mnt/mmc/.sldp/'):
                 assert rounded==source and m.get(bm+0xc)&1
             else:
                 assert not m.get(bm+0xc)&1 and m.get(bm+0xc)&2
@@ -7467,7 +7548,7 @@ if variant=='ipod':
     view=display_page(m,1); rows=setting_rows(m,view)
     kids=m.nodes[view]['children']; light,corners=kids[1],kids[3]
     assert kids==[rows[3],light,rows[0],corners,rows[1],rows[2]] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Light Mode, Accent, Corners, Home, Battery
-    assert m.icons_set==['system_display','system_display','system_display','system_display','playset_covermode','system_powermanager'] and all(m.nodes[r]['type']=='list_item' and m.nodes[r]['style']=='s_listitem_black' for r in rows)
+    assert m.icons_set==['system_display','system_display','system_display','system_display','switch_off','playset_covermode','system_powermanager'] and all(m.nodes[r]['type']=='list_item' and m.nodes[r]['style']=='s_listitem_black' for r in rows)
     buttons=[m.nodes[r]['children'][0] for r in rows]; labels=[m.nodes[b]['children'][1] for b in buttons]
     for b,l in zip(buttons,labels):
         icon=m.nodes[b]['children'][0]  # stock's 0x4c19bc icon geometry, which the row layouter maps
@@ -7533,23 +7614,32 @@ if variant=='ipod':
     click(1); assert texts()[1]=='主菜单：分栏'; home_bounds(False); passed()
     # Theme: Classic shows its own accent (ACCENT) after Theme, lays Home out with its own text inset
     # and chevron row, and the accent's bar; back to Minimal, all of it reverts to Minimal's accent.
-    # Corners: no key is Square; a click saves Rounded, and Theme leaves it alone.
-    corners_label=m.nodes[m.nodes[corners]['children'][0]]['children'][1]; assert m.nodes[corners_label]['text']=='外观：直角'
+    # Rounded Corners: a switch, off with no key; a click saves it on, and Theme leaves it alone.
+    corners_label=m.nodes[m.nodes[corners]['children'][0]]['children'][1]; assert m.nodes[corners_label]['text']=='圆角'
+    def corners_switch(): return [m.nodes[c]['image'] for c in m.nodes[m.nodes[corners]['children'][0]]['children'] if m.nodes[c].get('name')=='_setting_switch']
+    assert corners_switch()==['switch_off']
     f,ctx=m.handler(m.nodes[corners]['children'][0],O['EVT_CLICK']); m.calls=[]
-    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[corners_label]['text']=='外观：圆角'
+    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and corners_switch()==['switch_on']
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'ROUNDED')] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
-    # Light Mode: no key is Off; a click saves On, drops the cached images and repaints, and back.
+    # Light Mode: no key is Off; a click saves On, then Auto (LIGHT=2), then Off; each drops the cached images and repaints.
     light_label=m.nodes[m.nodes[light]['children'][0]]['children'][1]; assert m.nodes[light_label]['text']=='浅色模式：关'
     f,ctx=m.handler(m.nodes[light]['children'][0],O['EVT_CLICK'])
-    for value,text in ((1,'开'),(0,'关')):
+    for value,text in ((1,'开'),(2,'自动'),(0,'关')):
         m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[light_label]['text']=='浅色模式：'+text
         assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'LIGHT')]
         assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
+        if value==2:  # Auto: the UI loop drops the images and repaints as the hour crosses, once
+            m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
+            for clock,wall,flip in (((6,59),86401,1),((6,59),86402,0),((7,0),86402,0),((7,0),86403,1)):
+                m.clock,m.wall=clock,(wall,wall); m.calls=[]
+                m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0,clear=False)
+                assert [c[:2] for c in m.calls if c[0]=='image_manager_unload_all']==[('image_manager_unload_all',0x1000500)]*flip,(clock,wall)
+            m.clock=(18,14)
     passed()
     # Theme: Classic shows its own accent (ACCENT) after Theme, lays Home out with its own text inset
     # and chevron row, and the accent's bar; back to Minimal, all of it reverts to Minimal's accent.
     writes=click(3); assert [(w[0],m.text(w[1]),m.text(w[2])) for w in writes]==[(1,'IPOD','THEME')]
-    assert m.nodes[corners_label]['text']=='外观：圆角'
+    assert corners_switch()==['switch_on']
     assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
     kids=m.nodes[view]['children']
     assert kids==[rows[3],light,rows[0],corners,rows[1],rows[2]] and m.nodes[rows[0]].get('visible',1)==1
@@ -7563,9 +7653,9 @@ if variant=='ipod':
         assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
         assert texts()[0]=='强调色：'+name
         m.paint(view)
-        assert {b[4] for b in m.bands[1:]}=={color_t(ACCENTS[value][0])}
+        assert {b[4]&0xffffff for b in m.bands if b[1]>m.bands[0][1]}=={color_t(ACCENTS[value][0])&0xffffff}
         assert m.bands[0][4]==color_t(ACCENTS[value][4]); passed()
-    writes=click(3); assert [(w[0],m.text(w[2])) for w in writes]==[(0,'THEME')] and texts()[3]=='主题：简约' and m.nodes[corners_label]['text']=='外观：圆角'
+    writes=click(3); assert [(w[0],m.text(w[2])) for w in writes]==[(0,'THEME')] and texts()[3]=='主题：简约' and corners_switch()==['switch_on']
     m.paint(view); assert m.selected(view)==0
     kids=m.nodes[view]['children']
     assert kids==[rows[3],light,rows[0],corners,rows[1],rows[2]] and texts()[0]=='强调色：象牙白' and texts()[1]=='主菜单：分栏'
@@ -9080,7 +9170,7 @@ if variant=='ipod':
     assert m.call(address=payload_syms['home_shortcut_open'],args=(0,m.event,0,0),gap=0,count=5_000_000)==0
     m.page=m.top; assert m.nodes[m.page]['name']=='games_page'
     m.close()
-    chooser,sheet=games_open(); G=m.get(payload_syms['g'])
+    sheet,chooser=games_open(); G=m.get(payload_syms['g'])
     assert labels(chooser)==['游戏','数独','旋涡','纸牌','贪吃蛇'] and not m.nodes[sheet]['visible']
     rows=m.nodes[m.find('scroll_view',chooser)]['children']
     def pick(i):
@@ -9181,7 +9271,7 @@ if variant=='ipod':
     assert word(G_SCREEN)==0 and not frames(); passed()
     # Closing frees the state, also mid-game; opening again starts clean and resumes the Sudoku.
     m.close(); assert m.get(payload_syms['g'])==0 and not frames()
-    chooser,sheet=games_open(); G=m.get(payload_syms['g']); rows=m.nodes[m.find('scroll_view',chooser)]['children']
+    sheet,chooser=games_open(); G=m.get(payload_syms['g']); rows=m.nodes[m.find('scroll_view',chooser)]['children']
     pick(0); assert cells()==before
     key(O['KEY_RETURN']); m.advance(0); pick(2); assert sol()[:-4]==before_sol[:-4]  # and the cursor, kept on leaving
     # Moves save once, SAVE_MS after the first unsaved one, not per move; leaving with nothing new writes nothing.
@@ -11265,9 +11355,16 @@ for key in (O['KEY_PLAY'],O['KEY_BACK_BTN'],O['KEY_FWD_BTN']):
 assert lock_seen(O['KEY_FWD_BTN'],DOWN,O['KEY_PLAY'])==[1] and lock_seen(O['KEY_PLAY'],DOWN)==[0]  # by key
 assert lock_seen(O['KEY_PLAY'],UP,O['KEY_PLAY'],gap=1)==[1]  # and by its stamp
 assert l.u.mem_read(syms['g_keylock_flag'],1)==b'\1'; passed()
-# Play/Pause hold time (PLAY_HOLD) is patched into the demo.
-from build import PLAY_HOLD
-assert all(struct.unpack_from('<I',demo,fileoff(demo,a))[0]==new for a,_,new in PLAY_HOLD); passed()
+# Play/Pause and Return hold after KEY_HOLD_MS (HOLD_KEYS), every other key at stock's time.
+from build import HOLD_KEYS
+assert all(struct.unpack_from('<I',demo,fileoff(demo,a))[0]==(new or jal(payload_syms[fn])) for a,_,new,fn in HOLD_KEYS)
+for key,ms in ((O['KEY_PLAY'],700),(O['KEY_RETURN'],700),(O['KEY_CENTER'],1000)):
+    l.timers={}; l.call(address=payload_syms['ringnav_hold_timer'],args=(0x1234,l.wm,1000,key),gap=0)
+    assert [t[3] for t in l.timers.values()]==[ms]
+for key in (O['KEY_PLAY'],O['KEY_RETURN']):
+    info=l.call(address=payload_syms['ringnav_hold_info'],args=(l.wm,key),gap=0)
+    assert struct.unpack('<2i',l.u.mem_read(info,8))==(key,700)
+passed()
 # Lighting the screen stalls the UI loop about WAKE_MS (stock's on_wm_keyup_fun, the paint), so a
 # blind double press's last press is dispatched only after the first lit loop pass: still dropped.
 for double in ('0','1'):
@@ -12045,6 +12142,16 @@ for site in AUDIO_EXTENSION_CALLS:
         m.u.hook_add(UC_HOOK_CODE,extension_return,begin=site+8,end=site+8)
         assert bool(m.call(address=site,args=(formats,suffix,0,0),gap=0))==bool(accepted)
         passed()
+    # Folder view lists videos in the card's Videos folder (#128); the library scan and other folders never do.
+    for folder in (b'/mnt/mmc/vIdEoS/Films',b'/mnt/mmc/Videos',b'/mnt/mmc/Music',b'/mnt/mmc/VideosOld',b'/mnt/sda1/Videos'):
+        for ext in ('.mp4','.MKV','.pdf'):
+            m=Machine(); m.mock('strstr@GLIBC_2.0'); m.u.mem_write(syms['g_folder_path'],folder+b'\0')
+            formats=m.string('.mp3 .flac'); suffix=m.string(ext)
+            m.word(0x7000f000+(0xdd4 if site==0x5c2054 else 0xd64),formats)
+            m.u.hook_add(UC_HOOK_CODE,extension_return,begin=site+8,end=site+8)
+            listed=site==0x5c2054 and folder in (b'/mnt/mmc/vIdEoS/Films',b'/mnt/mmc/Videos') and ext!='.pdf'
+            assert bool(m.call(address=site,args=(formats,suffix,0,0),gap=0))==listed,(site,folder,ext)
+            passed()
 
 # M4B is spoken audio anywhere, at short duration; persistence and CUE rules stay shared.
 for path in ('/mnt/mmc/Novel.m4b','/mnt/mmc/Music/Novel.M4B','/mnt/mmc/Novel.m4B'):
@@ -12291,13 +12398,13 @@ for name,number,args,error in (('chapter_pipe2',4328,(0x1001000,0x80000,0,0),Fal
 class ChapterMachine(CoverflowMachine):
     def __init__(self, count=3, failed=False, ready=True):
         super().__init__(page='playing_page', pos=1)
-        self.ready=ready; self.cancelled=0; self.playtime=70
+        self.ready=ready; self.cancelled=0; self.playtime=70; self.fits=1
         self.job=self.alloc(32+512*260)
         for off,v in ((12,0),(16,int(failed)),(20,count)): self.word(self.job+off,v)
         for i,(sec,title) in enumerate(((0,'Opening'),(60,''),(120,'日本語'))):
             self.word(self.job+32+i*260,sec)
             self.u.mem_write(self.job+36+i*260,title.encode()+b'\0')
-        for name in ('chapters_start','chapters_poll','chapters_cancel'):
+        for name in ('chapters_start','chapters_poll','chapters_cancel','mp4_fits'):
             self.handlers[payload_syms[name]]='chapter:'+name
         self.mock('navigator_back')
         self.handlers.pop(syms['mclGetPlayStatus'],None); self.word(0xa3beac,2)
@@ -12309,6 +12416,8 @@ class ChapterMachine(CoverflowMachine):
         a=u.reg_read(REGS[0]); ret=0
         if name=='chapter:chapters_start':
             assert self.text(a)=='/mnt/mmc/Book ; $x.M4B'; ret=self.job
+        elif name=='chapter:mp4_fits':
+            assert self.text(a)=='/mnt/mmc/Book ; $x.M4B'; ret=self.fits
         elif name=='chapter:chapters_poll':
             ret=int(self.ready)
             if ret: self.word(self.job+12,1)
@@ -12339,6 +12448,10 @@ for state in (2,3):
     seeks=[c for c in m.calls if c[0] in ('player_seek_time','mclSetSeek','mclSetResume')]
     assert [(c[0],c[1]) for c in seeks]==[('player_seek_time' if state==2 else 'mclSetSeek',120)]
     assert any(c[0]=='navigator_back' for c in m.calls); passed()
+# A book whose MP4 index would not fit in RAM: a toast, and no ffmpeg.
+m=ChapterMachine(); m.fits=0; m.press(6000); assert m.hold()==11; m.release()
+m.pick(m.labels().index('Chapters')); m.advance(0)
+assert m.nodes[m.top]['name']!='chapters_page' and m.toasts[-1][3]=='这本书太长，Q2 无法显示章节'; passed()
 m=ChapterMachine(); m.open_chapters(); m.advance(50); m.word(O['MCL_POS'],2); m.choose(1)
 assert not any(c[0] in ('player_seek_time','mclSetSeek') for c in m.calls)
 assert any(c[0]=='navigator_back' for c in m.calls); passed()

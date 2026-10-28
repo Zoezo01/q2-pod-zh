@@ -131,6 +131,10 @@
 /* iPod black status chrome, in both Themes; TRACK_COLOR is Now Playing's progress track. */
 #define BAR_COLOR 0x000000
 #define TRACK_COLOR 0x1c1c1c
+/* iPod: the confirm pop-up's Cancel row (tools/ipod.py confirm_dialog); its prompt is centred above
+ * it at CONFIRM_PROMPT_PX (confirm_prompt). */
+#define CONFIRM_TOP 208
+#define CONFIRM_PROMPT_PX 24
 #define NP_TIMES_PX 14 /* Now Playing's times, and the volume text in their place */
 #define NP_ART_RADIUS 12 /* Now Playing's art corners (paint_cover), as stock's play_defaultcover scaled to the art */
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */

@@ -1,6 +1,7 @@
 /* Grouped queue traversal. Indices identify occurrences, including duplicate/CUE entries.
  * Stock still owns the queue, decoder and gapless handoff. */
 #include "playback.h"
+#include "chapters.h"
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h"
@@ -356,9 +357,27 @@ int ringnav_speed(int mode) {
     return stock_speed_trampoline(mode);
 }
 
+/* A local track whose MP4 index would not fit in RAM (mp4_fits) is never opened: the decoder
+ * would take the whole device down with it, at boot again through Memory Playback. */
+static int track_fits(int at) {
+    void *q = queue();
+    void *r = q && at >= 0 && (unsigned)at < deque_size(q) ? deque_at(q, (unsigned)at) : 0;
+    return !r || I(r, REC_TYPE) != 8 || mp4_fits(P(r, REC_PATH));
+}
+static int too_long; /* set where mclStartPlayer runs, maybe off the UI thread; toasted by the poll */
+int playback_start_fits(void) {
+    if (track_fits(M(MCL_POS))) return 1;
+    too_long = 1;
+    return 0;
+}
+
 int ringnav_open_preload(void) {
-    /* A gapless handoff does not run player_initconfig: reopen at a speed boundary. */
-    if (speed_read(M(MCL_PREPOS)) != g_playspeed_mode) return 1;
+    /* A gapless handoff does not run player_initconfig: reopen at a speed boundary. A track too
+     * long to open goes through mclStartPlayer, whose hook declines it. */
+    if (speed_read(M(MCL_PREPOS)) != g_playspeed_mode || !track_fits(M(MCL_PREPOS))) {
+        M(MCL_PRELOAD) = -1; /* stock's failed attempt: do not rescan on every auto-change tick */
+        return 1;
+    }
     return stock_open_preload_trampoline();
 }
 static void release(void) {
@@ -702,12 +721,35 @@ int ringnav_start_queue(int at) {
     }
     return stock_start_queue_trampoline(at);
 }
+/* A video Folder view lists in the Videos folder (ringnav_audio_extension) plays from its row in
+ * q2video, never from a queue: stock gets a copy without them, at moved to the same track (or the
+ * next song after a video), and q, the caller's showlist, stays whole. 0 when nothing to drop. */
+extern int video_ext(const char *ext);
+int playback_video(void *r) {
+    const char *path = P(r, REC_PATH);
+    return I(r, REC_TYPE) == 8 && path && video_ext(strrchr(path, '.'));
+}
+static void *no_videos(void *q, int *at) {
+    unsigned n = q ? deque_size(q) : 0, keep = 0, before = 0;
+    for (unsigned i = 0; i < n; ++i)
+        if (!playback_video(deque_at(q, i))) keep++, before += (int)i < *at;
+    if (keep == n) return 0;
+    void *out = _create_deque("stSongInfo");
+    deque_init(out);
+    for (unsigned i = 0; i < n; ++i)
+        if (!playback_video(deque_at(q, i))) _deque_push_back(out, deque_at(q, i));
+    if (!keep) *at = 0;
+    else if (*at > 0) *at = (int)(before < keep ? before : keep - 1);
+    return out;
+}
 int ringnav_load(void *q, int at, int type) {
     if (s.restoring == 2) type = M(MCL_TYPE);
     close_preload();
     /* After Shuffle Songs, before stock loads; ringnav_mode's playback_clear ends its shuffle. */
     if (unshuffle && !s.restoring) config_playmode(playback_unshuffle(), 1);
-    int result = stock_load_trampoline(q, at, type);
+    void *own = no_videos(q, &at);
+    int result = stock_load_trampoline(own ? own : q, at, type);
+    if (own) deque_destroy(own);
     back_to = 0;
     if (s.restoring == 2)
         s.restoring = 0;
@@ -1306,6 +1348,10 @@ static int playback_next(void) {
 }
 void playback_poll(void) {
     wheel_pct(); /* the saved sensitivity from the first UI pass */
+    if (too_long) {
+        too_long = 0;
+        toast("这本书太长，Q2 无法播放：请拆分成几段");
+    }
     xfade_poll(playback_next());
     mono_sync();
     unsigned now = time_now_ms();
@@ -1349,7 +1395,14 @@ int ringnav_checkfw(void *win, void *ctx) {
 }
 
 /* Stock passes its audio extension list and the final dot suffix in folder and scan paths.
- * Keep every existing format; TagLib's FileRef already dispatches M4B to MP4. */
+ * Keep every existing format; TagLib's FileRef already dispatches M4B to MP4. Folder view's
+ * listing (toolsLoadDirectory) in the card's Videos folder also takes videos, which a row click
+ * hands to books_video; the library scan never does, and no queue keeps them (no_videos). */
+#define LOAD_DIRECTORY_RET 0x5c205c /* toolsLoadDirectory's (build.py AUDIO_EXTENSION_CALLS) */
+extern int folder_videos(void);
 char *ringnav_audio_extension(const char *formats, const char *ext) {
-    return !strcasecmp(ext, ".m4b") ? (char *)ext : strstr(formats, ext);
+    if (!strcasecmp(ext, ".m4b") || (__builtin_return_address(0) == (void *)LOAD_DIRECTORY_RET &&
+                                     video_ext(ext) && folder_videos()))
+        return (char *)ext;
+    return strstr(formats, ext);
 }

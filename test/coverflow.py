@@ -103,7 +103,7 @@ int image_set_draw_type(void *x, int t) { return 0; }
 int image_base_set_image(void *x, const char *s) { snprintf(W(x)->image, 600, "%s", s); return 0; }
 /* A zero-length "no art" marker does not decode. Every successful load is unloaded again and
    decodes to art_w x art_h (bitmap_t w @0, h @4). */
-static int loads, unloads;
+static int loads, unloads, theme_placeholder;
 static unsigned art_w = 160, art_h = 160;
 /* Decoded art (bitmap_t w @0, h @4, line length @8, format @0xe, and here the pixels @0x14):
    RGBA8888, a pattern whose colour comes from the file's path, so every album looks different. */
@@ -125,13 +125,15 @@ static void pattern(unsigned char *px, unsigned seed) {
 }
 int widget_load_image(void *x, const char *url, void *b) {
     struct stat s;
-    int failed = strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size;
-    loads += !failed;
+    int themed = theme_placeholder && strncmp(url, "file://", 7);
+    int failed = !themed && (strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size);
+    loads += !failed && !themed;
     if (!failed) {
         unsigned *bm = b, seed = 0;
-        for (const char *c = strrchr(url, '/'); *c; ++c) seed = seed * 31 + (unsigned char)*c; /* the key, not the scratch path */
+        for (const char *c = strrchr(url, '/') ? strrchr(url, '/') : url; *c; ++c) seed = seed * 31 + (unsigned char)*c; /* the key, not the scratch path */
         unsigned char *px = pixels[next_pixels++ % 16];
         pattern(px, seed % 1000);
+        if (themed) memset(px, 0, sizeof pixels[0]); /* transparent theme placeholder */
         bm[0] = art_w, bm[1] = art_h, bm[2] = art_w * 4;
         ((unsigned short *)b)[7] = 1; /* RGBA8888 */
         *(unsigned char **)((char *)b + 0x14) = px;
@@ -692,6 +694,24 @@ static void depth(void) {
     key(KEY_RETURN); /* back to the same album, still drawn */
     assert(covers_view->visible && *(int *)(raw + SLIDE_INDEX) == 6);
     coverflow_paint(s, canvas);
+#if IPOD
+    /* Auto Light Mode refreshes a stationary frame and its composited placeholder in RAM. */
+    *(int *)(raw + SLIDE_INDEX) = 3;
+    theme_placeholder = 1;
+    for (int mode = 1; mode >= 0; --mode) {
+        light = mode;
+        int before = locks;
+        coverflow_paint(s, canvas);
+        unsigned paper = 0xff000000u | (mode ? LIGHT_PAPER * 0x010101u : 0);
+        assert(shown[0] == paper && shown[(CF_TOP + 80) * CF_VIEW_W + CF_CX] == paper);
+        assert(locks == before + 1 && frames == 1);
+        before = locks;
+        int decoded = loads;
+        coverflow_paint(s, canvas);
+        assert(locks == before && loads == decoded); /* no work on the next unchanged paint */
+    }
+    theme_placeholder = 0;
+#endif
     /* Refresh and close release the frame and every texture. */
     close_page();
     assert(frames == 0 && loads == unloads);

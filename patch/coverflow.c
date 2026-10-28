@@ -1089,10 +1089,11 @@ void *page_title(void *body, const char *caption) {
     return title;
 }
 
-/* The peq_ui.c page: a title bar (*title, unless 0) over n whole item_h rows in body, shrunk so the list's
- * white background never shows below a short list. Shared with photos.c. */
+/* The peq_ui.c page: a title bar (*title, unless 0) over n item_h rows in body, down to the page's
+ * bottom (iPod: the last row's selection meets the screen's edge; Legacy: whole rows) or shrunk so
+ * the list's white background never shows below a short list. Shared with photos.c. */
 void *page_list(void *page, void *body, void **title, const char *caption, int n, int item_h) {
-    int h = widget_get_prop_int(page, "h", 290), rows = (h - 48) / item_h * item_h;
+    int h = widget_get_prop_int(page, "h", 290), rows = IPOD ? h - 48 : (h - 48) / item_h * item_h;
     if (n * item_h < rows) rows = n * item_h;
     widget_destroy_children(body);
     widget_set_visible(body, 1, 0);
@@ -1423,13 +1424,14 @@ static struct {
     unsigned *tex;                /* CF_RING texture slots, then the placeholder */
     int album[CF_RING];           /* each slot's album + 1; 0 is empty */
     const unsigned *art[CF_RING]; /* its texture: the slot's own, or the placeholder */
-    int c, frac, drawn;           /* the position the frame holds, once drawn */
+    int c, frac, drawn, light;    /* the position and Light Mode the frame holds, once drawn */
 } fx __attribute__((section(".scratch")));
 
-/* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE, over
- * black, so a non-square cover shows uncropped between black bars, as Now Playing shows it. Only
- * 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha. The image
- * manager's copy is only read, and a cover's load is dropped again at once, as stock does. */
+/* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE,
+ * over black, so a non-square cover shows uncropped between black bars, as Now Playing shows it.
+ * Only 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha,
+ * composited over the page (black or Light Mode's paper). The image manager's copy is only read,
+ * and a cover's load is dropped again at once, as stock does. */
 static int decode(const char *url, unsigned *out, int unload) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned bitmap[64]; /* bitmap_t */
@@ -1440,6 +1442,11 @@ static int decode(const char *url, unsigned *out, int unload) {
     if (data) {
         const unsigned char *o = at[format];
         unsigned stride = bitmap_get_line_length(bitmap), side = w > h ? w : h, xoff[ART_SIZE];
+#if IPOD
+        unsigned paper = ipod_light() ? LIGHT_PAPER : 0;
+#else
+        unsigned paper = 0;
+#endif
         for (unsigned x = 0; x < ART_SIZE; ++x) { /* ~0u: a bar; left of the image wraps to one */
             unsigned sx = x * side / ART_SIZE - (side - w) / 2;
             xoff[x] = sx < w ? sx * 4 : ~0u;
@@ -1452,8 +1459,11 @@ static int decode(const char *url, unsigned *out, int unload) {
                     continue;
                 }
                 const unsigned char *px = data + sy * stride + xoff[x];
-                unsigned a = px[o[3]], r = px[o[0]], g = px[o[1]], b = px[o[2]];
-                if (a < 255) r = r * a / 255, g = g * a / 255, b = b * a / 255; /* over black */
+                unsigned a = px[o[3]], r = px[o[0]], g = px[o[1]], b = px[o[2]], k = 255 - a;
+                /* over the page: black, or Light Mode's paper (the placeholder's corners) */
+                if (a < 255)
+                    r = (r * a + paper * k) / 255, g = (g * a + paper * k) / 255,
+                    b = (b * a + paper * k) / 255;
                 *out++ = 0xff000000u | r | g << 8 | b << 16;
             }
         }
@@ -1469,6 +1479,14 @@ static void fx_close(void) {
     memset(&fx, 0, sizeof(fx));
 }
 
+static void fx_placeholder(void) {
+    unsigned *placeholder = fx.tex + CF_RING * CF_TEXELS;
+    if (!decode(PLACEHOLDER, placeholder, 0)) /* a theme image: the manager keeps it */
+        for (int i = 0; i < CF_TEXELS; ++i) placeholder[i] = 0xff3a3a3au;
+#if IPOD
+    fx.light = ipod_light();
+#endif
+}
 /* The frame and every texture at once, or neither: the flat covers then stand in. */
 static int fx_open(void) {
     fx.frame = bitmap_create_ex(CF_VIEW_W, CF_VIEW_H, CF_VIEW_W * 4, 1 /* RGBA8888 */);
@@ -1478,9 +1496,7 @@ static int fx_open(void) {
         return 0;
     }
     *(unsigned short *)((char *)fx.frame + 0xc) |= 1; /* BITMAP_FLAG_OPAQUE: every pixel is */
-    unsigned *placeholder = fx.tex + CF_RING * CF_TEXELS;
-    if (!decode(PLACEHOLDER, placeholder, 0)) /* a theme image: the manager keeps it */
-        for (int i = 0; i < CF_TEXELS; ++i) placeholder[i] = 0xff3a3a3au;
+    fx_placeholder();
     return 1;
 }
 
@@ -1546,6 +1562,13 @@ void coverflow_paint(void *w, void *canvas) {
         !visual(w, n = (int)widget_count_children(w), &c, &frac))
         return;
     const unsigned *ring[CF_RING];
+#if IPOD
+    if (fx.light != ipod_light()) {
+        fx_placeholder();
+        memset(fx.album, 0, sizeof fx.album); /* decoded art may have transparent corners too */
+        fx.drawn = 0;
+    }
+#endif
     fx_window(c, n, ring);
     if (coverflow_bounded(w)) /* no wrap: only the artist's real neighbours, never repeats */
         for (int j = 0; j < CF_RING; ++j)

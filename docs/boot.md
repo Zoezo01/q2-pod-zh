@@ -76,7 +76,7 @@ Flash `/tmp/q2-logo/update.tar` the normal way: copy it to the root of the micro
 
 ### Light Mode
 
-iPod builds of the default logo also ship `assets/boot-logo-light.jpg`, the same logo inverted (dark lettering on white), as `release/assets/default/raw/images/xx/logo-light.jpg`. While `/mnt/data/config.ini` has `LIGHT=1` ([Light Mode](ipod.md#light-mode)), the splash hook shows it instead of the built-in one, so a power-on after turning Light Mode on or off matches it. A card logo still wins, and a build with a custom `--logo` ships no light twin and shows its logo in both modes. To regenerate it from the default:
+iPod builds of the default logo also ship `assets/boot-logo-light.jpg`, the same logo inverted (dark lettering on white), as `release/assets/default/raw/images/xx/logo-light.jpg`. While `/mnt/data/config.ini` has `LIGHT=1`, or `LIGHT=2` and the boot's `date` says 07:00 to 18:59 ([Light Mode](ipod.md#light-mode)), the splash hook shows it instead of the built-in one, so a power-on after turning Light Mode on or off matches it. A card logo still wins, and a build with a custom `--logo` ships no light twin and shows its logo in both modes. ponytail: the boot shell has no `TZ` (only the player sets it, [Clock](internals.md#clock)) and the RTC holds UTC, so `LIGHT=2` picks the logo by the UTC hour; a saved zone the hook could read would fix it. To regenerate it from the default:
 
 ```sh
 magick assets/boot-logo.jpg -negate -colorspace sRGB -type TrueColor -strip -interlace none \

@@ -67,17 +67,17 @@ unchanged; Classic keeps its existing colour handling.
 The pinned style edits in `patch/ipod.json` remove list fills and corners and make pressed
 feedback neutral grey. Playing titles keep the separate playing glyph.
 
-In Minimal, wheel selection under its own accent (**Accent: Ivory**, the default) is off-white (`#EEEEEC`): a card, under **Corners: Rounded** inset
-`SEL_INSET` (6) pixels from each side of the row, a pill (corners half its height; grid tiles `SEL_RADIUS`, 6), and under **Corners: Square** (the default) a full-width square bar with square tiles,
+In Minimal, wheel selection under its own accent (**Accent: Ivory**, the default) is off-white (`#EEEEEC`): a card, under **Rounded Corners** on inset
+`SEL_INSET` (6) pixels from each side of the row, a pill (corners half its height, less on a row whose cover the round end would cut, such as Search's results: `pill_radius` shrinks them until the cover's corners are inside, checking only the row's own left-hand, non-centred images; grid tiles `SEL_RADIUS`, 6), and under **Rounded Corners** off (the default) a full-width square bar with square tiles,
 drawn with the anti-aliased rounded fill (square without a vgcanvas). Any other accent fills the
 card with its colour and leaves the rows' own (white) ink, as Classic's bar does. Minimal's unselected
 secondary text, stock's `#AAAAAA`, is the quieter `SUDO_MUTED` (`#8C8C8C`) everywhere. **Theme:
-Classic** draws the accent's gradient bar instead, full width, or under **Corners: Rounded** the same inset pill (its ends in whole-pixel bands, not anti-aliased), and leaves the rows' own (white) ink. The background
+Classic** draws the accent's gradient bar instead, full width, or under **Rounded Corners** on the same inset pill with anti-aliased ends, and leaves the rows' own (white) ink. The background
 hook resolves the selected row; the color hook maps its title to `#171717` and metadata to
 `#484848`, preserving alpha. Paint ancestry determines the colors, so no style overrides can
 remain on recycled rows or stale scrolling labels. Selected backgrounds stay transparent over
 the selection. Touch hides wheel selection until wheel/centre input; the native pressed state
-remains visible. Under **Corners: Rounded** a pressed list row (`s_btn_listitem`) is that grey as the
+remains visible. Under **Rounded Corners** on a pressed list row (`s_btn_listitem`) is that grey as the
 selection's inset pill instead (`pressed_pill`); other pressed widgets keep stock's box. The same hooks cover settings, streaming, dialogs, PEQ rows and media browser
 chrome. Photos, video, book content, EQ plots and visualizers keep their own drawing.
 
@@ -267,8 +267,9 @@ build-added icon ([internals.md](internals.md#spotify)), keep their bytes and st
 Spotify row's Now Playing page uses Now Playing's layout (`NP_*`), rounded art included. The Legacy build keeps every icon stock. The recolouring of accent-red artwork
 (`ringnav_image_add`) works on the decoded bitmap, so it applies at either size.
 
-The Brightness, Balance, Maximum Volume, Default Volume and Crossfade editors keep their thick stock sliders,
-fill, ranges and wheel/touch controls, but lose their endpoint icons (`slider_plain`, tools/ipod.py):
+Brightness, Balance, Maximum Volume and Default Volume use eight-pixel rounded, theme-aware bars
+with their original touch areas. Crossfade, Wheel Sensitivity and Resume Songs reuse Default Volume's
+page and inherit its styling. All keep their ranges and wheel/touch controls, but lose their endpoint icons (`slider_plain`, tools/ipod.py):
 the images stay, named, with no image and no size, since stock looks them up. The quick
 settings slider and custom volume overlay retain their layouts.
 
@@ -278,7 +279,7 @@ The pull-down (`dialog/statusbar_dialog.bin`) covers the whole screen when open.
 controls keep their four columns in two rows from y 20. Every label is the stock 16-pixel white
 style (`s_label_white16c`), 80 pixels wide and 40 high (two lines), top-aligned so one- and
 two-line labels start on the same line, 6 pixels under its icon and 12 above the next row. The
-brightness slider becomes a 6-pixel track (`#3A3A3A`, white fill) in a 48-pixel-high slider that
+brightness slider becomes a 6-pixel track in Now Playing's colours (`TRACK_COLOR`, filled with the accent's light tone as the progress bar, `quick_fill`) in a 48-pixel-high slider that
 still takes a tap or drag anywhere on it (`slide_with_bar`), from x 68 to 307. The stock dim and
 bright suns stay at its ends, in line with the first and last icon columns. Sizes are `QS_*` in
 `tools/ipod.py`. `dialog_statusbar_dialog_init` (`0x4a0d88`) finds every widget by name and
@@ -332,7 +333,8 @@ under `CLOCK_MIN` fails the build.
 ## Hold Return
 
 The stock long-key function at 0x4e873c retains all instructions except the final
-Home call at 0x4e8924, in both builds (`HOLD_RETURN`). Stock power, lock, test and key-lock gates and its release
+Home call at 0x4e8924, in both builds (`HOLD_RETURN`). The hold fires after 700 ms, as Play/Pause's does
+([internals.md](internals.md#queue-menu), `HOLD_KEYS`); stock waited 1000 ms. Stock power, lock, test and key-lock gates and its release
 latch execute first. The payload cancels centre confirmation and spin state, checks
 the shared screen/navigation restrictions, and then, on Now Playing, goes back
 (`navigator_back`) when the page it opened over (`np_origin`) lies right under it, or
@@ -433,8 +435,8 @@ moves the pages: they are anchored on their own row, at the slide_view's centre.
 
 The art's corners are rounded at 12 pixels (`NP_ART_RADIUS`), the radius of stock's own
 placeholder cover at this size, so real art and the placeholder match. The payload paints them
-over the image in the page's black, with an anti-aliased
-edge pixel. The title is 22 pixels
+over the scaled image in the page's black, with an anti-aliased
+edge pixel, so opposite corners share the same pixel grid. The title is 22 pixels
 white (`NP_TITLE_PX`) over the 18-pixel (`NP_META_PX`) artist, `#CCCCCC` (`NP_ARTIST_RGB`), and
 album, `#BBBBBB` (`NP_ALBUM_RGB`); "3 of 12" and both times remain `#AAAAAA`. Spotify uses the same hierarchy in the iPod build; Legacy
 keeps its existing artist color. Long lines scroll, as stock.
@@ -591,7 +593,7 @@ Display page again (`display_open`, `display_sub` naming the sub-page while its 
 drops the stock rows, takes the sub-page's title and builds only its own rows:
 
 - Appearance: "Theme: Minimal", "Light Mode: Off" ([Light Mode](#light-mode)), "Accent: Graphite"
-  and "Corners: Square" with the System settings Display icon (`system_display`), "Home: Split" (`playset_covermode`) and "Battery: Icon" (Icon,
+  and a "Rounded Corners" switch (stock's `switch_on`/`switch_off`, via `list_toggle`) with the System settings Display icon (`system_display`), "Home: Split" (`playset_covermode`) and "Battery: Icon" (Icon,
   Percent, Icon + Percent, Percent Inside; see [Status bar and clock](#status-bar-and-clock)) with
   the power manager icon (`system_powermanager`).
 - Coverflow: "Artist Albums: Coverflow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
@@ -611,7 +613,7 @@ The page is `CTX_FIXED`, so the wheel walks onto them like the stock rows.
 
 A change is saved at once with the stock `write_int_config(value, "IPOD", key)` (`0x4f3f4c`):
 `sprintf("%d")`, then `toolsWriteConfig("/mnt/data/config.ini", section, key, text)`, which
-rewrites the key or appends `[IPOD]` with it (`"[%s]\n%s=%s\n"`). The keys are `ACCENT` (Classic's accent), `MINIMAL_ACCENT` (Minimal's), `ROUNDED` (Corners: 0 Square, 1 Rounded), `LIGHT` (Light Mode: 0 Off, 1 On; missing is Off), `HOME`, `BATTERY` and `THEME`. The values are read once,
+rewrites the key or appends `[IPOD]` with it (`"[%s]\n%s=%s\n"`). The keys are `ACCENT` (Classic's accent), `MINIMAL_ACCENT` (Minimal's), `ROUNDED` (Rounded Corners: 0 off, 1 on), `LIGHT` (Light Mode: 0 Off, 1 On, 2 Auto; missing is Off), `HOME`, `BATTERY` and `THEME`. The values are read once,
 on the payload's first use (after stock `config_init`: `application_init` runs `platform_init`, which
 calls it, before it opens any window), with `toolsReadConfig` (`0x5bd464`), in the order stock `config_init`
 calls it: `(path, section, key, out, default)`. It reads the file line by line
@@ -679,6 +681,8 @@ What Classic does not restore: the pinned theme edit of `s_btn_listitem`'s press
 status bar asset's own background (`#000000`, not `#161616`), which the payload's fill covers.
 
 ### Light Mode
+
+**Light Mode: Auto** (`LIGHT=2`) is light from 07:00 to 18:59 by the device clock and dark the rest of the day. The row cycles Off, On, Auto on each click. It switches at 07:00 and 19:00 while the device is on, and the cached images are dropped and an open screen repaints then (`light_poll`, once a second from the UI loop, only under Auto). The boot logo picks its mode by the UTC hour ([boot](boot.md#light-mode)).
 
 **Light Mode: On** (`LIGHT=1`) turns both themes light at runtime, over the same assets. Every
 neutral colour (channels within `LIGHT_SPREAD`) flips per channel, black to `LIGHT_PAPER` (`#F4F4F4`)
