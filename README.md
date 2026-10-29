@@ -14,10 +14,10 @@
 
 | 项目 | 是什么 | 本分支用了什么 |
 |---|---|---|
-| [**DiamondBond/q2-pod**](https://github.com/DiamondBond/q2-pod) | 固件补丁本体（MIT）：不重编固件，而是往山灵官方 V1.32 二进制里挂钩子，在 `0xb00000` 载荷区跑自己的 C 代码，换来 iPod classic 界面、Coverflow、PEQ、Spotify、Rockbox 等。 | **全部功能与绝大部分代码**。本分支的基线是它的 **1.5.5**（以 merge 提交并入，之前依次基于 1.5.2 与 1.5.0），上游历史完整保留在 git log 里。 |
+| [**DiamondBond/q2-pod**](https://github.com/DiamondBond/q2-pod) | 固件补丁本体（MIT）：不重编固件，而是往山灵官方 V1.32 二进制里挂钩子，在 `0xb00000` 载荷区跑自己的 C 代码，换来 iPod classic 界面、Coverflow、PEQ、Spotify、Rockbox 等。 | **全部功能与绝大部分代码**。上游每发一版，本分支就把对应 tag 以一次 merge 提交并入，上游历史完整保留在 git log 里。 |
 | [**Ericwyn/q2-pod**](https://github.com/Ericwyn/q2-pod) | 同一项目的**简体中文汉化**分支（当前版本基于V1.4.8制作）。 | **汉化的底子**：术语表、翻译风格、`caption()` 支持 UTF-8 码点的做法都来自这里，译法也基本沿用它的用词。 |
 
-## 相对上游 1.5.5 改了什么
+## 相对上游改了什么
 
 ### 1. 界面简体中文
 
