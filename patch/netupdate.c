@@ -791,7 +791,7 @@ static void sh_rows(void) {
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
-        void *view = page_list(sh.page, sh.page, 0, "Q2 应用商店", n, 64);
+        void *view = page_list(sh.page, sh.page, 0, "应用商店", n, 64);
         for (int r = 0; r < n; ++r)
             sh.row[r] = page_row_detail(view, r,
                                         map[r] == ROW_ERASE  ? "清除 Spotify 数据"

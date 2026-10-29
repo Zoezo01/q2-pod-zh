@@ -25,6 +25,9 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,6 +50,8 @@ void *mmap(void*,unsigned,int,int,int,long); unsigned alarm(unsigned); void (*si
 int strcmp(const char*,const char*);
 int unlink(const char*), rename(const char*,const char*), fsync(int), memcmp(const void*,const void*,unsigned);
 char *strstr(const char*,const char*);
+long ptrace(int,int,void*,void*); int waitpid(int,int*,int), atoi(const char*), snprintf(char*,unsigned,const char*,...);
+int pread(int,void*,unsigned,long);
 #endif
 #define FBIOGET_VSCREENINFO 0x4600
 #define FBIOGET_FSCREENINFO 0x4602
@@ -146,8 +151,49 @@ static int capture(void) {
     return write_all(1,mem+y*stride,size) ? 1 : 0;
 }
 
+#define STACK_WORDS 160
+/* --prof MS N TID...: N rounds, MS ms apart, of each thread's state letter, pc and ra, then the stack's
+ * words that could be code addresses (tools/q2remote.py prof symbolizes them). Each thread is seized and
+ * interrupted for an instant, which queues no SIGSTOP; a signal that arrives meanwhile goes on to it. A
+ * thread in D waits until its I/O returns. MIPS PEEKUSR: 29 is $sp, 31 $ra, 64 the pc. */
+static int prof(int argc, char **argv) {
+    int ms=atoi(argv[2]), n=atoi(argv[3]);
+    for (int i=0;i<n;++i) {
+        for (int t=4;t<argc;++t) {
+            int tid=atoi(argv[t]), w, fd, r, got;
+            char buf[512], out[1024], state='?';
+            snprintf(buf,sizeof buf,"/proc/%d/stat",tid);
+            if ((fd=open(buf,0))<0) continue;
+            r=read(fd,buf,sizeof buf-1);
+            close(fd);
+            buf[r>0 ? r : 0]=0;
+            char *e=strstr(buf,") ");
+            if (e) state=e[2];
+            if (ptrace(0x4206,tid,0,0)) continue; /* PTRACE_SEIZE */
+            ptrace(0x4207,tid,0,0);               /* PTRACE_INTERRUPT */
+            /* until the interrupt's stop (PTRACE_EVENT_STOP); a signal's stop goes on with it */
+            while ((got=waitpid(tid,&w,0x40000000))==tid && (w&0xff)==0x7f && (w>>16)!=0x80)
+                ptrace(7,tid,0,(void*)(long)(w>>8&0xff)); /* PTRACE_CONT */
+            if (got!=tid || (w&0xff)!=0x7f) { ptrace(17,tid,0,0); continue; } /* gone, or not stopped */
+            unsigned long pc=ptrace(3,tid,(void*)64,0), ra=ptrace(3,tid,(void*)31,0),
+                          sp=ptrace(3,tid,(void*)29,0), up[STACK_WORDS]={0};
+            snprintf(buf,sizeof buf,"/proc/%d/mem",tid);
+            if ((fd=open(buf,0))>=0) { pread(fd,up,sizeof up,(long)sp); close(fd); }
+            ptrace(17,tid,0,0); /* PTRACE_DETACH, once the stack is read */
+            int m=snprintf(out,sizeof out,"%d %c %lx %lx",tid,state,pc,ra);
+            for (int k=0;k<STACK_WORDS && m<(int)sizeof out-12;++k)
+                if (up[k]>=0x400000 && up[k]<0x80000000 && !(up[k]&3)) m+=snprintf(out+m,sizeof out-m," %lx",up[k]);
+            out[m++]='\n';
+            write_all(1,out,m);
+        }
+        usleep(ms*1000);
+    }
+    return 0;
+}
+
 int main(int argc,char **argv) {
     if (argc==2 && !strcmp(argv[1],"--shot")) return capture();
+    if (argc>=5 && !strcmp(argv[1],"--prof")) return prof(argc,argv);
     int s=socket(AF_INET,SOCK_STREAM,0), one=1;
     if (s<0) return 1;
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=(PORT&255)<<8|PORT>>8};

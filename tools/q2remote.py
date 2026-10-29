@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive a --dev Q2 over Wi-Fi (Q2_HOST, and Q2_KEY or a key file; see docs/remote.md).
 
-usage: q2remote.py {sh [--timeout S] COMMAND|shot [--settle] OUT.png|state|wake|key NAME [MS]|wheel N [--step-ms MS]|tap X Y|swipe X1 Y1 X2 Y2 [MS]|push LOCAL REMOTE|pull REMOTE LOCAL|install UPDATE.TAR|log [LINES|-f|--clear]|events EVENT [S]|devices|find|reboot [--wait]}"""
+usage: q2remote.py {sh [--timeout S] COMMAND|shot [--settle] OUT.png|state|wake|key NAME [MS]|wheel N [--step-ms MS]|tap X Y|swipe X1 Y1 X2 Y2 [MS]|push LOCAL REMOTE|pull REMOTE LOCAL|install UPDATE.TAR|log [LINES|-f|--clear]|events EVENT [S]|devices|find|reboot [--wait]|prof S [--all] [--build DIR]}"""
 import concurrent.futures
 import contextlib
 import hashlib
@@ -370,6 +370,83 @@ def reboot(wait):
     raise TimeoutError(f"the Q2 did not answer within {REBOOT_WAIT_S} s")
 
 
+def symbol_table(path):
+    """(sorted addresses, names) of path's defined functions, dynamic and static."""
+    import bisect, subprocess
+    table = {}
+    for flags in (["-D"], []):
+        out = subprocess.run(["llvm-nm", *flags, "--defined-only", path], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            w = line.split()
+            if len(w) == 3 and w[1] in "tTwW":
+                table[int(w[0], 16)] = w[2]
+    keys = sorted(table)
+    return keys, [table[k] for k in keys], bisect.bisect_right
+
+
+def profile(seconds, all_threads, build):
+    """Sample demo's threads with q2remote --prof; the most frequent functions by thread state."""
+    import collections
+    out, rc = run("p=$(pidof demo); echo $p; ls /proc/$p/task; cat /proc/$p/maps")
+    if rc: raise RuntimeError(out.decode())
+    lines = out.decode().split("\n")
+    pid = lines[0].strip()
+    tids = [l for l in lines[1:] if l.strip().isdigit()]
+    maps = []
+    for l in lines:
+        w = l.split()
+        if len(w) >= 6 and "x" in w[1] and "-" in w[0] and w[5].startswith("/"):
+            lo, hi = (int(x, 16) for x in w[0].split("-"))
+            maps.append((lo, hi, int(w[2], 16), w[5]))
+    if not all_threads: tids = [pid]
+    hz = 100 if not all_threads else 20
+    n = int(seconds * hz)
+    raw, rc = run(f"{os.environ.get('Q2_PROF_BIN', 'q2remote')} --prof {1000 // hz} {n} {' '.join(tids)}", timeout=TIMEOUT + seconds * 3)
+    cache = pathlib.Path.home() / ".cache/q2-prof"
+    cache.mkdir(parents=True, exist_ok=True)
+    tables = {}
+    def name(addr):
+        for lo, hi, off, path in maps:
+            if lo <= addr < hi:
+                base = posixpath.basename(path)
+                cands = []
+                if base == "demo" and build:
+                    cands = [(pathlib.Path(build) / "patch.elf", 0), (pathlib.Path(build) / "demo", 0)]
+                else:
+                    local = cache / base
+                    if not local.exists(): pull(path, str(local))
+                    cands = [(local, lo - off)]
+                for f, bias in cands:
+                    if f not in tables: tables[f] = symbol_table(str(f))
+                    keys, names, bis = tables[f]
+                    i = bis(keys, addr - bias) - 1
+                    if i >= 0 and addr - bias - keys[i] < 0x20000:
+                        return f"{names[i]}+{addr - bias - keys[i]:#x}"[:60]
+                return f"{base}+{addr - lo + off:#x}"
+        return f"{addr:#x}"
+    counts = collections.defaultdict(collections.Counter)
+    total = collections.Counter()
+    for l in raw.decode().split("\n"):
+        w = l.split()
+        if len(w) < 4: continue
+        tid, state = w[0], w[1]
+        key = "running" if state == "R" else "blocked" if state == "D" else "sleeping"
+        total[(tid, key)] += 1
+        # pc, ra, then the stack's words that fall in code: a heuristic, so a stale word may show
+        frames = []
+        for x in w[2:]:
+            a = int(x, 16)
+            if not any(lo <= a < hi for lo, hi, _, _ in maps): continue
+            f = name(a).split("+")[0]
+            if not frames or frames[-1] != f: frames.append(f)
+            if len(frames) == 6: break
+        counts[(tid, key)]["  <- ".join(frames)] += 1
+    for (tid, key), c in sorted(counts.items(), key=lambda kv: -sum(kv[1].values())):
+        print(f"== thread {tid} {key}: {total[(tid, key)]} of {n} samples")
+        for k, v in c.most_common(15):
+            print(f"{v:6d}  {k}")
+
+
 def input_action(kind, args):
     if kind == "key":
         code = KEYS.get(args[0].lower())
@@ -449,6 +526,11 @@ def main(argv):
         print("\n".join(find())); return 0
     if cmd == "reboot" and a in ([], ["--wait"]):
         reboot(bool(a)); return 0
+    if cmd == "prof" and a and a[0].replace(".", "", 1).isdigit():
+        rest, build = a[1:], os.environ.get("Q2_BUILD")
+        if "--build" in rest:
+            i = rest.index("--build"); build = rest[i + 1]; del rest[i:i + 2]
+        profile(float(a[0]), rest == ["--all"], build); return 0
     if cmd == "events" and 1 <= len(a) <= 2:
         try: n = int(a[0]); seconds = float(a[1]) if len(a) > 1 else 5
         except ValueError: raise ValueError("events requires an integer event number and seconds")

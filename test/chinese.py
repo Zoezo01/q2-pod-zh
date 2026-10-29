@@ -55,8 +55,9 @@ def check(directory):
                   '随机播放歌曲', '查看队列', '网络电台', '待机时限：关闭',
                   '单声道音频', '断点续播：关闭', '上一页', '下一页',
                   '左右声道互换', '章节', '前往文件夹', '编辑播放列表',
-                  '上游英文固件更新', '应用商店', 'Q2 应用商店', '下载管理',
-                  '存储管理', '已下载歌曲', '移除下载？', '年代', '数独', '贪吃蛇'):
+                  '上游英文固件更新', '应用商店', '下载管理',
+                  '存储管理', '已下载歌曲', '移除下载？', '年代', '数独', '贪吃蛇',
+                  '删除播放列表？', '播放列表已删除', '无法删除播放列表'):
         assert label.encode() + b'\0' in payload, label
     # The localized labels must never replace the names of SD card directories.
     for folder in ('Podcasts', 'Audiobooks', 'Photos', 'Books', 'Videos'):

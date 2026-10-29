@@ -1,4 +1,4 @@
-# The Apps page's list (System settings → Apps): one GitHub repo with a release zip per line,
+# The App Store page's list (System settings → App Store): one GitHub repo with a release zip per line,
 # "owner/repo Name", the name optional. The device fetches this file; see docs/internals.md#q2-shelf.
 DiamondBond/q2-rockbox Rockbox
 DiamondBond/q2-rockbox-themes Rockbox Themes

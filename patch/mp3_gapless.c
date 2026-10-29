@@ -4,7 +4,7 @@
 typedef struct {
     int format, pad;
     double next_pts;
-    unsigned checked, start, skip, padding, rate, channels, held, unit, seeked, tag_skipped;
+    unsigned checked, start, skip, padding, rate, channels, held, unit, seeked, tag_skipped, guarded;
     unsigned char *tail;
 } mp3_private;
 
@@ -130,11 +130,25 @@ void mp3_gapless_seek(void *d, int at_start) {
     mp3_private *p = mp3_state(d);
     if (p) {
         p->held = 0;
+        p->guarded = 0;
         p->seeked = at_start ? 2 : 1;
         /* Stock demux_audio_seek makes the next fill discard one frame to resync. */
         p->tag_skipped = p->seeked == 2 && *(volatile int *)0xb152b4u;
         p->skip = p->start && p->seeked == 2 ? p->start - (p->tag_skipped ? (p->rate >= 32000 ? 1152 : 576) : 0) : 0;
     }
+}
+
+/* read_frame's demux_read_data (ds, buf, room). libmad decodes a frame only with MAD_BUFFER_GUARD
+ * (8) bytes after it, and demux_audio's packets are whole frames, so at EOF stock drops the last
+ * frame: the end of the track's audio, which the trailing trim then cut further, a tick into
+ * the next track. Zeros after it once, as Rockbox and minimp3 do, decode it. */
+int mp3_read(void *ds, unsigned char *buf, int room) {
+    int got = ((int (*)(void *, unsigned char *, int))0x484c0cu)(ds, buf, room);
+    mp3_private *p = got > 0 ? 0 : mp3_state(AT(ds, 0x58, void *));
+    if (!p || p->guarded || room < 8) return got;
+    p->guarded = 1;
+    memset(buf, 0, 8);
+    return 8;
 }
 
 void mp3_close(void *d) {

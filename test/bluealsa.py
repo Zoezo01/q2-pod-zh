@@ -7,7 +7,8 @@ import pathlib, struct, subprocess, sys
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools'))
-from build import BLUEALSA, BT_DROP, BT_DROP_HANDLER, BT_PCM_CALLERS, machine, read, word
+from build import (BLUEALSA, BT_DROP, BT_DROP_HANDLER, BT_PCM_CALLERS, BT_SILENCE_SAMPLES, bt_silence,
+                   machine, read, word)
 
 
 def check_drop(raw, queued, caller=None):
@@ -91,6 +92,76 @@ def check_drop(raw, queued, caller=None):
     return empty_at_ack and fifo[0] == 4096 and len(flushes) == flush_count and read(u, state + 0x1c) == 0 and read(u, state + 0x30) == 0xffffffff and rewound
 
 
+def silence_machine(raw):
+    """io_poll_and_read_pcm under Unicorn, poll and io_pcm_read scripted: call(poll result, ...)."""
+    u = machine(raw, 0x1000000)
+    io, pcm, transport, buffer, stop = 0x1000000, 0x1000100, 0x1000300, 0x1001000, 0x100f000
+    word(u, pcm + 4, transport)
+    log = {}
+    def signed(v): return v - (1 << 32 if v >> 31 else 0)
+    def hook(u, address, size, _):
+        if address == 0x4307a0:  # poll(fds, 2, timeout): a signal first, if scripted
+            log['timeout'] = signed(u.reg_read(UC_MIPS_REG_A2))
+            log.setdefault('timeouts', []).append(log['timeout'])
+            signal = log.pop('signal', None)
+            u.mem_write(u.reg_read(UC_MIPS_REG_A0) + 6, struct.pack('<H', signal is not None))
+            u.reg_write(UC_MIPS_REG_V0, 1 if signal is not None else log['poll'])
+            if signal is not None: log['next'] = signal
+        elif address == 0x40b7c4:  # the transport's signal read
+            word(u, u.reg_read(UC_MIPS_REG_A1), log.pop('next'))
+        elif address == 0x41414c:  # io_pcm_read
+            u.reg_write(UC_MIPS_REG_V0, log['got'])
+        elif address == 0x42ff70:  # pthread_cond_signal: Drain's waiter woken
+            log['drained'] = True
+        elif address == 0x42ff00:  # clock_gettime: asrsync_init
+            log['asrs'] = True
+        elif address not in (0x430ac0, 0x40c7a0):  # setcancelstate, pcm active
+            return
+        u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+    u.hook_add(UC_HOOK_CODE, hook)
+    def call(poll, timeout=-1, frames=1, samples=256, got=64, width=2, signal=None):
+        log.clear()
+        log.update(poll=poll, got=got, **({'signal': signal} if signal is not None else {}))
+        word(u, io + 0x30, timeout)
+        word(u, io + 0x1c, frames)
+        u.mem_write(pcm + 0x2a, struct.pack('<H', width << 8 | width * 8))
+        u.mem_write(buffer, b'\xff' * 2048)
+        for register, value in ((UC_MIPS_REG_SP, 0x100e000), (UC_MIPS_REG_A0, io), (UC_MIPS_REG_A1, pcm),
+                                (UC_MIPS_REG_A2, buffer), (UC_MIPS_REG_A3, samples), (UC_MIPS_REG_RA, stop)):
+            u.reg_write(register, value)
+        u.emu_start(0x4145d0, stop, count=20000)
+        log['timeout_after'] = signed(read(u, io + 0x30))
+        log['zeroed'] = bytes(u.mem_read(buffer, 2048)).index(b'\xff')
+        return signed(u.reg_read(UC_MIPS_REG_V0))
+    return u, call, log
+
+
+def check_silence(stock, raw):
+    """Drain's timeout, or PAUSE's 100 ms, after real PCM fills silence (stock sends nothing), later
+    polls don't wait, real PCM ends it, and with the budget spent or none armed it behaves as stock."""
+    _, call, log = silence_machine(stock)
+    assert call(1) == 64 and call(0, timeout=100) == 0, 'stock: Drain timeout returns nothing'
+    # (the scripted second poll then returns 0, which a real unbounded one wouldn't)
+    assert call(0, signal=3) == 0 and log['timeouts'] == [-1, -1], 'stock: PAUSE polls again without a timeout'
+    u, call, log = silence_machine(raw)
+    quiet = bt_silence()[1]['quiet']
+    assert call(1) == 64 and log['timeout'] == -1 and read(u, quiet) == BT_SILENCE_SAMPLES, 'no idle wait'
+    assert call(0, timeout=100) == 256 and log['timeout'] == 100 and log['drained'], "Drain's timeout fills"
+    assert log['timeout_after'] == -1 and log['zeroed'] == 512, '256 S16 samples, waiter woken'
+    assert call(0, frames=0) == 256 and log['timeout'] == 0 and log.get('asrs'), 'filling: no wait, pacing starts'
+    assert call(0, width=4) == 256 and log['zeroed'] == 1024, 'S32 (LDAC): 4 bytes a sample'
+    assert read(u, quiet) == BT_SILENCE_SAMPLES - 768
+    assert call(1, got=0) == 0 and read(u, quiet) == BT_SILENCE_SAMPLES - 768, 'PCM closed: no re-arm'
+    word(u, quiet, 100)
+    assert call(0) == 256 and read(u, quiet) == 0, 'the budget runs out'
+    assert call(1) == 64 and log['timeout'] == -1 and read(u, quiet) == BT_SILENCE_SAMPLES
+    assert call(1) == 64 and log['timeout'] == -1, 'real PCM ends the fill'
+    assert call(0, signal=3) == 256 and log['timeouts'] == [-1, 100], 'PAUSE (a skip): 100 ms, then the fill'
+    assert call(1) == 64
+    word(u, quiet, 0)
+    assert call(0, timeout=100) == 0 and log['drained'] and log['timeout_after'] == -1, 'no budget: drain as stock'
+
+
 def check(directory):
     directory = pathlib.Path(directory)
     def extract(name):
@@ -126,6 +197,8 @@ def check(directory):
     for caller in BT_PCM_CALLERS:
         assert not check_drop(stock, 4096, caller)
         assert check_drop(patched, 4096, caller), f'DROP retained partial PCM for {caller[0]:x}'
+    check_silence(stock, patched)
+    print("Bluetooth silence: Drain's or PAUSE's 100 ms timeout fills silence until real PCM or the budget ends; stock sends nothing.")
     print('Bluetooth DROP: delayed encoder signal preserves new PCM, flushes all old PCM and resets pacing; stock reproduces the fault.')
 
 

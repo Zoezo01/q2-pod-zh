@@ -10,7 +10,7 @@ import subprocess
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, jal, machine, symbols
-from peq import MP3_ALLOC, MP3_FILTER, MP3_CLOSE
+from peq import MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, DEMUX_READ
 from unicorn import UC_HOOK_CODE
 from unicorn.mips_const import *
 
@@ -18,7 +18,8 @@ out = Path(sys.argv[1])/'peq'
 raw = (out/'hciplayer').read_bytes()
 syms = symbols(out/'peq.elf')
 for address, value in ((MP3_ALLOC, jal(syms['mp3_private_alloc'])),
-                       (MP3_FILTER, jal(syms['mp3_filter_entry'])), (MP3_CLOSE, syms['mp3_close'])):
+                       (MP3_FILTER, jal(syms['mp3_filter_entry'])), (MP3_CLOSE, syms['mp3_close']),
+                       (MP3_READ, jal(syms['mp3_read']))):
     assert struct.unpack_from('<I', raw, fileoff(raw, address))[0] == value
 
 u = machine(raw, 0x2000000)
@@ -34,6 +35,7 @@ for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=Tr
         u.mem_write(int(s[0], 16), struct.pack('<I', address))
 heap, allocations, files, positions, filtered, descriptors = 0x3000000, {}, {}, {}, [], {}
 fail = None
+demux_left = 0
 imports_called = Counter()
 
 
@@ -55,6 +57,9 @@ def hook(u, address, size, _):
         data = a(1)
         filtered.append(bytes(u.mem_read(r(data), r(data+4))))
         result = data
+    elif address == DEMUX_READ:  # demux_read_data: demux_left bytes of 0xaa, then EOF
+        result = min(a(2), demux_left)
+        u.mem_write(a(1), b'\xaa' * result)
     elif address in imports:
         name = imports[address]
         imports_called[name] += 1
@@ -72,6 +77,9 @@ def hook(u, address, size, _):
             result = 0
         elif name in ('memcpy', 'memmove'):
             u.mem_write(a(0), bytes(u.mem_read(a(1), a(2))))
+            result = a(0)
+        elif name == 'memset':
+            u.mem_write(a(0), bytes([a(1) & 255]) * a(2))
             result = a(0)
         elif name == 'memcmp':
             x, y = bytes(u.mem_read(a(0), a(2))), bytes(u.mem_read(a(1), a(2)))
@@ -208,4 +216,21 @@ for i, header in enumerate((h, bytes(417), h)):
         assert feed(tr, pcm) == pcm
     call('mp3_close', tr[0])
     assert not allocations
-print('MIPS MP3 gapless: installed hooks, preloads, seek/reset, initial seek, fd restoration, untagged bypass, allocation failure and cleanup: OK')
+# read_frame at EOF: the last frame gets 8 zero guard bytes once, then stock's EOF; a seek re-arms it.
+tr = track(0)
+ds, buf = r(tr[1]), 0x3310000
+u.mem_write(buf, b'\xff' * 16)
+demux_left = 5
+assert call('mp3_read', ds, buf, 100) == 5 and bytes(u.mem_read(buf, 5)) == b'\xaa' * 5
+demux_left = 0
+assert call('mp3_read', ds, buf, 7) == 0
+assert call('mp3_read', ds, buf, 100) == 8 and bytes(u.mem_read(buf, 9)) == bytes(8) + b'\xff'
+assert call('mp3_read', ds, buf, 100) == 0
+call('mp3_gapless_seek', tr[0], 0)
+assert call('mp3_read', ds, buf, 100) == 8
+w(tr[0], 0)  # another demuxer's stream keeps stock's EOF
+assert call('mp3_read', ds, buf, 100) == 0
+w(tr[0], 0x89fd90)
+call('mp3_close', tr[0])
+assert not allocations
+print('MIPS MP3 gapless: installed hooks, preloads, seek/reset, initial seek, fd restoration, untagged bypass, allocation failure, last-frame guard and cleanup: OK')

@@ -21,11 +21,44 @@ static int dsd(void) {
     return (drv && !strcmp(drv, "dsdiff")) || (name && strlen(name) >= 5 && !memcmp(name, "ffdsd", 5));
 }
 
+/* Filter memory across a track change (#137): the player negotiates a new instance (or this one
+ * again) for each file, and a cascade starting from zero memory under a continuous signal clicks at
+ * a gapless change. The instance that played last leaves its settled filter here when it goes or
+ * renegotiates, if it was filtered to within XF_LEAD_S of its length (crossfade's position and
+ * length); the next one adopts it on its first block at the same rate, channels and preset. A skip
+ * or stop mid-track, or a pause, starts the next from zero.
+ * ponytail: a new instance that plays before the old one is freed starts from zero, as before; a
+ * skip in a track's last two seconds carries. */
+#define CARRY_STALE_NS 3000000000LL /* as XF_STALE_NS: older (a pause) would ring into the next */
+static struct {
+    double z[PEQ_CHANNELS][PEQ_BANDS][2];
+    peq_preset p;
+    int rate, channels, id;
+} carry;
+static int last_id;       /* the instance that played the last block, filtered or passed through */
+static long long last_at; /* now_ns of the last block filtered near its track's end */
+static void leave(player_state *s) {
+    if (s->id != last_id || s->fresh) return;
+    carry.id = 0;
+    if (!s->ending || s->dsp.ramp || s->dsp.waiting || s->dsp.current.bypass || !s->dsp.channels)
+        return;
+    memcpy(carry.z, s->dsp.current.z, sizeof carry.z), carry.p = s->preset;
+    carry.rate = s->dsp.rate, carry.channels = s->dsp.channels, carry.id = s->id;
+}
+static void adopt(player_state *s) {
+    int id = carry.id;
+    s->fresh = 0, carry.id = 0; /* one track takes it */
+    if (id && id == last_id && carry.rate == s->dsp.rate && carry.channels == s->dsp.channels &&
+        !memcmp(&carry.p, &s->preset, sizeof carry.p) && now_ns() - last_at < CARRY_STALE_NS)
+        memcpy(s->dsp.current.z, carry.z, sizeof carry.z);
+}
+
 static int control(af_instance *af, int command, void *arg) {
     player_state *s = af->setup;
     if (command == 0x10000100) {
         af_data *in = arg;
         if (!in || in->nch < 1 || in->nch > PEQ_CHANNELS) return -2;
+        leave(s);
         *af->data = *in;
         if (in->rate < 8000 || in->rate > 384000 || (in->format & ~63) || dsd()) {
             s->dsp.channels = 0; /* play leaves every block alone */
@@ -33,6 +66,7 @@ static int control(af_instance *af, int command, void *arg) {
         }
         peq_load_active(&s->preset);
         peq_reset(&s->dsp, in->rate, in->nch, &s->preset);
+        s->fresh = 1;
         af->data->format = 0x1d;
         af->data->bps = 4;
         if (in->format != 0x1d || in->bps != 4) { *in = *af->data; return 0; }
@@ -100,7 +134,7 @@ static void tap(const float *a, unsigned frames, int nch, int rate) {
  * putting out half of what comes in until the hold is full, so the decoder runs ahead at twice real
  * time and no gap opens. The next track's filter (a new instance: the player re-adds it at each file)
  * then mixes the held tail under its own start, equal power. The ring outlives both instances. */
-#define XF_FLOATS (1u << 20) /* ponytail: 4 MB; about 10 s at 44.1 kHz stereo, 4.7 s at 96, 2.3 s at 192 */
+#define XF_FLOATS (6u << 18) /* ponytail: 6 MB; 15 s at 48 kHz stereo, 7.5 s at 96, 3.7 s at 192 */
 #define XF_SLACK (1u << 17)  /* room for one block past the held tail */
 #define XF_LEAD_S 2.0        /* the hold starts this much early, for the length's whole seconds */
 #define XF_STALE_NS 3000000000LL /* a tail not followed this soon (stop, pause) is dropped */
@@ -223,6 +257,12 @@ static af_data *play(af_instance *af, af_data *data) {
         data->nch == s->dsp.channels && data->rate == s->dsp.rate &&
         !(data->len % (4 * data->nch))) {
         unsigned frames = (unsigned)data->len / (4 * data->nch);
+        if (s->fresh) adopt(s);
+        if (!s->dsp.current.bypass) { /* only a track played to its end hands its memory on */
+            double pts = decoded();
+            s->ending = LENGTH > 0 && pts >= 0 && pts > LENGTH - XF_LEAD_S;
+            if (s->ending) last_at = now_ns();
+        }
         peq_process(&s->dsp, data->audio, frames);
         static watched mono = { 0, ~0u }; /* Mono Audio (crossfade.c mono_sync), after the EQ's sides */
         if (data->nch == 2 && watch(&mono, MONO_FILE, data->rate, frames))
@@ -237,10 +277,12 @@ static af_data *play(af_instance *af, af_data *data) {
         data->len = (int)(frames * 4 * data->nch);
         tap(data->audio, frames, data->nch, data->rate);
     }
+    if (data && data->len > 0) last_id = s->id;
     return data;
 }
 
 static void uninit(af_instance *af) {
+    if (af->setup) leave(af->setup);
     free(af->data);
     free(af->setup);
     af->data = 0;
@@ -384,5 +426,63 @@ void mp3_seek(void *demuxer, float rel, float delay, int flags) {
     }
     STOCK_SEEK(demuxer, rel, delay, flags);
     if (priv && AT(priv, 0, int) == 1) mp3_gapless_seek(demuxer, AT(priv, 8, double) <= 0);
+}
+#endif
+
+/* Stopped, the main thread's idle loop (0x42d994) polled the play flag (PLAY_FLAG) with usleep(10000), and
+ * paused, MPlayer's loop (0x42fff0) checked for a command and slept usec_sleep(20000): 100 or 50 wakeups a
+ * second, more than everything else on a dark, idle Q2 together. IDLE_WAIT and PAUSE_WAIT make both sleeps
+ * futex waits: the stopped loop's on the flag, the paused loop's on cmd_gen. Every command reaches the player
+ * through the command thread's handler (0x42be20), which CMD_DONE wraps: when the handler changed the flag
+ * (set-songurl, set-nexturl) it wakes the stopped loop, and when it changed anything the paused loop reacts
+ * to (cmd_words, and the MPlayer context's state, which mcl-play and mcl-pause set) it moves cmd_gen and
+ * wakes that. demo's status queries, several a second, change none and wake nothing. A cmd_gen that moved
+ * since the last wait (a command handled while the loop checked) returns at once. Both loops still run
+ * their bodies after a wait, so the command thread's heartbeat (0xb10e68) is set again within WAIT_S: that
+ * thread clears it each second and exits hciplayer after 6 checks find it clear (0x42d95c).
+ * docs/internals.md#battery. ponytail: anything else the loops watch waits for WAIT_S. */
+#ifndef PEQ_HOST
+#define PLAY_FLAG 0xb10e34u
+#define MPCTX_STATE 4 /* mpctx's word: 1 playing (the pause loop returns), 2 paused */
+#define WAIT_S 1
+_Static_assert(WAIT_S <= 2, "stock watchdog: exit after 6 s without 0xb10e68");
+extern int hci_futex(volatile int *addr, int op, int value, const void *timeout);
+__asm__(".globl hci_futex\nhci_futex:\nli $v0, 4238\nsyscall\njr $ra\nnop\n");
+static const long wait_s[2] = { WAIT_S, 0 };
+int hci_idle_wait(unsigned us) {
+    (void)us;
+    hci_futex((volatile int *)PLAY_FLAG, 128, 0, wait_s); /* FUTEX_WAIT_PRIVATE while 0 */
+    return 0;
+}
+static volatile int cmd_gen;
+static int cmd_seen;
+int hci_pause_wait(unsigned us) {
+    (void)us;
+    int g = __atomic_load_n(&cmd_gen, __ATOMIC_ACQUIRE);
+    if (g == cmd_seen) {
+        hci_futex(&cmd_gen, 128, g, wait_s); /* FUTEX_WAIT_PRIVATE while unchanged */
+        g = cmd_gen;
+    }
+    cmd_seen = g;
+    return 0;
+}
+/* What the two loops read that a command sets: the play flag (first: hci_command wakes the stopped loop on
+ * it), the next and stop flags; then the context's state. The context (MPCTX) is always the static 0xaf9e38. */
+static const unsigned cmd_words[] = { PLAY_FLAG, 0xb10e6c, 0xb10e70 };
+#define CMD_WORDS (sizeof cmd_words / sizeof *cmd_words)
+static void cmd_state(int *v) {
+    for (unsigned i = 0; i < CMD_WORDS; ++i) v[i] = *(volatile int *)cmd_words[i];
+    v[CMD_WORDS] = *(volatile int *)((char *)MPCTX + MPCTX_STATE);
+}
+void hci_command(void *buf) {
+    int before[CMD_WORDS + 1], after[CMD_WORDS + 1], changed = 0;
+    cmd_state(before);
+    ((void (*)(void *))0x42be20u)(buf);
+    cmd_state(after);
+    for (unsigned i = 0; i < CMD_WORDS + 1; ++i) changed |= before[i] != after[i];
+    if (!changed) return;
+    __atomic_add_fetch(&cmd_gen, 1, __ATOMIC_SEQ_CST);
+    hci_futex(&cmd_gen, 129, 1, 0); /* FUTEX_WAKE_PRIVATE */
+    if (before[0] != after[0]) hci_futex((volatile int *)PLAY_FLAG, 129, 1, 0);
 }
 #endif
