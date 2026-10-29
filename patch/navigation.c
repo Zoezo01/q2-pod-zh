@@ -8021,7 +8021,7 @@ int ringnav_playlist_delete(void *win, void *event) {
     struct {
         int kind, ms;
         char text[0x400];
-    } prompt = { 1, 0, "Delete Playlist?" };
+    } prompt = { 1, 0, "删除播放列表？" };
     if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return 0;
     char sql[256];
     if (sqlite3_open("/mnt/data/database.db", &db)) goto done;
@@ -8041,7 +8041,7 @@ done:
         g_delete_flag = 1;
         navigator_back();
     }
-    toast(ok ? "Playlist deleted" : "Could not delete playlist");
+    toast(ok ? "播放列表已删除" : "无法删除播放列表");
     return 0;
 }
 
