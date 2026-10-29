@@ -7,7 +7,7 @@ import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarf
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.5.2'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.5.5'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -25,6 +25,8 @@ BASE = 0xb00000
 SCRATCH = 0xb80000  # 512 KB of payload text below it
 RING_STEP = 48
 HOOKS = {
+    'createPlayListItem': (0x50d32c, 'ringnav_playlist_create', None),
+    'playlist_delete_click': (0x4b35cc, 'ringnav_playlist_delete', None),
     'localmusic_playlistsmore_page_init': (0x4b3918, 'ringnav_playlistsmore', 'playlistsmore'),
     'on_wm_keydown_before_fun': (0x4e8424, 'ringnav_keydown', 'keydown'),
     'on_wm_keyup_before_fun': (0x4e85c8, 'ringnav', 'keyup'),
@@ -234,6 +236,17 @@ BT_DROP_PAYLOAD = 0x450000
 # is Q2's LDAC loop, which accumulates 256 samples in saved s6/s7 instead of ffb_t.
 BT_PCM_CALLERS = ((0x40649c, 0x74), (0x4150dc, 0x34), (0x41746c, 0x98),
                   (0x418114, 0x34), (0x418c84, 0x60), (0x41a6ec, None))
+# A skip left the encoder without PCM for ~400 ms and stock sent no packets, so the headset's buffer
+# ran dry: tools/bt_silence.S, linked at BT_SILENCE, returns silence from Drain's timeout instead,
+# for up to BT_SILENCE_SAMPLES (interleaved: 2 s at 48 kHz stereo, 1 s at 96 kHz) after real PCM.
+BT_SILENCE, BT_SILENCE_SAMPLES = 0x450400, 192000
+# (address, stock word, patched with: j or jal to a bt_silence.S symbol, or a word):
+# poll's timeout, poll's timeout path (its delay slot takes the moved move a1,zero), the PCM read,
+# and the signal jump table's PAUSE entry: demo pauses hciplayer before some skips, so PAUSE takes
+# Drain's case (a 100 ms poll, then the fill) instead of polling again unbounded.
+BT_SILENCE_SITES = ((0x41465c, 0x8e460030, 'j', 'timeout'), (0x414684, 0x00002825, 'j', 'fill'),
+                    (0x414688, 0x0c10c2b0, None, 0x00002825), (0x414754, 0x0c105053, 'jal', 'read'),
+                    (0x42d09c, 0x0041463c, None, 0x004147a0))
 # platform_init's crash watchdog forks pgrep every 2 s; 10 s is still quick to reboot a dead UI.
 WATCHDOG = 'usr/bin/checkappprocess.sh'
 WATCHDOG_SLEEP = (b'\tsleep 2\n', b'\tsleep 10\n')
@@ -267,6 +280,10 @@ HOLD_KEYS = ((0x6a0088, 0x8f99b1a4, 0x02603825, None), (0x6a0098, 0x0320f809, No
 # device_standby's bal awake_screen after the resume from Standby becomes li $v0, 1: the screen stays dark,
 # so the resuming key acts as it does dark (Play plays, centre wakes).
 STANDBY_WAKE = (0x4f7d24, 0x0411ff26, 0x24020001)
+# on_wm_idle_status, stock's idle callback (every UI pass), calls player_mainscheduling (jalr $t9), whose
+# mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
+# The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
+MAINSCHEDULING_CALL = (0x4e9d28, 0x0320f809)
 # checkBluetoothStatus' jalr player_save_start once a headset's A2DP comes up (a0 0: the queue restarts
 # unpaused, whatever it was doing). It becomes jal ringnav_bt_connect_start (docs/internals.md#resume-on-connect).
 BT_CONNECT_START = (0x4f358c, 0x0320f809)
@@ -376,6 +393,7 @@ WHEEL_TS_READ = (0x625b6c, 0x0320f809)
 # (player_playlist, used nowhere else); the Library's plural categories; settings rows in title case
 # and plain words; the Lock screen help; and Baidu without its (BETA).
 LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
+    ('msg_playlistfull', 'Playlist Is Full', 'Could not create playlist'),
     ('player_playlist', 'Playlists', 'Queue'), ('system_powermanager', 'Idle', 'Power'),
     ('powerm_deep_off', 'standby/shutdown', 'Standby'),
     ('local_songer', 'Artist', 'Artists'), ('local_album', 'Album', 'Albums'),
@@ -970,6 +988,7 @@ FUNCTIONS = {
  'tk_str_start_with': ('int', 'const char *, const char *'),
  'image_manager': ('void *', 'void'),
  'image_manager_unload_all': ('int', 'void *'),
+ 'image_manager_unload_bitmap_by_name': ('int', 'void *, const char *'),
  'bitmap_get_line_length': ('unsigned', 'void *'),
  'bitmap_lock_buffer_for_write': ('unsigned char *', 'void *'),
  'bitmap_unlock_buffer': ('int', 'void *'),
@@ -983,6 +1002,7 @@ FUNCTIONS = {
  'playing_timer_start': ('int', 'void *'),
  'playing_timer_clear': ('int', 'void *'),
  'player_seek_time': ('int', 'int'),
+ 'player_mainscheduling': ('int', 'void'),
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
@@ -1047,6 +1067,7 @@ FUNCTIONS = {
 }
 # Local stock routines in the SHA-256-pinned V1.32 executable.
 PRIVATE_FUNCTIONS = {
+    "playlist_delete_click": 0x4b35cc,
     'keylock_rows': HOOKS['keylock_rows'][0],
     'timezone_row': HOOKS['timezone_row'][0],
     'quick_lock': HOOKS['quick_lock'][0],
@@ -1197,6 +1218,17 @@ def patch_m4b_cover(raw):
     struct.pack_into('<I', image, fileoff(raw, site), branch(0x10000000, site, base))
     return bytes(image)
 
+def bt_silence():
+    """tools/bt_silence.S linked at BT_SILENCE: its bytes and symbols."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        d = pathlib.Path(d)
+        run('clang', '--target=mipsel-linux-gnu', '-march=mips32r2', '-mno-abicalls', '-fno-pic',
+            f'-DBUDGET={BT_SILENCE_SAMPLES}', '-c', ROOT/'tools/bt_silence.S', '-o', d/'s.o')
+        run('ld.lld', '-m', 'elf32ltsmip', f'-Ttext={BT_SILENCE:#x}', '-e', 'timeout', d/'s.o', '-o', d/'s.elf')
+        run('llvm-objcopy', '-O', 'binary', '-j', '.text', d/'s.elf', d/'s.bin')
+        return (d/'s.bin').read_bytes(), symbols(d/'s.elf')
+
 def patch_bluealsa(raw):
     """Offer AAC at 48 kHz only. A headset that opens the stream itself (AirPods out of the case)
     picks 44.1 kHz, and bluealsa, still fed 48 kHz, drops about 8% of the AAC frames."""
@@ -1226,12 +1258,19 @@ def patch_bluealsa(raw):
         words += [0x3c0a0000 | caller >> 16, 0x354a0000 | caller & 0xffff,
                   0x150a0000 | len(body)+1, 0, *body]
     words += [0x081051e4, 0]  # unknown caller: reset pacing without touching its buffer
-    payload = struct.pack(f'<{len(words)}I', *words)
+    check(len(words)*4 <= BT_SILENCE - BT_DROP_PAYLOAD, 'Bluetooth DROP payload too long')
+    words += [0] * ((BT_SILENCE - BT_DROP_PAYLOAD) // 4 - len(words))
+    code, sym = bt_silence()
+    payload = struct.pack(f'<{len(words)}I', *words) + code
     append_payload(image, payload, BT_DROP_PAYLOAD, len(payload), 'bluealsa')
     struct.pack_into('<2I', image, fileoff(raw, BT_DROP),
                      j(BT_DROP_PAYLOAD), 0)
     # Never flush the new track's FIFO from this asynchronously handled signal.
     struct.pack_into('<2I', image, fileoff(raw, BT_DROP_HANDLER), j(reset), 0)
+    for address, old, op, target in BT_SILENCE_SITES:
+        check(struct.unpack_from('<I', raw, fileoff(raw, address))[0] == old, 'Bluetooth silence site mismatch')
+        new = {'j': j, 'jal': jal}[op](sym[target]) if op else target
+        struct.pack_into('<I', image, fileoff(raw, address), new)
     return bytes(image)
 
 def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=True, rotator_lazy_clock=True, pwm_idle_clock=True, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):
@@ -1263,6 +1302,7 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
     sq = out/'stock.squashfs'; sq.write_bytes(blobs['recovery-update/rootfs.squashfs'])
     def cat(path): return subprocess.check_output(['unsquashfs', '-cat', str(sq), path])
     raw_demo = cat('release/bin/demo')
+    (out/'libc-2.28.so').write_bytes(cat('lib/libc-2.28.so'))
     # peq.h tls_untimed writes OpenSSL 1.1.1f's SSL_CTX->param (0x100) and its ->flags (0xc) itself,
     # as demo imports neither accessor: their first instructions must still read those fields.
     for lib, fn, at, word in (('libssl.so.1.1', 'SSL_CTX_get0_param', 4, 0x8c820100),         # lw v0, 0x100(a0)
@@ -1375,6 +1415,7 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
     patch_word(patched, *HOLD_RETURN, jal(ps['compact_now_playing']),
                'long Return destination after stock input gates')
     patch_word(patched, *STANDBY_WAKE, 'Standby resume stays dark')
+    patch_word(patched, *MAINSCHEDULING_CALL, jal(ps['ringnav_mainscheduling']), 'player scheduling paced')
     for address, old, new, fn in HOLD_KEYS:
         patch_word(patched, address, old, new or jal(ps[fn]), 'Play/Pause and Return hold time')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51300c))[0] == 0x8f99b6e4,

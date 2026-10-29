@@ -1,5 +1,31 @@
 # Changelog
 
+- **1.5.5**:
+  - Bluetooth: skipping a track no longer crackles. The Q2 sent the headset nothing for about 0.4 s during a skip, so its buffer ran dry and the next song played on with it near-empty. After 0.1 s it now keeps the stream going with silence until the next song starts.
+  - Search: in Light Mode, the letter you are typing in the search box is readable. It was white on light blue.
+  - Now Playing: the full-screen art takes the cover's own shape, so a wide or tall cover fills the screen instead of shrinking into a square.
+  - Coverflow: a fast spin starts jumping by letter a little later, after about 0.7 s of turning.
+  - Crossfade: up to 15 s, was 10.
+  - App Store: the page is titled **App Store**, was **Q2 App Store**.
+
+- **1.5.4**:
+  - Player: starting playback from stopped, and resuming from pause, answer at once instead of waiting up to a second.
+  - Player: a track change without Gapless, and a folder's move to its next track, start as soon as stock's did.
+  - Player: a CUE track's change is no longer delayed by the player's status checks.
+  - EQ: the filter memory carries over only between gapless tracks, so a normal track change starts clean.
+  - Playlists: a name already used by another playlist is refused as a whole name.
+
+- **1.5.3**:
+  - EQ: gapless albums no longer click between tracks while EQ or PEQ is on. Each track's filter started with empty memory instead of carrying on from the last one (#137).
+  - MP3: gapless albums no longer tick between tracks. The player dropped each MP3's last frame, cutting the end of the track short (#135).
+  - Now Playing: the wheel highlight on More's playback-speed buttons fits the visible button instead of covering the note below it (#135).
+  - Clock: prevents background time conversions from briefly corrupting the status bar time, Auto Light Mode and timezone offsets.
+  - Battery: the player sleeps while paused or stopped instead of checking for a command 50 or 100 times a second; it wakes for the command itself. Play, Pause and skips answer as before.
+  - Battery: the status bar's clock and Auto Light Mode read the time once a minute instead of on every frame.
+  - Performance and battery: with Gapless on, the interface asks the player for its status 10 times a second instead of on every frame, up to 125 times a second, waiting for each answer. Scrolling and animations no longer stall on it.
+  - Playlists: creating a playlist no longer reuses an occupied ID after sorting by name, and database failures show an error.
+  - Playlists: Delete Playlist removes the playlist and its entries in one step, keeps More open on Cancel, refreshes the list after success and reports failures. Music files and the current playback queue stay intact.
+
 - **1.5.2**:
   - MP3: removes encoder delay and trailing padding from files with supported Xing/Info and LAME-compatible tags, preserving intentional silence. Keep Audio settings → Gapless on for continuous playback between tracks. Files without usable tags keep stock playback.
 

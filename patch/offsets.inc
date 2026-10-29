@@ -187,8 +187,12 @@ static inline int arc_out(int r, int y) {
 #define CODEC_STEP_MS 25
 #define CODEC_STEPS 6
 /* iPod: the full-screen art (stock's bigcover_page) shows the song name BC_MS, then it and its shade
- * fade out in BC_STEPS steps, BC_STEP_MS apart. */
+ * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
+#define BC_TITLE_PAD 12 /* the song name's inset from the art's sides */
+/* The screen glass's rounded corners and how far content keeps clear of them (tools/ipod.py). */
+#define GLASS_R 80
+#define GLASS_SLACK 4
 #define BC_STEP_MS 50
 #define BC_STEPS 8
 /* iPod drill rows: the stock list_into image sits where stock rows put their own img_into, its left

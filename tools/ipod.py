@@ -14,6 +14,13 @@ from build import ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
+INC = (ROOT/'patch/offsets.inc').read_text()
+
+
+# The integer #defines of patch/offsets.inc, which the payload compiles with.
+O = {m[1]: int(m[2], 0) for m in re.finditer(r'^#define\s+(\w+)\s+(0x[0-9A-Fa-f]+|\d+)\b', INC, re.M)}
+inc = O.__getitem__
+
 # The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
 # 72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
 # 68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
@@ -27,8 +34,8 @@ MARGIN = 8
 # the device calibration knob: the corner radius in pixels, fitted to device photos (V5.4I cut
 # "20 of 29" at x 8, y 42 and the "Sy" of the last Home row, which needs about 80) and to stock's
 # 50px status bar margins, which clear it. Text and icons near a corner keep CORNER_SLACK more.
-CORNER_R = 80
-CORNER_SLACK = 4
+CORNER_R = inc('GLASS_R')
+CORNER_SLACK = inc('GLASS_SLACK')
 
 
 def corner_inset(y):
@@ -60,12 +67,6 @@ CLOCK_MIN = 105
 CLOCK_TEXT = 70
 # Seven full-width Home rows share one left edge clear of the rounded glass. The payload lays them out
 # at runtime (coverflow_home_layout): Split narrows the list to HOME_SPLIT_W, the art right of it.
-INC = (ROOT/'patch/offsets.inc').read_text()
-
-
-# The integer #defines of patch/offsets.inc, which the payload compiles with.
-O = {m[1]: int(m[2], 0) for m in re.finditer(r'^#define\s+(\w+)\s+(0x[0-9A-Fa-f]+|\d+)\b', INC, re.M)}
-inc = O.__getitem__
 
 
 # iPod page transition: the window anim_hint of the browsing, settings and equalizer pages. Stock's
@@ -494,7 +495,7 @@ def playing_page(root):
 # and sets its draw type, scale_auto as here), the shade and the name on its foot as stock has them on the
 # screen's. paint_cover rounds the playing art after scaling.
 BIGCOVER = 'bigcover_page.bin'
-BC_TITLE_PAD = 12
+BC_TITLE_PAD = inc('BC_TITLE_PAD')
 
 
 def bigcover_page(root):

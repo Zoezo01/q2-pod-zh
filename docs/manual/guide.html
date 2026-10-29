@@ -606,7 +606,7 @@ ALBUM_ARTIST=1</pre>
     <li>Unzip the file to the card’s root, so the card has <code>.spotify/librespot</code>, <code>.spotify/run</code> and <code>.spotify/aplay.sh</code>. On macOS and Linux the leading dot hides the folder; Cmd+Shift+. shows it in Finder.</li>
     <li>Eject and unplug the Q2.</li>
   </ol>
-  <p>Or, over Wi-Fi: <b>System settings → Apps → Spotify</b> downloads and installs it (<a href="#apps">Installing apps over Wi-Fi</a>).</p>
+  <p>Or, over Wi-Fi: <b>System settings → App Store → Spotify</b> downloads and installs it (<a href="#apps">Installing apps over Wi-Fi</a>).</p>
   <p>Browsing on the Q2 needs q2-librespot v1.3 or later. To update, unzip a newer release over it; its <code>cache/</code> keeps the saved login. To remove Spotify, delete the <code>.spotify</code> folder.</p>
   <p><b>Pairing, once:</b> the first time, the page says “Open Spotify on your phone and choose Q2”. With the phone on the same Wi-Fi, pick <b>Q2</b> in the Spotify app’s device list; the page turns into the menu, and the login is saved on the card. From then on the Q2 needs no phone. <b>Account</b> shows who is signed in and signs out.</p>
   </div>
@@ -793,9 +793,10 @@ http://stream.radioparadise.com/mp3-128</pre>
       <tr><td>Year Order</td><td><b>Newest First</b> (default) or <b>Oldest First</b>: the order of every year view, an artist’s albums (grid and Coverflow) and Coverflow’s <b>Year</b> sort. Undated albums go last.</td></tr>
       <tr><td>Artist Album Order</td><td><b>Year</b> (default, as <b>Year Order</b>) or <b>A–Z</b>: the order of an artist’s albums, grid and Coverflow.</td></tr>
       <tr><td>Folder Root</td><td>Where Home’s <b>Folder</b> opens: <b>Card</b> (default) or one of the card’s top-level folders, such as <code>Music</code>. Press to step through them in name order and back to Card. It opens directly even with an OTG drive connected. Return climbs to the card, then goes back to Home, or to the SD/OTG choice with OTG connected. If the folder is renamed or removed, Folder opens as if set to Card. Folders whose names start with a dot, start or end with a space, or run over 200 bytes aren’t offered.</td></tr>
+      <tr><td>Folder Skip</td><td>Stock’s setting. On: when the last track of a folder you're playing ends, playback carries on with the next folder on the card, in name order, and Next or Previous at either end of the folder moves to the sibling folder. Off: playback stops at the end of the folder. Albums, artists, Most Played and Shuffle Songs from the Library never jump to another folder, whatever this is set to.</td></tr>
       <tr><td>Artists</td><td><b>Album Artist</b> (default) or <b>Artist</b>: Album Artist browses Artists by the Album Artist tag, so guest artists don’t split albums. A choice saved before stays.</td></tr>
       <tr><td>Gapless</td><td>Keep on for continuous playback between tracks. MP3 files with supported Xing/Info and LAME-compatible tags have encoder delay and trailing padding removed automatically; intentional silence stays. Files without usable tags keep stock playback.</td></tr>
-      <tr><td>Crossfade</td><td>Fades one song into the next, 1–10 s (5 by default): turn the wheel or drag the slider, all the way down for Off; Centre switches it on or off. Only between different albums, so albums stay gapless; needs stock’s <b>Gapless</b> on. Off by default.</td></tr>
+      <tr><td>Crossfade</td><td>Fades one song into the next, 1–15 s (5 by default): turn the wheel or drag the slider, all the way down for Off; Centre switches it on or off. Only between different albums, so albums stay gapless; needs stock’s <b>Gapless</b> on. Off by default.</td></tr>
       <tr><td>EQ</td><td>Simple tone controls and the parametric EQ (see Chapter 4).</td></tr>
       <tr><td>Filter</td><td>Stock’s DAC filter.</td></tr>
     </tbody>
@@ -873,7 +874,7 @@ http://stream.radioparadise.com/mp3-128</pre>
   <p>Or, over Wi-Fi: <b>System settings → System Update → Network Update</b> downloads the newest release to the card’s <code>update.tar</code>, replacing any that’s there, then opens the TF card update’s confirmation. Press the row again to cancel the download.</p>
   <div class="sub">
   <h3 id="apps">Installing apps over Wi-Fi</h3>
-  <p><b>System settings → Apps</b> installs and updates Rockbox, the Rockbox themes, Spotify and the card apps from their GitHub releases, instead of unzipping them by hand. Its list of apps is fetched over Wi-Fi and kept on the card, so the first time it needs Wi-Fi to show any; until then its one row, <b>App list</b>, loads it when pressed. Each row shows <b>Install</b>, <b>Update</b> or <b>Installed</b>; with Wi-Fi on, the page fetches the list again and checks for newer releases when it opens (at most every 10 minutes). Rockbox Themes appears once Rockbox is on the card. An installed app that leaves the list keeps its row, so you can still remove it.</p>
+  <p><b>System settings → App Store</b> installs and updates Rockbox, the Rockbox themes, Spotify and the card apps from their GitHub releases, instead of unzipping them by hand. Its list of apps is fetched over Wi-Fi and kept on the card, so the first time it needs Wi-Fi to show any; until then its one row, <b>App list</b>, loads it when pressed. Each row shows <b>Install</b>, <b>Update</b> or <b>Installed</b>; with Wi-Fi on, the page fetches the list again and checks for newer releases when it opens (at most every 10 minutes). Rockbox Themes appears once Rockbox is on the card. An installed app that leaves the list keeps its row, so you can still remove it.</p>
   <ul>
     <li><b>Install or update:</b> press Centre on the row. It shows the download’s progress; press it again to cancel. You can leave the page meanwhile: a message says when it’s done, such as “Spotify is ready in Streaming”. Updates keep your Rockbox settings and Spotify’s login and cache size.</li>
     <li><b>Rockbox</b> becomes what the Q2 starts at power-on, as when you unzip it, so the first press says so and a second one installs it. <b>System settings → Boot to</b> changes that.</li>
@@ -906,7 +907,7 @@ http://stream.radioparadise.com/mp3-128</pre>
     <li>Unzip it onto the card’s root. It adds a <code>.rockbox</code> folder.</li>
     <li>Turn the Q2 on. Rockbox starts.</li>
   </ol>
-  <p>Or, over Wi-Fi: <b>System settings → Apps</b> installs Rockbox and then the themes (<a href="#apps">Installing apps over Wi-Fi</a>).</p>
+  <p>Or, over Wi-Fi: <b>System settings → App Store</b> installs Rockbox and then the themes (<a href="#apps">Installing apps over Wi-Fi</a>).</p>
   <p class="task">Install the ported themes:</p>
   <ol class="steps">
     <li>Download the zip from github.com/DiamondBond/q2-rockbox-themes/releases.</li>
@@ -944,6 +945,7 @@ http://stream.radioparadise.com/mp3-128</pre>
     <li><b>Rate songs with hearts:</b> hold the heart on Now Playing, turn to 0–5 hearts, press Centre to save. Five hearts is My Fav; <b>Library → Ratings</b> lists them.</li>
     <li><b>Double-press the Centre button</b> to turn the screen off on any page (videos and Now Playing excepted); on Now Playing a single press does it, and a double press seeks.</li>
     <li><b>Hold Return</b> to jump to Now Playing from anywhere; hold it again there to go back where you were. Rather go Home? <b>System settings → Display → Controls → Hold Return: Home</b>.</li>
+    <li><b>Where is search?</b> In <b>Library</b>, pull the list down from the top until “Release to search” appears. It searches your local songs.</li>
     <li><b>Wheel too fast or slow?</b> <b>System settings → Display → Controls → Wheel Sensitivity</b>.</li>
     <li><b>More playing time per charge:</b> <b>System settings → Power → Low Power</b>. <b>Battery longevity:</b> <b>Charge Limit</b> on the same page.</li>
     <li><b>Guest artists splitting albums?</b> <b>Audio settings → Artists → Album Artist</b> (the default unless you picked Artist).</li>

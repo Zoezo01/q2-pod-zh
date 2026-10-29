@@ -1205,10 +1205,13 @@ char *peq_mpctx; /* the player's MPContext pointer; null: no codec to check */
 double peq_pts = -1; /* written_audio_pts: seconds decoded */
 int peq_length;      /* {media-info}'s whole seconds */
 static unsigned clock_reads;
+static long clock_skew; /* seconds added: a pause without waiting for one */
 int __real_clock_gettime(clockid_t clock, struct timespec *t);
 int __wrap_clock_gettime(clockid_t clock, struct timespec *t) {
     ++clock_reads;
-    return __real_clock_gettime(clock, t);
+    int result = __real_clock_gettime(clock, t);
+    t->tv_sec += clock_skew;
+    return result;
 }
 static int left = -1; /* calloc calls before one fails; -1: never */
 void *test_calloc(size_t n, size_t size) {
@@ -1374,8 +1377,8 @@ static void crossfade_check(void) {
     track(&a, 48000);
     for (n = 0; n < 10 * 48000;) assert(block(&a, buf, 1024, &n, 1, 48000) == 1024);
     a.uninit(&a);
-    /* A 10 s fade: the hold wraps the ring; odd block sizes; order and the equal-power gain hold. */
-    xfade_view(10000);
+    /* A 15 s fade, the longest: the hold wraps the ring; odd block sizes; order and the equal-power gain hold. */
+    xfade_view(15000);
     peq_length = 60;
     static const unsigned sizes[] = {1024, 333, 17, 1000};
     unsigned j = 0;
@@ -1428,6 +1431,89 @@ static void mono_check(void) {
     unlink(MONO_FILE);
     unlink(SWAP_FILE);
     peq_pts = -1;
+}
+
+/* A gapless change (#137): the next instance, or this one renegotiated, carries on the last one's filter
+ * memory, so a continuous signal comes out as one uninterrupted DSP puts it; another preset, a skip
+ * mid-track, a pause and a passed-through track start from zero. */
+static void sine(float *x, unsigned *n) {
+    for (unsigned i = 0; i < 1024; ++i, ++*n) x[i] = 0.5f * sinf(*n / 2 * 0.05f);
+}
+static void continues(af_instance *af, peq_dsp *ref, unsigned *n) {
+    float x[1024], y[1024];
+    sine(x, n);
+    memcpy(y, x, sizeof x);
+    af_data d = {x, sizeof x, 44100, 2, 0x1d, 4};
+    assert(af->play(af, &d) == &d);
+    peq_process(ref, y, 512);
+    assert(!memcmp(x, y, sizeof x));
+}
+static void carry_check(void) {
+    xfade_view(0);
+    peq_length = 1, peq_pts = 0.5; /* each track filtered to its end */
+    peq_preset p = active(-3, 6);
+    peq_dsp ref;
+    peq_reset(&ref, 44100, 2, &p);
+    af_instance a, b;
+    unsigned n = 0;
+    track(&a, 44100);
+    continues(&a, &ref, &n);
+    a.uninit(&a);
+    track(&b, 44100);
+    continues(&b, &ref, &n);
+    af_data in = {0, 0, 44100, 2, 0x1d, 4};
+    assert(negotiate(&b, &in) == 1);
+    continues(&b, &ref, &n);
+    p = active(-3, 3);
+    peq_reset(&ref, 44100, 2, &p);
+    track(&a, 44100); /* negotiated while b is still there */
+    b.uninit(&b);
+    continues(&a, &ref, &n);
+    a.uninit(&a);
+    track(&b, 44100);
+    continues(&b, &ref, &n);
+    p = active(-3, 6);
+    peq_reset(&ref, 44100, 2, &p);
+    assert(negotiate(&b, &in) == 1);
+    continues(&b, &ref, &n);
+    b.uninit(&b);
+    /* A pause or stop before the next track: the old memory would ring into it, so it starts from zero. */
+    clock_skew += 4;
+    track(&a, 44100);
+    peq_reset(&ref, 44100, 2, &p);
+    continues(&a, &ref, &n);
+    a.uninit(&a);
+    /* A passed-through track in between (here a rate the EQ leaves alone): the next starts from zero. */
+    track(&b, 7999);
+    float pass[2] = {0.5f, 0.5f};
+    af_data d = {pass, sizeof pass, 7999, 2, 0x1d, 4};
+    assert(b.play(&b, &d) == &d && pass[0] == 0.5f);
+    b.uninit(&b);
+    track(&a, 44100);
+    peq_reset(&ref, 44100, 2, &p);
+    continues(&a, &ref, &n);
+    a.uninit(&a);
+    clock_skew = 0;
+    /* A skip mid-track (or a stop): the next track starts from silence, so from zero. */
+    peq_length = 60, peq_pts = 10;
+    track(&b, 44100); /* still after a track that ended */
+    continues(&b, &ref, &n);
+    b.uninit(&b);
+    peq_length = 1, peq_pts = 0.5;
+    track(&a, 44100);
+    peq_reset(&ref, 44100, 2, &p);
+    continues(&a, &ref, &n);
+    a.uninit(&a);
+    /* Mid-track with EQ on, once the unwatched tap settles: no clock reads. */
+    peq_length = 60, peq_pts = 10;
+    track(&a, 44100);
+    for (int i = 0; i < 100; ++i) continues(&a, &ref, &n);
+    unsigned reads = clock_reads;
+    for (int i = 0; i < 20; ++i) continues(&a, &ref, &n);
+    assert(clock_reads == reads);
+    a.uninit(&a);
+    peq_length = 0, peq_pts = -1;
+    assert(!unlink(PEQ_ACTIVE));
 }
 
 int main(void) {
@@ -1603,6 +1689,7 @@ int main(void) {
     assert(!af.data && !af.setup);
     crossfade_check();
     mono_check();
+    carry_check();
 
     /* Exact VBR seeking: a 44.1 kHz stereo MPEG-1 Layer III Xing frame, 3600 s long, whose table
      * puts the first half of the time in the first quarter of the bytes. */
@@ -1643,7 +1730,7 @@ def player_check(tmp):
                     '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-I', str(ROOT/'patch'),
                     *map(str, sources), '-Wl,--wrap=clock_gettime', '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    print('PEQ player: negotiation, pass-through, the visualizer tap, live updates, track changes, cleanup, crossfade, mono and the Xing seek table passed.')
+    print('PEQ player: negotiation, pass-through, the visualizer tap, live updates, track changes, carried filter memory, cleanup, crossfade, mono and the Xing seek table passed.')
 
 def visualizer_check(tmp):
     """The visualizer's analysis (patch/visualizer.c vis_bands): a sine lands in its band at full scale."""

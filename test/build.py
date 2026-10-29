@@ -283,14 +283,14 @@ def validate_assets(directory):
     assert read('rootfs.squashfs', S90PLAY) == expected_start
     assert read('rootfs.squashfs', S11LOGO) == read('stock.squashfs', S11LOGO).replace(*LOGO_HOOK)  # the card's logo, if saved
     assert read('rootfs.squashfs', BLUEALSA2) == read('stock.squashfs', BLUEALSA2).replace(*BT_KEEPALIVE)  # keep-alive 5 s
-    # bluealsa: AAC capability, the two DROP jumps, and one appended LOAD payload.
-    from build import BT_DROP, BT_DROP_HANDLER, BT_DROP_PAYLOAD, patch_bluealsa, segments
+    # bluealsa: AAC capability, the two DROP jumps, the silence sites, and one appended LOAD payload.
+    from build import BT_DROP, BT_DROP_HANDLER, BT_DROP_PAYLOAD, BT_SILENCE_SITES, patch_bluealsa, segments
     old, new = read('stock.squashfs', BLUEALSA), read('rootfs.squashfs', BLUEALSA)
     header = segments(old)[-1][0]
     allowed = {AAC_44K1, *range(header, header+32)}
-    for address in (BT_DROP, BT_DROP_HANDLER):
+    for address, size in ((BT_DROP, 8), (BT_DROP_HANDLER, 8), *((a, 4) for a, *_ in BT_SILENCE_SITES)):
         off = fileoff(old, address)
-        allowed.update(range(off, off+8))
+        allowed.update(range(off, off+size))
     assert {i for i in range(len(old)) if old[i] != new[i]} <= allowed
     assert new == patch_bluealsa(old)
     assert segments(new)[-1][1][2] == BT_DROP_PAYLOAD
@@ -333,12 +333,14 @@ def validate_assets(directory):
     assert struct.unpack_from('<I', demo, off)[0] == jal(symbols(directory/'patch.elf')['ringnav_ts_read'])
     # hciplayer's code (.text) differs from stock only in the VBR scan branch, now a nop, the 48 kHz EQ gates,
     # the ID3v2 walker calls, now id3_gain (MP3 ReplayGain), the MQA side chain's gate and probe length and
-    # the pause loop's sleep and gapless MP3 allocation/pre-filter hooks.
-    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_SLEEP, MP3_ALLOC, MP3_FILTER, MP3_CLOSE
+    # the pause and idle loops' futex waits and their wakes and gapless MP3 allocation/pre-filter/last-frame
+    # hooks.
+    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ
     old, new = read('stock.squashfs', 'usr/bin/hciplayer'), read('rootfs.squashfs', 'usr/bin/hciplayer')
     off = fileoff(old, VBR_SCAN)
-    words = (*EQ_RATE_GATES, *MQA_GATE, *MQA_PROBE, PAUSE_SLEEP)
-    gates = [fileoff(old, a) for a in (*(a for a, _, _ in words), *ID3_CALLS, MP3_ALLOC, MP3_FILTER)]
+    words = (*EQ_RATE_GATES, *MQA_GATE, *MQA_PROBE)
+    gates = [fileoff(old, a) for a in (*(a for a, _, _ in words), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
+                                       IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
     from flac import patch_words as flac_words
     flac = flac_words('sync,lpc,output', symbols(directory/'peq'/'peq.elf'))
@@ -350,7 +352,9 @@ def validate_assets(directory):
     id3_gain = symbols(directory/'peq'/'peq.elf')['id3_gain']
     assert {struct.unpack_from('<I', new, fileoff(old, a))[0] for a in ID3_CALLS} == {jal(id3_gain)}
     ps = symbols(directory/'peq'/'peq.elf')
-    for address, value in ((MP3_ALLOC, jal(ps['mp3_private_alloc'])),
+    for address, value in ((IDLE_WAIT[0], jal(ps['hci_idle_wait'])),
+                           (PAUSE_WAIT[0], jal(ps['hci_pause_wait'])), (CMD_DONE[0], jal(ps['hci_command'])),
+                           (MP3_ALLOC, jal(ps['mp3_private_alloc'])),
                            (MP3_FILTER, jal(ps['mp3_filter_entry'])), (MP3_CLOSE, ps['mp3_close'])):
         assert struct.unpack_from('<I', new, fileoff(old, address))[0] == value
     # Include every excluded UI screen and saved-preference defaults in byte parity checks.

@@ -12,7 +12,7 @@
 #include "stock.h"
 
 #define XF_MIN 1
-#define XF_MAX 10
+#define XF_MAX 15
 #define XF_DEFAULT 5
 #define XF_ROW "label_xfade"     /* the Audio settings row's label, found again by name */
 #define WHEEL_ROW "label_wheel"  /* and Display's Wheel sensitivity row's */

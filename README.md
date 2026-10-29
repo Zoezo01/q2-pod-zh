@@ -64,16 +64,6 @@
 > [!TIP]
 > Prefer Shanling's original look? Download `update-legacy.tar` instead, then rename `update-legacy.tar` to `update.tar` before you copy it to the card. It has the same features and fixes, without the iPod UI.
 
-## Extras
-
-- **Spotify (optional, Premium):** with the Q2 on Wi-Fi, open **System settings → Apps → Spotify** and press the row to install it. Then open **Streaming → Spotify** and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. [More](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
-- **Scrobbling:** connect Last.fm or ListenBrainz with the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
-- **Lock screen:** six built-in wallpapers, a large clock, or your own images ([user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf)).
-- **Boot logo:** put your own JPEG at `/Q2Pod/boot/boot-logo.jpg` on the card. It shows from the next power-on ([user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf)).
-- **Rockbox (optional):** a separate player. With the Q2 on Wi-Fi, open **System settings → Apps → Rockbox**. The first press says that Rockbox becomes what the Q2 starts at power-on; press again to install it.
-
-**System settings → Apps** installs, updates and removes Rockbox, its themes and Spotify over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later), keeping your Rockbox settings and Spotify's login.
-
 ## Controls
 
 | Control             | Action                                                                      |
@@ -85,27 +75,37 @@
 
 The user guide covers every control, EQ, Coverflow and more tips.
 
-## Library
-
-Copy your music to the card over USB-C, then run **Library → Update Local Music** on the Q2.
-
-These folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/`, `Books/` and `Videos/`; `EQ/` holds EQ presets to import. See the user guide for supported formats.
-
 ## Updating
 
 Over Wi-Fi: **System settings → System Update → Network Update** downloads the newest release to the card's `update.tar`, replacing any that's there, then opens the TF card update's confirmation. Press the row again to cancel the download.
 
 Manual: Repeat the [install steps](#install) with the newest release. Your settings, ratings and play counts are kept. The updater skips a version that's already installed, so a newer release always goes on.
 
-## Restoring stock firmware
+## Extras
 
-- **Back to Shanling's firmware:** install the [official Shanling firmware](https://en.shanling.com/download/150) the same way.
-- **If the Q2 won't start up:** copy the `recovery-update` folder from [Shanling's recovery package](https://drive.google.com/file/d/1aINQfJu6n0JTQ4hOzzD1uSpSj3TS_NJj/view?usp=drive_link) to the card, then hold **Previous** and power on with **Centre**.
+**System settings → App Store** installs, updates and removes Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser) over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later), keeping your Rockbox settings and Spotify's login.
+
+- **Spotify (optional, Premium):** with the Q2 on Wi-Fi, open **System settings → App Store → Spotify** and press the row to install it. Then open **Streaming → Spotify** and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. [More](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
+- **Scrobbling:** connect Last.fm or ListenBrainz with the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
+- **Lock screen:** six built-in wallpapers, a large clock, or your own images ([user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf)).
+- **Boot logo:** put your own JPEG at `/Q2Pod/boot/boot-logo.jpg` on the card. It shows from the next power-on ([user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf)).
+- **Rockbox (optional):** a separate player. With the Q2 on Wi-Fi, open **System settings → App Store → Rockbox**. The first press says that Rockbox becomes what the Q2 starts at power-on; press again to install it.
+
+## Library
+
+Copy your music to the card over USB-C, then run **Library → Update Local Music** on the Q2.
+
+These folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/`, `Books/` and `Videos/`; `EQ/` holds EQ presets to import. See the user guide for supported formats.
 
 ## Help
 
 - **Question or suggestion?** Please join the [Discord](https://discord.gg/pgsQpXhSQ).
 - **Bugs:** Please [open an issue](https://github.com/DiamondBond/q2-pod/issues).
+
+## Restoring stock firmware
+
+- **Back to Shanling's firmware:** install the [official Shanling firmware](https://en.shanling.com/download/150) the same way.
+- **If the Q2 won't start up:** copy the `recovery-update` folder from [Shanling's recovery package](https://drive.google.com/file/d/1aINQfJu6n0JTQ4hOzzD1uSpSj3TS_NJj/view?usp=drive_link) to the card, then hold **Previous** and power on with **Centre**.
 
 ## Documentation
 
@@ -118,7 +118,7 @@ Manual: Repeat the [install steps](#install) with the newest release. Your setti
 
 ## Support
 
-Q2 Pod is free and built in spare time. If it has made your Q2 better and you'd like to give something back, you can support development on Ko-fi. If that isn't an option, please consider donating to a good cause instead ❤️
+Q2 Pod is free and built with love in spare time. If it has made your Q2 better and you'd like to give something back, you can support development on Ko-fi. Otherwise if you can, please consider donating to a good cause instead ❤️
 
 <p align="center">
   <a href="https://ko-fi.com/diamondbond"><img alt="Support Q2 Pod on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support%20Q2%20Pod-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white"></a>

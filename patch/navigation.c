@@ -15,9 +15,17 @@ extern void stock_timezone_row_trampoline(void *, int);
 static const char *const tz_names[] = TIMEZONE_NAMES;
 #define TZ_COUNT (sizeof tz_names / sizeof *tz_names)
 
+#if IPOD
+static void clock_zone(void);
+#endif
 int ringnav_timezone(void) {
     unsigned n = g_time_zone;
-    return n < TZ_COUNT ? toolsSetTimeZone(tz_names[n]) : stock_timezone_trampoline();
+    int result = n < TZ_COUNT ? toolsSetTimeZone(tz_names[n]) : stock_timezone_trampoline();
+    tzset(); /* localtime_r does not reload TZ itself */
+#if IPOD
+    clock_zone();
+#endif
+    return result;
 }
 
 /* Past 2038, 28 years back for stock's 32-bit localtime: the same calendar until 2100. */
@@ -37,7 +45,9 @@ static void tz_now(unsigned char *rows) {
     long now = clock_back(wall_time());
     for (unsigned i = 0; i < TZ_COUNT; ++i) {
         toolsSetTimeZone(tz_names[i]);
-        const long *tm = (const long *)localtime(&now); /* struct tm: tm_gmtoff @36 */
+        tzset();
+        int buf[11];
+        const int *tm = localtime_r(&now, buf); /* struct tm: tm_gmtoff @36 */
         tz_offset[i] = tm ? tm[9] : 0;
     }
     ringnav_timezone();
@@ -223,6 +233,7 @@ static int ple_key(unsigned key, int phase);
 #define WHEEL_MAX_STEP 8  /* one more per this much spin, up to this many */
 #define LIST_FIRST_MS 300 /* iPod row lists: one row per step for this long, */
 #define LIST_RAMP_MS 200  /* then one row more per this much spin */
+#define CF_FIRST_MS 700   /* Coverflow: one cover per step this long before it jumps by letter */
 #define SHORT_LIST_MAX 16
 #define MAX_ENTRIES 512
 #define POS_MEM 64
@@ -387,7 +398,9 @@ typedef struct {
     int sel_row, sel_y;
     void *paint_w, *sel_widget; /* paint-local color mapping, never stored on recycled widgets */
     int sel_home;
-    unsigned clock_key; /* minute + 1 and format bit; 0 before the first, ~0 for --:-- */
+    unsigned clock_key;   /* minute + 1 and format bit; 0 before the first, ~0 for --:-- */
+    unsigned clock_timer; /* clock_due, at the next minute; 0 until the bar first paints */
+    int clock_full;       /* g_time24h_flag as clock_show last read it */
     /* The status bar's Bluetooth, Wi-Fi and battery widgets, looked up once (the bar is never
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
@@ -404,7 +417,10 @@ typedef struct {
      * (ringnav_bigcover) */
     void *bc[3];
     int bc_step;
-    unsigned bc_timer, bc_track;
+    unsigned bc_timer, bc_track, bc_repaint;
+    unsigned bc_key, bc_box, bc_shape,
+        bc_url; /* the track, cover and image bc_fit sized for, the box
+                 * it left, the image's w << 16 | h and its track */
     /* Volume: the dialog vol_paint last drew, its value and the redraw timer */
     void *vol_dialog;
     int vol_drawn;
@@ -433,7 +449,6 @@ typedef struct {
      */
     int settings_read, accent, minimal_accent, home_full, battery, home_rockbox, classic, shortcut,
         rounded, light, light_day; /* light_day: Auto's answer for now (LIGHT=2) */
-    long long light_wall;          /* the second light_poll last read the clock */
     void *sel_accent;              /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;               /* nested style hooks (a mutable style's fallback) map nothing */
     void *setting_label[7];
@@ -1179,6 +1194,11 @@ static int max_top(menu_t *m) {
 static rect_t bounds(menu_t *m, int i) {
     void *e = m->at[i];
     rect_t r = { 0, 0, I(e, W_W), I(e, W_H) };
+    /* Speed images have 61px hit targets, but their visible buttons are only 24px high. */
+    if (!tk_strcmp(widget_get_type(e), "image") &&
+        !tk_strcmp(widget_get_prop_str(P(e, W_PARENT), "style", ""), "s_btn_forwardspeed") &&
+        r.h > 24)
+        r.h = 24;
     for (void *p = e; p && p != m->w; p = P(p, W_PARENT)) {
         r.x += I(p, W_X);
         r.y += I(p, W_Y);
@@ -1577,27 +1597,23 @@ static const char *const setting_keys[] = { "ACCENT",   "HOME",    "BATTERY", "T
 static const int setting_counts[] = { ACCENT_N, 2, 4, 2, 7, 2, 3 };
 static int *const setting_values[] = { &st.accent,   &st.home_full, &st.battery, &st.classic,
                                        &st.shortcut, &st.rounded,   &st.light };
-/* Light Mode's Auto (LIGHT=2) is light from 7:00 to 19:00 by the clock. Under Auto only,
- * light_poll runs each UI pass, checks the hour once a second and, when Auto crosses either time,
- * drops the cached images (ringnav_image_add bakes the mode into them) and repaints, as
- * setting_click does. */
-#define LIGHT_FROM 7
-#define LIGHT_UNTIL 19
-static int light_day(void) {
+/* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
+ * cannot be read. */
+static const int *clock_now(int *buf) {
     long long wall = wall_time();
     long now = clock_back(wall);
-    const int *tm = wall == -1 ? (void *)0 : localtime(&now); /* struct tm: tm_hour @8 */
-    return tm && tm[2] >= LIGHT_FROM && tm[2] < LIGHT_UNTIL;
+    return wall == -1 ? (void *)0 : localtime_r(&now, buf);
 }
+/* Light Mode's Auto (LIGHT=2) is light from 7:00 to 19:00 by the clock. clock_show applies it each
+ * minute: when Auto crosses either time it drops the cached images (ringnav_image_add bakes the
+ * mode into them) and repaints, as setting_click does. */
+#define LIGHT_FROM 7
+#define LIGHT_UNTIL 19
+static int light_day(const int *tm) { return tm && tm[2] >= LIGHT_FROM && tm[2] < LIGHT_UNTIL; }
 static void np_fill(int scrub);
-static void light_poll(void) {
-    if (st.light != 2) return;
-    long long wall = wall_time();
-    if (wall == st.light_wall) return;
-    st.light_wall = wall;
-    int day = light_day();
-    if (day == st.light_day) return;
-    st.light_day = day;
+static void light_apply(const int *tm) {
+    if (st.light != 2 || light_day(tm) == st.light_day) return;
+    st.light_day = !st.light_day;
     np_fill(0);
     image_manager_unload_all(image_manager());
     widget_invalidate_force(window_manager(), (void *)0);
@@ -1612,7 +1628,8 @@ static int accent(void) {
         st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
         st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
         st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
-        st.light_day = light_day();
+        int buf[11];
+        st.light_day = light_day(clock_now(buf));
         st.settings_read = 1;
     }
     return st.classic ? st.accent : st.minimal_accent;
@@ -3200,18 +3217,32 @@ static int seek_position(int to) {
 
 #if IPOD
 /* The status bar's centred label follows stock's 24-hour setting (18:14 or 6:14 PM), without
- * seconds, or --:-- when the time cannot be read. The bar repaints at least once
- * a second (systembar_showface), and the label is written only when the minute shown changes.
- * struct tm: tm_min @4, tm_hour @8. */
-static void clock_sync(void *bar) {
-    long long wall = wall_time();
-    long now = clock_back(wall);
-    const int *tm = wall == -1 ? (void *)0 : localtime(&now);
-    int ok = tm && tm[1] >= 0 && tm[1] < 60 && tm[2] >= 0 && tm[2] < 24;
-    int full = g_time24h_flag != 0;
+ * seconds, or --:-- when the time cannot be read. clock_show reads the time once a minute, from a
+ * timer due at the next minute, writes the label when the minute shown changes and applies Auto
+ * Light Mode's hour; nothing reads the time in between. It runs at once for a new zone
+ * (ringnav_timezone), a time set by hand (time_click) and a wake (ringnav_sleep), and on the pass
+ * after the bar first paints or paints with a new 24-hour setting (ringnav_paint_bg). ponytail: a
+ * network time sync while lit shows at the next minute. */
+static void clock_show(void);
+static int clock_due(const void *info) {
+    (void)info;
+    st.clock_timer = 0;
+    clock_show();
+    return 0;
+}
+static void clock_show(void) {
+    stop_timer(&st.clock_timer);
+    int buf[11];
+    const int *tm = clock_now(buf);
+    int ok = tm && tm[0] >= 0 && tm[0] < 61 && tm[1] >= 0 && tm[1] < 60 && tm[2] >= 0 && tm[2] < 24;
+    int full = st.clock_full = g_time24h_flag != 0;
+    accent(); /* reads Light Mode */
+    light_apply(ok ? tm : (void *)0);
+    st.clock_timer = timer_add(clock_due, (void *)0, ok ? (60u - (unsigned)tm[0]) * 1000u : 60000u);
     unsigned key = ok ? ((unsigned)(tm[2] * 60 + tm[1]) + 1) | (unsigned)full << 11
                       : ~0u; /* 0 before the first */
-    void *label = key == st.clock_key ? (void *)0 : widget_lookup(bar, "label_clock", 1);
+    void *bar = *(void *const *)system_bar;
+    void *label = key == st.clock_key || !bar ? (void *)0 : widget_lookup(bar, "label_clock", 1);
     if (!label) return;
     st.clock_key = key;
     char s[16] = "--:--";
@@ -3221,6 +3252,9 @@ static void clock_sync(void *bar) {
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
                     tm[2] < 12 ? "AM" : "PM");
     widget_set_text_utf8(label, s);
+}
+static void clock_zone(void) {
+    if (st.clock_timer) clock_show(); /* the bar runs; boot's call comes before it */
 }
 
 /* systembar_showface sets img_bt's image each second: a codec badge (BT_CODECS) while stock shows
@@ -3820,6 +3854,7 @@ static int bc_fade(const void *info) {
 
 static int bc_gone(void *win, void *event) {
     stop_timer(&st.bc_timer);
+    stop_timer(&st.bc_repaint);
     st.bc[0] = st.bc[1] = st.bc[2] = (void *)0;
     return 0;
 }
@@ -3834,6 +3869,72 @@ static void bc_show(void) {
     st.bc_timer = timer_add(bc_fade, (void *)0, BC_MS);
 }
 
+static int bc_repaint(const void *info) {
+    st.bc_repaint = 0;
+    if (st.bc[2]) widget_invalidate_force(st.bc[2], (void *)0);
+    return 0; /* RET_REMOVE */
+}
+
+/* The full-screen art takes its cover's shape: the largest w:h box centred on the window whose
+ * corners clear the glass by GLASS_SLACK, as tools/ipod.py sizes the square BC_ART, with the shade
+ * and song name on its foot. Checked as the window paints; the image is decoded for its shape only
+ * when the track, stock's cover of it or the image changes, and the box is sized again when that
+ * shape or the box (a layout back to the square) changes. Stock names the player's one file per
+ * kind by g_playcover_type (0x51fdcc), so one counts only once it is the type's and g_lastcover_url
+ * is this track's, as Home's art; until then the art keeps the shape of g_lastcover_url's cover, or
+ * the square once that changes. The file is decoded past the image manager's cached copy, which may
+ * be the last track's. Stock's default_bigcover placeholder is the square. */
+static void bc_fit(void *win) {
+    void *img = widget_lookup(win, "img_bigcover", 1), *shade = st.bc[1], *title = st.bc[0];
+    const char *name = img ? widget_get_prop_str(img, "image", "") : "";
+    unsigned at, n;
+    void *r = queue_now(&at, &n);
+    const char *path = r ? P(r, REC_PATH) : (void *)0;
+    unsigned type = path && !tk_strcmp((const char *)g_lastcover_url, path) ? g_playcover_type : 0;
+    unsigned box = img ? (unsigned)(I(img, W_W) << 16 | I(img, W_H)) : 0;
+    unsigned key = fnv(np_track() ^ type, (const unsigned char *)name);
+    if (!img || !shade || !title || (key == st.bc_key && box == st.bc_box)) return;
+    int player = tk_str_end_with(name, "/tmp/coverpic.jpg") ||
+                 tk_str_end_with(name, "/tmp/externpic.jpg") ||
+                 tk_str_end_with(name, "/tmp/album_tidal.jpg");
+    const char *own = type == 1                ? "/tmp/coverpic.jpg"
+                      : type == 2 || type == 4 ? "/tmp/externpic.jpg"
+                                               : "";
+    unsigned bitmap[64], url = fnv(0, (const unsigned char *)g_lastcover_url);
+    if (key != st.bc_key && player && !(*own && tk_str_end_with(name, own))) {
+        if (url != st.bc_url) st.bc_shape = 1 << 16 | 1;
+    } else if (key != st.bc_key) {
+        st.bc_shape = 1 << 16 | 1,
+        st.bc_url = url; /* the square when it won't load or is past 4:1 */
+        if (tk_strcmp(name, "default_bigcover")) {
+            image_manager_unload_bitmap_by_name(image_manager(), name);
+            if (!widget_load_image(img, name, bitmap)) {
+                if (bitmap[0] && bitmap[1] && bitmap[0] < 1 << 16 && bitmap[1] < 1 << 16 &&
+                    bitmap[0] <= 4 * bitmap[1] && bitmap[1] <= 4 * bitmap[0])
+                    st.bc_shape = bitmap[0] << 16 | bitmap[1];
+                widget_unload_image(img, bitmap);
+            }
+        }
+    }
+    st.bc_key = key, st.bc_box = box;
+    unsigned w = st.bc_shape >> 16, h = st.bc_shape & 0xffff;
+    for (int s = 374; s > 2; s -= 2) {
+        int bw = w >= h ? s : (int)(s * w / h), bh = w >= h ? (int)(s * h / w) : s;
+        int x = (375 - bw) / 2, y = (320 - bh) / 2, dx = GLASS_R + GLASS_SLACK - x,
+            dy = GLASS_R - y;
+        if (bh > 320 || (dx > 0 && dy > 0 && dx * dx + dy * dy > GLASS_R * GLASS_R)) continue;
+        if (I(img, W_X) == x && I(img, W_Y) == y && I(img, W_W) == bw && I(img, W_H) == bh) return;
+        int sh = I(shade, W_H), foot = y + bh - sh;
+        widget_move_resize(title, x + BC_TITLE_PAD, foot + I(title, W_Y) - I(shade, W_Y),
+                           bw - 2 * BC_TITLE_PAD, I(title, W_H));
+        widget_move_resize(shade, x, foot, bw, sh);
+        widget_move_resize(img, x, y, bw, bh);
+        st.bc_box = (unsigned)(bw << 16 | bh);
+        rearm(&st.bc_repaint, bc_repaint, 0); /* AWTK drops what a paint invalidates */
+        return;
+    }
+}
+
 /* bigcover_page_init: stock's full-screen art (a tap on Now Playing's opens it, any tap closes it)
  * shows the song name BC_MS, then bc_fade fades it out. Stock's own timer writes the next song's
  * name; ringnav_sleep shows it again when the track changes. */
@@ -3843,6 +3944,7 @@ int ringnav_bigcover(void *win, void *ctx) {
     st.bc[0] = widget_lookup(win, "scrlabel_title", 1);
     st.bc[1] = widget_lookup(win, "view_shade", 1);
     st.bc[2] = win;
+    st.bc_key = 0, st.bc_shape = 1 << 16 | 1;
     bc_show();
     widget_on(win, EVT_DESTROY, bc_gone, win);
     return result;
@@ -4066,8 +4168,12 @@ int ringnav_paint_bg(void *w, void *canvas) {
     void *top = window_manager_get_top_window(wm);
     /* Any painted window, not only the top one: Home slides back in from a snapshot. */
     coverflow_home_art(w == bar ? top : w);
+    if (w == st.bc[2]) bc_fit(w);
     if (bar && (w == bar || w == top)) {
-        clock_sync(bar);
+        if (!st.clock_timer || (g_time24h_flag != 0) != st.clock_full) { /* not mid-paint */
+            st.clock_full = g_time24h_flag != 0;
+            rearm(&st.clock_timer, clock_due, 0);
+        }
         bar_sync(bar);
         np_sync(top);
         if (w == top) vol_paint(top, canvas);
@@ -4101,6 +4207,9 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
     ++st.style_depth;
     stock_color_trampoline(color, style, name, fallback);
     if (--st.style_depth) return color;
+    /* Text inputs' selected text (an edit's T9 pending letter) is stock near-black on their light
+     * blue selected_bg_color, which Light Mode keeps: it stays, not flipped to paper. */
+    if (name && !tk_strcmp(name, "selected_text_color")) return color;
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
         if (!ipod_classic() && (st.paint_w == st.bar_idle || coverflow_home_owns(st.paint_w))) {
             *color &= 0xffffff; /* paint_caps draws it */
@@ -4464,7 +4573,10 @@ static int setting_click(void *ctx, void *event) {
     else
         *value = accent_next[*value] == MINIMAL_ACCENT && !minimal ? 0 : accent_next[*value];
     write_int_config(*value, "IPOD", key);
-    if (i == 6) st.light_day = light_day(); /* Auto applies from this click */
+    if (i == 6) { /* Auto applies from this click */
+        int buf[11];
+        st.light_day = light_day(clock_now(buf));
+    }
     if (i == 2)
         widget_invalidate_force(*(void *const *)system_bar, (void *)0); /* bar_sync applies it */
     else if (i == 1 || i == 4)
@@ -4718,6 +4830,9 @@ static int time_click(void *target, void *event) {
     int ok = page && !tk_strcmp(widget_get_prop_str(page, "name", ""), "manualtime_page") &&
              !tk_strcmp(widget_get_prop_str(target, "name", ""), "btn_enter");
     int result = stock_dispatch_trampoline(target, event);
+#if IPOD
+    if (ok && st.clock_timer) clock_show();
+#endif
     if (ok && window_manager_get_top_window(window_manager()) == page) navigator_back();
     return result;
 }
@@ -7707,9 +7822,98 @@ static int ple_open(void *ctx, void *event) {
     return 0;
 }
 extern int stock_playlistsmore_trampoline(void *, void *);
+/* Stock's allocator assumes ID order; Library presents headers in name order. Allocate under
+ * the database lock instead, and report a failed insert instead of pretending it succeeded. */
+static int playlist_used(void *ctx, int n, char **v, char **names) {
+    if (n != 1 || !v[0]) return 1;
+    int id = atoi(v[0]);
+    if (id >= 0 && id < 100) ((unsigned char *)ctx)[id] = 1;
+    return 0;
+}
+int ringnav_playlist_create(void *list, const char *name) {
+    void *db = 0;
+    unsigned char used[100] = { 0 };
+    char title[64], quoted[127], sql[512];
+    int result = -1, id = 0;
+    if (!list || sqlite3_open("/mnt/data/database.db", &db)) goto done;
+    if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
+    if (sqlite3_exec(db, "select id from playlist where id <= 100", playlist_used, used, 0))
+        goto rollback;
+    for (; id < 100 && used[id]; ++id) {}
+    if (id == 100) goto rollback;
+    if (name && *name)
+        tk_snprintf(title, sizeof title, "%s", name);
+    else
+        tk_snprintf(title, sizeof title, "Playlist%d", id);
+    unsigned j = 0;
+    for (unsigned i = 0; title[i]; ++i) {
+        quoted[j++] = title[i];
+        if (title[i] == '\'') quoted[j++] = '\'';
+    }
+    quoted[j] = 0;
+    int exists = 0;
+    tk_snprintf(sql, sizeof sql, "select count(*) from playlist where id <= 100 and filename='%s'",
+                quoted);
+    /* As stock, the whole name: a cut one matching would make importPlayList file its songs
+     * under -2. */
+    if ((!name || strlen(name) < sizeof title) && sqlite3_exec(db, sql, ple_number, &exists, 0))
+        goto rollback;
+    if (exists) {
+        result = -2;
+        goto rollback;
+    }
+    tk_snprintf(sql, sizeof sql,
+                "insert into playlist values (%d,'%s','','','','','%s','','',0,0,%d,0,0,0,0,0,0);"
+                "select changes()",
+                id, quoted, quoted, id);
+    if (sqlite3_exec(db, sql, ple_changed, 0, 0) || sqlite3_exec(db, "commit", 0, 0, 0))
+        goto rollback;
+    result = id;
+    goto done;
+rollback:
+    sqlite3_exec(db, "rollback", 0, 0, 0);
+done:
+    if (db) sqlite3_close(db);
+    return result;
+}
+
+int ringnav_playlist_delete(void *win, void *event) {
+    void *list = P(p_deque_playlist, 0), *db = 0;
+    int row = widget_get_prop_int(win, "_playlist", -1), ok = 0;
+    if (!list || row < 0 || (unsigned)row >= deque_size(list)) return 0;
+    int id = I(deque_at(list, (unsigned)row), REC_ID);
+    if (id < 0 || id >= 100) return 0;
+    struct {
+        int kind, ms;
+        char text[0x400];
+    } prompt = { 1, 0, "Delete Playlist?" };
+    if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return 0;
+    char sql[256];
+    if (sqlite3_open("/mnt/data/database.db", &db)) goto done;
+    if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
+    tk_snprintf(sql, sizeof sql,
+                "delete from playlist where id=%d;select changes();"
+                "delete from playlist where id>100 and cd_num=%d",
+                id, id);
+    if (sqlite3_exec(db, sql, ple_changed, 0, 0) || sqlite3_exec(db, "commit", 0, 0, 0)) {
+        sqlite3_exec(db, "rollback", 0, 0, 0);
+        goto done;
+    }
+    ok = 1;
+done:
+    if (db) sqlite3_close(db);
+    if (ok) {
+        g_delete_flag = 1;
+        navigator_back();
+    }
+    toast(ok ? "Playlist deleted" : "Could not delete playlist");
+    return 0;
+}
+
 int ringnav_playlistsmore(void *win, void *ctx) {
     int result = stock_playlistsmore_trampoline(win, ctx);
     if (win) {
+        widget_set_prop_int(win, "_playlist", (int)ctx);
         /* Stock's row says Delete Song; this page deletes the whole playlist. Rename only this
          * label, as Now Playing's Delete Song still deletes the song. As its translation key, so a
          * re-translation keeps it (no language has the key, so it reads as given). */
@@ -8876,6 +9080,28 @@ int ringnav_dark_usleep(unsigned us) {
 int ringnav_dark_cover_usleep(unsigned us) {
     return usleep(!g_backlight_status && us < DARK_POLL_US ? DARK_POLL_US : us);
 }
+/* on_wm_idle_status ran player_mainscheduling every UI pass, and its mclAutoChange asks hciplayer
+ * for its status and waits for the answer on the UI thread: 40 to 125 round trips a second, each
+ * waking both players. It runs every MAINSCHEDULING_MS instead, DARK_POLL_US while dark and quiet:
+ * a lyric line and the play-state notifications follow within that, as stock's 200 ms status sync
+ * does. From a second before the playing track's end (player_playtime_and_length's cache, a CUE
+ * track's own end) until MAINSCHEDULING_END_MS after, it runs every pass, so a change without
+ * Gapless starts as soon as stock's did; paused, it stays paced. ponytail: a length that overstates
+ * the audio (a VBR MP3 without a Xing header) ends outside the window, up to 100 ms late; follow
+ * mclAutoChange's own end flag if that shows. */
+#define MAINSCHEDULING_MS 100
+#define MAINSCHEDULING_END_MS 2000
+int ringnav_mainscheduling(void) {
+    static unsigned last, end;
+    int sec = -1, total = 0;
+    if (mclGetPlayStatus() == 2) player_playtime_and_length(&sec, &total);
+    unsigned now = (unsigned)time_now_ms(),
+             gap = dark_quiet ? DARK_POLL_US / 1000 : MAINSCHEDULING_MS;
+    if (total > 0 && total - sec <= 1) end = now | !now;
+    if (last && now - last < gap && !(end && now - end < MAINSCHEDULING_END_MS)) return 0;
+    last = now | !now; /* never 0 */
+    return player_mainscheduling();
+}
 
 int ringnav_sleep(void *loop) {
     headset_poll();
@@ -8890,7 +9116,6 @@ int ringnav_sleep(void *loop) {
 #if IPOD
     lyric_poll();
     if (st.bc[0] && np_track() != st.bc_track) bc_show();
-    light_poll();
 #endif
     if (!g_backlight_status) {
         st.dark |= 1;
@@ -8904,6 +9129,9 @@ int ringnav_sleep(void *loop) {
         wheel_guard_reset();
         if (st.dark & 2) st.woke_at = (unsigned)time_now_ms();
         st.dark = 0;
+#if IPOD
+        if (st.clock_timer) clock_show(); /* a time set while dark */
+#endif
         widget_invalidate_force(window_manager(), (void *)0);
     } else if (time_now_ms() - st.last_input >= IDLE_MS &&
                !window_manager_is_animating(window_manager()) && !np_animating())
@@ -9516,7 +9744,7 @@ int ringnav(void *ctx, void *event) {
     }
     st.touch_mode = 0;
     if (is_home(top, w)) {
-        int speed = ramp(top, w, g_menu.scope, g_menu.ctx, dir, now, LIST_FIRST_MS, LIST_RAMP_MS);
+        int speed = ramp(top, w, g_menu.scope, g_menu.ctx, dir, now, CF_FIRST_MS, LIST_RAMP_MS);
         home_step(w, dir, now, speed > 1);
         widget_invalidate_force(w, (void *)0);
         return STOP;

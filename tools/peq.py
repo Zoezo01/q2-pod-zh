@@ -9,14 +9,21 @@ PLAYER_BASE = 0xe10000  # stock final LOAD ends at 0xe03b58
 # demux_audio_open's branch to the whole-file frame walk for Xing/VBRI MP3s; see docs/internals.md.
 VBR_SCAN = 0x48fb3c
 # MPlayer's pause loop sleeps usec_sleep(20000) between command checks: 50 wakes a second for as long as the
-# track stays paused. li $4,20000 -> li $4,50000 (ori): 20 a second, Play answered at most 30 ms later.
-PAUSE_SLEEP = (0x430234, 0x24044e20, 0x3404c350)
+# track stays paused. Its sleep becomes a futex wait that the command thread's handler call wakes
+# (hci_pause_wait, hci_command in peq_player.c, docs/internals.md#battery).
+PAUSE_WAIT = (0x430230, 0x0c12931c)  # jal usec_sleep
+CMD_DONE = (0x42d7c4, 0x0c10af88)  # jal 0x42be20, the command handler
+# Stopped, the idle loop's usleep(10000) becomes a futex wait on the play flag, which the command handler's
+# wrapper wakes (CMD_DONE; peq_player.c, docs/internals.md#battery).
+IDLE_WAIT = (0x42d9c8, 0x0c2b6bf4)  # jal usleep
 # The audio demuxer's seek slot (demuxer_desc_audio at 0x89fd90) holds demux_audio_seek; see docs/internals.md.
 SEEK_SLOT, STOCK_SEEK = 0x89fdbc, 0x48d1ac
 # demux_audio_open's calls to the ID3v2 frame walker (0x48e6b0) that feeds ReplayGain; see docs/internals.md.
 ID3_CALLS, STOCK_ID3 = (0x48f704, 0x4923d8), 0x48e6b0
 # Audio private allocation, pre-filter PCM call, and audio demuxer close slot.
 MP3_ALLOC, MP3_FILTER, MP3_CLOSE = 0x48fb90, 0x47f8e0, 0x89fdb8
+# ad_libmad read_frame's demux_read_data call (0x484c0c), which gets the last frame its guard bytes.
+MP3_READ, DEMUX_READ = 0x4b248c, 0x484c0c
 # The equalizer filter's descriptor (pinned) and its open slot, which becomes peq_open.
 EQ_DESC, EQ_OPEN_SLOT = 0x893df8, 0x893e0c
 # Stock skips the equalizer above 48 kHz (address, stock word, patched word); see docs/internals.md.
@@ -83,7 +90,8 @@ LIBC = {
     'strncmp': ('int', 'const char *, const char *, unsigned'),
     'strncasecmp': ('int', 'const char *, const char *, unsigned'),
     # iPod status bar clock (navigation.c)
-    'time': ('long', 'long *'), 'localtime': ('const int *', 'const long *'),
+    'time': ('long', 'long *'),
+    'localtime_r': ('const int *', 'const long *, int *'), 'tzset': ('void', 'void'),
     # Scrobble upload (scrobble.c): demo's libcurl and libcrypto
     'fseek': ('int', 'void *, long, int'), 'ftell': ('long', 'void *'), 'atoi': ('int', 'const char *'),
     'strstr': ('char *', 'const char *, const char *'),
@@ -128,6 +136,27 @@ def compile_common(out, binary, player=False, ipod=False, flac_experiments=()):
     for name, (ret, args) in LIBC.items():
         # Unused I/O is removed by --gc-sections in the player payload.
         alias = {'fopen': 'fopen64', 'readdir': 'readdir64', 'pow': '__pow_finite'}.get(name, name) if player else name
+        if name == 'localtime_r' and not player:
+            libc = symbols(out/'libc-2.28.so')
+            delta = libc['localtime_r@@GLIBC_2.0'] - libc['tzset@@GLIBC_2.0']
+            check(delta == -7724, 'Unexpected libc localtime_r offset')
+            header.append(f'extern {ret} peq_lib_{name}({args});')
+            header.append(f'#define {name} peq_lib_{name}')
+            address = got['tzset']
+            asm += ['.section .scratch,"aw",@nobits', '.align 2',
+                    'localtime_r_target: .space 4', f'.section .text.peq_lib_{name},"ax",@progbits',
+                    f'.globl peq_lib_{name}', f'peq_lib_{name}:',
+                    'lui $t8, %hi(localtime_r_target)', 'lw $t9, %lo(localtime_r_target)($t8)',
+                    'bnez $t9, 1f', 'nop',
+                    # Resolve tzset's lazy GOT entry once: unlike localtime, it writes no shared buffer.
+                    'addiu $sp, $sp, -32', 'sw $ra, 28($sp)', 'sw $a0, 20($sp)', 'sw $a1, 24($sp)',
+                    'jal peq_lib_tzset', 'nop', 'lw $ra, 28($sp)', 'lw $a0, 20($sp)',
+                    'lw $a1, 24($sp)', 'addiu $sp, $sp, 32',
+                    f'lui $t8, {address >> 16}', f'ori $t8, $t8, {address & 65535}',
+                    'lw $t9, 0($t8)', f'addiu $t9, $t9, {delta}',
+                    'lui $t8, %hi(localtime_r_target)', 'sw $t9, %lo(localtime_r_target)($t8)',
+                    '1:', 'jr $t9', 'nop']
+            continue
         if alias not in got:
             header.append(f'extern {ret} {name}({args});')
             continue
@@ -179,7 +208,9 @@ def patch_player(raw, out, flac_experiments=()):
                       '__end = .; /DISCARD/ : { *(.comment) *(.note*) *(.pdr) *(.mdebug*) '
                       '*(.MIPS.abiflags) *(.reginfo) } }')
     run('ld.lld', '-m', 'elf32ltsmip', '--gc-sections', '-T', script, '-e', 'peq_open', '--undefined=mp3_seek', '--undefined=id3_gain',
-        '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close',
+        '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
+        '--undefined=hci_idle_wait',
+        '--undefined=hci_pause_wait', '--undefined=hci_command',
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -189,7 +220,9 @@ def patch_player(raw, out, flac_experiments=()):
     off = fileoff(raw, EQ_OPEN_SLOT)
     data[off:off+4] = struct.pack('<I', ps['peq_open'])
     patch_word(data, VBR_SCAN, 0x144008a8, 0, 'VBR scan')  # bnez $v0, 0x491de0 -> nop
-    patch_word(data, *PAUSE_SLEEP, 'pause loop sleep')
+    patch_word(data, *PAUSE_WAIT, jal(ps['hci_pause_wait']), 'pause loop waits for a command')
+    patch_word(data, *CMD_DONE, jal(ps['hci_command']), 'a command wakes the idle and pause loops')
+    patch_word(data, *IDLE_WAIT, jal(ps['hci_idle_wait']), 'idle loop waits on the play flag')
     for address, stock, patched in EQ_RATE_GATES:
         patch_word(data, address, stock, patched, 'Equalizer rate gate')
     for address, stock, patched in (*MQA_GATE, *MQA_PROBE):
@@ -198,6 +231,7 @@ def patch_player(raw, out, flac_experiments=()):
     patch_word(data, MP3_ALLOC, jal(0xadaf00), jal(ps['mp3_private_alloc']), 'MP3 gapless private state')
     patch_word(data, MP3_FILTER, jal(0x44d350), jal(ps['mp3_filter_entry']), 'MP3 gapless PCM')
     patch_word(data, MP3_CLOSE, 0x48b7e4, ps['mp3_close'], 'MP3 gapless cleanup')
+    patch_word(data, MP3_READ, jal(DEMUX_READ), jal(ps['mp3_read']), 'MP3 last frame')
     for address in ID3_CALLS:
         patch_word(data, address, jal(STOCK_ID3), jal(ps['id3_gain']), 'MP3 ReplayGain')
     for address, stock, patched in patch_words(flac_experiments, ps):
