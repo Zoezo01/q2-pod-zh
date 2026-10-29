@@ -45,6 +45,7 @@ def validate(directory, variant):
     m = json.loads((directory/'manifest.json').read_text())
     check(m['variant'] == variant and m['version'] == VERSIONS[variant], 'Wrong variant identity')
     check(m['update_repo'] == REPO, f"Network Update fetches {m['update_repo']}'s releases, not {REPO}'s")
+    check(m.get('input_kind', 'zip') == 'zip', 'Built from update.tar, not the vendor ZIP: not a release')
     check(m['input_zip_sha256'] == ZIP_SHA and m['stock_demo_sha256'] == DEMO_SHA, 'Wrong stock identity')
     # test/patch.py (below) checks the sources and the demo, stock-demo and patch.bin hashes.
     for name, key in [('rootfs.squashfs', 'rootfs_sha256'), ('update.tar', 'update_sha256')]:

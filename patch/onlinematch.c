@@ -233,16 +233,16 @@ int album_lyrics(lyr_job *job, const lyr_track *t, int n,
 
 /* The toast that sums up job, into out. */
 void album_note(char *out, unsigned n, const lyr_job *job) {
-    static const char *const head[] = { "Album lyrics", "LRCLIB stopped answering", "Can't write to the card",
-                                        "Cancelled" };
-    static const char *const what[] = { "saved", "not found", "already had lyrics", "failed" };
+    static const char *const head[] = { "专辑歌词", "LRCLIB 无响应", "无法写入存储卡",
+                                        "已取消" };
+    static const char *const what[] = { "已保存", "未找到", "已有歌词", "失败" };
     const int count[] = { job->saved, job->none, job->had, job->failed };
     int answered = job->saved || job->none, any = answered || job->had || job->failed;
-    unsigned at = (unsigned)snprintf(out, n, "%s", job->state == LJ_OFFLINE && !answered ? "Can't reach LRCLIB"
+    unsigned at = (unsigned)snprintf(out, n, "%s", job->state == LJ_OFFLINE && !answered ? "无法连接 LRCLIB"
                                                                                          : head[job->state]);
     for (int i = 0, first = 1; i < 4 && at < n && (job->state != LJ_OFFLINE || answered); ++i)
-        if (count[i]) at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? ": " : ", ", count[i], what[i]), first = 0;
-    if (!any && job->state == LJ_DONE && at < n) snprintf(out + at, n - at, ": no songs on the card");
+        if (count[i]) at += (unsigned)snprintf(out + at, n - at, "%s%d %s", first ? "：" : "，", count[i], what[i]), first = 0;
+    if (!any && job->state == LJ_DONE && at < n) snprintf(out + at, n - at, "：卡上没有歌曲");
 }
 
 #ifndef PEQ_HOST
@@ -287,8 +287,9 @@ static int stopped(void *cancel, long long total, long long now, long long up, l
 }
 
 /* url's reply, NUL-terminated, under max bytes, to free; 0 if the transfer failed or *cancel (when
- * given) stopped it. */
-static char *get(const char *url, unsigned max, volatile int *cancel) {
+ * given) stopped it. *len, when given, gets the bytes read: a JPEG has NULs, so a cover cannot be
+ * measured with strlen. */
+static char *get_len(const char *url, unsigned max, volatile int *cancel, unsigned *len) {
     body_t b = { calloc(1, max), 0, max };
     void *c = b.buf ? easy(url) : 0;
     int bad = !c;
@@ -304,7 +305,12 @@ static char *get(const char *url, unsigned max, volatile int *cancel) {
         curl_easy_cleanup(c);
     }
     if (bad) free(b.buf), b.buf = 0;
+    if (len) *len = b.buf ? b.len : 0;
     return b.buf;
+}
+
+static char *get(const char *url, unsigned max, volatile int *cancel) {
+    return get_len(url, max, cancel, 0);
 }
 
 /* A string member of a cJSON object, or 0. */
@@ -420,7 +426,7 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
  * album, found as that search finds them, on a thread of its own that outlives the page. */
 extern void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
 extern void *coverflow_album_tracks(void *r);
-static const char AL_TITLE[] = "Download Album Lyrics";
+static const char AL_TITLE[] = "下载专辑歌词";
 static struct {
     lyr_job job;
     lyr_track *tracks;
@@ -459,9 +465,9 @@ static void al_show(void) {
         return;
     }
     if (al.job.cancel)
-        snprintf(s, sizeof s, "Cancelling…");
+        snprintf(s, sizeof s, "正在取消…");
     else
-        snprintf(s, sizeof s, "Downloading %d of %d", al.job.done + (al.job.done < al.job.total), al.job.total);
+        snprintf(s, sizeof s, "正在下载 %d / %d", al.job.done + (al.job.done < al.job.total), al.job.total);
     widget_set_text_utf8(al.label, s);
 }
 
@@ -508,7 +514,7 @@ static int al_click(void *ctx, void *event) {
         return 0;
     }
     if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+        toast("请先连接 Wi-Fi");
         return 0;
     }
     void *r = al_playing(), *list = r ? coverflow_album_tracks(r) : 0;
@@ -529,7 +535,7 @@ static int al_click(void *ctx, void *event) {
     if (list) deque_destroy(list);
     if (!k) {
         free(t);
-        toast("No album songs on the card");
+        toast("卡上没有该专辑的歌曲");
         return 0;
     }
     memset(&al.job, 0, sizeof al.job);
@@ -537,7 +543,7 @@ static int al_click(void *ctx, void *event) {
     if (pthread_create(&al.thread, 0, al_worker, 0)) {
         al.thread = 0, al.running = 0;
         free(t), al.tracks = 0;
-        toast("Can't start the download");
+        toast("无法开始下载");
         return 0;
     }
     timer_add(al_wait, (void *)0, 500);
@@ -628,6 +634,373 @@ static void covers(void) {
     }
     cJSON_Delete(json);
     free(body);
+}
+
+/* ---- Library fill: every album's lyrics, then every album's cover, then the songs without an album
+
+ * Playback settings' 补全封面与歌词 (navigation.c) runs this over the whole card: no thread may touch
+ * stock's song records, so the UI thread hands the worker one item at a time (ringnav_album_tracks'
+ * copies in lf.tracks, or a lone song from ringnav_fill_songs) and the worker only does network and
+ * file work. Each pass of library_fill_tick, from ringnav_sleep, joins the finished item and starts
+ * the next, so the UI stays responsive and a cancel lands between two items. A song or folder that
+ * already has what it needs is skipped, which is also what makes a second press resume: lyrics
+ * already beside a track (album_lyrics' `had`) and any cover already in the folder are left alone.
+ * The card's songs without an album tag (stock's Unknown Album, one record each, no folder cover)
+ * have a pass of their own, searched by their own title and artist. */
+extern int ringnav_fill_albums(int (*row)(void *ctx, const char *album, const char *artist,
+                                         const char *path),
+                               void *ctx);
+extern void *ringnav_album_tracks(const char *album, int *n);
+extern int ringnav_fill_songs(int (*row)(void *ctx, const char *title, const char *artist,
+                                         const char *path),
+                              void *ctx);
+extern void coverflow_refresh_art(void);
+
+#define LF_MAX 4096       /* albums kept; a bigger library fills its first LF_MAX and stops */
+#define LF_COVER_MAX (1 << 19) /* a 500 or 600 px JPEG; anything larger is not a cover */
+#define LF_SONG_MAX 4096  /* songs without an album, kept: a bigger set fills its first LF_SONG_MAX */
+#define LF_PULSE_MS 300   /* the spinner's turn: faster than stock's 120 ms bump, slower than a pass */
+enum { LF_OFFLINE = 1, LF_CARD }; /* why the fill ended before the card was walked */
+
+typedef struct {
+    char *album, *artist, *dir;
+} lf_album;
+
+/* A song without an album tag: what LRCLIB is asked for and where its lyrics go. */
+typedef struct {
+    char *path, *title, *artist;
+} lf_song;
+
+static struct {
+    lf_album *v;      /* the albums, from stock's database, one row each */
+    unsigned n, at;   /* how many, and the one being worked */
+    lf_song *song;    /* the albumless songs, likewise */
+    unsigned sn;
+    int phase;        /* 0 idle, 1 albums' lyrics, 2 albums' covers, 3 albumless songs' lyrics */
+    volatile int cancel;
+    unsigned long thread;
+    volatile int running; /* the worker's, until it returns */
+    lyr_track *tracks;    /* the current album's or song's, collected on the UI thread */
+    unsigned tn;
+    unsigned pulse;       /* the spinner's frame, turned by library_fill_tick */
+    unsigned pulse_at;
+    unsigned unanswered;  /* items in a row LRCLIB never answered for */
+    int stop;             /* LF_OFFLINE, LF_CARD: why the fill ended, for the toast */
+    unsigned lyric_saved, cover_written, skipped;
+} lf;
+
+static lyr_job lf_job;
+
+/* stock's albums: album, artist and one track's path, for lf_take. */
+static int lf_take(void *ctx, const char *album, const char *artist, const char *path) {
+    if (!album || !*album || !path || lf.n >= LF_MAX) return 0;
+    const char *slash = strrchr(path, '/');
+    if (!slash || slash == path) return 0;
+    unsigned d = (unsigned)(slash - path);
+    lf_album *a = &lf.v[lf.n];
+    a->album = strdup(album);
+    a->artist = strdup(artist ? artist : "");
+    a->dir = calloc(d + 1, 1); /* malloc is not among the imports the payload links */
+    if (!a->album || !a->artist || !a->dir) {
+        free(a->album), free(a->artist), free(a->dir);
+        return 1;
+    }
+    memcpy(a->dir, path, d), a->dir[d] = 0;
+    ++lf.n;
+    return 0;
+}
+
+/* file's name without its last extension, into out: an untagged song is searched by what its name
+ * says, as stock's list shows it. */
+static void lf_stem(char *out, unsigned n, const char *file) {
+    unsigned len = (unsigned)strlen(file), keep = len;
+    for (unsigned i = len; i; --i)
+        if (file[i - 1] == '.') {
+            keep = i - 1;
+            break;
+        }
+    if (!keep) keep = len; /* ".mp3" or no dot at all */
+    if (keep >= n) keep = n - 1;
+    memcpy(out, file, keep), out[keep] = 0;
+}
+
+/* A song without an album tag: title, artist and path, for lf_song. Its name stands in for a
+ * missing title (many albumless files never had one), which also keeps album_lyrics from passing
+ * it over as unsearchable. */
+static int lf_song_take(void *ctx, const char *title, const char *artist, const char *path) {
+    if (!path || !*path || lf.sn >= LF_SONG_MAX) return 0;
+    const char *slash = strrchr(path, '/');
+    if (!slash || !slash[1]) return 0;
+    char stem[0x200];
+    lf_stem(stem, sizeof stem, slash + 1);
+    if (!*stem) return 0;
+    lf_song *s = &lf.song[lf.sn];
+    s->path = strdup(path);
+    s->artist = strdup(artist ? artist : "");
+    s->title = strdup(title && *title ? title : stem);
+    if (!s->path || !s->artist || !s->title) {
+        free(s->path), free(s->artist), free(s->title);
+        return 1;
+    }
+    ++lf.sn;
+    return 0;
+}
+
+/* The covers a folder may already hold (stock's own art file names), cover.jpg written last. */
+static const char *const lf_cover_names[] = { "cover.jpg", "cover.jpeg", "cover.png", "folder.jpg",
+                                              "folder.jpeg", "folder.png" };
+
+/* data's len bytes at path through path.part, renamed once whole; 1 if it was. */
+static int lf_write(const char *path, const char *data, unsigned len) {
+    char part[0x300 + 8];
+    snprintf(part, sizeof part, "%s.part", path);
+    void *f = fopen(part, "wb");
+    if (!f) return 0;
+    int ok = fwrite(data, 1, len, f) == len;
+    if (fclose(f)) ok = 0; /* a failed write shows at close */
+    if (ok && !rename(part, path)) return 1;
+    unlink(part);
+    return 0;
+}
+
+/* The album's cover saved to path: the Cover Art Archive's front of one of MusicBrainz's first four
+ * release groups, else iTunes' first 600 px artwork. 1 if written, 0 otherwise. */
+static int lf_cover_save(const char *album, const char *artist, const char *path, volatile int *cancel) {
+    char url[3 * 0x300 + 128];
+    char *body = mb_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, cancel) : 0;
+    void *json = body ? cJSON_Parse(body) : 0, *list = json ? cJSON_GetObjectItem(json, "releases") : 0;
+    int n = list ? cJSON_GetArraySize(list) : 0, done = 0;
+    for (int i = 0; i < n && i < 4 && !done && !*cancel; ++i) {
+        const char *id = str(cJSON_GetObjectItem(cJSON_GetArrayItem(list, i), "release-group"), "id");
+        char art[0x200];
+        if (!id || strlen(id) != 36 || !caa(id, art)) continue;
+        unsigned len = 0;
+        char *img = get_len(art, LF_COVER_MAX, cancel, &len);
+        if (img && len) done = lf_write(path, img, len);
+        free(img);
+    }
+    cJSON_Delete(json);
+    free(body);
+    if (done || *cancel) return done;
+    body = itunes_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, cancel) : 0;
+    json = body ? cJSON_Parse(body) : 0, list = json ? cJSON_GetObjectItem(json, "results") : 0;
+    n = list ? cJSON_GetArraySize(list) : 0;
+    for (int i = 0; i < n && !done && !*cancel; ++i) {
+        const char *art = str(cJSON_GetArrayItem(list, i), "artworkUrl100");
+        unsigned len = 0;
+        char *img;
+        if (!art || strlen(art) >= 0x200) continue;
+        memcpy(url, art, strlen(art) + 1);
+        if (!itunes_art(url) || !(img = get_len(url, LF_COVER_MAX, cancel, &len))) continue;
+        if (len) done = lf_write(path, img, len);
+        free(img);
+    }
+    cJSON_Delete(json);
+    free(body);
+    return done;
+}
+
+/* A cover for the album already in its folder, or written into it; 1 if one was written. */
+static int lf_cover(const lf_album *a, volatile int *cancel) {
+    char path[0x300];
+    for (unsigned i = 0; i < sizeof lf_cover_names / sizeof *lf_cover_names; ++i) {
+        snprintf(path, sizeof path, "%s/%s", a->dir, lf_cover_names[i]);
+        if (!access(path, 0)) return 0; /* F_OK: it has one */
+    }
+    snprintf(path, sizeof path, "%s/cover.jpg", a->dir);
+    return lf_cover_save(a->album, a->artist, path, cancel);
+}
+
+/* The current album's or song's lyrics (album_lyrics, as Download Album Lyrics runs it). An item
+ * nothing answered for (a song saved, absent or already there) counts towards the offline run, so a
+ * card whose Wi-Fi went away ends the fill after two of them — as album_lyrics ends one album —
+ * instead of asking about the thousands of songs left. */
+static void *lf_lyrics_worker(void *unused) {
+    album_lyrics(&lf_job, lf.tracks, (int)lf.tn, al_fetch);
+    lf.lyric_saved += (unsigned)lf_job.saved;
+    lf.unanswered = lf_job.saved || lf_job.none || lf_job.had
+                        ? 0
+                        : lf.unanswered + (unsigned)(lf_job.failed ? lf_job.failed : 1);
+    if (lf_job.state == LJ_CARD) lf.stop = LF_CARD; /* the card can't be written: nothing left to do */
+    lf.running = 0;
+    return 0;
+}
+
+/* The album lf_step handed over: its cover, if it has none. */
+static void *lf_cover_worker(void *album) {
+    if (lf_cover(album, &lf.cancel)) lf.cover_written++;
+    lf.running = 0;
+    return 0;
+}
+
+/* The album at's tracks into lf.tracks (the UI thread's: stock's records are not the worker's to
+ * touch); 1 with lf.tn set, 0 if the album has none left. */
+static int lf_collect(unsigned at) {
+    int n = 0;
+    void *list = ringnav_album_tracks(lf.v[at].album, &n);
+    free(lf.tracks), lf.tracks = 0, lf.tn = 0;
+    if (!list) return 0;
+    lyr_track *t = n ? calloc((unsigned)n, sizeof *t) : 0;
+    for (int i = 0; t && i < n; ++i) {
+        void *s = deque_at(list, i);
+        const char *path = I(s, REC_TYPE) == 8 ? P(s, REC_PATH) : 0;
+        if (!path || *path != '/' || strlen(path) >= sizeof t->path || I(s, REC_CUE_START) ||
+            I(s, REC_CUE_END))
+            continue;
+        char name[0x200];
+        const char *file = P(s, REC_NAME);
+        if (file && lrc_name(name, sizeof name, file))
+            snprintf(t[lf.tn].shadow, sizeof t->shadow, DOWNPIC "%s", name);
+        al_put(t[lf.tn].path, sizeof t->path, path);
+        al_put(t[lf.tn].title, sizeof t->title, P(s, REC_TITLE));
+        al_put(t[lf.tn++].artist, sizeof t->artist, P(s, REC_ARTIST));
+    }
+    deque_destroy(list);
+    lf.tracks = t;
+    return t != 0;
+}
+
+/* The albumless song at as lf.tracks' one track, as lf_collect builds an album's; 1 if it is. A
+ * song has no folder of its own to be covered, so only its lyrics are fetched. */
+static int lf_song_collect(unsigned at) {
+    free(lf.tracks), lf.tracks = 0, lf.tn = 0;
+    const lf_song *s = &lf.song[at];
+    lyr_track *t = calloc(1, sizeof *t);
+    if (!t) return 0;
+    const char *slash = strrchr(s->path, '/');
+    char name[0x200];
+    if (slash && lrc_name(name, sizeof name, slash + 1))
+        snprintf(t->shadow, sizeof t->shadow, DOWNPIC "%s", name);
+    al_put(t->path, sizeof t->path, s->path);
+    al_put(t->title, sizeof t->title, s->title);
+    al_put(t->artist, sizeof t->artist, s->artist);
+    lf.tracks = t, lf.tn = 1;
+    return 1;
+}
+
+static void lf_clear(void) {
+    for (unsigned i = 0; i < lf.n; ++i) free(lf.v[i].album), free(lf.v[i].artist), free(lf.v[i].dir);
+    for (unsigned i = 0; i < lf.sn; ++i) free(lf.song[i].path), free(lf.song[i].title), free(lf.song[i].artist);
+    free(lf.v), lf.v = 0;
+    free(lf.song), lf.song = 0;
+    free(lf.tracks), lf.tracks = 0;
+    lf.n = lf.sn = lf.at = lf.tn = 0;
+    lf.phase = 0, lf.cancel = 0, lf.thread = 0, lf.running = 0;
+    lf.unanswered = 0, lf.stop = 0;
+    lf.lyric_saved = lf.cover_written = lf.skipped = 0;
+}
+
+/* The job's end: the summary, and Cover Flow told to rebuild if a cover went in. */
+static void lf_finish(void) {
+    char note[96];
+    int saved = (int)lf.lyric_saved, covers = (int)lf.cover_written;
+    if (lf.stop == LF_CARD)
+        snprintf(note, sizeof note, "无法写入存储卡，已停止：歌词 %d 首", saved);
+    else if (lf.stop == LF_OFFLINE)
+        snprintf(note, sizeof note, "无法连接 LRCLIB，已停止：歌词 %d 首，封面 %d 张", saved, covers);
+    else if (lf.cancel)
+        snprintf(note, sizeof note, "已停止：歌词 %d 首，封面 %d 张", saved, covers);
+    else
+        snprintf(note, sizeof note, "补全完成：歌词 %d 首，封面 %d 张", saved, covers);
+    if (lf.cover_written) coverflow_refresh_art();
+    lf_clear();
+    toast(note);
+}
+
+/* One item a pass: the finished one joined, then the next started. Runs between UI loop passes
+ * (ringnav_sleep), so the worker never sees a pointer the UI thread has freed. */
+static void lf_step(void) {
+    if (lf.phase == 1 && lf.at >= lf.n) lf.phase = 2, lf.at = 0;
+    else if (lf.phase == 2 && lf.at >= lf.n) lf.phase = 3, lf.at = 0;
+    else if (lf.phase == 3 && lf.at >= lf.sn) return lf_finish();
+    if (lf.phase == 1) {
+        if (!lf_collect(lf.at) || !lf.tn) {
+            free(lf.tracks), lf.tracks = 0, lf.tn = 0;
+            ++lf.at;
+            return;
+        }
+        memset(&lf_job, 0, sizeof lf_job);
+        lf.running = 1;
+        if (pthread_create(&lf.thread, 0, lf_lyrics_worker, 0)) lf.running = 0, lf.thread = 0;
+        ++lf.at;
+        return;
+    }
+    if (lf.phase == 3) {
+        if (!lf_song_collect(lf.at)) {
+            ++lf.at;
+            return;
+        }
+        memset(&lf_job, 0, sizeof lf_job);
+        lf.running = 1;
+        if (pthread_create(&lf.thread, 0, lf_lyrics_worker, 0)) lf.running = 0, lf.thread = 0;
+        ++lf.at;
+        return;
+    }
+    lf.running = 1;
+    if (pthread_create(&lf.thread, 0, lf_cover_worker, &lf.v[lf.at])) lf.running = 0, lf.thread = 0;
+    ++lf.at;
+}
+
+void library_fill_tick(void) {
+    if (!lf.phase) return;
+    unsigned now = time_now_ms();
+    if (now - lf.pulse_at >= LF_PULSE_MS) lf.pulse_at = now, ++lf.pulse; /* the row turns while it works */
+    if (lf.running) return;
+    if (lf.thread) {
+        pthread_join(lf.thread, 0);
+        lf.thread = 0;
+        if (lf.cancel) return lf_finish();
+        /* Covers ask MusicBrainz, so only the lyrics passes' silence means LRCLIB is gone. */
+        if (lf.stop == LF_CARD || (lf.phase != 2 && lf.unanswered >= LJ_OFFLINE_RUN)) {
+            if (!lf.stop) lf.stop = LF_OFFLINE;
+            return lf_finish();
+        }
+    }
+    lf_step();
+}
+
+int library_fill_active(void) { return lf.phase != 0; }
+
+void library_fill_cancel(void) { lf.cancel = 1; }
+
+/* The spinner beside the progress, a quarter turn a frame: a row waiting on the network still shows
+ * that something is going on. All four frames come from the packaged font (test/chinese.py). */
+static const char *lf_spinner(void) {
+    static const char *const frame[] = { "◐", "◓", "◑", "◒" };
+    return frame[lf.pulse & 3];
+}
+
+/* The row's label: its name, or how far the job has got. The counts say what they count — albums
+ * (张) while it walks them, songs (首) in the albumless pass — as a library's cover and song counts
+ * differ tenfold; the spinner trails them. */
+void library_fill_text(char *out, unsigned n) {
+    if (!lf.phase) return (void)snprintf(out, n, "补全封面与歌词");
+    if (lf.cancel) return (void)snprintf(out, n, "正在停止…");
+    if (lf.phase == 3)
+        snprintf(out, n, "单曲歌词 %u/%u 首 %s", lf.at, lf.sn, lf_spinner());
+    else
+        snprintf(out, n, lf.phase == 1 ? "专辑歌词 %u/%u 张 %s" : "专辑封面 %u/%u 张 %s", lf.at, lf.n,
+                 lf_spinner());
+}
+
+/* Start over the whole card; 0 with nothing to do (no tagged album and no albumless song, or no
+ * room for the lists). */
+int library_fill_start(void) {
+    if (lf.phase) return 1;
+    if (!(lf.v = calloc(LF_MAX, sizeof *lf.v)) || !(lf.song = calloc(LF_SONG_MAX, sizeof *lf.song))) {
+        lf_clear();
+        return 0;
+    }
+    lf.n = lf.sn = lf.at = 0, lf.cancel = 0, lf.lyric_saved = lf.cover_written = 0;
+    ringnav_fill_albums(lf_take, 0);
+    ringnav_fill_songs(lf_song_take, 0);
+    if (!lf.n && !lf.sn) {
+        lf_clear();
+        return 0;
+    }
+    if (lf.n == LF_MAX || lf.sn == LF_SONG_MAX) lf.skipped = 1; /* as many as the lists hold */
+    lf.phase = lf.n ? 1 : 3;
+    return 1;
 }
 
 /* kugou_obtaincover(keyword), online_coverthd's first source, then com163's and Baidu's: each adds
