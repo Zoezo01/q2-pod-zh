@@ -58,7 +58,7 @@ canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type t
 timer_add timer_remove navigator_back_to_home navigator_back window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
-widget_to_local widget_animator_pause window_manager_get_pointer_pressed
+widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 void *shim_calloc(size_t, size_t);
 #define calloc shim_calloc
@@ -145,6 +145,9 @@ int widget_load_image(void *x, const char *url, void *b) {
 }
 const unsigned char *bitmap_lock_buffer_for_read(void *b) { ++reads; return *(unsigned char **)((char *)b + 0x14); }
 int widget_unload_image(void *x, void *b) { ++unloads; return 0; }
+static char dropped[600]; /* the last cached bitmap dropped by name */
+void *image_manager(void) { return (void *)8; }
+int image_manager_unload_bitmap_by_name(void *m, const char *name) { snprintf(dropped, sizeof dropped, "%s", name); return 0; }
 void set_hscroll_label_attribute(void *x) { assert(!strcmp(W(x)->type, "hscroll_label")); }
 int slide_menu_set_value(void *x, int value) { *(int *)(W(x)->raw + SLIDE_INDEX) = value; return 0; }
 int widget_set_name(void *x, const char *s) { snprintf(W(x)->type, 32, "%s", s); return 0; }
@@ -197,6 +200,7 @@ void *widget_lookup(void *x, const char *n, int r) {
 static int home_full, classic, light;
 int ipod_home_full(void) { return home_full; }
 int ipod_classic(void) { return classic; }
+int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
 int ipod_home_rockbox(void) { return 0; }
 const char *ipod_home_shortcut(void) { return "Rockbox"; }
@@ -1439,6 +1443,14 @@ int main(void) {
        placeholder; reloaded only when the track or the usable cover changes, and only while Home
        is the painted top window. Both themes split the screen, the art itself in the right panel. */
     extern void coverflow_home_art(void *);
+    /* The pan's texture is softened once, [1,2,1]/4 a side (home_soften), so its sharpness no
+       longer pulses with the pan's sub-pixel phase: a lone texel spreads, flat colour stays. */
+    extern void home_soften(unsigned *, int, int);
+    unsigned line[4] = { 0xff000000u, 0xffffffffu, 0xff000000u, 0xff204080u };
+    home_soften(line, 4, 1);
+    assert(line[0] == 0xff3f3f3fu && line[1] == 0xff7f7f7fu && line[2] == 0xff474f5fu && line[3] == 0xff183060u);
+    unsigned flat[3] = { 0xff123456u, 0xff123456u, 0xff123456u };
+    home_soften(flat, 3, 1); assert(flat[0] == 0xff123456u && flat[2] == 0xff123456u);
     assert(mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != MAP_FAILED);
     deque queue = {0};
@@ -1467,6 +1479,8 @@ int main(void) {
     timer_fn = 0;
     coverflow_home_art(win);
     assert(!strcmp(art, player));
+    /* the player reuses the file for each track: its cached bitmap is dropped, not the last track's shown */
+    assert(!strcmp(dropped, player));
     /* a paint drops its own invalidations: the whole screen repaints after it */
     assert(!wm_repaints && timer_fn && (timer_fn(0), wm_repaints == 1));
     /* Square, portrait and landscape still covers keep their proportions, just cover the panel and
@@ -1597,7 +1611,10 @@ def main():
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]
         return ''.join(ast.literal_eval(x) for x in re.findall(r'"(?:[^"\\]|\\.)*"', line))
-    sql = macro('MUSIC_ALBUM_SQL') + macro('MUSIC_WHERE') + macro('ALBUM_GROUP')
+    # Marker expansion is executed against real SQLite by test/library_scope.py and the MIPS
+    # wrapper tests. These base predicates also apply when no directories have markers.
+    music_where = macro('MUSIC_WHERE') + '1'
+    sql = macro('MUSIC_ALBUM_SQL') + music_where + macro('ALBUM_GROUP')
     with sqlite3.connect(':memory:') as db:
         db.execute('create table songtable(id,album,songer,fileurl,albumsonger)')
         paths = ['/mnt/mmc/Audiobooks/Book/01.mp3', '/mnt/mmc/aUdIoBoOkS/02.flac',
@@ -1606,7 +1623,7 @@ def main():
                  '/mnt/mmc/Podcasts/Show/episode.mp3', '/mnt/mmc/pOdCaStS/untagged.mp3',
                  '/mnt/mmc/Podcasts Extra/song.mp3', '/mnt/mmc/Music/Podcasts/song.mp3']
         db.executemany('insert into songtable values (?,"Shared","Artist",?,"Artist")', enumerate(paths))
-        assert {r[0] for r in db.execute('select id from songtable where '+macro('MUSIC_WHERE'))} == {3,4,5,8,9}
+        assert {r[0] for r in db.execute('select id from songtable where '+music_where)} == {3,4,5,8,9}
         rows = db.execute(sql).fetchall()
         assert len(rows) == 1 and rows[0][3] in paths[3:]
         db.execute('delete from songtable where id >= 3')
@@ -1617,6 +1634,12 @@ def main():
         assert not db.execute(sql).fetchall()
         db.execute("update songtable set fileurl='/mnt/mmc/PODCASTS/untagged.mp3' where id=10")
         assert not db.execute(sql).fetchall()
+        for path in ('/mnt/mmc/Discovery/weekly/01.flac', '/mnt/mmc/dIsCoVeRy/01.flac'):
+            db.execute('update songtable set fileurl=? where id=10', (path,))
+            assert db.execute(sql).fetchone()[:2] == (-1, 'Unknown Album')
+        for path in ('/mnt/mmc/Discovery Extra/01.flac', '/mnt/mmc/Music/Discovery/01.flac'):
+            db.execute('update songtable set fileurl=? where id=10', (path,))
+            assert db.execute(sql).fetchone()[:2] == (-1, 'Unknown Album')
 
     with tempfile.TemporaryDirectory(prefix='q2-coverflow-check-') as directory:
         tmp = pathlib.Path(directory)

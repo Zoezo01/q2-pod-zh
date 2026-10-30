@@ -187,7 +187,7 @@ def compile_common(out, binary, player=False, ipod=False, flac_experiments=()):
     flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections', f'-DIPOD={int(ipod)}']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)

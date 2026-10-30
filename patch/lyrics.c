@@ -226,7 +226,7 @@ typedef struct {
     int ms;                       /* its start, LRC_FAR when unsynced */
     unsigned text, n;             /* its characters, text[text..text + n) */
     unsigned mark, marks;         /* its word stamps, mark[mark..mark + marks) */
-    unsigned char px, rows;       /* its layout (px 0 until then): rows of LYRIC_W */
+    unsigned char px, rows;       /* its layout (px 0 until then): rows of ly.w */
     unsigned short start[LYRIC_ROWS], len[LYRIC_ROWS], w[LYRIC_ROWS];
 } ly_line;
 typedef struct {
@@ -252,6 +252,7 @@ static struct {
     int ms, cur, fill;
     unsigned lit_at;
     int sec, run, guess, lo, hi, pos;
+    int w; /* the width lines wrap at, the rows' less LYRIC_X a side; 0 until rows are laid out */
 } ly;
 
 /* A line's share of the rows' FNV-1a: its stock seconds and its characters. */
@@ -323,7 +324,6 @@ int lyrics_on(void *lrc) {
            (unsigned)widget_count_children(lrc) == ly.rows;
 }
 
-#define LYRIC_W (375 - 2 * LYRIC_X)
 /* Lines are drawn in the system font, LYRIC_BOLD more times a pixel right for weight. */
 #define LYRIC_BOLD 2
 static int ly_cjk(unsigned c) {
@@ -345,7 +345,7 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
                 brk = i, wbrk = x, resume = i + 1;
             else if (i > start && (ly_cjk(s[i]) || ly_cjk(s[i - 1])))
                 brk = i, wbrk = x, resume = i;
-            if (i > start && x + adv[i] + LYRIC_BOLD > LYRIC_W) break;
+            if (i > start && x + adv[i] + LYRIC_BOLD > (ly.w ? ly.w : 375 - 2 * LYRIC_X)) break;
         }
         unsigned end = i;
         if (i < l->n && brk > start) end = brk, x = wbrk, i = resume;
@@ -396,6 +396,11 @@ int lyrics_rows(void *lrc) {
         if (t) t->sum = sum;
     }
     if (!lyrics_on(lrc)) return 0; /* none, or out of memory: stock's rows stay */
+    /* the iPod page's rows span the screen, the centred (stock) page's its 225 px column */
+    if (ly.w != I(lrc, W_W) - 2 * LYRIC_X) {
+        ly.w = I(lrc, W_W) - 2 * LYRIC_X;
+        for (unsigned i = 0; i < ly.tab->n; ++i) ly.tab->line[i].px = 0;
+    }
     void *canvas = widget_get_canvas(lrc);
     for (unsigned i = 0; i < n; ++i) {
         void *row = widget_get_child(lrc, i);

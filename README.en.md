@@ -2,8 +2,8 @@
 
 **简体中文分支 · Simplified Chinese fork**
 
-本仓库是 [DiamondBond/q2-pod](https://github.com/DiamondBond/q2-pod)（MIT）的简体中文个人分支，基线为上游 **1.5.7**。
-汉化起点是 [Ericwyn/q2-pod](https://github.com/Ericwyn/q2-pod) 的简体中文提交，已按 1.5.7 的新结构重做，
+本仓库是 [DiamondBond/q2-pod](https://github.com/DiamondBond/q2-pod)（MIT）的简体中文个人分支，基线为上游 **1.5.8**。
+汉化起点是 [Ericwyn/q2-pod](https://github.com/Ericwyn/q2-pod) 的简体中文提交，已按 1.5.8 的新结构重做，
 并加了三个自用功能（无耳机不播放、状态栏「播放中 / 已暂停」、一键补全封面与歌词）。
 
 **中文说明（本仓库首页）：[README.md](README.md)**

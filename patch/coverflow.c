@@ -2428,6 +2428,22 @@ static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
  * ponytail: only the playing track's cover, no iPod slideshow of library covers or crossfades;
  * library thumbnails are too small for the panel, so each change would decode a full cover. Light
  * Mode's paper behind a transparent cover changes with the next cover. */
+/* [1,2,1]/4 along n opaque texels step apart, in place. home_render's bilinear keeps a whole-pixel
+ * frame's texels and mixes a half-pixel one's 50/50, so the pan's sharpness pulsed as its phase
+ * turned; texels already this soft read almost alike either way (1-2-1 against 1-3-3-1).
+ * ponytail: a constant slight softening of the art, no per-frame cost; a cubic resampler would
+ * keep the sharpness and cost every frame. */
+void home_soften(unsigned *t, int n, int step) { /* test/coverflow.py */
+    unsigned prev = t[0];
+    for (int i = 0; i < n; ++i) {
+        unsigned c = t[i * step], next = i + 1 < n ? t[(i + 1) * step] : c;
+        unsigned rb = ((prev & 0xff00ffu) + 2 * (c & 0xff00ffu) + (next & 0xff00ffu)) >> 2,
+                 g = ((prev & 0xff00u) + 2 * (c & 0xff00u) + (next & 0xff00u)) >> 2;
+        prev = c;
+        t[i * step] = 0xff000000u | (rb & 0xff00ffu) | (g & 0xff00u);
+    }
+}
+
 static int home_tex(const char *url) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned bitmap[64]; /* bitmap_t */
@@ -2470,6 +2486,8 @@ static int home_tex(const char *url) {
             }
         }
         bitmap_unlock_buffer(bitmap);
+        for (int y = 0; y < th; ++y) home_soften(home.tex + y * tw, tw, 1);
+        for (int x = 0; x < tw; ++x) home_soften(home.tex + x, th, tw);
         home.tw = tw, home.rx = tw - fw, home.ry = th - fh;
         home.u0 = (fw - HOME_PW) / 2, home.v0 = (fh - 290) / 2, home.du = -1;
     }
@@ -2535,6 +2553,9 @@ void coverflow_home_art(void *top) {
     int fw = HOME_PW, fh = 290;
     home.tw = 0;
     const char *src = cover;
+    /* the player writes every track's cover to the same file: drop AWTK's cached bitmap of the
+     * last track's, or the new track shows it (Enlarged Art does the same) */
+    if (cover) image_manager_unload_bitmap_by_name(image_manager(), cover);
     int pans = cover ? home_tex(cover) : -1;
     if (pans < 0 && r) pans = home_tex(url), src = url;
     if (pans > 0) {
@@ -2585,8 +2606,10 @@ static void home_width(void *w, int outer, int inner, int x, int end, int depth)
                        depth < 2 ? outer : inner, I(w, W_H));
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         void *child = widget_get_child(w, i);
-        if (!tk_strcmp(widget_get_type(child), "hscroll_label"))
+        if (!tk_strcmp(widget_get_type(child), "hscroll_label")) {
             widget_move_resize(child, x, I(child, W_Y), inner - x - end, I(child, W_H));
+            bold_label(child, -1); /* Classic's bold; Minimal paints its own (paint_caps) */
+        }
         else
             home_width(child, outer, inner, x, end, depth + 1);
     }

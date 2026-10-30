@@ -6,6 +6,7 @@ int playback_set(int kind, int value);
 int playback_groups(void *all, int folder);
 int playback_unshuffle(void);   /* the stock mode Shuffle Songs replaces */
 int playback_shuffle(int mode); /* the queue as Shuffle Songs, Repeat All; the next restores mode */
+int playback_listable(void);    /* View Queue: a shuffle's order is up (stock Shuffle given one) */
 int playback_group_skip(int forward);
 int playback_back(void); /* the track stock Shuffle's Previous left, once; else -1 */
 unsigned playback_upcoming(unsigned *out, unsigned max); /* Up Next: queue indices, in play order */
@@ -28,6 +29,9 @@ int wheel_pct(void); /* Wheel sensitivity, 50-200% */
 void wheel_set_pct(int n);
 void wheel_guard_reset(void);
 extern int wheel_guard; /* Volume guard: the screen-off wheel's half-turn guard, 0 off */
+/* Wheel QS taken back: the pull-down's slide for the next release, plus 1 (ringnav_dispatch);
+ * qs_down while its finger is down, so that finger's own late touch down keeps it */
+extern volatile int qs_back, qs_down;
 /* iPod: while wheel_raw is set the wheel posts no ticks and adds its raw travel to wheel_travel,
  * 200 units a turn, rising anticlockwise (games.c's Vortex, Now Playing's lyrics); wheel_held is
  * set while a finger is on the wheel */

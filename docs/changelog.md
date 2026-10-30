@@ -1,5 +1,25 @@
 # Changelog
 
+- **1.5.8**:
+  - Now Playing: a long song title or artist waits 1.5 s at its start before it scrolls, as a long album name does, so you can read its beginning.
+  - Now Playing: Enlarged Album Art only appears over the art page. It no longer covers the lyrics, info or visualizer pages ([#57](https://github.com/DiamondBond/q2-pod/issues/57)).
+  - Home: in Split, the album art follows a song change again. It could stay on the previous song's cover until two more skips.
+  - Home: in Split, the panning album art stays evenly sharp. In 1.5.7 it turned soft and sharp again about once a second, most visibly in lettering on the cover.
+  - Display: **Appearance → Centred Now Playing**, off by default, uses Shanling's own Now Playing layout: the art large in the middle, with the title and artist centred under it. Lyrics, the visualizer, the heart and ratings work there too; the track count, album line and remaining time are only on the iPod layout. Its progress bar takes your accent and Theme, as the iPod layout's does. It applies the next time Now Playing opens.
+  - Classic: the Home menu and the Now Playing title use a bold font, cut from Liberation Sans Bold. A title with characters that font lacks (Chinese, Japanese or Korean, say) stays in the regular font.
+  - View Queue: with Shuffle turned on from Now Playing, View Queue lists the songs in the order they'll play, not the library's order. The order starts fresh, so a song already played can come up again.
+  - Now Playing: the Play/Pause hold menu ends with **More…**, Now Playing's own menu.
+  - Display: choosing a Theme loads its look. **Classic**: Light Mode on, Cobalt, square corners, Home Split. **Minimal**: Light Mode off, Graphite, rounded corners, Home Split. Light Mode's Auto, the battery style and Centred Now Playing stay as you set them, and you can change any of them afterwards.
+  - Home: in Classic, the longer bold labels fit their rows, so "Now Playing" no longer ends in "…".
+  - Now Playing: in Centred Now Playing the play mode button sits level with the heart, the same distance from its edge.
+  - Display: **Controls → Smart Awake**, off by default. While a song plays, the screen stays on while you're on the lyrics, info or visualizer page. When paused, it turns off as usual.
+  - Lyrics: one click of the wheel no longer stops the lyrics following the song. It nudges them a little, and they spring back when you let go. Turn the wheel two clicks or more to scroll them yourself.
+  - Wheel QS: Quick Settings follows your swipe across the wheel as it happens, instead of sliding open after you lift your finger. A swipe that turns into a turn of the wheel puts it back.
+  - Buttons: after you hold the top button (Back), a second press it sometimes sends as you let go is ignored.
+  - Buttons: a Centre press made while Play/Pause, Previous or Next is held is ignored, as it already was for Back. Pressing the wheel's rim near a corner no longer opens the Shut Down dialog when it also catches the Centre button.
+  - Library: an empty `database.ignore` file in a folder keeps that folder's songs out of Songs, Albums, Artists, Coverflow and library shuffle, and from the displayed Favourites, Recent and Frequent lists (the records themselves are kept), while playlists and Folder still play them; a `database.unignore` deeper down shows a subfolder again. Update Local Music after adding or removing one. See [Hide folders from library browsing](discovery.md). From [@czdaniel's PR #144](https://github.com/DiamondBond/q2-pod/pull/144).
+  - Scrobbling: with `AUTO=1` under `[SCROBBLE]` in `.scrobble.ini`, the Q2 uploads your listens by itself while it is on Wi-Fi. A single listen goes up within about three hours; the more you listen, the sooner, down to hourly. **Upload Scrobbles** still sends them at once.
+
 - **1.5.7**:
   - Buttons: a Centre press made while the top button (Back) is held is ignored, so a loose wheel that closes both on one press only goes back.
   - Home: in Split, the album art pans smoothly instead of moving in small steps.

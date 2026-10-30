@@ -113,7 +113,7 @@ Split narrows both menus to `HOME_SPLIT_W` (187, half the screen) and shows the 
 the menus clipped left of it; `default_album_home` without a cover); Full hides the art and
 widens the menus to the screen, their rows to `HOME_FULL_ROW` (375), or `HOME_CLASSIC_ROW` (369)
 in Classic. Minimal's labels keep x 39 and end 33 pixels from the screen edge in Full, `HOME_SPLIT_LABEL_END` (8) before the art in Split, where no corner needs clearing (140 pixels wide). Classic's
-start at `HOME_CLASSIC_TEXT_X` (33) with their existing widths. The chevron moves 15 pixels
+start at `HOME_CLASSIC_TEXT_X` (33) and end `HOME_CLASSIC_LABEL_END` (33) before the row's edge, 10 pixels short of Split's chevron glyph, so the bold "Now Playing" (119 pixels) fits; in Liberation Sans Bold: the build ships it as `fonts/bold.ttf` (`assets/fonts`, OFL), cut to its Latin, Greek, Cyrillic and punctuation and renamed Q2 Pod Sans (the OFL keeps the Liberation name for the unmodified font), and `bold_label` names it in a label's style while the font has every character of its text (`BOLD_RANGES`, generated from the same cmap), else stock's font, which has CJK. Now Playing's title goes through it too, as its text changes. The chevron moves 15 pixels
 right in Split and 10 in Full, staying clear of the rounded glass, and rides the accent's selection bar alone.
 
 The art is the player's cover once `g_lastcover_url` matches the current queue path, else the
@@ -124,6 +124,8 @@ drops what a paint invalidates when the frame ends, so a 0 ms timer then repaint
 otherwise the new art and its fit would reach only the regions repainted later. `g_playcover_finishflag` remains
 stock-owned. Now Playing and Spotify's page keep their black background behind the art.
 
+The player writes every track's cover to the same `/tmp` file, so before Split loads it `coverflow_home_art` drops AWTK's cached bitmap of that name, as the full-screen art does; otherwise the image manager hands back the last track's cover.
+
 In Split a cover pans slowly, as an iPod classic's menu art did: `home_tex` box filters it once
 (at most 4 × 4 samples a texel) to its fit zoomed `DRIFT_ZOOM_PCT` (110), and each axis runs its
 own linear ping-pong across that margin alone, from the old crop (`DRIFT_X_MS` 20 s, `DRIFT_Y_MS`
@@ -132,7 +134,11 @@ edges never show. The art widget then spans the panel with an empty image, and `
 `coverflow_home_clip`, inside the panel's clip) draws one 188 × 290 frame `home_render` blends from
 the filtered cover at the pan's position in 1/256 px, bilinear. Whole-pixel steps at that speed
 read as a jerk every two thirds of a second, one axis at a time; the blend moves it by fractions
-of a pixel, as the iPod's own rendering does. A frame costs about 2.1 million instructions, five a
+of a pixel, as the iPod's own rendering does. The blend keeps a whole-pixel frame's texels but
+mixes a half-pixel one's 50/50, so on its own the cover's sharpness pulsed with the pan's phase,
+most visibly in lettering; `home_tex` softens the filtered cover once, `[1,2,1]/4` across and
+down (`home_soften`), so every phase reads about alike (1-2-1 against 1-3-3-1), at a constant
+slight softening and no cost per frame. A frame costs about 2.1 million instructions, five a
 second while Home shows. A cover whose zoomed fit passes `DRIFT_TEXELS` (four panels: wider
 than about 2:1, or taller than 5:1), a decode that is not 32-bit, the placeholder and Full stay still and unzoomed,
 drawn by the stock fill. Nothing is stored: the pan's phase counts only time shown, so leaving
@@ -544,7 +550,10 @@ lyrics page, while the track has lyrics, the wheel scrolls them smoothly, a pixe
 turns and as far a turn as a line a tick, instead of changing the volume or scrubbing; a scrub
 under way ends first, as any other end does. While the finger stays on the wheel they stay
 exactly where it put them; let go, they glide to the nearest whole line. On the page, the follow
-to a new line glides too. Lyrics moved by the wheel or a finger stay where they are, while the bar and the
+to a new line glides too. While they follow, the wheel meets a list end's resistance: travel short of
+`LYRIC_PUSH_DETENTS` (2) ticks within `LYRIC_PUSH_MS` of the last only nudges them `BUMP_PX`, held while the
+finger stays and springing back when it lets go, still following, so a stray touch keeps the follow.
+Lyrics moved by the wheel or a finger stay where they are, while the bar and the
 highlight go on, until the page swipes away from them; back on the lyrics page they are on the
 current line again. Another song starts at the top. See [internals.md](internals.md#scrub-ipod) and [Word-timed lyrics](internals.md#word-timed-lyrics).
 
@@ -626,7 +635,20 @@ drops the stock rows, takes the sub-page's title and builds only its own rows:
 - Appearance: "Theme: Minimal", "Light Mode: Off" ([Light Mode](#light-mode)), "Accent: Graphite"
   and a "Rounded Corners" switch (stock's `switch_on`/`switch_off`, via `list_toggle`) with the System settings Display icon (`system_display`), "Home: Split" (`playset_covermode`) and "Battery: Icon" (Icon,
   Percent, Icon + Percent, Percent Inside; see [Status bar and clock](#status-bar-and-clock)) with
-  the power manager icon (`system_powermanager`).
+  the power manager icon (`system_powermanager`), then a "Centred Now Playing" switch (`IPOD
+NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window's asset load
+  (`ui_loader_load_widget_with_parent`), builds the next Now Playing from stock's own page
+  (`tools/ipod.py` `PLAYING_STOCK`, `playing_page_stock.bin`, still named `playing_page`), which
+  `ringnav_playing` binds by the same widget names; it has no "3 of 12", album line or remaining time,
+  so those stay unbound. Its art starts 8 px under the status bar, the play mode mirrors the heart
+  (its box flipped to the right edge, centred), and its progress bar is the iPod page's (`np_slider`:
+  plain track, the accent's fill and the Theme's height) where stock's images drew theirs. Its pages are stock's 225 px column: the lyrics wrap at their rows' width and the
+  visualizer draws at its slide's (`lyrics.c` `ly.w`, `visualizer.c` `PAGE_W`). Choosing a Theme loads its preset (`theme_preset`): Classic sets Light Mode on, Cobalt (`ACCENT` 4), square corners and Split, Minimal Light Mode off, Graphite (`MINIMAL_ACCENT` 0), rounded corners and Split; Light Mode's Auto, Battery and Centred Now Playing are kept, and only changed values are saved.
+- Controls, after Shortcut: a "Smart Awake" switch (`IPOD KEEPLIT`, off;
+  `keep_lit_poll`): with Now Playing lit in front on its lyrics, info or visualizer page and a song
+  playing, it calls `reset_poweroptions_timer(1, 1, 1)` once a second, so the screen stays on there;
+  paused, it times out as usual. Enlarged Album Art never opens off the art page: `ringnav_bigcover`
+  closes its window at once when Now Playing's slide view is on another page (#57).
 - Coverflow: "Artist Albums: Coverflow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
   Coverflow ends with an All albums card, see
   [internals.md](internals.md#artist-albums-in-coverflow)), "Coverflow Sort: Album" and "Refresh

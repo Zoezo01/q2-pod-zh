@@ -56,11 +56,12 @@ int scrobble_ready(void) {
     return read_config(c);
 }
 
-/* [SCROBBLE] ALBUM_ARTIST=1: listens log the album artist in place of the artist, for tags whose
- * artist carries "feat." guests. */
-int scrobble_album_artist(void) {
+/* [SCROBBLE] key=1, off unless 1. ALBUM_ARTIST: listens log the album artist in place of the
+ * artist, for tags whose artist carries "feat." guests. AUTO: uploads start by themselves
+ * (navigation.c's scrobble_auto). */
+int scrobble_flag(const char *key) {
     char v[256] = "";
-    toolsReadConfig(INI_FILE, "SCROBBLE", "ALBUM_ARTIST", v, "");
+    toolsReadConfig(INI_FILE, "SCROBBLE", key, v, "");
     return atoi(v) == 1;
 }
 

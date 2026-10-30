@@ -388,6 +388,19 @@ def plain_slider(props, track, fill, bar):
     return props
 
 
+def np_slider(slider, x, cy, w, h):
+    """Now Playing's progress bar: an h-high plain track centred on row cy in an NP_TOUCH-high slider,
+    the accent's fill and the Theme's height set at runtime (navigation.c np_fill, np_theme)."""
+    slider[1] = [x, cy - NP_TOUCH // 2, w, NP_TOUCH]
+    slider[2] = plain_slider(slider[2], NP_TRACK, NP_FILL, h)
+    # No thumb: stock skips the dragger only when border_color is clear, else a touch shows its blue.
+    for state in ('normal', 'pressed', 'over', 'disable', 'focused'):
+        slider[2][f'style:{state}:border_color'] = '#00000000'
+    # Stock draws small radii square; the four-pixel line deliberately has square ends.
+    for key in slider[2]:
+        if key.endswith(':round_radius'): slider[2][key] = str(h // 2)  # a capsule, track and fill
+
+
 def playing_page(root):
     named = {n[2].get('name'): n for n in walk(root)}
     check([n[2].get('name') for n in root[3]] == [
@@ -419,6 +432,9 @@ def playing_page(root):
     title[1] = [NP_TEXT_X, top, text_w, 28]
     # every state: the labels are disabled (enable false), so a lone normal size would not apply
     title[2].update({'style': 's_scrlabel_white20l', **{f'style:{s}:font_size': str(NP_TITLE_PX) for s in ('normal', 'disable', 'focused')}})
+    # stock's lull only pauses between loops; delay holds a new song's start too, as the album's marquee
+    for n in (title, artist):
+        n[2].update(delay=str(inc('MARQUEE_HOLD_MS')), lull=str(inc('MARQUEE_HOLD_MS')))
     artist[1] = [NP_TEXT_X, top + 34, text_w, 22]
     for key in artist[2]:
         if key.endswith(':font_size'): artist[2][key] = str(NP_META_PX)
@@ -465,16 +481,8 @@ def playing_page(root):
     dots[2].update(anchor_x=f'{375 // 2}px', anchor_y='0px')
     named['image_wait'][1] = [NP_MARGIN + (NP_ART - 54) // 2, NP_TOP + art_y + (NP_ART - 54) // 2, 54, 54]
 
-    slider = named['slider_play']
     x, y, w, h = NP_BAR
-    slider[1] = [x, y + h // 2 - NP_TOUCH // 2, w, NP_TOUCH]
-    slider[2] = plain_slider(slider[2], NP_TRACK, NP_FILL, h)
-    # No thumb: stock skips the dragger only when border_color is clear, else a touch shows its blue.
-    for state in ('normal', 'pressed', 'over', 'disable', 'focused'):
-        slider[2][f'style:{state}:border_color'] = '#00000000'
-    # Stock draws small radii square; the four-pixel line deliberately has square ends.
-    for key in slider[2]:
-        if key.endswith(':round_radius'): slider[2][key] = str(h // 2)  # a capsule, track and fill
+    np_slider(named['slider_play'], x, y + h // 2, w, h)
     for name in ('img_repeata', 'img_repeatb'):
         named[name][1][0] = x
     total = named['label_playlen']
@@ -488,6 +496,46 @@ def playing_page(root):
             if key.endswith(':text_color'): n[2][key] = NP_GREY
     root[3][1:3] = []
     root[3].insert(3, remain)
+
+
+# iPod only. Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the
+# title and artist, as PLAYING_STOCK (navigation.c ringnav_ui_load); the payload binds it by the same names.
+# It keeps stock's layout; the title and artist hold at their start as the iPod page's do, and the lyrics
+# span their column, as the iPod page's span the screen (patch/lyrics.c wraps at the rows' width).
+PLAYING_STOCK = 'playing_page_stock.bin'
+def playing_stock(data):
+    check(sha(data) == UI_ASSETS[PLAYING_PAGE], f'{PLAYING_PAGE}: unaudited UI asset')
+    root = decode(data)
+    named = {n[2].get('name'): n for n in walk(root)}
+    check(root[2].get('name') == 'playing_page' and named['slide_view'][1][2] == 225, 'Unexpected stock Now Playing')
+    for name in ('scrlabel_title', 'scrlabel_artist'):
+        named[name][2].update(delay=str(inc('MARQUEE_HOLD_MS')), lull=str(inc('MARQUEE_HOLD_MS')))
+    lrc = named['scroll_lrc'][2]
+    check(lrc['self_layout'].startswith('default(x=0,y=0,w=-10,'), 'Unexpected lyrics scroll view')
+    lrc['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'
+    # Stock's art meets the status bar: it starts 8 px below it, 8 px smaller so its bottom stays
+    # put, with the play-state badge still centred on it.
+    check(named['img_cover'][1] == [18, 0, 188, 188] and named['img_playstate'][1] == [52, 34, 120, 120],
+          'Unexpected stock cover')
+    named['img_cover'][1] = [22, 8, 180, 180]
+    named['img_playstate'][1] = [52, 38, 120, 120]
+    # The play mode mirrors the heart: its box, flipped to the right edge, the icon centred in it, not
+    # drawn from the corner 12 px right of the box.
+    fav, mode = named['img_fav'], named['img_playmode']
+    check(fav[1] == [2, 129, 86, 73] and fav[2]['draw_type'] == 'center' and mode[2]['draw_type'] == 'default',
+          'Unexpected stock heart or play mode')
+    mode[1] = [375 - fav[1][0] - fav[1][2], *fav[1][1:]]
+    mode[2]['draw_type'] = 'center'
+    for key in [k for k in mode[2] if k.endswith(('x_offset', 'y_offset'))]: del mode[2][key]
+    # The heart's ink sits high in its bitmap (weighted centre 11 px of 28, the play modes' 13-14), so
+    # it drops 3 px to sit level with the play mode by eye.
+    fav[1] = [fav[1][0], fav[1][1] + 3, *fav[1][2:]]
+    # The progress bar is the iPod page's (np_slider), so it takes the accent and Theme, where stock's
+    # images drew theirs: its 82 px box's middle, 6 px down.
+    bar = named['slider_play']
+    check(bar[1] == [50, 208, 290, 82] and bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
+    np_slider(bar, 50, 208 + 82 // 2 + 6, 290, NP_BAR[3])
+    return encode(root)
 
 
 # iPod only. The full-screen art (a tap on Now Playing's opens it, any tap closes it): stock's art, shade and
