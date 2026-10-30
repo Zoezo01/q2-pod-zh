@@ -8,7 +8,8 @@
 #define VIS_N 1024           /* frames each frame analyses */
 #define VIS_HALO 64          /* log-spaced bands, 40 Hz to 16 kHz: the Halo's bars, pairs the spectrum's */
 #define VIS_X 16             /* tools/ipod.py NP_MARGIN */
-#define VIS_W (375 - 2 * VIS_X)
+#define VIS_W (375 - 2 * VIS_X) /* the widest page's drawing, its buffers' size */
+#define PAGE_W (vz.w - 2 * VIS_X) /* this page's: the slide's width, 375 or the centred page's 225 */
 #define VIS_H 186            /* tools/ipod.py NP_SLIDE_H, the page's height */
 #define VIS_ART 88           /* the Halo's centre */
 #define TAU 6.2831853f
@@ -18,6 +19,7 @@ static struct {
     float re[VIS_N], im[VIS_N], pcm[VIS_N][2], hann[VIS_N]; /* hann[VIS_N / 2] is 0 until filled */
     float level[VIS_HALO], peak[VIS_BARS], fall[VIS_BARS], wave[2][VIS_W], vu[2], spin, bass;
     unsigned held[VIS_BARS], lit[2], bin_rate;
+    int w; /* the page's width (visualizer_attach) */
     int bin[VIS_HALO + 1]; /* each band's first FFT bin at bin_rate */
 #ifndef PEQ_HOST
     void *win, *slide, *page, *art, *cover;
@@ -297,7 +299,7 @@ static void disc(void *vg, float x, float y, float r, unsigned color) {
 #define BASE 142
 #define TALL 126
 static void spectrum(void *vg, unsigned tone) {
-    float pitch = (float)VIS_W / VIS_BARS, w = pitch * 0.66f;
+    float pitch = (float)PAGE_W / VIS_BARS, w = pitch * 0.66f;
     /* Three fills for all the bars: the bars (one gradient, in page coordinates, serves them all),
      * their reflections and their caps. A fill each costs a frame. */
     for (int k = 0; k < 3; ++k) {
@@ -321,7 +323,7 @@ static void scope(void *vg, unsigned tone) {
     for (int k = 0; k < 3; ++k) {
         const float *w = vz.wave[!k ? 1 : 0];
         vgcanvas_begin_path(vg);
-        for (int x = 0; x < VIS_W; x += 2) {
+        for (int x = 0; x < PAGE_W; x += 2) {
             float y = VIS_H / 2 + (k ? 0 : 3) - w[x] * (VIS_H / 2 - 16);
             if (x) vgcanvas_line_to(vg, VIS_X + x, y);
             else vgcanvas_move_to(vg, VIS_X, y);
@@ -338,9 +340,9 @@ static void meters(void *vg, void *canvas, unsigned tone, unsigned now) {
     static const signed char marks[] = { -20, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3 };
     static const char *const labels[] = { "-20", "-10", "", "-5", "-3", "", "", "0", "", "", "+3" };
     /* 80 degrees of arc: the end labels of the two meters stay apart, and the face centres on the page. */
-    const float r = 94, py = 150, spread = 1.4f;
+    const float r = 94.0f * PAGE_W / VIS_W, py = 150, spread = 1.4f; /* narrower, smaller */
     for (int ch = 0; ch < 2; ++ch) {
-        float cx = VIS_X + (VIS_W / 4.0f) * (1 + 2 * ch), zero = -TAU / 4 - spread / 2;
+        float cx = VIS_X + (PAGE_W / 4.0f) * (1 + 2 * ch), zero = -TAU / 4 - spread / 2;
         vgcanvas_set_line_width(vg, 2);
         vgcanvas_begin_path(vg);
         vgcanvas_arc(vg, cx, py, r, zero, zero + spread * vu_at(0), 0);
@@ -381,7 +383,7 @@ static void meters(void *vg, void *canvas, unsigned tone, unsigned now) {
 /* Apple's radial spectrum: VIS_HALO bars, mirrored left and right, radiating from Now Playing's art
  * in a circle, turning slowly, with the bass pulsing the ring. */
 static void halo(void *vg, unsigned tone) {
-    float cx = 375 / 2.0f, cy = VIS_H / 2.0f, art = VIS_ART / 2.0f, r0 = art + 7 + 5 * vz.bass;
+    float cx = vz.w / 2.0f, cy = VIS_H / 2.0f, art = VIS_ART / 2.0f, r0 = art + 7 + 5 * vz.bass;
     vgcanvas_set_line_width(vg, art * 0.42f + 2); /* round the art: black over its corners */
     vgcanvas_begin_path(vg);
     vgcanvas_arc(vg, cx, cy, art * 1.21f + 1, 0, TAU, 0);
@@ -437,7 +439,7 @@ void visualizer_paint(void *w, void *canvas) {
         return;
     }
     int x = vz.ox, y = vz.oy, old[4], clip[4];
-    if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + x, I(canvas, CANVAS_Y) + y, 375, VIS_H))
+    if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + x, I(canvas, CANVAS_Y) + y, vz.w, VIS_H))
         return;
     canvas_set_clip_rect(canvas, clip);
     I(canvas, CANVAS_X) += x; /* the slide area's origin, for the vector drawing and the text alike */
@@ -455,7 +457,7 @@ void visualizer_paint(void *w, void *canvas) {
     }
     unsigned shown = now - vz.named;
     if (vz.named && shown < 1500)
-        caption(canvas, names[vz.style], 0, VIS_H - 22, 375, 20, 14,
+        caption(canvas, names[vz.style], 0, VIS_H - 22, vz.w, 20, 14,
              rgba(0xaaaaaa, shown < 1000 ? 255 : 255 * (1500 - shown) / 500));
     else if (vz.quiet) { /* the track: title · artist, or the title alone, trimmed to fit */
         void *tl = widget_lookup(vz.win, "scrlabel_title", 1), *al = widget_lookup(vz.win, "scrlabel_artist", 1);
@@ -466,9 +468,9 @@ void visualizer_paint(void *w, void *canvas) {
         if (n && a && *a) text[n++] = ' ', text[n++] = 0xb7, text[n++] = ' ';
         while (a && *a && n < sizeof text / sizeof *text) text[n++] = *a++;
         canvas_set_font(canvas, (void *)0, 14); /* draw_centred's */
-        if (title && canvas_measure_text(canvas, text, n) > VIS_W) n = title;
-        while (n > 1 && canvas_measure_text(canvas, text, n) > VIS_W) text[--n - 1] = 0x2026; /* … */
-        int r[4] = { VIS_X, VIS_H - 22, VIS_W, 20 };
+        if (title && canvas_measure_text(canvas, text, n) > PAGE_W) n = title;
+        while (n > 1 && canvas_measure_text(canvas, text, n) > PAGE_W) text[--n - 1] = 0x2026; /* … */
+        int r[4] = { VIS_X, VIS_H - 22, PAGE_W, 20 };
         if (n) draw_centred(canvas, text, n, r, 14, rgba(0xaaaaaa, 255));
     }
     I(canvas, CANVAS_X) -= x;
@@ -507,13 +509,14 @@ void visualizer_attach(void *win) {
     vz.win = win;
     vz.slide = slide;
     vz.cover = widget_lookup(win, "img_cover", 1);
-    vz.page = list_item_create(slide, 0, 0, 375, VIS_H);
+    vz.w = I(slide, W_W) > 0 && I(slide, W_W) <= 375 ? I(slide, W_W) : 375;
+    vz.page = list_item_create(slide, 0, 0, vz.w, VIS_H);
     widget_use_style(vz.page, "s_listitem_black");
     widget_on(vz.page, EVT_CLICK, next_style, 0);
     /* The art is the window's child, over the slide area's centre, for the same reason as the drawing. */
     vz.ox = vz.oy = 0;
     for (void *p = slide; p && p != win; p = P(p, W_PARENT)) vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
-    vz.art = image_create(win, vz.ox + (375 - VIS_ART) / 2, vz.oy + (VIS_H - VIS_ART) / 2, VIS_ART, VIS_ART);
+    vz.art = image_create(win, vz.ox + (vz.w - VIS_ART) / 2, vz.oy + (VIS_H - VIS_ART) / 2, VIS_ART, VIS_ART);
     widget_set_sensitive(vz.art, 0);
     widget_set_visible(vz.art, 0, 0);
     if (dots) widget_set_prop_int(dots, "max", (int)widget_count_children(slide));

@@ -1840,15 +1840,15 @@ SCROBBLE = r"""
 #include <stdarg.h>
 #include <sys/stat.h>
 #include "peq.h"
-int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *), scrobble_album_artist(void);
+int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *), scrobble_flag(const char *);
 void scrobble_append(const char *, unsigned);
 
-static const char *cfg[6]; /* TOKEN, USER, PASSWORD, API_KEY, API_SECRET, ALBUM_ARTIST */
+static const char *cfg[7]; /* TOKEN, USER, PASSWORD, API_KEY, API_SECRET, ALBUM_ARTIST, AUTO */
 int toolsReadConfig(const char *path, const char *section, const char *key, char *out, const char *def) {
-    static const char *const keys[] = { "TOKEN", "USER", "PASSWORD", "API_KEY", "API_SECRET", "ALBUM_ARTIST" };
-    static const char *const sections[] = { "LISTENBRAINZ", "LASTFM", "LASTFM", "LASTFM", "LASTFM", "SCROBBLE" };
+    static const char *const keys[] = { "TOKEN", "USER", "PASSWORD", "API_KEY", "API_SECRET", "ALBUM_ARTIST", "AUTO" };
+    static const char *const sections[] = { "LISTENBRAINZ", "LASTFM", "LASTFM", "LASTFM", "LASTFM", "SCROBBLE", "SCROBBLE" };
     assert(strstr(path, "/mnt/mmc/.scrobble.ini"));
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 7; i++)
         if (!strcmp(key, keys[i]) && !strcmp(section, sections[i]) && cfg[i]) { strcpy(out, cfg[i]); return 1; }
     return -1; /* stock leaves out alone for a missing file or key */
 }
@@ -1947,11 +1947,13 @@ int main(void) {
     dump = fopen(ROOT "/requests", "w");
     setvbuf(dump, 0, _IONBF, 0);
     assert(!scrobble_ready() && run(&sent) == -11); /* no accounts: no row, and never an upload */
-    assert(!scrobble_album_artist()); /* [SCROBBLE] ALBUM_ARTIST: off unless 1 */
+    assert(!scrobble_flag("ALBUM_ARTIST")); /* [SCROBBLE] flags: off unless 1 */
     cfg[5] = "0";
-    assert(!scrobble_album_artist());
+    assert(!scrobble_flag("ALBUM_ARTIST"));
     cfg[5] = "1";
-    assert(scrobble_album_artist() && !scrobble_ready()); /* not an account */
+    assert(scrobble_flag("ALBUM_ARTIST") && !scrobble_flag("AUTO") && !scrobble_ready()); /* not an account */
+    cfg[6] = "1";
+    assert(scrobble_flag("AUTO"));
     cfg[0] = "tok";
     assert(scrobble_ready() == 1);
     cfg[1] = "u", cfg[2] = "p&w", cfg[3] = "key";

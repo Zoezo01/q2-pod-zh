@@ -480,6 +480,12 @@ TOKEN=12345678-1234-1234-1234-123456789abc</pre>
   <p>If your Artist tags carry guests (“Artist feat. Guest”) and you’d rather scrobble the album’s artist, add this section. Songs without an Album Artist tag still scrobble their Artist; a compilation tagged “Various Artists” scrobbles as that. It applies to listens from then on.</p>
   <pre>[SCROBBLE]
 ALBUM_ARTIST=1</pre>
+  </div>
+  <div class="sub">
+  <h3>Upload automatically (optional)</h3>
+  <p>To have the Q2 upload by itself whenever it’s on Wi-Fi, add <code>AUTO=1</code> to the <code>[SCROBBLE]</code> section (with <code>ALBUM_ARTIST=1</code> too, if you use it). It sends nothing until you’ve listened to something. A single listen goes up within about three hours, and the more you listen, the sooner your listens go, down to hourly. It never turns Wi-Fi on and shows no messages.</p>
+  <pre>[SCROBBLE]
+AUTO=1</pre>
   <p class="task">Upload your listens:</p>
   <ol class="steps">
     <li>Safely eject the card, put it in the Q2 and reopen <b>Library</b>. <b>Upload Scrobbles</b> appears just above <b>Update Local Music</b> when a ListenBrainz token or all four Last.fm fields are present. If it’s missing, check the filename, section headings and required fields.</li>

@@ -7,7 +7,7 @@ import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarf
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.5.7'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.5.8'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -146,6 +146,8 @@ HOOKS = {
 IPOD_HOOKS = {'playlist_rebuild': (0x4b2dac, 'ringnav_playlist', 'playlist'),
               'widget_on_paint_background': (0x65c77c, 'ringnav_paint_bg', 'paint_bg'),
               'bigcover_page_init': (0x5200ec, 'ringnav_bigcover', 'bigcover'),
+              # Every window's asset (window_open's): Centred Now Playing's page (navigation.c ringnav_ui_load)
+              'ui_loader_load_widget_with_parent': (0x653d94, 'ringnav_ui_load', 'ui_load'),
               # Status bar's 1 s tick: the payload's play state, before any paint (navigation.c bar_sync)
               'systembar_showface': (0x52f610, 'ringnav_showface', 'showface'),
               'style_get_color': (0x649f6c, 'ringnav_style_color', 'color'),
@@ -643,6 +645,34 @@ def font_quotes(data):
     font.save(out, reorderTables=False)
     return out.getvalue()
 
+# Classic's bold (navigation.c bold_label): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
+# label holding anything else (CJK, say) keeps the stock font.
+BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
+
+def bold_font():
+    from fontTools import subset
+    from fontTools.ttLib import TTFont
+    font = TTFont(ROOT/'assets/fonts/LiberationSans-Bold.ttf', recalcTimestamp=False)
+    have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    sub = subset.Subsetter(subset.Options())
+    sub.populate(unicodes=have)
+    sub.subset(font)
+    check(sorted(font.getBestCmap()) == have, 'Bold font subset lost characters')
+    # A subset is an OFL Modified Version: it may not carry the Reserved Font Name "Liberation" (its
+    # names, not the copyright and trademark notices, IDs 0 and 7)
+    for rec in font['name'].names:
+        if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
+            rec.string = str(rec).replace('Liberation Sans', 'Q2 Pod Sans').replace('LiberationSans', 'Q2PodSans')
+            check('Liberation' not in str(rec), f'Bold font name {rec.nameID} keeps Liberation')
+    out = io.BytesIO()
+    font.save(out, reorderTables=False)
+    runs = []
+    for u in have:
+        if runs and runs[-1][1] + 1 == u: runs[-1][1] = u
+        else: runs.append([u, u])
+    return out.getvalue(), '#define BOLD_RANGES {' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
     value, in file order; the offsets past each change move with it."""
@@ -1120,6 +1150,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'tidalStreamingLevelNow': 4,  # the quality the Tidal URL thread asked for
                 'stTidalTracks': 16,  # a Tidal track list: total, limit, offset, its deque
                 'g_dropdown_menu_state': 4,  # Quick Settings: 1, 2 while it slides or follows a swipe, 3 open
+                'g_slide_direction': 4,  # where its release slides it: 1 open, 0 closed (set as a swipe starts)
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
                 'bt_connectstatus': 4}  # a link thread runs (1), ended (2), checked (3)
@@ -1319,7 +1350,7 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, ARTIST_PAGE, HOME_PAGE, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
                       QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
-                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art)
+                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
     check(contexts, 'No navigation contexts audited')
     windows, chinese = set(), set()  # chinese: the UI assets english_ui rewrites
@@ -1343,7 +1374,8 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
     symbol_table = run('readelf', '-Ws', demo)
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
-    header = [f'#define RING_STEP {RING_STEP}']
+    bold, bold_ranges = bold_font()
+    header = [f'#define RING_STEP {RING_STEP}', bold_ranges]
     header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
     header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
     header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
@@ -1622,12 +1654,15 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
             icons[f'stream_{n}.png'] = (like, row_icon(data))
         icons['default_album_home.png'] = ('default_album_big.png', art)
         icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
+    ui = 'release/assets/default/raw/ui/'
+    pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin'))))} if ipod else {}
     added = []
-    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()},
+    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages,
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
+                               **({BOLD_TTF: (FONT, bold)} if ipod else {}),
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
         stock = inode(p, like.encode())
         check(stock is not None, f'Missing stock inode for {path}')

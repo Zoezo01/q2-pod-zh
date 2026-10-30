@@ -232,7 +232,9 @@ static inline int arc_out(int r, int y) {
 #define HOME_CHEVRON_SHIFT 15
 #define HOME_FULL_CHEVRON_SHIFT 10
 #define HOME_CLASSIC_TEXT_X 33
-#define HOME_CLASSIC_LABEL_END (CHEVRON_W - 10)
+/* Labels end 10 px before Split's chevron glyph (x 20 of list_into, HOME_CHEVRON_SHIFT in), 5 px
+ * before Full's, so Liberation Sans Bold's "Now Playing" (119 px) fits Split's row. */
+#define HOME_CLASSIC_LABEL_END 33
 #define NP_BAR_CLASSIC 8
 #define NP_BAR_MINIMAL 4
 #define MINIMAL_FILL 0xeeeeec
@@ -272,6 +274,9 @@ static inline int arc_out(int r, int y) {
 #define NP_TITLE_PX 22
 #define NP_META_PX 18
 #define NP_ALBUM_RGB 0xbbbbbb
+/* A line too long to fit holds MARQUEE_HOLD_MS at its start: the Minimal album marquee
+ * (navigation.c) and the stock title and artist labels' delay and lull (tools/ipod.py). */
+#define MARQUEE_HOLD_MS 1500
 /* iPod Now Playing's lyrics (lyrics.c, docs/ipod.md#lyrics): a line of one row is LYRIC_SLOT high,
  * its text and the gap to the next, a longer one more; the first after a blank LYRIC_SLOT
  * (tools/ipod.py's list layout) so it can sit in the middle as the playing line does; text LYRIC_X
@@ -403,6 +408,12 @@ static inline int arc_out(int r, int y) {
 #define BUMP_PX 6
 #define BUMP_MS 120
 #define EDGE_PAUSE_MS 300 /* well above WHEEL_RUN_MS, so a spin never counts as a pause */
+/* Following lyrics resist the wheel as a list's end does (lyric_poll): travel short of
+ * LYRIC_PUSH_DETENTS within LYRIC_PUSH_MS of the last only nudges them BUMP_PX.
+ * ponytail: fixed feel, tune these two if a stray touch still takes over or a deliberate one
+ * feels stuck. */
+#define LYRIC_PUSH_DETENTS 2
+#define LYRIC_PUSH_MS 1000
 #define BAR_VALUE 0x7c /* scroll_bar native value, maintained by list/table scroll callbacks */
 #define KEY_CENTER 218
 #define KEY_PREV 172
@@ -491,7 +502,9 @@ static inline int arc_out(int r, int y) {
 /* localmusic/playlist_page's add mode (g_play_info + 0x7894): non-zero while it is Add to Playlist;
  * 0 when browsing the Playlists list, whose rows' trailing dots open playlistsmore_page. */
 #define PLAYLIST_ADD_MODE 0xa27894
-#define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b'"
+/* Marked folders stay indexed for playlists; the wrappers expand this before grouping. */
+#include "library_scope.h"
+#define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b' and " LIBRARY_SCOPE_TOKEN
 /* Tags may store a full date (20220510 or 2022-05-10); compare the year before aggregating. */
 #define ALBUM_YEAR "max(case when cast(year as text) glob '[1-9][0-9][0-9][0-9]*' then cast(substr(year,1,4) as integer) else 0 end)"
 /* One row per album, as album_cmp tells them apart (coverflow.c; navigation.c's Era). */

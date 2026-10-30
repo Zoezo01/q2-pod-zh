@@ -110,6 +110,7 @@ These folders at the card's root each add their own Library entry: `Podcasts/`, 
 ## Documentation
 
 - **For users:** [User guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf) · [Setup](docs/setup.md) · [Changelog](docs/changelog.md)
+- **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
 - **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md)
 
 ## License

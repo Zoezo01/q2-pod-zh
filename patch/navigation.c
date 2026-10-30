@@ -134,9 +134,14 @@ static int library_query(int content, const char *db, const char *sql, void *row
         if (n < 0 || (unsigned)n >= sizeof filtered) return -1;
         sql = filtered;
     }
-    if (content == 2) return stock_sorted_query_trampoline(db, sql, row, (int)arg);
-    return content ? stock_content_query_trampoline(db, sql, row, arg, sort)
-                   : stock_dbquery_trampoline(db, sql, row, (int)arg);
+    /* no memory to expand it: the token alone is SQL's 1, the whole library (library_scope.c) */
+    char *expanded = sql && strstr(sql, LIBRARY_SCOPE_TOKEN) ? library_scope_query(sql) : 0;
+    const char *query = expanded ? expanded : sql;
+    int result = content == 2 ? stock_sorted_query_trampoline(db, query, row, (int)arg)
+                 : content    ? stock_content_query_trampoline(db, query, row, arg, sort)
+                              : stock_dbquery_trampoline(db, query, row, (int)arg);
+    if (expanded) free(expanded);
+    return result;
 }
 int ringnav_library_query(const char *db, const char *sql, void *row, int sort) {
     return library_query(0, db, sql, row, (void *)sort, 0);
@@ -203,7 +208,7 @@ extern int visualizer_live(void), games_live(void);
 extern void *queue_now(unsigned *pos, unsigned *n);
 extern const char *now_tag(void *r, int field);
 extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
-    scrobble_album_artist(void);
+    scrobble_flag(const char *key);
 extern void scrobble_append(const char *line, unsigned n);
 extern void *staged(int (*query)(void *), void *arg, int *count);
 /* Scope music detail loads too: spoken tracks can share all their tags with music. */
@@ -382,11 +387,17 @@ typedef struct {
     unsigned art_cf_timer;
     unsigned wake_at; /* Wake: Double press, the screen-off centre press a second one must follow */
     unsigned woke_at; /* the centre press that woke the screen, then its first lit loop pass */
-    unsigned return_at; /* chord_gate: Return's press while held, else 0 */
-    int chord_eat;      /* 1: the held Centre press is dropped; -1: it passes */
-    unsigned chord_at;  /* the last Centre event chord_gate saw */
-    void *np_origin;    /* the page Hold Return opened Now Playing over */
-    void *dc_top;       /* the page of the last centre press no list click took, and its time */
+    unsigned return_at;          /* chord_gate: Return's press while held, else 0 */
+    int chord_eat;               /* 1: the held Centre press is dropped; -1: it passes */
+    unsigned chord_at;           /* the last Centre event chord_gate saw */
+    unsigned return_up;          /* chord_gate: a hold's release, else 0 */
+    unsigned edge_held, edge_at; /* chord_gate: edge buttons held (bits), the last one's press */
+    unsigned edge_seen;          /* chord_gate: an edge button's last press or repeat */
+    unsigned centre_at, centre_hold; /* a passing Centre press, and its hold timer */
+    int return_eat;                  /* 1: a ghost Return press is dropped */
+    unsigned return_eat_at;
+    void *np_origin; /* the page Hold Return opened Now Playing over */
+    void *dc_top;    /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
     unsigned charge_at, last_input, cpu_retry;
     /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
@@ -415,11 +426,13 @@ typedef struct {
     int pct_digit, pct_sign; /* BATT_PX advances of '0' and '%', measured on the first paint */
     unsigned letter_timer;   /* the fast-scroll letter shows while this runs */
     /* Now Playing's window and payload-filled widgets, and the sources they last showed. */
-    void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover;
+    void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
+    int np_bold;             /* the title's font: 1 bold, 0 stock's, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
      * (ringnav_bigcover) */
     void *bc[3];
+    void *bc_drop; /* full-screen art opened off the art page, closed on the next pass */
     int bc_step;
     unsigned bc_timer, bc_track, bc_repaint;
     unsigned bc_key, bc_box, bc_shape,
@@ -443,19 +456,25 @@ typedef struct {
                    */
     /* The lyrics (lyric_poll), of the song lyric_song, their rows built for lyric_rows_song:
      * lyric_raw while their page holds the wheel's raw travel; lyric_held once the wheel or a drag
-     * moved them; lyric_spun once the wheel moved them since it was let go; lyric_touch while a
+     * moved them; lyric_spun once the wheel moved them since it was let go (2: only nudged them,
+     * still following); lyric_touch while a
      * finger is on Now Playing, 1 if it came down on the lyrics, lyric_drag_y the offset then; the
      * glide's target lyric_to (1/16 px), its last step lyric_at, and lyric_glide while it moves;
      * lyric_follow_at the last follow. */
     int lyric_raw, lyric_held, lyric_spun, lyric_touch, lyric_drag_y, lyric_glide, lyric_to;
+    int lyric_push, lyric_home; /* travel short of LYRIC_PUSH_DETENTS, and where it nudged from */
+    unsigned lyric_push_at;
     unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
     int settings_read, accent, minimal_accent, home_full, battery, home_rockbox, classic, shortcut,
-        rounded, light, light_day; /* light_day: Auto's answer for now (LIGHT=2) */
-    void *sel_accent;              /* the row on a coloured selection, for Light Mode's ink */
-    int style_depth;               /* nested style hooks (a mutable style's fallback) map nothing */
-    void *setting_label[7];
+        rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
+        keep_lit,                  /* Smart Awake (#57, keep_lit_poll) */
+        np_centred;                /* Centred Now Playing (ringnav_ui_load) */
+    unsigned keep_lit_at;
+    void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
+    int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
+    void *setting_label[9];
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
 #endif
@@ -1610,12 +1629,13 @@ static const char *const accent_names[] = {
 };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home, 2 Battery, 3 Theme,
- * 4 Shortcut, 5 Corners, 6 Light Mode. */
-static const char *const setting_keys[] = { "ACCENT",   "HOME",    "BATTERY", "THEME",
-                                            "SHORTCUT", "ROUNDED", "LIGHT" };
-static const int setting_counts[] = { ACCENT_N, 2, 4, 2, 7, 2, 3 };
-static int *const setting_values[] = { &st.accent,   &st.home_full, &st.battery, &st.classic,
-                                       &st.shortcut, &st.rounded,   &st.light };
+ * 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred Now Playing. */
+static const char *const setting_keys[] = { "ACCENT",  "HOME",  "BATTERY", "THEME",    "SHORTCUT",
+                                            "ROUNDED", "LIGHT", "KEEPLIT", "NPCENTRED" };
+static const int setting_counts[] = { ACCENT_N, 2, 4, 2, 7, 2, 3, 2, 2 };
+static int *const setting_values[] = { &st.accent,  &st.home_full, &st.battery,
+                                       &st.classic, &st.shortcut,  &st.rounded,
+                                       &st.light,   &st.keep_lit,  &st.np_centred };
 /* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
  * cannot be read. */
 static const int *clock_now(int *buf) {
@@ -1647,6 +1667,8 @@ static int accent(void) {
         st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
         st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
         st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
+        st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
+        st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
         int buf[11];
         st.light_day = light_day(clock_now(buf));
         st.settings_read = 1;
@@ -2028,7 +2050,6 @@ static int draw_spaced(void *canvas, const unsigned *s, int x, int y, unsigned p
  * starts it; it stops once the album fits or the page goes. */
 #define MARQUEE_MS 50
 #define MARQUEE_PX 2
-#define MARQUEE_HOLD_MS 1500
 static int np_marquee(const void *info) {
     st.np_marquee = 0;
     /* Covered or dark, paint_caps restarts it on Now Playing's next paint. */
@@ -3156,7 +3177,7 @@ static void lyric_still(void *lrc) {
 /* Another song: its lyrics at the top, nothing held or gliding, and stock's animator, which would
  * carry them on to where the last song's follow sent them, stopped. */
 static void lyric_top(void *lrc) {
-    st.lyric_held = st.lyric_spun = st.lyric_glide = st.lyric_to = 0;
+    st.lyric_held = st.lyric_spun = st.lyric_glide = st.lyric_to = st.lyric_push = 0;
     lyric_still(lrc);
     scroll_view_set_offset(lrc, I(lrc, SCROLL_X), 0);
 }
@@ -3179,7 +3200,8 @@ int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
     lyric_pad(lrc);
 #if IPOD
     if (lrc == st.np_lrc) {
-        if (st.lyric_held || lyrics_on(lrc) || window_manager_get_pointer_pressed(window_manager()))
+        if (st.lyric_held || st.lyric_spun == 2 || lyrics_on(lrc) ||
+            window_manager_get_pointer_pressed(window_manager()))
             return 0;
         if (lyrics_shown()) {
             lyric_glide(lrc, y * 16);
@@ -3477,10 +3499,31 @@ static void clock_text(void *label, int negative, int t) {
     widget_set_text_utf8(label, s);
 }
 
+/* Classic's bold: w's text in Liberation Sans Bold (the build's fonts/bold.ttf) when that font has
+ * every character of it (BOLD_RANGES, from its cmap), else stock's font, which has CJK; Minimal's
+ * always stock's. was is the last answer (-1 none): only a change is written, in every state the
+ * labels style. Returns the answer. */
+int bold_label(void *w, int was) {
+    static const unsigned short ranges[] = BOLD_RANGES;
+    static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
+                                        "style:disable:font_name" };
+    const unsigned *c = w ? widget_get_text(w) : (void *)0;
+    int bold = !!w && ipod_classic();
+    for (; bold && c && *c; ++c) {
+        unsigned i = 0;
+        while (i < sizeof ranges / sizeof *ranges && (*c < ranges[i] || *c > ranges[i + 1])) i += 2;
+        bold = i < sizeof ranges / sizeof *ranges;
+    }
+    for (unsigned i = 0; w && bold != was && i < sizeof font / sizeof *font; ++i)
+        widget_set_prop_str(w, font[i], bold ? "bold" : "default");
+    return bold;
+}
+
 /* Now Playing's "3 of 12", album and remaining time (slider max less value, stock's seconds, so a
  * drag or scrub previews it). Labels are written only when their source changes. */
 static void np_sync(void *top) {
     if (!top || top != st.np_win) return;
+    st.np_bold = bold_label(st.np_title, st.np_bold); /* the title, as it changes */
     unsigned at, n;
     void *r = queue_now(&at, &n);
     const char *album = now_tag(r, REC_ALBUM);
@@ -3651,7 +3694,8 @@ static void lyric_init(void) {
 static void lyric_follow(void *lrc, int ms, int front, int shown) {
     int line = lyrics_line(lrc, ms, front), to = lyric_centre(lrc, line > 0 ? line : 0);
     if (to < 0) to = 0;
-    if (st.lyric_held || window_manager_get_pointer_pressed(window_manager())) return;
+    if (st.lyric_held || st.lyric_spun == 2 || window_manager_get_pointer_pressed(window_manager()))
+        return; /* lyric_spun 2: a finger on the wheel holds the nudge */
     lyric_pad(lrc);
     if (shown) {
         if (to * 16 != st.lyric_to || (!st.lyric_glide && I(lrc, SCROLL_Y) != to))
@@ -3660,6 +3704,18 @@ static void lyric_follow(void *lrc, int ms, int front, int shown) {
         lyric_still(lrc);
         scroll_view_set_offset(lrc, I(lrc, SCROLL_X), to);
     }
+}
+
+/* Smart Awake (#57): Now Playing lit in front, a song playing, on its lyrics, info or
+ * visualizer page holds the screen on as the lyrics wheel does; paused, it times out as usual. */
+static void keep_lit_poll(void) {
+    unsigned now = (unsigned)time_now_ms();
+    if (!st.np_slide || now - st.keep_lit_at < 1000) return;
+    st.keep_lit_at = now;
+    accent(); /* reads the settings */
+    if (st.keep_lit && g_backlight_status && widget_get_prop_int(st.np_slide, "value", 0) &&
+        window_manager_get_top_window(window_manager()) == st.np_win && mclGetPlayStatus() == 2)
+        reset_poweroptions_timer(1, 1, 1);
 }
 
 static void lyric_poll(void) {
@@ -3688,10 +3744,37 @@ static void lyric_poll(void) {
         wheel_raw = st.lyric_raw = on;
     }
     int travel = on ? __sync_lock_test_and_set(&wheel_travel, 0) : 0;
+    /* Following, the wheel meets the resistance of a list's end: travel short of
+     * LYRIC_PUSH_DETENTS within LYRIC_PUSH_MS only nudges the lyrics BUMP_PX from the follow's
+     * place, and they spring back when it is let go, still following; a stray touch keeps the
+     * follow. More takes over. */
+    if (travel && !st.lyric_held) {
+        unsigned at = (unsigned)time_now_ms();
+        if (!st.lyric_push || at - st.lyric_push_at > LYRIC_PUSH_MS) {
+            lyric_pad(lrc);
+            st.lyric_push = 0; /* a nudge still held keeps its home: no walking off tick by tick */
+            if (st.lyric_spun != 2)
+                st.lyric_home = st.lyric_glide ? st.lyric_to : I(lrc, SCROLL_Y) * 16;
+        }
+        st.lyric_push_at = at;
+        st.lyric_push += travel;
+        /* the clicks Wheel Sensitivity makes: fewer raw units each as it rises */
+        int push = LYRIC_PUSH_DETENTS * WHEEL_TICK_UNITS * 50 / wheel_pct();
+        if (st.lyric_push > -push && st.lyric_push < push) {
+            st.last_input = at;
+            reset_poweroptions_timer(1, 1, 1);
+            /* x rises anticlockwise: back up the lyrics */
+            lyric_glide(lrc,
+                        st.lyric_home - ((st.lyric_push > 0) - (st.lyric_push < 0)) * BUMP_PX * 16);
+            st.lyric_spun = 2;
+            travel = 0;
+        }
+    }
     if (travel) {
         st.last_input = time_now_ms();
         reset_poweroptions_timer(1, 1, 1);
         lyric_hold();
+        st.lyric_push = 0;
         lyric_pad(lrc);
         int y = I(lrc, SCROLL_Y),
             from = st.lyric_glide || (st.lyric_to + 8) >> 4 == y ? st.lyric_to : y * 16;
@@ -3701,8 +3784,13 @@ static void lyric_poll(void) {
         st.lyric_spun = 1;
     }
     if (!page)
-        st.lyric_spun = 0;
-    else if (shown && st.lyric_spun && !wheel_held) {
+        st.lyric_spun = st.lyric_push = 0;
+    else if (st.lyric_spun == 2 && !wheel_held) {
+        /* a nudge springs back, shown or not, unless a tick took them meanwhile; the follow moves
+         * them on if the line changed. The next touch starts its push afresh. */
+        if (shown && !st.lyric_held) lyric_glide(lrc, st.lyric_home);
+        st.lyric_spun = st.lyric_push = 0;
+    } else if (shown && st.lyric_spun && !wheel_held) {
         st.lyric_spun = 0;
         lyric_snap(lrc);
     }
@@ -3804,7 +3892,7 @@ static int np_gone(void *win, void *event) {
         st.np_win = (void *)0;
         st.np_hash = 0;
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
-            st.np_slide = st.np_lrc = (void *)0;
+            st.np_slide = st.np_lrc = st.np_title = (void *)0;
         st.scrub_moved = 0; /* the page is going: no seek */
         st.np_off = 0;
         stop_timer(&st.np_marquee);
@@ -3827,6 +3915,8 @@ int ringnav_playing(void *win, void *ctx) {
     st.np_remain = widget_lookup(win, "label_ipod_remain", 1);
     st.np_elapsed = widget_lookup(win, "label_playtime", 1);
     st.np_cover = widget_lookup(win, "img_cover", 1);
+    st.np_title = widget_lookup(win, "scrlabel_title", 1);
+    st.np_bold = -1;
     st.np_slide = widget_lookup(win, "slide_view", 1);
     st.np_lrc = widget_lookup(win, "scroll_lrc", 1);
     st.lyric_song = st.lyric_rows_song = np_track(); /* no song change at the start */
@@ -3954,12 +4044,36 @@ static void bc_fit(void *win) {
     }
 }
 
+/* ui_loader_load_widget_with_parent, every window's asset (window_open's): Centred Now Playing
+ * (IPOD NPCENTRED) builds Now Playing from stock's own page (tools/ipod.py PLAYING_STOCK), named
+ * playing_page too, which ringnav_playing binds as the iPod one; any opener comes through here. */
+extern void *stock_ui_load_trampoline(const char *name, void *parent);
+void *ringnav_ui_load(const char *name, void *parent) {
+    if (name && !tk_strcmp(name, "playing_page")) {
+        accent(); /* reads the settings */
+        if (st.np_centred) name = "playing_page_stock";
+    }
+    return stock_ui_load_trampoline(name, parent);
+}
+
 /* bigcover_page_init: stock's full-screen art (a tap on Now Playing's opens it, any tap closes it)
  * shows the song name BC_MS, then bc_fade fades it out. Stock's own timer writes the next song's
- * name; ringnav_sleep shows it again when the track changes. */
+ * name; ringnav_sleep shows it again when the track changes. Enlarged Album Art's idle timer opens
+ * it too: off the art page (lyrics, info, visualizer) there is no art to enlarge, so the next
+ * ringnav_sleep pass closes it (#57), once stock's open has finished with the window.
+ * ponytail: it may show for that one pass; stopping stock's idle timer would need its source. */
+static int bc_dropped(void *win, void *event) {
+    if (st.bc_drop == win) st.bc_drop = (void *)0;
+    return 0;
+}
 int ringnav_bigcover(void *win, void *ctx) {
     int result = stock_bigcover_trampoline(win, ctx);
     if (!win) return result;
+    if (st.np_slide && widget_get_prop_int(st.np_slide, "value", 0)) {
+        st.bc_drop = win;
+        widget_on(win, EVT_DESTROY, bc_dropped, win);
+        return result;
+    }
     st.bc[0] = widget_lookup(win, "scrlabel_title", 1);
     st.bc[1] = widget_lookup(win, "view_shade", 1);
     st.bc[2] = win;
@@ -4541,15 +4655,19 @@ static void setting_text(int i) {
                                   theme[st.classic],
                                   (const char *)0,
                                   (const char *)0,
-                                  light[st.light] };
+                                  light[st.light],
+                                  (const char *)0,
+                                  (const char *)0 };
     char shortcut[64];
     if (i == 4) {
         tk_snprintf(shortcut, sizeof shortcut, "Shortcut: %s", ipod_home_shortcut());
         widget_set_text_utf8(st.setting_label[i], shortcut);
         return;
     }
-    if (i == 5) {
-        list_toggle(st.setting_label[i], "Rounded Corners", st.rounded);
+    static const char *const toggles[] = { "Rounded Corners", 0, "Smart Awake",
+                                           "Centred Now Playing" };
+    if (i == 5 || i >= 7) {
+        list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
         return;
     }
     widget_set_text_utf8(st.setting_label[i], names[i]);
@@ -4576,6 +4694,24 @@ static void settings_layout(void *w) {
  * drawing on the next paint, and the theme's colors and images once every cached image is dropped
  * and the screen repaints; Home takes its new layout and Streaming label at once (never
  * recreated), and an open Now Playing its progress bar. */
+/* A Theme's preset, applied as it is chosen: Classic is light, Cobalt and square, Minimal dark,
+ * Graphite and rounded; both Split. Light Mode's Auto, the battery and Centred Now Playing are
+ * kept. Only a change is saved. */
+static void setting_put(int *value, int v, const char *key) {
+    if (*value != v) write_int_config(*value = v, "IPOD", key);
+}
+static void theme_preset(void) {
+    int classic = st.classic, buf[11];
+    if (st.light != 2) setting_put(&st.light, classic, "LIGHT");
+    st.light_day = light_day(clock_now(buf));
+    if (classic)
+        setting_put(&st.accent, 4, "ACCENT"); /* Cobalt */
+    else
+        setting_put(&st.minimal_accent, 0, "MINIMAL_ACCENT"); /* Graphite */
+    setting_put(&st.rounded, !classic, "ROUNDED");
+    setting_put(&st.home_full, 0, "HOME");
+}
+
 static int setting_click(void *ctx, void *event) {
     int i = (int)(long)ctx, minimal = !i && !ipod_classic();
     int *value = minimal ? &st.minimal_accent : setting_values[i];
@@ -4602,14 +4738,16 @@ static int setting_click(void *ctx, void *event) {
         coverflow_home_layout();
     else if (i == 5)
         widget_invalidate_force(window_manager(), (void *)0);
-    else {
+    else if (i < 7) { /* Smart Awake only needs its toggle drawn, Centred Now Playing the next
+                       * open (ringnav_ui_load) */
         if (i == 3) {
+            theme_preset();
             coverflow_home_layout();
             settings_layout(window_manager());
             np_theme();
             keep_selected(st.setting_label[3]);
-            setting_text(0);
-            setting_text(1);
+            for (int k = 0; k < 7; ++k)
+                if (k != 3 && k != 4) setting_text(k); /* the preset's rows */
         }
         np_fill(0);
         image_manager_unload_all(image_manager());
@@ -4715,14 +4853,17 @@ int ringnav_display(void *win, void *ctx) {
         return result;
     }
 #if IPOD
-    /* Theme, Light Mode, Accent, Corners, Home, Battery; Shortcut. */
-    static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 2 }, controls[] = { 4 };
+    /* Theme, Light Mode, Accent, Corners, Home, Battery, Centred Now Playing; Shortcut, Smart
+     * Awake. */
+    static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 2, 8 }, controls[] = { 4, 7 };
     static const char *const icons[] = { "system_display",      "playset_covermode",
                                          "system_powermanager", "system_display",
                                          "playset_covermode",   "system_display",
-                                         "system_display" };
+                                         "system_display",      "system_display",
+                                         "playset_covermode" };
     const unsigned char *rows = sub == DISPLAY_APPEARANCE ? appearance : controls;
-    for (int k = 0, n = sub == DISPLAY_APPEARANCE ? 6 : 1; k < n; ++k) {
+    for (int k = 0, n = sub == DISPLAY_APPEARANCE ? sizeof appearance : sizeof controls; k < n;
+         ++k) {
         int i = rows[k];
         st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
         setting_text(i);
@@ -4875,6 +5016,15 @@ int ringnav_dispatch(void *target, void *event) {
             quick_cancel(0, 0);
         if (target && type == EVT_CLICK && widget_get_prop_int(target, QUICK_HOLD, 0) < 0)
             return STOP;
+        /* Wheel QS taken back (playback.c qs_finish): its lift slides the pull-down back to how it
+         * was, ahead of stock's release handler; a touch down other than its own finger's (which
+         * may come after the turn) drops a stale one. */
+        if (type == EVT_POINTER_DOWN - 1 && !qs_down)
+            qs_back = 0;
+        else if (type == EVT_POINTER_UP_BEFORE - 1) {
+            if (qs_back) I(g_slide_direction, 0) = qs_back - 1;
+            qs_back = qs_down = 0;
+        }
         /* Quick Settings' swipe up to close may start on its brightness slider. The slider gets
          * its press only once the touch has moved SLIDE_PX more sideways than up or down, or on a
          * tap's release; a touch that moves up or down first, or while stock slides the pull-down
@@ -5169,7 +5319,8 @@ enum {
     QA_RESUME,
     QA_QUEUE,
     QA_FOLDER,
-    QA_CHAPTERS
+    QA_CHAPTERS,
+    QA_MORE
 };
 #define MCL(a) (*(volatile int *)(a))
 
@@ -5253,6 +5404,14 @@ static unsigned qm_album_id(void *r) {
                    st.art_n == st.qm_rows && st.qm_idx < st.art_n
                ? st.art_ids[st.qm_idx]
                : 0;
+}
+
+/* Now Playing's More… (img_more, on both layouts), while that page is open; else 0. */
+static void *np_more(void) {
+#if IPOD
+    if (st.np_win) return widget_lookup(st.np_win, "img_more", 1);
+#endif
+    return (void *)0;
 }
 
 static void qm_close(void) {
@@ -5661,12 +5820,14 @@ static void fav_titles(void *list, int n) {
     if (songs) deque_destroy(songs);
 }
 /* Playlists bypass songtable; filter their displayed copies, never their stored rows. */
-static int music_records(void *list) {
+static int music_records(void *list, int discovery) {
     void *music = _create_deque("stSongInfo");
     deque_init(music);
     for (unsigned i = 0; i < deque_size(list); ++i) {
         void *r = deque_at(list, i);
-        if (I(r, REC_TYPE) != 8 || !spoken(P(r, REC_PATH))) _deque_push_back(music, r);
+        const char *path = P(r, REC_PATH);
+        int hidden = discovery ? library_scope_hidden(path) : spoken(path);
+        if (I(r, REC_TYPE) != 8 || !hidden) _deque_push_back(music, r);
     }
     deque_clear(list);
     deque_assign(list, music);
@@ -5679,7 +5840,10 @@ int ringnav_localclass(int cls) {
     library_music = 1;
     int n = stock_localclass_trampoline(cls);
     void *list = P(p_deque_showlist, 0), *dir = P(tools_pdeq_directory, 0), *a = album_opened();
-    if (n > 0 && cls == 0xff20) n = music_records(list);
+    if (n > 0 && cls == 0xff20) n = music_records(list, 0);
+    /* These stored lists bypass songtable too. Keep Discovery out of their displayed copies,
+     * without removing favourites/history or changing explicit playlist and folder queues. */
+    if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) n = music_records(list, 1);
     if (n > 0 && cls == 0xff10 && a) album_only(list, a, 0), n = (int)deque_size(list);
     if (n > 0 && cls == CLASS_ALBUMS) n = coverflow_split(list);
     if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) /* My Fav, Frequent, Recent */
@@ -5769,7 +5933,8 @@ static void *qm_collect(void *r) {
 static void qm_insert(void *queue, void *add, int next) {
     unsigned at = playback_queue_insert(queue, add, next);
     if (next) {
-        st.qm_forced = MCL(MCL_MODE) == 2 ? at + 1 : 0;
+        /* stock Shuffle's only: advanced Shuffle Songs (also MCL_MODE 2) plays its own order */
+        st.qm_forced = MCL(MCL_MODE) == 2 && !playback_option(0) ? at + 1 : 0;
         st.qm_forced_hash = rec_hash(deque_at(queue, at));
     }
 }
@@ -6754,11 +6919,14 @@ static struct {
 
 static int era_sql(const char *sql, int (*row)(void *, int, char **, char **)) {
     void *db = 0;
+    /* Era uses SQLite directly rather than the stock library query wrappers. */
+    char *expanded = library_scope_query(sql); /* none: the whole library, as library_query */
     /* Keep a full-library grouping query from competing with the player's song records for RAM. */
     int bad = sqlite3_open("/mnt/data/database.db", &db) ||
               sqlite3_exec(db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE", 0, 0, 0) ||
-              sqlite3_exec(db, sql, row, 0, 0);
+              sqlite3_exec(db, expanded ? expanded : sql, row, 0, 0);
     if (db) sqlite3_close(db);
+    free(expanded);
     return !bad;
 }
 static int era_decade_row(void *ctx, int n, char **v, char **c) {
@@ -7132,10 +7300,62 @@ static int long_songs(void *ctx, void *event) {
     return 0;
 }
 
+/* [SCROBBLE] AUTO=1 (docs/internals.md#scrobbling): on Wi-Fi the log goes up by itself, silently,
+ * once its oldest unsent listen is SA_MAX_MIN old, SA_STEP_MIN sooner per listen since, at least
+ * every SA_MIN_MIN: a listen on its own waits three hours, an afternoon's album goes within the
+ * hour, and with no listens nothing goes. A failed upload tries again after SA_RETRY_MIN.
+ * ponytail: only listens since boot and outside an upload count; any others stay in the log and
+ * go with the next upload, so the loop never reads the card for them. */
+#define SA_MAX_MIN 180
+#define SA_MIN_MIN 60
+#define SA_STEP_MIN 4
+#define SA_RETRY_MIN 30
+static struct {
+    unsigned pending, first_at, check_at;
+    int running;
+} sa __attribute__((section(".scratch")));
+unsigned scrobble_auto_ms(unsigned pending) {
+    int min = SA_MAX_MIN - SA_STEP_MIN * (int)pending;
+    return (unsigned)(min < SA_MIN_MIN ? SA_MIN_MIN : min) * 60000u;
+}
+static void scrobble_listened(void) {
+    if (!sa.pending++) sa.first_at = (unsigned)time_now_ms();
+}
+/* Due again SA_RETRY_MIN from now, sooner if more listens come. */
+static void sa_retry(unsigned now) {
+    sa.first_at = now - scrobble_auto_ms(sa.pending) + SA_RETRY_MIN * 60000u;
+}
+static void scrobble_auto(void) {
+    unsigned now = (unsigned)time_now_ms();
+    if (sa.running) {
+        int sent = 0, done = scrobble_poll(&sent);
+        if (!done) return;
+        sa.running = 0;
+        if (done > 0)
+            sa.pending = 0;
+        else
+            sa_retry(now);
+        return;
+    }
+    if (!sa.pending || now - sa.first_at < scrobble_auto_ms(sa.pending) ||
+        now - sa.check_at < 60000)
+        return;
+    sa.check_at = now; /* Wi-Fi at most once a minute; the card's settings only on Wi-Fi */
+    /* not while a computer has the card. ponytail: one already uploading when the cable goes in
+     * still rewrites the log at its end; join it in ringnav_usbmode if that ever bites. */
+    if (get_wifisignal() <= 0 || navigator_window_is_exist("usbmode_page")) return;
+    int started = scrobble_flag("AUTO") ? scrobble_start() : -1;
+    if (started > 0)
+        sa.running = 1;
+    else if (started < 0) /* off, or no account: the card again in SA_RETRY_MIN */
+        sa_retry(now);
+}
+
 /* Upload Scrobbles: the log goes up on scrobble.c's thread, and a timer reports how it went. */
 static int upload_wait(const void *unused) {
     int sent = 0, done = scrobble_poll(&sent);
     if (!done) return 8; /* RET_REPEAT */
+    if (done > 0) sa.pending = 0;
     char s[48];
     tk_snprintf(s, sizeof s, done < 0 ? "Upload failed, %d sent" : "Scrobbles sent: %d", sent);
     toast(done > 0 && !sent ? "Nothing to upload" : s);
@@ -7144,6 +7364,7 @@ static int upload_wait(const void *unused) {
 
 static int upload_scrobbles(void *ctx, void *event) {
     int started = get_wifisignal() > 0 ? scrobble_start() : -2;
+    if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);
     toast(started > 0     ? "Uploading scrobbles"
           : !started      ? "Already uploading"
@@ -8054,10 +8275,22 @@ static int qm_run(const void *unused) {
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
     } else if (r && a == QA_QUEUE) {
-        if (playback_option(0)) /* a shuffle's play order is not the list's: ours */
+        /* A shuffle's play order is not the list's: ours (Up Next). A Play Next stock's Shuffle was
+         * holding (ringnav_shuffle) goes first in it, as advanced play has no forced pick. */
+        if (playback_listable()) {
+            void *queue = P(mcl_pdeqplaylist, 0);
+            unsigned at = st.qm_forced - 1;
+            st.qm_forced = 0;
+            if (queue && at < deque_size(queue) &&
+                rec_hash(deque_at(queue, at)) == st.qm_forced_hash)
+                playback_move(at);
             up_next(page_closed, page_keyup);
-        else
+        } else
             navigator_to("playerqueue_page");
+    } else if (a == QA_MORE) {
+        void *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
+        char click[0x30];
+        if (more) stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
         if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("No other group");
     } else if (aid && a == QA_RATE) {
@@ -8249,6 +8482,7 @@ static int qm_open(const void *unused) {
         acts[n++] = QA_REPEAT;
         acts[n++] = QA_GROUP;
         if (!group_first && st.rate_win) acts[n++] = QA_RATE;
+        if (np_more()) acts[n++] = QA_MORE; /* last: Now Playing's own menu */
     }
     static const char *const rows[] = { "Play Next",
                                         "Add to Queue",
@@ -8267,7 +8501,8 @@ static int qm_open(const void *unused) {
                                         "Resume",
                                         "View Queue",
                                         "Go to Folder",
-                                        "Chapters" };
+                                        "Chapters",
+                                        "More…" };
     char rated[32];
     /* stock sortselect row styles */
     for (int i = 0; i < n; ++i) {
@@ -8455,7 +8690,9 @@ const int *ringnav_hold_info(void *ids, int key) {
         ids, key); /* input_device_status_find_key_long_press_info */
 }
 unsigned ringnav_hold_timer(int (*fn)(const void *), void *ids, unsigned ms, int key) {
-    return timer_add(fn, ids, key == KEY_PLAY || key == KEY_RETURN ? KEY_HOLD_MS : ms);
+    unsigned id = timer_add(fn, ids, key == KEY_PLAY || key == KEY_RETURN ? KEY_HOLD_MS : ms);
+    if (key == KEY_CENTER) st.centre_hold = id; /* chord_gate may end it */
+    return id;
 }
 
 /* Replaces mclNextSong's shuffle pick call: stock picks and bookkeeps, then a pending Play next
@@ -8547,7 +8784,7 @@ static void scrobble(void *r, int total, int heard) {
     const char *artist = now_tag(r, REC_ARTIST), *album_artist = now_tag(r, REC_ALBUM_ARTIST);
     if (!album_artist || !*album_artist)
         album_artist = P(r, REC_ALBUM_ARTIST); /* CUE: none parsed */
-    if (album_artist && *album_artist && scrobble_album_artist()) artist = album_artist;
+    if (album_artist && *album_artist && scrobble_flag("ALBUM_ARTIST")) artist = album_artist;
     if (!artist || !*artist) return;
     long long now = wall_time();
     if (now < 1600000000) return; /* clock never set: Last.fm would reject the time */
@@ -8559,6 +8796,7 @@ static void scrobble(void *r, int total, int heard) {
     o += tk_snprintf(o, (unsigned)(line + sizeof line - o), "\t%d\tL\t%u\t\n", total,
                      (unsigned)(now - heard));
     scrobble_append(line, (unsigned)(o - line));
+    scrobble_listened();
 }
 
 /* The polled track's place at sec, its file's seconds. A CUE track becomes the book's place only
@@ -9131,9 +9369,16 @@ int ringnav_sleep(void *loop) {
     addon_poll();
     playback_poll();
     resume_poll();
+    scrobble_auto();
     power_poll();
 #if IPOD
     lyric_poll();
+    keep_lit_poll();
+    if (st.bc_drop) { /* once: a destroy before this pass cleared it */
+        void *drop = st.bc_drop;
+        st.bc_drop = (void *)0;
+        window_close(drop);
+    }
     if (st.bc[0] && np_track() != st.bc_track) bc_show();
 #endif
     if (!g_backlight_status) {
@@ -9220,30 +9465,68 @@ static int wake_gate(void *e) {
     return !st.wake_pass;
 }
 
-/* A loose wheel can close Centre with the top button (Return). A Centre press that starts while
- * Return is held, within CHORD_MS of Return's press, is dropped whole (its repeats and release
- * too), before the wake gate sees it; Return keeps its own. Centre held first passes as before.
- * ponytail: CHORD_MS bounds a Return release that never came (Standby while held). Returns 1 to
- * drop the event. */
+/* A loose wheel, or a thumb on its rim between two buttons, can close Centre with an edge button
+ * (Return, Play/Pause, Previous, Next). A Centre press that starts while one is held, within
+ * CHORD_MS of its press, is dropped whole (its repeats and release too), before the wake gate sees
+ * it; the edge button keeps its own. Centre pressed first passes, but an edge press within
+ * CHORD_MS of it ends Centre's hold timer (ringnav_hold_timer), so a rim press held near a corner
+ * never reaches stock's Centre hold, the Shut Down dialog. Return's hold (Now Playing, Home) can
+ * ghost a second press as it lets go: a Return press starting within RETURN_GHOST_MS of a hold's
+ * release is dropped whole too. ponytail: CHORD_MS bounds a Return release that never came (Standby
+ * while held); RETURN_GHOST_MS is the tuning knob, and only a ghost after the release is caught.
+ * Returns 1 to drop the event. */
 #define CHORD_MS 500
+#define RETURN_GHOST_MS 135
 static int chord_gate(void *e) {
     unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
     unsigned now = (unsigned)time_now_ms();
     if (type != EVT_KEY_DOWN && type != EVT_KEY_LONG && type != EVT_KEY_UP) return 0;
+    unsigned edge = key == KEY_RETURN     ? 1
+                    : key == KEY_PLAY     ? 2
+                    : key == KEY_BACK_BTN ? 4
+                    : key == KEY_FWD_BTN  ? 8
+                                          : 0;
+    /* a repeat follows its press within 258 ms; a later down is a new press (a lost release) */
+    if (edge && type == EVT_KEY_UP)
+        st.edge_held &= ~edge;
+    else if (edge &&
+             (!(st.edge_held & edge) || (type == EVT_KEY_DOWN && now - st.edge_seen > 300))) {
+        st.edge_held |= edge;
+        st.edge_at = now;
+        if (st.centre_at && now - st.centre_at < CHORD_MS && st.centre_hold) {
+            timer_remove(st.centre_hold); /* the rim's Centre: no hold */
+            st.centre_hold = 0;
+        }
+    }
+    if (edge && type != EVT_KEY_UP) st.edge_seen = now;
     if (key == KEY_RETURN) {
-        if (type == EVT_KEY_UP)
+        /* a repeat follows its press within 258 ms; a later down is a new press */
+        if (type == EVT_KEY_DOWN && !st.return_at &&
+            (!st.return_eat || now - st.return_eat_at > 300))
+            st.return_eat = st.return_up && now - st.return_up < RETURN_GHOST_MS;
+        if (st.return_eat) {
+            st.return_eat_at = now;
+            if (type == EVT_KEY_UP) st.return_eat = st.return_up = 0;
+            return 1;
+        }
+        if (type == EVT_KEY_UP) {
+            st.return_up = /* return_at may run a ms late, its | 1 */
+                st.return_at && now - st.return_at + 1 >= KEY_HOLD_MS ? now | 1 : 0;
             st.return_at = 0;
-        else if (!st.return_at)
+        } else if (!st.return_at)
             st.return_at = now | 1; /* never 0 while held */
         return 0;
     }
     if (key != KEY_CENTER) return 0;
     /* a repeat follows its press within 258 ms; a later down is a new press (a lost release) */
-    if (type == EVT_KEY_DOWN && (!st.chord_eat || now - st.chord_at > 300))
-        st.chord_eat = st.return_at && now - st.return_at < CHORD_MS ? 1 : -1;
+    int fresh = type == EVT_KEY_DOWN && (!st.chord_eat || now - st.chord_at > 300);
+    if (fresh) st.chord_eat = st.edge_held && now - st.edge_at < CHORD_MS ? 1 : -1;
     st.chord_at = now;
     int eat = st.chord_eat > 0;
-    if (type == EVT_KEY_UP) st.chord_eat = 0;
+    if (type == EVT_KEY_UP) st.chord_eat = st.centre_hold = 0;
+    /* a passing press: its time, for an edge press after it; its release ends that */
+    if (!eat)
+        st.centre_at = type == EVT_KEY_UP ? 0 : st.centre_at && !fresh ? st.centre_at : now | 1;
     return eat;
 }
 
