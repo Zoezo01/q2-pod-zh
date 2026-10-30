@@ -88,12 +88,10 @@ int wheel_pct(void) {
     }
     return wheel_percent;
 }
-/* The nearest ten within 50-200%, live on the next sample, and saved. */
+/* The nearest ten within 50-200%, live on the next sample; crossfade.c's refresh saves it. */
 void wheel_set_pct(int n) {
     n = n < 50 ? 50 : n > 200 ? 200 : (n + 5) / 10 * 10;
-    if (n == wheel_pct()) return;
-    wheel_apply(n);
-    write_int_config(n, "Q2POD", "WHEELSENSITIVITY");
+    if (n != wheel_pct()) wheel_apply(n);
 }
 
 /* Volume guard (Power, Q2POD VOLGUARD, off by default; navigation.c's pod rows set wheel_guard):

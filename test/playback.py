@@ -769,12 +769,12 @@ for pct in (50,100,130,150,160,200):  # the carry keeps the sixteenths: 150% and
     assert spin(sensitivity(str(pct))[0])==600*16//SIXTEENTHS[pct],pct
 assert spin(sensitivity('150')[0])==64 and spin(sensitivity('160')[0])==68
 checks+=1
-# Setting it: the nearest ten, clamped, live on the next sample and saved; an unchanged value is
-# not written again.
+# Setting it: the nearest ten, clamped, live on the next sample; the page saves it (crossfade.c's
+# refresh, test/patch.py), not wheel_set_pct.
 for n,pct in ((130,130),(74,70),(75,80),(20,50),(250,200),(50,50)):
     m,_=sensitivity(); m.calls=[]; m.fn('wheel_set_pct',n)
     saved=[(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
-    assert m.fn('wheel_pct')==pct and travel(m)==-(-SIXTEENTHS[pct]//16) and saved==([] if pct==50 else [(pct,'Q2POD','WHEELSENSITIVITY')]),n
+    assert m.fn('wheel_pct')==pct and travel(m)==-(-SIXTEENTHS[pct]//16) and saved==[],n
     assert sensitivity(str(pct))[1]==pct  # read back after a reboot
 checks+=1
 # A change mid-turn (the sensitivity page takes the wheel) keeps the carry's share of a tick, so it

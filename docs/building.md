@@ -87,6 +87,7 @@ python3 test/chapters.py                   # embedded chapter parsing, both MP4 
 python3 test/m4b.py /tmp/q2-build          # native TagLib M4B/MP4 metadata dispatch
 python3 test/id3.py /tmp/q2-build          # the built player's MP3 ReplayGain on ID3v2.3/2.4 tags
 python3 test/hci_wait.py /tmp/q2-build     # the built player's futex waits for Play and while paused
+python3 test/bt_resample.py /tmp/q2-build  # the built player's Bluetooth resampler across a gapless change
 python3 test/mp3_gapless_player.py /tmp/q2-build  # built MIPS gapless hooks, preload isolation, seeks and cleanup
 python3 test/ldac.py /tmp/q2-build         # shipped LDAC intermediate rates and native adaptive controller
 python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O

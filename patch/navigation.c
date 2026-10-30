@@ -168,6 +168,7 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *);
 extern void *coverflow_tracks(void *page);
 extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w);
+extern void coverflow_lost_touch(void);
 extern void *coverflow_album(void *page), *coverflow_album_tracks(void *r);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
 extern unsigned coverflow_scope(void *page);
@@ -381,8 +382,11 @@ typedef struct {
     unsigned art_cf_timer;
     unsigned wake_at; /* Wake: Double press, the screen-off centre press a second one must follow */
     unsigned woke_at; /* the centre press that woke the screen, then its first lit loop pass */
-    void *np_origin;  /* the page Hold Return opened Now Playing over */
-    void *dc_top;     /* the page of the last centre press no list click took, and its time */
+    unsigned return_at; /* chord_gate: Return's press while held, else 0 */
+    int chord_eat;      /* 1: the held Centre press is dropped; -1: it passes */
+    unsigned chord_at;  /* the last Centre event chord_gate saw */
+    void *np_origin;    /* the page Hold Return opened Now Playing over */
+    void *dc_top;       /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
     unsigned charge_at, last_input, cpu_retry;
     /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
@@ -773,6 +777,39 @@ static int cf_letter_expire(const void *info) {
     return 0;
 }
 
+/* w's one animator, the wheel's and Coverflow's touch's, from the live offset to goal in ms with
+ * easing (AWTK's easing_type_t), made on first use; 0 if it cannot be, the move committed at once.
+ */
+int carousel_glide(void *w, int goal, unsigned ms, int easing) {
+    void *a = P(w, SLIDE_ANIMATOR);
+    if (!a) {
+        a = widget_animator_scroll_create(w, ms, 0, easing);
+        if (a && !widget_animator_on(a, EVT_ANIM_END, home_done, w)) {
+            widget_animator_destroy(a);
+            a = (void *)0;
+        }
+        P(w, SLIDE_ANIMATOR) = a;
+        if (!a) {
+            int n = (int)widget_count_children(w),
+                stride = slide_menu_item_width(w) + I(w, SLIDE_SPACER);
+            int id = n && stride > 0 ? (I(w, SLIDE_INDEX) - goal / stride) % n : 0;
+            I(w, SLIDE_OFFSET) = 0;
+            slide_menu_set_value(w, id < 0 ? id + n : id);
+            widget_set_focused(widget_get_child(w, I(w, SLIDE_INDEX)), 1);
+            return 0;
+        }
+        widget_set_focused(widget_get_child(w, I(w, SLIDE_INDEX)), 0);
+    }
+    widget_animator_pause(a);
+    widget_animator_scroll_set_params(a, I(w, SLIDE_OFFSET), 0, goal, 0);
+    I(a, ANIM_ELAPSED) = I(a, ANIM_START_TIME) = 0;
+    I(a, ANIM_DURATION) = ms;
+    P(a, ANIM_EASING) =
+        easing_get(easing); /* scroll_create's own, so a reused one takes this run's */
+    widget_animator_start(a);
+    return 1;
+}
+
 static void home_step(void *w, int dir, unsigned now, int jump) {
     int n = (int)widget_count_children(w);
     int stride = slide_menu_item_width(w) + I(w, SLIDE_SPACER);
@@ -806,28 +843,10 @@ static void home_step(void *w, int dir, unsigned now, int jump) {
         rearm(&st.cf_letter_timer, cf_letter_expire, LETTER_MS);
     else
         stop_timer(&st.cf_letter_timer);
-    if (!a) {
-        a = widget_animator_scroll_create(w, HOME_SLIDE_MS, 0, SLIDE_EASING);
-        if (a && !widget_animator_on(a, EVT_ANIM_END, home_done, w)) {
-            widget_animator_destroy(a);
-            a = (void *)0;
-        }
-        P(w, SLIDE_ANIMATOR) = a;
-        if (!a) {
-            int id = (I(w, SLIDE_INDEX) - goal / stride) % n;
-            I(w, SLIDE_OFFSET) = 0;
-            slide_menu_set_value(w, id < 0 ? id + n : id);
-            widget_set_focused(widget_get_child(w, I(w, SLIDE_INDEX)), 1);
-            st.home_surface = (void *)0;
-            return;
-        }
-        widget_set_focused(widget_get_child(w, I(w, SLIDE_INDEX)), 0);
+    if (!carousel_glide(w, goal, fast ? HOME_FAST_SLIDE_MS : HOME_SLIDE_MS, SLIDE_EASING)) {
+        st.home_surface = (void *)0;
+        return;
     }
-    widget_animator_pause(a);
-    widget_animator_scroll_set_params(a, live, 0, goal, 0);
-    I(a, ANIM_ELAPSED) = I(a, ANIM_START_TIME) = 0;
-    I(a, ANIM_DURATION) = fast ? HOME_FAST_SLIDE_MS : HOME_SLIDE_MS;
-    widget_animator_start(a);
     st.home_surface = w;
     st.last_home = now;
     st.home_dir = dir;
@@ -9201,6 +9220,33 @@ static int wake_gate(void *e) {
     return !st.wake_pass;
 }
 
+/* A loose wheel can close Centre with the top button (Return). A Centre press that starts while
+ * Return is held, within CHORD_MS of Return's press, is dropped whole (its repeats and release
+ * too), before the wake gate sees it; Return keeps its own. Centre held first passes as before.
+ * ponytail: CHORD_MS bounds a Return release that never came (Standby while held). Returns 1 to
+ * drop the event. */
+#define CHORD_MS 500
+static int chord_gate(void *e) {
+    unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
+    unsigned now = (unsigned)time_now_ms();
+    if (type != EVT_KEY_DOWN && type != EVT_KEY_LONG && type != EVT_KEY_UP) return 0;
+    if (key == KEY_RETURN) {
+        if (type == EVT_KEY_UP)
+            st.return_at = 0;
+        else if (!st.return_at)
+            st.return_at = now | 1; /* never 0 while held */
+        return 0;
+    }
+    if (key != KEY_CENTER) return 0;
+    /* a repeat follows its press within 258 ms; a later down is a new press (a lost release) */
+    if (type == EVT_KEY_DOWN && (!st.chord_eat || now - st.chord_at > 300))
+        st.chord_eat = st.return_at && now - st.return_at < CHORD_MS ? 1 : -1;
+    st.chord_at = now;
+    int eat = st.chord_eat > 0;
+    if (type == EVT_KEY_UP) st.chord_eat = 0;
+    return eat;
+}
+
 /* main_loop_post_key_event: its one caller, on_wm_idle_status, posts SyncLink's (Eddict Player's)
  * play/pause, previous and next as a press and a release for the loop to dispatch later, stamped
  * with time_now_ms. Each post keeps its key and the time around it, so ringnav_input knows it. */
@@ -9230,7 +9276,7 @@ static int remote_key(void *e) {
  * UI; a key's release goes to the player instead. Every event times ringnav_sleep's idle. */
 int ringnav(void *ctx, void *event);
 int ringnav_input(void *wm, void *e) {
-    if (e && wake_gate(e)) return 0;
+    if (e && (chord_gate(e) || wake_gate(e))) return 0;
     st.last_input = time_now_ms();
     if (video_on()) {
         if (e && I(e, EVENT_TYPE) == EVT_KEY_UP) video_key((unsigned)I(e, EVENT_KEY));
@@ -9697,6 +9743,7 @@ int ringnav(void *ctx, void *event) {
         drop_input();
         return dir && window_manager_is_animating(wm) ? hold_wheel(ctx, event, dir) : STOP;
     }
+    coverflow_lost_touch();
     if (books_key(top, key)) return STOP; /* the reader's pages and caption */
     void *w = surface_under(top, (void *)0, (void *)0, dir != 0);
     if (!is_home(top, w) || w != st.home_surface) st.home_surface = (void *)0;

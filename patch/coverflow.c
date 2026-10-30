@@ -52,7 +52,8 @@ static struct {
     int resort;            /* Display settings changed the library's order: the next load reads it */
     job_t *jobs;
     unsigned long thread;
-    unsigned timer;
+    unsigned timer, title_timer; /* title_timer: the captions follow the centre cover mid-move */
+    int titled;                  /* the album the captions name, + 1 */
     unsigned saved_album, albums_gen; /* albums_gen: library_gen when albums was queried */
     int screen, album, running, text_albums;
     volatile int done, total, cancel;
@@ -1417,6 +1418,26 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ri
     }
 }
 
+#define CF_MISS 99
+
+/* The ring offset of the frontmost cover body (not its reflection) drawn at frame pixel x, y at
+ * frac, or CF_MISS; nearest first, in the drawing order, rounded corners (iPod) left out. A cover
+ * fading out at the edge, under a quarter bright, is no target. */
+int coverflow_hit(int frac, int x, int y) {
+    for (int k = 0; k <= CF_REACH; ++k)
+        for (int i = 0; i < (k ? 2 : 1); ++i) {
+            int j = slot(frac, k, i), t = (j - CF_REACH) * CF_ONE - frac, side = t < 0 ? -1 : 1;
+            int v = side > 0 ? x : 2 * CF_CX - 1 - x, u, h;
+            pose_t p;
+            pose(t * side, &p);
+            if (p.bright < 64 || !unproject(&p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h)) continue;
+            int ins = h * cf_inset[(u + CF_HALF16) >> 4] / (ART_SIZE * 256), top = CF_MID256 - h / 2;
+            if ((y << 8) + 128 >= top + ins && (y << 8) + 128 < top + h - ins) /* column()'s corners */
+                return j - CF_REACH;
+        }
+    return CF_MISS;
+}
+
 /* The depth renderer's state: the frame, the textures of the covers around the visual position
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 static struct {
@@ -1487,15 +1508,21 @@ static void fx_placeholder(void) {
     fx.light = ipod_light();
 #endif
 }
+/* A w x h RGBA8888 bitmap the renderers fill whole, so flagged opaque; 0 when out of memory. */
+static void *opaque_frame(int w, int h) {
+    void *b = bitmap_create_ex(w, h, w * 4, 1 /* RGBA8888 */);
+    if (b) *(unsigned short *)((char *)b + 0xc) |= 1; /* BITMAP_FLAG_OPAQUE */
+    return b;
+}
+
 /* The frame and every texture at once, or neither: the flat covers then stand in. */
 static int fx_open(void) {
-    fx.frame = bitmap_create_ex(CF_VIEW_W, CF_VIEW_H, CF_VIEW_W * 4, 1 /* RGBA8888 */);
+    fx.frame = opaque_frame(CF_VIEW_W, CF_VIEW_H);
     fx.tex = fx.frame ? calloc(CF_RING + 1, CF_TEXELS * 4) : 0;
     if (!fx.tex) {
         fx_close();
         return 0;
     }
-    *(unsigned short *)((char *)fx.frame + 0xc) |= 1; /* BITMAP_FLAG_OPAQUE: every pixel is */
     fx_placeholder();
     return 1;
 }
@@ -1553,6 +1580,8 @@ int visual(void *s, int n, int *c, int *frac) { /* shared with photos.c */
  * would otherwise repeat round the shelf. */
 int coverflow_bounded(void *w) { return w && w == cf.slide && cf.scoped == ARTIST_ALBUMS; }
 
+static int retitle(const void *unused);
+
 /* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
  * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
  * position or a texture has changed. */
@@ -1580,9 +1609,167 @@ void coverflow_paint(void *w, void *canvas) {
         bitmap_unlock_buffer(fx.frame);
         fx.c = c, fx.frac = frac, fx.drawn = 1;
     }
+    if (c + 1 != cf.titled && !cf.title_timer) cf.title_timer = timer_add(retitle, 0, 0);
     int r[4] = { 0, 0, CF_VIEW_W, CF_VIEW_H };
     canvas_draw_image(canvas, fx.frame, r, r);
 }
+
+/* Touch (docs/internals.md#coverflow-touch). The slide_menu stays insensitive: the covers' view
+ * takes the touch and moves the offset itself, so stock's drag and throw never run. A drag follows
+ * the finger, CF_DRAG_PX an album; the release glides on at the finger's speed, decelerating,
+ * through the wheel's own animator (carousel_glide), to the cover that speed reaches; a tap brings
+ * a side cover to the centre or opens the centre one. A touch while the covers move stops them.
+ * The press is the covers' view's; the moves and the release are the page's, so a release off the
+ * covers still ends the touch, and one never seen ends at the next key (coverflow_lost_touch). */
+extern int carousel_glide(void *w, int goal, unsigned ms, int easing);
+#define CF_SAMPLES 8
+#define ABS(x) ((x) < 0 ? -(x) : (x))
+static struct {
+    int down, drag, caught, x, y, from, n; /* from: the offset at the press, or the drag's start */
+    int sx[CF_SAMPLES];
+    unsigned st[CF_SAMPLES];
+} tc __attribute__((section(".scratch")));
+
+static int stride_of(void *s) { return slide_menu_item_width(s) + I(s, SLIDE_SPACER); }
+static int round_stride(int off, int stride) { return floor_div(2 * off + stride, 2 * stride) * stride; }
+
+/* An artist's albums give past an end as iOS's rubber band, x * 0.55 / (1 + x * 0.55 / D) with
+ * D 2/5 of a stride, so the centre never reaches past half a cover (visual() would wrap there);
+ * not rubber: they stop at the end. */
+static int bound(int off, int stride, int rubber) {
+    void *s = cf.slide;
+    if (!coverflow_bounded(s)) return off;
+    int i = I(s, SLIDE_INDEX), hi = i * stride, lo = (i + 1 - (int)widget_count_children(s)) * stride;
+    int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
+    if (!x || !rubber) return edge;
+    a = a * 11 * d / (a * 11 + 20 * d);
+    return edge + (x < 0 ? -a : a);
+}
+
+/* bound's inverse past an end: a touch catching the rubber band (or a wheel bounce) drags on from
+ * where it shows, not from a band stretched again. */
+static int unbound(int off, int stride) {
+    void *s = cf.slide;
+    if (!coverflow_bounded(s)) return off;
+    int i = I(s, SLIDE_INDEX), hi = i * stride, lo = (i + 1 - (int)widget_count_children(s)) * stride;
+    int edge = off > hi ? hi : off < lo ? lo : off, x = off - edge, a = ABS(x), d = 2 * stride / 5;
+    if (!x || a >= d) return off;
+    a = 20 * d * a / (11 * (d - a));
+    return edge + (x < 0 ? -a : a);
+}
+
+/* px/s over the last 100 ms of moves; 0 if the finger rested CF_STILL_MS before lifting. */
+static int velocity(unsigned now) {
+    int last = (tc.n - 1) % CF_SAMPLES, first = last;
+    if (!tc.n || now - tc.st[last] > CF_STILL_MS) return 0;
+    for (int k = 1; k < (tc.n < CF_SAMPLES ? tc.n : CF_SAMPLES); ++k) {
+        int j = (tc.n - 1 - k) % CF_SAMPLES;
+        if (tc.st[last] - tc.st[j] > 100) break;
+        first = j;
+    }
+    int dt = (int)(tc.st[last] - tc.st[first]), v = dt ? (tc.sx[last] - tc.sx[first]) * 1000 / dt : 0;
+    return v > CF_VMAX ? CF_VMAX : v < -CF_VMAX ? -CF_VMAX : v; /* a burst of queued moves */
+}
+
+static void sample(int x, unsigned t) {
+    tc.sx[tc.n % CF_SAMPLES] = x, tc.st[tc.n % CF_SAMPLES] = t;
+    ++tc.n;
+}
+
+/* When the event was posted: moves queued behind a frame are dispatched together, but keep their
+ * own times. 0 (unstamped) takes the dispatch time. */
+static unsigned stamp(void *event) {
+    unsigned t = (unsigned)I(event, EVENT_TIME);
+    return t ? t : time_now_ms();
+}
+
+/* The covers glide on from the release (v px/s, 0 to settle) to a whole cover: where the speed
+ * carries them in CF_PROJECT_MS, never back against a flick, starting at the finger's speed. */
+static void release(int v) {
+    void *s = cf.slide;
+    int stride = stride_of(s), live = I(s, SLIDE_OFFSET);
+    if (stride <= 0) return;
+    int vo = v * stride / CF_DRAG_PX, goal = round_stride(live + vo * CF_PROJECT_MS / 1000, stride);
+    int flick = ABS(v) >= CF_FLICK;
+    if (flick && v > 0 && goal < -floor_div(-live, stride) * stride) goal = -floor_div(-live, stride) * stride;
+    if (flick && v < 0 && goal > floor_div(live, stride) * stride) goal = floor_div(live, stride) * stride;
+    goal = bound(goal, stride, 0);
+    if (goal == live && !live && !P(s, SLIDE_ANIMATOR)) return; /* at rest already */
+    int d = ABS(goal - live), a = ABS(vo), ahead = (goal > live && v > 0) || (goal < live && v < 0);
+    unsigned ms = ahead ? (unsigned)(3000 * d / a) : CF_SETTLE_MS; /* cubic out: 3 d / v */
+    carousel_glide(s, goal, ms < CF_SETTLE_MS ? CF_SETTLE_MS : ms > CF_GLIDE_MAX ? CF_GLIDE_MAX : ms,
+                   EASE_CUBIC_OUT);
+}
+
+/* A tap at rest: the cover drawn under it comes to the centre, or opens if it is there. */
+static void tap(int x, int y) {
+    void *s = cf.slide;
+    int n = (int)widget_count_children(s), c, frac, xy[2] = { x, y };
+    int stride = visual(s, n, &c, &frac);
+    if (!stride) return;
+    widget_to_local(s, xy);
+    int j = fx.frame ? coverflow_hit(frac, xy[0], xy[1])
+            : ABS(xy[0] - CF_CX) < ART_SIZE / 2 && xy[1] >= 0 && xy[1] < ART_SIZE
+                ? 0
+                : CF_MISS; /* the flat fallback: the centre cover only */
+    if (j == CF_MISS || (coverflow_bounded(s) && (unsigned)(c + j) >= (unsigned)n)) return;
+    if (!j && !frac)
+        pick((void *)(long)c, 0);
+    else
+        carousel_glide(s, round_stride(I(s, SLIDE_OFFSET), stride) - j * stride, CF_TAP_MS, SLIDE_EASING);
+}
+
+static int covers_live(void) { return cf.slide && cf.screen == COVERS && !cf.timer; }
+
+/* The touch ends at now: a drag glides on (thrown unless aborted), a stopped glide settles, a
+ * still touch is a tap. Off the covers (a screen change mid-touch) they still settle on a whole
+ * cover. */
+static void lift(int aborted, unsigned now) {
+    if (!tc.down) return;
+    tc.down = 0;
+    if (!cf.slide) return;
+    if (tc.drag || tc.caught || !covers_live())
+        release(tc.drag && !aborted && covers_live() ? velocity(now) : 0);
+    else if (!aborted) tap(tc.x, tc.y);
+}
+
+static int touch(void *ctx, void *event) {
+    int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
+    if (type == EVT_POINTER_DOWN) {
+        lift(1, 0); /* a release the input queue dropped */
+        if (!covers_live()) return 0;
+        void *a = P(cf.slide, SLIDE_ANIMATOR);
+        if (a) widget_animator_pause(a); /* caught where it is */
+        tc = (typeof(tc)){ .down = 1, .caught = a != 0, .x = x, .y = y,
+                           .from = unbound(I(cf.slide, SLIDE_OFFSET), stride_of(cf.slide)) };
+        return 0;
+    }
+    if (!tc.down) return 0;
+    if (type == EVT_POINTER_UP_BEFORE || type == EVT_POINTER_ABORT) {
+        lift(type == EVT_POINTER_ABORT, stamp(event));
+        return 0;
+    }
+    if (type != EVT_POINTER_MOVE_BEFORE || !covers_live()) return 0;
+    int dx = x - tc.x, dy = y - tc.y;
+    if (!tc.drag) {
+        if (ABS(dx) < CF_SLOP && ABS(dy) < CF_SLOP) return 0;
+        if (ABS(dy) > ABS(dx)) { /* up or down: stock's (the Quick Settings pull-down) */
+            lift(1, 0);
+            return 0;
+        }
+        tc.drag = 1, tc.x = x, dx = 0; /* from here, so the covers don't jump the slop */
+    }
+    sample(x, stamp(event));
+    int stride = stride_of(cf.slide);
+    I(cf.slide, SLIDE_OFFSET) = bound(tc.from + dx * stride / CF_DRAG_PX, stride, 1);
+    widget_invalidate_force(cf.slide, 0);
+    return 0;
+}
+
+/* ringnav, at a key with no finger down: a touch whose release went unseen ends, so the wheel
+ * and Centre act on the cover the covers settle on. */
+void coverflow_lost_touch(void) { lift(1, 0); }
+
 
 static void cover(void *img, unsigned i, int near) {
     char url[600] = "file://";
@@ -1593,14 +1780,12 @@ static void cover(void *img, unsigned i, int near) {
         image_base_set_image(img, PLACEHOLDER);
 }
 
-static int changed(void *ctx, void *event) {
-    unsigned n = widget_count_children(cf.slide), c = (unsigned)I(cf.slide, SLIDE_INDEX);
-    for (unsigned i = 0; !fx.frame && i < n; ++i) { /* the flat fallback's own images */
-        unsigned d = i > c ? i - c : c - i;
-        cover(widget_get_child(cf.slide, i), i, d <= ART_NEAR || n - d <= ART_NEAR);
-    }
+/* The captions name album c (or a card's), once each time it changes. */
+static void titles(unsigned c) {
+    unsigned n = widget_count_children(cf.slide);
+    if ((int)c + 1 == cf.titled) return;
+    cf.titled = (int)c + 1;
     void *r = c + CARDS < n ? deque_at(cf.albums, c) : (void *)0;
-    if (r && !cf.scoped) cf.saved_album = album_key(r);
     widget_set_text_utf8(cf.name, r                            ? P(r, REC_ALBUM)
                                   : cf.scoped == ARTIST_ALBUMS ? "All albums"
                                                                : sort_names[cf.sort]);
@@ -1609,11 +1794,30 @@ static int changed(void *ctx, void *event) {
      * left. */
     widget_set_prop_int(cf.name, "xoffset", 0);
     widget_set_prop_int(cf.artist, "xoffset", 0);
+}
+
+static int changed(void *ctx, void *event) {
+    unsigned n = widget_count_children(cf.slide), c = (unsigned)I(cf.slide, SLIDE_INDEX);
+    for (unsigned i = 0; !fx.frame && i < n; ++i) { /* the flat fallback's own images */
+        unsigned d = i > c ? i - c : c - i;
+        cover(widget_get_child(cf.slide, i), i, d <= ART_NEAR || n - d <= ART_NEAR);
+    }
+    void *r = c + CARDS < n ? deque_at(cf.albums, c) : (void *)0;
+    if (r && !cf.scoped) cf.saved_album = album_key(r);
+    cf.titled = 0; /* a commit always writes them */
+    titles(c);
     return 0;
 }
 
-/* One child per album plus the cards (CARDS), moved by the wheel only: the slide_menu takes no
- * touch. With depth it spans the frame, so every step repaints all of it, and its CF_VIEW_H square
+/* The centre cover the frame last drew, named outside the paint. */
+static int retitle(const void *unused) {
+    cf.title_timer = 0;
+    if (cf.slide && cf.screen == COVERS) titles((unsigned)fx.c);
+    return 0;
+}
+
+/* One child per album plus the cards (CARDS), moved by the wheel and by touch on the covers' view
+ * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step repaints all of it, and its CF_VIEW_H square
  * items with a negative spacer move one album per CF_STRIDE px; the children stay empty under the
  * frame. The flat fallback is the stock images, 160 px, as before. ponytail: one child per album;
  * if large libraries lag on hardware, virtualize to a recycled window of children. */
@@ -1651,9 +1855,12 @@ static void covers(void) {
         widget_set_prop_int(cf.artist, "style:normal:text_color", (int)CF_GREY);
         slide_menu_set_value(cf.slide, cf.album);
         widget_on(cf.slide, EVT_VALUE_CHANGED, changed, 0);
+        tc.down = 0; /* a touch on the covers these replace */
         changed(0, 0);
+        widget_on(cf.covers, EVT_POINTER_DOWN, touch, 0); /* the rest: open_page */
     }
     widget_set_visible(cf.covers, 1, 0);
+    widget_set_sensitive(cf.covers, 1);
     widget_invalidate_force(cf.page, 0);
 }
 
@@ -1854,7 +2061,11 @@ static int to_tracks(const void *unused) {
     cf.tracks = coverflow_album_tracks(r);
     n = (int)deque_size(cf.tracks);
     cf.screen = TRACKS;
-    if (cf.covers) widget_set_visible(cf.covers, 0, 0); /* none in the text list */
+    if (cf.covers) { /* none in the text list; stock's hit test skips insensitive, not hidden,
+                      * widgets, and the covers' view over the list would take its taps and swipes */
+        widget_set_visible(cf.covers, 0, 0);
+        widget_set_sensitive(cf.covers, 0);
+    }
     void *view = list(P(r, REC_ALBUM), n);
     /* the album over its tracks, all centred */
     widget_set_prop_int(cf.title, "style:normal:font_size", CF_NAME_PX);
@@ -1979,6 +2190,8 @@ static int keyup(void *ctx, void *event) {
 
 static int closed(void *ctx, void *event) {
     if (ctx != cf.page) return 0; /* a page scoped_open closed already */
+    stop_timer(&cf.title_timer);
+    tc.down = 0;
     if (cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 1);
     drop();
     cf.page = cf.body = cf.covers = cf.slide = 0;
@@ -1995,8 +2208,16 @@ static int closed(void *ctx, void *event) {
     return 0;
 }
 
+/* A Coverflow page: the covers' moves and release are taken here (touch). */
+static void *open_page(void) {
+    void *page = page_open("coverflow_page", closed, keyup);
+    static const unsigned short kinds[] = { EVT_POINTER_MOVE_BEFORE, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
+    for (unsigned k = 0; page && k < sizeof kinds / sizeof *kinds; ++k) widget_on(page, kinds[k], touch, 0);
+    return page;
+}
+
 static int coverflow_open(void *ctx, void *event) {
-    if (cf.page || !(cf.page = page_open("coverflow_page", closed, keyup))) return 0;
+    if (cf.page || !(cf.page = open_page())) return 0;
     load();
     return 0;
 }
@@ -2006,7 +2227,7 @@ static int coverflow_open(void *ctx, void *event) {
  * ponytail: Return then skips it; stack the state if that is missed. */
 static int scoped_open(void) {
     void *old = cf.page, *under = artist_under(),
-         *page = page_open("coverflow_page", closed, keyup);
+         *page = open_page();
     if (!page) return 0; /* the old page and its state stay */
     if (old) {
         closed(old, 0);
@@ -2114,10 +2335,18 @@ const char *now_tag(void *r, int field) {
 }
 
 #if IPOD
+#define HOME_PW (375 - HOME_SPLIT_W) /* Split's art panel, 290 high */
 /* iPod Home (docs/ipod.md): the playing track's art beside the list. */
 static struct {
     void *win, *art, *list, *sets; /* sets: the Settings list, in the list's place while open */
     unsigned key, repaint; /* repaint: the timer of home_repaint */
+    /* drift: home_drift's timer; drift_ms: the pan's phase, ms shown */
+    unsigned drift, drift_ms, drift_last;
+    /* home_tex's zoomed cover (tw 0: the still stock image, which never pans) and the panel's
+     * frame, drawn from it at du dv (1/256 px, -1 for none yet) */
+    unsigned *tex;
+    void *frame;
+    int tw, rx, ry, u0, v0, du, dv;
     int clip[4];  /* the canvas clip while the art paints, restored after */
     int clipped;
 } home __attribute__((section(".scratch")));
@@ -2140,18 +2369,142 @@ static int home_repaint(const void *unused) {
     return 0; /* RET_REMOVE */
 }
 
-/* Sizes the art to a w x h bitmap's proportions, just covering the panel and centred on
- * it, so the native fill draws it whole and the clip crops it evenly; unknown sizes fill the
- * panel. */
-static void home_fit(unsigned w, unsigned h) {
-    int x = HOME_SPLIT_W, pw = 375 - x, ph = 290, fw = pw, fh = ph;
+/* One axis of the pan (an iPod classic's menu art): 0 to range px and back over 2 x period ms, in
+ * 1/256 px. range is a tenth of a cover within DRIFT_TEXELS (under 100 px), so 32 bits hold it. */
+static int drift_at(int range, unsigned period) {
+    unsigned t = home.drift_ms % (2 * period);
+    return (int)((unsigned)range * 256 * ((t < period ? t : 2 * period - t) >> 4) / (period >> 4));
+}
+
+/* Where the panel's top left is in the zoomed cover, in 1/256 px: the old crop, then the pan. */
+static int pan_u(void) { return home.u0 * 256 + drift_at(home.rx, DRIFT_X_MS); }
+static int pan_v(void) { return home.v0 * 256 + drift_at(home.ry, DRIFT_Y_MS); }
+
+/* A step repaints only the panel, once the pan has moved; coverflow_home_clip draws it. */
+static void drift_place(void) {
+    if (pan_u() == home.du && pan_v() == home.dv) return;
+    static int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, 290 }; /* rect_t, in the parent */
+    widget_invalidate_force(P(home.art, W_PARENT), pane);
+}
+
+/* The pan runs only while it shows: Home on top and not sliding (its snapshot would not move), the
+ * screen lit, a cover that pans (the placeholder does not; Full never paints the art). */
+static int drift_live(void) {
+    void *wm = window_manager();
+    return home.tw && g_backlight_status && !g_lockscreen_pageflag &&
+           window_manager_get_top_window(wm) == home.win && !window_manager_is_animating(wm);
+}
+
+/* The pan's step; once it no longer shows the timer goes, and the next Home paint arms it again
+ * at the same phase. Steps are capped, so a stalled loop never jumps. */
+static int home_drift(const void *unused) {
+    if (!drift_live()) return (int)(home.drift = 0); /* RET_REMOVE */
+    unsigned now = time_now_ms(), step = now - home.drift_last;
+    home.drift_last = now;
+    /* modulo a whole number of both axes' cycles, so it never wraps mid-cycle */
+    home.drift_ms = (home.drift_ms + (step < DRIFT_MAX_STEP_MS ? step : DRIFT_MAX_STEP_MS)) %
+                    (2u * DRIFT_X_MS * DRIFT_Y_MS);
+    drift_place();
+    return 8; /* RET_REPEAT */
+}
+
+/* A w x h image's size just covering the panel at its proportions; unknown sizes fill it. */
+static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
+    int pw = HOME_PW, ph = 290;
+    *fw = pw, *fh = ph;
     if (w && h && w <= 8192 && h <= 8192) {
         if ((unsigned)pw * h > (unsigned)ph * w)
-            fh = (int)(((unsigned)pw * h + w - 1) / w);
+            *fh = (int)(((unsigned)pw * h + w - 1) / w);
         else
-            fw = (int)(((unsigned)ph * w + h - 1) / h);
+            *fw = (int)(((unsigned)ph * w + h - 1) / h);
     }
-    widget_move_resize(home.art, x + (pw - fw) / 2, (ph - fh) / 2, fw, fh);
+}
+
+/* The cover at url, box filtered once to its fit zoomed DRIFT_ZOOM_PCT (home.tex, tw x th) and
+ * composited over the page as Coverflow's decode does, for the pan to draw from. It pans across
+ * the zoom's margin only (rx ry), from the old crop (u0 v0), so its edges never show. 1 when it
+ * pans, -1 when nothing loads, 0 for a 16-bit decode or a cover too long for DRIFT_TEXELS, which the
+ * stock fill shows still.
+ * ponytail: only the playing track's cover, no iPod slideshow of library covers or crossfades;
+ * library thumbnails are too small for the panel, so each change would decode a full cover. Light
+ * Mode's paper behind a transparent cover changes with the next cover. */
+static int home_tex(const char *url) {
+    static const unsigned char at[4][4] = BITMAP_RGBA_AT;
+    unsigned bitmap[64]; /* bitmap_t */
+    if (widget_load_image(home.art, url, bitmap)) return -1;
+    unsigned w = bitmap[0], h = bitmap[1], format = ((unsigned short *)bitmap)[7] - 1u;
+    int fw, fh;
+    home_fit(w, h, &fw, &fh);
+    int tw = fw * DRIFT_ZOOM_PCT / 100, th = fh * DRIFT_ZOOM_PCT / 100;
+    const unsigned char *data = 0;
+    if (!home.frame) home.frame = opaque_frame(HOME_PW, 290);
+    if (home.frame && format < 4 && w && h && w <= 8192 && h <= 8192 && tw <= DRIFT_TEXELS / th) {
+        free(home.tex); /* a row and a texel more: home_render's last neighbours, at weight 0 */
+        home.tex = calloc((unsigned)(th + 1) * (unsigned)tw + 1, 4);
+        data = home.tex ? bitmap_lock_buffer_for_read(bitmap) : 0;
+    }
+    if (data) {
+        const unsigned char *o = at[format];
+        unsigned stride = bitmap_get_line_length(bitmap), paper = ipod_light() ? LIGHT_PAPER : 0;
+        unsigned *out = home.tex;
+        for (int y = 0; y < th; ++y) {
+            unsigned y0 = (unsigned)y * h / (unsigned)th, y1 = (unsigned)(y + 1) * h / (unsigned)th;
+            y1 += y1 == y0;
+            for (int x = 0; x < tw; ++x) {
+                unsigned x0 = (unsigned)x * w / (unsigned)tw,
+                         x1 = (unsigned)(x + 1) * w / (unsigned)tw;
+                x1 += x1 == x0;
+                /* alpha-weighted sums, so only the average divides; at most 4 x 4 samples, so a
+                 * huge embedded cover filters as quickly as a small one */
+                unsigned r = 0, g = 0, b = 0, a = 0, n = 0, xs = (x1 - x0 + 3) / 4 * 4,
+                         ys = (y1 - y0 + 3) / 4;
+                for (unsigned sy = y0; sy < y1; sy += ys)
+                    for (const unsigned char *px = data + sy * stride + x0 * 4,
+                                             *end = data + sy * stride + x1 * 4;
+                         px < end; px += xs, n += 255) {
+                        unsigned k = px[o[3]];
+                        r += px[o[0]] * k, g += px[o[1]] * k, b += px[o[2]] * k, a += k;
+                    }
+                unsigned bg = paper * (n - a);
+                *out++ = 0xff000000u | (r + bg) / n | (g + bg) / n << 8 | (b + bg) / n << 16;
+            }
+        }
+        bitmap_unlock_buffer(bitmap);
+        home.tw = tw, home.rx = tw - fw, home.ry = th - fh;
+        home.u0 = (fw - HOME_PW) / 2, home.v0 = (fh - 290) / 2, home.du = -1;
+    }
+    widget_unload_image(home.art, bitmap);
+    return data != 0;
+}
+
+/* The panel from the zoomed cover at u, v (1/256 px), bilinear, so the pan moves by fractions of
+ * a pixel: in whole pixels its 1.5 a second jerked. Opaque, so red and blue blend in one word. */
+static void home_render(unsigned *d, int pitch, int u, int v) {
+    unsigned fu = (unsigned)u & 255, fv = (unsigned)v & 255, w00 = (256 - fu) * (256 - fv) >> 8,
+             w01 = fu * (256 - fv) >> 8, w10 = (256 - fu) * fv >> 8, w11 = 256 - w00 - w01 - w10;
+    for (int y = 0; y < 290; ++y, d += pitch) {
+        const unsigned *a = home.tex + ((v >> 8) + y) * home.tw + (u >> 8), *b = a + home.tw;
+        for (int x = 0; x < HOME_PW; ++x, ++a, ++b) {
+            unsigned rb = (a[0] & 0xff00ffu) * w00 + (a[1] & 0xff00ffu) * w01 +
+                          (b[0] & 0xff00ffu) * w10 + (b[1] & 0xff00ffu) * w11,
+                     g = (a[0] & 0xff00u) * w00 + (a[1] & 0xff00u) * w01 + (b[0] & 0xff00u) * w10 +
+                         (b[1] & 0xff00u) * w11;
+            d[x] = 0xff000000u | (rb >> 8 & 0xff00ffu) | (g >> 8 & 0xff00u);
+        }
+    }
+}
+
+/* The pan's frame over the art (its image is empty), rendered again only once the pan moved. */
+static void home_paint(void *canvas) {
+    int u = pan_u(), v = pan_v(), r[4] = { 0, 0, HOME_PW, 290 };
+    if (u != home.du || v != home.dv) {
+        unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(home.frame);
+        if (!d) return;
+        home_render(d, (int)(bitmap_get_line_length(home.frame) / 4), u, v);
+        bitmap_unlock_buffer(home.frame);
+        home.du = u, home.dv = v;
+    }
+    canvas_draw_image(canvas, home.frame, r, r);
 }
 
 /* The player's cover, else the Coverflow cache of the track's album (now_tag), else the
@@ -2162,6 +2515,10 @@ static void home_fit(unsigned w, unsigned h) {
  * shows the new art whole. */
 void coverflow_home_art(void *top) {
     if (!home.art || top != home.win || !widget_get_visible(home.art)) return;
+    if (!home.drift && drift_live()) {
+        home.drift_last = time_now_ms();
+        home.drift = timer_add(home_drift, (void *)0, DRIFT_TICK_MS);
+    }
     unsigned pos, n;
     void *r = queue_now(&pos, &n);
     const char *path = r ? P(r, REC_PATH) : (void *)0;
@@ -2175,20 +2532,33 @@ void coverflow_home_art(void *top) {
     char url[600] = "file://";
     if (r) art_path(url + 7, album, "");
     unsigned size[2] = { 0, 0 };
-    if (!(cover && image_show(home.art, cover, size)) && !(r && image_show(home.art, url, size)) &&
-        !image_show(home.art, HOME_PLACEHOLDER, size))
-        image_base_set_image(home.art, HOME_PLACEHOLDER);
-    home_fit(size[0], size[1]);
+    int fw = HOME_PW, fh = 290;
+    home.tw = 0;
+    const char *src = cover;
+    int pans = cover ? home_tex(cover) : -1;
+    if (pans < 0 && r) pans = home_tex(url), src = url;
+    if (pans > 0) {
+        image_base_set_image(home.art, ""); /* home_paint draws it */
+    } else {
+        /* still, sized to the image's fit and centred, so the native fill draws it whole and the
+         * clip crops it evenly */
+        if (!(pans == 0 && image_show(home.art, src, size)) &&
+            !image_show(home.art, HOME_PLACEHOLDER, size))
+            image_base_set_image(home.art, HOME_PLACEHOLDER);
+        home_fit(size[0], size[1], &fw, &fh);
+    }
+    widget_move_resize(home.art, HOME_SPLIT_W + (HOME_PW - fw) / 2, (290 - fh) / 2, fw, fh);
     rearm(&home.repaint, home_repaint, 0);
 }
 
 /* The art paints only inside its panel and the lists only left of it, so a sliding list
  * never covers the art: ringnav_paint_bg narrows the canvas clip (screen coordinates; the canvas
  * origin is the widget's) before stock draws it, and ringnav_paint puts the old clip back after its
- * children. */
+ * children, the pan's frame painted inside it first. */
 void coverflow_home_clip(void *w, void *canvas, int begin) {
     if (!w || (w != home.art && w != home.list && w != home.sets)) return;
     if (!begin) {
+        if (w == home.art && home.tw) home_paint(canvas);
         if (home.clipped) canvas_set_clip_rect(canvas, home.clip);
         home.clipped = 0;
         return;
@@ -2228,6 +2598,8 @@ static void home_width(void *w, int outer, int inner, int x, int end, int depth)
  * rows, and made insensitive, as hidden rows keep their taps. */
 void coverflow_home_layout(void) {
     int full = ipod_home_full(), classic = ipod_classic();
+    /* The art goes back to the panel; Split's next paint resumes the pan. */
+    stop_timer(&home.drift);
     if (!home.list) return;
     void *rockbox = widget_lookup(home.win, "btn_rockbox", 1);
     if (rockbox) {
@@ -2245,7 +2617,8 @@ void coverflow_home_layout(void) {
     if (home.sets) home_width(home.sets, outer, inner, x, end, 0);
     widget_move_resize(home.art, split, 0, 375 - split, 290);
     widget_set_visible(home.art, !full, 0);
-    home.key = ~0u; /* Split shows the current cover again */
+    home.key = ~0u; /* Split shows the current cover again, next frame if laid out mid-paint */
+    rearm(&home.repaint, home_repaint, 0);
 }
 
 /* Home's Settings row, as an iPod's submenu: the Settings list (stock's Playback and System

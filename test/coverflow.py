@@ -41,6 +41,8 @@ extern char shim_lastcover[1024], shim_id3[2716];
 #define g_playcover_type shim_covertype
 extern unsigned char shim_memory[0x800];
 #define g_memory_info shim_memory
+#define g_backlight_status 0 /* dark: Home's cover never pans here */
+#define g_lockscreen_pageflag 0
 int shim_lock(void *), shim_unlock(void *), shim_statfs(const char *, void *);
 """ + ''.join(f'{r} {n}({a});\n' for n in """
 getAllAlbum getMusicByAlbum toolsQueryDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
@@ -55,7 +57,8 @@ widget_count_children widget_get_child widget_lookup widget_move_resize widget_g
 canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp
 timer_add timer_remove navigator_back_to_home navigator_back window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
-canvas_draw_image slide_menu_set_spacer window_manager
+canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
+widget_to_local widget_animator_pause window_manager_get_pointer_pressed
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 void *shim_calloc(size_t, size_t);
 #define calloc shim_calloc
@@ -74,7 +77,7 @@ int coverflow_home(void *, void *), coverflow_player_cover(const char *, const c
 const char *track_name(char *, unsigned, void *);
 
 /* Widgets: raw memory first, so the payload's field reads (SLIDE_INDEX) land in it. */
-typedef struct { char raw[0x100]; int parent, visible, kids[512], nkids, bg; char type[32], text[160], image[600];
+typedef struct { char raw[0x100]; int parent, visible, numb, kids[512], nkids, bg; char type[32], text[160], image[600];
                  handler click; void *ctx; } widget;
 static widget w[8192];
 static int nw;
@@ -155,8 +158,11 @@ int widget_set_visible(void *x, int v, int r) { W(x)->visible = v; return 0; }
 int widget_get_prop_int(void *x, const char *k, int d) { return d; }
 int widget_set_prop_int(void *x, const char *k, int v) { if (!strcmp(k, "style:normal:bg_color")) W(x)->bg = v; return 0; }
 const char *widget_get_prop_str(void *x, const char *k, const char *d) { return strcmp(k, "image") ? d : W(x)->image; }
+static handler touch_fn, changed_fn; /* the covers' touch and the slide_menu's change */
 unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
     if (!x) return 0;
+    if (type >= EVT_POINTER_DOWN && type <= EVT_POINTER_ABORT) touch_fn = f;
+    if (type == EVT_VALUE_CHANGED) changed_fn = f;
     if (type == EVT_CLICK || type == EVT_KEY_UP || type == EVT_DESTROY) {
         widget *h = type == EVT_CLICK ? W(x) : &w[0] + (type == EVT_KEY_UP ? 8190 : 8191); /* page handlers */
         h->click = f; h->ctx = ctx;
@@ -166,6 +172,20 @@ unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
 int widget_destroy_children(void *x) { W(x)->nkids = 0; return 0; }
 static int wm_repaints; /* whole-screen invalidations, from outside a paint */
 void *window_manager(void) { return &wm_repaints; }
+void *window_manager_get_top_window(void *wm) { return 0; }
+int window_manager_is_animating(void *wm) { return 0; }
+static unsigned clock_ms, pressed = 1, paused;
+unsigned time_now_ms(void) { return clock_ms; }
+int window_manager_get_pointer_pressed(void *wm) { return pressed; }
+int widget_animator_pause(void *a) { ++paused; return 0; }
+int widget_to_local(void *x, void *p) { int *r = (int *)W(x)->raw, *q = p; q[0] -= r[0], q[1] -= r[1]; return 0; }
+/* navigation.c's: the glide asked for, the animator standing in as running until glide_end. */
+static int glides, glide_goal, glide_ms, glide_easing;
+int carousel_glide(void *x, int goal, unsigned ms, int easing) {
+    *(void **)(W(x)->raw + SLIDE_ANIMATOR) = (void *)1;
+    ++glides, glide_goal = goal, glide_ms = (int)ms, glide_easing = easing;
+    return 1;
+}
 int widget_invalidate_force(void *x, void *y) { wm_repaints += x == &wm_repaints; return 0; }
 unsigned widget_count_children(void *x) { return x == &wm_repaints ? 0 : W(x)->nkids; } /* no window stack */
 void *widget_get_child(void *x, unsigned i) { return &w[W(x)->kids[i]]; }
@@ -187,7 +207,7 @@ int widget_move_resize(void *x, int left, int top, int ww, int h) {
     return 0;
 }
 static int insensitive; /* the widget last made insensitive */
-int widget_set_sensitive(void *x, int v) { if (!v) insensitive = W(x) - w; return 0; }
+int widget_set_sensitive(void *x, int v) { W(x)->numb = !v; if (!v) insensitive = W(x) - w; return 0; }
 static int clip_rect[4] = { 0, 0, 375, 320 }; /* the canvas clip, screen x, y, w, h */
 int canvas_get_clip_rect(void *c, void *r) { memcpy(r, clip_rect, sizeof clip_rect); return 0; }
 int canvas_set_clip_rect(void *c, const void *r) { memcpy(clip_rect, r, sizeof clip_rect); return 0; }
@@ -636,6 +656,126 @@ static void renderer(void) {
     assert(worst < CF_VIEW_W * CF_VIEW_H / 50);
 }
 
+int coverflow_hit(int, int, int);
+void coverflow_lost_touch(void);
+static unsigned batch; /* the dispatch time of moves queued together, else 0 */
+static int touch_at(int type, int x, int y, unsigned t) { /* t: when the event was posted */
+    int e[16] = {0};
+    e[0] = type, e[EVENT_TIME / 4] = t, e[EVENT_X / 4] = x, e[EVENT_Y / 4] = y;
+    clock_ms = batch ? batch : t;
+    return touch_fn(0, e);
+}
+/* The glide ends as stock completion would: the index takes the offset, which goes back to 0. */
+static void glide_end(widget *s) {
+    char *raw = s->raw;
+    int n = s->nkids, i = (*(int *)(raw + SLIDE_INDEX) - glide_goal / CF_STRIDE) % n;
+    *(int *)(raw + SLIDE_INDEX) = i < 0 ? i + n : i;
+    *(int *)(raw + SLIDE_OFFSET) = 0;
+    *(void **)(raw + SLIDE_ANIMATOR) = 0;
+    changed_fn(0, 0);
+}
+static int offset(widget *s) { return *(int *)(s->raw + SLIDE_OFFSET); }
+static const char *album_caption(widget *covers_view) { /* the first label: the album's */
+    for (int i = 0; i < covers_view->nkids; ++i)
+        if (!strcmp(w[covers_view->kids[i]].type, "hscroll_label")) return w[covers_view->kids[i]].text;
+    return "";
+}
+
+/* Touch: the hit test agrees with the drawn covers; taps, drags, flicks, a vertical move, a catch
+   and a release never seen. */
+static void touches(widget *s, widget *covers_view) {
+    const unsigned *ring[7];
+    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 8) {
+        render(frac, ring);
+        for (int y = 1; y < CF_TOP + 160 - 1; ++y) /* the bodies, above the reflections */
+            for (int x = 1; x < CF_VIEW_W - 1; ++x) {
+                int j = coverflow_hit(frac, x, y), same = 1;
+                for (int d = 0; d < 4; ++d) same &= coverflow_hit(frac, x + (d & 1 ? d - 2 : 0), y + (d & 1 ? 0 : d - 1)) == j;
+                if (same && j != 99) assert(slot_of(px(x, y)) == j + 3); /* away from the edges */
+                if (same && j == 99 && y < CF_TOP + 80) /* black, or a cover too faint to tap; reflections below */
+                    for (int i = 0; i < 3; ++i) assert(ch(px(x, y), i) < 64);
+            }
+    }
+    char *raw = s->raw;
+    int n = s->nkids, side = CF_CX + CF_X1 * CF_EYE / (CF_EYE + CF_Z1), mid = CF_TOP + 80;
+    *(int *)(raw + SLIDE_INDEX) = 3, *(int *)(raw + SLIDE_OFFSET) = 0;
+    /* A tap on the right-hand cover glides it to the centre, as the wheel's step; the left-hand one,
+       back. A tap on the background does nothing. */
+    touch_at(EVT_POINTER_DOWN, side, mid, 0); touch_at(EVT_POINTER_UP_BEFORE, side, mid, 80);
+    assert(glides == 1 && glide_goal == -CF_STRIDE && glide_easing == SLIDE_EASING && glide_ms == CF_TAP_MS);
+    glide_end(s); assert(*(int *)(raw + SLIDE_INDEX) == 4 && !strcmp(album_caption(covers_view), names[4]));
+    touch_at(EVT_POINTER_DOWN, 2 * CF_CX - side, mid, 0); touch_at(EVT_POINTER_UP_BEFORE, 2 * CF_CX - side, mid, 80);
+    assert(glides == 2 && glide_goal == CF_STRIDE && paused == 0);
+    glide_end(s);
+    touch_at(EVT_POINTER_DOWN, 5, 5, 0); touch_at(EVT_POINTER_UP_BEFORE, 5, 5, 80);
+    assert(glides == 2 && !timer_fn);
+    /* A drag follows the finger, CF_DRAG_PX an album, from where it passed the slop. A flick right glides on, decelerating, to a cover further left in the list. */
+    touch_at(EVT_POINTER_DOWN, 100, 100, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 100 + CF_SLOP - 1, 100, 10); assert(offset(s) == 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 110, 102, 20); assert(offset(s) == 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 110 + CF_DRAG_PX / 2, 102, 40); assert(offset(s) == CF_STRIDE / 2);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 110 + CF_DRAG_PX, 102, 60); assert(offset(s) == CF_STRIDE);
+    touch_at(EVT_POINTER_UP_BEFORE, 110 + CF_DRAG_PX + 10, 102, 64);
+    assert(glides == 3 && glide_easing == EASE_CUBIC_OUT && glide_goal % CF_STRIDE == 0 && glide_goal >= 3 * CF_STRIDE);
+    assert(glide_ms > CF_SETTLE_MS && glide_ms <= CF_GLIDE_MAX);
+    int albums = glide_goal / CF_STRIDE;
+    glide_end(s); assert(*(int *)(raw + SLIDE_INDEX) == ((3 - albums) % n + n) % n);
+    /* A drag that rests before it lifts settles on the nearest cover; a third of the way it goes back. */
+    *(int *)(raw + SLIDE_INDEX) = 3;
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20, 100, 20);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20 - CF_DRAG_PX * 2 / 3, 100, 60);
+    touch_at(EVT_POINTER_UP_BEFORE, 200 - 20 - CF_DRAG_PX * 2 / 3, 100, 60 + CF_STILL_MS + 40);
+    assert(glides == 4 && glide_goal == -CF_STRIDE && glide_ms == CF_SETTLE_MS);
+    glide_end(s);
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20, 100, 20);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20 - CF_DRAG_PX / 3, 100, 60);
+    touch_at(EVT_POINTER_UP_BEFORE, 200 - 20 - CF_DRAG_PX / 3, 100, 200);
+    assert(glides == 5 && glide_goal == 0);
+    glide_end(s); assert(*(int *)(raw + SLIDE_INDEX) == 4);
+    /* A slow flick still moves on at least to the next cover, never back against itself. */
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20, 100, 100);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 33, 100, 150); /* 260 px/s */
+    touch_at(EVT_POINTER_UP_BEFORE, 200 - 33, 100, 155);
+    assert(glides == 6 && glide_goal == -CF_STRIDE);
+    glide_end(s); assert(*(int *)(raw + SLIDE_INDEX) == 5);
+    /* Up or down is not the covers': no move, no tap. */
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 203, 130, 20); touch_at(EVT_POINTER_MOVE_BEFORE, 260, 160, 40);
+    touch_at(EVT_POINTER_UP_BEFORE, 260, 160, 60);
+    assert(glides == 6 && offset(s) == 0 && !timer_fn);
+    /* A touch while they glide stops them where they are; lifting settles, and opens nothing. */
+    touch_at(EVT_POINTER_DOWN, side, mid, 0); touch_at(EVT_POINTER_UP_BEFORE, side, mid, 50);
+    assert(glides == 7);
+    *(int *)(raw + SLIDE_OFFSET) = -CF_STRIDE / 3;
+    touch_at(EVT_POINTER_DOWN, CF_CX, mid, 100); assert(paused == 1);
+    touch_at(EVT_POINTER_UP_BEFORE, CF_CX, mid, 150);
+    assert(glides == 8 && glide_goal == 0 && glide_ms == CF_SETTLE_MS && !timer_fn);
+    glide_end(s);
+    /* A release that never arrived: the next key lets go, and so does the next touch. */
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0); touch_at(EVT_POINTER_MOVE_BEFORE, 180, 100, 20);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 130, 100, 40);
+    coverflow_lost_touch(); assert(glides == 9);
+    glide_end(s);
+    /* A flick whose moves and release were queued behind a frame, dispatched at once, is timed by
+       when they were posted. */
+    batch = 500;
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0); touch_at(EVT_POINTER_MOVE_BEFORE, 180, 100, 20);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 140, 100, 40); touch_at(EVT_POINTER_UP_BEFORE, 140, 100, 45);
+    batch = 0;
+    assert(glides == 10 && glide_easing == EASE_CUBIC_OUT && glide_goal <= -2 * CF_STRIDE && glide_ms > CF_SETTLE_MS);
+    glide_end(s);
+    /* The centre cover opens its album. */
+    touch_at(EVT_POINTER_DOWN, CF_CX, mid, 0); touch_at(EVT_POINTER_UP_BEFORE, CF_CX, mid, 80);
+    assert(glides == 10 && timer_fn);
+    int album = *(int *)(raw + SLIDE_INDEX);
+    run(); assert(!strcmp(title(), names[album]) && !covers_view->visible);
+    key(KEY_RETURN); assert(covers_view->visible);
+}
+
 static void depth(void) {
     renderer();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
@@ -646,7 +786,7 @@ static void depth(void) {
     char *raw = s->raw;
     int *geo = (int *)raw;
     assert(frames == 1 && geo[0] == 0 && geo[1] == 0 && geo[2] == CF_VIEW_W && geo[3] == CF_VIEW_H);
-    assert(s == &w[insensitive]); /* wheel only: the covers take no touch */
+    assert(s == &w[insensitive]); /* the covers' view takes the touch, never stock's slide_menu */
     assert(slide_menu_item_width(s) + *(int *)(raw + SLIDE_SPACER) == CF_STRIDE);
     for (int i = 0; i < s->nkids; ++i) assert(!w[s->kids[i]].image[0]);
     widget *covers_view = &w[s->parent];
@@ -691,9 +831,11 @@ static void depth(void) {
     assert(timer_fn != waiting);
     run();
     assert(!strcmp(title(), names[6]) && !covers_view->visible && last_album(6)); /* kept for a reboot */
+    assert(covers_view->numb); /* stock hit-tests hidden widgets: the list below takes the touch */
     key(KEY_RETURN); /* back to the same album, still drawn */
-    assert(covers_view->visible && *(int *)(raw + SLIDE_INDEX) == 6);
+    assert(covers_view->visible && !covers_view->numb && *(int *)(raw + SLIDE_INDEX) == 6);
     coverflow_paint(s, canvas);
+    touches(s, covers_view);
 #if IPOD
     /* Auto Light Mode refreshes a stationary frame and its composited placeholder in RAM. */
     *(int *)(raw + SLIDE_INDEX) = 3;
@@ -874,6 +1016,20 @@ static void artist_only(void) {
     run();
     assert(slide()->nkids == 3);
     order_is((const char *const[]){ "B", "Tight", 0 });
+    /* Past either end an artist's shelf gives, never half a cover (it would wrap to the other end),
+       and lifting springs back to the end. */
+    widget *s = slide();
+    int stride = slide_menu_item_width(s) + *(int *)(s->raw + SLIDE_SPACER);
+    for (int dir = -1; dir <= 1; dir += 2) {
+        int i0 = *(int *)(s->raw + SLIDE_INDEX), end = (dir > 0 ? i0 : i0 - 2) * stride; /* first or last card */
+        touch_at(EVT_POINTER_DOWN, 187, 100, 0);
+        for (int k = 1; k <= 40; ++k) touch_at(EVT_POINTER_MOVE_BEFORE, 187 + dir * 20 * k, 100, 10 * k);
+        int over = (offset(s) - end) * dir;
+        assert(over > 0 && over < stride / 2);
+        touch_at(EVT_POINTER_UP_BEFORE, 187 + dir * 800, 100, 405);
+        assert(glide_goal == end);
+        glide_end(s);
+    }
     deque *again = _create_deque(0);
     again->at[again->n++] = records[0];
     page = &w[nw + 1];
@@ -1288,6 +1444,7 @@ int main(void) {
     deque queue = {0};
     shim_queue = &queue;
     home_art = make(0, "image");
+    frame_fail = 1; /* no pan frame: covers show still (as a 16-bit or too long one), the image named */
     int *geo = (int *)W(home_art)->raw, asset[4] = { 0, 0, 375, 290 }, /* W_X, W_Y, W_W, W_H */
         split[4] = { HOME_SPLIT_W, 0, 375 - HOME_SPLIT_W, 290 };
     memcpy(geo, asset, sizeof asset);
@@ -1312,14 +1469,16 @@ int main(void) {
     assert(!strcmp(art, player));
     /* a paint drops its own invalidations: the whole screen repaints after it */
     assert(!wm_repaints && timer_fn && (timer_fn(0), wm_repaints == 1));
-    /* Square, portrait and landscape covers keep their proportions, just cover the panel and are
-       centred on it; C division leaves an odd overflow's extra pixel on the right or bottom. */
-    static const int covers[][6] = { { 160, 160, 136, 0, 290, 290 }, { 206, 290, 178, 0, 206, 290 },
-                                     { 300, 200, 64, 0, 435, 290 }, { 100, 400, 187, -231, 188, 752 } };
+    /* Square, portrait and landscape still covers keep their proportions, just cover the panel and
+       centre on it. */
+    static const int covers[][4] = { { 160, 160, 290, 290 }, { 206, 290, 206, 290 },
+                                     { 300, 200, 435, 290 }, { 100, 400, 188, 752 } };
     for (unsigned i = 0; i < 4; ++i) {
         art_w = covers[i][0], art_h = covers[i][1];
         *(volatile int *)MCL_POS = 1; coverflow_home_art(win); *(volatile int *)MCL_POS = 0; coverflow_home_art(win);
-        for (int k = 0; k < 4; ++k) assert(geo[k] == covers[i][2 + k]);
+        int want[4] = { HOME_SPLIT_W + (375 - HOME_SPLIT_W - covers[i][2]) / 2, (290 - covers[i][3]) / 2,
+                        covers[i][2], covers[i][3] };
+        for (int k = 0; k < 4; ++k) assert(geo[k] == want[k]);
     }
     art_w = art_h = 160;
     /* The art's paint is clipped to the panel on screen (canvas origin at the art, window at y 30)
@@ -1388,7 +1547,7 @@ int main(void) {
     for (int i = 0; i < 4; ++i) assert(*(int *)(all[i]->raw + W_W) == HOME_SPLIT_W);
     assert(*(int *)(label->raw + W_W) == HOME_SPLIT_W - dot_x - HOME_SPLIT_LABEL_END && W(home_art)->visible);
     coverflow_home_art(win);
-    assert(loads == before + 1 && !strcmp(art, player));
+    assert(loads == before + 2 && !strcmp(art, player)); /* home_tex tries it, then the still fill */
     classic = 1; /* Classic halves the screen: the 160px cover fills 290px from 187 + (188 - 290) / 2 */
     coverflow_home_layout();
     for (int i = 0; i < 4; ++i) assert(*(int *)(all[i]->raw + W_W) == HOME_SPLIT_W);
@@ -1396,7 +1555,7 @@ int main(void) {
            *(int *)(label->raw + W_W) == HOME_SPLIT_W - HOME_CLASSIC_TEXT_X - HOME_CLASSIC_LABEL_END);
     coverflow_home_art(win);
     static const int classic_geo[4] = { 136, 0, 290, 290 };
-    assert(loads == before + 2 && !strcmp(art, player) && !memcmp(geo, classic_geo, sizeof classic_geo));
+    assert(loads == before + 4 && !strcmp(art, player) && !memcmp(geo, classic_geo, sizeof classic_geo));
     home_full = 1;
     coverflow_home_layout();
     for (int i = 0; i < 4; ++i) assert(*(int *)(all[i]->raw + W_W) == (i < 2 ? 375 : HOME_CLASSIC_ROW));
@@ -1404,6 +1563,14 @@ int main(void) {
     classic = 0; home_full = 0;
     coverflow_home_layout();
     assert(*(int *)(label->raw + W_X) == dot_x && !memcmp(geo, split, sizeof split) && loads == unloads);
+    /* A cover that pans: the art's image is empty and fills the panel, the pan's frame drawn over it. */
+    frame_fail = 0;
+    *(volatile int *)MCL_POS = 0;
+    coverflow_home_art(win);
+    assert(!*art && !memcmp(geo, split, sizeof split) && loads == unloads);
+    int drew = draws;
+    coverflow_home_clip(home_art, canvas, 0);
+    assert(draws == drew + 1);
 
 #endif
     embedded_first();

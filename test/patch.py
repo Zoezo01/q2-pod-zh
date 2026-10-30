@@ -364,6 +364,10 @@ class Machine:
         elif name=='widget_count_children': ret=len(n['children'])
         elif name=='widget_get_child': ret=n['children'][b] if b<len(n['children']) else 0
         elif name=='widget_set_prop_int': n[self.text(b)]=signed(c); ret=0
+        elif name=='slider_set_value':  # stock dispatches the value change at once (o32: the double in a2:a3)
+            n['value']=int(struct.unpack('<d',struct.pack('<II',c,d))[0]); ret=0
+            for t,f,ctx in list(n.get('handlers',())):
+                if t==O['EVT_VALUE_CHANGED']: self.echoes=getattr(self,'echoes',0)+1; self.nested(f,ctx,self.event,0,0)
         elif name=='widget_set_prop_str': n[self.text(b)]=self.text(c); ret=0
         elif name=='text_selector_count_options': ret=n.get('options',0)
         elif name=='text_selector_set_selected_index': self.word(a+O['SELECTOR_INDEX'],b); ret=0
@@ -456,7 +460,7 @@ class Machine:
                 ret=0
         elif name=='widget_load_image':  # list_into is 50x50; image_size None fails the load
             ret=1 if self.image_size is None else 0
-            if not ret: self.word(c,self.image_size[0]); self.word(c+4,self.image_size[1])
+            if not ret: self.word(c,self.image_size[0]); self.word(c+4,self.image_size[1]); self.u.mem_write(c+8,bytes(16))  # no pixels
         elif name=='canvas_draw_icon': self.icons.append((signed(c),signed(d),self.clip)); ret=0
         elif name=='canvas_set_font': self.font=(self.text(b) if b else 'default',c); ret=0
         elif name=='canvas_set_text_color': self.word(self.lcd+O['LCD_TEXT_COLOR'],b); ret=0
@@ -3220,8 +3224,9 @@ class QueueMachine(Machine):
         self.slider=self.node('slider','slider_bootvol'); self.vol=self.node('label','label_vol')
         self.dec,self.add=self.node('image','img_dec'),self.node('image','img_add')
         self.title,self.switch=self.node('label','label_title'),self.node('image','img_bootswitch')
-        return self.node('window','bootvol_page',[self.node('view','view_navbar',[self.title,self.switch]),
-                         self.node('view','view_bootvol',[self.slider,self.dec,self.add,self.vol],visible=0)])
+        view=self.node('view','view_bootvol',[self.slider,self.dec,self.add,self.vol],visible=0)
+        self.nodes[view]['enable']=0  # stock hides and disables it while its switch is off
+        return self.node('window','bootvol_page',[self.node('view','view_navbar',[self.title,self.switch]),view])
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('q:'): return super().hook(u,address,size,unused)
@@ -5346,8 +5351,8 @@ if variant=='ipod':
       bar=m.node('window','system_bar'); m.word(syms['system_bar'],bar)
       for w in (bar,m.home): m.word(w+O['W_PARENT'],m.wm)
       SPLIT=O['HOME_SPLIT_W']; PW=375-SPLIT
-      def art_image(w):
-          m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0))
+      def art_image(w):  # no time passes, so the cover's pan (DRIFT_*) holds its phase until advanced
+          m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0),gap=0)
           return m.nodes[m.art].get('image')
       m.byte(syms['g_playcover_type'],1)
       assert art_image(m.home).startswith('file:///mnt/mmc/.coverflow/') and m.get(m.list+O['W_W'])==SPLIT
@@ -5358,9 +5363,10 @@ if variant=='ipod':
       assert not [c for c in m.calls if c[0] in ('widget_load_image','canvas_draw_image')]; m.top=m.home
       m.u.mem_write(syms['g_lastcover_url'],b'/p/A\0')
       m.byte(syms['g_playcover_type'],3); assert art_image(m.home).startswith('file:///mnt/mmc/.coverflow/'); passed()
-      # Sized to the cover's proportions, just covering the panel and centred on it (native fill then
-      # draws it whole), and clipped to the panel from the background hook to the border hook, so it
-      # crops evenly and never stretches.
+      # A cover with no pixels to pan (here none decode; on the device a 16-bit decode or one too long
+      # for DRIFT_TEXELS) stays still: sized to its proportions, just covering the panel (native fill
+      # then draws it whole), centred, and clipped to the panel from the background hook to the
+      # border hook, so it crops evenly and never stretches.
       assert m.nodes[m.art].get('sensitive')==0
       def geometry(): return [signed(m.get(m.art+O[k])) for k in ('W_X','W_Y','W_W','W_H')]
       def cover(w,h):
@@ -5368,22 +5374,33 @@ if variant=='ipod':
           m.u.mem_write(syms['g_lastcover_url'],b'/p/other\0'); art_image(m.home)
           m.u.mem_write(syms['g_lastcover_url'],b'/p/A\0'); art_image(m.home)
           return geometry()
-      for (w,h),want in (((300,300),[SPLIT+int((PW-290)/2),0,290,290]),((2*PW,580),[SPLIT,0,PW,290]),
-                         ((600,400),[SPLIT+int((PW-435)/2),0,435,290]),((100,400),[SPLIT,int((290-4*PW)/2),PW,4*PW])):
+      def fit(w=290,h=290): return [SPLIT+int((PW-w)/2),int((290-h)/2),w,h]
+      for (w,h),want in (((300,300),fit()),((2*PW,580),fit(PW)),((600,400),fit(435)),((100,400),fit(PW,4*PW))):
           assert cover(w,h)==want,((w,h),geometry(),want)
       passed()
-      m.clip=(0,0,375,320); m.word(m.canvas+O['CANVAS_X'],SPLIT); m.word(m.canvas+O['CANVAS_Y'],30+want[1])
-      m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(m.art,m.canvas,0,0))
+      m.clip=(0,0,375,320); m.word(m.canvas+O['CANVAS_X'],want[0]); m.word(m.canvas+O['CANVAS_Y'],30+want[1])
+      m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(m.art,m.canvas,0,0),gap=0)
       assert m.clip==(SPLIT,30,PW,290),m.clip
-      m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.art,m.canvas,0,0)); assert m.clip==(0,0,375,320)
+      m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.art,m.canvas,0,0),gap=0); assert m.clip==(0,0,375,320)
       # The list paints only left of the panel; the placeholder (no size) fills the panel.
       m.word(m.canvas+O['CANVAS_X'],0); m.word(m.canvas+O['CANVAS_Y'],30+HOME_TOP)
-      m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(m.list,m.canvas,0,0))
+      m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(m.list,m.canvas,0,0),gap=0)
       assert m.clip==(0,30+HOME_TOP,SPLIT,7*HOME_ROW),m.clip
-      m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.list,m.canvas,0,0)); assert m.clip==(0,0,375,320)
+      m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.list,m.canvas,0,0),gap=0); assert m.clip==(0,0,375,320)
       m.image_size=None
       m.u.mem_write(syms['g_lastcover_url'],b'/p/none\0')
       art_image(m.home); assert m.nodes[m.art]['image']=='default_album_home' and geometry()==[SPLIT,0,PW,290]; passed()
+      # Neither a still cover nor the placeholder pans (the pan itself: after DepthMachine).
+      def drifts(): return [t for t in m.timers.values() if t[1]==payload_syms['home_drift']]
+      m.advance(O['DRIFT_TICK_MS']); art_image(m.home); assert not drifts()
+      assert cover(300,300)==fit(); art_image(m.home); m.advance(O['DRIFT_TICK_MS']); assert not drifts() and cover(300,300)==fit()
+      passed()
+    # Full: the art is hidden on the panel and never pans.
+    CONFIG.clear(); CONFIG.update(HOME='1'); m=CoverflowMachine(); m.open(); m.top=m.home; CONFIG.clear()
+    m.image_size=(300,300); m.byte(syms['g_playcover_type'],1); m.u.mem_write(syms['g_lastcover_url'],b'/p/A\0')
+    for _ in range(3): m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(m.home,m.canvas,0,0))
+    assert not [t for t in m.timers.values() if t[1]==payload_syms['home_drift']] and not m.nodes[m.art]['visible']
+    assert [signed(m.get(m.art+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[SPLIT,0,PW,290]; passed()
 
     # Now Playing: stock init runs first, then "n of m", the album and "-remaining" (slider max less
     # value, in seconds) fill in; later paints rewrite a label only when its source changed.
@@ -7092,18 +7109,19 @@ passed()
 # byte for byte what the host build of the same source draws (test/coverflow.py checks that
 # one's geometry); on the page it spans the frame, draws through the stock canvas and hit-tests taps.
 BIG=0x2000000
-def cover_pixels(seed):
-    return b''.join(struct.pack('<I',0xff000000|((i*2654435761+seed*40503)>>7)&0xffffff) for i in range(160*160))
+def cover_pixels(seed,n=160*160):
+    return b''.join(struct.pack('<I',0xff000000|((i*2654435761+seed*40503)>>7)&0xffffff) for i in range(n))
 class DepthMachine(CoverflowMachine):
     budget=50_000_000  # decoding and rendering run in the payload, at native emulator speed (fast)
     def __init__(self,**kw):
         super().__init__(**kw)
-        self.u.mem_map(BIG,0x800000); self.big=BIG
+        self.u.mem_map(BIG,0x1800000); self.big=BIG
         self.frames=[]; self.destroyed=[]; self.draws=[]; self.loads=[]; self.unloads=0; self.pixels={}
         self.art_size=(160,160)  # the covers' decoded size; the placeholder is always 160 square
+        self.art_sizes={}  # by URL ending, sizes other than art_size
         self.fast()
     def big_alloc(self,n):
-        a=self.big; self.big+=(n+15)&~15; assert self.big<=BIG+0x800000; return a
+        a=self.big; self.big+=(n+15)&~15; assert self.big<=BIG+0x1800000; return a
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         a,b,c,d=[u.reg_read(r) for r in REGS]
@@ -7116,16 +7134,16 @@ class DepthMachine(CoverflowMachine):
         elif name=='bitmap_lock_buffer_for_read': ret=self.get(a+0x14)
         elif name=='widget_load_image':
             url=self.text(b); self.loads.append(url) if a==self.top else None  # Coverflow's, not iPod Home's
-            w,h=(160,160) if url==CF_PLACEHOLDER else self.art_size
+            w,h=(160,160) if url==CF_PLACEHOLDER else next((v for k,v in self.art_sizes.items() if url.endswith(k)),self.art_size)
             if url not in self.pixels:
-                self.pixels[url]=self.big_alloc(w*h*4); self.u.mem_write(self.pixels[url],cover_pixels(len(self.pixels))[:w*h*4])
+                self.pixels[url]=self.big_alloc(w*h*4); self.u.mem_write(self.pixels[url],cover_pixels(len(self.pixels),w*h))
             self.word(c,w); self.word(c+4,h); self.word(c+8,w*4); self.u.mem_write(c+0xc,struct.pack('<HH',2,1)); self.word(c+0x14,self.pixels[url]); ret=0
         elif name=='widget_unload_image': self.unloads+=a==self.top; ret=0
         elif name=='slide_menu_set_spacer': self.word(a+O['SLIDE_SPACER'],b); ret=0
         elif name=='canvas_draw_image':
             src,dst=[tuple(signed(self.get(r+4*i)) for i in range(4)) for r in (c,d)]
             line=self.get(b+8); data=self.get(b+0x14)
-            frame=b''.join(bytes(self.u.mem_read(data+y*line,4*O['CF_VIEW_W'])) for y in range(O['CF_VIEW_H']))
+            frame=b''.join(bytes(self.u.mem_read(data+y*line,4*dst[2])) for y in range(dst[3]))
             self.draws.append((a,b,src,dst,struct.unpack_from('<H',bytes(self.u.mem_read(b+0xc,2)))[0],frame)); ret=0
         else: return super().hook(u,address,size,unused)
         self.calls.append((name,a,b,c))
@@ -7229,6 +7247,88 @@ m=Starved(); m.open(); s=m.slide
 assert cf_geometry(m,s)==(0,24,375,160) and all(m.nodes[c].get('image') for c in m.nodes[s]['children'])
 paint(m); assert not m.draws; passed()
 print(f'Coverflow depth on MIPS: {rest_cost} instructions for the first paint (decoding the covers in reach, then the frame), {turn_cost} for a frame a quarter turn on (payload only; stock drawing mocked)')
+
+if variant=='ipod':
+    # Home's Split pan (DRIFT_*): the cover is box filtered once to its fit zoomed DRIFT_ZOOM_PCT, and
+    # each paint of the art (its own image empty) draws the panel from that at the pan's 1/256 px
+    # position, bilinear, so it moves by fractions of a pixel. Each axis is a linear ping-pong of its
+    # own period across the zoom's margin, from the unzoomed crop. One timer runs it while Home is on
+    # top, lit and still; a step repaints only the panel.
+    SPLIT=O['HOME_SPLIT_W']; PW=375-SPLIT; X,Y,TICK=O['DRIFT_X_MS'],O['DRIFT_Y_MS'],O['DRIFT_TICK_MS']
+    m=DepthMachine(); pan_counter=m.u.hook_add(UC_HOOK_BLOCK,count_block,begin=BASE,end=SCRATCH-1)  # before any code is cached
+    m.open(); m.top=m.home; m.word(m.home+O['W_PARENT'],m.wm); np=m.node('window','playing_page')
+    m.byte(syms['g_playcover_type'],1); m.u.mem_write(syms['g_lastcover_url'],b'/p/A\0')
+    def paint_home(): m.call(address=IPOD_HOOKS['widget_on_paint_background'][0],args=(m.home,m.canvas,0,0),gap=0)
+    def drifts(): return [t for t in m.timers.values() if t[1]==payload_syms['home_drift']]
+    def invalidated(): return [(c[1],c[2] and tuple(signed(m.get(c[2]+4*i)) for i in range(4))) for c in m.calls if c[0]=='widget_invalidate_force']
+    def tex_of(w,h):  # the box filter of the last cover loaded (opaque), and its zoomed size
+        url,=m.pixels; px=struct.unpack(f'<{w*h}I',bytes(m.u.mem_read(m.pixels[url],w*h*4)))
+        fw,fh=(PW,-(-PW*h//w)) if PW*h>290*w else (-(-290*w//h),290); tw,th=fw*O['DRIFT_ZOOM_PCT']//100,fh*O['DRIFT_ZOOM_PCT']//100
+        out=[]
+        for y in range(th):
+            y0=y*h//th; y1=max((y+1)*h//th,y0+1)
+            for x in range(tw):
+                x0=x*w//tw; x1=max((x+1)*w//tw,x0+1); n=r=g=b=0
+                for sy in range(y0,y1,(y1-y0+3)//4):  # at most 4 x 4 samples
+                    for p in px[sy*w+x0:sy*w+x1:(x1-x0+3)//4]: r+=p&255; g+=p>>8&255; b+=p>>16&255; n+=1
+                out.append(0xff000000|r//n|g//n<<8|b//n<<16)
+        return dict(px=out+[0]*(tw+1),tw=tw,u0=(fw-PW)//2,v0=(fh-290)//2,rx=tw-fw,ry=th-fh)
+    def at(r,period,t): t%=2*period; return r*256*((t if t<period else 2*period-t)>>4)//(period>>4)
+    def framed(c,t):  # the panel at phase t, as home_render blends it
+        u,v=c['u0']*256+at(c['rx'],X,t),c['v0']*256+at(c['ry'],Y,t); tw,px=c['tw'],c['px']
+        fu,fv=u&255,v&255; w00=(256-fu)*(256-fv)>>8; w01=fu*(256-fv)>>8; w10=(256-fu)*fv>>8; w11=256-w00-w01-w10
+        out=[]
+        for y in range(290):
+            i=((v>>8)+y)*tw+(u>>8)
+            for a,b,c_,d in zip(px[i:i+PW],px[i+1:i+PW+1],px[i+tw:i+tw+PW],px[i+tw+1:i+tw+PW+1]):
+                out.append(0xff000000|((a&0xff00ff)*w00+(b&0xff00ff)*w01+(c_&0xff00ff)*w10+(d&0xff00ff)*w11)>>8&0xff00ff
+                           |((a&0xff00)*w00+(b&0xff00)*w01+(c_&0xff00)*w10+(d&0xff00)*w11)>>8&0xff00)
+        return struct.pack(f'<{len(out)}I',*out)
+    def drawn():
+        n=len(m.draws); m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.art,m.canvas,0,0),gap=0)
+        assert len(m.draws)==n+1 and m.draws[-1][3]==(0,0,PW,290) and m.draws[-1][4]&1,m.draws[n:]
+        return m.draws[-1][5]
+    # 319 square: fits 290 and zooms to 319, a texel a pixel; 638 square: each texel 2 x 2 averaged;
+    # 1914 square: 6 x 6 sampled 3 x 3.
+    m.art_size=(319,319); m.pixels.clear(); paint_home(); c=tex_of(319,319)
+    assert m.nodes[m.art]['image']=='' and [signed(m.get(m.art+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[SPLIT,0,PW,290]
+    assert (c['u0'],c['v0'],c['rx'],c['ry'])==((290-PW)//2,0,29,29) and not drifts()
+    assert drawn()==framed(c,0) and ('bitmap_lock_buffer_for_write',) in [x[:1] for x in m.calls]
+    assert drawn()==framed(c,0) and ('bitmap_lock_buffer_for_write',) not in [x[:1] for x in m.calls]  # unmoved: not rendered again
+    paint_home(); m.advance(0); assert len(drifts())==1  # it arms on the next paint
+    m.calls.clear(); m.advance(TICK); assert set(invalidated())=={(m.home,(SPLIT,0,PW,290))},invalidated()
+    assert drawn()==framed(c,TICK)!=framed(c,0)  # a tick moves it by a fraction of a pixel
+    m.advance(1000-TICK); assert drawn()==framed(c,1000) and len(drifts())==1; passed()
+    m.advance(TICK); instructions[0]=0; assert drawn()==framed(c,1000+TICK); frame_cost=instructions[0]
+    # A stalled loop steps at most DRIFT_MAX_STEP_MS.
+    tid=next(t for t,v in m.timers.items() if v[1]==payload_syms['home_drift']); m.timers[tid]=(m.now+5000,*m.timers[tid][1:])
+    m.advance(5000); t=1000+TICK+O['DRIFT_MAX_STEP_MS']; assert drawn()==framed(c,t); passed()
+    # Another window on top, the screen off, the lock screen or a slide: the next step removes the
+    # timer and nothing repaints until Home paints again, resuming at the same phase with one timer.
+    for cover_up in (lambda: setattr(m,'top',np),lambda: m.byte(syms['g_backlight_status'],0),
+                     lambda: m.byte(syms['g_lockscreen_pageflag'],1),lambda: setattr(m,'animating',1)):
+        cover_up(); m.advance(TICK); assert not drifts()
+        m.calls.clear(); m.advance(2000); assert not invalidated()
+        paint_home(); assert not drifts()  # still not showing
+        m.top=m.home; m.byte(syms['g_backlight_status'],1); m.byte(syms['g_lockscreen_pageflag'],0); m.animating=0; added=0
+        for _ in range(5): m.calls.clear(); paint_home(); added+=sum(x[:2]==('timer_add',payload_syms['home_drift']) for x in m.calls)
+        assert len(drifts())==1 and added==1 and drawn()==framed(c,t)
+        m.advance(400); t+=400; assert drawn()==framed(c,t)
+    passed()
+    # Layout (Home or Theme changed) drops the timer and reloads the cover; a new cover keeps the phase,
+    # and a large one is box filtered.
+    m.call(address=payload_syms['coverflow_home_layout'],args=(0,0,0,0),gap=0); assert not drifts()
+    paint_home(); assert drawn()==framed(c,t); paint_home(); assert len(drifts())==1
+    m.art_size=(638,638); m.pixels.clear(); m.byte(syms['g_playcover_type'],2)
+    instructions[0]=0; paint_home(); filter_cost=instructions[0]; c=tex_of(638,638)
+    assert drawn()==framed(c,t) and len(drifts())==1
+    m.art_size=(1914,1914); m.pixels.clear(); m.byte(syms['g_playcover_type'],1)
+    instructions[0]=0; paint_home(); big_cost=instructions[0]; m.u.hook_del(pan_counter); c=tex_of(1914,1914); assert drawn()==framed(c,t); passed()
+    # A player cover too long for DRIFT_TEXELS stays still, even with a Coverflow thumbnail that
+    # could pan; neither arms the timer.
+    m.art_sizes={'externpic.jpg':(4000,100)}; m.byte(syms['g_playcover_type'],2); m.advance(TICK); paint_home(); m.advance(TICK); paint_home()
+    assert not drifts() and m.nodes[m.art]['image'].endswith('externpic.jpg') and m.get(m.art+O['W_W'])==290*40; passed()
+    print(f'Home pan on MIPS: {frame_cost} instructions a frame (every DRIFT_TICK_MS), {filter_cost} and {big_cost} to filter a 638 and a 1914 px cover once (payload only)')
 
 if variant=='ipod':
     # Accent (docs/internals.md#accent). The mapping: stock red blended with a neutral becomes the same
@@ -11397,6 +11497,13 @@ assert wake(DOWN,gap=100) and wake(UP,gap=50) and eaten()  # the double press; a
 assert not wake(DOWN,gap=O['WAKE_MS']) and not wake(UP) and not wake(DOWN,gap=O['WAKE_MS']) and not wake(UP)  # too slow
 assert wake(DOWN,O['KEY_PLAY'],gap=1000) and wake(UP,O['KEY_PLAY']) and wake(UP,O['KEY_NEXT'])  # media and wheel work dark
 m.byte(syms['g_backlight_status'],1); assert wake(DOWN,gap=1000) and wake(UP) and all(wake(t,RET,gap=1000) for t in (DOWN,LONG,UP)); passed()
+# A loose wheel's Centre under a held Return (chord_gate): the press is dropped whole, Return passes;
+# Centre held first, or long after Return's press (a lost release), passes.
+assert wake(DOWN,RET,gap=1000) and not wake(DOWN,gap=30) and not wake(DOWN,gap=258) and not wake(UP,gap=50) and wake(UP,RET)
+assert wake(DOWN,gap=1000) and wake(DOWN,RET,gap=30) and wake(UP) and wake(UP,RET)
+assert wake(DOWN,RET,gap=1000) and wake(DOWN,gap=600) and wake(UP) and wake(UP,RET)
+assert wake(DOWN,RET,gap=1000) and not wake(DOWN,gap=30) and wake(UP,RET) and wake(DOWN,gap=1000)  # its release lost
+assert wake(DOWN,gap=1000) and wake(UP); passed()
 # Standby's resume (STANDBY_WAKE, device_standby's awake_screen) stays dark in both modes, so the
 # resuming key acts as dark (#27); a wake press clears stock's resume guard, which would drop its release.
 from build import STANDBY_WAKE
@@ -11621,12 +11728,12 @@ for config,on in (({},0),({'WHEELQS':'0'},0),({'WHEELQS':'1'},1)):
 passed()
 # Its row opens stock's Boot volume page re-dressed (crossfade.c): titled, no switch, the percent
 # beside the slider, which runs 50-200 in tens. The wheel and +/- step 10%, live and saved, the
-# slider snaps to a ten, and Centre goes back (edit_key, as on Brightness).
+# slider snaps to a ten, a drag is live but saved once at its release, and Centre goes back (edit_key, as on Brightness).
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',stock_rows=3,sub=3)
 display_page=m.top; m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(-1)==[] and m.top!=display_page and m.nodes[m.top]['name']=='bootvol_page'
 assert m.nodes[m.title]['text']=='Wheel Sensitivity' and m.nodes[m.switch]['visible']==0 and m.nodes[m.vol]['text']=='50%'
-assert m.nodes[named(m,m.top,'view_bootvol')]['visible']==1
+assert m.nodes[named(m,m.top,'view_bootvol')]['visible']==1 and m.nodes[named(m,m.top,'view_bootvol')]['enable']==1  # touch (#140)
 def press(w,kind=O['EVT_CLICK']):
     m.calls=[]; f,ctx=m.handler(w,kind); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
     return [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
@@ -11638,11 +11745,20 @@ assert turn(O['KEY_PREV'])==[(50,*W)] and m.nodes[m.vol]['text']=='50%' and turn
 assert press(m.add)==[(60,*W)] and m.nodes[m.vol]['text']=='60%' and texts()[-1]=='Wheel Sensitivity: 60%'
 assert press(m.dec)==[(50,*W)] and press(m.dec)==[] and texts()[-1]=='Wheel Sensitivity: 50%'
 m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(130,*W)] and m.nodes[m.vol]['text']=='130%'
-m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[(200,*W)] and press(m.add)==[] and turn()==[]
+m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='200%'
+assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(200,*W)] and press(m.add)==[] and turn()==[]
+# A drag over several values saves once, at the release; one whose release sends nothing (stock: a
+# drag back to its start, an aborted press) is saved by the next step, which saves as ever.
+m.nodes[m.slider]['value']=127; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='130%'
+m.nodes[m.slider]['value']=163; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==[(160,*W)]
+m.nodes[m.slider]['value']=143; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='140%'
+assert press(m.dec)==[(130,*W)] and turn()==[(140,*W)]
+m.echoes=0; m.nodes[m.slider]['value']=157; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(160,*W)] and m.echoes==1  # its snap to 160 echoes, unsaved
+m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.add)==[(200,*W)]
 assert texts()[-1]=='Wheel Sensitivity: 200%' and m.nodes[m.switch]['visible']==0
 assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; passed()
 # Resume Songs' row opens the same page: no switch, Off below 20, then 20-120 min in fives, live and
-# saved; Centre goes back.
+# saved (a drag at its release); Centre goes back.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(5)==[] and m.nodes[m.top]['name']=='bootvol_page' and m.nodes[m.title]['text']=='Resume Songs'
@@ -11653,9 +11769,29 @@ assert press(m.dec)==[(30,*R)] and turn(O['KEY_PREV'])==[(25,*R)] and turn(O['KE
 assert turn(O['KEY_PREV'])==[(0,*R)] and m.nodes[m.vol]['text']=='Off' and texts()[5]=='Resume Songs: Off'
 assert turn(O['KEY_PREV'])==[] and press(m.add)==[(20,*R)]  # Off is the bottom; up from it is 20
 m.nodes[m.slider]['value']=63; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(65,*R)] and m.nodes[m.vol]['text']=='65 min'
-m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[(120,*R)] and turn()==[]
+m.nodes[m.slider]['value']=300; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='120 min'
+assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(120,*R)] and turn()==[]
 m.nodes[m.slider]['value']=15; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(0,*R)] and texts()[5]=='Resume Songs: Off'
-assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; passed()
+assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1
+# A page closed mid-drag saves the dragged value once, as it closes.
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
+assert click(5)==[]
+m.nodes[m.slider]['value']=53; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and texts()[5]=='Resume Songs: 55 min'
+assert press(m.top,O['EVT_DESTROY'])==[(55,*R)] and texts()[5]=='Resume Songs: 55 min'; passed()
+# Crossfade's row opens it with its switch: Off or XF_MIN..XF_MAX s. A drag saves both keys at its
+# release; the switch, +/- and the wheel save each change.
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
+assert click(3)==[] and m.nodes[m.title]['text']=='Crossfade' and m.nodes[m.vol]['text']=='Off'
+X=lambda on,sec: [(on,'Q2POD','XFADE'),(sec,'Q2POD','XFADESEC')]
+m.nodes[m.slider]['value']=7; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='7 s'
+m.nodes[m.slider]['value']=9; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and press(m.slider,O['EVT_VALUE_CHANGED'])==X(1,9)
+assert texts()[3]=='Crossfade: 9 s' and press(m.switch)==X(0,9) and m.nodes[m.vol]['text']=='Off'
+assert press(m.add)==X(1,1) and turn()==X(1,2)  # up from Off is XF_MIN, 1 s
+m.nodes[m.slider]['value']=0; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and m.nodes[m.vol]['text']=='Off'
+assert press(m.dec)==X(0,2)  # a drag whose release sent nothing: the next step saves it, unchanged or not
+passed()
 # Bluetooth's list (btmenu_rows, rebuilt on every search) gains Resume on connect and Control Device Volume
 # with Bluetooth on, right after its fourth row, Bluetooth Headset Volume Control, as stock's rows: no icon,
 # 78 high. Both off unless Q2POD RESUME / BTVOLLINK is 1 (docs/internals.md#resume-on-connect,

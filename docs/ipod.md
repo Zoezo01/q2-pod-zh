@@ -124,6 +124,30 @@ drops what a paint invalidates when the frame ends, so a 0 ms timer then repaint
 otherwise the new art and its fit would reach only the regions repainted later. `g_playcover_finishflag` remains
 stock-owned. Now Playing and Spotify's page keep their black background behind the art.
 
+In Split a cover pans slowly, as an iPod classic's menu art did: `home_tex` box filters it once
+(at most 4 × 4 samples a texel) to its fit zoomed `DRIFT_ZOOM_PCT` (110), and each axis runs its
+own linear ping-pong across that margin alone, from the old crop (`DRIFT_X_MS` 20 s, `DRIFT_Y_MS`
+26 s): about 1.5 pixels a second on a square cover, as iPod.js's recreation moves, and the cover's
+edges never show. The art widget then spans the panel with an empty image, and `home_paint` (from
+`coverflow_home_clip`, inside the panel's clip) draws one 188 × 290 frame `home_render` blends from
+the filtered cover at the pan's position in 1/256 px, bilinear. Whole-pixel steps at that speed
+read as a jerk every two thirds of a second, one axis at a time; the blend moves it by fractions
+of a pixel, as the iPod's own rendering does. A frame costs about 2.1 million instructions, five a
+second while Home shows. A cover whose zoomed fit passes `DRIFT_TEXELS` (four panels: wider
+than about 2:1, or taller than 5:1), a decode that is not 32-bit, the placeholder and Full stay still and unzoomed,
+drawn by the stock fill. Nothing is stored: the pan's phase counts only time shown, so leaving
+Home, a new cover or a Theme change resumes it where it was. One `DRIFT_TICK_MS` (200 ms, about 0.3 px a step; a late tick steps at most `DRIFT_MAX_STEP_MS`, 500 ms) timer
+runs it, armed from Home's paint only while Home is the top window and not sliding, the screen is
+lit and the lock screen is off; its next step after any of those changes removes it, and
+`coverflow_home_layout` (Home, Theme, a new Home window) removes it at once. A step is capped at
+`DRIFT_MAX_STEP_MS`, so a stalled loop never jumps. A step invalidates only the panel, and a paint
+renders the frame again only once the pan has moved. It pans while paused too. Not done: the
+iPod's random slideshow of library covers and its crossfades (the library's thumbnails are too
+small for a 290 px panel, so each change would decode a full cover), and Light Mode's paper behind
+a transparent cover follows only the next cover change. The timer trusts `home.win` as Home's
+identity, as the art's paint always has: Home is only replaced through `coverflow_home`, which
+stops the timer first.
+
 ## Status bar and clock
 
 `systembar_showface` (`0x52f610`, run by `system_bar_init` and then a 1 s widget
