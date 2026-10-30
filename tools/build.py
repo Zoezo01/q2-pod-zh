@@ -10,18 +10,18 @@ ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 # the ZIP it came in (-- with no ZIP, this is the only input build() accepts).
 TAR_SHA = '0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.5.5'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.5.7'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
 TAG = 'V' + VERSION.replace('.', '')
-# The Chinese fork's iPod build carries its own edition letter, H: the updater refuses only a literal
-# identical to the installed one (docs/building.md), so V155I (upstream's English 1.5.5) would be
-# turned away by a player already on it, while V155H installs over it and over stock V1.32 in one
-# flash. A later Chinese build moves on to I, J…, since a player already on H would turn H away.
-# --dev still numbers builds.
-VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'H'}
+# The Chinese fork's iPod build carries its own edition letter, J: the updater refuses only a literal
+# identical to the installed one (docs/building.md), so V157I (upstream's English 1.5.7) would be
+# turned away by a player already on it, while V157J installs over it and over stock V1.32 in one
+# flash. A later Chinese build moves on to K, L…, since a player already on J would turn J away.
+# I is skipped: upstream's English build took it at 5.7. --dev still numbers builds.
+VERSIONS = {'stock': TAG + 'S', 'ipod': TAG + 'J'}
 
 def dev_tag(number, edition):
     """--dev build number's tag: V and three base-36 digits, the edition lowercase (V00Ai), so no
@@ -258,6 +258,9 @@ BT_SILENCE_SITES = ((0x41465c, 0x8e460030, 'j', 'timeout'), (0x414684, 0x0000282
 # platform_init's crash watchdog forks pgrep every 2 s; 10 s is still quick to reboot a dead UI.
 WATCHDOG = 'usr/bin/checkappprocess.sh'
 WATCHDOG_SLEEP = (b'\tsleep 2\n', b'\tsleep 10\n')
+# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) starts off.
+DEFAULT_CONFIG = 'release/assets/default/raw/config.ini'
+COVERMODE = (b'\nCOVERMODE=1\n', b'\nCOVERMODE=0\n')
 # toolsSetRtcTime's command, with its padding; -u keeps the RTC in UTC. See docs/internals.md#clock.
 RTC_WRITE = (b'hwclock -w\0\0', b'hwclock -wu\0')
 # network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x37133d): stock turns
@@ -883,6 +886,7 @@ FUNCTIONS = {
  'input_method_request': ('int', 'void *, void *'),
  'widget_animator_pause': ('int', 'void *'),
  'widget_animator_destroy': ('int', 'void *'),
+ 'easing_get': ('void *', 'int'),  # Coverflow's glides set a reused animator's easing
  'canvas_get_clip_rect': ('int', 'void *, void *'),
  'canvas_set_clip_rect': ('int', 'void *, const void *'),
  'canvas_set_fill_color': ('int', 'void *, unsigned'),
@@ -1575,6 +1579,9 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
     s90play = s90play.replace(*BOOT_HOOK)
     check(s90play.count(LOG_HOOK[0]) == 1, 'Unexpected demo loop')
     (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK) if dev else s90play)
+    config = cat(DEFAULT_CONFIG)
+    check(config.count(COVERMODE[0]) == 1, 'Unexpected default config.ini')
+    (out/'config.ini').write_bytes(config.replace(*COVERMODE))
     s11logo = cat(S11LOGO)
     check(s11logo.count(LOGO_HOOK[0]) == 1, 'Unexpected S11logo_display_shell')
     (out/'S11logo').write_bytes(s11logo.replace(*LOGO_HOOK))
@@ -1592,7 +1599,7 @@ def build(zip_path, out, logo, ipod=False, dev=False, repo=REPO, aic_idle_wait=T
     for path, src in ((b'release/bin/demo', out/'demo'), (b'usr/bin/hciplayer', out/'peq/hciplayer'),
                       (BLUEALSA.encode(), out/'bluealsa'), (WATCHDOG.encode(), out/'watchdog'),
                       (S90PLAY.encode(), out/'S90play'), (S11LOGO.encode(), out/'S11logo'),
-                      (BLUEALSA2.encode(), out/'bluealsa2'),
+                      (BLUEALSA2.encode(), out/'bluealsa2'), (DEFAULT_CONFIG.encode(), out/'config.ini'),
                       (LOGO.encode(), logo)):
         p = swap_inode(p, path, src)
     aic_notifier = None

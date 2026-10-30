@@ -302,6 +302,62 @@ int peq_open(af_instance *af) {
     return 1;
 }
 
+#ifndef PEQ_HOST
+/* Bluetooth's resampler across a gapless change (docs/internals.md#bluetooth-resampler). ALSA runs at
+ * 48 kHz there, so for any other rate the player appends lavcresample (af_info at 0x8a4540), a new
+ * instance each file. Its SwrContext holds the last half filter of input back until more comes:
+ * freed with the instance (0x4ac534), that never plays, and the next file arrives about 10 frames
+ * early, a click. An instance freed after a block within XF_LEAD_S of its track's end (read here,
+ * as the PEQ filter is not in the chain with the EQ off from boot) keeps its context here; the next
+ * one swaps it for its own fresh one on its first block, if both were set up alike (ctx_*, what
+ * stock's reinit compares, and channels) and under CARRY_STALE_NS later.
+ * ponytail: as carry, a skip in a track's last two seconds carries too. */
+typedef struct {
+    void *swr, *in, *tmp;
+    int alloc[2], filter[3];
+    double cutoff;
+    char ctx[32]; /* ctx_out_rate, ctx_in_rate, filter size, phase shift, linear (+pad), ctx_cutoff */
+} lavc_resample;
+_Static_assert(sizeof(lavc_resample) == 0x48 && __builtin_offsetof(lavc_resample, ctx) == 0x28, "lavcresample ABI");
+#define SWR_FREE ((void (*)(void **))0x41e2d0u)
+static struct { void *swr; char ctx[32]; int nch; long long at; } rs;
+static lavc_resample *rs_last; /* the instance that resampled the last block */
+static long long rs_end;       /* now_ns of that block if near its track's end, else 0 */
+static af_data *rs_play(af_instance *af, af_data *data) {
+    lavc_resample *s = af->setup;
+    if (s != rs_last) {
+        void *swr = rs.swr;
+        rs.swr = 0, rs_last = s;
+        if (swr && rs.nch == af->data->nch && !memcmp(rs.ctx, s->ctx, sizeof rs.ctx) &&
+            now_ns() - rs.at < CARRY_STALE_NS) {
+            void *fresh = s->swr;
+            s->swr = swr, swr = fresh;
+        }
+        SWR_FREE(&swr);
+    }
+    double pts = decoded();
+    rs_end = LENGTH > 0 && pts >= 0 && pts > LENGTH - XF_LEAD_S ? now_ns() : 0;
+    return ((af_data * (*)(af_instance *, af_data *))0x4ac35cu)(af, data);
+}
+static void rs_uninit(af_instance *af) {
+    lavc_resample *s = af->setup;
+    if (s && s == rs_last) {
+        rs_last = 0;
+        if (rs_end && now_ns() - rs_end < CARRY_STALE_NS) {
+            SWR_FREE(&rs.swr);
+            rs.swr = s->swr, s->swr = 0, rs.nch = af->data->nch, rs.at = now_ns();
+            memcpy(rs.ctx, s->ctx, sizeof rs.ctx);
+        }
+    }
+    ((void (*)(af_instance *))0x4ac534u)(af);
+}
+int rs_open(af_instance *af) {
+    int r = ((int (*)(af_instance *))0x4ac2c0u)(af);
+    af->play = rs_play, af->uninit = rs_uninit;
+    return r;
+}
+#endif
+
 /* Exact VBR MP3 seeking (docs/internals.md#large-mp3s). A Xing header in the first frame h (n bytes)
  * gives the track length and a 100-point table of how far into the file each 1% of it starts. For
  * second t, *frac gets that place as a fraction of the file after the frame, read off the table

@@ -1,5 +1,18 @@
 # Changelog
 
+- **1.5.7**:
+  - Buttons: a Centre press made while the top button (Back) is held is ignored, so a loose wheel that closes both on one press only goes back.
+  - Home: in Split, the album art pans smoothly instead of moving in small steps.
+  - EQ: Simple has a **Presets** button, between the switch and Reset, which is now a small **R** box. It opens Advanced's stock presets (Pop, Rock and the rest). A preset picked there plays at once in Advanced, and Simple turns off. While a preset or Advanced plays, Simple's switch shows the preset's name and the sliders are dimmed. Tapping the switch then turns the EQ off. Moving a slider turns Simple back on.
+  - Coverflow: swipe the covers. They follow your finger, glide on after a flick and slow to a stop on a cover. Tap a side cover to bring it to the middle, tap the middle one to open it, and touch the covers while they move to stop them. An artist's albums stretch a little past either end. The album name now changes as each cover passes the middle.
+  - Coverflow: an album's song list takes taps and swipes. A tap plays the song, and a swipe up or down scrolls a long list. Before, only the wheel worked there.
+  - Settings: the slider and the minus and plus buttons on Resume Songs, Crossfade and Wheel Sensitivity work by touch again. They only worked with the wheel while Default Volume was off.
+
+- **1.5.6**:
+  - Now Playing: Enlarged Album Art (10s wait) is off by default. The new default applies after a reset or on a new setup; a saved setting is kept.
+  - Home: in Split, the album art drifts slowly across its panel, as on an iPod classic. It moves only while Home is on screen.
+  - Bluetooth: gapless changes no longer click. For songs not at 48 kHz, the Q2 dropped about 0.2 ms of audio at every change between songs; it now plays through.
+
 - **1.5.5**:
   - Bluetooth: skipping a track no longer crackles. The Q2 sent the headset nothing for about 0.4 s during a skip, so its buffer ran dry and the next song played on with it near-empty. After 0.1 s it now keeps the stream going with silence until the next song starts.
   - Search: in Light Mode, the letter you are typing in the search box is readable. It was white on light blue.

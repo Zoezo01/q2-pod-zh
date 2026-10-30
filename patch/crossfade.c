@@ -24,6 +24,7 @@
 static struct {
     int read, on, seconds, done, key[4];
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs */
+    int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
     int mono_read, mono, swap_read, swap, mqa_read, mqa;
     volatile int *flag, *mono_flag, *swap_flag;
@@ -205,8 +206,11 @@ static int value(void) {
 }
 static const int steps[] = { 1, 10, 5 }; /* a tick or +/-, by xf.ctx */
 
-/* The page and the row from xf, and the choice saved. */
+/* The page and the row from xf, and the choice saved: during a drag, at its release (slid). */
 static void refresh(int save) {
+    if (save && xf.sliding) xf.unsaved = 1, save = 0;
+    if (save) xf.unsaved = 0;
+    if (save && xf.ctx == 1) write_int_config(wheel_pct(), "Q2POD", "WHEELSENSITIVITY");
     if (save && xf.ctx == 2) write_int_config(xf.rs_min, "Q2POD", "RESUMEMIN");
     if (save && !xf.ctx) {
         write_int_config(xf.on, "Q2POD", "XFADE");
@@ -223,14 +227,18 @@ static void refresh(int save) {
     else if (xf.ctx == 2)
         tk_snprintf(t, sizeof t, xf.rs_min ? "%d 分钟" : "关闭", xf.rs_min);
     else {
-        tk_snprintf(t, sizeof t, xf.on ? "%d s" : "关闭", xf.seconds);
+        tk_snprintf(t, sizeof t, xf.on ? "%d 秒" : "关闭", xf.seconds);
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
     widget_set_text_utf8(xf.label, t);
-    if (widget_get_prop_int(xf.slider, "value", 0) != value()) slider_set_value(xf.slider, value());
+    if (widget_get_prop_int(xf.slider, "value", 0) != value()) {
+        xf.setting = 1; /* its value-changed is no release */
+        slider_set_value(xf.slider, value());
+        xf.setting = 0;
+    }
 }
 
-static void set_value(int n) {
+static void take(int n) {
     if (xf.ctx == 2) {
         n = n < RS_MIN ? 0 : n > RS_MAX ? RS_MAX : (n + 2) / 5 * 5; /* the nearest five */
         if (n == resume_min()) return;
@@ -239,8 +247,9 @@ static void set_value(int n) {
         return;
     }
     if (xf.ctx) {
-        wheel_set_pct(n); /* rounds, clamps and saves */
-        refresh(0);
+        int was = wheel_pct();
+        wheel_set_pct(n); /* rounds and clamps */
+        refresh(wheel_pct() != was); /* and snaps the slider to the ten */
         return;
     }
     n = n < 0 ? 0 : n > XF_MAX ? XF_MAX : n;
@@ -250,22 +259,36 @@ static void set_value(int n) {
     refresh(1);
 }
 
+/* n, held: a finger dragging the slider, whose values save at its release. Anything else (the
+ * release, the wheel, +/-) saves, a held value left unsaved too: stock's slider sends no change
+ * for a drag back to its start or an aborted press, so a drag can end unseen. */
+static void set_value(int n, int held) {
+    xf.sliding = held;
+    take(n);
+    if (!held && xf.unsaved) refresh(1);
+}
+
 static int toggle(void *ctx, void *event) {
     if (xf.ctx) return 0;
+    xf.sliding = 0;
     xf.on = !xf.on;
     refresh(1);
     return 0;
 }
 static int step(void *ctx, void *event) {
-    set_value(value() + (int)(long)ctx * steps[xf.ctx]);
+    set_value(value() + (int)(long)ctx * steps[xf.ctx], 0);
     return 0;
 }
+/* A drag's values (ctx 1) show and play at once; the release (ctx 0) saves the last. */
 static int slid(void *ctx, void *event) {
-    set_value(widget_get_prop_int(xf.slider, "value", value()));
+    if (!xf.setting) set_value(widget_get_prop_int(xf.slider, "value", value()), ctx != 0);
     return 0;
 }
 static int gone(void *ctx, void *event) {
-    if (xf.page == ctx) xf.page = 0, xf.ctx = 0;
+    if (xf.page != ctx) return 0;
+    xf.sliding = 0;
+    if (xf.unsaved) refresh(1); /* a release never seen */
+    xf.page = 0, xf.ctx = 0;
     return 0;
 }
 
@@ -299,13 +322,16 @@ int xfade_open(void *ctx, void *event) {
     widget_on(xf.sw, EVT_CLICK, toggle, 0);
     widget_on(xf.dec, EVT_CLICK, step, (void *)-1L);
     widget_on(xf.add, EVT_CLICK, step, (void *)1L);
-    widget_on(xf.slider, EVT_VALUE_CHANGING, slid, 0);
+    widget_on(xf.slider, EVT_VALUE_CHANGING, slid, (void *)1L);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
     widget_set_text_utf8(title, mode == 2 ? "断点续播"
                                 : wheel   ? "滚轮灵敏度"
                                           : "交叉淡化");
-    widget_set_visible(xf.view, 1, 0); /* stock shows it only while Boot volume's switch is on */
+    /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
+     * slider and +/- (#140). */
+    widget_set_visible(xf.view, 1, 0);
+    widget_set_enable(xf.view, 1);
     if (mode) widget_set_visible(xf.sw, 0, 0);
     slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);
     slider_set_max(xf.slider, mode == 2 ? RS_MAX : wheel ? 200 : XF_MAX);
@@ -336,7 +362,7 @@ int xfade_key(void *top, unsigned key) {
         return press;
     }
     if (key != KEY_NEXT && key != KEY_PREV) return 0;
-    set_value(value() + (key == KEY_NEXT ? 1 : -1) * steps[xf.ctx]);
+    set_value(value() + (key == KEY_NEXT ? 1 : -1) * steps[xf.ctx], 0);
     return 1;
 }
 

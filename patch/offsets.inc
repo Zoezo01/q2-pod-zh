@@ -216,6 +216,17 @@ static inline int arc_out(int r, int y) {
  * (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
+/* Split's cover pans (docs/ipod.md#home): zoomed DRIFT_ZOOM_PCT, each axis a linear ping-pong of
+ * its own period across the zoom's margin (about 1.5 px/s on a square cover, as iPod.js's), drawn
+ * at sub-pixel positions every DRIFT_TICK_MS, a step at most DRIFT_MAX_STEP_MS. A cover whose zoomed
+ * fit passes DRIFT_TEXELS (four panels) stays still. Tuned by eye; 2 x DRIFT_X_MS x DRIFT_Y_MS must
+ * fit in 32 bits. */
+#define DRIFT_ZOOM_PCT 110
+#define DRIFT_X_MS 20000
+#define DRIFT_Y_MS 26000
+#define DRIFT_TICK_MS 200
+#define DRIFT_MAX_STEP_MS 500 /* 2.5 ticks: a late tick keeps its time */
+#define DRIFT_TEXELS 218080 /* four panels: 4 x 188 x 290 */
 #define HOME_CLASSIC_ROW 369
 #define HOME_TOP 8 /* Minimal's decorative inset; Classic starts below the status bar. */
 #define HOME_CHEVRON_SHIFT 15
@@ -443,6 +454,8 @@ static inline int arc_out(int r, int y) {
 #define ANIM_DURATION 0x20
 #define ANIM_X_TO 0x60
 #define SLIDE_EASING 8          /* stock scroll_to easing */
+#define ANIM_EASING 0x38 /* widget_animator_init (0x665eb4) stores easing_get(type) here */
+#define EASE_CUBIC_OUT 5 /* AWTK easing_type_t: starts at 3x the mean speed, then decelerates */
 #define EVT_ANIM_END 0x125
 
 /* Play/Pause hold queue menu (docs/internals.md). AWTK input_device_status lives at
@@ -570,6 +583,16 @@ static inline int arc_out(int r, int y) {
 #define CF_REFLECT_TOP (IPOD ? 48 : 64)
 #define CF_STRIDE 110
 #define CF_TEXT_Y 212 /* the album caption's top, under the frame; the artist follows */
+/* Touch on the covers (coverflow.c, docs/internals.md#coverflow-touch) */
+#define CF_DRAG_PX 90      /* finger travel per album: about the centre cover's own on screen */
+#define CF_SLOP 8          /* px a touch moves before it is a drag, not a tap */
+#define CF_PROJECT_MS 400  /* a flick's reach: the finger's speed carried on for this long */
+#define CF_FLICK 250       /* px/s: a release this fast moves on at least to the next cover */
+#define CF_STILL_MS 60     /* a finger resting this long before it lifts throws nothing */
+#define CF_VMAX 6000       /* px/s, the fastest flick counted: about 27 albums' glide */
+#define CF_GLIDE_MAX 1400  /* ms, the longest glide */
+#define CF_SETTLE_MS 280   /* a release with no flick settles on the nearest cover */
+#define CF_TAP_MS 320      /* a tapped side cover's glide to the centre */
 /* Photos (patch/photos.c, docs/internals.md#photos): under a 48px title, PH_COLS columns of
  * PH_TILE_W x PH_TILE_H tiles from x PH_GRID_X, three whole rows in the 240px below it, each a
  * thumbnail of at most PH_THUMB_W x PH_THUMB_H centred in its tile, so the selection shows round

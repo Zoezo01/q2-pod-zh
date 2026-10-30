@@ -1092,12 +1092,16 @@ def eq3_captures(tmp, out, font):
         keys = lambda *k: [ui.shim_e3_key(x) for x in k]
         keys(CENTRE, *[NEXT] * 6, CENTRE, NEXT, CENTRE, *[PREV] * 4, CENTRE, NEXT, CENTRE, *[NEXT] * 8, CENTRE, PREV, PREV)
         shot(f'{theme}-off')  # Low +3, Mid -2, High +4; Low selected; 3EQ off
-        keys(PREV, CENTRE, NEXT, NEXT, CENTRE, PREV)
+        keys(PREV, PREV, PREV, CENTRE, *[NEXT] * 4, CENTRE, PREV)
         shot(f'{theme}-on-adjusting')  # 3EQ on, Mid being turned to -2.5 dB
-        keys(CENTRE, NEXT, NEXT)
+        keys(CENTRE, PREV, PREV)
         shot(f'{theme}-on-reset-selected')
-        keys(*[PREV] * 5)
+        keys(PREV)
+        shot(f'{theme}-on-presets-selected')
+        keys(PREV, PREV)
         shot(f'{theme}-tabs-selected')
+        keys(NEXT, NEXT, CENTRE); ui.shim_run(); assert ui.shim_click(b'Rock', 1)
+        shot(f'{theme}-preset')  # Rock picked from Presets: PEQ plays, the sliders dimmed
         ui.shim_e3_close()
 
 def eq3_editor_check(lib, ui, tmp):
@@ -1119,13 +1123,16 @@ def eq3_editor_check(lib, ui, tmp):
     before = active.read_bytes(); peq = bytes(state().peq)
     assert state().mode == EQ_PEQ and ui.shim_flag() == 1
     assert ui.shim_e3_open() == 0 and title() == '' and active.read_bytes() == before
-    # The wheel picks Mid (from Low), Centre takes it, the wheel turns it in 0.5 dB steps: one save
-    # timer for the run, and nothing written until it fires. 3EQ stays off; PEQ keeps playing.
-    timers = ui.shim_timers()
-    keys(NEXT, CENTRE, NEXT, NEXT, NEXT, NEXT)
+    # The wheel picks Mid (from Low) and Centre takes it: over a playing PEQ, 3EQ takes over at once
+    # and PEQ's preset is kept. The wheel turns it in 0.5 dB steps: one save timer for the run, and
+    # nothing written until it fires.
+    keys(NEXT, CENTRE); s = state()
+    assert s.mode == EQ_3 and bytes(s.peq) == peq and ui.shim_flag() == 1
+    before, timers = active.read_bytes(), ui.shim_timers()
+    keys(NEXT, NEXT, NEXT, NEXT)
     assert ui.shim_timers() == timers + 1 and active.read_bytes() == before and ui.shim_pending()
     ui.shim_run(); s = state()
-    assert gains(s) == [0, 2, 0] and s.eq3.bands[1].frequency == 1750 and s.mode == EQ_PEQ and bytes(s.peq) == peq
+    assert gains(s) == [0, 2, 0] and s.eq3.bands[1].frequency == 1750 and s.mode == EQ_3 and bytes(s.peq) == peq
     assert abs(s.eq3.preamp + 2) < .05 and ui.shim_flag() == 1  # headroom for the boost
     # Below zero Mid moves to 900 Hz; Centre ends the adjustment and saves at once.
     keys(*[PREV] * 7); assert gains() == [0, 2, 0]
@@ -1135,19 +1142,19 @@ def eq3_editor_check(lib, ui, tmp):
     # Return ends the adjustment without leaving; the limits hold.
     backs = ui.shim_backs(); keys(CENTRE, *[NEXT] * 20); ui.shim_e3_return()
     assert gains() == [0, -1.5, 6] and ui.shim_backs() == backs and title() == ''
-    # The switch: 3EQ on turns PEQ off and keeps it; the indicator stays on.
-    keys(PREV, PREV, PREV, CENTRE)
+    # The switch, from High past R and Presets: 3EQ is on, PEQ off and kept; the indicator stays on.
+    keys(*[PREV] * 5)
     s = state(); assert s.mode == EQ_3 and bytes(s.peq) == peq and ui.shim_flag() == 1 and title() == ''
     e = Preset(); assert lib.peq_load_active(C.byref(e)) and bytes(e) == bytes(s.eq3) and e.bypass == 0
     # While on, adjustments are heard as they are saved (here at the Centre that ends one).
-    keys(NEXT, CENTRE, NEXT, CENTRE); assert gains() == [0.5, -1.5, 6] and state().mode == EQ_3
+    keys(NEXT, NEXT, NEXT, CENTRE, NEXT, CENTRE); assert gains() == [0.5, -1.5, 6] and state().mode == EQ_3
     # Off from here keeps the 3EQ's preamp playing until the page closes; the indicator goes off.
-    keys(PREV, CENTRE); s = state()
+    keys(PREV, PREV, PREV, CENTRE); s = state()
     assert (s.mode, s.hold) == (EQ_OFF, 1) and ui.shim_flag() == 0 and ui.shim_eqflag() == 0
     assert lib.peq_load_active(C.byref(e)) and (e.bypass, e.count) == (0, 0) and e.preamp == s.eq3.preamp < 0
     keys(CENTRE); s = state(); assert (s.mode, s.hold) == (EQ_3, 0) and ui.shim_flag() == 1 and ui.shim_eqflag() == 1
-    # Reset zeroes the gains and keeps the mode.
-    keys(*[NEXT] * 4, CENTRE); s = state(); assert gains(s) == [0, 0, 0] and s.mode == EQ_3 and s.eq3.preamp == 0
+    # Reset (R, past Presets) zeroes the gains and keeps the mode.
+    keys(NEXT, NEXT, CENTRE); s = state(); assert gains(s) == [0, 0, 0] and s.mode == EQ_3 and s.eq3.preamp == 0
     # Touch: a press on a slider takes it and sets the gain under the finger; the drag follows in
     # 0.5 dB steps; lifting saves. The page is 290 high: travel 138..230, 0 dB at 184.
     assert ui.shim_e3_touch(0x100, 62, 138) == 0 and ui.shim_e3_touch(0x102, 62, 100) == 0
@@ -1156,19 +1163,19 @@ def eq3_editor_check(lib, ui, tmp):
     assert gains() == [1, 0, 0] and not ui.shim_pending()
     ui.shim_e3_touch(0x100, 312, 230); ui.shim_e3_touch(0x104, 312, 230); assert gains() == [1, 0, -6]
     ui.shim_e3_touch(0x102, 312, 138); assert gains() == [1, 0, -6]  # no drag after the lift
-    ui.shim_e3_touch(0x100, 300, 70); assert gains() == [0, 0, 0]  # Reset
+    ui.shim_e3_touch(0x100, 340, 70); assert gains() == [0, 0, 0]  # Reset
     ui.shim_e3_touch(0x100, 50, 70); assert state().mode == EQ_OFF  # the switch
     ui.shim_e3_touch(0x100, 50, 70); assert state().mode == EQ_3
     # A failed save says so and keeps the last good record; the next one writes the pending gains.
     good = active.read_bytes(); (active.parent/'peq-active.tmp').mkdir()
-    keys(NEXT, CENTRE, NEXT, CENTRE)
+    keys(NEXT, NEXT, NEXT, CENTRE, NEXT, CENTRE)
     assert title() == '保存失败，均衡器未变' and active.read_bytes() == good
     ui.shim_tab_touch(300)
     assert title() == '保存失败，均衡器未变' and active.read_bytes() == good
     (active.parent/'peq-active.tmp').rmdir()
     keys(CENTRE, CENTRE); assert gains() == [0.5, 0, 0] and title() == ''
     # Return leaves; leaving with Off held lets the preamp go.
-    keys(PREV, CENTRE); assert state().hold == 1
+    keys(PREV, PREV, PREV, CENTRE); assert state().hold == 1
     backs = ui.shim_backs(); ui.shim_e3_return(); assert ui.shim_backs() == backs + 1
     ui.shim_e3_close(); s = state(); assert (s.mode, s.hold) == (EQ_OFF, 0)
     assert lib.peq_load_active(C.byref(e)) and e.bypass == 1 and ui.shim_flag() == 0
@@ -1176,12 +1183,13 @@ def eq3_editor_check(lib, ui, tmp):
     ui.shim_open(); assert ui.shim_tab_touch(300) and ui.shim_click('启用 Off'.encode(), 1); s = state()
     assert s.mode == EQ_PEQ and bytes(s.peq) == peq and gains(s) == [0.5, 0, 0] and ui.shim_flag() == 1
     assert ui.shim_tab_touch(50); ui.shim_close()
-    ui.shim_e3_open(); assert ui.shim_e3_touch(0x100, 50, 70) == 0 and state().mode == EQ_3  # and back
+    ui.shim_e3_open(); assert ui.shim_e3_touch(0x100, 50, 70) == 0 and (state().mode, state().hold) == (EQ_OFF, 0)  # shown on: off
+    assert ui.shim_e3_touch(0x100, 50, 70) == 0 and state().mode == EQ_3  # and back
     ui.shim_e3_close(); assert state().mode == EQ_3 and ui.shim_flag() == 1
     # The tabs: the wheel reaches the bar above Simple's switch, Centre opens Advanced with the wheel
     # still on the bar; past it the list's first row, and back. Neither tab changes what plays.
     before = active.read_bytes()
-    ui.shim_e3_open(); keys(PREV, PREV, CENTRE); ui.shim_run()
+    ui.shim_e3_open(); keys(*[PREV] * 4, CENTRE); ui.shim_run()
     assert ui.shim_click('启用 Off'.encode(), 2) and ui.shim_selection() == -1 and title() == ''
     keys(NEXT); assert ui.shim_selection() == 0
     assert not ui.shim_e3_key(NEXT)  # the list's own
@@ -1205,6 +1213,37 @@ def eq3_editor_check(lib, ui, tmp):
     ui.shim_e3_close()
     after.mode = EQ_PEQ; assert lib.eq_save(C.byref(after))
     before = active.read_bytes(); ui.peq_boot(); assert active.read_bytes() == before  # PEQ stays on
+    # Simple's Presets, between the switch and R: Advanced's Stock presets screen, Return back to Simple.
+    # A pick plays at once as PEQ, 3EQ off and its gains kept; the switch shows it on under its name and
+    # the sliders dim. A slider then turns 3EQ back on, PEQ's preset kept; the switch over a playing
+    # PEQ turns the EQ off, holding nothing. Leaving from Presets reopens on Simple.
+    ui.shim_text.restype = C.c_char_p
+    def label(i=1):
+        ui.shim_e3_paint(); r, px, c = (C.c_int * 4)(), C.c_uint(), C.c_uint()
+        return [ui.shim_text(i, r, C.byref(px), C.byref(c)).decode('latin-1') for i in range(ui.shim_texts())][i]  # code points < 256, a byte each
+    simple = lambda: not ui.shim_click(b'Enabled', 2) and not ui.shim_click(b'Rock', 2)  # no list
+    eq3 = gains(); after.mode = EQ_3; assert lib.eq_save(C.byref(after)); before = active.read_bytes()
+    ui.shim_e3_open(); assert label() == 'Presets'
+    keys(PREV, PREV, CENTRE); ui.shim_run(); assert ui.shim_click(b'Rock', 2) and not ui.shim_click(b'Stock presets', 2)
+    ui.shim_return(); assert simple() and active.read_bytes() == before
+    keys(CENTRE); ui.shim_run(); assert ui.shim_click(b'Rock', 1)
+    s = state(); assert simple() and (s.mode, s.hold) == (EQ_PEQ, 0) and s.peq.bands[0].gain == -2
+    assert gains(s) == eq3 and ui.shim_flag() == 1 and label(0) == 'Rock' and label() == 'Presets' and title() == ''
+    keys(NEXT, NEXT, CENTRE); s = state()  # Low
+    assert s.mode == EQ_3 and s.peq.bands[0].gain == -2 and label(0) == 'Enabled: On'
+    keys(CENTRE, PREV, PREV, CENTRE); ui.shim_run(); assert ui.shim_click(b'Classical', 1) and label(0) == 'Classical'
+    ui.shim_e3_touch(0x100, 50, 70); s = state()  # the switch
+    assert (s.mode, s.hold) == (EQ_OFF, 0) and label(0) == 'Enabled: Off' and ui.shim_flag() == 0
+    ui.shim_e3_touch(0x100, 230, 70); ui.shim_run(); assert ui.shim_click(b'Rock', 2)  # a tap on Presets
+    ui.shim_close(); ui.shim_open(); assert simple(); ui.shim_close()
+    # A saved preset applied in Advanced: the switch's name cut on a character boundary (byte 12 is ä's second).
+    presets = active.parent/'peq-presets'
+    for f in presets.glob('Batch *.peq'): f.unlink()
+    assert lib.peq_save(bytes(presets/'Kopfhörerbässe.peq'), C.byref(state().peq), 1) == 1
+    ui.shim_e3_open(); assert ui.shim_tab_touch(300)
+    assert ui.shim_click(b'Presets', 1) and ui.shim_click('Kopfhörerbässe.peq'.encode(), 1) and ui.shim_click(b'Apply changes', 1)
+    assert ui.shim_click(b'Enabled Off', 1) and state().mode == EQ_PEQ and ui.shim_tab_touch(50)
+    assert label(0) == 'Kopfhörerb'; ui.shim_e3_close()
     print('EQ Simple tab: entry without change, tabs, wheel and touch adjustment, coalesced saves, switch, held Off, reset, failed save and indicator passed.')
 
 # Drives patch/peq_player.c the way hciplayer's af chain does. Built 32-bit like the device,
