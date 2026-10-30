@@ -37,7 +37,7 @@ static void un_fill(int sel) {
     unsigned *idx = un.idx, n = un.n = playback_upcoming(idx, UP_NEXT_ROWS);
     un.hash = q ? queue_hash(q) : 0;
     void *view = un.view =
-        page_list(un.page, un.page, 0, n ? "View Queue" : "Nothing to play next", n, 64);
+        page_list(un.page, un.page, 0, n ? "查看队列" : "暂无待播歌曲", n, 64);
     char name[512];
     for (unsigned i = 0; i < n; i++) { /* the title over the artist, if tagged */
         void *t = deque_at(q, idx[i]);
@@ -53,7 +53,7 @@ void up_next(int (*closed)(void *, void *), int (*keyup)(void *, void *)) {
 /* A Play/Pause hold on a row (un_hold, deferred out of its dispatch): the row's track plays next
  * (playback_move) and the rows are taken again with it at row 0, the selection there. A row already
  * next stays there. A queue changed under the page, or a row no longer up next (played since),
- * takes the rows again and says "Queue changed"; a page gone or a row out of range does nothing. */
+ * takes the rows again and says "队列已更改"; a page gone or a row out of range does nothing. */
 static int un_move(const void *unused) {
     unsigned row = un.row, up[UP_NEXT_ROWS], n = playback_upcoming(up, UP_NEXT_ROWS), i = 0;
     void *q = P(mcl_pdeqplaylist, 0);
@@ -62,7 +62,7 @@ static int un_move(const void *unused) {
     while (i < n && up[i] != at) ++i;
     int stale = queue_hash(q) != un.hash || i == n || (i && playback_move(at) < 0);
     un_fill(0);
-    if (stale) toast("Queue changed");
+    if (stale) toast("队列已更改");
     return 0;
 }
 int un_hold(void *top) {

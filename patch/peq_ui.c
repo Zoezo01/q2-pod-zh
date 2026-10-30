@@ -234,7 +234,7 @@ static void follow_auto(void) {
 
 /* The Preamp row's and the picker's Auto. */
 static void auto_text(char *s, unsigned n) {
-    snprintf(s, n, "Auto (44.1: %.1f / 48: %.1f)", autos()[0], autos()[1]);
+    snprintf(s, n, "自动 (44.1: %.1f / 48: %.1f)", autos()[0], autos()[1]);
 }
 
 /* A Preamp pick sticks to the saved preset it was loaded from (its copy in PEQ_SAVED, never the
@@ -254,7 +254,7 @@ static int compare_names(const void *a, const void *b) { return strcmp(a, b); }
 static void list_files(const char *folder, const char *extension) {
     ui.count = 0;
     void *dir = opendir(folder);
-    if (!dir) { snprintf(ui.status, sizeof(ui.status), "Folder missing or unavailable"); return; }
+    if (!dir) { snprintf(ui.status, sizeof(ui.status), "文件夹不存在或不可用"); return; }
     struct dirent *entry;
     while ((entry = readdir(dir))) {
         const char *name = entry->d_name;
@@ -266,7 +266,7 @@ static void list_files(const char *folder, const char *extension) {
             void *names = calloc(capacity, 256);
             if (!names) {
                 ui.count = 0;
-                snprintf(ui.status, sizeof(ui.status), "Out of memory; cannot list presets");
+                snprintf(ui.status, sizeof(ui.status), "内存不足，无法列出预设");
                 break;
             }
             if (ui.count) memcpy(names, ui.names, ui.count * 256);
@@ -278,7 +278,7 @@ static void list_files(const char *folder, const char *extension) {
     }
     closedir(dir);
     if (ui.count) qsort(ui.names, ui.count, 256, compare_names);
-    if (!ui.count && !ui.status[0]) snprintf(ui.status, sizeof(ui.status), "No presets found");
+    if (!ui.count && !ui.status[0]) snprintf(ui.status, sizeof(ui.status), "未找到预设");
 }
 
 /* File name in ui.destination: sizeof skips PEQ_SAVED and its "/". */
@@ -302,22 +302,22 @@ checked:
     snprintf(old, sizeof old, "%.*s", (int)strlen(from) - 4, from);
     ui.screen = PRESETS;
     if (!*t || *t == '.' || *c)
-        snprintf(ui.status, sizeof(ui.status), "Name not allowed; preset kept");
+        snprintf(ui.status, sizeof(ui.status), "名称不可用，预设未改");
     else if (!strcmp(t, old)) return;
     else if (snprintf(to, sizeof to, PEQ_SAVED "/%s.peq", t), strcasecmp(t, old) && !access(to, 0))
-        snprintf(ui.status, sizeof(ui.status), "Name taken; preset kept");
+        snprintf(ui.status, sizeof(ui.status), "名称已存在，预设未改");
     else if (rename(ui.destination, to))
-        snprintf(ui.status, sizeof(ui.status), "Rename failed; preset kept");
+        snprintf(ui.status, sizeof(ui.status), "重命名失败，预设未改");
     else {
         if (!strcmp(ui.name, old)) snprintf(ui.name, sizeof(ui.name), "%s", t);
         if (!strcmp(ui.applied, old)) snprintf(ui.applied, sizeof(ui.applied), "%s", t);
-        snprintf(ui.status, sizeof(ui.status), "Renamed to %.100s", t);
+        snprintf(ui.status, sizeof(ui.status), "已重命名为 %.100s", t);
     }
 }
 
 /* Stock's genre presets, built in: reset_user_eq's table (modes 4-11), in dB over the ten default
  * bands. Picking one loads it into the editor as a saved preset does; nothing is written. */
-static const char stock_names[][10] = { "Pop", "Rock", "Dance", "Blues", "Metal", "Vocal", "Classical", "Jazz" };
+static const char stock_names[][10] = { "流行", "摇滚", "舞曲", "布鲁斯", "金属", "人声", "古典", "爵士" };
 static const signed char stock_gains[][10] = {
     { 3, 1, 0, -2, -4, -4, -2, 0, 1, 2 }, { -2, 0, 2, 4, -2, -2, 0, 0, 4, 4 },
     { -2, 3, 4, 1, -2, -2, 0, 0, 4, 4 },  { -2, 0, 2, 1, 0, 0, 0, 0, -2, -4 },
@@ -334,7 +334,7 @@ static void load_draft(peq_preset *p, const char *name, int length) {
     ui.dirty = 1;
     snprintf(ui.name, sizeof(ui.name), "%.*s", length, name);
     ui.screen = HOME;
-    snprintf(ui.status, sizeof(ui.status), "Preset loaded; choose Apply to activate");
+    snprintf(ui.status, sizeof(ui.status), "预设已载入，请选择应用以启用");
 }
 
 /* Search fits above T9's screen y=60 (page y=30), so opening the keyboard won't shift the page. */
@@ -361,7 +361,7 @@ static void save_candidate(int replace) {
     mkdir(PEQ_SAVED, 0700);
     int result = peq_save(ui.destination, &ui.candidate, replace);
     if (result == 2) { ui.previous = ui.screen; ui.screen = CONFIRM; }
-    else snprintf(ui.status, sizeof(ui.status), result ? "Preset saved; active EQ unchanged" : "Save failed; settings unchanged");
+    else snprintf(ui.status, sizeof(ui.status), result ? "预设已保存，当前均衡器未变" : "保存失败，设置未变");
 }
 
 /* The draft into the saved state under its name, playing if it shows On or on is set (Simple's
@@ -426,7 +426,7 @@ static int action(void *ctx, void *event) {
         s.mode = ui.draft.bypass ? EQ_PEQ : EQ_OFF;
         s.hold = 0;
         if (eq_commit(&s)) ui.draft.bypass = s.mode != EQ_PEQ;
-        else snprintf(ui.status, sizeof(ui.status), "Switch failed; EQ unchanged");
+        else snprintf(ui.status, sizeof(ui.status), "切换失败，均衡器未变");
     }
     else if (id == ENABLE) b->enabled = !b->enabled;
     else if (id == TYPE) b->type = (b->type + 1) % 3;
@@ -439,7 +439,7 @@ static int action(void *ctx, void *event) {
         if (*value < (k ? 0.1 : 20)) *value = k ? 0.1 : 20;
         if (*value > (k ? 10 : 20000)) *value = k ? 10 : 20000;
     } else if (id == APPLY) {
-        snprintf(ui.status, sizeof(ui.status), apply(0) ? "Applied" : "Apply failed; active EQ unchanged");
+        snprintf(ui.status, sizeof(ui.status), apply(0) ? "已应用" : "应用失败，当前均衡器未变");
     } else if (id == RESET) {
         /* The draft returns to peq_default; On/Off is live state, not part of the edit. */
         int bypass = ui.draft.bypass;
@@ -448,13 +448,13 @@ static int action(void *ctx, void *event) {
         follow_auto();
         ui.name[0] = 0;
         ui.dirty = 1;
-        snprintf(ui.status, sizeof(ui.status), "Reset; choose Apply to activate");
+        snprintf(ui.status, sizeof(ui.status), "已重置，请选择应用以启用");
     } else if (id == YES) {
         ui.screen = ui.previous;
         if (ui.screen != DELETES) save_candidate(1);
         /* Saved presets are copies; the active EQ and the editor draft are untouched. */
-        else if (unlink(ui.destination)) snprintf(ui.status, sizeof(ui.status), "Delete failed; preset kept");
-        else snprintf(ui.status, sizeof(ui.status), "Deleted %.100s; active EQ unchanged", deleting());
+        else if (unlink(ui.destination)) snprintf(ui.status, sizeof(ui.status), "删除失败，预设已保留");
+        else snprintf(ui.status, sizeof(ui.status), "已删除 %.100s，当前均衡器未变", deleting());
     } else if (id == CANCEL) ui.screen = ui.previous;
     else if (id < 256) {
         int file = ui.file_page * FILE_PAGE + id;
@@ -485,7 +485,7 @@ static int action(void *ctx, void *event) {
             peq_error error;
             snprintf(path, sizeof(path), PEQ_IMPORT "/%s", ui.names[file]);
             if (!peq_import_file(path, &ui.candidate, &error))
-                snprintf(ui.status, sizeof(ui.status), "Line %u: %s", error.line, error.reason);
+                snprintf(ui.status, sizeof(ui.status), "第 %u 行：%s", error.line, error.reason);
             else {
                 unsigned n = strlen(ui.names[file]) - 4;
                 snprintf(ui.destination, sizeof(ui.destination), PEQ_SAVED "/%.*s.peq", (int)n, ui.names[file]);
@@ -503,7 +503,7 @@ static int action(void *ctx, void *event) {
             snprintf(path, sizeof(path), PEQ_SAVED "/%s", ui.names[file]);
             peq_preset p;
             if (peq_load(path, &p)) load_draft(&p, ui.names[file], (int)strlen(ui.names[file]) - 4);
-            else snprintf(ui.status, sizeof(ui.status), "Cannot read preset; settings unchanged");
+            else snprintf(ui.status, sizeof(ui.status), "无法读取预设，设置未变");
         }
     }
     if (edit) { /* ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL and a picked gain */
@@ -520,7 +520,7 @@ static int action(void *ctx, void *event) {
         ui.tab = SIMPLE;
         ui.status[0] = 0;
         e3.focus = E3_PRESETS;
-        e3.status = ok ? 0 : "Apply failed; active EQ unchanged";
+        e3.status = ok ? 0 : "应用失败，当前均衡器未变";
     }
     if (screen != ui.screen) ui.file_page = 0;
     if (!ui.timer) ui.timer = timer_add(render, 0, 1);
@@ -580,61 +580,61 @@ static int render(const void *unused) {
     widget_set_prop_int(view, "yslidable", 1);
     widget_set_prop_int(view, "xslidable", 0);
     widget_set_prop_int(view, "_ringnav_index", ui.tabs && ui.screen == HOME ? -1 : selection);
-    char text[160], value[32];
+    char text[160], value[40]; /* Auto's two cuts with a three-byte 自动 need 33 bytes, not 31 */
     int n = 0;
-    static const char *const types[] = {"Peaking", "Low shelf", "High shelf"};
+    static const char *const types[] = {"峰值", "低架滤波", "高架滤波"};
     /* No Back row: Return steps back on every screen (keyup). */
     if (ui.screen == HOME) {
-        row(view, n++, ui.dirty ? "Apply changes" : "Nothing to apply", ui.dirty ? APPLY : -1);
-        row(view, n++, "Reset to defaults", RESET);
-        list_toggle(row(view, n++, "", BYPASS), "Enabled", !ui.draft.bypass);
+        row(view, n++, ui.dirty ? "应用更改" : "无待应用更改", ui.dirty ? APPLY : -1);
+        row(view, n++, "恢复默认设置", RESET);
+        list_toggle(row(view, n++, "", BYPASS), "启用", !ui.draft.bypass);
         /* Balance turns one side down: R 1.0 dB is the left 1 dB quieter. */
-        snprintf(value, sizeof(value), __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",
+        snprintf(value, sizeof(value), __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "居中",
                  ui.draft.balance > 0 ? "R" : "L", __builtin_fabs(ui.draft.balance));
-        row_dim(view, n++, "Balance", value, BALANCE, INTO);
+        row_dim(view, n++, "声道平衡", value, BALANCE, INTO);
         if (on_auto())
             auto_text(value, sizeof(value));
         else
             snprintf(value, sizeof(value), "%.1f dB", ui.draft.preamp);
-        void *shown = row_dim(view, n++, "Preamp", value, PREAMP, INTO);
+        void *shown = row_dim(view, n++, "前级增益", value, PREAMP, INTO);
         /* At 20px two double-digit cuts overrun the iPod's 280px column beside the caption and
          * chevron; at 16 the longest, -60.0 at both, leaves 6px (the stock font's widths). */
         if (on_auto()) widget_set_prop_int(shown, "style:normal:font_size", 16);
-        row_dim(view, n++, "Presets", ui.name[0] ? ui.name : 0, MENU, INTO); /* the draft's preset */
+        row_dim(view, n++, "预设", ui.name[0] ? ui.name : 0, MENU, INTO); /* the draft's preset */
         /* 16px band captions leave room for the gain and chevron, even at 20000 Hz on one channel. */
         for (int i = 0; i < PEQ_BANDS && (i < 10 || i <= ui.draft.count); ++i) {
             peq_band *b = &ui.draft.bands[i];
             snprintf(text, sizeof(text), "%d  %s %.0f Hz%s", i + 1, types[b->type], b->frequency,
                      (const char *[]){"", "", " L", " R"}[b->enabled]);
-            snprintf(value, sizeof(value), b->enabled ? "%+.1f dB" : "Off", b->gain);
+            snprintf(value, sizeof(value), b->enabled ? "%+.1f dB" : "关闭", b->gain);
             row_dim(view, n++, text, value, i, (b->enabled ? 0 : DIM) | INTO | SMALL);
         }
     } else if (ui.screen == BAND) {
         peq_band *b = &ui.draft.bands[ui.band];
         /* Imported missing bands already have valid defaults from peq_default. */
         if (ui.draft.count <= ui.band) ui.draft.count = ui.band + 1;
-        list_toggle(row(view, n++, "", ENABLE), "Band", b->enabled);
-        if (b->enabled) row_dim(view, n++, "Channels", (const char *[]){0, "Both", "Left", "Right"}[b->enabled], CHANNEL, 0);
-        row_dim(view, n++, "Type", types[b->type], TYPE, 0);
-        snprintf(value, sizeof(value), "%.0f Hz", b->frequency); row_dim(view, n++, "Frequency", value, FREQUENCY, INTO);
-        snprintf(value, sizeof(value), "%+.1f dB", b->gain); row_dim(view, n++, "Gain", value, GAIN, INTO);
+        list_toggle(row(view, n++, "", ENABLE), "频段", b->enabled);
+        if (b->enabled) row_dim(view, n++, "声道", (const char *[]){0, "双声道", "左声道", "右声道"}[b->enabled], CHANNEL, 0);
+        row_dim(view, n++, "类型", types[b->type], TYPE, 0);
+        snprintf(value, sizeof(value), "%.0f Hz", b->frequency); row_dim(view, n++, "频率", value, FREQUENCY, INTO);
+        snprintf(value, sizeof(value), "%+.1f dB", b->gain); row_dim(view, n++, "增益", value, GAIN, INTO);
         snprintf(value, sizeof(value), "%.2f", b->q); row_dim(view, n++, "Q", value, QUALITY, INTO);
     } else if (ui.screen == ADJUST) {
         /* Row 0 names the value; it and the centre button open the keyboard on the edit over the
          * title (below). */
-        snprintf(text, sizeof(text), ui.adjust == QUALITY ? "Band %d Q" : "Band %d Frequency (Hz)",
+        snprintf(text, sizeof(text), ui.adjust == QUALITY ? "频段 %d Q" : "频段 %d 频率 (Hz)",
                  ui.band + 1);
         row(view, n++, text, KEYBOARD);
         if (ui.adjust == QUALITY) snprintf(value, sizeof(value), "0.05");
         else snprintf(value, sizeof(value), "%d Hz", steps[ui.step]);
-        row_dim(view, n++, "Raise", value, RAISE, 0);
-        row_dim(view, n++, "Lower", value, LOWER, 0);
-        if (ui.adjust != QUALITY) row_dim(view, n++, "Step", value, STEP, 0);
+        row_dim(view, n++, "增加", value, RAISE, 0);
+        row_dim(view, n++, "减少", value, LOWER, 0);
+        if (ui.adjust != QUALITY) row_dim(view, n++, "步长", value, STEP, 0);
     } else if (ui.screen == PICK) {
         for (int i = 0; i < picks[ui.pick - BALANCE].rows; ++i) {
             double v = picks[ui.pick - BALANCE].first + picks[ui.pick - BALANCE].step * i;
             if (ui.pick == BALANCE) /* L 12.0 dB to R 12.0 dB */
-                snprintf(text, sizeof(text), i == 24 ? "Centre" : "%s %.1f dB", v < 0 ? "L" : "R", __builtin_fabs(v));
+                snprintf(text, sizeof(text), i == 24 ? "居中" : "%s %.1f dB", v < 0 ? "L" : "R", __builtin_fabs(v));
             else if (ui.pick == PREAMP && !i)
                 auto_text(text, sizeof(text));
             else snprintf(text, sizeof(text), "%+.1f dB", v);
@@ -642,34 +642,34 @@ static int render(const void *unused) {
         }
     } else if (ui.screen == NAMING) { /* the name in the edit over the title, as the value menu's,
                                          on the keyboard's letters */
-        snprintf(text, sizeof(text), "Rename %.*s", (int)strlen(deleting()) - 4, deleting());
+        snprintf(text, sizeof(text), "重命名 %.*s", (int)strlen(deleting()) - 4, deleting());
         row(view, n++, text, KEYBOARD);
     } else if (ui.screen == CONFIRM && ui.previous == DELETES) {
-        snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting()); row(view, n++, text, YES);
-        row(view, n++, "Cancel", CANCEL);
+        snprintf(text, sizeof(text), "删除 %.100s？确认", deleting()); row(view, n++, text, YES);
+        row(view, n++, "取消", CANCEL);
     } else if (ui.screen == CONFIRM) {
-        row(view, n++, "Replace existing preset? Confirm", YES);
-        row(view, n++, "Cancel replacement", CANCEL);
+        row(view, n++, "替换现有预设？确认", YES);
+        row(view, n++, "取消替换", CANCEL);
     } else if (ui.screen == STOCKS) {
         for (int i = 0; i < STOCK_N; ++i) row(view, n++, stock_names[i], i);
     } else if (ui.screen == SAVES) {
         for (int i = 0; i < 10; ++i) {
-            snprintf(text, sizeof(text), "Save as Manual %02d", i+1); row(view, n++, text, i);
+            snprintf(text, sizeof(text), "保存为 Manual %02d", i+1); row(view, n++, text, i);
         }
     } else {
         if (ui.screen == PRESETS) {
-            row_dim(view, n++, "Stock presets", 0, STOCK, INTO);
-            row_dim(view, n++, "Import from SD /EQ", 0, IMPORT, INTO);
-            row_dim(view, n++, "Save editor preset", 0, SAVE, INTO);
-            row_dim(view, n++, "Rename a preset", 0, RENAME, INTO);
-            row_dim(view, n++, "Delete a preset", 0, DELETE, INTO);
+            row_dim(view, n++, "内置预设", 0, STOCK, INTO);
+            row_dim(view, n++, "从 SD /EQ 导入", 0, IMPORT, INTO);
+            row_dim(view, n++, "保存编辑中的预设", 0, SAVE, INTO);
+            row_dim(view, n++, "重命名预设", 0, RENAME, INTO);
+            row_dim(view, n++, "删除预设", 0, DELETE, INTO);
         }
         list_files(ui.screen == IMPORTS ? PEQ_IMPORT : PEQ_SAVED, ui.screen == IMPORTS ? ".txt" : ".peq");
         int last = ui.count ? (ui.count - 1) / FILE_PAGE : 0;
         if (ui.file_page < 0) ui.file_page = 0;
         if (ui.file_page > last) { ui.file_page = last; selection = offset = 0; }
-        if (ui.file_page) row(view, n++, "Previous page", FILE_PREV);
-        if (ui.file_page < last) row(view, n++, "Next page", FILE_NEXT);
+        if (ui.file_page) row(view, n++, "上一页", FILE_PREV);
+        if (ui.file_page < last) row(view, n++, "下一页", FILE_NEXT);
         for (int i = 0, start = ui.file_page * FILE_PAGE; i < FILE_PAGE && start + i < ui.count; ++i)
             row(view, n++, ui.names[start + i], i);
     }
@@ -693,15 +693,15 @@ static int render(const void *unused) {
     text[0] = 0;
     if (ui.status[0]) snprintf(text, sizeof(text), "%s", ui.status);
     else if (ui.screen == BAND)
-        snprintf(text, sizeof(text), "Band %d", ui.band + 1);
-    else if (ui.screen == PICK && ui.pick == GAIN) snprintf(text, sizeof(text), "Band %d Gain", ui.band + 1);
+        snprintf(text, sizeof(text), "频段 %d", ui.band + 1);
+    else if (ui.screen == PICK && ui.pick == GAIN) snprintf(text, sizeof(text), "频段 %d 增益", ui.band + 1);
     else if (ui.screen == PICK)
-        snprintf(text, sizeof(text), ui.pick == PREAMP ? "Preamp" : "Balance");
+        snprintf(text, sizeof(text), ui.pick == PREAMP ? "前级增益" : "声道平衡");
     else if ((ui.screen == IMPORTS || ui.screen == PRESETS || ui.screen == DELETES || ui.screen == RENAMES) &&
              ui.count > FILE_PAGE)
-        snprintf(text, sizeof(text), "Presets %d/%d", ui.file_page + 1, (ui.count - 1) / FILE_PAGE + 1);
+        snprintf(text, sizeof(text), "预设 %d/%d", ui.file_page + 1, (ui.count - 1) / FILE_PAGE + 1);
     else if (ui.screen != HOME && ui.screen != ADJUST && ui.screen != NAMING)
-        snprintf(text, sizeof(text), "Presets");
+        snprintf(text, sizeof(text), "预设");
     widget_set_text_utf8(title, text);
     /* The value or name in an edit over the title, after it so a tap reaches the edit, as the
      * search fields': its bottom (page y 28) clears T9's top (page y 30), so the keyboard neither
@@ -951,7 +951,7 @@ static int e3_flush(void) {
     eq_load(&s);
     e3_preset(&s.eq3);
     if (!eq_save(&s)) {
-        e3.status = "Save failed; EQ unchanged"; /* kept dirty: the next edit tries again */
+        e3.status = "保存失败，均衡器未变"; /* kept dirty: the next edit tries again */
         return 0;
     }
     e3.dirty = 0;
@@ -988,7 +988,7 @@ static void e3_switch(int on) {
     s.mode = on ? EQ_3 : EQ_OFF;
     s.hold = !on && e3.on;
     if (!eq_commit(&s)) {
-        e3.status = "Switch failed; EQ unchanged";
+        e3.status = "切换失败，均衡器未变";
         return;
     }
     e3.on = on;
@@ -1109,13 +1109,13 @@ static void e3_paint(void *canvas) {
     char text[16];
     /* The switch names the preset playing: 12 bytes at most, cut on a UTF-8 boundary, at 16px past 9 */
     char preset[16];
-    int n = snprintf(preset, sizeof preset, "%s", ui.applied[0] ? ui.applied : "Advanced");
+    int n = snprintf(preset, sizeof preset, "%s", ui.applied[0] ? ui.applied : "高级");
     if (n > 12) {
         n = 12;
         while (n && (preset[n] & 0xc0) == 0x80) --n; /* preset[12] continues a character: drop it */
         preset[n] = 0;
     }
-    const char *const names[] = { peq ? preset : e3.on ? "Enabled: On" : "Enabled: Off", "Presets", "R" };
+    const char *const names[] = { peq ? preset : e3.on ? "启用：打开" : "启用：关闭", "预设", "R" };
     for (int i = 0; i < 3; ++i) {
         int x = e3_button[i][0], w = e3_button[i][1];
         e3_box(canvas, x, E3_BUTTONS, w, 40, e3.focus == E3_SWITCH + i ? 0x333333 : 0x1a1a1a);
@@ -1123,7 +1123,7 @@ static void e3_paint(void *canvas) {
         caption(canvas, names[i], x, E3_BUTTONS, w, 40, !i && peq && n > 9 ? 16 : 20, 0xffffffffu);
     }
     for (int i = 0; i < 3; ++i) {
-        static const char *const names[] = { "Low", "Mid", "High" };
+        static const char *const names[] = { "低频", "中频", "高频" };
         int x = 62 + 125 * i, y = e3_y(e3.gain[i]), focus = e3.focus == E3_LOW + i;
         if (focus) e3_box(canvas, x - 56, E3_SLIDERS, 112, e3_bottom() + 36 - E3_SLIDERS, 0x1a1a1a);
         caption(canvas, names[i], x - 56, E3_SLIDERS, 112, 28, 20, peq ? CF_GREY : 0xffffffffu);
@@ -1146,7 +1146,7 @@ static void tabs_paint(void *canvas) {
     for (int i = 0; i < 2; ++i) {
         int x = i ? 191 : 8, shown = i == !simple;
         if (focus && !shown) e3_box(canvas, x, 4, 176, 40, 0x333333);
-        caption(canvas, i ? "Advanced" : "Simple", x, 4, 176, 40, 20, shown ? 0xffffffffu : CF_GREY);
+        caption(canvas, i ? "高级" : "简单", x, 4, 176, 40, 20, shown ? 0xffffffffu : CF_GREY);
         if (shown) e3_box(canvas, x + 40, 42, 96, 3, TONE);
     }
     stock_canvas_set_fill_color(canvas, fill);
