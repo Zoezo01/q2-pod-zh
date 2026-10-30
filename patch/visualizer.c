@@ -424,7 +424,7 @@ static int look(const void *unused) {
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips the
  * page it was given at run time to a sliver. Painting starts the timer. */
 void visualizer_paint(void *w, void *canvas) {
-    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters", "Halo" };
+    static const char *const names[] = { "频谱", "示波器", "VU 表", "光环" };
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;

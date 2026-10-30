@@ -933,13 +933,13 @@ static void sorting(void) {
     open_page();
     widget *s = slide();
     assert(s->nkids == albums);
-    order_is((const char *const[]){ "Cover", "Folder", "Embedded", "None", "New", "A", "B", "C", "Tight", 0 });
+    order_is((const char *const[]){ "Cover", "文件夹", "Embedded", "None", "New", "A", "B", "C", "Tight", 0 });
     int q = queries;
     /* Artist, articles aside (The Beatles under B), then year (the query: None, Folder), then stock. */
-    ranked[0] = "none", ranked[1] = "Folder", ranked[2] = 0;
+    ranked[0] = "none", ranked[1] = "文件夹", ranked[2] = 0;
     press_sort();
     assert(saved_sort() == 1 && queries == q + 1); /* only the ranking is queried */
-    order_is((const char *const[]){ "Tight", "None", "Folder", "Cover", "Embedded", "New", "A", "C", "B", 0 });
+    order_is((const char *const[]){ "Tight", "None", "文件夹", "Cover", "Embedded", "New", "A", "C", "B", 0 });
     unsigned letter;
     assert(coverflow_jump(slide(), 0, 1, &letter) == 8 && letter == 'B');
     assert(coverflow_jump(slide(), 1, 1, &letter) == 7 && letter == 'B');
@@ -948,7 +948,7 @@ static void sorting(void) {
     ranked[0] = "New", ranked[1] = "a", ranked[2] = 0;
     press_sort();
     assert(saved_sort() == 6);
-    order_is((const char *const[]){ "New", "A", "Cover", "Folder", "Embedded", "None", "B", "C", "Tight", 0 });
+    order_is((const char *const[]){ "New", "A", "Cover", "文件夹", "Embedded", "None", "B", "C", "Tight", 0 });
     assert(coverflow_jump(slide(), 0, 1, &letter) == 1 && !letter);
     assert(strstr(rank_sql, "else 0 end) desc"));
     /* Year order: Oldest first: the next open ranks again, ascending (the query's order still). */
@@ -975,28 +975,28 @@ static void sorting(void) {
     /* Recently Added: the query's order (a name in another case still matches), the rest after. */
     ranked[0] = "C", ranked[1] = "a", ranked[2] = "New", ranked[3] = "COVER", ranked[4] = "Gone", ranked[5] = 0;
     press_sort();
-    order_is((const char *const[]){ "C", "A", "New", "Cover", "Folder", "Embedded", "None", "B", "Tight", 0 });
+    order_is((const char *const[]){ "C", "A", "New", "Cover", "文件夹", "Embedded", "None", "B", "Tight", 0 });
     assert(coverflow_jump(slide(), 0, 1, &letter) == 1 && !letter);
     /* Most Played: the album's listens, most first, ties and unplayed in stock order. */
     played[4] = 5, played[1] = 2, played[7] = 2;
     q = queries;
     press_sort();
     assert(saved_sort() == 3 && queries == q);
-    order_is((const char *const[]){ "New", "Folder", "C", "Cover", "Embedded", "None", "A", "B", "Tight", 0 });
+    order_is((const char *const[]){ "New", "文件夹", "C", "Cover", "Embedded", "None", "A", "B", "Tight", 0 });
     assert(coverflow_jump(slide(), 0, 1, &letter) == 1 && !letter);
     /* The order outlives the page; Album again is the stock order. */
     close_page();
     open_page();
-    order_is((const char *const[]){ "New", "Folder", "C", 0 });
+    order_is((const char *const[]){ "New", "文件夹", "C", 0 });
     /* Random: the generator's order, nothing queried. */
     q = queries;
     press_sort();
     assert(saved_sort() == 4 && queries == q);
-    order_is((const char *const[]){ "Tight", "C", "B", "A", "New", "None", "Embedded", "Folder", "Cover", 0 });
+    order_is((const char *const[]){ "Tight", "C", "B", "A", "New", "None", "Embedded", "文件夹", "Cover", 0 });
     assert(coverflow_jump(slide(), 0, 1, &letter) == 1 && !letter);
     press_sort();
     assert(saved_sort() == 0);
-    order_is((const char *const[]){ "Cover", "Folder", "Embedded", "None", "New", "A", "B", "C", "Tight", 0 });
+    order_is((const char *const[]){ "Cover", "文件夹", "Embedded", "None", "New", "A", "B", "C", "Tight", 0 });
     close_page();
     assert(loads == unloads);
     *(const char **)(records[6] + REC_ARTIST) = "Artist";
@@ -1043,7 +1043,7 @@ static void artist_only(void) {
     close_page();
     open_page();
     assert(slide()->nkids == all);
-    order_is((const char *const[]){ "Cover", "Folder", 0 });
+    order_is((const char *const[]){ "Cover", "文件夹", 0 });
     close_page();
     deque *none = _create_deque(0);
     assert(!coverflow_artist(none));
@@ -1064,7 +1064,7 @@ static void artist_only(void) {
     row->click(row->ctx, 0); run();
     assert(!strcmp(title(), "B"));
     key(KEY_RETURN); /* tracks return to the text list */
-    assert(!strcmp(title(), "Albums") && loads == before);
+    assert(!strcmp(title(), "专辑") && loads == before);
     close_page();
     artist_view = 0;
 }
@@ -1184,11 +1184,11 @@ static void embedded_first(void) {
     /* Embedded art comes before a folder's cover.jpg, and a folder shared with another album gives
        its albums no cover.jpg: with embedded art failing, they keep the placeholder. */
     embedded_fails = 0;
-    album("Both", "cover.jpg");
+    album("双声道", "cover.jpg");
     album("Embedded2", 0);
     rescan();
     open_page();
-    assert(size("Both") == 8 && size("Embedded2") == 8 && !tmp_files());
+    assert(size("双声道") == 8 && size("Embedded2") == 8 && !tmp_files());
     close_page();
     album("Shared", "cover.jpg");
     album("Mate", 0);
@@ -1323,7 +1323,7 @@ int main(void) {
 
     /* An empty library, or one being scanned, shows the message and builds nothing. */
     open_page();
-    assert(!strcmp(title(), "Update Local Music first") && !slide() && queries == 1);
+    assert(!strcmp(title(), "请先更新本地音乐") && !slide() && queries == 1);
     /* Every list (message, progress, tracks) comes from list(): iPod rows are transparent, so its
        list_view paints black itself rather than the theme's light card. */
     int lists = 0;
@@ -1333,7 +1333,7 @@ int main(void) {
     album("Cover", "cover.jpg");
     *(volatile int *)SCAN_THREAD = 1;
     open_page();
-    assert(!strcmp(title(), "Update Local Music first") && queries == 1 && !calls);
+    assert(!strcmp(title(), "请先更新本地音乐") && queries == 1 && !calls);
     close_page();
     *(volatile int *)SCAN_DONE = 1;
 
@@ -1342,13 +1342,13 @@ int main(void) {
     char both[600];
     snprintf(both, sizeof(both), PEQ_ROOT "/music/Cover/folder.jpg");
     fclose(fopen(both, "w"));
-    album("Folder", "folder.jpg");
+    album("文件夹", "folder.jpg");
     album("Embedded", 0);
     embedded_fails = 1;
     rescan();
     open_page();
     assert(calls == 2 && !strcmp(made[0], "cover.jpg") && !strcmp(made[1], "folder.jpg"));
-    assert(size("Cover") == 9 && size("Folder") == 10 && size("Embedded") == 0 && !tmp_files());
+    assert(size("Cover") == 9 && size("文件夹") == 10 && size("Embedded") == 0 && !tmp_files());
     widget *s = slide();
     assert(s && s->nkids == 3 && !strncmp(w[s->kids[0]].image, "file://", 7));
     close_page();
@@ -1383,7 +1383,7 @@ int main(void) {
     page = &w[nw + 1];
     home.click(home.ctx, 0);
     while (!blocked) usleep(1000);
-    assert(!strncmp(title(), "Preparing artwork", 17));
+    assert(!strncmp(title(), "正在准备封面", strlen("正在准备封面")));
     int e[16] = {0}; e[EVENT_KEY / 4] = KEY_RETURN;
     w[8190].click(0, e);
     pthread_t t;

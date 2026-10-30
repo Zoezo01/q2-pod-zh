@@ -462,8 +462,8 @@ static const char *year_sql(void) {
     return ringnav_year_old() ? SORT_SQL ALBUM_YEAR "=0," ALBUM_YEAR ",album COLLATE NOCASE"
                               : SORT_SQL ALBUM_YEAR "=0," ALBUM_YEAR " desc,album COLLATE NOCASE";
 }
-static const char *const sort_names[] = { "Sort: Album", "Sort: Artist", "Sort: Recently Added",
-                                          "Sort: Most Played", "Sort: Random", "Sort: Rating", "Sort: Year" };
+static const char *const sort_names[] = { "排序：专辑", "排序：表演者", "排序：最近添加",
+                                          "排序：最多播放", "排序：随机", "排序：评价", "排序：年份" };
 /* The order step after cf.sort (dir 1), or cf.sort itself (0), in the page's own orders; an
  * order not among them is the first (Album, or the rated albums' Rating). */
 static int sort_next(int dir) {
@@ -1787,7 +1787,7 @@ static void titles(unsigned c) {
     cf.titled = (int)c + 1;
     void *r = c + CARDS < n ? deque_at(cf.albums, c) : (void *)0;
     widget_set_text_utf8(cf.name, r                            ? P(r, REC_ALBUM)
-                                  : cf.scoped == ARTIST_ALBUMS ? "All albums"
+                                  : cf.scoped == ARTIST_ALBUMS ? "全部专辑"
                                                                : sort_names[cf.sort]);
     widget_set_text_utf8(cf.artist, r ? cover_artist(r) : ""); /* NULL leaves the old one */
     /* Stock draws even a centred caption at -xoffset: a long one's scroll would shift the next
@@ -1825,7 +1825,7 @@ static void covers(void) {
     cf.screen = COVERS;
     if (cf.text_albums) {
         unsigned n = deque_size(cf.albums);
-        void *view = list("Albums", (int)n);
+        void *view = list("专辑", (int)n);
         for (unsigned i = 0; i < n; ++i)
             page_row_into(view, (int)i, P(deque_at(cf.albums, i), REC_ALBUM), pick);
         return;
@@ -1880,7 +1880,7 @@ static int poll(const void *unused) {
     cf.timer = 0;
     if (cf.done == cf.total) return to_covers(0); /* stop() joins the thread's last steps */
     char progress[64];
-    tk_snprintf(progress, sizeof(progress), "Preparing artwork\xe2\x80\xa6 %d/%d", cf.done,
+    tk_snprintf(progress, sizeof(progress), "正在准备封面… %d/%d", cf.done,
                 cf.total);
     widget_set_text_utf8(cf.title, progress);
     cf.timer = timer_add(poll, 0, 250);
@@ -1931,7 +1931,7 @@ static void load(void) {
     if (n <= 0) {
         drop_albums(); /* only a real list is kept */
         cf.screen = COVERS; /* Return goes Home */
-        list("Update Local Music first", 0);
+        list("请先更新本地音乐", 0);
         return;
     }
     unsigned count = deque_size(cf.albums);
@@ -1959,7 +1959,7 @@ static void load(void) {
     if (cf.total && card_space(ART_DIR) && !pthread_create(&cf.thread, 0, worker, 0)) {
         cf.running = 1;
         cf.screen = PREPARING;
-        page_row_detail(list("", 1), 0, "Cancel", 0, cancel_row);
+        page_row_detail(list("", 1), 0, "取消", 0, cancel_row);
         poll(0);
     } else
         to_covers(0);
@@ -1989,7 +1989,7 @@ static int play(void *ctx, void *event) {
     int i = (int)(long)ctx;
     void *t = deque_at(cf.tracks, (unsigned)i);
     if (!t || access(P(t, REC_PATH), 0)) {
-        widget_set_text_utf8(cf.title, "Storage unavailable");
+        widget_set_text_utf8(cf.title, "存储不可用");
         return 0;
     }
     play_folder(cf.tracks, i, 0xff10);
@@ -2092,7 +2092,7 @@ static int play_all(const void *unused) {
     if (deque_size(all) && !access(P(deque_at(all, 0), REC_PATH), 0))
         play_folder(all, 0, 0xf001);
     else
-        widget_set_text_utf8(cf.name, "Storage unavailable");
+        widget_set_text_utf8(cf.name, "存储不可用");
     deque_destroy(all);
     return 0;
 }

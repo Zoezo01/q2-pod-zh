@@ -173,6 +173,18 @@ the bar and writes the time into `label_clock` (see
 [internals.md](internals.md#status-bar-ipod)); the widest text, `12:59 PM`, is 69 pixels in the
 stock font at 16 pixels.
 
+**Play state.** The glyph is one of two bitmaps, and stock writes it only when the bar paints, so a
+pause nothing on screen asked for — the 3.5 mm jack pulled (`config_po_output` calls `mclSetPause`),
+a Bluetooth link dropped, a headset's own pause — could leave the play glyph up until the bar was
+painted whole again, as the lock screen closing or a wake does. The state therefore also shows as a
+word: `label_playword`, a 15 px `s_label_white16c` label of `PLAY_WORD_W` (48) px created once as
+the last child of `view_left`, so the view's own margin and spacing put it after the glyph — and
+after the EQ badge when that shows; with the badge there the word no longer ends before the centred
+clock (its left edge is x 133), so it stays hidden instead. `bar_state_poll` (`ringnav_sleep`, every `PLAY_POLL_MS`, 100 ms) re-applies
+`bar_state_sync` and writes `播放中` / `已暂停` when the state changes, and repaints the bar whole —
+`widget_invalidate_force` — whenever the state or the word's room moves, so both follow whatever
+paused the player within a pass; dark, the wake's repaint shows them, so nothing is drawn before it.
+
 **Codec.** The Bluetooth images are 42-pixel canvases with their ink at the right: the glyph takes
 10 pixels, while stock's codec badges take up to 40 (aptX HD). A new badge shows for a second
 (`CODEC_MS`), then fades out and the white Bluetooth glyph (`bar_btcon`) fades in at the same place,

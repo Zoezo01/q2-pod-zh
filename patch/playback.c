@@ -386,7 +386,7 @@ int ringnav_speed(int mode) {
     if (!blob_io(path, tmp, &saved, sizeof saved, 1)) {
         unlink(tmp);
         playback_speed_start();
-        toast("Could not save folder speed");
+        toast("无法保存文件夹播放速度");
         return stock_speed_trampoline(g_playspeed_mode);
     }
     g_playspeed_mode = (unsigned char)mode;
@@ -904,6 +904,10 @@ int ringnav_prev(void) {
  * Skip every branch calls mclNextSong(0)/mclPrevSong, so advanced order applies. MCL_MODE is
  * written directly: mclSetPlayMode would end advanced play. */
 int ringnav_change(int next) {
+    /* 无耳机不播放 (headset.c): a pocket press of Next or Previous must not start a stopped queue
+     * either. Refused whole, so the queue keeps the track it had; -1 and -5 stay the caller's
+     * failures (no storage). */
+    if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
     if (!s.active) {
         if (!next || !list_end()) return stock_change_trampoline(next);
@@ -1392,7 +1396,7 @@ void playback_poll(void) {
     wheel_pct(); /* the saved sensitivity from the first UI pass */
     if (too_long) {
         too_long = 0;
-        toast("Too long to play on the Q2: split it into parts");
+        toast("这本书太长，Q2 无法播放：请拆分成几段");
     }
     xfade_poll(playback_next());
     mono_sync();
