@@ -9,5 +9,7 @@ mutate_only_covered_lines = false
 timeout_multiplier = 10.0
 
 [tool.pytest.ini_options]
-testpaths = ["test/unit"]
+testpaths = ["test/unit", "test/fw"]
 timeout = 60
+# A mock that raises inside a ctypes callback is only a warning: make it a failure.
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
