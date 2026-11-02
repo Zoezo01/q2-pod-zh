@@ -377,6 +377,13 @@ static inline int arc_out(int r, int y) {
 #define CHARGE_STOP 80
 #define CHARGE_RESUME 75
 #define CHARGE_POLL_MS 5000
+/* Hardware watchdog (docs/internals.md#watchdog): the UI loop feeds it every pass, so a loop or a
+ * kernel stalled WDT_MS reboots. Well above any ordinary pass (a 65k-song list, a cover decode:
+ * seconds). The known long ones on the UI thread, an import's tag reads and a folder add's directory
+ * loads (a minute or more on a big card), get WDT_LONG_MS (ringnav_wdt_long), well under the
+ * driver's limit of about 23 minutes. */
+#define WDT_MS 60000
+#define WDT_LONG_MS 900000
 /* Standby limit (docs/internals.md#standby-limit): its three choices after Off, in hours of one
  * Standby, after which the Q2 powers off. */
 #define STANDBY_LIMIT_1 1

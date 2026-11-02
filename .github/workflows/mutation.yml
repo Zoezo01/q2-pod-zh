@@ -1,0 +1,43 @@
+# Mutation tests of the tools/ functions changed since 1.2.0; see docs/building.md#mutation-tests.
+# Weekly, or by hand after a substantial change to tools/: the same mutants over unchanged code find
+# nothing new. The unit tests themselves run on every pull request (tests.yml).
+# Needs no stock firmware: only synthetic fixtures run here, and survivors.txt holds repo source alone.
+name: Mutation tests
+
+on:
+  schedule:
+    - cron: '23 3 * * 0'  # Sundays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Named, so a step's pipe keeps pipefail: tee would otherwise hide report.py's exit status.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  mutmut:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # targets.py diffs against the 1.2.0 tag
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y clang lld llvm
+      - run: pip install -r requirements.txt -r test/unit/requirements.txt
+      - run: python3 -m pytest test/unit -q
+      - name: Mutate
+        run: t=$(python3 test/unit/targets.py) && test -n "$t" && mutmut run $t | tail -n 3  # targets.py failing fails here
+      - name: Report
+        run: python3 test/unit/report.py --floor 95 --survivors survivors.txt | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: surviving-mutants
+          path: survivors.txt
+          if-no-files-found: ignore

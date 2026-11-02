@@ -1,7 +1,7 @@
 # Cooperative PWM clock gating
 
 The build replaces the exact V1.32 PWM module, MCU module and MCU firmware as one
-set (on by default; `--no-pwm-idle-clock` keeps all three stock files). The boot script loads PWM before MCU, as stock already does.
+set (off by default; `--dev --pwm-idle-clock` replaces all three). The boot script loads PWM before MCU, as stock already does.
 
 This document describes the polling park protocol. The optional additional
 `--mcu-idle-sleep` uses a version2 protocol and two IRQ hooks; see

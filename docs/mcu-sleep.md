@@ -1,7 +1,7 @@
 # MCU idle sleep experiment
 
 The cooperative PWM patch parks the buzzer MCU but leaves its core polling SRAM.
-`--dev --mcu-idle-sleep` (with the default PWM gating) adds interruptible `WAIT` in that parked
+`--dev --pwm-idle-clock --mcu-idle-sleep` adds interruptible `WAIT` in that parked
 state. It is off by default. PWM clocks remain governed by the existing paired
 Linux/MCU ownership protocol. No CPU frequency, voltage, audio, DMA or clock-register
 configuration changes are made by this option.

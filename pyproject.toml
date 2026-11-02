@@ -1,0 +1,13 @@
+# Mutation testing only (docs/building.md#mutation-tests); nothing here is packaged.
+[tool.mutmut]
+source_paths = ["tools"]
+# What tools/ reads at import and in source_sha256().
+also_copy = ["patch", "assets", "docs/manual"]
+pytest_add_cli_args_test_selection = ["test/unit"]
+# Cover what the tests never reach as survivors, not as a silent gap.
+mutate_only_covered_lines = false
+timeout_multiplier = 10.0
+
+[tool.pytest.ini_options]
+testpaths = ["test/unit"]
+timeout = 60

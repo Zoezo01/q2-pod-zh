@@ -726,7 +726,9 @@ static int sh_wait(const void *unused) {
     else if (job == JOB_INSTALL && is(i, "themes"))
         toast("Rockbox Themes are ready in Rockbox's Theme Settings");
     else if (job == JOB_INSTALL)
-        snprintf(s, sizeof s, "%s is ready in Streaming", apps[i].name), toast(s);
+        snprintf(s, sizeof s, "%s is ready in %s", apps[i].name,
+                 addon_is_game(apps[i].id) ? "Library's Games" : "Streaming"),
+            toast(s);
     else if (job == JOB_REMOVE)
         snprintf(s, sizeof s, "%s removed", apps[i].name), toast(s);
     else if (job == JOB_ERASE)

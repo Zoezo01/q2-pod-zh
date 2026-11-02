@@ -104,6 +104,15 @@ def boot_check():
         assert 'demo exit 139' in out and cp is False
         assert logged(0, True) == (False, False) and logged(143, True) == (False, False)
         assert logged([137, 0], True, 1) == (False, False)  # the Rockbox hand-over's kill, then a clean demo
+        # /mnt/data/q2-state (navigation.c state_poll) still there at boot: the last session ended in a forced
+        # restart, or the battery. It goes into q2-crash.log, a new one that says so or the crash's, and goes.
+        state, line = r/'mnt/data/q2-state', 'screen:off power:suspending cable:out battery:57 play:paused out:jack\n'
+        state.write_text(line); out, cp = logged(0, False)
+        assert 'did not end' in out and '== last state' in out and line in out and not state.exists() and cp is False
+        for f in (crash, copy): f.unlink(missing_ok=True)
+        crash.write_text('== demo exit 137\n'); state.write_text(line); boot(True, False, status=0)
+        assert crash.read_text().startswith('== demo exit 137\n== last state\n') and line in crash.read_text() and not state.exists()
+        for f in (crash, copy): f.unlink(missing_ok=True)
     print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback and Home Rockbox row passed.')
 boot_check()
 

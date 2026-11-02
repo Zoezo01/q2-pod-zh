@@ -662,7 +662,8 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   full-screen art (`bigcover_page`) in front, and a song playing, it calls
   `reset_poweroptions_timer(1, 1, 1)` once a second, so the screen stays on there (with Enlarged Album
   Art on, the art page too, once its countdown opens the full-screen art);
-  paused, it times out as usual. Enlarged Album Art never opens off the art page (#57): while Now Playing's slide view is on
+  paused, it times out as usual. A card game in Games is held open and lit while it is on, playing
+  or not, with no idle quit ([Card games](internals.md#card-apps)). Enlarged Album Art never opens off the art page (#57): while Now Playing's slide view is on
   another page, each `ringnav_sleep` pass holds stock's countdown (`BC_IDLE`) at its full 10 s.
   Before, the window opened and closed a pass later, flashing over the lyrics every 10 s (#153).
   Then a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single

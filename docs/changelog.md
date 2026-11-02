@@ -1,5 +1,12 @@
 # Changelog
 
+- **1.6.2**:
+  - Games: games from the App Store appear in **Library → Games** after Snake and play over the whole screen, by touch and the wheel. **Play/Pause** and **Previous/Next** keep controlling the music, and holding **Return** closes one. A game closes after two minutes untouched, unless **Smart Awake** is on, which keeps it open and the screen lit.
+  - System: the three kernel driver changes from 1.5.0 (the rotator's lazy clock, the backlight PWM clock gating with the buzzer MCU parked, and the paused-audio notifier's sleep) are no longer in the firmware. No battery saving was ever measured for them, none of them handles the Q2's Standby suspend and resume, and they are the only Shanling driver files Q2 Pod changed, so a Q2 that goes dark and ignores every button until a 15-second Centre hold is one place simpler to explain. Developers can still build them with `--dev` and their flags.
+  - System: a Q2 whose software stops responding (screen black, no button does anything, and only a 15-second Centre hold revived it) now restarts by itself within a minute, as long as it froze while awake rather than going into or out of Standby. Shanling's hardware watchdog was loaded but never started.
+  - System: what the Q2 was doing (screen, Standby, charger, battery, playback and its output) is kept on the Q2 and, after a restart it didn't choose, appears in q2-crash.log on the card, with the crash record when the player ends on its own.
+  - App Store: **Live Music Archive**, a card app, streams concerts from the Internet Archive's Live Music Archive: browse or search its artists, pick a year and a show, and the best recording plays, soundboard first (Q2 Pod 1.6.0 or later). The App Store's list comes from the Q2 Pod repo, so it shows without a firmware update.
+
 - **1.6.1**:
   - Playback: a saved **MQA: Off** now stays in effect after restarting the Q2. Before, gaps between high-resolution tracks came back after every restart until MQA was toggled On and Off.
   - Library: **Recently Added** keeps the day a song was added when you run **Update Local Music**. Shanling's firmware dates a song by the last time its file was read on exFAT cards, and a full update reads every file, so after one the whole library counted as added that day and albums added a few days earlier dropped off the list ([#170](https://github.com/DiamondBond/q2-pod/issues/170)). Songs added before this version keep the dates they have; a song shows its real date once it has been added by this version's update.

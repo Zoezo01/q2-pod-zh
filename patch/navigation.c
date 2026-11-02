@@ -399,6 +399,11 @@ typedef struct {
     void *dc_top;    /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
     unsigned charge_at, last_input, cpu_retry;
+    int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
+    int wdt_long; /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
+    int ended;    /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
+    int suspended;  /* inside Standby's suspend (ringnav_standby), for the state record */
+    char state[96]; /* the state record last written (state_poll) */
     /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
     unsigned logo_at;
     int logo_mounted;
@@ -3712,6 +3717,13 @@ static void keep_lit_poll(void) {
         reset_poweroptions_timer(1, 1, 1);
 }
 
+/* Smart Awake's setting (accent's, kept current by its switch): addon.c holds a card game open
+ * and lit under it */
+int ringnav_smart_awake(void) {
+    accent();
+    return st.keep_lit;
+}
+
 /* Centred Now Playing's full-screen lyrics (np_lyric_touch): the column (stock's slide_view_view,
  * tools/ipod.py PLAYING_STOCK) goes over the page's other widgets, black and the window's width,
  * its slide_view down to the page dots, and the lines wrap at the new width (lyrics_fit), back on
@@ -6041,6 +6053,7 @@ static void qm_tracks(void *r, void *add) {
         char path[1024];
         tk_snprintf(path, sizeof(path), "%s/%s", (const char *)g_folder_path,
                     (const char *)P(r, REC_NAME));
+        ringnav_wdt_long();
         folder_tracks(path, add, 0);
         return;
     }
@@ -9173,6 +9186,92 @@ static void cpu_poll(void) {
     }
     if (!st.cpu_off) st.cpu_bad = 3;
 }
+/* Hardware watchdog (docs/internals.md#watchdog). Stock loads soc_watchdog.ko and never starts it,
+ * so a Q2 whose UI loop or kernel stalls stays dark, every button dead, until a 15 s Centre hold
+ * cuts the power. The first UI loop pass starts it counting WDT_MS and every pass feeds it, so a
+ * stall that long reboots instead. It counts on the RTC clock, through a suspend, so Standby stops
+ * it before and starts it again after (ringnav_standby). Its close is a no-op, so a clean end
+ * (ringnav_clean_end: power-off, Restart, a firmware update, Rockbox) stops it. libhardware2's
+ * watchdog_start/stop/feed ioctls; no device, or a refused start, leaves stock's behaviour.
+ * ponytail: the UI loop is the only feeder, so a stalled worker thread is not caught. */
+#define WDT_DEV "/dev/jz_watchdog"
+#define WDT_START 0x8004570d /* an int of milliseconds, by pointer */
+#define WDT_STOP 0x2000570e
+#define WDT_FEED 0x2000570f
+static void wdt_set(int on) { /* Standby's suspend and the resume after it; a clean end */
+    int ms = WDT_MS;
+    if (st.wdt > 0) ioctl(st.wdt, on ? WDT_START : WDT_STOP, &ms);
+}
+static void wdt_span(int ms) {
+    ioctl(st.wdt, WDT_STOP, 0);
+    ioctl(st.wdt, WDT_START, &ms);
+}
+/* A known long pass is starting (an import's tag reads, a folder add's loads): WDT_LONG_MS for it,
+ * and the next pass, once it has returned, WDT_MS again */
+void ringnav_wdt_long(void) {
+    if (st.ended || st.wdt <= 0 || st.wdt_long) return;
+    st.wdt_long = 1;
+    wdt_span(WDT_LONG_MS);
+}
+static void wdt_poll(void) {
+    if (st.ended || st.wdt < 0) return;
+    if (st.wdt && st.wdt_long) {
+        st.wdt_long = 0;
+        wdt_span(WDT_MS);
+    } else if (st.wdt)
+        ioctl(st.wdt, WDT_FEED, 0);
+    if (st.wdt) return;
+    int fd = open(WDT_DEV, 0x80002), ms = WDT_MS; /* O_RDWR, as libhardware2, | O_CLOEXEC (MIPS) */
+    st.wdt = fd > 0 && !ioctl(fd, WDT_START, &ms) ? fd : -1;
+    if (fd > 0 && st.wdt < 0) close(fd);
+}
+/* The state record (docs/internals.md#watchdog): /mnt/data/q2-state says what the Q2 is doing, one
+ * line rewritten and synced whenever it changes: the screen, Standby's suspend, the cable, the
+ * battery, playback and its output, CPU1. A clean end removes it; one still there at boot means a
+ * forced restart (or the battery), and S90play puts it in q2-crash.log (docs/boot.md). */
+#define STATE_FILE "/mnt/data/q2-state"
+static char *put(char *p, const char *s) {
+    while (*s) *p++ = *s++;
+    return p;
+}
+static void state_poll(void) {
+    static const char *const play[] = { "?", "stopped", "playing", "paused" };
+    static const char *const out[] = { "jack", "bluetooth", "usb" };
+    if (st.ended) return;
+    unsigned ps = (unsigned)mclGetPlayStatus(), ow = (unsigned)mclGetOutputWay();
+    unsigned pct = (unsigned)I(g_power_capacity, 0), n = 0;
+    char s[sizeof st.state], d[4], *p = s;
+    p = put(p, g_backlight_status ? "screen:on" : "screen:off");
+    p = put(p, st.suspended ? " power:suspending" : " power:running");
+    p = put(p, g_usbdet_value ? " cable:in" : " cable:out");
+    p = put(p, " battery:");
+    if (pct > 100) pct = 100;
+    do d[n++] = '0' + pct % 10;
+    while (pct /= 10);
+    while (n) *p++ = d[--n];
+    p = put(p, " play:");
+    p = put(p, play[ps < 4 ? ps : 0]);
+    p = put(p, " out:");
+    p = put(p, out[ow < 3 ? ow : 0]);
+    p = put(p, st.cpu_off ? " cpu1:off\n" : "\n");
+    *p = 0;
+    if (!tk_strcmp(s, st.state)) return;
+    void *f = fopen(STATE_FILE, "w");
+    if (!f) return;
+    fwrite(s, 1, p - s, f);
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+    memcpy(st.state, s, p - s + 1);
+}
+/* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
+ */
+void ringnav_clean_end(void) {
+    if (st.ended) return;
+    st.ended = 1;
+    wdt_set(0);
+    unlink(STATE_FILE);
+}
 /* Standby limit (docs/internals.md#standby-limit): device_standby puts the radios, the card and the
  * DAC down, then toolsIntoStandby suspends to RAM ("mem" to /sys/power/state) and returns once
  * something resumes it. With a limit, the RTC's wake alarm is set that far ahead first and cleared
@@ -9205,7 +9304,12 @@ int ringnav_standby(void) {
     unsigned start = st.standby_limit ? rtc_now() : 0;
     unsigned alarm = start + hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
+    st.suspended = 1;
+    state_poll(); /* the record a resume that never comes leaves behind */
+    wdt_set(0);   /* it would count through the suspend */
     int result = stock_standby_trampoline();
+    wdt_set(1);
+    st.suspended = 0; /* the next pass records the resume */
     if (armed) {
         unsigned now = rtc_now();
         rtc_alarm(0);
@@ -9319,6 +9423,8 @@ static void power_poll(void) {
     cpu_poll();
     standby_poll();
     logo_poll();
+    wdt_poll();
+    state_poll();
 }
 
 /* Home's Rockbox row (docs/boot.md#rockbox-from-home), bound by coverflow_home: a click leaves
@@ -9349,6 +9455,7 @@ int rockbox_open(void *ctx, void *event) {
     if (bt_link() && g_bluetoothflag && bt_linkstatus &&
         (unsigned)btctl_transport_get_volume() <= 127)
         btctl_transport_set_volume(((g_maxvolume < 100 ? g_maxvolume : 100) * 127 + 50) / 100);
+    ringnav_clean_end(); /* the watchdog would outlive demo's kill; nothing to report */
     system("killall checkappprocess.sh; killall -9 hciplayer; " SPOT_KILL "; sync; kill -9 $PPID");
     return 0;
 }
@@ -9362,9 +9469,9 @@ static int now_playing(void) {
 /* Now Playing's visualizer repainting, its album marquee moving or its lyrics gliding: their 40 and
  * 50 ms timers and the glide's steps would run late on an idle pass. Its progress and the lyrics'
  * follow tick every 250 ms and keep up. A game's 33 ms frame timer too: Vortex's raw wheel posts no
- * input to stamp. */
+ * input to stamp, nor does a card game's, whose travel goes once a pass. */
 static int np_animating(void) {
-    return games_live() ||
+    return games_live() || addon_game_on() ||
            (now_playing() && (visualizer_live() || st.lyric_glide ||
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
@@ -9716,7 +9823,8 @@ static int remote_key(void *e) {
 }
 
 /* window_manager_dispatch_input_event: while q2video plays (books.c) no key or touch reaches the
- * UI; a key's release goes to the player instead. Every event times ringnav_sleep's idle. */
+ * UI; a key's release goes to the player instead. A card game (addon.c) takes every event but the
+ * music's keys. Every event times ringnav_sleep's idle. */
 int ringnav(void *ctx, void *event);
 int ringnav_input(void *wm, void *e) {
     if (e && (chord_gate(e) || wake_gate(e))) return 0;
@@ -9725,6 +9833,7 @@ int ringnav_input(void *wm, void *e) {
         if (e && I(e, EVENT_TYPE) == EVT_KEY_UP) video_key((unsigned)I(e, EVENT_KEY));
         return 0;
     }
+    if (addon_game_input(e)) return 0;
     unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
     unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
@@ -9762,14 +9871,15 @@ int ringnav_input(void *wm, void *e) {
 }
 
 /* window_manager_paint, a leaf (tools/build.py WM_PAINT_LEAF): the window manager's own paint
- * (vtable +0xc), except while q2video has the framebuffer (video_poll repaints after) and while the
- * screen is off, unless a window animates (AWTK steps it from the paint); the first lit pass
- * repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
+ * (vtable +0xc), except while q2video or a card game has the framebuffer (each poll repaints after
+ * it) and while the screen is off, unless a window animates (AWTK steps it from the paint); the
+ * first lit pass repaints the whole screen (ringnav_sleep; docs/internals.md Battery). */
 int ringnav_wm_paint(void *wm) {
     if (wm && !g_backlight_status && !window_manager_is_animating(wm)) return 0; /* RET_OK */
-    void *vt = wm && !video_on() ? P(wm, 0x94) : (void *)0;
+    int away = video_on() || addon_game_on();
+    void *vt = wm && !away ? P(wm, 0x94) : (void *)0;
     int (*paint)(void *) = vt ? (int (*)(void *))P(vt, 0xc) : (int (*)(void *))0;
-    return paint ? paint(wm) : video_on() ? 0 : 0x10; /* RET_BAD_PARAMS, as stock */
+    return paint ? paint(wm) : away ? 0 : 0x10; /* RET_BAD_PARAMS, as stock */
 }
 
 /* buzzeer_switch (0x4f3cc8), every Key Tone click, stock's and ringnav()'s: the MCU's buzzer

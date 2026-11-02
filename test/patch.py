@@ -94,7 +94,7 @@ class Machine:
                   'strlen@GLIBC_2.0','strncpy@GLIBC_2.0','strrchr@GLIBC_2.0','strcasecmp@GLIBC_2.0','strncasecmp@GLIBC_2.0',
                   'strcasestr@GLIBC_2.2',
                   'unlink@GLIBC_2.0','atoi@GLIBC_2.0','strtol@GLIBC_2.0','memcmp@GLIBC_2.0','access@GLIBC_2.0',
-                  'fflush@GLIBC_2.0','fsync@GLIBC_2.0','fileno@GLIBC_2.0',  # blob_io's sync before rename
+                  'open@GLIBC_2.0','fflush@GLIBC_2.0','fsync@GLIBC_2.0','fileno@GLIBC_2.0',  # the watchdog and the state record
                   'fopen@GLIBC_2.2', 'opendir@GLIBC_2.0', 'readdir@GLIBC_2.0',
                   'closedir@GLIBC_2.0', 'pthread_mutex_lock@GLIBC_2.0',
                   'pthread_mutex_unlock@GLIBC_2.0', 'calloc@GLIBC_2.0', 'realloc@GLIBC_2.0',
@@ -261,6 +261,7 @@ class Machine:
             result=(re.sub(r'%\.\*s','%s',fmt) % tuple(params)).encode(); self.u.mem_write(a,result[:b-1]+b'\0'); ret=len(result)
         elif name=='atoi@GLIBC_2.0': ret=int(re.match(r'[+-]?\d+',self.text(a))[0]) if re.match(r'[+-]?\d+',self.text(a)) else 0
         elif name=='access@GLIBC_2.0': ret=0 if self.text(a) in self.present else -1
+        elif name=='open@GLIBC_2.0': ret=0xffffffff  # no /dev/jz_watchdog here: the watchdog stays off
         elif name=='calloc@GLIBC_2.0': ret=0 if getattr(self,'fail_calloc',False) else self.alloc(a*b)
         elif name=='realloc@GLIBC_2.0':  # moved, as glibc may, the old block spoilt
             kept=bytes(self.u.mem_read(a,b)); ret=self.alloc(b); self.u.mem_write(ret,kept); self.u.mem_write(a,b'\xff'*b); self.resized.append(kept)
@@ -9683,7 +9684,8 @@ class BooksMachine(DepthMachine):
         elif name=='fork': ret=self.forked
         elif name=='execl':
             sp=u.reg_read(UC_MIPS_REG_SP); e=self.get(sp+16)  # a volume argv, then its terminator
-            self.execs.append((self.text(a),self.text(b),self.text(c),self.text(d),e and (self.text(e),self.get(sp+20)))); ret=-1
+            if not c: self.execs.append((self.text(a),self.text(b))); ret=-1  # no arguments: the terminator third
+            else: self.execs.append((self.text(a),self.text(b),self.text(c),self.text(d),e and (self.text(e),self.get(sp+20)))); ret=-1
         elif name=='waitpid': assert a==self.forked and c==1; ret=self.waited
         elif name=='socket': assert (a,b,c)==(1,1,0); ret=7
         elif name=='sendto':
@@ -11080,8 +11082,59 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
+# Card games (addon.c, q2app game=1): Library's Games lists them, Streaming doesn't. A row runs the binary
+# over the screen; each input event reaches its socket as a text datagram instead of the UI (a held Return
+# ends it), but the music's keys stay stock's; the wheel's raw travel goes once a poll, and its end gives
+# the wheel back.
+m=AppMachine(); card_app(m,'fidget','name=Fidget\ngame=1\n'); assert 'Fidget' not in stream_rows(m)
+def fn(name,*args): return m.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
+assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Fidget' and fn('addon_game_on')==0
+m.forked=0; m.execs=[]; fn('addon_game_start',0); assert m.execs[-1][:2]==('/mnt/mmc/.fidget/q2-fidget',)*2  # the child
+m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_on')==4243 and m.get(payload_syms['wheel_raw'])==1
+inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; GS='/tmp/q2-fidget.input.sock'
+def game_event(kind,key=0,x=0,y=0,stock=False):
+    m.calls=[]; m.sent=[]; m.word(m.event+O['EVENT_X'],x); m.word(m.event+O['EVENT_Y'],y)
+    m.call(x or key,address=inp,args=(m.wm,m.event,0,0),event_type=kind,gap=0,clear=False)  # EVENT_KEY is EVENT_X's word
+    assert ('stock_input' in [c[0] for c in m.calls])==stock,(kind,key)
+    return [(t[1],t[5]) for t in m.sent]
+assert game_event(O['EVT_KEY_UP'],O['KEY_CENTER'])==[('k u 218',GS)] and game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])==[('k d 170',GS)]
+assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])==[('k u 170',GS)]  # let go: not a hold
+for k in ('KEY_PLAY','KEY_BACK_BTN','KEY_FWD_BTN'):
+    for kind in ('EVT_KEY_DOWN','EVT_KEY_UP'): assert game_event(O[kind],O[k],stock=True)==[],(k,kind)
+for kind,want in ((O['EVT_POINTER_DOWN']-1,'d'),(O['EVT_POINTER_MOVE_BEFORE']-1,'m'),(O['EVT_POINTER_UP_BEFORE']-1,'u'),(O['EVT_POINTER_ABORT'],'u')):
+    assert game_event(kind,x=120,y=88)==[(f't {want} 88 199',GS)],kind  # the panel's (x, y) turned into the view's
+m.word(payload_syms['wheel_travel'],0xffffffdb); m.sent=[]; m.waited=0; fn('addon_poll')
+assert [t[1] for t in m.sent]==['w -37'] and m.get(payload_syms['wheel_travel'])==0 and fn('addon_game_on')==4243
+def poll(m):  # one pass: how many kills it sent (their text's stack buffer is reused by then)
+    m.calls=[]; m.call(address=payload_syms['addon_poll'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)
+    return [c[0] for c in m.calls].count('system')
+# Return held 700 ms ends it, timed here from its down (stock makes the long press after this hook); one
+# that ignores the TERM is KILLed 3 s on; the held Return's release, after it has gone, stays out of Games.
+assert game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])==[('k d 170',GS)]
+for _ in range(12): m.now+=50; game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])  # its repeats: still the first down's hold
+assert poll(m)==0
+m.now+=101; assert poll(m)==1 and poll(m)==0  # 701: the stamps are odd (| 1), 0 being none
+m.now+=3000; assert poll(m)==1
+m.waited=4243; poll(m); assert fn('addon_game_on')==0 and m.get(payload_syms['wheel_raw'])==0
+assert game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN'])==[] and game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])==[]
+assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=True)==[]
+# Released before then: the game's Return, nothing ended.
+m.waited=0; assert fn('addon_game_start',0)==1
+game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN']); m.now+=300; assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])==[('k u 170',GS)]
+m.now+=1000; assert poll(m)==0
+# Two minutes without input end it (TERM), counted from the last input, unless Smart Awake (IPOD KEEPLIT)
+# holds it open and lit.
+m.now+=90_000; game_event(O['EVT_KEY_UP'],O['KEY_CENTER']); m.now+=60_000; assert poll(m)==0
+m.now+=60_000; assert poll(m)==1
+m.waited=4243; poll(m); assert fn('addon_game_on')==0
+def idle(m):
+    m.now+=120_000; m.waited=0; return poll(m)>0
+CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget','name=Fidget\ngame=1\n'); a.forked=4243
+assert a.call(address=payload_syms['addon_games'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
+assert a.call(address=payload_syms['addon_game_start'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
+assert not idle(a) and not idle(a) and any(c[0]=='reset_poweroptions_timer' for c in a.calls); passed()
 # Stock's Baidu Netdisk row (a Chinese cloud drive; list_baidu's icon) is gone from Streaming, destroyed; its
 # TIDAL row stays first.
 m=AppMachine(); view=m.node('scroll_view','scroll_view_streamsset')
@@ -12125,11 +12178,11 @@ LIST='/mnt/mmc/.q2/sources.list'
 m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:bytearray(b'q2-v1.8'),SPOT_FILES:bytearray(b'.spotify/run\n.spotify/librespot\n'),
                 '/mnt/mmc/.spotify/run':bytearray(b'sh'),'/mnt/mmc/.spotify/librespot':bytearray(b'ELF')})
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
-assert m.labels()==['App Store','Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
+assert m.labels()==['App Store','Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install']
+assert m.labels()==['App Store','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://api.github.com/repos/m-d-e-v/q2-podcasts/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of eight
+assert m.opts[10002]=='https://api.github.com/repos/DiamondBond/q2-fidget/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of ten
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[6]=='Update' and '/tmp/q2-shelf.json' not in m.files; passed()  # q2-v1.8 against the latest q2-v1.9
 m.close(); m.now+=9*60*1000; apps_open(m); assert len(m.threads)==1 and m.labels()[6]=='Update'; passed()  # still fresh: no requests
@@ -12147,7 +12200,7 @@ assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/libre
 m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(1); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
-apps_open(m); shelf_job(m); assert m.labels()==['App Store','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install']  # not stopped: checked again
+apps_open(m); shelf_job(m); assert m.labels()==['App Store','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install']  # not stopped: checked again
 m.row(0); assert m.labels()[2]=='Starts at power-on; Boot to changes that. Press again to install' and len(m.threads)==6
 m.row(0); assert len(m.threads)==7 and m.labels()[2]=='Checking…'; m.row(0); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(0); m.row(0); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -12161,7 +12214,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(0); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -12181,6 +12234,8 @@ assert m.labels()==['App Store','Foo','Install'] and m.files[LIST]==b'me/q2-foo 
 # of play, after a pause and on a track change, and jumps back there when it next starts playing near
 # its beginning.
 # A place near either end is forgotten; a short or CUE track, or a paused start, is left alone.
+RECORD='/mnt/data/q2-state'  # navigation.c state_poll's record, written on the first pass and on a change
+RECORD_FD=77  # PowerMachine's fileno for it, so its fsync is told apart
 class ResumeMachine(QueueMachine):
     def __init__(self,files=None):
         super().__init__()
@@ -12198,7 +12253,7 @@ class ResumeMachine(QueueMachine):
         if name=='fopen':
             path,mode=self.text(a),self.text(b)
             # the boot logo's lit-only mount poll; dark, any open counts
-            self.opens+=path!='/proc/mounts' or not self.u.mem_read(syms['g_backlight_status'],1)[0]
+            self.opens+=path!=RECORD and (path!='/proc/mounts' or not self.u.mem_read(syms['g_backlight_status'],1)[0])
             if mode=='rb' and path not in self.files: ret=0
             else: ret=0x2000000+len(self.calls); self.open[ret]=[path,mode,0,b'' if mode=='wb' else self.files.get(path,b'')]
         elif name=='fread':
@@ -13135,14 +13190,16 @@ assert [c[:2] for c in m.calls if c[0] in ('stock_savercover','widget_invalidate
 # back at CHARGE_RESUME: on, or USB mode's own choice while its page is open. Every CHARGE_POLL_MS.
 class PowerMachine(ResumeMachine):
     def __init__(self,config={},files=None):
-        super().__init__(files); self.config.update(config); self.writes=[]
+        super().__init__(files); self.config.update(config); self.writes=[]; self.records=[]  # records: the state record's
         for n in ('fflush@GLIBC_2.0','fsync@GLIBC_2.0','fileno@GLIBC_2.0','unlink@GLIBC_2.0','open@GLIBC_2.0','close@GLIBC_2.0'):
             self.handlers[syms[n]]='p:'+n
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,''); a=u.reg_read(REGS[0])
         if name.startswith('r:fclose') and self.open.get(a,[0,0])[1]=='w':
-            path,_,_,data=self.open.pop(a); self.files[path]=data; self.writes.append((path,data)); self.calls.append(('fclose',a,0,0))
+            path,_,_,data=self.open.pop(a); self.files[path]=data; (self.records if path==RECORD else self.writes).append((path,data)); self.calls.append(('fclose',a,0,0))
             self.returns(0); return
+        if name.startswith(('p:fflush','p:fileno','p:fsync')) and (a==RECORD_FD or self.open.get(a,[''])[0]==RECORD):
+            self.returns(RECORD_FD if name.startswith('p:fileno') else 0); return  # the record's sync, apart from the marker's
         if name.startswith('r:fopen') and self.text(u.reg_read(REGS[1]))=='w':
             ret=0x2000000+len(self.calls); self.open[ret]=[self.text(a),'w',0,b'']; self.calls.append(('fopen',a,0,0))
             self.returns(ret); return
@@ -13287,6 +13344,56 @@ m=StandbyMachine({'STANDBYLIMIT':'1'},key=7200,refuse=True); assert m.standby()=
 for usb,play in ((1,3),(0,2)):  # a cable in, or playing: it stays on, and no later pass powers off
     m=StandbyMachine({'STANDBYLIMIT':'1'}); m.standby(); m.byte(syms['g_usbdet_value'],usb); m.word(0xa3beac,play)
     assert not m.off() and not m.off(); passed()
+# Hardware watchdog and the state record (docs/internals.md#watchdog). The first pass opens
+# /dev/jz_watchdog and starts it at WDT_MS, every pass feeds it, Standby stops it around the suspend
+# and starts it again, and a clean end stops it and removes the record; nothing is fed or written
+# after. No device, or a refused start: tried once, and the record is kept all the same. The record
+# is rewritten only when it changes, and as suspending just before Standby's suspend.
+WDT_START,WDT_STOP,WDT_FEED=0x8004570d,0x2000570e,0x2000570f
+class WatchdogMachine(StandbyMachine):
+    def __init__(self,config={},fd=3,refuse_start=False,**k):
+        super().__init__(config,**k); self.fd,self.refuse_start,self.ioctls,self.wdt_opens=fd,refuse_start,[],0
+        self.handlers[syms['ioctl@GLIBC_2.0']]='d:ioctl'
+        self.byte(syms['g_backlight_status'],1); self.byte(syms['g_usbdet_value'],0)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,''); a,b,c=[u.reg_read(r) for r in REGS[:3]]
+        if name=='p:open@GLIBC_2.0':
+            assert self.text(a)=='/dev/jz_watchdog' and b==0x80002; self.wdt_opens+=1; self.returns(self.fd&0xffffffff); return
+        if name=='d:ioctl':
+            self.ioctls.append((a,b,self.get(c)) if b==WDT_START else (a,b))
+            if b!=WDT_FEED: self.events.append(('wdt',b))
+            self.returns(0xffffffff if b==WDT_START and self.refuse_start else 0); return
+        return super().hook(u,address,size,unused)
+    def record(self): return self.files.get(RECORD)
+m=WatchdogMachine(key=600); m.pass_(1)
+assert m.wdt_opens==1 and m.ioctls==[(3,WDT_START,O['WDT_MS'])],(m.ioctls)
+assert m.record()==b'screen:on power:running cable:out battery:0 play:paused out:jack\n',m.record()
+m.pass_(1); m.pass_(1); assert m.ioctls[1:]==[(3,WDT_FEED)]*2 and m.wdt_opens==1 and len(m.records)==1; passed()
+level(m,57,0); m.pass_(1); assert m.records[-1]==(RECORD,b'screen:on power:running cable:out battery:57 play:paused out:jack\n')
+n=len(m.records); m.pass_(1); assert len(m.records)==n  # unchanged: not rewritten
+m.byte(syms['g_backlight_status'],0); m.byte(syms['g_usbdet_value'],1); m.pass_(1)
+assert m.records[-1][1]==b'screen:off power:running cable:in battery:57 play:paused out:jack\n'; passed()
+m.ioctls=[]; assert m.standby()==[('wdt',WDT_STOP),'suspend',('wdt',WDT_START)],m.events
+assert m.records[-1][1]==b'screen:off power:suspending cable:in battery:57 play:paused out:jack\n'
+m.pass_(1); assert m.records[-1][1].startswith(b'screen:off power:running') and m.ioctls[-1]==(3,WDT_FEED); passed()
+m=WatchdogMachine({'STANDBYLIMIT':'1'}); m.pass_(1)
+assert m.standby()==[('alarm',0),('alarm',start+3600),('wdt',WDT_STOP),'suspend',('wdt',WDT_START),('alarm',0)],m.events; passed()
+# a known long pass (an import, a folder add) counts WDT_LONG_MS; the next pass, after it, WDT_MS again
+m=WatchdogMachine(key=600); m.pass_(1); m.ioctls=[]
+for _ in range(2): m.call(address=payload_syms['ringnav_wdt_long'],args=(0,0,0,0),gap=0)  # once while it runs
+assert m.ioctls==[(3,WDT_STOP),(3,WDT_START,O['WDT_LONG_MS'])],m.ioctls; m.ioctls=[]
+m.pass_(1); assert m.ioctls==[(3,WDT_STOP),(3,WDT_START,O['WDT_MS'])],m.ioctls; m.ioctls=[]
+m.pass_(1); assert m.ioctls==[(3,WDT_FEED)] and O['WDT_LONG_MS']>O['WDT_MS']==60000; passed()
+# a clean end: the watchdog stops, the record goes, and nothing is fed or written after it
+m=WatchdogMachine(key=600); m.pass_(1); m.ioctls=[]
+m.call(address=payload_syms['ringnav_clean_end'],args=(0,0,0,0),gap=0)
+assert m.ioctls==[(3,WDT_STOP)] and RECORD not in m.files; n=len(m.records); m.ioctls=[]
+level(m,5,0); m.pass_(1); assert not m.ioctls and len(m.records)==n and RECORD not in m.files; passed()
+m=WatchdogMachine(key=600,fd=-1); m.pass_(1); m.pass_(1)
+assert m.wdt_opens==1 and not m.ioctls and m.record() and m.standby()==['suspend']; passed()
+m=WatchdogMachine(key=600,refuse_start=True); m.pass_(1); m.pass_(1)
+assert m.ioctls==[(3,WDT_START,O['WDT_MS'])] and m.record() and m.standby()==['suspend']; passed()
+
 # The Wi-Fi signal (navigation.c ringnav_wifi_signal): networkGetWifiSignal, which the status bar and
 # the network monitor thread each call about once a second, reads the driver's rx_signal and never
 # sends stock's SIOCGIWSTATS, whose TX report takes the radio out of power save. It answers stock's

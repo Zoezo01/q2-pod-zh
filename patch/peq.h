@@ -23,6 +23,7 @@ static inline void child_oom_first(void) {
 #define PEQ_ROOT "" /* host tests pass a scratch directory */
 void child_exit(int status) __attribute__((noreturn));
 void child_oom_first(void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
+void ringnav_clean_end(void); /* a clean end begins: the watchdog stops, the state record goes (navigation.c) */
 #ifdef canvas_set_fill_color
 /* Light Mode: every colour the payload draws passes ui_ink (navigation.c) on its way to these stock
  * setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read back
@@ -248,6 +249,13 @@ const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
 void addon_forget(const char *dir), addon_quit(const char *dir);
+/* addon.c's card games (q2app game=1), Games' rows after its own: how many (a scan), one's name,
+ * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it */
+int addon_games(void), addon_game_start(int k), addon_game_on(void);
+const char *addon_game_name(int k);
+int addon_game_input(void *e), addon_is_game(const char *id);
+void ringnav_wdt_long(void); /* navigation.c: the watchdog's long count for a long pass */
+int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);

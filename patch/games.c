@@ -534,6 +534,7 @@ static struct game {
     int pop_ring, pop_seg, trail[TRAIL][2], record; /* record: the last game set Best */
     struct best sn_best;
     struct snake sn;
+    int rows; /* the chooser's: its own games, then the card's */
 } *g __attribute__((section(".scratch")));
 
 static int sud_started(const struct sudoku *s) {
@@ -665,7 +666,7 @@ static int show(const void *unused) {
     widget_set_visible(g->sheet, g->screen != CHOOSER, 0);
     if (g->screen == CHOOSER) {
         flush(1);
-        ringnav_select(g->view, from - 1, 4);
+        ringnav_select(g->view, from - 1, g->rows);
     } else if (g->screen == VORTEX)
         vortex_new(&g->vx), run();
     else if (g->screen == SNAKE)
@@ -681,6 +682,10 @@ static void to(int screen) {
 
 static int pick_game(void *ctx, void *event) {
     to((int)(long)ctx + 1);
+    return 0;
+}
+static int pick_card_game(void *ctx, void *event) { /* the card's, over the whole screen */
+    addon_game_start((int)(long)ctx - 4);
     return 0;
 }
 
@@ -1103,11 +1108,15 @@ int games_open(void *ctx, void *event) {
     g->sheet = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     widget_set_visible(g->sheet, 0, 0);
-    g->view = page_list(page, g->list, 0, "Games", 4, 48);
+    int cards = addon_games(); /* then the card's games (addon.c), by name */
+    g->rows = 4 + cards;
+    g->view = page_list(page, g->list, 0, "Games", g->rows, 48);
     page_row_into(g->view, 0, "Sudoku", pick_game);
     page_row_into(g->view, 1, "Vortex", pick_game);
     page_row_into(g->view, 2, "Solitaire", pick_game);
     page_row_into(g->view, 3, "Snake", pick_game);
+    for (int k = 0; k < cards; ++k)
+        page_row_into(g->view, 4 + k, addon_game_name(k), pick_card_game);
     if (!BLOB_IO(GAMES_SUDOKU, g->sud, 0) || !games_ok(&g->sud, sizeof g->sud, SUD_MAGIC) ||
         g->sud.cur > 80)
         sud_new(&g->sud);

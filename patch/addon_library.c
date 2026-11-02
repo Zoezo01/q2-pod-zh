@@ -335,6 +335,7 @@ static int listed(const char *path) {
  * imports, only the files it named, so the user's own exports there aren't imported again over
  * playlists edited since. Stock's own Import Playlists row gets the whole folder. */
 int addon_m3u_dir(const char *dir, void *dq) {
+    ringnav_wdt_long(); /* the import reads every listed song's tags next, on this thread */
     int n = toolsGetDirectoryM3u8(dir, dq);
     if (!libup.only) return n;
     void *kept = _create_deque("stSongInfo");

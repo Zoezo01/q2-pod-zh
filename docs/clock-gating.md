@@ -1,7 +1,7 @@
 # Rotator clock experiment
 
-The build defers `gate_rot` until the first valid conversion (on by default;
-`--no-rotator-lazy-clock` keeps the stock module). It is independent of FLAC
+The build defers `gate_rot` until the first valid conversion (off by default;
+`--dev --rotator-lazy-clock` builds it). It is independent of FLAC
 decoding, CPU frequency, and audio output.
 
 ```sh

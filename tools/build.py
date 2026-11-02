@@ -7,7 +7,7 @@ import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarf
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.6.1'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.6.2'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -185,6 +185,15 @@ S90PLAY = 'etc/init.d/S90play'
 ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         c=/mnt/data/q2-crash.log
+        m=/mnt/data/q2-state
+        [ -f $m ] && {{
+            [ -f $c ] || {{
+                echo "== date"; date
+                echo "== demo did not end: a forced restart, or the battery ran out"
+            }} > $c
+            {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
+            rm -f $m
+        }}
         [ -f $c ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
@@ -211,7 +220,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             killall checkappprocess.sh 2>/dev/null
             rockbox
         done
-        case $s in 0|143) ;; *)
+        case $s in 0|143) rm -f $m ;; *)
             {{
                 echo "== date"; date
                 echo "== demo exit $s"
@@ -1326,9 +1335,14 @@ def patch_bluealsa(raw):
         struct.pack_into('<I', image, fileoff(raw, address), new)
     return bytes(image)
 
-def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=True, rotator_lazy_clock=True, pwm_idle_clock=True, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):
+def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):  # pragma: no mutate block
     from flac import selection
     flac_experiments = selection(flac_experiments)
+    # Kernel-module experiments: no measured saving (docs/clock-gating.md, pwm-clock-gating.md,
+    # audio-notifier.md), none handles suspend/resume, and stock Standby suspends by default; dev only.
+    check(not aic_idle_wait or dev, '--aic-idle-wait requires --dev')
+    check(not rotator_lazy_clock or dev, '--rotator-lazy-clock requires --dev')
+    check(not pwm_idle_clock or dev, '--pwm-idle-clock requires --dev')
     check(not mcu_idle_sleep or (dev and pwm_idle_clock), '--mcu-idle-sleep requires --dev --pwm-idle-clock')
     version = TAG
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
@@ -1781,12 +1795,12 @@ if __name__ == '__main__':
                     help='FLAC fast paths (comma-separated subset; empty for stock FLAC)')
     ap.add_argument('--update-repo', default=REPO, metavar='OWNER/NAME',
                     help="GitHub repo whose latest release Network Update fetches (default: %(default)s), for a fork's test builds")
-    ap.add_argument('--aic-idle-wait', action=argparse.BooleanOptionalAction, default=True,
-                    help='sleep the stopped PCM notifier until start or teardown (default on; --no-aic-idle-wait for stock)')
-    ap.add_argument('--rotator-lazy-clock', action=argparse.BooleanOptionalAction, default=True,
-                    help='defer the rotator clock until its first conversion (default on)')
-    ap.add_argument('--pwm-idle-clock', action=argparse.BooleanOptionalAction, default=True,
-                    help='cooperative Linux/MCU PWM clock gating (default on)')
+    ap.add_argument('--aic-idle-wait', action='store_true',
+                    help='experimental: sleep the stopped PCM notifier until start or teardown (requires --dev)')
+    ap.add_argument('--rotator-lazy-clock', action='store_true',
+                    help='experimental: defer the rotator clock until its first conversion (requires --dev)')
+    ap.add_argument('--pwm-idle-clock', action='store_true',
+                    help='experimental: cooperative Linux/MCU PWM clock gating (requires --dev)')
     a=ap.parse_args()
     try:
         build(a.zip,a.out.resolve(),a.logo,a.dev,a.update_repo,a.aic_idle_wait,a.rotator_lazy_clock,a.pwm_idle_clock,a.mcu_idle_sleep,a.flac_experiments)

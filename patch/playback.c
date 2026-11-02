@@ -197,7 +197,8 @@ static void qs_follow(void) {
 /* The second touch: the finger down where the swipe starts, then on across the gap. */
 static void qs_begin(void) {
     int state = *(volatile int *)g_dropdown_menu_state;
-    if (!g_backlight_status || (state && state != 3) || !ringnav_wheel_qs()) return;
+    if (!g_backlight_status || (state && state != 3) || !ringnav_wheel_qs() || addon_game_on())
+        return; /* a card game would take its swipe as a touch */
     char path[32], name[16];
     for (int i = 0; !qs_fd && i < 16; ++i) {
         tk_snprintf(path, sizeof path, "/dev/input/event%d", i);
@@ -1446,6 +1447,7 @@ void playback_poll(void) {
 }
 
 int ringnav_savequeue(void) {
+    ringnav_clean_end(); /* stock's only call is into_poweroff's */
     playback_save();
     return stock_savequeue_trampoline();
 }
@@ -1456,6 +1458,7 @@ int ringnav_savequeue(void) {
  * Network Update's) stops the player before its thread flashes and reboots, so it saves on open.
  * Stopped, nothing is saved: stock's save skips it and the snapshot keeps its second. */
 static void reboot_save(void) {
+    ringnav_clean_end();
     if (mclGetPlayStatus() != 1) save_memoryplay_info(); /* ringnav_savequeue */
 }
 int ringnav_reboot(void) {
