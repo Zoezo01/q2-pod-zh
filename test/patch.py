@@ -4969,18 +4969,20 @@ def pass_():
     paint_live_bar(); m.advance(1,clear=False)
     return (m.nodes[word]['text'],m.nodes[word]['visible'],
             ('widget_invalidate_force',bar) in [c[:2] for c in m.calls])
-assert pass_()==('播放中',1,False)  # nothing moved: no repaint
-m.word(0xa3beac,3); assert pass_()==('已暂停',1,True)
+assert pass_()==('正在播放',1,False)  # nothing moved: no repaint
+m.word(0xa3beac,3); assert pass_()==('暂停播放',1,True)
 m.word(0xa3beac,1); assert pass_()==('',0,True)
-m.word(0xa3beac,2); m.nodes[eq]['visible']=1; assert pass_()==('播放中',0,True)  # the EQ badge's room
-assert pass_()==('播放中',0,False)
-m.nodes[eq]['visible']=0; assert pass_()==('播放中',1,True)
-# Laid out by the view's own row layouter, the word takes the cell after the glyph and ends
-# clear of the centred clock (x 133), the room stock's margin and spacing leave it.
+m.word(0xa3beac,2); m.nodes[eq]['visible']=1; assert pass_()==('正在播放',0,True)  # the EQ badge's room
+assert pass_()==('正在播放',0,False)
+m.nodes[eq]['visible']=0; assert pass_()==('正在播放',1,True)
+# Laid out by the view's own row layouter, the word takes the cell after the glyph and ends inside
+# the clock's box: four hanzi run to x 133, past its x 129, but that box is sized for the widest
+# text ("12:59 PM") and the time inks from its middle, so the two never touch on screen.
 native_row_layout(m,views[0])
 glyph=[c for c in m.nodes[views[0]]['children'] if m.nodes[c]['name']=='img_state'][0]
 gx,wx=signed(m.get(glyph+O['W_X'])),signed(m.get(word+O['W_X']))
-assert wx>=gx+m.get(glyph+O['W_W']) and wx+m.get(word+O['W_W'])<=133, (gx,wx)
+clock_x=m.get(named(m,bar,'label_clock')+O['W_X'])
+assert wx>=gx+m.get(glyph+O['W_W']) and wx+m.get(word+O['W_W'])<=clock_x+6, (gx,wx,clock_x)
 passed()
 for mode in (1,2,3,0,1,2,3,0):
     m.call(address=payload_syms['setting_click'],args=(2,m.event,0,0),gap=0)
@@ -8625,8 +8627,9 @@ class GuardMachine(Machine):
         self.handlers[syms['getBtLinkSize']]='guard:size'
         self.handlers[syms['getBtLinkItem']]='guard:item'
         for n in ('video_status','radio_status','spot_status'): self.handlers[payload_syms[n]]='guard:zero'
-        for n in ('stock_pause_trampoline','stock_change_trampoline'):
+        for n in ('stock_pause_trampoline','stock_change_trampoline','stock_start_player_trampoline'):
             self.handlers[int(manifest['patch_symbols'][n],16)]='guard:'+n
+        self.handlers[payload_syms['playback_start_fits']]='guard:fits'
         self.mock('navigator_to_with_context')
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
@@ -8635,12 +8638,14 @@ class GuardMachine(Machine):
         if name=='status': ret=self.status
         elif name=='way': ret=self.way
         elif name=='size': ret=len(self.links)
+        elif name=='fits': ret=1
         elif name=='item':
             if 0<=a<len(self.links): self.word(b,self.links[a])
         elif name!='zero': self.started.append(name)
         self.returns(ret)
     def play(self): return self.call(address=payload_syms['ringnav_play_pause'],args=(0,0,0,0),gap=0)
     def change(self): return self.call(address=payload_syms['ringnav_change'],args=(1,0,0,0),gap=0)
+    def start(self): return self.call(address=payload_syms['ringnav_start_player'],args=(0,0,0,0),gap=0)
     def said(self):
         return [self.text(c[2]+8) for c in self.calls
                 if c[0]=='navigator_to_with_context' and self.text(c[1])=='dialog/msginfo_dialog']
@@ -8648,7 +8653,7 @@ def guarded(go,po=0,bal=0,way=0,status=3,links=(0,),light=1,config={}):
     m=GuardMachine(links=links,config=config); m.way=way; m.status=status
     m.byte(syms['g_po_status'],po); m.byte(syms['g_bal_status'],bal)
     m.byte(syms['g_backlight_status'],light)
-    go(m)
+    m.rc=go(m)
     return m
 for kw,want in (({},[]),({'status':2},['stock_pause_trampoline']),({'po':1},['stock_pause_trampoline']),
                 ({'bal':1},['stock_pause_trampoline']),({'way':2},['stock_pause_trampoline']),
@@ -8660,6 +8665,16 @@ for kw,want in (({},[]),({'po':1},['stock_change_trampoline']),({'way':2},['stoc
 assert guarded(lambda m: m.play(),config={'HEADSETGUARD':'0'}).started==['stock_pause_trampoline']
 assert guarded(lambda m: m.play()).said()==['未连接耳机']
 assert guarded(lambda m: m.play(),light=0).said()==[]; passed()
+
+# A row's click in a playlist starts through mclStartPlayer's hook as well, so the gate holds there
+# too (headset_guard_start): ringnav_start_player fails with -1 the way a too-long track does, and
+# the queue keeps the track it had. Asked for before it can play, so a pause still passes.
+for kw,want in (({},-1),({'way':1},-1),({'po':1},0),({'bal':1},0),({'way':2},0),
+                ({'way':1,'links':(3,)},0)):
+    assert guarded(lambda m: m.start(),**kw).rc==want,kw
+assert guarded(lambda m: m.start()).started==[]
+assert guarded(lambda m: m.start(),config={'HEADSETGUARD':'0'}).rc==0
+passed()
 
 def long_list(n=40,m=None):
     m=m or Machine(); w,es=m.page_list(n,extent=n*48,name='allmusic_page'); m.paint(w); return m,w,es

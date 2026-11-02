@@ -48,6 +48,7 @@ static struct {
     unsigned char address[14];
     int airpods;
     unsigned refused_at; /* 无耳机不播放: the last refusal, so one press toasts once */
+    volatile int pending; /* the same refusal from a start off the UI thread, toasted by headset_poll */
 } hs __attribute__((section(".scratch")));
 
 void headset_manual(void) {
@@ -74,11 +75,11 @@ static int silent_output(void) {
     }
     return 1; /* the headphone DAC alone, with no jack in it */
 }
-/* 无耳机不播放 (Q2POD HEADSETGUARD, on by default): a pocket press of Play, or of Next/Previous,
- * must not start a queue nobody can hear and drain the battery. Only starting is refused; a pause
- * still goes through, and so do the ways of playing that cannot be a pocket press (a row's click,
- * a link coming up, an AirPods ear report). Silent in a pocket: the toast is for a lit screen, and
- * one refusal at most per press, since one press may pass two gates. */
+/* 无耳机不播放 (Q2POD HEADSETGUARD, on by default): a start with nothing at the output is refused,
+ * whether it comes from a pocket press of Play or Next/Previous, or from a row's click in a playlist
+ * (headset_guard_start, out of mclStartPlayer). Only starting is refused: a pause still goes through,
+ * and so do a link coming up and an AirPods ear report. Silent in a pocket: the toast is for a lit
+ * screen, and one refusal at most per press, since one press may pass two gates. */
 int headset_guard_refuse(void) {
     if (!config_value("Q2POD", "HEADSETGUARD", 2, 1) || !silent_output()) return 0;
     unsigned now = time_now_ms();
@@ -86,6 +87,13 @@ int headset_guard_refuse(void) {
         hs.refused_at = now;
         toast("未连接耳机");
     }
+    return 1;
+}
+/* The same guard for every other start: a row's click in a playlist, a card app's import, a resumed
+ * queue. Stock's mclStartPlayer may run off the UI thread, so the toast is left to headset_poll. */
+int headset_guard_start(void) {
+    if (!config_value("Q2POD", "HEADSETGUARD", 2, 1) || !silent_output()) return 0;
+    hs.pending = 1;
     return 1;
 }
 int ringnav_play_pause(void) {
@@ -384,6 +392,13 @@ void headset_command(int code) {
 }
 void headset_poll(void) {
     unsigned now = time_now_ms();
+    if (hs.pending) { /* a start off the UI thread was refused: one toast, on a lit screen */
+        hs.pending = 0;
+        if (g_backlight_status && now - hs.refused_at > 800) {
+            hs.refused_at = now;
+            toast("未连接耳机");
+        }
+    }
     if (now - hs.checked < 100) return;
     hs.checked = now;
     int on = g_bluetoothflag && bt_linkstatus && !bt__recv_pageflag;

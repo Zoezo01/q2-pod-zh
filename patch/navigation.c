@@ -3416,11 +3416,14 @@ static int bar_repaint(const void *info) {
 /* The glyph alone says which of two bitmaps it is, so a pause nothing on screen asked for — the
  * 3.5 mm jack pulled (config_po_output's mclSetPause) or a Bluetooth link dropped — would read as
  * playing until the glyph was painted again. The state therefore also gets a word beside the glyph
- * ("播放中", "已暂停"), written from the same status by bar_word_sync, and the bar repaints through
- * bar_repaint when either moves, from whatever the pause came from. The word takes the room after
- * the glyph, and steps aside while the EQ badge (label_eq) holds it: the bar is 375 px with the
- * clock centred from CLOCK_EDGE on. */
-#define PLAY_WORD_W 48
+ * ("正在播放", "暂停播放"), written from the same status by bar_word_sync, and the bar repaints
+ * through bar_repaint when either moves, from whatever the pause came from. The word takes the room
+ * after the glyph, and steps aside while the EQ badge (label_eq) holds it: the bar is 375 px with
+ * the clock centred from CLOCK_EDGE on. Four hanzi at PLAY_WORD_PX are 60 px from the glyph's right
+ * edge (73), so the word ends at 133: label_clock starts there, but its 117 px box is sized for the
+ * widest text ("12:59 PM"), and the time itself inks from the middle of it, tens of px further in.
+ * On screen the two never touch. */
+#define PLAY_WORD_W 62
 #define PLAY_WORD_PX 15
 
 /* The word's label, created once as the last child of the glyph's view: that view lays its
@@ -3453,7 +3456,7 @@ static int bar_word_sync(void *bar) {
     int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
     if (key == st.bar_key) return 0;
     st.bar_key = key, st.bar_word = status;
-    widget_set_text_utf8(st.play_word, status == 2 ? "播放中" : status == 3 ? "已暂停" : "");
+    widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "暂停播放" : "");
     widget_set_visible(st.play_word, show, 0);
     return 1;
 }
@@ -7982,6 +7985,9 @@ int ringnav_usbmode(void *a, void *b, void *c, void *d) {
  * PCM go first. A track too long for RAM fails as stock's own checks do, with -1. */
 int ringnav_start_player(void) {
     if (!playback_start_fits()) return -1;
+    /* 无耳机不播放 covers every start, not just a pocket press: a row's click in a playlist is the
+     * same dead silence, so it fails like a track too long, and the queue keeps its position. */
+    if (headset_guard_start()) return -1;
     headset_manual();
     spot_yield();
     radio_stop();
@@ -9769,31 +9775,7 @@ int ringnav_mainscheduling(void) {
     return player_mainscheduling();
 }
 
-/* Temporary probe: writes this process's address map to the card, so the space above the
- * payload's segment (0xb96850) can be measured. Verification only, removed once measured. */
-static unsigned probe_at;
-
-static void maps_probe(const char *name) {
-    char cmd[160];
-    /* $PPID is demo itself: system() runs the command in a child shell. */
-    snprintf(cmd, sizeof cmd, "cat /proc/$PPID/maps > /mnt/mmc/%s 2>/dev/null; "
-             "cat /proc/$PPID/maps > /mnt/data/%s 2>/dev/null; sync", name, name);
-    system(cmd);
-}
-
-static void maps_probe_tick(void) {
-    unsigned now = time_now_ms();
-    if (!probe_at) {
-        maps_probe("q2maps-boot.txt");
-        probe_at = now ? now : 1;
-    } else if (now - probe_at > 90000) {
-        maps_probe("q2maps-late.txt");
-        probe_at = now;
-    }
-}
-
 int ringnav_sleep(void *loop) {
-    maps_probe_tick();
     library_fill_tick();
     if (library_fill_active() && st.pod_label[POD_LIBRARY_FILL]) pod_text(POD_LIBRARY_FILL);
     headset_poll();

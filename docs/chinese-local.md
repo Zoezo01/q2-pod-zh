@@ -23,7 +23,7 @@
 除了汉化，本分支在上游 1.6.2 之上加了三个自用功能，都在 `patch/` 里，与汉化改动互不影响：
 
 - **无耳机不播放**（`patch/headset.c`，设置行在 播放设置 → 无耳机不播放，默认开）：没有 3.5 mm / 4.4 mm 耳机、没连蓝牙耳机、也没接 USB DAC 时，按播放键或切歌键不开始播放，只提示「未连接耳机」。拦截点在 `ringnav_play_pause()`、`media_key()` 与 `playback.c` 的 `ringnav_change()`，配置键 `HEADSETGUARD`。
-- **状态栏「播放中 / 已暂停」**（`patch/navigation.c`，`bar_word_sync()` + `label_playword`）：图标只有两种位图，暂停又可能来自屏幕外（拔耳机时 `config_po_output` 自己 `mclSetPause`），所以旁边加文字说明；与图标共用上游 `bar_repaint` 的 0 ms 定时器，EQ 标记出现时让位，不压中间时钟。
+- **状态栏「正在播放 / 暂停播放」**（`patch/navigation.c`，`bar_word_sync()` + `label_playword`）：图标只有两种位图，暂停又可能来自屏幕外（拔耳机时 `config_po_output` 自己 `mclSetPause`），所以旁边加文字说明；与图标共用上游 `bar_repaint` 的 0 ms 定时器，EQ 标记出现时让位。四个汉字占 60 px，从图标右边缘的 73 到 133，落在时钟格（129 起、按最宽「12:59 PM」留的 117 px）的空边里，时刻本身居中墨水，不会相碰。
 - **一键补全封面与歌词**（`patch/onlinematch.c` 的 `library_fill_*`，设置行在 播放设置 → 补全封面与歌词）：三段推进——专辑歌词、专辑封面、没有专辑标签的单曲歌词，进度直接写在这一行（`专辑歌词 12/174 张`、`单曲歌词 8/56 首`），行尾 `◐ ◓ ◑ ◒` 每 0.3 秒转一格表示后台还在跑；`library_fill_tick` 挂在 `ringnav_sleep` 上，退出页面、听歌、熄屏都照旧推进。
 
 改动清单与刷机说明见仓库首页 [README.md](../README.md)。

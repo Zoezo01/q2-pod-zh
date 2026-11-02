@@ -1,10 +1,10 @@
 # Q2 Pod 简体中文版（山灵 Q2）
 
-山灵 Q2 的 iPod classic 风格固件补丁，**简体中文分支**。
+把山灵 Q2 刷成 iPod classic 的样子，界面全中文。
 
-这不是山灵官方固件，也不是上游的官方中文版，而是个人自用分支：把上游的固件补丁做成中文界面，并加了三个自己需要的功能。
+这不是山灵官方固件，也不是上游的官方中文版，是自己用的一个分支：在上游的固件补丁之上做中文界面，另外加了三个自己需要的功能。
 
-![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V162M-3D424B?style=flat-square)
+![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V162N-3D424B?style=flat-square)
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
 ![许可](https://img.shields.io/badge/license-MIT-B99AC8?style=flat-square)
 
@@ -31,7 +31,7 @@
 
 ### 2. 构建脚本：不再把原厂中文改回英文
 
-上游为了让界面变英文，构建时用 `english_ui()` 把每个 UI 资产里的原厂中文逐条换成英文。中文版要的是反过来的效果，所以 `tools/build.py` 增加：
+上游为了做出英文界面，构建时用 `english_ui()` 把每个 UI 资产里的原厂中文逐条换成英文。我们正好相反，所以 `tools/build.py` 里加了这么一行：
 
 ```python
 CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解码/编码往返校验
@@ -39,13 +39,13 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 `ENGLISH` / `ENGLISH_IN` 两张表仍在，改成 `False` 就得到上游的英文界面。
 
-同时 `tools/build.py` 支持直接输入山灵的 `update.tar`（不是官方 ZIP），用独立的 pinned SHA-256 校验，`manifest.json` 记 `input_kind: "tar"`；`tools/release.py` 拒绝把这类构建当作正式发布包。
+`tools/build.py` 也能直接吃山灵官方的 `update.tar`，不必先解出那个 ZIP。这类输入走另一条 pinned SHA-256 校验，`manifest.json` 里记 `input_kind: "tar"`；`tools/release.py` 不认这种包，免得被当成正式发布物。
 
-### 3. 版本标记 `V162M`
+### 3. 版本标记 `V162N`
 
-上游英文版是 `V162I`，本分支是 `V162M`：`162` 表示基于上游 1.6.2，`M` 是中文版第 12 次构建（`tools/build.py` 里 `TAG` 末尾的字母顺次用 `C`、`D`、`E`…，但跳过上游英文版占用的 `I`；1.6.x 起上游只构建一个版本，所以不再有 `VERSIONS` 表）。
+上游英文版叫 `V162I`，这个分支叫 `V162N`。前半截 `162` 是上游版本 1.6.2，末位字母是中文版的发布序号——顺次往下排 `C`、`D`、`E`…，遇到 `I` 跳过去，那是英文版占的号。（1.6.x 起上游只构建一个版本，所以 `VERSIONS` 表没了。）
 
-原因：固件升级（`update_firmware`，0x4f8440）只在"包内标记与设备已安装标记**完全相同**"时提示"已是最新版本"，并不比较版本高低。与上游英文版区分开，才能在一台刷过英文 1.6.2 的设备上直接升级到中文版；以后重新构建把字母往后挪一位就能再刷。
+为什么非要多一个字母：固件升级（`update_firmware`，0x4f8440）判断"是不是最新"，只看包里的标记和设备上已装的标记**一模一样**，不比较版本高低。标记跟英文版错开，一台刷过英文 1.6.2 的机器才能直接升到中文版；以后重新构建，把字母往后挪一位就能再刷一次。
 
 ### 4. 新功能：无耳机不播放
 
@@ -53,17 +53,20 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 主菜单 → 设置 → 播放设置 → 无耳机不播放（默认开）
 ```
 
-没插 3.5 mm / 4.4 mm 耳机、没连蓝牙耳机、也没接 USB DAC 时，按播放键或切歌键不会开始播放，只提示一句「未连接耳机」（灭屏时不提示）。Q2 没有内置扬声器，没耳机时的播放只是空放耗电，这个功能就是防口袋里误触。
+没插 3.5 mm / 4.4 mm 耳机、没连蓝牙耳机、也没接 USB DAC 时，**任何方式都开始不了播放**：按键不行，在播放列表里直接点一首歌也不行，只会提示一句「未连接耳机」（灭屏时不提示）。Q2 没有内置扬声器，这种播放只是空放耗电。
+
+最初只拦了按键，因为想的是口袋里误触；但列表点歌一样会出声，所以后来把 `mclStartPlayer` 这个所有本地曲目的唯一入口也堵上了。
 
 - `patch/headset.c`：`silent_output()` 判断输出通路（`g_po_status`、`g_bal_status`、`mclGetOutputWay()`、蓝牙列表 `status==3`），`headset_guard_refuse()` 读取配置键 `HEADSETGUARD`。
 - `patch/playback.c`、`patch/headset.c`：`ringnav_change()`、`ringnav_play_pause()`、`media_key()` 加守卫，`KEY_PLAY` / `KEY_FWD_BTN` / `KEY_BACK_BTN` 全部拦截。
+- `patch/navigation.c`：`ringnav_start_player()` 调用 `headset_guard_start()`，没有输出时返回 -1，和"曲目太长"走同一条失败路径，队列停在原来那首。这个提示在 `headset_poll` 里弹，因为 `mclStartPlayer` 可能不在 UI 线程。
 - `patch/navigation.c`：新增枚举 `POD_HEADSET_GUARD`，设置行插在「左右声道互换」之后。
 
-### 5. 新功能：状态栏显示「播放中 / 已暂停」
+### 5. 新功能：状态栏显示「正在播放 / 暂停播放」
 
 左上角的播放/暂停图标只有两种位图，暂停又可能来自屏幕上没人按下的操作（拔 3.5 mm 耳机时 `config_po_output` 会自己 `mclSetPause`），一帧画完就分辨不出"在放"还是"已停"。所以图标右边加文字说明：
 
-- `patch/navigation.c`：`bar_word_sync()` 在状态变化时写 `label_playword`，与图标共用上游 `bar_repaint` 那个 0 ms 定时器强制整条状态栏重画；文字宽 48 px，EQ 标记（`label_eq`）出现时自动让位，不压中间时钟。
+- `patch/navigation.c`：`bar_word_sync()` 在状态变化时写 `label_playword`，与图标共用上游 `bar_repaint` 那个 0 ms 定时器强制整条状态栏重画；文字宽 62 px（四个汉字 15 px 字号正好 60），EQ 标记（`label_eq`）出现时自动让位。时钟那格是按最宽的「12:59 PM」留的，时刻本身居中显示，所以四个字不会压到时间上。
 - 上游 1.5.0 的 `a783c29`（Fixes #116）已经修了"图标不跟随"本身，本分支在此基础上只加了文字。
 
 ### 6. 新功能：一键补全封面与歌词
@@ -93,13 +96,13 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 | 项 | 上游 1.6.2 | 本分支 |
 |---|---|---|
 | 界面语言 | 英文 | 简体中文（`CHINESE_UI = True`） |
-| 版本标记 | `V162I` | `V162M` |
-| 无耳机时播放/切歌 | 照常开始播放 | 拒绝并提示，可在播放设置关闭 |
-| 状态栏播放状态 | 只有图标 | 图标 +「播放中」/「已暂停」 |
+| 版本标记 | `V162I` | `V162N` |
+| 无耳机时开始播放 | 照常播，声音全进了空气 | 按键、切歌、列表点歌都拒绝，可在播放设置关掉 |
+| 状态栏播放状态 | 只有图标 | 图标 +「正在播放」/「暂停播放」 |
 | 补全封面与歌词 | 一次一首，封面上手挑 | 播放设置里一键扫全卡 |
 | 汉化来源 | — | Ericwyn/q2-pod 的汉化，按 1.6.2 结构重做 |
 
-其余全部保持上游行为：浅色模式（关 / 开 / 自动）、圆角开关、交叉淡化最长 15 秒、滚轮快捷手势、封面/歌词/信息页、Spotify、Tidal、网络电台、AirPods、评分、交叉淡化、断点续播、80% 充电上限、待机时限、应用商店与网络更新。
+其余都跟上游一样：浅色模式（关 / 开 / 自动）、圆角开关、交叉淡化（最长 15 秒）、滚轮快捷手势、封面与歌词页、Spotify、Tidal、网络电台、AirPods、评分、断点续播、80% 充电上限、待机时限、应用商店与网络更新。
 
 ## 仓库里有什么
 
@@ -137,17 +140,17 @@ uv pip install -r requirements.txt
 | 该 ZIP 内的 `update.tar` | `0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1` |
 
 ```bash
-.venv/bin/python tools/build.py '/path/Q2 Firmware V1.32.zip' --out build-cn --ipod
+.venv/bin/python tools/build.py '/path/Q2 Firmware V1.32.zip' --out build-cn
 # 或
-.venv/bin/python tools/build.py /path/update.tar --out build-cn --ipod
+.venv/bin/python tools/build.py /path/update.tar --out build-cn
 ```
 
-`--out` 目录必须不存在。产出约 51.1 MiB、载荷见构建日志（上限 512 KB），标记 `V162M`；加 `--dev` 会得到递增的开发标记（`V001c`…），附带需要密钥的远程调试服务。
+`--out` 目录必须不存在。产出一份约 51.1 MiB 的 `update.tar`，标记 `V162N`，载荷大小看构建日志（上限 512 KB）。加 `--dev` 会得到递增的开发标记（`V001c`…），附带一个需要密钥的远程调试服务。
 
 ## 测试
 
 ```bash
-.venv/bin/python test/chinese.py build-cn     # 汉字字形覆盖（463 个）
+.venv/bin/python test/chinese.py build-cn     # 汉字字形覆盖（475 个）
 .venv/bin/python test/patch.py build-cn       # 全量行为场景（约 45 分钟）
 .venv/bin/python test/peq.py
 .venv/bin/python test/coverflow.py
@@ -159,7 +162,7 @@ uv pip install -r requirements.txt
 
 把 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
-- 本版标记 `V162M`，与官方 `V1.32`、上游英文 `V162I`、上一版中文 `V161L` 都不同，可以互相刷。
+- 本版标记 `V162N`，和官方 `V1.32`、上游英文 `V162I`、上一版中文 `V162M` 都不一样，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
 - 回滚用山灵官方 V1.32 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.32`，自建包约 51 MB。
 - 网络更新（应用商店）下载的仍是 DiamondBond 的**英文**固件，所以更新行标题写成「上游英文固件更新」。装了会失去汉化，要保留中文请用 TF 卡刷本分支的包。
