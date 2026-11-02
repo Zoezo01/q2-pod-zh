@@ -1820,7 +1820,8 @@ def test_a_full_update_keeps_the_library_s_dates(fw):
     fw.mock('toolsUpdateDbTable', lambda db, sql, *_: (scripts.append(C.string_at(sql)), 1)[1])
     fw.mock('stock_scan_all_trampoline', lambda a, b, *_: (scripts.append(b'SCAN'), 7)[1])
     assert g.scan_all_kept(1, 1) == 7
-    assert scripts[1] == b'SCAN' and b'create table ringnav_added' in scripts[0] and b'update songtable' in scripts[2]
+    assert scripts[1] == b'SCAN' and re.search(rb'create table (if not exists )?ringnav_added', scripts[0])
+    assert b'update songtable' in scripts[2]
 
 
 def test_a_failed_copy_skips_the_write_back(fw):

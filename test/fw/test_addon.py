@@ -27,12 +27,13 @@ W_W, W_H, CANVAS_LCD = 0x08, 0x0c, 0x38
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56)] + \
-               [(n, C.c_int) for n in ('qr', 'present', 'launched', 'hold', 'relaunch', 'restart')] + \
+               [(n, C.c_int) for n in ('qr', 'game', 'present', 'launched', 'hold', 'relaunch', 'restart')] + \
                [(n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')]
 
 
 class Ap(C.Structure):
-    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX)]
+    _fields_ = [('a', App * APPS_MAX), ('n', C.c_int), ('shown', C.c_int), ('order', C.c_int * APPS_MAX),
+                ('games', C.c_int), ('game', C.c_int * APPS_MAX)]
 
 
 class Sm(C.Structure):
@@ -359,7 +360,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
