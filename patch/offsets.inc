@@ -311,7 +311,7 @@ static inline int arc_out(int r, int y) {
 #define SPOT_BAR_X 21
 #define SPOT_BAR_Y 251
 #define SPOT_BAR_W 333
-#define SPOT_BAR_H 8 /* the bar's view; iPod's Minimal paints its 4px line at the top (np_bar_h) */
+#define SPOT_BAR_H 8 /* the bar's view; Minimal paints its 4px line at the top (theme_t.np_bar) */
 #define SPOT_TIMES_Y 265
 #define SPOT_TIME_X 46
 /* iPod settings rows (docs/ipod.md#settings): Minimal starts SET_TOP below the status bar, Classic

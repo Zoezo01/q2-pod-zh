@@ -352,7 +352,6 @@ int ipod_classic(void); /* navigation.c: Theme: Classic */
 int bold_label(void *w, int was); /* navigation.c: Classic's bold font for w's text, or stock's */
 int ipod_light(void);   /* navigation.c: Light Mode */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
-#define np_bar_h() (ipod_classic() ? NP_BAR_CLASSIC : NP_BAR_MINIMAL)
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
 void toast(const char *text); /* navigation.c */

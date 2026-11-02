@@ -2053,7 +2053,7 @@ static void paint_chevrons(void *w, void *canvas) {
     void *win = window_of(w);
     int home = home_menu(win);
     if (g_navbar_status || !kind(w) || !P(canvas, CANVAS_LCD) || !drill(w) ||
-        (home && (!ipod_classic() || st.sel_w != w)) || !load_rows(&g_menu, w) ||
+        (home && (!theme()->chevron_home || st.sel_w != w)) || !load_rows(&g_menu, w) ||
         widget_load_image(w, "list_into", bitmap) || !clip_surface(canvas, &g_menu, &old))
         return;
     /* Light Mode: the row on a coloured bar or card keeps stock's white `>`, as an iPod's blue bar
@@ -2202,13 +2202,16 @@ static int np_marquee(const void *info) {
  * NP_CAPS_PX, painted on its page (view_album) over its transparent label, scrolled by np_marquee
  * when wider than it. ponytail: other long labels are cut off, not scrolled. */
 static void paint_caps(void *w, void *canvas) {
-    if (!w || ipod_classic() || !P(canvas, CANVAS_LCD)) return;
+    if (!w || !P(canvas, CANVAS_LCD)) return;
+    const theme_t *T = theme();
     if (w == st.bar_idle) {
-        draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - MARK_PX) / 2, MARK_PX,
-                    RGBA(0xaaaaaa), 375);
+        if (T->caps_mark)
+            draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - MARK_PX) / 2, MARK_PX,
+                        RGBA(0xaaaaaa), 375);
         return;
     }
     if (st.np_album && w == P(st.np_album, W_PARENT)) {
+        if (!T->caps_np) return;
         void *a = st.np_album;
         int old[4], clip[4];
         if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + I(a, W_X),
@@ -2225,7 +2228,8 @@ static void paint_caps(void *w, void *canvas) {
             st.np_marquee = timer_add(np_marquee, (void *)0, MARQUEE_HOLD_MS);
         return;
     }
-    if (tk_strcmp(widget_get_type(w), "hscroll_label") || !coverflow_home_owns(w)) return;
+    if (!T->caps_home || tk_strcmp(widget_get_type(w), "hscroll_label") || !coverflow_home_owns(w))
+        return;
     unsigned color = RGBA(SUDO_MUTED);
     for (void *p = w; p; p = P(p, W_PARENT))
         if (p == st.sel_widget) color = 0xffffffff;
@@ -2358,15 +2362,15 @@ static void paint_selection(void *w, void *canvas) {
     }
     /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
-    int classic = ipod_classic(), round = setting(SETTING_ROUNDED);
+    int bar = theme()->painter[PAINT_SELECTION] == SEL_BAR, round = setting(SETTING_ROUNDED);
     const scheme_t *S = scheme();
-    st.sel_widget = classic ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
-    st.sel_home = home && !classic;
+    st.sel_widget = bar ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
+    st.sel_home = home && !bar;
     /* Light Mode: ink on a coloured bar or card stays white (ringnav_style_color). */
     st.sel_accent = !neutral(S->tones[0]) && !st.sel_home && !(S->flags & SCHEME_CARD)
                         ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
                         : (void *)0;
-    if (classic && (!tile || g_menu.kind == 4)) {
+    if (bar && (!tile || g_menu.kind == 4)) {
         const unsigned *a = S->tones;
         /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
         rect_t bar = r;
@@ -3820,7 +3824,7 @@ static void label_font(void *w, int bold) {
 int bold_label(void *w, int was) {
     static const unsigned short ranges[] = BOLD_RANGES;
     const unsigned *c = w ? widget_get_text(w) : (void *)0;
-    int bold = !!w && ipod_classic();
+    int bold = !!w && theme()->bold;
     for (; bold && c && *c; ++c) {
         unsigned i = 0;
         while (i < sizeof ranges / sizeof *ranges && (*c < ranges[i] || *c > ranges[i + 1])) i += 2;
@@ -3920,8 +3924,9 @@ static void np_fill(int scrub) {
     if (!st.np_slider) return;
     slider_fill(st.np_slider, scrub ? 0xffffffff : RGBA(accent_tone(TONE_LIGHT)));
     /* Minimal's fill is near white already: its scrub thickens the line to Classic's. */
-    if (!ipod_classic())
-        widget_set_prop_int(st.np_slider, "bar_size", scrub ? NP_BAR_CLASSIC : np_bar_h());
+    const theme_t *T = theme();
+    if (T->np_scrub != T->np_bar)
+        widget_set_prop_int(st.np_slider, "bar_size", scrub ? T->np_scrub : T->np_bar);
     widget_invalidate_force(st.np_slider, (void *)0);
 }
 
@@ -3932,13 +3937,14 @@ static void np_theme(void) {
                                           "style:over:round_radius", "style:disable:round_radius",
                                           "style:focused:round_radius" };
     void *glyph = st.np_win ? widget_lookup(st.np_win, "img_playstate", 1) : (void *)0;
-    int h = np_bar_h();
+    const theme_t *T = theme();
+    int h = T->np_bar;
     for (unsigned i = 0; st.np_slider && i < sizeof radius / sizeof *radius; ++i)
         widget_set_prop_int(st.np_slider, radius[i], h / 2);
     if (st.np_slider) widget_set_prop_int(st.np_slider, "bar_size", h);
-    if (glyph) widget_set_opacity(glyph, ipod_classic() ? 255 : 0);
+    if (glyph) widget_set_opacity(glyph, T->np_state_op);
     /* Minimal: the album is paint_caps' capitals. */
-    if (st.np_album) widget_set_opacity(st.np_album, ipod_classic() ? 255 : 0);
+    if (st.np_album) widget_set_opacity(st.np_album, T->np_album_op);
 }
 
 /* Paused, the seek waits for Play (scrub_end) and the player's second stands still until then,
@@ -5178,7 +5184,7 @@ static int settings_list(void *w) {
 static void settings_layout(void *w) {
     if (!w) return;
     if (settings_list(w)) {
-        int y = ipod_classic() ? 0 : SET_TOP;
+        int y = theme()->set_top;
         if (I(w, W_Y) != y) widget_move_resize(w, I(w, W_X), y, I(w, W_W), I(w, W_H));
         return;
     }

@@ -6079,6 +6079,17 @@ for (x,y),alpha in pixels.items():
     assert pixels.get((x,BC_ART-1-y))==alpha
 assert m.get(m.lcd+O['LCD_FILL_COLOR'])==0x12345678; passed()
 
+# Stock's play-state glyph and album label are Classic's (np_theme): opaque there, hidden in Minimal.
+for theme,op in (('0',0),('1',255)):
+    CONFIG.clear(); CONFIG.update(THEME=theme); q=QueueMachine(queue=3,pos=1); q.handlers[playing+12]='stock_playing'
+    glyph,album=q.node('image','img_playstate'),q.node('label','label_ipod_album')
+    for w in (glyph,album): q.byte(w+0x34,0x80)
+    win=q.node('window','playing_page',[q.node('slider','slider_play',max=225,value=100,bar_size=4),glyph,album])
+    q.word(win+O['W_PARENT'],q.wm); q.top=win
+    assert q.call(address=playing,args=(win,7,0,0),gap=0)==0
+    assert [q.u.mem_read(w+0x34,1)[0] for w in (glyph,album)]==[op,op],theme
+passed()
+
 # Scrub: a double centre press toggles it; the wheel then moves a target of SCRUB_STEP
 # seconds times the ramp, previewed on the slider and both labels however far apart the ticks,
 # and committed once through player_seek_time (track seconds) when the scrub ends. Stock's page
