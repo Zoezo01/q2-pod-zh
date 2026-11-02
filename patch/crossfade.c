@@ -4,8 +4,10 @@
  * and off. Display's Wheel sensitivity row opens the same page (xf.ctx 1): 50-200% in tens, no
  * switch, the wheel a ten a tick and Centre back, as on Brightness (navigation.c edit_key). Audio
  * settings' Resume Songs row opens it too (xf.ctx 2): Off and RS_MIN..RS_MAX minutes in fives, the
- * same way, the length a music track needs to keep its place (navigation.c resume_poll). Mono
- * Audio's and MQA's rows live here too (mono_sync, mqa_sync). */
+ * same way, the length a music track needs to keep its place (navigation.c resume_poll). Display's
+ * Night Shift row opens it as well (xf.ctx 3): the switch and Centre cycle Off, On and Auto, as
+ * Light Mode's row does, and the slider runs NS_COOL to NS_WARM, warmer to the right, a NS_STEP a
+ * tick (nightshift.c). Mono Audio's and MQA's rows live here too (mono_sync, mqa_sync). */
 #include "offsets.inc"
 #include "peq.h"
 #include "playback.h"
@@ -17,13 +19,14 @@
 #define XF_ROW "label_xfade"     /* the Audio settings row's label, found again by name */
 #define WHEEL_ROW "label_wheel"  /* and Display's Wheel sensitivity row's */
 #define RS_ROW "label_resumemin" /* and Audio settings' Resume Songs row's */
+#define NS_ROW "label_night"     /* and Display's Night Shift row's */
 #define RS_MIN 20
 #define RS_MAX 120
 #define RS_DEFAULT 30
 
 static struct {
-    int read, on, seconds, done, key[4];
-    int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs */
+    int read, on, seconds, done, key[5];
+    int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
     int mono_read, mono, swap_read, swap, mqa_read, mqa;
@@ -94,6 +97,21 @@ static void rs_text(void *label) {
 void resume_row(void *label) {
     widget_set_name(label, RS_ROW);
     rs_text(label);
+}
+
+static void night_text(void *label) {
+    char t[32] = "夜览：关";
+    if (night_on() == 2)
+        tk_snprintf(t, sizeof t, "夜览：自动");
+    else if (night_on())
+        tk_snprintf(t, sizeof t, "夜览：%dK", night_kelvin());
+    widget_set_text_utf8(label, t);
+}
+
+/* Display's row (navigation.c ringnav_display makes it): the label, named for refresh(). */
+void night_row(void *label) {
+    widget_set_name(label, NS_ROW);
+    night_text(label);
 }
 
 /* An int shared with hciplayer's filter (and q2video): made whole under tmp and renamed, as the
@@ -173,17 +191,20 @@ int swap_click(void *ctx, void *event) {
 /* MQA (Q2POD MQA, read once, default off). hciplayer's start-of-track probe decodes about 2 s of a
  * FLAC or PCM track before it plays (docs/internals.md#mqa-detection), long enough to break a
  * gapless change. Off sends stock's {mcl-mqadecodemode\2}, which skips the probe, so MQA plays
- * undecoded; On sends 0, hciplayer's default. hciplayer keeps it until it restarts, and
- * ringnav_mode sends it again from player_initconfig, which runs on every connect. A change applies
- * at the next audio init. */
+ * undecoded; On sends 0, hciplayer's default. Send on accept before stock publishes the socket:
+ * its first connection does not request player_initconfig. A toggle applies at the next audio init. */
 static int mqa_on(void) {
     if (!xf.mqa_read) xf.mqa = config_value("Q2POD", "MQA", 2, 0), xf.mqa_read = 1;
     return xf.mqa;
 }
-void mqa_sync(void) {
+static void mqa_sync(int fd) {
     static const char on[] = "{mcl-mqadecodemode\\0}", off[] = "{mcl-mqadecodemode\\2}";
-    int fd = *(volatile int *)MCL_FD;
-    if (fd != -1) send(fd, mqa_on() ? on : off, sizeof on - 1, 0);
+    if (fd > 0) send(fd, mqa_on() ? on : off, sizeof on - 1, 0); /* -1: no player; stock never publishes 0 */
+}
+int mqa_accept(int fd, void *addr, unsigned *len) {
+    int player = accept(fd, addr, len);
+    mqa_sync(player);
+    return player;
 }
 static void mqa_text(void) { list_toggle(xf.mqa_label, "MQA", mqa_on()); }
 void mqa_row(void *label) {
@@ -193,18 +214,22 @@ void mqa_row(void *label) {
 int mqa_click(void *ctx, void *event) {
     xf.mqa = !mqa_on();
     write_int_config(xf.mqa, "Q2POD", "MQA");
-    mqa_sync();
+    mqa_sync(*(volatile int *)MCL_FD);
     mqa_text();
     return 0;
 }
 
-/* The slider's value: the sensitivity; Resume's minutes, RS_MIN - 5 for Off; or 0 for Off, else
- * the length. */
+/* The slider's value: the sensitivity; Resume's minutes, RS_MIN - 5 for Off; Night Shift's steps
+ * below NS_COOL, on or off; or 0 for Off, else the length. */
 static int value(void) {
+    if (xf.ctx == 3) return (NS_COOL - night_kelvin()) / NS_STEP;
     if (xf.ctx == 2) return resume_min() ? resume_min() : RS_MIN - 5;
     return xf.ctx ? wheel_pct() : xf.on ? xf.seconds : 0;
 }
-static const int steps[] = { 1, 10, 5 }; /* a tick or +/-, by xf.ctx */
+static const int steps[] = { 1, 10, 5, 1 }; /* a tick or +/-, by xf.ctx */
+
+/* Whether the page has its switch: Crossfade's and Night Shift's. */
+static int switched(void) { return xf.ctx == 0 || xf.ctx == 3; }
 
 /* The page and the row from xf, and the choice saved: during a drag, at its release (slid). */
 static void refresh(int save) {
@@ -212,6 +237,7 @@ static void refresh(int save) {
     if (save) xf.unsaved = 0;
     if (save && xf.ctx == 1) write_int_config(wheel_pct(), "Q2POD", "WHEELSENSITIVITY");
     if (save && xf.ctx == 2) write_int_config(xf.rs_min, "Q2POD", "RESUMEMIN");
+    if (save && xf.ctx == 3) night_save();
     if (save && !xf.ctx) {
         write_int_config(xf.on, "Q2POD", "XFADE");
         write_int_config(xf.seconds, "Q2POD", "XFADESEC");
@@ -220,13 +246,21 @@ static void refresh(int save) {
     if (row) row_text(row);
     if ((row = widget_lookup(window_manager(), WHEEL_ROW, 1))) wheel_text(row);
     if ((row = widget_lookup(window_manager(), RS_ROW, 1))) rs_text(row);
+    if ((row = widget_lookup(window_manager(), NS_ROW, 1))) night_text(row);
     if (!xf.page) return;
     char t[16];
     if (xf.ctx == 1)
         tk_snprintf(t, sizeof t, "%d%%", wheel_pct());
     else if (xf.ctx == 2)
         tk_snprintf(t, sizeof t, xf.rs_min ? "%d 分钟" : "关闭", xf.rs_min);
-    else {
+    else if (xf.ctx == 3) {
+        tk_snprintf(t, sizeof t,
+                    night_on() == 2 ? "自动"
+                    : night_on()    ? "%dK"
+                                    : "关闭",
+                    night_kelvin());
+        image_base_set_image(xf.sw, night_on() ? "switch_on" : "switch_off");
+    } else {
         tk_snprintf(t, sizeof t, xf.on ? "%d 秒" : "关闭", xf.seconds);
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
@@ -239,6 +273,15 @@ static void refresh(int save) {
 }
 
 static void take(int n) {
+    if (xf.ctx == 3) { /* a move turns it on, Auto kept */
+        int top = (NS_COOL - NS_WARM) / NS_STEP;
+        n = n < 0 ? 0 : n > top ? top : n;
+        if (n == value() && night_on()) return;
+        /* shown at once, saved as the rest (refresh) */
+        night_set(night_on() ? night_on() : 1, NS_COOL - n * NS_STEP);
+        refresh(1);
+        return;
+    }
     if (xf.ctx == 2) {
         n = n < RS_MIN ? 0 : n > RS_MAX ? RS_MAX : (n + 2) / 5 * 5; /* the nearest five */
         if (n == resume_min()) return;
@@ -269,8 +312,13 @@ static void set_value(int n, int held) {
 }
 
 static int toggle(void *ctx, void *event) {
-    if (xf.ctx) return 0;
+    if (!switched()) return 0;
     xf.sliding = 0;
+    if (xf.ctx == 3) {
+        night_set((night_on() + 1) % 3, night_kelvin()); /* Off, On, Auto */
+        refresh(1);
+        return 0;
+    }
     xf.on = !xf.on;
     refresh(1);
     return 0;
@@ -293,7 +341,7 @@ static int gone(void *ctx, void *event) {
 }
 
 /* The row's click: stock's Boot volume page, its handlers swapped for these; ctx 1 for Wheel
- * sensitivity's row, 2 for Resume Songs'. */
+ * sensitivity's row, 2 for Resume Songs', 3 for Night Shift's. */
 int xfade_open(void *ctx, void *event) {
     int mode = (int)(long)ctx, wheel = mode == 1;
     settings();
@@ -325,18 +373,22 @@ int xfade_open(void *ctx, void *event) {
     widget_on(xf.slider, EVT_VALUE_CHANGING, slid, (void *)1L);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
-    widget_set_text_utf8(title, mode == 2 ? "断点续播"
-                                : wheel   ? "滚轮灵敏度"
-                                          : "交叉淡化");
+    widget_set_text_utf8(title, mode == 3   ? "夜览"
+                                : mode == 2 ? "断点续播"
+                                : wheel     ? "滚轮灵敏度"
+                                            : "交叉淡化");
     /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);
     widget_set_enable(xf.view, 1);
-    if (mode) widget_set_visible(xf.sw, 0, 0);
-    slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);
-    slider_set_max(xf.slider, mode == 2 ? RS_MAX : wheel ? 200 : XF_MAX);
-    slider_set_step(xf.slider, steps[mode]);
     xf.ctx = mode;
+    if (!switched()) widget_set_visible(xf.sw, 0, 0);
+    slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);
+    slider_set_max(xf.slider, mode == 3   ? (NS_COOL - NS_WARM) / NS_STEP
+                              : mode == 2 ? RS_MAX
+                              : wheel     ? 200
+                                          : XF_MAX);
+    slider_set_step(xf.slider, steps[mode]);
     xf.page = page;
     refresh(0);
     return 0;
@@ -356,7 +408,7 @@ int xfade_key(void *top, unsigned key) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!xf.page || top != xf.page) return 0;
     if (key == KEY_CENTER) {
-        if (xf.ctx) return 0;
+        if (!switched()) return 0;
         int press = center_press(&xf.press, &xf.press_at, single, 0);
         if (press == 2 && g_backlight_status) on_wm_keyup_fun((void *)0, (void *)release);
         return press;
@@ -368,19 +420,22 @@ int xfade_key(void *top, unsigned key) {
 
 /* playback_poll, each UI pass: the next change's fade into XFADE_FILE, made whole under another
  * name first as the visualizer's tap is. A fade only when Crossfade and stock's Gapless are on and
- * the next track is another album's (album_cmp), so albums stay gapless. */
+ * the next track is another album's (album_cmp), so albums stay gapless; stock Shuffle's next (-2)
+ * is drawn at the change, so it counts as another album's. Its change is a cold start (stock
+ * preloads nothing in Shuffle), which the filter's tail waits out (XF_STALE_NS). */
 void xfade_poll(int next) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned pos = (unsigned)I(MCL_POS, 0), n = q ? deque_size(q) : 0;
-    if (!xf.flag && (next < 0 || pos >= n)) return; /* nothing playing on: no config read yet */
+    if (!xf.flag && (next == -1 || pos >= n)) return; /* nothing playing on: no config read yet */
     settings();
     if (xf.flag && *xf.flag) peq_chain(); /* the fade runs in the filter, once something plays */
     int in = next >= 0 && pos < n && (unsigned)next < n; /* records, not positions: a new queue */
-    int key[4] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
-                   in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0 };
+    int key[5] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
+                   in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
+                   next == -2 && pos < n };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;
     memcpy(xf.key, key, sizeof key);
-    int ms = key[0] && key[1] && key[2] != key[3] && album_cmp((void *)key[2], (void *)key[3])
+    int ms = key[0] && key[1] && (key[4] || (key[2] != key[3] && album_cmp((void *)key[2], (void *)key[3])))
                  ? key[0] * 1000
                  : 0;
     xf.done = 0; /* until the player is told: a file that cannot be made yet is tried next pass */

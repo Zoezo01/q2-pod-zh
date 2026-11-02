@@ -8,7 +8,6 @@
 #include "playback.h"
 #include "stock.h"
 #endif
-#if IPOD || defined PEQ_HOST
 
 #ifdef PEQ_HOST /* playback.c's and coverflow.c's on the device */
 unsigned games_seed = 1;
@@ -535,6 +534,7 @@ static struct game {
     int pop_ring, pop_seg, trail[TRAIL][2], record; /* record: the last game set Best */
     struct best sn_best;
     struct snake sn;
+    int rows; /* the chooser's: its own games, then the card's */
 } *g __attribute__((section(".scratch")));
 
 static int sud_started(const struct sudoku *s) {
@@ -666,7 +666,7 @@ static int show(const void *unused) {
     widget_set_visible(g->sheet, g->screen != CHOOSER, 0);
     if (g->screen == CHOOSER) {
         flush(1);
-        ringnav_select(g->view, from - 1, 4);
+        ringnav_select(g->view, from - 1, g->rows);
     } else if (g->screen == VORTEX)
         vortex_new(&g->vx), run();
     else if (g->screen == SNAKE)
@@ -682,6 +682,10 @@ static void to(int screen) {
 
 static int pick_game(void *ctx, void *event) {
     to((int)(long)ctx + 1);
+    return 0;
+}
+static int pick_card_game(void *ctx, void *event) { /* the card's, over the whole screen */
+    addon_game_start((int)(long)ctx - 4);
     return 0;
 }
 
@@ -888,8 +892,9 @@ static void sudoku_paint(void *canvas, unsigned tone) {
         box(canvas, x0 + k * CELL - 1, y0 - 1, 2, 9 * CELL + 2, 0xaaaaaa);
         box(canvas, x0 - 1, y0 + k * CELL - 1, 9 * CELL + 2, 2, 0xaaaaaa);
     }
+    /* the accent's text tone: Graphite's light tone is the grid's grey */
     frame_rect(canvas, x0 + s->cur % 9 * CELL, y0 + s->cur / 9 * CELL, CELL, CELL,
-               g->picking ? 0xffffff : tone, 0);
+               g->picking ? 0xffffff : accent_tone(3), 0);
     if (g->confirm)
         banner(canvas, tone, "开始新游戏？", 0xffffff, "中心键：是  返回键：否", 0xaaaaaa);
     else if (sud_done(s))
@@ -972,9 +977,7 @@ static void vortex_paint(void *canvas, unsigned tone) {
 /* A grey v (0 to 255) that Light Mode's flip (ui_ink) leaves at v: a card is paper-white in either
  * mode, its black suits black. */
 static unsigned unflipped(unsigned v) {
-#if IPOD
     if (ipod_light()) v = v < LIGHT_INK ? 255 : (LIGHT_PAPER - v) * 255 / (LIGHT_PAPER - LIGHT_INK);
-#endif
     return v * 0x010101u;
 }
 
@@ -1105,11 +1108,15 @@ int games_open(void *ctx, void *event) {
     g->sheet = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     widget_set_visible(g->sheet, 0, 0);
-    g->view = page_list(page, g->list, 0, "游戏", 4, 48);
+    int cards = addon_games(); /* then the card's games (addon.c), by name */
+    g->rows = 4 + cards;
+    g->view = page_list(page, g->list, 0, "游戏", g->rows, 48);
     page_row_into(g->view, 0, "数独", pick_game);
     page_row_into(g->view, 1, "旋涡", pick_game);
     page_row_into(g->view, 2, "纸牌", pick_game);
     page_row_into(g->view, 3, "贪吃蛇", pick_game);
+    for (int k = 0; k < cards; ++k)
+        page_row_into(g->view, 4 + k, addon_game_name(k), pick_card_game);
     if (!BLOB_IO(GAMES_SUDOKU, g->sud, 0) || !games_ok(&g->sud, sizeof g->sud, SUD_MAGIC) ||
         g->sud.cur > 80)
         sud_new(&g->sud);
@@ -1124,5 +1131,4 @@ int games_open(void *ctx, void *event) {
     if (bad) sol_new(&g->sol);
     return 0;
 }
-#endif
 #endif

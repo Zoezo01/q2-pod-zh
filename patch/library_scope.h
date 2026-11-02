@@ -5,5 +5,6 @@
 #define LIBRARY_SCOPE_TOKEN "/*q2-library-scope*/1"
 char *library_scope_query(const char *sql); /* caller frees; NULL on allocation failure */
 int library_scope_hidden(const char *path);
+void library_scope_scan(void); /* stock's scan thread, before a library update */
 
 #endif

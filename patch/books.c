@@ -468,11 +468,7 @@ unsigned book_back(const unsigned char *t, unsigned n, unsigned pos, int rows, i
 #define BOOK_X 24  /* the text's left edge, and its margin on the right */
 #define BOOK_Y 6   /* the first line's top: ten lines clear the glass's corners */
 #define BOOK_ROWS 10
-#if IPOD
 #define BOOK_TONE accent_tone(2)
-#else
-#define BOOK_TONE 0xaaaaaa
-#endif
 #define BOOKS_MAX 500 /* ponytail: ringnav navigates at most MAX_ENTRIES (512) rows */
 #define MARKS_N 64    /* books whose page is kept, the most recently read first */
 
@@ -783,6 +779,7 @@ int video_start(const char *file, int radio) {
     if (!out) dac_take(); /* without it the PCM takes the sound and the jack stays silent */
     int pid = fork();
     if (!pid) {
+        child_oom_first();
         const char *dev = out ? out : "plughw:0,0", *v = out ? vol : (char *)0;
         if (radio)
             execl(VIDEO_BIN, VIDEO_BIN, "-r", dev, file, v, (char *)0);

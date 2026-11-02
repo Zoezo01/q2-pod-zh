@@ -2,7 +2,7 @@
 #include "offsets.inc"
 
 extern int stock_eq_trampoline(int mode);
-int peq_chained __attribute__((section(".scratch"))); /* a peq_stock_eq this boot: the filter is in */
+int peq_chained __attribute__((section(".scratch"))); /* a peq_stock_eq since hciplayer connected: the filter is in */
 /* All calls, including restored playback, instantiate the replacement even in bypass.
  * Afterwards the flag only drives the status-bar EQ icon (systembar_showface @0x52f8b0): on
  * while 3EQ or PEQ is. */
@@ -49,13 +49,8 @@ enum { BACK = 1000, APPLY, RESET, BYPASS, MENU, IMPORT, SAVE, ENABLE, TYPE, RAIS
        FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
 #define FILE_PAGE 128
 #define GRAPH_W (375 - 2 * PEQ_GRAPH_X)
-#if IPOD
 #define ROW_X CF_EDGE /* the text column clear of the rounded glass, as coverflow.c's */
 #define TONE accent_tone(2) /* the light tone */
-#else
-#define ROW_X 12
-#define TONE 0xffffff
-#endif
 /* The page's two tabs: Simple, 3EQ's sliders (e3), and Advanced, the PEQ editor (ui.screen). */
 enum { SIMPLE, ADVANCED };
 static struct {
@@ -751,8 +746,8 @@ static void path(void *vg, const float *y) {
 }
 
 /* The graph view (ringnav_paint, after stock): a faint grid at 0, +-6 and +-12 dB and 100 Hz, 1 kHz
- * and 10 kHz, labelled in grey; the response as a 2px line in the accent's light tone (white in
- * Stock), fading to clear toward 0 dB, the other channel's dimmer when the two differ; a ring on each
+ * and 10 kHz, labelled in grey; the response as a 2px line in the accent's light tone,
+ * fading to clear toward 0 dB, the other channel's dimmer when the two differ; a ring on each
  * band in use, the edited band's larger and filled. Off: the line alone, grey. */
 static void e3_paint(void *canvas), tabs_paint(void *canvas);
 void peq_paint(void *w, void *canvas) {
@@ -1099,7 +1094,7 @@ static void e3_box(void *canvas, int x, int y, int w, int h, unsigned rgb) {
     canvas_fill_rect(canvas, x, y, w, h);
 }
 
-/* The switch's bar and the gains' bars in the accent's light tone (white in Stock and Minimal), grey
+/* The switch's bar and the gains' bars in the accent's light tone (white in Minimal), grey
  * while 3EQ is off; the selected control on a lighter card; the slider being adjusted with a white
  * handle and value, the others grey. While PEQ plays the switch shows it on, under the applied
  * preset's name (Advanced unnamed), and the sliders are dimmed: one takes over as 3EQ. */

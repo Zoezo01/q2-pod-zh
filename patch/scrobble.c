@@ -56,14 +56,18 @@ int scrobble_ready(void) {
     return read_config(c);
 }
 
+/* [SCROBBLE] key's number, 0 when missing. PERCENT: the share of a song heard that logs a listen
+ * (navigation.c's resume_poll). */
+int scrobble_value(const char *key) {
+    char v[256] = "";
+    toolsReadConfig(INI_FILE, "SCROBBLE", key, v, "");
+    return atoi(v);
+}
+
 /* [SCROBBLE] key=1, off unless 1. ALBUM_ARTIST: listens log the album artist in place of the
  * artist, for tags whose artist carries "feat." guests. AUTO: uploads start by themselves
  * (navigation.c's scrobble_auto). */
-int scrobble_flag(const char *key) {
-    char v[256] = "";
-    toolsReadConfig(INI_FILE, "SCROBBLE", key, v, "");
-    return atoi(v) == 1;
-}
+int scrobble_flag(const char *key) { return scrobble_value(key) == 1; }
 
 /* The UI thread's listen; the upload's rewrite holds the same lock. */
 void scrobble_append(const char *line, unsigned n) {

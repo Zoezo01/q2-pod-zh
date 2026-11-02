@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package both variants locally; optionally upload and publish one verified release."""
+"""Package the release locally; optionally upload and publish it, verified."""
 import argparse
 import hashlib
 import importlib.util
@@ -11,11 +11,11 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from build import ROOT, REPO, VERSION, VERSIONS, ZIP_SHA, DEMO_SHA, build, check, run, sha, source_sha256
+from build import ROOT, REPO, VERSION, TAG, ZIP_SHA, DEMO_SHA, build, check, run, sha, source_sha256
 
-# Each variant's update.tar; iPod is the main build, Legacy keeps the stock UI. Network Update
-# (patch/netupdate.c) fetches releases/latest/download/<name>, so the name can't carry the version.
-ASSETS = {'ipod': 'update.tar', 'stock': 'update-legacy.tar'}
+# Network Update (patch/netupdate.c) fetches releases/latest/download/<ASSET>, so the name can't
+# carry the version.
+ASSET = 'update.tar'
 # Rebuilt from docs/manual every release; the README links releases/latest/download/<GUIDE>.
 GUIDE = 'Q2-Pod-User-Guide.pdf'
 
@@ -35,15 +35,12 @@ def notes():
 
 def release_body(out, record):
     """The version heading and its bullets plus the SHA-256 block used by previous releases."""
-    lines = [notes(), '', 'SHA-256:']
-    for variant, asset in ASSETS.items():
-        lines.append(f'- {asset} ({VERSIONS[variant]}): `{record["assets"][asset]}`')
-    return '\n'.join(lines) + '\n'
+    return '\n'.join([notes(), '', 'SHA-256:', f'- {ASSET} ({TAG}): `{record["assets"][ASSET]}`']) + '\n'
 
 
-def validate(directory, variant):
+def validate(directory):
     m = json.loads((directory/'manifest.json').read_text())
-    check(m['variant'] == variant and m['version'] == VERSIONS[variant], 'Wrong variant identity')
+    check(m['version'] == TAG, 'Wrong build identity')
     check(m['update_repo'] == REPO, f"Network Update fetches {m['update_repo']}'s releases, not {REPO}'s")
     check(m.get('input_kind', 'zip') == 'zip', 'Built from update.tar, not the vendor ZIP: not a release')
     check(m['input_zip_sha256'] == ZIP_SHA and m['stock_demo_sha256'] == DEMO_SHA, 'Wrong stock identity')
@@ -54,7 +51,7 @@ def validate(directory, variant):
         check(t.getnames() == ['firmware_v20.info', 'recovery-update', 'recovery-update/xImage',
                                'recovery-update/rootfs.squashfs'], 'Unexpected update members')
         info = t.extractfile('firmware_v20.info').read().decode().splitlines()
-        check(info[:2] == ['Shanling Q2', VERSIONS[variant]] and len(info) == 4, 'Wrong update identity')
+        check(info[:2] == ['Shanling Q2', TAG] and len(info) == 4, 'Wrong update identity')
         for line, name, key in zip(info[2:], ['recovery-update/xImage', 'recovery-update/rootfs.squashfs'],
                                   ['kernel_sha256', 'rootfs_sha256']):
             data = t.extractfile(name).read()
@@ -63,7 +60,7 @@ def validate(directory, variant):
                         ('playback', directory), ('m4b', directory), ('ldac', directory),
                         ('id3', directory), ('headset_io', directory), ('bluealsa', directory),
                         ('coverflow',), ('mp3',), ('mp3_gapless',),
-                        ('mp3_gapless_player', directory), ('bt_resample', directory), ('remote',)):
+                        ('mp3_gapless_player', directory), ('bt_resample', directory), ('xfade_player', directory), ('remote',)):
         subprocess.run([sys.executable, ROOT/f'test/{test}.py', *map(str, args)], check=True)
 
 
@@ -74,16 +71,14 @@ def package(stock, out):
     out.mkdir(parents=True)
     source = source_sha256()
     revision = run('git', '-C', ROOT, 'rev-parse', 'HEAD').strip()
-    checksums = {}
-    for variant, asset in ASSETS.items():
-        for suffix in ('', '-repeat'):
-            build(stock, out/(variant+suffix), ROOT/'assets/boot-logo.jpg', ipod=variant == 'ipod')
-        # The byte comparisons below prove the repeat build; validate the first only.
-        validate(out/variant, variant)
-        data = (out/variant/'update.tar').read_bytes()
-        check(data == (out/(variant+'-repeat')/'update.tar').read_bytes(), f'{variant}: non-reproducible update')
-        (out/asset).write_bytes(data)
-        checksums[asset] = sha(data)
+    for suffix in ('', '-repeat'):
+        build(stock, out/('build'+suffix), ROOT/'assets/boot-logo.jpg')
+    # The byte comparison below proves the repeat build; validate the first only.
+    validate(out/'build')
+    data = (out/'build/update.tar').read_bytes()
+    check(data == (out/'build-repeat/update.tar').read_bytes(), 'Non-reproducible update')
+    (out/ASSET).write_bytes(data)
+    checksums = {ASSET: sha(data)}
     subprocess.run([sys.executable, str(ROOT/'docs/manual/build.py'), str(out/GUIDE)], check=True)
     check(source == source_sha256() and revision == run('git', '-C', ROOT, 'rev-parse', 'HEAD').strip(),
           'Source changed during release build')
@@ -92,20 +87,19 @@ def package(stock, out):
     (out/'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in checksums.items()))
     (out/'release-notes.md').write_text(release_body(out, record))
     (out/'release.json').write_text(json.dumps(record, indent=2)+'\n')
-    print(f'Both variants validated and reproducible: {out}')
+    print(f'Validated and reproducible: {out}')
 
 
 def upload(out, publish=False):
     record = json.loads((out/'release.json').read_text())
     check(record['tag'] == VERSION and record['source_sha256'] == source_sha256(), 'Wrong release source/tag')
-    check(set(record['assets']) == set(ASSETS.values()), 'Both variants are required')
-    # package() validated these trees; the update bytes and source hash prove they are unchanged.
-    for variant, asset in ASSETS.items():
-        data = (out/asset).read_bytes()
-        check(sha(data) == record['assets'][asset] and data == (out/variant/'update.tar').read_bytes(),
-              'Release update mismatch')
+    check(set(record['assets']) == {ASSET}, f'The release is {ASSET} alone')
+    # package() validated this tree; the update bytes and source hash prove it is unchanged.
+    data = (out/ASSET).read_bytes()
+    check(sha(data) == record['assets'][ASSET] and data == (out/'build/update.tar').read_bytes(),
+          'Release update mismatch')
     check(sha((out/GUIDE).read_bytes()) == record['guide_sha256'], 'User guide mismatch')
-    sums = ''.join(f'{record["assets"][name]}  {name}\n' for name in ASSETS.values())
+    sums = f'{record["assets"][ASSET]}  {ASSET}\n'
     check((out/'SHA256SUMS').read_text() == sums, 'Release checksums mismatch')
     (out/'release-notes.md').write_text(release_body(out, record))
     gh = ['gh', '--repo', REPO, 'release']
@@ -116,7 +110,7 @@ def upload(out, publish=False):
         check(existing['isDraft'], 'Refusing to overwrite a published release')
     run(*gh, 'edit' if existing else 'create', VERSION, '--draft', '--target', record['revision'], '--title', VERSION,
         '--notes-file', out/'release-notes.md')
-    files = [*ASSETS.values(), GUIDE]
+    files = [ASSET, GUIDE]
     run(*gh, 'upload', VERSION, *(out/name for name in files), '--clobber')
     with tempfile.TemporaryDirectory(prefix='q2-release-verify-') as tmp:
         run(*gh, 'download', VERSION, '--dir', tmp)
@@ -139,7 +133,7 @@ if __name__ == '__main__':
     a = ap.parse_args()
     try:
         if a.command == 'package':
-            # Validation runs the MIPS suite, so fail before four builds, not after them.
+            # Validation runs the MIPS suite, so fail before two builds, not after them.
             check(importlib.util.find_spec('unicorn') is not None,
                   'Release validation needs the requirements.txt environment: pip install -r requirements.txt')
             package(a.zip, a.out.resolve())

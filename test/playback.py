@@ -434,6 +434,25 @@ for cls,want in ((0xff10,(1,['a2','a1'])),(0xf001,(2,['a2','b1','a1']))):
     r.stock_resume=(cls,rows,2); assert (r.fn('ringnav_memory',out),r.names(out))==want
 checks+=1
 
+# Without advanced play a local queue is kept plain (version 4) while Memory Playback is on, the only
+# thing that reads it: an added track, the position and second come back, still without advanced
+# play; a queue edit at the same track rewrites it, and a stream's queue leaves it alone.
+m=PlaybackMachine(); m.word(O['MCL_TYPE'],0xff01); q=m.get(syms['mcl_pdeqplaylist'])
+m.items(q).append(m.song('added')); m.fn('playback_insert',7,1,0); m.fn('playback_save')
+assert '/mnt/data/ringnav-queue' not in m.files  # Memory Playback off: nothing written
+m.byte(syms['g_memory_play'],2); m.fn('playback_save')
+saved=struct.unpack_from('<14I',m.files['/mnt/data/ringnav-queue'])
+assert (saved[1],saved[4],saved[5],saved[13])==(4,8,2,0xff01) and m.fn('playback_option',0)==0
+r=PlaybackMachine(m.files); r.byte(syms['g_memory_play'],2); r.library_rows.append(r.song('added'))
+out=r.deque([]); assert r.fn('ringnav_memory',out)==2 and r.seek==37
+assert r.names()==['a2','b1','a1','cue1','cue2','solo','a1','added'] and r.fn('playback_option',1)==2
+r.fn('ringnav_load',out,2,0xff01); assert r.fn('playback_option',1)==2 and len(r.names())==8
+m.items(q).pop(); m.fn('playback_save')
+assert struct.unpack_from('<I',m.files['/mnt/data/ringnav-queue'],16)[0]==7
+plain=m.files['/mnt/data/ringnav-queue']; m.word(O['MCL_TYPE'],0xf1); m.items(q).pop(); m.fn('playback_save')
+assert m.files['/mnt/data/ringnav-queue']==plain
+checks+=1
+
 # Missing priority files retain the remaining Play Next block and a valid next-boot snapshot.
 m=PlaybackMachine(); m.options(1,5,0)
 q=m.get(syms['mcl_pdeqplaylist']); at=m.current()+1
@@ -647,8 +666,9 @@ for cls in (0xf001,0xff10,1):
         assert r.current()==6 and r.stops==1
         checks+=1
 
-# Boot applies the saved stock mode before restoring the queue, then again when hciplayer
-# connects. Execute config_init's actual call site: neither startup call is a mode choice.
+# Boot applies the saved stock mode before restoring the queue; player_initconfig applies it again
+# only when hciplayer reconnects after a disconnect. Execute config_init's actual call site: neither
+# call is a mode choice.
 for folder in (0,1):
     for mode in range(4):
         m=PlaybackMachine()
@@ -667,12 +687,13 @@ for folder in (0,1):
         at=r.fn('ringnav_memory',out); assert at==want[0] and r.seek==37
         r.fn('ringnav_load',out,at,0xf001)
         r.word(O['MCL_FD'],9); r.sent=[]
-        if mode==3: r.config['MQA']='1'
+        r.word(ps['peq_chained'],1) # the filter was attached under the last hciplayer
         r.call(address=0x513374,args=(0,0,0,0),gap=0) # player_initconfig
         assert '/mnt/data/ringnav-queue' in r.files and r.sequence()==want
-        # The connected hciplayer gets MQA's mode: off (2) skips its start-of-track probe.
+        assert r.get(ps['peq_chained'])==0 # a new hciplayer has no filter: peq_chain attaches again
+        # MQA is already sent at accept; this reconnect configuration does not send it again.
         mqa=lambda: [x[1] for x in r.sent if x[1].startswith(b'{mcl-mqa')]
-        assert mqa()==[b'{mcl-mqadecodemode\\0}' if mode==3 else b'{mcl-mqadecodemode\\2}']
+        assert not mqa()
         # A real mode choice still clears the snapshot after startup, and sends no MQA mode.
         r.sent=[]
         r.call(address=syms['config_playmode'],args=(mode,0,0,0),gap=0)
@@ -680,6 +701,53 @@ for folder in (0,1):
         # Stock Shuffle (2) keeps Shuffle Albums/Folders; every other mode ends them.
         assert ('/mnt/data/ringnav-queue' in r.files) == (mode == 2)
         checks+=1
+
+# The first connection never sets stock's reconfiguration flag, so player_initconfig does not run
+# then. Apply the saved MQA mode inside the real accept loop, before the descriptor becomes visible
+# to playback.
+class MqaConnectMachine(PlaybackMachine):
+    def __init__(self):
+        super().__init__()
+        self.handlers[syms['accept@GLIBC_2.0']]='mqa:accept'
+        self.handlers[syms['usleep@GLIBC_2.0']]='mqa:sleep'
+        self.handlers[ps['list_toggle']]='mqa:label' # the row's switch: no settings page here
+        self.word(O['MCL_FD']+4,7) # stock's listening socket
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name=='mqa:accept':
+            assert u.reg_read(UC_MIPS_REG_A0)==7
+            assert self.get(u.reg_read(UC_MIPS_REG_A2))==110
+            self.returns(self.accepted,clobber=True)
+        elif name=='mqa:sleep': u.emu_stop()
+        elif name=='mqa:label': self.returns(0,clobber=True)
+        else:
+            if name=='q:send@GLIBC_2.0': assert self.get(O['MCL_FD'])==0xffffffff; self.unpublished+=1
+            super().hook(u,address,size,unused)
+    def connect(self,fd):
+        self.accepted=fd; self.sent=[]; self.unpublished=0
+        self.word(O['MCL_FD'],-1)
+        self.u.reg_write(UC_MIPS_REG_SP,0x7000f000)
+        self.u.reg_write(UC_MIPS_REG_T9,syms['mclWaitAccept'])
+        self.u.emu_start(syms['mclWaitAccept'],0x1000000,count=self.budget)
+        assert self.u.reg_read(UC_MIPS_REG_PC)==syms['usleep@GLIBC_2.0']
+        assert self.get(O['MCL_FD'])==(fd if fd>0 else 0xffffffff)
+        assert self.unpublished==len(self.sent) # every send saw the socket still unpublished
+
+on,off=b'{mcl-mqadecodemode\\0}',b'{mcl-mqadecodemode\\2}'
+for saved in (None,'0','1'):
+    m=MqaConnectMachine()
+    if saved is not None: m.config['MQA']=saved
+    want=on if saved=='1' else off
+    for fd in (-1,0,9,9,11): # failure, stock-rejected zero, boot, reused fd, new fd
+        m.connect(fd)
+        assert m.sent==([(fd,want,len(want),0)] if fd>0 else [])
+        checks+=1
+    # A toggle while no player is connected sends nothing; the next connection gets the new mode.
+    m.word(O['MCL_FD'],-1); m.sent=[]
+    assert m.fn('mqa_click')==0 and not m.sent
+    assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0 if saved=='1' else 1,'Q2POD','MQA')]
+    m.connect(9); assert m.sent==[(9,off if saved=='1' else on,21,0)]
+    checks+=1
 
 # Previous then Next returns to the track Previous left instead of skipping it.
 m=PlaybackMachine(); m.options(2,5,0); m.advance_song(0); m.advance_song(0)
@@ -879,7 +947,7 @@ def ui_pass(m):
     m.fn('ringnav_sleep',0x1234)
 assert wheel([dark,ui_pass,(10,1)]+turn(10,D)+[(Y,0),lit,ui_pass,dark,(Y,1)]+turn(Y,U))[0]==[]  # wake without wheel travel re-arms
 checks+=1
-# UI wiring in both variants: stock-style choice menu, selected marker, touch and wheel slider.
+# UI wiring: stock-style choice menu, selected marker, touch and wheel slider.
 m=PlaybackMachine(); m.top=m.node('window','playing_page'); m.stack=[m.top]; m.word(m.top+O['W_PARENT'],m.wm)
 m.press(100); assert m.hold()==11
 assert m.labels()[-3:]==['随机播放','重复播放','分组：专辑']
@@ -942,7 +1010,7 @@ for nxt,pos,wrap,folder in ((1,6,0,'toolsLoadNextDir'),(0,0,6,'toolsLoadPrevDir'
             else: assert folder not in m.seen and ('mclSetPlayPos',wrap) in m.seen, m.seen
             checks+=1
 
-print(f'{checks} advanced playback/wheel MIPS checks passed ({variant})')
+print(f'{checks} advanced playback/wheel MIPS checks passed')
 
 # Elapsed checkpoints are fixed-size, atomic, and tied to both snapshot and position.
 m=PlaybackMachine(); m.options(0,5,0)
@@ -1106,3 +1174,47 @@ assert m.sent_speed==0 and m.u.mem_read(syms['g_playspeed_mode'],1)[0]==0
 m.word(O['MCL_POS'],0); m.sent_speed=None; m.fn('playback_track_speed')
 assert m.sent_speed==2 and m.u.mem_read(syms['g_playspeed_mode'],1)[0]==2
 print('Folder speed: persistence, exact parents, reconnect, gapless and failed saves passed')
+
+# Crossfade's policy (crossfade.c xfade_poll, from playback_poll each UI pass): the next change's
+# fade in ms, in the int hciplayer's filter maps (XFADE_FILE), only to another album with Gapless
+# on; while one is set, the filter goes into the chain (peq_chain).
+class XfadeMachine(PlaybackMachine):
+    def __init__(self, on='1'):
+        super().__init__(); self.flag=self.alloc(4); self.attaches=0
+        self.config.update(XFADE=on, XFADESEC='7')
+        for n in ('open','ftruncate','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
+        self.handlers[ps['peq_attach']]='xf:attach'
+        self.handlers.pop(syms['mclGetPlayStatus']); self.word(0xa3beac,2)  # playing
+        self.word(syms['g_equalizer_flag'],0); self.byte(O['MCL_GAPLESS'],1)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('xf:'): return super().hook(u,address,size,unused)
+        if name=='xf:open': self.files[self.text(u.reg_read(REGS[0]))]=b''
+        self.attaches+=name=='xf:attach'
+        self.returns(self.flag if name=='xf:mmap' else 3 if name=='xf:open' else 0)
+    def fade(self,pos=None):
+        if pos is not None: self.word(O['MCL_POS'],pos)
+        self.fn('playback_poll'); return self.get(self.flag)
+m=XfadeMachine()
+assert m.fade()==7000 and '/tmp/q2xfade' in m.files  # 'album a' to the untagged /C/ image
+assert m.fade()==7000 and m.attaches==1
+assert m.fade(3)==0 and m.fade(0)==7000  # the image's two CUE tracks; Album A to Album B
+m.byte(O['MCL_GAPLESS'],0); assert m.fade()==0
+m.byte(O['MCL_GAPLESS'],1); assert m.fade()==7000
+m.word(O['MCL_MODE'],1); assert m.fade()==0  # Repeat One: no next file
+m.word(O['MCL_MODE'],2); assert m.fade()==7000  # stock Shuffle: the next is drawn at the change, another album's
+m.byte(O['MCL_GAPLESS'],0); assert m.fade()==0; m.byte(O['MCL_GAPLESS'],1)
+m.word(O['MCL_MODE'],0); assert m.fade()==7000
+m.word(O['MCL_MODE'],0); assert m.fade(6)==0  # the last track
+m=XfadeMachine('0'); assert m.fade()==0 and not m.files and not m.attaches  # off: no file
+# Shuffle Songs (the reports' mode, #164): the next is the shuffle's successor, not pos + 1, and
+# the fade follows album_cmp of the two records at every automatic change.
+m=XfadeMachine(); assert m.fn('playback_shuffle',2)==1
+rows=m.library_rows; fades=set()
+for _ in range(6):
+    pos,nxt=m.current(),m.fn('playback_successor',1); assert 0<=nxt<len(rows)
+    want=7000 if m.fn('album_cmp',rows[pos],rows[nxt]) else 0
+    assert m.fade()==want,(pos,nxt,m.fade(),want); fades.add(want)
+    assert m.advance_song(1)>=0
+assert fades=={0,7000},fades  # both cases met along the way
+print('Crossfade: the next change\'s fade, album and Gapless gates, the shared file, the filter and Shuffle Songs passed')

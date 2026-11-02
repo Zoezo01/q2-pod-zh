@@ -69,20 +69,20 @@
 #define LCD_FILL_COLOR 0xbc
 #define LCD_STROKE_COLOR 0xc0
 #define LCD_TEXT_COLOR 0xb8     /* lcd_set_text_color @0x6474c4 */
+/* Night Shift (nightshift.c): the screen's lcd_mem, BGRA8888 (lcd_mem create @0x6922c0) */
+#define LCD_END_FRAME 0x7c   /* lcd_end_frame @0x647958 calls it */
+#define LCD_W 0xb0
+#define LCD_H 0xb4
+#define LCD_DRAW_MODE 0xcc   /* lcd_begin_frame @0x6472a8 */
+#define LCD_DRAW_NORMAL 0    /* 1 a window animation's */
+#define LCD_DIRTY 0xf8       /* the frame's rect, x y w h; lcd_begin_frame sets it */
+#define LCD_OFFLINE_FB 0x110 /* the buffer drawn into */
+#define LCD_LINE_LENGTH 0x124
+#define LCD_FORMAT 0x128
+#define LCD_BGRA8888 3
 #define CANVAS_ALIGN_V 0x30     /* canvas_set_text_align @0x63419c; middle = 1 */
 #define CANVAS_ALIGN_H 0x34     /* center = 1 */
-/* Selection outline tuning. RADIUS > 2 or the stock rounded path squares off; tests read these.
- * The shade uses the same stock dark surface as the fill at an alpha that keeps the outline
- * above 3:1 on pure white art (0x99 is the floor); on dark rows it matches the stock background
- * exactly and disappears. The line is translucent white at OUTLINE_ALPHA, so it reads as a soft
- * grey on the dark theme instead of a hard white edge; lower OUTLINE_ALPHA or SHADE_ALPHA
- * together and the contrast margin over bright art erodes. */
-#define RADIUS 9
-#define FILL_RGB 0x2b2b2b
-#define FILL_ALPHA 0x40
-#define SHADE_ALPHA 0xb3
-#define OUTLINE_RGB 0xffffff
-#define OUTLINE_ALPHA 0xb3
+#define FILL_RGB 0x2b2b2b /* the stock dark surface, under the letter and volume overlays */
 /* iPod accents, in the order of the Accent setting (IPOD/ACCENT in config.ini; 0 is the default):
  * { selection top, bottom, light tone, red tone, highlight }, 0xRRGGBB. Equal stops keep
  * selection flat on the Q2 panel; retain the fine top highlight. White text holds
@@ -143,7 +143,7 @@ static inline int arc_out(int r, int y) {
     while ((s + 1) * (s + 1) <= v) ++s;
     return 16 * r - s;
 }
-#define PLACEHOLDER (IPOD ? "default_album_flow" : "default_album_big") /* Cover Flow's and Spotify's missing art */
+#define PLACEHOLDER "default_album_flow" /* Cover Flow's and Spotify's missing art */
 #define VOL_POLL_MS 50 /* how often the volume indicator checks for a change */
 /* The volume panel off Now Playing (vol_paint): exactly over Quick Settings' brightness row
  * (tools/ipod.py checks it), its rounded corners clear of the 80px glass corners. */
@@ -189,6 +189,10 @@ static inline int arc_out(int r, int y) {
 /* iPod: the full-screen art (stock's bigcover_page) shows the song name BC_MS, then it and its shade
  * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
+/* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x52bffc) counts it down while a
+ * song plays there and opens bigcover_page at 0, then sets it back to BC_IDLE_FULL (10 s). */
+#define BC_IDLE 0x99f660
+#define BC_IDLE_FULL 40
 #define BC_TITLE_PAD 12 /* the song name's inset from the art's sides */
 /* The screen glass's rounded corners and how far content keeps clear of them (tools/ipod.py). */
 #define GLASS_R 80
@@ -293,7 +297,7 @@ static inline int arc_out(int r, int y) {
 #define SPOT_ART_X 16
 /* iPod: Now Playing's art top, clear of the page dots (tools/ipod.py NP_ART_Y) */
 #define NP_ART_TOP 42
-#define SPOT_ART_Y (IPOD ? NP_ART_TOP : 50)
+#define SPOT_ART_Y NP_ART_TOP
 #define SPOT_ART_PX 166
 /* iPod: the 50px heart/play-mode frame sits this far below the art's bottom edge, so the centred
  * 28px glyph (4px clear at its foot) ends level with the art (tools/ipod.py NP_ICON_PAD) */
@@ -373,6 +377,13 @@ static inline int arc_out(int r, int y) {
 #define CHARGE_STOP 80
 #define CHARGE_RESUME 75
 #define CHARGE_POLL_MS 5000
+/* Hardware watchdog (docs/internals.md#watchdog): the UI loop feeds it every pass, so a loop or a
+ * kernel stalled WDT_MS reboots. Well above any ordinary pass (a 65k-song list, a cover decode:
+ * seconds). The known long ones on the UI thread, an import's tag reads and a folder add's directory
+ * loads (a minute or more on a big card), get WDT_LONG_MS (ringnav_wdt_long), well under the
+ * driver's limit of about 23 minutes. */
+#define WDT_MS 60000
+#define WDT_LONG_MS 900000
 /* Standby limit (docs/internals.md#standby-limit): its three choices after Off, in hours of one
  * Standby, after which the Q2 powers off. */
 #define STANDBY_LIMIT_1 1
@@ -508,6 +519,13 @@ static inline int arc_out(int r, int y) {
 /* Tags may store a full date (20220510 or 2022-05-10); compare the year before aggregating. */
 #define ALBUM_YEAR "max(case when cast(year as text) glob '[1-9][0-9][0-9][0-9]*' then cast(substr(year,1,4) as integer) else 0 end)"
 /* One row per album, as album_cmp tells them apart (coverflow.c; navigation.c's Era). */
+/* An album group's art track: its lowest disc then track then path, as Coverflow lists it. A bare
+ * fileurl would be whichever row SQLite saw last, so an album whose tracks carry different covers
+ * showed a random one. Each number is clamped to 0-9999 so its prefix stays four digits (a date as
+ * the track, or -1, would cut the path). */
+#define ALBUM_TRACK \
+    "substr(min(substr(10000+min(max(ifnull(cd_num,0),0),9999),2)||" \
+    "substr(10000+min(max(ifnull(track,0),0),9999),2)||fileurl),9)"
 #define ALBUM_GROUP " group by album COLLATE NOCASE," \
     "ifnull(albumsonger,'') COLLATE NOCASE,case ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end"
 #define CLASS_ARTIST_ALBUMS 0xff01 /* an artist's albums (load_localclass_list 0xff11) */
@@ -563,8 +581,8 @@ static inline int arc_out(int r, int y) {
 #define BOOTVOL_CHANGED 0x4b4300  /* slider_bootvol's EVT_VALUE_CHANGED */
 #define SCAN_THREAD 0xa271d8
 #define SCAN_DONE 0xa271d4
-/* Coverflow text: iPod keeps every label CF_EDGE from the sides, where the lowest track row's text
- * clears the bottom corners; both builds keep the captions there. Album names and artists scroll
+/* Coverflow text: every label, captions included, sits CF_EDGE from the sides, where the lowest
+ * track row's text clears the bottom corners. Album names and artists scroll
  * within that. Under the covers (CF_TEXT_Y), the album name is CF_NAME_PX white and the artist
  * CF_ARTIST_PX in CF_GREY (stock secondary text) right under it. */
 #define CF_EDGE 36
@@ -593,7 +611,7 @@ static inline int arc_out(int r, int y) {
 #define CF_BRIGHT1 192
 #define CF_BRIGHT2 128
 #define CF_REFLECT 24
-#define CF_REFLECT_TOP (IPOD ? 48 : 64)
+#define CF_REFLECT_TOP 48
 #define CF_STRIDE 110
 #define CF_TEXT_Y 212 /* the album caption's top, under the frame; the artist follows */
 /* Touch on the covers (coverflow.c, docs/internals.md#coverflow-touch) */

@@ -491,15 +491,11 @@ static void box(void *canvas, int x, int y, int w, int h, unsigned color, unsign
 }
 
 /* ringnav_paint, every widget after stock painted it: the bar, as Now Playing's capsule (the
- * accent's light tone in iPod, stock red in Stock), and the play state in the top row. */
+ * accent's light tone), and the play state in the top row. */
 void spot_paint(void *w, void *canvas) {
     if (!ui.page || !w || !P(canvas, CANVAS_LCD) || (w != ui.bar && w != ui.glyph)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-#if IPOD
     unsigned tone = rgba(accent_tone(2), 255);
-#else
-    unsigned tone = rgba(STOCK_RED, 255);
-#endif
     if (w == ui.bar) {
         unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
@@ -567,10 +563,10 @@ static void spot_np(void) {
         label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l", NP_TITLE_PX, 0xffffffffu);
     ui.artist =
         label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 75, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-              IPOD ? (0xff000000u | NP_ARTIST_RGB) : SPOT_GREY);
+              0xff000000u | NP_ARTIST_RGB);
     ui.album =
         label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-              IPOD ? (0xff000000u | NP_ALBUM_RGB) : SPOT_GREY);
+              0xff000000u | NP_ALBUM_RGB);
     void *fields[] = { ui.title, ui.artist, ui.album };
     for (unsigned i = 0; i < 3; ++i) {
         hscroll_label_set_only_focus(fields[i], 0);

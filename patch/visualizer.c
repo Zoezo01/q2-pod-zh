@@ -3,7 +3,6 @@
  * plugins; a tap moves to the next style. */
 #include "peq.h"
 #include "offsets.inc"
-#if IPOD
 
 #define VIS_N 1024           /* frames each frame analyses */
 #define VIS_HALO 64          /* log-spaced bands, 40 Hz to 16 kHz: the Halo's bars, pairs the spectrum's */
@@ -523,5 +522,4 @@ void visualizer_attach(void *win) {
     widget_on(slide, EVT_VALUE_CHANGED, slid, 0);
     widget_on(win, EVT_DESTROY, gone, win);
 }
-#endif
 #endif

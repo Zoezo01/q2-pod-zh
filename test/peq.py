@@ -4,6 +4,7 @@ import cmath
 import ctypes as C
 import math
 import pathlib
+import re
 import subprocess
 import tempfile
 import sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
@@ -1069,7 +1070,7 @@ def eq3_captures(tmp, out, font):
     (tmp/'shim.h').write_text(SHIM_H)
     (tmp/'shim.c').write_text('#include "peq.h"\n' + SHIM)
     ui = compile_host(tmp, 'peq_ui_ipod.so', ROOT/'patch/peq_ui.c', ROOT/'patch/peq.c', tmp/'shim.c',
-                      '-I', ROOT/'patch', '-include', tmp/'shim.h', '-DIPOD=1')
+                      '-I', ROOT/'patch', '-include', tmp/'shim.h')
     ui.shim_e3_paint.restype = C.POINTER(C.c_uint32 * (290 * 375))
     ui.shim_text.restype = C.c_char_p
     (tmp/'root/mnt/data').mkdir(parents=True)
@@ -1403,13 +1404,41 @@ static void crossfade_check(void) {
     n = 2 * 48000; /* back to 2 s */
     assert(block(&a, buf, 1024, &n, 1, 48000) == 1024 && buf[0] == 2 * 48000);
     a.uninit(&a);
-    /* A tail followed by another rate is dropped: the next track plays alone. */
+    /* A tail followed by another rate plays at that rate, linearly interpolated: 48000 held frames
+     * are 44100 frames out, the ramp 48000/44100 a frame, under the same equal-power gains. */
+    track(&a, 48000);
+    for (n = out = 0; n < 10 * 48000;) {
+        unsigned k = block(&a, buf, 1024, &n, 1, 48000);
+        for (unsigned i = 0; i < k; ++i) assert(buf[2 * i] == (float)out++);
+    }
+    assert(n - out == 48000);
+    a.uninit(&a);
+    track(&b, 44100);
+    for (m = mixed = 0; m < 2 * 44100;) {
+        unsigned start = m, k = block(&b, buf, 1024, &m, 0, 44100);
+        assert(k == 1024);
+        for (unsigned i = 0; i < k; ++i, ++mixed) {
+            if (mixed < 44100) {
+                float p = (mixed + 0.5f) / 44100 * 1.5707963f;
+                assert(fabsf(buf[2 * i + 1] - cosf(p)) < 1e-5f);
+                assert(fabsf(buf[2 * i] - ((start + i) * sinf(p) + (out + mixed * (48000.0f / 44100)) * cosf(p))) < 0.5f);
+            } else
+                assert(buf[2 * i] == (float)(start + i) && buf[2 * i + 1] == 0);
+        }
+    }
+    b.uninit(&b);
+    /* Another channel count drops it: the next track plays alone. */
     track(&a, 48000);
     for (n = 0; n < 10 * 48000;) block(&a, buf, 1024, &n, 1, 48000);
     a.uninit(&a);
-    track(&b, 44100);
-    m = 0;
-    assert(block(&b, buf, 1024, &m, 0, 44100) == 1024 && buf[0] == 0 && buf[1] == 0);
+    memset(&b, 0, sizeof b);
+    assert(peq_open(&b) == 1);
+    af_data mono_in = {0, 0, 48000, 1, 0x1d, 4};
+    assert(negotiate(&b, &mono_in) == 1);
+    for (unsigned i = 0; i < 1024; ++i) buf[i] = 0;
+    peq_pts = 1024.0 / 48000;
+    af_data d1 = {buf, 1024 * 4, 48000, 1, 0x1d, 4};
+    assert(b.play(&b, &d1) == &d1 && d1.len == 1024 * 4 && buf[0] == 0 && buf[1023] == 0);
     b.uninit(&b);
     /* The same instance starting over at the end (a chain kept across the change) is the next track. */
     track(&a, 48000);
@@ -1787,7 +1816,7 @@ def player_check(tmp):
 
 def visualizer_check(tmp):
     """The visualizer's analysis (patch/visualizer.c vis_bands): a sine lands in its band at full scale."""
-    lib = compile_host(tmp, 'visualizer.so', ROOT/'patch/visualizer.c', ROOT/'patch/peq.c', '-DIPOD=1', '-I', ROOT/'patch')
+    lib = compile_host(tmp, 'visualizer.so', ROOT/'patch/visualizer.c', ROOT/'patch/peq.c', '-I', ROOT/'patch')
     rate, n, bands = 44100, 1024, 64
     def levels(pcm):
         out = (C.c_float * bands)()
@@ -1845,7 +1874,7 @@ void check_styles(void) {
     }
 }
 """)
-    checked = compile_host(tmp, 'visualizer_checks.so', harness, ROOT/'patch/peq.c', '-DIPOD=1', '-I', ROOT/'patch')
+    checked = compile_host(tmp, 'visualizer_checks.so', harness, ROOT/'patch/peq.c', '-I', ROOT/'patch')
     checked.check_styles()
     print('Visualizer: FFT bands, selected-style work, stereo scope/VU and pause decay passed.')
 
@@ -2597,6 +2626,7 @@ TIDAL_DL = r'''#include <assert.h>
 #define REC_COVER 0
 #define fork() (-1) /* tag's ffmpeg: no remux here, the copy stays as downloaded */
 #define child_exit _exit
+#define child_oom_first() ((void)0)
 static int thumb(const char *s, const char *d, int w, int h) { return 0; }
 static long file_size(const char *p) { return -1; }
 static int quality = 27; static void *queue;
@@ -2813,6 +2843,10 @@ def shelf_check(tmp, lib):
         assert sources(bad, scratch) == [], bad
     assert [a[2] for a in sources('a/q2-x\nb/q2-x\nc/x\n', scratch)] == ['x']  # a repeated id: the first
     assert len(sources(''.join(f'me/q2-a{i}\n' for i in range(20)), scratch)) == 16
+    assert [a[2] for a in sources('a/q2\nb/q2-tidal\nc/downpic\nd/q2-tidal2\n', scratch)] == ['tidal2']  # never the firmware's folders
+    own = {m for f in (ROOT/'patch').glob('*.[ch]')
+           for m in re.findall(r'(?:mmc/|CARD "/)\.([a-z0-9-]+)["/]', f.read_text())} - {'rockbox', 'spotify'}
+    assert own and not [x for x in own if sources(f'a/q2-{x}\n', scratch)], own  # every card folder of the firmware's
     C.c_int.in_dll(lib, 'shelf_n').value = len(sources((ROOT/'sources.list').read_text()))
     ids = [a.id.decode() for a in apps[:6]]
     assert ids == ['rockbox', 'themes', 'spotify', 'deezer', 'soulseek', 'filebrowser'], ids
@@ -2857,13 +2891,13 @@ def shelf_check(tmp, lib):
 
     # The card apps (patch/addon.c), zipped as their releases are: the app, its launcher and manifest.
     # What each saved (Deezer's sign-in, settings and queue; Soulseek's settings, transfers and
-    # share index; File Browser's settings), never in a release, survives an install over it, an
-    # update and a remove.
+    # share index; File Browser's settings), never in a release, survives an install over it and an
+    # update; a remove takes the whole folder, and nothing outside it.
     saved = {3: ['.deezer/arl', '.deezer/quality', '.deezer/organize', '.deezer/mode', '.deezer/layout',
                  '.deezer/queue.json'],
              4: ['.soulseek/config.json', '.soulseek/downloads.json', '.soulseek/shares.cache'],
              5: ['.filebrowser/config.json']}
-    shutil.rmtree(card); card.mkdir(parents=True)
+    shutil.rmtree(card); (card/'Music').mkdir(parents=True); (card/'Music/a.flac').write_bytes(b'song')
     for i, kept in saved.items():
         d = '.' + ids[i]
         for f in kept: (card/f).parent.mkdir(exist_ok=True); (card/f).write_bytes(b'mine')
@@ -2872,8 +2906,11 @@ def shelf_check(tmp, lib):
         assert install(i, z) == 0 and install(i, z) == 0, i
         assert sorted(files(i)) == sorted(f'{d}/{n}' for n in (f'q2-{ids[i]}', 'run', 'q2app', 'README.txt'))
         assert all((card/f).read_bytes() == b'mine' for f in kept), i
+        (card/d/'stream').mkdir(); (card/d/'stream/01.flac').write_bytes(b'song')
+        (card/f'{d}2').mkdir(); (card/f'{d}2/x').write_bytes(b'other')
         lib.shelf_remove(i)
-        assert sorted(str(f.relative_to(card)) for f in (card/d).rglob('*')) == sorted(kept), i
+        assert not (card/d).exists() and not (card/f'.q2/apps/{ids[i]}.tag').exists(), i
+        assert (card/'Music/a.flac').exists() and (card/f'{d}2/x').exists(), i
     print("Q2 Shelf: release JSON, unzip listing checks, install, update, failed move, remove and card apps passed.")
 
 

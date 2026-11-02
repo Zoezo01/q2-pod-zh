@@ -110,7 +110,7 @@ Use each service's existing daemon/browser, account identity, metadata and offli
 
 For Deezer, put manifests/jobs beside its account/download records, exclude explicitly saved audio from cache eviction, and feed manifest entry positions to its offline queue. Map favorite tracks to Download Liked Songs and existing authentication/API errors to the shared states. Advertise capabilities only after implementing the controls and storage semantics.
 
-For [Qobuz](qobuz.md), reuse complete-file FLAC metadata, ffmpeg/output and quality settings. Add manifests/protected references beside its cache. Playlist/favorite-track APIs supply ordering; keep fresh `track/getFileUrl` and Range recovery in transfers. Exclude protected referenced audio from eviction rather than treating every played song as an explicit download. These are maintainer instructions, not a claim either integration already implements this extension.
+For Qobuz, reuse complete-file FLAC metadata, ffmpeg/output and quality settings. Add manifests/protected references beside its cache. Playlist/favorite-track APIs supply ordering; keep fresh `track/getFileUrl` and Range recovery in transfers. Exclude protected referenced audio from eviction rather than treating every played song as an explicit download. These are maintainer instructions, not a claim either integration already implements this extension.
 
 ## Conformance
 

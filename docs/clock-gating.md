@@ -1,7 +1,7 @@
 # Rotator clock experiment
 
-The build defers `gate_rot` until the first valid conversion (on by default;
-`--no-rotator-lazy-clock` keeps the stock module). It is independent of FLAC
+The build defers `gate_rot` until the first valid conversion (off by default;
+`--dev --rotator-lazy-clock` builds it). It is independent of FLAC
 decoding, CPU frequency, and audio output.
 
 ```sh
@@ -145,7 +145,7 @@ The snapshots therefore establish software clock ownership, not a direct physica
 gate measurement. No system-power or battery-runtime measurement was made.
 
 Final software checks: 84 module cases plus 2 branch-delay controls; 1,837 iPod
-payload scenarios; opt-in/default module packaging for both editions; Legacy asset
+payload scenarios; opt-in/default module packaging; asset
 validation; two byte-identical default packages. The iPod asset suite still flags
 `scrsaver_playcover.png` corner alpha: that exact image is byte-identical to the
 upstream baseline, so it is an existing unrelated failure.

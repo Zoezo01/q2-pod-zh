@@ -108,6 +108,7 @@ static void tag(const char *tmp, char (*tags)[TIDAL_TAG], int pic) {
     tk_snprintf(out, sizeof out, "%s.tag.tmp", tmp);
     int pid = fork();
     if (!pid) {
+        child_oom_first();
         if (pic && flac)
             execl(TIDAL_FFMPEG, TIDAL_FFMPEG, "-nostdin", "-v", "quiet", "-i", tmp, "-i",
                   TIDAL_COVER, "-map", "0:a", "-map", "1:v", "-disposition:v", "attached_pic", "-c",
