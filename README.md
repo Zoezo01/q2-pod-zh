@@ -10,26 +10,7 @@
 
 **直接刷机：[下载 `update.tar`](https://github.com/Zoezo01/q2-pod-zh/releases/latest)**（见 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases)，附 SHA256 与刷机说明）
 
-<<<<<<< HEAD
-- **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Coverflow you can swipe, four visualizers and Games. Classic and Minimal themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
-- **Wheel navigation:** smooth scrolling that speeds up as you spin, adjustable sensitivity, menus that remember your place, Hold Return to Now Playing or Home, and Single Press Scrub.
-- **Library:** up to 65,000 songs, search, Era (albums by decade), Most Played, Long Songs, favourites, playlists with Edit Playlist and M3U import and export, Play Next, Add to Queue and View Queue. An empty `database.ignore` file keeps a folder out of the Library's lists while its songs still play from Folder view and playlists.
-- **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums.
-- **Playback:** gapless FLAC, MP3 (encoder delay removed) and USB DAC output, Crossfade up to 15 s that follows sample-rate changes and Shuffle, shuffle by song, album or folder, playback speed per folder, Resume Songs, and Memory Playback that brings back the queue you left, Play Next and Add to Queue included.
-- **EQ:** Simple's Low, Mid and High sliders with presets, or Advanced's parametric EQ with up to 30 bands, a live curve, Auto preamp and Balance; AutoEQ and Equalizer APO presets import from the card. Mono Audio and Swap L/R.
-- **Lyrics and covers:** synced `.lrc` lyrics on Now Playing and full screen, Download Cover & Lyrics from LRCLIB, the Cover Art Archive and iTunes, and Download Album Lyrics.
-- **Streaming:** Spotify (Premium): browse your library, search, play and download playlists on the Q2 after a one-time pairing from your phone; AirPlay from your iPhone; Internet Radio with your own stations; Tidal tracks you've played replay from the card.
-- **App Store and updates:** installs and updates Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts, Live Music Archive, and the Fidget game) over Wi-Fi; Network Update installs new Q2 Pod releases.
-- **Scrobbling:** send your listens to Last.fm or ListenBrainz over Wi-Fi, by hand or automatically, and choose how much of a song counts.
-- **Podcasts and audiobooks:** `.m4b` audiobooks (including ones split by a CUE sheet) and podcasts resume where you stopped; the Podcasts app subscribes to shows, downloads episodes and has a sleep timer. A book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
-- **Photos, books and videos:** folders at the card's root add JPEG and PNG photo albums, `.txt` and `.epub` books, and videos.
-- **Lock screen and boot logo:** six wallpapers, a large clock or your own images; your own JPEG at power-on.
-- **Bluetooth and AirPods:** AirPods stem controls, ear detection and two-way volume sync; Resume on Connect, Control Device Volume, separate volume levels for Bluetooth and wired output, smoother AAC, and click-free gapless changes.
-- **Battery and buttons:** an optional 80% charge limit, Low Power mode, a Standby limit that powers off a Q2 left asleep, Wake by double press, Volume Guard, and a player that sleeps while paused.
-- **Fixes to stock:** the clock keeps its time after power-off, the song and second come back after an update or restart, accented tags show as tagged, time zones show their current offset, and the interface is English throughout.
-=======
 ## 参考了哪两个项目
->>>>>>> zh-161
 
 | 项目 | 是什么 | 本分支用了什么 |
 |---|---|---|
@@ -46,7 +27,7 @@
 - **上游新增的文案一并翻译**：1.4.9 / 1.5.0 的浅色模式、滚轮快捷、视频文件夹视图、断点续播、关于页新位置、时区偏移、`网络电台`、`Tidal 下载`、`下载专辑歌词`、年代页的 `80 年代`、信息页的 `位置` / `未知`、12 小时制的 `上午` / `下午`；1.5.1 / 1.5.2 的浅色模式 `自动`、外观页的 `圆角` 开关、超长有声书的 `这本书太长，Q2 无法播放：请拆分成几段` / `…无法显示章节`；1.5.3–1.5.5 的 `应用商店`（上游把 Q2 前缀去掉了）、`删除播放列表？`、`播放列表已删除` / `无法删除播放列表`；1.5.7 的简单页 `预设` 按钮（重置缩成 `R` 小方块）、预设名为空时的 `高级`，以及 `已应用` / `应用失败，当前均衡器未变`；1.5.8 的 `居中正在播放`、`智能常亮` 与长按菜单末尾的 `更多…`；1.5.9–1.6.1 的 `夜览`、`主菜单：轮播`、`单按拖动`、`戴耳机时按键音`、`更多…`、`歌单已更新`，以及卡应用同步的 `没有存储卡` / `序号过长` / `缺少序号` / `请求过长` / `无法开始扫描`；1.6.2 的 `请等应用商店完成` / `卡上没有它` / `无法启动`。
 - **术语**按 Apple《iPod classic 简体中文使用手册》：主菜单「音乐」，保留 Cover Flow，用「表演者」「有声读物」「评价」「重复播放」。品牌、音频单位、歌曲 / 艺术家 / 文件名、外部服务回复保持原文。
 - **自绘文字支持 UTF-8**：`caption()` 把 UTF-8 解码成 Unicode 码点再交给 `draw_centred`，缓冲随上游扩到 32 码点。
-- **字形校验**：`test/chinese.py` 要求界面用到的每个汉字在打包的 `fonts/default.ttf` 里都有字形（当前 474 个），卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）保持英文。
+- **字形校验**：`test/chinese.py` 要求界面用到的每个汉字在打包的 `fonts/default.ttf` 里都有字形（当前 475 个），卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）保持英文。
 
 ### 2. 构建脚本：不再把原厂中文改回英文
 
@@ -74,13 +55,9 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 没插 3.5 mm / 4.4 mm 耳机、没连蓝牙耳机、也没接 USB DAC 时，按播放键或切歌键不会开始播放，只提示一句「未连接耳机」（灭屏时不提示）。Q2 没有内置扬声器，没耳机时的播放只是空放耗电，这个功能就是防口袋里误触。
 
-<<<<<<< HEAD
-**System settings → App Store** installs, updates and removes Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts, Live Music Archive, and the Fidget game) over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later; Podcasts 1.4.2 and Subsonic 1.4.3 or later), keeping your Rockbox settings and Spotify's login.
-=======
 - `patch/headset.c`：`silent_output()` 判断输出通路（`g_po_status`、`g_bal_status`、`mclGetOutputWay()`、蓝牙列表 `status==3`），`headset_guard_refuse()` 读取配置键 `HEADSETGUARD`。
 - `patch/playback.c`、`patch/headset.c`：`ringnav_change()`、`ringnav_play_pause()`、`media_key()` 加守卫，`KEY_PLAY` / `KEY_FWD_BTN` / `KEY_BACK_BTN` 全部拦截。
 - `patch/navigation.c`：新增枚举 `POD_HEADSET_GUARD`，设置行插在「左右声道互换」之后。
->>>>>>> zh-161
 
 ### 5. 新功能：状态栏显示「播放中 / 已暂停」
 
@@ -182,7 +159,7 @@ uv pip install -r requirements.txt
 
 把 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
-- 本版标记 `V162M`，与官方 `V1.32`、上游英文 `V162I`、上一版中文 `V158K` 都不同，可以互相刷。
+- 本版标记 `V162M`，与官方 `V1.32`、上游英文 `V162I`、上一版中文 `V161L` 都不同，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
 - 回滚用山灵官方 V1.32 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.32`，自建包约 51 MB。
 - 网络更新（应用商店）下载的仍是 DiamondBond 的**英文**固件，所以更新行标题写成「上游英文固件更新」。装了会失去汉化，要保留中文请用 TF 卡刷本分支的包。
