@@ -3416,7 +3416,7 @@ static int bar_repaint(const void *info) {
 /* The glyph alone says which of two bitmaps it is, so a pause nothing on screen asked for — the
  * 3.5 mm jack pulled (config_po_output's mclSetPause) or a Bluetooth link dropped — would read as
  * playing until the glyph was painted again. The state therefore also gets a word beside the glyph
- * ("正在播放", "暂停播放"), written from the same status by bar_word_sync, and the bar repaints
+ * ("正在播放", "播放暂停"), written from the same status by bar_word_sync, and the bar repaints
  * through bar_repaint when either moves, from whatever the pause came from. The word takes the room
  * after the glyph, and steps aside while the EQ badge (label_eq) holds it: the bar is 375 px with
  * the clock centred from CLOCK_EDGE on. Four hanzi at PLAY_WORD_PX are 60 px from the glyph's right
@@ -3456,7 +3456,7 @@ static int bar_word_sync(void *bar) {
     int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
     if (key == st.bar_key) return 0;
     st.bar_key = key, st.bar_word = status;
-    widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "暂停播放" : "");
+    widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
     widget_set_visible(st.play_word, show, 0);
     return 1;
 }

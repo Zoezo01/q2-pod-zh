@@ -189,7 +189,7 @@ the last child of `view_left`, so the view's own margin and spacing put it after
 after the EQ badge when that shows; with the badge there the word no longer ends before the centred
 clock (its left edge is x 129), so it stays hidden instead. Alone, the four hanzi run from x 73 to
 133, over the clock's box but not over the time inked in its middle. `bar_state_poll` (`ringnav_sleep`, every `PLAY_POLL_MS`, 100 ms) re-applies
-`bar_state_sync` and writes `正在播放` / `暂停播放` when the state changes, and repaints the bar whole —
+`bar_state_sync` and writes `正在播放` / `播放暂停` when the state changes, and repaints the bar whole —
 `widget_invalidate_force` — whenever the state or the word's room moves, so both follow whatever
 paused the player within a pass; dark, the wake's repaint shows them, so nothing is drawn before it.
 

@@ -4970,7 +4970,7 @@ def pass_():
     return (m.nodes[word]['text'],m.nodes[word]['visible'],
             ('widget_invalidate_force',bar) in [c[:2] for c in m.calls])
 assert pass_()==('正在播放',1,False)  # nothing moved: no repaint
-m.word(0xa3beac,3); assert pass_()==('暂停播放',1,True)
+m.word(0xa3beac,3); assert pass_()==('播放暂停',1,True)
 m.word(0xa3beac,1); assert pass_()==('',0,True)
 m.word(0xa3beac,2); m.nodes[eq]['visible']=1; assert pass_()==('正在播放',0,True)  # the EQ badge's room
 assert pass_()==('正在播放',0,False)
