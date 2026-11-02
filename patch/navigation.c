@@ -1792,8 +1792,6 @@ static int accent(void) {
     }
     return *themes[st.theme].accent_slot;
 }
-/* 1 while Minimal draws its own accent: the off-white card with dark ink. */
-static int minimal_card(void) { return !ipod_classic() && st.minimal_accent == MINIMAL_ACCENT; }
 const theme_t *theme(void) {
     accent();
     return &themes[st.theme];
@@ -1802,6 +1800,8 @@ const scheme_t *scheme(void) {
     int v = accent();
     return &themes[st.theme].schemes[v];
 }
+static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
+static inline const unsigned *tones(void) { return tones_of(accent()); }
 static int setting(int i) {
     accent();
     return *setting_values[i];
@@ -1864,7 +1864,8 @@ static unsigned tone_of(const unsigned *a, int tone) {
     return ipod_light() && neutral(a[0]) ? a[TONE_RED] : a[tone];
 }
 unsigned accent_tone(int tone) {
-    return tone == TONE_LIGHT && minimal_card() ? MINIMAL_FILL : tone_of(accents[accent()], tone);
+    const scheme_t *S = scheme();
+    return tone == TONE_LIGHT && S->flags & SCHEME_CARD ? S->fill : tone_of(S->tones, tone);
 }
 
 /* A color_t (bytes r, g, b, a) that is stock red blended with a neutral, t * red + k * white per
@@ -1901,11 +1902,11 @@ static unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
     return out;
 }
 unsigned accent_map(unsigned c, int preset, int tone) {
+    const unsigned *a = tones_of(preset);
     if (ipod_light())
-        return !(c >> 24) || neutral(c)
-                   ? ui_ink(c)
-                   : red_map(c, flip(tone_of(accents[preset], tone)), 0xffffff, 1);
-    return preset == CRIMSON ? c : red_map(c, accents[preset][tone], 0xffffff, 0);
+        return !(c >> 24) || neutral(c) ? ui_ink(c)
+                                        : red_map(c, flip(tone_of(a, tone)), 0xffffff, 1);
+    return theme()->schemes[preset].flags & SCHEME_RAW_RED ? c : red_map(c, a[tone], 0xffffff, 0);
 }
 
 /* A pill's end radius on a list row (h tall, its card inset px from the row's left): h / 2, less
@@ -2358,14 +2359,15 @@ static void paint_selection(void *w, void *canvas) {
     /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
     int classic = ipod_classic(), round = setting(SETTING_ROUNDED);
+    const scheme_t *S = scheme();
     st.sel_widget = classic ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
     st.sel_home = home && !classic;
     /* Light Mode: ink on a coloured bar or card stays white (ringnav_style_color). */
-    st.sel_accent = !neutral(accents[accent()][0]) && !st.sel_home && !minimal_card()
+    st.sel_accent = !neutral(S->tones[0]) && !st.sel_home && !(S->flags & SCHEME_CARD)
                         ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
                         : (void *)0;
     if (classic && (!tile || g_menu.kind == 4)) {
-        const unsigned *a = accents[accent()];
+        const unsigned *a = S->tones;
         /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
         rect_t bar = r;
         int pill = !tile && round ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
@@ -2380,7 +2382,7 @@ static void paint_selection(void *w, void *canvas) {
         int in = grid ? TILE_INSET : square ? 0 : SEL_INSET, vertical = grid ? TILE_INSET : 0;
         rect_t card = { r.x + in, r.y + vertical, r.w - 2 * in, r.h - 2 * vertical };
         int radius = !round ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
-        fill_box(canvas, &card, RGBA(minimal_card() ? MINIMAL_FILL : accents[accent()][0]), radius);
+        fill_box(canvas, &card, RGBA(S->flags & SCHEME_CARD ? S->fill : S->tones[0]), radius);
     }
     st.sel_w = w;
     st.sel_row = i;
@@ -2409,7 +2411,10 @@ static void edit_paint(void *w, void *canvas);
  * page's Delete.
  */
 static void paint_radio(void *w, void *canvas) {
-    if (!w || !st.sel_widget || st.sel_home || !minimal_card() || !P(canvas, CANVAS_LCD)) return;
+    if (!w || !st.sel_widget || st.sel_home || !(scheme()->flags & SCHEME_CARD) ||
+        !P(canvas, CANVAS_LCD))
+        return;
+    const scheme_t *S = scheme();
     const char *image = widget_get_prop_str(w, "image", "");
     int more = tk_str_start_with(widget_get_prop_str(w, "name", ""), "img_more");
     int dot = !tk_strcmp(image, "select"), del = !tk_strcmp(image, "navbar_delete");
@@ -2424,7 +2429,7 @@ static void paint_radio(void *w, void *canvas) {
         if (widget_load_image(w, "list_delete", bitmap)) return;
         rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 2, (int)bitmap[0],
                          (int)bitmap[1] };
-        fill_box(canvas, &clear, RGBA(MINIMAL_FILL), 0);
+        fill_box(canvas, &clear, RGBA(S->fill), 0);
         canvas_draw_icon(canvas, bitmap, x, y);
         stock_canvas_set_fill_color(canvas, fill);
         return;
@@ -2432,7 +2437,7 @@ static void paint_radio(void *w, void *canvas) {
     if (more) {
         /* Stock's 4px dots, 7px apart, centred in the 50px image. */
         rect_t clear = { x - 13, y - 4, 26, 8 };
-        fill_box(canvas, &clear, RGBA(MINIMAL_FILL), 0);
+        fill_box(canvas, &clear, RGBA(S->fill), 0);
         for (int i = -1; i <= 1; ++i) {
             rect_t dot = { x - 11 + (i + 1) * 7, y - 2, 4, 4 };
             fill_box(canvas, &dot, RGBA(0x171717), 2);
@@ -2443,7 +2448,7 @@ static void paint_radio(void *w, void *canvas) {
     rect_t ring = { x - 13, y - 13, 26, 26 }, hole = { x - 11, y - 11, 22, 22 },
            in = { x - 6, y - 6, 12, 12 };
     fill_box(canvas, &ring, RGBA(0x171717), 13);
-    fill_box(canvas, &hole, RGBA(MINIMAL_FILL), 11);
+    fill_box(canvas, &hole, RGBA(S->fill), 11);
     if (dot) fill_box(canvas, &in, RGBA(0x171717), 6);
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -2463,7 +2468,7 @@ static void paint_into(void *w, void *canvas) {
     rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 4, (int)bitmap[0],
                      (int)bitmap[1] / 2 };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    fill_box(canvas, &clear, RGBA(accents[accent()][0]), 0);
+    fill_box(canvas, &clear, RGBA(tones()[0]), 0);
     canvas_draw_icon(canvas, bitmap, x, y);
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -4779,8 +4784,9 @@ int ringnav_paint_bg(void *w, void *canvas) {
     if (w == bar && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         /* Classic in Light Mode: an iPod's grey bar, flat (final colour) */
-        int grey = ipod_classic() && ipod_light();
-        stock_canvas_set_fill_color(canvas, grey ? RGBA(LIGHT_BAR) : ui_ink(RGBA(BAR_COLOR)));
+        const scheme_t *S = scheme();
+        int grey = S->bar_light && ipod_light();
+        stock_canvas_set_fill_color(canvas, grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
         canvas_fill_rect(canvas, 0, 0, I(w, W_W), I(w, W_H));
         stock_canvas_set_fill_color(canvas, fill);
     }
@@ -4830,6 +4836,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
     /* Text inputs' selected text (an edit's T9 pending letter) is stock near-black on their light
      * blue selected_bg_color, which Light Mode keeps: it stays, not flipped to paper. */
     if (name && !tk_strcmp(name, "selected_text_color")) return color;
+    const scheme_t *S = scheme();
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
         if (!ipod_classic() && (st.paint_w == st.bar_idle || coverflow_home_owns(st.paint_w))) {
             *color &= 0xffffff; /* paint_caps draws it */
@@ -4844,7 +4851,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
         }
         if (ipod_light() && painting_in(st.sel_accent)) return color;
         int selected = selected_ink();
-        if (selected && (st.sel_home || minimal_card())) {
+        if (selected && (st.sel_home || S->flags & SCHEME_CARD)) {
             unsigned alpha = *color & 0xff000000u;
             *color =
                 alpha |
@@ -4860,11 +4867,11 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
                 }
         }
         /* Minimal's secondary text is Sudo's quieter grey, but stock's on an accent's card. */
-        if (!ipod_classic() && !selected && (*color & 0xffffff) == 0xaaaaaa)
-            *color = (*color & 0xff000000u) | SUDO_MUTED;
+        if (S->muted && !selected && (*color & 0xffffff) == 0xaaaaaa)
+            *color = (*color & 0xff000000u) | S->muted;
     }
     int a = accent();
-    if (a == CRIMSON && !ipod_light()) return color;
+    if (S->flags & SCHEME_RAW_RED && !ipod_light()) return color;
     unsigned c = accent_map(*color, a, TONE_LIGHT);
     if (c != *color && name && tk_str_end_with(name, "text_color"))
         c = accent_map(*color, a, TONE_RED);
@@ -4932,6 +4939,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned format = bitmap ? *(unsigned short *)((char *)bitmap + 0xe) - 1u : 4,
              preset = accent();
+    const scheme_t *sc = &theme()->schemes[preset];
     unsigned char *data = (void *)0;
     /* Before the manager copies bitmap_t: cached flags must agree with the new alpha. These
      * paths are stock's album/artist thumbnails and Folder view's (.downpic/fd*, its cover
@@ -4953,8 +4961,8 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     int dark = s && tk_str_start_with(s, CONFIRM_IMAGE);
     int control = s && tk_str_start_with(s, DROPDOWN_IMAGE) && !tk_str_start_with(s, DROPDOWN_SUN);
     int paper = ipod_light(); /* Light Mode: tone_of's tones, flipped as drawn */
-    unsigned tone = dark ? CONFIRM_SURFACE : flip_if(paper, tone_of(accents[preset], TONE_RED)),
-             glyph = 0xffffff, light = flip_if(paper, tone_of(accents[preset], TONE_LIGHT));
+    unsigned tone = dark ? CONFIRM_SURFACE : flip_if(paper, tone_of(tones_of(preset), TONE_RED)),
+             glyph = 0xffffff, light = flip_if(paper, tone_of(tones_of(preset), TONE_LIGHT));
     if (control && ((tone >> 16) * 299 + (tone >> 8 & 255) * 587 + (tone & 255) * 114) / 1000 >
                        GLYPH_LIGHT_MAX)
         glyph = CONFIRM_SURFACE;
@@ -4969,14 +4977,14 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "img_") && tk_strcmp(name, "img_delete") &&
         tk_strcmp(name, "img_edit") && tk_strcmp(name, "img_morefolder") &&
         tk_strcmp(name, "img_path") && !dark && !ipod_classic())
-        tone = SUDO_MUTED;
+        tone = sc->muted;
     /* Minimal: the settings icons' coloured discs all turn MINIMAL_CHEVRON, like list_into's ink
      * and stock's grey list discs. The Bluetooth rows' white marks (device, refresh) and
      * list_delete (paint_radio's) take list_into's ink too under Minimal's own accent, or they
      * vanish on the selected row's off-white card; another accent's card keeps them white. A
      * pixel's saturation (max - min) against the disc's (the icon's most saturated) says how far it
      * blends towards the white glyph, so edges stay smooth; alpha kept. */
-    int into = s && !*s && minimal_card() &&
+    int into = s && !*s && sc->flags & SCHEME_CARD &&
                (!tk_strcmp(name, "list_into") || !tk_strcmp(name, "bt_lefticon") ||
                 !tk_strcmp(name, "bt_refresh") || !tk_strcmp(name, "list_delete"));
     int icon = s && !*s &&
@@ -5031,17 +5039,17 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                     }
                     if (sat > disc) sat = disc;
                     if (icon && !disc) continue; /* already grey: keep the disc/glyph contrast */
-                    int ink = disc ? (255 - (MINIMAL_CHEVRON & 255)) * sat / disc : 0;
+                    int ink = disc ? (255 - (sc->chevron & 255)) * sat / disc : 0;
                     p[o[0]] = p[o[1]] = p[o[2]] =
-                        (unsigned char)(!icon    ? MINIMAL_CHEVRON & 255
-                                        : square ? (MINIMAL_CHEVRON & 255) + ink
+                        (unsigned char)(!icon    ? sc->chevron & 255
+                                        : square ? (sc->chevron & 255) + ink
                                                  : 255 - ink);
                 }
         bitmap_unlock_buffer(bitmap);
     }
     int mapped = 0; /* the accent changed a pixel: its colours are final */
-    if ((preset != CRIMSON || dark || paper) && format < 4 && s && !*s && !settings_icon(name) &&
-        (ipod_classic() || (!icon && !into)))
+    if ((!(sc->flags & SCHEME_RAW_RED) || dark || paper) && format < 4 && s && !*s &&
+        !settings_icon(name) && (ipod_classic() || (!icon && !into)))
         data = bitmap_lock_buffer_for_write(bitmap);
     if (data) {
         const unsigned char *o = at[format];

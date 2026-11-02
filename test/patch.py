@@ -8481,6 +8481,17 @@ for config in ({},{'ACCENT':'2'}):
         assert rgba(config,name,colors)==colors,name
 passed()
 
+# Ivory's card is Minimal's alone: Classic with a stored ACCENT=7 paints and maps images as Graphite, dark and light.
+def drawn_list(config):
+    k=Machine(); k.config=dict(config); kw,_=k.page_list(5,extent=1000); k.paint(kw)
+    return k.bands,k.rounded,k.strokes
+for light in ('0','1'):
+    ivory,graphite=({'THEME':'1','ACCENT':v,'LIGHT':light} for v in ('7','0'))
+    assert drawn_list(ivory)==drawn_list(graphite),light
+    for name in ('list_into','bt_refresh','list_delete','switch_on','img_flac'):
+        assert rgba(ivory,name,px)==rgba(graphite,name,px),(light,name)
+passed()
+
 # Packaged icon pixels: monochrome, alpha preserved and existing grey glyphs unchanged.
 for fmt in (1,2,3,4):
     assert rgba({},'local_album',px,fmt)==rgba({},'local_album',px)
