@@ -141,10 +141,10 @@ python3 test/unit/report.py --survivors /tmp/survivors.txt  # score, table, each
 
 ### C
 
-mutmut mutates Python only, so none of `patch/*.c` is covered: 1,158 functions added or changed since 1.2.0, 394 of them in `navigation.c`. The way to cover them is a source-level mutator ([universalmutator](https://github.com/agroce/universalmutator), or a small one of our own) run on the same schedule against the host-compiled tests, one file at a time, starting with what is small and fast:
+mutmut mutates Python only. For the C (1,158 functions added or changed since 1.2.0, 394 of them in `navigation.c`), the way is a source-level mutator ([universalmutator](https://github.com/agroce/universalmutator), or a small one of our own) run on the same schedule, one file at a time, against tests that run in seconds:
 
-1. `library_scope.c`, `mp3_gapless.c` and `chapters.c`: 25 functions with small tests of their own. `test/library_scope.py` takes half a second; the other two need ffmpeg.
-2. `coverflow.c`, `peq.c`, `peq_ui.c` and `peq_player.c`: 180 functions, through `test/coverflow.py` and `test/peq.py`, which need the 32-bit libraries.
-3. `navigation.c` and `playback.c`: their tests need a stock build and `test/patch.py` takes about 6 minutes a run, so they can't run per mutant in public CI. They need a fast stock-free harness first, or a self-hosted runner holding the firmware.
+1. `library_scope.c`, `mp3_gapless.c` and `chapters.c`, through their own scripts. `test/library_scope.py` takes half a second; the other two need ffmpeg.
+2. `coverflow.c` and the `peq*` files, through `test/coverflow.py` and `test/peq.py`, which need the 32-bit libraries.
+3. Everything `test/fw` reaches, `navigation.c` and `playback.c` among them: the whole suite takes about 20 seconds, and a mutant needs only the tests of its own file. `test/patch.py` takes about 6 minutes a run and needs a stock build, so it can't run per mutant in public CI.
 
 Mutants of C run as real code, so they belong in a container with no network, as the fence above can't reach them.
