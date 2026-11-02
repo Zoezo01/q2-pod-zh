@@ -80,7 +80,7 @@ uv python install 3.12 && uv venv --python 3.12 .venv && \
 
 `test/chinese.py` 会扫描 `patch/*.c` 与 `tools/ipod.py` 里的全部汉字，要求它们在固件实际打包的 `fonts/default.ttf` 中都有字形，并抽查主菜单、确认框和载荷里的中文标签；卡内目录名（Podcasts、Audiobooks、Photos、Books、Videos）必须仍是英文。
 
-整包构建在 Debian 12 / arm64 上完成：LLVM 14 的 MIPS 目标、自编的 squashfs-tools 4.6.1、ImageMagick，以及 Python 3.12。产出 `update.tar` 约 50.6 MiB、标记 `V161L`，载荷 __PAYLOAD__ B（上限 512 KB，余约 __SPARE__ KB）。`test/chinese.py`（__GLYPHS__ 个字形）与 `test/patch.py` 的全量行为测试都跑在构建产物上，测试脚本的断言已随汉化逐条改中文。
+整包构建在 Debian 12 / arm64 上完成：LLVM 14 的 MIPS 目标、自编的 squashfs-tools 4.6.1、ImageMagick，以及 Python 3.12。产出 `update.tar` 约 51.1 MiB、标记 `V161L`，载荷 513,512 B（上限 512 KB，余约 10 KB）。`test/chinese.py`（474 个字形）与 `test/patch.py` 的全量行为测试都跑在构建产物上，测试脚本的断言已随汉化逐条改中文。
 
 本次构建前在 Windows 上做的先行验证仍然有效：用 MinGW-w64（gcc 16.2）配合 host shim 跑过能独立运行的那部分 C 测试——`books.c`、`games.c`、`visualizer.c` 与 3EQ（`peq.c` + `peq_ui.c` 的 shim）全部通过，其中 books 与 visualizer 覆盖 UTF-8 文本与自绘 caption。`patch/peq_ui.c` 在相同编译选项下与上游 HEAD 的诊断完全一致，即汉化没有引入新的编译问题。
 
@@ -94,7 +94,7 @@ C 侧还做了括号/字面量配平检查，`tools/*.py`、`test/*.py` 均通�
 
 同一个标记只能刷一次：以后重新构建的中文包如果还是 `V161L`，已在本版上的设备同样会被拒绝。这时用 `--dev` 构建（每次生成递增的标记，如 `V001c`、`V002c`），或把 `tools/build.py` 里 `TAG` 末尾的字母往后换一个（L→M）。开发包会额外安装需要密钥的远程调试服务，不建议长期停留。不要手工修改升级包或校验值。
 
-刷机前务必确认拿的是**本次构建的包**（`build-161a/update.tar`，约 50.6 MiB），而不是山灵官方 V1.32 原包（约 54 MB，`firmware_v20.info` 第二行是 `V1.32`）——把原包刷回原厂固件，固件升级会因标记相同而拒绝。
+刷机前务必确认拿的是**本次构建的包**（`build-161a/update.tar`，约 51.1 MiB），而不是山灵官方 V1.32 原包（约 54 MB，`firmware_v20.info` 第二行是 `V1.32`）——把原包刷回原厂固件，固件升级会因标记相同而拒绝。
 
 需要回滚时，按山灵官方说明使用 Q2 官方 V1.32 固件从 TF 卡升级。本地中文修改不影响这一恢复途径。卡内文件通常不因正常升级而格式化，但设置、评分、续播记录等内部数据不保证被原厂固件保留或识别。
 
