@@ -8943,6 +8943,12 @@ m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[3][i])
 m,view,rows=display({}); m.paint(view); assert not m.bands
 f,ctx=m.handler(m.nodes[rows[3]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
+# Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Graphite; THEME=2 is Minimal.
+for config,want in (({'THEME':'1','ACCENT':'7'},['Theme: Classic','Light Mode: Off','Accent: Graphite']),
+                    ({'THEME':'2'},['Theme: Minimal','Light Mode: Off','Accent: Ivory'])):
+    m,view,rows=display(config)
+    assert [row_text(r) for r in m.nodes[view]['children']]==want+['Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing'],config
+passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent
 CONFIG.update(THEME='1'); m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'

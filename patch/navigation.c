@@ -1678,7 +1678,8 @@ static const option_t minimal_opts[] = {
     /* { setting, def, preset, keep, values (0: all) } */
     { SETTING_LIGHT, -1, 0, 2, 0 },     { SETTING_ACCENT, MINIMAL_ACCENT, 0, -1, 0 },
     { SETTING_ROUNDED, -1, 1, -1, 0 },  { SETTING_HOME, -1, 0, -1, 0 },
-    { SETTING_BATTERY, -1, -1, -1, 0 }, { SETTING_NPCENTRED, -1, -1, -1, 0 }
+    { SETTING_SHORTCUT, -1, -1, -1, 0 }, { SETTING_BATTERY, -1, -1, -1, 0 },
+    { SETTING_TIMETITLE, -1, 1, -1, 0 }, { SETTING_NPCENTRED, -1, -1, -1, 0 }
 };
 static const scheme_t classic_schemes[ACCENT_N] = {
     /* slot 7 is outside values: no roles */
@@ -1691,7 +1692,8 @@ static const scheme_t classic_schemes[ACCENT_N] = {
 static const option_t classic_opts[] = {
     { SETTING_LIGHT, -1, 1, 2, 0 },     { SETTING_ACCENT, 0, 4, -1, 0x17f },
     { SETTING_ROUNDED, -1, 0, -1, 0 },  { SETTING_HOME, -1, 0, -1, 0 },
-    { SETTING_BATTERY, -1, -1, -1, 0 }, { SETTING_NPCENTRED, -1, -1, -1, 0 }
+    { SETTING_SHORTCUT, -1, -1, -1, 0 }, { SETTING_BATTERY, -1, -1, -1, 0 },
+    { SETTING_TIMETITLE, -1, 0, -1, 0 }, { SETTING_NPCENTRED, -1, -1, -1, 0 }
 };
 static const theme_t themes[THEME_N] = {
     { .name = "Minimal",
@@ -1740,11 +1742,24 @@ static const theme_t themes[THEME_N] = {
 static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",     "THEME",
                                             "SHORTCUT",  "ROUNDED",   "LIGHT",       "KEEPLIT",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
-static const int setting_counts[] = { ACCENT_N, 3, 4, 2, 7, 2, 3, 2, 2, 2, 2, 2 };
+static const int setting_counts[] = { ACCENT_N, 3, 4, THEME_N, 7, 2, 3, 2, 2, 2, 2, 2 };
 static int *const setting_values[] = { &st.accent,     &st.home,         &st.battery,
                                        &st.theme,      &st.shortcut,     &st.rounded,
                                        &st.light,      &st.keep_lit,     &st.np_centred,
                                        &st.keytone_hp, &st.scrub_single, &st.time_title };
+/* An option's value and config key: the accent's are the theme's own, the rest setting_values'. */
+static int *option_slot(const theme_t *T, int setting) {
+    return setting == SETTING_ACCENT ? T->accent_slot : setting_values[setting];
+}
+static const char *option_key(const theme_t *T, int setting) {
+    return setting == SETTING_ACCENT ? T->accent_key : setting_keys[setting];
+}
+/* The option bound to setting, or NULL. */
+static const option_t *option_of(const theme_t *T, int setting) {
+    for (int k = 0; k < T->n_opts; ++k)
+        if (T->opts[k].setting == setting) return &T->opts[k];
+    return (void *)0;
+}
 /* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
  * cannot be read. */
 static const int *clock_now(int *buf) {
@@ -1777,8 +1792,6 @@ static int accent(void) {
     if (!st.settings_read) {
         for (int i = 0; i < 4; ++i)
             *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
-        if (st.accent == MINIMAL_ACCENT) /* Classic has no Ivory: Graphite */
-            st.accent = 0;
         st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
         st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
         st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
@@ -1788,6 +1801,13 @@ static int accent(void) {
         st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
         st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
         st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
+        /* A stored value outside an option's values is its default (Classic's Ivory: Graphite). */
+        for (int t = 0; t < THEME_N; ++t)
+            for (int k = 0; k < themes[t].n_opts; ++k) {
+                const option_t *o = &themes[t].opts[k];
+                int *v = option_slot(&themes[t], o->setting);
+                if (o->values && o->def >= 0 && !(o->values >> *v & 1)) *v = o->def;
+            }
         int buf[11];
         st.light_day = light_day(clock_now(buf));
         st.settings_read = 1;
@@ -5151,17 +5171,19 @@ static void setting_text(int i) {
                              *const battery[] = { "Battery: Icon", "Battery: Percent",
                                                   "Battery: Icon + Percent",
                                                   "Battery: Percent Inside" },
-                             *const theme[] = { "Theme: Minimal", "Theme: Classic" },
                              *const light[] = { "Light Mode: Off", "Light Mode: On",
                                                 "Light Mode: Auto" };
     accent(); /* reads the settings */
     const char *const names[] = { accent_names[accent()], home[st.home],   battery[st.battery],
-                                  theme[st.theme],        (const char *)0, (const char *)0,
+                                  (const char *)0,        (const char *)0, (const char *)0,
                                   light[st.light],        (const char *)0, (const char *)0 };
-    char shortcut[64];
-    if (i == 4) {
-        tk_snprintf(shortcut, sizeof shortcut, "Shortcut: %s", ipod_home_shortcut());
-        widget_set_text_utf8(st.setting_label[i], shortcut);
+    char text[64];
+    if (i == 3 || i == 4) {
+        if (i == 3)
+            tk_snprintf(text, sizeof text, "Theme: %s", theme()->name);
+        else
+            tk_snprintf(text, sizeof text, "Shortcut: %s", ipod_home_shortcut());
+        widget_set_text_utf8(st.setting_label[i], text);
         return;
     }
     static const char *const toggles[] = { "Rounded Corners",       0,
@@ -5203,22 +5225,21 @@ static void setting_put(int *value, int v, const char *key) {
     if (*value != v) write_int_config(*value = v, "IPOD", key);
 }
 static void theme_preset(void) {
-    int classic = st.theme, buf[11];
-    if (st.light != 2) setting_put(&st.light, classic, "LIGHT");
+    const theme_t *T = theme();
+    int buf[11];
     st.light_day = light_day(clock_now(buf));
-    if (classic)
-        setting_put(&st.accent, 4, "ACCENT"); /* Cobalt */
-    else
-        setting_put(&st.minimal_accent, 0, "MINIMAL_ACCENT"); /* Graphite */
-    setting_put(&st.rounded, !classic, "ROUNDED");
-    setting_put(&st.home, 0, "HOME");
-    setting_put(&st.time_title, !classic, "TIMETITLE");
+    for (int k = 0; k < T->n_opts; ++k) {
+        const option_t *o = &T->opts[k];
+        int *v = option_slot(T, o->setting);
+        if (o->preset >= 0 && *v != o->keep) setting_put(v, o->preset, option_key(T, o->setting));
+    }
 }
 
 static int setting_click(void *ctx, void *event) {
-    int i = (int)(long)ctx, minimal = !i && !st.theme;
-    int *value = minimal ? &st.minimal_accent : setting_values[i];
-    const char *key = minimal ? "MINIMAL_ACCENT" : setting_keys[i];
+    int i = (int)(long)ctx;
+    const theme_t *T = theme();
+    int *value = option_slot(T, i);
+    const char *key = option_key(T, i);
     /* Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games */
     static const int shortcut_next[] = { 3, 2, 6, 5, 1, 4, 0 };
     /* Graphite, ..., Plum, Green, then Ivory in Minimal or Graphite in Classic */
@@ -5228,8 +5249,12 @@ static int setting_click(void *ctx, void *event) {
         *value = shortcut_next[shortcut()];
     else if (i)
         *value = (*value + 1) % setting_counts[i];
-    else
-        *value = accent_next[*value] == MINIMAL_ACCENT && !minimal ? 0 : accent_next[*value];
+    else {
+        const option_t *o = option_of(T, SETTING_ACCENT);
+        unsigned mask = o && o->values ? o->values : (1u << ACCENT_N) - 1;
+        do *value = accent_next[*value];
+        while (!(mask >> *value & 1));
+    }
     write_int_config(*value, "IPOD", key);
     if (i == 6) { /* Auto applies from this click */
         int buf[11];
@@ -5428,10 +5453,10 @@ int ringnav_display(void *win, void *ctx) {
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {
-        /* Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Time in Title, Centred Now
-         * Playing */
-        static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 4, 2, 11, 8 };
-        for (unsigned k = 0; k < sizeof appearance; ++k) setting_row(view, appearance[k]);
+        /* Theme, then the active theme's options in order */
+        const theme_t *T = theme();
+        setting_row(view, SETTING_THEME);
+        for (int k = 0; k < T->n_opts; ++k) setting_row(view, T->opts[k].setting);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
