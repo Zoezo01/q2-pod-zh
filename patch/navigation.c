@@ -2415,10 +2415,9 @@ static void edit_paint(void *w, void *canvas);
  * page's Delete.
  */
 static void paint_radio(void *w, void *canvas) {
-    if (!w || !st.sel_widget || st.sel_home || !(scheme()->flags & SCHEME_CARD) ||
-        !P(canvas, CANVAS_LCD))
-        return;
+    if (!w || !st.sel_widget || st.sel_home) return;
     const scheme_t *S = scheme();
+    if (!(S->flags & SCHEME_CARD) || !P(canvas, CANVAS_LCD)) return;
     const char *image = widget_get_prop_str(w, "image", "");
     int more = tk_str_start_with(widget_get_prop_str(w, "name", ""), "img_more");
     int dot = !tk_strcmp(image, "select"), del = !tk_strcmp(image, "navbar_delete");
