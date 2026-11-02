@@ -383,7 +383,7 @@ static int radio(int argc, char **argv) {
             if (!rs.at && au.played > 0) rs.at = now_ms(), tries = 0, radio_state("playing");
             if (!rs.at && now_ms() - started > RADIO_SILENT_MS && !au.played) {
                 /* the writer may be blocked in ALSA, past joining: say so and end here */
-                if (!au.error[0]) snprintf(au.error, sizeof au.error, "no sound from the output");
+                if (!au.error[0]) snprintf(au.error, sizeof au.error, "输出没有声音");
                 radio_state("error");
                 unlink(RADIO_SOCK);
                 if (pid > 0) kill(pid, SIGKILL);

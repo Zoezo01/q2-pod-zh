@@ -358,9 +358,9 @@ static const char *fav_toggle(const list_t *l, int i) {
     list_free(&favs);
     ++rd.serial;
     if (ok && ui.favs) later(R_FAVS, 0);
-    return !ok         ? "Could not save Favourites"
-           : found < 0 ? "Added to Favourites"
-                       : "Removed from Favourites";
+    return !ok         ? "无法保存收藏"
+           : found < 0 ? "已加入收藏"
+                       : "已取消收藏";
 }
 
 /* The Now Playing page from rd: the station, the StreamTitle as artist - title, the stream, and the
@@ -384,12 +384,12 @@ static void np_refresh(void) {
     set(np.song, song);
     if (!rd.pid)
         tk_snprintf(t, sizeof t,
-                    tk_strcmp(rd.state, "error") ? "Stopped"
-                    : rd.error[0]                ? "Can't play: %s"
-                                                 : "Can't play this station",
+                    tk_strcmp(rd.state, "error") ? "已停止"
+                    : rd.error[0]                ? "无法播放：%s"
+                                                 : "无法播放此电台",
                     rd.error);
     else if (!rd.since)
-        tk_snprintf(t, sizeof t, "Connecting…");
+        tk_snprintf(t, sizeof t, "连接中…");
     else
         tk_snprintf(t, sizeof t, rd.bitrate[0] ? "%s  %s kbps" : "%s", rd.codec, rd.bitrate);
     set(np.info, t);
@@ -433,7 +433,7 @@ static void np_open(void) {
     if (np.page || !(np.page = page_open("radionp_page", np_closed, np_keyup))) return;
     void *page = np.page;
     widget_set_text_utf8(label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY),
-                         "Internet Radio");
+                         "网络电台");
     void *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
@@ -468,7 +468,7 @@ static int searched(void *ctx, void *event) {
     char q[sizeof ui.caption];
     if (widget_get_text_utf8(ui.edit, q, sizeof q) || !q[0]) {
         const unsigned *text = widget_get_text(ui.edit);
-        if (text && text[0]) toast("Search is too long");
+        if (text && text[0]) toast("搜索内容过长");
         return later(A_SHOW, 0), 0;
     }
     snprintf(ui.caption, sizeof ui.caption, "%s", q);
@@ -491,7 +491,7 @@ void radio_search(void) {
     if (ui.view) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     widget_destroy_children(ui.page), ui.view = 0; /* the box alone: the keyboard leaves no room for the rows */
     ui.edit = edit_create(ui.page, "text", 2, 26);
-    widget_set_prop_str(ui.edit, "tips", "Search stations");
+    widget_set_prop_str(ui.edit, "tips", "搜索电台");
     widget_on(ui.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(ui.edit, EVT_IM_ACTION, searched, 0);
     widget_on(ui.edit, EVT_BLUR, search_left, 0);
@@ -500,8 +500,8 @@ void radio_search(void) {
 
 /* The page shows level's list, its row last chosen selected. */
 static void show(int level) {
-    static const char *const menu[] = { "Now Playing", "Favourites", "Featured",
-                                        "Top Stations", "By Country", "By Genre" };
+    static const char *const menu[] = { "正在播放", "收藏", "精选",
+                                        "热门电台", "按国家", "按流派" };
     if (ui.view && !ui.note) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     ui.level = level;
     ui.note = 0;
@@ -510,7 +510,7 @@ static void show(int level) {
     if (level == MENU) {
         for (int r = rd.list.n || !access(RADIO_LAST, 0) ? R_PLAYING : R_FAVS; r <= R_GENRE; ++r)
             ui.rows[n++] = r;
-        ui.view = page_list(ui.page, ui.page, 0, "Internet Radio", n, 48);
+        ui.view = page_list(ui.page, ui.page, 0, "网络电台", n, 48);
         for (int i = 0; i < n; ++i) /* Now Playing plays; the rest open lists */
             if (ui.rows[i] == R_PLAYING)
                 page_row_detail(ui.view, i, menu[ui.rows[i]], 0, menu_click);
@@ -520,7 +520,7 @@ static void show(int level) {
         const list_t *l = level == PICK ? &ui.pick : &ui.list;
         n = l->n;
         ui.view = page_list(ui.page, ui.page, 0,
-                            level == PICK ? ui.genre ? "Genres" : "Countries" : ui.caption, n, 48);
+                            level == PICK ? ui.genre ? "流派" : "国家" : ui.caption, n, 48);
         for (int i = 0; i < n; ++i)
             if (level == PICK)
                 page_row_into(ui.view, i, name_of(l, i), pick_click);
@@ -556,7 +556,7 @@ static void fetch(const char *path, int want) {
     fx.code = 0;
     fx.running = get_wifisignal() > 0 && (fx.body = calloc(FETCH_MAX, 1)) &&
                  !pthread_create(&fx.thread, 0, fetch_worker, 0);
-    note(fx.running ? "Loading…" : get_wifisignal() > 0 ? "Directory unavailable" : "No Wi-Fi");
+    note(fx.running ? "加载中…" : get_wifisignal() > 0 ? "电台目录不可用" : "未连接 Wi-Fi");
 }
 
 static unsigned fetch_got(const char *data, unsigned size, unsigned n, void *unused) {
@@ -604,9 +604,9 @@ static int tick(const void *unused) {
         if (l->n)
             show(ui.want);
         else
-            note("No stations");
+            note("暂无电台");
     } else
-        note(get_wifisignal() > 0 ? "Directory unavailable" : "No Wi-Fi");
+        note(get_wifisignal() > 0 ? "电台目录不可用" : "未连接 Wi-Fi");
     free(fx.body);
     fx.body = 0;
     return 8;
@@ -620,11 +620,11 @@ static int go(const void *unused) {
     if (ui.next == R_FAVS) {
         favs_read(&ui.list, 1);
         tk_snprintf(ui.caption, sizeof ui.caption,
-                    ui.list.n ? "Favourites" : "No favourites");
+                    ui.list.n ? "收藏" : "暂无收藏");
         show(STATIONS);
     } else if (ui.next == R_FEATURED) {
         list_set(&ui.list, STARTERS, sizeof STARTERS - 1, 0, 0);
-        tk_snprintf(ui.caption, sizeof ui.caption, "Featured");
+        tk_snprintf(ui.caption, sizeof ui.caption, "精选");
         show(STATIONS);
     } else if (ui.next == A_SHOW) {
         show(ui.level);
@@ -633,7 +633,7 @@ static int go(const void *unused) {
         tk_snprintf(path, sizeof path, "/m3u/stations/byname/%s" RADIO_QUERY, key);
         fetch(path, STATIONS);
     } else if (ui.next == R_TOP) {
-        tk_snprintf(ui.caption, sizeof ui.caption, "Top Stations");
+        tk_snprintf(ui.caption, sizeof ui.caption, "热门电台");
         fetch("/m3u/stations/topvote/100?hidebroken=true", STATIONS);
     } else if (ui.next != A_PICK) {
         ui.genre = ui.next == R_GENRE;

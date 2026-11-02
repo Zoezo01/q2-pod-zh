@@ -563,7 +563,7 @@ def validate_assets(directory):
             cancel, enter = root[3]
             assert [n[0] for n in root[3]] == ['button', 'button'] and [n[2]['name'] for n in root[3]] == ['img_cancel', 'img_enter']
             assert cancel[1] == [0, 208, 375, 48] and enter[1] == [0, 256, 375, 48] and enter[1][1] + enter[1][3] <= 320
-            assert [n[2]['text'] for n in root[3]] == ['Cancel', 'OK']
+            assert [n[2]['text'] for n in root[3]] == ['取消', '确定']
             continue
         if short == BIGCOVER:  # iPod only: a centred square of art clear of the glass (corners above), the name on its foot
             art, shade, title = root[3]
@@ -582,7 +582,7 @@ def validate_assets(directory):
             # labels are literal), hidden in the list's place until Home's Settings row slides it in.
             assert sl == 'list_view' and sp['name'] == 'list_view_homeset' and sp['visible'] == 'false'
             assert sg == [0, HOME_TOP, HOME_LIST_W, 2*HOME_ROW] and [r[2]['name'] for r in ss[3]] == ['btn_playset', 'btn_sysset']
-            assert [r[3][1][2]['name'] for r in ss[3]] == ['img_playset', 'img_sysset'] and [r[3][0][2]['text'] for r in ss[3]] == ['Playback', 'System']
+            assert [r[3][1][2]['name'] for r in ss[3]] == ['img_playset', 'img_sysset'] and [r[3][0][2]['text'] for r in ss[3]] == ['播放设置', '系统设置']
             # The art fills the right panel below the status bar; the payload fits and crops it.
             assert art[0] == 'image' and art[1] == [0, 0, 375, 290] and art[2]['draw_type'] == 'fill' and HOME_LIST_W == 375
             assert all(v == '#00000000' for k,v in root[3][1][2].items() if k.startswith('style:'))
@@ -593,7 +593,7 @@ def validate_assets(directory):
                 # Labels end before the chevron's glyph; longer ones scroll (only_focus) or end in an ellipsis.
                 assert label[1][0] + label[1][2] == image[1][2] - HOME_LABEL_END and label[1][2] >= 100
                 assert label[2]['only_focus'] == 'true' and label[2]['ellipses'] == 'true'
-            assert [r[3][0][2].get('text') for r in sv[3]] == [None, 'Library', 'Coverflow', None, 'Rockbox', None, 'Settings']
+            assert [r[3][0][2].get('text') for r in sv[3]] == [None, '音乐', 'Cover Flow', None, 'Rockbox', None, '设置']
             assert lg == [0, HOME_TOP, HOME_LIST_W, 7*HOME_ROW] and HOME_TOP + 7*HOME_ROW <= BOTTOM - HOME_TOP
             # Home: Carousel's: stock's carousel and arrows after the lists, hidden and taking no taps
             # until chosen (coverflow_home_layout); its cards stock's in their places, Library's label
@@ -604,7 +604,7 @@ def validate_assets(directory):
                 assert n[:2] == old[:2] and n[2] == {**old[2], 'visible': 'false', 'sensitive': 'false'}
             slide = carousel[0]
             assert [c[2]['name'] for c in slide[3]] == ['btn_'+n for n in ('playing', 'localmusic', 'coverflow', 'folder', 'rockbox', 'stream', 'playset', 'sysset')]
-            assert [c[3][1][2].get('text') for c in slide[3]] == [stock_root[3][0][3][0][3][1][2]['text'], 'Library', 'Coverflow', None, 'Rockbox', None, None, None]
+            assert [c[3][1][2].get('text') for c in slide[3]] == [stock_root[3][0][3][0][3][1][2]['text'], '音乐', 'Cover Flow', None, 'Rockbox', None, None, None]
             for card in slide[3]:
                 image = card[3][0][2]
                 assert {v for k, v in image.items() if k.endswith(':bg_image')} == {'menu_' + image['name'][4:].replace('localmusic', 'music'),
