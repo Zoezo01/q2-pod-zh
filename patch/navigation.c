@@ -489,7 +489,7 @@ typedef struct {
     unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
-    int settings_read, accent, minimal_accent, home, battery, home_rockbox, classic, shortcut,
+    int settings_read, accent, minimal_accent, home, battery, home_rockbox, theme, shortcut,
         rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
         keep_lit,                  /* Smart Awake (#57, keep_lit_poll) */
         np_centred,                /* Centred Now Playing (ringnav_ui_load) */
@@ -1646,6 +1646,91 @@ static const char *const accent_names[] = {
     "Accent: Tangerine", "Accent: Plum",    "Accent: Ivory", "Accent: Green"
 };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
+enum {
+    SETTING_ACCENT,
+    SETTING_HOME,
+    SETTING_BATTERY,
+    SETTING_THEME,
+    SETTING_SHORTCUT,
+    SETTING_ROUNDED,
+    SETTING_LIGHT,
+    SETTING_KEEPLIT,
+    SETTING_NPCENTRED,
+    SETTING_KEYTONEHP,
+    SETTING_SCRUBSINGLE,
+    SETTING_TIMETITLE
+};
+/* The built-in themes (docs/internals.md#themes). */
+#define THEME_N 2
+static const scheme_t minimal_schemes[ACCENT_N] = {
+    /* { tones, flags, fill, chevron, muted, bar_light } */
+    { accents[0], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[1], SCHEME_RAW_RED, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[2], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[3], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[4], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[5], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[6], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[7], SCHEME_CARD, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 },
+    { accents[8], 0, MINIMAL_FILL, MINIMAL_CHEVRON, SUDO_MUTED, 0 }
+};
+static const option_t minimal_opts[] = {
+    /* { setting, def, preset, keep, values (0: all) } */
+    { SETTING_LIGHT, -1, 0, 2, 0 },     { SETTING_ACCENT, MINIMAL_ACCENT, 0, -1, 0 },
+    { SETTING_ROUNDED, -1, 1, -1, 0 },  { SETTING_HOME, -1, 0, -1, 0 },
+    { SETTING_BATTERY, -1, -1, -1, 0 }, { SETTING_NPCENTRED, -1, -1, -1, 0 }
+};
+static const scheme_t classic_schemes[ACCENT_N] = {
+    /* slot 7 is outside values: no roles */
+    { accents[0], 0, 0, 0, 0, LIGHT_BAR }, { accents[1], SCHEME_RAW_RED, 0, 0, 0, LIGHT_BAR },
+    { accents[2], 0, 0, 0, 0, LIGHT_BAR }, { accents[3], 0, 0, 0, 0, LIGHT_BAR },
+    { accents[4], 0, 0, 0, 0, LIGHT_BAR }, { accents[5], 0, 0, 0, 0, LIGHT_BAR },
+    { accents[6], 0, 0, 0, 0, LIGHT_BAR }, { accents[7], 0, 0, 0, 0, 0 },
+    { accents[8], 0, 0, 0, 0, LIGHT_BAR }
+};
+static const option_t classic_opts[] = {
+    { SETTING_LIGHT, -1, 1, 2, 0 },     { SETTING_ACCENT, 0, 4, -1, 0x17f },
+    { SETTING_ROUNDED, -1, 0, -1, 0 },  { SETTING_HOME, -1, 0, -1, 0 },
+    { SETTING_BATTERY, -1, -1, -1, 0 }, { SETTING_NPCENTRED, -1, -1, -1, 0 }
+};
+static const theme_t themes[THEME_N] = {
+    { .name = "Minimal",
+      .painter = { SEL_CARD },
+      .caps_mark = 1,
+      .caps_home = 1,
+      .caps_np = 1,
+      .icons_mono = 1,
+      .icons_badge_muted = 1,
+      .icons_addon_mono = 1,
+      .home_top = HOME_TOP,
+      .home_full_row = HOME_FULL_ROW,
+      .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
+      .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END },
+      .set_top = SET_TOP,
+      .np_bar = NP_BAR_MINIMAL,
+      .np_scrub = NP_BAR_CLASSIC,
+      .accent_slot = &st.minimal_accent,
+      .accent_key = "MINIMAL_ACCENT",
+      .schemes = minimal_schemes,
+      .opts = minimal_opts,
+      .n_opts = sizeof minimal_opts / sizeof *minimal_opts },
+    { .name = "Classic",
+      .painter = { SEL_BAR },
+      .chevron_home = 1,
+      .bold = 1,
+      .np_album_op = 255,
+      .np_state_op = 255,
+      .home_full_row = HOME_CLASSIC_ROW,
+      .home_text_x = HOME_CLASSIC_TEXT_X,
+      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END },
+      .np_bar = NP_BAR_CLASSIC,
+      .np_scrub = NP_BAR_CLASSIC,
+      .accent_slot = &st.accent,
+      .accent_key = "ACCENT",
+      .schemes = classic_schemes,
+      .opts = classic_opts,
+      .n_opts = sizeof classic_opts / sizeof *classic_opts }
+};
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
  * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
@@ -1655,7 +1740,7 @@ static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
 static const int setting_counts[] = { ACCENT_N, 3, 4, 2, 7, 2, 3, 2, 2, 2, 2, 2 };
 static int *const setting_values[] = { &st.accent,     &st.home,         &st.battery,
-                                       &st.classic,    &st.shortcut,     &st.rounded,
+                                       &st.theme,      &st.shortcut,     &st.rounded,
                                        &st.light,      &st.keep_lit,     &st.np_centred,
                                        &st.keytone_hp, &st.scrub_single, &st.time_title };
 /* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
@@ -1705,10 +1790,22 @@ static int accent(void) {
         st.light_day = light_day(clock_now(buf));
         st.settings_read = 1;
     }
-    return st.classic ? st.accent : st.minimal_accent;
+    return *themes[st.theme].accent_slot;
 }
 /* 1 while Minimal draws its own accent: the off-white card with dark ink. */
 static int minimal_card(void) { return !ipod_classic() && st.minimal_accent == MINIMAL_ACCENT; }
+const theme_t *theme(void) {
+    accent();
+    return &themes[st.theme];
+}
+const scheme_t *scheme(void) {
+    int v = accent();
+    return &themes[st.theme].schemes[v];
+}
+static int setting(int i) {
+    accent();
+    return *setting_values[i];
+}
 /* Shortcut with no key is Rockbox while the card has it, else Favorites: asked each time, as the
  * card may mount after the first read. */
 static int shortcut(void) {
@@ -1717,7 +1814,7 @@ static int shortcut(void) {
 }
 int ipod_classic(void) {
     accent();
-    return st.classic;
+    return st.theme;
 }
 int ipod_home(void) {
     accent();
@@ -2260,7 +2357,7 @@ static void paint_selection(void *w, void *canvas) {
     }
     /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
-    int classic = ipod_classic();
+    int classic = ipod_classic(), round = setting(SETTING_ROUNDED);
     st.sel_widget = classic ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
     st.sel_home = home && !classic;
     /* Light Mode: ink on a coloured bar or card stays white (ringnav_style_color). */
@@ -2271,7 +2368,7 @@ static void paint_selection(void *w, void *canvas) {
         const unsigned *a = accents[accent()];
         /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
         rect_t bar = r;
-        int pill = !tile && st.rounded ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
+        int pill = !tile && round ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
         if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
         gradient(canvas, bar, a[0], a[1], a[4], pill);
     } else if (home) {
@@ -2279,10 +2376,10 @@ static void paint_selection(void *w, void *canvas) {
         fill_box(canvas, &dot, 0xffffffff, HOME_DOT / 2);
     } else { /* Sudo's card: inset from the glass's edges, its corners rounded */
         int grid = tile && g_menu.kind != 4; /* pop-up buttons keep their row inset */
-        int square = !tile && !st.rounded;   /* Corners: Square, a full-width bar as Classic's */
+        int square = !tile && !round;        /* Corners: Square, a full-width bar as Classic's */
         int in = grid ? TILE_INSET : square ? 0 : SEL_INSET, vertical = grid ? TILE_INSET : 0;
         rect_t card = { r.x + in, r.y + vertical, r.w - 2 * in, r.h - 2 * vertical };
-        int radius = !st.rounded ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
+        int radius = !round ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
         fill_box(canvas, &card, RGBA(minimal_card() ? MINIMAL_FILL : accents[accent()][0]), radius);
     }
     st.sel_w = w;
@@ -4310,7 +4407,8 @@ int ringnav_playing(void *win, void *ctx) {
     lyric_init();                                    /* the rows stock's init built */
     void *lyric = widget_lookup(win, "view_lyric", 1);
     static const unsigned touch[] = { EVT_POINTER_DOWN, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
-    for (unsigned i = 0; lyric && st.np_centred && i < sizeof touch / sizeof *touch; ++i)
+    for (unsigned i = 0; lyric && setting(SETTING_NPCENTRED) && i < sizeof touch / sizeof *touch;
+         ++i)
         widget_on(lyric, touch[i], np_lyric_touch, (void *)0);
     st.np_hash = 0;
     const char *file;
@@ -4442,8 +4540,7 @@ static void bc_fit(void *win) {
 extern void *stock_ui_load_trampoline(const char *name, void *parent);
 void *ringnav_ui_load(const char *name, void *parent) {
     if (name && !tk_strcmp(name, "playing_page")) {
-        accent(); /* reads the settings */
-        if (st.np_centred) name = "playing_page_stock";
+        if (setting(SETTING_NPCENTRED)) name = "playing_page_stock";
     }
     return stock_ui_load_trampoline(name, parent);
 }
@@ -4641,7 +4738,7 @@ static int pressed_pill(void *w, void *canvas) {
             return touch_target(row) == w && I(row, W_W) > 2 * SEL_INSET + I(row, W_H);
         rect_t card = { TILE_INSET, TILE_INSET, I(w, W_W) - 2 * TILE_INSET,
                         I(w, W_H) - 2 * TILE_INSET };
-        fill_box(canvas, &card, PH_GREY, (accent(), st.rounded) ? SEL_RADIUS : 0);
+        fill_box(canvas, &card, PH_GREY, setting(SETTING_ROUNDED) ? SEL_RADIUS : 0);
         return 1;
     }
     void *b = touch_target(w);
@@ -4655,7 +4752,7 @@ static int pressed_pill(void *w, void *canvas) {
         return 0;
     }
     st.press_row = w;
-    int in = (accent(), st.rounded) ? SEL_INSET : 0;
+    int in = setting(SETTING_ROUNDED) ? SEL_INSET : 0;
     rect_t pill = { in, 0, I(w, W_W) - 2 * in, I(w, W_H) };
     fill_box(canvas, &pill, PH_GREY, in ? pill_radius(b, pill.h, SEL_INSET) : 0);
     return b == w; /* a page row's own (clear) background */
@@ -5044,15 +5141,9 @@ static void setting_text(int i) {
                              *const light[] = { "Light Mode: Off", "Light Mode: On",
                                                 "Light Mode: Auto" };
     accent(); /* reads the settings */
-    const char *const names[] = { accent_names[st.classic ? st.accent : st.minimal_accent],
-                                  home[st.home],
-                                  battery[st.battery],
-                                  theme[st.classic],
-                                  (const char *)0,
-                                  (const char *)0,
-                                  light[st.light],
-                                  (const char *)0,
-                                  (const char *)0 };
+    const char *const names[] = { accent_names[accent()], home[st.home],   battery[st.battery],
+                                  theme[st.theme],        (const char *)0, (const char *)0,
+                                  light[st.light],        (const char *)0, (const char *)0 };
     char shortcut[64];
     if (i == 4) {
         tk_snprintf(shortcut, sizeof shortcut, "Shortcut: %s", ipod_home_shortcut());
@@ -5098,7 +5189,7 @@ static void setting_put(int *value, int v, const char *key) {
     if (*value != v) write_int_config(*value = v, "IPOD", key);
 }
 static void theme_preset(void) {
-    int classic = st.classic, buf[11];
+    int classic = st.theme, buf[11];
     if (st.light != 2) setting_put(&st.light, classic, "LIGHT");
     st.light_day = light_day(clock_now(buf));
     if (classic)

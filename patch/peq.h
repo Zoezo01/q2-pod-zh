@@ -76,6 +76,7 @@ static inline int ink_vgcanvas_set_fill_linear_gradient(void *vg, float sx, floa
 #define vgcanvas_set_fill_linear_gradient ink_vgcanvas_set_fill_linear_gradient
 #endif
 #endif
+#include "theme.h"
 
 #define PEQ_BANDS 30 /* 10 per side plus 10 shared, as L/R APO files use */
 #define PEQ_CHANNELS 8

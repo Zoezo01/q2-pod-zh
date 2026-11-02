@@ -8216,6 +8216,24 @@ passed()
 
 m=Machine(); style_color(m,red)
 assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','7'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]; passed()
+# theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
+# range is Minimal; Classic's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a
+# missing MINIMAL_ACCENT is Ivory, the card (flags 1); Crimson is raw red (flags 2) in both.
+for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',0),({'THEME':'2','MINIMAL_ACCENT':'3'},'Minimal',3),
+                         ({'THEME':'1','ACCENT':'7'},'Classic',0),({'THEME':'1','ACCENT':'12'},'Classic',0),
+                         ({'THEME':'1','ACCENT':'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1','ACCENT':'8'},'Classic',8)):
+    k=Machine(); k.config=dict(config)
+    t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+    assert k.text(k.get(t))==name and len(k.config_reads)==13,config
+    s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
+    flags=k.u.mem_read(s+4,1)[0]  # scheme_t: tones @0, flags @4
+    assert k.get(s)==payload_syms['accents']+20*want and flags==(1 if name=='Minimal' and want==7 else 2 if want==1 else 0),(config,flags)
+passed()
+# A paint before any config read draws a built-in theme, never zeroed scratch.
+k=Machine(); k.config=dict(THEME='1',ACCENT='4'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
+k.paint(kw); assert len(k.config_reads)==13 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
+k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
+assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 
 # Gradients: the leaf's null checks, then the caller's stops mapped (nr @8, stops @0xc).
 def gradient(config,stops,same_out=True,vt_get=True,style=True):
@@ -8899,6 +8917,10 @@ m,view,rows=display({'ACCENT':'2','THEME':'1'}); m.paint(view)
 assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[2][i]) for i in (4,0,1)]; passed()
 f,ctx=m.handler(m.nodes[rows[0]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[3][i]) for i in (4,0,1)]; passed()
+# Minimal to Classic, live: the very next paint is Classic's preset Cobalt bar.
+m,view,rows=display({}); m.paint(view); assert not m.bands
+f,ctx=m.handler(m.nodes[rows[3]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent
 CONFIG.update(THEME='1'); m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'
