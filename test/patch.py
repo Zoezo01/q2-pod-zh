@@ -6632,10 +6632,10 @@ class CentredMachine(KaraokeMachine):
             self.word(self.lrc+O['SCROLL_Y'],0)
         else: ret=self.nodes[self.win]['children'].index(a)
         self.returns(ret,clobber=True)
-    def show(self,playtime=0,lrc=None):  # stock's page: the title, the column (its slide_view and dots), the bar
+    def show(self,playtime=0,lrc=None,slide='slide_view'):  # slide: the slide_view's name (another: a page without one); stock's page: the title, the column (its slide_view and dots), the bar
         self.playtime=playtime; self.lrc=self.node('scroll_view','scroll_lrc'); self.build()
         self.lyric=self.node('view','view_lyric',[self.node('list_view','view_lrc',[self.lrc])])
-        self.slide=self.node('slide_view','slide_view',[self.lyric],value=1)
+        self.slide=self.node('slide_view',slide,[self.lyric],value=1)
         self.dots=self.node('slide_indicator','slide_indicator1'); self.word(self.dots+O['W_Y'],270)
         self.col=self.node('view','slide_view_view',[self.slide,self.dots]); self.word(self.slide+O['W_PARENT'],self.col)
         self.bar=self.node('slider','slider_play')
@@ -6680,6 +6680,11 @@ for dx,dy in ((70,0),(0,40),(11,0)):  # a swipe, a drag of the lines, past TAP_P
     m=centred(); m.tap(dx=dx,dy=dy); assert m.full()[:6]==COLUMN[:5]+(None,),(dx,dy,m.full()); passed()
 m=centred(lines=()); m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()  # no lyrics
 m=centred(centred='0'); assert not m.nodes[m.lyric].get('handlers'); passed()  # the iPod page's own
+# A page without stock's slide_view (a layout of its own) has no column: a tap on its lyrics leaves
+# everything as it was, where np_full read the column off a NULL slide_view (W_PARENT at 0x48).
+m=CentredMachine(); m.lines=[(5,'x'*15),(9,'Two two'),(12,'Three')]; m.show(9,slide='pages')
+m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full()
+m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()
 # Download Album Lyrics (onlinematch.c ringnav_playermore): after stock's 8 ⋯ rows (its init mocked), one
 # more in stock's row widgets and 20 px label, under Download Cover & Lyrics (PLAYMORE_ROWS' kind 4), its
 # button unnamed so stock's row click (an atoi of the name) never sees it; only for a playing song on the

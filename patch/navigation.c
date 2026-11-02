@@ -3987,11 +3987,13 @@ int ringnav_smart_awake(void) {
 /* Centred Now Playing's full-screen lyrics (np_lyric_touch): the column (stock's slide_view_view,
  * tools/ipod.py PLAYING_STOCK) goes over the page's other widgets, black and the window's width,
  * its slide_view down to the page dots, and the lines wrap at the new width (lyrics_fit), back on
- * the playing line; off, stock's place again, before the progress bar. */
+ * the playing line; off, stock's place again, before the progress bar. A page without a slide_view
+ * has none of this: nothing changes. */
 #define NP_COLUMN_X 80 /* stock's column: its x and width, and its slide_view's height */
 #define NP_COLUMN_W 225
 #define NP_COLUMN_SLIDE_H 198
 static void np_full(int on) {
+    if (!st.np_slide) return; /* a page without stock's slide_view: no column to move */
     void *col = P(st.np_slide, W_PARENT), *dots = widget_lookup(col, "slide_indicator1", 1);
     st.np_full = on;
     widget_restack(col, on ? widget_count_children(st.np_win) : widget_index_of(st.np_slider));
