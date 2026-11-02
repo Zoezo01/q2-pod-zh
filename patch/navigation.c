@@ -6687,6 +6687,11 @@ static void sc_text(int i) {
                                           : "清除 Spotify 数据");
 }
 
+/* netupdate.c's erase ended: .cache-size went with it, so Spotify's row reads 2 GB again. */
+void stream_erased(void) {
+    if (st.sc_page) sc_text(1), sc_text(2);
+}
+
 /* The services Streaming lists, each shown or hidden by a check row on its Configuration page:
  * 0 stock's Tidal, 1 Spotify, the card apps (addon.c's order), then Tidal Downloads, Internet
  * Radio and AirPlay. Q2POD STREAMHIDE in config.ini holds the hidden ones' keys, comma separated:
