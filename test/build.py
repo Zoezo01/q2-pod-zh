@@ -48,6 +48,8 @@ def boot_check():
         # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
         assert WIFI_OFF in script
         script = script.replace(WIFI_OFF, f'echo wifi >> {r}/order')
+        assert 'usleep 300000' in script  # Home's hand-over pauses before Rockbox: logged, its place is the point
+        script = script.replace('usleep 300000', f'echo settle >> {r}/order')
         for real in ('killall -9', 'ifconfig', 'wlan0', 'wpa_supplicant', 'udhcpc', 'wifi_connect'): assert real not in script, real
         for d in ('proc', 'mnt/data', 'mnt/mmc/.rockbox', 'tmp', 'usr/bin', 'release/bin'): (r/d).mkdir(parents=True)
         def exe(path, body): (r/path).write_text('#!/bin/sh\n' + body + '\n'); (r/path).chmod(0o755)
@@ -94,10 +96,10 @@ def boot_check():
         def order(*args): boot(*args); return (r/'order').read_text().split()
         session = ['wifi', 'rockbox', 'demo']
         for code in (0, 1, 81, 137, 255): assert order(False, True, code) == session
-        assert order(True, True, 81, 1) == ['demo', *session]   # Home's Rockbox row
-        assert order(False, True, 81, 2) == session * 3         # power-on, then the row twice
+        assert order(True, True, 81, 1) == ['demo', 'settle', *session]  # Home's Rockbox row waits for what demo launched
+        assert order(False, True, 81, 2) == session + ['settle', *session] * 2  # power-on doesn't wait, the row twice does
         assert order(False, False) == ['demo']                  # no Rockbox on the card
-        assert order(True, False, 81, 1) == ['demo', 'demo']    # nor when the row is taken
+        assert order(True, False, 81, 1) == ['demo', 'settle', 'demo']  # nor when the row is taken
         assert order(True, True) == ['demo']                    # Play/Pause held
         target.write_text('q2pod'); assert order(False, True) == ['demo']; target.unlink()
         # an abnormal end of demo leaves its status on /mnt/data, which the next boot copies to a mounted card;

@@ -189,7 +189,11 @@ ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
 # No rmmod 8733bs: that module also holds Bluetooth's power line, and Bluetooth must survive the hand-over.
 # The rest ends as stock's networkStop does. wifi_connect.sh because demo may have just started it. No ifconfig wlan0
 # 0.0.0.0: BusyBox brings a down interface up to set an address, which would wake a cold boot's radio; demo clears it.
-WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
+# Home's hand-over pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
+# start Wi-Fi under Rockbox. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
+# finish starting: wifi_connect.sh exits before its /tmp/wpasupplicant_initsuccess without a saved network, and demo
+# starts udhcpc later too. ponytail: 300 ms is a guess, far above fork to exec; a shell slower than that still escapes.
+WIFI_OFF ='killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         c=/mnt/data/q2-crash.log
         m=/mnt/data/q2-state
@@ -227,6 +231,8 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             [ -e {ROCKBOX_FLAG} ] || break
             rm -f {ROCKBOX_FLAG}
             killall checkappprocess.sh 2>/dev/null
+            # demo is gone: what it just launched gets this long to reach a name WIFI_OFF kills (build.py)
+            usleep 300000
             rockbox
         done
         case $s in 0|143) rm -f $m ;; *)
