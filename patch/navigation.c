@@ -4842,8 +4842,10 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
      * blue selected_bg_color, which Light Mode keeps: it stays, not flipped to paper. */
     if (name && !tk_strcmp(name, "selected_text_color")) return color;
     const scheme_t *S = scheme();
+    const theme_t *T = theme();
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
-        if (!ipod_classic() && (st.paint_w == st.bar_idle || coverflow_home_owns(st.paint_w))) {
+        if ((T->caps_mark && st.paint_w == st.bar_idle) ||
+            (T->caps_home && coverflow_home_owns(st.paint_w))) {
             *color &= 0xffffff; /* paint_caps draws it */
             return color;
         }
@@ -4944,7 +4946,8 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned format = bitmap ? *(unsigned short *)((char *)bitmap + 0xe) - 1u : 4,
              preset = accent();
-    const scheme_t *sc = &theme()->schemes[preset];
+    const theme_t *T = theme();
+    const scheme_t *sc = &T->schemes[preset];
     unsigned char *data = (void *)0;
     /* Before the manager copies bitmap_t: cached flags must agree with the new alpha. These
      * paths are stock's album/artist thumbnails and Folder view's (.downpic/fd*, its cover
@@ -4981,7 +4984,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
      * secondary text's grey, legible on the black list and on the selected row's off-white card. */
     if (s && !*s && tk_str_start_with(name, "img_") && tk_strcmp(name, "img_delete") &&
         tk_strcmp(name, "img_edit") && tk_strcmp(name, "img_morefolder") &&
-        tk_strcmp(name, "img_path") && !dark && !ipod_classic())
+        tk_strcmp(name, "img_path") && !dark && T->icons_badge_muted)
         tone = sc->muted;
     /* Minimal: the settings icons' coloured discs all turn MINIMAL_CHEVRON, like list_into's ink
      * and stock's grey list discs. The Bluetooth rows' white marks (device, refresh) and
@@ -4996,7 +4999,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                (settings_icon(name) || tk_str_start_with(name, "local_") ||
                 (tk_str_start_with(name, "list_") && !into) || tk_str_start_with(name, "small_") ||
                 tk_str_start_with(name, "player_"));
-    int mono = s && !*s && !ipod_classic() &&
+    int mono = s && !*s && T->icons_mono &&
                (tk_str_start_with(name, "navbar_") || tk_str_start_with(name, "home_") ||
                 tk_str_start_with(name, "img_") || tk_str_start_with(name, "drop_") ||
                 tk_str_start_with(name, "play_") || tk_str_start_with(name, "playlist_") ||
@@ -5024,7 +5027,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
             }
         bitmap_unlock_buffer(bitmap);
     }
-    unsigned char *px = (icon || into) && format < 4 && !ipod_classic()
+    unsigned char *px = (icon || into) && format < 4 && T->icons_mono
                             ? bitmap_lock_buffer_for_write(bitmap)
                             : (void *)0;
     if (px) {
@@ -5054,7 +5057,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     }
     int mapped = 0; /* the accent changed a pixel: its colours are final */
     if ((!(sc->flags & SCHEME_RAW_RED) || dark || paper) && format < 4 && s && !*s &&
-        !settings_icon(name) && (ipod_classic() || (!icon && !into)))
+        !settings_icon(name) && (!T->icons_mono || (!icon && !into)))
         data = bitmap_lock_buffer_for_write(bitmap);
     if (data) {
         const unsigned char *o = at[format];
@@ -5095,8 +5098,8 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     }
     /* Minimal: a card app's Streaming icon (addon.c, a file:// image) greys as Streaming's own
      * stream_ icons do (mono, above), so its row matches theirs; Classic keeps its colours. */
-    unsigned char *app = format < 4 && !ipod_classic() && addon_is_icon(name) && I(bitmap, 0) > 0 &&
-                                 I(bitmap, 0) <= 4096 && I(bitmap, 4) <= 4096 &&
+    unsigned char *app = format < 4 && T->icons_addon_mono && addon_is_icon(name) &&
+                                 I(bitmap, 0) > 0 && I(bitmap, 0) <= 4096 && I(bitmap, 4) <= 4096 &&
                                  (int)bitmap_get_line_length(bitmap) >= 4 * I(bitmap, 0)
                              ? bitmap_lock_buffer_for_write(bitmap)
                              : (void *)0;
