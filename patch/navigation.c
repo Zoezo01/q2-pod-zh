@@ -1718,6 +1718,8 @@ static const theme_t themes[THEME_N] = {
       .painter = { SEL_BAR },
       .chevron_home = 1,
       .bold = 1,
+      .art_square = 1,
+      .batt_fill = BATT_CHARGE_RGB,
       .np_album_op = 255,
       .np_state_op = 255,
       .home_full_row = HOME_CLASSIC_ROW,
@@ -1811,10 +1813,6 @@ static int setting(int i) {
 static int shortcut(void) {
     accent();
     return st.shortcut < 7 ? st.shortcut : rockbox_available() ? 0 : 3;
-}
-int ipod_classic(void) {
-    accent();
-    return st.theme;
 }
 int ipod_home(void) {
     accent();
@@ -2123,7 +2121,7 @@ static void paint_letter(void *w, void *canvas) {
 /* Classic under Square: an iPod's square art on Now Playing, the full-screen art, Cover Flow
  * (coverflow_render) and list thumbnails; stock's placeholder and Home: Carousel's cards keep their
  * own corners. */
-int ipod_square_art(void) { return ipod_classic() && !st.rounded; }
+int ipod_square_art(void) { return theme()->art_square && !st.rounded; }
 
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
  * NP_ART_RADIUS at 166px, painted over it in the page's
@@ -3793,7 +3791,7 @@ static void paint_battery(void *w, void *canvas) {
     canvas_fill_rect(canvas, bw - 1, y + 1, 1, bh - 2);
     canvas_fill_rect(canvas, bw, y + (bh - nh) / 2, BATT_NUB_W, nh);
     /* Classic: an iPod's green charge under the outline, red when low */
-    if (ipod_classic() && !(key & 1)) canvas_set_fill_color(canvas, RGBA(BATT_CHARGE_RGB));
+    if (theme()->batt_fill && !(key & 1)) canvas_set_fill_color(canvas, RGBA(theme()->batt_fill));
     canvas_fill_rect(canvas, 2, y + 2, (bw - 4) * (key & 2 ? 100 : level) / 100, bh - 4);
     if (st.batt_mode == 2) {
         int x = bw + BATT_NUB_W + BATT_GAP;
@@ -5218,7 +5216,7 @@ static void theme_preset(void) {
 }
 
 static int setting_click(void *ctx, void *event) {
-    int i = (int)(long)ctx, minimal = !i && !ipod_classic();
+    int i = (int)(long)ctx, minimal = !i && !st.theme;
     int *value = minimal ? &st.minimal_accent : setting_values[i];
     const char *key = minimal ? "MINIMAL_ACCENT" : setting_keys[i];
     /* Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games */
@@ -5242,7 +5240,8 @@ static int setting_click(void *ctx, void *event) {
     else if (i == 1 || i == 4)
         coverflow_home_layout();
     else if (i == 5) {
-        if (ipod_classic()) image_manager_unload_all(image_manager()); /* its thumbnails' corners */
+        if (theme()->art_square)
+            image_manager_unload_all(image_manager()); /* its thumbnails' corners */
         widget_invalidate_force(window_manager(), (void *)0);
     } else if (i < 7) { /* the switches from Smart Awake on only need their toggle drawn, Centred
                          * Now Playing the next open (ringnav_ui_load) */

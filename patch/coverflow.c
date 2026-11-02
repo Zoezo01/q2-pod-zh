@@ -2720,7 +2720,7 @@ int coverflow_home_owns(void *w) {
 /* Both menus' lists span outer, their rows and tap targets inner; labels start at x and end end
  * before the row's edge (Classic: before the chevron). */
 static void home_width(void *w, int outer, int inner, int x, int end, int depth) {
-    widget_move_resize(w, I(w, W_X), depth ? I(w, W_Y) : ipod_classic() ? 0 : HOME_TOP,
+    widget_move_resize(w, I(w, W_X), depth ? I(w, W_Y) : theme()->home_top,
                        depth < 2 ? outer : inner, I(w, W_H));
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         void *child = widget_get_child(w, i);
@@ -2745,7 +2745,8 @@ static void home_show(void *w, int on) {
  * lists' place, and leaving it, the main list. Hidden Rockbox is restacked last because the native
  * layout includes hidden rows, and made insensitive, as hidden rows keep their taps. */
 void coverflow_home_layout(void) {
-    int mode = ipod_home(), full = mode == 1, carousel = mode == 2, classic = ipod_classic();
+    int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
+    const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
@@ -2763,9 +2764,8 @@ void coverflow_home_layout(void) {
                                  ipod_home_shortcut());
     }
     int split = HOME_SPLIT_W, outer = full ? 375 : split,
-        inner = !full ? split : classic ? HOME_CLASSIC_ROW : HOME_FULL_ROW,
-        x = classic ? HOME_CLASSIC_TEXT_X : HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
-        end = classic ? HOME_CLASSIC_LABEL_END : full ? HOME_LABEL_END : HOME_SPLIT_LABEL_END;
+        inner = !full ? split : T->home_full_row, x = T->home_text_x,
+        end = T->home_label_end[full];
     home_width(home.list, outer, inner, x, end, 0);
     if (home.sets) home_width(home.sets, outer, inner, x, end, 0);
     widget_move_resize(home.art, split, 0, 375 - split, 290);

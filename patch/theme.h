@@ -30,6 +30,8 @@ typedef struct {
     const scheme_t *schemes; /* [ACCENT_N], indexed by accent value */
     const option_t *opts;    /* Appearance rows after Theme, in order */
     unsigned char n_opts;
+    unsigned char art_square; /* art takes Corners: Square */
+    unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;
 const theme_t *theme(void);   /* accent(); return &themes[st.theme]; */
 const scheme_t *scheme(void); /* &theme()->schemes[accent()] */
