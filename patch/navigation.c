@@ -9769,7 +9769,31 @@ int ringnav_mainscheduling(void) {
     return player_mainscheduling();
 }
 
+/* Temporary probe: writes this process's address map to the card, so the space above the
+ * payload's segment (0xb96850) can be measured. Verification only, removed once measured. */
+static unsigned probe_at;
+
+static void maps_probe(const char *name) {
+    char cmd[160];
+    /* $PPID is demo itself: system() runs the command in a child shell. */
+    snprintf(cmd, sizeof cmd, "cat /proc/$PPID/maps > /mnt/mmc/%s 2>/dev/null; "
+             "cat /proc/$PPID/maps > /mnt/data/%s 2>/dev/null; sync", name, name);
+    system(cmd);
+}
+
+static void maps_probe_tick(void) {
+    unsigned now = time_now_ms();
+    if (!probe_at) {
+        maps_probe("q2maps-boot.txt");
+        probe_at = now ? now : 1;
+    } else if (now - probe_at > 90000) {
+        maps_probe("q2maps-late.txt");
+        probe_at = now;
+    }
+}
+
 int ringnav_sleep(void *loop) {
+    maps_probe_tick();
     library_fill_tick();
     if (library_fill_active() && st.pod_label[POD_LIBRARY_FILL]) pod_text(POD_LIBRARY_FILL);
     headset_poll();
