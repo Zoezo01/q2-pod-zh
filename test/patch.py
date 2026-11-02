@@ -2,7 +2,7 @@
 """Execute the actual patched MIPS callback with stock filter and mocked UI services.
 Requires unicorn==2.1.4. Does not emulate the entire device or flash hardware.
 """
-import json, math, pathlib, re, sqlite3, struct, sys
+import hashlib, io, json, math, os, pathlib, re, sqlite3, struct, sys
 from functools import cmp_to_key
 from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
 from unicorn.mips_const import *
@@ -53,6 +53,41 @@ SAVED=[UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2,UC_MIPS_REG_S3,
 
 def signed(x): return x if x<0x80000000 else x-0x100000000
 SCOPE_RULES='/mnt/data/q2-library-scope'  # library_scope.c's folder marker rules, written by a library update
+
+# Q2_TRACE=FILE logs every draw and widget-property call, each hook's return and each passed case, by value.
+TRACE=open(os.environ['Q2_TRACE'],'w') if os.environ.get('Q2_TRACE') else None
+def trace(*fields):
+    if TRACE: TRACE.write('\t'.join(fields)+'\n')
+TRACE_ARGS={'canvas_get_clip_rect':'_','canvas_set_clip_rect':'_r','canvas_set_global_alpha':'_i',
+    **dict.fromkeys(('canvas_set_fill_color','canvas_set_stroke_color','canvas_set_text_color'),'_x'),
+    **dict.fromkeys(('canvas_fill_rect','canvas_stroke_rect'),'_iiii'),'canvas_draw_icon':'_xii','canvas_set_font':'_si',
+    'canvas_draw_text_in_rect':'_wr','canvas_draw_text':'_wii','canvas_measure_text':'_w','canvas_draw_image':'_xrr',
+    'canvas_fill_rounded_rect':'_rrdi','canvas_stroke_rounded_rect':'_rrdii',
+    **{'vg:vgcanvas_'+n:c for n,c in (('save','_'),('restore','_'),('begin_path','_'),('close_path','_'),('fill','_'),
+       ('stroke','_'),('translate','_ff'),('move_to','_ff'),('line_to','_ff'),('arc','_fffffi'),('set_fill_color','_x'),
+       ('set_stroke_color','_x'),('set_fill_linear_gradient','_ffffxx'),('set_line_width','_f'),('set_line_cap','_s'))},
+    'widget_set_prop_int':'nsi','widget_set_prop_str':'nss','widget_move_resize':'niiii','widget_resize':'nii',
+    'widget_set_opacity':'ni','widget_use_style':'ns','widget_set_text_utf8':'ns','widget_set_tr_text':'ns',
+    'widget_set_visible':'nii','widget_set_sensitive':'ni','widget_factory_create_widget':'_sniiii',
+    **dict.fromkeys(('image_create','list_item_create','button_create','hscroll_label_create','label_create'),'niiii'),
+    'image_set_draw_type':'ni','image_base_set_image':'ns',
+    'image_manager':'','image_manager_unload_all':'_','image_manager_unload_bitmap_by_name':'_s'}
+HOOK_NAMES={a:n for a,n,_ in HOOKS.values()}
+PAYLOAD_NAMES={v:n for n,v in sorted(payload_syms.items())}
+def render(m,code,v):
+    """One traced value; 'w' takes (UTF-32 pointer, length). Addresses never appear, so traces survive a relink."""
+    if code=='w': return json.dumps(''.join(chr(m.get(v[0]+4*k)) for k in range(v[1])))
+    if code in 'srd' and not v: return 'null'
+    if code=='s': return json.dumps(m.text(v))
+    if code=='r': return ','.join(str(signed(m.get(v+4*k))) for k in range(4))
+    if code=='d': return '%08x'%m.get(v)
+    if code=='f': return '%g'%struct.unpack('<f',struct.pack('<I',v))[0]
+    if code=='n' and v in m.nodes: return 'n%d'%list(m.nodes).index(v)
+    # ponytail: an alpha-0 colour 0x00b00000-0x00b9ffff reads as an address (P); none is drawn today
+    if BASE<=v<SCRATCH+0x20000: return PAYLOAD_NAMES.get(v,'P')
+    if 0x70000000<=v<0x70010000: return 'S'
+    return str(signed(v)) if code=='i' else '%08x'%v
+
 
 class Machine:
     def __init__(self, patched=True):
@@ -220,6 +255,12 @@ class Machine:
         a,b,c,d=[u.reg_read(r) for r in REGS]
         n=self.nodes.get(a,{})
         self.calls.append((name,a,b,c))
+        if TRACE and name in TRACE_ARGS:
+            sp=u.reg_read(UC_MIPS_REG_SP); it=iter([a,b,c,d]+[self.get(sp+16+4*k) for k in range(4)]); out=[]
+            for k in TRACE_ARGS[name]:
+                v=(next(it),next(it)) if k=='w' else next(it)
+                if k!='_': out.append(render(self,k,v))
+            trace(name,*out)
         if name=='memcpy': self.u.mem_write(a,bytes(self.u.mem_read(b,c))); ret=a
         elif name=='strncpy@GLIBC_2.0': self.u.mem_write(a,self.raw(b)[:c].ljust(c,b'\0')); ret=a
         elif name=='memset': self.u.mem_write(a,bytes([b&255])*c); ret=a
@@ -601,6 +642,10 @@ class Machine:
         assert self.u.reg_read(UC_MIPS_REG_PC)==0x1000000, 'Instruction limit reached'
         assert self.u.reg_read(UC_MIPS_REG_SP)==0x7000f000
         assert [self.u.reg_read(r) for r in SAVED]==[0x12340000+i for i in range(len(SAVED))]
+        if TRACE:
+            v0=self.u.reg_read(UC_MIPS_REG_V0); name=HOOK_NAMES.get(address) or render(self,'p',address)
+            px=[] if name!='ringnav_image_add' or args is None else [hashlib.sha1(bytes(self.u.mem_read(self.get(args[2]+0x14),self.get(args[2]+4)*self.get(args[2]+8)))).hexdigest()[:12]]
+            trace('ret',name,render(self,'d' if name=='ringnav_style_color' else 'x',v0),*px)
         return signed(self.u.reg_read(UC_MIPS_REG_V0))
     def advance(self,ms,clear=True):
         """Run due UI timers deterministically, including the exact deadline; RET_REPEAT re-arms."""
@@ -685,6 +730,26 @@ checks=0
 def passed():
     global checks
     checks+=1
+    trace(f'== {checks}')
+
+# Q2_TRACE: draw calls and hook answers by value: widgets as mock node ids, strings by content, payload
+# addresses by symbol (else P), stack addresses as S; cmp of two builds' traces survives a layout change.
+saved,TRACE=TRACE,io.StringIO()
+t=Machine(); w=t.node('label'); rect=t.alloc(16); text=t.alloc(8); paint=payload_syms['ringnav_paint']
+for o,v in enumerate((1,2,-3,4)): t.word(rect+4*o,v)
+t.word(text,ord('O')); t.word(text+4,ord('K'))
+assert [render(t,c,v) for c,v in (('n',w),('n',0x1234),('s',t.string('Songs')),('s',0),('i',0xffffffe2),('x',0xff112233),
+        ('r',rect),('r',0),('d',rect),('f',0x3fc00000),('p',paint),('i',paint),('x',SCRATCH+0x1ffff),('x',0x7000eff0),
+        ('x',BASE-4),('x',SCRATCH+0x20000))]==['n0','00001234','"Songs"','null','-30','ff112233','1,2,-3,4','null','00000001',
+        '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+0x20000)]
+for r,v in zip((*REGS,UC_MIPS_REG_SP,UC_MIPS_REG_T9),(t.canvas,text,2,10,0x7000f000,syms['canvas_draw_text'])): t.u.reg_write(r,v)
+t.word(0x7000f010,-20); t.hook(t.u,syms['canvas_draw_text'],4,None)
+t.rockbox_mode=0; t.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0)  # "Favorites", a literal: P
+assert TRACE.getvalue().splitlines()==['canvas_draw_text\t"OK"\t10\t-20','ret\tipod_home_shortcut\tP']
+COVER=r'(vg:vgcanvas_|canvas_|widget_set_prop|widget_move_resize$|widget_resize$|widget_set_opacity$|widget_use_style$|image_)'
+assert {n for n in t.handlers.values() if re.match(COVER,n) and n.removeprefix('vg:') in FUNCTIONS}|{'canvas_set_global_alpha'}<=TRACE_ARGS.keys()
+n=checks; TRACE.seek(0); TRACE.truncate(); passed(); assert TRACE.getvalue()==f'== {n+1}\n'
+TRACE=saved
 
 # The failed-exec path exits through the kernel, without libc's copied buffers or handlers.
 m=Machine(); exited=[]
@@ -8226,6 +8291,12 @@ def image(config,name,fmt=3):
     return [bytes(m.u.mem_read(data+12*y,12)) for y in range(2)]
 hi=ACCENTS[0][3]; want=bytes([hi&255,hi>>8&255,hi>>16,0x80])+bytes([0x80,0x80,0x80,0xff])+b'\xee'*4
 assert image({},'switch_on')==[want,want]; passed()
+# Q2_TRACE's hook answers: the style hook's colour (the word at v0); the image hook's v0 and the pixels it mapped.
+saved,TRACE=TRACE,io.StringIO(); m=Machine(); m.config={}; style_color(m,color_t(0xff1448))
+assert TRACE.getvalue().splitlines()[-1]=='ret\tringnav_style_color\t%08x'%color_t(ACCENTS[0][3])
+px=image({},'switch_on')
+assert TRACE.getvalue().splitlines()[-1]=='ret\tringnav_image_add\t00000000\t'+hashlib.sha1(b''.join(px)).hexdigest()[:12]
+TRACE=saved; passed()
 stock=bytes([0x48,0x14,0xff,0x80,0x80,0x80,0x80,0xff])+b'\xee'*4
 for config,name,fmt in (({'ACCENT':'1','THEME':'1'},'switch_on',3),({},'file:///tmp/coverpic.jpg',3),({},'/mnt/mmc/a/cover.jpg',3),
                         ({},'https://resources.tidal.com/images/a/320x320.jpg',3),({},'switch_on',5),
