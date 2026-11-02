@@ -226,7 +226,7 @@ static void library_take(const char *id) {
     line_end(seq); /* the whole file when it has no newline */
     tk_snprintf(libup.done, sizeof libup.done, "%s.done", path);
     if (!*seq || strlen(seq) >= sizeof libup.seq) { /* can't be kept: never run, answered once */
-        library_refuse(seq, *seq ? "Seq too long" : "Missing seq");
+        library_refuse(seq, *seq ? "序号过长" : "缺少序号");
         return;
     }
     if (!strcmp(seq, last)) return; /* the one taken last is done already */
@@ -246,7 +246,7 @@ static void library_take(const char *id) {
     tk_snprintf(libup.seq, sizeof libup.seq, "%s", seq);
     libup.scan = 0;
     libup.list[0] = 0; /* no files until library_parse moves them there */
-    const char *bad = n >= LIB_MAX - 2            ? "Request too long"
+    const char *bad = n >= LIB_MAX - 2            ? "请求过长"
                       : access("/tmp/mmc_add", 0) ? "No memory card"
                                                   : library_parse(body, why, sizeof why);
     if (bad || (!libup.scan && !libup.list[0])) { /* a seq alone: nothing to do */
@@ -278,7 +278,7 @@ static void library_step(void) {
             return;
         }
         if (!libup.seen) {
-            library_done("Couldn't start the scan");
+            library_done("无法开始扫描");
             return;
         }
         if (!libup.list[0]) {
@@ -302,9 +302,9 @@ static void library_step(void) {
     int r = importPlayList();
     libup.only = 0;
     char why[300];
-    const char *bad = r == -2 ? "No memory card" : library_missing(why, sizeof why);
+    const char *bad = r == -2 ? "没有存储卡" : library_missing(why, sizeof why);
     library_done(bad); /* before the toast, whose dialog runs a loop of its own */
-    toast(bad ? bad : "Playlists updated");
+    toast(bad ? bad : "歌单已更新");
 }
 
 /* addon_poll's, once a pass, every LIB_POLL_MS. A stock dialog it opens (Update Local Music, a

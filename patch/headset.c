@@ -47,6 +47,7 @@ static struct {
     int linked, known, ears, want, paused, owner, automatic, last_key;
     unsigned char address[14];
     int airpods;
+    unsigned refused_at; /* 无耳机不播放: the last refusal, so one press toasts once */
 } hs __attribute__((section(".scratch")));
 
 void headset_manual(void) {
@@ -55,7 +56,40 @@ void headset_manual(void) {
         hs.recent_owner = 0;
     }
 }
+int media_playing(void);
+/* Nothing listens: neither jack is in, and the output that is selected has nothing at its end. The
+ * Q2 has no music speaker (only the MCU's buzzer), so a start here plays into silence. Output way 1
+ * only says Bluetooth is the chosen output (config_outputchannel), not that a device is linked: the
+ * link list's 3 is a connected device, as headset_bt_autolink reads it. A USB DAC (2) is its own
+ * end. */
+static int silent_output(void) {
+    if (g_po_status || g_bal_status) return 0; /* 3.5 mm, 4.4 mm */
+    int way = mclGetOutputWay();
+    if (way >= 2) return 0;
+    if (way == 1) {
+        int status = 0;
+        char item[32];
+        for (int i = getBtLinkSize(); status != 3 && i-- > 0;) getBtLinkItem(i, &status, item);
+        return status != 3;
+    }
+    return 1; /* the headphone DAC alone, with no jack in it */
+}
+/* 无耳机不播放 (Q2POD HEADSETGUARD, on by default): a pocket press of Play, or of Next/Previous,
+ * must not start a queue nobody can hear and drain the battery. Only starting is refused; a pause
+ * still goes through, and so do the ways of playing that cannot be a pocket press (a row's click,
+ * a link coming up, an AirPods ear report). Silent in a pocket: the toast is for a lit screen, and
+ * one refusal at most per press, since one press may pass two gates. */
+int headset_guard_refuse(void) {
+    if (!config_value("Q2POD", "HEADSETGUARD", 2, 1) || !silent_output()) return 0;
+    unsigned now = time_now_ms();
+    if (g_backlight_status && now - hs.refused_at > 800) {
+        hs.refused_at = now;
+        toast("未连接耳机");
+    }
+    return 1;
+}
 int ringnav_play_pause(void) {
+    if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
     return stock_pause_trampoline();
 }
@@ -96,6 +130,12 @@ static int focus(void) {
 }
 int media_focused(void) { return focus() != 0; }
 void media_key(unsigned key) {
+    /* The active source's own Play, Next and Previous, refused on the same terms as the local ones
+     * (headset_guard_refuse): with a Bluetooth headset linked the link is the output, so its own
+     * remote still starts and changes playback. */
+    if ((key == KEY_PLAY || key == KEY_FWD_BTN || key == KEY_BACK_BTN) && !media_playing() &&
+        headset_guard_refuse())
+        return;
     headset_manual();
     int f = focus(); /* a focused Spotify or radio that isn't running leaves them to the owner */
     if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key)))

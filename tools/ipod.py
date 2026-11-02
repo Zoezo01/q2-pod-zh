@@ -200,7 +200,7 @@ def artist_tabs(root):
 # literal too, "Library" in every language: stock would set label_localmusic's text to small_local
 # ("Local Songs"), a key only Home uses.
 HOME_PAGE = 'home_page.bin'
-LIBRARY = {'name': 'label_library', 'text': 'Library'}
+LIBRARY = {'name': 'label_library', 'text': '音乐'}
 
 
 def home_card(menu, at, row, text):
@@ -226,11 +226,11 @@ def home_card(menu, at, row, text):
 # holding stock's own Playback and System setting rows (labelled Playback and System), into the list's place.
 HOME_ROWS = ['playing', 'localmusic', 'coverflow', 'folder', 'rockbox', 'stream', 'settings']
 HOME_SETS = ['playset', 'sysset']
-HOME_LITERAL = {'coverflow': 'Coverflow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
+HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': '设置'}
 # Stock's visitor translates label_localmusic, label_playset and label_sysset by name; renamed, they keep
 # these shorter literals.
-HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback'},
-                'sysset': {'name': 'label_system', 'text': 'System'}}
+HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': '播放设置'},
+                'sysset': {'name': 'label_system', 'text': '系统设置'}}
 
 
 # The theme default list_view is a light rounded card; Home's lists clear it to transparent.
@@ -264,7 +264,7 @@ def ipod_home(root):
     check([n[2]['name'] for n in root[3][0][3]] == ['btn_' + r for r in
             ('playing', 'localmusic', 'folder', 'stream', 'playset', 'sysset')], 'Unexpected home cards')
     menu = root[3][0]
-    home_card(menu, 2, 'coverflow', 'Coverflow')
+    home_card(menu, 2, 'coverflow', 'Cover Flow')
     home_card(menu, 4, 'rockbox', 'Rockbox')
     menu[3][1][3][1][2].update(LIBRARY)
     # Home: Carousel's (coverflow_home_layout): the carousel and its arrows, over the lists, hidden and
@@ -634,7 +634,7 @@ def confirm_dialog(root):
     # is the lists' own bar or card. Stock looks both up by name and binds the same callbacks.
     for i, n in enumerate(root[3]):
         n[0], n[1] = 'button', [0, CONFIRM_TOP + i * CONFIRM_ROW, 375, CONFIRM_ROW]
-        n[2] = {'name': n[2]['name'], 'text': ('Cancel', 'OK')[i], 'focusable': 'false',
+        n[2] = {'name': n[2]['name'], 'text': ('取消', '确定')[i], 'focusable': 'false',
                 'style:normal:font_size': '20', 'style:normal:text_align_h': 'center'}
         # Every state, or AWTK's button/default shows its blue border (1px) and fill; a tap gets
         # the lists' pressed grey, the wheel the selection.
