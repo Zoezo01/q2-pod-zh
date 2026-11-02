@@ -1,5 +1,8 @@
 # Changelog
 
+- **1.6.4**:
+  - Rockbox: Wi-Fi turns off while Rockbox runs, and comes back when you return to Q2 Pod if it was on.
+
 - **1.6.3**:
   - Ratings: a copy of your song and album ratings stays on the card as `.ratings.tsv`, to read or back up on a computer, since the ratings themselves aren't on the part of the Q2 that USB storage shows. It is updated soon after a change and is only a copy: editing it changes nothing on the Q2. If a new copy would have fewer lines than the last one, the last one is kept as `.ratings.tsv.1`, unless that file already has more ([#182](https://github.com/DiamondBond/q2-pod/issues/182)).
   - Games: a card game no longer quits at random when you press **Return**. Now only holding **Return** closes one.

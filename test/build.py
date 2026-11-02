@@ -37,18 +37,23 @@ print('Dev build tag checks passed.')
 def boot_check():
     """S90play's dual boot (build.py BOOT_HOOK) under the host sh, with stand-in programs."""
     import subprocess, tempfile, pathlib
-    from build import BOOT_HOOK, ROCKBOX_FLAG
+    from build import BOOT_HOOK, ROCKBOX_FLAG, WIFI_OFF
     with tempfile.TemporaryDirectory(prefix='q2-boot-') as tmp:
         r = pathlib.Path(tmp)
         script = BOOT_HOOK[1].decode().replace(' &\n', '\n')
         for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log'):
             script = script.replace(old, f'{r}{old}')
         script = script.replace('usleep 200000', ':').replace('usleep 500000', ':')
+        # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
+        # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
+        assert WIFI_OFF in script
+        script = script.replace(WIFI_OFF, f'echo wifi >> {r}/order')
+        for real in ('killall -9', 'ifconfig', 'wlan0', 'wpa_supplicant', 'udhcpc', 'wifi_connect'): assert real not in script, real
         for d in ('proc', 'mnt/data', 'mnt/mmc/.rockbox', 'tmp', 'usr/bin', 'release/bin'): (r/d).mkdir(parents=True)
         def exe(path, body): (r/path).write_text('#!/bin/sh\n' + body + '\n'); (r/path).chmod(0o755)
         # demo takes Home's Rockbox row (leaves the flag) as many times as the shortcuts file says
         flag, shortcuts = f'{r}{ROCKBOX_FLAG}', r/'shortcuts'
-        exe('release/bin/demo', f'echo demo >> {r}/ran; n=$(cat {shortcuts}); '
+        exe('release/bin/demo', f'echo demo >> {r}/ran; echo demo >> {r}/order; n=$(cat {shortcuts}); '
             f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && : > {flag}; '
             f's=$(head -n1 {r}/code); [ $(wc -l < {r}/code) -gt 1 ] && sed -i 1d {r}/code; exit $s')  # one status per run, the last repeats
         rb, target = r/'mnt/mmc/.rockbox/rockbox', r/'mnt/data/boot-target'
@@ -56,9 +61,9 @@ def boot_check():
             shortcuts.write_text(f'{shortcut}\n')
             (r/'code').write_text(''.join(f'{c}\n' for c in (status if isinstance(status, (list, tuple)) else [status])))
             exe('usr/bin/q2boot', 'exit ' + ('0' if held else '1'))
-            if card: exe('mnt/mmc/.rockbox/rockbox', f'pwd >> {r}/ran; exit {code}')
+            if card: exe('mnt/mmc/.rockbox/rockbox', f'pwd >> {r}/ran; echo rockbox >> {r}/order; exit {code}')
             else: rb.unlink(missing_ok=True)
-            (r/'ran').write_text('')
+            (r/'ran').write_text(''); (r/'order').write_text('')
             subprocess.run(['sh', '-c', script], check=True)
             return (r/'ran').read_text().split(), target.exists() and target.read_text().strip()
         (r/'proc/mounts').write_text('')
@@ -85,6 +90,16 @@ def boot_check():
         assert boot(True, True, 81, 1) == (['demo', *rockbox], False)
         assert boot(False, True, 81, 2) == (rockbox * 3, False) and not pathlib.Path(flag).exists()
         assert boot(True, False, 81, 1) == (['demo', 'demo'], False)  # no Rockbox on the card: Q2 Pod again
+        # Wi-Fi goes off before every start of Rockbox and at no other time; demo follows Rockbox whatever its status
+        def order(*args): boot(*args); return (r/'order').read_text().split()
+        session = ['wifi', 'rockbox', 'demo']
+        for code in (0, 1, 81, 137, 255): assert order(False, True, code) == session
+        assert order(True, True, 81, 1) == ['demo', *session]   # Home's Rockbox row
+        assert order(False, True, 81, 2) == session * 3         # power-on, then the row twice
+        assert order(False, False) == ['demo']                  # no Rockbox on the card
+        assert order(True, False, 81, 1) == ['demo', 'demo']    # nor when the row is taken
+        assert order(True, True) == ['demo']                    # Play/Pause held
+        target.write_text('q2pod'); assert order(False, True) == ['demo']; target.unlink()
         # an abnormal end of demo leaves its status on /mnt/data, which the next boot copies to a mounted card;
         # 0, 143 and the Rockbox hand-over leave nothing
         crash, copy, mounts = r/'mnt/data/q2-crash.log', r/'mnt/mmc/q2-crash.log', r/'proc/mounts'
@@ -113,7 +128,7 @@ def boot_check():
         crash.write_text('== demo exit 137\n'); state.write_text(line); boot(True, False, status=0)
         assert crash.read_text().startswith('== demo exit 137\n== last state\n') and line in crash.read_text() and not state.exists()
         for f in (crash, copy): f.unlink(missing_ok=True)
-    print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback and Home Rockbox row passed.')
+    print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback, Home Rockbox row and Wi-Fi off before Rockbox passed.')
 boot_check()
 
 def logo_check():
