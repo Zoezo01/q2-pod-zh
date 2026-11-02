@@ -24,6 +24,7 @@ extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
 extern void *staged(int (*)(void *), void *, int *);
 extern int album_before(const void *, const void *), folder_cmp(void *, void *),
     album_only(void *, void *, int);
+extern unsigned queue_hash(void *); /* navigation.c */
 
 typedef struct {
     unsigned index, group, rank;
@@ -33,7 +34,7 @@ typedef struct {
     unsigned n, cursor, npend, hn, stamp;
     unsigned pend[PEND_LIMIT]; /* Play Next: queue indices, the first plays first */
     int saved_elapsed, save_failed, resume_pending, resume_elapsed, resume_wait;
-    unsigned saved_pos, saved_sum;
+    unsigned saved_pos, saved_sum, saved_queue; /* saved_queue: a plain snapshot's queue_hash */
     int next_valid, next_value;
     unsigned next_pos;
     unsigned resume_key, resume_pos;
@@ -49,6 +50,7 @@ static int back_to __attribute__((section(".scratch"))), back_at __attribute__((
 /* Shuffle Songs is one-shot: the stock mode it replaced + 1, which the next other queue restores.
  * ponytail: RAM only, so a reboot mid-shuffle keeps Shuffle; a queue-file header field fixes it. */
 static int unshuffle __attribute__((section(".scratch")));
+unsigned playback_loads __attribute__((section(".scratch")));
 /* The wheel's ticks. Stock's encoder thread looks at the wheel once per 80 ms (200 ms after
  * touching) and ticks at most once a look, dropping any travel past its threshold: on the device
  * a tick took 27 units of travel against a threshold of 12, a fast half turn gave a single tick,
@@ -135,11 +137,9 @@ static void wheel_post(char *info, int key) {
     }
 }
 
-#if IPOD
 volatile int wheel_raw __attribute__((section(".scratch")));
 volatile int wheel_travel __attribute__((section(".scratch")));
 volatile int wheel_held __attribute__((section(".scratch"))); /* a finger on the wheel */
-#endif
 
 /* Quick Settings from the wheel: a swipe straight across it, as on a touchpad. The ring has no
  * middle, so the swipe is a touch at one edge and then, within QS_GAP_MS, one at the opposite edge
@@ -254,18 +254,14 @@ void wheel_sample(int *s, int ret, char *info) {
         if (wh_anchor) s[0] = wh_anchor;
         wh_anchor = 0;
         if (wh_guard != DARK_OPEN) wh_guard = 0;
-#if IPOD
         wheel_held = 0;
-#endif
         return;
     }
     if (!wh_anchor) {
         wh_anchor = wh_last = s[0];
         wh_acc = 0;
         qs_start(s[0]);
-#if IPOD
         wheel_held = 1;
-#endif
         return;
     }
     int d = s[0] - wh_last, units = wheel_units ? wheel_units : WHEEL_TICK_UNITS * WHEEL_FINE;
@@ -285,14 +281,12 @@ void wheel_sample(int *s, int ret, char *info) {
     }
     d *= WHEEL_FINE;
     wh_last = s[0];
-#if IPOD
     if (wheel_raw) { /* games.c's Vortex reads the travel itself; nothing is queued for a menu */
         __sync_fetch_and_add(&wheel_travel, d / WHEEL_FINE);
         wh_acc = 0;
         s[0] = wh_anchor;
         return;
     }
-#endif
     /* Sensitivity changed mid-turn (its own page takes the wheel): the carry keeps its share of a
      * tick, so it stays under the new travel and fires no burst. */
     if (units != wh_units) {
@@ -370,7 +364,7 @@ void playback_track_speed(void) {
 int ringnav_speed(int mode) {
     folder_speed saved = { { 0 }, 0 };
     char path[80], tmp[84];
-    /* player_initconfig re-applies speed when the decoder connects; that is not a user edit. */
+    /* player_initconfig re-applies speed when hciplayer reconnects after a disconnect; not a user edit. */
     if (__builtin_return_address(0) == (void *)0x51339c || (unsigned)mode >= 4) {
         playback_speed_start();
         return stock_speed_trampoline(g_playspeed_mode);
@@ -428,6 +422,8 @@ static void release(void) {
     s.groups = s.seen = s.history = 0;
     s.n = s.hn = s.cursor = s.npend = 0;
     s.resume_key = s.resume_pending = s.resume_wait = s.save_failed = 0;
+    unlink(QUEUE_FILE);
+    s.dirty = 1; /* the next save writes a plain snapshot whole */
 }
 /* Albums as Coverflow tells them apart (album_cmp: tagged albums first), or folders. */
 static int group_cmp(void *a, void *b) { return s.folder ? folder_cmp(a, b) : album_cmp(a, b); }
@@ -466,11 +462,11 @@ static void shuffle(entry *v, unsigned n) {
 }
 static void make_order(entry *v) {
     for (unsigned i = 0; i < s.n; ++i) v[i] = (entry){ i, s.groups[i], 0 };
-    qsort(v, s.n, sizeof *v, compare);
-    if (s.shuffle == 1) {
+    if (s.shuffle == 1) { /* no sort first: the shuffle undoes it, seconds on a big library */
         shuffle(v, s.n);
         return;
     }
+    qsort(v, s.n, sizeof *v, compare);
     if (s.shuffle == 2 || s.shuffle == 4)
         for (unsigned i = 0, j; i < s.n; i = j) {
             for (j = i + 1; j < s.n && v[j].group == v[i].group; ++j) {}
@@ -789,6 +785,7 @@ static void *no_videos(void *q, int *at) {
     return out;
 }
 int ringnav_load(void *q, int at, int type) {
+    ++playback_loads;
     if (s.restoring == 2) type = M(MCL_TYPE);
     close_preload();
     /* After Shuffle Songs, before stock loads; ringnav_mode's playback_clear ends its shuffle. */
@@ -808,17 +805,18 @@ int ringnav_load(void *q, int at, int type) {
         else {
             s.active = 0;
             release();
-            unlink(QUEUE_FILE);
         }
     }
     return result;
 }
 extern void ringnav_read_artistype(void);
 /* config_init applies the saved mode before the Home page can restore the queue; Artists is read
- * here too, as stock reads it only when a Library list or artist page opens. */
+ * here too, as stock reads it only when a Library list or artist page opens, and Night Shift's
+ * setting, so no paint reads one (nightshift.c night_paint). */
 int ringnav_bootmode(int mode, int notify) {
     peq_boot();
     ringnav_read_artistype();
+    night_on();
     s.restoring = 1;
     int result = config_playmode(mode, notify);
     s.restoring = 0;
@@ -829,13 +827,16 @@ void playback_clear(void) {
     if (s.active) close_preload();
     s.active = 0;
     release();
-    unlink(QUEUE_FILE);
 }
 int ringnav_mode(int mode) {
-    /* player_initconfig re-applies the saved mode each time hciplayer connects, after a boot
-     * resume too: not a choice, so advanced play stays. The new hciplayer gets MQA's too. */
+    /* player_initconfig re-applies the saved mode when hciplayer reconnects after a disconnect
+     * (never on the first connection at boot): not a choice, so advanced play stays. */
     int initconfig = __builtin_return_address(0) == (void *)INITCONFIG_MODE_RET;
-    if (initconfig) mqa_sync();
+    if (initconfig) {
+        /* A new hciplayer has no filter: peq_chain attaches again. With the EQ on, player_initconfig's
+         * own set_equalizer_value (0x5133b8, before this call) has put it in already. */
+        if (!g_equalizer_flag) peq_chained = 0;
+    }
     if (s.restoring || initconfig) return stock_mode_trampoline(mode);
     unshuffle = 0; /* a mode choice outlasts Shuffle Songs */
     /* Stock Shuffle (2) on Shuffle Albums/Folders keeps the groups; any other mode ends them. */
@@ -848,7 +849,9 @@ static int list_end(void) {
     return M(MCL_MODE) == 0 && (M(MCL_TYPE) & 0xf000) == 0xf000 && queue() && M(MCL_POS) >= 0 &&
            (unsigned)M(MCL_POS) + 1 == deque_size(queue());
 }
+unsigned auto_nexts __attribute__((section(".scratch"))); /* tracks that ended by themselves */
 int ringnav_next(int automatic) {
+    auto_nexts += automatic != 0;
     if (!s.active) {
         if (list_end()) {
             close_preload();
@@ -977,14 +980,16 @@ int ringnav_preload(void) {
     return mcl_open_preload();
 }
 void playback_insert(unsigned at, unsigned n, int next) {
-    if (!s.active) return;
+    if (!s.active) {
+        s.dirty = 1; /* the plain snapshot, on the next UI pass */
+        return;
+    }
     close_preload();
     /* Remap occurrences before grouping is recomputed. */
     unsigned *seen = calloc(s.n + n + 1, sizeof *seen);
     if (!seen) {
         s.active = 0;
         release();
-        unlink(QUEUE_FILE);
         return;
     }
     for (unsigned i = 0; i < s.n; ++i) seen[i >= at ? i + n : i] = s.seen[i];
@@ -1058,7 +1063,8 @@ int playback_move(unsigned from) {
 
 /* Snapshot fields are little-endian uint32 on this MIPS target, no pointers. Version 3: after the
  * history comes the pending Play Next list, npend indices. Version 2 had one run of it, forced and
- * force_end in the header, and restores as the list. */
+ * force_end in the header, and restores as the list. Version 4 is version 3's layout for a queue
+ * without advanced play (plain): queue order, no history or list, restored without advanced play. */
 typedef struct {
     unsigned magic, version, size, checksum, n, pos, elapsed, shuffle, repeat, folder, cursor, hn,
         npend, type;
@@ -1073,12 +1079,29 @@ static int save_elapsed(int sec) {
     return BLOB_IO(CHECKPOINT_FILE, c, 1);
 }
 void playback_save(void) {
-    if (!s.active) return;
-    if (!s.n || s.n > SAVE_LIMIT) {
-        unlink(QUEUE_FILE);
+    /* Without advanced play a local queue (folder or library, as Play Next grows) is kept plain,
+     * while Memory Playback or car mode would restore it (ringnav_memory reads nothing otherwise). */
+    int plain = !s.active;
+    unsigned type = (unsigned)M(MCL_TYPE), pos = (unsigned)M(MCL_POS);
+    if (plain && ((!g_memory_play && !g_carmode) || !queue() ||
+                  (type != 1 && (type & 0xf000) != 0xf000) || airplayGetFlag() == 2)) {
         s.dirty = 0;
         return;
     }
+    unsigned n = plain ? deque_size(queue()) : s.n;
+    if (plain && !n) return; /* boot's empty queue, before the snapshot restores */
+    if (!n || n > SAVE_LIMIT) {
+        unlink(QUEUE_FILE);
+        s.dirty = 0;
+        s.saved_queue = 0;
+        return;
+    }
+    if (pos >= n) return; /* no track: the snapshot keeps the last one */
+    /* ponytail: a plain queue is hashed whole each save (every 30 s playing, at most 999 tracks) to
+     * see stock's own edits (View Queue's delete); hook those to drop the hash. */
+    unsigned qsum = plain ? queue_hash(queue()) : 0;
+    if (qsum != s.saved_queue) s.dirty = 1;
+    unsigned hn = plain ? 0 : s.hn, npend = plain ? 0 : s.npend;
     int sec = 0, total = 0;
     mclGetPlayTime(&sec, &total);
     if (!sec && s.resume_wait && s.resume_key && (unsigned)M(MCL_POS) == s.resume_pos)
@@ -1086,17 +1109,17 @@ void playback_save(void) {
     else if (sec > 0)
         s.resume_wait = 0;
     if (sec < 0) sec = 0;
-    if (!s.dirty && !s.save_failed && sec == s.saved_elapsed && (unsigned)M(MCL_POS) == s.saved_pos) return;
+    if (!s.dirty && !s.save_failed && sec == s.saved_elapsed && pos == s.saved_pos) return;
     /* Failed checkpoints stay pending; the UI loop retries at most every five seconds. */
     s.save_failed = 1;
     s.stamp = time_now_ms();
-    if (!s.dirty && (unsigned)M(MCL_POS) == s.saved_pos) {
+    if (!s.dirty && pos == s.saved_pos) {
         if (save_elapsed(sec)) s.saved_elapsed = sec, s.save_failed = 0;
         return;
     }
     s.dirty = 1;
-    unsigned size = sizeof(snapshot) + (s.n * 3 + s.hn + s.npend) * 4;
-    for (unsigned i = 0; i < s.n; ++i) {
+    unsigned size = sizeof(snapshot) + (n * 3 + hn + npend) * 4;
+    for (unsigned i = 0; i < n; ++i) {
         const char *path = P(deque_at(queue(), i), REC_PATH);
         unsigned len = path ? strlen(path) : 0;
         if (!len || len >= 1024) return;
@@ -1105,31 +1128,34 @@ void playback_save(void) {
     unsigned char *buf = calloc(size, 1);
     if (!buf) return;
     snapshot h = { 0x5132524e,
-                   3,
+                   plain ? 4 : 3,
                    size,
                    0,
-                   s.n,
-                   (unsigned)M(MCL_POS),
+                   n,
+                   pos,
                    (unsigned)sec,
-                   (unsigned)s.shuffle,
-                   (unsigned)s.repeat,
-                   (unsigned)s.folder,
-                   s.cursor,
-                   s.hn,
-                   s.npend,
-                   (unsigned)M(MCL_TYPE) };
+                   plain ? 0 : (unsigned)s.shuffle,
+                   plain ? 2 : (unsigned)s.repeat,
+                   plain ? 0 : (unsigned)s.folder,
+                   plain ? pos : s.cursor,
+                   hn,
+                   npend,
+                   type };
     memcpy(buf, &h, sizeof h);
     unsigned char *p = buf + sizeof h;
-    for (unsigned i = 0; i < s.n * 3 + s.hn + s.npend; ++i) {
-        unsigned index = i < s.n              ? s.order[i].index
-                         : i < s.n * 2        ? s.cycle[i - s.n].index
-                         : i < s.n * 3        ? s.seen[i - s.n * 2]
-                         : i < s.n * 3 + s.hn ? s.history[i - s.n * 3]
-                                              : s.pend[i - s.n * 3 - s.hn];
+    for (unsigned i = 0; i < n * 3 + hn + npend; ++i) {
+        /* plain: the queue's order twice, nothing seen */
+        unsigned index = plain && i < n * 2 ? i % n
+                         : plain            ? 0
+                         : i < n            ? s.order[i].index
+                         : i < n * 2        ? s.cycle[i - n].index
+                         : i < n * 3        ? s.seen[i - n * 2]
+                         : i < n * 3 + hn   ? s.history[i - n * 3]
+                                            : s.pend[i - n * 3 - hn];
         memcpy(p, &index, 4);
         p += 4;
     }
-    for (unsigned i = 0; i < s.n; ++i) {
+    for (unsigned i = 0; i < n; ++i) {
         void *r = deque_at(queue(), i);
         const char *path = P(r, REC_PATH);
         unsigned identity[] = { strlen(path) + 1, (unsigned)I(r, REC_CUE_START),
@@ -1144,8 +1170,9 @@ void playback_save(void) {
     free(buf);
     if (ok) {
         s.saved_elapsed = sec;
-        s.saved_pos = (unsigned)M(MCL_POS);
+        s.saved_pos = pos;
         s.saved_sum = sum;
+        s.saved_queue = qsum;
         s.dirty = 0;
         s.save_failed = !save_elapsed(sec);
     }
@@ -1182,10 +1209,10 @@ int ringnav_memory(void *out) {
     void *f = fopen(QUEUE_FILE, "rb");
     if (!f) return stock_memory(out);
     snapshot h = { 0 };
-    /* Raw header words, as the file has them: version 3 ends with npend, type; version 2 with
+    /* Raw header words, as the file has them: version 3 and 4 end with npend, type; version 2 with
      * forced, force_end, type, its one run, which the restore turns into the list. */
     unsigned head[15] = { 0 }, header_size, run = 0, run_end = 0;
-    int ok = fread(head, 48, 1, f) == 1 && head[0] == 0x5132524e && (head[1] == 2 || head[1] == 3);
+    int ok = fread(head, 48, 1, f) == 1 && head[0] == 0x5132524e && head[1] >= 2 && head[1] <= 4;
     header_size = head[1] == 2 ? 60 : 56;
     ok = ok && fread(head + 12, header_size - 48, 1, f) == 1;
     memcpy(&h, head, 48);
@@ -1326,7 +1353,7 @@ int ringnav_memory(void *out) {
         s.shuffle = (int)h.shuffle;
         s.repeat = (int)h.repeat;
         s.folder = (int)h.folder;
-        s.active = rebuild(0);
+        s.active = h.version == 4 ? 0 : rebuild(0);
         if (s.active) {
             unsigned k = 0;
             for (unsigned i = 0; i < h.n; ++i)
@@ -1357,6 +1384,8 @@ int ringnav_memory(void *out) {
                     unsigned at = map[indices[h.n * 3 + h.hn + i]];
                     if (at != ~0u) pend_front(at);
                 }
+        }
+        if (s.active || h.version == 4) {
             deque_assign(out, q);
             I(g_memory_info, 0) = (int)h.type;
             mclSetStartSeekTime(g_memory_play == 2 || g_carmode ? (int)h.elapsed : 0);
@@ -1380,13 +1409,16 @@ int playback_resumed(void *r) {
     return pending && (unsigned)M(MCL_POS) == s.resume_pos &&
            fnv(FNV_SEED, P(r, REC_PATH)) == s.resume_key;
 }
-/* The track gapless preloads after this one, or -1: Crossfade's next (crossfade.c). Stock preloads
- * pos+1 only in order and repeat-all (mclSetPlayMode's modes 0 and 3). */
+/* The track that plays after this one, or -1: Crossfade's next (crossfade.c). Stock preloads pos+1
+ * only in order and repeat-all (mclSetPlayMode's modes 0 and 3); stock Shuffle (2) draws its next
+ * at the change, so it is -2, unknown but another track's. */
 static int playback_next(void) {
     if (s.active) return playback_successor(1);
     unsigned at = (unsigned)M(MCL_POS);
     int mode = M(MCL_MODE);
-    return (mode == 0 || mode == 3) && queue() && at + 1 < deque_size(queue()) ? (int)at + 1 : -1;
+    unsigned n = queue() ? deque_size(queue()) : 0;
+    if (mode == 2) return at < n && n > 1 ? -2 : -1;
+    return (mode == 0 || mode == 3) && at + 1 < n ? (int)at + 1 : -1;
 }
 void playback_poll(void) {
     wheel_pct(); /* the saved sensitivity from the first UI pass */
@@ -1397,7 +1429,6 @@ void playback_poll(void) {
     xfade_poll(playback_next());
     mono_sync();
     unsigned now = time_now_ms();
-    if (!s.active) return;
     /* playback_save writes only what changed, at most every 5 s. A track that just plays on
      * writes its elapsed second every 30 s instead (a synced flash write each); a new track, a
      * pause or a seek go within 5 s, a failed write retries every 30 s, and power-off saves

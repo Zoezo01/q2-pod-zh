@@ -15,16 +15,12 @@ extern void stock_timezone_row_trampoline(void *, int);
 static const char *const tz_names[] = TIMEZONE_NAMES;
 #define TZ_COUNT (sizeof tz_names / sizeof *tz_names)
 
-#if IPOD
 static void clock_zone(void);
-#endif
 int ringnav_timezone(void) {
     unsigned n = g_time_zone;
     int result = n < TZ_COUNT ? toolsSetTimeZone(tz_names[n]) : stock_timezone_trampoline();
     tzset(); /* localtime_r does not reload TZ itself */
-#if IPOD
     clock_zone();
-#endif
     return result;
 }
 
@@ -91,6 +87,13 @@ static int spoken(const char *path);
 
 /* Failed exec in a forked child must not flush demo's copied stdio or run its exit handlers. */
 __asm__(".globl child_exit\nchild_exit:\nli $v0, 4001\nsyscall\n");
+/* Out of memory, the kernel kills the fattest process, which was demo (#169): every child demo
+ * forks, whose one job can need tens of MB, makes itself the first to go, between fork and exec. */
+int open(const char *, int, ...);
+void child_oom_first(void) {
+    int fd = open("/proc/self/oom_score_adj", 1); /* O_WRONLY */
+    if (fd >= 0) write(fd, "1000", 4), close(fd);
+}
 
 /* Stock's album-artist queries (Artists, an artist's albums and songs, search) take a song without
  * an album artist by its artist, so an untagged album stays under its artist, not Unknown.
@@ -196,7 +199,7 @@ extern void up_next(int (*closed)(void *, void *), int (*keyup)(void *, void *))
 extern int un_hold(void *top);
 extern void radio_poll(void);
 extern void xfade_row(void *label), wheel_row(void *label), resume_row(void *label),
-    mono_row(void *label), swap_row(void *label), mqa_row(void *label);
+    mono_row(void *label), swap_row(void *label), mqa_row(void *label), night_row(void *label);
 extern int mono_click(void *ctx, void *event), swap_click(void *ctx, void *event),
     mqa_click(void *ctx, void *event);
 extern int xfade_open(void *ctx, void *event), xfade_key(void *top, unsigned key), resume_min(void);
@@ -207,8 +210,9 @@ extern void visualizer_paint(void *w, void *canvas), visualizer_attach(void *win
 extern int visualizer_live(void), games_live(void);
 extern void *queue_now(unsigned *pos, unsigned *n);
 extern const char *now_tag(void *r, int field);
+extern unsigned char now_cover(void *r, const char **file);
 extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
-    scrobble_flag(const char *key);
+    scrobble_flag(const char *key), scrobble_value(const char *key);
 extern void scrobble_append(const char *line, unsigned n);
 extern void *staged(int (*query)(void *), void *arg, int *count);
 /* Scope music detail loads too: spoken tracks can share all their tags with music. */
@@ -235,7 +239,7 @@ static int ple_key(unsigned key, int phase);
 #define CF_BOUNCE                                                                                  \
     5 /* an artist's last album: a step past kicks it 1/CF_BOUNCE of a stride, springing back */
 #define WHEEL_RUN_MS 140
-#define WHEEL_RAMP_MS 100 /* scrub, the pixel fallback and Stock: one step for this long, then */
+#define WHEEL_RAMP_MS 100 /* scrub and the pixel fallback: one step for this long, then */
 #define WHEEL_MAX_STEP 8  /* one more per this much spin, up to this many */
 #define LIST_FIRST_MS 300 /* iPod row lists: one row per step for this long, */
 #define LIST_RAMP_MS 200  /* then one row more per this much spin */
@@ -243,13 +247,6 @@ static int ple_key(unsigned key, int phase);
 #define SHORT_LIST_MAX 16
 #define MAX_ENTRIES 512
 #define POS_MEM 64
-/* RADIUS, FILL_RGB, FILL_ALPHA, SHADE_ALPHA, OUTLINE_RGB and OUTLINE_ALPHA come from offsets.inc;
- * the colors pack their bytes at compile time (little-endian r,g,b,a). The outline is translucent
- * neutral white, never the playing red, seated on a dark shade of the stock surface so bright
- * album art cannot wash it out. */
-#define FILL_COLOR ((FILL_ALPHA << 24) | FILL_RGB)
-#define SHADE_COLOR ((SHADE_ALPHA << 24) | FILL_RGB)
-#define OUTLINE_COLOR ((OUTLINE_ALPHA << 24) | OUTLINE_RGB)
 #define B(p, o) (*(unsigned char *)((char *)(p) + (o)))
 
 typedef struct {
@@ -332,12 +329,13 @@ typedef struct {
     int rs_long, rs_settle, rs_sec, rs_saved, rs_still, rs_pending, rs_cue, rs_end, rs_total, rs_go;
     int rs_spoken; /* under Podcasts or Audiobooks: resumed at any length, never counted */
     /* Play counts by path hash (plays_read once loaded); the playing track's last second, the
-     * seconds of it heard and whether this play has counted. */
+     * seconds of it heard, whether this play has counted and been scrobbled, and .scrobble.ini's
+     * PERCENT (1-100, else 0) as it read when the play began. */
     struct {
         unsigned key, n;
     } plays[PLAYS_SLOTS];
     unsigned plays_read, ls_key;
-    int ls_sec, ls_heard, ls_done;
+    int ls_sec, ls_heard, ls_done, ls_sent, ls_pct;
     /* Most Played's page and its tracks: the last ranking plus the songs counted since, kept across
      * opens while the library is at mp_gen (~library_gen once stale). */
     void *mp_page, *mp_list, *td_page, *td_list;
@@ -348,7 +346,8 @@ typedef struct {
     void *ch_page;
     chapters *ch;
     unsigned ch_timer, ch_track, ch_key;
-    void *sc_page, *sc_row[2]; /* Streaming's Configuration page and its two cache rows */
+    void *sc_page, *sc_row[3]; /* Streaming's Configuration page, its cache rows and Erase's */
+    int sc_armed;              /* Erase Spotify Data pressed once: the next press erases */
 /* Streaming's services (svc): five fixed, and at most APPS_MAX card apps. */
 #define SVC_FIXED 5
 #define SVC_MAX (SVC_FIXED + APPS_MAX)
@@ -408,7 +407,6 @@ typedef struct {
     void *pull_page, *pull_surface;
     int pull_x, pull_y, pull_claimed;
     unsigned pull_scope;
-#if IPOD
     void *sel_w; /* the surface whose selection was last drawn */
     int sel_row, sel_y;
     void *paint_w, *sel_widget; /* paint-local color mapping, never stored on recycled widgets */
@@ -429,10 +427,12 @@ typedef struct {
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
     int np_bold;             /* the title's font: 1 bold, 0 stock's, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
+    /* Centred Now Playing's full-screen lyrics (np_full) and where the last touch on them came
+     * down (np_lyric_touch) */
+    int np_full, np_tap_x, np_tap_y;
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
      * (ringnav_bigcover) */
     void *bc[3];
-    void *bc_drop; /* full-screen art opened off the art page, closed on the next pass */
     int bc_step;
     unsigned bc_timer, bc_track, bc_repaint;
     unsigned bc_key, bc_box, bc_shape,
@@ -443,6 +443,7 @@ typedef struct {
     int vol_drawn;
     unsigned vol_timer;
     unsigned np_hash; /* of the album text, position and queue length shown, 0 to refresh */
+    unsigned np_art;  /* the track and player cover img_cover last took (np_art_poll) */
     int np_left;
     /* Minimal's album marquee: np_off px scrolled of the np_over px the album overflows its label.
      */
@@ -467,17 +468,19 @@ typedef struct {
     unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
-    int settings_read, accent, minimal_accent, home_full, battery, home_rockbox, classic, shortcut,
+    int settings_read, accent, minimal_accent, home, battery, home_rockbox, classic, shortcut,
         rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
         keep_lit,                  /* Smart Awake (#57, keep_lit_poll) */
-        np_centred;                /* Centred Now Playing (ringnav_ui_load) */
+        np_centred,                /* Centred Now Playing (ringnav_ui_load) */
+        keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
+        scrub_single;              /* Single Press Scrub (np_key) */
     unsigned keep_lit_at;
-    void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
-    int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
-    void *setting_label[9];
+    unsigned keytone_timer; /* Key Tone's click, for Click With Headphones' row (keytone_follow) */
+    void *sel_accent;       /* the row on a coloured selection, for Light Mode's ink */
+    int style_depth;        /* nested style hooks (a mutable style's fallback) map nothing */
+    void *setting_label[11];
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
-#endif
     /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
      * checked by count, record and browsing-state hashes; qm_cls is the class its list holds;
      * qm_forced is a shuffle Play next. */
@@ -504,7 +507,7 @@ typedef struct {
     unsigned art_n;
 } scratch_t;
 static scratch_t st __attribute__((section(".scratch")));
-static void rate_bind(void *win); /* ratings: both builds' Now Playing heart */
+static void rate_bind(void *win); /* ratings: Now Playing's heart */
 
 typedef struct {
     int x, y, w, h;
@@ -742,7 +745,6 @@ static int home_menu(void *top) {
     return top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "home_page");
 }
 
-#if IPOD
 /* A list row: a list_item or table_row. */
 static int is_row(void *w) {
     const char *t = w ? widget_get_type(w) : "";
@@ -763,9 +765,6 @@ static int slides(void *win) {
     const char *hint = win ? widget_get_prop_str(win, "anim_hint", (void *)0) : (void *)0;
     return hint && *hint;
 }
-#else
-#define slides(win) 0
-#endif
 
 /* The animator's destination is the intended icon, even before stock commits its index.
  * Keep this widget-owned: touch and page recreation cannot leave a dangling animator here. */
@@ -893,8 +892,6 @@ static int usb_prompt(void) {
 }
 
 static int allowed_top(void *top) {
-    if (!IPOD && top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "confirminfo_dialog"))
-        return usb_prompt();
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
 }
 
@@ -1324,7 +1321,11 @@ static void reveal(menu_t *m, int id, int immediate) {
 
 /* A payload page's own row: establish its scope and viewport before paint can recall another. */
 void ringnav_select(void *w, int id, int rows) {
-    int loaded = load(&g_menu, w, 0);
+    /* A list under another window (a card app's pages still arriving) keeps the props alone: its
+     * load would take g_menu and the top list's glide and big letter from under the wheel. */
+    void *win = window_of(w);
+    int loaded =
+        (!win || win == window_manager_get_top_window(window_manager())) && load(&g_menu, w, 0);
     prop(w, COUNT, rows);
     prop(w, SEL, id);
     if (loaded) reveal(&g_menu, id, 1);
@@ -1494,7 +1495,7 @@ static int pull_event(void *page, void *event) {
     if (release) {
         pull_cancel(); /* clear before stock search can navigate or destroy anything */
         if (ready) {
-            if (!IPOD || !tk_strcmp(widget_get_prop_str(page, "name", ""), "radio_page"))
+            if (!tk_strcmp(widget_get_prop_str(page, "name", ""), "radio_page"))
                 radio_search();
             else
                 stock_search(page, event);
@@ -1526,9 +1527,9 @@ static void pull_begin(void *event) {
     if (!event || I(event, EVENT_Y) < QUICK_EDGE_PX) return;
     void *page = window_manager_get_top_window(window_manager());
     if (!page) return;
-    /* Local Songs' stock search is iPod's; Internet Radio's search is its own, in both. */
+    /* Local Songs' is stock's search; Internet Radio's is its own. */
     const char *name = widget_get_prop_str(page, "name", "");
-    if (tk_strcmp(name, "radio_page") && (!IPOD || tk_strcmp(name, "localmusic_page"))) return;
+    if (tk_strcmp(name, "radio_page") && tk_strcmp(name, "localmusic_page")) return;
     void *w = surface((void *)0, (void *)0);
     if (!w) return;
     prop(w, PULL_SUPPRESS, 0);
@@ -1579,7 +1580,6 @@ int rockbox_available(void) {
 /* 0xRRGGBB to an opaque color_t, whose bytes are r, g, b, a. */
 #define RGBA(c) (0xff000000u | ((c) & 255) << 16 | ((c) & 0xff00) | (c) >> 16)
 
-#if IPOD
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
  * per channel from black to LIGHT_PAPER and white to LIGHT_INK; any other hue, and the alpha byte,
  * as they are. Either byte order (color_t or 0xRRGGBB): the paper and ink are grey. */
@@ -1605,11 +1605,6 @@ static unsigned flip_if(int on, unsigned c) { return on ? flip(c) : c; }
  * the style and image hooks: flipped in Light Mode. A clear colour stays 0: stock tests for it
  * (Now Playing's slider draws no dragger under a #00000000 border). */
 unsigned ui_ink(unsigned c) { return ipod_light() && c >> 24 ? flip(c) : c; }
-#else
-unsigned ui_ink(unsigned c) { return c; }
-#endif
-
-#if IPOD
 
 /* The 0xRRGGBB j/n of the way from one color to another, per channel. Shared with visualizer.c. */
 unsigned mix(unsigned from, unsigned to, int j, int n) {
@@ -1628,14 +1623,17 @@ static const char *const accent_names[] = {
     "Accent: Tangerine", "Accent: Plum",    "Accent: Ivory", "Accent: Green"
 };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
-/* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home, 2 Battery, 3 Theme,
- * 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred Now Playing. */
-static const char *const setting_keys[] = { "ACCENT",  "HOME",  "BATTERY", "THEME",    "SHORTCUT",
-                                            "ROUNDED", "LIGHT", "KEEPLIT", "NPCENTRED" };
-static const int setting_counts[] = { ACCENT_N, 2, 4, 2, 7, 2, 3, 2, 2 };
-static int *const setting_values[] = { &st.accent,  &st.home_full, &st.battery,
-                                       &st.classic, &st.shortcut,  &st.rounded,
-                                       &st.light,   &st.keep_lit,  &st.np_centred };
+/* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
+ * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
+ * Now Playing, 9 Click With Headphones (System settings, under Key Tone), 10 Single Press Scrub. */
+static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",    "THEME",
+                                            "SHORTCUT",  "ROUNDED",   "LIGHT",      "KEEPLIT",
+                                            "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE" };
+static const int setting_counts[] = { ACCENT_N, 3, 4, 2, 7, 2, 3, 2, 2, 2, 2 };
+static int *const setting_values[] = { &st.accent,     &st.home,        &st.battery,
+                                       &st.classic,    &st.shortcut,    &st.rounded,
+                                       &st.light,      &st.keep_lit,    &st.np_centred,
+                                       &st.keytone_hp, &st.scrub_single };
 /* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
  * cannot be read. */
 static const int *clock_now(int *buf) {
@@ -1649,6 +1647,13 @@ static const int *clock_now(int *buf) {
 #define LIGHT_FROM 7
 #define LIGHT_UNTIL 19
 static int light_day(const int *tm) { return tm && tm[2] >= LIGHT_FROM && tm[2] < LIGHT_UNTIL; }
+/* Night Shift's Auto (nightshift.c) is on while Light Mode's would be dark, 19:00 to 7:00, and
+ * off while the clock cannot be read. */
+int clock_night(void) {
+    int buf[11];
+    const int *tm = clock_now(buf);
+    return tm && !light_day(tm);
+}
 static void np_fill(int scrub);
 static void light_apply(const int *tm) {
     if (st.light != 2 || light_day(tm) == st.light_day) return;
@@ -1669,6 +1674,8 @@ static int accent(void) {
         st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
         st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
         st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
+        st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
+        st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
         int buf[11];
         st.light_day = light_day(clock_now(buf));
         st.settings_read = 1;
@@ -1687,9 +1694,9 @@ int ipod_classic(void) {
     accent();
     return st.classic;
 }
-int ipod_home_full(void) {
+int ipod_home(void) {
     accent();
-    return st.home_full;
+    return st.home;
 }
 int ipod_light(void) {
     accent();
@@ -1788,8 +1795,9 @@ static int pill_radius(void *row, int h, int inset) {
     int r = h / 2;
     for (unsigned i = 0; row && i < widget_count_children(row); ++i) {
         void *c = widget_get_child(row, i);
-        if (tk_strcmp(widget_get_type(c), "image") ||
-            widget_get_prop_int(c, "draw_type", 0) == IMAGE_DRAW_CENTER) /* icons: discs */
+        /* icons: discs; hidden: Folder's multi-select check, full height at its left */
+        if (tk_strcmp(widget_get_type(c), "image") || !widget_get_visible(c) ||
+            widget_get_prop_int(c, "draw_type", 0) == IMAGE_DRAW_CENTER)
             continue;
         int x = I(c, W_X) - inset, y = I(c, W_Y), ch = I(c, W_H);
         if (I(c, W_W) <= 0 || ch <= 0 || x < 0 || x >= r) continue;
@@ -1832,7 +1840,6 @@ static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsi
         }
     }
 }
-#endif
 
 /* Narrow the canvas clip to the surface's viewport, keeping the old clip; false when none shows. */
 static int clip_surface(void *canvas, menu_t *m, rect_t *old) {
@@ -1905,7 +1912,6 @@ static void *more_image(void *w) {
     return (void *)0;
 }
 
-#if IPOD
 /* A widget in a DRILL window (contexts.inc). Its own window decides, not the top one, so a window
  * painted during a transition keeps its own rows. */
 static int drill(void *w) {
@@ -1937,7 +1943,7 @@ static void paint_chevrons(void *w, void *canvas) {
             canvas_draw_icon(
                 canvas, lit && i == st.sel_row ? white : bitmap,
                 r.x + r.w - CHEVRON_W + (int)bitmap[0] / 2 +
-                    (home ? (ipod_home_full() ? HOME_FULL_CHEVRON_SHIFT : HOME_CHEVRON_SHIFT) : 0),
+                    (home ? (ipod_home() == 1 ? HOME_FULL_CHEVRON_SHIFT : HOME_CHEVRON_SHIFT) : 0),
                 home ? st.sel_y : r.y + r.h / 2); /* bitmap_t width @0 */
     }
     canvas_set_clip_rect(canvas, &old);
@@ -2019,9 +2025,7 @@ static void paint_cover(void *w, void *canvas) {
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
-#endif
 
-#if IPOD
 /* Minimal's small capitals (Sudo's): s from x, y (the text's top) in the default font at px,
  * upper-cased (ASCII and Latin-1), SUDO_TRACK px apart, cut off at x + max; returns the whole
  * text's width, a trailing SUDO_TRACK included. The text color is restored, the font is not. */
@@ -2100,35 +2104,25 @@ static void paint_caps(void *w, void *canvas) {
     draw_spaced(canvas, widget_get_text(w), 0, (I(w, W_H) - HOME_CAPS_PX) / 2, HOME_CAPS_PX, color,
                 I(w, W_W));
 }
-#endif
 
-/* Load and settle the painted surface's selection, then draw it: a neutral outline over the rows
- * in Stock, an off-white bar behind them in iPod (a dot on Home), or Classic's full-width accent
- * bar. The outline is one neutral white line seated on a dark shade line: the shade is the stock
- * dark surface at an alpha high enough to hold the white over bright album art, and being the same
- * color as the dark rows it vanishes on the stock theme. The translucent fill keeps the row
- * readable over artwork without borrowing the red "playing" language or the native focus flag.
- * Small rows and degenerate geometry keep the square fallback. */
+/* Load and settle the painted surface's selection, then draw it behind the rows: Minimal's card
+ * (a dot on Home) or Classic's full-width accent bar. */
 static void paint_selection(void *w, void *canvas) {
-#if IPOD
     if (kind(w)) st.sel_w = st.sel_widget = st.sel_accent = (void *)0;
-#endif
     if (!w || !canvas || !kind(w)) return;
     void *top = window_manager_get_top_window(window_manager());
     int i, shown = !st.touch_mode;
-#if IPOD
     void *own = window_of(w);
     if (own && own != top && slides(top)) {
         /* The page under a sliding one, painted into the animator's snapshot: draw the row it
          * holds. Loading, recall and settling read the top page's state, so none of it runs.
-         * A pending untouch is a Return by button, which shows the row of the page behind. */
-        if (!usable() || !load_rows(&g_menu, w)) return;
+         * A pending untouch is a Return by button, which shows the row of the page behind. Home's
+         * carousel shows its selected card, as below. */
+        if (!usable() || !load_rows(&g_menu, w) || g_menu.kind == 3) return;
         i = index_of(&g_menu, widget_get_prop_int(w, SEL, -1));
         top = own;
         if (st.untouch_timer) shown = 1;
-    } else
-#endif
-    {
+    } else {
         if (surface((void *)0, (void *)0) != w) return;
         if (!load(&g_menu, w, !window_manager_get_pointer_pressed(window_manager()))) {
             cancel_center();
@@ -2151,7 +2145,6 @@ static void paint_selection(void *w, void *canvas) {
     unsigned fill_color = (unsigned)I(lcd, LCD_FILL_COLOR);
     unsigned stroke_color = (unsigned)I(lcd, LCD_STROKE_COLOR);
     if (!clip_surface(canvas, &g_menu, &old)) return;
-#if IPOD
     /* A list row gets the full surface width; a grid tile keeps its own rect. */
     int tile = 2 * r.w < I(g_menu.w, W_W);
     if (!tile) {
@@ -2195,33 +2188,6 @@ static void paint_selection(void *w, void *canvas) {
     if (g_menu.kind == 4 &&
         r.w < I(g_menu.w, W_W)) /* a pop-up button's tile: framed white on any accent */
         frame_box(canvas, &r, 0xffffffff, SEL_RADIUS);
-#else
-    rect_t outer = { r.x + 1, r.y + 1, r.w - 2, r.h - 2 };
-    rect_t inner = { outer.x + 1, outer.y + 1, outer.w - 2, outer.h - 2 };
-    int drawn = 0;
-    /* Two concentric one-pixel rounded strokes, shade outside and white inside, not one
-     * border_width=2 call: the effect then does not depend on how a canvas backend
-     * interprets the width argument. Geometry is checked before the call, and radius 9/8
-     * both stay above the stock "square at <= 2" cutoff. The stock rounded stroke returns
-     * non-zero when its backend cannot draw (for example a canvas without a vgcanvas), and
-     * the safe square fallback then keeps the outline visible. */
-    if (outer.w > 2 * RADIUS && outer.h > 2 * RADIUS) {
-        unsigned fill = FILL_COLOR;
-        canvas_fill_rounded_rect(canvas, &outer, (void *)0, &fill, RADIUS);
-        unsigned shade = SHADE_COLOR;
-        unsigned white = OUTLINE_COLOR;
-        drawn = canvas_stroke_rounded_rect(canvas, &outer, (void *)0, &shade, RADIUS, 1) == 0;
-        if (drawn)
-            drawn =
-                canvas_stroke_rounded_rect(canvas, &inner, (void *)0, &white, RADIUS - 1, 1) == 0;
-    }
-    if (!drawn) {
-        canvas_set_stroke_color(canvas, SHADE_COLOR);
-        canvas_stroke_rect(canvas, outer.x, outer.y, outer.w, outer.h);
-        canvas_set_stroke_color(canvas, OUTLINE_COLOR);
-        canvas_stroke_rect(canvas, inner.x, inner.y, inner.w, inner.h);
-    }
-#endif
     /* Save/restore explicitly: this firmware's canvas_save/restore cover neither clip nor
      * either color, and the global alpha is deliberately never touched. */
     stock_canvas_set_fill_color(canvas, fill_color);
@@ -2231,7 +2197,6 @@ static void paint_selection(void *w, void *canvas) {
 
 static void edit_paint(void *w, void *canvas);
 
-#if IPOD
 /* Minimal's own accent: stock's white radio images (select, unselect: a 26 px ring, a 12 px dot
  * when checked) vanish on the selected row's off-white card, so they are drawn again over it in the
  * card's ink. So does the Wi-Fi, Bluetooth and Tidal rows' navbar_delete, drawn again as
@@ -2297,12 +2262,12 @@ static void paint_into(void *w, void *canvas) {
     canvas_draw_icon(canvas, bitmap, x, y);
     stock_canvas_set_fill_color(canvas, fill);
 }
-#endif
 
 /* Stock paints children first and calls this with the surface's canvas origin restored. */
 int ringnav_paint(void *w, void *canvas) {
     if (st.pull_page && !pull_live()) pull_cancel();
     int result = stock_paint_trampoline(w, canvas);
+    night_paint(canvas);
     coverflow_paint(w, canvas);
     lockscreen_paint(w, canvas);
     if (w == st.cf_letter_surface && st.cf_letter &&
@@ -2321,17 +2286,14 @@ int ringnav_paint(void *w, void *canvas) {
     spot_paint(w, canvas);
     addon_paint(w, canvas);
     peq_paint(w, canvas);
-#if IPOD
     visualizer_paint(w, canvas);
     games_paint(w, canvas);
-#endif
     /* Even a page with no navigable pane must end pending input when it is painted. */
     if (st.center_timer || st.home_surface) {
         void *wm = window_manager(), *top = window_manager_get_top_window(wm);
         if (!usable() || window_manager_is_animating(wm) || top != st.center_top) cancel_center();
         if (!carousel_page(top)) st.home_surface = (void *)0;
     }
-#if IPOD
     paint_chevrons(w, canvas);
     paint_radio(w, canvas);
     paint_into(w, canvas);
@@ -2341,9 +2303,6 @@ int ringnav_paint(void *w, void *canvas) {
     paint_caps(w, canvas);
     coverflow_home_clip(w, canvas, 0);
     st.paint_w = w ? P(w, W_PARENT) : (void *)0;
-#else
-    paint_selection(w, canvas);
-#endif
     return result;
 }
 
@@ -2363,8 +2322,7 @@ static void *list_button(void *view) {
 static void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
                            int w, int into) {
     /* Match the patched Library constructor's body and art_inset (tools/ipod.py). */
-    int compact =
-        IPOD && !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
+    int compact = !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
     int h = compact ? 68 : 70;
     void *button = list_button(view);
     if (compact) widget_resize(button, 335, h);
@@ -2678,6 +2636,37 @@ int ringnav_music_info(int a, char *info, const char *path) {
         flac_album_artist(path, info + MUSIC_INFO_ALBUM_ARTIST);
     return r;
 }
+/* A card app's song (its folder's listing, or an .m3u, reads no tags) in a library queue: stock
+ * parses only a folder play's file (player_get_id3info, MCL_TYPE 1) and copies any other queue's
+ * record, so its title was its file's name and its artist Unknown. As it starts, the playing
+ * record and the parsed tags take its file's, read as the library scan reads them
+ * (toolsGetMusicInfo): title, artist, album, album artist, track and disc. A record with an album
+ * is left, so a card app's song is read once a queue (a card song without an album tag, played from
+ * a list, at each start, as stock reads every folder play's); one without tags keeps its record's,
+ * and a CUE track its sheet's (ringnav_id3_path). ponytail: Up Next and an app's lists show the
+ * songs not yet played by their file names, and an app's list has no Go to rows (Now Playing's
+ * has). */
+static void card_tags(char *id3, const char *path) {
+    static const unsigned from[] = { 0x280, 0x100, 0, MUSIC_INFO_ALBUM_ARTIST };
+    static const unsigned to[] = { REC_TITLE, REC_ARTIST, REC_ALBUM, REC_ALBUM_ARTIST };
+    unsigned pos, n;
+    void *r = queue_now(&pos, &n);
+    const char *album = r ? P(r, REC_ALBUM) : 0;
+    char info[0x698] = { 0 };
+    if (I(MCL_TYPE, 0) == 1 || mclGetCueFlag() || !r || !P(r, REC_PATH) ||
+        strcmp(P(r, REC_PATH), path) || (album && *album) ||
+        !tk_str_start_with(path, "/mnt/mmc/") || toolsGetMusicInfo(0, info, path) != 1)
+        return;
+    for (unsigned k = 0; k < sizeof to / sizeof *to; k++) {
+        char *t, **field = (char **)((char *)r + to[k]);
+        info[from[k] + 0xff] = 0;
+        if (!info[from[k]] || !(t = strdup(info + from[k]))) continue;
+        free(*field), *field = t;
+        tk_snprintf(id3 + ID3_ALBUM + from[k], 0x100, "%s", t);
+    }
+    if (I(info, 0x684) > 0) I(r, REC_TRACK) = I(info, 0x684);
+    if (I(info, 0x688) > 0) I(r, REC_DISC) = I(info, 0x688);
+}
 /* player_get_id3info's copy of the parsed path (ID3_PATH in tools/build.py), after the tags and
  * before Now Playing's lines. A CUE track's tags are its record's, the stock parser's TITLE and
  * PERFORMER (the track's, else the sheet's); a sheet without them takes the file's (issue #59).
@@ -2694,6 +2683,7 @@ char *ringnav_id3_path(char *id3, const char *path) {
                 toolsTrimLeft(f); /* as stock did to its fields before this copy */
             }
     }
+    card_tags(id3, path);
     /* last: now_tag and marked_empty read a matching path as the tags being complete */
     tk_snprintf(id3, 0x400, "%s", path); /* +0x400: the CUE start */
     return id3;
@@ -2707,7 +2697,7 @@ int ringnav_scan_dir(const char *name, const char *dot) {
 
 /* Whether s is UTF-8: every lead byte with its continuation bytes, nothing overlong, no surrogate,
  * nothing past U+10FFFF. */
-static int utf8_text(const char *s) {
+int utf8_text(const char *s) {
     for (const unsigned char *p = (const unsigned char *)s; *p;) {
         unsigned c = *p++, n = c < 0x80                ? 0
                                : c >= 0xc2 && c < 0xe0 ? 1
@@ -3019,10 +3009,21 @@ static const unsigned char playset_order[] = {
 };
 /* Connections, personalisation and daily controls, then device maintenance; About stays last. */
 static const unsigned char sysset_order[] = {
-    1 /* Wireless */,     2 /* Network */,  3 /* Display */,       4 /* Power */,
-    8 /* Buttons lock */, 7 /* Key tone */, 5 /* Date and time */, 0 /* Language */,
-    6 /* In-Vehicle */,   13 /* Boot to */, 12 /* Apps */,         9 /* Update */,
-    10 /* Reset */,       11 /* About */,
+    1 /* Wireless */,
+    2 /* Network */,
+    3 /* Display */,
+    4 /* Power */,
+    8 /* Buttons lock */,
+    7 /* Key tone */,
+    13 /* Click With Headphones */,
+    5 /* Date and time */,
+    0 /* Language */,
+    6 /* In-Vehicle */,
+    14 /* Boot to */,
+    12 /* Apps */,
+    9 /* Update */,
+    10 /* Reset */,
+    11 /* About */,
 };
 
 /* Folder Root (Q2POD FOLDERROOT): the card's top-level folder Home's Folder opens in, "" the card
@@ -3131,20 +3132,16 @@ static void keep_selected(void *target) {
  * height back and clamps the offset; the next follow, tick or glide step pads it again. ponytail:
  * the wheel and a drag stop anywhere, so a row can be cut at the top until the page follows. iPod's
  * lyrics page (lyrics.c) ends with its last line in the middle. */
-#if IPOD
 /* The offset that centres row i of lrc in its view. */
 static int lyric_centre(void *lrc, int i) {
     void *row = widget_get_child(lrc, i);
     return I(row, W_Y) + (I(row, W_H) - I(lrc, W_H)) / 2;
 }
-#endif
 static void lyric_pad(void *lrc) {
-#if IPOD
     if (lyrics_on(lrc)) {
         I(lrc, VIEW_CONTENT_H) = lyric_centre(lrc, widget_count_children(lrc) - 1) + I(lrc, W_H);
         return;
     }
-#endif
     int h = I(lrc, W_H), end = I(lrc, VIEW_CONTENT_H) - h, top = 1 << 30;
     for (int i = widget_count_children(lrc); i-- > 0;) {
         int t = I(widget_get_child(lrc, i), W_Y);
@@ -3153,7 +3150,6 @@ static void lyric_pad(void *lrc) {
     if (end > 0 && top < 1 << 30) I(lrc, VIEW_CONTENT_H) = top + h;
 }
 
-#if IPOD
 static unsigned np_track(void);
 
 /* The lyrics page in front: Now Playing on top, lit, not sliding and untouched, on the lyrics. */
@@ -3189,7 +3185,6 @@ static void lyric_glide(void *lrc, int to) {
     if (!st.lyric_glide) st.lyric_at = (unsigned)time_now_ms();
     st.lyric_glide = 1;
 }
-#endif
 
 /* The Now Playing timer's follow (LYRIC_FOLLOW in tools/build.py): stock scrolls to the row three
  * lines above the current one, which past the end clamps to it. iPod: lyrics the wheel or a finger
@@ -3198,7 +3193,6 @@ static void lyric_glide(void *lrc, int to) {
  * line (lyric_follow). */
 int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
     lyric_pad(lrc);
-#if IPOD
     if (lrc == st.np_lrc) {
         if (st.lyric_held || st.lyric_spun == 2 || lyrics_on(lrc) ||
             window_manager_get_pointer_pressed(window_manager()))
@@ -3209,7 +3203,6 @@ int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
         }
         st.lyric_glide = 0;
     }
-#endif
     return scroll_view_scroll_to(lrc, x, y, ms);
 }
 
@@ -3222,7 +3215,6 @@ int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
 int ringnav_lyric_rows(void *win) {
     void *lrc = widget_lookup(win, "scroll_lrc", 1);
     int y = lrc ? I(lrc, SCROLL_Y) : 0, ret = ((int (*)(void *))0x529f0c)(win);
-#if IPOD
     if (lrc && lrc == st.np_lrc && lyrics_rows(lrc)) lyric_pad(lrc);
     unsigned song = lrc && lrc == st.np_lrc ? np_track() : st.lyric_rows_song;
     if (song != st.lyric_rows_song) {
@@ -3230,7 +3222,6 @@ int ringnav_lyric_rows(void *win) {
         lyric_top(lrc);
         return ret;
     }
-#endif
     if (y) scroll_view_set_offset(lrc, I(lrc, SCROLL_X), y);
     return ret;
 }
@@ -3256,14 +3247,13 @@ static int seek_position(int to) {
     return 0;
 }
 
-#if IPOD
 /* The status bar's centred label follows stock's 24-hour setting (18:14 or 6:14 PM), without
  * seconds, or --:-- when the time cannot be read. clock_show reads the time once a minute, from a
  * timer due at the next minute, writes the label when the minute shown changes and applies Auto
- * Light Mode's hour; nothing reads the time in between. It runs at once for a new zone
- * (ringnav_timezone), a time set by hand (time_click) and a wake (ringnav_sleep), and on the pass
- * after the bar first paints or paints with a new 24-hour setting (ringnav_paint_bg). ponytail: a
- * network time sync while lit shows at the next minute. */
+ * Light Mode's and Night Shift's hour; nothing reads the time in between. It runs at once for a new
+ * zone (ringnav_timezone), a time set by hand (time_click) and a wake (ringnav_sleep), and on the
+ * pass after the bar first paints or paints with a new 24-hour setting (ringnav_paint_bg).
+ * ponytail: a network time sync while lit shows at the next minute. */
 static void clock_show(void);
 static int clock_due(const void *info) {
     (void)info;
@@ -3279,6 +3269,7 @@ static void clock_show(void) {
     int full = st.clock_full = g_time24h_flag != 0;
     accent(); /* reads Light Mode */
     light_apply(ok ? tm : (void *)0);
+    night_clock(ok && !light_day(tm));
     st.clock_timer = timer_add(clock_due, (void *)0, ok ? (60u - (unsigned)tm[0]) * 1000u : 60000u);
     unsigned key = ok ? ((unsigned)(tm[2] * 60 + tm[1]) + 1) | (unsigned)full << 11
                       : ~0u; /* 0 before the first */
@@ -3707,15 +3698,39 @@ static void lyric_follow(void *lrc, int ms, int front, int shown) {
 }
 
 /* Smart Awake (#57): Now Playing lit in front, a song playing, on its lyrics, info or
- * visualizer page holds the screen on as the lyrics wheel does; paused, it times out as usual. */
+ * visualizer page, or its full-screen art in front, holds the screen on as the lyrics wheel does;
+ * paused, it times out as usual. */
 static void keep_lit_poll(void) {
     unsigned now = (unsigned)time_now_ms();
     if (!st.np_slide || now - st.keep_lit_at < 1000) return;
     st.keep_lit_at = now;
     accent(); /* reads the settings */
-    if (st.keep_lit && g_backlight_status && widget_get_prop_int(st.np_slide, "value", 0) &&
-        window_manager_get_top_window(window_manager()) == st.np_win && mclGetPlayStatus() == 2)
+    void *top = window_manager_get_top_window(window_manager());
+    if (st.keep_lit && g_backlight_status && mclGetPlayStatus() == 2 &&
+        ((top == st.np_win && widget_get_prop_int(st.np_slide, "value", 0)) ||
+         (top && top == st.bc[2])))
         reset_poweroptions_timer(1, 1, 1);
+}
+
+/* Centred Now Playing's full-screen lyrics (np_lyric_touch): the column (stock's slide_view_view,
+ * tools/ipod.py PLAYING_STOCK) goes over the page's other widgets, black and the window's width,
+ * its slide_view down to the page dots, and the lines wrap at the new width (lyrics_fit), back on
+ * the playing line; off, stock's place again, before the progress bar. */
+#define NP_COLUMN_X 80 /* stock's column: its x and width, and its slide_view's height */
+#define NP_COLUMN_W 225
+#define NP_COLUMN_SLIDE_H 198
+static void np_full(int on) {
+    void *col = P(st.np_slide, W_PARENT), *dots = widget_lookup(col, "slide_indicator1", 1);
+    st.np_full = on;
+    widget_restack(col, on ? widget_count_children(st.np_win) : widget_index_of(st.np_slider));
+    widget_set_prop_str(col, "style:normal:bg_color", on ? "#000000" : "#00000000");
+    widget_move_resize(col, on ? 0 : NP_COLUMN_X, I(col, W_Y), on ? I(st.np_win, W_W) : NP_COLUMN_W,
+                       I(col, W_H));
+    widget_resize(st.np_slide, I(col, W_W), on && dots ? I(dots, W_Y) : NP_COLUMN_SLIDE_H);
+    widget_layout(col);
+    if (lyrics_fit(st.np_lrc)) lyric_pad(st.np_lrc);
+    /* the follow takes them; the offset the layout left is no drag of the touch (lyric_poll) */
+    st.lyric_held = 0, st.lyric_drag_y = I(st.np_lrc, SCROLL_Y);
 }
 
 static void lyric_poll(void) {
@@ -3726,6 +3741,7 @@ static void lyric_poll(void) {
         lyric_top(lrc);
     }
     int page = lrc && st.np_slide && widget_get_prop_int(st.np_slide, "value", 0) == 1;
+    if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
     int touch = lrc && window_manager_get_top_window(wm) == st.np_win &&
                 window_manager_get_pointer_pressed(wm);
     int shown = page && lyrics_shown(),
@@ -3837,8 +3853,9 @@ static void np_cancel(void) {
     if (st.np_win) playing_timer_start(st.np_win);
 }
 
-/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing: it replays the release to stock
- * on_wm_keyup_fun, which turns the screen off (it reads only the event's key). */
+/* A single centre press, DOUBLE_CLICK_MS on, never while scrubbing (with Single Press Scrub, a
+ * double press): it replays the release to stock on_wm_keyup_fun, which turns the screen off (it
+ * reads only the event's key). */
 static int np_single(const void *info) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     st.np_press = 0;
@@ -3846,28 +3863,68 @@ static int np_single(const void *info) {
     return 0;
 }
 
+/* The top window if it is stock's volume dialog (vol_paint), else 0. */
+static void *vol_top(void) {
+    void *top = window_manager_get_top_window(window_manager());
+    if (!top || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return (void *)0;
+    return top;
+}
+
+/* The volume dialog on top with Now Playing directly under it (where vol_paint draws its band,
+ * given the slider and times), else 0. */
+static void *vol_band(void *wm) {
+    void *vol = st.np_win ? vol_top() : (void *)0;
+    unsigned n = vol ? widget_count_children(wm) : 0;
+    return n > 1 && widget_get_child(wm, n - 2) == st.np_win ? vol : (void *)0;
+}
+
+/* Scrub starts from the bar's second; the wheel moves the target until scrub_end. A volume
+ * band over the page closes first, as a tap beside its bar does, so the wheel reaches the scrub
+ * and the bar shows. The close runs the page's foreground handler, which sets the bar to the
+ * player's second and restarts stock's timer: the target is read, and the timer cleared, after
+ * it. */
+static void scrub_start(void) {
+    if (st.scrub || !st.np_slider) return;
+    void *vol = vol_band(window_manager());
+    if (vol) window_close(vol);
+    st.scrub = 1;
+    st.scrub_moved = 0;
+    st.scrub_to = widget_get_prop_int(st.np_slider, "value", 0);
+    st.scrub_track = np_track();
+    stop_timer(&st.settle_timer);
+    playing_timer_clear(st.np_win);
+    np_fill(1);
+    rearm(&st.scrub_timer, scrub_expire, SCRUB_MS);
+}
+
+/* Single Press Scrub (IPOD SCRUBSINGLE)'s single press, DOUBLE_CLICK_MS on: scrub starts. */
+static int np_scrub(const void *info) {
+    st.np_press = 0;
+    if (g_backlight_status) scrub_start();
+    return 0;
+}
+
 /* Centre and, while scrubbing, the wheel on the top Now Playing page. A centre press waits
- * DOUBLE_CLICK_MS: a second one starts scrub, else it turns the screen off as anywhere else; while
+ * DOUBLE_CLICK_MS: a second one starts scrub, else it turns the screen off as anywhere else; with
+ * Single Press Scrub the two swap, so a double press turns the screen off as on the lists. While
  * scrubbing one press ends it at once (center_press). The wheel moves the target SCRUB_STEP
  * seconds times the WHEEL_RAMP_MS ramp, within the track, and only previews it: the seek waits
  * for the scrub to end. Neither the volume nor its dialog sees the wheel. */
 static int np_key(void *top, unsigned key) {
     unsigned now = (unsigned)time_now_ms();
     if (key == KEY_CENTER) {
-        int press = center_press(&st.np_press, &st.np_press_at, np_single, st.scrub);
+        int one = (accent(), st.scrub_single);
+        int press =
+            center_press(&st.np_press, &st.np_press_at, one ? np_scrub : np_single, st.scrub);
+        if (one && !press) /* an overdue single press just started a scrub: this one ends it */
+            press = 2, st.np_press_at = now;
         if (press != 2) return press ? STOP : 0;
-        if (st.scrub) /* one press ends a scrub, a double press starts one */
+        if (st.scrub) /* one press ends a scrub */
             scrub_end();
-        else if (st.np_slider) {
-            st.scrub = 1;
-            st.scrub_moved = 0;
-            st.scrub_to = widget_get_prop_int(st.np_slider, "value", 0);
-            st.scrub_track = np_track();
-            stop_timer(&st.settle_timer);
-            playing_timer_clear(st.np_win);
-            np_fill(1);
-            rearm(&st.scrub_timer, scrub_expire, SCRUB_MS);
-        }
+        else if (one)
+            np_single((void *)0);
+        else
+            scrub_start();
         return STOP;
     }
     if (np_track() != st.scrub_track) { /* a new track: scrub_end drops the last one's target */
@@ -3894,7 +3951,7 @@ static int np_gone(void *win, void *event) {
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
             st.np_slide = st.np_lrc = st.np_title = (void *)0;
         st.scrub_moved = 0; /* the page is going: no seek */
-        st.np_off = 0;
+        st.np_off = st.np_full = 0;
         stop_timer(&st.np_marquee);
         np_cancel();
         lyrics_gone(); /* the next page's rows may take its rows' place */
@@ -3902,9 +3959,61 @@ static int np_gone(void *win, void *event) {
     return 0;
 }
 
+/* Now Playing's art (either page) follows the player's cover. Stock reloads img_cover only on
+ * one-shot flags its 250 ms timer finds set: a song change, a forced refresh, the cover thread's
+ * finish. Enlarged Art's timer clears all three while it is open (0x520064), so a change it took
+ * left the page on the last track's art. Each lit pass, the playing track and the player's file it
+ * can use (once g_lastcover_url is this track's: 1 embedded, 2 folder image, 4 downloaded, 3 none:
+ * stock's placeholder) are compared with the last; a change reloads the art as stock does, the
+ * cached bitmap dropped first (the player writes every track's cover to the same file). Anything
+ * else (parsing, Tidal) keeps stock's image.
+ * ponytail: one more decode per track change while the page is up, beside stock's own reload. */
+static unsigned np_art(const char **file) {
+    unsigned at, n;
+    void *r = queue_now(&at, &n);
+    unsigned char type = now_cover(r, file);
+    if (type == 3) *file = "play_defaultcover"; /* none: stock's placeholder */
+    return *file ? fnv(hash_bytes(FNV_SEED, &type, 1), (const unsigned char *)P(r, REC_PATH)) : 0;
+}
+static void np_art_poll(void) {
+    const char *file;
+    if (!st.np_cover || !g_backlight_status) return;
+    unsigned key = np_art(&file);
+    if (key == st.np_art) return;
+    st.np_art = key;
+    if (!file) return;
+    image_manager_unload_bitmap_by_name(image_manager(), file);
+    image_base_set_image(st.np_cover, file);
+    widget_invalidate_force(st.np_cover, (void *)0);
+}
+
+/* Centred Now Playing's lyrics page (ringnav_playing): a touch that lifts within TAP_PX of where it
+ * came down, so neither a swipe nor a drag of the lines, switches them to full screen and back
+ * (np_full), once there are lyrics to show. The slide_view taking the touch for a swipe (its
+ * abort) ends full screen at once, so the pages slide in their column. Returns 0: a STOP would
+ * keep the slide_view's grab (rate_fav_click). */
+#define TAP_PX 10 /* AWTK's drag threshold */
+static int np_lyric_touch(void *ctx, void *event) {
+    int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
+    int tap = (unsigned)(x - st.np_tap_x + TAP_PX) <= 2 * TAP_PX &&
+              (unsigned)(y - st.np_tap_y + TAP_PX) <= 2 * TAP_PX;
+    if (type == EVT_POINTER_DOWN) {
+        st.np_tap_x = x, st.np_tap_y = y;
+        return 0;
+    }
+    st.np_tap_x = 1 << 20; /* used or taken for a swipe: a later lift is no tap */
+    if (type == EVT_POINTER_ABORT) {
+        if (st.np_full) np_full(0);
+    } else if (tap && (st.np_full || lyrics_on(st.np_lrc)))
+        np_full(!st.np_full);
+    return 0;
+}
+
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
  */
 int ringnav_playing(void *win, void *ctx) {
+    if (st.np_full)
+        np_full(0); /* another Now Playing: the last one's lyrics back in their column */
     int result = stock_playing_trampoline(win, ctx);
     if (!win) return result;
     rate_bind(win);
@@ -3921,7 +4030,13 @@ int ringnav_playing(void *win, void *ctx) {
     st.np_lrc = widget_lookup(win, "scroll_lrc", 1);
     st.lyric_song = st.lyric_rows_song = np_track(); /* no song change at the start */
     lyric_init();                                    /* the rows stock's init built */
+    void *lyric = widget_lookup(win, "view_lyric", 1);
+    static const unsigned touch[] = { EVT_POINTER_DOWN, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
+    for (unsigned i = 0; lyric && st.np_centred && i < sizeof touch / sizeof *touch; ++i)
+        widget_on(lyric, touch[i], np_lyric_touch, (void *)0);
     st.np_hash = 0;
+    const char *file;
+    st.np_art = np_art(&file); /* stock's init loaded it */
     st.np_left = -1;
     np_fill(0);
     np_theme();
@@ -3997,9 +4112,8 @@ static void bc_fit(void *win) {
     void *img = widget_lookup(win, "img_bigcover", 1), *shade = st.bc[1], *title = st.bc[0];
     const char *name = img ? widget_get_prop_str(img, "image", "") : "";
     unsigned at, n;
-    void *r = queue_now(&at, &n);
-    const char *path = r ? P(r, REC_PATH) : (void *)0;
-    unsigned type = path && !tk_strcmp((const char *)g_lastcover_url, path) ? g_playcover_type : 0;
+    const char *cover;
+    unsigned type = now_cover(queue_now(&at, &n), &cover);
     unsigned box = img ? (unsigned)(I(img, W_W) << 16 | I(img, W_H)) : 0;
     unsigned key = fnv(np_track() ^ type, (const unsigned char *)name);
     if (!img || !shade || !title || (key == st.bc_key && box == st.bc_box)) return;
@@ -4058,22 +4172,12 @@ void *ringnav_ui_load(const char *name, void *parent) {
 
 /* bigcover_page_init: stock's full-screen art (a tap on Now Playing's opens it, any tap closes it)
  * shows the song name BC_MS, then bc_fade fades it out. Stock's own timer writes the next song's
- * name; ringnav_sleep shows it again when the track changes. Enlarged Album Art's idle timer opens
- * it too: off the art page (lyrics, info, visualizer) there is no art to enlarge, so the next
- * ringnav_sleep pass closes it (#57), once stock's open has finished with the window.
- * ponytail: it may show for that one pass; stopping stock's idle timer would need its source. */
-static int bc_dropped(void *win, void *event) {
-    if (st.bc_drop == win) st.bc_drop = (void *)0;
-    return 0;
-}
+ * name; ringnav_sleep shows it again when the track changes. Enlarged Album Art's countdown opens
+ * it too; off the art page (lyrics, info, visualizer) there is no art to enlarge, so ringnav_sleep
+ * holds the countdown full there (#57). Closing it after the open flashed it every 10 s (#153). */
 int ringnav_bigcover(void *win, void *ctx) {
     int result = stock_bigcover_trampoline(win, ctx);
     if (!win) return result;
-    if (st.np_slide && widget_get_prop_int(st.np_slide, "value", 0)) {
-        st.bc_drop = win;
-        widget_on(win, EVT_DESTROY, bc_dropped, win);
-        return result;
-    }
     st.bc[0] = widget_lookup(win, "scrlabel_title", 1);
     st.bc[1] = widget_lookup(win, "view_shade", 1);
     st.bc[2] = win;
@@ -4189,7 +4293,6 @@ static void album_tile(void *w) {
     if (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "artistinfo_page")) album_children(w, 0);
 }
 
-#if IPOD
 /* Quick Settings' brightness slider fills as Now Playing's bar does (np_fill), set before its
  * paint; QFILL holds the fill it last got, so a new accent or Light Mode reaches it. */
 #define QFILL "_ringnav_fill"
@@ -4204,15 +4307,20 @@ static void quick_fill(void *w) {
     slider_fill(w, (unsigned)color);
 }
 /* The confirm pop-up's prompt (stock's own child, "Shut Down?"): CONFIRM_PROMPT_PX, centred in the
- * space above its rows. ponytail: by position, any non-button child above CONFIRM_TOP. */
+ * space above its rows, or above Delete File's "Also delete source file" (stock's check_button
+ * msg_delcheckbutton at y 124, centred 20px), which keeps its stock place and style.
+ * ponytail: by position, any other non-button child above CONFIRM_TOP. */
 static void confirm_prompt(void *w) {
     if (tk_strcmp(widget_get_prop_str(w, "name", ""), "confirminfo_dialog")) return;
+    void *check = widget_lookup(w, "msg_delcheckbutton", 0);
+    int bottom = check ? I(check, W_Y) : CONFIRM_TOP;
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         void *c = widget_get_child(w, i);
-        if (!tk_strcmp(widget_get_type(c), "button") || I(c, W_Y) + I(c, W_H) > CONFIRM_TOP ||
+        if (c == check || !tk_strcmp(widget_get_type(c), "button") ||
+            I(c, W_Y) + I(c, W_H) > CONFIRM_TOP ||
             (!I(c, W_X) && !I(c, W_Y) && I(c, W_W) == I(w, W_W)))
             continue;
-        widget_move_resize(c, 0, 0, I(w, W_W), CONFIRM_TOP);
+        widget_move_resize(c, 0, 0, I(w, W_W), bottom);
         widget_set_prop_int(c, "style:normal:font_size", CONFIRM_PROMPT_PX);
         widget_set_prop_str(c, "style:normal:text_align_h", "center");
         widget_set_prop_str(c, "style:normal:text_align_v", "middle");
@@ -4230,30 +4338,37 @@ static void *touch_target(void *row) {
     void *b = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
     return b && !tk_strcmp(widget_get_type(b), "button") && !I(b, W_Y) ? b : row;
 }
+/* A button under half its row's width is a tile (the album grid's, the playlist page's pair), as
+ * paint_selection tells a tile from a row. */
+static int tile_in(void *b, void *row) { return 2 * I(b, W_W) < I(row, W_W); }
 static int press_repaint(const void *info) {
     st.press_timer = 0;
     void *top = window_manager_get_top_window(window_manager());
     if (top) widget_invalidate_force(top, (void *)0);
     return 0;
 }
-#endif
 
 /* A touched list row's grey is the selection's shape: the whole row, as Classic's bar (the
  * Library's button leaves x 0-20, 355-375 and the pitch's last 4 px), or under Rounded Corners the
  * inset pill. Drawn as the row's background; the button's own box is skipped (1). The press
  * invalidates the whole surface (ringnav_touch), its release only the button, so the row's edges
- * repaint once after it (press_repaint). */
+ * repaint once after it (press_repaint). A tile's grey is its selection card, inside the tile. */
 static int pressed_pill(void *w, void *canvas) {
-#if IPOD
     if (!w) return 0;
-    if (!is_row(w)) { /* the row drew it: skip its button's box */
+    if (!is_row(w)) {
         void *row = P(w, W_PARENT);
-        return is_row(row) && touch_target(row) == w && pressed_row(w) &&
-               I(row, W_W) > 2 * SEL_INSET + I(row, W_H);
+        if (!is_row(row) || !pressed_row(w)) return 0;
+        if (!tile_in(w, row)) /* the row drew it: skip its button's box */
+            return touch_target(row) == w && I(row, W_W) > 2 * SEL_INSET + I(row, W_H);
+        rect_t card = { TILE_INSET, TILE_INSET, I(w, W_W) - 2 * TILE_INSET,
+                        I(w, W_H) - 2 * TILE_INSET };
+        fill_box(canvas, &card, PH_GREY, (accent(), st.rounded) ? SEL_RADIUS : 0);
+        return 1;
     }
     void *b = touch_target(w);
-    /* childless: not a row but a page, such as Now Playing's visualizer */
-    if (!pressed_row(b) || !widget_count_children(w) || I(w, W_W) <= 2 * SEL_INSET + I(w, W_H)) {
+    /* childless: not a row but a page, such as Now Playing's visualizer; a tile draws its own */
+    if (!pressed_row(b) || tile_in(b, w) || !widget_count_children(w) ||
+        I(w, W_W) <= 2 * SEL_INSET + I(w, W_H)) {
         if (w == st.press_row) {
             st.press_row = (void *)0;
             rearm(&st.press_timer, press_repaint, 0);
@@ -4265,9 +4380,6 @@ static int pressed_pill(void *w, void *canvas) {
     rect_t pill = { in, 0, I(w, W_W) - 2 * in, I(w, W_H) };
     fill_box(canvas, &pill, PH_GREY, in ? pill_radius(b, pill.h, SEL_INSET) : 0);
     return b == w; /* a page row's own (clear) background */
-#else
-    return 0;
-#endif
 }
 
 /* Stock paints a widget's background before its children, so the bar sits behind the rows.
@@ -4279,10 +4391,8 @@ static int pressed_pill(void *w, void *canvas) {
  * under another window. */
 int ringnav_paint_bg(void *w, void *canvas) {
     st.paint_w = w;
-#if IPOD
     quick_fill(w);
     confirm_prompt(w);
-#endif
     album_tile(w);
     int result = pressed_pill(w, canvas) ? 0 : stock_paint_bg_trampoline(w, canvas);
     void *wm = window_manager(), *bar = *(void *const *)system_bar;
@@ -4472,6 +4582,11 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                        GLYPH_LIGHT_MAX)
         glyph = CONFIRM_SURFACE;
     while (s && *s && *s != '/' && *s != ':') ++s;
+    /* Home: Carousel's cards keep stock's colours in every Theme, accent and Light Mode; its white
+     * arrows (menu_left, menu_right) still flip in Light Mode, or they vanish on the paper */
+    if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
+        tk_strcmp(name, "menu_right"))
+        s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
      * secondary text's grey, legible on the black list and on the selected row's off-white card. */
     if (s && !*s && tk_str_start_with(name, "img_") && tk_strcmp(name, "img_delete") &&
@@ -4641,7 +4756,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
 }
 
 static void setting_text(int i) {
-    static const char *const home[] = { "Home: Split", "Home: Full" },
+    static const char *const home[] = { "Home: Split", "Home: Full", "Home: Carousel" },
                              *const battery[] = { "Battery: Icon", "Battery: Percent",
                                                   "Battery: Icon + Percent",
                                                   "Battery: Percent Inside" },
@@ -4650,7 +4765,7 @@ static void setting_text(int i) {
                                                 "Light Mode: Auto" };
     accent(); /* reads the settings */
     const char *const names[] = { accent_names[st.classic ? st.accent : st.minimal_accent],
-                                  home[st.home_full],
+                                  home[st.home],
                                   battery[st.battery],
                                   theme[st.classic],
                                   (const char *)0,
@@ -4664,8 +4779,9 @@ static void setting_text(int i) {
         widget_set_text_utf8(st.setting_label[i], shortcut);
         return;
     }
-    static const char *const toggles[] = { "Rounded Corners", 0, "Smart Awake",
-                                           "Centred Now Playing" };
+    static const char *const toggles[] = { "Rounded Corners",       0,
+                                           "Smart Awake",           "Centred Now Playing",
+                                           "Click With Headphones", "Single Press Scrub" };
     if (i == 5 || i >= 7) {
         list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
         return;
@@ -4709,7 +4825,7 @@ static void theme_preset(void) {
     else
         setting_put(&st.minimal_accent, 0, "MINIMAL_ACCENT"); /* Graphite */
     setting_put(&st.rounded, !classic, "ROUNDED");
-    setting_put(&st.home_full, 0, "HOME");
+    setting_put(&st.home, 0, "HOME");
 }
 
 static int setting_click(void *ctx, void *event) {
@@ -4738,8 +4854,8 @@ static int setting_click(void *ctx, void *event) {
         coverflow_home_layout();
     else if (i == 5)
         widget_invalidate_force(window_manager(), (void *)0);
-    else if (i < 7) { /* Smart Awake only needs its toggle drawn, Centred Now Playing the next
-                       * open (ringnav_ui_load) */
+    else if (i < 7) { /* the switches from Smart Awake on only need their toggle drawn, Centred
+                       * Now Playing the next open (ringnav_ui_load) */
         if (i == 3) {
             theme_preset();
             coverflow_home_layout();
@@ -4756,16 +4872,6 @@ static int setting_click(void *ctx, void *event) {
     setting_text(i);
     return 0;
 }
-
-#else
-#define np_cancel() ((void)0)
-/* playing_page_init: Stock's page as built, with the heart's rating hold (rate_bind). */
-int ringnav_playing(void *win, void *ctx) {
-    int result = stock_playing_trampoline(win, ctx);
-    if (win) rate_bind(win);
-    return result;
-}
-#endif
 
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
@@ -4825,7 +4931,8 @@ static int display_open(void *ctx, void *event) {
  * stock's page again (display_open) with its stock rows dropped and its own instead: Theme,
  * Accent, Corners, Home and Battery; Artist Albums, Coverflow Sort and Refresh Coverflow; Shortcut
  * (iPod), Hold Return and Wheel Sensitivity, the last opening its slider page (crossfade.c). The
- * value rows show it in the label and have no chevron, since they change in place.
+ * value rows show it in the label and have no chevron, since they change in place. Night Shift
+ * (the brightness icon) ends the main page, opening its slider page (crossfade.c).
  * ponytail: stock's page opened over itself; its own rows' state is never touched on a sub-page. */
 int ringnav_display(void *win, void *ctx) {
     static const char *const titles[] = { 0, "Appearance", "Coverflow", "Controls" },
@@ -4839,9 +4946,10 @@ int ringnav_display(void *win, void *ctx) {
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
     if (!view) return result;
     if (!sub) {
-        for (int i = IPOD ? DISPLAY_APPEARANCE : DISPLAY_COVERFLOW; i <= DISPLAY_CONTROLS; ++i)
+        for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_CONTROLS; ++i)
             widget_set_text_utf8(list_row_into(view, sub_icons[i], display_open, (void *)(long)i),
                                  titles[i]);
+        night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
         return result;
     }
     widget_destroy_children(view);
@@ -4852,15 +4960,15 @@ int ringnav_display(void *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
         return result;
     }
-#if IPOD
     /* Theme, Light Mode, Accent, Corners, Home, Battery, Centred Now Playing; Shortcut, Smart
-     * Awake. */
-    static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 2, 8 }, controls[] = { 4, 7 };
-    static const char *const icons[] = { "system_display",      "playset_covermode",
-                                         "system_powermanager", "system_display",
-                                         "playset_covermode",   "system_display",
-                                         "system_display",      "system_display",
-                                         "playset_covermode" };
+     * Awake, Single Press Scrub. Click With Headphones (9) is System settings' (ringnav_systemset).
+     */
+    static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 2, 8 }, controls[] = { 4, 7, 10 };
+    static const char *const icons[] = {
+        "system_display",    "playset_covermode", "system_powermanager", "system_display",
+        "playset_covermode", "system_display",    "system_display",      "system_display",
+        "playset_covermode", "system_keytone",    "playset_covermode"
+    };
     const unsigned char *rows = sub == DISPLAY_APPEARANCE ? appearance : controls;
     for (int k = 0, n = sub == DISPLAY_APPEARANCE ? sizeof appearance : sizeof controls; k < n;
          ++k) {
@@ -4868,7 +4976,6 @@ int ringnav_display(void *win, void *ctx) {
         st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
         setting_text(i);
     }
-#endif
     if (sub != DISPLAY_CONTROLS) return result;
     pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
     pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, wheel_icon);
@@ -4896,11 +5003,33 @@ static int boot_click(void *label, void *event) {
     boot_text(label);
     return 0;
 }
+/* Click With Headphones (Display's setting 9) sits under Key Tone and shows while it is on. Stock's
+ * Key Tone click handler sets g_keytone_flag; the row follows from the next loop pass. */
+#define KEYTONE_ROW "_keytone_hp"
+static int keytone_follow(const void *info) {
+    st.keytone_timer = 0;
+    void *view = widget_lookup(window_manager(), "scroll_view_sysset", 1);
+    void *row = view ? widget_lookup(view, KEYTONE_ROW, 1) : (void *)0;
+    if (row) widget_set_visible(row, g_keytone_flag != 0, 0), widget_layout(view);
+    return 0;
+}
+static int keytone_click(void *ctx, void *event) {
+    rearm(&st.keytone_timer, keytone_follow, 0);
+    return 0;
+}
 int ringnav_systemset(void *win, void *ctx) {
     int result = stock_systemset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_sysset", 1) : (void *)0;
-    if (view)
+    if (view) {
         widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "App Store");
+        st.setting_label[9] = list_row(view, "system_keytone", setting_click, (void *)9);
+        setting_text(9);
+        void *item = P(P(st.setting_label[9], W_PARENT), W_PARENT),
+             *tone = widget_lookup(view, "7", 1);
+        widget_set_name(item, KEYTONE_ROW);
+        widget_set_visible(item, g_keytone_flag != 0, 0);
+        if (tone) widget_on(tone, EVT_CLICK, keytone_click, 0);
+    }
     if (view && rockbox_available()) {
         char value[16];
         void *f = fopen(BOOT_TARGET, "rb");
@@ -4920,7 +5049,7 @@ int ringnav_systemset(void *win, void *ctx) {
         widget_on(button, EVT_CLICK, boot_click, label);
         boot_text(label);
     }
-    /* Without Rockbox there is no Boot to (13): the order less it. */
+    /* Without Rockbox there is no Boot to (14): the order less it. */
     unsigned char order[sizeof sysset_order];
     unsigned n = 0, rows = view ? widget_count_children(view) : 0;
     for (unsigned i = 0; i < sizeof sysset_order; i++)
@@ -4929,7 +5058,6 @@ int ringnav_systemset(void *win, void *ctx) {
     return result;
 }
 
-#if IPOD
 static int untouch(const void *info) {
     st.untouch_timer = 0;
     st.touch_mode = 0;
@@ -4937,7 +5065,6 @@ static int untouch(const void *info) {
     if (top) widget_invalidate_force(top, (void *)0);
     return 0;
 }
-#endif
 
 static void hide_outline(void) {
     if (st.touch_mode && !st.untouch_timer) return; /* already hidden: each touch move comes here */
@@ -4948,7 +5075,6 @@ static void hide_outline(void) {
 }
 
 int ringnav_touch(void *ctx, void *event) {
-#if IPOD
     /* settle_timer while paused on the scrubbed track: a paused seek still waiting for Play. */
     int hold =
         st.settle_timer && st.np_slider && np_track() == st.scrub_track && mclGetPlayStatus() == 3;
@@ -4962,7 +5088,6 @@ int ringnav_touch(void *ctx, void *event) {
     if (hold)
         stop_timer(&st.np_press); /* Swiping pages keeps the paused seek's preview. */
     else
-#endif
         np_cancel(); /* before the slider sees the touch, so a drag seeks the stock way */
     hide_outline();
     int result = stock_touch_trampoline(ctx, event);
@@ -4990,9 +5115,7 @@ static int time_click(void *target, void *event) {
     int ok = page && !tk_strcmp(widget_get_prop_str(page, "name", ""), "manualtime_page") &&
              !tk_strcmp(widget_get_prop_str(target, "name", ""), "btn_enter");
     int result = stock_dispatch_trampoline(target, event);
-#if IPOD
     if (ok && st.clock_timer) clock_show();
-#endif
     if (ok && window_manager_get_top_window(window_manager()) == page) navigator_back();
     return result;
 }
@@ -5096,8 +5219,6 @@ int ringnav_dispatch(void *target, void *event) {
     }
     return stock_dispatch_trampoline(target, event);
 }
-
-#if IPOD
 
 /* Only audited ordinary row constructors install this per-instance layouter. Stock still
  * positions every child, skips hidden controls, and owns clone/destruction and text overflow. */
@@ -5250,9 +5371,8 @@ void ringnav_boot(const char *page, const int *ctx) {
     else if (ctx[2] != 0xff)
         player_start((void *)ctx[0], ctx[1], ctx[2], ctx[3]);
 }
-#endif
 
-/* Called by stock long Return (both builds) and short Return on iPod Home, after their gates.
+/* Called by stock long Return and short Return on Home, after their gates.
  * Elsewhere it opens Now Playing over the page, remembered as np_origin; on Now Playing it goes
  * back to that page while it lies right under it, else Home. With Hold Return: Home it goes Home
  * from any page but Home itself, where it still opens Now Playing.
@@ -5298,9 +5418,18 @@ int compact_now_playing(void) {
 }
 
 /* Play/Pause hold queue menu (docs/internals.md). Stock long press fires once per press, so a hold
- * on a local song, album, artist/composer/genre or folder row opens the stock sortselect dialog
- * rebuilt as that row's menu. */
-enum { QM_SONG = 1, QM_ALBUM, QM_GROUP, QM_FOLDER, QM_COVERFLOW, QM_COVERALBUM, QM_PLAYING };
+ * on a local song, album, artist/composer/genre, folder or playlist row opens the stock sortselect
+ * dialog rebuilt as that row's menu. */
+enum {
+    QM_SONG = 1,
+    QM_ALBUM,
+    QM_GROUP,
+    QM_FOLDER,
+    QM_COVERFLOW,
+    QM_COVERALBUM,
+    QM_PLAYING,
+    QM_PLAYLIST
+};
 enum {
     QA_NEXT = 1,
     QA_ADD,
@@ -5340,11 +5469,15 @@ static int hold_released(void) {
     return held;
 }
 
-static unsigned rec_hash(void *r) {
+/* A record's fields from REC_NAME to last, and its CUE range: to REC_PATH its identity, to
+ * REC_ARTIST its tags too. */
+static unsigned rec_hash_to(void *r, int last) {
     unsigned h = FNV_SEED;
-    for (int o = REC_NAME; o <= REC_ARTIST; o += 4) h = fnv(h, P(r, o));
+    for (int o = REC_NAME; o <= last; o += 4) h = fnv(h, P(r, o));
     return hash_bytes(h, (const unsigned char *)r + REC_CUE_START, 8);
 }
+/* The row a hold menu is on: an album row (a cover's) or a playlist's is told apart by its tags. */
+static unsigned rec_hash(void *r) { return rec_hash_to(r, REC_ARTIST); }
 
 /* Everything a row's tracks are resolved from; a change while the menu is open cancels it. */
 static unsigned browse_hash(void) { return local_hash(hash_bytes(FNV_SEED, g_folder_path, 1024)); }
@@ -5357,10 +5490,12 @@ static void *page_tracks(void *page) {
                                 : coverflow_tracks(page);
 }
 
+/* A queue's identity: its records' names, paths and CUE ranges, not their tags, which card_tags
+ * fills as a song starts (the queue is not changed by that). */
 unsigned queue_hash(void *q) {
     unsigned h = FNV_SEED;
     for (unsigned i = 0, n = deque_size(q); i < n; ++i) {
-        unsigned r = rec_hash(deque_at(q, i));
+        unsigned r = rec_hash_to(deque_at(q, i), REC_PATH);
         h = hash_bytes(h, (const unsigned char *)&r, sizeof r);
     }
     return h;
@@ -5368,6 +5503,7 @@ unsigned queue_hash(void *q) {
 
 static void *qm_list(void) {
     if (st.qm_kind == QM_PLAYING) return P(mcl_pdeqplaylist, 0);
+    if (st.qm_kind == QM_PLAYLIST) return P(p_deque_playlist, 0);
     return st.qm_kind == QM_COVERFLOW ? page_tracks(window_manager_get_top_window(window_manager()))
                                       : P(p_deque_showlist, 0);
 }
@@ -5408,9 +5544,7 @@ static unsigned qm_album_id(void *r) {
 
 /* Now Playing's More… (img_more, on both layouts), while that page is open; else 0. */
 static void *np_more(void) {
-#if IPOD
     if (st.np_win) return widget_lookup(st.np_win, "img_more", 1);
-#endif
     return (void *)0;
 }
 
@@ -5454,7 +5588,11 @@ static int class_query(unsigned cls, void *r) {
         id == -2);
 }
 
-static int qm_query(void *r) { return class_query(st.qm_cls, r); }
+/* A playlist's songs, as its row opens them (cd_num, as ple_open). */
+static int qm_query(void *r) {
+    return st.qm_kind == QM_PLAYLIST ? getMusicByPlayList(I(r, REC_DISC))
+                                     : class_query(st.qm_cls, r);
+}
 
 /* An Albums row (load_album_detaillist) or Go to album opens its name's songs, 0xff10 with
  * classinfo +0xd the name and +0x10d the artist: r is kept, a copy, to keep its album alone. */
@@ -5646,7 +5784,7 @@ static int artist_cf_open(const void *unused) {
 }
 /* Artist albums: Grid gives the artist page its stock toolbar back, for its multi-select
  * (s_img_mulsel), which iPod hides on the local pages; the tabs move down under it. A toolbar
- * already showing (Legacy, a reload) is left alone. */
+ * already showing (a reload) is left alone. */
 static void artist_bar(void) {
     void *top = window_manager_get_top_window(window_manager()),
          *nav = top ? widget_lookup(top, "view_navbar", 0) : 0,
@@ -5848,15 +5986,15 @@ int ringnav_localclass(int cls) {
     if (n > 0 && cls == CLASS_ALBUMS) n = coverflow_split(list);
     if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) /* My Fav, Frequent, Recent */
         fav_titles(list, n);
-    if (IPOD) /* an untagged song's row reads its file name without the extension (track_name) */
-        for (int i = 0; i < n; ++i) {
-            void *r = deque_at(list, (unsigned)i);
-            char buf[512], **title = (char **)((char *)r + REC_TITLE), *t;
-            if (I(r, REC_TYPE) != 8 || (*title && **title) ||
-                !(t = strdup(track_name(buf, sizeof buf, r) ?: "")))
-                continue;
-            free(*title), *title = t;
-        }
+    /* an untagged song's row reads its file name without the extension (track_name) */
+    for (int i = 0; i < n; ++i) {
+        void *r = deque_at(list, (unsigned)i);
+        char buf[512], **title = (char **)((char *)r + REC_TITLE), *t;
+        if (I(r, REC_TYPE) != 8 || (*title && **title) ||
+            !(t = strdup(track_name(buf, sizeof buf, r) ?: "")))
+            continue;
+        free(*title), *title = t;
+    }
     if (cls < CLASS_ALBUMS || cls > 0xf006) {
         library_music = saved;
         return n;
@@ -5907,6 +6045,7 @@ static void qm_tracks(void *r, void *add) {
         return;
     }
     void *rows = staged_music(qm_query, r, &n);
+    if (st.qm_kind == QM_PLAYLIST) music_records(rows, 0); /* as its opened list (0xff20) */
     for (unsigned i = 0; i < deque_size(rows); ++i) {
         void *t = deque_at(rows, i);
         if (I(t, REC_TYPE) == 8) _deque_push_back(add, t);
@@ -6048,7 +6187,7 @@ static int page_closed(void *ctx, void *event) {
             st.ch = 0;
         }
     }
-    if (ctx == st.sc_page) st.sc_page = 0;
+    if (ctx == st.sc_page) st.sc_page = 0, st.sc_armed = 0;
     return 0;
 }
 
@@ -6205,7 +6344,6 @@ static int chapter_pick(void *ctx, void *event) {
         st.ch_key = listen_key(r);
         st.rs_pending = 0;
         st.rs_go_key = 0;
-#if IPOD
         st.scrub_track = st.ch_track;
         st.scrub_to = st.ch->rows[i].sec;
         st.scrub = st.scrub_moved = 1;
@@ -6213,9 +6351,6 @@ static int chapter_pick(void *ctx, void *event) {
         if (st.np_slider) widget_set_prop_int(st.np_slider, "value", st.scrub_to);
         if (st.np_elapsed) clock_text(st.np_elapsed, 0, st.scrub_to);
         scrub_end();
-#else
-        seek_position(st.ch->rows[i].sec);
-#endif
     }
     navigator_back();
     return 0;
@@ -6444,11 +6579,22 @@ int stream_cache(int spotify) {
     return 2;
 }
 
+/* Row i's caption: a cache row's size, or Erase Spotify Data's state. */
 static void sc_text(int i) {
     static const char *const sizes[] = { "512 MB", "1 GB", "2 GB", "4 GB", "8 GB" };
     char s[40];
-    tk_snprintf(s, sizeof s, "%s Cache: %s", i ? "Spotify" : "Tidal", sizes[stream_cache(i)]);
-    widget_set_text_utf8(widget_get_child(st.sc_row[i], 0), s);
+    if (i < 2)
+        tk_snprintf(s, sizeof s, "%s Cache: %s", i ? "Spotify" : "Tidal", sizes[stream_cache(i)]);
+    widget_set_text_utf8(widget_get_child(st.sc_row[i], 0),
+                         i < 2            ? s
+                         : shelf_erase(0) ? "Erasing…"
+                         : st.sc_armed    ? "Press again to erase the login and cache"
+                                          : "Erase Spotify Data");
+}
+
+/* netupdate.c's erase ended: .cache-size went with it, so Spotify's row reads 2 GB again. */
+void stream_erased(void) {
+    if (st.sc_page) sc_text(1), sc_text(2);
 }
 
 /* The services Streaming lists, each shown or hidden by a check row on its Configuration page:
@@ -6498,13 +6644,19 @@ static int svc_toggle(int i) {
 }
 
 /* A cache row steps to the next size and saves it: Tidal's applies at the next download's trim,
- * Spotify's when librespot next starts. Stop Streaming Services ends librespot and its restart
- * loop, a radio station, the card apps (addon.c) and a stock stream (Tidal's) queue, so the keys
- * and the output are local music's again; local music already stopped is left as it is. */
+ * Spotify's when librespot next starts. Erase Spotify Data wants a second press in a row, as the
+ * App Store's Remove: any other row's press or leaving the page drops the first. Stop Streaming
+ * Services ends librespot and its restart loop, a radio station, the card apps (addon.c) and a
+ * stock stream (Tidal's) queue, so the keys and the output are local music's again; local music
+ * already stopped is left as it is. */
 static int sc_click(void *ctx, void *event) {
     int i = (int)(long)ctx;
-    if (i > 3) return svc_toggle(i - 4);
-    if (i == 2) {
+    st.sc_armed = i == 2 && !st.sc_armed && !shelf_erase(0); /* erasing: says to wait */
+    if (i == 2 && !st.sc_armed) shelf_erase(1);
+    sc_text(2);
+    if (i > 4) return svc_toggle(i - 5);
+    if (i == 2) return 0;
+    if (i == 3) {
         unsigned type = (unsigned)MCL(MCL_TYPE);
         spot_stop();
         radio_stop();
@@ -6513,6 +6665,7 @@ static int sc_click(void *ctx, void *event) {
         toast("Streaming stopped");
         return 0;
     }
+    if (i == 1 && shelf_erase(0)) return toast("Wait for the one in progress"), 0; /* it rm -rfs */
     char path[48], tmp[52], s[8];
     int n = tk_snprintf(s, sizeof s, "%uM", 512u << (stream_cache(i) + 1) % 5);
     tk_snprintf(path, sizeof path, "%s/.cache-size", sc_dirs[i]);
@@ -6527,16 +6680,16 @@ static int stream_config(void *ctx, void *event) {
     if (st.sc_page || !(st.sc_page = page_open("streamconf_page", page_closed, page_keyup)))
         return 0;
     int n = SVC_FIXED + st.svc_n;
-    void *view = page_list(st.sc_page, st.sc_page, 0, "Configuration", 4 + n, 48);
-    for (int i = 0; i < 2; ++i)
+    void *view = page_list(st.sc_page, st.sc_page, 0, "Configuration", 5 + n, 48);
+    for (int i = 0; i < 3; ++i)
         st.sc_row[i] = page_row_detail(view, i, "", 0, sc_click), sc_text(i);
-    page_row_detail(view, 2, "Stop Streaming Services", 0, sc_click);
+    page_row_detail(view, 3, "Stop Streaming Services", 0, sc_click);
     /* a gap before the toggles, clear as the rows (the theme's default list_item fills) */
-    widget_use_style(list_item_create(view, 0, 3 * 48, 375, 48), "s_listitem_black");
+    widget_use_style(list_item_create(view, 0, 4 * 48, 375, 48), "s_listitem_black");
     char hide[SVC_HIDE];
     svc_hidden(hide);
     for (int i = 0; i < n; ++i) {
-        st.sc_check[i] = widget_get_child(page_row_detail(view, 4 + i, "", 0, sc_click), 0);
+        st.sc_check[i] = widget_get_child(page_row_detail(view, 5 + i, "", 0, sc_click), 0);
         list_toggle(st.sc_check[i], svc(i, 1), !svc_find(hide, i));
     }
     return 0;
@@ -6782,7 +6935,7 @@ static int rate_gone(void *win, void *event) {
     return 0;
 }
 
-/* Now Playing's heart (both builds' playing_page_init): stock's click is swapped for one that
+/* Now Playing's heart (playing_page_init): stock's click is swapped for one that
  * tells a hold from a tap, and the badge sits on the heart's top right. */
 static void rate_bind(void *win) {
     void *fav = widget_lookup(win, "img_fav", 1), *emitter = fav ? P(fav, W_EMITTER) : (void *)0;
@@ -6904,7 +7057,7 @@ static int ratings_menu(void *ctx, void *event) {
 #define ERA_DECADES 32
 #define ERA_ALBUMS                                                                                 \
     "select album,ifnull(nullif(albumsonger,''),songer)," ALBUM_YEAR                               \
-    " as release_year,fileurl from songtable "                                                     \
+    " as release_year," ALBUM_TRACK " from songtable "                                             \
     "where " MUSIC_WHERE " and ifnull(album,'')<>''" ALBUM_GROUP
 typedef struct {
     char *album, *artist, *path;
@@ -7608,9 +7761,7 @@ int ringnav_localmusic(void *win, void *ctx) {
         if (media_find(k + 1, path))
             widget_restack(
                 library_into(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k]), n++);
-#if IPOD
     widget_restack(library_into(view, "local_games", games_open, 0, "Games"), n++);
-#endif
     if (scrobble_ready())
         widget_restack(library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles"),
                        n++);
@@ -7692,7 +7843,7 @@ int ringnav_start_player(void) {
 /* systemset_about_page_init: stock's seven rows (0x4bc274), each a s_listitem_black list_item
  * holding a 335x70 s_btn_listitem button, a 166px s_scrlabel_white24l title at x 10 and a 149px
  * s_scrlabel_white20r value at x 176, both focus-only scrolling with ellipses. FW. Version (row 1)
- * reads demo's version literal, which carries the updater tag (tools/build.py VERSIONS), so it
+ * reads demo's version literal, which carries the updater tag (tools/build.py TAG), so it
  * shows the stock firmware's again; a CFW. Version row in the same widgets follows it. Its button
  * has no name, so stock's row click (atoi of the name, 0x4bc774) ignores it. */
 static void about_label(void *button, int x, int w, const char *style, const char *text) {
@@ -8159,11 +8310,11 @@ int ringnav_playlistsmore(void *win, void *ctx) {
          * re-translation keeps it (no language has the key, so it reads as given). */
         void *del = widget_lookup(win, "label_del", 1);
         if (del) widget_set_tr_text(del, "Delete Playlist");
-        /* A row like this page's stock Rename and Delete: a 375x72 (Legacy 78) list_item holding
-         * a 335x68 (Legacy 70) s_btn_listitem, its 52px icon at x 10 and its 20px label at x 72.
-         * Edit Playlist follows the Delete row at the same spacing. */
-        int h = IPOD ? 72 : 78, inner = IPOD ? 68 : 70;
-        void *item = list_item_create(win, 0, IPOD ? 154 : 216, 375, h);
+        /* A row like this page's stock Rename and Delete: a 375x72 list_item holding a 335x68
+         * s_btn_listitem, its 52px icon at x 10 and its 20px label at x 72. Edit Playlist follows
+         * the Delete row at the same spacing. */
+        int h = 72, inner = 68;
+        void *item = list_item_create(win, 0, 154, 375, h);
         widget_use_style(item, "s_listitem_black");
         void *button = button_create(item, 20, 0, 335, inner);
         widget_use_style(button, "s_btn_listitem");
@@ -8189,10 +8340,13 @@ static int qm_restore(void *page, void *event) {
 /* Now Playing's More rows, for this record: Album info (0x5283b0) fills the album query and opens
  * playerjumpinfo_page; Artist info opens artistinfo_page with {class, record}. A song played in
  * Coverflow, or with Artist albums: Coverflow, goes to the album's tracks in Coverflow instead, as
- * Go to Artist reaches its covers. */
+ * Go to Artist reaches its covers. A card app's song goes to the app's page when it offers one
+ * (addon.c addon_goto). */
 static void qm_goto(void *r, int album) {
     unsigned char *info = (unsigned char *)g_local_classinfo_save;
     void *wm = window_manager(), *page = window_manager_get_top_window(wm);
+    /* a card app's song (Qobuz's): the app's own page for its album or artist, when it says so */
+    if (addon_goto(P(r, REC_PATH), P(r, album ? REC_ALBUM : REC_ARTIST), album)) return;
     if (album && (navigator_window_is_exist("coverflow_page") || ringnav_artist_view()) &&
         coverflow_goto_album(r))
         return;
@@ -8287,6 +8441,8 @@ static int qm_run(const void *unused) {
             up_next(page_closed, page_keyup);
         } else
             navigator_to("playerqueue_page");
+    } else if (a == QA_MORE && st.qm_kind == QM_PLAYLIST) {
+        if (r) navigator_to_with_context("localmusic/playlistsmore_page", (void *)(long)st.qm_idx);
     } else if (a == QA_MORE) {
         void *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
         char click[0x30];
@@ -8466,11 +8622,13 @@ static int qm_open(const void *unused) {
     int album_hearts = aid ? rate_kept(1, aid) : 0;
     if (aid) acts[n++] = album_hearts == 5 ? QA_UNFAV : QA_FAV, acts[n++] = QA_RATE;
     if (st.qm_kind < QM_COVERFLOW || st.qm_kind == QM_PLAYING) acts[n++] = QA_PLAYLIST;
-    if ((st.qm_kind == QM_SONG || st.qm_kind == QM_PLAYING) && album && *album &&
+    /* a card app's song isn't in the Library: Go to only to the app's own page */
+    int hidden = song && !addon_goes(P(r, REC_PATH));
+    if ((st.qm_kind == QM_SONG || st.qm_kind == QM_PLAYING) && album && *album && !hidden &&
         (cls & 0xfff0) != 0xff10 && !navigator_window_is_exist("playerjumpinfo_page") &&
         !coverflow_shows_album(r))
         acts[n++] = QA_ALBUM;
-    if ((song || cls == CLASS_ALBUMS) && artist && *artist &&
+    if ((song || cls == CLASS_ALBUMS) && artist && *artist && !hidden &&
         !navigator_window_is_exist("artistinfo_page"))
         acts[n++] = QA_ARTIST;
     /* ponytail: hidden while a folder_page is open (as Go to's single-instance pages), so a folder
@@ -8484,6 +8642,7 @@ static int qm_open(const void *unused) {
         if (!group_first && st.rate_win) acts[n++] = QA_RATE;
         if (np_more()) acts[n++] = QA_MORE; /* last: Now Playing's own menu */
     }
+    if (st.qm_kind == QM_PLAYLIST) acts[n++] = QA_MORE; /* its dots' page */
     static const char *const rows[] = { "Play Next",
                                         "Add to Queue",
                                         "Shuffle",
@@ -8586,16 +8745,23 @@ static int qm_hold(void) {
         return 0;
     int cur = reconcile(&g_menu, !moving(&g_menu));
     if (cur < 0) return 0;
-    /* A playlist row's hold opens the same More page as its trailing dots. The Add to Playlist
-     * picker shares playlist_page's name; its add mode tells the two apart. */
-    if (!tk_strcmp(name, "playlist_page") && !I(PLAYLIST_ADD_MODE, 0)) {
+    /* A playlist row's hold queues its songs; More… opens the page its trailing dots do. The Add
+     * to Playlist picker shares playlist_page's name and keeps stock's hold: its add mode tells
+     * the two apart, as the showlist under it is another page's. */
+    if (!tk_strcmp(name, "playlist_page") && I(PLAYLIST_ADD_MODE, 0)) return 0;
+    if (!tk_strcmp(name, "playlist_page")) {
         /* The row's index counts Import and Export; its dots' name carries the playlist's. */
-        void *more = more_image(g_menu.at[cur]);
-        if (!key || !more) return 0;
+        void *more = more_image(g_menu.at[cur]), *lists = P(p_deque_playlist, 0);
+        unsigned at = (unsigned)atoi(more ? widget_get_prop_str(more, "name", "") + 8 : "-1");
+        void *r = lists && at < deque_size(lists) ? deque_at(lists, at) : 0;
+        if (!key || !r || !(st.qm_timer = timer_add(qm_open, (void *)0, 0))) return 0;
+        st.qm_kind = QM_PLAYLIST;
+        st.qm_cls = 0xf001; /* its songs load as a song list, as Shuffle's (play_folder) */
+        st.qm_idx = at;
+        st.qm_rows = deque_size(lists);
+        st.qm_hash = rec_hash(r);
         st.qm_press = *(unsigned long long *)((char *)key + INPUT_KEY_TIME);
         drop_input();
-        navigator_to_with_context("localmusic/playlistsmore_page",
-                                  (void *)(long)atoi(widget_get_prop_str(more, "name", "") + 8));
         return 1;
     }
     if (!coverflow) list = P(p_deque_showlist, 0);
@@ -8847,21 +9013,28 @@ static void resume_poll(void) {
     else
         st.ch_key = 0;
     /* A listen: half the track or LISTEN_MAX_S heard, seeks and pauses aside; a repeat starts over.
-     */
+     * It scrobbles then too, or with [SCROBBLE] PERCENT once that share of it is heard (of all but
+     * its last 2 s, which a poll a second apart may not see). */
     if (!st.rs_pending && !st.rs_spoken) {
         unsigned lk = listen_key(r);
         if (lk != st.ls_key || (sec < 2 && st.ls_sec > LISTEN_MIN_S)) {
             st.ls_key = lk;
             st.ls_sec = sec;
-            st.ls_heard = st.ls_done = 0;
+            st.ls_heard = st.ls_done = st.ls_sent = 0;
+            int pct = scrobble_value("PERCENT");
+            st.ls_pct = pct >= 1 && pct <= 100 ? pct : 0;
         }
         int d = sec - st.ls_sec;
         if (d > 0 && d <= 2) st.ls_heard += d;
         st.ls_sec = sec;
-        if (!st.ls_done && total > LISTEN_MIN_S &&
-            st.ls_heard >= (total / 2 < LISTEN_MAX_S ? total / 2 : LISTEN_MAX_S)) {
+        int listen = total / 2 < LISTEN_MAX_S ? total / 2 : LISTEN_MAX_S;
+        if (!st.ls_done && total > LISTEN_MIN_S && st.ls_heard >= listen) {
             st.ls_done = 1;
             play_count(r, lk);
+        }
+        if (!st.ls_sent && total > LISTEN_MIN_S &&
+            st.ls_heard >= (st.ls_pct ? (total - 2) * st.ls_pct / 100 : listen)) {
+            st.ls_sent = 1;
             scrobble(r, total, st.ls_heard);
         }
     }
@@ -9089,6 +9262,7 @@ static void *logo_sync(void *unused) {
             b = 0; /* landscape: ffmpeg turns it a quarter clockwise (coverflow.c's ff_thumb) */
         int status, pid = fork();
         if (!pid) {
+            child_oom_first();
             execl("/usr/bin/ffmpeg", "/usr/bin/ffmpeg", "-nostdin", "-v", "quiet", "-i", LOGO_SRC,
                   "-vf", "transpose=1", "-pix_fmt", "yuvj444p", "-q:v", "2", "-f", "mjpeg", "-y",
                   LOGO_ROT, (char *)0);
@@ -9147,7 +9321,6 @@ static void power_poll(void) {
     logo_poll();
 }
 
-#if IPOD
 /* Home's Rockbox row (docs/boot.md#rockbox-from-home), bound by coverflow_home: a click leaves
  * Q2 Pod for Rockbox. demo cannot start it itself: Rockbox needs the screen, the keys and ALSA. So
  * demo leaves S90play's flag and ends; S90play sees it, runs Rockbox and starts demo again when
@@ -9179,28 +9352,21 @@ int rockbox_open(void *ctx, void *event) {
     system("killall checkappprocess.sh; killall -9 hciplayer; " SPOT_KILL "; sync; kill -9 $PPID");
     return 0;
 }
-#endif
 
-#if IPOD
 /* Now Playing on top. */
 static int now_playing(void) {
     void *top = window_manager_get_top_window(window_manager());
     return top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "playing_page");
 }
-#endif
 
 /* Now Playing's visualizer repainting, its album marquee moving or its lyrics gliding: their 40 and
  * 50 ms timers and the glide's steps would run late on an idle pass. Its progress and the lyrics'
  * follow tick every 250 ms and keep up. A game's 33 ms frame timer too: Vortex's raw wheel posts no
  * input to stamp. */
 static int np_animating(void) {
-#if IPOD
     return games_live() ||
            (now_playing() && (visualizer_live() || st.lyric_glide ||
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
-#else
-    return 0;
-#endif
 }
 
 /* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level. */
@@ -9313,8 +9479,8 @@ static void bt_volume_poll(void) {
     *(volatile signed char *)0xa38c41u = (signed char)v; /* stock responseSetVolume's level */
     device_set_volume(v, 1);
     write_int_config(v, "PLAYSET", "VOLUME");
-    void *top = window_manager_get_top_window(window_manager());
-    if (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) {
+    void *top = vol_top();
+    if (top) {
         void *slider = widget_lookup(top, "slider_vol", 1);
         if (slider) widget_set_prop_int(slider, "value", v);
     }
@@ -9371,16 +9537,12 @@ int ringnav_sleep(void *loop) {
     resume_poll();
     scrobble_auto();
     power_poll();
-#if IPOD
     lyric_poll();
     keep_lit_poll();
-    if (st.bc_drop) { /* once: a destroy before this pass cleared it */
-        void *drop = st.bc_drop;
-        st.bc_drop = (void *)0;
-        window_close(drop);
-    }
+    np_art_poll();
+    if (st.np_slide && widget_get_prop_int(st.np_slide, "value", 0)) /* off the art page */
+        *(volatile signed char *)BC_IDLE = BC_IDLE_FULL;
     if (st.bc[0] && np_track() != st.bc_track) bc_show();
-#endif
     if (!g_backlight_status) {
         st.dark |= 1;
         int quiet = I(g_dacoff_time, 0) < 0 && !media_playing() && !video_on() &&
@@ -9393,9 +9555,7 @@ int ringnav_sleep(void *loop) {
         wheel_guard_reset();
         if (st.dark & 2) st.woke_at = (unsigned)time_now_ms();
         st.dark = 0;
-#if IPOD
         if (st.clock_timer) clock_show(); /* a time set while dark */
-#endif
         widget_invalidate_force(window_manager(), (void *)0);
     } else if (time_now_ms() - st.last_input >= IDLE_MS &&
                !window_manager_is_animating(window_manager()) && !np_animating())
@@ -9616,6 +9776,8 @@ int ringnav_wm_paint(void *wm) {
  * (system("cmd_mcu write_str buzzer") when g_keytone_flag is set). Silent while headphones (either
  * jack) or a Bluetooth or USB output listen, since the buzzer is the device's own speaker;
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
+ * Click With Headphones (IPOD KEYTONEHP, off) keeps the buzzer clicking there too, as stock does;
+ * Key Tone off is still silent.
  * The command waits out the buzzer and the MCU's park (tools/mcu_pwm_clock.c), so it runs on a
  * worker, not the UI thread; a click while one sounds is dropped, as the buzzer is busy anyway.
  */
@@ -9626,7 +9788,8 @@ static void *tone_worker(void *on) {
     return 0;
 }
 int ringnav_buzzer(int on) {
-    if (g_po_status || g_bal_status || mclGetOutputWay() || !g_keytone_flag || tone_busy) return 0;
+    int listening = g_po_status || g_bal_status || mclGetOutputWay();
+    if ((listening && (accent(), !st.keytone_hp)) || !g_keytone_flag || tone_busy) return 0;
     unsigned long tid;
     tone_busy = 1;
     if (pthread_create(&tid, 0, tone_worker, (void *)(long)on))
@@ -9647,7 +9810,6 @@ int ringnav_keydown(void *ctx, void *event) {
     if (ple_key(key, 1)) return STOP;
     void *top = window_manager_get_top_window(window_manager());
     if (quick_stuck(top)) return STOP; /* the release closes it (ringnav) */
-#if IPOD
     unsigned char tone = g_keytone_flag;
     void *row = (void *)0;
     entries_t s = { &row, 0, 1, 4096 };
@@ -9659,11 +9821,8 @@ int ringnav_keydown(void *ctx, void *event) {
         if (s.n) st.tone_key = key;
     }
     if (st.tone_key) g_keytone_flag = 0;
-#endif
     int result = stock_keydown_trampoline(ctx, event);
-#if IPOD
     if (st.tone_key) g_keytone_flag = tone;
-#endif
     /* Coverflow moves on release; stop the press before it navigates the focused list below. */
     if (!result && (key == KEY_PREV || key == KEY_NEXT) && top &&
         !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page"))
@@ -9836,9 +9995,7 @@ static int replay_wheel(const void *info) {
     int dir = st.held > 0 ? 1 : -1;
     unsigned key = dir > 0 ? KEY_NEXT : KEY_PREV;
     st.held_event[EVENT_KEY / 4] = key;
-#if IPOD
     st.tone_key = key; /* clicks on its row change, as a live tick whose press was silenced */
-#endif
     ringnav(st.held_ctx, st.held_event); /* held again: hold_wheel counts it back in */
     st.held -= dir;
     if (st.held) return 8; /* RET_REPEAT */
@@ -9872,11 +10029,9 @@ int ringnav(void *ctx, void *event) {
     }
     unsigned key = (unsigned)I(event, EVENT_KEY);
     if (ple_key(key, 2)) return STOP;
-#if IPOD
     /* This release's press was silenced by ringnav_keydown: a row change below clicks instead. */
     int owned = st.tone_key == key;
     st.tone_key = 0;
-#endif
     if ((key == KEY_PREV || key == KEY_NEXT) &&
         *(volatile signed char *)KEY_LOCKOUT <= 8 - LOCKOUT_KEEP)
         *(volatile unsigned char *)KEY_LOCKOUT = 0;
@@ -9890,11 +10045,8 @@ int ringnav(void *ctx, void *event) {
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
     /* The rating picker's keys, before the page's own (its Return would leave it) */
     if (usable() && rate_key(window_manager_get_top_window(window_manager()), key)) return STOP;
-#if IPOD
     /* A game's keys, before stock's lock filter, media keys and screen-off double Centre */
     if (usable() && games_key(window_manager_get_top_window(window_manager()), key)) return STOP;
-#endif
-#if IPOD
     /* Return or Centre closes quick settings, as its swipe up does (dialog_quit); stock leaves
      * Return to its Home button and Centre to turning the screen off. A held Return's release
      * goes to the stock filter, which consumes its latch (a hold may go Home from here). */
@@ -9907,7 +10059,6 @@ int ringnav(void *ctx, void *event) {
             return STOP;
         }
     }
-#endif
     if (search_key(key)) return STOP;
     int result = usb_prompt() ? 0 : stock_keyup_trampoline(ctx, event);
     if (key == KEY_PLAY && hold_released()) return STOP;
@@ -9924,22 +10075,27 @@ int ringnav(void *ctx, void *event) {
         if (key == KEY_CENTER || !usable()) drop_spin();
         return result;
     }
-#if IPOD
     if (key == KEY_RETURN && st.scrub) { /* ends the scrub without leaving the page */
         np_cancel();
         if (window_manager_get_top_window(window_manager()) == st.np_win) return STOP;
+    }
+    /* Full-screen lyrics: Return goes back to the column first, as a tap does */
+    if (key == KEY_RETURN && st.np_full &&
+        window_manager_get_top_window(window_manager()) == st.np_win) {
+        np_full(0);
+        return STOP;
     }
     /* Home's Settings list goes back to Home's list (coverflow_home_back). */
     if (key == KEY_RETURN && coverflow_home_back(window_manager_get_top_window(window_manager())))
         return STOP;
     /* Return on Home's main list selects Now Playing (its first row); on that row it opens Now
-     * Playing with the current queue untouched. */
+     * Playing with the current queue untouched. The carousel keeps stock's Return. */
     if (key == KEY_RETURN && usable()) {
         void *wm = window_manager(), *top = window_manager_get_top_window(wm);
         void *w = home_menu(top) && !window_manager_is_animating(wm)
                       ? surface_under(top, (void *)0, (void *)0, 1)
                       : (void *)0;
-        if (w && load(&g_menu, w, 1) && g_menu.n) {
+        if (w && load(&g_menu, w, 1) && g_menu.n && g_menu.kind != 3) {
             st.touch_mode = 0;
             if (widget_get_prop_int(w, SEL, -1) != 0) {
                 select(&g_menu, 0);
@@ -9957,9 +10113,6 @@ int ringnav(void *ctx, void *event) {
         rearm(&st.untouch_timer, untouch, 0);
         if (!st.untouch_timer) st.touch_mode = 0;
     }
-#else
-    if (key == KEY_RETURN) st.touch_mode = 0; /* Back by button: the page behind shows its row. */
-#endif
     if (key != KEY_CENTER && key != KEY_PREV && key != KEY_NEXT) return result;
     if (key == KEY_CENTER) {
         drop_spin();
@@ -9993,15 +10146,15 @@ int ringnav(void *ctx, void *event) {
         return STOP;
     }
 
-#if IPOD
-    if (top != st.np_win || window_manager_is_animating(wm) ||
-        window_manager_get_pointer_pressed(wm))
+    /* Outside a scrub the volume's band over Now Playing leaves the keys the page's: Centre's
+     * presses as on it, the wheel the volume's, and a pending press survives the ticks */
+    int np = top == st.np_win || (!st.scrub && vol_band(wm));
+    if (!np || window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm))
         np_cancel();
     else if (key != KEY_CENTER && np_lyrics(key))
         return STOP;
     else if (key == KEY_CENTER || st.scrub)
-        return np_key(top, key);
-#endif
+        return np_key(st.np_win, key);
     if (!allowed_top(top) && !usb_prompt()) {
         drop_input();
         return result;
@@ -10080,7 +10233,7 @@ int ringnav(void *ctx, void *event) {
         return STOP;
     }
     /* Every accepted tick times the run and takes its place in it, short lists included. */
-    int list = IPOD && g_menu.n; /* iPod row lists: the gentler ramp */
+    int list = g_menu.n; /* row lists: the gentler ramp */
     int step = ramp(top, g_menu.w, g_menu.scope, g_menu.ctx, dir, now,
                     list ? LIST_FIRST_MS : WHEEL_RAMP_MS, list ? LIST_RAMP_MS : WHEEL_RAMP_MS);
     if (g_menu.rows <= SHORT_LIST_MAX) {
@@ -10095,14 +10248,12 @@ int ringnav(void *ctx, void *event) {
             slide_menu_scroll_to_prev(w);
     } else if (g_menu.n) {
         int id = widget_get_prop_int(w, SEL, -1);
-#if IPOD
         if (step > 1) rearm(&st.letter_timer, letter_expire, LETTER_MS);
-#endif
         int next = clamp_step(id < 0 ? (cur >= 0 ? g_menu.id[cur] : 0) : id, g_menu.rows - 1,
                               id < 0 ? 0 : dir * step);
         if (next == 0 || next == g_menu.rows - 1) drop_wheel();
         if (next == id) {
-            int home = IPOD && home_menu(top) && g_menu.rows >= 2;
+            int home = home_menu(top) && g_menu.rows >= 2;
             if (!(home || ring_list(&g_menu)) || id < 0) {
                 stop_scroll(&g_menu);
                 widget_invalidate_force(w, (void *)0); /* a wheel wake still clears touch hiding */
@@ -10126,9 +10277,7 @@ int ringnav(void *ctx, void *event) {
         select(&g_menu, next);
         /* Stop momentum even when the selected row already fits the viewport. */
         reveal(&g_menu, next, 1);
-#if IPOD
         if (owned && id >= 0) buzzeer_switch(1); /* one click per row change, however far */
-#endif
     } else {
         int top = view_top(&g_menu);
         int next = clamp_step(top, max_top(&g_menu), dir * RING_STEP * step);

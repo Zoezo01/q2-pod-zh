@@ -17,7 +17,7 @@ python3 test/pwm_build.py /path/to/stockfs /tmp/q2-pwm
 ```
 
 LLVM 18 and Unicorn 2.1 with the virtual TLB interface are used for these checks.
-Add `--ipod` for the iPod UI. The rotator experiment is separately selectable.
+The rotator experiment is separately selectable.
 The package manifest records the policy, three input/output hashes and MCU layout.
 
 ## Why three files?
@@ -162,7 +162,7 @@ Loaded build IDs: PWM `2bbd27190cbc686e8c9bdfd9f5d313f7ba432dff`, MCU
 `52fc5972890555516ceeeb244b233f9a3daf5a14`.
 
 The final combined iPod payload passed 1,837 MIPS execution scenarios. Packaging
-checks passed for both experimental editions and an unchanged default build;
+checks passed for the experimental build and an unchanged default build;
 the shared loader also passed the existing 84 rotator cases and two delay-slot
 controls. No electrical power
 or battery-runtime improvement has been measured, and these checks do not cover

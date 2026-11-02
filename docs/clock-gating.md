@@ -145,7 +145,7 @@ The snapshots therefore establish software clock ownership, not a direct physica
 gate measurement. No system-power or battery-runtime measurement was made.
 
 Final software checks: 84 module cases plus 2 branch-delay controls; 1,837 iPod
-payload scenarios; opt-in/default module packaging for both editions; Legacy asset
+payload scenarios; opt-in/default module packaging; asset
 validation; two byte-identical default packages. The iPod asset suite still flags
 `scrsaver_playcover.png` corner alpha: that exact image is byte-identical to the
 upstream baseline, so it is an existing unrelated failure.

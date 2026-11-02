@@ -47,6 +47,16 @@ static const struct {
     { "q2-librespot", "spotify", ".spotify", "'.spotify/cache/*' .spotify/.cache-size",
       ".spotify/librespot" },
 };
+/* The firmware's own card folders, never a card app's: a remove deletes .<id> whole. */
+static const char *const reserved[] = { "books", "coverflow", "downpic", "photos", "q2", "sldp",
+                                        "tidal" };
+
+/* Whether id is a special[] app's, which a remove never deletes whole. */
+static int special_id(const char *id) {
+    for (unsigned k = 0; k < sizeof special / sizeof *special; ++k)
+        if (!strcmp(special[k].id, id)) return 1;
+    return 0;
+}
 
 /* Whether s's n bytes are all a-z0-9- (kind 0, an id), or A-Z too (1, an owner), or ._ too (2). */
 static int only(const char *s, unsigned n, int kind) {
@@ -97,6 +107,8 @@ int shelf_sources(const char *text, shelf_app *out, int max) {
         }
         if (!*a.id) {
             if (in > 15 || !only(id, in, 0)) continue;
+            for (unsigned k = 0; k < sizeof reserved / sizeof *reserved; ++k)
+                bad |= strlen(reserved[k]) == in && !memcmp(reserved[k], id, in);
             memcpy(a.id, id, in);
             snprintf(a.dir, sizeof a.dir, ".%s", a.id);
             snprintf(a.bin, sizeof a.bin, ".%s/q2-%s", a.id, a.id);
@@ -261,7 +273,8 @@ int shelf_place(int i) {
 }
 
 /* Remove: app i's listed files, but those another app lists too (two fonts are both Rockbox's and
- * the themes'), then the folders that left empty, up to and with its own; then its list and tag. */
+ * the themes'), then the folders that left empty, up to and with its own; then its list and tag.
+ * A card app's folder goes whole, with what the app saved there (a login among it). */
 void shelf_remove(int i) {
     char path[512];
     unsigned n = 0, m[SH_MAX] = { 0 };
@@ -286,6 +299,12 @@ void shelf_remove(int i) {
     }
     free(list);
     for (int j = 0; j < shelf_n; ++j) free(other[j]);
+    /* dir is shelf_sources' checked ".<id>". ponytail: addon_quit waits AWAY_MS (3 s), so an app
+     * still saving on its TERM past that can write files back; wait on its pid file if one does. */
+    if (!special_id(apps[i].id)) {
+        snprintf(path, sizeof path, "rm -rf '" CARD "/%s'", apps[i].dir);
+        system(path);
+    }
     app_file(path, sizeof path, i, ".files");
     unlink(path);
     app_file(path, sizeof path, i, ".tag");
@@ -297,11 +316,7 @@ void shelf_remove(int i) {
 #include "stock.h"
 
 #define NU_REPO "https://github.com/" Q2POD_REPO "/releases/latest" /* tools/build.py --update-repo */
-#if IPOD /* tools/release.py ASSETS */
 #define NU_ASSET "update.tar"
-#else
-#define NU_ASSET "update-legacy.tar"
-#endif
 #define NU_FILE "/mnt/mmc/update.tar"
 #define NU_CA "/etc/scrobble-ca.pem" /* scrobble.c's; github.com's and its asset host's roots */
 
@@ -480,8 +495,8 @@ int ringnav_fwupdate(void *win, void *ctx) {
 
 /* The Apps page (System settings): a row per app in sources.list, its state as the row's detail.
  * One job at a time on one thread: the page's opening check (the list, then the latest tags), an
- * install, a remove or Spotify's erase. Leaving the page leaves it running; its progress shows when
- * the page opens again. */
+ * install, a remove or Spotify's erase (Streaming → Configuration's, shelf_erase). Leaving the page
+ * leaves it running; its progress shows when the page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
@@ -489,16 +504,16 @@ int ringnav_fwupdate(void *win, void *ctx) {
 #define SH_STALE_MS (10 * 60 * 1000ull)
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
-enum { ROW_ERASE = SH_MAX, ROW_NONE }; /* map's rows that are no app: Erase, and no list yet */
+enum { ROW_NONE = SH_MAX }; /* map's row that is no app: no list yet */
 
 static struct {
     unsigned long thread;
     volatile int running, cancel, percent, stage, result; /* cancel, percent: progress()'s pair */
-    int job, app, armed, rows, n, map[SH_MAX + 1];        /* map: a row's app or ROW_ */
+    int job, app, armed, rows, n, map[SH_MAX];            /* map: a row's app or ROW_NONE */
     unsigned need;                                        /* SH_SPACE's MB */
     unsigned long long checked;                           /* now_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
-    void *page, *row[SH_MAX + 1];
+    void *page, *row[SH_MAX];
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -662,10 +677,6 @@ static void sh_text(int r) {
     const char *t = s;
     if (i == ROW_NONE)
         t = sh.job == JOB_CHECK ? "Loading…" : "Connect to Wi-Fi to load the list";
-    else if (i == ROW_ERASE && sh.job == JOB_ERASE)
-        t = "Erasing…";
-    else if (i == ROW_ERASE)
-        t = armed ? "Press again to erase the login and cache" : "Login and cache";
     else if (busy && sh.cancel)
         t = "Cancelling…";
     else if (busy && sh.stage == 1 && sh.percent)
@@ -703,15 +714,15 @@ static int sh_wait(const void *unused) {
     sh.job = 0;
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
-    if (job != JOB_CHECK && is(i, "spotify")) spot_stop(); /* spotify.c forgets the old one */
+    if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
+        spot_stop(); /* spotify.c forgets the old one */
     sh_rows();
     if (job == JOB_INSTALL && r == SH_SPACE)
         snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
     else if (job == JOB_INSTALL && r)
         toast(said[r]);
     else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast(IPOD ? "Rockbox is ready. Find it on Home"
-                   : "Rockbox is ready. It starts at power-on");
+        toast("Rockbox is ready. Find it on Home");
     else if (job == JOB_INSTALL && is(i, "themes"))
         toast("Rockbox Themes are ready in Rockbox's Theme Settings");
     else if (job == JOB_INSTALL)
@@ -719,14 +730,14 @@ static int sh_wait(const void *unused) {
     else if (job == JOB_REMOVE)
         snprintf(s, sizeof s, "%s removed", apps[i].name), toast(s);
     else if (job == JOB_ERASE)
-        toast("Spotify's login and cache erased");
+        stream_erased(), toast("Spotify's login and cache erased"); /* rows first: toast blocks */
     return 0;
 }
 
 static void sh_start(int job, int i) {
-    if (is(i, "spotify") && job != JOB_CHECK)
+    if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
         spot_stop(); /* on this thread: spotify.c's state too */
-    if (job != JOB_CHECK) addon_forget(apps[i].dir);
+    if (job == JOB_INSTALL || job == JOB_REMOVE) addon_forget(apps[i].dir);
     sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = 0, sh.running = 1;
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
@@ -736,8 +747,8 @@ static void sh_start(int job, int i) {
         timer_add(sh_wait, (void *)0, 500);
 }
 
-/* Install and Update at once; Installed's Remove, Rockbox's first Install (it becomes the power-on
- * default) and Erase on a second press of the same row. Pressed again, the running install cancels.
+/* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
+ * power-on default) on a second press of the same row. Pressed again, the running install cancels.
  * With no list yet, the one row loads it. */
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
@@ -752,12 +763,11 @@ static int sh_click(void *ctx, void *event) {
             sh.cancel = 1; /* not once moving */
         else if (sh.job != JOB_INSTALL || sh.app != i)
             toast("Wait for the one in progress");
-    } else if (i != ROW_NONE && (i == ROW_ERASE || sh_state(i) == ST_INSTALLED)) {
+    } else if (i != ROW_NONE && sh_state(i) == ST_INSTALLED) {
         if (!armed)
             sh.armed = r + 1;
         else
-            sh_start(i == ROW_ERASE ? JOB_ERASE : JOB_REMOVE,
-                     i == ROW_ERASE ? sh_find("spotify") : i);
+            sh_start(JOB_REMOVE, i);
     } else if (get_wifisignal() <= 0)
         toast("Connect to Wi-Fi first");
     else if (i == ROW_NONE)
@@ -777,30 +787,36 @@ static int sh_closed(void *ctx, void *event) {
     return 0;
 }
 
-/* The rows, in the list's order: Rockbox Themes only with Rockbox on the card, Erase after Spotify
- * only with a .spotify folder, one to load the list while there is none; built again when a job
- * ends changes which. */
+/* The rows, in the list's order: Rockbox Themes only with Rockbox on the card, one to load the list
+ * while there is none; built again when a job ends changes which. */
 static void sh_rows(void) {
-    int map[SH_MAX + 1] = { 0 }, n = 0;
-    for (int i = 0; i < shelf_n; ++i) {
-        if (is(i, "themes") && !rockbox_available()) continue;
-        map[n++] = i;
-        if (is(i, "spotify") && file_mode(SPOT_DIR) == 0040000) map[n++] = ROW_ERASE;
-    }
+    int map[SH_MAX] = { 0 }, n = 0;
+    for (int i = 0; i < shelf_n; ++i)
+        if (!is(i, "themes") || rockbox_available()) map[n++] = i;
     if (!n) map[n++] = ROW_NONE;
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
         void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
         for (int r = 0; r < n; ++r)
-            sh.row[r] = page_row_detail(view, r,
-                                        map[r] == ROW_ERASE  ? "Erase Spotify Data"
-                                        : map[r] == ROW_NONE ? "App list"
-                                                             : apps[map[r]].name,
+            sh.row[r] = page_row_detail(view, r, map[r] == ROW_NONE ? "App list" : apps[map[r]].name,
                                         "", sh_click);
         sh.rows = n;
     }
     sh_refresh();
+}
+
+/* Streaming → Configuration's Erase Spotify Data (navigation.c): with start, Spotify's login and
+ * cache erased on this thread, unless a job is running (a check stops, as an App Store row's press
+ * stops it, so the next press acts); whether an erase is running. */
+int shelf_erase(int start) {
+    if (start && sh.job == JOB_CHECK)
+        sh.cancel = 1, toast("Stopped checking for updates");
+    else if (start && sh.job)
+        toast("Wait for the one in progress");
+    else if (start)
+        sh_start(JOB_ERASE, -1);
+    return sh.job == JOB_ERASE;
 }
 
 /* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
@@ -808,7 +824,7 @@ static void sh_rows(void) {
  * API requests an hour. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
-    if (!sh.job && !shelf_n) {
+    if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
         unsigned n = 0;
         char *list = read_all(SH_LIST, 1u << 16, &n);
         shelf_n = shelf_sources(list, apps, SH_MAX);

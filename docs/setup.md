@@ -4,7 +4,7 @@ For a brand new Q2. You need the Q2, its microSD card, a USB-C cable and a compu
 
 ## 1. Install Q2 Pod
 
-1. Download the latest `update.tar` here: https://github.com/DiamondBond/q2-pod/releases/latest (`update-legacy.tar` is the same firmware without the iPod UI; rename `update-legacy.tar` to `update.tar` before you copy it to the card).
+1. Download the latest `update.tar` here: https://github.com/DiamondBond/q2-pod/releases/latest.
 2. Copy `update.tar` onto the card (the main folder, not inside a folder). Eject the card and unplug the Q2.
 3. Put the card in the Q2 and turn it on.
 4. On the Q2: **System settings → System Update → TF card update**. Leave the card in until the Q2 restarts. Do not unplug it while it updates.

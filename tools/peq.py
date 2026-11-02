@@ -29,6 +29,9 @@ EQ_DESC, EQ_OPEN_SLOT = 0x893df8, 0x893e0c
 # lavcresample's descriptor open slot (af_info at 0x8a4540; stock open 0x4ac2c0), which becomes rs_open: the
 # resampler Bluetooth's 48 kHz output appends keeps its state across a gapless change (docs/internals.md).
 RS_OPEN_SLOT, RS_OPEN = 0x8a4554, 0x4ac2c0
+# ao_alsa's descriptor init slot (0x88f758; stock init 0x438988), which becomes ao_init: on a USB DAC the same
+# request asks for the rate and format it negotiated last time, so a gapless change keeps the PCM open.
+AO_INIT_SLOT, AO_INIT = 0x88f760, 0x438988
 # Stock skips the equalizer above 48 kHz (address, stock word, patched word); see docs/internals.md.
 EQ_RATE_GATES = ((0x42ced0, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
                  (0x42fd84, 0x1440003b, 0x1000003b))   # bnez $v0 to the insert -> b
@@ -47,6 +50,11 @@ MQA_GATE = ((0x42f8b0, 0x34620040, 0x3c0200b1),   # ori $v0, $v1, 0x40    -> lui
 MQA_PROBE = ((0x42eaf4, 0x3c020002, 0x3c020030),  # lui $v0, 0x2           -> lui $v0, 0x30
              (0x42eaf8, 0x38630002, 0x3963000f),  # xori $v1, $v1, 2       -> xori $v1, $t3, 15
              (0x42eafc, 0x00e3100b, 0x00621006))  # movn $v0, $a3, $v1     -> srlv $v0, $v0, $v1
+# ao_alsa's init (0x438988) asks for a 500 ms buffer (0x438a3c) but cuts it to 100 ms on output way 2, a USB
+# DAC: two branch delay slots store 100000 us and become nops, so USB keeps 500 ms.
+# ponytail: where hciplayer scales a USB DAC's volume itself, a change now lags up to 500 ms, not 100 ms.
+USB_BUFFER = ((0x43977c, 0xafc2017c, 0),  # sw $v0, 0x17c($fp)  -> nop  (hw:2,0)
+              (0x439a60, 0xafc3017c, 0))  # sw $v1, 0x17c($fp)  -> nop  (hw:1,0)
 LIBC = {
     'memset': ('void *', 'void *, int, unsigned'),
     'memcpy': ('void *', 'void *, const void *, unsigned'),
@@ -55,6 +63,7 @@ LIBC = {
     'strlen': ('unsigned', 'const char *'),
     'fputs': ('int', 'const char *, void *'),
     'calloc': ('void *', 'unsigned, unsigned'),
+    'realloc': ('void *', 'void *, unsigned'),  # addon.c got: a kept reply to its size
     'free': ('void', 'void *'),
     'memmove': ('void *', 'void *, const void *, unsigned'),
     'pow': ('double', 'double, double'), 'cos': ('double', 'double'),
@@ -81,6 +90,7 @@ LIBC = {
     'deque_assign': ('void', 'void *, const void *'), 'deque_clear': ('void', 'void *'),
     'deque_pop_back': ('void', 'void *'),
     'deque_destroy': ('void', 'void *'), 'send': ('int', 'int, const void *, unsigned, int'),
+    'accept': ('int', 'int, void *, unsigned *'),  # MQA's saved mode before publishing the player socket
     # Coverflow's art thread (coverflow.c)
     'pthread_create': ('int', 'unsigned long *, const void *, void *(*)(void *), void *'),
     'pthread_join': ('int', 'unsigned long, void **'), 'pthread_self': ('unsigned long', 'void'), 'pthread_detach': ('int', 'unsigned long'), 'pthread_mutex_lock': ('int', 'void *'),
@@ -97,6 +107,7 @@ LIBC = {
     'localtime_r': ('const int *', 'const long *, int *'), 'tzset': ('void', 'void'),
     # Scrobble upload (scrobble.c): demo's libcurl and libcrypto
     'fseek': ('int', 'void *, long, int'), 'ftell': ('long', 'void *'), 'atoi': ('int', 'const char *'),
+    'strtol': ('long', 'const char *, char **, int'),  # addon.c progress_row
     'strstr': ('char *', 'const char *, const char *'),
     'curl_easy_init': ('void *', 'void'), 'curl_easy_setopt': ('int', 'void *, int, ...'),
     'curl_easy_perform': ('int', 'void *'), 'curl_easy_getinfo': ('int', 'void *, int, ...'),
@@ -127,7 +138,7 @@ LIBC = {
     'write': ('int', 'int, const void *, unsigned'),
 }
 
-def compile_common(out, binary, player=False, ipod=False, flac_experiments=()):
+def compile_common(out, binary, player=False, flac_experiments=()):
     got = {}
     for line in run('readelf', '-AW', binary).splitlines():
         words = line.split()
@@ -184,10 +195,10 @@ def compile_common(out, binary, player=False, ipod=False, flac_experiments=()):
                 'mp3_filter_entry:', 'move $a2, $fp', 'j mp3_filter', 'nop']
     (out/'peq_platform.h').write_text('\n'.join(header)+'\n')
     (out/'peq_imports.S').write_text('\n'.join(asm)+'\n')
-    flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections', f'-DIPOD={int(ipod)}']
+    flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)
@@ -213,7 +224,7 @@ def patch_player(raw, out, flac_experiments=()):
     run('ld.lld', '-m', 'elf32ltsmip', '--gc-sections', '-T', script, '-e', 'peq_open', '--undefined=mp3_seek', '--undefined=id3_gain',
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
-        '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open',
+        '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init',
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -230,8 +241,11 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, patched, 'Equalizer rate gate')
     for address, stock, patched in (*MQA_GATE, *MQA_PROBE):
         patch_word(data, address, stock, patched, 'MQA side chain')
+    for address, stock, patched in USB_BUFFER:
+        patch_word(data, address, stock, patched, 'USB DAC buffer')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
+    patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'USB DAC init slot')
     patch_word(data, MP3_ALLOC, jal(0xadaf00), jal(ps['mp3_private_alloc']), 'MP3 gapless private state')
     patch_word(data, MP3_FILTER, jal(0x44d350), jal(ps['mp3_filter_entry']), 'MP3 gapless PCM')
     patch_word(data, MP3_CLOSE, 0x48b7e4, ps['mp3_close'], 'MP3 gapless cleanup')

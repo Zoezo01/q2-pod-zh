@@ -31,30 +31,24 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             raise AssertionError('Packaged uncommitted build inputs')
     assert not out.exists()
-    # Fail the second variant, so the first one's build succeeds before the failure.
-    def fail_stock(stock, directory, logo, ipod=False):
-        if not ipod:
-            raise ValueError('simulated stock build failure')
+    # Fail the repeat build, so the first one succeeds before the failure.
+    def fail_repeat(stock, directory, logo):
+        if directory.name.endswith('-repeat'):
+            raise ValueError('simulated repeat build failure')
         directory.mkdir()
-        (directory/'update.tar').write_bytes(b'stock')
+        (directory/'update.tar').write_bytes(b'pod')
         (directory/'manifest.json').write_text('{}')
-    with patch('release.build', side_effect=fail_stock), patch('release.validate'), patch('release.run', side_effect=lambda *a: '' if 'status' in a else 'revision'):
+    with patch('release.build', side_effect=fail_repeat), patch('release.validate'), patch('release.run', side_effect=lambda *a: '' if 'status' in a else 'revision'):
         try:
             release.package(pathlib.Path('stock.zip'), out)
         except ValueError as e:
-            assert 'stock build failure' in str(e)
+            assert 'repeat build failure' in str(e)
         else:
-            raise AssertionError('Accepted a failed variant')
+            raise AssertionError('Accepted a failed build')
     assert not (out/'release.json').exists()
-    assets = {}
-    for variant, name in release.ASSETS.items():
-        d = out/variant
-        d.mkdir(exist_ok=True)
-        (d/'update.tar').write_bytes(variant.encode())
-        (d/'manifest.json').write_text(json.dumps(dict(
-            variant=variant, version=release.VERSIONS[variant], update_sha256=release.sha(variant.encode()))))
-        (out/name).write_bytes(variant.encode())
-        assets[name] = release.sha(variant.encode())
+    (out/'build/manifest.json').write_text(json.dumps(dict(version=release.TAG, update_sha256=release.sha(b'pod'))))
+    (out/release.ASSET).write_bytes(b'pod')
+    assets = {release.ASSET: release.sha(b'pod')}
     (out/release.GUIDE).write_bytes(b'%PDF')
     record = dict(tag=release.VERSION, revision='revision', source_sha256=release.source_sha256(), assets=assets,
                   guide_sha256=release.sha(b'%PDF'))
@@ -62,7 +56,7 @@ with tempfile.TemporaryDirectory() as tmp:
     (out/'release-notes.md').write_text(release.release_body(out, record))
     # The heading, then bullets, for this version only.
     body = (out/'release-notes.md').read_text()
-    assert body.startswith(f'**{release.VERSION}**\n- One.\n- iPod: two.\n\nSHA-256:\n- update.tar ({release.VERSIONS["ipod"]}): ')
+    assert body.startswith(f'**{release.VERSION}**\n- One.\n- iPod: two.\n\nSHA-256:\n- update.tar ({release.TAG}): ')
     # A nested entry keeps its bullets as written, one level out, up to the next version.
     changelog = pathlib.Path(tmp)/'docs/changelog.md'
     single = changelog.read_text()
@@ -93,20 +87,19 @@ with tempfile.TemporaryDirectory() as tmp:
         assert any('--draft=false' in c for c in calls) == (failure is None)
         # Network Update's fixed names and the guide, no ZIPs.
         sent = {pathlib.Path(a).name for c in calls if c[4] == 'upload' for a in c[6:]}
-        assert failure == 'upload' or sent == {'update.tar', 'update-legacy.tar', release.GUIDE, '--clobber'}, sent
-    # An asset that isn't its variant's update.tar must fail before contacting GitHub.
-    (out/release.ASSETS['stock']).write_bytes(b'ipod')
+        assert failure == 'upload' or sent == {'update.tar', release.GUIDE, '--clobber'}, sent
+    # An asset that isn't the build's update.tar must fail before contacting GitHub.
+    (out/release.ASSET).write_bytes(b'other')
     with patch('release.run') as gh:
         try: release.upload(out)
         except ValueError: pass
         else: raise AssertionError('Accepted a mismatched update')
         gh.assert_not_called()
-    (out/release.ASSETS['stock']).write_bytes(b'stock')
-    # A missing variant must fail before contacting GitHub.
-    (out/release.ASSETS['ipod']).unlink()
+    # A missing one must too.
+    (out/release.ASSET).unlink()
     with patch('release.run') as gh:
         try: release.upload(out)
         except OSError: pass
-        else: raise AssertionError('Accepted a missing variant')
+        else: raise AssertionError('Accepted a missing update')
         gh.assert_not_called()
-print('Dual-variant build/upload failure checks passed.')
+print('Release build/upload failure checks passed.')

@@ -440,15 +440,15 @@ static void np_open(void) {
     np.station =
         label(page, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l", NP_TITLE_PX, 0xffffffffu);
     np.artist = label(page, SPOT_TEXT_X, SPOT_ART_Y + 75, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-                      IPOD ? (0xff000000u | NP_ARTIST_RGB) : SPOT_GREY);
+                      0xff000000u | NP_ARTIST_RGB);
     np.song = label(page, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
-              IPOD ? (0xff000000u | NP_ALBUM_RGB) : SPOT_GREY);
+              0xff000000u | NP_ALBUM_RGB);
     np.info = label(page, SPOT_TIME_X, SPOT_TIMES_Y, 375 - 2 * SPOT_TIME_X - 80, 16, "s_scrlabel_white20l", 14, SPOT_GREY);
     np.elapsed = label(page, 375 - SPOT_TIME_X - 80, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20r",
                        14, SPOT_GREY);
     /* local Now Playing's heart (tools/ipod.py img_fav) */
     np.heart =
-        image_create(page, IPOD ? 303 : 320, IPOD ? SPOT_ART_Y + SPOT_ART_PX - 50 + NP_ICON_PAD : 176, 50, 50);
+        image_create(page, 303, SPOT_ART_Y + SPOT_ART_PX - 50 + NP_ICON_PAD, 50, 50);
     image_set_draw_type(np.heart, IMAGE_DRAW_CENTER);
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);

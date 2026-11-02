@@ -23,14 +23,13 @@
 ## Build
 
 ```sh
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-build                 # Legacy (stock UI)
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-ipod --ipod           # iPod UI
-python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-dev --ipod --dev      # iPod test build
+python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-build                 # release build
+python3 tools/build.py 'Q2 Firmware V1.32.zip' --out /tmp/q2-dev --dev             # test build
 ```
 
 Rebuilt firmware uses `assets/boot-logo.jpg` as the boot splash. Pass another 320x375 JPEG with `--logo` to use your own; see [boot.md](boot.md#custom-boot-logo).
 
-Both variants replace the stock equalizer page with a 30-band PEQ editor (bands, shelves, preamp, on/off, presets, stock's built-in genre presets, `/EQ` import) and patch `hciplayer`'s equalizer filter with the matching DSP. Both also clear the 44.1 kHz AAC capability bit in `bluealsa` (see [internals.md](internals.md#bluetooth-aac)).
+The build replaces the stock equalizer page with a 30-band PEQ editor (bands, shelves, preamp, on/off, presets, stock's built-in genre presets, `/EQ` import) and patch `hciplayer`'s equalizer filter with the matching DSP. Both also clear the 44.1 kHz AAC capability bit in `bluealsa` (see [internals.md](internals.md#bluetooth-aac)).
 
 ### Stopped-audio notifier wait
 
@@ -49,11 +48,11 @@ On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset t
 
 ### Versioning
 
-The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x4f8440`; the online check `check_otginfo`, `0x4f8968`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) packed as `V<xyz>S` (Legacy) or `V<xyz>I` (iPod). For example, 1.0.0 is `V100I`. The mod installs over stock and over any other build, and stock V1.32 installs back over it.
+The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x4f8440`; the online check `check_otginfo`, `0x4f8968`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) packed as `V<xyz>I`. For example, 1.0.0 is `V100I`. The mod installs over stock and over any other build, and stock V1.32 installs back over it.
 
-About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, or just `<version>` in Legacy, plus ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar` (iPod) and `update-legacy.tar`.
+About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
 
-`--dev` numbers each test build from the untracked `.build-number` and tags it `V` plus that number in three base-36 digits, then the edition in lowercase (`V001i`, `V002i` … `VZZZi`; `s` for Legacy). No two test builds share a tag, and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
+`--dev` numbers each test build from the untracked `.build-number` and tags it `V` plus that number in three base-36 digits, then `i` (`V001i`, `V002i` … `VZZZi`). No two test builds share a tag, and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
 
 `--update-repo OWNER/NAME` points **Network Update** at another GitHub repo's latest release, so a fork's test builds update from the fork's own releases. It defaults to `DiamondBond/q2-pod`, so a build without it is unchanged. The manifest records it as `update_repo`, and `tools/release.py` refuses a build that points anywhere else.
 
@@ -88,6 +87,7 @@ python3 test/m4b.py /tmp/q2-build          # native TagLib M4B/MP4 metadata disp
 python3 test/id3.py /tmp/q2-build          # the built player's MP3 ReplayGain on ID3v2.3/2.4 tags
 python3 test/hci_wait.py /tmp/q2-build     # the built player's futex waits for Play and while paused
 python3 test/bt_resample.py /tmp/q2-build  # the built player's Bluetooth resampler across a gapless change
+python3 test/xfade_player.py /tmp/q2-build  # the built player's crossfade: the hold, the mix at the same and another rate, the drops
 python3 test/mp3_gapless_player.py /tmp/q2-build  # built MIPS gapless hooks, preload isolation, seeks and cleanup
 python3 test/ldac.py /tmp/q2-build         # shipped LDAC intermediate rates and native adaptive controller
 python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O

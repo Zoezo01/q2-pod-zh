@@ -100,6 +100,7 @@ chapters *chapters_start(const char *path, unsigned long long now) {
     if (pipe2(p, CH_CLOEXEC)) { c->failed = c->done = 1; return c; }
     c->pid = fork();
     if (!c->pid) {
+        child_oom_first();
         char *const args[] = { "/usr/bin/ffmpeg", "-nostdin", "-v", "error", "-i", (char *)path,
                               "-f", "ffmetadata", "pipe:1", 0 };
         if (p[1] == 1) fcntl(1, 2, 0); /* F_SETFD: clear CLOEXEC */

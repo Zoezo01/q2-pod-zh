@@ -2,8 +2,7 @@
 
 A configured Q2 PCM stream keeps `aic_dma_notice` polling every 10 ms after pause.
 The build puts that stopped notifier on its existing wait queue until start/resume or
-teardown. It is on by default; `--no-aic-idle-wait` keeps the stock module. It supports
-both iPod and Legacy packages.
+teardown. It is on by default; `--no-aic-idle-wait` keeps the stock module.
 
 This is a driver experiment for the audited V1.32 firmware. It does not alter
 active notification intervals, PCM period/buffer constraints, DMA descriptors,

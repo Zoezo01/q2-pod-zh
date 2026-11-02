@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise actual C marker traversal and its generated predicates with real SQLite."""
+"""Exercise actual C marker traversal, its rules file and its generated predicates with real SQLite."""
 import ctypes
 import os
 from pathlib import Path
@@ -16,22 +16,28 @@ def main():
         tmp = Path(directory)
         card = tmp/'mnt/mmc'
         card.mkdir(parents=True)
-        stub = tmp/'state.c'
-        stub.write_text('volatile unsigned library_gen;\n')
+        (tmp/'mnt/data').mkdir()
+        rules = tmp/'mnt/data/q2-library-scope'
         so = tmp/'scope.so'
         subprocess.run(['cc', '-shared', '-fPIC', '-pthread', '-DPEQ_HOST',
             f'-DPEQ_ROOT="{tmp}"', '-O1', '-Wall', '-Wextra', '-Werror',
-            '-I', str(ROOT/'patch'), str(ROOT/'patch/library_scope.c'), str(stub),
+            '-I', str(ROOT/'patch'), str(ROOT/'patch/library_scope.c'),
             '-o', str(so)], check=True)
-        lib = ctypes.CDLL(str(so))
-        lib.library_scope_query.argtypes = [ctypes.c_char_p]
-        lib.library_scope_query.restype = ctypes.c_void_p
-        lib.library_scope_hidden.argtypes = [ctypes.c_char_p]
-        lib.library_scope_hidden.restype = ctypes.c_int
         libc = ctypes.CDLL(None)
         libc.free.argtypes = [ctypes.c_void_p]
-        generation = ctypes.c_uint.in_dll(lib, 'library_gen')
-        def refresh(): generation.value += 2
+        lib, boots = None, 0
+        def boot():  # a fresh copy of the library, as after a reboot: nothing in memory
+            nonlocal lib, boots
+            boots += 1
+            copy = tmp/f'scope{boots}.so'
+            shutil.copy(so, copy)
+            lib = ctypes.CDLL(str(copy))
+            lib.library_scope_query.argtypes = [ctypes.c_char_p]
+            lib.library_scope_query.restype = ctypes.c_void_p
+            lib.library_scope_hidden.argtypes = [ctypes.c_char_p]
+            lib.library_scope_hidden.restype = ctypes.c_int
+        boot()
+        def refresh(): lib.library_scope_scan()  # a library update
         def marker(folder, name='database.ignore'):
             target = card/folder/name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +80,7 @@ def main():
         marker("Odd ' %_ ")
         marker('日本語')
         check(set())  # A library refresh, not per-row filesystem I/O, updates the snapshot.
+        boot(); check(set())  # nor does a reboot: no scan has written the rules
         refresh(); check({1, 2, 4, 6, 7, 11, 13})
         grouped = db.execute(expand('select min(id), album from songtable where '+TOKEN+' group by album')).fetchall()
         assert dict((album, i) for i, album in grouped)['Shared'] == 0
@@ -97,6 +104,7 @@ def main():
         deep = card/'Deep'
         (deep/Path(*(['nested'] * 65))).mkdir(parents=True)
         refresh(); check(set())
+        assert not rules.exists()
         shutil.rmtree(deep)
         refresh(); check({2, 4, 6, 7, 11})
         many = card/'Many'
@@ -104,8 +112,27 @@ def main():
         refresh(); check(set())
         shutil.rmtree(many)
         refresh(); check({2, 4, 6, 7, 11})
+        assert sorted(rules.read_text().splitlines()) == ['0/mnt/mmc/Needledrop', '0/mnt/mmc/Needledrop/Keep/Hide',
+            "0/mnt/mmc/Odd ' %_ ", '0/mnt/mmc/Singles/Nested', '0/mnt/mmc/日本語', '1/mnt/mmc/Needledrop/Keep']
+        # A reboot reads the rules file and walks nothing: a marker added since waits for a scan.
+        discovery = marker('Discovery')
+        boot(); check({2, 4, 6, 7, 11})
+        # A cut or malformed rules file, or none, fails open.
+        text = rules.read_bytes()
+        for bad in (text[:-1], text[:text.index(b'\n') + 3], b'x' + text[1:], None):
+            if bad is None: rules.unlink()
+            else: rules.write_bytes(bad)
+            boot(); check(set())
+        refresh(); check({2, 4, 6, 7, 9, 11})
+        discovery.unlink()
+        # Hidden names (#154) work as the plain ones, an unignore's too.
+        hidden = marker('Discovery', '.database.ignore')
+        unhide = marker('Needledrop/Keep/Hide', '.database.unignore')
+        refresh(); check({2, 4, 7, 9, 11})
+        hidden.unlink(); unhide.unlink()
         assert original == {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in original}
-        print('library_scope: traversal, inheritance, exceptions, refresh, SQL quoting, grouping, playlist retention and unchanged files passed')
+        print('library_scope: traversal, rules file across reboots, cut or missing rules, inheritance, exceptions,'
+              ' refresh, SQL quoting, grouping, playlist retention and unchanged files passed')
 
 if __name__ == '__main__':
     main()

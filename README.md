@@ -26,16 +26,22 @@
 
 ## Features
 
-- **iPod UI:** Home, menus, Now Playing, Coverflow and four visualizers, accent colour and Games.
-- **Wheel navigation:** smooth scrolling, and menus remember your place.
-- **EQ:** Simple's Low, Mid and High sliders, or Advanced's parametric EQ with up to 30 bands and a live curve.
-- **Streaming:** Spotify (Premium): browse your library, search, play and download playlists on the Q2 after a one-time pairing from your phone; AirPlay from your iPhone, and Internet Radio.
-- **Scrobbling:** send your listens to Last.fm or ListenBrainz over Wi-Fi.
+- **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Coverflow you can swipe, four visualizers and Games. Classic and Minimal themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
+- **Wheel navigation:** smooth scrolling that speeds up as you spin, adjustable sensitivity, menus that remember your place, Hold Return to Now Playing or Home, and Single Press Scrub.
+- **Library:** up to 65,000 songs, search, Era (albums by decade), Most Played, Long Songs, favourites, playlists with Edit Playlist and M3U import and export, Play Next, Add to Queue and View Queue. An empty `database.ignore` file keeps a folder out of the Library's lists while its songs still play from Folder view and playlists.
 - **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums.
-- **Browsing and playback:** favourites, playlists, Most Played, Long Songs, Crossfade, and shuffle by song, album or folder.
-- **Podcasts and audiobooks:** `.m4b` audiobooks (including ones split by a CUE sheet) and podcasts resume where you stopped. A book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
-- **AirPods:** stem controls, ear detection and two-way volume sync.
-- **Battery:** an optional 80% charge limit, Low Power mode, and a Standby limit that powers off a Q2 left asleep.
+- **Playback:** gapless FLAC, MP3 (encoder delay removed) and USB DAC output, Crossfade up to 15 s that follows sample-rate changes and Shuffle, shuffle by song, album or folder, playback speed per folder, Resume Songs, and Memory Playback that brings back the queue you left, Play Next and Add to Queue included.
+- **EQ:** Simple's Low, Mid and High sliders with presets, or Advanced's parametric EQ with up to 30 bands, a live curve, Auto preamp and Balance; AutoEQ and Equalizer APO presets import from the card. Mono Audio and Swap L/R.
+- **Lyrics and covers:** synced `.lrc` lyrics on Now Playing and full screen, Download Cover & Lyrics from LRCLIB, the Cover Art Archive and iTunes, and Download Album Lyrics.
+- **Streaming:** Spotify (Premium): browse your library, search, play and download playlists on the Q2 after a one-time pairing from your phone; AirPlay from your iPhone; Internet Radio with your own stations; Tidal tracks you've played replay from the card.
+- **App Store and updates:** installs and updates Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts) over Wi-Fi; Network Update installs new Q2 Pod releases.
+- **Scrobbling:** send your listens to Last.fm or ListenBrainz over Wi-Fi, by hand or automatically, and choose how much of a song counts.
+- **Podcasts and audiobooks:** `.m4b` audiobooks (including ones split by a CUE sheet) and podcasts resume where you stopped; the Podcasts app subscribes to shows, downloads episodes and has a sleep timer. A book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
+- **Photos, books and videos:** folders at the card's root add JPEG and PNG photo albums, `.txt` and `.epub` books, and videos.
+- **Lock screen and boot logo:** six wallpapers, a large clock or your own images; your own JPEG at power-on.
+- **Bluetooth and AirPods:** AirPods stem controls, ear detection and two-way volume sync; Resume on Connect, Control Device Volume, separate volume levels for Bluetooth and wired output, smoother AAC, and click-free gapless changes.
+- **Battery and buttons:** an optional 80% charge limit, Low Power mode, a Standby limit that powers off a Q2 left asleep, Wake by double press, Volume Guard, and a player that sleeps while paused.
+- **Fixes to stock:** the clock keeps its time after power-off, the song and second come back after an update or restart, accented tags show as tagged, time zones show their current offset, and the interface is English throughout.
 
 <details open>
 <summary><h2>Screenshots</h2></summary>
@@ -62,7 +68,7 @@
 4. **Update:** open **System settings → System Update → TF card update**. Leave the card in until the Q2 restarts.
 
 > [!TIP]
-> Prefer Shanling's original look? Download `update-legacy.tar` instead, then rename `update-legacy.tar` to `update.tar` before you copy it to the card. It has the same features and fixes, without the iPod UI.
+> Still on the old Legacy build? Network Update can't move you to this one. Install `update.tar` by hand once: copy it to the card root and update, as for a first install.
 
 ## Controls
 
@@ -83,7 +89,7 @@ Manual: Repeat the [install steps](#install) with the newest release. Your setti
 
 ## Extras
 
-**System settings → App Store** installs, updates and removes Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser) over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later), keeping your Rockbox settings and Spotify's login.
+**System settings → App Store** installs, updates and removes Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts) over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later; Podcasts 1.4.2 and Subsonic 1.4.3 or later), keeping your Rockbox settings and Spotify's login.
 
 - **Spotify (optional, Premium):** with the Q2 on Wi-Fi, open **System settings → App Store → Spotify** and press the row to install it. Then open **Streaming → Spotify** and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. [More](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
 - **Scrobbling:** connect Last.fm or ListenBrainz with the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
@@ -96,6 +102,8 @@ Manual: Repeat the [install steps](#install) with the newest release. Your setti
 Copy your music to the card over USB-C, then run **Library → Update Local Music** on the Q2.
 
 These folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/`, `Books/` and `Videos/`; `EQ/` holds EQ presets to import. See the user guide for supported formats.
+
+To keep a folder out of Songs, Albums, Artists, Coverflow and library shuffle, put an empty file named `database.ignore` in it and run **Update Local Music** again. Its songs still play from Folder view and from playlists, and an empty `database.unignore` in a subfolder lets that subfolder back in ([details](docs/discovery.md)).
 
 ## Help
 

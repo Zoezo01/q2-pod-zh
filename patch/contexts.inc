@@ -15,9 +15,7 @@
 { "coverflow_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/coverflow.c) */
 { "photos_page", CTX_DYNAMIC, 0 },    /* runtime window (patch/photos.c) */
 { "books_page", CTX_DYNAMIC, 0 },     /* runtime window (patch/books.c) */
-#if IPOD
 { "games_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/games.c) */
-#endif
 { "mostplayed_page", CTX_FIXED, 0 }, /* runtime window (patch/navigation.c); fixed: the hold menu */
 { "shuffle_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
 { "playlistedit_page", CTX_DYNAMIC, 0 },
@@ -89,11 +87,9 @@
 { "search_dialog", CTX_DYNAMIC, 0 },
 { "tidal_search_dialog", CTX_DYNAMIC, 0 },
 { "confirminfo_dialog", CTX_DYNAMIC, BUTTONS },
-#if IPOD /* confirm and choice dialogs; text-entry and toast dialogs leave the wheel on volume */
 /* A BUTTONS window must not contain a list: the window is the surface, so a list inside never is. */
 { "tidal_confirminfo_dialog", CTX_DYNAMIC, BUTTONS },
 { "autoshutdown_dialog", CTX_DYNAMIC, BUTTONS },
 { "playlistsmore_page", CTX_DYNAMIC, BUTTONS }, /* a playlist's Rename, Delete and Edit */
 { "tidal_quality_select_dialog", CTX_DYNAMIC, BUTTONS },
 { "tidal_sortmode_dialog", CTX_DYNAMIC, BUTTONS },
-#endif
