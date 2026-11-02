@@ -78,7 +78,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 原厂只有「正在播放 → ⋯ → 动态获取封面与歌词」，一次一首歌、封面还要自己挑。这一行把整张卡扫一遍：
 
 - **第一段抓歌词**：每张专辑逐首问 LRCLIB，找到带时间轴的版本就写成歌曲同目录的同名 `.lrc`（与「下载专辑歌词」同一套 `album_lyrics`），已有 `.lrc` 的歌跳过。
-- **第二段抓封面**：文件夹里没有任何封面文件时，取 MusicBrainz 前四个发行组的 Cover Art Archive 前置封面（500 px），取不到再试 iTunes 的 600 px，存成 `cover.jpg`；已有 `cover.jpg` / `folder.jpg` 的跳过。跑完调用 `coverflow_refresh_art()`，下次进 Cover Flow 就重建。
+- **第二段抓封面**：文件夹里没有任何封面文件时，先问酷狗——就是原厂「动态获取封面」用的那套接口，中文专辑基本都在它库里，取 480 px 的图；酷狗没有才依次试 MusicBrainz 前四个发行组的 Cover Art Archive（500 px）和 iTunes（600 px），存成 `cover.jpg`；已有 `cover.jpg` / `folder.jpg` 的跳过。跑完调用 `coverflow_refresh_art()`，下次进 Cover Flow 就重建。
 - **第三段抓单曲**：没有专辑标签的歌（原厂归到 Unknown Album）没有所属文件夹可放封面，所以只逐首补歌词，按各自的标题 + 歌手问 LRCLIB；没写标题的用文件名去掉扩展名去搜。
 - **进度就显示在这一行上**，计数写清了单位：`专辑歌词 12/174 张`（174 是专辑数）→ `专辑封面 3/174 张` → `单曲歌词 8/56 首`；再按一次变成「正在停止…」，已下的不会丢。
 - **行尾的转动小点**（`◐ ◓ ◑ ◒`，每 0.3 秒一格）表示后台还在跑：专辑之间可能要等好几秒，数字不动时看它就知道没卡死。
@@ -86,9 +86,11 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 - **为什么天然能续**：全靠「缺什么补什么」，所以中断、重启、再按一次都从没补到的地方接着走。
 - **不占线程**：原厂的歌曲记录只允许 UI 线程碰，所以按「UI 线程取一张专辑 → 工作线程联网」一次一张地推进（`library_fill_tick`，挂在 `ringnav_sleep`），界面不卡，取消也能在两张专辑之间落地。
 
-需要 Wi-Fi。LRCLIB 与 MusicBrainz 都约 1 请求/秒，2000 首歌词约 35–40 分钟、300 张专辑的封面约 10–15 分钟，建议插着电跑。封面按「搜索到的第一张」自动选定，同名专辑（一堆 *Greatest Hits*）可能配错，删掉 `cover.jpg` 重来即可。
+需要 Wi-Fi。2000 首歌词约 35–40 分钟（LRCLIB 约 1 请求/秒）；封面大多一次就在酷狗命中，300 张专辑通常十几分钟以内。建议插着电跑。封面按「搜到的第一张」自动选定，同名专辑（一堆 *Greatest Hits*）可能配错，删掉 `cover.jpg` 重来即可。
 
-- `patch/onlinematch.c`：`library_fill_*`（枚举、三段任务、带单位的进度、转动的指示、取消），`lf_cover_save()` 复用 `mb_url()` / `caa()` / `itunes_url()`，`lf_song_take()` / `lf_song_collect()` 处理没有专辑标签的单曲。
+「正在播放 → ⋯ → 动态获取封面」也改成酷狗优先了：原厂的酷狗、网易、百度搜索结果排在最前面，我们补的 MusicBrainz 与 iTunes 排在后面当备选。改动只是把这一句里的两个调用调了个顺序。
+
+- `patch/onlinematch.c`：`library_fill_*`（枚举、三段任务、带单位的进度、转动的指示、取消），`lf_cover_save()` 先问 `kg_cover_save()`（酷狗搜索 → 专辑信息 → 480 px 图），再复用 `mb_url()` / `caa()` / `itunes_url()`，`lf_song_take()` / `lf_song_collect()` 处理没有专辑标签的单曲。
 - `patch/navigation.c`：导出 `ringnav_fill_albums()`（全库专辑 SQL，复用年代页的 `ERA_ALBUMS`）、`ringnav_album_tracks()`（单张专辑曲目）与 `ringnav_fill_songs()`（无专辑标签的歌），新增枚举 `POD_LIBRARY_FILL` 与设置行。
 
 ### 差异一览

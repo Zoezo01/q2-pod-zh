@@ -20,7 +20,7 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # a player already on it, while V162M installs over it and over stock V1.32 in one flash. A later
 # Chinese build moves on to N, O…, since a player already on M would turn M away. I is skipped:
 # upstream's English build took it at 5.7. --dev still numbers builds.
-TAG = 'V' + VERSION.replace('.', '') + 'N'
+TAG = 'V' + VERSION.replace('.', '') + 'O'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a

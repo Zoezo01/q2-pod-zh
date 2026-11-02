@@ -763,10 +763,73 @@ static int lf_write(const char *path, const char *data, unsigned len) {
     return 0;
 }
 
-/* The album's cover saved to path: the Cover Art Archive's front of one of MusicBrainz's first four
- * release groups, else iTunes' first 600 px artwork. 1 if written, 0 otherwise. */
+/* Kugou's song search for the album; its hits carry the album id, and an album's info an imgurl
+ * whose {size} stands for the width asked for. The Chinese catalogue has the releases MusicBrainz
+ * usually has none of, so this is asked before it. */
+static int kg_url(char *out, unsigned n, const char *album, const char *artist) {
+    const char *part[] = { "http://mobilecdn.kugou.com/api/v3/search/song?format=json&pagesize=3&keyword=",
+                           *artist ? artist : album, "%20", *artist ? album : "" };
+    return url_join(out, n, part, 4, 0);
+}
+
+/* Kugou's imgurl as its 480 px JPEG, into out (0x200, a cover URL's size); 0 if it does not fit. */
+static int kg_art(const char *img, char *out) {
+    const char *at = strstr(img, "{size}");
+    int head = at ? (int)(at - img) : 0, tail = at ? (int)strlen(at + 6) : (int)strlen(img);
+    if (head + 3 + tail >= 0x200) return 0;
+    if (!at) {
+        memcpy(out, img, tail + 1);
+        return 1;
+    }
+    memcpy(out, img, head);
+    memcpy(out + head, "480", 3);
+    memcpy(out + head + 3, at + 6, tail + 1);
+    return 1;
+}
+
+/* The cover Kugou has for the album, saved to path: one search names the album ids, one info request
+ * per id gives the picture, the first that downloads wins. 1 if written. */
+static int kg_cover_save(const char *album, const char *artist, const char *path, volatile int *cancel) {
+    char url[3 * 0x300 + 128];
+    int ids[3], n = 0;
+    char *body = kg_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, cancel) : 0;
+    void *json = body ? cJSON_Parse(body) : 0;
+    void *info = json ? cJSON_GetObjectItem(cJSON_GetObjectItem(json, "data"), "info") : 0;
+    for (int i = 0, hits = info ? cJSON_GetArraySize(info) : 0; i < hits && n < 3; ++i) {
+        void *v = cJSON_GetObjectItem(cJSON_GetArrayItem(info, i), "album_id");
+        int id = v ? *(int *)((char *)v + 20) : 0; /* cJSON's valueint */
+        int j = 0;
+        while (id > 0 && j < n && ids[j] != id) ++j;
+        if (id > 0 && j == n) ids[n++] = id;
+    }
+    cJSON_Delete(json);
+    free(body);
+    for (int i = 0; i < n && !*cancel; ++i) {
+        unsigned len = 0;
+        char art[0x200];
+        snprintf(url, sizeof url, "http://mobilecdn.kugou.com/api/v3/album/info?format=json&albumid=%d", ids[i]);
+        body = get(url, COVER_MAX, cancel);
+        json = body ? cJSON_Parse(body) : 0;
+        const char *img = json ? str(cJSON_GetObjectItem(json, "data"), "imgurl") : 0;
+        int got = 0;
+        if (img && kg_art(img, art)) {
+            char *pic = get_len(art, LF_COVER_MAX, cancel, &len);
+            if (pic && len) got = lf_write(path, pic, len);
+            free(pic);
+        }
+        cJSON_Delete(json);
+        free(body);
+        if (got) return 1;
+    }
+    return 0;
+}
+
+/* The album's cover saved to path: Kugou's first, since it has the Chinese releases MusicBrainz
+ * usually lacks; else the Cover Art Archive's front of one of MusicBrainz's first four release
+ * groups, else iTunes' first 600 px artwork. 1 if written, 0 otherwise. */
 static int lf_cover_save(const char *album, const char *artist, const char *path, volatile int *cancel) {
     char url[3 * 0x300 + 128];
+    if (kg_cover_save(album, artist, path, cancel)) return 1;
     char *body = mb_url(url, sizeof url, album, artist) ? get(url, COVER_MAX, cancel) : 0;
     void *json = body ? cJSON_Parse(body) : 0, *list = json ? cJSON_GetObjectItem(json, "releases") : 0;
     int n = list ? cJSON_GetArraySize(list) : 0, done = 0;
@@ -1004,10 +1067,12 @@ int library_fill_start(void) {
 }
 
 /* kugou_obtaincover(keyword), online_coverthd's first source, then com163's and Baidu's: each adds
- * image URLs to stock's list (online_addcoverlist), which the page downloads and shows. ours go first. */
+ * image URLs to stock's list (online_addcoverlist), which the page downloads and shows. Those three
+ * go first: they know Chinese releases, which MusicBrainz often has no release at all for, so its
+ * covers and iTunes's only back them up. */
 extern void stock_kugoucover_trampoline(const char *keyword);
 void ringnav_cover_search(const char *keyword) {
-    covers();
     stock_kugoucover_trampoline(keyword);
+    covers();
 }
 #endif
