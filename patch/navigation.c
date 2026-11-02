@@ -5173,7 +5173,6 @@ static void setting_text(int i) {
                                                   "Battery: Percent Inside" },
                              *const light[] = { "Light Mode: Off", "Light Mode: On",
                                                 "Light Mode: Auto" };
-    accent(); /* reads the settings */
     const char *const names[] = { accent_names[accent()], home[st.home],   battery[st.battery],
                                   (const char *)0,        (const char *)0, (const char *)0,
                                   light[st.light],        (const char *)0, (const char *)0 };
