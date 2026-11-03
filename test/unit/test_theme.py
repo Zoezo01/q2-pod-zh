@@ -153,7 +153,7 @@ def test_extends():
                  'id="t" name="T" index="2" extends="classic"')
     assert (t['accents'], t['schemes'][0], t['schemes'][4], t['opts']) == (0x110, ZERO, CLASSIC_ROLES, [opt('SETTING_ACCENT', default=4, values=0x110)])
     assert resolved('<view name="home"><element name="rows" top="12"/></view>')['home_top'] == 12  # a card theme states numbers
-    assert resolved('<colorScheme name="graphite" fill="#11223344"/>')['schemes'][0]['fill'] == 0x44112233
+    assert resolved('<colorScheme name="graphite" fill="#112233"/>')['schemes'][0]['fill'] == 0x112233
     assert resolved('<view name="playing"><element name="album" opacity="255"/></view>')['np_album_op'] == 255
 
 
@@ -175,8 +175,8 @@ M = 'id="minimal" name="M" index="0"'
     ('<view name="playing"><element name="album" opacity="x"/></view>', None, 'playing.album.opacity: expected an integer'),
     ('<view name="playing"><element name="album" opacity="256"/></view>', None, 'playing.album.opacity: 256 outside 0..255'),
     ('<view name="playing"><element name="album" opacity="-1"/></view>', None, 'playing.album.opacity: -1 outside 0..255'),
-    ('<colorScheme name="ivory" fill="eeeeec"/>', None, 'scheme.fill: expected #rrggbb or #rrggbbaa'),
-    ('<colorScheme name="ivory" fill="#112233fe"/>', None, "scheme.fill: alpha 0xfe is Night Shift's"),
+    ('<colorScheme name="ivory" fill="eeeeec"/>', None, 'scheme.fill: expected #rrggbb'),
+    ('<colorScheme name="ivory" fill="#112233fe"/>', None, 'scheme.fill: expected #rrggbb'),
     ('<option setting="volume"/>', None, 'unknown setting volume'),
     ('<option setting="light" preset="dim"/>', None, 'light: unknown value dim'),
     ('<option setting="light" bright="1"/>', None, 'unknown key option.bright'),

@@ -30,7 +30,7 @@ class Key:
 
 
 def key(path, field, type, hi=None):
-    hi = {'bool': 1, 'color': 0xffffffff, 'enum': len(CHOICES.get(path, ())) - 1}.get(type, hi)
+    hi = {'bool': 1, 'color': 0xffffff, 'enum': len(CHOICES.get(path, ())) - 1}.get(type, hi)
     return Key(path, field, type, 0, hi, 0, 'live')
 
 
@@ -207,13 +207,9 @@ def value(node, path, text, macros):
             err(f'{path}: unknown value {text}')
         v = CHOICES[path].index(text)
     elif k.type == 'color':
-        m = re.fullmatch('#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?', text)
-        if not m:
-            err(f'{path}: expected #rrggbb or #rrggbbaa')
-        alpha = int(m[2] or '0', 16)
-        if alpha == 0xfe:
-            err(f"{path}: alpha 0xfe is Night Shift's")
-        v = alpha << 24 | int(m[1], 16)
+        if not re.fullmatch('#[0-9a-fA-F]{6}', text):
+            err(f'{path}: expected #rrggbb')
+        v = int(text[1:], 16)
     else:
         if not re.fullmatch('-?[0-9]+', text):
             err(f'{path}: expected an integer')
