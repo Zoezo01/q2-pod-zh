@@ -1146,8 +1146,6 @@ def test_a_failed_refresh_shows_the_error(fw):
     assert p.top.state == K_ERROR and p.top.live == 1
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: got() keeps a queued click across a refresh, as go() then indexes rows that are gone '
-                                       '(spotify.c stops br.go here; addon.c never does): stale or uninitialised pointers in pg.f')
 def test_a_refresh_drops_a_click_on_its_old_rows(fw):
     p = live(fw, rows_of(0, 5))
     p.world.ms += 2000
@@ -1155,6 +1153,17 @@ def test_a_refresh_drops_a_click_on_its_old_rows(fw):
     p.press(4)                 # the row's click, its go() queued for the next timer pass
     p.answer(msg=b'refresh', rows=rows_of(0, 1))  # this tick came first
     assert p.pg.go == 0
+
+
+@pytest.mark.parametrize('next_, rows', [(0, rows_of(0, 5)), (1, rows_of(0, 1))])
+def test_a_refresh_keeps_a_click_on_the_same_rows_or_a_redraw(fw, next_, rows):
+    p = live(fw, rows_of(0, 5))
+    p.world.ms += 2000
+    p.tick()
+    p.press(4)
+    p.pg.next = next_          # 1: G_SHOW, a search box's blur
+    p.answer(msg=b'refresh', rows=rows)
+    assert p.pg.go != 0
 
 
 def test_a_held_play_sends_a_rows_hold_op(fw):
