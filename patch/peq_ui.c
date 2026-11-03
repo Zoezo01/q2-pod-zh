@@ -96,8 +96,8 @@ static struct {
 
 /* EQ per Output: PEQ_ACTIVE stays what plays, and owner names the output it was set on. When another
  * output takes over, the EQ goes to owner's file and the new output's comes back; a new output keeps
- * what plays. An open EQ page holds unsaved state, so the swap waits for it to close. owner is on
- * disk so an edit just before power-off still goes to the right output. */
+ * what plays. An open EQ page follows it (page_load). owner is on disk so an edit just before
+ * power-off still goes to the right output. */
 static char eq_owner[20] __attribute__((section(".scratch")));
 static void eq_slot(char *path, unsigned n, const char *key) {
     snprintf(path, n, EQ_OUTPUTS "/%s", key);
@@ -141,41 +141,63 @@ static const char *eq_output_caption(void) {
            : !strcmp(eq_owner, "usb")       ? "EQ for USB"
                                             : "EQ for this Bluetooth device";
 }
+/* What plays, as now, into owner's file, if there is an owner. A PEQ_ACTIVE that exists but can't be
+ * read isn't filed over a good slot. 0 if the file can't be saved. */
+static int eq_file(eq_state *now) {
+    char from[256];
+    int readable = eq_load(now) || access(PEQ_ACTIVE, 0);
+    now->hold = 0;
+    if (!eq_owner[0] || !readable) return 1;
+    /* ponytail: past EQ_DEVICES a new headset plays and edits the current EQ, unremembered;
+     * a forgotten device's slot stays, so re-pairing brings its EQ back. Eviction would need a
+     * last-used date per slot. */
+    eq_slot(from, sizeof from, eq_owner);
+    if (strlen(eq_owner) == 17 && access(from, 0) && eq_devices() >= EQ_DEVICES) return 1;
+    mkdir(EQ_OUTPUTS, 0700);
+    return eq_save_to(from, now);
+}
+/* Turned off: the output keeps its latest EQ, and what plays from here on belongs to none. Simple
+ * can't hold unsaved gains here: the row is on Advanced, and tab_to won't leave them behind. */
 void eq_output_forget(void) {
     char path[256];
+    eq_state now;
+    if (!eq_owner[0]) owner_read();
+    eq_file(&now);
     eq_slot(path, sizeof path, "owner");
     unlink(path);
     eq_owner[0] = 0;
 }
+static void e3_done(void);
+static void page_load(void);
+static int render(const void *unused);
+/* A keyboard's up (ui.edit): a render would close it, and those screens edit only the draft, so
+ * nothing can be filed wrongly while the swap waits. ponytail: left up under another page, the old
+ * output's EQ plays until it closes; the rebuild would have to keep the typing to do better. */
 void eq_output(const char *key) {
-    if (ui.page) return;
+    if (ui.edit) return;
     if (!eq_owner[0]) owner_read();
     if (!strcmp(key, eq_owner)) return;
     eq_state now, next;
-    char from[256], to[256];
-    eq_load(&now);
-    now.hold = 0;
-    mkdir(EQ_OUTPUTS, 0700);
+    char to[256];
+    e3_done();
+    if (e3.dirty || !eq_file(&now)) return; /* kept for the next pass: nothing is lost */
     eq_slot(to, sizeof to, key);
-    /* ponytail: past EQ_DEVICES a new headset plays and edits the current EQ, unremembered;
-     * a forgotten device's slot stays, so re-pairing brings its EQ back. Eviction would need a
-     * last-used date per slot. */
-    if (eq_owner[0]) { /* none, just turned on: what plays belongs to no output, and is not filed */
-        eq_slot(from, sizeof from, eq_owner);
-        int full = strlen(eq_owner) == 17 && access(from, 0) && eq_devices() >= EQ_DEVICES;
-        if (!full && !eq_save_to(from, &now)) return; /* kept for the next pass: nothing is lost */
-    }
     if (!eq_load_from(to, &next)) next = now;
     /* Off to Off is silent, so the filter stays out of the chain (peq_chain may still want it). */
     if (memcmp(&next, &now, sizeof next) &&
         !(now.mode == EQ_OFF && next.mode == EQ_OFF ? eq_save(&next) : eq_commit(&next)))
         return;
-    /* ponytail: power lost before owner is saved files the new output's EQ under the old one, once. */
+    /* ponytail: power lost before owner is saved files the new output's EQ under the old one, once.
+     * A failed save is the same at the next boot; RAM moves on either way, as staying would file the
+     * new EQ over the old slot at the next pass. */
     owner_set(key);
+    if (ui.page) {
+        page_load();
+        if (!ui.timer) ui.timer = timer_add(render, 0, 1);
+    }
 }
 
 static int action(void *ctx, void *event);
-static int render(const void *unused);
 
 /* A row: the caption on the left, white or, for display-only rows and off bands (DIM), grey, and
  * the value, if any, in grey against the right edge, or left of stock's list_into chevron on a row
@@ -364,7 +386,7 @@ static void rename_preset(void) {
     const char *from = deleting();
     const unsigned *wide = ui.edit ? widget_get_text(ui.edit) : 0;
     if (!ui.edit || widget_get_text_utf8(ui.edit, text, sizeof text)) text[0] = 0;
-    int unread = !text[0] && wide && *wide;
+    int typed = wide && *wide;
     unsigned n = strlen(text);
     while (n && (text[n - 1] == ' ' || text[n - 1] == '.')) text[--n] = 0; /* FAT drops these */
     const char *t = text, *c;
@@ -375,7 +397,7 @@ static void rename_preset(void) {
 checked:
     snprintf(old, sizeof old, "%.*s", (int)strlen(from) - 4, from);
     ui.screen = PRESETS;
-    if (!*t && !unread) ui.screen = RENAMES;
+    if (!typed) ui.screen = RENAMES;
     else if (!*t || *t == '.' || *c)
         snprintf(ui.status, sizeof(ui.status), "Name not allowed; preset kept");
     else if (!strcmp(t, old)) return;
@@ -980,7 +1002,33 @@ static void *bar(void *page, int x, int w) {
     return title;
 }
 
-/* Audio settings' EQ row: opens on the tab it was last on (ui.tab, zeroed to Simple at boot).
+/* The page from what plays, as it opens and when another output takes over, under the caption saying
+ * whose EQ it is. Unapplied Advanced edits stay in the draft: Apply puts them on the output then
+ * playing. */
+static void page_load(void) {
+    eq_state s;
+    peq_preset edits = ui.draft;
+    const char *output = eq_output_caption();
+    eq_load(&s);
+    ui.draft = s.peq;
+    /* Auto's saved number may be older (another version's); the player never plays it, so nothing
+     * to apply. */
+    follow_auto();
+    load(&s);
+    ui.named.bypass = ui.draft.bypass;
+    if (memcmp(&ui.draft, &ui.named, sizeof(ui.named))) ui.applied[0] = 0; /* replaced since */
+    if (ui.dirty) {
+        edits.bypass = ui.draft.bypass; /* live state, as load_draft */
+        ui.draft = edits;
+    } else memcpy(ui.name, ui.applied, sizeof(ui.name));
+    if (output) {
+        e3.caption = 1;
+        e3.status = output;
+        snprintf(ui.status, sizeof(ui.status), "%s", output);
+    }
+}
+
+/* Playback's EQ row: opens on the tab it was last on (ui.tab, zeroed to Simple at boot).
  * Opening changes nothing. ponytail: kept in RAM, so a reboot goes back to Simple; saving it in
  * eq_state would keep it, add when asked. */
 int peq_page_init(void *page, void *context) {
@@ -990,29 +1038,14 @@ int peq_page_init(void *page, void *context) {
     ui.screen = HOME;
     ui.status[0] = 0;
     ui.tabs = 0;
-    eq_state s;
-    eq_load(&s);
-    ui.draft = s.peq;
-    /* Auto's saved number may be older (another version's); the player never plays it, so nothing
-     * to apply. */
-    follow_auto();
     ui.dirty = 0;
-    load(&s);
-    ui.named.bypass = ui.draft.bypass;
-    if (memcmp(&ui.draft, &ui.named, sizeof(ui.named))) ui.applied[0] = 0; /* replaced since */
-    memcpy(ui.name, ui.applied, sizeof(ui.name));
+    page_load();
     e3.focus = E3_LOW;
     e3.h = widget_get_prop_int(page, "h", 290);
     widget_on(page, EVT_DESTROY, closed, 0);
     widget_on(page, EVT_KEY_UP, keyup, 0);
     widget_on(page, EVT_POINTER_MOVE_BEFORE, e3_touch, 0); /* a slider's drag */
     widget_on(page, EVT_POINTER_UP_BEFORE, e3_touch, 0);
-    const char *output = eq_output_caption();
-    if (output) {
-        e3.caption = 1;
-        e3.status = output;
-        snprintf(ui.status, sizeof(ui.status), "%s", output);
-    }
     render(0);
     return 0;
 }

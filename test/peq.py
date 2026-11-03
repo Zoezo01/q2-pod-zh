@@ -874,6 +874,8 @@ def editor_check(lib, tmp):
     ui.shim_type(name().encode()); assert title() == 'Presets' and (saved/f'{long}.peq').exists()
     click('Rename a preset'); click(long[:50]); ui.shim_type(b'M' * 300)
     assert title() == 'Name not allowed; preset kept' and (saved/f'{long}.peq').exists()
+    click('Rename a preset'); click(long[:50]); ui.shim_type(b' . ')  # all trimmed away: typed, not a cancel
+    assert title() == 'Name not allowed; preset kept' and (saved/f'{long}.peq').exists()
     (saved/f'{long}.peq').unlink()
     ui.shim_return(); assert named('HD650')
     # Deleting asks first, removes only the saved copy and leaves the active EQ alone.
@@ -1076,7 +1078,12 @@ def output_check(tmp):
     (tmp/'shim.h').write_text(SHIM_H)
     (tmp/'shim.c').write_text('#include "peq.h"\n' + SHIM)
     (tmp/'checks.c').write_text('#include "peq_ui.c"\nvoid check_page(long p) { ui.page = (void *)p; }\n'
-                                'void check_boot(void) { eq_owner[0] = 0; }\n')
+                                'void check_boot(void) { eq_owner[0] = 0; }\n'
+                                'void check_edit(long p) { ui.edit = (void *)p; }\n'
+                                'void check_slider(double g) { e3_set(0, g); }\n'
+                                'double check_gain(void) { return e3.gain[0]; }\n'
+                                'void check_draft(double b) { ui.dirty = 1; ui.draft.balance = b; }\n'
+                                'double check_balance(void) { return ui.draft.balance; }\n')
     ui = compile_host(tmp, 'outputs.so', tmp/'checks.c', ROOT/'patch/peq.c', tmp/'shim.c',
                       '-I', ROOT/'patch', '-include', tmp/'shim.h')
     ui.eq_output.argtypes = [C.c_char_p]
@@ -1104,10 +1111,9 @@ def output_check(tmp):
     # Off is remembered too, and the status bar's flag follows.
     ui.eq_output(b'3.5mm'); setting(2, EQ_OFF); ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and ui.shim_flag() == 1
     ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_OFF) and ui.shim_flag() == 0 and ui.shim_eqflag() == 0
-    # Same output, or the EQ page open: nothing moves until it closes.
+    # Same output: nothing moves.
     before = slot('4.4mm'); setting(4); ui.eq_output(b'3.5mm'); assert playing() == (4, EQ_3) and slot('4.4mm') == before
-    ui.check_page(1); ui.eq_output(b'4.4mm'); assert playing() == (4, EQ_3) and slot('3.5mm') == 2
-    ui.check_page(0); ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and slot('3.5mm') == 4
+    ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and slot('3.5mm') == 4
     # Power lost with an unsaved edit: owner on disk still files it under the right output.
     setting(5); ui.check_boot(); ui.eq_output(b'3.5mm'); assert slot('4.4mm') == 5 and playing() == (4, EQ_3)
     # The comparison's hold never goes into a slot.
@@ -1135,7 +1141,30 @@ def output_check(tmp):
     assert b'EQ for' not in (ui.shim_title() or b''); ui.check_page(0)
     ui.shim_following(1); ui.shim_open(); assert ui.shim_title() == b'EQ for 4.4 mm', ui.shim_title()
     ui.shim_e3_key(1); assert ui.shim_title() != b'EQ for 4.4 mm', ui.shim_title(); ui.check_page(0)
-    print('EQ per Output: each output keeps its own EQ, off too; open page, power loss, full slots')
+    # Turned off, the output keeps its latest EQ; what's set while off is replaced when turned on.
+    ui.eq_output(b'usb'); setting(3); ui.eq_output(b'3.5mm'); ui.eq_output(b'usb'); setting(5)
+    ui.eq_output_forget(); assert slot('usb') == 5 and not (slots/'owner').exists() and playing() == (5, EQ_3)
+    setting(6); ui.eq_output(b'usb'); assert playing() == (5, EQ_3)
+    # An unreadable PEQ_ACTIVE isn't filed over a good slot, swapping or turning off.
+    active = data/'peq-active'
+    ui.eq_output(b'3.5mm'); before = slot('3.5mm'); good = active.read_bytes(); active.write_bytes(b'junk')
+    ui.eq_output(b'4.4mm'); assert slot('3.5mm') == before
+    active.write_bytes(b'junk'); before = slot('4.4mm'); ui.eq_output_forget(); assert slot('4.4mm') == before
+    active.write_bytes(good); ui.eq_output(b'3.5mm')
+    # The page follows a swap, open or covered: unsaved sliders go to the output they were set on, the
+    # new output's gains and the caption come up, and unapplied Advanced edits stay in the draft.
+    setting(2); ui.eq_output(b'usb'); setting(4); ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_3)
+    ui.shim_open(); assert ui.shim_title() == b'EQ for 3.5 mm'
+    ui.check_slider.argtypes = ui.check_draft.argtypes = [C.c_double]
+    ui.check_gain.restype = ui.check_balance.restype = C.c_double
+    ui.check_slider(1); ui.check_draft(1.5); ui.eq_output(b'usb')
+    assert slot('3.5mm') == 1 and playing() == (4, EQ_3) and ui.check_gain() == 4 and ui.check_balance() == 1.5
+    ui.shim_run(); assert ui.shim_title() == b'EQ for USB', ui.shim_title()
+    # A keyboard's up: its render would close it, so the swap waits, and nothing moves.
+    setting(3); ui.check_edit(1); ui.eq_output(b'3.5mm'); assert playing() == (3, EQ_3) and slot('usb') == 4
+    ui.check_edit(0); ui.eq_output(b'3.5mm'); assert playing() == (1, EQ_3) and slot('usb') == 3
+    ui.check_page(0)
+    print('EQ per Output: each output keeps its own EQ, off too; open page, turning off, power loss, full slots')
 
 
 def eq3_check(lib, tmp):
