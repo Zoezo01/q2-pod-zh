@@ -422,9 +422,10 @@ sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.
 (one row of `ipod.json` values per set, SET0 first), `boot_sites` (each stock immediate's address
 and value name), `geom_names` and `ui_redirects` (the windows a set has its own copy of).
 `theme_t.geom` picks the row. `theme_boot` runs once a boot, at the first `system_bar` load in
-`ringnav_ui_load`, after `accent()` has read the settings. Over the `THEME_PAGE`-rounded span of
-the sites whose low halfword differs from the set's value, it calls mprotect (4125) RWX, writes those
-halfwords, calls cacheflush (4147, BCACHE) and mprotects the span back to R-X. SET0, the set of both
+`ringnav_ui_load`, after `accent()` has read the settings. For each `THEME_PAGE` (4 KiB) page that
+holds a site whose low halfword differs from the set's value, lowest first, it calls mprotect (4125)
+RWX on that page, writes the page's halfwords, calls cacheflush (4147, BCACHE) on it and mprotects
+it back to R-X. SET0, the set of both
 built-ins, matches every baked immediate, so it makes no syscall and writes nothing. A window in
 `ui_redirects` for the theme's set loads as `<set>_<name>.bin` in the same folder
 (`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and

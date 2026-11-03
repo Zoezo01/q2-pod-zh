@@ -4501,29 +4501,29 @@ static void bc_fit(void *win) {
 }
 
 /* Geometry sets: tools/ipod.py bakes SET0 into the stock row immediates (ipod.json). Another set
- * rewrites, once, only the low halfwords that differ: stock text is R-X, so the span goes RWX,
- * is written and flushed, and goes back to R-X. SET0 makes no syscall and writes nothing. */
+ * rewrites, once, only the low halfwords that differ: stock text is R-X, so each page holding one
+ * goes RWX, is written and flushed, and goes back to R-X, lowest page first. SET0 makes no syscall
+ * and writes nothing. */
 static int boot_differs(int i, const volatile unsigned short *v) {
     return (*(unsigned *)boot_sites[i].addr & 0xffff) != (unsigned)v[boot_sites[i].group];
 }
 static void theme_boot(void) {
     const volatile unsigned short *v = boot_values[theme()->geom];
-    unsigned lo = ~0u, hi = 0;
-    for (int i = 0; i < BOOT_SITES; ++i)
-        if (boot_differs(i, v)) {
-            if (boot_sites[i].addr < lo) lo = boot_sites[i].addr;
-            if (boot_sites[i].addr > hi) hi = boot_sites[i].addr;
-        }
-    if (!hi) return;
-    lo &= ~(THEME_PAGE - 1u), hi = (hi + 4 + THEME_PAGE - 1) & ~(THEME_PAGE - 1u);
-    if (theme_mprotect((void *)lo, hi - lo, 7)) return; /* PROT_READ|WRITE|EXEC; stock stays */
-    for (int i = 0; i < BOOT_SITES; ++i)
-        if (boot_differs(i, v)) {
-            unsigned *w = (unsigned *)boot_sites[i].addr;
-            *w = (*w & 0xffff0000) | v[boot_sites[i].group];
-        }
-    theme_cacheflush((void *)lo, hi - lo, 3); /* BCACHE */
-    theme_mprotect((void *)lo, hi - lo, 5);   /* PROT_READ|PROT_EXEC */
+    for (;;) { /* a written site no longer differs, so each pass takes the next page */
+        unsigned page = ~0u;
+        for (int i = 0; i < BOOT_SITES; ++i)
+            if (boot_differs(i, v) && (boot_sites[i].addr & ~(THEME_PAGE - 1u)) < page)
+                page = boot_sites[i].addr & ~(THEME_PAGE - 1u);
+        if (page == ~0u) return;
+        if (theme_mprotect((void *)page, THEME_PAGE, 7)) return; /* RWX; the rest stays stock */
+        for (int i = 0; i < BOOT_SITES; ++i)
+            if ((boot_sites[i].addr & ~(THEME_PAGE - 1u)) == page && boot_differs(i, v)) {
+                unsigned *w = (unsigned *)boot_sites[i].addr;
+                *w = (*w & 0xffff0000) | v[boot_sites[i].group];
+            }
+        theme_cacheflush((void *)page, THEME_PAGE, 3); /* BCACHE */
+        theme_mprotect((void *)page, THEME_PAGE, 5);   /* PROT_READ|PROT_EXEC */
+    }
 }
 
 /* A set's own copy of a window, <set>_<name>.bin in name's folder (tools/build.py), else name. */

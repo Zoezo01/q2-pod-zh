@@ -8648,11 +8648,11 @@ def booted(values=()):
 m,before=booted()
 assert m.syscalls==[] and {a:m.get(a) for a in SITES}==before; passed()
 m,before=booted((('pitch',28),))
-pitch=[a for a,v in SITES.items() if v=='pitch']; lo,hi=min(pitch)&~(PAGE-1),(max(pitch)+4+PAGE-1)&~(PAGE-1)
-assert m.syscalls==[(4125,lo,hi-lo,7),(4147,lo,hi-lo,3),(4125,lo,hi-lo,5)]
+pages=sorted({a&~(PAGE-1) for a,v in SITES.items() if v=='pitch'}); assert len(pages)>1
+assert m.syscalls==[s for p in pages for s in ((4125,p,PAGE,7),(4147,p,PAGE,3),(4125,p,PAGE,5))]
 assert {a:m.get(a) for a in SITES}=={a:(w&0xffff0000|28 if SITES[a]=='pitch' else w) for a,w in before.items()}
-assert [p for b,e,p in m.u.mem_regions() if b<=lo<=e]==[5]
-m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); assert len(m.syscalls)==3; passed()  # once a boot
+assert [p for b,e,p in m.u.mem_regions() for q in pages if b<=q<=e]==[5]*len(pages)
+m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); assert len(m.syscalls)==3*len(pages); passed()  # once a boot
 # A set's own window: <set>_<name>, in its folder; other names load as asked.
 m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
 def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
