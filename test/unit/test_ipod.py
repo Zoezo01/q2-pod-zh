@@ -738,6 +738,7 @@ def test_immediates_every_site_once():
 
 def test_immediate_values_set0_are_the_baked_values():
     values = ipod.immediate_values(ipod.SET0)
+    assert set(values) == set(ipod.VALUE_NAMES)
     assert (values['np_bar_x'], values['np_bar_w']) == (ipod.NP_BAR[0], ipod.NP_BAR[2])
     assert ipod.VALUE_NAMES[0] == 'pitch'
     for name in ipod.VALUE_NAMES:
