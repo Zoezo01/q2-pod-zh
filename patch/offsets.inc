@@ -42,6 +42,7 @@
 #define EVENT_TARGET 0x10
 #define EVENT_X 0x18           /* pointer_event_init @0x640298 */
 #define EVENT_Y 0x1c
+#define EVT_POINTER_FIRST 0xff /* the pointer events the wm dispatches: down 0xff, move 0x101, up 0x103 */
 #define EVT_POINTER_DOWN 0x100 /* wm registers on_wm_tsdown_before_fun for this type @0x523ef0 */
 #define EVT_POINTER_MOVE_BEFORE 0x102 /* wm move-before forwards this type to the down hook @0x523ed4 */
 #define EVT_POINTER_UP_BEFORE 0x104
@@ -457,7 +458,14 @@ static inline int arc_out(int r, int y) {
  */
 #define WHEEL_INFO_LOOP 0x10
 #define LOOP_QUEUE 0x38
+#define LOOP_POST 0x18 /* main_loop_t's queue_event slot (playback.c ringnav_queue_event) */
 #define WHEEL_QUEUE_FREE 8
+/* main_loop_simple's pressed byte: the touch thread sets it as it posts a down and clears it as it
+ * posts the release (input_dispatch_to_main_loop), whether or not the queue kept them. */
+#define LOOP_PRESSED 0x44
+/* A pointer press the window manager keeps this long with no pointer event is no finger
+ * (navigation.c pointer_down): a release it never got would otherwise hold the wheel and Centre. */
+#define STALE_TOUCH_MS 5000
 /* An empty Library list's page (navigation.c empty_toast) closes once the window manager marks it
  * opened ("stage" WINDOW_STAGE_OPENED, after the open animation): polled every EMPTY_POLL_MS,
  * EMPTY_TRIES at most. The close path reads the same property @0x689c68 (3 or 5, suspended). */

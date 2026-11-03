@@ -401,6 +401,8 @@ typedef struct {
     void *dc_top;    /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
     unsigned charge_at, last_input, cpu_retry;
+    unsigned touch_at; /* the last pointer event's time and type (pointer_down, stale_note) */
+    int touch_type, stale_noted, stale_notes;
     int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
     int wdt_long; /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
     int ended;    /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
@@ -901,6 +903,44 @@ static int usb_prompt(void) {
 static int allowed_top(void *top) {
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
 }
+/* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick
+ * and Centre press on a list is then dropped (ringnav's gate) and the selection stays hidden until
+ * a tap, which Wheel QS's finger (playback.c) cannot give; a stuck pull-down (quick_stuck) stays
+ * too. The release went missing in the input queue (playback.c ringnav_queue_event, the found
+ * way, now closed); this is the backstop for any other. A press is a finger only while a pointer
+ * event reached the window manager within STALE_TOUCH_MS (ringnav_input; ringnav_touch for the
+ * harness); a finger resting that long gets the wheel back as well. The first stale press per
+ * touch, STALE_NOTES a boot, goes to q2-wheel.log, which the next boot appends to the card's
+ * (tools/build.py BOOT_HOOK): the page, the pull-down's state and slide timer, the touch thread's
+ * own down flag (LOOP_PRESSED), Wheel QS's finger and the last pointer event. ponytail:
+ * STALE_TOUCH_MS is a guess; the note is the way to a cause. */
+#define STALE_NOTES 8
+static void stale_note(unsigned age) {
+    if (st.stale_noted || st.stale_notes >= STALE_NOTES) return;
+    st.stale_noted = 1;
+    st.stale_notes++;
+    unsigned char *loop = main_loop();
+    void *top = window_manager_get_top_window(window_manager());
+    char s[160];
+    tk_snprintf(s, sizeof s,
+                "== wheel: stale press at %u s: top=%s pull-down=%d slide=%d thread=%d "
+                "qs=%d/%d last=%x %u ms ago\n",
+                (unsigned)time_now_ms() / 1000, top ? widget_get_prop_str(top, "name", "") : "-",
+                I(g_dropdown_menu_state, 0), top ? widget_get_prop_int(top, "timer_idex", -1) : -1,
+                loop ? loop[LOOP_PRESSED] : -1, qs_live, qs_down, st.touch_type, age);
+    void *f = fopen("/mnt/data/q2-wheel.log", "ab");
+    if (!f) return;
+    fputs(s, f);
+    fclose(f);
+}
+static int pointer_down(void) {
+    if (!window_manager_get_pointer_pressed(window_manager())) return 0;
+    unsigned age = (unsigned)time_now_ms() - st.touch_at;
+    if (age < STALE_TOUCH_MS) return 1;
+    stale_note(age);
+    return 0;
+}
+int ringnav_pointer_down(void) { return pointer_down(); } /* visualizer.c */
 
 /* A click identifies its pane by ancestry. On the first wheel turn, an unowned pair starts
  * with the first pane in UI order; painting and touch never choose one implicitly. */
@@ -1412,9 +1452,8 @@ static int confirm_center(const void *info) {
     /* Stock removes this one-shot after return; never repeat (RET_REPEAT=8). */
     st.center_timer = 0;
     void *top = window_manager_get_top_window(window_manager());
-    int valid = w && !window_manager_get_pointer_pressed(window_manager()) && !g_power_longkey &&
-                !g_ingore_bootkey_flag && !*(volatile unsigned char *)BOOT_KEY_GUARD &&
-                load_rows(&g_menu, w);
+    int valid = w && !pointer_down() && !g_power_longkey && !g_ingore_bootkey_flag &&
+                !*(volatile unsigned char *)BOOT_KEY_GUARD && load_rows(&g_menu, w);
     if (valid) {
         /* Validation must not recall/rebind a changed scope or consume its pending recall. */
         g_menu.ctx = context_now(&g_menu.scope);
@@ -2134,14 +2173,13 @@ static void paint_selection(void *w, void *canvas) {
         if (st.untouch_timer) shown = 1;
     } else {
         if (surface((void *)0, (void *)0) != w) return;
-        if (!load(&g_menu, w, !window_manager_get_pointer_pressed(window_manager()))) {
+        if (!load(&g_menu, w, !pointer_down())) {
             cancel_center();
             return;
         }
         if (st.center_timer && !pending_matches(top, &g_menu)) cancel_center();
         if (g_menu.kind == 3) return; /* Home shows its selected card. */
-        i = reconcile(&g_menu,
-                      !moving(&g_menu) && !window_manager_get_pointer_pressed(window_manager()));
+        i = reconcile(&g_menu, !moving(&g_menu) && !pointer_down());
     }
     /* Touch hides the selection until the wheel or a button, except on Home (iPod's list) and a
      * pop-up's buttons, which open on their first (Cancel). */
@@ -2470,9 +2508,7 @@ static int quick_cancel(void *ctx, void *event) {
 static int quick_long(const void *unused) {
     quick.timer = 0;
     void *win = quick.win, *icon = quick.icon;
-    if (!win || window_manager_get_top_window(window_manager()) != win ||
-        !window_manager_get_pointer_pressed(window_manager()))
-        return 0;
+    if (!win || window_manager_get_top_window(window_manager()) != win || !pointer_down()) return 0;
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
     /* Abort the image's press before closing, so its release cannot click the icon. */
     prop(icon, QUICK_HOLD, -page);
@@ -3171,7 +3207,7 @@ static unsigned np_track(void);
 static int lyrics_shown(void) {
     void *wm = window_manager();
     return st.np_lrc && st.np_slide && usable() && window_manager_get_top_window(wm) == st.np_win &&
-           !window_manager_is_animating(wm) && !window_manager_get_pointer_pressed(wm) &&
+           !window_manager_is_animating(wm) && !pointer_down() &&
            widget_get_prop_int(st.np_slide, "value", 0) == 1;
 }
 
@@ -3209,9 +3245,7 @@ static void lyric_glide(void *lrc, int to) {
 int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
     lyric_pad(lrc);
     if (lrc == st.np_lrc) {
-        if (st.lyric_held || st.lyric_spun == 2 || lyrics_on(lrc) ||
-            window_manager_get_pointer_pressed(window_manager()))
-            return 0;
+        if (st.lyric_held || st.lyric_spun == 2 || lyrics_on(lrc) || pointer_down()) return 0;
         if (lyrics_shown()) {
             lyric_glide(lrc, y * 16);
             return 0;
@@ -3700,7 +3734,7 @@ static void lyric_init(void) {
 static void lyric_follow(void *lrc, int ms, int front, int shown) {
     int line = lyrics_line(lrc, ms, front), to = lyric_centre(lrc, line > 0 ? line : 0);
     if (to < 0) to = 0;
-    if (st.lyric_held || st.lyric_spun == 2 || window_manager_get_pointer_pressed(window_manager()))
+    if (st.lyric_held || st.lyric_spun == 2 || pointer_down())
         return; /* lyric_spun 2: a finger on the wheel holds the nudge */
     lyric_pad(lrc);
     if (shown) {
@@ -3764,8 +3798,7 @@ static void lyric_poll(void) {
     }
     int page = lrc && st.np_slide && widget_get_prop_int(st.np_slide, "value", 0) == 1;
     if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
-    int touch = lrc && window_manager_get_top_window(wm) == st.np_win &&
-                window_manager_get_pointer_pressed(wm);
+    int touch = lrc && window_manager_get_top_window(wm) == st.np_win && pointer_down();
     int shown = page && lyrics_shown(),
         on = shown && widget_count_children(lrc) && mclGetLyricSize() > 0;
     if (!page) st.lyric_held = 0;
@@ -5097,6 +5130,8 @@ static void hide_outline(void) {
 }
 
 int ringnav_touch(void *ctx, void *event) {
+    st.touch_at = time_now_ms(); /* a down or move reaching the pages: a finger (pointer_down) */
+    st.stale_noted = 0;
     /* settle_timer while paused on the scrubbed track: a paused seek still waiting for Play. */
     int hold =
         st.settle_timer && st.np_slider && np_track() == st.scrub_track && mclGetPlayStatus() == 3;
@@ -6960,8 +6995,7 @@ static int rate_key(void *top, unsigned key) {
  * slide_view under the heart lets go of its grab and the picker takes the next touch. */
 static int rate_long(const void *unused) {
     st.rate_hold = 0;
-    if (!window_manager_get_pointer_pressed(window_manager()) || !(st.rate_held = rate_open()))
-        return 0;
+    if (!pointer_down() || !(st.rate_held = rate_open())) return 0;
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, st.rate_win, 0, 0);
     widget_dispatch_event_to_target_recursive(st.rate_win, abort_event);
@@ -8767,8 +8801,8 @@ static int qm_hold(void) {
         return 1;
     }
     if (st.qm_dialog || st.qm_timer || st.qm_playlist || !usable() ||
-        (!playing && !allowed_top(top)) || window_manager_is_animating(wm) ||
-        window_manager_get_pointer_pressed(wm) || airplayGetFlag() == 2 || g_navbar_status)
+        (!playing && !allowed_top(top)) || window_manager_is_animating(wm) || pointer_down() ||
+        airplayGetFlag() == 2 || g_navbar_status)
         return 0;
     if (playing) {
         unsigned at, n, type = (unsigned)MCL(MCL_TYPE);
@@ -8879,8 +8913,7 @@ static int quick_wheel_toggle(void *top) {
 static int quick_stuck(void *top) {
     return usable() && top &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog") &&
-           (unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 &&
-           !window_manager_get_pointer_pressed(window_manager()) &&
+           (unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 && !pointer_down() &&
            widget_get_prop_int(top, "timer_idex", -1) == -1;
 }
 /* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On an
@@ -10105,13 +10138,18 @@ int ringnav(void *ctx, void *event);
 int ringnav_input(void *wm, void *e) {
     if (e && (chord_gate(e) || wake_gate(e))) return 0;
     st.last_input = time_now_ms();
+    unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
+    unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
     if (video_on()) {
         if (e && I(e, EVENT_TYPE) == EVT_KEY_UP) video_key((unsigned)I(e, EVENT_KEY));
         return 0;
     }
     if (addon_game_input(e)) return 0;
-    unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
-    unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
+    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT) { /* a finger (pointer_down) */
+        st.touch_at = st.last_input;
+        st.touch_type = (int)type;
+        st.stale_noted = 0;
+    }
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {
         reset_poweroptions_timer(1, 1, 1);
@@ -10269,8 +10307,7 @@ static int field_key(void *top, unsigned key) {
 static int edit_single(const void *info) {
     st.edit_press = 0;
     void *wm = window_manager(), *top = window_manager_get_top_window(wm);
-    if (!usable() || window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm))
-        return 0;
+    if (!usable() || window_manager_is_animating(wm) || pointer_down()) return 0;
     *(volatile unsigned char *)KEY_LOCKOUT = 0; /* stock's wheel lockout after the centre key */
     int n = fields(top), f = field_at(top);
     if (!n) {
@@ -10300,9 +10337,13 @@ static int edit_key(void *top, unsigned key) {
         return 1;
     }
     if (key != KEY_PREV && key != KEY_NEXT) return 0;
+    /* sliding open or shut (quick_stuck's states, or its slide timer): the wheel waits for it */
+    if (quick && ((unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 ||
+                  widget_get_prop_int(top, "timer_idex", -1) != -1))
+        return 1;
     if (quick && quick_volume()) return 0; /* stock's wheel volume */
     void *wm = window_manager();
-    if (window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm)) return 1;
+    if (window_manager_is_animating(wm) || pointer_down()) return 1;
     int dir = key == KEY_NEXT ? 1 : -1;
     if (quick) {
         void *slider = widget_lookup(top, "slider_backlight", 1);
@@ -10377,7 +10418,7 @@ static int replay_wheel(const void *info) {
         st.held_timer = 0;
         return 0; /* anything but RET_REPEAT removes the timer */
     }
-    if (window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm)) return 8;
+    if (window_manager_is_animating(wm) || pointer_down()) return 8;
     int dir = st.held > 0 ? 1 : -1;
     unsigned key = dir > 0 ? KEY_NEXT : KEY_PREV;
     st.held_event[EVENT_KEY / 4] = key;
@@ -10535,7 +10576,7 @@ int ringnav(void *ctx, void *event) {
     /* Outside a scrub the volume's band over Now Playing leaves the keys the page's: Centre's
      * presses as on it, the wheel the volume's, and a pending press survives the ticks */
     int np = top == st.np_win || (!st.scrub && vol_band(wm));
-    if (!np || window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm))
+    if (!np || window_manager_is_animating(wm) || pointer_down())
         np_cancel();
     else if (key != KEY_CENTER && np_lyrics(key))
         return STOP;
@@ -10561,7 +10602,7 @@ int ringnav(void *ctx, void *event) {
         st.dc_at = now;
     }
     int dir = key == KEY_NEXT ? 1 : key == KEY_PREV ? -1 : 0;
-    if (window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm)) {
+    if (window_manager_is_animating(wm) || pointer_down()) {
         drop_input();
         return dir && window_manager_is_animating(wm) ? hold_wheel(ctx, event, dir) : STOP;
     }

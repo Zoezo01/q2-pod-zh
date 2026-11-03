@@ -167,6 +167,10 @@ GRADIENT_LEAF = ('style_get_gradient', 0x649f3c, 'ringnav_style_gradient', (0x10
 # Videos: window_manager_paint is a leaf too (null-checks the manager and its vtable at +0x94, then
 # tail-calls paint, +0xc); the payload does the whole of it and skips it while q2video plays.
 WM_PAINT_LEAF = ('window_manager_paint', 0x66d46c, 'ringnav_wm_paint', (0x10800009, 0, 0x8c820094))
+# The UI loop's input queue has one way in, main_loop_queue_event, a leaf too (null-checks the loop, its
+# queue_event slot at +0x18 and the request, then tail-calls the slot); the payload does the whole of it
+# and keeps the touch thread's empty events out of the queue (playback.c ringnav_queue_event).
+QUEUE_LEAF = ('main_loop_queue_event', 0x648ea8, 'ringnav_queue_event', (0x10800008, 0, 0x8c990018))
 # Videos' player (patch/video.c): a separate executable against the rootfs's own libraries,
 # with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
@@ -207,10 +211,15 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
             rm -f $m
         }}
-        [ -f $c ] && (
+        w=/mnt/data/q2-wheel.log
+        [ -f $c ] || [ -f $w ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
-            grep -q ' /mnt/mmc ' /proc/mounts && cp $c /mnt/mmc/q2-crash.log && sync && rm -f $c
+            grep -q ' /mnt/mmc ' /proc/mounts && {{
+                [ -f $c ] && cp $c /mnt/mmc/q2-crash.log && rm -f $c
+                [ -f $w ] && cat $w >> /mnt/mmc/q2-wheel.log && rm -f $w
+                sync
+            }}
         ) &
         rb=/mnt/mmc/.rockbox
         rockbox() {{
@@ -915,6 +924,7 @@ FUNCTIONS = {
  'window_manager_get_top_window': ('void *', 'void *'),
  'window_manager_is_animating': ('int', 'void *'),
  'window_manager_get_pointer_pressed': ('int', 'void *'),
+ 'main_loop': ('void *', 'void'),  # +LOOP_PRESSED: the touch thread's own down flag (navigation.c stale_note)
  'widget_get_visible': ('int', 'void *'),
  'widget_get_prop_bool': ('int', 'void *, const char *, int'),
  'widget_get_prop_int': ('int', 'void *, const char *, int'),
@@ -1244,7 +1254,7 @@ def compile_payload(out):
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
@@ -1467,7 +1477,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         gp = ((prolog[0] & 65535) << 16) + (low if low < 32768 else low - 65536) + address
         check(gp == GP, f'{name}: unexpected GOT base')
         jump(off, replacement)
-    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF):
+    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF, QUEUE_LEAF):
         off = fileoff(patched, address)
         check(syms[name] == address and struct.unpack_from('<III', patched, off) == words, f'{name}: unexpected code')
         jump(off, replacement)

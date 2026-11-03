@@ -137,6 +137,21 @@ static void wheel_post(char *info, int key) {
         ((void (*)(void *))WHEEL_POST)(info);
     }
 }
+/* main_loop_queue_event (tools/build.py QUEUE_LEAF): the one way into the UI loop's queue, for every
+ * input thread, SyncLink's keys and idle requests alike; full, it drops its oldest event. The touch
+ * thread (tslib_run, 0x622d70) posts an event of type 0 for every sample with no pressure while it
+ * holds no finger down, which the loop hands the window manager as EVT_NONE. Wheel QS's lift writes
+ * BTN_TOUCH 0 to the panel's node, so a thumb that rests on the screen's edge after the swipe is
+ * reported without a touch the input core passes on, and streams those at the panel's rate; twenty
+ * of them while the pull-down opened evicted the lift's release (q2-wheel.log: thread=0, last=move),
+ * and the wheel and Centre were dead until a tap. They mean nothing, so they are not queued;
+ * everything else goes to stock's poster. */
+int ringnav_queue_event(void *loop, const unsigned *r) {
+    int (*post)(void *, const void *) =
+        loop ? *(int (**)(void *, const void *))((char *)loop + LOOP_POST) : 0;
+    if (!post || !r) return 0x10; /* RET_BAD_PARAMS, as stock */
+    return r[0] ? post(loop, r) : 0;
+}
 
 volatile int wheel_raw __attribute__((section(".scratch")));
 volatile int wheel_travel __attribute__((section(".scratch")));
@@ -170,8 +185,8 @@ static unsigned qs_t0 __attribute__((section(".scratch"))); /* the gesture's fir
 static int qs_left __attribute__((section(".scratch"))),
     qs_travel __attribute__((section(".scratch"))), qs_armed __attribute__((section(".scratch")));
 /* the streamed finger: down (qs_live), from and to on the screen, over qs_ms from qs_t0 */
-static int qs_live __attribute__((section(".scratch"))), qs_from __attribute__((section(".scratch"))),
-    qs_to __attribute__((section(".scratch")));
+volatile int qs_live __attribute__((section(".scratch"))); /* navigation.c stale_note reads it */
+static int qs_from __attribute__((section(".scratch"))), qs_to __attribute__((section(".scratch")));
 static unsigned qs_ms __attribute__((section(".scratch")));
 volatile int qs_back __attribute__((section(".scratch"))), qs_down __attribute__((section(".scratch")));
 

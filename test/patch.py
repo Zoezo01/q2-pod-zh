@@ -1070,6 +1070,29 @@ m.pressed=1
 assert m.confirm()==11 and not m.dispatched()
 assert m.call()==11 and m.selected(w)==2
 m.pressed=0; passed()
+# A press the window manager keeps with no pointer event for STALE_TOUCH_MS is no finger: the wheel
+# and Centre work again, the bar paints, and the first such press is noted once in q2-wheel.log
+# (a touch's release the manager never got held them until a tap). A fresh touch is a finger still.
+m.touch(); m.pressed=1; m.calls=[]
+assert m.call()==11 and m.selected(w)==2 and not [c for c in m.calls if c[0]=='fopen@GLIBC_2.2']
+m.now+=O['STALE_TOUCH_MS']
+assert m.call()==11 and m.selected(w)==3
+notes=[c for c in m.calls if c[0]=='fopen@GLIBC_2.2']
+assert len(notes)==1 and m.text(notes[0][1])=='/mnt/data/q2-wheel.log' and m.text(notes[0][2])=='ab'
+m.calls=[]; assert m.call()==11 and m.selected(w)==4 and not [c for c in m.calls if c[0]=='fopen@GLIBC_2.2']
+m.paint(w); assert m.selected(w)==4 and m.drawn()
+assert m.confirm()==11 and m.dispatched()[0][1]==entries[4]
+m.touch(); m.calls=[]; assert m.call()==11 and m.selected(w)==4  # a new touch: a finger again
+m.now+=O['STALE_TOUCH_MS']; assert m.call(O['KEY_PREV'])==11 and m.selected(w)==3 and len([c for c in m.calls if c[0]=='fopen@GLIBC_2.2'])==1
+m.pressed=0; passed()
+# The window manager's dispatch is where a real touch is timed, pointer events only, and only those
+# that reach it: a key does not count, nor an event the video player or a card game takes.
+m.handlers[payload_syms['stock_input_trampoline']]='stock_input'
+def wm_event(kind): return m.call(address=HOOKS['window_manager_dispatch_input_event'][0],args=(m.wm,m.event,0,0),event_type=kind,gap=0)
+wm_event(O['EVT_POINTER_FIRST']); m.pressed=1; m.calls=[]; assert m.call()==11 and m.selected(w)==3
+wm_event(O['EVT_KEY_DOWN']); m.now+=O['STALE_TOUCH_MS']; assert m.call()==11 and m.selected(w)==4  # a key is no finger
+wm_event(O['EVT_POINTER_FIRST']+2); m.now+=O['STALE_TOUCH_MS']-1500; assert m.call()==11 and m.selected(w)==4  # a move
+m.pressed=0; passed()
 # With three rows in view the difference shows: the middle one wins, not the top edge.
 m=Machine(); w,es=m.page_list(8,height=192,extent=1000)
 m.paint(w); m.touch(); m.word(w+O['SCROLL_Y'],200); m.word(w+O['VIEW_ANIMATOR'],0x1234)
@@ -1842,6 +1865,14 @@ assert m.call()==11 and m.nodes[bright]['value']==51
 m=Machine(); m.config['QSVOLUME']='1'; bright=m.node('slider','slider_backlight',value=50)
 m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])])
 assert m.call()!=11 and m.nodes[bright]['value']==50; passed()
+# While the pull-down slides (stock state 1 or 2, or its timer_idex slide timer running) the wheel
+# does nothing there, brightness and volume mode alike: only the rested, open panel takes a tick.
+for state,timer,volume in ((1,7,'0'),(2,7,'0'),(3,7,'0'),(3,7,'1'),(2,7,'1')):
+    m=Machine(); m.config['QSVOLUME']=volume; bright=m.node('slider','slider_backlight',value=50)
+    m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])],timer_idex=timer)
+    m.word(syms['g_dropdown_menu_state'],state)
+    assert m.call()==11 and m.nodes[bright]['value']==50, (state,timer,volume)
+passed()
 # A swipe up that closes it may start on the brightness slider: the slider gets its press only once the
 # touch goes 10 px more sideways than up or down, or with a tap's release; a touch that goes up first,
 # or any while stock slides the pull-down (g_dropdown_menu_state 1, 2), never reaches it, and a press
@@ -6397,7 +6428,7 @@ m.byte(syms['g_backlight_status'],1); m.playtime=30; assert settle(m)[-1]==4*SLO
 # and the place; a finger on the screen keeps them where they are.
 m.word(O['MCL_POS'],2); m.playtime=0; assert loop(m)==0 and settle(m)[-1]==0 and m.rows()==0; passed()
 m.playtime=12; assert settle(m)[-1]==2*SLOT and m.rows()==2*SLOT and settle(m)[-1]==2*SLOT; passed()
-m.pressed=1; m.playtime=20; assert settle(m)[-1]==2*SLOT; m.pressed=0; assert settle(m)[-1]==3*SLOT; passed()
+m.touch(); m.pressed=1; m.playtime=20; assert settle(m)[-1]==2*SLOT; m.pressed=0; assert settle(m)[-1]==3*SLOT; passed()  # a touch, then its press
 # The clock: the first second seen puts it anywhere in that second (its middle, with a poll's slack);
 # the next second narrows it to within a poll after that change; it never runs a poll past its second;
 # paused it stays, and on Play goes on from there until the next second; a seek starts it again.
@@ -9255,6 +9286,7 @@ class RateMachine(FileMocks,ShuffleMachine):
         if press: f,ctx=self.handler(self.fav,O['EVT_POINTER_DOWN']); self.call(address=f,args=(ctx,self.event,0,0),gap=0)
         f,ctx=self.handler(self.fav,O['EVT_CLICK']); return self.call(address=f,args=(ctx,self.event,0,0),gap=0)
     def heart(self,ms=O['RATE_HOLD_MS']):  # a press held ms on the heart
+        self.touch()  # the finger's down reaches the window manager first (pointer_down)
         f,ctx=self.handler(self.fav,O['EVT_POINTER_DOWN']); self.call(address=f,args=(ctx,self.event,0,0),gap=0)
         self.pressed=1; self.advance(ms,clear=False); self.pressed=0
 def key_of(name): k=fnv('/p/'+name); return k|(k==0)

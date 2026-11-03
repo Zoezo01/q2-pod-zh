@@ -130,6 +130,15 @@ def boot_check():
         crash.write_text('== demo exit 137\n'); state.write_text(line); boot(True, False, status=0)
         assert crash.read_text().startswith('== demo exit 137\n== last state\n') and line in crash.read_text() and not state.exists()
         for f in (crash, copy): f.unlink(missing_ok=True)
+        # the wheel's stale-press notes (navigation.c stale_note) go to the card the same way, appended, on their own
+        wheel, wcopy = r/'mnt/data/q2-wheel.log', r/'mnt/mmc/q2-wheel.log'
+        wheel.write_text('== wheel: one\n'); mounts.write_text(''); boot(True, False, status=0)
+        assert wheel.exists() and not wcopy.exists() and not copy.exists()  # no card: kept
+        mounts.write_text(f'/dev/mmcblk0p1 {r}/mnt/mmc vfat rw 0 0\n'); wcopy.write_text('== wheel: earlier\n'); boot(True, False, status=0)
+        assert wcopy.read_text() == '== wheel: earlier\n== wheel: one\n' and not wheel.exists() and not copy.exists()
+        wheel.write_text('== wheel: two\n'); crash.write_text('== demo exit 137\n'); boot(True, False, status=0)
+        assert wcopy.read_text().endswith('== wheel: two\n') and copy.read_text() == '== demo exit 137\n' and not wheel.exists() and not crash.exists()
+        for f in (crash, copy, wheel, wcopy): f.unlink(missing_ok=True)
     print('Dual boot: Rockbox by default, one-session Q2 Pod, stale choice ignored, card fallback, Home Rockbox row and Wi-Fi off before Rockbox passed.')
 boot_check()
 
@@ -172,7 +181,7 @@ logo_check()
 
 def validate_assets(directory):
     import functools, json, re, struct, subprocess
-    from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
+    from build import sha, run, fileoff, symbols, BLUEALSA, AAC_44K1, GRADIENT_LEAF, WM_PAINT_LEAF, QUEUE_LEAF, HELPER, HELPER_LIKE, BOOT, BOOT_HOOK, REMOTE, REMOTE_HOOK, LOG_HOOK, S90PLAY, S11LOGO, LOGO_HOOK, LOGO_LIGHT, BLUEALSA2, BT_KEEPALIVE, RTC_WRITE, WIFI_LPS, HOOKS, LOCK_CLOCK_12H, WATCHDOG, WATCHDOG_SLEEP, DROP_CACHES, STREAM_POLL_CALLS, DARK_POLLS, WHEEL_TS_READ, PDR
     from ipod import (ART_PLACEHOLDERS, sized_art, AUDIT, TOOLBAR_SWITCHES, BOTTOM, CONFIRM, VOLUME, BIGCOVER, BC_ART, BC_TITLE_PAD, QUICK_SETTINGS, QS_TOP, QS_LABEL_GAP, QS_LABEL_H,
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
@@ -212,8 +221,8 @@ def validate_assets(directory):
         want = struct.pack('<III', 0x8f99a8f8, 0x0320f809, 0x8fa40000 | slot)
         assert demo[off:off+12] == want
     # Every hook and leaf jumps to its payload function (build.py pins the leaves' words): the
-    # leaves are window_manager_paint (Videos) and style_get_gradient.
-    for address, name in [*(h[:2] for h in HOOKS.values()), WM_PAINT_LEAF[1:3], GRADIENT_LEAF[1:3]]:
+    # leaves are window_manager_paint (Videos), style_get_gradient and main_loop_queue_event.
+    for address, name in [*(h[:2] for h in HOOKS.values()), WM_PAINT_LEAF[1:3], GRADIENT_LEAF[1:3], QUEUE_LEAF[1:3]]:
         off = fileoff(stock, address)
         assert demo[off:off+8] == j(symbols(directory/'patch.elf')[name]).to_bytes(4, 'little') + bytes(4)
     from build import AUDIO_EXTENSION_CALLS

@@ -813,6 +813,25 @@ assert wheel([(50,1),(52+U,1),(52+U,0),(52+U,1),(51+2*U,1)])[0]==[P]  # a lift d
 F=O['WHEEL_QUEUE_FREE']  # a busy UI: a tick that would leave fewer free slots is dropped, not queued
 assert [len(wheel([(10,1),(10+U,1)],used=n)[0]) for n in (20-F-2,20-F-1,20)]==[1,0,0]
 checks+=1
+# main_loop_queue_event (build.py QUEUE_LEAF, playback.c ringnav_queue_event): the UI loop's one way
+# in. The touch thread posts an event of type 0 for every pressureless sample while it holds no
+# finger, and twenty of them evict a queued release; they go nowhere, so they are not queued. Every
+# other request reaches the loop's own poster; a missing loop, slot or request is RET_BAD_PARAMS.
+class PostMachine(PlaybackMachine):
+    slot=syms['main_loop_queue_event']+0x10  # the loop's poster: stock code never otherwise reached
+    def __init__(self):
+        super().__init__(); self.posted=[]; self.handlers[self.slot]='post'
+    def hook(self,u,address,size,unused):
+        if address!=self.slot: return super().hook(u,address,size,unused)
+        self.posted.append(self.get(u.reg_read(REGS[1]))); self.returns(0,clobber=True)
+def post(kind,loop_ok=1,slot_ok=1):
+    m=PostMachine(); loop,r=m.alloc(0x60),m.alloc(0x30)
+    if slot_ok: m.word(loop+O['LOOP_POST'],m.slot)
+    m.word(r,kind)
+    return m.fn('ringnav_queue_event',loop if loop_ok else 0,r),m.posted
+assert post(0x103)==(0,[0x103]) and post(0xff)==(0,[0xff]) and post(0x110)==(0,[0x110]) and post(0x1000)==(0,[0x1000])
+assert post(0)==(0,[]) and post(0x103,loop_ok=0)==(0x10,[]) and post(0x103,slot_ok=0)==(0x10,[])
+checks+=1
 # Wheel QS (playback.c qs_begin): a touch at one edge, then within QS_GAP_MS one at the opposite edge,
 # streams a finger on the screen to hyn_ts: down at the swipe's start and on across the gap at the
 # gesture's pace (first touch to second, doubled, clamped), on with each sample, at the far end on the

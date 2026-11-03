@@ -32,7 +32,7 @@ void wheel_guard_reset(void);
 extern int wheel_guard; /* Volume guard: the screen-off wheel's half-turn guard, 0 off */
 /* Wheel QS taken back: the pull-down's slide for the next release, plus 1 (ringnav_dispatch);
  * qs_down while its finger is down, so that finger's own late touch down keeps it */
-extern volatile int qs_back, qs_down;
+extern volatile int qs_back, qs_down, qs_live;
 /* iPod: while wheel_raw is set the wheel posts no ticks and adds its raw travel to wheel_travel,
  * 200 units a turn, rising anticlockwise (games.c's Vortex, Now Playing's lyrics); wheel_held is
  * set while a finger is on the wheel */
