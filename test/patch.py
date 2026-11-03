@@ -102,6 +102,7 @@ class Machine:
                   'fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0')
         self.word(0xa2638c,0x1000010); self.handlers[0x1000010]='scope_free'
         self.resized=[]  # the bytes each realloc kept
+        self.sized={}  # a block's size, for realloc to spoil only that
         self.scope_tree={}; self.scope_markers=set(); self.scope_handles={}
         self.scope_files={}; self.scope_open={}  # SCOPE_RULES (and its .tmp): path -> bytes; handle -> [path, writing, bytes]
         self.present=set()  # paths access finds (the UI loop's Spotify poll asks for its login)
@@ -262,9 +263,12 @@ class Machine:
         elif name=='atoi@GLIBC_2.0': ret=int(re.match(r'[+-]?\d+',self.text(a))[0]) if re.match(r'[+-]?\d+',self.text(a)) else 0
         elif name=='access@GLIBC_2.0': ret=0 if self.text(a) in self.present else -1
         elif name=='open@GLIBC_2.0': ret=0xffffffff  # no /dev/jz_watchdog here: the watchdog stays off
-        elif name=='calloc@GLIBC_2.0': ret=0 if getattr(self,'fail_calloc',False) else self.alloc(a*b)
+        elif name=='calloc@GLIBC_2.0':
+            ret=0 if getattr(self,'fail_calloc',False) else self.alloc(a*b)
+            self.sized[ret]=a*b
+        elif name=='realloc@GLIBC_2.0' and getattr(self,'fail_realloc',False): ret=0
         elif name=='realloc@GLIBC_2.0':  # moved, as glibc may, the old block spoilt
-            kept=bytes(self.u.mem_read(a,b)); ret=self.alloc(b); self.u.mem_write(ret,kept); self.u.mem_write(a,b'\xff'*b); self.resized.append(kept)
+            kept=bytes(self.u.mem_read(a,b)); ret=self.alloc(b); self.u.mem_write(ret,kept); self.u.mem_write(a,b'\xff'*min(b,self.sized.get(a,b))); self.resized.append(kept); self.sized[ret]=b
         elif name=='strdup@GLIBC_2.0': ret=self.string(self.text(a))
         elif name=='scope_free': ret=0
         elif name=='opendir@GLIBC_2.0':
@@ -4249,6 +4253,23 @@ for cls,artist,query in ((0xf003,0,'getMusicByAlbum'),(0xf004,0,'getMusicBySonge
 for cls,last,rows in ((0xf004,1,3),(0xff01,-1,3),(0xff10,-1,3),(0xff11,-1,3),(0xf007,-1,3),(0xf004,-1,0)):
     shown,q,_=unknown(cls,0,last=last,rows=rows)
     assert len(shown)==rows and q is None, (cls,last,rows); passed()
+# Library -> Songs reads straight into the showlist: stock's load holds its copy and the staging deque
+# together, the library twice. The staging pointer comes back, its deque cleared as stock leaves it.
+class SongsMachine(ClassMachine):
+    def hook(self,u,address,size,unused):
+        if address==syms['getAllMusic']:
+            self.calls.append(('getAllMusic',u.reg_read(REGS[0]),self.get(payload_syms['library_music'])))
+            self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in self.found]
+            self.returns(len(self.found)); return
+        if address==syms['music_nagvation_title']:
+            self.calls.append(('title',u.reg_read(REGS[0]),self.names(self.get(syms['p_deque_showlist'])))); self.returns(0); return
+        super().hook(u,address,size,unused)
+m=SongsMachine(page='localclass_page',cls=0xf001,rows=3); m.found=[m.song('T1'),m.song('T2')]; m.word(syms['g_sort_flag'],2)
+staging=m.get(syms['tools_pdeq_directory']); m.deqs[staging][1]=[m.song('stale')]; m.calls=[]
+assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf001,0,0,0),gap=0)==2
+assert m.names(m.get(syms['p_deque_showlist']))==['T1','T2'] and m.get(syms['tools_pdeq_directory'])==staging and not m.items(staging)
+assert ('getAllMusic',2,1) in m.calls and ('title',0xf001,['T1','T2']) in m.calls
+assert not [c for c in m.calls if c[0] in ('stock_localclass','deque_assign','deque_init_copy')]; passed()
 # Every Library class and detail load scopes SQL, including empty results and failures, and
 # restores an already-scoped caller. The trampoline supplies stock's displayed copies.
 class ScopedClassMachine(ClassMachine):
@@ -4303,8 +4324,8 @@ m.word(m.row(0)+O['REC_PATH'],m.string(paths[0]))
 assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf00b,0,0,0),gap=0)==1
 passed()
 # iPod song rows: an untagged song's title is its file name without the extension; a tag stays.
-m=ClassMachine(page='localclass_page',cls=0xf001,rows=2); m.word(m.row(1)+O['REC_TITLE'],m.string('Tagged'))
-m.word(m.row(0)+O['REC_NAME'],m.string('a.flac')); m.word(m.row(0)+O['REC_PATH'],m.string('/p/a.flac'))
+m=SongsMachine(page='localclass_page',cls=0xf001,rows=2); m.found=[m.song('a.flac'),m.song('Row 1')]
+m.word(m.found[1]+O['REC_TITLE'],m.string('Tagged')); m.word(m.found[0]+O['REC_PATH'],m.string('/p/a.flac'))
 m.call(address=HOOKS['load_localclass_list'][0],args=(0xf001,0,0,0),gap=0)
 assert [m.text(m.get(m.row(i)+O['REC_TITLE'])) for i in (0,1)]==['a','Tagged']; passed()
 # My Fav, Frequent and Recent: a row stock copied without its title takes the library's, by path, not
@@ -6785,11 +6806,13 @@ class FileMocks:
         if name=='fopen':
             path,mode=self.text(a),self.text(b)
             if (mode=='wb' and not self.fail_write) or (mode=='rb' and path in self.files):
-                f=0x2000000+16*next(i for i in range(64) if 0x2000000+16*i not in self.open_files); self.open_files[f]=[path,b'']; return f
-        elif name=='fread': data=self.files[self.open_files[d][0]]; u.mem_write(a,data[:b*c].ljust(b*c,b'\0')); return min(c,len(data)//b)
+                f=0x2000000+16*next(i for i in range(64) if 0x2000000+16*i not in self.open_files); self.open_files[f]=[path,b'',0]; return f
+        elif name=='fread':
+            o=self.open_files[d]; data=self.files[o[0]][o[2]:]; n=min(c,len(data)//b); o[2]+=n*b
+            u.mem_write(a,data[:b*c].ljust(b*c,b'\0')); return n
         elif name=='fwrite': self.open_files[d][1]+=bytes(u.mem_read(a,b*c)); return c
         elif name=='fclose':
-            path,data=self.open_files.pop(a)
+            path,data,_=self.open_files.pop(a)
             if data: self.files[path]=data
         elif name=='rename': self.files[self.text(b)]=self.files.pop(self.text(a))
         return 0
@@ -7005,6 +7028,108 @@ assert m.db.execute('PRAGMA temp_store').fetchone()==(1,); passed()
 for failure in ('open','PRAGMA','select'):
     m=EraMachine(SONGS); m.fail=failure; top=m.top; m.open_era()
     assert m.top==top and m.toasts[-1][3]=='Era unavailable' and m.closed_db==1; passed()
+# The ratings' copy on the card (navigation.c rc_*): the tables' hashes named again from the library, a page a poll.
+RC_FILE='/mnt/mmc/.ratings.tsv'; RC_HEAD='#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n'
+class RatingsCopyMachine(FileMocks,EraMachine):
+    def __init__(self,songs,favs=()):
+        super().__init__(); self.budget=2_000_000; self.file_mocks('rc:',{'/proc/mounts':b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n'}); self.writes=0
+        self.db.execute('drop table songtable')
+        for t in ('songtable','myfav'): self.db.execute(f'create table {t}(id integer primary key,fileurl,time,album,albumsonger)')
+        self.db.executemany('insert into songtable(fileurl,time,album,albumsonger) values(?,?,?,?)',songs)
+        self.db.executemany('insert into myfav(fileurl,time,album,albumsonger) values(?,?,?,?)',favs)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('rc:'): return super().hook(u,address,size,unused)
+        name=name[3:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; self.writes+=name=='rename' and self.text(b)==RC_FILE
+        self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
+    def rec(self,path,cue=0,album=None,artist=None):
+        r=self.record((1,0,path,cue,0,'x')); self.word(r+O['REC_ALBUM'],self.string(album) if album is not None else 0)
+        self.word(r+O['REC_ALBUM_ARTIST'],self.string(artist) if artist is not None else 0); return r
+    def key(self,f,*a,**k): return self.call(address=payload_syms[f],args=(self.rec(*a,**k),0,0,0),gap=0)&0xffffffff
+    def rate(self,songs=(),albums=()):  # (key, hearts) each, as the tables keep them
+        for path,rows in (('/mnt/data/ringnav-ratings',songs),('/mnt/data/ringnav-album-ratings',albums)):
+            self.files[path]=b''.join(struct.pack('<I',(k&~7)|h) for k,h in rows).ljust(4*O['RATE_SLOTS'],b'\0')
+    def poll(self,ms=5000):  # that long on, then pages until the pass ends
+        self.now+=ms; f=payload_syms['ratings_copy_poll']; self.call(address=f,args=(0,0,0,0),gap=0)
+        while self.get(payload_syms['rc']): self.now+=1000; self.call(address=f,args=(0,0,0,0),gap=0)
+    def copy_text(self): return self.files[RC_FILE].decode()
+SONGS_RC=[('/mnt/mmc/m/a.flac',0,'Alpha','Band'),('/mnt/mmc/m/a2.flac',0,'Alpha','Band'),('/mnt/mmc/m/cue.flac',0,'Live','Band'),
+          ('/mnt/mmc/m/cue.flac',30,'Live','Band'),('/mnt/mmc/CD1/1.flac',0,'Solo',None),('/mnt/mmc/CD2/1.flac',0,'Solo',None),
+          ('/mnt/mmc/m/t\tab.flac',0,'Ta\tb','Ban\nd')]
+FAV_RC=[('/mnt/mmc/m/fav.flac',0,'Other','Band')]
+m=RatingsCopyMachine(SONGS_RC,FAV_RC)
+aa=m.key('album_id','/mnt/mmc/m/a.flac',album='Alpha',artist='Band'); ab=m.key('album_id','/mnt/mmc/CD2/1.flac',album='Solo',artist='')
+unknown=m.rec('/x'); m.word(unknown+O['REC_ID'],0xffffffff); au=m.call(address=payload_syms['album_id'],args=(unknown,0,0,0),gap=0)&0xffffffff
+m.rate([(m.key('listen_key','/mnt/mmc/m/cue.flac',cue=30),3),(m.key('listen_key','/mnt/mmc/m/t\tab.flac'),1),
+        (m.key('listen_key','/mnt/mmc/m/fav.flac'),2),(m.key('listen_key','/mnt/mmc/gone.flac'),4)],[(aa,5),(ab,2),(au,1)])
+# Five seconds after boot: My Fav's as 5 whatever is kept, the songs with a CUE start, an album once, the folder only where
+# no album artist tells it apart, tabs and newlines as spaces, a song no longer in the library left out.
+m.poll(0); assert RC_FILE not in m.files; m.poll(4999); assert RC_FILE not in m.files
+m.poll(1); text=m.copy_text()
+assert text==RC_HEAD+'album\t1\tUnknown Album\t\t\nsong\t5\t/mnt/mmc/m/fav.flac\t\nalbum\t5\tAlpha\tBand\t\nsong\t3\t/mnt/mmc/m/cue.flac\t30\n' \
+    'album\t2\tSolo\t\t/mnt/mmc\nsong\t1\t/mnt/mmc/m/t ab.flac\t\n',text
+assert m.writes==1 and m.closed_db==1 and not m.get(payload_syms['rc']+4) and '/mnt/mmc/.ratings.tsv.tmp' not in m.files; passed()
+# Nothing due, nothing read; the same copy again isn't written; a change is, 5 s after the last of a run.
+sql=len(m.sql); m.poll(); m.poll(); assert len(m.sql)==sql
+due=payload_syms['ratings_copy_due']; m.call(address=due,args=(0,0,0,0),gap=0); m.poll(); assert len(m.sql)>sql and m.writes==1; passed()
+m.db.execute('delete from myfav'); m.call(address=due,args=(0,0,0,0),gap=0); m.poll(4999); assert m.writes==1
+m.call(address=due,args=(0,0,0,0),gap=0); m.poll(4999); assert m.writes==1; m.poll(1); assert m.writes==2 and 'fav.flac' not in m.copy_text(); passed()
+# The card away (USB storage): it waits, then writes.
+m.db.execute("insert into myfav(fileurl,time) values('/mnt/mmc/m/a.flac',0)"); mounts=m.files['/proc/mounts']; m.files['/proc/mounts']=b'none /mnt/data ubifs rw 0 0\n'
+sql=len(m.sql); m.call(address=due,args=(0,0,0,0),gap=0); m.poll(); assert len(m.sql)==sql and m.writes==2
+m.files['/proc/mounts']=mounts; m.poll(); assert m.writes==3 and 'song\t5\t/mnt/mmc/m/a.flac\t\n' in m.copy_text(); passed()
+# USB storage taking the card during a pass: nothing written, and due again once it's back.
+m.db.execute("insert into myfav(fileurl,time) values('/mnt/mmc/m/u.flac',0)"); m.call(address=due,args=(0,0,0,0),gap=0); m.now+=5000
+f=payload_syms['ratings_copy_poll']; m.call(address=f,args=(0,0,0,0),gap=0); assert m.get(payload_syms['rc'])
+m.files['/proc/mounts']=b'none /mnt/data ubifs rw 0 0\n'; writes=m.writes
+while m.get(payload_syms['rc']): m.now+=1000; m.call(address=f,args=(0,0,0,0),gap=0)
+assert m.writes==writes; m.files['/proc/mounts']=mounts; m.poll(); assert m.writes==writes+1 and 'u.flac' in m.copy_text()
+m.db.execute("delete from myfav where fileurl like '%u.flac'"); m.call(address=due,args=(0,0,0,0),gap=0); m.poll(); passed()
+# A scan holds a pass back and ends one under way, unwritten; the library rewritten makes the copy due again.
+writes=m.writes
+m.db.execute('delete from myfav'); m.call(address=due,args=(0,0,0,0),gap=0); m.word(O['SCAN_THREAD'],1); m.word(O['SCAN_DONE'],0); m.poll(); assert m.writes==writes
+f=payload_syms['ratings_copy_poll']; m.word(O['SCAN_THREAD'],0); m.now+=5000; m.call(address=f,args=(0,0,0,0),gap=0); assert m.get(payload_syms['rc'])
+m.word(O['SCAN_THREAD'],1); m.word(O['SCAN_DONE'],0); m.now+=1000; m.call(address=f,args=(0,0,0,0),gap=0); assert not m.get(payload_syms['rc']) and m.writes==writes
+m.word(O['SCAN_DONE'],1); m.word(payload_syms['library_gen'],m.get(payload_syms['library_gen'])+1); m.poll(); assert m.writes==writes+1; passed()
+# Fewer lines than the card's copy: the old one is kept as .1, so a lost table can't take the only copy.
+kept=m.files[RC_FILE+'.1'].decode(); assert kept.count('\n')>m.copy_text().count('\n') and 'song\t5\t/mnt/mmc/m/a.flac' in kept; passed()
+# Input holds pages back; the pass then goes on.
+m.call(address=due,args=(0,0,0,0),gap=0); m.db.execute("insert into myfav(fileurl,time) values('/mnt/mmc/m/q.flac',0)"); m.now+=5000
+f=payload_syms['ratings_copy_poll']; m.call(address=f,args=(0,0,0,0),gap=0); assert m.get(payload_syms['rc'])
+sql=len(m.sql); m.call(address=payload_syms['ringnav_input'],args=(m.wm,m.event,0,0),gap=0); m.call(address=f,args=(0,0,0,0),gap=0); assert len(m.sql)==sql
+m.poll(0); assert 'q.flac' in m.copy_text(); passed()
+# A failed write leaves the copy, and no .tmp on the card.
+before=m.copy_text(); m.db.execute("insert into myfav(fileurl,time) values('/mnt/mmc/m/w.flac',0)"); m.fail_write=True; writes=m.writes
+m.call(address=due,args=(0,0,0,0),gap=0); m.poll(); m.fail_write=False; assert m.writes==writes and m.copy_text()==before; passed()
+# A read that fails leaves the copy as it was, the connection closed.
+before=m.copy_text(); writes=m.writes; m.db.execute("insert into myfav(fileurl,time) values('/mnt/mmc/m/a2.flac',0)"); m.fail='select'; closed=m.closed_db
+m.call(address=due,args=(0,0,0,0),gap=0); m.poll(); assert m.writes==writes and m.copy_text()==before and m.closed_db==closed+1; m.fail=''; passed()
+# So does a failed look for songtable, which isn't "no scan yet": the copy isn't cut to My Fav's alone.
+m=RatingsCopyMachine(SONGS_RC,FAV_RC); m.rate([(m.key('listen_key','/mnt/mmc/m/a.flac'),3)]); m.poll(0); m.poll(); before=m.copy_text(); assert 'a.flac' in before
+m.db.execute("insert into myfav(fileurl,time) values('/mnt/mmc/m/a2.flac',0)"); m.fail='select 1 from sqlite_master'; closed=m.closed_db
+m.call(address=payload_syms['ratings_copy_due'],args=(0,0,0,0),gap=0); m.poll(); assert m.writes==1 and m.copy_text()==before and m.closed_db==closed+1; m.fail=''; passed()
+# The longest copy stays as .1: a rating given and cleared after a lost table can't take it. A shorter copy
+# whose write fails leaves the last one where it was, with no .tmp.
+m=RatingsCopyMachine(SONGS_RC,FAV_RC+[(f'/mnt/mmc/m/f{i}.flac',0,'','') for i in range(3)]); m.poll(0); m.poll(); full=m.copy_text()
+def rc_change(sql=''):
+    if sql: m.db.execute(sql)
+    m.call(address=payload_syms['ratings_copy_due'],args=(0,0,0,0),gap=0); m.poll()
+rc_change('delete from myfav'); assert m.files[RC_FILE+'.1'].decode()==full and m.copy_text()==RC_HEAD
+rc_change("insert into myfav(fileurl,time) values('/mnt/mmc/m/n.flac',0)"); one=m.copy_text(); assert 'n.flac' in one
+m.db.execute('delete from myfav'); m.fail_write=True; rc_change(); m.fail_write=False
+assert m.copy_text()==one and m.files[RC_FILE+'.1'].decode()==full and RC_FILE+'.tmp' not in m.files
+rc_change(); assert m.copy_text()==RC_HEAD and m.files[RC_FILE+'.1'].decode()==full; passed()
+# Out of memory ends the pass with the last copy kept, not one with rows missing.
+long=[(f'/mnt/mmc/{"x"*1000}/{i}.flac',0,'','') for i in range(80)]
+m=RatingsCopyMachine(SONGS_RC,long); m.poll(0); m.files[RC_FILE]=b'kept\n'; m.fail_realloc=True; m.poll(); assert m.files[RC_FILE]==b'kept\n' and m.writes==0
+m.fail_realloc=False; m.call(address=payload_syms['ratings_copy_due'],args=(0,0,0,0),gap=0); m.poll(); assert m.copy_text().count('\n')==82; passed()
+# No scan yet, so no songtable: My Fav's alone still get their copy.
+m=RatingsCopyMachine([],FAV_RC); m.db.execute('drop table songtable'); m.poll(0); m.poll()
+assert m.copy_text()==RC_HEAD+'song\t5\t/mnt/mmc/m/fav.flac\t\n' and m.closed_db==1; passed()
+# A library past a page: every page is read, and a pass stops at the last rated found.
+many=[(f'/mnt/mmc/l/{i}.flac',0,'','') for i in range(200)]
+m=RatingsCopyMachine(many); m.rate([(m.key('listen_key','/mnt/mmc/l/100.flac'),4)]); m.poll(0); m.poll()
+assert m.copy_text()==RC_HEAD+'song\t4\t/mnt/mmc/l/100.flac\t\n' and not [q for q in m.sql if 'id>128' in q]; passed()
 # Full-date tags belong to their year; normalize each track before picking the album's latest.
 dates=[('Dates','Artist','','/mnt/mmc/music/d1.flac',20220510),
        ('Dates','Artist','','/mnt/mmc/music/d2.flac',2023),
@@ -9006,7 +9131,12 @@ m=ShuffleMachine(); m.found=[m.song(f'T{i}') for i in range(130)]
 m.word(m.found[1]+O['REC_ARTIST'],0)  # untagged: the count alone
 slots=[(fnv('/p/T3'),5),(fnv('/p/T1'),2),(fnv('/p/T7'),5)]+[(fnv(f'/p/T{i}'),1) for i in range(8,130)]
 m.counts=b''.join(struct.pack('<2I',*e) for e in slots).ljust(8*O['PLAYS_SLOTS'],b'\0')
+m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0; m.page=m.top
+# The library is read once, unsorted and uncopied: a copy OOM-killed demo on a 47,000-song library.
+assert [c[1] for c in m.calls if c[0]=='getAllMusic']==[3]
+assert not [c for c in m.calls if c[0] in ('deque_init_copy','deque_assign')]
+assert m.names(m.get(syms['tools_pdeq_directory']))==['staged']
 ranked=['T3','T7','T1']+[f'T{i}' for i in range(8,130)][:O['PLAYS_TOP']-3]
 # Each 64px row: the title over its artist (when tagged) and play count, in 16px stock grey.
 details=['Artist · 5 plays','Artist · 5 plays','2 plays']+['Artist · 1 play']*(O['PLAYS_TOP']-3)
@@ -9152,6 +9282,11 @@ m.heart(); p=m.panel(); assert m.nodes[p]['sensitive']==1; heart=[h for h in m.n
 f,ctx=m.handler(heart,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.panel() is None and m.nodes[p]['sensitive']==0 and m.kept()==[(key_of('B')&~7)|3] and m.badge()=='3'
 assert m.tap()==0 and m.favs=={'B'} and m.kept()==[] and m.badge() is None; passed()
+# A tap or a saved rating makes the card's copy due, 5 s on; a picker left unsaved doesn't.
+rc_due=payload_syms['rc_due']; m.word(rc_due,0); m.heart(); m.call(O['KEY_RETURN']); assert not m.get(rc_due)
+assert m.tap()==0 and m.get(rc_due)==1
+m.word(rc_due,0); m.heart(); m.call(O['KEY_NEXT']); m.call(O['KEY_CENTER']); assert m.get(rc_due)==1 and m.kept()==[(key_of('B')&~7)|1]
+assert m.tap()==0 and m.favs=={'B'} and m.kept()==[]; passed()
 # Kept across boots; the badge follows the playing track on the UI tick.
 assert m.tap()==0 and m.favs==set(); m.heart(); m.call(O['KEY_NEXT']); m.call(O['KEY_NEXT']); m.call(O['KEY_CENTER'])
 m2=RateMachine(m.files['/mnt/data/ringnav-ratings']); assert m2.badge()=='2'
@@ -9791,6 +9926,15 @@ m.close()
 sheet,chooser=games_open(); G=m.get(payload_syms['g'])
 assert labels(chooser)==['Games','Sudoku','Vortex','Solitaire','Snake'] and not m.nodes[sheet]['visible']
 rows=m.nodes[m.find('scroll_view',chooser)]['children']
+# The wheel carries over at both ends of the real chooser: a bump, then after a pause the other end.
+w=m.find('scroll_view',chooser); m.paint(w,gap=0)
+for _ in range(5):
+    if m.selected(w)!=3: assert m.call(gap=1000)==11; m.paint(w,gap=0)
+assert m.selected(w)==3
+assert m.call(gap=100)==11 and m.selected(w)==3; m.paint(w,gap=0)
+assert m.call(gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==0; m.paint(w,gap=0)
+assert m.call(PREV,gap=100)==11 and m.selected(w)==0; m.paint(w,gap=0)
+assert m.call(PREV,gap=O['EDGE_PAUSE_MS'])==11 and m.selected(w)==3; m.paint(w,gap=0); passed()
 def pick(i):
     f,ctx=m.handler(rows[i],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
 def paint(): m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False,count=50_000_000)
@@ -11088,9 +11232,9 @@ m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps;
 # over the screen; each input event reaches its socket as a text datagram instead of the UI (a held Return
 # ends it), but the music's keys stay stock's; the wheel's raw travel goes once a poll, and its end gives
 # the wheel back.
-m=AppMachine(); card_app(m,'fidget','name=Fidget\ngame=1\n'); assert 'Fidget' not in stream_rows(m)
+m=AppMachine(); card_app(m,'fidget','name=Buddy\ngame=1\n'); assert 'Buddy' not in stream_rows(m)
 def fn(name,*args): return m.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
-assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Fidget' and fn('addon_game_on')==0
+assert fn('addon_games')==1 and m.text(fn('addon_game_name',0))=='Buddy' and fn('addon_game_on')==0
 m.forked=0; m.execs=[]; fn('addon_game_start',0); assert m.execs[-1][:2]==('/mnt/mmc/.fidget/q2-fidget',)*2  # the child
 m.forked=4243; assert fn('addon_game_start',0)==1 and fn('addon_game_on')==4243 and m.get(payload_syms['wheel_raw'])==1
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; GS='/tmp/q2-fidget.input.sock'
@@ -11124,6 +11268,13 @@ assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=True)==[]
 m.waited=0; assert fn('addon_game_start',0)==1
 game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN']); m.now+=300; assert game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])==[('k u 170',GS)]
 m.now+=1000; assert poll(m)==0
+# A press stamped on an even millisecond rounds up (| 1), a poll in that same millisecond is before it: no hold.
+m.now+=m.now&1; game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN']); assert poll(m)==0
+game_event(O['EVT_KEY_UP'],O['KEY_RETURN'])
+# Ended by a hold on an even millisecond, its TERM gets its time before any KILL.
+m.now+=2; game_event(O['EVT_KEY_DOWN'],O['KEY_RETURN']); m.now+=702; assert poll(m)==1
+m.now+=2999; assert poll(m)==0; m.now+=3; assert poll(m)==1
+m.waited=4243; poll(m); game_event(O['EVT_KEY_UP'],O['KEY_RETURN'],stock=False); m.waited=0; assert fn('addon_game_start',0)==1
 # Two minutes without input end it (TERM), counted from the last input, unless Smart Awake (IPOD KEEPLIT)
 # holds it open and lit.
 m.now+=90_000; game_event(O['EVT_KEY_UP'],O['KEY_CENTER']); m.now+=60_000; assert poll(m)==0
@@ -11131,7 +11282,7 @@ m.now+=60_000; assert poll(m)==1
 m.waited=4243; poll(m); assert fn('addon_game_on')==0
 def idle(m):
     m.now+=120_000; m.waited=0; return poll(m)>0
-CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget','name=Fidget\ngame=1\n'); a.forked=4243
+CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget','name=Buddy\ngame=1\n'); a.forked=4243
 assert a.call(address=payload_syms['addon_games'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert a.call(address=payload_syms['addon_game_start'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert not idle(a) and not idle(a) and any(c[0]=='reset_poweroptions_timer' for c in a.calls); passed()
@@ -12178,9 +12329,9 @@ LIST='/mnt/mmc/.q2/sources.list'
 m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:bytearray(b'q2-v1.8'),SPOT_FILES:bytearray(b'.spotify/run\n.spotify/librespot\n'),
                 '/mnt/mmc/.spotify/run':bytearray(b'sh'),'/mnt/mmc/.spotify/librespot':bytearray(b'ELF')})
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
-assert m.labels()==['App Store','Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
+assert m.labels()==['App Store','Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install']
+assert m.labels()==['App Store','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
 assert m.opts[10002]=='https://api.github.com/repos/DiamondBond/q2-fidget/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of ten
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
@@ -12200,7 +12351,7 @@ assert not {SPOT_TAG,SPOT_FILES,'/mnt/mmc/.spotify/run','/mnt/mmc/.spotify/libre
 m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(1); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
-apps_open(m); shelf_job(m); assert m.labels()==['App Store','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install']  # not stopped: checked again
+apps_open(m); shelf_job(m); assert m.labels()==['App Store','Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install']  # not stopped: checked again
 m.row(0); assert m.labels()[2]=='Starts at power-on; Boot to changes that. Press again to install' and len(m.threads)==6
 m.row(0); assert len(m.threads)==7 and m.labels()[2]=='Checking…'; m.row(0); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(0); m.row(0); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -12214,7 +12365,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Fidget','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(0); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -12322,6 +12473,14 @@ m.word(r+O['REC_PATH'],m.string('/mnt/mmc/audiobooks/Book/01.mp3')); playing(m,0
 assert m.places()==[(fnv('/mnt/mmc/audiobooks/Book/01.mp3'),61)] and '/mnt/data/ringnav-plays' not in m.files
 assert '/mnt/mmc/.scrobbler.log' not in m.files; passed()
 
+# resume_held: a long track past RESUME_EDGE_S holds a place a restart would lose; ringnav_change asks then.
+def held(m): return m.call(address=payload_syms['resume_held'],args=(0,0,0,0),gap=0)
+m=ResumeMachine(); playing(m,0,pos=0,n=O['RESUME_EDGE_S']); assert not held(m)
+playing(m,O['RESUME_EDGE_S'],n=2); assert held(m)
+m=ResumeMachine(); playing(m,100,200,pos=0,n=3); assert not held(m); passed()  # short: nothing kept
+m=ResumeMachine(); playing(m,0,pos=0,n=3); playing(m,3600-O['RESUME_EDGE_S']-1); assert held(m)
+playing(m,3600-O['RESUME_EDGE_S']); assert not held(m); passed()  # the last seconds keep no place either
+
 # A spoken CUE book: a chapter keeps its file's place (CUE start + seconds) and never jumps by itself;
 # a chapter row's hold menu starts with Resume, which plays the list's songs from the chapter holding
 # the place and seeks into it once that chapter starts. A chapter within RESUME_EDGE_S of the file's
@@ -12332,6 +12491,7 @@ def chapter(m,r,start,end,path=book):
 def place(sec,path=book): return {'/mnt/data/ringnav-resume':struct.pack('<II',fnv(path),sec)+bytes(8*O['RESUME_SLOTS']-8)}
 m=ResumeMachine(); chapter(m,m.items(m.get(syms['mcl_pdeqplaylist']))[0],600,1200)
 playing(m,0,600,pos=0,n=70); assert m.places()==[(fnv(book),661)] and '/mnt/data/ringnav-plays' not in m.files
+assert not held(m)  # a chapter's restart leaves the book's place alone: nothing to ask
 m=ResumeMachine(m.files); chapter(m,m.items(m.get(syms['mcl_pdeqplaylist']))[0],600,1200)
 m.poll(0,600,pos=0,n=2); playing(m,1,600,n=3); assert not m.seeks; passed()  # picking a chapter plays it
 for start,end,sec,kept in ((0,600,10,[(fnv(book),700)]),(1200,0,590,[])):  # the book's first or last 30 s
@@ -12659,7 +12819,10 @@ assert wake(DOWN,gap=1000) and wake(UP); passed()
 hold=700
 assert wake(DOWN,RET,gap=1000) and wake(UP,RET,gap=hold) and not wake(DOWN,RET,gap=60) and not wake(UP,RET,gap=30)
 assert wake(DOWN,RET,gap=1000) and wake(UP,RET,gap=hold) and wake(DOWN,RET,gap=200) and wake(UP,RET,gap=30)
-assert wake(DOWN,RET,gap=1000) and wake(UP,RET,gap=100) and wake(DOWN,RET,gap=60) and wake(UP,RET,gap=30); passed()
+assert wake(DOWN,RET,gap=1000) and wake(UP,RET,gap=100) and wake(DOWN,RET,gap=60) and wake(UP,RET,gap=30)
+# The stamp rounds up (| 1): a ghost in the same even millisecond as the release is still inside the window.
+assert wake(DOWN,RET,gap=1000); m.now+=hold; m.now+=m.now&1
+assert wake(UP,RET,gap=0) and not wake(DOWN,RET,gap=0) and not wake(UP,RET,gap=30); passed()
 # Every edge button guards Centre as Return does: a thumb on the rim closes Centre with Play/Pause,
 # Previous or Next too. Centre pressed first passes, but an edge press within CHORD_MS of it ends
 # Centre's hold timer, so stock's Centre hold (Shut Down) never comes; a later one leaves it.
@@ -12671,7 +12834,10 @@ FWD=O['KEY_FWD_BTN']
 assert wake(DOWN,gap=1000); t=centre_hold(); assert t in m.timers
 assert wake(DOWN,FWD,gap=100) and t not in m.timers and wake(UP,gap=50) and wake(UP,FWD)
 assert wake(DOWN,gap=1000); t=centre_hold(); assert wake(DOWN,FWD,gap=600) and t in m.timers
-m.timers.pop(t); assert wake(UP,gap=50) and wake(UP,FWD); passed()
+m.timers.pop(t); assert wake(UP,gap=50) and wake(UP,FWD)
+# The stamp rounds up (| 1): an edge press in the same even millisecond as Centre's still ends the hold.
+m.now+=1000; m.now+=m.now&1; assert wake(DOWN,gap=0); t=centre_hold()
+assert wake(DOWN,FWD,gap=0) and t not in m.timers and wake(UP,gap=50) and wake(UP,FWD); passed()
 # A lost release (Standby while held) leaves the guards whole: a press long after its button's last
 # event is a new press, while repeats within 258 ms of each other are still the first press.
 assert wake(DOWN,FWD,gap=1000) and wake(DOWN,FWD,gap=1000) and not wake(DOWN,gap=30) and not wake(UP,gap=50) and wake(UP,FWD)

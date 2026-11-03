@@ -333,7 +333,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     <li><b>Page slides:</b> pages slide in from the right and back out on Return.</li>
     <li><b>Fast-scroll letter:</b> spinning a long list shows the letter it sorts under (C for The Cure).</li>
     <li><b>Artists:</b> open on Albums, with Songs one tap away.</li>
-    <li><b>Starting up:</b> the Q2 starts on Home. <b>Memory Playback → Location</b> restores your queue, paused; <b>Track</b> restarts the song. <b>In-Vehicle Mode</b> starts playing.</li>
+    <li><b>Starting up:</b> the Q2 starts on Home. <b>Memory Playback → Location</b> restores your queue, paused; <b>Track</b> restarts the song, unless it resumes. <b>In-Vehicle Mode</b> starts playing.</li>
   </ul>
   </div>
   <div class="sec">
@@ -421,6 +421,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     <li><b>Five hearts is My Fav:</b> tapping the heart still adds a song to My Fav (five hearts) or takes it out (unrated). A song rated 1 to 4 shows its number on the empty heart.</li>
     <li><b>Library → Ratings</b> lists <b>Top Rated</b> (4 and 5 hearts), <b>Loved</b> (5), <b>All Rated</b> and <b>Disliked</b> (1), most hearts first. A row plays the list from that song.</li>
     <li>Ratings are kept by file path, so they survive Update Local Music but not moving or renaming the file.</li>
+    <li>A copy of your song and album ratings stays on the card as <b>.ratings.tsv</b>, to read on a computer. It is updated soon after a change, and it is only a copy: editing it changes nothing on the Q2.</li>
   </ul>
   <p>Albums have 0 to 5 hearts of their own, separate from their songs’.</p>
   <ul>
@@ -471,7 +472,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     <li><b>Next Album / Previous Album</b> in the hold menu skips the rest of the group, or returns to the start of the previously played group. Folder grouping shows <b>Next Folder / Previous Folder</b>.</li>
     <li>Choosing a stock play mode clears these options, except Shuffle during Shuffle Albums or Folders, which keeps the groups. In those modes, <b>Next Album / Previous Album</b> (or folder) lead the hold menu.</li>
   </ul>
-  <p>Your queue, options and history are restored after a restart; missing files are skipped. <b>Memory Playback → Location</b> restores elapsed time, <b>Track</b> starts at the beginning, and <b>In-Vehicle Mode</b> plays automatically.</p>
+  <p>Your queue, options and history are restored after a restart; missing files are skipped. <b>Memory Playback → Location</b> restores elapsed time, <b>Track</b> starts at the beginning (a track that resumes returns to its place), and <b>In-Vehicle Mode</b> plays automatically.</p>
 
   </div>
   <div class="sec">
@@ -734,7 +735,7 @@ http://stream.radioparadise.com/mp3-128</pre>
 
   <h3>Books with a CUE sheet</h3>
   <p>A book split into chapters by a <code>.cue</code> sheet remembers one place for the whole book, if it’s an <code>.m4b</code> or sits in <code>Podcasts/</code> or <code>Audiobooks/</code>. Picking a chapter plays that chapter from its start, and it becomes the book’s place once you’re past its first 30 seconds. To continue where you stopped, open the book’s chapters and hold Play/Pause on any of them: <b>Resume</b>, at the top of the menu, plays from the right chapter and position. Music albums with a CUE sheet don’t resume.</p>
-  <div class="note"><p><span class="label">Note:</span> DRM-protected files aren’t supported. The last 30 seconds of a file aren’t resumed.</p></div>
+  <div class="note"><p><span class="label">Note:</span> DRM-protected files aren’t supported. The last 30 seconds of a file aren’t resumed. When a file with a saved place is alone in the queue, <b>Previous</b> or <b>Next</b> shows “Press again to restart”; a second press within 3 seconds restarts it.</p></div>
 
   </div>
   </div>

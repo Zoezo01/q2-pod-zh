@@ -29,12 +29,12 @@
 - **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Coverflow you can swipe, four visualizers and Games. Classic and Minimal themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
 - **Wheel navigation:** smooth scrolling that speeds up as you spin, adjustable sensitivity, menus that remember your place, Hold Return to Now Playing or Home, and Single Press Scrub.
 - **Library:** up to 65,000 songs, search, Era (albums by decade), Most Played, Long Songs, favourites, playlists with Edit Playlist and M3U import and export, Play Next, Add to Queue and View Queue. An empty `database.ignore` file keeps a folder out of the Library's lists while its songs still play from Folder view and playlists.
-- **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums.
+- **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums; a copy stays on the card as `.ratings.tsv`.
 - **Playback:** gapless FLAC, MP3 (encoder delay removed) and USB DAC output, Crossfade up to 15 s that follows sample-rate changes and Shuffle, shuffle by song, album or folder, playback speed per folder, Resume Songs, and Memory Playback that brings back the queue you left, Play Next and Add to Queue included.
 - **EQ:** Simple's Low, Mid and High sliders with presets, or Advanced's parametric EQ with up to 30 bands, a live curve, Auto preamp and Balance; AutoEQ and Equalizer APO presets import from the card. Mono Audio and Swap L/R.
 - **Lyrics and covers:** synced `.lrc` lyrics on Now Playing and full screen, Download Cover & Lyrics from LRCLIB, the Cover Art Archive and iTunes, and Download Album Lyrics.
 - **Streaming:** Spotify (Premium): browse your library, search, play and download playlists on the Q2 after a one-time pairing from your phone; AirPlay from your iPhone; Internet Radio with your own stations; Tidal tracks you've played replay from the card.
-- **App Store and updates:** installs and updates Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts, Live Music Archive, and the Fidget game) over Wi-Fi; Network Update installs new Q2 Pod releases.
+- **App Store and updates:** installs and updates Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts, Live Music Archive, and the Buddy game) over Wi-Fi; Network Update installs new Q2 Pod releases.
 - **Scrobbling:** send your listens to Last.fm or ListenBrainz over Wi-Fi, by hand or automatically, and choose how much of a song counts.
 - **Podcasts and audiobooks:** `.m4b` audiobooks (including ones split by a CUE sheet) and podcasts resume where you stopped; the Podcasts app subscribes to shows, downloads episodes and has a sleep timer. A book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
 - **Photos, books and videos:** folders at the card's root add JPEG and PNG photo albums, `.txt` and `.epub` books, and videos.
@@ -89,7 +89,7 @@ Manual: Repeat the [install steps](#install) with the newest release. Your setti
 
 ## Extras
 
-**System settings → App Store** installs, updates and removes Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts, Live Music Archive, and the Fidget game) over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later; Podcasts 1.4.2 and Subsonic 1.4.3 or later), keeping your Rockbox settings and Spotify's login.
+**System settings → App Store** installs, updates and removes Rockbox, its themes, Spotify and the card apps (Deezer, Soulseek, File Browser, Subsonic, Podcasts, Live Music Archive, and the Buddy game) over Wi-Fi from their GitHub releases (Q2 Pod 1.4 or later; Podcasts 1.4.2 and Subsonic 1.4.3 or later), keeping your Rockbox settings and Spotify's login.
 
 - **Spotify (optional, Premium):** with the Q2 on Wi-Fi, open **System settings → App Store → Spotify** and press the row to install it. Then open **Streaming → Spotify** and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. [More](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
 - **Scrobbling:** connect Last.fm or ListenBrainz with the [user guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf).
