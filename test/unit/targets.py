@@ -14,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 NEEDS_STOCK = {
     'aic.py': {'validate_stock', 'patch_module'},
     'build.py': {'build', 'compile_payload'},
-    'ipod.py': {'patch_asset'},
+    'ipod.py': {'patch_asset', 'patch_code'},
     'peq.py': {'compile_common', 'patch_player'},
     'pwm.py': {'link', 'patch_pwm', 'patch_mcu', 'patch_bundle'},
     'rotator.py': {'patch_module'},

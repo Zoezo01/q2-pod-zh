@@ -16,6 +16,8 @@ from build import ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
+# The named immediates' values (ipod.json): text rows' plain, art rows' art_.
+VALUE_NAMES = list(dict.fromkeys(g['value'] for g in AUDIT['immediates'] if isinstance(g['value'], str)))
 INC = (ROOT/'patch/offsets.inc').read_text()
 
 
@@ -34,6 +36,14 @@ class Geometry:
     body: int = 68
     art: int = 52
     art_inset: int = 8
+    art_pitch: int = 72
+    art_body: int = 68
+    title24_y: int = 13  # text y in the body: the 24px title, the title, metadata, playlist count
+    title_y: int = 10
+    meta_y: int = 39
+    count_y: int = 40
+    art_title24_y: int = 13
+    art_meta_y: int = 39
 
 
 SET0 = Geometry()
@@ -119,6 +129,13 @@ def with_geometry(g):
         NP_ICONS_END=375 - corner_x(g.bar, NP_TOP),  # the 50px icon images fill the row's height
         NP_BAR_X=bar_x, NP_BAR=[bar_x, 253, 375 - 2 * bar_x, 4],
         NP_TIME_X=max(MARGIN, corner_x(g.bar + NP_TIMES_Y + 1, 14)))
+
+
+def immediate_values(g=SET0):
+    """{value name: word} for the named ipod.json immediates under geometry g."""
+    geo = with_geometry(g)
+    values = {k: v for k, v in dataclasses.asdict(g).items() if k not in ('name', 'bar')}
+    return values | {'scroll': geo.BOTTOM - 50, 'np_bar_x': geo.NP_BAR[0], 'np_bar_w': geo.NP_BAR[2]}
 
 
 IPOD = with_geometry(SET0)
@@ -943,9 +960,9 @@ def patch_code(data, symbols):
         word(address + 4, 0x0320f809, 0x0320f809, 'lookup close call')
         word(address + 8, 0, 0x8fa40000 | name_slot, 'lookup close receives the top window name')
 
+    values = immediate_values(SET0)
     for group in AUDIT['immediates']:
-        value = {'pitch': PITCH, 'body': BODY, 'art': ART, 'art_inset': ART_INSET,
-                 'scroll': BOTTOM - 50, 'np_bar_x': NP_BAR[0], 'np_bar_w': NP_BAR[2]}.get(group['value'], group['value'])
+        value = values[group['value']] if isinstance(group['value'], str) else group['value']
         for address, instruction in group['sites']:
             old = int(instruction, 16)
             word(int(address, 16), old, (old & 0xffff0000) | value, group['purpose'])

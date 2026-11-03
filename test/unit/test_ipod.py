@@ -724,3 +724,31 @@ def test_patch_asset_rows_and_lists_follow_the_geometry(monkeypatch):
     assert n['row'][1][3] == 64 and n['art'][1][1] == 4
     n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data)))
     assert n['list_view'][1] == [0, 0, 375, 290] and n['row'][1][3] == 72 and n['art'][1][1] == 8
+
+
+SET0_WORDS = {'pitch': 72, 'body': 68, 'art': 52, 'art_inset': 8, 'scroll': 240,
+              'title24_y': 13, 'title_y': 10, 'meta_y': 39, 'count_y': 40}
+SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
+
+
+def test_immediates_every_site_once():
+    sites = [a for g in ipod.AUDIT['immediates'] for a, _ in g['sites']]
+    assert len(sites) == 71 and len(set(sites)) == 71
+
+
+def test_immediate_values_set0_are_the_baked_values():
+    values = ipod.immediate_values(ipod.SET0)
+    assert (values['np_bar_x'], values['np_bar_w']) == (ipod.NP_BAR[0], ipod.NP_BAR[2])
+    assert ipod.VALUE_NAMES[0] == 'pitch'
+    for name in ipod.VALUE_NAMES:
+        if not name.startswith('np_bar'):
+            assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_')], name
+
+
+def test_only_split_names_take_the_art_prefix():
+    assert {n for n in ipod.VALUE_NAMES if n.startswith('art_')} - {'art_inset'} <= {'art_' + n for n in SPLIT}
+    assert all(g['value'] in SPLIT and g['page'] == 'shared' for g in ipod.AUDIT['immediates'] if 'page' in g)
+
+
+def test_geometry_has_every_value_name():
+    assert set(ipod.VALUE_NAMES) - {'scroll', 'np_bar_x', 'np_bar_w'} <= {f.name for f in dataclasses.fields(ipod.Geometry)}
