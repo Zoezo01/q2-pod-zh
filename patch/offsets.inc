@@ -464,14 +464,13 @@ static inline int arc_out(int r, int y) {
  * posts the release (input_dispatch_to_main_loop), whether or not the queue kept them. */
 #define LOOP_PRESSED 0x44
 /* A pointer press the window manager keeps this long with no pointer event is no finger
- * (navigation.c pointer_down): a release it never got would otherwise hold the wheel and Centre. */
+ * (navigation.c stale_heal): a release it never got would otherwise hold the wheel and Centre. */
 #define STALE_TOUCH_MS 5000
 /* An empty Library list's page (navigation.c empty_toast) closes once the window manager marks it
- * opened ("stage" WINDOW_STAGE_OPENED, after the open animation): polled every EMPTY_POLL_MS,
- * EMPTY_TRIES at most. The close path reads the same property @0x689c68 (3 or 5, suspended). */
+ * opened ("stage" WINDOW_STAGE_OPENED, after the open animation): polled every EMPTY_POLL_MS.
+ * The close path reads the same property @0x689c68 (3 or 5, suspended). */
 #define WINDOW_STAGE_OPENED 3
 #define EMPTY_POLL_MS 50
-#define EMPTY_TRIES 20
 /* With the screen off (the wheel is the volume), WHEEL_DARK_GUARD units of one touch's travel one
  * way (100, half a turn, whatever the sensitivity) tick nothing; the wheel then ticks until it has
  * been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration knobs. */

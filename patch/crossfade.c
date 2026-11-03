@@ -1,4 +1,4 @@
-/* Crossfade (docs/internals.md#crossfade): Audio settings' row, its page and the fade hciplayer's
+/* Crossfade (docs/internals.md#crossfade): Playback's row, its page and the fade hciplayer's
  * filter applies (peq_player.c). The page is stock's Boot volume page re-dressed: its slider runs
  * Off (0) and XF_MIN..XF_MAX seconds, so it needs no switch; the switch and Centre still turn it on
  * and off. Display's Wheel sensitivity row opens the same page (xf.ctx 1): 50-200% in tens, no
@@ -16,9 +16,9 @@
 #define XF_MIN 1
 #define XF_MAX 15
 #define XF_DEFAULT 5
-#define XF_ROW "label_xfade"     /* the Audio settings row's label, found again by name */
+#define XF_ROW "label_xfade"     /* the Playback row's label, found again by name */
 #define WHEEL_ROW "label_wheel"  /* and Display's Wheel sensitivity row's */
-#define RS_ROW "label_resumemin" /* and Audio settings' Resume Songs row's */
+#define RS_ROW "label_resumemin" /* and Playback's Resume Songs row's */
 #define NS_ROW "label_night"     /* and Display's Night Shift row's */
 #define RS_MIN 20
 #define RS_MAX 120
@@ -32,7 +32,7 @@ static struct {
     int mono_read, mono, swap_read, swap, mqa_read, mqa;
     volatile int *flag, *mono_flag, *swap_flag;
     void *swap_label, *mqa_label;
-    void *mono_label; /* the Mono Audio row's, while Audio settings is open */
+    void *mono_label; /* the Mono Audio row's, while Playback is open */
     void *page, *sw, *view, *slider, *dec, *add, *label;
     unsigned press, press_at;
 } xf __attribute__((section(".scratch")));
@@ -54,7 +54,7 @@ static void row_text(void *label) {
     widget_set_text_utf8(label, t);
 }
 
-/* Audio settings' row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
+/* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
 void xfade_row(void *label) {
     settings();
     widget_set_name(label, XF_ROW);
@@ -93,7 +93,7 @@ static void rs_text(void *label) {
     widget_set_text_utf8(label, t);
 }
 
-/* Audio settings' row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
+/* Playback's row (navigation.c ringnav_audioset makes it): the label, named for refresh(). */
 void resume_row(void *label) {
     widget_set_name(label, RS_ROW);
     rs_text(label);
@@ -162,7 +162,7 @@ void mono_sync(void) {
 
 static void mono_text(void *label) { list_toggle(label, "Mono Audio", mono_on()); }
 
-/* Audio settings' row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
+/* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
 void mono_row(void *label) {
     xf.mono_label = label;
     mono_text(label);

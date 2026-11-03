@@ -414,7 +414,7 @@ class Machine:
             if kids is not None: kids.remove(a); kids.insert(min(b,len(kids)),a)
             ret=0
         elif name=='pointer_event_init':
-            self.word(a,b); self.word(a+0x10,c); ret=a
+            self.word(a,b); self.word(a+0x10,c); self.word(a+O['EVENT_X'],d); self.word(a+O['EVENT_Y'],self.get(u.reg_read(UC_MIPS_REG_SP)+16)); ret=a
         elif name=='time_now_ms': ret=self.now & 0xffffffff
         elif name=='timer_add':
             ret=0 if self.timer_fail else self.next_timer
@@ -1071,28 +1071,32 @@ m.pressed=1
 assert m.confirm()==11 and not m.dispatched()
 assert m.call()==11 and m.selected(w)==2
 m.pressed=0; passed()
-# A press the window manager keeps with no pointer event for STALE_TOUCH_MS is no finger: the wheel
-# and Centre work again, the bar paints, and the first such press is noted once in q2-wheel.log
-# (a touch's release the manager never got held them until a tap). A fresh touch is a finger still.
-m.touch(); m.pressed=1; m.calls=[]
-assert m.call()==11 and m.selected(w)==2 and not [c for c in m.calls if c[0]=='fopen@GLIBC_2.2']
-m.now+=O['STALE_TOUCH_MS']
-assert m.call()==11 and m.selected(w)==3
-notes=[c for c in m.calls if c[0]=='fopen@GLIBC_2.2']
-assert len(notes)==1 and m.text(notes[0][1])=='/mnt/data/q2-wheel.log' and m.text(notes[0][2])=='ab'
-m.calls=[]; assert m.call()==11 and m.selected(w)==4 and not [c for c in m.calls if c[0]=='fopen@GLIBC_2.2']
-m.paint(w); assert m.selected(w)==4 and m.drawn()
-assert m.confirm()==11 and m.dispatched()[0][1]==entries[4]
-m.touch(); m.calls=[]; assert m.call()==11 and m.selected(w)==4  # a new touch: a finger again
-m.now+=O['STALE_TOUCH_MS']; assert m.call(O['KEY_PREV'])==11 and m.selected(w)==3 and len([c for c in m.calls if c[0]=='fopen@GLIBC_2.2'])==1
-m.pressed=0; passed()
-# The window manager's dispatch is where a real touch is timed, pointer events only, and only those
-# that reach it: a key does not count, nor an event the video player or a card game takes.
+# A press with no pointer event for STALE_TOUCH_MS is healed once per pass of ringnav_sleep: an abort to the
+# top window's targets, so a row can't click, then the release stock never got, at the touch's last place. Only
+# events that reach the window manager count, pointer events only: a key is no finger, and a move is. A --dev
+# build also notes it in q2-wheel.log; a release build opens no file.
 m.handlers[payload_syms['stock_input_trampoline']]='stock_input'
+m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
+m.mock('widget_dispatch_event_to_target_recursive')
 def wm_event(kind): return m.call(address=HOOKS['window_manager_dispatch_input_event'][0],args=(m.wm,m.event,0,0),event_type=kind,gap=0)
-wm_event(O['EVT_POINTER_FIRST']); m.pressed=1; m.calls=[]; assert m.call()==11 and m.selected(w)==3
-wm_event(O['EVT_KEY_DOWN']); m.now+=O['STALE_TOUCH_MS']; assert m.call()==11 and m.selected(w)==4  # a key is no finger
-wm_event(O['EVT_POINTER_FIRST']+2); m.now+=O['STALE_TOUCH_MS']-1500; assert m.call()==11 and m.selected(w)==4  # a move
+def heal():
+    m.calls=[]; m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0)
+    return [c for c in m.calls if c[0] in ('widget_dispatch_event_to_target_recursive','stock_input')]
+def opens(): return [c for c in m.calls if c[0]=='fopen@GLIBC_2.2' and m.text(c[1])=='/mnt/data/q2-wheel.log']
+m.word(m.event+O['EVENT_Y'],44); m.call(33,address=HOOKS['window_manager_dispatch_input_event'][0],args=(m.wm,m.event,0,0),event_type=O['EVT_POINTER_FIRST'],gap=0); m.pressed=1  # the event's x is its key's word
+assert not heal(); m.now+=O['STALE_TOUCH_MS']-1; assert not heal() and not opens()
+m.now+=1; steps=heal()
+assert [c[0] for c in steps]==['widget_dispatch_event_to_target_recursive','stock_input']
+assert steps[0][1]==m.top and m.get(steps[0][2])==O['EVT_POINTER_ABORT']
+assert steps[1][1]==m.wm and m.get(steps[1][2])==O['EVT_POINTER_UP_BEFORE']-1 and (m.get(steps[1][2]+O['EVENT_X']),m.get(steps[1][2]+O['EVENT_Y']))==(33,44)
+assert len(opens())==(1 if manifest['dev'] else 0)
+if manifest['dev']: assert m.text(opens()[0][2])=='ab'
+assert not heal()  # still pressed (stock's flag not what it reads): one try per STALE_TOUCH_MS, not every pass
+m.now+=O['STALE_TOUCH_MS']; assert len(heal())==2
+m.pressed=0; m.now+=O['STALE_TOUCH_MS']; assert not heal()  # nothing pressed: nothing to do
+assert m.call()==11 and m.selected(w)==3; m.paint(w); assert m.drawn()
+wm_event(O['EVT_POINTER_FIRST']); m.pressed=1; m.now+=O['STALE_TOUCH_MS']-1; wm_event(O['EVT_POINTER_FIRST']+2); m.now+=1; assert not heal()  # a move
+wm_event(O['EVT_KEY_DOWN']); m.now+=O['STALE_TOUCH_MS']; assert len(heal())==2  # a key is no finger
 m.pressed=0; passed()
 # With three rows in view the difference shows: the middle one wins, not the top edge.
 m=Machine(); w,es=m.page_list(8,height=192,extent=1000)
@@ -1849,10 +1853,18 @@ passed()
 for state,pressed,timer,stuck in ((1,0,None,1),(2,0,-1,1),(3,0,None,0),(0,0,None,0),(1,1,None,0),(1,0,7,0)):
     m=Machine(); m.top=m.node('dialog','statusbar_dialog',**({} if timer is None else {'timer_idex':timer}))
     m.word(syms['g_dropdown_menu_state'],state); m.pressed=pressed
+    m.handlers[payload_syms['stock_input_trampoline']]='stock_input'
+    m.call(address=HOOKS['window_manager_dispatch_input_event'][0],args=(m.wm,m.event,0,0),event_type=O['EVT_POINTER_FIRST'],gap=0)  # a touch just now: a finger
     m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
     m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0)
     assert m.ups==[m.top]*stuck,(state,pressed,timer)
 passed()
+# That release goes through the dispatch hook, so a Wheel QS take-back slides back and leaves nothing stale.
+m=Machine(); m.top=m.node('dialog','statusbar_dialog'); m.word(syms['g_dropdown_menu_state'],1)
+m.word(payload_syms['qs_back'],2); m.word(payload_syms['qs_down'],1); m.word(syms['g_slide_direction'],0)
+m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
+m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0)
+assert m.ups==[m.top] and m.get(syms['g_slide_direction'])==1 and not m.get(payload_syms['qs_back']) and not m.get(payload_syms['qs_down']); passed()
 # A held Play/Pause there switches its wheel to stock's volume and back, kept as Q2POD QSVOLUME.
 m=Machine(); bright=m.node('slider','slider_backlight',value=50)
 m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])])
@@ -4272,7 +4284,7 @@ for cls,last,rows in ((0xf004,1,3),(0xff01,-1,3),(0xff10,-1,3),(0xff11,-1,3),(0x
     assert len(shown)==rows and q is None, (cls,last,rows); passed()
 # An empty class list: its page, once the window manager marks it opened (stage 3, after the open
 # animation), is force-closed from the next loop pass, then the toast says so. Until then it is
-# polled (EMPTY_POLL_MS, EMPTY_TRIES at most, then the toast alone); a page already left, or
+# polled (EMPTY_POLL_MS) until it opens or stops being on top, then the toast alone; a page already left, or
 # another class's, keeps the toast only.
 def empty(cls,page,stage=O['WINDOW_STAGE_OPENED'],leave=False,shown=None):
     m=ClassMachine(page=page,cls=cls,rows=0); m.found=[]; m.query=None
@@ -4293,8 +4305,9 @@ assert not closes(m) and not m.toasts and len(m.timers)==1
 m.advance(O['EMPTY_POLL_MS']*5); assert not m.toasts and len(m.timers)==1
 m.nodes[m.top]['stage']=O['WINDOW_STAGE_OPENED']; m.calls=[]; m.advance(O['EMPTY_POLL_MS'])
 assert closes(m) and m.toasts and not m.timers; passed()
-m=empty(0xf003,'album_page',stage=2); m.calls=[]; m.advance(O['EMPTY_POLL_MS']*(O['EMPTY_TRIES']+2))
-assert not closes(m) and m.toasts and not m.timers; passed()  # never opened: the toast alone
+m=empty(0xf003,'album_page',stage=2); m.advance(O['EMPTY_POLL_MS']*100); assert not m.toasts and len(m.timers)==1  # slow to open: still waits
+m.top=m.node('window','localmusic_page'); m.calls=[]; m.advance(O['EMPTY_POLL_MS'])
+assert not closes(m) and m.toasts and not m.timers; passed()  # left before it opened: the toast alone
 m=empty(0xf003,'album_page',leave=True)
 assert not closes(m) and m.toasts and not m.timers; passed()
 m=empty(0xf004,'localclass_page',shown=0xf006)  # Genres' page on top by now: not Artists' to close

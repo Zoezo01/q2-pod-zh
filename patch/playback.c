@@ -200,7 +200,7 @@ static unsigned qs_t0 __attribute__((section(".scratch"))); /* the gesture's fir
 static int qs_left __attribute__((section(".scratch"))),
     qs_travel __attribute__((section(".scratch"))), qs_armed __attribute__((section(".scratch")));
 /* the streamed finger: down (qs_live), from and to on the screen, over qs_ms from qs_t0 */
-volatile int qs_live __attribute__((section(".scratch"))); /* navigation.c stale_note reads it */
+volatile int qs_live __attribute__((section(".scratch"))); /* navigation.c stale_note reads it (--dev) */
 static int qs_from __attribute__((section(".scratch"))), qs_to __attribute__((section(".scratch")));
 static unsigned qs_ms __attribute__((section(".scratch")));
 volatile int qs_back __attribute__((section(".scratch"))), qs_down __attribute__((section(".scratch")));

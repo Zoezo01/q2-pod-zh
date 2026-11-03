@@ -83,7 +83,7 @@ HOOKS = {
     'read_artistype_value': (0x4f4724, 'ringnav_read_artistype', None),
     # Tag reads: a FLAC's "ALBUM ARTIST" when stock's libtag finds no ALBUMARTIST
     'toolsGetMusicInfo': (0x5c5f40, 'ringnav_music_info', 'music_info'),
-    # Power gains Charge limit and Low power; Audio settings gains Artists (Album Artist)
+    # Power gains Charge limit and Low power; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4cc4cc, 'ringnav_systemset', 'systemset'),
     'systemset_display_page_init': (0x4c1d04, 'ringnav_display', 'display'),
     # Lock screen (patch/lockscreen.c): the built-in wallpapers in the picture list, the Lock screen
@@ -198,8 +198,9 @@ ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
 # Home's hand-over pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
 # start Wi-Fi under Rockbox. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
 # finish starting: wifi_connect.sh exits before its /tmp/wpasupplicant_initsuccess without a saved network, and demo
-# starts udhcpc later too. ponytail: 300 ms is a guess, far above fork to exec; a shell slower than that still escapes.
-WIFI_OFF ='killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
+# starts udhcpc later too. A second pass 2 s in, called off if Rockbox has already left and demo is starting Wi-Fi
+# again, catches a shell that took longer. ponytail: 300 ms and 2 s are guesses; a shell slower than 2 s still escapes.
+WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         c=/mnt/data/q2-crash.log
         m=/mnt/data/q2-state
@@ -211,14 +212,10 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
             rm -f $m
         }}
-        w=/mnt/data/q2-wheel.log
-        [ -f $c ] || [ -f $w ] && (
+        [ -f $c ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
-            grep -q ' /mnt/mmc ' /proc/mounts && {{
-                [ -f $c ] && cp $c /mnt/mmc/q2-crash.log && sync && rm -f $c
-                [ -f $w ] && cat $w >> /mnt/mmc/q2-wheel.log && sync && rm -f $w
-            }}
+            grep -q ' /mnt/mmc ' /proc/mounts && cp $c /mnt/mmc/q2-crash.log && sync && rm -f $c
         ) &
         rb=/mnt/mmc/.rockbox
         rockbox() {{
@@ -243,7 +240,9 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             killall checkappprocess.sh 2>/dev/null
             # demo is gone: what it just launched gets this long to reach a name WIFI_OFF kills (build.py)
             usleep 300000
+            (usleep 2000000; {WIFI_OFF}) &
             rockbox
+            kill $! 2>/dev/null
         done
         case $s in 0|143) rm -f $m ;; *)
             {{
@@ -270,6 +269,16 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
 LOG_HOOK = (b'        while :; do\n            /release/bin/demo\n',
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
+# --dev only: the wheel's stale-press notes (navigation.c stale_note) go to the card's q2-wheel.log, appended, when
+# the card is up. In BOOT_HOOK's start path.
+WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
+                  b'        w=/mnt/data/q2-wheel.log\n'
+                  b'        [ -f $w ] && (\n'
+                  b'            i=0\n'
+                  b"            while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done\n"
+                  b"            grep -q ' /mnt/mmc ' /proc/mounts && cat $w >> /mnt/mmc/q2-wheel.log && sync && rm -f $w\n"
+                  b'        ) &\n'
+                  b'        rb=/mnt/mmc/.rockbox\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.
 BLUEALSA = 'usr/bin/bluealsa'
 # Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM between songs, so
@@ -1455,6 +1464,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{info[1]}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
                f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
+               f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
     (out/'stock.h').write_text('\n'.join(header)+'\n')
@@ -1645,7 +1655,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(s90play.count(BOOT_HOOK[0]) == 1 and s90play.count(REMOTE_HOOK[0]) == 1, 'Unexpected S90play')
     s90play = s90play.replace(*BOOT_HOOK)
     check(s90play.count(LOG_HOOK[0]) == 1, 'Unexpected demo loop')
-    (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK) if dev else s90play)
+    check(s90play.count(WHEEL_LOG_HOOK[0]) == 1, 'Unexpected card path')
+    (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK).replace(*WHEEL_LOG_HOOK) if dev else s90play)
     config = cat(DEFAULT_CONFIG)
     check(config.count(COVERMODE[0]) == 1, 'Unexpected default config.ini')
     (out/'config.ini').write_bytes(config.replace(*COVERMODE))

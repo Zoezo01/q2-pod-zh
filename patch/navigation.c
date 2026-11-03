@@ -366,8 +366,8 @@ typedef struct {
      * and the list it opened, with its tracks. */
     unsigned *rates, *album_rates;
     void *rate_win, *rate_fav, *rate_ctx, *rate_badge, *rate_on;
-    int rate_shown;              /* the badge's hearts plus 1, 0 for a new badge */
-    int empty_kind, empty_tries; /* the empty Library list empty_toast names and closes */
+    int rate_shown; /* the badge's hearts plus 1, 0 for a new badge */
+    int empty_kind; /* the empty Library list empty_toast names and closes */
     int rate_pick, rate_held;
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu, *rt_page, *rt_list;
@@ -403,8 +403,8 @@ typedef struct {
     void *dc_top;    /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
     unsigned charge_at, last_input, cpu_retry;
-    unsigned touch_at; /* the last pointer event's time and type (pointer_down, stale_note) */
-    int touch_type, stale_noted, stale_notes;
+    unsigned touch_at; /* the last pointer event's time, type and place (stale_heal, stale_note) */
+    int touch_type, touch_x, touch_y, stale_notes;
     int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
     int wdt_long; /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
     int ended;    /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
@@ -904,44 +904,7 @@ static int usb_prompt(void) {
 static int allowed_top(void *top) {
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
 }
-/* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick
- * and Centre press on a list is then dropped (ringnav's gate) and the selection stays hidden until
- * a tap, which Wheel QS's finger (playback.c) cannot give; a stuck pull-down (quick_stuck) stays
- * too. The release went missing in the input queue (playback.c ringnav_queue_event, the found
- * way, now closed); this is the backstop for any other. A press is a finger only while a pointer
- * event reached the window manager within STALE_TOUCH_MS (ringnav_input; ringnav_touch for the
- * harness); a finger resting that long gets the wheel back as well. The first stale press per
- * touch, STALE_NOTES a boot, goes to q2-wheel.log, which the next boot appends to the card's
- * (tools/build.py BOOT_HOOK): the page, the pull-down's state and slide timer, the touch thread's
- * own down flag (LOOP_PRESSED), Wheel QS's finger and the last pointer event. ponytail:
- * STALE_TOUCH_MS is a guess; the note is the way to a cause. */
-#define STALE_NOTES 8
-static void stale_note(unsigned age) {
-    if (st.stale_noted || st.stale_notes >= STALE_NOTES) return;
-    st.stale_noted = 1;
-    st.stale_notes++;
-    unsigned char *loop = main_loop();
-    void *top = window_manager_get_top_window(window_manager());
-    char s[160];
-    tk_snprintf(s, sizeof s,
-                "== wheel: stale press at %u s: top=%s pull-down=%d slide=%d thread=%d "
-                "qs=%d/%d last=%x %u ms ago\n",
-                (unsigned)time_now_ms() / 1000, top ? widget_get_prop_str(top, "name", "") : "-",
-                I(g_dropdown_menu_state, 0), top ? widget_get_prop_int(top, "timer_idex", -1) : -1,
-                loop ? loop[LOOP_PRESSED] : -1, qs_live, qs_down, st.touch_type, age);
-    void *f = fopen("/mnt/data/q2-wheel.log", "ab");
-    if (!f) return;
-    fputs(s, f);
-    fclose(f);
-}
-static int pointer_down(void) {
-    if (!window_manager_get_pointer_pressed(window_manager())) return 0;
-    unsigned age = (unsigned)time_now_ms() - st.touch_at;
-    if (age < STALE_TOUCH_MS) return 1;
-    stale_note(age);
-    return 0;
-}
-int ringnav_pointer_down(void) { return pointer_down(); } /* visualizer.c */
+static int pointer_down(void) { return window_manager_get_pointer_pressed(window_manager()); }
 
 /* A click identifies its pane by ancestry. On the first wheel turn, an unowned pair starts
  * with the first pane in UI order; painting and touch never choose one implicitly. */
@@ -2522,7 +2485,7 @@ static int quick_long(const void *unused) {
     if (page == 3 && navigator_window_is_exist("equalizer_page")) return 0;
     navigator_to(page == 1   ? "systemset/wifi_page"
                  : page == 2 ? "systemset/bluetooth_page"
-                             : "playset/equalizer_page"); /* as Audio settings' EQ row (0x4b94d0) */
+                             : "playset/equalizer_page"); /* as Playback's EQ row (0x4b94d0) */
     return 0;
 }
 static int quick_down(void *icon, void *event) {
@@ -2555,7 +2518,7 @@ int ringnav_quick_settings(void *win, void *ctx) {
 
 /* Power's Charge limit, Low power and Wake (docs/internals.md#charge-limit, #low-power,
  * #wake), Q2POD CHARGELIMIT, LOWPOWER and WAKEDOUBLE in config.ini, Display's Artist albums
- * (ARTISTCF), Audio settings' Year order (YEAROLD, coverflow.c's year ranks) and Artists, which
+ * (ARTISTCF), Playback's Year order (YEAROLD, coverflow.c's year ranks) and Artists, which
  * is stock's own PLAYSET ARTISTTYPE (artist_type, the artist page's switch;
  * docs/internals.md#album-artists), and Bluetooth's Resume on connect (RESUME, so a missing key
  * holds playback; docs/internals.md#resume-on-connect), and the Lock screen's Clock (LOCKCLOCK,
@@ -5061,6 +5024,16 @@ static int display_open(void *ctx, void *event) {
     return 0;
 }
 
+static void setting_row(void *view, int i) {
+    static const char *const icons[] = {
+        "system_display",    "playset_covermode", "system_powermanager", "system_display",
+        "playset_covermode", "system_display",    "system_display",      "system_display",
+        "playset_covermode", "system_keytone",    "playset_covermode"
+    };
+    st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
+    setting_text(i);
+}
+
 /* systemset_display_page_init: stock builds its three rows (0x4c19bc: a s_listitem_black list_item
  * holding a 335x70 s_btn_listitem button with a 52px icon, a 24px label at x 72 and list_into);
  * Smart Awake and Night Shift (the brightness icon, opening its slider page, crossfade.c) join
@@ -5080,20 +5053,11 @@ int ringnav_display(void *win, void *ctx) {
                              *const tone_icon[] = { "system_keytone" },
                              *const lock_icon[] = { "system_keylock" };
     static const unsigned char main_order[] = { 0, 1, 3, 4, 2, 5, 6 };
-    /* Setting 9, Click With Headphones, shows while Key Tone is on. */
-    static const char *const icons[] = {
-        "system_display",    "playset_covermode", "system_powermanager", "system_display",
-        "playset_covermode", "system_display",    "system_display",      "system_display",
-        "playset_covermode", "system_keytone",    "playset_covermode"
-    };
-#define SETTING_ROW(i)                                                                             \
-    (st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)(i)),             \
-     setting_text(i))
     int sub = display_sub, result = stock_display_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
     if (!view) return result;
     if (!sub) {
-        SETTING_ROW(7);
+        setting_row(view, 7);
         night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
         for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_COVERFLOW; ++i)
             widget_set_text_utf8(list_row_into(view, sub_icons[i], display_open, (void *)(long)i),
@@ -5112,21 +5076,20 @@ int ringnav_display(void *win, void *ctx) {
     if (sub == DISPLAY_APPEARANCE) {
         /* Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing */
         static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 4, 2, 8 };
-        for (unsigned k = 0; k < sizeof appearance; ++k) SETTING_ROW(appearance[k]);
+        for (unsigned k = 0; k < sizeof appearance; ++k) setting_row(view, appearance[k]);
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
     pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, qs_icons);
     pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
-    SETTING_ROW(10);
+    setting_row(view, 10);
     pod_rows(win, "scroll_view_display", POD_KEYTONE, 1, tone_icon);
-    SETTING_ROW(9);
+    setting_row(view, 9); /* Click With Headphones shows while Key Tone is on */
     widget_set_visible(P(P(st.setting_label[9], W_PARENT), W_PARENT), g_keytone_flag != 0, 0);
     widget_set_tr_text(list_row_into(view, "system_keylock", keylock_open, 0), "system_keylock");
     pod_rows(win, "scroll_view_display", POD_WAKE, 1, lock_icon);
     pod_rows(win, "scroll_view_display", POD_VOL_GUARD, 1, lock_icon);
     return result;
-#undef SETTING_ROW
 }
 
 #define BOOT_TARGET "/mnt/data/boot-target"
@@ -5200,8 +5163,6 @@ static void hide_outline(void) {
 }
 
 int ringnav_touch(void *ctx, void *event) {
-    st.touch_at = time_now_ms(); /* a down or move reaching the pages: a finger (pointer_down) */
-    st.stale_noted = 0;
     /* settle_timer while paused on the scrubbed track: a paused seek still waiting for Play. */
     int hold =
         st.settle_timer && st.np_slider && np_track() == st.scrub_track && mclGetPlayStatus() == 3;
@@ -6011,8 +5972,8 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * Albums grid's Return then did nothing until a restart (Hold Return: Home, back_to_home, still
  * left it); the cause was not found in the window manager's close path, so the page goes before a
  * Return can reach it, with the forced close that path uses. The page is its class's
- * (g_class_type), on top, whichever of the two list pages shows it. ponytail: polled every
- * EMPTY_POLL_MS, EMPTY_TRIES at most, then the toast alone. */
+ * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
+ * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
     static const char *const none[] = { "No albums", "No artists", "No composers", "No genres" };
     void *wm = window_manager(), *top = window_manager_get_top_window(wm);
@@ -6020,11 +5981,8 @@ static int empty_toast(const void *unused) {
     int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
                I(g_class_type, 0) == CLASS_ALBUMS + st.empty_kind;
     if (mine && widget_get_prop_int(top, "stage", 0) != WINDOW_STAGE_OPENED) {
-        if (st.empty_tries++ < EMPTY_TRIES) {
-            timer_add(empty_toast, (void *)0, EMPTY_POLL_MS);
-            return 0;
-        }
-        mine = 0;
+        timer_add(empty_toast, (void *)0, EMPTY_POLL_MS);
+        return 0;
     }
     if (mine) window_manager_close_window_force(wm, top);
     toast(none[st.empty_kind]);
@@ -6167,7 +6125,6 @@ int ringnav_localclass(int cls) {
     library_music = saved;
     if (n <= 0) { /* say so, not a black page; once the page that loads it is up */
         st.empty_kind = cls - CLASS_ALBUMS;
-        st.empty_tries = 0;
         timer_add(empty_toast, (void *)0, 0);
     }
     return n;
@@ -8974,6 +8931,52 @@ static int quick_wheel_toggle(void *top) {
     write_int_config(volume, "Q2POD", "QSVOLUME");
     return 1;
 }
+/* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick
+ * and Centre press on a list is then dropped (ringnav's gate) and the selection stays hidden until
+ * a tap, which Wheel QS's finger (playback.c) cannot give; a stuck pull-down (quick_stuck) stays
+ * too. The release went missing in the input queue (playback.c ringnav_queue_event, the found
+ * way, now closed); this is the backstop for any other. A press with no pointer event reaching the
+ * window manager (ringnav_input) within STALE_TOUCH_MS gets an abort, so a pressed row drops its
+ * press and cannot click, then the release stock never got, at the touch's last place: only that
+ * path clears the flag (input_device_status_on_input_event, 0x69ff64). A finger resting that long
+ * is lifted too; its real lift then finds the flag clear and does nothing (0x69fe30). ponytail:
+ * STALE_TOUCH_MS is a guess, and that the flag is what window_manager_get_pointer_pressed reads
+ * (vtable +0x44) and that widgets drop a press on the abort are AWTK's source, not traced in demo;
+ * the time stamped here holds a wrong guess to one try per STALE_TOUCH_MS.
+ * --dev builds only (Q2POD_DEV): each heal, STALE_NOTES a boot, goes to q2-wheel.log, which the
+ * next boot appends to the card's (tools/build.py WHEEL_LOG_HOOK): the page, the pull-down's state
+ * and slide timer, the touch thread's own down flag (LOOP_PRESSED), Wheel QS's finger and the last
+ * pointer event. */
+#define STALE_NOTES 8
+static void stale_note(unsigned age) {
+    if (st.stale_notes >= STALE_NOTES) return;
+    st.stale_notes++;
+    unsigned char *loop = main_loop();
+    void *top = window_manager_get_top_window(window_manager());
+    char s[160];
+    tk_snprintf(s, sizeof s,
+                "== wheel: stale press at %u s: top=%s pull-down=%d slide=%d thread=%d "
+                "qs=%d/%d last=%x %u ms ago\n",
+                (unsigned)time_now_ms() / 1000, top ? widget_get_prop_str(top, "name", "") : "-",
+                I(g_dropdown_menu_state, 0), top ? widget_get_prop_int(top, "timer_idex", -1) : -1,
+                loop ? loop[LOOP_PRESSED] : -1, qs_live, qs_down, st.touch_type, age);
+    void *f = fopen("/mnt/data/q2-wheel.log", "ab");
+    if (!f) return;
+    fputs(s, f);
+    fclose(f);
+}
+static void stale_heal(void) {
+    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    unsigned now = (unsigned)time_now_ms(), age = now - st.touch_at, abort_event[12], up[12];
+    if (age < STALE_TOUCH_MS || !window_manager_get_pointer_pressed(wm)) return;
+    if (Q2POD_DEV) stale_note(age);
+    st.touch_at = now;
+    if (top)
+        widget_dispatch_event_to_target_recursive(
+            top, pointer_event_init(abort_event, EVT_POINTER_ABORT, top, 0, 0));
+    stock_input_trampoline(
+        wm, pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, wm, st.touch_x, st.touch_y));
+}
 /* Stock's swipe down opens Quick Settings at g_dropdown_menu_state 1 and starts its slide only on
  * the touch's release reaching the dialog (its pointer-up handler adds the timer_idex timer). The
  * dialog is modal, opened inside the swipe's pointer move, and above the screen it catches a touch
@@ -8981,7 +8984,10 @@ static int quick_wheel_toggle(void *top) {
  * draining the queue. So a release already queued, by a flick quicker than the dialog loads or a
  * swipe queued behind a track start, goes to the page under it: the dialog stays on top off screen
  * with that page sent to the background, Now Playing's timer stopped (#189). With no touch down
- * and no slide running, the next UI pass hands it the release, and it slides as the swipe asked. */
+ * and no slide running, the next UI pass hands it the release through ringnav_dispatch, so a Wheel
+ * QS take-back (qs_back) still applies: stock's handler (0x4a08bc, bound at
+ * dialog_statusbar_dialog_init) ignores the event's place and at states 1 and 2 with timer_idex -1
+ * always adds its slide timer (0x4a099c), which always ends, so one pass does it. */
 static int quick_stuck(void *top) {
     return usable() && top &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog") &&
@@ -8992,8 +8998,7 @@ static void quick_poll(void) {
     void *top = window_manager_get_top_window(window_manager());
     unsigned up[12];
     if (quick_stuck(top))
-        stock_dispatch_trampoline(top,
-                                  pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, top, 0, 0));
+        ringnav_dispatch(top, pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, top, 0, 0));
 }
 /* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On an
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
@@ -10020,6 +10025,7 @@ int ringnav_mainscheduling(void) {
 }
 
 int ringnav_sleep(void *loop) {
+    stale_heal();
     quick_poll();
     headset_poll();
     headset_eq_poll();
@@ -10224,10 +10230,11 @@ int ringnav_input(void *wm, void *e) {
         return 0;
     }
     if (addon_game_input(e)) return 0;
-    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT) { /* a finger (pointer_down) */
+    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT) { /* a finger (stale_heal) */
         st.touch_at = st.last_input;
         st.touch_type = (int)type;
-        st.stale_noted = 0;
+        st.touch_x = I(e, EVENT_X);
+        st.touch_y = I(e, EVENT_Y);
     }
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {

@@ -247,8 +247,7 @@ static int tick(const void *unused) {
      * and the style's name has faded: one repaint puts the track's name under it, then none until it
      * plays again. */
     if (rate) vz.heard = now;
-    extern int ringnav_pointer_down(void); /* navigation.c: a press with a finger behind it */
-    int still = settled() && !ringnav_pointer_down(); /* a drag starting */
+    int still = settled() && !window_manager_get_pointer_pressed(window_manager()); /* a drag starting */
     halo_art(still);
     if (still && vz.quiet != (now - vz.heard > 1500 && now - vz.named > 1500 && mclGetPlayStatus() != 2)) {
         vz.quiet = !vz.quiet; /* at rest, the style's name gone: the track's name, or back */
