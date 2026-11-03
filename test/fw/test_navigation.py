@@ -1575,8 +1575,6 @@ def test_a_gone_app_has_nothing_to_toggle(fw, st, scratch):
 
 
 @pytest.mark.skipif(os.environ.get('Q2_FW_SANITIZE') is not None, reason="AddressSanitizer's fake stack gives each call a new frame to stale")
-@pytest.mark.xfail(strict=True, reason="BUG: svc_hidden reads Q2POD STREAMHIDE into a hide[] nothing initialised, and stock leaves out alone "
-                                       "for a missing key with an empty default (root_read's note): navigation.c:6609")
 def test_no_streamhide_key_hides_nothing(fw, st, scratch):
     services = Services(fw, st, scratch)
     seen = {}
