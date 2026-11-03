@@ -5462,7 +5462,7 @@ m.pick(3); m.advance(0); assert m.opened[-1]==('localmusic/playlistsmore_page',1
 for row,want in ((0,['A','T1','T2','B','C']),(1,['A','B','C','T1','T2'])):
     m=playlist_hold(); assert m.run(row) is None and m.names()==want and m.query[:2]==('getMusicByPlayList',8)
     assert not m.playback(); passed()
-m=playlist_hold(1); m.found=[m.song('dir',4)]; assert m.run(0)=='队列未变' and m.names()==['A','B','C']; passed()
+m=playlist_hold(1); m.found=[m.song('dir',4)]; assert m.run(0)=='队列未更改' and m.names()==['A','B','C']; passed()
 m=playlist_hold(); m.press(7100); assert m.hold()==11 and m.release()==0
 m.word(syms['p_deque_playlist'],m.deque([m.song('Other',4)])); m.pick(3); m.advance(0)
 assert not [o for o in m.opened if o[0]=='localmusic/playlistsmore_page']; passed()  # the list changed: nothing
