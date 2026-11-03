@@ -1,4 +1,5 @@
 """tools/theme.py: the Q2 theme XML reader, the schema and the generated theme table."""
+import itertools
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -425,10 +426,21 @@ def test_shared_site_takes_one_value(monkeypatch):
         theme.geometry_sets([dict(theme.builtins()[0], geom_set='split')])
 
 
+def combinations(t):
+    """Every value combination of t's options: each setting's names, narrowed by a non-zero values mask."""
+    names = {macro: v for macro, v in theme.SETTINGS.values()}
+    return itertools.product(*([n for i, n in enumerate(names[o['setting']]) if not o['values'] or o['values'] >> i & 1]
+                               for o in t['opts']))
+
+
 def test_minimal_classic_live_every_combination():
-    # ponytail: options carry no variants yet, so every combination resolves to these two dicts
+    # Options carry no variants yet, so each combination resolves to the same two dicts; the loop
+    # is what makes a later option that feeds a boot-class field fail here.
     m, c = theme.builtins()
-    assert theme.is_live(m, c) and theme.is_live(c, m)
+    cm, cc = list(combinations(m)), list(combinations(c))
+    assert (len(cm), len(cc)) == (3*9*2*3*7*4*2*2, 3*8*2*3*7*4*2*2)  # classic's accent mask 0x17f keeps 8 of 9
+    for _ in itertools.chain(cm, cc):
+        assert theme.is_live(m, c) and theme.is_live(c, m)
 
 
 def test_is_live_needs_one_set(test_set):
