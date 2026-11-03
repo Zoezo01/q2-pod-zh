@@ -753,8 +753,6 @@ def test_a_too_long_queue_ends_advanced_play(player):
     assert player.set(0, 1) == 0 and player.s.active == 0
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: stock's View Queue delete shrinks the queue behind advanced play: s.n and the "
-                                       "order stay stale, so ringnav_next plays an index past the queue (playback.c:874)")
 def test_next_after_stocks_own_delete_stays_on_the_queue(player):
     player.load(player.albums(5))
     assert player.set(1, REPEAT_ALL) == 1
@@ -853,14 +851,42 @@ def test_stock_picks_it_cannot_follow_change_nothing(fw, player, at):
     assert len(fw.calls('stock_start_queue_trampoline')) == 1
 
 
-def test_a_pick_after_stock_changed_the_queue_changes_nothing(fw, player):
+def test_a_pick_after_stocks_delete_plays_on_over_the_queue_left(fw, player):
     start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
     player.load(player.albums(6))
-    assert player.set(0, 1) == 1
-    history = player.history()
+    assert player.set(0, 1) == 1 and player.set(1, ONE_PASS) == 1
     player.deques[player.handle].pop()
     start(2)
-    assert player.history() == history
+    assert player.s.n == 5 and player.history() == [0, 2]
+    player.mcl.pos = 2
+    assert sorted(player.run(10)) == [1, 3, 4]
+
+
+def test_stocks_delete_drops_play_next(player):
+    player.load(player.albums(5))
+    assert player.set(0, 0) == 1
+    player.s.pend[0], player.s.npend = 4, 1
+    player.deques[player.handle].pop()
+    assert player.next(0) >= 0 and player.mcl.pos < 4 and player.pending() == []
+
+
+def test_the_poll_follows_stocks_delete_before_crossfade_looks(fw, player):
+    player.load(player.albums(5))
+    assert player.set(0, 1) == 1
+    player.deques[player.handle].pop()
+    fw.fn('playback_poll', None)()
+    assert player.s.n == 4 and player.s.active == 1
+
+
+def test_previous_after_stocks_delete_stays_on_the_queue(player):
+    player.load(player.albums(5))
+    assert player.set(0, 1) == 1 and player.set(1, REPEAT_ALL) == 1
+    while player.mcl.pos != 4:
+        player.next(0)
+    player.next(0)             # Previous would go back to 4
+    player.deques[player.handle].pop()
+    player.prev()
+    assert player.s.n == 4 and player.mcl.pos < 4
 
 
 def test_move_makes_a_track_next(fw, player):

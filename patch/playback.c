@@ -582,6 +582,15 @@ static int rebuild(int keep) {
     s.dirty = 1;
     return 1;
 }
+/* Stock's own queue edits (View Queue's delete) resize the queue behind advanced play, so its
+ * indices name other tracks or none: a new order over the queue as it is now, as a new load of
+ * a local queue gets (the only kind advanced play runs on). Play Next's list goes with it. */
+static void follow_queue(void) {
+    if (!s.active || (queue() ? deque_size(queue()) : 0) == s.n) return;
+    close_preload();
+    s.npend = 0;
+    s.active = rebuild(0);
+}
 int playback_option(int kind) {
     return kind == 0 ? (s.active ? s.shuffle : 0) : kind == 1 ? (s.active ? s.repeat : 2) : s.folder;
 }
@@ -757,6 +766,7 @@ static void commit(unsigned next) {
  * Play Next takes only its entry off the list, the rest stay pending. */
 int ringnav_start_queue(int at) {
     unsigned x = (unsigned)at;
+    follow_queue();
     if (s.active && x < s.n && x != (unsigned)M(MCL_POS) && queue() && deque_size(queue()) == s.n) {
         close_preload();
         if (s.shuffle == 1 && pend_find(x) == s.npend) play_now(x);
@@ -853,6 +863,7 @@ static int list_end(void) {
 unsigned auto_nexts __attribute__((section(".scratch"))); /* tracks that ended by themselves */
 int ringnav_next(int automatic) {
     auto_nexts += automatic != 0;
+    follow_queue();
     if (!s.active) {
         if (list_end()) {
             close_preload();
@@ -880,6 +891,7 @@ int playback_back(void) {
     return to >= 0 && M(MCL_POS) == back_at && queue() && (unsigned)to < deque_size(queue()) ? to : -1;
 }
 int ringnav_prev(void) {
+    follow_queue();
     if (!s.active) {
         int left = M(MCL_POS), result = stock_prev_trampoline();
         back_to = M(MCL_MODE) == 2 && M(MCL_POS) != left ? left + 1 : 0;
@@ -1427,6 +1439,7 @@ void playback_poll(void) {
         too_long = 0;
         toast("Too long to play on the Q2: split it into parts");
     }
+    follow_queue(); /* before Crossfade reads the next track */
     xfade_poll(playback_next());
     mono_sync();
     unsigned now = time_now_ms();
