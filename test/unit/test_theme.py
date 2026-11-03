@@ -111,7 +111,7 @@ MINIMAL = {
     'painter[PAINT_SELECTION]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'bold': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
-    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0,
+    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0,
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -268,7 +268,7 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chev
                   ('bold', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
-                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8)]
+                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 0)]
 
 
 def test_emit(tmp_path):
@@ -307,3 +307,21 @@ def test_emit_both(tmp_path):
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
     assert text.endswith('    },\n};\n')
+
+
+def test_playing_layout_builtins_ipod():
+    assert [t['np_layout'] for t in theme.builtins()] == [0, 0]
+
+
+def test_playing_layout_resolves_centred():
+    t = resolved('<view name="playing" layout="centred"/>'); theme.validate(t, 't.xml')
+    assert t['np_layout'] == 1
+
+
+def test_playing_layout_rejects_unknown():
+    assert error(resolved, '<view name="playing" layout="other"/>') == 't.xml:1: playing.layout: unknown value other'
+
+
+def test_emit_np_layout(tmp_path):
+    theme.emit(theme.builtins(), tmp_path)
+    assert (tmp_path/'themes.inc').read_text().count('.np_layout = 0,') == 2

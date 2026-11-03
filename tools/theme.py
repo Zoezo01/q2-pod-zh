@@ -16,7 +16,8 @@ SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTI
             'time_title': ('SETTING_TIMETITLE', ('off', 'on')),
             'np_layout': ('SETTING_NPCENTRED', ('ipod', 'centred'))}
 ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}
-CHOICES = {'list.selection.painter': ('card', 'bar'), 'playing.title.font': ('regular', 'bold')}
+CHOICES = {'list.selection.painter': ('card', 'bar'), 'playing.title.font': ('regular', 'bold'),
+           'playing.layout': ('ipod', 'centred')}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -63,9 +64,10 @@ SCHEMA = {k.path: k for k in (
     key('scheme.fill', 'fill', 'color'),
     key('scheme.chevron', 'chevron', 'color'),
     key('scheme.muted', 'muted', 'color'),
-    key('scheme.bar_light', 'bar_light', 'color'))}
+    key('scheme.bar_light', 'bar_light', 'color'),
+    Key('playing.layout', 'np_layout', 'enum', 0, 1, 0, 'open'))}  # <view> attributes: after n_opts
 FIELDS = {k.field: k for k in SCHEMA.values()}
-ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if not p.startswith('scheme.')}
+ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if p.count('.') == 2}
 VIEWS = {e.partition('.')[0] for e in ELEMENTS}
 CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'option', 'view'}, 'view': {'element'}}
 OPTION_ATTRS = {'setting', 'key', 'default', 'preset', 'keep'}
@@ -288,9 +290,11 @@ def resolve(root, by_id, seen=()):
             v = c.attrs.get('name', '')
             if v not in VIEWS:
                 err(c, f'unknown view {v}')
-            for k in c.attrs:
+            for k, text in c.attrs.items():
                 if k != 'name':
-                    err(c, f'unknown key view.{k}')
+                    if f'{v}.{k}' not in SCHEMA:
+                        err(c, f'unknown key view.{k}')
+                    t[SCHEMA[f'{v}.{k}'].field] = value(c, f'{v}.{k}', text, macros)
             for e in c.children:
                 el = f'{v}.{e.attrs.get("name", "")}'
                 if el not in ELEMENTS:
@@ -367,11 +371,13 @@ def emit(themes, out):
         lines.append('};')
     lines.append('static const theme_t themes[THEME_N] = {')
     for t in themes:
-        # ponytail: every SCHEMA field precedes accent_slot today; split when theme_t grows past n_opts.
+        # theme_t order: element fields, the pointers and n_opts, then the <view> attribute fields.
         fields = [('name', json.dumps(t['name'])),
-                  *((k.field, t[k.field]) for k in SCHEMA.values() if not k.path.startswith('scheme.')),
+                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.path.count('.') == 2),
                   ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
-                  ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts']))]
+                  ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
+                  *((k.field, t[k.field]) for k in SCHEMA.values()
+                    if k.path.count('.') == 1 and not k.path.startswith('scheme.'))]
         lines += ['    {', *(f'        .{k} = {v},' for k, v in fields), '    },']
     lines += ['};', '']
     (out/'themes.inc').write_text('\n'.join(lines))

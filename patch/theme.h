@@ -5,6 +5,7 @@
 enum { PAINT_SELECTION, PAINTER_N }; /* theme_t.painter[] index */
 enum { SEL_CARD, SEL_BAR };          /* painter[PAINT_SELECTION] (Minimal card, Classic bar) */
 enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 }; /* scheme_t.flags (Ivory in Minimal; Crimson) */
+enum { NP_IPOD, NP_CENTRED };                 /* theme_t.np_layout: np_pages[] index */
 typedef struct {
     const unsigned *tones; /* its ACCENTS row: accents[v] (top, bottom, light, red, highlight) */
     unsigned char flags;   /* SCHEME_* */
@@ -30,6 +31,7 @@ typedef struct {
     const scheme_t *schemes; /* [ACCENT_N], indexed by accent value */
     const option_t *opts;    /* Appearance rows after Theme, in order */
     unsigned char n_opts;
+    unsigned char np_layout;  /* NP_* */
     unsigned char art_square; /* art takes Corners: Square */
     unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;

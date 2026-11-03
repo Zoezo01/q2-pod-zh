@@ -397,6 +397,11 @@ value stops the build. The tool writes `themes.inc` into the build directory, wh
 includes after the accent tables, where the hand-written table stood, and `THEME_N` into `stock.h`,
 because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in both themes.
 
+**Now Playing layout.** `theme_t.np_layout` (`<view name="playing" layout="ipod|centred">`, ipod in
+both built-ins) picks the page `ringnav_ui_load` loads for `playing_page`: `np_pages[np_layout()]`,
+where Centred Now Playing (`NPCENTRED`) forces `NP_CENTRED` (`playing_page_stock`).
+`ringnav_playing` binds the lyric tap on the centred page only.
+
 ## Page transitions (iPod)
 
 Stock V1.32 carries AWTK's window animators and uses one: `saverscreen_page.bin` has `close_anim_hint` `slide_left(duration=200,easing=cubic_out)`, the only hint in the stock assets. The window manager builds the animator named by a window's `anim_hint` (`window_animator_htranslate_create`, `0x683a08`, for `htranslate`) when it opens or closes. `navigator_to_with_context` (`0x4ec758`) opens a page above the rest and `navigator_back` (`0x4ec8e0`) is `window_manager_back`, so the page below stays alive and Return reverses the slide.

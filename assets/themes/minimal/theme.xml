@@ -18,7 +18,7 @@
     <element name="icons" mono="1" badge_muted="1" addon_mono="1"/>
   </view>
   <view name="home"><element name="chevron" visible="0"/><element name="rows" caps="1"/></view>
-  <view name="playing">
+  <view name="playing" layout="ipod">
     <element name="art" square="0"/>
     <element name="title" font="regular"/>
     <element name="album" caps="1" opacity="0"/>

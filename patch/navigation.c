@@ -1754,6 +1754,9 @@ static int setting(int i) {
     accent();
     return *setting_values[i];
 }
+static const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
+/* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
+static int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
 /* Shortcut with no key is Rockbox while the card has it, else Favorites: asked each time, as the
  * card may mount after the first read. */
 static int shortcut(void) {
@@ -4361,7 +4364,7 @@ int ringnav_playing(void *win, void *ctx) {
     lyric_init();                                    /* the rows stock's init built */
     void *lyric = widget_lookup(win, "view_lyric", 1);
     static const unsigned touch[] = { EVT_POINTER_DOWN, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
-    for (unsigned i = 0; lyric && setting(SETTING_NPCENTRED) && i < sizeof touch / sizeof *touch;
+    for (unsigned i = 0; lyric && np_layout() == NP_CENTRED && i < sizeof touch / sizeof *touch;
          ++i)
         widget_on(lyric, touch[i], np_lyric_touch, (void *)0);
     st.np_hash = 0;
@@ -4488,14 +4491,13 @@ static void bc_fit(void *win) {
     }
 }
 
-/* ui_loader_load_widget_with_parent, every window's asset (window_open's): Centred Now Playing
- * (IPOD NPCENTRED) builds Now Playing from stock's own page (tools/ipod.py PLAYING_STOCK), named
- * playing_page too, which ringnav_playing binds as the iPod one; any opener comes through here. */
+/* ui_loader_load_widget_with_parent, every window's asset (window_open's): the theme's layout
+ * (np_layout(); Centred Now Playing forces NP_CENTRED) picks the page. Stock's own page
+ * (tools/ipod.py PLAYING_STOCK) is named playing_page too, which ringnav_playing binds as the iPod
+ * one; any opener comes through here. */
 extern void *stock_ui_load_trampoline(const char *name, void *parent);
 void *ringnav_ui_load(const char *name, void *parent) {
-    if (name && !tk_strcmp(name, "playing_page")) {
-        if (setting(SETTING_NPCENTRED)) name = "playing_page_stock";
-    }
+    if (name && !tk_strcmp(name, "playing_page")) name = np_pages[np_layout()];
     return stock_ui_load_trampoline(name, parent);
 }
 
