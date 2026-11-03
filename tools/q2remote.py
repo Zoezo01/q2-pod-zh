@@ -182,10 +182,12 @@ def wheel_positions(ticks, units=WHEEL_UNITS, start=100):
 
 
 def wheel_units(config):
-    """Travel per tick from config.ini's Q2POD WHEELSENSITIVITY, as playback.c reads it."""
+    """Travel per tick from config.ini's Q2POD WHEELSENSITIVITY, as playback.c reads it: in sixteenths
+    of a unit, rounded as its wheel_apply rounds them, so `wheel N` gives N ticks at every setting."""
     m = re.search(r"^WHEELSENSITIVITY=(\d+)\s*$", config, re.M)
     pct = int(m.group(1)) if m and m.group(1) == str(int(m.group(1))) else 50
-    return WHEEL_UNITS * 50 / (pct if 50 <= pct <= 200 and pct % 10 == 0 else 50)
+    pct = pct if 50 <= pct <= 200 and pct % 10 == 0 else 50
+    return (WHEEL_UNITS * 16 * 50 + pct // 2) // pct / 16
 
 
 def event_writer(path, batches, delay_us=SAMPLE_US):

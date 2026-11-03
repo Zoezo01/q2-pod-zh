@@ -866,6 +866,22 @@ def test_input_swipe_errors(inputs, args, message):
         q.input_action('swipe', args)
 
 
+# playback.c's wheel_apply in sixteenths of a unit, (WHEEL_TICK_UNITS * WHEEL_FINE * 50 + pct / 2) / pct.
+# The exact 28 * 50 / pct put a long `wheel N` 1 to 4 ticks off at 60, 110-130, 150 and 170-190%.
+WHEEL_SIXTEENTHS = {50: 448, 60: 373, 70: 320, 80: 280, 90: 249, 100: 224, 110: 204, 120: 187,
+                    130: 172, 140: 160, 150: 149, 160: 140, 170: 132, 180: 124, 190: 118, 200: 112}
+
+
+@pytest.mark.parametrize('config,sixteenths', [(f'WHEELSENSITIVITY={p}\n', n) for p, n in WHEEL_SIXTEENTHS.items()] + [
+    ('A=1\nWHEELSENSITIVITY=150  \nB=2', 149),
+    # Anything but a canonical ten in 50-200 is 50%, as wheel_pct reads it.
+    ('', 448), ('XWHEELSENSITIVITY=100\n', 448), ('WHEELSENSITIVITY=40\n', 448), ('WHEELSENSITIVITY=210\n', 448),
+    ('WHEELSENSITIVITY=55\n', 448), ('WHEELSENSITIVITY=080\n', 448),
+])
+def test_wheel_units_in_sixteenths(config, sixteenths):
+    assert q.wheel_units(config) == sixteenths / 16
+
+
 def test_input_wheel(inputs):
     q.input_action('wheel', ['1'])
     (cmd, data), = inputs.scripts
