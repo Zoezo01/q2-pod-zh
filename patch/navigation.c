@@ -3678,7 +3678,7 @@ static void bar_sync(void *bar) {
                           : (mode == 3 ? BATT_INSIDE_W : BATT_BODY_W) + BATT_NUB_W +
                                 (mode == 2 ? BATT_GAP + pct : 0);
     int resized = I(st.bar_slot, W_W) != width;
-    widget_resize(st.bar_slot, width, 30);
+    widget_resize(st.bar_slot, width, theme()->bar_h);
     /* Resize only relayouts the slot's own children; the right-aligned row must
      * position it again even when Icon + Percent -> Icon keeps it visible. */
     if (resized) widget_layout_children(P(st.bar_slot, W_PARENT));

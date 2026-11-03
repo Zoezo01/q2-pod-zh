@@ -4,7 +4,7 @@ import dataclasses
 import json
 import re
 from build import ROOT
-from ipod import BOTTOM, INC, O
+from ipod import INC, O, SET0
 
 
 ACCENT_NAMES = [n.lower() for n in re.findall(r'\}\s*,?\s*/\* (\w+)', re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0])]
@@ -325,6 +325,7 @@ def resolve(root, by_id, seen=()):
     for o in t['opts']:
         if o['setting'] == 'SETTING_ACCENT':
             o['values'] = 0 if t['accents'] == ALL_ACCENTS else t['accents']
+    t['bar_h'] = SET0.bar  # ponytail: one set; a set's own bar replaces it
     return t
 
 
@@ -351,8 +352,8 @@ def validate(t, name):
     if t['cf.bright2'] > t['cf.bright1']:
         err(f'coverflow.shelf: bright2 {t["cf.bright2"]} exceeds bright1 {t["cf.bright1"]}')
     h = O['CF_NAME_H'] + O['CF_ARTIST_H']
-    if t['cf.text_y'] + h > BOTTOM:
-        err(f'coverflow.caption: text_y + {h} = {t["cf.text_y"] + h} exceeds the client height {BOTTOM}')
+    if t['cf.text_y'] + h > 320 - t['bar_h']:
+        err(f'coverflow.caption: text_y + {h} = {t["cf.text_y"] + h} exceeds the client height {320 - t["bar_h"]}')
 
 
 def builtins(root=ROOT/'assets/themes'):
@@ -394,7 +395,7 @@ def emit(themes, out):
                   *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'live' and k.path.count('.') == 2),
                   ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
                   ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
-                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'open')]
+                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'open'), ('bar_h', t['bar_h'])]
         lines += ['    {', *(f'        .{k} = {v},' for k, v in fields), '    },']
     lines += ['};', '']
     (out/'themes.inc').write_text('\n'.join(lines))

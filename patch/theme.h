@@ -38,9 +38,11 @@ typedef struct {
     unsigned char n_opts;
     unsigned char np_layout; /* NP_* */
     cf_style_t cf;
+    short bar_h;              /* the status bar's height; client_h() is the window's under it */
     unsigned char art_square; /* art takes Corners: Square */
     unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;
 const theme_t *theme(void);   /* accent(); return &themes[st.theme]; */
 const scheme_t *scheme(void); /* &theme()->schemes[accent()] */
+static inline int client_h(void) { return 320 - theme()->bar_h; } /* the window under the bar */
 #endif

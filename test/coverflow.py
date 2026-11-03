@@ -207,7 +207,8 @@ static theme_t shim_themes[2] = {
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
       .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 } };
-const theme_t *theme(void) { return &shim_themes[classic]; }
+static short stub_bar_h = 30;
+const theme_t *theme(void) { shim_themes[classic].bar_h = stub_bar_h; return &shim_themes[classic]; }
 int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
 static int square_art;
@@ -1621,6 +1622,14 @@ int main(void) {
     classic = 0; home_mode = 0;
     coverflow_home_layout();
     assert(*(int *)(label->raw + W_X) == dot_x && !memcmp(geo, split, sizeof split) && loads == unloads);
+    /* A 26 px bar: the art panel takes the 294 px client height (client_h). */
+    stub_bar_h = 26;
+    coverflow_home_layout();
+    static const int tall[4] = { HOME_SPLIT_W, 0, 375 - HOME_SPLIT_W, 294 };
+    assert(!memcmp(geo, tall, sizeof tall));
+    stub_bar_h = 30;
+    coverflow_home_layout();
+    assert(!memcmp(geo, split, sizeof split));
     /* A cover that pans: the art's image is empty and fills the panel, the pan's frame drawn over it. */
     frame_fail = 0;
     *(volatile int *)MCL_POS = 0;

@@ -1152,6 +1152,9 @@ def battery_checks():
                 assert shown(b,w)==['view_battery']
                 assert b.get(w['view_battery']+O['W_W'])==(O['BATT_PCT_W'] if mode==1 else (O['BATT_INSIDE_W'] if mode==3 else O['BATT_BODY_W'])+O['BATT_NUB_W']+(O['BATT_GAP']+O['BATT_PCT_W'] if mode==2 else 0))
     passed()
+    # The slot takes the bar's height, theme()->bar_h (client_h() = 320 - 30 = 290 under SET0).
+    b,bar,w,paint=battery_bar(1); b.word(w['view_battery']+O['W_H'],0); paint()
+    assert b.get(w['view_battery']+O['W_H'])==30; passed()
 battery_checks()
 assert m.confirm()==11 and m.dispatched()[0][1]==entries[0]; passed()
 assert m.call()==11 and m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==12
@@ -7925,7 +7928,7 @@ def host_render(textures,cases):
     from theme import ROLE_MACROS
     cf=', '.join(f'.{f[3:]} = {O[m]}' for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.'))
     main=r"""#include "theme.h"
-static theme_t t = { .cf = { %s } };
+static theme_t t = { .cf = { %s }, .bar_h = 30 };
 const theme_t *theme(void) { return &t; }
 #include <stdio.h>
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);

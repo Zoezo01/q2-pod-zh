@@ -1905,7 +1905,7 @@ static void covers(void) {
     if (!cf.covers) {
         void *f = widget_factory();
         int depth = fx_open();
-        cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, 290);
+        cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, client_h());
         cf.slide = widget_factory_create_widget(f, "slide_menu", cf.covers, 0, depth ? 0 : 24, 375,
                                                 depth ? CF_VIEW_H : ART_SIZE);
         if (depth) slide_menu_set_spacer(cf.slide, cfs.stride - CF_VIEW_H);
@@ -1974,7 +1974,8 @@ static void load(void) {
     widget_destroy_children(cf.page);
     cf.covers = cf.slide = cf.name = cf.artist = 0; /* destroyed with the page's children */
     cf.album = 0;
-    cf.body = widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, 290);
+    cf.body =
+        widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, client_h());
     int n = 0;
     unsigned gen = library_gen;
     if (cf.albums_gen != gen && !cf.scoped) drop_albums();
@@ -2358,7 +2359,8 @@ int coverflow_goto_album(void *r) {
     cf.scoped = ALBUM_TRACKS;
     cf.covers = cf.slide = cf.name = cf.artist = 0;
     cf.album = 0;
-    cf.body = widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, 290);
+    cf.body =
+        widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, client_h());
     to_tracks(0);
     return 1;
 }
@@ -2414,7 +2416,7 @@ const char *now_tag(void *r, int field) {
     return P(r, field);
 }
 
-#define HOME_PW (375 - HOME_SPLIT_W) /* Split's art panel, 290 high */
+#define HOME_PW (375 - HOME_SPLIT_W) /* Split's art panel, client_h() high */
 /* iPod Home (docs/ipod.md): the playing track's art beside the list. */
 static struct {
     void *win, *art, *list, *sets; /* sets: the Settings list, in the list's place while open */
@@ -2473,7 +2475,7 @@ static int pan_v(void) { return home.v0 * 256 + drift_at(home.ry, DRIFT_Y_MS); }
 /* A step repaints only the panel, once the pan has moved; coverflow_home_clip draws it. */
 static void drift_place(void) {
     if (pan_u() == home.du && pan_v() == home.dv) return;
-    static int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, 290 }; /* rect_t, in the parent */
+    int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, client_h() }; /* rect_t, in the parent */
     widget_invalidate_force(P(home.art, W_PARENT), pane);
 }
 
@@ -2500,7 +2502,7 @@ static int home_drift(const void *unused) {
 
 /* A w x h image's size just covering the panel at its proportions; unknown sizes fill it. */
 static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
-    int pw = HOME_PW, ph = 290;
+    int pw = HOME_PW, ph = client_h();
     *fw = pw, *fh = ph;
     if (w && h && w <= 8192 && h <= 8192) {
         if ((unsigned)pw * h > (unsigned)ph * w)
@@ -2550,7 +2552,7 @@ static int home_tex(const char *url) {
     home_fit(w, h, &fw, &fh);
     int tw = fw * DRIFT_ZOOM_PCT / 100, th = fh * DRIFT_ZOOM_PCT / 100;
     const unsigned char *data = 0;
-    if (!home.frame) home.frame = opaque_frame(HOME_PW, 290);
+    if (!home.frame) home.frame = opaque_frame(HOME_PW, client_h());
     if (home.frame && format < 4 && w && h && w <= 8192 && h <= 8192 && tw <= DRIFT_TEXELS / th) {
         free(home.tex);
         home.tex = calloc((unsigned)(th + 3) * (unsigned)(tw + 3), 4);
@@ -2596,7 +2598,7 @@ static int home_tex(const char *url) {
         for (int y = th + 1; y < th + 3; ++y)
             memcpy(home.tex + y * ts, home.tex + th * ts, (unsigned)ts * 4);
         home.tw = tw, home.rx = tw - fw, home.ry = th - fh;
-        home.u0 = (fw - HOME_PW) / 2, home.v0 = (fh - 290) / 2, home.du = -1;
+        home.u0 = (fw - HOME_PW) / 2, home.v0 = (fh - client_h()) / 2, home.du = -1;
     }
     widget_unload_image(home.art, bitmap);
     return data != 0;
@@ -2630,7 +2632,7 @@ static void home_render(unsigned *d, int pitch, int u, int v) {
     bspline_w((unsigned)u & 255, wx), bspline_w((unsigned)v & 255, wy);
     int ts = home.tw + 3;
     const unsigned *s = home.tex + (v >> 8) * ts + (u >> 8); /* texel -1, -1 from u, v */
-    for (int y = -3; y < 290; ++y, s += ts) {
+    for (int y = -3, h = client_h(); y < h; ++y, s += ts) {
         unsigned *o = home.ring[(y + 3) & 3];
         for (int x = 0; x < HOME_PW; ++x) o[x] = tap4(s[x], s[x + 1], s[x + 2], s[x + 3], wx);
         if (y < 0) continue;
@@ -2643,7 +2645,7 @@ static void home_render(unsigned *d, int pitch, int u, int v) {
 
 /* The pan's frame over the art (its image is empty), rendered again only once the pan moved. */
 static void home_paint(void *canvas) {
-    int u = pan_u(), v = pan_v(), r[4] = { 0, 0, HOME_PW, 290 };
+    int u = pan_u(), v = pan_v(), r[4] = { 0, 0, HOME_PW, client_h() };
     if (u != home.du || v != home.dv) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(home.frame);
         if (!d) return;
@@ -2679,7 +2681,7 @@ void coverflow_home_art(void *top) {
     char url[600] = "file://";
     if (r) art_path(url + 7, album, "");
     unsigned size[2] = { 0, 0 };
-    int fw = HOME_PW, fh = 290;
+    int ch = client_h(), fw = HOME_PW, fh = ch;
     home.tw = 0;
     const char *src = cover;
     /* the player writes every track's cover to the same file: drop AWTK's cached bitmap of the
@@ -2697,7 +2699,7 @@ void coverflow_home_art(void *top) {
             image_base_set_image(home.art, HOME_PLACEHOLDER);
         home_fit(size[0], size[1], &fw, &fh);
     }
-    widget_move_resize(home.art, HOME_SPLIT_W + (HOME_PW - fw) / 2, (290 - fh) / 2, fw, fh);
+    widget_move_resize(home.art, HOME_SPLIT_W + (HOME_PW - fw) / 2, (ch - fh) / 2, fw, fh);
     rearm(&home.repaint, home_repaint, 0);
 }
 
@@ -2716,7 +2718,7 @@ void coverflow_home_clip(void *w, void *canvas, int begin) {
     int clip[4], art = w == home.art, x = HOME_SPLIT_W, pane = widget_get_visible(home.art) ? x : 375;
     clip_within(canvas, home.clip, clip, I(canvas, CANVAS_X) - I(w, W_X) + (art ? x : 0),
                 I(canvas, CANVAS_Y) - I(w, W_Y) + (art ? 0 : I(w, W_Y)), art ? 375 - x : pane,
-                art ? 290 : I(w, W_H));
+                art ? client_h() : I(w, W_H));
     canvas_set_clip_rect(canvas, clip);
     home.clipped = 1;
 }
@@ -2779,7 +2781,7 @@ void coverflow_home_layout(void) {
         end = T->home_label_end[full];
     home_width(home.list, outer, inner, x, end, 0);
     if (home.sets) home_width(home.sets, outer, inner, x, end, 0);
-    widget_move_resize(home.art, split, 0, 375 - split, 290);
+    widget_move_resize(home.art, split, 0, 375 - split, client_h());
     widget_set_visible(home.art, !mode, 0);
     if (home.carousel[0] && carousel != widget_get_visible(home.carousel[0])) {
         for (int i = 0; i < 3; ++i) home_show(home.carousel[i], carousel);

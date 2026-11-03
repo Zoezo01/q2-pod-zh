@@ -116,7 +116,7 @@ MINIMAL = {
     'painter[PAINT_SELECTION]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'bold': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
-    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0,
+    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0, 'bar_h': 30,
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -274,7 +274,7 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chev
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
                   ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 0),
-                  *CF_TODAY.items()]
+                  *CF_TODAY.items(), ('bar_h', 30)]
 
 
 def test_emit(tmp_path):
@@ -351,6 +351,13 @@ def test_coverflow_range_rejects(monkeypatch, field, value):
 def test_coverflow_cross_rejects(field, value, message):
     with pytest.raises(theme.ThemeError, match=message):
         theme.validate({**theme.builtins()[0], field: value}, 't.xml')
+
+
+def test_coverflow_caption_follows_bar_h():
+    t = {**theme.builtins()[0], 'bar_h': 34}
+    with pytest.raises(theme.ThemeError, match='text_y \\+ 60 = 287 exceeds the client height 286'):
+        theme.validate({**t, 'cf.text_y': 227}, 't.xml')
+    theme.validate({**t, 'cf.text_y': 226}, 't.xml')
 
 
 def test_coverflow_edges_pass(monkeypatch):   # each limit itself is allowed

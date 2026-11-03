@@ -411,6 +411,13 @@ tools/theme.py checks each range, top + 160 + reflect ≤ `CF_VIEW_H`, bright2 �
 `text_y` + `CF_NAME_H` + `CF_ARTIST_H` ≤ the client height. The tilt table, `CF_EDGE`, `CF_VIEW_*`,
 `CF_CX` and `ART_SIZE` stay fixed.
 
+**Bar and client height.** `theme_t.bar_h` is the status bar's height, 30 for both built-ins
+(`ipod.SET0`). `client_h()` (`patch/theme.h`) is `320 - bar_h`, the window's height under the bar,
+read by Cover Flow's views, Home's art panel, its pan frame, render loop and clip, and the battery
+slot (`bar_sync`). The page fallbacks (`widget_get_prop_int(page, "h", 290)`) and `DRIFT_TEXELS` stay
+sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.py`) drive
+`ipod_home`, `status_bar`, `playing_page` and `patch_asset`; `patch_code` bakes `SET0`.
+
 ## Page transitions (iPod)
 
 Stock V1.32 carries AWTK's window animators and uses one: `saverscreen_page.bin` has `close_anim_hint` `slide_left(duration=200,easing=cubic_out)`, the only hint in the stock assets. The window manager builds the animator named by a window's `anim_hint` (`window_animator_htranslate_create`, `0x683a08`, for `htranslate`) when it opens or closes. `navigator_to_with_context` (`0x4ec758`) opens a page above the rest and `navigator_back` (`0x4ec8e0`) is `window_manager_back`, so the page below stays alive and Return reverses the slide.
