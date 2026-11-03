@@ -26,7 +26,9 @@ class Node:
 # A strict XML subset: comments, elements with double-quoted lowercase attributes, and whitespace.
 # WS, not \s, which also accepts \xa0 and other characters XML calls text.
 WS = '[ \t\r\n]'
-TOKEN = re.compile(rf'<!--.*?-->|<(/?)([A-Za-z][A-Za-z0-9]*)((?:{WS}+[a-z0-9_.]+="[^"<]*")*){WS}*(/?)>|{WS}+', re.S)
+# Values exclude controls (etree folds \t\r\n to spaces) and comments '--' (etree rejects it).
+TOKEN = re.compile(rf'<!--(?:(?!--).)*-->|<(/?)([A-Za-z][A-Za-z0-9]*)'
+                   rf'((?:{WS}+[a-z0-9_.]+="[^"<\x00-\x1f]*")*){WS}*(/?)>|{WS}+', re.S)
 ENTITIES = {'amp': '&', 'lt': '<', 'gt': '>', 'quot': '"'}
 
 

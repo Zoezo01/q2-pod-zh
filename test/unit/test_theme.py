@@ -40,6 +40,10 @@ def test_tokenize():
     ('<a b="&apos;"/>', 't.xml:1: unknown entity'),
     ('<a b="&"/>', 't.xml:1: unknown entity'),
     ('<a/>\n<!-- x', 't.xml:2: unclosed comment'),
+    ('<a b="x\ty"/>', 't.xml:1: malformed tag'),
+    ('<a b="x\ny"/>', 't.xml:1: malformed tag'),
+    ('<a b="x\x01y"/>', 't.xml:1: malformed tag'),
+    ('<!-- a -- b -->', 't.xml:1: unclosed comment'),
 ])
 def test_tokenize_rejects(text, message):
     assert error(theme.tokenize, text, 't.xml') == message
