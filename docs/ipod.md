@@ -234,7 +234,7 @@ and full-row tap targets. The `navbar_only` assets set their
 Constants are `SET_*` in `patch/offsets.inc`.
 
 System Settings puts Wireless and Network first, then personal and daily controls, then device
-maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come last. Added binary settings
+maintenance, with About last; neither list has headings. Play Mode, EQ, EQ per Output, Gapless and Crossfade come first; specialist output controls come last. Added binary settings
 use Shanling's `switch_on` / `switch_off` images with the whole row as the tap target. Settings
 that cycle between named choices retain their value labels. Crossfade, Resume Songs, Wheel
 Sensitivity and App Store show a chevron, as do the added Library browsing rows.

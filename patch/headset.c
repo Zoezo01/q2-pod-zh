@@ -43,7 +43,7 @@ static struct {
     volatile int keys[16];
     unsigned worker_generation, checked, epoch, paused_epoch, paused_at, recent_at,
         recent_owner, recent_session;
-    unsigned last_at, session, linked_at;
+    unsigned last_at, session, linked_at, eq_checked;
     int linked, known, ears, want, paused, owner, automatic, last_key;
     unsigned char address[14];
     int airpods;
@@ -341,6 +341,29 @@ void headset_command(int code) {
         headset_manual();
         if (!hs.known || hs.ears) media_set_playing(1);
     }
+}
+/* EQ per Output's name for what plays (stock's config_bal_output and config_po_output: the jack last
+ * plugged in; unplugging 4.4 mm leaves output 0, so a jack must be in to count). None, nothing to
+ * hear: the EQ stays with its output until another takes over. */
+static const char *eq_output_key(char *mac) {
+    int way = mclGetOutputWay(), status = 0;
+    if (way == 2) return "usb";
+    if (way == 1) {
+        for (int i = getBtLinkSize(); status != 3 && i-- > 0;) getBtLinkItem(i, &status, mac);
+        return status == 3 && strlen(mac) == 17 ? mac : 0;
+    }
+    return g_headset_output == 1 && g_bal_status  ? "4.4mm"
+           : g_headset_output == 0 && g_po_status ? "3.5mm"
+                                                  : 0;
+}
+void headset_eq_poll(void) {
+    unsigned now = time_now_ms();
+    if (now - hs.eq_checked < 500) return;
+    hs.eq_checked = now;
+    if (!ringnav_eq_output()) return;
+    char mac[64] = { 0 };
+    const char *key = eq_output_key(mac);
+    if (key) eq_output(key);
 }
 void headset_poll(void) {
     unsigned now = time_now_ms();

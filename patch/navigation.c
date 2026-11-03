@@ -273,6 +273,7 @@ enum {
     POD_CF_SORT,    /* Display's Coverflow Sort: coverflow.c's SORT_FILE, not config.ini */
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
     POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
+    POD_EQ_OUTPUT,  /* EQ per Output (peq_ui.c) */
     POD_COUNT
 };
 
@@ -379,7 +380,7 @@ typedef struct {
     int pod_read, charge_limit, low_power, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, cpu_off, cpu_bad, cpu_marked, artist_cf, year_old, resume, lock_clock,
-        artist_az, hold_home, standby_limit, standby_off, wheel_qs;
+        artist_az, hold_home, standby_limit, standby_off, wheel_qs, eq_output;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -2546,12 +2547,14 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &bt_vol_link,
                                    0,
                                    0,
-                                   &st.wheel_qs };
+                                   &st.wheel_qs,
+                                   &st.eq_output };
 _Static_assert(POD_LOCKCLOCK == 7, "lockscreen.c passes pod_rows 7");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = {
     "CHARGELIMIT", "LOWPOWER", "WAKEDOUBLE", "ARTISTCF",     "YEAROLD",   0, "RESUME", "LOCKCLOCK",
-    "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0,        "WHEELQS"
+    "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0,        "WHEELQS",
+    "EQOUTPUT"
 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
@@ -2583,6 +2586,10 @@ int ringnav_artist_view(void) {
 int ringnav_lock_clock(void) {
     pod_settings();
     return st.lock_clock;
+}
+int ringnav_eq_output(void) {
+    pod_settings();
+    return st.eq_output;
 }
 int ringnav_bt_resume(void) {
     pod_settings();
@@ -2894,6 +2901,7 @@ static void pod_text(int i) {
         { 0 }, /* Coverflow Sort's from coverflow.c */
         { "Refresh Coverflow" },
         { 0 }, /* Wheel QS: a switch */
+        { 0 }, /* EQ per Output: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -2909,6 +2917,7 @@ static void pod_text(int i) {
                          : i == POD_VOL_GUARD ? "Volume Guard"
                          : i == POD_BT_LINK   ? "Control Device Volume"
                          : i == POD_WHEEL_QS  ? "Wheel QS"
+                         : i == POD_EQ_OUTPUT ? "EQ per Output"
                                               : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -2940,6 +2949,7 @@ static int pod_click(void *ctx, void *event) {
          * sends the Q2's level to the device. */
         if (i == POD_BT_LINK && mclGetOutputWay() == 1)
             headset_volume_reset(), device_set_volume(g_volume, 0);
+        if (i == POD_EQ_OUTPUT && !*value) eq_output_forget(); /* what plays stays */
     }
     pod_text(i);
     return 0;
@@ -2996,29 +3006,18 @@ static void reorder(void *view, const unsigned char *order, unsigned n) {
 
 /* Everyday listening, volume, library behaviour, then specialist output controls. */
 static const unsigned char playset_order[] = {
-    3 /* Play Mode */,
-    2 /* EQ */,
-    9 /* Gapless */,
-    18 /* Crossfade */,
-    10 /* ReplayGain */,
-    8 /* Memory play */,
-    20 /* Resume Songs */,
-    0 /* Gain */,
-    4 /* Max Volume */,
-    5 /* Default Vol */,
-    11 /* Balance */,
-    21 /* Mono Audio */,
-    22 /* Swap L/R */,
-    16 /* Artists */,
-    17 /* Artist album order */,
-    15 /* Year order */,
-    19 /* Folder Root */,
-    14 /* Folder skip */,
-    13 /* Folder art */,
-    12 /* Enlarged art */,
-    1 /* Filters */,
-    6 /* DSD Output */,
-    23 /* MQA */,
+    3 /* Play Mode */,      2 /* EQ */,
+    24 /* EQ per Output */, 9 /* Gapless */,
+    18 /* Crossfade */,     10 /* ReplayGain */,
+    8 /* Memory play */,    20 /* Resume Songs */,
+    0 /* Gain */,           4 /* Max Volume */,
+    5 /* Default Vol */,    11 /* Balance */,
+    21 /* Mono Audio */,    22 /* Swap L/R */,
+    16 /* Artists */,       17 /* Artist album order */,
+    15 /* Year order */,    19 /* Folder Root */,
+    14 /* Folder skip */,   13 /* Folder art */,
+    12 /* Enlarged art */,  1 /* Filters */,
+    6 /* DSD Output */,     23 /* MQA */,
     7 /* USB Audio */,
 };
 /* Connections, personalisation and daily controls, then device maintenance; About stays last. */
@@ -3093,7 +3092,8 @@ static int root_click(void *ctx, void *event) {
 }
 
 int ringnav_audioset(void *win, void *ctx) {
-    static const char *const icons[] = { "playset_covermode", "playset_folderjump" };
+    static const char *const icons[] = { "playset_covermode", "playset_folderjump" },
+                             *const eq_icon[] = { "playset_eq" };
     int result = stock_audioset_trampoline(win, ctx);
     pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
     pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
@@ -3109,6 +3109,7 @@ int ringnav_audioset(void *win, void *ctx) {
         mono_row(list_row(view, "playset_balance", mono_click, 0));
         swap_row(list_row(view, "playset_balance", swap_click, 0));
         mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
+        pod_rows(win, "scroll_view_playset", POD_EQ_OUTPUT, 1, eq_icon);
     }
     reorder(view, playset_order, sizeof playset_order);
     return result;
@@ -9888,6 +9889,7 @@ int ringnav_mainscheduling(void) {
 
 int ringnav_sleep(void *loop) {
     headset_poll();
+    headset_eq_poll();
     bt_volume_poll();
     video_poll();
     spot_poll();

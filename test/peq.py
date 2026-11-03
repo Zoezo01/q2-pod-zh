@@ -433,7 +433,9 @@ static struct { int parent, y, h, bg; char text[400]; handler click, destroy, ke
 static int count = 1, timers, removed, backs, chevrons[4096];
 static int (*timer_fn)(const void *);
 volatile unsigned char g_equalizer_flag, g_backlight_status = 1;
-int stock_eq_trampoline(int mode) { return mode; }
+static int stock_eq_calls;
+int stock_eq_trampoline(int mode) { ++stock_eq_calls; return mode; }
+int shim_chained(void) { return stock_eq_calls; }
 static void *make(void *parent, int h) {
     ++count; w[count].parent = (int)(long)parent; w[count].h = h; w[count].y = 0;
     w[count].text[0] = 0; chevrons[count] = 0; w[count].click = w[count].change = w[count].focus = w[count].down = w[count].action = 0; w[count].bg = 0; return (void *)(long)count;
@@ -662,6 +664,9 @@ int shim_open(void) { count = 1; w[1].destroy = w[1].keyup = 0; return peq_page_
 int shim_pending(void) { return timer_fn != 0; }
 int shim_removed(void) { return removed; }
 unsigned char shim_flag(void) { return g_equalizer_flag; }
+static int eq_following;
+void shim_following(int on) { eq_following = on; }
+int ringnav_eq_output(void) { return eq_following; }
 void shim_run(void) { int (*f)(const void *) = timer_fn; timer_fn = 0; if (f) f(0); }
 /* Click the row whose labels, caption and value joined by a space, start with text; optionally let
  * the deferred render run (1), or only find it (2). */
@@ -1054,6 +1059,72 @@ def editor_check(lib, tmp):
     ui.shim_return(); ui.shim_return()
     print('EQ preset pages: all 8,850 imports, sorting, page boundaries, navigation, save/replace, load and deletion passed.')
     eq3_editor_check(lib, ui, tmp)
+
+def output_check(tmp):
+    """EQ per Output (peq_ui.c): each output keeps the EQ set on it, through the real file paths."""
+    tmp = tmp/'outputs'; tmp.mkdir()
+    (tmp/'shim.h').write_text(SHIM_H)
+    (tmp/'shim.c').write_text('#include "peq.h"\n' + SHIM)
+    (tmp/'checks.c').write_text('#include "peq_ui.c"\nvoid check_page(long p) { ui.page = (void *)p; }\n'
+                                'void check_boot(void) { eq_owner[0] = 0; }\n')
+    ui = compile_host(tmp, 'outputs.so', tmp/'checks.c', ROOT/'patch/peq.c', tmp/'shim.c',
+                      '-I', ROOT/'patch', '-include', tmp/'shim.h')
+    ui.eq_output.argtypes = [C.c_char_p]
+    ui.eq_load.argtypes = ui.eq_save.argtypes = [C.POINTER(State)]
+    ui.eq_load_from.argtypes = [C.c_char_p, C.POINTER(State)]
+    ui.eq3_bands.argtypes = [C.POINTER(Preset), C.POINTER(C.c_double * 3)]
+    data = tmp/'root/mnt/data'; data.mkdir(parents=True); slots = data/'peq-outputs'
+    A, B = b'AA:AA:AA:AA:AA:AA', b'BB:BB:BB:BB:BB:BB'
+    def state(gain, mode=EQ_3):
+        s = State(); ui.eq_load(C.byref(s))
+        ui.eq3_bands(C.byref(s.eq3), C.byref((C.c_double * 3)(gain, 0, 0))); s.mode, s.hold = mode, 0
+        return s
+    def setting(gain, mode=EQ_3): assert ui.eq_save(C.byref(state(gain, mode)))
+    def playing():
+        s = State(); assert ui.eq_load(C.byref(s)); return s.eq3.bands[0].gain, s.mode
+    def slot(name):
+        s = State(); assert ui.eq_load_from(str(slots/name).encode(), C.byref(s)); return s.eq3.bands[0].gain
+    # The first output adopts what plays; nothing else is written.
+    setting(1); ui.eq_output(b'3.5mm')
+    assert playing() == (1, EQ_3) and sorted(p.name for p in slots.iterdir()) == ['owner']
+    # A new output keeps what plays, and each edit stays with the output it was made on.
+    setting(2); ui.eq_output(b'4.4mm'); assert playing() == (2, EQ_3) and slot('3.5mm') == 2
+    setting(3); ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_3) and slot('4.4mm') == 3
+    ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3)
+    # Off is remembered too, and the status bar's flag follows.
+    ui.eq_output(b'3.5mm'); setting(2, EQ_OFF); ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and ui.shim_flag() == 1
+    ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_OFF) and ui.shim_flag() == 0 and ui.shim_eqflag() == 0
+    # Same output, or the EQ page open: nothing moves until it closes.
+    before = slot('4.4mm'); setting(4); ui.eq_output(b'3.5mm'); assert playing() == (4, EQ_3) and slot('4.4mm') == before
+    ui.check_page(1); ui.eq_output(b'4.4mm'); assert playing() == (4, EQ_3) and slot('3.5mm') == 2
+    ui.check_page(0); ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and slot('3.5mm') == 4
+    # Power lost with an unsaved edit: owner on disk still files it under the right output.
+    setting(5); ui.check_boot(); ui.eq_output(b'3.5mm'); assert slot('4.4mm') == 5 and playing() == (4, EQ_3)
+    # The comparison's hold never goes into a slot.
+    s = state(6); s.hold = 1; assert ui.eq_save(C.byref(s)); ui.eq_output(b'usb')
+    t = State(); assert ui.eq_load_from(str(slots/'3.5mm').encode(), C.byref(t)) and t.hold == 0
+    # A slot that cannot be saved keeps the EQ and the owner, to try again; an unreadable one counts as new.
+    (slots/'usb.tmp').mkdir(); setting(7); ui.eq_output(b'3.5mm'); assert playing() == (7, EQ_3) and not (slots/'usb').exists()
+    (slots/'usb.tmp').rmdir(); (slots/'3.5mm').write_bytes(b'junk'); ui.eq_output(b'3.5mm'); assert playing() == (7, EQ_3) and slot('usb') == 7
+    # Forgetting ends the following: what plays stays, and the next output adopts it.
+    ui.eq_output_forget(); assert not (slots/'owner').exists(); setting(8); ui.eq_output(b'4.4mm'); assert playing() == (8, EQ_3)
+    # EQ_DEVICES: past it a new headset is not remembered; one already remembered, and jacks, still are.
+    good = (slots/'usb').read_bytes()
+    for i in range(32): (slots/('%02X:00:00:00:00:00' % i)).write_bytes(good)
+    ui.eq_output_forget(); ui.eq_output(b'28:00:00:00:00:00'); setting(9); ui.eq_output(b'29:00:00:00:00:00')
+    assert not (slots/'28:00:00:00:00:00').exists() and playing() == (9, EQ_3)
+    ui.eq_output(b'00:00:00:00:00:00'); assert not (slots/'29:00:00:00:00:00').exists()
+    setting(11); ui.eq_output(b'3.5mm'); assert slot('00:00:00:00:00:00') == 11
+    # Off to Off leaves the filter out of the chain, while the file still changes.
+    ui.eq_output(b'4.4mm'); setting(1, EQ_OFF); ui.eq_output(b'3.5mm'); setting(2, EQ_OFF); chained = ui.shim_chained()
+    ui.eq_output(b'4.4mm'); assert playing() == (1, EQ_OFF) and ui.shim_chained() == chained
+    # The page says whose EQ it is, only with the setting on.
+    ui.shim_title.restype = C.c_char_p; ui.eq_output(b'4.4mm'); ui.shim_open()
+    assert b'EQ for' not in (ui.shim_title() or b''); ui.check_page(0)
+    ui.shim_following(1); ui.shim_open(); assert ui.shim_title() == b'EQ for 4.4 mm', ui.shim_title()
+    ui.shim_e3_key(1); assert ui.shim_title() != b'EQ for 4.4 mm', ui.shim_title(); ui.check_page(0)
+    print('EQ per Output: each output keeps its own EQ, off too; open page, power loss, full slots')
+
 
 def eq3_check(lib, tmp):
     """3EQ's filters on the shared engine, and the one state record PEQ and 3EQ share."""
@@ -3210,6 +3281,7 @@ if __name__ == '__main__':
         dsp_check(lib)
         eq3_check(lib, tmp)
         editor_check(lib, tmp)
+        output_check(tmp)
         player_check(tmp)
         visualizer_check(tmp)
         scrobble_check(tmp)

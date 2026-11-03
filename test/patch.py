@@ -12886,8 +12886,8 @@ assert m.get(payload_syms['wheel_guard'])==1; passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'STANDBYLIMIT':'4'})
 assert texts()[4]=='Standby Limit: Off'; passed()  # out of range: Off
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
-assert len(rows)==9 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_gapless','playset_folderjump','playset_memplay','playset_balance','playset_balance','playset_dsdoutput']
-assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Crossfade: Off','Folder Root: Card','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA']
+assert len(rows)==10 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_gapless','playset_folderjump','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_eq']
+assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Crossfade: Off','Folder Root: Card','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','EQ per Output']
 assert click(2)==[(1,'Q2POD','ARTISTAZ')] and texts()[2]=='Artist Album Order: A–Z'
 assert click(2)==[(0,'Q2POD','ARTISTAZ')] and texts()[2]=='Artist Album Order: Year'
 assert click(0)==[(1,'Q2POD','YEAROLD')] and texts()[0]=='Year Order: Oldest First'
@@ -12977,7 +12977,7 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,9,18,10,8,20,0,4,5,11,21,22,16,17,15,19,14,13,12,1,6,23,7]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,24,9,18,10,8,20,0,4,5,11,21,22,16,17,15,19,14,13,12,1,6,23,7]; passed()
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
 for i in (3,5):
     button=m.nodes[rows[i]]['children'][0]
@@ -14144,6 +14144,41 @@ for lit,queue in ((1,0x20),(0,0xf001),(0,0x20)):
     assert stream_calls('ringnav_tidal_poll',196608)==['sem_wait']
 assert stream_calls('ringnav_tidal_track')==['stock_tidaltrack','sem_post']
 assert stream_calls('ringnav_baidu_poll',10000)==['sem_wait']
+passed()
+
+# EQ per Output (headset.c eq_output_key): what plays names the output; nothing is asked while the
+# setting is off, and with no output in use the EQ stays where it is.
+class EqOutputMachine(BtLinkMachine):
+    def __init__(self,links=(),way=0,headset=0,po=0,bal=0,on=1):
+        super().__init__(links); self.way=way; self.on=on; self.keys=[]
+        self.handlers.update({syms['mclGetOutputWay']:'eo:way',payload_syms['ringnav_eq_output']:'eo:on',payload_syms['eq_output']:'eo:key'})
+        self.byte(syms['g_headset_output'],headset); self.byte(syms['g_po_status'],po); self.byte(syms['g_bal_status'],bal)
+    def hook(self,u,addr,size,_):
+        name=self.handlers.get(addr,'')
+        if not name.startswith('eo:'): return super().hook(u,addr,size,_)
+        if name=='eo:key': self.keys.append(self.text(u.reg_read(REGS[0])))
+        self.returns({'eo:way':self.way,'eo:on':self.on}.get(name,0))
+    def poll(self): self.call(address=payload_syms['headset_eq_poll'],args=(0,0,0,0),gap=1000); return self.keys
+for kw,want in ((dict(headset=0,po=1),['3.5mm']),(dict(headset=1,bal=1),['4.4mm']),(dict(headset=1,po=1,bal=1),['4.4mm']),
+                (dict(headset=0,po=1,bal=1),['3.5mm']),(dict(headset=0),[]),(dict(headset=1),[]),(dict(headset=0,bal=1),[]),
+                (dict(way=2,headset=3),['usb']),(dict(way=2,headset=3,po=1),['usb']),
+                (dict(way=1,headset=2,links=[(a_mac,3)]),[a_mac]),
+                (dict(way=1,headset=2,links=[(a_mac,3),(b_mac,5)]),[a_mac]),(dict(way=1,headset=2,links=[(a_mac,5)]),[]),
+                (dict(way=1,headset=2),[]),(dict(headset=0,po=1,on=0),[])):
+    assert EqOutputMachine(**kw).poll()==want,kw
+m=EqOutputMachine(headset=0,po=1); m.poll(); m.call(address=payload_syms['headset_eq_poll'],args=(0,0,0,0),gap=100); assert m.keys==['3.5mm']; passed()
+# The row, directly below EQ: off unless set, and turning it off forgets whose EQ plays.
+class EqRowMachine(QueueMachine):  # a payload call has no t9 for Machine's handler check
+    forgets=0
+    def hook(self,u,addr,size,_):
+        if self.handlers.get(addr)!='eq_output_forget': return super().hook(u,addr,size,_)
+        self.forgets+=1; self.returns(0)
+for config,on in (({},0),({'EQOUTPUT':'1'},1)):
+    m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',config,stock_rows=15,cls=EqRowMachine)
+    assert texts()[-1]=='EQ per Output' and icons[-1]=='playset_eq',config
+    m.handlers[payload_syms['eq_output_forget']]='eq_output_forget'
+    assert click(-1)==[(1-on,'Q2POD','EQOUTPUT')],config
+    assert m.forgets==on,config
 passed()
 
 print(f'{checks} MIPS execution scenarios passed; toolkit services mocked, stock lock filter executed.')

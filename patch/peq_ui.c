@@ -91,7 +91,90 @@ static struct {
     int focus, adjusting, dragging, dirty, on, h;
     double gain[3];
     const char *status;
+    int caption; /* status is eq_output_caption's: the first turn of the wheel clears it too */
 } e3 __attribute__((section(".scratch")));
+
+/* EQ per Output: PEQ_ACTIVE stays what plays, and owner names the output it was set on. When another
+ * output takes over, the EQ goes to owner's file and the new output's comes back; a new output keeps
+ * what plays. An open EQ page holds unsaved state, so the swap waits for it to close. owner is on
+ * disk so an edit just before power-off still goes to the right output. */
+static char eq_owner[20] __attribute__((section(".scratch")));
+static void eq_slot(char *path, unsigned n, const char *key) {
+    snprintf(path, n, EQ_OUTPUTS "/%s", key);
+}
+static void owner_set(const char *key) {
+    char file[sizeof eq_owner] = { 0 }, path[256];
+    snprintf(file, sizeof file, "%s", key);
+    memcpy(eq_owner, file, sizeof file);
+    eq_slot(path, sizeof path, "owner");
+    mkdir(EQ_OUTPUTS, 0700);
+    peq_save_file(path, "Q2OWNER", file, sizeof file);
+}
+static void owner_read(void) {
+    struct { char magic[8], key[sizeof eq_owner]; } file = { { 0 }, { 0 } };
+    char path[256];
+    eq_slot(path, sizeof path, "owner");
+    void *f = fopen(path, "rb");
+    if (!f) return;
+    unsigned n = fread(&file, 1, sizeof file, f);
+    fclose(f);
+    if (n == sizeof file && !memcmp(file.magic, "Q2OWNER", 8) && !file.key[sizeof file.key - 1])
+        memcpy(eq_owner, file.key, sizeof eq_owner);
+}
+/* Bluetooth slots kept, a MAC's 17 characters naming them. */
+static int eq_devices(void) {
+    int n = 0;
+    void *dir = opendir(EQ_OUTPUTS);
+    if (!dir) return 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir))) n += strlen(entry->d_name) == 17;
+    closedir(dir);
+    return n;
+}
+/* The bar's message as the EQ page opens: which output's EQ this is. */
+static const char *eq_output_caption(void) {
+    if (!ringnav_eq_output()) return 0;
+    if (!eq_owner[0]) owner_read();
+    return !eq_owner[0]                     ? 0
+           : !strcmp(eq_owner, "3.5mm")     ? "EQ for 3.5 mm"
+           : !strcmp(eq_owner, "4.4mm")     ? "EQ for 4.4 mm"
+           : !strcmp(eq_owner, "usb")       ? "EQ for USB"
+                                            : "EQ for this Bluetooth device";
+}
+void eq_output_forget(void) {
+    char path[256];
+    eq_slot(path, sizeof path, "owner");
+    unlink(path);
+    eq_owner[0] = 0;
+}
+void eq_output(const char *key) {
+    if (ui.page) return;
+    if (!eq_owner[0]) owner_read();
+    if (!eq_owner[0]) {
+        owner_set(key);
+        return;
+    }
+    if (!strcmp(key, eq_owner)) return;
+    eq_state now, next;
+    char from[256], to[256];
+    eq_load(&now);
+    now.hold = 0;
+    mkdir(EQ_OUTPUTS, 0700);
+    eq_slot(from, sizeof from, eq_owner);
+    eq_slot(to, sizeof to, key);
+    /* ponytail: past EQ_DEVICES a new headset plays and edits the current EQ, unremembered;
+     * a forgotten device's slot stays, so re-pairing brings its EQ back. Eviction would need a
+     * last-used date per slot. */
+    int full = strlen(eq_owner) == 17 && access(from, 0) && eq_devices() >= EQ_DEVICES;
+    if (!full && !eq_save_to(from, &now)) return; /* kept for the next pass: nothing is lost */
+    if (!eq_load_from(to, &next)) next = now;
+    /* Off to Off is silent, so the filter stays out of the chain (peq_chain may still want it). */
+    if (memcmp(&next, &now, sizeof next) &&
+        !(now.mode == EQ_OFF && next.mode == EQ_OFF ? eq_save(&next) : eq_commit(&next)))
+        return;
+    /* ponytail: power lost before owner is saved files the new output's EQ under the old one, once. */
+    owner_set(key);
+}
 
 static int action(void *ctx, void *event);
 static int render(const void *unused);
@@ -924,6 +1007,12 @@ int peq_page_init(void *page, void *context) {
     widget_on(page, EVT_KEY_UP, keyup, 0);
     widget_on(page, EVT_POINTER_MOVE_BEFORE, e3_touch, 0); /* a slider's drag */
     widget_on(page, EVT_POINTER_UP_BEFORE, e3_touch, 0);
+    const char *output = eq_output_caption();
+    if (output) {
+        e3.caption = 1;
+        e3.status = output;
+        snprintf(ui.status, sizeof(ui.status), "%s", output);
+    }
     render(0);
     return 0;
 }
@@ -1041,6 +1130,12 @@ static int e3_single(const void *unused) {
 int eq_key(void *top, unsigned key) {
     static const unsigned release[EVENT_KEY / 4 + 1] = { [EVENT_KEY / 4] = KEY_CENTER };
     if (!ui.page || top != ui.page) return 0;
+    if (e3.caption && (key == KEY_NEXT || key == KEY_PREV)) {
+        e3.caption = 0;
+        e3.status = 0;
+        ui.status[0] = 0;
+        if (ui.bar) widget_set_text_utf8(ui.bar, "");
+    }
     if (ui.tab == ADVANCED) {
         if (ui.screen != HOME || !ui.view ||
             (!ui.tabs && (key != KEY_PREV || widget_get_prop_int(ui.view, "_ringnav_index", -1) > 0)))
