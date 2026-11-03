@@ -201,11 +201,12 @@ void *widget_lookup(void *x, const char *n, int r) {
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
 int ipod_home(void) { return home_mode; }
-static const theme_t shim_themes[2] = {
+#define CF_STYLE { CF_TOP, CF_X1, CF_XS, CF_Z1, CF_ZS, CF_EYE, CF_BRIGHT1, CF_BRIGHT2, CF_REFLECT, CF_REFLECT_TOP, CF_STRIDE, NP_ART_RADIUS, CF_NAME_PX, CF_ARTIST_PX, CF_TEXT_Y }
+static theme_t shim_themes[2] = {
     { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
-      .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END } },
+      .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE },
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
-      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END } } };
+      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE } };
 const theme_t *theme(void) { return &shim_themes[classic]; }
 int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
@@ -794,6 +795,20 @@ static void touches(widget *s, widget *covers_view) {
     int album = *(int *)(raw + SLIDE_INDEX);
     run(); assert(!strcmp(title(), names[album]) && !covers_view->visible);
     key(KEY_RETURN); assert(covers_view->visible);
+}
+
+/* A theme's corner radius takes effect at the next page open (cf_restyle refills cf_inset). */
+static void restyle(void) {
+    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    theme_t *t = (theme_t *)theme();
+    close_page(); t->cf.radius = 0; open_page();
+    render(0, rest);
+    for (int y = 0; y < 160; ++y)
+        for (int x = 0; x < 160; ++x) assert(px(CF_CX - 80 + x, CF_TOP + y) == art[y * 160 + x]); /* square */
+    close_page(); t->cf.radius = NP_ART_RADIUS; open_page();
+    render(0, rest);
+    assert(px(CF_CX - 80 + 159, CF_TOP) != art[159]); /* rounded again */
+    close_page();
 }
 
 static void depth(void) {
@@ -1456,6 +1471,7 @@ int main(void) {
     close_page();
     assert(loads == unloads);
     depth();
+    restyle();
     sorting();
     artist_only();
     unknown_card();

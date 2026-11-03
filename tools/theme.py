@@ -4,7 +4,7 @@ import dataclasses
 import json
 import re
 from build import ROOT
-from ipod import INC, O
+from ipod import BOTTOM, INC, O
 
 
 ACCENT_NAMES = [n.lower() for n in re.findall(r'\}\s*,?\s*/\* (\w+)', re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0])]
@@ -65,22 +65,32 @@ SCHEMA = {k.path: k for k in (
     key('scheme.chevron', 'chevron', 'color'),
     key('scheme.muted', 'muted', 'color'),
     key('scheme.bar_light', 'bar_light', 'color'),
-    Key('playing.layout', 'np_layout', 'enum', 0, 1, 0, 'open'))}  # <view> attributes: after n_opts
+    Key('playing.layout', 'np_layout', 'enum', 0, 1, 0, 'open'),  # the 'open' fields: after n_opts
+    *(Key(f'coverflow.{e}.{a}', f'cf.{a}', 'int', lo, hi, 0, 'open') for e, a, lo, hi in (
+        ('shelf', 'top', 0, 50), ('shelf', 'x1', 0, 1023), ('shelf', 'xs', 0, 799), ('shelf', 'z1', 0, 799),
+        ('shelf', 'zs', 0, 799), ('shelf', 'eye', 1, 2046), ('shelf', 'bright1', 1, 256), ('shelf', 'bright2', 1, 256),
+        ('shelf', 'reflect', 1, 50), ('shelf', 'reflect_top', 0, 256), ('shelf', 'stride', 1, 375),
+        ('shelf', 'radius', 0, 83), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
+        ('caption', 'text_y', 210, 290))))}
 FIELDS = {k.field: k for k in SCHEMA.values()}
 ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if p.count('.') == 2}
 VIEWS = {e.partition('.')[0] for e in ELEMENTS}
 CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'option', 'view'}, 'view': {'element'}}
 OPTION_ATTRS = {'setting', 'key', 'default', 'preset', 'keep'}
 # Per-theme numbers stay in offsets.inc: theme id -> {C field: expression over O}.
+CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF_Z1', 'cf.zs': 'CF_ZS', 'cf.eye': 'CF_EYE',
+            'cf.bright1': 'CF_BRIGHT1', 'cf.bright2': 'CF_BRIGHT2', 'cf.reflect': 'CF_REFLECT',
+            'cf.reflect_top': 'CF_REFLECT_TOP', 'cf.stride': 'CF_STRIDE', 'cf.radius': 'NP_ART_RADIUS',
+            'cf.name_px': 'CF_NAME_PX', 'cf.artist_px': 'CF_ARTIST_PX', 'cf.text_y': 'CF_TEXT_Y'}
 ROLE_MACROS = {
     'minimal': {'home_top': 'HOME_TOP', 'home_full_row': 'HOME_FULL_ROW', 'home_text_x': 'HOME_DOT_X + HOME_DOT + HOME_DOT_GAP',
                 'home_label_end[0]': 'HOME_SPLIT_LABEL_END', 'home_label_end[1]': 'HOME_LABEL_END', 'set_top': 'SET_TOP',
                 'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': '0',
-                'fill': 'MINIMAL_FILL', 'chevron': 'MINIMAL_CHEVRON', 'muted': 'SUDO_MUTED', 'bar_light': '0'},
+                'fill': 'MINIMAL_FILL', 'chevron': 'MINIMAL_CHEVRON', 'muted': 'SUDO_MUTED', 'bar_light': '0', **CF_ROLES},
     'classic': {'home_top': '0', 'home_full_row': 'HOME_CLASSIC_ROW', 'home_text_x': 'HOME_CLASSIC_TEXT_X',
                 'home_label_end[0]': 'HOME_CLASSIC_LABEL_END', 'home_label_end[1]': 'HOME_CLASSIC_LABEL_END', 'set_top': '0',
                 'np_bar': 'NP_BAR_CLASSIC', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB',
-                'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR'},
+                'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
 }
 
 
@@ -335,6 +345,14 @@ def validate(t, name):
     for field, word in (('def', 'default'), ('preset', 'preset')):
         if accent[field] >= 0 and not t['accents'] >> accent[field] & 1:
             err(f'accent {word} {ACCENT_NAMES[accent[field]]} is not in colorSchemes')
+    shelf = t['cf.top'] + 160 + t['cf.reflect']  # 160: coverflow.c's ART_SIZE
+    if shelf > O['CF_VIEW_H']:
+        err(f'coverflow.shelf: top + 160 + reflect = {shelf} exceeds {O["CF_VIEW_H"]}')
+    if t['cf.bright2'] > t['cf.bright1']:
+        err(f'coverflow.shelf: bright2 {t["cf.bright2"]} exceeds bright1 {t["cf.bright1"]}')
+    h = O['CF_NAME_H'] + O['CF_ARTIST_H']
+    if t['cf.text_y'] + h > BOTTOM:
+        err(f'coverflow.caption: text_y + {h} = {t["cf.text_y"] + h} exceeds the client height {BOTTOM}')
 
 
 def builtins(root=ROOT/'assets/themes'):
@@ -371,13 +389,12 @@ def emit(themes, out):
         lines.append('};')
     lines.append('static const theme_t themes[THEME_N] = {')
     for t in themes:
-        # theme_t order: element fields, the pointers and n_opts, then the <view> attribute fields.
+        # theme_t order: the live element fields, the pointers and n_opts, then the 'open' fields.
         fields = [('name', json.dumps(t['name'])),
-                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.path.count('.') == 2),
+                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'live' and k.path.count('.') == 2),
                   ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
                   ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
-                  *((k.field, t[k.field]) for k in SCHEMA.values()
-                    if k.path.count('.') == 1 and not k.path.startswith('scheme.'))]
+                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'open')]
         lines += ['    {', *(f'        .{k} = {v},' for k, v in fields), '    },']
     lines += ['};', '']
     (out/'themes.inc').write_text('\n'.join(lines))

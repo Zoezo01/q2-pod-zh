@@ -7922,7 +7922,12 @@ def host_render(textures,cases):
     """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases."""
     import subprocess, tempfile
     from coverflow import SHIM_H
-    main=r"""#include <stdio.h>
+    from theme import ROLE_MACROS
+    cf=', '.join(f'.{f[3:]} = {O[m]}' for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.'))
+    main=r"""#include "theme.h"
+static theme_t t = { .cf = { %s } };
+const theme_t *theme(void) { return &t; }
+#include <stdio.h>
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return 0; }
 int ipod_square_art(void) { return 0; }
@@ -7938,7 +7943,7 @@ int main(void) {
         fflush(stdout);
     }
     return 0;
-}""" % (O['CF_VIEW_H'],O['CF_VIEW_W'],O['CF_VIEW_W'])
+}""" % (cf,O['CF_VIEW_H'],O['CF_VIEW_W'],O['CF_VIEW_W'])
     with tempfile.TemporaryDirectory(prefix='q2-render-') as d:
         d=pathlib.Path(d); (d/'shim.h').write_text(SHIM_H); (d/'main.c').write_text(main)
         subprocess.run(['cc','-O1','-DPEQ_HOST','-DPEQ_ROOT=""','-D_GNU_SOURCE',

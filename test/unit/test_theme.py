@@ -106,6 +106,11 @@ def opt(setting, default=-1, preset=-1, keep=-1, values=0):
     return {'setting': setting, 'def': default, 'preset': preset, 'keep': keep, 'values': values}
 
 
+CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
+            'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
+            'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212}
+
+
 MINIMAL = {
     'id': 'minimal', 'index': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
     'painter[PAINT_SELECTION]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
@@ -115,7 +120,7 @@ MINIMAL = {
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
-             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')]}
+             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], **CF_TODAY}
 CLASSIC = {
     **MINIMAL, 'id': 'classic', 'index': 1, 'name': 'Classic', 'accents': 0x17f, 'accent_key': 'ACCENT',
     'painter[PAINT_SELECTION]': 1, 'chevron_home': 1, 'caps_mark': 0, 'caps_home': 0, 'caps_np': 0,
@@ -268,7 +273,8 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chev
                   ('bold', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
-                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 0)]
+                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 0),
+                  *CF_TODAY.items()]
 
 
 def test_emit(tmp_path):
@@ -325,3 +331,36 @@ def test_playing_layout_rejects_unknown():
 def test_emit_np_layout(tmp_path):
     theme.emit(theme.builtins(), tmp_path)
     assert (tmp_path/'themes.inc').read_text().count('.np_layout = 0,') == 2
+
+
+def with_role(monkeypatch, **cf):
+    monkeypatch.setitem(theme.ROLE_MACROS, 'minimal', {**theme.ROLE_MACROS['minimal'], **{f'cf.{k}': str(v) for k, v in cf.items()}})
+
+
+@pytest.mark.parametrize('field,value', [('eye', 2047), ('eye', 0), ('xs', 800), ('zs', 800), ('x1', 1024), ('reflect', 0),
+    ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0)])
+def test_coverflow_range_rejects(monkeypatch, field, value):
+    with_role(monkeypatch, **{field: value})
+    with pytest.raises(theme.ThemeError, match=rf'coverflow\.\w+\.{field}: {value} outside'):
+        theme.builtins()
+
+
+@pytest.mark.parametrize('field,value,message', [
+    ('cf.top', 27, 'top \\+ 160 \\+ reflect = 211 exceeds 210'), ('cf.reflect', 38, 'top \\+ 160 \\+ reflect = 211 exceeds 210'),
+    ('cf.bright2', 193, 'bright2 193 exceeds bright1 192'), ('cf.text_y', 231, 'text_y \\+ 60 = 291 exceeds the client height 290')])
+def test_coverflow_cross_rejects(field, value, message):
+    with pytest.raises(theme.ThemeError, match=message):
+        theme.validate({**theme.builtins()[0], field: value}, 't.xml')
+
+
+def test_coverflow_edges_pass(monkeypatch):   # each limit itself is allowed
+    for edge in ({'cf.top': 26}, {'cf.text_y': 230}, {'cf.bright2': 192}):
+        theme.validate({**theme.builtins()[0], **edge}, 't.xml')
+    with_role(monkeypatch, eye=2046, x1=1023, xs=0)
+    theme.builtins()
+
+
+def test_emit_cf(tmp_path):
+    theme.emit(theme.builtins(), tmp_path)
+    text = (tmp_path/'themes.inc').read_text()
+    assert text.count('.cf.eye = 300,') == 2 and text.count('.cf.text_y = 212,') == 2

@@ -1284,9 +1284,11 @@ int image_show(void *img, const char *url, unsigned *size) {
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
 #define CF_RING (2 * CF_REACH + 1)
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
-#define CF_EYE16 (16 * CF_EYE)
+/* the active theme's Cover Flow values, copied at page open (cf_restyle) */
+static cf_style_t cfs __attribute__((section(".scratch")));
+#define CF_EYE16 (16 * cfs.eye)
 #define CF_HALF16 (16 * ART_SIZE / 2)
-#define CF_MID256 (256 * (CF_TOP + ART_SIZE / 2)) /* the horizon every cover centres on */
+#define CF_MID256 (256 * (cfs.top + ART_SIZE / 2)) /* the horizon every cover centres on */
 
 /* cos and sin of 0 to CF_ANGLE (60) degrees in 16 steps, 16.16 */
 static const int cf_cos[17] = { 65536, 65396, 64975, 64277, 63303, 62058, 60547, 58777, 56756,
@@ -1308,15 +1310,15 @@ static void pose(int t, pose_t *p) {
         /* xc = A t + B t^2: CF_X1 at t = 1, arriving at the stack's CF_XS slope, and quick at
          * first, so the covers turning in and out mid-step keep clear of each other. */
         int sq = (int)((unsigned)t * (unsigned)t >> 16);
-        p->xc = (16 * (2 * CF_X1 - CF_XS) * t + 16 * (CF_XS - CF_X1) * sq) >> 16;
-        p->zc = 16 * CF_Z1 * t >> 16;
-        p->bright = 256 - ((256 - CF_BRIGHT1) * t >> 16);
+        p->xc = (16 * (2 * cfs.x1 - cfs.xs) * t + 16 * (cfs.xs - cfs.x1) * sq) >> 16;
+        p->zc = 16 * cfs.z1 * t >> 16;
+        p->bright = 256 - ((256 - cfs.bright1) * t >> 16);
     } else {
         int e = t - CF_ONE;
-        p->xc = 16 * CF_X1 + (16 * CF_XS * e >> 16);
-        p->zc = 16 * CF_Z1 + (16 * CF_ZS * e >> 16);
-        p->bright = e < CF_ONE ? CF_BRIGHT1 - ((CF_BRIGHT1 - CF_BRIGHT2) * e >> 16)
-                    : e < 2 * CF_ONE ? CF_BRIGHT2 * (2 * CF_ONE - e) >> 16 : 0;
+        p->xc = 16 * cfs.x1 + (16 * cfs.xs * e >> 16);
+        p->zc = 16 * cfs.z1 + (16 * cfs.zs * e >> 16);
+        p->bright = e < CF_ONE ? cfs.bright1 - ((cfs.bright1 - cfs.bright2) * e >> 16)
+                    : e < 2 * CF_ONE ? cfs.bright2 * (2 * CF_ONE - e) >> 16 : 0;
     }
 }
 
@@ -1400,9 +1402,9 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
         }
     }
     /* The reflection starts where the body ends, sharing the row the body only partly covers. */
-    int reflect = h * CF_REFLECT / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
+    int reflect = h * cfs.reflect / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
     int fade = (256 << 16) / reflect; /* fading per 1/256 px, 16.16 */
-    unsigned dim = (unsigned)bright * CF_REFLECT_TOP >> 8;
+    unsigned dim = (unsigned)bright * cfs.reflect_top >> 8;
     wash = shade(cf_paper, 256u - dim);
     if (stop > CF_VIEW_H) stop = CF_VIEW_H;
     for (y = (bottom + ins) >> 8, px = d + y * pitch; y < stop; ++y, px += pitch) {
@@ -1431,6 +1433,20 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 /* The cover t (16.16, signed) turns from the visual position, under what is drawn. */
 static unsigned short cf_inset[ART_SIZE] __attribute__((section(".scratch"))); /* 1/256 texel, symmetric */
 
+/* Copy the theme's Cover Flow values to cfs. */
+static void cf_restyle(void) { cfs = theme()->cf; }
+/* cf_inset follows the theme's radius, or none under square art. */
+static void cf_corners(void) {
+    static short filled __attribute__((section(".scratch")));
+    int radius = ipod_square_art() ? 0 : cfs.radius;
+    if (radius == filled) return;
+    filled = (short)radius;
+    int r = ART_SIZE * radius / 166;
+    memset(cf_inset, 0, sizeof cf_inset);
+    for (int k = 0; k < r; ++k)
+        cf_inset[k] = cf_inset[ART_SIZE - 1 - k] = (unsigned short)(arc_out(r, k) * 16);
+}
+
 static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
@@ -1456,16 +1472,8 @@ static int slot(int frac, int k, int i) {
  * texture of the cover j - CF_REACH from the centre, or 0 to leave it out. Nearest first; nearer
  * covers and their reflections overlap farther ones. */
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ring[CF_RING]) {
-    /* once per corner style, including callers which render without opening the page */
-    static unsigned char cf_style __attribute__((section(".scratch"))); /* 0: not yet */
-    unsigned char style = ipod_square_art() ? 2 : 1;
-    if (cf_style != style) {
-        int r = ART_SIZE * NP_ART_RADIUS / 166;
-        for (int k = 0; k < r; ++k)
-            cf_inset[k] = cf_inset[ART_SIZE - 1 - k] =
-                style == 2 ? 0 : (unsigned short)(arc_out(r, k) * 16);
-        cf_style = style;
-    }
+    if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
+    cf_corners();
     cf_paper = ipod_light() ? LIGHT_PAPER * 0x010101u : 0;
     shelf_t f;
     f.d = d, f.pitch = pitch;
@@ -1880,9 +1888,10 @@ static int retitle(const void *unused) {
 
 /* One child per album plus the cards (CARDS), moved by the wheel and by touch on the covers' view
  * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step repaints all of it, and its CF_VIEW_H square
- * items with a negative spacer move one album per CF_STRIDE px; the children stay empty under the
- * frame. The flat fallback is the stock images, 160 px, as before. ponytail: one child per album;
- * if large libraries lag on hardware, virtualize to a recycled window of children. */
+ * items with a negative spacer move one album per the theme's stride in px; the children stay
+ * empty under the frame. The flat fallback is the stock images, 160 px, as before. ponytail: one
+ * child per album; if large libraries lag on hardware, virtualize to a recycled window of
+ * children. */
 static void covers(void) {
     cf.screen = COVERS;
     if (cf.text_albums) {
@@ -1899,7 +1908,7 @@ static void covers(void) {
         cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, 290);
         cf.slide = widget_factory_create_widget(f, "slide_menu", cf.covers, 0, depth ? 0 : 24, 375,
                                                 depth ? CF_VIEW_H : ART_SIZE);
-        if (depth) slide_menu_set_spacer(cf.slide, CF_STRIDE - CF_VIEW_H);
+        if (depth) slide_menu_set_spacer(cf.slide, cfs.stride - CF_VIEW_H);
         widget_set_sensitive(cf.slide, 0);
         for (unsigned i = 0, n = deque_size(cf.albums); i < n + CARDS; ++i) {
             void *img = image_create(cf.slide, 0, 0, 0, 0);
@@ -1910,10 +1919,11 @@ static void covers(void) {
         }
         /* Album over artist under the frame, white and larger, then grey, clear of the rounded
          * glass (docs/ipod.md#coverflow). */
-        cf.name = text(cf.covers, CF_EDGE, CF_TEXT_Y, 375 - 2 * CF_EDGE, CF_NAME_H);
-        widget_set_prop_int(cf.name, "style:normal:font_size", CF_NAME_PX);
-        cf.artist = text(cf.covers, CF_EDGE, CF_TEXT_Y + CF_NAME_H, 375 - 2 * CF_EDGE, CF_ARTIST_H);
-        widget_set_prop_int(cf.artist, "style:normal:font_size", CF_ARTIST_PX);
+        cf.name = text(cf.covers, CF_EDGE, cfs.text_y, 375 - 2 * CF_EDGE, CF_NAME_H);
+        widget_set_prop_int(cf.name, "style:normal:font_size", cfs.name_px);
+        cf.artist =
+            text(cf.covers, CF_EDGE, cfs.text_y + CF_NAME_H, 375 - 2 * CF_EDGE, CF_ARTIST_H);
+        widget_set_prop_int(cf.artist, "style:normal:font_size", cfs.artist_px);
         widget_set_prop_int(cf.artist, "style:normal:text_color", (int)CF_GREY);
         slide_menu_set_value(cf.slide, cf.album);
         widget_on(cf.slide, EVT_VALUE_CHANGED, changed, 0);
@@ -2130,7 +2140,7 @@ static int to_tracks(const void *unused) {
     }
     void *view = list(P(r, REC_ALBUM), n);
     /* the album over its tracks, all centred */
-    widget_set_prop_int(cf.title, "style:normal:font_size", CF_NAME_PX);
+    widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
     for (int i = 0; i < n; ++i) {
         void *row = page_row_detail(
             view, i, track_name(name, sizeof name, deque_at(cf.tracks, (unsigned)i)), 0, play);
@@ -2279,6 +2289,7 @@ static int closed(void *ctx, void *event) {
 
 /* A Coverflow page: the covers' moves and release are taken here (touch). */
 static void *open_page(void) {
+    cf_restyle();
     void *page = page_open("coverflow_page", closed, keyup);
     static const unsigned short kinds[] = { EVT_POINTER_MOVE_BEFORE, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
     for (unsigned k = 0; page && k < sizeof kinds / sizeof *kinds; ++k) widget_on(page, kinds[k], touch, 0);

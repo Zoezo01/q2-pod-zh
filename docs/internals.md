@@ -254,7 +254,7 @@ Every name-sorted library list (artists, album artists, composers, genres, album
 
 ## Coverflow depth
 
-Coverflow draws its covers in software, after Rockbox PictureFlow's renderer: the selected cover faces the viewer at its native 160 pixels, two neighbours a side are turned 60 degrees inward, pushed back and dimmed, and each has a reflection. `patch/coverflow.c` owns the drawing; the stock `slide_menu` stays the navigation and animation controller, so the wheel (one retargeted animator, 200 ms or 120 ms fast, reversal), wrapping, centre, the saved album and track positions all work as before. Touch is the payload's own (below): the `slide_menu` stays insensitive, so stock's drag and throw never run. Tunables are `CF_*` in `patch/offsets.inc`; adjust them together.
+The shelf and caption values below are the theme's `cfs` (see Themes); both built-ins use these macros. Coverflow draws its covers in software, after Rockbox PictureFlow's renderer: the selected cover faces the viewer at its native 160 pixels, two neighbours a side are turned 60 degrees inward, pushed back and dimmed, and each has a reflection. `patch/coverflow.c` owns the drawing; the stock `slide_menu` stays the navigation and animation controller, so the wheel (one retargeted animator, 200 ms or 120 ms fast, reversal), wrapping, centre, the saved album and track positions all work as before. Touch is the payload's own (below): the `slide_menu` stays insensitive, so stock's drag and throw never run. Tunables are `CF_*` in `patch/offsets.inc`; adjust them together.
 
 **Layout.** With depth the `slide_menu` spans the frame, 375 × 210 (`CF_VIEW_W` × `CF_VIEW_H`) at the top of the page, so every animator step invalidates all of it. Its items stay `h` square (210), and `slide_menu_set_spacer` (a store at `+0x84` and an invalidate) sets the spacer to `CF_STRIDE - 210`, so the stride that stock scroll, completion and ringnav's wheel steps use (item width plus spacer) is `CF_STRIDE` (110 px). The children are `image` widgets with no image, so stock paints nothing under the frame. The album and artist captions sit under the frame at `CF_TEXT_Y` and follow the centre cover: when the album `coverflow_paint` drew in the middle changes, a zero-delay timer (`retitle`, never text set inside the paint) names it, once per change; `EVT_VALUE_CHANGED`, when a move commits, writes them again.
 
@@ -401,6 +401,15 @@ because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in both th
 both built-ins) picks the page `ringnav_ui_load` loads for `playing_page`: `np_pages[np_layout()]`,
 where Centred Now Playing (`NPCENTRED`) forces `NP_CENTRED` (`playing_page_stock`).
 `ringnav_playing` binds the lyric tap on the centred page only.
+
+**Cover Flow.** `theme_t.cf` (`cf_style_t`: `coverflow.shelf` top, x1, xs, z1, zs, eye, bright1,
+bright2, reflect, `reflect_top`, stride, radius; `coverflow.caption` `name_px`, `artist_px`, `text_y`) is
+copied to coverflow.c's `cfs` by `cf_restyle` at every page open, so the stride is in place before
+`slide_menu_set_spacer`; a radius change refills `cf_inset`, and a render before any page restyles
+once. Built-ins take every value from offsets.inc's `CF_*` and `NP_ART_RADIUS` (`ROLE_MACROS`).
+tools/theme.py checks each range, top + 160 + reflect ≤ `CF_VIEW_H`, bright2 ≤ bright1, and
+`text_y` + `CF_NAME_H` + `CF_ARTIST_H` ≤ the client height. The tilt table, `CF_EDGE`, `CF_VIEW_*`,
+`CF_CX` and `ART_SIZE` stay fixed.
 
 ## Page transitions (iPod)
 
