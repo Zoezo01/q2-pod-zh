@@ -1,0 +1,12 @@
+# The App Store page's list (System settings → App Store): one GitHub repo with a release zip per line,
+# "owner/repo Name", the name optional. The device fetches this file; see docs/internals.md#q2-shelf.
+DiamondBond/q2-rockbox Rockbox
+DiamondBond/q2-rockbox-themes Rockbox Themes
+DiamondBond/q2-librespot Spotify
+group-a-study/q2-deezer Deezer
+group-a-study/q2-soulseek Soulseek
+group-a-study/q2-filebrowser File Browser
+andsuor/q2-subsonic Subsonic
+m-d-e-v/q2-podcasts Podcasts
+harpmudd/q2-lma Live Music Archive
+DiamondBond/q2-fidget Fidget

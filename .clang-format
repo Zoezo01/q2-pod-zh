@@ -1,0 +1,16 @@
+# C style for the firmware patch, tuned to the existing patch/navigation.c layout:
+# 4-space indent, 100 columns, right-aligned pointers, one-line guards.
+#
+# Do not run clang-format on patch/trampoline.S, patch/link.ld or patch/contexts.inc:
+# it cannot parse GAS or linker scripts, and it packs contexts.inc onto few lines.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+PointerAlignment: Right
+BreakBeforeBraces: Attach
+Cpp11BracedListStyle: false
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Always

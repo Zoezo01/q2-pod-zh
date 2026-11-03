@@ -1,0 +1,354 @@
+{
+  "assets": {
+    "dialog/addplaylist_dialog.bin": "c4ff5019863a904019b872f8baea64d3cefc9c1b520972803419507cbaa03905",
+    "folder_page.bin": "7ea6d0e191ed15e42a46a3b1e4898c91b175b216615cf3d4f656dd3aa1407bcb",
+    "localmusic_page.bin": "beada69a80011fef5068dcaf5d741355f57d0df936fca497f65f51bcba60b7a4",
+    "localmusic/album_page.bin": "b0a6420c81b19fd78706dcb1e1db09b365c5c9b817bf615ebc535197bce41ab1",
+    "localmusic/albuminfo_page.bin": "2e4c8f8112a0efd8c7a0c44bca3a20d822506eb76094bb5abb2f41fc26a6d416",
+    "localmusic/allmusic_page.bin": "1c05f4d017c27c3e140d568e963b43c64891309f730f304b93d0e4fc5d86f782",
+    "localmusic/artistinfo_page.bin": "a5e9a8f104d8e8aeeec4640faf0e160fa7483011700632eaade64afff8bb3198",
+    "localmusic/localclass_page.bin": "41572b285d5c6a447ae340d8827cacc02eac0359d5d4bd07cbf518e5463a10a1",
+    "localmusic/playlist_page.bin": "68efc8a91545f4c79b649cf177912332c6c493ed2b258d3b759f9bf14e44b962",
+    "localmusic/playlistsmore_page.bin": "60948d54736bbe913305b960ee3b8c88dd135f4327e7a8c37e526740cec66d9f",
+    "home_page.bin": "c0e056388681952b31b7e4b3e13fc65f143807a5c6ff6c45060dbbe5ae9e5241",
+    "system_bar.bin": "37a66b86847eae4f26ce748cb7d0b621d49e9e173e0526342058e3901389d9b1",
+    "playing_page.bin": "f39a5d333ae68028b6af1448f363deb28a3a417d3c085e4151322e022a9b2e4c",
+    "dialog/statusbar_dialog.bin": "54b59c005201fe5b9efbebb5b359d45527552942fbeb7f55f2270872136dcd47",
+    "dialog/confirminfo_dialog.bin": "cceac1b202d46c7cdd11205b66ac9332fc349e07797e636b39ee471348545b73",
+    "dialog/volume_dialog.bin": "ee8f94ff6e39a288017527da088ecfaa180e84a0da590129da647a99e6a18a01",
+    "bigcover_page.bin": "36d2def0530caff99db04ad19153de076711592d13467aadfecc74acede6187e"
+  },
+  "navbar_only": {
+    "audiosetting_page.bin": "fa8581c656da81d0b32430fea7963f46bd53e582acddbe8346fa74a42df25555",
+    "stream_page.bin": "29225655cf5fcbf4a59b224f62f28583c80bf0da992cde7615a85e9a90a33f5a",
+    "systemset/about_page.bin": "b4c8d2a0c386ec0887ff388cfe0ce7e62330326444cb1ff1352b043ee741c373",
+    "systemset/autotime_page.bin": "58cc51c23b38ae5d2f450436b487eb028fdb5a8d1adf5791b98487888de47e5a",
+    "systemset/backlight_page.bin": "fe9bcb8642f41241ae10a2c6ce789540d83aa6228a0d820039340fe03a1db771",
+    "systemset/bluetooth_page.bin": "cb0769a18333872291d764298b792f9845ed5f4a207c930deca62fdcbf00ff89",
+    "systemset/btadjustvol_page.bin": "d59be953002bf620a69930661223edd3df64555e19f4643e254361658607a7a0",
+    "systemset/btquality_page.bin": "c87e76c26c0bd632ae031044ca2e7fd32a4a26ea56d9581f7fa2ab5bb5db23c7",
+    "systemset/datetime_page.bin": "f6f6291b801cab485314f6021c8a6728e90d9427f9b2212cde9e25129d2d0460",
+    "systemset/display_page.bin": "27dca07a081976aa9493098e4b27dbc879ec1b541ca8c76b753e61a22ae3772b",
+    "systemset/fwupdate_page.bin": "2bc2df74a6e6f22c31f8f94417b2261489f40b267bb4837e4aa5f5a72c1a5cf7",
+    "systemset/keylock_page.bin": "c592fa9f7e521b23b69222f317b000d555893caf39b8fe60e6f04a9cd49cb473",
+    "systemset/language_page.bin": "e5d47651b9a8755c3e2a62f35c489608e55341cebd98883a6074b138fd0ee095",
+    "systemset/lighttime_page.bin": "f43d0e586a7be9d8b71177b1a08c0952f5f7c7fe903f9369b1c43b36fef2bdd5",
+    "systemset/manualtime_page.bin": "88182131bc9396b2552314f421a999c3b812b833725ca7c11b8298506cced512",
+    "systemset/netservice_page.bin": "b71dbca2736744f41aedc19eadc99ee39c7ed397c6e7ecf6625fabfeff7209bf",
+    "systemset/powermanager_page.bin": "b5b239337d4cfaedeb411acb2656f2763bb2aabbd33f3e76859c6535865cbf78",
+    "systemset/reset_page.bin": "e75b83286fa12a31f3fb7888e0f2ce55703357a06342d0508339be910fb048f5",
+    "systemset/screensaver_about.bin": "6ebc67b6407a49ac8a7f50c207a99c46726ba873b6f3e2b05fe8c4f95233fb6e",
+    "systemset/screensaver_page.bin": "2beb2a2be18a510eb7df46ee8e71e291e37bac49fa9bbc66f01ab69837ba03d9",
+    "systemset/sleepshutdown_page.bin": "69745c2bd47bd4266c260fccdfe1caf3310b92fcfb24332dfeb0ee9d3746a947",
+    "systemset/standby_page.bin": "4b742684b54d4c3d7450f43ebe1a5c7f60aad18b95030c9c0a750f60f56fc78c",
+    "systemset/synclink_page.bin": "43548f5bb3d0bb7588c75fd18f131e5a6800d16a859879bb0a8e629a9af8ec02",
+    "systemset/sysset_page.bin": "f4dba120dcafd36769ab79260ebc866d4bccade7639db2cdbff452ff698b6b66",
+    "systemset/wifi_page.bin": "b764c8b575f9c54ca6790fc41625d1dbcf950fa4f1ef5731740677790a1ec4fd",
+    "systemset/wifiset_page.bin": "b819516450926304f6b8fc54b871d8affe2bfea0a731098640d45a6eeb1b2666",
+    "playset/balance_page.bin": "af24c18dc7ac31aa032d8afa8d4314a705c24f2c39709f3766589794bc7923ae",
+    "playset/bootvol_page.bin": "919519e00bc25a12dea0f543ff0d49c4b35e4aa12d75c94bff6086234aa2ba5d",
+    "playset/dsdoutput_page.bin": "27e3ab99a9f2a1c52fea8144b39ff890d7efd534e06c29c39e71be66763856da",
+    "playset/filter_page.bin": "95d49ff2e44ad17581ede0fd2408a8d806d2f60ad516fbf4541cd6646e703bc2",
+    "playset/maxvol_page.bin": "030fd56d839bb49220feabb523ce74f681ea0309af90e0fcc0e708011142e455",
+    "playset/memplay_page.bin": "094a08004783128baa743868e574069f25e80a24833224c36575d7fb324c16c6",
+    "playset/playmode_page.bin": "8796dda04cf87408d5bac89ac13939eef78326e56113a460d6fcbc38099c8a4f",
+    "playset/playset_page.bin": "6f81ba52f8c9154051c935a829b3fb32419edd18792af85ccc15386a9aafbef6",
+    "playset/replaygain_page.bin": "35e4bddbd4791bc8e64b8e0165d5b299a633ad15ca9bae69a945b156a5491602",
+    "playset/usbvol_page.bin": "21f4ee2dd2ca9fcd0be904f852ff7051a8015183fca2d1c0741ddf76a43a70ce"
+  },
+  "slide_only": {
+    "playset/equalizer_page.bin": "37c084eb1ab9642af62d9e73550a6ec1d2e90410b192f81bfa878af2e5c93fbf"
+  },
+  "immediates": [
+    {
+      "value": "pitch",
+      "purpose": "row creation, reset or artwork offset divisor",
+      "sites": [
+        ["0x4a2c5c", "0x2402004e"],
+        ["0x4a2c60", "0x2406004e"],
+        ["0x4a2f24", "0x2404004e"],
+        ["0x4a44c8", "0x2410004e"],
+        ["0x4a4b9c", "0x2402004e"],
+        ["0x4a6fa8", "0x2402004e"],
+        ["0x4a9ad8", "0x2410004e"],
+        ["0x4aa35c", "0x2402004e"],
+        ["0x4ad8e4", "0x2410004e"],
+        ["0x4addd0", "0x2402004e"],
+        ["0x4b0f88", "0x2402004e"],
+        ["0x4b2ec0", "0x2402004e"],
+        ["0x4b2f0c", "0x2402004e"],
+        ["0x5217d4", "0x2405004e"],
+        ["0x521a84", "0x2403004e"],
+        ["0x5228f8", "0x2410004e"],
+        ["0x5230c8", "0x2402004e"]
+      ]
+    },
+    {
+      "value": "pitch",
+      "purpose": "local class artwork offset divisor (stock disagrees with its 78px rows)",
+      "sites": [
+        ["0x4b0608", "0x24100078"]
+      ]
+    },
+    {
+      "value": "body",
+      "purpose": "row background, hit target and full-height children",
+      "sites": [
+        ["0x4a4bb8", "0x24150046"],
+        ["0x4a62d0", "0x24020046"],
+        ["0x4aa388", "0x24120046"],
+        ["0x4addec", "0x24120046"],
+        ["0x4adfe4", "0x24020046"],
+        ["0x4b0fc0", "0x24110046"],
+        ["0x4b2880", "0x24130046"],
+        ["0x4b2a44", "0x24170046"],
+        ["0x4b2f2c", "0x24130046"],
+        ["0x5223ec", "0x24060046"],
+        ["0x523100", "0x24110046"],
+        ["0x524820", "0x24140046"]
+      ]
+    },
+    {
+      "value": "body",
+      "purpose": "text/icon container inside row; stock child layout stretches to parent",
+      "sites": [
+        ["0x4a4d50", "0x24020078"],
+        ["0x4a63fc", "0x24020078"],
+        ["0x4a6530", "0x24020078"],
+        ["0x4aa510", "0x24020078"],
+        ["0x4ae288", "0x24020078"]
+      ]
+    },
+    {
+      "value": "art",
+      "purpose": "stock 52px artwork drawn 1:1 in the inset row widget",
+      "sites": [
+        ["0x4a4c70", "0x24070032"],
+        ["0x4aa42c", "0x24070032"],
+        ["0x4adfec", "0x24070032"],
+        ["0x4b1058", "0x24070032"]
+      ]
+    },
+    {
+      "value": "art_inset",
+      "purpose": "artwork and playing overlay at the 8px top/left inset",
+      "sites": [
+        ["0x4a4ce4", "0x24060009"],
+        ["0x4aa4a4", "0x24060009"],
+        ["0x4ae05c", "0x24060009"],
+        ["0x5231c4", "0x24060009"],
+        ["0x523234", "0x24060009"],
+        ["0x524944", "0x2405000a"]
+      ]
+    },
+    {
+      "value": 0,
+      "purpose": "folder artwork on the row layout's 8px left margin",
+      "sites": [
+        ["0x5231cc", "0x24050004"]
+      ]
+    },
+    {
+      "value": 13,
+      "purpose": "24px title position in the 68px body, font unchanged",
+      "sites": [
+        ["0x4a4d9c", "0x2406000e"],
+        ["0x4a6580", "0x2406000e"],
+        ["0x4aa55c", "0x2406000e"]
+      ]
+    },
+    {
+      "value": 10,
+      "purpose": "title position in the 68px body, font unchanged",
+      "sites": [
+        ["0x4ae314", "0x2406000b"],
+        ["0x4b2bd4", "0x2406000b"]
+      ]
+    },
+    {
+      "value": 39,
+      "purpose": "16px metadata position in the 68px body, font unchanged",
+      "sites": [
+        ["0x4a4e04", "0x24060028"],
+        ["0x4a661c", "0x24060028"],
+        ["0x4aa5ac", "0x24060028"],
+        ["0x4ae38c", "0x24060028"]
+      ]
+    },
+    {
+      "value": 40,
+      "purpose": "playlist count position in the 68px body",
+      "sites": [
+        ["0x4b2c38", "0x24060029"]
+      ]
+    },
+    {
+      "value": "scroll",
+      "purpose": "all songs recreated scrollbar spans the relocated list",
+      "sites": [
+        ["0x4a8cd8", "0x240200be"]
+      ]
+    },
+    {
+      "value": "np_bar_w",
+      "purpose": "Now Playing A-B markers span the iPod progress bar (x = start + t * width / length)",
+      "sites": [
+        ["0x52a318", "0x24020122"]
+      ]
+    },
+    {
+      "value": "np_bar_x",
+      "purpose": "Now Playing A-B markers start at the iPod progress bar's left end",
+      "sites": [
+        ["0x52a330", "0x24420032"]
+      ]
+    },
+    {
+      "value": 225,
+      "purpose": "toolbar switch pages: the title spans to the switch",
+      "sites": [
+        ["0x4b4b58", "0x2407006e"], ["0x4ca0a8", "0x2407006e"], ["0x4c96c8", "0x2407006e"]
+      ]
+    },
+    {
+      "value": 305,
+      "purpose": "toolbar switch pages: the switch takes the right-hand slot",
+      "sites": [
+        ["0x4b4c3c", "0x240500bd"], ["0x4ca184", "0x240500bd"], ["0x4c97a4", "0x240500bd"]
+      ]
+    },
+    {
+      "value": 0,
+      "purpose": "toolbar switch pages: no Home or Now Playing button (the keys go there)",
+      "sites": [
+        ["0x4b4cc4", "0x24070032"], ["0x4b4d30", "0x24070032"], ["0x4ca210", "0x24070032"],
+        ["0x4ca27c", "0x24070032"], ["0x4c982c", "0x24070032"], ["0x4c9898", "0x24070032"]
+      ]
+    }
+  ],
+  "row_layout_calls": {
+    "purpose": "fit ordinary row titles and their containers on every native relayout",
+    "sites": [
+      ["0x52315c", "0x0320f809"],
+      ["0x4aa3f0", "0x0320f809"],
+      ["0x4b101c", "0x0320f809"],
+      ["0x4a4c34", "0x0320f809"],
+      ["0x4a6394", "0x0320f809"],
+      ["0x4adea4", "0x0320f809"],
+      ["0x4b2944", "0x0320f809"]
+    ]
+  },
+  "private_prologues": {
+    "bitmap_create_ex": "3f001c3cfc729c2721e09903",
+    "bitmap_destroy": "3f001c3c4c779c2721e09903",
+    "bitmap_lock_buffer_for_read": "3f001c3cc06c9c2721e09903",
+    "bitmap_lock_buffer_for_write": "3f001c3c486c9c2721e09903",
+    "bitmap_unlock_buffer": "3f001c3cd06b9c2721e09903",
+    "bitmap_get_line_length": "3f001c3c04729c2721e09903",
+    "canvas_draw_image": "3f001c3c6c1a9c2721e09903",
+    "slide_menu_set_spacer": "43001c3ce0189c2721e09903",
+    "widget_to_local": "3d001c3c0cc39c2721e09903",
+    "stock_search": "50001c3cfc2a9c2721e09903",
+    "mcl_open_preload": "48001c3c78e39c2721e09903",
+    "mcl_shuffle_pick": "48001c3ca0eb9c2721e09903"
+  },
+  "event_abi_words": {
+    "0x645758": "0400828c",
+    "0x523e6c": "12010524",
+    "0x523e80": "15010524",
+    "0x523eb8": "14010524",
+    "0x523ed4": "02010524",
+    "0x523ef0": "00010524",
+    "0x523f28": "ff000524",
+    "0x663170": "00010224",
+    "0x6635b0": "02010224",
+    "0x663840": "04010224",
+    "0x5cb3e4": "07010224",
+    "0x66245c": "0c000524",
+    "0x64031c": "180011ae",
+    "0x640328": "1c0002ae",
+    "0x65e138": "1000428e",
+    "0x4e8d10": "1f008228"
+  },
+  "settings_icons": {
+    "bt_adjvol.png": "e10a70cf0d916f3512a1eb334e78b00b4524299b838a559fb3454f3d77253118",
+    "display_backlight.png": "e404b9afa3ebe5ee355fbf84898e0a37baab5ceebeacea606a6ba02ce5fe48a2",
+    "display_lighttime.png": "3fb7e1a497b3d25a7b4c965f1b10103bc87ff9f8796a12c4a2854b3e4cbbdf4e",
+    "display_screenlock.png": "e1aefd07bc42cd12cbe3cc59ac10378051134ed0f82d3b41a6c2c7e2cdeb4009",
+    "netservice_airplay.png": "5f4a6020eef501c61a4ea216be748fd43a32acd4ed2f4d8b66bb1b3a3dc9a690",
+    "netservice_dlna.png": "e64e462b2251cad08b92ccf26d63a7447d15b53479337db7aa0d809b908d108d",
+    "netservice_wifitrans.png": "51c91d8e5aeb6e516d8340d84f1c0bbdb3133779feeff6c03aab68831366fb8a",
+    "playset_balance.png": "126a4143a0d175fe907e57d6fd05cd3245dbaf79ddd812393bd5e7bb2c2cfa00",
+    "playset_bootvol.png": "a77717f0e65259b295510f48e45789e933edd80522d58583e92745061a749909",
+    "playset_covermode.png": "7779acf1f6d43520847422948a85c530662591f3b7ea72f24f48d0e80f15bf38",
+    "playset_dsdoutput.png": "3143aec07d8ab8cfd6c6f9d2eaeddeb520c318ca7142568a4bc5750a0794b064",
+    "playset_eq.png": "b497476c243a0b5ae7dcc7ab40cdd6dbaa4ff34a96dba36e6fc881549757a9d9",
+    "playset_filter.png": "b061817c1b36585a80b14888f0d5cf1e4a31f3e261373eb40dd198a8ca36066d",
+    "playset_foldercover.png": "2ddb715bff4385d95f4d4cebaaa40d33b8a307c31f4d41ed7f5c0fbfd2e3ce6f",
+    "playset_folderjump.png": "9bd43d497adf406366c2ce940a493f701531115637dad28fefb0de45622deb40",
+    "playset_gain.png": "ce9b9074a723bf7c25e515747d5cccde5b92a89160cf4f06e1780176e63a9bf0",
+    "playset_gapless.png": "346521137d320cdd5ae3e2ea40878a77440086b2eb95b57547b25ea2993026d0",
+    "playset_maxvol.png": "fdf0c7fd9e667cfb6b5deb6aaad879ffd6b975aeed2b68ff588bf8ca4a9554dc",
+    "playset_memplay.png": "e4f565326ba92bdffa5ae732f26efa6437f863a36c46243f440a1c71a17f8a82",
+    "playset_playmode.png": "0135d5b6dd5bbdc47f0f25223e2ac4abe7501f72c553d1f201347343271efc33",
+    "playset_replaygain.png": "b1032f5c366538eaea1c12d67fdade963aeb600d00185948d6825b6abdffbc17",
+    "playset_usbaudiovol.png": "84216537f2e9b69203dc60b352f4fda3f2fec94812a948abdd9d89abed8ccda4",
+    "system_about.png": "2db5645463dd172e412bd622029d48a8690f0f45ac0f03ebf16c107b18e051de",
+    "system_carmode.png": "4cd38b8636088bf9dc031888d56e5477ec6b6f3dc2dbb75cb36a47dd959babcc",
+    "system_display.png": "54cbd0ade0867b844d24e8d1c5a41f1d8edd3fb48fe1af00fc1c748b7bd6f7f6",
+    "system_keylock.png": "61a20d318a385d648e093b42b8d75522b33ae66f33d115d46aa6afdfe210f020",
+    "system_keytone.png": "63b3c2583f548bef5becc73833016949eaab28a3d1a047c7c3a64334ccfeeef2",
+    "system_language.png": "7a6a5453c64937dbabd4e93c627d9ab0ef7dd067fdf1c4e5a40c414c351c383b",
+    "system_netservice.png": "6b2c5d99fef820ad1b9b25e0ae8427f0afe075a45bf96cd94a4de12e74d287dd",
+    "system_powermanager.png": "b534c5dc91efd4b25f5ea6db908a8fd27a0900b5e60334695f76c2f935e89ae3",
+    "system_prove.png": "397354e2066458634028d652113c7135d85f89af9fc241ee0c36cc19a81455d8",
+    "system_reset.png": "901ab5a1bd5debf7eddfbfb5d8a8279799ab4114654e089a384c19b96e27e8da",
+    "system_time.png": "099c408e7231031efdda48ef83278604cefb78d749f3d022d87706e53948fb99",
+    "system_update.png": "033aa18e2abd2bdaaf992914d371f2695c18c29337f916e1703ad2220cf88bf7",
+    "system_wifiset.png": "2c402d96b83b9d09188713cdb3fccc644b8904dcab79b07f9ed8a0e9cc9638f2",
+    "usb_chargeswitch.png": "3a4525530fa5dcba008059b6e619e441d97c918be03fbf8050fa0f6dac77035f",
+    "wifiset_bt.png": "f4532d38453173c69c63e35c9edc6e89f04031acd2d9136be0c1ccaa598a9163",
+    "wifiset_synclink.png": "5caf51400e222818bf305bfc8e259daae5bdeac32b230bb8357419fb108a67d5",
+    "wifiset_wifi.png": "6b891d09eb21b4e5a128b20de034eb27cf975673e02ba5107ed2b450cf5bdb29"
+  },
+  "styles": {
+    "default.bin": {
+      "sha256": "3605aa963897e5686c9ca9fd89431992fe22ab326dbced846361f57a4d004f67",
+      "edits": [
+        ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "00000000", 4],
+        ["button", "s_btn_listitem", "bg_color", "3d1920ff", "333333ff", 1],
+        ["button", "s_btn_listitem", "round_radius", "0e000000", "00000000", 5],
+        ["button", "s_btn_forwardspeed", "bg_color", "2b2b2bff", "00000000", 5],
+        ["button", "s_btn_forwardspeed", "round_radius", "23000000", "00000000", 5],
+        ["button", "s_btn_listblack", "bg_color", "000000ff", "00000000", 5],
+        ["list_item", "s_listitem_black", "bg_color", "000000ff", "00000000", 5],
+        ["table_row", "s_tablerow_black", "bg_color", "000000ff", "00000000", 28],
+        ["table_row", "s_tablerow_black", "selected_bg_color", "000000ff", "00000000", 28],
+        ["hscroll_label", "s_scrlabel_red16l", "text_color", "ff1448ff", "ffffffff", 3],
+        ["hscroll_label", "s_scrlabel_red20l", "text_color", "ff1448ff", "ffffffff", 3],
+        ["hscroll_label", "s_scrlabel_red24l", "text_color", "ff1448ff", "ffffffff", 3]
+      ]
+    }
+  },
+  "quiet_icons": {
+    "play_cycle.png": "b40c14b19a133a83a5f4057c558197ba81b73b3c9dd8b8d28e7fd8f249111e47",
+    "play_cycle1.png": "9886fe03f8d5bc9bae0134afaa370060d40e9de65a64124c4086b8ed991b6609",
+    "play_fav.png": "96a152d513e108810d25cd179ab7c8ce80e49cc9259c9270f12f496c1e75d029",
+    "play_more.png": "d073c48e609e3ce0d5dbeaf68e11a1345e850eb813690038876ce0e366a017d4",
+    "play_moredown.png": "528d84351aaa429d08c214d1e8fdf9ede5302aba3fd2deb20d2deceb2b6cdbed",
+    "play_order.png": "508038ef8c00cc7014147bb0eb547c1b813f2308fd7d8b329b9894bbc513a5e0",
+    "play_random.png": "d81c704f4d9a48f5e846cf65562b9e23a444d235693a42b333af218355ccaae6",
+    "play_unfav.png": "04d0c4d00711d1164999e9342bc58f2fe1c94ae0e0c739489f6c9e9e6cb880ad"
+  },
+  "status_icons": {
+    "bar_bt.png": "1539bde8279c7dd458ea3c6e486d82d03a0f5f7523e538c5e92bd02282f73514",
+    "bar_btcon.png": "2cb29f09130c5ed818b279eb72cc21e69e8412fd0b0192389ca91130c6cda042",
+    "bar_play.png": "e762c7c01c74e82276c9eb19f4a59dc2ac5f03597011ea429b680804b5003e5a",
+    "bar_pause.png": "7d297e4cc60a92bc10ff3f589e9cfe61f9b58d283a76e60acda4266b3d101ff7",
+    "bar_wifi0.png": "44a5e6e4e7b3e5dbe7c69de0ded63768fb97ef893f439635ae5d7096e15228a4",
+    "bar_wifi1.png": "1f95a57f2282c971b376f374a5efccd1a688fe742c8f0e93dd6dd6c48995e900",
+    "bar_wifi2.png": "1331c949b5e1c2cdf21821e3af00a35f4fa45db32950f927cf4c591111f05dda",
+    "bar_wifi3.png": "64d3803551bcfd792adc642ecc1feee6a4d234247f128988c6af8110cad6a231",
+    "bar_wifi4.png": "db931f0f03a87929b60b3e459a877adb0a4d3ca9f97c80a1f70b88981b872208"
+  }
+}

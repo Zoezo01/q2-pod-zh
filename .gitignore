@@ -1,0 +1,21 @@
+# Vendor firmware and anything derived from it (Shanling's copyrighted code)
+stock/
+work/
+build/
+build-*/
+dist/*
+*.zip
+*.tar
+*.squashfs
+
+__pycache__/
+mutants/
+q2remote.key
+.build-number
+docs/manual/*.pdf
+graphify-out/
+
+# graphify install regenerates these per agent
+.claude/skills/
+.codex/skills/
+.agents/skills/
