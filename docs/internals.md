@@ -413,8 +413,8 @@ tools/theme.py checks each range, top + 160 + reflect â‰¤ `CF_VIEW_H`, bright2 â
 
 **Bar and client height.** `theme_t.bar_h` is the status bar's height, 30 for both built-ins
 (`ipod.SET0`). `client_h()` (`patch/theme.h`) is `320 - bar_h`, the window's height under the bar,
-read by Cover Flow's views, Home's art panel, its pan frame, render loop and clip, and the battery
-slot (`bar_sync`). The page fallbacks (`widget_get_prop_int(page, "h", 290)`) and `DRIFT_TEXELS` stay
+read by Cover Flow's views, Home's art panel, its pan frame, render loop and clip; the battery
+slot (`bar_sync`) takes `bar_h` itself. The page fallbacks (`widget_get_prop_int(page, "h", 290)`) and `DRIFT_TEXELS` stay
 sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.py`) drive
 `ipod_home`, `status_bar`, `playing_page` and `patch_asset`; `patch_code` bakes `SET0`.
 
@@ -422,16 +422,21 @@ sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.
 (one row of `ipod.json` values per set, SET0 first), `boot_sites` (each stock immediate's address
 and value name), `geom_names` and `ui_redirects` (the windows a set has its own copy of).
 `theme_t.geom` picks the row. `theme_boot` runs once a boot, at the first `system_bar` load in
-`ringnav_ui_load`, after `accent()` has read the settings. For each `THEME_PAGE` (4 KiB) page that
-holds a site whose low halfword differs from the set's value, lowest first, it calls mprotect (4125)
-RWX on that page, writes the page's halfwords, calls cacheflush (4147, BCACHE) on it and mprotects
-it back to R-X. SET0, the set of both
-built-ins, matches every baked immediate, so it makes no syscall and writes nothing. A window in
-`ui_redirects` for the theme's set loads as `<set>_<name>.bin` in the same folder
+`ringnav_ui_load`, after `accent()` has read the settings. It finds each `THEME_PAGE` (4 KiB, the
+Q2's kernel page) page that holds a site whose low halfword differs from the set's value and
+mprotects (4125) every one RWX, lowest first. Only if all of them succeed does it write the
+halfwords, then per page call cacheflush (4147, BCACHE) and mprotect it back to R-X, and record the
+set in `st.geom`. If one mprotect fails, it mprotects the pages it already opened back to R-X and
+writes nothing: the code stays SET0's and `st.geom` stays 0, so the theme draws with SET0's rows.
+SET0, the set of both built-ins, matches every baked immediate, so it makes no syscall and writes
+nothing. Everything that follows the set reads `st.geom`, not `theme_t.geom`, so a Theme switch to
+another set, which takes effect at the restart, changes nothing before it. A window in
+`ui_redirects` for that set loads as `<set>_<name>.bin` in the same folder
 (`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and
-cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open. The Library and Edit Playlist rows the payload builds
-follow the live geometry: `list_row_core` reads the Library constructor's body and icon x words
-after `theme_boot`, and Edit Playlist's row takes the set's `pitch` and `body` (`geom()`).
+cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open.
+The Library and Edit Playlist rows the payload builds follow the live geometry: `list_row_core`
+reads the Library constructor's body and icon x words after `theme_boot`, and Edit Playlist's row
+takes the written set's `pitch` and `body` (`geom()`).
 
 ## Page transitions (iPod)
 

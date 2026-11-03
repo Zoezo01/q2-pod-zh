@@ -503,7 +503,8 @@ typedef struct {
         np_centred,                /* Centred Now Playing (ringnav_ui_load) */
         keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
         scrub_single,              /* Single Press Scrub (np_key) */
-        theme_booted;              /* theme_boot ran (ringnav_ui_load) */
+        theme_booted,              /* theme_boot ran (ringnav_ui_load) */
+        geom;                      /* the geometry set theme_boot wrote; 0, SET0, until then */
     unsigned keep_lit_at;
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
@@ -4505,35 +4506,47 @@ static void bc_fit(void *win) {
 }
 
 /* Geometry sets: tools/ipod.py bakes SET0 into the stock row immediates (ipod.json). Another set
- * rewrites, once, only the low halfwords that differ: stock text is R-X, so each page holding one
- * goes RWX, is written and flushed, and goes back to R-X, lowest page first. SET0 makes no syscall
- * and writes nothing. */
+ * rewrites, once, only the low halfwords that differ. Stock text is R-X, so every page holding one
+ * goes RWX first, lowest first; only if all did are they written, flushed and put back to R-X. A
+ * failed mprotect puts back the pages already opened and writes nothing, so the code stays SET0's
+ * and st.geom, the set the code holds, stays 0. SET0 makes no syscall and writes nothing. */
 static int boot_differs(int i, const volatile unsigned short *v) {
     return (*(unsigned *)boot_sites[i].addr & 0xffff) != (unsigned)v[boot_sites[i].group];
 }
+static unsigned boot_page(const volatile unsigned short *v, unsigned from) { /* ~0u: none */
+    unsigned page = ~0u;
+    for (int i = 0; i < BOOT_SITES; ++i) {
+        unsigned p = boot_sites[i].addr & ~(THEME_PAGE - 1u);
+        if (p >= from && p < page && boot_differs(i, v)) page = p;
+    }
+    return page;
+}
 static void theme_boot(void) {
-    const volatile unsigned short *v = boot_values[theme()->geom];
-    for (;;) { /* a written site no longer differs, so each pass takes the next page */
-        unsigned page = ~0u;
+    unsigned g = theme()->geom, p, q;
+    const volatile unsigned short *v = boot_values[g];
+    for (p = boot_page(v, 0); p != ~0u; p = boot_page(v, p + THEME_PAGE))
+        if (theme_mprotect((void *)p, THEME_PAGE, 7)) { /* RWX */
+            for (q = boot_page(v, 0); q != p; q = boot_page(v, q + THEME_PAGE))
+                theme_mprotect((void *)q, THEME_PAGE, 5);
+            return;
+        }
+    for (p = boot_page(v, 0); p != ~0u; p = boot_page(v, p + THEME_PAGE)) {
         for (int i = 0; i < BOOT_SITES; ++i)
-            if (boot_differs(i, v) && (boot_sites[i].addr & ~(THEME_PAGE - 1u)) < page)
-                page = boot_sites[i].addr & ~(THEME_PAGE - 1u);
-        if (page == ~0u) return;
-        if (theme_mprotect((void *)page, THEME_PAGE, 7)) return; /* RWX; the rest stays stock */
-        for (int i = 0; i < BOOT_SITES; ++i)
-            if ((boot_sites[i].addr & ~(THEME_PAGE - 1u)) == page && boot_differs(i, v)) {
+            if ((boot_sites[i].addr & ~(THEME_PAGE - 1u)) == p && boot_differs(i, v)) {
                 unsigned *w = (unsigned *)boot_sites[i].addr;
                 *w = (*w & 0xffff0000) | v[boot_sites[i].group];
             }
-        theme_cacheflush((void *)page, THEME_PAGE, 3); /* BCACHE */
-        theme_mprotect((void *)page, THEME_PAGE, 5);   /* PROT_READ|PROT_EXEC */
+        theme_cacheflush((void *)p, THEME_PAGE, 3); /* BCACHE */
+        theme_mprotect((void *)p, THEME_PAGE, 5);   /* PROT_READ|PROT_EXEC */
     }
+    st.geom = g;
 }
 
-/* A set's own copy of a window, <set>_<name>.bin in name's folder (tools/build.py), else name. */
+/* The set theme_boot wrote's own copy of a window, <set>_<name>.bin in name's folder
+ * (tools/build.py), else name. */
 static char ui_path[64] __attribute__((section(".scratch")));
 static const char *ui_redirect(const char *name) {
-    unsigned g = theme()->geom;
+    unsigned g = st.geom;
     for (const volatile ui_redirect_t *r = ui_redirects; r->name; ++r)
         if (r->sets >> g & 1 && !tk_strcmp(r->name, name)) {
             const char *slash = strrchr(name, '/'), *base = slash ? slash + 1 : name;
@@ -4544,8 +4557,8 @@ static const char *ui_redirect(const char *name) {
     return name;
 }
 
-/* The theme's geometry set's value of group (G_PITCH, G_BODY, ...), as theme_boot writes it. */
-static int geom(int group) { return boot_values[theme()->geom][group]; }
+/* The value of group (G_PITCH, G_BODY, ...) in the set theme_boot wrote (st.geom). */
+static int geom(int group) { return boot_values[st.geom][group]; }
 
 /* ui_loader_load_widget_with_parent, every window's asset (window_open's): the theme's layout
  * (np_layout(); Centred Now Playing forces NP_CENTRED) picks the page. Stock's own page

@@ -176,11 +176,13 @@ class Machine:
     def lcd_colors(self): return tuple(self.get(self.lcd+O[off]) for off in ('LCD_FILL_COLOR','LCD_STROKE_COLOR'))
     def mock(self,*names,prefix=''):
         for n in names: self.handlers[syms[n]]=prefix+n
-    def record_syscalls(self):
-        """The payload's o32 syscalls, answered 0; mprotect (4125) takes effect."""
+    def record_syscalls(self,fail=lambda page:False):
+        """The payload's o32 syscalls, answered 0; mprotect (4125) takes effect, except RWX on a page
+        fail(page) picks, answered EACCES."""
         self.syscalls=[]
         def syscall(u,intno,unused):
             n,a,b,c=(u.reg_read(r) for r in (UC_MIPS_REG_V0,*REGS[:3])); self.syscalls.append((n,a,b,c))
+            if n==4125 and c==7 and fail(a): u.reg_write(UC_MIPS_REG_A3,1); u.reg_write(UC_MIPS_REG_V0,13); return
             if n==4125: u.mem_protect(a,b,c)
             u.reg_write(UC_MIPS_REG_A3,0); u.reg_write(UC_MIPS_REG_V0,0)
         self.u.hook_add(UC_HOOK_INTR,syscall)
@@ -8637,11 +8639,14 @@ from ipod import AUDIT, VALUE_NAMES
 PAGE=4096  # the Q2's kernel page: mprotect's rounding unit
 TEXT=[(v,((v+m_+4095)&~4095)-v) for _,(t,o,v,_,f,m_,fl,_) in segments((B/'demo').read_bytes()) if t==1 and fl&1 and v<BASE][0]
 SITES={int(a,16):g['value'] for g in AUDIT['immediates'] if isinstance(g['value'],str) for a,_ in g['sites']}
+def set_geom(m,g):  # the active theme's theme_t.geom (@82, after bar_h @80): a Theme switch to set g
+    m.byte((m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff)+82,g)
 def set_value(m,name,v): m.u.mem_write(payload_syms['boot_values']+2*VALUE_NAMES.index(name),struct.pack('<H',v))
-def booted(values=()):
-    m=Machine(); m.u.mem_protect(*TEXT,5); m.record_syscalls()
+def booted(values=(),fail=lambda page:False,geom=0):
+    m=Machine(); m.u.mem_protect(*TEXT,5); m.record_syscalls(fail)
     m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
     for name,v in values: set_value(m,name,v)
+    if geom: set_geom(m,geom)
     before={a:m.get(a) for a in SITES}
     m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0)
     return m,before
@@ -8649,10 +8654,25 @@ m,before=booted()
 assert m.syscalls==[] and {a:m.get(a) for a in SITES}==before; passed()
 m,before=booted((('pitch',28),))
 pages=sorted({a&~(PAGE-1) for a,v in SITES.items() if v=='pitch'}); assert len(pages)>1
-assert m.syscalls==[s for p in pages for s in ((4125,p,PAGE,7),(4147,p,PAGE,3),(4125,p,PAGE,5))]
+# All or nothing: every page goes RWX first, lowest first, and only then is any word written.
+assert m.syscalls==[(4125,p,PAGE,7) for p in pages]+[s for p in pages for s in ((4147,p,PAGE,3),(4125,p,PAGE,5))]
 assert {a:m.get(a) for a in SITES}=={a:(w&0xffff0000|28 if SITES[a]=='pitch' else w) for a,w in before.items()}
 assert [p for b,e,p in m.u.mem_regions() for q in pages if b<=q<=e]==[5]*len(pages)
 m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); assert len(m.syscalls)==3*len(pages); passed()  # once a boot
+# An mprotect that fails on the second page puts the first back to R-X and writes no word.
+gm,gbefore=booted((('pitch',28),),fail=lambda page:page==pages[1])
+assert gm.syscalls==[(4125,pages[0],PAGE,7),(4125,pages[1],PAGE,7),(4125,pages[0],PAGE,5)]
+assert {a:gm.get(a) for a in SITES}==gbefore
+assert [p for b,e,p in gm.u.mem_regions() for q in pages if b<=q<=e]==[5]*len(pages); passed()
+# A set theme_boot did not write is not applied: with every mprotect failing (or after a Theme switch,
+# which writes theme_t.geom), the windows still load as SET0's, which theme_boot left in the code.
+gm,gbefore=booted(fail=lambda page:True,geom=1)
+assert [s[3] for s in gm.syscalls]==[7] and {a:gm.get(a) for a in SITES}==gbefore
+def gloaded(name,sets):
+    gm.word(payload_syms['ui_redirects'],gm.string(name)); gm.byte(payload_syms['ui_redirects']+4,sets)
+    gm.calls=[]; gm.call(address=load,args=(gm.string(name),0,0,0),gap=0)
+    return [gm.text(c[1]) for c in gm.calls if c[0]=='stock_ui_load']
+assert gloaded('home_page',2)==['home_page'] and gloaded('home_page',1)==['ipod_home_page']; passed()
 # A set's own window: <set>_<name>, in its folder; other names load as asked.
 m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
 def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
@@ -9508,6 +9528,7 @@ assert m.texts()==['No plays yet'] and not m.nodes[m.find('scroll_view')]['child
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.top==m.page; m.close(); passed()
 # Geometry sets: Edit Playlist's row follows the live pitch and body, as the page's asset rows do.
 m=PlaylistEditMachine(); set_value(m,'pitch',28); set_value(m,'body',26); m.open_editor(28,26); passed()
+gm=PlaylistEditMachine(); set_geom(gm,1); gm.open_editor(); passed()  # the set theme_boot wrote, SET0
 # The Library rows follow the constructor's live body and icon x, whichever group the audit gave them.
 m=ShuffleMachine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
 set_value(m,SITES[0x524820],60); set_value(m,SITES[0x524944],6)
