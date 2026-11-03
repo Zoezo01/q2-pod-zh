@@ -1,10 +1,14 @@
 """tools/theme.py: the Q2 theme XML reader, the schema and the generated theme table."""
 import itertools
+import re
+import shutil
 import xml.etree.ElementTree as ET
 
 import pytest
 
+import ipod
 import theme
+from ipod import Geometry, SET0
 from theme import ThemeError
 
 
@@ -161,6 +165,7 @@ def test_extends():
     t = resolved('<colorSchemes accents="cobalt green"/><option setting="accent" key="ACCENT" default="cobalt"/>',
                  'id="t" name="T" index="2" extends="classic"')
     assert (t['accents'], t['schemes'][0], t['schemes'][4], t['opts']) == (0x110, ZERO, CLASSIC_ROLES, [opt('SETTING_ACCENT', default=4, values=0x110)])
+    # resolve() takes it, but builtins() rejects it beside Classic, whose ACCENT takes other colours
     assert resolved('<view name="home"><element name="rows" top="12"/></view>')['home_top'] == 12  # a card theme states numbers
     assert resolved('<colorScheme name="graphite" fill="#112233"/>')['schemes'][0]['fill'] == 0x112233
     assert resolved('<colorScheme name="graphite" fill="#AbCdEf"/>')['schemes'][0]['fill'] == 0xabcdef
@@ -195,7 +200,7 @@ M = 'id="minimal" name="M" index="0"'
     ('<option setting="accent" key="OTHER_ACCENT"/>', None, 'accent: unknown key OTHER_ACCENT'),
     ('', 'id="t" name="T" index="2" extends="other"', 'extends unknown theme other'),
     ('', 'id="T" name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
-    ('', 'id="t" name="" index="2"', 'name: expected a name'),
+    ('', 'id="t" name="" index="2"', 'name: expected 1..48 bytes, no control characters'),
     ('', 'id="t" name="T" index="10"', 'index: expected a digit'),
     ('', 'id="t" name="T" index="2" colour="x"', 'unknown key theme.colour'),
     ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
@@ -253,10 +258,16 @@ def test_key():
     assert theme.key('a.b.c', 'f', 'int', 255).hi == 255
 
 
+# Each coverflow.* key at its low end: a theme with no base states them all.
+CF_LO = '<view name="coverflow">' + ''.join(
+    f'<element name="{e}" ' + ' '.join(f'{k.path.rpartition(".")[2]}="{k.lo}"' for k in theme.SCHEMA.values()
+                                       if k.path.startswith(f'coverflow.{e}.')) + '/>' for e in ('shelf', 'caption')) + '</view>'
+
+
 def test_builtins_rejects(tmp_path):
     def put(folder, attrs):
         (tmp_path/folder).mkdir(exist_ok=True)
-        (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" {attrs}><option setting="accent" key="ACCENT"/></theme>')
+        (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" {attrs}><option setting="accent" key="ACCENT"/>{CF_LO}</theme>')
     put('a', 'id="a" name="A" index="0"')
     assert [t['id'] for t in theme.builtins(tmp_path)] == ['a']
     put('b', 'id="b" name="B" index="2"')
@@ -267,6 +278,38 @@ def test_builtins_rejects(tmp_path):
     assert error(theme.builtins, tmp_path) == 'b/theme.xml:1: index 0, expected 1'
     (tmp_path/'b'/'theme.xml').write_text('<theme format="1" id="b" name="B" index="1"><option setting="accent"/></theme>')
     assert error(theme.builtins, tmp_path) == 'b/theme.xml:1: accent: no key'
+
+
+def test_builtins_rejects_a_shared_accent_key(tmp_path):
+    """Themes sharing an accent key share its stored value, so they must take the same colours and default."""
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
+    def put(folder, attrs, body):
+        (tmp_path/folder).mkdir(exist_ok=True)
+        (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" {attrs}>{body}</theme>')
+    shared = 'id="t" name="T" index="2" extends="classic"'
+    put('t', shared, '<colorSchemes accents="cobalt green"/><option setting="accent" key="ACCENT" default="cobalt"/>')
+    assert error(theme.builtins, tmp_path) == 't/theme.xml:1: accent key ACCENT is classic\'s, with other colorSchemes or default'
+    put('t', shared, '<option setting="accent" key="ACCENT" default="graphite"/>')
+    assert [t['id'] for t in theme.builtins(tmp_path)] == ['minimal', 'classic', 't']  # Classic's own: allowed
+    put('t', shared, '<option setting="accent" key="ACCENT" default="tidal"/>')
+    assert error(theme.builtins, tmp_path) == 't/theme.xml:1: accent key ACCENT is classic\'s, with other colorSchemes or default'
+
+
+def test_validate_rejects_unset_coverflow():
+    """A theme with no base and no coverflow.* has 0 for keys whose range starts at 1 (reflect divides)."""
+    t = resolved('<option setting="accent" key="ACCENT"/>', 'id="t" name="T" index="2"')
+    assert error(theme.validate, t, 't.xml') == 't.xml:1: coverflow.shelf.eye: 0 outside 1..2046'
+    t = resolved(f'<option setting="accent" key="ACCENT"/>{CF_LO}', 'id="t" name="T" index="2"')
+    assert theme.validate(t, 't.xml') is None
+
+
+@pytest.mark.parametrize('name', ['A\x7fB', 'A\x85B', 'x' * 49, 'é' * 25])
+def test_resolve_rejects_a_bad_name(name):
+    assert error(resolved, '', f'id="t" name="{name}" index="2" extends="minimal"') == 't.xml:1: name: expected 1..48 bytes, no control characters'
+
+
+def test_resolve_takes_a_long_name():
+    assert resolved('', f'id="t" name="{"é" * 24}" index="2" extends="minimal"')['name'] == 'é' * 24
 
 
 MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chevron_home', 0), ('caps_mark', 1),
@@ -374,9 +417,6 @@ def test_emit_cf(tmp_path):
     assert text.count('.cf.eye = 300,') == 2 and text.count('.cf.text_y = 212,') == 2
 
 
-import re
-import ipod
-from ipod import Geometry, SET0
 TEST = Geometry(name='test', pitch=28)
 
 

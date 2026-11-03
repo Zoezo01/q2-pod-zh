@@ -1,6 +1,7 @@
 """Built-in themes: assets/themes/<id>/theme.xml in the Q2 theme XML, read, checked and written out as
 the payload's theme table (themes.inc)."""
 import dataclasses
+import itertools
 import json
 import re
 from build import ROOT, check
@@ -267,8 +268,9 @@ def resolve(root, by_id, seen=()):
     tid = a.get('id', '')
     if not re.fullmatch('[a-z][a-z0-9_]*', tid):
         err(root, 'id: expected [a-z][a-z0-9_]*')
-    if not a.get('name'):
-        err(root, 'name: expected a name')
+    # the Theme row's "Theme: %s" holds 63 bytes; a control character would reach C (a C1 one as \u0080)
+    if not 0 < len(a.get('name', '').encode()) <= 48 or re.search('[\x00-\x1f\x7f-\x9f]', a['name']):
+        err(root, 'name: expected 1..48 bytes, no control characters')
     if not re.fullmatch('[0-9]', a.get('index', '')):
         err(root, 'index: expected a digit')
     if tid in seen:
@@ -380,6 +382,11 @@ def validate(t, name):
     for field, word in (('def', 'default'), ('preset', 'preset')):
         if accent[field] >= 0 and not t['accents'] >> accent[field] & 1:
             err(f'accent {word} {ACCENT_NAMES[accent[field]]} is not in colorSchemes')
+    for k in SCHEMA.values():  # every value, those from a default or a base too (coverflow divides by some)
+        if k.type != 'set':
+            for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field]]:
+                if not k.lo <= v <= k.hi:
+                    err(f'{k.path}: {v} outside {k.lo}..{k.hi}')
     shelf = t['cf.top'] + 160 + t['cf.reflect']  # 160: coverflow.c's ART_SIZE
     if shelf > O['CF_VIEW_H']:
         err(f'coverflow.shelf: top + 160 + reflect = {shelf} exceeds {O["CF_VIEW_H"]}')
@@ -388,6 +395,10 @@ def validate(t, name):
     h = O['CF_NAME_H'] + O['CF_ARTIST_H']
     if t['cf.text_y'] + h > 320 - t['bar_h']:
         err(f'coverflow.caption: text_y + {h} = {t["cf.text_y"] + h} exceeds the client height {320 - t["bar_h"]}')
+
+
+def accent_default(t):
+    return next(o['def'] for o in t['opts'] if o['setting'] == 'SETTING_ACCENT')
 
 
 def builtins(root=ROOT/'assets/themes'):
@@ -402,6 +413,10 @@ def builtins(root=ROOT/'assets/themes'):
             fail(n.file, n.line, f'id {t["id"]} is not its folder name')
         found.append((t['index'], n, t))
     found.sort(key=lambda f: f[0])
+    # An accent key is one stored value, which the boot fixup forces into every sharing theme's colours.
+    for (_, _, t), (_, n, u) in itertools.combinations(found, 2):
+        if t['accent_key'] == u['accent_key'] and (t['accents'], accent_default(t)) != (u['accents'], accent_default(u)):
+            fail(n.file, n.line, f'accent key {u["accent_key"]} is {t["id"]}\'s, with other colorSchemes or default')
     for i, (index, n, _) in enumerate(found):
         if index != i:
             fail(n.file, n.line, f'index {index}, expected {i}')
