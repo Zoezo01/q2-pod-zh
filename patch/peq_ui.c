@@ -150,23 +150,21 @@ void eq_output_forget(void) {
 void eq_output(const char *key) {
     if (ui.page) return;
     if (!eq_owner[0]) owner_read();
-    if (!eq_owner[0]) {
-        owner_set(key);
-        return;
-    }
     if (!strcmp(key, eq_owner)) return;
     eq_state now, next;
     char from[256], to[256];
     eq_load(&now);
     now.hold = 0;
     mkdir(EQ_OUTPUTS, 0700);
-    eq_slot(from, sizeof from, eq_owner);
     eq_slot(to, sizeof to, key);
     /* ponytail: past EQ_DEVICES a new headset plays and edits the current EQ, unremembered;
      * a forgotten device's slot stays, so re-pairing brings its EQ back. Eviction would need a
      * last-used date per slot. */
-    int full = strlen(eq_owner) == 17 && access(from, 0) && eq_devices() >= EQ_DEVICES;
-    if (!full && !eq_save_to(from, &now)) return; /* kept for the next pass: nothing is lost */
+    if (eq_owner[0]) { /* none, just turned on: what plays belongs to no output, and is not filed */
+        eq_slot(from, sizeof from, eq_owner);
+        int full = strlen(eq_owner) == 17 && access(from, 0) && eq_devices() >= EQ_DEVICES;
+        if (!full && !eq_save_to(from, &now)) return; /* kept for the next pass: nothing is lost */
+    }
     if (!eq_load_from(to, &next)) next = now;
     /* Off to Off is silent, so the filter stays out of the chain (peq_chain may still want it). */
     if (memcmp(&next, &now, sizeof next) &&

@@ -1106,8 +1106,10 @@ def output_check(tmp):
     # A slot that cannot be saved keeps the EQ and the owner, to try again; an unreadable one counts as new.
     (slots/'usb.tmp').mkdir(); setting(7); ui.eq_output(b'3.5mm'); assert playing() == (7, EQ_3) and not (slots/'usb').exists()
     (slots/'usb.tmp').rmdir(); (slots/'3.5mm').write_bytes(b'junk'); ui.eq_output(b'3.5mm'); assert playing() == (7, EQ_3) and slot('usb') == 7
-    # Forgetting ends the following: what plays stays, and the next output adopts it.
-    ui.eq_output_forget(); assert not (slots/'owner').exists(); setting(8); ui.eq_output(b'4.4mm'); assert playing() == (8, EQ_3)
+    # Forgetting ends the following: what plays stays, and a next output with no slot adopts it.
+    ui.eq_output_forget(); assert not (slots/'owner').exists(); setting(8); ui.eq_output(b'2A:00:00:00:00:00'); assert playing() == (8, EQ_3)
+    # Turned on again where a slot exists, that output's EQ comes back and what played is filed nowhere.
+    ui.eq_output_forget(); setting(9); ui.eq_output(b'usb'); assert playing() == (7, EQ_3) and slot('usb') == 7 and slot('4.4mm') != 9
     # EQ_DEVICES: past it a new headset is not remembered; one already remembered, and jacks, still are.
     good = (slots/'usb').read_bytes()
     for i in range(32): (slots/('%02X:00:00:00:00:00' % i)).write_bytes(good)

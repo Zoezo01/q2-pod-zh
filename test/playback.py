@@ -831,6 +831,7 @@ def post(kind,loop_ok=1,slot_ok=1):
     return m.fn('ringnav_queue_event',loop if loop_ok else 0,r),m.posted
 assert post(0x103)==(0,[0x103]) and post(0xff)==(0,[0xff]) and post(0x110)==(0,[0x110]) and post(0x1000)==(0,[0x1000])
 assert post(0)==(0,[]) and post(0x103,loop_ok=0)==(0x10,[]) and post(0x103,slot_ok=0)==(0x10,[])
+m=PostMachine(); loop=m.alloc(0x60); m.word(loop+O['LOOP_POST'],m.slot); assert m.fn('ringnav_queue_event',loop,0)==0x10 and not m.posted
 checks+=1
 # Wheel QS (playback.c qs_begin): a touch at one edge, then within QS_GAP_MS one at the opposite edge,
 # streams a finger on the screen to hyn_ts: down at the swipe's start and on across the gap at the

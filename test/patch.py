@@ -1872,6 +1872,11 @@ for state,timer,volume in ((1,7,'0'),(2,7,'0'),(3,7,'0'),(3,7,'1'),(2,7,'1')):
     m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])],timer_idex=timer)
     m.word(syms['g_dropdown_menu_state'],state)
     assert m.call()==11 and m.nodes[bright]['value']==50, (state,timer,volume)
+for state,timer,want in ((1,-1,50),(2,-1,50),(3,-1,51)):  # the state alone gates it, and at rest it ticks
+    m=Machine(); bright=m.node('slider','slider_backlight',value=50)
+    m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])],timer_idex=timer)
+    m.word(syms['g_dropdown_menu_state'],state)
+    assert m.call()==11 and m.nodes[bright]['value']==want, (state,timer)
 passed()
 # A swipe up that closes it may start on the brightness slider: the slider gets its press only once the
 # touch goes 10 px more sideways than up or down, or with a tap's release; a touch that goes up first,
@@ -4278,10 +4283,10 @@ def empty(cls,page,stage=O['WINDOW_STAGE_OPENED'],leave=False,shown=None):
     m.calls=[]; m.advance(0)
     return m
 closes=lambda m: [c[:3] for c in m.calls if c[0]=='window_manager_close_window_force']
-for cls,page in ((0xf003,'album_page'),(0xf003,'localclass_page'),(0xf004,'localclass_page'),(0xf006,'localclass_page')):
+for cls,page in ((0xf003,'album_page'),(0xf003,'localclass_page'),(0xf004,'localclass_page'),(0xf005,'localclass_page'),(0xf006,'localclass_page')):
     m=empty(cls,page); top=m.stack[-1]
     assert closes(m)==[('window_manager_close_window_force',m.wm,top)]
-    assert m.toasts==[('dialog/msginfo_dialog',1,2000,{0xf003:'No albums',0xf004:'No artists',0xf006:'No genres'}[cls])] and not m.timers
+    assert m.toasts==[('dialog/msginfo_dialog',1,2000,{0xf003:'No albums',0xf004:'No artists',0xf005:'No composers',0xf006:'No genres'}[cls])] and not m.timers
     passed()
 m=empty(0xf003,'album_page',stage=2)  # created, its open animation still running
 assert not closes(m) and not m.toasts and len(m.timers)==1

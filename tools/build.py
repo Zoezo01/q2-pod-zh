@@ -216,9 +216,8 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
             grep -q ' /mnt/mmc ' /proc/mounts && {{
-                [ -f $c ] && cp $c /mnt/mmc/q2-crash.log && rm -f $c
-                [ -f $w ] && cat $w >> /mnt/mmc/q2-wheel.log && rm -f $w
-                sync
+                [ -f $c ] && cp $c /mnt/mmc/q2-crash.log && sync && rm -f $c
+                [ -f $w ] && cat $w >> /mnt/mmc/q2-wheel.log && sync && rm -f $w
             }}
         ) &
         rb=/mnt/mmc/.rockbox

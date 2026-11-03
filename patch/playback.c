@@ -143,8 +143,8 @@ static void wheel_post(char *info, int key) {
  * holds no finger down, which the loop hands the window manager as EVT_NONE. Wheel QS's lift writes
  * BTN_TOUCH 0 to the panel's node, so a thumb that rests on the screen's edge after the swipe is
  * reported without a touch the input core passes on, and streams those at the panel's rate; twenty
- * of them while the pull-down opened evicted the lift's release (q2-wheel.log: thread=0, last=move),
- * and the wheel and Centre were dead until a tap. They mean nothing, so they are not queued;
+ * of them while the pull-down opened would evict the lift's release (inferred; q2-wheel.log shows
+ * thread=0, last=move), and the wheel and Centre were dead until a tap. They mean nothing, so they are not queued;
  * everything else goes to stock's poster. */
 int ringnav_queue_event(void *loop, const unsigned *r) {
     int (*post)(void *, const void *) =
