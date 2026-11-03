@@ -515,8 +515,6 @@ def test_an_href_up_past_the_root_stops_there(fw):
     assert convert(fw, epub('OPS/c.opf', chapters)) == (1, b'One')
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: book_convert: a ../ href overwrites the OPF's folder in path, so the next itemref resolves "
-                                       'against the last one and the book fails as unreadable (books.c:356-373)')
 def test_every_chapter_up_a_folder(fw):
     chapters = [('../Text/a.xhtml', 'OPS/Text/a.xhtml', 'One'), ('../Text/b.xhtml', 'OPS/Text/b.xhtml', 'Two')]
     assert convert(fw, epub('OPS/pkg/c.opf', chapters)) == (1, b'One\f\nTwo')
@@ -764,13 +762,17 @@ def test_a_long_paragraph_s_back_is_a_page_reaching_this_one(fw):
         assert s < 6000 <= page(p, 8000, s, 3, 10, measure, None, None)
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: book_back: its resync on continuation bytes has no bound, so 3 KB of them before a page step the '
-                                       'start past the page (books.c:458), and past the buffer if they run to its end')
 def test_the_page_before_never_starts_after_this_one(fw):
     page, back, measure = pages(fw)
-    text = b'\x80' * 7999 + b'A'  # stopped before the end, so the overrun stays out of this test
+    text = b'\x80' * 7999 + b'A'
     with Exact(text) as p:
         assert back(p, 8000, 4000, 3, 10, measure, None) <= 4000
+
+
+def test_continuation_bytes_to_the_end_stay_in_the_buffer(fw):
+    page, back, measure = pages(fw)
+    with Exact(b'\x80' * 4000) as p:  # under ASan an over-read faults here
+        assert back(p, 4000, 4000, 3, 10, measure, None) < 4000
 
 
 # Books: the shelf and the marks
