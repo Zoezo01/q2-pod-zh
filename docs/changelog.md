@@ -2,6 +2,7 @@
 
 - **1.6.4**:
   - Rockbox: Wi-Fi turns off while Rockbox runs, and comes back when you return to Q2 Pod if it was on.
+  - Library: **Recently Added** goes by the date a song's file was created, which the card keeps and reading never changes. Before, on an exFAT card, a song's date was the last time its file was read; 1.6.1 kept dates across **Update Local Music** but couldn't bring back one already lost, so an album added the day of a 1.6.0 update stayed buried in the library ([#188](https://github.com/DiamondBond/q2-pod/issues/188)). The next Update Local Music dates every song afresh. Windows and Linux stamp a copied file with the time of the copy; a Mac keeps the file's own creation date.
   - EQ: holding **Playback** in Quick Settings opens the EQ page directly.
   - EQ: on **Advanced**, the response graph now scrolls with the list, so the rows have the whole page once you scroll past it, and comes back when you reach the top row. Before, it stayed on screen and left room for three rows.
   - EQ: renaming a preset now opens its name with the keyboard up and the cursor at the end, so you can change a few letters or clear it and type a new one. The keyboard's **OK** or the **Rename** row confirms, and **Return** cancels. Before, the first key replaced the whole name, and a name of four letters or more was read as nothing typed, so the rename never happened.

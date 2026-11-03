@@ -4106,48 +4106,19 @@ m.tree['/m']=['new.flac',"it's.flac"]
 assert m.rescan()==1 and not m.added and m.get(SONGS)==65000 and not m.u.mem_read(STOP,1)[0]
 assert m.db.execute('select albumsonger from songtable where id=7').fetchone()==("New artist's tags",)
 passed()
-# Update Local Music keeps every song's time_create across stock's drop of songtable (#170): a keyed
-# copy before stock runs, written back by path and CUE start after; new songs keep stock's date.
-# A scan without the drop flag, and a folder scan, write nothing.
-class UpdateMachine(FolderTagsMachine):
-    # stock's columns are typed (fileurl VARCHAR(1024), time INTEGER, time_create INTEGER), which the key's match relies on
-    SONGTABLE='create table songtable(id INTEGER primary key,filename VARCHAR(256),fileurl VARCHAR(1024),album,songer,style,name,composer,albumsonger,year,track,cd_num,time INTEGER,time_end INTEGER,time_create INTEGER,Initial)'
-    def __init__(self):
-        super().__init__(); self.scripts=[]
-        rows=self.db.execute('select * from songtable order by id').fetchall()+[(9,'n.flac',None,*self.old[3:12],0,0,777,ord('N'))]  # a NULL path never matches
-        self.db.executescript('drop table songtable;'+self.SONGTABLE)
-        for row in rows: self.db.execute('insert into songtable values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',row)
-        for n in ('scanAllMusicFile','scanSpecFolder'): self.handlers[HOOKS[n][0]+12]='stock_'+n  # the writers' stock bodies
-    def hook(self,u,address,size,unused):
-        name=self.handlers.get(address,'')
-        a,b,c,d=[u.reg_read(r) for r in REGS]
-        if name=='stock_scanAllMusicFile':
-            if b:  # the drop flag: every song comes back dated by the access time stock reads now
-                self.db.executescript('drop table songtable;'+self.SONGTABLE)
-                for row in ((1,*self.old[1:12],0,0,9000,ord('O')),(2,*self.old[1:12],30,40,9001,ord('O')),
-                            (3,'new.flac','/m/new.flac',*self.old[3:12],0,0,9002,ord('N')),(4,'n.flac',None,*self.old[3:12],0,0,9003,ord('N'))):
-                    self.db.execute('insert into songtable values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',row)
-            ret=1
-        elif name=='stock_scanSpecFolder': ret=1
-        elif name=='refresh:toolsUpdateDbTable':
-            assert self.text(a)=='/mnt/data/database.db'; self.scripts.append(self.text(b)); self.db.executescript(self.text(b)); ret=1
-        else: return super().hook(u,address,size,unused)
-        self.returns(ret)
-def update(drop,folder=False):
-    m=UpdateMachine()
-    assert m.call(address=payload_syms['coverflow_scan_folder' if folder else 'coverflow_scan_all'],args=(m.string('/m'),drop,0,0),gap=0)==1
-    return m
-m=update(1)
-assert m.db.execute('select fileurl,time,time_create from songtable order by id').fetchall()==[("/m/it's.flac",0,123),("/m/it's.flac",30,456),('/m/new.flac',0,9002),(None,0,9003)]
-assert len(m.scripts)==2 and not m.db.execute("select name from sqlite_master where name='ringnav_added'").fetchall(); passed()
-# a copy left by an update that never wrote back (power lost mid-scan) keeps its dates through the next one
-m=UpdateMachine(); m.db.executescript("""create table ringnav_added(fileurl VARCHAR(1024),time INTEGER,time_create INTEGER,primary key(fileurl,time)) without rowid;
-insert into ringnav_added values("/m/it's.flac",0,111)""")
-assert m.call(address=payload_syms['coverflow_scan_all'],args=(m.string('/m'),1,0,0),gap=0)==1
-assert m.db.execute('select time_create from songtable order by id').fetchall()==[(111,),(456,),(9002,),(9003,)]
-assert not m.db.execute("select name from sqlite_master where name='ringnav_added'").fetchall(); passed()
-for drop,folder in ((0,False),(1,True)):
-    assert not update(drop,folder).scripts; passed()
+# A song's date (toolsGetFileCreateTime) is the card's creation stamp from statx, which reads never
+# move (#170, #188); stock's own date stands in without one: a failed call, no btime or a zero stamp.
+for btime,mask,error,expect in ((1700000000,0x800,0,1700000000),(1700000000,0x7ff,0,0),(0,0x800,0,0),(1700000000,0x800,2,0)):
+    m=Machine(); m.handlers[HOOKS['toolsGetFileCreateTime'][0]+12]='stock_created'; seen=[]
+    def statx(u,interrupt,unused):
+        a,b,c,d=[u.reg_read(r) for r in REGS]; buf=m.get(u.reg_read(UC_MIPS_REG_SP)+16)  # o32's fifth argument
+        seen.append((u.reg_read(UC_MIPS_REG_V0),a,m.text(b),c,d))
+        if error: u.reg_write(UC_MIPS_REG_A3,1); u.reg_write(UC_MIPS_REG_V0,error); return
+        u.mem_write(buf,bytes(256)); u.mem_write(buf,struct.pack('<I',mask)); u.mem_write(buf+80,struct.pack('<Q',btime))  # the kernel writes all 256
+        u.reg_write(UC_MIPS_REG_A3,0); u.reg_write(UC_MIPS_REG_V0,0)
+    m.u.hook_add(UC_HOOK_INTR,statx); path=m.string('/m/a.flac')
+    assert m.call(address=payload_syms['ringnav_file_created'],args=(path,0,0,0),gap=0)==expect
+    assert seen==[(4366,0xffffff9c,'/m/a.flac',0,0x800)] and [c[1] for c in m.calls if c[0]=='stock_created']==([] if expect else [path]); passed()
 # Library Artists rows hide the head picture (CLASS_ICON); Composers and Genres, sharing the rebound
 # rows, show theirs again through stock's setter.
 from build import CLASS_ICON

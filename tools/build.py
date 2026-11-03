@@ -56,6 +56,8 @@ HOOKS = {
     'scanAllMusicFile': (0x4fc788, 'coverflow_scan_all', 'scan_all'),
     'scanSpecFolder': (0x4fc964, 'coverflow_scan_folder', 'scan_folder'),
     'deleteMusicFromMusicDb': (0x500b5c, 'coverflow_delete_song', 'delete_song'),
+    # A song's added date: the card's creation stamp, not the access time (coverflow.c)
+    'toolsGetFileCreateTime': (0x5bddc4, 'ringnav_file_created', 'file_created'),
     'player_play_pause': (0x515728, 'ringnav_play_pause', 'pause'),
     'mclSetBtVol': (0x5accec, 'ringnav_btvol', 'btvol'),
     'mclSetOutputWay': (0x5aae54, 'ringnav_output', 'output'),
