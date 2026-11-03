@@ -1311,6 +1311,9 @@ static void reveal(menu_t *m, int id, int immediate) {
     int want = h > m->height || y - top < margin  ? y - margin
                : y - top > m->height - h - margin ? y - (m->height - h - margin)
                                                   : top;
+    /* The first row brings in whatever heads the list above it (the EQ page's graph) when both
+     * fit, rather than stopping a margin into it. Kind 1's ids are its row order. */
+    if (m->kind == 1 && id == 0 && y + h + margin <= m->height) want = 0;
     want = clamp_step(want, max_top(m), 0);
     if (immediate) {
         wheel_offset(m, want);
@@ -2470,14 +2473,18 @@ static int quick_long(const void *unused) {
         !window_manager_get_pointer_pressed(window_manager()))
         return 0;
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
-    /* Abort the image's press before closing, so its release cannot toggle the radio. */
+    /* Abort the image's press before closing, so its release cannot click the icon. */
     prop(icon, QUICK_HOLD, -page);
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, win, 0, 0);
     widget_dispatch_event_to_target_recursive(win, abort_event);
     quick_cancel(0, 0);
     dialog_quit(win, 0);
-    navigator_to(page == 1 ? "systemset/wifi_page" : "systemset/bluetooth_page");
+    /* An open EQ page is already the goal: a second would share peq_ui.c's one state. */
+    if (page == 3 && navigator_window_is_exist("equalizer_page")) return 0;
+    navigator_to(page == 1   ? "systemset/wifi_page"
+                 : page == 2 ? "systemset/bluetooth_page"
+                             : "playset/equalizer_page"); /* as Audio settings' EQ row (0x4b94d0) */
     return 0;
 }
 static int quick_down(void *icon, void *event) {
@@ -2493,8 +2500,9 @@ int ringnav_quick_settings(void *win, void *ctx) {
     int result = stock_quicksettings_trampoline(win, ctx);
     if (win) {
         quick_lock_text(win);
-        static const char *const names[] = { "img_wifiswitch", "img_btswitch" };
-        for (int i = 0; i < 2; ++i) {
+        /* held: 1 Wi-Fi's settings, 2 Bluetooth's, 3 the EQ page (Playback's) */
+        static const char *const names[] = { "img_wifiswitch", "img_btswitch", "img_playset" };
+        for (int i = 0; i < 3; ++i) {
             void *icon = widget_lookup(win, names[i], 1);
             if (!icon) continue;
             prop(icon, QUICK_HOLD, i + 1);
@@ -10362,7 +10370,7 @@ static int replay_wheel(const void *info) {
  * before stock's Return or the page's own can destroy the edit under it, which crashes demo; the
  * next Return goes back. Stock's search dialogs and the playlist editor's search (search_edit)
  * keep their text. Every other T9 edit of ours (EDIT_NAME, edit_create) is a cancel: emptied
- * first, so the blur's EVT_VALUE_CHANGED reads as no entry and its page shows what it had. */
+ * first, so the blur's EVT_VALUE_CHANGED reads as no entry and its page backs out of the edit. */
 static int search_key(unsigned key) {
     if (key != KEY_RETURN) return 0;
     void *im = input_method(), *edit = im ? P(im, IM_WIDGET) : (void *)0;

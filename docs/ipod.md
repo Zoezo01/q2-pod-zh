@@ -308,7 +308,8 @@ brightness slider becomes a 6-pixel track in Now Playing's colours (`TRACK_COLOR
 still takes a tap or drag anywhere on it (`slide_with_bar`), from x 68 to 307. The stock dim and
 bright suns stay at its ends, in line with the first and last icon columns. Sizes are `QS_*` in
 `tools/ipod.py`. `dialog_statusbar_dialog_init` (`0x4a0d88`) finds every widget by name and
-never moves or resizes one.
+never moves or resizes one. A finger held on Wi-Fi or Bluetooth opens its settings, and on Playback the EQ page
+([internals.md](internals.md#quick-settings-holds)); a tap stays stock's.
 
 The controls' stock images are 60-pixel discs: `#444444` with a white glyph when off, stock red
 (`#FF1448`) with a white glyph when on (`drop_wifiopen`, `drop_btopen`, `drop_keylockopen`,

@@ -2,6 +2,9 @@
 
 - **1.6.4**:
   - Rockbox: Wi-Fi turns off while Rockbox runs, and comes back when you return to Q2 Pod if it was on.
+  - EQ: holding **Playback** in Quick Settings opens the EQ page directly.
+  - EQ: on **Advanced**, the response graph now scrolls with the list, so the rows have the whole page once you scroll past it, and comes back when you reach the top row. Before, it stayed on screen and left room for three rows.
+  - EQ: renaming a preset now opens its name with the keyboard up and the cursor at the end, so you can change a few letters or clear it and type a new one. The keyboard's **OK** or the **Rename** row confirms, and **Return** cancels. Before, the first key replaced the whole name, and a name of four letters or more was read as nothing typed, so the rename never happened.
 
 - **1.6.3**:
   - Ratings: a copy of your song and album ratings stays on the card as `.ratings.tsv`, to read or back up on a computer, since the ratings themselves aren't on the part of the Q2 that USB storage shows. It is updated soon after a change and is only a copy: editing it changes nothing on the Q2. If a new copy would have fewer lines than the last one, the last one is kept as `.ratings.tsv.1`, unless that file already has more ([#182](https://github.com/DiamondBond/q2-pod/issues/182)).

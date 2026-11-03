@@ -99,10 +99,10 @@ static int render(const void *unused);
 /* A row: the caption on the left, white or, for display-only rows and off bands (DIM), grey, and
  * the value, if any, in grey against the right edge, or left of stock's list_into chevron on a row
  * that opens a screen or picker (INTO: coverflow.c's row_into). Returns the last label, the
- * value's if any. */
+ * value's if any. Rows start under the graph where it heads the list. */
 enum { DIM = 1, INTO = 2, SMALL = 4 };
 static void *row_dim(void *view, int index, const char *text, const char *value, int id, int flags) {
-    void *item = list_item_create(view, 0, index * 48, 375, 48), *label = 0;
+    void *item = list_item_create(view, 0, (ui.graph ? PEQ_GRAPH_H : 0) + index * 48, 375, 48), *label = 0;
     widget_use_style(item, "s_listitem_black");
     for (int i = 0; i < 1 + !!value; ++i) {
         label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, 48);
@@ -187,15 +187,10 @@ static int typed(void *ctx, void *event) {
     return 0;
 }
 
-/* The rename edit closed with new text; empty (Return's cancel, search_key) shows the name again.
- */
+/* The rename edit's Done (EVT_IM_ACTION, and EVT_VALUE_CHANGED, which stock sends only for a
+ * changed text) renames, once: Done sends both. */
 static int named(void *ctx, void *event) {
-    char s[4];
-    if (!ui.edit) return 0;
-    if (!widget_get_text_utf8(ui.edit, s, sizeof s) && s[0])
-        action((void *)(long)NAMED, 0);
-    else if (!ui.timer)
-        ui.timer = timer_add(render, 0, 1);
+    if (ui.edit && ui.screen == NAMING) action((void *)(long)NAMED, 0);
     return 0;
 }
 
@@ -279,13 +274,16 @@ static void list_files(const char *folder, const char *extension) {
 /* File name in ui.destination: sizeof skips PEQ_SAVED and its "/". */
 static const char *deleting(void) { return ui.destination + sizeof(PEQ_SAVED); }
 
-/* ui.destination (a saved preset's path) renamed to the edit's text, kept if that is empty, starts
- * with a dot, holds a character the card's FAT cannot, or names another preset. The editor's and
- * the active preset's names follow it. */
+/* ui.destination (a saved preset's path) renamed to the edit's text, kept if that starts with a
+ * dot, holds a character the card's FAT cannot, names another preset or is too long to read back
+ * (stock's conversion leaves it empty, 0x716bb0); an empty one, as Return's cancel leaves it
+ * (search_key), goes back to the list. The editor's and the active preset's names follow it. */
 static void rename_preset(void) {
-    char text[200], to[600], old[256];
+    char text[256], to[600], old[256]; /* a whole name: list_files takes up to 255 bytes */
     const char *from = deleting();
+    const unsigned *wide = ui.edit ? widget_get_text(ui.edit) : 0;
     if (!ui.edit || widget_get_text_utf8(ui.edit, text, sizeof text)) text[0] = 0;
+    int unread = !text[0] && wide && *wide;
     unsigned n = strlen(text);
     while (n && (text[n - 1] == ' ' || text[n - 1] == '.')) text[--n] = 0; /* FAT drops these */
     const char *t = text, *c;
@@ -296,7 +294,8 @@ static void rename_preset(void) {
 checked:
     snprintf(old, sizeof old, "%.*s", (int)strlen(from) - 4, from);
     ui.screen = PRESETS;
-    if (!*t || *t == '.' || *c)
+    if (!*t && !unread) ui.screen = RENAMES;
+    else if (!*t || *t == '.' || *c)
         snprintf(ui.status, sizeof(ui.status), "Name not allowed; preset kept");
     else if (!strcmp(t, old)) return;
     else if (snprintf(to, sizeof to, PEQ_SAVED "/%s.peq", t), strcasecmp(t, old) && !access(to, 0))
@@ -388,9 +387,10 @@ static int action(void *ctx, void *event) {
         /* Done can close T9 while the edit stays focused; focus alone won't reopen it, nor send
          * EVT_FOCUS, so the number page and selection are asked for here too. */
         input_method_request(input_method(), ui.edit);
-        if (ui.screen == ADJUST) focused(0, 0);
+        focused(0, 0);
         return 0;
     }
+    if (id == NAMED && ui.screen != NAMING) return 0; /* the row's click after the edit's blur renamed */
     peq_band *b = &ui.draft.bands[ui.band];
     ui.status[0] = 0;
     ui.tabs = 0;
@@ -400,6 +400,7 @@ static int action(void *ctx, void *event) {
         if (ui.screen == HOME) { navigator_back(); return 0; }
         if (ui.screen == PICK) ui.screen = ui.pick == GAIN ? BAND : HOME;
         else if (ui.screen == ADJUST) ui.screen = BAND;
+        else if (ui.screen == NAMING) ui.screen = RENAMES;
         else ui.screen = ui.from_simple || ui.screen == BAND || ui.screen == PRESETS ? HOME : PRESETS;
     } else if (id == MENU) ui.screen = PRESETS;
     else if (id == IMPORT) ui.screen = IMPORTS;
@@ -410,7 +411,7 @@ static int action(void *ctx, void *event) {
     else if (id == STOCK) ui.screen = STOCKS;
     else if (id == DELETE) ui.screen = DELETES;
     else if (id == RENAME) ui.screen = RENAMES;
-    else if (id == NAMED) { if (ui.screen == NAMING) rename_preset(); }
+    else if (id == NAMED) rename_preset();
     else if (id >= BALANCE && id <= GAIN) { ui.pick = id; ui.screen = PICK; }
     else if (id == FREQUENCY || id == QUALITY) { ui.adjust = id; ui.screen = ADJUST; }
     else if (id == SAVE) ui.screen = SAVES;
@@ -547,9 +548,9 @@ static int render(const void *unused) {
     e3.view = 0;
     int selection = 0, offset = 0;
     int height = widget_get_prop_int(ui.page, "h", 320), graph = ui.screen == HOME || ui.screen == BAND;
-    int top = 48 + graph * PEQ_GRAPH_H;
+    int head = graph * PEQ_GRAPH_H; /* two rows, so whole rows still fill the list at either end */
     /* Whole rows only, so the last row is never clipped. */
-    int rows = (height - top) / 48 * 48;
+    int rows = (height - 48) / 48 * 48;
     if (ui.view && ui.rendered == ui.screen) {
         selection = widget_get_prop_int(ui.view, "_ringnav_index", 0);
         offset = widget_get_prop_int(ui.view, "yoffset", 0);
@@ -565,8 +566,9 @@ static int render(const void *unused) {
     ui.rendered = ui.screen;
     ui.edit = 0;
     widget_destroy_children(ui.page);
-    void *list = list_view_create(ui.page, 0, top, 375, rows);
-    widget_set_prop_int(list, "item_height", 48);
+    /* No item_height: stock's layout (0x5ea5f4) would give the graph its 48 px; the rows are 48
+     * high themselves. */
+    void *list = list_view_create(ui.page, 0, 48, 375, rows);
     /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
     widget_set_prop_int(list, "style:normal:bg_color", (int)0xff000000u);
     widget_set_prop_int(list, "style:normal:border_color", 0);
@@ -575,6 +577,10 @@ static int render(const void *unused) {
     widget_set_prop_int(view, "yslidable", 1);
     widget_set_prop_int(view, "xslidable", 0);
     widget_set_prop_int(view, "_ringnav_index", ui.tabs && ui.screen == HOME ? -1 : selection);
+    /* The graph heads the list and scrolls off with it. It takes no click, so ringnav's rows, row 0
+     * first, are the ones under it; peq_paint draws it from its own paint, inside the list's clip. */
+    ui.graph = graph ? widget_factory_create_widget(widget_factory(), "view", view, 0, 0, 375, head) : 0;
+    if (graph) curve();
     char text[160], value[32];
     int n = 0;
     static const char *const types[] = {"Peaking", "Low shelf", "High shelf"};
@@ -635,10 +641,8 @@ static int render(const void *unused) {
             else snprintf(text, sizeof(text), "%+.1f dB", v);
             row(view, n++, text, i);
         }
-    } else if (ui.screen == NAMING) { /* the name in the edit over the title, as the value menu's,
-                                         on the keyboard's letters */
-        snprintf(text, sizeof(text), "Rename %.*s", (int)strlen(deleting()) - 4, deleting());
-        row(view, n++, text, KEYBOARD);
+    } else if (ui.screen == NAMING) { /* the name in the edit over the title (below); the row is Done */
+        row(view, n++, "Rename", NAMED);
     } else if (ui.screen == CONFIRM && ui.previous == DELETES) {
         snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting()); row(view, n++, text, YES);
         row(view, n++, "Cancel", CANCEL);
@@ -668,19 +672,14 @@ static int render(const void *unused) {
         for (int i = 0, start = ui.file_page * FILE_PAGE; i < FILE_PAGE && start + i < ui.count; ++i)
             row(view, n++, ui.names[start + i], i);
     }
-    widget_set_prop_int(view, "virtual_h", n * 48);
+    widget_set_prop_int(view, "virtual_h", head + n * 48);
     /* ringnav keeps the selection above on a view whose row count it already knows. */
     if (ui.screen == PICK) widget_set_prop_int(view, "_ringnav_count", n);
-    if (n * 48 < rows) { /* short lists: shrink so the list's white background never shows below the rows */
-        widget_resize(list, 375, n * 48);
-        widget_resize(view, 375, n * 48);
+    if (head + n * 48 < rows) { /* short lists: shrink so the list's white background never shows below the rows */
+        widget_resize(list, 375, head + n * 48);
+        widget_resize(view, 375, head + n * 48);
     }
     scroll_view_set_offset(view, 0, offset);
-    ui.graph = 0;
-    if (graph) {
-        curve();
-        ui.graph = widget_factory_create_widget(widget_factory(), "view", ui.page, 0, 48, 375, PEQ_GRAPH_H);
-    }
     /* A message takes the title bar until the next action, so it never shrinks the list; on the
      * main screen the bar otherwise shows the tabs (peq_paint). */
     void *title = ui.screen == HOME ? bar(ui.page, 0, 375) : bar(ui.page, 8, 359);
@@ -706,15 +705,24 @@ static int render(const void *unused) {
      * Done, as stock's numeric edit rewrites unfinished decimals. */
     if (ui.screen == ADJUST || ui.screen == NAMING) {
         peq_band *b = &ui.draft.bands[ui.band];
+        char s[256]; /* a whole name, as rename_preset reads it */
         ui.edit = edit_create(ui.page, "text", 2, 26);
         if (ui.screen == NAMING)
-            snprintf(text, sizeof(text), "%.*s", (int)strlen(deleting()) - 4, deleting());
+            snprintf(s, sizeof s, "%.*s", (int)strlen(deleting()) - 4, deleting());
         else
-            snprintf(text, sizeof(text), ui.adjust == QUALITY ? "%.2f" : "%.0f",
+            snprintf(s, sizeof s, ui.adjust == QUALITY ? "%.2f" : "%.0f",
                      ui.adjust == QUALITY ? b->q : b->frequency);
-        widget_set_text_utf8(ui.edit, text);
+        widget_set_text_utf8(ui.edit, s);
         widget_on(ui.edit, EVT_VALUE_CHANGED, ui.screen == NAMING ? named : typed, 0);
         if (ui.screen == ADJUST) widget_on(ui.edit, EVT_FOCUS, focused, 0);
+        else {
+            /* The name opens with the keyboard up and the cursor where stock's text setter leaves
+             * it, at the end (0x614198). Stock's focus otherwise selects it all (an idle,
+             * 0x60f560), so a key replaced the name. Done confirms an unchanged name too. */
+            widget_set_prop_int(ui.edit, "select_none_when_focused", 1);
+            widget_on(ui.edit, EVT_IM_ACTION, named, 0);
+            widget_set_focused(ui.edit, 1);
+        }
     }
     widget_invalidate_force(ui.page, 0);
     return 7; /* RET_REMOVE */

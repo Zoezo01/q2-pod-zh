@@ -2495,6 +2495,16 @@ assert m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==48
 w,es=m.page_list(3,height=96,extent=400)
 m.word(es[1]+O['W_H'],140); m.word(es[2]+O['W_Y'],188)
 m.paint(w); assert m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==48; passed()
+# Row 0 brings back what heads the list above it (the EQ page's graph) when both fit; a head too tall for that
+# leaves the margin, so row 0 is never pushed off.
+for height,top in ((192,0),(144,84)):
+    m=Machine(); w,es=m.page_list(6,height=height,extent=96+6*48)
+    for i,e in enumerate(es): m.word(e+O['W_Y'],96+i*48)
+    m.paint(w)
+    for _ in range(4): m.call()
+    assert m.selected(w)==4 and m.get(w+O['SCROLL_Y'])>top
+    for _ in range(4): m.call(O['KEY_PREV'])
+    assert m.selected(w)==0 and m.get(w+O['SCROLL_Y'])==top; passed()
 
 m=Machine(); w=m.page(); m.word(w+O['W_H'],96)
 e=m.entry(w,0); m.word(e+O['W_W'],4); m.word(e+O['W_H'],4); m.nodes[w]['children']=[e]
@@ -12619,12 +12629,12 @@ for choice in (1,2,3,0):
                 assert (gate.call(key,address=address)==11)==blocked,(choice,light,key,address)
 passed()
 
-# Quick settings (#70): a tap passes unchanged; a stationary hold opens settings without a click.
-for radio,page in (('wifi','systemset/wifi_page'),('bt','systemset/bluetooth_page')):
+# Quick settings (#70): a tap passes unchanged; a stationary hold opens settings (Playback: the EQ page) without a click.
+for radio,page in (('wifiswitch','systemset/wifi_page'),('btswitch','systemset/bluetooth_page'),('playset','playset/equalizer_page')):
     def quick_page():
         m=QueueMachine(); m.mock('dialog_quit','widget_dispatch_event_to_target_recursive')
         m.handlers[int(manifest['patch_symbols']['stock_quicksettings_trampoline'],16)]='stock_quicksettings'
-        icon=m.node('image','img_'+radio+'switch')
+        icon=m.node('image','img_'+radio)
         win=m.node('dialog','statusbar_dialog',[icon,m.node('image','img_lock'),m.node('label','label_lock')])
         m.top=win
         m.call(address=HOOKS['dialog_statusbar_dialog_init'][0],args=(win,0,0,0),gap=0)
@@ -12648,6 +12658,9 @@ for radio,page in (('wifi','systemset/wifi_page'),('bt','systemset/bluetooth_pag
     assert dispatch(O['EVT_CLICK'])==11 and not any(c[0]=='stock_dispatch' for c in m.calls)
     # A later touch can tap the same icon normally.
     m.top=win; down(); dispatch(O['EVT_POINTER_UP_BEFORE']); assert dispatch(O['EVT_CLICK'])==0; passed()
+    if radio=='playset':  # pulled down over the EQ page: the hold only closes the panel, no second EQ page
+        m,icon,win,down,dispatch=quick_page(); m.open_pages.add('equalizer_page'); down(); m.advance(O['RATE_HOLD_MS'])
+        assert not m.opened and [c[1:3] for c in m.calls if c[0]=='dialog_quit']==[(win,0)]; passed()
     for kind in (O['EVT_POINTER_MOVE_BEFORE'],O['EVT_POINTER_ABORT'],O['EVT_KEY_DOWN_BEFORE']):
         m,icon,win,down,dispatch=quick_page(); down(); dispatch(kind,x=50)
         m.advance(O['RATE_HOLD_MS']); assert not m.opened, (kind,m.opened)
