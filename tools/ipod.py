@@ -949,6 +949,20 @@ def patch_asset(path, data, g=SET0):
     return encode(root)
 
 
+def set_assets(cat, g):
+    """The UI windows g draws differently from SET0, as <g.name>_<name>.bin beside the stock one.
+    The prefix goes on the basename: stock opens subdirectory windows by path."""
+    # ponytail: playing_page_stock gets no set copy; add it when a set needs one
+    ui, out = 'release/assets/default/raw/ui/', {}
+    for rel in UI_ASSETS:
+        data = cat(ui + rel)
+        mine = patch_asset(rel, data, g=g)
+        if mine != patch_asset(rel, data):
+            folder, _, base = rel.rpartition('/')
+            out[ui + (folder and folder + '/') + f'{g.name}_{base}'] = mine
+    return out
+
+
 def patch_code(data, symbols):
     changes = []
     word = functools.partial(patch_word, data, changes=changes)

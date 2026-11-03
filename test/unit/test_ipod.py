@@ -753,3 +753,22 @@ def test_only_split_names_take_the_art_prefix():
 
 def test_geometry_has_every_value_name():
     assert set(ipod.VALUE_NAMES) - {'scroll', 'np_bar_x', 'np_bar_w'} <= {f.name for f in dataclasses.fields(ipod.Geometry)}
+
+
+UI = 'release/assets/default/raw/ui/'
+
+
+@pytest.fixture
+def fake_assets(monkeypatch):
+    monkeypatch.setattr(ipod, 'UI_ASSETS', {'system_bar.bin': '', 'dialog/volume_dialog.bin': '', 'home_page.bin': ''})
+    monkeypatch.setattr(ipod, 'patch_asset', lambda rel, data, g=ipod.SET0: data + (b'!' if g.bar != 30 and rel != 'home_page.bin' else b''))
+
+
+def test_set_assets_only_what_differs(fake_assets):
+    got = ipod.set_assets(lambda p: p.encode(), ipod.Geometry(name='test', bar=26))
+    assert got == {UI + 'test_system_bar.bin': (UI + 'system_bar.bin').encode() + b'!',
+                   UI + 'dialog/test_volume_dialog.bin': (UI + 'dialog/volume_dialog.bin').encode() + b'!'}
+
+
+def test_set_assets_set0_is_empty(fake_assets):
+    assert ipod.set_assets(lambda p: p.encode(), ipod.SET0) == {}
