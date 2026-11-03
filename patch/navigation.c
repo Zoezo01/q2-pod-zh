@@ -88,6 +88,14 @@ static int spoken(const char *path);
 
 /* Failed exec in a forked child must not flush demo's copied stdio or run its exit handlers. */
 __asm__(".globl child_exit\nchild_exit:\nli $v0, 4001\nsyscall\n");
+/* Geometry sets (theme_boot): demo imports neither, so the o32 syscalls, as spot_shut. 0, errno */
+int theme_mprotect(void *addr, unsigned len, int prot);
+int theme_cacheflush(void *addr, int len, int cache);
+__asm__(".set push\n.set noreorder\n"
+        ".globl theme_mprotect\ntheme_mprotect:\nli $v0,4125\nsyscall\njr $ra\nnop\n"
+        ".globl theme_cacheflush\ntheme_cacheflush:\nli $v0,4147\nsyscall\njr $ra\nnop\n"
+        ".set pop\n");
+#define THEME_PAGE 4096u /* the Q2's kernel page: mprotect's rounding unit */
 /* Out of memory, the kernel kills the fattest process, which was demo (#169): every child demo
  * forks, whose one job can need tens of MB, makes itself the first to go, between fork and exec. */
 int open(const char *, int, ...);
@@ -494,7 +502,8 @@ typedef struct {
         keep_lit,                  /* Smart Awake (#57, keep_lit_poll) */
         np_centred,                /* Centred Now Playing (ringnav_ui_load) */
         keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
-        scrub_single;              /* Single Press Scrub (np_key) */
+        scrub_single,              /* Single Press Scrub (np_key) */
+        theme_booted;              /* theme_boot ran (ringnav_ui_load) */
     unsigned keep_lit_at;
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
@@ -4491,14 +4500,60 @@ static void bc_fit(void *win) {
     }
 }
 
+/* Geometry sets: tools/ipod.py bakes SET0 into the stock row immediates (ipod.json). Another set
+ * rewrites, once, only the low halfwords that differ: stock text is R-X, so the span goes RWX,
+ * is written and flushed, and goes back to R-X. SET0 makes no syscall and writes nothing. */
+static int boot_differs(int i, const volatile unsigned short *v) {
+    return (*(unsigned *)boot_sites[i].addr & 0xffff) != (unsigned)v[boot_sites[i].group];
+}
+static void theme_boot(void) {
+    const volatile unsigned short *v = boot_values[theme()->geom];
+    unsigned lo = ~0u, hi = 0;
+    for (int i = 0; i < BOOT_SITES; ++i)
+        if (boot_differs(i, v)) {
+            if (boot_sites[i].addr < lo) lo = boot_sites[i].addr;
+            if (boot_sites[i].addr > hi) hi = boot_sites[i].addr;
+        }
+    if (!hi) return;
+    lo &= ~(THEME_PAGE - 1u), hi = (hi + 4 + THEME_PAGE - 1) & ~(THEME_PAGE - 1u);
+    if (theme_mprotect((void *)lo, hi - lo, 7)) return; /* PROT_READ|WRITE|EXEC; stock stays */
+    for (int i = 0; i < BOOT_SITES; ++i)
+        if (boot_differs(i, v)) {
+            unsigned *w = (unsigned *)boot_sites[i].addr;
+            *w = (*w & 0xffff0000) | v[boot_sites[i].group];
+        }
+    theme_cacheflush((void *)lo, hi - lo, 3); /* BCACHE */
+    theme_mprotect((void *)lo, hi - lo, 5);   /* PROT_READ|PROT_EXEC */
+}
+
+/* A set's own copy of a window, <set>_<name>.bin in name's folder (tools/build.py), else name. */
+static char ui_path[64] __attribute__((section(".scratch")));
+static const char *ui_redirect(const char *name) {
+    unsigned g = theme()->geom;
+    for (const volatile ui_redirect_t *r = ui_redirects; r->name; ++r)
+        if (r->sets >> g & 1 && !tk_strcmp(r->name, name)) {
+            const char *slash = strrchr(name, '/'), *base = slash ? slash + 1 : name;
+            tk_snprintf(ui_path, sizeof ui_path, "%.*s%s_%s", (int)(base - name), name,
+                        geom_names[g], base);
+            return ui_path;
+        }
+    return name;
+}
+
 /* ui_loader_load_widget_with_parent, every window's asset (window_open's): the theme's layout
  * (np_layout(); Centred Now Playing forces NP_CENTRED) picks the page. Stock's own page
  * (tools/ipod.py PLAYING_STOCK) is named playing_page too, which ringnav_playing binds as the iPod
  * one; any opener comes through here. */
 extern void *stock_ui_load_trampoline(const char *name, void *parent);
 void *ringnav_ui_load(const char *name, void *parent) {
+    /* application_init's first window; accent() makes theme() final */
+    if (name && !st.theme_booted && !tk_strcmp(name, "system_bar")) {
+        st.theme_booted = 1;
+        accent();
+        theme_boot();
+    }
     if (name && !tk_strcmp(name, "playing_page")) name = np_pages[np_layout()];
-    return stock_ui_load_trampoline(name, parent);
+    return stock_ui_load_trampoline(ui_redirect(name), parent);
 }
 
 /* bigcover_page_init: stock's full-screen art (a tap on Now Playing's opens it, any tap closes it)

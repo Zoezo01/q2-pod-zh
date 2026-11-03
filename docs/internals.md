@@ -418,6 +418,18 @@ slot (`bar_sync`). The page fallbacks (`widget_get_prop_int(page, "h", 290)`) an
 sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.py`) drive
 `ipod_home`, `status_bar`, `playing_page` and `patch_asset`; `patch_code` bakes `SET0`.
 
+**Geometry sets.** `tools/theme.py` also emits the boot tables into `themes.inc`: `boot_values`
+(one row of `ipod.json` values per set, SET0 first), `boot_sites` (each stock immediate's address
+and value name), `geom_names` and `ui_redirects` (the windows a set has its own copy of).
+`theme_t.geom` picks the row. `theme_boot` runs once a boot, at the first `system_bar` load in
+`ringnav_ui_load`, after `accent()` has read the settings. Over the `THEME_PAGE`-rounded span of
+the sites whose low halfword differs from the set's value, it calls mprotect (4125) RWX, writes those
+halfwords, calls cacheflush (4147, BCACHE) and mprotects the span back to R-X. SET0, the set of both
+built-ins, matches every baked immediate, so it makes no syscall and writes nothing. A window in
+`ui_redirects` for the theme's set loads as `<set>_<name>.bin` in the same folder
+(`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and
+cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open.
+
 ## Page transitions (iPod)
 
 Stock V1.32 carries AWTK's window animators and uses one: `saverscreen_page.bin` has `close_anim_hint` `slide_left(duration=200,easing=cubic_out)`, the only hint in the stock assets. The window manager builds the animator named by a window's `anim_hint` (`window_animator_htranslate_create`, `0x683a08`, for `htranslate`) when it opens or closes. `navigator_to_with_context` (`0x4ec758`) opens a page above the rest and `navigator_back` (`0x4ec8e0`) is `window_manager_back`, so the page below stays alive and Return reverses the slide.

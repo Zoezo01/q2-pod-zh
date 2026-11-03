@@ -176,6 +176,14 @@ class Machine:
     def lcd_colors(self): return tuple(self.get(self.lcd+O[off]) for off in ('LCD_FILL_COLOR','LCD_STROKE_COLOR'))
     def mock(self,*names,prefix=''):
         for n in names: self.handlers[syms[n]]=prefix+n
+    def record_syscalls(self):
+        """The payload's o32 syscalls, answered 0; mprotect (4125) takes effect."""
+        self.syscalls=[]
+        def syscall(u,intno,unused):
+            n,a,b,c=(u.reg_read(r) for r in (UC_MIPS_REG_V0,*REGS[:3])); self.syscalls.append((n,a,b,c))
+            if n==4125: u.mem_protect(a,b,c)
+            u.reg_write(UC_MIPS_REG_A3,0); u.reg_write(UC_MIPS_REG_V0,0)
+        self.u.hook_add(UC_HOOK_INTR,syscall)
     def scope_scan(self):
         """A library update's marker walk over scope_tree and scope_markers, into SCOPE_RULES."""
         self.call(address=payload_syms['library_scope_scan'],args=(0,0,0,0),gap=0,clear=False)
@@ -8622,6 +8630,35 @@ def loaded(name):
     return [m.text(c[1]) for c in m.calls if c[0]=='stock_ui_load']
 assert loaded('playing_page')==['playing_page_stock'] and loaded('home_page')==['home_page']
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert loaded('playing_page')==['playing_page']; passed()
+# Geometry sets: the first system_bar load rewrites only the stock immediates whose set value differs.
+settings_m=m  # the Appearance cases go on with it below
+from build import segments
+from ipod import AUDIT, VALUE_NAMES
+PAGE=4096  # the Q2's kernel page: mprotect's rounding unit
+TEXT=[(v,((v+m_+4095)&~4095)-v) for _,(t,o,v,_,f,m_,fl,_) in segments((B/'demo').read_bytes()) if t==1 and fl&1 and v<BASE][0]
+SITES={int(a,16):g['value'] for g in AUDIT['immediates'] if isinstance(g['value'],str) for a,_ in g['sites']}
+def set_value(m,name,v): m.u.mem_write(payload_syms['boot_values']+2*VALUE_NAMES.index(name),struct.pack('<H',v))
+def booted(values=()):
+    m=Machine(); m.u.mem_protect(*TEXT,5); m.record_syscalls()
+    m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+    for name,v in values: set_value(m,name,v)
+    before={a:m.get(a) for a in SITES}
+    m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0)
+    return m,before
+m,before=booted()
+assert m.syscalls==[] and {a:m.get(a) for a in SITES}==before; passed()
+m,before=booted((('pitch',28),))
+pitch=[a for a,v in SITES.items() if v=='pitch']; lo,hi=min(pitch)&~(PAGE-1),(max(pitch)+4+PAGE-1)&~(PAGE-1)
+assert m.syscalls==[(4125,lo,hi-lo,7),(4147,lo,hi-lo,3),(4125,lo,hi-lo,5)]
+assert {a:m.get(a) for a in SITES}=={a:(w&0xffff0000|28 if SITES[a]=='pitch' else w) for a,w in before.items()}
+assert [p for b,e,p in m.u.mem_regions() if b<=lo<=e]==[5]
+m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); assert len(m.syscalls)==3; passed()  # once a boot
+# A set's own window: <set>_<name>, in its folder; other names load as asked.
+m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
+redirect('system_bar'); assert loaded('system_bar')==['ipod_system_bar'] and loaded('home_page')==['home_page']
+redirect('dialog/volume_dialog'); assert loaded('dialog/volume_dialog')==['dialog/ipod_volume_dialog']; passed()
+m=settings_m
 # Artist albums (Q2POD ARTISTCF), the other layout choice, after Home; no key is Coverflow.
 cf_label=m.nodes[m.nodes[cf]['children'][0]]['children'][1]; assert m.nodes[cf_label]['text']=='Artist View: Cover Flow'
 f,ctx=m.handler(m.nodes[cf]['children'][0],O['EVT_CLICK']); m.calls=[]
