@@ -27,6 +27,7 @@ def test_tokenize():
 @pytest.mark.parametrize('text, message', [
     ('<a/>x', 't.xml:1: text between tags'),
     ('<a/>\n\xa0', 't.xml:2: text between tags'),
+    ('\nx', 't.xml:2: text between tags'),
     ('<![CDATA[x]]>', 't.xml:1: malformed tag'),
     ('<!DOCTYPE a>', 't.xml:1: malformed tag'),
     ('<?xml version="1.0"?>', 't.xml:1: malformed tag'),
@@ -74,6 +75,8 @@ def test_tokenizer_matches_etree():
     ('<theme format="1">\n</view>', 't.xml:2: mismatched </view>'),
     ('</theme>', 't.xml:1: mismatched </theme>'),
     ('<theme format="1">\n<view>', 't.xml:2: unclosed <view>'),
+    ('<theme format="1">\n<view>\n<element>', 't.xml:3: unclosed <element>'),
+    ('<theme format="1">x', 't.xml:1: text between tags'),
 ])
 def test_parse_rejects(text, message):
     assert error(theme.parse, text, 't.xml') == message
@@ -154,6 +157,8 @@ def test_extends():
     assert (t['accents'], t['schemes'][0], t['schemes'][4], t['opts']) == (0x110, ZERO, CLASSIC_ROLES, [opt('SETTING_ACCENT', default=4, values=0x110)])
     assert resolved('<view name="home"><element name="rows" top="12"/></view>')['home_top'] == 12  # a card theme states numbers
     assert resolved('<colorScheme name="graphite" fill="#112233"/>')['schemes'][0]['fill'] == 0x112233
+    assert resolved('<colorScheme name="graphite" fill="#AbCdEf"/>')['schemes'][0]['fill'] == 0xabcdef
+    assert resolved('<colorSchemes/>')['accents'] == 0
     assert resolved('<view name="playing"><element name="album" opacity="255"/></view>')['np_album_op'] == 255
 
 
@@ -187,6 +192,12 @@ M = 'id="minimal" name="M" index="0"'
     ('', 'id="t" name="" index="2"', 'name: expected a name'),
     ('', 'id="t" name="T" index="10"', 'index: expected a digit'),
     ('', 'id="t" name="T" index="2" colour="x"', 'unknown key theme.colour'),
+    ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
+    ('', 'id="t" name="T"', 'index: expected a digit'),
+    ('<colorScheme/>', None, 'unknown scheme '),
+    ('<option/>', None, 'unknown setting '),
+    ('<view/>', None, 'unknown view '),
+    ('<view name="list"><element/></view>', None, 'unknown element list.'),
     ('<view name="home"><element name="rows" top="8"/></view>', M, 'home.rows.top comes from patch/offsets.inc'),
     ('<colorScheme name="graphite" fill="#eeeeec"/>', M, 'scheme.fill comes from patch/offsets.inc'),
 ])
@@ -204,6 +215,9 @@ def test_resolve_checks_role_macros(monkeypatch):
     monkeypatch.setitem(theme.ROLE_MACROS, 'minimal', {**theme.ROLE_MACROS['minimal'], 'np_bar': '400'})
     line = theme.load(THEMES/'minimal/theme.xml').line
     assert error(theme.builtins) == f'minimal/theme.xml:{line}: playing.scrubber.height: 400 outside 0..375'
+    monkeypatch.setitem(theme.ROLE_MACROS, 'minimal', {**theme.ROLE_MACROS['minimal'], 'np_bar': 'abs(4)'})
+    with pytest.raises(NameError):  # offsets.inc names only, no builtins
+        theme.builtins()
 
 
 N = 'id="t" name="T" index="2"'
@@ -213,11 +227,24 @@ N = 'id="t" name="T" index="2"'
     ('<option setting="light"/><option setting="light"/><option setting="accent" key="ACCENT"/>', None, 'SETTING_LIGHT declared twice'),
     ('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" default="green"/>', None, 'accent default green is not in colorSchemes'),
     ('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" preset="green"/>', None, 'accent preset green is not in colorSchemes'),
+    ('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" default="graphite"/>', None, 'accent default graphite is not in colorSchemes'),
     ('<colorSchemes accents=""/>', None, 'colorSchemes is empty'),
 ])
 def test_validate_rejects(body, attrs, message):
     t = resolved(body, *([attrs] if attrs else []))
     assert error(theme.validate, t, 't.xml') == f't.xml:1: {message}'
+
+
+def test_validate_accepts():
+    t = resolved('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" default="cobalt" preset="cobalt"/>')
+    assert theme.validate(t, 't.xml') is None
+
+
+def test_key():
+    assert theme.key('a.b.c', 'f', 'bool') == theme.Key('a.b.c', 'f', 'bool', 0, 1, 0, 'live')
+    assert theme.key('a.b.c', 'f', 'color').hi == 0xffffff
+    assert theme.key('list.selection.painter', 'f', 'enum').hi == 1
+    assert theme.key('a.b.c', 'f', 'int', 255).hi == 255
 
 
 def test_builtins_rejects(tmp_path):
@@ -230,3 +257,53 @@ def test_builtins_rejects(tmp_path):
     assert error(theme.builtins, tmp_path) == 'b/theme.xml:1: index 2, expected 1'
     put('b', 'id="c" name="B" index="1"')
     assert error(theme.builtins, tmp_path) == 'b/theme.xml:1: id c is not its folder name'
+    put('b', 'id="b" name="B" index="0"')
+    assert error(theme.builtins, tmp_path) == 'b/theme.xml:1: index 0, expected 1'
+    (tmp_path/'b'/'theme.xml').write_text('<theme format="1" id="b" name="B" index="1"><option setting="accent"/></theme>')
+    assert error(theme.builtins, tmp_path) == 'b/theme.xml:1: accent: no key'
+
+
+MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chevron_home', 0), ('caps_mark', 1),
+                  ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
+                  ('bold', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
+                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
+                  ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
+                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8)]
+
+
+def test_emit(tmp_path):
+    theme.emit(theme.builtins()[:1], tmp_path)
+    flags = {1: 2, 7: 1}
+    assert (tmp_path/'themes.inc').read_text().startswith('\n'.join([
+        '/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */',
+        'static const scheme_t minimal_schemes[] = {',
+        *(f'    {{ .tones = accents[{v}], .flags = {flags.get(v, 0)}, .fill = 0xeeeeec, .chevron = 0x777777, '
+          f'.muted = 0x8c8c8c, .bar_light = 0x000000 }},' for v in range(9)),
+        '};',
+        '_Static_assert(sizeof minimal_schemes / sizeof *minimal_schemes == ACCENT_N, "one scheme per ACCENTS row");',
+        'static const option_t minimal_opts[] = {',
+        '    { .setting = SETTING_LIGHT, .def = -1, .preset = 0, .keep = 2, .values = 0x0 },',
+        '    { .setting = SETTING_ACCENT, .def = 7, .preset = 0, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_ROUNDED, .def = -1, .preset = 1, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_HOME, .def = -1, .preset = 0, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_SHORTCUT, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_BATTERY, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_TIMETITLE, .def = -1, .preset = 1, .keep = -1, .values = 0x0 },',
+        '    { .setting = SETTING_NPCENTRED, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
+        '};',
+        'static const theme_t themes[THEME_N] = {',
+        '    {', *(f'        .{k} = {v},' for k, v in MINIMAL_FIELDS), '    },',
+        '};', '']))
+
+
+def test_emit_both(tmp_path):
+    theme.emit(theme.builtins(), tmp_path)
+    text = (tmp_path/'themes.inc').read_text()
+    assert [l for l in text.splitlines() if l.startswith('static const')] == [
+        'static const scheme_t minimal_schemes[] = {', 'static const option_t minimal_opts[] = {',
+        'static const scheme_t classic_schemes[] = {', 'static const option_t classic_opts[] = {',
+        'static const theme_t themes[THEME_N] = {']
+    assert '    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000 },\n    { .tones = accents[8]' in text
+    assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
+    assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
+    assert text.endswith('    },\n};\n')

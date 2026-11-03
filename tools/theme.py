@@ -1,6 +1,7 @@
 """Built-in themes: assets/themes/<id>/theme.xml in the Q2 theme XML, read, checked and written out as
 the payload's theme table (themes.inc)."""
 import dataclasses
+import json
 import re
 from build import ROOT
 from ipod import INC, O
@@ -348,3 +349,29 @@ def builtins(root=ROOT/'assets/themes'):
         if index != i:
             fail(n.file, n.line, f'index {index}, expected {i}')
     return [t for _, _, t in found]
+
+
+def emit(themes, out):
+    """out/'themes.inc': the schemes, options and themes[] navigation.c includes."""
+    lines = ['/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */']
+    for t in themes:
+        i = t['id']
+        lines.append(f'static const scheme_t {i}_schemes[] = {{')
+        lines += [f'    {{ .tones = accents[{v}], .flags = {s["card"] | s["raw_red"] << 1}, .fill = 0x{s["fill"]:06x}, '
+                  f'.chevron = 0x{s["chevron"]:06x}, .muted = 0x{s["muted"]:06x}, .bar_light = 0x{s["bar_light"]:06x} }},'
+                  for v, s in enumerate(t['schemes'])]
+        lines += ['};', f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes == ACCENT_N, "one scheme per ACCENTS row");',
+                  f'static const option_t {i}_opts[] = {{']
+        lines += [f'    {{ .setting = {o["setting"]}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
+                  f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
+        lines.append('};')
+    lines.append('static const theme_t themes[THEME_N] = {')
+    for t in themes:
+        # ponytail: every SCHEMA field precedes accent_slot today; split when theme_t grows past n_opts.
+        fields = [('name', json.dumps(t['name'])),
+                  *((k.field, t[k.field]) for k in SCHEMA.values() if not k.path.startswith('scheme.')),
+                  ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
+                  ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts']))]
+        lines += ['    {', *(f'        .{k} = {v},' for k, v in fields), '    },']
+    lines += ['};', '']
+    (out/'themes.inc').write_text('\n'.join(lines))

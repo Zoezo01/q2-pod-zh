@@ -1634,13 +1634,18 @@ def main():
     ap.add_argument('--captures', type=pathlib.Path,
                     help='write the renderer\'s frames (rest, quarter, half, three-quarter turns, one album) as PNGs here')
     a = ap.parse_args()
-    # shim_themes stands in for navigation.c's themes[]: each theme's .home_* fields must match.
+    # shim_themes stands in for the generated themes[]: each theme's .home_* fields must match the
+    # offsets.inc expressions tools/theme.py ROLE_MACROS gives it (0, unset in the shim, left out).
+    from theme import ROLE_MACROS
     def home_fields(text):
         return [re.findall(r'\.(home_\w+) = (\{[^}]*\}|[^,{}\n]+)', t.split('.n_opts')[0]) for t in text]
-    nav = re.split(r'\{ \.name = "', (ROOT/'patch/navigation.c').read_text())[1:3]
+    nav = [[(k, v) for k, v in (('home_top', m['home_top']), ('home_full_row', m['home_full_row']),
+                                ('home_text_x', m['home_text_x']),
+                                ('home_label_end', f'{{ {m["home_label_end[0]"]}, {m["home_label_end[1]"]} }}')) if v != '0']
+           for m in (ROLE_MACROS['minimal'], ROLE_MACROS['classic'])]
     shim = re.search(r'shim_themes\[2\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
-    assert norm(home_fields(shim)) == norm(home_fields(nav)), 'shim_themes drifted from navigation.c themes[]'
+    assert norm(home_fields(shim)) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]

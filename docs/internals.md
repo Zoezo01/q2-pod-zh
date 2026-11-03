@@ -387,8 +387,15 @@ the stored accent.
   `values` becomes `def`. Choosing a theme writes each option's `preset` unless the stored value is
   its `keep` (Light's Auto), and only values that change. The accent row cycles within `values`.
 
-The numbers stay macros in `patch/offsets.inc`; the table only names them. `edit_paint` stays
-Minimal's card in both themes.
+The table is generated. Each built-in theme is `assets/themes/<id>/theme.xml`. The format is a strict
+XML subset: elements with double-quoted attributes, self-closing tags and comments, only whitespace
+between tags, the entities `&amp; &lt; &gt; &quot;`, UTF-8, at most 32 KB. `tools/theme.py` fills
+each theme in this order: the schema defaults, its `extends` base, its own elements, then
+`ROLE_MACROS`, which takes the per-theme numbers (Home rows, the settings top, the progress bar, the
+scheme colours) from `patch/offsets.inc`, so a theme file never names a macro. Any unknown name or
+value stops the build. The tool writes `themes.inc` into the build directory, which navigation.c
+includes after the accent tables, where the hand-written table stood, and `THEME_N` into `stock.h`,
+because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in both themes.
 
 ## Page transitions (iPod)
 
