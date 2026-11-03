@@ -6,7 +6,7 @@ How the scroll-wheel payload hooks the stock Shanling Q2 firmware. For the user-
 
 ## Hooks
 
-Checked MIPS prologues redirect into a payload at `0xb00000`, using the final unused `PT_NULL` program header. demo's `.pdr` section, outside every segment, is zeroed for rootfs space ([building.md](building.md)). Trampolines restore the stock GOT base and resume each original function after its PIC setup. Writable input and position state is mapped at `0xb80000`, a `NOLOAD` section (with any stray `.bss`): the segment's memory size covers it, the file does not.
+Checked MIPS prologues redirect into a payload at `0xb00000`, using the final unused `PT_NULL` program header. demo's `.pdr` section, outside every segment, is zeroed for rootfs space ([building.md](building.md)). Trampolines restore the stock GOT base and resume each original function after its PIC setup. Writable input and position state is mapped at `0xb90000`, a `NOLOAD` section (with any stray `.bss`): the segment's memory size covers it, the file does not.
 
 `HOOKS`, `GRADIENT_LEAF` and `WM_PAINT_LEAF` in `tools/build.py` are the hooked entry points.
 

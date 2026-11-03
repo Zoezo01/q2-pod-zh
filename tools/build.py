@@ -21,7 +21,7 @@ def dev_tag(number):
     for _ in range(3): n, d = divmod(n, 36); digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[d] + digits
     return 'V' + digits + 'i'
 BASE = 0xb00000
-SCRATCH = 0xb80000  # 512 KB of payload text below it
+SCRATCH = 0xb90000  # 576 KB of payload text below it
 RING_STEP = 48
 HOOKS = {
     'createPlayListItem': (0x50d32c, 'ringnav_playlist_create', None),
