@@ -4234,6 +4234,35 @@ for cls,artist,query in ((0xf003,0,'getMusicByAlbum'),(0xf004,0,'getMusicBySonge
 for cls,last,rows in ((0xf004,1,3),(0xff01,-1,3),(0xff10,-1,3),(0xff11,-1,3),(0xf007,-1,3),(0xf004,-1,0)):
     shown,q,_=unknown(cls,0,last=last,rows=rows)
     assert len(shown)==rows and q is None, (cls,last,rows); passed()
+# An empty class list: its page, once the window manager marks it opened (stage 3, after the open
+# animation), is force-closed from the next loop pass, then the toast says so. Until then it is
+# polled (EMPTY_POLL_MS, EMPTY_TRIES at most, then the toast alone); a page already left, or
+# another class's, keeps the toast only.
+def empty(cls,page,stage=O['WINDOW_STAGE_OPENED'],leave=False,shown=None):
+    m=ClassMachine(page=page,cls=cls,rows=0); m.found=[]; m.query=None
+    assert m.call(address=HOOKS['load_localclass_list'][0],args=(cls,0,0,0),gap=0)==0 and len(m.timers)==1
+    m.nodes[m.top]['stage']=stage
+    if shown is not None: m.word(syms['g_class_type'],shown)
+    if leave: m.top=m.node('window','localmusic_page')
+    m.calls=[]; m.advance(0)
+    return m
+closes=lambda m: [c[:3] for c in m.calls if c[0]=='window_manager_close_window_force']
+for cls,page in ((0xf003,'album_page'),(0xf003,'localclass_page'),(0xf004,'localclass_page'),(0xf006,'localclass_page')):
+    m=empty(cls,page); top=m.stack[-1]
+    assert closes(m)==[('window_manager_close_window_force',m.wm,top)]
+    assert m.toasts==[('dialog/msginfo_dialog',1,2000,{0xf003:'No albums',0xf004:'No artists',0xf006:'No genres'}[cls])] and not m.timers
+    passed()
+m=empty(0xf003,'album_page',stage=2)  # created, its open animation still running
+assert not closes(m) and not m.toasts and len(m.timers)==1
+m.advance(O['EMPTY_POLL_MS']*5); assert not m.toasts and len(m.timers)==1
+m.nodes[m.top]['stage']=O['WINDOW_STAGE_OPENED']; m.calls=[]; m.advance(O['EMPTY_POLL_MS'])
+assert closes(m) and m.toasts and not m.timers; passed()
+m=empty(0xf003,'album_page',stage=2); m.calls=[]; m.advance(O['EMPTY_POLL_MS']*(O['EMPTY_TRIES']+2))
+assert not closes(m) and m.toasts and not m.timers; passed()  # never opened: the toast alone
+m=empty(0xf003,'album_page',leave=True)
+assert not closes(m) and m.toasts and not m.timers; passed()
+m=empty(0xf004,'localclass_page',shown=0xf006)  # Genres' page on top by now: not Artists' to close
+assert not closes(m) and m.toasts==[('dialog/msginfo_dialog',1,2000,'No artists')]; passed()
 # Library -> Songs reads straight into the showlist: stock's load holds its copy and the staging deque
 # together, the library twice. The staging pointer comes back, its deque cleared as stock leaves it.
 class SongsMachine(ClassMachine):

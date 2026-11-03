@@ -364,8 +364,8 @@ typedef struct {
      * and the list it opened, with its tracks. */
     unsigned *rates, *album_rates;
     void *rate_win, *rate_fav, *rate_ctx, *rate_badge, *rate_on;
-    int rate_shown; /* the badge's hearts plus 1, 0 for a new badge */
-    int empty_kind; /* the empty Library list empty_toast names */
+    int rate_shown;              /* the badge's hearts plus 1, 0 for a new badge */
+    int empty_kind, empty_tries; /* the empty Library list empty_toast names and closes */
     int rate_pick, rate_held;
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu, *rt_page, *rt_list;
@@ -5900,8 +5900,28 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
                     key && !strncasecmp(key, album, n) && key[n] == 0x1f ? key : album);
 }
 
+/* An empty Library list (Albums, Artists, Composers, Genres): once stock marks its page opened
+ * (the "stage" property the window manager sets after the open animation), the page is closed
+ * again and the toast says so over the list it came from. Stock opened a black page, and an empty
+ * Albums grid's Return then did nothing until a restart (Hold Return: Home, back_to_home, still
+ * left it); the cause was not found in the window manager's close path, so the page goes before a
+ * Return can reach it, with the forced close that path uses. The page is its class's
+ * (g_class_type), on top, whichever of the two list pages shows it. ponytail: polled every
+ * EMPTY_POLL_MS, EMPTY_TRIES at most, then the toast alone. */
 static int empty_toast(const void *unused) {
     static const char *const none[] = { "No albums", "No artists", "No composers", "No genres" };
+    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    const char *name = top ? widget_get_prop_str(top, "name", "") : "";
+    int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
+               I(g_class_type, 0) == CLASS_ALBUMS + st.empty_kind;
+    if (mine && widget_get_prop_int(top, "stage", 0) != WINDOW_STAGE_OPENED) {
+        if (st.empty_tries++ < EMPTY_TRIES) {
+            timer_add(empty_toast, (void *)0, EMPTY_POLL_MS);
+            return 0;
+        }
+        mine = 0;
+    }
+    if (mine) window_manager_close_window_force(wm, top);
     toast(none[st.empty_kind]);
     return 0;
 }
@@ -6042,6 +6062,7 @@ int ringnav_localclass(int cls) {
     library_music = saved;
     if (n <= 0) { /* say so, not a black page; once the page that loads it is up */
         st.empty_kind = cls - CLASS_ALBUMS;
+        st.empty_tries = 0;
         timer_add(empty_toast, (void *)0, 0);
     }
     return n;
