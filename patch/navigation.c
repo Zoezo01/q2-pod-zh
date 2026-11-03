@@ -1670,6 +1670,8 @@ enum {
     SETTING_TIMETITLE
 };
 #include "themes.inc" /* tools/theme.py, from assets/themes/<id>/theme.xml */
+_Static_assert(DRIFT_TEXELS >= 4 * (375 - HOME_SPLIT_W) * CLIENT_H_MAX,
+               "Home drift frame fits every set");
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
  * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
@@ -2490,14 +2492,16 @@ static void *list_button(void *view) {
  * label. */
 static void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
                            int w, int into) {
-    /* Match the patched Library constructor's body and art_inset (tools/ipod.py). */
+    /* The Library constructor's live words (tools/ipod.py, theme_boot): body and art_inset. */
     int compact = !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
-    int h = compact ? 68 : 70;
+    int h = compact ? *(const volatile unsigned short *)LIBRARY_ROW_BODY : 70;
     void *button = list_button(view);
     if (compact) widget_resize(button, 335, h);
     if (click) widget_on(button, EVT_CLICK, click, ctx);
     if (icon) { /* centred, as stock's rows (0x524978) */
-        void *image = image_create(button, compact ? 8 : 10, 0, SET_STOCK_ICON, h);
+        void *image = image_create(
+            button, compact ? *(const volatile unsigned short *)LIBRARY_ROW_ICON_X : 10, 0,
+            SET_STOCK_ICON, h);
         image_base_set_image(image, icon);
         image_set_draw_type(image, IMAGE_DRAW_CENTER);
     }
@@ -4539,6 +4543,9 @@ static const char *ui_redirect(const char *name) {
         }
     return name;
 }
+
+/* The theme's geometry set's value of group (G_PITCH, G_BODY, ...), as theme_boot writes it. */
+static int geom(int group) { return boot_values[theme()->geom][group]; }
 
 /* ui_loader_load_widget_with_parent, every window's asset (window_open's): the theme's layout
  * (np_layout(); Centred Now Playing forces NP_CENTRED) picks the page. Stock's own page
@@ -8794,11 +8801,11 @@ int ringnav_playlistsmore(void *win, void *ctx) {
          * re-translation keeps it (no language has the key, so it reads as given). */
         void *del = widget_lookup(win, "label_del", 1);
         if (del) widget_set_tr_text(del, "Delete Playlist");
-        /* A row like this page's stock Rename and Delete: a 375x72 list_item holding a 335x68
-         * s_btn_listitem, its 52px icon at x 10 and its 20px label at x 72. Edit Playlist follows
-         * the Delete row at the same spacing. */
-        int h = 72, inner = 68;
-        void *item = list_item_create(win, 0, 154, 375, h);
+        /* A row like this page's stock Rename and Delete: a 375 px list_item, the set's pitch high
+         * (SET0 72), holding a 335 px s_btn_listitem, its body high (68), its 52px icon at x 10 and
+         * its 20px label at x 72. Edit Playlist follows the Delete row at the same spacing. */
+        int h = geom(G_PITCH), inner = geom(G_BODY);
+        void *item = list_item_create(win, 0, 10 + 2 * h, 375, h);
         widget_use_style(item, "s_listitem_black");
         void *button = button_create(item, 20, 0, 335, inner);
         widget_use_style(button, "s_btn_listitem");

@@ -5457,7 +5457,7 @@ class PlaylistEditMachine(CoverflowMachine):
             self.nested(*self.handler(self.page,O['EVT_DESTROY']),self.event)
             self.stack.remove(self.page); self.top=self.stack[-1]
         self.returns(ret,clobber=True)
-    def open_editor(self):
+    def open_editor(self,h=72,inner=68):
         more=self.node('window','playlistsmore_page'); self.word(more+O['W_PARENT'],self.wm)
         self.top=more; self.stack.append(more)
         deleted=self.node('hscroll_label',name='label_del')
@@ -5466,7 +5466,7 @@ class PlaylistEditMachine(CoverflowMachine):
         assert self.nodes[deleted]['text']=='Delete Playlist'
         row=self.nodes[more]['children'][-1]; button=self.nodes[row]['children'][0]
         image,label=self.nodes[button]['children']
-        h,inner,y=72,68,154
+        y=10+2*h
         assert [self.get(row+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[0,y,375,h]
         assert self.nodes[row]['style']=='s_listitem_black'
         assert [self.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,inner]
@@ -9506,6 +9506,16 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and not m.plays and len
 m.page=m.top; assert m.nodes[m.page]['name']=='mostplayed_page' and m.nodes[m.page]['style:normal:bg_color']==-0x1000000
 assert m.texts()==['No plays yet'] and not m.nodes[m.find('scroll_view')]['children']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.top==m.page; m.close(); passed()
+# Geometry sets: Edit Playlist's row follows the live pitch and body, as the page's asset rows do.
+m=PlaylistEditMachine(); set_value(m,'pitch',28); set_value(m,'body',26); m.open_editor(28,26); passed()
+# The Library rows follow the constructor's live body and icon x, whichever group the audit gave them.
+m=ShuffleMachine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+set_value(m,SITES[0x524820],60); set_value(m,SITES[0x524944],6)
+m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0)
+stock=[m.node('list_item') for _ in range(11)]; view=m.node('scroll_view','scroll_view_localmusic',stock); m.top=m.node('window','localmusic_page',[view])
+assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
+button=m.nodes[m.nodes[view]['children'][0]]['children'][0]; icon=m.nodes[button]['children'][0]
+assert m.get(button+O['W_H'])==60 and m.get(icon+O['W_X'])==6; passed()
 m=ShuffleMachine(); m.found=[m.song(f'T{i}') for i in range(130)]
 m.word(m.found[1]+O['REC_ARTIST'],0)  # untagged: the count alone
 slots=[(fnv('/p/T3'),5),(fnv('/p/T1'),2),(fnv('/p/T7'),5)]+[(fnv(f'/p/T{i}'),1) for i in range(8,130)]

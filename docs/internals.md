@@ -429,7 +429,9 @@ it back to R-X. SET0, the set of both
 built-ins, matches every baked immediate, so it makes no syscall and writes nothing. A window in
 `ui_redirects` for the theme's set loads as `<set>_<name>.bin` in the same folder
 (`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and
-cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open.
+cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open. The Library and Edit Playlist rows the payload builds
+follow the live geometry: `list_row_core` reads the Library constructor's body and icon x words
+after `theme_boot`, and Edit Playlist's row takes the set's `pitch` and `body` (`geom()`).
 
 ## Page transitions (iPod)
 
