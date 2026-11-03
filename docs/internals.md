@@ -308,9 +308,10 @@ The iPod border hook also draws the fast-scroll letter over the list. A step of 
 iPod's accent ([ipod.md](ipod.md#display-settings); each theme keeps its own; Minimal's own accent uses Graphite's) replaces Shanling red wherever it is drawn:
 the theme's style colors, inline `style:*` colors (a mutable style answers through the same
 vtable), decoded images, and the payload's own selection bar and progress fill, which read
-`ACCENTS` directly. `accent_map` (`patch/navigation.c`) is a pure function on one `color_t` (bytes
-r, g, b, a). Stock uses `#FF1448`, `#7F0A24`, the pressed tint `#3D1920` and `#FF144840`, all
-stock red blended with a neutral: each channel is `t * red + k`. Least squares against red with
+the active scheme's tones (`tones()`, [Themes](#themes)). `accent_map` (`patch/navigation.c`) is
+a pure function on one `color_t` (bytes r, g, b, a). Stock uses `#FF1448`, `#7F0A24`, the
+pressed tint `#3D1920` and `#FF144840`, all stock red blended with a neutral: each channel is
+`t * red + k`. Least squares against red with
 the mean removed gives `t` (in 1/4096), then `k`. A color within `RED_TOLERANCE` (8) of that
 blend, with `t` between 1/16 and 17/16 and `k` not below the tolerance, becomes `t * tone + k`
 for one of the preset's tones (`ACCENTS`): the red tone for text colors (a property name ending
@@ -364,6 +365,30 @@ Changing the accent saves it, sets the progress fill, calls `image_manager_unloa
 (`0x645024`) and `widget_invalidate_force` on the window manager. Widgets ask for their style
 colors, gradients and images on every paint, so the next frame decodes the images again through
 the hook and shows every recoloured part; nothing needs a restart.
+
+## Themes
+
+Minimal (`THEME` 0) and Classic (1) are rows of `themes[]` (`patch/navigation.c`; the types are in
+`patch/theme.h`). Code asks the active theme for a field, never which theme it is. `theme()` and
+`scheme()` read the settings first (`accent()`), then return `&themes[st.theme]` and its scheme for
+the stored accent.
+
+- `theme_t` holds the painters (`painter[PAINT_SELECTION]`: Minimal's card or Classic's bar), the
+  surface flags (capitals, chevrons, monochrome icons, bold labels, Now Playing opacities), the Home
+  and settings geometry, the Now Playing bar heights, `art_square` (art takes Corners: Square,
+  `ipod_square_art`), `batt_fill` (the battery's charge colour, 0 for its outline's), the accent's
+  slot and config key
+  (`accent_slot`/`accent_key`: `ACCENT` or `MINIMAL_ACCENT`), its schemes and its options.
+- `scheme_t`: one per `ACCENTS` row, indexed by the stored value; its tones are that row, read
+  through `tones()` or `tones_of(v)`. `SCHEME_CARD` (Minimal's Ivory) draws the selection as a card
+  in `fill`; `SCHEME_RAW_RED` (Crimson) keeps stock red. The roles `fill`, `chevron`, `muted` and
+  `bar_light` are `0xRRGGBB`, 0 meaning unused, and `fill` is read only under `SCHEME_CARD`.
+- `option_t`: the Appearance rows after Theme, in order. At the first read, a stored value outside
+  `values` becomes `def`. Choosing a theme writes each option's `preset` unless the stored value is
+  its `keep` (Light's Auto), and only values that change. The accent row cycles within `values`.
+
+The numbers stay macros in `patch/offsets.inc`; the table only names them. `edit_paint` stays
+Minimal's card in both themes.
 
 ## Page transitions (iPod)
 
