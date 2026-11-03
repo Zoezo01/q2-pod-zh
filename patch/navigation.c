@@ -274,6 +274,8 @@ enum {
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
     POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
     POD_EQ_OUTPUT,  /* EQ per Output (peq_ui.c) */
+    POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
+    POD_CARMODE,
     POD_COUNT
 };
 
@@ -484,9 +486,8 @@ typedef struct {
         keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
         scrub_single;              /* Single Press Scrub (np_key) */
     unsigned keep_lit_at;
-    unsigned keytone_timer; /* Key Tone's click, for Click With Headphones' row (keytone_follow) */
-    void *sel_accent;       /* the row on a coloured selection, for Light Mode's ink */
-    int style_depth;        /* nested style hooks (a mutable style's fallback) map nothing */
+    void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
+    int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
     void *setting_label[11];
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
@@ -1674,7 +1675,7 @@ static const char *const accent_names[] = {
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
- * Now Playing, 9 Click With Headphones (System settings, under Key Tone), 10 Single Press Scrub. */
+ * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub. */
 static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",    "THEME",
                                             "SHORTCUT",  "ROUNDED",   "LIGHT",      "KEEPLIT",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE" };
@@ -2584,14 +2585,30 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    0,
                                    &st.wheel_qs,
-                                   &st.eq_output };
+                                   &st.eq_output,
+                                   0,
+                                   0 };
 _Static_assert(POD_LOCKCLOCK == 7, "lockscreen.c passes pod_rows 7");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
-static const char *const pod_keys[] = {
-    "CHARGELIMIT", "LOWPOWER", "WAKEDOUBLE", "ARTISTCF",     "YEAROLD",   0, "RESUME", "LOCKCLOCK",
-    "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0,        "WHEELQS",
-    "EQOUTPUT"
-};
+static const char *const pod_keys[] = { "CHARGELIMIT",
+                                        "LOWPOWER",
+                                        "WAKEDOUBLE",
+                                        "ARTISTCF",
+                                        "YEAROLD",
+                                        0,
+                                        "RESUME",
+                                        "LOCKCLOCK",
+                                        "ARTISTAZ",
+                                        "VOLGUARD",
+                                        "HOLDRETURN",
+                                        "STANDBYLIMIT",
+                                        "BTVOLLINK",
+                                        0,
+                                        0,
+                                        "WHEELQS",
+                                        "EQOUTPUT",
+                                        0,
+                                        0 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -2938,6 +2955,8 @@ static void pod_text(int i) {
         { "Refresh Coverflow" },
         { 0 }, /* Wheel QS: a switch */
         { 0 }, /* EQ per Output: a switch */
+        { 0 }, /* Key Tone: a switch */
+        { 0 }, /* In-Vehicle Mode: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -2946,7 +2965,11 @@ static void pod_text(int i) {
         widget_set_text_utf8(st.pod_label[i], sort);
         return;
     }
-    int v = i == POD_ARTISTS ? I(artist_type, 0) == 1 : pod_values[i] ? *pod_values[i] : 0;
+    int v = i == POD_ARTISTS   ? I(artist_type, 0) == 1
+            : i == POD_KEYTONE ? g_keytone_flag != 0
+            : i == POD_CARMODE ? g_carmode != 0
+            : pod_values[i]    ? *pod_values[i]
+                               : 0;
     const char *toggle = i == POD_CHARGE      ? "Charge Limit (" STR(CHARGE_STOP) "%)"
                          : i == POD_LOW       ? "Low Power"
                          : i == POD_RESUME    ? "Resume on Connect"
@@ -2954,11 +2977,16 @@ static void pod_text(int i) {
                          : i == POD_BT_LINK   ? "Control Device Volume"
                          : i == POD_WHEEL_QS  ? "Wheel QS"
                          : i == POD_EQ_OUTPUT ? "EQ per Output"
+                         : i == POD_KEYTONE   ? "Key Tone"
+                         : i == POD_CARMODE   ? "In-Vehicle Mode"
                                               : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
     else
         widget_set_text_utf8(st.pod_label[i], names[i][v]);
+    /* Stock's rows, so stock's translations */
+    if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
+    if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
 }
 /* Centre or tap toggles and saves. Charge limit and Low power take effect on the next UI loop pass
  * (power_poll); Artists on the next load of an artist list, as the artist page's switch does;
@@ -2976,6 +3004,17 @@ static int pod_click(void *ctx, void *event) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
         write_int_config(v, "PLAYSET", "ARTISTTYPE");
+    } else if (i == POD_KEYTONE) {
+        g_keytone_flag = !g_keytone_flag;
+        write_int_config(g_keytone_flag, "SYSSET", "KEYTONE");
+        /* Click With Headphones, built just after this row on Controls, shows while it is on. */
+        void *item = P(P(st.setting_label[9], W_PARENT), W_PARENT);
+        widget_set_visible(item, g_keytone_flag != 0, 0);
+        widget_layout(P(item, W_PARENT));
+    } else if (i == POD_CARMODE) {
+        g_carmode = !g_carmode;
+        write_int_config(g_carmode, "SYSSET", "CARMODE");
+        g_carmode_state = 0; /* as stock's row (0x4cc2b0) */
     } else {
         int *value = pod_values[i];
         *value = (*value + 1) % pod_choices(i);
@@ -3001,13 +3040,16 @@ void pod_rows(void *win, const char *view_name, int first, int n, const char *co
 
 /* systemset_powermanager_page_init and playset_playset_page_init: stock builds its rows, then
  * these follow in the same widgets and styles (list_row), with the value in the label. */
+static void boot_row(void *view);
 int ringnav_powermanager(void *win, void *ctx) {
     static const char *const icons[] = { "usb_chargeswitch", "system_powermanager",
-                                         "system_keylock" };
+                                         "system_carmode" };
     int result = stock_power_trampoline(win, ctx);
-    pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 3, icons);
-    pod_rows(win, "scroll_view_powermanager", POD_VOL_GUARD, 1, icons + 2);
-    pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1, icons + 1);
+    pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1,
+             icons + 1); /* beside stock's Standby */
+    pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 2, icons);
+    pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
+    boot_row(win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0);
     return result;
 }
 /* The Bluetooth page's list (stock's local builder, btmenu_rows), rebuilt whole on every search and
@@ -3040,38 +3082,37 @@ static void reorder(void *view, const unsigned char *order, unsigned n) {
     for (unsigned i = 0; i < n; i++) widget_restack(rows[order[i]], i);
 }
 
-/* Everyday listening, volume, library behaviour, then specialist output controls. */
+/* Everyday listening, what plays next, level, channels, then specialist output controls; the ring
+ * puts Library & Folders one detent from the top. Stock's ids 0-12, then ours as built. */
 static const unsigned char playset_order[] = {
-    3 /* Play Mode */,      2 /* EQ */,
-    24 /* EQ per Output */, 9 /* Gapless */,
-    18 /* Crossfade */,     10 /* ReplayGain */,
-    8 /* Memory play */,    20 /* Resume Songs */,
-    0 /* Gain */,           4 /* Max Volume */,
-    5 /* Default Vol */,    11 /* Balance */,
-    21 /* Mono Audio */,    22 /* Swap L/R */,
-    16 /* Artists */,       17 /* Artist album order */,
-    15 /* Year order */,    19 /* Folder Root */,
-    14 /* Folder skip */,   13 /* Folder art */,
-    12 /* Enlarged art */,  1 /* Filters */,
-    6 /* DSD Output */,     23 /* MQA */,
-    7 /* USB Audio */,
+    3 /* Play Mode */,   2 /* EQ */,          18 /* EQ per Output */, 9 /* Gapless */,
+    13 /* Crossfade */,  8 /* Memory play */, 14 /* Resume Songs */,  0 /* Gain */,
+    10 /* ReplayGain */, 4 /* Max Volume */,  5 /* Default Vol */,    11 /* Balance */,
+    15 /* Mono Audio */, 16 /* Swap L/R */,   12 /* Enlarged art */,  1 /* Filters */,
+    6 /* DSD Output */,  17 /* MQA */,        7 /* USB Audio */,      19 /* Library & Folders */,
 };
-/* Connections, personalisation and daily controls, then device maintenance; About stays last. */
+/* Library & Folders: stock's Folder art and Folder skip (0, 1), then ours as built. */
+static const unsigned char library_order[] = {
+    3 /* Artists */,     4 /* Artist album order */, 2 /* Year order */,
+    5 /* Folder Root */, 1 /* Folder skip */,        0 /* Folder art */,
+};
+/* Connections, personalisation and daily controls, then device maintenance; About stays last.
+ * In-Vehicle, Key tone and Buttons lock stay hidden, stock's page left whole: Power and Controls
+ * have their rows now (pod_click, keylock_open). */
 static const unsigned char sysset_order[] = {
     1 /* Wireless */,
     2 /* Network */,
     3 /* Display */,
+    13 /* Controls */,
     4 /* Power */,
-    8 /* Buttons lock */,
-    7 /* Key tone */,
-    13 /* Click With Headphones */,
     5 /* Date and time */,
     0 /* Language */,
-    6 /* In-Vehicle */,
-    14 /* Boot to */,
-    12 /* Apps */,
+    12 /* App Store */,
     9 /* Update */,
     10 /* Reset */,
+    6 /* In-Vehicle, hidden */,
+    7 /* Key tone, hidden */,
+    8 /* Buttons lock, hidden */,
     11 /* About */,
 };
 
@@ -3127,26 +3168,45 @@ static int root_click(void *ctx, void *event) {
     return 0;
 }
 
+/* Playback's Library & Folders opens stock's page again (as Display's sub-pages do) with only the
+ * library rows: stock's two kept, its others dropped. The main page drops those two instead. Each
+ * page builds only its own rows, so a row's kept label is its page's. */
+static int playset_sub __attribute__((section(".scratch")));
+static int library_open(void *ctx, void *event) {
+    playset_sub = 1;
+    navigator_to("playset/playset_page");
+    playset_sub = 0;
+    return 0;
+}
 int ringnav_audioset(void *win, void *ctx) {
     static const char *const icons[] = { "playset_covermode", "playset_folderjump" },
                              *const eq_icon[] = { "playset_eq" };
-    int result = stock_audioset_trampoline(win, ctx);
-    pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
-    pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
+    int sub = playset_sub, result = stock_audioset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_playset", 1) : (void *)0;
-    if (view)
-        xfade_row(list_row_into(view, "playset_gapless", xfade_open, (void *)0)); /* crossfade.c */
-    if (view) {
+    if (!view) return result;
+    for (int i = (int)widget_count_children(view); i-- > 0;)
+        if ((i == 13 || i == 14) != sub) widget_destroy(widget_get_child(view, (unsigned)i));
+    if (sub) {
+        void *nav = widget_lookup(win, "view_navbar", 1),
+             *title = nav ? widget_get_child(nav, 0) : (void *)0;
+        if (title) widget_set_text_utf8(title, "Library & Folders");
+        pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
+        pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
         char name[256];
         root_read(name);
         st.root_label = list_row(view, "playset_folderjump", root_click, 0);
         root_text(name);
-        resume_row(list_row_into(view, "playset_memplay", xfade_open, (void *)2)); /* crossfade.c */
-        mono_row(list_row(view, "playset_balance", mono_click, 0));
-        swap_row(list_row(view, "playset_balance", swap_click, 0));
-        mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
-        pod_rows(win, "scroll_view_playset", POD_EQ_OUTPUT, 1, eq_icon);
+        reorder(view, library_order, sizeof library_order);
+        return result;
     }
+    xfade_row(list_row_into(view, "playset_gapless", xfade_open, (void *)0));  /* crossfade.c */
+    resume_row(list_row_into(view, "playset_memplay", xfade_open, (void *)2)); /* crossfade.c */
+    mono_row(list_row(view, "playset_balance", mono_click, 0));
+    swap_row(list_row(view, "playset_balance", swap_click, 0));
+    mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
+    pod_rows(win, "scroll_view_playset", POD_EQ_OUTPUT, 1, eq_icon);
+    widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
+                         "Library & Folders");
     reorder(view, playset_order, sizeof playset_order);
     return result;
 }
@@ -4972,6 +5032,10 @@ int ringnav_np_info(void *win) {
 
 /* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
 enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS };
+static int keylock_open(void *ctx, void *event) {
+    navigator_to("systemset/keylock_page");
+    return 0;
+}
 static int display_sub __attribute__((section(".scratch")));
 static int display_open(void *ctx, void *event) {
     display_sub = (int)(long)ctx;
@@ -4982,29 +5046,42 @@ static int display_open(void *ctx, void *event) {
 
 /* systemset_display_page_init: stock builds its three rows (0x4c19bc: a s_listitem_black list_item
  * holding a 335x70 s_btn_listitem button with a 52px icon, a 24px label at x 72 and list_into);
- * Appearance (iPod), Coverflow and Controls follow with the same widgets and styles, each opening
- * stock's page again (display_open) with its stock rows dropped and its own instead: Theme,
- * Accent, Corners, Home and Battery; Artist Albums, Coverflow Sort and Refresh Coverflow; Shortcut
- * (iPod), Hold Return and Wheel Sensitivity, the last opening its slider page (crossfade.c). The
- * value rows show it in the label and have no chevron, since they change in place. Night Shift
- * (the brightness icon) ends the main page, opening its slider page (crossfade.c).
+ * Smart Awake and Night Shift (the brightness icon, opening its slider page, crossfade.c) join
+ * them, then Appearance and Coverflow, each opening stock's page again (display_open) with its
+ * stock rows dropped and its own instead: Theme, Light Mode, Accent, Corners, Home, Shortcut,
+ * Battery, Centred Now Playing; Artist Albums, Coverflow Sort and Refresh Coverflow. Controls is
+ * System settings' row (ringnav_systemset) on the same page: the wheel, the buttons and what the
+ * buttons do. The value rows show it in the label and have no chevron, since they change in place.
  * ponytail: stock's page opened over itself; its own rows' state is never touched on a sub-page. */
 int ringnav_display(void *win, void *ctx) {
     static const char *const titles[] = { 0, "Appearance", "Coverflow", "Controls" },
-                             *const sub_icons[] = { 0, "system_display", "playset_covermode",
-                                                    "playset_folderjump" };
+                             *const sub_icons[] = { 0, "system_display", "playset_covermode" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
                                             "system_update" };
-    static const char *const hold_icon[] = { "playset_folderjump" };
-    static const char *const wheel_icon[] = { "system_display" };
+    static const char *const qs_icons[] = { "system_display" },
+                             *const hold_icon[] = { "playset_folderjump" },
+                             *const tone_icon[] = { "system_keytone" },
+                             *const lock_icon[] = { "system_keylock" };
+    static const unsigned char main_order[] = { 0, 1, 3, 4, 2, 5, 6 };
+    /* Setting 9, Click With Headphones, shows while Key Tone is on. */
+    static const char *const icons[] = {
+        "system_display",    "playset_covermode", "system_powermanager", "system_display",
+        "playset_covermode", "system_display",    "system_display",      "system_display",
+        "playset_covermode", "system_keytone",    "playset_covermode"
+    };
+#define SETTING_ROW(i)                                                                             \
+    (st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)(i)),             \
+     setting_text(i))
     int sub = display_sub, result = stock_display_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
     if (!view) return result;
     if (!sub) {
-        for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_CONTROLS; ++i)
+        SETTING_ROW(7);
+        night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
+        for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_COVERFLOW; ++i)
             widget_set_text_utf8(list_row_into(view, sub_icons[i], display_open, (void *)(long)i),
                                  titles[i]);
-        night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
+        reorder(view, main_order, sizeof main_order);
         return result;
     }
     widget_destroy_children(view);
@@ -5015,27 +5092,24 @@ int ringnav_display(void *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
         return result;
     }
-    /* Theme, Light Mode, Accent, Corners, Home, Battery, Centred Now Playing; Shortcut, Smart
-     * Awake, Single Press Scrub. Click With Headphones (9) is System settings' (ringnav_systemset).
-     */
-    static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 2, 8 }, controls[] = { 4, 7, 10 };
-    static const char *const icons[] = {
-        "system_display",    "playset_covermode", "system_powermanager", "system_display",
-        "playset_covermode", "system_display",    "system_display",      "system_display",
-        "playset_covermode", "system_keytone",    "playset_covermode"
-    };
-    const unsigned char *rows = sub == DISPLAY_APPEARANCE ? appearance : controls;
-    for (int k = 0, n = sub == DISPLAY_APPEARANCE ? sizeof appearance : sizeof controls; k < n;
-         ++k) {
-        int i = rows[k];
-        st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
-        setting_text(i);
+    if (sub == DISPLAY_APPEARANCE) {
+        /* Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing */
+        static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 4, 2, 8 };
+        for (unsigned k = 0; k < sizeof appearance; ++k) SETTING_ROW(appearance[k]);
+        return result;
     }
-    if (sub != DISPLAY_CONTROLS) return result;
-    pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
-    pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, wheel_icon);
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
+    pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, qs_icons);
+    pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
+    SETTING_ROW(10);
+    pod_rows(win, "scroll_view_display", POD_KEYTONE, 1, tone_icon);
+    SETTING_ROW(9);
+    widget_set_visible(P(P(st.setting_label[9], W_PARENT), W_PARENT), g_keytone_flag != 0, 0);
+    widget_set_tr_text(list_row_into(view, "system_keylock", keylock_open, 0), "system_keylock");
+    pod_rows(win, "scroll_view_display", POD_WAKE, 1, lock_icon);
+    pod_rows(win, "scroll_view_display", POD_VOL_GUARD, 1, lock_icon);
     return result;
+#undef SETTING_ROW
 }
 
 #define BOOT_TARGET "/mnt/data/boot-target"
@@ -5058,58 +5132,37 @@ static int boot_click(void *label, void *event) {
     boot_text(label);
     return 0;
 }
-/* Click With Headphones (Display's setting 9) sits under Key Tone and shows while it is on. Stock's
- * Key Tone click handler sets g_keytone_flag; the row follows from the next loop pass. */
-#define KEYTONE_ROW "_keytone_hp"
-static int keytone_follow(const void *info) {
-    st.keytone_timer = 0;
-    void *view = widget_lookup(window_manager(), "scroll_view_sysset", 1);
-    void *row = view ? widget_lookup(view, KEYTONE_ROW, 1) : (void *)0;
-    if (row) widget_set_visible(row, g_keytone_flag != 0, 0), widget_layout(view);
-    return 0;
-}
-static int keytone_click(void *ctx, void *event) {
-    rearm(&st.keytone_timer, keytone_follow, 0);
-    return 0;
+static void boot_row(void *view) {
+    if (!view || !rockbox_available()) return;
+    char value[16];
+    void *f = fopen(BOOT_TARGET, "rb");
+    boot_rockbox = 1;
+    if (f) {
+        unsigned n = fread(value, 1, 5, f);
+        int q2pod = n == 5 && !memcmp(value, "q2pod", 5);
+        /* Shell command substitution strips all trailing newlines. */
+        while (q2pod && (n = fread(value, 1, sizeof value, f)))
+            for (unsigned i = 0; i < n; ++i)
+                if (value[i] != '\n') q2pod = 0;
+        boot_rockbox = !q2pod || ferror(f);
+        fclose(f);
+    }
+    void *label = list_row(view, "system_powermanager", 0, 0);
+    void *button = P(label, W_PARENT);
+    widget_on(button, EVT_CLICK, boot_click, label);
+    boot_text(label);
 }
 int ringnav_systemset(void *win, void *ctx) {
     int result = stock_systemset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_sysset", 1) : (void *)0;
     if (view) {
         widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "App Store");
-        st.setting_label[9] = list_row(view, "system_keytone", setting_click, (void *)9);
-        setting_text(9);
-        void *item = P(P(st.setting_label[9], W_PARENT), W_PARENT),
-             *tone = widget_lookup(view, "7", 1);
-        widget_set_name(item, KEYTONE_ROW);
-        widget_set_visible(item, g_keytone_flag != 0, 0);
-        if (tone) widget_on(tone, EVT_CLICK, keytone_click, 0);
+        widget_set_text_utf8(
+            list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
+            "Controls");
+        for (unsigned i = 6; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
     }
-    if (view && rockbox_available()) {
-        char value[16];
-        void *f = fopen(BOOT_TARGET, "rb");
-        boot_rockbox = 1;
-        if (f) {
-            unsigned n = fread(value, 1, 5, f);
-            int q2pod = n == 5 && !memcmp(value, "q2pod", 5);
-            /* Shell command substitution strips all trailing newlines. */
-            while (q2pod && (n = fread(value, 1, sizeof value, f)))
-                for (unsigned i = 0; i < n; ++i)
-                    if (value[i] != '\n') q2pod = 0;
-            boot_rockbox = !q2pod || ferror(f);
-            fclose(f);
-        }
-        void *label = list_row(view, "system_powermanager", 0, 0);
-        void *button = P(label, W_PARENT);
-        widget_on(button, EVT_CLICK, boot_click, label);
-        boot_text(label);
-    }
-    /* Without Rockbox there is no Boot to (14): the order less it. */
-    unsigned char order[sizeof sysset_order];
-    unsigned n = 0, rows = view ? widget_count_children(view) : 0;
-    for (unsigned i = 0; i < sizeof sysset_order; i++)
-        if (sysset_order[i] < rows) order[n++] = sysset_order[i];
-    reorder(view, order, n);
+    reorder(view, sysset_order, sizeof sysset_order);
     return result;
 }
 

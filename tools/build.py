@@ -1194,7 +1194,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_po_status', 'g_bal_status',  # 3.5 mm and 4.4 mm jacks: 1 plugged (check_headset_status)
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
-           'g_memory_play', 'g_carmode',
+           'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbdet_value']  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
 # Audited stock browsing state, deque pointers, art locks, the status bar widget
