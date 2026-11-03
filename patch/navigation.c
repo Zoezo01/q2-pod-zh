@@ -273,7 +273,7 @@ enum {
     POD_CF_SORT,    /* Display's Coverflow Sort: coverflow.c's SORT_FILE, not config.ini */
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
     POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
-    POD_EQ_OUTPUT,  /* EQ per Output (peq_ui.c) */
+    POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
     POD_COUNT
@@ -2644,6 +2644,13 @@ int ringnav_eq_output(void) {
     pod_settings();
     return st.eq_output;
 }
+/* Advanced EQ's row. Turned off, what plays stays. */
+void ringnav_eq_output_toggle(void) {
+    pod_settings();
+    st.eq_output = !st.eq_output;
+    write_int_config(st.eq_output, "Q2POD", "EQOUTPUT");
+    if (!st.eq_output) eq_output_forget();
+}
 int ringnav_bt_resume(void) {
     pod_settings();
     return st.resume;
@@ -2976,7 +2983,6 @@ static void pod_text(int i) {
                          : i == POD_VOL_GUARD ? "Volume Guard"
                          : i == POD_BT_LINK   ? "Control Device Volume"
                          : i == POD_WHEEL_QS  ? "Wheel QS"
-                         : i == POD_EQ_OUTPUT ? "EQ per Output"
                          : i == POD_KEYTONE   ? "Key Tone"
                          : i == POD_CARMODE   ? "In-Vehicle Mode"
                                               : 0;
@@ -3024,7 +3030,6 @@ static int pod_click(void *ctx, void *event) {
          * sends the Q2's level to the device. */
         if (i == POD_BT_LINK && mclGetOutputWay() == 1)
             headset_volume_reset(), device_set_volume(g_volume, 0);
-        if (i == POD_EQ_OUTPUT && !*value) eq_output_forget(); /* what plays stays */
     }
     pod_text(i);
     return 0;
@@ -3085,11 +3090,25 @@ static void reorder(void *view, const unsigned char *order, unsigned n) {
 /* Everyday listening, what plays next, level, channels, then specialist output controls; the ring
  * puts Library & Folders one detent from the top. Stock's ids 0-12, then ours as built. */
 static const unsigned char playset_order[] = {
-    3 /* Play Mode */,   2 /* EQ */,          18 /* EQ per Output */, 9 /* Gapless */,
-    13 /* Crossfade */,  8 /* Memory play */, 14 /* Resume Songs */,  0 /* Gain */,
-    10 /* ReplayGain */, 4 /* Max Volume */,  5 /* Default Vol */,    11 /* Balance */,
-    15 /* Mono Audio */, 16 /* Swap L/R */,   12 /* Enlarged art */,  1 /* Filters */,
-    6 /* DSD Output */,  17 /* MQA */,        7 /* USB Audio */,      19 /* Library & Folders */,
+    3 /* Play Mode */,
+    2 /* EQ */,
+    9 /* Gapless */,
+    13 /* Crossfade */,
+    8 /* Memory play */,
+    14 /* Resume Songs */,
+    0 /* Gain */,
+    10 /* ReplayGain */,
+    4 /* Max Volume */,
+    5 /* Default Vol */,
+    11 /* Balance */,
+    15 /* Mono Audio */,
+    16 /* Swap L/R */,
+    12 /* Enlarged art */,
+    1 /* Filters */,
+    6 /* DSD Output */,
+    17 /* MQA */,
+    7 /* USB Audio */,
+    18 /* Library & Folders */,
 };
 /* Library & Folders: stock's Folder art and Folder skip (0, 1), then ours as built. */
 static const unsigned char library_order[] = {
@@ -3179,8 +3198,7 @@ static int library_open(void *ctx, void *event) {
     return 0;
 }
 int ringnav_audioset(void *win, void *ctx) {
-    static const char *const icons[] = { "playset_covermode", "playset_folderjump" },
-                             *const eq_icon[] = { "playset_eq" };
+    static const char *const icons[] = { "playset_covermode", "playset_folderjump" };
     int sub = playset_sub, result = stock_audioset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_playset", 1) : (void *)0;
     if (!view) return result;
@@ -3204,7 +3222,6 @@ int ringnav_audioset(void *win, void *ctx) {
     mono_row(list_row(view, "playset_balance", mono_click, 0));
     swap_row(list_row(view, "playset_balance", swap_click, 0));
     mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
-    pod_rows(win, "scroll_view_playset", POD_EQ_OUTPUT, 1, eq_icon);
     widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
                          "Library & Folders");
     reorder(view, playset_order, sizeof playset_order);

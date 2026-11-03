@@ -12970,8 +12970,8 @@ assert m.get(payload_syms['wheel_guard'])==1; passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'STANDBYLIMIT':'4'})
 assert texts()[0]=='Standby Limit: Off'; passed()  # out of range: Off
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
-assert len(rows)==7 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_eq','playset_folderjump']
-assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','EQ per Output','Library & Folders']
+assert len(rows)==6 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_folderjump']
+assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','Library & Folders']
 # Library & Folders: its row opens stock's page again as the sub-page, stock's two rows kept, ours built.
 assert click(-1)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,sub=1)
@@ -13067,9 +13067,9 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,20,9,15,8,16,0,10,4,5,11,17,18,12,1,6,19,7,21]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,9,15,8,16,0,10,4,5,11,17,18,12,1,6,19,7,20]; passed()
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
-for i in (0,1,6):
+for i in (0,1,5):
     button=m.nodes[rows[i]]['children'][0]
     assert m.nodes[m.nodes[button]['children'][-1]]['image']=='list_into'
 passed()
@@ -14256,18 +14256,18 @@ for kw,want in ((dict(headset=0,po=1),['3.5mm']),(dict(headset=1,bal=1),['4.4mm'
                 (dict(way=1,headset=2),[]),(dict(headset=0,po=1,on=0),[])):
     assert EqOutputMachine(**kw).poll()==want,kw
 m=EqOutputMachine(headset=0,po=1); m.poll(); m.call(address=payload_syms['headset_eq_poll'],args=(0,0,0,0),gap=100); assert m.keys==['3.5mm']; passed()
-# The row, directly below EQ: off unless set, and turning it off forgets whose EQ plays.
+# Advanced EQ's row (peq_ui.c): off unless set, and turning it off forgets whose EQ plays.
 class EqRowMachine(QueueMachine):  # a payload call has no t9 for Machine's handler check
     forgets=0
     def hook(self,u,addr,size,_):
         if self.handlers.get(addr)!='eq_output_forget': return super().hook(u,addr,size,_)
         self.forgets+=1; self.returns(0)
 for config,on in (({},0),({'EQOUTPUT':'1'},1)):
-    m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',config,stock_rows=15,cls=EqRowMachine)
-    assert texts()[-2]=='EQ per Output' and icons[-2]=='playset_eq',config
-    m.handlers[payload_syms['eq_output_forget']]='eq_output_forget'
-    assert click(-2)==[(1-on,'Q2POD','EQOUTPUT')],config
-    assert m.forgets==on,config
+    m=EqRowMachine(); m.config.update(config); m.handlers[payload_syms['eq_output_forget']]='eq_output_forget'
+    assert m.call(address=payload_syms['ringnav_eq_output'],args=(0,0,0,0),gap=0)==on,config
+    m.calls=[]; m.call(address=payload_syms['ringnav_eq_output_toggle'],args=(0,0,0,0),gap=0)
+    assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1-on,'Q2POD','EQOUTPUT')],config
+    assert m.forgets==on and m.call(address=payload_syms['ringnav_eq_output'],args=(0,0,0,0),gap=0)==1-on,config
 passed()
 
 print(f'{checks} MIPS execution scenarios passed; toolkit services mocked, stock lock filter executed.')

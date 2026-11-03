@@ -44,7 +44,7 @@ void peq_attach(void) {
 }
 
 enum { HOME, BAND, PRESETS, IMPORTS, SAVES, CONFIRM, DELETES, PICK, ADJUST, STOCKS, RENAMES, NAMING };
-enum { BACK = 1000, APPLY, RESET, BYPASS, MENU, IMPORT, SAVE, ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL, STEP,
+enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE, TYPE, RAISE, LOWER, TYPED, CHANNEL, STEP,
        YES, CANCEL, DELETE, BALANCE, PREAMP, GAIN, /* these three open the picker, in picks[] order */
        FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
 #define FILE_PAGE 128
@@ -505,6 +505,7 @@ static int action(void *ctx, void *event) {
         if (eq_commit(&s)) ui.draft.bypass = s.mode != EQ_PEQ;
         else snprintf(ui.status, sizeof(ui.status), "Switch failed; EQ unchanged");
     }
+    else if (id == PER_OUTPUT) ringnav_eq_output_toggle();
     else if (id == ENABLE) b->enabled = !b->enabled;
     else if (id == TYPE) b->type = (b->type + 1) % 3;
     else if (id == CHANNEL && b->enabled) b->enabled = b->enabled % 3 + 1; /* both, left, right */
@@ -670,6 +671,7 @@ static int render(const void *unused) {
         row(view, n++, ui.dirty ? "Apply changes" : "Nothing to apply", ui.dirty ? APPLY : -1);
         row(view, n++, "Reset to defaults", RESET);
         list_toggle(row(view, n++, "", BYPASS), "Enabled", !ui.draft.bypass);
+        list_toggle(row(view, n++, "", PER_OUTPUT), "EQ per Output", ringnav_eq_output());
         /* Balance turns one side down: R 1.0 dB is the left 1 dB quieter. */
         snprintf(value, sizeof(value), __builtin_fabs(ui.draft.balance) >= 0.05 ? "%s %.1f dB" : "Centre",
                  ui.draft.balance > 0 ? "R" : "L", __builtin_fabs(ui.draft.balance));

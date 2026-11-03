@@ -667,6 +667,7 @@ unsigned char shim_flag(void) { return g_equalizer_flag; }
 static int eq_following;
 void shim_following(int on) { eq_following = on; }
 int ringnav_eq_output(void) { return eq_following; }
+void ringnav_eq_output_toggle(void) { eq_following = !eq_following; }
 void shim_run(void) { int (*f)(const void *) = timer_fn; timer_fn = 0; if (f) f(0); }
 /* Click the row whose labels, caption and value joined by a space, start with text; optionally let
  * the deferred render run (1), or only find it (2). */
@@ -683,6 +684,12 @@ int shim_click(const char *text, int run) {
         }
     }
     return 0;
+}
+int shim_row_y(const char *text) {
+    for (int p = 2; p <= count; ++p)
+        for (int i = p + 1; i <= count; ++i)
+            if (w[p].click && w[i].parent == p && !strncmp(w[i].text, text, strlen(text))) return w[p].y;
+    return -1;
 }
 void shim_return(void) { int event[8] = {0}; event[6] = 170; w[1].keyup(0, event); shim_run(); }
 void shim_close(void) { w[1].destroy(0, 0); }
@@ -781,8 +788,11 @@ def editor_check(lib, tmp):
     ui.shim_close(); ui.peq_attach(); assert read().bypass == 1 and ui.shim_flag() == 0; advanced()
     assert lib.peq_save(bytes(active), C.byref(preset(enabled=1)), 1) == 1
     # The switch writes the stock config key, so boot restores it; the flag follows the preset.
-    click('Enabled Off'); assert ui.shim_eqflag() == 1 and ui.shim_flag() == 1
-    click('Enabled On'); assert ui.shim_eqflag() == 0 and ui.shim_flag() == 0
+    # EQ per Output: directly below Enabled, with the EQ off or on.
+    below = lambda: ui.shim_row_y(b'EQ per Output') == ui.shim_row_y(b'Enabled') + 48
+    assert below(); click('EQ per Output Off'); assert below(); click('EQ per Output On'); assert below()
+    click('Enabled Off'); assert ui.shim_eqflag() == 1 and ui.shim_flag() == 1 and below()
+    click('Enabled On'); assert ui.shim_eqflag() == 0 and ui.shim_flag() == 0 and below()
     ui.shim_close(); assert advanced() == 0; click('Enabled Off')
     full = ui.shim_list_height()
     # iPod rows are transparent, so the list itself must paint black, not the theme's light card.

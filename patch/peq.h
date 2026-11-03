@@ -220,7 +220,8 @@ void peq_attach(void); /* peq_ui.c */
 /* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
  * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following. */
 void eq_output(const char *key), eq_output_forget(void);
-int ringnav_eq_output(void); /* navigation.c: the setting */
+int ringnav_eq_output(void);         /* navigation.c: the setting */
+void ringnav_eq_output_toggle(void); /* and its row's click */
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
