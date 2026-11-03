@@ -119,7 +119,7 @@ boot_check()
 def logo_check():
     """S11logo_display_shell's splash choice (build.py LOGO_HOOK) under the host sh."""
     import subprocess, tempfile, pathlib
-    from build import LOGO_HOOK, LOGO, LOGO_LIGHT
+    from build import LOGO_HOOK, LOGO, LOGO_LIGHT, TIMEZONES
     with tempfile.TemporaryDirectory(prefix='q2-logo-') as tmp:
         tmp = pathlib.Path(tmp)
         user, config, dark, light = tmp/'boot-logo.jpg', tmp/'config.ini', tmp/'logo.jpg', tmp/'logo-light.jpg'
@@ -138,8 +138,18 @@ def logo_check():
         assert shown() == str(user)  # the card's logo wins in either mode
         user.unlink()
         config.write_text('[IPOD]\nLIGHT=2\n')  # Auto: light from 07:00 to 18:59 by the clock
-        def at(hour): return subprocess.run(['sh', '-c', script.replace('$(date +%H)', hour)], check=True, capture_output=True, text=True).stdout.strip()
+        def at(hour): return subprocess.run(['sh', '-c', script.replace('$(TZ=$z date +%H)', hour)], check=True, capture_output=True, text=True).stdout.strip()
         assert at('06') == str(dark) and at('07') == str(light) and at('18') == str(light) and at('19') == str(dark)
+        # Auto reads the hour in the saved zone: only the zone's own TZ gets a light hour
+        for i, (_, zone) in enumerate(TIMEZONES):
+            config.write_text(f'[SYSSET]\nTIMEZONE={i}\n[IPOD]\nLIGHT=2\n')
+            fake = f'''date() {{ [ "$TZ" = '{zone}' ] && echo 12 || echo 22; }}; '''
+            assert subprocess.run(['sh', '-c', fake + script], check=True, capture_output=True, text=True).stdout.strip() == str(light), zone
+        # No saved zone, or one past the list: stock's default, as the player reads it (config_init)
+        for text in ('[IPOD]\nLIGHT=2\n', f'[SYSSET]\nTIMEZONE={len(TIMEZONES)}\n[IPOD]\nLIGHT=2\n'):
+            config.write_text(text)
+            fake = f'''date() {{ [ "$TZ" = '{TIMEZONES[22][1]}' ] && echo 12 || echo 22; }}; '''
+            assert subprocess.run(['sh', '-c', fake + script], check=True, capture_output=True, text=True).stdout.strip() == str(light)
     print('Boot logo: the saved card logo, else the light splash under Light Mode, else the built-in one, passed.')
 logo_check()
 

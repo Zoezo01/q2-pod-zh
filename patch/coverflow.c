@@ -424,19 +424,23 @@ static void drop_albums(void) {
     cf.albums = cf.stock = 0;
 }
 
-/* A stock library query's rows (*count its result) copied out of the staging deque, which is
- * restored so the query leaves no trace; shared with navigation.c's queue menu. ponytail: save
- * and restore are deep copies, so after Library -> Songs on a 65,000-song library each call holds
- * two copies of that list for a moment; a move needs the stock deque's layout. */
+/* A stock library query run into the caller's deque, the staging pointer on it so it leaves no trace.
+ * No copies: two of a 47,000-song library's rows got demo OOM-killed, with 128 MB and no swap. Stock
+ * writes the pointer only at init and reads it afresh at each use; every caller is on the UI thread,
+ * as an overlap could leave the pointer on a deque its owner destroyed. */
+int staged_into(void *into, int (*query)(void *), void *arg) {
+    void *dir = P(tools_pdeq_directory, 0);
+    P(tools_pdeq_directory, 0) = into;
+    int n = query(arg);
+    P(tools_pdeq_directory, 0) = dir;
+    return n;
+}
+
+/* Its rows (*count its result) in a deque of their own; shared with navigation.c's queue menu. */
 void *staged(int (*query)(void *), void *arg, int *count) {
-    void *dir = P(tools_pdeq_directory, 0), *save = _create_deque("stSongInfo"),
-         *out = _create_deque("stSongInfo");
-    deque_init_copy(save, dir);
-    *count = query(arg);
-    deque_init_copy(out, dir);
-    deque_clear(dir);
-    deque_assign(dir, save);
-    deque_destroy(save);
+    void *out = _create_deque("stSongInfo");
+    deque_init(out);
+    *count = staged_into(out, query, arg);
     return out;
 }
 

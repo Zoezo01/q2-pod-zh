@@ -815,7 +815,7 @@ int shelf_erase(int start) {
     if (start && sh.job == JOB_CHECK)
         sh.cancel = 1, toast("已停止检查更新");
     else if (start && sh.job)
-        toast("Wait for the one in progress");
+        toast("等当前任务完成");
     else if (start)
         sh_start(JOB_ERASE, -1);
     return sh.job == JOB_ERASE;

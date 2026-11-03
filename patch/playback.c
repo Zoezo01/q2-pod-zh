@@ -25,6 +25,7 @@ extern void *staged(int (*)(void *), void *, int *);
 extern int album_before(const void *, const void *), folder_cmp(void *, void *),
     album_only(void *, void *, int);
 extern unsigned queue_hash(void *); /* navigation.c */
+extern int resume_held(void);       /* navigation.c */
 
 typedef struct {
     unsigned index, group, rank;
@@ -903,6 +904,30 @@ int ringnav_prev(void) {
     s.dirty = 1;
     return mclStartPlayer();
 }
+/* Would this manual Next/Prev start the playing file again? With more tracks stock moves on, Repeat
+ * One too, so outside advanced play a one-track queue does, unless Folder Skip leaves it for a sibling
+ * folder (never an M3U's) or List Play's Next stops it. Shuffle's Previous goes back to its last
+ * position before any folder, here this track. ponytail: stock Shuffle's pool can also redraw the
+ * playing track, and Folder Skip with no sibling wraps; neither can be told before the press. */
+static int change_restarts(int next) {
+    int at = M(MCL_POS);
+    if (s.active) return next ? playback_successor(0) == at : s.hn >= 2 && (int)s.history[s.hn - 2] == at;
+    if (!queue() || deque_size(queue()) != 1 || (next && list_end())) return 0;
+    if (M(MCL_TYPE) != 1 || !*(volatile unsigned char *)MCL_JUMPFOLDER || mclGetPlayM3uFlag()) return 1;
+    return !next && M(MCL_MODE) == 2 && !M(MCL_LASTPOS);
+}
+/* A press that would restart a track holding a place only asks; a second within RESTART_ASK_MS goes
+ * ahead, and resume_poll forgets the place as for any move to the start. */
+#define RESTART_ASK_MS 3000
+static unsigned restart_at;
+static int restart_ask; /* set here, maybe off the UI thread; toasted by the poll */
+static int restart_refused(int next) {
+    if (!resume_held() || !change_restarts(next)) return restart_at = 0;
+    unsigned now = (unsigned)time_now_ms();
+    if (restart_at && now - restart_at <= RESTART_ASK_MS) return restart_at = 0;
+    restart_at = now | !now; /* never 0, no press yet */
+    return restart_ask = 1;
+}
 /* Manual Next/Prev (player_change_music). List Play stops at a library queue's end, as above. At
  * queue index 0 or n-1 stock wraps or loads a sibling folder itself; in Repeat All without Folder
  * Skip every branch calls mclNextSong(0)/mclPrevSong, so advanced order applies. MCL_MODE is
@@ -913,6 +938,7 @@ int ringnav_change(int next) {
      * failures (no storage). */
     if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
+    if (restart_refused(next)) return 0; /* the caller toasts -1 (no storage) and -5 */
     if (!s.active) {
         if (!next || !list_end()) return stock_change_trampoline(next);
         ringnav_next(0); /* stops */
@@ -1407,11 +1433,12 @@ int ringnav_memory(void *out) {
     free(buf);
     return result >= 0 ? result : stock_memory(out);
 }
-/* The queue snapshot's startup position takes precedence over per-track long-song resume. */
+/* The queue snapshot's startup position takes precedence over per-track long-song resume; one with
+ * no time to give (Memory Playback: Track) leaves the track's own place in charge. */
 int playback_resumed(void *r) {
     int pending = s.resume_pending;
     s.resume_pending = 0;
-    return pending && (unsigned)M(MCL_POS) == s.resume_pos &&
+    return pending && s.resume_elapsed && (unsigned)M(MCL_POS) == s.resume_pos &&
            fnv(FNV_SEED, P(r, REC_PATH)) == s.resume_key;
 }
 /* The track that plays after this one, or -1: Crossfade's next (crossfade.c). Stock preloads pos+1
@@ -1430,6 +1457,10 @@ void playback_poll(void) {
     if (too_long) {
         too_long = 0;
         toast("这本书太长，Q2 无法播放：请拆分成几段");
+    }
+    if (restart_ask) {
+        restart_ask = 0;
+        toast("再按一次从头播放");
     }
     xfade_poll(playback_next());
     mono_sync();
