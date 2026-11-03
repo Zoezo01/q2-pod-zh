@@ -64,7 +64,7 @@ class Machine:
         for v,w in FP64_FIX: self.u.mem_write(v,struct.pack('<I',w))
         self.u.mem_map(0x1000000,0x200000)
         self.u.mem_map(0x70000000,0x10000)
-        self.next=0x1001000; self.nodes={}; self.calls=[]; self.animating=0; self.pressed=0
+        self.next=0x1001000; self.nodes={}; self.calls=[]; self.animating=0; self.pressed=0; self.ups=[]
         self.top=0; self.wm=0x1000000; self.event=0x1000100
         self.strokes=[]; self.rounded=[]; self.bands=[]; self.icons=[]; self.letters=[]; self.font=None; self.vg_calls=[]; self.fake_vg=0; self.global_alpha=0
         self.rounded_fail=False; self.count=self.budget  # call()'s instruction limit, which nested() shares
@@ -430,6 +430,7 @@ class Machine:
             if self.get(b)==O['EVT_CLICK']:
                 self.clicks.append(a)
                 if self.on_click: self.on_click(a,b)
+            elif self.get(b)==O['EVT_POINTER_UP_BEFORE']-1: self.ups.append(a)
             ret=0
         elif name=='table_client_stop_animator_scroll': self.word(a+O['TABLE_ANIMATOR'],0); ret=0
         elif name=='widget_is_instance_of': ret=1
@@ -1843,15 +1844,14 @@ for key in ('KEY_CENTER','KEY_RETURN'):
     assert m.call(O[key])==11 and [c[1:3] for c in m.calls if c[0]=='dialog_quit']==[(m.top,0)]
 passed()
 # A swipe down whose release the pull-down never got (stock state 1 or 2, no touch, no slide timer)
-# leaves it on top off screen: the next key closes it untouched; a live drag or slide keeps it.
-for state,pressed,timer,stuck in ((1,0,None,1),(2,0,-1,1),(3,0,None,0),(1,1,None,0),(1,0,7,0)):
-    m=Machine(); bright=m.node('slider','slider_backlight',value=50)
-    m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])],**({} if timer is None else {'timer_idex':timer}))
-    m.mock('dialog_quit'); m.word(syms['g_dropdown_menu_state'],state); m.pressed=pressed
-    down=m.call(address=HOOKS['on_wm_keydown_before_fun'][0],event_type=O['EVT_KEY_DOWN_BEFORE'],gap=0)
-    m.call()
-    assert (down==11 and m.nodes[bright]['value']==50)==bool(stuck)
-    assert [c[1:3] for c in m.calls if c[0]=='dialog_quit']==[(m.top,0)]*stuck, (state,pressed,timer)
+# leaves it on top off screen, the page under it stopped (#189): the next UI pass hands it the
+# release, which stock's handler slides; an open panel, a live drag and a running slide are left.
+for state,pressed,timer,stuck in ((1,0,None,1),(2,0,-1,1),(3,0,None,0),(0,0,None,0),(1,1,None,0),(1,0,7,0)):
+    m=Machine(); m.top=m.node('dialog','statusbar_dialog',**({} if timer is None else {'timer_idex':timer}))
+    m.word(syms['g_dropdown_menu_state'],state); m.pressed=pressed
+    m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
+    m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0)
+    assert m.ups==[m.top]*stuck,(state,pressed,timer)
 passed()
 # A held Play/Pause there switches its wheel to stock's volume and back, kept as Q2POD QSVOLUME.
 m=Machine(); bright=m.node('slider','slider_backlight',value=50)

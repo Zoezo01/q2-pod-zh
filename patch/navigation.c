@@ -8905,16 +8905,25 @@ static int quick_wheel_toggle(void *top) {
     return 1;
 }
 /* Stock's swipe down opens Quick Settings at g_dropdown_menu_state 1 and starts its slide only on
- * the touch's release reaching the dialog (its pointer-up handler adds the timer_idex timer). A
- * release the dialog never gets, as when the window opens slowly at boot, leaves it on top but off
- * screen, holding the wheel. With no touch down and no slide running it is closed, as Return closes
- * the open one; the key that finds it is used up. ponytail: only keys check it; a touch on it shows
- * it, as stock already does. */
+ * the touch's release reaching the dialog (its pointer-up handler adds the timer_idex timer). The
+ * dialog is modal, opened inside the swipe's pointer move, and above the screen it catches a touch
+ * only once opened (window_manager_find_target, stage 3), in an idle its nested loop runs after
+ * draining the queue. So a release already queued, by a flick quicker than the dialog loads or a
+ * swipe queued behind a track start, goes to the page under it: the dialog stays on top off screen
+ * with that page sent to the background, Now Playing's timer stopped (#189). With no touch down
+ * and no slide running, the next UI pass hands it the release, and it slides as the swipe asked. */
 static int quick_stuck(void *top) {
     return usable() && top &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog") &&
            (unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 && !pointer_down() &&
            widget_get_prop_int(top, "timer_idex", -1) == -1;
+}
+static void quick_poll(void) {
+    void *top = window_manager_get_top_window(window_manager());
+    unsigned up[12];
+    if (quick_stuck(top))
+        stock_dispatch_trampoline(top,
+                                  pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, top, 0, 0));
 }
 /* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On an
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
@@ -8925,7 +8934,6 @@ int ringnav_keylong(void *ctx, void *event) {
     if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
-    if (quick_stuck(top)) return STOP; /* the release closes it (ringnav) */
     const char *fav = radio_hold(top);
     int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) || un_hold(top);
     char *key = taken ? play_key() : (char *)0;
@@ -9942,6 +9950,7 @@ int ringnav_mainscheduling(void) {
 }
 
 int ringnav_sleep(void *loop) {
+    quick_poll();
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
@@ -10233,7 +10242,6 @@ int ringnav_keydown(void *ctx, void *event) {
     unsigned key = event ? (unsigned)I(event, EVENT_KEY) : 0;
     if (ple_key(key, 1)) return STOP;
     void *top = window_manager_get_top_window(window_manager());
-    if (quick_stuck(top)) return STOP; /* the release closes it (ringnav) */
     unsigned char tone = g_keytone_flag;
     void *row = (void *)0;
     entries_t s = { &row, 0, 1, 4096 };
@@ -10464,11 +10472,6 @@ int ringnav(void *ctx, void *event) {
         *(volatile unsigned char *)KEY_LOCKOUT = 0;
     if (key == KEY_CENTER || key == KEY_RETURN) st.held = 0; /* a button ends a held turn */
     void *front = window_manager_get_top_window(window_manager());
-    if (quick_stuck(front)) {
-        drop_input();
-        dialog_quit(front, 0);
-        return STOP;
-    }
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
     /* The rating picker's keys, before the page's own (its Return would leave it) */
     if (usable() && rate_key(window_manager_get_top_window(window_manager()), key)) return STOP;
