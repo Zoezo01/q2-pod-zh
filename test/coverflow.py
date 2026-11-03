@@ -201,12 +201,12 @@ void *widget_lookup(void *x, const char *n, int r) {
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
 int ipod_home(void) { return home_mode; }
-#define CF_STYLE { CF_TOP, CF_X1, CF_XS, CF_Z1, CF_ZS, CF_EYE, CF_BRIGHT1, CF_BRIGHT2, CF_REFLECT, CF_REFLECT_TOP, CF_STRIDE, NP_ART_RADIUS, CF_NAME_PX, CF_ARTIST_PX, CF_TEXT_Y }
+/* CF_STYLE0/1 (minimal, classic): main() passes each theme's .cf from tools/theme.py ROLE_MACROS */
 static theme_t shim_themes[2] = {
     { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
-      .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE },
+      .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
-      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE } };
+      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 } };
 const theme_t *theme(void) { return &shim_themes[classic]; }
 int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
@@ -1662,6 +1662,9 @@ def main():
     shim = re.search(r'shim_themes\[2\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
     assert norm(home_fields(shim)) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
+    cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
+                for i, m in enumerate((ROLE_MACROS['minimal'], ROLE_MACROS['classic']))]
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]
@@ -1724,7 +1727,7 @@ def main():
         binary = tmp/'coverflow_test'
         subprocess.run(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unused-function',
-                        '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
+                        *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
                         str(tmp/'test.c'), '-o', str(binary)], check=True)
         env = dict(os.environ)
         if a.captures:  # capture the reflection intensity
