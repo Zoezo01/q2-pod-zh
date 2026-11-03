@@ -806,6 +806,29 @@ def validate_assets(directory):
         try: patch_asset(short, original[:-1]+b'x')
         except ValueError: pass
         else: raise AssertionError('Accepted a changed asset')
+    # Every geometry set's built list windows take the row height of the page's pitch
+    # immediates (art pages take art_pitch), and its rows fit.
+    from theme import builtins, geometry_sets
+    page_kind = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
+                 'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
+                 'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'art',
+                 'localmusic/localclass_page.bin': 'art'}
+    built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
+    for g in geometry_sets(builtins()):
+        assert g.body <= g.pitch and g.art_body <= g.art_pitch, g.name
+        assert g.art + 2*g.art_inset <= g.art_body, g.name
+        checked = set()
+        for short, kind in page_kind.items():
+            folder, _, base = short.rpartition('/')
+            mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
+            new = decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + short))
+            old = {n[2].get('name'): n[2] for n in walk(decode(read('stock.squashfs', ui + short)))}
+            for n in walk(new):
+                for prop in ('row_height', 'default_item_height'):
+                    if old.get(n[2].get('name'), {}).get(prop) == '78':
+                        assert n[2][prop] == str(g.art_pitch if kind == 'art' else g.pitch), (g.name, short, prop)
+                        checked.add(short)
+        assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:
