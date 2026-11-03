@@ -25,6 +25,14 @@ typedef struct {
     short name_px, artist_px, text_y;
 } cf_style_t;
 typedef struct {
+    unsigned addr;
+    unsigned char group;
+} boot_site_t; /* one ipod.json immediate */
+typedef struct {
+    const char *name;
+    unsigned char sets;
+} ui_redirect_t; /* sets with <set>_<name>.bin */
+typedef struct {
     const char *name; /* "Minimal": the Theme row's "Theme: %s" */
     unsigned char painter[PAINTER_N];
     unsigned char chevron_home, caps_mark, caps_home, caps_np, icons_mono, icons_badge_muted,
@@ -39,6 +47,7 @@ typedef struct {
     unsigned char np_layout; /* NP_* */
     cf_style_t cf;
     short bar_h;              /* the status bar's height; client_h() is the window's under it */
+    unsigned char geom;       /* geometry set id: boot_values[] row, 0 = SET0 "ipod" */
     unsigned char art_square; /* art takes Corners: Square */
     unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;

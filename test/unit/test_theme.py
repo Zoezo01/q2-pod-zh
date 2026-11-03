@@ -116,7 +116,7 @@ MINIMAL = {
     'painter[PAINT_SELECTION]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'bold': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
-    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0, 'bar_h': 30,
+    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0, 'bar_h': 30, 'geom_set': 'ipod',
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -274,7 +274,7 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chev
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
                   ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 0),
-                  *CF_TODAY.items(), ('bar_h', 30)]
+                  *CF_TODAY.items(), ('bar_h', 30), ('geom', 0)]
 
 
 def test_emit(tmp_path):
@@ -312,7 +312,7 @@ def test_emit_both(tmp_path):
     assert '    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000 },\n    { .tones = accents[8]' in text
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
-    assert text.endswith('    },\n};\n')
+    assert '    },\n};\nenum { GEOM_IPOD, GEOM_N };\n' in text
 
 
 def test_playing_layout_builtins_ipod():
@@ -371,3 +371,102 @@ def test_emit_cf(tmp_path):
     theme.emit(theme.builtins(), tmp_path)
     text = (tmp_path/'themes.inc').read_text()
     assert text.count('.cf.eye = 300,') == 2 and text.count('.cf.text_y = 212,') == 2
+
+
+import re
+import ipod
+from ipod import Geometry, SET0
+TEST = Geometry(name='test', pitch=28)
+
+
+@pytest.fixture
+def test_set(monkeypatch):
+    monkeypatch.setitem(theme.GEOMETRIES, 'test', TEST)
+
+
+def minimal_with(geometry):
+    text = (theme.ROOT/'assets/themes/minimal/theme.xml').read_text()
+    text = re.sub(r'(<theme\b[^>]*>)', r'\1' + geometry, text, count=1)
+    t = theme.resolve(theme.parse(text, 'minimal.xml'), {})
+    theme.validate(t, 'minimal.xml')
+    return t
+
+
+def test_builtins_are_set0():
+    assert [theme.geometry(t) for t in theme.builtins()] == [SET0, SET0]
+    assert theme.geometry_sets(theme.builtins()) == [SET0]
+    assert minimal_with('<geometry set="ipod"/>') == theme.builtins()[0]
+
+
+@pytest.mark.parametrize('geometry, message', [
+    ('<geometry set="other"/>', 'unknown geometry set "other"'),
+    ('<geometry set="ipod" bar="26"/>', 'unknown key geometry.bar')])
+def test_geometry_rejects(geometry, message):
+    with pytest.raises(theme.ThemeError, match=message):
+        minimal_with(geometry)
+
+
+def test_geometry_sets_set0_first(test_set):
+    m, c = theme.builtins()
+    assert theme.geometry_sets([dict(m, geom_set='test'), c]) == [SET0, TEST]
+    assert theme.geometry_sets([dict(m, geom_set='test')]) == [SET0, TEST]
+
+
+def test_geometry_sets_refuse_a_wide_value(monkeypatch):
+    monkeypatch.setitem(theme.GEOMETRIES, 'wide', Geometry(name='wide', pitch=0x8000))
+    with pytest.raises(ValueError, match='wide: pitch 32768 does not fit an immediate'):
+        theme.geometry_sets([dict(theme.builtins()[0], geom_set='wide')])
+
+
+def test_shared_site_takes_one_value(monkeypatch):
+    monkeypatch.setitem(theme.GEOMETRIES, 'split', Geometry(name='split', pitch=28, art_pitch=52))
+    monkeypatch.setitem(theme.AUDIT, 'immediates', [{'value': 'pitch', 'purpose': 'x', 'page': 'shared', 'sites': [['0x4a2c5c', '0x2402004e']]}])
+    with pytest.raises(ValueError, match='split: pitch and art_pitch differ at shared site 0x4a2c5c'):
+        theme.geometry_sets([dict(theme.builtins()[0], geom_set='split')])
+
+
+def test_minimal_classic_live_every_combination():
+    # ponytail: options carry no variants yet, so every combination resolves to these two dicts
+    m, c = theme.builtins()
+    assert theme.is_live(m, c) and theme.is_live(c, m)
+
+
+def test_is_live_needs_one_set(test_set):
+    m, c = theme.builtins()
+    assert not theme.is_live(m, dict(c, geom_set='test'))
+
+
+def boot_inc(tmp_path, themes, **kw):
+    theme.emit(themes, tmp_path, **kw)
+    return (tmp_path/'themes.inc').read_text()
+
+
+def test_emit_boot_tables(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    names = ipod.VALUE_NAMES
+    sites = [(int(a, 16), g['value']) for g in ipod.AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
+    assert len(sites) == 58
+    assert inc.index('enum { GEOM_IPOD, GEOM_N };') > inc.index('static const theme_t themes[THEME_N]')
+    assert 'enum { ' + ', '.join(f'G_{n.upper()}' for n in names) + ', G_N };' in inc
+    assert '#define BOOT_SITES 58' in inc and '#define CLIENT_H_MAX 290' in inc
+    assert 'const boot_site_t boot_sites[BOOT_SITES] = {' + ', '.join(f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};' in inc
+    row = ', '.join(str(ipod.immediate_values(SET0)[n]) for n in names)
+    assert f'const volatile unsigned short boot_values[GEOM_N][G_N] = {{{{{row}}}}};' in inc
+    assert 'const char *const geom_names[GEOM_N] = {"ipod"};' in inc
+    assert 'const volatile ui_redirect_t ui_redirects[] = {{0, 0}, {0, 0}};' in inc
+    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0']
+
+
+def test_emit_second_set(tmp_path, test_set):
+    m, c = theme.builtins()
+    inc = boot_inc(tmp_path, [m, dict(c, geom_set='test')], redirects={'system_bar': 2, 'dialog/volume_dialog': 2})
+    assert 'enum { GEOM_IPOD, GEOM_TEST, GEOM_N };' in inc and '{"ipod", "test"}' in inc
+    rows = ['{' + ', '.join(str(ipod.immediate_values(g)[n]) for n in ipod.VALUE_NAMES) + '}' for g in (SET0, TEST)]
+    assert '= {' + ', '.join(rows) + '};' in inc
+    assert 'ui_redirects[] = {{"dialog/volume_dialog", 2}, {"system_bar", 2}, {0, 0}, {0, 0}};' in inc
+    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '1']
+
+
+def test_emit_refuses_a_set0_redirect(tmp_path):
+    with pytest.raises(ValueError, match='system_bar: SET0 never redirects'):
+        boot_inc(tmp_path, theme.builtins(), redirects={'system_bar': 1})

@@ -3,8 +3,8 @@ the payload's theme table (themes.inc)."""
 import dataclasses
 import json
 import re
-from build import ROOT
-from ipod import INC, O, SET0
+from build import ROOT, check
+from ipod import AUDIT, INC, O, SET0, VALUE_NAMES, Geometry, immediate_values
 
 
 ACCENT_NAMES = [n.lower() for n in re.findall(r'\}\s*,?\s*/\* (\w+)', re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0])]
@@ -71,11 +71,12 @@ SCHEMA = {k.path: k for k in (
         ('shelf', 'zs', 0, 799), ('shelf', 'eye', 1, 2046), ('shelf', 'bright1', 1, 256), ('shelf', 'bright2', 1, 256),
         ('shelf', 'reflect', 1, 50), ('shelf', 'reflect_top', 0, 256), ('shelf', 'stride', 1, 375),
         ('shelf', 'radius', 0, 83), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
-        ('caption', 'text_y', 210, 290))))}
+        ('caption', 'text_y', 210, 290))),
+    Key('geometry.set', 'geom_set', 'set', 0, 0, 'ipod', 'boot'))}
 FIELDS = {k.field: k for k in SCHEMA.values()}
 ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if p.count('.') == 2}
 VIEWS = {e.partition('.')[0] for e in ELEMENTS}
-CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'option', 'view'}, 'view': {'element'}}
+CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'geometry', 'option', 'view'}, 'view': {'element'}}
 OPTION_ATTRS = {'setting', 'key', 'default', 'preset', 'keep'}
 # Per-theme numbers stay in offsets.inc: theme id -> {C field: expression over O}.
 CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF_Z1', 'cf.zs': 'CF_ZS', 'cf.eye': 'CF_EYE',
@@ -92,6 +93,32 @@ ROLE_MACROS = {
                 'np_bar': 'NP_BAR_CLASSIC', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB',
                 'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
 }
+
+
+GEOMETRIES = {g.name: g for g in (SET0,)}  # <geometry set="..."/>: the row geometry sets, SET0 first
+
+
+def geometry(t):
+    return GEOMETRIES[t['geom_set']]
+
+
+def geometry_sets(themes):
+    """The distinct geometry sets of themes, SET0 first: boot_values[]' rows."""
+    sets = list(dict.fromkeys([SET0, *map(geometry, themes)]))
+    for g in sets:
+        v = immediate_values(g)
+        for n, x in v.items():
+            check(0 <= x < 0x8000, f'{g.name}: {n} {x} does not fit an immediate')
+        for group in AUDIT['immediates']:
+            n = group['value']
+            if group.get('page') == 'shared':
+                check(v[n] == v.get('art_' + n, v[n]), f'{g.name}: {n} and art_{n} differ at shared site {group["sites"][0][0]}')
+    return sets
+
+
+def is_live(a, b):
+    """Whether switching between themes a and b needs no restart: one set, no boot-class field differs."""
+    return geometry(a) == geometry(b) and all(a[k.field] == b[k.field] for k in SCHEMA.values() if k.cls == 'boot')
 
 
 class ThemeError(Exception):
@@ -275,6 +302,13 @@ def resolve(root, by_id, seen=()):
                 if k != 'name':
                     x = value(c, f'scheme.{k}', text, macros)
                     t['schemes'][ACCENT_NAMES.index(n)][SCHEMA[f'scheme.{k}'].field] = x
+        elif c.tag == 'geometry':
+            for k, text in c.attrs.items():
+                if k != 'set':
+                    err(c, f'unknown key geometry.{k}')
+                if text not in GEOMETRIES:
+                    err(c, f'unknown geometry set "{text}"')
+                t['geom_set'] = text
         elif c.tag == 'option':
             if opts is None:
                 opts = t['opts'] = []  # this file's options replace the inherited list
@@ -325,7 +359,7 @@ def resolve(root, by_id, seen=()):
     for o in t['opts']:
         if o['setting'] == 'SETTING_ACCENT':
             o['values'] = 0 if t['accents'] == ALL_ACCENTS else t['accents']
-    t['bar_h'] = SET0.bar  # ponytail: one set; a set's own bar replaces it
+    t['bar_h'] = geometry(t).bar
     return t
 
 
@@ -374,8 +408,10 @@ def builtins(root=ROOT/'assets/themes'):
     return [t for _, _, t in found]
 
 
-def emit(themes, out):
-    """out/'themes.inc': the schemes, options and themes[] navigation.c includes."""
+def emit(themes, out, redirects={}):
+    """out/'themes.inc': the schemes, options and themes[] navigation.c includes, then the boot tables.
+    redirects: ui name -> bitmask of the sets with their own <set>_<name>.bin."""
+    sets = geometry_sets(themes)
     lines = ['/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */']
     for t in themes:
         i = t['id']
@@ -395,7 +431,23 @@ def emit(themes, out):
                   *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'live' and k.path.count('.') == 2),
                   ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
                   ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
-                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'open'), ('bar_h', t['bar_h'])]
+                  *((k.field, t[k.field]) for k in SCHEMA.values() if k.cls == 'open'), ('bar_h', t['bar_h']),
+                  ('geom', sets.index(geometry(t)))]
         lines += ['    {', *(f'        .{k} = {v},' for k, v in fields), '    },']
-    lines += ['};', '']
+    lines.append('};')
+    for name, bits in redirects.items():
+        check(not bits & 1, f'{name}: SET0 never redirects')
+    sites = [(int(a, 16), g['value']) for g in AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
+    # ponytail: the second {0, 0} lets test/patch.py patch entry 0; 8 B
+    ui = [f'{{{json.dumps(n)}, {redirects[n]}}}' for n in sorted(redirects)] + ['{0, 0}'] * 2
+    lines += ['enum { ' + ', '.join(f'GEOM_{g.name.upper().replace("-", "_")}' for g in sets) + ', GEOM_N };',
+              'enum { ' + ', '.join(f'G_{n.upper()}' for n in VALUE_NAMES) + ', G_N };',
+              f'#define BOOT_SITES {len(sites)}', f'#define CLIENT_H_MAX {max(320 - g.bar for g in sets)}',
+              # volatile: -Oz can't fold the initialisers, which theme_boot and test/patch.py read
+              'const volatile unsigned short boot_values[GEOM_N][G_N] = {' + ', '.join(
+                  '{' + ', '.join(str(immediate_values(g)[n]) for n in VALUE_NAMES) + '}' for g in sets) + '};',
+              'const boot_site_t boot_sites[BOOT_SITES] = {' + ', '.join(
+                  f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};',
+              'const char *const geom_names[GEOM_N] = {' + ', '.join(json.dumps(g.name) for g in sets) + '};',
+              'const volatile ui_redirect_t ui_redirects[] = {' + ', '.join(ui) + '};', '']
     (out/'themes.inc').write_text('\n'.join(lines))
