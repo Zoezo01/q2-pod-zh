@@ -21,6 +21,19 @@ def image(size=0x400000, base=0x400000, null=False):
     return data
 
 
+NULL = (0,) * 8
+
+
+def program(*rows, size=0x1000, phoff=52):
+    """size bytes of ELF whose program headers, from phoff, are rows: (type, offset, vaddr, paddr, filesz, memsz, flags, align)."""
+    data = bytearray(size)
+    struct.pack_into('<I', data, 28, phoff)
+    struct.pack_into('<HH', data, 42, 32, len(rows))
+    for i, row in enumerate(rows):
+        struct.pack_into('<8I', data, phoff + 32 * i, *row)
+    return data
+
+
 @pytest.mark.parametrize('number,tag', [(1, 'V001i'), (35, 'V00Zi'), (36, 'V010i'), (46655, 'VZZZi'), (46656, 'V001i'), (46657, 'V002i')])
 def test_dev_tag(number, tag):
     assert build.dev_tag(number) == tag
@@ -49,6 +62,122 @@ def test_word_and_read():
     assert u.store[8] == b'\xff\xff\xff\xff' and build.read(u, 8) == 0xffffffff
     build.word(u, 12, 0x1234567890)
     assert u.store[12] == struct.pack('<I', 0x34567890) and build.read(u, 12) == 0x34567890
+
+
+def test_segments():
+    """Each header's file offset and its eight words, unsigned: a kernel's addresses are past 2^31."""
+    rows = [(1, 0x1000, 0x80000000, 0x80000000, 0x400, 0x800, 7, 0x1000), (4, 0x1100, 0x80000100, 0x80000100, 0x24, 0x24, 4, 4), NULL]
+    assert build.segments(program(*rows, phoff=64)) == [(64, rows[0]), (96, rows[1]), (128, rows[2])]
+
+
+def test_segments_wants_32_byte_headers():
+    data = program(NULL)
+    struct.pack_into('<H', data, 42, 56)  # ELF64's
+    with pytest.raises(ValueError, match='^Unexpected ELF program header size$'):
+        build.segments(data)
+
+
+def two_loads():
+    """A note whose offset disagrees with its LOAD's, then two LOAD segments, the first with 0x800 bytes of bss."""
+    return program((4, 0x300, 0x400100, 0x400100, 0x40, 0x40, 4, 4), (1, 0, 0x400000, 0x400000, 0x800, 0x1000, 5, 0x1000),
+                   (1, 0x1800, 0x411800, 0x411800, 0x100, 0x200, 6, 0x1000), NULL, size=0x1900)
+
+
+def test_fileoff():
+    data = two_loads()
+    assert [build.fileoff(data, a) for a in (0x400000, 0x400100, 0x4007ff, 0x411800, 0x4118ff)] == [0, 0x100, 0x7ff, 0x1800, 0x18ff]
+
+
+@pytest.mark.parametrize('address', [0x3fffff, 0x400800, 0x410fff, 0x411900])
+def test_fileoff_refuses_what_the_file_does_not_hold(address):
+    with pytest.raises(ValueError, match=f'^Unmapped address {address:x}$'):
+        build.fileoff(two_loads(), address)
+
+
+class Mapper:
+    def __init__(self):
+        self.calls = []
+
+    def mem_map(self, address, size):
+        self.calls.append(('map', address, size))
+
+    def mem_write(self, address, data):
+        self.calls.append(('write', address, bytes(data)))
+
+
+def loads():
+    """A PHDR first, a LOAD ending on a page, and a LOAD from mid-page with bss past its file bytes."""
+    data = program((6, 52, 0x400034, 0x400034, 0x80, 0x80, 4, 4), (1, 0, 0x400000, 0x400000, 0x200, 0x1000, 5, 0x1000),
+                   (1, 0x1123, 0x411123, 0x411123, 0x10, 0x2000, 6, 0x1000), NULL, size=0x1200)
+    data[0x1123:0x1133] = bytes(range(1, 17))
+    return bytes(data)
+
+
+def test_load_elf():
+    data, u = loads(), Mapper()
+    build.load_elf(u, data, 0x10000)
+    assert u.calls == [('map', 0x410000, 0x1000), ('write', 0x410000, data[:0x200]),
+                       ('map', 0x421000, 0x3000), ('write', 0x421123, bytes(range(1, 17)))]
+
+
+def test_load_elf_at_the_link_address_by_default():
+    data, u = loads(), Mapper()
+    build.load_elf(u, data)
+    assert [c[:2] for c in u.calls] == [('map', 0x400000), ('write', 0x400000), ('map', 0x411000), ('write', 0x411123)]
+
+
+def test_machine():
+    """raw's LOAD at +load, 64 KB of scratch, and a little-endian MIPS32 core that runs it."""
+    from unicorn.mips_const import UC_MIPS_REG_V0
+    raw = image(0x2000)
+    struct.pack_into('<I', raw, 0x1000, 0x24021234)  # addiu $v0, $zero, 0x1234
+    u = build.machine(bytes(raw), 0x800000, 0x10000)
+    assert sorted(u.mem_regions()) == [(0x410000, 0x411fff, 7), (0x800000, 0x80ffff, 7)]
+    assert u.mem_read(0x410000, 0x2000) == raw[0x1000:]
+    u.emu_start(0x410000, 0x410004)
+    assert u.reg_read(UC_MIPS_REG_V0) == 0x1234
+
+
+def test_machine_at_the_link_address_by_default():
+    raw = image(0x2000)
+    raw[0x1000] = 0x5a
+    u = build.machine(bytes(raw), 0x800000)
+    assert sorted(u.mem_regions())[0] == (0x400000, 0x401fff, 7) and u.mem_read(0x400000, 1) == b'\x5a'
+
+
+def appendable(size=0x10001):
+    """A LOAD from offset 0 (its paddr 0, as some linkers leave it), a dynamic segment inside it, and the final PT_NULL slot."""
+    return program((1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), (2, 0x700, 0x400700, 0x400700, 0x80, 0x80, 6, 4), NULL, size=size)
+
+
+def test_append_payload():
+    data = appendable()
+    before = bytes(data)
+    build.append_payload(data, b'\x11' * 6, 0x401001, 0x30, 'x')
+    assert struct.unpack_from('<8I', data, 52 + 64) == (1, 0x20000, 0x401001, 0x401001, 6, 0x30, 7, 0x10000)
+    assert data[:52 + 64] == before[:52 + 64] and data[52 + 96:0x10001] == before[52 + 96:]
+    assert data[0x10001:] == bytes(0x20000 - 0x10001) + b'\x11' * 6
+
+
+def test_append_payload_on_a_64k_boundary_pads_nothing():
+    data = appendable(0x20000)
+    build.append_payload(data, b'\x22' * 4, 0x500000, 4, 'x')
+    assert len(data) == 0x20004 and data[0x20000:] == b'\x22' * 4
+    assert struct.unpack_from('<2I', data, 52 + 64) == (1, 0x20000)
+
+
+@pytest.mark.parametrize('base', [0x400800, 0x401000])
+def test_append_payload_refuses_an_overlap(base):
+    with pytest.raises(ValueError, match='^x: payload mapping overlaps$'):
+        build.append_payload(appendable(), b'', base, 0, 'x')
+
+
+@pytest.mark.parametrize('rows', [[(1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), NULL, (2, 0x700, 0x400700, 0x400700, 0x80, 0x80, 6, 4)],
+                                  [(1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), NULL, NULL],
+                                  [(1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000)]])
+def test_append_payload_wants_one_final_null_slot(rows):
+    with pytest.raises(ValueError, match='^x: no final PT_NULL slot$'):
+        build.append_payload(program(*rows), b'', 0x500000, 0, 'x')
 
 
 @pytest.mark.parametrize('label,minutes', [('GMT+0 London', 0), ('GMT-3:30 St. John\'s', -210), ('GMT+12:45 Chatham', 765),
@@ -230,6 +359,176 @@ def test_english_ui_refuses_a_file_it_cannot_rewrite():
         build.english_ui('x', bytes(data))
 
 
+EMPTY_HEART = [(2, 10), (43, 60), (82, 10), (82, 159), (2, 159)]
+FONT_ORDER = ('post', 'name', 'cmap', 'OS/2', 'glyf', 'loca', 'hmtx', 'maxp', 'hhea', 'head')
+
+
+def quote_font(empty=EMPTY_HEART, quotes=(0x22, 0x27), composite=False):
+    """A TrueType font with quotes and both hearts, ♡ drawn as empty (or as a component of it), its tables
+    in FONT_ORDER, neither sorted nor fontTools' own order."""
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib.sfnt import SFNTReader, SFNTWriter
+    shapes = {'.notdef': [(0, 0), (500, 0), (500, 700)], 'quotedbl': [(50, 500), (150, 500), (100, 700)],
+              'quotesingle': [(60, 500), (120, 500), (90, 700)], 'quoteleft': [(70, 500), (130, 500), (100, 700)],
+              'heart': [(10, -5), (130, -5), (130, 293), (10, 293)], 'emptyheart': empty, 'part': empty}
+    glyphs = {}
+    for name, points in shapes.items():
+        pen = TTGlyphPen(shapes)
+        if name == 'emptyheart' and composite:
+            pen.addComponent('part', (1, 0, 0, 1, 0, 0))
+        else:
+            pen.moveTo(points[0])
+            for point in points[1:]:
+                pen.lineTo(point)
+            pen.closePath()
+        glyphs[name] = pen.glyph()
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder(list(shapes))
+    cmap = {0x22: 'quotedbl', 0x27: 'quotesingle', 0x2018: 'quoteleft', 0x2665: 'heart', 0x2661: 'emptyheart'}
+    fb.setupCharacterMap({c: g for c, g in cmap.items() if c in quotes or c > 0x7f})
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({name: {'heart': (140, 10), 'emptyheart': (100, 2)}.get(name, (200, 0)) for name in shapes})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({'familyName': 'Quotes', 'styleName': 'Regular'})
+    fb.setupOS2()
+    fb.setupPost()
+    fb.font.recalcTimestamp = False
+    fb.font['head'].created = fb.font['head'].modified = 3000000000
+    built = io.BytesIO()
+    fb.font.save(built)
+    reader, out = SFNTReader(io.BytesIO(built.getvalue())), io.BytesIO()
+    writer = SFNTWriter(out, len(reader.tables), reader.sfntVersion)
+    for tag in FONT_ORDER:
+        writer[tag] = reader[tag]
+    writer.close()
+    return out.getvalue()
+
+
+def test_font_quotes():
+    from fontTools.ttLib import TTFont
+    data = quote_font()
+    source, font = TTFont(io.BytesIO(data)), TTFont(io.BytesIO(build.font_quotes(data)))
+    straight = {0x2018: 'quotesingle', 0x2019: 'quotesingle', 0x201c: 'quotedbl', 0x201d: 'quotedbl'}
+    assert [t.cmap for t in font['cmap'].tables] == [{**t.cmap, **straight} for t in source['cmap'].tables]
+    empty = font['glyf']['emptyheart']  # in ♥'s box: x * 1.5 + 7, y * 2 - 25
+    assert list(empty.coordinates) == [(10, -5), (72, 95), (130, -5), (130, 293), (10, 293)]
+    assert (empty.xMin, empty.yMin, empty.xMax, empty.yMax) == (10, -5, 130, 293)
+    assert font['hmtx']['emptyheart'] == font['hmtx']['heart'] == (172, 10)
+    assert (font['head'].created, font['head'].modified) == (source['head'].created, source['head'].modified)
+    assert sorted(font.reader.tables, key=lambda t: font.reader.tables[t].offset) == list(FONT_ORDER)
+    assert all(font.reader[t] == source.reader[t] for t in ('post', 'name', 'OS/2', 'maxp'))
+
+
+def test_font_quotes_wants_straight_quotes():
+    with pytest.raises(ValueError, match='^Font without straight quotes$'):
+        build.font_quotes(quote_font(quotes=(0x27,)))
+
+
+@pytest.mark.parametrize('empty,composite', [([(3, 10), (82, 10), (82, 159)], False), ([(2, 10), (82, 10), (82, 160)], False),
+                                             (EMPTY_HEART, True)])
+def test_font_quotes_wants_stock_empty_heart(empty, composite):
+    with pytest.raises(ValueError, match='^Unexpected ♡ glyph$'):
+        build.font_quotes(quote_font(empty, composite=composite))
+
+
+def strings(*pairs):
+    """A strings/*.bin: u16 0, u16 pair count, a u32 offset to each key and value, then each text NUL-ended."""
+    texts = [t for pair in pairs for t in pair]
+    offsets, at = [], 4 + 8 * len(pairs)
+    for t in texts:
+        offsets.append(at)
+        at += len(t) + 1
+    return struct.pack(f'<HH{len(texts)}I', 0, len(pairs), *offsets) + b''.join(t + b'\0' for t in texts)
+
+
+def test_relabel():
+    """Every label, each between two others."""
+    def table(column):
+        pairs = [(b'first', b'Kept')]
+        for label in build.LABELS:
+            pairs += [(label[0], label[column]), (label[0] + b'_next', b'Kept')]
+        return strings(*pairs)
+    out = build.relabel(table(1))
+    assert out == table(2) and isinstance(out, bytes)
+
+
+@pytest.mark.parametrize('pairs', [[(b'a', b'Old')], [(b'k', b'Changed')], [(b'k', b'Old'), (b'k', b'Old')]])
+def test_relabel_wants_one_stock_label(monkeypatch, pairs):
+    monkeypatch.setattr(build, 'LABELS', ((b'k', b'Old', b'New'),))
+    with pytest.raises(ValueError, match='^Unexpected k label$'):
+        build.relabel(strings(*pairs))
+
+
+def segment(marker, body):
+    return bytes((0xff, marker)) + struct.pack('>H', len(body) + 2) + body
+
+
+def frame(marker=0xc0, width=320, height=375, bits=8, components=3):
+    """A start of frame, its components numbered from 1 as JFIF does."""
+    return segment(marker, struct.pack('>BHHB', bits, height, width, components) +
+                   b''.join(bytes((c, 0x11, 0)) for c in range(1, components + 1)))
+
+
+def jpeg(*parts):
+    return b'\xff\xd8' + b''.join(parts)
+
+
+JFIF = segment(0xe0, b'JFIF\0\1\1\0\0\x48\0\x48\0\0')
+BASELINE = 'Logo must be an 8-bit, three-component baseline JPEG (not grayscale/CMYK)'
+
+
+def test_jpeg_size():
+    tables = segment(0xdb, bytes(65)) + segment(0xc4, bytes(30))
+    assert build.jpeg_size(jpeg(JFIF, tables, frame(), segment(0xda, bytes(10)), b'\xff\xd9')) == (320, 375)
+
+
+@pytest.mark.parametrize('width,height', [(1, 1), (65535, 40000)])
+def test_jpeg_size_dimensions(width, height):
+    assert build.jpeg_size(jpeg(JFIF, frame(width=width, height=height))) == (width, height)
+
+
+def test_jpeg_size_skips_fill_and_bare_markers():
+    """0xff fill before a marker; TEM and RST0-7 carry no length."""
+    assert build.jpeg_size(jpeg(b'\xff\xff\x01\xff\xd0\xff\xd7', JFIF, b'\xff\xff', frame())) == (320, 375)
+
+
+def test_jpeg_size_skips_other_segments():
+    """DHT, JPG and DAC sit among the frame markers; an ICC profile's APP2 may run to 32 KB."""
+    others = segment(0xc4, b'\1') + segment(0xc8, b'\2') + segment(0xcc, b'\3') + segment(0xe2, bytes(0x7ffe))
+    assert build.jpeg_size(jpeg(others, frame())) == (320, 375)
+
+
+@pytest.mark.parametrize('marker', [0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf])
+def test_jpeg_size_wants_baseline(marker):
+    with pytest.raises(ValueError, match=f'^{re.escape(BASELINE)}$'):
+        build.jpeg_size(jpeg(JFIF, frame(marker)))
+
+
+@pytest.mark.parametrize('bits,components', [(12, 3), (8, 1), (8, 4), (8, 0)])
+def test_jpeg_size_wants_8_bit_rgb(bits, components):
+    with pytest.raises(ValueError, match=f'^{re.escape(BASELINE)}$'):
+        build.jpeg_size(jpeg(JFIF, frame(bits=bits, components=components)))
+
+
+@pytest.mark.parametrize('data,message', [
+    (b'\x89PNG\r\n', 'Logo must be a JPEG'), (jpeg(b'\x00'), 'Malformed JPEG'),
+    (jpeg(JFIF, b'\xff\xff'), 'Truncated JPEG marker'),
+    (jpeg(b'\xff\x00'), 'Malformed JPEG marker'), (jpeg(b'\xff\xd8', frame()), 'Malformed JPEG marker'),
+    (jpeg(b'\xff\xe0\x00'), 'Truncated JPEG segment'),
+    (jpeg(b'\xff\xe0\x00\x00'), 'Invalid JPEG segment length'), (jpeg(b'\xff\xe0\x00\x01'), 'Invalid JPEG segment length'),
+    (jpeg(b'\xff\xe0\x00\x05\x00\x00'), 'Invalid JPEG segment length'),
+    (jpeg(segment(0xc0, b'\x08\x01\x77')), 'Invalid JPEG frame length'),
+    (jpeg(JFIF, segment(0xc0, struct.pack('>BHHB', 8, 375, 320, 2) + bytes(9))), 'Invalid JPEG frame length'),
+    (jpeg(JFIF, frame(width=0)), 'Invalid JPEG dimensions'), (jpeg(JFIF, frame(height=0)), 'Invalid JPEG dimensions'),
+    (jpeg(JFIF, b'\xff\xe1\x00\x02'), 'No JPEG size marker'),
+    (jpeg(b'\xff\xd9\x00\x02', frame()), 'No JPEG size marker'),  # the search ends at EOI
+    (jpeg(b'\xff\xda\x00\x02', frame()), 'No JPEG size marker')])  # and at SOS
+def test_jpeg_size_refuses(data, message):
+    with pytest.raises(ValueError, match=f'^{re.escape(message)}$'):
+        build.jpeg_size(data)
+
+
 def test_bold_font():
     from fontTools.ttLib import TTFont
     font_bytes, ranges = build.bold_font()
@@ -328,6 +627,45 @@ def test_compile_helper(tmp_path, monkeypatch):
     assert commands[2] == ('ld.lld', '-m', 'elf32ltsmip', '-e', '__start', '--dynamic-linker', '/lib/ld-linux-mipsn8.so.1',
                            '--image-base=0x400000', '-z', 'noexecstack', '--gc-sections', '-s', '--hash-style=sysv', '--build-id=none',
                            *objs, tmp_path/'libc.so', tmp_path/'libz.so', '-o', tmp_path/'helper')
+
+
+def taglib(branch=0x1040004a):
+    """libtag_c as patch_m4b_cover reads it: the M4A cover branch at 0x125ac, in a LOAD from offset 0 below
+    the payload's 0x30000, a dynamic segment and the final PT_NULL slot."""
+    data = program((1, 0, 0, 0, 0x20000, 0x20000, 5, 0x10000), (2, 0x1f000, 0x1f000, 0x1f000, 0x100, 0x100, 6, 4), NULL, size=0x20000)
+    struct.pack_into('<I', data, 0x125ac, branch)
+    return bytes(data)
+
+
+def test_patch_m4b_cover(monkeypatch):
+    raw = taglib()
+    monkeypatch.setattr(build, 'TAG_C_SHA', build.sha(raw))
+    out = build.patch_m4b_cover(raw)
+    expected = bytearray(raw)
+    struct.pack_into('<I', expected, 0x125ac, 0x10007694)  # b 0x30000
+    struct.pack_into('<8I', expected, 52 + 64, 1, 0x20000, 0x30000, 0x30000, 48, 48, 5, 0x10000)
+    words = (0x104089b5, 0, 0x8f998170, 0x02002025, 0x2785d84c, 0x0320f809, 0, 0x104089ae, 0x8fbc0010, 0x10008963, 0)
+    assert out == bytes(expected) + struct.pack('<11I', *words) + b'm4b\0' and isinstance(out, bytes)
+
+
+def test_patch_m4b_cover_wants_the_pinned_library():
+    with pytest.raises(ValueError, match='^Unexpected TagLib cover library$'):
+        build.patch_m4b_cover(taglib())
+
+
+def test_patch_m4b_cover_wants_the_m4a_branch(monkeypatch):
+    raw = taglib(0x1040004b)
+    monkeypatch.setattr(build, 'TAG_C_SHA', build.sha(raw))
+    with pytest.raises(ValueError, match='^Unexpected TagLib M4A cover branch$'):
+        build.patch_m4b_cover(raw)
+
+
+def test_patch_m4b_cover_names_itself_in_a_mapping_error(monkeypatch):
+    raw = bytearray(taglib())
+    struct.pack_into('<H', raw, 44, 2)  # no final PT_NULL slot
+    monkeypatch.setattr(build, 'TAG_C_SHA', build.sha(raw))
+    with pytest.raises(ValueError, match='^TagLib cover: no final PT_NULL slot$'):
+        build.patch_m4b_cover(bytes(raw))
 
 
 def test_bt_silence_commands(monkeypatch):

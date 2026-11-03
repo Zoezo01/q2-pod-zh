@@ -10,6 +10,12 @@ import ipod
 import theme
 
 
+def classic():
+    """Classic's images without the pane's icons, which take most of the drawing time. Every art.py
+    mutant runs these tests, so only the two that read the icons draw them."""
+    return art.images({**theme.builtins()[1], 'pane_icon_x': 0})
+
+
 def pixels(data):
     w, h = struct.unpack('>II', data[16:24])
     idat = data.index(b'IDAT')
@@ -20,7 +26,9 @@ def pixels(data):
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi')}
+    full = art.images(themes[1])
+    assert {k: v for k, v in full.items() if '_icon_' not in k} == classic()  # what the other tests draw
+    assert set(full) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -32,7 +40,7 @@ REF_EDGE = {5: 0x114d90, 6: 0x114e91, 7: 0x114f91, 8: 0x125092, 9: 0x125193, 10:
 
 
 def test_the_play_state_stands_on_its_approved_rows():
-    got = art.images(theme.builtins()[1])
+    got = classic()
     w, h, at = pixels(got['classic_light_pause_l'])
     x0, y0 = art.STATE_BOX[:2]
     assert (w, h) == (ipod.STATE_W, 22)  # the bar's box and the art's are one number
@@ -54,7 +62,7 @@ def test_the_play_state_stands_on_its_approved_rows():
 
 def test_the_bolt_and_the_plug_fill_the_batterys_inside():
     t = theme.builtins()[1]
-    got = art.images(t)
+    got = classic()
     x0, y0 = art.BOLT_BOX[:2]
     for name in ('classic_light_bolt', 'classic_light_plug'):
         assert pixels(got[name])[:2] == tuple(art.BOLT_BOX[2:]) == (26, 13)  # the inside, x 290 to 315, rows 5 to 17
@@ -69,7 +77,7 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
 
 
 def test_the_note_is_white_and_translucent():
-    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_note'])
+    w, h, at = pixels(classic()['classic_light_note'])
     assert (w, h) == (100, 115)
     assert at(0, 0) == (0, 0, 0, 0)  # outside the drawing
     assert at(36, 30)[:3] == (255, 255, 255) and at(36, 30)[3] > 200  # the gloss at the stem's top
@@ -77,7 +85,7 @@ def test_the_note_is_white_and_translucent():
 
 
 def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
-    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_chevron'])
+    w, h, at = pixels(classic()['classic_light_chevron'])
     assert (w, h) == (12, 16)
     assert at(8, 8) == (255, 255, 255, 255)  # the point's centreline
     assert at(0, 15)[3] == 0 and at(11, 0)[3] == 0  # outside the stroke
@@ -85,7 +93,7 @@ def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
 
 
 def test_sort_is_three_white_bars():
-    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_sort_bars'])
+    w, h, at = pixels(classic()['classic_light_sort_bars'])
     assert (w, h) == (16, 12)
     for y in range(h):
         ink = [x for x in range(w) if at(x, y) == (255, 255, 255, 255)]
@@ -94,7 +102,7 @@ def test_sort_is_three_white_bars():
 
 
 def test_the_volume_ends_are_white_speakers_the_loud_one_with_waves():
-    got = art.images(theme.builtins()[1])
+    got = classic()
     (lw, lh, lo), (hw, hh, hi) = (pixels(got[f'classic_light_vol_{n}']) for n in ('lo', 'hi'))
     assert (lw, lh, hw, hh) == (8, 13, 18, 13)
     assert all(lo(x, y)[:3] == (255, 255, 255) for x in range(lw) for y in range(lh) if lo(x, y)[3])

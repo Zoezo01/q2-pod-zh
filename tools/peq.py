@@ -197,7 +197,7 @@ LIBC = {
     'write': ('int', 'int, const void *, unsigned'),
 }
 
-def compile_common(out, binary, player=False, flac_experiments=()):
+def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: no mutate block
     got = {}
     for line in run('readelf', '-AW', binary).splitlines():
         words = line.split()
@@ -265,7 +265,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):
     run('clang', *flags, '-c', out/'peq_imports.S', '-o', obj)
     return [*objects, obj]
 
-def patch_player(raw, out, flac_experiments=()):
+def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     from flac import selection, EXPORTS, patch_words
     flac_experiments = selection(flac_experiments)
     check(sha(raw) == PLAYER_SHA, 'Unexpected hciplayer')
