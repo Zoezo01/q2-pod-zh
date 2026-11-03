@@ -4,12 +4,14 @@ No global widget hook: excluded pages stay byte-identical; iPod's list style edi
 The audit records full original instructions and asset hashes, not search/replace patterns.
 """
 import copy
+import dataclasses
 import functools
 import json
 import math
 import pathlib
 import re
 import struct
+import types
 from build import ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
@@ -21,14 +23,20 @@ INC = (ROOT/'patch/offsets.inc').read_text()
 O = {m[1]: int(m[2], 0) for m in re.finditer(r'^#define\s+(\w+)\s+(0x[0-9A-Fa-f]+|\d+)\b', INC, re.M)}
 inc = O.__getitem__
 
-# The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
-# 72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
-# 68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
-BOTTOM = 290
-PITCH = 72
-BODY = PITCH - 4
-ART = 52
-ART_INSET = (BODY - ART) // 2
+@dataclasses.dataclass(frozen=True)
+class Geometry:
+    """The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
+    72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
+    68px row body. Rows keep the row layout's eight-pixel left margin for the artwork."""
+    name: str = 'ipod'
+    bar: int = 30
+    pitch: int = 72
+    body: int = 68
+    art: int = 52
+    art_inset: int = 8
+
+
+SET0 = Geometry()
 MARGIN = 8
 # The 375x320 panel's glass has rounded corners that hide whatever is drawn in them. CORNER_R is
 # the device calibration knob: the corner radius in pixels, fitted to device photos (V5.4I cut
@@ -81,16 +89,14 @@ HOME_LIST_W = 375
 # iPod Now Playing (Rockbox iVideo): a 40px top row, the art band below it, then the progress bar
 # with the times under its ends. Stock draws the 3x10 A-B markers at y 250; the 4px line sits at
 # 253; their x follows NP_BAR through the np_bar_* immediates in ipod.json. The window starts
-# at screen y 30; the top and bottom rows take their insets from the corners. The bar is a capsule
-# (round_radius half its height) and the payload rounds the art's corners (paint_cover).
+# at screen y Geometry.bar; the top and bottom rows take their insets from the corners. The bar
+# is a capsule (round_radius half its height) and the payload rounds the art's corners (paint_cover).
 # The art and the metadata keep NP_MARGIN from the sides, 12px apart; the art is as large as that
 # leaves while the text column keeps NP_TEXT_W, and "3 of 12" starts in line with the art.
 NP_TOP = 40
 NP_ICON = 50                     # the stock 50px control icons, centred in the top row
 NP_ICON_PAD = inc('NP_ICON_PAD')  # play_fav/play_order: 28px, centred, glyph ends 4px above
 NP_MARGIN = 16
-NP_POS_X = max(NP_MARGIN, corner_x(30 + (NP_TOP - 16) // 2, 16)) + 6  # "3 of 12", 16px text
-NP_ICONS_END = 375 - corner_x(30, NP_TOP)  # the 50px icon images fill the row's height
 NP_TEXT_W = 165
 NP_TITLE_PX = inc('NP_TITLE_PX')  # the title over the NP_META_PX artist and album, as Apple's hierarchy
 NP_META_PX = inc('NP_META_PX')
@@ -99,12 +105,24 @@ NP_SLIDE_H = 186                 # the swipeable art, lyrics and info pages; the
 NP_DOTS_Y = NP_SLIDE_H - 4       # above the seek bar's NP_TOUCH target
 # The art's gap below to the dots matches its gap above to "3 of 12"'s 16px text.
 NP_ART_Y = (NP_DOTS_Y - NP_ART - (NP_TOP - 16) // 2) // 2
-NP_BAR_X = max(MARGIN, corner_x(30 + 251, 8))
-NP_BAR = [NP_BAR_X, 253, 375 - 2 * NP_BAR_X, 4]
 NP_TOUCH = 44
 NP_TIMES_Y = 265  # 14px text in a 16px label, clear of the 10px A-B markers
-NP_TIME_X = max(MARGIN, corner_x(30 + NP_TIMES_Y + 1, 14))
 NP_TEXT_X = NP_MARGIN + NP_ART + 12
+
+
+def with_geometry(g):
+    """The row sizes and the Now Playing insets that clear the glass, for a window starting at g.bar."""
+    bar_x = max(MARGIN, corner_x(g.bar + 251, 8))
+    return types.SimpleNamespace(
+        BOTTOM=320 - g.bar, PITCH=g.pitch, BODY=g.body, ART=g.art, ART_INSET=g.art_inset,
+        NP_POS_X=max(NP_MARGIN, corner_x(g.bar + (NP_TOP - 16) // 2, 16)) + 6,  # "3 of 12", 16px text
+        NP_ICONS_END=375 - corner_x(g.bar, NP_TOP),  # the 50px icon images fill the row's height
+        NP_BAR_X=bar_x, NP_BAR=[bar_x, 253, 375 - 2 * bar_x, 4],
+        NP_TIME_X=max(MARGIN, corner_x(g.bar + NP_TIMES_Y + 1, 14)))
+
+
+IPOD = with_geometry(SET0)
+globals().update(vars(IPOD))
 check([NP_MARGIN, NP_ART, NP_TEXT_X, NP_TEXT_W, *NP_BAR[::2], NP_TIMES_Y, NP_TIME_X] ==  # Spotify's and Radio's
       [inc('SPOT_' + n) for n in 'ART_X ART_PX TEXT_X TEXT_W BAR_X BAR_W TIMES_Y TIME_X'.split()], 'SPOT_* != NP_*')
 check(inc('NP_ART_TOP') == NP_TOP + NP_ART_Y, 'NP_ART_TOP != NP_TOP + NP_ART_Y')

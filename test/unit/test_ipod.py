@@ -1,5 +1,6 @@
 """tools/ipod.py's page rewrites on small synthetic UI trees built to the shape each one checks for."""
 import copy
+import dataclasses
 
 import pytest
 
@@ -657,3 +658,28 @@ def test_sized_art(monkeypatch):
     assert ipod.sized_art(b'in', (140, 100)) == b'png'
     assert calls == [(('png:-', '-filter', 'Lanczos', '-resize', '52x52!', '-background', 'none', '-gravity', 'center', '-extent', '52x52', *ipod.PNG_OUT), b'in'),
                      (('png:-', '-filter', 'Lanczos', '-resize', '100x100!', '-background', 'black', '-gravity', 'center', '-extent', '140x100', *ipod.PNG_OUT), b'in')]
+
+
+SET0_VALUES = dict(BOTTOM=290, PITCH=72, BODY=68, ART=52, ART_INSET=8, NP_POS_X=22, NP_ICONS_END=353,
+                   NP_BAR_X=21, NP_BAR=[21, 253, 333, 4], NP_TIME_X=46)
+
+
+def test_with_geometry_set0_matches_module():
+    assert vars(ipod.with_geometry(ipod.SET0)) == SET0_VALUES
+    assert {n: getattr(ipod, n) for n in SET0_VALUES} == SET0_VALUES   # today's names still import
+    assert ipod.SET0 == ipod.Geometry() and vars(ipod.IPOD) == SET0_VALUES and ipod.SET0.name == 'ipod'
+
+
+def test_with_geometry_follows_the_bar():
+    assert vars(ipod.with_geometry(ipod.Geometry(name='t', bar=26))) == dict(
+        SET0_VALUES, BOTTOM=294, NP_ICONS_END=350, NP_BAR_X=18, NP_BAR=[18, 253, 339, 4], NP_TIME_X=39)
+
+
+def test_with_geometry_takes_the_row_sizes():
+    ns = ipod.with_geometry(ipod.Geometry(name='t', pitch=64, body=60, art=48, art_inset=6))
+    assert (ns.PITCH, ns.BODY, ns.ART, ns.ART_INSET, ns.BOTTOM) == (64, 60, 48, 6, 290)
+
+
+def test_geometry_is_frozen():
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        ipod.SET0.bar = 26
