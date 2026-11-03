@@ -683,3 +683,44 @@ def test_with_geometry_takes_the_row_sizes():
 def test_geometry_is_frozen():
     with pytest.raises(dataclasses.FrozenInstanceError):
         ipod.SET0.bar = 26
+
+
+T26 = ipod.Geometry(name='t', bar=26, pitch=64, body=60, art=52, art_inset=4)
+
+
+def test_ipod_home_art_fills_the_client_height():
+    root = home(); ipod.ipod_home(root, g=T26)
+    assert root[3][0][1] == [0, 0, 375, 294]
+
+
+def test_status_bar_takes_the_bar_height():
+    root = bar(); ipod.status_bar(root, g=T26); n = named(root)
+    assert [root[1][3], n['view_left'][1][3], n['view_right'][1][3]] == [26, 26, 26]
+    assert n['label_idle'][1] == [ipod.STATUS_MARGIN, 0, 28, 26] and n['label_clock'][1][3] == 26
+    assert [n[x][1][3] for x in ipod.STATUS_HIDDEN] == [26, 26, 26]
+
+
+def test_status_bar_wants_the_stock_height():
+    root = bar(); root[1][3] = 32
+    with pytest.raises(ValueError, match='^Unexpected status bar height$'):
+        ipod.status_bar(root)
+
+
+def test_playing_page_follows_the_bar():
+    root = playing(); ipod.playing_page(root, g=T26); n = named(root)
+    assert n['img_more'][1] == [300, 0, 50, 40] and n['label_ipod_pos'][1] == [22, 0, 278, 40]
+    assert n['slider_play'][1][0::2] == [18, 339] and n['img_repeata'][1][0] == 18
+    assert n['label_playtime'][1] == [39, 265, 80, 16] and n['label_ipod_remain'][1] == [256, 265, 80, 16]
+
+
+def test_patch_asset_rows_and_lists_follow_the_geometry(monkeypatch):
+    page = w('folder_page', w('view_navbar', at=[0, 0, 375, 50]),
+             w('list_view', w('row', w('art', kind='image', at=[8, 9, 52, 52]), kind='list_item', at=[0, 0, 375, 78]),
+               kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
+    data = ipod.encode(page)
+    monkeypatch.setitem(ipod.UI_ASSETS, 'folder_page.bin', ipod.sha(data))
+    n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data, g=T26)))
+    assert n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '64'
+    assert n['row'][1][3] == 64 and n['art'][1][1] == 4
+    n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data)))
+    assert n['list_view'][1] == [0, 0, 375, 290] and n['row'][1][3] == 72 and n['art'][1][1] == 8

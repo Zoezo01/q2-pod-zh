@@ -277,7 +277,8 @@ def home_list(name, rows, extra=None):
             {'name': 'list_view_' + name, 'item_height': str(HOME_ROW), **LIST_CLEAR, **(extra or {})}, [view]]
 
 
-def ipod_home(root):
+def ipod_home(root, g=SET0):
+    geo = with_geometry(g)
     check([n[0] for n in root[3]] == ['slide_menu', 'image', 'image'], 'Unexpected home carousel')
     check([n[2]['name'] for n in root[3][0][3]] == ['btn_' + r for r in
             ('playing', 'localmusic', 'folder', 'stream', 'playset', 'sysset')], 'Unexpected home cards')
@@ -290,7 +291,7 @@ def ipod_home(root):
     for n in root[3]:
         n[2].update(visible='false', sensitive='false')
     # An image for the playing track's art, moved to the right panel and fitted by coverflow_home_art.
-    root[3] = [['image', [0, 0, 375, 290], {'name': 'img_homeart', 'draw_type': 'fill'}, []],
+    root[3] = [['image', [0, 0, 375, geo.BOTTOM], {'name': 'img_homeart', 'draw_type': 'fill'}, []],
                home_list('home', HOME_ROWS), home_list('homeset', HOME_SETS, {'visible': 'false'}), *root[3]]
 
 
@@ -344,12 +345,15 @@ BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W
 CLOCK_GAP = 4
 
 
-def status_bar(root):
+def status_bar(root, g=SET0):
     left, right = root[3]
     root[2]['style:normal:bg_color'] = '#000000'
     # Clear, not black: AWTK draws the border over the bar's fill, and Light Mode flips black to paper.
     root[2].update({f'style:{s}:border_color': '#00000000' for s in ('normal', 'disable', 'focused')})
     check([left[2].get('name'), right[2].get('name')] == ['view_left', 'view_right'], 'Unexpected status bar')
+    check(root[1][3] == left[1][3] == right[1][3] == 30, 'Unexpected status bar height')
+    root[1][3] = left[1][3] = right[1][3] = g.bar
+    # ponytail: a 26 px bar's icons sit at y 5; a set with another bar re-derives STATUS_MARGIN/BATT_ROOM
     widgets = {n[2]['name']: n for n in left[3] + right[3]}
     check(sorted([*widgets, 'view_battery']) == sorted(STATUS_LEFT + STATUS_RIGHT + STATUS_HIDDEN), 'Unexpected status bar widgets')
     widgets['img_wifi'][1][2] = 14
@@ -378,15 +382,15 @@ def status_bar(root):
     reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + max(BATT_PCT_W, BATT_H_W, inc('BATT_INSIDE_W') + inc('BATT_NUB_W'))
     check(BATT_ROOM == room and reach <= room, f'Status bar battery needs {reach}px of {room}px')
     for name in STATUS_HIDDEN:
-        g = widgets[name][1]
-        g[0], g[3] = -200, 30  # still updated by stock, drawn off-screen
+        box = widgets[name][1]
+        box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
         root[3].append(widgets[name])
-    root[3].append(['label', [STATUS_MARGIN, 0, 28, 30], {
+    root[3].append(['label', [STATUS_MARGIN, 0, 28, g.bar], {
         'name': 'label_idle', 'text': 'Q2', 'visible': 'false',
         'style:normal:font_size': '18', 'style:normal:text_color': '#FFFFFF',
         'style:normal:text_align_h': 'left'}, []])
     # The payload writes the local time here (ringnav_paint_bg).
-    root[3].append(['hscroll_label', [extent, 0, width, 30], {
+    root[3].append(['hscroll_label', [extent, 0, width, g.bar], {
         'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true', 'ellipses': 'true'}, []])
 
 
@@ -423,7 +427,8 @@ def np_slider(slider, x, cy, w, h):
         if key.endswith(':round_radius'): slider[2][key] = str(h // 2)  # a capsule, track and fill
 
 
-def playing_page(root):
+def playing_page(root, g=SET0):
+    geo = with_geometry(g)
     named = {n[2].get('name'): n for n in walk(root)}
     check([n[2].get('name') for n in root[3]] == [
         'view_buttons', 'scrlabel_title', 'scrlabel_artist', 'label_playtime', 'label_playlen',
@@ -436,8 +441,8 @@ def playing_page(root):
         n[2] = {k: v for k, v in n[2].items() if not k.endswith(('_offset', 'text_align_h'))}
         if 'image' in n[2]:
             n[2]['draw_type'] = 'center'
-    named['img_more'][1] = [NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
-    buttons[3].append(['label', [NP_POS_X, 0, NP_ICONS_END - NP_ICON - NP_POS_X, NP_TOP], {
+    named['img_more'][1] = [geo.NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
+    buttons[3].append(['label', [geo.NP_POS_X, 0, geo.NP_ICONS_END - NP_ICON - geo.NP_POS_X, NP_TOP], {
         'name': 'label_ipod_pos', 'style:normal:font_size': '16', 'style:normal:text_color': NP_GREY,
         'style:normal:text_align_h': 'left'}, []])
 
@@ -503,16 +508,16 @@ def playing_page(root):
     dots[2].update(anchor_x=f'{375 // 2}px', anchor_y='0px')
     named['image_wait'][1] = [NP_MARGIN + (NP_ART - 54) // 2, NP_TOP + art_y + (NP_ART - 54) // 2, 54, 54]
 
-    x, y, w, h = NP_BAR
+    x, y, w, h = geo.NP_BAR
     np_slider(named['slider_play'], x, y + h // 2, w, h)
     for name in ('img_repeata', 'img_repeatb'):
         named[name][1][0] = x
     total = named['label_playlen']
     remain = copy.deepcopy(total)
-    remain[1] = [375 - NP_TIME_X - 80, NP_TIMES_Y, 80, 16]
+    remain[1] = [375 - geo.NP_TIME_X - 80, NP_TIMES_Y, 80, 16]
     remain[2].update(name='label_ipod_remain', text='')
     total[2]['visible'] = 'false'
-    named['label_playtime'][1] = [NP_TIME_X, NP_TIMES_Y, 80, 16]
+    named['label_playtime'][1] = [geo.NP_TIME_X, NP_TIMES_Y, 80, 16]
     for n in (named['label_playtime'], remain):
         for key in n[2]:
             if key.endswith(':text_color'): n[2][key] = NP_GREY
@@ -821,13 +826,15 @@ def patch_word(data, address, old, new, purpose, changes=None):
         changes.append(dict(address=hex(address), original=hex(old), patched=hex(new), purpose=purpose))
 
 
-def patch_asset(path, data):
+def patch_asset(path, data, g=SET0):
+    geo = with_geometry(g)
     check(sha(data) == UI_ASSETS[path], f'{path}: unaudited UI asset')
     root = decode(data)
     check(encode(root) == data, f'{path}: UI round trip differs')
     if path == ARTIST_PAGE:
         artist_tabs(root)
-    whole = {HOME_PAGE: ipod_home, STATUS_BAR: status_bar, PLAYING_PAGE: playing_page, QUICK_SETTINGS: quick_settings,
+    whole = {HOME_PAGE: functools.partial(ipod_home, g=g), STATUS_BAR: functools.partial(status_bar, g=g),
+             PLAYING_PAGE: functools.partial(playing_page, g=g), QUICK_SETTINGS: quick_settings,
              CONFIRM: confirm_dialog, VOLUME: volume_dialog, BIGCOVER: bigcover_page}
     if path in whole:
         whole[path](root)
@@ -856,33 +863,33 @@ def patch_asset(path, data):
     else:  # the toolbar's right button keeps the iPod glyphs' corner clearance
         for n in nav[0][3]:
             if n[2].get('name') == 'gif_returnplay':
-                n[1][0] = 375 - corner_x(30, n[1][3]) - n[1][2]
+                n[1][0] = 375 - corner_x(g.bar, n[1][3]) - n[1][2]
     for n in root[3]:
         if n is nav[0]:
             continue
-        kind, g, props, _ = n
+        kind, box, props, _ = n
         if kind == 'list_view' and path in NAVBAR_ONLY:  # settings rows: see ipod_list_layout
-            check(g[1] == 50 and props.get('default_item_height') == str(SET_STOCK_ROW) and
+            check(box[1] == 50 and props.get('default_item_height') == str(SET_STOCK_ROW) and
                     'item_height' not in props, f'{path}: unexpected settings list')
             props['default_item_height'] = str(SET_ROW)
-            g[1], g[3] = SET_TOP, SET_ROWS * SET_ROW
+            box[1], box[3] = SET_TOP, SET_ROWS * SET_ROW
         elif kind in ('list_view', 'table_view', 'tab_control'):
-            check(g[1] in (50, 100), f'{path}: unexpected list position')
+            check(box[1] in (50, 100), f'{path}: unexpected list position')
             if not playlist:
-                g[1] -= 50
-            g[3] = BOTTOM - g[1]
+                box[1] -= 50
+            box[3] = geo.BOTTOM - box[1]
         elif props.get('name') == 'view_navbar_allplay':
-            check(g == [0, 50, 375, 50], f'{path}: unexpected action bar')
-            g[1] = 0
+            check(box == [0, 50, 375, 50], f'{path}: unexpected action bar')
+            box[1] = 0
         elif kind == 'list_item':  # playlist editing actions
-            g[1] = 10 + ((g[1] - 60) // 78) * PITCH
+            box[1] = 10 + ((box[1] - 60) // 78) * geo.PITCH
         elif props.get('name') == 'view':  # allmusic's stock empty-state panel
-            g[1] -= 50
+            box[1] -= 50
         elif path in NAVBAR_ONLY:  # settings panels and notes keep their size; text ends clear of a top corner
-            check(g[1] >= 50, f'{path}: unexpected content under the toolbar')
-            g[1] -= 50
-            if kind in ('label', 'hscroll_label') and corner_inset(30 + g[1]):
-                g[2] = min(g[2], 375 - g[0] - corner_x(30 + g[1], 0))
+            check(box[1] >= 50, f'{path}: unexpected content under the toolbar')
+            box[1] -= 50
+            if kind in ('label', 'hscroll_label') and corner_inset(g.bar + box[1]):
+                box[2] = min(box[2], 375 - box[0] - corner_x(g.bar + box[1], 0))
     if path in NAVBAR_ONLY:
         slider_plain(path, root)
         return encode(root)
@@ -901,24 +908,24 @@ def patch_asset(path, data):
         in_row = in_row or kind in ('list_item', 'table_row') and g[3] in (0, 78)
         for prop in ('row_height', 'default_item_height'):
             if props.get(prop) == '78':
-                props[prop] = str(PITCH)
+                props[prop] = str(geo.PITCH)
         if in_row:
             if kind in ('list_item', 'table_row') and g[3] == 78:
-                g[3] = PITCH
+                g[3] = geo.PITCH
             elif g[3] == 70:
-                g[3] = BODY
+                g[3] = geo.BODY
             if g[1] in (11, 14, 21, 40, 41):
                 # titles and metadata keep their stock centring: the body shrank by two pixels
                 g[1] -= 1
             elif g[1] in (9, 10) and kind == 'image':
-                g[1] = ART_INSET
+                g[1] = geo.ART_INSET
         if path == ARTIST_PAGE:
             if kind == 'pages':
                 check(props.get('self_layout') == 'default(x=0,y=40,w=100%,h=170)', 'Unexpected tabs layout')
-                props['self_layout'] = f'default(x=0,y=40,w=100%,h={BOTTOM - 40})'
-                g[3] = BOTTOM - 40
+                props['self_layout'] = f'default(x=0,y=40,w=100%,h={geo.BOTTOM - 40})'
+                g[3] = geo.BOTTOM - 40
             if props.get('name') == 'list_view_album':
-                g[3] = BOTTOM - 40
+                g[3] = geo.BOTTOM - 40
         for child in children:
             rows(child, in_row)
     rows(root)
