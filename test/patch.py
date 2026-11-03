@@ -7533,6 +7533,23 @@ for utf8,raw in (('Lo que la música me enseñó',None),('Ciencia Ficción',None
     rawp=m.alloc(len(raw)+4); m.u.mem_write(rawp,raw+b'\0')
     m.call(address=0x5c5cf8,args=(int(latin1),rawp,m.string(copy),out),stack=(1,),gap=0)
     assert m.raw(out).decode()==utf8,(utf8,m.raw(out)); passed()
+# Multi-value genres (GENRE_COPY): TagLib's " / " join must fit style's 128 bytes without touching
+# the title at +0x80. Keep whole entries; an oversized first entry alone is cut at 127 bytes.
+genres = ['Sludge Metal', 'Alternative Metal', 'Country', 'Death Metal', 'Gothic Rock',
+          'Groove Metal', 'Grunge', 'Metal', 'Rock', 'Stoner Metal', 'Alternative Country',
+          'Gothic Country']
+joined = ' / '.join(genres)
+m = Machine()
+for given, want in (('', ''), ('Rock', 'Rock'), ('A / B', 'A / B'),
+                    ('x' * 127, 'x' * 127), ('x' * 128, 'x' * 127),
+                    ('A / ' + 'x' * 124, 'A'), (joined, ' / '.join(genres[:10]))):
+    out = m.alloc(0x100)
+    m.u.mem_write(out, b'\xa5' * 0x100)
+    assert m.call(address=payload_syms['ringnav_genre_copy'],
+                  args=(out, m.string(given), 0, 0), gap=0) == out
+    assert m.raw(out) == want.encode(), (given, m.raw(out))
+    assert m.u.mem_read(out + 0x80, 0x80) == b'\xa5' * 0x80
+passed()
 # CUE sheets (CUE_TEXT): its seven field conversions go to ringnav_cue_text: UTF-8 stays, GBK goes through
 # stock's conversion, any other text is Windows-1252 re-encoded as UTF-8, cut at a whole character to 511 bytes.
 for address in CUE_TEXT: assert struct.unpack_from('<I',demo,fileoff(demo,address))[0]==jal(payload_syms['ringnav_cue_text'])
@@ -14087,6 +14104,26 @@ want=['Album: Kid A','Genre: Unknown','File Size: 35.92 MB','Year: 2000','Encodi
 for _ in range(2):
     m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
     assert [c[1] for c in m.calls if c[0]=='np_info']==[win] and [m.nodes[l]['text'] for l in lines.values()]==want, [m.nodes[l]['text'] for l in lines.values()]
+assert not m.nodes[lines['label_genre']].get('destroyed') and m.nodes[lines['label_genre']]['type']=='label'
+passed()
+# A long bounded genre would be clipped at both ends by the plain centred label: that one becomes an
+# always-scrolling label, keeps the whole text, and is replaced only once.
+joined=' / '.join(['Sludge Metal','Alternative Metal','Country','Death Metal','Gothic Rock','Groove Metal',
+                   'Grunge','Metal','Rock','Stoner Metal'])
+m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'
+old=m.node('label','label_genre',text='Genre:'+joined)
+win=m.node('window','playing_page',[old]); m.word(old+O['W_PARENT'],win)
+m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
+new=next(w for w,n in m.nodes.items() if n.get('name')=='ringnav_genre_scroll')
+assert m.nodes[old]['visible']==0 and not m.nodes[old].get('destroyed')
+assert m.nodes[new]['type']=='hscroll_label' and m.nodes[new]['text']=='Genre: '+joined
+assert m.nodes[new]['style']=='s_scrlabel_white16c'
+assert m.nodes[new]['hscroll_label_set_only_focus']==1 and m.nodes[new]['hscroll_label_set_ellipses']==0
+assert sum(c[0]=='widget_set_text_utf8' and c[1]==new for c in m.calls)==1
+assert any(c[0]=='timer_add' for c in m.calls)
+m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)  # stock's next 250 ms fill
+assert not [c for c in m.calls if c[0]=='widget_set_text_utf8' and c[1]==new]  # no scroll reset
+assert m.nodes[new]['text']=='Genre: '+joined
 passed()
 # A missing player_location ("(key)") reads Location; a long (CJK) folder, past 512 bytes, stays whole.
 m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'; m.location=b'(player_location)\0'
