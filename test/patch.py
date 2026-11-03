@@ -6756,6 +6756,9 @@ for dx,dy in ((70,0),(0,40),(11,0)):  # a swipe, a drag of the lines, past TAP_P
     m=centred(); m.tap(dx=dx,dy=dy); assert m.full()[:6]==COLUMN[:5]+(None,),(dx,dy,m.full()); passed()
 m=centred(lines=()); m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()  # no lyrics
 m=centred(centred='0'); assert not m.nodes[m.lyric].get('handlers'); passed()  # the iPod page's own
+# np_layout() picks the lyric touch: the centred page's lyrics take np_lyric_touch on all three, the iPod page's none.
+for on,want in (('1',[(O[k],payload_syms['np_lyric_touch'],0) for k in ('EVT_POINTER_DOWN','EVT_POINTER_UP_BEFORE','EVT_POINTER_ABORT')]),('0',[])):
+    m=centred(centred=on); assert m.nodes[m.lyric].get('handlers',[])==want,(on,m.nodes[m.lyric].get('handlers')); passed()
 # A page without stock's slide_view (a layout of its own) has no column: a tap on its lyrics leaves
 # everything as it was, where np_full read the column off a NULL slide_view (W_PARENT at 0x48).
 m=CentredMachine(); m.lines=[(5,'x'*15),(9,'Two two'),(12,'Three')]; m.show(9,slide='pages')
