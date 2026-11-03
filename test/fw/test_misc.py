@@ -1506,7 +1506,7 @@ class Ui(C.Structure):
     _fields_ = [(k, C.c_void_p) for k in 'page view edit graph bar'.split()] + [('timer', C.c_uint), ('keyboard_timer', C.c_uint)] + \
                [(k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()] + \
                [('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
-                ('destination', C.c_char * 600), ('status', C.c_char * 160), ('name', C.c_char * 64), ('applied', C.c_char * 64),
+                ('destination', C.c_char * 600), ('status', C.c_char * 160), ('name', C.c_char * 256), ('applied', C.c_char * 256),
                 ('curve', (C.c_float * 343) * 2)]
 
 
@@ -1850,8 +1850,6 @@ def test_apply_bypassed_keeps_the_mode(fw):
     assert s.mode == 2 and not s.peq.bypass and u.draft.bypass == 0
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: ui.name holds 63 bytes, so a preset with a longer file name loads under a cut name and "
-                                       "remember_preamp can't find its file (peq_ui.c:67, 241, 330)")
 def test_a_preamp_pick_sticks_to_a_long_named_preset(fw):
     u = ui(fw)
     name = 'Beyerdynamic DT 1990 Pro (250 ohm) (Balanced pads) ParametricEQ v2'

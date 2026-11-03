@@ -64,7 +64,7 @@ static struct {
     peq_preset draft, candidate, named; /* named: the preset applied under applied's name */
     char (*names)[256];
     char destination[600], status[160];
-    char name[64], applied[64]; /* the draft's preset, and the active one's, when loaded from a file */
+    char name[256], applied[256]; /* the draft's preset, and the active one's, when loaded from a file */
     float curve[2][GRAPH_W];      /* the left and right response, in graph rows */
 } ui __attribute__((section(".scratch")));
 
