@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.6.5**:
+  - Sound: AAC in `.m4a`, Opus and Ogg Vorbis files that record their encoder's silence now change tracks without it, as MP3 and FLAC do, on wired and Bluetooth. Files that don't say how much there is keep theirs, as do HE-AAC, a raw `.aac` and WMA.
   - Lists: a long title on the selected row now scrolls a few times after a moment, as on an iPod, so you can read all of it. Other rows keep their "…".
   - Display: **Appearance → Time in Title** is new. Turn it off and the bar names the page you're on (Albums, Display, Now Playing), as an iPod's title bar does; Home and pages such as Games and Photos keep the clock. Choosing **Theme: Classic** turns it off, and **Theme: Minimal** on.
   - Classic: under square corners, album art has square corners too, Cover Flow's included, and the battery icon's charge is green.

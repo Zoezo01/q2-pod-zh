@@ -20,6 +20,10 @@ IDLE_WAIT = (0x42d9c8, 0x0c2b6bf4)  # jal usleep
 SEEK_SLOT, STOCK_SEEK = 0x89fdbc, 0x48d1ac
 # demux_audio_open's calls to the ID3v2 frame walker (0x48e6b0) that feeds ReplayGain; see docs/internals.md.
 ID3_CALLS, STOCK_ID3 = (0x48f704, 0x4923d8), 0x48e6b0
+# lavf_check_file's calloc of lavf_priv_t (0xc38): room for patch/lavf_gapless.c's window, freed with it.
+LAVF_PRIV = (0x4aea4c, 0x24040c38, 0x24040c58)
+# mov_read_trak's av_freep(&sc->elst_data): its window reads the edit's duration. mov_read_close frees it instead.
+MOV_EDITS = (0x5168f8, jal(0x6f4118), 0)
 # Audio private allocation, pre-filter PCM call, and audio demuxer close slot.
 MP3_ALLOC, MP3_FILTER, MP3_CLOSE = 0x48fb90, 0x47f8e0, 0x89fdb8
 # ad_libmad read_frame's demux_read_data call (0x484c0c), which gets the last frame its guard bytes.
@@ -122,6 +126,7 @@ LIBC = {
     'rmdir': ('int', 'const char *'),  # Apps' Remove (netupdate.c)
     'lseek64': ('long long', 'int, long long, int'), 'read': ('int', 'int, void *, unsigned'),
     'snprintf': ('int', 'char *, unsigned, const char *, ...'),
+    'llrint': ('long long', 'double'),
     '__isoc99_sscanf': ('int', 'const char *, const char *, ...'),  # peq.c peq_number: no strtod in demo's GOT
     'opendir': ('void *', 'const char *'), 'closedir': ('int', 'void *'),
     'readdir': ('struct dirent *', 'void *'),
@@ -241,7 +246,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):
     flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)
@@ -320,6 +325,8 @@ def patch_player(raw, out, flac_experiments=()):
     patch_word(data, MP3_FILL, DEMUX_FILL, ps['mp3_fill'], 'MP3 tail tags')
     for address in ID3_CALLS:
         patch_word(data, address, jal(STOCK_ID3), jal(ps['id3_gain']), 'MP3 ReplayGain')
+    patch_word(data, *LAVF_PRIV, 'lavf gapless window')
+    patch_word(data, *MOV_EDITS, 'M4A edit list kept')
     for address, stock, patched in patch_words(flac_experiments, ps):
         patch_word(data, address, stock, patched, 'Experimental FLAC')
     append_payload(data, payload, PLAYER_BASE, max(len(payload), ps['__end']-PLAYER_BASE), 'player')

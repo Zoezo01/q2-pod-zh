@@ -422,6 +422,10 @@ def validate_assets(directory):
     from flac import patch_words as flac_words
     flac = flac_words('sync,lpc,output', symbols(directory/'peq'/'peq.elf'))
     gates += [fileoff(old, a) for a, _, _ in flac]
+    # Lossy gapless: the window's room and the kept edit list.
+    from peq import LAVF_PRIV, MOV_EDITS
+    gates += [fileoff(old, a) for a, _, _ in (LAVF_PRIV, MOV_EDITS)]
+    assert [struct.unpack_from('<I', new, fileoff(old, a))[0] for a, _, _ in (LAVF_PRIV, MOV_EDITS)] == [LAVF_PRIV[2], MOV_EDITS[2]]
     differ = [i for i in range(0x3e40, 0x485250) if old[i] != new[i]]
     assert set(differ) <= {*range(off, off+4), *(i for g in gates for i in range(g, g+4))} and not any(new[off:off+4])
     assert [struct.unpack_from('<I', new, fileoff(old, a))[0] for a, _, _ in words] == [p for _, _, p in words]

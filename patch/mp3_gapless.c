@@ -252,6 +252,7 @@ void *mp3_private_alloc(unsigned size) {
     return calloc(1, sizeof(mp3_private));
 }
 
+void lavf_trim(void *d, void *sh, af_data *data);
 af_data *mp3_filter(void *filters, af_data *data, void *sh) {
     void *ds = AT(sh, 0, void *), *d = ds ? AT(ds, 0x58, void *) : 0;
     mp3_private *p = mp3_state(d);
@@ -283,6 +284,7 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
         }
     }
     if (p && p->start) mp3_trim(p, data);
+    lavf_trim(d, sh, data);
     return ((af_data *(*)(void *, af_data *))0x44d350u)(filters, data);
 }
 
