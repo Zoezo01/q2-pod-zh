@@ -1041,7 +1041,7 @@ static void show(void) {
     } else if (l->state == K_ERROR) {
         pg.view = page_list(pg.page, pg.page, 0, l->note, n = 1 + stoppable(), 48);
         page_row_detail(pg.view, 0,
-                        l->retry ? "Retry" : "Install it again in System settings → Apps", 0,
+                        l->retry ? "Retry" : "Install it again in System settings → App Store", 0,
                         clicked);
         if (n > 1) stop_row(1);
     } else {

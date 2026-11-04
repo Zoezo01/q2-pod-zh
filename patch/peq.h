@@ -84,6 +84,8 @@ static inline int ink_vgcanvas_set_fill_linear_gradient(void *vg, float sx, floa
 #define PEQ_ACTIVE PEQ_ROOT "/mnt/data/peq-active"
 #define PEQ_SAVED PEQ_ROOT "/mnt/data/peq-presets"
 #define PEQ_IMPORT PEQ_ROOT "/mnt/mmc/EQ"
+#define EQ_OUTPUTS PEQ_ROOT "/mnt/data/peq-outputs" /* EQ per Output: an eq_state per output, and owner */
+#define EQ_DEVICES 32 /* Bluetooth devices remembered at once */
 
 /* Versioned disk representation: fixed-width fields, no pointers or implicit padding.
  * enabled: 0 off, 1 both channels, 2 left only, 3 right only (v1 files hold 0 or 1).
@@ -128,6 +130,8 @@ int peq_save(const char *path, const peq_preset *p, int replace);
 void eq3_bands(peq_preset *p, const double gain[3]);
 int eq_load(eq_state *s); /* 0: no readable state, s holds the defaults */
 int eq_save(const eq_state *s);
+int eq_load_from(const char *path, eq_state *s), eq_save_to(const char *path, const eq_state *s);
+int peq_save_file(const char *path, const char *magic, const void *data, unsigned size);
 void eq_effective(const eq_state *s, peq_preset *out);
 int peq_compile(const peq_preset *p, int rate, peq_engine *out); /* the saved preamp, Auto or not */
 void peq_response(const peq_engine *e, int rate, double f, double *l, double *r);
@@ -213,6 +217,11 @@ int config_value(const char *section, const char *key, int n, int def); /* navig
 int image_show(void *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
 void peq_attach(void); /* peq_ui.c */
+/* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
+ * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following. */
+void eq_output(const char *key), eq_output_forget(void);
+int ringnav_eq_output(void);         /* navigation.c: the setting */
+void ringnav_eq_output_toggle(void); /* and its row's click */
 void peq_boot(void); /* clear a previous session's Simple EQ comparison before restoring playback */
 extern int peq_chained; /* peq_ui.c: peq_stock_eq ran this boot */
 void peq_chain(void);   /* crossfade.c: peq_attach once a connect (ringnav_mode), while playing */
@@ -315,7 +324,7 @@ int hex(char c); /* a hex digit's value, -1 for any other character; headset.c's
 void *label(void *parent, int x, int y, int w, int h, const char *style, int px, unsigned color);
 void spot_yield(void), spot_stop(void), radio_stop(void);
 void headset_volume_reset(void);
-void headset_poll(void), headset_manual(void);
+void headset_poll(void), headset_eq_poll(void), headset_manual(void);
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
 void video_key(unsigned key);

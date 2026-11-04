@@ -137,6 +137,29 @@ static void wheel_post(char *info, int key) {
         ((void (*)(void *))WHEEL_POST)(info);
     }
 }
+/* main_loop_queue_event (tools/build.py QUEUE_LEAF): the one way into the UI loop's queue, for every
+ * input thread, SyncLink's keys and idle requests alike; full, it drops its oldest event. The touch
+ * thread (tslib_run, 0x622d70) posts an event of type 0 for every sample with no pressure while it
+ * holds no finger down, which the loop hands the window manager as EVT_NONE. Wheel QS's lift writes
+ * BTN_TOUCH 0 to the panel's node, so a thumb that rests on the screen's edge after the swipe is
+ * reported without a touch the input core passes on, and streams those at the panel's rate; twenty
+ * of them while the pull-down opened would evict the lift's release (inferred; q2-wheel.log shows
+ * thread=0, last=move), and the wheel and Centre were dead until a tap. They mean nothing, so they are not queued;
+ * everything else goes to stock's poster. A rim button going down is noted here for Wheel QS
+ * (qs_start): this runs on the posting thread, ahead of a UI thread a track start may be blocking,
+ * so chord_gate's edge_held would come too late. */
+static volatile unsigned qs_key_at __attribute__((section(".scratch")));
+int ringnav_queue_event(void *loop, const unsigned *r) {
+    int (*post)(void *, const void *) =
+        loop ? *(int (**)(void *, const void *))((char *)loop + LOOP_POST) : 0;
+    if (!post || !r) return 0x10; /* RET_BAD_PARAMS, as stock */
+    if (r[0] == EVT_KEY_DOWN) {
+        unsigned key = r[EVENT_KEY / 4];
+        if (key == KEY_RETURN || key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN)
+            qs_key_at = (unsigned)time_now_ms();
+    }
+    return r[0] ? post(loop, r) : 0;
+}
 
 volatile int wheel_raw __attribute__((section(".scratch")));
 volatile int wheel_travel __attribute__((section(".scratch")));
@@ -154,6 +177,13 @@ volatile int wheel_held __attribute__((section(".scratch"))); /* a finger on the
  * (g_slide_direction, set once as it starts), wherever the finger lifts, so the finger lifts where
  * it is and ringnav_dispatch turns that release's slide back to how the pull-down was (qs_back).
  * Writes are a few dozen bytes a sample, on the encoder thread, only during a gesture.
+ * Next then Previous is also a touch at one edge and then at the opposite one, and a press is not
+ * a swipe (#189), so a rim button going down since the last touch began, or within QS_GAP_MS
+ * before it (inferred: the ring's first sample may trail the switch), rules the second touch out
+ * (qs_key_at).
+ * ponytail: a touch that only brushes the rim and then a press still swipes, as the finger starts
+ * on the second touch's first sample, ahead of its button; let the press lift a live finger if
+ * that shows up.
  * ponytail: the pace is the first touch's down to the second's, doubled (clamped QS_MIN_MS to
  * QS_MAX_MS), a straight line with no easing; either way across toggles it, as the wheel's x has
  * no known top; gate on the first touch's x once a device trace finds the top. */
@@ -170,8 +200,8 @@ static unsigned qs_t0 __attribute__((section(".scratch"))); /* the gesture's fir
 static int qs_left __attribute__((section(".scratch"))),
     qs_travel __attribute__((section(".scratch"))), qs_armed __attribute__((section(".scratch")));
 /* the streamed finger: down (qs_live), from and to on the screen, over qs_ms from qs_t0 */
-static int qs_live __attribute__((section(".scratch"))), qs_from __attribute__((section(".scratch"))),
-    qs_to __attribute__((section(".scratch")));
+volatile int qs_live __attribute__((section(".scratch"))); /* navigation.c stale_note reads it (--dev) */
+static int qs_from __attribute__((section(".scratch"))), qs_to __attribute__((section(".scratch")));
 static unsigned qs_ms __attribute__((section(".scratch")));
 volatile int qs_back __attribute__((section(".scratch"))), qs_down __attribute__((section(".scratch")));
 
@@ -240,7 +270,7 @@ static void qs_start(int x) {
     int span = x > qs_x ? x - qs_x : qs_x - x;
     if (span > 100) span = 200 - span;
     qs_armed = qs_at && (unsigned)time_now_ms() - qs_at < QS_GAP_MS && qs_left < QS_SLACK &&
-               span >= QS_SPAN;
+               span >= QS_SPAN && (int)(qs_key_at - qs_t0) < -QS_GAP_MS;
     qs_travel = 0;
     if (qs_armed)
         qs_begin();

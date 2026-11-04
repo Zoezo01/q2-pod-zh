@@ -273,6 +273,9 @@ enum {
     POD_CF_SORT,    /* Display's Coverflow Sort: coverflow.c's SORT_FILE, not config.ini */
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
     POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
+    POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
+    POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
+    POD_CARMODE,
     POD_COUNT
 };
 
@@ -364,7 +367,7 @@ typedef struct {
     unsigned *rates, *album_rates;
     void *rate_win, *rate_fav, *rate_ctx, *rate_badge, *rate_on;
     int rate_shown; /* the badge's hearts plus 1, 0 for a new badge */
-    int empty_kind; /* the empty Library list empty_toast names */
+    int empty_kind; /* the empty Library list empty_toast names and closes */
     int rate_pick, rate_held;
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu, *rt_page, *rt_list;
@@ -379,7 +382,7 @@ typedef struct {
     int pod_read, charge_limit, low_power, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, cpu_off, cpu_bad, cpu_marked, artist_cf, year_old, resume, lock_clock,
-        artist_az, hold_home, standby_limit, standby_off, wheel_qs;
+        artist_az, hold_home, standby_limit, standby_off, wheel_qs, eq_output;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -400,6 +403,8 @@ typedef struct {
     void *dc_top;    /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
     unsigned charge_at, last_input, cpu_retry;
+    unsigned touch_at; /* the last pointer event's time, type and place (stale_heal, stale_note) */
+    int touch_type, touch_x, touch_y, stale_notes;
     int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
     int wdt_long; /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
     int ended;    /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
@@ -481,9 +486,8 @@ typedef struct {
         keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
         scrub_single;              /* Single Press Scrub (np_key) */
     unsigned keep_lit_at;
-    unsigned keytone_timer; /* Key Tone's click, for Click With Headphones' row (keytone_follow) */
-    void *sel_accent;       /* the row on a coloured selection, for Light Mode's ink */
-    int style_depth;        /* nested style hooks (a mutable style's fallback) map nothing */
+    void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
+    int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
     void *setting_label[11];
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
@@ -900,6 +904,7 @@ static int usb_prompt(void) {
 static int allowed_top(void *top) {
     return top && context_id(widget_get_prop_str(top, "name", (void *)0)) >= 0;
 }
+static int pointer_down(void) { return window_manager_get_pointer_pressed(window_manager()); }
 
 /* A click identifies its pane by ancestry. On the first wheel turn, an unowned pair starts
  * with the first pane in UI order; painting and touch never choose one implicitly. */
@@ -1311,6 +1316,9 @@ static void reveal(menu_t *m, int id, int immediate) {
     int want = h > m->height || y - top < margin  ? y - margin
                : y - top > m->height - h - margin ? y - (m->height - h - margin)
                                                   : top;
+    /* The first row brings in whatever heads the list above it (the EQ page's graph) when both
+     * fit, rather than stopping a margin into it. Kind 1's ids are its row order. */
+    if (m->kind == 1 && id == 0 && y + h + margin <= m->height) want = 0;
     want = clamp_step(want, max_top(m), 0);
     if (immediate) {
         wheel_offset(m, want);
@@ -1408,9 +1416,8 @@ static int confirm_center(const void *info) {
     /* Stock removes this one-shot after return; never repeat (RET_REPEAT=8). */
     st.center_timer = 0;
     void *top = window_manager_get_top_window(window_manager());
-    int valid = w && !window_manager_get_pointer_pressed(window_manager()) && !g_power_longkey &&
-                !g_ingore_bootkey_flag && !*(volatile unsigned char *)BOOT_KEY_GUARD &&
-                load_rows(&g_menu, w);
+    int valid = w && !pointer_down() && !g_power_longkey && !g_ingore_bootkey_flag &&
+                !*(volatile unsigned char *)BOOT_KEY_GUARD && load_rows(&g_menu, w);
     if (valid) {
         /* Validation must not recall/rebind a changed scope or consume its pending recall. */
         g_menu.ctx = context_now(&g_menu.scope);
@@ -1631,7 +1638,7 @@ static const char *const accent_names[] = {
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
- * Now Playing, 9 Click With Headphones (System settings, under Key Tone), 10 Single Press Scrub. */
+ * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub. */
 static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",    "THEME",
                                             "SHORTCUT",  "ROUNDED",   "LIGHT",      "KEEPLIT",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE" };
@@ -2130,14 +2137,13 @@ static void paint_selection(void *w, void *canvas) {
         if (st.untouch_timer) shown = 1;
     } else {
         if (surface((void *)0, (void *)0) != w) return;
-        if (!load(&g_menu, w, !window_manager_get_pointer_pressed(window_manager()))) {
+        if (!load(&g_menu, w, !pointer_down())) {
             cancel_center();
             return;
         }
         if (st.center_timer && !pending_matches(top, &g_menu)) cancel_center();
         if (g_menu.kind == 3) return; /* Home shows its selected card. */
-        i = reconcile(&g_menu,
-                      !moving(&g_menu) && !window_manager_get_pointer_pressed(window_manager()));
+        i = reconcile(&g_menu, !moving(&g_menu) && !pointer_down());
     }
     /* Touch hides the selection until the wheel or a button, except on Home (iPod's list) and a
      * pop-up's buttons, which open on their first (Cancel). */
@@ -2466,18 +2472,20 @@ static int quick_cancel(void *ctx, void *event) {
 static int quick_long(const void *unused) {
     quick.timer = 0;
     void *win = quick.win, *icon = quick.icon;
-    if (!win || window_manager_get_top_window(window_manager()) != win ||
-        !window_manager_get_pointer_pressed(window_manager()))
-        return 0;
+    if (!win || window_manager_get_top_window(window_manager()) != win || !pointer_down()) return 0;
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
-    /* Abort the image's press before closing, so its release cannot toggle the radio. */
+    /* Abort the image's press before closing, so its release cannot click the icon. */
     prop(icon, QUICK_HOLD, -page);
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, win, 0, 0);
     widget_dispatch_event_to_target_recursive(win, abort_event);
     quick_cancel(0, 0);
     dialog_quit(win, 0);
-    navigator_to(page == 1 ? "systemset/wifi_page" : "systemset/bluetooth_page");
+    /* An open EQ page is already the goal: a second would share peq_ui.c's one state. */
+    if (page == 3 && navigator_window_is_exist("equalizer_page")) return 0;
+    navigator_to(page == 1   ? "systemset/wifi_page"
+                 : page == 2 ? "systemset/bluetooth_page"
+                             : "playset/equalizer_page"); /* as Playback's EQ row (0x4b94d0) */
     return 0;
 }
 static int quick_down(void *icon, void *event) {
@@ -2493,8 +2501,9 @@ int ringnav_quick_settings(void *win, void *ctx) {
     int result = stock_quicksettings_trampoline(win, ctx);
     if (win) {
         quick_lock_text(win);
-        static const char *const names[] = { "img_wifiswitch", "img_btswitch" };
-        for (int i = 0; i < 2; ++i) {
+        /* held: 1 Wi-Fi's settings, 2 Bluetooth's, 3 the EQ page (Playback's) */
+        static const char *const names[] = { "img_wifiswitch", "img_btswitch", "img_playset" };
+        for (int i = 0; i < 3; ++i) {
             void *icon = widget_lookup(win, names[i], 1);
             if (!icon) continue;
             prop(icon, QUICK_HOLD, i + 1);
@@ -2509,7 +2518,7 @@ int ringnav_quick_settings(void *win, void *ctx) {
 
 /* Power's Charge limit, Low power and Wake (docs/internals.md#charge-limit, #low-power,
  * #wake), Q2POD CHARGELIMIT, LOWPOWER and WAKEDOUBLE in config.ini, Display's Artist albums
- * (ARTISTCF), Audio settings' Year order (YEAROLD, coverflow.c's year ranks) and Artists, which
+ * (ARTISTCF), Playback's Year order (YEAROLD, coverflow.c's year ranks) and Artists, which
  * is stock's own PLAYSET ARTISTTYPE (artist_type, the artist page's switch;
  * docs/internals.md#album-artists), and Bluetooth's Resume on connect (RESUME, so a missing key
  * holds playback; docs/internals.md#resume-on-connect), and the Lock screen's Clock (LOCKCLOCK,
@@ -2538,13 +2547,31 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &bt_vol_link,
                                    0,
                                    0,
-                                   &st.wheel_qs };
+                                   &st.wheel_qs,
+                                   &st.eq_output,
+                                   0,
+                                   0 };
 _Static_assert(POD_LOCKCLOCK == 7, "lockscreen.c passes pod_rows 7");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
-static const char *const pod_keys[] = {
-    "CHARGELIMIT", "LOWPOWER", "WAKEDOUBLE", "ARTISTCF",     "YEAROLD",   0, "RESUME", "LOCKCLOCK",
-    "ARTISTAZ",    "VOLGUARD", "HOLDRETURN", "STANDBYLIMIT", "BTVOLLINK", 0, 0,        "WHEELQS"
-};
+static const char *const pod_keys[] = { "CHARGELIMIT",
+                                        "LOWPOWER",
+                                        "WAKEDOUBLE",
+                                        "ARTISTCF",
+                                        "YEAROLD",
+                                        0,
+                                        "RESUME",
+                                        "LOCKCLOCK",
+                                        "ARTISTAZ",
+                                        "VOLGUARD",
+                                        "HOLDRETURN",
+                                        "STANDBYLIMIT",
+                                        "BTVOLLINK",
+                                        0,
+                                        0,
+                                        "WHEELQS",
+                                        "EQOUTPUT",
+                                        0,
+                                        0 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -2575,6 +2602,17 @@ int ringnav_artist_view(void) {
 int ringnav_lock_clock(void) {
     pod_settings();
     return st.lock_clock;
+}
+int ringnav_eq_output(void) {
+    pod_settings();
+    return st.eq_output;
+}
+/* Advanced EQ's row. Turned off, what plays stays. */
+void ringnav_eq_output_toggle(void) {
+    pod_settings();
+    st.eq_output = !st.eq_output;
+    write_int_config(st.eq_output, "Q2POD", "EQOUTPUT");
+    if (!st.eq_output) eq_output_forget();
 }
 int ringnav_bt_resume(void) {
     pod_settings();
@@ -2886,6 +2924,9 @@ static void pod_text(int i) {
         { 0 }, /* Coverflow Sort's from coverflow.c */
         { "Refresh Coverflow" },
         { 0 }, /* Wheel QS: a switch */
+        { 0 }, /* EQ per Output: a switch */
+        { 0 }, /* Key Tone: a switch */
+        { 0 }, /* In-Vehicle Mode: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -2894,18 +2935,27 @@ static void pod_text(int i) {
         widget_set_text_utf8(st.pod_label[i], sort);
         return;
     }
-    int v = i == POD_ARTISTS ? I(artist_type, 0) == 1 : pod_values[i] ? *pod_values[i] : 0;
+    int v = i == POD_ARTISTS   ? I(artist_type, 0) == 1
+            : i == POD_KEYTONE ? g_keytone_flag != 0
+            : i == POD_CARMODE ? g_carmode != 0
+            : pod_values[i]    ? *pod_values[i]
+                               : 0;
     const char *toggle = i == POD_CHARGE      ? "Charge Limit (" STR(CHARGE_STOP) "%)"
                          : i == POD_LOW       ? "Low Power"
                          : i == POD_RESUME    ? "Resume on Connect"
                          : i == POD_VOL_GUARD ? "Volume Guard"
                          : i == POD_BT_LINK   ? "Control Device Volume"
                          : i == POD_WHEEL_QS  ? "Wheel QS"
+                         : i == POD_KEYTONE   ? "Key Tone"
+                         : i == POD_CARMODE   ? "In-Vehicle Mode"
                                               : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
     else
         widget_set_text_utf8(st.pod_label[i], names[i][v]);
+    /* Stock's rows, so stock's translations */
+    if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
+    if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
 }
 /* Centre or tap toggles and saves. Charge limit and Low power take effect on the next UI loop pass
  * (power_poll); Artists on the next load of an artist list, as the artist page's switch does;
@@ -2923,6 +2973,17 @@ static int pod_click(void *ctx, void *event) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
         write_int_config(v, "PLAYSET", "ARTISTTYPE");
+    } else if (i == POD_KEYTONE) {
+        g_keytone_flag = !g_keytone_flag;
+        write_int_config(g_keytone_flag, "SYSSET", "KEYTONE");
+        /* Click With Headphones, built just after this row on Controls, shows while it is on. */
+        void *item = P(P(st.setting_label[9], W_PARENT), W_PARENT);
+        widget_set_visible(item, g_keytone_flag != 0, 0);
+        widget_layout(P(item, W_PARENT));
+    } else if (i == POD_CARMODE) {
+        g_carmode = !g_carmode;
+        write_int_config(g_carmode, "SYSSET", "CARMODE");
+        g_carmode_state = 0; /* as stock's row (0x4cc2b0) */
     } else {
         int *value = pod_values[i];
         *value = (*value + 1) % pod_choices(i);
@@ -2947,13 +3008,16 @@ void pod_rows(void *win, const char *view_name, int first, int n, const char *co
 
 /* systemset_powermanager_page_init and playset_playset_page_init: stock builds its rows, then
  * these follow in the same widgets and styles (list_row), with the value in the label. */
+static void boot_row(void *view);
 int ringnav_powermanager(void *win, void *ctx) {
     static const char *const icons[] = { "usb_chargeswitch", "system_powermanager",
-                                         "system_keylock" };
+                                         "system_carmode" };
     int result = stock_power_trampoline(win, ctx);
-    pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 3, icons);
-    pod_rows(win, "scroll_view_powermanager", POD_VOL_GUARD, 1, icons + 2);
-    pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1, icons + 1);
+    pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1,
+             icons + 1); /* beside stock's Standby */
+    pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 2, icons);
+    pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
+    boot_row(win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0);
     return result;
 }
 /* The Bluetooth page's list (stock's local builder, btmenu_rows), rebuilt whole on every search and
@@ -2986,49 +3050,51 @@ static void reorder(void *view, const unsigned char *order, unsigned n) {
     for (unsigned i = 0; i < n; i++) widget_restack(rows[order[i]], i);
 }
 
-/* Everyday listening, volume, library behaviour, then specialist output controls. */
+/* Everyday listening, what plays next, level, channels, then specialist output controls; the ring
+ * puts Library & Folders one detent from the top. Stock's ids 0-12, then ours as built. */
 static const unsigned char playset_order[] = {
     3 /* Play Mode */,
     2 /* EQ */,
     9 /* Gapless */,
-    18 /* Crossfade */,
-    10 /* ReplayGain */,
+    13 /* Crossfade */,
     8 /* Memory play */,
-    20 /* Resume Songs */,
+    14 /* Resume Songs */,
     0 /* Gain */,
+    10 /* ReplayGain */,
     4 /* Max Volume */,
     5 /* Default Vol */,
     11 /* Balance */,
-    21 /* Mono Audio */,
-    22 /* Swap L/R */,
-    16 /* Artists */,
-    17 /* Artist album order */,
-    15 /* Year order */,
-    19 /* Folder Root */,
-    14 /* Folder skip */,
-    13 /* Folder art */,
+    15 /* Mono Audio */,
+    16 /* Swap L/R */,
     12 /* Enlarged art */,
     1 /* Filters */,
     6 /* DSD Output */,
-    23 /* MQA */,
+    17 /* MQA */,
     7 /* USB Audio */,
+    18 /* Library & Folders */,
 };
-/* Connections, personalisation and daily controls, then device maintenance; About stays last. */
+/* Library & Folders: stock's Folder art and Folder skip (0, 1), then ours as built. */
+static const unsigned char library_order[] = {
+    3 /* Artists */,     4 /* Artist album order */, 2 /* Year order */,
+    5 /* Folder Root */, 1 /* Folder skip */,        0 /* Folder art */,
+};
+/* Connections, personalisation and daily controls, then device maintenance; About stays last.
+ * In-Vehicle, Key tone and Buttons lock stay hidden, stock's page left whole: Power and Controls
+ * have their rows now (pod_click, keylock_open). */
 static const unsigned char sysset_order[] = {
     1 /* Wireless */,
     2 /* Network */,
     3 /* Display */,
+    13 /* Controls */,
     4 /* Power */,
-    8 /* Buttons lock */,
-    7 /* Key tone */,
-    13 /* Click With Headphones */,
     5 /* Date and time */,
     0 /* Language */,
-    6 /* In-Vehicle */,
-    14 /* Boot to */,
-    12 /* Apps */,
+    12 /* App Store */,
     9 /* Update */,
     10 /* Reset */,
+    6 /* In-Vehicle, hidden */,
+    7 /* Key tone, hidden */,
+    8 /* Buttons lock, hidden */,
     11 /* About */,
 };
 
@@ -3084,24 +3150,43 @@ static int root_click(void *ctx, void *event) {
     return 0;
 }
 
+/* Playback's Library & Folders opens stock's page again (as Display's sub-pages do) with only the
+ * library rows: stock's two kept, its others dropped. The main page drops those two instead. Each
+ * page builds only its own rows, so a row's kept label is its page's. */
+static int playset_sub __attribute__((section(".scratch")));
+static int library_open(void *ctx, void *event) {
+    playset_sub = 1;
+    navigator_to("playset/playset_page");
+    playset_sub = 0;
+    return 0;
+}
 int ringnav_audioset(void *win, void *ctx) {
     static const char *const icons[] = { "playset_covermode", "playset_folderjump" };
-    int result = stock_audioset_trampoline(win, ctx);
-    pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
-    pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
+    int sub = playset_sub, result = stock_audioset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_playset", 1) : (void *)0;
-    if (view)
-        xfade_row(list_row_into(view, "playset_gapless", xfade_open, (void *)0)); /* crossfade.c */
-    if (view) {
+    if (!view) return result;
+    for (int i = (int)widget_count_children(view); i-- > 0;)
+        if ((i == 13 || i == 14) != sub) widget_destroy(widget_get_child(view, (unsigned)i));
+    if (sub) {
+        void *nav = widget_lookup(win, "view_navbar", 1),
+             *title = nav ? widget_get_child(nav, 0) : (void *)0;
+        if (title) widget_set_text_utf8(title, "Library & Folders");
+        pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
+        pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
         char name[256];
         root_read(name);
         st.root_label = list_row(view, "playset_folderjump", root_click, 0);
         root_text(name);
-        resume_row(list_row_into(view, "playset_memplay", xfade_open, (void *)2)); /* crossfade.c */
-        mono_row(list_row(view, "playset_balance", mono_click, 0));
-        swap_row(list_row(view, "playset_balance", swap_click, 0));
-        mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
+        reorder(view, library_order, sizeof library_order);
+        return result;
     }
+    xfade_row(list_row_into(view, "playset_gapless", xfade_open, (void *)0));  /* crossfade.c */
+    resume_row(list_row_into(view, "playset_memplay", xfade_open, (void *)2)); /* crossfade.c */
+    mono_row(list_row(view, "playset_balance", mono_click, 0));
+    swap_row(list_row(view, "playset_balance", swap_click, 0));
+    mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
+    widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
+                         "Library & Folders");
     reorder(view, playset_order, sizeof playset_order);
     return result;
 }
@@ -3162,7 +3247,7 @@ static unsigned np_track(void);
 static int lyrics_shown(void) {
     void *wm = window_manager();
     return st.np_lrc && st.np_slide && usable() && window_manager_get_top_window(wm) == st.np_win &&
-           !window_manager_is_animating(wm) && !window_manager_get_pointer_pressed(wm) &&
+           !window_manager_is_animating(wm) && !pointer_down() &&
            widget_get_prop_int(st.np_slide, "value", 0) == 1;
 }
 
@@ -3200,9 +3285,7 @@ static void lyric_glide(void *lrc, int to) {
 int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
     lyric_pad(lrc);
     if (lrc == st.np_lrc) {
-        if (st.lyric_held || st.lyric_spun == 2 || lyrics_on(lrc) ||
-            window_manager_get_pointer_pressed(window_manager()))
-            return 0;
+        if (st.lyric_held || st.lyric_spun == 2 || lyrics_on(lrc) || pointer_down()) return 0;
         if (lyrics_shown()) {
             lyric_glide(lrc, y * 16);
             return 0;
@@ -3691,7 +3774,7 @@ static void lyric_init(void) {
 static void lyric_follow(void *lrc, int ms, int front, int shown) {
     int line = lyrics_line(lrc, ms, front), to = lyric_centre(lrc, line > 0 ? line : 0);
     if (to < 0) to = 0;
-    if (st.lyric_held || st.lyric_spun == 2 || window_manager_get_pointer_pressed(window_manager()))
+    if (st.lyric_held || st.lyric_spun == 2 || pointer_down())
         return; /* lyric_spun 2: a finger on the wheel holds the nudge */
     lyric_pad(lrc);
     if (shown) {
@@ -3755,8 +3838,7 @@ static void lyric_poll(void) {
     }
     int page = lrc && st.np_slide && widget_get_prop_int(st.np_slide, "value", 0) == 1;
     if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
-    int touch = lrc && window_manager_get_top_window(wm) == st.np_win &&
-                window_manager_get_pointer_pressed(wm);
+    int touch = lrc && window_manager_get_top_window(wm) == st.np_win && pointer_down();
     int shown = page && lyrics_shown(),
         on = shown && widget_count_children(lrc) && mclGetLyricSize() > 0;
     if (!page) st.lyric_held = 0;
@@ -4930,6 +5012,10 @@ int ringnav_np_info(void *win) {
 
 /* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
 enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS };
+static int keylock_open(void *ctx, void *event) {
+    navigator_to("systemset/keylock_page");
+    return 0;
+}
 static int display_sub __attribute__((section(".scratch")));
 static int display_open(void *ctx, void *event) {
     display_sub = (int)(long)ctx;
@@ -4938,31 +5024,45 @@ static int display_open(void *ctx, void *event) {
     return 0;
 }
 
+static void setting_row(void *view, int i) {
+    static const char *const icons[] = {
+        "system_display",    "playset_covermode", "system_powermanager", "system_display",
+        "playset_covermode", "system_display",    "system_display",      "system_display",
+        "playset_covermode", "system_keytone",    "playset_covermode"
+    };
+    st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
+    setting_text(i);
+}
+
 /* systemset_display_page_init: stock builds its three rows (0x4c19bc: a s_listitem_black list_item
  * holding a 335x70 s_btn_listitem button with a 52px icon, a 24px label at x 72 and list_into);
- * Appearance (iPod), Coverflow and Controls follow with the same widgets and styles, each opening
- * stock's page again (display_open) with its stock rows dropped and its own instead: Theme,
- * Accent, Corners, Home and Battery; Artist Albums, Coverflow Sort and Refresh Coverflow; Shortcut
- * (iPod), Hold Return and Wheel Sensitivity, the last opening its slider page (crossfade.c). The
- * value rows show it in the label and have no chevron, since they change in place. Night Shift
- * (the brightness icon) ends the main page, opening its slider page (crossfade.c).
+ * Smart Awake and Night Shift (the brightness icon, opening its slider page, crossfade.c) join
+ * them, then Appearance and Coverflow, each opening stock's page again (display_open) with its
+ * stock rows dropped and its own instead: Theme, Light Mode, Accent, Corners, Home, Shortcut,
+ * Battery, Centred Now Playing; Artist Albums, Coverflow Sort and Refresh Coverflow. Controls is
+ * System settings' row (ringnav_systemset) on the same page: the wheel, the buttons and what the
+ * buttons do. The value rows show it in the label and have no chevron, since they change in place.
  * ponytail: stock's page opened over itself; its own rows' state is never touched on a sub-page. */
 int ringnav_display(void *win, void *ctx) {
     static const char *const titles[] = { 0, "Appearance", "Coverflow", "Controls" },
-                             *const sub_icons[] = { 0, "system_display", "playset_covermode",
-                                                    "playset_folderjump" };
+                             *const sub_icons[] = { 0, "system_display", "playset_covermode" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
                                             "system_update" };
-    static const char *const hold_icon[] = { "playset_folderjump" };
-    static const char *const wheel_icon[] = { "system_display" };
+    static const char *const qs_icons[] = { "system_display" },
+                             *const hold_icon[] = { "playset_folderjump" },
+                             *const tone_icon[] = { "system_keytone" },
+                             *const lock_icon[] = { "system_keylock" };
+    static const unsigned char main_order[] = { 0, 1, 3, 4, 2, 5, 6 };
     int sub = display_sub, result = stock_display_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
     if (!view) return result;
     if (!sub) {
-        for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_CONTROLS; ++i)
+        setting_row(view, 7);
+        night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
+        for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_COVERFLOW; ++i)
             widget_set_text_utf8(list_row_into(view, sub_icons[i], display_open, (void *)(long)i),
                                  titles[i]);
-        night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
+        reorder(view, main_order, sizeof main_order);
         return result;
     }
     widget_destroy_children(view);
@@ -4973,26 +5073,22 @@ int ringnav_display(void *win, void *ctx) {
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
         return result;
     }
-    /* Theme, Light Mode, Accent, Corners, Home, Battery, Centred Now Playing; Shortcut, Smart
-     * Awake, Single Press Scrub. Click With Headphones (9) is System settings' (ringnav_systemset).
-     */
-    static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 2, 8 }, controls[] = { 4, 7, 10 };
-    static const char *const icons[] = {
-        "system_display",    "playset_covermode", "system_powermanager", "system_display",
-        "playset_covermode", "system_display",    "system_display",      "system_display",
-        "playset_covermode", "system_keytone",    "playset_covermode"
-    };
-    const unsigned char *rows = sub == DISPLAY_APPEARANCE ? appearance : controls;
-    for (int k = 0, n = sub == DISPLAY_APPEARANCE ? sizeof appearance : sizeof controls; k < n;
-         ++k) {
-        int i = rows[k];
-        st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
-        setting_text(i);
+    if (sub == DISPLAY_APPEARANCE) {
+        /* Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing */
+        static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 4, 2, 8 };
+        for (unsigned k = 0; k < sizeof appearance; ++k) setting_row(view, appearance[k]);
+        return result;
     }
-    if (sub != DISPLAY_CONTROLS) return result;
-    pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
-    pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, wheel_icon);
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
+    pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, qs_icons);
+    pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
+    setting_row(view, 10);
+    pod_rows(win, "scroll_view_display", POD_KEYTONE, 1, tone_icon);
+    setting_row(view, 9); /* Click With Headphones shows while Key Tone is on */
+    widget_set_visible(P(P(st.setting_label[9], W_PARENT), W_PARENT), g_keytone_flag != 0, 0);
+    widget_set_tr_text(list_row_into(view, "system_keylock", keylock_open, 0), "system_keylock");
+    pod_rows(win, "scroll_view_display", POD_WAKE, 1, lock_icon);
+    pod_rows(win, "scroll_view_display", POD_VOL_GUARD, 1, lock_icon);
     return result;
 }
 
@@ -5016,58 +5112,37 @@ static int boot_click(void *label, void *event) {
     boot_text(label);
     return 0;
 }
-/* Click With Headphones (Display's setting 9) sits under Key Tone and shows while it is on. Stock's
- * Key Tone click handler sets g_keytone_flag; the row follows from the next loop pass. */
-#define KEYTONE_ROW "_keytone_hp"
-static int keytone_follow(const void *info) {
-    st.keytone_timer = 0;
-    void *view = widget_lookup(window_manager(), "scroll_view_sysset", 1);
-    void *row = view ? widget_lookup(view, KEYTONE_ROW, 1) : (void *)0;
-    if (row) widget_set_visible(row, g_keytone_flag != 0, 0), widget_layout(view);
-    return 0;
-}
-static int keytone_click(void *ctx, void *event) {
-    rearm(&st.keytone_timer, keytone_follow, 0);
-    return 0;
+static void boot_row(void *view) {
+    if (!view || !rockbox_available()) return;
+    char value[16];
+    void *f = fopen(BOOT_TARGET, "rb");
+    boot_rockbox = 1;
+    if (f) {
+        unsigned n = fread(value, 1, 5, f);
+        int q2pod = n == 5 && !memcmp(value, "q2pod", 5);
+        /* Shell command substitution strips all trailing newlines. */
+        while (q2pod && (n = fread(value, 1, sizeof value, f)))
+            for (unsigned i = 0; i < n; ++i)
+                if (value[i] != '\n') q2pod = 0;
+        boot_rockbox = !q2pod || ferror(f);
+        fclose(f);
+    }
+    void *label = list_row(view, "system_powermanager", 0, 0);
+    void *button = P(label, W_PARENT);
+    widget_on(button, EVT_CLICK, boot_click, label);
+    boot_text(label);
 }
 int ringnav_systemset(void *win, void *ctx) {
     int result = stock_systemset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_sysset", 1) : (void *)0;
     if (view) {
         widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "App Store");
-        st.setting_label[9] = list_row(view, "system_keytone", setting_click, (void *)9);
-        setting_text(9);
-        void *item = P(P(st.setting_label[9], W_PARENT), W_PARENT),
-             *tone = widget_lookup(view, "7", 1);
-        widget_set_name(item, KEYTONE_ROW);
-        widget_set_visible(item, g_keytone_flag != 0, 0);
-        if (tone) widget_on(tone, EVT_CLICK, keytone_click, 0);
+        widget_set_text_utf8(
+            list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
+            "Controls");
+        for (unsigned i = 6; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
     }
-    if (view && rockbox_available()) {
-        char value[16];
-        void *f = fopen(BOOT_TARGET, "rb");
-        boot_rockbox = 1;
-        if (f) {
-            unsigned n = fread(value, 1, 5, f);
-            int q2pod = n == 5 && !memcmp(value, "q2pod", 5);
-            /* Shell command substitution strips all trailing newlines. */
-            while (q2pod && (n = fread(value, 1, sizeof value, f)))
-                for (unsigned i = 0; i < n; ++i)
-                    if (value[i] != '\n') q2pod = 0;
-            boot_rockbox = !q2pod || ferror(f);
-            fclose(f);
-        }
-        void *label = list_row(view, "system_powermanager", 0, 0);
-        void *button = P(label, W_PARENT);
-        widget_on(button, EVT_CLICK, boot_click, label);
-        boot_text(label);
-    }
-    /* Without Rockbox there is no Boot to (14): the order less it. */
-    unsigned char order[sizeof sysset_order];
-    unsigned n = 0, rows = view ? widget_count_children(view) : 0;
-    for (unsigned i = 0; i < sizeof sysset_order; i++)
-        if (sysset_order[i] < rows) order[n++] = sysset_order[i];
-    reorder(view, order, n);
+    reorder(view, sysset_order, sizeof sysset_order);
     return result;
 }
 
@@ -5891,8 +5966,25 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
                     key && !strncasecmp(key, album, n) && key[n] == 0x1f ? key : album);
 }
 
+/* An empty Library list (Albums, Artists, Composers, Genres): once stock marks its page opened
+ * (the "stage" property the window manager sets after the open animation), the page is closed
+ * again and the toast says so over the list it came from. Stock opened a black page, and an empty
+ * Albums grid's Return then did nothing until a restart (Hold Return: Home, back_to_home, still
+ * left it); the cause was not found in the window manager's close path, so the page goes before a
+ * Return can reach it, with the forced close that path uses. The page is its class's
+ * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
+ * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
     static const char *const none[] = { "No albums", "No artists", "No composers", "No genres" };
+    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    const char *name = top ? widget_get_prop_str(top, "name", "") : "";
+    int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
+               I(g_class_type, 0) == CLASS_ALBUMS + st.empty_kind;
+    if (mine && widget_get_prop_int(top, "stage", 0) != WINDOW_STAGE_OPENED) {
+        timer_add(empty_toast, (void *)0, EMPTY_POLL_MS);
+        return 0;
+    }
+    if (mine) window_manager_close_window_force(wm, top);
     toast(none[st.empty_kind]);
     return 0;
 }
@@ -6930,8 +7022,7 @@ static int rate_key(void *top, unsigned key) {
  * slide_view under the heart lets go of its grab and the picker takes the next touch. */
 static int rate_long(const void *unused) {
     st.rate_hold = 0;
-    if (!window_manager_get_pointer_pressed(window_manager()) || !(st.rate_held = rate_open()))
-        return 0;
+    if (!pointer_down() || !(st.rate_held = rate_open())) return 0;
     unsigned abort_event[12];
     pointer_event_init(abort_event, EVT_POINTER_ABORT, st.rate_win, 0, 0);
     widget_dispatch_event_to_target_recursive(st.rate_win, abort_event);
@@ -8737,8 +8828,8 @@ static int qm_hold(void) {
         return 1;
     }
     if (st.qm_dialog || st.qm_timer || st.qm_playlist || !usable() ||
-        (!playing && !allowed_top(top)) || window_manager_is_animating(wm) ||
-        window_manager_get_pointer_pressed(wm) || airplayGetFlag() == 2 || g_navbar_status)
+        (!playing && !allowed_top(top)) || window_manager_is_animating(wm) || pointer_down() ||
+        airplayGetFlag() == 2 || g_navbar_status)
         return 0;
     if (playing) {
         unsigned at, n, type = (unsigned)MCL(MCL_TYPE);
@@ -8840,18 +8931,74 @@ static int quick_wheel_toggle(void *top) {
     write_int_config(volume, "Q2POD", "QSVOLUME");
     return 1;
 }
+/* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick
+ * and Centre press on a list is then dropped (ringnav's gate) and the selection stays hidden until
+ * a tap, which Wheel QS's finger (playback.c) cannot give; a stuck pull-down (quick_stuck) stays
+ * too. The release went missing in the input queue (playback.c ringnav_queue_event, the found
+ * way, now closed); this is the backstop for any other. A press with no pointer event reaching the
+ * window manager (ringnav_input) within STALE_TOUCH_MS gets an abort, so a pressed row drops its
+ * press and cannot click, then the release stock never got, at the touch's last place: only that
+ * path clears the flag (input_device_status_on_input_event, 0x69ff64). A finger resting that long
+ * is lifted too; its real lift then finds the flag clear and does nothing (0x69fe30). ponytail:
+ * STALE_TOUCH_MS is a guess, and that the flag is what window_manager_get_pointer_pressed reads
+ * (vtable +0x44) and that widgets drop a press on the abort are AWTK's source, not traced in demo;
+ * the time stamped here holds a wrong guess to one try per STALE_TOUCH_MS.
+ * --dev builds only (Q2POD_DEV): each heal, STALE_NOTES a boot, goes to q2-wheel.log, which the
+ * next boot appends to the card's (tools/build.py WHEEL_LOG_HOOK): the page, the pull-down's state
+ * and slide timer, the touch thread's own down flag (LOOP_PRESSED), Wheel QS's finger and the last
+ * pointer event. */
+#define STALE_NOTES 8
+static void stale_note(unsigned age) {
+    if (st.stale_notes >= STALE_NOTES) return;
+    st.stale_notes++;
+    unsigned char *loop = main_loop();
+    void *top = window_manager_get_top_window(window_manager());
+    char s[160];
+    tk_snprintf(s, sizeof s,
+                "== wheel: stale press at %u s: top=%s pull-down=%d slide=%d thread=%d "
+                "qs=%d/%d last=%x %u ms ago\n",
+                (unsigned)time_now_ms() / 1000, top ? widget_get_prop_str(top, "name", "") : "-",
+                I(g_dropdown_menu_state, 0), top ? widget_get_prop_int(top, "timer_idex", -1) : -1,
+                loop ? loop[LOOP_PRESSED] : -1, qs_live, qs_down, st.touch_type, age);
+    void *f = fopen("/mnt/data/q2-wheel.log", "ab");
+    if (!f) return;
+    fputs(s, f);
+    fclose(f);
+}
+static void stale_heal(void) {
+    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
+    unsigned now = (unsigned)time_now_ms(), age = now - st.touch_at, abort_event[12], up[12];
+    if (age < STALE_TOUCH_MS || !window_manager_get_pointer_pressed(wm)) return;
+    if (Q2POD_DEV) stale_note(age);
+    st.touch_at = now;
+    if (top)
+        widget_dispatch_event_to_target_recursive(
+            top, pointer_event_init(abort_event, EVT_POINTER_ABORT, top, 0, 0));
+    stock_input_trampoline(
+        wm, pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, wm, st.touch_x, st.touch_y));
+}
 /* Stock's swipe down opens Quick Settings at g_dropdown_menu_state 1 and starts its slide only on
- * the touch's release reaching the dialog (its pointer-up handler adds the timer_idex timer). A
- * release the dialog never gets, as when the window opens slowly at boot, leaves it on top but off
- * screen, holding the wheel. With no touch down and no slide running it is closed, as Return closes
- * the open one; the key that finds it is used up. ponytail: only keys check it; a touch on it shows
- * it, as stock already does. */
+ * the touch's release reaching the dialog (its pointer-up handler adds the timer_idex timer). The
+ * dialog is modal, opened inside the swipe's pointer move, and above the screen it catches a touch
+ * only once opened (window_manager_find_target, stage 3), in an idle its nested loop runs after
+ * draining the queue. So a release already queued, by a flick quicker than the dialog loads or a
+ * swipe queued behind a track start, goes to the page under it: the dialog stays on top off screen
+ * with that page sent to the background, Now Playing's timer stopped (#189). With no touch down
+ * and no slide running, the next UI pass hands it the release through ringnav_dispatch, so a Wheel
+ * QS take-back (qs_back) still applies: stock's handler (0x4a08bc, bound at
+ * dialog_statusbar_dialog_init) ignores the event's place and at states 1 and 2 with timer_idex -1
+ * always adds its slide timer (0x4a099c), which always ends, so one pass does it. */
 static int quick_stuck(void *top) {
     return usable() && top &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog") &&
-           (unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 &&
-           !window_manager_get_pointer_pressed(window_manager()) &&
+           (unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 && !pointer_down() &&
            widget_get_prop_int(top, "timer_idex", -1) == -1;
+}
+static void quick_poll(void) {
+    void *top = window_manager_get_top_window(window_manager());
+    unsigned up[12];
+    if (quick_stuck(top))
+        ringnav_dispatch(top, pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, top, 0, 0));
 }
 /* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On an
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
@@ -8862,7 +9009,6 @@ int ringnav_keylong(void *ctx, void *event) {
     if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
-    if (quick_stuck(top)) return STOP; /* the release closes it (ringnav) */
     const char *fav = radio_hold(top);
     int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) || un_hold(top);
     char *key = taken ? play_key() : (char *)0;
@@ -9879,7 +10025,10 @@ int ringnav_mainscheduling(void) {
 }
 
 int ringnav_sleep(void *loop) {
+    stale_heal();
+    quick_poll();
     headset_poll();
+    headset_eq_poll();
     bt_volume_poll();
     video_poll();
     spot_poll();
@@ -10074,13 +10223,19 @@ int ringnav(void *ctx, void *event);
 int ringnav_input(void *wm, void *e) {
     if (e && (chord_gate(e) || wake_gate(e))) return 0;
     st.last_input = time_now_ms();
+    unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
+    unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
     if (video_on()) {
         if (e && I(e, EVENT_TYPE) == EVT_KEY_UP) video_key((unsigned)I(e, EVENT_KEY));
         return 0;
     }
     if (addon_game_input(e)) return 0;
-    unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;
-    unsigned key = e ? (unsigned)I(e, EVENT_KEY) : 0;
+    if (type >= EVT_POINTER_FIRST && type <= EVT_POINTER_ABORT) { /* a finger (stale_heal) */
+        st.touch_at = st.last_input;
+        st.touch_type = (int)type;
+        st.touch_x = I(e, EVENT_X);
+        st.touch_y = I(e, EVENT_Y);
+    }
     if ((type == EVT_KEY_DOWN || type == EVT_KEY_UP || type == EVT_KEY_LONG) &&
         (key == KEY_PREV || key == KEY_NEXT || key == KEY_CENTER) && usb_prompt()) {
         reset_poweroptions_timer(1, 1, 1);
@@ -10164,7 +10319,6 @@ int ringnav_keydown(void *ctx, void *event) {
     unsigned key = event ? (unsigned)I(event, EVENT_KEY) : 0;
     if (ple_key(key, 1)) return STOP;
     void *top = window_manager_get_top_window(window_manager());
-    if (quick_stuck(top)) return STOP; /* the release closes it (ringnav) */
     unsigned char tone = g_keytone_flag;
     void *row = (void *)0;
     entries_t s = { &row, 0, 1, 4096 };
@@ -10238,8 +10392,7 @@ static int field_key(void *top, unsigned key) {
 static int edit_single(const void *info) {
     st.edit_press = 0;
     void *wm = window_manager(), *top = window_manager_get_top_window(wm);
-    if (!usable() || window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm))
-        return 0;
+    if (!usable() || window_manager_is_animating(wm) || pointer_down()) return 0;
     *(volatile unsigned char *)KEY_LOCKOUT = 0; /* stock's wheel lockout after the centre key */
     int n = fields(top), f = field_at(top);
     if (!n) {
@@ -10269,9 +10422,13 @@ static int edit_key(void *top, unsigned key) {
         return 1;
     }
     if (key != KEY_PREV && key != KEY_NEXT) return 0;
+    /* sliding open or shut (quick_stuck's states, or its slide timer): the wheel waits for it */
+    if (quick && ((unsigned)(I(g_dropdown_menu_state, 0) - 1) < 2 ||
+                  widget_get_prop_int(top, "timer_idex", -1) != -1))
+        return 1;
     if (quick && quick_volume()) return 0; /* stock's wheel volume */
     void *wm = window_manager();
-    if (window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm)) return 1;
+    if (window_manager_is_animating(wm) || pointer_down()) return 1;
     int dir = key == KEY_NEXT ? 1 : -1;
     if (quick) {
         void *slider = widget_lookup(top, "slider_backlight", 1);
@@ -10346,7 +10503,7 @@ static int replay_wheel(const void *info) {
         st.held_timer = 0;
         return 0; /* anything but RET_REPEAT removes the timer */
     }
-    if (window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm)) return 8;
+    if (window_manager_is_animating(wm) || pointer_down()) return 8;
     int dir = st.held > 0 ? 1 : -1;
     unsigned key = dir > 0 ? KEY_NEXT : KEY_PREV;
     st.held_event[EVENT_KEY / 4] = key;
@@ -10362,7 +10519,7 @@ static int replay_wheel(const void *info) {
  * before stock's Return or the page's own can destroy the edit under it, which crashes demo; the
  * next Return goes back. Stock's search dialogs and the playlist editor's search (search_edit)
  * keep their text. Every other T9 edit of ours (EDIT_NAME, edit_create) is a cancel: emptied
- * first, so the blur's EVT_VALUE_CHANGED reads as no entry and its page shows what it had. */
+ * first, so the blur's EVT_VALUE_CHANGED reads as no entry and its page backs out of the edit. */
 static int search_key(unsigned key) {
     if (key != KEY_RETURN) return 0;
     void *im = input_method(), *edit = im ? P(im, IM_WIDGET) : (void *)0;
@@ -10392,11 +10549,6 @@ int ringnav(void *ctx, void *event) {
         *(volatile unsigned char *)KEY_LOCKOUT = 0;
     if (key == KEY_CENTER || key == KEY_RETURN) st.held = 0; /* a button ends a held turn */
     void *front = window_manager_get_top_window(window_manager());
-    if (quick_stuck(front)) {
-        drop_input();
-        dialog_quit(front, 0);
-        return STOP;
-    }
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
     /* The rating picker's keys, before the page's own (its Return would leave it) */
     if (usable() && rate_key(window_manager_get_top_window(window_manager()), key)) return STOP;
@@ -10504,7 +10656,7 @@ int ringnav(void *ctx, void *event) {
     /* Outside a scrub the volume's band over Now Playing leaves the keys the page's: Centre's
      * presses as on it, the wheel the volume's, and a pending press survives the ticks */
     int np = top == st.np_win || (!st.scrub && vol_band(wm));
-    if (!np || window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm))
+    if (!np || window_manager_is_animating(wm) || pointer_down())
         np_cancel();
     else if (key != KEY_CENTER && np_lyrics(key))
         return STOP;
@@ -10530,7 +10682,7 @@ int ringnav(void *ctx, void *event) {
         st.dc_at = now;
     }
     int dir = key == KEY_NEXT ? 1 : key == KEY_PREV ? -1 : 0;
-    if (window_manager_is_animating(wm) || window_manager_get_pointer_pressed(wm)) {
+    if (window_manager_is_animating(wm) || pointer_down()) {
         drop_input();
         return dir && window_manager_is_animating(wm) ? hold_wheel(ctx, event, dir) : STOP;
     }

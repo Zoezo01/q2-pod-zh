@@ -813,11 +813,31 @@ assert wheel([(50,1),(52+U,1),(52+U,0),(52+U,1),(51+2*U,1)])[0]==[P]  # a lift d
 F=O['WHEEL_QUEUE_FREE']  # a busy UI: a tick that would leave fewer free slots is dropped, not queued
 assert [len(wheel([(10,1),(10+U,1)],used=n)[0]) for n in (20-F-2,20-F-1,20)]==[1,0,0]
 checks+=1
+# main_loop_queue_event (build.py QUEUE_LEAF, playback.c ringnav_queue_event): the UI loop's one way
+# in. The touch thread posts an event of type 0 for every pressureless sample while it holds no
+# finger, and twenty of them evict a queued release; they go nowhere, so they are not queued. Every
+# other request reaches the loop's own poster; a missing loop, slot or request is RET_BAD_PARAMS.
+class PostMachine(PlaybackMachine):
+    slot=syms['main_loop_queue_event']+0x10  # the loop's poster: stock code never otherwise reached
+    def __init__(self):
+        super().__init__(); self.posted=[]; self.handlers[self.slot]='post'
+    def hook(self,u,address,size,unused):
+        if address!=self.slot: return super().hook(u,address,size,unused)
+        self.posted.append(self.get(u.reg_read(REGS[1]))); self.returns(0,clobber=True)
+def post(kind,loop_ok=1,slot_ok=1):
+    m=PostMachine(); loop,r=m.alloc(0x60),m.alloc(0x30)
+    if slot_ok: m.word(loop+O['LOOP_POST'],m.slot)
+    m.word(r,kind)
+    return m.fn('ringnav_queue_event',loop if loop_ok else 0,r),m.posted
+assert post(0x103)==(0,[0x103]) and post(0xff)==(0,[0xff]) and post(0x110)==(0,[0x110]) and post(0x1000)==(0,[0x1000])
+assert post(0)==(0,[]) and post(0x103,loop_ok=0)==(0x10,[]) and post(0x103,slot_ok=0)==(0x10,[])
+m=PostMachine(); loop=m.alloc(0x60); m.word(loop+O['LOOP_POST'],m.slot); assert m.fn('ringnav_queue_event',loop,0)==0x10 and not m.posted
+checks+=1
 # Wheel QS (playback.c qs_begin): a touch at one edge, then within QS_GAP_MS one at the opposite edge,
 # streams a finger on the screen to hyn_ts: down at the swipe's start and on across the gap at the
 # gesture's pace (first touch to second, doubled, clamped), on with each sample, at the far end on the
 # lift. A second touch that turns lifts where it is and leaves qs_back, the slide back to how it was.
-class QsMachine(PlaybackMachine):
+class QsMachine(PostMachine):
     def __init__(self,on=1):
         super().__init__(); self.frames=[]; self.on=on; self.handlers[O['WHEEL_POST']]='wheel_post'
         for n in ('open@GLIBC_2.0','ioctl@GLIBC_2.0','write@GLIBC_2.0','close@GLIBC_2.0'): self.handlers[syms[n]]='qs:'+n.split('@')[0]
@@ -839,7 +859,11 @@ def qs(samples,on=1,state=0):
     m=QsMachine(on); m.word(syms['g_dropdown_menu_state'],state)
     info,s,loop,q=m.alloc(0x60),m.alloc(20),m.alloc(0x60),m.alloc(8)
     m.word(info+O['WHEEL_INFO_LOOP'],loop); m.word(loop+O['LOOP_QUEUE'],q); m.u.mem_write(q,struct.pack('<4H',15,15,0,20))
-    for gap,x,pr in samples: m.now+=gap; m.word(s,x); m.word(s+8,pr); m.fn('wheel_sample',s,1,info)
+    m.word(loop+O['LOOP_POST'],m.slot); r=m.alloc(0x30)
+    for step in samples:
+        if isinstance(step,str):  # a key going down, through the queue's one way in
+            m.word(r,O['EVT_KEY_DOWN']); m.word(r+O['EVENT_KEY'],O[step]); m.fn('ringnav_queue_event',loop,r); continue
+        gap,x,pr=step; m.now+=gap; m.word(s,x); m.word(s+8,pr); m.fn('wheel_sample',s,1,info)
     m.frames.append(('back',m.get(ps['qs_back']))); m.frames.append(('held',m.get(ps['qs_down'])))
     return m.frames
 # 10 and 110, opposite edges (x 0 is no touch): 100 ms down to down is a 200 ms swipe, half of it gone
@@ -854,6 +878,19 @@ t=qs([(1000,10,1),(40,10,0),(60,110,1),(20,140,1),(10,140,0)])
 assert t==[('down',5),('move',112),'lift',('back',1),('held',1)],t  # the second turned: lifted there, slides back closed
 t=qs([(1000,10,1),(40,10,0),(60,110,1),(20,140,1),(10,140,0)],state=3)
 assert t==[('down',310),('move',155),'lift',('back',2),('held',1)],t  # open: slides back open
+# Next then Previous is two touches at opposite edges too: a rim button going down since the last
+# touch began makes it a press, not a swipe (#189), and three presses in a row stay presses. So does
+# a switch that beats the ring's first sample. Only the rim's: a wheel tick or Centre during a
+# swipe, or a press well before its first touch, leaves it one.
+none=[('back',0),('held',0)]
+for key in ('KEY_FWD_BTN','KEY_BACK_BTN','KEY_RETURN','KEY_PLAY'):
+    assert qs([(1000,10,1),key,(40,10,0),(60,110,1),(50,110,0)])==none,key
+assert qs([(1000,10,1),'KEY_FWD_BTN',(40,10,0),(60,110,1),'KEY_BACK_BTN',(40,110,0),(60,10,1),'KEY_FWD_BTN',(40,10,0)])==none
+for extra in ('KEY_NEXT','KEY_PREV','KEY_CENTER'):
+    assert qs([(1000,10,1),extra,(40,10,0),(60,110,1),(50,110,1),(100,110,1),(10,110,0)])==qs(swipe),extra
+assert qs(['KEY_FWD_BTN',(1000,10,1),(40,10,0),(60,110,1),(50,110,1),(100,110,1),(10,110,0)])==qs(swipe)
+assert qs([(1000,10,1),(40,10,0),'KEY_FWD_BTN',(60,110,1),(50,110,0)])==none  # a press between the touches
+assert qs([(1000,0,0),'KEY_FWD_BTN',(20,10,1),(40,10,0),(60,110,1),(50,110,0)])==none  # the switch first
 checks+=1
 if 'wheel_raw' in ps:  # iPod: while games.c's Vortex sets wheel_raw, nothing ticks and the travel adds up raw
     raw=lambda on: lambda m: m.word(ps['wheel_raw'],on)

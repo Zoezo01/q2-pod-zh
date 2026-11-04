@@ -90,7 +90,7 @@ selection rectangle or chevron. **Theme: Classic** styles the menu as before 1.0
 (below).
 
 The seven destinations remain Now Playing, Library, Coverflow, Folder, Rockbox, Streaming and
-Settings. Rockbox is visible only when its binary is on the card, unless Display → Controls' **Shortcut**
+Settings. Rockbox is visible only when its binary is on the card, unless Display → Appearance's **Shortcut**
 (`IPOD/SHORTCUT` 0-6) turns that row into Artists, Albums, Favorites, Rated Albums, Shuffle or Games (`home_shortcut_open`; Rated Albums is Ratings → Albums, `rated_albums`; Shuffle is the Library's Shuffle page, `shuffle_menu`); with no key it is Rockbox when the card has it, else Favorites. Centre cycles Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games. Settings opens Playback and
 System; Return restores the menu's previous selection, and a short Return on the main menu selects
 Now Playing; a short Return with Now Playing selected opens it without changing playback. Return there goes back to Home. The wheel bumps at either end of both lists and wraps after a pause, as ring lists do ([internals.md](internals.md#wheel-movement)).
@@ -226,15 +226,15 @@ tabs 50 pixels lower ([internals.md](internals.md#artist-albums-in-coverflow)).
 
 ## Settings
 
-Settings, Playback, Audio settings and Streaming lists use 68-pixel controls
+Settings, Playback and Streaming lists use 68-pixel controls
 (`SET_ROW`, `SET_ROWS`). Minimal starts 8 pixels (`SET_TOP`) below the status bar; Classic
 starts directly below it. The list stays 272 pixels high in both themes, preserving scrolling
 and full-row tap targets. The `navbar_only` assets set their
 `list_view`'s `default_item_height` from 78 to 68, which no stock asset uses, and nothing else.
 Constants are `SET_*` in `patch/offsets.inc`.
 
-System Settings puts Wireless and Network first, then personal and daily controls, then device
-maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come last. Added binary settings
+System Settings puts Wireless and Network first, then Display, Controls and Power, then Date & Time, Language and device
+maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come next, and Library & Folders last, one reverse detent from the top on Playback's ring. Added binary settings
 use Shanling's `switch_on` / `switch_off` images with the whole row as the tap target. Settings
 that cycle between named choices retain their value labels. Crossfade, Resume Songs, Wheel
 Sensitivity and App Store show a chevron, as do the added Library browsing rows.
@@ -308,7 +308,8 @@ brightness slider becomes a 6-pixel track in Now Playing's colours (`TRACK_COLOR
 still takes a tap or drag anywhere on it (`slide_with_bar`), from x 68 to 307. The stock dim and
 bright suns stay at its ends, in line with the first and last icon columns. Sizes are `QS_*` in
 `tools/ipod.py`. `dialog_statusbar_dialog_init` (`0x4a0d88`) finds every widget by name and
-never moves or resizes one.
+never moves or resizes one. A finger held on Wi-Fi or Bluetooth opens its settings, and on Playback the EQ page
+([internals.md](internals.md#quick-settings-holds)); a tap stays stock's.
 
 The controls' stock images are 60-pixel discs: `#444444` with a white glyph when off, stock red
 (`#FF1448`) with a white glyph when on (`drop_wifiopen`, `drop_btopen`, `drop_keylockopen`,
@@ -373,7 +374,7 @@ Playing and the first short Return reaches the stock Back path, with position
 memory restoring the browsing page and its selection. No short-Return callback or
 other long-key destination changes.
 
-**System settings → Display → Controls → Hold Return** (`Q2POD HOLDRETURN`) picks the
+**System settings → Controls → Hold Return** (`Q2POD HOLDRETURN`) picks the
 destination: Recent (0, the default) is the behaviour above; Home (1) calls the stock Home
 destination from any page but Home, Now Playing included, and clears `np_origin`. On Home the hold
 still opens Now Playing, as does iPod's short Return on Home's first row (on any other row it first
@@ -634,14 +635,13 @@ builds three rows with `0x4c19bc`: a `list_item_create(view, 0, 0, 0, 0)` in `s_
 `s_btn_listitem` with a click handler, and in it a 52-pixel icon at x 10, a
 `s_scrlabel_white24l` `hscroll_label` at (72, 0, 210, 70) and `list_into` at x 282. The rows
 show no value; each opens a sub-page (iPod's [settings rows](#settings) then lay them out 68
-pixels high). The build then adds, the same way with stock's `list_into` chevron, **Appearance**
-(`system_display`), **Coverflow** (Play settings' cover mode icon, `playset_covermode`)
-and **Controls** (Play settings' folder jump icon, `playset_folderjump`). Each opens stock's
+pixels high). The build then adds a "Smart Awake" switch and Night Shift, and, the same way with stock's `list_into` chevron, **Appearance**
+(`system_display`) and **Coverflow** (Play settings' cover mode icon, `playset_covermode`), restacked as Brightness, Screen Off Time, Smart Awake, Night Shift, Lock Screen, Appearance, Coverflow. System settings' **Controls** row (Play settings' folder jump icon, `playset_folderjump`) is the third sub-page. Each opens stock's
 Display page again (`display_open`, `display_sub` naming the sub-page while its init runs), which
 drops the stock rows, takes the sub-page's title and builds only its own rows:
 
 - Appearance: "Theme: Minimal", "Light Mode: Off" ([Light Mode](#light-mode)), "Accent: Graphite"
-  and a "Rounded Corners" switch (stock's `switch_on`/`switch_off`, via `list_toggle`) with the System settings Display icon (`system_display`), "Home: Split" (`playset_covermode`) and "Battery: Icon" (Icon,
+  and a "Rounded Corners" switch (stock's `switch_on`/`switch_off`, via `list_toggle`) with the System settings Display icon (`system_display`), "Home: Split" and "Shortcut: Rockbox" (`playset_covermode`) and "Battery: Icon" (Icon,
   Percent, Icon + Percent, Percent Inside; see [Status bar and clock](#status-bar-and-clock)) with
   the power manager icon (`system_powermanager`), then a "Centred Now Playing" switch (`IPOD
 NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window's asset load
@@ -657,7 +657,7 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   Return brings the column back, as do a swipe, another page and leaving the page; a window over the page leaves it
   full screen
   ([Word-timed lyrics](internals.md#word-timed-lyrics)). Choosing a Theme loads its preset (`theme_preset`): Classic sets Light Mode on, Cobalt (`ACCENT` 4), square corners and Split, Minimal Light Mode off, Graphite (`MINIMAL_ACCENT` 0), rounded corners and Split; Light Mode's Auto, Battery and Centred Now Playing are kept, and only changed values are saved.
-- Controls, after Shortcut: a "Smart Awake" switch (`IPOD KEEPLIT`, off;
+- Display's main page: a "Smart Awake" switch (`IPOD KEEPLIT`, off;
   `keep_lit_poll`): with Now Playing lit in front on its lyrics, info or visualizer page, or its
   full-screen art (`bigcover_page`) in front, and a song playing, it calls
   `reset_poweroptions_timer(1, 1, 1)` once a second, so the screen stays on there (with Enlarged Album
@@ -666,22 +666,19 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   or not, with no idle quit ([Card games](internals.md#card-apps)). Enlarged Album Art never opens off the art page (#57): while Now Playing's slide view is on
   another page, each `ringnav_sleep` pass holds stock's countdown (`BC_IDLE`) at its full 10 s.
   Before, the window opened and closed a pass later, flashing over the lyrics every 10 s (#153).
-  Then a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
-  centre press starts the scrub and a double press turns the screen off (Scrub, above).
-  "Click With Headphones" (`IPOD KEYTONEHP`) is System settings', under Key Tone ([Key Tone](internals.md#key-tone)).
 - Coverflow: "Artist Albums: Coverflow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
   Coverflow ends with an All albums card, see
   [internals.md](internals.md#artist-albums-in-coverflow)), "Coverflow Sort: Album" and "Refresh
   Coverflow" (`system_update`).
-- Controls: "Shortcut: Rockbox" (iPod, `playset_covermode`), "Hold Return: Recent"
-  (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`) and Wheel Sensitivity,
-  which opens its slider page.
+- Controls: Wheel Sensitivity, which opens its slider page; "Wheel QS"; "Hold Return: Recent"
+  (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
+  centre press starts the scrub and a double press turns the screen off (Scrub, above); "Key Tone"; "Click With Headphones" (`IPOD KEYTONEHP`), shown while Key Tone is on ([Key Tone](internals.md#key-tone)); Buttons Lock, which opens stock's page; "Wake: Single Press"; and "Volume Guard".
 
 All are among the [settings icons](#settings-icons) the build pre-sizes. A value row has its value
 in the label (260 pixels wide, to where the chevron ends) and no chevron, since Centre or a tap
 changes it in place. Theme, Accent and Home share the Appearance page, so a new theme relabels the
 other two in place.
-The build also appends **Boot to: Rockbox / Q2 Pod** to System settings when Rockbox is present; see [Boot](boot.md#rockbox).
+The build also appends **Boot to: Rockbox / Q2 Pod** to Power when Rockbox is present; see [Boot](boot.md#rockbox).
 The page is `CTX_FIXED`, so the wheel walks onto them like the stock rows.
 
 A change is saved at once with the stock `write_int_config(value, "IPOD", key)` (`0x4f3f4c`):
