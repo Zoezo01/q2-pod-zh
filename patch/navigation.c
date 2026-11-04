@@ -460,6 +460,10 @@ typedef struct {
      */
     int np_off, np_over;
     unsigned np_marquee;
+    /* The info page's Genre line: its label, np_info's copy (genre_fill), and px scrolled. */
+    void *genre_label;
+    int genre_off;
+    unsigned genre_timer;
     /* The selected row's marquee (marq_poll); Time in Title off (bar_title). */
     void *marq_row, *marq_label;
     unsigned marq_timer;
@@ -2764,8 +2768,10 @@ static void flac_album_artist(const char *path, char *out) {
     fclose(f);
 }
 /* toolsGetMusicInfo's genre strcpy (GENRE_COPY): TagLib joins multi-value genres with " / ",
- * but style has only 0x80 bytes before name. Keep whole entries that fit, or 0x7f bytes of an
- * oversized first one; the tag file is untouched. */
+ * but style has only 0x80 bytes before name. Keep whole entries that fit, or as many whole
+ * characters of an oversized first one as fit 0x7f bytes; the tag file is untouched.
+ * ponytail: only " / " is an entry boundary, so one value joined with ";" or "//" is cut at 127
+ * bytes, and an empty first entry before an oversized one stores an empty genre. */
 char *ringnav_genre_copy(char *dst, const char *joined) {
     const char *entry = joined;
     unsigned keep = 0;
@@ -2781,6 +2787,7 @@ char *ringnav_genre_copy(char *dst, const char *joined) {
         if (!*end) break;
         entry = end + 3;
     }
+    while (keep && (joined[keep] & 0xc0) == 0x80) --keep; /* not inside a UTF-8 character */
     memcpy(dst, joined, keep);
     dst[keep] = 0;
     return dst;
@@ -4216,6 +4223,8 @@ static int np_gone(void *win, void *event) {
         st.scrub_moved = 0; /* the page is going: no seek */
         st.np_off = st.np_full = 0;
         stop_timer(&st.np_marquee);
+        stop_timer(&st.genre_timer);
+        st.genre_label = (void *)0;
         np_cancel();
         lyrics_gone(); /* the next page's rows may take its rows' place */
     }
@@ -4280,6 +4289,9 @@ int ringnav_playing(void *win, void *ctx) {
     int result = stock_playing_trampoline(win, ctx);
     if (!win) return result;
     rate_bind(win);
+    /* np_gone leaves a replaced page's state alone: its Genre line is that page's. */
+    stop_timer(&st.genre_timer);
+    st.genre_label = (void *)0;
     st.np_win = win;
     st.np_pos = widget_lookup(win, "label_ipod_pos", 1);
     st.np_album = widget_lookup(win, "label_ipod_album", 1);
@@ -5142,76 +5154,58 @@ static int setting_click(void *ctx, void *event) {
     return 0;
 }
 
-/* Stock's info page draws Genre in a plain, centred 225 px label: a bounded multi-genre value is
- * wider, so both ends are clipped and only its middle shows. Stock's np_info rewrites that label
- * every 250 ms, which resets an hscroll_label's animation. Keep the stock label hidden as the
- * value source and drive a separate scroller from it, updating its text only when the track's
- * genre changes. np_info still fills label_genre; the visible one has a private name. AWTK's own
- * scroller advances a fixed 16 ms per callback, so its speed follows the UI frame rate; drive its
- * xoffset from wall time instead (see genre_scroll_tick). */
+/* The info page's Genre line: stock's centred label would clip a long value at both ends, and
+ * stock's np_info rewrites it every 250 ms, which would reset an animation on it. So it stays
+ * hidden as the value source, and a private hscroll_label shows the value, its text set only when
+ * that changes. It scrolls as Minimal's album does (np_marquee), in front and lit only: covered,
+ * dark or off the page the chain ends, and np_info's next fill restarts it. Stock measures text_w
+ * on the first paint, so a new label starts moving on a fill after that.
+ * ponytail: not in np_animating, so once idle its 50 ms step waits for the loop's slower passes and
+ * it runs a little slower than the album's; add it there if that looks bad, at the cost of the
+ * loop's fast pace while it moves. */
 #define GENRE_SCROLL "ringnav_genre_scroll"
-#define GENRE_SPEED 20 /* ms a pixel: 0.05 px/ms, half stock's 0.1 */
-static struct {
-    void *label;
-    unsigned timer, start;
-} genre_scroll;
-static int genre_scroll_closed(void *ctx, void *event) {
-    if (genre_scroll.label != ctx) return 0;
-    if (genre_scroll.timer) timer_remove(genre_scroll.timer);
-    genre_scroll.label = 0, genre_scroll.timer = genre_scroll.start = 0;
+static int genre_over(void) {
+    void *s = st.genre_label;
+    if (!s || !g_backlight_status || window_manager_get_top_window(window_manager()) != st.np_win ||
+        widget_get_prop_int(st.np_slide, "value", 0) != 2) /* view_info */
+        return 0;
+    return I(s, HSCROLL_TEXT_W) + 4 - I(s, W_W); /* stock's two 2 px margins, as marq_poll */
+}
+static int genre_step(const void *info) {
+    (void)info;
+    st.genre_timer = 0;
+    int over = genre_over();
+    if (over <= 0) return 0;
+    int end = st.genre_off >= over;
+    st.genre_off = end ? 0 : st.genre_off + MARQUEE_PX > over ? over : st.genre_off + MARQUEE_PX;
+    hscroll_label_set_xoffset(st.genre_label, st.genre_off);
+    st.genre_timer = timer_add(genre_step, (void *)0,
+                               end || st.genre_off >= over ? MARQUEE_HOLD_MS : MARQUEE_MS);
     return 0;
 }
-/* AWTK's scroller advances 16 ms a timer callback, so its visible speed follows the UI loop's
- * frame rate. Drive xoffset from wall time instead; hscroll_label_t.text_w is @0x94 in stock V1.32. */
-static int genre_scroll_tick(const void *unused) {
-    void *label = genre_scroll.label;
-    if (!label) return 0;
-    int range = I(label, 0x94) - I(label, W_W) + 4; /* minus the style's 2 px margins */
-    if (range <= 0) return 8;                       /* RET_REPEAT */
-    unsigned now = time_now_ms();
-    if (!genre_scroll.start) genre_scroll.start = now;
-    unsigned travel = (unsigned)range * GENRE_SPEED;
-    if (now - genre_scroll.start >= travel + 2000u) genre_scroll.start = now; /* 2 s lull */
-    unsigned elapsed = now - genre_scroll.start;
-    ((int (*)(void *, int))0x5e7f6cu)(label, elapsed >= travel ? range : (int)(elapsed / GENRE_SPEED));
-    return 8; /* RET_REPEAT */
-}
-static void np_set_text(void *widget, const char *text) {
-    char old[512];
-    if (widget_get_text_utf8(widget, old, sizeof old) || strcmp(old, text))
-        widget_set_text_utf8(widget, text);
-}
-static void np_genre_label(void *label, const char *text) {
-    void *parent = label ? P(label, W_PARENT) : 0;
-    if (!label) return;
-    if (!parent) {
-        np_set_text(label, text);
-        return;
+static void genre_fill(void *win, void *label, const char *text) {
+    void *s = widget_lookup(win, GENRE_SCROLL, 1);
+    if (!s) {
+        s = hscroll_label_create(P(label, W_PARENT), I(label, W_X), I(label, W_Y), I(label, W_W),
+                                 I(label, W_H));
+        if (!s) return;
+        widget_set_name(s, GENRE_SCROLL);
+        widget_use_style(s, "s_scrlabel_white16c");
+        hscroll_label_set_only_focus(s, 1); /* no stock timer: genre_step moves it */
+        widget_set_visible(label, 0, 0);
     }
-    void *scroll = widget_lookup(parent, GENRE_SCROLL, 1);
-    if (!scroll && strlen(text) <= 28) {
-        np_set_text(label, text);
-        return;
+    char old[1024 + 64 + 8]; /* ringnav_np_info's out */
+    int same = !widget_get_text_utf8(s, old, sizeof old) && !strcmp(old, text);
+    if (!same) {
+        widget_set_text_utf8(s, text);
+        st.genre_off = 0;
+        hscroll_label_set_xoffset(s, 0);
     }
-    if (!scroll) {
-        scroll = hscroll_label_create(parent, I(label, W_X), I(label, W_Y), I(label, W_W),
-                                      I(label, W_H));
-        if (!scroll) return;
-        widget_set_name(scroll, GENRE_SCROLL);
-        widget_use_style(scroll, "s_scrlabel_white16c");
-        hscroll_label_set_only_focus(scroll, 1); /* no AWTK timer: genre_scroll_tick drives it */
-        hscroll_label_set_ellipses(scroll, 0);
-        widget_on(scroll, EVT_DESTROY, genre_scroll_closed, scroll);
-    }
-    widget_set_visible(label, 0, 0);
-    genre_scroll.label = scroll;
-    if (!genre_scroll.timer) genre_scroll.timer = timer_add(genre_scroll_tick, 0, 16);
-    char old[512];
-    if (widget_get_text_utf8(scroll, old, sizeof old) || strcmp(old, text)) {
-        widget_set_text_utf8(scroll, text);
-        genre_scroll.start = 0;
-        ((int (*)(void *, int))0x5e7f6cu)(scroll, 0);
-    }
+    if (win != st.np_win) return;
+    st.genre_label = s;
+    if (!same) stop_timer(&st.genre_timer); /* the new text holds at its start */
+    if (!st.genre_timer && genre_over() > 0)
+        st.genre_timer = timer_add(genre_step, (void *)0, MARQUEE_HOLD_MS);
 }
 
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
@@ -5252,7 +5246,7 @@ int ringnav_np_info(void *win) {
         tk_snprintf(out, sizeof out, "%.*s: %.*s%s", n, name, split ? len - u : len, v,
                     split ? units[i] : "");
         if (i == 1) {
-            np_genre_label(label, out);
+            genre_fill(win, label, out);
             continue;
         }
         if (strcmp(out, s)) widget_set_text_utf8(label, out);

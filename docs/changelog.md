@@ -6,6 +6,7 @@
   - Classic: under square corners, album art has square corners too, Cover Flow's included, and the battery icon's charge is green.
   - Now Playing: the volume shows in the progress bar's own colour.
   - **Coverflow** is now spelled **Cover Flow**, as Apple does, and its **Artist Albums** row is now **Artist View**, so the longer name fits.
+  - Library: a song with a long list of genres no longer shows the end of its genres as its title. Run **Update Local Music** once to repair songs already in the library; a song already in a playlist can keep the old title until you add it again. On Now Playing's info page, a long Genre line scrolls.
 
 - **1.6.4**:
   - Settings: **Playback** is shorter. Artists, Artist Album Order, Year Order, Folder Root, Folder Skip and Folder Album Cover moved to **Playback → Library & Folders**, and ReplayGain moved next to Gain. Your settings are kept.

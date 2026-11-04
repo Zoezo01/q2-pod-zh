@@ -499,7 +499,7 @@ The art, title, artist and album are the slide_view's first page, so a swipe rep
 with the lyrics or info page. The info page keeps its stock 225-pixel column, centred; the lyrics
 page spans the screen (**Lyrics** below). The info page's lines read `Label: value`, with spaced units
 (`35.92 MB`, `16-bit`, `950 kbps`, `44.1 kHz`), **Genre** and **Year** for stock's Genres and Era,
-`Unknown` for a missing value and `Location:` before the folder (`ringnav_np_info`). The play/pause overlay has zero opacity, retaining its original gesture target without
+`Unknown` for a missing value and `Location:` before the folder (`ringnav_np_info`). A Genre line too long for the column scrolls at the album marquee's pace while the page shows (`genre_step`). The play/pause overlay has zero opacity, retaining its original gesture target without
 a transport glyph; stock may update its visibility without making it appear. The loading
 spinner stays centred on the artwork. The on-screen Return icon moves off-screen, as on the pages whose navbars are
 hidden; the hardware Return does the same. More keeps its place at the top row's right. The play

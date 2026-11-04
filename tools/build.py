@@ -1014,6 +1014,7 @@ FUNCTIONS = {
  'set_hscroll_label_attribute': ('void', 'void *'),
  'hscroll_label_set_only_focus': ('int', 'void *, int'),
  'hscroll_label_set_ellipses': ('int', 'void *, int'),
+ 'hscroll_label_set_xoffset': ('int', 'void *, int'),
  'hscroll_label_start': ('int', 'void *'),
  'hscroll_label_stop': ('int', 'void *'),
  'widget_set_text': ('int', 'void *, const unsigned *'),

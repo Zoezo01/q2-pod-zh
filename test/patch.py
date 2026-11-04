@@ -7598,7 +7598,7 @@ assert [m.text(id3+O[k]) for k in ('ID3_TITLE','ID3_ARTIST','ID3_ALBUM')]==['Cha
 # showed Chinese; now only when they also read as GBK (ringnav_gbk_tag): a GBK-tagged MP3's Latin-1 frame
 # still shows Chinese, Western text its UTF-8 copy. Either is stored through its tidy-up (0x5b5a30) into
 # the 256-byte field.
-from build import TAG_TEXT, CUE_TEXT, SCAN_DIRS
+from build import TAG_TEXT, GENRE_COPY, CUE_TEXT, SCAN_DIRS
 assert struct.unpack_from('<I',demo,fileoff(demo,TAG_TEXT[0]))[0]==jal(payload_syms['ringnav_gbk_tag'])
 class TagTextMachine(Machine):
     def __init__(self):
@@ -7629,7 +7629,9 @@ for utf8,raw in (('Lo que la música me enseñó',None),('Ciencia Ficción',None
     m.call(address=0x5c5cf8,args=(int(latin1),rawp,m.string(copy),out),stack=(1,),gap=0)
     assert m.raw(out).decode()==utf8,(utf8,m.raw(out)); passed()
 # Multi-value genres (GENRE_COPY): TagLib's " / " join must fit style's 128 bytes without touching
-# the title at +0x80. Keep whole entries; an oversized first entry alone is cut at 127 bytes.
+# the title at +0x80. Keep whole entries; an oversized first entry alone is cut at a whole character
+# within 127 bytes.
+assert struct.unpack_from('<I',demo,fileoff(demo,GENRE_COPY[0]))[0]==jal(payload_syms['ringnav_genre_copy'])
 genres = ['Sludge Metal', 'Alternative Metal', 'Country', 'Death Metal', 'Gothic Rock',
           'Groove Metal', 'Grunge', 'Metal', 'Rock', 'Stoner Metal', 'Alternative Country',
           'Gothic Country']
@@ -7637,13 +7639,19 @@ joined = ' / '.join(genres)
 m = Machine()
 for given, want in (('', ''), ('Rock', 'Rock'), ('A / B', 'A / B'),
                     ('x' * 127, 'x' * 127), ('x' * 128, 'x' * 127),
-                    ('A / ' + 'x' * 124, 'A'), (joined, ' / '.join(genres[:10]))):
+                    ('A / ' + 'x' * 124, 'A'), (joined, ' / '.join(genres[:10])),
+                    ('語' * 60, '語' * 42), ('x' + '語' * 60, 'x' + '語' * 42),
+                    ('xx' + '語' * 60, 'xx' + '語' * 41), ('😀' * 40, '😀' * 31),
+                    ('語' * 42 + ' / ' + 'x' * 9, '語' * 42)):
     out = m.alloc(0x100)
     m.u.mem_write(out, b'\xa5' * 0x100)
     assert m.call(address=payload_syms['ringnav_genre_copy'],
                   args=(out, m.string(given), 0, 0), gap=0) == out
     assert m.raw(out) == want.encode(), (given, m.raw(out))
     assert m.u.mem_read(out + 0x80, 0x80) == b'\xa5' * 0x80
+bad = m.alloc(0x100); m.u.mem_write(bad, b'\x80' * 200 + b'\0')  # no character starts: nothing to keep
+out = m.alloc(0x100); m.u.mem_write(out, b'\xa5' * 0x100)
+assert m.call(address=payload_syms['ringnav_genre_copy'], args=(out, bad, 0, 0), gap=0) == out and m.raw(out) == b''
 passed()
 # CUE sheets (CUE_TEXT): its seven field conversions go to ringnav_cue_text: UTF-8 stays, GBK goes through
 # stock's conversion, any other text is Windows-1252 re-encoded as UTF-8, cut at a whole character to 511 bytes.
@@ -14207,32 +14215,64 @@ stock_lines={'label_album':'Album:Kid A','label_genre':'Genre:Unknown Artist','l
              'label_sample':'Sample Rate:44.1kHz','label_location':'SD:/Music/Radiohead'}
 lines={k:m.node('label',k,text=v) for k,v in stock_lines.items()}
 win=m.node('window','playing_page',list(lines.values()))
-want=['Album: Kid A','Genre: Unknown','File Size: 35.92 MB','Year: 2000','Encoding: FLAC','Bit Depth: 16-bit',
+for l in lines.values(): m.word(l+O['W_PARENT'],win)
+want=['Album: Kid A','Genre:Unknown Artist','File Size: 35.92 MB','Year: 2000','Encoding: FLAC','Bit Depth: 16-bit',
       'Bitrate: 950 kbps','Sample Rate: 44.1 kHz','Location: SD:/Music/Radiohead']
 for _ in range(2):
     m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
     assert [c[1] for c in m.calls if c[0]=='np_info']==[win] and [m.nodes[l]['text'] for l in lines.values()]==want, [m.nodes[l]['text'] for l in lines.values()]
-assert not m.nodes[lines['label_genre']].get('destroyed') and m.nodes[lines['label_genre']]['type']=='label'
+assert next(n for n in m.nodes.values() if n.get('name')=='ringnav_genre_scroll')['text']=='Genre: Unknown'
 passed()
-# A long bounded genre would be clipped at both ends by the plain centred label: that one becomes an
-# always-scrolling label, keeps the whole text, and is replaced only once.
-joined=' / '.join(['Sludge Metal','Alternative Metal','Country','Death Metal','Gothic Rock','Groove Metal',
-                   'Grunge','Metal','Rock','Stoner Metal'])
-m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'
-old=m.node('label','label_genre',text='Genre:'+joined)
-win=m.node('window','playing_page',[old]); m.word(old+O['W_PARENT'],win)
-m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
-new=next(w for w,n in m.nodes.items() if n.get('name')=='ringnav_genre_scroll')
-assert m.nodes[old]['visible']==0 and not m.nodes[old].get('destroyed')
-assert m.nodes[new]['type']=='hscroll_label' and m.nodes[new]['text']=='Genre: '+joined
-assert m.nodes[new]['style']=='s_scrlabel_white16c'
-assert m.nodes[new]['hscroll_label_set_only_focus']==1 and m.nodes[new]['hscroll_label_set_ellipses']==0
-assert sum(c[0]=='widget_set_text_utf8' and c[1]==new for c in m.calls)==1
-assert any(c[0]=='timer_add' for c in m.calls)
-m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)  # stock's next 250 ms fill
-assert not [c for c in m.calls if c[0]=='widget_set_text_utf8' and c[1]==new]  # no scroll reset
-assert m.nodes[new]['text']=='Genre: '+joined
-passed()
+# Genre shows in a private scroller, stock's label hidden as its source and left alone; its text is set once,
+# so stock's next 250 ms fill resets nothing. Only a value wider than the label moves, on the album marquee's
+# chain, and only in front, lit, on the info page.
+class GenreMachine(InfoMachine,QueueMachine): pass
+np_page=HOOKS['playing_page_init'][0]
+def genre_page(genre,text_w):
+    m=GenreMachine(queue=3,pos=1); m.handlers[syms['getFormatString']]='i:format'; m.handlers[np_page+12]='stock_playing'
+    source=m.node('label','label_genre',text='Genre:'+genre); m.word(source+O['W_X'],75); m.word(source+O['W_W'],225)
+    page=m.node('view','view_info',[source]); sv=m.node('slide_view','slide_view',value=2)
+    win=m.node('window','playing_page',[sv,page,m.node('slider','slider_play',max=225,value=100)])
+    for w,parent in ((source,page),(page,win),(sv,win),(win,m.wm)): m.word(w+O['W_PARENT'],parent)
+    m.top=win; m.call(address=np_page,args=(win,7,0,0),gap=0); m.timers.clear()
+    def fill(): m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
+    fill()  # stock measures on the first paint: nothing to scroll yet
+    s=next(w for w,n in m.nodes.items() if n.get('name')=='ringnav_genre_scroll')
+    assert not m.timers and m.get(s+O['HSCROLL_TEXT_W'])==0
+    m.word(s+O['HSCROLL_TEXT_W'],text_w)
+    return m,win,sv,source,s,fill
+m,win,sv,source,s,fill=genre_page('流行',100); fill()
+assert m.nodes[source]['visible']==0 and m.nodes[source]['text']=='Genre:流行' and m.nodes[s]['text']=='Genre: 流行'
+assert m.nodes[s]['type']=='hscroll_label' and m.nodes[s]['style']=='s_scrlabel_white16c' and m.get(s+O['W_X'])==75 and m.get(s+O['W_W'])==225
+assert m.nodes[s]['hscroll_label_set_only_focus']==1
+assert not m.timers and not [c for c in m.calls if c[0]=='widget_set_text_utf8' and c[1]==s]; passed()
+# 79 px over (2 px at a step): MARQUEE_HOLD_MS, 40 steps to the end, a hold there, back to the start, a hold.
+m,win,sv,source,s,fill=genre_page('Rock',300); pause,ms=O['MARQUEE_HOLD_MS'],50
+def shift(): return m.nodes[s]['hscroll_label_set_xoffset']
+fill(); assert len(m.timers)==1 and shift()==0; fill(); assert len(m.timers)==1
+m.advance(pause-1); assert shift()==0; m.advance(1); assert shift()==2; m.advance(ms); assert shift()==4
+m.advance(ms*37); assert shift()==78; m.advance(ms); assert shift()==79  # never past the end
+m.advance(pause-1); assert shift()==79; m.advance(1); assert shift()==0
+m.advance(pause-1); assert shift()==0; m.advance(1); assert shift()==2; passed()
+# Dark, covered or off the page: the chain ends where it is, a fill doesn't start it, and one in front does.
+for off_front,on_front in ((lambda:m.byte(syms['g_backlight_status'],0),lambda:m.byte(syms['g_backlight_status'],1)),
+                           (lambda:setattr(m,'top',m.node('window','dialog')),lambda:setattr(m,'top',win)),
+                           (lambda:m.nodes[sv].update(value=0),lambda:m.nodes[sv].update(value=2))):
+    was=shift(); off_front(); m.advance(ms); assert not m.timers and shift()==was
+    fill(); assert not m.timers
+    on_front(); fill(); assert len(m.timers)==1; m.advance(pause); assert shift()==was+2; passed()
+# A short genre after a long one, on the same page: back at the start, its timer gone once measured, none again.
+m.nodes[source]['text']='Genre:Pop'; fill(); assert m.nodes[s]['text']=='Genre: Pop' and shift()==0 and len(m.timers)==1
+m.word(s+O['HSCROLL_TEXT_W'],60); m.advance(pause); assert shift()==0 and not m.timers
+fill(); assert not m.timers; passed()
+# A long one after a long one holds at its start; a page closing, or a new one replacing it, ends the chain.
+m,win,sv,source,s,fill=genre_page('Rock',300); fill(); m.advance(pause+ms); assert shift()==4
+m.nodes[source]['text']='Genre:Metal'; fill(); assert shift()==0 and len(m.timers)==1 and min(t[0] for t in m.timers.values())==m.now+pause
+m.call(address=np_page,args=(m.node('window','playing_page'),7,0,0),gap=0); assert not [t for t in m.timers.values() if t[1]==payload_syms['genre_step']]
+m,win,sv,source,s,fill=genre_page('Rock',300); fill(); assert len(m.timers)==1
+f,ctx=m.handler(win,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert not m.timers
+m.top=0; was=len(m.calls); m.call(address=payload_syms['genre_step'],args=(0,0,0,0),gap=0)
+assert not m.timers and not any(c[0]=='hscroll_label_set_xoffset' for c in m.calls); passed()
 # A missing player_location ("(key)") reads Location; a long (CJK) folder, past 512 bytes, stays whole.
 m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'; m.location=b'(player_location)\0'
 folder='SD:/Music/'+'\u97f3\u697d'*150; label=m.node('label','label_location',text=folder)
