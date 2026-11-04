@@ -331,7 +331,8 @@ typedef struct {
         int sec;
     } spots[RESUME_SLOTS];
     unsigned spots_read, rs_at, rs_key, rs_file, rs_go_key, rs_go_at;
-    int rs_long, rs_settle, rs_sec, rs_saved, rs_still, rs_pending, rs_cue, rs_end, rs_total, rs_go;
+    int rs_long, rs_settle, rs_sec, rs_saved, rs_still, rs_pending, rs_cue, rs_end, rs_total, rs_go,
+        rs_stopped;
     int rs_spoken; /* under Podcasts or Audiobooks: resumed at any length, never counted */
     /* Play counts by path hash (plays_read once loaded); the playing track's last second, the
      * seconds of it heard, whether this play has counted and been scrobbled, and .scrobble.ini's
@@ -6490,10 +6491,18 @@ static int songs_unsorted(void *music) {
 static int shuffle_play(void *all) {
     int size = (int)deque_size(all);
     if (size) {
+        int at = (int)rand_below((unsigned)size);
+        if (playback_keeps(all, at)) { /* not a pick of it: another song, or alone, Now Playing */
+            if (size == 1) {
+                playback_np();
+                return size;
+            }
+            at = (at + 1 + (int)rand_below((unsigned)size - 1)) % size;
+        }
         int mode = playback_unshuffle();
         playback_clear(); /* stock Shuffle keeps Shuffle Albums/Folders otherwise */
         config_playmode(2, 1);
-        play_folder(all, (int)rand_below((unsigned)size), 0xf001);
+        play_folder(all, at, 0xf001);
         playback_shuffle(mode); /* an order Up Next can list; stock's shuffle stays the fallback */
     }
     return size;
@@ -9413,9 +9422,22 @@ static void spot_save(int sec) {
 /* Would starting the polled track again lose a place worth keeping? spot_keep keeps none near
  * either end, and spot_save leaves a CUE book's place alone at a chapter's start. */
 int resume_held(void) {
-    return st.rs_long && !st.rs_cue && !st.rs_end && st.rs_sec >= RESUME_EDGE_S &&
-           st.rs_sec < st.rs_total - RESUME_EDGE_S;
+    int sec, total;
+    if (!st.rs_long || st.rs_cue || st.rs_end) return 0;
+    if (player_playtime_and_length(&sec, &total) < 0) sec = st.rs_sec; /* stopped: where it was */
+    return sec >= RESUME_EDGE_S && sec < st.rs_total - RESUME_EDGE_S;
 }
+
+/* A load of the file playing, from another list: back to this second once it starts over. */
+void resume_return(void) {
+    int sec, total;
+    st.rs_go = player_playtime_and_length(&sec, &total) < 0 ? st.rs_sec : sec;
+    st.rs_go_key = st.rs_key;
+    st.rs_go_at = (unsigned)time_now_ms();
+}
+
+/* A confirmed restart: a stop before it doesn't send it back to the place. */
+void resume_restart(void) { st.rs_stopped = 0; }
 
 /* Once a second from the UI loop: a long track saves its place and, when it starts playing near
  * its beginning, jumps to the saved one. A spoken CUE track saves its file's place but jumps only
@@ -9427,13 +9449,17 @@ static void resume_poll(void) {
     st.rs_at = now;
     int sec = 0, total = 0;
     void *r = queue_now(&at, &n);
-    if (!r || player_playtime_and_length(&sec, &total) < 0 || total <= 0) return;
+    if (!r || player_playtime_and_length(&sec, &total) < 0 || total <= 0) {
+        if (st.rs_long && mclGetPlayStatus() == 1)
+            st.rs_stopped = 1; /* not a load's or seek's -1 */
+        return;
+    }
     unsigned key = listen_key(r);                   /* a CUE image's tracks share one path */
     if (now - st.rs_go_at > 8000) st.rs_go_key = 0; /* a Resume row's chapter never came */
     if (key != st.rs_key) {
         if (st.rs_long && !st.rs_pending) spot_save(st.rs_sec);
         st.rs_key = key;
-        st.rs_long = 0;
+        st.rs_long = st.rs_stopped = 0;
         st.rs_settle = 1;
         return;
     }
@@ -9451,6 +9477,13 @@ static void resume_poll(void) {
         if (playback_resumed(r)) st.rs_pending = 0;
         st.rs_sec = st.rs_saved = sec;
         st.rs_still = 0;
+    }
+    /* Started again after a stop, as a list pick or Play does: back to the place it stopped at. */
+    if (st.rs_stopped) {
+        st.rs_stopped = 0;
+        if (st.rs_long && !st.rs_cue && !st.rs_end && sec < RESUME_START_S &&
+            st.rs_sec >= RESUME_EDGE_S && st.rs_sec < st.rs_total - RESUME_EDGE_S)
+            st.rs_pending = st.rs_sec;
     }
     if (st.ch_key == key)
         st.rs_pending = 0;
@@ -10809,6 +10842,14 @@ int ringnav(void *ctx, void *event) {
     if (key == KEY_CENTER || key == KEY_RETURN) st.held = 0; /* a button ends a held turn */
     void *front = window_manager_get_top_window(window_manager());
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
+    /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49a478), for its 2 s of
+     * the 3 s: the same key goes on. ponytail: the toast stays up its time; another key is still
+     * stopped. */
+    if ((key == KEY_BACK_BTN || key == KEY_FWD_BTN) && restart_armed(key == KEY_FWD_BTN) && front &&
+        !tk_strcmp(widget_get_type(front), "dialog")) {
+        key == KEY_FWD_BTN ? next_quick_click() : prev_quick_click();
+        return STOP;
+    }
     /* The rating picker's keys, before the page's own (its Return would leave it) */
     if (usable() && rate_key(window_manager_get_top_window(window_manager()), key)) return STOP;
     /* A game's keys, before stock's lock filter, media keys and screen-off double Centre */

@@ -134,6 +134,8 @@ HOOKS = {
     'mclStartPlayer': (0x5ad6ac, 'ringnav_start_player', 'start_player'),
     # View Queue's row and Up Next's (navigation.c): a picked queue index, kept in advanced play's order
     'player_start_queue': (0x5160dc, 'ringnav_start_queue', 'start_queue'),
+    # A list pick of the playing file only asks (playback.c)
+    'player_start': (0x515e38, 'ringnav_player_start', 'player_start'),
     # Card apps (patch/addon.c): USB mode's page, before it unmounts the card, ends them first
     'usbmode_page_init': (0x530cd4, 'ringnav_usbmode', 'usbmode'),
     # Tidal cache (patch/tidal.c): the stream URL thread's player start, with its song id in $s2
@@ -1120,6 +1122,8 @@ FUNCTIONS = {
  'playing_timer_start': ('int', 'void *'),
  'playing_timer_clear': ('int', 'void *'),
  'player_seek_time': ('int', 'int'),
+ 'player_playtime': ('int', 'void'),
+ 'prev_quick_click': ('int', 'void'), 'next_quick_click': ('int', 'void'),
  'player_mainscheduling': ('int', 'void'),
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),

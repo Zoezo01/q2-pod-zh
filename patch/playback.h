@@ -39,4 +39,6 @@ extern volatile int qs_back, qs_down, qs_live;
  * 200 units a turn, rising anticlockwise (games.c's Vortex, Now Playing's lyrics); wheel_held is
  * set while a finger is on the wheel */
 extern volatile int wheel_raw, wheel_travel, wheel_held;
+int playback_keeps(void *q, int at), restart_armed(int key);
+void playback_np(void);
 #endif

@@ -3823,6 +3823,20 @@ assert m.run(2) is None
 assert m.opened[-1][:2]==('playing_page',['T1','T2']) and m.opened[-1][2] in (0,1) and m.opened[-1][3:]==(0xf001,2) and [c[1:3] for c in m.calls if c[0]=='config_playmode']==[(2,1)]
 assert [c[0] for c in m.calls].count('stock_playback_shuffle')==1; passed()
 m=QueueMachine(cls=0xf004,page='localclass_page'); m.found=[]; assert m.run(2)=='Queue unchanged' and m.opened[-1][0]!='playing_page'; passed()
+# The Queue menu's Shuffle drawing a long track that's playing isn't a pick of it: another song, the queue replaced as for
+# any draw. Alone in the list it opens Now Playing, with no mode change, no load and no "Queue unchanged".
+class KeepsMachine(QueueMachine):
+    def __init__(self,**kw):
+        super().__init__(**kw); self.handlers[payload_syms['playback_shuffle']]='stock_playback_shuffle'; self.handlers[payload_syms['playback_keeps']]='keeps:'; self.drawn=[]
+        self.handlers[payload_syms['playback_np']]='keeps:np'; self.nps=0
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name=='keeps:': self.drawn.append(u.reg_read(REGS[1])); return self.returns(len(self.drawn)==1)
+        if name=='keeps:np': self.nps+=1; return self.returns(0)
+        return super().hook(u,address,size,unused)
+m=KeepsMachine(cls=0xf004,page='localclass_page'); assert m.run(2) is None and m.opened[-1][0]=='playing_page' and m.opened[-1][2]!=m.drawn[0] and not m.nps
+assert [c[1:3] for c in m.calls if c[0]=='config_playmode']==[(2,1)]; passed()
+m=KeepsMachine(cls=0xf004,page='localclass_page'); m.found=m.found[:1]; assert m.run(2) is None and m.nps==1 and not [c for c in m.calls if c[0]=='config_playmode'] and m.opened[-1][0]!='playing_page'; passed()
 # Go to album fills the album query as Now Playing's Album info and opens playerjumpinfo_page; Go to
 # artist opens artistinfo_page with {class, record}. Closing either puts the browsing state back.
 info=syms['g_local_classinfo_save']

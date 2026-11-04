@@ -21,12 +21,14 @@ extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_memory_trampoline(void *), stock_savequeue_trampoline(void), stock_change_trampoline(int),
     stock_seek_time_trampoline(int), stock_seek_start_trampoline(void),
     stock_reboot_trampoline(void), stock_checkfw_trampoline(void *, void *),
-    stock_speed_trampoline(int), stock_open_preload_trampoline(void), stock_start_queue_trampoline(int);
+    stock_speed_trampoline(int), stock_open_preload_trampoline(void), stock_start_queue_trampoline(int),
+    stock_player_start_trampoline(void *, int, int, int);
 extern void *staged(int (*)(void *), void *, int *);
 extern int album_before(const void *, const void *), folder_cmp(void *, void *),
     album_only(void *, void *, int);
 extern unsigned queue_hash(void *); /* navigation.c */
 extern int resume_held(void);       /* navigation.c */
+extern void resume_return(void), resume_restart(void);
 
 typedef struct {
     unsigned index, group, rank;
@@ -787,8 +789,14 @@ static void commit(unsigned next) {
  * the order carries on after it and it neither plays again later in the pass nor drops the tracks
  * it jumped; an ordered queue's in place, so the tracks after it follow. A pick inside a pending
  * Play Next takes only its entry off the list, the rest stay pending. */
+#define VIEW_QUEUE_RET 0x529944 /* View Queue's row, past its bounds checks */
 int ringnav_start_queue(int at) {
     unsigned x = (unsigned)at;
+    if (__builtin_return_address(0) == (void *)VIEW_QUEUE_RET && x == (unsigned)M(MCL_POS) &&
+        playback_keeps(queue(), at)) {
+        playback_np();
+        return 1;
+    }
     if (s.active && x < s.n && x != (unsigned)M(MCL_POS) && queue() && deque_size(queue()) == s.n) {
         close_preload();
         if (s.shuffle == 1 && pend_find(x) == s.npend) play_now(x);
@@ -958,16 +966,28 @@ static int change_restarts(int next) {
     if (M(MCL_TYPE) != 1 || !*(volatile unsigned char *)MCL_JUMPFOLDER || mclGetPlayM3uFlag()) return 1;
     return !next && M(MCL_MODE) == 2 && !M(MCL_LASTPOS);
 }
-/* A press that would restart a track holding a place only asks; a second within RESTART_ASK_MS goes
- * ahead, and resume_poll forgets the place as for any move to the start. */
+/* A local queue's only: a DLNA controller or an online queue (0xf1, 0xf2) keeps stock's way. */
+static int local_class(int cls) { return cls == 1 || (cls & 0xf000) == 0xf000; }
+static int place_held(void) { return local_class(M(MCL_TYPE)) && resume_held(); }
+/* A press that would restart a track holding a place only asks; a second of the same key within
+ * RESTART_ASK_MS goes ahead, and resume_poll forgets the place as for any move to the start. Another
+ * key asks again and arms for itself, so Previous can't confirm what a stray Next asked. */
 #define RESTART_ASK_MS 3000
 static unsigned restart_at;
+static int restart_key; /* change_music's next: 0 Previous, 1 Next */
 static int restart_ask; /* set here, maybe off the UI thread; toasted by the poll */
-static int restart_refused(int next) {
-    if (!resume_held() || !change_restarts(next)) return restart_at = 0;
+int restart_armed(int key) {
+    return restart_at && restart_key == key && (unsigned)time_now_ms() - restart_at <= RESTART_ASK_MS;
+}
+static int restart_refused(int key, int restarts) {
+    if (!restarts) return restart_at = 0;
     unsigned now = (unsigned)time_now_ms();
-    if (restart_at && now - restart_at <= RESTART_ASK_MS) return restart_at = 0;
+    if (restart_armed(key)) {
+        resume_restart();
+        return restart_at = 0;
+    }
     restart_at = now | !now; /* never 0, no press yet */
+    restart_key = key;
     return restart_ask = 1;
 }
 /* Manual Next/Prev (player_change_music). List Play stops at a library queue's end, as above. At
@@ -976,7 +996,9 @@ static int restart_refused(int next) {
  * written directly: mclSetPlayMode would end advanced play. */
 static int change_music(int next) {
     headset_manual();
-    if (restart_refused(next)) return 0; /* the caller toasts -1 (no storage) and -5 */
+    /* Stock's skip past a file it can't play is automatic, and never asks. */
+    if (!press_natural && restart_refused(next, place_held() && change_restarts(next)))
+        return 0; /* the caller toasts -1 (no storage) and -5 */
     press_stamp();
     if (!s.active) {
         if (!next || !list_end()) return stock_change_trampoline(next);
@@ -1003,14 +1025,59 @@ int ringnav_change(int next) {
     return result;
 }
 /* A user's seek stamps: a scrub or chapter (player_seek_time; Resume Songs' jump goes past this hook) and
- * Previous restarting the track (player_seek_start). A-B Repeat and a phone call mclSetSeek themselves. */
+ * Previous restarting the track. A-B Repeat and a phone call mclSetSeek themselves. */
 int ringnav_seek_time(int sec) {
     press_stamp();
     return stock_seek_time_trampoline(sec);
 }
+/* player_prev_music's first move, its only caller, on anything playing or paused: past 10 s stock seeks
+ * to the track's start and returns 1, in any queue and mode, without reaching player_change_music. A
+ * refusal returns 1 too, so it goes no further. Under 11 s stock returns 0 and Previous changes track. */
 int ringnav_seek_start(void) {
-    press_stamp();
+    int restarts = player_playtime() > 10;
+    if (restart_refused(0, restarts && place_held())) return 1;
+    if (restarts) press_stamp();
     return stock_seek_start_trampoline();
+}
+/* Is q's entry at the file playing or paused, the same CUE track, on a track holding a place? */
+int playback_keeps(void *q, int at) {
+    unsigned pos = (unsigned)M(MCL_POS);
+    if (mclGetPlayStatus() == 1 || !place_held() || !q || !queue() || (unsigned)at >= deque_size(q) ||
+        pos >= deque_size(queue()))
+        return 0;
+    void *ra = deque_at(q, (unsigned)at), *rb = deque_at(queue(), pos);
+    const char *a = P(ra, REC_PATH), *b = P(rb, REC_PATH);
+    return a && b && !strcmp(a, b) && I(ra, REC_CUE_START) == I(rb, REC_CUE_START) &&
+           I(ra, REC_CUE_END) == I(rb, REC_CUE_END);
+}
+/* Now Playing, as on_backplay_click opens it, class 0xff: a pick means play this, so a paused file goes
+ * on. Its Play waits for the DAC by itself (dac_resume), so no stamp. */
+void playback_np(void) {
+    static const int context[4] = { 0, 0, 0xff, 2 };
+    navigator_switch_to_with_context("playing_page", context, 0);
+    if (mclGetPlayStatus() == 3) player_play_pause();
+}
+/* Picks of the playing file reach player_start from each of these; none reads its result. */
+#define PAGE_PICK_RET 0x52cc1c  /* playing_page_init, which opens Now Playing itself */
+#define ALBUM_PLAY_RET 0x4a5d6c /* the album page's play (0x4a5c6c), which stays on its page */
+#define ALBUMINFO_PLAY_RET 0x4a9c48
+/* The same row of the same list: nothing starts. SyncLink's (0x51b73c, 0x51b90c), off the UI thread, stays
+ * silent, the track playing on. From another list stock loads it, and the poll goes back to the place. Not a
+ * press: an app's .play (press_natural), Shuffle Albums' load, DLNA and online. */
+int ringnav_player_start(void *q, int at, int cls, int mode) {
+    void *from = __builtin_return_address(0);
+    if (!press_natural && !s.grouping && local_class(cls) && playback_keeps(q, at)) {
+        if (at != M(MCL_POS) || deque_size(q) != deque_size(queue()) || cls != M(MCL_TYPE))
+            resume_return();
+        else {
+            if (from == (void *)ALBUM_PLAY_RET || from == (void *)ALBUMINFO_PLAY_RET)
+                playback_np();
+            else if (from == (void *)PAGE_PICK_RET && mclGetPlayStatus() == 3)
+                player_play_pause();
+            return 1;
+        }
+    }
+    return stock_player_start_trampoline(q, at, cls, mode);
 }
 int playback_group_skip(int forward) {
     if (!s.active && !playback_set(2, s.folder)) return 0;
