@@ -5634,10 +5634,10 @@ def shown(): return [m.nodes[w].get('text') for w in (pos,album,remain)]
 def written(): return [m.nodes[c[1]]['name'] for c in m.calls if c[0]=='widget_set_text_utf8']
 def repaint(w=win): m.call(address=HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0)); return written()
 assert m.call(address=playing,args=(win,7,0,0),gap=0)==0 and m.calls[0][:3]==('stock_playing',win,7)
-assert shown()==['2 of 3','Album 1','-2:05']; passed()
+assert shown()==['2 / 3','Album 1','-2:05']; passed()
 assert repaint()==[] and repaint(bar)==[]; passed()
 m.nodes[slider]['value']=101; assert repaint()==['label_ipod_remain'] and shown()[2]=='-2:04'; passed()
-m.word(O['MCL_POS'],2); assert repaint(bar)==['label_ipod_pos','label_ipod_album'] and shown()[:2]==['3 of 3','Album 2']; passed()
+m.word(O['MCL_POS'],2); assert repaint(bar)==['label_ipod_pos','label_ipod_album'] and shown()[:2]==['3 / 3','Album 2']; passed()
 # A rebuilt queue can reuse the same string address with new text; the text itself is hashed.
 m.u.mem_write(m.get(m.items(m.get(syms['mcl_pdeqplaylist']))[2]+O['REC_ALBUM']),b'Other\0')
 assert 'label_ipod_album' in repaint() and shown()[1]=='Other'; passed()
@@ -5651,7 +5651,7 @@ for mx,v,want in ((3725,0,'-1:02:05'),(3600,0,'-1:00:00'),(3599,0,'-59:59'),(90,
     m.nodes[slider].update(max=mx,value=v); repaint(); assert shown()[2]==want,(mx,v)
 passed()
 queue=m.deqs[m.get(syms['mcl_pdeqplaylist'])][1]
-del queue[1:]; m.word(O['MCL_POS'],0); repaint(); assert shown()[:2]==['1 of 1','Album 0']
+del queue[1:]; m.word(O['MCL_POS'],0); repaint(); assert shown()[:2]==['1 / 1','Album 0']
 queue.clear(); repaint(); assert shown()[:2]==['','']; passed()
 # Another top window, or the page once destroyed, leaves the labels alone.
 queue.append(m.copy('stSongInfo',m.song('X'))); m.top=m.node('window','home_page'); m.word(m.top+O['W_PARENT'],m.wm)
@@ -5830,7 +5830,7 @@ for theme,bh in (('0',4),('1',8)):
   fills=[b[:5] for b in m.bands]
   assert fills==[(*band,color_t(0))],fills  # then the capsule, as the progress bar
   assert [(r['rect'],r['radius'],r['color']) for r in m.rounded]==[(bar,bh//2,color_t(O['TRACK_COLOR'])),((24,bar[1],327*40//100,bh),bh//2,color_t(0xffffff))],m.rounded
-  assert [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==[('Volume 40',(0,295,375,16),O['NP_TIMES_PX'])]; passed()
+  assert [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==[('音量 40',(0,295,375,16),O['NP_TIMES_PX'])]; passed()
 assert len(m.timers)==1; poll=next(iter(m.timers))
 m.advance(O['VOL_POLL_MS']); assert not did('widget_invalidate_force') and poll in m.timers  # unchanged: nothing
 m.nodes[sv]['value']=41; m.advance(O['VOL_POLL_MS'])  # changed: the whole dialog repaints

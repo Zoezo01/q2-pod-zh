@@ -703,12 +703,14 @@ def status_icon(name, data):
     width = 14 if name.startswith('bar_wifi') else 42 if name.startswith('bar_bt') else 12
     if name.startswith('bar_wifi'):
         level = int(name[-5])
-        # Concentric arcs (+-44 degrees) round the dot at 7,12.6: ink rows 3-14, the battery's 11 px.
-        paths = ('M0.88,6.27 A8.8,8.8 0 0,1 13.12,6.27', 'M2.76,8.21 A6.1,6.1 0 0,1 11.24,8.21',
-                 'M4.64,10.15 A3.4,3.4 0 0,1 9.36,10.15')
+        # Concentric arcs (+-44 degrees) round the dot at 7,11.6: ink rows 2-13, the same 12 rows
+        # stock's 16px Wi-Fi glyph fills (2-13) and the battery's 11 px. One pixel lower (3-14) and
+        # the glyph hangs below the battery on the bar.
+        paths = ('M0.88,5.27 A8.8,8.8 0 0,1 13.12,5.27', 'M2.76,7.21 A6.1,6.1 0 0,1 11.24,7.21',
+                 'M4.64,9.15 A3.4,3.4 0 0,1 9.36,9.15')
         shapes = 'stroke-width 1.5 ' + ' '.join(f"stroke '{'white' if level >= 4-i else '#666666'}' path '{p}'"
                                                 for i, p in enumerate(paths))
-        shapes += f" stroke none fill '{'white' if level else '#666666'}' circle 7,12.6 8.2,12.6"
+        shapes += f" stroke none fill '{'white' if level else '#666666'}' circle 7,11.6 8.2,11.6"
     elif name.startswith('bar_bt'):
         color = 'white' if name == 'bar_btcon.png' else '#666666'
         shapes = f"stroke '{color}' path 'M34.2,4 L41.2,11 L37.2,14 L37.2,2 L41.2,5 L34.2,12'"
