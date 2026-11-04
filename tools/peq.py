@@ -29,8 +29,8 @@ EQ_DESC, EQ_OPEN_SLOT = 0x893df8, 0x893e0c
 # lavcresample's descriptor open slot (af_info at 0x8a4540; stock open 0x4ac2c0), which becomes rs_open: the
 # resampler Bluetooth's 48 kHz output appends keeps its state across a gapless change (docs/internals.md).
 RS_OPEN_SLOT, RS_OPEN = 0x8a4554, 0x4ac2c0
-# ao_alsa's descriptor init slot (0x88f758; stock init 0x438988), which becomes ao_init: on a USB DAC the same
-# request asks for the rate and format it negotiated last time, so a gapless change keeps the PCM open.
+# ao_alsa's descriptor init slot (0x88f758; stock init 0x438988), which becomes ao_init: on Bluetooth or a USB DAC
+# the same request asks for the rate and format it negotiated last time, so a gapless change keeps the PCM open.
 AO_INIT_SLOT, AO_INIT = 0x88f760, 0x438988
 # Stock skips the equalizer above 48 kHz (address, stock word, patched word); see docs/internals.md.
 EQ_RATE_GATES = ((0x42ced0, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
@@ -253,7 +253,7 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, jal(ps[name]), 'DAC release wait')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
-    patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'USB DAC init slot')
+    patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')
     patch_word(data, MP3_ALLOC, jal(0xadaf00), jal(ps['mp3_private_alloc']), 'MP3 gapless private state')
     patch_word(data, MP3_FILTER, jal(0x44d350), jal(ps['mp3_filter_entry']), 'MP3 gapless PCM')
     patch_word(data, MP3_CLOSE, 0x48b7e4, ps['mp3_close'], 'MP3 gapless cleanup')

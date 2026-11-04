@@ -284,7 +284,7 @@ WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
                   b'        rb=/mnt/mmc/.rockbox\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.
 BLUEALSA = 'usr/bin/bluealsa'
-# Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM between songs, so
+# Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM (a stop, a skip, a cold start), so
 # a track change doesn't restart the stream (true-wireless buds started one ear first).
 BLUEALSA2 = 'usr/bin/bluealsa2'
 BT_KEEPALIVE = (b'bluealsa -c LDAC', b'bluealsa --keep-alive=5 -c LDAC')

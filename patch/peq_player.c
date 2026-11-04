@@ -377,32 +377,51 @@ int rs_open(af_instance *af) {
     return r;
 }
 
-/* A USB DAC across a gapless change (docs/internals.md#usb-output-buffer). ao_alsa's init (0x438988, the
- * descriptor's slot 0x88f760) keeps the PCM open when the file's rate, channels and format equal what the
- * last call asked, but it saves the negotiated rate and format as that (0x4393b8, 0x43934c) and runs a
- * DAC whose top rate is 48 kHz at 48 kHz for any file (0x43999c), so a 44.1 kHz album's every change
- * closed the PCM undrained and reopened it. The same request asks for what it got last time instead, as
- * the player already does for Bluetooth (0x42efcc): the compare matches and ao_data keeps the negotiated
- * values, so the chain resamples as before. The pair moves as one, on a fresh open (another DAC may have
- * come) or when the DAC changed the request; a request taken as asked leaves it, so a 44.1 and 48 kHz
- * mix stays matched. Another request, a closed PCM (a stop; stock's own init calls at 0x439b5c, the
- * hw_params retry, and 0x439d14, reset's, bypass the slot) or another output negotiate as stock, so a
- * DAC that takes the file's rate and format is unchanged. ponytail: one request remembered; a queue
- * that changes rate reopens at each change, as the headphone jack does. */
+/* Bluetooth and a USB DAC across a gapless change (docs/internals.md#usb-output-buffer). ao_alsa's init
+ * (0x438988, the descriptor's slot 0x88f760) keeps the PCM open when the file's rate, channels and format equal
+ * what the last call asked, but it saves the negotiated rate and format as that (0x4393b8, 0x43934c). The player
+ * asks Bluetooth for 48 kHz whatever the file (0x42efcc) and bluealsa's ioplug offers the transport's one rate
+ * (LDAC 96 kHz; 48 kHz for AAC and SBC, so those matched), and it runs a USB DAC whose top rate is 48 kHz at
+ * 48 kHz for any file (0x43999c), so at any other answer every change drained or lost the buffer, closed and
+ * reopened the PCM. The same request asks for what it got last time instead: the compare matches and ao_data
+ * keeps the negotiated values, so the chain resamples as before. The pair moves as one, on a fresh open (another
+ * DAC or transport may have come), when the request was changed, or when the request it holds was taken as asked
+ * (a reopen found a new answer); another request taken as asked leaves it, so a 44.1 and 48 kHz mix stays
+ * matched. Another request, a closed PCM (a stop; stock's own init calls at 0x439b5c, the hw_params retry, and
+ * 0x439d14, reset's, bypass the slot) or the headphone jack negotiate as stock, and a pair that changes nothing
+ * (AAC, SBC, a DAC that takes the file's format) isn't even looked at. A transport gone under an open PCM
+ * (reconnect, codec change) leaves the ioplug disconnected or, when it had underrun first, in XRUN with its dead
+ * FIFO, and stock's play and reset only prepare it, so only a PCM still running or prepared is kept. The ioplug's
+ * state op only reads (libasound 0x904d0): the plugin's pointer callback moves it, and that runs from
+ * snd_pcm_status, hence stock's get_space (0x43815c) first. Every other state, and another output way (the pair is
+ * that way's), negotiates as stock. ponytail: one request remembered, so a queue that changes bit depth or channels
+ * reopens at each change, as AAC does; a next track later than the buffer underruns, so it reopens, as stock did at
+ * every change; on a USB DAC, whose PCM never stops by itself (stop_threshold is the boundary), a next track later
+ * than the buffer is RUNNING with hw_ptr past appl_ptr, and its first frames go out behind the hardware, as a
+ * same-format wired change does in stock; a server that closed the FIFO under a PCM with nothing yet underrun stays the hole stock AAC has:
+ * the first write finds it (docs/internals.md#usb-output-buffer). */
 #define OUTPUT_WAY (*(volatile int *)0xb10e54u)
 #define ALSA_PCM (*(void *volatile *)0xb115a8u)
 #define AO_RATE (*(volatile int *)0xafa1a0u)
 #define AO_FORMAT (*(volatile int *)0xafa1a8u)
-static int usb_asked[2], usb_got[2]; /* the last request the DAC changed, and what it got */
+#define PCM_PREPARED 2 /* SND_PCM_STATE_*, from snd_pcm_state (0xadb680) */
+#define PCM_RUNNING 3
+static int ao_asked[2], ao_got[2], ao_way; /* the last request the output changed, what it got, and on which way */
+static int ao_playing(void) {
+    ((int (*)(void))0x43815cu)(); /* stock's get_space: snd_pcm_status brings the ioplug's state up to date */
+    int state = ((int (*)(void *))0xadb680u)(ALSA_PCM);
+    return state == PCM_RUNNING || state == PCM_PREPARED;
+}
 int ao_init(int rate, int channels, int format, int flags) {
     int asked[2] = { rate, format }, was_open = ALSA_PCM != 0;
-    if (OUTPUT_WAY == 2 && was_open && rate == usb_asked[0] && format == usb_asked[1])
-        rate = usb_got[0], format = usb_got[1];
+    int held = OUTPUT_WAY == ao_way && rate == ao_asked[0] && format == ao_asked[1];
+    if (OUTPUT_WAY && was_open && held && (rate != ao_got[0] || format != ao_got[1]) && ao_playing())
+        rate = ao_got[0], format = ao_got[1];
     int r = ((int (*)(int, int, int, int))0x438988u)(rate, channels, format, flags);
-    if (r > 0 && OUTPUT_WAY == 2 && ALSA_PCM) {
+    if (r > 0 && ALSA_PCM) {
         int got[2] = { AO_RATE, AO_FORMAT };
-        if (!was_open || asked[0] != got[0] || asked[1] != got[1])
-            usb_asked[0] = asked[0], usb_asked[1] = asked[1], usb_got[0] = got[0], usb_got[1] = got[1];
+        if (!was_open || held || OUTPUT_WAY != ao_way || asked[0] != got[0] || asked[1] != got[1])
+            ao_asked[0] = asked[0], ao_asked[1] = asked[1], ao_got[0] = got[0], ao_got[1] = got[1], ao_way = OUTPUT_WAY;
     }
     return r;
 }
