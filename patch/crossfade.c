@@ -25,7 +25,7 @@
 #define RS_DEFAULT 30
 
 static struct {
-    int read, on, seconds, done, key[5];
+    int read, on, seconds, done, key[6], stops, counted;
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
@@ -461,26 +461,45 @@ int xfade_key(void *top, unsigned key) {
 
 /* playback_poll, each UI pass: the next change's fade into XFADE_FILE, made whole under another
  * name first as the visualizer's tap is. A fade only when Crossfade and stock's Gapless are on and
- * the next track is another album's (album_cmp), so albums stay gapless; stock Shuffle's next (-2)
- * is drawn at the change, so it counts as another album's. Its change is a cold start (stock
- * preloads nothing in Shuffle), which the filter's tail waits out (XF_STALE_NS). */
-void xfade_poll(int next) {
+ * the next track is another album's (album_cmp), so albums stay gapless; stock Shuffle's next
+ * always counts as another album's, and is -2 when not drawn ahead (playback.c shuffle_peek). Its
+ * change is a cold start (stock preloads nothing in Shuffle), which the filter's tail waits out
+ * (XF_COLD_NS). Each stop moves the count beside the fade, so no tail outlives a stop: status 1 and
+ * no file error. An error's status is no stop: stock's dialog timer takes the file away and shows
+ * its modal toast, passes running under it, before it plays the next (on_wm_timer_dialog,
+ * 0x4ea784). A stop during a toast isn't counted. */
+static int fades_into(void *r) {
+    const char *p = P(r, REC_PATH), *e = p ? strrchr(p, '.') : 0;
+    unsigned st[36];
+    /* DSD skips the filter; a missing or empty file never plays: nothing would mix the tail */
+    if (e && (!strcasecmp(e, ".dsf") || !strcasecmp(e, ".dff") || !strcasecmp(e, ".iso"))) return 0;
+    /* over 2 GB, o32's stat fails: that's a file */
+    return !p || p[0] != '/' || (!access(p, 0) && (__xstat(3, p, st) || st[12]));
+}
+void xfade_poll(int next, int shuffled) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned pos = (unsigned)I(MCL_POS, 0), n = q ? deque_size(q) : 0;
     if (!xf.flag && (next == -1 || pos >= n)) return; /* nothing playing on: no config read yet */
     settings();
-    if (xf.flag && *xf.flag) peq_chain(); /* the fade runs in the filter, once something plays */
+    if (xf.flag && *xf.flag & XF_MS) peq_chain(); /* the fade runs in the filter, once something plays */
     int in = next >= 0 && pos < n && (unsigned)next < n; /* records, not positions: a new queue */
-    int key[5] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
+    if (mclGetPlayStatus() != 1)
+        xf.counted = 0;
+    else if (xf.flag && !xf.counted && access("/tmp/notfile", 0) && access("/tmp/notsupport", 0) &&
+             !navigator_window_is_exist("msginfo_dialog"))
+        xf.counted = 1, ++xf.stops;
+    int key[6] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
                    in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
-                   next == -2 && pos < n };
+                   shuffled && next != -1 && pos < n, xf.stops };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;
     memcpy(xf.key, key, sizeof key);
-    int ms = key[0] && key[1] && (key[4] || (key[2] != key[3] && album_cmp((void *)key[2], (void *)key[3])))
+    int ms = key[0] && key[1] &&
+                     (key[4] || (key[2] != key[3] && album_cmp((void *)key[2], (void *)key[3]))) &&
+                     (!key[3] || fades_into((void *)key[3]))
                  ? key[0] * 1000
                  : 0;
     xf.done = 0; /* until the player is told: a file that cannot be made yet is tried next pass */
     if (!xf.flag && ms && !(xf.flag = shared_int(XFADE_FILE ".tmp", XFADE_FILE))) return;
-    if (xf.flag) *xf.flag = ms;
+    if (xf.flag) *xf.flag = ms | (xf.stops & 0x7fff) << XF_STOPS;
     xf.done = 1;
 }

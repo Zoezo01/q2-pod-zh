@@ -1500,15 +1500,54 @@ int playback_resumed(void *r) {
     return pending && s.resume_elapsed && (unsigned)M(MCL_POS) == s.resume_pos &&
            fnv(FNV_SEED, P(r, REC_PATH)) == s.resume_key;
 }
+/* Stock Shuffle's next, drawn ahead so Crossfade can ask about the file. Stock's pick (0x5a8120) takes
+ * the current index out of the pool and sets the position to a random one left there, which stays
+ * until it is current: so ringnav_shuffle overrides the position with this draw, a uniform one of the
+ * same set. Neither touches the pool. The two records say the queue under it hasn't changed.
+ * ponytail: with under 2 in the pool the pick refills it (or Folder Skip jumps): -2, unknown. */
+static struct { unsigned at, index; void *now, *next; } peek __attribute__((section(".scratch")));
+static int peek_holds(unsigned at) {
+    void *q = queue();
+    unsigned n = q ? deque_size(q) : 0;
+    return peek.now && peek.at == at && at < n && peek.index < n && deque_at(q, at) == peek.now &&
+           deque_at(q, peek.index) == peek.next;
+}
+static int shuffle_peek(unsigned at) {
+    if (peek_holds(at)) return (int)peek.index;
+    void *pool = P(MCL_POOL, 0);
+    unsigned k = pool ? deque_size(pool) : 0, n = deque_size(queue());
+    peek.now = 0;
+    for (int tries = 0; k >= 2 && tries < 8; ++tries) {
+        unsigned x = *(unsigned *)deque_at(pool, rand_below(k));
+        if (x != at && x < n) {
+            peek.at = at, peek.index = x;
+            peek.now = deque_at(queue(), at), peek.next = deque_at(queue(), x);
+            return (int)x;
+        }
+    }
+    return -2;
+}
+int playback_peek(unsigned at) {
+    int to = peek_holds(at) ? (int)peek.index : -1;
+    peek.now = 0;
+    return to;
+}
 /* The track that plays after this one, or -1: Crossfade's next (crossfade.c). Stock preloads pos+1
- * only in order and repeat-all (mclSetPlayMode's modes 0 and 3); stock Shuffle (2) draws its next
- * at the change, so it is -2, unknown but another track's. */
+ * only in order and repeat-all (mclSetPlayMode's modes 0 and 3), repeat-all's wrapping to 0; stock
+ * Shuffle (2) goes back after a Previous, to a Play next, or to the draw above. */
 static int playback_next(void) {
     if (s.active) return playback_successor(1);
     unsigned at = (unsigned)M(MCL_POS);
     int mode = M(MCL_MODE);
     unsigned n = queue() ? deque_size(queue()) : 0;
-    if (mode == 2) return at < n && n > 1 ? -2 : -1;
+    if (mode == 2) {
+        if (at >= n || n < 2) return -1;
+        int to = shuffle_forced();
+        if (to >= 0) return to;
+        if (back_to && (int)at == back_at && (unsigned)back_to <= n) return back_to - 1;
+        return shuffle_peek(at);
+    }
+    if (mode == 3 && n && at + 1 == n) return 0;
     return (mode == 0 || mode == 3) && at + 1 < n ? (int)at + 1 : -1;
 }
 void playback_poll(void) {
@@ -1521,7 +1560,7 @@ void playback_poll(void) {
         restart_ask = 0;
         toast("Press again to restart");
     }
-    xfade_poll(playback_next());
+    xfade_poll(playback_next(), !s.active && M(MCL_MODE) == 2);
     mono_sync();
     unsigned now = time_now_ms();
     /* playback_save writes only what changed, at most every 5 s. A track that just plays on

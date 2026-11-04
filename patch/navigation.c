@@ -9289,14 +9289,24 @@ unsigned ringnav_hold_timer(int (*fn)(const void *), void *ids, unsigned ms, int
 
 /* Replaces mclNextSong's shuffle pick call: stock picks and bookkeeps, then a pending Play next
  * becomes the next track if it is still at its index. */
-int ringnav_shuffle(int forward) {
-    int back = playback_back(), result = mcl_shuffle_pick(forward);
-    if (back >= 0) MCL(MCL_POS) = back; /* after Previous, Next returns to the track it left */
+int shuffle_forced(void) {
     void *queue = P(mcl_pdeqplaylist, 0);
     unsigned at = st.qm_forced - 1;
+    return queue && at < deque_size(queue) && rec_hash(deque_at(queue, at)) == st.qm_forced_hash
+               ? (int)at
+               : -1;
+}
+int ringnav_shuffle(int forward) {
+    unsigned was = (unsigned)MCL(MCL_POS);
+    int back = playback_back(), result = mcl_shuffle_pick(forward), forced = shuffle_forced(),
+        ahead = playback_peek(was); /* after the pick: Folder Skip's jump changes the queue */
     st.qm_forced = 0;
-    if (queue && at < deque_size(queue) && rec_hash(deque_at(queue, at)) == st.qm_forced_hash)
-        MCL(MCL_POS) = (int)at;
+    if (forced >= 0)
+        MCL(MCL_POS) = forced;
+    else if (back >= 0)
+        MCL(MCL_POS) = back; /* after Previous, Next returns to the track it left */
+    else if (ahead >= 0)
+        MCL(MCL_POS) = ahead;
     return result;
 }
 

@@ -135,16 +135,19 @@ static void tap(const float *a, unsigned frames, int nch, int rate) {
  * time and no gap opens. The next track's filter (a new instance: the player re-adds it at each file)
  * then mixes the held tail under its own start, equal power, at its own rate. The ring outlives
  * both instances. */
-#define XF_FLOATS (6u << 18) /* ponytail: 6 MB; 15 s at 48 kHz stereo, 7.5 s at 96, 3.7 s at 192 */
+#define XF_FLOATS (6u << 18) /* ponytail: 6 MB; 15 s at 48 kHz stereo, 7.5 s at 96, 3.75 s at 192 */
 #define XF_SLACK (1u << 17)  /* room for one block past the held tail */
 #define XF_LEAD_S 2.0        /* the hold starts this much early, for the length's whole seconds */
-#define XF_STALE_NS 3000000000LL /* a tail, or a mix, no other track takes on this soon (stop) is dropped */
+#define XF_STALE_NS 3000000000LL /* a tail cut short, or a mix, not taken on this soon is dropped */
+#define XF_COLD_NS 30000000000LL /* the same for a tail its file's end left: a cold start */
 #define XF_SEEK_S 1.5        /* a position jump this large while holding is a seek */
 #ifdef PEQ_HOST
 extern double peq_pts;
-extern int peq_length;
+extern int peq_length, peq_next_flag;
 static double decoded(void) { return peq_pts; }
 #define LENGTH peq_length
+#define NEXT_FLAG peq_next_flag
+#define STOP_FLAG peq_next_flag
 #else
 /* written_audio_pts (0x44641c, a leaf): seconds decoded so far, NOPTS (-2^63) without a stream;
  * the length is {media-info}'s whole seconds (0xb10e84, demo's mclGetPlayTime). */
@@ -153,6 +156,8 @@ static double decoded(void) {
     return sh && ds ? ((double (*)(void *, void *))0x44641cu)(sh, ds) : -1;
 }
 #define LENGTH (*(volatile int *)0xb10e84u)
+#define NEXT_FLAG (*(volatile int *)0xb10e6cu)
+#define STOP_FLAG (*(volatile int *)0xb10e70u)
 #endif
 static struct {
     float *ring;
@@ -161,6 +166,8 @@ static struct {
     double pos, step;             /* its read position in the held frames, and held frames per frame out */
     int out, mixer;               /* the mix's output rate, and the instance that mixed last */
     int rate, nch, owner, length; /* the holder's format, instance and length when it began */
+    int stops;                    /* demo's stop count then: a stop since drops the tail (XF_STOPS) */
+    int ended;                    /* the holder's file ended by itself: no press up at its uninit */
     long long last;               /* now_ns of the holder's last block */
     double pts;                   /* its position then */
 } xf;
@@ -200,7 +207,7 @@ static void ring_copy(float *a, unsigned at, unsigned n, unsigned cap, int nch, 
 
 /* Frames of a (interleaved, nch) put out in place: all of them, or fewer while the hold fills. */
 static unsigned crossfade(player_state *s, float *a, unsigned frames, int nch, int rate) {
-    int ms = xfade_ms(rate, frames);
+    int said = xfade_ms(rate, frames), ms = said & XF_MS, stopped = said >> XF_STOPS != xf.stops;
     if (!ms && !xf.len) return frames; /* no fade or held tail: skip clock and position queries */
     unsigned cap = XF_FLOATS / (unsigned)nch;
     long long now = now_ns();
@@ -210,23 +217,30 @@ static unsigned crossfade(player_state *s, float *a, unsigned frames, int nch, i
     int mine = xf.len && xf.owner == s->id,
         restart = mine && xf.pts >= xf.length - XF_SEEK_S && pts >= 0 && pts < XF_SEEK_S;
     if (xf.len && (xf.total || !mine || restart)) {
-        /* The mix begins on the first block after the hold: a tail not followed within XF_STALE_NS
-         * (a stop) is dropped; another rate plays it through linear interpolation (step held frames
-         * an output frame), a fading tail, so that is enough. Mid-mix, its track's pause only waits;
-         * a track at another rate, or one more than XF_STALE_NS on (a stop, then another play),
-         * drops what is left. ponytail: a skip mid-mix to a track at its rate fades the rest under
-         * that one; another channel count drops it, mid-mix too (the ring is read with nch). */
-        if (xf.total && (rate != xf.out || (s->id != xf.mixer && now - xf.last > XF_STALE_NS)))
+        /* The mix begins on the first block after the hold, unless demo saw a stop since it began.
+         * A tail whose file ended by itself waits XF_COLD_NS for a cold start, one cut short
+         * XF_STALE_NS. Another rate plays it through linear interpolation (step held frames an
+         * output frame), a fading tail, so that is enough. Mid-mix, its track's pause only waits; a
+         * stop, or a track more than XF_STALE_NS on, drops what is left. A track shorter than the
+         * fade hands the rest to the next, retimed at another rate. ponytail: limits in
+         * docs/internals.md. */
+        if (xf.total && (stopped || (s->id != xf.mixer && now - xf.last > XF_STALE_NS)))
             xf.len = xf.total = 0;
-        else if (!xf.total) {
-            if (now - xf.last <= XF_STALE_NS) {
+        else if (xf.total && rate != xf.out) {
+            double step = (double)xf.rate / rate;
+            xf.total = (unsigned)(xf.total * xf.step / step);
+            xf.left = (unsigned)((xf.len - xf.pos) / step);
+            xf.step = step, xf.out = rate;
+        } else if (!xf.total) {
+            if (!stopped && now - xf.last <= (xf.ended ? XF_COLD_NS : XF_STALE_NS)) {
                 xf.step = (double)xf.rate / rate, xf.pos = 0, xf.out = rate;
                 xf.total = xf.left = (unsigned)(xf.len / xf.step);
             }
             if (!xf.total) xf.len = 0;
         }
-        if (nch != xf.nch) xf.len = xf.total = 0;
         if (xf.total) {
+            int hn = xf.nch; /* the ring holds the holder's channels */
+            unsigned hcap = XF_FLOATS / (unsigned)hn;
             unsigned n = frames < xf.left ? frames : xf.left;
             /* The gains turn by a fixed angle a frame: exact at each block's start, rotated after, in
              * double (and cos d as 1 - 2 sin^2 d/2) or a long fade's rounding drifts to 1e-4. */
@@ -235,11 +249,15 @@ static unsigned crossfade(player_state *s, float *a, unsigned frames, int nch, i
             for (unsigned i = 0; i < n; ++i, xf.pos += xf.step) {
                 unsigned at = (unsigned)xf.pos, next = at + 1 < xf.len ? at + 1 : at;
                 float frac = (float)(xf.pos - at), fi = (float)in, fo = (float)out;
-                if ((at += xf.head) >= cap) at -= cap;
-                if ((next += xf.head) >= cap) next -= cap;
-                const float *h0 = xf.ring + at * nch, *h1 = xf.ring + next * nch;
-                for (int c = 0; c < nch; ++c)
-                    a[i * nch + c] = a[i * nch + c] * fi + (h0[c] + (h1[c] - h0[c]) * frac) * fo;
+                if ((at += xf.head) >= hcap) at -= hcap;
+                if ((next += xf.head) >= hcap) next -= hcap;
+                const float *h0 = xf.ring + at * hn, *h1 = xf.ring + next * hn;
+                for (int c = 0; c < nch; ++c) {
+                    /* stereo under mono is its mean, as Mono Audio's; mono is both sides */
+                    int l = hn > nch ? 0 : c % hn, r = hn > nch ? 1 : l;
+                    float x0 = (h0[l] + h0[r]) * 0.5f, x1 = (h1[l] + h1[r]) * 0.5f;
+                    a[i * nch + c] = a[i * nch + c] * fi + (x0 + (x1 - x0) * frac) * fo;
+                }
                 double t = in * cd + out * sd;
                 out = out * cd - in * sd, in = t;
             }
@@ -253,11 +271,19 @@ static unsigned crossfade(player_state *s, float *a, unsigned frames, int nch, i
     if (want > cap - XF_SLACK / (unsigned)nch) want = cap - XF_SLACK / (unsigned)nch;
     int ending = want && length > 0 && pts >= 0 && pts > length - 2.0 * want / rate - XF_LEAD_S;
     mine = xf.len && xf.owner == s->id;
-    if (mine && (!ending || __builtin_fabs(pts - xf.pts) > XF_SEEK_S || xf.len + frames > cap))
-        xf.len = 0; /* a seek, or no fade any more: the held audio was left behind */
-    if (!ending || frames > cap - want || (!xf.ring && !(xf.ring = calloc(XF_FLOATS, sizeof(float)))))
+    if (mine && (__builtin_fabs(pts - xf.pts) > XF_SEEK_S || xf.len + frames > cap))
+        xf.len = mine = 0; /* a seek: the held audio was left behind */
+    /* A hold once begun is finished, whatever demo says now: no fade any more only stops it
+     * growing, and the next track mixes what is held. Chosen over playing it out: no block runs
+     * after the file's end to carry the rest. */
+    if (mine && !ms) want = xf.len;
+    if (!mine && (!ending || frames > cap - want ||
+                  (!xf.ring && !(xf.ring = calloc(XF_FLOATS, sizeof(float))))))
         return frames;
-    if (!xf.len) xf.head = 0, xf.owner = s->id, xf.rate = rate, xf.nch = nch, xf.length = length;
+    if (!xf.len) {
+        xf.head = 0, xf.owner = s->id, xf.rate = rate, xf.nch = nch, xf.length = length;
+        xf.stops = said >> XF_STOPS, xf.ended = 0;
+    }
     ring_copy(a, (xf.head + xf.len) % cap, frames, cap, nch, 1);
     xf.len += frames;
     unsigned k = (frames + 1) / 2;
@@ -296,13 +322,20 @@ static af_data *play(af_instance *af, af_data *data) {
         frames = crossfade(s, data->audio, frames, data->nch, data->rate);
         data->len = (int)(frames * 4 * data->nch);
         tap(data->audio, frames, data->nch, data->rate);
+    } else if (data && data->len > 0 && !s->dsp.channels) {
+        xf.len = xf.total = 0; /* DSD or the like plays between: the tail has nothing to mix under */
     }
     if (data && data->len > 0) last_id = s->id;
     return data;
 }
 
 static void uninit(af_instance *af) {
-    if (af->setup) leave(af->setup);
+    if (af->setup) {
+        player_state *s = af->setup;
+        leave(s);
+        /* Before the idle loop clears them (0x42da10): a skip or stop has one up here, a file's end neither. */
+        if (xf.len && xf.owner == s->id) xf.ended = !NEXT_FLAG && !STOP_FLAG;
+    }
     free(af->data);
     free(af->setup);
     af->data = 0;

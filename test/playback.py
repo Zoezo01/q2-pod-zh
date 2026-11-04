@@ -1298,7 +1298,9 @@ class XfadeMachine(PlaybackMachine):
     def __init__(self, on='1'):
         super().__init__(); self.flag=self.alloc(4); self.attaches=0; self.written=4
         self.config.update(XFADE=on, XFADESEC='7')
-        for n in ('open','write','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
+        for n in ('open','write','mmap','close','__xstat'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
+        self.handlers[syms['navigator_window_is_exist']]='xf:exist'; self.handlers[syms['mcl_shuffle_pick']]='xf:pick'
+        self.missing|={'/tmp/notfile','/tmp/notsupport'}; self.toast=0; self.empty=set(); self.drawn=0
         self.handlers[ps['peq_attach']]='xf:attach'
         self.handlers.pop(syms['mclGetPlayStatus']); self.word(0xa3beac,2)  # playing
         self.word(syms['g_equalizer_flag'],0); self.byte(O['MCL_GAPLESS'],1)
@@ -1307,6 +1309,13 @@ class XfadeMachine(PlaybackMachine):
         if not name.startswith('xf:'): return super().hook(u,address,size,unused)
         if name=='xf:open': self.files[self.text(u.reg_read(REGS[0]))]=b''
         self.attaches+=name=='xf:attach'
+        if name=='xf:__xstat': self.word(u.reg_read(REGS[2])+48,0 if self.text(u.reg_read(REGS[1])) in self.empty else 4096)
+        if name=='xf:exist': return self.returns(self.toast)
+        if name=='xf:pick':  # as stock, forward: the current index out of the pool, a random one left is the position
+            pool=self.get(O['MCL_POOL']); left=[self.get(e) for e in self.items(pool) if self.get(e)!=self.mcl('MCL_POS')]
+            self.word(O['MCL_LASTPOS'],self.mcl('MCL_POS')); self.word(O['MCL_POOL'],self.deque(left,'int'))
+            self.drawn=left[0]; self.word(O['MCL_POS'],left[0]); return self.returns(1)
+        if name=='xf:prevstub': self.word(O['MCL_POS'],1); return self.returns(1)
         self.returns(self.flag if name=='xf:mmap' else 3 if name=='xf:open' else self.written if name=='xf:write' else 0)
     def fade(self,pos=None):
         if pos is not None: self.word(O['MCL_POS'],pos)
@@ -1322,6 +1331,69 @@ m.word(O['MCL_MODE'],2); assert m.fade()==7000  # stock Shuffle: the next is dra
 m.byte(O['MCL_GAPLESS'],0); assert m.fade()==0; m.byte(O['MCL_GAPLESS'],1)
 m.word(O['MCL_MODE'],0); assert m.fade()==7000
 m.word(O['MCL_MODE'],0); assert m.fade(6)==0  # the last track
+# Repeat All at the queue's end: stock preloads position 0, so the wrap fades when that's another album's.
+m.word(O['MCL_MODE'],3); assert m.fade(6)==0  # 'ALBUM A' back to 'album a': gapless
+m.word(m.library_rows[6]+O['REC_ALBUM'],m.string('Album C')); assert m.fade(3)==0 and m.fade(6)==7000 and m.fade(0)==7000
+m.word(O['MCL_MODE'],0); assert m.fade(6)==0
+# A DSD next never fades (the filter can't mix under it): any case of the three extensions. DSD going
+# out is the filter's to pass through, so the policy still fades out of one.
+for name in ('/B/x.dsf','/B/x.DFF','/B/x.iso'):
+    m=XfadeMachine(); m.word(m.library_rows[1]+O['REC_PATH'],m.string(name))
+    assert m.fade(0)==0,name
+m=XfadeMachine(); m.word(m.library_rows[0]+O['REC_PATH'],m.string('/A/x.dsf')); assert m.fade(0)==7000
+# Each stop moves the count above the fade's ms: a natural change, which never reads as stopped, doesn't.
+m=XfadeMachine(); assert m.fade(0)==7000 and m.fade(0)==7000
+m.word(0xa3beac,1); assert m.fade()==7000|1<<16 and m.fade()==7000|1<<16
+m.word(0xa3beac,2); assert m.fade()==7000|1<<16
+m.word(0xa3beac,3); assert m.fade()==7000|1<<16
+m.word(0xa3beac,1); assert m.fade()==7000|2<<16
+# The count alone is no fade: with none asked, the filter isn't put in the chain for it.
+m.word(0xa3beac,2); m.byte(O['MCL_GAPLESS'],0); assert m.fade()==2<<16
+n=m.attaches; assert m.fade()==2<<16 and m.fade()==2<<16 and m.attaches==n
+# A file error's status 1 isn't a stop: the error file there, then gone with stock's modal toast up,
+# then Next. Nothing moves the count, so the next track mixes the tail. A stop right after still counts.
+m=XfadeMachine(); assert m.fade(0)==7000
+m.word(0xa3beac,1); m.missing.discard('/tmp/notfile'); assert m.fade()==7000
+m.missing.add('/tmp/notfile'); m.missing.discard('/tmp/notsupport'); assert m.fade()==7000
+m.missing.add('/tmp/notsupport'); m.toast=1; assert m.fade()==7000 and m.fade()==7000
+m.toast=0; m.word(0xa3beac,2); assert m.fade()==7000
+m.word(0xa3beac,1); assert m.fade()==7000|1<<16
+# A next file missing or empty asks no fade: it never plays, so that song ends whole. A URL isn't looked at.
+m=XfadeMachine(); m.missing.add('/B/01.flac'); assert m.fade(0)==0,m.fade(0)
+m=XfadeMachine(); m.empty.add('/B/01.flac'); assert m.fade(0)==0
+m=XfadeMachine(); m.word(m.library_rows[1]+O['REC_PATH'],m.string('http://x/y.flac')); m.missing.add('http://x/y.flac'); assert m.fade(0)==7000
+# Stock Shuffle's next drawn ahead: the file asked about is the one that plays, the pick overridden; a
+# DSD or missing draw asks no fade, any other fades whichever album. Uniform over the pool but the current,
+# which the draw leaves alone; Previous, a Play next and a new queue go their own way.
+def shuffled(pool=None):
+    m=XfadeMachine(); m.word(O['MCL_MODE'],2); m.word(O['MCL_POS'],0)
+    m.word(O['MCL_POOL'],m.deque(pool if pool is not None else list(range(7)),'int')); return m
+m=shuffled(); assert m.fade()==7000
+seen=[]
+for _ in range(120):  # one machine: its generator runs on, as the device's
+    m.word(O['MCL_POOL'],m.deque(list(range(7)),'int')); m.word(O['MCL_POS'],0)
+    m.fn('playback_poll'); assert m.fn('ringnav_shuffle',1)==1
+    x=m.mcl('MCL_POS'); seen.append(x); assert 0<x<7,x
+    assert sorted(m.get(e) for e in m.items(m.get(O['MCL_POOL'])))==list(range(1,7))  # the pick's erase only
+    m.word(O['MCL_POS'],x); m.fn('playback_poll')  # the next pass redraws from the new track
+assert set(seen)==set(range(1,7)) and max(seen.count(x) for x in range(1,7))<60,seen
+for bad in ('dsd','missing'):
+    m=shuffled([0,1]); r=m.library_rows[1]
+    if bad=='dsd': m.word(r+O['REC_PATH'],m.string('/B/x.iso'))
+    else: m.missing.add('/B/01.flac')
+    assert m.fade()==0,bad; assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==1
+m=shuffled([0,1]); assert m.fade()==7000 and m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==1
+# Under two in the pool: the refill's draw is unknown, and still fades, with no override.
+m=shuffled([0]); assert m.fade()==7000
+# A new queue under the draw: the old index isn't forced on it (the records no longer match).
+m=shuffled([0,1,2]); m.fn('playback_poll'); rows=list(m.library_rows); rows[1],rows[2]=rows[2],rows[1]
+m.word(syms['mcl_pdeqplaylist'],m.deque(rows)); m.word(O['MCL_POOL'],m.deque([0,5],'int'))
+assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==m.drawn==5
+# Previous then Next returns to the track left, and the policy asks about that one: a DSD one asks no fade.
+m=shuffled(); m.word(O['MCL_POS'],6); m.handlers[ps['stock_prev_trampoline']]='xf:prevstub'
+m.word(m.library_rows[6]+O['REC_PATH'],m.string('/A/left.dsf'))  # one row in six: a draw would fade
+m.fn('ringnav_prev'); assert m.mcl('MCL_POS')==1,m.mcl('MCL_POS'); assert m.fade()==0
+assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==6
 m=XfadeMachine('0'); assert m.fade()==0 and not m.files and not m.attaches  # off: no file
 # Shuffle Songs (the reports' mode, #164): the next is the shuffle's successor, not pos + 1, and
 # the fade follows album_cmp of the two records at every automatic change.

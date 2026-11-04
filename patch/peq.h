@@ -153,7 +153,9 @@ long long now_ns(void);
 unsigned long long now_ms(void);
 /* Crossfade (docs/internals.md#crossfade): demo writes the next track change's fade, an int in ms,
  * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for it. */
-#define XFADE_FILE PEQ_ROOT "/tmp/q2xfade"
+#define XFADE_FILE PEQ_ROOT "/tmp/q2xfade" /* the next fade's ms (XF_MS), under demo's count of stops (XF_STOPS) */
+#define XF_MS 0xffff
+#define XF_STOPS 16
 /* Mono Audio: demo writes an int, 1 to mix both channels into each; hciplayer's filter and q2video map
  * it read-only (video.c keeps its own copy of the path). */
 #define MONO_FILE PEQ_ROOT "/tmp/q2mono"

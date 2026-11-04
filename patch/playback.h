@@ -9,6 +9,8 @@ int playback_shuffle(int mode); /* the queue as Shuffle Songs, Repeat All; the n
 int playback_listable(void);    /* View Queue: a shuffle's order is up (stock Shuffle given one) */
 int playback_group_skip(int forward);
 int playback_back(void); /* the track stock Shuffle's Previous left, once; else -1 */
+int playback_peek(unsigned at); /* stock Shuffle's next drawn ahead from at, once; else -1 */
+int shuffle_forced(void);       /* navigation.c: a Play next stock Shuffle goes to next, or -1 */
 unsigned playback_upcoming(unsigned *out, unsigned max); /* Up Next: queue indices, in play order */
 /* Play Next / Add: the tracks land at pos+1 (next) or the end; returns that index */
 unsigned playback_queue_insert(void *queue, void *add, int next);
@@ -19,7 +21,7 @@ void playback_speed_start(void);
 void playback_track_speed(void); /* a track's start: the folder's speed, to the decoder */
 int playback_start_fits(void);   /* 0: the track at MCL_POS is too long to open */
 int playback_video(void *record); /* a video file, kept out of audio queues */
-void xfade_poll(int next); /* crossfade.c */
+void xfade_poll(int next, int shuffled); /* crossfade.c */
 void mono_sync(void);      /* crossfade.c */
 int playback_resumed(void *r);
 void playback_save(void);
