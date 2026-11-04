@@ -421,7 +421,7 @@ list_item_create label_create list_view_create scroll_view_create widget_use_sty
 widget_set_text_utf8 widget_on widget_get_prop_int widget_set_prop_int widget_destroy_children
 widget_resize scroll_view_set_offset widget_invalidate_force timer_add timer_remove
 navigator_back write_int_config widget_factory widget_factory_create_widget widget_set_prop_str
-widget_get_text_utf8 widget_set_focused widget_lookup window_manager pages_set_active_by_name edit_set_select
+widget_get_text widget_get_text_utf8 widget_set_focused widget_lookup window_manager pages_set_active_by_name edit_set_select
 input_method input_method_request widget_set_name
 canvas_set_fill_color canvas_fill_rect canvas_get_vgcanvas vgcanvas_save vgcanvas_restore vgcanvas_translate
 vgcanvas_begin_path vgcanvas_close_path vgcanvas_move_to vgcanvas_line_to vgcanvas_arc vgcanvas_fill vgcanvas_stroke
@@ -432,17 +432,23 @@ widget_to_local on_wm_keyup_fun
 #define stock_canvas_set_fill_color canvas_set_fill_color
 """
 SHIM = r"""
-static struct { int parent, h, bg; char text[160]; handler click, destroy, keyup, change, focus, down, move, up; void *ctx; } w[4096];
+static struct { int parent, y, h, bg; char text[400]; handler click, destroy, keyup, change, focus, down, move, up, action; void *ctx; } w[4096];
 static int count = 1, timers, removed, backs, chevrons[4096];
 static int (*timer_fn)(const void *);
 volatile unsigned char g_equalizer_flag, g_backlight_status = 1;
-int stock_eq_trampoline(int mode) { return mode; }
+static int stock_eq_calls;
+int stock_eq_trampoline(int mode) { ++stock_eq_calls; return mode; }
+int shim_chained(void) { return stock_eq_calls; }
 static void *make(void *parent, int h) {
-    ++count; w[count].parent = (int)(long)parent; w[count].h = h;
-    w[count].text[0] = 0; chevrons[count] = 0; w[count].click = w[count].change = w[count].focus = w[count].down = 0; w[count].bg = 0; return (void *)(long)count;
+    ++count; w[count].parent = (int)(long)parent; w[count].h = h; w[count].y = 0;
+    w[count].text[0] = 0; chevrons[count] = 0; w[count].click = w[count].change = w[count].focus = w[count].down = w[count].action = 0; w[count].bg = 0; return (void *)(long)count;
 }
-/* The value menu's edit: its text, the keyboard it asks for, whether it took focus. */
-static int edit_widget, edit_parent, edit_bottom, focused, keyboard_owner;
+/* The value menu's edit: its text, the keyboard it asks for, whether it took focus; its selection, as
+ * start and end (stock's ufloat refuses "." where its text less this has one), and whether its focus
+ * leaves the text unselected. */
+static int edit_widget, edit_parent, edit_bottom, focused, keyboard_owner, select_none;
+static unsigned selected[2];
+static char at_focus[sizeof w->text]; /* the edit's text when it took focus */
 #include "offsets.inc"
 /* The input method's editing target (IM_WIDGET) and open keyboard (IM_KEYBOARD, stock's window 4000). */
 static unsigned char im[32];
@@ -461,7 +467,7 @@ static char keyboard[32], input_type[16];
 void *widget_factory(void) { return 0; }
 void *widget_factory_create_widget(void *f, const char *type, void *p, int x, int y, int ww, int h) {
     void *e = make(p, h);
-    if (!strcmp(type, "edit")) { edit_name[0] = 0; edit_widget = (int)(long)e; edit_parent = (int)(long)p; edit_bottom = y + h; keyboard[0] = 0; focused = 0; }
+    if (!strcmp(type, "edit")) { edit_name[0] = 0; edit_widget = (int)(long)e; edit_parent = (int)(long)p; edit_bottom = y + h; keyboard[0] = 0; focused = 0; select_none = selected[0] = selected[1] = 0; }
     return e;
 }
 /* The curve's vgcanvas drawing (peq_paint) is checked on the device; here it only has to link. Filled
@@ -516,6 +522,13 @@ int widget_set_prop_str(void *x, const char *k, const char *v) {
     if ((long)x == edit_widget && !strcmp(k, "input_type")) snprintf(input_type, sizeof(input_type), "%s", v);
     return 0;
 }
+const unsigned *widget_get_text(void *x) {
+    static unsigned s[sizeof w->text];
+    unsigned i = 0;
+    for (; w[(long)x].text[i]; ++i) s[i] = (unsigned char)w[(long)x].text[i];
+    s[i] = 0;
+    return s;
+}
 int widget_get_text_utf8(void *x, char *s, unsigned size) {
     s[0] = 0;
     if (strlen(w[(long)x].text) < size) snprintf(s, size, "%s", w[(long)x].text);
@@ -525,6 +538,8 @@ int widget_set_focused(void *x, int v) {
     if ((long)x == edit_widget && focused != v) {
         focused = v;
         input_method_request(input_method(), v ? x : 0);
+        if (v && !select_none) selected[0] = 0, selected[1] = strlen(w[edit_widget].text); /* stock's idle, 0x60f560 */
+        if (v) snprintf(at_focus, sizeof at_focus, "%s", w[edit_widget].text);
         if (v && w[edit_widget].focus) w[edit_widget].focus(0, 0);
     }
     return 0;
@@ -539,8 +554,6 @@ void *widget_lookup(void *x, const char *name, int recursive) {
 int pages_set_active_by_name(void *x, const char *name) { if ((long)x == 4001) snprintf(page, sizeof(page), "%s", name); return 0; }
 const char *shim_page(void) { return page; }
 void shim_page_reset(void) { page[0] = 0; }
-/* The edit's selection, as start and end (stock's ufloat refuses "." where its text less this has one). */
-static unsigned selected[2];
 int edit_set_select(void *x, unsigned start, unsigned end) { selected[0] = start, selected[1] = end; return 0; }
 unsigned shim_selected(int i) { return selected[i]; }
 void shim_select_reset(void) { selected[0] = selected[1] = 0; }
@@ -558,14 +571,36 @@ void shim_cancel(void) {
     input_method_request(im, 0);
     w[edit_widget].change(0, 0); shim_run();
 }
-/* Typing a value and closing the keyboard: the edit reports EVT_VALUE_CHANGED. */
+/* Typing a value and closing the keyboard: the edit reports EVT_VALUE_CHANGED, as stock does only
+ * for a text changed since the focus. */
 void shim_type(const char *text) {
     assert(keyboard_owner == edit_widget);
-    snprintf(w[edit_widget].text, 160, "%s", text);
+    snprintf(w[edit_widget].text, sizeof w->text, "%s", text);
     input_method_request(input_method(), 0); /* stock Done closes T9 before reporting the value */
-    w[edit_widget].change(0, 0); shim_run();
+    if (strcmp(w[edit_widget].text, at_focus)) w[edit_widget].change(0, 0);
+    if (w[edit_widget].action) w[edit_widget].action(0, 0); /* then EVT_IM_ACTION's own handler */
+    shim_run();
 }
-void *list_item_create(void *p, int x, int y, int ww, int h) { return make(p, h); }
+/* The focus leaving the edit, as a tap on a row takes it: EVT_VALUE_CHANGED for a changed text. */
+void shim_blur(void) {
+    focused = 0;
+    input_method_request(im, 0);
+    if (strcmp(w[edit_widget].text, at_focus)) w[edit_widget].change(0, 0);
+}
+/* A T9 key: it replaces the selection, which here always runs to the end (stock's select-all), else
+ * goes at the end, where stock's text setter leaves the cursor; "\b" deletes. */
+void shim_key(const char *s) {
+    char *t = w[edit_widget].text;
+    unsigned n = strlen(t), at = selected[1] > selected[0] ? selected[0] : n && !strcmp(s, "\b") ? n - 1 : n;
+    assert(keyboard_owner == edit_widget);
+    t[at] = 0, selected[0] = selected[1] = 0;
+    if (strcmp(s, "\b")) snprintf(t + at, sizeof w->text - at, "%s", s);
+}
+/* The rows: each one's y in the scroll view, and the last one's bottom. */
+static int rows_bottom;
+void *list_item_create(void *p, int x, int y, int ww, int h) { void *r = make(p, h); w[(long)r].y = y; rows_bottom = y + h; return r; }
+int shim_row0_y(void) { for (int i = 2; i <= count; ++i) if (w[i].click) return w[i].y; return -1; }
+int shim_rows_bottom(void) { return rows_bottom; }
 void *label_create(void *p, int x, int y, int ww, int h) { return make(p, h); }
 /* coverflow.c's chevron: a textless child, marked. */
 void row_into(void *item, int h) { chevrons[(long)make(item, h)] = 1; }
@@ -588,32 +623,36 @@ int shim_chevron(const char *text) {
 void list_toggle(void *label, const char *title, int on) {
     int row = w[(long)label].parent, sw = (long)label + 1;
     if (sw > count || w[sw].parent != row) sw = (int)(long)make((void *)(long)row, 48);
-    snprintf(w[(long)label].text, 160, "%s", title);
-    snprintf(w[sw].text, 160, "%s", on ? "On" : "Off");
+    snprintf(w[(long)label].text, sizeof w->text, "%s", title);
+    snprintf(w[sw].text, sizeof w->text, "%s", on ? "On" : "Off");
 }
 void *list_view_create(void *p, int x, int y, int ww, int h) { return make(p, h); }
 void *scroll_view_create(void *p, int x, int y, int ww, int h) { return make(p, h); }
 int widget_use_style(void *x, const char *s) { return 0; }
-int widget_set_text_utf8(void *x, const char *s) { snprintf(w[(long)x].text, 160, "%s", s); return 0; }
+int widget_set_text_utf8(void *x, const char *s) { snprintf(w[(long)x].text, sizeof w->text, "%s", s); return 0; }
 unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
     long i = (long)x;
     if (type == 0x10c) { w[i].click = f; w[i].ctx = ctx; }
     else if (type == 0x0c) w[i].destroy = f;
     else if (type == 0x0e) w[i].change = f;
     else if (type == 0x10e) w[i].focus = f;
+    else if (type == 0x13a) w[i].action = f;
     else if (type == 0x100) w[i].down = f;
     else if (type == 0x102) w[i].move = f;
     else if (type == 0x104) w[i].up = f;
     else w[i].keyup = f;
     return 1;
 }
-static int selection, offset;
+static int selection, offset, virtual_h;
 int widget_get_prop_int(void *x, const char *k, int d) {
-    return (long)x == 1 && !strcmp(k, "h") ? 290 : !strcmp(k, "_ringnav_index") ? selection : d;
+    return (long)x == 1 && !strcmp(k, "h") ? 290 : !strcmp(k, "_ringnav_index") ? selection
+           : !strcmp(k, "yoffset") ? offset : d;
 }
 int widget_set_prop_int(void *x, const char *k, int v) {
     if (!strcmp(k, "style:normal:bg_color")) w[(long)x].bg = v;
+    if ((long)x == edit_widget && !strcmp(k, "select_none_when_focused")) select_none = v;
     if (!strcmp(k, "_ringnav_index")) selection = v;
+    if (!strcmp(k, "virtual_h")) virtual_h = v;
     return 0;
 }
 int widget_destroy_children(void *x) { assert(!keyboard_owner); count = 1; return 0; }
@@ -621,6 +660,11 @@ int widget_resize(void *x, int ww, int h) { w[(long)x].h = h; return 0; }
 int scroll_view_set_offset(void *x, int a, int b) { offset = b; return 0; }
 int shim_selection(void) { return selection; }
 int shim_offset(void) { return offset; }
+int shim_virtual_h(void) { return virtual_h; }
+void shim_select(int i) { selection = i; }
+void shim_scroll(int y) { offset = y; } /* a touch scroll */
+int shim_parent(int x) { return w[x].parent; }
+int shim_h(int x) { return w[x].h; }
 int widget_invalidate_force(void *x, void *y) { return 0; }
 unsigned timer_add(int (*f)(const void *), void *ctx, unsigned ms) { timer_fn = f; return ++timers; }
 int timer_remove(unsigned id) { timer_fn = 0; ++removed; return 0; }
@@ -634,6 +678,10 @@ int shim_open(void) { count = 1; w[1].destroy = w[1].keyup = 0; return peq_page_
 int shim_pending(void) { return timer_fn != 0; }
 int shim_removed(void) { return removed; }
 unsigned char shim_flag(void) { return g_equalizer_flag; }
+static int eq_following;
+void shim_following(int on) { eq_following = on; }
+int ringnav_eq_output(void) { return eq_following; }
+void ringnav_eq_output_toggle(void) { eq_following = !eq_following; }
 void shim_run(void) { int (*f)(const void *) = timer_fn; timer_fn = 0; if (f) f(0); }
 /* Click the row whose labels, caption and value joined by a space, start with text; optionally let
  * the deferred render run (1), or only find it (2). */
@@ -651,10 +699,16 @@ int shim_click(const char *text, int run) {
     }
     return 0;
 }
+int shim_row_y(const char *text) {
+    for (int p = 2; p <= count; ++p)
+        for (int i = p + 1; i <= count; ++i)
+            if (w[p].click && w[i].parent == p && !strncmp(w[i].text, text, strlen(text))) return w[p].y;
+    return -1;
+}
 void shim_return(void) { int event[8] = {0}; event[6] = 170; w[1].keyup(0, event); shim_run(); }
 void shim_close(void) { w[1].destroy(0, 0); }
-const char *shim_title(void) {
-    for (int i = 2; i <= count; ++i) if (w[i].parent == 1 && w[i].h == 48) return w[i].text;
+const char *shim_title(void) { /* past the list, 48 high with one row */
+    for (int i = 3; i <= count; ++i) if (w[i].parent == 1 && w[i].h == 48) return w[i].text;
     return "";
 }
 int shim_list_height(void) { return w[2].h; } /* the list view is the page's first child */
@@ -718,7 +772,8 @@ def editor_check(lib, tmp):
     """The editor's promises, driven through its real click and render paths."""
     (tmp/'shim.h').write_text(SHIM_H)
     (tmp/'shim.c').write_text('#include "peq.h"\n' + SHIM)
-    (tmp/'peq_ui_checks.c').write_text('#include "peq_ui.c"\ndouble check_headroom(const peq_preset *p) { return headroom(p); }\n')
+    (tmp/'peq_ui_checks.c').write_text('#include "peq_ui.c"\ndouble check_headroom(const peq_preset *p) { return headroom(p); }\n'
+                                       'int check_view(void) { return (int)(long)ui.view; }\nint check_graph(void) { return (int)(long)ui.graph; }\n')
     ui = compile_host(tmp, 'peq_ui.so', tmp/'peq_ui_checks.c', ROOT/'patch/peq.c', tmp/'shim.c',
                       '-I', ROOT/'patch', '-include', tmp/'shim.h')
     headroom_check(lib, ui)
@@ -747,8 +802,11 @@ def editor_check(lib, tmp):
     ui.shim_close(); ui.peq_attach(); assert read().bypass == 1 and ui.shim_flag() == 0; advanced()
     assert lib.peq_save(bytes(active), C.byref(preset(enabled=1)), 1) == 1
     # The switch writes the stock config key, so boot restores it; the flag follows the preset.
-    click('启用 Off'); assert ui.shim_eqflag() == 1 and ui.shim_flag() == 1
-    click('启用 On'); assert ui.shim_eqflag() == 0 and ui.shim_flag() == 0
+    # 各输出独立均衡: directly below Enabled, with the EQ off or on.
+    below = lambda: ui.shim_row_y('各输出独立均衡'.encode()) == ui.shim_row_y('启用'.encode()) + 48
+    assert below(); click('各输出独立均衡 Off'); assert below(); click('各输出独立均衡 On'); assert below()
+    click('启用 Off'); assert ui.shim_eqflag() == 1 and ui.shim_flag() == 1 and below()
+    click('启用 On'); assert ui.shim_eqflag() == 0 and ui.shim_flag() == 0 and below()
     ui.shim_close(); assert advanced() == 0; click('启用 Off')
     full = ui.shim_list_height()
     # iPod rows are transparent, so the list itself must paint black, not the theme's light card.
@@ -762,11 +820,22 @@ def editor_check(lib, tmp):
     # A band edit sets the preamp to minus the combined response's peak: here the one +1 dB band.
     assert abs(read().preamp + 1) < 0.01, read().preamp
     # A message takes the title bar; the list keeps every row.
-    assert ui.shim_list_height() == full == 144  # 3 rows under the curve
+    assert ui.shim_list_height() == full == 240  # 5 rows, the curve's two among them at the top
+    # The curve heads the list, in its scroll view with the rows under it and in its height, so it
+    # scrolls off with them; a render on the same screen keeps the offset. A turn up from row 0 on
+    # the main screen reaches the tabs, not from a lower row or on a band.
+    graph = ui.check_graph(); assert ui.shim_parent(graph) == ui.check_view() and ui.shim_h(graph) == 96
+    assert ui.shim_row0_y() == 96 and ui.shim_virtual_h() == ui.shim_rows_bottom() > 96
+    ui.shim_scroll(150); click('Enabled Off'); assert ui.shim_offset() == 150; click('Enabled On')
+    ui.shim_select(3); assert ui.shim_e3_key(0) == 0  # the list's turn
+    ui.shim_select(0); assert ui.shim_e3_key(0) == 1 and ui.shim_selection() == -1
+    assert ui.shim_e3_key(1) == 1 and ui.shim_selection() == 0
+    click('1  '); assert ui.shim_row0_y() == 96 and ui.shim_e3_key(0) == 0; ui.shim_return()
     # Loading into the editor does not activate it.
     assert lib.peq_save(bytes(saved/'HD650.peq'), C.byref(preset(enabled=1, gain=-3.0)), 1) == 1
     before = active.read_bytes()
-    click('预设'); click('HD650.peq')
+    click('预设'); assert ui.shim_row0_y() == 0 and ui.shim_virtual_h() == ui.shim_rows_bottom()  # no curve
+    click('HD650.peq')
     assert active.read_bytes() == before and title() == '预设已载入，请选择应用以启用'
     click('启用 Off'); click('启用 On')  # any action clears the message
     assert named('HD650') and read().bands[0].gain == 1  # the draft's name; still the applied preset
@@ -786,12 +855,43 @@ def editor_check(lib, tmp):
     assert not ui.shim_pending() and ui.shim_removed() == removed + 1
     advanced()
     assert named('HD650')  # the applied preset's name survives the page
-    # Renaming: Return with the keyboard up keeps the name and the file.
+    # Renaming: a pick opens the name with the keyboard up and nothing selected, so a key edits its
+    # end (stock's focus selected it all, so a key replaced it). Return with the keyboard up goes back
+    # to the list and keeps the name and the file.
     ui.shim_edit.restype = C.c_char_p; name = lambda: ui.shim_edit().decode()
-    click('预设'); click('重命名预设'); click('HD650.peq'); assert name() == 'HD650'
-    click('重命名 HD650'); assert ui.shim_keyboard_owner(); ui.shim_cancel()
-    assert name() == 'HD650' and (saved/'HD650.peq').exists() and title() == ''
-    ui.shim_return(); ui.shim_return()
+    click('预设'); click('重命名预设'); click('HD650.peq')
+    assert name() == 'HD650' and ui.shim_focused() and ui.shim_keyboard_owner() and title() == ''
+    ui.shim_key(b'\b'); ui.shim_key(b'X'); assert name() == 'HD65X'
+    ui.shim_cancel()  # back on the list: its preset, no Rename row
+    assert ui.shim_click(b'HD650.peq', 2) and not ui.shim_click('重命名'.encode(), 2) and (saved/'HD650.peq').exists()
+    # Done on the name unchanged (no EVT_VALUE_CHANGED) keeps it; the Rename row on a cleared name
+    # goes back to the list, as Return does.
+    click('HD650.peq'); ui.shim_type(name().encode())
+    assert title() == '预设' and ui.shim_click('重命名预设'.encode(), 2) and (saved/'HD650.peq').exists()
+    click('重命名预设'); click('HD650.peq')
+    for _ in range(5): ui.shim_key(b'\b')
+    ui.shim_dismiss_keyboard(); click('Rename')
+    assert title() == '预设' and not ui.shim_click('重命名'.encode(), 2) and (saved/'HD650.peq').exists()
+    # Done renames, a name past 3 bytes too (once read as empty, a cancel); so does a tap on the
+    # Rename row, its blur first, the row's click then keeping the message. The editor's name follows.
+    click('HD650.peq'); ui.shim_key(b' v2'); ui.shim_type(name().encode())
+    assert title() == 'Renamed to HD650 v2' and (saved/'HD650 v2.peq').exists() and not (saved/'HD650.peq').exists()
+    click('重命名预设'); click('HD650 v2.peq')
+    for _ in range(3): ui.shim_key(b'\b')
+    ui.shim_blur(); click('Rename')
+    assert title() == 'Renamed to HD650' and (saved/'HD650.peq').exists()
+    # A name of any length a list shows (to 255 bytes) opens whole, so Done keeps it; one too long
+    # to read back is refused, not taken as a cancel.
+    long = 'L' * 250
+    (saved/f'{long}.peq').write_bytes((saved/'HD650.peq').read_bytes())
+    click('重命名预设'); click(long[:50]); assert name() == long
+    ui.shim_type(name().encode()); assert title() == '预设' and (saved/f'{long}.peq').exists()
+    click('重命名预设'); click(long[:50]); ui.shim_type(b'M' * 300)
+    assert title() == 'Name not allowed; preset kept' and (saved/f'{long}.peq').exists()
+    click('重命名预设'); click(long[:50]); ui.shim_type(b' . ')  # all trimmed away: typed, not a cancel
+    assert title() == 'Name not allowed; preset kept' and (saved/f'{long}.peq').exists()
+    (saved/f'{long}.peq').unlink()
+    ui.shim_return(); assert named('HD650')
     # Deleting asks first, removes only the saved copy and leaves the active EQ alone.
     before = active.read_bytes()
     click('预设'); click('删除预设'); click('HD650.peq'); click('取消')
@@ -946,7 +1046,7 @@ def editor_check(lib, tmp):
     rep.bands[6].enabled = 0; assert auto(rep) != '自动 (44.1: -9.2 / 48: -8.8)'
     assert ui.shim_click(f'前级增益 {auto(rep)}'.encode(), 2)
     (saved/'Rep.peq').unlink()
-    print('EQ Advanced tab: bypass, apply, auto preamp, channels, balance, frequency and Q, load, failed saves, delete, reset and close passed.')
+    print('EQ Advanced tab: bypass, apply, the scrolling curve, auto preamp, channels, balance, frequency and Q, load, rename, failed saves, delete, reset and close passed.')
     # A full pack stays sorted and reachable, with bounded widget counts and page-local action IDs.
     imports = tmp/'root/mnt/mmc/EQ'
     for i in reversed(range(8850)):
@@ -985,6 +1085,101 @@ def editor_check(lib, tmp):
     ui.shim_return(); ui.shim_return()
     print('EQ preset pages: all 8,850 imports, sorting, page boundaries, navigation, save/replace, load and deletion passed.')
     eq3_editor_check(lib, ui, tmp)
+
+def output_check(tmp):
+    """EQ per Output (peq_ui.c): each output keeps the EQ set on it, through the real file paths."""
+    tmp = tmp/'outputs'; tmp.mkdir()
+    (tmp/'shim.h').write_text(SHIM_H)
+    (tmp/'shim.c').write_text('#include "peq.h"\n' + SHIM)
+    (tmp/'checks.c').write_text('#include "peq_ui.c"\nvoid check_page(long p) { ui.page = (void *)p; }\n'
+                                'void check_boot(void) { eq_owner[0] = 0; }\n'
+                                'void check_edit(long p) { ui.edit = (void *)p; }\n'
+                                'void check_slider(double g) { e3_set(0, g); }\n'
+                                'double check_gain(void) { return e3.gain[0]; }\n'
+                                'void check_draft(double b) { ui.dirty = 1; ui.draft.balance = b; }\n'
+                                'double check_balance(void) { return ui.draft.balance; }\n')
+    ui = compile_host(tmp, 'outputs.so', tmp/'checks.c', ROOT/'patch/peq.c', tmp/'shim.c',
+                      '-I', ROOT/'patch', '-include', tmp/'shim.h')
+    ui.eq_output.argtypes = [C.c_char_p]
+    ui.eq_load.argtypes = ui.eq_save.argtypes = [C.POINTER(State)]
+    ui.eq_load_from.argtypes = [C.c_char_p, C.POINTER(State)]
+    ui.eq3_bands.argtypes = [C.POINTER(Preset), C.POINTER(C.c_double * 3)]
+    data = tmp/'root/mnt/data'; data.mkdir(parents=True); slots = data/'peq-outputs'
+    A, B = b'AA:AA:AA:AA:AA:AA', b'BB:BB:BB:BB:BB:BB'
+    def state(gain, mode=EQ_3):
+        s = State(); ui.eq_load(C.byref(s))
+        ui.eq3_bands(C.byref(s.eq3), C.byref((C.c_double * 3)(gain, 0, 0))); s.mode, s.hold = mode, 0
+        return s
+    def setting(gain, mode=EQ_3): assert ui.eq_save(C.byref(state(gain, mode)))
+    def playing():
+        s = State(); assert ui.eq_load(C.byref(s)); return s.eq3.bands[0].gain, s.mode
+    def slot(name):
+        s = State(); assert ui.eq_load_from(str(slots/name).encode(), C.byref(s)); return s.eq3.bands[0].gain
+    # The first output adopts what plays; nothing else is written.
+    setting(1); ui.eq_output(b'3.5mm')
+    assert playing() == (1, EQ_3) and sorted(p.name for p in slots.iterdir()) == ['owner']
+    # A new output keeps what plays, and each edit stays with the output it was made on.
+    setting(2); ui.eq_output(b'4.4mm'); assert playing() == (2, EQ_3) and slot('3.5mm') == 2
+    setting(3); ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_3) and slot('4.4mm') == 3
+    ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3)
+    # Off is remembered too, and the status bar's flag follows.
+    ui.eq_output(b'3.5mm'); setting(2, EQ_OFF); ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and ui.shim_flag() == 1
+    ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_OFF) and ui.shim_flag() == 0 and ui.shim_eqflag() == 0
+    # Same output: nothing moves.
+    before = slot('4.4mm'); setting(4); ui.eq_output(b'3.5mm'); assert playing() == (4, EQ_3) and slot('4.4mm') == before
+    ui.eq_output(b'4.4mm'); assert playing() == (3, EQ_3) and slot('3.5mm') == 4
+    # Power lost with an unsaved edit: owner on disk still files it under the right output.
+    setting(5); ui.check_boot(); ui.eq_output(b'3.5mm'); assert slot('4.4mm') == 5 and playing() == (4, EQ_3)
+    # The comparison's hold never goes into a slot.
+    s = state(6); s.hold = 1; assert ui.eq_save(C.byref(s)); ui.eq_output(b'usb')
+    t = State(); assert ui.eq_load_from(str(slots/'3.5mm').encode(), C.byref(t)) and t.hold == 0
+    # A slot that cannot be saved keeps the EQ and the owner, to try again; an unreadable one counts as new.
+    (slots/'usb.tmp').mkdir(); setting(7); ui.eq_output(b'3.5mm'); assert playing() == (7, EQ_3) and not (slots/'usb').exists()
+    (slots/'usb.tmp').rmdir(); (slots/'3.5mm').write_bytes(b'junk'); ui.eq_output(b'3.5mm'); assert playing() == (7, EQ_3) and slot('usb') == 7
+    # Forgetting ends the following: what plays stays, and a next output with no slot adopts it.
+    ui.eq_output_forget(); assert not (slots/'owner').exists(); setting(8); ui.eq_output(b'2A:00:00:00:00:00'); assert playing() == (8, EQ_3)
+    # Turned on again where a slot exists, that output's EQ comes back and what played is filed nowhere.
+    ui.eq_output_forget(); setting(9); ui.eq_output(b'usb'); assert playing() == (7, EQ_3) and slot('usb') == 7 and slot('4.4mm') != 9
+    # EQ_DEVICES: past it a new headset is not remembered; one already remembered, and jacks, still are.
+    good = (slots/'usb').read_bytes()
+    for i in range(32): (slots/('%02X:00:00:00:00:00' % i)).write_bytes(good)
+    ui.eq_output_forget(); ui.eq_output(b'28:00:00:00:00:00'); setting(9); ui.eq_output(b'29:00:00:00:00:00')
+    assert not (slots/'28:00:00:00:00:00').exists() and playing() == (9, EQ_3)
+    ui.eq_output(b'00:00:00:00:00:00'); assert not (slots/'29:00:00:00:00:00').exists()
+    setting(11); ui.eq_output(b'3.5mm'); assert slot('00:00:00:00:00:00') == 11
+    # Off to Off leaves the filter out of the chain, while the file still changes.
+    ui.eq_output(b'4.4mm'); setting(1, EQ_OFF); ui.eq_output(b'3.5mm'); setting(2, EQ_OFF); chained = ui.shim_chained()
+    ui.eq_output(b'4.4mm'); assert playing() == (1, EQ_OFF) and ui.shim_chained() == chained
+    # The page says whose EQ it is, only with the setting on.
+    ui.shim_title.restype = C.c_char_p; ui.eq_output(b'4.4mm'); ui.shim_open()
+    assert b'EQ for' not in (ui.shim_title() or b''); ui.check_page(0)
+    ui.shim_following(1); ui.shim_open(); assert ui.shim_title() == b'EQ for 4.4 mm', ui.shim_title()
+    ui.shim_e3_key(1); assert ui.shim_title() != b'EQ for 4.4 mm', ui.shim_title(); ui.check_page(0)
+    # Turned off, the output keeps its latest EQ; what's set while off is replaced when turned on.
+    ui.eq_output(b'usb'); setting(3); ui.eq_output(b'3.5mm'); ui.eq_output(b'usb'); setting(5)
+    ui.eq_output_forget(); assert slot('usb') == 5 and not (slots/'owner').exists() and playing() == (5, EQ_3)
+    setting(6); ui.eq_output(b'usb'); assert playing() == (5, EQ_3)
+    # An unreadable PEQ_ACTIVE isn't filed over a good slot, swapping or turning off.
+    active = data/'peq-active'
+    ui.eq_output(b'3.5mm'); before = slot('3.5mm'); good = active.read_bytes(); active.write_bytes(b'junk')
+    ui.eq_output(b'4.4mm'); assert slot('3.5mm') == before
+    active.write_bytes(b'junk'); before = slot('4.4mm'); ui.eq_output_forget(); assert slot('4.4mm') == before
+    active.write_bytes(good); ui.eq_output(b'3.5mm')
+    # The page follows a swap, open or covered: unsaved sliders go to the output they were set on, the
+    # new output's gains and the caption come up, and unapplied Advanced edits stay in the draft.
+    setting(2); ui.eq_output(b'usb'); setting(4); ui.eq_output(b'3.5mm'); assert playing() == (2, EQ_3)
+    ui.shim_open(); assert ui.shim_title() == b'EQ for 3.5 mm'
+    ui.check_slider.argtypes = ui.check_draft.argtypes = [C.c_double]
+    ui.check_gain.restype = ui.check_balance.restype = C.c_double
+    ui.check_slider(1); ui.check_draft(1.5); ui.eq_output(b'usb')
+    assert slot('3.5mm') == 1 and playing() == (4, EQ_3) and ui.check_gain() == 4 and ui.check_balance() == 1.5
+    ui.shim_run(); assert ui.shim_title() == b'EQ for USB', ui.shim_title()
+    # A keyboard's up: its render would close it, so the swap waits, and nothing moves.
+    setting(3); ui.check_edit(1); ui.eq_output(b'3.5mm'); assert playing() == (3, EQ_3) and slot('usb') == 4
+    ui.check_edit(0); ui.eq_output(b'3.5mm'); assert playing() == (1, EQ_3) and slot('usb') == 3
+    ui.check_page(0)
+    print('EQ per Output: each output keeps its own EQ, off too; open page, turning off, power loss, full slots')
+
 
 def eq3_check(lib, tmp):
     """3EQ's filters on the shared engine, and the one state record PEQ and 3EQ share."""
@@ -3141,6 +3336,7 @@ if __name__ == '__main__':
         dsp_check(lib)
         eq3_check(lib, tmp)
         editor_check(lib, tmp)
+        output_check(tmp)
         player_check(tmp)
         visualizer_check(tmp)
         scrobble_check(tmp)

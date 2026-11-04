@@ -42,6 +42,7 @@
 #define EVENT_TARGET 0x10
 #define EVENT_X 0x18           /* pointer_event_init @0x640298 */
 #define EVENT_Y 0x1c
+#define EVT_POINTER_FIRST 0xff /* the pointer events the wm dispatches: down 0xff, move 0x101, up 0x103 */
 #define EVT_POINTER_DOWN 0x100 /* wm registers on_wm_tsdown_before_fun for this type @0x523ef0 */
 #define EVT_POINTER_MOVE_BEFORE 0x102 /* wm move-before forwards this type to the down hook @0x523ed4 */
 #define EVT_POINTER_UP_BEFORE 0x104
@@ -457,7 +458,19 @@ static inline int arc_out(int r, int y) {
  */
 #define WHEEL_INFO_LOOP 0x10
 #define LOOP_QUEUE 0x38
+#define LOOP_POST 0x18 /* main_loop_t's queue_event slot (playback.c ringnav_queue_event) */
 #define WHEEL_QUEUE_FREE 8
+/* main_loop_simple's pressed byte: the touch thread sets it as it posts a down and clears it as it
+ * posts the release (input_dispatch_to_main_loop), whether or not the queue kept them. */
+#define LOOP_PRESSED 0x44
+/* A pointer press the window manager keeps this long with no pointer event is no finger
+ * (navigation.c stale_heal): a release it never got would otherwise hold the wheel and Centre. */
+#define STALE_TOUCH_MS 5000
+/* An empty Library list's page (navigation.c empty_toast) closes once the window manager marks it
+ * opened ("stage" WINDOW_STAGE_OPENED, after the open animation): polled every EMPTY_POLL_MS.
+ * The close path reads the same property @0x689c68 (3 or 5, suspended). */
+#define WINDOW_STAGE_OPENED 3
+#define EMPTY_POLL_MS 50
 /* With the screen off (the wheel is the volume), WHEEL_DARK_GUARD units of one touch's travel one
  * way (100, half a turn, whatever the sensitivity) tick nothing; the wheel then ticks until it has
  * been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration knobs. */
@@ -639,9 +652,10 @@ static inline int arc_out(int r, int y) {
 #define PH_SHOT_H 290
 #define PH_GREY 0xff333333 /* color_t #333333 */
 #define PHOTOS_MAX 500 /* ponytail: ringnav navigates at most MAX_ENTRIES (512) rows; page beyond */
-/* PEQ editor (patch/peq_ui.c): on the main and band screens a PEQ_GRAPH_H view under the title
- * holds the response from PEQ_GRAPH_X to 375 - PEQ_GRAPH_X (20 Hz to 20 kHz, log), +-PEQ_GRAPH_DB at
- * its plot's top and bottom (rows PEQ_PLOT_TOP to PEQ_PLOT_BOTTOM), frequency labels under it. */
+/* PEQ editor (patch/peq_ui.c): on the main and band screens a PEQ_GRAPH_H view heads the Advanced
+ * list and holds the response from PEQ_GRAPH_X to 375 - PEQ_GRAPH_X (20 Hz to 20 kHz, log),
+ * +-PEQ_GRAPH_DB at its plot's top and bottom (rows PEQ_PLOT_TOP to PEQ_PLOT_BOTTOM), frequency
+ * labels under it. */
 #define PEQ_GRAPH_H 96
 #define PEQ_GRAPH_X 16
 #define PEQ_GRAPH_DB 15

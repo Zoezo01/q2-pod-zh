@@ -26,7 +26,8 @@ enum { ARTIST_ALBUMS = 1, RATED_ALBUMS, ALBUM_TRACKS }; /* cf.scoped */
 #define CARDS (cf.scoped == ARTIST_ALBUMS ? deque_size(cf.albums) > 1 : cf.scoped ? 1 : 0)
 
 extern int stock_home_trampoline(void *win, void *ctx), stock_scan_all_trampoline(void *, void *),
-    stock_scan_folder_trampoline(void *, void *), stock_delete_song_trampoline(void *, void *);
+    stock_scan_folder_trampoline(void *, void *), stock_delete_song_trampoline(void *, void *),
+    stock_file_created_trampoline(const char *);
 
 enum { PREPARING, COVERS, TRACKS };
 typedef struct {
@@ -71,40 +72,27 @@ static int library_write(int (*stock)(void *, void *), void *a, void *b) {
     ++library_gen;
     return result;
 }
-/* Update Local Music (b: the drop flag it passes to toolsInitDatabase) drops songtable and dates
- * every song again from toolsGetFileCreateTime (0x5bddc4): on exFAT and NTFS cards the file's
- * access time, which the update's own tag reads move, so each full update dated the whole library
- * to its last update or play and Recently Added lost the albums added a few days before (#170).
- * Songs already in the library keep their time_create across the rebuild, matched by path and
- * CUE start; new songs take stock's. The copy is a table in the database, typed as songtable's
- * columns are so the key matches by value and is one lookup per song, without rowid (it is its own
- * index) and dropped once written back; its pages stay in the file's free list for the next
- * update. An update that never got there (power lost, a reboot mid-scan) leaves it, and the next
- * update's copy keeps its rows, so those dates still return. Both scripts run inside the
- * generation window, so no list is kept between stock's end and the write-back.
- * ponytail: a song replaced at the same path keeps its old date; an update stopped
- * with Back loses the dates of the songs it never re-added; a failed save (toolsUpdateDbTable
- * returns 1 on success and closes the handle on an error, which the next call reopens) skips
- * the write-back, so stock's dates stand. */
-#define DB "/mnt/data/database.db"
-static const char ADDED_SAVE[] =
-    "create table if not exists ringnav_added(fileurl VARCHAR(1024),time INTEGER,time_create INTEGER,"
-    "primary key(fileurl,time)) without rowid;"
-    "insert or ignore into ringnav_added select fileurl,time,time_create from songtable;";
-static const char ADDED_RESTORE[] =
-    "update songtable set time_create=ifnull((select a.time_create from ringnav_added a"
-    " where a.fileurl=songtable.fileurl and a.time=songtable.time),time_create);"
-    "drop table if exists ringnav_added;";
-static int scan_all_kept(void *a, void *b) {
-    int saved = b && toolsUpdateDbTable(DB, ADDED_SAVE) == 1;
-    int result = stock_scan_all_trampoline(a, b);
-    if (saved) toolsUpdateDbTable(DB, ADDED_RESTORE);
-    return result;
-}
 int coverflow_scan_all(void *a, void *b) {
     library_scope_scan();
-    return library_write(scan_all_kept, a, b);
+    return library_write(stock_scan_all_trampoline, a, b);
 }
+/* toolsGetFileCreateTime (0x5bddc4) dates a song (time_create, Recently Added's order) by stat's
+ * st_ctime, on FAT32 the directory entry's creation time, but by st_atime on exFAT cards, where
+ * stat has no creation time; every read moves that, so a full update dated the whole library to
+ * its own day (#170, #188). statx reports the creation stamp exFAT keeps (stock's kernel has the
+ * mainline driver); the o32 syscall itself, as demo imports no statx. docs/internals.md has the
+ * rest. ponytail: a file whose filesystem reports no stamp takes stock's date and drifts as
+ * before. */
+#ifndef PEQ_HOST
+__asm__(".globl ringnav_statx\nringnav_statx:\nli $v0, 4366\nsyscall\njr $ra\nnop\n");
+extern int ringnav_statx(int dirfd, const char *path, int flags, unsigned mask, void *buf);
+int ringnav_file_created(const char *path) {
+    unsigned sx[64]; /* struct statx: stx_mask first, stx_btime.tv_sec at byte 80 */
+    if (ringnav_statx(-100, path, 0, 0x800, sx) == 0 && (sx[0] & 0x800) && sx[20])
+        return (int)sx[20];
+    return stock_file_created_trampoline(path);
+}
+#endif
 int coverflow_scan_folder(void *a, void *b) {
     library_scope_scan();
     return library_write(stock_scan_folder_trampoline, a, b);

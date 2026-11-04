@@ -10,7 +10,7 @@ ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 # the ZIP it came in (-- with no ZIP, this is the only input build() accepts).
 TAR_SHA = '0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.6.3'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.6.4'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -20,7 +20,7 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # a player already on it, while V162M installs over it and over stock V1.32 in one flash. A later
 # Chinese build moves on to N, O…, since a player already on M would turn M away. I is skipped:
 # upstream's English build took it at 5.7. --dev still numbers builds.
-TAG = 'V' + VERSION.replace('.', '') + 'Q'
+TAG = 'V' + VERSION.replace('.', '') + 'R'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
@@ -64,6 +64,8 @@ HOOKS = {
     'scanAllMusicFile': (0x4fc788, 'coverflow_scan_all', 'scan_all'),
     'scanSpecFolder': (0x4fc964, 'coverflow_scan_folder', 'scan_folder'),
     'deleteMusicFromMusicDb': (0x500b5c, 'coverflow_delete_song', 'delete_song'),
+    # A song's added date: the card's creation stamp, not the access time (coverflow.c)
+    'toolsGetFileCreateTime': (0x5bddc4, 'ringnav_file_created', 'file_created'),
     'player_play_pause': (0x515728, 'ringnav_play_pause', 'pause'),
     'mclSetBtVol': (0x5accec, 'ringnav_btvol', 'btvol'),
     'mclSetOutputWay': (0x5aae54, 'ringnav_output', 'output'),
@@ -89,7 +91,7 @@ HOOKS = {
     'read_artistype_value': (0x4f4724, 'ringnav_read_artistype', None),
     # Tag reads: a FLAC's "ALBUM ARTIST" when stock's libtag finds no ALBUMARTIST
     'toolsGetMusicInfo': (0x5c5f40, 'ringnav_music_info', 'music_info'),
-    # Power gains Charge limit and Low power; Audio settings gains Artists (Album Artist)
+    # Power gains Charge limit and Low power; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4cc4cc, 'ringnav_systemset', 'systemset'),
     'systemset_display_page_init': (0x4c1d04, 'ringnav_display', 'display'),
     # Lock screen (patch/lockscreen.c): the built-in wallpapers in the picture list, the Lock screen
@@ -173,6 +175,10 @@ GRADIENT_LEAF = ('style_get_gradient', 0x649f3c, 'ringnav_style_gradient', (0x10
 # Videos: window_manager_paint is a leaf too (null-checks the manager and its vtable at +0x94, then
 # tail-calls paint, +0xc); the payload does the whole of it and skips it while q2video plays.
 WM_PAINT_LEAF = ('window_manager_paint', 0x66d46c, 'ringnav_wm_paint', (0x10800009, 0, 0x8c820094))
+# The UI loop's input queue has one way in, main_loop_queue_event, a leaf too (null-checks the loop, its
+# queue_event slot at +0x18 and the request, then tail-calls the slot); the payload does the whole of it
+# and keeps the touch thread's empty events out of the queue (playback.c ringnav_queue_event).
+QUEUE_LEAF = ('main_loop_queue_event', 0x648ea8, 'ringnav_queue_event', (0x10800008, 0, 0x8c990018))
 # Videos' player (patch/video.c): a separate executable against the rootfs's own libraries,
 # with display_logo's inode metadata.
 HELPER, HELPER_LIKE = 'usr/bin/q2video', 'usr/bin/display_logo'
@@ -186,11 +192,23 @@ HELPER_LIBS = ['lib/libc-2.28.so', 'lib/libpthread-2.28.so', 'usr/lib/libasound.
 # card has none. demo keeps its argv[0], which checkappprocess.sh pgreps for. iPod's Home Rockbox row
 # (navigation.c rockbox_open) leaves ROCKBOX_FLAG and kills demo: Rockbox runs again, its
 # watchdog stopped in case demo's kill was not reached, then demo once more. Any other end of demo
-# ends the loop, so the watchdog reboots as stock's would.
+# ends the loop, so the watchdog reboots as stock's would. Wi-Fi is off while Rockbox runs (WIFI_OFF).
 BOOT = 'usr/bin/q2boot'
 REMOTE = 'usr/bin/q2remote'
 S90PLAY = 'etc/init.d/S90play'
 ROCKBOX_FLAG = '/tmp/q2pod-rockbox'
+# Rockbox can't use Wi-Fi and the radio costs battery, so rockbox() below stops it. Nothing is saved or restored
+# here: demo, which follows every Rockbox exit, restarts Wi-Fi from WIFI in config.ini, which wifi_switch writes on
+# every toggle. That covers a forced reset during Rockbox too, and writing the config here would lose the user's choice.
+# No rmmod 8733bs: that module also holds Bluetooth's power line, and Bluetooth must survive the hand-over.
+# The rest ends as stock's networkStop does. wifi_connect.sh because demo may have just started it. No ifconfig wlan0
+# 0.0.0.0: BusyBox brings a down interface up to set an address, which would wake a cold boot's radio; demo clears it.
+# Home's hand-over pauses first: a shell demo forked for one of these just before it died isn't named yet, and would
+# start Wi-Fi under Rockbox. demo is gone, so nothing new can start and a short wait is enough. Not a wait for Wi-Fi to
+# finish starting: wifi_connect.sh exits before its /tmp/wpasupplicant_initsuccess without a saved network, and demo
+# starts udhcpc later too. A second pass 2 s in, called off if Rockbox has already left and demo is starting Wi-Fi
+# again, catches a shell that took longer. ponytail: 300 ms and 2 s are guesses; a shell slower than 2 s still escapes.
+WIFI_OFF = 'killall -9 wifi_connect.sh udhcpc wpa_supplicant 2>/dev/null; ifconfig wlan0 down 2>/dev/null'
 BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         c=/mnt/data/q2-crash.log
         m=/mnt/data/q2-state
@@ -210,6 +228,8 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         rb=/mnt/mmc/.rockbox
         rockbox() {{
             [ -f $rb/rockbox ] || return
+            # Rockbox only starts here, so power-on and Home's hand-over both lose Wi-Fi (build.py WIFI_OFF)
+            {WIFI_OFF}
             (cd $rb && exec ./rockbox) > $rb/rockbox.log 2>&1
             echo "exit $?" >> $rb/rockbox.log
         }}
@@ -226,7 +246,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             [ -e {ROCKBOX_FLAG} ] || break
             rm -f {ROCKBOX_FLAG}
             killall checkappprocess.sh 2>/dev/null
+            # demo is gone: what it just launched gets this long to reach a name WIFI_OFF kills (build.py)
+            usleep 300000
+            (usleep 2000000; {WIFI_OFF}) &
             rockbox
+            kill $! 2>/dev/null
         done
         case $s in 0|143) rm -f $m ;; *)
             {{
@@ -253,6 +277,16 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
 LOG_HOOK = (b'        while :; do\n            /release/bin/demo\n',
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
+# --dev only: the wheel's stale-press notes (navigation.c stale_note) go to the card's q2-wheel.log, appended, when
+# the card is up. In BOOT_HOOK's start path.
+WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
+                  b'        w=/mnt/data/q2-wheel.log\n'
+                  b'        [ -f $w ] && (\n'
+                  b'            i=0\n'
+                  b"            while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done\n"
+                  b"            grep -q ' /mnt/mmc ' /proc/mounts && cat $w >> /mnt/mmc/q2-wheel.log && sync && rm -f $w\n"
+                  b'        ) &\n'
+                  b'        rb=/mnt/mmc/.rockbox\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.
 BLUEALSA = 'usr/bin/bluealsa'
 # Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM between songs, so
@@ -920,6 +954,7 @@ FUNCTIONS = {
  'window_manager_get_top_window': ('void *', 'void *'),
  'window_manager_is_animating': ('int', 'void *'),
  'window_manager_get_pointer_pressed': ('int', 'void *'),
+ 'main_loop': ('void *', 'void'),  # +LOOP_PRESSED: the touch thread's own down flag (navigation.c stale_note)
  'widget_get_visible': ('int', 'void *'),
  'widget_get_prop_bool': ('int', 'void *, const char *, int'),
  'widget_get_prop_int': ('int', 'void *, const char *, int'),
@@ -1190,7 +1225,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_po_status', 'g_bal_status',  # 3.5 mm and 4.4 mm jacks: 1 plugged (check_headset_status)
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
-           'g_memory_play', 'g_carmode',
+           'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbdet_value']  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
 # Audited stock browsing state, deque pointers, art locks, the status bar widget
@@ -1249,7 +1284,7 @@ def compile_payload(out):
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
@@ -1458,6 +1493,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
     header += [f'#define STOCK_VERSION "{info[1]}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
                f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
+               f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
     (out/'stock.h').write_text('\n'.join(header)+'\n')
@@ -1479,7 +1515,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         gp = ((prolog[0] & 65535) << 16) + (low if low < 32768 else low - 65536) + address
         check(gp == GP, f'{name}: unexpected GOT base')
         jump(off, replacement)
-    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF):
+    for name, address, replacement, words in (WM_PAINT_LEAF, GRADIENT_LEAF, QUEUE_LEAF):
         off = fileoff(patched, address)
         check(syms[name] == address and struct.unpack_from('<III', patched, off) == words, f'{name}: unexpected code')
         jump(off, replacement)
@@ -1648,7 +1684,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(s90play.count(BOOT_HOOK[0]) == 1 and s90play.count(REMOTE_HOOK[0]) == 1, 'Unexpected S90play')
     s90play = s90play.replace(*BOOT_HOOK)
     check(s90play.count(LOG_HOOK[0]) == 1, 'Unexpected demo loop')
-    (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK) if dev else s90play)
+    check(s90play.count(WHEEL_LOG_HOOK[0]) == 1, 'Unexpected card path')
+    (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK).replace(*WHEEL_LOG_HOOK) if dev else s90play)
     config = cat(DEFAULT_CONFIG)
     check(config.count(COVERMODE[0]) == 1, 'Unexpected default config.ini')
     (out/'config.ini').write_bytes(config.replace(*COVERMODE))

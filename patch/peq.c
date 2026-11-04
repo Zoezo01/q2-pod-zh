@@ -216,7 +216,7 @@ int peq_load(const char *path, peq_preset *out) {
 }
 
 /* magic (8 bytes) then data, fsynced under path.tmp and renamed over path. */
-static int save_file(const char *path, const char *magic, const void *data, unsigned size) {
+int peq_save_file(const char *path, const char *magic, const void *data, unsigned size) {
     char tmp[600];
     if (strlen(path) > 580) return 0;
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -233,7 +233,7 @@ static int save_file(const char *path, const char *magic, const void *data, unsi
 int peq_save(const char *path, const peq_preset *p, int replace) {
     if (!peq_valid(p)) return 0;
     if (!replace && !access(path, 0)) return 2;
-    return save_file(path, "Q2PEQ02", p, sizeof(*p));
+    return peq_save_file(path, "Q2PEQ02", p, sizeof(*p));
 }
 
 /* The 3EQ's fixed filters at gain dB each: a 155 Hz low shelf, a peak at 900 Hz to cut or 1750 Hz to
@@ -254,13 +254,13 @@ static int eq_valid(const eq_state *s) {
 }
 
 /* Q2PEQ03, else a Q2PEQ01/02 preset from before 3EQ: its PEQ, on unless bypassed, and a flat 3EQ. */
-int eq_load(eq_state *s) {
+int eq_load_from(const char *path, eq_state *s) {
     static const double flat[3];
     struct { char magic[8]; eq_state s; } file;
     memset(s, 0, sizeof(*s));
     peq_default(&s->peq);
     eq3_bands(&s->eq3, flat);
-    void *f = fopen(PEQ_ACTIVE, "rb");
+    void *f = fopen(path, "rb");
     if (!f) return 0;
     char extra;
     memset(&file, 0, sizeof(file));
@@ -278,14 +278,16 @@ int eq_load(eq_state *s) {
         *s = file.s;
         return 1;
     }
-    if (!peq_load(PEQ_ACTIVE, &s->peq)) return 0;
+    if (!peq_load(path, &s->peq)) return 0;
     s->mode = s->peq.bypass ? EQ_OFF : EQ_PEQ;
     return 1;
 }
+int eq_load(eq_state *s) { return eq_load_from(PEQ_ACTIVE, s); }
 
-int eq_save(const eq_state *s) {
-    return eq_valid(s) && save_file(PEQ_ACTIVE, "Q2PEQ03", s, sizeof(*s));
+int eq_save_to(const char *path, const eq_state *s) {
+    return eq_valid(s) && peq_save_file(path, "Q2PEQ03", s, sizeof(*s));
 }
+int eq_save(const eq_state *s) { return eq_save_to(PEQ_ACTIVE, s); }
 
 /* What plays: the mode's preset, bypassed when Off, or with hold the 3EQ's preamp alone. Only PEQ
  * plays Auto (1: the player's per-rate cut), unless picked: never picked (0) is Auto, as the editor
