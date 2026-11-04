@@ -332,7 +332,9 @@ static int stream_start(const void *unused) {
             tk_snprintf(sm.last, sizeof sm.last, "%s",
                         (const char *)P(deque_at(songs, n - 1), REC_NAME));
         sm.state = S_PLAY;
+        press_natural = 1;             /* the app's .play, from its poll: nobody here pressed */
         play_folder(songs, 0, 0xf001); /* playing_page copies the queue at once */
+        press_natural = 0;
         sm.loads = playback_loads;     /* its load, which play_folder has done (playback_groups) */
     }
     deque_destroy(songs);

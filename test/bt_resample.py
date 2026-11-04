@@ -6,9 +6,9 @@ A tone split across two files comes out of two instances exactly as one instance
 at AAC/SBC's 48 kHz and LDAC's 96 kHz. Stock's (and a skip mid-track, a rate change or a pause)
 start the second from a fresh resampler, which loses the first's tail.
 Then a USB DAC's init across a change (ao_init): a repeated request asks for what it negotiated.
-Last the wired outputs' start (dac_*): stock's own unmute sites release, wait once, then let audio flow.
+Last the wired outputs' start (dac_*): at stock's own unmute sites only a press waits, once, before audio flows.
 Usage: test/bt_resample.py BUILD_DIR"""
-import math, pathlib, struct, subprocess, sys
+import math, pathlib, re, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, jal, load_elf, symbols
 from peq import RS_OPEN_SLOT, RS_OPEN, AO_INIT_SLOT, AO_INIT, DAC_RELEASE
@@ -33,7 +33,11 @@ for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=Tr
     if len(s) >= 5 and s[2] == 'R_MIPS_JUMP_SLOT':
         imports[STUBS + 4*len(imports)] = s[4].split('@')[0]
         u.mem_write(int(s[0], 16), struct.pack('<I', STUBS + 4*(len(imports)-1)))
-heap, clock, freed, dac_log, pause_rc = [HEAP], [10**9], set(), [], [0]
+# open isn't a jump slot here: its peq_lib_ stub's GOT word (peq_imports.S), as in xfade_player.py.
+hi, lo = re.search(r'peq_lib_open:\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()).groups()
+imports[STUBS + 4*len(imports)] = 'open'
+u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
+heap, clock, freed, dac_log, pause_rc, press = [HEAP], [10**9], set(), [], [0], [None]  # press: PRESS_FILE's word
 
 def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
 def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
@@ -70,6 +74,9 @@ def libc(u, address, size, _):
     elif n == '__divdi3':
         x, y = (v - (1 << 64) if v >> 63 else v for v in (a(0) | a(1) << 32, a(2) | a(3) << 32))
         result = abs(x) // abs(y) * (1 if (x < 0) == (y < 0) else -1); v1 = result >> 32
+    elif n == 'open': assert cstr(a(0)) == b'/tmp/q2press' and not a(1); result = -1 if press[0] is None else 7
+    elif n == 'read': assert a(0) == 7 and a(2) == 4; w(a(1), press[0]); result = 4
+    elif n == 'close': assert a(0) == 7; result = 0
     elif n == 'ioctl': dac_log.append(('ioctl', a(0), a(1), r(a(2)))); result = 0
     elif n == 'usleep': dac_log.append('wait'); assert 100000 <= a(0) <= 200000, 'the mute line, without a long wait'; result = 0
     elif n == 'snd_pcm_pause': dac_log.append(('pause', a(1))); result = pause_rc[0]
@@ -215,23 +222,69 @@ def resume(): return site(0x4387ec, DONE)
 def wrapper(name, *args):
     dac_log.clear(), call(ps[name], *args)
     return [*dac_log], r(FLAG)
-RELEASED = ([UNMUTE, 'wait'], 0)
+RELEASED, AS_STOCK = ([UNMUTE, 'wait'], 0), ([UNMUTE], 0)
+def stamped(age=1):
+    """A word in PRESS_FILE, age ms old by the clock, which moves on so no word comes twice."""
+    clock[0] += 10**10
+    press[0] = (clock[0] // 10**6 - age) & 0xffffffff | 1
 
-# The end of init waits after its unmute; with no mute, or with the unmute left to seek or resume, it does nothing.
-state()
+# The end of init waits after its unmute only for a fresh press; with no mute, or with the unmute left to seek or
+# resume, it does nothing.
+state(); stamped()
 assert init_end() == RELEASED
-state(flag=0)
+state(flag=0); stamped()
 assert init_end() == ([], 0)
-state(paused=True)
+state(paused=True); stamped()
 assert init_end() == ([], 1)
-state(offset=30.0)
+# A natural change: a stale press, one from the future (the clock wrapped between them), 0 or no file: the ioctl,
+# exactly stock, no wait.
+for age in (5001, 0x7fffffff, -1000):
+    state(); stamped(age)
+    assert init_end() == AS_STOCK, age
+state(); stamped(4999); clock[0] += 10**6  # 5000 exactly
+assert init_end() == AS_STOCK
+state(); stamped(); press[0] = 0
+assert init_end() == AS_STOCK
+state(); press[0] = None
+assert init_end() == AS_STOCK
+# The window's edge, and a press either side of the 32-bit wrap.
+state(); stamped(4999)
+assert init_end() == RELEASED
+clock[0] = (1 << 32) * 10**6 - 10**10 + 10**6 * 2
+state(); stamped(100)
+assert clock[0] // 10**6 >> 32 == 1 and press[0] >> 31 == 1 and init_end() == RELEASED
+# One press waits once: a short track's natural reopen on the same word doesn't.
+state()
+assert init_end() == AS_STOCK
+# A start with an offset: init passes it to seek, which follows the press and waits once; a later resume has
+# nothing left to do. Without a press (a natural next, Memory Playback's place), it doesn't wait.
+state(offset=30.0); stamped()
 assert init_end() == ([], 1)
-# A start with an offset: init passes it to seek, which waits once; a later resume has nothing left to do.
 assert seek() == RELEASED and seek() == ([], 0) and resume() == ([('pause', 0)], 0)
+for word in (None, 0):
+    state(offset=30.0); press[0] = word
+    assert init_end() == ([], 1) and seek() == AS_STOCK, word
+state(offset=30.0); stamped(6000)
+assert seek() == AS_STOCK
+# A user's seek has a fresh stamp, and waits once. A-B Repeat's loop and a phone's seek have none: stock's.
+state(); stamped()
+assert seek() == RELEASED
+state()
+assert seek() == AS_STOCK
+for word in (None, 0):
+    state(); press[0] = word
+    assert seek() == AS_STOCK, word
+state(); stamped(6000)
+assert seek() == AS_STOCK
 # While paused, seek's own check passes it over, as the end of init's does.
-state(paused=True)
+state(paused=True); stamped()
 assert seek() == ([], 1)
-# Resume releases, waits, then lets audio flow, and stock's own unmute after the call passes.
+# Resume releases, waits, then lets audio flow, and stock's own unmute after the call passes; only ever a user's,
+# so the file has no say.
+for word in (None, 0):
+    state(); press[0] = word
+    assert resume() == ([UNMUTE, 'wait', ('pause', 0)], 0), word
+state(); stamped(6000)
 assert resume() == ([UNMUTE, 'wait', ('pause', 0)], 0)
 state(flag=0)
 assert resume() == ([('pause', 0)], 0)
@@ -240,14 +293,14 @@ state(flag=0); pause_rc[0] = 0xffffffe0
 assert call(ps['dac_resume'], 0x1000) == 0xffffffe0
 pause_rc[0] = 0
 # With the DAC closed, everything passes straight through.
-state(fd=0)
+state(fd=0); stamped()
 assert resume() == ([('pause', 0)], 1) and init_end() == ([], 1) and seek() == ([], 1)
-# Bluetooth and USB never wait and never touch the DAC, at stock's sites or the hooks themselves.
+# Bluetooth and USB never wait and never touch the DAC, at stock's sites or the hooks themselves, press or none.
 for way in (1, 2):
-    state(way=way)
+    state(way=way); stamped()
     assert resume() == ([('pause', 0)], 1), way
     assert init_end() == ([], 1), way
     assert wrapper('dac_unmute', 0) == ([], 1), way
-state(way=2)
+state(way=2); stamped()
 assert seek() == ([], 1)
-print('Wired start: each site releases and waits once before audio flows; Bluetooth, USB and a clear flag don\'t wait.')
+print('Wired start: a press waits once before audio flows; a natural change, Bluetooth, USB and a clear flag don\'t wait.')

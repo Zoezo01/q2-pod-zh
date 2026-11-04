@@ -6,6 +6,7 @@
 #include "stock.h"
 #undef select /* the UI selection helper below; headset.c uses libc select */
 extern int stock_sorted_query_trampoline(const char *, const char *, void *, int);
+extern int stock_seek_time_trampoline(int);
 extern int stock_dbquery_trampoline(const char *, const char *, void *, int),
     stock_content_query_trampoline(const char *, const char *, void *, void *, int);
 extern int stock_quicksettings_trampoline(void *, void *);
@@ -9481,7 +9482,8 @@ static void resume_poll(void) {
     if (st.rs_pending) {
         if (sec < 1) return; /* not playing yet: a paused boot resume waits for Play */
         if (sec < RESUME_START_S) {
-            player_seek_time(st.rs_pending); /* blocks the UI up to 2 s, as Scrub's commit */
+            /* blocks the UI up to 2 s, as Scrub's commit; past the hook: nobody pressed, no wait */
+            stock_seek_time_trampoline(st.rs_pending);
             sec = st.rs_pending;
         }
         st.rs_pending = 0;

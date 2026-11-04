@@ -413,27 +413,50 @@ int ao_init(int rate, int channels, int format, int flags) {
  * releases, waits, then lets audio flow: the PCM is prepared or paused, so nothing runs out and the clock
  * stands still, and no frame is written, so DSD stays bit-exact. Stock unmutes once per mute: the flag
  * (0xb11584, 1 after hciplayer's mute) gates every site and each clears it, so one action waits once.
- * ponytail: every wired manual start comes about 130 ms later, and so does a track change that already
- * reopened the PCM (a change of rate, Gapless off, stock Shuffle, DSD). Spotify's aplay and q2video keep the
- * cut. Whether a start pops with the gate open, or a seek while paused ticks, can only be settled by ear. */
+ * Init and seek wait only when demo's PRESS_FILE holds a fresh stamp, so a track change nobody pressed for
+ * has no sleep, Crossfade's and Gapless's above all; a resume always waits, only ever a press or a phone's.
+ * ponytail: a wired manual start comes about 130 ms later. A stamp left unspent under 5 s (a refused Next, a
+ * press that opened paused, a seek while paused, a press and a track under 5 s) gives a natural reopen one
+ * 130 ms gap, at most one per word; a per-file stamp would close that. A rapid double Next can spend its word
+ * on the first init, so the last track keeps the old cut. A-B Repeat, Resume Songs' jump, a phone's seek,
+ * Spotify's aplay and q2video keep the cut. Whether a start pops with the gate open, or a seek while paused
+ * ticks, can only be settled by ear. */
 #define DAC_RELEASE_MS 130 /* derived, not measured: the mute line's 90-100 ms and the ramp at top volume */
+#define DAC_PRESS_MS 5000  /* demo's mute, its sleep and a slow card's open, from the press to init's end */
 #define DAC_FD (*(volatile int *)0xb1158cu)
 #define DAC_MUTED (*(volatile int *)0xb11584u)
+#define DAC_HELPER ((void (*)(int))0x43b280u) /* stock's: checks the way and the fd, clears the flag */
+/* Whether PRESS_FILE holds a fresh stamp, each used once, so a short track's natural change after the press's
+ * own start doesn't wait. Stale, from the future, 0 or no file: no. Read only at these sites, never per block. */
+static int dac_told(void) {
+    static int seen;
+    int at = 0, fd = open(PRESS_FILE, 0); /* O_RDONLY */
+    if (fd < 0) return 0;
+    read(fd, &at, sizeof at);
+    close(fd);
+    if (!at || at == seen || (unsigned)now_ms() - (unsigned)at >= DAC_PRESS_MS) return 0;
+    seen = at;
+    return 1;
+}
 /* The end of init (0x4391b0), past stock's checks of the way and the fd: the ioctl is stock's own. */
 int dac_ioctl(int fd, unsigned request, void *arg) {
     int r = ioctl(fd, request, arg);
-    usleep(DAC_RELEASE_MS * 1000);
+    if (dac_told()) usleep(DAC_RELEASE_MS * 1000);
     return r;
 }
-/* seek (0x42b164), through stock's helper (0x43b280), which checks the way and the fd and clears the flag. */
+/* seek (0x42b164), a start offset's or an mcl-seek's: demo stamps a user's, not A-B Repeat's loop. */
 void dac_unmute(int value) {
-    ((void (*)(int))0x43b280u)(value);
-    if (!OUTPUT_WAY && DAC_FD > 0) usleep(DAC_RELEASE_MS * 1000);
+    int wait = !OUTPUT_WAY && DAC_FD > 0 && dac_told();
+    DAC_HELPER(value);
+    if (wait) usleep(DAC_RELEASE_MS * 1000);
 }
 /* Resume (0x43881c) calls snd_pcm_pause(pcm, 0) before its unmute (0x438978): that one goes first now, and
  * with the flag clear, stock's check after the call (0x438844) passes it over. */
 int dac_resume(void *pcm) {
-    if (DAC_MUTED == 1) dac_unmute(0);
+    if (DAC_MUTED == 1) {
+        DAC_HELPER(0);
+        if (!OUTPUT_WAY && DAC_FD > 0) usleep(DAC_RELEASE_MS * 1000);
+    }
     return ((int (*)(void *, int))0xadacf0u)(pcm, 0);
 }
 #endif

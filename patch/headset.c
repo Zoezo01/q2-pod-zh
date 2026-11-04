@@ -61,6 +61,7 @@ void headset_manual(void) {
 }
 int ringnav_play_pause(void) {
     headset_manual();
+    if (mclGetPlayStatus() == 1) press_stamp(); /* Play from a stop starts a track */
     return stock_pause_trampoline();
 }
 int media_owner(void) { return video_status() ? 4 : radio_status() ? 3 : spot_status() ? 2 : 1; }

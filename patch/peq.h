@@ -150,6 +150,7 @@ void peq_process(peq_dsp *d, float *audio, unsigned frames);
 #define VIS_RING 65536 /* a power of two: 1.5 s at 44.1 kHz, room for VIS_LATENCY_MS */
 typedef struct { unsigned seq, rate; long long stamp; unsigned want, pad; float ring[VIS_RING][2]; } vis_tap;
 long long now_ns(void);
+unsigned long long now_ms(void);
 /* Crossfade (docs/internals.md#crossfade): demo writes the next track change's fade, an int in ms,
  * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for it. */
 #define XFADE_FILE PEQ_ROOT "/tmp/q2xfade"
@@ -157,6 +158,11 @@ long long now_ns(void);
  * it read-only (video.c keeps its own copy of the path). */
 #define MONO_FILE PEQ_ROOT "/tmp/q2mono"
 #define SWAP_FILE PEQ_ROOT "/tmp/q2swap"
+/* The wired outputs' wait (docs/internals.md#wired-start): demo writes now_ms, never 0, at a press that starts
+ * a track or seeks, and 0 at a natural change; hciplayer reads it at init's end and seek's unmute. */
+#define PRESS_FILE PEQ_ROOT "/tmp/q2press"
+extern int press_natural; /* crossfade.c: inside a track change nobody pressed for, nothing stamps */
+void press_stamp(void), press_forget(void);
 /* librespot (spotify.c) and its restart loop, whose pid its launcher left, stopped: Spotify's idle
  * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe. */
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */

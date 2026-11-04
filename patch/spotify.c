@@ -118,12 +118,6 @@ static struct {
     int art_tries;
 } ui __attribute__((section(".scratch")));
 
-unsigned long long now_ms(void) { /* shared with radio.c; not now_ns() / 1e6: no __udivdi3 here */
-    int ts[2];            /* o32 timespec */
-    clock_gettime(1, ts); /* CLOCK_MONOTONIC, librespot's at= clock */
-    return (unsigned long long)(unsigned)ts[0] * 1000 + (unsigned)ts[1] / 1000000;
-}
-
 /* c to the datagram socket at path, *sock opened on first use. Shared with radio.c. */
 void dgram_send(int *sock, const char *path, const char *c, unsigned n) {
     if (*sock <= 0) *sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */

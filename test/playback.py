@@ -1092,6 +1092,7 @@ class HeldMachine(ChangeMachine):
         super().__init__(); self.handlers.pop(ps['resume_held']); self.play=(0,0); self.seeks=[]
         self.handlers[ps['stock_sleep_trampoline']]='stock_sleep'
         for n in ('player_playtime_and_length','player_seek_time'): self.handlers[syms[n]]='h:'+n
+        self.handlers[ps['stock_seek_time_trampoline']]='h:player_seek_time'
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('h:'): return super().hook(u,address,size,unused)
@@ -1295,9 +1296,9 @@ print('Folder speed: persistence, exact parents, reconnect, gapless and failed s
 # on; while one is set, the filter goes into the chain (peq_chain).
 class XfadeMachine(PlaybackMachine):
     def __init__(self, on='1'):
-        super().__init__(); self.flag=self.alloc(4); self.attaches=0
+        super().__init__(); self.flag=self.alloc(4); self.attaches=0; self.written=4
         self.config.update(XFADE=on, XFADESEC='7')
-        for n in ('open','ftruncate','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
+        for n in ('open','write','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
         self.handlers[ps['peq_attach']]='xf:attach'
         self.handlers.pop(syms['mclGetPlayStatus']); self.word(0xa3beac,2)  # playing
         self.word(syms['g_equalizer_flag'],0); self.byte(O['MCL_GAPLESS'],1)
@@ -1306,7 +1307,7 @@ class XfadeMachine(PlaybackMachine):
         if not name.startswith('xf:'): return super().hook(u,address,size,unused)
         if name=='xf:open': self.files[self.text(u.reg_read(REGS[0]))]=b''
         self.attaches+=name=='xf:attach'
-        self.returns(self.flag if name=='xf:mmap' else 3 if name=='xf:open' else 0)
+        self.returns(self.flag if name=='xf:mmap' else 3 if name=='xf:open' else self.written if name=='xf:write' else 0)
     def fade(self,pos=None):
         if pos is not None: self.word(O['MCL_POS'],pos)
         self.fn('playback_poll'); return self.get(self.flag)
@@ -1333,3 +1334,75 @@ for _ in range(6):
     assert m.advance_song(1)>=0
 assert fades=={0,7000},fades  # both cases met along the way
 print('Crossfade: the next change\'s fade, album and Gapless gates, the shared file, the filter and Shuffle Songs passed')
+
+# What waits for the DAC (crossfade.c press_stamp, docs/internals.md#wired-start): demo's stamp in PRESS_FILE.
+class PressMachine(XfadeMachine):
+    def __init__(self):
+        super().__init__('0'); self.now=5000; self.handlers.pop(ps['press_stamp'])
+        self.handlers[syms['clock_gettime@GLIBC_2.2']]='xf:clock'; self.handlers[syms['rename@GLIBC_2.0']]='xf:rename'
+        self.handlers[0x4ea848]='xf:dialog'; self.handlers[syms['mclStartPlayer']]='xf:start'
+        self.stock=[]; self.nested_load=0
+        for name in ('change','next','load','pause','seek_time','seek_start'): self.handlers[ps[f'stock_{name}_trampoline']]='xf:'+name
+        self.word(O['MCL_TYPE'],0xf001)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name=='xf:clock':
+            b=u.reg_read(REGS[1]); self.word(b,self.now//1000&0xffffffff); self.word(b+4,self.now%1000*1000000); return self.returns(0)
+        if name=='xf:rename': self.files[self.text(u.reg_read(REGS[1]))]=b''; return self.returns(0)
+        if name=='xf:dialog': return u.reg_write(UC_MIPS_REG_PC,0x1000000)  # back in on_wm_timer_dialog
+        if name[3:] in ('change','next','load','pause','seek_time','seek_start','start'):
+            self.stock.append(name); self.seen=self.get(self.flag)
+            if name in ('xf:next','xf:change') and self.nested_load:  # Folder Skip's load, as stock's do within them
+                self.nested_load=0; self.nested(ps['ringnav_load'],self.get(syms['mcl_pdeqplaylist']),0,1)
+            return self.returns(0)
+        return super().hook(u,address,size,unused)
+    def at(self): return self.get(self.flag)
+    def nothing(self): return not {'/tmp/q2press','/tmp/q2press.tmp'}&set(self.files)
+    def enter(self,name,*args):  # through the hook, not the fixtures' mock
+        self.handlers.pop(syms[name],None); return self.call(address=syms[name],args=tuple(args)+(0,)*(4-len(args)),gap=0)
+# Nothing is created until the first press: a poll, a natural change and the Stop that ends a queue make no file.
+m=PressMachine(); m.fn('playback_poll'); m.advance_song(1); assert m.nothing() and m.stock==['xf:next']
+# A manual Next or Previous stamps, odd and so never 0, the low 32 bits of the monotonic clock's ms, before stock runs.
+m.enter('player_next_music'); assert '/tmp/q2press' in m.files and m.at()==5001 and m.seen==5001
+m.now=6000; m.fn('ringnav_change',0); assert m.at()==6001
+m.now=(1<<32)+1002; m.fn('ringnav_change',1); assert m.at()==1003
+# A natural change forgets it and stamps nothing, before stock's next or advanced play's mclStartPlayer; a rollover too.
+m=PressMachine(); m.fn('ringnav_change',1); m.advance_song(1); assert m.at()==0 and m.seen==0 and m.get(ps['press_natural'])==0
+m=PressMachine(); m.options(1,5,0); m.fn('ringnav_change',1); m.stock=[]; m.advance_song(1); assert m.stock==['xf:start'] and m.seen==0
+m=PressMachine(); m.fn('ringnav_change',1); m.nested_load=1; m.advance_song(1); assert m.at()==0 and 'xf:load' in m.stock
+m=PressMachine(); m.nested_load=1; m.advance_song(1); assert m.nothing() and 'xf:load' in m.stock
+# ringnav_next(0) is reached only under ringnav_change, which has stamped: alone it neither stamps nor forgets.
+m=PressMachine(); m.advance_song(0); assert m.nothing()
+m=PressMachine(); m.fn('ringnav_change',1); m.now=7000; m.advance_song(0); assert m.at()==5001
+# A list pick stamps, after stock's load. Memory Playback's restore doesn't, in its load or player_start's second.
+m=PressMachine(); m.fn('ringnav_load',m.get(syms['mcl_pdeqplaylist']),0,0xf001); assert m.at()==5001 and m.seen==0
+s=PlaybackMachine(); s.options(4,5,0); s.advance_song(0); s.fn('playback_save')
+m=PressMachine(); m.handlers.pop(ps['stock_load_trampoline']); m.files.update(s.files); m.byte(syms['g_memory_play'],2); out=m.deque([])
+at=m.fn('ringnav_memory',out); assert at>=0 and m.nothing(); m.fn('ringnav_load',out,at,1); assert m.nothing()
+# Only a local queue's press: DLNA's (2, 3) and the online ones' (0xf1, 0xf2) start tracks by themselves.
+for kind,stamps in ((1,True),(0xff10,True),(0xf001,True),(2,False),(3,False),(0xf1,False),(0xf2,False)):
+    m=PressMachine(); m.word(O['MCL_TYPE'],kind); m.fn('ringnav_load',m.get(syms['mcl_pdeqplaylist']),0,kind); assert m.nothing()!=stamps,kind
+    m=PressMachine(); m.word(O['MCL_TYPE'],kind); m.fn('ringnav_change',1); assert m.nothing()!=stamps,kind
+# Stock's own player_start_queue hook doesn't stamp (DLNA, SyncLink's URL plays); Up Next's row does, before it.
+m=PressMachine(); m.handlers[ps['stock_start_queue_trampoline']]='xf:none'; m.fn('ringnav_start_queue',2); assert m.nothing()
+m=PressMachine(); m.handlers[syms['player_start_queue']]='xf:start'; m.handlers[syms['navigator_back']]='xf:none'
+m.fn('un_play',0); assert m.stock==['xf:start'] and m.seen==5001
+# Play from a stop stamps, a headset's own too (media_set_playing, through the same hook); playing or paused doesn't.
+m=PressMachine(); m.word(0xa3beac,1); m.enter('player_play_pause'); assert m.at()==5001 and m.stock==['xf:pause']
+m=PressMachine(); m.handlers.pop(syms['player_play_pause'],None); m.word(0xa3beac,1); m.fn('media_set_playing',1); assert m.at()==5001 and m.stock==['xf:pause']
+for status in (2,3):
+    m=PressMachine(); m.word(0xa3beac,status); m.enter('player_play_pause'); assert m.nothing(),status
+m=PressMachine(); m.options(3,0,0); m.fn('playback_group_skip',1); assert m.at()==5001  # Next Group, a press
+# A user's scrub and Previous restarting the track stamp, through the hooks, and go on to stock.
+m=PressMachine(); m.enter('player_seek_time',50); assert m.at()==5001 and m.stock==['xf:seek_time'] and m.seen==5001
+m=PressMachine(); m.enter('player_seek_start'); assert m.at()==5001 and m.stock==['xf:seek_start'] and m.seen==5001
+# The skip past a file stock can't play: on_wm_timer_dialog's own words into stock's player_next_music, and nobody
+# pressed, for a Folder Skip load in it too. The same Next from anywhere else stamps (above).
+for load in (0,1):
+    m=PressMachine(); m.handlers.pop(syms['player_next_music'],None); m.u.reg_write(UC_MIPS_REG_GP,0xa26cc0); m.nested_load=load
+    m.call(address=0x4eaa8c,args=(0,0,0,0),gap=0); assert 'xf:change' in m.stock and m.nothing(),load
+    assert m.get(ps['press_natural'])==0
+# A full tmpfs: the file isn't made and nothing is stored, so no SIGBUS; the next press tries again.
+m=PressMachine(); m.written=-1; m.word(m.flag,0xdead); m.fn('ringnav_change',1); assert m.at()==0xdead and '/tmp/q2press' not in m.files
+m.written=4; m.fn('ringnav_change',1); assert m.at()==5001
+print('Press: Next, Previous, a list pick and a user\'s seek stamp; a natural change forgets, stamps nothing and makes no file')

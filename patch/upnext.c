@@ -27,7 +27,7 @@ static struct {
 static int un_play(void *ctx, void *event) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned at = un.idx[(long)ctx];
-    if (q && at < deque_size(q)) player_start_queue((int)at);
+    if (q && at < deque_size(q)) press_stamp(), player_start_queue((int)at);
     navigator_back();
     return 0;
 }

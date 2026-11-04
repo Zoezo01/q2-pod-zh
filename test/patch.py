@@ -78,6 +78,8 @@ class Machine:
         for off,v in zip(('LCD_FILL_COLOR','LCD_STROKE_COLOR'),LCD_COLORS): self.word(self.lcd+O[off],v)
         self.clip=(0,0,240,240)
         self.handlers={}
+        if patched:  # a file and a clock; test/playback.py tests them
+            self.handlers[payload_syms['press_stamp']]='stock_press_stamp'
         for name in FUNCTIONS: self.handlers[syms[name]]=name
         # canvas_get_vgcanvas runs stock, down to the mocked lcd_get_vgcanvas, as the rounded wrappers need
         for name in ('slide_menu_item_width','slide_menu_on_scroll_done','canvas_get_vgcanvas',
@@ -5242,7 +5244,7 @@ class CoverflowMachine(QueueMachine):
                 field=lambda e,k: self.text(self.get(e+O[k])) if self.get(e+O[k]) else ''
                 self.play_tags=[(field(e,'REC_TITLE'),field(e,'REC_ARTIST'),field(e,'REC_ALBUM'),field(e,'REC_ALBUM_ARTIST'),
                                  self.get(e+O['REC_TRACK']),self.get(e+O['REC_DISC'])) for e in self.items(self.get(b))]
-                self.plays.append((self.text(a),*[signed(self.get(b+4*i)) for i in range(4)]))
+                self.plays.append((self.text(a),*[signed(self.get(b+4*i)) for i in range(4)])); self.natural=self.get(payload_syms['press_natural'])
                 # stock_load: loads its queue at once, as stock's playing_page_init does (the real mclLoadPlayList)
                 if getattr(self,'stock_load',0): self.nested(syms['mclLoadPlayList'],self.get(b),self.get(b+4),self.get(b+8),0)
             elif self.text(a)=='dialog/msginfo_dialog':
@@ -6062,7 +6064,7 @@ centre(m,50); step(m,O['SCRUB_MS'],wait=True); ended(m,[5]); passed()
 PLAY_STATUS=0xa3beac
 m=scrub_page(); m.handlers.pop(syms['mclGetPlayStatus']); m.word(PLAY_STATUS,3); centre(m); step(m)
 m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[1]+O['REC_CUE_START'],30); centre(m,50)
-assert did(m,'mclSetSeek')==[135] and not m.seeks and not did(m,'mclSetResume')
+assert did(m,'mclSetSeek')==[135] and not m.seeks and not did(m,'mclSetResume') and not did(m,'stock_press_stamp')  # Play waits, in dac_resume
 step(m,O['SCRUB_MS']+5000,wait=True); assert not m.seeks and not m.starts and m.nodes[m.slider]['value']==105
 m.word(m.event+O['EVENT_Y'],0)  # call's key is EVENT_X: a touch right of the slider
 m.call(374,address=HOOKS['on_wm_tsdown_before_fun'][0],event_type=O['EVT_POINTER_DOWN'])
@@ -7445,6 +7447,8 @@ class RolloverMachine(CoverflowMachine):
         self.handlers.pop(syms['player_mainscheduling'])  # runs stock's, as tick() calls it
         self.native_trace={syms[n]:n for n in ('mclAutoChange','mclNextSong','on_player_autochange','toolsLoadNextDir',
                           'player_refresh_playqueue','mclLoadPlayList','player_get_id3info','player_set_coverinfo','mclClearChangeFlag')}
+        self.native_trace[syms['open@GLIBC_2.0']]='press_open'  # only a stamp opens a file here; it fails at the write
+        self.mock('open@GLIBC_2.0','write@GLIBC_2.0','close@GLIBC_2.0')
         self.trace=[]; self.files={}; self.dirs={}; self.artfiles=set(); self.worker=False; self.forks=0
         self.handlers[0x5c29bc]='r:directory'; self.handlers[0x5c2c8c]='r:directory'
         self.handlers[0x5ace14]='r:decoder_start'
@@ -7475,6 +7479,7 @@ class RolloverMachine(CoverflowMachine):
         self.call(address=syms['mclLoadPlayList'],args=(self.deque(self.dirs['/mnt/mmc/0']),0,1,0),gap=0)
         self.call(address=syms['mclStartPlayer'],args=(0,0,0,0),gap=0)
         self.call(address=syms['player_get_id3info'],args=(0,0,0,0),gap=0)
+        self.handlers.pop(payload_syms['press_stamp'])  # the natural changes from here run the real one
     def hook(self,u,address,size,unused):
         if address in getattr(self,'native_trace',{}): self.trace.append((self.native_trace[address],None))
         name=self.handlers.get(address,'')
@@ -7577,6 +7582,8 @@ for sizes in ((2,2,1,1),(1,1,1,1)):
     events=[event for event,_ in m.trace]
     for event in ('on_player_autochange','toolsLoadNextDir','player_refresh_playqueue'): assert events.count(event)==3
     assert events.count('mclLoadPlayList')==4 and events.count('mclClearChangeFlag')==len(paths)-1
+    # Folder Skip's rollover is a natural change: its load stamps no press (docs/internals.md#wired-start).
+    assert 'press_open' not in events
 # A CUE track (issue #59): its record's PERFORMER is kept, a missing sheet TITLE takes the file's album.
 from build import ID3_PATH
 assert struct.unpack_from('<I',demo,fileoff(demo,ID3_PATH[0]))[0]==jal(payload_syms['ringnav_id3_path'])
@@ -11991,6 +11998,7 @@ m.poll(); m.advance(0)
 assert [p[2:4] for p in m.plays]==[(0,0xf001)] and m.play_names==['01 - Snow [12].flac'],(m.plays,m.play_names); passed()
 m.word(syms['mcl_pdeqplaylist'],m.deque(recs)); m.word(O['MCL_POOL'],m.deque([0],'int')); m.word(O['MCL_POS'],0)
 m.poll(); assert m.files['/tmp/q2-deezer.playing']==f'{STREAM}/01 - Snow [12].flac\n'.encode() and len(m.plays)==1
+assert m.natural==1 and m.get(payload_syms['press_natural'])==0  # the app's poll, not a press: no wait for the DAC
 seen=m.stats[STREAM]; stream_songs('01 - Snow [12].flac','02 - Oakwood [13].flac'); m.stats[STREAM]=seen
 m.poll(); assert len(m.names())==1  # the folder's mtime unchanged: not scanned
 stream_songs('01 - Snow [12].flac','02 - Oakwood [13].flac','03 - Chateau [14].flac'); m.poll()
@@ -12587,7 +12595,8 @@ class ResumeMachine(QueueMachine):
         self.files={} if files is None else files; self.open={}; self.play=(0,0); self.seeks=[]; self.opens=self.renames=0
         self.handlers[sleep_hook+12]='stock_sleep'
         for n in ('fopen@GLIBC_2.2','fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0',
-                  'access@GLIBC_2.0','time@GLIBC_2.0','player_playtime_and_length','player_seek_time'): self.handlers[syms[n]]='r:'+n
+                  'access@GLIBC_2.0','time@GLIBC_2.0','player_playtime_and_length'): self.handlers[syms[n]]='r:'+n
+        self.handlers[payload_syms['stock_seek_time_trampoline']]='r:player_seek_time'
         self.epoch=1700000000
         self.mock('tk_snprintf','strstr@GLIBC_2.0')
         self.mock('pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0')  # scrobble.c's log lock
@@ -12613,7 +12622,9 @@ class ResumeMachine(QueueMachine):
         elif name=='player_playtime_and_length':
             if self.play[1]: self.word(a,self.play[0]); self.word(b,self.play[1]); ret=1
             else: ret=-1
-        elif name=='player_seek_time': self.seeks.append(signed(a)); self.play=(signed(a),self.play[1])
+        elif name=='player_seek_time':  # a jump nobody pressed: past the hook, no stamp (docs/internals.md#wired-start)
+            assert not isinstance(self,ResumeMachine) or not any(c[0]=='stock_press_stamp' for c in self.calls)
+            self.seeks.append(signed(a)); self.play=(signed(a),self.play[1])
         self.returns(ret,clobber=True)
     def poll(self,sec,total=3600,pos=None,n=1):  # n polls a second apart, the time standing at sec
         if pos is not None: self.word(O['MCL_POS'],pos)
@@ -13193,11 +13204,11 @@ passed()
 class MonoMachine(QueueMachine):
     def __init__(self):
         super().__init__(); self.flag=self.alloc(4); self.word(syms['g_equalizer_flag'],1)  # the filter is in
-        for n in ('open','ftruncate','rename','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='mono:'+n
+        for n in ('open','write','rename','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='mono:'+n
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('mono:'): return super().hook(u,address,size,unused)
-        self.calls.append((name,)); self.returns(self.flag if name=='mono:mmap' else 3 if name=='mono:open' else 0)
+        self.calls.append((name,)); self.returns(self.flag if name=='mono:mmap' else 3 if name=='mono:open' else 4 if name=='mono:write' else 0)
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,cls=MonoMachine)
 assert not [c for c in m.calls if c[0]=='mono:open']
 assert click(2)==[(1,'Q2POD','MONO')] and texts()[2]=='Mono Audio' and m.get(m.flag)==1
@@ -14422,6 +14433,7 @@ class ChapterResumeMachine(ChapterMachine):
                      'rename@GLIBC_2.0','access@GLIBC_2.0','time@GLIBC_2.0',
                      'player_playtime_and_length','player_seek_time'):
             self.handlers[syms[name]]='r:'+name
+        self.handlers[payload_syms['stock_seek_time_trampoline']]='r:player_seek_time'
     def hook(self,u,address,size,unused):
         if self.handlers.get(address,'').startswith('r:'): return ResumeMachine.hook(self,u,address,size,unused)
         return super().hook(u,address,size,unused)

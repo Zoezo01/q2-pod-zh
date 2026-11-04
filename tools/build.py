@@ -59,6 +59,9 @@ HOOKS = {
     # A song's added date: the card's creation stamp, not the access time (coverflow.c)
     'toolsGetFileCreateTime': (0x5bddc4, 'ringnav_file_created', 'file_created'),
     'player_play_pause': (0x515728, 'ringnav_play_pause', 'pause'),
+    # A user's seek stamps a press for hciplayer's wait for the DAC (docs/internals.md#wired-start)
+    'player_seek_time': (0x51454c, 'ringnav_seek_time', 'seek_time'),
+    'player_seek_start': (0x5143a8, 'ringnav_seek_start', 'seek_start'),
     'mclSetBtVol': (0x5accec, 'ringnav_btvol', 'btvol'),
     'mclSetOutputWay': (0x5aae54, 'ringnav_output', 'output'),
     'write_int_config': (0x4f3f4c, 'ringnav_write_config', 'write_config'),

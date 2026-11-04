@@ -30,7 +30,7 @@ static struct {
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
     int mono_read, mono, swap_read, swap, mqa_read, mqa;
-    volatile int *flag, *mono_flag, *swap_flag;
+    volatile int *flag, *mono_flag, *swap_flag, *press_file;
     void *swap_label, *mqa_label;
     void *mono_label; /* the Mono Audio row's, while Playback is open */
     void *page, *sw, *view, *slider, *dec, *add, *label;
@@ -115,12 +115,13 @@ void night_row(void *label) {
 }
 
 /* An int shared with hciplayer's filter (and q2video): made whole under tmp and renamed, as the
- * visualizer's tap is, then mapped; 0 if it cannot be made yet, so the caller tries next pass. */
+ * visualizer's tap is, then mapped; 0 if it cannot be made yet, so the caller tries next pass.
+ * Written, not ftruncate'd: that allocates no page, so a full tmpfs would SIGBUS the first store. */
 static volatile int *shared_int(const char *tmp, const char *path) {
     void *p = (void *)-1;
-    int fd = open(tmp, 0x302, 0644); /* O_RDWR | O_CREAT | O_TRUNC (MIPS) */
+    int zero = 0, fd = open(tmp, 0x302, 0644); /* O_RDWR | O_CREAT | O_TRUNC (MIPS) */
     if (fd < 0) return 0;
-    if (!ftruncate(fd, sizeof(int))) {
+    if (write(fd, &zero, sizeof zero) == sizeof zero) {
         p = mmap(0, sizeof(int), 3, 1, fd, 0); /* PROT_READ | PROT_WRITE, MAP_SHARED */
         if (p != (void *)-1 && rename(tmp, path)) {
             munmap(p, sizeof(int));
@@ -129,6 +130,20 @@ static volatile int *shared_int(const char *tmp, const char *path) {
     }
     close(fd);
     return p != (void *)-1 ? p : 0;
+}
+
+/* What waits for the DAC (docs/internals.md#wired-start) is opt in: a site missed keeps the old cut, a
+ * stamp on a change nobody pressed for would lengthen its gap. Only a local queue's: DLNA and online
+ * queues (0xf1, 0xf2) start tracks by themselves through the same calls. One int write per press. */
+int press_natural __attribute__((section(".scratch")));
+void press_stamp(void) {
+    unsigned type = *(volatile unsigned *)MCL_TYPE;
+    if (press_natural || !(type == 1 || (type & 0xf000) == 0xf000)) return;
+    if (!xf.press_file) xf.press_file = shared_int(PRESS_FILE ".tmp", PRESS_FILE);
+    if (xf.press_file) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
+}
+void press_forget(void) {
+    if (xf.press_file) *xf.press_file = 0;
 }
 
 /* The PEQ filter into the chain, in bypass, for the visualizer's tap, a fade or Mono Audio: boot

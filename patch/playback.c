@@ -19,6 +19,7 @@
 extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_prev_trampoline(void), stock_mode_trampoline(int), stock_preload_trampoline(void),
     stock_memory_trampoline(void *), stock_savequeue_trampoline(void), stock_change_trampoline(int),
+    stock_seek_time_trampoline(int), stock_seek_start_trampoline(void),
     stock_reboot_trampoline(void), stock_checkfw_trampoline(void *, void *),
     stock_speed_trampoline(int), stock_open_preload_trampoline(void), stock_start_queue_trampoline(int);
 extern void *staged(int (*)(void *), void *, int *);
@@ -829,6 +830,7 @@ int ringnav_load(void *q, int at, int type) {
     if (s.restoring == 2)
         s.restoring = 0;
     else if (!s.restoring) {
+        press_stamp(); /* a list pick, after stock's load names the queue's type */
         s.resume_key = s.resume_pending = 0;
         s.npend = 0;
         /* Shuffle Albums/Folders end with any other queue; a repeat or Shuffle track mode carries on */
@@ -882,7 +884,7 @@ static int list_end(void) {
            (unsigned)M(MCL_POS) + 1 == deque_size(queue());
 }
 unsigned auto_nexts __attribute__((section(".scratch"))); /* tracks that ended by themselves */
-int ringnav_next(int automatic) {
+static int next_song(int automatic) {
     auto_nexts += automatic != 0;
     if (!s.active) {
         if (list_end()) {
@@ -904,6 +906,16 @@ int ringnav_next(int automatic) {
     close_preload();
     M(MCL_POS) = next;
     return mclStartPlayer();
+}
+/* A natural change (mclAutoChange's, its only automatic caller) forgets the last press and stamps nothing:
+ * a Folder Skip's rollover loads its next folder in here (on_player_autochange, ringnav_load). */
+int ringnav_next(int automatic) {
+    if (!automatic) return next_song(0);
+    press_forget();
+    press_natural = 1;
+    int result = next_song(1);
+    press_natural = 0;
+    return result;
 }
 int playback_back(void) {
     int to = back_to - 1;
@@ -962,9 +974,10 @@ static int restart_refused(int next) {
  * queue index 0 or n-1 stock wraps or loads a sibling folder itself; in Repeat All without Folder
  * Skip every branch calls mclNextSong(0)/mclPrevSong, so advanced order applies. MCL_MODE is
  * written directly: mclSetPlayMode would end advanced play. */
-int ringnav_change(int next) {
+static int change_music(int next) {
     headset_manual();
     if (restart_refused(next)) return 0; /* the caller toasts -1 (no storage) and -5 */
+    press_stamp();
     if (!s.active) {
         if (!next || !list_end()) return stock_change_trampoline(next);
         ringnav_next(0); /* stops */
@@ -979,6 +992,25 @@ int ringnav_change(int next) {
     M(MCL_MODE) = mode;
     *skip = was;
     return result;
+}
+/* on_wm_timer_dialog's skip past a file it can't play (jalr player_next_music, 0x4ea840, which tail-branches
+ * here with ra restored) is the only Next nobody pressed; its Folder Skip load stamps nothing either. */
+#define UNPLAYABLE_NEXT_RET 0x4ea848
+int ringnav_change(int next) {
+    press_natural = __builtin_return_address(0) == (void *)UNPLAYABLE_NEXT_RET;
+    int result = change_music(next);
+    press_natural = 0;
+    return result;
+}
+/* A user's seek stamps: a scrub or chapter (player_seek_time; Resume Songs' jump goes past this hook) and
+ * Previous restarting the track (player_seek_start). A-B Repeat and a phone call mclSetSeek themselves. */
+int ringnav_seek_time(int sec) {
+    press_stamp();
+    return stock_seek_time_trampoline(sec);
+}
+int ringnav_seek_start(void) {
+    press_stamp();
+    return stock_seek_start_trampoline();
 }
 int playback_group_skip(int forward) {
     if (!s.active && !playback_set(2, s.folder)) return 0;
@@ -1025,6 +1057,7 @@ int playback_group_skip(int forward) {
     }
     close_preload();
     M(MCL_POS) = (int)next;
+    press_stamp();
     mclStartPlayer();
     playback_save();
     return 1;
