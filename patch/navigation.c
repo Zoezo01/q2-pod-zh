@@ -9379,6 +9379,7 @@ static void scrobble(void *r, int total, int heard) {
     if (!artist || !*artist) return;
     long long now = wall_time();
     if (now < 1600000000) return; /* clock never set: Last.fm would reject the time */
+    if (!addon_scrobbles(P(r, REC_PATH))) return; /* its card app's q2app says scrobble=0 */
     char line[800], name[512], *end = line + sizeof line - 48, *o = line; /* 48: the numbers */
     o = scrobble_tag(o, end, artist);
     o = scrobble_tag(o, end, now_tag(r, REC_ALBUM));

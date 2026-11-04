@@ -2,7 +2,8 @@
  * settings' Apps from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
  * Spotify's librespot is. Q2 Pod knows none of them by name: each is a card folder .<id> holding
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
- *            hint) and qr (1: its row turns it on and shows its QR code once it answers);
+ *            hint), qr (1: its row turns it on and shows its QR code once it answers) and scrobble
+ *            (0: its songs stay out of the scrobble log, addon_scrobbles);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -1357,6 +1358,19 @@ static app_t *goto_app(const char *path) {
 int addon_goes(const char *path) {
     char id[APP_ID];
     return !card_id(path, id) || goto_app(path);
+}
+/* Whether a listen of path goes in the scrobble log (navigation.c scrobble): not when it is in an
+ * app's folder and its q2app says scrobble=0, a line a Windows editor may end in \r. Compared as
+ * text: number() is 0 for a missing key or a word too.
+ * ponytail: by folder, not by who queued it: a song an app's .m3u or local row names outside its
+ * own folder still logs. Knowing the app means keeping it per queue, if one ever needs that. */
+int addon_scrobbles(const char *path) {
+    char id[APP_ID], raw[512], file[64], v[4];
+    if (!card_id(path, id)) return 1;
+    tk_snprintf(file, sizeof file, CARD "/.%s/q2app", id);
+    state_read(file, raw, sizeof raw);
+    field(raw, "scrobble", v, sizeof v);
+    return strcmp(v, "0") && strcmp(v, "0\r");
 }
 
 /* Go to Album (album) or Go to Artist on a song in a card app's folder, /mnt/mmc/.<id>/…

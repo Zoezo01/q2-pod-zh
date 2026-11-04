@@ -12589,7 +12589,7 @@ class ResumeMachine(QueueMachine):
         for n in ('fopen@GLIBC_2.2','fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0',
                   'access@GLIBC_2.0','time@GLIBC_2.0','player_playtime_and_length','player_seek_time'): self.handlers[syms[n]]='r:'+n
         self.epoch=1700000000
-        self.mock('tk_snprintf')
+        self.mock('tk_snprintf','strstr@GLIBC_2.0')
         self.mock('pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0')  # scrobble.c's log lock
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
@@ -12761,6 +12761,22 @@ m=ResumeMachine(); m.config['PERCENT']='0'; playing(m,0,200,pos=0,n=90); assert 
 playing(m,90,200,n=20); assert logged(m)==1; passed()
 m=ResumeMachine(); m.epoch=86400; playing(m,0,200,pos=0,n=110)  # clock never set: counted only
 assert counts(m) and '/mnt/mmc/.scrobbler.log' not in m.files; passed()
+# q2app scrobble=0 (addon_scrobbles): a song in that app's folder counts but logs nothing, wherever under
+# it. A missing key or file, any other value, another app's song or one outside any app still logs.
+def app_listen(q2app,path='/mnt/mmc/.lma/cache/show/01 - Song.ogg',app='.lma'):
+    m=ResumeMachine(); m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[0]+O['REC_PATH'],m.string(path))
+    if q2app is not None: m.files[f'/mnt/mmc/{app}/q2app']=q2app
+    playing(m,0,200,pos=0,n=110); assert counts(m)==[(fnv(path),1)],(q2app,path)
+    return logged(m)
+for q2app in (b'scrobble=0\n',b'name=LMA\nscrobble=0',b'name=LMA\r\nscrobble=0\r\nqr=0\r\n'):
+    assert app_listen(q2app)==-3,q2app
+assert app_listen(b'scrobble=0\n','/mnt/mmc/.lma/a.flac')==-3; passed()
+for q2app in (None,b'',b'name=LMA\nqr=0\n',b'scrobble=1\n',b'scrobble=\n',b'scrobble=no\n',b'scrobble=00\n',b'scrobble=0x\n',b'noscrobble=0\n'):
+    assert app_listen(q2app)==1,q2app
+for path in ('/mnt/mmc/Music/a.flac','/mnt/mmc/.other/a.flac','/mnt/mmc/.lma','/p/.lma/a.flac'):
+    assert app_listen(b'scrobble=0\n',path)==1,path
+assert app_listen(b'scrobble=0\n','/mnt/mmc/.Bad_Id/a.flac','.Bad_Id')==1  # not an app's id, manifest or not
+passed()
 m=ResumeMachine(); r=m.items(m.get(syms['mcl_pdeqplaylist']))[0]  # CUE tracks of one image: apart
 playing(m,0,200,pos=0,n=110); m.word(r+O['REC_CUE_START'],300); m.poll(0,200); playing(m,1,200,n=110)
 assert len(counts(m))==2 and counts(m)[1]==(fnv('/p/A'),1); passed()
