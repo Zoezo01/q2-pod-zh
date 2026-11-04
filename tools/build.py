@@ -1010,6 +1010,9 @@ FUNCTIONS = {
  'set_hscroll_label_attribute': ('void', 'void *'),
  'hscroll_label_set_only_focus': ('int', 'void *, int'),
  'hscroll_label_set_ellipses': ('int', 'void *, int'),
+ 'hscroll_label_start': ('int', 'void *'),
+ 'hscroll_label_stop': ('int', 'void *'),
+ 'widget_set_text': ('int', 'void *, const unsigned *'),
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
  'window_close': ('int', 'void *'),
  'dialog_quit': ('int', 'void *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a0a28)

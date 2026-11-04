@@ -120,8 +120,8 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                     text(a,'88%',280,5,40,20,16)
                 if case<3 or case in (10,11):
                     full=case in (1,2); width=(inc('HOME_CLASSIC_ROW') if old else HOME_LIST_W) if full else inc('HOME_SPLIT_W')
-                    labels = ['Now Playing','Library','Coverflow','Folders','Rockbox','Streaming','Settings']
-                    if case==1: labels=['Now Playing','Library - a very long music collection','Coverflow','音楽フォルダー','Streaming','Settings']
+                    labels = ['Now Playing','Library','Cover Flow','Folders','Rockbox','Streaming','Settings']
+                    if case==1: labels=['Now Playing','Library - a very long music collection','Cover Flow','音楽フォルダー','Streaming','Settings']
                     if case==2: labels=['Playback','System']
                     if not full and case!=11:
                         image(a,dark if case==10 else bright,width,30,375-width,290)

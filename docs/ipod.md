@@ -49,7 +49,16 @@ the shared widget implementation nor album grids are hooked. The folder rebind's
 140/190-pixel resize call is disabled so recycled titles retain their computed
 width. Title styles and ellipsis settings are untouched; the title scrolls only while focused
 (`hscroll_label_set_only_focus`), which no row is, so a long title keeps its ellipsis instead of
-every row's scrolling once as the page opens.
+every row's scrolling once as the page opens. The selected row's scrolls, as an iPod's does:
+`MARQUEE_HOLD_MS` after the selection settles the payload runs stock's scroller on it
+(`hscroll_label_start`) at the album marquee's pace, `MARQUEE_PASSES` (3) times with that hold after
+each and again at the start, then rests until the selection moves, as each pass repaints every
+16 ms. `only_focus` is off while it runs, since stock's timer (`0x5e897c`) stops an unfocused
+`only_focus` label on its first tick; once running, stock's paint (`0x5e9154`) drops the ellipsis. A
+paint that moves the selection, to another widget or to another row in the same pooled widget, stops
+it from a timer. A title that fits costs one timer per selection. ponytail: the first
+`hscroll_label` of the row is taken as its title, and a dark screen, a covered page or a touch's
+hidden selection stops it only at the end of its pass, not at once.
 
 ## Flat rows and selection
 
@@ -89,7 +98,7 @@ Selection is a small white dot and bright text; other destinations use `#AAAAAA`
 selection rectangle or chevron. **Theme: Classic** styles the menu as before 1.0.1 instead
 (below).
 
-The seven destinations remain Now Playing, Library, Coverflow, Folder, Rockbox, Streaming and
+The seven destinations remain Now Playing, Library, Cover Flow, Folder, Rockbox, Streaming and
 Settings. Rockbox is visible only when its binary is on the card, unless Display → Appearance's **Shortcut**
 (`IPOD/SHORTCUT` 0-6) turns that row into Artists, Albums, Favorites, Rated Albums, Shuffle or Games (`home_shortcut_open`; Rated Albums is Ratings → Albums, `rated_albums`; Shuffle is the Library's Shuffle page, `shuffle_menu`); with no key it is Rockbox when the card has it, else Favorites. Centre cycles Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games. Settings opens Playback and
 System; Return restores the menu's previous selection, and a short Return on the main menu selects
@@ -118,14 +127,14 @@ start at `HOME_CLASSIC_TEXT_X` (33) and end `HOME_CLASSIC_LABEL_END` (33) before
 right in Split and 10 in Full, staying clear of the rounded glass, and rides the accent's selection bar alone.
 
 The art is the player's cover once `g_lastcover_url` matches the current queue path, else the
-current album's Coverflow thumbnail, else the placeholder; the previous track's player file is
+current album's Cover Flow thumbnail, else the placeholder; the previous track's player file is
 never used as a fallback. It reloads only when its key (the queue path, usable player-cover type
 and parsed album tags) changes, and not at all in Full. The reload runs inside a paint, and AWTK
 drops what a paint invalidates when the frame ends, so a 0 ms timer then repaints the whole screen;
 otherwise the new art and its fit would reach only the regions repainted later. `g_playcover_finishflag` remains
 stock-owned. Now Playing and Spotify's page keep their black background behind the art.
 
-**Carousel** replaces the lists and the art with stock's home carousel. It has eight cards: Now Playing, Library, Coverflow, Folder, the Rockbox shortcut, Streaming, Playback Settings and System Settings. The Rockbox shortcut card is the Shortcut row: it opens what the Shortcut setting chooses, and stays when that row is hidden (no Rockbox on the card), where tapping it shows a message. The cards keep their own colours, as on the stock Home, whatever the Theme, accent or Light Mode. The wheel moves through the carousel ([internals.md](internals.md#home-carousel)), Centre opens the card and touch drags and taps as in stock; Return keeps stock's behaviour there. Leaving Carousel for Split or Full shows the main list.
+**Carousel** replaces the lists and the art with stock's home carousel. It has eight cards: Now Playing, Library, Cover Flow, Folder, the Rockbox shortcut, Streaming, Playback Settings and System Settings. The Rockbox shortcut card is the Shortcut row: it opens what the Shortcut setting chooses, and stays when that row is hidden (no Rockbox on the card), where tapping it shows a message. The cards keep their own colours, as on the stock Home, whatever the Theme, accent or Light Mode. The wheel moves through the carousel ([internals.md](internals.md#home-carousel)), Centre opens the card and touch drags and taps as in stock; Return keeps stock's behaviour there. Leaving Carousel for Split or Full shows the main list.
 
 The player writes every track's cover to the same `/tmp` file, so before Split loads it `coverflow_home_art` drops AWTK's cached bitmap of that name, as the full-screen art does; otherwise the image manager hands back the last track's cover.
 
@@ -180,6 +189,8 @@ the bar and writes the time into `label_clock` (see
 [internals.md](internals.md#status-bar-ipod)); the widest text, `12:59 PM`, is 69 pixels in the
 stock font at 16 pixels.
 
+**Time in Title.** Display → Appearance's **Time in Title** switch (`IPOD TIMETITLE`, on unless chosen; Classic's preset turns it off, Minimal's on) is the iPod's own: off, `label_clock` names the page in front instead of the time, as an iPod's title bar does (`bar_title`): "Now Playing" or "Cover Flow", else stock's title in the page's hidden navbar (`scrlabel_title`, or a settings page's unnamed first child). Home, a page showing its navbar and a page with no title keep the clock, and a pop-up or keyboard leaves the bar as it is. Classic's title is bold (`bold_label`), and one past the clock's width ends in an ellipsis. ponytail: the payload's other pages (Games, Photos, Books) have no navbar, so the bar stays on the clock there, most with a heading on the page; naming them means reading each page's caption.
+
 **Codec.** The Bluetooth images are 42-pixel canvases with their ink at the right: the glyph takes
 10 pixels, while stock's codec badges take up to 40 (aptX HD). A new badge shows for a second
 (`CODEC_MS`), then fades out and the white Bluetooth glyph (`bar_btcon`) fades in at the same place,
@@ -201,7 +212,7 @@ The playback, Bluetooth and Wi-Fi glyphs share smooth edges, rounded ends and a 
 
 In Icon and Icon + Percent, charging fills the icon solid green (`BATT_CHARGE_RGB`); low battery always uses
 `BATT_LOW_RGB` (`#FF1448`) under every accent. Saved Battery values keep their existing meanings.
-The bar is black in Minimal and charcoal in Classic. Every mode fits with ordinary Bluetooth and Wi-Fi, with at least
+The bar is black in both themes, or Light Mode's paper in Minimal and flat grey in Classic. In Classic, Icon and Icon + Percent's charge is an iPod's green (`BATT_CHARGE_RGB`) under the outline at every level, not only while charging. Every mode fits with ordinary Bluetooth and Wi-Fi, with at least
 4 pixels (`CLOCK_GAP`) before the widest clock text (`BATT_ROOM`, 94 pixels from the margin).
 Wide codec badges temporarily show the icon alone until they fade.
 
@@ -221,7 +232,7 @@ these widgets. Left out: `wifitransport_page` (its image starts above the
 navbar's bottom edge), `fwdownload_page` (no navbar), the PEQ page (it replaces
 all children) and every Tidal page, whose navbars hold the search and sort
 buttons. A page with a visible navbar keeps its own title. The artist page shows its stock
-navbar (multi-select, the Album Artist switch) again at run time when Artist Albums is Grid, its
+navbar (multi-select, the Album Artist switch) again at run time when Artist View is Grid, its
 tabs 50 pixels lower ([internals.md](internals.md#artist-albums-in-coverflow)).
 
 ## Settings
@@ -323,7 +334,7 @@ glyphs; off and disabled discs contain no red and keep their stock look, and alp
 The brightness suns (`drop_lighleft`, `drop_lightright`) sit on black, not a disc, and keep the
 accent's red tone (`DROPDOWN_SUN`).
 
-## Coverflow
+## Cover Flow
 
 The covers are drawn with depth ([internals](internals.md#coverflow-depth)): the
 selected cover at its native 160 pixels, two angled neighbours a side and a faint reflection, all
@@ -352,7 +363,7 @@ under the glass (screen coordinates: the bar at y 0 to 30, windows at 30 to 320,
 and confirm pop-ups at 0 to 320): a label's font-high band, an image drawn centred at its size, a
 slider's bar, else the widget. Backgrounds, tap targets and list rows, which scroll, are not
 checked there; `test/patch.py` checks the settings rows in the first and last visible slots,
-Coverflow's labels and lowest track row, and the status bar clock against every combination of
+Cover Flow's labels and lowest track row, and the status bar clock against every combination of
 icons. Raising `CORNER_R` until the clock drops
 under `CLOCK_MIN` fails the build.
 
@@ -389,7 +400,7 @@ pushing the page below it out to the left, and Return reverses that; the status 
 of either page and stays still.
 
 Left immediate: Home (opened once, never closed), Now Playing (its open starts the player, which
-can hold the UI thread), Coverflow (its open loads the albums and covers), the dialogs and quick
+can hold the UI thread), Cover Flow (its open loads the albums and covers), the dialogs and quick
 settings, the queue, More and jump pages over Now Playing, and the pages that keep their stock
 assets: Tidal and the other online pages, Wi-Fi transfer and the firmware download. Moving between
 folders reloads the folder page in place, so only opening and leaving that page slides. Stock
@@ -460,7 +471,9 @@ pixels below it, so it has 14 pixels to "3 of 12"'s text above and to the page d
 moves the pages: they are anchored on their own row, at the slide_view's centre.
 
 The art's corners are rounded at 12 pixels (`NP_ART_RADIUS`), the radius of stock's own
-placeholder cover at this size, so real art and the placeholder match. The payload paints them
+placeholder cover at this size, so real art and the placeholder match; Classic under **Rounded
+Corners** off has an iPod's square art instead (`ipod_square_art`: Now Playing, the full-screen art,
+Cover Flow and list thumbnails; stock's placeholder and Home: Carousel's cards keep their corners). The payload paints them
 over the scaled image in the page's black, with an anti-aliased
 edge pixel, so opposite corners share the same pixel grid. The title is 22 pixels
 white (`NP_TITLE_PX`) over the 18-pixel (`NP_META_PX`) artist, `#CCCCCC` (`NP_ARTIST_RGB`), and
@@ -501,7 +514,7 @@ The bar is a four-pixel plain-colour line inside a 44-pixel seek target: a `#1C1
 8-pixel capsule (`NP_BAR_CLASSIC`; `bar_size` and `round_radius` set on the slider at runtime,
 `np_theme`) filled in the accent's light tone (Graphite `#6E6E6E`, 3.3:1; see [Display
 settings](#display-settings)), and shows stock's play/pause glyph on the art again. Spotify's bar follows the same theme.
-The asset holds Graphite's; `ringnav_playing` sets the current accent's. Tap or drag anywhere in the bar's taller target to seek; the page dots sit just above it so page swipes keep a separate target. The elapsed time
+The asset holds Graphite's; `ringnav_playing` sets the current accent's. The volume shown over the page draws the same bar in the same fill. Tap or drag anywhere in the bar's taller target to seek; the page dots sit just above it so page swipes keep a separate target. The elapsed time
 is stock's label; the remaining time replaces stock's total. Sizes are `NP_*` constants in
 `tools/ipod.py`; see [internals.md](internals.md#now-playing-ipod).
 
@@ -636,14 +649,14 @@ builds three rows with `0x4c19bc`: a `list_item_create(view, 0, 0, 0, 0)` in `s_
 `s_scrlabel_white24l` `hscroll_label` at (72, 0, 210, 70) and `list_into` at x 282. The rows
 show no value; each opens a sub-page (iPod's [settings rows](#settings) then lay them out 68
 pixels high). The build then adds a "Smart Awake" switch and Night Shift, and, the same way with stock's `list_into` chevron, **Appearance**
-(`system_display`) and **Coverflow** (Play settings' cover mode icon, `playset_covermode`), restacked as Brightness, Screen Off Time, Smart Awake, Night Shift, Lock Screen, Appearance, Coverflow. System settings' **Controls** row (Play settings' folder jump icon, `playset_folderjump`) is the third sub-page. Each opens stock's
+(`system_display`) and **Cover Flow** (Play settings' cover mode icon, `playset_covermode`), restacked as Brightness, Screen Off Time, Smart Awake, Night Shift, Lock Screen, Appearance, Cover Flow. System settings' **Controls** row (Play settings' folder jump icon, `playset_folderjump`) is the third sub-page. Each opens stock's
 Display page again (`display_open`, `display_sub` naming the sub-page while its init runs), which
 drops the stock rows, takes the sub-page's title and builds only its own rows:
 
 - Appearance: "Theme: Minimal", "Light Mode: Off" ([Light Mode](#light-mode)), "Accent: Graphite"
   and a "Rounded Corners" switch (stock's `switch_on`/`switch_off`, via `list_toggle`) with the System settings Display icon (`system_display`), "Home: Split" and "Shortcut: Rockbox" (`playset_covermode`) and "Battery: Icon" (Icon,
   Percent, Icon + Percent, Percent Inside; see [Status bar and clock](#status-bar-and-clock)) with
-  the power manager icon (`system_powermanager`), then a "Centred Now Playing" switch (`IPOD
+  the power manager icon (`system_powermanager`), then a "Time in Title" switch ([Status bar and clock](#status-bar-and-clock)) and a "Centred Now Playing" switch (`IPOD
 NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window's asset load
   (`ui_loader_load_widget_with_parent`), builds the next Now Playing from stock's own page
   (`tools/ipod.py` `PLAYING_STOCK`, `playing_page_stock.bin`, still named `playing_page`), which
@@ -656,7 +669,7 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   down to the page dots, wrapped again at that width (`np_full`, `lyrics_fit`) and back on the playing line; a tap or
   Return brings the column back, as do a swipe, another page and leaving the page; a window over the page leaves it
   full screen
-  ([Word-timed lyrics](internals.md#word-timed-lyrics)). Choosing a Theme loads its preset (`theme_preset`): Classic sets Light Mode on, Cobalt (`ACCENT` 4), square corners and Split, Minimal Light Mode off, Graphite (`MINIMAL_ACCENT` 0), rounded corners and Split; Light Mode's Auto, Battery and Centred Now Playing are kept, and only changed values are saved.
+  ([Word-timed lyrics](internals.md#word-timed-lyrics)). Choosing a Theme loads its preset (`theme_preset`): Classic sets Light Mode on, Cobalt (`ACCENT` 4), square corners, Split and Time in Title off, Minimal Light Mode off, Graphite (`MINIMAL_ACCENT` 0), rounded corners, Split and Time in Title on; Light Mode's Auto, Battery and Centred Now Playing are kept, and only changed values are saved.
 - Display's main page: a "Smart Awake" switch (`IPOD KEEPLIT`, off;
   `keep_lit_poll`): with Now Playing lit in front on its lyrics, info or visualizer page, or its
   full-screen art (`bigcover_page`) in front, and a song playing, it calls
@@ -666,10 +679,10 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   or not, with no idle quit ([Card games](internals.md#card-apps)). Enlarged Album Art never opens off the art page (#57): while Now Playing's slide view is on
   another page, each `ringnav_sleep` pass holds stock's countdown (`BC_IDLE`) at its full 10 s.
   Before, the window opened and closed a pass later, flashing over the lyrics every 10 s (#153).
-- Coverflow: "Artist Albums: Coverflow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
-  Coverflow ends with an All albums card, see
-  [internals.md](internals.md#artist-albums-in-coverflow)), "Coverflow Sort: Album" and "Refresh
-  Coverflow" (`system_update`).
+- Cover Flow: "Artist View: Cover Flow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
+  Cover Flow ends with an All albums card, see
+  [internals.md](internals.md#artist-albums-in-coverflow)), "Cover Flow Sort: Album" and "Refresh
+  Cover Flow" (`system_update`).
 - Controls: Wheel Sensitivity, which opens its slider page; "Wheel QS"; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
   centre press starts the scrub and a double press turns the screen off (Scrub, above); "Key Tone"; "Click With Headphones" (`IPOD KEYTONEHP`), shown while Key Tone is on ([Key Tone](internals.md#key-tone)); Buttons Lock, which opens stock's page; "Wake: Single Press"; and "Volume Guard".

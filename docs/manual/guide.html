@@ -15,7 +15,7 @@
 @page toc { margin-left: 1.1in; @bottom-left { content: "Contents"; padding-left: 0.45in; } }
 @page ch1  { @bottom-left { content: "Chapter 1   Getting Started"; } }
 @page ch2  { @bottom-left { content: "Chapter 2   Library and Music"; } }
-@page ch3  { @bottom-left { content: "Chapter 3   Now Playing and Coverflow"; } }
+@page ch3  { @bottom-left { content: "Chapter 3   Now Playing and Cover Flow"; } }
 @page ch4  { @bottom-left { content: "Chapter 4   EQ"; } }
 @page ch5  { @bottom-left { content: "Chapter 5   Streaming"; } }
 @page ch6  { @bottom-left { content: "Chapter 6   Podcasts, Audiobooks, Photos, Books and Videos"; } }
@@ -169,10 +169,10 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     <li><span class="n">{{p:shuffle}}</span><a href="#shuffle">Shuffle, repeat and grouping</a></li>
     <li><span class="n">{{p:scrobble}}</span><a href="#scrobble">Scrobbling to Last.fm and ListenBrainz</a></li>
 
-    <li class="chap"><span class="n">{{p:c3}}</span><a href="#c3">Chapter 3: Now Playing and Coverflow</a></li>
+    <li class="chap"><span class="n">{{p:c3}}</span><a href="#c3">Chapter 3: Now Playing and Cover Flow</a></li>
     <li><span class="n">{{p:np}}</span><a href="#np">The Now Playing screen</a></li>
     <li><span class="n">{{p:speed}}</span><a href="#speed">Playback speed</a></li>
-    <li><span class="n">{{p:cf}}</span><a href="#cf">Browsing with Coverflow</a></li>
+    <li><span class="n">{{p:cf}}</span><a href="#cf">Browsing with Cover Flow</a></li>
 
     <li class="chap"><span class="n">{{p:c4}}</span><a href="#c4">Chapter 4: EQ</a></li>
     <li><span class="n">{{p:eq3}}</span><a href="#eq3">Simple</a></li>
@@ -303,12 +303,12 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
       <tr><td>Turn the screen off</td><td>Double-press the Centre button on any page (videos excepted). On Now Playing, a single press does it, unless <b>Single Press Scrub</b> is on. With the screen off, a quick double press only wakes it.</td></tr>
       <tr><td>Jump to Now Playing</td><td>Hold Return from anywhere. Return, or another hold, goes back where you were. With <b>Hold Return: Home</b> a hold goes Home instead, from anywhere but Home.</td></tr>
       <tr><td>See options for a song</td><td>Hold Play/Pause on a song or the local Now Playing track: rate (on Now Playing), queue, favourite, add to a playlist, or go to its album, artist or folder.</td></tr>
-      <tr><td>See options for an album, artist, genre or folder</td><td>Hold Play/Pause on it: queue, shuffle or add to a playlist. An album in Coverflow, Library Albums or an artist’s albums can also be favourited and rated; a Coverflow album can go to its artist.</td></tr>
+      <tr><td>See options for an album, artist, genre or folder</td><td>Hold Play/Pause on it: queue, shuffle or add to a playlist. An album in Cover Flow, Library Albums or an artist’s albums can also be favourited and rated; a Cover Flow album can go to its artist.</td></tr>
       <tr><td>See options for a playlist</td><td>Hold Play/Pause on it in Library → Playlists: queue or shuffle its songs, or <b>More…</b> for its More menu.</td></tr>
       <tr><td>Open the EQ</td><td>In quick settings, hold <b>Playback</b>.</td></tr>
       <tr><td>Skip to a point in a song</td><td>On Now Playing, double-press Centre (press once with <b>Single Press Scrub</b> on), then turn: 5 s per tick. Double-press, Return, touch or wait 3 s to jump.</td></tr>
       <tr><td>Search your songs</td><td>At the top of Library (Local Songs), pull down until “Release to search” appears.</td></tr>
-      <tr><td>Move quickly through Coverflow</td><td>Turn fast: Album and Artist sorts jump one populated initial per tick. Sort and Refresh remain individual stops.</td></tr>
+      <tr><td>Move quickly through Cover Flow</td><td>Turn fast: Album and Artist sorts jump one populated initial per tick. Sort and Refresh remain individual stops.</td></tr>
       <tr><td>Open quick settings</td><td>Pull down from the top edge of the screen. In the pull-down, the wheel sets the brightness. Tap Wi-Fi or Bluetooth to toggle it; hold its icon to open its settings.</td></tr>
       <tr><td>Answer a pop-up</td><td>Turn the wheel to move between OK and Cancel.</td></tr>
     </tbody>
@@ -323,15 +323,16 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </div>
   <div class="sec">
   <h2 id="ui">Finding your way around</h2>
-  <img class="shot" src="../../assets/screenshots/home-split.png" alt="Home in the Split layout: Now Playing, Library, Coverflow, Folder, Favorites, Streaming and Settings on the left, the playing album’s cover on the right">
+  <img class="shot" src="../../assets/screenshots/home-split.png" alt="Home in the Split layout: Now Playing, Library, Cover Flow, Folder, Favorites, Streaming and Settings on the left, the playing album’s cover on the right">
   <ul>
-    <li><b>Home:</b> a list (Now Playing, Library, Coverflow, Folder, a shortcut, Streaming, Settings) beside the playing track’s cover. The shortcut is Rockbox when it’s on the card, otherwise Favorites; <b>System settings → Display → Appearance → Shortcut</b> changes it. The list wraps at either end. A short Return on it selects Now Playing, and another opens it without changing playback; Return there goes back to Home.</li>
-    <li><b>Home layouts:</b> <b>Home: Full</b> drops the cover and widens the list. <b>Home: Carousel</b> shows Shanling’s home carousel instead: eight cards (Now Playing, Library, Coverflow, Folder, the shortcut, Streaming, Playback and System settings) in Shanling’s own colours. The wheel moves through the cards, Centre opens one, and Return works as it does on Shanling’s own Home.</li>
+    <li><b>Home:</b> a list (Now Playing, Library, Cover Flow, Folder, a shortcut, Streaming, Settings) beside the playing track’s cover. The shortcut is Rockbox when it’s on the card, otherwise Favorites; <b>System settings → Display → Appearance → Shortcut</b> changes it. The list wraps at either end. A short Return on it selects Now Playing, and another opens it without changing playback; Return there goes back to Home.</li>
+    <li><b>Home layouts:</b> <b>Home: Full</b> drops the cover and widens the list. <b>Home: Carousel</b> shows Shanling’s home carousel instead: eight cards (Now Playing, Library, Cover Flow, Folder, the shortcut, Streaming, Playback and System settings) in Shanling’s own colours. The wheel moves through the cards, Centre opens one, and Return works as it does on Shanling’s own Home.</li>
     <li><b>Settings:</b> slides <b>Playback</b> and <b>System</b> into the list’s place, as an iPod’s submenu, with the cover still beside it. This list wraps too; Return goes back.</li>
     <li><b>Folder:</b> opens the SD card directly when no OTG drive is connected. Return at the SD root goes back to Home; inside a folder it goes up one level. With OTG connected when Folder opens, choose SD or OTG first. A folder set in <b>Playback → Library &amp; Folders → Folder Root</b> opens directly either way; Return climbs from it to the SD root, then to Home, or to the SD/OTG choice with OTG connected.</li>
     <li><b>Lists:</b> four rows per screen with a full-width accent bar; <b>&gt;</b> marks rows that open another list.</li>
     <li><b>Status bar:</b> play state, EQ, time, Bluetooth, Wi-Fi and battery. The Bluetooth codec (AAC, LDAC…) shows briefly on connect.</li>
     <li><b>Page slides:</b> pages slide in from the right and back out on Return.</li>
+    <li><b>Long titles:</b> pause on a row and a title too long to fit scrolls so you can read it.</li>
     <li><b>Fast-scroll letter:</b> spinning a long list shows the letter it sorts under (C for The Cure).</li>
     <li><b>Artists:</b> open on Albums, with Songs one tap away.</li>
     <li><b>Starting up:</b> the Q2 starts on Home. <b>Memory Playback → Location</b> restores your queue, paused; <b>Track</b> restarts the song, unless it resumes. <b>In-Vehicle Mode</b> starts playing.</li>
@@ -341,7 +342,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   <h2 id="features">What Q2 Pod adds</h2>
   <p>With Q2 Pod you can:</p>
   <ul>
-    <li>Browse with an iPod-style Home, menus, Now Playing, Coverflow, four visualizers and games, in your choice of theme, accent colour, Home layout and battery display, with Light Mode and Night Shift for day and night</li>
+    <li>Browse with an iPod-style Home, menus, Now Playing, Cover Flow, four visualizers and games, in your choice of theme, accent colour, Home layout and battery display, with Light Mode and Night Shift for day and night</li>
     <li>Scroll with a wheel that follows your finger, in menus that remember where you were</li>
     <li>Shape the sound with three simple tone sliders, or up to 30 EQ bands with a live curve and AutoEQ and Equalizer APO presets</li>
     <li>Stream Spotify (Premium), AirPlay from your iPhone, and Internet Radio, and install apps and updates over Wi-Fi</li>
@@ -371,15 +372,15 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </ol>
   <p>These folders at the card’s root each add their own <b>Library</b> entry: <code>Podcasts/</code>, <code>Audiobooks/</code>, <code>Photos/</code>, <code>Books/</code> and <code>Videos/</code>; <code>EQ/</code> holds EQ presets to import. Other folder names, such as <code>Images/</code>, aren’t picked up. See <a href="#card">What goes on the microSD card</a> for supported formats.</p>
   <p>Update Local Music adds up to 65,000 songs (stock stopped at 20,000), so with a larger library run it again after updating.</p>
-  <p><b>Hiding a folder:</b> to keep a folder out of <b>Songs</b>, <b>Albums</b>, <b>Artists</b>, Coverflow and library shuffle, put an empty file named <code>database.ignore</code> in it and run <b>Update Local Music</b> again. Its songs still play from Folder view and from playlists, so a folder of singles or needledrops stays reachable without filling your library. An empty <code>database.unignore</code> in a subfolder lets that subfolder back in. Name the markers <code>.database.ignore</code> and <code>.database.unignore</code>, with a leading dot, if other players shouldn’t list them. Remove the marker and update the library to show the folder again.</p>
+  <p><b>Hiding a folder:</b> to keep a folder out of <b>Songs</b>, <b>Albums</b>, <b>Artists</b>, Cover Flow and library shuffle, put an empty file named <code>database.ignore</code> in it and run <b>Update Local Music</b> again. Its songs still play from Folder view and from playlists, so a folder of singles or needledrops stays reachable without filling your library. An empty <code>database.unignore</code> in a subfolder lets that subfolder back in. Name the markers <code>.database.ignore</code> and <code>.database.unignore</code>, with a leading dot, if other players shouldn’t list them. Remove the marker and update the library to show the folder again.</p>
   <p>Settings, play counts, ratings, resume points and book pages are stored on the Q2 itself, not the card, so they stay put when you swap cards.</p>
 
   </div>
   <div class="sec">
   <h2 id="tagging">Tagging your music</h2>
-  <p>Q2 Pod builds the library from your files’ tags, so a few tag habits decide how albums and songs show up. Fix tags on a computer (Mp3tag, MusicBrainz Picard or foobar2000), then run <b>Update Local Music</b> and press <b>System settings → Display → Coverflow → Refresh Coverflow</b>.</p>
+  <p>Q2 Pod builds the library from your files’ tags, so a few tag habits decide how albums and songs show up. Fix tags on a computer (Mp3tag, MusicBrainz Picard or foobar2000), then run <b>Update Local Music</b> and press <b>System settings → Display → Cover Flow → Refresh Cover Flow</b>.</p>
   <ul>
-    <li><b>An album is its name plus its Album Artist.</b> Coverflow, <b>Library → Albums</b>, Album groups, Crossfade and album ratings all go by these two tags. Give every track on an album the same Album Artist. A track with a different one, for example “Artist; Guest” where the rest say “Artist”, becomes an album of its own. So does a track that has no Album Artist when the others do. Put guests in the track’s <b>Artist</b> or <b>Title</b> instead, and use one Album Artist such as “Various Artists” for a compilation.</li>
+    <li><b>An album is its name plus its Album Artist.</b> Cover Flow, <b>Library → Albums</b>, Album groups, Crossfade and album ratings all go by these two tags. Give every track on an album the same Album Artist. A track with a different one, for example “Artist; Guest” where the rest say “Artist”, becomes an album of its own. So does a track that has no Album Artist when the others do. Put guests in the track’s <b>Artist</b> or <b>Title</b> instead, and use one Album Artist such as “Various Artists” for a compilation.</li>
     <li><b>No Album Artist on any track:</b> the album’s folder tells it apart instead, and disc folders (<code>CD1</code>, <code>Disc 2</code>) count as one album. Two albums with the same name in one folder then become one album, so give each album its own folder or an Album Artist.</li>
     <li><b>Artists list versus albums:</b> <b>Playback → Library &amp; Folders → Artists</b> picks what the <b>Artists</b> list groups by, <b>Album Artist</b> (the default) or <b>Artist</b>. That only decides which artist rows you see. Each album is still identified by its name and Album Artist, so a choice in the Artists list never merges or splits albums.</li>
     <li><b>Keep Genre short.</b> A very long Genre tag, such as dozens of genres joined with “//”, overflows into the title: the song shows the end of its genre as its name in song lists and on Now Playing. Trim the Genre to a few entries.</li>
@@ -388,7 +389,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </div>
   <div class="sec">
   <h2 id="card">What goes on the microSD card</h2>
-  <p>Media folders go at the card’s root, with any capitalisation; each adds its own <b>Library</b> row when present. Q2 Pod’s own caches, <code>.coverflow/</code>, <code>.photos/</code> and <code>.books/</code>, can be deleted to free space: Q2 Pod rebuilds them as needed, and Coverflow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: they hold your saved Spotify login and the songs you downloaded for offline play. Deleting them signs you out or removes those offline songs, and the Spotify and Tidal caches are sized in Streaming → Configuration instead.</p>
+  <p>Media folders go at the card’s root, with any capitalisation; each adds its own <b>Library</b> row when present. Q2 Pod’s own caches, <code>.coverflow/</code>, <code>.photos/</code> and <code>.books/</code>, can be deleted to free space: Q2 Pod rebuilds them as needed, and Cover Flow and Photos need 16 MB free. Don’t delete <code>.spotify/cache/</code> or <code>.tidal/</code>: they hold your saved Spotify login and the songs you downloaded for offline play. Deleting them signs you out or removes those offline songs, and the Spotify and Tidal caches are sized in Streaming → Configuration instead.</p>
   <table class="paths">
     <thead><tr><th>Path</th><th>What it is</th><th>Made by</th></tr></thead>
     <tbody>
@@ -404,7 +405,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
       <tr><td><code>.scrobble.ini</code></td><td>Scrobble accounts; adds <b>Upload Scrobbles</b></td><td>You</td></tr>
       <tr><td><code>.scrobbler.log</code></td><td>Every listen, Rockbox format; for Upload Scrobbles or any uploader</td><td>Q2 Pod</td></tr>
       <tr><td><code>.scrobbler.log.sent</code></td><td>Listens already uploaded</td><td>Q2 Pod</td></tr>
-      <tr><td><code>.coverflow/</code></td><td>Coverflow artwork cache</td><td>Q2 Pod</td></tr>
+      <tr><td><code>.coverflow/</code></td><td>Cover Flow artwork cache</td><td>Q2 Pod</td></tr>
       <tr><td><code>.photos/</code></td><td>Photo thumbnails and screen-size copies</td><td>Q2 Pod</td></tr>
       <tr><td><code>.books/</code></td><td>EPUBs converted to text</td><td>Q2 Pod</td></tr>
       <tr><td><code>.sldp/</code></td><td>Stock’s own cover cache</td><td>Stock</td></tr>
@@ -426,8 +427,8 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </ul>
   <p>Albums have 0 to 5 hearts of their own, separate from their songs’.</p>
   <ul>
-    <li><b>Rate an album:</b> in Coverflow (also an artist’s), <b>Library → Album</b> or an artist’s albums, hold <b>Play/Pause</b> on the album. <b>Add to Favourites</b> gives it five hearts, <b>Remove from Favourites</b> takes them away, and <b>Rate Album</b> opens the same picker. The row shows the album’s hearts.</li>
-    <li><b>Library → Ratings → Albums</b> shows the rated albums in Coverflow, most hearts first. Its <b>Sort</b> card cycles <b>Rating</b>, <b>Album</b>, <b>Artist</b>, <b>Year</b> (as <b>Year Order</b>) and <b>Most Played</b>, and is remembered. Return goes back to Ratings.</li>
+    <li><b>Rate an album:</b> in Cover Flow (also an artist’s), <b>Library → Album</b> or an artist’s albums, hold <b>Play/Pause</b> on the album. <b>Add to Favourites</b> gives it five hearts, <b>Remove from Favourites</b> takes them away, and <b>Rate Album</b> opens the same picker. The row shows the album’s hearts.</li>
+    <li><b>Library → Ratings → Albums</b> shows the rated albums in Cover Flow, most hearts first. Its <b>Sort</b> card cycles <b>Rating</b>, <b>Album</b>, <b>Artist</b>, <b>Year</b> (as <b>Year Order</b>) and <b>Most Played</b>, and is remembered. Return goes back to Ratings.</li>
     <li>An album is its name with its album artist, or its folder when it has none (disc folders count as one), so a rating survives Update Local Music, but retagging or moving the album starts it unrated.</li>
   </ul>
 
@@ -448,7 +449,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </table>
   <p>Changes apply the next time the playlist loads; the queue that’s playing keeps its order. Only local playlists can be edited.</p>
   <p>Playlist import, a stock feature, reads M3U files only from the <code>_explaylist_data</code> folder at the card’s root, the folder playlist export creates. Export a playlist once to create it, or make the folder yourself, then put your <code>.m3u</code> files in it and import.</p>
-  <p><b>Library → Era</b> (after Genre) lists each decade that has dated albums, oldest first, with how many albums it holds. A decade opens <b>Play All</b> (its albums by year, each in track order), <b>Shuffle</b> (all their songs, as Shuffle Songs) and its albums, each shown with its artist and year; press Centre on one to see its tracks in Coverflow. An album’s year is its latest track’s, from the <b>Year</b> tag; untagged years leave an album out.</p>
+  <p><b>Library → Era</b> (after Genre) lists each decade that has dated albums, oldest first, with how many albums it holds. A decade opens <b>Play All</b> (its albums by year, each in track order), <b>Shuffle</b> (all their songs, as Shuffle Songs) and its albums, each shown with its artist and year; press Centre on one to see its tracks in Cover Flow. An album’s year is its latest track’s, from the <b>Year</b> tag; untagged years leave an album out.</p>
   <p><b>Library → Long Songs</b> (after Hi-Res) lists the songs over 10 minutes, longest first, with their length. The first open measures every song once (“Measuring songs… n/N”); later opens measure only new ones. <b>Cancel</b> keeps what was measured.</p>
 
   </div>
@@ -467,7 +468,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </table>
   <p><b>Play Single Song</b>, <b>Play Category</b> and <b>Play All Categories</b> stop after that song, group or queue. <b>Repeat Song</b>, <b>Repeat Category</b> and <b>Repeat All Categories</b> loop that scope, with a fresh shuffle cycle. Each shuffle cycle visits every song once. Next skips a single-song stop or repeat; category modes stay in the current category. Previous follows what you actually played, and Next after Previous returns to the song you went back from.</p>
   <ul>
-    <li><b>Album groups</b> tell albums apart as Coverflow does: by album name (ignoring case), then album artist. Songs without an album artist, and untagged songs, use their parent folder. Albums play in disc and track order.</li>
+    <li><b>Album groups</b> tell albums apart as Cover Flow does: by album name (ignoring case), then album artist. Songs without an album artist, and untagged songs, use their parent folder. Albums play in disc and track order.</li>
     <li><b>Folder groups</b> use the folder a song is in and play in path order.</li>
     <li><b>Library → Shuffle → Shuffle Albums / Shuffle Folders</b> loads all scanned songs except audiobooks and shuffles those groups, which can take a while on a large library. Shuffle in an album, artist, genre or folder’s hold menu still shuffles every song it collects. <b>Shuffle Songs</b> and those Shuffles play in one shuffled order with Repeat All, so <b>View Queue</b> shows what comes next. Shuffle Songs is one-shot: the next album or song you pick plays in the play mode you had before, unless you chose another mode meanwhile.</li>
     <li><b>Next Album / Previous Album</b> in the hold menu skips the rest of the group, or returns to the start of the previously played group. Folder grouping shows <b>Next Folder / Previous Folder</b>.</li>
@@ -524,7 +525,7 @@ AUTO=1</pre>
 
 <!-- ============ 3 NOW PLAYING ============ -->
 <section class="chapter" style="page: ch3">
-  <div class="opener"><h1 id="c3">Now Playing and Coverflow</h1><div class="num">3</div></div>
+  <div class="opener"><h1 id="c3">Now Playing and Cover Flow</h1><div class="num">3</div></div>
   <p class="lead">See what’s playing, rate it, scrub through it and change its speed, or flip through your albums by cover.</p>
 
   <div class="sec">
@@ -553,16 +554,16 @@ AUTO=1</pre>
 
   </div>
   <div class="sec">
-  <h2 id="cf"><img class="hicon" src="../../assets/icons/menu_coverflow.png" alt="">Browsing with Coverflow</h2>
+  <h2 id="cf"><img class="hicon" src="../../assets/icons/menu_coverflow.png" alt="">Browsing with Cover Flow</h2>
   <ul>
     <li>Run <b>Update Local Music</b> first.</li>
     <li><b>Browse</b> with the wheel, or swipe the covers: they follow your finger and glide on after a flick. Tap a side cover to bring it to the middle, tap the middle one to open it, and touch the covers while they move to stop them.</li>
-    <li><b>First open</b> prepares artwork once; <b>Cancel</b> keeps progress. Later opens add only new albums; <b>System settings → Display → Coverflow → Refresh Coverflow</b> rebuilds everything at the next open, and redoes the album covers in Library.</li>
-    <li><b>System settings → Display → Coverflow → Coverflow Sort</b> switches between <b>Album</b>, <b>Artist</b> (then year), <b>Year</b> (newest or oldest first, as <b>Year Order</b>), <b>Recently Added</b>, <b>Most Played</b> and <b>Random</b>. The choice is kept and applies the next time Coverflow opens; Random reshuffles each time you pick it.</li>
-    <li><b>An artist’s albums as Coverflow:</b> <b>System settings → Display → Coverflow → Artist Albums: Coverflow</b> switches <b>Library → Artists → artist → Albums</b> from the default Grid to Coverflow; <b>List</b> shows the album names alone. It contains only that artist’s albums, also when Artists is set to Album Artist. With two or more, the last card, <b>All albums</b>, plays all of them: the albums in the order shown, each in disc and track order, from the first song. Return goes straight back to the Artists list.</li>
-    <li><b>Go to Album</b> in the hold menu of a song you played from Coverflow (or with Artist Albums set to Coverflow) opens that album’s tracks in Coverflow. Return goes back to where you were.</li>
+    <li><b>First open</b> prepares artwork once; <b>Cancel</b> keeps progress. Later opens add only new albums; <b>System settings → Display → Cover Flow → Refresh Cover Flow</b> rebuilds everything at the next open, and redoes the album covers in Library.</li>
+    <li><b>System settings → Display → Cover Flow → Cover Flow Sort</b> switches between <b>Album</b>, <b>Artist</b> (then year), <b>Year</b> (newest or oldest first, as <b>Year Order</b>), <b>Recently Added</b>, <b>Most Played</b> and <b>Random</b>. The choice is kept and applies the next time Cover Flow opens; Random reshuffles each time you pick it.</li>
+    <li><b>An artist’s albums as Cover Flow:</b> <b>System settings → Display → Cover Flow → Artist View: Cover Flow</b> switches <b>Library → Artists → artist → Albums</b> from the default Grid to Cover Flow; <b>List</b> shows the album names alone. It contains only that artist’s albums, also when Artists is set to Album Artist. With two or more, the last card, <b>All albums</b>, plays all of them: the albums in the order shown, each in disc and track order, from the first song. Return goes straight back to the Artists list.</li>
+    <li><b>Go to Album</b> in the hold menu of a song you played from Cover Flow (or with Artist View set to Cover Flow) opens that album’s tracks in Cover Flow. Return goes back to where you were.</li>
     <li>With <b>Artists</b> set to <b>Album Artist</b>, each cover shows its album artist, so a compilation reads “Various Artists” or whoever compiled it.</li>
-    <li><b>Audiobooks</b> stay out of Coverflow: an album whose tracks are all <code>.m4b</code> files or sit under the card’s <code>Audiobooks/</code> folder. Library Artists, Albums and Shuffle exclude them too; Podcasts keep their current listings.</li>
+    <li><b>Audiobooks</b> stay out of Cover Flow: an album whose tracks are all <code>.m4b</code> files or sit under the card’s <code>Audiobooks/</code> folder. Library Artists, Albums and Shuffle exclude them too; Podcasts keep their current listings.</li>
     <li><b>Artwork:</b> embedded art first, then a <code>cover</code> or <code>folder</code> image (<code>.jpg</code>, <code>.png</code> or <code>.webp</code>); otherwise a placeholder. A folder shared by several albums skips its cover and folder images, since they’d be another album’s art. Now Playing shows the same WebP and large or unusual PNG covers.</li>
   </ul>
   </div>
@@ -747,7 +748,7 @@ http://stream.radioparadise.com/mp3-128</pre>
   <p>Put one folder per show or book in <code>Podcasts/</code> or <code>Audiobooks/</code> at the card’s root. Each file resumes where you stopped, independently of the others (the 512 most recent are remembered), and never counts as a play. Playback speed is set per folder (see Chapter 3). Spoken tracks can be added to Favorites and appear in Ratings, while staying out of Library music lists and shuffle.</p>
   <div class="sub">
   <h3>M4B audiobooks</h3>
-  <p>Unprotected <code>.m4b</code> files play as they are: copy the original files onto the card, with no renaming or conversion needed. Extensions are case-insensitive. M4B files anywhere on the card resume at any duration and don’t count toward Most Played or scrobbles. <code>Audiobooks/</code> adds a Library shortcut, but is optional for M4B. Embedded artwork uses the MP4 cover reader, with folder artwork as the fallback. M4B audiobooks stay out of Coverflow and Library Artists and Albums.</p>
+  <p>Unprotected <code>.m4b</code> files play as they are: copy the original files onto the card, with no renaming or conversion needed. Extensions are case-insensitive. M4B files anywhere on the card resume at any duration and don’t count toward Most Played or scrobbles. <code>Audiobooks/</code> adds a Library shortcut, but is optional for M4B. Embedded artwork uses the MP4 cover reader, with folder artwork as the fallback. M4B audiobooks stay out of Cover Flow and Library Artists and Albums.</p>
   <p>For embedded M4B chapters, hold Play/Pause on Now Playing and choose <b>Chapters</b>. Turn the wheel and press Centre, or tap a chapter, to jump to its start and return to Now Playing. The list starts on the current chapter and shows titles and start times. Missing titles appear as “Chapter N”; books without chapters show “No embedded chapters”. Chapter jumps use whole seconds and preserve pause. Previous and Next keep their usual behavior.</p>
 
   <h3>Books with a CUE sheet</h3>
@@ -803,7 +804,7 @@ http://stream.radioparadise.com/mp3-128</pre>
 
   <div class="sec">
   <h2 id="display">Display</h2>
-  <p>Open <b>System settings → Display</b>. Brightness, Screen Off Time, <b>Smart Awake</b>, <b>Night Shift</b> and Lock Screen are on the page itself. Two menus hold the rest: <b>Appearance</b> (Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing) and <b>Coverflow</b> (Artist Albums, Coverflow Sort, Refresh Coverflow).</p>
+  <p>Open <b>System settings → Display</b>. Brightness, Screen Off Time, <b>Smart Awake</b>, <b>Night Shift</b> and Lock Screen are on the page itself. Two menus hold the rest: <b>Appearance</b> (Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Time in Title, Centred Now Playing) and <b>Cover Flow</b> (Artist View, Cover Flow Sort, Refresh Cover Flow).</p>
   <table>
     <thead><tr><th>Setting</th><th>Options</th></tr></thead>
     <tbody>
@@ -813,8 +814,9 @@ http://stream.radioparadise.com/mp3-128</pre>
       <tr><td>Corners</td><td>Square (default): a full-width selection bar, square album grid tiles and pop-up buttons. Rounded: a pill-shaped bar inset from the screen’s edges, rounded tiles and buttons. Kept when you change theme</td></tr>
       <tr><td>Home</td><td>Split (menu beside the playing album’s cover), Full (menu only) or Carousel (Shanling’s home carousel)</td></tr>
       <tr><td>Battery</td><td>Icon (default), Percent, Icon + Percent, Percent Inside</td></tr>
+      <tr><td>Time in Title</td><td>On (default): the bar shows the time. Off: it names the page you’re on, as an iPod’s title bar does; Home and pages such as Games and Photos keep the clock. Choosing Theme: Classic turns it off, Theme: Minimal on</td></tr>
       <tr><td>Centred Now Playing</td><td>Off (default): the iPod layout. On: Shanling’s own layout, the art large in the middle with the title and artist centred under it; tap its lyrics to show them full screen. Takes effect the next time Now Playing opens</td></tr>
-      <tr><td>Artist Albums</td><td>Grid (default), Coverflow or List (names only, no artwork) for an artist’s albums</td></tr>
+      <tr><td>Artist View</td><td>Grid (default), Cover Flow or List (names only, no artwork) for an artist’s albums</td></tr>
       <tr><td>Shortcut</td><td>What Home’s shortcut row opens: Rockbox (default when it’s on the card, otherwise Favorites), Artists, Albums, Favorites, Rated Albums, Shuffle (Library → Shuffle) or Games</td></tr>
       <tr><td>Smart Awake</td><td>Off (default). On: while a song plays, the screen stays lit on Now Playing’s lyrics, info and visualizer pages, full-screen lyrics included, and on the full-screen album art, so you can read along or watch without pressing a key. With Enlarged Album Art on, that includes the art page once the full-screen art opens there. An App Store game in Games stays open and lit too, playing or not, until you close it. Otherwise, on the art page, while paused, or anywhere else, Screen Off Time applies as usual</td></tr>
       <tr><td>Night Shift</td><td>Off (default), On or Auto, with a warmth from 5000K to 2000K, 3400K by default: the screen’s colours shift warmer, easier on the eyes at night. The switch or Centre cycles Off, On and Auto; Auto warms the screen from 19:00 to 7:00, the hours Light Mode’s Auto is dark. Turn the wheel or drag the slider right for warmer; a move while it is off turns it on. Videos stay untinted.</td></tr>
@@ -882,8 +884,8 @@ http://stream.radioparadise.com/mp3-128</pre>
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>Artists</td><td><b>Album Artist</b> (default) or <b>Artist</b>: Album Artist browses Artists by the Album Artist tag, so guest artists don’t split albums. A choice saved before stays.</td></tr>
-      <tr><td>Artist Album Order</td><td><b>Year</b> (default, as <b>Year Order</b>) or <b>A–Z</b>: the order of an artist’s albums, grid and Coverflow.</td></tr>
-      <tr><td>Year Order</td><td><b>Newest First</b> (default) or <b>Oldest First</b>: the order of every year view, an artist’s albums (grid and Coverflow) and Coverflow’s <b>Year</b> sort. Undated albums go last.</td></tr>
+      <tr><td>Artist Album Order</td><td><b>Year</b> (default, as <b>Year Order</b>) or <b>A–Z</b>: the order of an artist’s albums, grid and Cover Flow.</td></tr>
+      <tr><td>Year Order</td><td><b>Newest First</b> (default) or <b>Oldest First</b>: the order of every year view, an artist’s albums (grid and Cover Flow) and Cover Flow’s <b>Year</b> sort. Undated albums go last.</td></tr>
       <tr><td>Folder Root</td><td>Where Home’s <b>Folder</b> opens: <b>Card</b> (default) or one of the card’s top-level folders, such as <code>Music</code>. Press to step through them in name order and back to Card. It opens directly even with an OTG drive connected. Return climbs to the card, then goes back to Home, or to the SD/OTG choice with OTG connected. If the folder is renamed or removed, Folder opens as if set to Card. Folders whose names start with a dot, start or end with a space, or run over 200 bytes aren’t offered.</td></tr>
       <tr><td>Folder Skip</td><td>Stock’s setting. On: when the last track of a folder you're playing ends, playback carries on with the next folder on the card, in name order, and Next or Previous at either end of the folder moves to the sibling folder. Off: playback stops at the end of the folder. Albums, artists, Most Played and Shuffle Songs from the Library never jump to another folder, whatever this is set to.</td></tr>
       <tr><td>Folder Album Cover</td><td>Stock’s setting: a folder’s own cover image as the album cover.</td></tr>
@@ -1039,7 +1041,7 @@ http://stream.radioparadise.com/mp3-128</pre>
     <li><b>More playing time per charge:</b> <b>System settings → Power → Low Power</b>. <b>Battery longevity:</b> <b>Charge Limit</b> on the same page.</li>
     <li><b>Wi-Fi left on?</b> While it’s connected, the radio naps between transfers and wakes as soon as data arrives, so there’s no need to turn it off between uses.</li>
     <li><b>Guest artists splitting albums?</b> <b>Playback → Library &amp; Folders → Artists → Album Artist</b> (the default unless you picked Artist).</li>
-    <li><b>Coverflow order:</b> <b>System settings → Display → Coverflow → Coverflow Sort</b> switches to Artist, Year, Recently Added, Most Played or Random.</li>
+    <li><b>Cover Flow order:</b> <b>System settings → Display → Cover Flow → Cover Flow Sort</b> switches to Artist, Year, Recently Added, Most Played or Random.</li>
     <li><b>Screen waking in your pocket?</b> <b>System settings → Controls → Wake: Double Press</b>.</li>
     <li><b>Want stock’s EQ presets?</b> <b>EQ → Advanced → Presets → Stock presets</b> has Pop, Rock, Jazz and the rest; the ten default bands work as a 10-band graphic EQ.</li>
     <li><b>Wheel click gone?</b> Key Tone is the Q2’s own speaker, so it stays quiet while headphones, Bluetooth or a USB DAC are connected, unless <b>System settings → Controls → Click With Headphones</b> (under Key Tone) is on.</li>
@@ -1055,8 +1057,8 @@ http://stream.radioparadise.com/mp3-128</pre>
     <li><b>The Q2 won’t turn on, won’t charge, or is frozen.</b> Plug it into the charger. Hold <b>Centre</b> for 15 seconds, and keep holding through the on-screen shutdown prompt until it powers off and restarts. For Rockbox, hold Play/Pause for 15 seconds instead. A Q2 that stops responding while it’s on restarts by itself within a minute; afterwards q2-crash.log on the card says what it was doing, so attach it to a bug report.</li>
     <li><b>A song is missing.</b> Check it’s in a folder the Q2 scans, with a supported format (<a href="#card">What goes on the microSD card</a>), then run <b>Library → Update Local Music</b>. DRM-protected files don’t appear. Still missing? Check its tags with <a href="#tagging">Tagging your music</a>.</li>
     <li><b>An album is split in two.</b> Give every track the same Album Artist (<a href="#tagging">Tagging your music</a>). Then run <b>Update Local Music</b> again.</li>
-    <li><b>Artwork is missing.</b> Add a <code>cover</code> or <code>folder</code> image (<code>.jpg</code>, <code>.png</code> or <code>.webp</code>) next to the songs, unless several albums share that folder. Then press <b>System settings → Display → Coverflow → Refresh Coverflow</b> (<a href="#cf">Browsing with Coverflow</a>).</li>
-    <li><b>Coverflow restarts the Q2 while preparing artwork.</b> Press <b>System settings → Display → Coverflow → Refresh Coverflow</b> and open Coverflow again. Still restarting? Shrink very large embedded covers: about 500 × 500 pixels is plenty for the screen, and many taggers resize covers in bulk. Then run <b>Update Local Music</b>. If it keeps happening, install Shanling’s firmware and then Q2 Pod again (<a href="#restore">Restoring stock firmware</a>), and attach the card’s <code>q2-crash.log</code> to a bug report.</li>
+    <li><b>Artwork is missing.</b> Add a <code>cover</code> or <code>folder</code> image (<code>.jpg</code>, <code>.png</code> or <code>.webp</code>) next to the songs, unless several albums share that folder. Then press <b>System settings → Display → Cover Flow → Refresh Cover Flow</b> (<a href="#cf">Browsing with Cover Flow</a>).</li>
+    <li><b>Cover Flow restarts the Q2 while preparing artwork.</b> Press <b>System settings → Display → Cover Flow → Refresh Cover Flow</b> and open Cover Flow again. Still restarting? Shrink very large embedded covers: about 500 × 500 pixels is plenty for the screen, and many taggers resize covers in bulk. Then run <b>Update Local Music</b>. If it keeps happening, install Shanling’s firmware and then Q2 Pod again (<a href="#restore">Restoring stock firmware</a>), and attach the card’s <code>q2-crash.log</code> to a bug report.</li>
     <li><b>No sound, or sound from the wrong output.</b> Unplug and reconnect the headphones, and check <b>Volume</b> and the status bar. Playback uses whichever output is active when it starts: headphone jack, Bluetooth or a USB DAC. For Spotify, pause and play again after switching. If local music stays silent after streaming, use <b>Streaming → Configuration → Stop Streaming Services</b> (<a href="#stream-config">Configuration</a>).</li>
     <li><b>The PC doesn’t see the Q2 as a USB DAC.</b> Windows needs Shanling’s USB driver (V5.20, for the MTouch players), from <a href="https://en.shanling.com/download/69">en.shanling.com/download/69</a>. Install it, then plug the Q2 in again.</li>
     <li><b>Bluetooth headphones drop out.</b> Set the quality to <b>LDAC Connection (auto)</b>, which adapts to the link. HQ is the most likely to break up (<a href="#bt">Bluetooth headphones</a>).</li>

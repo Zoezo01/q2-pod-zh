@@ -1456,10 +1456,15 @@ static int slot(int frac, int k, int i) {
  * texture of the cover j - CF_REACH from the centre, or 0 to leave it out. Nearest first; nearer
  * covers and their reflections overlap farther ones. */
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ring[CF_RING]) {
-    if (!cf_inset[0]) { /* once, including callers which render without opening the page */
+    /* once per corner style, including callers which render without opening the page */
+    static unsigned char cf_style __attribute__((section(".scratch"))); /* 0: not yet */
+    unsigned char style = ipod_square_art() ? 2 : 1;
+    if (cf_style != style) {
         int r = ART_SIZE * NP_ART_RADIUS / 166;
         for (int k = 0; k < r; ++k)
-            cf_inset[k] = cf_inset[ART_SIZE - 1 - k] = (unsigned short)(arc_out(r, k) * 16);
+            cf_inset[k] = cf_inset[ART_SIZE - 1 - k] =
+                style == 2 ? 0 : (unsigned short)(arc_out(r, k) * 16);
+        cf_style = style;
     }
     cf_paper = ipod_light() ? LIGHT_PAPER * 0x010101u : 0;
     shelf_t f;

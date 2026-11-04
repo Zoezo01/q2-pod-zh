@@ -204,6 +204,8 @@ int ipod_home(void) { return home_mode; }
 int ipod_classic(void) { return classic; }
 int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
+static int square_art;
+int ipod_square_art(void) { return square_art; }
 int ipod_home_rockbox(void) { return 0; }
 const char *ipod_home_shortcut(void) { return "Rockbox"; }
 int home_shortcut_open(void *x, void *e) { return 0; }
@@ -564,7 +566,14 @@ static void renderer(void) {
     /* At rest the selected cover is the texture itself, 160 px square at CF_TOP, centred, full
        brightness; the neighbours at CF_BRIGHT1, then CF_BRIGHT2; the third out is not drawn. */
     const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    /* Classic under Square: the corners are the cover too, and a change back rounds them again. */
+    square_art = 1;
     render(0, rest);
+    for (int y = 0; y < 160; ++y)
+        for (int x = 0; x < 160; ++x) assert(px(CF_CX - 80 + x, CF_TOP + y) == art[y * 160 + x]);
+    square_art = 0;
+    render(0, rest);
+    assert(px(CF_CX - 80 + 1, CF_TOP) != art[1]); /* art[0] is black, as the corner's background */
     for (int y = 0; y < 160; ++y)
         for (int x = 0; x < 160; ++x)
             if ((x >= 12 && x < 148) || (y >= 12 && y < 148))
@@ -895,7 +904,7 @@ static void depth(void) {
     tex_fail = 0;
 }
 
-/* Display settings' Coverflow Sort (coverflow_sort_step): each press takes the next order, saved and
+/* Display settings' Cover Flow Sort (coverflow_sort_step): each press takes the next order, saved and
    taken at the next open; ties keep the stock order. */
 static const char *album_at(int i) {
     static char got[160];
@@ -1241,7 +1250,7 @@ static void ffmpeg_art(void) {
     assert(calls == before && size("Webp") == 6 && size("Ffok") == 6 && !tmp_files());
     close_page();
     /* An ffmpeg that never reached its own exit (killed: out of memory, #169) leaves no marker, so
-       the album is tried again at the next open, not shown artless until Refresh Coverflow. */
+       the album is tried again at the next open, not shown artless until Refresh Cover Flow. */
     album("Fkill", 0);
     rescan();
     for (int i = 0; i < 2; ++i) {
@@ -1405,7 +1414,7 @@ int main(void) {
     open_page();
     assert(size("C") == 9 && !strcmp(made[calls - 1], "cover.jpg"));
 
-    /* Display settings' Refresh Coverflow (coverflow_refresh_art) clears the cache and, at the next
+    /* Display settings' Refresh Cover Flow (coverflow_refresh_art) clears the cache and, at the next
        open, queries the albums again and rebuilds every one. Stock's Library covers go too, with
        AWTK's cached bitmaps, as the same names are written again. */
     int before = calls, q = queries, d = drops;

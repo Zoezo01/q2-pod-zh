@@ -1,5 +1,12 @@
 # Changelog
 
+- **1.6.5**:
+  - Lists: a long title on the selected row now scrolls a few times after a moment, as on an iPod, so you can read all of it. Other rows keep their "…".
+  - Display: **Appearance → Time in Title** is new. Turn it off and the bar names the page you're on (Albums, Display, Now Playing), as an iPod's title bar does; Home and pages such as Games and Photos keep the clock. Choosing **Theme: Classic** turns it off, and **Theme: Minimal** on.
+  - Classic: under square corners, album art has square corners too, Cover Flow's included, and the battery icon's charge is green.
+  - Now Playing: the volume shows in the progress bar's own colour.
+  - **Coverflow** is now spelled **Cover Flow**, as Apple does, and its **Artist Albums** row is now **Artist View**, so the longer name fits.
+
 - **1.6.4**:
   - Settings: **Playback** is shorter. Artists, Artist Album Order, Year Order, Folder Root, Folder Skip and Folder Album Cover moved to **Playback → Library & Folders**, and ReplayGain moved next to Gain. Your settings are kept.
   - Settings: **System settings → Controls** is new and holds the wheel and button settings: Wheel Sensitivity, Wheel QS, Hold Return and Single Press Scrub from Display, Key Tone, Click With Headphones and Buttons Lock from System settings, and Wake and Volume Guard from Power. Your settings are kept.

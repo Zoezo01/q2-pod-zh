@@ -460,6 +460,11 @@ typedef struct {
      */
     int np_off, np_over;
     unsigned np_marquee;
+    /* The selected row's marquee (marq_poll); Time in Title off (bar_title). */
+    void *marq_row, *marq_label;
+    unsigned marq_timer;
+    int marq_id, marq_passes;
+    int time_title, bar_titled, bar_bold;
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;
@@ -488,7 +493,7 @@ typedef struct {
     unsigned keep_lit_at;
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
-    void *setting_label[11];
+    void *setting_label[12];
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
     /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
@@ -1638,15 +1643,16 @@ static const char *const accent_names[] = {
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
- * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub. */
-static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",    "THEME",
-                                            "SHORTCUT",  "ROUNDED",   "LIGHT",      "KEEPLIT",
-                                            "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE" };
-static const int setting_counts[] = { ACCENT_N, 3, 4, 2, 7, 2, 3, 2, 2, 2, 2 };
-static int *const setting_values[] = { &st.accent,     &st.home,        &st.battery,
-                                       &st.classic,    &st.shortcut,    &st.rounded,
-                                       &st.light,      &st.keep_lit,    &st.np_centred,
-                                       &st.keytone_hp, &st.scrub_single };
+ * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
+ * in Title. */
+static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",     "THEME",
+                                            "SHORTCUT",  "ROUNDED",   "LIGHT",       "KEEPLIT",
+                                            "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
+static const int setting_counts[] = { ACCENT_N, 3, 4, 2, 7, 2, 3, 2, 2, 2, 2, 2 };
+static int *const setting_values[] = { &st.accent,     &st.home,         &st.battery,
+                                       &st.classic,    &st.shortcut,     &st.rounded,
+                                       &st.light,      &st.keep_lit,     &st.np_centred,
+                                       &st.keytone_hp, &st.scrub_single, &st.time_title };
 /* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
  * cannot be read. */
 static const int *clock_now(int *buf) {
@@ -1689,6 +1695,7 @@ static int accent(void) {
         st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
         st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
         st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
+        st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
         int buf[11];
         st.light_day = light_day(clock_now(buf));
         st.settings_read = 1;
@@ -2010,12 +2017,17 @@ static void paint_letter(void *w, void *canvas) {
     canvas_set_clip_rect(canvas, &old);
 }
 
+/* Classic under Square: an iPod's square art on Now Playing, the full-screen art, Cover Flow
+ * (coverflow_render) and list thumbnails; stock's placeholder and Home: Carousel's cards keep their
+ * own corners. */
+int ipod_square_art(void) { return ipod_classic() && !st.rounded; }
+
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
  * NP_ART_RADIUS at 166px, painted over it in the page's
  * black: each corner row outside the arc, then its edge pixel at the alpha of its uncovered part
  * (1/16 px). */
 static void paint_cover(void *w, void *canvas) {
-    if (!w || !P(canvas, CANVAS_LCD)) return;
+    if (!w || !P(canvas, CANVAS_LCD) || ipod_square_art()) return;
     int x = 0, y0 = 0;
     if (w == st.bc[2]) {
         w = widget_lookup(w, "img_bigcover", 1);
@@ -2118,6 +2130,80 @@ static void paint_caps(void *w, void *canvas) {
                 I(w, W_W));
 }
 
+/* The selected row's long title scrolls, as an iPod's does, MARQUEE_HOLD_MS after the selection
+ * settles and at the album marquee's pace, MARQUEE_PASSES times (each repaints every 16 ms: stock's
+ * tick, 0x5e86d8); every other row keeps its ellipsis. Only a title stock would scroll on focus
+ * alone (only_focus; no row is focused): stock's timer stops such a label on its first tick unless
+ * it is focused (0x5e897c), so only_focus is off while this one runs. A pass ends by itself, so a
+ * dark screen or a covered page costs at most the rest of one. A row is its widget and its id, as a
+ * table's pool can hold the selection in one widget (paint_selection; a paint would drop
+ * hscroll_label_stop's invalidate, so marq_moved stops it). */
+static int marq_gone(void *ctx, void *event) {
+    (void)ctx, (void)event;
+    st.marq_label = (void *)0;
+    return 0;
+}
+static void marq_stop(void) {
+    void *label = st.marq_label;
+    if (!label) return;
+    st.marq_label = (void *)0;
+    widget_off_by_func(label, EVT_DESTROY, marq_gone, (void *)0);
+    hscroll_label_stop(label);
+    hscroll_label_set_only_focus(label, 1);
+}
+static void *row_scroller(void *w, int depth) {
+    unsigned n = widget_count_children(w);
+    for (unsigned i = 0; i < n; ++i) {
+        void *c = widget_get_child(w, i);
+        if (!widget_get_visible(c)) continue;
+        if (!tk_strcmp(widget_get_type(c), "hscroll_label")) return c;
+        void *in = depth ? row_scroller(c, depth - 1) : (void *)0;
+        if (in) return in;
+    }
+    return (void *)0;
+}
+static int marq_poll(const void *info) {
+    (void)info;
+    st.marq_timer = 0;
+    void *w = usable() ? surface((void *)0, (void *)0) : (void *)0;
+    int i = st.sel_row;
+    void *row = w && w == st.sel_w && load_rows(&g_menu, w) && i >= 0 && i < g_menu.n &&
+                        g_menu.id[i] == st.marq_id
+                    ? g_menu.at[i]
+                    : (void *)0;
+    if (!row || row != st.marq_row) {
+        marq_stop();
+        st.marq_row = (void *)0; /* the next paint with a selection starts over */
+        return 0;
+    }
+    if (st.marq_label) { /* a pass and the hold after it: back to the start, for the next */
+        marq_stop();
+        if (++st.marq_passes < MARQUEE_PASSES)
+            st.marq_timer = timer_add(marq_poll, (void *)0, MARQUEE_HOLD_MS);
+        return 0;
+    }
+    void *label = row_scroller(row, 2);
+    /* stock's two margins (2 px each by default, 0x5e8428) count towards its ellipsis */
+    int over = label ? I(label, HSCROLL_TEXT_W) + 4 - I(label, W_W) : 0;
+    if (over <= 0 || !((const char *)label)[HSCROLL_ONLY_FOCUS]) return 0; /* until it moves */
+    unsigned ms = (unsigned)over * MARQUEE_MS / MARQUEE_PX;
+    widget_set_prop_int(label, "loop", 0);
+    widget_set_prop_int(label, "duration", (int)ms);
+    st.marq_label = label;
+    widget_on(label, EVT_DESTROY, marq_gone, (void *)0);
+    hscroll_label_set_only_focus(label, 0);
+    hscroll_label_start(label);
+    st.marq_timer = timer_add(marq_poll, (void *)0, ms + MARQUEE_HOLD_MS);
+    return 0;
+}
+static int marq_moved(const void *info) {
+    (void)info;
+    marq_stop();
+    st.marq_passes = 0;
+    st.marq_timer = timer_add(marq_poll, (void *)0, MARQUEE_HOLD_MS);
+    return 0;
+}
+
 /* Load and settle the painted surface's selection, then draw it behind the rows: Minimal's card
  * (a dot on Home) or Classic's full-width accent bar. */
 static void paint_selection(void *w, void *canvas) {
@@ -2197,6 +2283,11 @@ static void paint_selection(void *w, void *canvas) {
     st.sel_w = w;
     st.sel_row = i;
     st.sel_y = r.y + r.h / 2;
+    if (g_menu.at[i] != st.marq_row || g_menu.id[i] != st.marq_id) {
+        st.marq_row = g_menu.at[i];
+        st.marq_id = g_menu.id[i];
+        rearm(&st.marq_timer, marq_moved, 0);
+    }
     if (g_menu.kind == 4 &&
         r.w < I(g_menu.w, W_W)) /* a pop-up button's tile: framed white on any accent */
         frame_box(canvas, &r, 0xffffffff, SEL_RADIUS);
@@ -2909,7 +3000,7 @@ static void pod_text(int i) {
         { "Charge Limit: Off", "Charge Limit: " STR(CHARGE_STOP) "%" },
         { "Low Power: Off", "Low Power: On" },
         { "Wake: Single Press", "Wake: Double Press" },
-        { "Artist Albums: Grid", "Artist Albums: Coverflow", "Artist Albums: List" },
+        { "Artist View: Grid", "Artist View: Cover Flow", "Artist View: List" },
         { "Year Order: Newest First", "Year Order: Oldest First" },
         { "Artists: Artist", "Artists: Album Artist" },
         { "Resume on Connect: Off", "Resume on Connect: On" },
@@ -2922,7 +3013,7 @@ static void pod_text(int i) {
           "Standby Limit: " STR(STANDBY_LIMIT_3) " h" },
         { 0 }, /* Control Device Volume: a switch */
         { 0 }, /* Coverflow Sort's from coverflow.c */
-        { "Refresh Coverflow" },
+        { "Refresh Cover Flow" },
         { 0 }, /* Wheel QS: a switch */
         { 0 }, /* EQ per Output: a switch */
         { 0 }, /* Key Tone: a switch */
@@ -2931,7 +3022,7 @@ static void pod_text(int i) {
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
         char sort[48];
-        tk_snprintf(sort, sizeof sort, "Coverflow %s", coverflow_sort_name());
+        tk_snprintf(sort, sizeof sort, "Cover Flow %s", coverflow_sort_name());
         widget_set_text_utf8(st.pod_label[i], sort);
         return;
     }
@@ -2968,7 +3059,7 @@ static int pod_click(void *ctx, void *event) {
         coverflow_sort_step();
     else if (i == POD_CF_REFRESH) {
         coverflow_refresh_art();
-        toast("Coverflow rebuilds its artwork next time");
+        toast("Cover Flow rebuilds its artwork next time");
     } else if (i == POD_ARTISTS) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
@@ -3363,7 +3454,9 @@ static void clock_show(void) {
     unsigned key = ok ? ((unsigned)(tm[2] * 60 + tm[1]) + 1) | (unsigned)full << 11
                       : ~0u; /* 0 before the first */
     void *bar = *(void *const *)system_bar;
-    void *label = key == st.clock_key || !bar ? (void *)0 : widget_lookup(bar, "label_clock", 1);
+    void *label = key == st.clock_key || !bar || st.bar_titled
+                      ? (void *)0
+                      : widget_lookup(bar, "label_clock", 1);
     if (!label) return;
     st.clock_key = key;
     char s[16] = "--:--";
@@ -3563,6 +3656,8 @@ static void paint_battery(void *w, void *canvas) {
     canvas_fill_rect(canvas, 0, y + 1, 1, bh - 2);
     canvas_fill_rect(canvas, bw - 1, y + 1, 1, bh - 2);
     canvas_fill_rect(canvas, bw, y + (bh - nh) / 2, BATT_NUB_W, nh);
+    /* Classic: an iPod's green charge under the outline, red when low */
+    if (ipod_classic() && !(key & 1)) canvas_set_fill_color(canvas, RGBA(BATT_CHARGE_RGB));
     canvas_fill_rect(canvas, 2, y + 2, (bw - 4) * (key & 2 ? 100 : level) / 100, bh - 4);
     if (st.batt_mode == 2) {
         int x = bw + BATT_NUB_W + BATT_GAP;
@@ -3579,14 +3674,18 @@ static void clock_text(void *label, int negative, int t) {
     widget_set_text_utf8(label, s);
 }
 
+static void label_font(void *w, int bold) {
+    static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
+                                        "style:disable:font_name" };
+    for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
+        widget_set_prop_str(w, font[i], bold ? "bold" : "default");
+}
 /* Classic's bold: w's text in Liberation Sans Bold (the build's fonts/bold.ttf) when that font has
  * every character of it (BOLD_RANGES, from its cmap), else stock's font, which has CJK; Minimal's
  * always stock's. was is the last answer (-1 none): only a change is written, in every state the
  * labels style. Returns the answer. */
 int bold_label(void *w, int was) {
     static const unsigned short ranges[] = BOLD_RANGES;
-    static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
-                                        "style:disable:font_name" };
     const unsigned *c = w ? widget_get_text(w) : (void *)0;
     int bold = !!w && ipod_classic();
     for (; bold && c && *c; ++c) {
@@ -3594,8 +3693,7 @@ int bold_label(void *w, int was) {
         while (i < sizeof ranges / sizeof *ranges && (*c < ranges[i] || *c > ranges[i + 1])) i += 2;
         bold = i < sizeof ranges / sizeof *ranges;
     }
-    for (unsigned i = 0; w && bold != was && i < sizeof font / sizeof *font; ++i)
-        widget_set_prop_str(w, font[i], bold ? "bold" : "default");
+    if (w && bold != was) label_font(w, bold);
     return bold;
 }
 
@@ -3625,6 +3723,53 @@ static void np_sync(void *top) {
     if (left == st.np_left) return;
     st.np_left = left;
     clock_text(st.np_remain, 1, left);
+}
+
+/* Time in Title off: the bar's centre names the page in front, as an iPod's, in Classic's bold:
+ * Now Playing or Cover Flow, else stock's title in the page's hidden navbar (scrlabel_title, or a
+ * settings page's unnamed first child). Home, a page showing its navbar and an untitled page keep
+ * the clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
+ * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
+static void bar_title(void *bar, void *top) {
+    static const unsigned
+        now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
+        cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 };
+    if (st.time_title && !st.bar_titled) return; /* the clock, every paint */
+    if (!top || tk_strcmp(widget_get_type(top), "window")) return;
+    void *label = widget_lookup(bar, "label_clock", 1);
+    if (!label) return;
+    const unsigned *title = (void *)0;
+    if (!st.time_title) {
+        void *nav = widget_lookup(top, "view_navbar", 0), *t = (void *)0;
+        if (nav && !widget_get_visible(nav)) {
+            t = widget_lookup(nav, "scrlabel_title", 0);
+            if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
+            if (t && tk_strcmp(widget_get_type(t), "hscroll_label")) t = (void *)0;
+        }
+        title = top == st.np_win                                                     ? now_playing
+                : !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page") ? cover_flow
+                : t ? widget_get_text(t)
+                    : (void *)0;
+        if (title && !*title) title = (void *)0;
+    }
+    if (!title) {
+        if (!st.bar_titled) return;
+        st.bar_titled = 0;
+        st.clock_key = 0; /* clock_show writes it again */
+        if (st.bar_bold) label_font(label, 0);
+        st.bar_bold = 0;
+        rearm(&st.clock_timer, clock_due, 0);
+        return;
+    }
+    const unsigned *had = widget_get_text(label), *want = title;
+    while (had && *had && *had == *want) ++had, ++want;
+    int changed = !st.bar_titled || !had || *had != *want;
+    if (changed) widget_set_text(label, title);
+    st.bar_titled = 1;
+    int bold = bold_label(label, st.bar_bold); /* a new Theme can change it under the same title */
+    if ((changed || bold != st.bar_bold) && !st.bar_timer)
+        st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
+    st.bar_bold = bold;
 }
 
 /* Scrub (docs/internals.md#scrub-ipod) follows stock's own key seek (0x52c754): the page's 250 ms
@@ -4347,7 +4492,8 @@ static void vol_paint(void *top, void *canvas) {
     fill_box(canvas, &bar, RGBA(np ? TRACK_COLOR : VOL_PANEL_TRACK), bar.h / 2);
     if (w) {
         rect_t on = { bar.x, bar.y, w < bar.h ? bar.h : w, bar.h };
-        fill_box(canvas, &on, RGBA(0xffffff), bar.h / 2);
+        /* Over Now Playing it is the progress bar's own: the accent's fill */
+        fill_box(canvas, &on, RGBA(np ? accent_tone(TONE_LIGHT) : 0xffffff), bar.h / 2);
     }
     stock_canvas_set_fill_color(canvas, fill);
     k += put_num(s + k, (unsigned)clamp_step(0, 999, level));
@@ -4513,6 +4659,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
             rearm(&st.clock_timer, clock_due, 0);
         }
         bar_sync(bar);
+        bar_title(bar, top);
         np_sync(top);
         if (w == top) vol_paint(top, canvas);
         /* Boot may paint Home before the screen is usable, so nothing chose or drew its first
@@ -4654,7 +4801,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     /* Before the manager copies bitmap_t: cached flags must agree with the new alpha. These
      * paths are stock's album/artist thumbnails and Folder view's (.downpic/fd*, its cover
      * thread's); playing covers are rounded after scaling. */
-    if (format < 4 && name &&
+    if (format < 4 && name && !ipod_square_art() &&
         (tk_str_start_with(name, "file:///mnt/mmc/.sldp/") ||
          tk_str_start_with(name, "file:///mnt/mmc/.downpic/fd"))) {
         int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
@@ -4876,7 +5023,8 @@ static void setting_text(int i) {
     }
     static const char *const toggles[] = { "Rounded Corners",       0,
                                            "Smart Awake",           "Centred Now Playing",
-                                           "Click With Headphones", "Single Press Scrub" };
+                                           "Click With Headphones", "Single Press Scrub",
+                                           "Time in Title" };
     if (i == 5 || i >= 7) {
         list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
         return;
@@ -4921,6 +5069,7 @@ static void theme_preset(void) {
         setting_put(&st.minimal_accent, 0, "MINIMAL_ACCENT"); /* Graphite */
     setting_put(&st.rounded, !classic, "ROUNDED");
     setting_put(&st.home, 0, "HOME");
+    setting_put(&st.time_title, !classic, "TIMETITLE");
 }
 
 static int setting_click(void *ctx, void *event) {
@@ -4947,10 +5096,11 @@ static int setting_click(void *ctx, void *event) {
         widget_invalidate_force(*(void *const *)system_bar, (void *)0); /* bar_sync applies it */
     else if (i == 1 || i == 4)
         coverflow_home_layout();
-    else if (i == 5)
+    else if (i == 5) {
+        if (ipod_classic()) image_manager_unload_all(image_manager()); /* its thumbnails' corners */
         widget_invalidate_force(window_manager(), (void *)0);
-    else if (i < 7) { /* the switches from Smart Awake on only need their toggle drawn, Centred
-                       * Now Playing the next open (ringnav_ui_load) */
+    } else if (i < 7) { /* the switches from Smart Awake on only need their toggle drawn, Centred
+                         * Now Playing the next open (ringnav_ui_load) */
         if (i == 3) {
             theme_preset();
             coverflow_home_layout();
@@ -4959,6 +5109,7 @@ static int setting_click(void *ctx, void *event) {
             keep_selected(st.setting_label[3]);
             for (int k = 0; k < 7; ++k)
                 if (k != 3 && k != 4) setting_text(k); /* the preset's rows */
+            setting_text(11);
         }
         np_fill(0);
         image_manager_unload_all(image_manager());
@@ -5028,7 +5179,7 @@ static void setting_row(void *view, int i) {
     static const char *const icons[] = {
         "system_display",    "playset_covermode", "system_powermanager", "system_display",
         "playset_covermode", "system_display",    "system_display",      "system_display",
-        "playset_covermode", "system_keytone",    "playset_covermode"
+        "playset_covermode", "system_keytone",    "playset_covermode",   "system_display"
     };
     st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
     setting_text(i);
@@ -5039,12 +5190,13 @@ static void setting_row(void *view, int i) {
  * Smart Awake and Night Shift (the brightness icon, opening its slider page, crossfade.c) join
  * them, then Appearance and Coverflow, each opening stock's page again (display_open) with its
  * stock rows dropped and its own instead: Theme, Light Mode, Accent, Corners, Home, Shortcut,
- * Battery, Centred Now Playing; Artist Albums, Coverflow Sort and Refresh Coverflow. Controls is
- * System settings' row (ringnav_systemset) on the same page: the wheel, the buttons and what the
- * buttons do. The value rows show it in the label and have no chevron, since they change in place.
- * ponytail: stock's page opened over itself; its own rows' state is never touched on a sub-page. */
+ * Battery, Time in Title, Centred Now Playing; Artist View, Coverflow Sort and Refresh Coverflow.
+ * Controls is System settings' row (ringnav_systemset) on the same page: the wheel, the buttons and
+ * what the buttons do. The value rows show it in the label and have no chevron, since they change
+ * in place. ponytail: stock's page opened over itself; its own rows' state is never touched on a
+ * sub-page. */
 int ringnav_display(void *win, void *ctx) {
-    static const char *const titles[] = { 0, "Appearance", "Coverflow", "Controls" },
+    static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls" },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
                                             "system_update" };
@@ -5074,8 +5226,9 @@ int ringnav_display(void *win, void *ctx) {
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {
-        /* Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Centred Now Playing */
-        static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 4, 2, 8 };
+        /* Theme, Light Mode, Accent, Corners, Home, Shortcut, Battery, Time in Title, Centred Now
+         * Playing */
+        static const unsigned char appearance[] = { 3, 6, 0, 5, 1, 4, 2, 11, 8 };
         for (unsigned k = 0; k < sizeof appearance; ++k) setting_row(view, appearance[k]);
         return result;
     }

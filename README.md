@@ -6,7 +6,7 @@
 
 <p align="center">
   iPod classic experience for the Shanling Q2.<br>
-  Wheel navigation, Coverflow, PEQ, and optional Spotify and Rockbox, all built on top of the stock firmware.
+  Wheel navigation, Cover Flow, PEQ, and optional Spotify and Rockbox, all built on top of the stock firmware.
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 
 ## Features
 
-- **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Coverflow you can swipe, four visualizers and Games. Classic and Minimal themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
+- **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Cover Flow you can swipe, four visualizers and Games. Classic and Minimal themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
 - **Wheel navigation:** smooth scrolling that speeds up as you spin, adjustable sensitivity, menus that remember your place, Hold Return to Now Playing or Home, and Single Press Scrub.
 - **Library:** up to 65,000 songs, search, Era (albums by decade), Most Played, Long Songs, favourites, playlists with Edit Playlist and M3U import and export, Play Next, Add to Queue and View Queue. An empty `database.ignore` file keeps a folder out of the Library's lists while its songs still play from Folder view and playlists.
 - **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums; a copy stays on the card as `.ratings.tsv`.
@@ -79,7 +79,7 @@
 | **Hold Play/Pause** | View the playing queue, or open track, playlist and shuffle/repeat options. |
 | **Hold Return**     | Jump to Now Playing; hold again to go back. Display can make it go Home.    |
 
-The user guide covers every control, EQ, Coverflow and more tips.
+The user guide covers every control, EQ, Cover Flow and more tips.
 
 ## Updating
 
@@ -103,7 +103,7 @@ Copy your music to the card over USB-C, then run **Library → Update Local Musi
 
 These folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/`, `Books/` and `Videos/`; `EQ/` holds EQ presets to import. See the user guide for supported formats.
 
-To keep a folder out of Songs, Albums, Artists, Coverflow and library shuffle, put an empty file named `database.ignore` in it and run **Update Local Music** again. Its songs still play from Folder view and from playlists, and an empty `database.unignore` in a subfolder lets that subfolder back in ([details](docs/discovery.md)).
+To keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, put an empty file named `database.ignore` in it and run **Update Local Music** again. Its songs still play from Folder view and from playlists, and an empty `database.unignore` in a subfolder lets that subfolder back in ([details](docs/discovery.md)).
 
 ## Help
 

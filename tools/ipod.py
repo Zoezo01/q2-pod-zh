@@ -226,7 +226,7 @@ def home_card(menu, at, row, text):
 # holding stock's own Playback and System setting rows (labelled Playback and System), into the list's place.
 HOME_ROWS = ['playing', 'localmusic', 'coverflow', 'folder', 'rockbox', 'stream', 'settings']
 HOME_SETS = ['playset', 'sysset']
-HOME_LITERAL = {'coverflow': 'Coverflow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
+HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
 # Stock's visitor translates label_localmusic, label_playset and label_sysset by name; renamed, they keep
 # these shorter literals.
 HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback'},
@@ -264,7 +264,7 @@ def ipod_home(root):
     check([n[2]['name'] for n in root[3][0][3]] == ['btn_' + r for r in
             ('playing', 'localmusic', 'folder', 'stream', 'playset', 'sysset')], 'Unexpected home cards')
     menu = root[3][0]
-    home_card(menu, 2, 'coverflow', 'Coverflow')
+    home_card(menu, 2, 'coverflow', 'Cover Flow')
     home_card(menu, 4, 'rockbox', 'Rockbox')
     menu[3][1][3][1][2].update(LIBRARY)
     # Home: Carousel's (coverflow_home_layout): the carousel and its arrows, over the lists, hidden and
@@ -369,7 +369,7 @@ def status_bar(root):
         'style:normal:text_align_h': 'left'}, []])
     # The payload writes the local time here (ringnav_paint_bg).
     root[3].append(['hscroll_label', [extent, 0, width, 30], {
-        'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true'}, []])
+        'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true', 'ellipses': 'true'}, []])
 
 
 # Stock finds every Now Playing widget by name, recursively, so they can move: title, artist

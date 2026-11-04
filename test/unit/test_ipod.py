@@ -33,12 +33,12 @@ def menu():
 
 def test_home_card():
     m = menu()
-    ipod.home_card(m, 2, 'coverflow', 'Coverflow')
+    ipod.home_card(m, 2, 'coverflow', 'Cover Flow')
     card = m[3][2]
     assert card[2]['name'] == 'btn_coverflow'
     image, label = card[3]
     assert image[2] == {'name': 'img_coverflow', 'style:normal:bg_image': 'menu_coverflow', 'style:focused:bg_image': 'menu_coverflowdown', 'draw': 'menu_music'}
-    assert label[2] == {'name': 'label_coverflow', 'text': 'Coverflow'}
+    assert label[2] == {'name': 'label_coverflow', 'text': 'Cover Flow'}
     assert m[3][1] == local_card() and len(m[3]) == 7
 
 
@@ -47,7 +47,7 @@ def test_home_card_wants_the_local_music_card(image, label):
     m = menu()
     m[3][1][3][0][2]['name'], m[3][1][3][1][2]['name'] = image, label
     with pytest.raises(ValueError, match='^Unexpected Local Music card$'):
-        ipod.home_card(m, 2, 'coverflow', 'Coverflow')
+        ipod.home_card(m, 2, 'coverflow', 'Cover Flow')
 
 
 def home():
@@ -67,7 +67,7 @@ def test_ipod_home():
     carousel = root[3][3]
     assert [c[2]['name'] for c in carousel[3]] == ['btn_playing', 'btn_localmusic', 'btn_coverflow', 'btn_folder', 'btn_rockbox',
                                                    'btn_stream', 'btn_playset', 'btn_sysset']
-    assert carousel[3][2][3][1][2]['text'] == 'Coverflow' and carousel[3][4][3][1][2]['text'] == 'Rockbox'
+    assert carousel[3][2][3][1][2]['text'] == 'Cover Flow' and carousel[3][4][3][1][2]['text'] == 'Rockbox'
     assert carousel[3][1][3][1][2] == {'name': 'label_library', 'text': 'Library'}
     assert carousel[3][2][3][1][2]['name'] == 'label_coverflow'
     for n in root[3][3:]:
@@ -143,7 +143,7 @@ def test_status_bar_clock_and_idle_labels():
     right = ipod.STATUS_MARGIN + 20 + 14 + 30 + 2 * gap
     extent = max(left, right)
     assert clock == ['hscroll_label', [extent, 0, 375 - 2 * extent, 30], {
-        'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true'}, []]
+        'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true', 'ellipses': 'true'}, []]
 
 
 def test_status_bar_wants_its_views():
