@@ -1240,7 +1240,6 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'tidalStreamingLevelNow': 4,  # the quality the Tidal URL thread asked for
                 'stTidalTracks': 16,  # a Tidal track list: total, limit, offset, its deque
                 'g_dropdown_menu_state': 4,  # Quick Settings: 1, 2 while it slides or follows a swipe, 3 open
-                'g_slide_direction': 4,  # where its release slides it: 1 open, 0 closed (set as a swipe starts)
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
                 'bt_connectstatus': 4}  # a link thread runs (1), ended (2), checked (3)

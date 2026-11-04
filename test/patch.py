@@ -1905,12 +1905,6 @@ for state,pressed,timer,stuck in ((1,0,None,1),(2,0,-1,1),(3,0,None,0),(0,0,None
     m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0)
     assert m.ups==[m.top]*stuck,(state,pressed,timer)
 passed()
-# That release goes through the dispatch hook, so a Wheel QS take-back slides back and leaves nothing stale.
-m=Machine(); m.top=m.node('dialog','statusbar_dialog'); m.word(syms['g_dropdown_menu_state'],1)
-m.word(payload_syms['qs_back'],2); m.word(payload_syms['qs_down'],1); m.word(syms['g_slide_direction'],0)
-m.handlers[HOOKS['main_loop_sleep_default'][0]+12]='stock_sleep'
-m.call(address=HOOKS['main_loop_sleep_default'][0],args=(0x1234,0,0,0),gap=0)
-assert m.ups==[m.top] and m.get(syms['g_slide_direction'])==1 and not m.get(payload_syms['qs_back']) and not m.get(payload_syms['qs_down']); passed()
 # A held Play/Pause there switches its wheel to stock's volume and back, kept as Q2POD QSVOLUME.
 m=Machine(); bright=m.node('slider','slider_backlight',value=50)
 m.top=m.node('dialog','statusbar_dialog',[m.node('view','view_backlight',[bright])])
@@ -1960,20 +1954,6 @@ assert slider_touch([('down',100,300),('move',120,300),('up',120,250)],state=1)=
 assert slider_touch([('down',100,300),('up',100,300)],state=2)==[(0,[]),(0,[])]
 assert slider_touch([('down',100,300),('move',103,280)],dialog='backlight_page')==[(0,[D]),(0,[M])]  # Settings' slider is stock's
 passed()
-# Wheel QS taken back (playback.c qs_back, the slide plus 1): the release turns the pull-down's slide
-# back (g_slide_direction, which stock set as the swipe started), once; a touch down drops a stale one.
-def qs_release(back,steps,down=0):
-    m=Machine(); dialog=m.node('dialog','statusbar_dialog'); m.top=dialog
-    m.word(payload_syms['qs_back'],back); m.word(payload_syms['qs_down'],down); m.word(syms['g_slide_direction'],7); seen=[]
-    for typ in steps:
-        m.call(187,address=HOOKS['widget_dispatch'][0],args=(dialog,m.event,0,0),event_type=typ,gap=0)
-        seen.append(m.get(syms['g_slide_direction'])); m.word(syms['g_slide_direction'],7)
-    return seen,m.get(payload_syms['qs_back'])
-assert qs_release(1,[U,U])==([0,7],0) and qs_release(2,[U])==([1],0)  # back closed, back open; once
-assert qs_release(0,[U])==([7],0) and qs_release(1,[D,U])==([7,7],0)  # none, or a real touch since
-assert qs_release(1,[D,U],down=1)==([7,0],0)  # its own finger's touch down, late, keeps it
-passed()
-
 # Run stock's slider event handler with the packaged hit rectangle. Position arithmetic is
 # stock FP64 (unsupported by Unicorn); this checks capture and delivery, including outside drags.
 from ipod import decode,walk as ui_walk
@@ -8461,8 +8441,8 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('sys
 # buttons and what they do.
 cfv=display_page(m,2); cf,cf_sort,cf_refresh=m.nodes[cfv]['children']
 assert m.icons_set==['playset_covermode','playset_covermode','system_update']
-ctl=display_page(m,3); wheel,qs,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
-assert [row_text(r) for r in (hold,qs,scrub_one)]==['Hold Return: Recent','Wheel QS','Single Press Scrub']; passed()
+ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
+assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
 kids=m.nodes[view]['children']; light,corners,shortcut,time_title,centred=kids[1],kids[3],kids[5],kids[7],kids[8]
 assert row_text(shortcut)=='Shortcut: Rockbox'
@@ -12951,18 +12931,18 @@ passed()
 # Volume guard (#46; its wheel engine in test/playback.py): off by default, the dark wheel as stock;
 # the row saves VOLGUARD and sets wheel_guard, which the encoder thread reads.
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',stock_rows=3,sub=3)
-assert texts()==['Wheel Sensitivity: 50%','Wheel QS','Hold Return: Recent','Single Press Scrub','system_keytone','Click With Headphones','system_keylock','Wake: Single Press','Volume Guard']  # stock's two by key, for their translations
-assert icons==['system_display','system_display','playset_folderjump','playset_covermode','system_keytone','system_keytone','system_keylock','system_keylock','system_keylock']
+assert texts()==['Wheel Sensitivity: 50%','Hold Return: Recent','Single Press Scrub','system_keytone','Click With Headphones','system_keylock','Wake: Single Press','Volume Guard']  # stock's two by key, for their translations
+assert icons==['system_display','playset_folderjump','playset_covermode','system_keytone','system_keytone','system_keylock','system_keylock','system_keylock']
 guard=lambda: m.get(payload_syms['wheel_guard'])
-assert guard()==0 and click(8)==[(1,'Q2POD','VOLGUARD')] and texts()[8]=='Volume Guard' and guard()==1
-assert click(8)==[(0,'Q2POD','VOLGUARD')] and texts()[8]=='Volume Guard' and guard()==0; passed()
+assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
+assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
 # Buttons Lock opens stock's page, as its row on System did. Key Tone, System's stock row before
 # (0x4cc2dc): its byte and key; Click With Headphones shows while it is on, and saves IPOD KEYTONEHP.
-assert click(6)==[] and m.opened[-1]==('systemset/keylock_page',None)
-hp=rows[5]; assert m.nodes[hp]['visible']==0
+assert click(5)==[] and m.opened[-1]==('systemset/keylock_page',None)
+hp=rows[4]; assert m.nodes[hp]['visible']==0
 for on in (1,0):
-    assert click(4)==[(on,'SYSSET','KEYTONE')] and m.u.mem_read(syms['g_keytone_flag'],1)==bytes([on]) and m.nodes[hp]['visible']==on
-assert click(5)==[(1,'IPOD','KEYTONEHP')]; passed()
+    assert click(3)==[(on,'SYSSET','KEYTONE')] and m.u.mem_read(syms['g_keytone_flag'],1)==bytes([on]) and m.nodes[hp]['visible']==on
+assert click(4)==[(1,'IPOD','KEYTONEHP')]; passed()
 # Wake (docs/internals.md#wake): screen off, a lone centre press and its release never reach the UI;
 # a second press within WAKE_MS passes, press and release. Other keys, the screen on, or the
 # setting off pass untouched, except one more centre press within WAKE_MS of the waking one (#45).
@@ -13055,7 +13035,7 @@ def eaten():  # blind presses and their repeats stay dropped with the release
 assert eaten() and wake(DOWN,gap=O['WAKE_MS']) and wake(UP)  # a blind double press only wakes
 m.byte(syms['g_backlight_status'],1); assert not wake(DOWN,gap=100) and not wake(UP,gap=50); m.byte(syms['g_backlight_status'],0)
 assert wake(DOWN,gap=1000) and wake(UP)  # a new press does not inherit the dropped press's flag
-assert click(7)==[(1,'Q2POD','WAKEDOUBLE')] and texts()[7]=='Wake: Double Press' and back_dark()
+assert click(6)==[(1,'Q2POD','WAKEDOUBLE')] and texts()[6]=='Wake: Double Press' and back_dark()
 assert not wake(DOWN,gap=1000) and not wake(UP,gap=50)  # a pocket bump
 assert wake(DOWN,gap=100) and wake(UP,gap=50) and eaten()  # the double press; a third only wakes
 assert not wake(DOWN,gap=O['WAKE_MS']) and not wake(UP) and not wake(DOWN,gap=O['WAKE_MS']) and not wake(UP)  # too slow
@@ -13105,7 +13085,7 @@ assert struct.unpack_from('<I',demo,fileoff(demo,STANDBY_WAKE[0]))[0]==STANDBY_W
 m.byte(syms['g_backlight_status'],0)
 m.byte(O['BOOT_KEY_GUARD'],1); assert not wake(DOWN,gap=1000) and not wake(UP,gap=50) and m.u.mem_read(O['BOOT_KEY_GUARD'],1)==b'\0'
 assert wake(DOWN,gap=100) and m.u.mem_read(O['BOOT_KEY_GUARD'],1)==b'\0' and wake(UP,gap=50)
-assert click(7)==[(0,'Q2POD','WAKEDOUBLE')]; passed()
+assert click(6)==[(0,'Q2POD','WAKEDOUBLE')]; passed()
 # SyncLink (#113): Eddict Player's keys, which stock posts with main_loop_post_key_event, reach
 # stock's lock filters dark with the Buttons lock off; the same keys from the buttons stay locked.
 post=HOOKS['main_loop_post_key_event'][0]
@@ -13153,7 +13133,7 @@ passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'CHARGELIMIT':'1','LOWPOWER':'1','WAKEDOUBLE':'1','VOLGUARD':'1','STANDBYLIMIT':'2'})
 assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'Low Power','system_carmode','Boot to: Rockbox']
 m,rows,texts,*_=settings_page('display','scroll_view_display',{'WAKEDOUBLE':'1','VOLGUARD':'1'},stock_rows=3,sub=3)
-assert texts()[7:]==['Wake: Double Press','Volume Guard']
+assert texts()[6:]==['Wake: Double Press','Volume Guard']
 assert m.get(payload_syms['wheel_guard'])==1; passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'STANDBYLIMIT':'4'})
 assert texts()[0]=='Standby Limit: Off'; passed()  # out of range: Off
@@ -13311,23 +13291,18 @@ for config,pct in (({},50),({'WHEELSENSITIVITY':'130'},130),({'WHEELSENSITIVITY'
     assert texts()[0]==f'Wheel Sensitivity: {pct}%' and icons[0]=='system_display' and m.nodes[label]['name']=='label_wheel'
     assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][0]==rows[0],config  # the list's start
 passed()
-# Hold Return (Q2POD HOLDRETURN; compact_now_playing): Controls' row before Wheel QS and Wheel
-# sensitivity, Recent unless set; Centre or tap toggles and saves it.
+# Hold Return (Q2POD HOLDRETURN; compact_now_playing): Controls' row after Wheel sensitivity,
+# Recent unless set; Centre or tap toggles and saves it.
 for config,text in (({},'Recent'),({'HOLDRETURN':'1'},'Home')):
     m,rows,texts,icons,click=settings_page('display','scroll_view_display',config,stock_rows=3,sub=3)
-    assert texts()[2]=='Hold Return: '+text and icons[2]=='playset_folderjump'
-    assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][2]==rows[2],config
-assert click(2)==[(0,'Q2POD','HOLDRETURN')] and texts()[2]=='Hold Return: Recent'
-assert click(2)==[(1,'Q2POD','HOLDRETURN')] and texts()[2]=='Hold Return: Home'
-passed()
-# Wheel QS (Q2POD WHEELQS, playback.c's swipe): off unless set, the row between
-# Hold Return and Wheel sensitivity; Centre or tap toggles it and saves it.
-for config,on in (({},0),({'WHEELQS':'0'},0),({'WHEELQS':'1'},1)):
-    m,rows,texts,icons,click=settings_page('display','scroll_view_display',config,stock_rows=3,sub=3)
-    assert texts()[1]=='Wheel QS' and icons[1]=='system_display',config
+    assert texts()[1]=='Hold Return: '+text and icons[1]=='playset_folderjump'
     assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][1]==rows[1],config
-    assert click(1)==[(1-on,'Q2POD','WHEELQS')], config
+assert click(1)==[(0,'Q2POD','HOLDRETURN')] and texts()[1]=='Hold Return: Recent'
+assert click(1)==[(1,'Q2POD','HOLDRETURN')] and texts()[1]=='Hold Return: Home'
 passed()
+# Wheel QS is gone: a saved Q2POD WHEELQS=1 is a key nobody reads, no row and nothing written.
+m,rows,texts,icons,click=settings_page('display','scroll_view_display',{'WHEELQS':'1'},stock_rows=3,sub=3)
+assert 'Wheel QS' not in texts() and texts()[:2]==['Wheel Sensitivity: 50%','Hold Return: Recent'] and click(1)==[(1,'Q2POD','HOLDRETURN')]; passed()
 # Its row opens stock's Boot volume page re-dressed (crossfade.c): titled, no switch, the percent
 # beside the slider, which runs 50-200 in tens. The wheel and +/- step 10%, live and saved, the
 # slider snaps to a ten, a drag is live but saved once at its release, and Centre goes back (edit_key, as on Brightness).

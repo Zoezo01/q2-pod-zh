@@ -273,7 +273,6 @@ enum {
     POD_BT_LINK,
     POD_CF_SORT,    /* Display's Coverflow Sort: coverflow.c's SORT_FILE, not config.ini */
     POD_CF_REFRESH, /* and Refresh Coverflow, an action */
-    POD_WHEEL_QS,   /* Wheel QS, a swipe across the wheel (playback.c) */
     POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
@@ -384,7 +383,7 @@ typedef struct {
     int pod_read, charge_limit, low_power, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, cpu_off, cpu_bad, cpu_marked, artist_cf, year_old, resume, lock_clock,
-        artist_az, hold_home, standby_limit, standby_off, wheel_qs, eq_output;
+        artist_az, hold_home, standby_limit, standby_off, eq_output;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -2644,7 +2643,6 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &bt_vol_link,
                                    0,
                                    0,
-                                   &st.wheel_qs,
                                    &st.eq_output,
                                    0,
                                    0 };
@@ -2665,7 +2663,6 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "BTVOLLINK",
                                         0,
                                         0,
-                                        "WHEELQS",
                                         "EQOUTPUT",
                                         0,
                                         0 };
@@ -2678,11 +2675,6 @@ static void pod_settings(void) {
         if (pod_keys[i]) /* Artist albums defaults to Coverflow */
             *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i), i == POD_ARTIST_CF);
     st.pod_read = 1;
-}
-/* Wheel QS on (Q2POD WHEELQS, default off; playback.c's swipe). */
-int ringnav_wheel_qs(void) {
-    pod_settings();
-    return st.wheel_qs;
 }
 int ringnav_year_old(void) {
     pod_settings();
@@ -3046,7 +3038,6 @@ static void pod_text(int i) {
         { 0 }, /* Control Device Volume: a switch */
         { 0 }, /* Coverflow Sort's from coverflow.c */
         { "Refresh Cover Flow" },
-        { 0 }, /* Wheel QS: a switch */
         { 0 }, /* EQ per Output: a switch */
         { 0 }, /* Key Tone: a switch */
         { 0 }, /* In-Vehicle Mode: a switch */
@@ -3068,7 +3059,6 @@ static void pod_text(int i) {
                          : i == POD_RESUME    ? "Resume on Connect"
                          : i == POD_VOL_GUARD ? "Volume Guard"
                          : i == POD_BT_LINK   ? "Control Device Volume"
-                         : i == POD_WHEEL_QS  ? "Wheel QS"
                          : i == POD_KEYTONE   ? "Key Tone"
                          : i == POD_CARMODE   ? "In-Vehicle Mode"
                                               : 0;
@@ -5295,8 +5285,7 @@ int ringnav_display(void *win, void *ctx) {
                              *const sub_icons[] = { 0, "system_display", "playset_covermode" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
                                             "system_update" };
-    static const char *const qs_icons[] = { "system_display" },
-                             *const hold_icon[] = { "playset_folderjump" },
+    static const char *const hold_icon[] = { "playset_folderjump" },
                              *const tone_icon[] = { "system_keytone" },
                              *const lock_icon[] = { "system_keylock" };
     static const unsigned char main_order[] = { 0, 1, 3, 4, 2, 5, 6 };
@@ -5328,7 +5317,6 @@ int ringnav_display(void *win, void *ctx) {
         return result;
     }
     wheel_row(list_row_into(view, "system_display", xfade_open, (void *)1));
-    pod_rows(win, "scroll_view_display", POD_WHEEL_QS, 1, qs_icons);
     pod_rows(win, "scroll_view_display", POD_HOLD_HOME, 1, hold_icon);
     setting_row(view, 10);
     pod_rows(win, "scroll_view_display", POD_KEYTONE, 1, tone_icon);
@@ -5475,15 +5463,6 @@ int ringnav_dispatch(void *target, void *event) {
             quick_cancel(0, 0);
         if (target && type == EVT_CLICK && widget_get_prop_int(target, QUICK_HOLD, 0) < 0)
             return STOP;
-        /* Wheel QS taken back (playback.c qs_finish): its lift slides the pull-down back to how it
-         * was, ahead of stock's release handler; a touch down other than its own finger's (which
-         * may come after the turn) drops a stale one. */
-        if (type == EVT_POINTER_DOWN - 1 && !qs_down)
-            qs_back = 0;
-        else if (type == EVT_POINTER_UP_BEFORE - 1) {
-            if (qs_back) I(g_slide_direction, 0) = qs_back - 1;
-            qs_back = qs_down = 0;
-        }
         /* Quick Settings' swipe up to close may start on its brightness slider. The slider gets
          * its press only once the touch has moved SLIDE_PX more sideways than up or down, or on a
          * tap's release; a touch that moves up or down first, or while stock slides the pull-down
@@ -9189,7 +9168,7 @@ static int quick_wheel_toggle(void *top) {
 }
 /* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick
  * and Centre press on a list is then dropped (ringnav's gate) and the selection stays hidden until
- * a tap, which Wheel QS's finger (playback.c) cannot give; a stuck pull-down (quick_stuck) stays
+ * a tap; a stuck pull-down (quick_stuck) stays
  * too. The release went missing in the input queue (playback.c ringnav_queue_event, the found
  * way, now closed); this is the backstop for any other. A press with no pointer event reaching the
  * window manager (ringnav_input) within STALE_TOUCH_MS gets an abort, so a pressed row drops its
@@ -9201,8 +9180,7 @@ static int quick_wheel_toggle(void *top) {
  * the time stamped here holds a wrong guess to one try per STALE_TOUCH_MS.
  * --dev builds only (Q2POD_DEV): each heal, STALE_NOTES a boot, goes to q2-wheel.log, which the
  * next boot appends to the card's (tools/build.py WHEEL_LOG_HOOK): the page, the pull-down's state
- * and slide timer, the touch thread's own down flag (LOOP_PRESSED), Wheel QS's finger and the last
- * pointer event. */
+ * and slide timer, the touch thread's own down flag (LOOP_PRESSED) and the last pointer event. */
 #define STALE_NOTES 8
 static void stale_note(unsigned age) {
     if (st.stale_notes >= STALE_NOTES) return;
@@ -9212,10 +9190,10 @@ static void stale_note(unsigned age) {
     char s[160];
     tk_snprintf(s, sizeof s,
                 "== wheel: stale press at %u s: top=%s pull-down=%d slide=%d thread=%d "
-                "qs=%d/%d last=%x %u ms ago\n",
+                "last=%x %u ms ago\n",
                 (unsigned)time_now_ms() / 1000, top ? widget_get_prop_str(top, "name", "") : "-",
                 I(g_dropdown_menu_state, 0), top ? widget_get_prop_int(top, "timer_idex", -1) : -1,
-                loop ? loop[LOOP_PRESSED] : -1, qs_live, qs_down, st.touch_type, age);
+                loop ? loop[LOOP_PRESSED] : -1, st.touch_type, age);
     void *f = fopen("/mnt/data/q2-wheel.log", "ab");
     if (!f) return;
     fputs(s, f);
@@ -9240,10 +9218,10 @@ static void stale_heal(void) {
  * draining the queue. So a release already queued, by a flick quicker than the dialog loads or a
  * swipe queued behind a track start, goes to the page under it: the dialog stays on top off screen
  * with that page sent to the background, Now Playing's timer stopped (#189). With no touch down
- * and no slide running, the next UI pass hands it the release through ringnav_dispatch, so a Wheel
- * QS take-back (qs_back) still applies: stock's handler (0x4a08bc, bound at
- * dialog_statusbar_dialog_init) ignores the event's place and at states 1 and 2 with timer_idex -1
- * always adds its slide timer (0x4a099c), which always ends, so one pass does it. */
+ * and no slide running, the next UI pass hands it the release through ringnav_dispatch: stock's
+ * handler (0x4a08bc, bound at dialog_statusbar_dialog_init) ignores the event's place and at states
+ * 1 and 2 with timer_idex -1 always adds its slide timer (0x4a099c), which always ends, so one pass
+ * does it. */
 static int quick_stuck(void *top) {
     return usable() && top &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog") &&

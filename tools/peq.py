@@ -182,7 +182,6 @@ LIBC = {
     'mmap64': ('void *', 'void *, unsigned, int, int, int, long long'),
     'clock_gettime': ('int', 'int, void *'),
     'sinf': ('float', 'float'), 'cosf': ('float', 'float'),
-    # The wheel's Quick Settings swipe (playback.c qs_swipe) writes touch events to hyn_ts
     'write': ('int', 'int, const void *, unsigned'),
 }
 

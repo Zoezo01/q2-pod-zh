@@ -683,7 +683,7 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   Cover Flow ends with an All albums card, see
   [internals.md](internals.md#artist-albums-in-coverflow)), "Cover Flow Sort: Album" and "Refresh
   Cover Flow" (`system_update`).
-- Controls: Wheel Sensitivity, which opens its slider page; "Wheel QS"; "Hold Return: Recent"
+- Controls: Wheel Sensitivity, which opens its slider page; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
   centre press starts the scrub and a double press turns the screen off (Scrub, above); "Key Tone"; "Click With Headphones" (`IPOD KEYTONEHP`), shown while Key Tone is on ([Key Tone](internals.md#key-tone)); Buttons Lock, which opens stock's page; "Wake: Single Press"; and "Volume Guard".
 
