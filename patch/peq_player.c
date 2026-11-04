@@ -406,6 +406,36 @@ int ao_init(int rate, int channels, int format, int flags) {
     }
     return r;
 }
+
+/* The wired outputs' cut start (docs/internals.md#wired-start). ioctl DAC_MUTE 0 returns with the driver's
+ * mute line still held for 90-100 ms, and after a pause or seek the volume is still ramping, so what played
+ * at once was cut, heard as a swift fade-up. Each place stock releases on output way 0 with the DAC open now
+ * releases, waits, then lets audio flow: the PCM is prepared or paused, so nothing runs out and the clock
+ * stands still, and no frame is written, so DSD stays bit-exact. Stock unmutes once per mute: the flag
+ * (0xb11584, 1 after hciplayer's mute) gates every site and each clears it, so one action waits once.
+ * ponytail: every wired manual start comes about 130 ms later, and so does a track change that already
+ * reopened the PCM (a change of rate, Gapless off, stock Shuffle, DSD). Spotify's aplay and q2video keep the
+ * cut. Whether a start pops with the gate open, or a seek while paused ticks, can only be settled by ear. */
+#define DAC_RELEASE_MS 130 /* derived, not measured: the mute line's 90-100 ms and the ramp at top volume */
+#define DAC_FD (*(volatile int *)0xb1158cu)
+#define DAC_MUTED (*(volatile int *)0xb11584u)
+/* The end of init (0x4391b0), past stock's checks of the way and the fd: the ioctl is stock's own. */
+int dac_ioctl(int fd, unsigned request, void *arg) {
+    int r = ioctl(fd, request, arg);
+    usleep(DAC_RELEASE_MS * 1000);
+    return r;
+}
+/* seek (0x42b164), through stock's helper (0x43b280), which checks the way and the fd and clears the flag. */
+void dac_unmute(int value) {
+    ((void (*)(int))0x43b280u)(value);
+    if (!OUTPUT_WAY && DAC_FD > 0) usleep(DAC_RELEASE_MS * 1000);
+}
+/* Resume (0x43881c) calls snd_pcm_pause(pcm, 0) before its unmute (0x438978): that one goes first now, and
+ * with the flag clear, stock's check after the call (0x438844) passes it over. */
+int dac_resume(void *pcm) {
+    if (DAC_MUTED == 1) dac_unmute(0);
+    return ((int (*)(void *, int))0xadacf0u)(pcm, 0);
+}
 #endif
 
 /* Exact VBR MP3 seeking (docs/internals.md#large-mp3s). A Xing header in the first frame h (n bytes)

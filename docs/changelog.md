@@ -8,6 +8,7 @@
   - **Coverflow** is now spelled **Cover Flow**, as Apple does, and its **Artist Albums** row is now **Artist View**, so the longer name fits.
   - Library: a song with a long list of genres no longer shows the end of its genres as its title. Run **Update Local Music** once to repair songs already in the library; a song already in a playlist can keep the old title until you add it again. On Now Playing's info page, a long Genre line scrolls.
   - Apps: an app's songs can stay out of your scrobbles. Add a line `scrobble=0` to the `q2app` file in its folder on the card, for an app such as Live Music Archive whose live recordings don't match Last.fm's. They still count as plays. Updating the app can replace that file, so check the line afterwards.
+  - Sound: on the 3.5 mm and balanced outputs, the first fraction of a second is no longer cut, a quick fade-up you could hear, when you press Play, unpause, skip or seek. Sound now starts about an eighth of a second later instead, and a track change that already left a gap (a change of sample rate, Gapless off, Shanling's own Shuffle, DSD) leaves it longer by the same amount. Spotify, Internet Radio and Videos play as before.
 
 - **1.6.4**:
   - Settings: **Playback** is shorter. Artists, Artist Album Order, Year Order, Folder Root, Folder Skip and Folder Album Cover moved to **Playback → Library & Folders**, and ReplayGain moved next to Gain. Your settings are kept.

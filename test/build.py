@@ -407,12 +407,12 @@ def validate_assets(directory):
     # hciplayer's code (.text) differs from stock only in the VBR scan branch, now a nop, the 48 kHz EQ gates,
     # the ID3v2 walker calls, now id3_gain (MP3 ReplayGain), the MQA side chain's gate and probe length and
     # the pause and idle loops' futex waits and their wakes, gapless MP3 allocation/pre-filter/last-frame
-    # hooks and the USB DAC buffer's two stores, now nops.
-    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, USB_BUFFER
+    # hooks, the USB DAC buffer's two stores, now nops, and the wired unmute calls, now the DAC release wait.
+    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, USB_BUFFER, DAC_RELEASE
     old, new = read('stock.squashfs', 'usr/bin/hciplayer'), read('rootfs.squashfs', 'usr/bin/hciplayer')
     off = fileoff(old, VBR_SCAN)
     words = (*EQ_RATE_GATES, *MQA_GATE, *MQA_PROBE, *USB_BUFFER)
-    gates = [fileoff(old, a) for a in (*(a for a, _, _ in words), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
+    gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.
     from flac import patch_words as flac_words
@@ -428,7 +428,8 @@ def validate_assets(directory):
     for address, value in ((IDLE_WAIT[0], jal(ps['hci_idle_wait'])),
                            (PAUSE_WAIT[0], jal(ps['hci_pause_wait'])), (CMD_DONE[0], jal(ps['hci_command'])),
                            (MP3_ALLOC, jal(ps['mp3_private_alloc'])),
-                           (MP3_FILTER, jal(ps['mp3_filter_entry'])), (MP3_CLOSE, ps['mp3_close'])):
+                           (MP3_FILTER, jal(ps['mp3_filter_entry'])), (MP3_CLOSE, ps['mp3_close']),
+                           *((a, jal(ps[name])) for a, _, name in DAC_RELEASE)):
         assert struct.unpack_from('<I', new, fileoff(old, address))[0] == value
     # Include every excluded UI screen and saved-preference defaults in byte parity checks.
     paths = [l.removeprefix('squashfs-root/') for l in run('unsquashfs', '-l', directory/'stock.squashfs').splitlines()

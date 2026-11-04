@@ -55,6 +55,11 @@ MQA_PROBE = ((0x42eaf4, 0x3c020002, 0x3c020030),  # lui $v0, 0x2           -> lu
 # ponytail: where hciplayer scales a USB DAC's volume itself, a change now lags up to 500 ms, not 100 ms.
 USB_BUFFER = ((0x43977c, 0xafc2017c, 0),  # sw $v0, 0x17c($fp)  -> nop  (hw:2,0)
               (0x439a60, 0xafc3017c, 0))  # sw $v1, 0x17c($fp)  -> nop  (hw:1,0)
+# The wired outputs' unmute calls release the DAC, wait and only then let audio flow (peq_player.c,
+# docs/internals.md#wired-start): (address, stock word, hook).
+DAC_RELEASE = ((0x4391b0, 0x0c2b6eec, 'dac_ioctl'),   # end of init: jal ioctl
+               (0x42b164, 0x0c10eca0, 'dac_unmute'),  # seek: jal 0x43b280, the unmute helper
+               (0x43881c, 0x0c2b6b3c, 'dac_resume'))  # resume: jal snd_pcm_pause
 LIBC = {
     'memset': ('void *', 'void *, int, unsigned'),
     'memcpy': ('void *', 'void *, const void *, unsigned'),
@@ -225,6 +230,7 @@ def patch_player(raw, out, flac_experiments=()):
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init',
+        *(f'--undefined={name}' for _, _, name in DAC_RELEASE),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -243,6 +249,8 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, patched, 'MQA side chain')
     for address, stock, patched in USB_BUFFER:
         patch_word(data, address, stock, patched, 'USB DAC buffer')
+    for address, stock, name in DAC_RELEASE:
+        patch_word(data, address, stock, jal(ps[name]), 'DAC release wait')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'USB DAC init slot')

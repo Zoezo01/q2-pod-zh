@@ -6,11 +6,12 @@ A tone split across two files comes out of two instances exactly as one instance
 at AAC/SBC's 48 kHz and LDAC's 96 kHz. Stock's (and a skip mid-track, a rate change or a pause)
 start the second from a fresh resampler, which loses the first's tail.
 Then a USB DAC's init across a change (ao_init): a repeated request asks for what it negotiated.
+Last the wired outputs' start (dac_*): stock's own unmute sites release, wait once, then let audio flow.
 Usage: test/bt_resample.py BUILD_DIR"""
 import math, pathlib, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-from build import fileoff, load_elf, symbols
-from peq import RS_OPEN_SLOT, RS_OPEN, AO_INIT_SLOT, AO_INIT
+from build import fileoff, jal, load_elf, symbols
+from peq import RS_OPEN_SLOT, RS_OPEN, AO_INIT_SLOT, AO_INIT, DAC_RELEASE
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE
 from unicorn.mips_const import *
 
@@ -32,7 +33,7 @@ for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=Tr
     if len(s) >= 5 and s[2] == 'R_MIPS_JUMP_SLOT':
         imports[STUBS + 4*len(imports)] = s[4].split('@')[0]
         u.mem_write(int(s[0], 16), struct.pack('<I', STUBS + 4*(len(imports)-1)))
-heap, clock, freed = [HEAP], [10**9], set()
+heap, clock, freed, dac_log, pause_rc = [HEAP], [10**9], set(), [], [0]
 
 def w(p, *v): u.mem_write(p, struct.pack('<' + 'I'*len(v), *v))
 def r(p): return struct.unpack('<I', u.mem_read(p, 4))[0]
@@ -69,6 +70,10 @@ def libc(u, address, size, _):
     elif n == '__divdi3':
         x, y = (v - (1 << 64) if v >> 63 else v for v in (a(0) | a(1) << 32, a(2) | a(3) << 32))
         result = abs(x) // abs(y) * (1 if (x < 0) == (y < 0) else -1); v1 = result >> 32
+    elif n == 'ioctl': dac_log.append(('ioctl', a(0), a(1), r(a(2)))); result = 0
+    elif n == 'usleep': dac_log.append('wait'); assert 100000 <= a(0) <= 200000, 'the mute line, without a long wait'; result = 0
+    elif n == 'snd_pcm_pause': dac_log.append(('pause', a(1))); result = pause_rc[0]
+    elif n == 'snd_pcm_state': result = 2  # not suspended
     else: raise AssertionError(n)
     u.reg_write(UC_MIPS_REG_V0, result & 0xffffffff)
     if v1 is not None: u.reg_write(UC_MIPS_REG_V1, v1 & 0xffffffff)
@@ -183,3 +188,66 @@ plug(lambda rate: 48000, lambda fmt: fmt)
 assert queue((44100, S16), (44100, S16)) == ([(44100, S16), (48000, S16)], 1)
 assert init(44100, S24, way=0) == (44100, S24) and init(44100, S24, way=1) == (44100, S24)
 print('USB DAC init: an album on a 48 kHz DAC opens the PCM once; other requests, DACs and outputs are stock\'s.')
+
+# The wired outputs' start (patch/peq_player.c dac_*), through stock's own sites around the patched calls.
+for address, _, name in DAC_RELEASE:
+    assert struct.unpack_from('<I', raw, fileoff(raw, address))[0] == jal(ps[name])
+FLAG, FD, CAN_PAUSE, MPCTX, OFFSET = 0xb11584, 0xb1158c, 0xb11594, 0xaf9e30, 0xaf9b78
+UNMUTE = ('ioctl', 5, 0xc0044d1f, 0)
+def stub(u, address, size, _): u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+u.hook_add(UC_HOOK_CODE, stub, begin=0x4460fc, end=0x4460fc)  # mp_msg
+u.hook_add(UC_HOOK_CODE, stub, begin=0x42bcf8, end=0x42bcf8)  # Bluetooth's volume after a resume
+ctx, frame = alloc(0x100), alloc(0x400)
+w(MPCTX, ctx), w(frame + 0x180, 0xb10000), w(CAN_PAUSE, 1), w(PCM, 0x1000)
+def state(way=0, flag=1, fd=5, paused=False, offset=0.0):
+    w(WAY, way), w(FLAG, flag), w(FD, fd), w(ctx + 4, 2 if paused else 1)
+    u.mem_write(OFFSET, struct.pack('<d', offset))
+def site(start, until, **regs):
+    """What stock's code from start to until does, and the flag it leaves."""
+    dac_log.clear()
+    for reg, value in regs.items(): u.reg_write(globals()['UC_MIPS_REG_' + reg], value)
+    u.reg_write(UC_MIPS_REG_SP, STACK), u.reg_write(UC_MIPS_REG_RA, DONE)
+    u.emu_start(start, until, count=100_000)
+    return [*dac_log], r(FLAG)
+def init_end(): return site(0x438d78, 0x438d94, S4=0xb10000, FP=frame)
+def seek(): return site(0x42b0d4, 0x42b128, V0=0xb10000, S0=ctx, S1=0xb10000, S2=0xb10000)
+def resume(): return site(0x4387ec, DONE)
+def wrapper(name, *args):
+    dac_log.clear(), call(ps[name], *args)
+    return [*dac_log], r(FLAG)
+RELEASED = ([UNMUTE, 'wait'], 0)
+
+# The end of init waits after its unmute; with no mute, or with the unmute left to seek or resume, it does nothing.
+state()
+assert init_end() == RELEASED
+state(flag=0)
+assert init_end() == ([], 0)
+state(paused=True)
+assert init_end() == ([], 1)
+state(offset=30.0)
+assert init_end() == ([], 1)
+# A start with an offset: init passes it to seek, which waits once; a later resume has nothing left to do.
+assert seek() == RELEASED and seek() == ([], 0) and resume() == ([('pause', 0)], 0)
+# While paused, seek's own check passes it over, as the end of init's does.
+state(paused=True)
+assert seek() == ([], 1)
+# Resume releases, waits, then lets audio flow, and stock's own unmute after the call passes.
+assert resume() == ([UNMUTE, 'wait', ('pause', 0)], 0)
+state(flag=0)
+assert resume() == ([('pause', 0)], 0)
+# Resume hands back snd_pcm_pause's answer, which stock's failure path reads.
+state(flag=0); pause_rc[0] = 0xffffffe0
+assert call(ps['dac_resume'], 0x1000) == 0xffffffe0
+pause_rc[0] = 0
+# With the DAC closed, everything passes straight through.
+state(fd=0)
+assert resume() == ([('pause', 0)], 1) and init_end() == ([], 1) and seek() == ([], 1)
+# Bluetooth and USB never wait and never touch the DAC, at stock's sites or the hooks themselves.
+for way in (1, 2):
+    state(way=way)
+    assert resume() == ([('pause', 0)], 1), way
+    assert init_end() == ([], 1), way
+    assert wrapper('dac_unmute', 0) == ([], 1), way
+state(way=2)
+assert seek() == ([], 1)
+print('Wired start: each site releases and waits once before audio flows; Bluetooth, USB and a clear flag don\'t wait.')
