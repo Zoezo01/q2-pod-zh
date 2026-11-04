@@ -391,6 +391,10 @@ SORT_TRIMS = (0x5b9e38, 0x5b9ea4, 0x5ba750, 0x5ba7bc)
 # ("m" + 鷖...). That round trip's strcmp (jalr, with the round trip's copy in its delay slot) becomes jal
 # ringnav_gbk_tag, which also asks that the bytes read as GBK; otherwise TagLib's UTF-8 copy is kept.
 TAG_TEXT = (0x5c5e7c, 0x0320f809)
+# toolsGetMusicInfo's genre strcpy (dst info+0x200 at 0x5c62d0, the 0x80-byte style field before
+# title at +0x280) becomes jal ringnav_genre_copy. Its delay slot still loads the joined genre into
+# a1; bounding this one copy covers both the library scan and the player's tag reads.
+GENRE_COPY = (0x5c62dc, 0x0320f809)
 # The CUE sheet parser (the unnamed function after toolsFreeStSongInfo) ran each field through the same
 # toolsIconvConvert(field, "utf-8", "gbk"); its seven bal become jal ringnav_cue_text.
 CUE_TEXT = (0x5c06d0, 0x5c0794, 0x5c084c, 0x5c0908, 0x5c0bc8, 0x5c0f84, 0x5c130c)
@@ -1265,7 +1269,7 @@ def compile_payload(out):
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
@@ -1559,6 +1563,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *BT_AUTOLINK, jal(ps['headset_bt_autolink']), 'Bluetooth: auto-link keeps an incoming link')
     patch_word(patched, *SCAN_REFRESH, jal(ps['ringnav_scan_refresh']), 'folder scan refreshes existing tags')
     patch_word(patched, *TAG_TEXT, jal(ps['ringnav_gbk_tag']), 'tag text GBK only when it reads as GBK')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GENRE_COPY[0] - 4))[0] == 0x8f99f5bc,
+          'genre copy: expected strcpy import')
+    patch_word(patched, *GENRE_COPY, jal(ps['ringnav_genre_copy']),
+               'long genre tags stay inside the style field')
     for address in CUE_TEXT:
         patch_word(patched, address, branch(0x04110000, address, syms['toolsIconvConvert']),
                    jal(ps['ringnav_cue_text']), 'CUE text read as UTF-8, GBK or Windows-1252')

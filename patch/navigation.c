@@ -2763,6 +2763,29 @@ static void flac_album_artist(const char *path, char *out) {
         }
     fclose(f);
 }
+/* toolsGetMusicInfo's genre strcpy (GENRE_COPY): TagLib joins multi-value genres with " / ",
+ * but style has only 0x80 bytes before name. Keep whole entries that fit, or 0x7f bytes of an
+ * oversized first one; the tag file is untouched. */
+char *ringnav_genre_copy(char *dst, const char *joined) {
+    const char *entry = joined;
+    unsigned keep = 0;
+    for (;;) {
+        const char *end = entry;
+        while (*end && (end[0] != ' ' || end[1] != '/' || end[2] != ' ')) ++end;
+        unsigned n = end - joined;
+        if (n > 0x7f) {
+            if (entry == joined) keep = 0x7f;
+            break;
+        }
+        keep = n;
+        if (!*end) break;
+        entry = end + 3;
+    }
+    memcpy(dst, joined, keep);
+    dst[keep] = 0;
+    return dst;
+}
+
 /* toolsGetMusicInfo (the library scan and the player's tag reads): an empty album artist falls back
  * to flac_album_artist. */
 int ringnav_music_info(int a, char *info, const char *path) {
@@ -5119,6 +5142,78 @@ static int setting_click(void *ctx, void *event) {
     return 0;
 }
 
+/* Stock's info page draws Genre in a plain, centred 225 px label: a bounded multi-genre value is
+ * wider, so both ends are clipped and only its middle shows. Stock's np_info rewrites that label
+ * every 250 ms, which resets an hscroll_label's animation. Keep the stock label hidden as the
+ * value source and drive a separate scroller from it, updating its text only when the track's
+ * genre changes. np_info still fills label_genre; the visible one has a private name. AWTK's own
+ * scroller advances a fixed 16 ms per callback, so its speed follows the UI frame rate; drive its
+ * xoffset from wall time instead (see genre_scroll_tick). */
+#define GENRE_SCROLL "ringnav_genre_scroll"
+#define GENRE_SPEED 20 /* ms a pixel: 0.05 px/ms, half stock's 0.1 */
+static struct {
+    void *label;
+    unsigned timer, start;
+} genre_scroll;
+static int genre_scroll_closed(void *ctx, void *event) {
+    if (genre_scroll.label != ctx) return 0;
+    if (genre_scroll.timer) timer_remove(genre_scroll.timer);
+    genre_scroll.label = 0, genre_scroll.timer = genre_scroll.start = 0;
+    return 0;
+}
+/* AWTK's scroller advances 16 ms a timer callback, so its visible speed follows the UI loop's
+ * frame rate. Drive xoffset from wall time instead; hscroll_label_t.text_w is @0x94 in stock V1.32. */
+static int genre_scroll_tick(const void *unused) {
+    void *label = genre_scroll.label;
+    if (!label) return 0;
+    int range = I(label, 0x94) - I(label, W_W) + 4; /* minus the style's 2 px margins */
+    if (range <= 0) return 8;                       /* RET_REPEAT */
+    unsigned now = time_now_ms();
+    if (!genre_scroll.start) genre_scroll.start = now;
+    unsigned travel = (unsigned)range * GENRE_SPEED;
+    if (now - genre_scroll.start >= travel + 2000u) genre_scroll.start = now; /* 2 s lull */
+    unsigned elapsed = now - genre_scroll.start;
+    ((int (*)(void *, int))0x5e7f6cu)(label, elapsed >= travel ? range : (int)(elapsed / GENRE_SPEED));
+    return 8; /* RET_REPEAT */
+}
+static void np_set_text(void *widget, const char *text) {
+    char old[512];
+    if (widget_get_text_utf8(widget, old, sizeof old) || strcmp(old, text))
+        widget_set_text_utf8(widget, text);
+}
+static void np_genre_label(void *label, const char *text) {
+    void *parent = label ? P(label, W_PARENT) : 0;
+    if (!label) return;
+    if (!parent) {
+        np_set_text(label, text);
+        return;
+    }
+    void *scroll = widget_lookup(parent, GENRE_SCROLL, 1);
+    if (!scroll && strlen(text) <= 28) {
+        np_set_text(label, text);
+        return;
+    }
+    if (!scroll) {
+        scroll = hscroll_label_create(parent, I(label, W_X), I(label, W_Y), I(label, W_W),
+                                      I(label, W_H));
+        if (!scroll) return;
+        widget_set_name(scroll, GENRE_SCROLL);
+        widget_use_style(scroll, "s_scrlabel_white16c");
+        hscroll_label_set_only_focus(scroll, 1); /* no AWTK timer: genre_scroll_tick drives it */
+        hscroll_label_set_ellipses(scroll, 0);
+        widget_on(scroll, EVT_DESTROY, genre_scroll_closed, scroll);
+    }
+    widget_set_visible(label, 0, 0);
+    genre_scroll.label = scroll;
+    if (!genre_scroll.timer) genre_scroll.timer = timer_add(genre_scroll_tick, 0, 16);
+    char old[512];
+    if (widget_get_text_utf8(scroll, old, sizeof old) || strcmp(old, text)) {
+        widget_set_text_utf8(scroll, text);
+        genre_scroll.start = 0;
+        ((int (*)(void *, int))0x5e7f6cu)(scroll, 0);
+    }
+}
+
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
  * ("35.92 MB", "16-bit", "950 kbps", "44.1 kHz"), the folder its Location label, and an unknown
@@ -5156,6 +5251,10 @@ int ringnav_np_info(void *win) {
                     v[len - u - 1] <= '9';
         tk_snprintf(out, sizeof out, "%.*s: %.*s%s", n, name, split ? len - u : len, v,
                     split ? units[i] : "");
+        if (i == 1) {
+            np_genre_label(label, out);
+            continue;
+        }
         if (strcmp(out, s)) widget_set_text_utf8(label, out);
     }
     return result;
