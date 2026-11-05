@@ -274,14 +274,19 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
 LOG_HOOK = (b'        while :; do\n            /release/bin/demo\n',
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
-# --dev only: the wheel's stale-press notes (navigation.c stale_note) go to the card's q2-wheel.log, appended, when
-# the card is up. In BOOT_HOOK's start path.
+# --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
+# card's q2-wheel.log, appended, when the card is up, up to 256 KB. In BOOT_HOOK's start path.
 WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
                   b'        w=/mnt/data/q2-wheel.log\n'
                   b'        [ -f $w ] && (\n'
                   b'            i=0\n'
                   b"            while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done\n"
-                  b"            grep -q ' /mnt/mmc ' /proc/mounts && cat $w >> /mnt/mmc/q2-wheel.log && sync && rm -f $w\n"
+                  b"            grep -q ' /mnt/mmc ' /proc/mounts || exit\n"
+                  b'            c=/mnt/mmc/q2-wheel.log\n'
+                  b'            n=$(wc -c 2>/dev/null <$c)\n'
+                  b'            [ "${n:-0}" -lt 262144 ] || { rm -f $w; exit; }\n'
+                  # renamed first: a flush after this makes a new file for the next boot
+                  b'            mv -f $w $w.m && cat $w.m >> $c && sync && rm -f $w.m\n'
                   b'        ) &\n'
                   b'        rb=/mnt/mmc/.rockbox\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.

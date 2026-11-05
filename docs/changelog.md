@@ -24,6 +24,7 @@
   - Resume: **Previous** on an audiobook, podcast or long track now shows "Press again to restart" instead of restarting it, in any queue, from 30 seconds in to 30 seconds before the end. Earlier or later there's no place to lose, so it restarts at once. Only the same button pressed again within 3 seconds restarts it, even while the message is showing, so **Previous** can no longer confirm a prompt that **Next** raised.
   - Resume: picking the file that's playing, from the list it's playing from or from View Queue, now opens Now Playing instead of restarting it, and a paused file carries on. From another list, that list is loaded and the file goes back to your place after a moment. Short songs restart as before. Starting a stopped long file goes back to where it stopped.
   - Wheel: **Wheel QS** is removed for now. Quick Settings still opens with a swipe down from the top of the screen.
+  - Wheel: if the wheel ever keeps scrolling on its own, press **Return** twice: it stops until you lift your finger.
 
 - **1.6.4**:
   - Settings: **Playback** is shorter. Artists, Artist Album Order, Year Order, Folder Root, Folder Skip and Folder Album Cover moved to **Playback → Library & Folders**, and ReplayGain moved next to Gain. Your settings are kept.

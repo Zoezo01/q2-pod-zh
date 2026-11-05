@@ -13651,6 +13651,10 @@ assert m.pass_(O['IDLE_MS'])[1]==[]; m.animating=0
 assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']] and not m.writes; passed()
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'
 m.call(address=inp,args=(m.wm,m.event,0,0),gap=0); assert m.pass_(1)[1]==[]; passed()  # input: full speed again
+# A wheel press tick_gate drops is no input to the idle clock; one with a frame behind it is.
+m=PowerMachine(); m.handlers[inp+12]='stock_input'; m.animating=1; m.pass_(1); m.pass_(O['IDLE_MS']); m.animating=0; assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]
+m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0); assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]
+m.word(payload_syms['wheel_frame_at'],m.now); m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0); assert m.pass_(1)[1]==[]; passed()
 # A refused online is retried once a second, not every pass.
 class Refused(PowerMachine):
     def hook(self,u,address,size,unused):

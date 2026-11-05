@@ -499,8 +499,9 @@ typedef struct {
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
     void *setting_label[12];
-    unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
-    int greeted;       /* the first reachable list got its boot repaint */
+    unsigned tone_key;  /* the wheel key whose press ringnav_keydown silenced, 0 when none */
+    unsigned tick_drop; /* tick_gate: the wheel keys whose press it dropped, bits */
+    int greeted;        /* the first reachable list got its boot repaint */
     /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
      * checked by count, record and browsing-state hashes; qm_cls is the class its list holds;
      * qm_forced is a shuffle Play next. */
@@ -10490,7 +10491,33 @@ static int remote_key(void *e) {
  * UI; a key's release goes to the player instead. A card game (addon.c) takes every event but the
  * music's keys. Every event times ringnav_sleep's idle. */
 int ringnav(void *ctx, void *event);
+/* A wheel tick needs a ring frame with pressure within WHEEL_FRESH_MS (wheel_sample stamps it
+ * before it posts), and no stop from Return, so a tick with no finger behind it goes no further,
+ * whatever posted it. Its release follows its press, so AWTK never keeps a press with no release.
+ * replay_wheel calls ringnav itself and never passes here. Signed: a frame can stamp after the
+ * clock is read. ponytail: ticks queued behind a UI stalled past WHEEL_FRESH_MS after the last
+ * frame go too; a flick's tail, raise the knob if it is ever missed. */
+static int tick_gate(void *e) {
+    unsigned type = (unsigned)I(e, EVENT_TYPE), key = (unsigned)I(e, EVENT_KEY);
+    if ((type != EVT_KEY_DOWN && type != EVT_KEY_UP) || (key != KEY_PREV && key != KEY_NEXT))
+        return 0;
+    unsigned bit = key == KEY_NEXT ? 2 : 1;
+    if (type == EVT_KEY_UP) {
+        int drop = (st.tick_drop & bit) != 0;
+        st.tick_drop &= ~bit;
+        return drop;
+    }
+    int muted = wheel_mute;
+    if (!muted && (int)((unsigned)time_now_ms() - wheel_frame_at) < WHEEL_FRESH_MS) {
+        st.tick_drop &= ~bit;
+        return 0;
+    }
+    st.tick_drop |= bit;
+    if (Q2POD_DEV && !muted) wheel_gate_note();
+    return 1;
+}
 int ringnav_input(void *wm, void *e) {
+    if (e && tick_gate(e)) return 0;
     if (e && (chord_gate(e) || wake_gate(e))) return 0;
     st.last_input = time_now_ms();
     unsigned type = e ? (unsigned)I(e, EVENT_TYPE) : 0;

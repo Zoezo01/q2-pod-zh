@@ -884,6 +884,329 @@ assert wheel([(10,1),(10+U-1,1),fast,(10+U,1),(9+U+U//2,1)])[0]==[P] and wheel([
 for more,want in ((1,[]),(2,[P]),(-1,[])):
     assert wheel([(10,1),(23,1),slow,(23+more,1)],sensitivity('100')[0])[0]==want,more
 checks+=1
+import random,zlib
+# The encoder thread whole, with no finger assumed: stock's own loop (0x6259e8, get_direction's tail,
+# with ringnav_ts_read in it) reads a mock ts_read and posts to a 20-event queue that drops its oldest,
+# as main_loop_simple_queue_event does. A UI that drains after each read is one keeping up.
+INPUT=HOOKS['window_manager_dispatch_input_event'][0]; LOG='/mnt/data/q2-wheel.log'; DEV=manifest['dev']
+class EncoderMachine(PlaybackMachine):
+    GP=0xa26cc0
+    def __init__(self,pct=50):
+        super().__init__(); self.q=[]; self.sample=None; self.keys=[]
+        self.sp=self.alloc(0x4000)+0x3000; self.info=self.sp+0x20
+        loop,self.qw=self.alloc(0x60),self.alloc(8)
+        self.word(self.info+O['WHEEL_INFO_LOOP'],loop); self.word(loop+O['LOOP_QUEUE'],self.qw); self.word(self.sp+0x2c,1); self.word(self.sp+0x18,self.GP)
+        self.handlers[O['WHEEL_POST']]='enc:post'; self.handlers[self.get(self.GP-0xa84)]='enc:read'
+        # the path a button takes, ringnav_queue_event, posting through the loop's own poster
+        self.loop=self.alloc(0x60); self.word(self.loop+O['LOOP_POST'],0x1000020); self.handlers[0x1000020]='enc:loop'; self.loop_posts=[]
+        self.handlers[ps['stock_input_trampoline']]='stock_input'
+        self.log=b''; self.log_opens=0; self.synced=0; self.log_fail=False; self.threads=[]; self.spawned=0; self.hold=False; self.thread_fail=0
+        for name,short in (('fopen@GLIBC_2.2','fopen'),('fclose@GLIBC_2.2','fclose'),('fputs@GLIBC_2.0','fputs'),('fseek@GLIBC_2.0','fseek'),
+                           ('ftell@GLIBC_2.0','ftell'),('fflush@GLIBC_2.0','fflush'),('fileno@GLIBC_2.0','fileno'),('fsync@GLIBC_2.0','fsync'),
+                           ('pthread_create@GLIBC_2.2','thread'),('pthread_detach@GLIBC_2.0','detach')):
+            self.handlers[syms[name]]='enc:'+short
+        self.sync(); self.fn('wheel_set_pct',pct)
+        self.start=self.now; self.now=1<<30  # long past any frame's stamp, which is what the gate is about
+    def sync(self):
+        n=len(self.q); self.u.mem_write(self.qw,struct.pack('<4H',15,(15+n)%20,n==20,20))
+    def push(self,event):
+        self.q.append(event); self.q[:-20]=[]; self.sync()
+    def drain(self): self.q=[]; self.sync()
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('enc:'): return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
+        if name=='enc:post':
+            event=self.get(self.info+O['WHEEL_INFO_EVENT']),self.get(self.info+O['WHEEL_INFO_KEY'])
+            self.push(event)
+            if event[0]==0x110: self.keys.append(event[1])
+        elif name=='enc:read':
+            x,p,ret=self.sample
+            for i,v in enumerate((x,0,p,self.now//1000,self.now%1000*1000)): self.word(b+4*i,v)
+        elif name=='enc:loop': self.loop_posts.append((self.get(b),self.get(b+O['EVENT_KEY'])))
+        elif name=='enc:fopen':
+            assert self.text(a)==LOG and self.text(b)=='ab'
+            self.log_opens+=1; ret=0 if self.log_fail else 0x777
+        elif name=='enc:fputs': self.log+=self.text(a).encode()
+        elif name=='enc:ftell': ret=len(self.log)
+        elif name=='enc:fsync': self.synced+=1
+        elif name=='enc:thread':
+            ret=self.thread_fail
+            if not ret: self.threads.append(c); self.spawned+=1
+        return self.returns(ret)
+    def run_threads(self):  # a flush's thread, once its creator is off the emulator
+        if self.hold: return
+        while self.threads: self.call(address=self.threads.pop(),args=(0,0,0,0),gap=0,clear=False)
+    def read(self,x,p,ret=1,gap=10):  # one pass of the thread's loop: the ticks it posted
+        self.now+=gap; self.sample=(x,p,ret); self.keys=[]
+        for r,v in ((UC_MIPS_REG_SP,self.sp),(UC_MIPS_REG_GP,self.GP),(UC_MIPS_REG_S0,O['WHEEL_POST']),(UC_MIPS_REG_S1,self.info),
+                    (UC_MIPS_REG_S4,self.get(self.GP-0x7f44)),(UC_MIPS_REG_RA,0x1000000),(REGS[0],1)): self.u.reg_write(r,v)
+        self.u.emu_start(0x6259ec,0x6259e8,count=500000)
+        assert self.u.reg_read(UC_MIPS_REG_PC)==0x6259e8 and self.u.reg_read(UC_MIPS_REG_SP)==self.sp
+        keys=self.keys; self.run_threads(); return keys
+    def turn(self,n,step,gap,x=100):  # a finger going round: the ticks, stamped
+        ticks=[]
+        if x: self.read(x,1,gap=gap); self.x=x
+        for _ in range(n):
+            self.x=(self.x+step-1)%200+1
+            ticks+=[(self.now+gap,k) for k in self.read(self.x,1,gap=gap)]; self.drain()
+        return ticks
+    def press(self,key=O['KEY_RETURN'],kind=0x110):  # a button's event, as its thread posts it
+        r=self.alloc(0x40); self.word(r,kind); self.word(r+O['EVENT_KEY'],key)
+        self.call(address=ps['ringnav_queue_event'],args=(self.loop,r,0,0),gap=0,clear=False); self.run_threads()
+    def input(self,kind,key):  # what ringnav_input lets on to stock's window manager
+        self.call(key,address=INPUT,args=(self.wm,self.event,0,0),event_type=kind,gap=0)
+        n=sum(c[0]=='stock_input' for c in self.calls); self.run_threads(); return n
+    def gated(self):  # the queue, through ringnav_input only
+        through=[(kind,key) for kind,key in self.q if self.input(kind,key)]
+        self.drain(); return through
+    def deliver(self):  # the same, and a release it passes reaches ringnav, as stock's would
+        through=[]
+        for kind,key in self.q:
+            if self.input(kind,key):
+                through.append((kind,key))
+                if kind==0x114: self.call(key,gap=0)
+        self.drain(); return through
+    def mute(self): return self.get(ps['wheel_mute'])
+SIXTEENTHS_MOST=lambda pct: 100*16//SIXTEENTHS[pct]+1  # half a turn's ticks, and the carry's
+# Ordinary use, stamped, at four sensitivities: a slow turn over the seam, a fast one, a reversal, a
+# rest, a tap and a flick. The same ticks at the same times mean the same list ramp downstream; this
+# number is the code before the gate and Return's stop, so normal feel did not move. It covers what's
+# in it: none of Volume Guard, the raw travel, a fractional step or a lost lift.
+ORDINARY_WANT=0x1ac3e3c3
+def ordinary(pct):
+    m=EncoderMachine(pct); m.now=m.start; out=[]
+    out+=m.turn(300,1,20); m.read(m.x,0); m.now+=300
+    out+=m.turn(40,15,10,x=30); m.read(m.x,0); m.now+=150
+    out+=m.turn(60,3,15,x=150); out+=m.turn(60,-3,15,x=0); m.now+=800; out+=m.turn(30,2,15,x=0); m.read(m.x,0); m.now+=500
+    assert not m.read(40,1)+m.read(40,0); m.now+=90
+    out+=m.turn(4,12,10,x=60); m.read(m.x,0)
+    return out
+assert zlib.crc32(repr([ordinary(pct) for pct in (50,100,130,200)]).encode())==ORDINARY_WANT
+# The same with what the CRC left out, against its own number from the code before: a lost lift (the
+# next touch goes on from it) and a fractional step, 130%'s, over a mid-turn change; Volume Guard's
+# own checks follow this block.
+ORDINARY2_WANT=0xb7bde5ad
+def ordinary2(pct):
+    m=EncoderMachine(pct); m.now=m.start; out=m.turn(50,3,15); m.now+=2000; out+=m.turn(50,3,15,x=0); m.fn('wheel_set_pct',130); out+=m.turn(50,3,15,x=0); m.read(m.x,0)
+    return out
+assert zlib.crc32(repr([ordinary2(pct) for pct in (50,200)]).encode())==ORDINARY2_WANT
+checks+=1
+# The driver's x is a byte, and no arc of it is dead: past 200 and at 0 a frame ticks like any other.
+for x,want,back in ((200,[P],200-U),(201,[P],201-U),(255,[P],255-U),(1,[N],1+U),(0,[N],U)):
+    m=EncoderMachine(); m.read(back,1)
+    assert m.read(x,1)==want,x
+# A real lift leaves stock's path nothing to tick on, however many samples with no pressure follow.
+m=EncoderMachine(); m.turn(3,U,10); m.read(m.x,0)
+for x in (21,50,99,101,150,179): assert not m.read(x,0)
+checks+=1
+r=random.Random(0x5117)
+# A fixed seed's hostile samples, any byte (a lift in any state, the seam, repeats, a lost lift, bursts,
+# a busy UI, Return at any moment): no lift, however many or wherever they say the finger is, posts a
+# tick; one sample is at most half a turn's ticks; a busy UI always leaves a button's press and release
+# their slots; and after a lift nothing is stopped.
+def hostile(last):
+    k=r.randrange(6)
+    return last if k==0 else (last+r.randint(-3,3)-1)%200+1 if k==1 else r.choice((1,2,199,200)) if k==2 else r.choice((0,201,255)) if k==3 else r.randint(0,255)
+for pct in (50,100,130,200):
+    m=EncoderMachine(pct); most=SIXTEENTHS_MOST(pct); last=100
+    for touch in range(50):
+        for _ in range(r.randrange(1,25)):
+            x=hostile(last); gap=r.choice((0,1,10,10,10,40,500)); ret=r.random()>.05
+            k=m.read(x,1,ret=int(ret),gap=gap)
+            assert len(k)<=most,(pct,x,k)
+            if ret: last=x
+            assert len(m.q)<=20-O['WHEEL_QUEUE_FREE'],len(m.q)  # the queue as a stalled UI leaves it
+            if r.random()<.5: m.drain()
+            if r.random()<.1: m.press()
+        m.drain()
+        if r.random()<.2: continue  # a lost lift: the next touch goes on from it
+        for _ in range(r.randrange(1,25)):  # the lift, then whatever follows it with no finger
+            k=m.read(hostile(last),0,ret=1,gap=r.choice((0,1,10,1000,6000)))
+            assert not k and not m.mute(),(pct,k)
+checks+=1
+# ringnav_input's gate, from the frame on. The encoder's ticks pass, with their frames fresh; a tick
+# whose last frame is WHEEL_FRESH_MS old goes nowhere, its release with it; a release follows its own
+# press's decision whatever the frames did in between.
+FRESH=O['WHEEL_FRESH_MS']; DOWN_,UP_=0x110,0x114
+for kind in (P,N):
+    move=100+(U if kind==P else -U)
+    m=EncoderMachine()
+    m.read(100,1); m.read(move,1); assert len(m.q)==2
+    q=list(m.q); assert m.deliver()==q
+    m.read(100,1); m.drain(); m.read(move,1); q=list(m.q); m.now+=FRESH-1; assert m.deliver()==q  # just in time
+    m.read(100,1); m.drain(); m.read(move,1); m.now+=FRESH; assert m.deliver()==[]
+    # a frame stamped just after the gate read its clock: no wrap, no tick dropped mid-spin
+    m.word(ps['wheel_frame_at'],m.now+5); assert m.input(DOWN_,kind) and m.input(UP_,kind)
+    # a tick with no frame ever, and frames with no pressure: nothing lets it in
+    m=EncoderMachine(); assert not m.input(DOWN_,kind) and not m.input(UP_,kind)
+    m.read(100,1); m.read(100,0); m.now+=FRESH
+    for x in (50,60,70): m.read(x,0,gap=1)
+    m.drain(); assert not m.input(DOWN_,kind) and not m.input(UP_,kind)
+    # a dropped press's release is dropped with a frame in between, a passed one's passes with none
+    m=EncoderMachine(); assert not m.input(DOWN_,kind)
+    m.read(100,1); assert not m.input(UP_,kind)
+    assert m.input(DOWN_,kind); m.now+=FRESH*5; assert m.input(UP_,kind)
+    assert m.input(UP_,kind)  # a release with no press stays stock's business
+    # a dropped press whose release was lost: the next press passes, and owns its release
+    m=EncoderMachine(); assert not m.input(DOWN_,kind); m.read(100,1); assert m.input(DOWN_,kind) and m.input(UP_,kind)
+    # the two wheel keys keep their own decision
+    other=N if kind==P else P
+    m.now+=FRESH; assert not m.input(DOWN_,kind); m.read(100,1); assert m.input(DOWN_,other) and m.input(UP_,other) and not m.input(UP_,kind)
+# Every other key and event goes by, with no frame; a tick on a page that holds it replays with its
+# frames long gone (replay_wheel calls ringnav itself): the queue's tick was decided at the gate.
+m=EncoderMachine()
+for key in (O['KEY_RETURN'],O['KEY_CENTER'],O['KEY_PLAY'],O['KEY_BACK_BTN'],O['KEY_FWD_BTN']):
+    assert m.input(DOWN_,key) and m.input(UP_,key),key
+w,_=m.page_list(); m.animating=1; m.call(N,gap=0); assert any(v[1]==ps['replay_wheel'] for v in m.timers.values())
+before=m.selected(w); m.animating=0; m.word(ps['wheel_frame_at'],0); m.advance(100); assert m.selected(w)!=before and not m.timers
+checks+=1
+# A real finger, however long: ten minutes at 21 ticks a second one way (and a minute the other), every
+# frame's ticks through the gate: never a tick lost or a stop, and a --dev log writes once, past 30 s.
+for step,minutes in ((6,10),(-6,1)):
+    m=EncoderMachine(); m.read(100,1); m.x=100; n=0; frames=minutes*6000
+    for i in range(frames):
+        m.x=(m.x+step-1)%200+1; m.read(m.x,1,gap=10); q=len(m.q); assert len(m.gated())==q; n+=q//2
+    assert not m.mute() and abs(n-frames*abs(step)//U)<=1 and 21<=n/(frames/100)<22,(n,frames)
+    assert m.log_opens==(1 if DEV else 0) and m.log.count(b'== wheel: a run past 30 s')==(1 if DEV else 0)
+# A turn slower than any tick gap, the thumb resting up to 999 ms between frames: every tick arrives.
+m=EncoderMachine(); m.read(100,1); m.x=100; n=0
+for i in range(100):
+    m.x=(m.x+U-1)%200+1; k=m.read(m.x,1,gap=FRESH-1); assert k==[P]; n+=len(m.deliver())
+assert n==200
+# And past that: a tick is made by the frame that stamps it, so a 5 s rest between frames loses none.
+m=EncoderMachine(); m.read(100,1); m.x=100; n=0
+for i in range(10):
+    m.x=(m.x+U-1)%200+1; assert m.read(m.x,1,gap=5000)==[P]; n+=len(m.deliver())
+assert n==20
+checks+=1
+# Return's stop takes two. One Return is a rim press: a thumb can slide to it and carry on with no
+# lift, and every tick arrives (35 in 3 s, a 0.8 s rest, on); a lift just after it arms nothing for the
+# next touch; a normal Back never stops anything.
+def ghost(m,n,step,gap=10,ui=False):
+    out=[]
+    for _ in range(n):
+        m.x=(m.x+step-1)%200+1; out+=m.read(m.x,1,gap=gap)
+        if len(m.q)>=8: m.deliver() if ui else m.drain()
+    return out
+R=O['KEY_RETURN']; TICK=O['WHEEL_ESCAPE_TICK_MS']; STOP=O['WHEEL_STOP_TICKS']
+m=EncoderMachine(); m.read(100,1); m.x=100; assert ghost(m,20,5); m.press(); assert not m.mute()
+for i in range(35):
+    assert ghost(m,1,U,gap=85)==[P] and not m.mute(),i
+    m.drain()
+m.x=(m.x+U-1)%200+1; assert m.read(m.x,1,gap=800)==[P]; assert ghost(m,3,U,gap=85)==[P]*3
+m=EncoderMachine(); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); m.read(m.x,0,gap=1)    # lifted straight after it
+m.read(100,1); m.x=100; ghost(m,20,5); m.press(); assert not m.mute() and ghost(m,20,5)
+m=EncoderMachine()
+for i in range(20):                                                                          # scroll and Back, over and over
+    m.read(100,1); m.x=100; assert ghost(m,20,5); m.drain(); m.press(); m.read(m.x,0); assert not m.mute()
+assert m.log_opens==0
+# A ghost, ring reporting pressure and a moving x with no lift, on a list, on Home each way and under
+# Now Playing's volume_dialog. The first Return does its job and ticks carry on; the second, its press
+# posted as ever, stops them: what is queued goes nowhere, and no tick for as long as the frames run. A
+# lift, and the next touch works, with nothing left behind: no replay timer, the row where it was.
+for name,make,step in (('list',lambda m:m.page_list()[0],5),('home next',lambda m:m.page('home_page','slide_menu'),-5),('home prev',lambda m:m.page('home_page','slide_menu'),5),('now playing',lambda m:m.page('playing_page'),5)):
+    m=EncoderMachine(); w=make(m); m.read(100,1); m.x=100
+    assert ghost(m,50,step,ui=True),name; m.deliver()
+    if name=='now playing': dlg=m.node('dialog','volume_dialog'); page=m.top; m.top=dlg  # the tick opened it
+    m.press(); m.press(kind=UP_); m.call(R,gap=0); assert not m.mute(),name
+    if name=='now playing': m.top=page  # Return closes it (0x4a2134)
+    assert ghost(m,60,step),name; m.drain()
+    ghost(m,12,step); assert m.q,name; m.press(); assert m.loop_posts[-1]==(DOWN_,R) and m.mute(),name
+    assert not m.deliver(),name   # the ticks queued ahead of it
+    m.press(kind=UP_); assert m.loop_posts[-1]==(UP_,R); m.call(R,gap=0)
+    shown=m.selected(w) if name=='list' else None
+    for _ in range(3000):  # 30 s: nothing comes to move a row or reopen the bar
+        m.x=(m.x+step-1)%200+1; assert not m.read(m.x,1),name
+    assert not m.q and m.mute(),name; m.advance(5000)
+    assert not any(v[1]==ps['replay_wheel'] for v in m.timers.values()),name
+    if shown is not None: assert m.selected(w)==shown
+    assert not m.read(m.x,0) and not m.mute(),name
+    m.byte(O['KEY_LOCKOUT'],0)  # Return's own lockout, long over
+    k=m.read(100,1)+m.read(100-U,1); assert k==[N] and m.deliver()==[(DOWN_,N),(UP_,N)],name
+    if shown is not None: assert m.selected(w)!=shown,name
+# Exactly when: ticks since the first Return (the count runs on through a third press), a tick just now
+# and a frame just now; its release, another key or no finger arm nothing; and a stop's Returns count once.
+def armed():
+    m=EncoderMachine(); m.read(100,1); m.x=100; ghost(m,20,5); m.drain(); m.press(); return m
+def since(m,n):
+    for _ in range(n): assert ghost(m,1,U)==[P]; m.drain()
+m=armed(); since(m,STOP-1); m.press(); assert not m.mute(); since(m,1); m.press(); assert m.mute()
+m=armed(); since(m,STOP); m.now+=TICK-1; m.press(); assert m.mute()
+m=armed(); since(m,STOP); m.now+=TICK; m.press(); assert not m.mute()
+m=armed(); since(m,STOP); m.word(ps['wheel_frame_at'],m.now-FRESH); m.press(); assert not m.mute()
+m=armed(); m.read(m.x,0); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute()         # a lift disarms
+m=armed(); m.now+=FRESH; since(m,STOP); m.press(); assert not m.mute()                                  # so does a gap in frames
+m=EncoderMachine(); m.read(100,1); m.x=100; m.press(kind=UP_); m.press(O['KEY_CENTER']); m.press(O['KEY_PLAY']); since(m,STOP); m.press(); assert not m.mute()
+m=EncoderMachine(); m.press(); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute() and m.loop_posts==[(DOWN_,R),(DOWN_,R)]  # nothing on the ring
+m=EncoderMachine(); m.read(100,1); m.x=100; since(m,STOP); m.read(m.x,0); m.press(); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute()  # Back between touches: no first press
+m=armed(); since(m,STOP); m.press(); assert m.mute(); m.loop_posts=[]; m.press(); ghost(m,60,5); m.press(); ghost(m,20,5); assert m.mute() and len(m.loop_posts)==2
+if DEV: assert m.get(ps['wl_stops'])==1
+# The stop ends at a real lift, or a rest in frames from the very first frame after it, however long,
+# and with the log's flush done or not: 999 ms is the ghost going on, 1000 a run that ended with no
+# lift seen. Then it takes two Returns again.
+def stopped():
+    m=armed(); since(m,STOP); m.press(); assert m.mute(); return m
+for rest in (FRESH,1500,5000,60000):
+    m=stopped(); m.x=(m.x+U-1)%200+1; assert m.read(m.x,1,gap=rest)==[P] and not m.mute(),rest   # the first frame after it
+    m.drain(); since(m,STOP); assert not m.mute(); m.press(); assert not m.mute(); since(m,STOP); m.press(); assert m.mute()
+m=stopped()
+for _ in range(3): m.x=(m.x+U-1)%200+1; assert not m.read(m.x,1,gap=FRESH-1) and m.mute()
+# A ghost that never lifts: stopped for as long as it lasts, with the buttons free. The clock stands
+# still across a Standby, so that is no rest: the stop outlasts it. An hour's rest awake ends it.
+m=stopped(); ghost(m,100,5); assert m.mute(); m.press(O['KEY_CENTER']); assert m.loop_posts[-1][1]==O['KEY_CENTER'] and m.input(DOWN_,O['KEY_CENTER'])
+m.x=(m.x+4)%200+1; assert not m.read(m.x,1,gap=0) and m.mute()
+m.x=(m.x+4)%200+1; m.read(m.x,1,gap=3600*1000); assert not m.mute() and ghost(m,20,5)
+# Volume Guard: no shield from a ghost. Screen off, it holds the first half turn of any touch, then a
+# ghost with no lift ticks on (docs/internals.md); the stop works dark too.
+m=EncoderMachine(); m.word(ps['wheel_guard'],1); m.byte(syms['g_backlight_status'],0)
+m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain(); m.press(); since(m,STOP); m.press(); assert m.mute() and not ghost(m,20,5)
+# Vortex and the lyrics read the raw travel with a thumb held down as long as they like: not ticks.
+m=EncoderMachine(); m.word(ps['wheel_raw'],1); n=m.turn(3000,2,20)
+assert m.get(ps['wheel_travel'])==2*3000 and not m.q and not n; m.word(ps['wheel_raw'],0)
+checks+=1
+# A normal build keeps no trace: none of the log's state, and no thread or file for a stop or a drop.
+if not DEV:
+    assert not {'wl_frames','wl_flush','wheel_gate_note','wl_stops'}&set(ps)
+    m=stopped(); m.drain(); m.read(m.x,0); m.now+=FRESH; assert not m.input(DOWN_,N)
+    assert m.spawned==0 and m.log_opens==0 and not m.log
+else:
+    # The frame log. A frame is stores: no call but the clock; x is noted as it came, whatever it is.
+    m=EncoderMachine(); m.read(100,1); m.read(255,1); m.read(0,0); assert m.spawned==0 and not m.log
+    # The stop writes once, off the wheel's thread, synced, with the frames in order, the oldest of the
+    # last 64, and the counts.
+    m=EncoderMachine(); m.read(100,1); m.x=100; ghost(m,99,5); m.read(250,1); m.read(100,1); m.x=100; m.press(); since(m,STOP); m.press(); assert m.mute() and m.spawned==1 and m.log_opens==1 and m.synced==1
+    rows=m.log.decode().splitlines(); assert rows[0].startswith('== wheel: Return stopped a run') and 'stops 1' in rows[0] and len(rows)==65
+    ms=[int(l.split()[0]) for l in rows[1:]]; assert ms==sorted(ms) and 'x=250 p=1' in m.log.decode()
+    ghost(m,3100,5); assert m.log_opens==1  # past 30 s, the same run: nothing more
+    # One writer: a flush while one writes is lost, not raced; the next after it goes. A thread that can't
+    # start leaves the way clear.
+    m=EncoderMachine(); m.hold=True; m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==1 and not m.log
+    m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==1 and m.mute()
+    m.hold=False; m.run_threads(); assert m.log_opens==1
+    m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==2 and m.log_opens==2
+    m=EncoderMachine(); m.thread_fail=11; m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.mute() and m.spawned==0
+    m.thread_fail=0; m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==1
+    # A run past 30 s writes once; a lift and another, up to eight a boot, never past the size; gaps of a
+    # second in ticks never get there; a log it cannot open costs nothing else.
+    m=EncoderMachine(); m.read(100,1); m.x=100; assert ghost(m,2999,5); assert m.log_opens==0; ghost(m,300,5); assert m.log_opens==1 and m.log.startswith(b'== wheel: a run past 30 s')
+    for i in range(20):
+        m.drain(); m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,3300,5)
+    assert m.log_opens==8 and len(m.log)<=32768+64*40
+    m=EncoderMachine(); m.log=b'x'*32768; m.read(100,1); m.x=100; ghost(m,3300,5); assert m.log_opens==1 and m.log==b'x'*32768 and not m.synced
+    m=EncoderMachine(); m.read(100,1); m.x=100
+    for _ in range(6): ghost(m,1000,5); m.now+=FRESH
+    assert m.log_opens==0
+    m=EncoderMachine(); m.log_fail=True; m.read(100,1); m.x=100; assert ghost(m,3300,5) and m.log_opens==1
+    # The gate's first drop of a run leaves its own line, once a run however many follow; a second's quiet
+    # is a new run; the ticks a stop refuses are the stop's, not the gate's.
+    m=EncoderMachine(); m.read(100,1); m.now+=FRESH
+    for _ in range(50):
+        assert not m.input(DOWN_,N) and not m.input(UP_,N); m.now+=50
+    assert m.log_opens==1 and m.log.startswith(b'== wheel: a tick with no ring frame') and m.get(ps['wl_drops'])==50
+    m.now+=FRESH; assert not m.input(DOWN_,N); assert m.log_opens==2
+    m=stopped(); n=m.log_opens; m.read(m.x,1,gap=1); assert not m.input(DOWN_,N) and not m.input(UP_,N) and m.log_opens==n and m.get(ps['wl_drops'])==0
+checks+=1
 # Volume guard on (Q2POD VOLGUARD, #46), screen off: a touch's first WHEEL_DARK_GUARD units one way
 # tick nothing and are dropped; then it ticks as lit, reversals and new touches too, until WHEEL_DARK_IDLE_MS without travel. A
 # reversal, lift or pause under the guard starts it again; travel is units, so sensitivity aside.

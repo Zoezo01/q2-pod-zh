@@ -35,7 +35,9 @@ extern int wheel_guard; /* Volume guard: the screen-off wheel's half-turn guard,
 /* iPod: while wheel_raw is set the wheel posts no ticks and adds its raw travel to wheel_travel,
  * 200 units a turn, rising anticlockwise (games.c's Vortex, Now Playing's lyrics); wheel_held is
  * set while a finger is on the wheel */
-extern volatile int wheel_raw, wheel_travel, wheel_held;
+extern volatile int wheel_raw, wheel_travel, wheel_held, wheel_mute;
+extern volatile unsigned wheel_frame_at; /* the wheel's last frame with pressure */
+void wheel_gate_note(void); /* --dev: tick_gate dropped a tick for want of a frame */
 int playback_keeps(void *q, int at), restart_armed(int key);
 void playback_np(void);
 #endif
