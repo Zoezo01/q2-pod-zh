@@ -211,7 +211,7 @@ void *page_row_detail_into(void *view, int index, const char *caption, const cha
 void page_row_into(void *view, int index, const char *caption, int (*click)(void *, void *));
 void row_into(void *item, int h);
 void list_toggle(void *label, const char *title, int on); /* navigation.c: a row's switch */
-/* navigation.c: Classic Light's value */
+/* navigation.c: Classic's value */
 void list_value(void *label, const char *title, const char *value);
 char *csv_find(char *list, const char *item);                /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
@@ -363,7 +363,7 @@ void dac_take(void);                          /* books.c */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
 const char *theme_face(const unsigned *s, int n);
-void bar_title_sync(void *win); /* navigation.c: Classic Light's bar title names win */
+void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 int ipod_light(void);   /* navigation.c: Light Mode */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau

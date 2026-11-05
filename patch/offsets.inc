@@ -214,12 +214,7 @@ static inline int arc_out(int r, int y) {
 #define HOME_DOT_X 25
 #define HOME_DOT 6
 #define HOME_DOT_GAP 8
-/* iPod Theme: Classic (IPOD/THEME 1, docs/ipod.md#display-settings) puts the pre-1.0.1 look back
- * over the Minimal assets at runtime. In Home's Full the rows end at HOME_CLASSIC_ROW, so the
- * chevron's glyph (x 20 to 30 of list_into) sits close to the panel edge without touching the
- * glass on the bottom row. Labels start at HOME_CLASSIC_TEXT_X and leave room for the glyph.
- * The progress bar is an NP_BAR_CLASSIC capsule
- * (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
+/* Classic's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
 #define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
@@ -234,14 +229,9 @@ static inline int arc_out(int r, int y) {
 #define DRIFT_TICK_MS 200
 #define DRIFT_MAX_STEP_MS 500 /* 2.5 ticks: a late tick keeps its time */
 #define DRIFT_TEXELS 221088 /* four panels: 4 x 188 x 294, the tallest set's client */
-#define HOME_CLASSIC_ROW 369
 #define HOME_TOP 8 /* Minimal's decorative inset; Classic starts below the status bar. */
 #define HOME_CHEVRON_SHIFT 15
 #define HOME_FULL_CHEVRON_SHIFT 10
-#define HOME_CLASSIC_TEXT_X 33
-/* Labels end 10 px before Split's chevron glyph (x 20 of list_into, HOME_CHEVRON_SHIFT in), 5 px
- * before Full's, so Liberation Sans Bold's "Now Playing" (119 px) fits Split's row. */
-#define HOME_CLASSIC_LABEL_END 33
 #define NP_BAR_CLASSIC 8
 #define NP_BAR_MINIMAL 4
 #define MINIMAL_FILL 0xeeeeec

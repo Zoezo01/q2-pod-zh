@@ -2968,7 +2968,7 @@ static void home_width(void *w, int outer, int inner, int x, int end, int depth)
         void *child = widget_get_child(w, i);
         if (!tk_strcmp(widget_get_type(child), "hscroll_label")) {
             widget_move_resize(child, x, I(child, W_Y), inner - x - end, I(child, W_H));
-            /* Classic's bold, Classic Light's face; Minimal paints its own (paint_caps) */
+            /* Classic's bold, Classic's face; Minimal paints its own (paint_caps) */
             theme_font(child, ROLE_NP, -1);
         }
         else
@@ -2983,8 +2983,8 @@ static void home_show(void *w, int on) {
 }
 
 /* Stored HOME=0/1/2 is Split/Full/Carousel in both themes: Split halves the screen, the art in the
- * right panel; Full hides the art and widens the list, its rows to HOME_FULL_ROW (Minimal) or
- * HOME_CLASSIC_ROW; Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
+ * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
+ * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
  * lists' place, and leaving it, the main list. Hidden Rockbox is restacked last because the native
  * layout includes hidden rows, and made insensitive, as hidden rows keep their taps. */
 void coverflow_home_layout(void) {
@@ -3083,7 +3083,7 @@ int coverflow_home_back(void *top) {
     return 1;
 }
 
-/* Classic Light's bar title on Home (navigation.c bar_title_sync). */
+/* Classic's bar title on Home (navigation.c bar_title_sync). */
 const char *coverflow_home_title(void) {
     void *open = home_open();
     return !open ? "Q2 Pod" : open == home.lib ? "Library" : "Settings";

@@ -7,7 +7,7 @@ import pytest
 import ipod
 import theme
 
-CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT = (theme.sets(theme.builtins()[2])[s] for s in ('classic-light', 'classic-light-text'))  # Classic Light's sets: its theme.xml
+CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT = (theme.sets(theme.builtins()[1])[s] for s in ('classic-light', 'classic-light-text'))  # Classic's sets: its theme.xml
 
 
 def w(name, *children, kind='view', at=None, **props):
@@ -720,7 +720,7 @@ def test_status_bar_wants_the_stock_height():
         ipod.status_bar(root)
 
 
-# Classic Light's bar, from the spec's rules: bar text at bar_px (21 px, caps on rows 6 to 16), centred on the rows
+# Classic's bar, from the spec's rules: bar text at bar_px (21 px, caps on rows 6 to 16), centred on the rows
 # above the bar's two lines; title and clock share one box height and y (-1, the baseline at row 17); the
 # title's text starts where the glass ends at the caps' top, g.bar_title_w wide; stock's hscroll_label keeps 2 px
 # each side of the box, so the box is 4 wider; the clock is centred on the screen.
@@ -737,7 +737,7 @@ def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     assert classic_light_text_w('Local Songs') <= m['title'][2] - 4 and classic_light_text_w('Now Playing') <= m['title'][2] - 4
 
 
-def classic_light_text_w(text):  # text's advance in the Classic Light face at the bar's px (stb scales ascent - descent to the size)
+def classic_light_text_w(text):  # text's advance in the Classic face at the bar's px (stb scales ascent - descent to the size)
     from fontTools.ttLib import TTFont
     f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
     cmap = f.getBestCmap()
@@ -784,7 +784,7 @@ def test_classic_light_status_bar_eq_in_the_room():
 
 # Where the row layout puts the icons: right-aligned from the group's margin, the slot 31 (its soft edge, the body,
 # the nub), hidden children taking no room. Bluetooth's and Wi-Fi's canvases are stock's; their ink lands on the
-# columns and rows Classic Light's look states, and with the play state hidden they close up on the battery.
+# columns and rows Classic's look states, and with the play state hidden they close up on the battery.
 def test_classic_light_status_bar_icons_on_their_columns():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     view = n['view_right']
@@ -931,7 +931,7 @@ def test_set_assets_set0_is_empty(fake_assets):
 
 
 def test_classic_light_sets():
-    # Classic Light: a 26 px bar, 28 px text rows, 52 px art rows with the art 1:1 (Row Art off: 28, no art),
+    # Classic: a 26 px bar, 28 px text rows, 52 px art rows with the art 1:1 (Row Art off: 28, no art),
     # and text pages without artwork.
     n, t = CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT
     assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 28, 28, 52, 52, 52, 0, 0, 0)
@@ -956,7 +956,7 @@ def test_home_library_list():
     assert 'list_view_homelib' not in named(root) and 'img_library' not in rows and 'img_localmusic' in rows
 
 
-# Songs' action bar under Classic Light: a row of the set's action_row, the list and the empty panel under it, and stock's recreated
+# Songs' action bar under Classic: a row of the set's action_row, the list and the empty panel under it, and stock's recreated
 # scroll bar spans that (the payload shapes what stock builds in it, navigation.c action_row). A set without action_row keeps
 # stock's 50 px bar.
 def test_songs_action_row(monkeypatch):
@@ -972,7 +972,7 @@ def test_songs_action_row(monkeypatch):
 
 
 def test_settings_lists_follow_the_set(monkeypatch):
-    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Classic Light's whole window of 28 px rows from 0.
+    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Classic's whole window of 28 px rows from 0.
     path = 'systemset/sysset_page.bin'
     page = w('sysset_page', w('view_navbar', at=[0, 0, 375, 50]),
              w('list_view', kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
@@ -983,7 +983,7 @@ def test_settings_lists_follow_the_set(monkeypatch):
 
 
 def test_lists_beside_settings_rows_take_item_height(monkeypatch):
-    # A library list with the set's settings row height is told apart by its item_height (Classic Light only).
+    # A library list with the set's settings row height is told apart by its item_height (Classic only).
     path = 'localmusic/albuminfo_page.bin'
     data = ipod.encode(list_page(path)); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
     assert named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))['list_view'][2]['item_height'] == '28'

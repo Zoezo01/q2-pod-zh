@@ -689,18 +689,10 @@ def validate_assets(directory):
             # The dot and the labels clear the bottom row's corner.
             assert dot[0] >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + (HOME_ROW - dot[1])//2, dot[1])
             assert HOME_TEXT_X >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
-            # Split (coverflow_home_layout) gives Minimal's menu 45% of the screen, Classic's half, the art the rest;
-            # Full's last chevron leaves the same glass clearance as the label on the left.
+            # Split (coverflow_home_layout) gives the menu half the screen, the art the rest;
             # Split's glyph ends 13px before the art, as in the Home concept.
             assert inc('HOME_SPLIT_W') == 375 // 2
             assert inc('CHEVRON_W') - 30 - inc('HOME_CHEVRON_SHIFT') == 13
-            glyph_end = inc('HOME_CLASSIC_ROW') - inc('CHEVRON_W') + 30 + inc('HOME_FULL_CHEVRON_SHIFT')
-            glyph_y = SET0.bar + 6*HOME_ROW + (HOME_ROW - 50) // 2 + 16
-            assert 375 - glyph_end >= corner_x(glyph_y, 34 - 16)
-            assert inc('HOME_CLASSIC_TEXT_X') >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
-            # Classic's labels stop short of Split's glyph (x 20 to 30 of list_into) and Full's.
-            for row, shift in ((inc('HOME_SPLIT_W'), inc('HOME_CHEVRON_SHIFT')), (inc('HOME_CLASSIC_ROW'), inc('HOME_FULL_CHEVRON_SHIFT'))):
-                assert row - inc('HOME_CLASSIC_LABEL_END') + 5 <= row - inc('CHEVRON_W') + shift + 20
             continue
         if short == STATUS_BAR:  # iPod only: play state left, title between, four icons right
             left, right, *rest = root[3]
@@ -886,7 +878,7 @@ def validate_assets(directory):
                     if n[0] in ('list_view', 'table_view') and old and old[1] in (50, 100) and n[1] != old:
                         ends[rel] = n[1][1] + n[1][3]
             assert ends and set(ends.values()) == {320 - g.bar}, (g.name, ends)
-        if g.bar_px:  # Classic Light's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
+        if g.bar_px:  # Classic's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
             m = status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
             assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name

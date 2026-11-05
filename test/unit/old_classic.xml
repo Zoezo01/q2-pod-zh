@@ -1,5 +1,4 @@
-<!-- Theme: Classic (IPOD/THEME 1, docs/ipod.md#display-settings). Its numbers (Home rows, the settings
-     top, the progress bar, the scheme colours) come from patch/offsets.inc via tools/theme.py ROLE_MACROS. -->
+<!-- The old Classic (before Classic took Classic Light's look): a fixture for test_theme.py, its offsets.inc numbers in test_theme.py old_classic_macros. Its selection painter, the retired bar, reads as stops (the same index). -->
 <theme format="1" id="classic" name="Classic" index="1" extends="minimal">
   <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum green"/>
   <option setting="light" preset="on" keep="auto"/>
@@ -12,7 +11,7 @@
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="0"/></view>
   <view name="list">
-    <element name="selection" painter="bar"/>
+    <element name="selection" painter="stops"/>
     <element name="icons" mono="0" badge_muted="0" addon_mono="0"/>
   </view>
   <view name="home"><element name="chevron" visible="1"/><element name="rows" caps="0"/></view>

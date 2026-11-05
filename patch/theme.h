@@ -3,8 +3,8 @@
 /* The built-in themes' shape (docs/internals.md#themes); the table is navigation.c's themes[]. */
 
 enum { PAINT_SELECTION, PAINT_BAR, PAINT_BATTERY, PAINTER_N }; /* theme_t.painter[] index */
-enum { SEL_CARD, SEL_BAR, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic bar) */
-enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic Light gloss) */
+enum { SEL_CARD, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic stops) */
+enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic gloss) */
 enum {
     BATT_STOCK,
     BATT_CLASSIC_LIGHT
@@ -120,7 +120,7 @@ typedef struct {
     const scheme_t *schemes; /* [n_schemes], indexed by accent value: each scheme's dark half */
     const scheme_t *light; /* [n_schemes] each scheme's light half; == schemes when the theme states
                               no final value (Minimal, Classic) */
-    unsigned char n_schemes; /* ACCENT_N, then the theme's own (Classic Light: 10) */
+    unsigned char n_schemes; /* ACCENT_N, then the theme's own (Classic: 10) */
     const option_t *opts;    /* Appearance rows after Theme, in order */
     unsigned char n_opts;
     unsigned undeclared;     /* SETTING_* bits of the theme options it does not declare */

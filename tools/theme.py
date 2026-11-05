@@ -27,7 +27,7 @@ PAYLOAD_KEYS = frozenset(
     + [k for f in sorted((ROOT/'patch').glob('*.c')) for k in re.findall(r'"IPOD", "([A-Z0-9_]+)"', f.read_text())])
 # value name -> its C name (theme.h); the font keys take FONTS
 FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'classic-light': 'FONT_CLASSIC_LIGHT'}
-CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'},
+CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS'},
            'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
            'bar.battery.painter': {'stock': 'BATT_STOCK', 'classic-light': 'BATT_CLASSIC_LIGHT'},
            **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
@@ -180,10 +180,9 @@ ROLE_MACROS = {
                 'home_label_end[0]': 'HOME_SPLIT_LABEL_END', 'home_label_end[1]': 'HOME_LABEL_END', 'set_top': 'SET_TOP',
                 'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': '0',
                 'fill': 'MINIMAL_FILL', 'chevron': 'MINIMAL_CHEVRON', 'muted': 'SUDO_MUTED', 'bar_light': '0', **CF_ROLES},
-    'classic': {'home_top': '0', 'home_full_row': 'HOME_CLASSIC_ROW', 'home_text_x': 'HOME_CLASSIC_TEXT_X',
-                'home_label_end[0]': 'HOME_CLASSIC_LABEL_END', 'home_label_end[1]': 'HOME_CLASSIC_LABEL_END', 'set_top': '0',
-                'np_bar': 'NP_BAR_CLASSIC', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB',
-                'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
+    # Classic: what its theme.xml doesn't state itself (Now Playing's bar, the stock battery's fill, the bars outside its gloss)
+    'classic-light': {'set_top': '0', 'np_bar': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB', 'fill': '0', 'chevron': '0',
+                      'bar_light': 'LIGHT_BAR'},
 }
 
 # Classic Blue's selection band: its 1 px top line, the stops under it and its edge row:

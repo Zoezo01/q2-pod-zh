@@ -437,7 +437,7 @@ typedef struct {
     /* The status bar's Bluetooth, Wi-Fi and battery widgets, looked up once (the bar is never
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
-     * level, charge and low state. Classic Light's bar also has a title (bar_title_sync), from the
+     * level, charge and low state. Classic's bar also has a title (bar_title_sync), from the
      * top window title_win and, when a label holds it, title_lbl (both found once per window). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
         *bar_title, *title_win, *title_lbl,
@@ -480,8 +480,7 @@ typedef struct {
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled, bar_bold, title_x,
-        title_w; /* Classic Light's bar title's own box */
+    int time_title, bar_titled, bar_bold, title_x, title_w; /* Classic's bar title's own box */
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;
@@ -1849,7 +1848,7 @@ static int theme_own(int k) {
         if (T->opts[i].setting == SETTING_OWN + k) return st.own[k];
     return 0;
 }
-/* Classic Light's Home in Split (coverflow.c): Library on Home and Row Preview */
+/* Classic's Home in Split (coverflow.c): Library on Home and Row Preview */
 int home_lib_on(void) { return theme_own(OWN_HOMELIB); }
 int row_preview_on(void) { return theme_own(OWN_ROWPREVIEW); }
 static const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
@@ -1988,40 +1987,6 @@ static int pill_radius(void *row, int h, int inset) {
     return r;
 }
 
-/* A vertical gradient in one-pixel bands, then a one-pixel top highlight; equal ends give a solid
- * fill. r.h is at least 2. A pill (radius, at most r.h / 2) insets the bands at either end to that
- * radius's circle; 0 is square. Plain fills keep this off the stock gradient_t ABI, which is not
- * audited. */
-static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsigned hi,
-                     int radius) {
-    for (int j = 0; j < r.h; ++j) {
-        int out = 0, D = 2 * radius, d = 2 * j + 1 - r.h;
-        d = (d < 0 ? -d : d) - (r.h - D); /* half pixels past the end circle's centre */
-        if (radius && d > 0) {            /* 1/16-pixel chord, sampled at the band's centre. */
-            int v = (D * D - d * d) * 64, k = 0;
-            int end = 8 * D;
-            while (k < end) {
-                int mid = (k + end + 1) / 2;
-                if (mid * mid <= v)
-                    k = mid;
-                else
-                    end = mid - 1;
-            }
-            out = 8 * D - k;
-        }
-        int in = (out + 15) / 16;
-        unsigned color = RGBA(j ? mix(top, bottom, j, r.h - 1) : hi);
-        canvas_set_fill_color(canvas, color);
-        canvas_fill_rect(canvas, r.x + in, r.y + j, r.w - 2 * in, 1);
-        if (out & 15) {
-            canvas_set_fill_color(canvas,
-                                  (color & 0xffffff) | (unsigned)(16 - (out & 15)) * 17 << 24);
-            canvas_fill_rect(canvas, r.x + in - 1, r.y + j, 1, 1);
-            canvas_fill_rect(canvas, r.x + r.w - in, r.y + j, 1, 1);
-        }
-    }
-}
-
 /* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
  * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
  * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
@@ -2122,7 +2087,7 @@ static int drill(void *w) {
 static int geom(int group);
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
  * list_into: not in multi-select, and not on grid tiles. Home has none, except Classic's, which
- * rides its selection bar alone, nudge included. A theme's chevron_sel (Classic Light's) draws only
+ * rides its selection bar alone, nudge included. A theme's chevron_sel (Classic's) draws only
  * the selected row's, white. The image manager caches the bitmap. */
 static void paint_chevrons(void *w, void *canvas) {
     unsigned bitmap[64], white[64]; /* bitmap_t */
@@ -2457,36 +2422,28 @@ static void paint_selection(void *w, void *canvas) {
                 !st.sel_home
             ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
             : (void *)0;
+    /* Classic's band (SEL_STOPS): square and full width, the glass clips it */
     if (band && (!tile || g_menu.kind == 4)) {
-        if (painter == SEL_STOPS) { /* square and full width: the glass clips it */
-            int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
-                edge = tall ? 2 : !!S->sel_edge;
-            if (tall) paint_stops(canvas, r.x, r.y, r.w, r.h, &S->sel); /* its lines go over them */
-            if (top) {
-                stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
-                canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
-            }
-            if (tall && S->sel_tall_top) {
-                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_top));
-                canvas_fill_rect(canvas, r.x, r.y + top, r.w, 1);
-            }
-            if (!tall) paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
-            if (tall) {
-                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_edge));
-                canvas_fill_rect(canvas, r.x, r.y + r.h - 2, r.w, 1);
-                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_line));
-                canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
-            } else if (edge) {
-                stock_canvas_set_fill_color(canvas, RGBA(S->sel_edge));
-                canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
-            }
-        } else {
-            const unsigned *a = S->tones;
-            /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
-            rect_t bar = r;
-            int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
-            if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
-            gradient(canvas, bar, a[0], a[1], a[4], pill);
+        int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
+            edge = tall ? 2 : !!S->sel_edge;
+        if (tall) paint_stops(canvas, r.x, r.y, r.w, r.h, &S->sel); /* its lines go over them */
+        if (top) {
+            stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
+            canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
+        }
+        if (tall && S->sel_tall_top) {
+            stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_top));
+            canvas_fill_rect(canvas, r.x, r.y + top, r.w, 1);
+        }
+        if (!tall) paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
+        if (tall) {
+            stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_edge));
+            canvas_fill_rect(canvas, r.x, r.y + r.h - 2, r.w, 1);
+            stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_line));
+            canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
+        } else if (edge) {
+            stock_canvas_set_fill_color(canvas, RGBA(S->sel_edge));
+            canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
         }
     } else if (home) {
         rect_t dot = { HOME_DOT_X, r.y + (r.h - HOME_DOT) / 2, HOME_DOT, HOME_DOT };
@@ -2543,14 +2500,14 @@ static int painting_in(void *row);
  * images (select, unselect: a 26 px ring, a 12 px dot when checked) vanish on the selected row's
  * off-white card, so they are drawn again over it in the card's ink. So does the Wi-Fi, Bluetooth
  * and Tidal rows' navbar_delete, drawn again as list_delete, its copy in list_into's grey;
- * navbar_delete itself stays white for the playlist page's Delete. A set_text theme (Classic Light)
+ * navbar_delete itself stays white for the playlist page's Delete. A set_text theme (Classic)
  * has neither: its rings are emptied and a checked row gets a tick.
  */
 static void paint_radio(void *w, void *canvas) {
     if (!w) return;
     if (theme()->set_text) {
         const scheme_t *S = scheme();
-        /* Classic Light: a checked row's tick (dy, x, w of each 1 px line), the theme's own mark,
+        /* Classic: a checked row's tick (dy, x, w of each 1 px line), the theme's own mark,
          * in the selection's text or the ink; stock's ring images are empty (ringnav_image_add). */
         static const unsigned char tick[][3] = { { 0, 11, 2 }, { 1, 10, 2 }, { 2, 9, 2 },
                                                  { 3, 8, 2 },  { 4, 0, 2 },  { 4, 7, 2 },
@@ -2740,7 +2697,7 @@ void list_toggle(void *label, const char *title, int on) {
     image_base_set_image(image, on ? "switch_on" : "switch_off");
 }
 
-/* Classic Light's settings rows (set_text): the title left and the value right-aligned in the
+/* Classic's settings rows (set_text): the title left and the value right-aligned in the
  * trailing column, the title ending short of it. Switches read On or Off as values. */
 void list_value(void *label, const char *title, const char *value) {
     void *button = P(label, W_PARENT);
@@ -3857,7 +3814,7 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    /* Classic Light: EQ only while nothing plays (a codec badge, which needs a track, would reach
+    /* Classic: EQ only while nothing plays (a codec badge, which needs a track, would reach
      * it: tools/ipod.py). The play state leads the bar, so the title moves past it while it shows;
      * on Home it stands in for "Q2 Pod" (bar_title_sync). */
     if (st.bar_title && st.bar_state) {
@@ -3912,7 +3869,7 @@ static void bar_sync(void *bar) {
         image_base_set_image(st.bar_bt, BT_GLYPH);
     accent(); /* reads the settings */
     if (st.home_rockbox != rockbox_available()) coverflow_home_layout();
-    /* Classic Light's battery: the set's body, which Percent Inside keeps */
+    /* Classic's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme();
     /* A relayout puts them back in the row; the bar paints at least once a second. */
     if (T->bar_bt_dy && I(st.bar_bt, W_Y) != T->bar_bt_dy)
@@ -3934,10 +3891,10 @@ static void bar_sync(void *bar) {
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Classic Light: EQ shares the group */
+        /* Classic: EQ shares the group */
         if (classic_light && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
-        /* Classic Light's Percent Inside is the icon's own width: the icon would win no room */
+        /* Classic's Percent Inside is the icon's own width: the icon would win no room */
         if (reach > BATT_ROOM && !(classic_light && mode == 3)) mode = 0;
     }
     widget_set_visible(st.bar_icon, 0, 0);
@@ -3945,7 +3902,7 @@ static void bar_sync(void *bar) {
     widget_set_visible(st.bar_slot, 1, 0);
 
     /* the level from label_battery's "88%" (stock zeroes progress_battery while charging), then
-     * under Classic Light full on power (get_battery_capacity's status 2 and stock's cable flag,
+     * under Classic full on power (get_battery_capacity's status 2 and stock's cable flag,
      * memory both, as stock shows the plain icon then), charging (bar_charge) and low
      * (bar_lowcharge), as stock picks the icon */
     const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
@@ -3986,7 +3943,7 @@ static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
     stock_canvas_set_fill_color(canvas, color);
     canvas_fill_rect(canvas, x, y, w, h);
 }
-/* Classic Light's battery (BATT_CLASSIC_LIGHT), the body's top-left at x, y, the set's V_BATT_W x
+/* Classic's battery (BATT_CLASSIC_LIGHT), the body's top-left at x, y, the set's V_BATT_W x
  * V_BATT_H with the nub outside: the batt_line outline, its corners half covered, batt_edge along
  * the bottom and a hollow nub, the batt_empty rows inside, over them the level in the batt stops (a
  * batt_low sliver when low, full while charging), the last column shaded and, outside Percent
@@ -4052,7 +4009,7 @@ static void classic_light_digits(void *canvas, const unsigned *s, unsigned n, co
 }
 
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
- * puts the percentage beside the charge-level icon. Under Classic Light the battery is
+ * puts the percentage beside the charge-level icon. Under Classic the battery is
  * classic_light_battery's, its digits in the bar's size. Restore canvas state. */
 static void paint_battery(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
@@ -5296,7 +5253,7 @@ static int title_due(const void *info) {
     return 0;
 }
 
-/* Classic Light's bar title (label_title, only its set's bar has one) names the top window win,
+/* Classic's bar title (label_title, only its set's bar has one) names the top window win,
  * Home by the list it shows; a dialog keeps the window's title. The title's source is found once
  * per top window; after that a paint compares only that label's text with the title's (none for a
  * title by name), and the title is written only when it changes, with the face that has its
@@ -5370,8 +5327,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         const theme_t *T = theme();
         const scheme_t *S = scheme();
-        if (T->painter[PAINT_BAR] ==
-            BAR_GLOSS) { /* Classic Light: the gloss rows over the line, final */
+        if (T->painter[PAINT_BAR] == BAR_GLOSS) { /* Classic: the gloss rows over the line, final */
             int h = I(w, W_H) - 1;
             paint_stops(canvas, 0, 0, I(w, W_W), h, &S->bar);
             if (S->bar_line2 && ipod_light()) {
@@ -5728,7 +5684,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                     (unsigned char)((p[o[0]] * 299 + p[o[1]] * 587 + p[o[2]] * 114) / 1000);
         bitmap_unlock_buffer(bitmap);
     }
-    /* Under Classic Light's battery the codec badges in the half's ink (its monochrome marks):
+    /* Under Classic's battery the codec badges in the half's ink (its monochrome marks):
      * every pixel that colour, alpha kept, final. */
     int mark = -1;
     if (format < 4 && s && !*s && T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
@@ -5749,13 +5705,13 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
         bitmap_unlock_buffer(bitmap);
         mapped = 1;
     }
-    /* A chevron_sel theme (Classic Light): stock's grey `>` on every row is emptied; paint_into
+    /* A chevron_sel theme (Classic): stock's grey `>` on every row is emptied; paint_into
      * draws the selected row's, white. */
     if (T->chevron_sel && s && !*s && !tk_strcmp(name, "list_into") && format < 4) {
         clear_bitmap(bitmap);
         mapped = 1;
     }
-    /* A set_text theme (Classic Light): stock's radio rings are emptied; paint_radio draws the
+    /* A set_text theme (Classic): stock's radio rings are emptied; paint_radio draws the
      * tick. */
     if (T->set_text && s && !*s && (!tk_strcmp(name, "select") || !tk_strcmp(name, "unselect")) &&
         format < 4) {
@@ -6401,7 +6357,7 @@ void ringnav_song_unknown(const char *key, char *text, int size) {
     if (geom(G_TEXT_ART)) getFormatString(key, text, size);
 }
 
-/* Under a set without text-row artwork (Classic Light's), a row no taller than the pitch is one
+/* Under a set without text-row artwork (Classic's), a row no taller than the pitch is one
  * line: its leading children (artwork, the playing gif; stock's choice box stays) and the text's
  * second line hide, and the title, at the set's centred y, takes their width. Stock re-showing one
  * relayouts the row, which hides it again. */
@@ -6527,7 +6483,7 @@ static int compact_row_layout(void *layout, void *row) {
             widget_move_resize(text, T->art_text_x - 2 - I(row, W_X), I(text, W_Y), I(text, W_W),
                                I(text, W_H));
     }
-    /* The set's text inset (Classic Light's text_x, on screen, clear of the glass; the row may sit
+    /* The set's text inset (Classic's text_x, on screen, clear of the glass; the row may sit
      * in from it): text leading the row moves there, its right edge kept. Text after art or stock's
      * choice box keeps its place. */
     int tx = geom_val(V_TEXT_X);
@@ -7214,7 +7170,7 @@ static int empty_toast(const void *unused) {
 
 /* Library Artists rows have no head picture, so the name gets its width (compact_row_layout skips
  * hidden siblings). Composers and Genres share the rows, which are rebound, so they show theirs
- * again, and Classic Light's one-line rows show none. */
+ * again, and Classic's one-line rows show none. */
 int ringnav_class_icon(void *row, int i) {
     int artists = I(g_class_type, 0) == 0xf004;
     int shown = !artists && geom(G_TEXT_ART); /* no class icon on a one-line row */
@@ -9090,7 +9046,7 @@ enum {
 };
 
 /* Every Library row, stock's and the added ones: its label takes the list titles' role. In a set
- * without Library icons (Classic Light) it also drops its icon and starts its label at the set's
+ * without Library icons (Classic) it also drops its icon and starts its label at the set's
  * text inset on screen, its right edge kept. */
 static void library_look(void *view) {
     const theme_t *T = theme();

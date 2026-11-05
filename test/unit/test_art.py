@@ -17,10 +17,10 @@ def pixels(data):
     return w, h, lambda x, y: tuple(raw[y * (4 * w + 1) + 1 + 4 * x + i] for i in range(4))
 
 
-def test_classic_light_draws_its_images_and_the_others_none():
+def test_classic_draws_its_images_and_minimal_none():
     themes = theme.builtins()
-    assert not art.images(themes[0]) and not art.images(themes[1])
-    assert set(art.images(themes[2])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
+    assert not art.images(themes[0])
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -32,7 +32,7 @@ REF_EDGE = {5: 0x155a9b, 6: 0x1763a3, 7: 0x1a6dac, 8: 0x1d76b4, 9: 0x207fbc, 10:
 
 
 def test_the_play_state_stands_on_its_approved_rows():
-    got = art.images(theme.builtins()[2])
+    got = art.images(theme.builtins()[1])
     w, h, at = pixels(got['classic_light_pause_l'])
     x0, y0 = art.STATE_BOX[:2]
     assert (w, h) == (ipod.STATE_W, 22)  # the bar's box and the art's are one number
@@ -50,7 +50,7 @@ def test_the_play_state_stands_on_its_approved_rows():
 
 
 def test_the_bolt_and_the_plug_fill_the_batterys_inside():
-    t = theme.builtins()[2]
+    t = theme.builtins()[1]
     got = art.images(t)
     x0, y0 = art.BOLT_BOX[:2]
     for name in ('classic_light_bolt', 'classic_light_plug'):
@@ -66,7 +66,7 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
 
 
 def test_the_note_is_white_and_translucent():
-    w, h, at = pixels(art.images(theme.builtins()[2])['classic_light_note'])
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_note'])
     assert (w, h) == (100, 115)
     assert at(0, 0) == (0, 0, 0, 0)  # outside the drawing
     assert at(36, 30)[:3] == (255, 255, 255) and at(36, 30)[3] > 200  # the gloss at the stem's top
@@ -74,7 +74,7 @@ def test_the_note_is_white_and_translucent():
 
 
 def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
-    w, h, at = pixels(art.images(theme.builtins()[2])['classic_light_chevron'])
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_chevron'])
     assert (w, h) == (12, 16)
     assert at(8, 8) == (255, 255, 255, 255)  # the point's centreline
     assert at(0, 15)[3] == 0 and at(11, 0)[3] == 0  # outside the stroke
@@ -82,7 +82,7 @@ def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
 
 
 def test_sort_is_three_white_bars():
-    w, h, at = pixels(art.images(theme.builtins()[2])['classic_light_sort_bars'])
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_sort_bars'])
     assert (w, h) == (16, 12)
     for y in range(h):
         ink = [x for x in range(w) if at(x, y) == (255, 255, 255, 255)]
@@ -91,7 +91,7 @@ def test_sort_is_three_white_bars():
 
 
 def test_the_pane_icons_fit_their_box_and_keep_their_holes():
-    got = art.images(theme.builtins()[2])
+    got = art.images(theme.builtins()[1])
     for name, side in (('folder', 96), ('stack', 96), ('game', 96), ('wave', 96), ('gear', 96), ('note', 100)):
         w, h, at = pixels(got[f'classic_light_icon_{name}'])
         assert w == side

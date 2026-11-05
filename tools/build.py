@@ -772,7 +772,7 @@ BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 def bold_font():
     return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
 
-# Classic Light's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
+# Classic's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
 # The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
 # OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
