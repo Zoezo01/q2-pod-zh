@@ -5,7 +5,7 @@
 enum { PAINT_SELECTION, PAINTER_N }; /* theme_t.painter[] index */
 enum { SEL_CARD, SEL_BAR };          /* painter[PAINT_SELECTION] (Minimal card, Classic bar) */
 enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 }; /* scheme_t.flags (Ivory in Minimal; Crimson) */
-enum { NP_IPOD, NP_CENTRED };                 /* theme_t.np_layout: np_pages[] index */
+enum { NP_IPOD, NP_CENTRED, NP_N };           /* theme_t.np_layout: np_pages[] index */
 typedef struct {
     const unsigned *tones; /* its ACCENTS row: accents[v] (top, bottom, light, red, highlight) */
     unsigned char flags;   /* SCHEME_* */
@@ -33,7 +33,8 @@ typedef struct {
     unsigned char sets;
 } ui_redirect_t; /* sets with <set>_<name>.bin */
 typedef struct {
-    const char *name; /* "Minimal": the Theme row's "Theme: %s" */
+    const char *name;   /* "Minimal": the Theme row's "Theme: %s" */
+    unsigned char geom; /* second: THEME_GEOM_OFF (4) never moves */
     unsigned char painter[PAINTER_N];
     unsigned char chevron_home, caps_mark, caps_home, caps_np, icons_mono, icons_badge_muted,
         icons_addon_mono, bold, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
@@ -46,12 +47,10 @@ typedef struct {
     unsigned char n_opts;
     unsigned char np_layout; /* NP_* */
     cf_style_t cf;
-    short bar_h;              /* the status bar's height; client_h() is the window's under it */
-    unsigned char geom;       /* geometry set id: boot_values[] row, 0 = SET0 "ipod" */
     unsigned char art_square; /* art takes Corners: Square */
     unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;
 const theme_t *theme(void);   /* accent(); return &themes[st.theme]; */
 const scheme_t *scheme(void); /* &theme()->schemes[accent()] */
-static inline int client_h(void) { return 320 - theme()->bar_h; } /* the window under the bar */
+int client_h(void); /* the window under the bar of the set theme_boot wrote (navigation.c) */
 #endif

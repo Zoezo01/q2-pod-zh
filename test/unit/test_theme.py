@@ -117,11 +117,11 @@ CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, '
 
 
 MINIMAL = {
-    'id': 'minimal', 'index': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
+    'id': 'minimal', 'index': 0, 'dev': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
     'painter[PAINT_SELECTION]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'bold': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
-    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0, 'bar_h': 30, 'geom_set': 'ipod',
+    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'np_layout': 0, 'geom_set': 'ipod',
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -156,7 +156,7 @@ def test_accent_names():
 
 def test_frozen_table():
     """Today's Minimal and Classic, as the hand-written table had them."""
-    assert [bare(t) for t in theme.builtins()] == [MINIMAL, CLASSIC]
+    assert [bare(t) for t in theme.builtins()[:2]] == [MINIMAL, CLASSIC]
 
 
 def test_extends():
@@ -193,6 +193,7 @@ M = 'id="minimal" name="M" index="0"'
     ('<view name="playing"><element name="album" opacity="-1"/></view>', None, 'playing.album.opacity: -1 outside 0..255'),
     ('<colorScheme name="ivory" fill="eeeeec"/>', None, 'scheme.fill: expected #rrggbb'),
     ('<colorScheme name="ivory" fill="#112233fe"/>', None, 'scheme.fill: expected #rrggbb'),
+    ('<colorSchemes accents="cobalt"/><colorScheme name="green" muted="#112233"/>', None, 'scheme green is not in colorSchemes'),
     ('<option setting="volume"/>', None, 'unknown setting volume'),
     ('<option setting="light" preset="dim"/>', None, 'light: unknown value dim'),
     ('<option setting="light" bright="1"/>', None, 'unknown key option.bright'),
@@ -205,6 +206,7 @@ M = 'id="minimal" name="M" index="0"'
     ('', 'id="t" name="T" index="2" colour="x"', 'unknown key theme.colour'),
     ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
     ('', 'id="t" name="T"', 'index: expected a digit'),
+    ('', 'id="t" name="T" index="2" dev="2"', 'dev: expected 0 or 1'),
     ('<colorScheme/>', None, 'unknown scheme '),
     ('<option/>', None, 'unknown setting '),
     ('<view/>', None, 'unknown view '),
@@ -282,7 +284,7 @@ def test_builtins_rejects(tmp_path):
 
 def test_builtins_rejects_a_shared_accent_key(tmp_path):
     """Themes sharing an accent key share its stored value, so they must take the same colours and default."""
-    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('nano'))
     def put(folder, attrs, body):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" {attrs}>{body}</theme>')
@@ -293,6 +295,13 @@ def test_builtins_rejects_a_shared_accent_key(tmp_path):
     assert [t['id'] for t in theme.builtins(tmp_path)] == ['minimal', 'classic', 't']  # Classic's own: allowed
     put('t', shared, '<option setting="accent" key="ACCENT" default="tidal"/>')
     assert error(theme.builtins, tmp_path) == 't/theme.xml:1: accent key ACCENT is classic\'s, with other colorSchemes or default'
+
+
+def test_builtins_rejects_a_duplicate_id(tmp_path):
+    for folder in ('a', 'b'):
+        (tmp_path/folder).mkdir()
+        (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" id="a" name="A" index="0"><option setting="accent" key="ACCENT"/>{CF_LO}</theme>')
+    assert error(theme.builtins, tmp_path) == "b/theme.xml:1: id a is a/theme.xml's too"
 
 
 def test_validate_rejects_unset_coverflow():
@@ -312,13 +321,13 @@ def test_resolve_takes_a_long_name():
     assert resolved('', f'id="t" name="{"é" * 24}" index="2" extends="minimal"')['name'] == 'é' * 24
 
 
-MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 0), ('chevron_home', 0), ('caps_mark', 1),
+MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('chevron_home', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
                   ('bold', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
-                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 0),
-                  *CF_TODAY.items(), ('bar_h', 30), ('geom', 0)]
+                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 'NP_IPOD'),
+                  *CF_TODAY.items(), ('geom', 0)]
 
 
 def test_emit(tmp_path):
@@ -347,12 +356,12 @@ def test_emit(tmp_path):
 
 
 def test_emit_both(tmp_path):
-    theme.emit(theme.builtins(), tmp_path)
+    theme.emit(theme.builtins()[:2], tmp_path)
     text = (tmp_path/'themes.inc').read_text()
-    assert [l for l in text.splitlines() if l.startswith('static const')] == [
-        'static const scheme_t minimal_schemes[] = {', 'static const option_t minimal_opts[] = {',
-        'static const scheme_t classic_schemes[] = {', 'static const option_t classic_opts[] = {',
-        'static const theme_t themes[THEME_N] = {']
+    assert [l.split(' = ')[0] for l in text.splitlines() if l.startswith('static const')] == [
+        'static const scheme_t minimal_schemes[]', 'static const option_t minimal_opts[]',
+        'static const scheme_t classic_schemes[]', 'static const option_t classic_opts[]',
+        'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
     assert '    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000 },\n    { .tones = accents[8]' in text
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
@@ -360,7 +369,7 @@ def test_emit_both(tmp_path):
 
 
 def test_playing_layout_builtins_ipod():
-    assert [t['np_layout'] for t in theme.builtins()] == [0, 0]
+    assert [t['np_layout'] for t in theme.builtins()[:2]] == [0, 0]
 
 
 def test_playing_layout_resolves_centred():
@@ -373,8 +382,23 @@ def test_playing_layout_rejects_unknown():
 
 
 def test_emit_np_layout(tmp_path):
-    theme.emit(theme.builtins(), tmp_path)
-    assert (tmp_path/'themes.inc').read_text().count('.np_layout = 0,') == 2
+    theme.emit(theme.builtins()[:2], tmp_path)
+    assert (tmp_path/'themes.inc').read_text().count('.np_layout = NP_IPOD,') == 2
+
+
+def test_view_attr():
+    assert theme.view_attr('list.selection.painter') and theme.view_attr('home.rows.top')
+    assert not theme.view_attr('playing.layout') and not theme.view_attr('scheme.fill')
+    assert not theme.view_attr('scheme.sel.stops')  # a scheme role has two dots too (Task 11)
+
+
+# Enum fields and value counts come out as C names, so a reordered or added value is a compile error.
+def test_emit_names_enums_and_counts(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    assert inc.count('.painter[PAINT_SELECTION] = SEL_CARD,') == 1 and inc.count('.painter[PAINT_SELECTION] = SEL_BAR,') == 2
+    assert inc.count('.np_layout = NP_IPOD,') == 3 and '.np_layout = 0,' not in inc
+    for name, (_, values) in theme.SETTINGS.items():
+        assert f'#define SETTING_N_{name.upper()} {len(values)}\n' in inc
 
 
 def with_role(monkeypatch, **cf):
@@ -397,8 +421,9 @@ def test_coverflow_cross_rejects(field, value, message):
         theme.validate({**theme.builtins()[0], field: value}, 't.xml')
 
 
-def test_coverflow_caption_follows_bar_h():
-    t = {**theme.builtins()[0], 'bar_h': 34}
+def test_coverflow_caption_follows_the_bar(monkeypatch):
+    monkeypatch.setitem(theme.GEOMETRIES, 'tall', Geometry(name='tall', bar=34))
+    t = {**theme.builtins()[0], 'geom_set': 'tall'}
     with pytest.raises(theme.ThemeError, match='text_y \\+ 60 = 287 exceeds the client height 286'):
         theme.validate({**t, 'cf.text_y': 227}, 't.xml')
     theme.validate({**t, 'cf.text_y': 226}, 't.xml')
@@ -412,7 +437,7 @@ def test_coverflow_edges_pass(monkeypatch):   # each limit itself is allowed
 
 
 def test_emit_cf(tmp_path):
-    theme.emit(theme.builtins(), tmp_path)
+    theme.emit(theme.builtins()[:2], tmp_path)
     text = (tmp_path/'themes.inc').read_text()
     assert text.count('.cf.eye = 300,') == 2 and text.count('.cf.text_y = 212,') == 2
 
@@ -434,8 +459,8 @@ def minimal_with(geometry):
 
 
 def test_builtins_are_set0():
-    assert [theme.geometry(t) for t in theme.builtins()] == [SET0, SET0]
-    assert theme.geometry_sets(theme.builtins()) == [SET0]
+    assert [theme.geometry(t) for t in theme.builtins()[:2]] == [SET0, SET0]
+    assert theme.geometry_sets(theme.builtins()[:2]) == [SET0]
     assert minimal_with('<geometry set="ipod"/>') == theme.builtins()[0]
 
 
@@ -448,7 +473,7 @@ def test_geometry_rejects(geometry, message):
 
 
 def test_geometry_sets_set0_first(test_set):
-    m, c = theme.builtins()
+    m, c = theme.builtins()[:2]
     assert theme.geometry_sets([dict(m, geom_set='test'), c]) == [SET0, TEST]
     assert theme.geometry_sets([dict(m, geom_set='test')]) == [SET0, TEST]
 
@@ -476,7 +501,7 @@ def combinations(t):
 def test_minimal_classic_live_every_combination():
     # Options carry no variants yet, so each combination resolves to the same two dicts; the loop
     # is what makes a later option that feeds a boot-class field fail here.
-    m, c = theme.builtins()
+    m, c = theme.builtins()[:2]
     cm, cc = list(combinations(m)), list(combinations(c))
     assert (len(cm), len(cc)) == (3*9*2*3*7*4*2*2, 3*8*2*3*7*4*2*2)  # classic's accent mask 0x17f keeps 8 of 9
     for _ in itertools.chain(cm, cc):
@@ -484,7 +509,7 @@ def test_minimal_classic_live_every_combination():
 
 
 def test_is_live_needs_one_set(test_set):
-    m, c = theme.builtins()
+    m, c = theme.builtins()[:2]
     assert not theme.is_live(m, dict(c, geom_set='test'))
 
 
@@ -494,7 +519,7 @@ def boot_inc(tmp_path, themes, **kw):
 
 
 def test_emit_boot_tables(tmp_path):
-    inc = boot_inc(tmp_path, theme.builtins())
+    inc = boot_inc(tmp_path, theme.builtins()[:2])
     names = ipod.VALUE_NAMES
     sites = [(int(a, 16), g['value']) for g in ipod.AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
     assert len(sites) == 58
@@ -507,10 +532,30 @@ def test_emit_boot_tables(tmp_path):
     assert 'const char *const geom_names[GEOM_N] = {"ipod"};' in inc
     assert 'const volatile ui_redirect_t ui_redirects[] = {{0, 0}, {0, 0}};' in inc
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0']
+    assert all(s in inc for s in geom_vals_text([SET0])) and '#define THEME_GEOM_OFF 4' in inc
+
+
+def geom_vals_text(sets):
+    return ('enum { ' + ', '.join(f'V_{n.upper()}' for n in ipod.GEOM_VALS) + ', V_N };',
+            'geom_vals[GEOM_N][V_N] = {' + ', '.join('{' + ', '.join(str(getattr(g, n)) for n in ipod.GEOM_VALS) + '}' for g in sets) + '};')
+
+
+def test_emit_geom_vals(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    assert all(s in inc for s in geom_vals_text([SET0, ipod.NANO, ipod.NANO_TEXT]))
+    assert ipod.GEOM_VALS[:3] == ('bar', 'set_row', 'set_icon')
+    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, ipod.NANO)] == [[30, 68, 40], [26, 28, 0]]
+
+
+def test_emit_refuses_a_long_redirect(tmp_path):
+    # 'nano-text_' + 53 characters is 63 bytes plus the NUL: it fits; 54 does not.
+    boot_inc(tmp_path, theme.builtins(), redirects={'x' * 53: 2})
+    with pytest.raises(ValueError, match='exceeds ringnav_ui_load'):
+        boot_inc(tmp_path, theme.builtins(), redirects={'x' * 54: 2})
 
 
 def test_emit_second_set(tmp_path, test_set):
-    m, c = theme.builtins()
+    m, c = theme.builtins()[:2]
     inc = boot_inc(tmp_path, [m, dict(c, geom_set='test')], redirects={'system_bar': 2, 'dialog/volume_dialog': 2})
     assert 'enum { GEOM_IPOD, GEOM_TEST, GEOM_N };' in inc and '{"ipod", "test"}' in inc
     rows = ['{' + ', '.join(str(ipod.immediate_values(g)[n]) for n in ipod.VALUE_NAMES) + '}' for g in (SET0, TEST)]
@@ -522,3 +567,25 @@ def test_emit_second_set(tmp_path, test_set):
 def test_emit_refuses_a_set0_redirect(tmp_path):
     with pytest.raises(ValueError, match='system_bar: SET0 never redirects'):
         boot_inc(tmp_path, theme.builtins(), redirects={'system_bar': 1})
+
+
+def test_nano_builtin():
+    m, c, n = theme.builtins()
+    assert (n['id'], n['name'], n['index'], n['dev'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 1, 'nano', 'NANO_ACCENT', 0x17f)
+    assert n['opts'] == [opt('SETTING_ACCENT', default=4, preset=4, values=0x17f), opt('SETTING_HOME'), opt('SETTING_BATTERY')]
+    assert theme.geometry_sets([m, c, n]) == [SET0, ipod.NANO, ipod.NANO_TEXT]
+    assert (theme.offer([m, c, n], False), theme.offer([m, c, n], True)) == (2, 3)
+
+
+def test_dev_themes_come_last(tmp_path):
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
+    (tmp_path/'t').mkdir()
+    (tmp_path/'t'/'theme.xml').write_text('<theme format="1" id="t" name="T" index="3" extends="classic"><option setting="accent" key="ACCENT" default="graphite"/></theme>')
+    assert error(theme.builtins, tmp_path) == "t/theme.xml:1: index 3: an offered theme after the dev theme nano"
+
+
+def test_emit_nano_sets(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    assert 'enum { GEOM_IPOD, GEOM_NANO, GEOM_NANO_TEXT, GEOM_N };' in inc and '#define CLIENT_H_MAX 294' in inc
+    assert 'const char *const geom_names[GEOM_N] = {"ipod", "nano", "nano-text"};' in inc
+    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0', '1'] and '.accent_slot = &st.nano_accent,' in inc

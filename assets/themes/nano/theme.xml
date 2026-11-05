@@ -1,0 +1,9 @@
+<!-- Theme: Nano (IPOD/THEME 2, docs/ipod.md#display-settings): an iPod nano (3rd generation) look on its
+     own geometry sets (tools/ipod.py NANO, NANO_TEXT). dev="1": only a dev build offers it. Its numbers
+     are this file's or the sets', never patch/offsets.inc's. -->
+<theme format="1" id="nano" name="Nano" index="2" extends="classic" dev="1">
+  <geometry set="nano"/>
+  <option setting="accent" key="NANO_ACCENT" default="cobalt" preset="cobalt"/>
+  <option setting="home"/>
+  <option setting="battery"/>
+</theme>

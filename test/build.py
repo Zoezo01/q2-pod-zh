@@ -814,6 +814,10 @@ def validate_assets(directory):
     for g in geometry_sets(builtins()):
         assert g.body <= g.pitch and g.art_body <= g.art_pitch, g.name
         assert g.art + 2*g.art_inset <= g.art_body, g.name
+        assert g.text_art + 2*g.text_art_inset <= g.body or not g.text_art, g.name   # text rows' artwork fits, or none
+        for y, h, body in ((g.title24_y, 24, g.body), (g.title_y, 20, g.body), (g.meta_y, 16, g.body), (g.count_y, 16, g.body),
+                           (g.art_title24_y, 24, g.art_body), (g.art_meta_y, 16, g.art_body)):
+            assert 0 <= y and y + h <= body, (g.name, y, h, body)                    # every stock row label inside its body
         checked = set()
         for short, kind in page_kind.items():
             folder, _, base = short.rpartition('/')
@@ -826,6 +830,17 @@ def validate_assets(directory):
                         assert n[2][prop] == str(g.art_pitch if kind == 'art' else g.pitch), (g.name, short, prop)
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
+        assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name
+        for rel in UI_ASSETS:
+            folder, _, base = rel.rpartition('/')
+            mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
+            if 'squashfs-root/' + mine not in built: continue
+            for n in walk(decode(read('rootfs.squashfs', mine))):
+                if n[0] != 'list_view' or n[2].get('default_item_height') != str(g.set_row): continue
+                if rel in NAVBAR_ONLY:  # settings lists: the set's rows from its top
+                    assert n[1] == [0, g.set_top, 375, g.set_rows*g.set_row] and 'item_height' not in n[2], (g.name, rel)
+                else:                   # any other list with that row height is not one (settings_list)
+                    assert n[2].get('item_height') == str(g.set_row), (g.name, rel)
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

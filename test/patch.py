@@ -19,6 +19,8 @@ for name,key in (('demo','demo_sha256'),('stock-demo','stock_demo_sha256'),('pat
 assert manifest['version'] == (dev_tag(manifest['dev']) if manifest.get('dev') else TAG), 'Wrong version'
 assert manifest.get('compact_code')
 from ipod import INC, O  # patch/offsets.inc and its integer #defines
+from theme import THEME_GEOM_OFF, builtins as theme_builtins, geometry_sets
+GEOMS=[g.name for g in geometry_sets(theme_builtins())]; GEOM_NANO,GEOM_NANO_TEXT=GEOMS.index('nano'),GEOMS.index('nano-text')
 DC=O['DOUBLE_CLICK_MS']  # centre double-press window
 # iPod accent presets: {gradient top, bottom, light tone, red tone, highlight} per Accent setting value.
 ACCENTS=[tuple(int(v,16) for v in g) for g in re.findall(r'\{ 0x(\w+), 0x(\w+), 0x(\w+), 0x(\w+), 0x(\w+) \}',INC)]
@@ -28,6 +30,7 @@ CLASSIC=[p for p in range(len(ACCENTS)) if p!=O['MINIMAL_ACCENT']]  # the values
 def color_t(rgb): return 0xff000000|(rgb&255)<<16|(rgb>>8&255)<<8|rgb>>16
 O_GLYPH=re.search(r'#define BT_GLYPH "(\w+)"',INC)[1]  # the plain Bluetooth glyph a codec badge fades into
 CONFIG={}  # config.ini [IPOD] keys a new Machine starts with; the payload reads them on first use
+SETUP=[]  # functions a new Machine runs before anything can read config (QueueMachine's constructor does)
 FILL,RADIUS=(0x40<<24)|O['FILL_RGB'],9  # the stock rounded-rect checks' translucent fill and radius
 LCD_COLORS=(0x9abcdef0,0x12345678)
 syms=symbols(B/'stock-demo')
@@ -104,6 +107,7 @@ class Machine:
         self.strokes=[]; self.rounded=[]; self.bands=[]; self.icons=[]; self.letters=[]; self.font=None; self.vg_calls=[]; self.fake_vg=0; self.global_alpha=0
         self.rounded_fail=False; self.count=self.budget  # call()'s instruction limit, which nested() shares
         self.allocs={}; self.config=dict(CONFIG); self.config_reads=[]; self.card=(); self.dirs=set()  # /mnt/mmc's (name, d_type) entries; deeper folders
+        for f in SETUP: f(self)
         self.rebind=None; self.on_click=None; self.glide=True
         self.timers={}; self.next_timer=1; self.timer_fail=False; self.clicks=[]; self.started=[]
         self.screens=[]
@@ -128,7 +132,7 @@ class Machine:
         self.mock('pthread_create@GLIBC_2.2','pthread_detach@GLIBC_2.0')
         self.mock('reset_poweroptions_timer','screen_action','enable_fb','usleep@GLIBC_2.0','sprintf@GLIBC_2.0',
                   'airplayGetFlag','playpause_quick_click','time@GLIBC_2.0','localtime@GLIBC_2.0','tzset@GLIBC_2.0',
-                  'strlen@GLIBC_2.0','strncpy@GLIBC_2.0','strrchr@GLIBC_2.0','strcasecmp@GLIBC_2.0','strncasecmp@GLIBC_2.0',
+                  'strlen@GLIBC_2.0','strncpy@GLIBC_2.0','strrchr@GLIBC_2.0','strcasecmp@GLIBC_2.0','strncasecmp@GLIBC_2.0','strncmp@GLIBC_2.0',
                   'strcasestr@GLIBC_2.2',
                   'unlink@GLIBC_2.0','atoi@GLIBC_2.0','strtol@GLIBC_2.0','memcmp@GLIBC_2.0','access@GLIBC_2.0',
                   'open@GLIBC_2.0','fflush@GLIBC_2.0','fsync@GLIBC_2.0','fileno@GLIBC_2.0',  # the watchdog and the state record
@@ -365,6 +369,7 @@ class Machine:
         elif name=='strlen@GLIBC_2.0': ret=len(self.raw(a))  # bytes: stock strips a path's UTF-8 name byte by byte
         elif name=='strrchr@GLIBC_2.0': i=self.text(a).encode().rfind(bytes([b&255])); ret=a+i if i>=0 else 0
         elif name=='memcmp@GLIBC_2.0': x,y=bytes(u.mem_read(a,c)),bytes(u.mem_read(b,c)); ret=(x>y)-(x<y)
+        elif name=='strncmp@GLIBC_2.0': x,y=(bytes(self.raw(v))[:c] for v in (a,b)); ret=(x>y)-(x<y)
         elif name in ('strcasecmp@GLIBC_2.0','strncasecmp@GLIBC_2.0'):  # ASCII case, as the C locale
             x,y=(bytes(self.raw(v)).lower()[:c if name.startswith('strn') else None] for v in (a,b)); ret=(x>y)-(x<y)
         elif name=='sprintf@GLIBC_2.0':  # stock toolsTimeItoa's "%02d:%02d[:%02d]"
@@ -741,6 +746,14 @@ def passed():
     global checks
     checks+=1
     trace(f'== {checks}')
+def nano(m):  # Nano (THEME=2) as a --dev build offers it: the gate word at 3
+    m.byte(payload_syms['theme_offer'],3); m.config['THEME']='2'; return m
+def nano_boot(m,rowart=None,fail=None):  # ... then the first system_bar load writes its set; the names stock loaded
+    nano(m)  # rowart: the ROWART config value; fail(page): RWX mprotects it picks answer EACCES
+    if rowart is not None: m.config['ROWART']=rowart
+    m.record_syscalls(fail or (lambda page:False)); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+    m.call(address=HOOKS['ui_loader_load_widget_with_parent'][0],args=(m.string('system_bar'),0,0,0),gap=0)
+    return [m.text(c[1]) for c in m.calls if c[0]=='stock_ui_load']
 
 # Q2_TRACE: draw calls and hook answers by value: widgets as mock node ids, strings by content, payload
 # addresses by symbol (else P), stack addresses as S; cmp of two builds' traces survives a layout change.
@@ -1162,14 +1175,16 @@ def battery_checks():
                 assert shown(b,w)==['view_battery']
                 assert b.get(w['view_battery']+O['W_W'])==(O['BATT_PCT_W'] if mode==1 else (O['BATT_INSIDE_W'] if mode==3 else O['BATT_BODY_W'])+O['BATT_NUB_W']+(O['BATT_GAP']+O['BATT_PCT_W'] if mode==2 else 0))
     passed()
-    # The slot takes the bar's height, theme()->bar_h (client_h() = 320 - 30 = 290 under SET0):
-    # a 26 px bar_h (theme_t @80) poked into the active entry sizes it 26, then 30 again.
-    b,bar,w,paint=battery_bar(1); t=b.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert b.u.mem_read(t+80,2)==struct.pack('<h',30)
+    # The slot takes the bar's height in the set theme_boot wrote (geom_vals[st.geom][V_BAR], 30 under SET0): 26 poked into SET0's row sizes it 26, then 30 again.
+    b,bar,w,paint=battery_bar(1); assert b.u.mem_read(payload_syms['geom_vals'],2)==struct.pack('<h',30)
     for bar_h in (26,30):
-        b.u.mem_write(t+80,struct.pack('<h',bar_h)); b.word(w['view_battery']+O['W_H'],0); paint()
+        b.u.mem_write(payload_syms['geom_vals'],struct.pack('<h',bar_h)); b.word(w['view_battery']+O['W_H'],0); paint()
         assert b.get(w['view_battery']+O['W_H'])==bar_h
     passed()
+    # Nano before its set is written (no boot here, or a failed one, or a switch pending its restart) keeps
+    # SET0's 30 px slot: the slot follows the written set, never theme().
+    b,bar,w,paint=battery_bar(1); nano(b); b.word(w['view_battery']+O['W_H'],0); paint()
+    assert b.get(w['view_battery']+O['W_H'])==30; passed()
 battery_checks()
 assert m.confirm()==11 and m.dispatched()[0][1]==entries[0]; passed()
 assert m.call()==11 and m.selected(w)==1 and m.get(w+O['SCROLL_Y'])==12
@@ -1416,6 +1431,25 @@ for address in (0x523038, 0x4aa2cc, 0x4b0efc, 0x4a4ae8):
                     assert m.get(title+O['W_W'])==width
         else:
             assert all(m.get(n+O['W_CHILDREN_LAYOUT'])==0 for row in rows for n in m.nodes[row]['children'])
+passed()
+
+# Nano's Songs and Artists/Composers/Genres rows are one 28 px line: the leading artwork and playing gif
+# and the second line hide, and the title sits centred in the row.
+for address in (0x4aa2cc, 0x4b0efc):
+    m=Machine(); nano_boot(m); w=m.page('folder_page','table_client')
+    m.mock('table_row_create','button_create','image_create','view_create','hscroll_label_create','gif_image_create',
+           'widget_use_style','widget_set_name','widget_set_children_layout','image_set_draw_type','image_base_set_image',
+           'set_hscroll_label_attribute','widget_set_visible')
+    assert m.call(address=address,args=(w,w,4,0))==0
+    rows=m.nodes[w]['children']; button=m.nodes[rows[0]]['children'][0]
+    assert {m.get(r+O['W_H']) for r in rows}=={28} and m.get(button+O['W_H'])==28
+    native_row_layout(m,button)
+    kids=m.nodes[button]['children']
+    text=next(c for c in kids if m.nodes[c]['type']=='hscroll_label' or any(m.nodes[t]['type']=='hscroll_label' for t in m.nodes[c]['children']))
+    title=next((c for c in m.nodes[text]['children'] if m.nodes[c]['type']=='hscroll_label'),text)
+    assert [m.nodes[c]['name'] for c in kids[:kids.index(text)] if m.nodes[c]['visible'] and not m.nodes[c]['name'].startswith('img_choice')]==[],address
+    assert [c for c in m.nodes[text]['children'] if c!=title and m.nodes[c]['visible']]==[],address
+    y,h=(signed(m.get(title+O[k])) for k in ('W_Y','W_H')); assert 2*y+h==28,(address,y,h)
 passed()
 
 # The three non-pooled constructors: album tracks, artist tracks and playlists.
@@ -7943,7 +7977,8 @@ def host_render(textures,cases):
     from theme import ROLE_MACROS
     cf=', '.join(f'.{f[3:]} = {O[m]}' for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.'))
     main=r"""#include "theme.h"
-static theme_t t = { .cf = { %s }, .bar_h = 30 };
+static theme_t t = { .cf = { %s } };
+int client_h(void) { return 290; }
 const theme_t *theme(void) { return &t; }
 #include <stdio.h>
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
@@ -8201,7 +8236,7 @@ for config,preset in (({},0),({**C,'ACCENT':'1'},1),({**C,'ACCENT':'2'},2),({**C
         want=ACCENTS[preset][3 if name.endswith('text_color') else 2]
         assert style_color(m,red,name)[1]==(red if preset==O['CRIMSON'] else color_t(want)),(config,name)
     assert style_color(m,grey)[1]==grey
-    assert len(m.config_reads)==13  # every key, once, on first use
+    assert len(m.config_reads)==14  # every key, once, on first use
     passed()
 # Real paint order, no persistent widget styles: normal, metadata, disabled alpha,
 # recycled text, touch hiding, Home siblings, and every accent.
@@ -8252,7 +8287,7 @@ for label_name in ('label_del','label_rename'):
 passed()
 
 m=Machine(); style_color(m,red)
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','7'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','7'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD','NANO_ACCENT','9')]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a
 # missing MINIMAL_ACCENT is Ivory, the card (flags 1); Crimson is raw red (flags 2) in both.
@@ -8261,16 +8296,27 @@ for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',0),({'THEME':
                          ({'THEME':'1','ACCENT':'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1','ACCENT':'8'},'Classic',8)):
     k=Machine(); k.config=dict(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))==name and len(k.config_reads)==13,config
+    assert k.text(k.get(t))==name and len(k.config_reads)==14,config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     flags=k.u.mem_read(s+4,1)[0]  # scheme_t: tones @0, flags @4
     assert k.get(s)==payload_syms['accents']+20*want and flags==(1 if name=='Minimal' and want==7 else 2 if want==1 else 0),(config,flags)
 passed()
 # A paint before any config read draws a built-in theme, never zeroed scratch.
 k=Machine(); k.config=dict(THEME='1',ACCENT='4'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==13 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
+k.paint(kw); assert len(k.config_reads)==14 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
 k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
+# Nano is THEME=2 only where the build offers it: a release build offers Minimal and Classic (above,
+# 2 is Minimal); with the gate word at 3 it is Nano, on its own NANO_ACCENT, whose stored value outside
+# Nano's colours (9: none, 7: Ivory) is its default, Cobalt; Classic's ACCENT is not Nano's.
+k=Machine(); assert k.u.mem_read(payload_syms['theme_offer'],1)==b'\x02'
+for config,want in (({},4),({'NANO_ACCENT':'2'},2),({'NANO_ACCENT':'7'},4),({'ACCENT':'2'},4)):
+    k=nano(Machine()); k.config.update(config)
+    t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+    assert k.text(k.get(t))=='Nano' and len(k.config_reads)==14 and k.config_reads[-1][2]=='NANO_ACCENT',config
+    s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
+    assert k.get(s)==payload_syms['accents']+20*want,config
+passed()
 
 # Gradients: the leaf's null checks, then the caller's stops mapped (nr @8, stops @0xc).
 def gradient(config,stops,same_out=True,vt_get=True,style=True):
@@ -8568,8 +8614,8 @@ def display_page(m,sub):
     assert m.calls[0][:3]==('stock_display',m.top,5)
     m.icons_set=[m.text(c[2]) for c in m.calls if c[0]=='image_base_set_image']
     return view
-def display(config,card=True,sub=1):
-    CONFIG.clear(); CONFIG.update(config); m=QueueMachine(); m.restack=True; m.rockbox_mode=0o100755 if card else 0; m.handlers[tramp['display']]='stock_display'
+def display(config,card=True,sub=1,setup=None):
+    CONFIG.clear(); CONFIG.update(config); SETUP[:]=[setup] if setup else []; m=QueueMachine(); SETUP.clear(); m.restack=True; m.rockbox_mode=0o100755 if card else 0; m.handlers[tramp['display']]='stock_display'
     view=display_page(m,sub)
     return m,view,setting_rows(m,view) if sub==1 else None
 def setting_rows(m,view):  # Accent, Home, Battery, Theme: as ringnav_display's index
@@ -8639,8 +8685,8 @@ from ipod import AUDIT, VALUE_NAMES
 PAGE=4096  # the Q2's kernel page: mprotect's rounding unit
 TEXT=[(v,((v+m_+4095)&~4095)-v) for _,(t,o,v,_,f,m_,fl,_) in segments((B/'demo').read_bytes()) if t==1 and fl&1 and v<BASE][0]
 SITES={int(a,16):g['value'] for g in AUDIT['immediates'] if isinstance(g['value'],str) for a,_ in g['sites']}
-def set_geom(m,g):  # the active theme's theme_t.geom (@82, after bar_h @80): a Theme switch to set g
-    m.byte((m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff)+82,g)
+def set_geom(m,g):  # the active theme's theme_t.geom (THEME_GEOM_OFF): a Theme switch to set g
+    m.byte((m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff)+THEME_GEOM_OFF,g)
 def set_value(m,name,v): m.u.mem_write(payload_syms['boot_values']+2*VALUE_NAMES.index(name),struct.pack('<H',v))
 def booted(values=(),fail=lambda page:False,geom=0):
     m=Machine(); m.u.mem_protect(*TEXT,5); m.record_syscalls(fail)
@@ -8666,7 +8712,9 @@ assert {a:gm.get(a) for a in SITES}==gbefore
 assert [p for b,e,p in gm.u.mem_regions() for q in pages if b<=q<=e]==[5]*len(pages); passed()
 # A set theme_boot did not write is not applied: with every mprotect failing (or after a Theme switch,
 # which writes theme_t.geom), the windows still load as SET0's, which theme_boot left in the code.
-gm,gbefore=booted(fail=lambda page:True,geom=1)
+def boot_vals(g): return struct.unpack(f'<{len(VALUE_NAMES)}H',m.u.mem_read(payload_syms['boot_values']+2*len(VALUE_NAMES)*g,2*len(VALUE_NAMES)))
+assert any(boot_vals(GEOM_NANO)[i]!=boot_vals(0)[i] for i in range(len(VALUE_NAMES)))  # the real row differs from the code
+gm,gbefore=booted(fail=lambda page:True,geom=GEOM_NANO)
 assert [s[3] for s in gm.syscalls]==[7] and {a:gm.get(a) for a in SITES}==gbefore
 def gloaded(name,sets):
     gm.word(payload_syms['ui_redirects'],gm.string(name)); gm.byte(payload_syms['ui_redirects']+4,sets)
@@ -8678,6 +8726,21 @@ m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stoc
 def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
 redirect('system_bar'); assert loaded('system_bar')==['ipod_system_bar'] and loaded('home_page')==['home_page']
 redirect('dialog/volume_dialog'); assert loaded('dialog/volume_dialog')==['dialog/ipod_volume_dialog']; passed()
+# Nano's first system_bar writes its set (every pitch word 28) and loads the set's own bar.
+nm=Machine(); assert nano_boot(nm)==['nano_system_bar']
+assert {nm.get(a)&0xffff for a,v in SITES.items() if v=='pitch'}=={28}; passed()
+# nano_boot's options reach the machine: rowart sets the config, fail sees each RWX page it is asked.
+nm=Machine(); tried=[]; assert nano_boot(nm,rowart='0',fail=lambda page:tried.append(page)) and nm.config['ROWART']=='0' and tried; passed()
+# client_h() follows the written set: 290 when Nano's boot fails, 294 once its set is written.
+for fail,want in ((lambda page:True,290),(lambda page:False,294)):
+    cm,_=booted(fail=fail,geom=GEOM_NANO)
+    assert cm.call(address=payload_syms['client_h'],args=(0,0,0,0),gap=0)==want
+passed()
+# The path a set's window loads by lives in ringnav_ui_load's own frame (stack), so a window stock loads
+# while loading another cannot overwrite it: Nano's Songs loads as its set's copy.
+nm=Machine(); nano_boot(nm); nm.calls=[]
+nm.call(address=HOOKS['ui_loader_load_widget_with_parent'][0],args=(nm.string('localmusic/allmusic_page'),0,0,0),gap=0)
+assert [(nm.text(c[1]),0x70000000<=c[1]<0x70010000) for c in nm.calls if c[0]=='stock_ui_load']==[('localmusic/nano_allmusic_page',True)]; passed()
 m=settings_m
 # Artist albums (Q2POD ARTISTCF), the other layout choice, after Home; no key is Coverflow.
 cf_label=m.nodes[m.nodes[cf]['children'][0]]['children'][1]; assert m.nodes[cf_label]['text']=='Artist View: Cover Flow'
@@ -8892,8 +8955,8 @@ class SettingsMachine(Machine):
         return super().hook(u,address,size,x)
 SET={k:O['SET_'+k] for k in ('ROW','TOP','ROWS','ICON','ICON_X','GAP','TEXT_X','EDGE','STOCK_ROW')}
 def geometry(m,w): return tuple(signed(m.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H'))
-def settings(builder,default=SET['ROW'],sub=0):
-    m=SettingsMachine(); m.layouts=0
+def settings(builder,default=SET['ROW'],sub=0,boot=None):
+    m=SettingsMachine(); m.layouts=0; boot and boot(m)
     m.mock('list_item_create','button_create','image_create','hscroll_label_create','label_create','widget_use_style',
            'widget_set_name','image_set_draw_type','image_base_set_image','set_hscroll_label_attribute','widget_on',
            'widget_set_text_utf8','widget_set_visible','widget_move_resize')
@@ -8985,6 +9048,20 @@ passed()
 # A list whose default_item_height is not SET_ROW (local pages, Home) keeps its rows as built.
 m,view=settings(0x4cbcc4,default=72); before=tree(m,view); lay(m,view); after=tree(m,view)
 assert [r[1] for r in after]==[r[1] for r in before] and all(r[0][3]==72 for r in after); passed()
+# Nano's settings rows: 28 px from the list's top (its list is found by the set's row), 40 px icons hidden,
+# the text where a row without an icon starts; a SET0 68 px list is not a Nano settings list.
+for builder in (0x4c43e4, 0x4cbcc4, 'display'):  # language, System settings, Display
+    CONFIG.clear(); m,view=settings(builder,default=28,boot=nano_boot); items=[i for i in m.nodes[view]['children'] if m.nodes[i]['visible']]
+    assert lay(m,view)==0 and m.get(m.get(view+O['W_PARENT'])+O['W_Y'])==0
+    assert [geometry(m,i)[1] for i in items]==[28*k for k in range(len(items))] and {geometry(m,i)[3] for i in items}=={28},builder
+    for i in items:
+        for c in m.nodes[m.nodes[i]['children'][0]]['children']:
+            x,y,w_,h=geometry(m,c)
+            if m.nodes[c]['type']=='image' and w_==O['SET_STOCK_ICON']: assert not m.nodes[c]['visible'],builder
+            elif m.nodes[c]['type']=='hscroll_label': assert x==SET['TEXT_X'] and 0<=y and y+h<=28,(builder,x,y,h)
+passed()
+CONFIG.clear(); m,view=settings(0x4cbcc4,boot=nano_boot); before=tree(m,view); lay(m,view)
+after=tree(m,view); assert [r[1] for r in after]==[r[1] for r in before] and all(r[0][3]==SET['ROW'] for r in after); passed()  # rows as built, stacked at the list's 68
 # A 78px item some other builder made (no stock settings button) keeps its height and children.
 m,view=settings(0x4cbcc4); odd=m.node('list_item'); other=m.node('button')
 m.nodes[odd]['children']=[other]; m.word(odd+O['W_H'],78); m.word(odd+O['W_W'],0)
@@ -9022,6 +9099,9 @@ for config,want in (({'THEME':'1','ACCENT':'7'},['Theme: Classic','Light Mode: O
     m,view,rows=display(config)
     assert [row_text(r) for r in m.nodes[view]['children']]==want+['Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing'],config
 passed()
+# The same stored THEME=2 where Nano is offered: its Appearance is Theme and Nano's own options.
+m,view,rows=display({'THEME':'2'},setup=nano)
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Accent: Cobalt','Home: Split','Battery: Icon']; passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent
 CONFIG.update(THEME='1'); m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'
@@ -9528,7 +9608,7 @@ assert m.texts()==['No plays yet'] and not m.nodes[m.find('scroll_view')]['child
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.top==m.page; m.close(); passed()
 # Geometry sets: Edit Playlist's row follows the live pitch and body, as the page's asset rows do.
 m=PlaylistEditMachine(); set_value(m,'pitch',28); set_value(m,'body',26); m.open_editor(28,26); passed()
-gm=PlaylistEditMachine(); set_geom(gm,1); gm.open_editor(); passed()  # the set theme_boot wrote, SET0
+gm=PlaylistEditMachine(); set_geom(gm,GEOM_NANO); gm.open_editor(); passed()  # the set theme_boot wrote, SET0
 # The Library rows follow the constructor's live body and icon x, whichever group the audit gave them.
 m=ShuffleMachine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
 set_value(m,SITES[0x524820],60); set_value(m,SITES[0x524944],6)

@@ -815,3 +815,33 @@ def test_set_assets_only_what_differs(fake_assets):
 
 def test_set_assets_set0_is_empty(fake_assets):
     assert ipod.set_assets(lambda p: p.encode(), ipod.SET0) == {}
+
+
+def test_nano_sets():
+    # Nano: a 26 px bar, 28 px text rows, 52 px art rows with the art 1:1 (Row Art off: 28, no art),
+    # and text pages without artwork.
+    n, t = ipod.NANO, ipod.NANO_TEXT
+    assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 28, 28, 52, 52, 52, 0, 0, 0)
+    assert dataclasses.replace(t, name='nano', art=52, art_pitch=52, art_body=52, art_title24_y=5, art_meta_y=31) == n
+    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 5, 31, 2, 6)
+    assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (28, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
+    assert ipod.immediate_values(n)['scroll'] == 244
+
+
+def test_settings_lists_follow_the_set(monkeypatch):
+    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Nano nine 28 px from 0.
+    path = 'systemset/sysset_page.bin'
+    page = w('sysset_page', w('view_navbar', at=[0, 0, 375, 50]),
+             w('list_view', kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
+    data = ipod.encode(page); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
+    for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (ipod.NANO, [0, 0, 375, 252], '28')):
+        n = named(ipod.decode(ipod.patch_asset(path, data, g=g)))
+        assert n['list_view'][1] == box and n['list_view'][2]['default_item_height'] == row and 'item_height' not in n['list_view'][2]
+
+
+def test_lists_beside_settings_rows_take_item_height(monkeypatch):
+    # A library list with the set's settings row height is told apart by its item_height (Nano only).
+    path = 'localmusic/albuminfo_page.bin'
+    data = ipod.encode(list_page(path)); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
+    assert named(ipod.decode(ipod.patch_asset(path, data, g=ipod.NANO)))['list_view'][2]['item_height'] == '28'
+    assert 'item_height' not in named(ipod.decode(ipod.patch_asset(path, data)))['list_view'][2]

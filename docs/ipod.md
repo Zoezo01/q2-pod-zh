@@ -243,6 +243,11 @@ starts directly below it. The list stays 272 pixels high in both themes, preserv
 and full-row tap targets. The `navbar_only` assets set their
 `list_view`'s `default_item_height` from 78 to 68, which no stock asset uses, and nothing else.
 Constants are `SET_*` in `patch/offsets.inc`.
+Under a geometry set (Nano: nine 28-pixel rows from the top, no icons) the row height, top, row
+count and icon size come from the set (`set_row`, `set_top`, `set_rows`, `set_icon`); the payload
+reads `set_row` and `set_icon` from the set `theme_boot` wrote, hides the icon at 0 and starts the
+text where a row without an icon starts. Another list whose `default_item_height` equals the set's
+`set_row` carries an explicit `item_height`, so only the settings pages are told apart by it.
 
 System Settings puts Wireless and Network first, then Display, Controls and Power, then Date & Time, Language and device
 maintenance, with About last; neither list has headings. Play Mode, EQ, Gapless and Crossfade come first; specialist output controls come next, and Library & Folders last, one reverse detent from the top on Playback's ring. Added binary settings

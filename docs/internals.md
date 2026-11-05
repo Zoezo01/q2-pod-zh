@@ -411,12 +411,15 @@ tools/theme.py checks each range, top + 160 + reflect ≤ `CF_VIEW_H`, bright2 �
 `text_y` + `CF_NAME_H` + `CF_ARTIST_H` ≤ the client height. The tilt table, `CF_EDGE`, `CF_VIEW_*`,
 `CF_CX` and `ART_SIZE` stay fixed.
 
-**Bar and client height.** `theme_t.bar_h` is the status bar's height, 30 for both built-ins
-(`ipod.SET0`). `client_h()` (`patch/theme.h`) is `320 - bar_h`, the window's height under the bar,
-read by Cover Flow's views, Home's art panel, its pan frame, render loop and clip; the battery
-slot (`bar_sync`) takes `bar_h` itself. The page fallbacks (`widget_get_prop_int(page, "h", 290)`) and `DRIFT_TEXELS` stay
-sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.py`) drive
-`ipod_home`, `status_bar`, `playing_page` and `patch_asset`; `patch_code` bakes `SET0`.
+**Bar and client height.** Each geometry set's bar height is in `geom_vals` (`themes.inc`, one
+row per set, the `V_*` columns), 30 for SET0 and 26 for Nano's sets. `client_h()` (navigation.c)
+is `320` less the bar of the set `theme_boot` wrote (`st.geom`), the window's height under the
+bar. Cover Flow's views, Home's art panel, its pan frame, render loop and clip read it, and the
+battery slot (`bar_sync`) takes the same bar. Before a set is written, after a failed `theme_boot`
+and while a switch waits for its restart, both stay SET0's. The page fallbacks
+(`widget_get_prop_int(page, "h", 290)`) stay sized for 290 and `DRIFT_TEXELS` for 294. On the
+build side `Geometry` and `with_geometry(g)` (`tools/ipod.py`) drive `ipod_home`, `status_bar`,
+`playing_page` and `patch_asset`; `patch_code` bakes `SET0`.
 
 **Geometry sets.** `tools/theme.py` also emits the boot tables into `themes.inc`: `boot_values`
 (one row of `ipod.json` values per set, SET0 first), `boot_sites` (each stock immediate's address
@@ -429,9 +432,10 @@ halfwords, then per page call cacheflush (4147, BCACHE) and mprotect it back to 
 set in `st.geom`. If one mprotect fails, it mprotects the pages it already opened back to R-X and
 writes nothing: the code stays SET0's and `st.geom` stays 0, so the theme draws with SET0's rows.
 SET0, the set of both built-ins, matches every baked immediate, so it makes no syscall and writes
-nothing. Everything that follows the set reads `st.geom`, not `theme_t.geom`, so a Theme switch to
-another set, which takes effect at the restart, changes nothing before it. A window in
-`ui_redirects` for that set loads as `<set>_<name>.bin` in the same folder
+nothing. Everything that follows the set (`geom()`, `geom_val()`, `client_h()`, `bar_sync` and
+the redirects) reads `st.geom`, not `theme_t.geom`, so a Theme switch to another set, which takes
+effect at the restart, changes nothing before it. A window in `ui_redirects` for that set loads as
+`<set>_<name>.bin`, the path written into `ringnav_ui_load`'s own frame, in the same folder
 (`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and
 cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open.
 The Library and Edit Playlist rows the payload builds follow the live geometry: `list_row_core`

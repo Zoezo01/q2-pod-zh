@@ -208,7 +208,8 @@ static theme_t shim_themes[2] = {
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
       .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 } };
 static short stub_bar_h = 30;
-const theme_t *theme(void) { shim_themes[classic].bar_h = stub_bar_h; return &shim_themes[classic]; }
+const theme_t *theme(void) { return &shim_themes[classic]; }
+int client_h(void) { return 320 - stub_bar_h; }
 int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
 static int square_art;

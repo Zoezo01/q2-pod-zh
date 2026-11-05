@@ -497,14 +497,14 @@ typedef struct {
     unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
-    int settings_read, accent, minimal_accent, home, battery, home_rockbox, theme, shortcut,
-        rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
-        keep_lit,                  /* Smart Awake (#57, keep_lit_poll) */
-        np_centred,                /* Centred Now Playing (ringnav_ui_load) */
-        keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
-        scrub_single,              /* Single Press Scrub (np_key) */
-        theme_booted,              /* theme_boot ran (ringnav_ui_load) */
-        geom;                      /* the geometry set theme_boot wrote; 0, SET0, until then */
+    int settings_read, accent, minimal_accent, nano_accent, home, battery, home_rockbox, theme,
+        shortcut, rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
+        keep_lit,                            /* Smart Awake (#57, keep_lit_poll) */
+        np_centred,                          /* Centred Now Playing (ringnav_ui_load) */
+        keytone_hp,                          /* Click With Headphones (ringnav_buzzer) */
+        scrub_single,                        /* Single Press Scrub (np_key) */
+        theme_booted,                        /* theme_boot ran (ringnav_ui_load) */
+        geom; /* the geometry set theme_boot wrote; 0, SET0, until then */
     unsigned keep_lit_at;
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
@@ -1673,6 +1673,10 @@ enum {
 #include "themes.inc" /* tools/theme.py, from assets/themes/<id>/theme.xml */
 _Static_assert(DRIFT_TEXELS >= 4 * (375 - HOME_SPLIT_W) * CLIENT_H_MAX,
                "Home drift frame fits every set");
+_Static_assert(__builtin_offsetof(theme_t, geom) == THEME_GEOM_OFF, "test/patch.py's set_geom");
+/* A value of the set theme_boot wrote (st.geom), never the live theme's: V_BAR, ... */
+static int geom_val(int v) { return geom_vals[st.geom][v]; }
+int client_h(void) { return 320 - geom_val(V_BAR); }
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
  * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
@@ -1680,7 +1684,23 @@ _Static_assert(DRIFT_TEXELS >= 4 * (375 - HOME_SPLIT_W) * CLIENT_H_MAX,
 static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",     "THEME",
                                             "SHORTCUT",  "ROUNDED",   "LIGHT",       "KEEPLIT",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
-static const int setting_counts[] = { ACCENT_N, 3, 4, THEME_N, 7, 2, 3, 2, 2, 2, 2, 2 };
+static const int setting_counts[] = { SETTING_N_ACCENT,
+                                      SETTING_N_HOME,
+                                      SETTING_N_BATTERY,
+                                      THEME_N,
+                                      7,
+                                      SETTING_N_CORNERS,
+                                      SETTING_N_LIGHT,
+                                      2,
+                                      SETTING_N_NP_LAYOUT,
+                                      2,
+                                      2,
+                                      2 };
+_Static_assert(SETTING_N_ACCENT == ACCENT_N, "the accent option's values are the ACCENTS rows");
+/* The themes the Theme row offers (tools/build.py THEME_OFFER): a release build leaves the dev ones
+ * out, so a stored one reads as Minimal. volatile: test/patch.py patches it to reach them. */
+const volatile unsigned char theme_offer = THEME_OFFER;
+static int setting_count(int i) { return i == SETTING_THEME ? theme_offer : setting_counts[i]; }
 static int *const setting_values[] = { &st.accent,     &st.home,         &st.battery,
                                        &st.theme,      &st.shortcut,     &st.rounded,
                                        &st.light,      &st.keep_lit,     &st.np_centred,
@@ -1729,7 +1749,7 @@ static void light_apply(const int *tm) {
 static int accent(void) {
     if (!st.settings_read) {
         for (int i = 0; i < 4; ++i)
-            *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
+            *setting_values[i] = config_value("IPOD", setting_keys[i], setting_count(i), 0);
         st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
         st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
         st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
@@ -1739,6 +1759,8 @@ static int accent(void) {
         st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
         st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
         st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
+        st.nano_accent =
+            config_value("IPOD", "NANO_ACCENT", ACCENT_N, 9); /* 9: none, Nano's default below */
         /* A stored value outside an option's values is its default (Classic's Ivory: Graphite). */
         for (int t = 0; t < THEME_N; ++t)
             for (int k = 0; k < themes[t].n_opts; ++k) {
@@ -1767,6 +1789,7 @@ static int setting(int i) {
     return *setting_values[i];
 }
 static const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
+_Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* layout");
 /* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
 static int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
 /* Shortcut with no key is Rockbox while the card has it, else Favorites: asked each time, as the
@@ -2321,7 +2344,7 @@ static void paint_selection(void *w, void *canvas) {
     }
     /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
-    int bar = theme()->painter[PAINT_SELECTION] == SEL_BAR, round = setting(SETTING_ROUNDED);
+    int bar = theme()->painter[PAINT_SELECTION] == SEL_BAR, corners = setting(SETTING_ROUNDED);
     const scheme_t *S = scheme();
     st.sel_widget = bar ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
     st.sel_home = home && !bar;
@@ -2333,7 +2356,7 @@ static void paint_selection(void *w, void *canvas) {
         const unsigned *a = S->tones;
         /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
         rect_t bar = r;
-        int pill = !tile && round ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
+        int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
         if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
         gradient(canvas, bar, a[0], a[1], a[4], pill);
     } else if (home) {
@@ -2341,10 +2364,10 @@ static void paint_selection(void *w, void *canvas) {
         fill_box(canvas, &dot, 0xffffffff, HOME_DOT / 2);
     } else { /* Sudo's card: inset from the glass's edges, its corners rounded */
         int grid = tile && g_menu.kind != 4; /* pop-up buttons keep their row inset */
-        int square = !tile && !round;        /* Corners: Square, a full-width bar as Classic's */
+        int square = !tile && !corners;      /* Corners: Square, a full-width bar as Classic's */
         int in = grid ? TILE_INSET : square ? 0 : SEL_INSET, vertical = grid ? TILE_INSET : 0;
         rect_t card = { r.x + in, r.y + vertical, r.w - 2 * in, r.h - 2 * vertical };
-        int radius = !round ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
+        int radius = !corners ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
         fill_box(canvas, &card, RGBA(S->flags & SCHEME_CARD ? S->fill : S->tones[0]), radius);
     }
     st.sel_w = w;
@@ -3692,7 +3715,7 @@ static void bar_sync(void *bar) {
                           : (mode == 3 ? BATT_INSIDE_W : BATT_BODY_W) + BATT_NUB_W +
                                 (mode == 2 ? BATT_GAP + pct : 0);
     int resized = I(st.bar_slot, W_W) != width;
-    widget_resize(st.bar_slot, width, theme()->bar_h);
+    widget_resize(st.bar_slot, width, geom_val(V_BAR));
     /* Resize only relayouts the slot's own children; the right-aligned row must
      * position it again even when Icon + Percent -> Icon keeps it visible. */
     if (resized) widget_layout_children(P(st.bar_slot, W_PARENT));
@@ -4543,16 +4566,14 @@ static void theme_boot(void) {
 }
 
 /* The set theme_boot wrote's own copy of a window, <set>_<name>.bin in name's folder
- * (tools/build.py), else name. */
-static char ui_path[64] __attribute__((section(".scratch")));
-static const char *ui_redirect(const char *name) {
+ * (tools/build.py), written into buf (the caller's 64 bytes), else name. */
+static const char *ui_redirect(const char *name, char *buf) {
     unsigned g = st.geom;
     for (const volatile ui_redirect_t *r = ui_redirects; r->name; ++r)
         if (r->sets >> g & 1 && !tk_strcmp(r->name, name)) {
             const char *slash = strrchr(name, '/'), *base = slash ? slash + 1 : name;
-            tk_snprintf(ui_path, sizeof ui_path, "%.*s%s_%s", (int)(base - name), name,
-                        geom_names[g], base);
-            return ui_path;
+            tk_snprintf(buf, 64, "%.*s%s_%s", (int)(base - name), name, geom_names[g], base);
+            return buf;
         }
     return name;
 }
@@ -4566,6 +4587,7 @@ static int geom(int group) { return boot_values[st.geom][group]; }
  * one; any opener comes through here. */
 extern void *stock_ui_load_trampoline(const char *name, void *parent);
 void *ringnav_ui_load(const char *name, void *parent) {
+    char path[64]; /* this call's own: a window stock loads inside this one keeps its name */
     /* application_init's first window; accent() makes theme() final */
     if (name && !st.theme_booted && !tk_strcmp(name, "system_bar")) {
         st.theme_booted = 1;
@@ -4573,7 +4595,7 @@ void *ringnav_ui_load(const char *name, void *parent) {
         theme_boot();
     }
     if (name && !tk_strcmp(name, "playing_page")) name = np_pages[np_layout()];
-    return stock_ui_load_trampoline(ui_redirect(name), parent);
+    return stock_ui_load_trampoline(ui_redirect(name, path), parent);
 }
 
 /* bigcover_page_init: stock's full-screen art (a tap on Now Playing's opens it, any tap closes it)
@@ -5201,7 +5223,7 @@ static void setting_text(int i) {
 
 static int settings_list(void *w) {
     return w && !tk_strcmp(widget_get_type(w), "list_view") && !I(w, ROW_HEIGHT) &&
-           I(w, LIST_DEFAULT_ITEM_HEIGHT) == SET_ROW;
+           I(w, LIST_DEFAULT_ITEM_HEIGHT) == geom_val(V_SET_ROW);
 }
 
 /* Cached pages behind Display must take the new inset before their return transition. */
@@ -5250,7 +5272,7 @@ static int setting_click(void *ctx, void *event) {
     if (i == 4)
         *value = shortcut_next[shortcut()];
     else if (i)
-        *value = (*value + 1) % setting_counts[i];
+        *value = (*value + 1) % setting_count(i);
     else {
         const option_t *o = option_of(T, SETTING_ACCENT);
         unsigned mask = o && o->values ? o->values : (1u << ACCENT_N) - 1;
@@ -5690,6 +5712,12 @@ int ringnav_dispatch(void *target, void *event) {
     return stock_dispatch_trampoline(target, event);
 }
 
+/* Under a set without text-row artwork (Nano's), a row no taller than the pitch is one line: its
+ * leading children (artwork, the playing gif; stock's choice box stays) and the text's second line
+ * hide, and the title, at the set's centred y, takes their width. Stock re-showing one relayouts
+ * the row, which hides it again. */
+static int one_line(void *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom(G_PITCH); }
+
 /* Only audited ordinary row constructors install this per-instance layouter. Stock still
  * positions every child, skips hidden controls, and owns clone/destruction and text overflow. */
 static int compact_row_layout(void *layout, void *row) {
@@ -5707,6 +5735,17 @@ static int compact_row_layout(void *layout, void *row) {
                 title = label;
             }
         }
+    }
+    if (text && one_line(row)) {
+        for (unsigned i = 0; i < count; ++i) {
+            void *child = widget_get_child(row, i);
+            if (child == text) break;
+            if (strncmp(widget_get_prop_str(child, "name", ""), "img_choice", 10))
+                widget_set_visible(child, 0, 0);
+        }
+        for (unsigned j = 0; text != title && j < widget_count_children(text); ++j)
+            if (widget_get_child(text, j) != title)
+                widget_set_visible(widget_get_child(text, j), 0, 0);
     }
     if (text && widget_get_visible(text)) {
         int width = I(row, W_W) - 2 * B(layout, DEFAULT_LAYOUT_X_MARGIN);
@@ -5748,26 +5787,31 @@ int compact_set_row_layout(void *row, const char *params) {
 }
 
 /* Settings rows (docs/ipod.md#settings). One stock child in row coordinates: full-height children
- * fill the row and shorter ones keep their centre; the icon shrinks to SET_ICON; text starts at
- * the corner-safe column; children from SET_RIGHT_SIDE, and wide ones' right edges, move with the
- * trailing image by `shift`, never past the text margin. */
+ * fill the row and shorter ones keep their centre; the icon shrinks to the set's icon size, or
+ * hides at 0; text starts at the corner-safe column; children from SET_RIGHT_SIDE, and wide ones'
+ * right edges, move with the trailing image by `shift`, never past the text margin. */
 static void set_child(void *c, int row_w, int row_h, int shift) {
     int x = I(c, W_X), y = I(c, W_Y), w = I(c, W_W), h = I(c, W_H), right = x + w;
+    int icon = geom_val(V_SET_ICON);
     if (h >= SET_STOCK_BODY) {
         y = 0;
         h = row_h;
     } else
         y -= (SET_STOCK_BODY - row_h) / 2;
     if (w == SET_STOCK_ICON && !tk_strcmp(widget_get_type(c), "image")) {
+        if (!icon) {
+            widget_set_visible(c, 0, 0);
+            return;
+        }
         /* the build pre-sizes the audited icons to SET_ICON, so they draw 1:1; any other one scales
          * down */
         image_set_draw_type(c, IMAGE_DRAW_SCALE_DOWN);
-        widget_move_resize(c, SET_ICON_X, (row_h - SET_ICON) / 2, SET_ICON, SET_ICON);
+        widget_move_resize(c, SET_ICON_X, (row_h - icon) / 2, icon, icon);
         return;
     }
     int left = x >= SET_RIGHT_SIDE ? SET_STOCK_X + x + shift
                : x > SET_STOCK_ICON / 2 + 10 /* after a stock icon at x 10 */
-                   ? SET_ICON_X + SET_ICON + SET_GAP + x - (SET_STOCK_ICON + 20)
+                   ? (icon ? SET_ICON_X + icon + SET_GAP : SET_TEXT_X) + x - (SET_STOCK_ICON + 20)
                    : SET_TEXT_X + x - 10;
     right = right >= SET_RIGHT_SIDE ? SET_STOCK_X + right + shift : right + left - x;
     if (right > row_w - SET_TEXT_X) right = row_w - SET_TEXT_X;
@@ -5809,10 +5853,11 @@ static void set_row(void *item) {
     }
 }
 
-/* The list_view layouter's vtable slot. A list whose asset default_item_height is SET_ROW (only
- * the iPod settings pages) gets settings rows: items stock made SET_STOCK_ROW high take SET_ROW
- * before the stock layout stacks them and sizes the scroll view, then each row is mapped. Settings
- * code never moves, resizes or scrolls its rows afterwards (docs/ipod.md#settings). */
+/* The list_view layouter's vtable slot. A list whose asset default_item_height is the set's
+ * settings row (only the iPod settings pages) gets settings rows: items stock made SET_STOCK_ROW
+ * high take it before the stock layout stacks them and sizes the scroll view, then each row is
+ * mapped. Settings code never moves, resizes or scrolls its rows afterwards
+ * (docs/ipod.md#settings). */
 int ipod_list_layout(void *layout, void *view) {
     void *list = view ? P(view, W_PARENT) : (void *)0;
     int rows = settings_list(list);
@@ -5820,7 +5865,7 @@ int ipod_list_layout(void *layout, void *view) {
     unsigned n = rows ? widget_count_children(view) : 0;
     for (unsigned i = 0; i < n; ++i) {
         void *item = widget_get_child(view, i);
-        if (I(item, W_H) == SET_STOCK_ROW && set_button(item)) I(item, W_H) = SET_ROW;
+        if (I(item, W_H) == SET_STOCK_ROW && set_button(item)) I(item, W_H) = geom_val(V_SET_ROW);
     }
     int ret = ((int (*)(void *, void *))LIST_VIEW_LAYOUT)(layout, view);
     /* Stock neither places nor sizes a hidden row (no keep_invisible): mapped at 0x0 its button
@@ -6373,11 +6418,12 @@ static int empty_toast(const void *unused) {
 
 /* Library Artists rows have no head picture, so the name gets its width (compact_row_layout skips
  * hidden siblings). Composers and Genres share the rows, which are rebound, so they show theirs
- * again. */
+ * again, and Nano's one-line rows show none. */
 int ringnav_class_icon(void *row, int i) {
     int artists = I(g_class_type, 0) == 0xf004;
-    widget_set_visible(widget_lookup(row, "img_icon", 1), !artists, 0);
-    return artists ? 0 : class_icon(row, i);
+    int shown = !artists && geom(G_TEXT_ART); /* no class icon on a one-line row */
+    widget_set_visible(widget_lookup(row, "img_icon", 1), shown, 0);
+    return shown ? class_icon(row, i) : 0;
 }
 
 /* load_localclass_list: stock fills p_deque_showlist and returns its size. getAllAlbum,
