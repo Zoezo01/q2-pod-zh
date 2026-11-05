@@ -348,7 +348,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                 if not nano:
                     label('12:59 PM',16,142,0,90,30)
                     image(a,asset(after,'images/xx/bar_play.png'),STATUS_MARGIN,7,12,16)
-                effective=0 if state=='codec' else mode
+                effective=0 if state=='codec' else 3 if nano and mode in (1,2) else mode  # Nano's values: they read as Percent Inside
                 if nano:  # navigation.c nano_battery: the set's body, the light half's outline, paper and level
                     gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=NANO.batt_w,NANO.batt_h; nh=bh//2
                     ink=f'#{half["ink"]:06x}'; dig=ink if color=='#ffffff' else color
@@ -367,7 +367,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                         if state=='charging' and effective!=3:
                             for dy,bx,w in ((0,3,3),(1,2,3),(2,1,3),(3,0,6),(4,2,3),(5,1,3),(6,1,2),(7,0,2)):
                                 rect(a,x+(bw-6)//2+bx,y+(bh-8)//2+dy,w,1,line)
-                    if effective==3: label(str(level),bh-2,x+1,y+1,bw-2,bh-2,dig,nano_font)
+                    if effective==3: label(str(level),bh-2,x+1,y+1,bw-2,bh-2,'#000000',nano_font)  # dark on the level
                     elif effective in (1,2):
                         px=x+(bw+nub+inc('BATT_GAP') if effective==2 else 0)
                         label(str(level)+'%',NANO.bar_px,px,0,x+width-px,NANO.bar,dig,nano_font)

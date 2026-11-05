@@ -73,6 +73,7 @@ SCHEMA = {k.path: k for k in (
     key('home.rows.text_x', 'home_text_x', 'int', 375),
     key('home.rows.label_end_split', 'home_label_end[0]', 'int', 375),
     key('home.rows.label_end_full', 'home_label_end[1]', 'int', 375),
+    key('home.rows.font_px', 'font_px[ROLE_NP]', 'int', 64),  # the role's: Now Playing's title follows it
     Key('home.pane.stops', 'home_pane', 'stops', 0, 0, (), 'live'),  # Split with no cover; (): the placeholder image
     key('home.pane.shadow', 'pane_shadow', 'color'),
     key('home.pane.shadow_w', 'pane_shadow_w', 'int', 64),
@@ -130,7 +131,7 @@ def view_attr(path):
 ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if view_attr(p)}
 VIEWS = {e.partition('.')[0] for e in ELEMENTS}
 CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'geometry', 'option', 'view'}, 'view': {'element'}, 'option': {'value'}}
-OPTION_ATTRS = {'setting', 'key', 'label', 'default', 'preset', 'keep'}
+OPTION_ATTRS = {'setting', 'key', 'label', 'default', 'preset', 'keep', 'values'}
 # Per-theme numbers stay in offsets.inc: theme id -> {C field: expression over O}.
 CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF_Z1', 'cf.zs': 'CF_ZS', 'cf.eye': 'CF_EYE',
             'cf.bright1': 'CF_BRIGHT1', 'cf.bright2': 'CF_BRIGHT2', 'cf.reflect': 'CF_REFLECT',
@@ -494,10 +495,29 @@ def presets(c, o, names, what):
     return o
 
 
+def offered(c, o, names, what):
+    """c's values, the bitmask of names its row takes. A stored value outside them reads as its default, so it
+    has one, and every value the option names is one of them."""
+    listed = c.attrs['values'].split()
+    if len(set(listed)) < 2:
+        fail(c.file, c.line, f'{what}: 2 or more values expected')
+    for n in listed:
+        if n not in names:
+            fail(c.file, c.line, f'{what}: unknown value {n}')
+    if o['def'] < 0:
+        fail(c.file, c.line, f'{what}: values need a default, what a stored value outside them reads as')
+    for attr, field in (('default', 'def'), ('preset', 'preset'), ('keep', 'keep')):
+        if o[field] >= 0 and names[o[field]] not in listed:
+            fail(c.file, c.line, f'{what}: {attr} {names[o[field]]} is not in values')
+    return sum(1 << names.index(n) for n in set(listed))
+
+
 def own_option(c, known):
     """A theme's own <option key label>: its values, each naming the geometry set it boots, one of known."""
     def err(node, message): fail(node.file, node.line, message)
     key = own_key(c, c.attrs['key'])
+    if 'values' in c.attrs:
+        err(c, f'{key}: its <value>s are its values')
     if not label_ok(c.attrs.get('label', '')):
         err(c, f'{key}: label expected 1..24 bytes, no control characters')
     names, sets = [], []
@@ -646,6 +666,10 @@ def resolve(root, by_id, seen=()):
             if s == 'accent':
                 names = scheme_names(t)
             o = presets(c, {'setting': macro, 'def': -1, 'preset': -1, 'keep': -1, 'values': 0}, names, s)
+            if 'values' in c.attrs:
+                if s == 'accent':
+                    err(c, 'accent: colorSchemes states its values')
+                o['values'] = offered(c, o, names, s)
             if 'key' in c.attrs:
                 if s != 'accent':
                     err(c, f'{s}: unknown key {c.attrs["key"]}')
@@ -867,6 +891,8 @@ def dump(t, **head):
         if s == 'accent':
             a['key'] = t['accent_key']
         a |= {attr: values[o[f]] for attr, f in (('default', 'def'), ('preset', 'preset'), ('keep', 'keep')) if o[f] >= 0}
+        if o['values'] and s != 'accent':
+            a['values'] = ' '.join(v for i, v in enumerate(values) if o['values'] >> i & 1)
         if own:
             lines += [tag('option', a, '>'), *(tag('value', {'label': n, 'set': x}) for n, x in zip(o['names'], o['sets'])), '</option>']
         else:

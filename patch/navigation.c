@@ -1781,12 +1781,15 @@ __attribute__((noinline)) static void settings_read(void) {
     /* the themes' own keys, after the thirteen, in table order */
     for (int k = 0; k < THEME_KEYS; ++k)
         st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);
-    /* A stored value outside an option's values is its default (Classic's Ivory: Graphite). */
+    /* A stored value outside an option's values reads as its default (Classic's Ivory: Graphite),
+     * the key untouched. A payload key is every theme's: only the live theme's reading counts. */
     for (int t = 0; t < THEME_N; ++t)
         for (int k = 0; k < themes[t].n_opts; ++k) {
             const option_t *o = &themes[t].opts[k];
             int *v = option_slot(&themes[t], o->setting);
-            if (o->values && o->def >= 0 && !(o->values >> *v & 1)) *v = o->def;
+            if (o->values && o->def >= 0 && !(o->values >> *v & 1) &&
+                (t == st.theme || o->setting == SETTING_ACCENT))
+                *v = o->def;
         }
     int buf[11];
     st.light_day = light_day(clock_now(buf));
@@ -2610,30 +2613,26 @@ static void *list_button(void *view) {
     return button;
 }
 
-static int geom(int group);
 /* A stock settings-style row (0x4c19bc): a list_button with a 52px icon and a 24px label at x 72
  * (no icon: at x 10, as the Bluetooth page's rows), into adding stock's list_into trailing image
- * with the label narrowed clear of it, as the stock Local Music categories place it. A Library row
- * in a set without art (Nano's Row Art off) has no icon, its label at the set's text inset.
- * Returns the label. */
+ * with the label narrowed clear of it, as the stock Local Music categories place it. Returns the
+ * label. */
 static void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
                            int w, int into) {
     /* The Library constructor's live words (tools/ipod.py, theme_boot): body and art_inset. */
     int compact = !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
-    int bare = compact && !geom(G_ART); /* the button sits at 20 */
     int h = compact ? *(const volatile unsigned short *)LIBRARY_ROW_BODY : 70;
     void *button = list_button(view);
     if (compact) widget_resize(button, 335, h);
     if (click) widget_on(button, EVT_CLICK, click, ctx);
-    if (icon && !bare) { /* centred, as stock's rows (0x524978) */
+    if (icon) { /* centred, as stock's rows (0x524978) */
         void *image = image_create(
             button, compact ? *(const volatile unsigned short *)LIBRARY_ROW_ICON_X : 10, 0,
             SET_STOCK_ICON, h);
         image_base_set_image(image, icon);
         image_set_draw_type(image, IMAGE_DRAW_CENTER);
     }
-    int x = bare ? geom_val(V_TEXT_X) - 20 : icon ? 72 : 10;
-    void *label = hscroll_label_create(button, x, 0, w, h);
+    void *label = hscroll_label_create(button, icon ? 72 : 10, 0, w, h);
     widget_use_style(label, "s_scrlabel_white24l");
     set_hscroll_label_attribute(label);
     if (into) image_base_set_image(image_create(button, 282, 0, 50, h), "list_into");
@@ -2676,8 +2675,8 @@ void list_value(void *label, const char *title, const char *value) {
     void *button = P(label, W_PARENT);
     void *text = widget_lookup(button, "_setting_value", 0);
     if (!text) {
-        int x = 302 - I(button, W_X) - 70;
-        text = hscroll_label_create(button, x, 0, 120, I(button, W_H));
+        int x = 302 - I(button, W_X) - 84;
+        text = hscroll_label_create(button, x, 0, 134, I(button, W_H));
         widget_set_name(text, "_setting_value");
         widget_use_style(text, "s_scrlabel_white20r");
         hscroll_label_set_only_focus(text, 1);
@@ -3898,8 +3897,9 @@ int ringnav_showface(void *bar) {
 /* Nano's battery (BATT_NANO), the body's top-left at x, y, the set's V_BATT_W x V_BATT_H with the
  * nub outside: the batt_line outline and nub, the paper inside, the level in the batt stops
  * (stock's red when low, full while charging) and, charging outside Percent Inside, a bolt in the
- * outline's colour. Final colours, never flipped; the caller restores the fill. */
-static void nano_battery(void *canvas, int x, int y, unsigned key) {
+ * outline's colour. Final colours, never flipped; the caller restores the fill. Returns the level's
+ * width. */
+static int nano_battery(void *canvas, int x, int y, unsigned key) {
     static const unsigned char bolt[][3] = { /* dy, x, w: an original 6x8 bolt */
                                              { 0, 3, 3 }, { 1, 2, 3 }, { 2, 1, 3 }, { 3, 0, 6 },
                                              { 4, 2, 3 }, { 5, 1, 3 }, { 6, 1, 2 }, { 7, 0, 2 }
@@ -3921,11 +3921,24 @@ static void nano_battery(void *canvas, int x, int y, unsigned key) {
         canvas_fill_rect(canvas, x + 1, y + 1, f, bh - 2);
     } else
         paint_stops(canvas, x + 1, y + 1, f, bh - 2, &T->batt);
-    if (!(key & 2) || st.batt_mode == 3) return;
+    if (!(key & 2) || st.batt_mode == 3) return f;
     stock_canvas_set_fill_color(canvas, line);
     for (unsigned i = 0; i < sizeof bolt / sizeof *bolt; ++i)
         canvas_fill_rect(canvas, x + (bw - 6) / 2 + bolt[i][1], y + (bh - 8) / 2 + bolt[i][0],
                          bolt[i][2], 1);
+    return f;
+}
+/* The part of the digits in r that falls in columns x to x + w, in color (draw_centred's, which
+ * Light Mode flips). */
+static void nano_digits(void *canvas, const unsigned *s, unsigned n, const rect_t *r, int x, int w,
+                        unsigned color) {
+    int old[4], clip[4];
+    if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + x, I(canvas, CANVAS_Y) + r->y, w,
+                     r->h))
+        return;
+    canvas_set_clip_rect(canvas, clip);
+    draw_centred(canvas, s, n, r, (unsigned)r->h, color);
+    canvas_set_clip_rect(canvas, old);
 }
 
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
@@ -3956,14 +3969,17 @@ static void paint_battery(void *w, void *canvas) {
     }
     if (nano) { /* the body centred on the bar's rows above its line */
         int bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), y = (I(w, W_H) - 1 - bh) / 2;
-        nano_battery(canvas, 0, y, key);
+        int f = nano_battery(canvas, 0, y, key);
         if (st.batt_mode == 2) {
             int x = bw + BATT_NUB_W + BATT_GAP;
             rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
             draw_centred(canvas, s, n, &r, px, color);
         } else if (inside) {
+            /* dark on the level, whatever its colour; past it the half's ink, on the paper. White
+             * flips to the light half's black, so that half passes it for both. */
             rect_t r = { 1, y + 1, bw - 2, bh - 2 };
-            draw_centred(canvas, s, n, &r, (unsigned)(bh - 2), color);
+            nano_digits(canvas, s, n, &r, r.x, f, RGBA(ipod_light() ? 0xffffffu : 0));
+            nano_digits(canvas, s, n, &r, r.x + f, r.w - f, RGBA(0xffffffu));
         }
         stock_canvas_set_fill_color(canvas, fill);
         return;
@@ -5079,13 +5095,14 @@ static int pressed_pill(void *w, void *canvas) {
     return b == w; /* a page row's own (clear) background */
 }
 
-/* The bar title for window win: Home, Now Playing and Coverflow by name; else 0, and *label is a
- * stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
+/* The bar title for window win: Home, Now Playing, Coverflow and EQ by name; else 0, and *label is
+ * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
     if (home_menu(win)) return "Q2 Pod";
     if (tk_str_start_with(name, "playing_page")) return "Now Playing";
     if (!tk_strcmp(name, "coverflow_page")) return "Coverflow";
+    if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
     void *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
         for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
@@ -5114,11 +5131,12 @@ static int title_gone(void *w, void *event) {
 /* Nano's bar title (label_title, only its set's bar has one) names the top window win; a dialog
  * keeps the window's title. The title's source is found once per top window; after that a paint
  * compares only that label's text with the title's (none for a title by name), and the title is
- * written only when it changes. */
+ * written only when it changes, with the face that has its characters (stock draws a character its
+ * face lacks as nothing). */
 void bar_title_sync(void *win) {
     if (!st.bar_title || !win) return;
     static const unsigned none = 0;
-    char s[64], now[64];
+    char s[256], now[256]; /* stock writes nothing unless all of it fits */
     const char *t = 0;
     if (win != st.title_win) {
         title_gone(0, 0);
@@ -5139,8 +5157,10 @@ void bar_title_sync(void *win) {
         if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
         t = s;
     }
-    if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t))
+    if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t)) {
         widget_set_text_utf8(st.bar_title, t);
+        theme_font(st.bar_title, ROLE_BAR, FONT_ROW);
+    }
 }
 
 /* Stock paints a widget's background before its children, so the bar sits behind the rows.
@@ -5687,10 +5707,14 @@ static int setting_click(void *ctx, void *event) {
     _Static_assert(sizeof accent_next / sizeof *accent_next == ACCENT_N, "one per ACCENTS row");
     if (i == 4)
         *value = shortcut_next[shortcut()];
-    else if (i)
-        *value =
-            (*value + 1) % (i >= SETTING_OWN ? theme_keys[i - SETTING_OWN].n : setting_count(i));
-    else { /* Graphite, ..., Green, Ivory (Minimal); a theme's own schemes after Green */
+    else if (i) {
+        const option_t *o = option_of(T, i);
+        unsigned mask = o && o->values ? o->values : ~0u;
+        do
+            *value = (*value + 1) %
+                     (i >= SETTING_OWN ? theme_keys[i - SETTING_OWN].n : setting_count(i));
+        while (!(mask >> *value & 1));
+    } else { /* Graphite, ..., Green, Ivory (Minimal); a theme's own schemes after Green */
         const option_t *o = option_of(T, SETTING_ACCENT);
         unsigned mask = o && o->values ? o->values : (1u << ACCENT_N) - 1;
         do {
@@ -6198,6 +6222,21 @@ int ringnav_dispatch(void *target, void *event) {
  * the row, which hides it again. */
 static int one_line(void *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom(G_PITCH); }
 
+/* A row's text after its title, however deep stock nests it (view_artist): the meta role. A theme
+ * with its own face there also takes it to stock's secondary grey, the theme's muted (a style's
+ * white would read as black ink in Light Mode). */
+static void row_meta(void *w) {
+    const theme_t *T = theme();
+    if (tk_strcmp(widget_get_type(w), "hscroll_label")) {
+        for (unsigned i = 0; T->font[ROLE_META] && i < widget_count_children(w); ++i)
+            row_meta(widget_get_child(w, i));
+        return;
+    }
+    int fresh = T->font[ROLE_META] && widget_get_prop_int(w, "_font", -1) < 0;
+    theme_font(w, ROLE_META, FONT_ROW);
+    if (fresh) widget_set_prop_int(w, "style:normal:text_color", (int)SPOT_GREY);
+}
+
 /* Only audited ordinary row constructors install this per-instance layouter. Stock still
  * positions every child, skips hidden controls, and owns clone/destruction and text overflow. */
 static int compact_row_layout(void *layout, void *row) {
@@ -6220,7 +6259,7 @@ static int compact_row_layout(void *layout, void *row) {
         for (unsigned i = 0; i < count; ++i) {
             void *child = widget_get_child(row, i);
             if (child == text) break;
-            if (strncmp(widget_get_prop_str(child, "name", ""), "img_choice", 10))
+            if (!tk_str_start_with(widget_get_prop_str(child, "name", ""), "img_choice"))
                 widget_set_visible(child, 0, 0);
         }
         for (unsigned j = 0; text != title && j < widget_count_children(text); ++j)
@@ -6251,18 +6290,21 @@ static int compact_row_layout(void *layout, void *row) {
                 void *label = widget_get_child(text, j);
                 if (label == title)
                     after = 1;
-                else if (after && !tk_strcmp(widget_get_type(label), "hscroll_label"))
-                    theme_font(label, ROLE_META, FONT_ROW);
+                else if (after)
+                    row_meta(label);
             }
         }
     }
     int ret = ((int (*)(void *, void *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
-    /* The set's text inset (Nano's text_x, clear of the glass): text the layout put left of it
-     * moves there, its right edge kept; art rows' text, after the art, keeps its place. */
+    /* The set's text inset (Nano's text_x, on screen, clear of the glass; the row may sit in from
+     * it): text leading the row moves there, its right edge kept. Text after art or stock's choice
+     * box keeps its place. */
     int tx = geom_val(V_TEXT_X);
-    if (tx && text && I(text, W_X) < tx)
+    if (tx && text && I(text, W_X) <= B(layout, DEFAULT_LAYOUT_X_MARGIN)) {
+        tx = tx > I(row, W_X) ? tx - I(row, W_X) : 0;
         widget_move_resize(text, tx, I(text, W_Y), I(text, W_W) - (tx - I(text, W_X)),
                            I(text, W_H));
+    }
     return ret;
 }
 
@@ -6288,6 +6330,12 @@ int compact_set_row_layout(void *row, const char *params) {
 static void set_child(void *c, int row_w, int row_h, int shift) {
     int x = I(c, W_X), y = I(c, W_Y), w = I(c, W_W), h = I(c, W_H), right = x + w;
     int icon = geom_val(V_SET_ICON);
+    /* A set without settings icons: any image leading the row goes, whatever its width (a paired
+     * device's 50 px one), and text after one starts at the text column. */
+    if (!icon && x < SET_RIGHT_SIDE && !tk_strcmp(widget_get_type(c), "image")) {
+        widget_set_visible(c, 0, 0);
+        return;
+    }
     if (h >= SET_STOCK_BODY) {
         y = 0;
         h = row_h;
@@ -6308,6 +6356,7 @@ static void set_child(void *c, int row_w, int row_h, int shift) {
                : x > SET_STOCK_ICON / 2 + 10 /* after a stock icon at x 10 */
                    ? (icon ? SET_ICON_X + icon + SET_GAP : SET_TEXT_X) + x - (SET_STOCK_ICON + 20)
                    : SET_TEXT_X + x - 10;
+    if (!icon && left < SET_TEXT_X) left = SET_TEXT_X;
     right = right >= SET_RIGHT_SIDE ? SET_STOCK_X + right + shift : right + left - x;
     if (right > row_w - SET_TEXT_X) right = row_w - SET_TEXT_X;
     widget_move_resize(c, left, y, right > left ? right - left : 0, h);
@@ -6349,6 +6398,19 @@ static void set_row(void *item) {
     }
 }
 
+/* A settings row's height: the set's, or two of them where it is too short for a stock row with a
+ * detail line under its title (Bluetooth's Quality), which would run into the next row. */
+static int set_row_h(void *button) {
+    int h = geom_val(V_SET_ROW);
+    if (2 * h > SET_STOCK_BODY) return h;
+    for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
+        void *c = widget_get_child(button, i);
+        if (I(c, W_Y) >= SET_STOCK_BODY / 2 && !tk_strcmp(widget_get_type(c), "hscroll_label"))
+            return 2 * h;
+    }
+    return h;
+}
+
 /* The list_view layouter's vtable slot. A list whose asset default_item_height is the set's
  * settings row (only the iPod settings pages) gets settings rows: items stock made SET_STOCK_ROW
  * high take it before the stock layout stacks them and sizes the scroll view, then each row is
@@ -6361,7 +6423,8 @@ int ipod_list_layout(void *layout, void *view) {
     unsigned n = rows ? widget_count_children(view) : 0;
     for (unsigned i = 0; i < n; ++i) {
         void *item = widget_get_child(view, i);
-        if (I(item, W_H) == SET_STOCK_ROW && set_button(item)) I(item, W_H) = geom_val(V_SET_ROW);
+        void *button = I(item, W_H) == SET_STOCK_ROW ? set_button(item) : (void *)0;
+        if (button) I(item, W_H) = set_row_h(button);
     }
     int ret = ((int (*)(void *, void *))LIST_VIEW_LAYOUT)(layout, view);
     /* Stock neither places nor sizes a hidden row (no keep_invisible): mapped at 0x0 its button
@@ -8771,6 +8834,32 @@ enum {
     L_STOCK
 };
 
+/* Every Library row, stock's and the added ones: its label takes the list titles' role. In a set
+ * without art (Nano's Row Art off) it also drops its icon and starts its label at the set's text
+ * inset on screen, its right edge kept. */
+static void library_look(void *view) {
+    const theme_t *T = theme();
+    int bare = !geom(G_ART);
+    if (!bare && !T->font[ROLE_TITLE] && !T->font_px[ROLE_TITLE]) return;
+    for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
+        void *row = widget_get_child(view, i);
+        void *button = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+        for (unsigned j = 0, k = button ? widget_count_children(button) : 0; j < k; ++j) {
+            void *c = widget_get_child(button, j);
+            if (tk_strcmp(widget_get_type(c), "hscroll_label")) {
+                if (bare) widget_set_visible(c, 0, 0);
+                continue;
+            }
+            theme_font(c, ROLE_TITLE, FONT_ROW);
+            if (bare) {
+                int x = geom_val(V_TEXT_X) - I(button, W_X);
+                widget_move_resize(c, x, I(c, W_Y), I(c, W_W) + I(c, W_X) - x, I(c, W_H));
+            }
+            break;
+        }
+    }
+}
+
 /* The Library: one Shuffle row opening its menu, browsing, the user's own lists, listening
  * history, the card's other media, then upkeep. The added rows' buttons have no name, so stock's
  * row click (atoi of the name, 0x5241fc) never sees them. */
@@ -8811,6 +8900,7 @@ int ringnav_localmusic(void *win, void *ctx) {
     if (scrobble_ready())
         widget_restack(library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles"),
                        n++);
+    library_look(view);
     return result;
 }
 

@@ -718,7 +718,7 @@ def test_status_bar_wants_the_stock_height():
         ipod.status_bar(root)
 
 
-# Nano's bar, from the spec's rules: bar text at bar_px (15 px), its caps (the font's own cap
+# Nano's bar, from the spec's rules: bar text at bar_px (19 px, a 10 px cap), its caps (the font's own cap
 # height at that size) centred on the rows above the bar's last (line) row; title and clock share
 # one box height and y; the title starts as far in as the glass needs at the caps' top plus
 # CORNER_SLACK and ends CLOCK_GAP before the widest clock text; the clock is centred on the screen.
@@ -726,12 +726,21 @@ def test_status_metrics_centre_the_caps_in_the_nano_bar():
     from fontTools.ttLib import TTFont
     f, g = TTFont(ipod.NANO_FONT_SRC, lazy=True), NANO
     m = ipod.status_metrics(g, ipod.NANO_FONT_SRC)
-    assert m['px'] == g.bar_px == 15
+    assert m['px'] == g.bar_px == 19 and m['cap'] == 10
     assert m['cap'] == round(f['OS/2'].sCapHeight * g.bar_px / (f['hhea'].ascent - f['hhea'].descent))
     assert 2 * m['cap_top'] + m['cap'] in (g.bar - 2, g.bar - 1)          # centred above the line
     assert m['inset'] == ipod.corner_inset(m['cap_top']) + ipod.CORNER_SLACK
     assert m['title'][0] == m['inset'] and m['title'][0] + m['title'][2] <= 375 / 2 - ipod.CLOCK_TEXT / 2 - ipod.CLOCK_GAP
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
+    # the widest clock text fits CLOCK_TEXT at this size, so a long title's box ends clear of it and BATT_ROOM holds
+    assert nano_text_w('12:59 PM') <= ipod.CLOCK_TEXT
+
+
+def nano_text_w(text):  # text's advance in the Nano face at the bar's px (stb scales ascent - descent to the size)
+    from fontTools.ttLib import TTFont
+    f = TTFont(ipod.NANO_FONT_SRC, lazy=True)
+    cmap = f.getBestCmap()
+    return sum(f['hmtx'][cmap[ord(c)]][0] for c in text) * NANO.bar_px / (f['hhea'].ascent - f['hhea'].descent)
 
 
 def test_nano_status_bar_has_a_title_and_no_idle_mark():
@@ -754,6 +763,33 @@ def test_nano_status_bar_battery_and_play_state_right():
     xm = ipod.corner_inset((NANO.bar - 1 - NANO.batt_h) // 2) + ipod.CORNER_SLACK
     assert n['view_right'][2]['children_layout'].endswith(f'xm={xm},s={ipod.inc("STATUS_GAP")})')
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
+
+
+# EQ floats inside the room the battery's reach counts, not left of img_bt's 43 px canvas (whose ink is its last
+# BT_REACH px), where the layout would put it: past the clock's text. In the bar's face, on its text line.
+def test_nano_status_bar_eq_in_the_room():
+    root = bar(); ipod.status_bar(root, g=NANO); n = named(root)
+    m, eq = ipod.status_metrics(NANO, ipod.NANO_FONT_SRC), n['label_eq']
+    x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
+    edge = 375 - (ipod.corner_inset((NANO.bar - 1 - NANO.batt_h) // 2) + ipod.CORNER_SLACK)  # the group's right edge
+    assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], 28, m['title'][3]]
+    assert x == edge - ipod.BATT_ROOM and x >= 375 / 2 + ipod.CLOCK_TEXT / 2 + 2  # the widest clock, 2 px clear
+    assert nano_text_w('EQ') <= 28  # the bar's face fits its box
+    # short of Bluetooth's ink: the battery with its nub, Wi-Fi, BT_REACH
+    assert x + 28 + gap <= edge - (NANO.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
+    assert {eq[2][f'style:{s}:{k}'] for s in ('normal', 'disable', 'focused') for k in ('font_size', 'font_name')} \
+        == {str(NANO.bar_px), ipod.NANO_FONT_NAME}
+
+
+# The play state shares EQ's place: left of img_bt's canvas it would touch a 12-hour clock.
+def test_nano_status_bar_play_state_in_the_room():
+    root = bar(); ipod.status_bar(root, g=NANO); n = named(root)
+    state, eq = n['img_state'], n['label_eq']
+    x, gap = n['view_right'][1][0] + state[1][0], ipod.inc('STATUS_GAP')
+    edge = 375 - (ipod.corner_inset((NANO.bar - 1 - NANO.batt_h) // 2) + ipod.CORNER_SLACK)
+    assert state[2]['floating'] == 'true' and state[1][0] == eq[1][0] and state[1][1::2] == [0, NANO.bar]
+    assert x >= 375 / 2 + ipod.CLOCK_TEXT / 2 + 2  # the widest clock, 2 px clear
+    assert x + state[1][2] + gap <= edge - (NANO.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
 
 
 def test_nano_status_bar_battery_must_fit(monkeypatch):

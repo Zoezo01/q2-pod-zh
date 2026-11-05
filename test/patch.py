@@ -370,7 +370,9 @@ class Machine:
         elif name=='strlen@GLIBC_2.0': ret=len(self.raw(a))  # bytes: stock strips a path's UTF-8 name byte by byte
         elif name=='strrchr@GLIBC_2.0': i=self.text(a).encode().rfind(bytes([b&255])); ret=a+i if i>=0 else 0
         elif name=='memcmp@GLIBC_2.0': x,y=bytes(u.mem_read(a,c)),bytes(u.mem_read(b,c)); ret=(x>y)-(x<y)
-        elif name=='strncmp@GLIBC_2.0': x,y=(bytes(self.raw(v))[:c] for v in (a,b)); ret=(x>y)-(x<y)
+        elif name=='strncmp@GLIBC_2.0':
+            assert a and b,'strncmp(NULL) faults in libc'
+            x,y=(bytes(self.raw(v))[:c] for v in (a,b)); ret=(x>y)-(x<y)
         elif name in ('strcasecmp@GLIBC_2.0','strncasecmp@GLIBC_2.0'):  # ASCII case, as the C locale
             x,y=(bytes(self.raw(v)).lower()[:c if name.startswith('strn') else None] for v in (a,b)); ret=(x>y)-(x<y)
         elif name=='sprintf@GLIBC_2.0':  # stock toolsTimeItoa's "%02d:%02d[:%02d]"
@@ -453,7 +455,9 @@ class Machine:
         elif name=='widget_get_type': ret=self.string(n.get('type',''))
         elif name=='widget_get_prop_str':
             # Stock text is VALUE_TYPE_WSTRING; value_str does not convert it to UTF-8.
+            # An unnamed widget's name is NULL too, whatever the default: stock answers its value_str.
             ret=0 if self.text(b)=='text' else self.string(n.get(self.text(b),''))
+            if self.text(b)=='name' and not n.get('name'): ret=0
         elif name=='widget_get_text': ret=self.wide_string(n.get('text',''))
         elif name=='player_playtime_and_length' and hasattr(self,'playtime'): self.word(a,self.playtime); self.word(b,225); ret=0
         elif name=='widget_get_text_utf8':
@@ -1455,11 +1459,45 @@ for address in (0x4aa2cc, 0x4b0efc):
     assert [m.nodes[c]['name'] for c in kids[:kids.index(text)] if m.nodes[c]['visible'] and not m.nodes[c]['name'].startswith('img_choice')]==[],address
     assert [c for c in m.nodes[text]['children'] if c!=title and m.nodes[c]['visible']]==[],address
     y,h=(signed(m.get(title+O[k])) for k in ('W_Y','W_H')); assert 2*y+h==28,(address,y,h)
-    # Outside multi-select (img_choice hidden) the title container starts at text_x, clear of the glass.
+    # Outside multi-select (img_choice hidden) the title container starts at text_x on screen, clear of
+    # the glass: the button sits at 20. In multi-select stock's box keeps its place and the text its own.
+    kx=lambda c: signed(m.get(c+O['W_X']))
+    multi=kx(text); assert multi>8 and kx(button)==20,address
     for c in kids:
         if m.nodes[c]['name'].startswith('img_choice'): m.nodes[c]['visible']=0
-    native_row_layout(m,button); assert m.get(text+O['W_X'])==20,address
+    native_row_layout(m,button); assert kx(button)+kx(text)==20,address
+    m.word(button+O['W_X'],30); native_row_layout(m,button); assert kx(text)==0,address  # a row further in than text_x: its text at its start
+    m.word(button+O['W_X'],20); native_row_layout(m,button)
+    edge=kx(text)+m.get(text+O['W_W'])  # the right edge stays where the layout put it
+    for c in kids:
+        if m.nodes[c]['name'].startswith('img_choice'): m.nodes[c]['visible']=1
+    native_row_layout(m,button); assert kx(text)==multi and kx(text)+m.get(text+O['W_W'])==edge,address
+    for c in kids:
+        if m.nodes[c]['name'].startswith('img_choice'): m.nodes[c]['visible']=0
+    # A leading child stock left unnamed (a Playlists row's) hides like the others, and does not fault.
+    unnamed=m.node('image'); m.nodes[button]['children'].insert(0,unnamed); native_row_layout(m,button)
+    assert not m.nodes[unnamed]['visible'],address
 passed()
+
+# Nano's Albums row: the second line, nested in stock's view_artist, takes the meta role: the Nano face at
+# meta_px, and stock's secondary grey in its one state a row uses, which the style hook turns to the theme's
+# muted. Its colour is written once. Classic's second line stays the style's, its row's calls unchanged.
+def album_row(boot):
+    m=Machine(); boot(m); w=m.page('folder_page','table_client')
+    m.mock('table_row_create','button_create','image_create','view_create','hscroll_label_create','gif_image_create',
+           'widget_use_style','widget_set_name','widget_set_children_layout','image_set_draw_type','image_base_set_image',
+           'set_hscroll_label_attribute','widget_set_visible')
+    assert m.call(address=0x4a4ae8,args=(w,w,1,0))==0
+    return m,m.nodes[m.nodes[w]['children'][0]]['children'][0]
+m,button=album_row(nano_boot); native_row_layout(m,button)
+title,meta=(next(n for n,v in m.nodes.items() if v['name']==name) for name in ('scrlabel1_name','scrlabel2_name'))
+for st_ in ('normal','focused','disable'):
+    assert (m.nodes[title][f'style:{st_}:font_name'],m.nodes[title][f'style:{st_}:font_size'])==('nano',27),st_
+    assert (m.nodes[meta][f'style:{st_}:font_name'],m.nodes[meta][f'style:{st_}:font_size'])==('nano',16),st_
+assert m.nodes[meta]['style:normal:text_color']==signed(0xffaaaaaa) and 'style:normal:text_color' not in m.nodes[title]
+m.nodes[meta]['style:normal:text_color']=0; native_row_layout(m,button); assert m.nodes[meta]['style:normal:text_color']==0
+m,button=album_row(lambda k: k.config.update(THEME='1')); native_row_layout(m,button)
+assert not [k for n in m.nodes.values() for k in n if str(k).startswith('style:')]; passed()
 
 # The three non-pooled constructors: album tracks, artist tracks and playlists.
 # These use distinct title/container names and must receive the same native layout behavior;
@@ -8788,7 +8826,7 @@ assert [r[:4] for r in gdrows]==[(0,j,375,1) for j in range(26)]
 assert (gdrows[0][4],gdrows[24][4],gdrows[25][4])==(color_t(0x5a595a),color_t(0x1f1e1f),color_t(0x3a393a))
 assert all(a>=b for j in range(24) for a,b in zip(channels(gdrows[j][4]),channels(gdrows[j+1][4]))); passed()
 # The title (label_title, Nano's bar only) names the top window: Home "Q2 Pod", Now Playing,
-# Coverflow, a stock page's hidden navbar title, a payload page's 48 px caption row. A dialog keeps
+# Coverflow, the EQ page (its 48 px row is the tabs' own label), a stock page's hidden navbar title, a payload page's 48 px caption row. A dialog keeps
 # the window's title, and an unchanged title is not written again.
 btm=nano_on(Machine()); bttl=btm.node('hscroll_label','label_title'); btbar=nano_bar(btm,bttl)
 def bt_titled(win):
@@ -8798,6 +8836,7 @@ def bt_titled(win):
 btnav=btm.node('view','view_navbar',[btm.node('image','img_return'),btm.node('hscroll_label',text='Songs')],visible=0)
 btcap=btm.node('hscroll_label',text='Shuffle'); btm.word(btcap+O['W_H'],48); btwins={}
 for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'Now Playing'),('coverflow_page',[],'Coverflow'),
+                                ('equalizer_page',[],'EQ'),
                                 ('allmusic_page',[btnav],'Songs'),('shuffle_page',[btcap],'Shuffle')):
     btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
 assert bt_titled(btm.node('dialog','sortselect_dialog'))=='Shuffle'
@@ -8813,7 +8852,14 @@ btm.nodes[btm.nodes[btnav]['children'][1]]['text']='Albums'; assert bt_titled(bt
 f,ctx=next((f,ctx) for t,f,ctx in btm.nodes[btcap]['handlers'] if t==O['EVT_DESTROY']); assert bt_titled(btwins['shuffle_page'])=='Shuffle'
 btm.call(address=f,args=(ctx,btm.event,0,0),gap=0)
 btcap2=btm.node('hscroll_label',text='Genres'); btm.word(btcap2+O['W_H'],48); btm.nodes[btwins['shuffle_page']]['children']=[btcap2]
-assert bt_titled(btwins['shuffle_page'])=='Genres'; passed()
+assert bt_titled(btwins['shuffle_page'])=='Genres'
+# A title outside the Nano face falls back at the bar's size and never blanks: bold.ttf, then stock's.
+# The next Latin title takes the Nano face back; a long Cyrillic title still fits the sync's buffers.
+for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','default'),('Songs','nano'),('Н'*60,'bold')):
+    btm.nodes[btm.nodes[btnav]['children'][1]]['text']=bt_text; assert bt_titled(btwins['allmusic_page'])==bt_text
+    assert [btm.nodes[bttl][f'style:{s}:font_name'] for s in ('normal','focused','disable')]==[bt_face]*3,bt_text
+    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[19]*3,bt_text
+passed()
 # Nano battery (BATT_NANO): a #636163 outline and nub, the paper inside, and the level in the
 # battery stops (#defbc6 top, #529a31 bottom) over the inner rows, centred on the caps' row
 # 12.5: body 26x13 at y 6. Charging fills it and adds the bolt; low is stock's red; Percent and
@@ -8849,18 +8895,25 @@ bolt=[(10+x,8+dy,w,1,LINE) for dy,x,w in ((0,3,3),(1,2,3),(2,1,3),(3,0,6),(4,2,3
 assert [b[:4] for b in bands[6:17]]==[(1,y+1+j,24,1) for j in range(11)] and bands[17:]==bolt; passed()
 bm,bw_,bands=nano_battery_bar(0,'bar_lowcharge','5%')
 assert bands[6:]==[(1,y+1,1,11,color_t(O['BATT_LOW_RGB']))]; passed()
-for mode in (1,2,3):  # Percent; Icon + Percent; Percent Inside (digits in the body)
+for mode in (1,2,3):  # Percent Inside (digits in the body), and the stored values that read as it
     bm,bw_,bands=nano_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
-    want={1:('50%',(0,0,bm.get(bw_['view_battery']+O['W_W']),26)),2:('50%',(30,0,bm.get(bw_['view_battery']+O['W_W'])-30,26)),
-          3:('50',(1,y+1,24,11))}[mode]
-    assert letters==[want] and (mode==1 or bands[:6]==outline),(mode,letters); passed()
+    assert letters==[('50',(1,y+1,24,11))]*2 and bands[:6]==outline and bm.get(bw_['view_battery']+O['W_W'])==28,(mode,letters); passed()
+# Percent Inside's digits read in both halves: dark on the level, whatever its colour (the gloss, full while
+# charging, stock's red when low), and past its end the half's ink, on the paper (white on the dark half's black).
+# Each part is clipped to its side of the level's end, and the canvas's clip comes back.
+for lt,past in (('1',0),('0',0xffffff)):
+    for batt_img,batt_text,f in (('bar_battery','50%',12),('bar_battery','100%',24),('bar_charge','63%',24),('bar_lowcharge','5%',1),('bar_battery','0%',0)):
+        bm,bw_,bands=nano_battery_bar(3,batt_img,batt_text,lt); digits=batt_text[:-1]
+        want=[(digits,(1,y+1,24,11),color_t(0),(1,y+1,f,11))][:f>0]+[(digits,(1,y+1,24,11),color_t(past),(1+f,y+1,24-f,11))][:f<24]
+        assert [(l['text'],l['rect'],l['color'],l['clip']) for l in bm.letters]==want,(lt,batt_img,batt_text,bm.letters)
+        assert bm.clip not in [w[3] for w in want]
+passed()
 # Nano's right group holds EQ or the play state, not both: a shown play state hides EQ, EQ alone
-# stays. Either one's width counts in the battery's reach: with Wi-Fi, Icon + Percent fits alone
-# (a 90 px reach of BATT_ROOM's 94) and falls back to the 28 px icon beside the play state or EQ.
-for status,eq,eq_on,icon in ((0,0,0,0),(2,0,0,1),(0,1,1,1),(2,1,0,1)):
-    bm,bw_,bands=nano_battery_bar(2,status=status,eq=eq,wifi=1)
+# stays. Either way Percent Inside, the width of the icon, keeps its digits beside Wi-Fi.
+for status,eq,eq_on in ((0,0,0),(2,0,0),(0,1,1),(2,1,0)):
+    bm,bw_,bands=nano_battery_bar(3,status=status,eq=eq,wifi=1)
     assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq_on),(status,eq)
-    assert (bm.get(bw_['view_battery']+O['W_W'])==28)==icon,(status,eq,bm.get(bw_['view_battery']+O['W_W']))
+    assert bm.get(bw_['view_battery']+O['W_W'])==28 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
 passed()
 # The play state glyph is Nano's blue (bar.state.color), final: Light Mode's flip leaves it.
 blue=bytes([0xe7,0xae,0x31,0x80,0xe7,0xae,0x31,0xff])+b'\xee'*4
@@ -9202,6 +9255,34 @@ def check_row(m,item,slot):
         elif label: assert label[0]==SET['TEXT_X']
         if label and not trail: assert label[0]+label[1]==375-SET['TEXT_X']
         if label and trail: assert label[0]+label[1]<=trail+30  # the chevron's glyph starts 20px in
+# A stock row with a second text line under its title (Bluetooth's Quality, 0x4be994: the title at y 12, the
+# detail at y 44 of its 70 px body), under a set whose row is too short for both (Nano's 28), takes two rows, so
+# nothing overlaps the next row. Its one-line neighbours keep the set's row, and a row at SET0's height stays.
+def stacked_row(m,view):
+    title,detail=m.node('hscroll_label'),m.node('hscroll_label')
+    for c,box in ((title,(10,12,266,20)),(detail,(10,44,266,16))):
+        for k,v in zip(('W_X','W_Y','W_W','W_H'),box): m.word(c+O[k],v)
+    b=m.node('button',children=[title,detail])
+    for k,v in zip(('W_X','W_W','W_H'),(20,335,70)): m.word(b+O[k],v)
+    item=m.node('list_item',children=[b]); m.word(item+O['W_H'],78); m.nodes[view]['children'].insert(1,item)
+    return item,title,detail
+m,view=settings(0x4c0f6c,default=28,boot=nano_on); item,title,detail=stacked_row(m,view); assert lay(m,view)==0
+rows=[i for i in m.nodes[view]['children'] if m.nodes[i]['visible']]; hs=[geometry(m,i)[3] for i in rows]
+assert hs[1]==56 and set(hs[:1]+hs[2:])=={28},hs
+ys=[geometry(m,i)[1] for i in rows]; assert all(y+h==ny for y,h,ny in zip(ys,hs,ys[1:])),(ys,hs)
+_,ty,_,th=geometry(m,title); _,dy,_,dh=geometry(m,detail); assert 0<=ty and ty+th<=dy and dy+dh<=56,(ty,th,dy,dh)
+after=tree(m,view); assert lay(m,view)==0 and tree(m,view)==after  # a later layout changes nothing
+m,view=settings(0x4c0f6c); item,*_=stacked_row(m,view); assert lay(m,view)==0 and geometry(m,item)[3]==SET['ROW']; passed()
+# A paired device's row (0x4be61c): a 50 px icon at x 0, its two lines at x 52, a trailing image. A set without settings
+# icons hides that icon too, and the lines start at the text column, not left of it. The trailing image stays.
+m,view=settings(0x4c0f6c,default=28,boot=nano_on); item,title,detail=stacked_row(m,view)
+b=m.nodes[item]['children'][0]; lead,trail=m.node('image'),m.node('image')
+for c,box in ((lead,(0,0,50,70)),(trail,(282,0,50,70))):
+    for k,v in zip(('W_X','W_Y','W_W','W_H'),box): m.word(c+O[k],v)
+for c in (title,detail): m.word(c+O['W_X'],52)
+m.nodes[b]['children'][:0]=[lead]; m.nodes[b]['children'].append(trail); assert lay(m,view)==0
+assert not m.nodes[lead]['visible'] and m.nodes[trail]['visible'] and geometry(m,item)[3]==56
+assert geometry(m,title)[0]==geometry(m,detail)[0]==SET['TEXT_X'],(geometry(m,title),SET['TEXT_X']); passed()
 for classic in (0,1):
     CONFIG['THEME']=str(classic)
     for builder in (0x4c43e4, 0x4c0f6c, 0x4cbcc4, 0x4ccc70, 'display'):  # language, BT quality, System settings, Wi-Fi, Display
@@ -9320,6 +9401,16 @@ for row in srows:
 begin(sk,sw); begin(sk,srows[0]); begin(sk,slabels[0])
 assert style_color(sk,0xffaaaaaa)[1]==0xffffffff and style_color(sk,0x80000000)[1]==0x80ffffff
 end(sk,slabels[0]); end(sk,srows[0]); end(sk,sw); passed()
+# A row's second line: the theme's muted grey off the band, the light half's the reference's #6b6d6b on
+# white, the dark half's its flip on black. On the band it is sel_text's white, in both halves.
+for mlight,mwant in (('1',0xff6b6d6b),('0',0xff949294)):
+    sk=Machine(); sk.config['LIGHT']=mlight; nano(sk); sw,srows=sk.page_list(3); slabels=[]
+    for row in srows:
+        l=sk.node('hscroll_label'); sk.nodes[row]['children'].append(l); sk.word(l+O['W_PARENT'],row); slabels.append(l)
+    begin(sk,sw); begin(sk,srows[1]); begin(sk,slabels[1]); assert style_color(sk,0xffaaaaaa)[1]==mwant,mlight
+    end(sk,slabels[1]); end(sk,srows[1]); begin(sk,srows[0]); begin(sk,slabels[0]); assert style_color(sk,0xffaaaaaa)[1]==0xffffffff,mlight
+    end(sk,slabels[0]); end(sk,srows[0]); end(sk,sw)
+passed()
 # Nano's halves. Nano declares Light Mode but not Rounded Corners or Centred Now Playing:
 # with ROUNDED=1 and NPCENTRED=1 stored its band is square and Now Playing is its own page. LIGHT=0 is
 # its dark half (no flip: stock's black and white), LIGHT=1 its light half on #ffffff and #000000, each
@@ -9395,6 +9486,39 @@ def art_boot(config):  # the names a fresh Nano's first system_bar loaded, with 
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['nano_system_bar']
 assert art_boot({'ROWART':'0'})==['nano-text_system_bar']
 passed()
+# Battery under Nano takes Icon or Percent Inside (theme.xml's values): the row cycles those two and writes the
+# key as usual. A stored Percent or Icon + Percent reads as Percent Inside and stays stored; a key that is not
+# stored reads as Icon. Minimal and Classic on the same build keep all four, whatever Nano's values say.
+m,view,_=display({},setup=nano); row=m.nodes[view]['children'][4]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
+assert row_text(row)=='Battery: Icon'
+for value,name in ((3,'Percent Inside'),(0,'Icon'),(3,'Percent Inside')):
+    m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'BATTERY')] and row_text(row)=='Battery: '+name
+passed()
+# Percent Inside fits its value box at the row's 27 px, inside the 2 px hscroll_label keeps each side by default (stock
+# draws an ellipsis past that). The box keeps the trailing column's right edge at screen x 352 and the title stops 8
+# short of it.
+from fontTools.ttLib import TTFont
+from ipod import NANO_FONT_SRC
+face=TTFont(NANO_FONT_SRC,lazy=True); glyphs=face.getBestCmap()
+def row_w(text): return sum(face['hmtx'][glyphs[ord(c)]][0] for c in text)*27/(face['hhea'].ascent-face['hhea'].descent)
+b=m.nodes[row]['children'][0]; title=m.nodes[b]['children'][1]; val=next(k for k in m.nodes[b]['children'] if m.nodes[k].get('name')=='_setting_value')
+vx,vw,bx=(m.get(val+O['W_X']),m.get(val+O['W_W']),m.get(b+O['W_X']))
+assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==352
+assert m.get(title+O['W_X'])+m.get(title+O['W_W'])==vx-8; passed()
+for stored in ('1','2'):
+    m,view,_=display({'BATTERY':stored},setup=nano); row=m.nodes[view]['children'][4]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
+    assert row_text(row)=='Battery: Percent Inside' and not [c for c in m.calls if c[0]=='write_int_config'] and m.config['BATTERY']==stored
+    assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==3
+    m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # from what it reads as: on to Icon
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'BATTERY')] and row_text(row)=='Battery: Icon'
+passed()
+for t in ('0','1'):
+    def on_t(k,t=t): nano(k); k.config['THEME']=t  # Minimal or Classic, on a build that offers Nano
+    for stored,name in (('0','Icon'),('1','Percent'),('2','Icon + Percent'),('3','Percent Inside')):
+        m,view,rows=display({'BATTERY':stored},setup=on_t)
+        assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==int(stored) and row_text(rows[2])=='Battery: '+name,(t,stored)
+passed()
 # Theme opens the picker (Display's page again, its rows the themes the build offers: Minimal and Classic
 # on a release build, Nano too on --dev) and writes nothing; the current theme's row holds select.
 class RestartMachine(QueueMachine):
@@ -9428,6 +9552,13 @@ for answer,art,light,want in ((0,'0','0',[]),(10,'1','0',[(2,'THEME'),(1,'LIGHT'
     assert names==['write_int_config']*len(want)+['stock_reboot'][:answer==10],answer
     t=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
     assert m.text(m.get(t))==('Nano' if answer else 'Classic')
+# Choosing Nano presets the plain icon, in option order, as its other presets; Cancel writes nothing.
+for answer,want in ((0,[]),(10,[(2,'THEME'),(1,'LIGHT'),(9,'NANO_ACCENT'),(0,'BATTERY')])):
+    m,view,_=display({'NANO_ACCENT':'4','LIGHT':'0','BATTERY':'3'},sub=4,cls=RestartMachine,setup=offered)
+    m.answer=answer; m.prompts=[]; m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
+    assert m.call(address=payload_syms['theme_pick'],args=(2,0,0,0),gap=0)==0
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want
+passed()
 # From a booted Nano, Classic needs SET0's code back: a restart too. Row Art the same; Cancel keeps On.
 m,view,_=display({},sub=4,cls=RestartMachine,setup=nano); m.u.mem_protect(*TEXT,5); m.record_syscalls(); m.prompts=[]
 m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
@@ -10018,9 +10149,45 @@ for lra,licon in (('0',False),('1',True)):
     lm.top=lm.node('window','localmusic_page',[lv])
     assert lm.call(address=HOOKS['localmusic_page_init'][0],args=(lm.top,5,0,0),gap=0)==0
     lbutton=lm.nodes[lm.nodes[lv]['children'][0]]['children'][0]; lkids=lm.nodes[lbutton]['children']
-    assert (lm.nodes[lkids[0]]['type']=='image')==licon and lm.get(lbutton+O['W_H'])==(52 if licon else 28),lra
-    if not licon: assert lm.get(lkids[0]+O['W_X'])==0
+    assert lm.get(lbutton+O['W_H'])==(52 if licon else 28),lra
 passed()
+# ... and stock's own rows (0x5247ec: an icon at x 8, a label at x 72, list_into at x 282, all the row's height) take
+# the same route as the added ones: without art no row shows an icon, every label starts at text_x on screen (the
+# button sits at 20) and its right edge stays. With art the icon and the label stay where stock put them.
+def library_page(lra):
+    SETUP[:]=[lambda k: nano(k).config.update(ROWART=lra)]; lm=ShuffleMachine(); SETUP.clear(); nano_on(lm,rowart=lra)
+    lstock=[]
+    for i in range(11):
+        kids=[lm.node('image'),lm.node('hscroll_label',text=f'Row {i}'),lm.node('image')]; h=28 if lra=='0' else 52
+        for c,(x,w) in zip(kids,((8,52),(72,253),(282,50))):
+            for k,v in zip(('W_X','W_W','W_H'),(x,w,h)): lm.word(c+O[k],v)
+        lb=lm.node('button',children=kids); lm.word(lb+O['W_X'],20); lstock.append(lm.node('list_item',children=[lb]))
+    lv=lm.node('scroll_view','scroll_view_localmusic',lstock); lm.top=lm.node('window','localmusic_page',[lv])
+    assert lm.call(address=HOOKS['localmusic_page_init'][0],args=(lm.top,5,0,0),gap=0)==0
+    return lm,[lm.nodes[r]['children'][0] for r in lm.nodes[lv]['children']]
+def library_labels(lm,buttons):
+    return [next(c for c in lm.nodes[b]['children'] if lm.nodes[c]['type']=='hscroll_label') for b in buttons]
+lm,lbuttons=library_page('0'); lkids=library_labels(lm,lbuttons); assert len(lkids)>11
+for lb,ll in zip(lbuttons,lkids):
+    lleading=lm.nodes[lb]['children'][:lm.nodes[lb]['children'].index(ll)]
+    assert not [c for c in lleading if lm.nodes[c]['visible']],lm.nodes[ll].get('text')
+    assert signed(lm.get(lb+O['W_X']))+signed(lm.get(ll+O['W_X']))==20,lm.nodes[ll].get('text')
+assert {m_x+m_w for m_x,m_w in [(signed(lm.get(ll+O['W_X'])),lm.get(ll+O['W_W'])) for ll in lkids if lm.nodes[ll].get('text','').startswith('Row')]}=={325}
+lm,lbuttons=library_page('1')
+for lb,ll in zip(lbuttons,library_labels(lm,lbuttons)):
+    icon=lm.nodes[lb]['children'][0]; assert lm.nodes[icon]['type']=='image' and lm.nodes[icon]['visible'] and lm.get(ll+O['W_X'])==72
+passed()
+# Every Library label, stock's and the added ones, Row Art on and off, takes the list titles' role: Nano's face
+# at title_px. Classic's stay the style's.
+for lra in ('1','0'):
+    lm,lbuttons=library_page(lra)
+    for ll in library_labels(lm,lbuttons):
+        for st_ in ('normal','focused','disable'):
+            assert (lm.nodes[ll].get(f'style:{st_}:font_name'),lm.nodes[ll].get(f'style:{st_}:font_size'))==('nano',27),(lra,st_,lm.nodes[ll].get('text'))
+lm=ShuffleMachine(); lm.config['THEME']='1'; lstock=[lm.node('list_item') for _ in range(11)]
+lv=lm.node('scroll_view','scroll_view_localmusic',lstock); lm.top=lm.node('window','localmusic_page',[lv])
+assert lm.call(address=HOOKS['localmusic_page_init'][0],args=(lm.top,5,0,0),gap=0)==0
+assert not [k for n in lm.nodes.values() for k in n if str(k).endswith('font_name')]; passed()
 m=ShuffleMachine(); m.found=[m.song(f'T{i}') for i in range(130)]
 m.word(m.found[1]+O['REC_ARTIST'],0)  # untagged: the count alone
 slots=[(fnv('/p/T3'),5),(fnv('/p/T1'),2),(fnv('/p/T7'),5)]+[(fnv(f'/p/T{i}'),1) for i in range(8,130)]

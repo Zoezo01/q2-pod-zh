@@ -209,7 +209,9 @@ static theme_t shim_themes[3] = {
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
       .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 },
     { .home_label_end = { 28, 33 }, .home_text_x = 20, .home_full_row = 375,
-      .home_pane = { 3, { 0, 50, 100 }, { 0x849aa5, 0x63717b, 0x424d52 } }, .pane_shadow = 0, .pane_shadow_w = 23,
+      .home_pane =
+          { 4, { 0, 44, 88, 100 }, { 0x8ca2ad, 0x63717b, 0x425152, 0x425152 } }, .pane_shadow = 0,
+      .pane_shadow_w = 23,
       .pane_shadow_a = 107, .pane_light = 0xffffff, .pane_light_a = 40, .cf = CF_STYLE1 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }

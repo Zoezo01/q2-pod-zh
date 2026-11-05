@@ -10,13 +10,14 @@
   <geometry name="nano" bar="26" pitch="28" body="28" art="52" art_inset="0" art_pitch="52"
             art_body="52" text_art="0" text_art_inset="0" title24_y="2" title_y="4" meta_y="6"
             count_y="6" art_title24_y="5" art_meta_y="31" set_row="28" set_top="0" set_rows="9"
-            set_icon="0" bar_px="15" batt_w="26" batt_h="13" text_x="20" home_row="28"/>
+            set_icon="0" bar_px="19" batt_w="26" batt_h="13" text_x="20" home_row="28"/>
   <geometry name="nano-text" extends="nano" art="0" art_pitch="28" art_body="28" art_title24_y="2"
             art_meta_y="6"/>
   <geometry set="nano"/>
-  <!-- every scheme: white text on the band in both halves; the light half on white paper, black ink; the status
-       bar's gloss over its 1 px line, the light half measured, the dark half's an original design -->
-  <colorScheme sel.text="#ffffff" light.paper="#ffffff" light.ink="#000000" light.sel.text="#ffffff"
+  <!-- every scheme: white text on the band in both halves; a row's second line #949294, which the light half
+       flips onto the measured #6b6d6b; the light half on white paper, black ink; the status bar's gloss over
+       its 1 px line, the light half measured, the dark half's an original design -->
+  <colorScheme sel.text="#ffffff" muted="#949294" light.paper="#ffffff" light.ink="#000000" light.sel.text="#ffffff"
                light.bar.stops="#ffffff 0, #e7e7e7 26, #cecbce 53, #adaaad 79, #9c9e9c 100" light.bar.line="#5a595a"
                dark.bar.stops="#5a595a 0, #4c4b4c 26, #3d3c3d 53, #292829 79, #1f1e1f 100" dark.bar.line="#3a393a"/>
   <!-- Nano Blue: Cobalt's tones and the measured band: its 1 px top line, the stops below it, its edge. Hues, so its
@@ -25,28 +26,29 @@
                sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
                sel.edge="#004184"/>
   <colorSchemes accents="nano-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
-  <!-- Nano's face: list rows (title 20 px), the bar title (15 px), the Now Playing title and Home rows; the
-       bar's fill is the scheme's gloss; the white chevron on the selected row only. The nano battery: a grey
+  <!-- Nano's face: list rows (title 27 px, second line 16 px), the bar title and clock (19 px, a 10 px cap, stated
+       again as the set's bar_px), the Now Playing title and Home rows (27 px); the bar's fill is the scheme's gloss; the white chevron on the selected row only. The nano battery: a grey
        outline (the light half's; the dark half's its unflip) and a gloss green level, a hue in both halves;
        the play state Nano's blue -->
   <view name="list">
     <element name="selection" painter="stops"/>
-    <element name="row" font="nano" meta_font="nano" title_px="20"/>
+    <element name="row" font="nano" meta_font="nano" title_px="27" meta_px="16"/>
     <element name="chevron" selected="1"/>
   </view>
   <view name="bar">
-    <element name="title" font="nano" font_size="15"/>
+    <element name="title" font="nano" font_size="19"/>
     <element name="fill" painter="gloss"/>
     <element name="battery" painter="nano" stops="#defbc6 0, #a5e37b 35, #6baa42 70, #529a31 100" light.line="#636163"/>
     <element name="state" color="#31aee7"/>
   </view>
   <view name="playing"><element name="title" font="nano"/></view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: a vertical gloss, a
-       shadow down its left edge, lighter towards the left, a white note and the queue's count -->
+       shadow down its left edge, lighter towards the left, a white note and the queue's count. The gloss ends at
+       88; its last stop repeats at 100 only because a stops list must end at 100 -->
   <view name="home">
-    <element name="rows" top="0" text_x="20" full_row="375" label_end_split="28" label_end_full="33" caps="0"/>
+    <element name="rows" top="0" text_x="20" font_px="27" full_row="375" label_end_split="28" label_end_full="33" caps="0"/>
     <element name="chevron" visible="1"/>
-    <element name="pane" stops="#849aa5 0, #63717b 50, #424d52 100" shadow="#000000" shadow_w="23" shadow_a="107"
+    <element name="pane" stops="#8ca2ad 0, #63717b 44, #425152 88, #425152 100" shadow="#000000" shadow_w="23" shadow_a="107"
              light="#ffffff" light_a="40"/>
   </view>
   <!-- a settings row is its title with the value right-aligned -->
@@ -56,7 +58,9 @@
   <option setting="accent" key="NANO_ACCENT" default="nano-blue" preset="nano-blue"/>
   <option setting="home" default="split" preset="split"/>
   <option setting="shortcut"/>
-  <option setting="battery"/>
+  <!-- Battery: the plain icon, chosen with Nano, or Percent Inside, the percent on or off. default is what a stored
+       Percent or Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
+  <option setting="battery" values="icon inside" default="inside" preset="icon"/>
   <option setting="time_title" preset="on"/>
   <!-- Row Art, Nano's own option: On shows the art lists' covers and icons in 52 px rows (the nano set),
        Off makes every list 28 px text (nano-text). A change restarts the Q2. Choosing Nano presets

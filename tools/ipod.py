@@ -461,6 +461,15 @@ def status_bar(root, g=SET0):
             root[3].append(widgets[name])
         face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
                 for k, v in (('font_size', str(g.bar_px)), ('font_name', NANO_FONT_NAME))}
+        # EQ and the play state inside the room the reach above counts: the layout would put them left of img_bt's
+        # whole canvas, at the clock's text, since only the canvas's last BT_REACH px hold ink.
+        # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs
+        # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
+        eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
+        eq[2].update({'floating': 'true', **face})
+        state = widgets['img_state']
+        state[1][:] = [eq[1][0], 0, state[1][2], g.bar]
+        state[2]['floating'] = 'true'
         # The payload writes the top window's title (bar_title_sync) and the local time (ringnav_paint_bg).
         for name, style in (('title', 's_scrlabel_white20l'), ('clock', 's_scrlabel_white20c')):
             root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',
