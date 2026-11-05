@@ -29,7 +29,8 @@ inc = O.__getitem__
 class Geometry:
     """The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
     72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
-    68px row body. Rows keep the row layout's eight-pixel left margin for the artwork."""
+    68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
+    text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Nano text row)."""
     name: str = 'ipod'
     bar: int = 30
     pitch: int = 72
@@ -38,6 +39,8 @@ class Geometry:
     art_inset: int = 8
     art_pitch: int = 72
     art_body: int = 68
+    text_art: int = 52
+    text_art_inset: int = 8
     title24_y: int = 13  # text y in the body: the 24px title, the title, metadata, playlist count
     title_y: int = 10
     meta_y: int = 39
@@ -707,6 +710,25 @@ def volume_dialog(root):
 NAVBAR_ONLY = AUDIT['navbar_only']
 SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW = (inc(n) for n in ('SET_ROW', 'SET_TOP', 'SET_ROWS', 'SET_STOCK_ROW'))
 
+# The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder, the Library), text
+# pages' do not. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
+PAGE_KIND = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
+             'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
+             'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'art',
+             'localmusic/localclass_page.bin': 'text'}
+
+
+def page_rows(g, kind):
+    """(pitch, body, artwork inset) of a page kind's rows under g."""
+    return (g.art_pitch, g.art_body, g.art_inset) if kind == 'art' else (g.pitch, g.body, g.text_art_inset)
+
+
+def text_y(g, y):
+    """A stock row label's y in the 70px body in g's body: the 20px title (11), the 24px title (14),
+    a 28px label (21), metadata (40) and a count (41)."""
+    return {11: g.title_y, 14: g.title24_y, 21: (g.body - 28) // 2, 40: g.meta_y, 41: g.count_y}[y]
+
+
 # The settings rows' stock 52px artwork (SET_STOCK_ICON), pinned by hash in ipod.json,
 # is pre-sized to SET_ICON at build time so the rows draw it 1:1 instead of scaling it on the device.
 # ImageMagick's Lanczos resize weights colour by alpha, so edges keep their colour and transparency;
@@ -845,6 +867,7 @@ def patch_word(data, address, old, new, purpose, changes=None):
 
 def patch_asset(path, data, g=SET0):
     geo = with_geometry(g)
+    pitch, body, inset = page_rows(g, PAGE_KIND.get(path, 'text'))
     check(sha(data) == UI_ASSETS[path], f'{path}: unaudited UI asset')
     root = decode(data)
     check(encode(root) == data, f'{path}: UI round trip differs')
@@ -899,7 +922,7 @@ def patch_asset(path, data, g=SET0):
             check(box == [0, 50, 375, 50], f'{path}: unexpected action bar')
             box[1] = 0
         elif kind == 'list_item':  # playlist editing actions
-            box[1] = 10 + ((box[1] - 60) // 78) * geo.PITCH
+            box[1] = 10 + ((box[1] - 60) // 78) * pitch
         elif props.get('name') == 'view':  # allmusic's stock empty-state panel
             box[1] -= 50
         elif path in NAVBAR_ONLY:  # settings panels and notes keep their size; text ends clear of a top corner
@@ -912,7 +935,7 @@ def patch_asset(path, data, g=SET0):
         return encode(root)
 
     def rows(n, in_row=False):
-        kind, g, props, children = n
+        kind, box, props, children = n
         if path == 'localmusic/album_page.bin' and props.get('name') == 'button1':  # inline black grid buttons
             for key, value in props.items():
                 if key.endswith(':bg_color') and value == '#000000':
@@ -921,28 +944,27 @@ def patch_asset(path, data, g=SET0):
             # the full width, as the Library's scroll_view: the scroll bar overlays the row's right
             # edge, and the selection card and chevrons line up with every other list
             props['self_layout'] = props['self_layout'].replace('w=365', 'w=375')
-            g[2] = 375
-        in_row = in_row or kind in ('list_item', 'table_row') and g[3] in (0, 78)
+            box[2] = 375
+        in_row = in_row or kind in ('list_item', 'table_row') and box[3] in (0, 78)
         for prop in ('row_height', 'default_item_height'):
             if props.get(prop) == '78':
-                props[prop] = str(geo.PITCH)
+                props[prop] = str(pitch)
         if in_row:
-            if kind in ('list_item', 'table_row') and g[3] == 78:
-                g[3] = geo.PITCH
-            elif g[3] == 70:
-                g[3] = geo.BODY
-            if g[1] in (11, 14, 21, 40, 41):
-                # titles and metadata keep their stock centring: the body shrank by two pixels
-                g[1] -= 1
-            elif g[1] in (9, 10) and kind == 'image':
-                g[1] = geo.ART_INSET
+            if kind in ('list_item', 'table_row') and box[3] == 78:
+                box[3] = pitch
+            elif box[3] == 70:
+                box[3] = body
+            if box[1] in (11, 14, 21, 40, 41):
+                box[1] = text_y(g, box[1])  # titles and metadata at the set's y in its body
+            elif box[1] in (9, 10) and kind == 'image':
+                box[1] = inset
         if path == ARTIST_PAGE:
             if kind == 'pages':
                 check(props.get('self_layout') == 'default(x=0,y=40,w=100%,h=170)', 'Unexpected tabs layout')
                 props['self_layout'] = f'default(x=0,y=40,w=100%,h={geo.BOTTOM - 40})'
-                g[3] = geo.BOTTOM - 40
+                box[3] = geo.BOTTOM - 40
             if props.get('name') == 'list_view_album':
-                g[3] = geo.BOTTOM - 40
+                box[3] = geo.BOTTOM - 40
         for child in children:
             rows(child, in_row)
     rows(root)

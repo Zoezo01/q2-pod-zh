@@ -809,10 +809,7 @@ def validate_assets(directory):
     # Every geometry set's built list windows take the row height of the page's pitch
     # immediates (art pages take art_pitch), and its rows fit.
     from theme import builtins, geometry_sets
-    page_kind = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
-                 'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
-                 'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'art',
-                 'localmusic/localclass_page.bin': 'art'}
+    from ipod import PAGE_KIND as page_kind
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
     for g in geometry_sets(builtins()):
         assert g.body <= g.pitch and g.art_body <= g.art_pitch, g.name

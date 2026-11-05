@@ -720,13 +720,46 @@ def test_patch_asset_rows_and_lists_follow_the_geometry(monkeypatch):
     data = ipod.encode(page)
     monkeypatch.setitem(ipod.UI_ASSETS, 'folder_page.bin', ipod.sha(data))
     n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data, g=T26)))
-    assert n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '64'
-    assert n['row'][1][3] == 64 and n['art'][1][1] == 4
+    assert n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '72'
+    assert n['row'][1][3] == 72 and n['art'][1][1] == 4
     n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data)))
     assert n['list_view'][1] == [0, 0, 375, 290] and n['row'][1][3] == 72 and n['art'][1][1] == 8
 
 
-SET0_WORDS = {'pitch': 72, 'body': 68, 'art': 52, 'art_inset': 8, 'scroll': 240,
+PAGE_T = ipod.Geometry(name='t', pitch=28, body=26, art_pitch=52, art_body=50, art=44, art_inset=3,
+                       text_art_inset=5, title24_y=2, title_y=4, meta_y=6, count_y=6)
+
+
+def list_page(name):
+    row = w('row', w('button', w('gif', kind='image', at=[0, 9, 50, 52]),
+                     w('title', kind='hscroll_label', at=[0, 11, 197, 20]), w('meta', at=[0, 40, 197, 16]),
+                     kind='button', at=[20, 0, 335, 70]), kind='list_item', at=[0, 0, 375, 78])
+    return w(name, w('view_navbar', at=[0, 0, 375, 50]),
+             w('list_view', row, kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
+
+
+@pytest.mark.parametrize('path, kind', [('localmusic/allmusic_page.bin', 'text'), ('folder_page.bin', 'art')])
+def test_patch_asset_rows_by_page_kind(monkeypatch, path, kind):
+    # A text page's rows take pitch/body, an art page's art_pitch/art_body; both move their text to the
+    # set's y. SET0 builds what it did.
+    data = ipod.encode(list_page(path))
+    monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
+    pitch, body, inset = (28, 26, 5) if kind == 'text' else (52, 50, 3)
+    assert ipod.PAGE_KIND[path] == kind and ipod.page_rows(PAGE_T, kind) == (pitch, body, inset)
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=PAGE_T)))
+    assert n['list_view'][2]['default_item_height'] == str(pitch) and n['row'][1][3] == pitch
+    assert (n['button'][1][3], n['gif'][1][1], n['title'][1][1], n['meta'][1][1]) == (body, inset, 4, 6)
+    n = named(ipod.decode(ipod.patch_asset(path, data)))
+    assert n['list_view'][2]['default_item_height'] == '72' and (n['row'][1][3], n['button'][1][3]) == (72, 68)
+    assert (n['gif'][1][1], n['title'][1][1], n['meta'][1][1]) == (8, 10, 39)
+
+
+def test_text_y():
+    assert [ipod.text_y(ipod.SET0, y) for y in (11, 14, 21, 40, 41)] == [10, 13, 20, 39, 40]
+    assert [ipod.text_y(PAGE_T, y) for y in (11, 14, 40, 41)] == [4, 2, 6, 6]
+
+
+SET0_WORDS = {'pitch': 72, 'body': 68, 'art': 52, 'art_inset': 8, 'text_art': 52, 'text_art_inset': 8, 'scroll': 240,
               'title24_y': 13, 'title_y': 10, 'meta_y': 39, 'count_y': 40}
 SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
 
@@ -748,11 +781,21 @@ def test_immediate_values_set0_are_the_baked_values():
 
 def test_only_split_names_take_the_art_prefix():
     assert {n for n in ipod.VALUE_NAMES if n.startswith('art_')} - {'art_inset'} <= {'art_' + n for n in SPLIT}
-    assert all(g['value'] in SPLIT and g['page'] == 'shared' for g in ipod.AUDIT['immediates'] if 'page' in g)
 
 
 def test_geometry_has_every_value_name():
     assert set(ipod.VALUE_NAMES) - {'scroll', 'np_bar_x', 'np_bar_w'} <= {f.name for f in dataclasses.fields(ipod.Geometry)}
+
+
+TEXT_SITES = {'0x4b0f88': 'pitch', '0x4b0608': 'pitch', '0x4b0fc0': 'body', '0x4b1058': 'text_art',
+              '0x4aa42c': 'text_art', '0x4adfec': 'text_art', '0x4aa4a4': 'text_art_inset', '0x4ae05c': 'text_art_inset'}
+
+
+def test_localclass_sites_are_text():
+    # Artists, Composers and Genres (localclass_page), and the artwork of Songs and an artist's songs, follow
+    # the text rows, so a set can make them 28 px text while Albums keep 52 px art rows.
+    got = {a: g['value'] for g in ipod.AUDIT['immediates'] for a, _ in g['sites'] if a in TEXT_SITES}
+    assert got == TEXT_SITES and ipod.PAGE_KIND['localmusic/localclass_page.bin'] == 'text'
 
 
 UI = 'release/assets/default/raw/ui/'

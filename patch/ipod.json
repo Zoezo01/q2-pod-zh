@@ -70,7 +70,8 @@
         ["0x4ad8e4", "0x2410004e"],
         ["0x4addd0", "0x2402004e"],
         ["0x4b2ec0", "0x2402004e"],
-        ["0x4b2f0c", "0x2402004e"]
+        ["0x4b2f0c", "0x2402004e"],
+        ["0x4b0f88", "0x2402004e"]
       ]
     },
     {
@@ -82,7 +83,6 @@
         ["0x4a2f24", "0x2404004e"],
         ["0x4a44c8", "0x2410004e"],
         ["0x4a4b9c", "0x2402004e"],
-        ["0x4b0f88", "0x2402004e"],
         ["0x5217d4", "0x2405004e"],
         ["0x521a84", "0x2403004e"],
         ["0x5228f8", "0x2410004e"],
@@ -90,7 +90,7 @@
       ]
     },
     {
-      "value": "art_pitch",
+      "value": "pitch",
       "purpose": "local class artwork offset divisor (stock disagrees with its 78px rows)",
       "sites": [
         ["0x4b0608", "0x24100078"]
@@ -106,7 +106,8 @@
         ["0x4adfe4", "0x24020046"],
         ["0x4b2880", "0x24130046"],
         ["0x4b2a44", "0x24170046"],
-        ["0x4b2f2c", "0x24130046"]
+        ["0x4b2f2c", "0x24130046"],
+        ["0x4b0fc0", "0x24110046"]
       ]
     },
     {
@@ -114,7 +115,6 @@
       "purpose": "row background, hit target and full-height children",
       "sites": [
         ["0x4a4bb8", "0x24150046"],
-        ["0x4b0fc0", "0x24110046"],
         ["0x5223ec", "0x24060046"],
         ["0x523100", "0x24110046"],
         ["0x524820", "0x24140046"]
@@ -141,7 +141,13 @@
       "value": "art",
       "purpose": "stock 52px artwork drawn 1:1 in the inset row widget",
       "sites": [
-        ["0x4a4c70", "0x24070032"],
+        ["0x4a4c70", "0x24070032"]
+      ]
+    },
+    {
+      "value": "text_art",
+      "purpose": "text pages' stock 50px artwork (Songs, an artist's songs, Artists): 52 drawn 1:1, 0 hides it",
+      "sites": [
         ["0x4aa42c", "0x24070032"],
         ["0x4adfec", "0x24070032"],
         ["0x4b1058", "0x24070032"]
@@ -152,11 +158,17 @@
       "purpose": "artwork and playing overlay at the 8px top/left inset",
       "sites": [
         ["0x4a4ce4", "0x24060009"],
-        ["0x4aa4a4", "0x24060009"],
-        ["0x4ae05c", "0x24060009"],
         ["0x5231c4", "0x24060009"],
         ["0x523234", "0x24060009"],
         ["0x524944", "0x2405000a"]
+      ]
+    },
+    {
+      "value": "text_art_inset",
+      "purpose": "text pages' playing overlay at the 8px top inset",
+      "sites": [
+        ["0x4aa4a4", "0x24060009"],
+        ["0x4ae05c", "0x24060009"]
       ]
     },
     {
