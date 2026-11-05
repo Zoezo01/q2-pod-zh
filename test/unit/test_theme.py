@@ -448,7 +448,7 @@ def test_emit_np_layout(tmp_path):
 def test_view_attr():
     assert theme.view_attr('list.selection.painter') and theme.view_attr('home.rows.top')
     assert not theme.view_attr('playing.layout') and not theme.view_attr('scheme.fill')
-    assert not theme.view_attr('scheme.sel.stops')  # a scheme role has two dots too (Task 11)
+    assert not theme.view_attr('scheme.sel.stops')  # a scheme role has two dots too
 
 
 # Enum fields and value counts come out as C names, so a reordered or added value is a compile error.
@@ -605,7 +605,7 @@ def test_stops_reject(stops, message):
 
 def test_emit_stops(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    # no closing ' }': later roles (Task 12's mode, Task 13's label) follow sel_text on the line
+    # no closing ' }': later roles (the mode, the label) follow sel_text on the line
     assert ('.sel = {6, {0, 17, 38, 58, 79, 100}, {0x08a6e7, 0x009ade, 0x008ade, 0x007dde, 0x006dd6, '
             '0x0065d6}}, .sel_top = 0x94c7de, .sel_edge = 0x004184, .sel_tall_edge = 0x004aa3, .sel_tall_line = 0x688db3, .sel_tall_top = 0x27ade5, .sel_text = 0xffffff') in inc
     assert inc.count('.painter[PAINT_SELECTION] = SEL_STOPS,') == 1
@@ -689,8 +689,8 @@ def test_resolve_rejects_halves(body, message):
 
 def test_emit_mode_and_undeclared(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    # Minimal and Classic: one array for both halves, their light rows as before (no closing ' }': Task 13's
-    # label and Task 17's bar follow on the line)
+    # Minimal and Classic: one array for both halves, their light rows as before (no closing ' }': the
+    # label and the bar follow on the line)
     assert '.light = minimal_schemes,' in inc and '.light = classic_schemes,' in inc and 'minimal_light' not in inc
     assert '.mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616' in inc
     # Nano: its dark rows in nano_schemes, its light rows in nano_light

@@ -8986,7 +8986,7 @@ assert bands[LEVEL:]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)]+SH
 bm,bw_,bands=nano_battery_bar(0,'bar_charge','63%')  # full, then the bolt: the generated image on the inside, at its real size
 assert [b[:4] for b in bands[LEVEL:LEVEL+13]]==[(BX,y+1+j,BW,1) for j in range(13)] and 'nano_bolt' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
 assert bm.image_draws==[((0,0,26,13),(BX,y+1,26,13))],bm.image_draws
-# Full on power, Andreas's Q2 on the charger: the plain icon's status from stock, the cable from stock's flag, both memory; the
+# Full on power, a Q2 on the charger: the plain icon's status from stock, the cable from stock's flag, both memory; the
 # level full and the plug drawn. Either one alone: no glyph. Charging wins over Full. Percent Inside keeps its digits, no glyph.
 bm,bw_,bands=nano_battery_bar(0,'bar_battery','100%',state=2,cable=1)
 assert bands[LEVEL:LEVEL+13]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)] and 'nano_plug' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
@@ -9027,7 +9027,7 @@ for lt,mark in (('1','l'),('0','d')):
 same=bytes([0x48,0x14,0xff,0x80,0x80,0x80,0x80,0xff])+b'\xee'*4  # image()'s pixels
 assert image({},'nano_play_l',prep=nano)==[same,same] and image({'LIGHT':'0'},'nano_bolt',prep=nano)==[same,same]
 assert image({'THEME':'1','LIGHT':'1'},'bar_play')!=[same,same]; passed()
-# Sort's bars are a mark, not final art: drawn white, they flip to the ink on the light half's paper (the bench's black) and stay white
+# Sort's bars are a mark, not final art: drawn white, they flip to the ink on the light half's paper (black) and stay white
 # on the dark half's. The theme's other art stays final.
 bars=[bytes([0xff,0xff,0xff,0xff]),bytes([0,0,0,0])]; barw=lambda v: bytes([v,v,v,0xff])+bytes([0,0,0,0])+b'\xee'*4
 ink0=image({'LIGHT':'1'},'bar_aac',prep=nano)[0][0]
@@ -9529,7 +9529,7 @@ count=[0]; counter=sk.u.hook_add(UC_HOOK_CODE,lambda *a: count.__setitem__(0,cou
 sk.call(address=HOOKS['widget_on_paint_background'][0],args=(sw,sk.canvas,0,0)); sk.u.hook_del(counter)
 y0=sk.bands[0][1]
 # the row taller than the set's pitch has its own row 1 and ends on its own two rows, offsets 50 and 51 (the stops fill between)
-sk_rows={}  # the band over the whole row, as the bench's: the four lines draw over it, last
+sk_rows={}  # the band over the whole row: the four lines draw over it, last
 for b in sk.bands: sk_rows[b[1]-y0]=b[4]
 assert [sk_rows[j] for j in range(52)]==[color_t(NB_TOP),color_t(0x27ade5)]+[color_t(stops_row(NB,j,52)) for j in range(2,50)]+[color_t(0x004aa3),color_t(0x688db3)]
 assert sorted(sk_rows)==list(range(52)) and {(b[0],b[2],b[3]) for b in sk.bands}=={(0,sk.get(sw+O['W_W']),1)}

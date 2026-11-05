@@ -736,7 +736,7 @@ def test_status_metrics_centre_the_caps_in_the_nano_bar():
     assert m['inset'] == ipod.corner_inset(5) == 53
     assert m['clock_text'] == 73 and nano_text_w('12:59 PM') <= 73  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [51, -1, 104, g.bar - 1]  # text on columns 53 to 153; a 12-hour clock's starts at 151 (Andreas's call)
+    assert m['title'] == [51, -1, 104, g.bar - 1]  # text on columns 53 to 153; a 12-hour clock's starts at 151
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
     # what a title fits: Local Songs and Now Playing, whole
     assert nano_text_w('Local Songs') <= m['title'][2] - 4 and nano_text_w('Now Playing') <= m['title'][2] - 4
