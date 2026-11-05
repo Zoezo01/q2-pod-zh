@@ -112,7 +112,7 @@ FLAC_META_EOF = ((0x490ba0, 0x06000163, 0x06000028),  # bltz $s0, 0x491130 -> 0x
 # on to read through it and killed the player (docs/internals.md#music-info-between-songs). Now it answers as with no stream.
 # ponytail: NULL only, a stream freed after the checks is still read.
 MEDIA_INFO_NULL = ((0x42c068, 0x10600008, 0x106000fc),  # beqz $v1, 0x42c08c -> 0x42c45c, the no-playing-status reply
-                   (0x42c588, 0x8fa21b20, 0x1060ffb4))  # lw $v0 (dead: 0x42c070 overwrites it) -> beqz $v1, 0x42c45c: mpctx gone during the length call
+                   (0x42c588, 0x8fa21b20, 0x1060ffb4))  # lw $v0 (dead: 0x42c070 overwrites it) -> beqz $v1, 0x42c45c: the same check on the length call's path; not shown it can fire there
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
