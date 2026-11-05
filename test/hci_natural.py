@@ -227,6 +227,138 @@ def understated():
     check(bytes(p.pcm[N * 4:2 * N * 4]) == source('b'), 'understated: the next song follows whole')
 
 
+def late(wait):
+    """set-gapless less than an open before demux EOF: b cold-starts, the stale thread frees its context, and c,
+    sent wait seconds on, once that thread is done or (0) while it still runs, plays: it's not b again."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 1.0 if raw.endswith(b'b.flac') and p.opened('b.flac') == 1 else 0  # the thread's
+    freeing = []
+    p.e.watch_fn(FREE_PRELOAD, lambda e: freeing.append(e.r32(NEXT)) if e.cur.tid != 1 else None)
+    p.song('a.flac')
+    p.until(lambda: p.frames() > N - RATE // 5, SECONDS + 1, 0.002)
+    p.gapless('b.flac')
+    check(p.until(lambda: p.frames() > N + 2000, 2), f'late: b cold-started at frame {p.frames()}')
+    p.run(wait)
+    if wait: check(p.fds('b.flac') == 1, f"late, c {wait} s on: the stale thread closed its file ({p.fds('b.flac')} open)")
+    p.gapless('c.flac')
+    p.run(1.3)
+    check(freeing and set(freeing) == {3}, f'late, c {wait} s on: the word stays 3 while the thread frees ({freeing})')
+    check(p.e.r32(NEXT) == 2, f'late, c {wait} s on: preloaded (state {p.e.r32(NEXT):#x})')
+    p.until(lambda: p.frames() >= 3 * N, 2 * SECONDS + 3)
+    b, c = bytes(p.pcm[N * 4:2 * N * 4]), bytes(p.pcm[2 * N * 4:3 * N * 4])
+    check(b == source('b') and c == source('c'), f'late, c {wait} s on: third song is c, not b again ({p.frames()} frames; b exact {b == source("b")}, third==c {c == source("c")}, third==b {c == source("b")})')
+    check(p.opened('b.flac') == 2 and p.opened('c.flac') == 1, f"late, c {wait} s on: opens b {p.opened('b.flac')}, c {p.opened('c.flac')}")
+
+
+def late_failed():
+    """The same race on a bad file: the failed thread's store doesn't block the next preload."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 0.7 if raw.endswith(b'junk.flac') and p.opened('junk.flac') == 1 else 0
+    p.song('a.flac')
+    p.until(lambda: p.frames() > N - RATE // 5, SECONDS + 1, 0.002)
+    p.gapless('junk.flac')
+    p.until(lambda: p.frames() == N, 1)
+    p.run(0.3)
+    p.song('b.flac')
+    p.until(lambda: p.frames() > N + 2000, 2)
+    p.run(1.2)
+    check(p.e.r32(NEXT) == 0, f'late failure: state {p.e.r32(NEXT):#x} once its thread is done, so the next preload can start')
+    p.gapless('c.flac')
+    p.run(0.3)
+    check(p.opened('c.flac') == 1, 'late failure: the next preload starts')
+
+
+def second_cold():
+    """A second cold start while a stale thread still runs: still 3, so nothing starts on its context."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 7.0 if raw.endswith(b'b.flac') and p.opened('b.flac') == 1 else 0
+    clears = []
+    p.e.watch_fn(COLD_PATH, lambda e: clears.append(e.r32(NEXT)))
+    p.song('a.flac')
+    p.until(lambda: p.frames() > N - RATE // 5, SECONDS + 1, 0.002)
+    p.gapless('b.flac')
+    p.until(lambda: p.frames() > N + 2000, 2)
+    check(p.e.r32(NEXT) == 3, f'second cold: 3 after the first ({p.e.r32(NEXT):#x})')
+    p.gapless('c.flac')  # waits for the word; b's end comes first and starts c cold
+    p.until(lambda: p.frames() > 2 * N + 2000, SECONDS + 1)
+    check(clears[-1] == 3 and p.e.r32(NEXT) == 3, f'second cold: 3 after the second ({clears}, {p.e.r32(NEXT):#x})')
+    check(p.fds('c.flac') == 1 and bytes(p.pcm[2 * N * 4:(2 * N + 2000) * 4]) == source('c')[:8000], 'second cold: c plays')
+    p.until(lambda: p.e.r32(NEXT) == 0, 4)
+    check(p.e.r32(NEXT) == 0, f'second cold: 0 once the thread is done ({p.e.r32(NEXT):#x})')
+
+
+def symbol(name):
+    for line in subprocess.run(['llvm-nm', ELF], capture_output=True, text=True).stdout.splitlines():
+        if line.endswith(' ' + name): return int(line.split()[0], 16)
+    raise SystemExit(f'no {name} in {ELF}')
+
+
+def inject(p, name, frm, to):
+    """Just before name's first sc, the word moves from frm to to, as another thread's store would. Counts on Unicorn's sc
+    failing when the word isn't what ll read, as the hardware's does when it's written."""
+    addr = symbol(name)
+    while struct.unpack('<I', p.e.u.mem_read(addr, 4))[0] >> 26 != 0x38: addr += 4
+    done = []
+    def go(e):
+        if not done and e.r32(NEXT) == frm:
+            e.w32(NEXT, to)
+            done.append(1)
+    p.e.watch_fn(addr, go)
+    return done
+
+
+def race_publish():
+    """The cold path's store lands between the thread's ll and sc: the thread goes stale, it doesn't take it as published."""
+    p = Player()
+    done = inject(p, 'preload_publish', 1, 3)
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('b.flac')
+    p.run(1)
+    # b's URL is still set, so the main loop starts it again once the word is 0
+    check(done and p.e.r32(NEXT) == 2 and p.opened('b.flac') == 2 and p.fds('b.flac') == 1, f"race at publish: retried, freed, started again ({p.e.r32(NEXT):#x}, opens {p.opened('b.flac')}, open {p.fds('b.flac')}, injected {done})")
+
+
+def race_cold():
+    """The thread's publish lands between the cold path's ll and sc: the retry sees 2 and clears it."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 0.5 if raw.endswith(b'b.flac') and p.opened('b.flac') == 1 else 0
+    done = inject(p, 'cold_clear', 1, 2)
+    p.song('a.flac')
+    p.until(lambda: p.frames() > N - RATE // 5, SECONDS + 1, 0.002)
+    p.gapless('b.flac')
+    p.until(lambda: p.frames() > N + 2000, 2)
+    p.run(1)
+    check(done and p.e.r32(NEXT) == 0, f'race at the cold path: retried to 0 ({p.e.r32(NEXT):#x}, injected {done})')
+
+
+def close_while_open(again):
+    """mcl-closegapless while the thread opens b, as a queue edit does: b isn't played; c, if sent, is."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 1.0 if raw.endswith(b'b.flac') else 0
+    done = inject(p, 'preload_close', 1, 2) if again == 'race' else []
+    p.song('a.flac')
+    p.run(0.5)
+    p.gapless('b.flac')
+    p.run(0.2)
+    p.e.send_cmd('{mcl-closegapless\\null}')
+    p.run(0.1)
+    if again == 'race':
+        check(done and p.e.r32(NEXT) == 0, f'close, raced: retried and cleared ({p.e.r32(NEXT):#x}, injected {done})')
+        return
+    check(p.e.r32(NEXT) == 3, f'close: the thread is stale ({p.e.r32(NEXT):#x})')
+    if again: p.gapless('c.flac')
+    p.run(1.5)
+    check(p.fds('b.flac') == 0, f"close: its file is closed ({p.fds('b.flac')} open)")
+    if not again:
+        check(p.e.r32(NEXT) == 0, f'close, nothing next: state clear ({p.e.r32(NEXT):#x})')
+        return
+    p.until(lambda: p.frames() >= 2 * N, 2 * SECONDS + 3)
+    second = bytes(p.pcm[N * 4:2 * N * 4])
+    check(bytes(p.pcm[:N * 4]) == source('a') and second == source('c'), f"close, then c: c follows a, not b (c {second == source('c')}, b {second == source('b')})")
+    check(p.opened('c.flac') == 1, f"close, then c: c opened {p.opened('c.flac')}")
+
+
 def iso_no_tracks():
     """A SACD ISO with a good TOC and no tracks (0x478b40), next: the check's hooks return a TOC of our own, as making a real
     one for this one branch isn't worth it. The stop stays clear, and it's reported at a's end."""
@@ -321,6 +453,15 @@ if __name__ == '__main__':
     xfade_bad_next()
     stop_in_failed_open()
     understated()
+    late(1.5)
+    late(0)
+    late_failed()
+    second_cold()
+    race_publish()
+    race_cold()
+    close_while_open(False)
+    close_while_open(True)
+    close_while_open('race')
     for name, most in (('junkx.mp3', 1), ('junkx.m4a', 0.1), ('junkx.ogg', 0.1), ('junkx.wv', 0.1), ('junkx.flac', 0.1), ('junkx.wav', 0.1), ('junkx.wma', 0.1)):
         tail_noise(name, most)
     tail_noise('junkh.mp3', None)  # no header to say where the audio ends: a limit, docs/internals.md#forced-eof

@@ -993,4 +993,46 @@ __asm__(".set push\n.set noreorder\n"
         ".globl stop_fill\nstop_fill:\nli $v0, 4222\nsyscall\nmove $t0, $v0\nli $v0, 4020\nsyscall\nbne $v0, $t0, 1f\nnop\n"
         "lui $v0, 0xb1\nli $t0, 2\nsw $t0, 0xe74($v0)\nli $t0, 1\nsw $t0, 0xe70($v0)\n"
         "1:\nmove $v0, $zero\njr $ra\naddiu $sp, $sp, 0x50\n.set pop\n");
+
+/* A preload the song outran: the main thread reached its EOF first, cleared 0xb10de8 (0 none, 1 thread
+ * running, 2 ready, -1 failed) and cold-started that file. The thread then stored 2 regardless, so the
+ * next set-gapless found it non-zero and started nothing, and the song after played the stale context:
+ * the same song again under the next title. Now the cold path's clear (cold_clear) leaves 3 while a
+ * thread runs, the thread publishes only over a 1, and a thread that finds 3 frees its context with
+ * stock's 0x42a9ac and clears it to 0. While it's 3 no new thread starts (0x42358c wants 0), so two never
+ * share the context; a next set-gapless waits for that. ll/sc, since the main thread's store can land
+ * between a load and a store. A preload that wins the race keeps every stock store after this one.
+ * docs/internals.md#a-preload-too-late. ponytail: a thread that publishes just before the cold path's
+ * clear leaves its context unfreed till the next preload zeroes it, as stock's mcl-closegapless does (a
+ * file handle); under MQA decode (0xb10c54 == 2) a stale thread's decoder isn't uninitialised either. */
+void preload_stale(void) {
+    int three = 3;
+    ((void (*)(void))0x42a9acu)();
+    __atomic_compare_exchange_n((volatile int *)0xb10de8u, &three, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+/* The failure exits' store of -1, moved after the context is freed; returns the thread's 0. */
+int preload_failed(void) {
+    int one = 1, three = 3;
+    if (!__atomic_compare_exchange_n((volatile int *)0xb10de8u, &one, -1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+        __atomic_compare_exchange_n((volatile int *)0xb10de8u, &three, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return 0;
+}
+__asm__(".set push\n.set noreorder\n.set noat\n"
+        /* From 0x42bb18: $v0 0xb10000, $v1 the thread's 0xb15df0, $a0 2, its saved registers restored. */
+        ".globl preload_publish\npreload_publish:\nli $a2, 1\n"
+        "1:\nll $a1, 0xde8($v0)\nbne $a1, $a2, 2f\nmove $a1, $a0\nsc $a1, 0xde8($v0)\nbeqz $a1, 1b\nnop\n"
+        "j 0x42bb1c\nnop\n"
+        "2:\njal preload_stale\nnop\nlw $ra, 0x65c($sp)\njr $ra\naddiu $sp, $sp, 0x660\n"
+        /* From 0x421a3c, in the main loop, between stock's uses of $v0 and $v1: touches only $t8, $t9. */
+        ".globl cold_clear\ncold_clear:\n"
+        "1:\nll $t8, 0xde8($v1)\naddiu $t8, $t8, -1\nins $t8, $zero, 1, 1\nli $t9, 3\nmovn $t9, $zero, $t8\n"
+        "sc $t9, 0xde8($v1)\nbeqz $t9, 1b\nnop\njr $ra\nnop\n"
+        /* mcl-closegapless and the direct stop, from the stock li $v1, 2 before their read of the word ($v0 0xb10000):
+         * a running thread is stale now, so 1 becomes 3. $a0 is the value stock's next instruction tests, not 2 for a 1. */
+        ".globl preload_close\npreload_close:\nli $v1, 2\n"
+        "1:\nll $a0, 0xde8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0xde8($v0)\nbeqz $at, 1b\nnop\n"
+        "2:\nj 0x42c26c\nnop\n"
+        ".globl preload_stop\npreload_stop:\nli $v1, 2\n"
+        "1:\nll $a0, 0xde8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0xde8($v0)\nbeqz $at, 1b\nnop\n"
+        "2:\nj 0x42c99c\nnop\n.set pop\n");
 #endif

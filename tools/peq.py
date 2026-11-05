@@ -76,6 +76,14 @@ STOP_FILL = (0x46c184, 0xac430e74, 'stop_fill')  # sw $v1, 0xe74($v0)
 # The header's length ends a track only when it's an MP3's Xing or Info frame count: stock's EOF once the position passed
 # it by 1 s, on a file (docs/internals.md#forced-eof). Every other length was an estimate, and cut real audio.
 FORCED_EOF = (0x4232bc, 0xac850014, 'forced_eof')  # sw $a1, 0x14($a0)
+# A preload the song outran doesn't publish its stale context (peq_player.c, docs/internals.md#a-preload-too-late):
+# the thread's store of 2, the three failure stores of -1, moved to the failure exit, and the cold path's clear.
+PRELOAD_PUBLISH = (0x42bb18, 0xac440de8, 'preload_publish')  # sw $a0, 0xde8($v0)
+PRELOAD_FAILED = (0x42bba4, 0x00001025, 'preload_failed')    # move $v0, $zero
+PRELOAD_FAIL_STORES = ((0x42bb80, 0xac430de8, 0), (0x42bbec, 0xac430de8, 0), (0x42bc14, 0xac430de8, 0))  # sw $v1, 0xde8($v0)
+COLD_CLEAR = (0x421a3c, 0xac600de8, 'cold_clear')            # sw $zero, 0xde8($v1)
+# mcl-closegapless and the direct stop while the thread runs: 1 becomes 3, so what it was opening isn't played.
+PRELOAD_CLOSE = ((0x42c264, 0x24030002, 'preload_close'), (0x42c994, 0x24030002, 'preload_stop'))  # li $v1, 2
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
@@ -247,7 +255,7 @@ def patch_player(raw, out, flac_experiments=()):
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
-        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, FORCED_EOF)),
+        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR)),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -270,12 +278,19 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, jal(ps[name]), 'DAC release wait')
     for address, stock, name in PROBE_STOP:
         patch_word(data, address, stock, j(ps[name]), 'Probe stop')
+    patch_word(data, PRELOAD_PUBLISH[0], PRELOAD_PUBLISH[1], j(ps[PRELOAD_PUBLISH[2]]), 'Preload publish')
+    patch_word(data, PRELOAD_FAILED[0], PRELOAD_FAILED[1], jal(ps[PRELOAD_FAILED[2]]), 'Preload failed')
+    for address, stock, patched in PRELOAD_FAIL_STORES:
+        patch_word(data, address, stock, patched, 'Preload failed')
     patch_word(data, FORCED_EOF[0], FORCED_EOF[1], jal(ps[FORCED_EOF[2]]), 'Forced EOF')
     for address, stock, name in STOP_SITES:
         patch_word(data, address, stock, jal(ps[name]), 'Stop base')
     for address, stock, patched in STOP_NOPS:
         patch_word(data, address, stock, patched, 'Stop base')
     patch_word(data, STOP_FILL[0], STOP_FILL[1], j(ps[STOP_FILL[2]]), 'Stop in a fill')
+    for address, stock, name in PRELOAD_CLOSE:
+        patch_word(data, address, stock, j(ps[name]), 'Preload close')
+    patch_word(data, COLD_CLEAR[0], COLD_CLEAR[1], jal(ps[COLD_CLEAR[2]]), 'Cold clear')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')
