@@ -134,6 +134,7 @@ class Emu:
         u.ctl_set_cpu_model(UC_CPU_MIPS32_24KF)
         self.pages = set()
         self.next_map = 0x60000000
+        self.unmapped = {}  # by size, for the next mmap; else a player's many plays reach ld.so
         self.fds = {}
         self.next_fd = 3
         self.threads = []
@@ -401,7 +402,7 @@ class Emu:
             # blocking: wait for one period's worth
             self.block_current(self.clock + 5 * 10**6, None, 'write', retry=True)
             return False
-        bps = {2: 2, 10: 4, 14: 4, 6: 3}.get(p.fmt, 4) * p.ch
+        bps = {2: 2, 3: 2, 10: 4, 14: 4, 6: 3}.get(p.fmt, 4) * p.ch
         data = bytes(self.u.mem_read(buf, n * bps))
         if self.on_write: self.on_write(self, data, n, p)
         p.fill += n
@@ -568,13 +569,13 @@ class Emu:
     def sys_llseek(self, fd, hi, lo, res):
         whence = self.arg(4)
         f = self.fds.get(fd)
-        if not f or 'h' not in f: return -errno.ESPIPE
+        if not f or 'h' not in f or b'unseekable' in f['path']: return -errno.ESPIPE
         r = os.lseek(f['h'], (hi << 32) | lo, whence)
         self.u.mem_write(res, struct.pack('<q', r))
         return 0
     def sys_lseek(self, fd, off, whence, _):
         f = self.fds.get(fd)
-        if not f or 'h' not in f: return -errno.ESPIPE
+        if not f or 'h' not in f or b'unseekable' in f['path']: return -errno.ESPIPE  # a path's way to be a pipe
         return os.lseek(f['h'], off if off < 1 << 31 else off - (1 << 32), whence)
     def sys_brk(self, a, *_):
         if a > self.brk:
@@ -590,8 +591,12 @@ class Emu:
         size = (length + PAGE - 1) & ~(PAGE - 1)
         fixed = flags & 0x10
         if not fixed:
-            addr = self.next_map
-            self.next_map += size + PAGE
+            free = self.unmapped.get(size)
+            if free:
+                addr = free.pop()
+            else:
+                addr = self.next_map
+                self.next_map += size + PAGE
         self.ensure(addr, size)
         if flags & 0x800:  # MAP_ANONYMOUS on MIPS
             self.u.mem_write(addr, bytes(size))
@@ -607,11 +612,14 @@ class Emu:
             if b'libasound' in pth and prot & 4 and not hasattr(self, 'alsa'):
                 self.install_alsa(addr - off)
         return addr
-    def sys_munmap(self, *_): return 0
+    def sys_munmap(self, addr, length, *_):
+        self.unmapped.setdefault((length + PAGE - 1) & ~(PAGE - 1), []).append(addr)
+        return 0
     def sys_mprotect(self, *_): return 0
     def sys_madvise(self, *_): return 0
     def sys_mremap(self, old, olds, news, flags):
         if news <= olds: return old
+        self.sys_munmap(old, olds)
         na = self.next_map
         self.next_map += ((news + PAGE - 1) & ~(PAGE - 1)) + PAGE
         self.ensure(na, news)

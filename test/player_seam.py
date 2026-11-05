@@ -8,621 +8,29 @@ clock, threads are green. Files come from ffmpeg and lame, HE-AAC from test/fixt
 at AOT 5, 48 kbps, and AOT 29, 32 kbps); patch/lavf_gapless.c's numbers are what's under test. Stock's player, from the
 same squashfs, is what a file with numbers of no use must come out as.
 Usage: test/player_seam.py BUILD_DIR [HCIPLAYER]   (a stock HCIPLAYER shows what each case measured before the fix)"""
-import array, math, os, pathlib, re, shutil, struct, subprocess, sys, tempfile
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-from build import segments
-from unicorn import *
-from unicorn.mips_const import *
+import array, math, pathlib, shutil, struct, subprocess, sys, tempfile
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from hci_emu import Emu as HciEmu
 
-A = UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3
-PAGE, TP_SLOT, AUTH = 4096, 0x7000, 0x43084c  # AUTH: the player's licence check
-MAD_TRAMPOLINES = 0x6ff00000
-E = dict(ENOENT=2, EBADF=9, EAGAIN=11, EACCES=13, ENOTTY=25, ESPIPE=29, ENOSYS=89, ETIMEDOUT=145)
+AUTH = 0x43084c  # the player's licence check
 
 
-def alsa_symbols(path):
-    """Offset of each snd_* export of the library."""
-    b = pathlib.Path(path).read_bytes()
-    segs = [s for _, s in segments(b)]
-    dyn = next(s for s in segs if s[0] == 2)
-    def off(v):
-        return next(v - s[2] + s[1] for s in segs if s[0] == 1 and s[2] <= v < s[2] + s[4])
-    tags = {}
-    for i in range(0, dyn[4], 8):
-        t, v = struct.unpack_from('<II', b, dyn[1] + i)
-        tags.setdefault(t, v)
-    symtab, strtab, out = off(tags[6]), off(tags[5]), {}
-    for i in range(tags[0x70000011]):  # DT_MIPS_SYMTABNO
-        name, value, _, info, _, shndx = struct.unpack_from('<IIIBBH', b, symtab + 16 * i)
-        text = b[strtab + name:b.index(b'\0', strtab + name)].decode()
-        if value and shndx and info & 15 == 2 and text.startswith('snd_'): out[value] = text
-    return out
-
-
-def mad_splits(path):
-    """Unicorn's translator overflows on libmad's kilo-instruction straight-line synthesis: places to end a block, in
-    long runs where this instruction and the next two are plain and nothing branches to the two after it."""
-    branch = re.compile(r'^(b|beq|beqz|bne|bnez|bgez|bgtz|blez|bltz|bal|bgezal|bltzal|jal|jalr|jr|j|bc1t|bc1f|beql|bnel|jr\.hb|jalr\.hb|bgezl|bltzl|blezl|bgtzl|bc1tl|bc1fl)$')
-    ins, targets = [], set()
-    for line in subprocess.check_output(['llvm-objdump', '-d', '--no-show-raw-insn', '--triple=mipsel', str(path)],
-                                         text=True, stderr=subprocess.DEVNULL).splitlines():
-        m = re.match(r'\s+([0-9a-f]+):\s+(\S+)(.*)', line)
-        if not m: continue
-        ins.append((int(m[1], 16), m[2]))
-        if branch.match(m[2]):
-            t = re.findall(r'0x([0-9a-f]+)', m[3])
-            if t: targets.add(int(t[0], 16))
-    out, run, i = [], 0, 0
-    while i + 2 < len(ins):
-        a, op = ins[i]
-        is_branch = bool(branch.match(op))
-        run = 0 if is_branch or a in targets else run + 1
-        if run >= 40 and not is_branch and not branch.match(ins[i - 1][1]) and not branch.match(ins[i + 1][1]) \
-                and not branch.match(ins[i + 2][1]) and ins[i + 1][0] == a + 4 and a + 4 not in targets and a + 8 not in targets:
-            out.append(a)
-            run = 0
-            i += 2
-            continue
-        i += 1
-    return out
-
-
-class Thread:
-    def __init__(self, tid, ctx, pc, tp):
-        self.tid, self.ctx, self.pc, self.tp = tid, ctx, pc, tp
-        self.wait = self.wake_at = self.ret = None
-        self.clear_tid = self.child_sp = 0
-        self.dead = self.retry = False
-
-
-class PCM:
-    """A ring drained by the virtual clock."""
-    def __init__(self, emu):
-        self.emu, self.rate, self.ch, self.fmt, self.buffer_us, self.periods = emu, 44100, 2, 2, 500000, 16
-        self.state, self.fill, self.t, self.nonblock = 2, 0, 0, 0  # 2 PREPARED
-
-    @property
-    def buffer_frames(self): return self.rate * self.buffer_us // 1000000
-
-    def sync(self):
-        now = self.emu.clock
-        if self.state == 3:  # RUNNING
-            done = (now - self.t) * self.rate // 10**9
-            if done >= self.fill:
-                if done > self.fill: self.state = 4  # XRUN
-                self.fill = 0
-            else:
-                self.fill -= done
-            self.t += done * 10**9 // self.rate
-        else:
-            self.t = now
-        return self.fill
-
-
-class Emu:
-    """Just enough Linux for hciplayer."""
+class Emu(HciEmu):
+    """Every PCM write kept as (rate, channels, format, bytes), and each drop's place among them."""
     def __init__(self, exe, root, aud, tmp):
-        self.root, self.aud, self.tmp = pathlib.Path(root), str(aud), pathlib.Path(tmp)
-        self.clock, self.pages, self.next_map, self.fds, self.next_fd = 10**12, set(), 0x60000000, {}, 3
-        self.threads, self.pending, self.events, self.chunks = [], [], [], []
-        self.next_tid, self.cmdq, self.replies, self.pcm, self.exited, self.alsa = 100, [], [], None, None, None
-        self.ctl, self.unmapped = {}, {}  # unmapped: by size, for the next mmap; else one player's plays reach ld.so
-        self.u = u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-        u.ctl_set_cpu_model(UC_CPU_MIPS32_24KF)
-        self.ensure(TP_SLOT, 4)
-        b = pathlib.Path(exe).read_bytes()
-        top = self.load_elf(b)
-        self.brk = (top + PAGE - 1) & ~(PAGE - 1)
-        ld = (self.root/'lib/ld-2.28.so').read_bytes()
-        ld_base = 0x77e00000
-        self.load_elf(ld, ld_base)
-        sp, strs = 0x7fff0000, 0x7fff0100
-        self.ensure(sp - 0x1000000, 0x1000000 + 0x8000)
-        def put(s):
-            nonlocal strs
-            p = strs
-            u.mem_write(p, s.encode() + b'\0')
-            strs += len(s) + 1
-            return p
-        argv = [put(x) for x in ('hciplayer', '-ao', 'alsa')]
-        envp = [put(x) for x in ('PATH=/usr/bin:/bin', 'LD_BIND_NOW=1')]
-        rnd = strs = (strs + 16) & ~15
-        strs += 16
-        phoff, = struct.unpack_from('<I', b, 28)
-        size, n = struct.unpack_from('<HH', b, 42)
-        aux = [(3, 0x400000 + phoff), (4, size), (5, n), (6, PAGE), (7, ld_base), (9, struct.unpack_from('<I', b, 24)[0]),
-               (11, 0), (12, 0), (13, 0), (14, 0), (16, 0), (23, 0), (25, rnd), (0, 0)]
-        p = sp
-        for v in [len(argv), *argv, 0, *envp, 0, *(x for pair in aux for x in pair)]:
-            self.w32(p, v)
-            p += 4
-        u.reg_write(UC_MIPS_REG_SP, sp)
-        u.reg_write(UC_MIPS_REG_CP0_STATUS, u.reg_read(UC_MIPS_REG_CP0_STATUS) | 1 << 29 | 1 << 26)
-        self.entry = ld_base + struct.unpack_from('<I', ld, 24)[0]
-        u.hook_add(UC_HOOK_INTR, self.syscall)
-        def licensed(u, a, s, _):
-            u.reg_write(UC_MIPS_REG_V0, 0)
-            u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
-        u.hook_add(UC_HOOK_CODE, licensed, begin=AUTH, end=AUTH)
-        self.cur = Thread(1, None, self.entry, 0)
-        self.threads.append(self.cur)
+        self.chunks, self.drops = [], []
+        super().__init__(exe, root, pathlib.Path(tmp).parent, fsmap={'/mnt/mmc': str(aud)})
+        self.hook_fn(AUTH, lambda e: 0)
+        self.alsa_active = True
+        self.on_write = lambda e, data, n, p: self.chunks.append((p.rate, p.ch, p.fmt, data))
 
-    def ensure(self, addr, size):
-        run = None
-        end = (addr + size + PAGE - 1) & ~(PAGE - 1)
-        for p in range(addr & ~(PAGE - 1), end, PAGE):
-            if p not in self.pages:
-                self.pages.add(p)
-                if run is None: run = p
-            elif run is not None:
-                self.u.mem_map(run, p - run)
-                run = None
-        if run is not None: self.u.mem_map(run, end - run)
-
-    def w32(self, a, *v): self.u.mem_write(a, struct.pack('<' + 'I' * len(v), *[x & 0xffffffff for x in v]))
-    def r32(self, a): return struct.unpack('<I', self.u.mem_read(a, 4))[0]
-    def arg(self, i): return self.u.reg_read(A[i]) if i < 4 else self.r32(self.u.reg_read(UC_MIPS_REG_SP) + 4 * i)
-    def cstr(self, a):
-        out = bytearray()
-        while True:
-            chunk = bytes(self.u.mem_read(a + len(out), PAGE - ((a + len(out)) & (PAGE - 1))))
-            i = chunk.find(b'\0')
-            if i >= 0: return bytes(out + chunk[:i])
-            out += chunk
-
-    def no_rdhwr(self, data):
-        """rdhwr rt,$29 faults here: lw rt, TP_SLOT($zero), which the scheduler keeps current."""
-        d, i = bytearray(data), 0
-        while (i := d.find(b'\x3b\xe8', i)) >= 0:
-            if i % 4 == 0 and d[i + 3] == 0x7c and not d[i + 2] & 0xe0:
-                d[i:i + 4] = struct.pack('<I', 0x8c000000 | (d[i + 2] & 31) << 16 | TP_SLOT)
-            i += 2
-        return bytes(d)
-
-    def load_elf(self, b, base=0):
-        top = 0
-        for _, s in segments(b):
-            if s[0] != 1: continue
-            _, o, v, _, f, m, flags, _ = s
-            self.ensure(base + v, m)
-            self.u.mem_write(base + v, self.no_rdhwr(b[o:o + f]) if flags & 1 else b[o:o + f])
-            top = max(top, base + v + m)
-        return top
-
-    def split_mad(self, d, base):
-        d = bytearray(d)
-        self.ensure(MAD_TRAMPOLINES, 0x10000)
-        for k, o in enumerate(mad_splits(self.root/'usr/lib/libmad.so.0.2.1')):
-            t = MAD_TRAMPOLINES + k * 12
-            self.u.mem_write(t, bytes(d[o:o + 4]) + struct.pack('<I', 0x08000000 | (base + o + 8) >> 2 & 0x3ffffff) + bytes(d[o + 4:o + 8]))
-            d[o:o + 8] = struct.pack('<II', 0x08000000 | t >> 2 & 0x3ffffff, 0)
-        return bytes(d)
-
-    def install_alsa(self, base):
-        names = {base + v: n for v, n in alsa_symbols(self.root/'usr/lib/libasound.so.2.0.0').items()}
-        def go(u, addr, size, _):
-            n = names.get(addr)
-            if n is None: return
-            r = self.snd(n)
-            if r is not False:
-                u.reg_write(UC_MIPS_REG_V0, (r or 0) & 0xffffffff)
-                u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
-        self.u.hook_add(UC_HOOK_CODE, go, begin=min(names), end=max(names))
-        self.alsa = names
-
-    def snd(self, n):
-        a = self.arg
-        if n == 'snd_pcm_open':
-            self.pcm = PCM(self)
-            self.w32(a(0), 0x7ffd0000)
-            return 0
-        if n in ('snd_pcm_hw_params_sizeof', 'snd_pcm_sw_params_sizeof', 'snd_pcm_status_sizeof'): return 1024
-        p = self.pcm
-        if n == 'snd_pcm_close':
-            self.pcm = None
-            return 0
-        if not p: return -77 if n != 'snd_lib_error_set_handler' else 0
-        if n == 'snd_pcm_hw_params_set_rate_near': p.rate = self.r32(a(2))
-        elif n == 'snd_pcm_hw_params_set_rate': p.rate = a(2)
-        elif n == 'snd_pcm_hw_params_set_channels_near': p.ch = self.r32(a(2))
-        elif n == 'snd_pcm_hw_params_set_channels': p.ch = a(2)
-        elif n == 'snd_pcm_hw_params_set_format': p.fmt = a(2)
-        elif n == 'snd_pcm_hw_params_set_buffer_time_near': p.buffer_us = self.r32(a(2))
-        elif n == 'snd_pcm_hw_params_set_periods_near': p.periods = self.r32(a(2))
-        elif n == 'snd_pcm_hw_params_get_buffer_size': self.w32(a(1), p.buffer_frames)
-        elif n == 'snd_pcm_hw_params_get_period_size':
-            self.w32(a(1), p.buffer_frames // p.periods)
-            if a(2): self.w32(a(2), 0)
-        elif n == 'snd_pcm_hw_params_get_rate_max': self.w32(a(1), 768000)
-        elif n == 'snd_pcm_hw_params_can_pause': return 1
-        elif n == 'snd_pcm_sw_params_get_boundary': self.w32(a(1), 0x40000000)
-        elif n == 'snd_pcm_status':
-            p.sync()
-            self.w32(a(1), p.state, 0)
-        elif n in ('snd_pcm_status_get_avail', 'snd_pcm_avail_update', 'snd_pcm_avail'): return p.buffer_frames - p.sync()
-        elif n == 'snd_pcm_status_get_delay': return p.sync()
-        elif n == 'snd_pcm_delay': self.w32(a(1), p.sync())
-        elif n in ('snd_pcm_status_get_state', 'snd_pcm_state'):
-            p.sync()
-            return p.state
-        elif n == 'snd_pcm_nonblock': p.nonblock = a(1)
-        elif n == 'snd_pcm_prepare':
-            p.state, p.fill, p.t = 2, 0, self.clock
-        elif n == 'snd_pcm_drop':
-            self.events.append(('drop', len(self.chunks)))
-            p.state, p.fill = 1, 0
-        elif n == 'snd_pcm_drain':
-            left = p.sync()
-            p.state = 1
-            self.u.reg_write(UC_MIPS_REG_V0, 0)
-            self.u.reg_write(UC_MIPS_REG_PC, self.u.reg_read(UC_MIPS_REG_RA))
-            self.block(self.clock + left * 10**9 // p.rate, None, 'drain')
-            p.fill = 0
-            return False
-        elif n == 'snd_pcm_pause':
-            p.sync()
-            p.state, p.t = 6 if a(1) else 3, self.clock
-        elif n == 'snd_pcm_writei': return self.writei(a(1), a(2))
-        elif n in ('snd_strerror', 'snd_pcm_format_description'): return False
-        return 0
-
-    def writei(self, buf, frames):
-        p = self.pcm
-        p.sync()
-        if p.state == 4: return -32  # EPIPE
-        n = min(frames, p.buffer_frames - p.fill)
-        if n <= 0:
-            if p.nonblock: return -11
-            self.block(self.clock + 5 * 10**6, None, 'write', retry=True)
-            return False
-        size = {2: 2, 3: 2, 10: 4, 14: 4, 6: 3}.get(p.fmt, 4) * p.ch
-        self.chunks.append((p.rate, p.ch, p.fmt, bytes(self.u.mem_read(buf, n * size))))
-        p.fill += n
-        if p.state in (2, 1): p.state, p.t = 3, self.clock
-        return n
-
-    def block(self, wake_at, ret, why, retry=False):
-        t = self.cur
-        t.wait, t.wake_at, t.ret, t.retry = (why,), wake_at, ret, retry
-        self.u.emu_stop()
-        self.switching = True
-
-    def syscall(self, u, intno, _):
-        if intno != 17:
-            pc = u.reg_read(UC_MIPS_REG_PC)
-            raise RuntimeError(f'exception {intno} at {pc:#x}')
-        nr = u.reg_read(UC_MIPS_REG_V0)
-        name = NAMES.get(nr)
-        r = getattr(self, 'sys_' + name)(*(self.arg(i) for i in range(4))) if name else -E['ENOSYS']
-        if r is not None:
-            if -4095 <= r < 0:
-                u.reg_write(UC_MIPS_REG_V0, -r), u.reg_write(UC_MIPS_REG_A3, 1)
-            else:
-                u.reg_write(UC_MIPS_REG_V0, r & 0xffffffff), u.reg_write(UC_MIPS_REG_A3, 0)
-
-    def path(self, raw):
-        p = raw.decode(errors='replace')
-        if p.startswith('/mnt/mmc/'): return self.aud + p[8:]
-        if p.startswith('/tmp/') or p.startswith('/mnt/data'): return str(self.tmp/p.lstrip('/').replace('/', '_'))
-        return str(self.root) + p
-
-    def sys_open(self, path, flags, *_):
-        raw = self.cstr(path)
-        if raw.startswith(b'/dev/'):
-            fd = self.next_fd
-            self.next_fd += 1
-            self.fds[fd] = {}
-            return fd
-        p, h = self.path(raw), 0
-        if flags & 3 == 1: h |= os.O_WRONLY
-        if flags & 3 == 2: h |= os.O_RDWR
-        if flags & 0x100: h |= os.O_CREAT
-        if flags & 0x200: h |= os.O_TRUNC
-        if flags & 0x8: h |= os.O_APPEND
-        if flags & 0x10000: h |= os.O_DIRECTORY
-        if h & (os.O_WRONLY | os.O_RDWR | os.O_CREAT) and not p.startswith(str(self.tmp)): return -E['EACCES']
-        try: hfd = os.open(p, h, 0o644)
-        except OSError as e: return -e.errno
-        fd = self.next_fd
-        self.next_fd += 1
-        self.fds[fd] = {'h': hfd, 'path': raw}
-        return fd
-    def sys_openat(self, _, path, flags, __): return self.sys_open(path, flags)
-    def sys_close(self, fd, *_):
-        f = self.fds.pop(fd, None)
-        if f and 'h' in f: os.close(f['h'])
-        return 0
-    def sys_read(self, fd, buf, n, _):
-        f = self.fds.get(fd)
-        if f is None: return -E['EBADF']
-        if 'h' in f:
-            d = os.read(f['h'], n)
-            self.u.mem_write(buf, d)
-            return len(d)
-        return self.sys_recv(fd, buf, n, 0) if 'sock' in f else 0
-    def sys_write(self, fd, buf, n, _):
-        f = self.fds.get(fd)
-        if fd in (1, 2): return n
-        if f is None: return -E['EBADF']
-        d = bytes(self.u.mem_read(buf, n))
-        if 'h' in f: return os.write(f['h'], d)
-        if 'sock' in f: self.replies.append(d)
-        return n
-    def sys_writev(self, fd, iov, cnt, _):
-        return sum(self.sys_write(fd, self.r32(iov + 8 * i), self.r32(iov + 8 * i + 4), 0) for i in range(cnt))
-    def sys_readv(self, fd, iov, cnt, _):
-        tot = 0
-        for i in range(cnt):
-            base, ln = self.r32(iov + 8 * i), self.r32(iov + 8 * i + 4)
-            got = self.sys_read(fd, base, ln, 0)
-            if got <= 0: return got if not tot else tot
-            tot += got
-            if got < ln: break
-        return tot
-    def stat_out(self, st, buf):
-        d = bytearray(144)
-        struct.pack_into('<I', d, 0, st.st_dev & 0xffffffff)
-        struct.pack_into('<Q', d, 16, st.st_ino)
-        struct.pack_into('<IIII', d, 24, st.st_mode, st.st_nlink, 0, 0)
-        struct.pack_into('<q', d, 56, st.st_size)
-        struct.pack_into('<IIIIII', d, 64, int(st.st_atime), 0, int(st.st_mtime), 0, int(st.st_ctime), 0)
-        struct.pack_into('<I', d, 88, 4096)
-        struct.pack_into('<q', d, 96, st.st_blocks)
-        self.u.mem_write(buf, bytes(d))
-    def sys_stat64(self, path, buf, *_):
-        try: self.stat_out(os.stat(self.path(self.cstr(path))), buf)
-        except OSError as e: return -e.errno
-        return 0
-    sys_lstat64 = sys_stat64
-    def sys_fstat64(self, fd, buf, *_):
-        f = self.fds.get(fd)
-        self.stat_out(os.fstat(f['h']) if f and 'h' in f else os.stat('/dev/null'), buf)
-        return 0
-    def sys_access(self, path, *_): return 0 if os.path.exists(self.path(self.cstr(path))) else -E['ENOENT']
-    def sys_llseek(self, fd, hi, lo, res):
-        f = self.fds.get(fd)
-        if not f or 'h' not in f or b'unseekable' in f['path']: return -E['ESPIPE']
-        self.u.mem_write(res, struct.pack('<q', os.lseek(f['h'], (hi << 32) | lo, self.arg(4))))
-        return 0
-    def sys_lseek(self, fd, off, whence, _):
-        f = self.fds.get(fd)
-        if not f or 'h' not in f or b'unseekable' in f['path']: return -E['ESPIPE']
-        return os.lseek(f['h'], off if off < 1 << 31 else off - (1 << 32), whence)
-    def sys_brk(self, a, *_):
-        if a > self.brk:
-            self.ensure(self.brk, a - self.brk)
-            self.brk = a
-        return self.brk
-    def sys_mmap2(self, addr, length, prot, flags): return self.mmap(addr, length, prot, flags, self.arg(4), self.arg(5) * PAGE)
-    def mmap(self, addr, length, prot, flags, fd, off):
-        size = (length + PAGE - 1) & ~(PAGE - 1)
-        if not flags & 0x10:  # MAP_FIXED
-            if self.unmapped.get(size):
-                addr = self.unmapped[size].pop()
-            else:
-                addr = self.next_map
-                self.next_map += size + PAGE
-        self.ensure(addr, size)
-        if flags & 0x800:  # MIPS MAP_ANONYMOUS
-            self.u.mem_write(addr, bytes(size))
-            return addr
-        f = self.fds.get(fd)
-        if not f or 'h' not in f: return -E['EBADF']
-        d = os.pread(f['h'], length, off)
-        if prot & 4:
-            d = self.no_rdhwr(d)
-            if b'libmad' in f['path']: d = self.split_mad(d, addr - off)
-        self.u.mem_write(addr, d + bytes(size - len(d)))
-        if b'libasound' in f['path'] and prot & 4 and not self.alsa: self.install_alsa(addr - off)
-        return addr
-    def sys_munmap(self, addr, length, *_):
-        self.unmapped.setdefault((length + PAGE - 1) & ~(PAGE - 1), []).append(addr)
-        return 0
-    def sys_mremap(self, old, olds, news, _):
-        if news <= olds: return old
-        self.sys_munmap(old, olds)
-        na = self.next_map
-        self.next_map += ((news + PAGE - 1) & ~(PAGE - 1)) + PAGE
-        self.ensure(na, news)
-        self.u.mem_write(na, bytes(self.u.mem_read(old, olds)))
-        return na
-    def sys_set_thread_area(self, tp, *_):
-        self.cur.tp = tp
-        self.w32(TP_SLOT, tp)
-        return 0
-    def sys_set_tid_address(self, p, *_):
-        self.cur.clear_tid = p
-        return self.cur.tid
-    def sys_getpid(self, *_): return 42
-    def sys_gettid(self, *_): return self.cur.tid
-    def sys_getppid(self, *_): return 1
-    def sys_uname(self, buf, *_):
-        for i, s in enumerate([b'Linux', b'q2', b'5.10.21', b'#1', b'mips', b'']):
-            self.u.mem_write(buf + 65 * i, s + b'\0')
-        return 0
-    def sys_readlink(self, *_): return -E['ENOENT']
-    def sys_getcwd(self, buf, *_):
-        self.u.mem_write(buf, b'/\0')
-        return 2
-    def sys_prlimit64(self, _, __, ___, old):
-        if old: self.u.mem_write(old, struct.pack('<QQ', 8 << 20, 1 << 40))
-        return 0
-    def sys_ugetrlimit(self, _, old, *__):
-        self.u.mem_write(old, struct.pack('<II', 8 << 20, 0x7fffffff))
-        return 0
-    def sys_getrlimit(self, res, old, *_): return self.sys_ugetrlimit(res, old)
-    def sys_sysinfo(self, buf, *_):
-        self.u.mem_write(buf, bytes(64))
-        return 0
-    def sys_sched_yield(self, *_): self.block(self.clock, (0, 0), 'yield')
-    def sys_sched_getaffinity(self, _, __, buf, ___):
-        self.u.mem_write(buf, struct.pack('<I', 1))
-        return 4
-    def sys_getpriority(self, *_): return 20
-    def sys_clock_gettime(self, _, ts, *__):
-        self.w32(ts, self.clock // 10**9, self.clock % 10**9)
-        return 0
-    def sys_clock_getres(self, _, ts, *__):
-        if ts: self.w32(ts, 0, 1000)
-        return 0
-    def sys_gettimeofday(self, tv, *_):
-        if tv: self.w32(tv, self.clock // 10**9, self.clock % 10**9 // 1000)
-        return 0
-    def sys_time(self, p, *_):
-        if p: self.w32(p, self.clock // 10**9)
-        return self.clock // 10**9
-    def sys_nanosleep(self, req, *_):
-        self.block(self.clock + self.r32(req) * 10**9 + self.r32(req + 4), (0, 0), 'sleep')
-    def sys_clock_nanosleep(self, _, flags, req, __):
-        at = self.r32(req) * 10**9 + self.r32(req + 4)
-        self.block(at if flags & 1 else self.clock + at, (0, 0), 'sleep')
-    def sys_futex(self, addr, op, val, timeout):
-        cmd = op & 0x7f
-        if cmd in (0, 9):
-            if self.r32(addr) != val: return -E['EAGAIN']
-            at = None
-            if timeout:
-                at = self.r32(timeout) * 10**9 + self.r32(timeout + 4) + (0 if cmd == 9 else self.clock)
-            t = self.cur
-            t.wait, t.wake_at, t.ret, t.retry = ('futex', addr), at, (E['ETIMEDOUT'], 1), False
-            self.u.emu_stop()
-            self.switching = True
-            return None
-        if cmd in (1, 10): return self.wake(addr, val)
-        if cmd == 5: return self.wake(addr, val) + self.wake(self.arg(4), timeout)
-        if cmd in (3, 4):
-            if cmd == 4 and self.r32(addr) != self.arg(5): return -E['EAGAIN']
-            n = self.wake(addr, val)
-            for t in self.threads:
-                if t.wait and t.wait == ('futex', addr): t.wait = ('futex', self.arg(4))
-            return n
-        return -E['ENOSYS']
-    def wake(self, addr, n):
-        c = 0
-        for t in self.threads:
-            if c >= n: break
-            if t.wait == ('futex', addr):
-                t.wait, t.ret, t.wake_at = None, (0, 0), None
-                c += 1
-        return c
-    def sys_clone(self, flags, stack, ptid, tls):
-        if not flags & 0x100: return -E['EAGAIN']  # no fork: the player's helpers aren't under test
-        tid = self.next_tid
-        self.next_tid += 1
-        t = Thread(tid, self.u.context_save(), self.u.reg_read(UC_MIPS_REG_PC), tls if flags & 0x80000 else self.cur.tp)
-        t.child_sp, t.ret = stack, (0, 0)
-        ctid = self.arg(4)
-        t.clear_tid = ctid if flags & 0x200000 else 0
-        if flags & 0x100000: self.w32(ptid, tid)
-        if flags & 0x1000000: self.w32(ctid, tid)
-        self.threads.append(t)
-        return tid
-    def sys_exit(self, *_):
-        t = self.cur
-        t.dead = True
-        if t.clear_tid:
-            self.w32(t.clear_tid, 0)
-            self.wake(t.clear_tid, 1)
-        self.u.emu_stop()
-        self.switching = True
-    def sys_exit_group(self, code, *_):
-        self.exited = code
-        self.u.emu_stop()
-        self.switching = True
-    def sys_socket(self, *_):
-        fd = self.next_fd
-        self.next_fd += 1
-        self.fds[fd] = {'sock': 1}
-        return fd
-    def sys_accept(self, *_):
-        t = self.cur
-        t.wait, t.wake_at, t.ret, t.retry = ('accept',), None, None, False
-        self.u.emu_stop()
-        self.switching = True
-    def sys_recv(self, fd, buf, n, _):
-        if not self.cmdq: return -E['EAGAIN']
-        d = self.cmdq.pop(0)[:n]
-        self.u.mem_write(buf, d)
-        return len(d)
-    sys_recvfrom = sys_recv
-    def sys_send(self, fd, buf, n, _): return self.sys_write(fd, buf, n, 0)
-    sys_sendto = sys_send
-    def sys_ioctl(self, fd, *_): return 0 if fd in self.fds and not self.fds[fd].get('h') else -E['ENOTTY']
-    def sys__newselect(self, nfds, r, w, e):
-        tv = self.arg(4)
-        if self.cmdq:
-            if r: self.u.mem_write(r, struct.pack('<I', 0xffffffff) * 8)
-            return 1
-        at = self.clock + self.r32(tv) * 10**9 + self.r32(tv + 4) * 1000 if tv else None
-        if r: self.u.mem_write(r, bytes(128))
-        self.select_set = r
-        self.block(at, (0, 0), 'select')
-    def sys_poll(self, _, __, timeout, ___):
-        self.block(self.clock + timeout * 10**6 if timeout and timeout < 1 << 31 else None, (0, 0), 'poll')
-    for name in ('set_robust_list', 'rt_sigaction', 'rt_sigprocmask', 'sigaltstack', 'getuid', 'geteuid', 'getgid', 'getegid', 'prctl',
-                 'setpriority', 'kill', 'tgkill', 'mprotect', 'madvise', 'bind', 'listen', 'setsockopt', 'getsockopt',
-                 'shutdown', 'connect', 'fcntl64', 'fcntl', 'getdents64', 'rmdir', 'mkdir', 'unlink', 'rename', 'fsync'):
-        locals()['sys_' + name] = lambda self, *_: 0
-    del name
-
-    def send(self, text):
-        self.cmdq.append(text.encode())
-        for t in self.threads:
-            if t.wait and t.wait[0] == 'select':
-                t.wait, t.wake_at, t.ret = None, None, (1, 0)
-                return
+    def event(self, name, **kw):
+        if name == 'pcm_drop': self.drops.append(len(self.chunks))
+        super().event(name, **kw)
 
     def run(self, seconds):
-        """Until that much virtual time has passed, or all is blocked."""
-        u, limit, idx = self.u, self.clock + int(seconds * 1e9), 0
-        while self.exited is None:
-            ready = [t for t in self.threads if not t.dead and (not t.wait or (t.wake_at is not None and t.wake_at <= self.clock))]
-            if not ready:
-                wakes = [t.wake_at for t in self.threads if not t.dead and t.wake_at is not None]
-                if not wakes or min(wakes) > limit:
-                    self.clock = limit
-                    return
-                self.clock = max(self.clock, min(wakes))
-                continue
-            if self.clock >= limit: return
-            idx = (idx + 1) % len(ready)
-            t = self.cur = ready[idx]
-            if t.ctx is not None: u.context_restore(t.ctx)
-            self.w32(TP_SLOT, t.tp)
-            t.wait = t.wake_at = None
-            if t.child_sp:
-                u.reg_write(UC_MIPS_REG_SP, t.child_sp)
-                t.child_sp = 0
-            if t.ret is not None and t.ret[0] == 1 and getattr(self, 'select_set', 0):
-                u.mem_write(self.select_set, struct.pack('<I', 0xffffffff) * 8)
-            if t.ret is not None and not t.retry:
-                u.reg_write(UC_MIPS_REG_V0, t.ret[0]), u.reg_write(UC_MIPS_REG_A3, t.ret[1])
-            t.ret, t.retry = None, False
-            self.switching = False
-            try:
-                u.emu_start(t.pc, 0xfffffff0, timeout=300000)
-            except UcError as e:
-                # A stale error status comes back on any stop: a real fault repeats at one PC.
-                pc = u.reg_read(UC_MIPS_REG_PC)
-                if not self.switching:
-                    self.faults = getattr(self, 'faults', 0) + 1 if pc == getattr(self, 'fault_pc', None) else 0
-                    self.fault_pc = pc
-                    if self.faults > 3: raise RuntimeError(f'{e} at pc={pc:#x}')
-            t.ctx = u.context_save()
-            t.pc = u.reg_read(UC_MIPS_REG_PC)
+        return super().run(until=(self.clock - 10**12) / 1e9 + seconds)
 
-
-NAMES = {4001: 'exit', 4003: 'read', 4004: 'write', 4005: 'open', 4006: 'close', 4013: 'time', 4019: 'lseek', 4020: 'getpid',
-         4024: 'getuid', 4033: 'access', 4037: 'kill', 4039: 'mkdir', 4040: 'rmdir', 4045: 'brk', 4047: 'getgid', 4049: 'geteuid',
-         4050: 'getegid', 4054: 'ioctl', 4055: 'fcntl', 4064: 'getppid', 4076: 'getrlimit', 4078: 'gettimeofday', 4085: 'readlink',
-         4091: 'munmap', 4097: 'setpriority', 4096: 'getpriority', 4116: 'sysinfo', 4118: 'fsync', 4120: 'clone', 4122: 'uname',
-         4125: 'mprotect', 4140: 'llseek', 4142: '_newselect', 4145: 'readv', 4146: 'writev', 4162: 'sched_yield', 4166: 'nanosleep',
-         4167: 'mremap', 4168: 'accept', 4169: 'bind', 4170: 'connect', 4174: 'listen', 4175: 'recv', 4176: 'recvfrom', 4178: 'send',
-         4180: 'sendto', 4181: 'setsockopt', 4182: 'shutdown', 4183: 'socket', 4188: 'poll', 4192: 'prctl', 4194: 'rt_sigaction',
-         4195: 'rt_sigprocmask', 4203: 'getcwd', 4206: 'sigaltstack', 4210: 'mmap2', 4213: 'stat64', 4214: 'lstat64', 4215: 'fstat64',
-         4218: 'madvise', 4219: 'getdents64', 4220: 'fcntl64', 4222: 'gettid', 4238: 'futex', 4239: 'sched_getaffinity',
-         4246: 'exit_group', 4252: 'set_tid_address', 4263: 'clock_gettime', 4264: 'clock_getres', 4265: 'clock_nanosleep', 4266: 'tgkill',
-         4283: 'set_thread_area', 4288: 'openat', 4309: 'set_robust_list', 4338: 'prlimit64'}
 
 SECONDS = 2
 TEMPLATE_AT, TEMPLATE = 30000, 4096
@@ -912,16 +320,16 @@ class Player:
         in them. seeks: (at seconds of played time, to seconds). during: a command for 0.3 s in."""
         e = self.e
         first = len(e.chunks)
-        e.send('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|1|0|90}' % name)
+        e.send_cmd('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|1|0|90}' % name)
         e.run(0.05)
         if next_name:
-            e.send('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % next_name)
+            e.send_cmd('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % next_name)
         if during:
             e.run(0.3)
-            e.send(during)
+            e.send_cmd(during)
         for at, to in seeks:
             e.run(at)
-            e.send('{mcl-seek\\%d}' % to)
+            e.send_cmd('{mcl-seek\\%d}' % to)
             e.run(0.02)
         idle = 0
         for _ in range(400):
@@ -929,8 +337,8 @@ class Player:
             e.run(0.25)
             idle = idle + 1 if len(e.chunks) == n else 0
             if idle >= 8 and len(e.chunks) > first: break
-        marks = [c for k, c in e.events if k == 'drop' and c >= first]
-        e.events.clear()
+        marks = [c for c in e.drops if c >= first]
+        e.drops.clear()
         out, at = [], []
         for i, (rate, ch, fmt, data) in enumerate(e.chunks[first:]):
             if first + i in marks: at.append(len(out))
@@ -1021,7 +429,7 @@ def bluetooth(exe, root, aud, tmp):
     """Through the 48 kHz resampler: M4A's seam against FLAC's, the same music with no seam at all."""
     player = Player(exe, root, aud, tmp)
     for command in '{mcl-setoutputway\\1}', '{mcl-setvol\\100}', '{mcl-softvolflag\\1}':  # without a volume, silence
-        player.e.send(command)
+        player.e.send_cmd(command)
         player.e.run(0.05)
     frames = SAMPLES * 48000 // 44100
     ref, _ = player.play('a.flac', 'b.flac')
@@ -1072,9 +480,14 @@ def main():
         pair(player, sources, 'priming lavf refuses', 'a_junk_priming.m4a', 'b_junk_priming.m4a', 1024, 1024 + PADDING, PADDING)
         print('An end that is wrong by more than the last packet')
         for file in 'stts_136.m4a', 'stts_0.m4a', 'last_delta_0.m4a', 'priming0.m4a', 'priming0_small.m4a', 'fragmented_unseekable.m4a', \
-                'timebase.m4a', 'timebase_edit.m4a', 'timebase_high.m4a', 'media_time_big.m4a', 'granule.ogg', 'granule_near.ogg', 'granule_7000.ogg', 'granule_100.ogg', \
+                'timebase_high.m4a', 'media_time_big.m4a', 'granule_near.ogg', 'granule_7000.ogg', 'granule_100.ogg', \
                 'chain_rates.ogg', 'pre_skip.opus', 'stale.m4a', 'stale_near.m4a', 'stale_300.m4a', 'stale_frame.m4a':
             like_stock(player, stock, file)
+        # A length that understates by more than stock's second past it: stock's forced EOF cut there, and only an MP3's frame
+        # count does now (docs/internals.md#forced-eof), so every packet comes out.
+        whole(player, 'timebase.m4a', (LONG + 1024 + 1023) // 1024 * 1024)
+        whole(player, 'timebase_edit.m4a', (SAMPLES + 1024 + 1023) // 1024 * 1024)
+        whole(player, 'granule.ogg', len(stock.play('granule_src.ogg')[0]) + 1)
         # ponytail: wrong by less than what's left of the last packet, it can't be told from padding, and that much goes.
         like_stock(player, stock, 'stale_100.m4a', (SAMPLES * 2 + 1024 + 1023) // 1024 * 1024 - 1024 - LONG + 100)
         like_stock(player, stock, 'two_edits.m4a', 1024)  # the priming, as the first edit's media time says
