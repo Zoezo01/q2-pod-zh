@@ -64,4 +64,23 @@ word(u, GEN, 5); call(u, 'hci_pause_wait')  # moved from the 0 last seen: no wai
 call(u, 'hci_pause_wait')                   # unchanged: waits while it is 5
 word(u, GEN, 6); call(u, 'hci_pause_wait')  # a command while the loop checked: no wait
 assert seen == [(4238, GEN, 128, 5)], seen
-print('hciplayer futex waits: Play wakes the stopped loop, resume the paused one, status queries nothing.')
+# A Pause undone with no PCM pause (the main thread never got there, on a double tap or inside a resume's write):
+# no resume will come, so demo's mute(2) is released here, once. After a real pause, or Pause alone, resume's to do.
+WAY, MUTED, DAC_FD, IOCTL = 0xb10e54, 0xb11584, 0xb1158c, 0xadbbb0
+def tap(state, muted=0, way=0, fd=5, then=2):
+    u, seen = machine_with(lambda u: word(u, MPCTX + 4, then))
+    word(u, MPCTX + 4, state), word(u, MUTED, muted), word(u, WAY, way), word(u, DAC_FD, fd)
+    released = []
+    def ioctl(u, address, size, unused):
+        released.append((u.reg_read(UC_MIPS_REG_4), u.reg_read(UC_MIPS_REG_5), read(u, u.reg_read(UC_MIPS_REG_6))))
+        u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+    u.hook_add(UC_HOOK_CODE, ioctl, begin=IOCTL, end=IOCTL)
+    call(u, 'hci_command')
+    return released, read(u, MUTED)
+assert tap(2, then=1) == ([(5, 0xc0044d1f, 0)], 0)
+assert tap(2, muted=1, then=1) == ([], 1)           # a real pause: resume releases it, and its wait
+assert tap(1, then=2) == ([], 0)                    # Pause alone
+assert tap(2, then=2) == ([], 0)                    # a status query while paused
+assert tap(2, way=1, then=1) == ([], 0)             # Bluetooth: demo's mute isn't this DAC's to hold
+assert tap(2, fd=0, then=1) == ([], 0)
+print('hciplayer futex waits: Play wakes the stopped loop, resume the paused one, status queries nothing; a Pause undone before the PCM paused releases the mute.')

@@ -450,7 +450,7 @@ static int ao_playing(void) {
 #define PREV_CHANNELS (*(volatile int *)0xafa16cu)
 #define AO_CHANNELS (*(volatile int *)0xafa1a4u)
 #define AO_OUTBURST (*(volatile unsigned *)0xafa1b0u)
-#define AO_BUFFERSIZE (*(volatile unsigned *)0xafa1b4u)
+#define AO_BUFFERSIZE (*(volatile unsigned *)0xafa1b4u) /* the ring, in bytes */
 #define AO_BYTES (*(volatile unsigned *)0xb11598u)
 static volatile int ao_natural, ao_draining; /* ao_natural: the way a natural end was on, plus 1 */
 static int ao_wait;   /* the reopen under way is a natural one: dac_ioctl waits for the line */
@@ -503,21 +503,6 @@ int ao_init(int rate, int channels, int format, int flags) {
     }
     return r;
 }
-/* ao_alsa's play (0x43afa4), its one writei. A kept PCM can still run dry while the new track's first block decodes
- * (nearly a whole buffer, 0x42f3f4), and what it then writes lands behind hw_ptr and is lost. The ring there is silence
- * (silence_size), so appl_ptr moves up to a period past hw_ptr first: a short gap, not a cut. The kernel limits the
- * forward to avail, which is more than asked for here. hciplayer doesn't import snd_pcm_forward. */
-long ao_write(void *pcm, const void *data, unsigned long frames) {
-    if (ao_stayed) {
-        unsigned avail = ao_avail(pcm), ring = AO_BUFFERSIZE / AO_BYTES;
-        ao_stayed = 0;
-        if (avail > ring) {
-            long (*forward)(void *, unsigned long) = dlsym(0, "snd_pcm_forward"); /* RTLD_DEFAULT */
-            if (forward) forward(pcm, avail - ring + AO_OUTBURST / AO_BYTES);
-        }
-    }
-    return ((long (*)(void *, const void *, unsigned long))0xadb220u)(pcm, data, frames);
-}
 static void ao_cut(void) { /* a press during ao_init's drain, on the command thread */
     if (__sync_val_compare_and_swap(&ao_draining, 1, 2) != 1) return;
     void *pcm = ALSA_PCM; /* mcl-orderstop's close may have run */
@@ -538,8 +523,7 @@ static void ao_cut(void) { /* a press during ao_init's drain, on the command thr
  * press that opened paused, a seek while paused, a press and a track under 5 s) gives a natural reopen one
  * 130 ms gap, at most one per word; a per-file stamp would close that. A rapid double Next can spend its word
  * on the first init, so the last track keeps the old cut. A-B Repeat, Resume Songs' jump, a phone's seek,
- * Spotify's aplay and q2video keep the cut. Whether a start pops with the gate open, or a seek while paused
- * ticks, can only be settled by ear. */
+ * Spotify's aplay and q2video keep the cut. Whether a start pops with the gate open can only be settled by ear. */
 #define DAC_RELEASE_MS 130 /* derived, not measured: the mute line's 90-100 ms and the ramp at top volume */
 #define DAC_PRESS_MS 5000  /* demo's mute, its sleep and a slow card's open, from the press to init's end */
 #define DAC_FD (*(volatile int *)0xb1158cu)
@@ -570,14 +554,152 @@ void dac_unmute(int value) {
     DAC_HELPER(value);
     if (wait) usleep(DAC_RELEASE_MS * 1000);
 }
-/* Resume (0x43881c) calls snd_pcm_pause(pcm, 0) before its unmute (0x438978): that one goes first now, and
- * with the flag clear, stock's check after the call (0x438844) passes it over. */
+/* An unpause on the headphone DAC (docs/internals.md#unpause). soc_aic.ko restarts the DMA at the ring's base on
+ * PAUSE_RELEASE and the pointer jumps to the next wrap, so what the ring held past the pause never played; and
+ * demo's mute(2) fades the volume and closes the line well before the pause, so the music under it went unheard.
+ * The last frames written are kept here. A resume drops and prepares the PCM, still muted, then writes them again
+ * from the fade's second step, by demo's stamp in MUTE_FILE against the pause's own trigger time. A prepare
+ * zeroes hw_ptr, so hw_ptr bounds how far back is this stream's: a seek, a reopen or an earlier unpause can't leak
+ * frames in, with no hook on any of them. Only way 0's writes are kept, one memcpy per write, and no byte a
+ * natural change writes differs. */
+#define PS_BYTES (1u << 21) /* touched only as far as a format's cap: 176 KB at 44.1 kHz S16, 899 KB at 192 kHz S32 */
+#define PS_HOLD_MS 500      /* frames kept beyond the ring: the fade and the sleep after it, with room to spare */
+#define PS_FRESH_MS 1000    /* a stamp older than this at the pause is not this pause's, so nothing goes back */
+#define PS_TRIM_MS (-29)    /* the stamp to mute(2)'s second volume write: the join (docs/internals.md#unpause) */
+#define PS_FADE_MS 4        /* the first frames rise from 0: the line is open, and they'd step from silence */
+#define PCM_WRITEI ((long (*)(void *, const void *, unsigned long))0xadb220u)
+#define PCM_PAUSE ((int (*)(void *, int))0xadacf0u)
+#define PCM_DROP ((int (*)(void *))0xadaf60u)
+#define PCM_PREPARE ((int (*)(void *))0xadb2b0u)
+#define PCM_STATUS ((int (*)(void *, void *))0xadabd0u)
+#define PCM_PAUSED 6
+#define SEEK_PENDING (*(volatile int *)0xb10c38u)   /* mcl-seek's, set before the mcl-play demo sends after it */
+/* snd_pcm_status_t, 0x6c bytes (snd_pcm_status_sizeof): the library's getters read these same words. */
+typedef struct { int state, trigger_s, trigger_ns, tstamp[2]; unsigned appl, hw; int rest[20]; } pcm_status;
+_Static_assert(sizeof(pcm_status) == 0x6c, "snd_pcm_status_t ABI");
+static char ps_ring[PS_BYTES] __attribute__((aligned(8)));
+static struct { unsigned at, fill, cap, frame; int rate; } ps; /* at: the next byte's place; fill: bytes held */
+
+/* ao_alsa's play (0x43afa4), its one writei. A kept PCM can still run dry while the new track's first block decodes
+ * (nearly a whole buffer, 0x42f3f4), and what it then writes lands behind hw_ptr and is lost. The ring there is silence
+ * (silence_size), so appl_ptr moves up to a period past hw_ptr first: a short gap, not a cut. The kernel limits the
+ * forward to avail, which is more than asked for here. hciplayer doesn't import snd_pcm_forward.
+ * After stock's write, what the DAC took is kept, and a write anywhere else forgets it, so a PCM paused on Bluetooth
+ * or USB when the way turns to 0 finds nothing to take for its own. (Not by the PCM's handle: a reopen's snd_pcm_t can
+ * land on the old one's address.) A write is at most the ring (get_space), and the cap is never less. */
+long ao_write(void *pcm, const char *data, unsigned long frames) {
+    if (ao_stayed) {
+        unsigned avail = ao_avail(pcm), ring = AO_BUFFERSIZE / AO_BYTES;
+        ao_stayed = 0;
+        if (avail > ring) {
+            long (*forward)(void *, unsigned long) = dlsym(0, "snd_pcm_forward"); /* RTLD_DEFAULT */
+            if (forward) forward(pcm, avail - ring + AO_OUTBURST / AO_BYTES);
+        }
+    }
+    long r = PCM_WRITEI(pcm, data, frames);
+    if (r <= 0) return r;
+    if (OUTPUT_WAY) {
+        ps.fill = 0;
+        return r;
+    }
+    unsigned frame = AO_BYTES, n = (unsigned)r * frame;
+    if (frame != ps.frame || AO_RATE != ps.rate) {
+        ps.frame = frame, ps.rate = AO_RATE, ps.at = ps.fill = 0;
+        ps.cap = AO_BUFFERSIZE + (unsigned)AO_RATE * frame / 1000 * PS_HOLD_MS;
+        if (ps.cap > PS_BYTES) ps.cap = PS_BYTES;
+        ps.cap -= ps.cap % frame;
+    }
+    unsigned m = n < ps.cap - ps.at ? n : ps.cap - ps.at;
+    memcpy(ps_ring + ps.at, data, m);
+    memcpy(ps_ring, data + m, n - m);
+    ps.at = ps.at + n >= ps.cap ? ps.at + n - ps.cap : ps.at + n;
+    ps.fill = n > ps.cap - ps.fill ? ps.cap : ps.fill + n;
+    return r;
+}
+
+/* Frames back from the pause to the fade's start, within what is held and this stream played. */
+static unsigned ps_back(const pcm_status *st, unsigned left) {
+    int at = 0, fd = open(MUTE_FILE, 0); /* O_RDONLY */
+    if (fd < 0) return 0;
+    read(fd, &at, sizeof at);
+    close(fd);
+    unsigned age = (unsigned)st->trigger_s * 1000u + (unsigned)st->trigger_ns / 1000000u - (unsigned)at;
+    int ms = (int)age + PS_TRIM_MS;
+    if (age >= PS_FRESH_MS || ms <= 0) return 0; /* no stamp reads as 0, an age of the whole uptime */
+    unsigned back = (unsigned)ms * (unsigned)ps.rate / 1000, room = ps.fill / ps.frame - left;
+    if (back > st->hw) back = st->hw;
+    return back < room ? back : room;
+}
+
+/* One sample times gain in place, by MPlayer's af_format bits: 1 little-endian, 2 unsigned, 4 float; bits 3-4 its
+ * bytes less one. */
+static void ps_scale(unsigned char *p, unsigned w, int format, double gain) {
+    unsigned v = 0;
+    for (unsigned i = 0; i < w; ++i) v |= (unsigned)p[format & 1 ? i : w - 1 - i] << (i * 8);
+    if (format & 4) {
+        float f;
+        memcpy(&f, &v, 4);
+        f = (float)(f * gain);
+        memcpy(&v, &f, 4);
+    } else {
+        unsigned shift = 32 - w * 8;
+        v <<= shift;
+        if (format & 2) v ^= 0x80000000u;
+        v = (unsigned)(int)((int)v * gain);
+        if (format & 2) v ^= 0x80000000u;
+        v >>= shift;
+    }
+    for (unsigned i = 0; i < w; ++i) p[format & 1 ? i : w - 1 - i] = (unsigned char)(v >> (i * 8));
+}
+
+/* The held frames from n before the newest to the newest, into a prepared PCM: its start threshold starts it, and
+ * what doesn't fit the ring waits for room, at most the back's length, on a thread that has nothing else to do.
+ * The first PS_FADE_MS rise from silence, whatever the format; only DSD is left bit-exact. In place: a second pause
+ * could only reach them again by going back as far, and then they fade again. */
+static void ps_write(void *pcm, unsigned n) {
+    unsigned left = n * ps.frame, at = ps.at >= left ? ps.at - left : ps.at + ps.cap - left;
+    if (!dsd()) {
+        unsigned fade = (unsigned)ps.rate / 1000 * PS_FADE_MS, w = (AO_FORMAT >> 3 & 3) + 1;
+        if (fade > n) fade = n;
+        for (unsigned i = 0, p = at; i < fade; ++i, p = p + ps.frame >= ps.cap ? p + ps.frame - ps.cap : p + ps.frame)
+            for (unsigned b = 0; b + w <= ps.frame; b += w)
+                ps_scale((unsigned char *)ps_ring + p + b, w, AO_FORMAT, (double)i / fade);
+    }
+    while (left) {
+        unsigned m = left < ps.cap - at ? left : ps.cap - at;
+        long r = PCM_WRITEI(pcm, ps_ring + at, m / ps.frame);
+        if (r == -4 || !r) continue; /* EINTR, as stock's play loop */
+        if (r < 0) return;           /* the next play's write recovers as stock's does */
+        at = at + (unsigned)r * ps.frame >= ps.cap ? 0 : at + (unsigned)r * ps.frame;
+        left -= (unsigned)r * ps.frame;
+    }
+}
+
+/* Resume (0x43881c) calls snd_pcm_pause(pcm, 0) before its unmute (0x438978): that one goes first now, and with the
+ * flag clear, stock's check after the call (0x438844) passes it over. On way 0 the PCM is dropped and prepared
+ * under the mute, the release waited for, and only then is anything written; with a seek pending nothing is, as
+ * its reset comes next and no old frame should sound. Anything but a paused PCM whose ring is all held (a pause
+ * that failed, Bluetooth, USB; hw_ptr past appl_ptr reads as more than is held) is stock's. */
 int dac_resume(void *pcm) {
+    pcm_status st;
+    int redo = 0;
+    unsigned n = 0;
+    if (!OUTPUT_WAY && pcm && PCM_STATUS(pcm, &st) >= 0 && st.state == PCM_PAUSED) {
+        unsigned left = st.appl - st.hw;
+        if (SEEK_PENDING) redo = 1;
+        else if (ps.frame == AO_BYTES && ps.rate == AO_RATE && left <= ps.fill / ps.frame) {
+            n = left + ps_back(&st, left);
+            redo = 1;
+        }
+    }
+    if (redo) PCM_DROP(pcm), PCM_PREPARE(pcm);
     if (DAC_MUTED == 1) {
         DAC_HELPER(0);
         if (!OUTPUT_WAY && DAC_FD > 0) usleep(DAC_RELEASE_MS * 1000);
     }
-    return ((int (*)(void *, int))0xadacf0u)(pcm, 0);
+    if (!redo) return PCM_PAUSE(pcm, 0);
+    if (n) ps_write(pcm, n);
+    return 0;
 }
 #endif
 
@@ -762,6 +884,11 @@ void hci_command(void *buf) {
     if (!changed) return;
     if (after[1] == 1 || after[2] == 1) ao_natural = 0; /* a skip or stop before init: not natural (ao_uninit) */
     if (after[1] == 1 || after[2] == 1 || (!before[0] && after[0])) ao_cut();
+    /* A Pause undone before the main thread reached it, a double tap or both inside dac_resume's write: no PCM pause,
+     * so no resume will release demo's mute(2). hciplayer's own mute sets the flag first, so a flag still clear says so;
+     * if the main thread is just getting there, it mutes after this and its resume releases as ever. A DAC not
+     * muted takes this as a no-op: user_mute(0) sets the volume it has. */
+    if (before[CMD_WORDS] == 2 && after[CMD_WORDS] == 1 && !DAC_MUTED) DAC_HELPER(0);
     __atomic_add_fetch(&cmd_gen, 1, __ATOMIC_SEQ_CST);
     hci_futex(&cmd_gen, 129, 1, 0); /* FUTEX_WAKE_PRIVATE */
     if (before[0] != after[0]) hci_futex((volatile int *)PLAY_FLAG, 129, 1, 0);

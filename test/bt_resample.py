@@ -7,8 +7,10 @@ at AAC/SBC's 48 kHz and LDAC's 96 kHz. Stock's (and a skip mid-track, a rate cha
 start the second from a fresh resampler, which loses the first's tail.
 Then a USB DAC's and Bluetooth's init across a change (ao_init): a repeated request asks for what it negotiated.
 Then the wired outputs' start (dac_*): at stock's own unmute sites a press waits, once, before audio flows.
-Last the old track's end (ao_uninit, ao_init): a natural change that reopens drains, mutes, reopens, unmutes and waits;
+Then the old track's end (ao_uninit, ao_init): a natural change that reopens drains, mutes, reopens, unmutes and waits;
 one demo left unmuted at the same format keeps the PCM open; a skip stays mute-first.
+Last an unpause (ao_write, dac_resume): the frames go back into a prepared PCM from where the fade began. The DMA
+itself isn't modelled: the PCM here is its status words and what reaches it.
 Usage: test/bt_resample.py BUILD_DIR"""
 import math, pathlib, re, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
@@ -39,6 +41,9 @@ for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=Tr
 hi, lo = re.search(r'peq_lib_open:\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()).groups()
 imports[STUBS + 4*len(imports)] = 'open'
 u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
+class dev:  # what the stubs below see of the PCM (mute: MUTE_FILE's word, None for no file)
+    state, trigger, appl, hw, status_rc, mute, most, calls, got, errors = 2, 0, 0, 0, 0, None, 1 << 30, 0, b'', []
+    before = None  # the log at the first frame written since pause_at
 heap, clock, freed, dac_log, pause_rc, press = [HEAP], [10**9], set(), [], [0], [None]  # press: PRESS_FILE's word
 real = {}  # imports the stock-init sections answer, by name
 
@@ -78,15 +83,30 @@ def libc(u, address, size, _):
     elif n == '__divdi3':
         x, y = (v - (1 << 64) if v >> 63 else v for v in (a(0) | a(1) << 32, a(2) | a(3) << 32))
         result = abs(x) // abs(y) * (1 if (x < 0) == (y < 0) else -1); v1 = result >> 32
-    elif n == 'open': assert cstr(a(0)) == b'/tmp/q2press' and not a(1); result = -1 if press[0] is None else 7
-    elif n == 'read': assert a(0) == 7 and a(2) == 4; w(a(1), press[0]); result = 4
-    elif n == 'close': assert a(0) == 7; result = 0
+    elif n == 'open':
+        assert cstr(a(0)) in (b'/tmp/q2press', b'/tmp/q2mute') and not a(1)
+        result = (-1 if press[0] is None else 7) if cstr(a(0)) == b'/tmp/q2press' else (-1 if dev.mute is None else 8)
+    elif n == 'read': assert a(0) in (7, 8) and a(2) == 4; w(a(1), press[0] if a(0) == 7 else dev.mute); result = 4
+    elif n == 'close': assert a(0) in (7, 8); result = 0
     elif n == 'ioctl': dac_log.append(('ioctl', a(0), a(1), r(a(2)))); result = 0
     elif n == 'usleep': dac_log.append('wait'); assert 100000 <= a(0) <= 200000, 'the mute line, without a long wait'; result = 0
     elif n == 'snd_pcm_pause': dac_log.append(('pause', a(1))); result = pause_rc[0]
     elif n == 'snd_pcm_state': result = 2  # not suspended
     elif n == 'snd_pcm_status_sizeof': result = 1024  # stock's get_space, from ao_init
-    elif n in ('snd_pcm_status', 'snd_pcm_status_get_avail'): result = 0
+    elif n == 'snd_pcm_status_get_avail': result = 0
+    elif n == 'snd_pcm_status':
+        w(a(1), dev.state, dev.trigger // 1000, dev.trigger % 1000 * 10**6, 0, 0, dev.appl & 0xffffffff, dev.hw)
+        result = dev.status_rc
+    elif n == 'snd_pcm_drop': dac_log.append('drop'); result = 0
+    elif n == 'snd_pcm_prepare': dac_log.append('prepare'); dev.appl = dev.hw = 0; result = 0
+    elif n == 'snd_pcm_writei':
+        frames = a(2)
+        if dev.errors: result = dev.errors.pop(0)
+        else:
+            frames = min(frames, dev.most)
+            dev.got += bytes(u.mem_read(a(1), frames * r(0xb11598))); dev.appl += frames; result = frames
+            dev.calls += 1
+            if dev.before is None: dev.before = [*dac_log]
     elif real: result = 0  # anything else stock's init calls
     else: raise AssertionError(n)
     u.reg_write(UC_MIPS_REG_V0, result & 0xffffffff)
@@ -791,3 +811,248 @@ for way, want in ((0, [DRAIN, CLOSE]), (2, [CLOSE])):
     alsa.clear(); call(0x43b1d0)
     assert order() == want, way
 print('Old track\'s end: a natural change that reopens is heard to its end, then mutes around the close and open and waits for the line; one at the same format that demo left unmuted stays open; dry reopens; a press during it silences; a skip, a stop, DSD and a preloaded same-format change call as stock.')
+
+real.clear()  # the stubs above answer from here on
+# An unpause: every write after the first is kept as it went, and a resume writes the frames again, in order, from the
+# fade's start to the newest, into a dropped and prepared PCM, after the unmute's wait and never by snd_pcm_pause.
+PAUSED, SEEK, AO_BUF, FRAME, S16F, S32F = 6, 0xb10c38, AO_DATA + 0x14, 0xb11598, 0x9, 0x19
+buf = alloc(1 << 20)
+def frames_of(start, n, width, nch=2):
+    """Frames that name themselves: left is the counter, the rest its negative."""
+    fmt = 'h' if width == 2 else 'i'
+    top = 32000 if width == 2 else 2000000000
+    out = bytearray()
+    for i in range(start, start + n):
+        v = (i * 7 + 1000) % top
+        out += struct.pack(f'<{nch}{fmt}', v, *([-v] * (nch - 1)))
+    return bytes(out)
+def setup(rate, fmt, frame, ring_frames, way=0):
+    w(WAY, way), w(AO_DATA, rate), w(AO_DATA + 8, fmt), w(AO_BUF, ring_frames * frame), w(FRAME, frame), w(FLAG, 1), w(FD, 5)
+    w(SEEK, 0), w(ctx + 0x2c, 0)
+    dev.state, dev.appl, dev.hw, dev.status_rc, dev.most, dev.errors = 2, 0, 0, 0, 1 << 30, []
+def play(start, n, width, frame):
+    """The player's writes, 4096 frames a time; returns the bytes and checks they reach the PCM untouched."""
+    data = frames_of(start, n, width, frame // width)
+    for at in range(0, n, 4096):
+        chunk = data[at * frame:(at + 4096) * frame]
+        dev.got = b''
+        u.mem_write(buf, chunk)
+        assert call(ps['ao_write'], PCM_H, buf, len(chunk) // frame) == len(chunk) // frame and dev.got == chunk
+    return data
+def pause_at(left, hw, age, now=500000):
+    """Paused with left frames unplayed and hw played; the stamp age ms before the pause's trigger."""
+    dev.state, dev.appl, dev.hw, dev.trigger = PAUSED, hw + left, hw, now
+    dev.mute = None if age is None else (now - age) | 1
+    dev.got, dev.calls, dev.before = b'', 0, None
+def go():
+    dac_log.clear()
+    rc = call(ps['dac_resume'], PCM_H)
+    return [*dac_log], rc, r(FLAG)
+PCM_H = 0x1000
+OPENED = ['drop', 'prepare', UNMUTE, 'wait']
+
+# The tunables, from the source, so tuning one doesn't fail these.
+source = (pathlib.Path(__file__).resolve().parents[1]/'patch'/'peq_player.c').read_text()
+FADE_MS, TRIM_MS = (int(re.search(rf'#define {n} \(?(-?\d+)', source)[1]) for n in ('PS_FADE_MS', 'PS_TRIM_MS'))
+def faded(rate): return rate // 1000 * FADE_MS
+def went_back(ms, rate): return max(ms + TRIM_MS, 0) * rate // 1000
+assert TRIM_MS < 0  # the join is past the fade's first step, so went_back's clamp is live
+# 44.1 kHz S16: the ring's unplayed part and 279 ms less the trim back, to the frame; the fade's frames rise from 0.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(12000, 28000, 280)  # the stamp is odd, so 279 ms
+log, rc, flag = go()
+assert log == OPENED and rc == 0 and flag == 0 and dev.before == OPENED  # no frame before the wait is over
+back, fade = went_back(279, 44100), faded(44100)
+want = data[(40000 - 12000 - back) * 4:]
+assert len(dev.got) == len(want) and dev.got[fade * 4:] == want[fade * 4:]
+for i in (0, 1, fade // 2, fade - 1):
+    l = struct.unpack_from('<h', dev.got, i * 4)[0]
+    o = struct.unpack_from('<h', want, i * 4)[0]
+    assert abs(l - int(o * i / fade)) <= 1, (i, l, o)
+assert not any(dev.got[:4])
+# A stale stamp, none, or one from the future (the clock wrapped): no further back than the pause.
+for age in (1001, 5000, -50, None):
+    setup(44100, S16F, 4, 22048)
+    data = play(0, 40000, 2, 4)
+    pause_at(12000, 28000, age)
+    assert go()[0] == OPENED and dev.got[fade * 4:] == data[(40000 - 12000 + fade) * 4:], age
+# Younger than the trim: back is age + trim clamped at 0, and the age doesn't wrap. Just past it, it goes back that far.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(12000, 28000, 2)  # odd, so 1 ms
+assert go()[0] == OPENED and len(dev.got) == 12000 * 4
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(12000, 28000, -TRIM_MS + 11)  # odd, so 10 ms back
+assert go()[0] == OPENED and len(dev.got) == (12000 + 10 * 44100 // 1000) * 4
+# The pause's own milliseconds count, not its whole seconds: this stamp is odd already, so 280 ms.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(12000, 28000, 280, now=500123)
+assert go()[0] == OPENED and len(dev.got) == (12000 + went_back(280, 44100)) * 4
+# A word of 0 is no stamp.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(12000, 28000, 100); dev.mute = 0
+assert go()[0] == OPENED and len(dev.got) == 12000 * 4
+# A track's first frames: never back past hw_ptr, which a prepare zeroed, whatever older frames are held.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(3000, 500, 280)
+assert go()[0] == OPENED and len(dev.got) == 3500 * 4 and dev.got[fade * 4:] == data[(40000 - 3500 + fade) * 4:]
+# Fewer frames than the fade: all of it rises.
+setup(44100, S16F, 4, 22048)
+data = play(0, 8192, 2, 4)
+pause_at(100, 0, None)
+assert go()[0] == OPENED and len(dev.got) == 400 and abs(struct.unpack_from('<h', dev.got, 99 * 4)[0] - struct.unpack_from('<h', data, (8192 - 1) * 4)[0] * 99 / 100) <= 1
+# Twice over: a second pause goes back within what the first wrote again, and what follows is still the same stream.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(12000, 28000, 280)
+go()
+data2 = play(40000, 4096, 2, 4)
+pause_at(4096, back + 12000, 280)
+assert go()[0][:2] == ['drop', 'prepare'] and dev.got[fade * 4:] == (data + data2)[(44096 - 4096 - back + fade) * 4:]
+# Past the shadow's end and across its wrap, in two writes and a short one, nothing is lost or reordered.
+setup(44100, S16F, 4, 22048)
+data = play(0, 200000, 2, 4)
+pause_at(22048, 100000, 280)
+dev.most = 1000
+assert go()[0] == OPENED and dev.got[fade * 4:] == data[(200000 - 22048 - back + fade) * 4:] and dev.calls > 20
+# A signal between, and a failing write: stock's play recovers it, so the rest is left.
+setup(44100, S16F, 4, 22048)
+data = play(0, 40000, 2, 4)
+pause_at(1000, 28000, None)
+dev.errors = [-4]
+assert go()[0] == OPENED and len(dev.got) == 4000
+pause_at(1000, 28000, None)
+dev.errors = [-32]
+assert go()[0] == ['drop', 'prepare'] and dev.got == b''
+# 96 kHz S32: its own fade and back. Another rate starts empty, and a ring not all held is stock's: the
+# pause as before, no drop.
+setup(96000, S32F, 8, 16384)
+data = play(0, 40000, 4, 8)
+pause_at(8000, 32000, 200)
+assert go()[0] == OPENED
+held = data[-(8000 + went_back(199, 96000)) * 8:]
+fade96 = faded(96000)
+assert len(dev.got) == len(held) and dev.got[fade96 * 8:] == held[fade96 * 8:] and not any(dev.got[:8])
+assert abs(struct.unpack_from('<i', dev.got, fade96 // 2 * 8)[0] - struct.unpack_from('<i', held, fade96 // 2 * 8)[0] / 2) <= 2
+setup(88200, S32F, 8, 16384)
+play(0, 4096, 4, 8)
+pause_at(8000, 1000, 200)
+assert go()[0] == [UNMUTE, 'wait', ('pause', 0)] and dev.got == b''
+setup(48000, S16F, 4, 24000)  # another format: nothing of the last is kept
+pause_at(100, 1000, None); dev.calls = 0
+assert go()[0] == [UNMUTE, 'wait', ('pause', 0)]
+# DSD stays bit-exact, the same frames from the same place.
+setup(176400, S32F, 8, 16384)
+codec, sh, name = alloc(0x400), alloc(16), alloc(16)
+u.mem_write(name, b'dsdiff\0')
+w(codec + 0x3e0, name), w(sh + 4, codec), w(ctx + 0x2c, sh)
+data = play(0, 40000, 4, 8)
+pause_at(8000, 32000, 100)
+assert go()[0] == OPENED and dev.got == data[-(8000 + went_back(99, 176400)) * 8:]
+w(ctx + 0x2c, 0)
+# A seek while paused: no old frame sounds; its reset writes next. Prepared, not paused.
+setup(44100, S16F, 4, 22048)
+play(0, 40000, 2, 4)
+pause_at(12000, 28000, 280)
+w(SEEK, 1)
+log, rc, flag = go()
+assert log == OPENED and dev.got == b'' and rc == 0
+w(SEEK, 0)
+# Stock's route: not paused (a pause that failed, a PCM the drain reopened); status failing.
+setup(44100, S16F, 4, 22048)
+play(0, 40000, 2, 4)
+pause_at(12000, 28000, 280); dev.state = 3
+assert go()[0] == [UNMUTE, 'wait', ('pause', 0)] and dev.got == b''
+pause_at(12000, 28000, 280); dev.status_rc = -1 & 0xffffffff
+w(FLAG, 1)
+assert go()[0] == [UNMUTE, 'wait', ('pause', 0)] and dev.got == b''
+dev.status_rc = 0
+# hw_ptr past appl_ptr: more than is held, so stock's.
+pause_at(12000, 28000, 280); dev.appl = 27000
+w(FLAG, 1)
+assert go()[0] == [UNMUTE, 'wait', ('pause', 0)]
+# Back goes no further than what is held, however much hw_ptr has played.
+setup(32000, S16F, 4, 24000)
+data = play(0, 13000, 2, 4)
+pause_at(12000, 28000, 280)
+assert go()[0] == OPENED and len(dev.got) == 13000 * 4 and dev.got[faded(32000) * 4:] == data[faded(32000) * 4:]
+# What is held: the ring and 500 ms, 176 KB at 44.1 kHz S16. The array stays touched this far, so it's pinned, not derived.
+setup(44100, S16F, 4, 22048)
+data = play(0, 100000, 2, 4)
+pause_at(5000, 90000, 1000)  # 999 ms: more than is held
+assert go()[0] == OPENED and len(dev.got) == 88192 + 88000
+# A same-rate change of format starts empty and then keeps the new frames.
+setup(48000, S16F, 4, 24000)
+play(0, 40000, 2, 4)
+setup(48000, S32F, 8, 16384)
+data = play(0, 8192, 4, 8)
+pause_at(2000, 6000, None)
+assert go()[0] == OPENED and len(dev.got) == 2000 * 8 and dev.got[faded(48000) * 8:] == data[-(2000 - faded(48000)) * 8:]
+# Past the 2 MB array, and a frame that doesn't divide it: capped, and the wrap stays on a frame.
+setup(768000, 0x11, 6, 16384)
+data = b''.join(struct.pack('<I', i)[:3] * 2 for i in range(1, 420000))
+for at in range(0, len(data), 4096 * 6):
+    chunk = data[at:at + 4096 * 6]
+    u.mem_write(buf, chunk), call(ps['ao_write'], PCM_H, buf, len(chunk) // 6)
+pause_at(1000, 400000, 1000)
+kept = (1 << 21) // 6
+assert go()[0] == OPENED and len(dev.got) == kept * 6 and dev.got[faded(768000) * 6:] == data[-(kept - faded(768000)) * 6:]
+# Every format rises from its own silence, to the frame, and is untouched after: 8, 6 and 3 byte frames, unsigned, big-endian.
+def sample(b, at, f, width):
+    """A sample's value relative to its silence."""
+    if f & 4: return struct.unpack_from('<f' if f & 1 else '>f', b, at)[0]
+    v = int.from_bytes(b[at:at + width], 'little' if f & 1 else 'big', signed=not f & 2)
+    return v - (1 << width * 8 - 1) if f & 2 else v
+def encode(x, f, width):
+    """x in -1..1."""
+    if f & 4: return struct.pack('<f' if f & 1 else '>f', x)
+    v = int(x * ((1 << width * 8 - 1) - 1)) + ((1 << width * 8 - 1) if f & 2 else 0)
+    return v.to_bytes(width, 'little' if f & 1 else 'big', signed=not f & 2)
+for name, f, frame, width in (('float', 0x1d, 8, 4), ('S24', 0x11, 6, 3), ('S24 mono', 0x11, 3, 3), ('U16', 0xb, 4, 2), ('U8', 0x2, 2, 1), ('S8', 0x0, 2, 1),
+                              ('S16 BE', 0x8, 4, 2), ('S32 BE', 0x18, 8, 4), ('float BE', 0x1c, 8, 4), ('U16 BE', 0xa, 4, 2)):
+    setup(44100, f, frame, 22048)
+    nch = frame // width
+    data = b''.join(encode(0.5 * (1 if i & 1 else -1) * (0.5 + (i % 97) / 200), f, width) for i in range(30000 * nch))
+    for at in range(0, len(data), 4096 * frame):
+        chunk = data[at:at + 4096 * frame]
+        u.mem_write(buf, chunk), call(ps['ao_write'], PCM_H, buf, len(chunk) // frame)
+    pause_at(1000, 28000, None)
+    assert go()[0] == OPENED and len(dev.got) == 1000 * frame, name
+    held = data[-1000 * frame:]
+    assert dev.got[fade * frame:] == held[fade * frame:], name
+    for c in range(nch):
+        assert sample(dev.got, c * width, f, width) == 0, (name, c)
+        for i in (1, fade // 2, fade - 1):
+            at = (i * frame + c * width)
+            got, was = sample(dev.got, at, f, width), sample(held, at, f, width)
+            assert abs(got - was * i / fade) <= (1e-4 if f & 4 else 1), (name, c, i, got, was)
+# The way turned to 0 while paused on a Bluetooth or USB PCM: this PCM's frames were never kept, so nothing old goes in.
+for way in (1, 2):
+    setup(48000, S16F, 4, 24000)
+    play(0, 40000, 2, 4)
+    w(WAY, way)
+    play(40000, 4096, 2, 4)
+    w(WAY, 0)
+    pause_at(1000, 1000, 280)
+    assert go()[0] == [UNMUTE, 'wait', ('pause', 0)] and dev.got == b'', way
+# Bluetooth and USB: nothing kept and nothing different, even paused.
+for way in (1, 2):
+    setup(48000, S16F, 4, 24000, way=way)
+    before = bytes(u.mem_read(ps['ps_ring'], 64)) if 'ps_ring' in ps else b''
+    play(0, 4096, 2, 4)
+    if before: assert bytes(u.mem_read(ps['ps_ring'], 64)) == before
+    pause_at(1000, 1000, 280)
+    assert go()[0] == [('pause', 0)], way
+    # Frames kept before the output changed, a seek pending or not, are no reason to touch this PCM.
+    setup(48000, S16F, 4, 24000)
+    play(0, 40000, 2, 4)
+    w(WAY, way)
+    for seek in (0, 1):
+        w(SEEK, seek), pause_at(1000, 1000, 280)
+        assert go()[0] == [('pause', 0)] and dev.got == b'', (way, seek)
+print('Unpause: a resume writes the frames again from the fade\'s second step, under its wait; a seek, a failed pause, Bluetooth and USB as they were.')

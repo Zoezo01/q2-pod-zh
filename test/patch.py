@@ -80,6 +80,7 @@ class Machine:
         self.handlers={}
         if patched:  # a file and a clock; test/playback.py tests them
             self.handlers[payload_syms['press_stamp']]='stock_press_stamp'
+            self.handlers[payload_syms['mute_stamp']]='stock_mute_stamp'
         for name in FUNCTIONS: self.handlers[syms[name]]=name
         # canvas_get_vgcanvas runs stock, down to the mocked lcd_get_vgcanvas, as the rounded wrappers need
         for name in ('slide_menu_item_width','slide_menu_on_scroll_done','canvas_get_vgcanvas',

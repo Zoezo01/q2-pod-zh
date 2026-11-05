@@ -1338,7 +1338,7 @@ print('Crossfade: the next change\'s fade, album and Gapless gates, the shared f
 # What waits for the DAC (crossfade.c press_stamp, docs/internals.md#wired-start): demo's stamp in PRESS_FILE.
 class PressMachine(XfadeMachine):
     def __init__(self):
-        super().__init__('0'); self.now=5000; self.handlers.pop(ps['press_stamp'])
+        super().__init__('0'); self.now=5000; self.handlers.pop(ps['press_stamp']); self.handlers.pop(ps['mute_stamp'])
         self.handlers[syms['clock_gettime@GLIBC_2.2']]='xf:clock'; self.handlers[syms['rename@GLIBC_2.0']]='xf:rename'
         self.handlers[0x4ea848]='xf:dialog'; self.handlers[syms['mclStartPlayer']]='xf:start'
         self.stock=[]; self.nested_load=0
@@ -1393,6 +1393,10 @@ m=PressMachine(); m.word(0xa3beac,1); m.enter('player_play_pause'); assert m.at(
 m=PressMachine(); m.handlers.pop(syms['player_play_pause'],None); m.word(0xa3beac,1); m.fn('media_set_playing',1); assert m.at()==5001 and m.stock==['xf:pause']
 for status in (2,3):
     m=PressMachine(); m.word(0xa3beac,status); m.enter('player_play_pause'); assert m.nothing(),status
+# The fade's start (docs/internals.md#unpause): a Pause from playing stamps MUTE_FILE before stock's mute(2), and nothing else does.
+m=PressMachine(); m.word(0xa3beac,2); m.enter('player_play_pause'); assert '/tmp/q2mute' in m.files and m.seen==5001 and m.stock==['xf:pause']
+for status in (1,3):
+    m=PressMachine(); m.word(0xa3beac,status); m.enter('player_play_pause'); assert '/tmp/q2mute' not in m.files,status
 m=PressMachine(); m.options(3,0,0); m.fn('playback_group_skip',1); assert m.at()==5001  # Next Group, a press
 # A user's scrub and Previous restarting the track stamp, through the hooks, and go on to stock.
 m=PressMachine(); m.enter('player_seek_time',50); assert m.at()==5001 and m.stock==['xf:seek_time'] and m.seen==5001

@@ -30,7 +30,7 @@ static struct {
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
     int mono_read, mono, swap_read, swap, mqa_read, mqa;
-    volatile int *flag, *mono_flag, *swap_flag, *press_file;
+    volatile int *flag, *mono_flag, *swap_flag, *press_file, *mute_file;
     void *swap_label, *mqa_label;
     void *mono_label; /* the Mono Audio row's, while Playback is open */
     void *page, *sw, *view, *slider, *dec, *add, *label;
@@ -163,6 +163,10 @@ int start_mute(int value) {
 int start_sleep(unsigned us) {
     if (start_quiet) return start_quiet = 0;
     return usleep(us);
+}
+void mute_stamp(void) {
+    if (!xf.mute_file) xf.mute_file = shared_int(MUTE_FILE ".tmp", MUTE_FILE);
+    if (xf.mute_file) *xf.mute_file = (int)now_ms() | 1; /* odd: never 0 */
 }
 void press_forget(void) {
     if (xf.press_file) *xf.press_file = 0;
