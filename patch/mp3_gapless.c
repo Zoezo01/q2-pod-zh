@@ -4,7 +4,7 @@
 typedef struct {
     int format, pad;
     double next_pts;
-    unsigned checked, start, skip, padding, rate, channels, held, unit, seeked, tag_skipped, guarded;
+    unsigned checked, start, skip, padding, rate, channels, held, unit, seeked, guarded;
     unsigned char *tail;
     long long audio_end;
 } mp3_private;
@@ -198,7 +198,7 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
                 if (got > 0) mp3_gapless(h, got, &p->start, &p->padding, &p->rate, &p->channels);
                 lseek64(fd, back, 0);
             }
-            if (p->start) p->skip = p->seeked == 1 ? 0 : p->start - (p->tag_skipped ? (p->rate >= 32000 ? 1152 : 576) : 0);
+            if (p->start) p->skip = p->seeked == 1 ? 0 : p->start;
         }
     }
     if (p && p->start) mp3_trim(p, data);
@@ -211,9 +211,11 @@ void mp3_gapless_seek(void *d, int at_start) {
         p->held = 0;
         p->guarded = 0;
         p->seeked = at_start ? 2 : 1;
-        /* Stock demux_audio_seek makes the next fill discard one frame to resync. */
-        p->tag_skipped = p->seeked == 2 && *(volatile int *)0xb152b4u;
-        p->skip = p->start && p->seeked == 2 ? p->start - (p->tag_skipped ? (p->rate >= 32000 ? 1152 : 576) : 0) : 0;
+        /* Stock's fill after a seek (flag 0xb152b4, 0x48c3b8) checks the next frame's header, goes back, and sizes
+         * the first packet from the next frame (0x48c4d0): the tag frame, cut short if that one is shorter, loses
+         * libmad its sync, and a rewind starts two frames late on VBR. The start needs no checking. */
+        if (at_start) *(volatile int *)0xb152b4u = 0;
+        p->skip = at_start ? p->start : 0;
     }
 }
 

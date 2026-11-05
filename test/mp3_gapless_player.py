@@ -167,11 +167,15 @@ for at in range(0, len(pcm), 2048*8):
 assert b''.join(result) == pcm[2257*8:-671*8]
 assert feed(preload, pcm[2048*8:4096*8]) == pcm[2257*8:(4096-671)*8]
 
-# Seek to zero: stock resync discards the tag frame before the decoder sees it.
+# Seek to zero: stock's check of the next frame is off, so the tag frame reaches the decoder whole (real_chain's
+# rewind). Any other seek keeps it.
 u.mem_write(t[2]+8, struct.pack('<d', 0))
 w(0xb152b4, 1)
+call('mp3_gapless_seek', t[0], 0)
+assert r(0xb152b4) == 1
 call('mp3_gapless_seek', t[0], 1)
-assert feed(t, pcm[1152*8:]) == pcm[2257*8:-671*8]
+assert r(0xb152b4) == 0
+assert feed(t, pcm) == pcm[2257*8:-671*8]
 # Mid-track seek drops held audio, preserving the new input apart from its tail.
 u.mem_write(t[2]+8, struct.pack('<d', 10))
 call('mp3_gapless_seek', t[0], 0)
@@ -213,9 +217,8 @@ assert not allocations
 for i, header in enumerate((h, bytes(417), h)):
     tr = track(0, header)
     if i == 0:
-        w(0xb152b4, 1)
         call('mp3_gapless_seek', tr[0], 1)
-        assert feed(tr, pcm[1152*8:]) == pcm[2257*8:-671*8]
+        assert feed(tr, pcm) == pcm[2257*8:-671*8]
     else:
         fail = 'calloc' if i == 2 else None
         assert feed(tr, pcm) == pcm
@@ -498,6 +501,8 @@ def real_chain():
     vbri[36:42] = b'VBRI\0\1'
     for tag_frame in (no_extension, no_count, vbri):
         assert decode(bytes(tag_frame) + plain[len(first_frame):]) == bare
+    again = decode(bytes(no_extension) + plain[len(first_frame):], rewind=True)
+    assert again[0] == again[1] == bare, (len(again[0]), len(again[1]), len(bare))
     bare_mp3 = plain[len(first_frame):]
     # A real encoder's shape: `Lame3.100`, the tag's CRC-16 right for that, ID3v2 ahead of the
     # first frame, and APEv2 then ID3v1 behind the last. FFmpeg's name list refuses this one, so FFmpeg's agreement
@@ -514,7 +519,22 @@ def real_chain():
     wide[field+21:field+24] = (576 << 12 | 2154).to_bytes(3, 'big')
     wide_pcm = decode(bytes(wide) + bare_mp3)
     assert len(wide_pcm) == len(bare) - (1105 + 1625)*4 and wide_pcm == bare[1105*4:][:len(wide_pcm)]
+    # A rewind plays the track from its first sample again: CBR, VBR (the next frame's size used to cut the tag frame
+    # short and lose libmad its sync, two frames late), and a padded tag frame ahead of a shorter one.
+    first, again = decode(plain, rewind=True)
+    assert first == again == want, (len(first), len(again))
+    for options in (('-V', '2'), ('-V', '0')):
+        vbr = encode('vbr', pcm[:split*2], *options)
+        first, again = decode(vbr, rewind=True)
+        assert len(first) == split*4 and again == first, (options, len(first), len(again))
+    low_frames = walk(low)
+    head = bytearray(low_frames[0])
+    head[2] |= 2
+    head.append(0)
+    assert not low_frames[1][2] & 2
+    first, again = decode(bytes(head) + b''.join(low_frames[1:]), rewind=True)
+    assert len(first) == split*4 and again == first, (len(first), len(again))
 
 
 real_chain()
-print('Real chain: lame files through stock demuxer, libmad and filters: encoder names (Lame3.100 with its cover and tails), ID3v2, Info header, tag frames without an extension, tail tags: OK')
+print('Real chain: lame files through stock demuxer, libmad and filters: encoder names (Lame3.100 with its cover and tails), ID3v2, Info header, tag frames without an extension, tail tags, rewind: OK')
