@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/DiamondBond/q2-pod?style=flat-square&label=download&color=3D424B" height="26"></a>
+  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/DiamondBond/q2-pod?style=flat-square&label=download&color=3D424B&cacheSeconds=86400" height="26"></a>
   <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-B99AC8?style=flat-square" height="26"></a>
   <a href="https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-D77868?style=flat-square" height="26"></a>
   <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-6FA3A0?style=flat-square" height="26"></a>
@@ -105,18 +105,10 @@
 
 ## Install
 
-You need a Q2 with a microSD card, a USB-C cable and a computer with internet. The [user guide][guide] walks through every step.
-
-> [!IMPORTANT]
-> Flashing firmware carries risk. Back up anything on the card you can't lose before you start.
-
 1. **Download** `update.tar` from the [latest release][release].
 2. **Plug the Q2 into your computer** with the USB-C cable. The card shows up as a drive.
 3. **Copy** `update.tar` to the root of the card (not inside a folder), then eject and unplug.
 4. **Update:** open **System settings → System Update → TF card update**. Leave the card in until the Q2 restarts.
-
-> [!TIP]
-> Still on the old Legacy build? Network Update can't move you to this one. Install `update.tar` by hand once: copy it to the card root and update, as for a first install.
 
 ## Controls
 
