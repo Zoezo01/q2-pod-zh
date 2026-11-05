@@ -8914,7 +8914,7 @@ def bt_titled(win):
     return btm.nodes[bttl].get('text')
 btnav=btm.node('view','view_navbar',[btm.node('image','img_return'),btm.node('hscroll_label',text='Songs')],visible=0)
 btcap=btm.node('hscroll_label',text='Shuffle'); btm.word(btcap+O['W_H'],48); btwins={}
-for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'Now Playing'),('coverflow_page',[],'Coverflow'),
+for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'Now Playing'),('coverflow_page',[],'Cover Flow'),
                                 ('equalizer_page',[],'EQ'),
                                 ('allmusic_page',[btnav],'Songs'),('shuffle_page',[btcap],'Shuffle')):
     btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
@@ -9085,11 +9085,11 @@ def title_value(r):  # (title, value) of a value row, or None
     v=[k['text'] for k in kids if k['name']=='_setting_value']
     return (kids[1]['text'],v[0]) if v else None
 assert [title_value(r) for r in dm.nodes[dv]['children']]==[('Theme','Nano'),('Light Mode','On'),('Accent','Nano Blue'),('Home','Split'),
-                                                           ('Battery','Icon'),('Row Art','On')]
+                                                           ('Shortcut','Rockbox'),('Battery','Icon'),('Time in Title','On'),('Row Art','On')]
 assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Controls' switches read On/Off as values under Nano.
 dm,dv=nano_display(sub=3)
-assert ('Smart Awake','Off') in [title_value(r) for r in dm.nodes[dv]['children']]; passed()
+assert ('Single Press Scrub','Off') in [title_value(r) for r in dm.nodes[dv]['children']]; passed()
 # Radio rows: select draws the ink tick (13x8, an original drawing) centred in its image;
 # unselect draws nothing; stock's ring images are empty under Nano.
 rm=nano_on(Machine()); rimg=rm.node('image','img_sel',image='select'); rm.word(rimg+O['W_W'],50); rm.word(rimg+O['W_H'],28)
@@ -9475,7 +9475,7 @@ for builder in (0x4c43e4, 0x4cbcc4, 'display'):  # language, System settings, Di
         for c in m.nodes[m.nodes[i]['children'][0]]['children']:
             x,y,w_,h=geometry(m,c)
             if m.nodes[c]['type']=='image' and w_==O['SET_STOCK_ICON']: assert not m.nodes[c]['visible'],builder
-            elif m.nodes[c]['type']=='hscroll_label': assert x==SET['TEXT_X'] and 0<=y and y+h<=28,(builder,x,y,h)
+            elif m.nodes[c]['type']=='hscroll_label' and m.nodes[c]['name']!='_setting_value': assert x==SET['TEXT_X'] and 0<=y and y+h<=28,(builder,x,y,h)
 passed()
 CONFIG.clear(); m,view=settings(0x4cbcc4,boot=nano_boot); before=tree(m,view); lay(m,view)
 after=tree(m,view); assert [r[1] for r in after]==[r[1] for r in before] and all(r[0][3]==SET['ROW'] for r in after); passed()  # rows as built, stacked at the list's 68
@@ -9617,6 +9617,23 @@ tadded=lambda: [x[:2] for x in tm.calls if x[:2]==('timer_add',tdue)]
 assert tpaint()=='Games' and tadded() and not tforced(); tm.advance(1,clear=True); assert tforced()
 assert tpaint()=='Games' and not tadded()  # no change, none forced
 tm.nodes[tl]['text']='Renamed'; assert tpaint()=='Renamed' and tadded(); tm.advance(1,clear=True); assert tforced(); passed()
+# Time in Title under Nano: the bar names the page in its own label either way. On, the clock keeps its label, off it makes way
+# for the title (stock's bar would have two names), and comes back on a page with no title, in its own face.
+def tt_bar(timetitle):
+    ttm=Machine(); ttm.config['TIMETITLE']=timetitle; nano_on(ttm); ttm.clock_minutes=True
+    ttt=ttm.node('hscroll_label','label_title'); ttc=ttm.node('hscroll_label','label_clock'); ttb=nano_bar(ttm,ttt,ttc)
+    def show(win):
+        ttm.top=win; ttm.word(win+O['W_PARENT'],ttm.wm)
+        ttm.call(address=HOOKS['widget_on_paint_background'][0],args=(ttb,ttm.canvas,0,0),gap=0); ttm.advance(1)
+        return ttm.nodes[ttt].get('text',''),ttm.nodes[ttc].get('text')
+    return ttm,ttc,show
+ttm,ttc,show=tt_bar('1')
+assert show(ttm.node('window','playing_page'))==('Now Playing','6:14 PM') and show(ttm.node('window','bare_page'))==('','6:14 PM'); passed()
+ttm,ttc,show=tt_bar('0'); clock=show(ttm.node('window','bare_page'))
+assert clock==('','6:14 PM') and show(ttm.node('window','playing_page'))==('Now Playing','')
+ttm.clock=(18,15); ttm.advance(61000); assert ttm.nodes[ttc]['text']==''  # the clock's minute stays out of it
+assert show(ttm.node('window','bare_page'))==('','6:15 PM')
+assert not any(k.endswith('font_name') for k in ttm.nodes[ttc]); passed()
 # With no row to select the wheel scrolls the view itself, to its own end, not list_end's 42 px past it.
 for lthm,lend in (('2',672-294),('1',672-294)):
     lm=Machine(); lm.config.update(THEME=lthm)
@@ -9703,7 +9720,7 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
 passed()
 # The same stored THEME=2 where Nano is offered: its Appearance is Theme and Nano's own options.
 m,view,rows=display({'THEME':'2'},setup=nano)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Battery: Icon','Row Art: On']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Row Art: On']; passed()
 # Nano's Accent is Nano Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
 # Nano does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
 # then Nano Blue, each band its own gloss: Nano Blue's stops, the others derived from their tones.
@@ -9719,11 +9736,11 @@ for value,name in ((0,'Graphite'),(1,'Crimson'),(2,'Tidal'),(3,'Champagne'),(4,'
 passed()
 # Row Art is Nano's own option (assets/themes/nano/theme.xml: key ROWART, values Off and On, each naming
 # the set it boots), drawn and cycled by the generic own-option row: the payload has no Row Art code. Its
-# key is read 14th, after NANO_ACCENT, on unless chosen; Centre writes the next value under the theme's
+# key is read 15th, after NANO_ACCENT, on unless chosen; Centre writes the next value under the theme's
 # key; the stored value picks the set the first system_bar boots: Off nano-text, On (or unreadable) nano.
-m,view,rows=display({},setup=nano); art=m.nodes[view]['children'][5]
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Battery: Icon','Row Art: On']
-assert m.config_reads[12:14]==[('/mnt/data/config.ini','IPOD','NANO_ACCENT','9'),('/mnt/data/config.ini','IPOD','ROWART','1')]
+m,view,rows=display({},setup=nano); art=m.nodes[view]['children'][7]
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Row Art: On']
+assert m.config_reads[13:15]==[('/mnt/data/config.ini','IPOD','NANO_ACCENT','9'),('/mnt/data/config.ini','IPOD','ROWART','1')]
 def art_boot(config):  # the names a fresh Nano's first system_bar loaded, with config stored
     k=Machine(); k.config.update(config); return nano_boot(k)
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['nano_system_bar']
@@ -9732,7 +9749,7 @@ passed()
 # Battery under Nano takes Icon or Percent Inside (theme.xml's values): the row cycles those two and writes the
 # key as usual. A stored Percent or Icon + Percent reads as Percent Inside and stays stored; a key that is not
 # stored reads as Icon. Minimal and Classic on the same build keep all four, whatever Nano's values say.
-m,view,_=display({},setup=nano); row=m.nodes[view]['children'][4]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
+m,view,_=display({},setup=nano); row=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
 assert row_text(row)=='Battery: Icon'
 for value,name in ((3,'Percent Inside'),(0,'Icon'),(3,'Percent Inside')):
     m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
@@ -9750,7 +9767,7 @@ vx,vw,bx=(m.get(val+O['W_X']),m.get(val+O['W_W']),m.get(b+O['W_X']))
 assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==356
 assert m.get(title+O['W_X'])+m.get(title+O['W_W'])==vx-8; passed()
 for stored in ('1','2'):
-    m,view,_=display({'BATTERY':stored},setup=nano); row=m.nodes[view]['children'][4]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
+    m,view,_=display({'BATTERY':stored},setup=nano); row=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
     assert row_text(row)=='Battery: Percent Inside' and not [c for c in m.calls if c[0]=='write_int_config'] and m.config['BATTERY']==stored
     assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==3
     m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # from what it reads as: on to Icon
@@ -9801,6 +9818,10 @@ for answer,want in ((0,[]),(10,[(2,'THEME'),(1,'LIGHT'),(9,'NANO_ACCENT'),(0,'BA
     m.answer=answer; m.prompts=[]; m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
     assert m.call(address=payload_syms['theme_pick'],args=(2,0,0,0),gap=0)==0
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want
+# ... and Time in Title on, the look it is drawn with, from Classic's off.
+m,view,_=display({'TIMETITLE':'0'},sub=4,cls=RestartMachine,setup=offered); m.answer=10; m.prompts=[]
+m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]; m.call(address=payload_syms['theme_pick'],args=(2,0,0,0),gap=0)
+assert (1,'TIMETITLE') in [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
 passed()
 # From a booted Nano, Classic needs SET0's code back: a restart too. Row Art the same; Cancel keeps On.
 m,view,_=display({},sub=4,cls=RestartMachine,setup=nano); m.u.mem_protect(*TEXT,5); m.record_syscalls(); m.prompts=[]
@@ -9811,7 +9832,7 @@ assert m.prompts==['Restart to apply?'] and not [c for c in m.calls if c[0]=='wr
 for answer,want in ((0,[]),(10,[(0,'ROWART')])):
     m,view,_=display({},cls=RestartMachine,setup=nano); m.answer=answer; m.prompts=[]
     m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'
-    art=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[art]['children'][0],O['EVT_CLICK']); m.calls=[]
+    art=m.nodes[view]['children'][7]; f,ctx=m.handler(m.nodes[art]['children'][0],O['EVT_CLICK']); m.calls=[]
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='Row Art: On'
     assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot'][:answer==10]

@@ -4230,7 +4230,21 @@ static void np_sync(void *top) {
 static void bar_title(void *bar, void *top) {
     static const unsigned
         now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
-        cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 };
+        cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
+    if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
+        const unsigned *own = widget_get_text(st.bar_title);
+        int titled = !st.time_title && own && *own;
+        void *clock = titled != st.bar_titled ? widget_lookup(bar, "label_clock", 1) : (void *)0;
+        if (!clock) return;
+        st.bar_titled = titled;
+        st.clock_key = 0;
+        if (titled)
+            widget_set_text(clock, &none);
+        else
+            rearm(&st.clock_timer, clock_due, 0); /* clock_show writes it again */
+        if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
+        return;
+    }
     if (st.time_title && !st.bar_titled) return; /* the clock, every paint */
     if (!top || tk_strcmp(widget_get_type(top), "window")) return;
     void *label = widget_lookup(bar, "label_clock", 1);
@@ -4263,7 +4277,8 @@ static void bar_title(void *bar, void *top) {
     int changed = !st.bar_titled || !had || *had != *want;
     if (changed) widget_set_text(label, title);
     st.bar_titled = 1;
-    int bold = theme_font(label, ROLE_NP, st.bar_bold); /* a new Theme can change it under the same title */
+    int bold = theme_font(label, ROLE_NP,
+                          st.bar_bold); /* a new Theme can change it under the same title */
     if ((changed || bold != st.bar_bold) && !st.bar_timer)
         st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     st.bar_bold = bold;
@@ -5220,7 +5235,7 @@ static void *page_caption(void *win) {
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
     if (tk_str_start_with(name, "playing_page")) return "Now Playing";
-    if (!tk_strcmp(name, "coverflow_page")) return "Coverflow";
+    if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
     if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
     void *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
@@ -5371,8 +5386,8 @@ int ringnav_paint_bg(void *w, void *canvas) {
             rearm(&st.clock_timer, clock_due, 0);
         }
         bar_sync(bar);
-        bar_title(bar, top);
         bar_title_sync(top);
+        bar_title(bar, top);
         if (st.action_view) action_row(st.action_view);
         np_sync(top);
         if (w == top) vol_paint(top, canvas);
