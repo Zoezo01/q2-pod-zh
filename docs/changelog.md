@@ -4,6 +4,7 @@
   - Lists: a long title on the selected row now scrolls a few times after a moment, as on an iPod, so you can read all of it. Other rows keep their "…".
   - Display: **Appearance → Time in Title** is new. Turn it off and the bar names the page you're on (Albums, Display, Now Playing), as an iPod's title bar does; Home and pages such as Games and Photos keep the clock. Choosing **Theme: Classic** turns it off, and **Theme: Minimal** on.
   - Classic: under square corners, album art has square corners too, Cover Flow's included, and the battery icon's charge is green.
+  - Display: **Theme: Nano** is new, a third theme next to Minimal and Classic: a lighter iPod look with a gloss title bar, a green battery, smaller rows, two-line Songs and a Home pane that follows the highlighted row, in light and dark. Choosing it restarts the Q2. Now Playing, Cover Flow, dialogs, Quick Settings and the other screens not themed yet look as in Classic.
   - Now Playing: the volume shows in the progress bar's own colour.
   - **Coverflow** is now spelled **Cover Flow**, as Apple does, and its **Artist Albums** row is now **Artist View**, so the longer name fits.
   - Library: a song with a long list of genres no longer shows the end of its genres as its title. Run **Update Local Music** once to repair songs already in the library; a song already in a playlist can keep the old title until you add it again. On Now Playing's info page, a long Genre line scrolls.

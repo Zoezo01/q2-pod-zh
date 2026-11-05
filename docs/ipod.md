@@ -771,6 +771,18 @@ What Classic does not restore: the pinned theme edit of `s_btn_listitem`'s press
 (`#3D1920` to `#333333`), so a touched row flashes grey rather than an accent tint, and the
 status bar asset's own background (`#000000`, not `#161616`), which the payload's fill covers.
 
+
+#### Nano
+
+**Theme: Nano** (`THEME=2`) is a lighter iPod look of its own, on its own layout; Classic stays as it is. Choosing it from Minimal or Classic asks "Restart to apply?", because its rows are another geometry set. A screen it does not theme yet (Now Playing, Cover Flow, dialogs, Quick Settings, Streaming's pages) looks as in Classic.
+
+- **The bar.** A gloss bar with the page's title on the left, the clock centred, the play state, Bluetooth, Wi-Fi and the battery on the right. Under this bar **Time in Title** decides the clock alone (on unless chosen, and choosing Nano turns it on): off, the clock makes way while the page has a title, so the bar names the page once. The battery has five states: low (a red sliver), part full, full, charging (a bolt) and full on power (a plug). **Battery** is Icon or Percent Inside (Icon by default); a stored Percent or Icon + Percent reads as Percent Inside.
+- **Lists.** 28 px rows, nine to a screen, the values on the right, the white chevron on the selected row only. A long title on the selected row scrolls, as in the other themes. Songs are two lines at 52 px, title and artist; Play All and Sort are a plain row at the top of Songs, reached by touch, not the wheel.
+- **Row Art.** It decides album covers only, in 52 px rows, and they are square: the Library is always 28 px text. A change restarts the Q2.
+- **Appearance's rows.** Theme, Light Mode, Accent, Home, Shortcut, Battery, Time in Title and Row Art. Corners and Centred Now Playing are not offered, and their stored values stay for the other themes. Nano has a dark version: choosing Nano turns Light Mode on unless it is on Auto. Its accent is its own (`NANO_ACCENT`): Nano Blue by default, then Classic's eight.
+- **Home.** In Split, Library is a list on Home's left with the pane beside it, and the pane shows the highlighted row: Now Playing and the Library's rows the current cover, Shuffle the note and the song count, Cover Flow the album count, Folder its icon, Games the game count, Streaming the services, Settings the card's free space.
+- **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), renamed and shipped as `fonts/nano.ttf`; `assets/fonts/README-nano.txt` says what changed and where the original is. A shadow wider than its alphas is a build error (theme docs).
+
 ### Light Mode
 
 **Light Mode: Auto** (`LIGHT=2`) is light from 07:00 to 18:59 by the device clock and dark the rest of the day. The row cycles Off, On, Auto on each click. It switches at 07:00 and 19:00 while the device is on, and the cached images are dropped and an open screen repaints then (`clock_show`, at each minute with the status bar's clock). The boot logo picks its mode by the same hours, in the saved time zone ([boot](boot.md#light-mode)).

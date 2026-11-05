@@ -368,7 +368,7 @@ the hook and shows every recoloured part; nothing needs a restart.
 
 ## Themes
 
-Minimal (`THEME` 0) and Classic (1) are rows of `themes[]` (`patch/navigation.c`; the types are in
+Minimal (`THEME` 0), Classic (1) and Nano (2) are rows of `themes[]` (`patch/navigation.c`; the types are in
 `patch/theme.h`). Code asks the active theme for a field, never which theme it is. `theme()` and
 `scheme()` read the settings first (`accent()`), then return `&themes[st.theme]` and its scheme for
 the stored accent.
@@ -441,6 +441,31 @@ cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 fr
 The Library and Edit Playlist rows the payload builds follow the live geometry: `list_row_core`
 reads the Library constructor's body and icon x words after `theme_boot`, and Edit Playlist's row
 takes the written set's `pitch` and `body` (`geom()`).
+
+
+**Nano.** THEME 2, in every build. It extends Classic and takes its numbers from its own theme.xml, none from `patch/offsets.inc`; a screen it does not theme yet looks as in Classic. The values for screens with no measured reference (Cover Flow, Settings, dialogs) and for motion start from iPod.js (https://github.com/tvillarete/ipod-classic-js, MIT): values only, no files, code or marks.
+
+**Geometry sets.** Nano's two sets are `nano` (Row Art on: 52 px art rows) and `nano-text` (all 28). A built-in theme declares its sets in its theme.xml (`<geometry name="nano" bar="26" …/>`, each omitted field the built-in set's or its `extends=` set's), and `tools/theme.py` checks each field's range (`GEOM_RANGES`) and builds the asset copies and boot tables from them. A theme on the card cannot declare a set.
+
+- Values that follow the written set but are not immediates (the bar, the settings rows, the battery body, the text inset) are `geom_vals[st.geom][V_*]`, and `client_h()` is `320 - geom_val(V_BAR)`.
+- `list_end`: list boxes take the whole window (294 under Nano), so rows draw down to the glass, while the selection's scroll limit (`sel_height`, `max_top`) stops at `list_end` so a selected row never lands where the glass hides its text. A last row selected leaves the glass's strip below it empty. A list ends after the last row whose text clears the glass at `text_x` (`fit_bottom`).
+- `action_row`: Songs' action bar as a plain row. Stock rebuilds that view's children on each refresh (0x4a7e54: the label, Play All's image, Sort's image only on some pages), so the assets shape only the boxes around it and `action_row()` shapes its children as it paints, once per rebuild. They stay stock's widgets with stock's handlers.
+- `home_lib`: Home's Library row, in Split, slides in a list of the Library's rows (`list_view_homelib`, filled by the same `library_rows` the page uses, `home_library`) instead of opening the page; each row opens its stock page and Return comes back to the list. The bar's title names the open list (`coverflow_home_title`). Full keeps stock's page.
+- Songs' rows have their own immediates (`song_pitch`, `song_body`, `song_title24_y`, `song_meta_y`) and page kind `song`. Under a set without text art, a row taller than the pitch whose leading image has no width is two lines (`two_lines`): art and playing gif hide, the second line stays, and the artist is what stock's bind (0x4a90e4) writes, "Unknown Artist" when untagged. A playlist's songs are the same page and list; album tracks and an artist's songs are other constructors, title only.
+
+**A theme's own options.** A theme declares them in theme.xml (`<option key="ROWART" label="Row Art" default="On">` over `<value label="Off" set="nano-text"/>` rows). The payload draws, cycles and stores them generically (`SETTING_OWN`, `theme_keys[]`, `st.own[]`) and reads their keys after the thirteen in declaration order, and `theme_geom(T)` boots the set that the stored value names. Nano's Row Art is one such option. An own option takes `preset` and `keep` as a payload setting does (into its `option_t` line), so `theme_preset()` writes it on a switch to the theme, and the restart test applies the presets first. Undeclared options (Corners and Centred NP under Nano) take the theme's value, and their stored keys are untouched: `ipod_square_art()` reads Corners that way, so a theme with `playing.art.square` that leaves Corners out is always square.
+
+**The picker.** The Theme row opens a picker. A pick that changes the set asks "Restart to apply?". Cancel writes nothing, and OK writes and reboots through `device_reboot`.
+
+**Painters.** `SEL_STOPS`, `BAR_GLOSS` and `BATT_NANO` draw final colours (`paint_stops`), and `home_pane_paint` draws the Split placeholder. `list.separator.stops` are a two-line row's and Play All's last rows, one stop a row, final in each half (`paint_separators`). `list.row.tall_font`/`tall_px` (`ROLE_TALL`) are a two-line row's title, and `scheme.sel.tall_top` the band's row 1 on a tall row, whose stops span the whole row.
+
+**The bar's title.** Under Nano the bar's `label_title` names the top window by `bar_title_sync`'s rule. It is written during a paint, where an invalidate is lost, so `title_due` forces it on to the panel just after. Time in Title decides the clock beside it: on, `label_clock` shows the time; off, `bar_title` empties it while the title has text and gives it back on a page with none, so the page is never named twice. Under Minimal and Classic the same switch names the page in `label_clock` itself, as above.
+
+**Home's pane.** It follows the highlighted row under a theme with `home.pane.icon_x`: `coverflow_home_row()` from `paint_selection` and the wheel, `home_pane_paint()` for what it shows. Each row's image comes from `tools/art.py` (`nano_icon_*`, original drawings), captions only from real data read by `home_counts` while Home comes back to the top, at boot and after a scan, never on a wheel move: at most one query per library change, and a running scan leaves the song and album counts unknown, so those rows show their image alone. Cover Flow's album count is its own list's when it holds one, else `sum(e=0)+max(e)` over `ALBUM_GROUP`, which is the same number. The free space is in binary GB, as About's Remaining. Rockbox as the Shortcut row shows the game icon alone, and Folder has no caption. Streaming's count leaves out Configuration.
+
+**Light and dark.** Every scheme has a dark and a light half (`theme_t.schemes`, `theme_t.light`). Light Mode (Off, On, Auto) picks one through `scheme()`, and a scheme's `mode` can keep it to one. theme.xml states a half's drawn-as-stated colours as `light.<key>`/`dark.<key>` (unprefixed: the dark half, stock's terms), and a half it leaves out is the flip of the other's greys. Minimal and Classic state none, so one array serves both, as before.
+
+**Other keys.** `tools/theme.py` also reads `alphas` keys, `list.art.*` (x, text_x, text_end), `bar.icons.*`, `bar.battery.{low,low_w,corner_a,foot_a}`, `list.chevron.x` and `home.chevron.x`.
 
 ## Page transitions (iPod)
 
