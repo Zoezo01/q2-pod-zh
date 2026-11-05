@@ -1477,7 +1477,15 @@ m=keyed(); assert m.key(NEXT_KEY)=='ask'; assert under_toast(m,O['KEY_FWD_BTN'])
 m=keyed(); assert m.key(NEXT_KEY)=='ask'; m.mock('on_wm_keyup_fun'); under_toast(m,O['KEY_BACK_BTN']); assert not m.set_seeks and m.get(ps['restart_at'])
 m=keyed(); assert m.key(PREV_KEY)=='ask'; m.mock('on_wm_keyup_fun'); under_toast(m,O['KEY_BACK_BTN'],3100); assert not m.set_seeks  # the window over
 m=keyed(); assert m.key(PREV_KEY)=='ask' and under_toast(m,O['KEY_BACK_BTN'],100) is not None and not m.set_seeks  # prev_quick_click's 500 ms filter
-checks+=22
+# The wheel's gate and stop don't come between the toast and its confirm: ticks with no frame behind them go nowhere and
+# leave the window armed, and the buttons aren't ticks, whatever the wheel is doing.
+m=keyed(); assert m.key(PREV_KEY)=='ask'; at=m.get(ps['restart_at']); m.word(ps['wheel_mute'],1)
+for kind in (DOWN_,UP_): m.call(O['KEY_PREV'],address=INPUT,args=(m.wm,m.event,0,0),event_type=kind,gap=0)
+assert m.get(ps['restart_at'])==at and under_toast(m,O['KEY_BACK_BTN'])==11 and m.set_seeks==[0] and m.get(ps['wheel_mute'])==1
+m=EncoderMachine(); m.word(ps['wheel_mute'],1)
+for key in (O['KEY_BACK_BTN'],O['KEY_FWD_BTN']):
+    for kind in (DOWN_,UP_): assert m.input(kind,key)==1 and m.mute(),(key,kind)
+checks+=24
 # A CUE track holds no place to lose at a chapter's start: Previous restarts it unasked.
 m=RealKeyMachine(); m.install([('ch','/a/book.m4b','B',0,0,600,1200)],0); m.word(O['MCL_TYPE'],1); m.keys(); m.poll(0,2); m.poll(100,3)
 assert m.key(PREV_KEY)=='seek'
@@ -1970,8 +1978,8 @@ m.written=4; m.fn('ringnav_change',1); assert m.at()==5001
 # A press the restart guard refuses plays nothing, so it stamps nothing, not even the file; its confirmation stamps before
 # stock runs. Under 11 s the seek hook stamps nothing either: player_change_music does, if it goes ahead.
 def asks(m,name,*args): m.handlers.pop(syms[name],None); return signed(m.call(address=syms[name],args=tuple(args)+(0,)*(4-len(args)),gap=0))
-def guarded():
-    m=PressMachine(); m.held=1; m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa3beac,2); m.install([('a','/a/a','A',0,0,0,0)],0); m.word(O['MCL_TYPE'],1); m.word(O['MCL_MODE'],0); m.byte(O['MCL_JUMPFOLDER'],0); return m
+def guarded(machine=None):
+    m=(machine or PressMachine)(); m.held=1; m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa3beac,2); m.install([('a','/a/a','A',0,0,0,0)],0); m.word(O['MCL_TYPE'],1); m.word(O['MCL_MODE'],0); m.byte(O['MCL_JUMPFOLDER'],0); return m
 m=guarded(); assert asks(m,'player_seek_start')==1 and m.nothing() and not m.stock
 m.now+=2000; asks(m,'player_seek_start'); assert m.stock==['xf:seek_start'] and m.seen==7001 and m.at()==7001
 m=guarded(); assert asks(m,'player_change_music',1)==0 and m.nothing() and not m.stock
@@ -2021,4 +2029,19 @@ m=StartMachine(); m.word(ps['press_natural'],2); m.word(0xa3beb0,1); assert m.si
 # ringnav_next(1) is what sets it, and only for its own span; a rollover's load inside it keeps the local class.
 m=PressMachine(); m.options(1,5,0); m.stock=[]; m.advance_song(1); assert m.stock==['xf:start'] and m.start_natural==2 and m.get(ps['press_natural'])==0
 m=PressMachine(); m.nested_load=1; m.advance_song(1); assert m.get(ps['press_natural'])==0
+# The restart guard around the marks: a refused press or a pick that starts nothing leaves a natural start's even mark as
+# it was, so it can't read as a press, and the next natural start marks afresh. A confirmed press stamps odd, its own start
+# mutes as stock's, and a natural change after it forgets the word, so no wait comes of it.
+m=guarded(StartMachine); q=m.get(syms['mcl_pdeqplaylist']); m.word(ps['press_natural'],2); assert m.site()==[] and m.at()==5000; m.word(ps['press_natural'],0)
+assert asks(m,'player_seek_start')==1 and m.at()==5000 and not m.stock
+assert asks(m,'player_change_music',1)==0 and m.at()==5000 and not m.stock  # another key: it asks again
+assert asks(m,'player_start',q,0,1,2)==1 and m.at()==5000 and not m.stock
+m.word(ps['press_natural'],2); m.now=6000; assert m.site()==[] and m.at()==6000; m.word(ps['press_natural'],0)
+m=guarded(StartMachine); assert asks(m,'player_change_music',1)==0 and m.nothing()
+m.now+=2000; asks(m,'player_change_music',1); assert m.at()==7001 and m.stock==['xf:change'] and m.site()==STOCK and m.at()==7001
+m.handlers[syms['player_change_music']]='xf:none'; m.advance_song(1); assert m.at()==0 and m.get(ps['press_natural'])==0
+m=guarded(StartMachine); assert asks(m,'player_seek_start')==1; m.now+=2000; asks(m,'player_seek_start'); assert m.at()==7001 and m.site()==STOCK and m.at()==7001
+m.advance_song(1); assert m.at()==0
+m=guarded(StartMachine); m.word(ps['press_natural'],2); m.site(); m.word(ps['press_natural'],0); m.held=0; asks(m,'player_start',m.get(syms['mcl_pdeqplaylist']),0,1,2)
+assert m.stock==['xf:player_start'] and m.site()==STOCK and m.at()==0  # a real pick's start mutes, and clears the mark it isn't for
 print('Start: a natural start on the jack skips demo\'s mute and sleep and marks the word; everything else keeps stock\'s')
