@@ -91,7 +91,15 @@ def setup():
         return data[:at + 8] + (count + change).to_bytes(4, 'big') + data[at + 12:]
     x = (aud/'x.mp3').read_bytes()
     (aud/'off.mp3').write_bytes(frames_field(x, -19))    # 0.5 s short: the audio still plays out
-    (aud/'cut.mp3').write_bytes(frames_field(x, -115))   # 3 s short: cut, as stock
+    (aud/'cut.mp3').write_bytes(frames_field(x, -115))   # 3 s short: still plays out, frames chain past the count
+    id3, id1 = b'ID3\x04\0\0\0\0\x10\0' + bytes(2048), b'TAG' + bytes(125)
+    (aud/'joined.mp3').write_bytes(id3 + x + id1 + id3 + x + id1)   # two tagged MP3s, joined with cat
+    (aud/'junkjoined.mp3').write_bytes(x + x + junk)
+    def ape(n):                                                     # an APEv2 tag holding a cover
+        item = struct.pack('<II', n, 2) + b'Cover Art (Front)\0cover.jpg\0' + random.Random(2).randbytes(n - 10)
+        foot = lambda flags: b'APETAGEX' + struct.pack('<IIII', 2000, len(item) + 32, 1, flags) + bytes(8)
+        return foot(0xa0000000) + item + foot(0x80000000)
+    (aud/'apex.mp3').write_bytes(x + ape(3 << 20) + id1)
     # DSD: a DSF whose header states half its samples
     def dsf(name, samples):
         body = random.Random(3).randbytes(4096 * 2 * 690)  # 5 s
@@ -210,14 +218,6 @@ def bad_next(name, site=None):
     check(bytes(p.pcm[base * 4:(base + RATE) * 4]) == source('b')[:RATE * 4], f'{name}: the next song then plays')
 
 
-def stop_in_failed_open():
-    """demo's stop while the thread's open of a bad file is under way isn't lost."""
-    p = Player()
-    p.e.hooks['delay'] = lambda raw: 0.4 if raw.endswith(b'junk.flac') else 0
-    p.song('a.flac')
-    p.run(1)
-    p.gapless('junk.flac')
-    p.run(0.1)
 def exits(p, seconds):
     """Virtual times of the exits hciplayer sends in the next `seconds`, asking as demo does."""
     at = []
@@ -277,6 +277,14 @@ def next_whole(name):
     check(len(got) == len(cold) and got == cold, f'{name}: next {len(got)} bytes, directly {len(cold)}')
 
 
+def stop_in_failed_open():
+    """demo's stop while the thread's open of a bad file is under way isn't lost."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 0.4 if raw.endswith(b'junk.flac') else 0
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('junk.flac')
+    p.run(0.1)
     p.e.send_cmd('{mcl-stop\\null}')
     p.until(lambda: p.events('pcm_close', 'pcm_drop'), 1)
     before = p.frames()
@@ -503,8 +511,17 @@ def understated_mp3(name):
     p = Player()
     p.song(name)
     p.settled(SECONDS + 3)
-    if cut: check(p.frames() < N - RATE, f'{name}: cut at the count + 1 s, {p.frames()} of {N} frames')
-    else: check(p.frames() >= N - 2304, f'{name}: plays to its end, {p.frames()} of {N} frames')
+    check(p.frames() >= N - 2304, f'{name}: plays to its end, {p.frames()} of {N} frames')
+
+
+def past_the_count():
+    """Past the count: frames joined on play, whatever follows them or a real tag's cover doesn't."""
+    for name, audio, least, most in ('joined.mp3', 2 * N, -0.1, 0.1), ('junkjoined.mp3', 2 * N, -0.4, 1), ('apex.mp3', N, -0.1, 1):
+        p = Player()
+        p.song(name)
+        p.settled(2 * SECONDS + 15)
+        past = (p.frames() - audio) / RATE
+        check(least < past < most, f'{name}: {p.frames()} frames, {audio} of audio, {past:.2f} s over, from {least} to {most} s')
 
 
 def dsd():
@@ -624,8 +641,12 @@ if __name__ == '__main__':
     bad_next('big.aac', 0x480184)
     bad_next('nostreams.wma', 0x4826a4)
     iso_no_tracks()
+    exit_apart()
+    next_whole('x.wma')
+    next_whole('bigmeta.flac')
     xfade_bad_next()
     stop_in_failed_open()
+    stop_while_open()
     understated()
     late(1.5)
     late(0)
@@ -639,16 +660,14 @@ if __name__ == '__main__':
     for name, most in (('junkx.mp3', 1), ('junkx.m4a', 0.1), ('junkx.ogg', 0.1), ('junkx.wv', 0.1), ('junkx.flac', 0.1), ('junkx.wav', 0.1), ('junkx.wma', 0.1)):
         tail_noise(name, most)
     tail_noise('junkh.mp3', None)  # no header to say where the audio ends: a limit, docs/internals.md#forced-eof
-    understated_mp3('off.mp3', False)
-    understated_mp3('cut.mp3', True)
-    exit_apart()
-    next_whole('x.wma')
-    next_whole('bigmeta.flac')
-    understated_mp3('x.mp3', False)
+    understated_mp3('off.mp3')
+    understated_mp3('cut.mp3')
+    understated_mp3('x.mp3')
+    past_the_count()
     dsd()
-    stop_while_open()
     for case in SEEKS:
         seek_flac(*case)
+    seek_flac('s44m', 44100, 215 * 4096 + 3000, 4096)
     seek_next()
     seek_past_end()
     seek_filtered(0)
@@ -658,4 +677,3 @@ if __name__ == '__main__':
     assert not failures, f'{len(failures)} failed: {failures}'
     shutil.rmtree(work)
     print('hci_natural: all passed')
-    seek_flac('s44m', 44100, 215 * 4096 + 3000, 4096)

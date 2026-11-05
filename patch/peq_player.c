@@ -831,13 +831,36 @@ void mp3_seek(void *demuxer, float rel, float delay, int flags) {
 
 /* The eof stock forces once the whole-second position passes the header's length by more than a second (0x4232bc).
  * Only an MP3's Xing or Info frame count is trusted: past it, libmad finding false syncs in whatever follows the
- * audio is noise, up to full scale, about 0.6 s per MB of junk. Every other length (WMA's preroll, a VBR MP3 with no
+ * audio (a big APE tag's cover, junk) is noise, up to full scale, about 0.6 s per MB. But a stale count, or files
+ * joined with cat, has real audio there, so it stores only if frames_follow finds no chain of frames. Every other length (WMA's preroll, a VBR MP3 with no
  * header, a FLAC's understated STREAMINFO) is only an estimate and cut real audio. Whole seconds and no doubles: the
  * main loop's registers are live here (forced_eof saves them), and it's only past the length, so one read per pass
  * of a track that's over. docs/internals.md#forced-eof.
  * ponytail: the real ceiling is noise. A no-header MP3 followed by junk still plays it, to full scale, as stock: only
- * a header says where the audio ends. Elapsed runs ahead of the total meanwhile. A count over 27 hours isn't trusted. */
+ * a header says where the audio ends. Elapsed runs ahead of the total meanwhile. A count over 27 hours isn't trusted.
+ * A joined file's own big tag, or a sample rate change, past the count + 1 s ends it there, as stock. Junk after a
+ * joined file can end it a little early: the chain is read ahead of what's playing. */
 #define AUDIO_DEMUXER 0x89fd90u
+/* Two frames in a row at the cursor, the second's header where the first's length says and both of the first frame's
+ * kind: an MP3's longest frame is 1441 bytes, so one starts in the first 1441. False syncs don't chain. With under a
+ * buffer left, it's the file's end: a tag's or the last frames, and what's left is too little to be noise. */
+static int frames_follow(int fd, unsigned head, unsigned hz) {
+    static const unsigned short kbps[2][15] = { { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 },
+                                                { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 } };
+    static unsigned char b[4096];
+    int got = read(fd, b, sizeof b), one = head >> 19 & 3;
+    if (got < (int)sizeof b) return 1;
+    for (int i = 0; i < 1441; i++) {
+        int at = i, n = 0;
+        for (; n < 2; n++) {
+            unsigned w = (unsigned)b[at] << 24 | b[at + 1] << 16 | b[at + 2] << 8 | b[at + 3], br = w >> 12 & 15;
+            if ((w ^ head) & 0xfffe0c00u || !br || br == 15) break;
+            at += (one == 3 ? 144000 : 72000) * kbps[one != 3][br] / hz + (w >> 9 & 1);
+        }
+        if (n == 2) return 1;
+    }
+    return 0;
+}
 int forced_eof_c(char *mp, int pos) {
     static const unsigned short rates[3] = { 44100, 48000, 32000 };
     unsigned char h[64];
@@ -859,7 +882,11 @@ int forced_eof_c(char *mp, int pos) {
         if (!(x[7] & 1)) return 0;
         unsigned frames = (unsigned)x[8] << 24 | x[9] << 16 | x[10] << 8 | x[11], spf = version == 3 ? 1152 : 576;
         if (!frames || frames > 0xffffffffu / spf) return 0;
-        return pos > (int)(frames * spf / (rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2))) + 1;
+        unsigned hz = rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
+        if (pos <= (int)(frames * spf / hz) + 1) return 0;
+        int follow = frames_follow(fd, head, hz);
+        lseek64(fd, back, 0);
+        return !follow;
     }
     return 0;
 }
@@ -994,32 +1021,6 @@ __asm__(".set push\n.set noreorder\n"
         "lui $v0, 0xb1\nli $t0, 2\nsw $t0, 0xe74($v0)\nli $t0, 1\nsw $t0, 0xe70($v0)\n"
         "1:\nmove $v0, $zero\njr $ra\naddiu $sp, $sp, 0x50\n.set pop\n");
 
-/* A preload the song outran: the main thread reached its EOF first, cleared 0xb10de8 (0 none, 1 thread
- * running, 2 ready, -1 failed) and cold-started that file. The thread then stored 2 regardless, so the
- * next set-gapless found it non-zero and started nothing, and the song after played the stale context:
- * the same song again under the next title. Now the cold path's clear (cold_clear) leaves 3 while a
- * thread runs, the thread publishes only over a 1, and a thread that finds 3 frees its context with
- * stock's 0x42a9ac and clears it to 0. While it's 3 no new thread starts (0x42358c wants 0), so two never
- * share the context; a next set-gapless waits for that. ll/sc, since the main thread's store can land
- * between a load and a store. A preload that wins the race keeps every stock store after this one.
- * docs/internals.md#a-preload-too-late. ponytail: a thread that publishes just before the cold path's
- * clear leaves its context unfreed till the next preload zeroes it, as stock's mcl-closegapless does (a
- * file handle); under MQA decode (0xb10c54 == 2) a stale thread's decoder isn't uninitialised either. */
-void preload_stale(void) {
-    int three = 3;
-    ((void (*)(void))0x42a9acu)();
-    __atomic_compare_exchange_n((volatile int *)0xb10de8u, &three, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-}
-/* The failure exits' store of -1, moved after the context is freed; returns the thread's 0. */
-int preload_failed(void) {
-    int one = 1, three = 3;
-    if (!__atomic_compare_exchange_n((volatile int *)0xb10de8u, &one, -1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
-        __atomic_compare_exchange_n((volatile int *)0xb10de8u, &three, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-    return 0;
-}
-__asm__(".set push\n.set noreorder\n.set noat\n"
-        /* From 0x42bb18: $v0 0xb10000, $v1 the thread's 0xb15df0, $a0 2, its saved registers restored. */
-        ".globl preload_publish\npreload_publish:\nli $a2, 1\n"
 /* demo learns of a track's end only from the newest player-status it reads (0x5a8688, 0x5a7e88): one value, cleared by
  * a read of exit and overwritten by any later reply. An exit moves it on at its next UI pass (0xa3be55, mclAutoChange).
  * So a second exit within a pass of the first, from a next file that ends as it starts, is lost; hciplayer then idles
@@ -1055,6 +1056,32 @@ __asm__(".set push\n.set noreorder\n.set noat\n.globl exit_hold\nexit_hold:\nadd
         "lw $t6, 60($sp)\nlw $t7, 64($sp)\nlw $t8, 68($sp)\nlw $t9, 72($sp)\nlui $a0, 0x89\n"
         "jr $ra\naddiu $sp, $sp, 80\n.set pop\n");
 
+/* A preload the song outran: the main thread reached its EOF first, cleared 0xb10de8 (0 none, 1 thread
+ * running, 2 ready, -1 failed) and cold-started that file. The thread then stored 2 regardless, so the
+ * next set-gapless found it non-zero and started nothing, and the song after played the stale context:
+ * the same song again under the next title. Now the cold path's clear (cold_clear) leaves 3 while a
+ * thread runs, the thread publishes only over a 1, and a thread that finds 3 frees its context with
+ * stock's 0x42a9ac and clears it to 0. While it's 3 no new thread starts (0x42358c wants 0), so two never
+ * share the context; a next set-gapless waits for that. ll/sc, since the main thread's store can land
+ * between a load and a store. A preload that wins the race keeps every stock store after this one.
+ * docs/internals.md#a-preload-too-late. ponytail: a thread that publishes just before the cold path's
+ * clear leaves its context unfreed till the next preload zeroes it, as stock's mcl-closegapless does (a
+ * file handle); under MQA decode (0xb10c54 == 2) a stale thread's decoder isn't uninitialised either. */
+void preload_stale(void) {
+    int three = 3;
+    ((void (*)(void))0x42a9acu)();
+    __atomic_compare_exchange_n((volatile int *)0xb10de8u, &three, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+/* The failure exits' store of -1, moved after the context is freed; returns the thread's 0. */
+int preload_failed(void) {
+    int one = 1, three = 3;
+    if (!__atomic_compare_exchange_n((volatile int *)0xb10de8u, &one, -1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+        __atomic_compare_exchange_n((volatile int *)0xb10de8u, &three, 0, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return 0;
+}
+__asm__(".set push\n.set noreorder\n.set noat\n"
+        /* From 0x42bb18: $v0 0xb10000, $v1 the thread's 0xb15df0, $a0 2, its saved registers restored. */
+        ".globl preload_publish\npreload_publish:\nli $a2, 1\n"
         "1:\nll $a1, 0xde8($v0)\nbne $a1, $a2, 2f\nmove $a1, $a0\nsc $a1, 0xde8($v0)\nbeqz $a1, 1b\nnop\n"
         "j 0x42bb1c\nnop\n"
         "2:\njal preload_stale\nnop\nlw $ra, 0x65c($sp)\njr $ra\naddiu $sp, $sp, 0x660\n"
