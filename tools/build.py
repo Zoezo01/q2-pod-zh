@@ -1479,9 +1479,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
-    from theme import builtins, emit, geometry_sets, offer
+    from theme import builtins, emit, geometry_sets, offer, theme_keys
     themes = builtins()
     header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
+    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
     header.append(f'#define THEME_OFFER {offer(themes, bool(dev))}')  # navigation.c theme_offer
     (out/'stock.h').write_text('\n'.join(header)+'\n')
     set_pages, redirects = {}, {}

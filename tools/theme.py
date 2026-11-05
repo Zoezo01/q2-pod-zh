@@ -19,8 +19,12 @@ SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTI
             'shortcut': ('SETTING_SHORTCUT', ('rockbox', 'artists', 'albums', 'favorites', 'rated_albums', 'shuffle', 'games')),
             'time_title': ('SETTING_TIMETITLE', ('off', 'on')),
             'np_layout': ('SETTING_NPCENTRED', ('ipod', 'centred'))}
-ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent',
-               'NANO_ACCENT': '&st.nano_accent'}
+ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}
+# The IPOD keys the payload reads itself (navigation.c setting_keys[], every "IPOD", "<KEY>" literal): a
+# theme's own key is never one of them.
+PAYLOAD_KEYS = frozenset(
+    re.findall(r'"([A-Z0-9_]+)"', re.search(r'setting_keys\[\] = \{([^}]*)\}', (ROOT/'patch/navigation.c').read_text())[1])
+    + [k for f in sorted((ROOT/'patch').glob('*.c')) for k in re.findall(r'"IPOD", "([A-Z0-9_]+)"', f.read_text())])
 # value name -> its C name (theme.h); playing.title.font is the theme_t.bold flag
 CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'}, 'playing.title.font': {'regular': '0', 'bold': '1'},
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
@@ -100,8 +104,8 @@ def view_attr(path):
 
 ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if view_attr(p)}
 VIEWS = {e.partition('.')[0] for e in ELEMENTS}
-CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'geometry', 'option', 'view'}, 'view': {'element'}}
-OPTION_ATTRS = {'setting', 'key', 'default', 'preset', 'keep'}
+CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'geometry', 'option', 'view'}, 'view': {'element'}, 'option': {'value'}}
+OPTION_ATTRS = {'setting', 'key', 'label', 'default', 'preset', 'keep'}
 # Per-theme numbers stay in offsets.inc: theme id -> {C field: expression over O}.
 CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF_Z1', 'cf.zs': 'CF_ZS', 'cf.eye': 'CF_EYE',
             'cf.bright1': 'CF_BRIGHT1', 'cf.bright2': 'CF_BRIGHT2', 'cf.reflect': 'CF_REFLECT',
@@ -141,20 +145,19 @@ def derive_gloss(tones):
 GEOMETRIES = {g.name: g for g in (SET0, NANO, NANO_TEXT)}  # <geometry set="..."/>: the row geometry sets, SET0 first
 THEME_GEOM_OFF = 4  # offsetof(theme_t, geom), right after name so no field moves it; asserted in navigation.c; test/patch.py pokes it
 SCHEME_MODE_OFF = 5  # offsetof(scheme_t, mode) on MIPS, right after flags; asserted in navigation.c; test/patch.py pokes it
-ROW_ART_OFF = {'nano': 'nano-text'}  # ponytail: Row Art off's set, until an option's <variant> names it
 
 
-def geometry(t):
-    return GEOMETRIES[t['geom_set']]
-
-
-def theme_sets(t):
-    return [geometry(t), *(GEOMETRIES[g] for g in [ROW_ART_OFF.get(t['geom_set'])] if g)]
+def geometry(t, values=None):
+    """The set t boots: its set-selecting own option's for values[key] (own key -> value label) when values
+    names it, else its <geometry set>."""
+    o = next((o for o in t['opts'] if o.get('sets') and o['key'] in (values or {})), None)
+    return GEOMETRIES[o['sets'][o['names'].index(values[o['key']])] if o else t['geom_set']]
 
 
 def geometry_sets(themes):
-    """The distinct geometry sets of themes, SET0 first: boot_values[]' rows."""
-    sets = list(dict.fromkeys([SET0, *(g for t in themes for g in theme_sets(t))]))
+    """The distinct geometry sets of themes and their own options' values, SET0 first: boot_values[]' rows."""
+    sets = list(dict.fromkeys([SET0, *map(geometry, themes),
+                               *(GEOMETRIES[s] for t in themes for o in t['opts'] if o.get('sets') for s in o['sets'])]))
     for g in sets:
         v = immediate_values(g)
         for n, x in v.items():
@@ -166,9 +169,10 @@ def geometry_sets(themes):
     return sets
 
 
-def is_live(a, b):
-    """Whether switching between themes a and b needs no restart: one set, no boot-class field differs."""
-    return geometry(a) == geometry(b) and all(a[k.field] == b[k.field] for k in SCHEMA.values() if k.cls == 'boot')
+def is_live(a, b, va=None, vb=None):
+    """Whether switching from theme a to b, their own options at va and vb (key -> value label), needs no
+    restart: one set, no boot-class field differs."""
+    return geometry(a, va) == geometry(b, vb) and all(a[k.field] == b[k.field] for k in SCHEMA.values() if k.cls == 'boot')
 
 
 class ThemeError(Exception):
@@ -372,6 +376,58 @@ def value(node, path, text, macros):
     return ranged(node, k, v)
 
 
+def own_key(node, key):
+    """A theme's own IPOD key: never the payload's."""
+    if not re.fullmatch('[A-Z][A-Z0-9_]*', key):
+        fail(node.file, node.line, 'option.key: expected [A-Z][A-Z0-9_]*')
+    if key in PAYLOAD_KEYS:
+        fail(node.file, node.line, f"{key}: the payload's key")
+    return key
+
+
+def label_ok(text):  # a row's text: 1..24 bytes, no control characters
+    return 0 < len(text.encode()) <= 24 and not re.search('[\x00-\x1f\x7f-\x9f]', text)
+
+
+def presets(c, o, names, what):
+    """o's def, preset and keep: indices into names of c's default, preset and keep, -1 when absent."""
+    for attr, field in (('default', 'def'), ('preset', 'preset'), ('keep', 'keep')):
+        if attr in c.attrs:
+            if c.attrs[attr] not in names:
+                fail(c.file, c.line, f'{what}: unknown value {c.attrs[attr]}')
+            o[field] = names.index(c.attrs[attr])
+    return o
+
+
+def own_option(c):
+    """A theme's own <option key label>: its values, each naming the geometry set it boots."""
+    def err(node, message): fail(node.file, node.line, message)
+    key = own_key(c, c.attrs['key'])
+    if not label_ok(c.attrs.get('label', '')):
+        err(c, f'{key}: label expected 1..24 bytes, no control characters')
+    names, sets = [], []
+    for v in c.children:
+        for k in v.attrs:
+            if k not in ('label', 'set'):
+                err(v, f'unknown key value.{k}')
+        x = v.attrs.get('label', '')
+        if not label_ok(x):
+            err(v, f'{key}: value label expected 1..24 bytes, no control characters')
+        if x in names:
+            err(v, f'{key}: duplicate value {x}')
+        if 'set' not in v.attrs:
+            err(v, f'{key}: value {x} has no set')
+        if v.attrs['set'] not in GEOMETRIES:
+            err(v, f'unknown geometry set "{v.attrs["set"]}"')
+        names.append(x)
+        sets.append(v.attrs['set'])
+    if not 2 <= len(names) <= 10:  # config_value reads one digit
+        err(c, f'{key}: 2 to 10 values expected')
+    # ponytail: set is the one selector; a value that selects a scheme or a font adds its attribute, and its payload reader, when a theme needs it
+    return presets(c, {'setting': 'SETTING_OWN', 'key': key, 'label': c.attrs['label'], 'names': names, 'sets': sets,
+                       'def': -1, 'preset': -1, 'keep': -1, 'values': 0}, names, key)
+
+
 def scheme_names(t):
     """The names accent values index: the ACCENTS rows, then the theme's own schemes."""
     return ACCENT_NAMES + [s['name'] for s in t['schemes'][len(ACCENT_NAMES):]]
@@ -477,22 +533,25 @@ def resolve(root, by_id, seen=()):
             for k in c.attrs:
                 if k not in OPTION_ATTRS:
                     err(c, f'unknown key option.{k}')
+            if 'key' in c.attrs and 'setting' not in c.attrs:
+                opts.append(own_option(c))
+                continue
             s = c.attrs.get('setting', '')
             if s not in SETTINGS:
                 err(c, f'unknown setting {s}')
+            if c.children:
+                err(c.children[0], f'{s}: a payload setting takes no <value>')
+            if 'label' in c.attrs:  # its row's title is the payload's
+                err(c, f'{s}: a payload setting takes no label')
             macro, names = SETTINGS[s]
             if s == 'accent':
                 names = scheme_names(t)
-            o = {'setting': macro, 'def': -1, 'preset': -1, 'keep': -1, 'values': 0}
-            for attr, field in (('default', 'def'), ('preset', 'preset'), ('keep', 'keep')):
-                if attr in c.attrs:
-                    if c.attrs[attr] not in names:
-                        err(c, f'{s}: unknown value {c.attrs[attr]}')
-                    o[field] = names.index(c.attrs[attr])
+            o = presets(c, {'setting': macro, 'def': -1, 'preset': -1, 'keep': -1, 'values': 0}, names, s)
             if 'key' in c.attrs:
-                if s != 'accent' or c.attrs['key'] not in ACCENT_KEYS:
+                if s != 'accent':
                     err(c, f'{s}: unknown key {c.attrs["key"]}')
-                t['accent_key'] = c.attrs['key']
+                # ACCENT or MINIMAL_ACCENT, else a theme-owned key (theme_keys)
+                t['accent_key'] = c.attrs['key'] if c.attrs['key'] in ACCENT_KEYS else own_key(c, c.attrs['key'])
             opts.append(o)
         else:  # view
             v = c.attrs.get('name', '')
@@ -545,7 +604,7 @@ def resolve(root, by_id, seen=()):
 def validate(t, name):
     """The whole-theme rules resolve() can't check per attribute."""
     def err(message): fail(name, t['line'], message)
-    settings = [o['setting'] for o in t['opts']]
+    settings = [o.get('key') or o['setting'] for o in t['opts']]
     accent = next((o for o in t['opts'] if o['setting'] == 'SETTING_ACCENT'), None)
     if not accent:
         err('no accent option')
@@ -554,6 +613,8 @@ def validate(t, name):
     for s in settings:
         if settings.count(s) > 1:
             err(f'{s} declared twice')
+    if any(o.get('key') == t['accent_key'] for o in t['opts']):
+        err(f"{t['accent_key']} declared twice")
     if not t['accents']:
         err('colorSchemes is empty')
     for field, word in (('def', 'default'), ('preset', 'preset')):
@@ -581,10 +642,34 @@ def validate(t, name):
     bar = geometry(t).bar
     if t['cf.text_y'] + h > 320 - bar:
         err(f'coverflow.caption: text_y + {h} = {t["cf.text_y"] + h} exceeds the client height {320 - bar}')
+    chooser = [o for o in t['opts'] if o.get('sets')]
+    if len(chooser) > 1:
+        err('one option per theme selects the geometry set')
+    for o in chooser:
+        d = max(o['def'], 0)
+        if o['sets'][d] != t['geom_set']:
+            err(f"{o['key']}: default {o['names'][d]} boots {o['sets'][d]}, the theme's geometry is {t['geom_set']}")
+        for s in o['sets']:  # theme_t has one bar; the caption check above then holds for every set
+            if GEOMETRIES[s].bar != bar:
+                err(f"{o['key']}: set {s} has a {GEOMETRIES[s].bar} px bar, the theme's is {bar}")
 
 
 def accent_default(t):
     return next(o['def'] for o in t['opts'] if o['setting'] == 'SETTING_ACCENT')
+
+
+def theme_keys(themes):
+    """The themes' own IPOD keys in read order, after the payload's twelve: each theme's own accent key and own
+    options, theme then declaration order, each key once. key -> (value count, default, the own option or None
+    for an accent key)."""
+    keys = {}
+    for t in themes:
+        for o in t['opts']:
+            if o.get('key'):
+                keys.setdefault(o['key'], (len(o['names']), max(o['def'], 0), o))
+            elif o['setting'] == 'SETTING_ACCENT' and t['accent_key'] not in ACCENT_KEYS:
+                keys.setdefault(t['accent_key'], (len(t['schemes']), max(accent_default(t), 0), None))
+    return keys
 
 
 def builtins(root=ROOT/'assets/themes'):
@@ -608,6 +693,14 @@ def builtins(root=ROOT/'assets/themes'):
     for (_, _, t), (_, n, u) in itertools.combinations(found, 2):
         if t['accent_key'] == u['accent_key'] and (t['accents'], accent_default(t)) != (u['accents'], accent_default(u)):
             fail(n.file, n.line, f'accent key {u["accent_key"]} is {t["id"]}\'s, with other colorSchemes or default')
+    # An own key is one stored value too: its values and default alike; its preset is each theme's (as LIGHT's).
+    def shape(e): return e[:2] + ({k: v for k, v in e[2].items() if k not in ('preset', 'keep')} if e[2] else None,)
+    owners = {}
+    for _, n, t in found:
+        for key, e in theme_keys([t]).items():
+            o = owners.setdefault(key, (t, e))
+            if shape(o[1]) != shape(e):
+                fail(n.file, n.line, f"{key} is {o[0]['id']}'s, with other values or default")
     for i, (index, n, _) in enumerate(found):
         if index != i:
             fail(n.file, n.line, f'index {index}, expected {i}')
@@ -631,6 +724,9 @@ def emit(themes, out, redirects={}):
     """out/'themes.inc': the schemes, options and themes[] navigation.c includes, then the boot tables.
     redirects: ui name -> bitmask of the sets with their own <set>_<name>.bin."""
     sets = geometry_sets(themes)
+    keys = list(theme_keys(themes))
+    def setting(o): return f'SETTING_OWN + {keys.index(o["key"])}' if o.get('key') else o['setting']
+    def gname(g): return f'GEOM_{g.name.upper().replace("-", "_")}'
     def c(k, v): return list(CHOICES[k.path].values())[v] if k.type == 'enum' else v
     lines = ['/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */']
     def rows(t, light):
@@ -650,7 +746,7 @@ def emit(themes, out, redirects={}):
             lines += [f'static const scheme_t {i}_light[] = {{', *rows(t, True), '};',
                       f'_Static_assert(sizeof {i}_light == sizeof {i}_schemes, "one light half per scheme");']
         lines.append(f'static const option_t {i}_opts[] = {{')
-        lines += [f'    {{ .setting = {o["setting"]}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
+        lines += [f'    {{ .setting = {setting(o)}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
                   f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
         lines.append('};')
     lines.append('static const theme_t themes[THEME_N] = {')
@@ -658,7 +754,7 @@ def emit(themes, out, redirects={}):
         # theme_t order: the live element fields, the pointers and n_opts, then the 'open' fields.
         fields = [('name', json.dumps(t['name'])),
                   *((k.field, c(k, t[k.field])) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
-                  ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
+                  ('accent_slot', ACCENT_KEYS.get(t['accent_key']) or f'&st.own[{keys.index(t["accent_key"])}]'), ('accent_key', json.dumps(t['accent_key'])),
                   ('schemes', f'{t["id"]}_schemes'), ('light', f'{t["id"]}_schemes' if shared(t) else f'{t["id"]}_light'),
                   ('n_schemes', len(t['schemes'])),
                   ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
@@ -673,7 +769,7 @@ def emit(themes, out, redirects={}):
     sites = [(int(a, 16), g['value']) for g in AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
     # ponytail: the second {0, 0} lets test/patch.py patch entry 0; 8 B
     ui = [f'{{{json.dumps(n)}, {redirects[n]}}}' for n in sorted(redirects)] + ['{0, 0}'] * 2
-    lines += ['enum { ' + ', '.join(f'GEOM_{g.name.upper().replace("-", "_")}' for g in sets) + ', GEOM_N };',
+    lines += ['enum { ' + ', '.join(map(gname, sets)) + ', GEOM_N };',
               'enum { ' + ', '.join(f'G_{n.upper()}' for n in VALUE_NAMES) + ', G_N };',
               f'#define BOOT_SITES {len(sites)}', f'#define CLIENT_H_MAX {max(320 - g.bar for g in sets)}',
               # volatile: -Oz can't fold the initialisers, which theme_boot and test/patch.py read
@@ -689,5 +785,12 @@ def emit(themes, out, redirects={}):
                   f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};',
               'const char *const geom_names[GEOM_N] = {' + ', '.join(json.dumps(g.name) for g in sets) + '};',
               'const volatile ui_redirect_t ui_redirects[] = {' + ', '.join(ui) + '};',
-              *(f'#define SETTING_N_{n.upper()} {len(v)}' for n, (_, v) in SETTINGS.items()), '']
+              *(f'#define SETTING_N_{n.upper()} {len(v)}' for n, (_, v) in SETTINGS.items()),
+              # last: its sets are GEOM_* names
+              'const theme_key_t theme_keys[THEME_KEYS] = {', *(
+                  f'    {{ .key = {json.dumps(k)}, .label = 0, .names = 0, .sets = 0, .n = {n}, .def = {d} }},' if o is None else
+                  f'    {{ .key = {json.dumps(k)}, .label = {json.dumps(o["label"])}, '
+                  f'.names = (const char *const[]){{{", ".join(map(json.dumps, o["names"]))}}}, '
+                  f'.sets = (const unsigned char[]){{{", ".join(gname(GEOMETRIES[s]) for s in o["sets"])}}}, .n = {n}, .def = {d} }},'
+                  for k, (n, d, o) in theme_keys(themes).items()), '};', '']
     (out/'themes.inc').write_text('\n'.join(lines))

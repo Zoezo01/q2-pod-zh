@@ -19,4 +19,11 @@
   <option setting="shortcut"/>
   <option setting="battery"/>
   <option setting="time_title" preset="on"/>
+  <!-- Row Art, Nano's own option: On shows the art lists' covers and icons in 52 px rows (the nano set),
+       Off makes every list 28 px text (nano-text). A change restarts the Q2. Choosing Nano presets
+       On, as Classic presets Cobalt. -->
+  <option key="ROWART" label="Row Art" default="On" preset="On">
+    <value label="Off" set="nano-text"/>
+    <value label="On" set="nano"/>
+  </option>
 </theme>

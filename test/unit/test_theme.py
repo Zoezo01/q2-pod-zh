@@ -112,6 +112,10 @@ def opt(setting, default=-1, preset=-1, keep=-1, values=0):
     return {'setting': setting, 'def': default, 'preset': preset, 'keep': keep, 'values': values}
 
 
+def own(key, label, names, sets, default=-1, preset=-1, keep=-1):  # a theme's own option, as resolve() keeps it
+    return {**opt('SETTING_OWN', default, preset, keep), 'key': key, 'label': label, 'names': list(names), 'sets': list(sets)}
+
+
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
             'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212}
@@ -199,8 +203,8 @@ M = 'id="minimal" name="M" index="0"'
     ('<option setting="light" preset="dim"/>', None, 'light: unknown value dim'),
     ('<option setting="light" bright="1"/>', None, 'unknown key option.bright'),
     ('<option setting="home" key="HOME"/>', None, 'home: unknown key HOME'),
-    ('<option setting="accent" key="OTHER_ACCENT"/>', None, 'accent: unknown key OTHER_ACCENT'),
-    ('', 'id="t" name="T" index="2" extends="other"', 'extends unknown theme other'),
+    ('<option setting="accent" key="HOME"/>', None, "HOME: the payload's key"),
+    ('', 'id="t" name="T" index="2" extends="pico"', 'extends unknown theme pico'),
     ('', 'id="T" name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
     ('', 'id="t" name="" index="2"', 'name: expected 1..48 bytes, no control characters'),
     ('', 'id="t" name="T" index="10"', 'index: expected a digit'),
@@ -235,6 +239,8 @@ def test_resolve_checks_role_macros(monkeypatch):
 
 
 N = 'id="t" name="T" index="2"'
+A = '<option setting="accent" key="ACCENT"/>'
+V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
 @pytest.mark.parametrize('body, attrs, message', [
     ('<option setting="light"/>', None, 'no accent option'),
     ('<option setting="accent"/>', N, 'accent: no key'),
@@ -243,6 +249,14 @@ N = 'id="t" name="T" index="2"'
     ('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" preset="green"/>', None, 'accent preset green is not in colorSchemes'),
     ('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" default="graphite"/>', None, 'accent default graphite is not in colorSchemes'),
     ('<colorSchemes accents=""/>', None, 'colorSchemes is empty'),
+    (A + f'<option key="ART" label="Art">{V}</option><option key="ART" label="Art">{V}</option>', None, 'ART declared twice'),
+    ('<option setting="accent" key="ART"/>' + f'<option key="ART" label="Art">{V}</option>', None, 'ART declared twice'),
+    (A + f'<option key="ART" label="Art">{V}</option><option key="AUX" label="Aux">{V}</option>', None,
+     'one option per theme selects the geometry set'),
+    (A + '<option key="ART" label="Art" default="On"><value label="Off" set="ipod"/><value label="On" set="nano"/></option>', None,
+     "ART: default On boots nano, the theme's geometry is ipod"),
+    (A + '<option key="ART" label="Art" default="Off"><value label="Off" set="ipod"/><value label="On" set="nano"/></option>', None,
+     "ART: set nano has a 26 px bar, the theme's is 30"),
 ])
 def test_validate_rejects(body, attrs, message):
     t = resolved(body, *([attrs] if attrs else []))
@@ -497,20 +511,22 @@ def test_shared_site_takes_one_value(monkeypatch):
 
 
 def combinations(t):
-    """Every value combination of t's options: each setting's names, narrowed by a non-zero values mask."""
-    names = {macro: v for macro, v in theme.SETTINGS.values()}
-    return itertools.product(*([n for i, n in enumerate(names[o['setting']]) if not o['values'] or o['values'] >> i & 1]
-                               for o in t['opts']))
+    """Every value combination of t's options as {option: value}: a bound setting's names (narrowed by a values
+    mask) under its SETTINGS name, an own option's labels under its key."""
+    names = {macro: (name, v) for name, (macro, v) in theme.SETTINGS.items()}
+    axes = [(o['key'], o['names']) if o.get('key') else names[o['setting']] for o in t['opts']]
+    return [dict(zip([a for a, _ in axes], combo)) for combo in itertools.product(
+        *([x for i, x in enumerate(v) if not o['values'] or o['values'] >> i & 1] for (_, v), o in zip(axes, t['opts'])))]
 
 
-def test_minimal_classic_live_every_combination():
-    # Options carry no variants yet, so each combination resolves to the same two dicts; the loop
-    # is what makes a later option that feeds a boot-class field fail here.
-    m, c = theme.builtins()[:2]
-    cm, cc = list(combinations(m)), list(combinations(c))
-    assert (len(cm), len(cc)) == (3*9*2*3*7*4*2*2, 3*8*2*3*7*4*2*2)  # classic's accent mask 0x17f keeps 8 of 9
-    for _ in itertools.chain(cm, cc):
-        assert theme.is_live(m, c) and theme.is_live(c, m)
+def test_live_every_combination():
+    m, c, n = theme.builtins()
+    cm, cc, cn = combinations(m), combinations(c), combinations(n)
+    assert (len(cm), len(cc)) == (3*9*2*3*7*4*2*2, 3*8*2*3*7*4*2*2) and cn  # classic's accent mask 0x17f keeps 8 of 9
+    assert all(theme.is_live(m, c, a, cc[0]) for a in cm) and all(theme.is_live(c, m, b, cm[0]) for b in cc)
+    assert not any(theme.is_live(m, n, cm[0], b) or theme.is_live(c, n, cc[0], b) for b in cn)
+    on, off = ([b for b in cn if b['ROWART'] == v] for v in ('On', 'Off'))
+    assert on and off and not theme.is_live(n, n, on[0], off[0]) and theme.is_live(n, n, on[0], on[-1])
 
 
 def test_is_live_needs_one_set(test_set):
@@ -657,6 +673,69 @@ def test_emit_own_scheme(tmp_path):
     assert inc.count('/ sizeof *minimal_schemes >= ACCENT_N') == 1
 
 
+def test_own_option():
+    m, c, n = theme.builtins()
+    row_art = own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)
+    assert n['opts'][-1] == row_art and not any(o.get('key') for o in m['opts'] + c['opts'])
+    assert theme.geometry(n) is ipod.NANO and theme.geometry(n, {'ROWART': 'Off'}) is ipod.NANO_TEXT
+    assert theme.geometry(n, {'ROWART': 'On'}) is ipod.NANO and theme.geometry(m, {'ROWART': 'Off'}) is SET0
+    assert theme.theme_keys([m, c, n]) == {'NANO_ACCENT': (10, 9, None), 'ROWART': (2, 1, row_art)}
+    assert {'ACCENT', 'MINIMAL_ACCENT', 'HOME', 'BATTERY', 'THEME', 'LIGHT', 'VIS'} <= theme.PAYLOAD_KEYS
+    assert not {'ROWART', 'NANO_ACCENT'} & theme.PAYLOAD_KEYS and set(theme.ACCENT_KEYS) == {'ACCENT', 'MINIMAL_ACCENT'}
+    assert not hasattr(theme, 'ROW_ART_OFF')
+
+
+V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
+@pytest.mark.parametrize('body, message', [
+    ('<option key="ART" label="Art"><value label="Off" set="ipod"/></option>', 'ART: 2 to 10 values expected'),
+    ('<option key="ART" label="Art"><value label="Off" set="ipod"/><value label="Off" set="ipod"/></option>', 'ART: duplicate value Off'),
+    ('<option key="ART" label="Art"><value label="Off" set="flat"/><value label="On" set="ipod"/></option>', 'unknown geometry set "flat"'),
+    ('<option key="ART" label="Art"><value label="Off"/><value label="On" set="ipod"/></option>', 'ART: value Off has no set'),
+    ('<option key="ART" label="Art"><value label="Off" set="ipod" tint="1"/><value label="On" set="ipod"/></option>', 'unknown key value.tint'),
+    (f'<option key="ART" label="Art" default="Dim">{V}</option>', 'ART: unknown value Dim'),
+    (f'<option key="art" label="Art">{V}</option>', 'option.key: expected [A-Z][A-Z0-9_]*'),
+    (f'<option key="LIGHT" label="Light">{V}</option>', "LIGHT: the payload's key"),
+    (f'<option key="ART" label="">{V}</option>', 'ART: label expected 1..24 bytes, no control characters'),
+    ('<option key="ART" label="Art"><value label="" set="ipod"/><value label="On" set="ipod"/></option>',
+     'ART: value label expected 1..24 bytes, no control characters'),
+    ('<option setting="home"><value label="Off" set="ipod"/></option>', 'home: a payload setting takes no <value>'),
+    ('<option setting="home" label="H"/>', 'home: a payload setting takes no label'),
+    (f'<option key="ART" label="Art" preset="Dim">{V}</option>', 'ART: unknown value Dim'),
+    (f'<option key="ART" label="Art" keep="Dim">{V}</option>', 'ART: unknown value Dim'),
+    (f'<option key="ART" label="Art">{V}<view name="bar"/></option>', 'unknown element <view>'),
+])
+def test_own_option_rejects(body, message):
+    assert error(resolved, body) == f't.xml:1: {message}'
+
+
+def test_builtins_rejects_a_shared_own_key(tmp_path):
+    """Themes sharing an own key share its stored value, so they must declare the same values and default;
+    each presets it as it likes (as Minimal and Classic preset LIGHT)."""
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('nano'))
+    def put(folder, index, label, presets=''):
+        (tmp_path/folder).mkdir(exist_ok=True)
+        (tmp_path/folder/'theme.xml').write_text(
+            f'<theme format="1" id="{folder}" name="{folder}" index="{index}" extends="classic">'
+            f'<option setting="accent" key="ACCENT" default="graphite"/><option key="ART" label="{label}"{presets}>{V}</option></theme>')
+    put('a', 2, 'Art', ' preset="On"'); put('b', 3, 'Art', ' preset="Off" keep="On"')
+    assert list(theme.theme_keys(theme.builtins(tmp_path))) == ['ART']  # one key, one slot
+    assert {t['id']: (t['opts'][-1]['preset'], t['opts'][-1]['keep']) for t in theme.builtins(tmp_path)[2:]} == {'a': (1, -1), 'b': (0, 1)}
+    put('b', 3, 'Row Art')
+    assert error(theme.builtins, tmp_path) == "b/theme.xml:1: ART is a's, with other values or default"
+
+
+def test_emit_own_options(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    nano_opts = inc.split('static const option_t nano_opts[] = {\n')[1].split('};')[0].splitlines()
+    assert nano_opts[-1] == '    { .setting = SETTING_OWN + 1, .def = 1, .preset = 1, .keep = -1, .values = 0x0 },'
+    assert inc.count('.accent_slot = &st.own[0],') == 1 and 'nano_accent' not in inc
+    assert ('const theme_key_t theme_keys[THEME_KEYS] = {\n'
+            '    { .key = "NANO_ACCENT", .label = 0, .names = 0, .sets = 0, .n = 10, .def = 9 },\n'
+            '    { .key = "ROWART", .label = "Row Art", .names = (const char *const[]){"Off", "On"}, '
+            '.sets = (const unsigned char[]){GEOM_NANO_TEXT, GEOM_NANO}, .n = 2, .def = 1 },\n};') in inc
+    assert inc.index('const theme_key_t theme_keys') > inc.index('enum { GEOM_IPOD, GEOM_NANO, GEOM_NANO_TEXT, GEOM_N };')
+
+
 def boot_inc(tmp_path, themes, **kw):
     theme.emit(themes, tmp_path, **kw)
     return (tmp_path/'themes.inc').read_text()
@@ -717,7 +796,8 @@ def test_nano_builtin():
     m, c, n = theme.builtins()
     assert (n['id'], n['name'], n['index'], n['dev'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 1, 'nano', 'NANO_ACCENT', 0x37f)
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
-                         opt('SETTING_HOME'), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1)]
+                         opt('SETTING_HOME'), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1),
+                         own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, ipod.NANO, ipod.NANO_TEXT]
     assert (theme.offer([m, c, n], False), theme.offer([m, c, n], True)) == (2, 3)
 
@@ -733,4 +813,4 @@ def test_emit_nano_sets(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     assert 'enum { GEOM_IPOD, GEOM_NANO, GEOM_NANO_TEXT, GEOM_N };' in inc and '#define CLIENT_H_MAX 294' in inc
     assert 'const char *const geom_names[GEOM_N] = {"ipod", "nano", "nano-text"};' in inc
-    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0', '1'] and '.accent_slot = &st.nano_accent,' in inc
+    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0', '1'] and '.accent_slot = &st.own[0],' in inc

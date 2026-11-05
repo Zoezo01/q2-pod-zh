@@ -8237,7 +8237,7 @@ for config,preset in (({},0),({**C,'ACCENT':'1'},1),({**C,'ACCENT':'2'},2),({**C
         want=ACCENTS[preset][3 if name.endswith('text_color') else 2]
         assert style_color(m,red,name)[1]==(red if preset==O['CRIMSON'] else color_t(want)),(config,name)
     assert style_color(m,grey)[1]==grey
-    assert len(m.config_reads)==14  # every key, once, on first use
+    assert len(m.config_reads)==15  # every key, once, on first use
     passed()
 # Real paint order, no persistent widget styles: normal, metadata, disabled alpha,
 # recycled text, touch hiding, Home siblings, and every accent.
@@ -8288,7 +8288,7 @@ for label_name in ('label_del','label_rename'):
 passed()
 
 m=Machine(); style_color(m,red)
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','7'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD','NANO_ACCENT','9')]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','7'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD','NANO_ACCENT','9'),('/mnt/data/config.ini','IPOD','ROWART','1')]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a
 # missing MINIMAL_ACCENT is Ivory, the card (flags 1); Crimson is raw red (flags 2) in both.
@@ -8297,14 +8297,14 @@ for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',0),({'THEME':
                          ({'THEME':'1','ACCENT':'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1','ACCENT':'8'},'Classic',8)):
     k=Machine(); k.config=dict(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))==name and len(k.config_reads)==14,config
+    assert k.text(k.get(t))==name and len(k.config_reads)==15,config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     flags=k.u.mem_read(s+4,1)[0]  # scheme_t: tones @0, flags @4
     assert k.get(s)==payload_syms['accents']+20*want and flags==(1 if name=='Minimal' and want==7 else 2 if want==1 else 0),(config,flags)
 passed()
 # A paint before any config read draws a built-in theme, never zeroed scratch.
 k=Machine(); k.config=dict(THEME='1',ACCENT='4'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==14 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
+k.paint(kw); assert len(k.config_reads)==15 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
 k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 # Nano is THEME=2 only where the build offers it: a release build offers Minimal and Classic (above,
@@ -8314,7 +8314,7 @@ k=Machine(); assert k.u.mem_read(payload_syms['theme_offer'],1)==b'\x02'
 for config,want in (({},4),({'NANO_ACCENT':'2'},2),({'NANO_ACCENT':'7'},4),({'ACCENT':'2'},4)):
     k=nano(Machine()); k.config.update(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))=='Nano' and len(k.config_reads)==14 and k.config_reads[-1][2]=='NANO_ACCENT',config
+    assert k.text(k.get(t))=='Nano' and len(k.config_reads)==15 and [r[2] for r in k.config_reads[13:]]==['NANO_ACCENT','ROWART'],config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     assert k.get(s)==payload_syms['accents']+20*want,config
 passed()
@@ -8774,6 +8774,9 @@ def click(i):
     m.calls=[]; f,ctx=m.handler(buttons[i],O['EVT_CLICK'])
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
     return [c[1:] for c in m.calls if c[0]=='write_int_config']
+def pick(t):  # the Theme picker's row for theme t (theme_pick), the Appearance page underneath
+    m.calls=[]; assert m.call(address=payload_syms['theme_pick'],args=(t,0,0,0),gap=0)==0
+    return [c[1:] for c in m.calls if c[0]=='write_int_config']
 # Initialize the real Home asset on this machine, then toggle its cached settings in Display.
 home=asset_tree(m,HOME_PAGE)
 m.handlers[HOOKS['home_page_init'][0]+12]='stock_home'
@@ -8842,7 +8845,7 @@ passed()
 # Theme: Classic loads its preset (Light Mode on, Cobalt, square corners, Split), lays Home out with
 # its own text inset and chevron row, and the accent's bar; back to Minimal, its preset (dark,
 # Graphite, rounded). Only changes are saved.
-writes=click(3); assert [(w[0],m.text(w[1]),m.text(w[2])) for w in writes]==[(1,'IPOD','THEME'),(1,'IPOD','LIGHT'),(4,'IPOD','ACCENT'),(0,'IPOD','ROUNDED'),(0,'IPOD','TIMETITLE')]
+writes=pick(1); assert [(w[0],m.text(w[1]),m.text(w[2])) for w in writes]==[(1,'IPOD','THEME'),(1,'IPOD','LIGHT'),(4,'IPOD','ACCENT'),(0,'IPOD','ROUNDED'),(0,'IPOD','TIMETITLE')]
 assert corners_switch()==['switch_off'] and m.nodes[light_label]['text']=='Light Mode: On'
 assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
 kids=m.nodes[view]['children']
@@ -8863,7 +8866,7 @@ for value,name in ((5,'Tangerine'),(6,'Plum'),(8,'Green'),(0,'Graphite'),(1,'Cri
     m.paint(view)
     assert {b[4]&0xffffff for b in m.bands if b[1]>m.bands[0][1]}=={color_t(ACCENTS[value][0])&0xffffff}
     assert m.bands[0][4]==color_t(ACCENTS[value][4]); passed()
-writes=click(3); assert [(w[0],m.text(w[2])) for w in writes]==[(0,'THEME'),(0,'MINIMAL_ACCENT'),(1,'ROUNDED'),(1,'TIMETITLE')]
+writes=pick(0); assert [(w[0],m.text(w[2])) for w in writes]==[(0,'THEME'),(0,'MINIMAL_ACCENT'),(1,'ROUNDED'),(1,'TIMETITLE')]
 assert texts()[3]=='Theme: Minimal' and corners_switch()==['switch_on'] and m.nodes[light_label]['text']=='Light Mode: Off'
 m.paint(view); assert m.selected(view)==0
 kids=m.nodes[view]['children']
@@ -8873,15 +8876,15 @@ m.paint(view); assert not m.bands and m.rounded[0]['color']==color_t(ACCENTS[0][
 # Light Mode's Auto survives a Theme change; the other preset rows are the user's to change after.
 m.call(address=f_light,args=(ctx_light,m.event,0,0),gap=0); m.call(address=f_light,args=(ctx_light,m.event,0,0),gap=0)
 assert m.nodes[light_label]['text']=='Light Mode: Auto'
-for theme in ('Classic','Minimal'):
-    writes=click(3); assert 'LIGHT' not in [m.text(w[2]) for w in writes] and m.nodes[light_label]['text']=='Light Mode: Auto'
+for t in (1,0):
+    writes=pick(t); assert 'LIGHT' not in [m.text(w[2]) for w in writes] and m.nodes[light_label]['text']=='Light Mode: Auto'
 m.call(address=f_light,args=(ctx_light,m.event,0,0),gap=0); assert m.nodes[light_label]['text']=='Light Mode: Off'; passed()
 # Minimal's accents (MINIMAL_ACCENT): Ivory, then Classic's; a coloured one is the card's fill.
 for value,name in ((1,'Crimson'),(2,'Tidal'),(3,'Champagne'),(4,'Cobalt'),(5,'Tangerine'),(6,'Plum'),(8,'Green'),(7,'Ivory'),(0,'Graphite')):
     writes=click(0); assert [(w[0],m.text(w[2])) for w in writes]==[(value,'MINIMAL_ACCENT')] and texts()[0]=='Accent: '+name
     m.paint(view); assert not m.bands and m.rounded[0]['color']==color_t(0xeeeeec if value==7 else ACCENTS[value][0])
 passed()
-click(3); home_bounds(False,True); click(3); home_bounds(False); passed()
+pick(1); home_bounds(False,True); pick(0); home_bounds(False); passed()
 bar=m.node('window','system_bar'); m.word(syms['system_bar'],bar)
 for value,name in ((1,'Percent'),(2,'Icon + Percent'),(3,'Percent Inside'),(0,'Icon')):
     writes=click(2); assert [(w[0],m.text(w[2])) for w in writes]==[(value,'BATTERY')] and texts()[2]=='Battery: '+name
@@ -9031,8 +9034,8 @@ cached=m.node('list_view'); library=m.node('list_view')
 m.word(cached+O['LIST_DEFAULT_ITEM_HEIGHT'],SET['ROW']); m.word(cached+O['ROW_HEIGHT'],0); m.word(cached+O['W_Y'],SET['TOP'])
 m.word(library+O['W_Y'],0); m.word(library+O['LIST_DEFAULT_ITEM_HEIGHT'],72)
 previous=m.node('window','sysset_page',[cached,library]); m.nodes[m.wm]['children'].insert(0,previous)
-for classic in (1,0,1,0,1):  # each a click on Theme, from Minimal
-    f,ctx=m.nodes[button(theme)]['click']; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+for classic in (1,0,1,0,1):  # each a Theme pick, from Minimal
+    assert m.call(address=payload_syms['theme_pick'],args=(classic,0,0,0),gap=0)==0
     assert m.get(cached+O['W_Y'])==(0 if classic else SET['TOP'])  # cached page, before any layout
     assert m.get(m.get(view+O['W_PARENT'])+O['W_Y'])==(0 if classic else SET['TOP'])
     assert m.get(library+O['W_Y'])==0
@@ -9094,7 +9097,7 @@ f,ctx=m.handler(m.nodes[rows[0]]['children'][0],O['EVT_CLICK']); m.call(address=
 m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[3][i]) for i in (4,0,1)]; passed()
 # Minimal to Classic, live: the very next paint is Classic's preset Cobalt bar.
 m,view,rows=display({}); m.paint(view); assert not m.bands
-f,ctx=m.handler(m.nodes[rows[3]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+m.call(address=payload_syms['theme_pick'],args=(1,0,0,0),gap=0)
 m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
 # Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Graphite; THEME=2 is Minimal.
 for config,want in (({'THEME':'1','ACCENT':'7'},['Theme: Classic','Light Mode: Off','Accent: Graphite']),
@@ -9177,7 +9180,7 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
 passed()
 # The same stored THEME=2 where Nano is offered: its Appearance is Theme and Nano's own options.
 m,view,rows=display({'THEME':'2'},setup=nano)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Battery: Icon']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Battery: Icon','Row Art: On']; passed()
 # Nano's Accent is Nano Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
 # Nano does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
 # then Nano Blue, each band its own gloss: Nano Blue's stops, the others derived from their tones.
@@ -9190,6 +9193,70 @@ for value,name in ((0,'Graphite'),(1,'Crimson'),(2,'Tidal'),(3,'Champagne'),(4,'
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'NANO_ACCENT')] and row_text(rows[0])=='Accent: '+name
     m.paint(view); top=NB_TOP if value==9 else int(turn(GLOSS_TOP,ACCENTS[value][0])[1:],16)  # the first row: the top line
     assert m.bands[0][4]==color_t(top),(name,hex(m.bands[0][4]))
+passed()
+# Row Art is Nano's own option (assets/themes/nano/theme.xml: key ROWART, values Off and On, each naming
+# the set it boots), drawn and cycled by the generic own-option row: the payload has no Row Art code. Its
+# key is read 14th, after NANO_ACCENT, on unless chosen; Centre writes the next value under the theme's
+# key; the stored value picks the set the first system_bar boots: Off nano-text, On (or unreadable) nano.
+m,view,rows=display({},setup=nano); art=m.nodes[view]['children'][5]
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Battery: Icon','Row Art: On']
+assert m.config_reads[12:14]==[('/mnt/data/config.ini','IPOD','NANO_ACCENT','9'),('/mnt/data/config.ini','IPOD','ROWART','1')]
+def art_boot(config):  # the names a fresh Nano's first system_bar loaded, with config stored
+    k=Machine(); k.config.update(config); return nano_boot(k)
+assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['nano_system_bar']
+assert art_boot({'ROWART':'0'})==['nano-text_system_bar']
+passed()
+# Theme opens the picker (Display's page again, its rows the themes the build offers: Minimal and Classic
+# on a release build, Nano too on --dev) and writes nothing; the current theme's row holds select.
+class RestartMachine(QueueMachine):
+    answer=0  # the confirm's: 10 is OK
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)=='q:navigator_to_with_context' and self.text(u.reg_read(REGS[0]))=='dialog/confirminfo_dialog':
+            self.prompts.append(self.text(u.reg_read(REGS[1])+8)); self.returns(self.answer); return
+        super().hook(u,address,size,unused)
+def offered(k): nano(k); k.config['THEME']='1'  # Classic, on a build that offers Nano
+m,view,rows=display({'THEME':'1'}); f,ctx=m.handler(m.nodes[rows[3]]['children'][0],O['EVT_CLICK']); m.calls=[]
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None)
+assert m.get(payload_syms['display_sub'])==0 and not [c for c in m.calls if c[0]=='write_int_config']
+for setup,names in ((None,['Minimal','Classic']),(offered,['Minimal','Classic','Nano'])):
+    m,view,_=display({'THEME':'1'},sub=4,setup=setup)
+    assert [row_text(r) for r in m.nodes[view]['children']]==names and m.icons_set==['unselect','select','unselect'][:len(names)]
+# A live pick (Minimal to Classic) applies at once and moves the check; the current theme's own row does nothing.
+m,view,rows=display({}); pview=display_page(m,4); m.calls=[]
+assert m.call(address=payload_syms['theme_pick'],args=(0,0,0,0),gap=0)==0 and not [c for c in m.calls if c[0]=='write_int_config']
+writes=pick(1); assert [(w[0],m.text(w[2])) for w in writes][:1]==[(1,'THEME')] and row_text(rows[3])=='Theme: Classic'
+assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select']
+# Nano needs its own set: the confirm asks; Cancel writes nothing and stays Classic; OK writes THEME and
+# Nano's presets (Light Mode On unless Auto is stored; Nano Blue; Row Art On where it was Off), in that
+# order, then restarts through device_reboot (the queue saved first).
+for answer,art,light,want in ((0,'0','0',[]),(10,'1','0',[(2,'THEME'),(1,'LIGHT'),(9,'NANO_ACCENT')]),
+                              (10,'0','2',[(2,'THEME'),(9,'NANO_ACCENT'),(1,'ROWART')])):
+    m,view,_=display({'NANO_ACCENT':'4','ROWART':art,'LIGHT':light},sub=4,cls=RestartMachine,setup=offered)
+    m.answer=answer; m.prompts=[]; m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
+    assert m.call(address=payload_syms['theme_pick'],args=(2,0,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
+    names=[c[0] for c in m.calls if c[0] in ('write_int_config','stock_reboot')]
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want
+    assert names==['write_int_config']*len(want)+['stock_reboot'][:answer==10],answer
+    t=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+    assert m.text(m.get(t))==('Nano' if answer else 'Classic')
+# From a booted Nano, Classic needs SET0's code back: a restart too. Row Art the same; Cancel keeps On.
+m,view,_=display({},sub=4,cls=RestartMachine,setup=nano); m.u.mem_protect(*TEXT,5); m.record_syscalls(); m.prompts=[]
+m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); m.calls=[]
+m.call(address=payload_syms['theme_pick'],args=(1,0,0,0),gap=0)
+assert m.prompts==['Restart to apply?'] and not [c for c in m.calls if c[0]=='write_int_config']
+for answer,want in ((0,[]),(10,[(0,'ROWART')])):
+    m,view,_=display({},cls=RestartMachine,setup=nano); m.answer=answer; m.prompts=[]
+    m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'
+    art=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[art]['children'][0],O['EVT_CLICK']); m.calls=[]
+    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='Row Art: On'
+    assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot'][:answer==10]
+# The restart test applies the chosen theme's presets: from a booted Nano with Row Art Off (nano-text),
+# Nano with its preset (On) boots nano, another set; with Row Art On, the set running. Classic: always.
+for art,want in (('0',1),('1',0)):
+    k=Machine(); k.config['ROWART']=art; nano_boot(k)
+    assert [k.call(address=payload_syms['theme_restart'],args=(t,0,0,0),gap=0) for t in (2,1)]==[want,1],art
 passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent

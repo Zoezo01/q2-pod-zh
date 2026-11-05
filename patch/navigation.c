@@ -191,6 +191,7 @@ extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
 extern unsigned coverflow_scope(void *page);
 extern void coverflow_home_art(void *top);
 extern void coverflow_home_layout(void);
+extern int ringnav_reboot(void);
 extern void coverflow_home_clip(void *w, void *canvas, int begin);
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
 extern void lockscreen_paint(void *w, void *canvas);
@@ -497,18 +498,20 @@ typedef struct {
     unsigned lyric_at, lyric_follow_at, lyric_song, lyric_rows_song;
     /* The Display settings, read from config.ini on first use, and the display page's value labels.
      */
-    int settings_read, accent, minimal_accent, nano_accent, home, battery, home_rockbox, theme,
-        shortcut, rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
-        keep_lit,                            /* Smart Awake (#57, keep_lit_poll) */
-        np_centred,                          /* Centred Now Playing (ringnav_ui_load) */
-        keytone_hp,                          /* Click With Headphones (ringnav_buzzer) */
-        scrub_single,                        /* Single Press Scrub (np_key) */
-        theme_booted,                        /* theme_boot ran (ringnav_ui_load) */
-        geom; /* the geometry set theme_boot wrote; 0, SET0, until then */
+    int settings_read, accent, minimal_accent, home, battery, home_rockbox, theme, shortcut,
+        rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
+        keep_lit,                  /* Smart Awake (#57, keep_lit_poll) */
+        np_centred,                /* Centred Now Playing (ringnav_ui_load) */
+        keytone_hp,                /* Click With Headphones (ringnav_buzzer) */
+        scrub_single,              /* Single Press Scrub (np_key) */
+        theme_booted,              /* theme_boot ran (ringnav_ui_load) */
+        geom;                      /* the geometry set theme_boot wrote; 0, SET0, until then */
+    int own[THEME_KEYS]; /* the themes' own keys' values (theme_keys[], tools/theme.py), read after
+                            the twelve */
     unsigned keep_lit_at;
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
-    void *setting_label[12];
+    void *setting_label[12 + THEME_KEYS]; /* SETTING_OWN + THEME_KEYS */
     unsigned tone_key; /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     int greeted;       /* the first reachable list got its boot repaint */
     /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
@@ -1675,8 +1678,11 @@ enum {
     SETTING_NPCENTRED,
     SETTING_KEYTONEHP,
     SETTING_SCRUBSINGLE,
-    SETTING_TIMETITLE
+    SETTING_TIMETITLE,
+    SETTING_OWN
 };
+_Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN + THEME_KEYS,
+               "one label per Display row");
 #include "themes.inc" /* tools/theme.py, from assets/themes/<id>/theme.xml */
 _Static_assert(DRIFT_TEXELS >= 4 * (375 - HOME_SPLIT_W) * CLIENT_H_MAX,
                "Home drift frame fits every set");
@@ -1688,7 +1694,7 @@ int client_h(void) { return 320 - geom_val(V_BAR); }
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
  * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
- * in Title. */
+ * in Title; 12 on: a theme's own options, SETTING_OWN + k for theme_keys[k]. */
 static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",     "THEME",
                                             "SHORTCUT",  "ROUNDED",   "LIGHT",       "KEEPLIT",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
@@ -1713,12 +1719,17 @@ static int *const setting_values[] = { &st.accent,     &st.home,         &st.bat
                                        &st.theme,      &st.shortcut,     &st.rounded,
                                        &st.light,      &st.keep_lit,     &st.np_centred,
                                        &st.keytone_hp, &st.scrub_single, &st.time_title };
-/* An option's value and config key: the accent's are the theme's own, the rest setting_values'. */
+/* An option's value and config key: the accent's are the theme's own, an own option's st.own[] and
+ * theme_keys[], the rest setting_values'. */
 static int *option_slot(const theme_t *T, int setting) {
-    return setting == SETTING_ACCENT ? T->accent_slot : setting_values[setting];
+    return setting == SETTING_ACCENT ? T->accent_slot
+           : setting >= SETTING_OWN  ? &st.own[setting - SETTING_OWN]
+                                     : setting_values[setting];
 }
 static const char *option_key(const theme_t *T, int setting) {
-    return setting == SETTING_ACCENT ? T->accent_key : setting_keys[setting];
+    return setting == SETTING_ACCENT ? T->accent_key
+           : setting >= SETTING_OWN  ? theme_keys[setting - SETTING_OWN].key
+                                     : setting_keys[setting];
 }
 /* The option bound to setting, or NULL. */
 static const option_t *option_of(const theme_t *T, int setting) {
@@ -1768,8 +1779,9 @@ __attribute__((noinline)) static void settings_read(void) {
     st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
     st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
     st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
-    /* any digit; the fixup below takes one outside Nano's values to its default, Nano Blue */
-    st.nano_accent = config_value("IPOD", "NANO_ACCENT", 10, ACCENT_N);
+    /* the themes' own keys, after the thirteen, in table order */
+    for (int k = 0; k < THEME_KEYS; ++k)
+        st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);
     /* A stored value outside an option's values is its default (Classic's Ivory: Graphite). */
     for (int t = 0; t < THEME_N; ++t)
         for (int k = 0; k < themes[t].n_opts; ++k) {
@@ -4606,8 +4618,23 @@ static unsigned boot_page(const volatile unsigned short *v, unsigned from) { /* 
     }
     return page;
 }
+/* The set T boots with setting at v and every other option as stored; with chosen, as a switch to T
+ * leaves them: an option's preset unless it has none or the stored value is its keep
+ * (theme_preset's test). Its first own option selects the set (tools/theme.py allows one); without
+ * one, T->geom. */
+static int geom_with(const theme_t *T, int setting, int v, int chosen) {
+    for (int k = 0; k < T->n_opts; ++k) {
+        const option_t *o = &T->opts[k];
+        if (o->setting < SETTING_OWN) continue;
+        int s = o->setting - SETTING_OWN, w = o->setting == setting ? v : st.own[s];
+        if (chosen && o->preset >= 0 && w != o->keep) w = o->preset;
+        return theme_keys[s].sets[w];
+    }
+    return T->geom;
+}
+int theme_geom(const theme_t *T) { return geom_with(T, -1, 0, 0); }
 static void theme_boot(void) {
-    unsigned g = theme()->geom, p, q;
+    unsigned g = theme_geom(theme()), p, q;
     const volatile unsigned short *v = boot_values[g];
     for (p = boot_page(v, 0); p != ~0u; p = boot_page(v, p + THEME_PAGE))
         if (theme_mprotect((void *)p, THEME_PAGE, 7)) { /* RWX */
@@ -5281,11 +5308,15 @@ static void setting_text(int i) {
         widget_set_text_utf8(st.setting_label[0], text);
         return;
     }
-    if (i == 3 || i == 4) {
+    if (i == 3 || i == 4 || i >= SETTING_OWN) {
         if (i == 3)
             tk_snprintf(text, sizeof text, "Theme: %s", theme()->name);
-        else
+        else if (i == 4)
             tk_snprintf(text, sizeof text, "Shortcut: %s", ipod_home_shortcut());
+        else {
+            const theme_key_t *K = &theme_keys[i - SETTING_OWN];
+            tk_snprintf(text, sizeof text, "%s: %s", K->label, K->names[st.own[i - SETTING_OWN]]);
+        }
         widget_set_text_utf8(st.setting_label[i], text);
         return;
     }
@@ -5338,10 +5369,11 @@ static void theme_preset(void) {
     }
 }
 
+void restart_confirm(int setting, int value);
 static int setting_click(void *ctx, void *event) {
     int i = (int)(long)ctx;
     const theme_t *T = theme();
-    int *value = option_slot(T, i);
+    int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
     /* Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games */
     static const int shortcut_next[] = { 3, 2, 6, 5, 1, 4, 0 };
@@ -5351,7 +5383,8 @@ static int setting_click(void *ctx, void *event) {
     if (i == 4)
         *value = shortcut_next[shortcut()];
     else if (i)
-        *value = (*value + 1) % setting_count(i);
+        *value =
+            (*value + 1) % (i >= SETTING_OWN ? theme_keys[i - SETTING_OWN].n : setting_count(i));
     else { /* Graphite, ..., Green, Ivory (Minimal); a theme's own schemes after Green */
         const option_t *o = option_of(T, SETTING_ACCENT);
         unsigned mask = o && o->values ? o->values : (1u << ACCENT_N) - 1;
@@ -5360,6 +5393,12 @@ static int setting_click(void *ctx, void *event) {
             if (!v && T->n_schemes > ACCENT_N && *value < ACCENT_N) v = ACCENT_N;
             *value = v < T->n_schemes ? v : 0;
         } while (!(mask >> *value & 1));
+    }
+    if (i >= SETTING_OWN && geom_with(T, i, *value, 0) != st.geom) {
+        int v = *value; /* an own option's value that boots another set */
+        *value = was;
+        restart_confirm(i, v);
+        return 0;
     }
     write_int_config(*value, "IPOD", key);
     if (i == 6) { /* Auto applies from this click */
@@ -5376,16 +5415,6 @@ static int setting_click(void *ctx, void *event) {
         widget_invalidate_force(window_manager(), (void *)0);
     } else if (i < 7) { /* the switches from Smart Awake on only need their toggle drawn, Centred
                          * Now Playing the next open (ringnav_ui_load) */
-        if (i == 3) {
-            theme_preset();
-            coverflow_home_layout();
-            settings_layout(window_manager());
-            np_theme();
-            keep_selected(st.setting_label[3]);
-            for (int k = 0; k < 7; ++k)
-                if (k != 3 && k != 4) setting_text(k); /* the preset's rows */
-            setting_text(11);
-        }
         np_fill(0);
         image_manager_unload_all(image_manager());
         widget_invalidate_force(window_manager(), (void *)0);
@@ -5447,6 +5476,58 @@ static void genre_fill(void *win, void *label, const char *text) {
     if (!st.genre_timer && genre_over() > 0)
         st.genre_timer = timer_add(genre_step, (void *)0, MARQUEE_HOLD_MS);
 }
+/* A switch to theme t that keeps the set: THEME, then t's preset, Home and the settings inset
+ * relaid, the Appearance rows (Theme and t's options) redrawn, the per-theme caches dropped and
+ * everything repainted. */
+void theme_select(int t) {
+    setting_put(&st.theme, t, "THEME");
+    theme_preset();
+    coverflow_home_layout();
+    settings_layout(window_manager());
+    np_theme();
+    st.pct_digit = st.pct_sign = 0; /* the battery's digits, measured again in t's font */
+    keep_selected(st.setting_label[SETTING_THEME]);
+    const theme_t *T = theme();
+    setting_text(SETTING_THEME);
+    for (int k = 0; k < T->n_opts; ++k) setting_text(T->opts[k].setting);
+    np_fill(0);
+    image_manager_unload_all(image_manager());
+    widget_invalidate_force(window_manager(), (void *)0);
+}
+int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
+/* A choice that needs another geometry set: confirmed, setting takes value (a theme its presets
+ * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
+ * first; cancelled, nothing is written and nothing changes. */
+void restart_confirm(int setting, int value) {
+    struct {
+        int kind, ms;
+        char text[0x400];
+    } prompt = { 1, 0, "Restart to apply?" };
+    if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
+    const theme_t *T = theme();
+    setting_put(option_slot(T, setting), value, option_key(T, setting));
+    if (setting == SETTING_THEME) theme_preset();
+    ringnav_reboot();
+}
+/* The picker's rows, while it shows. ponytail: compared, never dereferenced; the picker is its only
+ * caller in use. */
+static void *theme_view __attribute__((section(".scratch")));
+static int theme_pick(void *ctx, void *event) {
+    int t = (int)(long)ctx;
+    accent();
+    if (t == st.theme) return 0;
+    if (theme_restart(t)) {
+        restart_confirm(SETTING_THEME, t);
+        return 0;
+    }
+    theme_select(t);
+    void *win = window_manager_get_top_window(window_manager());
+    void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
+    for (unsigned i = 0; view && view == theme_view && i < widget_count_children(view); ++i)
+        image_base_set_image(widget_get_child(widget_get_child(widget_get_child(view, i), 0), 0),
+                             (int)i == t ? "select" : "unselect");
+    return 0;
+}
 
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
@@ -5495,7 +5576,7 @@ int ringnav_np_info(void *win) {
 }
 
 /* The Display sub-page the next display_page is to be (DISPLAY_*), 0 for Display itself. */
-enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS };
+enum { DISPLAY_APPEARANCE = 1, DISPLAY_COVERFLOW, DISPLAY_CONTROLS, DISPLAY_THEMES };
 static int keylock_open(void *ctx, void *event) {
     navigator_to("systemset/keylock_page");
     return 0;
@@ -5514,7 +5595,9 @@ static void setting_row(void *view, int i) {
         "playset_covermode", "system_display",    "system_display",      "system_display",
         "playset_covermode", "system_keytone",    "playset_covermode",   "system_display"
     };
-    st.setting_label[i] = list_row(view, icons[i], setting_click, (void *)(long)i);
+    const char *icon = i < SETTING_OWN ? icons[i] : "system_display";
+    st.setting_label[i] = list_row(view, icon, i == SETTING_THEME ? display_open : setting_click,
+                                   (void *)(long)(i == SETTING_THEME ? DISPLAY_THEMES : i));
     setting_text(i);
 }
 
@@ -5529,8 +5612,9 @@ static void setting_row(void *view, int i) {
  * in place. ponytail: stock's page opened over itself; its own rows' state is never touched on a
  * sub-page. */
 int ringnav_display(void *win, void *ctx) {
-    static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls" },
-                             *const sub_icons[] = { 0, "system_display", "playset_covermode" };
+    static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls", "Theme" },
+                             *const sub_icons[] = { 0, "system_display", "playset_covermode",
+                                                    "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
                                             "system_update" };
     static const char *const qs_icons[] = { "system_display" },
@@ -5553,6 +5637,15 @@ int ringnav_display(void *win, void *ctx) {
     widget_destroy_children(view);
     void *nav = widget_lookup(win, "view_navbar", 1), *title = nav ? widget_get_child(nav, 0) : 0;
     if (title) widget_set_text_utf8(title, titles[sub]);
+    if (sub == DISPLAY_THEMES) { /* the built-ins this build offers; card themes follow (PR 12) */
+        accent();
+        for (int t = 0; t < theme_offer; ++t)
+            widget_set_text_utf8(
+                list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
+                themes[t].name);
+        theme_view = view;
+        return result;
+    }
     if (sub == DISPLAY_COVERFLOW) {
         pod_rows(win, "scroll_view_display", POD_ARTIST_CF, 1, cf_icons);
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);

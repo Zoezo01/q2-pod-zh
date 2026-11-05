@@ -30,12 +30,22 @@ typedef struct {
     const char *label;   /* a theme's own scheme's name ("Nano Blue"); NULL: accent_names[v] */
 } scheme_t;
 typedef struct {
-    unsigned char setting; /* SETTING_* (navigation.c): the bound row's click/text code */
+    unsigned char setting; /* SETTING_* (navigation.c): the bound row's click/text code, or
+                              SETTING_OWN + k: the theme's own option theme_keys[k] */
     signed char def;       /* stored value not in values -> def; -1 none */
     signed char preset;    /* theme_preset writes it; -1 none */
     signed char keep;      /* a stored value theme_preset leaves (Light's Auto 2); -1 none */
     unsigned values;       /* bitmask of values the row takes; 0: all of setting_counts[setting] */
 } option_t;
+/* a theme's own IPOD key (tools/theme.py theme_keys), read after the payload's twelve in table
+ * order into st.own[] */
+typedef struct {
+    const char *key;           /* the IPOD key; a theme-owned accent key's too */
+    const char *label;         /* the row's title; 0: an accent key (its row is Accent's) */
+    const char *const *names;  /* [n] the values' labels */
+    const unsigned char *sets; /* [n] the GEOM_* set each value boots */
+    unsigned char n, def;      /* value count; the value a missing or unreadable key reads */
+} theme_key_t;
 typedef struct {
     /* coverflow.shelf (px, brightness of 256), then coverflow.caption: offsets.inc's CF_* */
     short top, x1, xs, z1, zs, eye, bright1, bright2, reflect, reflect_top, stride, radius;
@@ -71,8 +81,9 @@ typedef struct {
     unsigned char art_square; /* art takes Corners: Square */
     unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;
-const theme_t *theme(void);   /* accent(); return &themes[st.theme]; */
-const scheme_t *scheme(void); /* theme()'s scheme accent(), in the half Light Mode picks */
+const theme_t *theme(void);       /* accent(); return &themes[st.theme]; */
+int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stored values */
+const scheme_t *scheme(void);     /* theme()'s scheme accent(), in the half Light Mode picks */
 int client_h(void); /* the window under the bar of the set theme_boot wrote (navigation.c) */
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s); /* navigation.c */
 #endif
