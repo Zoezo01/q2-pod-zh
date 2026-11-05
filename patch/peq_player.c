@@ -490,7 +490,7 @@ static int ao_playing(void) {
 #define AO_BUFFERSIZE (*(volatile unsigned *)0xafa1b4u) /* the ring, in bytes */
 #define AO_BYTES (*(volatile unsigned *)0xb11598u)
 static volatile int ao_natural, ao_draining; /* ao_natural: the way a natural end was on, plus 1 */
-static int ao_wait;   /* the reopen under way is a natural one: dac_ioctl waits for the line */
+static int ao_wait;   /* the reopen under way is a natural one, by ao_init's branch or a DSD end in ao_uninit: dac_ioctl waits for the line */
 static int ao_stayed; /* a natural change kept the PCM open: ao_write looks at the first write */
 static int ao_pcm[3]; /* what the open PCM is: reinit_audio_chain overwrites ao_data with the request before init */
 static int dac_word(int pressed);
@@ -504,6 +504,7 @@ static unsigned ao_avail(void *pcm) {
 void ao_uninit(int immed) {
     ao_natural = !immed && !NEXT_FLAG && !DSD_FILE ? OUTPUT_WAY + 1 : 0;
     if (ao_natural) ao_pcm[0] = AO_RATE, ao_pcm[1] = AO_CHANNELS, ao_pcm[2] = AO_FORMAT;
+    ao_wait = !immed && !NEXT_FLAG && DSD_FILE;
     ((void (*)(int))0x43868cu)(immed);
 }
 /* Bluetooth's cold route keeps the PCM only with this much of the ring still to play. A kept PCM gets no Drain, so
@@ -601,11 +602,13 @@ static int dac_told(void) { return dac_word(1); }
 /* The end of init (0x4391b0), past stock's checks of the way and the fd: the ioctl is stock's own. A mark still unread
  * is a natural start ao_init's branch didn't take (DSD at either end, no PCM open, the arm dropped): demo skipped its
  * mute and sleep for it, so this is what stands in for them. dac_word answers each word once, so a mark ao_init read
- * can't wait here too. ponytail: a start offset passes this site and dac_unmute reads only a press's, so a natural
+ * can't wait here too. Every natural end out of DSD waits, mark or not, through ao_uninit's ao_wait; ao_init's line
+ * after stock's init clears it. DSD_FILE also reads 1 at a PCM track's end into a preloaded DSD one, so that waits too.
+ * ponytail: a start offset passes this site and dac_unmute reads only a press's, so a natural
  * start with an offset that reopens keeps the cut, as it has since start_mute. */
 int dac_ioctl(int fd, unsigned request, void *arg) {
     int r = ioctl(fd, request, arg);
-    if (dac_told() || ao_wait || dac_word(0)) usleep(DAC_RELEASE_MS * 1000);
+    if (dac_told() || dac_word(0) || ao_wait) usleep(DAC_RELEASE_MS * 1000);
     return r;
 }
 /* seek (0x42b164), a start offset's or an mcl-seek's: demo stamps a user's, not A-B Repeat's loop. */

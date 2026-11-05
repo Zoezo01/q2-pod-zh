@@ -636,5 +636,26 @@ assert wait == 130 and pcms == 2, (wait, pcms)
 for preload in (False, True):
     wait, opens, pcms = released('a44.flac', 'b44.flac', preload=preload)
     assert opens == 1 and pcms == 1, (preload, opens, pcms)
-print('The jack, a natural start: DSD on either side and another format wait once before frames; no mark and a stay-open add none.')
+# A natural end out of DSD waits with no mark: a preload, where demo has no mute, and a cold one. The flag also reads 1 at
+# a PCM track's end into a preloaded DSD one, so that waits too. Into DSD with no preload and no mark, and PCM to PCM, as before.
+for first, second, preload in (('z.dsf', 'b44.flac', True), ('z.dsf', 'y.dsf', True), ('z.dsf', 'b44.flac', False), ('a44.flac', 'z.dsf', True)):
+    wait, opens, pcms = released(first, second, marked=False, preload=preload)
+    assert wait == 130 and opens == 2 and pcms == 2, (first, second, preload, wait, opens, pcms)
+wait, opens, pcms = released('a44.flac', 'b48.flac', marked=False)
+assert wait == 0 and pcms == 2, (wait, pcms)
+# ao_uninit's own word, as stock's uninit starts: a natural end out of DSD sets it; the same end cut by a press, and PCM's end, don't.
+def uninit_word(first, second, pressed):
+    p = Player()
+    words = []
+    if pressed: p.e.watch_fn(ps['ao_uninit'], lambda e: e.w32(0xb10e6c, 1))
+    p.e.watch_fn(0x43868c, lambda e: words.append(e.r32(ps['ao_wait'])))
+    p.song(first)
+    p.run(0.2)
+    p.gapless(second)
+    assert p.until(lambda: words, 8), (first, pressed)
+    return words[0]
+assert uninit_word('z.dsf', 'b44.flac', False) == 1
+assert uninit_word('z.dsf', 'b44.flac', True) == 0
+assert uninit_word('a44.flac', 'b48.flac', False) == 0
+print('The jack, a natural start: DSD on either side and another format wait once before frames; a natural end out of DSD waits with no mark, a press-cut one sets no word; a stay-open adds none.')
 shutil.rmtree(work, ignore_errors=True)

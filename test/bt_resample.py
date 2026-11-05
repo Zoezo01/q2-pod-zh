@@ -856,11 +856,18 @@ press[0] = None
 begin(0); end(1); nxt()
 for t in TRIPLE: w(t, 0xffffffff)
 got = nxt(); assert got == JACK, got
-# DSD keeps its mute, at the end of a DSD track and at the start of one.
+# DSD keeps its mute, at the end of a DSD track and at the start of one. The end's reopen waits for the line, a press's cut doesn't.
 begin(0); w(DSD_FILE, 1); end(1); w(DSD_FILE, 0)
+assert nxt(48000) == [*JACK, WAIT]
+begin(0); w(DSD_FILE, 1); w(NEXT, 1); end(1); w(DSD_FILE, 0); w(NEXT, 0)
 assert nxt(48000) == JACK
 begin(0); end(1); w(DSD_FILE, 1)
 assert nxt(48000) == JACK
+# A mark at a DSD end is spent by that wait: the reopen after it has none to read.
+begin(0); w(DSD_FILE, 1); end(1); w(DSD_FILE, 0); marked()
+assert nxt(48000) == [*JACK, WAIT]
+got = nxt(44100); assert WAIT not in got, got
+press[0] = None
 # The drain's error: nothing changes, stock's own drain and reopen follow.
 begin(0); end(1); drain_rc[0] = -5
 assert nxt(48000) == HEARD and r(PCM) == 0x5000
