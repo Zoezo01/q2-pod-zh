@@ -28,6 +28,8 @@ PAYLOAD_KEYS = frozenset(
 # value name -> its C name (theme.h); the font keys take FONTS
 FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'nano': 'FONT_NANO'}
 CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'},
+           'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
+           'bar.battery.painter': {'stock': 'BATT_STOCK', 'nano': 'BATT_NANO'},
            **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
@@ -53,6 +55,8 @@ def key(path, field, type, hi=None, final=False):
 # theme_t declaration order; the scheme.* keys are scheme_t's.
 SCHEMA = {k.path: k for k in (
     key('list.selection.painter', 'painter[PAINT_SELECTION]', 'enum'),
+    key('bar.fill.painter', 'painter[PAINT_BAR]', 'enum'),
+    key('bar.battery.painter', 'painter[PAINT_BATTERY]', 'enum'),
     key('home.chevron.visible', 'chevron_home', 'bool'),
     key('bar.title.caps', 'caps_mark', 'bool'),
     key('home.rows.caps', 'caps_home', 'bool'),
@@ -79,6 +83,9 @@ SCHEMA = {k.path: k for k in (
     key('list.row.meta_px', 'font_px[ROLE_META]', 'int', 64),
     key('bar.title.font', 'font[ROLE_BAR]', 'enum'),
     key('bar.title.font_size', 'font_px[ROLE_BAR]', 'int', 64),
+    Key('bar.battery.stops', 'batt', 'stops', 0, 0, (), 'live'),
+    key('bar.battery.line', 'batt_line', 'color', final=True),  # a grey that must follow the paper
+    key('bar.state.color', 'state_color', 'color'),  # 0: stock's glyph
     key('scheme.card', 'card', 'bool'),
     key('scheme.raw_red', 'raw_red', 'bool'),
     key('scheme.fill', 'fill', 'color'),
@@ -89,6 +96,8 @@ SCHEMA = {k.path: k for k in (
     key('scheme.sel.top', 'sel_top', 'color', final=True),
     key('scheme.sel.edge', 'sel_edge', 'color', final=True),
     key('scheme.sel.text', 'sel_text', 'color', final=True),
+    Key('scheme.bar.stops', 'bar', 'stops', 0, 0, (), 'live', True),
+    key('scheme.bar.line', 'bar_line', 'color', final=True),
     key('scheme.mode', 'mode', 'enum'),
     # the light half's flip ends; the dark half's are fixed, #000000 and #ffffff
     Key('scheme.paper', 'paper', 'color', 0, 0xffffff, O['LIGHT_PAPER'] * 0x010101, 'live'),
@@ -467,7 +476,7 @@ def resolve(root, by_id, seen=()):
         t = resolve(by_id[a['extends']], by_id, seen + (tid,))  # a fresh dict: ours to change
     else:
         t = {'accents': ALL_ACCENTS, 'accent_key': None, 'schemes': [zero_scheme() for _ in ACCENT_NAMES], 'opts': [],
-             **{k.field: k.default for k in SCHEMA.values() if not k.path.startswith('scheme.')}}
+             **{k.field: k.default for k in SCHEMA.values() if not k.path.startswith('scheme.')}, 'light': {}}
     t.update(id=tid, name=a['name'], index=int(a['index']), dev=int(a.get('dev', '0')), line=root.line)
     macros = ROLE_MACROS.get(tid, {})
     opts = None
@@ -578,9 +587,12 @@ def resolve(root, by_id, seen=()):
                     if attr != 'name':
                         h, k = split_half(attr)
                         x = value(e, f'{el}.{k}', text, macros)
-                        if h:  # ponytail: no final view key yet; one takes the colorScheme loop's rule
+                        f = SCHEMA[f'{el}.{k}']
+                        if h and not f.final:
                             err(e, f'{el}.{k}: one value for both halves')
-                        t[SCHEMA[f'{el}.{k}'].field] = x
+                        if h == 'dark' and k in e.attrs:
+                            err(e, f'{el}.{k}: stated twice ({k} and dark.{k})')
+                        (t['light'] if h == 'light' else t)[f.field] = x
     for c, n in named:
         if not t['accents'] >> scheme_names(t).index(n) & 1:
             err(c, f'scheme {n} is not in colorSchemes')
@@ -630,7 +642,7 @@ def validate(t, name):
             err(f'accent {word} {scheme_names(t)[accent[field]]} is not in colorSchemes')
     for k in SCHEMA.values():  # every value, those from a default or a base too (coverflow divides by some)
         if k.type not in ('set', 'stops'):
-            for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field]]:
+            for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field], t['light'].get(k.field, k.lo)]:
                 if not k.lo <= v <= k.hi:
                     err(f'{k.path}: {v} outside {k.lo}..{k.hi}')
     for s in t['schemes']:
@@ -735,14 +747,18 @@ def emit(themes, out, redirects={}):
     keys = list(theme_keys(themes))
     def setting(o): return f'SETTING_OWN + {keys.index(o["key"])}' if o.get('key') else o['setting']
     def gname(g): return f'GEOM_{g.name.upper().replace("-", "_")}'
-    def c(k, v): return list(CHOICES[k.path].values())[v] if k.type == 'enum' else v
+    def c(k, v):
+        if k.type == 'stops':
+            return stops_c(v)
+        return list(CHOICES[k.path].values())[v] if k.type == 'enum' else v
     lines = ['/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */']
     def rows(t, light):
         return [f'    {{ .tones = accents[{s.get("base", v)}], .flags = {s["card"] | s["raw_red"] << 1}, .fill = 0x{s["fill"]:06x}, '
                 f'.chevron = 0x{s["chevron"]:06x}, .muted = 0x{s["muted"]:06x}, .bar_light = 0x{s["bar_light"]:06x}, '
                 f'.sel = {stops_c(s["sel"])}, .sel_top = 0x{s["sel_top"]:06x}, .sel_edge = 0x{s["sel_edge"]:06x}, '
                 f'.sel_text = 0x{s["sel_text"]:06x}, .mode = {c(SCHEMA["scheme.mode"], s["mode"])}, '
-                f'.paper = 0x{s["paper"]:06x}, .ink = 0x{s["ink"]:06x}'
+                f'.paper = 0x{s["paper"]:06x}, .ink = 0x{s["ink"]:06x}, '
+                f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}'
                 + (f', .label = {json.dumps(s["label"])}' if 'label' in s else '') + ' },'
                 for v, s in enumerate(scheme_half(s, light) for s in t['schemes'])]
     for t in themes:
@@ -759,9 +775,13 @@ def emit(themes, out, redirects={}):
         lines.append('};')
     lines.append('static const theme_t themes[THEME_N] = {')
     for t in themes:
+        # a final field's halves {dark, light}, flipped between the default accent's light paper and ink
+        d = t['schemes'][max(accent_default(t), 0)]
+        halves = [half(t, light, d['paper'], d['ink']) for light in (False, True)]
+        def field(k): return '{%s, %s}' % tuple(c(k, h[k.field]) for h in halves) if k.final else c(k, t[k.field])
         # theme_t order: the live element fields, the pointers and n_opts, then the 'open' fields.
         fields = [('name', json.dumps(t['name'])),
-                  *((k.field, c(k, t[k.field])) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
+                  *((k.field, field(k)) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
                   ('accent_slot', ACCENT_KEYS.get(t['accent_key']) or f'&st.own[{keys.index(t["accent_key"])}]'), ('accent_key', json.dumps(t['accent_key'])),
                   ('schemes', f'{t["id"]}_schemes'), ('light', f'{t["id"]}_schemes' if shared(t) else f'{t["id"]}_light'),
                   ('n_schemes', len(t['schemes'])),

@@ -2,8 +2,10 @@
 #define Q2_THEME_H
 /* The built-in themes' shape (docs/internals.md#themes); the table is navigation.c's themes[]. */
 
-enum { PAINT_SELECTION, PAINTER_N };   /* theme_t.painter[] index */
+enum { PAINT_SELECTION, PAINT_BAR, PAINT_BATTERY, PAINTER_N }; /* theme_t.painter[] index */
 enum { SEL_CARD, SEL_BAR, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic bar) */
+enum { BAR_FLAT, BAR_GLOSS };          /* painter[PAINT_BAR]: the status bar's fill (Nano gloss) */
+enum { BATT_STOCK, BATT_NANO }; /* painter[PAINT_BATTERY]: the bar's battery and status marks */
 enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 };      /* scheme_t.flags (Ivory in Minimal; Crimson) */
 enum { SCHEME_DERIVE, SCHEME_LIGHT, SCHEME_DARK }; /* scheme_t.mode */
 enum { NP_IPOD, NP_CENTRED, NP_N };                /* theme_t.np_layout: np_pages[] index */
@@ -26,6 +28,8 @@ typedef struct {
     unsigned sel_top;    /* its first pixel row, a crisp line above the stops, 0 none */
     unsigned sel_edge;   /* its last pixel row, 0 none */
     unsigned sel_text;   /* text on it, 0: the row's own */
+    stops_t bar;         /* BAR_GLOSS: the status bar's rows above its line */
+    unsigned bar_line;   /* BAR_GLOSS: the bar's last pixel row */
     unsigned paper, ink; /* this half's, greys 0xRRGGBB: the light half's are the flip's ends
                             (LIGHT_PAPER and LIGHT_INK unless set), the dark half's 0x000000 and
                             0xffffff. A one-array theme's row holds the light half's: only
@@ -69,6 +73,9 @@ typedef struct {
     unsigned char chevron_home, caps_mark, caps_home, caps_np, icons_mono, icons_badge_muted,
         icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
     unsigned char font[ROLE_N], font_px[ROLE_N];    /* FONT_*; px 0: the style's size */
+    stops_t batt;          /* BATT_NANO: the level's stops, a hue in both halves */
+    unsigned batt_line[2]; /* BATT_NANO: the outline, nub and bolt, final: [0] dark, [1] light */
+    unsigned state_color;  /* bar_play/bar_pause's colour, final, 0xRRGGBB; 0: stock's glyph */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
     int *accent_slot;

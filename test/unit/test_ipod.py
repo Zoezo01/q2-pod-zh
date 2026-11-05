@@ -706,6 +706,54 @@ def test_status_bar_wants_the_stock_height():
         ipod.status_bar(root)
 
 
+# Nano's bar, from the spec's rules: bar text at bar_px (15 px), its caps (the font's own cap
+# height at that size) centred on the rows above the bar's last (line) row; title and clock share
+# one box height and y; the title starts as far in as the glass needs at the caps' top plus
+# CORNER_SLACK and ends CLOCK_GAP before the widest clock text; the clock is centred on the screen.
+def test_status_metrics_centre_the_caps_in_the_nano_bar():
+    from fontTools.ttLib import TTFont
+    f, g = TTFont(ipod.NANO_FONT_SRC, lazy=True), ipod.NANO
+    m = ipod.status_metrics(g, ipod.NANO_FONT_SRC)
+    assert m['px'] == g.bar_px == 15
+    assert m['cap'] == round(f['OS/2'].sCapHeight * g.bar_px / (f['hhea'].ascent - f['hhea'].descent))
+    assert 2 * m['cap_top'] + m['cap'] in (g.bar - 2, g.bar - 1)          # centred above the line
+    assert m['inset'] == ipod.corner_inset(m['cap_top']) + ipod.CORNER_SLACK
+    assert m['title'][0] == m['inset'] and m['title'][0] + m['title'][2] <= 375 / 2 - ipod.CLOCK_TEXT / 2 - ipod.CLOCK_GAP
+    assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
+
+
+def test_nano_status_bar_has_a_title_and_no_idle_mark():
+    root = bar(); ipod.status_bar(root, g=ipod.NANO); n = named(root)
+    m = ipod.status_metrics(ipod.NANO, ipod.NANO_FONT_SRC)
+    assert n['label_title'][1] == m['title'] and n['label_clock'][1] == m['clock'] and 'label_idle' not in n
+    assert [root[1][3], n['view_left'][1][3], n['view_right'][1][3]] == [26, 26, 26]
+    for name in ('label_title', 'label_clock'):
+        assert {n[name][2][f'style:{s}:{k}'] for s in ('normal', 'disable', 'focused') for k in ('font_size', 'font_name')} \
+            == {str(ipod.NANO.bar_px), ipod.NANO_FONT_NAME}
+    assert n['view_left'][3] == [] and n['view_left'][2]['children_layout'].endswith(f'xm={m["inset"]},s={ipod.inc("STATUS_GAP")})')
+
+
+# Right of the centred clock: the play state, or EQ while it is on and nothing plays (navigation.c
+# bar_state_sync), then Bluetooth, Wi-Fi and the battery, the group's margin clear of the glass at the
+# battery body's top.
+def test_nano_status_bar_battery_and_play_state_right():
+    root = bar(); ipod.status_bar(root, g=ipod.NANO); n = named(root)
+    assert [c[2]['name'] for c in n['view_right'][3]] == ['label_eq', 'img_state', *ipod.STATUS_RIGHT]
+    xm = ipod.corner_inset((ipod.NANO.bar - 1 - ipod.NANO.batt_h) // 2) + ipod.CORNER_SLACK
+    assert n['view_right'][2]['children_layout'].endswith(f'xm={xm},s={ipod.inc("STATUS_GAP")})')
+    assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
+
+
+def test_nano_status_bar_battery_must_fit(monkeypatch):
+    monkeypatch.setattr(ipod, 'BATT_ROOM', ipod.BATT_ROOM + 1)
+    with pytest.raises(ValueError, match=r'^Status bar battery needs \d+px of \d+px$'):
+        ipod.status_bar(bar(), g=ipod.NANO)
+    monkeypatch.undo()
+    ipod.status_bar(bar(), g=dataclasses.replace(ipod.NANO, batt_w=ipod.NANO.batt_w + 2))  # 94 of 94
+    with pytest.raises(ValueError, match=r'^Status bar battery needs 95px of 94px$'):
+        ipod.status_bar(bar(), g=dataclasses.replace(ipod.NANO, batt_w=ipod.NANO.batt_w + 3))
+
+
 def test_playing_page_follows_the_bar():
     root = playing(); ipod.playing_page(root, g=T26); n = named(root)
     assert n['img_more'][1] == [300, 0, 50, 40] and n['label_ipod_pos'][1] == [22, 0, 278, 40]

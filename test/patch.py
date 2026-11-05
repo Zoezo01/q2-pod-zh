@@ -8384,8 +8384,9 @@ assert light_image({'LIGHT':'1'},'file:///tmp/coverpic.jpg',False)[:4]==bytes([0
 
 # Images: decoded 32-bit theme bitmaps are mapped in place before stock caches them; covers by
 # path or URL, Home: Carousel's cards, Crimson and other formats are left alone. bitmap_t w @0, h @4, line_length @8, format @0xe.
-def image(config,name,fmt=3):
+def image(config,name,fmt=3,prep=None):
     m=Machine(); m.config=config; m.handlers[tramp['image']]='stock_image'
+    if prep: prep(m)
     bm=m.alloc(0x60); data=m.alloc(64)
     m.word(bm,2); m.word(bm+4,2); m.word(bm+8,12); m.u.mem_write(bm+0xe,struct.pack('<H',fmt)); m.word(bm+0x14,data)
     px=[bytes([0x48,0x14,0xff,0x80]),bytes([0x80,0x80,0x80,0xff])]  # BGRA: translucent red, grey
@@ -8744,6 +8745,121 @@ passed()
 nm=Machine(); nano_boot(nm); nm.calls=[]
 nm.call(address=HOOKS['ui_loader_load_widget_with_parent'][0],args=(nm.string('localmusic/allmusic_page'),0,0,0),gap=0)
 assert [(nm.text(c[1]),0x70000000<=c[1]<0x70010000) for c in nm.calls if c[0]=='stock_ui_load']==[('localmusic/nano_allmusic_page',True)]; passed()
+def nano_on(nm,rowart='1'):  # Nano on this release build, theme_boot done: st.geom is GEOM_NANO (GEOM_NANO_TEXT at ROWART=0)
+    nano_boot(nm,rowart); return nm
+def nano_bar(nm,*children):  # the system bar under Nano's set: 375x26
+    b=nm.node('system_bar','system_bar',list(children)); nm.word(b+O['W_PARENT'],nm.wm)
+    nm.word(b+O['W_W'],375); nm.word(b+O['W_H'],26); nm.word(syms['system_bar'],b); return b
+def channels(c): return (c&255,c>>8&255,c>>16&255)  # color_t's R, G, B
+# Nano's bar (BAR_GLOSS): the scheme's bar stops, one row per pixel over the 25 rows above the
+# line, then the #5a595a line in the last row. These are final colours, the light half's here (nano()
+# stores LIGHT=1): Light Mode's flip touches none.
+# The LCD fill is restored, and the paint, the title's included (Home, then a stock page's navbar
+# title, then that page again), stays under the 100,000-instruction cap.
+nb=nano_on(Machine()); nbar=nano_bar(nb,nb.node('hscroll_label','label_title'))
+def gpaint(win):
+    nb.top=win; nb.word(win+O['W_PARENT'],nb.wm); nb.bands=[]; gcost=[0]
+    ghook=nb.u.hook_add(UC_HOOK_CODE,lambda *a: gcost.__setitem__(0,gcost[0]+1),begin=BASE,end=SCRATCH-1)
+    nb.call(address=HOOKS['widget_on_paint_background'][0],args=(nbar,nb.canvas,0,0),gap=0); nb.u.hook_del(ghook)
+    return gcost[0]
+gnav=nb.node('window','allmusic_page',[nb.node('view','view_navbar',[nb.node('hscroll_label',text='Songs')],visible=0)])
+gcost=[gpaint(nb.node('window','home_page')),gpaint(gnav),gpaint(gnav)]
+grows=[b[:5] for b in nb.bands]
+assert [r[:4] for r in grows]==[(0,j,375,1) for j in range(26)],grows[:2]
+assert (grows[0][4],grows[24][4],grows[25][4])==(color_t(0xffffff),color_t(0x9c9e9c),color_t(0x5a595a))
+assert all(a>=b for j in range(24) for a,b in zip(channels(grows[j][4]),channels(grows[j+1][4])))  # every stop darkens
+assert nb.lcd_colors()==LCD_COLORS and max(gcost)<100000,gcost
+# The dark half (LIGHT=0): the same gloss shape in the dark bar stops, over the #3a393a separator.
+nd=Machine(); nd.config['LIGHT']='0'; nano_on(nd); ndbar=nano_bar(nd)
+nd.call(address=HOOKS['widget_on_paint_background'][0],args=(ndbar,nd.canvas,0,0),gap=0)
+gdrows=[b[:5] for b in nd.bands]
+assert [r[:4] for r in gdrows]==[(0,j,375,1) for j in range(26)]
+assert (gdrows[0][4],gdrows[24][4],gdrows[25][4])==(color_t(0x5a595a),color_t(0x1f1e1f),color_t(0x3a393a))
+assert all(a>=b for j in range(24) for a,b in zip(channels(gdrows[j][4]),channels(gdrows[j+1][4]))); passed()
+# The title (label_title, Nano's bar only) names the top window: Home "Q2 Pod", Now Playing,
+# Coverflow, a stock page's hidden navbar title, a payload page's 48 px caption row. A dialog keeps
+# the window's title, and an unchanged title is not written again.
+btm=nano_on(Machine()); bttl=btm.node('hscroll_label','label_title'); btbar=nano_bar(btm,bttl)
+def bt_titled(win):
+    btm.top=win; btm.word(win+O['W_PARENT'],btm.wm)
+    btm.call(address=HOOKS['widget_on_paint_background'][0],args=(btbar,btm.canvas,0,0),gap=0)
+    return btm.nodes[bttl].get('text')
+btnav=btm.node('view','view_navbar',[btm.node('image','img_return'),btm.node('hscroll_label',text='Songs')],visible=0)
+btcap=btm.node('hscroll_label',text='Shuffle'); btm.word(btcap+O['W_H'],48); btwins={}
+for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'Now Playing'),('coverflow_page',[],'Coverflow'),
+                                ('allmusic_page',[btnav],'Songs'),('shuffle_page',[btcap],'Shuffle')):
+    btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
+assert bt_titled(btm.node('dialog','sortselect_dialog'))=='Shuffle'
+btm.calls=[]; assert bt_titled(btwins['shuffle_page'])=='Shuffle'  # the same title again: not written
+assert not [c for c in btm.calls if c[0]=='widget_set_text_utf8' and c[1]==bttl]
+# The source is found once per top window: painting it again looks nothing up, and a navbar title
+# rewritten under the same window is followed.
+def bt_looked(): return [btm.text(c[2]) for c in btm.calls if c[0]=='widget_lookup']  # the last paint's (call clears calls)
+assert bt_titled(btwins['allmusic_page'])=='Songs' and 'view_navbar' in bt_looked()
+assert bt_titled(btwins['allmusic_page'])=='Songs' and 'view_navbar' not in bt_looked()
+btm.nodes[btm.nodes[btnav]['children'][1]]['text']='Albums'; assert bt_titled(btwins['allmusic_page'])=='Albums'
+# A caption rebuilt under a live window (page_list) drops the cached one; the next paint finds the new.
+f,ctx=next((f,ctx) for t,f,ctx in btm.nodes[btcap]['handlers'] if t==O['EVT_DESTROY']); assert bt_titled(btwins['shuffle_page'])=='Shuffle'
+btm.call(address=f,args=(ctx,btm.event,0,0),gap=0)
+btcap2=btm.node('hscroll_label',text='Genres'); btm.word(btcap2+O['W_H'],48); btm.nodes[btwins['shuffle_page']]['children']=[btcap2]
+assert bt_titled(btwins['shuffle_page'])=='Genres'; passed()
+# Nano battery (BATT_NANO): a #636163 outline and nub, the paper inside, and the level in the
+# battery stops (#defbc6 top, #529a31 bottom) over the inner rows, centred on the caps' row
+# 12.5: body 26x13 at y 6. Charging fills it and adds the bolt; low is stock's red; Percent and
+# Icon + Percent draw the digits in Nano's bar size. Everything stays under the instruction cap.
+def nano_battery_bar(mode,image='bar_battery',text='50%',light='1',status=None,eq=None,wifi=0):
+    bm=Machine(); bm.config.update(LIGHT=light,BATTERY=str(mode)); nano_on(bm)  # before the boot reads the settings
+    if status is not None: bm.handlers.pop(syms['mclGetPlayStatus'],None); bm.word(0xa3beac,status)  # local's play state
+    lv=bm.node('progress_bar','progress_battery',value=50)
+    bw_={n:bm.node(t,n,list(c),visible=v,**kw) for n,t,c,v,kw in (
+        ('img_bt','image',(),0,dict(image=O_GLYPH)),('img_wifi','image',(),wifi,{}),('label_battery','label',(),0,dict(text=text)),
+        ('view_battery','view',(),0,{}),('img_battery','image',(lv,),1,dict(image=image)),('img_state','image',(),0,{}),
+        *((('label_eq','label',(),eq,{}),) if eq is not None else ()))}
+    bm.word(bw_['img_wifi']+O['W_W'],14); bm.word(bw_['img_state']+O['W_W'],15)
+    if eq is not None: bm.word(bw_['label_eq']+O['W_W'],28)
+    bbar=nano_bar(bm,bm.node('view','view_right',list(bw_.values())))
+    paint=lambda x=bbar: bm.call(address=HOOKS['widget_on_paint_background'][0],args=(x,bm.canvas,0,0),gap=0)
+    paint(); paint(); bm.bands=[]
+    cost=[0]; hook=bm.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
+    paint(bw_['view_battery']); bm.u.hook_del(hook); assert cost[0]<100000,cost  # the battery under the cap
+    return bm,bw_,[b[:5] for b in bm.bands]
+LINE,PAPER=color_t(0x636163),color_t(0xffffff); y=6
+outline=[(1,y,24,1,LINE),(1,y+12,24,1,LINE),(0,y+1,1,11,LINE),(25,y+1,1,11,LINE),(26,y+3,2,6,LINE),(1,y+1,24,11,PAPER)]
+bm,bw_,bands=nano_battery_bar(0)
+assert bm.get(bw_['view_battery']+O['W_W'])==28 and bm.get(bw_['view_battery']+O['W_H'])==26
+assert bands[:6]==outline and [b[:4] for b in bands[6:]]==[(1,y+1+j,12,1) for j in range(11)]
+assert (bands[6][4],bands[16][4])==(color_t(0xdefbc6),color_t(0x529a31))
+# The dark half (LIGHT=0): the outline is the light #636163's unflip, #9c9e9c (no dark.line is
+# stated), the paper inside black, the level's hues as they are.
+bm,bw_,dark=nano_battery_bar(0,light='0'); DL=color_t(0x9c9e9c)
+assert dark[:6]==[(*r[:4],DL) for r in outline[:5]]+[(1,y+1,24,11,color_t(0))] and dark[6:]==bands[6:]; passed()
+bm,bw_,bands=nano_battery_bar(0,'bar_charge','63%')  # full, then the bolt in the outline's colour
+bolt=[(10+x,8+dy,w,1,LINE) for dy,x,w in ((0,3,3),(1,2,3),(2,1,3),(3,0,6),(4,2,3),(5,1,3),(6,1,2),(7,0,2))]
+assert [b[:4] for b in bands[6:17]]==[(1,y+1+j,24,1) for j in range(11)] and bands[17:]==bolt; passed()
+bm,bw_,bands=nano_battery_bar(0,'bar_lowcharge','5%')
+assert bands[6:]==[(1,y+1,1,11,color_t(O['BATT_LOW_RGB']))]; passed()
+for mode in (1,2,3):  # Percent; Icon + Percent; Percent Inside (digits in the body)
+    bm,bw_,bands=nano_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
+    want={1:('50%',(0,0,bm.get(bw_['view_battery']+O['W_W']),26)),2:('50%',(30,0,bm.get(bw_['view_battery']+O['W_W'])-30,26)),
+          3:('50',(1,y+1,24,11))}[mode]
+    assert letters==[want] and (mode==1 or bands[:6]==outline),(mode,letters); passed()
+# Nano's right group holds EQ or the play state, not both: a shown play state hides EQ, EQ alone
+# stays. Either one's width counts in the battery's reach: with Wi-Fi, Icon + Percent fits alone
+# (a 90 px reach of BATT_ROOM's 94) and falls back to the 28 px icon beside the play state or EQ.
+for status,eq,eq_on,icon in ((0,0,0,0),(2,0,0,1),(0,1,1,1),(2,1,0,1)):
+    bm,bw_,bands=nano_battery_bar(2,status=status,eq=eq,wifi=1)
+    assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq_on),(status,eq)
+    assert (bm.get(bw_['view_battery']+O['W_W'])==28)==icon,(status,eq,bm.get(bw_['view_battery']+O['W_W']))
+passed()
+# The play state glyph is Nano's blue (bar.state.color), final: Light Mode's flip leaves it.
+blue=bytes([0xe7,0xae,0x31,0x80,0xe7,0xae,0x31,0xff])+b'\xee'*4
+assert image({},'bar_play',prep=nano)==[blue,blue] and image({},'bar_pause',prep=nano)==[blue,blue]
+assert image({'THEME':'1','LIGHT':'1'},'bar_play')!=[blue,blue]; passed()
+# The codec badge (bar_aac, ...) is the scheme's ink, its alpha kept: Nano's monochrome marks.
+ink=bytes([0,0,0,0x80,0,0,0,0xff])+b'\xee'*4
+assert image({},'bar_aac',prep=nano)==[ink,ink] and image({'THEME':'1'},'bar_aac')!=[ink,ink]
+white=bytes([0xff,0xff,0xff,0x80,0xff,0xff,0xff,0xff])+b'\xee'*4  # the dark half's ink; the play blue a hue in both
+assert image({'LIGHT':'0'},'bar_aac',prep=nano)==[white,white] and image({'LIGHT':'0'},'bar_play',prep=nano)==[blue,blue]; passed()
 m=settings_m
 # Artist albums (Q2POD ARTISTCF), the other layout choice, after Home; no key is Coverflow.
 cf_label=m.nodes[m.nodes[cf]['children'][0]]['children'][1]; assert m.nodes[cf_label]['text']=='Artist View: Cover Flow'

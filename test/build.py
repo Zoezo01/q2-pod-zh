@@ -195,7 +195,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, NANO_FONT_SRC)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -808,7 +808,7 @@ def validate_assets(directory):
         else: raise AssertionError('Accepted a changed asset')
     # Every geometry set's built list windows take the row height of the page's pitch
     # immediates (art pages take art_pitch), and its rows fit.
-    from theme import builtins, geometry_sets
+    from theme import builtins, geometry_sets, SCHEMA
     from ipod import PAGE_KIND as page_kind
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
     for g in geometry_sets(builtins()):
@@ -841,6 +841,17 @@ def validate_assets(directory):
                     assert n[1] == [0, g.set_top, 375, g.set_rows*g.set_row] and 'item_height' not in n[2], (g.name, rel)
                 else:                   # any other list with that row height is not one (settings_list)
                     assert n[2].get('item_height') == str(g.set_row), (g.name, rel)
+        if g.bar_px:  # Nano's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
+            m = status_metrics(g, NANO_FONT_SRC)
+            bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
+            assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
+            assert 2 * m['cap_top'] + m['cap'] in (g.bar - 2, g.bar - 1) and m['inset'] >= corner_x(m['cap_top'], m['cap']), g.name
+            assert 2 * m['clock'][0] + m['clock'][2] == 375, g.name
+            # the right group clear of the glass at the battery body's top, the body above the bar's line
+            xm = corner_x((g.bar - 1 - g.batt_h) // 2, g.batt_h)
+            assert g.batt_h <= g.bar - 1 and bar['view_right'][2]['children_layout'].endswith(f'xm={xm},s={inc("STATUS_GAP")})'), g.name
+            size = SCHEMA['bar.title.font_size'].field
+            assert {t[size] for t in builtins() if g in geometry_sets([t])} == {g.bar_px}, g.name  # the theme's bar text is the set's
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

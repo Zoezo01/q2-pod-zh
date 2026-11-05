@@ -103,7 +103,7 @@ def test_load(tmp_path):
 
 THEMES = theme.ROOT/'assets/themes'
 ZERO = {**dict.fromkeys(('card', 'raw_red', 'fill', 'chevron', 'muted', 'bar_light'), 0),
-        'sel': (), 'sel_top': 0, 'sel_edge': 0, 'sel_text': 0, 'mode': 0, 'paper': 0xf4f4f4, 'ink': 0x161616, 'light': {}}
+        'sel': (), 'sel_top': 0, 'sel_edge': 0, 'sel_text': 0, 'bar': (), 'bar_line': 0, 'mode': 0, 'paper': 0xf4f4f4, 'ink': 0x161616, 'light': {}}
 MINIMAL_ROLES = {**ZERO, 'fill': 0xeeeeec, 'chevron': 0x777777, 'muted': 0x8c8c8c}
 CLASSIC_ROLES = {**ZERO, 'bar_light': 0xdedede}
 
@@ -123,10 +123,10 @@ CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, '
 
 MINIMAL = {
     'id': 'minimal', 'index': 0, 'dev': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
-    'painter[PAINT_SELECTION]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
+    'painter[PAINT_SELECTION]': 0, 'painter[PAINT_BAR]': 0, 'painter[PAINT_BATTERY]': 0, 'chevron_home': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
-    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'np_layout': 0, 'geom_set': 'ipod',
+    'set_top': 8, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'batt': (), 'batt_line': 0, 'state_color': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod',
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -336,12 +336,13 @@ def test_resolve_takes_a_long_name():
     assert resolved('', f'id="t" name="{"é" * 24}" index="2" extends="minimal"')['name'] == 'é' * 24
 
 
-MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('chevron_home', 0), ('caps_mark', 1),
+MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
                   ('font[ROLE_NP]', 'FONT_DEFAULT'), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
                   ('font_px[ROLE_TITLE]', 0), ('font_px[ROLE_META]', 0), ('font[ROLE_BAR]', 'FONT_DEFAULT'), ('font_px[ROLE_BAR]', 0),
+                  ('batt', '{0}'), ('batt_line', '{0, 0}'), ('state_color', 0),
                   ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
                   ('schemes', 'minimal_schemes'), ('light', 'minimal_schemes'), ('n_schemes', 9), ('opts', 'minimal_opts'), ('n_opts', 8),
                   ('undeclared', 0), ('np_layout', 'NP_IPOD'),
@@ -356,7 +357,7 @@ def test_emit(tmp_path):
         'static const scheme_t minimal_schemes[] = {',
         *(f'    {{ .tones = accents[{v}], .flags = {flags.get(v, 0)}, .fill = 0xeeeeec, .chevron = 0x777777, '
           f'.muted = 0x8c8c8c, .bar_light = 0x000000, .sel = {{0}}, .sel_top = 0x000000, .sel_edge = 0x000000, '
-          f'.sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616 }},' for v in range(9)),
+          f'.sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616, .bar = {{0}}, .bar_line = 0x000000 }},' for v in range(9)),
         '};',
         '_Static_assert(sizeof minimal_schemes / sizeof *minimal_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");',
         'static const option_t minimal_opts[] = {',
@@ -383,7 +384,7 @@ def test_emit_both(tmp_path):
         'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
     assert ('    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000, '
             '.sel = {0}, .sel_top = 0x000000, .sel_edge = 0x000000, .sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, '
-            '.ink = 0x161616 },\n    { .tones = accents[8]') in text
+            '.ink = 0x161616, .bar = {0}, .bar_line = 0x000000 },\n    { .tones = accents[8]') in text
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
     assert '    },\n};\nenum { GEOM_IPOD, GEOM_N };\n' in text
@@ -573,6 +574,28 @@ def test_emit_stops(tmp_path):
     assert inc.count('.painter[PAINT_SELECTION] = SEL_STOPS,') == 1
 
 
+def test_bar_painter_and_scheme_bar_roles():
+    t = resolved('<colorScheme name="graphite" bar.stops="#ffffff 0, #9c9e9c 100" bar.line="#5a595a"/>'
+                 '<view name="bar"><element name="fill" painter="gloss"/></view>')
+    assert t['painter[PAINT_BAR]'] == 1 and t['schemes'][0]['bar'] == ((0, 0xffffff), (100, 0x9c9e9c))
+    assert t['schemes'][0]['bar_line'] == 0x5a595a
+    assert error(resolved, '<view name="bar"><element name="fill" painter="shiny"/></view>') == \
+        't.xml:1: bar.fill.painter: unknown value shiny'
+
+
+def test_bar_battery_painter_rejects():
+    assert error(resolved, '<view name="bar"><element name="battery" painter="segments"/></view>') == \
+        't.xml:1: bar.battery.painter: unknown value segments'
+
+
+def test_theme_level_halves():
+    nano = theme.builtins()[2]
+    assert nano['batt_line'] == 0 and nano['light']['batt_line'] == 0x636163  # light stated, dark derived
+    assert theme.half(nano, False, 0xffffff, 0)['batt_line'] == 0x9c9e9c
+    assert error(resolved, '<view name="bar"><element name="battery" light.painter="nano"/></view>') == \
+        't.xml:1: bar.battery.painter: one value for both halves'
+
+
 def test_scheme_mode_paper_ink():
     t = resolved('<colorScheme mode="light" light.paper="#ffffff" light.ink="#000000"/>')
     assert {(s['mode'], s['paper'], s['ink']) for s in t['schemes']} == {(1, 0xffffff, 0)}
@@ -618,6 +641,7 @@ def test_validate_rejects_mode(body, message):
     ('<colorScheme name="cobalt" dark.mode="dark"/>', 'scheme.mode: one value for both halves'),
     ('<colorScheme name="cobalt" sel.top="#111111" dark.sel.top="#222222"/>', 'scheme.sel.top: stated twice (sel.top and dark.sel.top)'),
     ('<view name="list"><element name="selection" light.painter="bar"/></view>', 'list.selection.painter: one value for both halves'),
+    ('<view name="bar"><element name="battery" line="#111111" dark.line="#222222"/></view>', 'bar.battery.line: stated twice (line and dark.line)'),
 ])
 def test_resolve_rejects_halves(body, message):
     assert error(resolved, body) == f't.xml:1: {message}'

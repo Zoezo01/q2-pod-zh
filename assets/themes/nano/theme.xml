@@ -3,20 +3,30 @@
      are this file's or the sets', never patch/offsets.inc's. -->
 <theme format="1" id="nano" name="Nano" index="2" extends="classic" dev="1">
   <geometry set="nano"/>
-  <!-- every scheme: white text on the band in both halves; the light half on white paper, black ink -->
-  <colorScheme sel.text="#ffffff" light.paper="#ffffff" light.ink="#000000" light.sel.text="#ffffff"/>
+  <!-- every scheme: white text on the band in both halves; the light half on white paper, black ink; the status
+       bar's gloss over its 1 px line, the light half measured, the dark half's an original design -->
+  <colorScheme sel.text="#ffffff" light.paper="#ffffff" light.ink="#000000" light.sel.text="#ffffff"
+               light.bar.stops="#ffffff 0, #e7e7e7 26, #cecbce 53, #adaaad 79, #9c9e9c 100" light.bar.line="#5a595a"
+               dark.bar.stops="#5a595a 0, #4c4b4c 26, #3d3c3d 53, #292829 79, #1f1e1f 100" dark.bar.line="#3a393a"/>
   <!-- Nano Blue: Cobalt's tones and the measured band: its 1 px top line, the stops below it, its edge. Hues, so its
        light half is the same. The other accents get this band turned to their own top tone -->
   <colorScheme name="nano-blue" label="Nano Blue" base="cobalt" sel.top="#94c7de"
                sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
                sel.edge="#004184"/>
   <colorSchemes accents="nano-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
-  <!-- Nano's face: list rows (title 18 px), the bar title (15 px), the Now Playing title and Home rows -->
+  <!-- Nano's face: list rows (title 18 px), the bar title (15 px), the Now Playing title and Home rows; the
+       bar's fill is the scheme's gloss. The nano battery: a grey outline (the light half's; the dark half's
+       its unflip) and a gloss green level, a hue in both halves; the play state Nano's blue -->
   <view name="list">
     <element name="selection" painter="stops"/>
     <element name="row" font="nano" meta_font="nano" title_px="18"/>
   </view>
-  <view name="bar"><element name="title" font="nano" font_size="15"/></view>
+  <view name="bar">
+    <element name="title" font="nano" font_size="15"/>
+    <element name="fill" painter="gloss"/>
+    <element name="battery" painter="nano" stops="#defbc6 0, #a5e37b 35, #6baa42 70, #529a31 100" light.line="#636163"/>
+    <element name="state" color="#31aee7"/>
+  </view>
   <view name="playing"><element name="title" font="nano"/></view>
   <!-- Light Mode: On is the measured nano look, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>

@@ -438,8 +438,10 @@ typedef struct {
     /* The status bar's Bluetooth, Wi-Fi and battery widgets, looked up once (the bar is never
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
-     * level, charge and low state. */
-    void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq;
+     * level, charge and low state. Nano's bar also has a title (bar_title_sync), from the top
+     * window title_win and, when a label holds it, title_lbl (both found once per window). */
+    void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
+        *bar_title, *title_win, *title_lbl;
     int codec, codec_step, batt_mode;
     unsigned codec_timer, batt_key, bar_timer;
     int pct_digit, pct_sign; /* BATT_PX advances of '0' and '%', measured on the first paint */
@@ -3705,6 +3707,7 @@ static int bar_state_sync(void *bar) {
         st.bar_idle = widget_lookup(bar, "label_idle", 1);
         st.bar_state = widget_lookup(bar, "img_state", 1);
         st.bar_eq = widget_lookup(bar, "label_eq", 1);
+        st.bar_title = widget_lookup(bar, "label_title", 1);
     }
     if (st.bar_state) {
         int status = media_owner() == 1 ? mclGetPlayStatus() :
@@ -3720,6 +3723,10 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
+    /* Nano's right group has room for EQ or the play state, not both: EQ while nothing plays */
+    if (st.bar_eq && st.bar_state && widget_get_visible(st.bar_state) &&
+        theme()->painter[PAINT_BATTERY] == BATT_NANO)
+        widget_set_visible(st.bar_eq, 0, 0);
     if (st.bar_idle && st.bar_state && st.bar_eq)
         widget_set_visible(st.bar_idle,
                            !widget_get_visible(st.bar_state) && !widget_get_visible(st.bar_eq), 0);
@@ -3760,16 +3767,25 @@ static void bar_sync(void *bar) {
         image_base_set_image(st.bar_bt, BT_GLYPH);
     accent(); /* reads the settings */
     if (st.home_rockbox != rockbox_available()) coverflow_home_layout();
+    /* Nano's battery: the set's body, which Percent Inside keeps */
+    const theme_t *T = theme();
+    int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
+        body = nano ? geom_val(V_BATT_W) : BATT_BODY_W, inside = nano ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
         int reach = mode == 1   ? BATT_PCT_W
-                    : mode == 3 ? BATT_INSIDE_W + BATT_NUB_W
-                                : BATT_BODY_W + BATT_NUB_W + BATT_GAP + BATT_PCT_W;
+                    : mode == 3 ? inside + BATT_NUB_W
+                                : body + BATT_NUB_W + BATT_GAP + BATT_PCT_W;
         if (widget_get_visible(st.bar_wifi)) reach += I(st.bar_wifi, W_W) + STATUS_GAP;
         if (shown)
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
+        /* Nano: the play state or EQ shares the group */
+        if (nano && st.bar_state && widget_get_visible(st.bar_state))
+            reach += I(st.bar_state, W_W) + STATUS_GAP;
+        if (nano && st.bar_eq && widget_get_visible(st.bar_eq))
+            reach += I(st.bar_eq, W_W) + STATUS_GAP;
         if (reach > BATT_ROOM) mode = 0;
     }
     widget_set_visible(st.bar_icon, 0, 0);
@@ -3786,9 +3802,9 @@ static void bar_sync(void *bar) {
                    (unsigned)(icon && !tk_strcmp(icon, "bar_charge")) << 1 |
                    (unsigned)(icon && !tk_strcmp(icon, "bar_lowcharge"));
     int pct = pct_width(key >> 2);
-    int width = mode == 1 ? pct
-                          : (mode == 3 ? BATT_INSIDE_W : BATT_BODY_W) + BATT_NUB_W +
-                                (mode == 2 ? BATT_GAP + pct : 0);
+    int width = mode == 1
+                    ? pct
+                    : (mode == 3 ? inside : body) + BATT_NUB_W + (mode == 2 ? BATT_GAP + pct : 0);
     int resized = I(st.bar_slot, W_W) != width;
     widget_resize(st.bar_slot, width, geom_val(V_BAR));
     /* Resize only relayouts the slot's own children; the right-aligned row must
@@ -3810,11 +3826,48 @@ int ringnav_showface(void *bar) {
     return result;
 }
 
+/* Nano's battery (BATT_NANO), the body's top-left at x, y, the set's V_BATT_W x V_BATT_H with the
+ * nub outside: the batt_line outline and nub, the paper inside, the level in the batt stops
+ * (stock's red when low, full while charging) and, charging outside Percent Inside, a bolt in the
+ * outline's colour. Final colours, never flipped; the caller restores the fill. */
+static void nano_battery(void *canvas, int x, int y, unsigned key) {
+    static const unsigned char bolt[][3] = { /* dy, x, w: an original 6x8 bolt */
+                                             { 0, 3, 3 }, { 1, 2, 3 }, { 2, 1, 3 }, { 3, 0, 6 },
+                                             { 4, 2, 3 }, { 5, 1, 3 }, { 6, 1, 2 }, { 7, 0, 2 }
+    };
+    const theme_t *T = theme();
+    int L = ipod_light(), bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), nh = bh / 2,
+        f = (bw - 2) * (int)(key & 2 ? 100 : key >> 2) / 100;
+    unsigned line = RGBA(T->batt_line[L]);
+    stock_canvas_set_fill_color(canvas, line);
+    canvas_fill_rect(canvas, x + 1, y, bw - 2, 1);
+    canvas_fill_rect(canvas, x + 1, y + bh - 1, bw - 2, 1);
+    canvas_fill_rect(canvas, x, y + 1, 1, bh - 2);
+    canvas_fill_rect(canvas, x + bw - 1, y + 1, 1, bh - 2);
+    canvas_fill_rect(canvas, x + bw, y + (bh - nh) / 2, BATT_NUB_W, nh);
+    stock_canvas_set_fill_color(canvas, RGBA(scheme()->paper));
+    canvas_fill_rect(canvas, x + 1, y + 1, bw - 2, bh - 2);
+    if (key & 1) { /* low */
+        stock_canvas_set_fill_color(canvas, RGBA(BATT_LOW_RGB));
+        canvas_fill_rect(canvas, x + 1, y + 1, f, bh - 2);
+    } else
+        paint_stops(canvas, x + 1, y + 1, f, bh - 2, &T->batt);
+    if (!(key & 2) || st.batt_mode == 3) return;
+    stock_canvas_set_fill_color(canvas, line);
+    for (unsigned i = 0; i < sizeof bolt / sizeof *bolt; ++i)
+        canvas_fill_rect(canvas, x + (bw - 6) / 2 + bolt[i][1], y + (bh - 8) / 2 + bolt[i][0],
+                         bolt[i][2], 1);
+}
+
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
- * puts the percentage beside the charge-level icon. Restore canvas state. */
+ * puts the percentage beside the charge-level icon. Under Nano the battery is nano_battery's, its
+ * digits in the bar's size. Restore canvas state. */
 static void paint_battery(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
+    const theme_t *T = theme();
+    int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
+        px = nano && T->font_px[ROLE_BAR] ? T->font_px[ROLE_BAR] : BATT_PX;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     unsigned key = st.batt_key, level = key >> 2, s[4], n = put_num(s, level);
     int inside = st.batt_mode == 3;
@@ -3822,14 +3875,28 @@ static void paint_battery(void *w, void *canvas) {
     unsigned color = RGBA(key & 2 ? BATT_CHARGE_RGB : key & 1 ? BATT_LOW_RGB : 0xffffff);
     if (!inside && !st.pct_digit) {
         unsigned c = '0';
-        canvas_set_font(canvas, (void *)0, BATT_PX);
+        canvas_set_font(canvas, theme_face(&c, 1), px); /* draw_centred's face */
         st.pct_digit = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
         c = '%';
         st.pct_sign = (int)(canvas_measure_text(canvas, &c, 1) + 0.5f);
     }
     if (st.batt_mode == 1) {
         rect_t r = { 0, 0, I(w, W_W), I(w, W_H) };
-        draw_centred(canvas, s, n, &r, BATT_PX, color);
+        draw_centred(canvas, s, n, &r, px, color);
+        return;
+    }
+    if (nano) { /* the body centred on the bar's rows above its line */
+        int bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), y = (I(w, W_H) - 1 - bh) / 2;
+        nano_battery(canvas, 0, y, key);
+        if (st.batt_mode == 2) {
+            int x = bw + BATT_NUB_W + BATT_GAP;
+            rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
+            draw_centred(canvas, s, n, &r, px, color);
+        } else if (inside) {
+            rect_t r = { 1, y + 1, bw - 2, bh - 2 };
+            draw_centred(canvas, s, n, &r, (unsigned)(bh - 2), color);
+        }
+        stock_canvas_set_fill_color(canvas, fill);
         return;
     }
     const int bw = inside ? BATT_INSIDE_W : BATT_BODY_W, bh = inside ? BATT_INSIDE_H : BATT_BODY_H,
@@ -4943,6 +5010,70 @@ static int pressed_pill(void *w, void *canvas) {
     return b == w; /* a page row's own (clear) background */
 }
 
+/* The bar title for window win: Home, Now Playing and Coverflow by name; else 0, and *label is a
+ * stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
+static const char *bar_title_of(void *win, void **label) {
+    const char *name = widget_get_prop_str(win, "name", "");
+    if (home_menu(win)) return "Q2 Pod";
+    if (tk_str_start_with(name, "playing_page")) return "Now Playing";
+    if (!tk_strcmp(name, "coverflow_page")) return "Coverflow";
+    void *nav = widget_lookup(win, "view_navbar", 1);
+    if (nav) {
+        for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
+            void *c = widget_get_child(nav, i);
+            const char *t = widget_get_type(c);
+            if (!tk_strcmp(t, "hscroll_label") || !tk_strcmp(t, "label")) *label = c;
+        }
+    } else {
+        void *c = win;
+        for (int d = 0;
+             d < 2 && !*label && (c = widget_count_children(c) ? widget_get_child(c, 0) : 0); ++d)
+            if (!tk_strcmp(widget_get_type(c), "hscroll_label") && I(c, W_H) == 48) *label = c;
+    }
+    return 0;
+}
+
+/* Either of st.title_win and st.title_lbl going (page_list rebuilds a caption under a live window)
+ * drops both, so the next paint finds them again. */
+static int title_gone(void *w, void *event) {
+    if (st.title_win) widget_off_by_func(st.title_win, EVT_DESTROY, title_gone, st.title_win);
+    if (st.title_lbl) widget_off_by_func(st.title_lbl, EVT_DESTROY, title_gone, st.title_lbl);
+    st.title_win = st.title_lbl = (void *)0;
+    return 0;
+}
+
+/* Nano's bar title (label_title, only its set's bar has one) names the top window win; a dialog
+ * keeps the window's title. The title's source is found once per top window; after that a paint
+ * compares only that label's text with the title's (none for a title by name), and the title is
+ * written only when it changes. */
+void bar_title_sync(void *win) {
+    if (!st.bar_title || !win) return;
+    static const unsigned none = 0;
+    char s[64], now[64];
+    const char *t = 0;
+    if (win != st.title_win) {
+        title_gone(0, 0);
+        st.title_win = win;
+        widget_on(win, EVT_DESTROY, title_gone, win);
+        if (tk_strcmp(widget_get_type(win), "window")) return;
+        t = bar_title_of(win, &st.title_lbl);
+        if (st.title_lbl) widget_on(st.title_lbl, EVT_DESTROY, title_gone, st.title_lbl);
+    } else {
+        if (!st.title_lbl) return;
+        const unsigned *a = widget_get_text(st.title_lbl) ?: &none,
+                       *b = widget_get_text(st.bar_title) ?: &none;
+        while (*a && *a == *b) ++a, ++b;
+        if (*a == *b) return;
+    }
+    if (!t) {
+        *s = 0;
+        if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
+        t = s;
+    }
+    if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t))
+        widget_set_text_utf8(st.bar_title, t);
+}
+
 /* Stock paints a widget's background before its children, so the bar sits behind the rows.
  * The selection work for the surface happens here, once per frame, instead of in the border hook;
  * a BUTTONS dialog is itself top-level. Home's art is clipped to its panel until the border hook.
@@ -4963,11 +5094,20 @@ int ringnav_paint_bg(void *w, void *canvas) {
     if (!w || P(w, W_PARENT) != wm) return result;
     if (w == bar && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        /* Classic in Light Mode: an iPod's grey bar, flat (final colour) */
+        const theme_t *T = theme();
         const scheme_t *S = scheme();
-        int grey = S->bar_light && ipod_light();
-        stock_canvas_set_fill_color(canvas, grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
-        canvas_fill_rect(canvas, 0, 0, I(w, W_W), I(w, W_H));
+        if (T->painter[PAINT_BAR] == BAR_GLOSS) { /* Nano: the gloss rows over the line, final */
+            int h = I(w, W_H) - 1;
+            paint_stops(canvas, 0, 0, I(w, W_W), h, &S->bar);
+            stock_canvas_set_fill_color(canvas, RGBA(S->bar_line));
+            canvas_fill_rect(canvas, 0, h, I(w, W_W), 1);
+        } else {
+            /* Classic in Light Mode: an iPod's grey bar, flat (final colour) */
+            int grey = S->bar_light && ipod_light();
+            stock_canvas_set_fill_color(canvas,
+                                        grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
+            canvas_fill_rect(canvas, 0, 0, I(w, W_W), I(w, W_H));
+        }
         stock_canvas_set_fill_color(canvas, fill);
     }
     void *top = window_manager_get_top_window(wm);
@@ -4981,6 +5121,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         }
         bar_sync(bar);
         bar_title(bar, top);
+        bar_title_sync(top);
         np_sync(top);
         if (w == top) vol_paint(top, canvas);
         /* Boot may paint Home before the screen is usable, so nothing chose or drew its first
@@ -5290,6 +5431,31 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                 p[o[0]] = p[o[1]] = p[o[2]] =
                     (unsigned char)((p[o[0]] * 299 + p[o[1]] * 587 + p[o[2]] * 114) / 1000);
         bitmap_unlock_buffer(bitmap);
+    }
+    /* The play state in the theme's state_color, and under Nano's battery the codec badges in the
+     * half's ink (its monochrome marks): every pixel that colour, alpha kept, final. */
+    int mark = -1;
+    if (format < 4 && s && !*s) {
+        if (T->state_color && (!tk_strcmp(name, "bar_play") || !tk_strcmp(name, "bar_pause")))
+            mark = (int)T->state_color;
+        else if (T->painter[PAINT_BATTERY] == BATT_NANO)
+            for (unsigned i = 0; i < sizeof codecs / sizeof *codecs; ++i)
+                if (!tk_strcmp(name, codecs[i])) mark = (int)sc->ink;
+    }
+    unsigned char *one = mark >= 0 ? bitmap_lock_buffer_for_write(bitmap) : (void *)0;
+    if (one) {
+        const unsigned char *o = at[format];
+        int premul = *(unsigned short *)((char *)bitmap + 0xc) & BITMAP_PREMULTI;
+        for (int y = 0; y < I(bitmap, 4); ++y)
+            for (unsigned char *p = one + y * bitmap_get_line_length(bitmap),
+                               *end = p + 4 * I(bitmap, 0);
+                 p < end; p += 4)
+                for (int c = 0; c < 3; ++c) {
+                    unsigned v = (unsigned)mark >> (16 - 8 * c) & 255;
+                    p[o[c]] = (unsigned char)(premul ? v * p[o[3]] / 255 : v);
+                }
+        bitmap_unlock_buffer(bitmap);
+        mapped = 1;
     }
     /* Light Mode: a theme image without colour that is mostly glyph (marks, chevrons, spinners)
      * flips as the colours do. One with a grey or dark disc or plate (LIGHT_SURFACE) keeps its

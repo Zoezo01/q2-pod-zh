@@ -12,7 +12,7 @@ import pathlib
 import re
 import struct
 import types
-from build import ROOT, check, fileoff, sha, jal
+from build import NANO_TTF, ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
@@ -54,6 +54,9 @@ class Geometry:
     set_top: int = inc('SET_TOP')
     set_rows: int = inc('SET_ROWS')
     set_icon: int = inc('SET_ICON')
+    bar_px: int = 0  # the status bar's title and clock px in the Nano face (status_metrics); 0: stock's bar, no title
+    batt_w: int = inc('BATT_BODY_W')  # the battery body under BATT_NANO (navigation.c nano_battery), its nub outside
+    batt_h: int = inc('BATT_BODY_H')
 
 
 SET0 = Geometry()
@@ -63,7 +66,8 @@ SET0 = Geometry()
 # art rows centre their two lines.
 NANO = Geometry(name='nano', bar=26, pitch=28, body=28, art=52, art_inset=0, art_pitch=52, art_body=52,
                 text_art=0, text_art_inset=0, title24_y=2, title_y=4, meta_y=6, count_y=6,
-                art_title24_y=5, art_meta_y=31, set_row=28, set_top=0, set_rows=9, set_icon=0)
+                art_title24_y=5, art_meta_y=31, set_row=28, set_top=0, set_rows=9, set_icon=0, bar_px=15,
+                batt_w=26, batt_h=13)
 NANO_TEXT = dataclasses.replace(NANO, name='nano-text', art=0, art_pitch=28, art_body=28, art_title24_y=2, art_meta_y=6)
 MARGIN = 8
 # The 375x320 panel's glass has rounded corners that hide whatever is drawn in them. CORNER_R is
@@ -149,7 +153,7 @@ def with_geometry(g):
         NP_TIME_X=max(MARGIN, corner_x(g.bar + NP_TIMES_Y + 1, 14)))
 
 
-GEOM_VALS = ('bar', 'set_row', 'set_icon')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
+GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
 
 
 def immediate_values(g=SET0):
@@ -380,7 +384,30 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
+# Nano's right group: the play state, or EQ while it is on and nothing plays (never both: navigation.c
+# bar_state_sync), beside Bluetooth, Wi-Fi and the battery
+STATUS_RIGHT_NANO = ['label_eq', 'img_state', *STATUS_RIGHT]
 CLOCK_GAP = 4
+NANO_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Nano face's source, subset to NANO_TTF
+NANO_FONT_NAME = pathlib.Path(NANO_TTF).stem
+
+
+def status_metrics(g, font):
+    """Nano's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's line.
+    The title starts as far in as the glass needs at the caps' top, plus CORNER_SLACK, and the
+    clock is centred. Model (checked on the device): stb scales a font so that ascent - descent is
+    its size, and AWTK centres the line box in the label."""
+    from fontTools.ttLib import TTFont
+    f = TTFont(font, lazy=True)
+    asc, desc = f['hhea'].ascent, f['hhea'].descent
+    scale = g.bar_px / (asc - desc)
+    cap, h = round(f['OS/2'].sCapHeight * scale), g.bar - 1
+    cap_top = (h - cap) // 2
+    label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
+    inset = corner_inset(cap_top) + CORNER_SLACK
+    return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset,
+            'title': [inset, label_y, int(375 / 2 - CLOCK_TEXT / 2 - CLOCK_GAP) - inset, h],
+            'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
 
 
 def status_bar(root, g=SET0):
@@ -406,17 +433,36 @@ def status_bar(root, g=SET0):
         pct[2].update({f'style:{s}:font_size': str(BATT_PCT_PX), f'style:{s}:text_align_h': 'right'})
     pct[2]['visible'] = 'false'
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
-    left[3] = [widgets[n] for n in STATUS_LEFT]
-    right[3] = [widgets[n] for n in STATUS_RIGHT]
-    for view in (left, right):
+    # Nano's set (bar_px): the title on the left in the Nano face, the clock centred, the icons right of it
+    m = g.bar_px and status_metrics(g, NANO_FONT_SRC)
+    left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
+    right[3] = [widgets[n] for n in (STATUS_RIGHT_NANO if m else STATUS_RIGHT)]
+    # Nano's icons clear the glass at the battery body's top, centred above the bar's line
+    xm = corner_inset((g.bar - 1 - g.batt_h) // 2) + CORNER_SLACK if m else STATUS_MARGIN
+    for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
         layout = view[2]['children_layout']
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
-        view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={STATUS_MARGIN},s={inc("STATUS_GAP")}')
+        view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
+    room = int(375 - xm - (375 / 2 + CLOCK_TEXT / 2 + CLOCK_GAP))
+    if m:  # the icon battery with every icon shown, the play state or EQ
+        gap = inc('STATUS_GAP')
+        reach = BT_REACH + 3 * gap + max(widgets[n][1][2] for n in STATUS_LEFT) + widgets['img_wifi'][1][2] + g.batt_w + inc('BATT_NUB_W')
+        check(BATT_ROOM == room and reach <= room, f'Status bar battery needs {reach}px of {room}px')
+        for name in STATUS_HIDDEN:
+            box = widgets[name][1]
+            box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
+            root[3].append(widgets[name])
+        face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
+                for k, v in (('font_size', str(g.bar_px)), ('font_name', NANO_FONT_NAME))}
+        # The payload writes the top window's title (bar_title_sync) and the local time (ringnav_paint_bg).
+        for name, style in (('title', 's_scrlabel_white20l'), ('clock', 's_scrlabel_white20c')):
+            root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',
+                                                       'ellipses': 'true', **face}, []])
+        return
     shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES] for v in (left, right)]
     extent = max(STATUS_MARGIN + sum(n[1][2] for n in v) + inc('STATUS_GAP') * (len(v) - 1) for v in shown)
     width = 375 - 2 * extent
     check(width >= CLOCK_MIN and right[1][0] + right[1][2] == 375, f'Status bar clock {width}px, too narrow')
-    room = int(375 - STATUS_MARGIN - (375 / 2 + CLOCK_TEXT / 2 + CLOCK_GAP))
     reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + max(BATT_PCT_W, BATT_H_W, inc('BATT_INSIDE_W') + inc('BATT_NUB_W'))
     check(BATT_ROOM == room and reach <= room, f'Status bar battery needs {reach}px of {room}px')
     for name in STATUS_HIDDEN:

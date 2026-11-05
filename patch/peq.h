@@ -352,6 +352,7 @@ void dac_take(void);                          /* books.c */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
 const char *theme_face(const unsigned *s, int n);
+void bar_title_sync(void *win); /* navigation.c: Nano's bar title names win */
 int ipod_light(void);   /* navigation.c: Light Mode */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau
