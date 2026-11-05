@@ -247,7 +247,7 @@ Copy your music to the card over USB-C, then run **Library → Update Local Musi
 
 </details>
 
-<details open>
+<details>
 <summary><h2>License</h2></summary>
 
 [MIT](LICENSE) covers this repository's code and docs. The fonts in `assets/fonts` keep their own licences: Liberation Sans (OFL, shipped cut down and renamed Q2 Pod Sans) and TeX Gyre Heros (GUST Font License, shipped cut down and renamed Q2 Pod Classic Light, see `assets/fonts/README-classic-light.txt`). The Shanling firmware included in release images remains Shanling's. Q2 Pod is an independent project and is not affiliated with Shanling.
