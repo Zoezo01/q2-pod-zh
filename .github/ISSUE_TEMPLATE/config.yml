@@ -1,0 +1,7 @@
+contact_links:
+  - name: Security problem
+    url: https://github.com/DiamondBond/q2-pod/security/advisories/new
+    about: Report it privately, not in an issue
+  - name: Question or suggestion
+    url: https://discord.gg/MY3FTNuAdG
+    about: Ask on Discord
