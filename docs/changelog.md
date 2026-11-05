@@ -1,5 +1,7 @@
 # Changelog
 
+- **1.6.6**:
+  - Display: **Theme: Classic Light** is new, a third theme next to Minimal and Classic: a lighter iPod look with a gloss title bar, a green battery, smaller rows, two-line Songs and a Home pane that follows the highlighted row, in light and dark. Choosing it restarts the Q2. The Theme row, under every theme, now opens a list with a tick on the current theme, where it used to cycle. Now Playing, Cover Flow, dialogs, Quick Settings and the other screens not themed yet look as in Classic.
 - **1.6.5**:
   - Sound: AAC in `.m4a`, Opus and Ogg Vorbis files that record their encoder's silence now change tracks without it, as MP3 and FLAC do, on wired and Bluetooth. Files that don't say how much there is keep theirs, as do HE-AAC, a raw `.aac` and WMA.
   - Sound: MP3s whose tag spelled the encoder differently, such as `Lame3.100`, were played with their silent padding and a small gap between tracks. They now play with no gap, as do MP3s from other encoders that record their gapless information properly, and MP3s from iTunes. Going back to the start of a variable-bitrate track no longer starts it a moment late. A cover other than a JPEG in an APE tag at the end of a file can no longer play as a burst of noise and a gap. Files with no gapless information still have a short gap, as in any player, though an empty header frame's 26 ms of silence is gone.
@@ -23,7 +25,6 @@
   - Lists: a long title on the selected row now scrolls a few times after a moment, as on an iPod, so you can read all of it. Other rows keep their "…".
   - Display: **Appearance → Time in Title** is new. Turn it off and the bar names the page you're on (Albums, Display, Now Playing), as an iPod's title bar does; Home and pages such as Games and Photos keep the clock. Choosing **Theme: Classic** turns it off, and **Theme: Minimal** on.
   - Classic: under square corners, album art has square corners too, Cover Flow's included, and the battery icon's charge is green.
-  - Display: **Theme: Classic Light** is new, a third theme next to Minimal and Classic: a lighter iPod look with a gloss title bar, a green battery, smaller rows, two-line Songs and a Home pane that follows the highlighted row, in light and dark. Choosing it restarts the Q2. The Theme row, under every theme, now opens a list with a tick on the current theme, where it used to cycle. Now Playing, Cover Flow, dialogs, Quick Settings and the other screens not themed yet look as in Classic.
   - Now Playing: the volume shows in the progress bar's own colour.
   - **Coverflow** is now spelled **Cover Flow**, as Apple does, and its **Artist Albums** row is now **Artist View**, so the longer name fits.
   - Library: a song with a long list of genres no longer shows the end of its genres as its title. Run **Update Local Music** once to repair songs already in the library; a song already in a playlist can keep the old title until you add it again. On Now Playing's info page, a long Genre line scrolls.

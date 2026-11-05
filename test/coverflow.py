@@ -132,7 +132,7 @@ static int note_loads, note_drawn[4], note_fail; /* the pane image: a theme imag
 static char pane_image[32];
 int widget_load_image(void *x, const char *url, void *b) {
     struct stat s;
-    if (!strncmp(url, "classic_light_", 5)) {
+    if (!strncmp(url, "classic_light_", 14)) {
         snprintf(pane_image, sizeof pane_image, "%s", url);
         memset(b, 0, 0x18);
         int note = strstr(url, "note") != 0; /* the pane icons are 96 x 96 */
@@ -214,7 +214,13 @@ static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Car
 int ipod_home(void) { return home_mode; }
 void library_rows(void *list) {}
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
-int library_count(const char *sql) { return strstr(sql, "sum(e=0)") ? 312 : 704; }
+extern volatile unsigned library_gen;
+static int count_calls, count_answer = 704;
+static pthread_t count_thread_seen;
+int library_count(const char *sql) {
+    ++count_calls, count_thread_seen = pthread_self();
+    return strstr(sql, "sum(e=0)") ? count_answer == 704 ? 312 : count_answer : count_answer;
+}
 int on_home_music_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
 void bar_title_sync(void *win) {}
@@ -1685,6 +1691,24 @@ int main(void) {
     stub_bar_h = 30;
     coverflow_home_layout();
     assert(!memcmp(geo, split, sizeof split));
+    /* The pane's counts: asked once, off the UI thread, published by the timer; 0 is an answer, a failure
+     * is asked again at the next Home; Full and Carousel ask nothing. */
+    classic = 2; home_mode = 1; shim_themes[2].pane_icon_x = 43; coverflow_home(win, 0);
+    int (*counts)(const void *) = timer_fn;
+    timer_fn = 0; count_calls = 0;
+    assert(!counts(0) && !count_calls);
+    home_mode = 0;
+    #define COUNTS_DONE() do { int r; while ((r = counts(0)) == 8) usleep(1000); assert(!r); } while (0)
+    ++library_gen; COUNTS_DONE();
+    int asked = count_calls; /* the songs and the albums */
+    assert(asked == 2 && !pthread_equal(count_thread_seen, pthread_self()));
+    COUNTS_DONE(); assert(count_calls == asked);
+    ++library_gen; count_answer = -1; COUNTS_DONE(); assert(count_calls == asked + 2);
+    COUNTS_DONE(); assert(count_calls == asked + 4);
+    count_answer = 0; COUNTS_DONE(); assert(count_calls == asked + 6);
+    COUNTS_DONE(); assert(count_calls == asked + 6);
+    count_answer = 704; ++library_gen; COUNTS_DONE(); assert(count_calls == asked + 8);
+    classic = 0; timer_fn = 0; shim_themes[2].pane_icon_x = 0;
     /* Classic Light (shim_themes[2]): no cover shows the pane instead of default_album_home. The art spans the
      * panel and paints the pane's stops over all of it, its light (white, alpha 40 at the left, 0 at the
      * right edge, a band per alpha), the shadow down its left edge (black, the theme's alpha per column),

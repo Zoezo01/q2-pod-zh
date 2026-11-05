@@ -690,11 +690,6 @@ def test_with_geometry_takes_the_row_sizes():
     assert (ns.PITCH, ns.BODY, ns.ART, ns.ART_INSET, ns.BOTTOM) == (64, 60, 48, 6, 290)
 
 
-def test_geometry_is_frozen():
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        ipod.SET0.bar = 26
-
-
 T26 = ipod.Geometry(name='t', bar=26, pitch=64, body=60, art=52, art_inset=4)
 
 

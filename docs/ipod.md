@@ -771,7 +771,6 @@ What Classic does not restore: the pinned theme edit of `s_btn_listitem`'s press
 (`#3D1920` to `#333333`), so a touched row flashes grey rather than an accent tint, and the
 status bar asset's own background (`#000000`, not `#161616`), which the payload's fill covers.
 
-
 #### Classic Light
 
 **Theme: Classic Light** (`THEME=2`) is a lighter iPod look of its own, on its own layout; Classic stays as it is. Choosing it from Minimal or Classic asks "Restart to apply?", because its rows are another geometry set. A screen it does not theme yet (Now Playing, Cover Flow, dialogs, Quick Settings, Streaming's pages) looks as in Classic.
@@ -781,7 +780,7 @@ status bar asset's own background (`#000000`, not `#161616`), which the payload'
 - **Row Art.** It decides album covers only, in 52 px rows, and they are square: the Library is always 28 px text. A change restarts the Q2.
 - **Appearance's rows.** Theme, Light Mode, Accent, Home, Shortcut, Battery, Time in Title and Row Art. Corners and Centred Now Playing are not offered, and their stored values stay for the other themes. Classic Light has a dark version: choosing Classic Light turns Light Mode on unless it is on Auto. Its accent is its own (`CLASSIC_LIGHT_ACCENT`): Classic Blue by default, then Classic's eight.
 - **Home.** In Split, Library is a list on Home's left with the pane beside it, and the pane shows the highlighted row: Now Playing and the Library's rows the current cover, Shuffle the note and the song count, Cover Flow the album count, Folder its icon, Games the game count, Streaming the services, Settings the card's free space.
-- **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), renamed and shipped as `fonts/classic-light.ttf`; `assets/fonts/README-classic-light.txt` says what changed and where the original is. A shadow wider than its alphas is a build error (theme docs).
+- **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), renamed and shipped as `fonts/classic-light.ttf`; `assets/fonts/README-classic-light.txt` says what changed and where the original is.
 
 ### Light Mode
 

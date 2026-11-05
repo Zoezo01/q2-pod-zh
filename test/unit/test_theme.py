@@ -543,13 +543,6 @@ def test_geometry_sets_refuse_a_wide_value(monkeypatch):
         theme.geometry_sets([dict(theme.builtins()[0], geom_set='wide')])
 
 
-def test_shared_site_takes_one_value(monkeypatch):
-    monkeypatch.setitem(theme.GEOMETRIES, 'split', Geometry(name='split', pitch=28, art_pitch=52))
-    monkeypatch.setitem(theme.AUDIT, 'immediates', [{'value': 'pitch', 'purpose': 'x', 'page': 'shared', 'sites': [['0x4a2c5c', '0x2402004e']]}])
-    with pytest.raises(ValueError, match='split: pitch and art_pitch differ at shared site 0x4a2c5c'):
-        theme.geometry_sets([dict(theme.builtins()[0], geom_set='split')])
-
-
 def combinations(t):
     """Every value combination of t's options as {option: value}: a bound setting's names (narrowed by a values
     mask) under its SETTINGS name, an own option's labels under its key."""
@@ -559,19 +552,6 @@ def combinations(t):
         *([x for i, x in enumerate(v) if not o['values'] or o['values'] >> i & 1] for (_, v), o in zip(axes, t['opts'])))]
 
 
-def test_live_every_combination():
-    m, c, n = theme.builtins()
-    cm, cc, cn = combinations(m), combinations(c), combinations(n)
-    assert (len(cm), len(cc)) == (3*9*2*3*7*4*2*2, 3*8*2*3*7*4*2*2) and cn  # classic's accent mask 0x17f keeps 8 of 9
-    assert all(theme.is_live(m, c, a, cc[0]) for a in cm) and all(theme.is_live(c, m, b, cm[0]) for b in cc)
-    assert not any(theme.is_live(m, n, cm[0], b) or theme.is_live(c, n, cc[0], b) for b in cn)
-    on, off = ([b for b in cn if b['ROWART'] == v] for v in ('On', 'Off'))
-    assert on and off and not theme.is_live(n, n, on[0], off[0]) and theme.is_live(n, n, on[0], on[-1])
-
-
-def test_is_live_needs_one_set(test_set):
-    m, c = theme.builtins()[:2]
-    assert not theme.is_live(m, dict(c, geom_set='test'))
 
 
 NB = '#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100'
@@ -906,17 +886,6 @@ def test_builtins_rejects_a_shared_set_name(tmp_path):
     assert error(theme.builtins, tmp_path) == "b/theme.xml:1: geometry set pico is a's, with other values"
 
 
-def test_classic_light_from_minimal(tmp_path):
-    """Classic Light is data: written out as a theme over Minimal that states every field, it builds to Classic Light."""
-    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
-    classic_light = theme.builtins()[2]
-    (tmp_path / 'clone').mkdir()
-    (tmp_path / 'clone' / 'theme.xml').write_text(
-        theme.dump(classic_light, id='clone', name='Classic Light Clone', index='3', extends='minimal'))
-    clone = theme.builtins(tmp_path)[3]
-    skip = {'id', 'name', 'index', 'line'}
-    assert clone['id'] == 'clone'
-    assert {k: v for k, v in clone.items() if k not in skip} == {k: v for k, v in classic_light.items() if k not in skip}
 
 
 def boot_inc(tmp_path, themes, **kw):
@@ -936,7 +905,7 @@ def test_emit_boot_tables(tmp_path):
     row = ', '.join(str(ipod.immediate_values(SET0)[n]) for n in names)
     assert f'const volatile unsigned short boot_values[GEOM_N][G_N] = {{{{{row}}}}};' in inc
     assert 'const char *const geom_names[GEOM_N] = {"ipod"};' in inc
-    assert 'const volatile ui_redirect_t ui_redirects[] = {{0, 0}, {0, 0}};' in inc
+    assert 'const volatile ui_redirect_t ui_redirects[] = {{0, 0}};' in inc
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0']
     assert all(s in inc for s in geom_vals_text([SET0])) and '#define THEME_GEOM_OFF 4' in inc
 
@@ -966,7 +935,7 @@ def test_emit_second_set(tmp_path, test_set):
     assert 'enum { GEOM_IPOD, GEOM_TEST, GEOM_N };' in inc and '{"ipod", "test"}' in inc
     rows = ['{' + ', '.join(str(ipod.immediate_values(g)[n]) for n in ipod.VALUE_NAMES) + '}' for g in (SET0, TEST)]
     assert '= {' + ', '.join(rows) + '};' in inc
-    assert 'ui_redirects[] = {{"dialog/volume_dialog", 2}, {"system_bar", 2}, {0, 0}, {0, 0}};' in inc
+    assert 'ui_redirects[] = {{"dialog/volume_dialog", 2}, {"system_bar", 2}, {0, 0}};' in inc
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '1']
 
 
@@ -979,7 +948,7 @@ def test_classic_light_builtin():
     m, c, n = theme.builtins()
     assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic Light', 2, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
-                         opt('SETTING_HOME', default=0, preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
+                         opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
                          own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 

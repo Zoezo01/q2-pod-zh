@@ -73,7 +73,7 @@
   <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>
-  <option setting="home" default="split" preset="split"/>
+  <option setting="home" preset="split"/>
   <option setting="shortcut"/>
   <!-- Battery: the plain icon, chosen with Classic Light, or Percent Inside, the percent on or off. default is what a stored
        Percent or Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->

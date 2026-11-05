@@ -388,8 +388,8 @@ the stored accent.
   and settings geometry, the Now Playing bar heights, `art_square` (art takes Corners: Square,
   `ipod_square_art`), `batt_fill` (the battery's charge colour, 0 for its outline's), the accent's
   slot and config key
-  (`accent_slot`/`accent_key`: `ACCENT` or `MINIMAL_ACCENT`), its schemes and its options.
-- `scheme_t`: one per `ACCENTS` row, indexed by the stored value; its tones are that row, read
+  (`accent_slot`/`accent_key`: `ACCENT`, `MINIMAL_ACCENT` or `CLASSIC_LIGHT_ACCENT`), its schemes and its options.
+- `scheme_t`: one per `ACCENTS` row and theme's own accent, indexed by the stored value; its tones are that row, read
   through `tones()` or `tones_of(v)`. `SCHEME_CARD` (Minimal's Ivory) draws the selection as a card
   in `fill`; `SCHEME_RAW_RED` (Crimson) keeps stock red. The roles `fill`, `chevron`, `muted` and
   `bar_light` are `0xRRGGBB`, 0 meaning unused, and `fill` is read only under `SCHEME_CARD`.
@@ -441,21 +441,19 @@ mprotects (4125) every one RWX, lowest first. Only if all of them succeed does i
 halfwords, then per page call cacheflush (4147, BCACHE) and mprotect it back to R-X, and record the
 set in `st.geom`. If one mprotect fails, it mprotects the pages it already opened back to R-X and
 writes nothing: the code stays SET0's and `st.geom` stays 0, so the theme draws with SET0's rows.
-SET0, the set of both built-ins, matches every baked immediate, so it makes no syscall and writes
+SET0, Minimal's and Classic's set, matches every baked immediate, so it makes no syscall and writes
 nothing. Everything that follows the set (`geom()`, `geom_val()`, `client_h()`, `bar_sync` and
 the redirects) reads `st.geom`, not `theme_t.geom`, so a Theme switch to another set, which takes
 effect at the restart, changes nothing before it. A window in `ui_redirects` for that set loads as
 `<set>_<name>.bin`, the path written into `ringnav_ui_load`'s own frame, in the same folder
-(`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and
-cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open.
+(`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`).
 The Library and Edit Playlist rows the payload builds follow the live geometry: `list_row_core`
 reads the Library constructor's body and icon x words after `theme_boot`, and Edit Playlist's row
 takes the written set's `pitch` and `body` (`geom()`).
 
+**Classic Light.** THEME 2, in every build. It extends Classic and takes its numbers from its own theme.xml, none from `patch/offsets.inc`; a screen it does not theme yet looks as in Classic. The values for Settings and dialogs, which have no measured reference, start from iPod.js (https://github.com/tvillarete/ipod-classic-js, MIT): values only, no files, code or marks.
 
-**Classic Light.** THEME 2, in every build. It extends Classic and takes its numbers from its own theme.xml, none from `patch/offsets.inc`; a screen it does not theme yet looks as in Classic. The values for screens with no measured reference (Cover Flow, Settings, dialogs) and for motion start from iPod.js (https://github.com/tvillarete/ipod-classic-js, MIT): values only, no files, code or marks.
-
-**Geometry sets.** Classic Light's two sets are `classic-light` (Row Art on: 52 px art rows) and `classic-light-text` (all 28). A built-in theme declares its sets in its theme.xml (`<geometry name="classic-light" bar="26" …/>`, each omitted field the built-in set's or its `extends=` set's), and `tools/theme.py` checks each field's range (`GEOM_RANGES`) and builds the asset copies and boot tables from them. A theme on the card cannot declare a set.
+**Geometry sets.** Classic Light's two sets are `classic-light` (Row Art on: 52 px art rows) and `classic-light-text` (all 28). A built-in theme declares its sets in its theme.xml (`<geometry name="classic-light" bar="26" …/>`, each omitted field the built-in set's or its `extends=` set's), and `tools/theme.py` checks each field's range (`GEOM_RANGES`) and builds the asset copies and boot tables from them.
 
 - Values that follow the written set but are not immediates (the bar, the settings rows, the battery body, the text inset) are `geom_vals[st.geom][V_*]`, and `client_h()` is `320 - geom_val(V_BAR)`.
 - `list_end`: list boxes take the whole window (294 under Classic Light), so rows draw down to the glass, while the selection's scroll limit (`sel_height`, `max_top`) stops at `list_end` so a selected row never lands where the glass hides its text. A last row selected leaves the glass's strip below it empty. A list ends after the last row whose text clears the glass at `text_x` (`fit_bottom`).

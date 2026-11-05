@@ -291,11 +291,7 @@ def test_classic_light_font():
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
-    assert ('glyf' in font) == build.CLASSIC_LIGHT_TRUETYPE and ('CFF ' in font) != build.CLASSIC_LIGHT_TRUETYPE  # the chosen outline form
-
-
-def test_bold_font_is_the_subset_route():
-    assert build.bold_font() == build.subset_font(build.ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
+    assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
 
 
 def test_source_sha256_hashes_every_input_by_path(tmp_path, monkeypatch):

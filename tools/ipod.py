@@ -408,7 +408,7 @@ def status_metrics(g, font):
     """Classic Light's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
     fractional top row counted: the title's first ink clears the glass there. Stock's hscroll_label keeps
     2 px each side of its box, so the title's box is that much wider than its g.bar_title_w of text; the
-    clock is centred, clock_text ("12:59 PM") its widest. Model (checked on the device):
+    clock is centred, clock_text ("12:59 PM") its widest. Model:
     stb scales a font so that ascent - descent is its size, and AWTK centres the line box in the label."""
     from fontTools.ttLib import TTFont
     f = TTFont(font, lazy=True)

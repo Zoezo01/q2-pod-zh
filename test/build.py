@@ -365,8 +365,11 @@ def validate_assets(directory):
     from build import SCROBBLE_CA
     assert read('rootfs.squashfs', SCROBBLE_CA) == (ROOT/'assets/scrobble-ca.pem').read_bytes()
     # Classic's bold ships, cut to what BOLD_RANGES lists
-    from build import BOLD_TTF, bold_font
+    from build import BOLD_TTF, CLASSIC_LIGHT_TTF, CLASSIC_LIGHT_NOTICE, FONT_NOTICES, bold_font, subset_font
     assert read('rootfs.squashfs', BOLD_TTF) == bold_font()[0]
+    assert read('rootfs.squashfs', CLASSIC_LIGHT_TTF) == subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)[0]
+    for name in FONT_NOTICES:
+        assert read('rootfs.squashfs', 'release/assets/default/raw/fonts/' + name) == (ROOT/'assets/fonts'/name).read_bytes()
     # Centred Now Playing's page is English, as the iPod page is (english_ui)
     from build import CJK
     from ipod import PLAYING_STOCK
@@ -824,7 +827,7 @@ def validate_assets(directory):
     # Every geometry set's built list windows take the row height of the page's pitch
     # immediates (art pages take art_pitch), and its rows fit.
     from theme import builtins, geometry_sets, SCHEMA
-    from ipod import PAGE_KIND as page_kind
+    from ipod import PAGE_KIND as page_kind, page_rows
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
     for g in geometry_sets(builtins()):
         assert g.body <= g.pitch and g.art_body <= g.art_pitch and g.song_body <= g.song_pitch, g.name
@@ -843,7 +846,7 @@ def validate_assets(directory):
             for n in walk(new):
                 for prop in ('row_height', 'default_item_height'):
                     if old.get(n[2].get('name'), {}).get(prop) == '78':
-                        assert n[2][prop] == str({'art': g.art_pitch, 'song': g.song_pitch}.get(kind, g.pitch)), (g.name, short, prop)
+                        assert n[2][prop] == str(page_rows(g, kind)[0]), (g.name, short, prop)
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
         assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name

@@ -1715,7 +1715,7 @@ static const int setting_counts[] = { SETTING_N_ACCENT,
                                       SETTING_N_HOME,
                                       SETTING_N_BATTERY,
                                       THEME_N,
-                                      7,
+                                      SETTING_N_SHORTCUT,
                                       SETTING_N_CORNERS,
                                       SETTING_N_LIGHT,
                                       2,
@@ -4945,6 +4945,10 @@ static void theme_boot(void) {
         if (theme_mprotect((void *)p, THEME_PAGE, 7)) { /* RWX */
             for (q = boot_page(v, 0); q != p; q = boot_page(v, q + THEME_PAGE))
                 theme_mprotect((void *)q, THEME_PAGE, 5);
+            /* A theme only ever runs on its own set, so a set this boot can't write reads as
+             * Minimal until the next boot; THEME stays as stored. Its Appearance rows are never
+             * built on another theme's, whose rows a switch would redraw through unset labels. */
+            st.theme = 0;
             return;
         }
     for (p = boot_page(v, 0); p != ~0u; p = boot_page(v, p + THEME_PAGE)) {
@@ -5983,7 +5987,6 @@ void theme_select(int t) {
     settings_layout(window_manager());
     np_theme();
     st.pct_digit = st.pct_sign = 0; /* the battery's digits, measured again in t's font */
-    keep_selected(st.setting_label[SETTING_THEME]);
     const theme_t *T = theme();
     setting_text(SETTING_THEME);
     for (int k = 0; k < T->n_opts; ++k) setting_text(T->opts[k].setting);
@@ -8400,28 +8403,27 @@ static struct {
     unsigned m, cap;
 } era __attribute__((section(".scratch")));
 
-static int era_sql(const char *sql, int (*row)(void *, int, char **, char **)) {
+static int era_sql(const char *sql, int (*row)(void *, int, char **, char **), void *ctx) {
     void *db = 0;
     /* Era uses SQLite directly rather than the stock library query wrappers. */
     char *expanded = library_scope_query(sql); /* none: the whole library, as library_query */
     /* Keep a full-library grouping query from competing with the player's song records for RAM. */
     int bad = sqlite3_open("/mnt/data/database.db", &db) ||
               sqlite3_exec(db, "PRAGMA cache_size=64;PRAGMA temp_store=FILE", 0, 0, 0) ||
-              sqlite3_exec(db, expanded ? expanded : sql, row, 0, 0);
+              sqlite3_exec(db, expanded ? expanded : sql, row, ctx, 0);
     if (db) sqlite3_close(db);
     free(expanded);
     return !bad;
 }
-/* Home pane's counts: sql's one number, 0 when it can't be had. Off the wheel's path: coverflow.c
- * home_counts reads these once Home is back on top, and when a scan ends. era.n: era_menu sets its
- * own before it reads it, and no Era page is open under Home. */
+/* Home pane's counts: sql's one number, -1 when it can't be had. On coverflow.c count_worker's
+ * thread: era_sql opens its own connection, and the device's libsqlite3 is THREADSAFE=1. */
 static int count_row(void *ctx, int n, char **v, char **c) {
-    if (n == 1 && v[0]) era.n = atoi(v[0]);
+    if (n == 1 && v[0]) *(int *)ctx = atoi(v[0]);
     return 0;
 }
 int library_count(const char *sql) {
-    era.n = 0;
-    return era_sql(sql, count_row) ? era.n : 0;
+    int n = 0;
+    return era_sql(sql, count_row, &n) ? n : -1;
 }
 static int era_decade_row(void *ctx, int n, char **v, char **c) {
     if (n == 2 && v[0] && v[1] && era.n < ERA_DECADES)
@@ -8516,7 +8518,7 @@ static void *era_shuffle_songs(void) {
         "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
         "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, ALBUM_GROUP, from, from + 9);
     era_keys.n = 0;
-    if (era.m && era_sql(sql, era_key_row) && era_keys.n) {
+    if (era.m && era_sql(sql, era_key_row, 0) && era_keys.n) {
         qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, era_key_cmp);
         void *all = staged(songs_unsorted, (void *)1, &n);
         for (unsigned i = 0; i < deque_size(all); ++i) {
@@ -8566,7 +8568,7 @@ static int era_open_decade(void *ctx, void *event) {
     era.v =
         calloc((unsigned)era.count[k] + 1, sizeof *era.v); /* the decade's count, from era_menu */
     era.cap = era.v ? (unsigned)era.count[k] : 0;
-    era_sql(sql, era_album_row);
+    era_sql(sql, era_album_row, 0);
     void *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
     tk_snprintf(detail, sizeof detail, era.m == 1 ? "%u album" : "%u albums", era.m);
     page_row_detail(view, 0, "Play All", detail, era_pick);
@@ -8584,7 +8586,7 @@ static int era_menu(void *ctx, void *event) {
     if (!era_sql("select year/10*10,count(*) from (select " ALBUM_YEAR
                  " year from songtable where " MUSIC_WHERE " and ifnull(album,'')<>''" ALBUM_GROUP
                  ") where year>0 group by 1 order by 1",
-                 era_decade_row)) {
+                 era_decade_row, 0)) {
         toast("Era unavailable");
         return 0;
     }

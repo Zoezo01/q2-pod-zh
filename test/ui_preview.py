@@ -2,7 +2,7 @@
 """Compose native-size review sheets; these are layout illustrations, not AWTK captures.
 Usage: python3 test/ui_preview.py [--themes BEFORE,AFTER] BEFORE_BUILD AFTER_BUILD OUTPUT [BEFORE_CF AFTER_CF]
 Each side is drawn in an iPod Theme, classic or minimal (default classic,minimal); one build passed
-twice compares its two themes. --themes classic_light,classic_light (one build passed twice) composes only the status
+twice compares its two themes. --themes classic-light,classic-light (one build passed twice) composes only the status
 sheet, Classic Light's bar on each row. Uses the existing ImageMagick dependency and the original firmware's
 native font/assets.
 """

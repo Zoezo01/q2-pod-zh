@@ -8855,6 +8855,10 @@ nm=Machine(); assert classic_light_boot(nm)==['classic-light_system_bar']
 assert {nm.get(a)&0xffff for a,v in SITES.items() if v=='pitch'}=={28}; passed()
 # classic_light_boot's options reach the machine: rowart sets the config, fail sees each RWX page it is asked.
 nm=Machine(); tried=[]; assert classic_light_boot(nm,rowart='0',fail=lambda page:tried.append(page)) and nm.config['ROWART']=='0' and tried; passed()
+# A set this boot can't write reads as Minimal, THEME kept: a theme's Appearance only runs on its own set.
+nm=Machine(); minimal_t=nm.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)
+classic_light_boot(nm,fail=lambda page:True)
+assert nm.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)==minimal_t and nm.config['THEME']=='2'; passed()
 # client_h() follows the written set: 290 when Classic Light's boot fails, 294 once its set is written.
 for fail,want in ((lambda page:True,290),(lambda page:False,294)):
     cm,_=booted(fail=fail,geom=GEOM_CLASSIC_LIGHT)
@@ -10391,7 +10395,18 @@ m=kept
 class PaneMachine(EraMachine):
     def __init__(self,songs=SONGS):
         super().__init__(songs)
+        self.threads=[]
+        self.handlers[syms['pthread_create@GLIBC_2.2']]='pane_thread'; self.handlers[syms['pthread_join@GLIBC_2.0']]='pane_join'
+    def advance(self,ms,clear=True):  # home_counts' count_worker runs as its thread would, then its timer publishes
+        super().advance(ms,clear)
+        while getattr(self,"threads",None):
+            fn,arg=self.threads.pop(0); self.call(address=fn,args=(arg,0,0,0),gap=0,count=5_000_000,clear=False)
+            super().advance(1500,False)
     def hook(self,u,address,size,unused):
+        if self.handlers.get(address)=='pane_thread':
+            self.word(u.reg_read(UC_MIPS_REG_A0),77); self.threads.append((u.reg_read(UC_MIPS_REG_A2),u.reg_read(UC_MIPS_REG_A3)))
+            self.returns(0,clobber=True); return
+        if self.handlers.get(address)=='pane_join': self.returns(0,clobber=True); return
         if self.handlers.get(address)=='rockbox_stat':  # the card a device of its own, under /mnt
             path=self.text(u.reg_read(UC_MIPS_REG_A1))
             if path in ('/mnt/mmc','/mnt'):

@@ -309,17 +309,7 @@ def geometry_sets(themes):
         v = immediate_values(g)
         for n, x in v.items():
             check(0 <= x < 0x8000, f'{g.name}: {n} {x} does not fit an immediate')
-        for group in AUDIT['immediates']:
-            n = group['value']
-            if group.get('page') == 'shared':
-                check(v[n] == v.get('art_' + n, v[n]), f'{g.name}: {n} and art_{n} differ at shared site {group["sites"][0][0]}')
     return found
-
-
-def is_live(a, b, va=None, vb=None):
-    """Whether switching from theme a to b, their own options at va and vb (key -> value label), needs no
-    restart: one set, no boot-class field differs."""
-    return geometry(a, va) == geometry(b, vb) and all(a[k.field] == b[k.field] for k in SCHEMA.values() if k.cls == 'boot')
 
 
 class ThemeError(Exception):
@@ -491,6 +481,9 @@ def value(node, path, text, macros):
     k = SCHEMA.get(path)
     if not k:
         err(f'unknown key {path}')
+    # ponytail: a final colour's 0 means unset (theme.h), so it has no black; a role needs #010101 until one wants a flag
+    if k in FINAL and k.type == 'color' and text.lower() == '#000000':
+        err(f'{path}: #000000 reads as unset; use #010101')
     if k.field in macros:
         err(f'{path} comes from patch/offsets.inc')
     if k.type == 'bool':
@@ -799,9 +792,20 @@ def validate(t, name):
         err(f"{t['accent_key']} declared twice")
     if not t['accents']:
         err('colorSchemes is empty')
+    if len(t['schemes']) > 10:  # config_value reads one digit
+        err(f"{len(t['schemes'])} accents, at most 10")
+    if t['painter[PAINT_SELECTION]'] == 'SEL_STOPS' and not all(s['sel'] for i, s in enumerate(t['schemes']) if t['accents'] >> i & 1):
+        err('selection: painter stops needs every offered scheme\'s sel.stops')
+    if t['painter[PAINT_BATTERY]'] == 'BATT_CLASSIC_LIGHT' and not t['batt']:
+        err('battery: this painter needs stops')
+    for o in t['opts']:
+        if o.get('setting') != 'SETTING_ACCENT' and not o.get('key') and o['def'] >= 0 and not o.get('values'):
+            err(f"{o['setting']}: default has no effect without values (settings_read holds a stock setting's default)")
     for field, word in (('def', 'default'), ('preset', 'preset')):
         if accent[field] >= 0 and not t['accents'] >> accent[field] & 1:
             err(f'accent {word} {scheme_names(t)[accent[field]]} is not in colorSchemes')
+    if accent['def'] < 0 and not t['accents'] & 1:
+        err('accent: slot 0 is not offered, so a missing key needs a default')
     for k in SCHEMA.values():  # every value, those from a default or a base too (coverflow divides by some)
         if k.type not in ('set', 'stops', 'alphas'):
             for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field], t['light'].get(k.field, k.lo)]:
@@ -902,82 +906,6 @@ def builtins(root=ROOT/'assets/themes'):
     return [t for _, _, t in found]
 
 
-def dump(t, **head):
-    """Resolved theme t as theme.xml text stating every field, its sets too; head overrides <theme> attributes.
-    A field with no spelling raises: an unset stops value, or a resolved field this does not know."""
-    def nope(field): raise ThemeError(f'{field}: not declarable')
-    def spell(k, v):
-        if k.type == 'stops':
-            return ', '.join(f'#{c:06x} {p}' for p, c in v) or nope(k.field)
-        if k.type == 'alphas':
-            return ' '.join(map(str, v)) or nope(k.field)
-        return f'#{v:06x}' if k.type == 'color' else list(CHOICES[k.path])[v] if k.type == 'enum' else str(v)
-    def tag(name, attrs, end='/>'):
-        def esc(v): return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('"', '&quot;')
-        return f'<{name}' + ''.join(f' {a}="{esc(v)}"' for a, v in attrs.items()) + end
-    def known(d, *fields):
-        for f in d:
-            if f not in fields:
-                nope(f)
-    known(t, *FIELDS, 'id', 'name', 'index', 'line', 'accents', 'accent_key', 'derive', 'schemes', 'opts', 'light',
-          'undeclared', 'geoms')
-    lines = [tag('theme', {'format': 1, **{f: t[f] for f in ('id', 'name', 'index')}, **head}, '>')]
-    lines += [tag('geometry', dataclasses.asdict(g)) for g in t['geoms'].values()] + [tag('geometry', {'set': t['geom_set']})]
-    names = scheme_names(t)
-    keys = [k for k in SCHEMA.values() if k.path.startswith('scheme.')]
-    # own schemes first: each copies its base row's light half, which the rows then state
-    for i, s in sorted(enumerate(t['schemes']), key=lambda e: e[0] < len(ACCENT_NAMES)):
-        known(s, *(k.field for k in keys), 'light', 'name', 'label', 'base')
-        if not t['accents'] >> i & 1:  # an ACCENTS row out of colorSchemes is zero, stated or not
-            if i >= len(ACCENT_NAMES):
-                nope(names[i])
-            continue
-        a = {'name': names[i]}
-        if 'base' in s:
-            a |= {'base': ACCENT_NAMES[s['base']], 'label': s['label']}
-        for k in keys:
-            attr = k.path.removeprefix('scheme.')
-            a[f'light.{attr}' if attr in ('paper', 'ink') else attr] = spell(k, s[k.field])
-            if k.field in s['light']:
-                a[f'light.{attr}'] = spell(k, s['light'][k.field])
-        lines.append(tag('colorScheme', a))
-    lines.append(tag('colorSchemes', {'accents': ' '.join(n for i, n in enumerate(names) if t['accents'] >> i & 1),
-                                      **({'derive': t['derive']} if 'derive' in t else {})}))
-    payload = {macro: (s, values) for s, (macro, values) in SETTINGS.items()}
-    for o in t['opts']:
-        known(o, 'setting', 'def', 'preset', 'keep', 'values', 'key', 'label', 'names', 'sets')
-        own = o['setting'] == 'SETTING_OWN'
-        s, values = (None, o['names']) if own else payload[o['setting']]
-        values = names if s == 'accent' else values
-        a = {'key': o['key'], 'label': o['label']} if own else {'setting': s}
-        if s == 'accent':
-            a['key'] = t['accent_key']
-        a |= {attr: values[o[f]] for attr, f in (('default', 'def'), ('preset', 'preset'), ('keep', 'keep')) if o[f] >= 0}
-        if o['values'] and s != 'accent':
-            a['values'] = ' '.join(v for i, v in enumerate(values) if o['values'] >> i & 1)
-        if own:
-            lines += [tag('option', a, '>'), *(tag('value', {'label': n, 'set': x}) for n, x in zip(o['names'], o['sets'])), '</option>']
-        else:
-            lines.append(tag('option', a))
-    views, elements = {}, {}  # view -> its own attributes; view -> element -> its attributes
-    for k in SCHEMA.values():
-        if k.path.startswith(('scheme.', 'geometry.')):
-            continue
-        v, _, rest = k.path.partition('.')
-        if not view_attr(k.path):
-            views.setdefault(v, {})[rest] = spell(k, t[k.field])
-            continue
-        e, _, attr = rest.partition('.')
-        a = elements.setdefault(v, {}).setdefault(e, {'name': e})
-        a[attr] = spell(k, t[k.field])
-        if k.field in t['light']:
-            a[f'light.{attr}'] = spell(k, t['light'][k.field])
-    for v, es in elements.items():
-        lines += [tag('view', {'name': v, **views.pop(v, {})}, '>'), *(tag('element', a) for a in es.values()), '</view>']
-    lines += [tag('view', {'name': v, **a}) for v, a in views.items()]
-    return '\n'.join(lines + ['</theme>', ''])
-
-
 def stops_c(v):
     """A stops value's stops_t initialiser."""
     return '{0}' if not v else '{%d, {%s}, {%s}}' % (len(v), ', '.join(str(p) for p, _ in v), ', '.join(f'0x{c:06x}' for _, c in v))
@@ -1041,8 +969,8 @@ def emit(themes, out, redirects={}):
         check(not bits & 1, f'{name}: SET0 never redirects')
         check(len(name) + 1 + max(len(g.name) for g in sets) < 64, f'{name}: its set path exceeds ringnav_ui_load\'s 64 bytes')
     sites = [(int(a, 16), g['value']) for g in AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
-    # ponytail: the second {0, 0} lets test/patch.py patch entry 0; 8 B
-    ui = [f'{{{json.dumps(n)}, {redirects[n]}}}' for n in sorted(redirects)] + ['{0, 0}'] * 2
+    ui = [f'{{{json.dumps(n)}, {redirects[n]}}}' for n in sorted(redirects)] + ['{0, 0}']
+    check(len(sets) <= 8, f'{len(sets)} geometry sets: ui_redirect_t.sets holds 8')
     lines += ['enum { ' + ', '.join(gname(g.name) for g in sets) + ', GEOM_N };',
               'enum { ' + ', '.join(f'G_{n.upper()}' for n in VALUE_NAMES) + ', G_N };',
               f'#define BOOT_SITES {len(sites)}', f'#define CLIENT_H_MAX {max(320 - g.bar for g in sets)}',

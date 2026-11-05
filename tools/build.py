@@ -741,8 +741,8 @@ def subset_font(src, family, ranges_macro, notice=None):
     sub.populate(unicodes=have)
     sub.subset(font)
     check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
-    # A subset is a Modified Version: it may not carry the Reserved Font Name (its names, not the
-    # copyright and trademark notices, IDs 0 and 7)
+    # A subset is a Modified Version: it may not carry the Reserved Font Name (its names; the notices
+    # are the licence files FONT_NOTICES ships beside it)
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
             rec.string = str(rec).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', ''))
@@ -775,10 +775,10 @@ def bold_font():
 # Classic Light's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
 # The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
-CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to its Latin, Greek, Cyrillic and punctuation, and renamed. '
+# OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
+FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-classic-light.txt')
+CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, and renamed. '
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
-# stb draws the subset's outlines in the form chosen here: TrueType quadratics (otf_to_ttf) or the CFF original
-CLASSIC_LIGHT_TRUETYPE = False
 
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
@@ -1820,6 +1820,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
                                CLASSIC_LIGHT_TTF: (FONT, classic_light),
+                               **{'release/assets/default/raw/fonts/' + n: ('etc/hosts', (ROOT/'assets/fonts'/n).read_bytes()) for n in FONT_NOTICES},
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
         stock = inode(p, like.encode())
         check(stock is not None, f'Missing stock inode for {path}')

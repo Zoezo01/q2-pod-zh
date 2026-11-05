@@ -2434,10 +2434,14 @@ static struct {
     int pane; /* no cover shows: coverflow_home_clip paints the theme's pane */
     void *row; /* the highlighted row and what it shows in the pane (PANE_*) */
     int kind;
-    /* the pane's captions, read off the wheel's path (home_counts), 0 unknown; counted: their
-     * library_gen; free in tenths of a GB */
-    int songs, albums, services, games, free_tenths;
-    unsigned counted, count_timer, pane_timer;
+    /* the pane's captions, read off the wheel's path (home_counts), 0 unknown; counted: songs and
+     * albums answer asked, the library_gen they were asked at; counting: 1 count_worker runs, 2 it
+     * has answered in got_*; pane_read: when home_pane_read last ran, | 1, 0 never */
+    int songs, albums, services, games, free_tenths, counted;
+    volatile int counting;
+    int got_songs, got_albums;
+    unsigned long count_thread;
+    unsigned asked, pane_read, count_timer, pane_timer;
     unsigned ring[4][HOME_PW];
     int clip[4];  /* the canvas clip while the art paints, restored after */
     int clipped;
@@ -2800,34 +2804,61 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
 
 #define PANE_COUNT_MS 400 /* once Home has slid back */
 #define PANE_BOOT_MS 1500 /* once boot's first paints are over */
+#define PANE_READ_MS 60000 /* the card's I/O, at most this often */
+/* The two counts, a whole library's grouping among them, take seconds on a large one: off the UI
+ * thread, and home_counts publishes them. -1: no answer. */
+static void *count_worker(void *unused) {
+    home.got_songs = library_count("select count(*) from songtable where " MUSIC_WHERE);
+    /* Coverflow's rows: a row per album, and one for all the songs with no album */
+    if (home.got_albums < 0)
+        home.got_albums = library_count("select sum(e=0)+max(e) from (select ifnull(album,'')='' e "
+                                        "from songtable where " MUSIC_WHERE ALBUM_GROUP ")");
+    home.counting = 2;
+    return 0;
+}
+
 /* The pane's captions and images, once Home's window is back on top and after boot: not on a wheel
- * move, and at most one query per library change. A scan running: the counts it will change are
- * unknown, and this looks again until it ends. */
+ * move, and at most one query per library change, or per Home after one that failed. A scan
+ * running: the counts it will change are unknown, and this looks again until it ends. Home in Full
+ * or Carousel has no pane and asks nothing; Split's next foreground asks.
+ * ponytail: home_pane_read's card I/O stays on the UI thread (addon_scan's table is the UI's) at
+ * most once a PANE_READ_MS, so a fresh app or the free space can lag that long. */
 static int home_counts(const void *unused) {
+    int answered = home.counting == 2;
+    if (answered) {
+        pthread_join(home.count_thread, 0);
+        home.counting = 0;
+        home.counted = home.got_songs >= 0 && home.got_albums >= 0;
+        if (home.counted) home.songs = home.got_songs, home.albums = home.got_albums;
+        pane_invalidate();
+    }
+    if (home.counting) return 8; /* RET_REPEAT */
     unsigned gen = library_gen;
     if (library_scanning()) {
         if (home.songs || home.albums) pane_invalidate();
-        home.songs = home.albums = 0;
-        return 8; /* RET_REPEAT */
+        home.songs = home.albums = home.counted = 0;
+        return 8;
+    }
+    if (!ipod_home() && (gen != home.asked || (!home.counted && !answered))) {
+        home.asked = gen;
+        /* Coverflow's own list when it has one */
+        home.got_albums = cf.stock && !cf.scoped && cf.albums_gen == gen ? (int)deque_size(cf.stock) : -1;
+        home.counting = 1;
+        if (!pthread_create(&home.count_thread, 0, count_worker, 0)) return 8;
+        home.counting = 0;
     }
     home.count_timer = 0;
-    if (gen != home.counted || !home.songs) {
-        home.counted = gen;
-        home.songs = library_count("select count(*) from songtable where " MUSIC_WHERE);
-        /* Coverflow's own list when it has one; else its rows: a row per album, and one for all
-         * the songs with no album */
-        home.albums =
-            cf.stock && !cf.scoped && cf.albums_gen == gen
-                ? (int)deque_size(cf.stock)
-                : library_count("select sum(e=0)+max(e) from (select ifnull(album,'')='' e from "
-                                "songtable where " MUSIC_WHERE ALBUM_GROUP ")");
+    if (ipod_home()) return 0; /* RET_REMOVE */
+    unsigned now = time_now_ms();
+    if (!home.pane_read || now - home.pane_read >= PANE_READ_MS) {
+        home.pane_read = now | 1;
+        home_pane_read(&home.services, &home.games, &home.free_tenths);
+        unsigned bitmap[64]; /* bitmap_t: decoded once, so no row's first show reads it */
+        for (unsigned i = 0; i < sizeof pane_icons / sizeof *pane_icons; ++i)
+            widget_load_image(home.art, pane_icons[i], bitmap);
+        pane_invalidate();
     }
-    home_pane_read(&home.services, &home.games, &home.free_tenths);
-    unsigned bitmap[64]; /* bitmap_t: decoded once, so no row's first show reads it */
-    for (unsigned i = 0; i < sizeof pane_icons / sizeof *pane_icons; ++i)
-        widget_load_image(home.art, pane_icons[i], bitmap);
-    pane_invalidate();
-    return 0; /* RET_REMOVE */
+    return 0;
 }
 
 static int home_foreground(void *ctx, void *event) {
