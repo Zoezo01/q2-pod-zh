@@ -82,6 +82,11 @@
   <!-- Row Art, Classic Light's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
        art lists (the classic-light set), Off makes those lists 28 px text (classic-light-text). The Library is text either way.
        A change restarts the Q2. Choosing Classic Light presets On, as Classic presets Cobalt. -->
+  <!-- Classic Light's Home in Split, each its own switch, on as chosen, as Classic presets its own: Library on Home slides
+       the Library's rows in on Home (off, Library opens its page), Row Preview has the pane follow the highlighted row
+       (off, it shows Now Playing's art on every row) -->
+  <option key="HOMELIB" label="Library on Home" default="On" preset="On"><value label="Off"/><value label="On"/></option>
+  <option key="ROWPREVIEW" label="Row Preview" default="On" preset="On"><value label="Off"/><value label="On"/></option>
   <option key="ROWART" label="Row Art" default="On" preset="On">
     <value label="Off" set="classic-light-text"/>
     <value label="On" set="classic-light"/>

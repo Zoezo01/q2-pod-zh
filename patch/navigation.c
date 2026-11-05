@@ -1841,6 +1841,16 @@ static int setting(int i) {
     accent();
     return themes[st.theme].undeclared >> i & 1 ? 0 : *setting_values[i];
 }
+/* A theme's own choice (OWN_*): its stored value while the theme offers it, else 0. */
+static int theme_own(int k) {
+    const theme_t *T = theme();
+    for (int i = 0; i < T->n_opts; ++i)
+        if (T->opts[i].setting == SETTING_OWN + k) return st.own[k];
+    return 0;
+}
+/* Classic Light's Home in Split (coverflow.c): Library on Home and Row Preview */
+int home_lib_on(void) { return theme_own(OWN_HOMELIB); }
+int row_preview_on(void) { return theme_own(OWN_ROWPREVIEW); }
 static const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
 _Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* layout");
 /* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
@@ -4930,7 +4940,7 @@ static unsigned boot_page(const volatile unsigned short *v, unsigned from) { /* 
 static int geom_with(const theme_t *T, int setting, int v, int chosen) {
     for (int k = 0; k < T->n_opts; ++k) {
         const option_t *o = &T->opts[k];
-        if (o->setting < SETTING_OWN) continue;
+        if (o->setting < SETTING_OWN || !theme_keys[o->setting - SETTING_OWN].sets) continue;
         int s = o->setting - SETTING_OWN, w = o->setting == setting ? v : st.own[s];
         if (chosen && o->preset >= 0 && w != o->keep) w = o->preset;
         return theme_keys[s].sets[w];

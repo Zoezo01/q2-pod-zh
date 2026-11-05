@@ -561,7 +561,8 @@ def offered(c, o, names, what):
 
 
 def own_option(c, known):
-    """A theme's own <option key label>: its values, each naming the geometry set it boots, one of known."""
+    """A theme's own <option key label>: its values, each naming the geometry set it boots, one of known, or
+    none of them naming one: a plain choice the payload reads as st.own[OWN_<KEY>]."""
     def err(node, message): fail(node.file, node.line, message)
     key = own_key(c, c.attrs['key'])
     if 'values' in c.attrs:
@@ -578,16 +579,16 @@ def own_option(c, known):
             err(v, f'{key}: value label expected 1..24 bytes, no control characters')
         if x in names:
             err(v, f'{key}: duplicate value {x}')
-        if 'set' not in v.attrs:
-            err(v, f'{key}: value {x} has no set')
-        if v.attrs['set'] not in known:
+        if ('set' in v.attrs) != ('set' in c.children[0].attrs):
+            err(v, f'{key}: every value names a set, or none does')
+        if 'set' in v.attrs and v.attrs['set'] not in known:
             err(v, f'unknown geometry set "{v.attrs["set"]}"')
         names.append(x)
-        sets.append(v.attrs['set'])
+        sets.append(v.attrs.get('set'))
     if not 2 <= len(names) <= 10:  # config_value reads one digit
         err(c, f'{key}: 2 to 10 values expected')
     # ponytail: set is the one selector; a value that selects a scheme or a font adds its attribute, and its payload reader, when a theme needs it
-    return presets(c, {'setting': 'SETTING_OWN', 'key': key, 'label': c.attrs['label'], 'names': names, 'sets': sets,
+    return presets(c, {'setting': 'SETTING_OWN', 'key': key, 'label': c.attrs['label'], 'names': names, 'sets': sets if sets[0] else None,
                        'def': -1, 'preset': -1, 'keep': -1, 'values': 0}, names, key)
 
 
@@ -988,11 +989,12 @@ def emit(themes, out, redirects={}):
               'const char *const geom_names[GEOM_N] = {' + ', '.join(json.dumps(g.name) for g in sets) + '};',
               'const volatile ui_redirect_t ui_redirects[] = {' + ', '.join(ui) + '};',
               *(f'#define SETTING_N_{n.upper()} {len(v)}' for n, (_, v) in SETTINGS.items()),
+              *(f'#define OWN_{k} {i}' for i, k in enumerate(theme_keys(themes))),
               # last: its sets are GEOM_* names
               'const theme_key_t theme_keys[THEME_KEYS] = {', *(
                   f'    {{ .key = {json.dumps(k)}, .label = 0, .names = 0, .sets = 0, .n = {n}, .def = {d} }},' if o is None else
                   f'    {{ .key = {json.dumps(k)}, .label = {json.dumps(o["label"])}, '
-                  f'.names = (const char *const[]){{{", ".join(map(json.dumps, o["names"]))}}}, '
-                  f'.sets = (const unsigned char[]){{{", ".join(map(gname, o["sets"]))}}}, .n = {n}, .def = {d} }},'
+                  f'.names = (const char *const[]){{{", ".join(map(json.dumps, o["names"]))}}}, ' +
+                  (f'.sets = (const unsigned char[]){{{", ".join(map(gname, o["sets"]))}}}, ' if o['sets'] else '.sets = 0, ') + f'.n = {n}, .def = {d} }},'
                   for k, (n, d, o) in theme_keys(themes).items()), '};', '']
     (out/'themes.inc').write_text('\n'.join(lines))

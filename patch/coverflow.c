@@ -2446,7 +2446,8 @@ static struct {
     int clip[4];  /* the canvas clip while the art paints, restored after */
     int clipped;
 } home __attribute__((section(".scratch")));
-extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *);
+extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
+    home_lib_on(void), row_preview_on(void);
 extern void library_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql);
@@ -2778,7 +2779,8 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
     void *list = P(surface, W_PARENT);
     const char *name = widget_get_prop_str(row, "name", "");
     int kind = PANE_LIBRARY;
-    if (list == home.sets) kind = PANE_SETTINGS;
+    if (!row_preview_on()) kind = PANE_NOW; /* Row Preview off: Now Playing's on every row */
+    else if (list == home.sets) kind = PANE_SETTINGS;
     else if (list == home.lib) kind = id ? PANE_LIBRARY : PANE_SHUFFLE;
     else {
         static const char *const names[] = { "img_playing", "img_library", 0,
@@ -2820,7 +2822,7 @@ static void *count_worker(void *unused) {
 /* The pane's captions and images, once Home's window is back on top and after boot: not on a wheel
  * move, and at most one query per library change, or per Home after one that failed. A scan
  * running: the counts it will change are unknown, and this looks again until it ends. Home in Full
- * or Carousel has no pane and asks nothing; Split's next foreground asks.
+ * or Carousel, or Row Preview off, shows no count and asks nothing; the next foreground asks.
  * ponytail: home_pane_read's card I/O stays on the UI thread (addon_scan's table is the UI's) at
  * most once a PANE_READ_MS, so a fresh app or the free space can lag that long. */
 static int home_counts(const void *unused) {
@@ -2839,7 +2841,8 @@ static int home_counts(const void *unused) {
         home.songs = home.albums = home.counted = 0;
         return 8;
     }
-    if (!ipod_home() && (gen != home.asked || (!home.counted && !answered))) {
+    int pane = !ipod_home() && row_preview_on(); /* the counts' only reader */
+    if (pane && (gen != home.asked || (!home.counted && !answered))) {
         home.asked = gen;
         /* Coverflow's own list when it has one */
         home.got_albums = cf.stock && !cf.scoped && cf.albums_gen == gen ? (int)deque_size(cf.stock) : -1;
@@ -2848,7 +2851,7 @@ static int home_counts(const void *unused) {
         home.counting = 0;
     }
     home.count_timer = 0;
-    if (ipod_home()) return 0; /* RET_REMOVE */
+    if (!pane) return 0; /* RET_REMOVE */
     unsigned now = time_now_ms();
     if (!home.pane_read || now - home.pane_read >= PANE_READ_MS) {
         home.pane_read = now | 1;
@@ -3045,11 +3048,11 @@ static int home_settings(void *ctx, void *event) {
     return 0;
 }
 
-/* Home's Library row in Split (a set with home_lib): its rows slide in as Settings' do, each filled
+/* Home's Library row in Split (a set with home_lib, Library on Home on): its rows slide in as Settings' do, each filled
  * by the page's own constructor (navigation.c library_rows) in Home's rows' shape, and open what
  * they open from the page. Full and Carousel keep the page. */
 static int home_library(void *ctx, void *event) {
-    if (ipod_home() || !home.lib) return on_home_music_onclick(ctx, event);
+    if (ipod_home() || !home.lib || !home_lib_on()) return on_home_music_onclick(ctx, event);
     if (widget_get_visible(home.lib)) return 0;
     const theme_t *T = theme();
     library_rows(home.lib);
