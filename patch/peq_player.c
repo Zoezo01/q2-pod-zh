@@ -564,12 +564,16 @@ static void ao_cut(void) { /* a press during ao_init's drain, on the command thr
 #define DAC_HELPER ((void (*)(int))0x43b280u) /* stock's: checks the way and the fd, clears the flag */
 /* Whether PRESS_FILE holds a fresh stamp, each used once, so a short track's natural change after the press's
  * own start doesn't wait. Stale, from the future, 0 or no file: no. Read only at these sites, never per block. */
-static int dac_word(int pressed) { /* odd: a press's stamp; even: start_mute's mark */
-    static int seen;
-    int at = 0, fd = open(PRESS_FILE, 0); /* O_RDONLY */
+static int stamp_read(const char *path) { /* demo's word in a /tmp file; 0 without one */
+    int at = 0, fd = open(path, 0); /* O_RDONLY */
     if (fd < 0) return 0;
     read(fd, &at, sizeof at);
     close(fd);
+    return at;
+}
+static int dac_word(int pressed) { /* odd: a press's stamp; even: start_mute's mark */
+    static int seen;
+    int at = stamp_read(PRESS_FILE);
     if (!at || (at & 1) != pressed || at == seen || (unsigned)now_ms() - (unsigned)at >= DAC_PRESS_MS) return 0;
     seen = at;
     return 1;
@@ -655,10 +659,8 @@ long ao_write(void *pcm, const char *data, unsigned long frames) {
 
 /* Frames back from the pause to the fade's start, within what is held and this stream played. */
 static unsigned ps_back(const pcm_status *st, unsigned left) {
-    int at = 0, fd = open(MUTE_FILE, 0); /* O_RDONLY */
-    if (fd < 0) return 0;
-    read(fd, &at, sizeof at);
-    close(fd);
+    int at = stamp_read(MUTE_FILE);
+    if (!at) return 0;
     unsigned age = (unsigned)st->trigger_s * 1000u + (unsigned)st->trigger_ns / 1000000u - (unsigned)at;
     int ms = (int)age + PS_TRIM_MS;
     if (age >= PS_FRESH_MS || ms <= 0) return 0; /* no stamp reads as 0, an age of the whole uptime */
