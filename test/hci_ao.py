@@ -56,7 +56,7 @@ class Ring(PCM):
         self.paused, self.trigger, self.released, self.epochs = None, 0, 0, []  # a pause's hw_ptr and time; what a prepare set aside
     @property
     def buffer_frames(self):
-        return 16384 if self.rate >= 96000 else self.rate * self.buffer_us // 1000000
+        return 16384 if self.rate >= 96000 and not self.os.transport else self.rate * self.buffer_us // 1000000  # the DMA's cap isn't a transport's
     def hw(self):
         if self.paused is not None: return self.paused
         return 0 if self.hw_at is None else (self.os.clock - self.hw_at) * self.rate // 10**9
@@ -490,6 +490,8 @@ for way, transport in ROUTES:
         assert len(p.e.streams) == 1 and pcm.lost == 0 and not pcm.forwards, (way, transport, first, len(p.e.streams), pcm.lost, pcm.forwards)
         assert pcm.rate == out_rate(way, transport, first), (way, transport, first, pcm.rate)
         assert written(pcm.chunks) == want and any(want), (way, transport, first, len(written(pcm.chunks)), len(want))
+        seconds = sum(NOISE_SECONDS.get(n) or LONG.get(n, SECONDS) for n in (first, second))
+        assert abs(len(want) // pcm.bytes() - seconds * pcm.rate) < 64, (way, transport, first, len(want) // pcm.bytes())
         if first[0] != 'n':
             s = pcm.samples()
             f, rms, peak = tone(s, pcm.rate)
@@ -506,6 +508,8 @@ for transport in (None, 96000):
         assert len(p.e.streams) == 1 and pcm.lost == 0, (transport, first, len(p.e.streams), pcm.lost)
         s, rate = pcm.samples(), pcm.rate
         change = int(LONG.get(first, SECONDS) * rate)
+        frames = len(written(pcm.chunks)) // pcm.bytes()
+        assert abs(frames - change - SECONDS * rate) < 64, (transport, first, frames)
         for part in s[:change], s[change:]:
             f, rms, peak = tone(part, rate)
             assert abs(f - TONE) < 2 and abs(rms / peak - 0.707) < 0.03, (transport, first, f, rms, peak)
@@ -521,9 +525,31 @@ for way, transport in ROUTES:
         assert len(p.e.streams) == 2, (way, transport, second, keep, len(p.e.streams))
         assert all(pcm.lost == 0 for pcm in p.e.streams), (way, transport, second)
         assert any(k['left'] > 0 for _, n, k in p.e.events if n == 'pcm_drain'), (way, transport, second)
-print('Bluetooth and USB: Gapless off, another bit depth and channels reopen, with what the buffer held drained first.')
+        for pcm in p.e.streams:
+            f, rms, peak = tone(pcm.samples(), pcm.rate)
+            assert abs(f - TONE) < 2 and peak > 0.3 and abs(rms / peak - 0.707) < 0.03, (way, transport, second, f, rms, peak)
+            frames = len(written(pcm.chunks)) // pcm.bytes()
+            assert abs(frames - SECONDS * pcm.rate) < 64, (way, transport, second, frames)  # the resampler's few short of a file
+print('Bluetooth and USB: Gapless off, another bit depth and channels reopen, with what the buffer held drained first, tone and level right on both sides.')
+# Bluetooth with the next track late: under BT_STAY_MS of the ring left, stock's reopen and its Drain; more, it stays.
+def late(ms_left, transport=None):
+    p = heard(1, transport)
+    p.song('a44.flac')
+    assert p.until(p.ended, 8)
+    pcm = p.e.pcm
+    assert p.until(lambda: (pcm.appl - pcm.hw()) * 1000 // pcm.rate <= ms_left, 1), ms_left
+    p.song('b44.flac')
+    p.run(SECONDS + 0.8)
+    return p
+for transport in (None, 96000):
+    p = late(300, transport)
+    assert len(p.e.streams) == 1 and not [k for _, n, k in p.e.events if n == 'pcm_drain'], (transport, len(p.e.streams))
+    p = late(120, transport)
+    drains = [k['left'] for _, n, k in p.e.events if n == 'pcm_drain']
+    assert len(p.e.streams) == 2 and drains and drains[0] > 0, (transport, len(p.e.streams), drains)
+print('Bluetooth, the next track late: 300 ms left stays on one PCM; 120 ms left reopens through stock\'s Drain.')
 # Crossfade in Shuffle: the whole tail mixed over one PCM, the level flat, and across a rate on Bluetooth the pitch right.
-def fade_over(way, transport, first, second):
+def fade_over(way, transport, first, second, preload=False):
     p = heard(way, transport)
     (p.e.tmp/'tmp_q2xfade').write_bytes(struct.pack('<i', 1000))
     total, seen = [0], ps['xf'] + 12
@@ -531,11 +557,24 @@ def fade_over(way, transport, first, second):
     p.song(first)
     p.run(0.3)
     p.e.send_cmd('{mcl-seteq\\0|0|0|0|0|0|0|0|0|0|1}')
+    if preload:
+        p.gapless(second)
     assert p.until(p.ended, 8), first
-    p.song(second)
+    if not preload:
+        p.song(second)
     p.run(4)
     assert total[0] > 40000, (way, transport, first, total)
     return p
+def as_preload(pcm, other):
+    """Every frame in its place. Not bytes: the mix's gains are exact at each block's start, and the routes cut blocks apart, a 16-bit LSB at most."""
+    x, y = pcm.samples(), other.samples()
+    return len(x) == len(y) and all(abs(v - w) < 2**-14 for v, w in zip(x, y))
+def holes(s):
+    run = worst = 0
+    for v in s:
+        run = run + 1 if v == 0 else 0
+        worst = max(worst, run)
+    return worst
 for way, transport in ROUTES:
     p = fade_over(way, transport, 'n5.flac', 'n6.flac')
     pcm = p.e.pcm
@@ -543,12 +582,15 @@ for way, transport in ROUTES:
     levels = windows(pcm.samples(), pcm.rate)
     mid = sorted(levels)[len(levels) // 2]
     assert mid > 0.01 and all(abs(20 * math.log10(max(x, 1e-6) / mid)) < 1.5 for x in levels[1:-1]), (way, transport, [round(x, 3) for x in levels])
+    assert holes(pcm.samples()) < pcm.rate // 100, (way, transport, holes(pcm.samples()))
+    assert as_preload(pcm, fade_over(way, transport, 'n5.flac', 'n6.flac', True).e.pcm), (way, transport)
 for transport in (None, 96000):
     p = fade_over(1, transport, 'f44.flac', 'h48.flac')
     pcm = p.e.pcm
     assert len(p.e.streams) == 1 and pcm.lost == 0, (transport, len(p.e.streams), pcm.lost)
     f, rms, peak = tone(pcm.samples(), pcm.rate)
-    assert abs(f - TONE) < 2, (transport, f)
+    assert abs(f - TONE) < 2 and holes(pcm.samples()) < pcm.rate // 100, (transport, f)
+    assert as_preload(pcm, fade_over(1, transport, 'f44.flac', 'h48.flac', True).e.pcm), transport
 print('Crossfade on Bluetooth at 48 and 96 kHz and on USB: one PCM, within 1.5 dB through the hold and the mix, the whole tail mixed; across a rate on Bluetooth the pitch holds.')
 # A real DSD end stays stock's on either way.
 for way in 1, 2:

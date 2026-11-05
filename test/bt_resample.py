@@ -824,8 +824,31 @@ for way, rate, answer in ((2, 44100, None), (2, 192000, None), (BT, 48000, 96000
 cold(44100, way=2); avail[0] = BUFFER
 assert nxt() == REOPEN
 avail[0] = 0
-cold(48000, way=BT); avail[0] = BUFFER
-assert nxt(48000) == []
+# Bluetooth keeps it only with BT_STAY_MS of the ring to play; less is stock's reopen, whose Drain starts the silence
+# fill. Exactly the limit stays, a frame under doesn't, at AAC's and SBC's rate and LDAC's.
+for answer, limit in ((48000, 9600), (96000, 19200)):
+    cold(48000, way=BT, answer=answer); avail[0] = BUFFER - limit
+    assert nxt(48000) == [], answer
+    cold(48000, way=BT, answer=answer); avail[0] = BUFFER - limit + 1
+    assert nxt(48000) == REOPEN, answer
+    cold(48000, way=BT, answer=answer); avail[0] = BUFFER
+    assert nxt(48000) == REOPEN, answer
+    avail[0] = 0
+# MQA's get_space isn't in the ring's units: it reopens. A status that fails reads as full, and the state decides.
+cold(48000, way=BT); w(0xb10c54, 2), w(0xb10b6c, 0x18)
+got = nxt(48000)
+w(0xb10c54, 0), w(0xb10b6c, 0)
+assert got == REOPEN, got
+cold(48000, way=BT)
+status, real['snd_pcm_status'] = real['snd_pcm_status'], lambda: -1 & 0xffffffff
+got = nxt(48000)
+real['snd_pcm_status'] = status
+assert got == [], got
+# USB and a preload don't look: a ring nearly out still stays.
+cold(44100, way=2); avail[0] = BUFFER - 1
+assert nxt() == []
+begin(BT); w(PRELOADED, 1); file_end_section(); ask(48000); end(1); avail[0] = BUFFER - 1
+assert ask(48000)[0] == []
 avail[0] = 0
 press[0] = None
 # What's left of a natural end isn't kept: a same-format change takes it, so a later reset doesn't drain.

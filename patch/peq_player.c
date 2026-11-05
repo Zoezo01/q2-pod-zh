@@ -439,8 +439,9 @@ int rs_open(af_instance *af) {
 #define PCM_PREPARED 2 /* SND_PCM_STATE_*, from snd_pcm_state (0xadb680) */
 #define PCM_RUNNING 3
 static int ao_asked[2], ao_got[2], ao_way; /* the last request the output changed, what it got, and on which way */
+static int ao_free;                        /* get_space's last answer, in bytes */
 static int ao_playing(void) {
-    ((int (*)(void))0x43815cu)(); /* stock's get_space: snd_pcm_status brings the ioplug's state up to date */
+    ao_free = ((int (*)(void))0x43815cu)(); /* stock's get_space: snd_pcm_status brings the ioplug's state up to date */
     int state = ((int (*)(void *))0xadb680u)(ALSA_PCM);
     return state == PCM_RUNNING || state == PCM_PREPARED;
 }
@@ -505,6 +506,18 @@ void ao_uninit(int immed) {
     if (ao_natural) ao_pcm[0] = AO_RATE, ao_pcm[1] = AO_CHANNELS, ao_pcm[2] = AO_FORMAT;
     ((void (*)(int))0x43868cu)(immed);
 }
+/* Bluetooth's cold route keeps the PCM only with this much of the ring still to play. A kept PCM gets no Drain, so
+ * bluealsa's silence fill (tools/bt_silence.S) doesn't start: a first write later than the ring sends no packet for
+ * the whole stall and the headset's buffer can run dry. With less left, stock's reopen and its Drain run.
+ * ponytail: a stall starting after ao_init has no fill, as a late preload already hasn't. A failed status reads as a
+ * full ring, leaving it to the ioplug's state. MQA's get_space counts 6 bytes a frame (0x4382d4), not the ring's, so
+ * it isn't comparable and MQA reopens. */
+#define BT_STAY_MS 200 /* derived, not measured: the fill's 100 ms poll twice over, under the ~440 ms a natural end leaves */
+static int bt_margin(int rate) {
+    if (OUTPUT_WAY != 1) return 1;
+    if (*(volatile int *)0xb10c54u == 2 && *(volatile int *)0xb10b6cu == 0x18) return 0;
+    return AO_BUFFERSIZE - ao_free >= (unsigned)rate * BT_STAY_MS / 1000 * AO_BYTES;
+}
 int ao_init(int rate, int channels, int format, int flags) {
     int asked[2] = { rate, format }, was_open = ALSA_PCM != 0;
     int held = OUTPUT_WAY == ao_way && rate == ao_asked[0] && format == ao_asked[1];
@@ -516,7 +529,7 @@ int ao_init(int rate, int channels, int format, int flags) {
     if (natural == OUTPUT_WAY + 1 && was_open && !DSD_FILE) {
         int preloaded = PREV_RATE != -1;
         int told = !preloaded && (OUTPUT_WAY || dac_word(0)); /* only the jacks have demo's mute (start_mute) */
-        if (told && channels == ao_pcm[1] && rate == ao_pcm[0] && format == ao_pcm[2] && ao_playing())
+        if (told && channels == ao_pcm[1] && rate == ao_pcm[0] && format == ao_pcm[2] && ao_playing() && bt_margin(rate))
             PREV_CHANNELS = channels, PREV_RATE = rate, PREV_FORMAT = format; /* nothing to reopen for */
         if (OUTPUT_WAY != 1) { /* Bluetooth's stock drains unmuted, and its plugin stops at its own underrun */
             int reopens = !KEEP_GAPLESS || channels != PREV_CHANNELS || rate != PREV_RATE || format != PREV_FORMAT;
