@@ -1394,6 +1394,10 @@ m=shuffled(); m.word(O['MCL_POS'],6); m.handlers[ps['stock_prev_trampoline']]='x
 m.word(m.library_rows[6]+O['REC_PATH'],m.string('/A/left.dsf'))  # one row in six: a draw would fade
 m.fn('ringnav_prev'); assert m.mcl('MCL_POS')==1,m.mcl('MCL_POS'); assert m.fade()==0
 assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==6
+# A Play Next changes the answer mid-track, both ways: the poll reads the next record each pass.
+m=XfadeMachine(); rows=list(m.library_rows); assert m.fade(3)==0
+m.word(syms['mcl_pdeqplaylist'],m.deque(rows[:4]+[rows[0]]+rows[4:])); assert m.fade()==7000
+m.word(syms['mcl_pdeqplaylist'],m.deque(rows)); assert m.fade()==0
 m=XfadeMachine('0'); assert m.fade()==0 and not m.files and not m.attaches  # off: no file
 # Shuffle Songs (the reports' mode, #164): the next is the shuffle's successor, not pos + 1, and
 # the fade follows album_cmp of the two records at every automatic change.

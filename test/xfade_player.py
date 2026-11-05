@@ -256,6 +256,22 @@ for clear, then in ((50, 0), (47, 0), (50, 1000)):
     uninit(af)
     assert n - out >= mark and (then or n - out == mark), (n - out, mark)
     mix(44100, n - out, out, seconds=int((n - out) / 44100) + 1)
+# A Play Next changes demo's answer mid-track. Asked before the window, the whole fade; inside it, half of
+# what is left; asked after the last block, or taken back before the window, a plain join, untouched.
+for begin, at, then, want in ((0, 10, 5000, 5), (0, 24, 5000, 3), (0, 30, 5000, 0), (5000, 10, 0, 0)):
+    w(flag, begin), w(LENGTH, 30)
+    af, n, out = track(44100), (at - 2) * 44100, (at - 2) * 44100
+    while n < 30 * 44100:
+        if n >= at * 44100 and n - 1024 < at * 44100: w(flag, then)
+        k, got = block(af, 1024, n, 1.0, 44100)
+        for c0, c1 in got: assert c0 == float(out), (at, out, c0); out += 1
+        n += 1024
+    uninit(af)
+    assert abs((n - out) / 44100 - want) < 0.05, (begin, at, n - out)
+    if want: mix(44100, n - out, out, seconds=want + 1)
+    else:
+        w(flag, 0); af = track(44100); k, got = block(af, 1024, 0, 0.25, 44100); uninit(af)
+        assert k == 1024 and got[5] == (5.0, 0.25), (begin, at, got[5])
 # A track shorter than its hold: half of it held, none of it lost.
 out, held = hold(48000, 3, 5000, 0)
 assert out + held >= 3 * 48000 and held > 48000
