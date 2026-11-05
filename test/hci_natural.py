@@ -438,6 +438,97 @@ def dsd():
     check(whole > 4 * RATE, f'DSD plays, {whole} frames')
 
 
+def seek_flac(name, rate, frames, block):
+    """Bit-exact from the first frame at or past each target to the file's last sample, either side of the old threshold
+    (last frame x its size / rate), right at the end, and seeking back."""
+    src = (aud/f'{name}.wav').read_bytes()[-frames * 4:]
+    last = frames // block
+    short = frames - last * block
+    edge = last * short // rate
+    secs = frames // rate
+    for targets in dict.fromkeys(((edge - 1,), (edge + 1,), (secs - 2,), (secs - 1,), (secs,), (min(edge + 1, secs - 2), max(edge - 3, 1)))):
+        p = Player()
+        p.song(f'{name}.flac')
+        p.run(1)
+        for t in targets:
+            at = p.seek_drop(t)
+            p.run(0.5)
+        p.settled(secs + 3)
+        land = min(math.ceil(targets[-1] * rate / block), last) * block
+        out = bytes(p.pcm[at * 4:])
+        check(out == src[land * 4:], f'{name} (edge {edge} s), seek {targets}: {len(out) // 4} frames from {land}, wanted {frames - land}; exact {out == src[land * 4:]}, end there {out[-4000:] == src[-4000:]}')
+
+
+def seek_next():
+    """A seek past the old threshold, then the next file: the whole end, the next song's first frame after it, a preload still."""
+    name, rate, frames, block = SEEKS[0]
+    src, nxt = (aud/f'{name}.wav').read_bytes()[-frames * 4:], (aud/'nextq.wav').read_bytes()[-8 * RATE * 4:]
+    p = Player()
+    p.song(f'{name}.flac')
+    p.run(1)
+    at = p.seek_drop(16)
+    p.run(0.5)
+    p.gapless('nextq.flac')
+    p.until(lambda: p.frames() > at + (frames - 16 * rate) + RATE, 8)
+    check(src[-RATE * 4:] + nxt[:RATE // 2 * 4] in bytes(p.pcm), 'seek, then next: the end, then its first half second, gapless')
+
+
+def seek_past_end():
+    """Past the file's length: it ends at once, and nothing's left playing."""
+    name, rate, frames, block = SEEKS[0]
+    p = Player()
+    p.song(f'{name}.flac')
+    p.run(1)
+    at = p.seek_drop(frames // rate + 5)
+    p.settled(4)
+    check(p.frames() - at <= block and not p.fds(f'{name}.flac'), f'seek past the end: {p.frames() - at} frames, closed')
+
+
+def seek_filtered(xfade):
+    """With a live filter, flat: as long as without it and within rounding, and Crossfade neither loses the end."""
+    name, rate, frames, block = SEEKS[0]
+    src = array.array('h', (aud/f'{name}.wav').read_bytes()[-frames * 4:])
+    p = Player()
+    if xfade: (p.e.tmp/'tmp_q2xfade').write_bytes(struct.pack('<i', xfade * 1000))
+    p.song(f'{name}.flac')
+    p.run(0.5)
+    p.eq()
+    p.run(0.5)
+    at = p.seek_drop(16)
+    land = math.ceil(16 * rate / block) * block
+    if xfade: p.gapless('nextq.flac')
+    p.settled(25 if xfade else 8)
+    out = array.array('h', bytes(p.pcm[at * 4:]))
+    if xfade:  # the fade takes the seam's seconds off the two lengths, and the last song's own tail is held as well
+        want = frames - land + 8 * RATE - 2 * xfade * RATE
+        check(abs(len(out) // 2 - want) < 2048, f'seek under Crossfade: {len(out) // 2} frames, wanted {want} (+-2048)')
+    else:
+        want = src[land * 2:]
+        off = max((abs(x - y) for x, y in zip(out, want)), default=99)
+        check(len(out) == len(want) and off <= 2, f'seek, filter live: {len(out) // 2} of {len(want) // 2} frames, off by at most {off}')
+
+
+def seek_other(name):
+    """Lossy and other lossless: the last 0.2 s, as a run with no seek gives it, after a seek near the end and one back."""
+    r = Player()
+    r.song(name)
+    r.settled(11)
+    ref = bytes(r.pcm)
+    width = 8 if len(ref) > 12 * RATE * 4 else 4
+    K = RATE // 5 * width
+    for targets in ((6,), (6, 2)):
+        p = Player()
+        p.song(name)
+        p.run(1)
+        for t in targets:
+            at = p.seek_drop(t)
+            p.run(0.3)
+        p.settled(11)
+        out = bytes(p.pcm[at * 4:])
+        secs = len(out) / width / RATE
+        check(out[-K:] == ref[-K:] and abs(secs - (8 - targets[-1])) < 1.5, f'{name}, seek {targets}: {secs:.2f} s out, its end there {out[-K:] == ref[-K:]}')
+
+
 if __name__ == '__main__':
     failures = []
     setup()
@@ -469,6 +560,14 @@ if __name__ == '__main__':
     understated_mp3('cut.mp3', True)
     understated_mp3('x.mp3', False)
     dsd()
+    for case in SEEKS:
+        seek_flac(*case)
+    seek_next()
+    seek_past_end()
+    seek_filtered(0)
+    seek_filtered(2)
+    for name in 'l.mp3', 'l.m4a', 'la.m4a', 'l.ogg', 'l.wv', 'l.wav':
+        seek_other(name)
     assert not failures, f'{len(failures)} failed: {failures}'
     shutil.rmtree(work)
     print('hci_natural: all passed')

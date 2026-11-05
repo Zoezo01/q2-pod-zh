@@ -84,6 +84,15 @@ PRELOAD_FAIL_STORES = ((0x42bb80, 0xac430de8, 0), (0x42bbec, 0xac430de8, 0), (0x
 COLD_CLEAR = (0x421a3c, 0xac600de8, 'cold_clear')            # sw $zero, 0xde8($v1)
 # mcl-closegapless and the direct stop while the thread runs: 1 becomes 3, so what it was opening isn't played.
 PRELOAD_CLOSE = ((0x42c264, 0x24030002, 'preload_close'), (0x42c994, 0x24030002, 'preload_stop'))  # li $v1, 2
+# A FLAC seek keeps the file's end (peq_player.c, docs/internals.md#a-flac-seek-near-the-end): the decoder's seek
+# gate's failure exit, and the seek's sync scan finding none in what's left of the file.
+FLAC_GATE = (0x5b7dc4, 0x1000fd74, 'flac_gate')       # b 0x5b7398
+SEEK_NOSYNC = (0x48d5ec, 0x8fa20030, 'seek_nosync')   # lw $v0, 0x30($sp)
+SEEK_WORDS = ((0x48d5f0, 0x00822023, 0),           # subu $a0, $a0, $v0, now in seek_nosync
+              (0x48d418, 0x03c0a825, 0),           # move $s5, $fp: the probe loop's exit keeps the probed position
+              (0x48d41c, 0x02e08825, 0),           # move $s1, $s7
+              (0x48dce0, 0x1440fdcd, 0x14400003),  # bnez $v0, 0x48d418 -> 0x48dcf0: no probe, so the estimate's
+              (0x48d80c, 0x188002d5, 0))           # blez $a0, 0x48e364: a probe past the target steps back, near the end too
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
@@ -255,7 +264,7 @@ def patch_player(raw, out, flac_experiments=()):
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
-        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR)),
+        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -291,6 +300,10 @@ def patch_player(raw, out, flac_experiments=()):
     for address, stock, name in PRELOAD_CLOSE:
         patch_word(data, address, stock, j(ps[name]), 'Preload close')
     patch_word(data, COLD_CLEAR[0], COLD_CLEAR[1], jal(ps[COLD_CLEAR[2]]), 'Cold clear')
+    patch_word(data, FLAC_GATE[0], FLAC_GATE[1], j(ps[FLAC_GATE[2]]), 'FLAC gate')
+    patch_word(data, SEEK_NOSYNC[0], SEEK_NOSYNC[1], j(ps[SEEK_NOSYNC[2]]), 'Seek no sync')
+    for address, stock, patched in SEEK_WORDS:
+        patch_word(data, address, stock, patched, 'Seek no sync')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')

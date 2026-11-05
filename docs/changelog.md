@@ -15,6 +15,7 @@
   - Sound: songs whose file understates their length, such as some MP3s with no VBR header and some WMA files, no longer lose their last seconds.
   - Sound: a broken file next in the queue no longer cuts the song before it about 5 seconds short. The song plays to its end, then the player says the file isn't supported and moves on. With Crossfade on, the song's last seconds come late, under the next song, after the message, or are dropped if that song starts more than 3 seconds later.
   - Sound: with Gapless on, a song that started moments before the previous one ended no longer plays twice under the next song's name, and changing the queue while the next song is loading no longer plays the song you took out.
+  - Sound: seeking near the end of a FLAC no longer loses its last moments with a pop, or plays a blip then 2 seconds of silence. It lands where you seek, right up to the end.
 
 - **1.6.4**:
   - Settings: **Playback** is shorter. Artists, Artist Album Order, Year Order, Folder Root, Folder Skip and Folder Album Cover moved to **Playback → Library & Folders**, and ReplayGain moved next to Gain. Your settings are kept.

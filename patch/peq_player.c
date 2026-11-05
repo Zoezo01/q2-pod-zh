@@ -1035,4 +1035,36 @@ __asm__(".set push\n.set noreorder\n.set noat\n"
         ".globl preload_stop\npreload_stop:\nli $v1, 2\n"
         "1:\nll $a0, 0xde8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0xde8($v0)\nbeqz $at, 1b\nnop\n"
         "2:\nj 0x42c99c\nnop\n.set pop\n");
+
+/* A FLAC seek (demux_audio 0x48d1ac) ends with a gate in the decoder (0x5b6aac): a frame whose time is before the
+ * target (0xb152b0, until the file closes) failed, unplayed. Two things went wrong with that.
+ * The time is frame number x this frame's own block size, so a short last frame's is far too early: for a target past
+ * last frame x its size / rate (a 40 s track's 3497-sample last frame: 34.1 s; hardware's 20 s noise file, 2137: 10.4 s)
+ * it failed, and the file's end was lost with a step at the seam. flac_gate lets a frame shorter than STREAMINFO's
+ * maximum through. Variable block sizes have a sample number, so stay gated.
+ * And a failure is a failure: ad_ffmpeg stops (0x4ad0c0) and, if the demuxer has already read to EOF, the main loop
+ * ends the track with the rest of the frames still queued: one block, or nothing, then silence until the next track.
+ * Now a gated frame is consumed with no samples (its whole size returned, got_frame still 0), and decoding goes on.
+ * Comes only from a gated frame, so a track not sought runs no new instruction.
+ * Near the end the seek went forward blind: within 64 KB of the end its probe loop (0x48d418) left at the
+ * unprobed next position, and a probe past the target (0x48d80c) stepped on instead of back. A 40 s track at
+ * this bitrate lost 2 s (37 landed at 39), or everything, when that next position held the last frame or
+ * nothing: no audio, the demuxer ended, then the next song cold-started. tools/peq.py now keeps the probed
+ * position, before the target, and the gate plays from the target.
+ * The scan (0x48d5b8) still starts from a seek with no probe, an estimate within 64 KB of the end; with no sync
+ * in what's left of the file, it landed on the last bytes. seek_nosync steps that back 64 KB instead.
+ * docs/internals.md#a-flac-seek-near-the-end.
+ * ponytail: that estimate isn't checked against the target, so on a file of very uneven bitrate a seek
+ * into the last 64 KB can land up to that far from it, and a short frame mid-file passes the gate; nothing
+ * past the landing is lost. */
+__asm__(".set push\n.set noreorder\n.set noat\n"
+        /* From 0x5b7dc4, the gate's failure, with $v1 stock's; the frame's fields are on stock's stack. */
+        ".globl flac_gate\nflac_gate:\nlw $a1, 0xc0($sp)\nbnez $a1, 1f\nlw $a1, 0xac($sp)\nlw $v0, 0x14($s0)\n"
+        "slt $a1, $a1, $v0\nbeqz $a1, 1f\nnop\nj 0x5b6ab8\nnop\n"
+        /* $s4 is still the packet's size: stock's epilogue returns it. */
+        "1:\nj 0x5b7128\nnop\n"
+        /* From 0x48d5ec: $a0 at $a3 is the scan's end, no sync found; a found one is below it. */
+        ".globl seek_nosync\nseek_nosync:\nlw $v0, 0x30($sp)\nbne $a0, $a3, 1f\nnop\n"
+        "lui $a1, 1\naddiu $a1, $a1, -1\nsubu $a0, $v0, $a1\n"
+        "1:\nj 0x48d5f4\nsubu $a0, $a0, $v0\n.set pop\n");
 #endif
