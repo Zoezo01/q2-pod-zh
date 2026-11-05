@@ -616,7 +616,9 @@ static struct { unsigned at, fill, cap, frame; int rate; } ps; /* at: the next b
 /* ao_alsa's play (0x43afa4), its one writei. A kept PCM can still run dry while the new track's first block decodes
  * (nearly a whole buffer, 0x42f3f4), and what it then writes lands behind hw_ptr and is lost. The ring there is silence
  * (silence_size), so appl_ptr moves up to a period past hw_ptr first: a short gap, not a cut. The kernel limits the
- * forward to avail, which is more than asked for here. hciplayer doesn't import snd_pcm_forward.
+ * forward to avail, which is more than asked for here. hciplayer doesn't import snd_pcm_forward. The frames kept below
+ * lead up to that gap, not across it, so they go: a resume goes back no further than the new track, and with the gap
+ * itself still to play it holds too little and is stock's.
  * After stock's write, what the DAC took is kept, and a write anywhere else forgets it, so a PCM paused on Bluetooth
  * or USB when the way turns to 0 finds nothing to take for its own. (Not by the PCM's handle: a reopen's snd_pcm_t can
  * land on the old one's address.) A write is at most the ring (get_space), and the cap is never less. */
@@ -627,6 +629,7 @@ long ao_write(void *pcm, const char *data, unsigned long frames) {
         if (avail > ring) {
             long (*forward)(void *, unsigned long) = dlsym(0, "snd_pcm_forward"); /* RTLD_DEFAULT */
             if (forward) forward(pcm, avail - ring + AO_OUTBURST / AO_BYTES);
+            ps.fill = 0;
         }
     }
     long r = PCM_WRITEI(pcm, data, frames);

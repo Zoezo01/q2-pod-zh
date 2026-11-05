@@ -22,7 +22,12 @@ FILES = {'a44.flac': (44100, 2, 's16', 'flac'), 'b44.flac': (44100, 2, 's16', 'f
          'c96.flac': (96000, 2, 's32', 'flac'), 'd44.flac': (44100, 1, 's16', 'flac'), 'a44.mp3': (44100, 2, 's16', 'libmp3lame'),
          'b44.mp3': (44100, 2, 's16', 'libmp3lame'), 'a192.flac': (192000, 2, 's32', 'flac'), 'b192.flac': (192000, 2, 's32', 'flac'),
          'f44.flac': (44100, 2, 's16', 'flac'), 'g44.flac': (44100, 2, 's16', 'flac'), 'h48.flac': (48000, 2, 's16', 'flac')}
-LONG = {'f44.flac': 5.5, 'g44.flac': 3, 'h48.flac': 3}  # Crossfade: its hold opens 2 x fade + 2 s before the end
+FILES.update({'t100.flac': (44100, 2, 's16', 'flac'), 't400.flac': (44100, 2, 's16', 'flac')})
+NOISE = {'n1.flac': ['-c:a', 'flac'], 'n2.flac': ['-c:a', 'flac'], 'n5.flac': ['-c:a', 'flac'], 'n6.flac': ['-c:a', 'flac'],
+         'c1.mp3': ['-c:a', 'libmp3lame', '-q:a', '2'], 'c2.mp3': ['-c:a', 'libmp3lame', '-q:a', '2'], 'c1.m4a': ['-c:a', 'aac'], 'c2.m4a': ['-c:a', 'aac'],
+         'c1.opus': ['-c:a', 'libopus'], 'c2.opus': ['-c:a', 'libopus'], 'c1.ogg': ['-c:a', 'libvorbis'], 'c2.ogg': ['-c:a', 'libvorbis']}
+NOISE_SECONDS = {'n1.flac': 1.5, 'n2.flac': 3, 'n5.flac': 5.5, 'n6.flac': 3}
+LONG = {'f44.flac': 5.5, 'g44.flac': 3, 'h48.flac': 3, 't100.flac': 0.1, 't400.flac': 0.4}  # Crossfade: its hold opens 2 x fade + 2 s before the end
 
 
 def setup():
@@ -34,6 +39,10 @@ def setup():
         depth = ['-sample_fmt', fmt, '-bits_per_raw_sample', '24'] if fmt == 's32' else ['-sample_fmt', fmt] if codec == 'flac' else []
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'sine=f={TONE}:r={rate}:d={LONG.get(name, SECONDS)}', '-af', 'volume=5.66', '-ac', str(ch),
                         *depth, '-c:a', codec, aud/name], check=True)
+    for seed, (name, args) in enumerate(NOISE.items(), 1):  # pink noise: every frame its own, and the seam's level shows
+        rate = 48000 if name.endswith('.opus') else 44100
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'anoisesrc=d={NOISE_SECONDS.get(name, 2)}:c=pink:r={rate}:seed={seed}:a=0.4', '-ac', '2',
+                        *args, aud/name], check=True)
 
 
 class Ring(PCM):
@@ -41,10 +50,12 @@ class Ring(PCM):
     def __init__(self, os_):
         super().__init__(os_)
         self.hw_at, self.appl, self.lost, self.forwards, self.chunks = None, 0, 0, [], []
+        self.paused, self.trigger, self.released, self.epochs = None, 0, 0, []  # a pause's hw_ptr and time; what a prepare set aside
     @property
     def buffer_frames(self):
         return 16384 if self.rate >= 96000 else self.rate * self.buffer_us // 1000000
     def hw(self):
+        if self.paused is not None: return self.paused
         return 0 if self.hw_at is None else (self.os.clock - self.hw_at) * self.rate // 10**9
     def avail(self):
         return self.hw() + self.buffer_frames - self.appl
@@ -71,8 +82,8 @@ class KernelEmu(Emu):
             Ring.__init__(self.pcm, self)
             self.streams.append(self.pcm)
             return r
-        if n == 'snd_pcm_status':
-            self.w32(a(1), p.state, 0)
+        if n == 'snd_pcm_status':  # dac_resume's words too: state, trigger, tstamp, appl_ptr, hw_ptr
+            self.w32(a(1), p.state, p.trigger // 10**9, p.trigger % 10**9, 0, 0, p.appl, p.hw())
             return 0
         if n in ('snd_pcm_status_get_avail', 'snd_pcm_avail_update', 'snd_pcm_avail'):
             self.reads += n == 'snd_pcm_status_get_avail'
@@ -83,10 +94,18 @@ class KernelEmu(Emu):
             return d
         if n == 'snd_pcm_status_get_state' or n == 'snd_pcm_state': return p.state
         if n == 'snd_pcm_prepare':
-            p.state, p.hw_at, p.appl = 2, None, 0
+            if p.chunks: p.epochs.append(p.chunks)
+            p.state, p.hw_at, p.appl, p.chunks, p.paused = 2, None, 0, [], None
             return 0
         if n == 'snd_pcm_drop':
-            p.state, p.hw_at = 1, None
+            p.state, p.hw_at, p.paused = 1, None, None
+            return 0
+        if n == 'snd_pcm_pause':
+            if a(1):
+                p.paused, p.trigger, p.state = p.hw(), self.clock, 6
+            else:  # hw_ptr where it was: soc_aic's jump to the next wrap (docs/internals.md#unpause) isn't modelled
+                p.hw_at, p.paused, p.state = self.clock - p.paused * 10**9 // p.rate, None, 3
+                p.released += 1
             return 0
         if n == 'snd_pcm_drain':
             left = max(p.appl - p.hw(), 0)
@@ -191,7 +210,72 @@ def tone(samples, rate):
     return freq, rms, max(abs(v) for v in s)
 
 
-signal.alarm(600)  # a spinning player fails the run
+def written(chunks):
+    return b''.join(data for _, data in chunks)
+
+
+def natural_into(first, second, excess=None, xfade=0, way=0):
+    """A plays out by itself, B's first write has gone: the player at that moment."""
+    p = Player(way)
+    if xfade: (p.e.tmp/'tmp_q2xfade').write_bytes(struct.pack('<i', xfade))
+    p.song(first)
+    p.run(0.3)
+    if xfade: p.e.send_cmd('{mcl-seteq\\0|0|0|0|0|0|0|0|0|0|1}')
+    assert p.until(p.ended, 8), first
+    p.mark()
+    p.excess, end = excess, p.e.clock + 3 * 10**9
+    p.song(second)
+    while not p.looks and p.e.clock < end: p.run(0.001)
+    assert p.looks, second
+    return p
+
+
+def pause_resume(p, after, age_ms=330):
+    """after s on, demo's Pause with its fade age_ms old (mute_stamp), then Play; returns what the PCM showed at the pause."""
+    p.run(after)
+    pcm = p.e.pcm
+    (p.e.tmp/'tmp_q2mute').write_bytes(struct.pack('<I', (p.e.clock // 10**6 - age_ms) & 0xffffffff | 1))
+    p.e.send_cmd('{mcl-pause\\null}')
+    assert p.until(lambda: pcm.state == 6, 1), (pcm.state, p.e.r32(WAY), p.e.pcm is pcm, p.ended(), p.e.events[-6:])
+    p.run(0.3)
+    held = pcm.hw(), pcm.appl, list(pcm.chunks)
+    p.e.send_cmd('{mcl-play\\null}')
+    assert p.until(lambda: pcm.state == 3, 1), pcm.state
+    return held
+
+
+TRIM_MS = -29  # peq_player.c PS_TRIM_MS
+
+
+def replayed_right(p, held, reference):
+    """What dac_resume wrote: the ring's unplayed part and back to the fade, within what is held. It ends where the ring
+    stood, and the frames after it carry on: nothing lost, nothing from the wrong place. Its first 4 ms rise from silence.
+    Returns 'stock' or (frames written, unplayed, back, held)."""
+    pcm, (hw, appl, chunks) = p.e.pcm, held
+    size, all_written = pcm.bytes(), written(chunks)
+    new_from = chunks[-1][0]  # the chunks after the last hole: there timeline and written bytes line up
+    for (at, data), (nxt, _) in zip(reversed(chunks[:-1]), reversed(chunks[1:])):
+        if at + len(data) // size != nxt: break
+        new_from = at
+    since = sum(len(d) for at, d in chunks if at >= new_from) // size
+    left = appl - hw
+    if left > since:  # the hole itself is still to play: nothing goes back, as stock's resume
+        assert pcm.released == 1 and not pcm.epochs, (left, since, pcm.released)
+        return 'stock'
+    assert pcm.released == 0 and pcm.epochs == [chunks], (pcm.released, len(pcm.epochs))
+    stamp = struct.unpack('<I', (p.e.tmp/'tmp_q2mute').read_bytes())[0]
+    age = (pcm.trigger // 10**6 - stamp) & 0xffffffff
+    back = (age + TRIM_MS) * pcm.rate // 1000
+    n = left + min(back, since - left)
+    after, fade = written(pcm.chunks), pcm.rate // 1000 * 4
+    assert after[fade * size:n * size] == all_written[-n * size:][fade * size:], ('replay', n, left, back, since)
+    if reference is not None:
+        whole = all_written + after[n * size:]
+        assert whole == reference[:len(whole)], 'a frame lost or moved'
+    return n, left, back, since
+
+
+signal.alarm(1500)  # a spinning player fails the run
 # Reopens, with demo's mark: each at what its file is, the tone right and the level clean.
 setup()
 for second, rate, width in (('b48.flac', 48000, 2), ('c96.flac', 96000, 4), ('d44.flac', 44100, 2)):
@@ -250,11 +334,11 @@ print('Kept PCM run dry by the first write: on the jack and USB, at 44.1 and 192
 def fade(second, excess):
     p = Player()
     (p.e.tmp/'tmp_q2xfade').write_bytes(struct.pack('<i', 1000))
-    mixes, seen = [0], ps['xf.3']  # xf's members split: total is the fourth
+    mixes, seen = [0], ps['xf'] + 12  # xf's total
     def watch(e):
         mixes[0] = max(mixes[0], e.r32(seen))
     p.e.watch_fn(ps['ao_write'], watch)
-    p.excess = excess
+    p.excess, end = excess, p.e.clock + 3 * 10**9
     p.song('f44.flac')
     p.run(0.3)
     p.e.send_cmd('{mcl-seteq\\0|0|0|0|0|0|0|0|0|0|1}')
@@ -271,4 +355,102 @@ assert total > 40000, total  # the 1 s tail, held to the first block, is the mix
 p, total = fade('h48.flac', None)
 assert len(p.e.streams) == 2 and p.e.pcm.rate == 48000 and p.e.pcm.lost == 0 and total > 40000, (len(p.e.streams), p.e.pcm.rate, total)
 print('Crossfade in Shuffle: at the same format one PCM and the whole tail mixed, past a dry first write too; across a rate one reopen and the tail mixed after it.')
+# Pause soon after a natural change: the kept frames against the PCM's timeline.
+def reference(first, second, xfade=0, seconds=3):
+    p = natural_into(first, second, None, xfade)
+    p.run(seconds)
+    return written(p.e.pcm.chunks)
+plain = reference('n1.flac', 'n2.flac')
+for after in 0.02, 0.1, 0.4, 1.0:  # the fade's start in the old track, then the new
+    p = natural_into('n1.flac', 'n2.flac')
+    held = pause_resume(p, after)
+    p.run(2.5)
+    got = replayed_right(p, held, plain)
+    assert got != 'stock' and got[0] == got[1] + got[2], (after, got)  # the whole way back to the fade
+# The first write forwarded past a dry ring: what goes back is the new track's only, whatever the fade's age, and the
+# hole is never filled with the old track's frames. (A pause with the hole still to play: test/bt_resample.py.)
+for after in 0.002, 0.04, 0.1, 0.4:
+    p = natural_into('n1.flac', 'n2.flac', excess=88)
+    held = pause_resume(p, after)
+    p.run(2.5)
+    pcm = p.e.pcm
+    assert len(pcm.forwards) == 1 and len(p.e.streams) == 1 and pcm.lost == 0, (after, pcm.forwards, pcm.lost)
+    got = replayed_right(p, held, None)
+    assert got != 'stock', (after, got)
+print('Pause after a natural change: from the fade across the seam, every frame right; after a forward, only the new track goes back.')
+# Pause inside Crossfade's mix on the PCM that stayed open: the mix's frames go back as they were written.
+mixed = reference('f44.flac', 'g44.flac', 1000)
+p = natural_into('f44.flac', 'g44.flac', None, 1000)
+held = pause_resume(p, 0.3)
+assert p.e.r32(ps['xf'] + 12) > 40000, 'mixing'
+p.run(2.5)
+assert len(p.e.streams) == 1, len(p.e.streams)
+assert replayed_right(p, held, mixed) != 'stock'
+print('Pause inside the mix on a stayed-open PCM: the mix resumes where the fade began, nothing lost.')
+# Bluetooth and USB: writes leave the kept frames empty, a kept PCM included, and a resume is stock's.
+for way in 1, 2:
+    p = Player(way)
+    p.song('n1.flac')
+    p.run(0.2)
+    p.gapless('n2.flac')
+    held = pause_resume(p, 1.5)  # n2 under way, on the PCM n1 opened
+    p.run(0.3)
+    pcm = p.e.pcm
+    fill, ring = p.e.r32(ps['ps.1']), bytes(p.e.u.mem_read(ps['ps_ring'], 1 << 16))
+    assert fill == 0 and not any(ring) and pcm.released == 1 and not pcm.epochs, (way, fill, pcm.released, len(pcm.epochs))
+    assert len(p.e.streams) == 1, (way, len(p.e.streams))
+print('Bluetooth and USB: a write keeps nothing beside the ring, a kept PCM too, and an unpause is stock\'s.')
+# A track under the exit hold, then a natural reopen: one wait, the drain whole, and none at all for a track of 300 ms or more.
+HOLD_AFTER = 0x4226dc  # past exit_hold's jal and its delay slot
+def short_then_reopen(short):
+    p = Player()
+    enter, left = [], []
+    p.e.watch_fn(ps['exit_hold_c'], lambda e: enter.append(e.clock))
+    p.e.watch_fn(HOLD_AFTER, lambda e: left.append(e.clock))
+    p.song('a44.flac')
+    assert p.until(lambda: left, 8)
+    p.mark()
+    p.song(short)
+    assert p.until(lambda: len(left) == 2, 3), short
+    pcm = p.e.pcm
+    middle = written(pcm.chunks)
+    p.mark()
+    p.song('b48.flac')
+    p.run(SECONDS + 0.8)
+    assert len(p.e.streams) == 2 and p.e.pcm.rate == 48000 and pcm.lost == 0 and not pcm.forwards, (short, len(p.e.streams), pcm.lost, pcm.forwards)
+    drains = [k for _, n, k in p.e.events if n == 'pcm_drain']
+    assert [d['left'] > 0 for d in drains] == [True, False], (short, drains)  # ao_init's, then stock's own on a drained PCM
+    assert written(pcm.chunks) == middle, short  # what the first PCM ended with reached the drain untouched
+    return (left[1] - enter[1]) / 1e9, (left[1] - left[0]) / 1e9, drains[0]['left']
+hold, apart, _ = short_then_reopen('t100.flac')
+assert 0 < hold <= 0.3 and apart >= 0.299, (hold, apart)
+hold, apart, _ = short_then_reopen('t400.flac')
+assert hold == 0 and apart >= 0.299, (hold, apart)
+print('A track under the exit hold, then a reopen: its exit waits once, the drain runs whole; a 400 ms track waits for nothing.')
+# The other trims on the stay-open route: the same frames as a preload's, whose seams test/player_seam.py and
+# test/mp3_gapless_player.py measure in samples, so the seam is what it was and the level can't step.
+for first, second in (('c1.mp3', 'c2.mp3'), ('c1.m4a', 'c2.m4a'), ('c1.opus', 'c2.opus'), ('c1.ogg', 'c2.ogg')):
+    p = Player()
+    p.preloaded(first, second)
+    want = written(p.e.pcm.chunks)
+    p = Player()
+    p.cold(first, second)
+    pcm = p.e.pcm
+    assert len(p.e.streams) == 1 and not pcm.lost and not pcm.forwards, (first, len(p.e.streams), pcm.lost, pcm.forwards)
+    got = written(pcm.chunks)
+    assert got == want, (first, len(got), len(want))
+print('MP3, AAC in M4A, Opus and Vorbis on the stay-open route: frame for frame what a preload gives.')
+# Crossfade's hold on the stay-open route: the level through hold, mix and on stays flat.
+def windows(data, rate, ms=100):
+    v = array.array('h', data)[::2]
+    n = rate * ms // 1000
+    return [math.sqrt(sum(x * x for x in v[i:i + n]) / n) for i in range(0, len(v) - n, n)]
+p = natural_into('n5.flac', 'n6.flac', None, 1000)
+assert p.e.r32(ps['xf'] + 12) > 40000, 'mixing'
+p.run(3)
+assert len(p.e.streams) == 1, len(p.e.streams)
+levels = windows(written(p.e.pcm.chunks), 44100)
+mid = sorted(levels)[len(levels) // 2]
+assert all(abs(20 * math.log10(max(x, 1) / mid)) < 1.5 for x in levels[3:-3]), [round(x) for x in levels]
+print('Crossfade on the stay-open route: the level stays within 1.5 dB through the hold and the mix.')
 shutil.rmtree(work, ignore_errors=True)

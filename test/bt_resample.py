@@ -41,9 +41,13 @@ for line in subprocess.check_output(['readelf', '-rW', out/'hciplayer'], text=Tr
 hi, lo = re.search(r'peq_lib_open:\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()).groups()
 imports[STUBS + 4*len(imports)] = 'open'
 u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
+hi, lo = re.search(r'peq_lib_dlsym:\nlui \$gp.*\nori \$gp.*\nlui \$t8, (\d+)\nori \$t8, \$t8, (\d+)', (out/'peq_imports.S').read_text()).groups()
+imports[STUBS + 4*len(imports)] = 'dlsym'
+u.mem_write(int(hi) << 16 | int(lo), struct.pack('<I', STUBS + 4*(len(imports)-1)))
 class dev:  # what the stubs below see of the PCM (mute: MUTE_FILE's word, None for no file)
     state, trigger, appl, hw, status_rc, mute, most, calls, got, errors = 2, 0, 0, 0, 0, None, 1 << 30, 0, b'', []
     before = None  # the log at the first frame written since pause_at
+    avail = 0
 heap, clock, freed, dac_log, pause_rc, press = [HEAP], [10**9], set(), [], [0], [None]  # press: PRESS_FILE's word
 real = {}  # imports the stock-init sections answer, by name
 
@@ -93,7 +97,7 @@ def libc(u, address, size, _):
     elif n == 'snd_pcm_pause': dac_log.append(('pause', a(1))); result = pause_rc[0]
     elif n == 'snd_pcm_state': result = 2  # not suspended
     elif n == 'snd_pcm_status_sizeof': result = 1024  # stock's get_space, from ao_init
-    elif n == 'snd_pcm_status_get_avail': result = 0
+    elif n == 'snd_pcm_status_get_avail': result = dev.avail
     elif n == 'snd_pcm_status':
         w(a(1), dev.state, dev.trigger // 1000, dev.trigger % 1000 * 10**6, 0, 0, dev.appl & 0xffffffff, dev.hw)
         result = dev.status_rc
@@ -813,6 +817,7 @@ for way, want in ((0, [DRAIN, CLOSE]), (2, [CLOSE])):
 print('Old track\'s end: a natural change that reopens is heard to its end, then mutes around the close and open and waits for the line; one at the same format that demo left unmuted stays open; dry reopens; a press during it silences; a skip, a stop, DSD and a preloaded same-format change call as stock.')
 
 real.clear()  # the stubs above answer from here on
+UNMUTE = ('ioctl', 5, 0xc0044d1f, 0)  # the real ioctl again, not the section above's marker
 # An unpause: every write after the first is kept as it went, and a resume writes the frames again, in order, from the
 # fade's start to the newest, into a dropped and prepared PCM, after the unmute's wait and never by snd_pcm_pause.
 PAUSED, SEEK, AO_BUF, FRAME, S16F, S32F = 6, 0xb10c38, AO_DATA + 0x14, 0xb11598, 0x9, 0x19
@@ -862,7 +867,7 @@ setup(44100, S16F, 4, 22048)
 data = play(0, 40000, 2, 4)
 pause_at(12000, 28000, 280)  # the stamp is odd, so 279 ms
 log, rc, flag = go()
-assert log == OPENED and rc == 0 and flag == 0 and dev.before == OPENED  # no frame before the wait is over
+assert log == OPENED and rc == 0 and flag == 0 and dev.before == OPENED, (log, rc, flag, dev.before)  # no frame before the wait is over
 back, fade = went_back(279, 44100), faded(44100)
 want = data[(40000 - 12000 - back) * 4:]
 assert len(dev.got) == len(want) and dev.got[fade * 4:] == want[fade * 4:]
@@ -1055,4 +1060,22 @@ for way in (1, 2):
     for seek in (0, 1):
         w(SEEK, seek), pause_at(1000, 1000, 280)
         assert go()[0] == [('pause', 0)] and dev.got == b'', (way, seek)
+# A kept PCM forwarded past a dry ring at its first write: the gap holds nothing of the old track. What goes back is the
+# new track's only, and with the gap still to play there isn't all the ring to rewrite, so it's stock's.
+FORWARD, forwards = STUBS + 0xff0, []
+imports[FORWARD] = 'snd_pcm_forward'
+real.update({'dlsym': lambda: FORWARD, 'snd_pcm_forward': lambda: forwards.append(a(1))})
+setup(44100, S16F, 4, 22048)
+play(0, 40000, 2, 4)
+new = frames_of(100000, 1000, 2, 2)
+u.mem_write(buf, new)
+w(ps['ao_stayed'], 1), w(0xafa1b0, 16 * 4)  # AO_OUTBURST: 16 frames
+dev.avail, dev.got = 22048 + 100, b''
+assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [116] and dev.got == new
+dev.avail = 0
+pause_at(1200, 60000, 280)  # the gap's last 200 frames unplayed
+assert go()[0] == [UNMUTE, 'wait', ('pause', 0)] and dev.got == b''
+w(FLAG, 1), pause_at(600, 60000, 280)
+assert go()[0] == OPENED and len(dev.got) == 1000 * 4 and dev.got[faded(44100) * 4:] == new[faded(44100) * 4:]
+real.clear()
 print('Unpause: a resume writes the frames again from the fade\'s second step, under its wait; a seek, a failed pause, Bluetooth and USB as they were.')
