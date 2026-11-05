@@ -529,7 +529,7 @@ def seek_flac(name, rate, frames, block):
     short = frames - last * block
     edge = last * short // rate
     secs = frames // rate
-    for targets in dict.fromkeys(((edge - 1,), (edge + 1,), (secs - 2,), (secs - 1,), (secs,), (min(edge + 1, secs - 2), max(edge - 3, 1)))):
+    for targets in dict.fromkeys(((secs // 2,), (edge - 1,), (edge + 1,), (secs - 2,), (secs - 1,), (secs,), (min(edge + 1, secs - 2), max(edge - 3, 1)))):
         p = Player()
         p.song(f'{name}.flac')
         p.run(1)
@@ -658,3 +658,4 @@ if __name__ == '__main__':
     assert not failures, f'{len(failures)} failed: {failures}'
     shutil.rmtree(work)
     print('hci_natural: all passed')
+    seek_flac('s44m', 44100, 215 * 4096 + 3000, 4096)

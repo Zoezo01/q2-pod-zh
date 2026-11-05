@@ -972,8 +972,8 @@ __asm__(".set push\n.set noreorder\n"
  * frame (0x48018c) and an ASF with no streams (0x4826bc, in its open, after its check took the file) each store the
  * stop and return. stop_base gives a store's base: stock's on the main thread, on any other a word of our own, with
  * the saved $18 of the frame the probe loop's call made pointed at probe_stopped so the loop still gives up.
- * The ISO's fill (0x46c184, no track data after its retries) runs on the thread when its decoder starts; there's
- * no loop to stop. 0x42a47c is exit_sighandler, the process's own crash: left. */
+ * The ISO's fill (0x46c184, no track data after its retries) has no loop to stop if the thread's first read of the
+ * image lands there. 0x42a47c is exit_sighandler, the process's own crash: left. */
 #define PROBE_OPEN_RA 0x4859f0u
 static int stop_sink[2];
 char *stop_base(unsigned ra, void **saved18) {
@@ -1074,9 +1074,11 @@ __asm__(".set push\n.set noreorder\n.set noat\n.globl exit_hold\nexit_hold:\nadd
 /* A FLAC seek (demux_audio 0x48d1ac) ends with a gate in the decoder (0x5b6aac): a frame whose time is before the
  * target (0xb152b0, until the file closes) failed, unplayed. Two things went wrong with that.
  * The time is frame number x this frame's own block size, so a short last frame's is far too early: for a target past
- * last frame x its size / rate (a 40 s track's 3497-sample last frame: 34.1 s; hardware's 20 s noise file, 2137: 10.4 s)
- * it failed, and the file's end was lost with a step at the seam. flac_gate lets a frame shorter than STREAMINFO's
- * maximum through. Variable block sizes have a sample number, so stay gated.
+ * last frame x its size / rate (a 40 s track's 3497-sample last frame: 34.1 s; a 20 s file's 2137: 10.4 s) it failed,
+ * and the file's end was lost with a step at the seam. flac_last lets a frame through when it's shorter than STREAMINFO's
+ * maximum, frame number x maximum + its size, over rate, isn't before the target, and, with a total in STREAMINFO, the total less this
+ * frame divides evenly into frames at least as long as it: that's a last frame, not a stream of blocks below the maximum,
+ * whose every frame is short. Variable block sizes have a sample number, so stay gated.
  * And a failure is a failure: ad_ffmpeg stops (0x4ad0c0) and, if the demuxer has already read to EOF, the main loop
  * ends the track with the rest of the frames still queued: one block, or nothing, then silence until the next track.
  * Now a gated frame is consumed with no samples (its whole size returned, got_frame still 0), and decoding goes on.
@@ -1085,17 +1087,29 @@ __asm__(".set push\n.set noreorder\n.set noat\n.globl exit_hold\nexit_hold:\nadd
  * unprobed next position, and a probe past the target (0x48d80c) stepped on instead of back. A 40 s track at
  * this bitrate lost 2 s (37 landed at 39), or everything, when that next position held the last frame or
  * nothing: no audio, the demuxer ended, then the next song cold-started. tools/peq.py now keeps the probed
- * position, before the target, and the gate plays from the target.
+ * position, and the gate plays from the target.
  * The scan (0x48d5b8) still starts from a seek with no probe, an estimate within 64 KB of the end; with no sync
  * in what's left of the file, it landed on the last bytes. seek_nosync steps that back 64 KB instead.
  * docs/internals.md#a-flac-seek-near-the-end.
- * ponytail: that estimate isn't checked against the target, so on a file of very uneven bitrate a seek
- * into the last 64 KB can land up to that far from it, and a short frame mid-file passes the gate; nothing
- * past the landing is lost. */
+ * ponytail: that estimate isn't checked against the target, so on a file of very uneven bitrate a seek into the
+ * last 64 KB can start after it, by however far the estimate is off; a total of zero leaves only the maximum's test, so a
+ * stream of blocks below its maximum can land early. Nothing past the landing is lost. */
+int flac_last(const char *c, const char *st) {
+    int own = AT(st, 0xac, int), max = AT(c, 0x14, int), rate = AT(st, 0xa0, int);
+    long long frame = AT(st, 0xb8, long long), total = AT(c, 0x20, long long);
+    if (own >= max || rate <= 0) return 0;
+    if (frame >> 31) return 1; /* no real file's, and 32-bit keeps this out of libgcc */
+    int f = (int)frame;
+    if ((float)(f * max + own) / rate < *(volatile float *)0xb152b0u) return 0;
+    long long rest = total - own;
+    if (!total || !f || rest <= 0 || rest >> 31) return 1;
+    return (int)rest % f == 0 && (int)rest / f >= own;
+}
 __asm__(".set push\n.set noreorder\n.set noat\n"
         /* From 0x5b7dc4, the gate's failure, with $v1 stock's; the frame's fields are on stock's stack. */
-        ".globl flac_gate\nflac_gate:\nlw $a1, 0xc0($sp)\nbnez $a1, 1f\nlw $a1, 0xac($sp)\nlw $v0, 0x14($s0)\n"
-        "slt $a1, $a1, $v0\nbeqz $a1, 1f\nnop\nj 0x5b6ab8\nnop\n"
+        ".globl flac_gate\nflac_gate:\nlw $a1, 0xc0($sp)\nbnez $a1, 1f\nnop\naddiu $sp, $sp, -24\nsw $v1, 16($sp)\n"
+        "move $a0, $s0\njal flac_last\naddiu $a1, $sp, 24\nlw $v1, 16($sp)\naddiu $sp, $sp, 24\n"
+        "beqz $v0, 1f\nnop\nj 0x5b6ab8\nnop\n"
         /* $s4 is still the packet's size: stock's epilogue returns it. */
         "1:\nj 0x5b7128\nnop\n"
         /* From 0x48d5ec: $a0 at $a3 is the scan's end, no sync found; a found one is below it. */
