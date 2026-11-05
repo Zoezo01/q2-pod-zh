@@ -893,4 +893,58 @@ void hci_command(void *buf) {
     hci_futex(&cmd_gen, 129, 1, 0); /* FUTEX_WAKE_PRIVATE */
     if (before[0] != after[0]) hci_futex((volatile int *)PLAY_FLAG, 129, 1, 0);
 }
+
+/* A file no demuxer knows: the DSF, DFF and SACD ISO checks (0x47b8f0, 0x47a1ac, 0x478444) store the global
+ * stop, code 2, on failure, and the probe loop (0x485934) stops on it, before lavf. On the preload thread
+ * (0x42b8d0) that stops the song still playing, about 5 s before its end. There the checks now store nothing;
+ * the loop still stops, as it reads the flag through $18, which probe_stop points at a word of our own (its
+ * epilogue restores $18). Called by the forced path, a check returns to more probing, which reaches the loop.
+ * Saving and restoring the flag around the thread's open would lose a real stop landing in it, and the main
+ * thread and the FLAC check (flac_sync.c) could read it between. docs/internals.md#a-bad-file-next.
+ * ponytail: stores deep in the decoders (0x4ee61c, 0x508370, 0x52f584, 0x5b6260) aren't covered; a preload
+ * thread's decode of a next file reaching one still stops the song. */
+#define PROBE_LOOP_RA 0x4859a4u /* after the unsafe pass's jalr; the forced path comes back elsewhere */
+extern int hci_id(int number);
+__asm__(".globl hci_id\nhci_id:\nmove $v0, $a0\nsyscall\njr $ra\nnop\n");
+static const int probe_stopped = 1;
+void *probe_stop_c(unsigned ra) {
+    if (hci_id(4222) != hci_id(4020)) /* gettid != getpid: not the main thread */
+        return ra == PROBE_LOOP_RA ? (char *)&probe_stopped - 0xe70 : 0;
+    *(volatile int *)0xb10e74u = 2;
+    *(volatile int *)0xb10e70u = 1;
+    return 0;
+}
+__asm__(".set push\n.set noreorder\n"
+        ".globl probe_stop_dsf\nprobe_stop_dsf:\nb probe_stop\naddiu $sp, $sp, 0xa8\n"
+        ".globl probe_stop_iso\nprobe_stop_iso:\nlw $s1, 0x3c($sp)\nb probe_stop\naddiu $sp, $sp, 0x60\n"
+        ".globl probe_stop_dff\nprobe_stop_dff:\naddiu $sp, $sp, 0xc0\n"
+        "probe_stop:\naddiu $sp, $sp, -24\nsw $ra, 20($sp)\nmove $a0, $ra\njal probe_stop_c\nnop\n"
+        "lw $ra, 20($sp)\nbeqz $v0, 1f\naddiu $sp, $sp, 24\nmove $s2, $v0\n"
+        "1:\njr $ra\nmove $v0, $zero\n.set pop\n");
+
+/* The same store in the checks' other shapes. A SACD ISO's TOC with no tracks (0x478b5c), an AAC scan that found no
+ * frame (0x48018c) and an ASF with no streams (0x4826bc, in its open, after its check took the file) each store the
+ * stop and return. stop_base gives a store's base: stock's on the main thread, on any other a word of our own, with
+ * the saved $18 of the frame the probe loop's call made pointed at probe_stopped so the loop still gives up.
+ * The ISO's fill (0x46c184, no track data after its retries) runs on the thread when its decoder starts; there's
+ * no loop to stop. 0x42a47c is exit_sighandler, the process's own crash: left. */
+#define PROBE_OPEN_RA 0x4859f0u
+static int stop_sink[2];
+char *stop_base(unsigned ra, void **saved18) {
+    if (hci_id(4222) == hci_id(4020)) return (char *)0xb10000u;
+    if (ra == PROBE_LOOP_RA || ra == PROBE_OPEN_RA) *saved18 = (char *)&probe_stopped - 0xe70;
+    return (char *)stop_sink - 0xe70;
+}
+/* ra, s2: the slots of the return address and $18 the probe loop's call saved, from this function's $sp. */
+#define STOP_SITE(name, ra, s2) \
+    ".globl " name "\n" name ":\naddiu $sp, $sp, -24\nsw $ra, 20($sp)\nlw $a0, " #ra " + 24($sp)\n" \
+    "addiu $a1, $sp, " #s2 " + 24\njal stop_base\nnop\nlw $ra, 20($sp)\naddiu $sp, $sp, 24\njr $ra\nli $v1, 2\n"
+__asm__(".set push\n.set noreorder\n"
+        STOP_SITE("stop_iso", 0x5c, 0x40)
+        STOP_SITE("stop_aac", 0x78 + 0x6c, 0x78 + 0x50)
+        STOP_SITE("stop_asf", 0xb0 + 0x2c, 0xb0 + 0x28)
+        /* From 0x46c184 by j, $v1 2, epilogue done but for the $sp in the jr's delay slot. */
+        ".globl stop_fill\nstop_fill:\nli $v0, 4222\nsyscall\nmove $t0, $v0\nli $v0, 4020\nsyscall\nbne $v0, $t0, 1f\nnop\n"
+        "lui $v0, 0xb1\nli $t0, 2\nsw $t0, 0xe74($v0)\nli $t0, 1\nsw $t0, 0xe70($v0)\n"
+        "1:\nmove $v0, $zero\njr $ra\naddiu $sp, $sp, 0x50\n.set pop\n");
 #endif

@@ -1,7 +1,7 @@
 """Checked Q2 V1.32 PEQ hooks and target ABI imports; no vendor code is distributed."""
 import re
 import struct
-from build import ROOT, FLAGS, GP, FUNCTIONS, GLOBALS, PRIVATE_FUNCTIONS, append_payload, check, fileoff, run, sha, symbols, jal
+from build import ROOT, FLAGS, GP, FUNCTIONS, GLOBALS, PRIVATE_FUNCTIONS, append_payload, check, fileoff, run, sha, symbols, jal, j
 from ipod import patch_word
 
 PLAYER_SHA = '9c3f8c6d01f1ba62392622f6098b06a36b3e4f022a5468eaca6a5803e74f8e11'
@@ -64,6 +64,15 @@ DAC_RELEASE = ((0x4391b0, 0x0c2b6eec, 'dac_ioctl'),   # end of init: jal ioctl
                (0x42b164, 0x0c10eca0, 'dac_unmute'),  # seek: jal 0x43b280, the unmute helper
                (0x43881c, 0x0c2b6b3c, 'dac_resume'),  # resume: jal snd_pcm_pause
                (0x43afa4, 0x0c2b6c88, 'ao_write'))    # play: jal snd_pcm_writei; the first write after a kept PCM; an unpause writes these frames again
+# The DSF, DFF and ISO checks' failure exits store the global stop: on the preload thread they don't (peq_player.c,
+# docs/internals.md#a-bad-file-next): (address, stock word, hook). The delay slot's lui stays, unused.
+PROBE_STOP = ((0x47b97c, 0xac640e74, 'probe_stop_dsf'),  # sw $a0, 0xe74($v1)
+              (0x47a904, 0xac640e74, 'probe_stop_dff'),
+              (0x478c10, 0xac640e74, 'probe_stop_iso'))
+# The rest that can run on the thread: a base from a hook in place of the first lui, the second lui gone. The fill's own.
+STOP_SITES = ((0x478b40, 0x3c0200b1, 'stop_iso'), (0x480184, 0x3c0200b1, 'stop_aac'), (0x4826a4, 0x3c0200b1, 'stop_asf'))
+STOP_NOPS = ((0x478b50, 0x3c0200b1, 0), (0x480190, 0x3c0200b1, 0), (0x4826b0, 0x3c0200b1, 0))
+STOP_FILL = (0x46c184, 0xac430e74, 'stop_fill')  # sw $v1, 0xe74($v0)
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
@@ -235,7 +244,7 @@ def patch_player(raw, out, flac_experiments=()):
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
-        *(f'--undefined={name}' for _, _, name in DAC_RELEASE),
+        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL)),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -256,6 +265,13 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, patched, 'USB DAC buffer')
     for address, stock, name in DAC_RELEASE:
         patch_word(data, address, stock, jal(ps[name]), 'DAC release wait')
+    for address, stock, name in PROBE_STOP:
+        patch_word(data, address, stock, j(ps[name]), 'Probe stop')
+    for address, stock, name in STOP_SITES:
+        patch_word(data, address, stock, jal(ps[name]), 'Stop base')
+    for address, stock, patched in STOP_NOPS:
+        patch_word(data, address, stock, patched, 'Stop base')
+    patch_word(data, STOP_FILL[0], STOP_FILL[1], j(ps[STOP_FILL[2]]), 'Stop in a fill')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')

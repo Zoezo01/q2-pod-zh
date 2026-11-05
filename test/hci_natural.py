@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Natural track changes in the real hciplayer (hci_emu.py runs it, its threads, demuxers and decoders on Unicorn with
+ALSA modelled and a virtual clock), driven over its socket as demo drives it.
+
+A preloaded change is bit-exact. A next file no demuxer knows leaves the song playing to its last frame, then reports;
+a real stop landing in that failed open still stops. A header that understates the length cuts nothing. A preload the
+song outran or the queue closed is dropped: the next song is the right one. A header's frame count ends an MP3 followed
+by junk. A seek near a file's end keeps that end, on every format.
+Usage: test/hci_natural.py BUILD_DIR [PLAYER]  (PLAYER: another hciplayer, to see old code fail)"""
+import array, math, pathlib, random, shutil, struct, subprocess, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_RA, UC_MIPS_REG_S2
+from hci_emu import Emu
+
+build = pathlib.Path(sys.argv[1]).resolve()
+player = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else build/'peq'/'hciplayer'
+work, root, aud = build/'hci_natural', build/'hci_natural'/'root', build/'hci_natural'/'aud'
+AUTH, STOP, NEXT = 0x43084c, 0xb10e70, 0xb10de8  # the licence check; the stop flag; the preload's state
+TOUCH_NOTSUPPORT, COLD_PATH = 0x4234e8, 0x421a3c
+LAVF_CHECK, LAVF_PREFERRED, FREE_PRELOAD = 0x4ae664, 0x4af03c, 0x42a9ac  # lavf's check; from the preferred one, stock's first try; the thread's free of its context
+SECONDS, RATE = 5, 44100
+N = SECONDS * RATE
+SEEKS = (('s44', 44100, 215 * 4096 + 3000, 4096), ('s1152', 44100, 765 * 1152 + 700, 1152), ('s96', 96000, 8 * 96000 + 2000, 4096),
+         ('s192', 192000, 5 * 192000 + 3000, 8192))
+OTHERS = {'x.mp3': ['-c:a', 'libmp3lame', '-q:a', '2'], 'h.mp3': ['-c:a', 'libmp3lame', '-q:a', '2', '-write_xing', '0'],
+          'x.m4a': ['-c:a', 'aac'], 'x.ogg': ['-c:a', 'libvorbis'], 'x.wv': ['-c:a', 'wavpack'], 'x.flac': ['-c:a', 'flac'],
+          'x.wav': ['-c:a', 'pcm_s16le'], 'x.wma': ['-c:a', 'wmav2'], 'l.mp3': ['-c:a', 'libmp3lame', '-b:a', '320k'],
+          'l.m4a': ['-c:a', 'aac'], 'la.m4a': ['-c:a', 'alac'], 'l.ogg': ['-c:a', 'libvorbis'], 'l.wv': ['-c:a', 'wavpack'], 'l.wav': ['-c:a', 'pcm_s16le']}
+ELF = build/'peq'/'peq.elf'
+
+
+def setup():
+    shutil.rmtree(work, ignore_errors=True)
+    aud.mkdir(parents=True)
+    subprocess.run(['unsquashfs', '-no-progress', '-d', root, '-f', build/'stock.squashfs', 'lib', 'usr/lib'], check=True, stdout=subprocess.DEVNULL)
+    for seed, name in enumerate('abc', 1):
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'anoisesrc=d={SECONDS}:c=pink:r={RATE}:seed={seed}:a=0.4',
+                        '-ac', '2', '-c:a', 'pcm_s16le', aud/f'{name}.wav'], check=True)
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', aud/f'{name}.wav', '-c:a', 'flac', aud/f'{name}.flac'], check=True)
+    for name in 'junk.flac', 'junk.dff', 'junk.iso':
+        (aud/name).write_bytes(random.Random(1).randbytes(200000))
+    (aud/'empty.flac').write_bytes(b'')
+    h = bytearray((aud/'a.flac').read_bytes()[:42])  # STREAMINFO, the last metadata block, no rate or length, no frames
+    h[4] |= 0x80
+    h[18:26] = bytes(8)
+    (aud/'headers.flac').write_bytes(h)
+    g = bytes((aud/'a.flac').read_bytes()[:42])          # the same with a good rate and length, and the last-block bit
+    (aud/'headers2.flac').write_bytes(g[:4] + bytes([g[4] | 0x80]) + g[5:])
+    # a.flac with STREAMINFO's total samples halved: a header that understates the length
+    b = bytearray((aud/'a.flac').read_bytes())
+    value = int.from_bytes(b[18:26], 'big')
+    b[18:26] = ((value & ~((1 << 36) - 1)) | N // 2).to_bytes(8, 'big')
+    (aud/'under.flac').write_bytes(b)
+    junk = random.Random(2).randbytes(3 << 20)
+    (aud/'big.flac').write_bytes(junk)
+    (aud/'big.aac').write_bytes(junk)
+    # an ASF header object with no streams in it, then its data object
+    guid = bytes.fromhex('3026b2758e66cf11a6d900aa0062ce6c')
+    (aud/'nostreams.wma').write_bytes(guid + struct.pack('<QIH', 30, 0, 0x0201) + bytes.fromhex('3626b2758e66cf11a6d900aa0062ce6c') +
+                                      struct.pack('<Q', 50) + bytes(34) + junk[:60000])
+    # low level, so 64 KB, the FLAC seek's step, is about 2 s; the last frame short, so its time by its own size is far early
+    def wav(name, rate, frames, seed=1):
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'anoisesrc=r={rate}:c=pink:a=0.0005:seed={seed}', '-af',
+                        f'atrim=end_sample={frames}', '-ac', '2', '-c:a', 'pcm_s16le', aud/f'{name}.wav'], check=True)
+    for name, rate, frames, block in SEEKS:
+        wav(name, rate, frames, 3)
+        subprocess.run(['flac', '-s', '-f', '--no-seektable', f'--blocksize={block}', '-o', aud/f'{name}.flac', aud/f'{name}.wav'], check=True)
+    wav('nextq', RATE, 8 * RATE, 4)
+    subprocess.run(['flac', '-s', '-f', '-o', aud/'nextq.flac', aud/'nextq.wav'], check=True)
+    # the other formats, 8 s, and the MP3s' shapes
+    wav8 = aud/'loud.wav'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'anoisesrc=d=8:c=pink:r={RATE}:seed=5:a=0.4', '-ac', '2',
+                    '-c:a', 'pcm_s16le', wav8], check=True)
+    for name, args in OTHERS.items():
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', aud/'a.wav' if name.startswith(('x', 'h')) else wav8, *args, aud/name], check=True)
+    for name in 'x.mp3', 'h.mp3', 'x.m4a', 'x.ogg', 'x.wv', 'x.flac', 'x.wav', 'x.wma':
+        (aud/f'junk{name}').write_bytes((aud/name).read_bytes() + junk)
+    def frames_field(data, change):
+        at = data.find(b'Xing', 0, 300)
+        at = at if at >= 0 else data.find(b'Info', 0, 300)
+        count = int.from_bytes(data[at + 8:at + 12], 'big')
+        return data[:at + 8] + (count + change).to_bytes(4, 'big') + data[at + 12:]
+    x = (aud/'x.mp3').read_bytes()
+    (aud/'off.mp3').write_bytes(frames_field(x, -19))    # 0.5 s short: the audio still plays out
+    (aud/'cut.mp3').write_bytes(frames_field(x, -115))   # 3 s short: cut, as stock
+    # DSD: a DSF whose header states half its samples
+    def dsf(name, samples):
+        body = random.Random(3).randbytes(4096 * 2 * 690)  # 5 s
+        (aud/name).write_bytes(b'DSD ' + struct.pack('<QQQ', 28, 92 + len(body), 0) + b'fmt ' + struct.pack('<QIIIIIIQI', 52, 1, 0, 2, 2, 2822400, 1, samples, 4096) +
+                               bytes(4) + b'data' + struct.pack('<Q', 12 + len(body)) + body)
+    dsf('whole.dsf', 690 * 4096 * 8)
+    dsf('under.dsf', 345 * 4096 * 8)
+
+
+class Player:
+    def __init__(self):
+        self.e = e = Emu(player, root, work, log=work/'player.log', fsmap={'/mnt/mmc': str(aud)})
+        e.hook_fn(AUTH, lambda e: 0)
+        for name in 'mnt_data_peq-active', 'tmp_q2xfade':
+            (e.tmp/name).unlink(missing_ok=True)
+        self.pcm = bytearray()
+        e.on_write = lambda e, data, n, p: self.pcm.extend(data)
+        e.alsa_active = True
+        self.run(0.3)
+    def run(self, s):
+        self.e.run(until=self.now() + s)
+    def now(self):
+        return (self.e.clock - 10**12) / 1e9
+    def frames(self):
+        return len(self.pcm) // 4
+    def song(self, name):
+        self.e.send_cmd('{set-songurl\\/mnt/mmc/%s|ss=0|0|0|1|0|90}' % name)
+    def gapless(self, name):
+        self.e.send_cmd('{set-gapless\\/mnt/mmc/%s|ss=0|0|0|1|90}' % name)
+    def until(self, done, limit, step=0.02):
+        """Run in small steps until done() or limit virtual seconds on; False if it never came."""
+        end = self.now() + limit
+        while self.now() < end:
+            if done(): return True
+            self.run(step)
+        return done()
+    def events(self, *names):
+        return [(n, k) for _, n, k in self.e.events if n in names]
+    def opened(self, name):
+        return sum(1 for _, n, k in self.e.events if n == 'open' and k['path'].endswith(name))
+    def fds(self, name):
+        return sum(1 for f in self.e.fds.values() if f.get('path', b'').endswith(name.encode()))
+    def seek(self, seconds):
+        self.e.send_cmd('{mcl-seek\\%d}' % seconds)
+    def seek_drop(self, seconds):
+        """Seek, and return the frames out when it dropped the PCM: what's after that is what the seek played."""
+        drops = len(self.events('pcm_drop'))
+        self.seek(seconds)
+        self.until(lambda: len(self.events('pcm_drop')) > drops, 1)
+        return self.events('pcm_drop')[drops][1]['total'] if len(self.events('pcm_drop')) > drops else self.frames()
+    def settled(self, limit):
+        """Run until the output hasn't grown for 1 s."""
+        end, last, since = self.now() + limit, -1, self.now()
+        while self.now() < end and self.now() - since < 1:
+            if self.frames() != last: last, since = self.frames(), self.now()
+            self.run(0.1)
+    def eq(self):
+        """A live filter, flat but for a band at 0 dB: the path a filter sits on, without changing the music."""
+        preset = struct.pack('<iid', 1, 0, 0.0) + struct.pack('<iiddd', 1, 0, 1000.0, 0.0, 1.0) + struct.pack('<iiddd', 0, 0, 1000.0, 0.0, 1.41) * 29 + struct.pack('<dii', 0.0, 1, 0)
+        (self.e.tmp/'mnt_data_peq-active').write_bytes(b'Q2PEQ02\0' + preset)
+        self.e.send_cmd('{mcl-seteq\\0|0|0|0|0|0|0|0|0|0|1}')
+
+
+def source(name):
+    return (aud/f'{name}.wav').read_bytes()[-N * 4:]
+
+
+def check(ok, what):
+    print(('ok   ' if ok else 'FAIL ') + what, flush=True)
+    failures.extend([] if ok else [what])
+
+
+def seam():
+    """A preloaded change at the same format: every frame of both, in order, nothing between."""
+    p = Player()
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('b.flac')
+    p.until(lambda: p.frames() >= 2 * N, 2 * SECONDS + 2)
+    check(bytes(p.pcm[:2 * N * 4]) == source('a') + source('b'), f'seam: {p.frames()} frames, a then b bit-exact')
+    check(p.opened('b.flac') == 1, 'seam: b opened once, by the preload')
+
+
+def bad_next(name, site=None):
+    """The next file opens and fails its probe: a plays to its last frame, then the player reports."""
+    p = Player()
+    tids, lavf, hit, forced = set(), [], [], []
+    p.e.watch_fn(0x4223c8, lambda e: tids.add(e.cur.tid))
+    p.e.watch_fn(LAVF_CHECK, lambda e: lavf.append(e.cur.tid) if e.u.reg_read(UC_MIPS_REG_RA) != LAVF_PREFERRED else None)
+    # either side of the thread's forced checks
+    p.e.watch_fn(0x485aec, lambda e: forced.append(e.u.reg_read(UC_MIPS_REG_S2)) if e.cur.tid != 1 else None)
+    p.e.watch_fn(0x485af4, lambda e: forced.append(e.u.reg_read(UC_MIPS_REG_S2)) if e.cur.tid != 1 else None)
+    if site: p.e.watch_fn(site, lambda e: hit.append(e.cur.tid))
+    p.song('a.flac')
+    p.run(1)
+    p.gapless(name)
+    stopped, said = [0], bytearray()
+    def reported():
+        stopped[0] |= p.frames() < N and p.e.r32(STOP)
+        said.extend(b''.join(p.e.replies))
+        p.e.replies.clear()
+        p.e.send_cmd('{player-status\\request}')
+        return b'error' in said
+    check(p.until(reported, SECONDS + 1), f'{name}: reported: {said[-60:]}')
+    check(not [t for t in lavf if t != 1], f'{name}: the thread gave up before the list reached lavf ({lavf})')
+    check(forced[::2] == forced[1::2], f"{name}: a forced check leaves its caller's $18 ({forced})")
+    if site: check([t for t in hit if t != 1], f'{name}: the thread reached {site:#x} ({hit})')
+    check(not stopped[0], f'{name}: the stop flag stays clear while a plays')
+    check(p.frames() == N and bytes(p.pcm) == source('a'), f'{name}: a whole, {p.frames()} of {N} frames')
+    check(said.index(b'exit') < said.index(b'error') if b'exit' in said else False, f'{name}: its end, then the error')
+    p.run(0.1)
+    check(p.e.r32(NEXT) == 0 and tids == {1}, f'{name}: the main thread opened it (state {p.e.r32(NEXT):#x}, tids {tids})')
+    p.song('b.flac')  # demo's Next after the prompt
+    base = p.frames()
+    p.until(lambda: p.frames() >= base + RATE, 3)
+    check(bytes(p.pcm[base * 4:(base + RATE) * 4]) == source('b')[:RATE * 4], f'{name}: the next song then plays')
+
+
+def stop_in_failed_open():
+    """demo's stop while the thread's open of a bad file is under way isn't lost."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 0.4 if raw.endswith(b'junk.flac') else 0
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('junk.flac')
+    p.run(0.1)
+    p.e.send_cmd('{mcl-stop\\null}')
+    p.until(lambda: p.events('pcm_close', 'pcm_drop'), 1)
+    before = p.frames()
+    p.run(1)
+    check(p.frames() == before and before < N, f'stop in a failed open: stopped at {before} frames and stayed stopped')
+
+
+def iso_no_tracks():
+    """A SACD ISO with a good TOC and no tracks (0x478b40), next: the check's hooks return a TOC of our own, as making a real
+    one for this one branch isn't worth it. The stop stays clear, and it's reported at a's end."""
+    p = Player()
+    toc, area = 0x6fe00000, 0x6fe00800
+    p.e.ensure(toc, 0x1000)
+    p.e.w32(toc + 0x68, area)
+    hit = []
+    p.e.watch_fn(0x478b40, lambda e: hit.append(e.cur.tid))
+    p.e.hook_fn(0x46a010, lambda e: toc)
+    p.e.hook_fn(0x46bd18, lambda e: 0)
+    p.e.hook_fn(0x469e90, lambda e: 0)
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('junk.iso')
+    stopped = []
+    p.until(lambda: stopped.append(1) if p.e.r32(STOP) and p.frames() < N else p.frames() >= N, SECONDS + 1)
+    check([t for t in hit if t != 1], f'no-track ISO: the thread reached it ({hit})')
+    check(not stopped and p.frames() == N, f'no-track ISO: a whole, {p.frames()} frames, stop flag clear {not stopped}')
+
+
+def xfade_bad_next():
+    """Crossfade holds a's tail back, and a's whole length comes out of the decoder before the report."""
+    p = Player()
+    (p.e.tmp/'tmp_q2xfade').write_bytes(struct.pack('<i', 2000))
+    p.song('a.flac')
+    p.run(0.5)
+    p.eq()
+    p.run(0.5)
+    p.gapless('junk.flac')
+    said = bytearray()
+    def reported():
+        said.extend(b''.join(p.e.replies))
+        p.e.replies.clear()
+        p.e.send_cmd('{player-status\\request}')
+        return b'error' in said
+    check(p.until(reported, SECONDS + 1), f'under Crossfade: reported ({p.frames()} of {N} frames out, the rest held: a limit)')
+    check(not p.e.r32(STOP) and p.frames() >= N - 2 * RATE - 4096, f'under Crossfade: only the hold is missing, {p.frames()} of {N} frames')
+
+
+if __name__ == '__main__':
+    failures = []
+    setup()
+    seam()
+    bad_next('junk.flac')
+    bad_next('empty.flac')
+    bad_next('junk.dff')
+    bad_next('junk.iso')
+    bad_next('big.flac')
+    bad_next('big.aac', 0x480184)
+    bad_next('nostreams.wma', 0x4826a4)
+    iso_no_tracks()
+    xfade_bad_next()
+    stop_in_failed_open()
+    assert not failures, f'{len(failures)} failed: {failures}'
+    shutil.rmtree(work)
+    print('hci_natural: all passed')
