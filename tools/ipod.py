@@ -382,9 +382,9 @@ def patch_style(data, audit):
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
 STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state', 'label_eq']
-STATE_W = 18  # Classic's play state's width: its halo's last column is 283 (tools/art.py STATE_BOX)
+STATE_W = 18  # Classic's play state's width: its ink's last column is 282 (tools/art.py STATE_BOX)
 BAR_PAD = 6  # Classic's bar: the title's and the Home play state's ink this far clear of the glass (bar_right gives the battery's)
-HOME_STATE_X = 56 + BAR_PAD  # Classic's play state on Home, in the title's place (test_art)
+HOME_STATE_X = 52 + BAR_PAD  # Classic's play state on Home, in the title's place: 52 the glass's reach into its ink (test_art)
 STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's

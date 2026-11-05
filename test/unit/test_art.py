@@ -49,7 +49,7 @@ def test_the_play_state_stands_on_its_approved_rows():
     # On Home (img_home_state at HOME_STATE_X, on the bar's rows from 0) every state's ink clears the glass by BAR_PAD.
     for name in ('play_l', 'play_d', 'pause_l', 'pause_d'):
         w, h, at = pixels(got[f'classic_light_{name}'])
-        assert max(ipod.corner_inset(y) - x for x in range(w) for y in range(h) if at(x, y)[3]) <= ipod.HOME_STATE_X - ipod.BAR_PAD, name
+        assert max(ipod.corner_inset(y) - x for x in range(w) for y in range(h) if at(x, y)[3]) == ipod.HOME_STATE_X - ipod.BAR_PAD, name
 
 
 def test_the_bolt_and_the_plug_fill_the_batterys_inside():

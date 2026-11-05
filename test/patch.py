@@ -8799,7 +8799,7 @@ m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stoc
 def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
 redirect('system_bar'); assert loaded('system_bar')==['ipod_system_bar'] and loaded('home_page')==['home_page']
 redirect('dialog/volume_dialog'); assert loaded('dialog/volume_dialog')==['dialog/ipod_volume_dialog']; passed()
-# Classic's first system_bar writes its set (every pitch word 28) and loads the set's own bar.
+# Classic's first system_bar writes its set (every pitch word 32) and loads the set's own bar.
 nm=Machine(); assert classic_light_boot(nm)==['classic-light_system_bar']
 assert {nm.get(a)&0xffff for a,v in SITES.items() if v=='pitch'}=={32}; passed()
 # classic_light_boot's options reach the machine: rowart sets the config, fail sees each RWX page it is asked.
@@ -9508,7 +9508,7 @@ for light in ('1','0'):
 am=Machine(); am.config['THEME']='1'; aview=am.node('view','view_navbar_allplay'); am.bands=[]; am.call(address=HOOKS['widget_on_paint_background'][0],args=(aview,am.canvas,0,0),gap=0); assert not am.bands
 passed()
 # Classic's lists take the whole window, so rows draw down to the glass, but the selection's scroll stops where the set's
-# list_end says (252: below it the glass hides a row's text): the wheel's last row ends there, past stock's own end.
+# list_end says (256: below it the glass hides a row's text): the wheel's last row ends there, past stock's own end.
 # A list lower in its window (Songs under Play All) stops at the same screen row. Under other themes, stock's end.
 for lthm,ly,lend in (('1',0,672-256),('1',32,672-224),('0',0,672-294)):
     lm=Machine(); lm.config.update(THEME=lthm)
@@ -9560,6 +9560,30 @@ for status in (0,2,0):
     for _ in range(2): hm.call(address=HOOKS['widget_on_paint_background'][0],args=(hbar,hm.canvas,0,0),gap=0); hm.advance(1)
     assert (hm.nodes[htt].get('text'),hm.nodes[htt].get('visible',1),hm.nodes[hcl].get('text'))==('Q2 Pod',int(status!=2),''),status
 passed()
+# Off, the title takes the clock's room up to EQ's box (view_right's x plus its own, 222), and its own width back on a page
+# with no title; on, it keeps its own.
+for wtt,wwide in (('0',222-54),('1',98)):
+    wm=Machine(); wm.config['TIMETITLE']=wtt; classic_light_on(wm); wm.clock_minutes=True
+    wt,wc,weq=wm.node('hscroll_label','label_title'),wm.node('hscroll_label','label_clock'),wm.node('label','label_eq'); wr=wm.node('view','view_right',[weq])
+    for n,x,w in ((wt,54,98),(wr,200,115),(weq,22,28)): wm.word(n+O['W_X'],x); wm.word(n+O['W_W'],w)
+    wm.word(weq+O['W_PARENT'],wr); wb=classic_light_bar(wm,wt,wc,wr)
+    def wshow(win):
+        wm.top=win; wm.word(win+O['W_PARENT'],wm.wm)
+        wm.call(address=HOOKS['widget_on_paint_background'][0],args=(wb,wm.canvas,0,0),gap=0); wm.advance(1)
+        return wm.get(wt+O['W_W'])
+    wgot=wshow(wm.node('window','playing_page')),wshow(wm.node('window','bare_page')); assert wgot==(wwide,98),(wtt,wgot)
+passed()
+# Classic (list.art.placeholder 38): stock's 52 px Folder tile is drawn 38 px in its middle, the rest clear; a cover keeps
+# the row's size.
+fm=classic_light_on(Machine()); fm.handlers[tramp['image']]='stock_image'
+def ftile(name):
+    bm=fm.alloc(0x60); data=fm.alloc(4*52*52)
+    fm.word(bm,52); fm.word(bm+4,52); fm.word(bm+8,4*52); fm.u.mem_write(bm+0xe,struct.pack('<H',3)); fm.word(bm+0x14,data)
+    fm.u.mem_write(data,bytes([0x80,0x80,0x80,255])*(52*52))
+    fm.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,fm.string(name),bm,0),gap=0,count=20_000_000)
+    raw=bytes(fm.u.mem_read(data,4*52*52)); return lambda x,y: raw[4*(52*y+x)+3]
+fa=ftile('list_folder'); assert [fa(x,26) for x in (6,7,44,45)]==[0,255,255,0] and [fa(26,y) for y in (6,7,44,45)]==[0,255,255,0]
+fa=ftile('file:///mnt/mmc/.downpic/fd1.jpg'); assert fa(0,0)==fa(51,26)==255; passed()
 # With no row to select the wheel scrolls the view itself, to its own end, not list_end's 42 px past it.
 for lthm,lend in (('1',672-294),('0',672-294)):
     lm=Machine(); lm.config.update(THEME=lthm)
@@ -10429,7 +10453,7 @@ button=m.nodes[m.nodes[view]['children'][0]]['children'][0]; icon=m.nodes[button
 assert m.get(button+O['W_H'])==60 and m.get(icon+O['W_X'])==6; passed()
 # Classic's Library is text whatever Row Art says (ROWART 0 or 1): 32 px rows, no icon; the label starts at text_x (20), the
 # button at 20. The Library's constructor sites take the set's lib_ values; Albums' (0x4a4bb8) keep 52 px with Row Art on,
-# 28 off: Row Art decides the album covers alone.
+# 32 off: Row Art decides the album covers alone.
 for lra,lalbum in (('0',32),('1',52)):
     SETUP[:]=[lambda k: classic_light(k).config.update(ROWART=lra)]; lm=ShuffleMachine(); SETUP.clear(); classic_light_on(lm,rowart=lra)  # its constructor reads THEME
     lstock=[lm.node('list_item') for _ in range(11)]; lv=lm.node('scroll_view','scroll_view_localmusic',lstock)

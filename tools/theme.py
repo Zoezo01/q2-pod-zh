@@ -62,7 +62,7 @@ SCHEMA = {k.path: k for k in (
     key('list.art.x', 'art_x', 'int', 375),  # a row with art, on screen: the cover, 0: stock's layout
     key('list.art.text_x', 'art_text_x', 'int', 375),  # ... its text's first and last columns
     key('list.art.text_end', 'art_text_end', 'int', 375),
-    key('list.art.placeholder', 'art_placeholder', 'int', 64),  # stock's Folder tile (list_folder) this size, centred in its row; 0: stock's
+    key('list.art.placeholder', 'art_placeholder', 'int', 51),  # stock's Folder tile (list_folder) this size, centred in its row; 0: stock's
     key('list.row.text_end', 'row_text_end', 'int', 375),  # a two-line row without art (Songs'): its text's last column on screen
     Key('list.separator.stops', 'sep', 'stops', 0, 0, (), 'live', True),  # ... its last rows, one stop a row, final
     key('list.row.tall_font', 'font[ROLE_TALL]', 'enum'),  # a two-line row's title
@@ -767,13 +767,14 @@ def resolve(root, by_id, seen=()):
             if t['accents'] >> i & 1 and not s['sel']:
                 top = ACCENT_TONES[i][0]
                 s['sel'] = tuple((p, int(h[1:], 16)) for p, h in derive_gloss(ACCENT_TONES[i]))
-                # the light rim on the light half; on black the dark half's top row is the band's own first stop
-                s['light'].setdefault('sel_top', s['sel_top'] or int(turn(GLOSS_TOP, top)[1:], 16))
+                # the light rims are the light half's; on black the dark half's band starts on its first stop (no
+                # second row: 0, the stops) and a tall row ends on its dark edge
+                for f, g in (('sel_top', GLOSS_TOP), ('sel_tall_top', GLOSS_TALL_TOP), ('sel_tall_line', GLOSS_TALL_LINE)):
+                    s['light'].setdefault(f, s[f] or int(turn(g, top)[1:], 16))
                 s['sel_top'] = s['sel_top'] or s['sel'][0][1]
                 s['sel_edge'] = s['sel_edge'] or int(turn(GLOSS_EDGE, top)[1:], 16)
                 s['sel_tall_edge'] = s['sel_tall_edge'] or int(turn(GLOSS_TALL_EDGE, top)[1:], 16)
-                s['sel_tall_line'] = s['sel_tall_line'] or int(turn(GLOSS_TALL_LINE, top)[1:], 16)
-                s['sel_tall_top'] = s['sel_tall_top'] or int(turn(GLOSS_TALL_TOP, top)[1:], 16)
+                s['sel_tall_line'] = s['sel_tall_line'] or s['sel_tall_edge']
                 for f in ('sel', 'sel_top', 'sel_edge', 'sel_tall_edge', 'sel_tall_line', 'sel_tall_top'):  # the gloss is both halves' design (Graphite's grey band flipped would turn upside down)
                     s['light'].setdefault(f, s[f])
     t['schemes'] = [s if i >= len(ACCENT_NAMES) or t['accents'] >> i & 1 else zero_scheme() for i, s in enumerate(t['schemes'])]
