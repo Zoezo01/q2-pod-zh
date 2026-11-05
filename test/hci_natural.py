@@ -5,7 +5,8 @@ ALSA modelled and a virtual clock), driven over its socket as demo drives it.
 A preloaded change is bit-exact. A next file no demuxer knows leaves the song playing to its last frame, then reports;
 a real stop landing in that failed open still stops. A header that understates the length cuts nothing. A preload the
 song outran or the queue closed is dropped: the next song is the right one. A header's frame count ends an MP3 followed
-by junk. A seek near a file's end keeps that end, on every format.
+by junk. A seek near a file's end keeps that end, on every format. Under Crossfade a late next takes the held tail up to
+30 s on, and the fade flag moved mid-track moves the mix as test/xfade_player.py's filter says.
 Usage: test/hci_natural.py BUILD_DIR [PLAYER]  (PLAYER: another hciplayer, to see old code fail)"""
 import array, math, pathlib, random, shutil, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -20,6 +21,8 @@ TOUCH_NOTSUPPORT, COLD_PATH = 0x4234e8, 0x421a3c
 LAVF_CHECK, LAVF_PREFERRED, FREE_PRELOAD = 0x4ae664, 0x4af03c, 0x42a9ac  # lavf's check; from the preferred one, stock's first try; the thread's free of its context
 SECONDS, RATE = 5, 44100
 N = SECONDS * RATE
+LONG_SECONDS = 10
+LONG_N = LONG_SECONDS * RATE
 SEEKS = (('s44', 44100, 215 * 4096 + 3000, 4096), ('s1152', 44100, 765 * 1152 + 700, 1152), ('s96', 96000, 8 * 96000 + 2000, 4096),
          ('s192', 192000, 5 * 192000 + 3000, 8192))
 OTHERS = {'x.mp3': ['-c:a', 'libmp3lame', '-q:a', '2'], 'h.mp3': ['-c:a', 'libmp3lame', '-q:a', '2', '-write_xing', '0'],
@@ -100,6 +103,10 @@ def setup():
         foot = lambda flags: b'APETAGEX' + struct.pack('<IIII', 2000, len(item) + 32, 1, flags) + bytes(8)
         return foot(0xa0000000) + item + foot(0x80000000)
     (aud/'apex.mp3').write_bytes(x + ape(3 << 20) + id1)
+    for seed, name in enumerate(('long_a', 'long_b', 'long_c'), 7):  # long enough that a fade's window opens after the first packet's position
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'anoisesrc=d={LONG_SECONDS}:c=pink:r={RATE}:seed={seed}:a=0.4',
+                        '-ac', '2', '-c:a', 'pcm_s16le', aud/f'{name}.wav'], check=True)
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', aud/f'{name}.wav', '-c:a', 'flac', aud/f'{name}.flac'], check=True)
     # DSD: a DSF whose header states half its samples
     def dsf(name, samples):
         body = random.Random(3).randbytes(4096 * 2 * 690)  # 5 s
@@ -475,6 +482,89 @@ def xfade_bad_next():
     check(not p.e.r32(STOP) and p.frames() >= N - 2 * RATE - 4096, f'under Crossfade: only the hold is missing, {p.frames()} of {N} frames')
 
 
+def long_source(name):
+    return array.array('h', (aud/f'{name}.wav').read_bytes()[-LONG_N * 4:])
+
+
+def faded(fade):
+    p = Player()
+    (p.e.tmp/'tmp_q2xfade').write_bytes(struct.pack('<i', fade * 1000))
+    p.song('long_a.flac')
+    p.run(0.5)
+    p.e.send_cmd('{mcl-seteq\\0|0|0|0|0|0|0|0|0|0|1}')
+    p.e.send_cmd('{media-info\\get-music-info}')
+    return p
+
+
+def xfade_late_next(label, delay, again, wanted):
+    """A song before a bad file holds its tail; the toast, then C. The tail goes under C up to XF_COLD_NS later, not after."""
+    fade = 3
+    p = faded(fade)
+    p.run(3.5)
+    p.gapless('junk.flac')
+    said = bytearray()
+    def reported():
+        said.extend(b''.join(p.e.replies))
+        p.e.replies.clear()
+        p.e.send_cmd('{player-status\\request}')
+        return b'error' in said
+    check(p.until(reported, 12), f'{label}: reported')
+    before = p.frames()
+    if again:  # the second attempt demo may make under a second toast
+        p.run(1)
+        p.song('junk.flac')
+        p.run(delay - 1)
+    else:
+        p.run(delay)
+    base = p.frames()
+    check(base == before == LONG_N - fade * RATE, f'{label}: only the hold is held back, {base} frames')
+    p.song('long_c.flac')
+    p.until(lambda: p.frames() >= base + 4 * RATE, 8)
+    out, tail = array.array('h', bytes(p.pcm[base * 4:(base + RATE) * 4])), long_source('long_a')[-fade * RATE * 2:][:2 * RATE]
+    share = sum(x * y for x, y in zip(out, tail)) / sum(y * y for y in tail)
+    check((share > 0.9) == wanted and (share < 0.2) != wanted, f'{label}: the tail in C\'s first second, {share:.3f}')
+
+
+def fade_edit(label, start, edit_at, ms, want_lo, want_hi):
+    """The flag moves mid-track, as a Play Next moves it, replacing a preload as demo does: where does the song stop being
+    the output, in seconds before its end? (None: never, a plain join.)"""
+    p = Player()
+    flag = p.e.tmp/'tmp_q2xfade'
+    maps, real = [], p.e._mmap
+    def spy(addr, length, prot, flags, fd, off):
+        r = real(addr, length, prot, flags, fd, off)
+        if 'q2xfade' in str(p.e.fds.get(fd, {}).get('path', b'')): maps.append(r)
+        return r
+    p.e._mmap = spy
+    flag.write_bytes(struct.pack('<i', start))
+    p.song('long_a.flac')
+    t0 = p.now()
+    p.run(0.5)
+    p.e.send_cmd('{mcl-seteq\\0|0|0|0|0|0|0|0|0|0|1}')
+    p.e.send_cmd('{media-info\\get-music-info}')
+    events = [(5.0, 'preload')] + ([(edit_at, 'edit')] if edit_at is not None else [])
+    name, loaded = 'long_b', False
+    for at, what in sorted(events):
+        p.run(max(0, t0 + at - p.now()))
+        if what == 'preload':
+            p.gapless(name + '.flac')
+            loaded = True
+        else:
+            flag.write_bytes(struct.pack('<i', ms))
+            for a in maps: p.e.w32(a, ms)
+            name = 'long_c'
+            if loaded:
+                p.e.send_cmd('{mcl-closegapless\\null}')
+                p.run(0.05)
+                p.gapless(name + '.flac')
+    p.until(lambda: p.frames() >= LONG_N + 2 * RATE, 10)
+    out, a = array.array('h', bytes(p.pcm)), long_source('long_a')
+    at = next((j // 2 for j in range(0, min(len(out), len(a)), 2) if abs(out[j] - a[j]) > 16), None)
+    gone = None if at is None else (LONG_N - at) / RATE
+    ok = gone is None if want_lo is None else gone is not None and want_lo <= gone <= want_hi
+    check(ok, f'{label}: {gone} s before its end, wanted {want_lo} to {want_hi}')
+
+
 def tail_noise(name, most):
     """Junk after the audio, against the same file without it: no more than most s of it comes out."""
     runs = []
@@ -674,6 +764,16 @@ if __name__ == '__main__':
     seek_filtered(2)
     for name in 'l.mp3', 'l.m4a', 'la.m4a', 'l.ogg', 'l.wv', 'l.wav':
         seek_other(name)
+    for label, delay, again, wanted in (('late next, toast 2 s', 2.0, 0, True), ('late next, toast 5 s', 5.0, 0, True),
+                                        ('late next, second toast', 5.0, 1, True), ('late next, 35 s', 35.0, 0, False)):
+        xfade_late_next(label, delay, again, wanted)
+    fade_edit('no fade', 0, None, 0, None, None)
+    fade_edit('asked 1 s', 1000, None, 0, 0.95, 1.05)
+    fade_edit('raised before the window', 0, 2.0, 1000, 0.95, 1.05)
+    fade_edit('raised in the window', 0, 8.0, 1000, 0.3, 0.9)  # half of what is left
+    fade_edit('raised after its last block', 0, 9.8, 1000, None, None)
+    fade_edit('cleared before the window', 1000, 2.0, 0, None, None)
+    fade_edit('cleared in the hold', 1000, 7.0, 0, 0.95, 1.05)  # a hold once begun is finished
     assert not failures, f'{len(failures)} failed: {failures}'
     shutil.rmtree(work)
     print('hci_natural: all passed')
