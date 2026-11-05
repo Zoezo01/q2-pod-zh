@@ -14,12 +14,14 @@
                sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
                sel.edge="#004184"/>
   <colorSchemes accents="nano-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
-  <!-- Nano's face: list rows (title 18 px), the bar title (15 px), the Now Playing title and Home rows; the
-       bar's fill is the scheme's gloss. The nano battery: a grey outline (the light half's; the dark half's
-       its unflip) and a gloss green level, a hue in both halves; the play state Nano's blue -->
+  <!-- Nano's face: list rows (title 20 px), the bar title (15 px), the Now Playing title and Home rows; the
+       bar's fill is the scheme's gloss; the white chevron on the selected row only. The nano battery: a grey
+       outline (the light half's; the dark half's its unflip) and a gloss green level, a hue in both halves;
+       the play state Nano's blue -->
   <view name="list">
     <element name="selection" painter="stops"/>
-    <element name="row" font="nano" meta_font="nano" title_px="18"/>
+    <element name="row" font="nano" meta_font="nano" title_px="20"/>
+    <element name="chevron" selected="1"/>
   </view>
   <view name="bar">
     <element name="title" font="nano" font_size="15"/>
@@ -28,10 +30,20 @@
     <element name="state" color="#31aee7"/>
   </view>
   <view name="playing"><element name="title" font="nano"/></view>
+  <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: a vertical gloss, a
+       shadow down its left edge, lighter towards the left, a white note and the queue's count -->
+  <view name="home">
+    <element name="rows" top="0" text_x="20" full_row="375" label_end_split="28" label_end_full="33" caps="0"/>
+    <element name="chevron" visible="1"/>
+    <element name="pane" stops="#849aa5 0, #63717b 50, #424d52 100" shadow="#000000" shadow_w="23" shadow_a="107"
+             light="#ffffff" light_a="40"/>
+  </view>
+  <!-- a settings row is its title with the value right-aligned -->
+  <view name="settings"><element name="values" text="1"/></view>
   <!-- Light Mode: On is the measured nano look, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="NANO_ACCENT" default="nano-blue" preset="nano-blue"/>
-  <option setting="home"/>
+  <option setting="home" default="split" preset="split"/>
   <option setting="shortcut"/>
   <option setting="battery"/>
   <option setting="time_title" preset="on"/>

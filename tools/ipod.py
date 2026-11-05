@@ -57,6 +57,8 @@ class Geometry:
     bar_px: int = 0  # the status bar's title and clock px in the Nano face (status_metrics); 0: stock's bar, no title
     batt_w: int = inc('BATT_BODY_W')  # the battery body under BATT_NANO (navigation.c nano_battery), its nub outside
     batt_h: int = inc('BATT_BODY_H')
+    text_x: int = 0  # list text's left edge, clear of the glass at the first row (0: stock's); lists end at fit_bottom
+    home_row: int = 39  # Home's and its Settings list's row height; Python only, no C reads it
 
 
 SET0 = Geometry()
@@ -67,7 +69,7 @@ SET0 = Geometry()
 NANO = Geometry(name='nano', bar=26, pitch=28, body=28, art=52, art_inset=0, art_pitch=52, art_body=52,
                 text_art=0, text_art_inset=0, title24_y=2, title_y=4, meta_y=6, count_y=6,
                 art_title24_y=5, art_meta_y=31, set_row=28, set_top=0, set_rows=9, set_icon=0, bar_px=15,
-                batt_w=26, batt_h=13)
+                batt_w=26, batt_h=13, text_x=20, home_row=28)
 NANO_TEXT = dataclasses.replace(NANO, name='nano-text', art=0, art_pitch=28, art_body=28, art_title24_y=2, art_meta_y=6)
 MARGIN = 8
 # The 375x320 panel's glass has rounded corners that hide whatever is drawn in them. CORNER_R is
@@ -114,7 +116,7 @@ CLOCK_TEXT = 70
 # calibration knob.
 SLIDE = f'htranslate(duration={inc("PAGE_SLIDE_MS")})'
 HOME_TOP = inc('HOME_TOP')
-HOME_ROW = 39
+HOME_ROW = SET0.home_row
 HOME_TEXT_X = inc('HOME_DOT_X') + inc('HOME_DOT') + inc('HOME_DOT_GAP')  # labels after the selection dot
 HOME_LABEL_END = inc('HOME_LABEL_END')  # mirror the text inset, clear of the lower-right glass
 HOME_LIST_W = 375
@@ -153,14 +155,27 @@ def with_geometry(g):
         NP_TIME_X=max(MARGIN, corner_x(g.bar + NP_TIMES_Y + 1, 14)))
 
 
-GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
+def fit_bottom(g):
+    """The client-y bottom of g's lists: rows continue while a row's glyph band, [6, pitch - 6] inside
+    it, clears the glass at g.text_x; the rest of the window is a plain strip. The whole window when
+    g.text_x is 0 (stock's text, which the corners do not reach)."""
+    # ponytail: one bottom per set; per page kind if a 52 px row's art corner shows clipped
+    if not g.text_x:
+        return 320 - g.bar
+    n = 0
+    while n * g.pitch < 320 - g.bar and corner_x(g.bar + n * g.pitch + 6, g.pitch - 12) <= g.text_x:
+        n += 1
+    return min(n * g.pitch, 320 - g.bar)
+
+
+GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h', 'text_x')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
 
 
 def immediate_values(g=SET0):
     """{value name: word} for the named ipod.json immediates under geometry g."""
     geo = with_geometry(g)
     values = {k: v for k, v in dataclasses.asdict(g).items() if k in VALUE_NAMES}
-    return values | {'scroll': geo.BOTTOM - 50, 'np_bar_x': geo.NP_BAR[0], 'np_bar_w': geo.NP_BAR[2]}
+    return values | {'scroll': fit_bottom(g) - 50, 'np_bar_x': geo.NP_BAR[0], 'np_bar_w': geo.NP_BAR[2]}
 
 
 IPOD = with_geometry(SET0)
@@ -298,8 +313,8 @@ LIST_CLEAR = {f'style:{state}:{prop}': '#00000000' for state in ('normal', 'disa
               for prop in ('bg_color', 'border_color')}
 
 
-def home_list(name, rows, extra=None):
-    """A Home list_view of HOME_ROW rows: each a label under a full-row transparent tap image."""
+def home_list(name, rows, g, extra=None):
+    """A Home list_view of g.home_row rows: each a label under a full-row transparent tap image."""
     views = []
     for i, row in enumerate(rows):
         # Long translations ellipsize and scroll inside the shared text margins.
@@ -307,16 +322,16 @@ def home_list(name, rows, extra=None):
         if row in HOME_LITERAL:
             label['text'] = HOME_LITERAL[row]
         label.update(HOME_RENAMED.get(row, {}))
-        views.append(['view', [0, i * HOME_ROW, HOME_LIST_W, HOME_ROW], {'name': 'btn_' + row}, [
-            ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, HOME_ROW], label, []],
-            ['image', [0, 0, HOME_LIST_W, HOME_ROW], {'name': 'img_' + row, 'clickable': 'true'}, []]]])
+        views.append(['view', [0, i * g.home_row, HOME_LIST_W, g.home_row], {'name': 'btn_' + row}, [
+            ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, g.home_row], label, []],
+            ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': 'img_' + row, 'clickable': 'true'}, []]]])
     # The list_view's layout (0x5ea3a4) makes its scroll view vertical only for a mobile scroll bar,
     # which Home has none of, and scroll_view_create leaves it off; the payload navigates only
     # vertical scroll views.
-    view = ['scroll_view', [0, 0, HOME_LIST_W, HOME_ROW * len(views)],
+    view = ['scroll_view', [0, 0, HOME_LIST_W, g.home_row * len(views)],
             {'name': 'scroll_view_' + name, 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, views]
-    return ['list_view', [0, HOME_TOP, HOME_LIST_W, HOME_ROW * len(views)],
-            {'name': 'list_view_' + name, 'item_height': str(HOME_ROW), **LIST_CLEAR, **(extra or {})}, [view]]
+    return ['list_view', [0, HOME_TOP, HOME_LIST_W, g.home_row * len(views)],
+            {'name': 'list_view_' + name, 'item_height': str(g.home_row), **LIST_CLEAR, **(extra or {})}, [view]]
 
 
 def ipod_home(root, g=SET0):
@@ -334,7 +349,7 @@ def ipod_home(root, g=SET0):
         n[2].update(visible='false', sensitive='false')
     # An image for the playing track's art, moved to the right panel and fitted by coverflow_home_art.
     root[3] = [['image', [0, 0, 375, geo.BOTTOM], {'name': 'img_homeart', 'draw_type': 'fill'}, []],
-               home_list('home', HOME_ROWS), home_list('homeset', HOME_SETS, {'visible': 'false'}), *root[3]]
+               home_list('home', HOME_ROWS, g), home_list('homeset', HOME_SETS, g, {'visible': 'false'}), *root[3]]
 
 
 def style_props(data):
@@ -981,7 +996,7 @@ def patch_asset(path, data, g=SET0):
             check(box[1] in (50, 100), f'{path}: unexpected list position')
             if not playlist:
                 box[1] -= 50
-            box[3] = geo.BOTTOM - box[1]
+            box[3] = fit_bottom(g) - box[1]
         elif props.get('name') == 'view_navbar_allplay':
             check(box == [0, 50, 375, 50], f'{path}: unexpected action bar')
             box[1] = 0

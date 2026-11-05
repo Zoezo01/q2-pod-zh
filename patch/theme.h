@@ -70,14 +70,20 @@ typedef struct {
     const char *name;   /* "Minimal": the Theme row's "Theme: %s" */
     unsigned char geom; /* second: THEME_GEOM_OFF (4) never moves */
     unsigned char painter[PAINTER_N];
-    unsigned char chevron_home, caps_mark, caps_home, caps_np, icons_mono, icons_badge_muted,
-        icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
-    unsigned char font[ROLE_N], font_px[ROLE_N];    /* FONT_*; px 0: the style's size */
+    unsigned char chevron_home, chevron_sel, set_text, caps_mark, caps_home, caps_np, icons_mono,
+        icons_badge_muted, icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
+    unsigned char font[ROLE_N], font_px[ROLE_N]; /* FONT_*; px 0: the style's size */
     stops_t batt;          /* BATT_NANO: the level's stops, a hue in both halves */
     unsigned batt_line[2]; /* BATT_NANO: the outline, nub and bolt, final: [0] dark, [1] light */
     unsigned state_color;  /* bar_play/bar_pause's colour, final, 0xRRGGBB; 0: stock's glyph */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
+    /* Split's panel where no cover shows (home_pane_paint), n 0: HOME_PLACEHOLDER. Its colours are
+     * 0xRRGGBB, the shadow down its left edge and the light beyond it; _w in columns, _a the alpha
+     * at the strongest column. */
+    stops_t home_pane;
+    unsigned pane_shadow, pane_light;
+    short pane_shadow_w, pane_shadow_a, pane_light_a;
     int *accent_slot;
     const char *accent_key;  /* &st.accent,"ACCENT" | &st.minimal_accent,"MINIMAL_ACCENT" */
     const scheme_t *schemes; /* [n_schemes], indexed by accent value: each scheme's dark half */
@@ -97,4 +103,6 @@ int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stor
 const scheme_t *scheme(void);     /* theme()'s scheme accent(), in the half Light Mode picks */
 int client_h(void); /* the window under the bar of the set theme_boot wrote (navigation.c) */
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s); /* navigation.c */
+/* 0xRRGGBB to an opaque color_t, whose bytes are r, g, b, a. */
+#define RGBA(c) (0xff000000u | ((c) & 255) << 16 | ((c) & 0xff00) | (c) >> 16)
 #endif

@@ -195,7 +195,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, NANO_FONT_SRC)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, NANO_FONT_SRC, fit_bottom)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -831,6 +831,15 @@ def validate_assets(directory):
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
         assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name
+        # Home's rows are the set's and fit; a theme with Home's chevron ends its labels short of the
+        # glyph (x 20 of list_into) in both widths, as Classic's below.
+        mine = ui + f'{g.name}_{HOME_PAGE}'
+        listed = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + HOME_PAGE)))}['list_view_home']
+        assert listed[2]['item_height'] == str(g.home_row) and HOME_TOP + 7*g.home_row <= 320 - g.bar, g.name
+        for t in builtins():
+            if g in geometry_sets([t]) and t['chevron_home']:
+                assert t['home_label_end[0]'] >= inc('CHEVRON_W') - inc('HOME_CHEVRON_SHIFT') - 15, t['id']
+                assert t['home_label_end[1]'] >= inc('CHEVRON_W') - inc('HOME_FULL_CHEVRON_SHIFT') - 15, t['id']
         for rel in UI_ASSETS:
             folder, _, base = rel.rpartition('/')
             mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
@@ -841,6 +850,19 @@ def validate_assets(directory):
                     assert n[1] == [0, g.set_top, 375, g.set_rows*g.set_row] and 'item_height' not in n[2], (g.name, rel)
                 else:                   # any other list with that row height is not one (settings_list)
                     assert n[2].get('item_height') == str(g.set_row), (g.name, rel)
+        if g.text_x:  # text from text_x clears the glass at the first row; 9 rows fit, a plain strip below them
+            assert g.text_x >= corner_x(g.bar + 6, g.pitch - 12) and fit_bottom(g) // g.pitch == 9, g.name
+            ends = {}
+            for rel in UI_ASSETS:  # every list box the transform resizes ends at fit_bottom
+                folder, _, base = rel.rpartition('/')
+                mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
+                if 'squashfs-root/' + mine not in built or rel in NAVBAR_ONLY: continue
+                was = {n[2].get('name'): n[1] for n in decode(read('stock.squashfs', ui + rel))[3]}
+                for n in decode(read('rootfs.squashfs', mine))[3]:
+                    old = was.get(n[2].get('name'))
+                    if n[0] in ('list_view', 'table_view') and old and old[1] in (50, 100) and n[1] != old:
+                        ends[rel] = n[1][1] + n[1][3]
+            assert ends and set(ends.values()) == {fit_bottom(g)}, (g.name, ends)
         if g.bar_px:  # Nano's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
             m = status_metrics(g, NANO_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}

@@ -45,7 +45,7 @@ extern unsigned char shim_memory[0x800];
 #define g_lockscreen_pageflag 0
 int shim_lock(void *), shim_unlock(void *), shim_statfs(const char *, void *);
 """ + ''.join(f'{r} {n}({a});\n' for n in """
-getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
+canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
 deque_init _deque_push_back deque_pop_back
 deque_assign deque_destroy deque_size deque_at window_create widget_factory
 widget_factory_create_widget image_create hscroll_label_create set_hscroll_label_attribute
@@ -60,6 +60,7 @@ bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
+int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
 #define calloc shim_calloc
 """
@@ -106,7 +107,7 @@ int image_set_draw_type(void *x, int t) { return 0; }
 int image_base_set_image(void *x, const char *s) { snprintf(W(x)->image, 600, "%s", s); return 0; }
 /* A zero-length "no art" marker does not decode. Every successful load is unloaded again and
    decodes to art_w x art_h (bitmap_t w @0, h @4). */
-static int loads, unloads, theme_placeholder;
+static int loads, unloads, theme_placeholder, cover_fail;
 static unsigned art_w = 160, art_h = 160;
 /* Decoded art (bitmap_t w @0, h @4, line length @8, format @0xe, and here the pixels @0x14):
    RGBA8888, a pattern whose colour comes from the file's path, so every album looks different. */
@@ -129,7 +130,7 @@ static void pattern(unsigned char *px, unsigned seed) {
 int widget_load_image(void *x, const char *url, void *b) {
     struct stat s;
     int themed = theme_placeholder && strncmp(url, "file://", 7);
-    int failed = !themed && (strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size);
+    int failed = cover_fail || (!themed && (strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size));
     loads += !failed && !themed;
     if (!failed) {
         unsigned *bm = b, seed = 0;
@@ -202,15 +203,38 @@ void *widget_lookup(void *x, const char *n, int r) {
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
 int ipod_home(void) { return home_mode; }
 /* CF_STYLE0/1 (minimal, classic): main() passes each theme's .cf from tools/theme.py ROLE_MACROS */
-static theme_t shim_themes[2] = {
+static theme_t shim_themes[3] = {
     { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
-      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 } };
+      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 },
+    { .home_label_end = { 28, 33 }, .home_text_x = 20, .home_full_row = 375,
+      .home_pane = { 3, { 0, 50, 100 }, { 0x849aa5, 0x63717b, 0x424d52 } }, .pane_shadow = 0, .pane_shadow_w = 23,
+      .pane_shadow_a = 107, .pane_light = 0xffffff, .pane_light_a = 40, .cf = CF_STYLE1 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
 int client_h(void) { return 320 - stub_bar_h; }
 int theme_font(void *w, int role, int was) { return was; } /* the font only: no geometry */
+/* The Split pane's painters: the stops asked for, each fill in the colour last set, the count's text. */
+static int stops_calls, stops_rect[4], fills;
+static const stops_t *stops_arg;
+static struct { int x, y, w, h; unsigned color; } fill[1024];
+static unsigned fill_color, centred_color;
+static char centred_text[32];
+void paint_stops(void *c, int x, int y, int ww, int h, const stops_t *s) {
+    ++stops_calls; stops_rect[0] = x; stops_rect[1] = y; stops_rect[2] = ww; stops_rect[3] = h; stops_arg = s;
+}
+int stock_canvas_set_fill_color(void *c, unsigned x) { fill_color = x; return 0; }
+int canvas_fill_rect(void *c, int x, int y, int ww, int h) {
+    assert(fills < 1024);
+    fill[fills].x = x; fill[fills].y = y; fill[fills].w = ww; fill[fills].h = h; fill[fills++].color = fill_color;
+    return 0;
+}
+void draw_centred(void *c, const unsigned *s, unsigned n, const void *r, unsigned px, unsigned color) {
+    unsigned i = 0;
+    for (; i < n && i + 1 < sizeof centred_text; ++i) centred_text[i] = (char)s[i];
+    centred_text[i] = 0, centred_color = color;
+}
 int ipod_light(void) { return light; }
 static int square_art;
 int ipod_square_art(void) { return square_art; }
@@ -1544,7 +1568,9 @@ int main(void) {
     /* The art's paint is clipped to the panel on screen (canvas origin at the art, window at y 30)
        from the background hook to the border hook; other widgets keep the clip. */
     extern void coverflow_home_clip(void *, void *, int);
-    int canvas[2] = { geo[0], 30 + geo[1] }, full[4] = { 0, 0, 375, 320 }, want[4] = { HOME_SPLIT_W, 30, 375 - HOME_SPLIT_W, 290 };
+    static char lcd[0x100]; /* the canvas's LCD: the pane saves and restores its fill */
+    int canvas[32] = { geo[0], 30 + geo[1] }, full[4] = { 0, 0, 375, 320 }, want[4] = { HOME_SPLIT_W, 30, 375 - HOME_SPLIT_W, 290 };
+    *(void **)((char *)canvas + CANVAS_LCD) = lcd;
     coverflow_home_clip(home_art, canvas, 1);
     assert(!memcmp(clip_rect, want, sizeof want));
     coverflow_home_clip(win, canvas, 0);
@@ -1631,6 +1657,62 @@ int main(void) {
     stub_bar_h = 30;
     coverflow_home_layout();
     assert(!memcmp(geo, split, sizeof split));
+    /* Nano (shim_themes[2]): no cover shows the pane instead of default_album_home. The art spans the
+     * panel and paints the pane's stops over all of it, a 23-column shadow down its left edge (black,
+     * alpha 107 fading to 0), then the white light ramp from there to the right edge (alpha 40 fading
+     * to 0), the white note and the queue's count, "12 Songs". */
+    unsigned queued = queue.n;
+    classic = 2; home_mode = 0; stub_bar_h = 26; coverflow_home_layout();
+    queue.n = 12; *(volatile int *)MCL_POS = 0; cover_fail = 1; coverflow_home_art(win);
+    static const int pane[4] = { HOME_SPLIT_W, 0, 375 - HOME_SPLIT_W, 294 };
+    assert(!*art && !memcmp(geo, pane, sizeof pane));
+    *(unsigned *)(lcd + LCD_FILL_COLOR) = 0x12345678;
+    fills = 0; stops_calls = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(stops_calls == 1 && !memcmp(stops_rect, (int[]){ 0, 0, 375 - HOME_SPLIT_W, 294 }, 16) &&
+           stops_arg == &shim_themes[2].home_pane);
+    for (int i = 0; i < 23; ++i)
+        assert(fill[i].x == i && fill[i].w == 1 && fill[i].h == 294 && fill[i].color >> 24 == 107u * (23 - i) / 23 &&
+               !(fill[i].color & 0xffffff));
+    int pw = 375 - HOME_SPLIT_W, lw = pw - 23; /* the light ramp, one column each */
+    for (int i = 0; i < lw; ++i)
+        assert(fill[23 + i].x == 23 + i && fill[23 + i].w == 1 && fill[23 + i].color >> 24 == 40u * (lw - i) / lw &&
+               (fill[23 + i].color & 0xffffff) == 0xffffff);
+    assert(fills > 23 + lw && !strcmp(centred_text, "12 Songs"));
+    assert((centred_color & 0xffffff) == 0xffffff); /* light 0, the dark half: the count white, raw */
+    assert(fill_color == 0x12345678); /* the LCD's fill back */
+    /* The note: one raw colour, its beam, stems and heads never overlapping (each pixel blended once),
+     * inside its 34 x 40 box above the panel's centre. */
+    int gx = (pw - 34) / 2, gy = (294 - 40) / 2 - 14;
+    static unsigned char note[40][40];
+    memset(note, 0, sizeof note);
+    for (int i = 23 + lw; i < fills; ++i) {
+        assert(fill[i].color == 0xd9ffffff);
+        for (int y = 0; y < fill[i].h; ++y)
+            for (int x = 0; x < fill[i].w; ++x) {
+                int nx = fill[i].x - gx + x + 2, ny = fill[i].y - gy + y;
+                assert(nx >= 0 && nx < 40 && ny >= 0 && ny < 40 && !note[ny][nx]);
+                note[ny][nx] = 1;
+            }
+    }
+    #define NOTE(x, y) note[y][(x) + 2]
+    for (int x = 8; x < 34; ++x) assert(NOTE(x, 0) && NOTE(x, 5)); /* the beam */
+    for (int y = 6; y < 32; ++y) assert(NOTE(8, y) && NOTE(11, y)); /* the stems */
+    for (int y = 6; y < 28; ++y) assert(NOTE(30, y) && NOTE(33, y));
+    for (int x = -2; x < 12; ++x) assert(NOTE(x, 33)); /* the heads' widest rows, half-width 7 */
+    for (int x = 20; x < 34; ++x) assert(NOTE(x, 29));
+    assert(NOTE(1, 29) && !NOTE(0, 29) && NOTE(1, 37) && !NOTE(9, 37) && !NOTE(8, 38)); /* half-width 4 */
+    #undef NOTE
+    light = 1; fills = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!(centred_color & 0xffffff)); /* the light half: black, which ui_ink draws as the white paper */
+    light = 0;
+    *centred_text = 0; queue.n = 0; coverflow_home_art(win); fills = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!*centred_text && fills); /* no queue: the note alone */
+    /* A panning cover or a still one: no pane. */
+    cover_fail = 0; queue.n = queued; coverflow_home_layout(); coverflow_home_art(win);
+    stops_calls = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!stops_calls && *art);
+    classic = 0; stub_bar_h = 30; coverflow_home_layout();
+    assert(!memcmp(geo, split, sizeof split));
     /* A cover that pans: the art's image is empty and fills the panel, the pan's frame drawn over it. */
     frame_fail = 0;
     *(volatile int *)MCL_POS = 0;
@@ -1662,16 +1744,22 @@ def main():
     a = ap.parse_args()
     # shim_themes stands in for the generated themes[]: each theme's .home_* fields must match the
     # offsets.inc expressions tools/theme.py ROLE_MACROS gives it (0, unset in the shim, left out).
-    from theme import ROLE_MACROS
+    from theme import ROLE_MACROS, builtins, stops_c
     def home_fields(text):
         return [re.findall(r'\.(home_\w+) = (\{[^}]*\}|[^,{}\n]+)', t.split('.n_opts')[0]) for t in text]
     nav = [[(k, v) for k, v in (('home_top', m['home_top']), ('home_full_row', m['home_full_row']),
                                 ('home_text_x', m['home_text_x']),
                                 ('home_label_end', f'{{ {m["home_label_end[0]"]}, {m["home_label_end[1]"]} }}')) if v != '0']
            for m in (ROLE_MACROS['minimal'], ROLE_MACROS['classic'])]
-    shim = re.search(r'shim_themes\[2\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
+    shim = re.search(r'shim_themes\[3\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
-    assert norm(home_fields(shim)) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    assert norm(home_fields(shim[:2])) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    # Nano's are its theme.xml's, resolved; home_top 0 is unset in the shim.
+    nano, tight = builtins()[2], re.sub(r'\s', '', shim[2])
+    assert nano['home_top'] == 0 and f"home_label_end={{{nano['home_label_end[0]']},{nano['home_label_end[1]']}}}" in tight
+    assert 'home_pane=' + stops_c(nano['home_pane']).replace(' ', '') in tight, 'shim_themes drifted from Nano'
+    for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_shadow_a', 'pane_light', 'pane_light_a'):
+        assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == nano[field], f'shim_themes drifted from Nano: {field}'
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
                 for i, m in enumerate((ROLE_MACROS['minimal'], ROLE_MACROS['classic']))]
@@ -1755,7 +1843,7 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in both themes passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in both themes, and Nano\'s pane, passed.')
 
 
 if __name__ == '__main__':

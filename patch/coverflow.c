@@ -18,7 +18,8 @@
 #define CF_W (375 - 2 * CF_EDGE)
 #define MIN_FREE_MB 16 /* no new cache files below this much free space on the card */
 #define ART_NEAR 3 /* real art only this many covers either side, like PictureFlow's cache */
-#define HOME_PLACEHOLDER "default_album_home" /* Classic Home's, at 290px (stock's: 110) */
+/* Home's without a theme's pane (home_pane_paint), at 290px (stock's: 110) */
+#define HOME_PLACEHOLDER "default_album_home"
 enum { ARTIST_ALBUMS = 1, RATED_ALBUMS, ALBUM_TRACKS }; /* cf.scoped */
 /* after the albums: an artist's All albums (two or more), the rated albums' Sort; none after the
  * library's, whose Sort and Refresh are Display settings' Coverflow Sort and Refresh Coverflow
@@ -2429,6 +2430,7 @@ static struct {
     unsigned *tex;
     void *frame;
     int tw, rx, ry, u0, v0, du, dv;
+    int pane; /* no cover shows: coverflow_home_clip paints the theme's pane */
     unsigned ring[4][HOME_PW];
     int clip[4];  /* the canvas clip while the art paints, restored after */
     int clipped;
@@ -2656,12 +2658,60 @@ static void home_paint(void *canvas) {
     canvas_draw_image(canvas, home.frame, r, r);
 }
 
-/* The player's cover, else the Coverflow cache of the track's album (now_tag), else the
- * placeholder. The player's files belong to the track whose path it copies to g_lastcover_url
- * after writing them, so right after a track change they count only once that is this track. Runs
- * whenever a window or the status bar paints (at least once a second), for Home in Split, and
- * reloads only when the track, the cover it can use or its parsed tags change; home_repaint then
- * shows the new art whole. */
+/* Split's panel in the theme's home_pane where no cover shows: the stops, a shadow down its left
+ * edge, a light fading from there to its right edge, an original note (34 x 40) and the queue's
+ * song count. Raw colours, but the count's: ui_ink flips black to the light half's white paper, and
+ * the dark half draws white as it is. The note's parts never overlap, so its alpha blends once. */
+void home_pane_paint(void *canvas, int x, int y, int w, int h) {
+    static const unsigned char half[5] = { 7, 7, 6, 6, 4 }; /* a head's half-width at |dy| */
+    /* each stem's x and end, its head's centre */
+    static const signed char note[2][4] = { { 8, 32, 5, 33 }, { 30, 28, 27, 29 } };
+    const theme_t *T = theme();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+    paint_stops(canvas, x, y, w, h, &T->home_pane);
+    int sw = T->pane_shadow_w, lw = w - sw;
+    for (int i = 0; i < sw; ++i) {
+        stock_canvas_set_fill_color(canvas, (RGBA(T->pane_shadow) & 0xffffff) |
+                                                (unsigned)(T->pane_shadow_a * (sw - i) / sw) << 24);
+        canvas_fill_rect(canvas, x + i, y, 1, h);
+    }
+    for (int i = 0; T->pane_light_a && i < lw; ++i) {
+        stock_canvas_set_fill_color(canvas, (RGBA(T->pane_light) & 0xffffff) |
+                                                (unsigned)(T->pane_light_a * (lw - i) / lw) << 24);
+        canvas_fill_rect(canvas, x + sw + i, y, 1, h);
+    }
+    int gx = x + (w - 34) / 2, gy = y + (h - 40) / 2 - 14;
+    stock_canvas_set_fill_color(canvas, 0xd9ffffff);
+    canvas_fill_rect(canvas, gx + 8, gy, 26, 6);
+    for (int k = 0; k < 2; ++k) {
+        int sx = note[k][0], end = note[k][1], cx = note[k][2], cy = note[k][3];
+        canvas_fill_rect(canvas, gx + sx, gy + 6, 4, end - 6);
+        for (int dy = -4; dy <= 4; ++dy) {
+            int hw = half[dy < 0 ? -dy : dy], right = cx + hw;
+            if (cy + dy < end && right > sx) right = sx; /* the stem has this row's end */
+            canvas_fill_rect(canvas, gx + cx - hw, gy + cy + dy, right - cx + hw, 1);
+        }
+    }
+    unsigned at, n;
+    queue_now(&at, &n);
+    if (n) {
+        char t[16];
+        unsigned s[16];
+        int len = tk_snprintf(t, sizeof t, n == 1 ? "1 Song" : "%u Songs", n);
+        for (int i = 0; i < len; ++i) s[i] = (unsigned char)t[i];
+        int box[4] = { x, gy + 47, w, 24 }; /* rect_t */
+        draw_centred(canvas, s, (unsigned)len, box, T->font_px[ROLE_TITLE],
+                     RGBA(ipod_light() ? 0u : 0xffffffu));
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
+
+/* The player's cover, else the Coverflow cache of the track's album (now_tag), else the theme's
+ * pane or the placeholder. The player's files belong to the track whose path it copies to
+ * g_lastcover_url after writing them, so right after a track change they count only once that is
+ * this track. Runs whenever a window or the status bar paints (at least once a second), for Home
+ * in Split, and reloads only when the track, the cover it can use or its parsed tags change;
+ * home_repaint then shows the new art whole. */
 void coverflow_home_art(void *top) {
     if (!home.art || top != home.win || !widget_get_visible(home.art)) return;
     if (!home.drift && drift_live()) {
@@ -2678,6 +2728,7 @@ void coverflow_home_art(void *top) {
                               (const unsigned char *)&album, sizeof(album));
     if (key == home.key) return;
     home.key = key;
+    home.pane = 0;
     char url[600] = "file://";
     if (r) art_path(url + 7, album, "");
     unsigned size[2] = { 0, 0 };
@@ -2692,12 +2743,17 @@ void coverflow_home_art(void *top) {
     if (pans > 0) {
         image_base_set_image(home.art, ""); /* home_paint draws it */
     } else {
-        /* still, sized to the image's fit and centred, so the native fill draws it whole and the
-         * clip crops it evenly */
-        if (!(pans == 0 && image_show(home.art, src, size)) &&
-            !image_show(home.art, HOME_PLACEHOLDER, size))
-            image_base_set_image(home.art, HOME_PLACEHOLDER);
-        home_fit(size[0], size[1], &fw, &fh);
+        int shown = pans == 0 && image_show(home.art, src, size);
+        if (!shown && theme()->home_pane.n) {
+            image_base_set_image(home.art, ""); /* home_pane_paint draws it, the whole panel */
+            home.pane = 1;
+        } else {
+            /* still, sized to the image's fit and centred, so the native fill draws it whole and
+             * the clip crops it evenly */
+            if (!shown && !image_show(home.art, HOME_PLACEHOLDER, size))
+                image_base_set_image(home.art, HOME_PLACEHOLDER);
+            home_fit(size[0], size[1], &fw, &fh);
+        }
     }
     widget_move_resize(home.art, HOME_SPLIT_W + (HOME_PW - fw) / 2, (ch - fh) / 2, fw, fh);
     rearm(&home.repaint, home_repaint, 0);
@@ -2711,6 +2767,7 @@ void coverflow_home_clip(void *w, void *canvas, int begin) {
     if (!w || (w != home.art && w != home.list && w != home.sets)) return;
     if (!begin) {
         if (w == home.art && home.tw) home_paint(canvas);
+        else if (w == home.art && home.pane) home_pane_paint(canvas, 0, 0, I(w, W_W), I(w, W_H));
         if (home.clipped) canvas_set_clip_rect(canvas, home.clip);
         home.clipped = 0;
         return;

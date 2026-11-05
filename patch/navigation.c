@@ -1615,9 +1615,6 @@ int rockbox_available(void) {
     return !__xstat(3, ROCKBOX_BIN, info) && (info[5] & 0170000) == 0100000;
 }
 
-/* 0xRRGGBB to an opaque color_t, whose bytes are r, g, b, a. */
-#define RGBA(c) (0xff000000u | ((c) & 255) << 16 | ((c) & 0xff00) | (c) >> 16)
-
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
  * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
  * unless the scheme sets them); any other hue, and the alpha byte, as they are. Either byte order
@@ -2088,23 +2085,25 @@ static int drill(void *w) {
 
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
  * list_into: not in multi-select, and not on grid tiles. Home has none, except Classic's, which
- * rides its selection bar alone, nudge included. The image manager caches the bitmap. */
+ * rides its selection bar alone, nudge included. A theme's chevron_sel (Nano's) draws only the
+ * selected row's, white. The image manager caches the bitmap. */
 static void paint_chevrons(void *w, void *canvas) {
     unsigned bitmap[64], white[64]; /* bitmap_t */
     rect_t old;
     void *win = window_of(w);
-    int home = home_menu(win);
+    int home = home_menu(win), sel_only = theme()->chevron_sel;
     if (g_navbar_status || !kind(w) || !P(canvas, CANVAS_LCD) || !drill(w) ||
         (home && (!theme()->chevron_home || st.sel_w != w)) || !load_rows(&g_menu, w) ||
         widget_load_image(w, "list_into", bitmap) || !clip_surface(canvas, &g_menu, &old))
         return;
     /* Light Mode: the row on a coloured bar or card keeps stock's white `>`, as an iPod's blue bar
      * does; by path, the image hook leaves it unflipped. */
-    int lit = ipod_light() && st.sel_accent && st.sel_w == w &&
+    int lit = (sel_only || (ipod_light() && st.sel_accent)) && st.sel_w == w &&
               !widget_load_image(w, LIST_INTO_WHITE, white);
     for (int i = 0; i < g_menu.n; ++i) {
         rect_t r = bounds(&g_menu, i);
-        if (2 * r.w >= I(w, W_W) && drill(g_menu.at[i]) && (!home || i == st.sel_row))
+        if (2 * r.w >= I(w, W_W) && drill(g_menu.at[i]) && (!home || i == st.sel_row) &&
+            (!sel_only || (lit && i == st.sel_row)))
             canvas_draw_icon(
                 canvas, lit && i == st.sel_row ? white : bitmap,
                 r.x + r.w - CHEVRON_W + (int)bitmap[0] / 2 +
@@ -2467,14 +2466,36 @@ static void paint_selection(void *w, void *canvas) {
 
 static void edit_paint(void *w, void *canvas);
 
-/* Minimal's own accent: stock's white radio images (select, unselect: a 26 px ring, a 12 px dot
- * when checked) vanish on the selected row's off-white card, so they are drawn again over it in the
- * card's ink. So does the Wi-Fi, Bluetooth and Tidal rows' navbar_delete, drawn again as
- * list_delete, its copy in list_into's grey; navbar_delete itself stays white for the playlist
- * page's Delete.
+static int painting_in(void *row);
+/* Minimal's own accent: stock's white radio
+ * images (select, unselect: a 26 px ring, a 12 px dot when checked) vanish on the selected row's
+ * off-white card, so they are drawn again over it in the card's ink. So does the Wi-Fi, Bluetooth
+ * and Tidal rows' navbar_delete, drawn again as list_delete, its copy in list_into's grey;
+ * navbar_delete itself stays white for the playlist page's Delete. A set_text theme (Nano) has
+ * neither: its rings are emptied and a checked row gets a tick.
  */
 static void paint_radio(void *w, void *canvas) {
-    if (!w || !st.sel_widget || st.sel_home) return;
+    if (!w) return;
+    if (theme()->set_text) {
+        const scheme_t *S = scheme();
+        /* Nano: a checked row's tick (dy, x, w of each 1 px line), the nano's own mark, in the
+         * selection's text or the ink; stock's ring images are empty (ringnav_image_add). */
+        static const unsigned char tick[][3] = { { 0, 11, 2 }, { 1, 10, 2 }, { 2, 9, 2 },
+                                                 { 3, 8, 2 },  { 4, 0, 2 },  { 4, 7, 2 },
+                                                 { 5, 1, 2 },  { 5, 6, 2 },  { 6, 2, 2 },
+                                                 { 6, 5, 2 },  { 7, 3, 3 } };
+        if (!P(canvas, CANVAS_LCD) || tk_strcmp(widget_get_prop_str(w, "image", ""), "select"))
+            return;
+        unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+        int x = I(w, W_W) / 2 - 6, y = I(w, W_H) / 2 - 4;
+        stock_canvas_set_fill_color(canvas,
+                                    RGBA(painting_in(st.sel_accent) ? S->sel_text : S->ink));
+        for (unsigned i = 0; i < sizeof tick / sizeof *tick; ++i)
+            canvas_fill_rect(canvas, x + tick[i][1], y + tick[i][0], tick[i][2], 1);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
+    if (!st.sel_widget || st.sel_home) return;
     const scheme_t *S = scheme();
     if (!(S->flags & SCHEME_CARD) || !P(canvas, CANVAS_LCD)) return;
     const char *image = widget_get_prop_str(w, "image", "");
@@ -2515,12 +2536,14 @@ static void paint_radio(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
-static int painting_in(void *row);
 /* Light Mode: stock's own `>` (a list_into image) on the coloured bar or card's row, drawn again
- * white over the selection's colour, as paint_chevrons draws the payload's. */
+ * white over the selection's colour, as paint_chevrons draws the payload's. A chevron_sel theme's
+ * stock image is empty (ringnav_image_add), so this is its only one, in either half, over nothing
+ * cleared: the band shows. */
 static void paint_into(void *w, void *canvas) {
-    unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
-    if (!w || !ipod_light() || !st.sel_accent || !P(canvas, CANVAS_LCD) ||
+    unsigned bitmap[64];                         /* bitmap_t: width @0, height @4 */
+    int sel_only = w ? theme()->chevron_sel : 0; /* in either half: stock's own is empty */
+    if (!w || !(ipod_light() || sel_only) || !st.sel_accent || !P(canvas, CANVAS_LCD) ||
         tk_strcmp(widget_get_prop_str(w, "image", ""), "list_into") ||
         !painting_in(st.sel_accent) || widget_load_image(w, LIST_INTO_WHITE, bitmap))
         return;
@@ -2530,7 +2553,7 @@ static void paint_into(void *w, void *canvas) {
     rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 4, (int)bitmap[0],
                      (int)bitmap[1] / 2 };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    fill_box(canvas, &clear, RGBA(tones()[0]), 0);
+    if (!sel_only) fill_box(canvas, &clear, RGBA(tones()[0]), 0);
     canvas_draw_icon(canvas, bitmap, x, y);
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -2587,26 +2610,30 @@ static void *list_button(void *view) {
     return button;
 }
 
+static int geom(int group);
 /* A stock settings-style row (0x4c19bc): a list_button with a 52px icon and a 24px label at x 72
  * (no icon: at x 10, as the Bluetooth page's rows), into adding stock's list_into trailing image
- * with the label narrowed clear of it, as the stock Local Music categories place it. Returns the
- * label. */
+ * with the label narrowed clear of it, as the stock Local Music categories place it. A Library row
+ * in a set without art (Nano's Row Art off) has no icon, its label at the set's text inset.
+ * Returns the label. */
 static void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
                            int w, int into) {
     /* The Library constructor's live words (tools/ipod.py, theme_boot): body and art_inset. */
     int compact = !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
+    int bare = compact && !geom(G_ART); /* the button sits at 20 */
     int h = compact ? *(const volatile unsigned short *)LIBRARY_ROW_BODY : 70;
     void *button = list_button(view);
     if (compact) widget_resize(button, 335, h);
     if (click) widget_on(button, EVT_CLICK, click, ctx);
-    if (icon) { /* centred, as stock's rows (0x524978) */
+    if (icon && !bare) { /* centred, as stock's rows (0x524978) */
         void *image = image_create(
             button, compact ? *(const volatile unsigned short *)LIBRARY_ROW_ICON_X : 10, 0,
             SET_STOCK_ICON, h);
         image_base_set_image(image, icon);
         image_set_draw_type(image, IMAGE_DRAW_CENTER);
     }
-    void *label = hscroll_label_create(button, icon ? 72 : 10, 0, w, h);
+    int x = bare ? geom_val(V_TEXT_X) - 20 : icon ? 72 : 10;
+    void *label = hscroll_label_create(button, x, 0, w, h);
     widget_use_style(label, "s_scrlabel_white24l");
     set_hscroll_label_attribute(label);
     if (into) image_base_set_image(image_create(button, 282, 0, 50, h), "list_into");
@@ -2626,6 +2653,10 @@ static void *list_row_into(void *view, const char *icon, int (*click)(void *, vo
  * whether the label sits in a settings button (x 20) or a full-width page row (page_row_detail,
  * peq_ui.c's). */
 void list_toggle(void *label, const char *title, int on) {
+    if (theme()->set_text) {
+        list_value(label, title, on ? "On" : "Off");
+        return;
+    }
     void *button = P(label, W_PARENT);
     void *image = widget_lookup(button, "_setting_switch", 0);
     if (!image) {
@@ -2637,6 +2668,44 @@ void list_toggle(void *label, const char *title, int on) {
     }
     widget_set_text_utf8(label, title);
     image_base_set_image(image, on ? "switch_on" : "switch_off");
+}
+
+/* Nano's settings rows (set_text): the title left and the value right-aligned in the trailing
+ * column, the title ending short of it. Switches read On or Off as values. */
+void list_value(void *label, const char *title, const char *value) {
+    void *button = P(label, W_PARENT);
+    void *text = widget_lookup(button, "_setting_value", 0);
+    if (!text) {
+        int x = 302 - I(button, W_X) - 70;
+        text = hscroll_label_create(button, x, 0, 120, I(button, W_H));
+        widget_set_name(text, "_setting_value");
+        widget_use_style(text, "s_scrlabel_white20r");
+        hscroll_label_set_only_focus(text, 1);
+        hscroll_label_set_ellipses(text, 1);
+        widget_move_resize(label, I(label, W_X), 0, x - 8 - I(label, W_X), I(button, W_H));
+    }
+    widget_set_text_utf8(label, title);
+    widget_set_text_utf8(text, value);
+    theme_font(text, ROLE_TITLE, FONT_ROW);
+}
+
+/* A settings row's "Title: value" text; a set_text theme shows it as list_value, its bare text
+ * (Accent's name) under Accent. */
+static void row_label(void *label, const char *text) {
+    if (!theme()->set_text) {
+        widget_set_text_utf8(label, text);
+        return;
+    }
+    const char *value = text;
+    while (*value && !(value[0] == ':' && value[1] == ' ')) ++value;
+    char title[40] = "Accent";
+    unsigned n = (unsigned)(value - text);
+    if (*value) {
+        if (n >= sizeof title) n = sizeof title - 1;
+        memcpy(title, text, n);
+        title[n] = 0;
+    }
+    list_value(label, title, *value ? value + 2 : text);
 }
 
 /* item's place in list, comma separated, or 0; an empty item is never in it. Shared with
@@ -5261,6 +5330,17 @@ static void round_corners(unsigned char *px, int w, int h, int stride, int alpha
     }
 }
 
+/* Zeroes every pixel of a decoded 32-bit bitmap (bitmap_t w @0, h @4), alpha included, row padding
+ * kept, and clears its opaque flag (@0xc bit 0) as round_corners' callers do: it draws nothing. */
+static void clear_bitmap(void *bitmap) {
+    unsigned char *px = bitmap_lock_buffer_for_write(bitmap);
+    if (!px) return;
+    for (int y = 0; y < I(bitmap, 4); ++y)
+        memset(px + y * bitmap_get_line_length(bitmap), 0, 4 * (unsigned)I(bitmap, 0));
+    *(unsigned short *)((char *)bitmap + 0xc) &= ~1u;
+    bitmap_unlock_buffer(bitmap);
+}
+
 int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned format = bitmap ? *(unsigned short *)((char *)bitmap + 0xe) - 1u : 4,
@@ -5457,6 +5537,18 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
         bitmap_unlock_buffer(bitmap);
         mapped = 1;
     }
+    /* A chevron_sel theme (Nano): stock's grey `>` on every row is emptied; paint_into draws the
+     * selected row's, white. */
+    if (T->chevron_sel && s && !*s && !tk_strcmp(name, "list_into") && format < 4) {
+        clear_bitmap(bitmap);
+        mapped = 1;
+    }
+    /* A set_text theme (Nano): stock's radio rings are emptied; paint_radio draws the tick. */
+    if (T->set_text && s && !*s && (!tk_strcmp(name, "select") || !tk_strcmp(name, "unselect")) &&
+        format < 4) {
+        clear_bitmap(bitmap);
+        mapped = 1;
+    }
     /* Light Mode: a theme image without colour that is mostly glyph (marks, chevrons, spinners)
      * flips as the colours do. One with a grey or dark disc or plate (LIGHT_SURFACE) keeps its
      * white glyph, an image the accent mapped is final, and switch_off keeps its white knob as
@@ -5514,7 +5606,7 @@ static void setting_text(int i) {
     char text[64];
     if (i == 0 && S->label) {
         tk_snprintf(text, sizeof text, "Accent: %s", S->label);
-        widget_set_text_utf8(st.setting_label[0], text);
+        row_label(st.setting_label[0], text);
         return;
     }
     if (i == 3 || i == 4 || i >= SETTING_OWN) {
@@ -5524,9 +5616,13 @@ static void setting_text(int i) {
             tk_snprintf(text, sizeof text, "Shortcut: %s", ipod_home_shortcut());
         else {
             const theme_key_t *K = &theme_keys[i - SETTING_OWN];
+            if (theme()->set_text) { /* the label and the value's name, unsplit */
+                list_value(st.setting_label[i], K->label, K->names[st.own[i - SETTING_OWN]]);
+                return;
+            }
             tk_snprintf(text, sizeof text, "%s: %s", K->label, K->names[st.own[i - SETTING_OWN]]);
         }
-        widget_set_text_utf8(st.setting_label[i], text);
+        row_label(st.setting_label[i], text);
         return;
     }
     static const char *const toggles[] = { "Rounded Corners",       0,
@@ -5537,7 +5633,7 @@ static void setting_text(int i) {
         list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
         return;
     }
-    widget_set_text_utf8(st.setting_label[i], names[i]);
+    row_label(st.setting_label[i], names[i]);
 }
 
 static int settings_list(void *w) {
@@ -6160,7 +6256,14 @@ static int compact_row_layout(void *layout, void *row) {
             }
         }
     }
-    return ((int (*)(void *, void *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
+    int ret = ((int (*)(void *, void *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
+    /* The set's text inset (Nano's text_x, clear of the glass): text the layout put left of it
+     * moves there, its right edge kept; art rows' text, after the art, keeps its place. */
+    int tx = geom_val(V_TEXT_X);
+    if (tx && text && I(text, W_X) < tx)
+        widget_move_resize(text, tx, I(text, W_Y), I(text, W_W) - (tx - I(text, W_X)),
+                           I(text, W_H));
+    return ret;
 }
 
 int compact_set_row_layout(void *row, const char *params) {
@@ -8795,6 +8898,7 @@ static void about_label(void *button, int x, int w, const char *style, const cha
     hscroll_label_set_only_focus(label, 1);
     hscroll_label_set_ellipses(label, 1);
     widget_set_text_utf8(label, text);
+    theme_font(label, x < 100 ? ROLE_TITLE : ROLE_META, FONT_ROW);
 }
 
 int ringnav_about(void *win, void *ctx) {

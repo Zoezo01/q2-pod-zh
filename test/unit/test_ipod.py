@@ -693,6 +693,15 @@ def test_ipod_home_art_fills_the_client_height():
     assert root[3][0][1] == [0, 0, 375, 294]
 
 
+def test_nano_home_rows_are_28():
+    root = home(); ipod.ipod_home(root, g=ipod.NANO); n = named(root)
+    assert n['list_view_home'][1] == [0, ipod.HOME_TOP, 375, 7 * 28] and n['list_view_home'][2]['item_height'] == '28'
+    rows = named(n['list_view_home'])  # the carousel's cards take the same names
+    assert [rows['btn_' + r][1] for r in ipod.HOME_ROWS] == [[0, 28 * i, 375, 28] for i in range(7)]
+    assert n['list_view_homeset'][1] == [0, ipod.HOME_TOP, 375, 2 * 28] and n['list_view_homeset'][2]['item_height'] == '28'
+    root = home(); ipod.ipod_home(root); assert named(root)['list_view_home'][2]['item_height'] == '39'
+
+
 def test_status_bar_takes_the_bar_height():
     root = bar(); ipod.status_bar(root, g=T26); n = named(root)
     assert [root[1][3], n['view_left'][1][3], n['view_right'][1][3]] == [26, 26, 26]
@@ -873,7 +882,13 @@ def test_nano_sets():
     assert dataclasses.replace(t, name='nano', art=52, art_pitch=52, art_body=52, art_title24_y=5, art_meta_y=31) == n
     assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 5, 31, 2, 6)
     assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (28, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
-    assert ipod.immediate_values(n)['scroll'] == 244
+    assert ipod.immediate_values(n)['scroll'] == 202
+
+
+def test_fit_bottom_keeps_rows_whose_text_clears_the_glass():
+    assert ipod.fit_bottom(ipod.SET0) == 290 and ipod.fit_bottom(ipod.NANO) == ipod.fit_bottom(ipod.NANO_TEXT) == 252
+    assert ipod.fit_bottom(ipod.Geometry(name='t', bar=26, pitch=24, text_x=20)) == 264  # 11 rows of 24
+    assert ipod.immediate_values(ipod.NANO)['scroll'] == 202 and ipod.immediate_values(ipod.SET0)['scroll'] == 240
 
 
 def test_settings_lists_follow_the_set(monkeypatch):

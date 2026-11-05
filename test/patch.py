@@ -749,6 +749,10 @@ def passed():
     trace(f'== {checks}')
 def nano(m):  # Nano (THEME=2) as a --dev build offers it: the gate word at 3; its light half unless LIGHT is stored
     m.byte(payload_syms['theme_offer'],3); m.config['THEME']='2'; m.config.setdefault('LIGHT','1'); return m
+def nano_new(cls,**kw):  # a Nano cls machine: THEME is stored before its constructor reads it (QueueMachine's does)
+    SETUP[:]=[nano]
+    try: return cls(**kw)
+    finally: SETUP.clear()
 def nano_boot(m,rowart=None,fail=None):  # ... then the first system_bar load writes its set; the names stock loaded
     nano(m)  # rowart: the ROWART config value; fail(page): RWX mprotects it picks answer EACCES
     if rowart is not None: m.config['ROWART']=rowart
@@ -1451,6 +1455,10 @@ for address in (0x4aa2cc, 0x4b0efc):
     assert [m.nodes[c]['name'] for c in kids[:kids.index(text)] if m.nodes[c]['visible'] and not m.nodes[c]['name'].startswith('img_choice')]==[],address
     assert [c for c in m.nodes[text]['children'] if c!=title and m.nodes[c]['visible']]==[],address
     y,h=(signed(m.get(title+O[k])) for k in ('W_Y','W_H')); assert 2*y+h==28,(address,y,h)
+    # Outside multi-select (img_choice hidden) the title container starts at text_x, clear of the glass.
+    for c in kids:
+        if m.nodes[c]['name'].startswith('img_choice'): m.nodes[c]['visible']=0
+    native_row_layout(m,button); assert m.get(text+O['W_X'])==20,address
 passed()
 
 # The three non-pooled constructors: album tracks, artist tracks and playlists.
@@ -8626,7 +8634,10 @@ def setting_rows(m,view):  # Accent, Home, Battery, Theme: as ringnav_display's 
     lab=lambda r: m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][1]].get('text','')
     kids=m.nodes[view]['children']
     return [next(r for r in kids if lab(r).startswith(k)) for k in ('Accent','Home','Battery','Theme')]
-def row_text(r): return m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][1]]['text']
+def row_text(r):  # a row's label; a Nano value row (list_value) reads "title: value"
+    b=m.nodes[m.nodes[r]['children'][0]]; t=m.nodes[b['children'][1]]['text']
+    v=[m.nodes[k]['text'] for k in b['children'] if m.nodes[k].get('name')=='_setting_value']
+    return f'{t}: {v[0]}' if v else t
 m,main,_=display({},sub=0)
 kids=m.nodes[main]['children']
 assert len(kids)==7 and [row_text(r) for r in kids[2:4]+kids[5:]]==['Smart Awake','Night Shift: Off','Appearance','Cover Flow']
@@ -8860,7 +8871,69 @@ ink=bytes([0,0,0,0x80,0,0,0,0xff])+b'\xee'*4
 assert image({},'bar_aac',prep=nano)==[ink,ink] and image({'THEME':'1'},'bar_aac')!=[ink,ink]
 white=bytes([0xff,0xff,0xff,0x80,0xff,0xff,0xff,0xff])+b'\xee'*4  # the dark half's ink; the play blue a hue in both
 assert image({'LIGHT':'0'},'bar_aac',prep=nano)==[white,white] and image({'LIGHT':'0'},'bar_play',prep=nano)==[blue,blue]; passed()
+# Nano: the white `>` on the selected row only, in drill lists and on Home. Stock's own list_into
+# images (Library, Folder, categories) are emptied, and paint_into draws the white one over the
+# selected row's alone, with nothing cleared under it (the gloss stays).
+cm=nano_on(Machine()); cw,_=cm.page_list(10,height=96,extent=480,name='playlist_page'); window(cm,'playlist_page',cw)
+cm.paint(cw)
+assert cm.icons==[(240-half,24,(0,0,240,96))] and 'file:///release/assets/default/raw/images/xx/list_into.png' in [cm.text(c[2]) for c in cm.calls if c[0]=='widget_load_image'],cm.icons
+cm.call(); cm.paint(cw); assert cm.icons==[(240-half,72-cm.get(cw+O['SCROLL_Y']),(0,0,240,96))],cm.icons  # the row as scrolled
+cm.touch(); cm.paint(cw); assert not cm.icons; passed()  # no selection, no chevron
+assert image({},'list_into',prep=nano)==[bytes(8)+b'\xee'*4]*2; passed()
+# paint_into: stock's own list_into image on a row of the selected accent band (Folder's, the
+# Library's, the categories'). Nano's is emptied, so the white `>` goes at the image's centre in
+# both halves, over nothing cleared (no fill_box: the band shows); an unselected row's gets none.
+# Classic's Light Mode still clears the glyph's middle half in the accent first; its dark half
+# keeps stock's own.
+def into_paint(theme,light,row=0):
+    pm=Machine(); pm.config.update(THEME=theme,LIGHT=light,ACCENT='1')  # Classic: a hue (Graphite's silver is neutral, no band)
+    if theme=='2': nano_on(pm)
+    pw,pes=pm.page_list(10,height=96,extent=480,name='folder_page'); window(pm,'folder_page',pw); pm.paint(pw)
+    img=pm.node('image','into',image='list_into'); pm.nodes[pes[row]]['children']=[img]
+    pm.word(img+O['W_PARENT'],pes[row]); pm.word(img+O['W_W'],50); pm.word(img+O['W_H'],48); pm.paint(img)
+    return pm,[i[:2] for i in pm.icons],[c for c in pm.calls if c[0] in ('canvas_fill_rounded_rect','canvas_set_fill_color','canvas_fill_rect')]
+into_restore=['canvas_set_fill_color']  # the LCD fill put back, and no other fill
+for into_half in ('1','0'):  # Nano, both halves: the white `>` alone, at (w/2, h/2)
+    into_m,into_icons,into_fills=into_paint('2',into_half)
+    assert into_icons==[(25,24)] and [c[0] for c in into_fills]==into_restore and not into_m.rounded and not into_m.bands,(into_half,into_icons,into_fills)
+    assert 'file:///release/assets/default/raw/images/xx/list_into.png' in [into_m.text(c[2]) for c in into_m.calls if c[0]=='widget_load_image']
+into_m,into_icons,into_fills=into_paint('2','1',row=1); assert not into_icons and not into_fills,(into_icons,into_fills)  # the row under no band
+into_m,into_icons,into_fills=into_paint('1','1')  # Classic Light: the middle half cleared in the accent, then the white `>`
+assert into_icons==[(25,24)] and [c[0] for c in into_fills]==['canvas_fill_rounded_rect']+into_restore
+assert [(r['kind'],r['rect'],r['color']) for r in into_m.rounded]==[('fill',(0,12,50,25),color_t(ACCENTS[1][0]))],into_m.rounded
+into_m,into_icons,into_fills=into_paint('1','0'); assert not into_icons and not into_fills; passed()  # Classic dark: stock's own
+# Nano's Appearance: Theme, then its own options in order (Light Mode, Accent, Home, Battery, Row Art;
+# Corners and Centred NP are not declared). Each is a title with its value right-aligned; no switch
+# images.
+def nano_display(config={},sub=1):
+    CONFIG.clear(); CONFIG.update(config); dm=nano_new(QueueMachine); dm.restack=True; dm.rockbox_mode=0o100755
+    dm.handlers[tramp['display']]='stock_display'
+    return dm,display_page(dm,sub)
+dm,dv=nano_display()
+def title_value(r):  # (title, value) of a value row, or None
+    b=dm.nodes[r]['children'][0]; kids=[dm.nodes[k] for k in dm.nodes[b]['children']]
+    v=[k['text'] for k in kids if k['name']=='_setting_value']
+    return (kids[1]['text'],v[0]) if v else None
+assert [title_value(r) for r in dm.nodes[dv]['children']]==[('Theme','Nano'),('Light Mode','On'),('Accent','Nano Blue'),('Home','Split'),
+                                                           ('Battery','Icon'),('Row Art','On')]
+assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
+# Controls' switches read On/Off as values under Nano.
+dm,dv=nano_display(sub=3)
+assert ('Smart Awake','Off') in [title_value(r) for r in dm.nodes[dv]['children']]; passed()
+# Radio rows: select draws the ink tick (13x8, an original drawing) centred in its image;
+# unselect draws nothing; stock's ring images are empty under Nano.
+rm=nano_on(Machine()); rimg=rm.node('image','img_sel',image='select'); rm.word(rimg+O['W_W'],50); rm.word(rimg+O['W_H'],28)
+rm.paint(rimg)
+ntick=[(19+x,10+dy,w,1,color_t(0)) for dy,x,w in ((0,11,2),(1,10,2),(2,9,2),(3,8,2),(4,0,2),(4,7,2),(5,1,2),(5,6,2),(6,2,2),(6,5,2),(7,3,3))]
+assert [b[:5] for b in rm.bands]==ntick
+rm.nodes[rimg]['image']='unselect'; rm.paint(rimg); assert not rm.bands
+assert image({},'select',prep=nano)==image({},'unselect',prep=nano)==[bytes(8)+b'\xee'*4]*2; passed()
 m=settings_m
+# Nano Home: the stops band across the split list (no Minimal dot) and the white `>` on that row
+# alone (the 28 px rows are test/build.py's per-set Home check).
+hm=nano_on(Machine()); hv,himgs=home_list(hm); click_target(hm,himgs[2]); hm.clip=(0,0,375,320); hm.paint(hv)
+assert not hm.rounded and hm.bands and all(b[0]==0 and b[2]==HOME_LIST_W for b in hm.bands[:hm.sel()[3]])
+assert len(hm.icons)==1 and 'file:///release/assets/default/raw/images/xx/list_into.png' in [hm.text(c[2]) for c in hm.calls if c[0]=='widget_load_image']; passed()
 # Artist albums (Q2POD ARTISTCF), the other layout choice, after Home; no key is Coverflow.
 cf_label=m.nodes[m.nodes[cf]['children'][0]]['children'][1]; assert m.nodes[cf_label]['text']=='Artist View: Cover Flow'
 f,ctx=m.handler(m.nodes[cf]['children'][0],O['EVT_CLICK']); m.calls=[]
@@ -9938,6 +10011,16 @@ stock=[m.node('list_item') for _ in range(11)]; view=m.node('scroll_view','scrol
 assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
 button=m.nodes[m.nodes[view]['children'][0]]['children'][0]; icon=m.nodes[button]['children'][0]
 assert m.get(button+O['W_H'])==60 and m.get(icon+O['W_X'])==6; passed()
+# Nano's Library rows at 28 (ROWART=0): no icon; the label starts at text_x (20), the button at 20.
+for lra,licon in (('0',False),('1',True)):
+    SETUP[:]=[lambda k: nano(k).config.update(ROWART=lra)]; lm=ShuffleMachine(); SETUP.clear(); nano_on(lm,rowart=lra)  # its constructor reads THEME
+    lstock=[lm.node('list_item') for _ in range(11)]; lv=lm.node('scroll_view','scroll_view_localmusic',lstock)
+    lm.top=lm.node('window','localmusic_page',[lv])
+    assert lm.call(address=HOOKS['localmusic_page_init'][0],args=(lm.top,5,0,0),gap=0)==0
+    lbutton=lm.nodes[lm.nodes[lv]['children'][0]]['children'][0]; lkids=lm.nodes[lbutton]['children']
+    assert (lm.nodes[lkids[0]]['type']=='image')==licon and lm.get(lbutton+O['W_H'])==(52 if licon else 28),lra
+    if not licon: assert lm.get(lkids[0]+O['W_X'])==0
+passed()
 m=ShuffleMachine(); m.found=[m.song(f'T{i}') for i in range(130)]
 m.word(m.found[1]+O['REC_ARTIST'],0)  # untagged: the count alone
 slots=[(fnv('/p/T3'),5),(fnv('/p/T1'),2),(fnv('/p/T7'),5)]+[(fnv(f'/p/T{i}'),1) for i in range(8,130)]
@@ -13057,6 +13140,16 @@ want=tree(m.nodes[rows[1]]['children'][0])
 assert m.nodes[item]['style']=='s_listitem_black' and tree(button)==want
 assert m.nodes[title]['text']=='CFW. Version' and m.nodes[value]['text']==f"{VERSION} Pod{f" dev {manifest['dev']}" if manifest['dev'] else ''}"
 assert not m.nodes[button].get('handlers') and not m.nodes[button].get('name'); passed()
+# Under Nano the CFW. Version row's title and value take the Nano font (about_label).
+am=nano_new(ShuffleMachine); am.handlers[int(manifest['patch_symbols']['stock_about_trampoline'],16)]='stock_about'
+am.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
+aview=am.node('scroll_view','scroll_view_about'); am.top=am.node('window','about_page',[aview])
+for i in range(7):
+    arow=am.node('list_item'); am.nodes[aview]['children'].append(arow)
+    if i<2: assert am.call(address=0x4bc274,args=(arow,i,0,0),gap=0)==0
+assert am.call(address=HOOKS['systemset_about_page_init'][0],args=(am.top,5,0,0),gap=0)==0
+abutton=am.nodes[am.nodes[aview]['children'][2]]['children'][0]
+assert [am.nodes[l]['style:normal:font_name'] for l in am.nodes[abutton]['children']]==['nano','nano']; passed()
 
 # Network Update (netupdate.c): System Update's second row, built by stock's own row builder
 # (0x4c3140), is renamed "2" so stock's click (atoi of the name: 0 TF card, 1 Shanling) skips it, and
