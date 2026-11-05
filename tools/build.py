@@ -757,7 +757,7 @@ def bold_font():
 
 # Nano's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut
 NANO_TTF = 'release/assets/default/raw/fonts/nano.ttf'
-# stb draws the subset's outlines as S5 found: TrueType quadratics (otf_to_ttf) or the CFF original
+# stb draws the subset's outlines in the form chosen here: TrueType quadratics (otf_to_ttf) or the CFF original
 NANO_TRUETYPE = False
 
 def relabel(data):

@@ -33,7 +33,8 @@ class Geometry:
     text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Nano text row).
     set_row, set_top, set_rows, set_icon: settings lists hold set_rows rows of set_row from set_top, the
     icon at set_icon (0 hides it); payload rows are built 70 px high (SET_STOCK_BODY), stock's shape,
-    and mapped like stock's."""
+    and mapped like stock's.
+    SET0 is the built-in set; a theme declares its others in its theme.xml (<geometry name>, tools/theme.py)."""
     name: str = 'ipod'
     bar: int = 30
     pitch: int = 72
@@ -62,15 +63,6 @@ class Geometry:
 
 
 SET0 = Geometry()
-# Nano (assets/themes/nano): a 26px bar over a 294px window, 28px rows; with Row Art, 52px art rows with
-# the stock art drawn 1:1, without (nano-text) 28px art pages too. Its text pages carry no artwork.
-# Text y centres stock's 24, 20 and 16 px label boxes in a 28 px row (AWTK centres the text in its box); 52 px
-# art rows centre their two lines.
-NANO = Geometry(name='nano', bar=26, pitch=28, body=28, art=52, art_inset=0, art_pitch=52, art_body=52,
-                text_art=0, text_art_inset=0, title24_y=2, title_y=4, meta_y=6, count_y=6,
-                art_title24_y=5, art_meta_y=31, set_row=28, set_top=0, set_rows=9, set_icon=0, bar_px=15,
-                batt_w=26, batt_h=13, text_x=20, home_row=28)
-NANO_TEXT = dataclasses.replace(NANO, name='nano-text', art=0, art_pitch=28, art_body=28, art_title24_y=2, art_meta_y=6)
 MARGIN = 8
 # The 375x320 panel's glass has rounded corners that hide whatever is drawn in them. CORNER_R is
 # the device calibration knob: the corner radius in pixels, fitted to device photos (V5.4I cut

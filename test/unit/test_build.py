@@ -288,7 +288,7 @@ def test_nano_font():
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
     assert re.fullmatch(r'#define NANO_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
-    assert ('glyf' in font) == build.NANO_TRUETYPE and ('CFF ' in font) != build.NANO_TRUETYPE  # S5's outline form
+    assert ('glyf' in font) == build.NANO_TRUETYPE and ('CFF ' in font) != build.NANO_TRUETYPE  # the chosen outline form
 
 
 def test_bold_font_is_the_subset_route():

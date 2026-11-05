@@ -15,7 +15,7 @@ import sys
 import tempfile
 sys.path.insert(0, sys.path[0] + '/../tools')
 from ipod import (decode, walk, imagemagick, png_header, HOME_TEXT_X, HOME_LIST_W, STATUS_MARGIN,
-                  HOME_LABEL_END, HOME_ROW, HOME_TOP, INC, inc, SETTINGS_SLIDERS, NANO, NANO_FONT_NAME)
+                  HOME_LABEL_END, HOME_ROW, HOME_TOP, INC, inc, SETTINGS_SLIDERS, NANO_FONT_NAME)
 
 argv = sys.argv[1:]
 themes = ['classic', 'minimal']
@@ -307,8 +307,8 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
     # Native-size status review: all four modes, both themes, crowded and critical states.
     battery_rows=[]
     if nano:  # Nano's light half (theme.xml): its bar stops and line; the built bar's title and clock boxes
-        from theme import builtins, scheme_half
-        nano_t=builtins()[2]; half=scheme_half(nano_t['schemes'][9],True)
+        from theme import builtins, scheme_half, sets
+        nano_t=builtins()[2]; NANO=sets(nano_t)['nano']; half=scheme_half(nano_t['schemes'][9],True)
         def batt_stop(j,h):  # the battery level's stops at row j of h (paint_stops), light half: hues as stated
             p=j*100/(h-1); st=nano_t['batt']
             (p0,c0),(p1,c1)=next((a,b) for a,b in zip(st,st[1:]) if p<=b[0])

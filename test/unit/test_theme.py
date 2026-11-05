@@ -1,4 +1,5 @@
 """tools/theme.py: the Q2 theme XML reader, the schema and the generated theme table."""
+import dataclasses
 import itertools
 import re
 import shutil
@@ -10,6 +11,8 @@ import ipod
 import theme
 from ipod import Geometry, SET0
 from theme import ThemeError
+
+NANO, NANO_TEXT = (theme.sets(theme.builtins()[2])[s] for s in ('nano', 'nano-text'))  # Nano's sets: its theme.xml
 
 
 def error(f, *args):
@@ -127,7 +130,7 @@ MINIMAL = {
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
     'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': 0, 'pane_light': 0, 'pane_light_a': 0,
-    'set_top': 8, 'set_text': 0, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'batt': (), 'batt_line': 0, 'state_color': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod',
+    'set_top': 8, 'set_text': 0, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'batt': (), 'batt_line': 0, 'state_color': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -242,6 +245,7 @@ def test_resolve_checks_role_macros(monkeypatch):
 N = 'id="t" name="T" index="2"'
 A = '<option setting="accent" key="ACCENT"/>'
 V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
+P = '<geometry name="pico" bar="26"/>'
 @pytest.mark.parametrize('body, attrs, message', [
     ('<option setting="light"/>', None, 'no accent option'),
     ('<option setting="accent"/>', N, 'accent: no key'),
@@ -254,10 +258,10 @@ V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
     ('<option setting="accent" key="ART"/>' + f'<option key="ART" label="Art">{V}</option>', None, 'ART declared twice'),
     (A + f'<option key="ART" label="Art">{V}</option><option key="AUX" label="Aux">{V}</option>', None,
      'one option per theme selects the geometry set'),
-    (A + '<option key="ART" label="Art" default="On"><value label="Off" set="ipod"/><value label="On" set="nano"/></option>', None,
-     "ART: default On boots nano, the theme's geometry is ipod"),
-    (A + '<option key="ART" label="Art" default="Off"><value label="Off" set="ipod"/><value label="On" set="nano"/></option>', None,
-     "ART: set nano has a 26 px bar, the theme's is 30"),
+    (A + P + '<option key="ART" label="Art" default="On"><value label="Off" set="ipod"/><value label="On" set="pico"/></option>', None,
+     "ART: default On boots pico, the theme's geometry is ipod"),
+    (A + P + '<option key="ART" label="Art" default="Off"><value label="Off" set="ipod"/><value label="On" set="pico"/></option>', None,
+     "ART: set pico has a 26 px bar, the theme's is 30"),
 ])
 def test_validate_rejects(body, attrs, message):
     t = resolved(body, *([attrs] if attrs else []))
@@ -704,8 +708,8 @@ def test_own_option():
     m, c, n = theme.builtins()
     row_art = own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)
     assert n['opts'][-1] == row_art and not any(o.get('key') for o in m['opts'] + c['opts'])
-    assert theme.geometry(n) is ipod.NANO and theme.geometry(n, {'ROWART': 'Off'}) is ipod.NANO_TEXT
-    assert theme.geometry(n, {'ROWART': 'On'}) is ipod.NANO and theme.geometry(m, {'ROWART': 'Off'}) is SET0
+    assert theme.geometry(n) == NANO and theme.geometry(n, {'ROWART': 'Off'}) == NANO_TEXT
+    assert theme.geometry(n, {'ROWART': 'On'}) == NANO and theme.geometry(m, {'ROWART': 'Off'}) is SET0
     assert theme.theme_keys([m, c, n]) == {'NANO_ACCENT': (10, 9, None), 'ROWART': (2, 1, row_art)}
     assert {'ACCENT', 'MINIMAL_ACCENT', 'HOME', 'BATTERY', 'THEME', 'LIGHT', 'VIS'} <= theme.PAYLOAD_KEYS
     assert not {'ROWART', 'NANO_ACCENT'} & theme.PAYLOAD_KEYS and set(theme.ACCENT_KEYS) == {'ACCENT', 'MINIMAL_ACCENT'}
@@ -763,6 +767,86 @@ def test_emit_own_options(tmp_path):
     assert inc.index('const theme_key_t theme_keys') > inc.index('enum { GEOM_IPOD, GEOM_NANO, GEOM_NANO_TEXT, GEOM_N };')
 
 
+def test_nano_sets_from_its_theme_file():
+    """Nano's sets are its theme.xml's: nano states every Geometry field (SET0's defaults never reach it),
+    nano-text extends it. No tool names them."""
+    m, c, n = theme.builtins()
+    assert theme.sets(n) == {'ipod': SET0, 'nano': NANO, 'nano-text': NANO_TEXT} and theme.geometry(n) == NANO
+    assert theme.sets(m) == theme.sets(c) == {'ipod': SET0} and (m['geoms'], c['geoms']) == ({}, {})
+    decl = {e.attrs['name']: e.attrs for e in theme.load(THEMES/'nano'/'theme.xml').children
+            if e.tag == 'geometry' and 'name' in e.attrs}
+    assert set(decl['nano']) == {f.name for f in dataclasses.fields(Geometry)} and decl['nano-text']['extends'] == 'nano'
+    assert not hasattr(ipod, 'NANO') and not hasattr(ipod, 'NANO_TEXT')
+
+
+def test_geometry_declared():
+    # An omitted field is SET0's, or its extends= set's; <geometry set> names a declared set; an extending
+    # theme inherits its base's sets.
+    t = resolved('<geometry name="pico" bar="26"/><geometry name="pico-2" extends="pico" text_x="20"/>'
+                 '<geometry set="pico-2"/>')
+    pico = dataclasses.replace(SET0, name='pico', bar=26)
+    assert t['geoms'] == {'pico': pico, 'pico-2': dataclasses.replace(pico, name='pico-2', text_x=20)}
+    assert theme.geometry(t) == t['geoms']['pico-2'] and theme.geometry_sets([t]) == [SET0, t['geoms']['pico-2']]
+    u = resolved('', 'id="u" name="U" index="3" extends="nano"')
+    assert theme.sets(u) == theme.sets(theme.builtins()[2]) and theme.geometry(u) == NANO
+
+
+def test_geometry_ranges():
+    """Every Geometry field has a range, so a task that adds a field adds one; SET0 and Nano's sets lie inside."""
+    assert set(theme.GEOM_RANGES) == {f.name for f in dataclasses.fields(Geometry)} - {'name'}
+    assert [theme.check_set(g) for g in (SET0, NANO, NANO_TEXT)] == [None, None, None]
+    assert theme.check_set(dataclasses.replace(SET0, name='x', set_rows=5)) == 'geometry.set_rows: 5 outside 1..4'
+
+
+@pytest.mark.parametrize('body, message', [
+    ('<geometry name="Pico"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n'),
+    ('<geometry name="pico-text-and-more"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n'),
+    ('<geometry name="n"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n'),
+    ('<geometry name="ipod"/>', 'geometry set ipod declared twice'),
+    ('<geometry name="pico"/><geometry name="pico"/>', 'geometry set pico declared twice'),
+    ('<geometry name="pico" tint="1"/>', 'unknown key geometry.tint'),
+    ('<geometry name="pico" set="ipod"/>', 'unknown key geometry.set'),
+    ('<geometry name="pico" pitch="2x"/>', 'geometry.pitch: expected an integer'),
+    ('<geometry name="pico" bar="24"/>', 'geometry.bar: 24 outside 26..40'),
+    ('<geometry name="pico" pitch="28"/>', 'geometry.body: 68 outside 24..28'),
+    ('<geometry name="pico" art_inset="9"/>', 'geometry.art_inset: 9 outside 0..8'),
+    ('<geometry name="pico" pitch="28" body="28"/>', 'geometry.text_art: 52 outside 0..28'),
+    ('<geometry name="pico" home_row="41"/>', 'geometry.home_row: 41 outside 28..40'),
+    ('<geometry name="pico" extends="flat"/>', 'unknown geometry set "flat"'),
+    ('<geometry set="pico"/><geometry name="pico" bar="26"/>', 'unknown geometry set "pico"'),
+])
+def test_geometry_declare_rejects(body, message):
+    assert error(resolved, body) == f't.xml:1: {message}'
+
+
+def test_builtins_rejects_a_shared_set_name(tmp_path):
+    """A set name is one GEOM_* id and one <set>_<name>.bin prefix: the themes that declare it declare it alike."""
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('nano'))
+    def put(folder, index, bar):
+        (tmp_path/folder).mkdir(exist_ok=True)
+        (tmp_path/folder/'theme.xml').write_text(
+            f'<theme format="1" id="{folder}" name="{folder}" index="{index}" extends="classic">'
+            f'<geometry name="pico" bar="{bar}"/><geometry set="pico"/>'
+            '<option setting="accent" key="ACCENT" default="graphite"/></theme>')
+    put('a', 2, 26); put('b', 3, 26)
+    assert [theme.geometry(t).name for t in theme.builtins(tmp_path)[2:]] == ['pico', 'pico']
+    put('b', 3, 28)
+    assert error(theme.builtins, tmp_path) == "b/theme.xml:1: geometry set pico is a's, with other values"
+
+
+def test_nano_from_minimal(tmp_path):
+    """Nano is data: written out as a theme over Minimal that states every field, it builds to Nano."""
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
+    nano = theme.builtins()[2]
+    (tmp_path / 'clone').mkdir()
+    (tmp_path / 'clone' / 'theme.xml').write_text(
+        theme.dump(nano, id='clone', name='Nano Clone', index='3', extends='minimal'))
+    clone = theme.builtins(tmp_path)[3]
+    skip = {'id', 'name', 'index', 'dev', 'line'}
+    assert clone['id'] == 'clone'
+    assert {k: v for k, v in clone.items() if k not in skip} == {k: v for k, v in nano.items() if k not in skip}
+
+
 def boot_inc(tmp_path, themes, **kw):
     theme.emit(themes, tmp_path, **kw)
     return (tmp_path/'themes.inc').read_text()
@@ -792,9 +876,9 @@ def geom_vals_text(sets):
 
 def test_emit_geom_vals(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    assert all(s in inc for s in geom_vals_text([SET0, ipod.NANO, ipod.NANO_TEXT]))
+    assert all(s in inc for s in geom_vals_text([SET0, NANO, NANO_TEXT]))
     assert ipod.GEOM_VALS[:3] == ('bar', 'set_row', 'set_icon')
-    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, ipod.NANO)] == [[30, 68, 40], [26, 28, 0]]
+    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, NANO)] == [[30, 68, 40], [26, 28, 0]]
 
 
 def test_emit_refuses_a_long_redirect(tmp_path):
@@ -825,7 +909,7 @@ def test_nano_builtin():
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
                          opt('SETTING_HOME', default=0, preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1),
                          own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)]
-    assert theme.geometry_sets([m, c, n]) == [SET0, ipod.NANO, ipod.NANO_TEXT]
+    assert theme.geometry_sets([m, c, n]) == [SET0, NANO, NANO_TEXT]
     assert (theme.offer([m, c, n], False), theme.offer([m, c, n], True)) == (2, 3)
 
 
