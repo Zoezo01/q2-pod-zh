@@ -524,8 +524,8 @@ def end(eof, inited=2):
     w(ctx + 8, 0x88f758), w(ctx + 0x14, eof), w(INITED, inited)  # uninit_player clears the descriptor
     alsa.clear(); call(0x42e0a8, 0xff7a)
     return order()
-def begin(way, rate=44100, fmt=S16LE, gapless=1):
-    output(way, gapless, 5 if not way else 0); transport[0] = 96000 if way == BT else None
+def begin(way, rate=44100, fmt=S16LE, gapless=1, answer=None):
+    output(way, gapless, 5 if not way else 0); transport[0] = answer or (96000 if way == BT else None)
     running[0] = True
     ask(rate, fmt)
 def nxt(rate=44100, fmt=S16LE, channels=2, entry=None):
@@ -729,8 +729,8 @@ avail[0] = 0
 def marked(age=1):
     clock[0] += 10**10
     press[0] = ((clock[0] // 10**6 - age) & 0xffffffff) & ~1
-def cold(rate, gapless=1, way=0):
-    begin(way, rate, gapless=gapless); w(PRELOADED, 0); file_end_section(); w(TRIPLE[0], 0xffffffff); assert end(1) == []
+def cold(rate, gapless=1, way=0, answer=None):
+    begin(way, rate, gapless=gapless, answer=answer); w(PRELOADED, 0); file_end_section(); w(TRIPLE[0], 0xffffffff); assert end(1) == []
     marked()
 for rate in (44100, 192000):
     # Same format, Gapless on (stock Shuffle, a folder's end, Repeat One, Crossfade in Shuffle): nothing to reopen for.
@@ -786,10 +786,47 @@ w(NEXT, 0)
 # A skip after the mark: stock's.
 cold(44100); pressed(NEXT); w(NEXT, 0)
 got = nxt(); assert got == JACK, got
-# Other ways don't look at the mark: demo's mute is way 0's only (0x5ad1b0 tests its output way).
-for way, want in ((2, [DRAIN, CLOSE, OPEN]), (BT, [DRAIN, CLOSE, OPEN])):
-    cold(44100 if way == 2 else 48000, way=way)
-    assert nxt(44100 if way == 2 else 48000) == want, way
+# Bluetooth and USB: demo's mute is way 0's only (0x5ad1b0 tests its output way), so no mark is looked for and the same
+# format stays open with any word or none. A press's stamp, too: it hears the buffer's rest first (the limit in
+# docs/internals.md). LDAC's answer and AAC's and SBC's 48 kHz both meet the compare; neither way waits for a line.
+REOPEN = [DRAIN, CLOSE, OPEN]
+for way, rate, answer in ((2, 44100, None), (2, 192000, None), (BT, 48000, 96000), (BT, 48000, 48000)):
+    for word in ('none', 'mark', 'press'):
+        cold(rate, way=way, answer=answer)
+        if word == 'none': press[0] = None
+        elif word == 'press': stamped()
+        wall[0] = 0
+        assert ask(rate)[0] == [] and wall[0] == 0 and r(FLAG) == 0, (way, rate, word)
+        assert r(TRIPLE[1]) == 2 and r(TRIPLE[0]) != 0xffffffff, (way, rate, word)
+    press[0] = None
+    # Gapless off, a bit depth or channels: a reopen; ao_wait never reaches them. USB's one sleep with Gapless off is stock's own (0x439580).
+    cold(rate, gapless=0, way=way, answer=answer)
+    got = nxt(rate); assert got == (REOPEN if way == BT else [*REOPEN, WAIT]), (way, rate, got)
+    for change_to in ({'fmt': 0x19}, {'channels': 1}):
+        cold(rate, way=way, answer=answer)
+        assert nxt(rate, **change_to) == REOPEN, (way, rate, change_to)
+    # A PCM not running isn't kept; a skip after the end isn't natural.
+    cold(rate, way=way, answer=answer); pcm_state[0] = 6
+    got = nxt(rate); assert got == REOPEN, (way, rate, got)
+    pcm_state[0] = 2
+    cold(rate, way=way, answer=answer); pressed(NEXT); w(NEXT, 0)
+    assert nxt(rate) == ([CLOSE, OPEN] if way == 2 else REOPEN), (way, rate)
+    # DSD at either end.
+    for at_end in (1, 0):
+        cold(rate, way=way, answer=answer) if not at_end else None
+        if at_end:
+            begin(way, rate, answer=answer); w(PRELOADED, 0); file_end_section(); w(TRIPLE[0], 0xffffffff)
+            w(DSD_FILE, 1); end(1); w(DSD_FILE, 0)
+        else: w(DSD_FILE, 1)
+        got = nxt(rate); w(DSD_FILE, 0)
+        assert got == ([CLOSE, OPEN] if way == 2 else REOPEN), (way, rate, at_end, got)
+# Run dry, or a status that says nothing: USB reopens with what's left drained; Bluetooth's plugin stops at its own underrun.
+cold(44100, way=2); avail[0] = BUFFER
+assert nxt() == REOPEN
+avail[0] = 0
+cold(48000, way=BT); avail[0] = BUFFER
+assert nxt(48000) == []
+avail[0] = 0
 press[0] = None
 # What's left of a natural end isn't kept: a same-format change takes it, so a later reset doesn't drain.
 begin(0); end(1); nxt()

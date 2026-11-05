@@ -470,7 +470,10 @@ static int ao_playing(void) {
  * would close that. Demo's mute on the cold route (0x5ad1bc, 100 ms before set-songurl) is skipped by start_mute for a
  * natural start from a local queue, and marks PRESS_FILE even: then a same format with Gapless on matches stock's
  * compare, so the PCM never closes and nothing mutes, and any real reopen is drain, stock's mute, close, open, unmute,
- * wait, frames (dac_ioctl). No mark means demo may have muted: stock's timing, no wait.
+ * wait, frames (dac_ioctl). No mark means demo may have muted: stock's timing, no wait. Only the jacks have that mute,
+ * so Bluetooth and USB keep a same format with no mark. ponytail: so any not-playing press on them, any time before
+ * the buffer runs dry, is taken for the cold route's own set-songurl and hears the buffer's rest first; the word's odd
+ * stamp would close that.
  * mcl-orderstop's close on the command thread during the drain races it as it races stock's own
  * drain. ponytail: a USB stream hung during this drain runs to the kernel's 10 s, past the heartbeat's 6 ticks
  * (0x42d95c), and hciplayer exits; stock's 0x438768 has the same exposure. A close always stays under stock's mute, and the PCM only stops unmuted once drained. */
@@ -510,22 +513,24 @@ int ao_init(int rate, int channels, int format, int flags) {
     int natural = ao_natural;
     ao_natural = 0;
     ao_stayed = 0;
-    if (natural == OUTPUT_WAY + 1 && was_open && OUTPUT_WAY != 1 && !DSD_FILE) {
+    if (natural == OUTPUT_WAY + 1 && was_open && !DSD_FILE) {
         int preloaded = PREV_RATE != -1;
-        int told = !OUTPUT_WAY && !preloaded && dac_word(0); /* demo left its mute off for this start (start_mute) */
+        int told = !preloaded && (OUTPUT_WAY || dac_word(0)); /* only the jacks have demo's mute (start_mute) */
         if (told && channels == ao_pcm[1] && rate == ao_pcm[0] && format == ao_pcm[2] && ao_playing())
             PREV_CHANNELS = channels, PREV_RATE = rate, PREV_FORMAT = format; /* nothing to reopen for */
-        int reopens = !KEEP_GAPLESS || channels != PREV_CHANNELS || rate != PREV_RATE || format != PREV_FORMAT;
-        /* Ran dry: stop_threshold and silence_size are the boundary (0x4394dc, 0x4394f0, every way), so the PCM
-         * still runs, on silence, with hw_ptr past appl_ptr, and the new track's first frames would land behind it. */
-        if (!reopens && ao_avail(ALSA_PCM) >= AO_BUFFERSIZE / AO_BYTES) reopens = 1, PREV_RATE = -1;
-        ao_stayed = !reopens;
-        if (reopens) {
-            int was;
-            __atomic_store_n(&ao_draining, 1, __ATOMIC_SEQ_CST); /* before the flags: hci_command sets them, then looks */
-            if (!NEXT_FLAG && !STOP_FLAG) ((int (*)(void *))0xadb6a0u)(ALSA_PCM); /* snd_pcm_drain; an error leaves it to stock's own */
-            while ((was = __sync_val_compare_and_swap(&ao_draining, 1, 0)) == 2) usleep(1000);
-            ao_wait = was == 1 && !NEXT_FLAG && !STOP_FLAG && (told || preloaded);
+        if (OUTPUT_WAY != 1) { /* Bluetooth's stock drains unmuted, and its plugin stops at its own underrun */
+            int reopens = !KEEP_GAPLESS || channels != PREV_CHANNELS || rate != PREV_RATE || format != PREV_FORMAT;
+            /* Ran dry: stop_threshold and silence_size are the boundary (0x4394dc, 0x4394f0, every way), so the PCM
+             * still runs, on silence, with hw_ptr past appl_ptr, and the new track's first frames would land behind it. */
+            if (!reopens && ao_avail(ALSA_PCM) >= AO_BUFFERSIZE / AO_BYTES) reopens = 1, PREV_RATE = -1;
+            ao_stayed = !reopens;
+            if (reopens) {
+                int was;
+                __atomic_store_n(&ao_draining, 1, __ATOMIC_SEQ_CST); /* before the flags: hci_command sets them, then looks */
+                if (!NEXT_FLAG && !STOP_FLAG) ((int (*)(void *))0xadb6a0u)(ALSA_PCM); /* snd_pcm_drain; an error leaves it to stock's own */
+                while ((was = __sync_val_compare_and_swap(&ao_draining, 1, 0)) == 2) usleep(1000);
+                ao_wait = was == 1 && !NEXT_FLAG && !STOP_FLAG && (told || preloaded);
+            }
         }
     }
     int r = ((int (*)(int, int, int, int))0x438988u)(rate, channels, format, flags);
