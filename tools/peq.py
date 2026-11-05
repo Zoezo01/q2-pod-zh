@@ -42,7 +42,10 @@ AO_INIT_SLOT, AO_INIT = 0x88f760, 0x438988
 # that track's last audio before a reopen, and a skip stays mute-first (peq_player.c).
 AO_UNINIT_SLOT, AO_UNINIT = 0x88f764, 0x43868c
 # Stock skips the equalizer above 48 kHz (address, stock word, patched word); see docs/internals.md.
-EQ_RATE_GATES = ((0x42ced0, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
+EQ_RATE_GATES = ((0x42cec0, 0x8c429e30, 0),            # mpctx: the three loads below fed only that gate, and faulted with
+                 (0x42cec4, 0x8c42002c, 0),            # no sh_audio (docs/internals.md#music-info-between-songs)
+                 (0x42cec8, 0x8c42003c, 0),            # sh_audio's rate
+                 (0x42ced0, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
                  (0x42fd84, 0x1440003b, 0x1000003b))   # bnez $v0 to the insert -> b
 # The MQA side chain (docs/internals.md#mqa-detection): fill_audio_out_buffers runs every probed stream
 # through the MQA decoder while isMQA (0xb10c54) > 0 but plays its output only when isMQA == 2, so the gate
@@ -107,7 +110,7 @@ FLAC_META_EOF = ((0x490ba0, 0x06000163, 0x06000028),  # bltz $s0, 0x491130 -> 0x
                  (0x4929a4, 0x1000f9e2, 0x1000f8a7))  # b 0x491130 -> b 0x490c44: the last length byte's read at the end
 # get-music-info runs on the command thread and reads mpctx->sh_audio, NULL while a song is starting: stock's NULL branch went
 # on to read through it and killed the player (docs/internals.md#music-info-between-songs). Now it answers as with no stream.
-# ponytail: NULL only, a stream freed after the checks is still read; mcl-seteq's enable (0x42cec0) is unchecked, needs a stub.
+# ponytail: NULL only, a stream freed after the checks is still read.
 MEDIA_INFO_NULL = ((0x42c068, 0x10600008, 0x106000fc),  # beqz $v1, 0x42c08c -> 0x42c45c, the no-playing-status reply
                    (0x42c588, 0x8fa21b20, 0x1060ffb4))  # lw $v0 (dead: 0x42c070 overwrites it) -> beqz $v1, 0x42c45c: mpctx gone during the length call
 LIBC = {

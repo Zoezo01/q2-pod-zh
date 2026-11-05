@@ -300,6 +300,17 @@ def music_info_no_stream():
         check(p.frames() > before, f'music info, no {name}: playback carries on')
 
 
+def eq_enable_no_stream():
+    """mcl-seteq's enable with nothing playing: no sh_audio to read. Stock faults at 0x42cec4 or 0x42cec8. A song then plays."""
+    p = Player()
+    p.eq()
+    p.run(0.2)
+    check(p.e.r32(0xb10e08) == 2, f'EQ enable, no stream: state {p.e.r32(0xb10e08)}')
+    p.song('a.flac')
+    p.run(1)
+    check(p.frames() > 0, f'EQ enable, no stream: a song then plays, {p.frames()} frames')
+
+
 def next_whole(name):
     """A next file's first samples aren't lost to the preload: the same as it opened directly."""
     p = Player()
@@ -773,6 +784,7 @@ if __name__ == '__main__':
     exit_apart()
     metadata_cut()
     music_info_no_stream()
+    eq_enable_no_stream()
     next_whole('x.wma')
     next_whole('bigmeta.flac')
     xfade_bad_next()

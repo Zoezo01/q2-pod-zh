@@ -694,7 +694,9 @@ demo's status thread (`mclSyncPlayerStatus`) asks `{media-info\get-music-info}` 
 
 A natural change stores the demuxer about 7,200 instructions before `sh_audio`, each time. A request landing there is the crash. So the branch (`0x42c068`) now goes to the reply for no stream, `{media-info\no-playing-status}`, which demo already handles. The same goes for the path through the length call (`0x42c588`, over a dead load), where `mpctx` can go NULL before `0x42c064` reads it.
 
-`ponytail:` this closes the NULL only. The checks aren't under a lock, so a stream freed just after them is still read. `mcl-seteq`'s enable (`0x42cec0`) reads `mpctx->sh_audio->0x3c` with no check at all: a change can fault the same way while the EQ is being switched on, and it needs a stub rather than a word.
+`mcl-seteq`'s enable read `mpctx->sh_audio->0x3c` with no check at all (`0x42cec0`), only for the 48 kHz gate the EQ already removes (`EQ_RATE_GATES`). demo sends enable when its status isn't stopped: a switch of the EQ or its output, or the filter's first attach. Those three loads are gone, so it can't fault; with or without a stream it stores what `pre_eqset` does.
+
+`ponytail:` get-music-info's fix closes the NULL only. Its checks aren't under a lock, so a stream freed just after them is still read.
 
 ## A bad file next
 
