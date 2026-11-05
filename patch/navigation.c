@@ -1614,8 +1614,9 @@ int rockbox_available(void) {
 #define RGBA(c) (0xff000000u | ((c) & 255) << 16 | ((c) & 0xff00) | (c) >> 16)
 
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
- * per channel from black to LIGHT_PAPER and white to LIGHT_INK; any other hue, and the alpha byte,
- * as they are. Either byte order (color_t or 0xRRGGBB): the paper and ink are grey. */
+ * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
+ * unless the scheme sets them); any other hue, and the alpha byte, as they are. Either byte order
+ * (color_t or 0xRRGGBB): the paper and ink are grey. */
 static int neutral(unsigned c) {
     unsigned hi = 0, lo = 255;
     for (int s = 0; s < 24; s += 8) {
@@ -1625,11 +1626,17 @@ static int neutral(unsigned c) {
     }
     return hi - lo <= LIGHT_SPREAD;
 }
-static unsigned flip_v(unsigned v) { return LIGHT_PAPER - v * (LIGHT_PAPER - LIGHT_INK) / 255; }
+static unsigned flip_v(unsigned v, unsigned paper, unsigned ink) {
+    return paper - v * (paper - ink) / 255;
+}
+static const scheme_t *light_row(void);
 static unsigned flip(unsigned c) {
     if (!neutral(c)) return c;
+    /* greys, so either byte order */
+    const scheme_t *S = light_row();
+    unsigned paper = S->paper & 255, ink = S->ink & 255;
     unsigned out = c & 0xff000000u;
-    for (int s = 0; s < 24; s += 8) out |= flip_v(c >> s & 255) << s;
+    for (int s = 0; s < 24; s += 8) out |= flip_v(c >> s & 255, paper, ink) << s;
     return out;
 }
 static unsigned flip_if(int on, unsigned c) { return on ? flip(c) : c; }
@@ -1674,6 +1681,7 @@ enum {
 _Static_assert(DRIFT_TEXELS >= 4 * (375 - HOME_SPLIT_W) * CLIENT_H_MAX,
                "Home drift frame fits every set");
 _Static_assert(__builtin_offsetof(theme_t, geom) == THEME_GEOM_OFF, "test/patch.py's set_geom");
+_Static_assert(__builtin_offsetof(scheme_t, mode) == SCHEME_MODE_OFF, "test/patch.py patches it");
 /* A value of the set theme_boot wrote (st.geom), never the live theme's: V_BAR, ... */
 static int geom_val(int v) { return geom_vals[st.geom][v]; }
 int client_h(void) { return 320 - geom_val(V_BAR); }
@@ -1746,47 +1754,68 @@ static void light_apply(const int *tm) {
     image_manager_unload_all(image_manager());
     widget_invalidate_force(window_manager(), (void *)0);
 }
+/* accent()'s first call: the [IPOD] keys. Its own function, so accent()'s every later call (each
+ * colour Light Mode flips asks twice: ipod_light(), scheme()) skips this frame. */
+__attribute__((noinline)) static void settings_read(void) {
+    for (int i = 0; i < 4; ++i)
+        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_count(i), 0);
+    st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
+    st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
+    st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
+    st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
+    st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
+    st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
+    st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
+    st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
+    st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
+    /* any digit; the fixup below takes one outside Nano's values to its default, Nano Blue */
+    st.nano_accent = config_value("IPOD", "NANO_ACCENT", 10, ACCENT_N);
+    /* A stored value outside an option's values is its default (Classic's Ivory: Graphite). */
+    for (int t = 0; t < THEME_N; ++t)
+        for (int k = 0; k < themes[t].n_opts; ++k) {
+            const option_t *o = &themes[t].opts[k];
+            int *v = option_slot(&themes[t], o->setting);
+            if (o->values && o->def >= 0 && !(o->values >> *v & 1)) *v = o->def;
+        }
+    int buf[11];
+    st.light_day = light_day(clock_now(buf));
+    st.settings_read = 1;
+}
 static int accent(void) {
-    if (!st.settings_read) {
-        for (int i = 0; i < 4; ++i)
-            *setting_values[i] = config_value("IPOD", setting_keys[i], setting_count(i), 0);
-        st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
-        st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
-        st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
-        st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
-        st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
-        st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
-        st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
-        st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
-        st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
-        st.nano_accent =
-            config_value("IPOD", "NANO_ACCENT", ACCENT_N, 9); /* 9: none, Nano's default below */
-        /* A stored value outside an option's values is its default (Classic's Ivory: Graphite). */
-        for (int t = 0; t < THEME_N; ++t)
-            for (int k = 0; k < themes[t].n_opts; ++k) {
-                const option_t *o = &themes[t].opts[k];
-                int *v = option_slot(&themes[t], o->setting);
-                if (o->values && o->def >= 0 && !(o->values >> *v & 1)) *v = o->def;
-            }
-        int buf[11];
-        st.light_day = light_day(clock_now(buf));
-        st.settings_read = 1;
-    }
+    if (!st.settings_read) settings_read();
     return *themes[st.theme].accent_slot;
 }
 const theme_t *theme(void) {
     accent();
     return &themes[st.theme];
 }
+/* 1 for scheme v's light half: its mode, else Light Mode (Auto: light_day), which reads 0 where the
+ * theme does not declare it (setting()'s rule). The dark row's mode: both carry it. */
+static int light_on(const theme_t *T, int v) {
+    int m = T->schemes[v].mode;
+    return m == SCHEME_LIGHT || (m == SCHEME_DERIVE && !(T->undeclared >> SETTING_LIGHT & 1) &&
+                                 (st.light == 2 ? st.light_day : st.light));
+}
+/* The half Light Mode picks; Minimal's and Classic's two halves are one row. */
 const scheme_t *scheme(void) {
     int v = accent();
-    return &themes[st.theme].schemes[v];
+    const theme_t *T = &themes[st.theme];
+    return &(light_on(T, v) ? T->light : T->schemes)[v];
+}
+/* scheme() for code that runs only in the light half (flip, red_map's light term), so after
+ * ipod_light()'s accent(): the light row without a second accent() and light_on() on these
+ * per-colour paths (a Classic folder paint sets ~470 colours). */
+static const scheme_t *light_row(void) {
+    const theme_t *T = &themes[st.theme];
+    return &T->light[*T->accent_slot];
 }
 static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
 static inline const unsigned *tones(void) { return tones_of(accent()); }
+/* An option the theme does not declare reads 0, its stored key untouched (ponytail: 0 is every
+ * hidden option's value today; a theme hiding Home or Battery needs a value per bit). */
 static int setting(int i) {
     accent();
-    return *setting_values[i];
+    return themes[st.theme].undeclared >> i & 1 ? 0 : *setting_values[i];
 }
 static const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
 _Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* layout");
@@ -1803,8 +1832,8 @@ int ipod_home(void) {
     return st.home;
 }
 int ipod_light(void) {
-    accent();
-    return st.light == 2 ? st.light_day : st.light;
+    int v = accent();
+    return light_on(&themes[st.theme], v);
 }
 int ipod_battery(void) {
     accent();
@@ -1858,8 +1887,10 @@ unsigned accent_tone(int tone) {
  * part (k) becomes that share of glyph: white keeps a blend's light part as it is. With another
  * glyph, neutral pixels (the glyph itself) map too, so pass it only for an image that holds red.
  * Crimson is the identity. Light Mode (light) puts the red share over paper instead: a tint over
- * black becomes the same tint of tone over LIGHT_PAPER, its grey part flipped. */
+ * black becomes the same tint of tone over the light half's paper, its grey part flipped. */
 static unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
+    int paper = light ? (int)(light_row()->paper & 255) : 0,
+        ink = light ? (int)(light_row()->ink & 255) : 0;
     static const int red[3] = { STOCK_RED >> 16, STOCK_RED >> 8 & 255, STOCK_RED & 255 };
     const int sum = red[0] + red[1] + red[2];
     int ch[3] = { c & 255, c >> 8 & 255, c >> 16 & 255 }, s = ch[0] + ch[1] + ch[2], d = 0, dd = 0;
@@ -1876,8 +1907,7 @@ static unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
         int miss = ch[i] - (t * red[i] / 4096 + k);
         if (miss > RED_TOLERANCE || miss < -RED_TOLERANCE) return c;
         int v = t * (int)(tone >> (16 - 8 * i) & 255) / 4096 +
-                (light ? (t < 4096 ? 4096 - t : 0) * LIGHT_PAPER / 4096 -
-                             k * (LIGHT_PAPER - LIGHT_INK) / 255
+                (light ? (t < 4096 ? 4096 - t : 0) * paper / 4096 - k * (paper - ink) / 255
                        : k * (int)(glyph >> (16 - 8 * i) & 255) / 255);
         out |= (unsigned)(v < 0 ? 0 : v > 255 ? 255 : v) << 8 * i;
     }
@@ -1943,6 +1973,21 @@ static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsi
             canvas_fill_rect(canvas, r.x + in - 1, r.y + j, 1, 1);
             canvas_fill_rect(canvas, r.x + r.w - in, r.y + j, 1, 1);
         }
+    }
+}
+
+/* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
+ * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
+ * flipped. Fewer than two stops draw nothing. */
+void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s) {
+    if (s->n < 2) return;
+    for (int j = 0, k = 0; j < h; ++j) {
+        int p = h > 1 ? j * 25600 / (h - 1) : 0; /* 1/256 % */
+        while (k + 2 < s->n && p > s->pos[k + 1] * 256) ++k;
+        int lo = s->pos[k] * 256;
+        stock_canvas_set_fill_color(
+            canvas, RGBA(mix(s->rgb[k], s->rgb[k + 1], p - lo, s->pos[k + 1] * 256 - lo)));
+        canvas_fill_rect(canvas, x, y + j, w, 1);
     }
 }
 
@@ -2294,7 +2339,7 @@ static int marq_moved(const void *info) {
 }
 
 /* Load and settle the painted surface's selection, then draw it behind the rows: Minimal's card
- * (a dot on Home) or Classic's full-width accent bar. */
+ * (a dot on Home), Classic's full-width accent bar or a theme's stops band. */
 static void paint_selection(void *w, void *canvas) {
     if (kind(w)) st.sel_w = st.sel_widget = st.sel_accent = (void *)0;
     if (!w || !canvas || !kind(w)) return;
@@ -2344,21 +2389,38 @@ static void paint_selection(void *w, void *canvas) {
     }
     /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
-    int bar = theme()->painter[PAINT_SELECTION] == SEL_BAR, corners = setting(SETTING_ROUNDED);
+    int painter = theme()->painter[PAINT_SELECTION], band = painter != SEL_CARD,
+        corners = setting(SETTING_ROUNDED);
     const scheme_t *S = scheme();
-    st.sel_widget = bar ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
-    st.sel_home = home && !bar;
-    /* Light Mode: ink on a coloured bar or card stays white (ringnav_style_color). */
-    st.sel_accent = !neutral(S->tones[0]) && !st.sel_home && !(S->flags & SCHEME_CARD)
-                        ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
-                        : (void *)0;
-    if (bar && (!tile || g_menu.kind == 4)) {
-        const unsigned *a = S->tones;
-        /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
-        rect_t bar = r;
-        int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
-        if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
-        gradient(canvas, bar, a[0], a[1], a[4], pill);
+    st.sel_widget = band ? (void *)0 : home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i];
+    st.sel_home = home && !band;
+    /* Light Mode: ink on a coloured bar or card stays white (ringnav_style_color); so does the
+     * stops band's, or its sel_text. */
+    st.sel_accent =
+        (painter == SEL_STOPS || (!neutral(S->tones[0]) && !(S->flags & SCHEME_CARD))) &&
+                !st.sel_home
+            ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
+            : (void *)0;
+    if (band && (!tile || g_menu.kind == 4)) {
+        if (painter == SEL_STOPS) { /* square and full width: the glass clips it */
+            int top = !!S->sel_top, edge = !!S->sel_edge;
+            if (top) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
+                canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
+            }
+            paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
+            if (edge) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_edge));
+                canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
+            }
+        } else {
+            const unsigned *a = S->tones;
+            /* Corners: Rounded makes a list row's bar a pill, inset like Minimal's card */
+            rect_t bar = r;
+            int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
+            if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
+            gradient(canvas, bar, a[0], a[1], a[4], pill);
+        }
     } else if (home) {
         rect_t dot = { HOME_DOT_X, r.y + (r.h - HOME_DOT) / 2, HOME_DOT, HOME_DOT };
         fill_box(canvas, &dot, 0xffffffff, HOME_DOT / 2);
@@ -4899,7 +4961,10 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
                 if (!widget_get_prop_bool(w, "enable", 1)) enabled = 0;
             *color = (*color & 0xff000000u) | (enabled ? 0xffffff : 0xaaaaaa);
         }
-        if (ipod_light() && painting_in(st.sel_accent)) return color;
+        if (painting_in(st.sel_accent) && (ipod_light() || S->sel_text)) {
+            if (S->sel_text) *color = (*color & 0xff000000u) | (RGBA(S->sel_text) & 0xffffff);
+            return color;
+        }
         int selected = selected_ink();
         if (selected && (st.sel_home || S->flags & SCHEME_CARD)) {
             unsigned alpha = *color & 0xff000000u;
@@ -4990,7 +5055,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     unsigned format = bitmap ? *(unsigned short *)((char *)bitmap + 0xe) - 1u : 4,
              preset = accent();
     const theme_t *T = theme();
-    const scheme_t *sc = &T->schemes[preset];
+    const scheme_t *sc = scheme(); /* scheme preset (accent()) in the half Light Mode picks */
     unsigned char *data = (void *)0;
     /* Before the manager copies bitmap_t: cached flags must agree with the new alpha. These
      * paths are stock's album/artist thumbnails and Folder view's (.downpic/fd*, its cover
@@ -5167,6 +5232,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                              : (void *)0;
     if (ink) {
         const unsigned char *o = at[format];
+        unsigned fp = sc->paper & 255, fi = sc->ink & 255;
         int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
         int premul = *(unsigned short *)((char *)bitmap + 0xc) & BITMAP_PREMULTI, solid = 0,
             hue = 0;
@@ -5184,8 +5250,8 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
         for (int y = 0; !hue && (control || solid * LIGHT_SURFACE < w * h) && y < h; ++y)
             for (unsigned char *p = ink + y * stride, *end = p + 4 * w; p < end; p += 4)
                 for (int c = 0, a = p[o[3]]; c < 3 && a; ++c)
-                    p[o[c]] = (unsigned char)(premul ? flip_v(p[o[c]] * 255u / a) * a / 255
-                                                     : flip_v(p[o[c]]));
+                    p[o[c]] = (unsigned char)(premul ? flip_v(p[o[c]] * 255u / a, fp, fi) * a / 255
+                                                     : flip_v(p[o[c]], fp, fi));
         bitmap_unlock_buffer(bitmap);
     }
     return stock_image_trampoline(manager, name, bitmap);
@@ -5198,10 +5264,23 @@ static void setting_text(int i) {
                                                   "Battery: Percent Inside" },
                              *const light[] = { "Light Mode: Off", "Light Mode: On",
                                                 "Light Mode: Auto" };
-    const char *const names[] = { accent_names[accent()], home[st.home],   battery[st.battery],
-                                  (const char *)0,        (const char *)0, (const char *)0,
-                                  light[st.light],        (const char *)0, (const char *)0 };
+    int a = accent();
+    const scheme_t *S = scheme();
+    const char *const names[] = { S->label ? (const char *)0 : accent_names[a],
+                                  home[st.home],
+                                  battery[st.battery],
+                                  (const char *)0,
+                                  (const char *)0,
+                                  (const char *)0,
+                                  light[st.light],
+                                  (const char *)0,
+                                  (const char *)0 };
     char text[64];
+    if (i == 0 && S->label) {
+        tk_snprintf(text, sizeof text, "Accent: %s", S->label);
+        widget_set_text_utf8(st.setting_label[0], text);
+        return;
+    }
     if (i == 3 || i == 4) {
         if (i == 3)
             tk_snprintf(text, sizeof text, "Theme: %s", theme()->name);
@@ -5273,11 +5352,14 @@ static int setting_click(void *ctx, void *event) {
         *value = shortcut_next[shortcut()];
     else if (i)
         *value = (*value + 1) % setting_count(i);
-    else {
+    else { /* Graphite, ..., Green, Ivory (Minimal); a theme's own schemes after Green */
         const option_t *o = option_of(T, SETTING_ACCENT);
         unsigned mask = o && o->values ? o->values : (1u << ACCENT_N) - 1;
-        do *value = accent_next[*value];
-        while (!(mask >> *value & 1));
+        do {
+            int v = *value >= ACCENT_N ? *value + 1 : accent_next[*value];
+            if (!v && T->n_schemes > ACCENT_N && *value < ACCENT_N) v = ACCENT_N;
+            *value = v < T->n_schemes ? v : 0;
+        } while (!(mask >> *value & 1));
     }
     write_int_config(*value, "IPOD", key);
     if (i == 6) { /* Auto applies from this click */

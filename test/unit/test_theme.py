@@ -102,7 +102,8 @@ def test_load(tmp_path):
 
 
 THEMES = theme.ROOT/'assets/themes'
-ZERO = dict.fromkeys(('card', 'raw_red', 'fill', 'chevron', 'muted', 'bar_light'), 0)
+ZERO = {**dict.fromkeys(('card', 'raw_red', 'fill', 'chevron', 'muted', 'bar_light'), 0),
+        'sel': (), 'sel_top': 0, 'sel_edge': 0, 'sel_text': 0, 'mode': 0, 'paper': 0xf4f4f4, 'ink': 0x161616, 'light': {}}
 MINIMAL_ROLES = {**ZERO, 'fill': 0xeeeeec, 'chevron': 0x777777, 'muted': 0x8c8c8c}
 CLASSIC_ROLES = {**ZERO, 'bar_light': 0xdedede}
 
@@ -125,7 +126,7 @@ MINIMAL = {
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
-             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], **CF_TODAY}
+             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], 'undeclared': [], **CF_TODAY}
 CLASSIC = {
     **MINIMAL, 'id': 'classic', 'index': 1, 'name': 'Classic', 'accents': 0x17f, 'accent_key': 'ACCENT',
     'painter[PAINT_SELECTION]': 1, 'chevron_home': 1, 'caps_mark': 0, 'caps_home': 0, 'caps_np': 0,
@@ -135,7 +136,7 @@ CLASSIC = {
     'schemes': [ZERO if v == 7 else {**CLASSIC_ROLES, 'raw_red': int(v == 1)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=0, preset=4, values=0x17f),
              opt('SETTING_ROUNDED', preset=0), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
-             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=0), opt('SETTING_NPCENTRED')]}
+             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=0), opt('SETTING_NPCENTRED')], 'undeclared': []}
 
 
 def bare(t):
@@ -181,12 +182,12 @@ M = 'id="minimal" name="M" index="0"'
     ('<view name="list" layout="x"/>', None, 'unknown key view.layout'),
     ('<view name="list"><element name="row"/></view>', None, 'unknown element list.row'),
     ('<view name="list"><element name="icons" grey="1"/></view>', None, 'unknown key list.icons.grey'),
-    ('<view name="list"><element name="selection" painter="stops"/></view>', None, 'list.selection.painter: unknown value stops'),
-    ('<view name="playing"><element name="title" font="other"/></view>', None, 'playing.title.font: unknown value other'),
-    ('<colorScheme name="other-blue"/>', None, 'unknown scheme other-blue'),
-    ('<colorScheme name="ivory" sel.edge="#000000"/>', None, 'unknown key scheme.sel.edge'),
+    ('<view name="list"><element name="selection" painter="glass"/></view>', None, 'list.selection.painter: unknown value glass'),
+    ('<view name="playing"><element name="title" font="nano"/></view>', None, 'playing.title.font: unknown value nano'),
+    ('<colorScheme name="nano-blue"/>', None, 'unknown scheme nano-blue'),
+    ('<colorScheme name="ivory" sel.glow="#000000"/>', None, 'unknown key scheme.sel.glow'),
     ('<colorSchemes accents="graphite blue"/>', None, 'unknown scheme blue'),
-    ('<colorSchemes accents="graphite" derive="gloss"/>', None, 'unknown key colorSchemes.derive'),
+    ('<colorSchemes accents="graphite" tint="1"/>', None, 'unknown key colorSchemes.tint'),
     ('<view name="home"><element name="chevron" visible="2"/></view>', None, 'home.chevron.visible: expected 0 or 1'),
     ('<view name="playing"><element name="album" opacity="x"/></view>', None, 'playing.album.opacity: expected an integer'),
     ('<view name="playing"><element name="album" opacity="256"/></view>', None, 'playing.album.opacity: 256 outside 0..255'),
@@ -207,7 +208,7 @@ M = 'id="minimal" name="M" index="0"'
     ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
     ('', 'id="t" name="T"', 'index: expected a digit'),
     ('', 'id="t" name="T" index="2" dev="2"', 'dev: expected 0 or 1'),
-    ('<colorScheme/>', None, 'unknown scheme '),
+    ('<colorScheme name=""/>', None, 'unknown scheme '),
     ('<option/>', None, 'unknown setting '),
     ('<view/>', None, 'unknown view '),
     ('<view name="list"><element/></view>', None, 'unknown element list.'),
@@ -256,7 +257,7 @@ def test_validate_accepts():
 def test_key():
     assert theme.key('a.b.c', 'f', 'bool') == theme.Key('a.b.c', 'f', 'bool', 0, 1, 0, 'live')
     assert theme.key('a.b.c', 'f', 'color').hi == 0xffffff
-    assert theme.key('list.selection.painter', 'f', 'enum').hi == 1
+    assert theme.key('list.selection.painter', 'f', 'enum').hi == 2
     assert theme.key('a.b.c', 'f', 'int', 255).hi == 255
 
 
@@ -326,7 +327,8 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'
                   ('bold', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('set_top', 8), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
-                  ('schemes', 'minimal_schemes'), ('opts', 'minimal_opts'), ('n_opts', 8), ('np_layout', 'NP_IPOD'),
+                  ('schemes', 'minimal_schemes'), ('light', 'minimal_schemes'), ('n_schemes', 9), ('opts', 'minimal_opts'), ('n_opts', 8),
+                  ('undeclared', 0), ('np_layout', 'NP_IPOD'),
                   *CF_TODAY.items(), ('geom', 0)]
 
 
@@ -337,9 +339,10 @@ def test_emit(tmp_path):
         '/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */',
         'static const scheme_t minimal_schemes[] = {',
         *(f'    {{ .tones = accents[{v}], .flags = {flags.get(v, 0)}, .fill = 0xeeeeec, .chevron = 0x777777, '
-          f'.muted = 0x8c8c8c, .bar_light = 0x000000 }},' for v in range(9)),
+          f'.muted = 0x8c8c8c, .bar_light = 0x000000, .sel = {{0}}, .sel_top = 0x000000, .sel_edge = 0x000000, '
+          f'.sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616 }},' for v in range(9)),
         '};',
-        '_Static_assert(sizeof minimal_schemes / sizeof *minimal_schemes == ACCENT_N, "one scheme per ACCENTS row");',
+        '_Static_assert(sizeof minimal_schemes / sizeof *minimal_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");',
         'static const option_t minimal_opts[] = {',
         '    { .setting = SETTING_LIGHT, .def = -1, .preset = 0, .keep = 2, .values = 0x0 },',
         '    { .setting = SETTING_ACCENT, .def = 7, .preset = 0, .keep = -1, .values = 0x0 },',
@@ -362,7 +365,9 @@ def test_emit_both(tmp_path):
         'static const scheme_t minimal_schemes[]', 'static const option_t minimal_opts[]',
         'static const scheme_t classic_schemes[]', 'static const option_t classic_opts[]',
         'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
-    assert '    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000 },\n    { .tones = accents[8]' in text
+    assert ('    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000, '
+            '.sel = {0}, .sel_top = 0x000000, .sel_edge = 0x000000, .sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, '
+            '.ink = 0x161616 },\n    { .tones = accents[8]') in text
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
     assert '    },\n};\nenum { GEOM_IPOD, GEOM_N };\n' in text
@@ -395,7 +400,7 @@ def test_view_attr():
 # Enum fields and value counts come out as C names, so a reordered or added value is a compile error.
 def test_emit_names_enums_and_counts(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    assert inc.count('.painter[PAINT_SELECTION] = SEL_CARD,') == 1 and inc.count('.painter[PAINT_SELECTION] = SEL_BAR,') == 2
+    assert inc.count('.painter[PAINT_SELECTION] = SEL_CARD,') == 1 and inc.count('.painter[PAINT_SELECTION] = SEL_BAR,') == 1
     assert inc.count('.np_layout = NP_IPOD,') == 3 and '.np_layout = 0,' not in inc
     for name, (_, values) in theme.SETTINGS.items():
         assert f'#define SETTING_N_{name.upper()} {len(values)}\n' in inc
@@ -513,6 +518,145 @@ def test_is_live_needs_one_set(test_set):
     assert not theme.is_live(m, dict(c, geom_set='test'))
 
 
+NB = '#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100'
+NB_STOPS = ((0, 0x08a6e7), (17, 0x009ade), (38, 0x008ade), (58, 0x007dde), (79, 0x006dd6), (100, 0x0065d6))
+
+
+def test_stops_resolve():
+    t = resolved(f'<colorScheme name="cobalt" sel.stops="{NB}" sel.top="#94c7de" sel.edge="#004184" sel.text="#FFFFFF"/>')
+    s = t['schemes'][4]
+    assert (s['sel'], s['sel_top'], s['sel_edge'], s['sel_text']) == (NB_STOPS, 0x94c7de, 0x004184, 0xffffff)
+    assert t['schemes'][0]['sel'] == () and t['schemes'][0]['sel_top'] == t['schemes'][0]['sel_edge'] == 0
+    every = resolved('<colorScheme sel.text="#ffffff"/>')  # no name: every scheme the theme has
+    assert {s['sel_text'] for s in every['schemes']} == {0xffffff}
+
+
+@pytest.mark.parametrize('stops, message', [
+    ('#94c7de 0', '2 to 8 stops'),
+    (', '.join(f'#000000 {p}' for p in (0, 10, 20, 30, 40, 50, 60, 70, 100)), '2 to 8 stops'),
+    ('#94c7de 0, #0065d6 50', 'positions must rise from 0 to 100'),
+    ('#94c7de 10, #0065d6 100', 'positions must rise from 0 to 100'),
+    ('#94c7de 0, #08a6e7 40, #009ade 40, #0065d6 100', 'positions must rise from 0 to 100'),
+    ('#94c7de 0, #0065d6 100, #000000 60', 'positions must rise from 0 to 100'),
+    ('94c7de 0, #0065d6 100', 'expected "#rrggbb N, ..."'),
+    ('#94c7de0, #0065d6 100', 'expected "#rrggbb N, ..."'),
+    ('#94c7defe 0, #0065d6 100', 'expected "#rrggbb N, ..."'),
+    ('#94c7de 0, #0065d6 1000', 'expected "#rrggbb N, ..."'),
+])
+def test_stops_reject(stops, message):
+    assert error(resolved, f'<colorScheme name="cobalt" sel.stops="{stops}"/>') == f't.xml:1: scheme.sel.stops: {message}'
+
+
+def test_emit_stops(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    # no closing ' }': later roles (Task 12's mode, Task 13's label) follow sel_text on the line
+    assert ('.sel = {6, {0, 17, 38, 58, 79, 100}, {0x08a6e7, 0x009ade, 0x008ade, 0x007dde, 0x006dd6, '
+            '0x0065d6}}, .sel_top = 0x94c7de, .sel_edge = 0x004184, .sel_text = 0xffffff') in inc
+    assert inc.count('.painter[PAINT_SELECTION] = SEL_STOPS,') == 1
+
+
+def test_scheme_mode_paper_ink():
+    t = resolved('<colorScheme mode="light" light.paper="#ffffff" light.ink="#000000"/>')
+    assert {(s['mode'], s['paper'], s['ink']) for s in t['schemes']} == {(1, 0xffffff, 0)}
+    minimal, classic, nano = theme.builtins()
+    assert {(s['mode'], s['paper'], s['ink']) for s in minimal['schemes']} == {(0, 0xf4f4f4, 0x161616)}
+    assert {(s['mode'], s['paper'], s['ink']) for s in nano['schemes'] if s['sel']} == {(0, 0xffffff, 0)}
+    assert (minimal['undeclared'], classic['undeclared']) == ([], [])
+    assert nano['undeclared'] == ['SETTING_ROUNDED', 'SETTING_NPCENTRED']
+    assert nano['opts'][0] == opt('SETTING_LIGHT', preset=1, keep=2)
+    assert not (theme.shared(nano) or not theme.shared(minimal) or not theme.shared(classic))
+
+
+def test_halves():
+    # a stated half is kept; the other is the flip (light) or its inverse (dark) of its neutrals by the
+    # light paper and ink (here the defaults, #f4f4f4 and #161616); hues stay; unset stays unset
+    s = resolved('<colorScheme name="cobalt" sel.top="#404040" light.sel.edge="#c0c0c0" sel.text="#ffffff" '
+                 'light.sel.text="#ffffff" sel.stops="#94c7de 0, #404040 100"/>')['schemes'][4]
+    dark, light = theme.scheme_half(s, False), theme.scheme_half(s, True)
+    assert (dark['paper'], dark['ink'], light['paper'], light['ink']) == (0, 0xffffff, 0xf4f4f4, 0x161616)
+    assert (dark['sel_top'], light['sel_top']) == (0x404040, 0xbdbdbd)     # 0xf4 - 0x40 * (0xf4 - 0x16) // 255
+    assert (dark['sel_edge'], light['sel_edge']) == (0x3b3b3b, 0xc0c0c0)   # (0xf4 - 0xc0) * 255 // (0xf4 - 0x16)
+    assert (dark['sel_text'], light['sel_text']) == (0xffffff, 0xffffff)   # both stated
+    assert light['sel'] == ((0, 0x94c7de), (100, 0xbdbdbd))                # the hue kept, the grey flipped
+    assert theme.scheme_half(theme.zero_scheme(), True)['sel_top'] == 0    # unset stays unset
+    assert theme.flip(0x94c7de, 0xffffff, 0) == 0x94c7de
+    assert theme.flip(0x636163, 0xffffff, 0) == 0x9c9e9c and theme.unflip(0x9c9e9c, 0xffffff, 0) == 0x636163
+
+
+@pytest.mark.parametrize('body, message', [
+    ('<colorScheme name="cobalt" light.paper="#ff0000"/>', 'scheme.paper: expected a grey'),
+    ('<colorScheme light.ink="#000001"/>', 'scheme.ink: expected a grey'),
+    ('<colorScheme light.paper="#101010" light.ink="#f0f0f0"/>', 'scheme.paper: must be lighter than ink'),
+    ('<colorScheme mode="light"/>', 'light: a scheme with its own mode has no Light Mode option'),
+])
+def test_validate_rejects_mode(body, message):
+    assert error(theme.validate, resolved(body), 't.xml') == f't.xml:1: {message}'
+
+
+@pytest.mark.parametrize('body, message', [
+    ('<colorScheme paper="#ffffff"/>', "scheme.paper: the dark half's is #000000; write light.paper"),
+    ('<colorScheme dark.ink="#ffffff"/>', "scheme.ink: the dark half's is #ffffff; write light.ink"),
+    ('<colorScheme name="cobalt" light.muted="#ffffff"/>', 'scheme.muted: one value for both halves'),
+    ('<colorScheme name="cobalt" dark.mode="dark"/>', 'scheme.mode: one value for both halves'),
+    ('<colorScheme name="cobalt" sel.top="#111111" dark.sel.top="#222222"/>', 'scheme.sel.top: stated twice (sel.top and dark.sel.top)'),
+    ('<view name="list"><element name="selection" light.painter="bar"/></view>', 'list.selection.painter: one value for both halves'),
+])
+def test_resolve_rejects_halves(body, message):
+    assert error(resolved, body) == f't.xml:1: {message}'
+
+
+def test_emit_mode_and_undeclared(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    # Minimal and Classic: one array for both halves, their light rows as before (no closing ' }': Task 13's
+    # label and Task 17's bar follow on the line)
+    assert '.light = minimal_schemes,' in inc and '.light = classic_schemes,' in inc and 'minimal_light' not in inc
+    assert '.mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616' in inc
+    # Nano: its dark rows in nano_schemes, its light rows in nano_light
+    dark, light = (inc.split(f'static const scheme_t nano_{a}[] = {{')[1].split('};')[0] for a in ('schemes', 'light'))
+    assert '.paper = 0x000000, .ink = 0xffffff' in dark and '.paper = 0xffffff, .ink = 0x000000' in light
+    assert '.light = nano_light,' in inc and '_Static_assert(sizeof nano_light == sizeof nano_schemes' in inc
+    assert '.undeclared = (1 << SETTING_ROUNDED) | (1 << SETTING_NPCENTRED),' in inc
+    assert inc.count('.undeclared = 0,') == 2
+
+
+def test_derive_gloss():
+    assert theme.derive_gloss([0x008ade] * 5) == [(p, f'#{c:06x}') for p, c in theme.GLOSS]  # the band's own body: itself
+    for tones in theme.ACCENT_TONES:
+        stops = theme.derive_gloss(tones)
+        assert [p for p, _ in stops] == [0, 17, 38, 58, 79, 100] and stops[2][1] == f'#{tones[0]:06x}'
+    assert all(h[1:3] == h[3:5] == h[5:7] for _, h in theme.derive_gloss(theme.ACCENT_TONES[0]))  # Graphite stays grey
+    assert theme.derive_gloss(theme.ACCENT_TONES[4]) != [(p, f'#{c:06x}') for p, c in theme.GLOSS]  # Cobalt is near, not Nano Blue
+
+
+def test_nano_blue_own_scheme():
+    nano = theme.builtins()[2]
+    blue = nano['schemes'][9]
+    assert (blue['label'], blue['base'], blue['sel'], blue['sel_top'], blue['sel_edge']) == ('Nano Blue', 4, theme.GLOSS, theme.GLOSS_TOP, theme.GLOSS_EDGE)
+    assert nano['accents'] == 0x37f and nano['opts'][1] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
+    # each offered band is the same in both halves (Graphite's grey gloss is designed, not flipped)
+    assert all(theme.scheme_half(s, True)['sel'] == theme.scheme_half(s, False)['sel'] for s in nano['schemes'])
+    assert nano['schemes'][4]['sel'] == tuple((p, int(h[1:], 16)) for p, h in theme.derive_gloss(theme.ACCENT_TONES[4]))
+    assert nano['schemes'][7]['sel'] == ()  # Ivory, not offered
+
+
+@pytest.mark.parametrize('body, message', [
+    ('<colorScheme name="sky" base="teal" label="Sky"/>', 'sky: unknown base teal'),
+    ('<colorScheme name="sky" base="cobalt"/>', 'sky: an own scheme needs a label'),
+    ('<colorScheme name="sky" base="cobalt" label=""/>', 'sky: an own scheme needs a label'),
+    ('<colorScheme name="cobalt" base="cobalt" label="C"/>', 'cobalt: an ACCENTS row takes no base'),
+    ('<colorSchemes accents="graphite" derive="matte"/>', 'colorSchemes.derive: unknown value matte'),
+])
+def test_own_scheme_rejects(body, message):
+    assert error(resolved, body) == f't.xml:1: {message}'
+
+
+def test_emit_own_scheme(tmp_path):
+    inc = boot_inc(tmp_path, theme.builtins())
+    assert '    { .tones = accents[4], ' in inc.split('static const scheme_t nano_schemes[] = {')[1].split('\n')[10]
+    assert '.label = "Nano Blue" }' in inc and inc.count('.n_schemes = 9,') == 2 and '.n_schemes = 10,' in inc
+    assert inc.count('/ sizeof *minimal_schemes >= ACCENT_N') == 1
+
+
 def boot_inc(tmp_path, themes, **kw):
     theme.emit(themes, tmp_path, **kw)
     return (tmp_path/'themes.inc').read_text()
@@ -571,8 +715,9 @@ def test_emit_refuses_a_set0_redirect(tmp_path):
 
 def test_nano_builtin():
     m, c, n = theme.builtins()
-    assert (n['id'], n['name'], n['index'], n['dev'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 1, 'nano', 'NANO_ACCENT', 0x17f)
-    assert n['opts'] == [opt('SETTING_ACCENT', default=4, preset=4, values=0x17f), opt('SETTING_HOME'), opt('SETTING_BATTERY')]
+    assert (n['id'], n['name'], n['index'], n['dev'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 1, 'nano', 'NANO_ACCENT', 0x37f)
+    assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
+                         opt('SETTING_HOME'), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, ipod.NANO, ipod.NANO_TEXT]
     assert (theme.offer([m, c, n], False), theme.offer([m, c, n], True)) == (2, 3)
 

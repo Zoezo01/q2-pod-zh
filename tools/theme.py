@@ -1,5 +1,6 @@
 """Built-in themes: assets/themes/<id>/theme.xml in the Q2 theme XML, read, checked and written out as
 the payload's theme table (themes.inc)."""
+import colorsys
 import dataclasses
 import itertools
 import json
@@ -8,7 +9,9 @@ from build import ROOT, check
 from ipod import AUDIT, GEOM_VALS, INC, NANO, NANO_TEXT, O, SET0, VALUE_NAMES, Geometry, immediate_values
 
 
-ACCENT_NAMES = [n.lower() for n in re.findall(r'\}\s*,?\s*/\* (\w+)', re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0])]
+ACCENTS_BLOCK = re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0]
+ACCENT_NAMES = [n.lower() for n in re.findall(r'\}\s*,?\s*/\* (\w+)', ACCENTS_BLOCK)]
+ACCENT_TONES = [[int(x, 16) for x in re.findall(r'0x([0-9a-fA-F]{6})', row)] for row in re.findall(r'\{([^}]*)\}', ACCENTS_BLOCK)]
 ALL_ACCENTS = (1 << len(ACCENT_NAMES)) - 1
 SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTING_ACCENT', ACCENT_NAMES),
             'corners': ('SETTING_ROUNDED', ('square', 'round')), 'home': ('SETTING_HOME', ('split', 'full', 'carousel')),
@@ -19,8 +22,9 @@ SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTI
 ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent',
                'NANO_ACCENT': '&st.nano_accent'}
 # value name -> its C name (theme.h); playing.title.font is the theme_t.bold flag
-CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR'}, 'playing.title.font': {'regular': '0', 'bold': '1'},
-           'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'}}
+CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'}, 'playing.title.font': {'regular': '0', 'bold': '1'},
+           'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
+           'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -32,11 +36,12 @@ class Key:
     hi: int
     default: object
     cls: str  # 'live' | 'open' | 'boot'
+    final: bool = False  # drawn as stated: each half its own value (light.<key>, dark.<key>)
 
 
-def key(path, field, type, hi=None):
+def key(path, field, type, hi=None, final=False):
     hi = {'bool': 1, 'color': 0xffffff, 'enum': len(CHOICES.get(path, ())) - 1}.get(type, hi)
-    return Key(path, field, type, 0, hi, 0, 'live')
+    return Key(path, field, type, 0, hi, 0, 'live', final)
 
 
 # theme_t declaration order; the scheme.* keys are scheme_t's.
@@ -68,6 +73,14 @@ SCHEMA = {k.path: k for k in (
     key('scheme.chevron', 'chevron', 'color'),
     key('scheme.muted', 'muted', 'color'),
     key('scheme.bar_light', 'bar_light', 'color'),
+    Key('scheme.sel.stops', 'sel', 'stops', 0, 0, (), 'live', True),
+    key('scheme.sel.top', 'sel_top', 'color', final=True),
+    key('scheme.sel.edge', 'sel_edge', 'color', final=True),
+    key('scheme.sel.text', 'sel_text', 'color', final=True),
+    key('scheme.mode', 'mode', 'enum'),
+    # the light half's flip ends; the dark half's are fixed, #000000 and #ffffff
+    Key('scheme.paper', 'paper', 'color', 0, 0xffffff, O['LIGHT_PAPER'] * 0x010101, 'live'),
+    Key('scheme.ink', 'ink', 'color', 0, 0xffffff, O['LIGHT_INK'] * 0x010101, 'live'),
     Key('playing.layout', 'np_layout', 'enum', 0, 1, 0, 'open'),  # the 'open' fields: after n_opts
     *(Key(f'coverflow.{e}.{a}', f'cf.{a}', 'int', lo, hi, 0, 'open') for e, a, lo, hi in (
         ('shelf', 'top', 0, 50), ('shelf', 'x1', 0, 1023), ('shelf', 'xs', 0, 799), ('shelf', 'z1', 0, 799),
@@ -105,9 +118,29 @@ ROLE_MACROS = {
                 'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
 }
 
+# Nano Blue's measured selection band: its 1 px top line, the stops under it and its edge row:
+# derive="gloss"'s shape. assets/themes/nano/theme.xml states the same values (test_theme checks).
+GLOSS = ((0, 0x08a6e7), (17, 0x009ade), (38, 0x008ade), (58, 0x007dde), (79, 0x006dd6), (100, 0x0065d6))
+GLOSS_TOP, GLOSS_EDGE = 0x94c7de, 0x004184
+
+
+def turn(c, top):
+    """c, a colour of Nano Blue's band, in the accent whose top tone is top: its HSV hue turned by top's
+    less the band's 38 % stop's, saturation and value scaled by theirs, so that stop becomes top."""
+    def hsv(x): return colorsys.rgb_to_hsv(*((x >> s & 255) / 255 for s in (16, 8, 0)))
+    (h0, s0, v0), (h, s, v), (ch, cs, cv) = hsv(GLOSS[2][1]), hsv(top), hsv(c)
+    rgb = colorsys.hsv_to_rgb((ch + h - h0) % 1, min(1, cs * s / s0), min(1, cv * v / v0))
+    return '#' + ''.join(f'{round(255 * x):02x}' for x in rgb)
+
+
+def derive_gloss(tones):
+    """Nano Blue's stops in the accent of tones, an ACCENTS row: derive="gloss"."""
+    return [(p, turn(c, tones[0])) for p, c in GLOSS]
+
 
 GEOMETRIES = {g.name: g for g in (SET0, NANO, NANO_TEXT)}  # <geometry set="..."/>: the row geometry sets, SET0 first
 THEME_GEOM_OFF = 4  # offsetof(theme_t, geom), right after name so no field moves it; asserted in navigation.c; test/patch.py pokes it
+SCHEME_MODE_OFF = 5  # offsetof(scheme_t, mode) on MIPS, right after flags; asserted in navigation.c; test/patch.py pokes it
 ROW_ART_OFF = {'nano': 'nano-text'}  # ponytail: Row Art off's set, until an option's <variant> names it
 
 
@@ -231,7 +264,61 @@ def load(path):
 
 
 def zero_scheme():
-    return {k.field: k.default for k in SCHEMA.values() if k.path.startswith('scheme.')}
+    return {**{k.field: k.default for k in SCHEMA.values() if k.path.startswith('scheme.')}, 'light': {}}
+
+
+def split_half(attr):
+    """'light.sel.top' -> ('light', 'sel.top'); 'dark.x' -> ('dark', 'x'); 'x' -> (None, 'x')."""
+    h, dot, rest = attr.partition('.')
+    return (h, rest) if dot and h in ('light', 'dark') else (None, attr)
+
+
+def flip(c, paper, ink):
+    """navigation.c's flip(): a neutral (channels within LIGHT_SPREAD) per channel paper - v * (paper - ink) // 255
+    on the low bytes of paper and ink; else c."""
+    ch = [c >> s & 255 for s in (0, 8, 16)]
+    if max(ch) - min(ch) > O['LIGHT_SPREAD']:
+        return c
+    p, i = paper & 255, ink & 255
+    return sum((p - v * (p - i) // 255) << s for v, s in zip(ch, (0, 8, 16)))
+
+
+def unflip(c, paper, ink):
+    """flip's approximate inverse: a neutral per channel (paper - v) * 255 // (paper - ink), clamped to 0..255; else c."""
+    ch = [c >> s & 255 for s in (0, 8, 16)]
+    if max(ch) - min(ch) > O['LIGHT_SPREAD']:
+        return c
+    p, i = paper & 255, ink & 255
+    return sum(min(255, max(0, (p - v) * 255 // (p - i))) << s for v, s in zip(ch, (0, 8, 16)))
+
+
+FINAL = [k for k in SCHEMA.values() if k.final]
+
+
+def half(d, light, paper, ink):
+    """d's final fields in one half: the stated value, else the other half's flipped (light) or unflipped
+    (dark); unset stays unset; stops per stop, positions kept; 'light' dropped."""
+    out = {f: v for f, v in d.items() if f != 'light'}
+    f_ = flip if light else unflip
+    for k in FINAL:
+        if k.field not in d:
+            continue
+        v = d['light'].get(k.field) if light else d[k.field] or None
+        if v is None:  # unstated: the other half's, flipped; unset (0, ()) stays unset
+            o = d[k.field] if light else d['light'].get(k.field, k.default)
+            v = tuple((p, f_(c, paper, ink)) for p, c in o) if k.type == 'stops' else o and f_(o, paper, ink)
+        out[k.field] = v
+    return out
+
+
+def scheme_half(s, light):
+    """half(s, light, s['paper'], s['ink']), paper and ink the half's."""
+    return {**half(s, light, s['paper'], s['ink']), **({} if light else {'paper': 0, 'ink': 0xffffff})}
+
+
+def shared(t):
+    """No scheme states a final value in either half: one array serves both."""
+    return not any(s['light'] or any(s[k.field] for k in FINAL if k.path.startswith('scheme.')) for s in t['schemes'])
 
 
 def check_tags(node):
@@ -268,11 +355,26 @@ def value(node, path, text, macros):
         if not re.fullmatch('#[0-9a-fA-F]{6}', text):
             err(f'{path}: expected #rrggbb')
         v = int(text[1:], 16)
+    elif k.type == 'stops':  # "#rrggbb N, ...": 2 to 8 stops, N rising from 0 to 100
+        stops = [re.fullmatch(r'#([0-9a-fA-F]{6}) ([0-9]{1,3})', s.strip()) for s in text.split(',')]
+        if not all(stops):
+            err(f'{path}: expected "#rrggbb N, ..."')
+        v = tuple((int(m[2]), int(m[1], 16)) for m in stops)
+        if not 2 <= len(v) <= 8:
+            err(f'{path}: 2 to 8 stops')
+        if v[0][0] != 0 or v[-1][0] != 100 or any(a[0] >= b[0] for a, b in zip(v, v[1:])):
+            err(f'{path}: positions must rise from 0 to 100')
+        return v
     else:
         if not re.fullmatch('-?[0-9]+', text):
             err(f'{path}: expected an integer')
         v = int(text)
     return ranged(node, k, v)
+
+
+def scheme_names(t):
+    """The names accent values index: the ACCENTS rows, then the theme's own schemes."""
+    return ACCENT_NAMES + [s['name'] for s in t['schemes'][len(ACCENT_NAMES):]]
 
 
 def resolve(root, by_id, seen=()):
@@ -309,22 +411,59 @@ def resolve(root, by_id, seen=()):
     for c in root.children:
         if c.tag == 'colorSchemes':
             t['accents'] = 0
+            t.pop('derive', None)
             for k in c.attrs:
-                if k != 'accents':
+                if k not in ('accents', 'derive'):
                     err(c, f'unknown key colorSchemes.{k}')
+            if c.attrs.get('derive', 'gloss') != 'gloss':
+                err(c, f'colorSchemes.derive: unknown value {c.attrs["derive"]}')
+            if 'derive' in c.attrs:
+                t['derive'] = 'gloss'
+            names = scheme_names(t)
             for n in c.attrs.get('accents', '').split():
-                if n not in ACCENT_NAMES:
+                if n not in names:
                     err(c, f'unknown scheme {n}')
-                t['accents'] |= 1 << ACCENT_NAMES.index(n)
+                t['accents'] |= 1 << names.index(n)
         elif c.tag == 'colorScheme':
-            n = c.attrs.get('name', '')
-            if n not in ACCENT_NAMES:
+            n = c.attrs.get('name')  # none: every scheme the theme has
+            own = n is not None and 'base' in c.attrs  # a scheme of the theme's own, after the ACCENTS rows
+            if own:
+                label = c.attrs.get('label', '')
+                if n in ACCENT_NAMES:
+                    err(c, f'{n}: an ACCENTS row takes no base')
+                if c.attrs['base'] not in ACCENT_NAMES:
+                    err(c, f'{n}: unknown base {c.attrs["base"]}')
+                if not label:
+                    err(c, f'{n}: an own scheme needs a label')
+                if len(label.encode()) > 48 or re.search('[\x00-\x1f\x7f-\x9f]', label):
+                    err(c, f'{n}: label: expected 1..48 bytes, no control characters')
+                if n not in scheme_names(t):
+                    b = t['schemes'][ACCENT_NAMES.index(c.attrs['base'])]
+                    t['schemes'].append(dict(b, name=n, label=label, base=ACCENT_NAMES.index(c.attrs['base']),
+                                             light=dict(b['light'])))
+                    t['accents'] |= 1 << len(t['schemes']) - 1
+            names = scheme_names(t)
+            if n is not None and n not in names:
                 err(c, f'unknown scheme {n}')
-            named.append((c, n))
-            for k, text in c.attrs.items():
-                if k != 'name':
-                    x = value(c, f'scheme.{k}', text, macros)
-                    t['schemes'][ACCENT_NAMES.index(n)][SCHEMA[f'scheme.{k}'].field] = x
+            if n is not None:
+                named.append((c, n))
+            targets = t['schemes'] if n is None else [t['schemes'][names.index(n)]]
+            for attr, text in c.attrs.items():
+                if attr == 'name' or own and attr in ('base', 'label'):
+                    continue
+                h, k = split_half(attr)
+                path = f'scheme.{k}'
+                x = value(c, path, text, macros)
+                f = SCHEMA[path]
+                if k in ('paper', 'ink'):  # the light half's flip ends; the dark half's are fixed
+                    if h != 'light':
+                        err(c, f"{path}: the dark half's is {'#000000' if k == 'paper' else '#ffffff'}; write light.{k}")
+                elif h and not f.final:
+                    err(c, f'{path}: one value for both halves')
+                elif h == 'dark' and k in c.attrs:
+                    err(c, f'{path}: stated twice ({k} and dark.{k})')
+                for s in targets:
+                    (s['light'] if h == 'light' and f.final else s)[f.field] = x
         elif c.tag == 'geometry':
             for k, text in c.attrs.items():
                 if k != 'set':
@@ -342,6 +481,8 @@ def resolve(root, by_id, seen=()):
             if s not in SETTINGS:
                 err(c, f'unknown setting {s}')
             macro, names = SETTINGS[s]
+            if s == 'accent':
+                names = scheme_names(t)
             o = {'setting': macro, 'def': -1, 'preset': -1, 'keep': -1, 'values': 0}
             for attr, field in (('default', 'def'), ('preset', 'preset'), ('keep', 'keep')):
                 if attr in c.attrs:
@@ -366,12 +507,15 @@ def resolve(root, by_id, seen=()):
                 el = f'{v}.{e.attrs.get("name", "")}'
                 if el not in ELEMENTS:
                     err(e, f'unknown element {el}')
-                for k, text in e.attrs.items():
-                    if k != 'name':
+                for attr, text in e.attrs.items():
+                    if attr != 'name':
+                        h, k = split_half(attr)
                         x = value(e, f'{el}.{k}', text, macros)
+                        if h:  # ponytail: no final view key yet; one takes the colorScheme loop's rule
+                            err(e, f'{el}.{k}: one value for both halves')
                         t[SCHEMA[f'{el}.{k}'].field] = x
     for c, n in named:
-        if not t['accents'] >> ACCENT_NAMES.index(n) & 1:
+        if not t['accents'] >> scheme_names(t).index(n) & 1:
             err(c, f'scheme {n} is not in colorSchemes')
     for field, expr in macros.items():
         k = FIELDS[field]
@@ -381,10 +525,20 @@ def resolve(root, by_id, seen=()):
                 s[field] = v
         else:
             t[field] = v
-    t['schemes'] = [s if t['accents'] >> i & 1 else zero_scheme() for i, s in enumerate(t['schemes'])]
+    if t.get('derive'):  # the gloss in each offered ACCENTS row that states none
+        for i, s in enumerate(t['schemes'][:len(ACCENT_NAMES)]):
+            if t['accents'] >> i & 1 and not s['sel']:
+                top = ACCENT_TONES[i][0]
+                s['sel'] = tuple((p, int(h[1:], 16)) for p, h in derive_gloss(ACCENT_TONES[i]))
+                s['sel_top'] = s['sel_top'] or int(turn(GLOSS_TOP, top)[1:], 16)
+                s['sel_edge'] = s['sel_edge'] or int(turn(GLOSS_EDGE, top)[1:], 16)
+                for f in ('sel', 'sel_top', 'sel_edge'):  # the gloss is both halves' design (Graphite's grey band flipped would turn upside down)
+                    s['light'].setdefault(f, s[f])
+    t['schemes'] = [s if i >= len(ACCENT_NAMES) or t['accents'] >> i & 1 else zero_scheme() for i, s in enumerate(t['schemes'])]
     for o in t['opts']:
         if o['setting'] == 'SETTING_ACCENT':
             o['values'] = 0 if t['accents'] == ALL_ACCENTS else t['accents']
+    t['undeclared'] = [m for m, _ in SETTINGS.values() if m not in [o['setting'] for o in t['opts']]]
     return t
 
 
@@ -404,12 +558,20 @@ def validate(t, name):
         err('colorSchemes is empty')
     for field, word in (('def', 'default'), ('preset', 'preset')):
         if accent[field] >= 0 and not t['accents'] >> accent[field] & 1:
-            err(f'accent {word} {ACCENT_NAMES[accent[field]]} is not in colorSchemes')
+            err(f'accent {word} {scheme_names(t)[accent[field]]} is not in colorSchemes')
     for k in SCHEMA.values():  # every value, those from a default or a base too (coverflow divides by some)
-        if k.type != 'set':
+        if k.type not in ('set', 'stops'):
             for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field]]:
                 if not k.lo <= v <= k.hi:
                     err(f'{k.path}: {v} outside {k.lo}..{k.hi}')
+    for s in t['schemes']:
+        for f in ('paper', 'ink'):
+            if len({s[f] >> 16, s[f] >> 8 & 255, s[f] & 255}) > 1:
+                err(f'scheme.{f}: expected a grey')
+        if (s['paper'] & 255) <= (s['ink'] & 255):
+            err('scheme.paper: must be lighter than ink')
+    if 'SETTING_LIGHT' in settings and any(s['mode'] for s in t['schemes']):
+        err('light: a scheme with its own mode has no Light Mode option')
     shelf = t['cf.top'] + 160 + t['cf.reflect']  # 160: coverflow.c's ART_SIZE
     if shelf > O['CF_VIEW_H']:
         err(f'coverflow.shelf: top + 160 + reflect = {shelf} exceeds {O["CF_VIEW_H"]}')
@@ -460,20 +622,34 @@ def offer(themes, dev):
     return len(themes) if dev else sum(not t['dev'] for t in themes)
 
 
+def stops_c(v):
+    """A stops value's stops_t initialiser."""
+    return '{0}' if not v else '{%d, {%s}, {%s}}' % (len(v), ', '.join(str(p) for p, _ in v), ', '.join(f'0x{c:06x}' for _, c in v))
+
+
 def emit(themes, out, redirects={}):
     """out/'themes.inc': the schemes, options and themes[] navigation.c includes, then the boot tables.
     redirects: ui name -> bitmask of the sets with their own <set>_<name>.bin."""
     sets = geometry_sets(themes)
     def c(k, v): return list(CHOICES[k.path].values())[v] if k.type == 'enum' else v
     lines = ['/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */']
+    def rows(t, light):
+        return [f'    {{ .tones = accents[{s.get("base", v)}], .flags = {s["card"] | s["raw_red"] << 1}, .fill = 0x{s["fill"]:06x}, '
+                f'.chevron = 0x{s["chevron"]:06x}, .muted = 0x{s["muted"]:06x}, .bar_light = 0x{s["bar_light"]:06x}, '
+                f'.sel = {stops_c(s["sel"])}, .sel_top = 0x{s["sel_top"]:06x}, .sel_edge = 0x{s["sel_edge"]:06x}, '
+                f'.sel_text = 0x{s["sel_text"]:06x}, .mode = {c(SCHEMA["scheme.mode"], s["mode"])}, '
+                f'.paper = 0x{s["paper"]:06x}, .ink = 0x{s["ink"]:06x}'
+                + (f', .label = {json.dumps(s["label"])}' if 'label' in s else '') + ' },'
+                for v, s in enumerate(scheme_half(s, light) for s in t['schemes'])]
     for t in themes:
-        i = t['id']
-        lines.append(f'static const scheme_t {i}_schemes[] = {{')
-        lines += [f'    {{ .tones = accents[{v}], .flags = {s["card"] | s["raw_red"] << 1}, .fill = 0x{s["fill"]:06x}, '
-                  f'.chevron = 0x{s["chevron"]:06x}, .muted = 0x{s["muted"]:06x}, .bar_light = 0x{s["bar_light"]:06x} }},'
-                  for v, s in enumerate(t['schemes'])]
-        lines += ['};', f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes == ACCENT_N, "one scheme per ACCENTS row");',
-                  f'static const option_t {i}_opts[] = {{']
+        i, one = t['id'], shared(t)
+        # one: the light rows serve both halves (today's lines); else the dark rows, then the light ones
+        lines += [f'static const scheme_t {i}_schemes[] = {{', *rows(t, one), '};',
+                  f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");']
+        if not one:
+            lines += [f'static const scheme_t {i}_light[] = {{', *rows(t, True), '};',
+                      f'_Static_assert(sizeof {i}_light == sizeof {i}_schemes, "one light half per scheme");']
+        lines.append(f'static const option_t {i}_opts[] = {{')
         lines += [f'    {{ .setting = {o["setting"]}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
                   f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
         lines.append('};')
@@ -483,7 +659,10 @@ def emit(themes, out, redirects={}):
         fields = [('name', json.dumps(t['name'])),
                   *((k.field, c(k, t[k.field])) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
                   ('accent_slot', ACCENT_KEYS[t['accent_key']]), ('accent_key', json.dumps(t['accent_key'])),
-                  ('schemes', f'{t["id"]}_schemes'), ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
+                  ('schemes', f'{t["id"]}_schemes'), ('light', f'{t["id"]}_schemes' if shared(t) else f'{t["id"]}_light'),
+                  ('n_schemes', len(t['schemes'])),
+                  ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
+                  ('undeclared', ' | '.join(f'(1 << {m})' for m in t['undeclared']) or 0),
                   *((k.field, c(k, t[k.field])) for k in SCHEMA.values() if k.cls == 'open'),
                   ('geom', sets.index(geometry(t)))]
         lines += ['    {', *(f'        .{k} = {v},' for k, v in fields), '    },']
@@ -505,6 +684,7 @@ def emit(themes, out, redirects={}):
               'static const volatile short geom_vals[GEOM_N][V_N] = {' + ', '.join(
                   '{' + ', '.join(str(getattr(g, n)) for n in GEOM_VALS) + '}' for g in sets) + '};',
               f'#define THEME_GEOM_OFF {THEME_GEOM_OFF}',
+              f'#define SCHEME_MODE_OFF {SCHEME_MODE_OFF}',
               'const boot_site_t boot_sites[BOOT_SITES] = {' + ', '.join(
                   f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};',
               'const char *const geom_names[GEOM_N] = {' + ', '.join(json.dumps(g.name) for g in sets) + '};',

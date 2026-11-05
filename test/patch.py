@@ -19,7 +19,8 @@ for name,key in (('demo','demo_sha256'),('stock-demo','stock_demo_sha256'),('pat
 assert manifest['version'] == (dev_tag(manifest['dev']) if manifest.get('dev') else TAG), 'Wrong version'
 assert manifest.get('compact_code')
 from ipod import INC, O  # patch/offsets.inc and its integer #defines
-from theme import THEME_GEOM_OFF, builtins as theme_builtins, geometry_sets
+from theme import SCHEME_MODE_OFF, THEME_GEOM_OFF, builtins as theme_builtins, geometry_sets
+from theme import derive_gloss, turn, GLOSS_TOP  # tools/theme.py: the derived accents' bands
 GEOMS=[g.name for g in geometry_sets(theme_builtins())]; GEOM_NANO,GEOM_NANO_TEXT=GEOMS.index('nano'),GEOMS.index('nano-text')
 DC=O['DOUBLE_CLICK_MS']  # centre double-press window
 # iPod accent presets: {gradient top, bottom, light tone, red tone, highlight} per Accent setting value.
@@ -746,8 +747,8 @@ def passed():
     global checks
     checks+=1
     trace(f'== {checks}')
-def nano(m):  # Nano (THEME=2) as a --dev build offers it: the gate word at 3
-    m.byte(payload_syms['theme_offer'],3); m.config['THEME']='2'; return m
+def nano(m):  # Nano (THEME=2) as a --dev build offers it: the gate word at 3; its light half unless LIGHT is stored
+    m.byte(payload_syms['theme_offer'],3); m.config['THEME']='2'; m.config.setdefault('LIGHT','1'); return m
 def nano_boot(m,rowart=None,fail=None):  # ... then the first system_bar load writes its set; the names stock loaded
     nano(m)  # rowart: the ROWART config value; fail(page): RWX mprotects it picks answer EACCES
     if rowart is not None: m.config['ROWART']=rowart
@@ -8308,7 +8309,7 @@ k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 # Nano is THEME=2 only where the build offers it: a release build offers Minimal and Classic (above,
 # 2 is Minimal); with the gate word at 3 it is Nano, on its own NANO_ACCENT, whose stored value outside
-# Nano's colours (9: none, 7: Ivory) is its default, Cobalt; Classic's ACCENT is not Nano's.
+# Nano's colours (9: none, 7: Ivory) is its default, Nano Blue (Cobalt's tones); Classic's ACCENT is not Nano's.
 k=Machine(); assert k.u.mem_read(payload_syms['theme_offer'],1)==b'\x02'
 for config,want in (({},4),({'NANO_ACCENT':'2'},2),({'NANO_ACCENT':'7'},4),({'ACCENT':'2'},4)):
     k=nano(Machine()); k.config.update(config)
@@ -8367,8 +8368,10 @@ for config,text,fill in (({'LIGHT':'1'},g,g),({'LIGHT':'1','MINIMAL_ACCENT':'4'}
     assert gradient(config,[0xff000000,0xffffffff])[1]==[paper,ink]; passed()
 # Theme images flip in Light Mode when colourless and mostly glyph; a disc or a coloured image,
 # and stock's, stay. 4x4 BGRA: one white pixel on transparent, or on a grey plate.
-def light_image(config,name,plate):
-    m=Machine(); m.config=config; m.handlers[tramp['image']]='stock_image'
+def light_image(config,name,plate,prep=None):
+    m=Machine(); m.config=config
+    if prep: prep(m)
+    m.handlers[tramp['image']]='stock_image'
     bm=m.alloc(0x60); data=m.alloc(64)
     m.word(bm,4); m.word(bm+4,4); m.word(bm+8,16); m.u.mem_write(bm+0xe,struct.pack('<H',3)); m.word(bm+0x14,data)
     m.u.mem_write(data,bytes([0xff,0xff,0xff,0xff])+(bytes([0x44,0x44,0x44,0xff]) if plate else bytes(4))*15)
@@ -8614,8 +8617,8 @@ def display_page(m,sub):
     assert m.calls[0][:3]==('stock_display',m.top,5)
     m.icons_set=[m.text(c[2]) for c in m.calls if c[0]=='image_base_set_image']
     return view
-def display(config,card=True,sub=1,setup=None):
-    CONFIG.clear(); CONFIG.update(config); SETUP[:]=[setup] if setup else []; m=QueueMachine(); SETUP.clear(); m.restack=True; m.rockbox_mode=0o100755 if card else 0; m.handlers[tramp['display']]='stock_display'
+def display(config,card=True,sub=1,cls=None,setup=None):
+    CONFIG.clear(); CONFIG.update(config); SETUP[:]=[setup] if setup else []; m=(cls or QueueMachine)(); SETUP.clear(); m.restack=True; m.rockbox_mode=0o100755 if card else 0; m.handlers[tramp['display']]='stock_display'
     view=display_page(m,sub)
     return m,view,setting_rows(m,view) if sub==1 else None
 def setting_rows(m,view):  # Accent, Home, Battery, Theme: as ringnav_display's index
@@ -9099,9 +9102,95 @@ for config,want in (({'THEME':'1','ACCENT':'7'},['Theme: Classic','Light Mode: O
     m,view,rows=display(config)
     assert [row_text(r) for r in m.nodes[view]['children']]==want+['Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing'],config
 passed()
+# Nano's stops painter: a 52 px selected row is the #94c7de top line, Nano Blue's six stops over the
+# 50 rows below it and the #004184 edge on its last, full width and square, its colours final
+# (unflipped), within the 100,000-instruction cap of one paint hook.
+NB=((0,0x08a6e7),(17,0x009ade),(38,0x008ade),(58,0x007dde),(79,0x006dd6),(100,0x0065d6)); NB_TOP=0x94c7de
+def stops_row(stops,j,h):  # paint_stops' pixel row j of h, as the C mixes it
+    p=j*25600//(h-1); k=0
+    while k+2<len(stops) and p>stops[k+1][0]*256: k+=1
+    (a,ca),(b,cb)=stops[k],stops[k+1]; n=(b-a)*256; i=p-a*256
+    return sum(((ca>>s&255)*(n-i)+(cb>>s&255)*i)//n<<s for s in (0,8,16))
+sk=Machine(); nano(sk); sw,ses=sk.page_list(5,height=260,extent=1000)
+for i,e in enumerate(ses): sk.word(e+O['W_Y'],52*i); sk.word(e+O['W_H'],52)
+count=[0]; counter=sk.u.hook_add(UC_HOOK_CODE,lambda *a: count.__setitem__(0,count[0]+1))
+sk.call(address=HOOKS['widget_on_paint_background'][0],args=(sw,sk.canvas,0,0)); sk.u.hook_del(counter)
+y0=sk.bands[0][1]
+assert [b[4] for b in sk.bands]==[color_t(NB_TOP)]+[color_t(stops_row(NB,j,50)) for j in range(50)]+[color_t(0x004184)]
+assert sk.bands[0][4]==color_t(0x94c7de) and sk.bands[1][4]==color_t(0x08a6e7)  # a crisp line, then the band
+assert [b[1]-y0 for b in sk.bands]==list(range(52)) and {(b[0],b[2],b[3]) for b in sk.bands}=={(0,sk.get(sw+O['W_W']),1)}
+assert count[0]<100000,count[0]
+print(f'Nano selection on a 52 px row: {count[0]} instructions'); passed()
+# Text on the band is sel_text, white, whatever the row's own ink.
+sk=Machine(); nano(sk); sw,srows=sk.page_list(3); slabels=[]
+for row in srows:
+    l=sk.node('hscroll_label'); sk.nodes[row]['children'].append(l); sk.word(l+O['W_PARENT'],row); slabels.append(l)
+begin(sk,sw); begin(sk,srows[0]); begin(sk,slabels[0])
+assert style_color(sk,0xffaaaaaa)[1]==0xffffffff and style_color(sk,0x80000000)[1]==0x80ffffff
+end(sk,slabels[0]); end(sk,srows[0]); end(sk,sw); passed()
+# Nano's halves. Nano declares Light Mode but not Rounded Corners or Centred Now Playing:
+# with ROUNDED=1 and NPCENTRED=1 stored its band is square and Now Playing is its own page. LIGHT=0 is
+# its dark half (no flip: stock's black and white), LIGHT=1 its light half on #ffffff and #000000, each
+# its own scheme row. Classic, booted on the same keys, takes all three. Minimal and Classic keep one
+# row for both halves: their Light Mode is the run-time flip.
+def np_loaded(k):
+    k.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+    k.call(address=load,args=(k.string('playing_page'),0,0,0),gap=0)
+    return [k.text(c[1]) for c in k.calls if c[0]=='stock_ui_load']
+def half_of(k): return k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
+def lit(k): return k.call(address=payload_syms['ipod_light'],args=(0,0,0,0),gap=0)
+hidden=dict(LIGHT='0',ROUNDED='1',NPCENTRED='1')
+nk=Machine(); nano(nk); nk.config.update(hidden)
+assert lit(nk)==0 and style_color(nk,0xff000000,'bg_color')[1]==0xff000000 and style_color(nk,0xffffffff)[1]==0xffffffff
+nw,_=nk.page_list(5,extent=1000); nk.paint(nw)
+assert {(b[0],b[2]) for b in nk.bands}=={(0,nk.get(nw+O['W_W']))} and np_loaded(nk)==['playing_page']
+nl=Machine(); nano(nl); nl.config.update(hidden,LIGHT='1')
+assert lit(nl)==1 and half_of(nl)!=half_of(nk)
+assert style_color(nl,0xff000000,'bg_color')[1]==0xffffffff and style_color(nl,0xffffffff)[1]==0xff000000
+# the image hook's glyph pass takes the half's ink: a white glyph turns black in the light half, stays white in the dark
+assert light_image({'LIGHT':'1'},'scover_wait0',False,prep=nano)[:4]==bytes([0,0,0,0xff])
+assert light_image({'LIGHT':'0'},'scover_wait0',False,prep=nano)[:4]==bytes([0xff]*4)
+ck=Machine(); ck.config.update(THEME='1',**hidden)
+assert ck.call(address=payload_syms['ipod_light'],args=(0,0,0,0),gap=0)==0 and np_loaded(ck)==['playing_page_stock']
+cw,_=ck.page_list(5,extent=1000); ck.paint(cw); assert min(b[0] for b in ck.bands)==O['SEL_INSET']  # Rounded: the pill
+for th in ('0','1'):  # Minimal and Classic: the same row in both halves
+    rows=[]
+    for light in '01':
+        k=Machine(); k.config.update(THEME=th,LIGHT=light); rows.append(half_of(k))
+    assert rows[0]==rows[1],th
+lk=Machine(); lk.config.update(THEME='1',LIGHT='1'); assert style_color(lk,0xff000000,'bg_color')[1]==color_t(0xf4f4f4)
+passed()
+# Light Mode's Auto under Nano: by day (the mock's 18:14) the light half; when the clock's minute crosses
+# 19:00 (clock_due, as the Light Mode Auto case drives it) the images drop once and the dark half draws.
+au=Machine(); au.config['LIGHT']='2'; nano(au); day=half_of(au)
+assert lit(au)==1 and style_color(au,0xff000000,'bg_color')[1]==0xffffffff
+au.clock=(19,0); au.calls=[]; au.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0,clear=False)
+assert [c[:2] for c in au.calls if c[0]=='image_manager_unload_all']==[('image_manager_unload_all',0x1000500)]
+assert lit(au)==0 and half_of(au)!=day and style_color(au,0xff000000,'bg_color')[1]==0xff000000; passed()
+# A one-mode scheme ignores Light Mode: Nano's scheme patched to SCHEME_LIGHT (scheme_t.mode, SCHEME_MODE_OFF,
+# read from the dark row) draws its light row under LIGHT=0, and SCHEME_DARK its dark row under LIGHT=1.
+probe=Machine(); probe.config['LIGHT']='0'; nano(probe); dark_row=half_of(probe)
+probe=Machine(); nano(probe); light_row=half_of(probe)
+for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
+    om=Machine(); om.config['LIGHT']=stored; nano(om); om.u.mem_write(dark_row+SCHEME_MODE_OFF,bytes([mode]))
+    assert lit(om)==(mode==1) and half_of(om)==want,mode
+passed()
 # The same stored THEME=2 where Nano is offered: its Appearance is Theme and Nano's own options.
 m,view,rows=display({'THEME':'2'},setup=nano)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Accent: Cobalt','Home: Split','Battery: Icon']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Battery: Icon']; passed()
+# Nano's Accent is Nano Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
+# Nano does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
+# then Nano Blue, each band its own gloss: Nano Blue's stops, the others derived from their tones.
+for stored,name in ((None,'Nano Blue'),('7','Nano Blue'),('12','Nano Blue'),('4','Cobalt')):
+    m,view,rows=display({} if stored is None else {'NANO_ACCENT':stored},setup=nano)
+    assert row_text(rows[0])=='Accent: '+name,stored
+m,view,rows=display({},setup=nano); f,ctx=m.handler(m.nodes[rows[0]]['children'][0],O['EVT_CLICK'])
+for value,name in ((0,'Graphite'),(1,'Crimson'),(2,'Tidal'),(3,'Champagne'),(4,'Cobalt'),(5,'Tangerine'),(6,'Plum'),(8,'Green'),(9,'Nano Blue')):
+    m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'NANO_ACCENT')] and row_text(rows[0])=='Accent: '+name
+    m.paint(view); top=NB_TOP if value==9 else int(turn(GLOSS_TOP,ACCENTS[value][0])[1:],16)  # the first row: the top line
+    assert m.bands[0][4]==color_t(top),(name,hex(m.bands[0][4]))
+passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent
 CONFIG.update(THEME='1'); m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'

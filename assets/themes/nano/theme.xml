@@ -3,7 +3,20 @@
      are this file's or the sets', never patch/offsets.inc's. -->
 <theme format="1" id="nano" name="Nano" index="2" extends="classic" dev="1">
   <geometry set="nano"/>
-  <option setting="accent" key="NANO_ACCENT" default="cobalt" preset="cobalt"/>
+  <!-- every scheme: white text on the band in both halves; the light half on white paper, black ink -->
+  <colorScheme sel.text="#ffffff" light.paper="#ffffff" light.ink="#000000" light.sel.text="#ffffff"/>
+  <!-- Nano Blue: Cobalt's tones and the measured band: its 1 px top line, the stops below it, its edge. Hues, so its
+       light half is the same. The other accents get this band turned to their own top tone -->
+  <colorScheme name="nano-blue" label="Nano Blue" base="cobalt" sel.top="#94c7de"
+               sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
+               sel.edge="#004184"/>
+  <colorSchemes accents="nano-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
+  <view name="list"><element name="selection" painter="stops"/></view>
+  <!-- Light Mode: On is the measured nano look, Off its dark half, Auto both by the clock -->
+  <option setting="light" preset="on" keep="auto"/>
+  <option setting="accent" key="NANO_ACCENT" default="nano-blue" preset="nano-blue"/>
   <option setting="home"/>
+  <option setting="shortcut"/>
   <option setting="battery"/>
+  <option setting="time_title" preset="on"/>
 </theme>
