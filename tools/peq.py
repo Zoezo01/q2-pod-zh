@@ -32,6 +32,9 @@ RS_OPEN_SLOT, RS_OPEN = 0x8a4554, 0x4ac2c0
 # ao_alsa's descriptor init slot (0x88f758; stock init 0x438988), which becomes ao_init: on Bluetooth or a USB DAC
 # the same request asks for the rate and format it negotiated last time, so a gapless change keeps the PCM open.
 AO_INIT_SLOT, AO_INIT = 0x88f760, 0x438988
+# Its uninit slot (stock 0x43868c), which becomes ao_uninit: it notes a file played to its end, so ao_init drains
+# that track's last audio before a reopen, and a skip stays mute-first (peq_player.c).
+AO_UNINIT_SLOT, AO_UNINIT = 0x88f764, 0x43868c
 # Stock skips the equalizer above 48 kHz (address, stock word, patched word); see docs/internals.md.
 EQ_RATE_GATES = ((0x42ced0, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
                  (0x42fd84, 0x1440003b, 0x1000003b))   # bnez $v0 to the insert -> b
@@ -53,8 +56,11 @@ MQA_PROBE = ((0x42eaf4, 0x3c020002, 0x3c020030),  # lui $v0, 0x2           -> lu
 # ao_alsa's init (0x438988) asks for a 500 ms buffer (0x438a3c) but cuts it to 100 ms on output way 2, a USB
 # DAC: two branch delay slots store 100000 us and become nops, so USB keeps 500 ms.
 # ponytail: where hciplayer scales a USB DAC's volume itself, a change now lags up to 500 ms, not 100 ms.
-USB_BUFFER = ((0x43977c, 0xafc2017c, 0),  # sw $v0, 0x17c($fp)  -> nop  (hw:2,0)
-              (0x439a60, 0xafc3017c, 0))  # sw $v1, 0x17c($fp)  -> nop  (hw:1,0)
+# The queue's end (mcl-orderstop, 0x43b1d0, on the command thread) closes a USB DAC undrained, which that buffer
+# made a 500 ms loss: the branch that drains the other outputs goes for USB as well.
+USB_BUFFER = ((0x43977c, 0xafc2017c, 0),           # sw $v0, 0x17c($fp)  -> nop  (hw:2,0)
+              (0x439a60, 0xafc3017c, 0),           # sw $v1, 0x17c($fp)  -> nop  (hw:1,0)
+              (0x43b1f4, 0x1462000d, 0x1000000d))  # bne $v1, $v0, 0x43b22c -> b 0x43b22c
 # The wired outputs' unmute calls release the DAC, wait and only then let audio flow (peq_player.c,
 # docs/internals.md#wired-start): (address, stock word, hook).
 DAC_RELEASE = ((0x4391b0, 0x0c2b6eec, 'dac_ioctl'),   # end of init: jal ioctl
@@ -229,7 +235,7 @@ def patch_player(raw, out, flac_experiments=()):
     run('ld.lld', '-m', 'elf32ltsmip', '--gc-sections', '-T', script, '-e', 'peq_open', '--undefined=mp3_seek', '--undefined=id3_gain',
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
-        '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init',
+        '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
         *(f'--undefined={name}' for _, _, name in DAC_RELEASE),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
@@ -254,6 +260,7 @@ def patch_player(raw, out, flac_experiments=()):
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')
+    patch_word(data, AO_UNINIT_SLOT, AO_UNINIT, ps['ao_uninit'], 'Output uninit slot')
     patch_word(data, MP3_ALLOC, jal(0xadaf00), jal(ps['mp3_private_alloc']), 'MP3 gapless private state')
     patch_word(data, MP3_FILTER, jal(0x44d350), jal(ps['mp3_filter_entry']), 'MP3 gapless PCM')
     patch_word(data, MP3_CLOSE, 0x48b7e4, ps['mp3_close'], 'MP3 gapless cleanup')

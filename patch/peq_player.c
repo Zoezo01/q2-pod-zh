@@ -412,11 +412,60 @@ static int ao_playing(void) {
     int state = ((int (*)(void *))0xadb680u)(ALSA_PCM);
     return state == PCM_RUNNING || state == PCM_PREPARED;
 }
+/* The old track's end at a natural change that reopens the PCM (docs/internals.md#usb-output-buffer). Init's reopen
+ * mutes the DAC (0x4395dc) before it drains (0x438d04), and on USB closes without draining (0x438cfc), so up to the
+ * buffer (500 ms at 44.1 kHz, 85 ms at 192) of a track played to its end went unheard. So a change nobody pressed for drains first, then
+ * stock's mute, drain (bad state, returning at once in libasound, its answer unread), close and open run.
+ * What says nobody pressed: every file's end reaches the uninit slot (0x88f764), whose immed is 0 only when the
+ * loop ended it naturally (eof 1); a skip (set-nexturl, the next flag 0xb10e6c) and a stop (mcl-stop, the stop flag
+ * 0xb10e70) make eof 4, immed 1. A next flag up then, or a next or stop flag set by a command before the drain
+ * (hci_command, and init's own look), means a press and stock's mute-first order. A stop flag up at the slot closes
+ * the PCM there, so init finds nothing to drain. The arm is that way's, so it can't drain across outputs.
+ * A press during the drain, which stock's handler only notes, must silence: hci_command mutes the jack (0x43b280:
+ * its flag is what stock's unmute reads) and drops USB, whose mute wouldn't reach the DAC. snd_pcm_drain holds no
+ * lock (libasound 0x3ff44, hw 0x4f784) and plug forwards it, and a kernel DROP ends a blocked DRAIN. A rise of the
+ * play flag is a press here too: set-songurl (demo's not-playing path, whose mute a hardware-type word and the
+ * order-stop flag decide, 0x5ad1bc) sets
+ * no other word, and the flag was cleared on the way to this init (0x42d9fc). ao_draining keeps the PCM open
+ * while the other thread uses it: 1 draining, 2 being cut. The triple can't say: a cold natural change (Gapless off, stock Shuffle,
+ * Repeat One, a track under 3 s) resets it just as a skip does. Same-format gapless changes match stock's compare,
+ * so nothing is called. DSD (0xb10e5c, at either end) keeps its mute, which may guard an end pop. Bluetooth drains
+ * unmuted in stock's own code. A stop flag with immed 0 (a stop within one loop of the natural end) stays stock's.
+ * The drain runs on the player's main thread, as stock's muted one did, for the same time; on USB it adds what
+ * was lost, the buffer's rest.
+ * ponytail: a press from demo's not-playing state before the drain starts (within a UI pass of the end) can't be
+ * told from the cold route's own set-songurl and hears the tail play out, up to the buffer's rest; demo's press word
+ * would close that. Demo mutes the cold route itself 100 ms before set-songurl (0x5ad1bc, 0x5ad1c4), so on the jacks
+ * that tail goes unheard before this runs: only the preload route and USB gain; closing it is a change in demo.
+ * mcl-orderstop's close on the command thread during the drain races it as it races stock's own
+ * drain, on USB now too; demo sends that only at a queue's end, with no next track to drain for. Whether the PCM
+ * stopping unmuted, just before the following mute, pops can't be settled off a device: a loud track cut at
+ * full level on the jack, by ear or scope, would. No ramp is added to guess at it. */
+#define NEXT_FLAG (*(volatile int *)0xb10e6cu)
+#define STOP_FLAG (*(volatile int *)0xb10e70u)
+#define DSD_FILE (*(volatile int *)0xb10e5cu)
+#define KEEP_GAPLESS (*(volatile int *)0xb10e58u)
+#define PREV_FORMAT (*(volatile int *)0xafa164u) /* stock's triple, compared at 0x438cc0, 0x439598, 0x43972c */
+#define PREV_RATE (*(volatile int *)0xafa168u)
+#define PREV_CHANNELS (*(volatile int *)0xafa16cu)
+static volatile int ao_natural, ao_draining; /* ao_natural: the way a natural end was on, plus 1 */
+void ao_uninit(int immed) {
+    ao_natural = !immed && !NEXT_FLAG && !DSD_FILE ? OUTPUT_WAY + 1 : 0;
+    ((void (*)(int))0x43868cu)(immed);
+}
 int ao_init(int rate, int channels, int format, int flags) {
     int asked[2] = { rate, format }, was_open = ALSA_PCM != 0;
     int held = OUTPUT_WAY == ao_way && rate == ao_asked[0] && format == ao_asked[1];
     if (OUTPUT_WAY && was_open && held && (rate != ao_got[0] || format != ao_got[1]) && ao_playing())
         rate = ao_got[0], format = ao_got[1];
+    int natural = ao_natural;
+    ao_natural = 0;
+    if (natural == OUTPUT_WAY + 1 && was_open && OUTPUT_WAY != 1 && !DSD_FILE &&
+        (!KEEP_GAPLESS || channels != PREV_CHANNELS || rate != PREV_RATE || format != PREV_FORMAT)) {
+        __atomic_store_n(&ao_draining, 1, __ATOMIC_SEQ_CST); /* before the flags: hci_command sets them, then looks */
+        if (!NEXT_FLAG && !STOP_FLAG) ((int (*)(void *))0xadb6a0u)(ALSA_PCM); /* snd_pcm_drain; an error leaves it to stock's own */
+        while (__sync_val_compare_and_swap(&ao_draining, 1, 0) == 2) usleep(1000);
+    }
     int r = ((int (*)(int, int, int, int))0x438988u)(rate, channels, format, flags);
     if (r > 0 && ALSA_PCM) {
         int got[2] = { AO_RATE, AO_FORMAT };
@@ -424,6 +473,13 @@ int ao_init(int rate, int channels, int format, int flags) {
             ao_asked[0] = asked[0], ao_asked[1] = asked[1], ao_got[0] = got[0], ao_got[1] = got[1], ao_way = OUTPUT_WAY;
     }
     return r;
+}
+static void ao_cut(void) { /* a press during ao_init's drain, on the command thread */
+    if (__sync_val_compare_and_swap(&ao_draining, 1, 2) != 1) return;
+    void *pcm = ALSA_PCM; /* mcl-orderstop's close may have run */
+    if (OUTPUT_WAY != 2) ((void (*)(int))0x43b280u)(1);
+    else if (pcm) ((int (*)(void *))0xadaf60u)(pcm); /* snd_pcm_drop */
+    __atomic_store_n(&ao_draining, 0, __ATOMIC_SEQ_CST);
 }
 
 /* The wired outputs' cut start (docs/internals.md#wired-start). ioctl DAC_MUTE 0 returns with the driver's
@@ -659,6 +715,8 @@ void hci_command(void *buf) {
     cmd_state(after);
     for (unsigned i = 0; i < CMD_WORDS + 1; ++i) changed |= before[i] != after[i];
     if (!changed) return;
+    if (after[1] == 1 || after[2] == 1) ao_natural = 0; /* a skip or stop before init: not natural (ao_uninit) */
+    if (after[1] == 1 || after[2] == 1 || (!before[0] && after[0])) ao_cut();
     __atomic_add_fetch(&cmd_gen, 1, __ATOMIC_SEQ_CST);
     hci_futex(&cmd_gen, 129, 1, 0); /* FUTEX_WAKE_PRIVATE */
     if (before[0] != after[0]) hci_futex((volatile int *)PLAY_FLAG, 129, 1, 0);
