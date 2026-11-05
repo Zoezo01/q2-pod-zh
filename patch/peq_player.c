@@ -794,7 +794,7 @@ unsigned id3_txxx(const unsigned char *f, unsigned n, char *out, unsigned cap) {
 #define AV_DICT_FREE ((void (*)(void **))0x6eabfcu)
 #define RG_EXPORT ((int (*)(void *, void *))0x538764u)
 #define AT(p, o, type) (*(type *)((char *)(p) + (o)))
-static unsigned id3_int(const unsigned char *p, int syncsafe) {
+unsigned id3_int(const unsigned char *p, int syncsafe) {
     return syncsafe ? (p[0] & 127u) << 21 | (p[1] & 127u) << 14 | (p[2] & 127u) << 7 | (p[3] & 127u)
                     : (unsigned)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3];
 }

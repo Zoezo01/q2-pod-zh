@@ -503,16 +503,68 @@ def real_chain():
         assert decode(bytes(tag_frame) + plain[len(first_frame):]) == bare
     again = decode(bytes(no_extension) + plain[len(first_frame):], rewind=True)
     assert again[0] == again[1] == bare, (len(again[0]), len(again[1]), len(bare))
+    # iTunSMPB in ID3v2's comment forms. A lame -t file is what iTunes' measured files are shaped like, a known delay
+    # of 576 in the priming and a hard end: each must come out as LAME's own tag has it.
+    def smpb_text(priming, samples, remainder):
+        return ' 00000000 %08X %08X %016X 00000000 00000000' % (priming, remainder, samples)
+    def latin1(text, language=b'eng'):
+        return b'\0' + language + b'iTunSMPB\0' + text.encode()
+    def utf16(text, language=b'eng'):
+        return b'\1' + language + 'iTunSMPB'.encode('utf-16') + b'\0\0' + text.encode('utf-16')
+    def tag(version, *frames):
+        body = b''
+        for name, frame in frames:
+            size = len(frame)
+            body += name + (size.to_bytes(3, 'big') if version == 2 else
+                            size.to_bytes(4, 'big') + bytes(2) if version == 3 else
+                            bytes((size >> s & 127) for s in (21, 14, 7, 0)) + bytes(2)) + frame
+        size = len(body)
+        return b'ID3' + bytes((version, 0, 0)) + bytes((size >> s & 127) for s in (21, 14, 7, 0)) + body
     bare_mp3 = plain[len(first_frame):]
-    # A real encoder's shape: `Lame3.100`, the tag's CRC-16 right for that, ID3v2 ahead of the
+    assert encode('notag', pcm[:split*2], '-b', '320', '-t') == bare_mp3
+    total = len(walk(bare_mp3)) * 1152
+    good = smpb_text(576, split, total - 576 - split)
+    cover = random.Random(8).randbytes(70000)
+    for ahead in (tag(2, (b'COM', b'\0eng\0some comment'), (b'COM', latin1(good))),
+                  tag(2, (b'COM', utf16(good))),
+                  tag(3, (b'APIC', cover), (b'COMM', latin1(good))),
+                  tag(3, (b'COMM', utf16(good, b'xyz'))),
+                  tag(4, (b'APIC', cover), (b'COMM', b'\3eng' + b'iTunSMPB\0' + good.encode())),
+                  tag(3, (b'TXXX', b'\0iTunSMPB\0' + good.encode())),
+                  tag(3, (b'TIT2', b'\0x')) + tag(3, (b'COMM', latin1(good)))):
+        assert decode(ahead + bare_mp3) == want, ahead[:24]
+    # With a tag frame, which leaves itself out of its count; a valid LAME extension wins over any comment.
+    ahead = tag(3, (b'COMM', latin1(good)))
+    assert decode(ahead + bytes(no_extension) + bare_mp3) == want
+    other = tag(3, (b'COMM', latin1(smpb_text(1000, split, total - 1000 - split))))
+    assert decode(other + plain) == want
+    wrong = tag(3, (b'COMM', latin1(smpb_text(576, split + 1, total - 576 - split))))
+    # What a refused tag leaves is what no tag leaves: the wrong sum, another description, too much priming.
+    assert decode(wrong + bytes(no_extension) + bare_mp3) == bare
+    named = tag(3, (b'COMM', b'\0engiTunNORM\0' + good.encode()))
+    primed = tag(3, (b'COMM', latin1(smpb_text(16385, split, total - 16385 - split))))
+    assert decode(named + bare_mp3) == bare and decode(primed + bare_mp3) == bare
+    # Past the frames looked at, or in a tag laid out otherwise, it isn't found.
+    padded = tag(3, *[(b'TXXX', b'\0k\0v')] * 64, (b'COMM', latin1(good)))
+    assert decode(padded + bare_mp3) == bare
+    # A real encoder's shape: `Lame3.100`, the tag's CRC-16 right for that, ID3v2.4 with a large cover ahead of the
     # first frame, and APEv2 then ID3v1 behind the last. FFmpeg's name list refuses this one, so FFmpeg's agreement
     # says nothing here; mpg123's has no list.
     field = extension(first_frame)
+    cover = random.Random(9).randbytes(188000)
     named = signed(first_frame[:field] + b'Lame3.100' + first_frame[field+9:])
-    spelled = id3 + named + bare_mp3 + apev2(b'x'*1500) + id3v1
+    spelled = tag(4, (b'APIC', b'\0image/jpeg\0\3\0' + cover), (b'TIT2', b'\3x')) + named + bare_mp3 + apev2(b'x'*1500) + id3v1
     assert decode(spelled) == want
     # Any other name without its CRC is no extension: only the tag frame goes.
     assert decode(edited(plain, 0, b'GOGO3.13\0')) == bare
+    # Both sides of a boundary: nothing lost or inserted between the tracks.
+    longer = array.array('h', (int(26000*math.sin(2*math.pi*(200*i + 0.003*i*i)/rate)) for i in range(60000) for _ in (0, 1)))
+    for part in (longer[:30011*2], longer[30011*2:]):
+        lame_tag, no_tag = encode('tagged', part, '-b', '320'), encode('untagged', part, '-b', '320', '-t')
+        n, count = len(part)//2, len(walk(no_tag)) * 1152
+        ahead = tag(2, (b'COM', latin1(smpb_text(576, n, count - 576 - n))))
+        side = decode(ahead + no_tag)
+        assert len(side) == n*4 and side == decode(lame_tag)
     # The trim only ever cuts: what's left is the untrimmed decode's samples, with padding beyond one frame too.
     assert want == bare[1105*4:][:len(want)]
     wide = bytearray(first_frame)
@@ -537,4 +589,4 @@ def real_chain():
 
 
 real_chain()
-print('Real chain: lame files through stock demuxer, libmad and filters: encoder names (Lame3.100 with its cover and tails), ID3v2, Info header, tag frames without an extension, tail tags, rewind: OK')
+print('Real chain: lame files through stock demuxer, libmad and filters: encoder names (Lame3.100 with its cover and tails), ID3v2, Info header, tag frames without an extension, iTunSMPB, tail tags, rewind: OK')

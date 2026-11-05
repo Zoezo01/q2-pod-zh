@@ -11,7 +11,7 @@ typedef struct {
 
 /* Raw MPlayer decoders also emit the Xing frame. FFmpeg's mp3 demuxer removes it instead.
  * Delay/padding are per channel: https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mp3dec.c
- * ponytail: a file with no extension (no tag, VBRI) keeps 1624 to 2176 samples of delay and padding
+ * ponytail: a file with no extension and no iTunSMPB (no tag, VBRI) keeps 1624 to 2176 samples of delay and padding
  * at each boundary, nothing says how many to cut. docs/internals.md lists these. */
 static int mp3_named(const unsigned char *n, const char *name) {
     for (unsigned i = 0; i < 4; ++i) if ((n[i] | 32) != name[i]) return 0;
@@ -107,6 +107,50 @@ int mp3_gapless(const unsigned char *h, unsigned n, unsigned *start, unsigned *p
     return found;
 }
 
+static int smpb_field(const char **v, unsigned long long *out) {
+    const char *s = *v;
+    unsigned long long x = 0;
+    unsigned k = 0;
+    while (*s == ' ') ++s;
+    for (;; ++s, ++k) {
+        unsigned c = (unsigned char)*s, d = c >= '0' && c <= '9' ? c - '0' : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10 : 16;
+        if (d == 16) break;
+        x = x << 4 | d;
+    }
+    *out = x;
+    *v = s;
+    return k && k <= 16;
+}
+
+/* iTunes writes no extension but an iTunSMPB comment: reserved, priming, remainder, samples, in hex.
+ * https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mp3dec.c parses it since a1d17fdd28, with these refusals,
+ * but takes priming as covering the decoder's delay and trims 529 samples less at the start and more at the end.
+ * Measured here, on the one real file to hand (its gapless-itunes.mp3, iTunes 12.7.0.166), the audio stops at priming
+ * + samples + 529, as with LAME's delay; the sum can't tell the readings apart. ponytail: an iTunes version that
+ * really counted the decoder would come out 529 samples (12 ms) off at each boundary; docs/internals.md. */
+int mp3_smpb(const unsigned char *h, unsigned n, const char *v, unsigned *start, unsigned *padding,
+             unsigned *rate, unsigned *channels) {
+    unsigned hz, spf, mono, size = mp3_frame(h, n, &hz, &spf, &mono);
+    unsigned long long reserved, priming, remainder, samples, frames = 0;
+    if (!size || !smpb_field(&v, &reserved) || !smpb_field(&v, &priming) || !smpb_field(&v, &remainder) ||
+        !smpb_field(&v, &samples)) return 0;
+    /* mp3_trim's tail buffer is sized from the remainder: as big as a LAME tag can ask for. */
+    if (priming > 16384 || remainder > 4095 || !samples || samples >> 40) return 0;
+    unsigned tag = mp3_tag(h, size, spf, mono);
+    if (tag) {
+        const unsigned char *c = h[tag] == 'V' ? h + 50 : h[tag + 7] & 1 ? h + tag + 8 : 0;
+        if (!mp3_silent(h, tag)) return 0;
+        if (c && size >= (unsigned)(c - h) + 4) frames = (unsigned)c[0] << 24 | c[1] << 16 | c[2] << 8 | c[3];
+    }
+    /* The tag's count leaves out the tag frame. Without a count, FFmpeg has nothing to check either. */
+    if (frames && priming + samples + remainder != frames * spf) return 0;
+    *start = (tag ? spf : 0) + priming + 529;
+    *padding = remainder > 529 ? remainder - 529 : 0;
+    *rate = hz;
+    *channels = mono ? 1 : 2;
+    return 1;
+}
+
 /* What the ID3v1 tag takes off a file's end, from its last n bytes t, and in *ape what all the tags do if an APEv2
  * footer there is sane and says it has a header, which the caller must find at that place. stock's demuxer scans a
  * tag for frames: non-JPEG bytes in APEv2 can decode as noise, and the trailing trim then cuts that, not the padding.
@@ -165,6 +209,38 @@ static void mp3_trim(mp3_private *p, af_data *data) {
 
 #ifndef PEQ_HOST
 #define AT(p, o, type) (*(type *)((char *)(p) + (o)))
+unsigned id3_int(const unsigned char *p, int syncsafe);
+unsigned id3_txxx(const unsigned char *f, unsigned n, char *out, unsigned cap);
+
+/* The iTunSMPB text in the ID3v2 tags ahead of the audio, or 0. Frames are skipped by their headers, so a cover
+ * costs a seek; at most 64 of them looked at. Only for a file with no extension. A COMM frame is a TXXX frame's
+ * body with a language after the encoding. */
+static const char *mp3_smpb_text(int fd, long long end, char *t, unsigned cap) {
+    unsigned char b[10], f[512];
+    unsigned budget = 64;
+    long long at = 0;
+    while (at + 10 <= end && lseek64(fd, at, 0) == at && read(fd, b, 10) == 10 && !memcmp(b, "ID3", 3) && b[3] >= 2 && b[3] <= 4) {
+        unsigned v = b[3], flags = b[5], head = v == 2 ? 6 : 10, name = v == 2 ? 3 : 4;
+        long long stop = at + 10 + id3_int(b + 6, 1);
+        at += 10;
+        if (v > 2 && flags & 0x40 && read(fd, b, 4) == 4) at += v == 4 ? id3_int(b, 1) : 4 + id3_int(b, 0);
+        /* Unsynchronised tags, and 2.2's compressed ones, aren't laid out as their sizes say. */
+        while (!(flags & 0x80) && !(v == 2 && flags & 0x40) && budget && at + head <= stop && lseek64(fd, at, 0) == at &&
+               read(fd, b, head) == (int)head && b[0]) {
+            unsigned n = v == 2 ? (unsigned)b[3] << 16 | b[4] << 8 | b[5] : id3_int(b + 4, v == 4);
+            int comment = !memcmp(b, v == 2 ? "COM" : "COMM", name), txxx = !memcmp(b, v == 2 ? "TXX" : "TXXX", name);
+            --budget;
+            if ((comment ? n > 3 : txxx && n) && n <= sizeof f && (v == 2 || !b[9]) && read(fd, f, n) == (int)n) {
+                if (comment) f[3] = f[0];
+                if (id3_txxx(comment ? f + 3 : f, comment ? n - 3 : n, t, cap) > 9 && !memcmp(t, "iTunSMPB", 9)) return t + 9;
+            }
+            at += head + n;
+        }
+        at = stop + (v == 4 && flags & 0x10 ? 10 : 0);
+    }
+    return 0;
+}
+
 static mp3_private *mp3_state(void *d) {
     mp3_private *p = d && AT(d, 0, unsigned) == 0x89fd90u ? AT(d, 0xc70, mp3_private *) : 0;
     return p && p->format == 1 ? p : 0;
@@ -184,7 +260,7 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
         p->checked = 1;
         void *s = AT(d, 0x20, void *);
         if (s) {
-            int fd = AT(s, 0x14, int), got = 0;
+            int fd = AT(s, 0x14, int), got = 0, found = 0;
             long long back = lseek64(fd, 0, 1), at = AT(d, 0x10, long long);
             if (back >= 0) {
                 if (lseek64(fd, at, 0) == at) got = read(fd, h, sizeof h);
@@ -195,7 +271,12 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
                         !memcmp(t, "APETAGEX", 8)) cut = ape;
                     if (eof - cut > at) p->audio_end = eof - cut;
                 }
-                if (got > 0) mp3_gapless(h, got, &p->start, &p->padding, &p->rate, &p->channels);
+                if (got > 0) found = mp3_gapless(h, got, &p->start, &p->padding, &p->rate, &p->channels);
+                if (got > 0 && found != 1 && at > 0) {
+                    char text[256];
+                    const char *smpb = mp3_smpb_text(fd, at, text, sizeof text);
+                    if (smpb) mp3_smpb(h, got, smpb, &p->start, &p->padding, &p->rate, &p->channels);
+                }
                 lseek64(fd, back, 0);
             }
             if (p->start) p->skip = p->seeked == 1 ? 0 : p->start;

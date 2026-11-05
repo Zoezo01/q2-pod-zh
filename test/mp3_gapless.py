@@ -216,6 +216,44 @@ int main(int argc, char **argv) {
     audio = bytearray(header(flags=0))
     audio[36:40] = bytes(4)
     assert parse(bytes(audio)) is None
+    # iTunSMPB, with the counts of the real iTunes 12.7.0.166 file measured in docs/internals.md: no tag frame at all there.
+    lib.mp3_smpb.argtypes = [C.c_char_p, C.c_uint, C.c_char_p] + [C.c_void_p] * 4
+    def smpb(h, text):
+        fields = [C.c_uint() for _ in range(4)]
+        return tuple(x.value for x in fields) if lib.mp3_smpb(h, len(h), text, *map(C.byref, fields)) else None
+    def itunes(priming=0x210, remainder=0x86a, samples=0x66486):
+        return b' 00000000 %08X %08X %016X 00000000 0002DA9D 00000000' % (priming, remainder, samples)
+    audio = bytes.fromhex('fffba040') + bytes(16) + b'\x01' + bytes(501)  # 160 kbit/s, no tag name
+    assert parse(audio) is None
+    assert smpb(audio, itunes()) == (1057, 1625, 44100, 2)
+    assert smpb(audio, itunes().lower()) == (1057, 1625, 44100, 2)
+    assert smpb(audio, itunes(priming=0)) == (529, 1625, 44100, 2)
+    assert smpb(audio, itunes(priming=16384))[0] == 16384 + 529
+    assert smpb(audio, itunes(remainder=4095))[1] == 4095 - 529
+    assert smpb(audio, itunes(remainder=100))[1] == 0
+    for text in (itunes(priming=16385), itunes(remainder=4096), itunes(samples=0), itunes(samples=1 << 40), b'', b' 0 210 86A',
+                 b' 0 210 86A 66486'.replace(b'210', b'00000000000000210'), b'iTunSMPB'):
+        assert smpb(audio, text) is None, text
+    assert smpb(audio[:300], itunes()) is None and smpb(bytes(522), itunes()) is None
+    # A tag frame: the sum has to come to its frames, which leave it out, and its own samples go too.
+    def counted(frames, version=3, name=b'Info'):
+        h = bytearray(header(version=version, flags=1, encoder=b''))
+        h[36 if version == 3 else 21:48 if version == 3 else 33] = name + struct.pack('>II', 1, frames)
+        return bytes(h)
+    assert smpb(counted(366), itunes()) == (1152 + 1057, 1625, 44100, 2)
+    assert smpb(counted(366, name=b'Xing'), itunes()) == (1152 + 1057, 1625, 44100, 2)
+    assert smpb(counted(732, version=2), itunes()) == (576 + 1057, 1625, 22050, 2)
+    assert smpb(counted(367), itunes()) is None and smpb(counted(365), itunes()) is None
+    assert smpb(counted(366), itunes(remainder=0x86b)) is None
+    assert smpb(counted(0), itunes()) == (1152 + 1057, 1625, 44100, 2)  # no count, nothing to check, as FFmpeg
+    vbri_count = bytearray(vbri)
+    vbri_count[50:54] = struct.pack('>I', 366)
+    assert smpb(bytes(vbri_count), itunes()) == (1152 + 1057, 1625, 44100, 2)
+    vbri_count[50:54] = struct.pack('>I', 365)
+    assert smpb(bytes(vbri_count), itunes()) is None
+    has_audio = bytearray(counted(366))
+    has_audio[10] = 1
+    assert smpb(bytes(has_audio), itunes()) is None
     # Tail tags: what stays of the file is what the demuxer plays, an APEv2 tag's only if its footer is sane, and
     # says it has a header for the caller to find.
     lib.mp3_tail.argtypes, lib.mp3_tail.restype = [C.c_char_p, C.c_uint, C.c_void_p], C.c_longlong
