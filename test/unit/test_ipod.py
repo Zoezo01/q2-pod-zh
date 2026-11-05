@@ -698,12 +698,12 @@ def test_ipod_home_art_fills_the_client_height():
     assert root[3][0][1] == [0, 0, 375, 294]
 
 
-def test_classic_light_home_rows_are_28():
+def test_classic_light_home_rows_are_32():
     root = home(); ipod.ipod_home(root, g=CLASSIC_LIGHT); n = named(root)
-    assert n['list_view_home'][1] == [0, ipod.HOME_TOP, 375, 7 * 28] and n['list_view_home'][2]['item_height'] == '28'
+    assert n['list_view_home'][1] == [0, ipod.HOME_TOP, 375, 7 * 32] and n['list_view_home'][2]['item_height'] == '32'
     rows = named(n['list_view_home'])  # the carousel's cards take the same names
-    assert [rows['btn_' + r][1] for r in ipod.HOME_ROWS] == [[0, 28 * i, 375, 28] for i in range(7)]
-    assert n['list_view_homeset'][1] == [0, ipod.HOME_TOP, 375, 2 * 28] and n['list_view_homeset'][2]['item_height'] == '28'
+    assert [rows['btn_' + r][1] for r in ipod.HOME_ROWS] == [[0, 32 * i, 375, 32] for i in range(7)]
+    assert n['list_view_homeset'][1] == [0, ipod.HOME_TOP, 375, 2 * 32] and n['list_view_homeset'][2]['item_height'] == '32'
     root = home(); ipod.ipod_home(root); assert named(root)['list_view_home'][2]['item_height'] == '39'
 
 
@@ -728,10 +728,10 @@ def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     g = CLASSIC_LIGHT
     m = ipod.status_metrics(g, ipod.CLASSIC_LIGHT_FONT_SRC)
     assert m['px'] == g.bar_px == 21 and m['cap'] == 11 and m['cap_top'] == 6 and m['label_y'] == -1
-    assert m['inset'] == ipod.corner_inset(6) == 50
+    assert m['inset'] == ipod.corner_inset(6) + ipod.BAR_PAD == 56  # BAR_PAD clear of the glass at the caps' top
     assert m['clock_text'] == 64 and classic_light_text_w('12:59 PM') <= 64  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [48, -1, 104, g.bar - 1]  # text on columns 50 to 150; a 12-hour clock's starts at 155
+    assert m['title'] == [54, -1, 98, g.bar - 1]  # text on columns 56 to 150; a 12-hour clock's starts at 155
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
     # what a title fits: Local Songs and Now Playing, whole
     assert classic_light_text_w('Local Songs') <= m['title'][2] - 4 and classic_light_text_w('Now Playing') <= m['title'][2] - 4
@@ -765,8 +765,8 @@ def test_classic_light_status_bar_battery_and_play_state_right():
     home, state = n['img_home_state'], n['img_state']
     assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
     assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
-    assert n['view_right'][2]['children_layout'].endswith(f'xm=56,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 318
-    assert 375 - ipod.corner_inset(4) >= 318  # clear of the glass at its top row 4, the nub's rows lower still
+    assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
+    assert 375 - ipod.corner_inset(4) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 4, BAR_PAD clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
@@ -776,7 +776,7 @@ def test_classic_light_status_bar_eq_in_the_room():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     m, eq = ipod.status_metrics(CLASSIC_LIGHT, ipod.CLASSIC_LIGHT_FONT_SRC), n['label_eq']
     x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
-    edge = 319  # the group's right edge: the nub ends at x 318
+    edge = 315  # the group's right edge: the nub ends at x 314
     assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], 28, m['title'][3]]
     assert x == 222 and x >= 375 / 2 + m['clock_text'] / 2 + ipod.CLASSIC_LIGHT_CLOCK_GAP  # the widest clock, CLASSIC_LIGHT_CLOCK_GAP clear
     assert classic_light_text_w('EQ') <= 28  # the bar's face fits its box
@@ -795,7 +795,7 @@ def test_classic_light_status_bar_icons_on_their_columns():
     assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3; the payload moves Bluetooth a row down, Wi-Fi a row up (bar.icons)
     assert n['img_state'][2].get('floating') is None
     def lay(*names):
-        x, out = 319, {}
+        x, out = 315, {}
         for name in reversed(names):
             w = 31 if name == 'view_battery' else n[name][1][2]
             x -= w
@@ -803,18 +803,18 @@ def test_classic_light_status_bar_icons_on_their_columns():
             x -= ipod.inc('STATUS_GAP')
         return out
     full = lay('img_bt', 'img_wifi', 'img_state', 'view_battery')
-    assert full['img_bt'][1] == 244 and {k: v for k, v in full.items() if k != 'img_bt'} == {
-        'view_battery': (288, 319), 'img_state': (266, 284), 'img_wifi': (248, 262)}
-    assert full['img_bt'][1] - ipod.BT_REACH == 234  # Bluetooth's ink
+    assert full['img_bt'][1] == 240 and {k: v for k, v in full.items() if k != 'img_bt'} == {
+        'view_battery': (284, 315), 'img_state': (262, 280), 'img_wifi': (244, 258)}
+    assert full['img_bt'][1] - ipod.BT_REACH == 230  # Bluetooth's ink
     bare = lay('img_bt', 'img_wifi', 'view_battery')
-    assert bare['img_wifi'] == (270, 284) and bare['img_bt'][1] - ipod.BT_REACH == 256
-    assert n['label_eq'][1][0] + view[1][0] + 28 < 256  # EQ, widest with a 12-hour clock: 226 to 254
+    assert bare['img_wifi'] == (266, 280) and bare['img_bt'][1] - ipod.BT_REACH == 252
+    assert n['label_eq'][1][0] + view[1][0] + 28 < 252  # EQ, widest with a 12-hour clock: 222 to 250
 
 
 def test_classic_light_status_bar_battery_must_fit():
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 93 of 97
-    with pytest.raises(ValueError, match=r'^Status bar battery needs 98px of 97px$'):
-        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 5))
+    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 93 of 93
+    with pytest.raises(ValueError, match=r'^Status bar battery needs 94px of 93px$'):
+        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 1))
 
 
 def test_playing_page_follows_the_bar():
@@ -935,15 +935,15 @@ def test_set_assets_set0_is_empty(fake_assets):
 
 
 def test_classic_light_sets():
-    # Classic: a 26 px bar, 28 px text rows, 52 px art rows with the art 1:1 (Row Art off: 28, no art),
+    # Classic: a 26 px bar, 32 px text rows, 52 px art rows with the art 1:1 (Row Art off: 32, no art),
     # and text pages without artwork.
     n, t = CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT
-    assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 28, 28, 52, 52, 52, 0, 0, 0)
+    assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 32, 32, 52, 52, 52, 0, 0, 0)
     assert (n.song_pitch, n.song_body, n.song_title24_y, n.song_meta_y) == (52, 52, 1, 29) == (t.song_pitch, t.song_body, t.song_title24_y, t.song_meta_y)
     assert dataclasses.replace(t, name='classic-light', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29) == n
-    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 1, 29, 2, 6)
-    assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (28, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
-    assert ipod.immediate_values(n)['scroll'] == 266
+    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (4, 6, 8, 8, 1, 29, 4, 8)
+    assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (32, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
+    assert ipod.immediate_values(n)['scroll'] == 262
 
 
 # Library as a Home list: a hidden list holds an empty scroll view the Library page's constructor finds by name, as high as
@@ -969,19 +969,19 @@ def test_songs_action_row(monkeypatch):
              w('view', at=[0, 100, 375, 193]), w('table_view', kind='table_view', at=[0, 100, 375, 190]), kind='window')
     data = ipod.encode(page); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
     n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
-    assert n['view_navbar_allplay'][1] == [0, 0, 375, 28] and n['table_view'][1] == [0, 28, 375, 266] and n['view'][1][1] == 28
-    assert ipod.immediate_values(CLASSIC_LIGHT)['scroll'] == 266 and ipod.immediate_values(ipod.SET0)['scroll'] == 240
+    assert n['view_navbar_allplay'][1] == [0, 0, 375, 32] and n['table_view'][1] == [0, 32, 375, 262] and n['view'][1][1] == 32
+    assert ipod.immediate_values(CLASSIC_LIGHT)['scroll'] == 262 and ipod.immediate_values(ipod.SET0)['scroll'] == 240
     n = named(ipod.decode(ipod.patch_asset(path, data)))
     assert n['view_navbar_allplay'][1] == [0, 0, 375, 50]
 
 
 def test_settings_lists_follow_the_set(monkeypatch):
-    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Classic's whole window of 28 px rows from 0.
+    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Classic's whole window of 32 px rows from 0.
     path = 'systemset/sysset_page.bin'
     page = w('sysset_page', w('view_navbar', at=[0, 0, 375, 50]),
              w('list_view', kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
     data = ipod.encode(page); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
-    for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (CLASSIC_LIGHT, [0, 0, 375, 294], '28')):
+    for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (CLASSIC_LIGHT, [0, 0, 375, 294], '32')):
         n = named(ipod.decode(ipod.patch_asset(path, data, g=g)))
         assert n['list_view'][1] == box and n['list_view'][2]['default_item_height'] == row and 'item_height' not in n['list_view'][2]
 
@@ -990,5 +990,5 @@ def test_lists_beside_settings_rows_take_item_height(monkeypatch):
     # A library list with the set's settings row height is told apart by its item_height (Classic only).
     path = 'localmusic/albuminfo_page.bin'
     data = ipod.encode(list_page(path)); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
-    assert named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))['list_view'][2]['item_height'] == '28'
+    assert named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))['list_view'][2]['item_height'] == '32'
     assert 'item_height' not in named(ipod.decode(ipod.patch_asset(path, data)))['list_view'][2]

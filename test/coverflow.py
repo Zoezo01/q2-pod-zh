@@ -232,9 +232,9 @@ static theme_t shim_themes[2] = {
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
       .home_pane =
-          { 4, { 0, 44, 88, 100 }, { 0x8ca2ad, 0x63717b, 0x425152, 0x425152 } }, .pane_shadow = 0,
-      .pane_shadow_w = 25,
-      .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 40, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
+          { 2, { 0, 100 }, { 0x63717b, 0x63717b } }, .pane_shadow = 0,
+      .pane_shadow_w = 0,
+      .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 0, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
       .pane_count_px = 27, .cf = CF_STYLE0 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
@@ -1700,7 +1700,9 @@ int main(void) {
      * panel and paints the pane's stops over all of it, its light (white, alpha 40 at the left, 0 at the
      * right edge, a band per alpha), the shadow down its left edge (black, the theme's alpha per column),
      * the note (its image, the theme's place) and the queue's count, "12 Songs", at 27 px, centred on its
-     * 24 px line box at the theme's place. */
+     * 24 px line box at the theme's place. Classic's own pane is flat (light and shadow 0): here they
+     * are on, as a theme may state them. */
+    shim_themes[1].pane_light_a = 40; shim_themes[1].pane_shadow_w = 25;
     unsigned queued = queue.n;
     classic = 1; home_mode = 0; stub_bar_h = 26; coverflow_home_layout();
     queue.n = 12; *(volatile int *)MCL_POS = 0; cover_fail = 1; coverflow_home_art(win);
@@ -1741,9 +1743,12 @@ int main(void) {
     for (int i = 0; i < 25; ++i)
         assert(fill[i].x == HOME_SPLIT_W - geo[0] + i && fill[i].y == -geo[1] && fill[i].w == 1 && fill[i].h == 294 &&
                (int)(fill[i].color >> 24) == SHADOW_A(i) && !(fill[i].color & 0xffffff));
+    shim_themes[1].pane_light_a = shim_themes[1].pane_shadow_w = 0; /* Classic's own: flat */
+    fills = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!fills);
     classic = 0; stub_bar_h = 30; coverflow_home_layout();
     fills = 0; coverflow_home_clip(home_art, canvas, 0);
-    assert(!fills); /* Minimal and Classic have no pane shadow to draw */
+    assert(!fills); /* Minimal has no pane shadow to draw */
     assert(!memcmp(geo, split, sizeof split));
     /* A cover that pans: the art's image is empty and fills the panel, the pan's frame drawn over it. */
     frame_fail = 0;

@@ -102,7 +102,8 @@ typedef struct {
     /* the theme's classic_light_chevron's box on screen: a full-width list's, Split's; 0: stock's
      * list_into
      */
-    short chevron_x, home_chevron_x;
+    short chevron_x, home_chevron_x,
+        art_placeholder; /* stock's Folder tile drawn this size in its row's middle, 0: as stock */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
     /* Split's panel where no cover shows (home_pane_paint), n 0: HOME_PLACEHOLDER. pane_shadow is

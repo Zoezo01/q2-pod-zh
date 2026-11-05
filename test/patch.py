@@ -1410,7 +1410,7 @@ for address in (0x523038, 0x4aa2cc, 0x4b0efc, 0x4a4ae8):
             assert all(m.get(n+O['W_CHILDREN_LAYOUT'])==0 for row in rows for n in m.nodes[row]['children'])
 passed()
 
-# Classic's Artists/Composers/Genres rows are one 28 px line: the leading artwork and playing gif
+# Classic's Artists/Composers/Genres rows are one 32 px line: the leading artwork and playing gif
 # and the second line hide, and the title sits centred in the row.
 for address in (0x4b0efc,):
     m=Machine(); classic_light_boot(m); w=m.page('folder_page','table_client')
@@ -1419,14 +1419,14 @@ for address in (0x4b0efc,):
            'set_hscroll_label_attribute','widget_set_visible')
     assert m.call(address=address,args=(w,w,4,0))==0
     rows=m.nodes[w]['children']; button=m.nodes[rows[0]]['children'][0]
-    assert {m.get(r+O['W_H']) for r in rows}=={28} and m.get(button+O['W_H'])==28
+    assert {m.get(r+O['W_H']) for r in rows}=={32} and m.get(button+O['W_H'])==32
     native_row_layout(m,button)
     kids=m.nodes[button]['children']
     text=next(c for c in kids if m.nodes[c]['type']=='hscroll_label' or any(m.nodes[t]['type']=='hscroll_label' for t in m.nodes[c]['children']))
     title=next((c for c in m.nodes[text]['children'] if m.nodes[c]['type']=='hscroll_label'),text)
     assert [m.nodes[c]['name'] for c in kids[:kids.index(text)] if m.nodes[c]['visible'] and not m.nodes[c]['name'].startswith('img_choice')]==[],address
     assert [c for c in m.nodes[text]['children'] if c!=title and m.nodes[c]['visible']]==[],address
-    y,h=(signed(m.get(title+O[k])) for k in ('W_Y','W_H')); assert 2*y+h==28,(address,y,h)
+    y,h=(signed(m.get(title+O[k])) for k in ('W_Y','W_H')); assert 2*y+h==32,(address,y,h)
     # Outside multi-select (img_choice hidden) the title container starts at text_x on screen, clear of
     # the glass: the button sits at 20. In multi-select stock's box keeps its place and the text its own.
     kx=lambda c: signed(m.get(c+O['W_X']))
@@ -8375,7 +8375,7 @@ for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEM
 passed()
 # A paint before any config read draws a built-in theme, never zeroed scratch.
 k=Machine(); k.config=dict(THEME='1'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==17 and k.bands[0][4]==color_t(0x94c7de)  # Classic Blue's band, its top line
+k.paint(kw); assert len(k.config_reads)==17 and k.bands[0][4]==color_t(0x08a6e7),hex(k.bands[0][4])  # Classic Blue's band's top row: the dark half's, no light rim
 k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 # THEME=1 is Classic, on its own CLASSIC_LIGHT_ACCENT, whose stored value outside
@@ -8801,7 +8801,7 @@ redirect('system_bar'); assert loaded('system_bar')==['ipod_system_bar'] and loa
 redirect('dialog/volume_dialog'); assert loaded('dialog/volume_dialog')==['dialog/ipod_volume_dialog']; passed()
 # Classic's first system_bar writes its set (every pitch word 28) and loads the set's own bar.
 nm=Machine(); assert classic_light_boot(nm)==['classic-light_system_bar']
-assert {nm.get(a)&0xffff for a,v in SITES.items() if v=='pitch'}=={28}; passed()
+assert {nm.get(a)&0xffff for a,v in SITES.items() if v=='pitch'}=={32}; passed()
 # classic_light_boot's options reach the machine: rowart sets the config, fail sees each RWX page it is asked.
 nm=Machine(); tried=[]; assert classic_light_boot(nm,rowart='0',fail=lambda page:tried.append(page)) and nm.config['ROWART']=='0' and tried; passed()
 # A set this boot can't write reads as Minimal, THEME kept: a theme's Appearance only runs on its own set.
@@ -8843,12 +8843,12 @@ assert [r[:4] for r in grows]==[(0,j,375,1) for j in range(25)]+[(0,24,375,1),(0
 assert (grows[0][4],grows[24][4],grows[25][4],grows[26][4])==(color_t(0xffffff),color_t(0x9c9e9c),color_t(0x848584),color_t(0x5a595a))
 assert all(a>=b for j in range(24) for a,b in zip(channels(grows[j][4]),channels(grows[j+1][4])))  # every stop darkens
 assert nb.lcd_colors()==LCD_COLORS and max(gcost)<100000,gcost
-# The dark half (LIGHT=0): the same gloss shape in the dark bar stops, over the #3a393a separator.
+# The dark half (LIGHT=0): flat #1c1c1c over a #333333 hairline.
 nd=Machine(); nd.config['LIGHT']='0'; classic_light_on(nd); ndbar=classic_light_bar(nd)
 nd.call(address=HOOKS['widget_on_paint_background'][0],args=(ndbar,nd.canvas,0,0),gap=0)
 gdrows=[b[:5] for b in nd.bands]
 assert [r[:4] for r in gdrows]==[(0,j,375,1) for j in range(26)]
-assert (gdrows[0][4],gdrows[24][4],gdrows[25][4])==(color_t(0x5a595a),color_t(0x1f1e1f),color_t(0x3a393a))
+assert (gdrows[0][4],gdrows[24][4],gdrows[25][4])==(color_t(0x1c1c1c),color_t(0x1c1c1c),color_t(0x333333)),[hex(r[4]) for r in gdrows]
 assert all(a>=b for j in range(24) for a,b in zip(channels(gdrows[j][4]),channels(gdrows[j+1][4]))); passed()
 # The title (label_title, Classic's bar only) names the top window: Home "Q2 Pod", Now Playing,
 # Coverflow, the EQ page (its 48 px row is the tabs' own label), a stock page's hidden navbar title, a payload page's 48 px caption row. A dialog keeps
@@ -9060,7 +9060,7 @@ rm.nodes[rimg]['image']='unselect'; rm.paint(rimg); assert not rm.bands
 assert image({},'select',prep=classic_light)==image({},'unselect',prep=classic_light)==[bytes(8)+b'\xee'*4]*2; passed()
 m=settings_m
 # Classic Home: the stops band across the split list (no Minimal dot) and the white `>` on that row
-# alone (the 28 px rows are test/build.py's per-set Home check).
+# alone (the 32 px rows are test/build.py's per-set Home check).
 hm=classic_light_on(Machine()); hv,himgs=home_list(hm); click_target(hm,himgs[2]); hm.clip=(0,0,375,320); hm.paint(hv)
 assert not hm.rounded and hm.bands and all(b[0]==0 and b[2]==HOME_LIST_W for b in hm.bands[:hm.sel()[3]])
 assert len(hm.icons)==1 and hm.icons[0][0]==168+25 and 'classic_light_chevron' in [hm.text(c[2]) for c in hm.calls if c[0]=='widget_load_image']; passed()
@@ -9291,25 +9291,25 @@ def check_row(m,item,slot):
         if label and trail: assert label[0]+label[1]<=trail+30  # the chevron's glyph starts 20px in
 # Classic's Theme picker: its rows lose the icon, not the mark. Each takes the column of stock's own (Language's tick): the stored
 # theme's select draws the tick, the others' unselect nothing, and the picker opens on it. Any other leading image still hides.
-m,view=settings('display',default=28,sub=4,boot=classic_light_on); m.rockbox_mode=0; lay(m,view)
+m,view=settings('display',default=32,sub=4,boot=classic_light_on); m.rockbox_mode=0; lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
 assert [m.nodes[i]['image'] for i in marks]==['unselect','select'] and all(m.nodes[i]['visible'] for i in marks)
-assert {geometry(m,i) for i in marks}=={(375-SET['EDGE']-50,0,50,28)},[geometry(m,i) for i in marks]
+assert {geometry(m,i) for i in marks}=={(375-SET['EDGE']-50,0,50,32)},[geometry(m,i) for i in marks]
 assert m.paint(view)==0 and m.selected(view)==1,m.selected(view)
 # Opened by a tap, its first paint comes with the pointer still down, which keeps other lists from recalling: a picker arrives
 # on its option all the same, so a Centre there does not take the first row. Language's the same.
-m,view=settings('display',default=28,sub=4,boot=classic_light_on); lay(m,view); m.pressed=1
+m,view=settings('display',default=32,sub=4,boot=classic_light_on); lay(m,view); m.pressed=1
 assert m.paint(view)==0 and m.selected(view)==1,m.selected(view)
 m=classic_light_on(Machine()); m.pressed=1; w,es=m.page_list(4,name='language_page'); m.nodes[es[2]]['children']=[m.node('image',image='select')]
 m.paint(w); assert m.selected(w)==2,m.selected(w)
 m=classic_light_on(Machine()); m.pressed=1; w,es=m.page_list(4,name='display_page'); m.paint(w); assert m.selected(w)==0,m.selected(w)
 m=Machine(); m.pressed=1; w,es=m.page_list(4,name='language_page'); m.nodes[es[2]]['children']=[m.node('image',image='select')]
 m.paint(w); assert m.selected(w)==0,m.selected(w)
-m,view=settings('display',default=28,sub=1,boot=classic_light_on); lay(m,view)
+m,view=settings('display',default=32,sub=1,boot=classic_light_on); lay(m,view)
 assert not any(m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['visible'] for r in m.nodes[view]['children'])
 passed()
 # A stock row with a second text line under its title (Bluetooth's Quality, 0x4be994: the title at y 12, the
-# detail at y 44 of its 70 px body), under a set whose row is too short for both (Classic's 28), takes two rows, so
+# detail at y 44 of its 70 px body), under a set whose row is too short for both (Classic's 32), takes two rows, so
 # nothing overlaps the next row. Its one-line neighbours keep the set's row, and a row at SET0's height stays.
 def stacked_row(m,view):
     title,detail=m.node('hscroll_label'),m.node('hscroll_label')
@@ -9319,22 +9319,22 @@ def stacked_row(m,view):
     for k,v in zip(('W_X','W_W','W_H'),(20,335,70)): m.word(b+O[k],v)
     item=m.node('list_item',children=[b]); m.word(item+O['W_H'],78); m.nodes[view]['children'].insert(1,item)
     return item,title,detail
-m,view=settings(0x4c0f6c,default=28,boot=classic_light_on); item,title,detail=stacked_row(m,view); assert lay(m,view)==0
+m,view=settings(0x4c0f6c,default=32,boot=classic_light_on); item,title,detail=stacked_row(m,view); assert lay(m,view)==0
 rows=[i for i in m.nodes[view]['children'] if m.nodes[i]['visible']]; hs=[geometry(m,i)[3] for i in rows]
-assert hs[1]==56 and set(hs[:1]+hs[2:])=={28},hs
+assert hs[1]==64 and set(hs[:1]+hs[2:])=={32},hs
 ys=[geometry(m,i)[1] for i in rows]; assert all(y+h==ny for y,h,ny in zip(ys,hs,ys[1:])),(ys,hs)
-_,ty,_,th=geometry(m,title); _,dy,_,dh=geometry(m,detail); assert 0<=ty and ty+th<=dy and dy+dh<=56,(ty,th,dy,dh)
+_,ty,_,th=geometry(m,title); _,dy,_,dh=geometry(m,detail); assert 0<=ty and ty+th<=dy and dy+dh<=64,(ty,th,dy,dh)
 after=tree(m,view); assert lay(m,view)==0 and tree(m,view)==after  # a later layout changes nothing
 m,view=settings(0x4c0f6c); item,*_=stacked_row(m,view); assert lay(m,view)==0 and geometry(m,item)[3]==SET['ROW']; passed()
 # A paired device's row (0x4be61c): a 50 px icon at x 0, its two lines at x 52, a trailing image. A set without settings
 # icons hides that icon too, and the lines start at the text column, not left of it. The trailing image stays.
-m,view=settings(0x4c0f6c,default=28,boot=classic_light_on); item,title,detail=stacked_row(m,view)
+m,view=settings(0x4c0f6c,default=32,boot=classic_light_on); item,title,detail=stacked_row(m,view)
 b=m.nodes[item]['children'][0]; lead,trail=m.node('image'),m.node('image')
 for c,box in ((lead,(0,0,50,70)),(trail,(282,0,50,70))):
     for k,v in zip(('W_X','W_Y','W_W','W_H'),box): m.word(c+O[k],v)
 for c in (title,detail): m.word(c+O['W_X'],52)
 m.nodes[b]['children'][:0]=[lead]; m.nodes[b]['children'].append(trail); assert lay(m,view)==0
-assert not m.nodes[lead]['visible'] and m.nodes[trail]['visible'] and geometry(m,item)[3]==56
+assert not m.nodes[lead]['visible'] and m.nodes[trail]['visible'] and geometry(m,item)[3]==64
 assert geometry(m,title)[0]==geometry(m,detail)[0]==SET['TEXT_X'],(geometry(m,title),SET['TEXT_X']); passed()
 for classic in (0,):  # Minimal's; Classic's below (classic_light_boot)
     CONFIG['THEME']=str(classic)
@@ -9377,17 +9377,17 @@ passed()
 # A list whose default_item_height is not SET_ROW (local pages, Home) keeps its rows as built.
 m,view=settings(0x4cbcc4,default=72); before=tree(m,view); lay(m,view); after=tree(m,view)
 assert [r[1] for r in after]==[r[1] for r in before] and all(r[0][3]==72 for r in after); passed()
-# Classic's settings rows: 28 px from the list's top (its list is found by the set's row), 40 px icons hidden,
+# Classic's settings rows: 32 px from the list's top (its list is found by the set's row), 40 px icons hidden,
 # the text where a row without an icon starts; a SET0 68 px list is not a Classic settings list.
 for builder in (0x4c43e4, 0x4cbcc4, 'display'):  # language, System settings, Display
-    CONFIG.clear(); m,view=settings(builder,default=28,boot=classic_light_boot); items=[i for i in m.nodes[view]['children'] if m.nodes[i]['visible']]
+    CONFIG.clear(); m,view=settings(builder,default=32,boot=classic_light_boot); items=[i for i in m.nodes[view]['children'] if m.nodes[i]['visible']]
     assert lay(m,view)==0 and m.get(m.get(view+O['W_PARENT'])+O['W_Y'])==0
-    assert [geometry(m,i)[1] for i in items]==[28*k for k in range(len(items))] and {geometry(m,i)[3] for i in items}=={28},builder
+    assert [geometry(m,i)[1] for i in items]==[32*k for k in range(len(items))] and {geometry(m,i)[3] for i in items}=={32},builder
     for i in items:
         for c in m.nodes[m.nodes[i]['children'][0]]['children']:
             x,y,w_,h=geometry(m,c)
             if m.nodes[c]['type']=='image' and w_==O['SET_STOCK_ICON']: assert not m.nodes[c]['visible'],builder
-            elif m.nodes[c]['type']=='hscroll_label' and m.nodes[c]['name']!='_setting_value': assert x==SET['TEXT_X'] and 0<=y and y+h<=28,(builder,x,y,h)
+            elif m.nodes[c]['type']=='hscroll_label' and m.nodes[c]['name']!='_setting_value': assert x==SET['TEXT_X'] and 0<=y and y+h<=32,(builder,x,y,h)
 passed()
 CONFIG.clear(); m,view=settings(0x4cbcc4,boot=classic_light_boot); before=tree(m,view); lay(m,view)
 after=tree(m,view); assert [r[1] for r in after]==[r[1] for r in before] and all(r[0][3]==SET['ROW'] for r in after); passed()  # rows as built, stacked at the list's 68
@@ -9461,12 +9461,12 @@ def action_page(nm,sorts=True):
     return alabel,aplay,asort,abar
 am=classic_light_on(Machine()); al,ap,asort,abar=action_page(am)
 boxof=lambda w: tuple(am.get(w+O[k]) for k in ('W_X','W_Y','W_W','W_H'))
-assert boxof(al)==(20,0,280,28) and boxof(ap)==(0,0,300,28) and boxof(asort)==(301,0,48,28)
+assert boxof(al)==(20,0,280,32) and boxof(ap)==(0,0,300,32) and boxof(asort)==(301,0,48,32)
 assert am.nodes[asort]['image']=='classic_light_sort_bars' and am.nodes[al]['style:normal:font_name']=='classic-light' and am.nodes[al]['style:normal:font_size']==27
 am.calls=[]; am.call(address=HOOKS['widget_on_paint_background'][0],args=(abar,am.canvas,0,0),gap=0); assert not [c for c in am.calls if c[0]=='widget_move_resize'],am.calls  # shaped once
-am.word(al+O['W_H'],50); am.call(address=HOOKS['widget_on_paint_background'][0],args=(abar,am.canvas,0,0),gap=0); assert boxof(al)==(20,0,280,28)  # stock's refresh: again
+am.word(al+O['W_H'],50); am.call(address=HOOKS['widget_on_paint_background'][0],args=(abar,am.canvas,0,0),gap=0); assert boxof(al)==(20,0,280,32)  # stock's refresh: again
 am=classic_light_on(Machine()); al,ap,asort,abar=action_page(am,sorts=False)
-assert boxof(al)==(20,0,280,28) and boxof(ap)==(0,0,300,28); passed()  # Recently Added's has no Sort
+assert boxof(al)==(20,0,280,32) and boxof(ap)==(0,0,300,32); passed()  # Recently Added's has no Sort
 # The separators, final colours in each half. A Songs row's 3 px at offsets 49 to 51, across the list, none on the selected
 # row, under the paint hook's cap. Albums' rows have none, nor do Classic's. Play All's row has them at offsets 25 to 27.
 SEP={'1':(0xfcfcfc,0xe2e3e2,0xf7f7f7),'0':(0x000000,0x2c2c2c,0x000000)}
@@ -9505,7 +9505,7 @@ passed()
 # Classic's lists take the whole window, so rows draw down to the glass, but the selection's scroll stops where the set's
 # list_end says (252: below it the glass hides a row's text): the wheel's last row ends there, past stock's own end.
 # A list lower in its window (Songs under Play All) stops at the same screen row. Under other themes, stock's end.
-for lthm,ly,lend in (('1',0,672-252),('1',28,672-224),('0',0,672-294)):
+for lthm,ly,lend in (('1',0,672-256),('1',32,672-224),('0',0,672-294)):
     lm=Machine(); lm.config.update(THEME=lthm)
     if lthm=='1': classic_light_on(lm)
     lw,les=lm.page_list(14,height=294-ly,extent=672,name='playlist_page'); window(lm,'playlist_page',lw); lm.word(lw+O['W_Y'],ly); lm.paint(lw)
@@ -10422,17 +10422,17 @@ stock=[m.node('list_item') for _ in range(11)]; view=m.node('scroll_view','scrol
 assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
 button=m.nodes[m.nodes[view]['children'][0]]['children'][0]; icon=m.nodes[button]['children'][0]
 assert m.get(button+O['W_H'])==60 and m.get(icon+O['W_X'])==6; passed()
-# Classic's Library is text whatever Row Art says (ROWART 0 or 1): 28 px rows, no icon; the label starts at text_x (20), the
+# Classic's Library is text whatever Row Art says (ROWART 0 or 1): 32 px rows, no icon; the label starts at text_x (20), the
 # button at 20. The Library's constructor sites take the set's lib_ values; Albums' (0x4a4bb8) keep 52 px with Row Art on,
 # 28 off: Row Art decides the album covers alone.
-for lra,lalbum in (('0',28),('1',52)):
+for lra,lalbum in (('0',32),('1',52)):
     SETUP[:]=[lambda k: classic_light(k).config.update(ROWART=lra)]; lm=ShuffleMachine(); SETUP.clear(); classic_light_on(lm,rowart=lra)  # its constructor reads THEME
     lstock=[lm.node('list_item') for _ in range(11)]; lv=lm.node('scroll_view','scroll_view_localmusic',lstock)
     lm.top=lm.node('window','localmusic_page',[lv])
     assert lm.call(address=HOOKS['localmusic_page_init'][0],args=(lm.top,5,0,0),gap=0)==0
     lbutton=lm.nodes[lm.nodes[lv]['children'][0]]['children'][0]; lkids=lm.nodes[lbutton]['children']
-    assert lm.get(lbutton+O['W_H'])==28,lra
-    assert lm.get(0x524820)&0xffff==28 and lm.get(0x4a4bb8)&0xffff==lalbum,lra
+    assert lm.get(lbutton+O['W_H'])==32,lra
+    assert lm.get(0x524820)&0xffff==32 and lm.get(0x4a4bb8)&0xffff==lalbum,lra
 passed()
 # ... and stock's own rows (0x5247ec: an icon at x 8, a label at x 72, list_into at x 282, all the row's height) take
 # the same route as the added ones: no row shows an icon, every label starts at text_x on screen (the button sits at 20)

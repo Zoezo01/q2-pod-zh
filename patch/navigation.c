@@ -2462,8 +2462,9 @@ static void paint_selection(void *w, void *canvas) {
         st.marq_id = g_menu.id[i];
         rearm(&st.marq_timer, marq_moved, 0);
     }
-    if (g_menu.kind == 4 &&
-        r.w < I(g_menu.w, W_W)) /* a pop-up button's tile: framed white on any accent */
+    /* a pop-up button's tile: framed white on any accent; Classic's band has its own top line and
+     * edge, as an iPod's */
+    if (g_menu.kind == 4 && r.w < I(g_menu.w, W_W) && !band)
         frame_box(canvas, &r, 0xffffffff, SEL_RADIUS);
     /* Save/restore explicitly: this firmware's canvas_save/restore cover neither clip nor
      * either color, and the global alpha is deliberately never touched. */
@@ -4203,6 +4204,14 @@ static void bar_title(void *bar, void *top) {
             widget_set_text(clock, &none);
         else
             rearm(&st.clock_timer, clock_due, 0); /* clock_show writes it again */
+        /* the title takes the clock's room while it makes way, up to EQ's box, where the right
+         * group's room starts (tools/ipod.py) */
+        static int title_w;
+        if (!title_w) title_w = I(st.bar_title, W_W);
+        void *eq = st.bar_eq ? P(st.bar_eq, W_PARENT) : (void *)0;
+        int wide = eq ? I(eq, W_X) + I(st.bar_eq, W_X) - I(st.bar_title, W_X) : title_w;
+        widget_resize(st.bar_title, titled && wide > title_w ? wide : title_w,
+                      I(st.bar_title, W_H));
         if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
         return;
     }
@@ -5512,6 +5521,40 @@ static void clear_bitmap(void *bitmap) {
     bitmap_unlock_buffer(bitmap);
 }
 
+/* Scales a decoded 32-bit bitmap (at most 64 px square; alpha at byte a of each pixel) into a to x
+ * to square at its middle, each pixel the alpha-weighted mean of the pixels it covers (a straight
+ * or a premultiplied colour alike), the rest cleared, and clears its opaque flag. */
+static void shrink_centred(void *bitmap, int to, int a) {
+    static unsigned char src[64 * 64 * 4]; /* the UI thread's */
+    int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
+    int premul = *(unsigned short *)((char *)bitmap + 0xc) & BITMAP_PREMULTI;
+    unsigned char *px = w <= 64 && h <= 64 && 0 < to && to < w && to < h
+                            ? bitmap_lock_buffer_for_write(bitmap)
+                            : (void *)0;
+    if (!px) return;
+    for (int y = 0; y < h; ++y) memcpy(src + 4 * w * y, px + stride * y, 4u * (unsigned)w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            unsigned sum[4] = { 0 }, n = 0;
+            int sx = x - (w - to) / 2, sy = y - (h - to) / 2;
+            if (sx >= 0 && sy >= 0 && sx < to && sy < to)
+                for (int v = sy * h / to; v < (sy + 1) * h / to; ++v)
+                    for (int u = sx * w / to; u < (sx + 1) * w / to; ++u, ++n)
+                        for (int c = 0; c < 4; ++c) {
+                            const unsigned char *p = src + 4 * (w * v + u);
+                            sum[c] += c == a || premul ? p[c] : p[c] * p[a];
+                        }
+            unsigned char *d = px + stride * y + 4 * x;
+            for (int c = 0; c < 4; ++c)
+                d[c] = (unsigned char)(!n                 ? 0
+                                       : c == a || premul ? sum[c] / n
+                                       : sum[a]           ? sum[c] / sum[a]
+                                                          : 0);
+        }
+    *(unsigned short *)((char *)bitmap + 0xc) &= ~1u;
+    bitmap_unlock_buffer(bitmap);
+}
+
 int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned format = bitmap ? *(unsigned short *)((char *)bitmap + 0xe) - 1u : 4,
@@ -5755,6 +5798,11 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                                                      : flip_v(p[o[c]], fp, fi));
         bitmap_unlock_buffer(bitmap);
     }
+    /* A theme's art placeholder size (Classic's 38): stock's Folder tile, list_folder, as tall as
+     * the row, drawn at that size in its middle, so it has room above and below; a real cover
+     * (.downpic/fd*) keeps the row's size. */
+    if (T->art_placeholder && s && !*s && !tk_strcmp(name, "list_folder") && format < 4)
+        shrink_centred(bitmap, T->art_placeholder, at[format][3]);
     return stock_image_trampoline(manager, name, bitmap);
 }
 

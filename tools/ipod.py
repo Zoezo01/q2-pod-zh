@@ -383,7 +383,8 @@ def patch_style(data, audit):
 STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state', 'label_eq']
 STATE_W = 18  # Classic's play state's width: its halo's last column is 283 (tools/art.py STATE_BOX)
-HOME_STATE_X = 56  # Classic's play state on Home, in the title's place: its ink's first column clears the glass (test_art)
+BAR_PAD = 6  # Classic's bar: the title's and the Home play state's ink this far clear of the glass (bar_right gives the battery's)
+HOME_STATE_X = 56 + BAR_PAD  # Classic's play state on Home, in the title's place (test_art)
 STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
@@ -420,7 +421,7 @@ def status_metrics(g, font):
     cap, h = math.ceil(f['OS/2'].sCapHeight * scale), g.bar - 1
     cap_top = (g.bar - 2 - cap) // 2
     label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
-    inset = corner_inset(cap_top)
+    inset = corner_inset(cap_top) + BAR_PAD
     pad = 2  # the hscroll_label's margin each side
     return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset, 'clock_text': clock_text,
             'title': [inset - pad, label_y, g.bar_title_w + 2 * pad, h],

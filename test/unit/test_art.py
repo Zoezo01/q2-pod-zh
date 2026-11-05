@@ -25,10 +25,10 @@ def test_classic_draws_its_images_and_minimal_none():
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
 # (the gradient's stops sampled at pixel centres), the edge down column 270.
-REF_FILL = {4: 0x125093, 5: 0x1563a3, 6: 0x186fad, 7: 0x1f83bf, 8: 0x299bd5, 9: 0x31b0e7, 10: 0x36bff2, 11: 0x39c7f7, 12: 0x35bcef,
-              13: 0x2ca5e0, 14: 0x238fcd, 15: 0x1e7cba, 16: 0x196cab, 17: 0x1563a2, 18: 0x145c9c}
-REF_EDGE = {5: 0x155a9b, 6: 0x1763a3, 7: 0x1a6dac, 8: 0x1d76b4, 9: 0x207fbc, 10: 0x2288c4, 11: 0x2592cd, 12: 0x228ac6, 13: 0x2083bf,
-              14: 0x1d7bb8, 15: 0x1c74b1, 16: 0x196caa, 17: 0x1764a3}
+REF_FILL = {4: 0x114c8f, 5: 0x1462a3, 6: 0x1870ae, 7: 0x1f83bf, 8: 0x299cd6, 9: 0x31b0e7, 10: 0x36bff2, 11: 0x38c7f6, 12: 0x35bbef,
+              13: 0x2ca6e0, 14: 0x238fcd, 15: 0x1e7cba, 16: 0x196dab, 17: 0x1563a2, 18: 0x135999}
+REF_EDGE = {5: 0x114d90, 6: 0x114e91, 7: 0x114f91, 8: 0x125092, 9: 0x125193, 10: 0x125293, 11: 0x125294, 12: 0x125395, 13: 0x125495,
+              14: 0x125596, 15: 0x135697, 16: 0x135797, 17: 0x135898}
 
 
 def test_the_play_state_stands_on_its_approved_rows():
@@ -41,17 +41,15 @@ def test_the_play_state_stands_on_its_approved_rows():
         assert near(at(272 - x0, y - y0), rgb), y
     for y, rgb in REF_EDGE.items():
         assert near(at(270 - x0, y - y0), rgb), y
-    # its extents: the halo's rows and columns, nothing past them
+    # its extents: the bars' rows and columns, nothing past them; no halo, as an iPod's
     ink = {(x, y) for x in range(w) for y in range(h) if at(x, y)[3]}
-    assert {y for _, y in ink} == set(range(3, 20)) and {x for x, _ in ink} == set(range(269 - x0, 284 - x0))
-    assert at(276 - x0, 11 - y0)[:3] == (255, 255, 255) and at(276 - x0, 11 - y0)[3] < 128  # between the bars: only the halo
-    # the halo: the light half's is stronger than the dark's, outside the ink
-    assert pixels(got['classic_light_play_l'])[2](269 - x0, 5 - y0)[3] > pixels(got['classic_light_play_d'])[2](269 - x0, 5 - y0)[3] > 0
-    # On Home (img_home_state at HOME_STATE_X, on the bar's rows from 0) every state's ink clears the glass, at the
-    # nearest x that does.
+    assert {y for _, y in ink} == set(range(4, 19)) and {x for x, _ in ink} == {*range(270 - x0, 276 - x0), *range(277 - x0, 283 - x0)}
+    assert at(276 - x0, 11 - y0)[3] == 0  # between the bars: clear
+    assert got['classic_light_play_l'] == got['classic_light_play_d']
+    # On Home (img_home_state at HOME_STATE_X, on the bar's rows from 0) every state's ink clears the glass by BAR_PAD.
     for name in ('play_l', 'play_d', 'pause_l', 'pause_d'):
         w, h, at = pixels(got[f'classic_light_{name}'])
-        assert max(ipod.corner_inset(y) - x for x in range(w) for y in range(h) if at(x, y)[3]) == ipod.HOME_STATE_X, name
+        assert max(ipod.corner_inset(y) - x for x in range(w) for y in range(h) if at(x, y)[3]) <= ipod.HOME_STATE_X - ipod.BAR_PAD, name
 
 
 def test_the_bolt_and_the_plug_fill_the_batterys_inside():

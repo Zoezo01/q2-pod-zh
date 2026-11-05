@@ -246,7 +246,7 @@ def icon(d, fit):
 
 NOTE_BOX = (222, 66, 100, 115)  # the drawing's viewBox
 STATE = {'play': 'M270.5 4.5 282.5 11.5 270.5 18.5Z', 'pause': 'M270.5 4.5H275V18.5H270.5ZM278 4.5H282.5V18.5H278Z'}
-STATE_BOX = (266, 0, STATE_W, 22)  # img_state's box in the bar (tools/ipod.py status_bar)
+STATE_BOX = (266, 0, STATE_W, 22)  # the frame the state art is drawn in, on the bar's rows; the art itself is position-free
 STATE_Y = (4, 19)  # the fill's and edge's first and last rows
 
 
@@ -268,7 +268,7 @@ def images(t):
             shape = path(d)
             for half, halo in (('l', t['state_halo_light']), ('d', t['state_halo_dark'])):
                 out[f'{prefix}_{name}_{half}'] = png(*STATE_BOX[2:], compose(STATE_BOX, [
-                    (stroke(shape, 2.6), lambda x, y, a=halo / 255: (0xffffff, a)),
+                    *[(stroke(shape, 2.6), lambda x, y, a=halo / 255: (0xffffff, a))][:halo > 0],  # none at alpha 0
                     (shape, lambda x, y: (fill(y), 1)),
                     (stroke(shape, 1), lambda x, y: (edge(y), 1))]))
     drawing = ROOT/f'assets/themes/{t["id"]}/note.svg'
