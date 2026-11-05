@@ -73,6 +73,9 @@ PROBE_STOP = ((0x47b97c, 0xac640e74, 'probe_stop_dsf'),  # sw $a0, 0xe74($v1)
 STOP_SITES = ((0x478b40, 0x3c0200b1, 'stop_iso'), (0x480184, 0x3c0200b1, 'stop_aac'), (0x4826a4, 0x3c0200b1, 'stop_asf'))
 STOP_NOPS = ((0x478b50, 0x3c0200b1, 0), (0x480190, 0x3c0200b1, 0), (0x4826b0, 0x3c0200b1, 0))
 STOP_FILL = (0x46c184, 0xac430e74, 'stop_fill')  # sw $v1, 0xe74($v0)
+# The header's length ends a track only when it's an MP3's Xing or Info frame count: stock's EOF once the position passed
+# it by 1 s, on a file (docs/internals.md#forced-eof). Every other length was an estimate, and cut real audio.
+FORCED_EOF = (0x4232bc, 0xac850014, 'forced_eof')  # sw $a1, 0x14($a0)
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
@@ -244,7 +247,7 @@ def patch_player(raw, out, flac_experiments=()):
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
-        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL)),
+        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, FORCED_EOF)),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -267,6 +270,7 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, jal(ps[name]), 'DAC release wait')
     for address, stock, name in PROBE_STOP:
         patch_word(data, address, stock, j(ps[name]), 'Probe stop')
+    patch_word(data, FORCED_EOF[0], FORCED_EOF[1], jal(ps[FORCED_EOF[2]]), 'Forced EOF')
     for address, stock, name in STOP_SITES:
         patch_word(data, address, stock, jal(ps[name]), 'Stop base')
     for address, stock, patched in STOP_NOPS:

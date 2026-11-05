@@ -216,6 +216,17 @@ def stop_in_failed_open():
     check(p.frames() == before and before < N, f'stop in a failed open: stopped at {before} frames and stayed stopped')
 
 
+def understated():
+    """The header says half the audio: all of it plays, and the next change is still exact."""
+    p = Player()
+    p.song('under.flac')
+    p.run(1)
+    p.gapless('b.flac')
+    p.until(lambda: p.frames() >= 2 * N, 2 * SECONDS + 2)
+    check(bytes(p.pcm[:N * 4]) == source('a'), f'understated: all {N} frames of the file played (forced EOF would stop at about {N // 2 + 2 * RATE})')
+    check(bytes(p.pcm[N * 4:2 * N * 4]) == source('b'), 'understated: the next song follows whole')
+
+
 def iso_no_tracks():
     """A SACD ISO with a good TOC and no tracks (0x478b40), next: the check's hooks return a TOC of our own, as making a real
     one for this one branch isn't worth it. The stop stays clear, and it's reported at a's end."""
@@ -256,6 +267,45 @@ def xfade_bad_next():
     check(not p.e.r32(STOP) and p.frames() >= N - 2 * RATE - 4096, f'under Crossfade: only the hold is missing, {p.frames()} of {N} frames')
 
 
+def tail_noise(name, most):
+    """Junk after the audio, against the same file without it: no more than most s of it comes out."""
+    runs = []
+    for f in name, name.removeprefix('junk'):
+        p = Player()
+        p.song(f)
+        p.settled(SECONDS + 15)
+        runs.append(bytes(p.pcm))
+    width = 8 if len(runs[1]) > 6 * RATE * 4 else 4  # lavc's float decoders come out as 32 bits
+    past = (len(runs[0]) - len(runs[1])) / width / RATE
+    peak = max(map(abs, array.array('h', runs[0][len(runs[1]):])), default=0)
+    print(f'     {name}: {past:.2f} s past the file without it, peak {peak}')
+    check(runs[0][:len(runs[1]) - RATE * width // 2] == runs[1][:-RATE * width // 2], f'{name}: the audio itself comes out')
+    if most is not None: check(past < most, f'{name}: {past:.2f} s of noise, under {most} s')
+
+
+def understated_mp3(name, cut):
+    """A frame count a little short still plays out; well short is cut, as stock."""
+    p = Player()
+    p.song(name)
+    p.settled(SECONDS + 3)
+    if cut: check(p.frames() < N - RATE, f'{name}: cut at the count + 1 s, {p.frames()} of {N} frames')
+    else: check(p.frames() >= N - 2304, f'{name}: plays to its end, {p.frames()} of {N} frames')
+
+
+def dsd():
+    """DSD: plays, an understated header cuts nothing while something's still wanted, and the mute past the length is seen."""
+    for name in 'whole.dsf', 'under.dsf':
+        p = Player()
+        muted = []
+        p.e.watch_fn(0x43b280, lambda e: muted.append((round(p.now(), 2), p.frames(), e.u.reg_read(UC_MIPS_REG_A0))))
+        p.song(name)
+        p.settled(SECONDS + 3)
+        print(f'     {name}: {p.frames()} frames at the end; mute helper calls (t, frames, arg) {muted[:6]}')
+        if name == 'whole.dsf': whole = p.frames()
+        else: check(p.frames() >= whole - 8192, f'{name}: as long as the whole one ({p.frames()} of {whole})')
+    check(whole > 4 * RATE, f'DSD plays, {whole} frames')
+
+
 if __name__ == '__main__':
     failures = []
     setup()
@@ -270,6 +320,14 @@ if __name__ == '__main__':
     iso_no_tracks()
     xfade_bad_next()
     stop_in_failed_open()
+    understated()
+    for name, most in (('junkx.mp3', 1), ('junkx.m4a', 0.1), ('junkx.ogg', 0.1), ('junkx.wv', 0.1), ('junkx.flac', 0.1), ('junkx.wav', 0.1), ('junkx.wma', 0.1)):
+        tail_noise(name, most)
+    tail_noise('junkh.mp3', None)  # no header to say where the audio ends: a limit, docs/internals.md#forced-eof
+    understated_mp3('off.mp3', False)
+    understated_mp3('cut.mp3', True)
+    understated_mp3('x.mp3', False)
+    dsd()
     assert not failures, f'{len(failures)} failed: {failures}'
     shutil.rmtree(work)
     print('hci_natural: all passed')

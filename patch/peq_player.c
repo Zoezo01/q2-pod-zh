@@ -828,6 +828,52 @@ void mp3_seek(void *demuxer, float rel, float delay, int flags) {
     STOCK_SEEK(demuxer, rel, delay, flags);
     if (priv && AT(priv, 0, int) == 1) mp3_gapless_seek(demuxer, AT(priv, 8, double) <= 0);
 }
+
+/* The eof stock forces once the whole-second position passes the header's length by more than a second (0x4232bc).
+ * Only an MP3's Xing or Info frame count is trusted: past it, libmad finding false syncs in whatever follows the
+ * audio is noise, up to full scale, about 0.6 s per MB of junk. Every other length (WMA's preroll, a VBR MP3 with no
+ * header, a FLAC's understated STREAMINFO) is only an estimate and cut real audio. Whole seconds and no doubles: the
+ * main loop's registers are live here (forced_eof saves them), and it's only past the length, so one read per pass
+ * of a track that's over. docs/internals.md#forced-eof.
+ * ponytail: the real ceiling is noise. A no-header MP3 followed by junk still plays it, to full scale, as stock: only
+ * a header says where the audio ends. Elapsed runs ahead of the total meanwhile. A count over 27 hours isn't trusted. */
+#define AUDIO_DEMUXER 0x89fd90u
+int forced_eof_c(char *mp, int pos) {
+    static const unsigned short rates[3] = { 44100, 48000, 32000 };
+    unsigned char h[64];
+    void *d = AT(mp, 0x28, void *), *priv = d ? AT(d, 0xc70, void *) : 0, *s = d ? AT(d, 0x20, void *) : 0;
+    if (!s || AT(d, 0, unsigned) != AUDIO_DEMUXER || !priv || AT(priv, 0, int) != 1) return 0;
+    int fd = AT(s, 0x14, int), got = 0;
+    long long at = AT(d, 0x10, long long), back = lseek64(fd, 0, 1);
+    if (back < 0) return 0;
+    if (lseek64(fd, at, 0) == at) got = read(fd, h, sizeof h);
+    lseek64(fd, back, 0);
+    if (got < 4 + 2 + 32 + 12) return 0;
+    unsigned head = (unsigned)h[0] << 24 | h[1] << 16 | h[2] << 8 | h[3];
+    unsigned version = head >> 19 & 3, rate = head >> 10 & 3, mono = (head >> 6 & 3) == 3;
+    if (head >> 21 != 0x7ff || version == 1 || (head >> 17 & 3) != 1 || rate == 3) return 0;
+    unsigned side = 4 + (version == 3 ? (mono ? 17 : 32) : (mono ? 9 : 17));
+    for (unsigned crc = 0; crc <= 2; crc += 2) { /* LAME keeps the fixed offset on a CRC frame, too */
+        const unsigned char *x = h + side + crc;
+        if (memcmp(x, "Xing", 4) && memcmp(x, "Info", 4)) continue;
+        if (!(x[7] & 1)) return 0;
+        unsigned frames = (unsigned)x[8] << 24 | x[9] << 16 | x[10] << 8 | x[11], spf = version == 3 ? 1152 : 576;
+        if (!frames || frames > 0xffffffffu / spf) return 0;
+        return pos > (int)(frames * spf / (rates[rate] >> (version == 3 ? 0 : version == 2 ? 1 : 2))) + 1;
+    }
+    return 0;
+}
+/* From 0x4232bc, $a0 mpctx, $s0 position: stock's store if that says so; every register else as it was. */
+__asm__(".set push\n.set noreorder\n.set noat\n.globl forced_eof\nforced_eof:\naddiu $sp, $sp, -88\n"
+        "sw $ra, 84($sp)\nsw $v0, 16($sp)\nsw $v1, 20($sp)\nsw $a0, 24($sp)\nsw $a2, 28($sp)\nsw $a3, 32($sp)\n"
+        "sw $t0, 36($sp)\nsw $t1, 40($sp)\nsw $t2, 44($sp)\nsw $t3, 48($sp)\nsw $t4, 52($sp)\nsw $t5, 56($sp)\n"
+        "sw $t6, 60($sp)\nsw $t7, 64($sp)\nsw $t8, 68($sp)\nsw $t9, 72($sp)\nsw $a1, 76($sp)\n"
+        "jal forced_eof_c\nmove $a1, $s0\nlw $a0, 24($sp)\nli $a1, 1\n"
+        "beqz $v0, 1f\nnop\nsw $a1, 0x14($a0)\n1:\n"
+        "lw $ra, 84($sp)\nlw $v0, 16($sp)\nlw $v1, 20($sp)\nlw $a2, 28($sp)\nlw $a3, 32($sp)\n"
+        "lw $t0, 36($sp)\nlw $t1, 40($sp)\nlw $t2, 44($sp)\nlw $t3, 48($sp)\nlw $t4, 52($sp)\nlw $t5, 56($sp)\n"
+        "lw $t6, 60($sp)\nlw $t7, 64($sp)\nlw $t8, 68($sp)\nlw $t9, 72($sp)\nlw $a1, 76($sp)\n"
+        "jr $ra\naddiu $sp, $sp, 88\n.set pop\n");
 #endif
 
 /* Stopped, the main thread's idle loop (0x42d994) polled the play flag (PLAY_FLAG) with usleep(10000), and
