@@ -712,33 +712,53 @@ def font_quotes(data):
     font.save(out, reorderTables=False)
     return out.getvalue()
 
-# Classic's bold (navigation.c bold_label): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
-# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
-# label holding anything else (CJK, say) keeps the stock font.
-BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
-
-def bold_font():
+def subset_font(src, family, ranges_macro):
+    """src cut to its Latin, Greek, Cyrillic and punctuation, renamed family (its own name is the font's
+    reserved name under OFL and GUST alike): the font's bytes and ranges_macro listing exactly what it
+    keeps."""
     from fontTools import subset
     from fontTools.ttLib import TTFont
-    font = TTFont(ROOT/'assets/fonts/LiberationSans-Bold.ttf', recalcTimestamp=False)
+    font = TTFont(src, recalcTimestamp=False)
+    old = font['name'].getDebugName(1)
+    label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
     sub = subset.Subsetter(subset.Options())
     sub.populate(unicodes=have)
     sub.subset(font)
-    check(sorted(font.getBestCmap()) == have, 'Bold font subset lost characters')
-    # A subset is an OFL Modified Version: it may not carry the Reserved Font Name "Liberation" (its
-    # names, not the copyright and trademark notices, IDs 0 and 7)
+    check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
+    # A subset is a Modified Version: it may not carry the Reserved Font Name (its names, not the
+    # copyright and trademark notices, IDs 0 and 7)
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
-            rec.string = str(rec).replace('Liberation Sans', 'Q2 Pod Sans').replace('LiberationSans', 'Q2PodSans')
-            check('Liberation' not in str(rec), f'Bold font name {rec.nameID} keeps Liberation')
+            rec.string = str(rec).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', ''))
+            check(old.split()[0] not in str(rec), f'{label} font name {rec.nameID} keeps {old.split()[0]}')
+    if 'CFF ' in font:  # the outlines' own names (PostScript FontName, FullName, FamilyName)
+        cff = font['CFF '].cff
+        top = cff.topDictIndex[0]
+        cff.fontNames = [n.replace(old, family).replace(old.replace(' ', ''), family.replace(' ', '')) for n in cff.fontNames]
+        for key in ('FullName', 'FamilyName'):
+            setattr(top, key, getattr(top, key).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', '')))
+        check(old.split()[0] not in ''.join(cff.fontNames + [top.FullName, top.FamilyName]), f'{label} font CFF name keeps {old.split()[0]}')
     out = io.BytesIO()
     font.save(out, reorderTables=False)
     runs = []
     for u in have:
         if runs and runs[-1][1] + 1 == u: runs[-1][1] = u
         else: runs.append([u, u])
-    return out.getvalue(), '#define BOLD_RANGES {' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+    return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+
+# Classic's bold (navigation.c bold_label): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
+# label holding anything else (CJK, say) keeps the stock font.
+BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
+
+def bold_font():
+    return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
+
+# Nano's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut
+NANO_TTF = 'release/assets/default/raw/fonts/nano.ttf'
+# stb draws the subset's outlines as S5 found: TrueType quadratics (otf_to_ttf) or the CFF original
+NANO_TRUETYPE = False
 
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
@@ -1458,7 +1478,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    header = [f'#define RING_STEP {RING_STEP}', bold_ranges]
+    nano, nano_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Nano', 'NANO_RANGES')
+    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, nano_ranges]
     header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
     header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
     header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
@@ -1768,6 +1789,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
+                               NANO_TTF: (FONT, nano),
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
         stock = inode(p, like.encode())
         check(stock is not None, f'Missing stock inode for {path}')

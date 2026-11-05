@@ -210,7 +210,7 @@ static theme_t shim_themes[2] = {
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
 int client_h(void) { return 320 - stub_bar_h; }
-int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
+int theme_font(void *w, int role, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
 static int square_art;
 int ipod_square_art(void) { return square_art; }

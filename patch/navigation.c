@@ -2031,7 +2031,8 @@ void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, un
                   unsigned color) {
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
     int align_v = I(canvas, CANVAS_ALIGN_V), align_h = I(canvas, CANVAS_ALIGN_H);
-    canvas_set_font(canvas, (void *)0, px); /* the system default font */
+    const char *face = theme_face(s, (int)n); /* the theme's face, or the system default font */
+    canvas_set_font(canvas, face, px);
     canvas_set_text_color(canvas, color);
     I(canvas, CANVAS_ALIGN_V) = I(canvas, CANVAS_ALIGN_H) = 1;
     canvas_draw_text_in_rect(canvas, s, n, r);
@@ -3874,28 +3875,70 @@ static void label_font(void *w, int bold) {
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
         widget_set_prop_str(w, font[i], bold ? "bold" : "default");
 }
-/* Classic's bold: w's text in Liberation Sans Bold (the build's fonts/bold.ttf) when that font has
- * every character of it (BOLD_RANGES, from its cmap), else stock's font, which has CJK; Minimal's
- * always stock's. was is the last answer (-1 none): only a change is written, in every state the
- * labels style. Returns the answer. */
-int bold_label(void *w, int was) {
-    static const unsigned short ranges[] = BOLD_RANGES;
-    const unsigned *c = w ? widget_get_text(w) : (void *)0;
-    int bold = !!w && theme()->bold;
-    for (; bold && c && *c; ++c) {
+static const unsigned short bold_ranges[] = BOLD_RANGES, nano_ranges[] = NANO_RANGES;
+
+/* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
+static int face_has(int face, const unsigned *c, int n) {
+    const unsigned short *r = face == FONT_NANO ? nano_ranges : bold_ranges;
+    unsigned k = face == FONT_NANO ? sizeof nano_ranges / sizeof *nano_ranges
+                                   : sizeof bold_ranges / sizeof *bold_ranges;
+    if (face == FONT_DEFAULT) return 1;
+    if (!c) return 0;
+    for (; n < 0 ? *c : n; ++c, --n) {
         unsigned i = 0;
-        while (i < sizeof ranges / sizeof *ranges && (*c < ranges[i] || *c > ranges[i + 1])) i += 2;
-        bold = i < sizeof ranges / sizeof *ranges;
+        while (i < k && (*c < r[i] || *c > r[i + 1])) i += 2;
+        if (i >= k) return 0;
     }
-    if (w && bold != was) label_font(w, bold);
-    return bold;
+    return 1;
+}
+
+/* The theme's font for role on w: its face (bold.ttf, nano.ttf: tools/build.py) when that face has
+ * every character of w's text (BOLD_RANGES, NANO_RANGES), else the next bold one that does (nano,
+ * then bold), else stock's, which has CJK; and its px, if the theme sets one. Written in every
+ * state the labels style, only when the answer (face | px << 2) differs from was; returns it. A
+ * code-built row passes FONT_ROW: the answer lives in its own "_font" prop, and a role the theme
+ * leaves to the style writes nothing. */
+int theme_font(void *w, int role, int was) {
+    static const char *const faces[] = { "default", "bold", "nano" };
+    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
+                                         "style:disable:font_name" },
+                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                                "style:disable:font_size" };
+    const theme_t *T = theme();
+    int face = w ? T->font[role] : FONT_DEFAULT, px = T->font_px[role], row = was == FONT_ROW;
+    if (row) {
+        if (!face && !px) return 0;
+        was = widget_get_prop_int(w, "_font", -1);
+    }
+    const unsigned *text = face ? widget_get_text(w) : (void *)0, none[1] = { 0 };
+    if (face && !text) text = none; /* no text yet: keeps the face, as bold_label did */
+    if (face == FONT_NANO && !face_has(FONT_NANO, text, -1))
+        face = FONT_BOLD; /* Cyrillic: still bold */
+    if (face == FONT_BOLD && !face_has(FONT_BOLD, text, -1)) face = FONT_DEFAULT; /* CJK */
+    int answer = face | px << 2;
+    if (!w || answer == was) return answer;
+    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
+        widget_set_prop_str(w, names[i], faces[face]);
+        if (px) widget_set_prop_int(w, sizes[i], px);
+    }
+    if (row) widget_set_prop_int(w, "_font", answer);
+    return answer;
+}
+
+/* Canvas text in the theme's face where it has the characters, else bold.ttf where it has them
+ * (still bold), else the system font (draw_centred, lyrics.c). A theme without a face of its own
+ * draws the system font, as before. */
+const char *theme_face(const unsigned *s, int n) {
+    if (theme()->font[ROLE_TITLE] != FONT_NANO) return (const char *)0;
+    if (face_has(FONT_NANO, s, n)) return "nano";
+    return face_has(FONT_BOLD, s, n) ? "bold" : (const char *)0;
 }
 
 /* Now Playing's "3 of 12", album and remaining time (slider max less value, stock's seconds, so a
  * drag or scrub previews it). Labels are written only when their source changes. */
 static void np_sync(void *top) {
     if (!top || top != st.np_win) return;
-    st.np_bold = bold_label(st.np_title, st.np_bold); /* the title, as it changes */
+    st.np_bold = theme_font(st.np_title, ROLE_NP, st.np_bold); /* the title, as it changes */
     unsigned at, n;
     void *r = queue_now(&at, &n);
     const char *album = now_tag(r, REC_ALBUM);
@@ -3960,7 +4003,7 @@ static void bar_title(void *bar, void *top) {
     int changed = !st.bar_titled || !had || *had != *want;
     if (changed) widget_set_text(label, title);
     st.bar_titled = 1;
-    int bold = bold_label(label, st.bar_bold); /* a new Theme can change it under the same title */
+    int bold = theme_font(label, ROLE_NP, st.bar_bold); /* a new Theme can change it under the same title */
     if ((changed || bold != st.bar_bold) && !st.bar_timer)
         st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     st.bar_bold = bold;
@@ -5938,9 +5981,17 @@ static int compact_row_layout(void *layout, void *row) {
          * glyphs smeared over the moving clip; focus-only (no row takes AWTK focus) keeps the
          * ellipsis, as the selected row shows it. */
         hscroll_label_set_only_focus(title, 1);
+        theme_font(title, ROLE_TITLE, FONT_ROW);
         if (title != text) {
             int available = width - I(title, W_X);
             widget_resize(title, available > 0 ? available : 0, I(title, W_H));
+            for (unsigned j = 0, after = 0; j < widget_count_children(text); ++j) {
+                void *label = widget_get_child(text, j);
+                if (label == title)
+                    after = 1;
+                else if (after && !tk_strcmp(widget_get_type(label), "hscroll_label"))
+                    theme_font(label, ROLE_META, FONT_ROW);
+            }
         }
     }
     return ((int (*)(void *, void *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
@@ -5991,6 +6042,7 @@ static void set_child(void *c, int row_w, int row_h, int shift) {
     right = right >= SET_RIGHT_SIDE ? SET_STOCK_X + right + shift : right + left - x;
     if (right > row_w - SET_TEXT_X) right = row_w - SET_TEXT_X;
     widget_move_resize(c, left, y, right > left ? right - left : 0, h);
+    if (!tk_strcmp(widget_get_type(c), "hscroll_label")) theme_font(c, ROLE_TITLE, FONT_ROW);
 }
 
 /* The row's stock settings button (SET_STOCK_X, SET_STOCK_W), or none: a row already mapped, or one

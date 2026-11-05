@@ -348,7 +348,10 @@ int video_start(const char *file, int radio); /* books.c */
 void *edit_create(void *item, const char *input_type, int y, int h);
 const char *output_device(char *vol);         /* books.c */
 void dac_take(void);                          /* books.c */
-int bold_label(void *w, int was); /* navigation.c: Classic's bold font for w's text, or stock's */
+/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system font */
+int theme_font(void *w, int role, int was);
+#define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
+const char *theme_face(const unsigned *s, int n);
 int ipod_light(void);   /* navigation.c: Light Mode */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau

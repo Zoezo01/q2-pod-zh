@@ -25,8 +25,10 @@ ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}
 PAYLOAD_KEYS = frozenset(
     re.findall(r'"([A-Z0-9_]+)"', re.search(r'setting_keys\[\] = \{([^}]*)\}', (ROOT/'patch/navigation.c').read_text())[1])
     + [k for f in sorted((ROOT/'patch').glob('*.c')) for k in re.findall(r'"IPOD", "([A-Z0-9_]+)"', f.read_text())])
-# value name -> its C name (theme.h); playing.title.font is the theme_t.bold flag
-CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'}, 'playing.title.font': {'regular': '0', 'bold': '1'},
+# value name -> its C name (theme.h); the font keys take FONTS
+FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'nano': 'FONT_NANO'}
+CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'},
+           **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 
@@ -58,7 +60,7 @@ SCHEMA = {k.path: k for k in (
     key('list.icons.mono', 'icons_mono', 'bool'),
     key('list.icons.badge_muted', 'icons_badge_muted', 'bool'),
     key('list.icons.addon_mono', 'icons_addon_mono', 'bool'),
-    key('playing.title.font', 'bold', 'enum'),
+    key('playing.title.font', 'font[ROLE_NP]', 'enum'),
     key('playing.album.opacity', 'np_album_op', 'int', 255),
     key('playing.state.opacity', 'np_state_op', 'int', 255),
     key('home.rows.top', 'home_top', 'int', 375),
@@ -71,6 +73,12 @@ SCHEMA = {k.path: k for k in (
     key('playing.scrubber.scrub_height', 'np_scrub', 'int', 375),
     key('playing.art.square', 'art_square', 'bool'),
     key('bar.battery.fill', 'batt_fill', 'color'),
+    key('list.row.font', 'font[ROLE_TITLE]', 'enum'),
+    key('list.row.meta_font', 'font[ROLE_META]', 'enum'),
+    key('list.row.title_px', 'font_px[ROLE_TITLE]', 'int', 64),
+    key('list.row.meta_px', 'font_px[ROLE_META]', 'int', 64),
+    key('bar.title.font', 'font[ROLE_BAR]', 'enum'),
+    key('bar.title.font_size', 'font_px[ROLE_BAR]', 'int', 64),
     key('scheme.card', 'card', 'bool'),
     key('scheme.raw_red', 'raw_red', 'bool'),
     key('scheme.fill', 'fill', 'color'),

@@ -11,7 +11,13 @@
                sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
                sel.edge="#004184"/>
   <colorSchemes accents="nano-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
-  <view name="list"><element name="selection" painter="stops"/></view>
+  <!-- Nano's face: list rows (title 18 px), the bar title (15 px), the Now Playing title and Home rows -->
+  <view name="list">
+    <element name="selection" painter="stops"/>
+    <element name="row" font="nano" meta_font="nano" title_px="18"/>
+  </view>
+  <view name="bar"><element name="title" font="nano" font_size="15"/></view>
+  <view name="playing"><element name="title" font="nano"/></view>
   <!-- Light Mode: On is the measured nano look, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="NANO_ACCENT" default="nano-blue" preset="nano-blue"/>

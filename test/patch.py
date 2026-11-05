@@ -9258,6 +9258,55 @@ for art,want in (('0',1),('1',0)):
     k=Machine(); k.config['ROWART']=art; nano_boot(k)
     assert [k.call(address=payload_syms['theme_restart'],args=(t,0,0,0),gap=0) for t in (2,1)]==[want,1],art
 passed()
+# Nano's rows take its font inline in every state, at its title size, once (a second layout writes
+# nothing); a title outside the font's characters falls back to bold.ttf (Cyrillic) or, when bold
+# lacks them too, the stock font (CJK), at that size. Classic's rows get no font at all; its Home
+# rows stay bold, Nano's are in its font.
+NANO_T=theme_builtins()[2]; PX=NANO_T['font_px[ROLE_TITLE]']
+STATES=('normal','focused','disable')
+def font_row(setup,text):
+    k=Machine()
+    if setup: setup(k)
+    w=k.page('artistinfo_page','scroll_view'); k.word(w+O['W_PARENT'],k.top); k.word(k.top+O['W_PARENT'],k.wm)
+    k.nodes[w]['name']='scroll_view_track'; k.row_record=k.alloc(0x80)
+    for off in (8,12,16,24): k.word(k.row_record+off,k.string(text))
+    k.word(k.row_record+0x48,1)
+    k.mock('button_create','list_item_create','image_create','view_create','hscroll_label_create',
+           'gif_image_create','widget_use_style','widget_set_name','widget_set_text_utf8',
+           'widget_set_visible','widget_on','widget_destroy_children','image_set_draw_type',
+           'image_base_set_image','set_hscroll_label_attribute','hscroll_label_set_only_focus',
+           'hscroll_label_set_ellipses','hscroll_label_set_speed','gif_image_play','deque_at',
+           'deque_size','tk_snprintf','batch_get_selectitem','file_is_playing','getFormatString',
+           'getMusicByPlayList','get_albumcover_listsize','mclGetPlayStatus','list_get_img_pic',
+           'strcmp@GLIBC_2.0','toolsTrimLeft','toolsTrimRight')
+    k.handlers[0x4aad10]='row_toolbar'
+    assert k.call(address=0x4a62c0,args=(w,0,0,0))==0
+    button,=[n for n,v in k.nodes.items() if v['type']=='button']
+    native_row_layout(k,button)
+    kids=k.nodes[button]['children']  # the title as compact_row_layout finds it (check_title_bounds' rule)
+    text=next(c for c in kids if k.nodes[c]['type']=='hscroll_label' or any(k.nodes[t]['type']=='hscroll_label' for t in k.nodes[c]['children']))
+    return k,button,next((c for c in k.nodes[text]['children'] if k.nodes[c]['type']=='hscroll_label'),text)
+fk,fb,ft=font_row(nano,'Title')
+assert [fk.nodes[ft][f'style:{s}:font_name'] for s in STATES]==['nano']*3 and [fk.nodes[ft][f'style:{s}:font_size'] for s in STATES]==[PX]*3
+fk.calls=[]; native_row_layout(fk,fb); assert not [c for c in fk.calls if c[0]=='widget_set_prop_str']
+fk,fb,ft=font_row(nano,'Навстречу ветру'); assert fk.nodes[ft]['style:normal:font_name']=='bold' and fk.nodes[ft]['style:normal:font_size']==PX
+fk,fb,ft=font_row(nano,'日本語 Title'); assert fk.nodes[ft]['style:normal:font_name']=='default' and fk.nodes[ft]['style:normal:font_size']==PX
+ck,cb,ct=font_row(lambda k: k.config.update(THEME='1'),'Title'); assert not [p for p in ck.nodes[ct] if p.endswith(':font_name') or p=='_font']
+for setup,face in ((lambda k: k.config.update(THEME='1'),'bold'),(nano,'nano')):
+    SETUP[:]=[setup]; hk=QueueMachine(); SETUP.clear(); home=asset_tree(hk,HOME_PAGE);  # QueueMachine reads THEME in its constructor hk.handlers[HOOKS['home_page_init'][0]+12]='stock_home'
+    hk.call(address=HOOKS['home_page_init'][0],args=(home,0,0,0),gap=0)
+    labels=[n for n,v in hk.nodes.items() if v['type']=='hscroll_label' and v.get('style:normal:font_name')]
+    assert labels and {hk.nodes[l]['style:normal:font_name'] for l in labels}=={face},face
+passed()
+# The fast-scroll letter (draw_centred) takes Nano's face under Nano, the system font under Classic.
+for setup,face in ((nano,'nano'),(lambda k: k.config.update(THEME='1'),'default')):
+    lm=Machine(); setup(lm); lm.word(lm.canvas+O['CANVAS_ALIGN_V'],2); lm.word(lm.canvas+O['CANVAS_ALIGN_H'],3)
+    lw,les=lm.page_list(40,extent=40*48,name='allmusic_page')
+    for e in les: lm.nodes[e]['text']='row'
+    lm.paint(lw,gap=0)
+    for _ in range(4): lm.call(gap=100)
+    lm.paint(lw,gap=0); assert [l['font'][0] for l in lm.letters]==[face],(face,lm.letters)
+passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent
 CONFIG.update(THEME='1'); m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'

@@ -7,6 +7,9 @@ enum { SEL_CARD, SEL_BAR, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card
 enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 };      /* scheme_t.flags (Ivory in Minimal; Crimson) */
 enum { SCHEME_DERIVE, SCHEME_LIGHT, SCHEME_DARK }; /* scheme_t.mode */
 enum { NP_IPOD, NP_CENTRED, NP_N };                /* theme_t.np_layout: np_pages[] index */
+enum { FONT_DEFAULT, FONT_BOLD, FONT_NANO };       /* theme_t.font[]: stock's, bold.ttf, nano.ttf */
+/* theme_t.font[] index: list title, list second line, bar title, Now Playing title and Home rows */
+enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_N };
 /* an N-stop gradient, n stops (0: none), pos rising from 0 to 100 (% of the band), rgb 0xRRGGBB */
 typedef struct {
     unsigned char n, pos[8];
@@ -64,7 +67,8 @@ typedef struct {
     unsigned char geom; /* second: THEME_GEOM_OFF (4) never moves */
     unsigned char painter[PAINTER_N];
     unsigned char chevron_home, caps_mark, caps_home, caps_np, icons_mono, icons_badge_muted,
-        icons_addon_mono, bold, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
+        icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
+    unsigned char font[ROLE_N], font_px[ROLE_N];    /* FONT_*; px 0: the style's size */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
     int *accent_slot;
