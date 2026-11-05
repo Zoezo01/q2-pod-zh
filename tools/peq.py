@@ -76,6 +76,8 @@ STOP_FILL = (0x46c184, 0xac430e74, 'stop_fill')  # sw $v1, 0xe74($v0)
 # The header's length ends a track only when it's an MP3's Xing or Info frame count: stock's EOF once the position passed
 # it by 1 s, on a file (docs/internals.md#forced-eof). Every other length was an estimate, and cut real audio.
 FORCED_EOF = (0x4232bc, 0xac850014, 'forced_eof')  # sw $a1, 0x14($a0)
+# A second exit within a UI pass of the last is lost to demo; it waits (peq_player.c, docs/internals.md#a-bad-file-next).
+EXIT_HOLD = (0x4226d4, 0x3c040089, 'exit_hold')  # lui $a0, 0x89
 # A preload the song outran doesn't publish its stale context (peq_player.c, docs/internals.md#a-preload-too-late):
 # the thread's store of 2, the three failure stores of -1, moved to the failure exit, and the cold path's clear.
 PRELOAD_PUBLISH = (0x42bb18, 0xac440de8, 'preload_publish')  # sw $a0, 0xde8($v0)
@@ -264,7 +266,7 @@ def patch_player(raw, out, flac_experiments=()):
         '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
-        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)),
+        *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)),
         *(f'--undefined={symbol}' for n in flac_experiments for symbol in EXPORTS[n]),
         *objects, '-o', out/'peq.elf')
     run('llvm-objcopy', '-O', 'binary', out/'peq.elf', out/'peq.bin')
@@ -292,6 +294,7 @@ def patch_player(raw, out, flac_experiments=()):
     for address, stock, patched in PRELOAD_FAIL_STORES:
         patch_word(data, address, stock, patched, 'Preload failed')
     patch_word(data, FORCED_EOF[0], FORCED_EOF[1], jal(ps[FORCED_EOF[2]]), 'Forced EOF')
+    patch_word(data, EXIT_HOLD[0], EXIT_HOLD[1], jal(ps[EXIT_HOLD[2]]), 'Exit hold')
     for address, stock, name in STOP_SITES:
         patch_word(data, address, stock, jal(ps[name]), 'Stop base')
     for address, stock, patched in STOP_NOPS:

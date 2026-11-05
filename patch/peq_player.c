@@ -1020,6 +1020,41 @@ int preload_failed(void) {
 __asm__(".set push\n.set noreorder\n.set noat\n"
         /* From 0x42bb18: $v0 0xb10000, $v1 the thread's 0xb15df0, $a0 2, its saved registers restored. */
         ".globl preload_publish\npreload_publish:\nli $a2, 1\n"
+/* demo learns of a track's end only from the newest player-status it reads (0x5a8688, 0x5a7e88): one value, cleared by
+ * a read of exit and overwritten by any later reply. An exit moves it on at its next UI pass (0xa3be55, mclAutoChange).
+ * So a second exit within a pass of the first, from a next file that ends as it starts, is lost; hciplayer then idles
+ * answering ready, demo keeps asking, and with no length to pass the queue sits on that file until a key. exit_hold
+ * sends an exit no sooner than EXIT_HOLD_MS after the last: requests are answered on the command thread, so nothing
+ * queues behind this one. A UI pass runs up to 222 ms with the screen dark, so a track of EXIT_HOLD_MS or more never
+ * waits. docs/internals.md#a-bad-file-next.
+ * ponytail: a shorter track's end is late by the rest of EXIT_HOLD_MS, with the ring still playing out. */
+#define EXIT_HOLD_MS 300
+extern int hci_call(int number, long a, void *b);
+__asm__(".globl hci_call\nhci_call:\nmove $v0, $a0\nmove $a0, $a1\nmove $a1, $a2\nsyscall\njr $ra\nnop\n");
+void exit_hold_c(void) {
+    static long long last;
+    long t[2], w[2];
+    hci_call(4263, 1, t); /* clock_gettime, CLOCK_MONOTONIC */
+    long long now = t[0] * 1000ll + t[1] / 1000000;
+    if (last && now - last < EXIT_HOLD_MS) {
+        int left = EXIT_HOLD_MS - (int)(now - last);
+        w[0] = 0;
+        w[1] = left * 1000000;
+        hci_call(4166, (long)w, 0); /* nanosleep */
+        now += left;
+    }
+    last = now;
+}
+/* From 0x4226d4, in the main loop's exit send: every register as it was, $a0 stock's lui. */
+__asm__(".set push\n.set noreorder\n.set noat\n.globl exit_hold\nexit_hold:\naddiu $sp, $sp, -80\n"
+        "sw $ra, 76($sp)\nsw $v0, 16($sp)\nsw $v1, 20($sp)\nsw $a1, 24($sp)\nsw $a2, 28($sp)\nsw $a3, 32($sp)\n"
+        "sw $t0, 36($sp)\nsw $t1, 40($sp)\nsw $t2, 44($sp)\nsw $t3, 48($sp)\nsw $t4, 52($sp)\nsw $t5, 56($sp)\n"
+        "sw $t6, 60($sp)\nsw $t7, 64($sp)\nsw $t8, 68($sp)\njal exit_hold_c\nsw $t9, 72($sp)\n"
+        "lw $ra, 76($sp)\nlw $v0, 16($sp)\nlw $v1, 20($sp)\nlw $a1, 24($sp)\nlw $a2, 28($sp)\nlw $a3, 32($sp)\n"
+        "lw $t0, 36($sp)\nlw $t1, 40($sp)\nlw $t2, 44($sp)\nlw $t3, 48($sp)\nlw $t4, 52($sp)\nlw $t5, 56($sp)\n"
+        "lw $t6, 60($sp)\nlw $t7, 64($sp)\nlw $t8, 68($sp)\nlw $t9, 72($sp)\nlui $a0, 0x89\n"
+        "jr $ra\naddiu $sp, $sp, 80\n.set pop\n");
+
         "1:\nll $a1, 0xde8($v0)\nbne $a1, $a2, 2f\nmove $a1, $a0\nsc $a1, 0xde8($v0)\nbeqz $a1, 1b\nnop\n"
         "j 0x42bb1c\nnop\n"
         "2:\njal preload_stale\nnop\nlw $ra, 0x65c($sp)\njr $ra\naddiu $sp, $sp, 0x660\n"

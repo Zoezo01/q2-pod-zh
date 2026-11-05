@@ -65,6 +65,15 @@ def setup():
     for name, rate, frames, block in SEEKS:
         wav(name, rate, frames, 3)
         subprocess.run(['flac', '-s', '-f', '--no-seektable', f'--blocksize={block}', '-o', aud/f'{name}.flac', aud/f'{name}.wav'], check=True)
+    s = bytearray((aud/'s44.flac').read_bytes())   # STREAMINFO's maximum above the stream's fixed block
+    s[10:12] = (8192).to_bytes(2, 'big')
+    (aud/'s44m.flac').write_bytes(s)
+    (aud/'s44m.wav').write_bytes((aud/'s44.wav').read_bytes())
+    for name, frames in (('t20', RATE // 50), ('t100', RATE // 10)):  # a whole track's worth of very short ones
+        wav(name, RATE, frames, 6)
+        subprocess.run(['flac', '-s', '-f', '-o', aud/f'{name}.flac', aud/f'{name}.wav'], check=True)
+    a = (aud/'b.flac').read_bytes()                  # a next FLAC with big metadata: 1 MB of padding before its frames
+    (aud/'bigmeta.flac').write_bytes(a[:4] + bytes([a[4] & 0x7f]) + a[5:42] + bytes([0x81]) + (1 << 20).to_bytes(3, 'big') + bytes(1 << 20) + a[42:])
     wav('nextq', RATE, 8 * RATE, 4)
     subprocess.run(['flac', '-s', '-f', '-o', aud/'nextq.flac', aud/'nextq.wav'], check=True)
     # the other formats, 8 s, and the MP3s' shapes
@@ -209,6 +218,65 @@ def stop_in_failed_open():
     p.run(1)
     p.gapless('junk.flac')
     p.run(0.1)
+def exits(p, seconds):
+    """Virtual times of the exits hciplayer sends in the next `seconds`, asking as demo does."""
+    at = []
+    def tick():
+        at.extend(p.now() for r in p.e.replies if b'exit' in r for _ in range(r.count(b'exit')))
+        p.e.replies.clear()
+        p.e.send_cmd('{player-status\\request}')
+    end = p.now() + seconds
+    while p.now() < end:
+        p.run(0.01)
+        tick()
+    return at
+
+
+def next_ends_at_once(name, gap):
+    """A next file that ends as it starts: its exit comes no sooner than demo can read it after the song's. A real short
+    track's audio is all there; ordinary tracks' exits aren't touched."""
+    p = Player()
+    p.song('a.flac')
+    p.run(1)
+    p.gapless(name)
+    at = exits(p, SECONDS + 1)
+    check(len(at) >= 2 and at[1] - at[0] >= gap - 0.011, f'{name}: exits {[round(t, 3) for t in at]}, wanted {gap} s apart')
+    check(bytes(p.pcm[:N * 4]) == source('a'), f'{name}: a whole')
+    return p
+
+
+def exit_apart():
+    next_ends_at_once('headers2.flac', 0.3)
+    for name in 't20', 't100':
+        p = next_ends_at_once(name + '.flac', 0.3)
+        want = (aud/f'{name}.wav').read_bytes()[-(len(p.pcm) - N * 4):] if len(p.pcm) > N * 4 else b''
+        check(len(want) and bytes(p.pcm[N * 4:N * 4 + len(want)]) == want, f'{name}: its audio follows a, {len(p.pcm) // 4 - N} frames')
+    p = Player()
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('b.flac')
+    p.run(SECONDS - 2)
+    p.gapless('c.flac')
+    at = exits(p, SECONDS + 1)
+    check(len(at) >= 1 and bytes(p.pcm[:N * 4]) == source('a') and bytes(p.pcm[N * 4:2 * N * 4]) == source('b'), 'ordinary tracks: bit-exact')
+
+
+def next_whole(name):
+    """A next file's first samples aren't lost to the preload: the same as it opened directly."""
+    p = Player()
+    p.song(name)
+    p.settled(SECONDS + 12)
+    cold = bytes(p.pcm)
+    p = Player()
+    p.song('a.flac')
+    p.run(1)
+    p.gapless(name)
+    p.until(lambda: p.frames() > N + RATE, SECONDS + 2)
+    p.settled(SECONDS + 14)
+    got = bytes(p.pcm[N * 4:])
+    check(len(got) == len(cold) and got == cold, f'{name}: next {len(got)} bytes, directly {len(cold)}')
+
+
     p.e.send_cmd('{mcl-stop\\null}')
     p.until(lambda: p.events('pcm_close', 'pcm_drop'), 1)
     before = p.frames()
@@ -415,8 +483,23 @@ def tail_noise(name, most):
     if most is not None: check(past < most, f'{name}: {past:.2f} s of noise, under {most} s')
 
 
-def understated_mp3(name, cut):
-    """A frame count a little short still plays out; well short is cut, as stock."""
+def stop_while_open():
+    """demo's direct stop while the thread opens a good next: the thread goes stale, so what it was opening isn't played."""
+    p = Player()
+    p.e.hooks['delay'] = lambda raw: 1.0 if raw.endswith(b'b.flac') else 0
+    p.song('a.flac')
+    p.run(1)
+    p.gapless('b.flac')
+    p.run(0.2)
+    p.e.send_cmd('{mcl-stop\\null}')
+    p.run(0.1)
+    check(p.e.r32(NEXT) == 3, f'stop in an open: the thread is stale ({p.e.r32(NEXT):#x})')
+    p.run(1.5)
+    check(p.fds('b.flac') == 0 and p.e.r32(NEXT) == 0, f"stop in an open: closed, state clear ({p.fds('b.flac')} open, {p.e.r32(NEXT):#x})")
+
+
+def understated_mp3(name):
+    """A frame count short of the audio plays out: what follows is frames."""
     p = Player()
     p.song(name)
     p.settled(SECONDS + 3)
@@ -558,8 +641,12 @@ if __name__ == '__main__':
     tail_noise('junkh.mp3', None)  # no header to say where the audio ends: a limit, docs/internals.md#forced-eof
     understated_mp3('off.mp3', False)
     understated_mp3('cut.mp3', True)
+    exit_apart()
+    next_whole('x.wma')
+    next_whole('bigmeta.flac')
     understated_mp3('x.mp3', False)
     dsd()
+    stop_while_open()
     for case in SEEKS:
         seek_flac(*case)
     seek_next()
