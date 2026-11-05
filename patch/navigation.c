@@ -1781,7 +1781,8 @@ static void light_apply(const int *tm) {
 __attribute__((noinline)) static void settings_read(void) {
     for (int i = 0; i < 4; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
-    st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
+    st.shortcut = config_value("IPOD", "SHORTCUT", SETTING_N_SHORTCUT,
+                               SETTING_N_SHORTCUT); /* no key, see shortcut() */
     st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
     st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
     st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
@@ -1857,7 +1858,7 @@ static int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : th
  * card may mount after the first read. */
 static int shortcut(void) {
     accent();
-    return st.shortcut < 7 ? st.shortcut : rockbox_available() ? 0 : 3;
+    return st.shortcut < SETTING_N_SHORTCUT ? st.shortcut : rockbox_available() ? 0 : 3;
 }
 int ipod_home(void) {
     accent();
@@ -1878,7 +1879,8 @@ int ipod_home_rockbox(void) {
 }
 const char *ipod_home_shortcut(void) {
     static const char *const names[] = { "Rockbox",      "Artists", "Albums", "Favorites",
-                                         "Rated Albums", "Shuffle", "Games" };
+                                         "Rated Albums", "Shuffle", "Games",  "Playlists" };
+    _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
     return names[shortcut()];
 }
 extern int rockbox_open(void *, void *);
@@ -1889,6 +1891,9 @@ int home_shortcut_open(void *ctx, void *event) {
     if (s == 4) return rated_albums(ctx, event);
     if (s == 5) return shuffle_menu(ctx, event);
     if (s == 6) return games_open(ctx, event);
+    if (s == 7)
+        return navigator_to_with_context("localmusic/playlist_page",
+                                         (void *)0); /* as stock's Home */
     if (s == 2) {
         struct {
             int cls;
@@ -5901,8 +5906,10 @@ static int setting_click(void *ctx, void *event) {
     const theme_t *T = theme();
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
-    /* Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games */
-    static const int shortcut_next[] = { 3, 2, 6, 5, 1, 4, 0 };
+    /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games */
+    static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 0, 1 };
+    _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
+                   "one per shortcut");
     /* Graphite, ..., Plum, Green, then Ivory (Classic's mask skips it to its own Classic Blue) */
     static const int accent_next[] = { 1, 2, 3, 4, 5, 6, 8, 0, MINIMAL_ACCENT };
     _Static_assert(sizeof accent_next / sizeof *accent_next == ACCENT_N, "one per ACCENTS row");
