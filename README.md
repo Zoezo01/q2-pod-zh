@@ -26,7 +26,7 @@
 
 ## Features
 
-- **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Cover Flow you can swipe, four visualizers and Games. Minimal, Classic and Classic Light themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
+- **iPod UI:** Home in Split, Full or Carousel layout, menus, Now Playing (regular or Centred), Cover Flow you can swipe, four visualizers and Games. Minimal and Classic themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, Smart Awake, and Quick Settings from a swipe across the wheel.
 - **Wheel navigation:** smooth scrolling that speeds up as you spin, adjustable sensitivity, menus that remember your place, Hold Return to Now Playing or Home, and Single Press Scrub.
 - **Library:** up to 65,000 songs, search, Era (albums by decade), Most Played, Long Songs, favourites, playlists with Edit Playlist and M3U import and export, Play Next, Add to Queue and View Queue. An empty `database.ignore` file keeps a folder out of the Library's lists while its songs still play from Folder view and playlists.
 - **Ratings:** rate songs and albums 0–5 hearts, then browse Top Rated, Loved and rated albums; a copy stays on the card as `.ratings.tsv`.

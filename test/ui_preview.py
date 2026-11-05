@@ -3,7 +3,7 @@
 Usage: python3 test/ui_preview.py [--themes BEFORE,AFTER] BEFORE_BUILD AFTER_BUILD OUTPUT [BEFORE_CF AFTER_CF]
 Each side is drawn in an iPod Theme, classic or minimal (default classic,minimal); one build passed
 twice compares its two themes. --themes classic-light,classic-light (one build passed twice) composes only the status
-sheet, Classic Light's bar on each row. Uses the existing ImageMagick dependency and the original firmware's
+sheet, Classic's bar on each row. Uses the existing ImageMagick dependency and the original firmware's
 native font/assets.
 """
 import hashlib
@@ -306,9 +306,9 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
         render(frames+['-append'],out/'coverflow-renderer.png')
     # Native-size status review: all four modes, both themes, crowded and critical states.
     battery_rows=[]
-    if classic_light:  # Classic Light's light half (theme.xml): its bar stops and line; the built bar's title and clock boxes
+    if classic_light:  # Classic's light half (theme.xml): its bar stops and line; the built bar's title and clock boxes
         from theme import builtins, scheme_half, sets
-        classic_light_t=builtins()[2]; CLASSIC_LIGHT=sets(classic_light_t)['classic-light']; half=scheme_half(classic_light_t['schemes'][9],True)
+        classic_light_t=builtins()[1]; CLASSIC_LIGHT=sets(classic_light_t)['classic-light']; half=scheme_half(classic_light_t['schemes'][9],True)
         def batt_stop(j,h):  # the battery level's stops at row j of h (paint_stops), light half: hues as stated
             p=j*100/(h-1); st=classic_light_t['batt']
             (p0,c0),(p1,c1)=next((a,b) for a,b in zip(st,st[1:]) if p<=b[0])
@@ -348,7 +348,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                 if not classic_light:
                     label('12:59 PM',16,142,0,90,30)
                     image(a,asset(after,'images/xx/bar_play.png'),STATUS_MARGIN,7,12,16)
-                effective=0 if state=='codec' else 3 if classic_light and mode in (1,2) else mode  # Classic Light's values: they read as Percent Inside
+                effective=0 if state=='codec' else 3 if classic_light and mode in (1,2) else mode  # Classic's values: they read as Percent Inside
                 if classic_light:  # navigation.c classic_light_battery: the set's body, the light half's outline, paper and level
                     gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=CLASSIC_LIGHT.batt_w,CLASSIC_LIGHT.batt_h; nh=inc('BATT_NUB_H')
                     ink=f'#{half["ink"]:06x}'; dig=ink if color=='#ffffff' else color

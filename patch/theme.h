@@ -3,8 +3,8 @@
 /* The built-in themes' shape (docs/internals.md#themes); the table is navigation.c's themes[]. */
 
 enum { PAINT_SELECTION, PAINT_BAR, PAINT_BATTERY, PAINTER_N }; /* theme_t.painter[] index */
-enum { SEL_CARD, SEL_BAR, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic bar) */
-enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic Light gloss) */
+enum { SEL_CARD, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic stops) */
+enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic gloss) */
 enum {
     BATT_STOCK,
     BATT_CLASSIC_LIGHT
@@ -63,7 +63,7 @@ typedef struct {
     const char *key;           /* the IPOD key; a theme-owned accent key's too */
     const char *label;         /* the row's title; 0: an accent key (its row is Accent's) */
     const char *const *names;  /* [n] the values' labels */
-    const unsigned char *sets; /* [n] the GEOM_* set each value boots */
+    const unsigned char *sets; /* [n] the GEOM_* set each value boots; null for a plain choice */
     unsigned char n, def;      /* value count; the value a missing or unreadable key reads */
 } theme_key_t;
 typedef struct {
@@ -102,7 +102,8 @@ typedef struct {
     /* the theme's classic_light_chevron's box on screen: a full-width list's, Split's; 0: stock's
      * list_into
      */
-    short chevron_x, home_chevron_x;
+    short chevron_x, home_chevron_x,
+        art_placeholder; /* stock's Folder tile drawn this size in its row's middle, 0: as stock */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
     /* Split's panel where no cover shows (home_pane_paint), n 0: HOME_PLACEHOLDER. pane_shadow is
@@ -120,7 +121,7 @@ typedef struct {
     const scheme_t *schemes; /* [n_schemes], indexed by accent value: each scheme's dark half */
     const scheme_t *light; /* [n_schemes] each scheme's light half; == schemes when the theme states
                               no final value (Minimal, Classic) */
-    unsigned char n_schemes; /* ACCENT_N, then the theme's own (Classic Light: 10) */
+    unsigned char n_schemes; /* ACCENT_N, then the theme's own (Classic: 10) */
     const option_t *opts;    /* Appearance rows after Theme, in order */
     unsigned char n_opts;
     unsigned undeclared;     /* SETTING_* bits of the theme options it does not declare */

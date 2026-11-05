@@ -30,7 +30,7 @@ class Geometry:
     """The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
     72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
     68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
-    text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Classic Light text row).
+    text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Classic text row).
     set_row, set_top, set_rows, set_icon: settings lists hold set_rows rows of set_row from set_top, the
     icon at set_icon (0 hides it); payload rows are built 70 px high (SET_STOCK_BODY), stock's shape,
     and mapped like stock's.
@@ -63,9 +63,9 @@ class Geometry:
     set_top: int = inc('SET_TOP')
     set_rows: int = inc('SET_ROWS')
     set_icon: int = inc('SET_ICON')
-    bar_px: int = 0  # the status bar's title and clock px in the Classic Light face (status_metrics); 0: stock's bar, no title
+    bar_px: int = 0  # the status bar's title and clock px in the Classic face (status_metrics); 0: stock's bar, no title
     bar_title_w: int = 0  # the bar title's text width (status_metrics)
-    bar_right: int = 0  # Classic Light's bar: the right group's margin, from the nub's last column to the screen's edge
+    bar_right: int = 0  # Classic's bar: the right group's margin, from the nub's last column to the screen's edge
     batt_w: int = inc('BATT_BODY_W')  # the battery body under BATT_CLASSIC_LIGHT (navigation.c classic_light_battery), its nub outside
     batt_h: int = inc('BATT_BODY_H')
     text_x: int = 0  # list text's left edge, clear of the glass at the first row (0: stock's)
@@ -382,7 +382,9 @@ def patch_style(data, audit):
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
 STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state', 'label_eq']
-STATE_W = 18  # Classic Light's play state's width: its halo's last column is 283 (tools/art.py STATE_BOX)
+STATE_W = 18  # Classic's play state's width: its halo's last column is 283 (tools/art.py STATE_BOX)
+BAR_PAD = 6  # Classic's bar: the title's and the Home play state's ink this far clear of the glass (bar_right gives the battery's)
+HOME_STATE_X = 56 + BAR_PAD  # Classic's play state on Home, in the title's place (test_art)
 STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
@@ -395,17 +397,18 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
-# Classic Light's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery
+# Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
+# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery. On Home's own list the play state is
+# img_home_state instead, in the title's place, "Q2 Pod" hidden.
 STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
-CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic Light's EQ, when the widest clock shows with it
-CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic Light face's source, subset to CLASSIC_LIGHT_TTF
+CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
+CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
 CLASSIC_LIGHT_FONT_NAME = pathlib.Path(CLASSIC_LIGHT_TTF).stem
 
 
 def status_metrics(g, font):
-    """Classic Light's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
+    """Classic's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
     fractional top row counted: the title's first ink clears the glass there. Stock's hscroll_label keeps
     2 px each side of its box, so the title's box is that much wider than its g.bar_title_w of text; the
     clock is centred, clock_text ("12:59 PM") its widest. Model:
@@ -418,7 +421,7 @@ def status_metrics(g, font):
     cap, h = math.ceil(f['OS/2'].sCapHeight * scale), g.bar - 1
     cap_top = (g.bar - 2 - cap) // 2
     label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
-    inset = corner_inset(cap_top)
+    inset = corner_inset(cap_top) + BAR_PAD
     pad = 2  # the hscroll_label's margin each side
     return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset, 'clock_text': clock_text,
             'title': [inset - pad, label_y, g.bar_title_w + 2 * pad, h],
@@ -447,7 +450,7 @@ def status_bar(root, g=SET0):
         pct[2].update({f'style:{s}:font_size': str(BATT_PCT_PX), f'style:{s}:text_align_h': 'right'})
     pct[2]['visible'] = 'false'
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
-    # Classic Light's set (bar_px): the title on the left in the Classic Light face, the clock centred, the icons right of it
+    # Classic's set (bar_px): the title on the left in the Classic face, the clock centred, the icons right of it
     m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
     left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
@@ -462,7 +465,7 @@ def status_bar(root, g=SET0):
         reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
         check(reach <= room, f'Status bar battery needs {reach}px of {room}px')
         # bar_sync's gate reads BATT_ROOM, the built-in bar's: a mode it lets through must still fit this room (a theme on this bar offers only modes the gate exempts: test_theme)
-        check(BATT_ROOM - room in (0, 1), f'BATT_ROOM {BATT_ROOM} past the bar\'s room {room}')
+        check(room >= BATT_ROOM - 1, f'BATT_ROOM {BATT_ROOM} past the bar\'s room {room}')
         for name in STATUS_HIDDEN:
             box = widgets[name][1]
             box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
@@ -479,6 +482,11 @@ def status_bar(root, g=SET0):
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, put Bluetooth's ink (a row into its canvas) on the battery's top row
         right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 - 1) + 16
+        left[1][3] = widgets['img_state'][1][3] = right[1][3]  # the state's 22 px art, its ink centred on the caps
+        home = copy.deepcopy(widgets['img_state'])
+        home[1][:] = [HOME_STATE_X, right[1][1], STATE_W, right[1][3]]
+        home[2].update(name='img_home_state', visible='false')
+        root[3].append(home)
         # The payload writes the top window's title (bar_title_sync) and the local time (ringnav_paint_bg).
         for name, style in (('title', 's_scrlabel_white20l'), ('clock', 's_scrlabel_white20c')):
             root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',

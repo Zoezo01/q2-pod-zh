@@ -12,7 +12,7 @@ import theme
 from ipod import Geometry, SET0
 from theme import ThemeError
 
-CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT = (theme.sets(theme.builtins()[2])[s] for s in ('classic-light', 'classic-light-text'))  # Classic Light's sets: its theme.xml
+CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT = (theme.sets(theme.builtins()[1])[s] for s in ('classic-light', 'classic-light-text'))  # Classic's sets: its theme.xml
 
 
 def error(f, *args):
@@ -116,7 +116,8 @@ def opt(setting, default=-1, preset=-1, keep=-1, values=0):
 
 
 def own(key, label, names, sets, default=-1, preset=-1, keep=-1):  # a theme's own option, as resolve() keeps it
-    return {**opt('SETTING_OWN', default, preset, keep), 'key': key, 'label': label, 'names': list(names), 'sets': list(sets)}
+    return {**opt('SETTING_OWN', default, preset, keep), 'key': key, 'label': label, 'names': list(names), 'sets': sets and list(sets)}
+HOMELIB, ROWPREVIEW = (own(k, label, ('Off', 'On'), None, default=1, preset=1) for k, label in (('HOMELIB', 'Library on Home'), ('ROWPREVIEW', 'Row Preview')))
 
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
@@ -130,11 +131,13 @@ MINIMAL = {
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
     'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': (), 'pane_light_a': 0, 'pane_icon_x': 0, 'pane_icon_y': 0, 'pane_note_x': 0, 'pane_note_y': 0, 'pane_count_y': 0, 'pane_count_w': 0, 'pane_count_px': 0,
-    'set_top': 8, 'set_text': 0, 'np_bar': 4, 'np_scrub': 8, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'batt_fill': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
+    'set_top': 8, 'set_text': 0, 'np_bar': 4, 'np_scrub': 8, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'batt_fill': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'art_placeholder': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
              opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], 'undeclared': [], **CF_TODAY}
+# The hand-written table's Classic, before Classic took Classic Light's look: OLD_CLASSIC_XML resolves to it.
+OLD_CLASSIC_XML = (theme.ROOT/'test/unit/old_classic.xml').read_text()
 CLASSIC = {
     **MINIMAL, 'id': 'classic', 'index': 1, 'name': 'Classic', 'accents': 0x17f, 'accent_key': 'ACCENT',
     'painter[PAINT_SELECTION]': 1, 'chevron_home': 1, 'caps_mark': 0, 'caps_home': 0, 'caps_np': 0,
@@ -153,8 +156,23 @@ def bare(t):
 
 def resolved(body, attrs='id="t" name="T" index="2" extends="minimal"'):
     by_id = {n.attrs['id']: n for n in map(theme.load, sorted(THEMES.glob('*/theme.xml')))}
+    by_id['classic'] = theme.parse(OLD_CLASSIC_XML, 'classic.xml')
     root = theme.parse(f'<theme format="1" {attrs}>{body}</theme>', 't.xml')
     return theme.resolve(root, {**by_id, root.attrs.get('id', ''): root})
+
+
+def old_builtins():
+    """Minimal and the old Classic: the engine's tests of two themes on the built-in set."""
+    by_id = {'minimal': theme.load(THEMES/'minimal/theme.xml'), 'classic': theme.parse(OLD_CLASSIC_XML, 'classic.xml')}
+    return [theme.resolve(by_id[k], by_id) for k in ('minimal', 'classic')]
+
+
+@pytest.fixture(autouse=True)
+def old_classic_macros(monkeypatch):  # the old Classic's offsets.inc numbers, as tools/theme.py had them
+    monkeypatch.setitem(theme.ROLE_MACROS, 'classic', {
+        'home_top': '0', 'home_full_row': '369', 'home_text_x': '33', 'home_label_end[0]': '33', 'home_label_end[1]': '33', 'set_top': '0',
+        'np_bar': 'NP_BAR_CLASSIC', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB',
+        'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **theme.CF_ROLES})
 
 
 def test_accent_names():
@@ -164,8 +182,8 @@ def test_accent_names():
 
 
 def test_frozen_table():
-    """Today's Minimal and Classic, as the hand-written table had them."""
-    assert [bare(t) for t in theme.builtins()[:2]] == [MINIMAL, CLASSIC]
+    """Minimal and the old Classic, as the hand-written table had them."""
+    assert bare(theme.builtins()[0]) == MINIMAL and [bare(t) for t in old_builtins()] == [MINIMAL, CLASSIC]
 
 
 def test_extends():
@@ -185,7 +203,7 @@ def test_extends():
 M = 'id="minimal" name="M" index="0"'
 @pytest.mark.parametrize('body, attrs, message', [
     ('<font name="x"/>', None, 'unknown element <font>'),
-    ('<view name="list"><element name="selection" painter="bar"><element name="x"/></element></view>', None, 'unknown element <element>'),
+    ('<view name="list"><element name="selection" painter="card"><element name="x"/></element></view>', None, 'unknown element <element>'),
     ('<view name="dialog"/>', None, 'unknown view dialog'),
     ('<view name="list" layout="x"/>', None, 'unknown key view.layout'),
     ('<view name="list"><element name="tile"/></view>', None, 'unknown element list.tile'),
@@ -275,7 +293,7 @@ def test_validate_accepts():
 def test_key():
     assert theme.key('a.b.c', 'f', 'bool') == theme.Key('a.b.c', 'f', 'bool', 0, 1, 0, 'live')
     assert theme.key('a.b.c', 'f', 'color').hi == 0xffffff
-    assert theme.key('list.selection.painter', 'f', 'enum').hi == 2
+    assert theme.key('list.selection.painter', 'f', 'enum').hi == 1
     assert theme.key('a.b.c', 'f', 'int', 255).hi == 255
 
 
@@ -304,6 +322,7 @@ def test_builtins_rejects(tmp_path):
 def test_builtins_rejects_a_shared_accent_key(tmp_path):
     """Themes sharing an accent key share its stored value, so they must take the same colours and default."""
     shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('classic-light'))
+    (tmp_path/'classic').mkdir(); (tmp_path/'classic'/'theme.xml').write_text(OLD_CLASSIC_XML)
     def put(folder, attrs, body):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" {attrs}>{body}</theme>')
@@ -356,7 +375,7 @@ def test_a_shadow_past_its_alphas_is_an_error():
 
 def test_classic_light_battery_offers_only_what_the_bar_gate_exempts():
     # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT: bar_sync's constant BATT_ROOM is the built-in bar's
-    n = theme.builtins()[2]
+    n = theme.builtins()[1]
     assert next(o['values'] for o in n['opts'] if o.get('setting') == 'SETTING_BATTERY') == 0b1001
 
 
@@ -373,7 +392,7 @@ def test_resolve_takes_a_long_name():
     assert resolved('', f'id="t" name="{"é" * 24}" index="2" extends="minimal"')['name'] == 'é' * 24
 
 
-MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('chevron_sel', 0), ('art_x', 0), ('art_text_x', 0), ('art_text_end', 0), ('row_text_end', 0), ('sep', '{{0}, {0}}'), ('font[ROLE_TALL]', 'FONT_DEFAULT'), ('font_px[ROLE_TALL]', 0), ('chevron_x', 0), ('home_chevron_x', 0), ('caps_mark', 1),
+MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('chevron_sel', 0), ('art_x', 0), ('art_text_x', 0), ('art_text_end', 0), ('art_placeholder', 0), ('row_text_end', 0), ('sep', '{{0}, {0}}'), ('font[ROLE_TALL]', 'FONT_DEFAULT'), ('font_px[ROLE_TALL]', 0), ('chevron_x', 0), ('home_chevron_x', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
                   ('font[ROLE_NP]', 'FONT_DEFAULT'), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
                   ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font_px[ROLE_NP]', 0), ('home_pane', '{0}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('set_top', 8), ('set_text', 0), ('np_bar', 4),
@@ -413,7 +432,7 @@ def test_emit(tmp_path):
 
 
 def test_emit_both(tmp_path):
-    theme.emit(theme.builtins()[:2], tmp_path)
+    theme.emit(old_builtins(), tmp_path)
     text = (tmp_path/'themes.inc').read_text()
     assert [l.split(' = ')[0] for l in text.splitlines() if l.startswith('static const')] == [
         'static const scheme_t minimal_schemes[]', 'static const option_t minimal_opts[]',
@@ -454,8 +473,8 @@ def test_view_attr():
 # Enum fields and value counts come out as C names, so a reordered or added value is a compile error.
 def test_emit_names_enums_and_counts(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    assert inc.count('.painter[PAINT_SELECTION] = SEL_CARD,') == 1 and inc.count('.painter[PAINT_SELECTION] = SEL_BAR,') == 1
-    assert inc.count('.np_layout = NP_IPOD,') == 3 and '.np_layout = 0,' not in inc
+    assert inc.count('.painter[PAINT_SELECTION] = SEL_CARD,') == 1 and inc.count('.painter[PAINT_SELECTION] = SEL_STOPS,') == 1
+    assert inc.count('.np_layout = NP_IPOD,') == 2 and '.np_layout = 0,' not in inc
     for name, (_, values) in theme.SETTINGS.items():
         assert f'#define SETTING_N_{name.upper()} {len(values)}\n' in inc
 
@@ -518,8 +537,8 @@ def minimal_with(geometry):
 
 
 def test_builtins_are_set0():
-    assert [theme.geometry(t) for t in theme.builtins()[:2]] == [SET0, SET0]
-    assert theme.geometry_sets(theme.builtins()[:2]) == [SET0]
+    assert [theme.geometry(t) for t in old_builtins()] == [SET0, SET0]
+    assert theme.geometry_sets(old_builtins()) == [SET0]
     assert minimal_with('<geometry set="ipod"/>') == theme.builtins()[0]
 
 
@@ -532,7 +551,7 @@ def test_geometry_rejects(geometry, message):
 
 
 def test_geometry_sets_set0_first(test_set):
-    m, c = theme.builtins()[:2]
+    m, c = old_builtins()
     assert theme.geometry_sets([dict(m, geom_set='test'), c]) == [SET0, TEST]
     assert theme.geometry_sets([dict(m, geom_set='test')]) == [SET0, TEST]
 
@@ -596,7 +615,7 @@ def test_bar_painter_and_scheme_bar_roles():
                  '<view name="bar"><element name="fill" painter="gloss"/></view>')
     assert t['painter[PAINT_BAR]'] == 1 and t['schemes'][0]['bar'] == ((0, 0xffffff), (100, 0x9c9e9c))
     assert t['schemes'][0]['bar_line'] == 0x5a595a and t['schemes'][0]['bar_line2'] == 0
-    classic_light = theme.builtins()[2]['schemes'][0]
+    classic_light = theme.builtins()[1]['schemes'][0]
     assert classic_light['bar_line2'] == 0x848584
     assert error(resolved, '<view name="bar"><element name="fill" painter="shiny"/></view>') == \
         't.xml:1: bar.fill.painter: unknown value shiny'
@@ -608,7 +627,7 @@ def test_bar_battery_painter_rejects():
 
 
 def test_theme_level_halves():
-    classic_light = theme.builtins()[2]
+    classic_light = theme.builtins()[1]
     assert classic_light['batt_line'] == 0x9c9e9c and classic_light['light']['batt_line'] == 0x717070  # both halves stated
     assert theme.half(classic_light, False, 0xffffff, 0)['batt_line'] == 0x9c9e9c
     assert theme.half({**classic_light, 'batt_line': 0}, False, 0xffffff, 0)['batt_line'] != 0  # one stated: the other derives
@@ -619,13 +638,13 @@ def test_theme_level_halves():
 def test_scheme_mode_paper_ink():
     t = resolved('<colorScheme mode="light" light.paper="#ffffff" light.ink="#000000"/>')
     assert {(s['mode'], s['paper'], s['ink']) for s in t['schemes']} == {(1, 0xffffff, 0)}
-    minimal, classic, classic_light = theme.builtins()
+    minimal, classic = theme.builtins()
     assert {(s['mode'], s['paper'], s['ink']) for s in minimal['schemes']} == {(0, 0xf4f4f4, 0x161616)}
-    assert {(s['mode'], s['paper'], s['ink']) for s in classic_light['schemes'] if s['sel']} == {(0, 0xffffff, 0)}
-    assert (minimal['undeclared'], classic['undeclared']) == ([], [])
-    assert classic_light['undeclared'] == ['SETTING_ROUNDED', 'SETTING_NPCENTRED']
-    assert classic_light['opts'][0] == opt('SETTING_LIGHT', preset=1, keep=2)
-    assert not (theme.shared(classic_light) or not theme.shared(minimal) or not theme.shared(classic))
+    assert {(s['mode'], s['paper'], s['ink']) for s in classic['schemes'] if s['sel']} == {(0, 0xffffff, 0)}
+    assert (minimal['undeclared'], old_builtins()[1]['undeclared']) == ([], [])
+    assert classic['undeclared'] == ['SETTING_ROUNDED', 'SETTING_NPCENTRED']
+    assert classic['opts'][0] == opt('SETTING_LIGHT', preset=1, keep=2)
+    assert not (theme.shared(classic) or not theme.shared(minimal) or not theme.shared(old_builtins()[1]))
 
 
 def test_halves():
@@ -660,7 +679,7 @@ def test_validate_rejects_mode(body, message):
     ('<colorScheme name="cobalt" light.muted="#ffffff"/>', 'scheme.muted: one value for both halves'),
     ('<colorScheme name="cobalt" dark.mode="dark"/>', 'scheme.mode: one value for both halves'),
     ('<colorScheme name="cobalt" sel.top="#111111" dark.sel.top="#222222"/>', 'scheme.sel.top: stated twice (sel.top and dark.sel.top)'),
-    ('<view name="list"><element name="selection" light.painter="bar"/></view>', 'list.selection.painter: one value for both halves'),
+    ('<view name="list"><element name="selection" light.painter="card"/></view>', 'list.selection.painter: one value for both halves'),
     ('<view name="bar"><element name="battery" line="#111111" dark.line="#222222"/></view>', 'bar.battery.line: stated twice (line and dark.line)'),
 ])
 def test_resolve_rejects_halves(body, message):
@@ -669,16 +688,16 @@ def test_resolve_rejects_halves(body, message):
 
 def test_emit_mode_and_undeclared(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    # Minimal and Classic: one array for both halves, their light rows as before (no closing ' }': the
+    # Minimal: one array for both halves, its light rows as before (no closing ' }': the
     # label and the bar follow on the line)
-    assert '.light = minimal_schemes,' in inc and '.light = classic_schemes,' in inc and 'minimal_light' not in inc
+    assert '.light = minimal_schemes,' in inc and 'minimal_light' not in inc
     assert '.mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616' in inc
-    # Classic Light: its dark rows in classic_light_schemes, its light rows in classic_light_light
+    # Classic: its dark rows in classic_light_schemes, its light rows in classic_light_light
     dark, light = (inc.split(f'static const scheme_t classic_light_{a}[] = {{')[1].split('};')[0] for a in ('schemes', 'light'))
     assert '.paper = 0x000000, .ink = 0xffffff' in dark and '.paper = 0xffffff, .ink = 0x000000' in light
     assert '.light = classic_light_light,' in inc and '_Static_assert(sizeof classic_light_light == sizeof classic_light_schemes' in inc
     assert '.undeclared = (1 << SETTING_ROUNDED) | (1 << SETTING_NPCENTRED),' in inc
-    assert inc.count('.undeclared = 0,') == 2
+    assert inc.count('.undeclared = 0,') == 1
 
 
 def test_derive_gloss():
@@ -691,24 +710,26 @@ def test_derive_gloss():
 
 
 def test_classic_light_second_line_is_its_grey_at_its_size():
-    n = theme.builtins()[2]
+    n = theme.builtins()[1]
     # one value in stock's terms, which the light half flips onto #6b6d6b
     assert {s['muted'] for i, s in enumerate(n['schemes']) if n['accents'] >> i & 1} == {0x949294}
     assert n['font_px[ROLE_META]'] == 17 and n['font[ROLE_META]'] == 0  # stock's regular
-    assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_TALL]'], n['font[ROLE_TALL]']) == (27, 28, 2)  # a two-line row's title, Classic Light's face
+    assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_TALL]'], n['font[ROLE_TALL]']) == (27, 28, 2)  # a two-line row's title, Classic's face
     assert n['sep'] == ((0, 0), (50, 0x2c2c2c), (100, 0)) and n['light']['sep'] == ((0, 0xfcfcfc), (50, 0xe2e3e2), (100, 0xf7f7f7))
 
 
 def test_classic_light_list_titles_and_home_rows_are_27_px():
-    n = theme.builtins()[2]
+    n = theme.builtins()[1]
     assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_NP]']) == (27, 27)
-    assert [(t['font_px[ROLE_TITLE]'], t['font_px[ROLE_NP]']) for t in theme.builtins()[:2]] == [(0, 0), (0, 0)]
+    assert [(t['font_px[ROLE_TITLE]'], t['font_px[ROLE_NP]']) for t in old_builtins()] == [(0, 0), (0, 0)]
 
 
 def test_classic_blue_own_scheme():
-    classic_light = theme.builtins()[2]
+    classic_light = theme.builtins()[1]
     blue = classic_light['schemes'][9]
-    assert (blue['label'], blue['base'], blue['sel'], blue['sel_top'], blue['sel_edge']) == ('Classic Blue', 4, theme.GLOSS, theme.GLOSS_TOP, theme.GLOSS_EDGE)
+    assert (blue['label'], blue['base'], blue['sel'], blue['light']['sel_top'], blue['sel_edge']) == ('Classic Blue', 4, theme.GLOSS, theme.GLOSS_TOP, theme.GLOSS_EDGE)
+    # the light rim is the light half's; on black the dark half's top row is the band's first stop, no rim
+    assert all(s['sel_top'] == s['sel'][0][1] for s in classic_light['schemes'] if s['sel'])
     assert classic_light['accents'] == 0x37f and classic_light['opts'][1] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
     # each offered band is the same in both halves (Graphite's grey gloss is designed, not flipped)
     assert all(theme.scheme_half(s, True)['sel'] == theme.scheme_half(s, False)['sel'] for s in classic_light['schemes'])
@@ -730,17 +751,17 @@ def test_own_scheme_rejects(body, message):
 def test_emit_own_scheme(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     assert '    { .tones = accents[4], ' in inc.split('static const scheme_t classic_light_schemes[] = {')[1].split('\n')[10]
-    assert '.label = "Classic Blue" }' in inc and inc.count('.n_schemes = 9,') == 2 and '.n_schemes = 10,' in inc
+    assert '.label = "Classic Blue" }' in inc and inc.count('.n_schemes = 9,') == 1 and '.n_schemes = 10,' in inc
     assert inc.count('/ sizeof *minimal_schemes >= ACCENT_N') == 1
 
 
 def test_own_option():
-    m, c, n = theme.builtins()
+    (m, n), c = theme.builtins(), old_builtins()[1]
     row_art = own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)
     assert n['opts'][-1] == row_art and not any(o.get('key') for o in m['opts'] + c['opts'])
     assert theme.geometry(n) == CLASSIC_LIGHT and theme.geometry(n, {'ROWART': 'Off'}) == CLASSIC_LIGHT_TEXT
     assert theme.geometry(n, {'ROWART': 'On'}) == CLASSIC_LIGHT and theme.geometry(m, {'ROWART': 'Off'}) is SET0
-    assert theme.theme_keys([m, c, n]) == {'CLASSIC_LIGHT_ACCENT': (10, 9, None), 'ROWART': (2, 1, row_art)}
+    assert theme.theme_keys([m, n]) == {'CLASSIC_LIGHT_ACCENT': (10, 9, None), 'HOMELIB': (2, 1, HOMELIB), 'ROWPREVIEW': (2, 1, ROWPREVIEW), 'ROWART': (2, 1, row_art)}
     assert {'ACCENT', 'MINIMAL_ACCENT', 'HOME', 'BATTERY', 'THEME', 'LIGHT', 'VIS'} <= theme.PAYLOAD_KEYS
     assert not {'ROWART', 'CLASSIC_LIGHT_ACCENT'} & theme.PAYLOAD_KEYS and set(theme.ACCENT_KEYS) == {'ACCENT', 'MINIMAL_ACCENT'}
     assert not hasattr(theme, 'ROW_ART_OFF')
@@ -751,7 +772,8 @@ V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
     ('<option key="ART" label="Art"><value label="Off" set="ipod"/></option>', 'ART: 2 to 10 values expected'),
     ('<option key="ART" label="Art"><value label="Off" set="ipod"/><value label="Off" set="ipod"/></option>', 'ART: duplicate value Off'),
     ('<option key="ART" label="Art"><value label="Off" set="flat"/><value label="On" set="ipod"/></option>', 'unknown geometry set "flat"'),
-    ('<option key="ART" label="Art"><value label="Off"/><value label="On" set="ipod"/></option>', 'ART: value Off has no set'),
+    ('<option key="ART" label="Art"><value label="Off"/><value label="On" set="ipod"/></option>', 'ART: every value names a set, or none does'),
+    ('<option key="ART" label="Art"><value label="Off"/><value label="On"/></option>', 'ART: a plain choice the payload does not read (PLAIN_KEYS)'),
     ('<option key="ART" label="Art"><value label="Off" set="ipod" tint="1"/><value label="On" set="ipod"/></option>', 'unknown key value.tint'),
     (f'<option key="ART" label="Art" default="Dim">{V}</option>', 'ART: unknown value Dim'),
     (f'<option key="art" label="Art">{V}</option>', 'option.key: expected [A-Z][A-Z0-9_]*'),
@@ -773,7 +795,7 @@ def test_payload_option_values():
     # values: the bitmask of the values the row takes; default: what a stored value outside them reads as
     t = resolved('<option setting="battery" values="icon inside" default="inside" preset="icon"/><option setting="accent" key="ACCENT"/>')
     assert t['opts'][0] == opt('SETTING_BATTERY', default=3, preset=0, values=0b1001)
-    assert all(o['values'] == 0 for b in theme.builtins()[:2] for o in b['opts'] if o['setting'] != 'SETTING_ACCENT')
+    assert all(o['values'] == 0 for b in old_builtins() for o in b['opts'] if o['setting'] != 'SETTING_ACCENT')
 
 
 @pytest.mark.parametrize('body, message', [
@@ -795,6 +817,7 @@ def test_builtins_rejects_a_shared_own_key(tmp_path):
     """Themes sharing an own key share its stored value, so they must declare the same values and default;
     each presets it as it likes (as Minimal and Classic preset LIGHT)."""
     shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('classic-light'))
+    (tmp_path/'classic').mkdir(); (tmp_path/'classic'/'theme.xml').write_text(OLD_CLASSIC_XML)
     def put(folder, index, label, presets=''):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
@@ -810,19 +833,22 @@ def test_builtins_rejects_a_shared_own_key(tmp_path):
 def test_emit_own_options(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     classic_light_opts = inc.split('static const option_t classic_light_opts[] = {\n')[1].split('};')[0].splitlines()
-    assert classic_light_opts[-1] == '    { .setting = SETTING_OWN + 1, .def = 1, .preset = 1, .keep = -1, .values = 0x0 },'
+    assert classic_light_opts[-1] == '    { .setting = SETTING_OWN + 3, .def = 1, .preset = 1, .keep = -1, .values = 0x0 },'
     assert inc.count('.accent_slot = &st.own[0],') == 1 and 'classic_light_accent' not in inc
     assert ('const theme_key_t theme_keys[THEME_KEYS] = {\n'
             '    { .key = "CLASSIC_LIGHT_ACCENT", .label = 0, .names = 0, .sets = 0, .n = 10, .def = 9 },\n'
+            '    { .key = "HOMELIB", .label = "Library on Home", .names = (const char *const[]){"Off", "On"}, .sets = 0, .n = 2, .def = 1 },\n'
+            '    { .key = "ROWPREVIEW", .label = "Row Preview", .names = (const char *const[]){"Off", "On"}, .sets = 0, .n = 2, .def = 1 },\n'
             '    { .key = "ROWART", .label = "Row Art", .names = (const char *const[]){"Off", "On"}, '
             '.sets = (const unsigned char[]){GEOM_CLASSIC_LIGHT_TEXT, GEOM_CLASSIC_LIGHT}, .n = 2, .def = 1 },\n};') in inc
     assert inc.index('const theme_key_t theme_keys') > inc.index('enum { GEOM_IPOD, GEOM_CLASSIC_LIGHT, GEOM_CLASSIC_LIGHT_TEXT, GEOM_N };')
+    assert '#define OWN_HOMELIB 1\n#define OWN_ROWPREVIEW 2\n#define OWN_ROWART 3\n' in inc
 
 
 def test_classic_light_sets_from_its_theme_file():
-    """Classic Light's sets are its theme.xml's: classic_light states every Geometry field (SET0's defaults never reach it),
+    """Classic's sets are its theme.xml's: classic_light states every Geometry field (SET0's defaults never reach it),
     classic-light-text extends it. No tool names them."""
-    m, c, n = theme.builtins()
+    (m, n), c = theme.builtins(), old_builtins()[1]
     assert theme.sets(n) == {'ipod': SET0, 'classic-light': CLASSIC_LIGHT, 'classic-light-text': CLASSIC_LIGHT_TEXT} and theme.geometry(n) == CLASSIC_LIGHT
     assert theme.sets(m) == theme.sets(c) == {'ipod': SET0} and (m['geoms'], c['geoms']) == ({}, {})
     decl = {e.attrs['name']: e.attrs for e in theme.load(THEMES/'classic-light'/'theme.xml').children
@@ -840,11 +866,11 @@ def test_geometry_declared():
     assert t['geoms'] == {'pico': pico, 'pico-2': dataclasses.replace(pico, name='pico-2', text_x=20)}
     assert theme.geometry(t) == t['geoms']['pico-2'] and theme.geometry_sets([t]) == [SET0, t['geoms']['pico-2']]
     u = resolved('', 'id="u" name="U" index="3" extends="classic-light"')
-    assert theme.sets(u) == theme.sets(theme.builtins()[2]) and theme.geometry(u) == CLASSIC_LIGHT
+    assert theme.sets(u) == theme.sets(theme.builtins()[1]) and theme.geometry(u) == CLASSIC_LIGHT
 
 
 def test_geometry_ranges():
-    """Every Geometry field has a range, so a task that adds a field adds one; SET0 and Classic Light's sets lie inside."""
+    """Every Geometry field has a range, so a task that adds a field adds one; SET0 and Classic's sets lie inside."""
     assert set(theme.GEOM_RANGES) == {f.name for f in dataclasses.fields(Geometry)} - {'name'}
     assert [theme.check_set(g) for g in (SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT)] == [None, None, None]
     assert theme.check_set(dataclasses.replace(SET0, name='x', set_rows=5)) == 'geometry.set_rows: 5 outside 1..4'
@@ -874,6 +900,7 @@ def test_geometry_declare_rejects(body, message):
 def test_builtins_rejects_a_shared_set_name(tmp_path):
     """A set name is one GEOM_* id and one <set>_<name>.bin prefix: the themes that declare it declare it alike."""
     shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('classic-light'))
+    (tmp_path/'classic').mkdir(); (tmp_path/'classic'/'theme.xml').write_text(OLD_CLASSIC_XML)
     def put(folder, index, bar):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
@@ -894,7 +921,7 @@ def boot_inc(tmp_path, themes, **kw):
 
 
 def test_emit_boot_tables(tmp_path):
-    inc = boot_inc(tmp_path, theme.builtins()[:2])
+    inc = boot_inc(tmp_path, old_builtins())
     names = ipod.VALUE_NAMES
     sites = [(int(a, 16), g['value']) for g in ipod.AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
     assert len(sites) == 58
@@ -919,7 +946,7 @@ def test_emit_geom_vals(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     assert all(s in inc for s in geom_vals_text([SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]))
     assert ipod.GEOM_VALS[:3] == ('bar', 'set_row', 'set_icon')
-    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, CLASSIC_LIGHT)] == [[30, 68, 40], [26, 28, 0]]
+    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, CLASSIC_LIGHT)] == [[30, 68, 40], [26, 32, 0]]
 
 
 def test_emit_refuses_a_long_redirect(tmp_path):
@@ -930,7 +957,7 @@ def test_emit_refuses_a_long_redirect(tmp_path):
 
 
 def test_emit_second_set(tmp_path, test_set):
-    m, c = theme.builtins()[:2]
+    m, c = old_builtins()
     inc = boot_inc(tmp_path, [m, dict(c, geom_set='test')], redirects={'system_bar': 2, 'dialog/volume_dialog': 2})
     assert 'enum { GEOM_IPOD, GEOM_TEST, GEOM_N };' in inc and '{"ipod", "test"}' in inc
     rows = ['{' + ', '.join(str(ipod.immediate_values(g)[n]) for n in ipod.VALUE_NAMES) + '}' for g in (SET0, TEST)]
@@ -945,11 +972,11 @@ def test_emit_refuses_a_set0_redirect(tmp_path):
 
 
 def test_classic_light_builtin():
-    m, c, n = theme.builtins()
-    assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic Light', 2, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
+    (m, n), c = theme.builtins(), old_builtins()[1]
+    assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic', 1, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
                          opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
-                         own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
+                         HOMELIB, ROWPREVIEW, own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 
 
@@ -957,4 +984,13 @@ def test_emit_classic_light_sets(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     assert 'enum { GEOM_IPOD, GEOM_CLASSIC_LIGHT, GEOM_CLASSIC_LIGHT_TEXT, GEOM_N };' in inc and '#define CLIENT_H_MAX 294' in inc
     assert 'const char *const geom_names[GEOM_N] = {"ipod", "classic-light", "classic-light-text"};' in inc
-    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0', '1'] and '.accent_slot = &st.own[0],' in inc
+    assert re.findall(r'\.geom = (\d+)', inc) == ['0', '1'] and '.accent_slot = &st.own[0],' in inc
+
+
+def test_bar_font_size_is_the_sets_bar_px(tmp_path):
+    """The bar's label is laid out at its set's bar_px (tools/ipod.py status_metrics): its text size must match."""
+    xml = (theme.ROOT/'assets/themes/classic-light/theme.xml').read_text().replace('font="classic-light" font_size="21"', 'font="classic-light" font_size="24"')
+    for d, src in (('minimal', (theme.ROOT/'assets/themes/minimal/theme.xml').read_text()), ('classic-light', xml)):
+        (tmp_path/d).mkdir(); (tmp_path/d/'theme.xml').write_text(src)
+    with pytest.raises(theme.ThemeError, match=r"bar.title.font_size 24 is not set classic-light's bar_px 21$"):
+        theme.builtins(tmp_path)

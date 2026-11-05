@@ -27,7 +27,7 @@ PAYLOAD_KEYS = frozenset(
     + [k for f in sorted((ROOT/'patch').glob('*.c')) for k in re.findall(r'"IPOD", "([A-Z0-9_]+)"', f.read_text())])
 # value name -> its C name (theme.h); the font keys take FONTS
 FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'classic-light': 'FONT_CLASSIC_LIGHT'}
-CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'},
+CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS'},
            'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
            'bar.battery.painter': {'stock': 'BATT_STOCK', 'classic-light': 'BATT_CLASSIC_LIGHT'},
            **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
@@ -62,6 +62,7 @@ SCHEMA = {k.path: k for k in (
     key('list.art.x', 'art_x', 'int', 375),  # a row with art, on screen: the cover, 0: stock's layout
     key('list.art.text_x', 'art_text_x', 'int', 375),  # ... its text's first and last columns
     key('list.art.text_end', 'art_text_end', 'int', 375),
+    key('list.art.placeholder', 'art_placeholder', 'int', 64),  # stock's Folder tile (list_folder) this size, centred in its row; 0: stock's
     key('list.row.text_end', 'row_text_end', 'int', 375),  # a two-line row without art (Songs'): its text's last column on screen
     Key('list.separator.stops', 'sep', 'stops', 0, 0, (), 'live', True),  # ... its last rows, one stop a row, final
     key('list.row.tall_font', 'font[ROLE_TALL]', 'enum'),  # a two-line row's title
@@ -180,10 +181,9 @@ ROLE_MACROS = {
                 'home_label_end[0]': 'HOME_SPLIT_LABEL_END', 'home_label_end[1]': 'HOME_LABEL_END', 'set_top': 'SET_TOP',
                 'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': '0',
                 'fill': 'MINIMAL_FILL', 'chevron': 'MINIMAL_CHEVRON', 'muted': 'SUDO_MUTED', 'bar_light': '0', **CF_ROLES},
-    'classic': {'home_top': '0', 'home_full_row': 'HOME_CLASSIC_ROW', 'home_text_x': 'HOME_CLASSIC_TEXT_X',
-                'home_label_end[0]': 'HOME_CLASSIC_LABEL_END', 'home_label_end[1]': 'HOME_CLASSIC_LABEL_END', 'set_top': '0',
-                'np_bar': 'NP_BAR_CLASSIC', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB',
-                'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
+    # Classic: what its theme.xml doesn't state itself (Now Playing's bar, the stock battery's fill, the bars outside its gloss)
+    'classic-light': {'set_top': '0', 'np_bar': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB', 'fill': '0', 'chevron': '0',
+                      'bar_light': 'LIGHT_BAR'},
 }
 
 # Classic Blue's selection band: its 1 px top line, the stops under it and its edge row:
@@ -560,8 +560,12 @@ def offered(c, o, names, what):
     return sum(1 << names.index(n) for n in set(listed))
 
 
+PLAIN_KEYS = {'HOMELIB', 'ROWPREVIEW'}  # the plain own keys the payload reads (navigation.c home_lib_on, row_preview_on)
+
+
 def own_option(c, known):
-    """A theme's own <option key label>: its values, each naming the geometry set it boots, one of known."""
+    """A theme's own <option key label>: its values, each naming the geometry set it boots, one of known, or
+    none of them naming one: a plain choice the payload reads as st.own[OWN_<KEY>]."""
     def err(node, message): fail(node.file, node.line, message)
     key = own_key(c, c.attrs['key'])
     if 'values' in c.attrs:
@@ -578,16 +582,18 @@ def own_option(c, known):
             err(v, f'{key}: value label expected 1..24 bytes, no control characters')
         if x in names:
             err(v, f'{key}: duplicate value {x}')
-        if 'set' not in v.attrs:
-            err(v, f'{key}: value {x} has no set')
-        if v.attrs['set'] not in known:
+        if ('set' in v.attrs) != ('set' in c.children[0].attrs):
+            err(v, f'{key}: every value names a set, or none does')
+        if 'set' in v.attrs and v.attrs['set'] not in known:
             err(v, f'unknown geometry set "{v.attrs["set"]}"')
         names.append(x)
-        sets.append(v.attrs['set'])
+        sets.append(v.attrs.get('set'))
     if not 2 <= len(names) <= 10:  # config_value reads one digit
         err(c, f'{key}: 2 to 10 values expected')
+    if not sets[0] and key not in PLAIN_KEYS:
+        err(c, f'{key}: a plain choice the payload does not read (PLAIN_KEYS)')
     # ponytail: set is the one selector; a value that selects a scheme or a font adds its attribute, and its payload reader, when a theme needs it
-    return presets(c, {'setting': 'SETTING_OWN', 'key': key, 'label': c.attrs['label'], 'names': names, 'sets': sets,
+    return presets(c, {'setting': 'SETTING_OWN', 'key': key, 'label': c.attrs['label'], 'names': names, 'sets': sets if sets[0] else None,
                        'def': -1, 'preset': -1, 'keep': -1, 'values': 0}, names, key)
 
 
@@ -761,7 +767,9 @@ def resolve(root, by_id, seen=()):
             if t['accents'] >> i & 1 and not s['sel']:
                 top = ACCENT_TONES[i][0]
                 s['sel'] = tuple((p, int(h[1:], 16)) for p, h in derive_gloss(ACCENT_TONES[i]))
-                s['sel_top'] = s['sel_top'] or int(turn(GLOSS_TOP, top)[1:], 16)
+                # the light rim on the light half; on black the dark half's top row is the band's own first stop
+                s['light'].setdefault('sel_top', s['sel_top'] or int(turn(GLOSS_TOP, top)[1:], 16))
+                s['sel_top'] = s['sel_top'] or s['sel'][0][1]
                 s['sel_edge'] = s['sel_edge'] or int(turn(GLOSS_EDGE, top)[1:], 16)
                 s['sel_tall_edge'] = s['sel_tall_edge'] or int(turn(GLOSS_TALL_EDGE, top)[1:], 16)
                 s['sel_tall_line'] = s['sel_tall_line'] or int(turn(GLOSS_TALL_LINE, top)[1:], 16)
@@ -798,6 +806,10 @@ def validate(t, name):
         err('selection: painter stops needs every offered scheme\'s sel.stops')
     if t['painter[PAINT_BATTERY]'] == 'BATT_CLASSIC_LIGHT' and not t['batt']:
         err('battery: this painter needs stops')
+    for n in sorted({t['geom_set'], *(s for o in t['opts'] for s in o.get('sets') or ())}):
+        g = sets(t)[n]  # the bar's own label is laid out at bar_px (tools/ipod.py status_metrics), its text drawn at font_size
+        if g.bar_px and t['font_px[ROLE_BAR]'] != g.bar_px:
+            err(f"bar.title.font_size {t['font_px[ROLE_BAR]']} is not set {n}'s bar_px {g.bar_px}")
     for o in t['opts']:
         if o.get('setting') != 'SETTING_ACCENT' and not o.get('key') and o['def'] >= 0 and not o.get('values'):
             err(f"{o['setting']}: default has no effect without values (settings_read holds a stock setting's default)")
@@ -988,11 +1000,12 @@ def emit(themes, out, redirects={}):
               'const char *const geom_names[GEOM_N] = {' + ', '.join(json.dumps(g.name) for g in sets) + '};',
               'const volatile ui_redirect_t ui_redirects[] = {' + ', '.join(ui) + '};',
               *(f'#define SETTING_N_{n.upper()} {len(v)}' for n, (_, v) in SETTINGS.items()),
+              *(f'#define OWN_{k} {i}' for i, k in enumerate(theme_keys(themes))),
               # last: its sets are GEOM_* names
               'const theme_key_t theme_keys[THEME_KEYS] = {', *(
                   f'    {{ .key = {json.dumps(k)}, .label = 0, .names = 0, .sets = 0, .n = {n}, .def = {d} }},' if o is None else
                   f'    {{ .key = {json.dumps(k)}, .label = {json.dumps(o["label"])}, '
-                  f'.names = (const char *const[]){{{", ".join(map(json.dumps, o["names"]))}}}, '
-                  f'.sets = (const unsigned char[]){{{", ".join(map(gname, o["sets"]))}}}, .n = {n}, .def = {d} }},'
+                  f'.names = (const char *const[]){{{", ".join(map(json.dumps, o["names"]))}}}, ' +
+                  (f'.sets = (const unsigned char[]){{{", ".join(map(gname, o["sets"]))}}}, ' if o['sets'] else '.sets = 0, ') + f'.n = {n}, .def = {d} }},'
                   for k, (n, d, o) in theme_keys(themes).items()), '};', '']
     (out/'themes.inc').write_text('\n'.join(lines))

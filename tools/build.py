@@ -764,7 +764,7 @@ def subset_font(src, family, ranges_macro, notice=None):
         else: runs.append([u, u])
     return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
 
-# Classic's bold (navigation.c theme_font): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# The bold face (navigation.c theme_font; Classic's fallback where its own lacks a character): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
 # Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
 # label holding anything else (CJK, say) keeps the stock font.
 BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
@@ -772,7 +772,7 @@ BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 def bold_font():
     return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
 
-# Classic Light's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
+# Classic's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
 # The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
 # OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
