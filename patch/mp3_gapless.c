@@ -9,9 +9,54 @@ typedef struct {
 } mp3_private;
 
 /* Raw MPlayer decoders also emit the Xing frame. FFmpeg's mp3 demuxer removes it instead.
- * Delay/padding are per channel: https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mp3dec.c */
-int mp3_gapless(const unsigned char *h, unsigned n, unsigned *start, unsigned *padding,
-                unsigned *rate, unsigned *channels) {
+ * Delay/padding are per channel: https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mp3dec.c
+ * ponytail: a file with no extension (no tag, VBRI) keeps 1624 to 2176 samples of delay and padding
+ * at each boundary, nothing says how many to cut. docs/internals.md lists these. */
+static int mp3_named(const unsigned char *n, const char *name) {
+    for (unsigned i = 0; i < 4; ++i) if ((n[i] | 32) != name[i]) return 0;
+    return 1;
+}
+
+static unsigned mp3_crc16(const unsigned char *p, unsigned n) {
+    unsigned c = 0;
+    while (n--) {
+        c ^= *p++;
+        for (unsigned i = 0; i < 8; ++i) c = c & 1 ? c >> 1 ^ 0xa001 : c >> 1;
+    }
+    return c;
+}
+
+static int mp3_extension(const unsigned char *h, unsigned size, unsigned at, unsigned spf,
+                         unsigned *start, unsigned *padding) {
+    unsigned flags = h[at + 7];
+    if (h[at + 4] || h[at + 5] || h[at + 6] || flags & ~15u || !(flags & 1)) return 0;
+    at += 8;
+    if (size < at + 4) return 0;
+    unsigned frames = (unsigned)h[at] << 24 | h[at+1] << 16 | h[at+2] << 8 | h[at+3];
+    at += 4 + (flags & 2 ? 4 : 0) + (flags & 4 ? 100 : 0) + (flags & 8 ? 4 : 0);
+    if (!frames || size < at + 36) return 0;
+    /* LAME's and FFmpeg's names in any case: an encoder really writes Lame3.100, its CRC right for that spelling, and
+     * FFmpeg's exact list misses it. Any other name (L3.99r, GOGO) has to prove its fields with the tag's CRC-16.
+     * Printable either way, so a tag without the extension (zeros, or whatever else a tool left there) isn't read as
+     * delays, and not text all through the 12 field bytes that follow, which is a longer name. */
+    unsigned text = 0;
+    for (unsigned i = 0; i < 4; ++i) if (h[at + i] < 32 || h[at + i] > 126) return 0;
+    for (unsigned i = 9; i < 21; ++i) text += h[at + i] >= 32 && h[at + i] <= 126;
+    if (text == 12) return 0;
+    if (!mp3_named(h + at, "lame") && !mp3_named(h + at, "lavc") && !mp3_named(h + at, "lavf") &&
+        mp3_crc16(h, at + 34) != ((unsigned)h[at + 34] << 8 | h[at + 35])) return 0;
+    unsigned delay = (unsigned)h[at+21] << 4 | h[at+22] >> 4;
+    unsigned pad = (unsigned)(h[at+22] & 15) << 8 | h[at+23];
+    if ((!delay && !pad) || delay == 4095 || pad == 4095 || (unsigned long long)frames * spf <= delay + pad) return 0;
+    *start = spf + delay + 529;
+    /* shortcut: padding below decoder delay cannot recover the missing tail; flush an extra
+     * MPEG frame if support for specially split continuous MP3 streams is needed. */
+    *padding = pad > 529 ? pad - 529 : 0;
+    return 1;
+}
+
+/* The first frame's size, 0 unless h holds the whole of a Layer III frame. */
+static unsigned mp3_frame(const unsigned char *h, unsigned n, unsigned *hz, unsigned *spf, unsigned *mono) {
     static const unsigned rates[] = {44100, 48000, 32000};
     static const unsigned bitrates[2][15] = {
         {0,32,40,48,56,64,80,96,112,128,160,192,224,256,320},
@@ -20,36 +65,45 @@ int mp3_gapless(const unsigned char *h, unsigned n, unsigned *start, unsigned *p
     if (n < 4 || h[0] != 255 || (h[1] & 224) != 224) return 0;
     unsigned version = h[1] >> 3 & 3, r = h[2] >> 2 & 3, br = h[2] >> 4;
     if (version == 1 || (h[1] & 6) != 2 || r == 3 || !br || br == 15) return 0;
-    unsigned hz = rates[r] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
-    unsigned spf = version == 3 ? 1152 : 576, mono = (h[3] & 192) == 192;
-    unsigned size = (version == 3 ? 144000 : 72000) * bitrates[version != 3][br] / hz + (h[2] >> 1 & 1);
-    if (n < size) return 0;
-    unsigned at = 4 + (version == 3 ? (mono ? 17 : 32) : (mono ? 9 : 17));
-    /* LAME keeps the fixed Xing offset even on CRC-protected frames; accept both layouts. */
-    if (size < at + 8) return 0;
-    if (memcmp(h + at, "Xing", 4) && memcmp(h + at, "Info", 4)) {
-        if (h[1] & 1 || size < at + 10) return 0;
-        at += 2;
-        if (memcmp(h + at, "Xing", 4) && memcmp(h + at, "Info", 4)) return 0;
+    *hz = rates[r] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
+    *spf = version == 3 ? 1152 : 576;
+    *mono = (h[3] & 192) == 192;
+    unsigned size = (version == 3 ? 144000 : 72000) * bitrates[version != 3][br] / *hz + (h[2] >> 1 & 1);
+    return n < size ? 0 : size;
+}
+
+/* Where a Xing, Info or VBRI name is in the first frame, 0 if none. LAME keeps the fixed Xing offset even on
+ * CRC-protected frames; accept both layouts. VBRI has one place. */
+static unsigned mp3_tag(const unsigned char *h, unsigned size, unsigned spf, unsigned mono) {
+    unsigned at = 4 + (spf == 1152 ? (mono ? 17 : 32) : (mono ? 9 : 17));
+    if (size >= at + 8 && (!memcmp(h + at, "Xing", 4) || !memcmp(h + at, "Info", 4))) return at;
+    if (!(h[1] & 1) && size >= at + 10 && (!memcmp(h + at + 2, "Xing", 4) || !memcmp(h + at + 2, "Info", 4))) return at + 2;
+    return size >= 42 && !memcmp(h + 36, "VBRI", 4) && !h[40] && h[41] == 1 ? 36 : 0;
+}
+
+/* Side info all zeros: no granule has a bit of main data, so a tag frame with it has no audio. */
+static int mp3_silent(const unsigned char *h, unsigned tag) {
+    for (unsigned i = h[1] & 1 ? 4 : 6; i < tag; ++i) if (h[i]) return 0;
+    return 1;
+}
+
+/* 1: the extension's trim. 2: no delays to read, but the frame itself is no audio: stock plays it as spf samples of
+ * silence, where FFmpeg drops it, and mpg123 too for Xing and Info. */
+int mp3_gapless(const unsigned char *h, unsigned n, unsigned *start, unsigned *padding,
+                unsigned *rate, unsigned *channels) {
+    unsigned hz, spf, mono, size = mp3_frame(h, n, &hz, &spf, &mono);
+    unsigned tag = size ? mp3_tag(h, size, spf, mono) : 0;
+    if (!tag) return 0;
+    int found = 1;
+    if (h[tag] == 'V' || !mp3_extension(h, size, tag, spf, start, padding)) {
+        if (!mp3_silent(h, tag)) return 0;
+        *start = spf;
+        *padding = 0;
+        found = 2;
     }
-    unsigned flags = h[at + 7];
-    if (h[at + 4] || h[at + 5] || h[at + 6] || flags & ~15u || !(flags & 1)) return 0;
-    at += 8;
-    if (size < at + 4) return 0;
-    unsigned frames = (unsigned)h[at] << 24 | h[at+1] << 16 | h[at+2] << 8 | h[at+3];
-    at += 4 + (flags & 2 ? 4 : 0) + (flags & 4 ? 100 : 0) + (flags & 8 ? 4 : 0);
-    if (!frames || size < at + 36 || (h[at + 9] >> 4) ||
-        (memcmp(h + at, "LAME", 4) && memcmp(h + at, "Lavc", 4) && memcmp(h + at, "Lavf", 4))) return 0;
-    unsigned delay = (unsigned)h[at+21] << 4 | h[at+22] >> 4;
-    unsigned pad = (unsigned)(h[at+22] & 15) << 8 | h[at+23];
-    if ((!delay && !pad) || delay == 4095 || pad == 4095 || (unsigned long long)frames * spf <= delay + pad) return 0;
-    *start = spf + delay + 529;
-    /* shortcut: padding below decoder delay cannot recover the missing tail; flush an extra
-     * MPEG frame if support for specially split continuous MP3 streams is needed. */
-    *padding = pad > 529 ? pad - 529 : 0;
     *rate = hz;
     *channels = mono ? 1 : 2;
-    return 1;
+    return found;
 }
 
 /* Keep the last padding frames until another block arrives. They disappear at EOF, without
@@ -116,10 +170,10 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
             long long back = lseek64(fd, 0, 1), at = AT(d, 0x10, long long);
             if (back >= 0) {
                 if (lseek64(fd, at, 0) == at) got = read(fd, h, sizeof h);
+                if (got > 0) mp3_gapless(h, got, &p->start, &p->padding, &p->rate, &p->channels);
                 lseek64(fd, back, 0);
             }
-            if (got > 0 && mp3_gapless(h, got, &p->start, &p->padding, &p->rate, &p->channels))
-                p->skip = p->seeked == 1 ? 0 : p->start - (p->tag_skipped ? (p->rate >= 32000 ? 1152 : 576) : 0);
+            if (p->start) p->skip = p->seeked == 1 ? 0 : p->start - (p->tag_skipped ? (p->rate >= 32000 ? 1152 : 576) : 0);
         }
     }
     if (p && p->start) mp3_trim(p, data);

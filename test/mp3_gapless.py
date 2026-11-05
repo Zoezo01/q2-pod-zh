@@ -154,6 +154,12 @@ int main(int argc, char **argv) {
         at += (4 if flags & 2 else 0) + (100 if flags & 4 else 0) + (4 if flags & 8 else 0)
         h[at:at+len(encoder)] = encoder
         h[at+21:at+24] = ((delay << 12) | pad).to_bytes(3, 'big')
+        crc = 0
+        for byte in h[:at+34]:
+            crc ^= byte
+            for _ in range(8):
+                crc = crc >> 1 ^ 0xa001 if crc & 1 else crc >> 1
+        h[at+34:at+36] = crc.to_bytes(2, 'big')
         return bytes(h)
 
     for version in (3, 2, 0):
@@ -166,11 +172,50 @@ int main(int argc, char **argv) {
                     assert parse(h) == expected, (version, mono, flags, crc, shifted, parse(h))
                     for n in range(len(h)):
                         assert parse(h[:n]) is None
-    for encoder in (b'Lavc61.1', b'Lavf61.1'):
-        assert parse(header(encoder=encoder))
-    for h in (header(flags=0), header(encoder=b'unknown'), header(delay=0, pad=0),
-              header(delay=4095), header(pad=4095), b'', bytes(500)):
-        assert parse(h) is None
+    # LAME's and FFmpeg's names in any case, a nonzero revision nibble, and any other printable name whose CRC holds.
+    for encoder in (b'Lavc61.1', b'Lavf61.1', b'lavf', b'L3.99r', b'L3.100', b'GOGO3.13', b'FhGIIS 4'):
+        assert parse(header(encoder=encoder)) == parse(header()), encoder
+    for encoder, kept in ((b'L3.99r', False), (b'GOGO3.13', False), (b'LAME3.100', True), (b'Lame3.100', True), (b'Lavf61.1', True)):
+        h = bytearray(header(encoder=encoder))
+        h[190] ^= 1  # the CRC, with all four optional fields in the frame
+        assert parse(bytes(h)) == (parse(header()) if kept else (1152, 0, 44100, 2)), encoder
+    assert parse(header(encoder=b'LAME3.100\x14')) == parse(header())
+    # A real encoder's own spelling, valid CRC and all. FFmpeg's check is case-sensitive too and mpg123's isn't there.
+    assert parse(header(encoder=b'Lame3.100')) == parse(header())
+    # A tag frame without a usable extension (nothing, binary, a longer name running over the field bytes, or a
+    # count missing): no delays to trim, but the frame's own silence goes.
+    frame_only = (1152, 0, 44100, 2)
+    for h in (header(flags=0), header(flags=14), header(encoder=b''), header(encoder=bytes(range(200, 230))),
+              header(encoder=b'Some Encoder Version 1.2.3 build 45'), header(delay=0, pad=0),
+              header(delay=4095), header(pad=4095)):
+        assert parse(h) == frame_only, h[36:60]
+    assert parse(header(version=2, flags=0)) == (576, 0, 22050, 2)
+    assert parse(header(mono=True, flags=0)) == (1152, 0, 44100, 1)
+    # A protected frame's CRC is not side info; the side info is what says a frame has no audio.
+    for crc_layout in (False, True):
+        h = bytearray(header(flags=0, crc=True, shifted=crc_layout))
+        h[4:6] = b'\x12\x34'
+        assert parse(bytes(h)) == frame_only
+        h[6] = 1
+        assert parse(bytes(h)) is None
+    for at in (4, 5, 20, 35):
+        h = bytearray(header(flags=0))
+        h[at] = 1
+        assert parse(bytes(h)) is None, at
+    vbri = bytearray(header(flags=0))
+    vbri[36:48] = b'VBRI\0\1' + bytes(6)
+    assert parse(bytes(vbri)) == frame_only
+    assert parse(bytes(vbri[:417])) == frame_only
+    # VBRI's version, and a VBRI frame carrying audio or too short for its name, stay stock's.
+    for at, value in ((41, 2), (40, 1), (10, 1)):
+        h = bytearray(vbri)
+        h[at] = value
+        assert parse(bytes(h)) is None, at
+    # Audio frames and non-frames stay stock's.
+    assert parse(bytes(417)) is None and parse(b'') is None and parse(bytes(500)) is None
+    audio = bytearray(header(flags=0))
+    audio[36:40] = bytes(4)
+    assert parse(bytes(audio)) is None
     assert parse(header(pad=100))[1] == 0
     h = bytearray(header())
     h[2] = 0  # free-format: no trustworthy first-frame boundary
