@@ -9544,6 +9544,17 @@ assert clock==('','6:14 PM') and show(ttm.node('window','playing_page'))==('Now 
 ttm.clock=(18,15); ttm.advance(61000); assert ttm.nodes[ttc]['text']==''  # the clock's minute stays out of it
 assert show(ttm.node('window','bare_page'))==('','6:15 PM')
 assert not any(k.endswith('font_name') for k in ttm.nodes[ttc]); passed()
+# Off, Home keeps its title whether or not the play state covers it (img_home_state): the clock stays out, with no flip
+# as music starts or stops.
+hm=Machine(); hm.config['TIMETITLE']='0'; classic_light_on(hm); hm.clock_minutes=True; hm.handlers.pop(syms['mclGetPlayStatus'],None)
+htt,hcl=hm.node('hscroll_label','label_title'),hm.node('hscroll_label','label_clock')
+hbar=classic_light_bar(hm,htt,hcl,hm.node('image','img_state',visible=0),hm.node('image','img_home_state',visible=0))
+hhome=hm.node('window','home_page'); hm.top=hhome; hm.word(hhome+O['W_PARENT'],hm.wm)
+for status in (0,2,0):
+    hm.word(0xa3beac,status)
+    for _ in range(2): hm.call(address=HOOKS['widget_on_paint_background'][0],args=(hbar,hm.canvas,0,0),gap=0); hm.advance(1)
+    assert (hm.nodes[htt].get('text'),hm.nodes[htt].get('visible',1),hm.nodes[hcl].get('text'))==('Q2 Pod',int(status!=2),''),status
+passed()
 # With no row to select the wheel scrolls the view itself, to its own end, not list_end's 42 px past it.
 for lthm,lend in (('1',672-294),('0',672-294)):
     lm=Machine(); lm.config.update(THEME=lthm)

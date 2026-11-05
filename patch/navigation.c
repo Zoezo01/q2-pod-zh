@@ -3775,7 +3775,7 @@ static int pct_width(unsigned level) {
 }
 
 /* img_state follows whichever player plays, stock's or Spotify's, radio's or a video's, and
- * label_idle shows when neither it nor label_eq does. Returns whether img_state changed. */
+ * label_idle shows when neither it nor label_eq does. Returns whether a state image changed. */
 static int bar_state_sync(void *bar) {
     int changed = 0;
     if (!st.bar_bt && bar) { /* bar_title_sync passes none: the widgets it found already */
@@ -4898,8 +4898,8 @@ static unsigned boot_page(const volatile unsigned short *v, unsigned from) { /* 
 }
 /* The set T boots with setting at v and every other option as stored; with chosen, as a switch to T
  * leaves them: an option's preset unless it has none or the stored value is its keep
- * (theme_preset's test). Its first own option selects the set (tools/theme.py allows one); without
- * one, T->geom. */
+ * (theme_preset's test). Its own option with sets selects the set (tools/theme.py allows one);
+ * without one, T->geom. */
 static int geom_with(const theme_t *T, int setting, int v, int chosen) {
     for (int k = 0; k < T->n_opts; ++k) {
         const option_t *o = &T->opts[k];

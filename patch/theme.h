@@ -63,7 +63,7 @@ typedef struct {
     const char *key;           /* the IPOD key; a theme-owned accent key's too */
     const char *label;         /* the row's title; 0: an accent key (its row is Accent's) */
     const char *const *names;  /* [n] the values' labels */
-    const unsigned char *sets; /* [n] the GEOM_* set each value boots */
+    const unsigned char *sets; /* [n] the GEOM_* set each value boots; null for a plain choice */
     unsigned char n, def;      /* value count; the value a missing or unreadable key reads */
 } theme_key_t;
 typedef struct {
