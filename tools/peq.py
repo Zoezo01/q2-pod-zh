@@ -56,17 +56,16 @@ MQA_PROBE = ((0x42eaf4, 0x3c020002, 0x3c020030),  # lui $v0, 0x2           -> lu
 # ao_alsa's init (0x438988) asks for a 500 ms buffer (0x438a3c) but cuts it to 100 ms on output way 2, a USB
 # DAC: two branch delay slots store 100000 us and become nops, so USB keeps 500 ms.
 # ponytail: where hciplayer scales a USB DAC's volume itself, a change now lags up to 500 ms, not 100 ms.
-# The queue's end (mcl-orderstop, 0x43b1d0, on the command thread) closes a USB DAC undrained, which that buffer
-# made a 500 ms loss: the branch that drains the other outputs goes for USB as well.
 USB_BUFFER = ((0x43977c, 0xafc2017c, 0),           # sw $v0, 0x17c($fp)  -> nop  (hw:2,0)
-              (0x439a60, 0xafc3017c, 0),           # sw $v1, 0x17c($fp)  -> nop  (hw:1,0)
-              (0x43b1f4, 0x1462000d, 0x1000000d))  # bne $v1, $v0, 0x43b22c -> b 0x43b22c
+              (0x439a60, 0xafc3017c, 0))           # sw $v1, 0x17c($fp)  -> nop  (hw:1,0)
 # The wired outputs' unmute calls release the DAC, wait and only then let audio flow (peq_player.c,
 # docs/internals.md#wired-start): (address, stock word, hook).
 DAC_RELEASE = ((0x4391b0, 0x0c2b6eec, 'dac_ioctl'),   # end of init: jal ioctl
                (0x42b164, 0x0c10eca0, 'dac_unmute'),  # seek: jal 0x43b280, the unmute helper
-               (0x43881c, 0x0c2b6b3c, 'dac_resume'))  # resume: jal snd_pcm_pause
+               (0x43881c, 0x0c2b6b3c, 'dac_resume'),  # resume: jal snd_pcm_pause
+               (0x43afa4, 0x0c2b6c88, 'ao_write'))    # play: jal snd_pcm_writei; the first write after a kept PCM
 LIBC = {
+    'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
     'memcpy': ('void *', 'void *, const void *, unsigned'),
     'memcmp': ('int', 'const void *, const void *, unsigned'),

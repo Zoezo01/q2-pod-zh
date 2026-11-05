@@ -396,9 +396,8 @@ int rs_open(af_instance *af) {
  * snd_pcm_status, hence stock's get_space (0x43815c) first. Every other state, and another output way (the pair is
  * that way's), negotiates as stock. ponytail: one request remembered, so a queue that changes bit depth or channels
  * reopens at each change, as AAC does; a next track later than the buffer underruns, so it reopens, as stock did at
- * every change; on a USB DAC, whose PCM never stops by itself (stop_threshold is the boundary), a next track later
- * than the buffer is RUNNING with hw_ptr past appl_ptr, and its first frames go out behind the hardware, as a
- * same-format wired change does in stock; a server that closed the FIFO under a PCM with nothing yet underrun stays the hole stock AAC has:
+ * every change; on a USB DAC or the jack a dry PCM is caught below: at init it reopens, and by the first write ao_write
+ * moves past it; a server that closed the FIFO under a PCM with nothing yet underrun stays the hole stock AAC has:
  * the first write finds it (docs/internals.md#usb-output-buffer). */
 #define OUTPUT_WAY (*(volatile int *)0xb10e54u)
 #define ALSA_PCM (*(void *volatile *)0xb115a8u)
@@ -424,8 +423,8 @@ static int ao_playing(void) {
  * A press during the drain, which stock's handler only notes, must silence: hci_command mutes the jack (0x43b280:
  * its flag is what stock's unmute reads) and drops USB, whose mute wouldn't reach the DAC. snd_pcm_drain holds no
  * lock (libasound 0x3ff44, hw 0x4f784) and plug forwards it, and a kernel DROP ends a blocked DRAIN. A rise of the
- * play flag is a press here too: set-songurl (demo's not-playing path, whose mute a hardware-type word and the
- * order-stop flag decide, 0x5ad1bc) sets
+ * play flag is a press here too: set-songurl (demo's not-playing path, whose mute a hardware-type word and its
+ * output way decide, 0x5ad1bc) sets
  * no other word, and the flag was cleared on the way to this init (0x42d9fc). ao_draining keeps the PCM open
  * while the other thread uses it: 1 draining, 2 being cut. The triple can't say: a cold natural change (Gapless off, stock Shuffle,
  * Repeat One, a track under 3 s) resets it just as a skip does. Same-format gapless changes match stock's compare,
@@ -435,12 +434,13 @@ static int ao_playing(void) {
  * was lost, the buffer's rest.
  * ponytail: a press from demo's not-playing state before the drain starts (within a UI pass of the end) can't be
  * told from the cold route's own set-songurl and hears the tail play out, up to the buffer's rest; demo's press word
- * would close that. Demo mutes the cold route itself 100 ms before set-songurl (0x5ad1bc, 0x5ad1c4), so on the jacks
- * that tail goes unheard before this runs: only the preload route and USB gain; closing it is a change in demo.
+ * would close that. Demo's mute on the cold route (0x5ad1bc, 100 ms before set-songurl) is skipped by start_mute for a
+ * natural start from a local queue, and marks PRESS_FILE even: then a same format with Gapless on matches stock's
+ * compare, so the PCM never closes and nothing mutes, and any real reopen is drain, stock's mute, close, open, unmute,
+ * wait, frames (dac_ioctl). No mark means demo may have muted: stock's timing, no wait.
  * mcl-orderstop's close on the command thread during the drain races it as it races stock's own
- * drain, on USB now too; demo sends that only at a queue's end, with no next track to drain for. Whether the PCM
- * stopping unmuted, just before the following mute, pops can't be settled off a device: a loud track cut at
- * full level on the jack, by ear or scope, would. No ramp is added to guess at it. */
+ * drain. ponytail: a USB stream hung during this drain runs to the kernel's 10 s, past the heartbeat's 6 ticks
+ * (0x42d95c), and hciplayer exits; stock's 0x438768 has the same exposure. A close always stays under stock's mute, and the PCM only stops unmuted once drained. */
 #define NEXT_FLAG (*(volatile int *)0xb10e6cu)
 #define STOP_FLAG (*(volatile int *)0xb10e70u)
 #define DSD_FILE (*(volatile int *)0xb10e5cu)
@@ -448,9 +448,24 @@ static int ao_playing(void) {
 #define PREV_FORMAT (*(volatile int *)0xafa164u) /* stock's triple, compared at 0x438cc0, 0x439598, 0x43972c */
 #define PREV_RATE (*(volatile int *)0xafa168u)
 #define PREV_CHANNELS (*(volatile int *)0xafa16cu)
+#define AO_CHANNELS (*(volatile int *)0xafa1a4u)
+#define AO_OUTBURST (*(volatile unsigned *)0xafa1b0u)
+#define AO_BUFFERSIZE (*(volatile unsigned *)0xafa1b4u)
+#define AO_BYTES (*(volatile unsigned *)0xb11598u)
 static volatile int ao_natural, ao_draining; /* ao_natural: the way a natural end was on, plus 1 */
+static int ao_wait;   /* the reopen under way is a natural one: dac_ioctl waits for the line */
+static int ao_stayed; /* a natural change kept the PCM open: ao_write looks at the first write */
+static int ao_pcm[3]; /* what the open PCM is: reinit_audio_chain overwrites ao_data with the request before init */
+static int dac_word(int pressed);
+/* Frames free, hw_ptr past appl_ptr making it more than the ring. Not stock's get_space, which caps MQA's below it. */
+static unsigned ao_avail(void *pcm) {
+    char status[256] __attribute__((aligned(8)));
+    ((int (*)(void *, void *))0xadabd0u)(pcm, status);
+    return ((unsigned (*)(void *))0xadb7b0u)(status);
+}
 void ao_uninit(int immed) {
     ao_natural = !immed && !NEXT_FLAG && !DSD_FILE ? OUTPUT_WAY + 1 : 0;
+    if (ao_natural) ao_pcm[0] = AO_RATE, ao_pcm[1] = AO_CHANNELS, ao_pcm[2] = AO_FORMAT;
     ((void (*)(int))0x43868cu)(immed);
 }
 int ao_init(int rate, int channels, int format, int flags) {
@@ -460,19 +475,48 @@ int ao_init(int rate, int channels, int format, int flags) {
         rate = ao_got[0], format = ao_got[1];
     int natural = ao_natural;
     ao_natural = 0;
-    if (natural == OUTPUT_WAY + 1 && was_open && OUTPUT_WAY != 1 && !DSD_FILE &&
-        (!KEEP_GAPLESS || channels != PREV_CHANNELS || rate != PREV_RATE || format != PREV_FORMAT)) {
-        __atomic_store_n(&ao_draining, 1, __ATOMIC_SEQ_CST); /* before the flags: hci_command sets them, then looks */
-        if (!NEXT_FLAG && !STOP_FLAG) ((int (*)(void *))0xadb6a0u)(ALSA_PCM); /* snd_pcm_drain; an error leaves it to stock's own */
-        while (__sync_val_compare_and_swap(&ao_draining, 1, 0) == 2) usleep(1000);
+    ao_stayed = 0;
+    if (natural == OUTPUT_WAY + 1 && was_open && OUTPUT_WAY != 1 && !DSD_FILE) {
+        int preloaded = PREV_RATE != -1;
+        int told = !OUTPUT_WAY && !preloaded && dac_word(0); /* demo left its mute off for this start (start_mute) */
+        if (told && channels == ao_pcm[1] && rate == ao_pcm[0] && format == ao_pcm[2] && ao_playing())
+            PREV_CHANNELS = channels, PREV_RATE = rate, PREV_FORMAT = format; /* nothing to reopen for */
+        int reopens = !KEEP_GAPLESS || channels != PREV_CHANNELS || rate != PREV_RATE || format != PREV_FORMAT;
+        /* Ran dry: stop_threshold and silence_size are the boundary (0x4394dc, 0x4394f0, every way), so the PCM
+         * still runs, on silence, with hw_ptr past appl_ptr, and the new track's first frames would land behind it. */
+        if (!reopens && ao_avail(ALSA_PCM) >= AO_BUFFERSIZE / AO_BYTES) reopens = 1, PREV_RATE = -1;
+        ao_stayed = !reopens;
+        if (reopens) {
+            int was;
+            __atomic_store_n(&ao_draining, 1, __ATOMIC_SEQ_CST); /* before the flags: hci_command sets them, then looks */
+            if (!NEXT_FLAG && !STOP_FLAG) ((int (*)(void *))0xadb6a0u)(ALSA_PCM); /* snd_pcm_drain; an error leaves it to stock's own */
+            while ((was = __sync_val_compare_and_swap(&ao_draining, 1, 0)) == 2) usleep(1000);
+            ao_wait = was == 1 && !NEXT_FLAG && !STOP_FLAG && (told || preloaded);
+        }
     }
     int r = ((int (*)(int, int, int, int))0x438988u)(rate, channels, format, flags);
+    ao_wait = 0;
     if (r > 0 && ALSA_PCM) {
         int got[2] = { AO_RATE, AO_FORMAT };
         if (!was_open || held || OUTPUT_WAY != ao_way || asked[0] != got[0] || asked[1] != got[1])
             ao_asked[0] = asked[0], ao_asked[1] = asked[1], ao_got[0] = got[0], ao_got[1] = got[1], ao_way = OUTPUT_WAY;
     }
     return r;
+}
+/* ao_alsa's play (0x43afa4), its one writei. A kept PCM can still run dry while the new track's first block decodes
+ * (nearly a whole buffer, 0x42f3f4), and what it then writes lands behind hw_ptr and is lost. The ring there is silence
+ * (silence_size), so appl_ptr moves up to a period past hw_ptr first: a short gap, not a cut. The kernel limits the
+ * forward to avail, which is more than asked for here. hciplayer doesn't import snd_pcm_forward. */
+long ao_write(void *pcm, const void *data, unsigned long frames) {
+    if (ao_stayed) {
+        unsigned avail = ao_avail(pcm), ring = AO_BUFFERSIZE / AO_BYTES;
+        ao_stayed = 0;
+        if (avail > ring) {
+            long (*forward)(void *, unsigned long) = dlsym(0, "snd_pcm_forward"); /* RTLD_DEFAULT */
+            if (forward) forward(pcm, avail - ring + AO_OUTBURST / AO_BYTES);
+        }
+    }
+    return ((long (*)(void *, const void *, unsigned long))0xadb220u)(pcm, data, frames);
 }
 static void ao_cut(void) { /* a press during ao_init's drain, on the command thread */
     if (__sync_val_compare_and_swap(&ao_draining, 1, 2) != 1) return;
@@ -503,20 +547,21 @@ static void ao_cut(void) { /* a press during ao_init's drain, on the command thr
 #define DAC_HELPER ((void (*)(int))0x43b280u) /* stock's: checks the way and the fd, clears the flag */
 /* Whether PRESS_FILE holds a fresh stamp, each used once, so a short track's natural change after the press's
  * own start doesn't wait. Stale, from the future, 0 or no file: no. Read only at these sites, never per block. */
-static int dac_told(void) {
+static int dac_word(int pressed) { /* odd: a press's stamp; even: start_mute's mark */
     static int seen;
     int at = 0, fd = open(PRESS_FILE, 0); /* O_RDONLY */
     if (fd < 0) return 0;
     read(fd, &at, sizeof at);
     close(fd);
-    if (!at || at == seen || (unsigned)now_ms() - (unsigned)at >= DAC_PRESS_MS) return 0;
+    if (!at || (at & 1) != pressed || at == seen || (unsigned)now_ms() - (unsigned)at >= DAC_PRESS_MS) return 0;
     seen = at;
     return 1;
 }
+static int dac_told(void) { return dac_word(1); }
 /* The end of init (0x4391b0), past stock's checks of the way and the fd: the ioctl is stock's own. */
 int dac_ioctl(int fd, unsigned request, void *arg) {
     int r = ioctl(fd, request, arg);
-    if (dac_told()) usleep(DAC_RELEASE_MS * 1000);
+    if (dac_told() || ao_wait) usleep(DAC_RELEASE_MS * 1000);
     return r;
 }
 /* seek (0x42b164), a start offset's or an mcl-seek's: demo stamps a user's, not A-B Repeat's loop. */

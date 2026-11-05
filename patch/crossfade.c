@@ -136,11 +136,33 @@ static volatile int *shared_int(const char *tmp, const char *path) {
  * stamp on a change nobody pressed for would lengthen its gap. Only a local queue's: DLNA and online
  * queues (0xf1, 0xf2) start tracks by themselves through the same calls. One int write per press. */
 int press_natural __attribute__((section(".scratch")));
-void press_stamp(void) {
+static int press_word(void) {
     unsigned type = *(volatile unsigned *)MCL_TYPE;
-    if (press_natural || !(type == 1 || (type & 0xf000) == 0xf000)) return;
+    if (!(type == 1 || (type & 0xf000) == 0xf000)) return 0;
     if (!xf.press_file) xf.press_file = shared_int(PRESS_FILE ".tmp", PRESS_FILE);
-    if (xf.press_file) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
+    return xf.press_file != 0;
+}
+void press_stamp(void) {
+    if (!press_natural && press_word()) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
+}
+/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5ad1bc, 0x5ad1d4). A natural start
+ * skips both, so the old track is heard to its end, and leaves an even mark for ao_init, whose reopen mutes
+ * after the drain, or which keeps the PCM open. Only ringnav_next(1) sets press_natural to 2: anything else,
+ * or no word to leave the mark in, keeps stock's. */
+static int start_quiet __attribute__((section(".scratch")));
+int start_mute(int value) {
+    start_quiet = press_natural == 2 && press_word();
+    if (!start_quiet) {
+        if (xf.press_file && !(*xf.press_file & 1)) *xf.press_file = 0; /* muted: an unspent mark isn't for this start */
+        return mclSetMute(value);
+    }
+    int at = (int)now_ms() & ~1; /* even, and never 0 */
+    *xf.press_file = at ? at : 2;
+    return 0;
+}
+int start_sleep(unsigned us) {
+    if (start_quiet) return start_quiet = 0;
+    return usleep(us);
 }
 void press_forget(void) {
     if (xf.press_file) *xf.press_file = 0;

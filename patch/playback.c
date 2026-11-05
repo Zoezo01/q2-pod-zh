@@ -912,7 +912,7 @@ static int next_song(int automatic) {
 int ringnav_next(int automatic) {
     if (!automatic) return next_song(0);
     press_forget();
-    press_natural = 1;
+    press_natural = 2; /* 2: start_mute's too, 1 being the other natural starts */
     int result = next_song(1);
     press_natural = 0;
     return result;

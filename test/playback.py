@@ -1352,6 +1352,7 @@ class PressMachine(XfadeMachine):
         if name=='xf:dialog': return u.reg_write(UC_MIPS_REG_PC,0x1000000)  # back in on_wm_timer_dialog
         if name[3:] in ('change','next','load','pause','seek_time','seek_start','start'):
             self.stock.append(name); self.seen=self.get(self.flag)
+            if name=='xf:start': self.start_natural=self.get(ps['press_natural'])
             if name in ('xf:next','xf:change') and self.nested_load:  # Folder Skip's load, as stock's do within them
                 self.nested_load=0; self.nested(ps['ringnav_load'],self.get(syms['mcl_pdeqplaylist']),0,1)
             return self.returns(0)
@@ -1360,7 +1361,7 @@ class PressMachine(XfadeMachine):
     def nothing(self): return not {'/tmp/q2press','/tmp/q2press.tmp'}&set(self.files)
     def enter(self,name,*args):  # through the hook, not the fixtures' mock
         self.handlers.pop(syms[name],None); return self.call(address=syms[name],args=tuple(args)+(0,)*(4-len(args)),gap=0)
-# Nothing is created until the first press: a poll, a natural change and the Stop that ends a queue make no file.
+# Nothing is created until the first press or start_mute's mark: a poll, ringnav_next(1)'s forget and the Stop that ends a queue make no file.
 m=PressMachine(); m.fn('playback_poll'); m.advance_song(1); assert m.nothing() and m.stock==['xf:next']
 # A manual Next or Previous stamps, odd and so never 0, the low 32 bits of the monotonic clock's ms, before stock runs.
 m.enter('player_next_music'); assert '/tmp/q2press' in m.files and m.at()==5001 and m.seen==5001
@@ -1406,3 +1407,37 @@ for load in (0,1):
 m=PressMachine(); m.written=-1; m.word(m.flag,0xdead); m.fn('ringnav_change',1); assert m.at()==0xdead and '/tmp/q2press' not in m.files
 m.written=4; m.fn('ringnav_change',1); assert m.at()==5001
 print('Press: Next, Previous, a list pick and a user\'s seek stamp; a natural change forgets, stamps nothing and makes no file')
+# What mclStartPlayer does on the jack from the idle player, its own code run from the way's test to the send (0x5ad1a8-0x5ad1e4).
+class StartMachine(PressMachine):
+    def __init__(self):
+        super().__init__(); self.quiet=[]
+        self.handlers[syms['mclSetMute']]='xf:mute'; self.handlers[syms['usleep@GLIBC_2.0']]='xf:usleep'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name in ('xf:mute','xf:usleep'): self.quiet.append((name[3:],u.reg_read(REGS[0]))); return self.returns(0)
+        return super().hook(u,address,size,unused)
+    def site(self):
+        self.quiet=[]; sp=self.u.reg_read(UC_MIPS_REG_SP)-0x100
+        self.word(sp+0x20,0xa26cc0); self.u.reg_write(UC_MIPS_REG_SP,sp); self.u.reg_write(UC_MIPS_REG_GP,0xa26cc0); self.u.reg_write(UC_MIPS_REG_FP,0xa40000)
+        self.u.emu_start(0x5ad1a8,0x5ad1e4,count=200000); self.u.reg_write(UC_MIPS_REG_SP,sp+0x100)
+        return self.quiet
+STOCK=[('mute',1),('usleep',100000)]
+m=StartMachine(); assert m.get(0x5ad1bc)==jal(ps['start_mute']) and m.get(0x5ad1d4)==jal(ps['start_sleep'])
+assert m.site()==STOCK and m.nothing()  # outside a natural change: a press, a boot, a resume, an app
+m.word(ps['press_natural'],1); assert m.site()==STOCK and m.nothing()  # the natural starts ringnav_next(1) doesn't make
+m.word(ps['press_natural'],2); assert m.site()==[] and m.at()==5000  # even: not a press's stamp
+assert m.site()==[] and m.at()==5000
+m.fn('start_sleep',150000); assert m.quiet==[('usleep',150000)]  # the skip is one sleep's, whatever comes next
+m.now=(1<<32)+1; m.quiet=[]; assert m.site()==[] and m.at()==2  # and never 0
+m.now=5000
+m.word(ps['press_natural'],0); assert m.site()==STOCK and m.at()==0  # the skip doesn't outlast its start, and a start that mutes clears an unspent mark
+m=StartMachine(); m.fn('ringnav_change',1); assert m.at()==5001; m.site(); assert m.at()==5001  # a press's stamp stays
+m.word(ps['press_natural'],2); m.now=7001; assert m.site()==[] and m.at()==7000
+for cls in (0xf1,0xf2,2,3,5):  # DLNA and the online queues stay stock's
+    m=StartMachine(); m.word(ps['press_natural'],2); m.word(O['MCL_TYPE'],cls); assert m.site()==STOCK and m.nothing(),cls
+m=StartMachine(); m.word(ps['press_natural'],2); m.written=-1; assert m.site()==STOCK and '/tmp/q2press' not in m.files  # no word to tell hciplayer
+m=StartMachine(); m.word(ps['press_natural'],2); m.word(0xa3beb0,1); assert m.site()==[] and m.nothing()  # stock's own test: the jack's only
+# ringnav_next(1) is what sets it, and only for its own span; a rollover's load inside it keeps the local class.
+m=PressMachine(); m.options(1,5,0); m.stock=[]; m.advance_song(1); assert m.stock==['xf:start'] and m.start_natural==2 and m.get(ps['press_natural'])==0
+m=PressMachine(); m.nested_load=1; m.advance_song(1); assert m.get(ps['press_natural'])==0
+print('Start: a natural start on the jack skips demo\'s mute and sleep and marks the word; everything else keeps stock\'s')
