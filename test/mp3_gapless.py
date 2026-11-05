@@ -216,6 +216,22 @@ int main(int argc, char **argv) {
     audio = bytearray(header(flags=0))
     audio[36:40] = bytes(4)
     assert parse(bytes(audio)) is None
+    # Tail tags: what stays of the file is what the demuxer plays, an APEv2 tag's only if its footer is sane, and
+    # says it has a header for the caller to find.
+    lib.mp3_tail.argtypes, lib.mp3_tail.restype = [C.c_char_p, C.c_uint, C.c_void_p], C.c_longlong
+    def tail(t):
+        ape = C.c_longlong()
+        return lib.mp3_tail(t, len(t), C.byref(ape)), ape.value
+    def ape(size, flags=0x80000000, version=2000):
+        return b'APETAGEX' + struct.pack('<IIII', version, size, 1, flags) + bytes(8)
+    id3v1 = b'TAG' + bytes(125)
+    for t, want in ((bytes(160), (0, 0)), (bytes(32) + id3v1, (128, 0)), (bytes(128) + ape(5000), (0, 5032)),
+                    (ape(5000) + id3v1, (128, 5160)), (bytes(40), (0, 0)), (b'TAG', (0, 0)),
+                    (bytes(128) + ape(5000, flags=0), (0, 0)),               # no header to confirm it
+                    (ape(5000, flags=0) + id3v1, (128, 0)),
+                    (bytes(128) + ape(5000, flags=0xa0000000), (0, 0)),      # this is a header, not a footer
+                    (bytes(128) + ape(5000, version=2001), (0, 0)), (bytes(128) + ape(31), (0, 0))):
+        assert tail(t) == want, (t[-32:], want)
     assert parse(header(pad=100))[1] == 0
     h = bytearray(header())
     h[2] = 0  # free-format: no trustworthy first-frame boundary

@@ -17,7 +17,7 @@ import tempfile
 import wave
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 from build import fileoff, jal, machine, symbols
-from peq import MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, DEMUX_READ
+from peq import MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, DEMUX_READ, MP3_FILL
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE
 from unicorn.mips_const import *
 
@@ -26,7 +26,7 @@ raw = (out/'hciplayer').read_bytes()
 syms = symbols(out/'peq.elf')
 for address, value in ((MP3_ALLOC, jal(syms['mp3_private_alloc'])),
                        (MP3_FILTER, jal(syms['mp3_filter_entry'])), (MP3_CLOSE, syms['mp3_close']),
-                       (MP3_READ, jal(syms['mp3_read']))):
+                       (MP3_READ, jal(syms['mp3_read'])), (MP3_FILL, syms['mp3_fill'])):
     assert struct.unpack_from('<I', raw, fileoff(raw, address))[0] == value
 
 u = machine(raw, 0x2000000)
@@ -204,8 +204,8 @@ for _ in range(20):
     assert feed(tr, pcm) == pcm
 for name in ('calloc', 'realloc', 'memcpy', 'memmove'):
     assert imports_called[name] == counts[name], (name, imports_called, counts)
-assert imports_called['read'] == counts['read'] + 1
-assert imports_called['lseek64'] == counts['lseek64'] + 3
+assert imports_called['read'] == counts['read'] + 2  # the first frame and the file's last bytes, once
+assert imports_called['lseek64'] == counts['lseek64'] + 4
 call('mp3_close', tr[0])
 assert not allocations
 
@@ -469,6 +469,22 @@ def real_chain():
     info = bytearray(walk(low)[0])
     info[extension(low):extension(low)+36] = plain[extension(plain):extension(plain)+36]
     assert decode(bytes(info) + plain[len(walk(plain)[0]):]) == want
+    # Tail tags. Binary in APEv2 (a PNG cover's, say) holds frame syncs that decode as noise.
+    def apev2(value):
+        items = struct.pack('<II', len(value), 0) + b'Cover Art (Front)\0' + value
+        tag = b'APETAGEX' + struct.pack('<IIII', 2000, len(items)+32, 1, 0xa0000000) + bytes(8)
+        return tag + items + tag[:20] + struct.pack('<I', 0x80000000) + bytes(8)
+    id3v1 = b'TAG' + bytes(124) + b'\xff'
+    binary = random.Random(7).randbytes(60000)
+    for tail in (id3v1, apev2(b'-6.5 dB'), apev2(b'-6.5 dB') + id3v1, apev2(binary), apev2(binary) + id3v1):
+        assert decode(plain + tail) == want, len(tail)
+    # A footer's size is only believed with a header at its place: half the file's here would otherwise cut music,
+    # and with no header to look for it plays on.
+    tags = apev2(b'-6.5 dB')
+    wrong_size = tags[:-20] + struct.pack('<I', len(plain)//2) + tags[-16:]
+    no_header = tags[:-12] + struct.pack('<I', 0) + tags[-8:]
+    for tail in (wrong_size, wrong_size + id3v1, no_header):
+        assert decode(plain + tail) == want, len(tail)
     # A tag frame with no usable extension, or VBRI: nothing to trim by, but the frame's own 1152 samples go, so the
     # track starts as the same audio with no tag frame does. Real lame frames, the name and fields overwritten.
     first_frame = walk(plain)[0]
@@ -484,11 +500,11 @@ def real_chain():
         assert decode(bytes(tag_frame) + plain[len(first_frame):]) == bare
     bare_mp3 = plain[len(first_frame):]
     # A real encoder's shape: `Lame3.100`, the tag's CRC-16 right for that, ID3v2 ahead of the
-    # first frame. FFmpeg's name list refuses this one, so FFmpeg's agreement
+    # first frame, and APEv2 then ID3v1 behind the last. FFmpeg's name list refuses this one, so FFmpeg's agreement
     # says nothing here; mpg123's has no list.
     field = extension(first_frame)
     named = signed(first_frame[:field] + b'Lame3.100' + first_frame[field+9:])
-    spelled = id3 + named + bare_mp3
+    spelled = id3 + named + bare_mp3 + apev2(b'x'*1500) + id3v1
     assert decode(spelled) == want
     # Any other name without its CRC is no extension: only the tag frame goes.
     assert decode(edited(plain, 0, b'GOGO3.13\0')) == bare
@@ -501,4 +517,4 @@ def real_chain():
 
 
 real_chain()
-print('Real chain: lame files through stock demuxer, libmad and filters: encoder names (Lame3.100), ID3v2, Info header, tag frames without an extension: OK')
+print('Real chain: lame files through stock demuxer, libmad and filters: encoder names (Lame3.100 with its cover and tails), ID3v2, Info header, tag frames without an extension, tail tags: OK')

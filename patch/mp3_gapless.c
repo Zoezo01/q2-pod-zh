@@ -6,6 +6,7 @@ typedef struct {
     double next_pts;
     unsigned checked, start, skip, padding, rate, channels, held, unit, seeked, tag_skipped, guarded;
     unsigned char *tail;
+    long long audio_end;
 } mp3_private;
 
 /* Raw MPlayer decoders also emit the Xing frame. FFmpeg's mp3 demuxer removes it instead.
@@ -106,6 +107,23 @@ int mp3_gapless(const unsigned char *h, unsigned n, unsigned *start, unsigned *p
     return found;
 }
 
+/* What the ID3v1 tag takes off a file's end, from its last n bytes t, and in *ape what all the tags do if an APEv2
+ * footer there is sane and says it has a header, which the caller must find at that place. stock's demuxer scans a
+ * tag for frames: non-JPEG bytes in APEv2 can decode as noise, and the trailing trim then cuts that, not the padding.
+ * With a wrong size this would lose music, so a footer with nothing to confirm it is left alone: a false stop loses
+ * music, a false pass only some noise. ponytail: not an APEv2 tag ahead of Lyrics3, which is rare. */
+long long mp3_tail(const unsigned char *t, unsigned n, long long *ape) {
+    long long cut = n >= 128 && !memcmp(t + n - 128, "TAG", 3) ? 128 : 0;
+    *ape = 0;
+    if (n < cut + 32) return cut;
+    const unsigned char *f = t + n - cut - 32;
+    unsigned version = (unsigned)f[8] | f[9] << 8 | f[10] << 16 | (unsigned)f[11] << 24;
+    unsigned size = (unsigned)f[12] | f[13] << 8 | f[14] << 16 | (unsigned)f[15] << 24;
+    if (!memcmp(f, "APETAGEX", 8) && version <= 2000 && size >= 32 && (f[23] & 0xa0) == 0x80)
+        *ape = cut + (long long)size + 32;
+    return cut;
+}
+
 /* Keep the last padding frames until another block arrives. They disappear at EOF, without
  * trusting a VBR seek's approximate sample position or the file's advertised frame count. */
 static void mp3_trim(mp3_private *p, af_data *data) {
@@ -162,7 +180,7 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
     void *ds = AT(sh, 0, void *), *d = ds ? AT(ds, 0x58, void *) : 0;
     mp3_private *p = mp3_state(d);
     if (p && !p->checked) {
-        unsigned char h[2048];
+        unsigned char h[2048], t[160];
         p->checked = 1;
         void *s = AT(d, 0x20, void *);
         if (s) {
@@ -170,6 +188,13 @@ af_data *mp3_filter(void *filters, af_data *data, void *sh) {
             long long back = lseek64(fd, 0, 1), at = AT(d, 0x10, long long);
             if (back >= 0) {
                 if (lseek64(fd, at, 0) == at) got = read(fd, h, sizeof h);
+                long long end = lseek64(fd, -(long long)sizeof t, 2);
+                if (end >= 0 && read(fd, t, sizeof t) == sizeof t) {
+                    long long eof = end + sizeof t, ape, cut = mp3_tail(t, sizeof t, &ape);
+                    if (ape && ape < eof && lseek64(fd, eof - ape, 0) == eof - ape && read(fd, t, 8) == 8 &&
+                        !memcmp(t, "APETAGEX", 8)) cut = ape;
+                    if (eof - cut > at) p->audio_end = eof - cut;
+                }
                 if (got > 0) mp3_gapless(h, got, &p->start, &p->padding, &p->rate, &p->channels);
                 lseek64(fd, back, 0);
             }
@@ -203,6 +228,14 @@ int mp3_read(void *ds, unsigned char *buf, int room) {
     p->guarded = 1;
     memset(buf, 0, 8);
     return 8;
+}
+
+/* demux_audio's fill (0x48c184, the descriptor's slot): the stream stops where the tail tags start. */
+int mp3_fill(void *d, void *ds) {
+    mp3_private *p = mp3_state(d);
+    void *s = AT(d, 0x20, void *);
+    if (p && p->audio_end && AT(s, 0x30, long long) + AT(s, 0x28, int) - AT(s, 0x2c, int) >= p->audio_end) return 0;
+    return ((int (*)(void *, void *))0x48c184u)(d, ds);
 }
 
 void mp3_close(void *d) {

@@ -24,6 +24,8 @@ ID3_CALLS, STOCK_ID3 = (0x48f704, 0x4923d8), 0x48e6b0
 MP3_ALLOC, MP3_FILTER, MP3_CLOSE = 0x48fb90, 0x47f8e0, 0x89fdb8
 # ad_libmad read_frame's demux_read_data call (0x484c0c), which gets the last frame its guard bytes.
 MP3_READ, DEMUX_READ = 0x4b248c, 0x484c0c
+# The audio demuxer's fill slot.
+MP3_FILL, DEMUX_FILL = 0x89fdb0, 0x48c184
 # The equalizer filter's descriptor (pinned) and its open slot, which becomes peq_open.
 EQ_DESC, EQ_OPEN_SLOT = 0x893df8, 0x893e0c
 # lavcresample's descriptor open slot (af_info at 0x8a4540; stock open 0x4ac2c0), which becomes rs_open: the
@@ -263,7 +265,7 @@ def patch_player(raw, out, flac_experiments=()):
                       '__end = .; /DISCARD/ : { *(.comment) *(.note*) *(.pdr) *(.mdebug*) '
                       '*(.MIPS.abiflags) *(.reginfo) } }')
     run('ld.lld', '-m', 'elf32ltsmip', '--gc-sections', '-T', script, '-e', 'peq_open', '--undefined=mp3_seek', '--undefined=id3_gain',
-        '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read',
+        '--undefined=mp3_private_alloc', '--undefined=mp3_filter_entry', '--undefined=mp3_close', '--undefined=mp3_read', '--undefined=mp3_fill',
         '--undefined=hci_idle_wait',
         '--undefined=hci_pause_wait', '--undefined=hci_command', '--undefined=rs_open', '--undefined=ao_init', '--undefined=ao_uninit',
         *(f'--undefined={name}' for _, _, name in (*DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)),
@@ -315,6 +317,7 @@ def patch_player(raw, out, flac_experiments=()):
     patch_word(data, MP3_FILTER, jal(0x44d350), jal(ps['mp3_filter_entry']), 'MP3 gapless PCM')
     patch_word(data, MP3_CLOSE, 0x48b7e4, ps['mp3_close'], 'MP3 gapless cleanup')
     patch_word(data, MP3_READ, jal(DEMUX_READ), jal(ps['mp3_read']), 'MP3 last frame')
+    patch_word(data, MP3_FILL, DEMUX_FILL, ps['mp3_fill'], 'MP3 tail tags')
     for address in ID3_CALLS:
         patch_word(data, address, jal(STOCK_ID3), jal(ps['id3_gain']), 'MP3 ReplayGain')
     for address, stock, patched in patch_words(flac_experiments, ps):
