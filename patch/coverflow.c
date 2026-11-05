@@ -2866,6 +2866,7 @@ static int home_counts(const void *unused) {
 
 static int home_foreground(void *ctx, void *event) {
     rearm(&home.count_timer, home_counts, PANE_COUNT_MS);
+    home.row = 0; /* the pane's kind again: Row Preview may have changed in Settings */
     return 0;
 }
 
@@ -3083,10 +3084,11 @@ int coverflow_home_back(void *top) {
     return 1;
 }
 
-/* Classic's bar title on Home (navigation.c bar_title_sync). */
+/* Classic's bar title on Home (navigation.c bar_title_sync): coverflow_home_name on its own list. */
+const char coverflow_home_name[] = "Q2 Pod";
 const char *coverflow_home_title(void) {
     void *open = home_open();
-    return !open ? "Q2 Pod" : open == home.lib ? "Library" : "Settings";
+    return !open ? coverflow_home_name : open == home.lib ? "Library" : "Settings";
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,

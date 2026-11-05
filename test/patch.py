@@ -8866,21 +8866,21 @@ for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'No
     btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
 assert bt_titled(btm.node('dialog','sortselect_dialog'))=='Shuffle'
 btm.calls=[]; assert bt_titled(btwins['shuffle_page'])=='Shuffle'  # the same title again: not written
-# The play state leads the bar: the title moves past it while it shows (its right end where it was), and on Home
-# the state stands in for "Q2 Pod". Stopped, both are back.
+# The play state sits by the battery (img_state); on Home's own list it is img_home_state instead, in the title's
+# place, "Q2 Pod" hidden (Home's Library and Settings are titled pages: coverflow_home_title). Stopped, neither shows.
 psm=classic_light_on(Machine()); psm.handlers.pop(syms['mclGetPlayStatus'],None)
-psttl=psm.node('hscroll_label','label_title'); psst=psm.node('image','img_state',visible=0)
-for k,v in (('W_X',48),('W_W',104),('W_H',25)): psm.word(psttl+O[k],v)
-psm.word(psst+O['W_W'],18); psbar=classic_light_bar(psm,psm.node('view','view_left',[psst]),psttl)
+psttl=psm.node('hscroll_label','label_title'); psst=psm.node('image','img_state',visible=0); pshs=psm.node('image','img_home_state',visible=0)
+psm.word(psst+O['W_W'],18); psbar=classic_light_bar(psm,psm.node('view','view_right',[psst]),pshs,psttl)
 pshome,pssongs=psm.node('window','home_page'),psm.node('window','allmusic_page',[psm.node('view','view_navbar',[psm.node('image','img_return'),psm.node('hscroll_label',text='Songs')],visible=0)])
-def ps_titled(win,status):
+def ps_bar(win,status):  # (title, title shown, by the battery, on Home) after two bar paints, each image's name when shown
     psm.word(0xa3beac,status); psm.top=win; psm.word(win+O['W_PARENT'],psm.wm)
     for _ in range(2): psm.call(address=HOOKS['widget_on_paint_background'][0],args=(psbar,psm.canvas,0,0),gap=0)
-    return psm.nodes[psttl].get('text'),psm.get(psttl+O['W_X']),psm.get(psttl+O['W_W'])
-psgap=O['STATUS_GAP']
-assert ps_titled(pshome,0)==('Q2 Pod',48,104) and ps_titled(pshome,2)==('',48+18+psgap,104-18-psgap) and ps_titled(pshome,3)[0]==''
-assert ps_titled(pssongs,2)==('Songs',48+18+psgap,104-18-psgap) and ps_titled(pssongs,0)==('Songs',48,104)
-assert ps_titled(pshome,0)==('Q2 Pod',48,104); passed()
+    shown=lambda w: psm.nodes[w].get('visible',1) and psm.nodes[w].get('image')
+    return psm.nodes[psttl].get('text'),psm.nodes[psttl].get('visible',1),shown(psst),shown(pshs)
+assert ps_bar(pshome,0)==('Q2 Pod',1,0,0)
+assert ps_bar(pshome,2)==('Q2 Pod',0,0,'classic_light_play_l') and ps_bar(pshome,3)==('Q2 Pod',0,0,'classic_light_pause_l')
+assert ps_bar(pssongs,2)==('Songs',1,'classic_light_play_l',0) and ps_bar(pssongs,0)==('Songs',1,0,0)
+assert ps_bar(pshome,0)==('Q2 Pod',1,0,0); passed()
 assert not [c for c in btm.calls if c[0]=='widget_set_text_utf8' and c[1]==bttl]
 # The source is found once per top window: painting it again looks nothing up, and a navbar title
 # rewritten under the same window is followed.
@@ -9727,6 +9727,13 @@ for answer,want in ((0,[]),(10,[(0,'ROWART')])):
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='Row Art: On'
     assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot'][:answer==10]
+# Library on Home and Row Preview are plain choices (no set): on the booted set a click saves Off at once and asks nothing.
+for i,key,label in ((7,'HOMELIB','Library on Home'),(8,'ROWPREVIEW','Row Preview')):
+    m,view,_=display({},cls=RestartMachine,setup=classic_light); classic_light_on(m); m.prompts=[]
+    row=m.nodes[view]['children'][i]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.calls=[]
+    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==[] and row_text(row)==label+': Off'
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,key)],key
+passed()
 # The restart test applies the chosen theme's presets: from a booted Classic with Row Art Off (classic-light-text),
 # Classic with its preset (On) boots classic_light, another set; with Row Art On, the set running. Minimal: always.
 for art,want in (('0',1),('1',0)):

@@ -731,7 +731,7 @@ def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     assert m['inset'] == ipod.corner_inset(6) == 50
     assert m['clock_text'] == 64 and classic_light_text_w('12:59 PM') <= 64  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [48, -1, 104, g.bar - 1]  # text on columns 50 to 150, 22 further with the play state; a 12-hour clock's starts at 155
+    assert m['title'] == [48, -1, 104, g.bar - 1]  # text on columns 50 to 150; a 12-hour clock's starts at 155
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
     # what a title fits: Local Songs and Now Playing, whole
     assert classic_light_text_w('Local Songs') <= m['title'][2] - 4 and classic_light_text_w('Now Playing') <= m['title'][2] - 4
@@ -752,15 +752,19 @@ def test_classic_light_status_bar_has_a_title_and_no_idle_mark():
     for name in ('label_title', 'label_clock'):
         assert {n[name][2][f'style:{s}:{k}'] for s in ('normal', 'disable', 'focused') for k in ('font_size', 'font_name')} \
             == {str(CLASSIC_LIGHT.bar_px), ipod.CLASSIC_LIGHT_FONT_NAME}
-    assert [c[2]['name'] for c in n['view_left'][3]] == ['img_state'] and n['view_left'][2]['children_layout'].endswith(f'xm={m["inset"]},s={ipod.inc("STATUS_GAP")})')
+    assert n['view_left'][3] == [] and n['view_left'][2]['children_layout'].endswith(f'xm={m["inset"]},s={ipod.inc("STATUS_GAP")})')
 
 
 # Right of the centred clock, left to right: EQ (it floats; only while nothing plays, navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi and the battery, the battery body ending where the glass
-# does at its top row.
-def test_classic_light_status_bar_battery_right():
+# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery, the battery body ending where the glass
+# does at its top row. On Home's own list the play state is img_home_state, hidden until the payload shows it,
+# in the title's place at HOME_STATE_X, on the right group's rows, the same art.
+def test_classic_light_status_bar_battery_and_play_state_right():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
-    assert [c[2]['name'] for c in n['view_right'][3]] == ['label_eq', *ipod.STATUS_RIGHT]
+    assert [c[2]['name'] for c in n['view_right'][3]] == ['label_eq', 'img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[2:]]
+    home, state = n['img_home_state'], n['img_state']
+    assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
+    assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
     assert n['view_right'][2]['children_layout'].endswith(f'xm=56,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 318
     assert 375 - ipod.corner_inset(4) >= 318  # clear of the glass at its top row 4, the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked

@@ -559,6 +559,9 @@ def offered(c, o, names, what):
     return sum(1 << names.index(n) for n in set(listed))
 
 
+PLAIN_KEYS = {'HOMELIB', 'ROWPREVIEW'}  # the plain own keys the payload reads (navigation.c home_lib_on, row_preview_on)
+
+
 def own_option(c, known):
     """A theme's own <option key label>: its values, each naming the geometry set it boots, one of known, or
     none of them naming one: a plain choice the payload reads as st.own[OWN_<KEY>]."""
@@ -586,6 +589,8 @@ def own_option(c, known):
         sets.append(v.attrs.get('set'))
     if not 2 <= len(names) <= 10:  # config_value reads one digit
         err(c, f'{key}: 2 to 10 values expected')
+    if not sets[0] and key not in PLAIN_KEYS:
+        err(c, f'{key}: a plain choice the payload does not read (PLAIN_KEYS)')
     # ponytail: set is the one selector; a value that selects a scheme or a font adds its attribute, and its payload reader, when a theme needs it
     return presets(c, {'setting': 'SETTING_OWN', 'key': key, 'label': c.attrs['label'], 'names': names, 'sets': sets if sets[0] else None,
                        'def': -1, 'preset': -1, 'keep': -1, 'values': 0}, names, key)
@@ -798,6 +803,10 @@ def validate(t, name):
         err('selection: painter stops needs every offered scheme\'s sel.stops')
     if t['painter[PAINT_BATTERY]'] == 'BATT_CLASSIC_LIGHT' and not t['batt']:
         err('battery: this painter needs stops')
+    for n in sorted({t['geom_set'], *(s for o in t['opts'] for s in o.get('sets') or ())}):
+        g = sets(t)[n]  # the bar's own label is laid out at bar_px (tools/ipod.py status_metrics), its text drawn at font_size
+        if g.bar_px and t['font_px[ROLE_BAR]'] != g.bar_px:
+            err(f"bar.title.font_size {t['font_px[ROLE_BAR]']} is not set {n}'s bar_px {g.bar_px}")
     for o in t['opts']:
         if o.get('setting') != 'SETTING_ACCENT' and not o.get('key') and o['def'] >= 0 and not o.get('values'):
             err(f"{o['setting']}: default has no effect without values (settings_read holds a stock setting's default)")

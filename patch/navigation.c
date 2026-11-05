@@ -195,6 +195,7 @@ extern int ringnav_reboot(void);
 extern void coverflow_home_clip(void *w, void *canvas, int begin);
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
 extern const char *coverflow_home_title(void);
+extern const char coverflow_home_name[];
 extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
@@ -438,9 +439,10 @@ typedef struct {
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
      * level, charge and low state. Classic's bar also has a title (bar_title_sync), from the
-     * top window title_win and, when a label holds it, title_lbl (both found once per window). */
+     * top window title_win and, when a label holds it, title_lbl (both found once per window), and
+     * a play state of Home's own (home_state), which takes the title's place there (bar_home). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
-        *bar_title, *title_win, *title_lbl,
+        *bar_title, *home_state, *title_win, *title_lbl,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
     int codec, codec_step, batt_mode;
     unsigned codec_timer, batt_key, bar_timer;
@@ -480,7 +482,7 @@ typedef struct {
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled, bar_bold, title_x, title_w; /* Classic's bar title's own box */
+    int time_title, bar_titled, bar_bold, bar_home;
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;
@@ -1842,12 +1844,7 @@ static int setting(int i) {
     return themes[st.theme].undeclared >> i & 1 ? 0 : *setting_values[i];
 }
 /* A theme's own choice (OWN_*): its stored value while the theme offers it, else 0. */
-static int theme_own(int k) {
-    const theme_t *T = theme();
-    for (int i = 0; i < T->n_opts; ++i)
-        if (T->opts[i].setting == SETTING_OWN + k) return st.own[k];
-    return 0;
-}
+static int theme_own(int k) { return option_of(theme(), SETTING_OWN + k) ? st.own[k] : 0; }
 /* Classic's Home in Split (coverflow.c): Library on Home and Row Preview */
 int home_lib_on(void) { return theme_own(OWN_HOMELIB); }
 int row_preview_on(void) { return theme_own(OWN_ROWPREVIEW); }
@@ -3781,7 +3778,7 @@ static int pct_width(unsigned level) {
  * label_idle shows when neither it nor label_eq does. Returns whether img_state changed. */
 static int bar_state_sync(void *bar) {
     int changed = 0;
-    if (!st.bar_bt) {
+    if (!st.bar_bt && bar) { /* bar_title_sync passes none: the widgets it found already */
         st.bar_bt = widget_lookup(bar, "img_bt", 1);
         st.bar_wifi = widget_lookup(bar, "img_wifi", 1);
         st.bar_pct = widget_lookup(bar, "label_battery", 1);
@@ -3791,14 +3788,23 @@ static int bar_state_sync(void *bar) {
         st.bar_state = widget_lookup(bar, "img_state", 1);
         st.bar_eq = widget_lookup(bar, "label_eq", 1);
         st.bar_title = widget_lookup(bar, "label_title", 1);
+        st.home_state = widget_lookup(bar, "img_home_state", 1);
     }
+    int on = 0;
     if (st.bar_state) {
         int status = media_owner() == 1 ? mclGetPlayStatus() :
                      video_status() ?: radio_status() ?: spot_status();
-        int on = status == 2 || status == 3;
-        changed = on != !!widget_get_visible(st.bar_state);
-        widget_set_visible(st.bar_state, on, 0);
-        if (on) {
+        on = status == 2 || status == 3;
+        /* Classic: by the battery, but on Home's own list in the title's place, "Q2 Pod" hidden */
+        void *at = !on ? (void *)0 : st.bar_home && st.home_state ? st.home_state : st.bar_state;
+        for (void *const *w = (void *const[]){ st.bar_state, st.home_state }, *const *e = w + 2;
+             w < e; ++w)
+            if (*w && (*w == at) != !!widget_get_visible(*w)) {
+                widget_set_visible(*w, *w == at, 0);
+                changed = 1;
+            }
+        if (st.home_state && st.bar_title) widget_set_visible(st.bar_title, at != st.home_state, 0);
+        if (at) {
             /* BATT_CLASSIC_LIGHT's play state is its own art (tools/art.py), by state and half */
             static const char *const classic_light_icon[2][2] = {
                 { "classic_light_play_d", "classic_light_pause_d" },
@@ -3808,26 +3814,15 @@ static int bar_state_sync(void *bar) {
                                    ? classic_light_icon[ipod_light()][status != 2]
                                : status == 2 ? "bar_play"
                                              : "bar_pause";
-            if (tk_strcmp(widget_get_prop_str(st.bar_state, "image", ""), icon)) {
-                image_base_set_image(st.bar_state, icon);
+            if (tk_strcmp(widget_get_prop_str(at, "image", ""), icon)) {
+                image_base_set_image(at, icon);
                 changed = 1;
             }
         }
     }
-    /* Classic: EQ only while nothing plays (a codec badge, which needs a track, would reach
-     * it: tools/ipod.py). The play state leads the bar, so the title moves past it while it shows;
-     * on Home it stands in for "Q2 Pod" (bar_title_sync). */
-    if (st.bar_title && st.bar_state) {
-        if (!st.title_w) st.title_x = I(st.bar_title, W_X), st.title_w = I(st.bar_title, W_W);
-        int by = widget_get_visible(st.bar_state) ? I(st.bar_state, W_W) + STATUS_GAP : 0;
-        if (I(st.bar_title, W_X) != st.title_x + by) { /* its right end stays clear of the clock */
-            widget_move_resize(st.bar_title, st.title_x + by, I(st.bar_title, W_Y), st.title_w - by,
-                               I(st.bar_title, W_H));
-            changed = 1;
-        }
-    }
-    if (st.bar_eq && st.bar_state && widget_get_visible(st.bar_state) &&
-        theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
+    /* Classic's right group has room for EQ or the play state, not both: EQ while nothing plays (a
+     * codec badge, which needs a track, would reach it: tools/ipod.py). */
+    if (st.bar_eq && on && theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
         widget_set_visible(st.bar_eq, 0, 0);
     if (st.bar_idle && st.bar_state && st.bar_eq)
         widget_set_visible(st.bar_idle,
@@ -3891,7 +3886,9 @@ static void bar_sync(void *bar) {
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Classic: EQ shares the group */
+        /* Classic: the play state or EQ shares the group */
+        if (classic_light && st.bar_state && widget_get_visible(st.bar_state))
+            reach += I(st.bar_state, W_W) + STATUS_GAP;
         if (classic_light && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
         /* Classic's Percent Inside is the icon's own width: the icon would win no room */
@@ -5263,8 +5260,13 @@ void bar_title_sync(void *win) {
     static const unsigned none = 0;
     char s[256], now[256]; /* stock writes nothing unless all of it fits */
     const char *t = home_menu(win) ? coverflow_home_title() : (const char *)0;
-    /* Home's own name gives way to the play state, which takes its place (bar_state_sync) */
-    if (t && !tk_strcmp(t, "Q2 Pod") && st.bar_state && widget_get_visible(st.bar_state)) t = "";
+    /* Home's own list: the play state moves to the title's place (bar_state_sync), after this paint
+     */
+    if ((t == coverflow_home_name) != st.bar_home) {
+        st.bar_home = t == coverflow_home_name;
+        if (bar_state_sync((void *)0) && !st.bar_timer)
+            st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
+    }
     if (t)
         ;
     else if (win != st.title_win) {

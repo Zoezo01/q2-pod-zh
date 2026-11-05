@@ -771,6 +771,7 @@ V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
     ('<option key="ART" label="Art"><value label="Off" set="ipod"/><value label="Off" set="ipod"/></option>', 'ART: duplicate value Off'),
     ('<option key="ART" label="Art"><value label="Off" set="flat"/><value label="On" set="ipod"/></option>', 'unknown geometry set "flat"'),
     ('<option key="ART" label="Art"><value label="Off"/><value label="On" set="ipod"/></option>', 'ART: every value names a set, or none does'),
+    ('<option key="ART" label="Art"><value label="Off"/><value label="On"/></option>', 'ART: a plain choice the payload does not read (PLAIN_KEYS)'),
     ('<option key="ART" label="Art"><value label="Off" set="ipod" tint="1"/><value label="On" set="ipod"/></option>', 'unknown key value.tint'),
     (f'<option key="ART" label="Art" default="Dim">{V}</option>', 'ART: unknown value Dim'),
     (f'<option key="art" label="Art">{V}</option>', 'option.key: expected [A-Z][A-Z0-9_]*'),
@@ -982,3 +983,12 @@ def test_emit_classic_light_sets(tmp_path):
     assert 'enum { GEOM_IPOD, GEOM_CLASSIC_LIGHT, GEOM_CLASSIC_LIGHT_TEXT, GEOM_N };' in inc and '#define CLIENT_H_MAX 294' in inc
     assert 'const char *const geom_names[GEOM_N] = {"ipod", "classic-light", "classic-light-text"};' in inc
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '1'] and '.accent_slot = &st.own[0],' in inc
+
+
+def test_bar_font_size_is_the_sets_bar_px(tmp_path):
+    """The bar's label is laid out at its set's bar_px (tools/ipod.py status_metrics): its text size must match."""
+    xml = (theme.ROOT/'assets/themes/classic-light/theme.xml').read_text().replace('font="classic-light" font_size="21"', 'font="classic-light" font_size="24"')
+    for d, src in (('minimal', (theme.ROOT/'assets/themes/minimal/theme.xml').read_text()), ('classic-light', xml)):
+        (tmp_path/d).mkdir(); (tmp_path/d/'theme.xml').write_text(src)
+    with pytest.raises(theme.ThemeError, match=r"bar.title.font_size 24 is not set classic-light's bar_px 21$"):
+        theme.builtins(tmp_path)
