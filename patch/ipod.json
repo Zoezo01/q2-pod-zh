@@ -65,8 +65,6 @@
       "purpose": "row creation, reset or artwork offset divisor",
       "sites": [
         ["0x4a6fa8", "0x2402004e"],
-        ["0x4a9ad8", "0x2410004e"],
-        ["0x4aa35c", "0x2402004e"],
         ["0x4ad8e4", "0x2410004e"],
         ["0x4addd0", "0x2402004e"],
         ["0x4b2ec0", "0x2402004e"],
@@ -101,7 +99,6 @@
       "purpose": "row background, hit target and full-height children",
       "sites": [
         ["0x4a62d0", "0x24020046"],
-        ["0x4aa388", "0x24120046"],
         ["0x4addec", "0x24120046"],
         ["0x4adfe4", "0x24020046"],
         ["0x4b2880", "0x24130046"],
@@ -125,7 +122,6 @@
       "sites": [
         ["0x4a63fc", "0x24020078"],
         ["0x4a6530", "0x24020078"],
-        ["0x4aa510", "0x24020078"],
         ["0x4ae288", "0x24020078"]
       ]
     },
@@ -194,8 +190,7 @@
       "value": "title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a6580", "0x2406000e"],
-        ["0x4aa55c", "0x2406000e"]
+        ["0x4a6580", "0x2406000e"]
       ]
     },
     {
@@ -218,7 +213,6 @@
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
         ["0x4a661c", "0x24060028"],
-        ["0x4aa5ac", "0x24060028"],
         ["0x4ae38c", "0x24060028"]
       ]
     },
@@ -234,6 +228,36 @@
       "purpose": "playlist count position in the 68px body",
       "sites": [
         ["0x4b2c38", "0x24060029"]
+      ]
+    },
+    {
+      "value": "song_pitch",
+      "purpose": "Songs: row creation and the page's row divisor, its own so a set can make them taller than the text rows",
+      "sites": [
+        ["0x4a9ad8", "0x2410004e"],
+        ["0x4aa35c", "0x2402004e"]
+      ]
+    },
+    {
+      "value": "song_body",
+      "purpose": "Songs: row background and its text container",
+      "sites": [
+        ["0x4aa388", "0x24120046"],
+        ["0x4aa510", "0x24020078"]
+      ]
+    },
+    {
+      "value": "song_title24_y",
+      "purpose": "Songs: 24px title position in the body, font unchanged",
+      "sites": [
+        ["0x4aa55c", "0x2406000e"]
+      ]
+    },
+    {
+      "value": "song_meta_y",
+      "purpose": "Songs: 16px metadata position in the body, font unchanged",
+      "sites": [
+        ["0x4aa5ac", "0x24060028"]
       ]
     },
     {

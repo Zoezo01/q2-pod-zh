@@ -1444,9 +1444,9 @@ for address in (0x523038, 0x4aa2cc, 0x4b0efc, 0x4a4ae8):
             assert all(m.get(n+O['W_CHILDREN_LAYOUT'])==0 for row in rows for n in m.nodes[row]['children'])
 passed()
 
-# Nano's Songs and Artists/Composers/Genres rows are one 28 px line: the leading artwork and playing gif
+# Nano's Artists/Composers/Genres rows are one 28 px line: the leading artwork and playing gif
 # and the second line hide, and the title sits centred in the row.
-for address in (0x4aa2cc, 0x4b0efc):
+for address in (0x4b0efc,):
     m=Machine(); nano_boot(m); w=m.page('folder_page','table_client')
     m.mock('table_row_create','button_create','image_create','view_create','hscroll_label_create','gif_image_create',
            'widget_use_style','widget_set_name','widget_set_children_layout','image_set_draw_type','image_base_set_image',
@@ -1481,6 +1481,45 @@ for address in (0x4aa2cc, 0x4b0efc):
     assert not m.nodes[unnamed]['visible'],address
 passed()
 
+# Nano's Songs rows are two lines at 52 px under Row Art On and Off alike: the artwork and playing gif hide, the title and
+# stock's artist line stay at the set's y, in one box on screen from 20 (text at 22) to 352 (text to 350), the second line
+# at its full width as well. In multi-select stock's box keeps its place and the text its own, inside the row.
+for rowart in ('1','0'):
+    m=Machine(); nano_boot(m,rowart); w=m.page('allmusic_page','table_client')
+    m.mock('table_row_create','button_create','image_create','view_create','hscroll_label_create','gif_image_create',
+           'widget_use_style','widget_set_name','widget_set_children_layout','image_set_draw_type','image_base_set_image',
+           'set_hscroll_label_attribute','widget_set_visible')
+    assert m.call(address=0x4aa2cc,args=(w,w,4,0))==0
+    rows=m.nodes[w]['children']; button=m.nodes[rows[0]]['children'][0]
+    assert {m.get(r+O['W_H']) for r in rows}=={52} and m.get(button+O['W_H'])==52
+    byname=lambda name: next(n for n in m.nodes[button]['children']+[g for c in m.nodes[button]['children'] for g in m.nodes[c]['children']]+[g for c in m.nodes[button]['children'] for t in m.nodes[c]['children'] for g in m.nodes[t]['children']] if m.nodes[n]['name']==name)
+    info,title,view,meta,badge=(byname(n) for n in ('view_info','scrlabel_name','view_artist','scrlabel_artist','img_pic'))
+    m.nodes[badge]['visible']=0  # the bind's ringnav_badge "null"
+    box=lambda c: tuple(signed(m.get(c+O[k])) for k in ('W_X','W_Y','W_W','W_H'))
+    choice=next(c for c in m.nodes[button]['children'] if m.nodes[c]['name'].startswith('img_choice'))
+    native_row_layout(m,button); multi=box(info)
+    assert multi[0]>8 and multi[0]+multi[2]<=375,multi
+    m.nodes[choice]['visible']=0; native_row_layout(m,button)
+    kids=m.nodes[button]['children']
+    assert [m.nodes[c]['name'] for c in kids[:kids.index(info)] if m.nodes[c]['visible']]==[],rowart
+    rx=m.get(button+O['W_X'])
+    assert rx+box(info)[0]==20 and box(info)[2]==332,(rx,box(info))
+    assert m.nodes[title]['visible'] and m.nodes[view]['visible'] and m.nodes[meta]['visible']
+    assert box(title)[2]==332 and box(view)[2]==332 and box(meta)[2]==332,(box(title),box(view),box(meta))
+    assert box(title)[1]==1 and box(view)[1]==29,(box(title),box(view))
+    native_row_layout(m,button); assert rx+box(info)[0]==20 and box(info)[2]==332 and box(meta)[2]==332  # a relayout keeps them
+    assert (m.nodes[meta]['style:normal:font_name'],m.nodes[meta]['style:normal:font_size'])==('default',17)
+    assert (m.nodes[title]['style:normal:font_name'],m.nodes[title]['style:normal:font_size'])==('nano',28)
+passed()
+# Classic's Songs rows stay stock's 72 px rows with their art.
+m=Machine(); m.config.update(THEME='1'); w=m.page('allmusic_page','table_client')
+m.mock('table_row_create','button_create','image_create','view_create','hscroll_label_create','gif_image_create',
+       'widget_use_style','widget_set_name','widget_set_children_layout','image_set_draw_type','image_base_set_image',
+       'set_hscroll_label_attribute','widget_set_visible')
+assert m.call(address=0x4aa2cc,args=(w,w,1,0))==0
+button=m.nodes[m.nodes[w]['children'][0]]['children'][0]; assert m.get(button+O['W_H'])==68
+native_row_layout(m,button); assert [m.nodes[c]['visible'] for c in m.nodes[button]['children']][1]; passed()
+
 # Nano's Albums row: the second line, nested in stock's view_artist, takes the meta role: stock's regular face at
 # meta_px, and stock's secondary grey in its one state a row uses, which the style hook turns to the theme's
 # muted. Its colour is written once. Classic's second line stays the style's, its row's calls unchanged.
@@ -1494,8 +1533,8 @@ def album_row(boot):
 m,button=album_row(nano_boot); native_row_layout(m,button)
 title,meta=(next(n for n,v in m.nodes.items() if v['name']==name) for name in ('scrlabel1_name','scrlabel2_name'))
 for st_ in ('normal','focused','disable'):
-    assert (m.nodes[title][f'style:{st_}:font_name'],m.nodes[title][f'style:{st_}:font_size'])==('nano',27),st_
-    assert (m.nodes[meta][f'style:{st_}:font_name'],m.nodes[meta][f'style:{st_}:font_size'])==('default',16),st_
+    assert (m.nodes[title][f'style:{st_}:font_name'],m.nodes[title][f'style:{st_}:font_size'])==('nano',28),st_
+    assert (m.nodes[meta][f'style:{st_}:font_name'],m.nodes[meta][f'style:{st_}:font_size'])==('default',17),st_
 assert m.nodes[meta]['style:normal:text_color']==signed(0xffaaaaaa) and 'style:normal:text_color' not in m.nodes[title]
 # Nano's columns, on screen: the cover at x 22 (the row sits at 20), the text's box from 80 (hscroll_label's 2 px: text at
 # 82) to 312, whichever stock's layout gave them.
@@ -3338,6 +3377,15 @@ for page_name in ('folder_page','localmusic_page','allmusic_page','radio_page'):
             assert not m.prompt(page)['visible']
             passed()
 
+# Nano's Library in Split is a list on Home's window (list_view_homelib), and takes the same pull. Home's own list does not,
+# nor does any Home under a set without that list.
+for boot,view,want in ((nano_boot,'scroll_view_localmusic',1),(nano_boot,'scroll_view_home',0),(lambda k:None,'scroll_view_home',0)):
+    m=PullMachine(); boot(m); w,es=m.page_list(5,name='home_page'); m.nodes[w]['name']=view; page=m.top
+    m.start_pull(page,w); m.emit(page,O['EVT_POINTER_MOVE_BEFORE'],y=120)
+    assert bool(m.prompt(page)['visible'])==bool(want),(view,want)
+    m.emit(page,O['EVT_POINTER_UP_BEFORE'],y=120)
+    assert len(m.searches())==want and not m.prompt(page)['visible']
+passed()
 # A failed registration leaves no partial page callbacks; retry binds each event once.
 for fail in ('EVT_WINDOW_BACKGROUND','EVT_POINTER_UP_BEFORE'):
     m=PullMachine();m.handlers[payload_syms['radio_search']]='stock_radio_search'
@@ -4394,6 +4442,27 @@ for cls,shown in ((0xf004,0),(0xf006,1),(0xf005,1),(0xf004,0)):
     m.word(syms['g_class_type'],cls); m.calls=[]
     m.call(address=payload_syms['ringnav_class_icon'],args=(row,3,0,0),gap=0)
     assert m.nodes[icon]['visible']==shown and [c[1:3] for c in m.calls if c[0]=='class_icon']==([(row,3)] if shown else [])
+passed()
+# A song with no artist tag (an empty REC_ARTIST): Nano's second line is empty, under Row Art On and Off, and a rebound
+# row loses the last song's artist; a record that says Unknown reads so. Classic keeps stock's "Unknown Artist".
+from build import SONG_UNKNOWN_CALL
+assert struct.unpack_from('<I',demo,fileoff(demo,SONG_UNKNOWN_CALL))[0]==jal(payload_syms['ringnav_song_unknown'])
+class SongBindMachine(Machine):
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)=='b:format':
+            self.formats.append(self.text(u.reg_read(UC_MIPS_REG_A0))); self.u.mem_write(u.reg_read(UC_MIPS_REG_A1),b'Unknown Artist\0'); self.returns(0); return
+        return super().hook(u,address,size,unused)
+for boot,want in ((lambda k:nano_boot(k,'1'),''),(lambda k:nano_boot(k,'0'),''),(lambda k:k.config.update(THEME='1'),'Unknown Artist')):
+    m=SongBindMachine(); boot(m); m.formats=[]; m.handlers[syms['getFormatString']]='b:format'
+    m.mock('deque_at','tk_snprintf','widget_set_text_utf8','widget_use_style','file_is_playing','toolsTrimLeft','toolsTrimRight')
+    title,meta,badge=(m.node('hscroll_label','scrlabel_name'),m.node('hscroll_label','scrlabel_artist'),m.node('image','img_pic'))
+    view_info=m.node('view','view_info',[title,meta,badge]); button=m.node('button','',[view_info]); m.row_record=m.alloc(0x80)
+    m.mock('list_get_img_pic'); m.word(m.row_record+8,m.string('Song')); m.word(m.row_record+12,m.string('/mnt/mmc/x.flac')); m.word(m.row_record+0x48,1)
+    for artist,text in (('Mac Quayle','Mac Quayle'),('',want),('Unknown','Unknown'),('',want)):
+        m.word(m.row_record+0x18,m.string(artist))
+        rc=m.call(address=0x4a90e4,args=(button,0,0,0)); assert rc==0,(rc,artist,[c[:2] for c in m.calls][-6:])
+        assert m.nodes[meta].get('text')==text,(artist,m.nodes[meta].get('text'),want)
+    assert m.formats==(['Unknown Artist']*2 if want else []),m.formats
 passed()
 # Library sorts: both stock name comparators, on the patched trim calls, skip a leading article.
 from build import SORT_TRIMS
@@ -8439,12 +8508,12 @@ assert light_image({'LIGHT':'1'},'file:///tmp/coverpic.jpg',False)[:4]==bytes([0
 
 # Images: decoded 32-bit theme bitmaps are mapped in place before stock caches them; covers by
 # path or URL, Home: Carousel's cards, Crimson and other formats are left alone. bitmap_t w @0, h @4, line_length @8, format @0xe.
-def image(config,name,fmt=3,prep=None):
+def image(config,name,fmt=3,prep=None,px=None):
     m=Machine(); m.config=config; m.handlers[tramp['image']]='stock_image'
     if prep: prep(m)
     bm=m.alloc(0x60); data=m.alloc(64)
     m.word(bm,2); m.word(bm+4,2); m.word(bm+8,12); m.u.mem_write(bm+0xe,struct.pack('<H',fmt)); m.word(bm+0x14,data)
-    px=[bytes([0x48,0x14,0xff,0x80]),bytes([0x80,0x80,0x80,0xff])]  # BGRA: translucent red, grey
+    px=px or [bytes([0x48,0x14,0xff,0x80]),bytes([0x80,0x80,0x80,0xff])]  # BGRA: translucent red, grey
     for y in range(2): m.u.mem_write(data+12*y,px[0]+px[1]+b'\xee'*4)  # 4 bytes of row padding
     ret=m.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,m.string(name),bm,0),gap=0)
     assert ret==0 and [c[1:] for c in m.calls if c[0]=='stock_image'][0][2]==bm
@@ -8960,6 +9029,13 @@ for lt,mark in (('1','l'),('0','d')):
 same=bytes([0x48,0x14,0xff,0x80,0x80,0x80,0x80,0xff])+b'\xee'*4  # image()'s pixels
 assert image({},'nano_play_l',prep=nano)==[same,same] and image({'LIGHT':'0'},'nano_bolt',prep=nano)==[same,same]
 assert image({'THEME':'1','LIGHT':'1'},'bar_play')!=[same,same]; passed()
+# Sort's bars are a mark, not final art: drawn white, they flip to the ink on the light half's paper (the bench's black) and stay white
+# on the dark half's. The theme's other art stays final.
+bars=[bytes([0xff,0xff,0xff,0xff]),bytes([0,0,0,0])]; barw=lambda v: bytes([v,v,v,0xff])+bytes([0,0,0,0])+b'\xee'*4
+ink0=image({'LIGHT':'1'},'bar_aac',prep=nano)[0][0]
+assert image({'LIGHT':'1'},'nano_sort_bars',prep=nano,px=bars)==[barw(ink0)]*2 and ink0<0x40,image({'LIGHT':'1'},'nano_sort_bars',prep=nano,px=bars)
+assert image({'LIGHT':'0'},'nano_sort_bars',prep=nano,px=bars)==[barw(0xff)]*2
+assert image({'LIGHT':'1'},'nano_chevron',prep=nano,px=bars)==[barw(0xff)]*2; passed()
 # The codec badge (bar_aac, ...) is the scheme's ink, its alpha kept: Nano's monochrome marks.
 ink=bytes([0,0,0,0x80,0,0,0,0xff])+b'\xee'*4
 assert image({},'bar_aac',prep=nano)==[ink,ink] and image({'THEME':'1'},'bar_aac')!=[ink,ink]
@@ -9296,6 +9372,30 @@ def check_row(m,item,slot):
         elif label: assert label[0]==SET['TEXT_X']
         if label and not trail: assert label[0]+label[1]==375-SET['TEXT_X']
         if label and trail: assert label[0]+label[1]<=trail+30  # the chevron's glyph starts 20px in
+# Nano's Theme picker: its rows lose the icon, not the mark. Each takes the column of stock's own (Language's tick): the stored
+# theme's select draws the tick, the others' unselect nothing, and the picker opens on it. Any other leading image still hides.
+m,view=settings('display',default=28,sub=4,boot=nano_on); m.rockbox_mode=0; lay(m,view)
+marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
+assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select'] and all(m.nodes[i]['visible'] for i in marks)
+assert {geometry(m,i) for i in marks}=={(375-SET['EDGE']-50,0,50,28)},[geometry(m,i) for i in marks]
+assert m.paint(view)==0 and m.selected(view)==2,m.selected(view)
+# Opened by a tap, its first paint comes with the pointer still down, which keeps other lists from recalling: a picker arrives
+# on its option all the same, so a Centre there does not take the first row. Language's the same; under Classic, as ever.
+m,view=settings('display',default=28,sub=4,boot=nano_on); lay(m,view); m.pressed=1
+assert m.paint(view)==0 and m.selected(view)==2,m.selected(view)
+m=nano_on(Machine()); m.pressed=1; w,es=m.page_list(4,name='language_page'); m.nodes[es[2]]['children']=[m.node('image',image='select')]
+m.paint(w); assert m.selected(w)==2,m.selected(w)
+m=nano_on(Machine()); m.pressed=1; w,es=m.page_list(4,name='display_page'); m.paint(w); assert m.selected(w)==0,m.selected(w)
+m=Machine(); m.pressed=1; w,es=m.page_list(4,name='language_page'); m.nodes[es[2]]['children']=[m.node('image',image='select')]
+m.paint(w); assert m.selected(w)==0,m.selected(w)
+m,view=settings('display',default=28,sub=1,boot=nano_on); lay(m,view)
+assert not any(m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['visible'] for r in m.nodes[view]['children'])
+passed()
+# Under Classic the picker keeps its leading mark, its place and its opening row: remembered, not the stored theme's.
+m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='1')); lay(m,view)
+marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
+assert [m.nodes[i]['image'] for i in marks]==['unselect','select'] and geometry(m,marks[0])[0]==SET['ICON_X']
+m.paint(view); assert m.selected(view)==0,m.selected(view); passed()
 # A stock row with a second text line under its title (Bluetooth's Quality, 0x4be994: the title at y 12, the
 # detail at y 44 of its 70 px body), under a set whose row is too short for both (Nano's 28), takes two rows, so
 # nothing overlaps the next row. Its one-line neighbours keep the set's row, and a row at SET0's height stays.
@@ -9430,10 +9530,11 @@ for i,e in enumerate(ses): sk.word(e+O['W_Y'],52*i); sk.word(e+O['W_H'],52)
 count=[0]; counter=sk.u.hook_add(UC_HOOK_CODE,lambda *a: count.__setitem__(0,count[0]+1))
 sk.call(address=HOOKS['widget_on_paint_background'][0],args=(sw,sk.canvas,0,0)); sk.u.hook_del(counter)
 y0=sk.bands[0][1]
-# the row taller than the set's pitch ends on its own two rows, offsets 50 and 51 (the stops fill above them)
-assert [b[4] for b in sk.bands]==[color_t(NB_TOP)]+[color_t(stops_row(NB,j,49)) for j in range(49)]+[color_t(0x004aa3),color_t(0x688db3)]
-assert sk.bands[0][4]==color_t(0x94c7de) and sk.bands[1][4]==color_t(0x08a6e7)  # a crisp line, then the band
-assert [b[1]-y0 for b in sk.bands]==list(range(52)) and {(b[0],b[2],b[3]) for b in sk.bands}=={(0,sk.get(sw+O['W_W']),1)}
+# the row taller than the set's pitch has its own row 1 and ends on its own two rows, offsets 50 and 51 (the stops fill between)
+sk_rows={}  # the band over the whole row, as the bench's: the four lines draw over it, last
+for b in sk.bands: sk_rows[b[1]-y0]=b[4]
+assert [sk_rows[j] for j in range(52)]==[color_t(NB_TOP),color_t(0x27ade5)]+[color_t(stops_row(NB,j,52)) for j in range(2,50)]+[color_t(0x004aa3),color_t(0x688db3)]
+assert sorted(sk_rows)==list(range(52)) and {(b[0],b[2],b[3]) for b in sk.bands}=={(0,sk.get(sw+O['W_W']),1)}
 assert count[0]<100000,count[0]
 print(f'Nano selection on a 52 px row: {count[0]} instructions'); passed()
 # Songs' action bar under Nano: what stock builds in it (it does again on a refresh) takes the plain row's shape: the label at
@@ -9451,11 +9552,46 @@ def action_page(nm,sorts=True):
 am=nano_on(Machine()); al,ap,asort,abar=action_page(am)
 boxof=lambda w: tuple(am.get(w+O[k]) for k in ('W_X','W_Y','W_W','W_H'))
 assert boxof(al)==(20,0,280,28) and boxof(ap)==(0,0,300,28) and boxof(asort)==(301,0,48,28)
-assert am.nodes[asort]['image']=='sort_bars' and am.nodes[al]['style:normal:font_name']=='nano' and am.nodes[al]['style:normal:font_size']==27
+assert am.nodes[asort]['image']=='nano_sort_bars' and am.nodes[al]['style:normal:font_name']=='nano' and am.nodes[al]['style:normal:font_size']==27
 am.calls=[]; am.call(address=HOOKS['widget_on_paint_background'][0],args=(abar,am.canvas,0,0),gap=0); assert not [c for c in am.calls if c[0]=='widget_move_resize'],am.calls  # shaped once
 am.word(al+O['W_H'],50); am.call(address=HOOKS['widget_on_paint_background'][0],args=(abar,am.canvas,0,0),gap=0); assert boxof(al)==(20,0,280,28)  # stock's refresh: again
 am=nano_on(Machine()); al,ap,asort,abar=action_page(am,sorts=False)
 assert boxof(al)==(20,0,280,28) and boxof(ap)==(0,0,300,28); passed()  # Recently Added's has no Sort
+# The separators, final colours in each half. A Songs row's 3 px at offsets 49 to 51, across the list, none on the selected
+# row, under the paint hook's cap. Albums' rows have none, nor do Classic's. Play All's row has them at offsets 25 to 27.
+SEP={'1':(0xfcfcfc,0xe2e3e2,0xf7f7f7),'0':(0x000000,0x2c2c2c,0x000000)}
+def song_list(boot,address=0x4aa2cc,n=7):
+    m=Machine(); boot(m); w=m.page('allmusic_page','table_client')
+    m.mock('table_row_create','button_create','image_create','view_create','hscroll_label_create','gif_image_create',
+           'widget_use_style','widget_set_name','widget_set_children_layout','image_set_draw_type','image_base_set_image',
+           'set_hscroll_label_attribute','widget_set_visible')
+    assert m.call(address=address,args=(w,w,n,0))==0
+    m.word(w+O['ROW_HEIGHT'],52); m.word(w+O['TABLE_ROWS'],n); m.word(w+O['W_H'],266); m.word(w+O['W_W'],375)
+    for i,row in enumerate(m.nodes[w]['children']):
+        button=m.nodes[row]['children'][0]; em=m.alloc(4); it=m.alloc(0x28)  # a tap target, as entry()
+        m.word(button+O['W_EMITTER'],em); m.word(em,it); m.word(it+O['EMIT_TYPE'],O['EVT_CLICK'])
+        m.word(row+O['ROW_INDEX'],i); m.word(row+O['W_Y'],52*i); m.word(row+O['W_PARENT'],w)
+        m.word(button+O['W_PARENT'],row); native_row_layout(m,button)
+    m.bands=[]; m.call(address=HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0),gap=0)
+    return m,w
+def sep_bands(m,light='1'): return [b for b in m.bands if b[4] in [color_t(c) for c in SEP[light]]]
+for light in ('1','0'):
+    m,w=song_list(lambda k:(k.config.update(LIGHT=light),nano_on(k)))
+    y0=m.bands[0][1]; lines=m.bands[56:]  # the band's first: 52 rows and its 4 lines
+    assert [(b[1]-y0,b[4]) for b in lines]==[(52*i+49+j,color_t(SEP[light][j])) for i in range(1,7) for j in range(3)],light
+    assert {(b[0],b[2],b[3]) for b in lines}=={(0,375,1)}
+    count=[0]; counter=m.u.hook_add(UC_HOOK_CODE,lambda *a: count.__setitem__(0,count[0]+1))
+    m.call(address=HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0),gap=0); m.u.hook_del(counter)
+    assert count[0]<100000,count[0]
+print(f'Nano Songs band and separators: {count[0]} instructions')
+assert not sep_bands(song_list(nano_on,address=0x4a4ae8)[0]),'Albums'
+assert not sep_bands(song_list(lambda k:k.config.update(THEME='1'))[0]),'Classic'
+for light in ('1','0'):
+    am=Machine(); am.config['LIGHT']=light; nano_on(am); al,ap,asort,abar=action_page(am); aview=am.top and am.nodes[am.top]['children'][0]
+    am.word(aview+O['W_W'],375); am.bands=[]; am.call(address=HOOKS['widget_on_paint_background'][0],args=(aview,am.canvas,0,0),gap=0)
+    assert [(b[1],b[2],b[3],b[4]) for b in am.bands]==[(25+j,375,1,color_t(SEP[light][j])) for j in range(3)],(light,am.bands)
+am=Machine(); am.config['THEME']='1'; aview=am.node('view','view_navbar_allplay'); am.bands=[]; am.call(address=HOOKS['widget_on_paint_background'][0],args=(aview,am.canvas,0,0),gap=0); assert not am.bands
+passed()
 # Nano's lists take the whole window, so rows draw down to the glass, but the selection's scroll stops where the set's
 # list_end says (252: below it the glass hides a row's text): the wheel's last row ends there, past stock's own end.
 # A list lower in its window (Songs under Play All) stops at the same screen row. Under other themes, stock's end.
@@ -9468,6 +9604,28 @@ for lthm,ly,lend in (('2',0,672-252),('2',28,672-224),('1',0,672-294)):
         lm.call(); lm.paint(lw); tops.append(lm.get(lw+O['SCROLL_Y']))
     if lthm!='2': lend=672-294+ly
     assert max(tops)==lend,(lthm,ly,max(tops),lend)
+passed()
+# Nano's bar names a payload page by its 48 px caption, the first in any of the window's children (Games' list follows its empty
+# sheet). An app's page rebuilds its caption under the live window; the bar's new text is forced on to the panel just after the paint
+# that wrote it (an invalidate in that paint is lost and the bar then redraws only the clock's rect).
+tm=nano_on(Machine()); tl=tm.node('hscroll_label','title',text='Games'); tm.word(tl+O['W_H'],48)
+tsheet=tm.node('view','sheet'); tlist=tm.node('view','list',[tl]); tm.top=tm.node('window','games_page',[tsheet,tlist]); tm.word(tm.top+O['W_PARENT'],tm.wm)
+tbar_label=tm.node('hscroll_label','label_title'); tbar=nano_bar(tm,tbar_label)
+tpaint=lambda: (tm.call(address=HOOKS['widget_on_paint_background'][0],args=(tbar,tm.canvas,0,0),gap=0),tm.nodes[tbar_label].get('text'))[1]
+tdue=payload_syms['title_due']; tforced=lambda: ('widget_invalidate_force',tbar_label) in [c[:2] for c in tm.calls]
+tadded=lambda: [x[:2] for x in tm.calls if x[:2]==('timer_add',tdue)]
+assert tpaint()=='Games' and tadded() and not tforced(); tm.advance(1,clear=True); assert tforced()
+assert tpaint()=='Games' and not tadded()  # no change, none forced
+tm.nodes[tl]['text']='Renamed'; assert tpaint()=='Renamed' and tadded(); tm.advance(1,clear=True); assert tforced(); passed()
+# With no row to select the wheel scrolls the view itself, to its own end, not list_end's 42 px past it.
+for lthm,lend in (('2',672-294),('1',672-294)):
+    lm=Machine(); lm.config.update(THEME=lthm)
+    if lthm=='2': nano_on(lm)
+    lw,les=lm.page_list(14,height=294,extent=672,name='playlist_page'); window(lm,'playlist_page',lw); lm.nodes[lw]['children']=[]; lm.paint(lw)
+    tops=[]
+    for _ in range(40):
+        lm.call(); lm.paint(lw); tops.append(lm.get(lw+O['SCROLL_Y']))
+    assert max(tops)==lend,(lthm,max(tops),lend)
 passed()
 # Nano's covers are square whatever a stored ROUNDED says: stock's thumbnails keep every pixel (playing.art.square, and
 # Corners is not its option), so neighbours meet with no notch. Classic's follow Corners, as above.
@@ -10198,6 +10356,13 @@ assert ltitled()=='Library'; passed()
 m.calls=[]; assert m.call(O['KEY_RETURN'])==11 and m.nodes[lst]['visible'] and not m.nodes[lib]['visible'] and ltitled()=='Q2 Pod'; passed()
 f,ctx=m.handler(named(m,m.top,'img_settings'),O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert ltitled()=='Settings'; passed()
 m.call(O['KEY_RETURN']); assert ltitled()=='Q2 Pod'
+# Open it again: the persistent list keeps its rows, none added or restacked (stock's constructor runs, its count no longer stock's), in Home's shape.
+lbefore=list(m.nodes[lview]['children']); m.calls=[]; f,ctx=m.handler(named(m,m.top,'img_library'),O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+assert m.nodes[lview]['children']==lbefore and len(lbefore)==17 and any(c[0]=='stock_localmusic' for c in m.calls) and not any(c[0]=='widget_restack' for c in m.calls)
+assert m.nodes[lib]['visible'] and ltitled()=='Library'
+for r in lbefore:
+    lb=m.nodes[r]['children'][0]; assert m.get(lb+O['W_X'])==0 and m.get(lb+O['W_W'])==O['HOME_SPLIT_W'],lb
+m.call(O['KEY_RETURN']); assert m.nodes[lst]['visible'] and ltitled()=='Q2 Pod'; passed()
 for mode in ('1','2'):
     m=nano_home(mode); f,ctx=m.handler(named(m,m.top,'img_library'),O['EVT_CLICK']); m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)
     assert any(c[0]=='on_home_music_onclick' for c in m.calls) and not any(c[0]=='stock_localmusic' for c in m.calls),mode

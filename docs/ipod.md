@@ -246,7 +246,10 @@ Constants are `SET_*` in `patch/offsets.inc`.
 Under a geometry set (Nano: nine 28-pixel rows from the top, no icons) the row height, top, row
 count and icon size come from the set (`set_row`, `set_top`, `set_rows`, `set_icon`); the payload
 reads `set_row` and `set_icon` from the set `theme_boot` wrote, hides the icon at 0 and starts the
-text where a row without an icon starts. Another list whose `default_item_height` equals the set's
+text where a row without an icon starts. A payload picker's `select` or `unselect` (Theme, Key Lock)
+is not an icon: at 0 it stays, in the column of stock's own marks, and the Theme picker, whose page
+is no `CHOICE` context, opens on its mark under a `set_text` theme as a `CHOICE` picker does, and
+under such a theme every picker does so when a tap opened it too. Another list whose `default_item_height` equals the set's
 `set_row` carries an explicit `item_height`, so only the settings pages are told apart by it.
 
 System Settings puts Wireless and Network first, then Display, Controls and Power, then Date & Time, Language and device

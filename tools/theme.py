@@ -30,7 +30,7 @@ FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'nano': 'FONT_NANO'}
 CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'},
            'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
            'bar.battery.painter': {'stock': 'BATT_STOCK', 'nano': 'BATT_NANO'},
-           **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'bar.title.font'), FONTS),
+           **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 
@@ -62,6 +62,10 @@ SCHEMA = {k.path: k for k in (
     key('list.art.x', 'art_x', 'int', 375),  # a row with art, on screen: the cover, 0: stock's layout
     key('list.art.text_x', 'art_text_x', 'int', 375),  # ... its text's first and last columns
     key('list.art.text_end', 'art_text_end', 'int', 375),
+    key('list.row.text_end', 'row_text_end', 'int', 375),  # a two-line row without art (Songs'): its text's last column on screen
+    Key('list.separator.stops', 'sep', 'stops', 0, 0, (), 'live', True),  # ... its last rows, one stop a row, final
+    key('list.row.tall_font', 'font[ROLE_TALL]', 'enum'),  # a two-line row's title
+    key('list.row.tall_px', 'font_px[ROLE_TALL]', 'int', 64),
     key('list.chevron.x', 'chevron_x', 'int', 375),  # the theme's own chevron's box on screen in a full-width list; 0: stock's
     key('home.chevron.x', 'home_chevron_x', 'int', 375),  # ... and in Split's list
     key('bar.title.caps', 'caps_mark', 'bool'),
@@ -129,6 +133,7 @@ SCHEMA = {k.path: k for k in (
     key('scheme.sel.edge', 'sel_edge', 'color', final=True),
     key('scheme.sel.tall_edge', 'sel_tall_edge', 'color', final=True),  # a row taller than the set's pitch ends on these two rows, 0: its edge
     key('scheme.sel.tall_line', 'sel_tall_line', 'color', final=True),
+    key('scheme.sel.tall_top', 'sel_tall_top', 'color', final=True),  # ... and has this second row, 0: the stops
     key('scheme.sel.text', 'sel_text', 'color', final=True),
     Key('scheme.bar.stops', 'bar', 'stops', 0, 0, (), 'live', True),
     key('scheme.bar.line', 'bar_line', 'color', final=True),
@@ -184,7 +189,7 @@ ROLE_MACROS = {
 # Nano Blue's measured selection band: its 1 px top line, the stops under it and its edge row:
 # derive="gloss"'s shape. assets/themes/nano/theme.xml states the same values (test_theme checks).
 GLOSS = ((0, 0x08a6e7), (17, 0x009ade), (38, 0x008ade), (58, 0x007dde), (79, 0x006dd6), (100, 0x0065d6))
-GLOSS_TOP, GLOSS_EDGE, GLOSS_TALL_EDGE, GLOSS_TALL_LINE = 0x94c7de, 0x004184, 0x004aa3, 0x688db3
+GLOSS_TOP, GLOSS_EDGE, GLOSS_TALL_EDGE, GLOSS_TALL_LINE, GLOSS_TALL_TOP = 0x94c7de, 0x004184, 0x004aa3, 0x688db3, 0x27ade5
 
 
 def turn(c, top):
@@ -224,6 +229,10 @@ GEOM_RANGES = {
     'count_y': (0, lambda g: g.body - 16),
     'art_title24_y': (0, lambda g: g.art_body - 24),
     'art_meta_y': (0, lambda g: g.art_body - 16),
+    'song_pitch': (28, 78),  # Songs' own rows
+    'song_body': (24, lambda g: g.song_pitch),
+    'song_title24_y': (0, lambda g: g.song_body - 24),
+    'song_meta_y': (0, lambda g: g.song_body - 16),
     'set_row': (28, 78),
     'set_top': (0, 40),  # a short header at most under the bar
     'set_rows': (1, lambda g: (320 - g.bar - g.set_top) // g.set_row),  # the settings list fits the client
@@ -765,7 +774,8 @@ def resolve(root, by_id, seen=()):
                 s['sel_edge'] = s['sel_edge'] or int(turn(GLOSS_EDGE, top)[1:], 16)
                 s['sel_tall_edge'] = s['sel_tall_edge'] or int(turn(GLOSS_TALL_EDGE, top)[1:], 16)
                 s['sel_tall_line'] = s['sel_tall_line'] or int(turn(GLOSS_TALL_LINE, top)[1:], 16)
-                for f in ('sel', 'sel_top', 'sel_edge', 'sel_tall_edge', 'sel_tall_line'):  # the gloss is both halves' design (Graphite's grey band flipped would turn upside down)
+                s['sel_tall_top'] = s['sel_tall_top'] or int(turn(GLOSS_TALL_TOP, top)[1:], 16)
+                for f in ('sel', 'sel_top', 'sel_edge', 'sel_tall_edge', 'sel_tall_line', 'sel_tall_top'):  # the gloss is both halves' design (Graphite's grey band flipped would turn upside down)
                     s['light'].setdefault(f, s[f])
     t['schemes'] = [s if i >= len(ACCENT_NAMES) or t['accents'] >> i & 1 else zero_scheme() for i, s in enumerate(t['schemes'])]
     for o in t['opts']:
@@ -799,6 +809,8 @@ def validate(t, name):
             for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field], t['light'].get(k.field, k.lo)]:
                 if not k.lo <= v <= k.hi:
                     err(f'{k.path}: {v} outside {k.lo}..{k.hi}')
+    if t['pane_shadow_w'] > len(t['pane_shadow_a']):
+        err(f"home.pane.shadow_w: {t['pane_shadow_w']} past its {len(t['pane_shadow_a'])} alphas")
     for s in t['schemes']:
         for f in ('paper', 'ink'):
             if len({s[f] >> 16, s[f] >> 8 & 255, s[f] & 255}) > 1:
@@ -994,7 +1006,7 @@ def emit(themes, out, redirects={}):
         return [f'    {{ .tones = accents[{s.get("base", v)}], .flags = {s["card"] | s["raw_red"] << 1}, .fill = 0x{s["fill"]:06x}, '
                 f'.chevron = 0x{s["chevron"]:06x}, .muted = 0x{s["muted"]:06x}, .bar_light = 0x{s["bar_light"]:06x}, '
                 f'.sel = {stops_c(s["sel"])}, .sel_top = 0x{s["sel_top"]:06x}, .sel_edge = 0x{s["sel_edge"]:06x}, '
-                f'.sel_tall_edge = 0x{s["sel_tall_edge"]:06x}, .sel_tall_line = 0x{s["sel_tall_line"]:06x}, '
+                f'.sel_tall_edge = 0x{s["sel_tall_edge"]:06x}, .sel_tall_line = 0x{s["sel_tall_line"]:06x}, .sel_tall_top = 0x{s["sel_tall_top"]:06x}, '
                 f'.sel_text = 0x{s["sel_text"]:06x}, .mode = {c(SCHEMA["scheme.mode"], s["mode"])}, '
                 f'.paper = 0x{s["paper"]:06x}, .ink = 0x{s["ink"]:06x}, '
                 f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}, .bar_line2 = 0x{s["bar_line2"]:06x}'

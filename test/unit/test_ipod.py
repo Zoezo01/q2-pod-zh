@@ -209,6 +209,13 @@ def test_status_bar_battery_must_fit(monkeypatch):
         ipod.status_bar(bar())
 
 
+def test_nano_bar_room_stays_the_gates(monkeypatch):
+    ipod.status_bar(bar(), g=NANO)  # 93 of BATT_ROOM's 94: the payload's gate reads the macro
+    monkeypatch.setattr(ipod, 'BATT_ROOM', ipod.BATT_ROOM + 1)
+    with pytest.raises(ValueError, match=r"^BATT_ROOM \d+ past the bar's room \d+$"):
+        ipod.status_bar(bar(), g=NANO)
+
+
 def test_status_bar_battery_reach(monkeypatch):
     monkeypatch.setattr(ipod, 'BATT_PCT_W', 500)
     with pytest.raises(ValueError, match=r'^Status bar battery needs \d+px of \d+px$'):
@@ -843,7 +850,7 @@ def list_page(name):
              w('list_view', row, kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
 
 
-@pytest.mark.parametrize('path, kind', [('localmusic/allmusic_page.bin', 'text'), ('folder_page.bin', 'art')])
+@pytest.mark.parametrize('path, kind', [('localmusic/albuminfo_page.bin', 'text'), ('folder_page.bin', 'art')])
 def test_patch_asset_rows_by_page_kind(monkeypatch, path, kind):
     # A text page's rows take pitch/body, an art page's art_pitch/art_body; both move their text to the
     # set's y. SET0 builds what it did.
@@ -857,6 +864,11 @@ def test_patch_asset_rows_by_page_kind(monkeypatch, path, kind):
     n = named(ipod.decode(ipod.patch_asset(path, data)))
     assert n['list_view'][2]['default_item_height'] == '72' and (n['row'][1][3], n['button'][1][3]) == (72, 68)
     assert (n['gif'][1][1], n['title'][1][1], n['meta'][1][1]) == (8, 10, 39)
+
+
+def test_songs_rows_are_their_own_kind():
+    assert ipod.PAGE_KIND['localmusic/allmusic_page.bin'] == 'song'
+    assert ipod.page_rows(dataclasses.replace(PAGE_T, song_pitch=52, song_body=50), 'song') == (52, 50, 5)
 
 
 def test_text_y():
@@ -881,11 +893,12 @@ def test_immediate_values_set0_are_the_baked_values():
     assert ipod.VALUE_NAMES[0] == 'pitch'
     for name in ipod.VALUE_NAMES:
         if not name.startswith('np_bar'):
-            assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_')], name
+            assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_').removeprefix('song_')], name
 
 
 def test_only_split_names_take_the_art_prefix():
     assert {n for n in ipod.VALUE_NAMES if n.startswith('art_')} - {'art_inset'} <= {'art_' + n for n in SPLIT}
+    assert {n for n in ipod.VALUE_NAMES if n.startswith('song_')} <= {'song_' + n for n in SPLIT}
 
 
 def test_geometry_has_every_value_name():
@@ -927,8 +940,9 @@ def test_nano_sets():
     # and text pages without artwork.
     n, t = NANO, NANO_TEXT
     assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 28, 28, 52, 52, 52, 0, 0, 0)
-    assert dataclasses.replace(t, name='nano', art=52, art_pitch=52, art_body=52, art_title24_y=2, art_meta_y=28) == n
-    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 2, 28, 2, 6)
+    assert (n.song_pitch, n.song_body, n.song_title24_y, n.song_meta_y) == (52, 52, 1, 29) == (t.song_pitch, t.song_body, t.song_title24_y, t.song_meta_y)
+    assert dataclasses.replace(t, name='nano', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29) == n
+    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 1, 29, 2, 6)
     assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (28, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
     assert ipod.immediate_values(n)['scroll'] == 266
 

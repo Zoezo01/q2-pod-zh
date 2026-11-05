@@ -1174,6 +1174,10 @@ static int load_rows(menu_t *m, void *w) {
     return 1;
 }
 
+/* The Theme picker's rows, while it shows. ponytail: compared, never dereferenced; the picker is
+ * its only caller in use. */
+static void *theme_view __attribute__((section(".scratch")));
+
 /* A row holding stock's "select" check image: a CHOICE picker's current option. */
 static int checked(void *w, int depth, int *budget) {
     if (!w || depth == 16 || --*budget < 0 || !widget_get_visible(w)) return 0;
@@ -1213,12 +1217,16 @@ static int load(menu_t *m, void *w, int recall) {
      * keeps its viewport, so it does not re-read the table. A non-virtual list prefers the
      * remembered first text, breaks ties by the second text and then by the remembered index,
      * and falls back to the index when no text matches. */
-    if (recall && m->kind != 3 && count < 0) {
-        /* A picker opens on its current option rather than the row last chosen. */
+    if (m->kind != 3 && count < 0 && (recall || theme()->set_text)) {
+        /* A picker opens on its current option rather than the row last chosen; under a set_text
+         * theme also while a tap that opened it is still down, or a Centre takes its first row. */
         void *top = window_manager_get_top_window(window_manager());
         int ctx = top ? context_id(widget_get_prop_str(top, "name", (void *)0)) : -1;
-        int choice = ctx >= 0 && (contexts[ctx].flags & CHOICE) ? checked_row(m) : -1;
-        int p = choice >= 0 ? -1 : position(m);
+        int choice =
+            (ctx >= 0 && (contexts[ctx].flags & CHOICE)) || (theme()->set_text && w == theme_view)
+                ? checked_row(m)
+                : -1;
+        int p = choice >= 0 || !recall ? -1 : position(m);
         int id = choice >= 0 ? choice : p < 0 ? -1 : st.pos[p].id - 1;
         unsigned hash = p < 0 ? 0 : st.pos[p].hash;
         unsigned hash2 = p < 0 ? 0 : st.pos[p].hash2;
@@ -1262,10 +1270,11 @@ static int view_top(menu_t *m) {
 static int sel_height(menu_t *m);
 
 /* Largest viewport top that still shows content; the clamp bound for every glide. */
-static int max_top(menu_t *m) {
-    if (m->kind == 2) return m->rows * m->row - sel_height(m);
-    return m->kind == 1 ? I(m->w, VIEW_CONTENT_H) - sel_height(m) : 0;
+static int scroll_end(menu_t *m, int height) {
+    if (m->kind == 2) return m->rows * m->row - height;
+    return m->kind == 1 ? I(m->w, VIEW_CONTENT_H) - height : 0;
 }
+static int max_top(menu_t *m) { return scroll_end(m, sel_height(m)); }
 
 static rect_t bounds(menu_t *m, int i) {
     void *e = m->at[i];
@@ -1570,11 +1579,14 @@ static void pull_begin(void *event) {
     if (!event || I(event, EVENT_Y) < QUICK_EDGE_PX) return;
     void *page = window_manager_get_top_window(window_manager());
     if (!page) return;
-    /* Local Songs' is stock's search; Internet Radio's is its own. */
+    /* Local Songs' is stock's search; Internet Radio's is its own. A set with home_lib shows the
+     * Library on Home's window, in Split, whose own lists take no pull. */
     const char *name = widget_get_prop_str(page, "name", "");
-    if (tk_strcmp(name, "radio_page") && tk_strcmp(name, "localmusic_page")) return;
+    int home = !tk_strcmp(name, "home_page");
+    if (!home && tk_strcmp(name, "radio_page") && tk_strcmp(name, "localmusic_page")) return;
     void *w = surface((void *)0, (void *)0);
     if (!w) return;
+    if (home && tk_strcmp(widget_get_prop_str(w, "name", ""), "scroll_view_localmusic")) return;
     prop(w, PULL_SUPPRESS, 0);
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
     widget_to_local(w, xy);
@@ -1898,8 +1910,9 @@ unsigned accent_tone(int tone) {
     return tone == TONE_LIGHT && S->flags & SCHEME_CARD ? S->fill : tone_of(S->tones, tone);
 }
 
-/* The height a selected row scrolls in: the surface's, cut at the set's list_end on screen, where
- * the rows below draw on to the glass but a selected one's text would not show. */
+/* The height a selected row scrolls in: the surface's, cut at the set's list_end, a row of the
+ * client under the bar (W_Y summed up to the window), where the rows below draw on to the glass but
+ * a selected one's text would not show. */
 static int sel_height(menu_t *m) {
     int y = 0, end = geom_val(V_LIST_END);
     if (!end || m->kind == 3 || m->kind == 4) return m->height;
@@ -2128,7 +2141,7 @@ static void paint_chevrons(void *w, void *canvas) {
             (!sel_only || (lit && i == st.sel_row)))
             canvas_draw_icon(
                 canvas, lit && i == st.sel_row ? white : bitmap,
-                box ? r.x + box + (int)white[0] / 2
+                box ? r.x + box + (int)(lit && i == st.sel_row ? white : bitmap)[0] / 2
                     : r.x + r.w - CHEVRON_W + (int)bitmap[0] / 2 +
                           (home ? (ipod_home() == 1 ? HOME_FULL_CHEVRON_SHIFT : HOME_CHEVRON_SHIFT)
                                 : 0),
@@ -2444,11 +2457,16 @@ static void paint_selection(void *w, void *canvas) {
         if (painter == SEL_STOPS) { /* square and full width: the glass clips it */
             int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
                 edge = tall ? 2 : !!S->sel_edge;
+            if (tall) paint_stops(canvas, r.x, r.y, r.w, r.h, &S->sel); /* its lines go over them */
             if (top) {
                 stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
                 canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
             }
-            paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
+            if (tall && S->sel_tall_top) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_top));
+                canvas_fill_rect(canvas, r.x, r.y + top, r.w, 1);
+            }
+            if (!tall) paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
             if (tall) {
                 stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_edge));
                 canvas_fill_rect(canvas, r.x, r.y + r.h - 2, r.w, 1);
@@ -2492,6 +2510,25 @@ static void paint_selection(void *w, void *canvas) {
      * either color, and the global alpha is deliberately never touched. */
     stock_canvas_set_fill_color(canvas, fill_color);
     stock_canvas_set_stroke_color(canvas, stroke_color);
+    canvas_set_clip_rect(canvas, &old);
+}
+
+/* A theme's separators, behind the rows: the last rows of each two-line row but the selected one's,
+ * across the list. A row's two_lines is a few words of its children, on a pool of a few rows. */
+static int two_lines(void *row);
+static void paint_separators(void *w, void *canvas) {
+    rect_t old;
+    if (!w || kind(w) != 2 || !theme()->sep[0].n || I(w, ROW_HEIGHT) <= geom(G_PITCH) ||
+        !P(canvas, CANVAS_LCD) || !load_rows(&g_menu, w) || !clip_surface(canvas, &g_menu, &old))
+        return;
+    const stops_t *lines = &theme()->sep[ipod_light()];
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+    for (int i = 0; i < g_menu.n; ++i)
+        if (two_lines(g_menu.at[i]) && !(st.sel_w == w && i == st.sel_row)) {
+            rect_t r = bounds(&g_menu, i);
+            paint_stops(canvas, 0, r.y + r.h - lines->n, I(w, W_W), lines->n, lines);
+        }
+    stock_canvas_set_fill_color(canvas, fill);
     canvas_set_clip_rect(canvas, &old);
 }
 
@@ -5168,6 +5205,18 @@ static int pressed_pill(void *w, void *canvas) {
 
 /* The bar title for window win: Now Playing, Coverflow and EQ by name; else 0, and *label is
  * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
+/* A payload page's 48 px caption: a child of win, or the first in one of its children (Games' list
+ * comes after its sheet). */
+static void *page_caption(void *win) {
+    for (unsigned i = 0, n = widget_count_children(win); i < n; ++i) {
+        void *c = widget_get_child(win, i);
+        if (widget_count_children(c) && tk_strcmp(widget_get_type(c), "hscroll_label"))
+            c = widget_get_child(c, 0);
+        if (!tk_strcmp(widget_get_type(c), "hscroll_label") && I(c, W_H) == 48) return c;
+    }
+    return 0;
+}
+
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
     if (tk_str_start_with(name, "playing_page")) return "Now Playing";
@@ -5181,10 +5230,7 @@ static const char *bar_title_of(void *win, void **label) {
             if (!tk_strcmp(t, "hscroll_label") || !tk_strcmp(t, "label")) *label = c;
         }
     } else {
-        void *c = win;
-        for (int d = 0;
-             d < 2 && !*label && (c = widget_count_children(c) ? widget_get_child(c, 0) : 0); ++d)
-            if (!tk_strcmp(widget_get_type(c), "hscroll_label") && I(c, W_H) == 48) *label = c;
+        *label = page_caption(win);
     }
     return 0;
 }
@@ -5214,9 +5260,15 @@ static void action_row(void *view) {
     if (n < 3) return; /* Recently Added and the like have no Sort */
     void *sort = widget_get_child(view, 2);
     widget_use_style(sort, "default");
-    image_base_set_image(sort, "sort_bars");
+    image_base_set_image(sort, "nano_sort_bars");
     image_set_draw_type(sort, IMAGE_DRAW_CENTER);
     widget_move_resize(sort, 301, 0, 48, h);
+}
+
+static int title_due(const void *info) {
+    (void)info;
+    widget_invalidate_force(st.bar_title, (void *)0);
+    return 0;
 }
 
 /* Nano's bar title (label_title, only its set's bar has one) names the top window win, Home by the
@@ -5255,6 +5307,10 @@ void bar_title_sync(void *win) {
     if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t)) {
         widget_set_text_utf8(st.bar_title, t);
         theme_font(st.bar_title, ROLE_BAR, FONT_ROW);
+        /* this runs mid-paint, where an invalidate is lost and the bar then redraws only the
+         * clock's rect: a page's new caption under the same window would wait for a window's change
+         */
+        timer_add(title_due, (void *)0, 0);
     }
 }
 
@@ -5273,8 +5329,15 @@ int ringnav_paint_bg(void *w, void *canvas) {
     int result = pressed_pill(w, canvas) ? 0 : stock_paint_bg_trampoline(w, canvas);
     void *wm = window_manager(), *bar = *(void *const *)system_bar;
     paint_selection(w, canvas);
+    paint_separators(w, canvas);
     coverflow_home_clip(w, canvas, 1);
     if (w && w == st.bar_slot) paint_battery(w, canvas);
+    if (w && w == st.action_view && P(canvas, CANVAS_LCD)) { /* Play All's row: the same lines */
+        const stops_t *lines = &theme()->sep[ipod_light()];
+        unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+        paint_stops(canvas, 0, I(w, W_H) - lines->n, I(w, W_W), lines->n, lines);
+        stock_canvas_set_fill_color(canvas, fill);
+    }
     if (!w || P(w, W_PARENT) != wm) return result;
     if (w == bar && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
@@ -5499,8 +5562,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
-    /* The images a BATT_NANO theme generates (tools/art.py) are final */
-    if (s && !*s && T->painter[PAINT_BATTERY] == BATT_NANO && tk_str_start_with(name, "nano_"))
+    /* The images a BATT_NANO theme generates (tools/art.py) are final, but for Sort's bars: a mark
+     * on the list's paper, in the half's ink */
+    if (s && !*s && T->painter[PAINT_BATTERY] == BATT_NANO && tk_str_start_with(name, "nano_") &&
+        tk_strcmp(name, "nano_sort_bars"))
         s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
      * secondary text's grey, legible on the black list and on the selected row's off-white card. */
@@ -5937,9 +6002,6 @@ void restart_confirm(int setting, int value) {
     if (setting == SETTING_THEME) theme_preset();
     ringnav_reboot();
 }
-/* The picker's rows, while it shows. ponytail: compared, never dereferenced; the picker is its only
- * caller in use. */
-static void *theme_view __attribute__((section(".scratch")));
 static int theme_pick(void *ctx, void *event) {
     int t = (int)(long)ctx;
     accent();
@@ -6315,11 +6377,29 @@ int ringnav_dispatch(void *target, void *event) {
     return stock_dispatch_trampoline(target, event);
 }
 
+/* Songs' bind found no artist on the record (SONG_UNKNOWN_CALL, tools/build.py). Stock's "Unknown
+ * Artist" shows only where a set keeps stock's row; under a set without text-row artwork the
+ * two-line row says only what the record says, so the second line stays empty. */
+void ringnav_song_unknown(const char *key, char *text, int size) {
+    if (geom(G_TEXT_ART)) getFormatString(key, text, size);
+}
+
 /* Under a set without text-row artwork (Nano's), a row no taller than the pitch is one line: its
  * leading children (artwork, the playing gif; stock's choice box stays) and the text's second line
  * hide, and the title, at the set's centred y, takes their width. Stock re-showing one relayouts
  * the row, which hides it again. */
 static int one_line(void *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom(G_PITCH); }
+/* Under such a set, a taller row whose leading image stock gave no width (text_art 0, as Songs') is
+ * two lines of text: the same children hide, its second line stays. */
+static int two_lines(void *row) {
+    if (geom(G_TEXT_ART) || I(row, W_H) <= geom(G_PITCH)) return 0;
+    for (unsigned i = 0; i < widget_count_children(row); ++i) {
+        void *child = widget_get_child(row, i);
+        if (!tk_str_start_with(widget_get_prop_str(child, "name", ""), "img_choice"))
+            return !I(child, W_W);
+    }
+    return 0;
+}
 
 /* A row's text after its title, however deep stock nests it (view_artist): the meta role. A theme
  * with its own face there also takes it to stock's secondary grey, the theme's muted (a style's
@@ -6344,7 +6424,7 @@ static int compact_row_layout(void *layout, void *row) {
     void *text = (void *)0, *title = (void *)0;
     unsigned count = widget_count_children(row);
     const theme_t *T = theme();
-    int tall = T->art_x && I(row, W_H) > geom(G_PITCH);
+    int tall = T->art_x && I(row, W_H) > geom(G_PITCH), plain = two_lines(row), choice = 0;
     /* Names differ (view_info, viewinfo_N, ...); all seven constructors put the title
      * first, either directly in the row or one level inside its text container. */
     for (unsigned i = 0; i < count && !text; ++i) {
@@ -6358,14 +6438,16 @@ static int compact_row_layout(void *layout, void *row) {
             }
         }
     }
-    if (text && one_line(row)) {
+    if (text && (plain || one_line(row))) {
         for (unsigned i = 0; i < count; ++i) {
             void *child = widget_get_child(row, i);
             if (child == text) break;
             if (!tk_str_start_with(widget_get_prop_str(child, "name", ""), "img_choice"))
                 widget_set_visible(child, 0, 0);
+            else if (widget_get_visible(child))
+                choice = 1;
         }
-        for (unsigned j = 0; text != title && j < widget_count_children(text); ++j)
+        for (unsigned j = 0; !plain && text != title && j < widget_count_children(text); ++j)
             if (widget_get_child(text, j) != title)
                 widget_set_visible(widget_get_child(text, j), 0, 0);
     }
@@ -6380,15 +6462,17 @@ static int compact_row_layout(void *layout, void *row) {
                 width -= I(child, W_W) + B(layout, DEFAULT_LAYOUT_SPACING);
         }
         /* A theme's art row: its text's box on the theme's columns, hscroll_label's margin each
-         * side (the move's below, after stock's layout). */
-        if (tall) width = T->art_text_end - T->art_text_x + 4;
+         * side (the move's below, after stock's layout); a two-line row's from the set's text
+         * inset, unless stock's choice box shows. */
+        if (tall && !plain) width = T->art_text_end - T->art_text_x + 4;
+        if (plain && !choice) width = T->row_text_end - geom_val(V_TEXT_X) + 2;
         if (width < 0) width = 0;
         widget_resize(text, width, I(text, W_H));
         /* Stock's rows scroll a long title once as the page opens, every row at a time, its
          * glyphs smeared over the moving clip; focus-only (no row takes AWTK focus) keeps the
          * ellipsis, as the selected row shows it. */
         hscroll_label_set_only_focus(title, 1);
-        theme_font(title, ROLE_TITLE, FONT_ROW);
+        theme_font(title, tall ? ROLE_TALL : ROLE_TITLE, FONT_ROW);
         if (title != text) {
             int available = width - I(title, W_X);
             widget_resize(title, available > 0 ? available : 0, I(title, W_H));
@@ -6396,8 +6480,15 @@ static int compact_row_layout(void *layout, void *row) {
                 void *label = widget_get_child(text, j);
                 if (label == title)
                     after = 1;
-                else if (after)
+                else if (after) {
                     row_meta(label);
+                    if (tall) { /* stock's second line is 151 px: it takes the box, as the title */
+                        widget_resize(label, available > 0 ? available : 0, I(label, W_H));
+                        for (unsigned k = 0; k < widget_count_children(label); ++k)
+                            widget_resize(widget_get_child(label, k), available > 0 ? available : 0,
+                                          I(widget_get_child(label, k), W_H));
+                    }
+                }
             }
         }
     }
@@ -6425,7 +6516,8 @@ static int compact_row_layout(void *layout, void *row) {
     int tx = geom_val(V_TEXT_X);
     if (tx && text && I(text, W_X) <= B(layout, DEFAULT_LAYOUT_X_MARGIN)) {
         tx = tx > I(row, W_X) ? tx - I(row, W_X) : 0;
-        widget_move_resize(text, tx, I(text, W_Y), I(text, W_W) - (tx - I(text, W_X)),
+        widget_move_resize(text, tx, I(text, W_Y),
+                           plain && !choice ? I(text, W_W) : I(text, W_W) - (tx - I(text, W_X)),
                            I(text, W_H));
     }
     return ret;
@@ -6454,9 +6546,14 @@ static void set_child(void *c, int row_w, int row_h, int shift) {
     int x = I(c, W_X), y = I(c, W_Y), w = I(c, W_W), h = I(c, W_H), right = x + w;
     int icon = geom_val(V_SET_ICON);
     /* A set without settings icons: any image leading the row goes, whatever its width (a paired
-     * device's 50 px one), and text after one starts at the text column. */
+     * device's 50 px one), and text after one starts at the text column. A payload picker's mark
+     * (Theme, Key Lock) stays, in the column of stock's own marks. */
     if (!icon && x < SET_RIGHT_SIDE && !tk_strcmp(widget_get_type(c), "image")) {
-        widget_set_visible(c, 0, 0);
+        const char *image = widget_get_prop_str(c, "image", "");
+        if (!tk_strcmp(image, "select") || !tk_strcmp(image, "unselect"))
+            widget_move_resize(c, row_w - SET_EDGE - 50, 0, 50, row_h);
+        else
+            widget_set_visible(c, 0, 0);
         return;
     }
     if (h >= SET_STOCK_BODY) {
@@ -11971,9 +12068,10 @@ int ringnav(void *ctx, void *event) {
             coverflow_home_row(w, g_menu.at[index_of(&g_menu, next)], next, 0);
         if (owned && id >= 0) buzzeer_switch(1); /* one click per row change, however far */
     } else {
-        int top = view_top(&g_menu);
-        int next = clamp_step(top, max_top(&g_menu), dir * RING_STEP * step);
-        if (next == 0 || next >= max_top(&g_menu)) st.wheel_run = 0;
+        /* no row to select: the view's own end, not the selection's list_end */
+        int top = view_top(&g_menu), end = scroll_end(&g_menu, g_menu.height);
+        int next = clamp_step(top, end, dir * RING_STEP * step);
+        if (next == 0 || next >= end) st.wheel_run = 0;
         wheel_offset(&g_menu, next);
     }
     widget_invalidate_force(w, (void *)0);

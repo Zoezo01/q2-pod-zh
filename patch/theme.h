@@ -10,8 +10,9 @@ enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 };      /* scheme_t.flags (Ivory in M
 enum { SCHEME_DERIVE, SCHEME_LIGHT, SCHEME_DARK }; /* scheme_t.mode */
 enum { NP_IPOD, NP_CENTRED, NP_N };                /* theme_t.np_layout: np_pages[] index */
 enum { FONT_DEFAULT, FONT_BOLD, FONT_NANO };       /* theme_t.font[]: stock's, bold.ttf, nano.ttf */
-/* theme_t.font[] index: list title, list second line, bar title, Now Playing title and Home rows */
-enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_N };
+/* theme_t.font[] index: list title, list second line, bar title, Now Playing title and Home rows, a
+ * two-line row's title */
+enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_TALL, ROLE_N };
 /* an N-stop gradient, n stops (0: none), pos rising from 0 to 100 (% of the band), rgb 0xRRGGBB;
  * as many stops as the band has rows: each row its own, exactly (paint_stops) */
 typedef struct {
@@ -30,6 +31,7 @@ typedef struct {
     unsigned sel_edge; /* its last pixel row, 0 none */
     unsigned sel_tall_edge, sel_tall_line; /* a row taller than the set's pitch: its last two rows,
                                               0 sel_edge alone */
+    unsigned sel_tall_top;                 /* ... and its second, 0 the stops */
     unsigned sel_text;                     /* text on it, 0: the row's own */
     stops_t bar;                           /* BAR_GLOSS: the status bar's rows above its line */
     unsigned bar_line;                     /* BAR_GLOSS: the bar's last pixel row */
@@ -88,6 +90,8 @@ typedef struct {
     short bar_bt_dy, bar_wifi_dy; /* rows off the bar's row layout: Bluetooth, Wi-Fi */
     /* a row with art, on screen: the cover's x and its text's first and last columns; 0: stock's */
     short art_x, art_text_x, art_text_end;
+    short row_text_end; /* a two-line row without art: its text's last column on screen */
+    stops_t sep[2];     /* its last rows, one stop a row, final: [0] dark, [1] light; 0: none */
     /* the theme's nano_chevron's box on screen: a full-width list's, Split's; 0: stock's list_into
      */
     short chevron_x, home_chevron_x;

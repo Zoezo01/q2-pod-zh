@@ -20,7 +20,7 @@ def pixels(data):
 def test_nano_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[1])
-    assert set(art.images(themes[2])) == {'sort_bars'} | {f'nano_{n}' for n in ('icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
+    assert set(art.images(themes[2])) == {f'nano_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
 
 
 # The reference's rendered rows, its pixels the truth, within 1 per channel: the fill down column 272 of the pause bars
@@ -79,6 +79,15 @@ def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
     assert at(8, 8) == (255, 255, 255, 255)  # the point's centreline
     assert at(0, 15)[3] == 0 and at(11, 0)[3] == 0  # outside the stroke
     assert 0 < at(1, 1)[3] < 255  # a rounded end's edge
+
+
+def test_sort_is_three_white_bars():
+    w, h, at = pixels(art.images(theme.builtins()[2])['nano_sort_bars'])
+    assert (w, h) == (16, 12)
+    for y in range(h):
+        ink = [x for x in range(w) if at(x, y) == (255, 255, 255, 255)]
+        assert ink == list(range({0: 16, 1: 16, 5: 11, 6: 11, 10: 6, 11: 6}.get(y, 0))), y
+        assert all(at(x, y)[3] == 0 for x in range(w) if x not in ink), y
 
 
 def test_the_pane_icons_fit_their_box_and_keep_their_holes():

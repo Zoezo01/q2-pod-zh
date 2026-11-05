@@ -55,6 +55,10 @@ class Geometry:
     count_y: int = 40
     art_title24_y: int = 13
     art_meta_y: int = 39
+    song_pitch: int = 72  # Songs' rows, a kind of their own: its pitch, body, title and metadata y
+    song_body: int = 68
+    song_title24_y: int = 13
+    song_meta_y: int = 39
     set_row: int = inc('SET_ROW')
     set_top: int = inc('SET_TOP')
     set_rows: int = inc('SET_ROWS')
@@ -457,6 +461,8 @@ def status_bar(root, g=SET0):
         gap = inc('STATUS_GAP')
         reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
         check(reach <= room, f'Status bar battery needs {reach}px of {room}px')
+        # bar_sync's gate reads BATT_ROOM, the built-in bar's: a mode it lets through must still fit this room (a theme on this bar offers only modes the gate exempts: test_theme)
+        check(BATT_ROOM - room in (0, 1), f'BATT_ROOM {BATT_ROOM} past the bar\'s room {room}')
         for name in STATUS_HIDDEN:
             box = widgets[name][1]
             box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
@@ -795,7 +801,7 @@ SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW = (inc(n) for n in ('SET_ROW', 'SET_TO
 
 # The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder), the Library's are its own
 # (lib_*), text pages' carry none. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
-PAGE_KIND = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
+PAGE_KIND = {'localmusic/allmusic_page.bin': 'song', 'localmusic/albuminfo_page.bin': 'text',
              'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
              'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'lib',
              'localmusic/localclass_page.bin': 'text'}
@@ -803,7 +809,8 @@ PAGE_KIND = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.
 
 def page_rows(g, kind):
     """(pitch, body, artwork inset) of a page kind's rows under g."""
-    return {'art': (g.art_pitch, g.art_body, g.art_inset), 'lib': (g.lib_pitch, g.lib_body, g.lib_inset)}.get(kind, (g.pitch, g.body, g.text_art_inset))
+    return {'art': (g.art_pitch, g.art_body, g.art_inset), 'lib': (g.lib_pitch, g.lib_body, g.lib_inset),
+            'song': (g.song_pitch, g.song_body, g.text_art_inset)}.get(kind, (g.pitch, g.body, g.text_art_inset))
 
 
 def text_y(g, y):

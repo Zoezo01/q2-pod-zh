@@ -253,9 +253,8 @@ STATE_Y = (4, 19)  # the fill's and edge's first and last rows
 def images(t):
     """Theme t's generated images, {name: PNG bytes}; those its values state."""
     out = {}
-    if t['chevron_x']:
-        out['sort_bars'] = png(*SORT_BOX[2:], compose(SORT_BOX, [(path(SORT), lambda x, y: (0xffffff, 1))]))
     if t['chevron_x']:  # white on the band in both halves, its point on the middle row
+        out[f'{t["id"]}_sort_bars'] = png(*SORT_BOX[2:], compose(SORT_BOX, [(path(SORT), lambda x, y: (0xffffff, 1))]))
         out[f'{t["id"]}_chevron'] = png(*CHEVRON_BOX[2:], compose(CHEVRON_BOX, [
             (stroke(path(CHEVRON), CHEVRON_STROKE, closed=False), lambda x, y: (0xffffff, 1))]))
     if t['bolt']:

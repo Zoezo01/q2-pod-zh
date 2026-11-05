@@ -812,11 +812,12 @@ def validate_assets(directory):
     from ipod import PAGE_KIND as page_kind
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
     for g in geometry_sets(builtins()):
-        assert g.body <= g.pitch and g.art_body <= g.art_pitch, g.name
+        assert g.body <= g.pitch and g.art_body <= g.art_pitch and g.song_body <= g.song_pitch, g.name
         assert g.art + 2*g.art_inset <= g.art_body, g.name
         assert g.text_art + 2*g.text_art_inset <= g.body or not g.text_art, g.name   # text rows' artwork fits, or none
         for y, h, body in ((g.title24_y, 24, g.body), (g.title_y, 20, g.body), (g.meta_y, 16, g.body), (g.count_y, 16, g.body),
-                           (g.art_title24_y, 24, g.art_body), (g.art_meta_y, 16, g.art_body)):
+                           (g.art_title24_y, 24, g.art_body), (g.art_meta_y, 16, g.art_body),
+                           (g.song_title24_y, 24, g.song_body), (g.song_meta_y, 16, g.song_body)):
             assert 0 <= y and y + h <= body, (g.name, y, h, body)                    # every stock row label inside its body
         checked = set()
         for short, kind in page_kind.items():
@@ -827,7 +828,7 @@ def validate_assets(directory):
             for n in walk(new):
                 for prop in ('row_height', 'default_item_height'):
                     if old.get(n[2].get('name'), {}).get(prop) == '78':
-                        assert n[2][prop] == str(g.art_pitch if kind == 'art' else g.pitch), (g.name, short, prop)
+                        assert n[2][prop] == str({'art': g.art_pitch, 'song': g.song_pitch}.get(kind, g.pitch)), (g.name, short, prop)
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
         assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name
