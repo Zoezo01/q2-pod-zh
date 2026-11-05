@@ -123,7 +123,7 @@ To keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, 
 
 ## License
 
-[MIT](LICENSE) covers this repository's code and docs. The fonts in `assets/fonts` keep their own licences: Liberation Sans (OFL, shipped cut down and renamed Q2 Pod Sans) and TeX Gyre Heros (GUST Font License, shipped cut down and renamed Q2 Pod Nano, see `assets/fonts/README-nano.txt`). The Shanling firmware included in release images remains Shanling's. Q2 Pod is an independent project and is not affiliated with Shanling.
+[MIT](LICENSE) covers this repository's code and docs. The fonts in `assets/fonts` keep their own licences: Liberation Sans (OFL, shipped cut down and renamed Q2 Pod Sans) and TeX Gyre Heros (GUST Font License, shipped cut down and renamed Q2 Pod Classic Light, see `assets/fonts/README-classic-light.txt`). The Shanling firmware included in release images remains Shanling's. Q2 Pod is an independent project and is not affiliated with Shanling.
 
 ## Support
 

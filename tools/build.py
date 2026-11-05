@@ -760,13 +760,13 @@ BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 def bold_font():
     return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
 
-# Nano's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
-# The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-nano.txt
-NANO_TTF = 'release/assets/default/raw/fonts/nano.ttf'
-NANO_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to its Latin, Greek, Cyrillic and punctuation, and renamed. '
+# Classic Light's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
+# The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
+CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
+CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to its Latin, Greek, Cyrillic and punctuation, and renamed. '
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 # stb draws the subset's outlines in the form chosen here: TrueType quadratics (otf_to_ttf) or the CFF original
-NANO_TRUETYPE = False
+CLASSIC_LIGHT_TRUETYPE = False
 
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
@@ -1488,8 +1488,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    nano, nano_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Nano', 'NANO_RANGES', NANO_NOTICE)
-    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, nano_ranges]
+    classic_light, classic_light_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
+    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, classic_light_ranges]
     header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
     header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
     header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
@@ -1804,7 +1804,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
-                               NANO_TTF: (FONT, nano),
+                               CLASSIC_LIGHT_TTF: (FONT, classic_light),
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
         stock = inode(p, like.encode())
         check(stock is not None, f'Missing stock inode for {path}')

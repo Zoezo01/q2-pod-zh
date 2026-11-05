@@ -195,7 +195,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, NANO_FONT_SRC)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -868,8 +868,8 @@ def validate_assets(directory):
                     if n[0] in ('list_view', 'table_view') and old and old[1] in (50, 100) and n[1] != old:
                         ends[rel] = n[1][1] + n[1][3]
             assert ends and set(ends.values()) == {320 - g.bar}, (g.name, ends)
-        if g.bar_px:  # Nano's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
-            m = status_metrics(g, NANO_FONT_SRC)
+        if g.bar_px:  # Classic Light's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
+            m = status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
             assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
             assert 2 * m['cap_top'] + m['cap'] in (g.bar - 3, g.bar - 2) and m['inset'] >= corner_inset(m['cap_top']), g.name

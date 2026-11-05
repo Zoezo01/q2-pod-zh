@@ -12,7 +12,7 @@ import theme
 from ipod import Geometry, SET0
 from theme import ThemeError
 
-NANO, NANO_TEXT = (theme.sets(theme.builtins()[2])[s] for s in ('nano', 'nano-text'))  # Nano's sets: its theme.xml
+CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT = (theme.sets(theme.builtins()[2])[s] for s in ('classic-light', 'classic-light-text'))  # Classic Light's sets: its theme.xml
 
 
 def error(f, *args):
@@ -192,7 +192,7 @@ M = 'id="minimal" name="M" index="0"'
     ('<view name="list"><element name="icons" grey="1"/></view>', None, 'unknown key list.icons.grey'),
     ('<view name="list"><element name="selection" painter="glass"/></view>', None, 'list.selection.painter: unknown value glass'),
     ('<view name="playing"><element name="title" font="serif"/></view>', None, 'playing.title.font: unknown value serif'),
-    ('<colorScheme name="nano-blue"/>', None, 'unknown scheme nano-blue'),
+    ('<colorScheme name="classic-blue"/>', None, 'unknown scheme classic-blue'),
     ('<colorScheme name="ivory" sel.glow="#000000"/>', None, 'unknown key scheme.sel.glow'),
     ('<colorSchemes accents="graphite blue"/>', None, 'unknown scheme blue'),
     ('<colorSchemes accents="graphite" tint="1"/>', None, 'unknown key colorSchemes.tint'),
@@ -303,7 +303,7 @@ def test_builtins_rejects(tmp_path):
 
 def test_builtins_rejects_a_shared_accent_key(tmp_path):
     """Themes sharing an accent key share its stored value, so they must take the same colours and default."""
-    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('nano'))
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('classic-light'))
     def put(folder, attrs, body):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(f'<theme format="1" {attrs}>{body}</theme>')
@@ -354,8 +354,8 @@ def test_a_shadow_past_its_alphas_is_an_error():
     theme.validate({**t, 'pane_shadow_a': (9, 8, 7)}, 't.xml')
 
 
-def test_nano_battery_offers_only_what_the_bar_gate_exempts():
-    # icon (0) never gates; Percent Inside (3) is exempt under BATT_NANO: bar_sync's constant BATT_ROOM is the built-in bar's
+def test_classic_light_battery_offers_only_what_the_bar_gate_exempts():
+    # icon (0) never gates; Percent Inside (3) is exempt under BATT_CLASSIC_LIGHT: bar_sync's constant BATT_ROOM is the built-in bar's
     n = theme.builtins()[2]
     assert next(o['values'] for o in n['opts'] if o.get('setting') == 'SETTING_BATTERY') == 0b1001
 
@@ -616,8 +616,8 @@ def test_bar_painter_and_scheme_bar_roles():
                  '<view name="bar"><element name="fill" painter="gloss"/></view>')
     assert t['painter[PAINT_BAR]'] == 1 and t['schemes'][0]['bar'] == ((0, 0xffffff), (100, 0x9c9e9c))
     assert t['schemes'][0]['bar_line'] == 0x5a595a and t['schemes'][0]['bar_line2'] == 0
-    nano = theme.builtins()[2]['schemes'][0]
-    assert nano['bar_line2'] == 0x848584
+    classic_light = theme.builtins()[2]['schemes'][0]
+    assert classic_light['bar_line2'] == 0x848584
     assert error(resolved, '<view name="bar"><element name="fill" painter="shiny"/></view>') == \
         't.xml:1: bar.fill.painter: unknown value shiny'
 
@@ -628,24 +628,24 @@ def test_bar_battery_painter_rejects():
 
 
 def test_theme_level_halves():
-    nano = theme.builtins()[2]
-    assert nano['batt_line'] == 0x9c9e9c and nano['light']['batt_line'] == 0x717070  # both halves stated
-    assert theme.half(nano, False, 0xffffff, 0)['batt_line'] == 0x9c9e9c
-    assert theme.half({**nano, 'batt_line': 0}, False, 0xffffff, 0)['batt_line'] != 0  # one stated: the other derives
-    assert error(resolved, '<view name="bar"><element name="battery" light.painter="nano"/></view>') == \
+    classic_light = theme.builtins()[2]
+    assert classic_light['batt_line'] == 0x9c9e9c and classic_light['light']['batt_line'] == 0x717070  # both halves stated
+    assert theme.half(classic_light, False, 0xffffff, 0)['batt_line'] == 0x9c9e9c
+    assert theme.half({**classic_light, 'batt_line': 0}, False, 0xffffff, 0)['batt_line'] != 0  # one stated: the other derives
+    assert error(resolved, '<view name="bar"><element name="battery" light.painter="classic-light"/></view>') == \
         't.xml:1: bar.battery.painter: one value for both halves'
 
 
 def test_scheme_mode_paper_ink():
     t = resolved('<colorScheme mode="light" light.paper="#ffffff" light.ink="#000000"/>')
     assert {(s['mode'], s['paper'], s['ink']) for s in t['schemes']} == {(1, 0xffffff, 0)}
-    minimal, classic, nano = theme.builtins()
+    minimal, classic, classic_light = theme.builtins()
     assert {(s['mode'], s['paper'], s['ink']) for s in minimal['schemes']} == {(0, 0xf4f4f4, 0x161616)}
-    assert {(s['mode'], s['paper'], s['ink']) for s in nano['schemes'] if s['sel']} == {(0, 0xffffff, 0)}
+    assert {(s['mode'], s['paper'], s['ink']) for s in classic_light['schemes'] if s['sel']} == {(0, 0xffffff, 0)}
     assert (minimal['undeclared'], classic['undeclared']) == ([], [])
-    assert nano['undeclared'] == ['SETTING_ROUNDED', 'SETTING_NPCENTRED']
-    assert nano['opts'][0] == opt('SETTING_LIGHT', preset=1, keep=2)
-    assert not (theme.shared(nano) or not theme.shared(minimal) or not theme.shared(classic))
+    assert classic_light['undeclared'] == ['SETTING_ROUNDED', 'SETTING_NPCENTRED']
+    assert classic_light['opts'][0] == opt('SETTING_LIGHT', preset=1, keep=2)
+    assert not (theme.shared(classic_light) or not theme.shared(minimal) or not theme.shared(classic))
 
 
 def test_halves():
@@ -693,10 +693,10 @@ def test_emit_mode_and_undeclared(tmp_path):
     # label and the bar follow on the line)
     assert '.light = minimal_schemes,' in inc and '.light = classic_schemes,' in inc and 'minimal_light' not in inc
     assert '.mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616' in inc
-    # Nano: its dark rows in nano_schemes, its light rows in nano_light
-    dark, light = (inc.split(f'static const scheme_t nano_{a}[] = {{')[1].split('};')[0] for a in ('schemes', 'light'))
+    # Classic Light: its dark rows in classic_light_schemes, its light rows in classic_light_light
+    dark, light = (inc.split(f'static const scheme_t classic_light_{a}[] = {{')[1].split('};')[0] for a in ('schemes', 'light'))
     assert '.paper = 0x000000, .ink = 0xffffff' in dark and '.paper = 0xffffff, .ink = 0x000000' in light
-    assert '.light = nano_light,' in inc and '_Static_assert(sizeof nano_light == sizeof nano_schemes' in inc
+    assert '.light = classic_light_light,' in inc and '_Static_assert(sizeof classic_light_light == sizeof classic_light_schemes' in inc
     assert '.undeclared = (1 << SETTING_ROUNDED) | (1 << SETTING_NPCENTRED),' in inc
     assert inc.count('.undeclared = 0,') == 2
 
@@ -707,33 +707,33 @@ def test_derive_gloss():
         stops = theme.derive_gloss(tones)
         assert [p for p, _ in stops] == [0, 17, 38, 58, 79, 100] and stops[2][1] == f'#{tones[0]:06x}'
     assert all(h[1:3] == h[3:5] == h[5:7] for _, h in theme.derive_gloss(theme.ACCENT_TONES[0]))  # Graphite stays grey
-    assert theme.derive_gloss(theme.ACCENT_TONES[4]) != [(p, f'#{c:06x}') for p, c in theme.GLOSS]  # Cobalt is near, not Nano Blue
+    assert theme.derive_gloss(theme.ACCENT_TONES[4]) != [(p, f'#{c:06x}') for p, c in theme.GLOSS]  # Cobalt is near, not Classic Blue
 
 
-def test_nano_second_line_is_the_references_grey_at_its_size():
+def test_classic_light_second_line_is_the_references_grey_at_its_size():
     n = theme.builtins()[2]
     # one value in stock's terms, which the light half flips onto the reference's #6b6d6b
     assert {s['muted'] for i, s in enumerate(n['schemes']) if n['accents'] >> i & 1} == {0x949294}
     assert n['font_px[ROLE_META]'] == 17 and n['font[ROLE_META]'] == 0  # stock's regular
-    assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_TALL]'], n['font[ROLE_TALL]']) == (27, 28, 2)  # a two-line row's title, Nano's face
+    assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_TALL]'], n['font[ROLE_TALL]']) == (27, 28, 2)  # a two-line row's title, Classic Light's face
     assert n['sep'] == ((0, 0), (50, 0x2c2c2c), (100, 0)) and n['light']['sep'] == ((0, 0xfcfcfc), (50, 0xe2e3e2), (100, 0xf7f7f7))
 
 
-def test_nano_list_titles_and_home_rows_are_27_px():
+def test_classic_light_list_titles_and_home_rows_are_27_px():
     n = theme.builtins()[2]
     assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_NP]']) == (27, 27)
     assert [(t['font_px[ROLE_TITLE]'], t['font_px[ROLE_NP]']) for t in theme.builtins()[:2]] == [(0, 0), (0, 0)]
 
 
-def test_nano_blue_own_scheme():
-    nano = theme.builtins()[2]
-    blue = nano['schemes'][9]
-    assert (blue['label'], blue['base'], blue['sel'], blue['sel_top'], blue['sel_edge']) == ('Nano Blue', 4, theme.GLOSS, theme.GLOSS_TOP, theme.GLOSS_EDGE)
-    assert nano['accents'] == 0x37f and nano['opts'][1] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
+def test_classic_blue_own_scheme():
+    classic_light = theme.builtins()[2]
+    blue = classic_light['schemes'][9]
+    assert (blue['label'], blue['base'], blue['sel'], blue['sel_top'], blue['sel_edge']) == ('Classic Blue', 4, theme.GLOSS, theme.GLOSS_TOP, theme.GLOSS_EDGE)
+    assert classic_light['accents'] == 0x37f and classic_light['opts'][1] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
     # each offered band is the same in both halves (Graphite's grey gloss is designed, not flipped)
-    assert all(theme.scheme_half(s, True)['sel'] == theme.scheme_half(s, False)['sel'] for s in nano['schemes'])
-    assert nano['schemes'][4]['sel'] == tuple((p, int(h[1:], 16)) for p, h in theme.derive_gloss(theme.ACCENT_TONES[4]))
-    assert nano['schemes'][7]['sel'] == ()  # Ivory, not offered
+    assert all(theme.scheme_half(s, True)['sel'] == theme.scheme_half(s, False)['sel'] for s in classic_light['schemes'])
+    assert classic_light['schemes'][4]['sel'] == tuple((p, int(h[1:], 16)) for p, h in theme.derive_gloss(theme.ACCENT_TONES[4]))
+    assert classic_light['schemes'][7]['sel'] == ()  # Ivory, not offered
 
 
 @pytest.mark.parametrize('body, message', [
@@ -749,20 +749,20 @@ def test_own_scheme_rejects(body, message):
 
 def test_emit_own_scheme(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    assert '    { .tones = accents[4], ' in inc.split('static const scheme_t nano_schemes[] = {')[1].split('\n')[10]
-    assert '.label = "Nano Blue" }' in inc and inc.count('.n_schemes = 9,') == 2 and '.n_schemes = 10,' in inc
+    assert '    { .tones = accents[4], ' in inc.split('static const scheme_t classic_light_schemes[] = {')[1].split('\n')[10]
+    assert '.label = "Classic Blue" }' in inc and inc.count('.n_schemes = 9,') == 2 and '.n_schemes = 10,' in inc
     assert inc.count('/ sizeof *minimal_schemes >= ACCENT_N') == 1
 
 
 def test_own_option():
     m, c, n = theme.builtins()
-    row_art = own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)
+    row_art = own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)
     assert n['opts'][-1] == row_art and not any(o.get('key') for o in m['opts'] + c['opts'])
-    assert theme.geometry(n) == NANO and theme.geometry(n, {'ROWART': 'Off'}) == NANO_TEXT
-    assert theme.geometry(n, {'ROWART': 'On'}) == NANO and theme.geometry(m, {'ROWART': 'Off'}) is SET0
-    assert theme.theme_keys([m, c, n]) == {'NANO_ACCENT': (10, 9, None), 'ROWART': (2, 1, row_art)}
+    assert theme.geometry(n) == CLASSIC_LIGHT and theme.geometry(n, {'ROWART': 'Off'}) == CLASSIC_LIGHT_TEXT
+    assert theme.geometry(n, {'ROWART': 'On'}) == CLASSIC_LIGHT and theme.geometry(m, {'ROWART': 'Off'}) is SET0
+    assert theme.theme_keys([m, c, n]) == {'CLASSIC_LIGHT_ACCENT': (10, 9, None), 'ROWART': (2, 1, row_art)}
     assert {'ACCENT', 'MINIMAL_ACCENT', 'HOME', 'BATTERY', 'THEME', 'LIGHT', 'VIS'} <= theme.PAYLOAD_KEYS
-    assert not {'ROWART', 'NANO_ACCENT'} & theme.PAYLOAD_KEYS and set(theme.ACCENT_KEYS) == {'ACCENT', 'MINIMAL_ACCENT'}
+    assert not {'ROWART', 'CLASSIC_LIGHT_ACCENT'} & theme.PAYLOAD_KEYS and set(theme.ACCENT_KEYS) == {'ACCENT', 'MINIMAL_ACCENT'}
     assert not hasattr(theme, 'ROW_ART_OFF')
 
 
@@ -814,7 +814,7 @@ def test_payload_option_values_rejects(body, message):
 def test_builtins_rejects_a_shared_own_key(tmp_path):
     """Themes sharing an own key share its stored value, so they must declare the same values and default;
     each presets it as it likes (as Minimal and Classic preset LIGHT)."""
-    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('nano'))
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('classic-light'))
     def put(folder, index, label, presets=''):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
@@ -829,26 +829,26 @@ def test_builtins_rejects_a_shared_own_key(tmp_path):
 
 def test_emit_own_options(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    nano_opts = inc.split('static const option_t nano_opts[] = {\n')[1].split('};')[0].splitlines()
-    assert nano_opts[-1] == '    { .setting = SETTING_OWN + 1, .def = 1, .preset = 1, .keep = -1, .values = 0x0 },'
-    assert inc.count('.accent_slot = &st.own[0],') == 1 and 'nano_accent' not in inc
+    classic_light_opts = inc.split('static const option_t classic_light_opts[] = {\n')[1].split('};')[0].splitlines()
+    assert classic_light_opts[-1] == '    { .setting = SETTING_OWN + 1, .def = 1, .preset = 1, .keep = -1, .values = 0x0 },'
+    assert inc.count('.accent_slot = &st.own[0],') == 1 and 'classic_light_accent' not in inc
     assert ('const theme_key_t theme_keys[THEME_KEYS] = {\n'
-            '    { .key = "NANO_ACCENT", .label = 0, .names = 0, .sets = 0, .n = 10, .def = 9 },\n'
+            '    { .key = "CLASSIC_LIGHT_ACCENT", .label = 0, .names = 0, .sets = 0, .n = 10, .def = 9 },\n'
             '    { .key = "ROWART", .label = "Row Art", .names = (const char *const[]){"Off", "On"}, '
-            '.sets = (const unsigned char[]){GEOM_NANO_TEXT, GEOM_NANO}, .n = 2, .def = 1 },\n};') in inc
-    assert inc.index('const theme_key_t theme_keys') > inc.index('enum { GEOM_IPOD, GEOM_NANO, GEOM_NANO_TEXT, GEOM_N };')
+            '.sets = (const unsigned char[]){GEOM_CLASSIC_LIGHT_TEXT, GEOM_CLASSIC_LIGHT}, .n = 2, .def = 1 },\n};') in inc
+    assert inc.index('const theme_key_t theme_keys') > inc.index('enum { GEOM_IPOD, GEOM_CLASSIC_LIGHT, GEOM_CLASSIC_LIGHT_TEXT, GEOM_N };')
 
 
-def test_nano_sets_from_its_theme_file():
-    """Nano's sets are its theme.xml's: nano states every Geometry field (SET0's defaults never reach it),
-    nano-text extends it. No tool names them."""
+def test_classic_light_sets_from_its_theme_file():
+    """Classic Light's sets are its theme.xml's: classic_light states every Geometry field (SET0's defaults never reach it),
+    classic-light-text extends it. No tool names them."""
     m, c, n = theme.builtins()
-    assert theme.sets(n) == {'ipod': SET0, 'nano': NANO, 'nano-text': NANO_TEXT} and theme.geometry(n) == NANO
+    assert theme.sets(n) == {'ipod': SET0, 'classic-light': CLASSIC_LIGHT, 'classic-light-text': CLASSIC_LIGHT_TEXT} and theme.geometry(n) == CLASSIC_LIGHT
     assert theme.sets(m) == theme.sets(c) == {'ipod': SET0} and (m['geoms'], c['geoms']) == ({}, {})
-    decl = {e.attrs['name']: e.attrs for e in theme.load(THEMES/'nano'/'theme.xml').children
+    decl = {e.attrs['name']: e.attrs for e in theme.load(THEMES/'classic-light'/'theme.xml').children
             if e.tag == 'geometry' and 'name' in e.attrs}
-    assert set(decl['nano']) == {f.name for f in dataclasses.fields(Geometry)} and decl['nano-text']['extends'] == 'nano'
-    assert not hasattr(ipod, 'NANO') and not hasattr(ipod, 'NANO_TEXT')
+    assert set(decl['classic-light']) == {f.name for f in dataclasses.fields(Geometry)} and decl['classic-light-text']['extends'] == 'classic-light'
+    assert not hasattr(ipod, 'CLASSIC_LIGHT') and not hasattr(ipod, 'CLASSIC_LIGHT_TEXT')
 
 
 def test_geometry_declared():
@@ -859,14 +859,14 @@ def test_geometry_declared():
     pico = dataclasses.replace(SET0, name='pico', bar=26)
     assert t['geoms'] == {'pico': pico, 'pico-2': dataclasses.replace(pico, name='pico-2', text_x=20)}
     assert theme.geometry(t) == t['geoms']['pico-2'] and theme.geometry_sets([t]) == [SET0, t['geoms']['pico-2']]
-    u = resolved('', 'id="u" name="U" index="3" extends="nano"')
-    assert theme.sets(u) == theme.sets(theme.builtins()[2]) and theme.geometry(u) == NANO
+    u = resolved('', 'id="u" name="U" index="3" extends="classic-light"')
+    assert theme.sets(u) == theme.sets(theme.builtins()[2]) and theme.geometry(u) == CLASSIC_LIGHT
 
 
 def test_geometry_ranges():
-    """Every Geometry field has a range, so a task that adds a field adds one; SET0 and Nano's sets lie inside."""
+    """Every Geometry field has a range, so a task that adds a field adds one; SET0 and Classic Light's sets lie inside."""
     assert set(theme.GEOM_RANGES) == {f.name for f in dataclasses.fields(Geometry)} - {'name'}
-    assert [theme.check_set(g) for g in (SET0, NANO, NANO_TEXT)] == [None, None, None]
+    assert [theme.check_set(g) for g in (SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT)] == [None, None, None]
     assert theme.check_set(dataclasses.replace(SET0, name='x', set_rows=5)) == 'geometry.set_rows: 5 outside 1..4'
 
 
@@ -893,7 +893,7 @@ def test_geometry_declare_rejects(body, message):
 
 def test_builtins_rejects_a_shared_set_name(tmp_path):
     """A set name is one GEOM_* id and one <set>_<name>.bin prefix: the themes that declare it declare it alike."""
-    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('nano'))
+    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True, ignore=shutil.ignore_patterns('classic-light'))
     def put(folder, index, bar):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
@@ -906,17 +906,17 @@ def test_builtins_rejects_a_shared_set_name(tmp_path):
     assert error(theme.builtins, tmp_path) == "b/theme.xml:1: geometry set pico is a's, with other values"
 
 
-def test_nano_from_minimal(tmp_path):
-    """Nano is data: written out as a theme over Minimal that states every field, it builds to Nano."""
+def test_classic_light_from_minimal(tmp_path):
+    """Classic Light is data: written out as a theme over Minimal that states every field, it builds to Classic Light."""
     shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
-    nano = theme.builtins()[2]
+    classic_light = theme.builtins()[2]
     (tmp_path / 'clone').mkdir()
     (tmp_path / 'clone' / 'theme.xml').write_text(
-        theme.dump(nano, id='clone', name='Nano Clone', index='3', extends='minimal'))
+        theme.dump(classic_light, id='clone', name='Classic Light Clone', index='3', extends='minimal'))
     clone = theme.builtins(tmp_path)[3]
     skip = {'id', 'name', 'index', 'line'}
     assert clone['id'] == 'clone'
-    assert {k: v for k, v in clone.items() if k not in skip} == {k: v for k, v in nano.items() if k not in skip}
+    assert {k: v for k, v in clone.items() if k not in skip} == {k: v for k, v in classic_light.items() if k not in skip}
 
 
 def boot_inc(tmp_path, themes, **kw):
@@ -948,16 +948,16 @@ def geom_vals_text(sets):
 
 def test_emit_geom_vals(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    assert all(s in inc for s in geom_vals_text([SET0, NANO, NANO_TEXT]))
+    assert all(s in inc for s in geom_vals_text([SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]))
     assert ipod.GEOM_VALS[:3] == ('bar', 'set_row', 'set_icon')
-    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, NANO)] == [[30, 68, 40], [26, 28, 0]]
+    assert [[getattr(g, n) for n in ipod.GEOM_VALS[:3]] for g in (SET0, CLASSIC_LIGHT)] == [[30, 68, 40], [26, 28, 0]]
 
 
 def test_emit_refuses_a_long_redirect(tmp_path):
-    # 'nano-text_' + 53 characters is 63 bytes plus the NUL: it fits; 54 does not.
-    boot_inc(tmp_path, theme.builtins(), redirects={'x' * 53: 2})
+    # 'classic-light-text_' + 44 characters is 63 bytes plus the NUL: it fits; 45 does not.
+    boot_inc(tmp_path, theme.builtins(), redirects={'x' * 44: 2})
     with pytest.raises(ValueError, match='exceeds ringnav_ui_load'):
-        boot_inc(tmp_path, theme.builtins(), redirects={'x' * 54: 2})
+        boot_inc(tmp_path, theme.builtins(), redirects={'x' * 45: 2})
 
 
 def test_emit_second_set(tmp_path, test_set):
@@ -975,17 +975,17 @@ def test_emit_refuses_a_set0_redirect(tmp_path):
         boot_inc(tmp_path, theme.builtins(), redirects={'system_bar': 1})
 
 
-def test_nano_builtin():
+def test_classic_light_builtin():
     m, c, n = theme.builtins()
-    assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 'nano', 'NANO_ACCENT', 0x37f)
+    assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic Light', 2, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
                          opt('SETTING_HOME', default=0, preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, preset=0, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
-                         own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)]
-    assert theme.geometry_sets([m, c, n]) == [SET0, NANO, NANO_TEXT]
+                         own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
+    assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 
 
-def test_emit_nano_sets(tmp_path):
+def test_emit_classic_light_sets(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
-    assert 'enum { GEOM_IPOD, GEOM_NANO, GEOM_NANO_TEXT, GEOM_N };' in inc and '#define CLIENT_H_MAX 294' in inc
-    assert 'const char *const geom_names[GEOM_N] = {"ipod", "nano", "nano-text"};' in inc
+    assert 'enum { GEOM_IPOD, GEOM_CLASSIC_LIGHT, GEOM_CLASSIC_LIGHT_TEXT, GEOM_N };' in inc and '#define CLIENT_H_MAX 294' in inc
+    assert 'const char *const geom_names[GEOM_N] = {"ipod", "classic-light", "classic-light-text"};' in inc
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '0', '1'] and '.accent_slot = &st.own[0],' in inc

@@ -1,11 +1,11 @@
-Q2 Pod Nano: a modified version of TeX Gyre Heros Bold
+Q2 Pod Classic Light: a modified version of TeX Gyre Heros Bold
 ======================================================
 
-fonts/nano.ttf in a Q2 Pod firmware image is a Modified Version of TeX Gyre Heros Bold
+fonts/classic-light.ttf in a Q2 Pod firmware image is a Modified Version of TeX Gyre Heros Bold
 (version 2.004), made from texgyreheros-bold.otf in this folder by tools/build.py (subset_font):
 
 - cut to its Latin, Greek, Cyrillic and punctuation (U+0020-U+052F, U+2000-U+21FF);
-- renamed Q2 Pod Nano, in the name table and the CFF names, as GUST asks of derived fonts. Its
+- renamed Q2 Pod Classic Light, in the name table and the CFF names, as GUST asks of derived fonts. Its
   copyright and trademark notices (name IDs 0 and 7) are kept, and its description (name ID 10)
   says it is modified and where the original is.
 

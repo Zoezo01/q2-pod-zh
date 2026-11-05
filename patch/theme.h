@@ -4,12 +4,19 @@
 
 enum { PAINT_SELECTION, PAINT_BAR, PAINT_BATTERY, PAINTER_N }; /* theme_t.painter[] index */
 enum { SEL_CARD, SEL_BAR, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic bar) */
-enum { BAR_FLAT, BAR_GLOSS };          /* painter[PAINT_BAR]: the status bar's fill (Nano gloss) */
-enum { BATT_STOCK, BATT_NANO }; /* painter[PAINT_BATTERY]: the bar's battery and status marks */
+enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic Light gloss) */
+enum {
+    BATT_STOCK,
+    BATT_CLASSIC_LIGHT
+}; /* painter[PAINT_BATTERY]: the bar's battery and status marks */
 enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 };      /* scheme_t.flags (Ivory in Minimal; Crimson) */
 enum { SCHEME_DERIVE, SCHEME_LIGHT, SCHEME_DARK }; /* scheme_t.mode */
 enum { NP_IPOD, NP_CENTRED, NP_N };                /* theme_t.np_layout: np_pages[] index */
-enum { FONT_DEFAULT, FONT_BOLD, FONT_NANO };       /* theme_t.font[]: stock's, bold.ttf, nano.ttf */
+enum {
+    FONT_DEFAULT,
+    FONT_BOLD,
+    FONT_CLASSIC_LIGHT
+}; /* theme_t.font[]: stock's, bold.ttf, classic-light.ttf */
 /* theme_t.font[] index: list title, list second line, bar title, Now Playing title and Home rows, a
  * two-line row's title */
 enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_TALL, ROLE_N };
@@ -40,7 +47,7 @@ typedef struct {
                             (LIGHT_PAPER and LIGHT_INK unless set), the dark half's 0x000000 and
                             0xffffff. A one-array theme's row holds the light half's: only
                             ipod_light()-gated code reads them there */
-    const char *label;   /* a theme's own scheme's name ("Nano Blue"); NULL: accent_names[v] */
+    const char *label;   /* a theme's own scheme's name ("Classic Blue"); NULL: accent_names[v] */
 } scheme_t;
 typedef struct {
     unsigned char setting; /* SETTING_* (navigation.c): the bound row's click/text code, or
@@ -79,12 +86,12 @@ typedef struct {
     unsigned char chevron_home, chevron_sel, set_text, caps_mark, caps_home, caps_np, icons_mono,
         icons_badge_muted, icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
     unsigned char font[ROLE_N], font_px[ROLE_N]; /* FONT_*; px 0: the style's size */
-    stops_t batt;       /* BATT_NANO: the level's stops, a hue in both halves */
-    stops_t batt_empty; /* BATT_NANO: the rows past the level */
-    unsigned batt_low;  /* BATT_NANO: the low level, batt_low_w columns */
+    stops_t batt;       /* BATT_CLASSIC_LIGHT: the level's stops, a hue in both halves */
+    stops_t batt_empty; /* BATT_CLASSIC_LIGHT: the rows past the level */
+    unsigned batt_low;  /* BATT_CLASSIC_LIGHT: the low level, batt_low_w columns */
     short batt_low_w;
-    unsigned batt_line[2]; /* BATT_NANO: the outline and nub, final: [0] dark, [1] light */
-    unsigned batt_edge;    /* BATT_NANO: its bottom row inside the outline */
+    unsigned batt_line[2]; /* BATT_CLASSIC_LIGHT: the outline and nub, final: [0] dark, [1] light */
+    unsigned batt_edge;    /* BATT_CLASSIC_LIGHT: its bottom row inside the outline */
     short batt_corner_a, batt_foot_a, batt_shade_a, batt_soft_a, batt_soft_top_a, batt_emboss_a,
         batt_emboss_nub_a;        /* of 255 */
     short bar_bt_dy, bar_wifi_dy; /* rows off the bar's row layout: Bluetooth, Wi-Fi */
@@ -92,7 +99,8 @@ typedef struct {
     short art_x, art_text_x, art_text_end;
     short row_text_end; /* a two-line row without art: its text's last column on screen */
     stops_t sep[2];     /* its last rows, one stop a row, final: [0] dark, [1] light; 0: none */
-    /* the theme's nano_chevron's box on screen: a full-width list's, Split's; 0: stock's list_into
+    /* the theme's classic_light_chevron's box on screen: a full-width list's, Split's; 0: stock's
+     * list_into
      */
     short chevron_x, home_chevron_x;
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
@@ -112,7 +120,7 @@ typedef struct {
     const scheme_t *schemes; /* [n_schemes], indexed by accent value: each scheme's dark half */
     const scheme_t *light; /* [n_schemes] each scheme's light half; == schemes when the theme states
                               no final value (Minimal, Classic) */
-    unsigned char n_schemes; /* ACCENT_N, then the theme's own (Nano: 10) */
+    unsigned char n_schemes; /* ACCENT_N, then the theme's own (Classic Light: 10) */
     const option_t *opts;    /* Appearance rows after Theme, in order */
     unsigned char n_opts;
     unsigned undeclared;     /* SETTING_* bits of the theme options it does not declare */

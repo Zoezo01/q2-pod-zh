@@ -2499,9 +2499,11 @@ static void drift_place(void) {
  * caption. */
 enum { PANE_NOW, PANE_LIBRARY, PANE_SHUFFLE, PANE_COVERFLOW, PANE_FOLDER, PANE_GAMES, PANE_ROCKBOX,
        PANE_STREAM, PANE_SETTINGS };
-static const char *const pane_icons[] = { "nano_note",       "nano_note",       "nano_icon_note",
-                                          "nano_icon_stack", "nano_icon_folder", "nano_icon_game",
-                                          "nano_icon_game",  "nano_icon_wave",   "nano_icon_gear" };
+static const char *const pane_icons[] = {
+    "classic_light_note", "classic_light_note", "classic_light_icon_note",
+    "classic_light_icon_stack", "classic_light_icon_folder", "classic_light_icon_game",
+    "classic_light_icon_game", "classic_light_icon_wave", "classic_light_icon_gear"
+};
 static int pane_covers(void) { return home.kind <= PANE_LIBRARY && !home.pane; }
 
 /* The pan runs only while it shows: Home on top and not sliding (its snapshot would not move), the
@@ -2932,7 +2934,7 @@ static void home_width(void *w, int outer, int inner, int x, int end, int depth)
         void *child = widget_get_child(w, i);
         if (!tk_strcmp(widget_get_type(child), "hscroll_label")) {
             widget_move_resize(child, x, I(child, W_Y), inner - x - end, I(child, W_H));
-            /* Classic's bold, Nano's face; Minimal paints its own (paint_caps) */
+            /* Classic's bold, Classic Light's face; Minimal paints its own (paint_caps) */
             theme_font(child, ROLE_NP, -1);
         }
         else
@@ -3047,7 +3049,7 @@ int coverflow_home_back(void *top) {
     return 1;
 }
 
-/* Nano's bar title on Home (navigation.c bar_title_sync). */
+/* Classic Light's bar title on Home (navigation.c bar_title_sync). */
 const char *coverflow_home_title(void) {
     void *open = home_open();
     return !open ? "Q2 Pod" : open == home.lib ? "Library" : "Settings";

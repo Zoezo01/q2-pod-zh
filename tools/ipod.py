@@ -12,7 +12,7 @@ import pathlib
 import re
 import struct
 import types
-from build import NANO_TTF, ROOT, check, fileoff, sha, jal
+from build import CLASSIC_LIGHT_TTF, ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
@@ -30,7 +30,7 @@ class Geometry:
     """The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
     72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
     68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
-    text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Nano text row).
+    text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Classic Light text row).
     set_row, set_top, set_rows, set_icon: settings lists hold set_rows rows of set_row from set_top, the
     icon at set_icon (0 hides it); payload rows are built 70 px high (SET_STOCK_BODY), stock's shape,
     and mapped like stock's.
@@ -63,10 +63,10 @@ class Geometry:
     set_top: int = inc('SET_TOP')
     set_rows: int = inc('SET_ROWS')
     set_icon: int = inc('SET_ICON')
-    bar_px: int = 0  # the status bar's title and clock px in the Nano face (status_metrics); 0: stock's bar, no title
+    bar_px: int = 0  # the status bar's title and clock px in the Classic Light face (status_metrics); 0: stock's bar, no title
     bar_title_w: int = 0  # the bar title's text width (status_metrics)
-    bar_right: int = 0  # Nano's bar: the right group's margin, from the nub's last column to the screen's edge
-    batt_w: int = inc('BATT_BODY_W')  # the battery body under BATT_NANO (navigation.c nano_battery), its nub outside
+    bar_right: int = 0  # Classic Light's bar: the right group's margin, from the nub's last column to the screen's edge
+    batt_w: int = inc('BATT_BODY_W')  # the battery body under BATT_CLASSIC_LIGHT (navigation.c classic_light_battery), its nub outside
     batt_h: int = inc('BATT_BODY_H')
     text_x: int = 0  # list text's left edge, clear of the glass at the first row (0: stock's)
     action_row: int = 0  # Songs' action bar as a plain row this high (0: stock's 50 px bar)
@@ -382,7 +382,7 @@ def patch_style(data, audit):
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
 STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state', 'label_eq']
-STATE_W = 18  # Nano's play state's width: its halo's last column is 283 (tools/art.py STATE_BOX)
+STATE_W = 18  # Classic Light's play state's width: its halo's last column is 283 (tools/art.py STATE_BOX)
 STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
@@ -395,17 +395,17 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
-# Nano's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
+# Classic Light's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
 # bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery
-STATUS_RIGHT_NANO = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
+STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
-NANO_CLOCK_GAP = 2  # Nano's EQ, when the widest clock shows with it
-NANO_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Nano face's source, subset to NANO_TTF
-NANO_FONT_NAME = pathlib.Path(NANO_TTF).stem
+CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic Light's EQ, when the widest clock shows with it
+CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic Light face's source, subset to CLASSIC_LIGHT_TTF
+CLASSIC_LIGHT_FONT_NAME = pathlib.Path(CLASSIC_LIGHT_TTF).stem
 
 
 def status_metrics(g, font):
-    """Nano's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
+    """Classic Light's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
     fractional top row counted: the title's first ink clears the glass there. Stock's hscroll_label keeps
     2 px each side of its box, so the title's box is that much wider than its g.bar_title_w of text; the
     clock is centred, clock_text ("12:59 PM") its widest. Model (checked on the device):
@@ -447,16 +447,16 @@ def status_bar(root, g=SET0):
         pct[2].update({f'style:{s}:font_size': str(BATT_PCT_PX), f'style:{s}:text_align_h': 'right'})
     pct[2]['visible'] = 'false'
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
-    # Nano's set (bar_px): the title on the left in the Nano face, the clock centred, the icons right of it
-    m = g.bar_px and status_metrics(g, NANO_FONT_SRC)
+    # Classic Light's set (bar_px): the title on the left in the Classic Light face, the clock centred, the icons right of it
+    m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
     left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
-    right[3] = [widgets[n] for n in (STATUS_RIGHT_NANO if m else STATUS_RIGHT)]
+    right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
     xm = g.bar_right if m else STATUS_MARGIN
     for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
         layout = view[2]['children_layout']
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
         view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
-    room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + (NANO_CLOCK_GAP if m else CLOCK_GAP)))
+    room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + (CLASSIC_LIGHT_CLOCK_GAP if m else CLOCK_GAP)))
     if m:  # every icon, the battery with the column of soft edge left of it, and EQ 2 px short of Bluetooth's ink
         gap = inc('STATUS_GAP')
         reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
@@ -468,7 +468,7 @@ def status_bar(root, g=SET0):
             box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
             root[3].append(widgets[name])
         face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
-                for k, v in (('font_size', str(g.bar_px)), ('font_name', NANO_FONT_NAME))}
+                for k, v in (('font_size', str(g.bar_px)), ('font_name', CLASSIC_LIGHT_FONT_NAME))}
         # EQ floats at the room's left edge, not left of img_bt's whole canvas, whose last BT_REACH px alone hold ink:
         # there it would reach the clock's text.
         # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs

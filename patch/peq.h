@@ -205,7 +205,8 @@ void *page_row_detail_into(void *view, int index, const char *caption, const cha
 void page_row_into(void *view, int index, const char *caption, int (*click)(void *, void *));
 void row_into(void *item, int h);
 void list_toggle(void *label, const char *title, int on); /* navigation.c: a row's switch */
-void list_value(void *label, const char *title, const char *value); /* navigation.c: Nano's value */
+/* navigation.c: Classic Light's value */
+void list_value(void *label, const char *title, const char *value);
 char *csv_find(char *list, const char *item);                /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
@@ -351,11 +352,12 @@ int video_start(const char *file, int radio); /* books.c */
 void *edit_create(void *item, const char *input_type, int y, int h);
 const char *output_device(char *vol);         /* books.c */
 void dac_take(void);                          /* books.c */
-/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system font */
+/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
+ * font */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
 const char *theme_face(const unsigned *s, int n);
-void bar_title_sync(void *win); /* navigation.c: Nano's bar title names win */
+void bar_title_sync(void *win); /* navigation.c: Classic Light's bar title names win */
 int ipod_light(void);   /* navigation.c: Light Mode */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau

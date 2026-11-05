@@ -17,10 +17,10 @@ def pixels(data):
     return w, h, lambda x, y: tuple(raw[y * (4 * w + 1) + 1 + 4 * x + i] for i in range(4))
 
 
-def test_nano_draws_its_images_and_the_others_none():
+def test_classic_light_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[1])
-    assert set(art.images(themes[2])) == {f'nano_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
+    assert set(art.images(themes[2])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
 
 
 # The reference's rendered rows, its pixels the truth, within 1 per channel: the fill down column 272 of the pause bars
@@ -33,7 +33,7 @@ REF_EDGE = {5: 0x155a9b, 6: 0x1763a3, 7: 0x1a6dac, 8: 0x1d76b4, 9: 0x207fbc, 10:
 
 def test_the_play_state_stands_on_the_reference_rows():
     got = art.images(theme.builtins()[2])
-    w, h, at = pixels(got['nano_pause_l'])
+    w, h, at = pixels(got['classic_light_pause_l'])
     x0, y0 = art.STATE_BOX[:2]
     assert (w, h) == (ipod.STATE_W, 22)  # the bar's box and the art's are one number
     near = lambda p, rgb: p[3] == 255 and all(abs(p[i] - (rgb >> s & 255)) <= 1 for i, s in enumerate((16, 8, 0)))
@@ -46,27 +46,27 @@ def test_the_play_state_stands_on_the_reference_rows():
     assert {y for _, y in ink} == set(range(3, 20)) and {x for x, _ in ink} == set(range(269 - x0, 284 - x0))
     assert at(276 - x0, 11 - y0)[:3] == (255, 255, 255) and at(276 - x0, 11 - y0)[3] < 128  # between the bars: only the halo
     # the halo: the light half's is stronger than the dark's, outside the ink
-    assert pixels(got['nano_play_l'])[2](269 - x0, 5 - y0)[3] > pixels(got['nano_play_d'])[2](269 - x0, 5 - y0)[3] > 0
+    assert pixels(got['classic_light_play_l'])[2](269 - x0, 5 - y0)[3] > pixels(got['classic_light_play_d'])[2](269 - x0, 5 - y0)[3] > 0
 
 
 def test_the_bolt_and_the_plug_fill_the_batterys_inside():
     t = theme.builtins()[2]
     got = art.images(t)
     x0, y0 = art.BOLT_BOX[:2]
-    for name in ('nano_bolt', 'nano_plug'):
+    for name in ('classic_light_bolt', 'classic_light_plug'):
         assert pixels(got[name])[:2] == tuple(art.BOLT_BOX[2:]) == (26, 13)  # the inside, x 290 to 315, rows 5 to 17
-    at = pixels(got['nano_bolt'])[2]
+    at = pixels(got['classic_light_bolt'])[2]
     assert at(301 - x0, 10 - y0) == (0x3c, 0x4a, 0x34, 255)  # its colour, opaque
     assert t['bolt'] == 0x3c4a34 and t['bolt_halo_a'] == 102
     halo = at(305 - x0, 10 - y0)  # past the bolt's edge: white, no stronger than its alpha
     assert halo[:3] == (255, 255, 255) and 0 < halo[3] <= 102
     assert at(290 - x0, 10 - y0)[3] == 0 and at(315 - x0, 10 - y0)[3] == 0
-    plug = pixels(got['nano_plug'])[2]
+    plug = pixels(got['classic_light_plug'])[2]
     assert plug(301 - x0, 11 - y0) == (0x3c, 0x4a, 0x34, 255) and plug(290 - x0, 11 - y0)[3] == 0
 
 
 def test_the_note_is_white_and_translucent():
-    w, h, at = pixels(art.images(theme.builtins()[2])['nano_note'])
+    w, h, at = pixels(art.images(theme.builtins()[2])['classic_light_note'])
     assert (w, h) == (100, 115)
     assert at(0, 0) == (0, 0, 0, 0)  # outside the drawing
     assert at(36, 30)[:3] == (255, 255, 255) and at(36, 30)[3] > 200  # the gloss at the stem's top
@@ -74,7 +74,7 @@ def test_the_note_is_white_and_translucent():
 
 
 def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
-    w, h, at = pixels(art.images(theme.builtins()[2])['nano_chevron'])
+    w, h, at = pixels(art.images(theme.builtins()[2])['classic_light_chevron'])
     assert (w, h) == (12, 16)
     assert at(8, 8) == (255, 255, 255, 255)  # the point's centreline
     assert at(0, 15)[3] == 0 and at(11, 0)[3] == 0  # outside the stroke
@@ -82,7 +82,7 @@ def test_the_chevron_is_a_white_rounded_stroke_on_its_box():
 
 
 def test_sort_is_three_white_bars():
-    w, h, at = pixels(art.images(theme.builtins()[2])['nano_sort_bars'])
+    w, h, at = pixels(art.images(theme.builtins()[2])['classic_light_sort_bars'])
     assert (w, h) == (16, 12)
     for y in range(h):
         ink = [x for x in range(w) if at(x, y) == (255, 255, 255, 255)]
@@ -93,7 +93,7 @@ def test_sort_is_three_white_bars():
 def test_the_pane_icons_fit_their_box_and_keep_their_holes():
     got = art.images(theme.builtins()[2])
     for name, side in (('folder', 96), ('stack', 96), ('game', 96), ('wave', 96), ('gear', 96), ('note', 100)):
-        w, h, at = pixels(got[f'nano_icon_{name}'])
+        w, h, at = pixels(got[f'classic_light_icon_{name}'])
         assert w == side
         ink = [(x, y) for x in range(w) for y in range(h) if at(x, y)[3]]
         xs, ys = [p[0] for p in ink], [p[1] for p in ink]
@@ -101,9 +101,9 @@ def test_the_pane_icons_fit_their_box_and_keep_their_holes():
             assert max(max(xs) - min(xs), max(ys) - min(ys)) in range(91, 96), name
             assert abs((min(xs) + max(xs)) / 2 + 230 - 278) <= 1 and abs((min(ys) + max(ys)) / 2 + 76 - 124) <= 1, name
     x, y = 278 - 230, 124 - 76
-    assert pixels(got['nano_icon_gear'])[2](x, y)[3] == 0  # the gear's hole, even-odd
-    assert pixels(got['nano_icon_folder'])[2](x, y)[3] > 0
-    assert pixels(got['nano_icon_folder'])[2](x, y)[:3] == (255, 255, 255)
+    assert pixels(got['classic_light_icon_gear'])[2](x, y)[3] == 0  # the gear's hole, even-odd
+    assert pixels(got['classic_light_icon_folder'])[2](x, y)[3] > 0
+    assert pixels(got['classic_light_icon_folder'])[2](x, y)[:3] == (255, 255, 255)
 
 
 def test_path_reads_arcs_and_further_subpaths():

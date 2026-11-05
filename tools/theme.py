@@ -26,10 +26,10 @@ PAYLOAD_KEYS = frozenset(
     re.findall(r'"([A-Z0-9_]+)"', re.search(r'setting_keys\[\] = \{([^}]*)\}', (ROOT/'patch/navigation.c').read_text())[1])
     + [k for f in sorted((ROOT/'patch').glob('*.c')) for k in re.findall(r'"IPOD", "([A-Z0-9_]+)"', f.read_text())])
 # value name -> its C name (theme.h); the font keys take FONTS
-FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'nano': 'FONT_NANO'}
+FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'classic-light': 'FONT_CLASSIC_LIGHT'}
 CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'bar': 'SEL_BAR', 'stops': 'SEL_STOPS'},
            'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
-           'bar.battery.painter': {'stock': 'BATT_STOCK', 'nano': 'BATT_NANO'},
+           'bar.battery.painter': {'stock': 'BATT_STOCK', 'classic-light': 'BATT_CLASSIC_LIGHT'},
            **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
@@ -186,14 +186,14 @@ ROLE_MACROS = {
                 'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
 }
 
-# Nano Blue's measured selection band: its 1 px top line, the stops under it and its edge row:
-# derive="gloss"'s shape. assets/themes/nano/theme.xml states the same values (test_theme checks).
+# Classic Blue's measured selection band: its 1 px top line, the stops under it and its edge row:
+# derive="gloss"'s shape. assets/themes/classic-light/theme.xml states the same values (test_theme checks).
 GLOSS = ((0, 0x08a6e7), (17, 0x009ade), (38, 0x008ade), (58, 0x007dde), (79, 0x006dd6), (100, 0x0065d6))
 GLOSS_TOP, GLOSS_EDGE, GLOSS_TALL_EDGE, GLOSS_TALL_LINE, GLOSS_TALL_TOP = 0x94c7de, 0x004184, 0x004aa3, 0x688db3, 0x27ade5
 
 
 def turn(c, top):
-    """c, a colour of Nano Blue's band, in the accent whose top tone is top: its HSV hue turned by top's
+    """c, a colour of Classic Blue's band, in the accent whose top tone is top: its HSV hue turned by top's
     less the band's 38 % stop's, saturation and value scaled by theirs, so that stop becomes top."""
     def hsv(x): return colorsys.rgb_to_hsv(*((x >> s & 255) / 255 for s in (16, 8, 0)))
     (h0, s0, v0), (h, s, v), (ch, cs, cv) = hsv(GLOSS[2][1]), hsv(top), hsv(c)
@@ -202,7 +202,7 @@ def turn(c, top):
 
 
 def derive_gloss(tones):
-    """Nano Blue's stops in the accent of tones, an ACCENTS row: derive="gloss"."""
+    """Classic Blue's stops in the accent of tones, an ACCENTS row: derive="gloss"."""
     return [(p, turn(c, tones[0])) for p, c in GLOSS]
 
 

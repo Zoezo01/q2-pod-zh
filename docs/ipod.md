@@ -243,7 +243,7 @@ starts directly below it. The list stays 272 pixels high in both themes, preserv
 and full-row tap targets. The `navbar_only` assets set their
 `list_view`'s `default_item_height` from 78 to 68, which no stock asset uses, and nothing else.
 Constants are `SET_*` in `patch/offsets.inc`.
-Under a geometry set (Nano: nine 28-pixel rows from the top, no icons) the row height, top, row
+Under a geometry set (Classic Light: nine 28-pixel rows from the top, no icons) the row height, top, row
 count and icon size come from the set (`set_row`, `set_top`, `set_rows`, `set_icon`); the payload
 reads `set_row` and `set_icon` from the set `theme_boot` wrote, hides the icon at 0 and starts the
 text where a row without an icon starts. A payload picker's `select` or `unselect` (Theme, Key Lock)
@@ -772,16 +772,16 @@ What Classic does not restore: the pinned theme edit of `s_btn_listitem`'s press
 status bar asset's own background (`#000000`, not `#161616`), which the payload's fill covers.
 
 
-#### Nano
+#### Classic Light
 
-**Theme: Nano** (`THEME=2`) is a lighter iPod look of its own, on its own layout; Classic stays as it is. Choosing it from Minimal or Classic asks "Restart to apply?", because its rows are another geometry set. A screen it does not theme yet (Now Playing, Cover Flow, dialogs, Quick Settings, Streaming's pages) looks as in Classic.
+**Theme: Classic Light** (`THEME=2`) is a lighter iPod look of its own, on its own layout; Classic stays as it is. Choosing it from Minimal or Classic asks "Restart to apply?", because its rows are another geometry set. A screen it does not theme yet (Now Playing, Cover Flow, dialogs, Quick Settings, Streaming's pages) looks as in Classic.
 
-- **The bar.** A gloss bar with the page's title on the left, the clock centred, the play state, Bluetooth, Wi-Fi and the battery on the right. Under this bar **Time in Title** decides the clock alone (on unless chosen, and choosing Nano turns it on): off, the clock makes way while the page has a title, so the bar names the page once. The battery has five states: low (a red sliver), part full, full, charging (a bolt) and full on power (a plug). **Battery** is Icon or Percent Inside (Icon by default); a stored Percent or Icon + Percent reads as Percent Inside.
+- **The bar.** A gloss bar with the page's title on the left, the clock centred, the play state, Bluetooth, Wi-Fi and the battery on the right. Under this bar **Time in Title** decides the clock alone (on unless chosen, and choosing Classic Light turns it on): off, the clock makes way while the page has a title, so the bar names the page once. The battery has five states: low (a red sliver), part full, full, charging (a bolt) and full on power (a plug). **Battery** is Icon or Percent Inside (Icon by default); a stored Percent or Icon + Percent reads as Percent Inside.
 - **Lists.** 28 px rows, nine to a screen, the values on the right, the white chevron on the selected row only. A long title on the selected row scrolls, as in the other themes. Songs are two lines at 52 px, title and artist; Play All and Sort are a plain row at the top of Songs, reached by touch, not the wheel.
 - **Row Art.** It decides album covers only, in 52 px rows, and they are square: the Library is always 28 px text. A change restarts the Q2.
-- **Appearance's rows.** Theme, Light Mode, Accent, Home, Shortcut, Battery, Time in Title and Row Art. Corners and Centred Now Playing are not offered, and their stored values stay for the other themes. Nano has a dark version: choosing Nano turns Light Mode on unless it is on Auto. Its accent is its own (`NANO_ACCENT`): Nano Blue by default, then Classic's eight.
+- **Appearance's rows.** Theme, Light Mode, Accent, Home, Shortcut, Battery, Time in Title and Row Art. Corners and Centred Now Playing are not offered, and their stored values stay for the other themes. Classic Light has a dark version: choosing Classic Light turns Light Mode on unless it is on Auto. Its accent is its own (`CLASSIC_LIGHT_ACCENT`): Classic Blue by default, then Classic's eight.
 - **Home.** In Split, Library is a list on Home's left with the pane beside it, and the pane shows the highlighted row: Now Playing and the Library's rows the current cover, Shuffle the note and the song count, Cover Flow the album count, Folder its icon, Games the game count, Streaming the services, Settings the card's free space.
-- **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), renamed and shipped as `fonts/nano.ttf`; `assets/fonts/README-nano.txt` says what changed and where the original is. A shadow wider than its alphas is a build error (theme docs).
+- **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), renamed and shipped as `fonts/classic-light.ttf`; `assets/fonts/README-classic-light.txt` says what changed and where the original is. A shadow wider than its alphas is a build error (theme docs).
 
 ### Light Mode
 

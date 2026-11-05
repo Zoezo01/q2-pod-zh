@@ -440,8 +440,8 @@ typedef struct {
     /* The status bar's Bluetooth, Wi-Fi and battery widgets, looked up once (the bar is never
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
-     * level, charge and low state. Nano's bar also has a title (bar_title_sync), from the top
-     * window title_win and, when a label holds it, title_lbl (both found once per window). */
+     * level, charge and low state. Classic Light's bar also has a title (bar_title_sync), from the
+     * top window title_win and, when a label holds it, title_lbl (both found once per window). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
         *bar_title, *title_win, *title_lbl,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
@@ -2114,8 +2114,8 @@ static int drill(void *w) {
 static int geom(int group);
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
  * list_into: not in multi-select, and not on grid tiles. Home has none, except Classic's, which
- * rides its selection bar alone, nudge included. A theme's chevron_sel (Nano's) draws only the
- * selected row's, white. The image manager caches the bitmap. */
+ * rides its selection bar alone, nudge included. A theme's chevron_sel (Classic Light's) draws only
+ * the selected row's, white. The image manager caches the bitmap. */
 static void paint_chevrons(void *w, void *canvas) {
     unsigned bitmap[64], white[64]; /* bitmap_t */
     rect_t old;
@@ -2130,7 +2130,7 @@ static void paint_chevrons(void *w, void *canvas) {
     /* Light Mode: the row on a coloured bar or card keeps stock's white `>`, as an iPod's blue bar
      * does; by path, the image hook leaves it unflipped. */
     int lit = (sel_only || (ipod_light() && st.sel_accent)) && st.sel_w == w &&
-              !widget_load_image(w, box ? "nano_chevron" : LIST_INTO_WHITE, white);
+              !widget_load_image(w, box ? "classic_light_chevron" : LIST_INTO_WHITE, white);
     for (int i = 0; i < g_menu.n; ++i) {
         rect_t r = bounds(&g_menu, i);
         if (2 * r.w >= I(w, W_W) && drill(g_menu.at[i]) && (!home || i == st.sel_row) &&
@@ -2535,15 +2535,15 @@ static int painting_in(void *row);
  * images (select, unselect: a 26 px ring, a 12 px dot when checked) vanish on the selected row's
  * off-white card, so they are drawn again over it in the card's ink. So does the Wi-Fi, Bluetooth
  * and Tidal rows' navbar_delete, drawn again as list_delete, its copy in list_into's grey;
- * navbar_delete itself stays white for the playlist page's Delete. A set_text theme (Nano) has
- * neither: its rings are emptied and a checked row gets a tick.
+ * navbar_delete itself stays white for the playlist page's Delete. A set_text theme (Classic Light)
+ * has neither: its rings are emptied and a checked row gets a tick.
  */
 static void paint_radio(void *w, void *canvas) {
     if (!w) return;
     if (theme()->set_text) {
         const scheme_t *S = scheme();
-        /* Nano: a checked row's tick (dy, x, w of each 1 px line), the nano's own mark, in the
-         * selection's text or the ink; stock's ring images are empty (ringnav_image_add). */
+        /* Classic Light: a checked row's tick (dy, x, w of each 1 px line), the theme's own mark,
+         * in the selection's text or the ink; stock's ring images are empty (ringnav_image_add). */
         static const unsigned char tick[][3] = { { 0, 11, 2 }, { 1, 10, 2 }, { 2, 9, 2 },
                                                  { 3, 8, 2 },  { 4, 0, 2 },  { 4, 7, 2 },
                                                  { 5, 1, 2 },  { 5, 6, 2 },  { 6, 2, 2 },
@@ -2611,7 +2611,7 @@ static void paint_into(void *w, void *canvas) {
     if (!w || !(ipod_light() || sel_only) || !st.sel_accent || !P(canvas, CANVAS_LCD) ||
         tk_strcmp(widget_get_prop_str(w, "image", ""), "list_into") ||
         !painting_in(st.sel_accent) ||
-        widget_load_image(w, box ? "nano_chevron" : LIST_INTO_WHITE, bitmap))
+        widget_load_image(w, box ? "classic_light_chevron" : LIST_INTO_WHITE, bitmap))
         return;
     /* Only the middle half is cleared, where the glyph's ink is (rows 16-33 of 50): the whole
      * 50 px image would cross a 48 px row's top, over the bar's highlight and the row above. */
@@ -2732,8 +2732,8 @@ void list_toggle(void *label, const char *title, int on) {
     image_base_set_image(image, on ? "switch_on" : "switch_off");
 }
 
-/* Nano's settings rows (set_text): the title left and the value right-aligned in the trailing
- * column, the title ending short of it. Switches read On or Off as values. */
+/* Classic Light's settings rows (set_text): the title left and the value right-aligned in the
+ * trailing column, the title ending short of it. Switches read On or Off as values. */
 void list_value(void *label, const char *title, const char *value) {
     void *button = P(label, W_PARENT);
     void *text = widget_lookup(button, "_setting_value", 0);
@@ -3847,11 +3847,13 @@ static int bar_state_sync(void *bar) {
         changed = on != !!widget_get_visible(st.bar_state);
         widget_set_visible(st.bar_state, on, 0);
         if (on) {
-            /* BATT_NANO's play state is its own art (tools/art.py), by state and half */
-            static const char *const nano_icon[2][2] = { { "nano_play_d", "nano_pause_d" },
-                                                         { "nano_play_l", "nano_pause_l" } };
-            const char *icon = theme()->painter[PAINT_BATTERY] == BATT_NANO
-                                   ? nano_icon[ipod_light()][status != 2]
+            /* BATT_CLASSIC_LIGHT's play state is its own art (tools/art.py), by state and half */
+            static const char *const classic_light_icon[2][2] = {
+                { "classic_light_play_d", "classic_light_pause_d" },
+                { "classic_light_play_l", "classic_light_pause_l" }
+            };
+            const char *icon = theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT
+                                   ? classic_light_icon[ipod_light()][status != 2]
                                : status == 2 ? "bar_play"
                                              : "bar_pause";
             if (tk_strcmp(widget_get_prop_str(st.bar_state, "image", ""), icon)) {
@@ -3860,10 +3862,10 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    /* Nano's right group has room for EQ or the play state, not both: EQ while nothing plays. Its
-     * row closes up towards the battery when the state hides. */
+    /* Classic Light's right group has room for EQ or the play state, not both: EQ while nothing
+     * plays. Its row closes up towards the battery when the state hides. */
     if (st.bar_eq && st.bar_state && widget_get_visible(st.bar_state) &&
-        theme()->painter[PAINT_BATTERY] == BATT_NANO)
+        theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
         widget_set_visible(st.bar_eq, 0, 0);
     if (st.bar_idle && st.bar_state && st.bar_eq)
         widget_set_visible(st.bar_idle,
@@ -3905,7 +3907,7 @@ static void bar_sync(void *bar) {
         image_base_set_image(st.bar_bt, BT_GLYPH);
     accent(); /* reads the settings */
     if (st.home_rockbox != rockbox_available()) coverflow_home_layout();
-    /* Nano's battery: the set's body, which Percent Inside keeps */
+    /* Classic Light's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme();
     /* A relayout puts them back in the row; the bar paints at least once a second. */
     if (T->bar_bt_dy && I(st.bar_bt, W_Y) != T->bar_bt_dy)
@@ -3914,9 +3916,9 @@ static void bar_sync(void *bar) {
     if (T->bar_wifi_dy && I(st.bar_wifi, W_Y) != T->bar_wifi_dy)
         widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), T->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
-    int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
-        body = nano ? geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
-        inside = nano ? body : BATT_INSIDE_W;
+    int classic_light = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
+        body = classic_light ? geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
+        inside = classic_light ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
         int reach = mode == 1   ? BATT_PCT_W
@@ -3927,28 +3929,29 @@ static void bar_sync(void *bar) {
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Nano: the play state or EQ shares the group */
-        if (nano && st.bar_state && widget_get_visible(st.bar_state))
+        /* Classic Light: the play state or EQ shares the group */
+        if (classic_light && st.bar_state && widget_get_visible(st.bar_state))
             reach += I(st.bar_state, W_W) + STATUS_GAP;
-        if (nano && st.bar_eq && widget_get_visible(st.bar_eq))
+        if (classic_light && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
-        /* Nano's Percent Inside is the icon's own width: the icon would win no room */
-        if (reach > BATT_ROOM && !(nano && mode == 3)) mode = 0;
+        /* Classic Light's Percent Inside is the icon's own width: the icon would win no room */
+        if (reach > BATT_ROOM && !(classic_light && mode == 3)) mode = 0;
     }
     widget_set_visible(st.bar_icon, 0, 0);
     widget_set_visible(st.bar_pct, 0, 0);
     widget_set_visible(st.bar_slot, 1, 0);
 
     /* the level from label_battery's "88%" (stock zeroes progress_battery while charging), then
-     * under Nano full on power (get_battery_capacity's status 2 and stock's cable flag, memory
-     * both, as stock shows the plain icon then), charging (bar_charge) and low (bar_lowcharge), as
-     * stock picks the icon */
+     * under Classic Light full on power (get_battery_capacity's status 2 and stock's cable flag,
+     * memory both, as stock shows the plain icon then), charging (bar_charge) and low
+     * (bar_lowcharge), as stock picks the icon */
     const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
     const unsigned *t = widget_get_text(st.bar_pct);
     int level = 0;
     while (t && *t >= '0' && *t <= '9') level = level * 10 + (int)(*t++ - '0');
     unsigned key = (unsigned)(level > 100 ? 100 : level) << 3 |
-                   (unsigned)(nano && I(g_power_chargestate, 0) == 2 && g_usbdet_value) << 2 |
+                   (unsigned)(classic_light && I(g_power_chargestate, 0) == 2 && g_usbdet_value)
+                       << 2 |
                    (unsigned)(icon && !tk_strcmp(icon, "bar_charge")) << 1 |
                    (unsigned)(icon && !tk_strcmp(icon, "bar_lowcharge"));
     int pct = pct_width(key >> 3);
@@ -3980,14 +3983,14 @@ static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
     stock_canvas_set_fill_color(canvas, color);
     canvas_fill_rect(canvas, x, y, w, h);
 }
-/* Nano's battery (BATT_NANO), the body's top-left at x, y, the set's V_BATT_W x V_BATT_H with the
- * nub outside: the batt_line outline, its corners half covered, batt_edge along the bottom and a
- * hollow nub, the batt_empty rows inside, over them the level in the batt stops (a batt_low sliver
- * when low, full while charging), the last column shaded and, outside Percent Inside, the nano_bolt
- * image charging or nano_plug full on power.
- * In the light half a soft edge outside the body and an emboss under it. Final colours, never
- * flipped; the caller restores the fill. Returns the level's width. */
-static int nano_battery(void *w, void *canvas, int x, int y, unsigned key) {
+/* Classic Light's battery (BATT_CLASSIC_LIGHT), the body's top-left at x, y, the set's V_BATT_W x
+ * V_BATT_H with the nub outside: the batt_line outline, its corners half covered, batt_edge along
+ * the bottom and a hollow nub, the batt_empty rows inside, over them the level in the batt stops (a
+ * batt_low sliver when low, full while charging), the last column shaded and, outside Percent
+ * Inside, the classic_light_bolt image charging or classic_light_plug full on power. In the light
+ * half a soft edge outside the body and an emboss under it. Final colours, never flipped; the
+ * caller restores the fill. Returns the level's width. */
+static int classic_light_battery(void *w, void *canvas, int x, int y, unsigned key) {
     const theme_t *T = theme();
     unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
     int L = ipod_light(), bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), nh = BATT_NUB_H,
@@ -4025,7 +4028,7 @@ static int nano_battery(void *w, void *canvas, int x, int y, unsigned key) {
                  BATT_NUB_W, 2);
     }
     if (key & 6 && st.batt_mode != 3 &&
-        !widget_load_image(w, key & 2 ? "nano_bolt" : "nano_plug", bitmap)) {
+        !widget_load_image(w, key & 2 ? "classic_light_bolt" : "classic_light_plug", bitmap)) {
         rect_t src = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
                dst = { x + 1, y + 1, (int)bitmap[0], (int)bitmap[1] };
         canvas_draw_image(canvas, bitmap, &src, &dst);
@@ -4034,8 +4037,8 @@ static int nano_battery(void *w, void *canvas, int x, int y, unsigned key) {
 }
 /* The part of the digits in r that falls in columns x to x + w, in color (draw_centred's, which
  * Light Mode flips). */
-static void nano_digits(void *canvas, const unsigned *s, unsigned n, const rect_t *r, int x, int w,
-                        unsigned color) {
+static void classic_light_digits(void *canvas, const unsigned *s, unsigned n, const rect_t *r,
+                                 int x, int w, unsigned color) {
     int old[4], clip[4];
     if (!clip_within(canvas, old, clip, I(canvas, CANVAS_X) + x, I(canvas, CANVAS_Y) + r->y, w,
                      r->h))
@@ -4046,14 +4049,14 @@ static void nano_digits(void *canvas, const unsigned *s, unsigned n, const rect_
 }
 
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
- * puts the percentage beside the charge-level icon. Under Nano the battery is nano_battery's, its
- * digits in the bar's size. Restore canvas state. */
+ * puts the percentage beside the charge-level icon. Under Classic Light the battery is
+ * classic_light_battery's, its digits in the bar's size. Restore canvas state. */
 static void paint_battery(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     const theme_t *T = theme();
-    int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
-        px = nano && T->font_px[ROLE_BAR] ? T->font_px[ROLE_BAR] : BATT_PX;
+    int classic_light = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
+        px = classic_light && T->font_px[ROLE_BAR] ? T->font_px[ROLE_BAR] : BATT_PX;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     unsigned key = st.batt_key, level = key >> 3, s[4], n = put_num(s, level);
     int inside = st.batt_mode == 3;
@@ -4071,9 +4074,10 @@ static void paint_battery(void *w, void *canvas) {
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
-    if (nano) { /* the body centred on the bar's rows above its two lines, its soft edge at 0 */
+    if (classic_light) { /* the body centred on the bar's rows above its two lines, its soft edge at
+                            0 */
         int bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), y = (geom_val(V_BAR) - 2 - bh) / 2;
-        int f = nano_battery(w, canvas, 1, y, key);
+        int f = classic_light_battery(w, canvas, 1, y, key);
         if (st.batt_mode == 2) {
             int x = 1 + bw + BATT_NUB_W + BATT_GAP;
             rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
@@ -4082,8 +4086,9 @@ static void paint_battery(void *w, void *canvas) {
             /* dark on the level, whatever its colour; past it white, on the dark rows. White flips
              * to the light half's black and black to its white, so that half passes the other. */
             rect_t r = { 2, y + 1, bw - 2, bh - 2 };
-            nano_digits(canvas, s, n, &r, r.x, f, RGBA(ipod_light() ? 0xffffffu : 0));
-            nano_digits(canvas, s, n, &r, r.x + f, r.w - f, RGBA(ipod_light() ? 0 : 0xffffffu));
+            classic_light_digits(canvas, s, n, &r, r.x, f, RGBA(ipod_light() ? 0xffffffu : 0));
+            classic_light_digits(canvas, s, n, &r, r.x + f, r.w - f,
+                                 RGBA(ipod_light() ? 0 : 0xffffffu));
         }
         stock_canvas_set_fill_color(canvas, fill);
         return;
@@ -4131,13 +4136,15 @@ static void label_font(void *w, int bold) {
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
         widget_set_prop_str(w, font[i], bold ? "bold" : "default");
 }
-static const unsigned short bold_ranges[] = BOLD_RANGES, nano_ranges[] = NANO_RANGES;
+static const unsigned short bold_ranges[] = BOLD_RANGES,
+                            classic_light_ranges[] = CLASSIC_LIGHT_RANGES;
 
 /* 1 iff every character of c (n < 0: up to the NUL; NULL has none) is in face's cmap. */
 static int face_has(int face, const unsigned *c, int n) {
-    const unsigned short *r = face == FONT_NANO ? nano_ranges : bold_ranges;
-    unsigned k = face == FONT_NANO ? sizeof nano_ranges / sizeof *nano_ranges
-                                   : sizeof bold_ranges / sizeof *bold_ranges;
+    const unsigned short *r = face == FONT_CLASSIC_LIGHT ? classic_light_ranges : bold_ranges;
+    unsigned k = face == FONT_CLASSIC_LIGHT
+                     ? sizeof classic_light_ranges / sizeof *classic_light_ranges
+                     : sizeof bold_ranges / sizeof *bold_ranges;
     if (face == FONT_DEFAULT) return 1;
     if (!c) return 0;
     for (; n < 0 ? *c : n; ++c, --n) {
@@ -4148,14 +4155,14 @@ static int face_has(int face, const unsigned *c, int n) {
     return 1;
 }
 
-/* The theme's font for role on w: its face (bold.ttf, nano.ttf: tools/build.py) when that face has
- * every character of w's text (BOLD_RANGES, NANO_RANGES), else the next bold one that does (nano,
- * then bold), else stock's, which has CJK; and its px, if the theme sets one. Written in every
- * state the labels style, only when the answer (face | px << 2) differs from was; returns it. A
- * code-built row passes FONT_ROW: the answer lives in its own "_font" prop, and a role the theme
- * leaves to the style writes nothing. */
+/* The theme's font for role on w: its face (bold.ttf, classic-light.ttf: tools/build.py) when that
+ * face has every character of w's text (BOLD_RANGES, CLASSIC_LIGHT_RANGES), else the next bold one
+ * that does (classic-light, then bold), else stock's, which has CJK; and its px, if the theme sets
+ * one. Written in every state the labels style, only when the answer (face | px << 2) differs from
+ * was; returns it. A code-built row passes FONT_ROW: the answer lives in its own "_font" prop, and
+ * a role the theme leaves to the style writes nothing. */
 int theme_font(void *w, int role, int was) {
-    static const char *const faces[] = { "default", "bold", "nano" };
+    static const char *const faces[] = { "default", "bold", "classic-light" };
     static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
                                          "style:disable:font_name" },
                              *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
@@ -4168,7 +4175,7 @@ int theme_font(void *w, int role, int was) {
     }
     const unsigned *text = face ? widget_get_text(w) : (void *)0, none[1] = { 0 };
     if (face && !text) text = none; /* no text yet: keeps the face, as bold_label did */
-    if (face == FONT_NANO && !face_has(FONT_NANO, text, -1))
+    if (face == FONT_CLASSIC_LIGHT && !face_has(FONT_CLASSIC_LIGHT, text, -1))
         face = FONT_BOLD; /* Cyrillic: still bold */
     if (face == FONT_BOLD && !face_has(FONT_BOLD, text, -1)) face = FONT_DEFAULT; /* CJK */
     int answer = face | px << 2;
@@ -4185,8 +4192,8 @@ int theme_font(void *w, int role, int was) {
  * (still bold), else the system font (draw_centred, lyrics.c). A theme without a face of its own
  * draws the system font, as before. */
 const char *theme_face(const unsigned *s, int n) {
-    if (theme()->font[ROLE_TITLE] != FONT_NANO) return (const char *)0;
-    if (face_has(FONT_NANO, s, n)) return "nano";
+    if (theme()->font[ROLE_TITLE] != FONT_CLASSIC_LIGHT) return (const char *)0;
+    if (face_has(FONT_CLASSIC_LIGHT, s, n)) return "classic-light";
     return face_has(FONT_BOLD, s, n) ? "bold" : (const char *)0;
 }
 
@@ -5271,7 +5278,7 @@ static void action_row(void *view) {
     if (n < 3) return; /* Recently Added and the like have no Sort */
     void *sort = widget_get_child(view, 2);
     widget_use_style(sort, "default");
-    image_base_set_image(sort, "nano_sort_bars");
+    image_base_set_image(sort, "classic_light_sort_bars");
     image_set_draw_type(sort, IMAGE_DRAW_CENTER);
     widget_move_resize(sort, 301, 0, 48, h);
 }
@@ -5282,11 +5289,11 @@ static int title_due(const void *info) {
     return 0;
 }
 
-/* Nano's bar title (label_title, only its set's bar has one) names the top window win, Home by the
- * list it shows; a dialog keeps the window's title. The title's source is found once per top
- * window; after that a paint compares only that label's text with the title's (none for a title by
- * name), and the title is written only when it changes, with the face that has its characters
- * (stock draws a character its face lacks as nothing). */
+/* Classic Light's bar title (label_title, only its set's bar has one) names the top window win,
+ * Home by the list it shows; a dialog keeps the window's title. The title's source is found once
+ * per top window; after that a paint compares only that label's text with the title's (none for a
+ * title by name), and the title is written only when it changes, with the face that has its
+ * characters (stock draws a character its face lacks as nothing). */
 void bar_title_sync(void *win) {
     if (!st.bar_title || !win) return;
     static const unsigned none = 0;
@@ -5354,7 +5361,8 @@ int ringnav_paint_bg(void *w, void *canvas) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         const theme_t *T = theme();
         const scheme_t *S = scheme();
-        if (T->painter[PAINT_BAR] == BAR_GLOSS) { /* Nano: the gloss rows over the line, final */
+        if (T->painter[PAINT_BAR] ==
+            BAR_GLOSS) { /* Classic Light: the gloss rows over the line, final */
             int h = I(w, W_H) - 1;
             paint_stops(canvas, 0, 0, I(w, W_W), h, &S->bar);
             if (S->bar_line2 && ipod_light()) {
@@ -5573,10 +5581,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
-    /* The images a BATT_NANO theme generates (tools/art.py) are final, but for Sort's bars: a mark
-     * on the list's paper, in the half's ink */
-    if (s && !*s && T->painter[PAINT_BATTERY] == BATT_NANO && tk_str_start_with(name, "nano_") &&
-        tk_strcmp(name, "nano_sort_bars"))
+    /* The images a BATT_CLASSIC_LIGHT theme generates (tools/art.py) are final, but for Sort's
+     * bars: a mark on the list's paper, in the half's ink */
+    if (s && !*s && T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT &&
+        tk_str_start_with(name, "classic_light_") && tk_strcmp(name, "classic_light_sort_bars"))
         s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
      * secondary text's grey, legible on the black list and on the selected row's off-white card. */
@@ -5711,10 +5719,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                     (unsigned char)((p[o[0]] * 299 + p[o[1]] * 587 + p[o[2]] * 114) / 1000);
         bitmap_unlock_buffer(bitmap);
     }
-    /* Under Nano's battery the codec badges in the half's ink (its monochrome marks): every pixel
-     * that colour, alpha kept, final. */
+    /* Under Classic Light's battery the codec badges in the half's ink (its monochrome marks):
+     * every pixel that colour, alpha kept, final. */
     int mark = -1;
-    if (format < 4 && s && !*s && T->painter[PAINT_BATTERY] == BATT_NANO)
+    if (format < 4 && s && !*s && T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
         for (unsigned i = 0; i < sizeof codecs / sizeof *codecs; ++i)
             if (!tk_strcmp(name, codecs[i])) mark = (int)sc->ink;
     unsigned char *one = mark >= 0 ? bitmap_lock_buffer_for_write(bitmap) : (void *)0;
@@ -5732,13 +5740,14 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
         bitmap_unlock_buffer(bitmap);
         mapped = 1;
     }
-    /* A chevron_sel theme (Nano): stock's grey `>` on every row is emptied; paint_into draws the
-     * selected row's, white. */
+    /* A chevron_sel theme (Classic Light): stock's grey `>` on every row is emptied; paint_into
+     * draws the selected row's, white. */
     if (T->chevron_sel && s && !*s && !tk_strcmp(name, "list_into") && format < 4) {
         clear_bitmap(bitmap);
         mapped = 1;
     }
-    /* A set_text theme (Nano): stock's radio rings are emptied; paint_radio draws the tick. */
+    /* A set_text theme (Classic Light): stock's radio rings are emptied; paint_radio draws the
+     * tick. */
     if (T->set_text && s && !*s && (!tk_strcmp(name, "select") || !tk_strcmp(name, "unselect")) &&
         format < 4) {
         clear_bitmap(bitmap);
@@ -6395,10 +6404,10 @@ void ringnav_song_unknown(const char *key, char *text, int size) {
     if (geom(G_TEXT_ART)) getFormatString(key, text, size);
 }
 
-/* Under a set without text-row artwork (Nano's), a row no taller than the pitch is one line: its
- * leading children (artwork, the playing gif; stock's choice box stays) and the text's second line
- * hide, and the title, at the set's centred y, takes their width. Stock re-showing one relayouts
- * the row, which hides it again. */
+/* Under a set without text-row artwork (Classic Light's), a row no taller than the pitch is one
+ * line: its leading children (artwork, the playing gif; stock's choice box stays) and the text's
+ * second line hide, and the title, at the set's centred y, takes their width. Stock re-showing one
+ * relayouts the row, which hides it again. */
 static int one_line(void *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom(G_PITCH); }
 /* Under such a set, a taller row whose leading image stock gave no width (text_art 0, as Songs') is
  * two lines of text: the same children hide, its second line stays. */
@@ -6521,9 +6530,9 @@ static int compact_row_layout(void *layout, void *row) {
             widget_move_resize(text, T->art_text_x - 2 - I(row, W_X), I(text, W_Y), I(text, W_W),
                                I(text, W_H));
     }
-    /* The set's text inset (Nano's text_x, on screen, clear of the glass; the row may sit in from
-     * it): text leading the row moves there, its right edge kept. Text after art or stock's choice
-     * box keeps its place. */
+    /* The set's text inset (Classic Light's text_x, on screen, clear of the glass; the row may sit
+     * in from it): text leading the row moves there, its right edge kept. Text after art or stock's
+     * choice box keeps its place. */
     int tx = geom_val(V_TEXT_X);
     if (tx && text && I(text, W_X) <= B(layout, DEFAULT_LAYOUT_X_MARGIN)) {
         tx = tx > I(row, W_X) ? tx - I(row, W_X) : 0;
@@ -7208,7 +7217,7 @@ static int empty_toast(const void *unused) {
 
 /* Library Artists rows have no head picture, so the name gets its width (compact_row_layout skips
  * hidden siblings). Composers and Genres share the rows, which are rebound, so they show theirs
- * again, and Nano's one-line rows show none. */
+ * again, and Classic Light's one-line rows show none. */
 int ringnav_class_icon(void *row, int i) {
     int artists = I(g_class_type, 0) == 0xf004;
     int shown = !artists && geom(G_TEXT_ART); /* no class icon on a one-line row */
@@ -9077,8 +9086,8 @@ enum {
 };
 
 /* Every Library row, stock's and the added ones: its label takes the list titles' role. In a set
- * without Library icons (Nano) it also drops its icon and starts its label at the set's text inset
- * on screen, its right edge kept. */
+ * without Library icons (Classic Light) it also drops its icon and starts its label at the set's
+ * text inset on screen, its right edge kept. */
 static void library_look(void *view) {
     const theme_t *T = theme();
     int bare = !geom_val(V_LIB_ART);

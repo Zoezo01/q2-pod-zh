@@ -2,8 +2,8 @@
 """Compose native-size review sheets; these are layout illustrations, not AWTK captures.
 Usage: python3 test/ui_preview.py [--themes BEFORE,AFTER] BEFORE_BUILD AFTER_BUILD OUTPUT [BEFORE_CF AFTER_CF]
 Each side is drawn in an iPod Theme, classic or minimal (default classic,minimal); one build passed
-twice compares its two themes. --themes nano,nano (one build passed twice) composes only the status
-sheet, Nano's bar on each row. Uses the existing ImageMagick dependency and the original firmware's
+twice compares its two themes. --themes classic_light,classic_light (one build passed twice) composes only the status
+sheet, Classic Light's bar on each row. Uses the existing ImageMagick dependency and the original firmware's
 native font/assets.
 """
 import hashlib
@@ -15,16 +15,16 @@ import sys
 import tempfile
 sys.path.insert(0, sys.path[0] + '/../tools')
 from ipod import (decode, walk, imagemagick, png_header, HOME_TEXT_X, HOME_LIST_W, STATUS_MARGIN,
-                  HOME_LABEL_END, HOME_ROW, HOME_TOP, INC, inc, SETTINGS_SLIDERS, NANO_FONT_NAME)
+                  HOME_LABEL_END, HOME_ROW, HOME_TOP, INC, inc, SETTINGS_SLIDERS, CLASSIC_LIGHT_FONT_NAME)
 
 argv = sys.argv[1:]
 themes = ['classic', 'minimal']
 if argv[:1] == ['--themes']: themes, argv = argv[1].split(','), argv[2:]
-nano = themes == ['nano', 'nano']
-assert len(themes) == 2 and (nano or set(themes) <= {'classic', 'minimal'})
+classic_light = themes == ['classic-light', 'classic-light']
+assert len(themes) == 2 and (classic_light or set(themes) <= {'classic', 'minimal'})
 before, after, out = map(pathlib.Path, argv[:3])
 cf_paths = list(map(pathlib.Path, argv[3:]))
-assert len(cf_paths) in (0, 2) and not (nano and (cf_paths or before.resolve() != after.resolve()))
+assert len(cf_paths) in (0, 2) and not (classic_light and (cf_paths or before.resolve() != after.resolve()))
 out.mkdir(parents=True, exist_ok=True)
 # Classic: patch/offsets.inc ACCENTS (top, bottom, light); Minimal has no accent.
 classic_accents = [tuple(int(v, 16) for v in g) for g in re.findall(r'\{ 0x(\w+), 0x(\w+), 0x(\w+), 0x(\w+), 0x\w+ \}', INC)]
@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
     cases += [f'{label} / {value}%' for label in ('Brightness','Balance','Maximum volume','Default volume')
               for value in (0,50,100)]
     cases += ['System Settings / with Rockbox', 'System Settings / without Rockbox', 'Internet Radio / favourite']
-    for accent, name in enumerate(() if nano else ('Graphite','Crimson','Tidal','Champagne','Cobalt')):
+    for accent, name in enumerate(() if classic_light else ('Graphite','Crimson','Tidal','Champagne','Cobalt')):
         tiles=[]
         for case, title in enumerate(cases):
             for side, (theme, build) in enumerate(zip(themes, (before, after))):
@@ -268,7 +268,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
     # Album cards: native tile positions and cover/label geometry from album_children.
     # Include each column, the last row, scrolling, long names and a playing overlay.
     album_frames=[]
-    for dynamic in () if nano else (False, True):
+    for dynamic in () if classic_light else (False, True):
         for offset, selected in ((0,0),(0,1),(0,2),(100,3),(100,4),(100,5)):
             a=['-size','375x320','xc:black']
             for i in range(6):
@@ -306,34 +306,34 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
         render(frames+['-append'],out/'coverflow-renderer.png')
     # Native-size status review: all four modes, both themes, crowded and critical states.
     battery_rows=[]
-    if nano:  # Nano's light half (theme.xml): its bar stops and line; the built bar's title and clock boxes
+    if classic_light:  # Classic Light's light half (theme.xml): its bar stops and line; the built bar's title and clock boxes
         from theme import builtins, scheme_half, sets
-        nano_t=builtins()[2]; NANO=sets(nano_t)['nano']; half=scheme_half(nano_t['schemes'][9],True)
+        classic_light_t=builtins()[2]; CLASSIC_LIGHT=sets(classic_light_t)['classic-light']; half=scheme_half(classic_light_t['schemes'][9],True)
         def batt_stop(j,h):  # the battery level's stops at row j of h (paint_stops), light half: hues as stated
-            p=j*100/(h-1); st=nano_t['batt']
+            p=j*100/(h-1); st=classic_light_t['batt']
             (p0,c0),(p1,c1)=next((a,b) for a,b in zip(st,st[1:]) if p<=b[0])
             return '#'+''.join(f'{round((c0>>s&255)+((c1>>s&255)-(c0>>s&255))*(p-p0)/(p1-p0)):02x}' for s in (16,8,0))
         def stop(y):  # the gloss at row y of 25, linear between the stops
-            p=y*100/(NANO.bar-2)
+            p=y*100/(CLASSIC_LIGHT.bar-2)
             (p0,c0),(p1,c1)=next((a,b) for a,b in zip(half['bar'],half['bar'][1:]) if p<=b[0])
             return '#'+''.join(f'{round((c0>>s&255)+((c1>>s&255)-(c0>>s&255))*(p-p0)/(p1-p0)):02x}' for s in (16,8,0))
-        boxes={n[2].get('name'):n for n in walk(decode(asset(after,'ui/nano_system_bar.bin').read_bytes()))}
-        nano_font=asset(after,f'fonts/{NANO_FONT_NAME}.ttf')
-        nano_xm=int(re.search(r'xm=(\d+)',boxes['view_right'][2]['children_layout'])[1])  # the right group's margin
-    for theme in themes[:1] if nano else themes:
+        boxes={n[2].get('name'):n for n in walk(decode(asset(after,'ui/classic-light_system_bar.bin').read_bytes()))}
+        classic_light_font=asset(after,f'fonts/{CLASSIC_LIGHT_FONT_NAME}.ttf')
+        classic_light_xm=int(re.search(r'xm=(\d+)',boxes['view_right'][2]['children_layout'])[1])  # the right group's margin
+    for theme in themes[:1] if classic_light else themes:
         bg=f'#{inc("BAR_COLOR"):06x}'
         for state,level in [('normal',n) for n in (0,1,9,50,99,100)]+[('charging',50),('low',5),('codec',100)]:
             columns=[]
             for mode in range(4):
                 color=f'#{inc("BATT_CHARGE_RGB") if state=="charging" else inc("BATT_LOW_RGB") if state=="low" else 0xffffff:06x}'
                 a=['-size','375x50','xc:black']
-                if nano:
-                    for y in range(NANO.bar-1): rect(a,0,y,375,1,stop(y))
-                    rect(a,0,NANO.bar-1,375,1,f'#{half["bar_line"]:06x}')
+                if classic_light:
+                    for y in range(CLASSIC_LIGHT.bar-1): rect(a,0,y,375,1,stop(y))
+                    rect(a,0,CLASSIC_LIGHT.bar-1,375,1,f'#{half["bar_line"]:06x}')
                     for name,value,gravity in (('label_title','Songs','West'),('label_clock','12:59 PM','Center')):
                         x,y,w,h=boxes[name][1]
                         # gravity before label: too, which a NorthWest left over would draw at the label's top
-                        a+=['(','+size','-gravity',gravity,'-background','none','-fill','black','-font',nano_font,'-pointsize',NANO.bar_px,
+                        a+=['(','+size','-gravity',gravity,'-background','none','-fill','black','-font',classic_light_font,'-pointsize',CLASSIC_LIGHT.bar_px,
                             'label:'+value,'-extent',f'{w}x{h}',')','-gravity','NorthWest','-geometry',f'+{x}{y:+d}','-composite',
                             '-fill','none','-stroke','#ff00ff','-draw',f'rectangle {x},{y} {x+w-1},{y+h-1}','+stroke']
                 else: rect(a,0,0,375,30,bg)
@@ -345,36 +345,36 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                             'label:'+value,'-gravity','Center','-extent',f'{w}x{h}'],glyph)
                     a.extend([glyph,'-gravity','NorthWest','-geometry',f'+{x}+{y}','-composite'])
                     return imagemagick(glyph,'-format','%@','info:',data=b'').decode().strip()
-                if not nano:
+                if not classic_light:
                     label('12:59 PM',16,142,0,90,30)
                     image(a,asset(after,'images/xx/bar_play.png'),STATUS_MARGIN,7,12,16)
-                effective=0 if state=='codec' else 3 if nano and mode in (1,2) else mode  # Nano's values: they read as Percent Inside
-                if nano:  # navigation.c nano_battery: the set's body, the light half's outline, paper and level
-                    gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=NANO.batt_w,NANO.batt_h; nh=inc('BATT_NUB_H')
+                effective=0 if state=='codec' else 3 if classic_light and mode in (1,2) else mode  # Classic Light's values: they read as Percent Inside
+                if classic_light:  # navigation.c classic_light_battery: the set's body, the light half's outline, paper and level
+                    gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=CLASSIC_LIGHT.batt_w,CLASSIC_LIGHT.batt_h; nh=inc('BATT_NUB_H')
                     ink=f'#{half["ink"]:06x}'; dig=ink if color=='#ffffff' else color
                     reach={0:0,1:inc('BATT_PCT_W'),2:bw+nub+inc('BATT_GAP')+inc('BATT_PCT_W'),3:bw+nub}[effective]
                     if reach+2*gap+14+inc('BT_REACH')>inc('BATT_ROOM'): effective=0  # Wi-Fi and Bluetooth shown
                     width=inc('BATT_PCT_W') if effective==1 else bw+nub+(inc('BATT_GAP')+inc('BATT_PCT_W') if effective==2 else 0)
-                    x=375-nano_xm-width; y=(NANO.bar-2-bh)//2
+                    x=375-classic_light_xm-width; y=(CLASSIC_LIGHT.bar-2-bh)//2
                     if effective!=1:
-                        line=f'#{nano_t["light"]["batt_line"]:06x}'
+                        line=f'#{classic_light_t["light"]["batt_line"]:06x}'
                         for dx,dy,w,h in ((1,0,bw-2,1),(0,1,1,bh-2),(bw-1,1,1,bh-2),(bw,(bh-nh)//2,nub,1),(bw,(bh-nh)//2+nh-1,nub,1),(bw+nub-1,(bh-nh)//2+1,1,nh-2)):
                             rect(a,x+dx,y+dy,w,h,line)
-                        rect(a,x+1,y+bh-1,bw-2,1,f'#{nano_t["batt_edge"]:06x}')
+                        rect(a,x+1,y+bh-1,bw-2,1,f'#{classic_light_t["batt_edge"]:06x}')
                         rect(a,x+1,y+1,bw-2,bh-2,f'#{half["paper"]:06x}')
                         f=(bw-2)*(100 if state=='charging' else level)//100
                         for j in range(bh-2) if f else ():
                             rect(a,x+1,y+1+j,f,1,color if state=='low' else batt_stop(j,bh-2))
                         if state=='charging' and effective!=3:
-                            image(a,asset(after,'images/xx/nano_bolt.png'),x+1,y+1,bw-2,bh-2)
-                    if effective==3: label(str(level),bh-2,x+1,y+1,bw-2,bh-2,'#000000',nano_font)  # dark on the level
+                            image(a,asset(after,'images/xx/classic_light_bolt.png'),x+1,y+1,bw-2,bh-2)
+                    if effective==3: label(str(level),bh-2,x+1,y+1,bw-2,bh-2,'#000000',classic_light_font)  # dark on the level
                     elif effective in (1,2):
                         px=x+(bw+nub+inc('BATT_GAP') if effective==2 else 0)
-                        label(str(level)+'%',NANO.bar_px,px,0,x+width-px,NANO.bar,dig,nano_font)
+                        label(str(level)+'%',CLASSIC_LIGHT.bar_px,px,0,x+width-px,CLASSIC_LIGHT.bar,dig,classic_light_font)
                     wifi=asset(after,'images/xx/bar_wifi4.png'); ww,wh=png_header(wifi.read_bytes())[:2]
-                    image(a,wifi,x-gap-ww,(NANO.bar-wh)//2,ww,wh,ink)
+                    image(a,wifi,x-gap-ww,(CLASSIC_LIGHT.bar-wh)//2,ww,wh,ink)
                     bt=asset(after,'images/xx/'+('bar_aptxhd' if state=='codec' else 'bar_btcon')+'.png'); tw,th=png_header(bt.read_bytes())[:2]
-                    image(a,bt,x-2*gap-ww-tw,(NANO.bar-th)//2,tw,th,ink)
+                    image(a,bt,x-2*gap-ww-tw,(CLASSIC_LIGHT.bar-th)//2,tw,th,ink)
                     frame=tmp/f'status-{theme}-{state}-{level}-{mode}.png'
                     assert render(a,frame)==(375,50)
                     columns.append(frame)

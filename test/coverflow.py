@@ -132,7 +132,7 @@ static int note_loads, note_drawn[4], note_fail; /* the pane image: a theme imag
 static char pane_image[32];
 int widget_load_image(void *x, const char *url, void *b) {
     struct stat s;
-    if (!strncmp(url, "nano_", 5)) {
+    if (!strncmp(url, "classic_light_", 5)) {
         snprintf(pane_image, sizeof pane_image, "%s", url);
         memset(b, 0, 0x18);
         int note = strstr(url, "note") != 0; /* the pane icons are 96 x 96 */
@@ -1685,7 +1685,7 @@ int main(void) {
     stub_bar_h = 30;
     coverflow_home_layout();
     assert(!memcmp(geo, split, sizeof split));
-    /* Nano (shim_themes[2]): no cover shows the pane instead of default_album_home. The art spans the
+    /* Classic Light (shim_themes[2]): no cover shows the pane instead of default_album_home. The art spans the
      * panel and paints the pane's stops over all of it, its light (white, alpha 40 at the left, 0 at the
      * right edge, a band per alpha), the shadow down its left edge (black, the theme's alpha per column),
      * the note (its image, the theme's place) and the queue's count, "12 Songs", at 27 px, centred on its
@@ -1775,13 +1775,13 @@ def main():
     shim = re.search(r'shim_themes\[3\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
     assert norm(home_fields(shim[:2])) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
-    # Nano's are its theme.xml's, resolved; home_top 0 is unset in the shim.
-    nano, tight = builtins()[2], re.sub(r'\s', '', shim[2])
-    assert nano['home_top'] == 0 and f"home_label_end={{{nano['home_label_end[0]']},{nano['home_label_end[1]']}}}" in tight
-    assert 'home_pane=' + stops_c(nano['home_pane']).replace(' ', '') in tight, 'shim_themes drifted from Nano'
-    assert 'pane_shadow_a={' + ','.join(map(str, nano['pane_shadow_a'])) in tight, 'shim_themes drifted from Nano'
+    # Classic Light's are its theme.xml's, resolved; home_top 0 is unset in the shim.
+    classic_light, tight = builtins()[2], re.sub(r'\s', '', shim[2])
+    assert classic_light['home_top'] == 0 and f"home_label_end={{{classic_light['home_label_end[0]']},{classic_light['home_label_end[1]']}}}" in tight
+    assert 'home_pane=' + stops_c(classic_light['home_pane']).replace(' ', '') in tight, 'shim_themes drifted from Classic Light'
+    assert 'pane_shadow_a={' + ','.join(map(str, classic_light['pane_shadow_a'])) in tight, 'shim_themes drifted from Classic Light'
     for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_light_a', 'pane_note_x', 'pane_note_y', 'pane_count_y', 'pane_count_w', 'pane_count_px'):
-        assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == nano[field], f'shim_themes drifted from Nano: {field}'
+        assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == classic_light[field], f'shim_themes drifted from Classic Light: {field}'
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
                 for i, m in enumerate((ROLE_MACROS['minimal'], ROLE_MACROS['classic']))]
@@ -1865,7 +1865,7 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in both themes, and Nano\'s pane, passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in both themes, and Classic Light\'s pane, passed.')
 
 
 if __name__ == '__main__':
