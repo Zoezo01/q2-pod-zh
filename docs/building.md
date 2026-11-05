@@ -78,6 +78,7 @@ python3 test/mp3_gapless.py                # gapless parser/PCM and generated LA
 python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock's demuxer and libmad under Unicorn on generated files (lame, unsquashfs, readelf)
 python3 test/build.py                      # JPEG header checks; no emulator required
 python3 test/build.py 'Q2 Firmware V1.32.zip'   # packaging checks (custom logo, quoted paths)
+python3 test/build.py --build BUILD         # a finished build's payloads and packaging
 python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
 python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
@@ -92,7 +93,8 @@ python3 test/hci_wait.py /tmp/q2-build     # the built player's futex waits for 
 python3 test/hci_ao.py /tmp/q2-build       # a natural change in the real player against a kernel-faithful PCM: reopens, a kept PCM, a dry first write
 python3 test/bt_resample.py /tmp/q2-build  # the built player's Bluetooth resampler across a gapless change
 python3 test/xfade_player.py /tmp/q2-build  # the built player's crossfade: the hold, the mix at the same and another rate, the drops
-python3 test/hci_natural.py /tmp/q2-build   # natural changes in the real player: a bit-exact seam, a bad next file, an understated length, a late preload
+python3 test/hci_natural.py /tmp/q2-build   # natural changes in the real player: a bit-exact seam, a bad next file, an understated length, a late preload, Crossfade's late next and moved fade
+python3 test/player_seam.py /tmp/q2-build   # AAC, Opus and Vorbis gapless trims in the real player, each format's seam and each wrong tag against stock (ffmpeg, unsquashfs)
 python3 test/mp3_gapless_player.py /tmp/q2-build  # built MIPS gapless hooks, preload isolation, seeks and cleanup
 python3 test/ldac.py /tmp/q2-build         # shipped LDAC intermediate rates and native adaptive controller
 python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O
