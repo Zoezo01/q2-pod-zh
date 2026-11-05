@@ -128,7 +128,8 @@ The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 
 Your settings, ratings and play counts are kept. The updater skips a version that's already installed, so a newer release always goes on.
 
-## Apps
+<details>
+<summary><h2>Apps</h2></summary>
 
 **System settings → App Store** installs, updates and removes these over Wi-Fi:
 
@@ -175,7 +176,10 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   </tr>
 </table>
 
-## Extras
+</details>
+
+<details>
+<summary><h2>Extras</h2></summary>
 
 <table>
   <tr valign="top">
@@ -194,13 +198,18 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
 
 The [user guide][guide] has the steps for each.
 
-## Library
+</details>
+
+<details>
+<summary><h2>Library</h2></summary>
 
 Copy your music to the card over USB-C, then run **Library → Update Local Music** on the Q2.
 
 - **More than music:** these folders at the card's root each add their own Library entry: `Podcasts/`, `Audiobooks/`, `Photos/`, `Books/` and `Videos/`. `EQ/` holds EQ presets to import. See the [user guide][guide] for supported formats.
 - **Long audiobooks:** a book too long for the Q2's memory (around 40 hours in one file) needs splitting into parts.
 - **Hiding a folder:** to keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, put an empty file named `database.ignore` in it and run **Update Local Music** again. Its songs still play from Folder view and from playlists, and an empty `database.unignore` in a subfolder lets that subfolder back in ([details](docs/discovery.md)).
+
+</details>
 
 ## Restoring stock firmware
 
