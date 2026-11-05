@@ -106,7 +106,7 @@ def test_load(tmp_path):
 
 THEMES = theme.ROOT/'assets/themes'
 ZERO = {**dict.fromkeys(('card', 'raw_red', 'fill', 'chevron', 'muted', 'bar_light'), 0),
-        'sel': (), 'sel_top': 0, 'sel_edge': 0, 'sel_text': 0, 'bar': (), 'bar_line': 0, 'mode': 0, 'paper': 0xf4f4f4, 'ink': 0x161616, 'light': {}}
+        'sel': (), 'sel_top': 0, 'sel_edge': 0, 'sel_text': 0, 'bar': (), 'bar_line': 0, 'bar_line2': 0, 'mode': 0, 'paper': 0xf4f4f4, 'ink': 0x161616, 'light': {}}
 MINIMAL_ROLES = {**ZERO, 'fill': 0xeeeeec, 'chevron': 0x777777, 'muted': 0x8c8c8c}
 CLASSIC_ROLES = {**ZERO, 'bar_light': 0xdedede}
 
@@ -129,8 +129,8 @@ MINIMAL = {
     'painter[PAINT_SELECTION]': 0, 'painter[PAINT_BAR]': 0, 'painter[PAINT_BATTERY]': 0, 'chevron_home': 0, 'chevron_sel': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
-    'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': 0, 'pane_light': 0, 'pane_light_a': 0,
-    'set_top': 8, 'set_text': 0, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'batt': (), 'batt_line': 0, 'state_color': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
+    'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': 0, 'pane_note_x': 0, 'pane_note_y': 0, 'pane_count_y': 0, 'pane_count_w': 0, 'pane_count_px': 0,
+    'set_top': 8, 'set_text': 0, 'np_bar': 4, 'np_scrub': 8, 'art_square': 0, 'batt_fill': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'batt': (), 'batt_line': 0, 'batt_edge': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -348,10 +348,10 @@ def test_resolve_takes_a_long_name():
 MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('chevron_sel', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
                   ('font[ROLE_NP]', 'FONT_DEFAULT'), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
-                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font_px[ROLE_NP]', 0), ('home_pane', '{0}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', 0), ('pane_light', 0), ('pane_light_a', 0), ('set_top', 8), ('set_text', 0), ('np_bar', 4),
+                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font_px[ROLE_NP]', 0), ('home_pane', '{0}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('set_top', 8), ('set_text', 0), ('np_bar', 4),
                   ('np_scrub', 8), ('art_square', 0), ('batt_fill', 0), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
                   ('font_px[ROLE_TITLE]', 0), ('font_px[ROLE_META]', 0), ('font[ROLE_BAR]', 'FONT_DEFAULT'), ('font_px[ROLE_BAR]', 0),
-                  ('batt', '{0}'), ('batt_line', '{0, 0}'), ('state_color', 0),
+                  ('batt', '{0}'), ('batt_line', '{0, 0}'), ('batt_edge', 0), ('batt_shade_a', 0), ('batt_soft_a', 0), ('batt_soft_top_a', 0), ('batt_emboss_a', 0), ('batt_emboss_nub_a', 0),
                   ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
                   ('schemes', 'minimal_schemes'), ('light', 'minimal_schemes'), ('n_schemes', 9), ('opts', 'minimal_opts'), ('n_opts', 8),
                   ('undeclared', 0), ('np_layout', 'NP_IPOD'),
@@ -366,7 +366,7 @@ def test_emit(tmp_path):
         'static const scheme_t minimal_schemes[] = {',
         *(f'    {{ .tones = accents[{v}], .flags = {flags.get(v, 0)}, .fill = 0xeeeeec, .chevron = 0x777777, '
           f'.muted = 0x8c8c8c, .bar_light = 0x000000, .sel = {{0}}, .sel_top = 0x000000, .sel_edge = 0x000000, '
-          f'.sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616, .bar = {{0}}, .bar_line = 0x000000 }},' for v in range(9)),
+          f'.sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, .ink = 0x161616, .bar = {{0}}, .bar_line = 0x000000, .bar_line2 = 0x000000 }},' for v in range(9)),
         '};',
         '_Static_assert(sizeof minimal_schemes / sizeof *minimal_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");',
         'static const option_t minimal_opts[] = {',
@@ -393,7 +393,7 @@ def test_emit_both(tmp_path):
         'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
     assert ('    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000, '
             '.sel = {0}, .sel_top = 0x000000, .sel_edge = 0x000000, .sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, '
-            '.ink = 0x161616, .bar = {0}, .bar_line = 0x000000 },\n    { .tones = accents[8]') in text
+            '.ink = 0x161616, .bar = {0}, .bar_line = 0x000000, .bar_line2 = 0x000000 },\n    { .tones = accents[8]') in text
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = classic_schemes,' in text
     assert '    },\n};\nenum { GEOM_IPOD, GEOM_N };\n' in text
@@ -560,8 +560,8 @@ def test_stops_resolve():
 
 
 @pytest.mark.parametrize('stops, message', [
-    ('#94c7de 0', '2 to 8 stops'),
-    (', '.join(f'#000000 {p}' for p in (0, 10, 20, 30, 40, 50, 60, 70, 100)), '2 to 8 stops'),
+    ('#94c7de 0', '2 to 13 stops'),
+    (', '.join(f'#000000 {p}' for p in (0, *range(10, 61, 5), 70, 100)), '2 to 13 stops'),
     ('#94c7de 0, #0065d6 50', 'positions must rise from 0 to 100'),
     ('#94c7de 10, #0065d6 100', 'positions must rise from 0 to 100'),
     ('#94c7de 0, #08a6e7 40, #009ade 40, #0065d6 100', 'positions must rise from 0 to 100'),
@@ -587,7 +587,9 @@ def test_bar_painter_and_scheme_bar_roles():
     t = resolved('<colorScheme name="graphite" bar.stops="#ffffff 0, #9c9e9c 100" bar.line="#5a595a"/>'
                  '<view name="bar"><element name="fill" painter="gloss"/></view>')
     assert t['painter[PAINT_BAR]'] == 1 and t['schemes'][0]['bar'] == ((0, 0xffffff), (100, 0x9c9e9c))
-    assert t['schemes'][0]['bar_line'] == 0x5a595a
+    assert t['schemes'][0]['bar_line'] == 0x5a595a and t['schemes'][0]['bar_line2'] == 0
+    nano = theme.builtins()[2]['schemes'][0]
+    assert nano['bar_line2'] == 0x848584
     assert error(resolved, '<view name="bar"><element name="fill" painter="shiny"/></view>') == \
         't.xml:1: bar.fill.painter: unknown value shiny'
 
@@ -599,8 +601,9 @@ def test_bar_battery_painter_rejects():
 
 def test_theme_level_halves():
     nano = theme.builtins()[2]
-    assert nano['batt_line'] == 0 and nano['light']['batt_line'] == 0x636163  # light stated, dark derived
+    assert nano['batt_line'] == 0x9c9e9c and nano['light']['batt_line'] == 0x717070  # both halves stated
     assert theme.half(nano, False, 0xffffff, 0)['batt_line'] == 0x9c9e9c
+    assert theme.half({**nano, 'batt_line': 0}, False, 0xffffff, 0)['batt_line'] != 0  # one stated: the other derives
     assert error(resolved, '<view name="bar"><element name="battery" light.painter="nano"/></view>') == \
         't.xml:1: bar.battery.painter: one value for both halves'
 

@@ -45,6 +45,10 @@ class Geometry:
     art_body: int = 68
     text_art: int = 52
     text_art_inset: int = 8
+    lib_pitch: int = 72  # the Library's rows, a kind of their own: its pitch, body, icon inset and icon (0 hides it)
+    lib_body: int = 68
+    lib_inset: int = 8
+    lib_art: int = 52
     title24_y: int = 13  # text y in the body: the 24px title, the title, metadata, playlist count
     title_y: int = 10
     meta_y: int = 39
@@ -160,7 +164,7 @@ def fit_bottom(g):
     return min(n * g.pitch, 320 - g.bar)
 
 
-GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h', 'text_x')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
+GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h', 'text_x', 'lib_art')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
 
 
 def immediate_values(g=SET0):
@@ -391,29 +395,33 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
-# Nano's right group: the play state, or EQ while it is on and nothing plays (never both: navigation.c
-# bar_state_sync), beside Bluetooth, Wi-Fi and the battery
-STATUS_RIGHT_NANO = ['label_eq', 'img_state', *STATUS_RIGHT]
+# Nano's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
+# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery
+STATUS_RIGHT_NANO = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
 NANO_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Nano face's source, subset to NANO_TTF
 NANO_FONT_NAME = pathlib.Path(NANO_TTF).stem
 
 
 def status_metrics(g, font):
-    """Nano's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's line.
-    The title starts as far in as the glass needs at the caps' top, plus CORNER_SLACK, and the
-    clock is centred. Model (checked on the device): stb scales a font so that ascent - descent is
-    its size, and AWTK centres the line box in the label."""
+    """Nano's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
+    fractional top row counted: the title's first ink clears the glass there. Stock's hscroll_label keeps
+    2 px each side of its box, so the title's box is that much wider than its text: it ends 2 px short of
+    the widest clock text, clock_text ("12:59 PM"), and the clock is centred. Model (checked on the device):
+    stb scales a font so that ascent - descent is its size, and AWTK centres the line box in the label."""
     from fontTools.ttLib import TTFont
     f = TTFont(font, lazy=True)
-    asc, desc = f['hhea'].ascent, f['hhea'].descent
+    asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
     scale = g.bar_px / (asc - desc)
-    cap, h = round(f['OS/2'].sCapHeight * scale), g.bar - 1
-    cap_top = (h - cap) // 2
+    clock_text = math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in '12:59 PM') * scale)
+    cap, h = math.ceil(f['OS/2'].sCapHeight * scale), g.bar - 1
+    cap_top = (g.bar - 2 - cap) // 2
     label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
-    inset = corner_inset(cap_top) + CORNER_SLACK
-    return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset,
-            'title': [inset, label_y, int(375 / 2 - CLOCK_TEXT / 2 - CLOCK_GAP) - inset, h],
+    inset = corner_inset(cap_top)
+    pad = 2  # the hscroll_label's margin each side
+    end = math.floor(375 / 2 - clock_text / 2) - pad
+    return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset, 'clock_text': clock_text,
+            'title': [inset - pad, label_y, end - inset + 2 * pad, h],
             'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
 
 
@@ -425,7 +433,6 @@ def status_bar(root, g=SET0):
     check([left[2].get('name'), right[2].get('name')] == ['view_left', 'view_right'], 'Unexpected status bar')
     check(root[1][3] == left[1][3] == right[1][3] == 30, 'Unexpected status bar height')
     root[1][3] = left[1][3] = right[1][3] = g.bar
-    # ponytail: a 26 px bar's icons sit at y 5; a set with another bar re-derives STATUS_MARGIN/BATT_ROOM
     widgets = {n[2]['name']: n for n in left[3] + right[3]}
     check(sorted([*widgets, 'view_battery']) == sorted(STATUS_LEFT + STATUS_RIGHT + STATUS_HIDDEN), 'Unexpected status bar widgets')
     widgets['img_wifi'][1][2] = 14
@@ -444,16 +451,17 @@ def status_bar(root, g=SET0):
     m = g.bar_px and status_metrics(g, NANO_FONT_SRC)
     left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_NANO if m else STATUS_RIGHT)]
-    # Nano's icons clear the glass at the battery body's top, centred above the bar's line
-    xm = corner_inset((g.bar - 1 - g.batt_h) // 2) + CORNER_SLACK if m else STATUS_MARGIN
+    # Nano's battery body, centred above the bar's two lines, ends on the last column the glass leaves at its
+    # top row, the nub outside it (the glass is further out by the nub's rows)
+    xm = corner_inset((g.bar - 2 - g.batt_h) // 2) - 1 - inc('BATT_NUB_W') if m else STATUS_MARGIN
     for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
         layout = view[2]['children_layout']
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
         view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
-    room = int(375 - xm - (375 / 2 + CLOCK_TEXT / 2 + CLOCK_GAP))
-    if m:  # the icon battery with every icon shown, the play state or EQ
+    room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + CLOCK_GAP))
+    if m:  # every icon, the battery with the column of soft edge left of it, and EQ 2 px short of Bluetooth's ink
         gap = inc('STATUS_GAP')
-        reach = BT_REACH + 3 * gap + max(widgets[n][1][2] for n in STATUS_LEFT) + widgets['img_wifi'][1][2] + g.batt_w + inc('BATT_NUB_W')
+        reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
         check(BATT_ROOM == room and reach <= room, f'Status bar battery needs {reach}px of {room}px')
         for name in STATUS_HIDDEN:
             box = widgets[name][1]
@@ -461,15 +469,16 @@ def status_bar(root, g=SET0):
             root[3].append(widgets[name])
         face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
                 for k, v in (('font_size', str(g.bar_px)), ('font_name', NANO_FONT_NAME))}
-        # EQ and the play state inside the room the reach above counts: the layout would put them left of img_bt's
-        # whole canvas, at the clock's text, since only the canvas's last BT_REACH px hold ink.
+        # EQ floats at the room's left edge, not left of img_bt's whole canvas, whose last BT_REACH px alone hold ink:
+        # there it would reach the clock's text.
         # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs
         # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
         eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
         eq[2].update({'floating': 'true', **face})
-        state = widgets['img_state']
-        state[1][:] = [eq[1][0], 0, state[1][2], g.bar]
-        state[2]['floating'] = 'true'
+        # The play state is in the row, 20 wide: Wi-Fi's ink ends on column 261 with it, and it closes up without it.
+        widgets['img_state'][1][2] = 20
+        # Stock's 16 px icon canvases, centred, put Bluetooth's ink (a row into its canvas) on the battery's top row
+        right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 - 1) + 16
         # The payload writes the top window's title (bar_title_sync) and the local time (ringnav_paint_bg).
         for name, style in (('title', 's_scrlabel_white20l'), ('clock', 's_scrlabel_white20c')):
             root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',
@@ -790,17 +799,17 @@ def volume_dialog(root):
 NAVBAR_ONLY = AUDIT['navbar_only']
 SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW = (inc(n) for n in ('SET_ROW', 'SET_TOP', 'SET_ROWS', 'SET_STOCK_ROW'))
 
-# The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder, the Library), text
-# pages' do not. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
+# The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder), the Library's are its own
+# (lib_*), text pages' carry none. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
 PAGE_KIND = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
              'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
-             'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'art',
+             'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'lib',
              'localmusic/localclass_page.bin': 'text'}
 
 
 def page_rows(g, kind):
     """(pitch, body, artwork inset) of a page kind's rows under g."""
-    return (g.art_pitch, g.art_body, g.art_inset) if kind == 'art' else (g.pitch, g.body, g.text_art_inset)
+    return {'art': (g.art_pitch, g.art_body, g.art_inset), 'lib': (g.lib_pitch, g.lib_body, g.lib_inset)}.get(kind, (g.pitch, g.body, g.text_art_inset))
 
 
 def text_y(g, y):

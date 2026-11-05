@@ -1992,15 +1992,16 @@ static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsi
 
 /* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
  * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
- * flipped. Fewer than two stops draw nothing. */
+ * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s) {
     if (s->n < 2) return;
     for (int j = 0, k = 0; j < h; ++j) {
         int p = h > 1 ? j * 25600 / (h - 1) : 0; /* 1/256 % */
         while (k + 2 < s->n && p > s->pos[k + 1] * 256) ++k;
         int lo = s->pos[k] * 256;
-        stock_canvas_set_fill_color(
-            canvas, RGBA(mix(s->rgb[k], s->rgb[k + 1], p - lo, s->pos[k + 1] * 256 - lo)));
+        stock_canvas_set_fill_color(canvas, RGBA(s->n == h ? s->rgb[j]
+                                                           : mix(s->rgb[k], s->rgb[k + 1], p - lo,
+                                                                 s->pos[k + 1] * 256 - lo)));
         canvas_fill_rect(canvas, x, y + j, w, 1);
     }
 }
@@ -2619,7 +2620,7 @@ static void *list_button(void *view) {
  * label. */
 static void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
                            int w, int into) {
-    /* The Library constructor's live words (tools/ipod.py, theme_boot): body and art_inset. */
+    /* The Library constructor's live words (tools/ipod.py, theme_boot): lib_body and lib_inset. */
     int compact = !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
     int h = compact ? *(const volatile unsigned short *)LIBRARY_ROW_BODY : 70;
     void *button = list_button(view);
@@ -2675,7 +2676,7 @@ void list_value(void *label, const char *title, const char *value) {
     void *button = P(label, W_PARENT);
     void *text = widget_lookup(button, "_setting_value", 0);
     if (!text) {
-        int x = 302 - I(button, W_X) - 84;
+        int x = 302 - I(button, W_X) - 80;
         text = hscroll_label_create(button, x, 0, 134, I(button, W_H));
         widget_set_name(text, "_setting_value");
         widget_use_style(text, "s_scrlabel_white20r");
@@ -3784,14 +3785,21 @@ static int bar_state_sync(void *bar) {
         changed = on != !!widget_get_visible(st.bar_state);
         widget_set_visible(st.bar_state, on, 0);
         if (on) {
-            const char *icon = status == 2 ? "bar_play" : "bar_pause";
+            /* BATT_NANO's play state is its own art (tools/art.py), by state and half */
+            static const char *const nano_icon[2][2] = { { "nano_play_d", "nano_pause_d" },
+                                                         { "nano_play_l", "nano_pause_l" } };
+            const char *icon = theme()->painter[PAINT_BATTERY] == BATT_NANO
+                                   ? nano_icon[ipod_light()][status != 2]
+                               : status == 2 ? "bar_play"
+                                             : "bar_pause";
             if (tk_strcmp(widget_get_prop_str(st.bar_state, "image", ""), icon)) {
                 image_base_set_image(st.bar_state, icon);
                 changed = 1;
             }
         }
     }
-    /* Nano's right group has room for EQ or the play state, not both: EQ while nothing plays */
+    /* Nano's right group has room for EQ or the play state, not both: EQ while nothing plays. Its
+     * row closes up towards the battery when the state hides. */
     if (st.bar_eq && st.bar_state && widget_get_visible(st.bar_state) &&
         theme()->painter[PAINT_BATTERY] == BATT_NANO)
         widget_set_visible(st.bar_eq, 0, 0);
@@ -3838,7 +3846,8 @@ static void bar_sync(void *bar) {
     /* Nano's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme();
     int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
-        body = nano ? geom_val(V_BATT_W) : BATT_BODY_W, inside = nano ? body : BATT_INSIDE_W;
+        body = nano ? geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
+        inside = nano ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
         int reach = mode == 1   ? BATT_PCT_W
@@ -3854,7 +3863,8 @@ static void bar_sync(void *bar) {
             reach += I(st.bar_state, W_W) + STATUS_GAP;
         if (nano && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
-        if (reach > BATT_ROOM) mode = 0;
+        /* Nano's Percent Inside is the icon's own width: the icon would win no room */
+        if (reach > BATT_ROOM && !(nano && mode == 3)) mode = 0;
     }
     widget_set_visible(st.bar_icon, 0, 0);
     widget_set_visible(st.bar_pct, 0, 0);
@@ -3894,38 +3904,56 @@ int ringnav_showface(void *bar) {
     return result;
 }
 
+static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
+    stock_canvas_set_fill_color(canvas, color);
+    canvas_fill_rect(canvas, x, y, w, h);
+}
 /* Nano's battery (BATT_NANO), the body's top-left at x, y, the set's V_BATT_W x V_BATT_H with the
- * nub outside: the batt_line outline and nub, the paper inside, the level in the batt stops
- * (stock's red when low, full while charging) and, charging outside Percent Inside, a bolt in the
- * outline's colour. Final colours, never flipped; the caller restores the fill. Returns the level's
- * width. */
-static int nano_battery(void *canvas, int x, int y, unsigned key) {
-    static const unsigned char bolt[][3] = { /* dy, x, w: an original 6x8 bolt */
-                                             { 0, 3, 3 }, { 1, 2, 3 }, { 2, 1, 3 }, { 3, 0, 6 },
-                                             { 4, 2, 3 }, { 5, 1, 3 }, { 6, 1, 2 }, { 7, 0, 2 }
-    };
+ * nub outside: the batt_line outline, its corners half covered, batt_edge along the bottom and a
+ * hollow nub, the paper inside, the level in the batt stops (stock's red when low, full while
+ * charging) with its last column shaded and, charging outside Percent Inside, the nano_bolt image.
+ * In the light half a soft edge outside the body and an emboss under it. Final colours, never
+ * flipped; the caller restores the fill. Returns the level's width. */
+static int nano_battery(void *w, void *canvas, int x, int y, unsigned key) {
     const theme_t *T = theme();
-    int L = ipod_light(), bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), nh = bh / 2,
-        f = (bw - 2) * (int)(key & 2 ? 100 : key >> 2) / 100;
+    unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
+    int L = ipod_light(), bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), nh = BATT_NUB_H,
+        iw = bw - 2, ih = bh - 2, r = x + bw - 1, ny = y + (bh - nh) / 2,
+        f = iw * (int)(key & 2 ? 100 : key >> 2) / 100;
     unsigned line = RGBA(T->batt_line[L]);
-    stock_canvas_set_fill_color(canvas, line);
-    canvas_fill_rect(canvas, x + 1, y, bw - 2, 1);
-    canvas_fill_rect(canvas, x + 1, y + bh - 1, bw - 2, 1);
-    canvas_fill_rect(canvas, x, y + 1, 1, bh - 2);
-    canvas_fill_rect(canvas, x + bw - 1, y + 1, 1, bh - 2);
-    canvas_fill_rect(canvas, x + bw, y + (bh - nh) / 2, BATT_NUB_W, nh);
-    stock_canvas_set_fill_color(canvas, RGBA(scheme()->paper));
-    canvas_fill_rect(canvas, x + 1, y + 1, bw - 2, bh - 2);
-    if (key & 1) { /* low */
-        stock_canvas_set_fill_color(canvas, RGBA(BATT_LOW_RGB));
-        canvas_fill_rect(canvas, x + 1, y + 1, f, bh - 2);
-    } else
-        paint_stops(canvas, x + 1, y + 1, f, bh - 2, &T->batt);
-    if (!(key & 2) || st.batt_mode == 3) return f;
-    stock_canvas_set_fill_color(canvas, line);
-    for (unsigned i = 0; i < sizeof bolt / sizeof *bolt; ++i)
-        canvas_fill_rect(canvas, x + (bw - 6) / 2 + bolt[i][1], y + (bh - 8) / 2 + bolt[i][0],
-                         bolt[i][2], 1);
+    if (L) {
+        bar_rect(canvas, (unsigned)T->batt_soft_a << 24, x - 1, y, 1, bh);
+        bar_rect(canvas, (unsigned)T->batt_soft_top_a << 24, x, y - 1, bw - 1, 1);
+    }
+    bar_rect(canvas, line, x + 1, y, iw, 1);
+    canvas_fill_rect(canvas, x, y + 1, 1, ih);
+    canvas_fill_rect(canvas, r, y + 1, 1, ih);
+    canvas_fill_rect(canvas, x + bw, ny, BATT_NUB_W, 1);
+    canvas_fill_rect(canvas, x + bw, ny + nh - 1, BATT_NUB_W, 1);
+    canvas_fill_rect(canvas, x + bw + BATT_NUB_W - 1, ny + 1, 1, nh - 2);
+    stock_canvas_set_fill_color(canvas, (line & 0xffffff) | 191u << 24);
+    canvas_fill_rect(canvas, x, y, 1, 1);
+    canvas_fill_rect(canvas, r, y, 1, 1);
+    stock_canvas_set_fill_color(canvas, (line & 0xffffff) | 128u << 24);
+    canvas_fill_rect(canvas, x, y + bh - 1, 1, 1);
+    canvas_fill_rect(canvas, r, y + bh - 1, 1, 1);
+    bar_rect(canvas, RGBA(T->batt_edge), x + 1, y + bh - 1, iw, 1);
+    bar_rect(canvas, RGBA(scheme()->paper), x + 1, y + 1, iw, ih);
+    if (key & 1) /* low */
+        bar_rect(canvas, RGBA(BATT_LOW_RGB), x + 1, y + 1, f, ih);
+    else
+        paint_stops(canvas, x + 1, y + 1, f, ih, &T->batt);
+    if (f == iw) bar_rect(canvas, (unsigned)T->batt_shade_a << 24, r - 1, y + 1, 1, ih);
+    if (L) {
+        bar_rect(canvas, 0xffffffu | (unsigned)T->batt_emboss_a << 24, x, y + bh + 1, bw - 1, 1);
+        bar_rect(canvas, 0xffffffu | (unsigned)T->batt_emboss_nub_a << 24, x + bw, ny + nh,
+                 BATT_NUB_W, 2);
+    }
+    if (key & 2 && st.batt_mode != 3 && !widget_load_image(w, "nano_bolt", bitmap)) {
+        rect_t src = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
+               dst = { x + 1, y + 1, (int)bitmap[0], (int)bitmap[1] };
+        canvas_draw_image(canvas, bitmap, &src, &dst);
+    }
     return f;
 }
 /* The part of the digits in r that falls in columns x to x + w, in color (draw_centred's, which
@@ -3967,17 +3995,17 @@ static void paint_battery(void *w, void *canvas) {
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
-    if (nano) { /* the body centred on the bar's rows above its line */
-        int bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), y = (I(w, W_H) - 1 - bh) / 2;
-        int f = nano_battery(canvas, 0, y, key);
+    if (nano) { /* the body centred on the bar's rows above its two lines, its soft edge at 0 */
+        int bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), y = (geom_val(V_BAR) - 2 - bh) / 2;
+        int f = nano_battery(w, canvas, 1, y, key);
         if (st.batt_mode == 2) {
-            int x = bw + BATT_NUB_W + BATT_GAP;
+            int x = 1 + bw + BATT_NUB_W + BATT_GAP;
             rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
             draw_centred(canvas, s, n, &r, px, color);
         } else if (inside) {
             /* dark on the level, whatever its colour; past it the half's ink, on the paper. White
              * flips to the light half's black, so that half passes it for both. */
-            rect_t r = { 1, y + 1, bw - 2, bh - 2 };
+            rect_t r = { 2, y + 1, bw - 2, bh - 2 };
             nano_digits(canvas, s, n, &r, r.x, f, RGBA(ipod_light() ? 0xffffffu : 0));
             nano_digits(canvas, s, n, &r, r.x + f, r.w - f, RGBA(0xffffffu));
         }
@@ -5188,6 +5216,10 @@ int ringnav_paint_bg(void *w, void *canvas) {
         if (T->painter[PAINT_BAR] == BAR_GLOSS) { /* Nano: the gloss rows over the line, final */
             int h = I(w, W_H) - 1;
             paint_stops(canvas, 0, 0, I(w, W_W), h, &S->bar);
+            if (S->bar_line2 && ipod_light()) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->bar_line2));
+                canvas_fill_rect(canvas, 0, h - 1, I(w, W_W), 1);
+            }
             stock_canvas_set_fill_color(canvas, RGBA(S->bar_line));
             canvas_fill_rect(canvas, 0, h, I(w, W_W), 1);
         } else {
@@ -5399,6 +5431,9 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
+    /* The images a BATT_NANO theme generates (tools/art.py) are final */
+    if (s && !*s && T->painter[PAINT_BATTERY] == BATT_NANO && tk_str_start_with(name, "nano_"))
+        s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
      * secondary text's grey, legible on the black list and on the selected row's off-white card. */
     if (s && !*s && tk_str_start_with(name, "img_") && tk_strcmp(name, "img_delete") &&
@@ -5532,16 +5567,12 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                     (unsigned char)((p[o[0]] * 299 + p[o[1]] * 587 + p[o[2]] * 114) / 1000);
         bitmap_unlock_buffer(bitmap);
     }
-    /* The play state in the theme's state_color, and under Nano's battery the codec badges in the
-     * half's ink (its monochrome marks): every pixel that colour, alpha kept, final. */
+    /* Under Nano's battery the codec badges in the half's ink (its monochrome marks): every pixel
+     * that colour, alpha kept, final. */
     int mark = -1;
-    if (format < 4 && s && !*s) {
-        if (T->state_color && (!tk_strcmp(name, "bar_play") || !tk_strcmp(name, "bar_pause")))
-            mark = (int)T->state_color;
-        else if (T->painter[PAINT_BATTERY] == BATT_NANO)
-            for (unsigned i = 0; i < sizeof codecs / sizeof *codecs; ++i)
-                if (!tk_strcmp(name, codecs[i])) mark = (int)sc->ink;
-    }
+    if (format < 4 && s && !*s && T->painter[PAINT_BATTERY] == BATT_NANO)
+        for (unsigned i = 0; i < sizeof codecs / sizeof *codecs; ++i)
+            if (!tk_strcmp(name, codecs[i])) mark = (int)sc->ink;
     unsigned char *one = mark >= 0 ? bitmap_lock_buffer_for_write(bitmap) : (void *)0;
     if (one) {
         const unsigned char *o = at[format];
@@ -8835,11 +8866,11 @@ enum {
 };
 
 /* Every Library row, stock's and the added ones: its label takes the list titles' role. In a set
- * without art (Nano's Row Art off) it also drops its icon and starts its label at the set's text
- * inset on screen, its right edge kept. */
+ * without Library icons (Nano) it also drops its icon and starts its label at the set's text inset
+ * on screen, its right edge kept. */
 static void library_look(void *view) {
     const theme_t *T = theme();
-    int bare = !geom(G_ART);
+    int bare = !geom_val(V_LIB_ART);
     if (!bare && !T->font[ROLE_TITLE] && !T->font_px[ROLE_TITLE]) return;
     for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
         void *row = widget_get_child(view, i);

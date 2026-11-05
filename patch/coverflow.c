@@ -2658,39 +2658,30 @@ static void home_paint(void *canvas) {
     canvas_draw_image(canvas, home.frame, r, r);
 }
 
-/* Split's panel in the theme's home_pane where no cover shows: the stops, a shadow down its left
- * edge, a light fading from there to its right edge, an original note (34 x 40) and the queue's
- * song count. Raw colours, but the count's: ui_ink flips black to the light half's white paper, and
- * the dark half draws white as it is. The note's parts never overlap, so its alpha blends once. */
-void home_pane_paint(void *canvas, int x, int y, int w, int h) {
-    static const unsigned char half[5] = { 7, 7, 6, 6, 4 }; /* a head's half-width at |dy| */
-    /* each stem's x and end, its head's centre */
-    static const signed char note[2][4] = { { 8, 32, 5, 33 }, { 30, 28, 27, 29 } };
+/* The theme's pane shadow down the panel's left edge at x, y. */
+static void pane_shadow(void *canvas, int x, int y, int h) {
     const theme_t *T = theme();
-    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    paint_stops(canvas, x, y, w, h, &T->home_pane);
-    int sw = T->pane_shadow_w, lw = w - sw;
+    int sw = T->pane_shadow_w;
     for (int i = 0; i < sw; ++i) {
         stock_canvas_set_fill_color(canvas, (RGBA(T->pane_shadow) & 0xffffff) |
                                                 (unsigned)(T->pane_shadow_a * (sw - i) / sw) << 24);
         canvas_fill_rect(canvas, x + i, y, 1, h);
     }
-    for (int i = 0; T->pane_light_a && i < lw; ++i) {
-        stock_canvas_set_fill_color(canvas, (RGBA(T->pane_light) & 0xffffff) |
-                                                (unsigned)(T->pane_light_a * (lw - i) / lw) << 24);
-        canvas_fill_rect(canvas, x + sw + i, y, 1, h);
-    }
-    int gx = x + (w - 34) / 2, gy = y + (h - 40) / 2 - 14;
-    stock_canvas_set_fill_color(canvas, 0xd9ffffff);
-    canvas_fill_rect(canvas, gx + 8, gy, 26, 6);
-    for (int k = 0; k < 2; ++k) {
-        int sx = note[k][0], end = note[k][1], cx = note[k][2], cy = note[k][3];
-        canvas_fill_rect(canvas, gx + sx, gy + 6, 4, end - 6);
-        for (int dy = -4; dy <= 4; ++dy) {
-            int hw = half[dy < 0 ? -dy : dy], right = cx + hw;
-            if (cy + dy < end && right > sx) right = sx; /* the stem has this row's end */
-            canvas_fill_rect(canvas, gx + cx - hw, gy + cy + dy, right - cx + hw, 1);
-        }
+}
+
+/* Split's panel in the theme's home_pane where no cover shows: the stops, a shadow down its left
+ * edge, the theme's note image (tools/art.py) and the queue's song count. Raw colours, but the
+ * count's: ui_ink flips black to the light half's white paper, and the dark half draws white as it
+ * is. */
+void home_pane_paint(void *canvas, int x, int y, int w, int h) {
+    const theme_t *T = theme();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), bitmap[64]; /* bitmap_t */
+    paint_stops(canvas, x, y, w, h, &T->home_pane);
+    pane_shadow(canvas, x, y, h);
+    if (!widget_load_image(home.art, "nano_note", bitmap)) {
+        int src[4] = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
+            dst[4] = { x + T->pane_note_x, y + T->pane_note_y, (int)bitmap[0], (int)bitmap[1] };
+        canvas_draw_image(canvas, bitmap, src, dst);
     }
     unsigned at, n;
     queue_now(&at, &n);
@@ -2699,8 +2690,8 @@ void home_pane_paint(void *canvas, int x, int y, int w, int h) {
         unsigned s[16];
         int len = tk_snprintf(t, sizeof t, n == 1 ? "1 Song" : "%u Songs", n);
         for (int i = 0; i < len; ++i) s[i] = (unsigned char)t[i];
-        int box[4] = { x, gy + 47, w, 24 }; /* rect_t */
-        draw_centred(canvas, s, (unsigned)len, box, T->font_px[ROLE_TITLE],
+        int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
+        draw_centred(canvas, s, (unsigned)len, box, T->pane_count_px,
                      RGBA(ipod_light() ? 0u : 0xffffffu));
     }
     stock_canvas_set_fill_color(canvas, fill);
@@ -2768,6 +2759,13 @@ void coverflow_home_clip(void *w, void *canvas, int begin) {
     if (!begin) {
         if (w == home.art && home.tw) home_paint(canvas);
         else if (w == home.art && home.pane) home_pane_paint(canvas, 0, 0, I(w, W_W), I(w, W_H));
+        /* a cover: the pane's own shadow over it, where the left column meets it. The art's box is
+         * the image's fit, so the panel's edge and rows are measured from it. */
+        if (w == home.art && !home.pane && theme()->pane_shadow_w) {
+            unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+            pane_shadow(canvas, HOME_SPLIT_W - I(w, W_X), -I(w, W_Y), client_h());
+            stock_canvas_set_fill_color(canvas, fill);
+        }
         if (home.clipped) canvas_set_clip_rect(canvas, home.clip);
         home.clipped = 0;
         return;

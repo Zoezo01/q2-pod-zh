@@ -150,6 +150,7 @@ class Machine:
         self.present=set()  # paths access finds (the UI loop's Spotify poll asks for its login)
         self.stats={}  # paths stat finds, with their mtime (songs on the card: a card app's)
         self.image_size=(50,50)  # what widget_load_image decodes
+        self.image_draws=[]
         self.clock=(18,14)  # local (hour, minute) for time/localtime, or the one of them that fails
         self.clock_minutes=False; self.marquee=False
         self.wall=(86400,86400)  # time's result, and the seconds localtime must be given
@@ -570,6 +571,7 @@ class Machine:
             else:
                 self.word(self.lcd+(O['LCD_FILL_COLOR'] if kind=='fill' else O['LCD_STROKE_COLOR']),self.get(d))
                 ret=0
+        elif name=='canvas_draw_image': self.image_draws.append(tuple(tuple(signed(self.get(r+4*i)) for i in range(4)) for r in (c,d))); ret=0
         elif name=='widget_load_image':  # list_into is 50x50; image_size None fails the load
             ret=1 if self.image_size is None else 0
             if not ret: self.word(c,self.image_size[0]); self.word(c+4,self.image_size[1]); self.u.mem_write(c+8,bytes(16))  # no pixels
@@ -8801,7 +8803,8 @@ def nano_bar(nm,*children):  # the system bar under Nano's set: 375x26
     nm.word(b+O['W_W'],375); nm.word(b+O['W_H'],26); nm.word(syms['system_bar'],b); return b
 def channels(c): return (c&255,c>>8&255,c>>16&255)  # color_t's R, G, B
 # Nano's bar (BAR_GLOSS): the scheme's bar stops, one row per pixel over the 25 rows above the
-# line, then the #5a595a line in the last row. These are final colours, the light half's here (nano()
+# line, the light half's second line #848584 over the last of them (dark has none), then the #5a595a
+# line in the last row. These are final colours, the light half's here (nano()
 # stores LIGHT=1): Light Mode's flip touches none.
 # The LCD fill is restored, and the paint, the title's included (Home, then a stock page's navbar
 # title, then that page again), stays under the 100,000-instruction cap.
@@ -8814,8 +8817,8 @@ def gpaint(win):
 gnav=nb.node('window','allmusic_page',[nb.node('view','view_navbar',[nb.node('hscroll_label',text='Songs')],visible=0)])
 gcost=[gpaint(nb.node('window','home_page')),gpaint(gnav),gpaint(gnav)]
 grows=[b[:5] for b in nb.bands]
-assert [r[:4] for r in grows]==[(0,j,375,1) for j in range(26)],grows[:2]
-assert (grows[0][4],grows[24][4],grows[25][4])==(color_t(0xffffff),color_t(0x9c9e9c),color_t(0x5a595a))
+assert [r[:4] for r in grows]==[(0,j,375,1) for j in range(25)]+[(0,24,375,1),(0,25,375,1)],grows[:2]
+assert (grows[0][4],grows[24][4],grows[25][4],grows[26][4])==(color_t(0xffffff),color_t(0x9c9e9c),color_t(0x848584),color_t(0x5a595a))
 assert all(a>=b for j in range(24) for a,b in zip(channels(grows[j][4]),channels(grows[j+1][4])))  # every stop darkens
 assert nb.lcd_colors()==LCD_COLORS and max(gcost)<100000,gcost
 # The dark half (LIGHT=0): the same gloss shape in the dark bar stops, over the #3a393a separator.
@@ -8858,12 +8861,13 @@ assert bt_titled(btwins['shuffle_page'])=='Genres'
 for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','default'),('Songs','nano'),('Н'*60,'bold')):
     btm.nodes[btm.nodes[btnav]['children'][1]]['text']=bt_text; assert bt_titled(btwins['allmusic_page'])==bt_text
     assert [btm.nodes[bttl][f'style:{s}:font_name'] for s in ('normal','focused','disable')]==[bt_face]*3,bt_text
-    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[19]*3,bt_text
+    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[24]*3,bt_text
 passed()
-# Nano battery (BATT_NANO): a #636163 outline and nub, the paper inside, and the level in the
-# battery stops (#defbc6 top, #529a31 bottom) over the inner rows, centred on the caps' row
-# 12.5: body 26x13 at y 6. Charging fills it and adds the bolt; low is stock's red; Percent and
-# Icon + Percent draw the digits in Nano's bar size. Everything stays under the instruction cap.
+# Nano battery (BATT_NANO): body 29x15 on rows 4 to 18, its soft edge's column at x 0 of the slot (screen 290): a
+# #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the paper inside, one stop per row
+# of the level over its 13 inner rows, its last column shaded. Light only: the soft edge and the emboss. Charging fills
+# it and draws nano_bolt; low is stock's red; Percent and Icon + Percent draw the digits in Nano's bar size. Everything
+# stays under the instruction cap.
 def nano_battery_bar(mode,image='bar_battery',text='50%',light='1',status=None,eq=None,wifi=0):
     bm=Machine(); bm.config.update(LIGHT=light,BATTERY=str(mode)); nano_on(bm)  # before the boot reads the settings
     if status is not None: bm.handlers.pop(syms['mclGetPlayStatus'],None); bm.word(0xa3beac,status)  # local's play state
@@ -8880,50 +8884,66 @@ def nano_battery_bar(mode,image='bar_battery',text='50%',light='1',status=None,e
     cost=[0]; hook=bm.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
     paint(bw_['view_battery']); bm.u.hook_del(hook); assert cost[0]<100000,cost  # the battery under the cap
     return bm,bw_,[b[:5] for b in bm.bands]
-LINE,PAPER=color_t(0x636163),color_t(0xffffff); y=6
-outline=[(1,y,24,1,LINE),(1,y+12,24,1,LINE),(0,y+1,1,11,LINE),(25,y+1,1,11,LINE),(26,y+3,2,6,LINE),(1,y+1,24,11,PAPER)]
+LINE,PAPER,EDGE=color_t(0x717070),color_t(0xffffff),color_t(0x5b6c52); y=4; BX=2; BW=27
+def a_(rgb,a): return color_t(rgb)&0xffffff|a<<24
+SOFT=[(0,y,1,15,a_(0,51)),(1,y-1,28,1,a_(0,28))]
+def body_bands(line,paper):
+    return [(BX,y,BW,1,line),(1,y+1,1,13,line),(29,y+1,1,13,line),(30,9,2,1,line),(30,13,2,1,line),(31,10,1,3,line),
+            (1,y,1,1,line&0xffffff|191<<24),(29,y,1,1,line&0xffffff|191<<24),(1,y+14,1,1,line&0xffffff|128<<24),(29,y+14,1,1,line&0xffffff|128<<24),
+            (BX,y+14,BW,1,EDGE),(BX,y+1,BW,13,paper)]
+EMBOSS=[(1,20,28,1,a_(0xffffff,179)),(30,14,2,2,a_(0xffffff,153))]
+ROWS=(0x90b27d,0xc4ebac,0xdcf9c5,0xcbefb1,0xade586,0xa6e27b,0x92ce68,0x67a83f,0x4e972c,0x4e972d,0x56a035,0x58a437,0x539933)
+outline=SOFT+body_bands(LINE,PAPER); LEVEL=len(outline)
 bm,bw_,bands=nano_battery_bar(0)
-assert bm.get(bw_['view_battery']+O['W_W'])==28 and bm.get(bw_['view_battery']+O['W_H'])==26
-assert bands[:6]==outline and [b[:4] for b in bands[6:]]==[(1,y+1+j,12,1) for j in range(11)]
-assert (bands[6][4],bands[16][4])==(color_t(0xdefbc6),color_t(0x529a31))
-# The dark half (LIGHT=0): the outline is the light #636163's unflip, #9c9e9c (no dark.line is
-# stated), the paper inside black, the level's hues as they are.
-bm,bw_,dark=nano_battery_bar(0,light='0'); DL=color_t(0x9c9e9c)
-assert dark[:6]==[(*r[:4],DL) for r in outline[:5]]+[(1,y+1,24,11,color_t(0))] and dark[6:]==bands[6:]; passed()
-bm,bw_,bands=nano_battery_bar(0,'bar_charge','63%')  # full, then the bolt in the outline's colour
-bolt=[(10+x,8+dy,w,1,LINE) for dy,x,w in ((0,3,3),(1,2,3),(2,1,3),(3,0,6),(4,2,3),(5,1,3),(6,1,2),(7,0,2))]
-assert [b[:4] for b in bands[6:17]]==[(1,y+1+j,24,1) for j in range(11)] and bands[17:]==bolt; passed()
+assert bm.get(bw_['view_battery']+O['W_W'])==32 and bm.get(bw_['view_battery']+O['W_H'])==26
+assert bands[:LEVEL]==outline
+assert bands[LEVEL:]==[(BX,y+1+j,13,1,color_t(c)) for j,c in enumerate(ROWS)]+EMBOSS,bands[LEVEL:]  # 50%: not reaching the last column
+# The dark half (LIGHT=0): the stated dark.line #9c9e9c, the paper inside black, no soft edge or emboss; the level's hues as they are.
+bm,bw_,dark=nano_battery_bar(0,light='0')
+assert dark==body_bands(color_t(0x9c9e9c),color_t(0))+bands[LEVEL:-2]; passed()
+SHADE=[(28,y+1,1,13,a_(0,64))]
+bm,bw_,bands=nano_battery_bar(0,'bar_battery','100%')  # full: the level's last column shaded
+assert bands[LEVEL:]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]; passed()
+bm,bw_,bands=nano_battery_bar(0,'bar_charge','63%')  # full, then the bolt: the generated image on the inside, whatever size it is
+bm.image_size=(27,13); assert [b[:4] for b in bands[LEVEL:LEVEL+13]]==[(BX,y+1+j,BW,1) for j in range(13)] and 'nano_bolt' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
+assert bm.image_draws==[((0,0,50,50),(BX,y+1,50,50))],bm.image_draws
+bm,bw_,bands=nano_battery_bar(3,'bar_charge','63%')  # Percent Inside: digits, no bolt
+assert not bm.image_draws; passed()
 bm,bw_,bands=nano_battery_bar(0,'bar_lowcharge','5%')
-assert bands[6:]==[(1,y+1,1,11,color_t(O['BATT_LOW_RGB']))]; passed()
+assert bands[LEVEL:]==[(BX,y+1,1,13,color_t(O['BATT_LOW_RGB']))]+EMBOSS; passed()
 for mode in (1,2,3):  # Percent Inside (digits in the body), and the stored values that read as it
     bm,bw_,bands=nano_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
-    assert letters==[('50',(1,y+1,24,11))]*2 and bands[:6]==outline and bm.get(bw_['view_battery']+O['W_W'])==28,(mode,letters); passed()
+    assert letters==[('50',(BX,y+1,BW,13))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==32,(mode,letters); passed()
 # Percent Inside's digits read in both halves: dark on the level, whatever its colour (the gloss, full while
 # charging, stock's red when low), and past its end the half's ink, on the paper (white on the dark half's black).
 # Each part is clipped to its side of the level's end, and the canvas's clip comes back.
 for lt,past in (('1',0),('0',0xffffff)):
-    for batt_img,batt_text,f in (('bar_battery','50%',12),('bar_battery','100%',24),('bar_charge','63%',24),('bar_lowcharge','5%',1),('bar_battery','0%',0)):
+    for batt_img,batt_text,f in (('bar_battery','50%',13),('bar_battery','100%',27),('bar_charge','63%',27),('bar_lowcharge','5%',1),('bar_battery','0%',0)):
         bm,bw_,bands=nano_battery_bar(3,batt_img,batt_text,lt); digits=batt_text[:-1]
-        want=[(digits,(1,y+1,24,11),color_t(0),(1,y+1,f,11))][:f>0]+[(digits,(1,y+1,24,11),color_t(past),(1+f,y+1,24-f,11))][:f<24]
+        want=[(digits,(BX,y+1,BW,13),color_t(0),(BX,y+1,f,13))][:f>0]+[(digits,(BX,y+1,BW,13),color_t(past),(BX+f,y+1,BW-f,13))][:f<BW]
         assert [(l['text'],l['rect'],l['color'],l['clip']) for l in bm.letters]==want,(lt,batt_img,batt_text,bm.letters)
         assert bm.clip not in [w[3] for w in want]
 passed()
 # Nano's right group holds EQ or the play state, not both: a shown play state hides EQ, EQ alone
-# stays. Either way Percent Inside, the width of the icon, keeps its digits beside Wi-Fi.
+# stays. Either way Percent Inside, the width of the icon, keeps its digits beside Wi-Fi, a wide codec badge or not.
 for status,eq,eq_on in ((0,0,0),(2,0,0),(0,1,1),(2,1,0)):
     bm,bw_,bands=nano_battery_bar(3,status=status,eq=eq,wifi=1)
     assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq_on),(status,eq)
-    assert bm.get(bw_['view_battery']+O['W_W'])==28 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
+    assert bm.get(bw_['view_battery']+O['W_W'])==32 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
 passed()
-# The play state glyph is Nano's blue (bar.state.color), final: Light Mode's flip leaves it.
-blue=bytes([0xe7,0xae,0x31,0x80,0xe7,0xae,0x31,0xff])+b'\xee'*4
-assert image({},'bar_play',prep=nano)==[blue,blue] and image({},'bar_pause',prep=nano)==[blue,blue]
-assert image({'THEME':'1','LIGHT':'1'},'bar_play')!=[blue,blue]; passed()
+# Nano's play state is its own art (tools/art.py), by state and half, in place of stock's glyph; the image hook leaves
+# any nano_ image as drawn. Classic keeps stock's.
+for lt,mark in (('1','l'),('0','d')):
+    for status,name in ((2,'play'),(3,'pause')):
+        bm,bw_,bands=nano_battery_bar(0,status=status,light=lt); assert bm.nodes[bw_['img_state']].get('image')==f'nano_{name}_{mark}',(status,lt)
+same=bytes([0x48,0x14,0xff,0x80,0x80,0x80,0x80,0xff])+b'\xee'*4  # image()'s pixels
+assert image({},'nano_play_l',prep=nano)==[same,same] and image({'LIGHT':'0'},'nano_bolt',prep=nano)==[same,same]
+assert image({'THEME':'1','LIGHT':'1'},'bar_play')!=[same,same]; passed()
 # The codec badge (bar_aac, ...) is the scheme's ink, its alpha kept: Nano's monochrome marks.
 ink=bytes([0,0,0,0x80,0,0,0,0xff])+b'\xee'*4
 assert image({},'bar_aac',prep=nano)==[ink,ink] and image({'THEME':'1'},'bar_aac')!=[ink,ink]
-white=bytes([0xff,0xff,0xff,0x80,0xff,0xff,0xff,0xff])+b'\xee'*4  # the dark half's ink; the play blue a hue in both
-assert image({'LIGHT':'0'},'bar_aac',prep=nano)==[white,white] and image({'LIGHT':'0'},'bar_play',prep=nano)==[blue,blue]; passed()
+white=bytes([0xff,0xff,0xff,0x80,0xff,0xff,0xff,0xff])+b'\xee'*4  # the dark half's ink
+assert image({'LIGHT':'0'},'bar_aac',prep=nano)==[white,white]; passed()
 # Nano: the white `>` on the selected row only, in drill lists and on Home. Stock's own list_into
 # images (Library, Folder, categories) are emptied, and paint_into draws the white one over the
 # selected row's alone, with nothing cleared under it (the gloss stays).
@@ -9496,7 +9516,7 @@ for value,name in ((3,'Percent Inside'),(0,'Icon'),(3,'Percent Inside')):
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'BATTERY')] and row_text(row)=='Battery: '+name
 passed()
 # Percent Inside fits its value box at the row's 27 px, inside the 2 px hscroll_label keeps each side by default (stock
-# draws an ellipsis past that). The box keeps the trailing column's right edge at screen x 352 and the title stops 8
+# draws an ellipsis past that). The box ends at screen x 356 and the title stops 8
 # short of it.
 from fontTools.ttLib import TTFont
 from ipod import NANO_FONT_SRC
@@ -9504,7 +9524,7 @@ face=TTFont(NANO_FONT_SRC,lazy=True); glyphs=face.getBestCmap()
 def row_w(text): return sum(face['hmtx'][glyphs[ord(c)]][0] for c in text)*27/(face['hhea'].ascent-face['hhea'].descent)
 b=m.nodes[row]['children'][0]; title=m.nodes[b]['children'][1]; val=next(k for k in m.nodes[b]['children'] if m.nodes[k].get('name')=='_setting_value')
 vx,vw,bx=(m.get(val+O['W_X']),m.get(val+O['W_W']),m.get(b+O['W_X']))
-assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==352
+assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==356
 assert m.get(title+O['W_X'])+m.get(title+O['W_W'])==vx-8; passed()
 for stored in ('1','2'):
     m,view,_=display({'BATTERY':stored},setup=nano); row=m.nodes[view]['children'][4]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
@@ -10142,23 +10162,26 @@ stock=[m.node('list_item') for _ in range(11)]; view=m.node('scroll_view','scrol
 assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
 button=m.nodes[m.nodes[view]['children'][0]]['children'][0]; icon=m.nodes[button]['children'][0]
 assert m.get(button+O['W_H'])==60 and m.get(icon+O['W_X'])==6; passed()
-# Nano's Library rows at 28 (ROWART=0): no icon; the label starts at text_x (20), the button at 20.
-for lra,licon in (('0',False),('1',True)):
+# Nano's Library is text whatever Row Art says (ROWART 0 or 1): 28 px rows, no icon; the label starts at text_x (20), the
+# button at 20. The Library's constructor sites take the set's lib_ values; Albums' (0x4a4bb8) keep 52 px with Row Art on,
+# 28 off: Row Art decides the album covers alone.
+for lra,lalbum in (('0',28),('1',52)):
     SETUP[:]=[lambda k: nano(k).config.update(ROWART=lra)]; lm=ShuffleMachine(); SETUP.clear(); nano_on(lm,rowart=lra)  # its constructor reads THEME
     lstock=[lm.node('list_item') for _ in range(11)]; lv=lm.node('scroll_view','scroll_view_localmusic',lstock)
     lm.top=lm.node('window','localmusic_page',[lv])
     assert lm.call(address=HOOKS['localmusic_page_init'][0],args=(lm.top,5,0,0),gap=0)==0
     lbutton=lm.nodes[lm.nodes[lv]['children'][0]]['children'][0]; lkids=lm.nodes[lbutton]['children']
-    assert lm.get(lbutton+O['W_H'])==(52 if licon else 28),lra
+    assert lm.get(lbutton+O['W_H'])==28,lra
+    assert lm.get(0x524820)&0xffff==28 and lm.get(0x4a4bb8)&0xffff==lalbum,lra
 passed()
 # ... and stock's own rows (0x5247ec: an icon at x 8, a label at x 72, list_into at x 282, all the row's height) take
-# the same route as the added ones: without art no row shows an icon, every label starts at text_x on screen (the
-# button sits at 20) and its right edge stays. With art the icon and the label stay where stock put them.
+# the same route as the added ones: no row shows an icon, every label starts at text_x on screen (the button sits at 20)
+# and its right edge stays, Row Art on or off.
 def library_page(lra):
     SETUP[:]=[lambda k: nano(k).config.update(ROWART=lra)]; lm=ShuffleMachine(); SETUP.clear(); nano_on(lm,rowart=lra)
     lstock=[]
     for i in range(11):
-        kids=[lm.node('image'),lm.node('hscroll_label',text=f'Row {i}'),lm.node('image')]; h=28 if lra=='0' else 52
+        kids=[lm.node('image'),lm.node('hscroll_label',text=f'Row {i}'),lm.node('image')]; h=28
         for c,(x,w) in zip(kids,((8,52),(72,253),(282,50))):
             for k,v in zip(('W_X','W_W','W_H'),(x,w,h)): lm.word(c+O[k],v)
         lb=lm.node('button',children=kids); lm.word(lb+O['W_X'],20); lstock.append(lm.node('list_item',children=[lb]))
@@ -10167,15 +10190,13 @@ def library_page(lra):
     return lm,[lm.nodes[r]['children'][0] for r in lm.nodes[lv]['children']]
 def library_labels(lm,buttons):
     return [next(c for c in lm.nodes[b]['children'] if lm.nodes[c]['type']=='hscroll_label') for b in buttons]
-lm,lbuttons=library_page('0'); lkids=library_labels(lm,lbuttons); assert len(lkids)>11
-for lb,ll in zip(lbuttons,lkids):
-    lleading=lm.nodes[lb]['children'][:lm.nodes[lb]['children'].index(ll)]
-    assert not [c for c in lleading if lm.nodes[c]['visible']],lm.nodes[ll].get('text')
-    assert signed(lm.get(lb+O['W_X']))+signed(lm.get(ll+O['W_X']))==20,lm.nodes[ll].get('text')
-assert {m_x+m_w for m_x,m_w in [(signed(lm.get(ll+O['W_X'])),lm.get(ll+O['W_W'])) for ll in lkids if lm.nodes[ll].get('text','').startswith('Row')]}=={325}
-lm,lbuttons=library_page('1')
-for lb,ll in zip(lbuttons,library_labels(lm,lbuttons)):
-    icon=lm.nodes[lb]['children'][0]; assert lm.nodes[icon]['type']=='image' and lm.nodes[icon]['visible'] and lm.get(ll+O['W_X'])==72
+for lra in ('0','1'):
+    lm,lbuttons=library_page(lra); lkids=library_labels(lm,lbuttons); assert len(lkids)>11
+    for lb,ll in zip(lbuttons,lkids):
+        lleading=lm.nodes[lb]['children'][:lm.nodes[lb]['children'].index(ll)]
+        assert not [c for c in lleading if lm.nodes[c]['visible']],lm.nodes[ll].get('text')
+        assert signed(lm.get(lb+O['W_X']))+signed(lm.get(ll+O['W_X']))==20,lm.nodes[ll].get('text')
+    assert {m_x+m_w for m_x,m_w in [(signed(lm.get(ll+O['W_X'])),lm.get(ll+O['W_W'])) for ll in lkids if lm.nodes[ll].get('text','').startswith('Row')]}=={325}
 passed()
 # Every Library label, stock's and the added ones, Row Art on and off, takes the list titles' role: Nano's face
 # at title_px. Classic's stay the style's.

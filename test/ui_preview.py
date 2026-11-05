@@ -350,23 +350,23 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                     image(a,asset(after,'images/xx/bar_play.png'),STATUS_MARGIN,7,12,16)
                 effective=0 if state=='codec' else 3 if nano and mode in (1,2) else mode  # Nano's values: they read as Percent Inside
                 if nano:  # navigation.c nano_battery: the set's body, the light half's outline, paper and level
-                    gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=NANO.batt_w,NANO.batt_h; nh=bh//2
+                    gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=NANO.batt_w,NANO.batt_h; nh=inc('BATT_NUB_H')
                     ink=f'#{half["ink"]:06x}'; dig=ink if color=='#ffffff' else color
                     reach={0:0,1:inc('BATT_PCT_W'),2:bw+nub+inc('BATT_GAP')+inc('BATT_PCT_W'),3:bw+nub}[effective]
                     if reach+2*gap+14+inc('BT_REACH')>inc('BATT_ROOM'): effective=0  # Wi-Fi and Bluetooth shown
                     width=inc('BATT_PCT_W') if effective==1 else bw+nub+(inc('BATT_GAP')+inc('BATT_PCT_W') if effective==2 else 0)
-                    x=375-nano_xm-width; y=(NANO.bar-1-bh)//2
+                    x=375-nano_xm-width; y=(NANO.bar-2-bh)//2
                     if effective!=1:
                         line=f'#{nano_t["light"]["batt_line"]:06x}'
-                        for dx,dy,w,h in ((1,0,bw-2,1),(1,bh-1,bw-2,1),(0,1,1,bh-2),(bw-1,1,1,bh-2),(bw,(bh-nh)//2,nub,nh)):
+                        for dx,dy,w,h in ((1,0,bw-2,1),(0,1,1,bh-2),(bw-1,1,1,bh-2),(bw,(bh-nh)//2,nub,1),(bw,(bh-nh)//2+nh-1,nub,1),(bw+nub-1,(bh-nh)//2+1,1,nh-2)):
                             rect(a,x+dx,y+dy,w,h,line)
+                        rect(a,x+1,y+bh-1,bw-2,1,f'#{nano_t["batt_edge"]:06x}')
                         rect(a,x+1,y+1,bw-2,bh-2,f'#{half["paper"]:06x}')
                         f=(bw-2)*(100 if state=='charging' else level)//100
                         for j in range(bh-2) if f else ():
                             rect(a,x+1,y+1+j,f,1,color if state=='low' else batt_stop(j,bh-2))
                         if state=='charging' and effective!=3:
-                            for dy,bx,w in ((0,3,3),(1,2,3),(2,1,3),(3,0,6),(4,2,3),(5,1,3),(6,1,2),(7,0,2)):
-                                rect(a,x+(bw-6)//2+bx,y+(bh-8)//2+dy,w,1,line)
+                            image(a,asset(after,'images/xx/nano_bolt.png'),x+1,y+1,bw-2,bh-2)
                     if effective==3: label(str(level),bh-2,x+1,y+1,bw-2,bh-2,'#000000',nano_font)  # dark on the level
                     elif effective in (1,2):
                         px=x+(bw+nub+inc('BATT_GAP') if effective==2 else 0)

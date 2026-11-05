@@ -1783,7 +1783,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     ui = 'release/assets/default/raw/ui/'
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
-    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages,
+    from art import images as theme_images
+    from theme import builtins as builtin_themes
+    drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
+    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),

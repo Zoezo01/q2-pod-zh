@@ -78,8 +78,11 @@ SCHEMA = {k.path: k for k in (
     key('home.pane.shadow', 'pane_shadow', 'color'),
     key('home.pane.shadow_w', 'pane_shadow_w', 'int', 64),
     key('home.pane.shadow_a', 'pane_shadow_a', 'int', 255),
-    key('home.pane.light', 'pane_light', 'color'),
-    key('home.pane.light_a', 'pane_light_a', 'int', 255),
+    key('home.pane.note_x', 'pane_note_x', 'int', 375),
+    key('home.pane.note_y', 'pane_note_y', 'int', 320),
+    key('home.pane.count_y', 'pane_count_y', 'int', 320),
+    key('home.pane.count_w', 'pane_count_w', 'int', 375),
+    key('home.pane.count_px', 'pane_count_px', 'int', 64),
     key('settings.rows.top', 'set_top', 'int', 375),
     key('settings.values.text', 'set_text', 'bool'),
     key('playing.scrubber.height', 'np_bar', 'int', 375),
@@ -94,7 +97,12 @@ SCHEMA = {k.path: k for k in (
     key('bar.title.font_size', 'font_px[ROLE_BAR]', 'int', 64),
     Key('bar.battery.stops', 'batt', 'stops', 0, 0, (), 'live'),
     key('bar.battery.line', 'batt_line', 'color', final=True),  # a grey that must follow the paper
-    key('bar.state.color', 'state_color', 'color'),  # 0: stock's glyph
+    key('bar.battery.edge', 'batt_edge', 'color'),  # its bottom row inside the outline
+    key('bar.battery.shade_a', 'batt_shade_a', 'int', 255),  # black over the level's last column
+    key('bar.battery.soft_a', 'batt_soft_a', 'int', 255),  # the light half's soft outer edge: left of the body, black
+    key('bar.battery.soft_top_a', 'batt_soft_top_a', 'int', 255),  # ... and above it
+    key('bar.battery.emboss_a', 'batt_emboss_a', 'int', 255),  # the light half's white row under the body
+    key('bar.battery.emboss_nub_a', 'batt_emboss_nub_a', 'int', 255),  # ... and under the nub
     key('scheme.card', 'card', 'bool'),
     key('scheme.raw_red', 'raw_red', 'bool'),
     key('scheme.fill', 'fill', 'color'),
@@ -107,6 +115,7 @@ SCHEMA = {k.path: k for k in (
     key('scheme.sel.text', 'sel_text', 'color', final=True),
     Key('scheme.bar.stops', 'bar', 'stops', 0, 0, (), 'live', True),
     key('scheme.bar.line', 'bar_line', 'color', final=True),
+    key('scheme.bar.line2', 'bar_line2', 'color'),  # the light half draws it, final, above bar.line; 0: none
     key('scheme.mode', 'mode', 'enum'),
     # the light half's flip ends; the dark half's are fixed, #000000 and #ffffff
     Key('scheme.paper', 'paper', 'color', 0, 0xffffff, O['LIGHT_PAPER'] * 0x010101, 'live'),
@@ -118,6 +127,13 @@ SCHEMA = {k.path: k for k in (
         ('shelf', 'reflect', 1, 50), ('shelf', 'reflect_top', 0, 256), ('shelf', 'stride', 1, 375),
         ('shelf', 'radius', 0, 83), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
         ('caption', 'text_y', 210, 290))),
+    # no payload field: tools/art.py draws these into the theme's images
+    Key('bar.battery.bolt', 'bolt', 'color', 0, 0xffffff, 0, 'art'),
+    Key('bar.battery.bolt_halo_a', 'bolt_halo_a', 'int', 0, 255, 0, 'art'),
+    Key('bar.state.stops', 'state_stops', 'stops', 0, 0, (), 'art'),
+    Key('bar.state.edge', 'state_edge', 'stops', 0, 0, (), 'art'),
+    Key('bar.state.halo_light', 'state_halo_light', 'int', 0, 255, 0, 'art'),
+    Key('bar.state.halo_dark', 'state_halo_dark', 'int', 0, 255, 0, 'art'),
     Key('geometry.set', 'geom_set', 'set', 0, 0, 'ipod', 'boot'))}
 FIELDS = {k.field: k for k in SCHEMA.values()}
 
@@ -181,6 +197,10 @@ GEOM_RANGES = {
     'art_body': (24, lambda g: g.art_pitch),
     'text_art': (0, lambda g: min(52, g.body)),
     'text_art_inset': (0, lambda g: (g.body - g.text_art) // 2),
+    'lib_pitch': (28, 78),  # the Library's own rows
+    'lib_body': (24, lambda g: g.lib_pitch),
+    'lib_art': (0, lambda g: min(52, g.lib_body)),
+    'lib_inset': (0, lambda g: (g.lib_body - g.lib_art) // 2),
     'title24_y': (0, lambda g: g.body - 24),  # stock's 24 px label box inside the body
     'title_y': (0, lambda g: g.body - 20),  # the 20 px box
     'meta_y': (0, lambda g: g.body - 16),  # the 16 px boxes
@@ -455,13 +475,13 @@ def value(node, path, text, macros):
         if not re.fullmatch('#[0-9a-fA-F]{6}', text):
             err(f'{path}: expected #rrggbb')
         v = int(text[1:], 16)
-    elif k.type == 'stops':  # "#rrggbb N, ...": 2 to 8 stops, N rising from 0 to 100
+    elif k.type == 'stops':  # "#rrggbb N, ...": 2 to 13 stops (stops_t), N rising from 0 to 100
         stops = [re.fullmatch(r'#([0-9a-fA-F]{6}) ([0-9]{1,3})', s.strip()) for s in text.split(',')]
         if not all(stops):
             err(f'{path}: expected "#rrggbb N, ..."')
         v = tuple((int(m[2]), int(m[1], 16)) for m in stops)
-        if not 2 <= len(v) <= 8:
-            err(f'{path}: 2 to 8 stops')
+        if not 2 <= len(v) <= 13:
+            err(f'{path}: 2 to 13 stops')
         if v[0][0] != 0 or v[-1][0] != 100 or any(a[0] >= b[0] for a, b in zip(v, v[1:])):
             err(f'{path}: positions must rise from 0 to 100')
         return v
@@ -944,7 +964,7 @@ def emit(themes, out, redirects={}):
                 f'.sel = {stops_c(s["sel"])}, .sel_top = 0x{s["sel_top"]:06x}, .sel_edge = 0x{s["sel_edge"]:06x}, '
                 f'.sel_text = 0x{s["sel_text"]:06x}, .mode = {c(SCHEMA["scheme.mode"], s["mode"])}, '
                 f'.paper = 0x{s["paper"]:06x}, .ink = 0x{s["ink"]:06x}, '
-                f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}'
+                f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}, .bar_line2 = 0x{s["bar_line2"]:06x}'
                 + (f', .label = {json.dumps(s["label"])}' if 'label' in s else '') + ' },'
                 for v, s in enumerate(scheme_half(s, light) for s in t['schemes'])]
     for t in themes:

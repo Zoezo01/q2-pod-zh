@@ -116,8 +116,7 @@
       "sites": [
         ["0x4a4bb8", "0x24150046"],
         ["0x5223ec", "0x24060046"],
-        ["0x523100", "0x24110046"],
-        ["0x524820", "0x24140046"]
+        ["0x523100", "0x24110046"]
       ]
     },
     {
@@ -159,7 +158,20 @@
       "sites": [
         ["0x4a4ce4", "0x24060009"],
         ["0x5231c4", "0x24060009"],
-        ["0x523234", "0x24060009"],
+        ["0x523234", "0x24060009"]
+      ]
+    },
+    {
+      "value": "lib_body",
+      "purpose": "the Library's row height (its constructor; navigation.c list_row_core reads it live)",
+      "sites": [
+        ["0x524820", "0x24140046"]
+      ]
+    },
+    {
+      "value": "lib_inset",
+      "purpose": "the Library's row icon x (its constructor; navigation.c list_row_core reads it live)",
+      "sites": [
         ["0x524944", "0x2405000a"]
       ]
     },

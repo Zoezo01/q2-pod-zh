@@ -867,10 +867,10 @@ def validate_assets(directory):
             m = status_metrics(g, NANO_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
             assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
-            assert 2 * m['cap_top'] + m['cap'] in (g.bar - 2, g.bar - 1) and m['inset'] >= corner_x(m['cap_top'], m['cap']), g.name
+            assert 2 * m['cap_top'] + m['cap'] in (g.bar - 3, g.bar - 2) and m['inset'] >= corner_inset(m['cap_top']), g.name
             assert 2 * m['clock'][0] + m['clock'][2] == 375, g.name
-            # the right group clear of the glass at the battery body's top, the body above the bar's line
-            xm = corner_x((g.bar - 1 - g.batt_h) // 2, g.batt_h)
+            # the battery body ends on the last column the glass leaves at its top row, above the bar's two lines
+            xm = corner_inset((g.bar - 2 - g.batt_h) // 2) - 1 - inc('BATT_NUB_W')
             assert g.batt_h <= g.bar - 1 and bar['view_right'][2]['children_layout'].endswith(f'xm={xm},s={inc("STATUS_GAP")})'), g.name
             size = SCHEMA['bar.title.font_size'].field
             assert {t[size] for t in builtins() if g in geometry_sets([t])} == {g.bar_px}, g.name  # the theme's bar text is the set's
