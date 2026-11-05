@@ -490,10 +490,11 @@ static int ao_wait;   /* the reopen under way is a natural one: dac_ioctl waits 
 static int ao_stayed; /* a natural change kept the PCM open: ao_write looks at the first write */
 static int ao_pcm[3]; /* what the open PCM is: reinit_audio_chain overwrites ao_data with the request before init */
 static int dac_word(int pressed);
-/* Frames free, hw_ptr past appl_ptr making it more than the ring. Not stock's get_space, which caps MQA's below it. */
+/* Frames free, hw_ptr past appl_ptr making it more than the ring. Not stock's get_space, which caps MQA's below it.
+ * ~0u if the status fails: ao_init takes that as dry, and reopens; ao_write forwards nothing. */
 static unsigned ao_avail(void *pcm) {
     char status[256] __attribute__((aligned(8)));
-    ((int (*)(void *, void *))0xadabd0u)(pcm, status);
+    if (((int (*)(void *, void *))0xadabd0u)(pcm, status) < 0) return ~0u;
     return ((unsigned (*)(void *))0xadb7b0u)(status);
 }
 void ao_uninit(int immed) {
@@ -630,7 +631,7 @@ long ao_write(void *pcm, const char *data, unsigned long frames) {
     if (ao_stayed) {
         unsigned avail = ao_avail(pcm), ring = AO_BUFFERSIZE / AO_BYTES;
         ao_stayed = 0;
-        if (avail > ring) {
+        if (avail > ring && avail != ~0u) {
             long (*forward)(void *, unsigned long) = dlsym(0, "snd_pcm_forward"); /* RTLD_DEFAULT */
             if (forward) forward(pcm, avail - ring + AO_OUTBURST / AO_BYTES);
             ps.fill = 0;

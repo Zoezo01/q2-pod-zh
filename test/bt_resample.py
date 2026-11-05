@@ -716,6 +716,10 @@ for way, want in ((0, HEARD), (2, [DRAIN, CLOSE, OPEN])):
     avail[0] = BUFFER - 1
     assert nxt() == [], way
     avail[0] = 0
+    begin(way); w(PRELOADED, 1); file_end_section(); end(1)
+    status, real['snd_pcm_status'] = real['snd_pcm_status'], lambda: -1 & 0xffffffff  # says nothing: reopen, whatever the stack held
+    assert nxt() == want, way
+    real['snd_pcm_status'] = status
 # Bluetooth's underrun stops its plugin and stock's play prepares (0x43b038): a full answer there changes nothing.
 begin(BT); ask(48000); end(1); avail[0] = BUFFER
 assert ask(48000)[0] == []
@@ -1070,7 +1074,10 @@ play(0, 40000, 2, 4)
 new = frames_of(100000, 1000, 2, 2)
 u.mem_write(buf, new)
 w(ps['ao_stayed'], 1), w(0xafa1b0, 16 * 4)  # AO_OUTBURST: 16 frames
-dev.avail, dev.got = 22048 + 100, b''
+dev.avail, dev.got, dev.status_rc = 22048 + 100, b'', -1 & 0xffffffff  # a status that fails forwards nothing
+assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [] and dev.got == new
+w(ps['ao_stayed'], 1)
+dev.got, dev.status_rc = b'', 0
 assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [116] and dev.got == new
 dev.avail = 0
 pause_at(1200, 60000, 280)  # the gap's last 200 frames unplayed
