@@ -2,7 +2,7 @@
 """Execute the actual patched MIPS callback with stock filter and mocked UI services.
 Requires unicorn==2.1.4. Does not emulate the entire device or flash hardware.
 """
-import json, math, pathlib, re, sqlite3, struct, sys
+import hashlib, io, json, math, os, pathlib, re, sqlite3, struct, sys
 from functools import cmp_to_key
 from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
 from unicorn.mips_const import *
@@ -53,6 +53,41 @@ SAVED=[UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2,UC_MIPS_REG_S3,
 
 def signed(x): return x if x<0x80000000 else x-0x100000000
 SCOPE_RULES='/mnt/data/q2-library-scope'  # library_scope.c's folder marker rules, written by a library update
+
+# Q2_TRACE=FILE logs every draw and widget-property call, each hook's return and each passed case, by value.
+TRACE=open(os.environ['Q2_TRACE'],'w') if os.environ.get('Q2_TRACE') else None
+def trace(*fields):
+    if TRACE: TRACE.write('\t'.join(fields)+'\n')
+TRACE_ARGS={'canvas_get_clip_rect':'_','canvas_set_clip_rect':'_r','canvas_set_global_alpha':'_i',
+    **dict.fromkeys(('canvas_set_fill_color','canvas_set_stroke_color','canvas_set_text_color'),'_x'),
+    **dict.fromkeys(('canvas_fill_rect','canvas_stroke_rect'),'_iiii'),'canvas_draw_icon':'_xii','canvas_set_font':'_si',
+    'canvas_draw_text_in_rect':'_wr','canvas_draw_text':'_wii','canvas_measure_text':'_w','canvas_draw_image':'_xrr',
+    'canvas_fill_rounded_rect':'_rrdi','canvas_stroke_rounded_rect':'_rrdii',
+    **{'vg:vgcanvas_'+n:c for n,c in (('save','_'),('restore','_'),('begin_path','_'),('close_path','_'),('fill','_'),
+       ('stroke','_'),('translate','_ff'),('move_to','_ff'),('line_to','_ff'),('arc','_fffffi'),('set_fill_color','_x'),
+       ('set_stroke_color','_x'),('set_fill_linear_gradient','_ffffxx'),('set_line_width','_f'),('set_line_cap','_s'))},
+    'widget_set_prop_int':'nsi','widget_set_prop_str':'nss','widget_move_resize':'niiii','widget_resize':'nii',
+    'widget_set_opacity':'ni','widget_use_style':'ns','widget_set_text_utf8':'ns','widget_set_tr_text':'ns',
+    'widget_set_visible':'nii','widget_set_sensitive':'ni','widget_factory_create_widget':'_sniiii',
+    **dict.fromkeys(('image_create','list_item_create','button_create','hscroll_label_create','label_create'),'niiii'),
+    'image_set_draw_type':'ni','image_base_set_image':'ns',
+    'image_manager':'','image_manager_unload_all':'_','image_manager_unload_bitmap_by_name':'_s'}
+HOOK_NAMES={a:n for a,n,_ in HOOKS.values()}
+PAYLOAD_NAMES={v:n for n,v in sorted(payload_syms.items())}
+def render(m,code,v):
+    """One traced value; 'w' takes (UTF-32 pointer, length). Addresses never appear, so traces survive a relink."""
+    if code=='w': return json.dumps(''.join(chr(m.get(v[0]+4*k)) for k in range(v[1])))
+    if code in 'srd' and not v: return 'null'
+    if code=='s': return json.dumps(m.text(v))
+    if code=='r': return ','.join(str(signed(m.get(v+4*k))) for k in range(4))
+    if code=='d': return '%08x'%m.get(v)
+    if code=='f': return '%g'%struct.unpack('<f',struct.pack('<I',v))[0]
+    if code=='n' and v in m.nodes: return 'n%d'%list(m.nodes).index(v)
+    # ponytail: an alpha-0 colour 0x00b00000-0x00b9ffff reads as an address (P); none is drawn today
+    if BASE<=v<SCRATCH+0x20000: return PAYLOAD_NAMES.get(v,'P')
+    if 0x70000000<=v<0x70010000: return 'S'
+    return str(signed(v)) if code=='i' else '%08x'%v
+
 
 class Machine:
     def __init__(self, patched=True):
@@ -142,6 +177,16 @@ class Machine:
     def lcd_colors(self): return tuple(self.get(self.lcd+O[off]) for off in ('LCD_FILL_COLOR','LCD_STROKE_COLOR'))
     def mock(self,*names,prefix=''):
         for n in names: self.handlers[syms[n]]=prefix+n
+    def record_syscalls(self,fail=lambda page:False):
+        """The payload's o32 syscalls, answered 0; mprotect (4125) takes effect, except RWX on a page
+        fail(page) picks, answered EACCES."""
+        self.syscalls=[]
+        def syscall(u,intno,unused):
+            n,a,b,c=(u.reg_read(r) for r in (UC_MIPS_REG_V0,*REGS[:3])); self.syscalls.append((n,a,b,c))
+            if n==4125 and c==7 and fail(a): u.reg_write(UC_MIPS_REG_A3,1); u.reg_write(UC_MIPS_REG_V0,13); return
+            if n==4125: u.mem_protect(a,b,c)
+            u.reg_write(UC_MIPS_REG_A3,0); u.reg_write(UC_MIPS_REG_V0,0)
+        self.u.hook_add(UC_HOOK_INTR,syscall)
     def scope_scan(self):
         """A library update's marker walk over scope_tree and scope_markers, into SCOPE_RULES."""
         self.call(address=payload_syms['library_scope_scan'],args=(0,0,0,0),gap=0,clear=False)
@@ -221,6 +266,12 @@ class Machine:
         a,b,c,d=[u.reg_read(r) for r in REGS]
         n=self.nodes.get(a,{})
         self.calls.append((name,a,b,c))
+        if TRACE and name in TRACE_ARGS:
+            sp=u.reg_read(UC_MIPS_REG_SP); it=iter([a,b,c,d]+[self.get(sp+16+4*k) for k in range(4)]); out=[]
+            for k in TRACE_ARGS[name]:
+                v=(next(it),next(it)) if k=='w' else next(it)
+                if k!='_': out.append(render(self,k,v))
+            trace(name,*out)
         if name=='memcpy': self.u.mem_write(a,bytes(self.u.mem_read(b,c))); ret=a
         elif name=='strncpy@GLIBC_2.0': self.u.mem_write(a,self.raw(b)[:c].ljust(c,b'\0')); ret=a
         elif name=='memset': self.u.mem_write(a,bytes([b&255])*c); ret=a
@@ -602,6 +653,10 @@ class Machine:
         assert self.u.reg_read(UC_MIPS_REG_PC)==0x1000000, 'Instruction limit reached'
         assert self.u.reg_read(UC_MIPS_REG_SP)==0x7000f000
         assert [self.u.reg_read(r) for r in SAVED]==[0x12340000+i for i in range(len(SAVED))]
+        if TRACE:
+            v0=self.u.reg_read(UC_MIPS_REG_V0); name=HOOK_NAMES.get(address) or render(self,'p',address)
+            px=[] if name!='ringnav_image_add' or args is None else [hashlib.sha1(bytes(self.u.mem_read(self.get(args[2]+0x14),self.get(args[2]+4)*self.get(args[2]+8)))).hexdigest()[:12]]
+            trace('ret',name,render(self,'d' if name=='ringnav_style_color' else 'x',v0),*px)
         return signed(self.u.reg_read(UC_MIPS_REG_V0))
     def advance(self,ms,clear=True):
         """Run due UI timers deterministically, including the exact deadline; RET_REPEAT re-arms."""
@@ -686,6 +741,26 @@ checks=0
 def passed():
     global checks
     checks+=1
+    trace(f'== {checks}')
+
+# Q2_TRACE: draw calls and hook answers by value: widgets as mock node ids, strings by content, payload
+# addresses by symbol (else P), stack addresses as S; cmp of two builds' traces survives a layout change.
+saved,TRACE=TRACE,io.StringIO()
+t=Machine(); w=t.node('label'); rect=t.alloc(16); text=t.alloc(8); paint=payload_syms['ringnav_paint']
+for o,v in enumerate((1,2,-3,4)): t.word(rect+4*o,v)
+t.word(text,ord('O')); t.word(text+4,ord('K'))
+assert [render(t,c,v) for c,v in (('n',w),('n',0x1234),('s',t.string('Songs')),('s',0),('i',0xffffffe2),('x',0xff112233),
+        ('r',rect),('r',0),('d',rect),('f',0x3fc00000),('p',paint),('i',paint),('x',SCRATCH+0x1ffff),('x',0x7000eff0),
+        ('x',BASE-4),('x',SCRATCH+0x20000))]==['n0','00001234','"Songs"','null','-30','ff112233','1,2,-3,4','null','00000001',
+        '1.5','ringnav_paint','ringnav_paint','P','S','%08x'%(BASE-4),'%08x'%(SCRATCH+0x20000)]
+for r,v in zip((*REGS,UC_MIPS_REG_SP,UC_MIPS_REG_T9),(t.canvas,text,2,10,0x7000f000,syms['canvas_draw_text'])): t.u.reg_write(r,v)
+t.word(0x7000f010,-20); t.hook(t.u,syms['canvas_draw_text'],4,None)
+t.rockbox_mode=0; t.call(address=payload_syms['ipod_home_shortcut'],args=(0,0,0,0),gap=0)  # "Favorites", a literal: P
+assert TRACE.getvalue().splitlines()==['canvas_draw_text\t"OK"\t10\t-20','ret\tipod_home_shortcut\tP']
+COVER=r'(vg:vgcanvas_|canvas_|widget_set_prop|widget_move_resize$|widget_resize$|widget_set_opacity$|widget_use_style$|image_)'
+assert {n for n in t.handlers.values() if re.match(COVER,n) and n.removeprefix('vg:') in FUNCTIONS}|{'canvas_set_global_alpha'}<=TRACE_ARGS.keys()
+n=checks; TRACE.seek(0); TRACE.truncate(); passed(); assert TRACE.getvalue()==f'== {n+1}\n'
+TRACE=saved
 
 # The failed-exec path exits through the kernel, without libc's copied buffers or handlers.
 m=Machine(); exited=[]
@@ -1087,6 +1162,14 @@ def battery_checks():
                 paint()
                 assert shown(b,w)==['view_battery']
                 assert b.get(w['view_battery']+O['W_W'])==(O['BATT_PCT_W'] if mode==1 else (O['BATT_INSIDE_W'] if mode==3 else O['BATT_BODY_W'])+O['BATT_NUB_W']+(O['BATT_GAP']+O['BATT_PCT_W'] if mode==2 else 0))
+    passed()
+    # The slot takes the bar's height, theme()->bar_h (client_h() = 320 - 30 = 290 under SET0):
+    # a 26 px bar_h (theme_t @80) poked into the active entry sizes it 26, then 30 again.
+    b,bar,w,paint=battery_bar(1); t=b.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+    assert b.u.mem_read(t+80,2)==struct.pack('<h',30)
+    for bar_h in (26,30):
+        b.u.mem_write(t+80,struct.pack('<h',bar_h)); b.word(w['view_battery']+O['W_H'],0); paint()
+        assert b.get(w['view_battery']+O['W_H'])==bar_h
     passed()
 battery_checks()
 assert m.confirm()==11 and m.dispatched()[0][1]==entries[0]; passed()
@@ -5371,7 +5454,7 @@ class PlaylistEditMachine(CoverflowMachine):
             self.nested(*self.handler(self.page,O['EVT_DESTROY']),self.event)
             self.stack.remove(self.page); self.top=self.stack[-1]
         self.returns(ret,clobber=True)
-    def open_editor(self):
+    def open_editor(self,h=72,inner=68):
         more=self.node('window','playlistsmore_page'); self.word(more+O['W_PARENT'],self.wm)
         self.top=more; self.stack.append(more)
         deleted=self.node('hscroll_label',name='label_del')
@@ -5380,7 +5463,7 @@ class PlaylistEditMachine(CoverflowMachine):
         assert self.nodes[deleted]['text']=='Delete Playlist'
         row=self.nodes[more]['children'][-1]; button=self.nodes[row]['children'][0]
         image,label=self.nodes[button]['children']
-        h,inner,y=72,68,154
+        y=10+2*h
         assert [self.get(row+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[0,y,375,h]
         assert self.nodes[row]['style']=='s_listitem_black'
         assert [self.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,inner]
@@ -6009,6 +6092,17 @@ for (x,y),alpha in pixels.items():
     assert pixels.get((x,BC_ART-1-y))==alpha
 assert m.get(m.lcd+O['LCD_FILL_COLOR'])==0x12345678; passed()
 
+# Stock's play-state glyph and album label are Classic's (np_theme): opaque there, hidden in Minimal.
+for theme,op in (('0',0),('1',255)):
+    CONFIG.clear(); CONFIG.update(THEME=theme); q=QueueMachine(queue=3,pos=1); q.handlers[playing+12]='stock_playing'
+    glyph,album=q.node('image','img_playstate'),q.node('label','label_ipod_album')
+    for w in (glyph,album): q.byte(w+0x34,0x80)
+    win=q.node('window','playing_page',[q.node('slider','slider_play',max=225,value=100,bar_size=4),glyph,album])
+    q.word(win+O['W_PARENT'],q.wm); q.top=win
+    assert q.call(address=playing,args=(win,7,0,0),gap=0)==0
+    assert [q.u.mem_read(w+0x34,1)[0] for w in (glyph,album)]==[op,op],theme
+passed()
+
 # Scrub: a double centre press toggles it; the wheel then moves a target of SCRUB_STEP
 # seconds times the ramp, previewed on the slider and both labels however far apart the ticks,
 # and committed once through player_seek_time (track seconds) when the scrub ends. Stock's page
@@ -6627,10 +6721,10 @@ class CentredMachine(KaraokeMachine):
             self.word(self.lrc+O['SCROLL_Y'],0)
         else: ret=self.nodes[self.win]['children'].index(a)
         self.returns(ret,clobber=True)
-    def show(self,playtime=0,lrc=None):  # stock's page: the title, the column (its slide_view and dots), the bar
+    def show(self,playtime=0,lrc=None,slide='slide_view'):  # slide: the slide_view's name (another: a page without one); stock's page: the title, the column (its slide_view and dots), the bar
         self.playtime=playtime; self.lrc=self.node('scroll_view','scroll_lrc'); self.build()
         self.lyric=self.node('view','view_lyric',[self.node('list_view','view_lrc',[self.lrc])])
-        self.slide=self.node('slide_view','slide_view',[self.lyric],value=1)
+        self.slide=self.node('slide_view',slide,[self.lyric],value=1)
         self.dots=self.node('slide_indicator','slide_indicator1'); self.word(self.dots+O['W_Y'],270)
         self.col=self.node('view','slide_view_view',[self.slide,self.dots]); self.word(self.slide+O['W_PARENT'],self.col)
         self.bar=self.node('slider','slider_play')
@@ -6675,6 +6769,14 @@ for dx,dy in ((70,0),(0,40),(11,0)):  # a swipe, a drag of the lines, past TAP_P
     m=centred(); m.tap(dx=dx,dy=dy); assert m.full()[:6]==COLUMN[:5]+(None,),(dx,dy,m.full()); passed()
 m=centred(lines=()); m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()  # no lyrics
 m=centred(centred='0'); assert not m.nodes[m.lyric].get('handlers'); passed()  # the iPod page's own
+# np_layout() picks the lyric touch: the centred page's lyrics take np_lyric_touch on all three, the iPod page's none.
+for on,want in (('1',[(O[k],payload_syms['np_lyric_touch'],0) for k in ('EVT_POINTER_DOWN','EVT_POINTER_UP_BEFORE','EVT_POINTER_ABORT')]),('0',[])):
+    m=centred(centred=on); assert m.nodes[m.lyric].get('handlers',[])==want,(on,m.nodes[m.lyric].get('handlers')); passed()
+# A page without stock's slide_view (a layout of its own) has no column: a tap on its lyrics leaves
+# everything as it was, where np_full read the column off a NULL slide_view (W_PARENT at 0x48).
+m=CentredMachine(); m.lines=[(5,'x'*15),(9,'Two two'),(12,'Three')]; m.show(9,slide='pages')
+m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full()
+m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()
 # Download Album Lyrics (onlinematch.c ringnav_playermore): after stock's 8 ⋯ rows (its init mocked), one
 # more in stock's row widgets and 20 px label, under Download Cover & Lyrics (PLAYMORE_ROWS' kind 4), its
 # button unnamed so stock's row click (an atoi of the name) never sees it; only for a playing song on the
@@ -7833,7 +7935,12 @@ def host_render(textures,cases):
     """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases."""
     import subprocess, tempfile
     from coverflow import SHIM_H
-    main=r"""#include <stdio.h>
+    from theme import ROLE_MACROS
+    cf=', '.join(f'.{f[3:]} = {O[m]}' for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.'))
+    main=r"""#include "theme.h"
+static theme_t t = { .cf = { %s }, .bar_h = 30 };
+const theme_t *theme(void) { return &t; }
+#include <stdio.h>
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return 0; }
 int ipod_square_art(void) { return 0; }
@@ -7849,7 +7956,7 @@ int main(void) {
         fflush(stdout);
     }
     return 0;
-}""" % (O['CF_VIEW_H'],O['CF_VIEW_W'],O['CF_VIEW_W'])
+}""" % (cf,O['CF_VIEW_H'],O['CF_VIEW_W'],O['CF_VIEW_W'])
     with tempfile.TemporaryDirectory(prefix='q2-render-') as d:
         d=pathlib.Path(d); (d/'shim.h').write_text(SHIM_H); (d/'main.c').write_text(main)
         subprocess.run(['cc','-O1','-DPEQ_HOST','-DPEQ_ROOT=""','-D_GNU_SOURCE',
@@ -8141,6 +8248,24 @@ passed()
 
 m=Machine(); style_color(m,red)
 assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','7'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]; passed()
+# theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
+# range is Minimal; Classic's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a
+# missing MINIMAL_ACCENT is Ivory, the card (flags 1); Crimson is raw red (flags 2) in both.
+for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',0),({'THEME':'2','MINIMAL_ACCENT':'3'},'Minimal',3),
+                         ({'THEME':'1','ACCENT':'7'},'Classic',0),({'THEME':'1','ACCENT':'12'},'Classic',0),
+                         ({'THEME':'1','ACCENT':'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1','ACCENT':'8'},'Classic',8)):
+    k=Machine(); k.config=dict(config)
+    t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+    assert k.text(k.get(t))==name and len(k.config_reads)==13,config
+    s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
+    flags=k.u.mem_read(s+4,1)[0]  # scheme_t: tones @0, flags @4
+    assert k.get(s)==payload_syms['accents']+20*want and flags==(1 if name=='Minimal' and want==7 else 2 if want==1 else 0),(config,flags)
+passed()
+# A paint before any config read draws a built-in theme, never zeroed scratch.
+k=Machine(); k.config=dict(THEME='1',ACCENT='4'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
+k.paint(kw); assert len(k.config_reads)==13 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
+k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
+assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 
 # Gradients: the leaf's null checks, then the caller's stops mapped (nr @8, stops @0xc).
 def gradient(config,stops,same_out=True,vt_get=True,style=True):
@@ -8216,6 +8341,12 @@ def image(config,name,fmt=3):
     return [bytes(m.u.mem_read(data+12*y,12)) for y in range(2)]
 hi=ACCENTS[0][3]; want=bytes([hi&255,hi>>8&255,hi>>16,0x80])+bytes([0x80,0x80,0x80,0xff])+b'\xee'*4
 assert image({},'switch_on')==[want,want]; passed()
+# Q2_TRACE's hook answers: the style hook's colour (the word at v0); the image hook's v0 and the pixels it mapped.
+saved,TRACE=TRACE,io.StringIO(); m=Machine(); m.config={}; style_color(m,color_t(0xff1448))
+assert TRACE.getvalue().splitlines()[-1]=='ret\tringnav_style_color\t%08x'%color_t(ACCENTS[0][3])
+px=image({},'switch_on')
+assert TRACE.getvalue().splitlines()[-1]=='ret\tringnav_image_add\t00000000\t'+hashlib.sha1(b''.join(px)).hexdigest()[:12]
+TRACE=saved; passed()
 stock=bytes([0x48,0x14,0xff,0x80,0x80,0x80,0x80,0xff])+b'\xee'*4
 for config,name,fmt in (({'ACCENT':'1','THEME':'1'},'switch_on',3),({},'file:///tmp/coverpic.jpg',3),({},'/mnt/mmc/a/cover.jpg',3),
                         ({},'https://resources.tidal.com/images/a/320x320.jpg',3),({},'switch_on',5),
@@ -8382,6 +8513,17 @@ for config in ({},{'ACCENT':'2'}):
         assert rgba(config,name,colors)==colors,name
 passed()
 
+# Ivory's card is Minimal's alone: Classic with a stored ACCENT=7 paints and maps images as Graphite, dark and light.
+def drawn_list(config):
+    k=Machine(); k.config=dict(config); kw,_=k.page_list(5,extent=1000); k.paint(kw)
+    return k.bands,k.rounded,k.strokes
+for light in ('0','1'):
+    ivory,graphite=({'THEME':'1','ACCENT':v,'LIGHT':light} for v in ('7','0'))
+    assert drawn_list(ivory)==drawn_list(graphite),light
+    for name in ('list_into','bt_refresh','list_delete','switch_on','img_flac'):
+        assert rgba(ivory,name,px)==rgba(graphite,name,px),(light,name)
+passed()
+
 # Packaged icon pixels: monochrome, alpha preserved and existing grey glyphs unchanged.
 for fmt in (1,2,3,4):
     assert rgba({},'local_album',px,fmt)==rgba({},'local_album',px)
@@ -8485,6 +8627,53 @@ def loaded(name):
     return [m.text(c[1]) for c in m.calls if c[0]=='stock_ui_load']
 assert loaded('playing_page')==['playing_page_stock'] and loaded('home_page')==['home_page']
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert loaded('playing_page')==['playing_page']; passed()
+# Geometry sets: the first system_bar load rewrites only the stock immediates whose set value differs.
+settings_m=m  # the Appearance cases go on with it below
+from build import segments
+from ipod import AUDIT, VALUE_NAMES
+PAGE=4096  # the Q2's kernel page: mprotect's rounding unit
+TEXT=[(v,((v+m_+4095)&~4095)-v) for _,(t,o,v,_,f,m_,fl,_) in segments((B/'demo').read_bytes()) if t==1 and fl&1 and v<BASE][0]
+SITES={int(a,16):g['value'] for g in AUDIT['immediates'] if isinstance(g['value'],str) for a,_ in g['sites']}
+def set_geom(m,g):  # the active theme's theme_t.geom (@82, after bar_h @80): a Theme switch to set g
+    m.byte((m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff)+82,g)
+def set_value(m,name,v): m.u.mem_write(payload_syms['boot_values']+2*VALUE_NAMES.index(name),struct.pack('<H',v))
+def booted(values=(),fail=lambda page:False,geom=0):
+    m=Machine(); m.u.mem_protect(*TEXT,5); m.record_syscalls(fail)
+    m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+    for name,v in values: set_value(m,name,v)
+    if geom: set_geom(m,geom)
+    before={a:m.get(a) for a in SITES}
+    m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0)
+    return m,before
+m,before=booted()
+assert m.syscalls==[] and {a:m.get(a) for a in SITES}==before; passed()
+m,before=booted((('pitch',28),))
+pages=sorted({a&~(PAGE-1) for a,v in SITES.items() if v=='pitch'}); assert len(pages)>1
+# All or nothing: every page goes RWX first, lowest first, and only then is any word written.
+assert m.syscalls==[(4125,p,PAGE,7) for p in pages]+[s for p in pages for s in ((4147,p,PAGE,3),(4125,p,PAGE,5))]
+assert {a:m.get(a) for a in SITES}=={a:(w&0xffff0000|28 if SITES[a]=='pitch' else w) for a,w in before.items()}
+assert [p for b,e,p in m.u.mem_regions() for q in pages if b<=q<=e]==[5]*len(pages)
+m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); assert len(m.syscalls)==3*len(pages); passed()  # once a boot
+# An mprotect that fails on the second page puts the first back to R-X and writes no word.
+gm,gbefore=booted((('pitch',28),),fail=lambda page:page==pages[1])
+assert gm.syscalls==[(4125,pages[0],PAGE,7),(4125,pages[1],PAGE,7),(4125,pages[0],PAGE,5)]
+assert {a:gm.get(a) for a in SITES}==gbefore
+assert [p for b,e,p in gm.u.mem_regions() for q in pages if b<=q<=e]==[5]*len(pages); passed()
+# A set theme_boot did not write is not applied: with every mprotect failing (or after a Theme switch,
+# which writes theme_t.geom), the windows still load as SET0's, which theme_boot left in the code.
+gm,gbefore=booted(fail=lambda page:True,geom=1)
+assert [s[3] for s in gm.syscalls]==[7] and {a:gm.get(a) for a in SITES}==gbefore
+def gloaded(name,sets):
+    gm.word(payload_syms['ui_redirects'],gm.string(name)); gm.byte(payload_syms['ui_redirects']+4,sets)
+    gm.calls=[]; gm.call(address=load,args=(gm.string(name),0,0,0),gap=0)
+    return [gm.text(c[1]) for c in gm.calls if c[0]=='stock_ui_load']
+assert gloaded('home_page',2)==['home_page'] and gloaded('home_page',1)==['ipod_home_page']; passed()
+# A set's own window: <set>_<name>, in its folder; other names load as asked.
+m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
+redirect('system_bar'); assert loaded('system_bar')==['ipod_system_bar'] and loaded('home_page')==['home_page']
+redirect('dialog/volume_dialog'); assert loaded('dialog/volume_dialog')==['dialog/ipod_volume_dialog']; passed()
+m=settings_m
 # Artist albums (Q2POD ARTISTCF), the other layout choice, after Home; no key is Coverflow.
 cf_label=m.nodes[m.nodes[cf]['children'][0]]['children'][1]; assert m.nodes[cf_label]['text']=='Artist View: Cover Flow'
 f,ctx=m.handler(m.nodes[cf]['children'][0],O['EVT_CLICK']); m.calls=[]
@@ -8818,6 +9007,16 @@ m,view,rows=display({'ACCENT':'2','THEME':'1'}); m.paint(view)
 assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[2][i]) for i in (4,0,1)]; passed()
 f,ctx=m.handler(m.nodes[rows[0]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[3][i]) for i in (4,0,1)]; passed()
+# Minimal to Classic, live: the very next paint is Classic's preset Cobalt bar.
+m,view,rows=display({}); m.paint(view); assert not m.bands
+f,ctx=m.handler(m.nodes[rows[3]]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
+# Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Graphite; THEME=2 is Minimal.
+for config,want in (({'THEME':'1','ACCENT':'7'},['Theme: Classic','Light Mode: Off','Accent: Graphite']),
+                    ({'THEME':'2'},['Theme: Minimal','Light Mode: Off','Accent: Ivory'])):
+    m,view,rows=display(config)
+    assert [row_text(r) for r in m.nodes[view]['children']]==want+['Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing'],config
+passed()
 CONFIG.clear(); CONFIG.update(ACCENT='3'); m=scrub_page()
 assert m.nodes[m.slider][FG]==FILL_HI; passed()  # Minimal: no accent
 CONFIG.update(THEME='1'); m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'
@@ -9322,6 +9521,17 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and not m.plays and len
 m.page=m.top; assert m.nodes[m.page]['name']=='mostplayed_page' and m.nodes[m.page]['style:normal:bg_color']==-0x1000000
 assert m.texts()==['No plays yet'] and not m.nodes[m.find('scroll_view')]['children']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.top==m.page; m.close(); passed()
+# Geometry sets: Edit Playlist's row follows the live pitch and body, as the page's asset rows do.
+m=PlaylistEditMachine(); set_value(m,'pitch',28); set_value(m,'body',26); m.open_editor(28,26); passed()
+gm=PlaylistEditMachine(); set_geom(gm,1); gm.open_editor(); passed()  # the set theme_boot wrote, SET0
+# The Library rows follow the constructor's live body and icon x, whichever group the audit gave them.
+m=ShuffleMachine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
+set_value(m,SITES[0x524820],60); set_value(m,SITES[0x524944],6)
+m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0)
+stock=[m.node('list_item') for _ in range(11)]; view=m.node('scroll_view','scroll_view_localmusic',stock); m.top=m.node('window','localmusic_page',[view])
+assert m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)==0
+button=m.nodes[m.nodes[view]['children'][0]]['children'][0]; icon=m.nodes[button]['children'][0]
+assert m.get(button+O['W_H'])==60 and m.get(icon+O['W_X'])==6; passed()
 m=ShuffleMachine(); m.found=[m.song(f'T{i}') for i in range(130)]
 m.word(m.found[1]+O['REC_ARTIST'],0)  # untagged: the count alone
 slots=[(fnv('/p/T3'),5),(fnv('/p/T1'),2),(fnv('/p/T7'),5)]+[(fnv(f'/p/T{i}'),1) for i in range(8,130)]

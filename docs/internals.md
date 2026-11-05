@@ -6,7 +6,7 @@ How the scroll-wheel payload hooks the stock Shanling Q2 firmware. For the user-
 
 ## Hooks
 
-Checked MIPS prologues redirect into a payload at `0xb00000`, using the final unused `PT_NULL` program header. demo's `.pdr` section, outside every segment, is zeroed for rootfs space ([building.md](building.md)). Trampolines restore the stock GOT base and resume each original function after its PIC setup. Writable input and position state is mapped at `0xb80000`, a `NOLOAD` section (with any stray `.bss`): the segment's memory size covers it, the file does not.
+Checked MIPS prologues redirect into a payload at `0xb00000`, using the final unused `PT_NULL` program header. demo's `.pdr` section, outside every segment, is zeroed for rootfs space ([building.md](building.md)). Trampolines restore the stock GOT base and resume each original function after its PIC setup. Writable input and position state is mapped at `0xb90000`, a `NOLOAD` section (with any stray `.bss`): the segment's memory size covers it, the file does not.
 
 `HOOKS`, `GRADIENT_LEAF` and `WM_PAINT_LEAF` in `tools/build.py` are the hooked entry points.
 
@@ -264,7 +264,7 @@ Every name-sorted library list (artists, album artists, composers, genres, album
 
 ## Coverflow depth
 
-Coverflow draws its covers in software, after Rockbox PictureFlow's renderer: the selected cover faces the viewer at its native 160 pixels, two neighbours a side are turned 60 degrees inward, pushed back and dimmed, and each has a reflection. `patch/coverflow.c` owns the drawing; the stock `slide_menu` stays the navigation and animation controller, so the wheel (one retargeted animator, 200 ms or 120 ms fast, reversal), wrapping, centre, the saved album and track positions all work as before. Touch is the payload's own (below): the `slide_menu` stays insensitive, so stock's drag and throw never run. Tunables are `CF_*` in `patch/offsets.inc`; adjust them together.
+The shelf and caption values below are the theme's `cfs` (see Themes); both built-ins use these macros. Coverflow draws its covers in software, after Rockbox PictureFlow's renderer: the selected cover faces the viewer at its native 160 pixels, two neighbours a side are turned 60 degrees inward, pushed back and dimmed, and each has a reflection. `patch/coverflow.c` owns the drawing; the stock `slide_menu` stays the navigation and animation controller, so the wheel (one retargeted animator, 200 ms or 120 ms fast, reversal), wrapping, centre, the saved album and track positions all work as before. Touch is the payload's own (below): the `slide_menu` stays insensitive, so stock's drag and throw never run. Tunables are `CF_*` in `patch/offsets.inc`; adjust them together.
 
 **Layout.** With depth the `slide_menu` spans the frame, 375 × 210 (`CF_VIEW_W` × `CF_VIEW_H`) at the top of the page, so every animator step invalidates all of it. Its items stay `h` square (210), and `slide_menu_set_spacer` (a store at `+0x84` and an invalidate) sets the spacer to `CF_STRIDE - 210`, so the stride that stock scroll, completion and ringnav's wheel steps use (item width plus spacer) is `CF_STRIDE` (110 px). The children are `image` widgets with no image, so stock paints nothing under the frame. The album and artist captions sit under the frame at `CF_TEXT_Y` and follow the centre cover: when the album `coverflow_paint` drew in the middle changes, a zero-delay timer (`retitle`, never text set inside the paint) names it, once per change; `EVT_VALUE_CHANGED`, when a move commits, writes them again.
 
@@ -318,9 +318,10 @@ The iPod border hook also draws the fast-scroll letter over the list. A step of 
 iPod's accent ([ipod.md](ipod.md#display-settings); each theme keeps its own; Minimal's own accent uses Graphite's) replaces Shanling red wherever it is drawn:
 the theme's style colors, inline `style:*` colors (a mutable style answers through the same
 vtable), decoded images, and the payload's own selection bar and progress fill, which read
-`ACCENTS` directly. `accent_map` (`patch/navigation.c`) is a pure function on one `color_t` (bytes
-r, g, b, a). Stock uses `#FF1448`, `#7F0A24`, the pressed tint `#3D1920` and `#FF144840`, all
-stock red blended with a neutral: each channel is `t * red + k`. Least squares against red with
+the active scheme's tones (`tones()`, [Themes](#themes)). `accent_map` (`patch/navigation.c`) is
+a pure function on one `color_t` (bytes r, g, b, a). Stock uses `#FF1448`, `#7F0A24`, the
+pressed tint `#3D1920` and `#FF144840`, all stock red blended with a neutral: each channel is
+`t * red + k`. Least squares against red with
 the mean removed gives `t` (in 1/4096), then `k`. A color within `RED_TOLERANCE` (8) of that
 blend, with `t` between 1/16 and 17/16 and `k` not below the tolerance, becomes `t * tone + k`
 for one of the preset's tones (`ACCENTS`): the red tone for text colors (a property name ending
@@ -374,6 +375,78 @@ Changing the accent saves it, sets the progress fill, calls `image_manager_unloa
 (`0x645024`) and `widget_invalidate_force` on the window manager. Widgets ask for their style
 colors, gradients and images on every paint, so the next frame decodes the images again through
 the hook and shows every recoloured part; nothing needs a restart.
+
+## Themes
+
+Minimal (`THEME` 0) and Classic (1) are rows of `themes[]` (`patch/navigation.c`; the types are in
+`patch/theme.h`). Code asks the active theme for a field, never which theme it is. `theme()` and
+`scheme()` read the settings first (`accent()`), then return `&themes[st.theme]` and its scheme for
+the stored accent.
+
+- `theme_t` holds the painters (`painter[PAINT_SELECTION]`: Minimal's card or Classic's bar), the
+  surface flags (capitals, chevrons, monochrome icons, bold labels, Now Playing opacities), the Home
+  and settings geometry, the Now Playing bar heights, `art_square` (art takes Corners: Square,
+  `ipod_square_art`), `batt_fill` (the battery's charge colour, 0 for its outline's), the accent's
+  slot and config key
+  (`accent_slot`/`accent_key`: `ACCENT` or `MINIMAL_ACCENT`), its schemes and its options.
+- `scheme_t`: one per `ACCENTS` row, indexed by the stored value; its tones are that row, read
+  through `tones()` or `tones_of(v)`. `SCHEME_CARD` (Minimal's Ivory) draws the selection as a card
+  in `fill`; `SCHEME_RAW_RED` (Crimson) keeps stock red. The roles `fill`, `chevron`, `muted` and
+  `bar_light` are `0xRRGGBB`, 0 meaning unused, and `fill` is read only under `SCHEME_CARD`.
+- `option_t`: the Appearance rows after Theme, in order. At the first read, a stored value outside
+  `values` becomes `def`. Choosing a theme writes each option's `preset` unless the stored value is
+  its `keep` (Light's Auto), and only values that change. The accent row cycles within `values`.
+
+The table is generated. Each built-in theme is `assets/themes/<id>/theme.xml`. The format is a strict
+XML subset: elements with double-quoted attributes, self-closing tags and comments, only whitespace
+between tags, the entities `&amp; &lt; &gt; &quot;`, UTF-8, at most 32 KB. `tools/theme.py` fills
+each theme in this order: the schema defaults, its `extends` base, its own elements, then
+`ROLE_MACROS`, which takes the per-theme numbers (Home rows, the settings top, the progress bar, the
+scheme colours) from `patch/offsets.inc`, so a theme file never names a macro. Any unknown name or
+value stops the build. The tool writes `themes.inc` into the build directory, which navigation.c
+includes after the accent tables, where the hand-written table stood, and `THEME_N` into `stock.h`,
+because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in both themes.
+
+**Now Playing layout.** `theme_t.np_layout` (`<view name="playing" layout="ipod|centred">`, ipod in
+both built-ins) picks the page `ringnav_ui_load` loads for `playing_page`: `np_pages[np_layout()]`,
+where Centred Now Playing (`NPCENTRED`) forces `NP_CENTRED` (`playing_page_stock`).
+`ringnav_playing` binds the lyric tap on the centred page only.
+
+**Cover Flow.** `theme_t.cf` (`cf_style_t`: `coverflow.shelf` top, x1, xs, z1, zs, eye, bright1,
+bright2, reflect, `reflect_top`, stride, radius; `coverflow.caption` `name_px`, `artist_px`, `text_y`) is
+copied to coverflow.c's `cfs` by `cf_restyle` at every page open, so the stride is in place before
+`slide_menu_set_spacer`; a radius change refills `cf_inset`, and a render before any page restyles
+once. Built-ins take every value from offsets.inc's `CF_*` and `NP_ART_RADIUS` (`ROLE_MACROS`).
+tools/theme.py checks each range, top + 160 + reflect ≤ `CF_VIEW_H`, bright2 ≤ bright1, and
+`text_y` + `CF_NAME_H` + `CF_ARTIST_H` ≤ the client height. The tilt table, `CF_EDGE`, `CF_VIEW_*`,
+`CF_CX` and `ART_SIZE` stay fixed.
+
+**Bar and client height.** `theme_t.bar_h` is the status bar's height, 30 for both built-ins
+(`ipod.SET0`). `client_h()` (`patch/theme.h`) is `320 - bar_h`, the window's height under the bar,
+read by Cover Flow's views, Home's art panel, its pan frame, render loop and clip; the battery
+slot (`bar_sync`) takes `bar_h` itself. The page fallbacks (`widget_get_prop_int(page, "h", 290)`) and `DRIFT_TEXELS` stay
+sized for 290. On the build side `Geometry` and `with_geometry(g)` (`tools/ipod.py`) drive
+`ipod_home`, `status_bar`, `playing_page` and `patch_asset`; `patch_code` bakes `SET0`.
+
+**Geometry sets.** `tools/theme.py` also emits the boot tables into `themes.inc`: `boot_values`
+(one row of `ipod.json` values per set, SET0 first), `boot_sites` (each stock immediate's address
+and value name), `geom_names` and `ui_redirects` (the windows a set has its own copy of).
+`theme_t.geom` picks the row. `theme_boot` runs once a boot, at the first `system_bar` load in
+`ringnav_ui_load`, after `accent()` has read the settings. It finds each `THEME_PAGE` (4 KiB, the
+Q2's kernel page) page that holds a site whose low halfword differs from the set's value and
+mprotects (4125) every one RWX, lowest first. Only if all of them succeed does it write the
+halfwords, then per page call cacheflush (4147, BCACHE) and mprotect it back to R-X, and record the
+set in `st.geom`. If one mprotect fails, it mprotects the pages it already opened back to R-X and
+writes nothing: the code stays SET0's and `st.geom` stays 0, so the theme draws with SET0's rows.
+SET0, the set of both built-ins, matches every baked immediate, so it makes no syscall and writes
+nothing. Everything that follows the set reads `st.geom`, not `theme_t.geom`, so a Theme switch to
+another set, which takes effect at the restart, changes nothing before it. A window in
+`ui_redirects` for that set loads as `<set>_<name>.bin` in the same folder
+(`dialog/volume_dialog` becomes `dialog/<set>_volume_dialog`). On the Q2 (V1.32), mprotect and
+cacheflush return 0 on a 4 KiB page, and a rewritten Songs/Albums steps 28/52 from the first open.
+The Library and Edit Playlist rows the payload builds follow the live geometry: `list_row_core`
+reads the Library constructor's body and icon x words after `theme_boot`, and Edit Playlist's row
+takes the written set's `pitch` and `body` (`geom()`).
 
 ## Page transitions (iPod)
 
@@ -453,7 +526,7 @@ iPod's lyrics page (`patch/lyrics.c`; [ipod.md](ipod.md#now-playing)): large lin
 
 **Follow.** Stock's follow (`ringnav_lyric_follow`) does nothing on the page. Every UI pass with the page in front and lit, else every `LYRIC_FOLLOW_MS` (250 ms, stock's timer's pace), `lyric_follow` finds the playing line, the first of those starting when the last started line did (lines sharing a stamp light together), and targets the offset that centres its row (line 0's before the first starts): glided to on the page, set at once off it, never while held or while a pointer is down. Wheel travel moves `LYRIC_SLOT` per tick's worth instead of `LYRIC_ROW_PX`. `lyrics_now` reads the clock on those passes, so its bounds narrow on each second's change; off them (another page, another window on top, the screen off) the follow goes by the whole second (`lyrics_sec`, as stock's), which lets the bounds go, so the clock starts again, wide, when the page is back in front. While `playing_page` is on top and lit, the playing line's rows repaint when its lit width changes, at most every `LYRIC_PAINT_MS` (66 ms, about 15 a second; a word-timed line's width moves nearly every pass, and the idle loop passes every 25 ms), and the last line's when another line starts. Limit: the lit sweep moves in steps of up to `LYRIC_PAINT_MS` of the song, a few pixels at a fast word; the value is a guess.
 
-**Full screen (Centred Now Playing).** Stock's page binds nothing to its lyrics, so with `NPCENTRED` on `ringnav_playing` binds `view_lyric`'s `EVT_POINTER_DOWN` (before children), `EVT_POINTER_UP_BEFORE` and `EVT_POINTER_ABORT` (`np_lyric_touch`). A release within `TAP_PX` (10, AWTK's drag threshold) of its press either way, so no swipe or drag of the lines, with lyrics on (`lyrics_on`) or already full screen, toggles `np_full`: the column (`slide_view_view`) is restacked last among the window's children with a black `bg_color`, moved to x 0 at the window's width, and its `slide_view` sized to the window's width and down to the dots' top (`slide_indicator1`, y 270); `widget_layout` lays the pages out, `view_lrc` ending 20 px above the page's foot (`h=-20`, 178 of 198 px in the column) and "No lyrics" centred (`tools/ipod.py` `playing_stock`), and `lyrics_fit` wraps the rows at the new width. The hold drops, so the follow glides to the playing line. Off, the column goes back before `slider_play` (`widget_index_of`), transparent, at x 80, 225 wide, its `slide_view` 198 high (`NP_COLUMN_*`). The `slide_view`'s abort as it takes a swipe ends it at once, so the pages slide in their column; `lyric_poll` ends it off the lyrics page, while a window over the page leaves it as it is; the press point is forgotten once its release or abort is seen, so a swipe that comes back to where it began is no tap; Return on the page ends it instead of leaving (`STOP`); the page's destruction drops it. Handlers return 0, as the heart's do. Limits: a press that lifts where it came down toggles however long it was held; a tap brings back lyrics the wheel or a finger held; any window over the page, a toast or the volume included, ends it; the covered widgets still repaint under the column (the bar every second, a long title's scroll), redrawing the lyrics beneath them.
+**Full screen (Centred Now Playing).** Stock's page binds nothing to its lyrics, so with `NPCENTRED` on `ringnav_playing` binds `view_lyric`'s `EVT_POINTER_DOWN` (before children), `EVT_POINTER_UP_BEFORE` and `EVT_POINTER_ABORT` (`np_lyric_touch`). A release within `TAP_PX` (10, AWTK's drag threshold) of its press either way, so no swipe or drag of the lines, with lyrics on (`lyrics_on`) or already full screen, toggles `np_full`: the column (`slide_view_view`) is restacked last among the window's children with a black `bg_color`, moved to x 0 at the window's width, and its `slide_view` sized to the window's width and down to the dots' top (`slide_indicator1`, y 270); `widget_layout` lays the pages out, `view_lrc` ending 20 px above the page's foot (`h=-20`, 178 of 198 px in the column) and "No lyrics" centred (`tools/ipod.py` `playing_stock`), and `lyrics_fit` wraps the rows at the new width. The hold drops, so the follow glides to the playing line. Off, the column goes back before `slider_play` (`widget_index_of`), transparent, at x 80, 225 wide, its `slide_view` 198 high (`NP_COLUMN_*`). The `slide_view`'s abort as it takes a swipe ends it at once, so the pages slide in their column; `lyric_poll` ends it off the lyrics page, while a window over the page leaves it as it is; the press point is forgotten once its release or abort is seen, so a swipe that comes back to where it began is no tap; Return on the page ends it instead of leaving (`STOP`); the page's destruction drops it; a page without `slide_view` has no column, so `np_full` does nothing and full screen never starts. Handlers return 0, as the heart's do. Limits: a press that lifts where it came down toggles however long it was held; a tap brings back lyrics the wheel or a finger held; any window over the page, a toast or the volume included, ends it; the covered widgets still repaint under the column (the bar every second, a long title's scroll), redrawing the lyrics beneath them.
 
 **Clock.** `player_playtime_and_length` reports whole seconds, which stock's status thread (`mclSyncPlayerStatus`, `0x5a91c4`) asks hciplayer for every 200 ms (`{media-info\get-music-info}`, its fourth field). `lyrics_now` keeps the offset from `time_now_ms` to the position as an interval: the first second seen, or one after a jump (a seek, another song), puts it anywhere in that second plus a poll (`LYRIC_POLL_MS`, 250); the next second's arrival while playing puts the position at most a poll past that second, and the two intersect, or restart from that change when they disagree. Paused (`mclGetPlayStatus()` not 2) it holds; on Play it goes on from where it stopped until the next second replaces that guess. It never runs more than a poll past its reported second.
 

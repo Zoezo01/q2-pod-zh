@@ -500,7 +500,6 @@ void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, un
 }
 /* iPod builds' theme: Classic's Graphite light tone, or Minimal's fill. */
 static int shim_classic_on = 1;
-int ipod_classic(void) { return shim_classic_on; }
 unsigned accent_tone(int tone) { return shim_classic_on ? 0x6e6e6e : 0xeeeeec; }
 void shim_classic(int on) { shim_classic_on = on; }
 int widget_set_prop_str(void *x, const char *k, const char *v) {

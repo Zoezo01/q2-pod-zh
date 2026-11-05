@@ -199,7 +199,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -608,8 +608,8 @@ def validate_assets(directory):
         slides = short not in (HOME_PAGE, STATUS_BAR, PLAYING_PAGE, QUICK_SETTINGS, CONFIRM, BIGCOVER)
         assert root[2].get('anim_hint') == (SLIDE if slides else None), short
         # screen coordinates: the bar, full-screen dialogs (quick settings slides down from -320), windows
-        origin, window = {STATUS_BAR: (0, (0, 30)), QUICK_SETTINGS: (320, (0, 320)), CONFIRM: (0, (0, 320)),
-                          BIGCOVER: (0, (0, 320))}.get(short, (30, (30, 320)))
+        origin, window = {STATUS_BAR: (0, (0, SET0.bar)), QUICK_SETTINGS: (320, (0, 320)), CONFIRM: (0, (0, 320)),
+                          BIGCOVER: (0, (0, 320))}.get(short, (SET0.bar, (SET0.bar, 320)))
         corners(short, root, 0, origin, window)
         if short == QUICK_SETTINGS:  # iPod only: the stock 4x2 grid, even label areas, a slim brightness track
             menu, light = root[3]
@@ -656,7 +656,7 @@ def validate_assets(directory):
             assert sg == [0, HOME_TOP, HOME_LIST_W, 2*HOME_ROW] and [r[2]['name'] for r in ss[3]] == ['btn_playset', 'btn_sysset']
             assert [r[3][1][2]['name'] for r in ss[3]] == ['img_playset', 'img_sysset'] and [r[3][0][2]['text'] for r in ss[3]] == ['Playback', 'System']
             # The art fills the right panel below the status bar; the payload fits and crops it.
-            assert art[0] == 'image' and art[1] == [0, 0, 375, 290] and art[2]['draw_type'] == 'fill' and HOME_LIST_W == 375
+            assert art[0] == 'image' and art[1] == [0, 0, 375, BOTTOM] and art[2]['draw_type'] == 'fill' and HOME_LIST_W == 375
             assert all(v == '#00000000' for k,v in root[3][1][2].items() if k.startswith('style:'))
             assert [r[2]['name'] for r in sv[3]] == ['btn_'+n for n in HOME_ROWS] and HOME_ROWS[2] == 'coverflow'
             for name, (_, _, _, (label, image)) in zip(HOME_ROWS, sv[3]):
@@ -684,17 +684,17 @@ def validate_assets(directory):
             dot = inc('HOME_DOT_X'), inc('HOME_DOT')
             assert HOME_TEXT_X == sum(dot) + inc('HOME_DOT_GAP')
             # The dot and the labels clear the bottom row's corner.
-            assert dot[0] >= corner_x(30 + HOME_TOP + 6*HOME_ROW + (HOME_ROW - dot[1])//2, dot[1])
-            assert HOME_TEXT_X >= corner_x(30 + HOME_TOP + 6*HOME_ROW + 9, 20)
+            assert dot[0] >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + (HOME_ROW - dot[1])//2, dot[1])
+            assert HOME_TEXT_X >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
             # Split (coverflow_home_layout) gives Minimal's menu 45% of the screen, Classic's half, the art the rest;
             # Full's last chevron leaves the same glass clearance as the label on the left.
             # Split's glyph ends 13px before the art, as in the Home concept.
             assert inc('HOME_SPLIT_W') == 375 // 2
             assert inc('CHEVRON_W') - 30 - inc('HOME_CHEVRON_SHIFT') == 13
             glyph_end = inc('HOME_CLASSIC_ROW') - inc('CHEVRON_W') + 30 + inc('HOME_FULL_CHEVRON_SHIFT')
-            glyph_y = 30 + 6*HOME_ROW + (HOME_ROW - 50) // 2 + 16
+            glyph_y = SET0.bar + 6*HOME_ROW + (HOME_ROW - 50) // 2 + 16
             assert 375 - glyph_end >= corner_x(glyph_y, 34 - 16)
-            assert inc('HOME_CLASSIC_TEXT_X') >= corner_x(30 + HOME_TOP + 6*HOME_ROW + 9, 20)
+            assert inc('HOME_CLASSIC_TEXT_X') >= corner_x(SET0.bar + HOME_TOP + 6*HOME_ROW + 9, 20)
             # Classic's labels stop short of Split's glyph (x 20 to 30 of list_into) and Full's.
             for row, shift in ((inc('HOME_SPLIT_W'), inc('HOME_CHEVRON_SHIFT')), (inc('HOME_CLASSIC_ROW'), inc('HOME_FULL_CHEVRON_SHIFT'))):
                 assert row - inc('HOME_CLASSIC_LABEL_END') + 5 <= row - inc('CHEVRON_W') + shift + 20
@@ -707,11 +707,11 @@ def validate_assets(directory):
             assert title[0] == 'hscroll_label' and title[2]['name'] == 'label_clock'
             x, _, w, _ = title[1]
             assert x + w/2 == 375/2 and w >= CLOCK_MIN  # centred on the screen, clear of both groups (corners below)
-            assert inc('CLOCK_EDGE') >= corner_x((30 - 20) // 2, 20) and x >= inc('CLOCK_EDGE')
+            assert inc('CLOCK_EDGE') >= corner_x((SET0.bar - 20) // 2, 20) and x >= inc('CLOCK_EDGE')
             assert title[2]['style:normal:font_size'] == '16'
             assert all(v[2]['children_layout'].endswith(f'xm={STATUS_MARGIN},s={inc("STATUS_GAP")})') for v in (left, right))
             idle = rest.pop()
-            assert idle[1] == [STATUS_MARGIN, 0, 28, 30] and idle[2]['text'] == 'Q2' and idle[2]['visible'] == 'false'
+            assert idle[1] == [STATUS_MARGIN, 0, 28, SET0.bar] and idle[2]['text'] == 'Q2' and idle[2]['visible'] == 'false'
             assert idle[2]['style:normal:font_size'] == '18' and STATUS_MARGIN >= corner_x(6, 18)
             assert STATUS_MARGIN + 28 < x
             assert [n[2]['name'] for n in rest] == STATUS_HIDDEN and all(n[1][0] + n[1][2] < 0 for n in rest)
@@ -756,7 +756,7 @@ def validate_assets(directory):
             lrc, slot = named['view_lrc'][3][0][2], inc('LYRIC_SLOT')
             assert named['view_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=375,h=178)' and 3 * slot <= 178 < 4 * slot
             assert lrc['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)' and lrc['children_layout'] == f'list_view(x=0,y={slot},s=0)'
-            assert inc('LYRIC_X') == NP_MARGIN >= corner_x(30 + NP_TOP, 178)
+            assert inc('LYRIC_X') == NP_MARGIN >= corner_x(SET0.bar + NP_TOP, 178)
             slider = named['slider_play']
             assert slider[1] == [NP_BAR[0], 233, NP_BAR[2], NP_TOUCH] and NP_TOUCH >= 44
             assert slider[2]['bar_size'] == '4' and slider[2]['slide_with_bar'] == 'true'
@@ -797,7 +797,7 @@ def validate_assets(directory):
         if short == 'localmusic/playlist_page.bin':
             old_nav = next(n for n in decode(original)[3] if n[2].get('name') == 'view_navbar')
             gif, old = (next(n for n in p[3] if n[2].get('name') == 'gif_returnplay') for p in (nav, old_nav))
-            assert gif[1] == [375 - corner_x(30, old[1][3]) - old[1][2], *old[1][1:]]
+            assert gif[1] == [375 - corner_x(SET0.bar, old[1][3]) - old[1][2], *old[1][1:]]
             assert nav[2].get('visible') != 'false' and nav[2].get('enable') != 'false'
             gif[1][0] = old[1][0]
             assert nav == old_nav, 'only the right button keeps clear of the glass'
@@ -821,6 +821,29 @@ def validate_assets(directory):
         try: patch_asset(short, original[:-1]+b'x')
         except ValueError: pass
         else: raise AssertionError('Accepted a changed asset')
+    # Every geometry set's built list windows take the row height of the page's pitch
+    # immediates (art pages take art_pitch), and its rows fit.
+    from theme import builtins, geometry_sets
+    page_kind = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
+                 'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
+                 'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'art',
+                 'localmusic/localclass_page.bin': 'art'}
+    built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
+    for g in geometry_sets(builtins()):
+        assert g.body <= g.pitch and g.art_body <= g.art_pitch, g.name
+        assert g.art + 2*g.art_inset <= g.art_body, g.name
+        checked = set()
+        for short, kind in page_kind.items():
+            folder, _, base = short.rpartition('/')
+            mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
+            new = decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + short))
+            old = {n[2].get('name'): n[2] for n in walk(decode(read('stock.squashfs', ui + short)))}
+            for n in walk(new):
+                for prop in ('row_height', 'default_item_height'):
+                    if old.get(n[2].get('name'), {}).get(prop) == '78':
+                        assert n[2][prop] == str(g.art_pitch if kind == 'art' else g.pitch), (g.name, short, prop)
+                        checked.add(short)
+        assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

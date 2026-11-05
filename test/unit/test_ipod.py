@@ -1,5 +1,6 @@
 """tools/ipod.py's page rewrites on small synthetic UI trees built to the shape each one checks for."""
 import copy
+import dataclasses
 
 import pytest
 
@@ -657,3 +658,117 @@ def test_sized_art(monkeypatch):
     assert ipod.sized_art(b'in', (140, 100)) == b'png'
     assert calls == [(('png:-', '-filter', 'Lanczos', '-resize', '52x52!', '-background', 'none', '-gravity', 'center', '-extent', '52x52', *ipod.PNG_OUT), b'in'),
                      (('png:-', '-filter', 'Lanczos', '-resize', '100x100!', '-background', 'black', '-gravity', 'center', '-extent', '140x100', *ipod.PNG_OUT), b'in')]
+
+
+SET0_VALUES = dict(BOTTOM=290, PITCH=72, BODY=68, ART=52, ART_INSET=8, NP_POS_X=22, NP_ICONS_END=353,
+                   NP_BAR_X=21, NP_BAR=[21, 253, 333, 4], NP_TIME_X=46)
+
+
+def test_with_geometry_set0_matches_module():
+    assert vars(ipod.with_geometry(ipod.SET0)) == SET0_VALUES
+    assert {n: getattr(ipod, n) for n in SET0_VALUES} == SET0_VALUES   # today's names still import
+    assert ipod.SET0 == ipod.Geometry() and vars(ipod.IPOD) == SET0_VALUES and ipod.SET0.name == 'ipod'
+
+
+def test_with_geometry_follows_the_bar():
+    assert vars(ipod.with_geometry(ipod.Geometry(name='t', bar=26))) == dict(
+        SET0_VALUES, BOTTOM=294, NP_ICONS_END=350, NP_BAR_X=18, NP_BAR=[18, 253, 339, 4], NP_TIME_X=39)
+
+
+def test_with_geometry_takes_the_row_sizes():
+    ns = ipod.with_geometry(ipod.Geometry(name='t', pitch=64, body=60, art=48, art_inset=6))
+    assert (ns.PITCH, ns.BODY, ns.ART, ns.ART_INSET, ns.BOTTOM) == (64, 60, 48, 6, 290)
+
+
+def test_geometry_is_frozen():
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        ipod.SET0.bar = 26
+
+
+T26 = ipod.Geometry(name='t', bar=26, pitch=64, body=60, art=52, art_inset=4)
+
+
+def test_ipod_home_art_fills_the_client_height():
+    root = home(); ipod.ipod_home(root, g=T26)
+    assert root[3][0][1] == [0, 0, 375, 294]
+
+
+def test_status_bar_takes_the_bar_height():
+    root = bar(); ipod.status_bar(root, g=T26); n = named(root)
+    assert [root[1][3], n['view_left'][1][3], n['view_right'][1][3]] == [26, 26, 26]
+    assert n['label_idle'][1] == [ipod.STATUS_MARGIN, 0, 28, 26] and n['label_clock'][1][3] == 26
+    assert [n[x][1][3] for x in ipod.STATUS_HIDDEN] == [26, 26, 26]
+
+
+def test_status_bar_wants_the_stock_height():
+    root = bar(); root[1][3] = 32
+    with pytest.raises(ValueError, match='^Unexpected status bar height$'):
+        ipod.status_bar(root)
+
+
+def test_playing_page_follows_the_bar():
+    root = playing(); ipod.playing_page(root, g=T26); n = named(root)
+    assert n['img_more'][1] == [300, 0, 50, 40] and n['label_ipod_pos'][1] == [22, 0, 278, 40]
+    assert n['slider_play'][1][0::2] == [18, 339] and n['img_repeata'][1][0] == 18
+    assert n['label_playtime'][1] == [39, 265, 80, 16] and n['label_ipod_remain'][1] == [256, 265, 80, 16]
+
+
+def test_patch_asset_rows_and_lists_follow_the_geometry(monkeypatch):
+    page = w('folder_page', w('view_navbar', at=[0, 0, 375, 50]),
+             w('list_view', w('row', w('art', kind='image', at=[8, 9, 52, 52]), kind='list_item', at=[0, 0, 375, 78]),
+               kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
+    data = ipod.encode(page)
+    monkeypatch.setitem(ipod.UI_ASSETS, 'folder_page.bin', ipod.sha(data))
+    n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data, g=T26)))
+    assert n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '64'
+    assert n['row'][1][3] == 64 and n['art'][1][1] == 4
+    n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data)))
+    assert n['list_view'][1] == [0, 0, 375, 290] and n['row'][1][3] == 72 and n['art'][1][1] == 8
+
+
+SET0_WORDS = {'pitch': 72, 'body': 68, 'art': 52, 'art_inset': 8, 'scroll': 240,
+              'title24_y': 13, 'title_y': 10, 'meta_y': 39, 'count_y': 40}
+SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
+
+
+def test_immediates_every_site_once():
+    sites = [a for g in ipod.AUDIT['immediates'] for a, _ in g['sites']]
+    assert len(sites) == 71 and len(set(sites)) == 71
+
+
+def test_immediate_values_set0_are_the_baked_values():
+    values = ipod.immediate_values(ipod.SET0)
+    assert set(values) == set(ipod.VALUE_NAMES)
+    assert (values['np_bar_x'], values['np_bar_w']) == (ipod.NP_BAR[0], ipod.NP_BAR[2])
+    assert ipod.VALUE_NAMES[0] == 'pitch'
+    for name in ipod.VALUE_NAMES:
+        if not name.startswith('np_bar'):
+            assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_')], name
+
+
+def test_only_split_names_take_the_art_prefix():
+    assert {n for n in ipod.VALUE_NAMES if n.startswith('art_')} - {'art_inset'} <= {'art_' + n for n in SPLIT}
+    assert all(g['value'] in SPLIT and g['page'] == 'shared' for g in ipod.AUDIT['immediates'] if 'page' in g)
+
+
+def test_geometry_has_every_value_name():
+    assert set(ipod.VALUE_NAMES) - {'scroll', 'np_bar_x', 'np_bar_w'} <= {f.name for f in dataclasses.fields(ipod.Geometry)}
+
+
+UI = 'release/assets/default/raw/ui/'
+
+
+@pytest.fixture
+def fake_assets(monkeypatch):
+    monkeypatch.setattr(ipod, 'UI_ASSETS', {'system_bar.bin': '', 'dialog/volume_dialog.bin': '', 'home_page.bin': ''})
+    monkeypatch.setattr(ipod, 'patch_asset', lambda rel, data, g=ipod.SET0: data + (b'!' if g.bar != 30 and rel != 'home_page.bin' else b''))
+
+
+def test_set_assets_only_what_differs(fake_assets):
+    got = ipod.set_assets(lambda p: p.encode(), ipod.Geometry(name='test', bar=26))
+    assert got == {UI + 'test_system_bar.bin': (UI + 'system_bar.bin').encode() + b'!',
+                   UI + 'dialog/test_volume_dialog.bin': (UI + 'dialog/volume_dialog.bin').encode() + b'!'}
+
+
+def test_set_assets_set0_is_empty(fake_assets):
+    assert ipod.set_assets(lambda p: p.encode(), ipod.SET0) == {}

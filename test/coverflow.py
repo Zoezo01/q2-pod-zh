@@ -201,7 +201,14 @@ void *widget_lookup(void *x, const char *n, int r) {
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
 int ipod_home(void) { return home_mode; }
-int ipod_classic(void) { return classic; }
+/* CF_STYLE0/1 (minimal, classic): main() passes each theme's .cf from tools/theme.py ROLE_MACROS */
+static theme_t shim_themes[2] = {
+    { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
+      .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
+    { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
+      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 } };
+static short stub_bar_h = 30;
+const theme_t *theme(void) { shim_themes[classic].bar_h = stub_bar_h; return &shim_themes[classic]; }
 int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
 int ipod_light(void) { return light; }
 static int square_art;
@@ -789,6 +796,20 @@ static void touches(widget *s, widget *covers_view) {
     int album = *(int *)(raw + SLIDE_INDEX);
     run(); assert(!strcmp(title(), names[album]) && !covers_view->visible);
     key(KEY_RETURN); assert(covers_view->visible);
+}
+
+/* A theme's corner radius takes effect at the next page open (cf_restyle refills cf_inset). */
+static void restyle(void) {
+    const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
+    theme_t *t = (theme_t *)theme();
+    close_page(); t->cf.radius = 0; open_page();
+    render(0, rest);
+    for (int y = 0; y < 160; ++y)
+        for (int x = 0; x < 160; ++x) assert(px(CF_CX - 80 + x, CF_TOP + y) == art[y * 160 + x]); /* square */
+    close_page(); t->cf.radius = NP_ART_RADIUS; open_page();
+    render(0, rest);
+    assert(px(CF_CX - 80 + 159, CF_TOP) != art[159]); /* rounded again */
+    close_page();
 }
 
 static void depth(void) {
@@ -1451,6 +1472,7 @@ int main(void) {
     close_page();
     assert(loads == unloads);
     depth();
+    restyle();
     sorting();
     artist_only();
     unknown_card();
@@ -1600,6 +1622,14 @@ int main(void) {
     classic = 0; home_mode = 0;
     coverflow_home_layout();
     assert(*(int *)(label->raw + W_X) == dot_x && !memcmp(geo, split, sizeof split) && loads == unloads);
+    /* A 26 px bar: the art panel takes the 294 px client height (client_h). */
+    stub_bar_h = 26;
+    coverflow_home_layout();
+    static const int tall[4] = { HOME_SPLIT_W, 0, 375 - HOME_SPLIT_W, 294 };
+    assert(!memcmp(geo, tall, sizeof tall));
+    stub_bar_h = 30;
+    coverflow_home_layout();
+    assert(!memcmp(geo, split, sizeof split));
     /* A cover that pans: the art's image is empty and fills the panel, the pan's frame drawn over it. */
     frame_fail = 0;
     *(volatile int *)MCL_POS = 0;
@@ -1629,6 +1659,21 @@ def main():
     ap.add_argument('--captures', type=pathlib.Path,
                     help='write the renderer\'s frames (rest, quarter, half, three-quarter turns, one album) as PNGs here')
     a = ap.parse_args()
+    # shim_themes stands in for the generated themes[]: each theme's .home_* fields must match the
+    # offsets.inc expressions tools/theme.py ROLE_MACROS gives it (0, unset in the shim, left out).
+    from theme import ROLE_MACROS
+    def home_fields(text):
+        return [re.findall(r'\.(home_\w+) = (\{[^}]*\}|[^,{}\n]+)', t.split('.n_opts')[0]) for t in text]
+    nav = [[(k, v) for k, v in (('home_top', m['home_top']), ('home_full_row', m['home_full_row']),
+                                ('home_text_x', m['home_text_x']),
+                                ('home_label_end', f'{{ {m["home_label_end[0]"]}, {m["home_label_end[1]"]} }}')) if v != '0']
+           for m in (ROLE_MACROS['minimal'], ROLE_MACROS['classic'])]
+    shim = re.search(r'shim_themes\[2\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
+    norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
+    assert norm(home_fields(shim)) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
+    cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
+                for i, m in enumerate((ROLE_MACROS['minimal'], ROLE_MACROS['classic']))]
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]
@@ -1691,7 +1736,7 @@ def main():
         binary = tmp/'coverflow_test'
         subprocess.run(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unused-function',
-                        '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
+                        *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
                         str(tmp/'test.c'), '-o', str(binary)], check=True)
         env = dict(os.environ)
         if a.captures:  # capture the reflection intensity
