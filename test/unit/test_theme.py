@@ -209,11 +209,11 @@ M = 'id="minimal" name="M" index="0"'
     ('<option setting="home" key="HOME"/>', None, 'home: unknown key HOME'),
     ('<option setting="accent" key="HOME"/>', None, "HOME: the payload's key"),
     ('', 'id="t" name="T" index="2" extends="pico"', 'extends unknown theme pico'),
-    ('', 'id="T" name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
+    ('', 'id="T" name="T" index="2"', 'id: expected [a-z][a-z0-9_-]*'),
     ('', 'id="t" name="" index="2"', 'name: expected 1..48 bytes, no control characters'),
     ('', 'id="t" name="T" index="10"', 'index: expected a digit'),
     ('', 'id="t" name="T" index="2" colour="x"', 'unknown key theme.colour'),
-    ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
+    ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_-]*'),
     ('', 'id="t" name="T"', 'index: expected a digit'),
     ('<colorScheme name=""/>', None, 'unknown scheme '),
     ('<option/>', None, 'unknown setting '),
@@ -358,6 +358,11 @@ def test_nano_battery_offers_only_what_the_bar_gate_exempts():
     # icon (0) never gates; Percent Inside (3) is exempt under BATT_NANO: bar_sync's constant BATT_ROOM is the built-in bar's
     n = theme.builtins()[2]
     assert next(o['values'] for o in n['opts'] if o.get('setting') == 'SETTING_BATTERY') == 0b1001
+
+
+def test_hyphen_in_an_id_is_a_c_name():
+    t = resolved('', 'id="a-b" name="T" index="2" extends="minimal"')
+    assert t['id'] == 'a-b' and theme.c_name(t) == 'a_b'
 
 
 def test_home_rows_font_px_is_the_home_role_px():
@@ -866,9 +871,9 @@ def test_geometry_ranges():
 
 
 @pytest.mark.parametrize('body, message', [
-    ('<geometry name="Pico"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n'),
-    ('<geometry name="pico-text-and-more"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n'),
-    ('<geometry name="n"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n'),
+    ('<geometry name="Pico"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..24 bytes, not n'),
+    ('<geometry name="pico-text-and-much-much-more"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..24 bytes, not n'),
+    ('<geometry name="n"/>', 'geometry.name: expected [a-z][a-z0-9-]*, 1..24 bytes, not n'),
     ('<geometry name="ipod"/>', 'geometry set ipod declared twice'),
     ('<geometry name="pico"/><geometry name="pico"/>', 'geometry set pico declared twice'),
     ('<geometry name="pico" tint="1"/>', 'unknown key geometry.tint'),

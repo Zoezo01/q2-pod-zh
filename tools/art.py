@@ -252,30 +252,30 @@ STATE_Y = (4, 19)  # the fill's and edge's first and last rows
 
 def images(t):
     """Theme t's generated images, {name: PNG bytes}; those its values state."""
-    out = {}
+    out, prefix = {}, t['id'].replace('-', '_')
     if t['chevron_x']:  # white on the band in both halves, its point on the middle row
-        out[f'{t["id"]}_sort_bars'] = png(*SORT_BOX[2:], compose(SORT_BOX, [(path(SORT), lambda x, y: (0xffffff, 1))]))
-        out[f'{t["id"]}_chevron'] = png(*CHEVRON_BOX[2:], compose(CHEVRON_BOX, [
+        out[f'{prefix}_sort_bars'] = png(*SORT_BOX[2:], compose(SORT_BOX, [(path(SORT), lambda x, y: (0xffffff, 1))]))
+        out[f'{prefix}_chevron'] = png(*CHEVRON_BOX[2:], compose(CHEVRON_BOX, [
             (stroke(path(CHEVRON), CHEVRON_STROKE, closed=False), lambda x, y: (0xffffff, 1))]))
     if t['bolt']:
         shape = path(BOLT)
-        out[f'{t["id"]}_bolt'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(stroke(shape, 1.6), lambda x, y: (0xffffff, t['bolt_halo_a'] / 255)),
+        out[f'{prefix}_bolt'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(stroke(shape, 1.6), lambda x, y: (0xffffff, t['bolt_halo_a'] / 255)),
                                                                        (shape, lambda x, y: (t['bolt'], 1))]))
-        out[f'{t["id"]}_plug'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(path(PLUG), lambda x, y: (t['bolt'], 1))]))
+        out[f'{prefix}_plug'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(path(PLUG), lambda x, y: (t['bolt'], 1))]))
     if t['state_stops']:
         fill, edge = gradient(t['state_stops'], *STATE_Y), gradient(t['state_edge'], *STATE_Y)
         for name, d in STATE.items():
             shape = path(d)
             for half, halo in (('l', t['state_halo_light']), ('d', t['state_halo_dark'])):
-                out[f'{t["id"]}_{name}_{half}'] = png(*STATE_BOX[2:], compose(STATE_BOX, [
+                out[f'{prefix}_{name}_{half}'] = png(*STATE_BOX[2:], compose(STATE_BOX, [
                     (stroke(shape, 2.6), lambda x, y, a=halo / 255: (0xffffff, a)),
                     (shape, lambda x, y: (fill(y), 1)),
                     (stroke(shape, 1), lambda x, y: (edge(y), 1))]))
     drawing = ROOT/f'assets/themes/{t["id"]}/note.svg'
     if drawing.exists():
-        out[f'{t["id"]}_note'] = png(*NOTE_BOX[2:], note(drawing.read_text()))
+        out[f'{prefix}_note'] = png(*NOTE_BOX[2:], note(drawing.read_text()))
     if t['pane_icon_x']:
         for name, d in PANE_ICONS.items():
             fit = name != 'note'
-            out[f'{t["id"]}_icon_{name}'] = png(*(ICON_BOX if fit else NOTE_BOX)[2:], icon(d, fit))
+            out[f'{prefix}_icon_{name}'] = png(*(ICON_BOX if fit else NOTE_BOX)[2:], icon(d, fit))
     return out

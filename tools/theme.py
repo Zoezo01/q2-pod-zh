@@ -207,7 +207,7 @@ def derive_gloss(tones):
 
 
 GEOMETRIES = {SET0.name: SET0}  # the built-in set; a theme declares its others (t['geoms'])
-GEOM_NAME = re.compile('(?!n$)[a-z][a-z0-9-]{0,15}')  # GEOM_<NAME> stays one C name per set, never GEOM_N
+GEOM_NAME = re.compile('(?!n$)[a-z][a-z0-9-]{0,23}')  # GEOM_<NAME> stays one C name per set, never GEOM_N
 # Geometry field -> its inclusive (lo, hi), each an int or a function of the finished set.
 GEOM_RANGES = {
     'bar': (26, 40),  # 26: Home's scratch frame (DRIFT_TEXELS, 4 x 188 x 294) holds a client of 294 at most; 40: an eighth of the screen
@@ -272,7 +272,7 @@ def declare(node, known):
     def err(message): fail(node.file, node.line, message)
     name = node.attrs['name']
     if not GEOM_NAME.fullmatch(name):
-        err('geometry.name: expected [a-z][a-z0-9-]*, 1..16 bytes, not n')
+        err('geometry.name: expected [a-z][a-z0-9-]*, 1..24 bytes, not n')
     if name in known:
         err(f'geometry set {name} declared twice')
     ints = {}
@@ -611,8 +611,8 @@ def resolve(root, by_id, seen=()):
         if k not in ('format', 'id', 'name', 'index', 'extends'):
             err(root, f'unknown key theme.{k}')
     tid = a.get('id', '')
-    if not re.fullmatch('[a-z][a-z0-9_]*', tid):
-        err(root, 'id: expected [a-z][a-z0-9_]*')
+    if not re.fullmatch('[a-z][a-z0-9_-]*', tid):
+        err(root, 'id: expected [a-z][a-z0-9_-]*')
     # the Theme row's "Theme: %s" holds 63 bytes; a control character would reach C (a C1 one as \u0080)
     if not 0 < len(a.get('name', '').encode()) <= 48 or re.search('[\x00-\x1f\x7f-\x9f]', a['name']):
         err(root, 'name: expected 1..48 bytes, no control characters')
@@ -842,6 +842,11 @@ def accent_default(t):
     return next(o['def'] for o in t['opts'] if o['setting'] == 'SETTING_ACCENT')
 
 
+def c_name(t):
+    """t's id as a C identifier's start: an id may hold a hyphen."""
+    return t['id'].replace('-', '_')
+
+
 def theme_keys(themes):
     """The themes' own IPOD keys in read order, after the payload's thirteen: each theme's own accent key and own
     options, theme then declaration order, each key once. key -> (value count, default, the own option or None
@@ -1003,7 +1008,7 @@ def emit(themes, out, redirects={}):
                 + (f', .label = {json.dumps(s["label"])}' if 'label' in s else '') + ' },'
                 for v, s in enumerate(scheme_half(s, light) for s in t['schemes'])]
     for t in themes:
-        i, one = t['id'], shared(t)
+        i, one = c_name(t), shared(t)
         # one: the light rows serve both halves (today's lines); else the dark rows, then the light ones
         lines += [f'static const scheme_t {i}_schemes[] = {{', *rows(t, one), '};',
                   f'_Static_assert(sizeof {i}_schemes / sizeof *{i}_schemes >= ACCENT_N, "one scheme per ACCENTS row, then the theme\'s own");']
@@ -1024,9 +1029,9 @@ def emit(themes, out, redirects={}):
         fields = [('name', json.dumps(t['name'])),
                   *((k.field, field(k)) for k in SCHEMA.values() if k.cls == 'live' and view_attr(k.path)),
                   ('accent_slot', ACCENT_KEYS.get(t['accent_key']) or f'&st.own[{keys.index(t["accent_key"])}]'), ('accent_key', json.dumps(t['accent_key'])),
-                  ('schemes', f'{t["id"]}_schemes'), ('light', f'{t["id"]}_schemes' if shared(t) else f'{t["id"]}_light'),
+                  ('schemes', f'{c_name(t)}_schemes'), ('light', f'{c_name(t)}_schemes' if shared(t) else f'{c_name(t)}_light'),
                   ('n_schemes', len(t['schemes'])),
-                  ('opts', f'{t["id"]}_opts'), ('n_opts', len(t['opts'])),
+                  ('opts', f'{c_name(t)}_opts'), ('n_opts', len(t['opts'])),
                   ('undeclared', ' | '.join(f'(1 << {m})' for m in t['undeclared']) or 0),
                   *((k.field, c(k, t[k.field])) for k in SCHEMA.values() if k.cls == 'open'),
                   ('geom', sets.index(geometry(t)))]
