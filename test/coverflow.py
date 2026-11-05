@@ -45,7 +45,7 @@ extern unsigned char shim_memory[0x800];
 #define g_lockscreen_pageflag 0
 int shim_lock(void *), shim_unlock(void *), shim_statfs(const char *, void *);
 """ + ''.join(f'{r} {n}({a});\n' for n in """
-getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
+canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
 deque_init _deque_push_back deque_pop_back
 deque_assign deque_destroy deque_size deque_at window_create widget_factory
 widget_factory_create_widget image_create hscroll_label_create set_hscroll_label_attribute
@@ -59,7 +59,9 @@ timer_add timer_remove navigator_back_to_home navigator_back window_manager_clos
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
+on_home_music_onclick widget_layout
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
+int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
 #define calloc shim_calloc
 """
@@ -106,7 +108,7 @@ int image_set_draw_type(void *x, int t) { return 0; }
 int image_base_set_image(void *x, const char *s) { snprintf(W(x)->image, 600, "%s", s); return 0; }
 /* A zero-length "no art" marker does not decode. Every successful load is unloaded again and
    decodes to art_w x art_h (bitmap_t w @0, h @4). */
-static int loads, unloads, theme_placeholder;
+static int loads, unloads, theme_placeholder, cover_fail;
 static unsigned art_w = 160, art_h = 160;
 /* Decoded art (bitmap_t w @0, h @4, line length @8, format @0xe, and here the pixels @0x14):
    RGBA8888, a pattern whose colour comes from the file's path, so every album looks different. */
@@ -126,10 +128,19 @@ static void pattern(unsigned char *px, unsigned seed) {
             px[4 * (y * 160 + x) + 3] = 255;
         }
 }
+static int note_loads, note_drawn[4], note_fail; /* the pane image: a theme image, translucent */
+static char pane_image[32];
 int widget_load_image(void *x, const char *url, void *b) {
     struct stat s;
+    if (!strncmp(url, "classic_light_", 5)) {
+        snprintf(pane_image, sizeof pane_image, "%s", url);
+        memset(b, 0, 0x18);
+        int note = strstr(url, "note") != 0; /* the pane icons are 96 x 96 */
+        ((unsigned *)b)[0] = note ? 100 : 96, ((unsigned *)b)[1] = note ? 115 : 96, note_loads += !note_fail;
+        return note_fail;
+    }
     int themed = theme_placeholder && strncmp(url, "file://", 7);
-    int failed = !themed && (strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size);
+    int failed = cover_fail || (!themed && (strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size));
     loads += !failed && !themed;
     if (!failed) {
         unsigned *bm = b, seed = 0;
@@ -201,15 +212,52 @@ void *widget_lookup(void *x, const char *n, int r) {
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
 int ipod_home(void) { return home_mode; }
+void library_rows(void *list) {}
+void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
+int library_count(const char *sql) { return strstr(sql, "sum(e=0)") ? 312 : 704; }
+int on_home_music_onclick(void *ctx, void *e) { return 0; }
+int widget_layout(void *w) { return 0; }
+void bar_title_sync(void *win) {}
 /* CF_STYLE0/1 (minimal, classic): main() passes each theme's .cf from tools/theme.py ROLE_MACROS */
-static theme_t shim_themes[2] = {
+static theme_t shim_themes[3] = {
     { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
-      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 } };
+      .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 },
+    { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
+      .home_pane =
+          { 4, { 0, 44, 88, 100 }, { 0x8ca2ad, 0x63717b, 0x425152, 0x425152 } }, .pane_shadow = 0,
+      .pane_shadow_w = 25,
+      .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 40, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
+      .pane_count_px = 27, .cf = CF_STYLE1 } };
 static short stub_bar_h = 30;
-const theme_t *theme(void) { shim_themes[classic].bar_h = stub_bar_h; return &shim_themes[classic]; }
-int bold_label(void *w, int was) { return was; } /* the font only: no geometry */
+const theme_t *theme(void) { return &shim_themes[classic]; }
+int client_h(void) { return 320 - stub_bar_h; }
+int theme_font(void *w, int role, int was) { return was; } /* the font only: no geometry */
+/* The Split pane's painters: the stops asked for, each fill in the colour last set, the count's text. */
+#define SHADOW_A(i) ((int[]){ 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }[i])
+static int stops_calls, stops_rect[4], fills;
+static const stops_t *stops_arg;
+static struct { int x, y, w, h; unsigned color; } fill[1024];
+static unsigned fill_color, centred_color;
+static char centred_text[32];
+static int centred_box[4];
+static unsigned centred_px;
+void paint_stops(void *c, int x, int y, int ww, int h, const stops_t *s) {
+    ++stops_calls; stops_rect[0] = x; stops_rect[1] = y; stops_rect[2] = ww; stops_rect[3] = h; stops_arg = s;
+}
+int stock_canvas_set_fill_color(void *c, unsigned x) { fill_color = x; return 0; }
+int canvas_fill_rect(void *c, int x, int y, int ww, int h) {
+    assert(fills < 1024);
+    fill[fills].x = x; fill[fills].y = y; fill[fills].w = ww; fill[fills].h = h; fill[fills++].color = fill_color;
+    return 0;
+}
+void draw_centred(void *c, const unsigned *s, unsigned n, const void *r, unsigned px, unsigned color) {
+    unsigned i = 0;
+    for (; i < n && i + 1 < sizeof centred_text; ++i) centred_text[i] = (char)s[i];
+    centred_text[i] = 0, centred_color = color;
+    memcpy(centred_box, r, sizeof centred_box), centred_px = px;
+}
 int ipod_light(void) { return light; }
 static int square_art;
 int ipod_square_art(void) { return square_art; }
@@ -255,8 +303,13 @@ unsigned char *bitmap_lock_buffer_for_write(void *b) { ++locks; return *(unsigne
 int bitmap_unlock_buffer(void *b) { return 0; }
 unsigned bitmap_get_line_length(void *b) { return ((unsigned *)b)[2]; }
 int canvas_draw_image(void *c, void *b, const void *src, const void *dst) {
-    ++draws;
     const int *r = dst, *q = src;
+    if (!(((unsigned short *)b)[6] & 1) && (((unsigned *)b)[0] == 100 || ((unsigned *)b)[0] == 96)) {
+        assert(!memcmp(q, (int[]){ 0, 0, ((unsigned *)b)[0], ((unsigned *)b)[1] }, 16));
+        memcpy(note_drawn, r, sizeof note_drawn);
+        return 0;
+    }
+    ++draws;
     assert(!memcmp(r, q, 16) && ((unsigned short *)b)[6] & 1); /* 1:1, and marked opaque */
     memcpy(drawn, r, sizeof drawn);
     for (int y = 0; y < CF_VIEW_H; ++y) memcpy(shown + y * CF_VIEW_W, *(unsigned char **)((char *)b + 0x14) + y * ((unsigned *)b)[2], CF_VIEW_W * 4);
@@ -1543,7 +1596,9 @@ int main(void) {
     /* The art's paint is clipped to the panel on screen (canvas origin at the art, window at y 30)
        from the background hook to the border hook; other widgets keep the clip. */
     extern void coverflow_home_clip(void *, void *, int);
-    int canvas[2] = { geo[0], 30 + geo[1] }, full[4] = { 0, 0, 375, 320 }, want[4] = { HOME_SPLIT_W, 30, 375 - HOME_SPLIT_W, 290 };
+    static char lcd[0x100]; /* the canvas's LCD: the pane saves and restores its fill */
+    int canvas[32] = { geo[0], 30 + geo[1] }, full[4] = { 0, 0, 375, 320 }, want[4] = { HOME_SPLIT_W, 30, 375 - HOME_SPLIT_W, 290 };
+    *(void **)((char *)canvas + CANVAS_LCD) = lcd;
     coverflow_home_clip(home_art, canvas, 1);
     assert(!memcmp(clip_rect, want, sizeof want));
     coverflow_home_clip(win, canvas, 0);
@@ -1630,6 +1685,55 @@ int main(void) {
     stub_bar_h = 30;
     coverflow_home_layout();
     assert(!memcmp(geo, split, sizeof split));
+    /* Classic Light (shim_themes[2]): no cover shows the pane instead of default_album_home. The art spans the
+     * panel and paints the pane's stops over all of it, its light (white, alpha 40 at the left, 0 at the
+     * right edge, a band per alpha), the shadow down its left edge (black, the theme's alpha per column),
+     * the note (its image, the theme's place) and the queue's count, "12 Songs", at 27 px, centred on its
+     * 24 px line box at the theme's place. */
+    unsigned queued = queue.n;
+    classic = 2; home_mode = 0; stub_bar_h = 26; coverflow_home_layout();
+    queue.n = 12; *(volatile int *)MCL_POS = 0; cover_fail = 1; coverflow_home_art(win);
+    static const int pane[4] = { HOME_SPLIT_W, 0, 375 - HOME_SPLIT_W, 294 };
+    assert(!*art && !memcmp(geo, pane, sizeof pane));
+    *(unsigned *)(lcd + LCD_FILL_COLOR) = 0x12345678;
+    fills = 0; stops_calls = 0; memset(note_drawn, 0, sizeof note_drawn); coverflow_home_clip(home_art, canvas, 0);
+    assert(stops_calls == 1 && !memcmp(stops_rect, (int[]){ 0, 0, 375 - HOME_SPLIT_W, 294 }, 16) &&
+           stops_arg == &shim_themes[2].home_pane);
+    for (int i = 0, x = 0; i < 40; x += fill[i++].w) {
+        assert(fill[i].x == x && fill[i].h == 294 && fill[i].color >> 24 == 40u - i && (fill[i].color & 0xffffff) == 0xffffff);
+        assert(fill[i].w == 4 || fill[i].w == 5);
+        if (i == 39) assert(x + fill[i].w == 375 - HOME_SPLIT_W);
+    }
+    for (int i = 0; i < 25; ++i) {
+        const typeof(*fill) *f = &fill[40 + i];
+        assert(f->x == i && f->w == 1 && f->h == 294 && (int)(f->color >> 24) == SHADOW_A(i) && !(f->color & 0xffffff));
+    }
+    assert(fills == 65 && !strcmp(centred_text, "12 Songs"));
+    assert(!memcmp(note_drawn, (int[]){ 40, 57, 100, 115 }, 16));
+    assert(!memcmp(centred_box, (int[]){ 0, 185, 182, 24 }, 16) && centred_px == 27);
+    assert((centred_color & 0xffffff) == 0xffffff); /* light 0, the dark half: the count white, raw */
+    assert(fill_color == 0x12345678); /* the LCD's fill back */
+    light = 1; fills = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!(centred_color & 0xffffff)); /* the light half: black, which ui_ink draws as the white paper */
+    light = 0;
+    note_fail = 1; fills = 0; coverflow_home_clip(home_art, canvas, 0); note_fail = 0;
+    assert(fills == 65 && !strcmp(centred_text, "12 Songs")); /* a missing image: the rest still draws */
+    *centred_text = 0; queue.n = 0; coverflow_home_art(win); fills = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!*centred_text && fills); /* no queue: the note alone */
+    /* A panning cover or a still one: no pane. */
+    cover_fail = 0; queue.n = queued; coverflow_home_layout(); coverflow_home_art(win);
+    stops_calls = 0; fills = 0; *(unsigned *)(lcd + LCD_FILL_COLOR) = 0x12345678; coverflow_home_clip(home_art, canvas, 0);
+    assert(!stops_calls && *art);
+    /* Where the left column meets the cover: the pane's own shadow over it, from the panel's edge, whatever the art's
+     * own size and place, all the client's rows; the fill back */
+    assert(fills == 25 && fill_color == 0x12345678); /* the shadow alone: the light is the pane's */
+    for (int i = 0; i < 25; ++i)
+        assert(fill[i].x == HOME_SPLIT_W - geo[0] + i && fill[i].y == -geo[1] && fill[i].w == 1 && fill[i].h == 294 &&
+               (int)(fill[i].color >> 24) == SHADOW_A(i) && !(fill[i].color & 0xffffff));
+    classic = 0; stub_bar_h = 30; coverflow_home_layout();
+    fills = 0; coverflow_home_clip(home_art, canvas, 0);
+    assert(!fills); /* Minimal and Classic have no pane shadow to draw */
+    assert(!memcmp(geo, split, sizeof split));
     /* A cover that pans: the art's image is empty and fills the panel, the pan's frame drawn over it. */
     frame_fail = 0;
     *(volatile int *)MCL_POS = 0;
@@ -1661,16 +1765,23 @@ def main():
     a = ap.parse_args()
     # shim_themes stands in for the generated themes[]: each theme's .home_* fields must match the
     # offsets.inc expressions tools/theme.py ROLE_MACROS gives it (0, unset in the shim, left out).
-    from theme import ROLE_MACROS
+    from theme import ROLE_MACROS, builtins, stops_c
     def home_fields(text):
         return [re.findall(r'\.(home_\w+) = (\{[^}]*\}|[^,{}\n]+)', t.split('.n_opts')[0]) for t in text]
     nav = [[(k, v) for k, v in (('home_top', m['home_top']), ('home_full_row', m['home_full_row']),
                                 ('home_text_x', m['home_text_x']),
                                 ('home_label_end', f'{{ {m["home_label_end[0]"]}, {m["home_label_end[1]"]} }}')) if v != '0']
            for m in (ROLE_MACROS['minimal'], ROLE_MACROS['classic'])]
-    shim = re.search(r'shim_themes\[2\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
+    shim = re.search(r'shim_themes\[3\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
-    assert norm(home_fields(shim)) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    assert norm(home_fields(shim[:2])) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    # Classic Light's are its theme.xml's, resolved; home_top 0 is unset in the shim.
+    classic_light, tight = builtins()[2], re.sub(r'\s', '', shim[2])
+    assert classic_light['home_top'] == 0 and f"home_label_end={{{classic_light['home_label_end[0]']},{classic_light['home_label_end[1]']}}}" in tight
+    assert 'home_pane=' + stops_c(classic_light['home_pane']).replace(' ', '') in tight, 'shim_themes drifted from Classic Light'
+    assert 'pane_shadow_a={' + ','.join(map(str, classic_light['pane_shadow_a'])) in tight, 'shim_themes drifted from Classic Light'
+    for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_light_a', 'pane_note_x', 'pane_note_y', 'pane_count_y', 'pane_count_w', 'pane_count_px'):
+        assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == classic_light[field], f'shim_themes drifted from Classic Light: {field}'
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
                 for i, m in enumerate((ROLE_MACROS['minimal'], ROLE_MACROS['classic']))]
@@ -1754,7 +1865,7 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in both themes passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in both themes, and Classic Light\'s pane, passed.')
 
 
 if __name__ == '__main__':

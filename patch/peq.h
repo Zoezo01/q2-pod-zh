@@ -211,6 +211,8 @@ void *page_row_detail_into(void *view, int index, const char *caption, const cha
 void page_row_into(void *view, int index, const char *caption, int (*click)(void *, void *));
 void row_into(void *item, int h);
 void list_toggle(void *label, const char *title, int on); /* navigation.c: a row's switch */
+/* navigation.c: Classic Light's value */
+void list_value(void *label, const char *title, const char *value);
 char *csv_find(char *list, const char *item);                /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
@@ -267,6 +269,8 @@ void tidal_clear(void);
  * end and waited for on the Apps page's worker. */
 #define APPS_MAX 8 /* card apps on the card at once */
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
+int addon_games_last(void); /* the card's games as the last addon_scan found them */
+#define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
@@ -354,7 +358,12 @@ int video_start(const char *file, int radio); /* books.c */
 void *edit_create(void *item, const char *input_type, int y, int h);
 const char *output_device(char *vol);         /* books.c */
 void dac_take(void);                          /* books.c */
-int bold_label(void *w, int was); /* navigation.c: Classic's bold font for w's text, or stock's */
+/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
+ * font */
+int theme_font(void *w, int role, int was);
+#define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
+const char *theme_face(const unsigned *s, int n);
+void bar_title_sync(void *win); /* navigation.c: Classic Light's bar title names win */
 int ipod_light(void);   /* navigation.c: Light Mode */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau

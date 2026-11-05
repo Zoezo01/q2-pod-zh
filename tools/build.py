@@ -334,6 +334,9 @@ WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
 LOCK_CLOCK_12H = (b'hh:mm\0\0\0HH:TT\0', b'hh:mm\0\0\0H:mm\0\0')
 # Now Playing's info page: its one fill (0x52a508), a bal, becomes jal ringnav_np_info, which tidies the lines.
 NP_INFO_CALL = 0x52baf4
+# Songs' row bind (0x4a90e4): a record with no artist gets stock's "Unknown Artist" through this getFormatString jalr,
+# which becomes jal ringnav_song_unknown.
+SONG_UNKNOWN_CALL = 0x4a9320
 # Folder row names are text, not printf formats ("99% Invisible" crashes stock's formatter).
 # tk_strncpy writes its terminator at n, so reserve the last byte of the 512-byte buffer.
 FOLDER_NAME = ((0x522384, 0x24050200, 0x240601ff),  # a2 = 511
@@ -722,33 +725,60 @@ def font_quotes(data):
     font.save(out, reorderTables=False)
     return out.getvalue()
 
-# Classic's bold (navigation.c bold_label): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
-# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
-# label holding anything else (CJK, say) keeps the stock font.
-BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
-
-def bold_font():
+def subset_font(src, family, ranges_macro, notice=None):
+    """src cut to its Latin, Greek, Cyrillic and punctuation, renamed family (its own name is the font's
+    reserved name under OFL and GUST alike): the font's bytes and ranges_macro listing exactly what it
+    keeps. notice, if any, goes in its description (name ID 10)."""
     from fontTools import subset
     from fontTools.ttLib import TTFont
-    font = TTFont(ROOT/'assets/fonts/LiberationSans-Bold.ttf', recalcTimestamp=False)
+    font = TTFont(src, recalcTimestamp=False)
+    old = font['name'].getDebugName(1)
+    label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
-    sub = subset.Subsetter(subset.Options())
+    options = subset.Options()
+    if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
+    sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
     sub.subset(font)
-    check(sorted(font.getBestCmap()) == have, 'Bold font subset lost characters')
-    # A subset is an OFL Modified Version: it may not carry the Reserved Font Name "Liberation" (its
-    # names, not the copyright and trademark notices, IDs 0 and 7)
+    check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
+    # A subset is a Modified Version: it may not carry the Reserved Font Name (its names, not the
+    # copyright and trademark notices, IDs 0 and 7)
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
-            rec.string = str(rec).replace('Liberation Sans', 'Q2 Pod Sans').replace('LiberationSans', 'Q2PodSans')
-            check('Liberation' not in str(rec), f'Bold font name {rec.nameID} keeps Liberation')
+            rec.string = str(rec).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', ''))
+            check(old.split()[0] not in str(rec), f'{label} font name {rec.nameID} keeps {old.split()[0]}')
+    if notice:
+        font['name'].setName(notice, 10, 3, 1, 0x409)
+    if 'CFF ' in font:  # the outlines' own names (PostScript FontName, FullName, FamilyName)
+        cff = font['CFF '].cff
+        top = cff.topDictIndex[0]
+        cff.fontNames = [n.replace(old, family).replace(old.replace(' ', ''), family.replace(' ', '')) for n in cff.fontNames]
+        for key in ('FullName', 'FamilyName'):
+            setattr(top, key, getattr(top, key).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', '')))
+        check(old.split()[0] not in ''.join(cff.fontNames + [top.FullName, top.FamilyName]), f'{label} font CFF name keeps {old.split()[0]}')
     out = io.BytesIO()
     font.save(out, reorderTables=False)
     runs = []
     for u in have:
         if runs and runs[-1][1] + 1 == u: runs[-1][1] = u
         else: runs.append([u, u])
-    return out.getvalue(), '#define BOLD_RANGES {' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+    return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+
+# Classic's bold (navigation.c theme_font): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
+# label holding anything else (CJK, say) keeps the stock font.
+BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
+
+def bold_font():
+    return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
+
+# Classic Light's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
+# The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
+CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
+CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to its Latin, Greek, Cyrillic and punctuation, and renamed. '
+               'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
+# stb draws the subset's outlines in the form chosen here: TrueType quadratics (otf_to_ttf) or the CFF original
+CLASSIC_LIGHT_TRUETYPE = False
 
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
@@ -1032,6 +1062,8 @@ FUNCTIONS = {
  'hscroll_label_stop': ('int', 'void *'),
  'widget_set_text': ('int', 'void *, const unsigned *'),
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
+ 'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (navigation.c library_rows)
+ 'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
  'window_close': ('int', 'void *'),
  'dialog_quit': ('int', 'void *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a0a28)
  'window_manager_close_window_force': ('int', 'void *, void *'),
@@ -1469,7 +1501,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    header = [f'#define RING_STEP {RING_STEP}', bold_ranges]
+    classic_light, classic_light_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
+    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, classic_light_ranges]
     header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
     header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
     header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
@@ -1490,9 +1523,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
-    from theme import builtins, emit, geometry_sets
+    from theme import builtins, emit, geometry_sets, theme_keys
     themes = builtins()
     header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
+    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
     (out/'stock.h').write_text('\n'.join(header)+'\n')
     set_pages, redirects = {}, {}
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
@@ -1615,6 +1649,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', patched, fileoff(patched, LYRIC_SAVE_FMT[0]))[0] == LYRIC_SAVE_FMT[1],
           'Unexpected Download Cover & Lyrics save')
     patch_word(patched, LYRIC_SAVE_CALL, 0x0320f809, jal(ps['ringnav_lyric_save']), 'lyrics saved beside the song')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SONG_UNKNOWN_CALL-8))[0] == 0x8f99a908,
+          "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
+    patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
     for word in FOLDER_NAME:
         patch_word(patched, *word, 'folder names are literal text')
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
@@ -1773,12 +1810,16 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     ui = 'release/assets/default/raw/ui/'
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
-    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages,
+    from art import images as theme_images
+    from theme import builtins as builtin_themes
+    drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
+    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
+                               CLASSIC_LIGHT_TTF: (FONT, classic_light),
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
         stock = inode(p, like.encode())
         check(stock is not None, f'Missing stock inode for {path}')

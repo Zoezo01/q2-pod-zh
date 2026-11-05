@@ -53,6 +53,7 @@
 #define EVT_KEY_UP 0x114          /* wm keyup dispatch @0x523eb8 */
 #define EVT_KEY_UP_BEFORE 0x115   /* wm keyup-before dispatch @0x523e80 */
 #define EVT_WINDOW_BACKGROUND 0x12a
+#define EVT_WINDOW_FOREGROUND 0x12b
 #define EVT_WINDOW_CLOSE 0x12c
 #define PULL_SEARCH_PX 48       /* device tuning: release distance from the initial touch */
 #define PULL_CLAIM_PX 8
@@ -221,6 +222,7 @@ static inline int arc_out(int r, int y) {
  * (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
+#define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
 /* Split's cover pans (docs/ipod.md#home): zoomed DRIFT_ZOOM_PCT, each axis a linear ping-pong of
  * its own period across the zoom's margin (about 1.5 px/s on a square cover, as iPod.js's), drawn
  * at sub-pixel positions every DRIFT_TICK_MS, a step at most DRIFT_MAX_STEP_MS. A cover whose zoomed
@@ -231,7 +233,7 @@ static inline int arc_out(int r, int y) {
 #define DRIFT_Y_MS 26000
 #define DRIFT_TICK_MS 200
 #define DRIFT_MAX_STEP_MS 500 /* 2.5 ticks: a late tick keeps its time */
-#define DRIFT_TEXELS 218080 /* four panels: 4 x 188 x 290 */
+#define DRIFT_TEXELS 221088 /* four panels: 4 x 188 x 294, the tallest set's client */
 #define HOME_CLASSIC_ROW 369
 #define HOME_TOP 8 /* Minimal's decorative inset; Classic starts below the status bar. */
 #define HOME_CHEVRON_SHIFT 15

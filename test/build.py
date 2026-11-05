@@ -199,7 +199,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -823,15 +823,17 @@ def validate_assets(directory):
         else: raise AssertionError('Accepted a changed asset')
     # Every geometry set's built list windows take the row height of the page's pitch
     # immediates (art pages take art_pitch), and its rows fit.
-    from theme import builtins, geometry_sets
-    page_kind = {'localmusic/allmusic_page.bin': 'text', 'localmusic/albuminfo_page.bin': 'text',
-                 'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
-                 'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'art',
-                 'localmusic/localclass_page.bin': 'art'}
+    from theme import builtins, geometry_sets, SCHEMA
+    from ipod import PAGE_KIND as page_kind
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
     for g in geometry_sets(builtins()):
-        assert g.body <= g.pitch and g.art_body <= g.art_pitch, g.name
+        assert g.body <= g.pitch and g.art_body <= g.art_pitch and g.song_body <= g.song_pitch, g.name
         assert g.art + 2*g.art_inset <= g.art_body, g.name
+        assert g.text_art + 2*g.text_art_inset <= g.body or not g.text_art, g.name   # text rows' artwork fits, or none
+        for y, h, body in ((g.title24_y, 24, g.body), (g.title_y, 20, g.body), (g.meta_y, 16, g.body), (g.count_y, 16, g.body),
+                           (g.art_title24_y, 24, g.art_body), (g.art_meta_y, 16, g.art_body),
+                           (g.song_title24_y, 24, g.song_body), (g.song_meta_y, 16, g.song_body)):
+            assert 0 <= y and y + h <= body, (g.name, y, h, body)                    # every stock row label inside its body
         checked = set()
         for short, kind in page_kind.items():
             folder, _, base = short.rpartition('/')
@@ -841,9 +843,57 @@ def validate_assets(directory):
             for n in walk(new):
                 for prop in ('row_height', 'default_item_height'):
                     if old.get(n[2].get('name'), {}).get(prop) == '78':
-                        assert n[2][prop] == str(g.art_pitch if kind == 'art' else g.pitch), (g.name, short, prop)
+                        assert n[2][prop] == str({'art': g.art_pitch, 'song': g.song_pitch}.get(kind, g.pitch)), (g.name, short, prop)
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
+        assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name
+        # Home's rows are the set's and fit; a theme with Home's chevron ends its labels short of the
+        # glyph (x 20 of list_into) in both widths, as Classic's below.
+        mine = ui + f'{g.name}_{HOME_PAGE}'
+        listed = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + HOME_PAGE)))}['list_view_home']
+        assert listed[2]['item_height'] == str(g.home_row) and HOME_TOP + 7*g.home_row <= 320 - g.bar, g.name
+        for t in builtins():
+            if g in geometry_sets([t]) and t['chevron_home']:
+                # a theme's own chevron in Split: the label ends at it
+                assert t['home_label_end[0]'] >= (inc('HOME_SPLIT_W') - t['home_chevron_x'] if t['home_chevron_x']
+                                                  else inc('CHEVRON_W') - inc('HOME_CHEVRON_SHIFT') - 15), t['id']
+                assert t['home_label_end[1]'] >= inc('CHEVRON_W') - inc('HOME_FULL_CHEVRON_SHIFT') - 15, t['id']
+        for rel in UI_ASSETS:
+            folder, _, base = rel.rpartition('/')
+            mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
+            if 'squashfs-root/' + mine not in built: continue
+            for n in walk(decode(read('rootfs.squashfs', mine))):
+                if n[0] != 'list_view' or n[2].get('default_item_height') != str(g.set_row): continue
+                if rel in NAVBAR_ONLY:  # settings lists: the set's rows from its top
+                    h = 320 - g.bar - g.set_top if g.list_end else g.set_rows*g.set_row
+                    assert n[1] == [0, g.set_top, 375, h] and 'item_height' not in n[2], (g.name, rel)
+                else:                   # any other list with that row height is not one (settings_list)
+                    assert n[2].get('item_height') == str(g.set_row), (g.name, rel)
+        if g.text_x:  # text from text_x clears the glass at the first row and at list_end's last; the lists take the window
+            assert g.text_x >= corner_x(g.bar + 6, g.pitch - 12) and g.list_end % g.pitch == 0, g.name
+            assert corner_x(g.bar + g.list_end - g.pitch + 6, g.pitch - 12) <= g.text_x < corner_x(g.bar + g.list_end + 6, g.pitch - 12), g.name
+            ends = {}
+            for rel in UI_ASSETS:  # every list box the transform resizes ends at the window's end
+                folder, _, base = rel.rpartition('/')
+                mine = ui + (folder and folder + '/') + f'{g.name}_{base}'
+                if 'squashfs-root/' + mine not in built or rel in NAVBAR_ONLY: continue
+                was = {n[2].get('name'): n[1] for n in decode(read('stock.squashfs', ui + rel))[3]}
+                for n in decode(read('rootfs.squashfs', mine))[3]:
+                    old = was.get(n[2].get('name'))
+                    if n[0] in ('list_view', 'table_view') and old and old[1] in (50, 100) and n[1] != old:
+                        ends[rel] = n[1][1] + n[1][3]
+            assert ends and set(ends.values()) == {320 - g.bar}, (g.name, ends)
+        if g.bar_px:  # Classic Light's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
+            m = status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
+            bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
+            assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
+            assert 2 * m['cap_top'] + m['cap'] in (g.bar - 3, g.bar - 2) and m['inset'] >= corner_inset(m['cap_top']), g.name
+            assert 2 * m['clock'][0] + m['clock'][2] == 375, g.name
+            # the battery's nub ends clear of the glass, at its top row, above the bar's two lines
+            xm = g.bar_right
+            assert xm >= corner_inset((g.bar - 2 - g.batt_h) // 2) and g.batt_h <= g.bar - 1 and bar['view_right'][2]['children_layout'].endswith(f'xm={xm},s={inc("STATUS_GAP")})'), g.name
+            size = SCHEMA['bar.title.font_size'].field
+            assert {t[size] for t in builtins() if g in geometry_sets([t])} == {g.bar_px}, g.name  # the theme's bar text is the set's
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:
