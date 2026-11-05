@@ -682,9 +682,19 @@ An MP3's Xing or Info frame count is different. It says where the audio ends, an
 
 M4A, Ogg, WavPack, FLAC, WAV and WMA with the same 3 MB appended play exactly what they do without it (`test/hci_natural.py`, `tail_noise`). CUE doesn't use this: the player's length is the whole image's and demo ends a track itself (`mclAutoChange`, `0x5ae6b0`).
 
+`ponytail:` 20 s of unsyncable bytes after the count run the buffer dry about 2 s before the next song starts, silent and with no XRUN; 3 s of the same is clean.
+
 `ponytail:` a joined file whose own big tag is being read at the count + 1 s, or whose rate changes, ends there, as stock. Junk after a joined file can end it a little before its audio does: the chain is read ahead of what's playing. The real ceiling is noise. An MP3 with no header followed by junk still plays it, at full scale, about 0.74 s per MB (3 MB: 2.22 s) with elapsed running past the total, exactly as stock does: its length estimate counts the junk. Nothing says where its audio ends. A WMA's elapsed still starts about 3 s on, as in stock, so Next's preload and Crossfade's hold come about 3 s early, which neither minds.
 
 A DSF's header can't understate here: the same file with its sample count halved plays the same length, and a halved data chunk stops there. Stock's `0x4232cc` calls the mute helper `0x43b280(1)` at position >= length - 1 for formats `0xc`, `0xe`, `0x10`, `0x11` with `0xb10e5c` at 1, and relies on the store to end such a track, so `forced_eof_c` keeps stock's store whenever `0xb10e5c` is 1. `test/hci_natural.py` lowers the length under a playing DSF to reach it.
+
+## Music info between songs
+
+demo's status thread (`mclSyncPlayerStatus`) asks `{media-info\get-music-info}` about four times a second, on the player's command thread. That branch (`0x42c030`) checks `mpctx` (`0xaf9e30`), its demuxer (`+0x28`) and the length words, then reads `sh_audio` (`+0x2c`). When `sh_audio` is NULL stock's branch only skips the bitrate lookup and reads `sh_audio->0xd4` anyway (`0x42c094`): SIGSEGV, and demo restarts the player, so the song starts again from its top.
+
+A natural change stores the demuxer about 7,200 instructions before `sh_audio`, each time. A request landing there is the crash. So the branch (`0x42c068`) now goes to the reply for no stream, `{media-info\no-playing-status}`, which demo already handles. The same goes for the path through the length call (`0x42c588`, over a dead load), where `mpctx` can go NULL before `0x42c064` reads it.
+
+`ponytail:` this closes the NULL only. The checks aren't under a lock, so a stream freed just after them is still read. `mcl-seteq`'s enable (`0x42cec0`) reads `mpctx->sh_audio->0x3c` with no check at all: a change can fault the same way while the EQ is being switched on, and it needs a stub rather than a word.
 
 ## A bad file next
 
@@ -722,7 +732,7 @@ A queue edit does the same from the other side. `mcl-closegapless` and the direc
 
 The thread and the cold path do run `demux_open` at once; stock's mutex `0xd30b9c` is taken by the thread and `0x42a9ac`, not the cold path. Comparing static memory across each open, the only words both change are the preload's own state and `mp_msg`'s line buffer (`0xe0c288`, a log line at worst); read from the code, also `0xb15df0` and the stream cache size (`0xaf9b60`), whose values depend on the file. That comparison sees changed values, not a store of the same value.
 
-`ponytail:` a thread that publishes just before the cold path's clear leaves its context unfreed until the next preload overwrites it, as `mcl-closegapless` does in stock (a file handle). Under MQA decode the main thread has cleared `0xb10d70`, so a stale thread's decoder isn't uninitialised. `0x42a9ac` has no decoder uninit, so each lost preload may leak the decoder, as stock's close sites do: not measured. A preload racing a cold start can hit `avcodec_open2`'s "Insufficient thread locking" (read from the code, not seen). In a narrow window with no `mcl-stop` before it, `mp_msg("Failed to open %s.\n", -1)` at `0x4a53a0` faults on `strlen(-1)` (`pc=0x60580038`, in the emulator): stock's, and left.
+`ponytail:` a thread that publishes just before the cold path's clear leaves its context unfreed until the next preload overwrites it, as `mcl-closegapless` does in stock (a file handle). That close is reachable: Gapless off in the 6 s before a song's end adds one open file each time, for the boot (8 to 26 fds over 20 closes), and so may demo's other `close_preload()` sites; Next and Previous don't send it. Under MQA decode the main thread has cleared `0xb10d70`, so a stale thread's decoder isn't uninitialised. `0x42a9ac` has no decoder uninit, so each lost preload may leak the decoder, as stock's close sites do: not measured. A preload racing a cold start can hit `avcodec_open2`'s "Insufficient thread locking" (read from the code, not seen). In a narrow window with no `mcl-stop` before it, `mp_msg("Failed to open %s.\n", -1)` at `0x4a53a0` faults on `strlen(-1)` (`pc=0x60580038`, in the emulator): stock's, and left.
 
 ## A FLAC seek near the end
 

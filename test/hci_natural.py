@@ -10,7 +10,7 @@ by junk. A seek near a file's end keeps that end, on every format. Under Crossfa
 Usage: test/hci_natural.py BUILD_DIR [PLAYER]  (PLAYER: another hciplayer, to see old code fail)"""
 import array, math, pathlib, random, shutil, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_RA, UC_MIPS_REG_S2
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_RA, UC_MIPS_REG_S2, UC_MIPS_REG_V1
 from hci_emu import Emu
 
 build = pathlib.Path(sys.argv[1]).resolve()
@@ -280,6 +280,24 @@ def metadata_cut():
         p.song(name)
         at = exits(p, 2)
         check(len(at) >= 1 and p.frames() == 0, f'{name} directly: exits {at}, {p.frames()} frames')
+
+
+def music_info_no_stream():
+    """get-music-info, on the command thread, while the main thread has no sh_audio: the no-stream reply, not a fault. The loads
+    are forced to NULL on that thread alone, since the race itself can't be timed here. Stock faults at 0x42c094, then 0x42c064."""
+    for name, load, length in ('sh_audio', 0x42c068, 1), ('mpctx after the length call', 0x42c588, 0):
+        p = Player()
+        p.song('a.flac')
+        p.run(1)
+        if not length: p.e.w32(0xb10e84, 0)
+        p.e.watch_fn(load, lambda e: e.u.reg_write(UC_MIPS_REG_V1, 0) if e.cur.tid != 1 else None)
+        p.e.replies.clear()
+        p.e.send_cmd('{media-info\\get-music-info}')
+        before = p.frames()
+        p.run(0.5)
+        said = b''.join(p.e.replies)
+        check(b'no-playing-status' in said, f'music info, no {name}: {said[-50:]}')
+        check(p.frames() > before, f'music info, no {name}: playback carries on')
 
 
 def next_whole(name):
@@ -754,6 +772,7 @@ if __name__ == '__main__':
     iso_no_tracks()
     exit_apart()
     metadata_cut()
+    music_info_no_stream()
     next_whole('x.wma')
     next_whole('bigmeta.flac')
     xfade_bad_next()

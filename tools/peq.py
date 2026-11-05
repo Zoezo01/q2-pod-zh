@@ -105,6 +105,11 @@ SEEK_WORDS = ((0x48d5f0, 0x00822023, 0),           # subu $a0, $a0, $v0, now in 
 # short file, reads the same blocks forever. It now ends the walk (docs/internals.md#a-flac-cut-inside-its-metadata).
 FLAC_META_EOF = ((0x490ba0, 0x06000163, 0x06000028),  # bltz $s0, 0x491130 -> 0x490c44, past the last block's branch
                  (0x4929a4, 0x1000f9e2, 0x1000f8a7))  # b 0x491130 -> b 0x490c44: the last length byte's read at the end
+# get-music-info runs on the command thread and reads mpctx->sh_audio, NULL while a song is starting: stock's NULL branch went
+# on to read through it and killed the player (docs/internals.md#music-info-between-songs). Now it answers as with no stream.
+# ponytail: NULL only, a stream freed after the checks is still read; mcl-seteq's enable (0x42cec0) is unchecked, needs a stub.
+MEDIA_INFO_NULL = ((0x42c068, 0x10600008, 0x106000fc),  # beqz $v1, 0x42c08c -> 0x42c45c, the no-playing-status reply
+                   (0x42c588, 0x8fa21b20, 0x1060ffb4))  # lw $v0 (dead: 0x42c070 overwrites it) -> beqz $v1, 0x42c45c: mpctx gone during the length call
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
@@ -319,6 +324,8 @@ def patch_player(raw, out, flac_experiments=()):
         patch_word(data, address, stock, patched, 'Seek no sync')
     for address, stock, patched in FLAC_META_EOF:
         patch_word(data, address, stock, patched, 'FLAC metadata at EOF')
+    for address, stock, patched in MEDIA_INFO_NULL:
+        patch_word(data, address, stock, patched, 'Music info with no stream')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')
