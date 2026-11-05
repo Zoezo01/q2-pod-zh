@@ -9389,11 +9389,14 @@ m.paint(w); assert m.selected(w)==0,m.selected(w)
 m,view=settings('display',default=28,sub=1,boot=classic_light_on); lay(m,view)
 assert not any(m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['visible'] for r in m.nodes[view]['children'])
 passed()
-# Under Classic the picker keeps its leading mark, its place and its opening row: remembered, not the stored theme's.
+# Under Classic the picker keeps its leading mark and its place, and opens on the stored theme, by a tap too, or a Centre there
+# would take Minimal, whose presets overwrite Light Mode, accent and corners.
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='1')); lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
 assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']
-m.paint(view); assert m.selected(view)==0,m.selected(view); passed()
+m.paint(view); assert m.selected(view)==1,m.selected(view)
+m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='1')); lay(m,view); m.pressed=1
+m.paint(view); assert m.selected(view)==1,m.selected(view); passed()
 # A stock row with a second text line under its title (Bluetooth's Quality, 0x4be994: the title at y 12, the
 # detail at y 44 of its 70 px body), under a set whose row is too short for both (Classic Light's 28), takes two rows, so
 # nothing overlaps the next row. Its one-line neighbours keep the set's row, and a row at SET0's height stays.
@@ -9659,7 +9662,7 @@ for row in srows:
 begin(sk,sw); begin(sk,srows[0]); begin(sk,slabels[0])
 assert style_color(sk,0xffaaaaaa)[1]==0xffffffff and style_color(sk,0x80000000)[1]==0x80ffffff
 end(sk,slabels[0]); end(sk,srows[0]); end(sk,sw); passed()
-# A row's second line: the theme's muted grey off the band, the light half's the reference's #6b6d6b on
+# A row's second line: the theme's muted grey off the band, the light half's #6b6d6b on
 # white, the dark half's its flip on black. On the band it is sel_text's white, in both halves.
 for mlight,mwant in (('1',0xff6b6d6b),('0',0xff949294)):
     sk=Machine(); sk.config['LIGHT']=mlight; classic_light(sk); sw,srows=sk.page_list(3); slabels=[]
@@ -9809,8 +9812,8 @@ for answer,art,light,want in ((0,'0','0',[]),(10,'1','0',[(2,'THEME'),(1,'LIGHT'
     assert names==['write_int_config']*len(want)+['stock_reboot'][:answer==10],answer
     t=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
     assert m.text(m.get(t))==('Classic Light' if answer else 'Classic')
-# Choosing Classic Light presets the plain icon, in option order, as its other presets; Cancel writes nothing.
-for answer,want in ((0,[]),(10,[(2,'THEME'),(1,'LIGHT'),(9,'CLASSIC_LIGHT_ACCENT'),(0,'BATTERY')])):
+# Choosing Classic Light presets in option order, and leaves the battery the other themes keep; Cancel writes nothing.
+for answer,want in ((0,[]),(10,[(2,'THEME'),(1,'LIGHT'),(9,'CLASSIC_LIGHT_ACCENT')])):
     m,view,_=display({'CLASSIC_LIGHT_ACCENT':'4','LIGHT':'0','BATTERY':'3'},sub=4,cls=RestartMachine,setup=offered)
     m.answer=answer; m.prompts=[]; m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
     assert m.call(address=payload_syms['theme_pick'],args=(2,0,0,0),gap=0)==0
@@ -10374,7 +10377,7 @@ assert ltitled()=='Library'; passed()
 m.calls=[]; assert m.call(O['KEY_RETURN'])==11 and m.nodes[lst]['visible'] and not m.nodes[lib]['visible'] and ltitled()=='Q2 Pod'; passed()
 f,ctx=m.handler(named(m,m.top,'img_settings'),O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert ltitled()=='Settings'; passed()
 m.call(O['KEY_RETURN']); assert ltitled()=='Q2 Pod'
-# Open it again: the persistent list keeps its rows, none added or restacked (stock's constructor runs, its count no longer stock's), in Home's shape.
+# Open it again: the list comes back with the same rows (the real constructor rebuilds them, the mock keeps them; stock's constructor runs, its count no longer stock's), in Home's shape.
 lbefore=list(m.nodes[lview]['children']); m.calls=[]; f,ctx=m.handler(named(m,m.top,'img_library'),O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
 assert m.nodes[lview]['children']==lbefore and len(lbefore)==17 and any(c[0]=='stock_localmusic' for c in m.calls) and not any(c[0]=='widget_restack' for c in m.calls)
 assert m.nodes[lib]['visible'] and ltitled()=='Library'

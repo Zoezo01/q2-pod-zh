@@ -710,9 +710,9 @@ def test_derive_gloss():
     assert theme.derive_gloss(theme.ACCENT_TONES[4]) != [(p, f'#{c:06x}') for p, c in theme.GLOSS]  # Cobalt is near, not Classic Blue
 
 
-def test_classic_light_second_line_is_the_references_grey_at_its_size():
+def test_classic_light_second_line_is_its_grey_at_its_size():
     n = theme.builtins()[2]
-    # one value in stock's terms, which the light half flips onto the reference's #6b6d6b
+    # one value in stock's terms, which the light half flips onto #6b6d6b
     assert {s['muted'] for i, s in enumerate(n['schemes']) if n['accents'] >> i & 1} == {0x949294}
     assert n['font_px[ROLE_META]'] == 17 and n['font[ROLE_META]'] == 0  # stock's regular
     assert (n['font_px[ROLE_TITLE]'], n['font_px[ROLE_TALL]'], n['font[ROLE_TALL]']) == (27, 28, 2)  # a two-line row's title, Classic Light's face
@@ -979,7 +979,7 @@ def test_classic_light_builtin():
     m, c, n = theme.builtins()
     assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('classic-light', 'Classic Light', 2, 'classic-light', 'CLASSIC_LIGHT_ACCENT', 0x37f)
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
-                         opt('SETTING_HOME', default=0, preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, preset=0, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
+                         opt('SETTING_HOME', default=0, preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
                          own('ROWART', 'Row Art', ('Off', 'On'), ('classic-light-text', 'classic-light'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT]
 

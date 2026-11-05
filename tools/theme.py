@@ -186,7 +186,7 @@ ROLE_MACROS = {
                 'fill': '0', 'chevron': '0', 'muted': '0', 'bar_light': 'LIGHT_BAR', **CF_ROLES},
 }
 
-# Classic Blue's measured selection band: its 1 px top line, the stops under it and its edge row:
+# Classic Blue's selection band: its 1 px top line, the stops under it and its edge row:
 # derive="gloss"'s shape. assets/themes/classic-light/theme.xml states the same values (test_theme checks).
 GLOSS = ((0, 0x08a6e7), (17, 0x009ade), (38, 0x008ade), (58, 0x007dde), (79, 0x006dd6), (100, 0x0065d6))
 GLOSS_TOP, GLOSS_EDGE, GLOSS_TALL_EDGE, GLOSS_TALL_LINE, GLOSS_TALL_TOP = 0x94c7de, 0x004184, 0x004aa3, 0x688db3, 0x27ade5

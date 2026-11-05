@@ -23,7 +23,7 @@ def test_classic_light_draws_its_images_and_the_others_none():
     assert set(art.images(themes[2])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
 
 
-# The reference's rendered rows, its pixels the truth, within 1 per channel: the fill down column 272 of the pause bars
+# The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
 # (the gradient's stops sampled at pixel centres), the edge down column 270.
 REF_FILL = {4: 0x125093, 5: 0x1563a3, 6: 0x186fad, 7: 0x1f83bf, 8: 0x299bd5, 9: 0x31b0e7, 10: 0x36bff2, 11: 0x39c7f7, 12: 0x35bcef,
               13: 0x2ca5e0, 14: 0x238fcd, 15: 0x1e7cba, 16: 0x196cab, 17: 0x1563a2, 18: 0x145c9c}
@@ -31,7 +31,7 @@ REF_EDGE = {5: 0x155a9b, 6: 0x1763a3, 7: 0x1a6dac, 8: 0x1d76b4, 9: 0x207fbc, 10:
               14: 0x1d7bb8, 15: 0x1c74b1, 16: 0x196caa, 17: 0x1764a3}
 
 
-def test_the_play_state_stands_on_the_reference_rows():
+def test_the_play_state_stands_on_its_approved_rows():
     got = art.images(theme.builtins()[2])
     w, h, at = pixels(got['classic_light_pause_l'])
     x0, y0 = art.STATE_BOX[:2]

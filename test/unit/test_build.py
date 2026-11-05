@@ -285,6 +285,7 @@ def test_classic_light_font():
     for i in (1, 3, 4, 6, 16, 17, 18, 21, 22):
         assert 'TeX Gyre' not in names.get(i, '') and 'TeXGyre' not in names.get(i, '')
     assert names[0] == str(source['name'].getName(0, 3, 1, 0x409))
+    assert names[7] == str(source['name'].getName(7, 3, 1, 0x409))
     assert 'Modified version of TeX Gyre Heros Bold' in names[10] and 'gust.org.pl' in names[10]  # LPPL 6(a), 6(b), 6(d)2
     assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
     if 'CFF ' in font:

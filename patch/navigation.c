@@ -1217,15 +1217,14 @@ static int load(menu_t *m, void *w, int recall) {
      * keeps its viewport, so it does not re-read the table. A non-virtual list prefers the
      * remembered first text, breaks ties by the second text and then by the remembered index,
      * and falls back to the index when no text matches. */
-    if (m->kind != 3 && count < 0 && (recall || theme()->set_text)) {
-        /* A picker opens on its current option rather than the row last chosen; under a set_text
-         * theme also while a tap that opened it is still down, or a Centre takes its first row. */
+    if (m->kind != 3 && count < 0 && (recall || theme()->set_text || w == theme_view)) {
+        /* A picker opens on its current option rather than the row last chosen; the Theme picker
+         * (and a set_text theme's others) also while a tap that opened it is still down, or a
+         * Centre takes its first row. */
         void *top = window_manager_get_top_window(window_manager());
         int ctx = top ? context_id(widget_get_prop_str(top, "name", (void *)0)) : -1;
         int choice =
-            (ctx >= 0 && (contexts[ctx].flags & CHOICE)) || (theme()->set_text && w == theme_view)
-                ? checked_row(m)
-                : -1;
+            (ctx >= 0 && (contexts[ctx].flags & CHOICE)) || w == theme_view ? checked_row(m) : -1;
         int p = choice >= 0 || !recall ? -1 : position(m);
         int id = choice >= 0 ? choice : p < 0 ? -1 : st.pos[p].id - 1;
         unsigned hash = p < 0 ? 0 : st.pos[p].hash;
@@ -2514,7 +2513,7 @@ static void paint_selection(void *w, void *canvas) {
 static int two_lines(void *row);
 static void paint_separators(void *w, void *canvas) {
     rect_t old;
-    if (!w || kind(w) != 2 || !theme()->sep[0].n || I(w, ROW_HEIGHT) <= geom(G_PITCH) ||
+    if (!w || !theme()->sep[0].n || kind(w) != 2 || I(w, ROW_HEIGHT) <= geom(G_PITCH) ||
         !P(canvas, CANVAS_LCD) || !load_rows(&g_menu, w) || !clip_surface(canvas, &g_menu, &old))
         return;
     const stops_t *lines = &theme()->sep[ipod_light()];
@@ -5443,7 +5442,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
                 if (!widget_get_prop_bool(w, "enable", 1)) enabled = 0;
             *color = (*color & 0xff000000u) | (enabled ? 0xffffff : 0xaaaaaa);
         }
-        if (painting_in(st.sel_accent) && (ipod_light() || S->sel_text)) {
+        if ((ipod_light() || S->sel_text) && painting_in(st.sel_accent)) {
             if (S->sel_text) *color = (*color & 0xff000000u) | (RGBA(S->sel_text) & 0xffffff);
             return color;
         }

@@ -725,7 +725,9 @@ def subset_font(src, family, ranges_macro, notice=None):
     old = font['name'].getDebugName(1)
     label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
-    sub = subset.Subsetter(subset.Options())
+    options = subset.Options()
+    if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
+    sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
     sub.subset(font)
     check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
@@ -752,7 +754,7 @@ def subset_font(src, family, ranges_macro, notice=None):
         else: runs.append([u, u])
     return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
 
-# Classic's bold (navigation.c bold_label): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# Classic's bold (navigation.c theme_font): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
 # Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
 # label holding anything else (CJK, say) keeps the stock font.
 BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
