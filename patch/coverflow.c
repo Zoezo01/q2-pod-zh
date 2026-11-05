@@ -1882,7 +1882,7 @@ static int retitle(const void *unused) {
  * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step repaints all of it, and its CF_VIEW_H square
  * items with a negative spacer move one album per CF_STRIDE px; the children stay empty under the
  * frame. The flat fallback is the stock images, 160 px, as before. ponytail: one child per album;
- * if large libraries lag on hardware, virtualize to a recycled window of children. */
+ * if large libraries lag, virtualize to a recycled window of children. */
 static void covers(void) {
     cf.screen = COVERS;
     if (cf.text_albums) {

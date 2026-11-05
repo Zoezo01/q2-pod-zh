@@ -556,7 +556,7 @@ static void ao_cut(void) { /* a press during ao_init's drain, on the command thr
  * press that opened paused, a seek while paused, a press and a track under 5 s) gives a natural reopen one
  * 130 ms gap, at most one per word; a per-file stamp would close that. A rapid double Next can spend its word
  * on the first init, so the last track keeps the old cut. A-B Repeat, Resume Songs' jump, a phone's seek,
- * Spotify's aplay and q2video keep the cut. Whether a start pops with the gate open can only be settled by ear. */
+ * Spotify's aplay and q2video keep the cut. */
 #define DAC_RELEASE_MS 130 /* derived, not measured: the mute line's 90-100 ms and the ramp at top volume */
 #define DAC_PRESS_MS 5000  /* demo's mute, its sleep and a slow card's open, from the press to init's end */
 #define DAC_FD (*(volatile int *)0xb1158cu)
