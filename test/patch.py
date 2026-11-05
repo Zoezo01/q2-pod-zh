@@ -8917,6 +8917,21 @@ for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'No
     btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
 assert bt_titled(btm.node('dialog','sortselect_dialog'))=='Shuffle'
 btm.calls=[]; assert bt_titled(btwins['shuffle_page'])=='Shuffle'  # the same title again: not written
+# The play state leads the bar: the title moves past it while it shows (its right end where it was), and on Home
+# the state stands in for "Q2 Pod". Stopped, both are back.
+psm=classic_light_on(Machine()); psm.handlers.pop(syms['mclGetPlayStatus'],None)
+psttl=psm.node('hscroll_label','label_title'); psst=psm.node('image','img_state',visible=0)
+for k,v in (('W_X',48),('W_W',104),('W_H',25)): psm.word(psttl+O[k],v)
+psm.word(psst+O['W_W'],18); psbar=classic_light_bar(psm,psm.node('view','view_left',[psst]),psttl)
+pshome,pssongs=psm.node('window','home_page'),psm.node('window','allmusic_page',[psm.node('view','view_navbar',[psm.node('image','img_return'),psm.node('hscroll_label',text='Songs')],visible=0)])
+def ps_titled(win,status):
+    psm.word(0xa3beac,status); psm.top=win; psm.word(win+O['W_PARENT'],psm.wm)
+    for _ in range(2): psm.call(address=HOOKS['widget_on_paint_background'][0],args=(psbar,psm.canvas,0,0),gap=0)
+    return psm.nodes[psttl].get('text'),psm.get(psttl+O['W_X']),psm.get(psttl+O['W_W'])
+psgap=O['STATUS_GAP']
+assert ps_titled(pshome,0)==('Q2 Pod',48,104) and ps_titled(pshome,2)==('',48+18+psgap,104-18-psgap) and ps_titled(pshome,3)[0]==''
+assert ps_titled(pssongs,2)==('Songs',48+18+psgap,104-18-psgap) and ps_titled(pssongs,0)==('Songs',48,104)
+assert ps_titled(pshome,0)==('Q2 Pod',48,104); passed()
 assert not [c for c in btm.calls if c[0]=='widget_set_text_utf8' and c[1]==bttl]
 # The source is found once per top window: painting it again looks nothing up, and a navbar title
 # rewritten under the same window is followed.
@@ -8934,7 +8949,7 @@ assert bt_titled(btwins['shuffle_page'])=='Genres'
 for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','default'),('Songs','classic-light'),('Н'*60,'bold')):
     btm.nodes[btm.nodes[btnav]['children'][1]]['text']=bt_text; assert bt_titled(btwins['allmusic_page'])==bt_text
     assert [btm.nodes[bttl][f'style:{s}:font_name'] for s in ('normal','focused','disable')]==[bt_face]*3,bt_text
-    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[24]*3,bt_text
+    assert [btm.nodes[bttl][f'style:{s}:font_size'] for s in ('normal','focused','disable')]==[21]*3,bt_text
 passed()
 # Classic Light battery (BATT_CLASSIC_LIGHT): body 28x15 on rows 4 to 18, its soft edge's column at x 0 of the slot (screen 288): a
 # #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, one stop per row

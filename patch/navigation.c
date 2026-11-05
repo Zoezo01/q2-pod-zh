@@ -480,7 +480,8 @@ typedef struct {
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled, bar_bold;
+    int time_title, bar_titled, bar_bold, title_x,
+        title_w; /* Classic Light's bar title's own box */
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;
@@ -3856,8 +3857,18 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    /* Classic Light's right group has room for EQ or the play state, not both: EQ while nothing
-     * plays. Its row closes up towards the battery when the state hides. */
+    /* Classic Light: EQ only while nothing plays (a codec badge, which needs a track, would reach
+     * it: tools/ipod.py). The play state leads the bar, so the title moves past it while it shows;
+     * on Home it stands in for "Q2 Pod" (bar_title_sync). */
+    if (st.bar_title && st.bar_state) {
+        if (!st.title_w) st.title_x = I(st.bar_title, W_X), st.title_w = I(st.bar_title, W_W);
+        int by = widget_get_visible(st.bar_state) ? I(st.bar_state, W_W) + STATUS_GAP : 0;
+        if (I(st.bar_title, W_X) != st.title_x + by) { /* its right end stays clear of the clock */
+            widget_move_resize(st.bar_title, st.title_x + by, I(st.bar_title, W_Y), st.title_w - by,
+                               I(st.bar_title, W_H));
+            changed = 1;
+        }
+    }
     if (st.bar_eq && st.bar_state && widget_get_visible(st.bar_state) &&
         theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
         widget_set_visible(st.bar_eq, 0, 0);
@@ -3923,9 +3934,7 @@ static void bar_sync(void *bar) {
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Classic Light: the play state or EQ shares the group */
-        if (classic_light && st.bar_state && widget_get_visible(st.bar_state))
-            reach += I(st.bar_state, W_W) + STATUS_GAP;
+        /* Classic Light: EQ shares the group */
         if (classic_light && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
         /* Classic Light's Percent Inside is the icon's own width: the icon would win no room */
@@ -5297,6 +5306,8 @@ void bar_title_sync(void *win) {
     static const unsigned none = 0;
     char s[256], now[256]; /* stock writes nothing unless all of it fits */
     const char *t = home_menu(win) ? coverflow_home_title() : (const char *)0;
+    /* Home's own name gives way to the play state, which takes its place (bar_state_sync) */
+    if (t && !tk_strcmp(t, "Q2 Pod") && st.bar_state && widget_get_visible(st.bar_state)) t = "";
     if (t)
         ;
     else if (win != st.title_win) {

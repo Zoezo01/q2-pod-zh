@@ -11,7 +11,7 @@
             lib_art="0" title24_y="2" title_y="4" meta_y="6"
             count_y="6" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
             song_meta_y="29" set_row="28" set_top="0" set_rows="9"
-            set_icon="0" bar_px="24" bar_title_w="100" bar_right="56" batt_w="28" batt_h="15" text_x="20" list_end="252" action_row="28" home_row="28" home_lib="1"/>
+            set_icon="0" bar_px="21" bar_title_w="100" bar_right="56" batt_w="28" batt_h="15" text_x="20" list_end="252" action_row="28" home_row="28" home_lib="1"/>
   <geometry name="classic-light-text" extends="classic-light" art="0" art_pitch="28" art_body="28" art_title24_y="2"
             art_meta_y="6"/>
   <geometry set="classic-light"/>
@@ -27,8 +27,7 @@
                sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
                sel.edge="#004184" sel.tall_edge="#004aa3" sel.tall_line="#688db3" sel.tall_top="#27ade5"/>
   <colorSchemes accents="classic-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
-  <!-- Classic Light's face: list rows (title 27 px, 28 on a two-line row, second line 17 px in stock's regular face), the bar title and clock (24 px, stated again as the
-       set's bar_px), the Now Playing title and Home rows (27 px); the bar's fill is the scheme's gloss; the white chevron on the selected row only, tools/art.py's 12 x 16 drawing, centred on the row at these x. The classic-light battery: a grey
+  <!-- Classic Light's face: list rows (title 27 px, 28 on a two-line row, second line 17 px in stock's regular face), the bar title and clock (21 px, stated again as the set's bar_px: three quarters of a row's caps, an iPod's bar to its rows), the Now Playing title and Home rows (27 px); the bar's fill is the scheme's gloss; the white chevron on the selected row only, tools/art.py's 12 x 16 drawing, centred on the row at these x. The classic-light battery: a grey
        outline and a gloss green level, a hue in both halves -->
   <view name="list">
     <element name="selection" painter="stops"/>
@@ -40,7 +39,7 @@
     <element name="chevron" selected="1" x="317"/>
   </view>
   <view name="bar">
-    <element name="title" font="classic-light" font_size="24"/>
+    <element name="title" font="classic-light" font_size="21"/>
     <element name="fill" painter="gloss"/>
     <!-- The battery's inside: one colour per row, the bright one at y 7, the dark rows past the level, a red sliver
          when low; its edges and the white that sits under it on the light half's gloss. Alphas of 255. The bolt
