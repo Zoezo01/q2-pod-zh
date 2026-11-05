@@ -1,7 +1,6 @@
 <!-- Theme: Nano (IPOD/THEME 2, docs/ipod.md#display-settings): an iPod nano (3rd generation) look on its
-     own geometry sets, declared below. dev="1": only a dev build offers it. Its numbers are this
-     file's, never patch/offsets.inc's. -->
-<theme format="1" id="nano" name="Nano" index="2" extends="classic" dev="1">
+     own geometry sets, declared below. Its numbers are this file's, never patch/offsets.inc's. -->
+<theme format="1" id="nano" name="Nano" index="2" extends="classic">
   <!-- Nano's geometry sets: a 26 px bar over a 294 px window, 28 px rows. The Library is always 28 px text.
        nano (Row Art on) has 52 px album rows with the stock art drawn 1:1; nano-text (Row Art off)
        makes those lists 28 px and has no artwork. Songs are two lines at 52 px under both. nano states every field, so the built-in set's defaults never reach Nano. Text

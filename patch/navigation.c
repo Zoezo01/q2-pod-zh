@@ -1727,10 +1727,6 @@ static const int setting_counts[] = { SETTING_N_ACCENT,
                                       2,
                                       2 };
 _Static_assert(SETTING_N_ACCENT == ACCENT_N, "the accent option's values are the ACCENTS rows");
-/* The themes the Theme row offers (tools/build.py THEME_OFFER): a release build leaves the dev ones
- * out, so a stored one reads as Minimal. volatile: test/patch.py patches it to reach them. */
-const volatile unsigned char theme_offer = THEME_OFFER;
-static int setting_count(int i) { return i == SETTING_THEME ? theme_offer : setting_counts[i]; }
 static int *const setting_values[] = { &st.accent,     &st.home,         &st.battery,
                                        &st.theme,      &st.shortcut,     &st.rounded,
                                        &st.light,      &st.keep_lit,     &st.np_centred,
@@ -1785,7 +1781,7 @@ static void light_apply(const int *tm) {
  * colour Light Mode flips asks twice: ipod_light(), scheme()) skips this frame. */
 __attribute__((noinline)) static void settings_read(void) {
     for (int i = 0; i < 4; ++i)
-        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_count(i), 0);
+        *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
     st.shortcut = config_value("IPOD", "SHORTCUT", 7, 7); /* 7: no key, see shortcut() */
     st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
     st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
@@ -5891,7 +5887,7 @@ static int setting_click(void *ctx, void *event) {
         unsigned mask = o && o->values ? o->values : ~0u;
         do
             *value = (*value + 1) %
-                     (i >= SETTING_OWN ? theme_keys[i - SETTING_OWN].n : setting_count(i));
+                     (i >= SETTING_OWN ? theme_keys[i - SETTING_OWN].n : setting_counts[i]);
         while (!(mask >> *value & 1));
     } else { /* Graphite, ..., Green, Ivory (Minimal); a theme's own schemes after Green */
         const option_t *o = option_of(T, SETTING_ACCENT);
@@ -6142,9 +6138,9 @@ int ringnav_display(void *win, void *ctx) {
     widget_destroy_children(view);
     void *nav = widget_lookup(win, "view_navbar", 1), *title = nav ? widget_get_child(nav, 0) : 0;
     if (title) widget_set_text_utf8(title, titles[sub]);
-    if (sub == DISPLAY_THEMES) { /* the built-ins this build offers; card themes follow (PR 12) */
+    if (sub == DISPLAY_THEMES) { /* the built-ins */
         accent();
-        for (int t = 0; t < theme_offer; ++t)
+        for (int t = 0; t < THEME_N; ++t)
             widget_set_text_utf8(
                 list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
                 themes[t].name);

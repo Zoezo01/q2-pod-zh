@@ -125,7 +125,7 @@ CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, '
 
 
 MINIMAL = {
-    'id': 'minimal', 'index': 0, 'dev': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
+    'id': 'minimal', 'index': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
     'painter[PAINT_SELECTION]': 0, 'painter[PAINT_BAR]': 0, 'painter[PAINT_BATTERY]': 0, 'chevron_home': 0, 'chevron_sel': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
@@ -215,7 +215,6 @@ M = 'id="minimal" name="M" index="0"'
     ('', 'id="t" name="T" index="2" colour="x"', 'unknown key theme.colour'),
     ('', 'name="T" index="2"', 'id: expected [a-z][a-z0-9_]*'),
     ('', 'id="t" name="T"', 'index: expected a digit'),
-    ('', 'id="t" name="T" index="2" dev="2"', 'dev: expected 0 or 1'),
     ('<colorScheme name=""/>', None, 'unknown scheme '),
     ('<option/>', None, 'unknown setting '),
     ('<view/>', None, 'unknown view '),
@@ -910,7 +909,7 @@ def test_nano_from_minimal(tmp_path):
     (tmp_path / 'clone' / 'theme.xml').write_text(
         theme.dump(nano, id='clone', name='Nano Clone', index='3', extends='minimal'))
     clone = theme.builtins(tmp_path)[3]
-    skip = {'id', 'name', 'index', 'dev', 'line'}
+    skip = {'id', 'name', 'index', 'line'}
     assert clone['id'] == 'clone'
     assert {k: v for k, v in clone.items() if k not in skip} == {k: v for k, v in nano.items() if k not in skip}
 
@@ -973,19 +972,11 @@ def test_emit_refuses_a_set0_redirect(tmp_path):
 
 def test_nano_builtin():
     m, c, n = theme.builtins()
-    assert (n['id'], n['name'], n['index'], n['dev'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 1, 'nano', 'NANO_ACCENT', 0x37f)
+    assert (n['id'], n['name'], n['index'], n['geom_set'], n['accent_key'], n['accents']) == ('nano', 'Nano', 2, 'nano', 'NANO_ACCENT', 0x37f)
     assert n['opts'] == [opt('SETTING_LIGHT', preset=1, keep=2), opt('SETTING_ACCENT', default=9, preset=9, values=0x37f),
                          opt('SETTING_HOME', default=0, preset=0), opt('SETTING_SHORTCUT'), opt('SETTING_BATTERY', default=3, preset=0, values=0b1001), opt('SETTING_TIMETITLE', preset=1),
                          own('ROWART', 'Row Art', ('Off', 'On'), ('nano-text', 'nano'), default=1, preset=1)]
     assert theme.geometry_sets([m, c, n]) == [SET0, NANO, NANO_TEXT]
-    assert (theme.offer([m, c, n], False), theme.offer([m, c, n], True)) == (2, 3)
-
-
-def test_dev_themes_come_last(tmp_path):
-    shutil.copytree(THEMES, tmp_path, dirs_exist_ok=True)
-    (tmp_path/'t').mkdir()
-    (tmp_path/'t'/'theme.xml').write_text('<theme format="1" id="t" name="T" index="3" extends="classic"><option setting="accent" key="ACCENT" default="graphite"/></theme>')
-    assert error(theme.builtins, tmp_path) == "t/theme.xml:1: index 3: an offered theme after the dev theme nano"
 
 
 def test_emit_nano_sets(tmp_path):

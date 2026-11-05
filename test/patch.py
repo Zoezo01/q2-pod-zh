@@ -753,8 +753,8 @@ def passed():
     global checks
     checks+=1
     trace(f'== {checks}')
-def nano(m):  # Nano (THEME=2) as a --dev build offers it: the gate word at 3; its light half unless LIGHT is stored
-    m.byte(payload_syms['theme_offer'],3); m.config['THEME']='2'; m.config.setdefault('LIGHT','1'); return m
+def nano(m):  # Nano (THEME=2): its light half unless LIGHT is stored
+    m.config['THEME']='2'; m.config.setdefault('LIGHT','1'); return m
 def nano_new(cls,**kw):  # a Nano cls machine: THEME is stored before its constructor reads it (QueueMachine's does)
     SETUP[:]=[nano]
     try: return cls(**kw)
@@ -8351,7 +8351,7 @@ Machine.hook=hook
 C={'THEME':'1'}
 for config,preset in (({},0),({**C,'ACCENT':'1'},1),({**C,'ACCENT':'2'},2),({**C,'ACCENT':'3','HOME':'1'},3),({**C,'ACCENT':'7'},0),
                       ({**C,'ACCENT':'12'},0),({**C,'ACCENT':'4'},4),({**C,'ACCENT':'5'},5),({**C,'ACCENT':'6'},6),({'ACCENT':'1'},0),
-                      ({'MINIMAL_ACCENT':'1'},1),({'MINIMAL_ACCENT':'6'},6),({'MINIMAL_ACCENT':'7'},0),({'MINIMAL_ACCENT':'8'},8),({**C,'ACCENT':'8'},8),({**C,'MINIMAL_ACCENT':'2'},0),({'ACCENT':'2','THEME':'0'},0),({'ACCENT':'2','THEME':'2'},0)):  # 4 is Cobalt (once Custom, gone before 0.9.9)
+                      ({'MINIMAL_ACCENT':'1'},1),({'MINIMAL_ACCENT':'6'},6),({'MINIMAL_ACCENT':'7'},0),({'MINIMAL_ACCENT':'8'},8),({**C,'ACCENT':'8'},8),({**C,'MINIMAL_ACCENT':'2'},0),({'ACCENT':'2','THEME':'0'},0),({'ACCENT':'2','THEME':'3'},0)):  # 4 is Cobalt (once Custom, gone before 0.9.9)
     m=Machine(); m.config=config
     ret,got,out=style_color(m,red)
     assert ret==out and got==(red if preset==O['CRIMSON'] else color_t(ACCENTS[preset][3])),(config,hex(got))
@@ -8416,7 +8416,7 @@ assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACC
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a
 # missing MINIMAL_ACCENT is Ivory, the card (flags 1); Crimson is raw red (flags 2) in both.
-for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',0),({'THEME':'2','MINIMAL_ACCENT':'3'},'Minimal',3),
+for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',0),({'THEME':'3','MINIMAL_ACCENT':'3'},'Minimal',3),
                          ({'THEME':'1','ACCENT':'7'},'Classic',0),({'THEME':'1','ACCENT':'12'},'Classic',0),
                          ({'THEME':'1','ACCENT':'1'},'Classic',1),({'MINIMAL_ACCENT':'1'},'Minimal',1),({'THEME':'1','ACCENT':'8'},'Classic',8)):
     k=Machine(); k.config=dict(config)
@@ -8431,10 +8431,8 @@ k=Machine(); k.config=dict(THEME='1',ACCENT='4'); kw,_=k.page_list(5,extent=1000
 k.paint(kw); assert len(k.config_reads)==15 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
 k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
-# Nano is THEME=2 only where the build offers it: a release build offers Minimal and Classic (above,
-# 2 is Minimal); with the gate word at 3 it is Nano, on its own NANO_ACCENT, whose stored value outside
+# THEME=2 is Nano, on its own NANO_ACCENT, whose stored value outside
 # Nano's colours (9: none, 7: Ivory) is its default, Nano Blue (Cobalt's tones); Classic's ACCENT is not Nano's.
-k=Machine(); assert k.u.mem_read(payload_syms['theme_offer'],1)==b'\x02'
 for config,want in (({},4),({'NANO_ACCENT':'2'},2),({'NANO_ACCENT':'7'},4),({'ACCENT':'2'},4)):
     k=nano(Machine()); k.config.update(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
@@ -8872,7 +8870,7 @@ passed()
 nm=Machine(); nano_boot(nm); nm.calls=[]
 nm.call(address=HOOKS['ui_loader_load_widget_with_parent'][0],args=(nm.string('localmusic/allmusic_page'),0,0,0),gap=0)
 assert [(nm.text(c[1]),0x70000000<=c[1]<0x70010000) for c in nm.calls if c[0]=='stock_ui_load']==[('localmusic/nano_allmusic_page',True)]; passed()
-def nano_on(nm,rowart='1'):  # Nano on this release build, theme_boot done: st.geom is GEOM_NANO (GEOM_NANO_TEXT at ROWART=0)
+def nano_on(nm,rowart='1'):  # Nano, theme_boot done: st.geom is GEOM_NANO (GEOM_NANO_TEXT at ROWART=0)
     nano_boot(nm,rowart); return nm
 def nano_bar(nm,*children):  # the system bar under Nano's set: 375x26
     b=nm.node('system_bar','system_bar',list(children)); nm.word(b+O['W_PARENT'],nm.wm)
@@ -9394,7 +9392,7 @@ passed()
 # Under Classic the picker keeps its leading mark, its place and its opening row: remembered, not the stored theme's.
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='1')); lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','select'] and geometry(m,marks[0])[0]==SET['ICON_X']
+assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']
 m.paint(view); assert m.selected(view)==0,m.selected(view); passed()
 # A stock row with a second text line under its title (Bluetooth's Quality, 0x4be994: the title at y 12, the
 # detail at y 44 of its 70 px body), under a set whose row is too short for both (Nano's 28), takes two rows, so
@@ -9510,9 +9508,9 @@ m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[3][i])
 m,view,rows=display({}); m.paint(view); assert not m.bands
 m.call(address=payload_syms['theme_pick'],args=(1,0,0,0),gap=0)
 m.paint(view); assert [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
-# Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Graphite; THEME=2 is Minimal.
+# Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Graphite; THEME=3 is Minimal.
 for config,want in (({'THEME':'1','ACCENT':'7'},['Theme: Classic','Light Mode: Off','Accent: Graphite']),
-                    ({'THEME':'2'},['Theme: Minimal','Light Mode: Off','Accent: Ivory'])):
+                    ({'THEME':'3'},['Theme: Minimal','Light Mode: Off','Accent: Ivory'])):
     m,view,rows=display(config)
     assert [row_text(r) for r in m.nodes[view]['children']]==want+['Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing'],config
 passed()
@@ -9718,7 +9716,7 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
     om=Machine(); om.config['LIGHT']=stored; nano(om); om.u.mem_write(dark_row+SCHEME_MODE_OFF,bytes([mode]))
     assert lit(om)==(mode==1) and half_of(om)==want,mode
 passed()
-# The same stored THEME=2 where Nano is offered: its Appearance is Theme and Nano's own options.
+# THEME=2: its Appearance is Theme and Nano's own options.
 m,view,rows=display({'THEME':'2'},setup=nano)
 assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Nano','Light Mode: On','Accent: Nano Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Row Art: On']; passed()
 # Nano's Accent is Nano Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
@@ -9774,31 +9772,30 @@ for stored in ('1','2'):
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'BATTERY')] and row_text(row)=='Battery: Icon'
 passed()
 for t in ('0','1'):
-    def on_t(k,t=t): nano(k); k.config['THEME']=t  # Minimal or Classic, on a build that offers Nano
+    def on_t(k,t=t): nano(k); k.config['THEME']=t  # Minimal or Classic
     for stored,name in (('0','Icon'),('1','Percent'),('2','Icon + Percent'),('3','Percent Inside')):
         m,view,rows=display({'BATTERY':stored},setup=on_t)
         assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==int(stored) and row_text(rows[2])=='Battery: '+name,(t,stored)
 passed()
-# Theme opens the picker (Display's page again, its rows the themes the build offers: Minimal and Classic
-# on a release build, Nano too on --dev) and writes nothing; the current theme's row holds select.
+# Theme opens the picker (Display's page again, its rows the themes) and writes nothing; the current
+# theme's row holds select.
 class RestartMachine(QueueMachine):
     answer=0  # the confirm's: 10 is OK
     def hook(self,u,address,size,unused):
         if self.handlers.get(address)=='q:navigator_to_with_context' and self.text(u.reg_read(REGS[0]))=='dialog/confirminfo_dialog':
             self.prompts.append(self.text(u.reg_read(REGS[1])+8)); self.returns(self.answer); return
         super().hook(u,address,size,unused)
-def offered(k): nano(k); k.config['THEME']='1'  # Classic, on a build that offers Nano
+def offered(k): nano(k); k.config['THEME']='1'  # Classic, its light half unless LIGHT is stored
 m,view,rows=display({'THEME':'1'}); f,ctx=m.handler(m.nodes[rows[3]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None)
 assert m.get(payload_syms['display_sub'])==0 and not [c for c in m.calls if c[0]=='write_int_config']
-for setup,names in ((None,['Minimal','Classic']),(offered,['Minimal','Classic','Nano'])):
-    m,view,_=display({'THEME':'1'},sub=4,setup=setup)
-    assert [row_text(r) for r in m.nodes[view]['children']]==names and m.icons_set==['unselect','select','unselect'][:len(names)]
+m,view,_=display({'THEME':'1'},sub=4)
+assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Classic','Nano'] and m.icons_set==['unselect','select','unselect']
 # A live pick (Minimal to Classic) applies at once and moves the check; the current theme's own row does nothing.
 m,view,rows=display({}); pview=display_page(m,4); m.calls=[]
 assert m.call(address=payload_syms['theme_pick'],args=(0,0,0,0),gap=0)==0 and not [c for c in m.calls if c[0]=='write_int_config']
 writes=pick(1); assert [(w[0],m.text(w[2])) for w in writes][:1]==[(1,'THEME')] and row_text(rows[3])=='Theme: Classic'
-assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select']
+assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select','unselect']
 # Nano needs its own set: the confirm asks; Cancel writes nothing and stays Classic; OK writes THEME and
 # Nano's presets (Light Mode On unless Auto is stored; Nano Blue; Row Art On where it was Off), in that
 # order, then restarts through device_reboot (the queue saved first).

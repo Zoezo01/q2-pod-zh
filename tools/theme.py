@@ -608,7 +608,7 @@ def resolve(root, by_id, seen=()):
     def err(node, message): fail(node.file, node.line, message)
     a = root.attrs
     for k in a:
-        if k not in ('format', 'id', 'name', 'index', 'extends', 'dev'):
+        if k not in ('format', 'id', 'name', 'index', 'extends'):
             err(root, f'unknown key theme.{k}')
     tid = a.get('id', '')
     if not re.fullmatch('[a-z][a-z0-9_]*', tid):
@@ -618,8 +618,6 @@ def resolve(root, by_id, seen=()):
         err(root, 'name: expected 1..48 bytes, no control characters')
     if not re.fullmatch('[0-9]', a.get('index', '')):
         err(root, 'index: expected a digit')
-    if a.get('dev', '0') not in ('0', '1'):
-        err(root, 'dev: expected 0 or 1')
     if tid in seen:
         err(root, f'extends cycle at {tid}')
     check_tags(root)
@@ -630,7 +628,7 @@ def resolve(root, by_id, seen=()):
     else:
         t = {'accents': ALL_ACCENTS, 'accent_key': None, 'schemes': [zero_scheme() for _ in ACCENT_NAMES], 'opts': [], 'geoms': {},
              **{k.field: k.default for k in SCHEMA.values() if not k.path.startswith('scheme.')}, 'light': {}}
-    t.update(id=tid, name=a['name'], index=int(a['index']), dev=int(a.get('dev', '0')), line=root.line)
+    t.update(id=tid, name=a['name'], index=int(a['index']), line=root.line)
     macros = ROLE_MACROS.get(tid, {})
     opts = None
     named = []
@@ -896,9 +894,6 @@ def builtins(root=ROOT/'assets/themes'):
     for i, (index, n, _) in enumerate(found):
         if index != i:
             fail(n.file, n.line, f'index {index}, expected {i}')
-    for (_, _, t), (_, n, u) in zip(found, found[1:]):  # a release build offers the themes before the first dev one
-        if t['dev'] and not u['dev']:
-            fail(n.file, n.line, f'index {u["index"]}: an offered theme after the dev theme {t["id"]}')
     return [t for _, _, t in found]
 
 
@@ -919,9 +914,9 @@ def dump(t, **head):
         for f in d:
             if f not in fields:
                 nope(f)
-    known(t, *FIELDS, 'id', 'name', 'index', 'dev', 'line', 'accents', 'accent_key', 'derive', 'schemes', 'opts', 'light',
+    known(t, *FIELDS, 'id', 'name', 'index', 'line', 'accents', 'accent_key', 'derive', 'schemes', 'opts', 'light',
           'undeclared', 'geoms')
-    lines = [tag('theme', {'format': 1, **{f: t[f] for f in ('id', 'name', 'index', 'dev')}, **head}, '>')]
+    lines = [tag('theme', {'format': 1, **{f: t[f] for f in ('id', 'name', 'index')}, **head}, '>')]
     lines += [tag('geometry', dataclasses.asdict(g)) for g in t['geoms'].values()] + [tag('geometry', {'set': t['geom_set']})]
     names = scheme_names(t)
     keys = [k for k in SCHEMA.values() if k.path.startswith('scheme.')]
@@ -976,11 +971,6 @@ def dump(t, **head):
         lines += [tag('view', {'name': v, **views.pop(v, {})}, '>'), *(tag('element', a) for a in es.values()), '</view>']
     lines += [tag('view', {'name': v, **a}) for v, a in views.items()]
     return '\n'.join(lines + ['</theme>', ''])
-
-
-def offer(themes, dev):
-    """How many themes the Theme row offers: a release build leaves the dev ones out."""
-    return len(themes) if dev else sum(not t['dev'] for t in themes)
 
 
 def stops_c(v):
