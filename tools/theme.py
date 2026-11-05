@@ -843,7 +843,7 @@ def accent_default(t):
 
 
 def theme_keys(themes):
-    """The themes' own IPOD keys in read order, after the payload's twelve: each theme's own accent key and own
+    """The themes' own IPOD keys in read order, after the payload's thirteen: each theme's own accent key and own
     options, theme then declaration order, each key once. key -> (value count, default, the own option or None
     for an accent key)."""
     keys = {}

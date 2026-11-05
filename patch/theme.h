@@ -50,7 +50,7 @@ typedef struct {
     signed char keep;      /* a stored value theme_preset leaves (Light's Auto 2); -1 none */
     unsigned values;       /* bitmask of values the row takes; 0: all of setting_counts[setting] */
 } option_t;
-/* a theme's own IPOD key (tools/theme.py theme_keys), read after the payload's twelve in table
+/* a theme's own IPOD key (tools/theme.py theme_keys), read after the payload's thirteen in table
  * order into st.own[] */
 typedef struct {
     const char *key;           /* the IPOD key; a theme-owned accent key's too */

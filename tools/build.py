@@ -715,10 +715,10 @@ def font_quotes(data):
     font.save(out, reorderTables=False)
     return out.getvalue()
 
-def subset_font(src, family, ranges_macro):
+def subset_font(src, family, ranges_macro, notice=None):
     """src cut to its Latin, Greek, Cyrillic and punctuation, renamed family (its own name is the font's
     reserved name under OFL and GUST alike): the font's bytes and ranges_macro listing exactly what it
-    keeps."""
+    keeps. notice, if any, goes in its description (name ID 10)."""
     from fontTools import subset
     from fontTools.ttLib import TTFont
     font = TTFont(src, recalcTimestamp=False)
@@ -735,6 +735,8 @@ def subset_font(src, family, ranges_macro):
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
             rec.string = str(rec).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', ''))
             check(old.split()[0] not in str(rec), f'{label} font name {rec.nameID} keeps {old.split()[0]}')
+    if notice:
+        font['name'].setName(notice, 10, 3, 1, 0x409)
     if 'CFF ' in font:  # the outlines' own names (PostScript FontName, FullName, FamilyName)
         cff = font['CFF '].cff
         top = cff.topDictIndex[0]
@@ -758,8 +760,11 @@ BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 def bold_font():
     return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
 
-# Nano's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut
+# Nano's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
+# The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-nano.txt
 NANO_TTF = 'release/assets/default/raw/fonts/nano.ttf'
+NANO_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to its Latin, Greek, Cyrillic and punctuation, and renamed. '
+               'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 # stb draws the subset's outlines in the form chosen here: TrueType quadratics (otf_to_ttf) or the CFF original
 NANO_TRUETYPE = False
 
@@ -1483,7 +1488,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    nano, nano_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Nano', 'NANO_RANGES')
+    nano, nano_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Nano', 'NANO_RANGES', NANO_NOTICE)
     header = [f'#define RING_STEP {RING_STEP}', bold_ranges, nano_ranges]
     header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
     header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')

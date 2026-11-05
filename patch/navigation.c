@@ -512,7 +512,7 @@ typedef struct {
         theme_booted,              /* theme_boot ran (ringnav_ui_load) */
         geom;                      /* the geometry set theme_boot wrote; 0, SET0, until then */
     int own[THEME_KEYS]; /* the themes' own keys' values (theme_keys[], tools/theme.py), read after
-                            the twelve */
+                            the thirteen */
     unsigned keep_lit_at;
     void *sel_accent; /* the row on a coloured selection, for Light Mode's ink */
     int style_depth;  /* nested style hooks (a mutable style's fallback) map nothing */
