@@ -77,6 +77,9 @@ def setup():
         subprocess.run(['flac', '-s', '-f', '-o', aud/f'{name}.flac', aud/f'{name}.wav'], check=True)
     a = (aud/'b.flac').read_bytes()                  # a next FLAC with big metadata: 1 MB of padding before its frames
     (aud/'bigmeta.flac').write_bytes(a[:4] + bytes([a[4] & 0x7f]) + a[5:42] + bytes([0x81]) + (1 << 20).to_bytes(3, 'big') + bytes(1 << 20) + a[42:])
+    (aud/'cutinfo.flac').write_bytes((aud/'a.flac').read_bytes()[:30])    # cut inside STREAMINFO
+    c = (aud/'a.flac').read_bytes()
+    (aud/'cutblock.flac').write_bytes(c[:4] + bytes([c[4] & 0x7f]) + c[5:42])  # cut where the next metadata block's header should be
     wav('nextq', RATE, 8 * RATE, 4)
     subprocess.run(['flac', '-s', '-f', '-o', aud/'nextq.flac', aud/'nextq.wav'], check=True)
     # the other formats, 8 s, and the MP3s' shapes
@@ -266,6 +269,17 @@ def exit_apart():
     p.gapless('c.flac')
     at = exits(p, SECONDS + 1)
     check(len(at) >= 1 and bytes(p.pcm[:N * 4]) == source('a') and bytes(p.pcm[N * 4:2 * N * 4]) == source('b'), 'ordinary tracks: bit-exact')
+
+
+def metadata_cut():
+    """A FLAC that ends where a metadata header should be: the walk ends, as next and picked directly, not the same blocks
+    forever. On stock this test doesn't return."""
+    for name in 'cutinfo.flac', 'cutblock.flac':
+        next_ends_at_once(name, 0.3)
+        p = Player()
+        p.song(name)
+        at = exits(p, 2)
+        check(len(at) >= 1 and p.frames() == 0, f'{name} directly: exits {at}, {p.frames()} frames')
 
 
 def next_whole(name):
@@ -732,6 +746,7 @@ if __name__ == '__main__':
     bad_next('nostreams.wma', 0x4826a4)
     iso_no_tracks()
     exit_apart()
+    metadata_cut()
     next_whole('x.wma')
     next_whole('bigmeta.flac')
     xfade_bad_next()

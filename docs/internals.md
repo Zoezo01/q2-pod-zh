@@ -706,6 +706,10 @@ So `exit_hold` (`jal` in place of the send's first word, `0x4226d4`, the only co
 
 A file with no rate at all (`Cannot find codec`) is a different path: `exit`, `error` and the prompt.
 
+## A FLAC cut inside its metadata
+
+`demux_audio_open`'s FLAC metadata walk reads each block's header and skips its length until a block flagged last. Past the file's end, `stream_read_char` gives -256, so the type byte has no last flag and the length is negative: the walk seeks back by it (`0x490ba0`, `0x4929a4`). A file under 256 bytes goes to position 0 (`Invalid seek to negative position`), reads `fLaC` as a block header, skips to the end and starts again, with no end. demo's process watch kills hciplayer and starts it on the same file, over and over, silent, until a key. A longer file lands 256 bytes before its end, and whether that ends depends on those bytes. `FLAC_META_EOF` sends a negative length to the walk's end, where a last block goes: such a file is then a FLAC with no frames, handled as in [a bad file next](#a-bad-file-next).
+
 ## A preload too late
 
 A `set-gapless` that arrives less than one open before demux EOF loses the race: the main loop sees `0xb10de8` at 1, clears it (`0x421a3c`) and cold-starts the file itself. Stock's thread then stored 2 regardless (`0x42bb18`), so the next `set-gapless` found the word non-zero and started nothing, and at that song's EOF the main loop swapped in the stale context: the same song again, bit for bit, while the log and the screen named the next one. A thread that failed stored -1 the same way, which only cost the next preload (a gap, the right song).

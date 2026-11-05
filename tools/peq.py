@@ -101,6 +101,10 @@ SEEK_WORDS = ((0x48d5f0, 0x00822023, 0),           # subu $a0, $a0, $v0, now in 
               (0x48d41c, 0x02e08825, 0),           # move $s1, $s7
               (0x48dce0, 0x1440fdcd, 0x14400003),  # bnez $v0, 0x48d418 -> 0x48dcf0: no probe, so the estimate's
               (0x48d80c, 0x188002d5, 0))           # blez $a0, 0x48e364: a probe past the target steps back, near the end too
+# demux_audio_open's FLAC metadata walk: a length read past the file's end is negative, the walk seeks back by it and, on a
+# short file, reads the same blocks forever. It now ends the walk (docs/internals.md#a-flac-cut-inside-its-metadata).
+FLAC_META_EOF = ((0x490ba0, 0x06000163, 0x06000028),  # bltz $s0, 0x491130 -> 0x490c44, past the last block's branch
+                 (0x4929a4, 0x1000f9e2, 0x1000f8a7))  # b 0x491130 -> b 0x490c44: the last length byte's read at the end
 LIBC = {
     'dlsym': ('void *', 'void *, const char *'),
     'memset': ('void *', 'void *, int, unsigned'),
@@ -313,6 +317,8 @@ def patch_player(raw, out, flac_experiments=()):
     patch_word(data, SEEK_NOSYNC[0], SEEK_NOSYNC[1], j(ps[SEEK_NOSYNC[2]]), 'Seek no sync')
     for address, stock, patched in SEEK_WORDS:
         patch_word(data, address, stock, patched, 'Seek no sync')
+    for address, stock, patched in FLAC_META_EOF:
+        patch_word(data, address, stock, patched, 'FLAC metadata at EOF')
     patch_word(data, SEEK_SLOT, STOCK_SEEK, ps['mp3_seek'], 'Audio demuxer seek slot')
     patch_word(data, RS_OPEN_SLOT, RS_OPEN, ps['rs_open'], 'Resampler open slot')
     patch_word(data, AO_INIT_SLOT, AO_INIT, ps['ao_init'], 'Output init slot')
