@@ -46,6 +46,7 @@ def setup():
     body = bytes([0x69]) * (4096 * 2 * 138)  # DSD, 1 s (test/hci_natural.py)
     (aud/'z.dsf').write_bytes(b'DSD ' + struct.pack('<QQQ', 28, 92 + len(body), 0) + b'fmt ' + struct.pack('<QIIIIIIQI', 52, 1, 0, 2, 2, 2822400, 1, 138 * 4096 * 8, 4096) +
                               bytes(4) + b'data' + struct.pack('<Q', 12 + len(body)) + body)
+    shutil.copy(aud/'z.dsf', aud/'y.dsf')
 
 
 class Ring(PCM):
@@ -605,4 +606,35 @@ for way in 1, 2:
     p.run(SECONDS + 0.8)
     assert len(p.e.streams) == 2, (way, len(p.e.streams))
 print('A DSD file\'s end on Bluetooth and USB: not taken as natural, and the next file reopens.')
+# The jack's natural start, demo's mute and sleep skipped: the line lets go, then DAC_RELEASE_MS, then frames, once.
+# The routes ao_init's branch doesn't take read the mark at init's end. Time from the release to hw_ptr's start.
+def released(first, second, marked=True, preload=False):
+    p = Player()
+    ends, freed = [], []
+    p.e.watch_fn(ps['ao_uninit'], lambda e: ends.append(e.clock))
+    p.e.watch_fn(ps['dac_ioctl'], lambda e: freed.append(e.clock))
+    p.song(first)
+    if preload:
+        p.run(0.2)
+        p.gapless(second)
+    assert p.until(lambda: ends, 8), first
+    if not preload:
+        p.run(0.02)
+        if marked: p.mark()
+        p.song(second)
+    p.run(1)
+    return (p.e.pcm.hw_at - freed[-1]) // 10**6, len(freed), len(p.e.streams)
+for first, second in (('a44.flac', 'z.dsf'), ('z.dsf', 'y.dsf'), ('z.dsf', 'b44.flac'), ('a44.flac', 'b48.flac')):
+    wait, opens, pcms = released(first, second)
+    assert wait == 130 and opens == 2 and pcms == 2, (first, second, wait, opens, pcms)
+# No mark: demo muted and slept as stock, so stock's timing. A preloaded change at another format waits once, the same.
+wait, opens, pcms = released('a44.flac', 'z.dsf', marked=False)
+assert wait == 0 and pcms == 2, (wait, pcms)
+wait, opens, pcms = released('a44.flac', 'b48.flac', preload=True)
+assert wait == 130 and pcms == 2, (wait, pcms)
+# The same format stays open: nothing to release, no wait, and a preload the same.
+for preload in (False, True):
+    wait, opens, pcms = released('a44.flac', 'b44.flac', preload=preload)
+    assert opens == 1 and pcms == 1, (preload, opens, pcms)
+print('The jack, a natural start: DSD on either side and another format wait once before frames; no mark and a stay-open add none.')
 shutil.rmtree(work, ignore_errors=True)

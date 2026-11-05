@@ -783,9 +783,10 @@ cold(44100, gapless=0)
 got = nxt_pressed(NEXT, rate=44100)
 assert got == SILENCED, got
 w(NEXT, 0)
-# A skip after the mark: stock's.
+# A skip after the mark, no stamp over it: stock's order, and the mark, unread, waits once at init's end. Then it's spent.
 cold(44100); pressed(NEXT); w(NEXT, 0)
-got = nxt(); assert got == JACK, got
+got = nxt(); assert got == [*JACK, WAIT], got
+got = nxt(); assert got == [], got
 # Bluetooth and USB: demo's mute is way 0's only (0x5ad1b0 tests its output way), so no mark is looked for and the same
 # format stays open with any word or none. A press's stamp, too: it hears the buffer's rest first (the limit in
 # docs/internals.md). LDAC's answer and AAC's and SBC's 48 kHz both meet the compare; neither way waits for a line.

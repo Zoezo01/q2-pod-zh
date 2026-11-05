@@ -598,10 +598,14 @@ static int dac_word(int pressed) { /* odd: a press's stamp; even: start_mute's m
     return 1;
 }
 static int dac_told(void) { return dac_word(1); }
-/* The end of init (0x4391b0), past stock's checks of the way and the fd: the ioctl is stock's own. */
+/* The end of init (0x4391b0), past stock's checks of the way and the fd: the ioctl is stock's own. A mark still unread
+ * is a natural start ao_init's branch didn't take (DSD at either end, no PCM open, the arm dropped): demo skipped its
+ * mute and sleep for it, so this is what stands in for them. dac_word answers each word once, so a mark ao_init read
+ * can't wait here too. ponytail: a start offset passes this site and dac_unmute reads only a press's, so a natural
+ * start with an offset that reopens keeps the cut, as it has since start_mute. */
 int dac_ioctl(int fd, unsigned request, void *arg) {
     int r = ioctl(fd, request, arg);
-    if (dac_told() || ao_wait) usleep(DAC_RELEASE_MS * 1000);
+    if (dac_told() || ao_wait || dac_word(0)) usleep(DAC_RELEASE_MS * 1000);
     return r;
 }
 /* seek (0x42b164), a start offset's or an mcl-seek's: demo stamps a user's, not A-B Repeat's loop. */
