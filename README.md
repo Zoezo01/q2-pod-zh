@@ -119,7 +119,7 @@ To keep a folder out of Songs, Albums, Artists, Cover Flow and library shuffle, 
 
 - **For users:** [User guide](https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf) · [Setup](docs/setup.md) · [Changelog](docs/changelog.md)
 - **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
-- **Hardware:** [Replacing the battery](docs/battery-replacement.pdf) · [Teardown photo](docs/teardown.jpg)
+- **Hardware:** [Replacing the battery](docs/battery.md) · [Teardown photo](docs/teardown.jpg)
 - **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md)
 
 ## License
