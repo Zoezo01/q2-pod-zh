@@ -902,6 +902,7 @@ static int frames_follow(int fd, unsigned head, unsigned hz) {
 int forced_eof_c(char *mp, int pos) {
     static const unsigned short rates[3] = { 44100, 48000, 32000 };
     unsigned char h[64];
+    if (DSD_FILE == 1) return 1; /* stock's 0x4232cc mutes it from length - 1, and this store is what ends that */
     void *d = AT(mp, 0x28, void *), *priv = d ? AT(d, 0xc70, void *) : 0, *s = d ? AT(d, 0x20, void *) : 0;
     if (!s || AT(d, 0, unsigned) != AUDIO_DEMUXER || !priv || AT(priv, 0, int) != 1) return 0;
     int fd = AT(s, 0x14, int), got = 0;

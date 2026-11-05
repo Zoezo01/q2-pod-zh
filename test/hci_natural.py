@@ -640,6 +640,13 @@ def dsd():
         if name == 'whole.dsf': whole = p.frames()
         else: check(p.frames() >= whole - 8192, f'{name}: as long as the whole one ({p.frames()} of {whole})')
     check(whole > 4 * RATE, f'DSD plays, {whole} frames')
+    p = Player()  # past its length, where stock mutes it: stock's store ends it, not the file's end with the clock running
+    p.song('whole.dsf')
+    p.run(1)
+    p.e.w32(0xb10e84, 2)
+    p.settled(SECONDS + 3)
+    print(f'     whole.dsf, a length of 2 s: {p.frames()} frames')
+    check(p.frames() < whole * 5 // 8, f'DSD past its length ends, {p.frames()} of {whole}')
 
 
 def seek_flac(name, rate, frames, block):

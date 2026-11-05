@@ -684,7 +684,7 @@ M4A, Ogg, WavPack, FLAC, WAV and WMA with the same 3 MB appended play exactly wh
 
 `ponytail:` a joined file whose own big tag is being read at the count + 1 s, or whose rate changes, ends there, as stock. Junk after a joined file can end it a little before its audio does: the chain is read ahead of what's playing. The real ceiling is noise. An MP3 with no header followed by junk still plays it, at full scale, about 0.74 s per MB (3 MB: 2.22 s) with elapsed running past the total, exactly as stock does: its length estimate counts the junk. Nothing says where its audio ends. A WMA's elapsed still starts about 3 s on, as in stock, so Next's preload and Crossfade's hold come about 3 s early, which neither minds.
 
-A DSF's header can't understate here: the same file with its sample count halved plays the same length. Stock's `0x4232cc` calls the mute helper `0x43b280(1)` at position >= length - 1 for formats `0xc`, `0xe`, `0x10`, `0x11`; on the DSFs tried, that came about 27 ms before the end. A DSD file that does understate could play muted past its length: inferred, not produced.
+A DSF's header can't understate here: the same file with its sample count halved plays the same length, and a halved data chunk stops there. Stock's `0x4232cc` calls the mute helper `0x43b280(1)` at position >= length - 1 for formats `0xc`, `0xe`, `0x10`, `0x11` with `0xb10e5c` at 1, and relies on the store to end such a track, so `forced_eof_c` keeps stock's store whenever `0xb10e5c` is 1. `test/hci_natural.py` lowers the length under a playing DSF to reach it.
 
 ## A bad file next
 
