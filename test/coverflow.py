@@ -59,6 +59,7 @@ timer_add timer_remove navigator_back_to_home navigator_back window_manager_clos
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
+on_home_music_onclick widget_layout
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
@@ -127,12 +128,15 @@ static void pattern(unsigned char *px, unsigned seed) {
             px[4 * (y * 160 + x) + 3] = 255;
         }
 }
-static int note_loads, note_drawn[4], note_fail; /* Home's no-cover note: a theme image, translucent */
+static int note_loads, note_drawn[4], note_fail; /* the pane image: a theme image, translucent */
+static char pane_image[32];
 int widget_load_image(void *x, const char *url, void *b) {
     struct stat s;
-    if (!strcmp(url, "nano_note")) {
+    if (!strncmp(url, "nano_", 5)) {
+        snprintf(pane_image, sizeof pane_image, "%s", url);
         memset(b, 0, 0x18);
-        ((unsigned *)b)[0] = 100, ((unsigned *)b)[1] = 115, note_loads += !note_fail;
+        int note = strstr(url, "note") != 0; /* the pane icons are 96 x 96 */
+        ((unsigned *)b)[0] = note ? 100 : 96, ((unsigned *)b)[1] = note ? 115 : 96, note_loads += !note_fail;
         return note_fail;
     }
     int themed = theme_placeholder && strncmp(url, "file://", 7);
@@ -208,23 +212,30 @@ void *widget_lookup(void *x, const char *n, int r) {
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */
 int ipod_home(void) { return home_mode; }
+void library_rows(void *list) {}
+void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
+int library_count(const char *sql) { return strstr(sql, "sum(e=0)") ? 312 : 704; }
+int on_home_music_onclick(void *ctx, void *e) { return 0; }
+int widget_layout(void *w) { return 0; }
+void bar_title_sync(void *win) {}
 /* CF_STYLE0/1 (minimal, classic): main() passes each theme's .cf from tools/theme.py ROLE_MACROS */
 static theme_t shim_themes[3] = {
     { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_full_row = HOME_CLASSIC_ROW, .home_text_x = HOME_CLASSIC_TEXT_X,
       .home_label_end = { HOME_CLASSIC_LABEL_END, HOME_CLASSIC_LABEL_END }, .cf = CF_STYLE1 },
-    { .home_label_end = { 28, 33 }, .home_text_x = 20, .home_full_row = 375,
+    { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
       .home_pane =
           { 4, { 0, 44, 88, 100 }, { 0x8ca2ad, 0x63717b, 0x425152, 0x425152 } }, .pane_shadow = 0,
-      .pane_shadow_w = 23,
-      .pane_shadow_a = 107, .pane_note_x = 35, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
+      .pane_shadow_w = 25,
+      .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 40, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
       .pane_count_px = 27, .cf = CF_STYLE1 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
 int client_h(void) { return 320 - stub_bar_h; }
 int theme_font(void *w, int role, int was) { return was; } /* the font only: no geometry */
 /* The Split pane's painters: the stops asked for, each fill in the colour last set, the count's text. */
+#define SHADOW_A(i) ((int[]){ 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }[i])
 static int stops_calls, stops_rect[4], fills;
 static const stops_t *stops_arg;
 static struct { int x, y, w, h; unsigned color; } fill[1024];
@@ -293,8 +304,8 @@ int bitmap_unlock_buffer(void *b) { return 0; }
 unsigned bitmap_get_line_length(void *b) { return ((unsigned *)b)[2]; }
 int canvas_draw_image(void *c, void *b, const void *src, const void *dst) {
     const int *r = dst, *q = src;
-    if (!(((unsigned short *)b)[6] & 1) && ((unsigned *)b)[0] == 100) {
-        assert(!memcmp(q, (int[]){ 0, 0, 100, 115 }, 16));
+    if (!(((unsigned short *)b)[6] & 1) && (((unsigned *)b)[0] == 100 || ((unsigned *)b)[0] == 96)) {
+        assert(!memcmp(q, (int[]){ 0, 0, ((unsigned *)b)[0], ((unsigned *)b)[1] }, 16));
         memcpy(note_drawn, r, sizeof note_drawn);
         return 0;
     }
@@ -1675,9 +1686,10 @@ int main(void) {
     coverflow_home_layout();
     assert(!memcmp(geo, split, sizeof split));
     /* Nano (shim_themes[2]): no cover shows the pane instead of default_album_home. The art spans the
-     * panel and paints the pane's stops over all of it, a 23-column shadow down its left edge (black,
-     * alpha 107 fading to 0), the note (its image, the theme's place) and the queue's count, "12 Songs",
-     * at 27 px, centred on its 24 px line box at the theme's place. */
+     * panel and paints the pane's stops over all of it, its light (white, alpha 40 at the left, 0 at the
+     * right edge, a band per alpha), the shadow down its left edge (black, the theme's alpha per column),
+     * the note (its image, the theme's place) and the queue's count, "12 Songs", at 27 px, centred on its
+     * 24 px line box at the theme's place. */
     unsigned queued = queue.n;
     classic = 2; home_mode = 0; stub_bar_h = 26; coverflow_home_layout();
     queue.n = 12; *(volatile int *)MCL_POS = 0; cover_fail = 1; coverflow_home_art(win);
@@ -1687,11 +1699,17 @@ int main(void) {
     fills = 0; stops_calls = 0; memset(note_drawn, 0, sizeof note_drawn); coverflow_home_clip(home_art, canvas, 0);
     assert(stops_calls == 1 && !memcmp(stops_rect, (int[]){ 0, 0, 375 - HOME_SPLIT_W, 294 }, 16) &&
            stops_arg == &shim_themes[2].home_pane);
-    for (int i = 0; i < 23; ++i)
-        assert(fill[i].x == i && fill[i].w == 1 && fill[i].h == 294 && fill[i].color >> 24 == 107u * (23 - i) / 23 &&
-               !(fill[i].color & 0xffffff));
-    assert(fills == 23 && !strcmp(centred_text, "12 Songs"));
-    assert(!memcmp(note_drawn, (int[]){ 35, 57, 100, 115 }, 16));
+    for (int i = 0, x = 0; i < 40; x += fill[i++].w) {
+        assert(fill[i].x == x && fill[i].h == 294 && fill[i].color >> 24 == 40u - i && (fill[i].color & 0xffffff) == 0xffffff);
+        assert(fill[i].w == 4 || fill[i].w == 5);
+        if (i == 39) assert(x + fill[i].w == 375 - HOME_SPLIT_W);
+    }
+    for (int i = 0; i < 25; ++i) {
+        const typeof(*fill) *f = &fill[40 + i];
+        assert(f->x == i && f->w == 1 && f->h == 294 && (int)(f->color >> 24) == SHADOW_A(i) && !(f->color & 0xffffff));
+    }
+    assert(fills == 65 && !strcmp(centred_text, "12 Songs"));
+    assert(!memcmp(note_drawn, (int[]){ 40, 57, 100, 115 }, 16));
     assert(!memcmp(centred_box, (int[]){ 0, 185, 182, 24 }, 16) && centred_px == 27);
     assert((centred_color & 0xffffff) == 0xffffff); /* light 0, the dark half: the count white, raw */
     assert(fill_color == 0x12345678); /* the LCD's fill back */
@@ -1699,7 +1717,7 @@ int main(void) {
     assert(!(centred_color & 0xffffff)); /* the light half: black, which ui_ink draws as the white paper */
     light = 0;
     note_fail = 1; fills = 0; coverflow_home_clip(home_art, canvas, 0); note_fail = 0;
-    assert(fills == 23 && !strcmp(centred_text, "12 Songs")); /* a missing image: the rest still draws */
+    assert(fills == 65 && !strcmp(centred_text, "12 Songs")); /* a missing image: the rest still draws */
     *centred_text = 0; queue.n = 0; coverflow_home_art(win); fills = 0; coverflow_home_clip(home_art, canvas, 0);
     assert(!*centred_text && fills); /* no queue: the note alone */
     /* A panning cover or a still one: no pane. */
@@ -1708,10 +1726,10 @@ int main(void) {
     assert(!stops_calls && *art);
     /* Where the left column meets the cover: the pane's own shadow over it, from the panel's edge, whatever the art's
      * own size and place, all the client's rows; the fill back */
-    assert(fills == 23 && fill_color == 0x12345678);
-    for (int i = 0; i < 23; ++i)
+    assert(fills == 25 && fill_color == 0x12345678); /* the shadow alone: the light is the pane's */
+    for (int i = 0; i < 25; ++i)
         assert(fill[i].x == HOME_SPLIT_W - geo[0] + i && fill[i].y == -geo[1] && fill[i].w == 1 && fill[i].h == 294 &&
-               fill[i].color >> 24 == 107u * (23 - i) / 23 && !(fill[i].color & 0xffffff));
+               (int)(fill[i].color >> 24) == SHADOW_A(i) && !(fill[i].color & 0xffffff));
     classic = 0; stub_bar_h = 30; coverflow_home_layout();
     fills = 0; coverflow_home_clip(home_art, canvas, 0);
     assert(!fills); /* Minimal and Classic have no pane shadow to draw */
@@ -1761,7 +1779,8 @@ def main():
     nano, tight = builtins()[2], re.sub(r'\s', '', shim[2])
     assert nano['home_top'] == 0 and f"home_label_end={{{nano['home_label_end[0]']},{nano['home_label_end[1]']}}}" in tight
     assert 'home_pane=' + stops_c(nano['home_pane']).replace(' ', '') in tight, 'shim_themes drifted from Nano'
-    for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_shadow_a', 'pane_note_x', 'pane_note_y', 'pane_count_y', 'pane_count_w', 'pane_count_px'):
+    assert 'pane_shadow_a={' + ','.join(map(str, nano['pane_shadow_a'])) in tight, 'shim_themes drifted from Nano'
+    for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_light_a', 'pane_note_x', 'pane_note_y', 'pane_count_y', 'pane_count_w', 'pane_count_px'):
         assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == nano[field], f'shim_themes drifted from Nano: {field}'
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'

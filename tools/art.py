@@ -5,6 +5,7 @@ import re
 import struct
 import zlib
 from build import ROOT
+from ipod import STATE_W
 
 SUB = 8  # sub-rows per pixel; columns are exact within a sub-row
 
@@ -37,52 +38,70 @@ def _arc(p0, rx, ry, phi, large, sweep, p1, steps=48):
 
 
 def path(d):
-    """An SVG path's d (absolute M L H V C A Z, an M's further pairs lines) as closed polylines."""
-    tokens = re.findall(r'[MLHVCAZ]|-?[0-9.]+', d)
+    """An SVG path's d (M L H V C Q A Z, absolute or relative, an M's further pairs lines) as closed polylines."""
+    tokens = re.findall(r'[MLHVCQAZmlhvcqaz]|-?[0-9]*\.?[0-9]+', d)
     polys, pts, i, cmd = [], [], 0, None
+    cur = (0.0, 0.0)
 
     def num():
         nonlocal i
         i += 1
         return float(tokens[i - 1])
+
+    def at(rel):  # the next pair, from the current point in a lower-case command
+        x, y = num(), num()
+        return (cur[0] + x, cur[1] + y) if rel else (x, y)
     while i < len(tokens):
-        if tokens[i] in 'MLHVCAZ':
+        if tokens[i].isalpha():
             cmd = tokens[i]
             i += 1
-        if cmd == 'Z':
+        rel, op = cmd.islower(), cmd.upper()
+        if op == 'Z':
             polys.append(pts)
-            pts = []
+            cur, pts = pts[0], []
             continue
-        if cmd == 'M':
-            pts = [(num(), num())]
-            cmd = 'L'
-        elif cmd == 'L':
-            pts.append((num(), num()))
-        elif cmd == 'H':
-            pts.append((num(), pts[-1][1]))
-        elif cmd == 'V':
-            pts.append((pts[-1][0], num()))
-        elif cmd == 'C':
-            p0, p1, p2, p3 = pts[-1], (num(), num()), (num(), num()), (num(), num())
+        if op == 'M':
+            cur = at(rel)
+            pts = [cur]
+            cmd = 'l' if rel else 'L'
+        elif op == 'L':
+            cur = at(rel)
+            pts.append(cur)
+        elif op == 'H':
+            cur = (num() + (cur[0] if rel else 0), cur[1])
+            pts.append(cur)
+        elif op == 'V':
+            cur = (cur[0], num() + (cur[1] if rel else 0))
+            pts.append(cur)
+        elif op in 'CQ':
+            ctrl = [cur, *(at(rel) for _ in range(3 if op == 'C' else 2))]
+            n = len(ctrl) - 1
             for k in range(1, 25):
                 t = k / 24
-                pts.append(tuple((1 - t)**3 * p0[a] + 3 * (1 - t)**2 * t * p1[a] + 3 * (1 - t) * t**2 * p2[a] + t**3 * p3[a] for a in (0, 1)))
-        elif cmd == 'A':
+                weights = [math.comb(n, m) * (1 - t)**(n - m) * t**m for m in range(n + 1)]
+                pts.append(tuple(sum(w * p[a] for w, p in zip(weights, ctrl)) for a in (0, 1)))
+            cur = pts[-1]
+        elif op == 'A':
             rx, ry, phi, large, sweep = num(), num(), num(), num(), num()
-            pts += _arc(pts[-1], rx, ry, phi, large, sweep, (num(), num()))
+            end = at(rel)
+            pts += _arc(cur, rx, ry, phi, large, sweep, end)
+            cur = pts[-1]
     return polys + ([pts] if pts else [])
 
 
-def stroke(polys, width):
-    """Closed polylines' stroke, round joined, as polygons a union fills."""
+def stroke(polys, width, closed=True):
+    """Polylines' stroke, round joined and capped, as polygons a union fills."""
     r, out = width / 2, []
+    circle = lambda x, y: [(x + r * math.cos(a * math.pi / 8), y + r * math.sin(a * math.pi / 8)) for a in range(16)]
     for poly in polys:
-        for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1]):
+        if not closed:
+            out.append(circle(*poly[0]))
+        for (x0, y0), (x1, y1) in zip(poly, poly[1:] + (poly[:1] if closed else [])):
             n = math.hypot(x1 - x0, y1 - y0)
             if n:
                 nx, ny = (y1 - y0) / n * r, (x0 - x1) / n * r
                 out.append([(x0 + nx, y0 + ny), (x1 + nx, y1 + ny), (x1 - nx, y1 - ny), (x0 - nx, y0 - ny)])
-            out.append([(x1 + r * math.cos(a * math.pi / 8), y1 + r * math.sin(a * math.pi / 8)) for a in range(16)])
+            out.append(circle(x1, y1))
     return out
 
 
@@ -105,6 +124,8 @@ def coverage(polys, box):
             if end is None or b > end:
                 end = b
             a, b = max(a - x0, 0), min(b - x0, w)
+            if a >= b:  # inside the union so far
+                continue
             for px in range(int(a), math.ceil(b)):
                 cov[row + px] += (min(b, px + 1) - max(a, px)) / SUB
     return cov
@@ -149,8 +170,9 @@ def png(w, h, rgba):
 
 
 # Screen coordinates, the bar's rows and columns; each image's box is where the payload draws it.
-BOLT = 'M305.6 6 301.8 12.4 304.6 12.4 303.8 17.2 308 10.6 305.2 10.6 306.6 6Z'
-BOLT_BOX = (292, 5, 27, 13)  # the battery's inside (navigation.c nano_battery)
+BOLT = 'M302.6 6 298.8 12.4 301.6 12.4 300.8 17.2 305 10.6 302.2 10.6 303.6 6Z'
+PLUG = 'M295 9.4h3.4v1.5H295ZM295 12.1h3.4v1.5H295ZM298.2 7.8h4.3a3.7 3.7 0 0 1 0 7.4h-4.3ZM305 10.8h5v1.5h-5Z'
+BOLT_BOX = (290, 5, 26, 13)  # the battery's inside (navigation.c nano_battery)
 def note(svg):
     """The note's RGBA bytes from its drawing, note.svg: see that file."""
     def linear(name):
@@ -178,19 +200,69 @@ def note(svg):
                               (stroke(shape, 1), lambda x, y: (0xffffff, 0.42))])
 
 
+SORT = 'M0 0H16V2H0ZM0 5H11V7H0ZM0 10H6V12H0Z'
+SORT_BOX = (0, 0, 16, 12)  # Songs' Sort, white as stock's glyphs: Light Mode flips it to the ink
+# Home's pane (coverflow.c): original drawings in the note's coordinates. Each but the note is fitted into a 92 px box
+# centred on PANE_CENTRE, the note's own place standing for its size; all share one fill and stroke (icon).
+PANE_ICONS = {
+    'note': 'M254 82.5 317 71.5V156A16 12.5 -12 1 1 308.5 145.5V101L262 109.5V165A17 12.5 -12 1 1 254 153.5Z',
+    'folder': 'M230 92q0-6 6-6h24l8 9h43q6 0 6 6v60q0 6-6 6h-75q-6 0-6-6Z',
+    'stack': 'M246 94h60v60h-60ZM228 104l14-4v48l-14-4ZM324 104l-14-4v48l14-4Z',
+    'game': 'M251 96h44c16 0 25 15 27 35 2 17-3 28-11 28-7 0-11-6-16-13-3-4-6-6-11-6h-22c-5 0-8 2-11 6-5 7-9 13-16 13-8 0-13-11-11-28 2-20 11-35 27-35Z'
+            'M243 109v9h-9v8h9v9h8v-9h9v-8h-9v-9ZM296 108a6 6 0 1 0 .01 0ZM284 120a6 6 0 1 0 .01 0Z',
+    'wave': 'M273 113a11 11 0 1 0 .01 0ZM293.1 105.9A27 27 0 0 1 293.1 142.1L287.9 137.4A20 20 0 0 0 287.9 110.6Z'
+            'M304.2 95.9A42 42 0 0 1 304.2 152.1L299.0 147.4A35 35 0 0 0 299.0 100.6ZM252.9 142.1A27 27 0 0 1 252.9 105.9L258.1 110.6A20 20 0 0 0 258.1 137.4Z'
+            'M241.8 152.1A42 42 0 0 1 241.8 95.9L247.0 100.6A35 35 0 0 0 247.0 147.4Z',
+    'gear': 'M313.7 140.8L309.6 148.4L296.3 147.3L291.3 151.4L289.8 164.7L281.6 167.2L273.0 157.0L266.6 156.4L256.2 164.7L248.6 160.6L249.7 147.3'
+            'L245.6 142.3L232.3 140.8L229.8 132.6L240.0 124.0L240.6 117.6L232.3 107.2L236.4 99.6L249.7 100.7L254.7 96.6L256.2 83.3L264.4 80.8L273.0 91.0'
+            'L279.4 91.6L289.8 83.3L297.4 87.4L296.3 100.7L300.4 105.7L313.7 107.2L316.2 115.4L306.0 124.0L305.4 130.4ZM273 108a16 16 0 1 0 .01 0Z'}
+PANE_CENTRE, PANE_FIT = (278, 124), 92
+ICON_BOX = (230, 76, 96, 96)  # the icons' image in the drawing's coordinates: home.pane.icon_x, icon_y place it
+ICON_GRADIENT = ((232, 74), (310, 168), ((0, 1), (.42, .9), (.52, .5), (1, .3)))  # across the drawing, white in these alphas
+CHEVRON = 'M2.9 3 8.4 8.5 2.9 14'
+CHEVRON_STROKE = 3.2
+CHEVRON_BOX = (0, 0, 12, 16)  # the row's chevron (navigation.c paint_chevrons, paint_into)
+def icon(d, fit):
+    """A pane icon's RGBA bytes: its subpaths even-odd in the white gradient, stroked at .42, 1 px in its own scale."""
+    polys = path(d)
+    xs, ys = [p[0] for poly in polys for p in poly], [p[1] for poly in polys for p in poly]
+    k = min(PANE_FIT / (max(xs) - min(xs)), PANE_FIT / (max(ys) - min(ys))) if fit else 1
+    cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+    place = (lambda p: (PANE_CENTRE[0] + k * (p[0] - cx), PANE_CENTRE[1] + k * (p[1] - cy))) if fit else (lambda p: p)
+    local = (lambda x, y: (cx + (x - PANE_CENTRE[0]) / k, cy + (y - PANE_CENTRE[1]) / k)) if fit else (lambda x, y: (x, y))
+    (ax, ay), (bx, by), stops = ICON_GRADIENT
+
+    def paint(x, y):
+        x, y = local(x, y)
+        t = max(0, min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax)**2 + (by - ay)**2)))
+        for (p0, a0), (p1, a1) in zip(stops, stops[1:]):
+            if t <= p1:
+                return 0xffffff, a0 + (a1 - a0) * (t - p0) / (p1 - p0)
+    placed = [[place(p) for p in poly] for poly in polys]
+    # one even-odd polygon: each subpath joined from the first's start and back, those seams crossed twice
+    whole = [q for poly in placed for q in (*poly, poly[0], placed[0][0])]
+    return compose(ICON_BOX if fit else NOTE_BOX, [([whole], paint), (stroke(placed, k), lambda x, y: (0xffffff, 0.42))])
+
+
 NOTE_BOX = (222, 66, 100, 115)  # the drawing's viewBox
 STATE = {'play': 'M270.5 4.5 282.5 11.5 270.5 18.5Z', 'pause': 'M270.5 4.5H275V18.5H270.5ZM278 4.5H282.5V18.5H278Z'}
-STATE_BOX = (266, 0, 20, 22)  # img_state's box in the bar (tools/ipod.py status_bar)
+STATE_BOX = (266, 0, STATE_W, 22)  # img_state's box in the bar (tools/ipod.py status_bar)
 STATE_Y = (4, 19)  # the fill's and edge's first and last rows
 
 
 def images(t):
     """Theme t's generated images, {name: PNG bytes}; those its values state."""
     out = {}
+    if t['chevron_x']:
+        out['sort_bars'] = png(*SORT_BOX[2:], compose(SORT_BOX, [(path(SORT), lambda x, y: (0xffffff, 1))]))
+    if t['chevron_x']:  # white on the band in both halves, its point on the middle row
+        out[f'{t["id"]}_chevron'] = png(*CHEVRON_BOX[2:], compose(CHEVRON_BOX, [
+            (stroke(path(CHEVRON), CHEVRON_STROKE, closed=False), lambda x, y: (0xffffff, 1))]))
     if t['bolt']:
         shape = path(BOLT)
         out[f'{t["id"]}_bolt'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(stroke(shape, 1.6), lambda x, y: (0xffffff, t['bolt_halo_a'] / 255)),
                                                                        (shape, lambda x, y: (t['bolt'], 1))]))
+        out[f'{t["id"]}_plug'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(path(PLUG), lambda x, y: (t['bolt'], 1))]))
     if t['state_stops']:
         fill, edge = gradient(t['state_stops'], *STATE_Y), gradient(t['state_edge'], *STATE_Y)
         for name, d in STATE.items():
@@ -203,4 +275,8 @@ def images(t):
     drawing = ROOT/f'assets/themes/{t["id"]}/note.svg'
     if drawing.exists():
         out[f'{t["id"]}_note'] = png(*NOTE_BOX[2:], note(drawing.read_text()))
+    if t['pane_icon_x']:
+        for name, d in PANE_ICONS.items():
+            fit = name != 'note'
+            out[f'{t["id"]}_icon_{name}'] = png(*(ICON_BOX if fit else NOTE_BOX)[2:], icon(d, fit))
     return out

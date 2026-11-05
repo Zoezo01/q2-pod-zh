@@ -194,6 +194,8 @@ extern void coverflow_home_layout(void);
 extern int ringnav_reboot(void);
 extern void coverflow_home_clip(void *w, void *canvas, int begin);
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
+extern const char *coverflow_home_title(void);
+extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
     photos_open(const char *root), books_paint(void *w, void *canvas), books_open(const char *root),
@@ -441,7 +443,8 @@ typedef struct {
      * level, charge and low state. Nano's bar also has a title (bar_title_sync), from the top
      * window title_win and, when a label holds it, title_lbl (both found once per window). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
-        *bar_title, *title_win, *title_lbl;
+        *bar_title, *title_win, *title_lbl,
+        *action_view; /* Songs' action bar on title_win, under a set with action_row */
     int codec, codec_step, batt_mode;
     unsigned codec_timer, batt_key, bar_timer;
     int pct_digit, pct_sign; /* BATT_PX advances of '0' and '%', measured on the first paint */
@@ -1256,10 +1259,12 @@ static int view_top(menu_t *m) {
     return m->kind == 2 ? I(m->w, TABLE_TOP) : m->kind == 1 ? I(m->w, SCROLL_Y) : 0;
 }
 
+static int sel_height(menu_t *m);
+
 /* Largest viewport top that still shows content; the clamp bound for every glide. */
 static int max_top(menu_t *m) {
-    if (m->kind == 2) return m->rows * m->row - m->height;
-    return m->kind == 1 ? I(m->w, VIEW_CONTENT_H) - m->height : 0;
+    if (m->kind == 2) return m->rows * m->row - sel_height(m);
+    return m->kind == 1 ? I(m->w, VIEW_CONTENT_H) - sel_height(m) : 0;
 }
 
 static rect_t bounds(menu_t *m, int i) {
@@ -1337,13 +1342,13 @@ static void reveal(menu_t *m, int id, int immediate) {
         h = r.h;
     }
     /* A tall row cannot fit: show its title consistently instead of alternating edges. */
-    int margin = clamp_step((m->height - h) / 2, SCROLL_MARGIN, 0);
-    int want = h > m->height || y - top < margin  ? y - margin
-               : y - top > m->height - h - margin ? y - (m->height - h - margin)
-                                                  : top;
+    int height = sel_height(m), margin = clamp_step((height - h) / 2, SCROLL_MARGIN, 0);
+    int want = h > height || y - top < margin  ? y - margin
+               : y - top > height - h - margin ? y - (height - h - margin)
+                                               : top;
     /* The first row brings in whatever heads the list above it (the EQ page's graph) when both
      * fit, rather than stopping a margin into it. Kind 1's ids are its row order. */
-    if (m->kind == 1 && id == 0 && y + h + margin <= m->height) want = 0;
+    if (m->kind == 1 && id == 0 && y + h + margin <= height) want = 0;
     want = clamp_step(want, max_top(m), 0);
     if (immediate) {
         wheel_offset(m, want);
@@ -1893,6 +1898,16 @@ unsigned accent_tone(int tone) {
     return tone == TONE_LIGHT && S->flags & SCHEME_CARD ? S->fill : tone_of(S->tones, tone);
 }
 
+/* The height a selected row scrolls in: the surface's, cut at the set's list_end on screen, where
+ * the rows below draw on to the glass but a selected one's text would not show. */
+static int sel_height(menu_t *m) {
+    int y = 0, end = geom_val(V_LIST_END);
+    if (!end || m->kind == 3 || m->kind == 4) return m->height;
+    void *wm = window_manager();
+    for (void *p = m->w; p && P(p, W_PARENT) != wm; p = P(p, W_PARENT)) y += I(p, W_Y);
+    return end - y < m->height ? end - y : m->height;
+}
+
 /* A color_t (bytes r, g, b, a) that is stock red blended with a neutral, t * red + k * white per
  * channel within RED_TOLERANCE, becomes the same blend of one of the preset's tones (TONE_RED for
  * text and images, TONE_LIGHT for every other color): flat reds,
@@ -2087,6 +2102,7 @@ static int drill(void *w) {
     return ctx >= 0 && (contexts[ctx].flags & DRILL);
 }
 
+static int geom(int group);
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
  * list_into: not in multi-select, and not on grid tiles. Home has none, except Classic's, which
  * rides its selection bar alone, nudge included. A theme's chevron_sel (Nano's) draws only the
@@ -2095,23 +2111,27 @@ static void paint_chevrons(void *w, void *canvas) {
     unsigned bitmap[64], white[64]; /* bitmap_t */
     rect_t old;
     void *win = window_of(w);
-    int home = home_menu(win), sel_only = theme()->chevron_sel;
+    const theme_t *T = theme();
+    int home = home_menu(win), sel_only = T->chevron_sel,
+        box = home && ipod_home() != 1 ? T->home_chevron_x : T->chevron_x;
     if (g_navbar_status || !kind(w) || !P(canvas, CANVAS_LCD) || !drill(w) ||
-        (home && (!theme()->chevron_home || st.sel_w != w)) || !load_rows(&g_menu, w) ||
+        (home && (!T->chevron_home || st.sel_w != w)) || !load_rows(&g_menu, w) ||
         widget_load_image(w, "list_into", bitmap) || !clip_surface(canvas, &g_menu, &old))
         return;
     /* Light Mode: the row on a coloured bar or card keeps stock's white `>`, as an iPod's blue bar
      * does; by path, the image hook leaves it unflipped. */
     int lit = (sel_only || (ipod_light() && st.sel_accent)) && st.sel_w == w &&
-              !widget_load_image(w, LIST_INTO_WHITE, white);
+              !widget_load_image(w, box ? "nano_chevron" : LIST_INTO_WHITE, white);
     for (int i = 0; i < g_menu.n; ++i) {
         rect_t r = bounds(&g_menu, i);
         if (2 * r.w >= I(w, W_W) && drill(g_menu.at[i]) && (!home || i == st.sel_row) &&
             (!sel_only || (lit && i == st.sel_row)))
             canvas_draw_icon(
                 canvas, lit && i == st.sel_row ? white : bitmap,
-                r.x + r.w - CHEVRON_W + (int)bitmap[0] / 2 +
-                    (home ? (ipod_home() == 1 ? HOME_FULL_CHEVRON_SHIFT : HOME_CHEVRON_SHIFT) : 0),
+                box ? r.x + box + (int)white[0] / 2
+                    : r.x + r.w - CHEVRON_W + (int)bitmap[0] / 2 +
+                          (home ? (ipod_home() == 1 ? HOME_FULL_CHEVRON_SHIFT : HOME_CHEVRON_SHIFT)
+                                : 0),
                 home ? st.sel_y : r.y + r.h / 2); /* bitmap_t width @0 */
     }
     canvas_set_clip_rect(canvas, &old);
@@ -2168,7 +2188,7 @@ static void paint_letter(void *w, void *canvas) {
 /* Classic under Square: an iPod's square art on Now Playing, the full-screen art, Cover Flow
  * (coverflow_render) and list thumbnails; stock's placeholder and Home: Carousel's cards keep their
  * own corners. */
-int ipod_square_art(void) { return theme()->art_square && !st.rounded; }
+int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUNDED); }
 
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
  * NP_ART_RADIUS at 166px, painted over it in the page's
@@ -2386,6 +2406,7 @@ static void paint_selection(void *w, void *canvas) {
     /* Touch hides the selection until the wheel or a button, except on Home (iPod's list) and a
      * pop-up's buttons, which open on their first (Cancel). */
     int home = home_menu(top);
+    if (home && i >= 0) coverflow_home_row(w, g_menu.at[i], g_menu.id[i], 1);
     if (i < 0 || (!shown && !home && g_menu.kind != 4)) return;
     rect_t r = bounds(&g_menu, i), old;
     /* A boundary detent nudges the selection against the end until it springs back. */
@@ -2421,13 +2442,19 @@ static void paint_selection(void *w, void *canvas) {
             : (void *)0;
     if (band && (!tile || g_menu.kind == 4)) {
         if (painter == SEL_STOPS) { /* square and full width: the glass clips it */
-            int top = !!S->sel_top, edge = !!S->sel_edge;
+            int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
+                edge = tall ? 2 : !!S->sel_edge;
             if (top) {
                 stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
                 canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
             }
             paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
-            if (edge) {
+            if (tall) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_edge));
+                canvas_fill_rect(canvas, r.x, r.y + r.h - 2, r.w, 1);
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_line));
+                canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
+            } else if (edge) {
                 stock_canvas_set_fill_color(canvas, RGBA(S->sel_edge));
                 canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
             }
@@ -2547,13 +2574,15 @@ static void paint_radio(void *w, void *canvas) {
 static void paint_into(void *w, void *canvas) {
     unsigned bitmap[64];                         /* bitmap_t: width @0, height @4 */
     int sel_only = w ? theme()->chevron_sel : 0; /* in either half: stock's own is empty */
+    int box = w ? theme()->chevron_x : 0;
     if (!w || !(ipod_light() || sel_only) || !st.sel_accent || !P(canvas, CANVAS_LCD) ||
         tk_strcmp(widget_get_prop_str(w, "image", ""), "list_into") ||
-        !painting_in(st.sel_accent) || widget_load_image(w, LIST_INTO_WHITE, bitmap))
+        !painting_in(st.sel_accent) ||
+        widget_load_image(w, box ? "nano_chevron" : LIST_INTO_WHITE, bitmap))
         return;
     /* Only the middle half is cleared, where the glyph's ink is (rows 16-33 of 50): the whole
      * 50 px image would cross a 48 px row's top, over the bar's highlight and the row above. */
-    int x = I(w, W_W) / 2, y = I(w, W_H) / 2;
+    int x = box ? box + (int)bitmap[0] / 2 - I(canvas, CANVAS_X) : I(w, W_W) / 2, y = I(w, W_H) / 2;
     rect_t clear = { x - (int)bitmap[0] / 2, y - (int)bitmap[1] / 4, (int)bitmap[0],
                      (int)bitmap[1] / 2 };
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
@@ -3845,6 +3874,13 @@ static void bar_sync(void *bar) {
     if (st.home_rockbox != rockbox_available()) coverflow_home_layout();
     /* Nano's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme();
+    /* A relayout puts them back in the row; the bar paints at least once a second. */
+    if (T->bar_bt_dy && I(st.bar_bt, W_Y) != T->bar_bt_dy)
+        widget_move_resize(st.bar_bt, I(st.bar_bt, W_X), T->bar_bt_dy, I(st.bar_bt, W_W),
+                           I(st.bar_bt, W_H));
+    if (T->bar_wifi_dy && I(st.bar_wifi, W_Y) != T->bar_wifi_dy)
+        widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), T->bar_wifi_dy, I(st.bar_wifi, W_W),
+                           I(st.bar_wifi, W_H));
     int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
         body = nano ? geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
         inside = nano ? body : BATT_INSIDE_W;
@@ -3871,15 +3907,18 @@ static void bar_sync(void *bar) {
     widget_set_visible(st.bar_slot, 1, 0);
 
     /* the level from label_battery's "88%" (stock zeroes progress_battery while charging), then
-     * charging (bar_charge) and low (bar_lowcharge), as stock picks the icon */
+     * under Nano full on power (get_battery_capacity's status 2 and stock's cable flag, memory
+     * both, as stock shows the plain icon then), charging (bar_charge) and low (bar_lowcharge), as
+     * stock picks the icon */
     const char *icon = widget_get_prop_str(st.bar_icon, "image", "");
     const unsigned *t = widget_get_text(st.bar_pct);
     int level = 0;
     while (t && *t >= '0' && *t <= '9') level = level * 10 + (int)(*t++ - '0');
-    unsigned key = (unsigned)(level > 100 ? 100 : level) << 2 |
+    unsigned key = (unsigned)(level > 100 ? 100 : level) << 3 |
+                   (unsigned)(nano && I(g_power_chargestate, 0) == 2 && g_usbdet_value) << 2 |
                    (unsigned)(icon && !tk_strcmp(icon, "bar_charge")) << 1 |
                    (unsigned)(icon && !tk_strcmp(icon, "bar_lowcharge"));
-    int pct = pct_width(key >> 2);
+    int pct = pct_width(key >> 3);
     int width = mode == 1
                     ? pct
                     : (mode == 3 ? inside : body) + BATT_NUB_W + (mode == 2 ? BATT_GAP + pct : 0);
@@ -3910,8 +3949,9 @@ static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
 }
 /* Nano's battery (BATT_NANO), the body's top-left at x, y, the set's V_BATT_W x V_BATT_H with the
  * nub outside: the batt_line outline, its corners half covered, batt_edge along the bottom and a
- * hollow nub, the paper inside, the level in the batt stops (stock's red when low, full while
- * charging) with its last column shaded and, charging outside Percent Inside, the nano_bolt image.
+ * hollow nub, the batt_empty rows inside, over them the level in the batt stops (a batt_low sliver
+ * when low, full while charging), the last column shaded and, outside Percent Inside, the nano_bolt
+ * image charging or nano_plug full on power.
  * In the light half a soft edge outside the body and an emboss under it. Final colours, never
  * flipped; the caller restores the fill. Returns the level's width. */
 static int nano_battery(void *w, void *canvas, int x, int y, unsigned key) {
@@ -3919,37 +3959,40 @@ static int nano_battery(void *w, void *canvas, int x, int y, unsigned key) {
     unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
     int L = ipod_light(), bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), nh = BATT_NUB_H,
         iw = bw - 2, ih = bh - 2, r = x + bw - 1, ny = y + (bh - nh) / 2,
-        f = iw * (int)(key & 2 ? 100 : key >> 2) / 100;
+        f = key & 1 ? T->batt_low_w : iw * (int)(key & 2 ? 100 : key >> 3) / 100;
     unsigned line = RGBA(T->batt_line[L]);
     if (L) {
         bar_rect(canvas, (unsigned)T->batt_soft_a << 24, x - 1, y, 1, bh);
-        bar_rect(canvas, (unsigned)T->batt_soft_top_a << 24, x, y - 1, bw - 1, 1);
+        bar_rect(canvas, (unsigned)T->batt_soft_top_a << 24, x, y - 1, bw, 1);
     }
     bar_rect(canvas, line, x + 1, y, iw, 1);
     canvas_fill_rect(canvas, x, y + 1, 1, ih);
     canvas_fill_rect(canvas, r, y + 1, 1, ih);
-    canvas_fill_rect(canvas, x + bw, ny, BATT_NUB_W, 1);
-    canvas_fill_rect(canvas, x + bw, ny + nh - 1, BATT_NUB_W, 1);
+    canvas_fill_rect(canvas, x + bw, ny, BATT_NUB_W - 1, 1);
+    canvas_fill_rect(canvas, x + bw, ny + nh - 1, BATT_NUB_W - 1, 1);
     canvas_fill_rect(canvas, x + bw + BATT_NUB_W - 1, ny + 1, 1, nh - 2);
-    stock_canvas_set_fill_color(canvas, (line & 0xffffff) | 191u << 24);
+    stock_canvas_set_fill_color(canvas, (line & 0xffffff) | (unsigned)T->batt_corner_a << 24);
     canvas_fill_rect(canvas, x, y, 1, 1);
     canvas_fill_rect(canvas, r, y, 1, 1);
-    stock_canvas_set_fill_color(canvas, (line & 0xffffff) | 128u << 24);
+    canvas_fill_rect(canvas, x + bw + BATT_NUB_W - 1, ny, 1, 1);
+    canvas_fill_rect(canvas, x + bw + BATT_NUB_W - 1, ny + nh - 1, 1, 1);
+    stock_canvas_set_fill_color(canvas, (line & 0xffffff) | (unsigned)T->batt_foot_a << 24);
     canvas_fill_rect(canvas, x, y + bh - 1, 1, 1);
     canvas_fill_rect(canvas, r, y + bh - 1, 1, 1);
     bar_rect(canvas, RGBA(T->batt_edge), x + 1, y + bh - 1, iw, 1);
-    bar_rect(canvas, RGBA(scheme()->paper), x + 1, y + 1, iw, ih);
+    paint_stops(canvas, x + 1, y + 1, iw, ih, &T->batt_empty);
     if (key & 1) /* low */
-        bar_rect(canvas, RGBA(BATT_LOW_RGB), x + 1, y + 1, f, ih);
+        bar_rect(canvas, RGBA(T->batt_low), x + 1, y + 1, f, ih);
     else
         paint_stops(canvas, x + 1, y + 1, f, ih, &T->batt);
-    if (f == iw) bar_rect(canvas, (unsigned)T->batt_shade_a << 24, r - 1, y + 1, 1, ih);
+    bar_rect(canvas, (unsigned)T->batt_shade_a << 24, r - 1, y + 1, 1, ih);
     if (L) {
         bar_rect(canvas, 0xffffffu | (unsigned)T->batt_emboss_a << 24, x, y + bh + 1, bw - 1, 1);
         bar_rect(canvas, 0xffffffu | (unsigned)T->batt_emboss_nub_a << 24, x + bw, ny + nh,
                  BATT_NUB_W, 2);
     }
-    if (key & 2 && st.batt_mode != 3 && !widget_load_image(w, "nano_bolt", bitmap)) {
+    if (key & 6 && st.batt_mode != 3 &&
+        !widget_load_image(w, key & 2 ? "nano_bolt" : "nano_plug", bitmap)) {
         rect_t src = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
                dst = { x + 1, y + 1, (int)bitmap[0], (int)bitmap[1] };
         canvas_draw_image(canvas, bitmap, &src, &dst);
@@ -3979,7 +4022,7 @@ static void paint_battery(void *w, void *canvas) {
     int nano = T->painter[PAINT_BATTERY] == BATT_NANO,
         px = nano && T->font_px[ROLE_BAR] ? T->font_px[ROLE_BAR] : BATT_PX;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
-    unsigned key = st.batt_key, level = key >> 2, s[4], n = put_num(s, level);
+    unsigned key = st.batt_key, level = key >> 3, s[4], n = put_num(s, level);
     int inside = st.batt_mode == 3;
     if (!inside) s[n++] = '%';
     unsigned color = RGBA(key & 2 ? BATT_CHARGE_RGB : key & 1 ? BATT_LOW_RGB : 0xffffff);
@@ -4003,11 +4046,11 @@ static void paint_battery(void *w, void *canvas) {
             rect_t r = { x, 0, I(w, W_W) - x, I(w, W_H) };
             draw_centred(canvas, s, n, &r, px, color);
         } else if (inside) {
-            /* dark on the level, whatever its colour; past it the half's ink, on the paper. White
-             * flips to the light half's black, so that half passes it for both. */
+            /* dark on the level, whatever its colour; past it white, on the dark rows. White flips
+             * to the light half's black and black to its white, so that half passes the other. */
             rect_t r = { 2, y + 1, bw - 2, bh - 2 };
             nano_digits(canvas, s, n, &r, r.x, f, RGBA(ipod_light() ? 0xffffffu : 0));
-            nano_digits(canvas, s, n, &r, r.x + f, r.w - f, RGBA(0xffffffu));
+            nano_digits(canvas, s, n, &r, r.x + f, r.w - f, RGBA(ipod_light() ? 0 : 0xffffffu));
         }
         stock_canvas_set_fill_color(canvas, fill);
         return;
@@ -5123,11 +5166,10 @@ static int pressed_pill(void *w, void *canvas) {
     return b == w; /* a page row's own (clear) background */
 }
 
-/* The bar title for window win: Home, Now Playing, Coverflow and EQ by name; else 0, and *label is
+/* The bar title for window win: Now Playing, Coverflow and EQ by name; else 0, and *label is
  * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
-    if (home_menu(win)) return "Q2 Pod";
     if (tk_str_start_with(name, "playing_page")) return "Now Playing";
     if (!tk_strcmp(name, "coverflow_page")) return "Coverflow";
     if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
@@ -5152,26 +5194,51 @@ static const char *bar_title_of(void *win, void **label) {
 static int title_gone(void *w, void *event) {
     if (st.title_win) widget_off_by_func(st.title_win, EVT_DESTROY, title_gone, st.title_win);
     if (st.title_lbl) widget_off_by_func(st.title_lbl, EVT_DESTROY, title_gone, st.title_lbl);
-    st.title_win = st.title_lbl = (void *)0;
+    st.title_win = st.title_lbl = st.action_view = (void *)0;
     return 0;
 }
 
-/* Nano's bar title (label_title, only its set's bar has one) names the top window win; a dialog
- * keeps the window's title. The title's source is found once per top window; after that a paint
- * compares only that label's text with the title's (none for a title by name), and the title is
- * written only when it changes, with the face that has its characters (stock draws a character its
- * face lacks as nothing). */
+/* Songs' action bar as a plain row (a set's action_row, its view tools/ipod.py sizes). Stock
+ * rebuilds its children on each refresh (0x4a7e54): the label first, then Play All's image and
+ * maybe Sort's, each bound as it is made. They stay as hit areas: the label at the list's text x in
+ * the row's face and size, Play All's image over the row's left without its icon, Sort's three bars
+ * (tools/art.py) over the right. Their first child's height says they are done. */
+static void action_row(void *view) {
+    int h = geom_val(V_ACTION_ROW), n = widget_count_children(view);
+    if (n < 2 || I(widget_get_child(view, 0), W_H) == h) return;
+    void *label = widget_get_child(view, 0), *play = widget_get_child(view, 1);
+    widget_move_resize(label, geom_val(V_TEXT_X), 0, 280, h);
+    theme_font(label, ROLE_TITLE, FONT_ROW);
+    widget_use_style(play, "default");
+    widget_move_resize(play, 0, 0, 300, h);
+    if (n < 3) return; /* Recently Added and the like have no Sort */
+    void *sort = widget_get_child(view, 2);
+    widget_use_style(sort, "default");
+    image_base_set_image(sort, "sort_bars");
+    image_set_draw_type(sort, IMAGE_DRAW_CENTER);
+    widget_move_resize(sort, 301, 0, 48, h);
+}
+
+/* Nano's bar title (label_title, only its set's bar has one) names the top window win, Home by the
+ * list it shows; a dialog keeps the window's title. The title's source is found once per top
+ * window; after that a paint compares only that label's text with the title's (none for a title by
+ * name), and the title is written only when it changes, with the face that has its characters
+ * (stock draws a character its face lacks as nothing). */
 void bar_title_sync(void *win) {
     if (!st.bar_title || !win) return;
     static const unsigned none = 0;
     char s[256], now[256]; /* stock writes nothing unless all of it fits */
-    const char *t = 0;
-    if (win != st.title_win) {
+    const char *t = home_menu(win) ? coverflow_home_title() : (const char *)0;
+    if (t)
+        ;
+    else if (win != st.title_win) {
         title_gone(0, 0);
         st.title_win = win;
         widget_on(win, EVT_DESTROY, title_gone, win);
         if (tk_strcmp(widget_get_type(win), "window")) return;
         t = bar_title_of(win, &st.title_lbl);
+        /* a page may have Songs' action bar: only a set with action_row looks */
+        if (geom_val(V_ACTION_ROW)) st.action_view = widget_lookup(win, "view_navbar_allplay", 0);
         if (st.title_lbl) widget_on(st.title_lbl, EVT_DESTROY, title_gone, st.title_lbl);
     } else {
         if (!st.title_lbl) return;
@@ -5243,6 +5310,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         bar_sync(bar);
         bar_title(bar, top);
         bar_title_sync(top);
+        if (st.action_view) action_row(st.action_view);
         np_sync(top);
         if (w == top) vol_paint(top, canvas);
         /* Boot may paint Home before the screen is usable, so nothing chose or drew its first
@@ -6259,11 +6327,13 @@ static int one_line(void *row) { return !geom(G_TEXT_ART) && I(row, W_H) <= geom
 static void row_meta(void *w) {
     const theme_t *T = theme();
     if (tk_strcmp(widget_get_type(w), "hscroll_label")) {
-        for (unsigned i = 0; T->font[ROLE_META] && i < widget_count_children(w); ++i)
+        for (unsigned i = 0;
+             (T->font[ROLE_META] || T->font_px[ROLE_META]) && i < widget_count_children(w); ++i)
             row_meta(widget_get_child(w, i));
         return;
     }
-    int fresh = T->font[ROLE_META] && widget_get_prop_int(w, "_font", -1) < 0;
+    int fresh =
+        (T->font[ROLE_META] || T->font_px[ROLE_META]) && widget_get_prop_int(w, "_font", -1) < 0;
     theme_font(w, ROLE_META, FONT_ROW);
     if (fresh) widget_set_prop_int(w, "style:normal:text_color", (int)SPOT_GREY);
 }
@@ -6273,6 +6343,8 @@ static void row_meta(void *w) {
 static int compact_row_layout(void *layout, void *row) {
     void *text = (void *)0, *title = (void *)0;
     unsigned count = widget_count_children(row);
+    const theme_t *T = theme();
+    int tall = T->art_x && I(row, W_H) > geom(G_PITCH);
     /* Names differ (view_info, viewinfo_N, ...); all seven constructors put the title
      * first, either directly in the row or one level inside its text container. */
     for (unsigned i = 0; i < count && !text; ++i) {
@@ -6307,6 +6379,9 @@ static int compact_row_layout(void *layout, void *row) {
             if (child != text && widget_get_visible(child))
                 width -= I(child, W_W) + B(layout, DEFAULT_LAYOUT_SPACING);
         }
+        /* A theme's art row: its text's box on the theme's columns, hscroll_label's margin each
+         * side (the move's below, after stock's layout). */
+        if (tall) width = T->art_text_end - T->art_text_x + 4;
         if (width < 0) width = 0;
         widget_resize(text, width, I(text, W_H));
         /* Stock's rows scroll a long title once as the page opens, every row at a time, its
@@ -6327,6 +6402,23 @@ static int compact_row_layout(void *layout, void *row) {
         }
     }
     int ret = ((int (*)(void *, void *))((const unsigned *)DEFAULT_LAYOUT_VTABLE)[2])(layout, row);
+    if (tall && text && widget_get_visible(text)) { /* stock's choice box keeps stock's places */
+        void *art = 0;
+        for (unsigned i = 0; i < count && widget_get_child(row, i) != text; ++i) {
+            void *child = widget_get_child(row, i);
+            if (!widget_get_visible(child)) continue;
+            if (tk_str_start_with(widget_get_prop_str(child, "name", ""), "img_choice")) {
+                art = 0;
+                break;
+            }
+            art = art ?: child;
+            widget_move_resize(child, T->art_x - I(row, W_X), I(child, W_Y), I(child, W_W),
+                               I(child, W_H));
+        }
+        if (art)
+            widget_move_resize(text, T->art_text_x - 2 - I(row, W_X), I(text, W_Y), I(text, W_W),
+                               I(text, W_H));
+    }
     /* The set's text inset (Nano's text_x, on screen, clear of the glass; the row may sit in from
      * it): text leading the row moves there, its right edge kept. Text after art or stock's choice
      * box keeps its place. */
@@ -8222,6 +8314,17 @@ static int era_sql(const char *sql, int (*row)(void *, int, char **, char **)) {
     free(expanded);
     return !bad;
 }
+/* Home pane's counts: sql's one number, 0 when it can't be had. Off the wheel's path: coverflow.c
+ * home_counts reads these once Home is back on top, and when a scan ends. era.n: era_menu sets its
+ * own before it reads it, and no Era page is open under Home. */
+static int count_row(void *ctx, int n, char **v, char **c) {
+    if (n == 1 && v[0]) era.n = atoi(v[0]);
+    return 0;
+}
+int library_count(const char *sql) {
+    era.n = 0;
+    return era_sql(sql, count_row) ? era.n : 0;
+}
 static int era_decade_row(void *ctx, int n, char **v, char **c) {
     if (n == 2 && v[0] && v[1] && era.n < ERA_DECADES)
         era.decade[era.n] = atoi(v[0]), era.count[era.n++] = atoi(v[1]);
@@ -8935,6 +9038,16 @@ int ringnav_localmusic(void *win, void *ctx) {
     return result;
 }
 
+/* Home's Library list (coverflow.c home_library), filled each time it opens, as the page is: the
+ * same rows in the same order, whatever card, user or app adds. Stock's constructor takes a window
+ * and finds the rows' view by name, so list, which holds one of that name, stands in. What else it
+ * sets on the window goes again, list being none: the play gif's timer and its handlers. */
+void library_rows(void *list) {
+    ringnav_localmusic(list, (void *)0);
+    ((int (*)(void *, void *))LOCALMUSIC_BG)(list, (void *)0);
+    widget_off_by_ctx(list, list);
+}
+
 /* Streaming's AirPlay row: stock's own receiver (Shairport 1.1.1, AirPlay 1), whose switch is on
  * System settings' Network service page; that page, one press from Streaming. */
 static int airplay_open(void *ctx, void *event) {
@@ -8948,6 +9061,27 @@ static int shows_image(void *w, const char *name) {
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
         if (shows_image(widget_get_child(w, i), name)) return 1;
     return 0;
+}
+
+/* Home pane's Streaming and Games captions, and the card's free space in tenths of a GB (0: no card
+ * mounted, whose dir shares /mnt's device), read with home_counts, never on a wheel move: the
+ * Streaming page's rows with the app scan it makes, less Configuration and those hidden; and the
+ * Games page's built-ins and card games. */
+void home_pane_read(int *services, int *games, int *free_tenths) {
+    char hide[SVC_HIDE];
+    unsigned card[36], mnt[36], fs[32];
+    int n = 0, total = (st.svc_n = addon_scan()) + 5;
+    svc_hidden(hide);
+    for (int i = 0; i < total; ++i)
+        if (!svc_find(hide, i)) ++n;
+    *services = n;
+    *games = GAMES_BUILTIN + addon_games_last();
+    /* statfs on MIPS o32: f_bsize word 1, f_bavail word 7 (netupdate.c). In binary GB, as About's
+     * Remaining: 209715 blocks of 512 B to a tenth, so 32 bits hold a 2 TB card's. */
+    *free_tenths = !__xstat(3, "/mnt/mmc", card) && !__xstat(3, "/mnt", mnt) && card[0] != mnt[0] &&
+                           !statfs("/mnt/mmc", fs)
+                       ? (int)(fs[7] * (fs[1] >> 9) / 209715)
+                       : 0;
 }
 
 /* A Streaming row tagged as service i (svc), hidden when STREAMHIDE holds it. */
@@ -11832,6 +11966,9 @@ int ringnav(void *ctx, void *event) {
         select(&g_menu, next);
         /* Stop momentum even when the selected row already fits the viewport. */
         reveal(&g_menu, next, 1);
+        /* Home's pane repaints in this frame, with the row. */
+        if (home_menu(top) && index_of(&g_menu, next) >= 0)
+            coverflow_home_row(w, g_menu.at[index_of(&g_menu, next)], next, 0);
         if (owned && id >= 0) buzzeer_switch(1); /* one click per row change, however far */
     } else {
         int top = view_top(&g_menu);

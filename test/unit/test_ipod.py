@@ -720,8 +720,8 @@ def test_status_bar_wants_the_stock_height():
 
 # Nano's bar, from the spec's rules: bar text at bar_px (24 px, caps on rows 5 to 17), centred on the rows
 # above the bar's two lines; title and clock share one box height and y (-1, the baseline at row 18); the
-# title's text starts where the glass ends at the caps' top and ends 2 px before the widest clock text; stock's
-# hscroll_label keeps 2 px each side of the box, so the box is 4 wider; the clock is centred on the screen.
+# title's text starts where the glass ends at the caps' top, g.bar_title_w wide; stock's hscroll_label keeps 2 px
+# each side of the box, so the box is 4 wider; the clock is centred on the screen.
 def test_status_metrics_centre_the_caps_in_the_nano_bar():
     g = NANO
     m = ipod.status_metrics(g, ipod.NANO_FONT_SRC)
@@ -729,10 +729,10 @@ def test_status_metrics_centre_the_caps_in_the_nano_bar():
     assert m['inset'] == ipod.corner_inset(5) == 53
     assert m['clock_text'] == 73 and nano_text_w('12:59 PM') <= 73  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [51, -1, 100, g.bar - 1]  # text on columns 53 to 148, the clock's from 151
+    assert m['title'] == [51, -1, 104, g.bar - 1]  # text on columns 53 to 153; a 12-hour clock's starts at 151 (Andreas's call)
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
-    # what a title fits: Appearance does, Local Songs and Now Playing are cut (Andreas's call)
-    assert nano_text_w('Appearance') <= m['title'][2] - 4 < nano_text_w('Local Songs') and nano_text_w('Now Playing') > 96
+    # what a title fits: Local Songs and Now Playing, whole
+    assert nano_text_w('Local Songs') <= m['title'][2] - 4 and nano_text_w('Now Playing') <= m['title'][2] - 4
 
 
 def nano_text_w(text):  # text's advance in the Nano face at the bar's px (stb scales ascent - descent to the size)
@@ -759,8 +759,8 @@ def test_nano_status_bar_has_a_title_and_no_idle_mark():
 def test_nano_status_bar_battery_and_play_state_right():
     root = bar(); ipod.status_bar(root, g=NANO); n = named(root)
     assert [c[2]['name'] for c in n['view_right'][3]] == ['label_eq', 'img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[2:]]
-    assert n['view_right'][2]['children_layout'].endswith(f'xm=53,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 321
-    assert ipod.corner_inset(4) == 56 and 375 - 56 == 319  # the battery body's last column, its top row 4
+    assert n['view_right'][2]['children_layout'].endswith(f'xm=56,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 318
+    assert 375 - ipod.corner_inset(4) >= 318  # clear of the glass at its top row 4, the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
@@ -770,9 +770,9 @@ def test_nano_status_bar_eq_in_the_room():
     root = bar(); ipod.status_bar(root, g=NANO); n = named(root)
     m, eq = ipod.status_metrics(NANO, ipod.NANO_FONT_SRC), n['label_eq']
     x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
-    edge = 322  # the group's right edge: the nub ends at x 321
+    edge = 319  # the group's right edge: the nub ends at x 318
     assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], 28, m['title'][3]]
-    assert x == edge - ipod.BATT_ROOM == 228 and x == 375 / 2 + m['clock_text'] / 2 + ipod.CLOCK_GAP  # the widest clock, CLOCK_GAP clear
+    assert x == 226 and x == 375 / 2 + m['clock_text'] / 2 + ipod.NANO_CLOCK_GAP  # the widest clock, NANO_CLOCK_GAP clear
     assert nano_text_w('EQ') <= 28  # the bar's face fits its box
     # 2 px short of Bluetooth's ink: the battery with its soft edge and nub, Wi-Fi, BT_REACH
     assert x + 28 + 2 <= edge - (1 + NANO.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
@@ -780,38 +780,34 @@ def test_nano_status_bar_eq_in_the_room():
         == {str(NANO.bar_px), ipod.NANO_FONT_NAME}
 
 
-# Where the row layout puts the icons: right-aligned from the group's margin, the slot 32 (its soft edge, the body,
+# Where the row layout puts the icons: right-aligned from the group's margin, the slot 31 (its soft edge, the body,
 # the nub), hidden children taking no room. Bluetooth's and Wi-Fi's canvases are stock's; their ink lands on the
 # columns and rows Nano's look states, and with the play state hidden they close up on the battery.
 def test_nano_status_bar_icons_on_their_columns():
     root = bar(); ipod.status_bar(root, g=NANO); n = named(root)
     view = n['view_right']
-    assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3: Bluetooth's ink 4 to 17, Wi-Fi's 6 to 17
+    assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3; the payload moves Bluetooth a row down, Wi-Fi a row up (bar.icons)
     assert n['img_state'][2].get('floating') is None
     def lay(*names):
-        x, out = 322, {}
+        x, out = 319, {}
         for name in reversed(names):
-            w = 32 if name == 'view_battery' else n[name][1][2]
+            w = 31 if name == 'view_battery' else n[name][1][2]
             x -= w
             out[name] = (x, x + w)
             x -= ipod.inc('STATUS_GAP')
         return out
     full = lay('img_bt', 'img_wifi', 'img_state', 'view_battery')
     assert full['img_bt'][1] == 244 and {k: v for k, v in full.items() if k != 'img_bt'} == {
-        'view_battery': (290, 322), 'img_state': (266, 286), 'img_wifi': (248, 262)}
+        'view_battery': (288, 319), 'img_state': (266, 284), 'img_wifi': (248, 262)}
     assert full['img_bt'][1] - ipod.BT_REACH == 234  # Bluetooth's ink
     bare = lay('img_bt', 'img_wifi', 'view_battery')
-    assert bare['img_wifi'] == (272, 286) and bare['img_bt'][1] - ipod.BT_REACH == 258
-    assert n['label_eq'][1][0] + view[1][0] + 28 < 258  # EQ, widest with a 12-hour clock: 228 to 256
+    assert bare['img_wifi'] == (270, 284) and bare['img_bt'][1] - ipod.BT_REACH == 256
+    assert n['label_eq'][1][0] + view[1][0] + 28 < 256  # EQ, widest with a 12-hour clock: 226 to 254
 
 
-def test_nano_status_bar_battery_must_fit(monkeypatch):
-    monkeypatch.setattr(ipod, 'BATT_ROOM', ipod.BATT_ROOM + 1)
-    with pytest.raises(ValueError, match=r'^Status bar battery needs \d+px of \d+px$'):
-        ipod.status_bar(bar(), g=NANO)
-    monkeypatch.undo()
-    ipod.status_bar(bar(), g=NANO)  # 94 of 94
-    with pytest.raises(ValueError, match=r'^Status bar battery needs 95px of 94px$'):
+def test_nano_status_bar_battery_must_fit():
+    ipod.status_bar(bar(), g=NANO)  # 93 of 93
+    with pytest.raises(ValueError, match=r'^Status bar battery needs 94px of 93px$'):
         ipod.status_bar(bar(), g=dataclasses.replace(NANO, batt_w=NANO.batt_w + 1))
 
 
@@ -931,25 +927,48 @@ def test_nano_sets():
     # and text pages without artwork.
     n, t = NANO, NANO_TEXT
     assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 28, 28, 52, 52, 52, 0, 0, 0)
-    assert dataclasses.replace(t, name='nano', art=52, art_pitch=52, art_body=52, art_title24_y=5, art_meta_y=31) == n
-    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 5, 31, 2, 6)
+    assert dataclasses.replace(t, name='nano', art=52, art_pitch=52, art_body=52, art_title24_y=2, art_meta_y=28) == n
+    assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (2, 4, 6, 6, 2, 28, 2, 6)
     assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (28, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
-    assert ipod.immediate_values(n)['scroll'] == 202
+    assert ipod.immediate_values(n)['scroll'] == 266
 
 
-def test_fit_bottom_keeps_rows_whose_text_clears_the_glass():
-    assert ipod.fit_bottom(ipod.SET0) == 290 and ipod.fit_bottom(NANO) == ipod.fit_bottom(NANO_TEXT) == 252
-    assert ipod.fit_bottom(ipod.Geometry(name='t', bar=26, pitch=24, text_x=20)) == 264  # 11 rows of 24
-    assert ipod.immediate_values(NANO)['scroll'] == 202 and ipod.immediate_values(ipod.SET0)['scroll'] == 240
+# Library as a Home list: a hidden list holds an empty scroll view the Library page's constructor finds by name, as high as
+# the window; the Library row's image is renamed, so stock's name match binds it nowhere and the payload does. The Carousel's
+# card keeps stock's. A set without home_lib keeps stock's binding.
+def test_home_library_list():
+    root = home(); ipod.ipod_home(root, g=NANO); rows = named(root[3][1])
+    lib = root[3][3]
+    assert lib[2]['name'] == 'list_view_homelib' and lib[2]['visible'] == 'false' and lib[1][3] == 294
+    assert lib[3][0][2]['name'] == 'scroll_view_localmusic' and lib[3][0][3] == [] and lib[3][0][2]['yslidable'] == 'true'
+    assert 'img_library' in rows and 'img_localmusic' not in rows
+    assert 'img_localmusic' in named(root[3][4])  # the carousel's
+    root = home(); ipod.ipod_home(root); rows = named(root[3][1])
+    assert 'list_view_homelib' not in named(root) and 'img_library' not in rows and 'img_localmusic' in rows
+
+
+# Songs' action bar under Nano: a row of the set's action_row, the list and the empty panel under it, and stock's recreated
+# scroll bar spans that (the payload shapes what stock builds in it, navigation.c action_row). A set without action_row keeps
+# stock's 50 px bar.
+def test_songs_action_row(monkeypatch):
+    path = 'localmusic/allmusic_page.bin'
+    page = w('allmusic_page', w('view_navbar', at=[0, 0, 375, 50]), w('view_navbar_allplay', at=[0, 50, 375, 50]),
+             w('view', at=[0, 100, 375, 193]), w('table_view', kind='table_view', at=[0, 100, 375, 190]), kind='window')
+    data = ipod.encode(page); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=NANO)))
+    assert n['view_navbar_allplay'][1] == [0, 0, 375, 28] and n['table_view'][1] == [0, 28, 375, 266] and n['view'][1][1] == 28
+    assert ipod.immediate_values(NANO)['scroll'] == 266 and ipod.immediate_values(ipod.SET0)['scroll'] == 240
+    n = named(ipod.decode(ipod.patch_asset(path, data)))
+    assert n['view_navbar_allplay'][1] == [0, 0, 375, 50]
 
 
 def test_settings_lists_follow_the_set(monkeypatch):
-    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Nano nine 28 px from 0.
+    # Settings lists hold the set's rows from its top: SET0 four 68 px rows from 8, Nano's whole window of 28 px rows from 0.
     path = 'systemset/sysset_page.bin'
     page = w('sysset_page', w('view_navbar', at=[0, 0, 375, 50]),
              w('list_view', kind='list_view', at=[0, 50, 375, 240], default_item_height='78'), kind='window')
     data = ipod.encode(page); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
-    for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (NANO, [0, 0, 375, 252], '28')):
+    for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (NANO, [0, 0, 375, 294], '28')):
         n = named(ipod.decode(ipod.patch_asset(path, data, g=g)))
         assert n['list_view'][1] == box and n['list_view'][2]['default_item_height'] == row and 'item_height' not in n['list_view'][2]
 

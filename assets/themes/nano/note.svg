@@ -1,7 +1,7 @@
 <!-- Home's no-cover note: an original drawing, white in varying alpha, 100 x 115. tools/art.py rasterises this
      file's paths and gradients at build time: its shape filled in shape_fill and stroked at .42, and the gloss,
-     clipped to the shape, in gloss_fill faded across by gloss_fade. It draws at screen (222, 83): screen is this
-     drawing's coordinates plus (0, 17). -->
+     clipped to the shape, in gloss_fill faded across by gloss_fade. It draws at screen (227, 83): screen is this
+     drawing's coordinates plus (5, 17). -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="222 66 100 115">
   <defs>
     <linearGradient id="shape_fill" gradientUnits="userSpaceOnUse" x1="0" y1="70" x2="0" y2="178">

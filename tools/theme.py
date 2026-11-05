@@ -59,6 +59,11 @@ SCHEMA = {k.path: k for k in (
     key('bar.battery.painter', 'painter[PAINT_BATTERY]', 'enum'),
     key('home.chevron.visible', 'chevron_home', 'bool'),
     key('list.chevron.selected', 'chevron_sel', 'bool'),
+    key('list.art.x', 'art_x', 'int', 375),  # a row with art, on screen: the cover, 0: stock's layout
+    key('list.art.text_x', 'art_text_x', 'int', 375),  # ... its text's first and last columns
+    key('list.art.text_end', 'art_text_end', 'int', 375),
+    key('list.chevron.x', 'chevron_x', 'int', 375),  # the theme's own chevron's box on screen in a full-width list; 0: stock's
+    key('home.chevron.x', 'home_chevron_x', 'int', 375),  # ... and in Split's list
     key('bar.title.caps', 'caps_mark', 'bool'),
     key('home.rows.caps', 'caps_home', 'bool'),
     key('playing.album.caps', 'caps_np', 'bool'),
@@ -76,8 +81,11 @@ SCHEMA = {k.path: k for k in (
     key('home.rows.font_px', 'font_px[ROLE_NP]', 'int', 64),  # the role's: Now Playing's title follows it
     Key('home.pane.stops', 'home_pane', 'stops', 0, 0, (), 'live'),  # Split with no cover; (): the placeholder image
     key('home.pane.shadow', 'pane_shadow', 'color'),
-    key('home.pane.shadow_w', 'pane_shadow_w', 'int', 64),
-    key('home.pane.shadow_a', 'pane_shadow_a', 'int', 255),
+    key('home.pane.shadow_w', 'pane_shadow_w', 'int', 32),
+    Key('home.pane.shadow_a', 'pane_shadow_a', 'alphas', 0, 0, (), 'live'),  # its alpha per column
+    key('home.pane.light_a', 'pane_light_a', 'int', 255),  # white, this alpha at the left edge and 0 at the right
+    key('home.pane.icon_x', 'pane_icon_x', 'int', 375),  # a row's icon's top-left in the panel; 0: the pane doesn't follow the row
+    key('home.pane.icon_y', 'pane_icon_y', 'int', 320),
     key('home.pane.note_x', 'pane_note_x', 'int', 375),
     key('home.pane.note_y', 'pane_note_y', 'int', 320),
     key('home.pane.count_y', 'pane_count_y', 'int', 320),
@@ -97,12 +105,19 @@ SCHEMA = {k.path: k for k in (
     key('bar.title.font_size', 'font_px[ROLE_BAR]', 'int', 64),
     Key('bar.battery.stops', 'batt', 'stops', 0, 0, (), 'live'),
     key('bar.battery.line', 'batt_line', 'color', final=True),  # a grey that must follow the paper
+    Key('bar.battery.empty', 'batt_empty', 'stops', 0, 0, (), 'live'),  # the section past the level, final
+    key('bar.battery.low', 'batt_low', 'color'),  # the level when low, batt_low_w columns
+    key('bar.battery.low_w', 'batt_low_w', 'int', 64),
     key('bar.battery.edge', 'batt_edge', 'color'),  # its bottom row inside the outline
+    key('bar.battery.corner_a', 'batt_corner_a', 'int', 255),  # the outline's top corners, the nub's outer ones
+    key('bar.battery.foot_a', 'batt_foot_a', 'int', 255),  # its bottom corners
     key('bar.battery.shade_a', 'batt_shade_a', 'int', 255),  # black over the level's last column
     key('bar.battery.soft_a', 'batt_soft_a', 'int', 255),  # the light half's soft outer edge: left of the body, black
     key('bar.battery.soft_top_a', 'batt_soft_top_a', 'int', 255),  # ... and above it
     key('bar.battery.emboss_a', 'batt_emboss_a', 'int', 255),  # the light half's white row under the body
     key('bar.battery.emboss_nub_a', 'batt_emboss_nub_a', 'int', 255),  # ... and under the nub
+    Key('bar.icons.bt_dy', 'bar_bt_dy', 'int', -4, 4, 0, 'live'),  # rows Bluetooth and Wi-Fi sit off the row layout's
+    Key('bar.icons.wifi_dy', 'bar_wifi_dy', 'int', -4, 4, 0, 'live'),
     key('scheme.card', 'card', 'bool'),
     key('scheme.raw_red', 'raw_red', 'bool'),
     key('scheme.fill', 'fill', 'color'),
@@ -112,6 +127,8 @@ SCHEMA = {k.path: k for k in (
     Key('scheme.sel.stops', 'sel', 'stops', 0, 0, (), 'live', True),
     key('scheme.sel.top', 'sel_top', 'color', final=True),
     key('scheme.sel.edge', 'sel_edge', 'color', final=True),
+    key('scheme.sel.tall_edge', 'sel_tall_edge', 'color', final=True),  # a row taller than the set's pitch ends on these two rows, 0: its edge
+    key('scheme.sel.tall_line', 'sel_tall_line', 'color', final=True),
     key('scheme.sel.text', 'sel_text', 'color', final=True),
     Key('scheme.bar.stops', 'bar', 'stops', 0, 0, (), 'live', True),
     key('scheme.bar.line', 'bar_line', 'color', final=True),
@@ -167,7 +184,7 @@ ROLE_MACROS = {
 # Nano Blue's measured selection band: its 1 px top line, the stops under it and its edge row:
 # derive="gloss"'s shape. assets/themes/nano/theme.xml states the same values (test_theme checks).
 GLOSS = ((0, 0x08a6e7), (17, 0x009ade), (38, 0x008ade), (58, 0x007dde), (79, 0x006dd6), (100, 0x0065d6))
-GLOSS_TOP, GLOSS_EDGE = 0x94c7de, 0x004184
+GLOSS_TOP, GLOSS_EDGE, GLOSS_TALL_EDGE, GLOSS_TALL_LINE = 0x94c7de, 0x004184, 0x004aa3, 0x688db3
 
 
 def turn(c, top):
@@ -212,9 +229,14 @@ GEOM_RANGES = {
     'set_rows': (1, lambda g: (320 - g.bar - g.set_top) // g.set_row),  # the settings list fits the client
     'set_icon': (0, lambda g: g.set_row),
     'bar_px': (0, lambda g: g.bar),  # the bar title's size inside the bar; 0: no title
+    'bar_title_w': (0, 188),  # its text's width: at most the bar's left half, a full-length title reaching the clock's box
+    'bar_right': (0, 80),
     'batt_w': (1, 40),
     'batt_h': (1, lambda g: g.bar - 2),  # inside the bar, clear of its line row
     'text_x': (0, 60),  # the glass rule stays test/build.py's
+    'action_row': (0, 50),
+    'list_end': (0, lambda g: 320 - g.bar),  # ... and list_end's, inside the window
+    'home_lib': (0, 1),  # Home's Library row slides in a list of the Library's rows
     'home_row': (28, lambda g: (320 - g.bar - O['HOME_TOP']) // 7),  # seven Home rows under HOME_TOP fit the client
 }
 THEME_GEOM_OFF = 4  # offsetof(theme_t, geom), right after name so no field moves it; asserted in navigation.c; test/patch.py pokes it
@@ -475,6 +497,10 @@ def value(node, path, text, macros):
         if not re.fullmatch('#[0-9a-fA-F]{6}', text):
             err(f'{path}: expected #rrggbb')
         v = int(text[1:], 16)
+    elif k.type == 'alphas':  # "N N ...": 1 to 32 alphas of 255
+        if not re.fullmatch(r'[0-9]{1,3}( [0-9]{1,3}){0,31}', text) or any(int(a) > 255 for a in text.split()):
+            err(f'{path}: expected up to 32 alphas 0..255')
+        return tuple(map(int, text.split()))
     elif k.type == 'stops':  # "#rrggbb N, ...": 2 to 13 stops (stops_t), N rising from 0 to 100
         stops = [re.fullmatch(r'#([0-9a-fA-F]{6}) ([0-9]{1,3})', s.strip()) for s in text.split(',')]
         if not all(stops):
@@ -737,7 +763,9 @@ def resolve(root, by_id, seen=()):
                 s['sel'] = tuple((p, int(h[1:], 16)) for p, h in derive_gloss(ACCENT_TONES[i]))
                 s['sel_top'] = s['sel_top'] or int(turn(GLOSS_TOP, top)[1:], 16)
                 s['sel_edge'] = s['sel_edge'] or int(turn(GLOSS_EDGE, top)[1:], 16)
-                for f in ('sel', 'sel_top', 'sel_edge'):  # the gloss is both halves' design (Graphite's grey band flipped would turn upside down)
+                s['sel_tall_edge'] = s['sel_tall_edge'] or int(turn(GLOSS_TALL_EDGE, top)[1:], 16)
+                s['sel_tall_line'] = s['sel_tall_line'] or int(turn(GLOSS_TALL_LINE, top)[1:], 16)
+                for f in ('sel', 'sel_top', 'sel_edge', 'sel_tall_edge', 'sel_tall_line'):  # the gloss is both halves' design (Graphite's grey band flipped would turn upside down)
                     s['light'].setdefault(f, s[f])
     t['schemes'] = [s if i >= len(ACCENT_NAMES) or t['accents'] >> i & 1 else zero_scheme() for i, s in enumerate(t['schemes'])]
     for o in t['opts']:
@@ -767,7 +795,7 @@ def validate(t, name):
         if accent[field] >= 0 and not t['accents'] >> accent[field] & 1:
             err(f'accent {word} {scheme_names(t)[accent[field]]} is not in colorSchemes')
     for k in SCHEMA.values():  # every value, those from a default or a base too (coverflow divides by some)
-        if k.type not in ('set', 'stops'):
+        if k.type not in ('set', 'stops', 'alphas'):
             for v in [s[k.field] for s in t['schemes']] if k.path.startswith('scheme.') else [t[k.field], t['light'].get(k.field, k.lo)]:
                 if not k.lo <= v <= k.hi:
                     err(f'{k.path}: {v} outside {k.lo}..{k.hi}')
@@ -869,6 +897,8 @@ def dump(t, **head):
     def spell(k, v):
         if k.type == 'stops':
             return ', '.join(f'#{c:06x} {p}' for p, c in v) or nope(k.field)
+        if k.type == 'alphas':
+            return ' '.join(map(str, v)) or nope(k.field)
         return f'#{v:06x}' if k.type == 'color' else list(CHOICES[k.path])[v] if k.type == 'enum' else str(v)
     def tag(name, attrs, end='/>'):
         def esc(v): return str(v).replace('&', '&amp;').replace('<', '&lt;').replace('"', '&quot;')
@@ -956,12 +986,15 @@ def emit(themes, out, redirects={}):
     def c(k, v):
         if k.type == 'stops':
             return stops_c(v)
+        if k.type == 'alphas':
+            return '{%s}' % (', '.join(map(str, v)) or '0')
         return list(CHOICES[k.path].values())[v] if k.type == 'enum' else v
     lines = ['/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */']
     def rows(t, light):
         return [f'    {{ .tones = accents[{s.get("base", v)}], .flags = {s["card"] | s["raw_red"] << 1}, .fill = 0x{s["fill"]:06x}, '
                 f'.chevron = 0x{s["chevron"]:06x}, .muted = 0x{s["muted"]:06x}, .bar_light = 0x{s["bar_light"]:06x}, '
                 f'.sel = {stops_c(s["sel"])}, .sel_top = 0x{s["sel_top"]:06x}, .sel_edge = 0x{s["sel_edge"]:06x}, '
+                f'.sel_tall_edge = 0x{s["sel_tall_edge"]:06x}, .sel_tall_line = 0x{s["sel_tall_line"]:06x}, '
                 f'.sel_text = 0x{s["sel_text"]:06x}, .mode = {c(SCHEMA["scheme.mode"], s["mode"])}, '
                 f'.paper = 0x{s["paper"]:06x}, .ink = 0x{s["ink"]:06x}, '
                 f'.bar = {stops_c(s["bar"])}, .bar_line = 0x{s["bar_line"]:06x}, .bar_line2 = 0x{s["bar_line2"]:06x}'
