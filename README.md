@@ -40,7 +40,7 @@
 - **Photos, books and videos:** folders at the card's root add JPEG and PNG photo albums, `.txt` and `.epub` books, and videos.
 - **Lock screen and boot logo:** six wallpapers, a large clock or your own images; your own JPEG at power-on.
 - **Bluetooth and AirPods:** AirPods stem controls, ear detection and two-way volume sync; Resume on Connect, Control Device Volume, separate volume levels for Bluetooth and wired output, smoother AAC, and click-free gapless changes.
-- **Battery and buttons:** an optional 80% charge limit, Low Power mode, a Standby limit that powers off a Q2 left asleep, Wake by double press, Volume Guard, and a player that sleeps while paused.
+- **Battery and buttons:** an optional 80% charge limit, a Standby limit that powers off a Q2 left asleep, Wake by double press, Volume Guard, and a player that sleeps while paused.
 - **Fixes to stock:** the clock keeps its time after power-off, the song and second come back after an update or restart, accented tags show as tagged, time zones show their current offset, and the interface is English throughout.
 
 <details open>

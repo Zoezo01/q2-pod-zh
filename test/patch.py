@@ -10289,7 +10289,7 @@ inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_i
 def event(kind,key=0):
     m.calls=[]; m.sent=[]
     assert m.call(key,address=inp,args=(m.wm,m.event,0,0),event_type=kind,gap=0,clear=False)==0
-    return [c[0] for c in m.calls if c[0]!='time_now_ms']  # the hook times Low power's idle, not input
+    return [c[0] for c in m.calls if c[0]!='time_now_ms']  # the hook times the idle, not input
 for key,c in ((O['KEY_PLAY'],'p'),(O['KEY_FWD_BTN'],'f'),(O['KEY_BACK_BTN'],'b'),(O['KEY_RETURN'],'q')):
     assert 'stock_input' not in event(O['EVT_KEY_UP'],key) and m.sent==[(7,c,1,0x40,1,'/tmp/q2video.sock',110)]
 assert event(0x110,O['KEY_CENTER'])==[] and event(O['EVT_POINTER_DOWN'])==[] and not m.sent; passed()
@@ -12879,8 +12879,8 @@ for radio,page in (('wifiswitch','systemset/wifi_page'),('btswitch','systemset/b
     m,icon,win,down,dispatch=quick_page(); m.timer_fail=True; down()
     assert dispatch(O['EVT_CLICK'])==0 and not m.opened; passed()
 
-# Settings rows (docs/internals.md#charge-limit, #low-power, #album-artists): Power management gains
-# Charge limit and Low power, Audio settings gains Artists, after the stock rows in the same widgets
+# Settings rows (docs/internals.md#charge-limit, #album-artists): Power management gains
+# Charge limit, Audio settings gains Artists, after the stock rows in the same widgets
 # and styles; Centre or tap toggles and saves each. Artists is stock's own PLAYSET ARTISTTYPE.
 def settings_page(hook,view_name,config={},stock_rows=2,bt=1,boot=False,cls=QueueMachine,sub=0):
     m=cls(); m.config.update(config); m.restack=True
@@ -12913,16 +12913,15 @@ def switch_image(m,row):
     images=[c for c in m.nodes[button]['children'] if m.nodes[c].get('name')=='_setting_switch']
     assert len(images)==1
     return m.nodes[images[0]]['image']
-assert all(switch_image(m,rows[i])=='switch_off' for i in (1,2,3))
-assert len(rows)==5 and icons==['system_powermanager','usb_chargeswitch','system_powermanager','system_carmode','system_powermanager'] and all(m.nodes[r]['style']=='s_listitem_black' for r in rows)
-assert texts()==['Standby Limit: Off','Charge Limit (80%)','Low Power','system_carmode','Boot to: Rockbox']
+assert all(switch_image(m,rows[i])=='switch_off' for i in (1,2))
+assert len(rows)==4 and icons==['system_powermanager','usb_chargeswitch','system_carmode','system_powermanager'] and all(m.nodes[r]['style']=='s_listitem_black' for r in rows)
+assert texts()==['Standby Limit: Off','Charge Limit (80%)','system_carmode','Boot to: Rockbox']
 assert click(1)==[(1,'Q2POD','CHARGELIMIT')] and texts()[1]==f"Charge Limit ({O['CHARGE_STOP']}%)"
-assert click(2)==[(1,'Q2POD','LOWPOWER')] and texts()[2]=='Low Power' and switch_image(m,rows[2])=='switch_on'
-assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','Low Power','system_carmode','Boot to: Rockbox']; passed()
+assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','system_carmode','Boot to: Rockbox']; passed()
 # In-Vehicle Mode, System's stock row before (0x4cc240): its byte, its key, and the state byte cleared.
 m.byte(syms['g_carmode_state'],1)
-assert click(3)==[(1,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\1' and m.u.mem_read(syms['g_carmode_state'],1)==b'\0' and switch_image(m,rows[3])=='switch_on'
-assert click(3)==[(0,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\0' and switch_image(m,rows[3])=='switch_off'; passed()
+assert click(2)==[(1,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\1' and m.u.mem_read(syms['g_carmode_state'],1)==b'\0' and switch_image(m,rows[2])=='switch_on'
+assert click(2)==[(0,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\0' and switch_image(m,rows[2])=='switch_off'; passed()
 # Standby limit (its alarm with the power poll's tests): each click steps to the next limit, then Off.
 limits=[f"Standby Limit: {O[f'STANDBY_LIMIT_{i}']} h" for i in (1,2,3)]
 for v,want in ((1,limits[0]),(2,limits[1]),(3,limits[2]),(0,'Standby Limit: Off')):
@@ -13130,8 +13129,8 @@ for double in ('0','1'):
     w.byte(syms['g_backlight_status'],1); w.now+=O['WAKE_MS']; loop_pass()
     assert not press(DOWN,0) and not press(UP,50) and press(DOWN,O['WAKE_MS']) and press(UP,50),double
 passed()
-m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'CHARGELIMIT':'1','LOWPOWER':'1','WAKEDOUBLE':'1','VOLGUARD':'1','STANDBYLIMIT':'2'})
-assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'Low Power','system_carmode','Boot to: Rockbox']
+m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'CHARGELIMIT':'1','WAKEDOUBLE':'1','VOLGUARD':'1','STANDBYLIMIT':'2'})
+assert texts()==[limits[1],f"Charge Limit ({O['CHARGE_STOP']}%)",'system_carmode','Boot to: Rockbox']
 m,rows,texts,*_=settings_page('display','scroll_view_display',{'WAKEDOUBLE':'1','VOLGUARD':'1'},stock_rows=3,sub=3)
 assert texts()[6:]==['Wake: Double Press','Volume Guard']
 assert m.get(payload_syms['wheel_guard'])==1; passed()
@@ -13621,32 +13620,27 @@ for pct,charging,want in ((79,2,[]),(80,2,[0]),(79,0,[]),(78,2,[0]),(76,0,[]),(7
 level(m,90); assert m.pass_(O['CHARGE_POLL_MS']-1)[0]==[] and m.pass_(1)[0]==[0]; passed()  # polled, not every pass
 m.open_pages=['usbmode_page']; m.byte(syms['g_usbdac_chargeflag'],0); level(m,70); assert m.pass_()[0]==[0]; passed()
 m=PowerMachine(); level(m,95,2); assert m.pass_()[0]==[]; passed()  # the limit off: stock charges
-# Low power: CPU1 offline while the screen is off (the first time bracketed by a synced marker),
-# back with the screen. Off, no file is touched. Either way the screen-off pass idles
-# SCREEN_OFF_SLEEP_MS, and a screen-on pass with no input or animation for IDLE_MS idles IDLE_SLEEP_MS.
-CPU1,MARK='/sys/devices/system/cpu/cpu1/online','/mnt/data/q2pod-cpu1'
+# The screen-off pass idles SCREEN_OFF_SLEEP_MS, and a screen-on pass with no input or animation for
+# IDLE_MS idles IDLE_SLEEP_MS. No file is touched.
 inp_hook=HOOKS['window_manager_dispatch_input_event'][0]
 m=PowerMachine()
 m.byte(syms['g_backlight_status'],0); assert m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']] and not m.writes and not m.opens; passed()
-# Dark with nothing playing and the DAC off (check_dacoff_state's -1), a pass idles DARK_IDLE_SLEEP_MS,
-# Low power or not; playing, a DAC still counting, or a Wake press that may get its second, SCREEN_OFF_SLEEP_MS.
-for config in ({},{'LOWPOWER':'1'}):
-    m=PowerMachine(config); m.handlers.pop(syms['mclGetPlayStatus'],None); m.byte(syms['g_backlight_status'],0)
-    off=O['SCREEN_OFF_SLEEP_MS']
-    for play,dac,want in ((3,-1,O['DARK_IDLE_SLEEP_MS']),(2,-1,off),(3,5,off),(1,-1,O['DARK_IDLE_SLEEP_MS'])):
-        m.word(0xa3beac,play); m.word(syms['g_dacoff_time'],dac&0xffffffff)
-        assert m.pass_(1)[1]==[want],(config,play,dac); passed()
+# An update from a build with Low Power on: LOWPOWER=1 left in config.ini and its marker on flash do nothing.
+m=PowerMachine({'LOWPOWER':'1'},files={'/mnt/data/q2pod-cpu1':b''}); m.byte(syms['g_backlight_status'],0)
+assert m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']] and not m.writes and not m.opens and '/mnt/data/q2pod-cpu1' in m.files; passed()
+# Dark with nothing playing and the DAC off (check_dacoff_state's -1), a pass idles DARK_IDLE_SLEEP_MS;
+# playing, a DAC still counting, or a Wake press that may get its second, SCREEN_OFF_SLEEP_MS.
+m=PowerMachine(); m.handlers.pop(syms['mclGetPlayStatus'],None); m.byte(syms['g_backlight_status'],0)
+off=O['SCREEN_OFF_SLEEP_MS']
+for play,dac,want in ((3,-1,O['DARK_IDLE_SLEEP_MS']),(2,-1,off),(3,5,off),(1,-1,O['DARK_IDLE_SLEEP_MS'])):
+    m.word(0xa3beac,play); m.word(syms['g_dacoff_time'],dac&0xffffffff)
+    assert m.pass_(1)[1]==[want],(play,dac); passed()
 m=PowerMachine({'WAKEDOUBLE':'1'}); m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa3beac,3)
 m.byte(syms['g_backlight_status'],0); m.word(syms['g_dacoff_time'],0xffffffff); m.handlers[inp_hook+12]='stock_input'
 assert m.pass_(1)[1]==[O['DARK_IDLE_SLEEP_MS']]  # reads Wake
 m.call(O['KEY_CENTER'],address=inp_hook,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0,clear=False)
 assert m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']] and m.pass_(O['WAKE_MS'])[1]==[O['DARK_IDLE_SLEEP_MS']]; passed()
-m=PowerMachine({'LOWPOWER':'1'}); m.byte(syms['g_backlight_status'],0)
-assert m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']] and m.writes==[(MARK,b''),(CPU1,b'0')] and MARK not in m.files
-assert [c[0] for c in m.calls if c[0] in ('fsync','unlink')]==['fsync','fsync','unlink','fsync']; passed()  # the marker, then its removal, on flash
-m.writes=[]; m.byte(syms['g_backlight_status'],1); m.pass_(1); assert m.writes==[(CPU1,b'1')]; passed()
-m.writes=[]; m.byte(syms['g_backlight_status'],0); m.pass_(1); assert m.writes==[(CPU1,b'0')]; passed()  # marked once a boot
-m=PowerMachine(); m.animating=1; m.pass_(1)  # idle pacing without Low power
+m=PowerMachine(); m.animating=1; m.pass_(1)  # idle pacing
 assert m.pass_(O['IDLE_MS'])[1]==[]; m.animating=0
 assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']] and not m.writes; passed()
 inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'
@@ -13655,23 +13649,6 @@ m.call(address=inp,args=(m.wm,m.event,0,0),gap=0); assert m.pass_(1)[1]==[]; pas
 m=PowerMachine(); m.handlers[inp+12]='stock_input'; m.animating=1; m.pass_(1); m.pass_(O['IDLE_MS']); m.animating=0; assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]
 m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0); assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]
 m.word(payload_syms['wheel_frame_at'],m.now); m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0); assert m.pass_(1)[1]==[]; passed()
-# A refused online is retried once a second, not every pass.
-class Refused(PowerMachine):
-    def hook(self,u,address,size,unused):
-        if self.handlers.get(address,'').startswith('r:fwrite') and self.text(u.reg_read(REGS[0]))=='1':
-            self.calls.append(('refused',0,0,0)); self.returns(0); return
-        return super().hook(u,address,size,unused)
-m=Refused({'LOWPOWER':'1'}); m.byte(syms['g_backlight_status'],0); m.pass_(1); m.byte(syms['g_backlight_status'],1)
-tries=lambda ms:[c[0] for c in m.pass_(ms) and m.calls if c[0]=='refused']
-assert tries(1)==['refused'] and tries(500)==[] and tries(500)==['refused']; passed()
-# A marker that cannot be written: no offline, so a stall could not go unnoticed.
-class Full(PowerMachine):
-    def hook(self,u,address,size,unused):
-        if self.handlers.get(address,'').startswith('p:fsync'):
-            self.calls.append(('fsync',0,0,0)); self.returns(0xffffffff); return
-        return super().hook(u,address,size,unused)
-m=Full({'LOWPOWER':'1'}); m.byte(syms['g_backlight_status'],0); m.pass_(1); m.pass_(1)
-assert not any(p==CPU1 for p,_ in m.writes); passed()
 # Now Playing keeps stock's pace only while its visualizer repaints; idle, it idles like any page.
 class Live(PowerMachine):
     def hook(self,u,address,size,unused):
@@ -13681,31 +13658,6 @@ class Live(PowerMachine):
 m=Live(); m.handlers[payload_syms['visualizer_live']]='v:live'; m.live=1
 m.top=m.node('window','playing_page'); m.pass_(1)
 assert m.pass_(O['IDLE_MS'])[1]==[]; m.live=0; assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]; passed()
-# A boot that stalled offlining CPU1 left the marker: the next one renames it and never tries.
-m=PowerMachine({'LOWPOWER':'1'},files={MARK:b''}); m.byte(syms['g_backlight_status'],0); m.pass_(1)
-assert not m.writes and '/mnt/data/q2pod-cpu1.bad' in m.files and MARK not in m.files; passed()
-
-# Even if renaming a previous crash marker fails, never offline the core again.
-class RenameFailed(PowerMachine):
-    def hook(self,u,address,size,unused):
-        if self.handlers.get(address,'').startswith('r:rename'):
-            self.returns(0xffffffff); return
-        return super().hook(u,address,size,unused)
-m=RenameFailed({'LOWPOWER':'1'},files={MARK:b''}); m.byte(syms['g_backlight_status'],0); m.pass_(1)
-assert not m.writes and MARK in m.files; passed()
-
-# A flushed inode alone is insufficient if its directory entry cannot reach flash.
-class DirectoryFull(PowerMachine):
-    syncs = 0
-    def hook(self,u,address,size,unused):
-        if self.handlers.get(address,'').startswith('p:fsync'):
-            self.syncs += 1
-            if self.syncs == 2:
-                self.returns(0xffffffff); return
-        return super().hook(u,address,size,unused)
-m=DirectoryFull({'LOWPOWER':'1'}); m.byte(syms['g_backlight_status'],0); m.pass_(1)
-assert not any(p==CPU1 for p,_ in m.writes); passed()
-
 # Standby limit (docs/internals.md#standby-limit): with a limit, toolsIntoStandby's suspend runs
 # between the RTC wake alarm's set (the limit past since_epoch) and its clear. A resume at or past the
 # alarm powers off on the next pass (poweroff_page), once, unless a cable is in or the music plays; a
@@ -13940,10 +13892,10 @@ def boot_row(value=None,mode=0o100755):
     assert m.calls[0][:3]==('stock_power',m.top,5)
     kids=m.nodes[view]['children']
     if mode!=0o100755:  # no Boot to
-        assert len(kids)==6
+        assert len(kids)==5
         return m,None,None
-    assert len(kids)==7
-    button=m.nodes[kids[6]]['children'][0]
+    assert len(kids)==6
+    button=m.nodes[kids[5]]['children'][0]
     label=m.nodes[button]['children'][1]
     return m,button,label
 def toggle_boot(m,button):

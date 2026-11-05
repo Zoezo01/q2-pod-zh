@@ -259,7 +259,6 @@ typedef struct {
 /* The settings rows pod_rows builds (pod_values and the Q2POD keys below). */
 enum {
     POD_CHARGE,
-    POD_LOW,
     POD_WAKE,
     POD_ARTIST_CF,
     POD_YEAR_OLD,
@@ -373,17 +372,15 @@ typedef struct {
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu, *rt_page, *rt_list;
     int dark; /* 1: the backlight was off at the last UI loop pass; 2: a centre press woke it */
-    /* Power's Charge limit and Low power (read once from config.ini's Q2POD), the value
-     * labels of those rows and Artists, and the poll: charging is held off at the limit; CPU1 is
-     * offline (cpu_off), this boot's first offline is done (cpu_marked), and cpu_bad is 0 before
-     * the check, 1 usable, 2 refused by an earlier boot's stall, 3 refused by the kernel;
+    /* Power's Charge limit (read once from config.ini's Q2POD), the value labels of that row
+     * and Artists, and the poll: charging is held off at the limit;
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
      * limit's choice; standby_off: its alarm ended a Standby, so the next pass powers off. */
-    int pod_read, charge_limit, low_power, wake_double, wake_pass, wake_eat,
+    int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
-        charge_held, cpu_off, cpu_bad, cpu_marked, artist_cf, year_old, resume, lock_clock,
-        artist_az, hold_home, standby_limit, standby_off, eq_output;
+        charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
+        standby_off, eq_output;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -403,7 +400,7 @@ typedef struct {
     void *np_origin; /* the page Hold Return opened Now Playing over */
     void *dc_top;    /* the page of the last centre press no list click took, and its time */
     unsigned dc_at;
-    unsigned charge_at, last_input, cpu_retry;
+    unsigned charge_at, last_input;
     unsigned touch_at; /* the last pointer event's time, type and place (stale_heal, stale_note) */
     int touch_type, touch_x, touch_y, stale_notes;
     int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
@@ -2613,8 +2610,8 @@ int ringnav_quick_settings(void *win, void *ctx) {
     return result;
 }
 
-/* Power's Charge limit, Low power and Wake (docs/internals.md#charge-limit, #low-power,
- * #wake), Q2POD CHARGELIMIT, LOWPOWER and WAKEDOUBLE in config.ini, Display's Artist albums
+/* Power's Charge limit and Wake (docs/internals.md#charge-limit, #wake), Q2POD CHARGELIMIT and
+ * WAKEDOUBLE in config.ini, Display's Artist albums
  * (ARTISTCF), Playback's Year order (YEAROLD, coverflow.c's year ranks) and Artists, which
  * is stock's own PLAYSET ARTISTTYPE (artist_type, the artist page's switch;
  * docs/internals.md#album-artists), and Bluetooth's Resume on connect (RESUME, so a missing key
@@ -2630,7 +2627,6 @@ static int bt_vol_link __attribute__((section(".scratch")));
 #define STR_(x) #x
 #define STR(x) STR_(x)
 static int *const pod_values[] = { &st.charge_limit,
-                                   &st.low_power,
                                    &st.wake_double,
                                    &st.artist_cf,
                                    &st.year_old,
@@ -2647,10 +2643,9 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.eq_output,
                                    0,
                                    0 };
-_Static_assert(POD_LOCKCLOCK == 7, "lockscreen.c passes pod_rows 7");
+_Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
-                                        "LOWPOWER",
                                         "WAKEDOUBLE",
                                         "ARTISTCF",
                                         "YEAROLD",
@@ -3023,7 +3018,6 @@ int ringnav_bt_connect_start(int pause) {
 static void pod_text(int i) {
     static const char *const names[][4] = {
         { "Charge Limit: Off", "Charge Limit: " STR(CHARGE_STOP) "%" },
-        { "Low Power: Off", "Low Power: On" },
         { "Wake: Single Press", "Wake: Double Press" },
         { "Artist View: Grid", "Artist View: Cover Flow", "Artist View: List" },
         { "Year Order: Newest First", "Year Order: Oldest First" },
@@ -3056,7 +3050,6 @@ static void pod_text(int i) {
             : pod_values[i]    ? *pod_values[i]
                                : 0;
     const char *toggle = i == POD_CHARGE      ? "Charge Limit (" STR(CHARGE_STOP) "%)"
-                         : i == POD_LOW       ? "Low Power"
                          : i == POD_RESUME    ? "Resume on Connect"
                          : i == POD_VOL_GUARD ? "Volume Guard"
                          : i == POD_BT_LINK   ? "Control Device Volume"
@@ -3071,7 +3064,7 @@ static void pod_text(int i) {
     if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
     if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
 }
-/* Centre or tap toggles and saves. Charge limit and Low power take effect on the next UI loop pass
+/* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll); Artists on the next load of an artist list, as the artist page's switch does;
  * Standby limit at the next Standby; Coverflow Sort and Refresh Coverflow at Coverflow's next open
  * (coverflow.c), Refresh with a toast, as it changes nothing in view. */
@@ -3129,7 +3122,7 @@ int ringnav_powermanager(void *win, void *ctx) {
     int result = stock_power_trampoline(win, ctx);
     pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1,
              icons + 1); /* beside stock's Standby */
-    pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 2, icons);
+    pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 1, icons);
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
     boot_row(win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0);
     return result;
@@ -9574,62 +9567,6 @@ int ringnav_wifi_signal(void) {
     return wifi.dbm;
 }
 
-/* Low power's second core (docs/internals.md#low-power): CPU1 is offline while the screen is off
- * and no video plays, so the player decodes on one core and the UI, Coverflow and videos keep both.
- * The first offline of a boot is bracketed by CPU1_PENDING, synced to flash: if a kernel stalled on
- * it, the next boot finds the file, renames it CPU1_BAD and never tries again. A write that fails
- * (no hotplug) stops the attempts until the next boot. */
-#define CPU1_ONLINE "/sys/devices/system/cpu/cpu1/online"
-#define CPU1_PENDING "/mnt/data/q2pod-cpu1"
-#define CPU1_BAD "/mnt/data/q2pod-cpu1.bad"
-static int cpu1_write(int on) {
-    void *f = fopen(CPU1_ONLINE, "w");
-    if (!f) return 0;
-    int ok = fwrite(on ? "1" : "0", 1, 1, f) == 1;
-    return !fclose(f) && ok;
-}
-static void cpu_poll(void) {
-    if (!st.low_power && !st.cpu_off) return; /* off: no file is touched */
-    if (!st.cpu_bad) {                        /* once a boot */
-        int pending = !access(CPU1_PENDING, 0);
-        if (pending) rename(CPU1_PENDING, CPU1_BAD);
-        st.cpu_bad = pending || !access(CPU1_BAD, 0) ? 2 : 1;
-    }
-    int off = st.low_power && !g_backlight_status && !video_on() && st.cpu_bad == 1;
-    if (off == st.cpu_off) return;
-    unsigned now = time_now_ms();
-    if (!off) { /* a refused online is retried once a second */
-        if (st.cpu_retry && now - st.cpu_retry < 1000) return;
-        st.cpu_off = !cpu1_write(1);
-        st.cpu_retry =
-            st.cpu_off ? now | !now : 0; /* never 0; |1 would eat a millisecond when now is even */
-        return;
-    }
-    if (!st.cpu_marked) { /* no marker on flash, no offline: the guard must hold */
-        void *mark = fopen(CPU1_PENDING, "w");
-        int synced = mark && !fflush(mark) && !fsync(fileno(mark));
-        if (mark && fclose(mark)) synced = 0;
-        int dir = open("/mnt/data", 0); /* persist the marker's directory entry before hotplug */
-        if (dir < 0)
-            synced = 0;
-        else {
-            if (fsync(dir)) synced = 0;
-            close(dir);
-        }
-        if (!synced) {
-            st.cpu_bad = 3;
-            return;
-        }
-    }
-    st.cpu_off = cpu1_write(0);
-    if (!st.cpu_marked) {
-        unlink(CPU1_PENDING);
-        int dir = open("/mnt/data", 0); /* O_RDONLY: the unlink reaches flash too */
-        if (dir >= 0) fsync(dir), close(dir);
-        st.cpu_marked = 1;
-    }
-    if (!st.cpu_off) st.cpu_bad = 3;
-}
 /* Hardware watchdog (docs/internals.md#watchdog). Stock loads soc_watchdog.ko and never starts it,
  * so a Q2 whose UI loop or kernel stalls stays dark, every button dead, until a 15 s Centre hold
  * cuts the power. The first UI loop pass starts it counting WDT_MS and every pass feeds it, so a
@@ -9671,7 +9608,7 @@ static void wdt_poll(void) {
 }
 /* The state record (docs/internals.md#watchdog): /mnt/data/q2-state says what the Q2 is doing, one
  * line rewritten and synced whenever it changes: the screen, Standby's suspend, the cable, the
- * battery, playback and its output, CPU1. A clean end removes it; one still there at boot means a
+ * battery, playback and its output. A clean end removes it; one still there at boot means a
  * forced restart (or the battery), and S90play puts it in q2-crash.log (docs/boot.md). */
 #define STATE_FILE "/mnt/data/q2-state"
 static char *put(char *p, const char *s) {
@@ -9697,7 +9634,7 @@ static void state_poll(void) {
     p = put(p, play[ps < 4 ? ps : 0]);
     p = put(p, " out:");
     p = put(p, out[ow < 3 ? ow : 0]);
-    p = put(p, st.cpu_off ? " cpu1:off\n" : "\n");
+    p = put(p, "\n");
     *p = 0;
     if (!tk_strcmp(s, st.state)) return;
     void *f = fopen(STATE_FILE, "w");
@@ -10081,7 +10018,6 @@ void ratings_copy_poll(void) {
 static void power_poll(void) {
     pod_settings();
     charge_poll();
-    cpu_poll();
     standby_poll();
     logo_poll();
     ratings_copy_poll();
@@ -10094,7 +10030,7 @@ static void power_poll(void) {
  * demo leaves S90play's flag and ends; S90play sees it, runs Rockbox and starts demo again when
  * Rockbox exits. Bluetooth's daemons are not demo's children and keep the headphones connected, so
  * Rockbox finds them and plays there (q2-rockbox's pcm-alsa). The queue is saved as power-off
- * saves it, charging and the second core are handed back as Rockbox expects them at boot, the
+ * saves it, charging is handed back as Rockbox expects it at boot, the
  * watchdog (checkappprocess.sh, which reboots once demo is gone) and hciplayer (which holds the
  * DAC's PCM) are stopped, and demo is killed outright, so no exit handler can hang it. */
 int rockbox_open(void *ctx, void *event) {
@@ -10110,7 +10046,6 @@ int rockbox_open(void *ctx, void *event) {
     radio_stop();
     addon_stop(); /* the card apps' loops run on past demo: each asked to end */
     if (st.charge_held) switch_charge_enable(1);
-    if (st.cpu_off) cpu1_write(1);
     /* Rockbox's volume is pcm-alsa's software mixer alone, so the headset's absolute volume, left
      * at the Q2's, would cap it: open it to the maximum volume limit. Demo syncs it back on return.
      */
