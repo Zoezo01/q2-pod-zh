@@ -481,8 +481,10 @@ static inline int arc_out(int r, int y) {
 #define WHEEL_DARK_IDLE_MS 1500
 /* A tick needs a ring frame with pressure this recent (tick_gate, navigation.c), and the same gap in
  * frames ends Return's stop. Return's stop (ringnav_queue_event, playback.c): a second Return with
- * WHEEL_STOP_TICKS ticks since the first, the last within WHEEL_ESCAPE_TICK_MS. Calibration knobs. */
+ * WHEEL_STOP_TICKS ticks since the first, the last within WHEEL_ESCAPE_TICK_MS, and the first within
+ * WHEEL_ARM_MS. Calibration knobs. */
 #define WHEEL_FRESH_MS 1000
+#define WHEEL_ARM_MS 2000
 #define WHEEL_ESCAPE_TICK_MS 300
 #define WHEEL_STOP_TICKS 3
 #define BOOT_KEY_GUARD 0xa37c8a /* no symbol: set after a Standby resume, on_wm_keyup_fun drops the next centre release */

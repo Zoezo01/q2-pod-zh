@@ -145,7 +145,7 @@ static void wheel_post(char *info, int key) {
  * the stop (wh_armed). wheel_mute: the stop, below. */
 volatile unsigned wheel_frame_at __attribute__((section(".scratch")));
 static volatile unsigned wh_tick_at __attribute__((section(".scratch"))),
-    wh_since __attribute__((section(".scratch")));
+    wh_since __attribute__((section(".scratch"))), wh_armed_at __attribute__((section(".scratch")));
 static volatile int wh_armed __attribute__((section(".scratch")));
 volatile int wheel_mute __attribute__((section(".scratch")));
 #if Q2POD_DEV
@@ -248,22 +248,23 @@ static void wl_note_tick(unsigned now, unsigned before) {
  * evict a queued release, and the wheel and Centre were dead until a tap (inferred; q2-wheel.log
  * showed thread=0, last=move). They mean nothing, so they are not queued; everything else goes to
  * stock's poster.
- * Return's stop. The first Return in a touch only does its normal job: a thumb can slide from the ring
- * to Return and back with no lift, and a turn begun on Back carries on. A second one with
- * WHEEL_STOP_TICKS ticks since the first, and ticks and frames still arriving, stops the ticks until a
+ * Return's stop. A first Return only does its normal job: a thumb can slide from the ring to Return and
+ * back with no lift, and a turn begun on Back carries on. One past WHEEL_ARM_MS after it is a new first.
+ * A second one with WHEEL_STOP_TICKS ticks since the first, and ticks and frames still arriving, stops the ticks until a
  * real lift or a WHEEL_FRESH_MS gap in frames (wheel_sample), and tick_gate refuses those queued. So
  * under a ghost the first Return closes the volume bar or goes up, and the second ends it. Here, at
- * the press, so a stalled UI doesn't move it. ponytail: a real turn with two rim presses in one touch
- * stops until its lift; nothing else ever limits a turn. */
+ * the press, so a stalled UI doesn't move it. ponytail: a real turn with two rim presses within
+ * WHEEL_ARM_MS in one touch stops until its lift; nothing else ever limits a turn. */
 int ringnav_queue_event(void *loop, const unsigned *r) {
     int (*post)(void *, const void *) =
         loop ? *(int (**)(void *, const void *))((char *)loop + LOOP_POST) : 0;
     if (!post || !r) return 0x10; /* RET_BAD_PARAMS, as stock */
     if (r[0] == EVT_KEY_DOWN && r[EVENT_KEY / 4] == KEY_RETURN && wh_anchor && !wheel_mute) {
         unsigned now = (unsigned)time_now_ms();
-        if (!wh_armed) {
+        if (!wh_armed || (int)(now - wh_armed_at) >= WHEEL_ARM_MS) {
             wh_since = 0;
             wh_armed = 1;
+            wh_armed_at = now;
         } else if (wh_since >= WHEEL_STOP_TICKS && (int)(now - wh_tick_at) < WHEEL_ESCAPE_TICK_MS &&
                    (int)(now - wheel_frame_at) < WHEEL_FRESH_MS) {
             wheel_mute = 1;

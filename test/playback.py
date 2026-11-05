@@ -1137,6 +1137,12 @@ m=armed(); since(m,STOP); m.now+=TICK; m.press(); assert not m.mute()
 m=armed(); since(m,STOP); m.word(ps['wheel_frame_at'],m.now-FRESH); m.press(); assert not m.mute()
 m=armed(); m.read(m.x,0); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute()         # a lift disarms
 m=armed(); m.now+=FRESH; since(m,STOP); m.press(); assert not m.mute()                                  # so does a gap in frames
+ARM=O['WHEEL_ARM_MS']  # the two within this of each other; a later press is a new first, with its own count
+m=armed(); since(m,STOP); m.word(ps['wh_armed_at'],m.now-ARM+1); m.press(); assert m.mute()
+m=armed(); since(m,STOP); m.word(ps['wh_armed_at'],m.now-ARM); m.press(); assert not m.mute(); since(m,STOP-1); m.press(); assert not m.mute(); since(m,1); m.press(); assert m.mute()
+m=armed()                                                                                                # a long touch's early Return, then an ordinary one
+for _ in range(ARM//85+1): assert ghost(m,1,U,gap=85)==[P]; m.drain()
+m.press(); assert not m.mute(); assert ghost(m,3,U,gap=85)==[P]*3
 m=EncoderMachine(); m.read(100,1); m.x=100; m.press(kind=UP_); m.press(O['KEY_CENTER']); m.press(O['KEY_PLAY']); since(m,STOP); m.press(); assert not m.mute()
 m=EncoderMachine(); m.press(); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute() and m.loop_posts==[(DOWN_,R),(DOWN_,R)]  # nothing on the ring
 m=EncoderMachine(); m.read(100,1); m.x=100; since(m,STOP); m.read(m.x,0); m.press(); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute()  # Back between touches: no first press
