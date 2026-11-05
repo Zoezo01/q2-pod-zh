@@ -1793,8 +1793,9 @@ __attribute__((noinline)) static void settings_read(void) {
     /* the themes' own keys, after the thirteen, in table order */
     for (int k = 0; k < THEME_KEYS; ++k)
         st.own[k] = config_value("IPOD", theme_keys[k].key, theme_keys[k].n, theme_keys[k].def);
-    /* A stored value outside an option's values reads as its default (Classic's Ivory: Graphite),
-     * the key untouched. A payload key is every theme's: only the live theme's reading counts. */
+    /* A stored value outside an option's values reads as its default (Classic's Ivory: Classic
+     * Blue), the key untouched. A payload key is every theme's: only the live theme's reading
+     * counts. */
     for (int t = 0; t < THEME_N; ++t)
         for (int k = 0; k < themes[t].n_opts; ++k) {
             const option_t *o = &themes[t].opts[k];
@@ -2083,9 +2084,9 @@ static int drill(void *w) {
 
 static int geom(int group);
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
- * list_into: not in multi-select, and not on grid tiles. Home has none, except Classic's, which
- * rides its selection bar alone, nudge included. A theme's chevron_sel (Classic's) draws only
- * the selected row's, white. The image manager caches the bitmap. */
+ * list_into: not in multi-select, and not on grid tiles. Home has none but a home_chevron_x theme's
+ * (Classic's), and a chevron_sel theme (Classic) draws only the selected row's, white. The image
+ * manager caches the bitmap. */
 static void paint_chevrons(void *w, void *canvas) {
     unsigned bitmap[64], white[64]; /* bitmap_t */
     rect_t old;
@@ -2164,9 +2165,9 @@ static void paint_letter(void *w, void *canvas) {
     canvas_set_clip_rect(canvas, &old);
 }
 
-/* Classic under Square: an iPod's square art on Now Playing, the full-screen art, Cover Flow
- * (coverflow_render) and list thumbnails; stock's placeholder and Home: Carousel's cards keep their
- * own corners. */
+/* Classic (art_square; Corners is not its option): an iPod's square art on Now Playing, the
+ * full-screen art, Cover Flow (coverflow_render) and list thumbnails; stock's placeholder and Home:
+ * Carousel's cards keep their own corners. */
 int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUNDED); }
 
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
@@ -2356,7 +2357,7 @@ static int marq_moved(const void *info) {
 }
 
 /* Load and settle the painted surface's selection, then draw it behind the rows: Minimal's card
- * (a dot on Home), Classic's full-width accent bar or a theme's stops band. */
+ * (a dot on Home) or Classic's stops band (SEL_STOPS). */
 static void paint_selection(void *w, void *canvas) {
     if (kind(w)) st.sel_w = st.sel_widget = st.sel_accent = (void *)0;
     if (!w || !canvas || !kind(w)) return;
@@ -2405,7 +2406,7 @@ static void paint_selection(void *w, void *canvas) {
         void *row = P(g_menu.at[i], W_PARENT);
         if (!I(g_menu.at[i], W_Y) && is_row(row) && I(row, W_H) > r.h) r.h = I(row, W_H);
     }
-    /* Classic: the accent's bar under the rows' own ink. Minimal: its card (sel_widget), off-white
+    /* Classic: its stops band under the rows' own ink. Minimal: its card (sel_widget), off-white
      * with dark ink under its own accent, else the accent's under the rows' own ink. */
     int painter = theme()->painter[PAINT_SELECTION], band = painter != SEL_CARD,
         corners = setting(SETTING_ROUNDED);
@@ -2447,7 +2448,7 @@ static void paint_selection(void *w, void *canvas) {
         fill_box(canvas, &dot, 0xffffffff, HOME_DOT / 2);
     } else { /* Sudo's card: inset from the glass's edges, its corners rounded */
         int grid = tile && g_menu.kind != 4; /* pop-up buttons keep their row inset */
-        int square = !tile && !corners;      /* Corners: Square, a full-width bar as Classic's */
+        int square = !tile && !corners;      /* Corners: Square, full width */
         int in = grid ? TILE_INSET : square ? 0 : SEL_INSET, vertical = grid ? TILE_INSET : 0;
         rect_t card = { r.x + in, r.y + vertical, r.w - 2 * in, r.h - 2 * vertical };
         int radius = !corners ? 0 : tile ? SEL_RADIUS : pill_radius(g_menu.at[i], card.h, in);
@@ -5339,7 +5340,8 @@ int ringnav_paint_bg(void *w, void *canvas) {
             stock_canvas_set_fill_color(canvas, RGBA(S->bar_line));
             canvas_fill_rect(canvas, 0, h, I(w, W_W), 1);
         } else {
-            /* Classic in Light Mode: an iPod's grey bar, flat (final colour) */
+            /* a scheme's bar_light in Light Mode, flat (final colour): no built-in flat bar has one
+             */
             int grey = S->bar_light && ipod_light();
             stock_canvas_set_fill_color(canvas,
                                         grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
@@ -5828,9 +5830,9 @@ static void settings_layout(void *w) {
  * drawing on the next paint, and the theme's colors and images once every cached image is dropped
  * and the screen repaints; Home takes its new layout and Streaming label at once (never
  * recreated), and an open Now Playing its progress bar. */
-/* A Theme's preset, applied as it is chosen: Classic is light, Cobalt and square, Minimal dark,
- * Graphite and rounded; both Split. Light Mode's Auto, the battery and Centred Now Playing are
- * kept. Only a change is saved. */
+/* A Theme's preset (its theme.xml's), applied as it is chosen: Classic light, Classic Blue, Time
+ * in Title and its own switches on; Minimal dark, Graphite, rounded, Time in Title on; both Split.
+ * Light Mode's Auto, the battery and Centred Now Playing are kept. Only a change is saved. */
 static void setting_put(int *value, int v, const char *key) {
     if (*value != v) write_int_config(*value = v, "IPOD", key);
 }
@@ -5853,7 +5855,7 @@ static int setting_click(void *ctx, void *event) {
     const char *key = option_key(T, i);
     /* Rockbox, Favorites, Shuffle, Rated Albums, Artists, Albums, Games */
     static const int shortcut_next[] = { 3, 2, 6, 5, 1, 4, 0 };
-    /* Graphite, ..., Plum, Green, then Ivory in Minimal or Graphite in Classic */
+    /* Graphite, ..., Plum, Green, then Ivory (Classic's mask skips it to its own Classic Blue) */
     static const int accent_next[] = { 1, 2, 3, 4, 5, 6, 8, 0, MINIMAL_ACCENT };
     _Static_assert(sizeof accent_next / sizeof *accent_next == ACCENT_N, "one per ACCENTS row");
     if (i == 4)

@@ -1,5 +1,5 @@
 <!-- Theme: Classic (IPOD/THEME 1, docs/ipod.md#display-settings): a light iPod look, with a dark half, on its own
-     geometry sets, declared below. Its numbers are this file's, never patch/offsets.inc's. Its id, classic-light,
+     geometry sets, declared below. Its numbers are this file's, but for what ROLE_MACROS (tools/theme.py) and Minimal supply. Its id, classic-light,
      names its art, sets and face (classic_light_*, classic-light*). -->
 <theme format="1" id="classic-light" name="Classic" index="1" extends="minimal">
   <!-- Classic's geometry sets: a 26 px bar over a 294 px window, 28 px rows. The Library is always 28 px text.
@@ -87,7 +87,7 @@
   <option setting="time_title" preset="on"/>
   <!-- Row Art, Classic's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
        art lists (the classic-light set), Off makes those lists 28 px text (classic-light-text). The Library is text either way.
-       A change restarts the Q2. Choosing Classic presets On, as Classic presets Cobalt. -->
+       A change restarts the Q2. Choosing Classic presets On. -->
   <!-- Classic's Home in Split, each its own switch, on as chosen, as Classic presets its own: Library on Home slides
        the Library's rows in on Home (off, Library opens its page), Row Preview has the pane follow the highlighted row
        (off, it shows Now Playing's art on every row) -->

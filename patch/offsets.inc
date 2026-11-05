@@ -229,7 +229,7 @@ static inline int arc_out(int r, int y) {
 #define DRIFT_TICK_MS 200
 #define DRIFT_MAX_STEP_MS 500 /* 2.5 ticks: a late tick keeps its time */
 #define DRIFT_TEXELS 221088 /* four panels: 4 x 188 x 294, the tallest set's client */
-#define HOME_TOP 8 /* Minimal's decorative inset; Classic starts below the status bar. */
+#define HOME_TOP 8 /* Minimal's decorative inset */
 #define HOME_CHEVRON_SHIFT 15
 #define HOME_FULL_CHEVRON_SHIFT 10
 #define NP_BAR_CLASSIC 8
@@ -248,7 +248,7 @@ static inline int arc_out(int r, int y) {
 #define LIGHT_CHROMA 40
 #define LIGHT_GLYPH 0xa0
 #define LIGHT_SURFACE 4
-#define LIGHT_BAR 0xdedede      /* Classic's status bar in Light Mode, as an iPod's, flat */
+#define LIGHT_BAR 0xdedede      /* a flat bar's Light Mode grey (scheme bar_light); Classic's gloss bar ignores it */
 /* Minimal's small capitals are SUDO_TRACK px apart (draw_spaced); secondary text is SUDO_MUTED. */
 #define SUDO_TRACK 2
 #define SUDO_MUTED 0x8c8c8c
