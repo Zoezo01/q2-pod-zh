@@ -13,7 +13,7 @@
             lib_art="0" title24_y="4" title_y="6" meta_y="8"
             count_y="8" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
             song_meta_y="29" set_row="32" set_top="0" set_rows="9"
-            set_icon="0" stream_row="52" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"
+            set_icon="0" stream_row="52" bar_px="21" bar_title_w="91" bar_right="63" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"
             stock_row="32" stock_body="32" stock_title_y="0" stock_title_h="32" toolbar="0"
             search_row="52" search_body="52" search_art="0" search_title_y="1" search_title24_y="1" search_title_h="28"
             search_meta_y="29" search_meta_h="20"/>
