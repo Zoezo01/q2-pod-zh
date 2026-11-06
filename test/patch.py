@@ -7953,6 +7953,19 @@ assert ys==[110,0,20,110] and m.get(lrc+O['VIEW_CONTENT_H'])==288,ys
 m.word(lrc+O['VIEW_CONTENT_H'],100); m.call(address=payload_syms['ringnav_lyric_follow'],args=(lrc,0,0,10),gap=0)
 assert m.get(lrc+O['VIEW_CONTENT_H'])==100 and m.get(lrc+O['SCROLL_Y'])==0; passed()
 
+# A looping label's lull (HSCROLL_LULL): stock's own timer, ending on its start before stock's lull callback
+# (hscroll_label_start stands in), so the delay holds there; a yoyo label stays at its end, to scroll back.
+from build import HSCROLL_LULL
+assert struct.unpack_from('<I',demo,fileoff(demo,HSCROLL_LULL[0]))[0]==jal(payload_syms['ringnav_hscroll_lull'])
+for yoyo in (0,1):
+    m=Machine(); w=m.node('hscroll_label'); m.byte(w+O['HSCROLL_YOYO'],yoyo); info=m.alloc(); m.word(info+O['TIMER_CTX'],w)
+    m.call(address=payload_syms['ringnav_hscroll_lull'],args=(w,syms['hscroll_label_start'],1500,0),gap=0)
+    (_,a,f,ms),=[c for c in m.calls if c[0]=='widget_add_timer']; assert (a,ms)==(w,1500)
+    m.call(address=f,args=(info,0,0,0),gap=0)
+    assert [c[:2] for c in m.calls if c[0].startswith('hscroll')]==[('hscroll_label_set_xoffset',w)]*(1-yoyo)+[('hscroll_label_start',info)]
+    assert m.nodes[w].get('hscroll_label_set_xoffset',-1)==(-1 if yoyo else 0)
+passed()
+
 # A refresh's lyric rebuild (LYRIC_ROWS), which stock ends at offset 0, keeps the view where it was.
 from build import LYRIC_ROWS
 assert struct.unpack_from('<I',demo,fileoff(demo,LYRIC_ROWS[0]))[0]==jal(payload_syms['ringnav_lyric_rows'])
@@ -9415,13 +9428,13 @@ def check_row(m,item,slot):
 # theme's select draws the tick, the others' unselect nothing, and the picker opens on it. Any other leading image still hides.
 m,view=settings('display',default=32,sub=4,boot=classic_light_on); m.rockbox_mode=0; lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect'] and all(m.nodes[i]['visible'] for i in marks)
+assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select'] and all(m.nodes[i]['visible'] for i in marks)  # Classic is last
 assert {geometry(m,i) for i in marks}=={(375-SET['EDGE']-50,0,50,32)},[geometry(m,i) for i in marks]
-assert m.paint(view)==0 and m.selected(view)==1,m.selected(view)
+assert m.paint(view)==0 and m.selected(view)==2,m.selected(view)
 # Opened by a tap, its first paint comes with the pointer still down, which keeps other lists from recalling: a picker arrives
 # on its option all the same, so a Centre there does not take the first row. Language's the same.
 m,view=settings('display',default=32,sub=4,boot=classic_light_on); lay(m,view); m.pressed=1
-assert m.paint(view)==0 and m.selected(view)==1,m.selected(view)
+assert m.paint(view)==0 and m.selected(view)==2,m.selected(view)
 m=classic_light_on(Machine()); m.pressed=1; w,es=m.page_list(4,name='language_page'); m.nodes[es[2]]['children']=[m.node('image',image='select')]
 m.paint(w); assert m.selected(w)==2,m.selected(w)
 m=classic_light_on(Machine()); m.pressed=1; w,es=m.page_list(4,name='display_page'); m.paint(w); assert m.selected(w)==0,m.selected(w)
@@ -9434,10 +9447,10 @@ passed()
 # would take Minimal, whose presets overwrite Light Mode, accent and corners.
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='2')); lay(m,view)
 marks=[m.nodes[m.nodes[r]['children'][0]]['children'][0] for r in m.nodes[view]['children']]
-assert [m.nodes[i]['image'] for i in marks]==['unselect','unselect','select'] and geometry(m,marks[0])[0]==SET['ICON_X']
-m.paint(view); assert m.selected(view)==2,m.selected(view)
+assert [m.nodes[i]['image'] for i in marks]==['unselect','select','unselect'] and geometry(m,marks[0])[0]==SET['ICON_X']  # Modern is second
+m.paint(view); assert m.selected(view)==1,m.selected(view)
 m,view=settings('display',sub=4,boot=lambda k:k.config.update(THEME='2')); lay(m,view); m.pressed=1
-m.paint(view); assert m.selected(view)==2,m.selected(view); passed()
+m.paint(view); assert m.selected(view)==1,m.selected(view); passed()
 # A stock row with a second text line under its title (Bluetooth's Quality, 0x4be994: the title at y 12, the
 # detail at y 44 of its 70 px body), under a set whose row is too short for both (Classic's 32), takes two rows, so
 # nothing overlaps the next row. Its one-line neighbours keep the set's row, and a row at SET0's height stays.
@@ -9873,12 +9886,13 @@ m,view,rows=display({'THEME':'1'}); f,ctx=m.handler(m.nodes[rows[3]]['children']
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None)
 assert m.get(payload_syms['display_sub'])==0 and not [c for c in m.calls if c[0]=='write_int_config']
 m,view,_=display({},sub=4)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Classic','Modern'] and m.icons_set==['select','unselect','unselect']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Minimal','Modern','Classic'] and m.icons_set==['select','unselect','unselect']
+m,view,_=display({'THEME':'2'},sub=4); assert m.icons_set==['unselect','select','unselect']  # the tick by stored THEME
 # The current theme's own row does nothing; a live pick (Minimal to Modern, one set) applies at once and moves the check.
 m,view,rows=display({}); pview=display_page(m,4); m.calls=[]
 assert m.call(address=payload_syms['theme_pick'],args=(0,0,0,0),gap=0)==0 and not [c for c in m.calls if c[0]=='write_int_config']
 writes=pick_theme(2); assert [(w[0],m.text(w[2])) for w in writes][:1]==[(2,'THEME')] and row_text(rows[3])=='Theme: Modern'
-assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','unselect','select']
+assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for r in m.nodes[pview]['children']]==['unselect','select','unselect']  # Modern's row is the second
 # Classic needs its own set: the confirm asks; Cancel writes nothing and stays Minimal; OK writes THEME and Classic's
 # presets in option order (Light Mode On unless Auto is stored; Classic Blue; Time in Title, Library on Home and Row Art
 # On where they were Off; the battery as stored), then restarts through device_reboot (the queue saved first); the
@@ -9968,7 +9982,7 @@ fk,fb,ft=font_row(classic_light,'Навстречу ветру'); assert fk.node
 fk,fb,ft=font_row(classic_light,'日本語 Title'); assert fk.nodes[ft]['style:normal:font_name']=='default' and fk.nodes[ft]['style:normal:font_size']==PX
 for setup in (None,lambda k: k.config.update(THEME='2')):  # Minimal and Modern
     ck,cb,ct=font_row(setup,'Title'); assert not [p for p in ck.nodes[ct] if p.endswith(':font_name') or p=='_font']
-for setup,face in ((lambda k: k.config.update(THEME='2'),'bold'),(classic_light,'classic-light')):
+for setup,face in ((lambda k: k.config.update(THEME='2'),'default'),(classic_light,'classic-light')):  # Modern's Home: stock's face
     SETUP[:]=[setup]; hk=QueueMachine(); SETUP.clear(); home=asset_tree(hk,HOME_PAGE);  # QueueMachine reads THEME in its constructor hk.handlers[HOOKS['home_page_init'][0]+12]='stock_home'
     hk.call(address=HOOKS['home_page_init'][0],args=(home,0,0,0),gap=0)
     labels=[n for n,v in hk.nodes.items() if v['type']=='hscroll_label' and v.get('style:normal:font_name')]

@@ -30,7 +30,7 @@ FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'classic-light': 'FONT_
 CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 'bar': 'SEL_BAR'},
            'bar.fill.painter': {'flat': 'BAR_FLAT', 'gloss': 'BAR_GLOSS'},
            'bar.battery.painter': {'stock': 'BATT_STOCK', 'classic-light': 'BATT_CLASSIC_LIGHT'},
-           **dict.fromkeys(('playing.title.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
+           **dict.fromkeys(('playing.title.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 
@@ -76,6 +76,7 @@ SCHEMA = {k.path: k for k in (
     key('list.icons.badge_muted', 'icons_badge_muted', 'bool'),
     key('list.icons.addon_mono', 'icons_addon_mono', 'bool'),
     key('playing.title.font', 'font[ROLE_NP]', 'enum'),
+    key('playing.title.font_px', 'font_px[ROLE_NP]', 'int', 64),
     key('playing.album.opacity', 'np_album_op', 'int', 255),
     key('playing.state.opacity', 'np_state_op', 'int', 255),
     key('home.rows.top', 'home_top', 'int', 375),
@@ -83,7 +84,8 @@ SCHEMA = {k.path: k for k in (
     key('home.rows.text_x', 'home_text_x', 'int', 375),
     key('home.rows.label_end_split', 'home_label_end[0]', 'int', 375),
     key('home.rows.label_end_full', 'home_label_end[1]', 'int', 375),
-    key('home.rows.font_px', 'font_px[ROLE_NP]', 'int', 64),  # the role's: Now Playing's title follows it
+    key('home.rows.font', 'font[ROLE_HOME]', 'enum'),
+    key('home.rows.font_px', 'font_px[ROLE_HOME]', 'int', 64),
     Key('home.pane.stops', 'home_pane', 'stops', 0, 0, (), 'live', True),  # Split with no cover, final; (): the placeholder image
     key('home.pane.shadow', 'pane_shadow', 'color'),
     key('home.pane.shadow_w', 'pane_shadow_w', 'int', 32),

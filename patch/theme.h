@@ -18,9 +18,9 @@ enum {
     FONT_BOLD,
     FONT_CLASSIC_LIGHT
 }; /* theme_t.font[]: stock's, bold.ttf, classic-light.ttf */
-/* theme_t.font[] index: list title, list second line, bar title, Now Playing title and Home rows, a
- * two-line row's title */
-enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_TALL, ROLE_N };
+/* theme_t.font[] index: list title, list second line, bar title, Now Playing title, a two-line
+ * row's title, Home rows */
+enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_TALL, ROLE_HOME, ROLE_N };
 /* an N-stop gradient, n stops (0: none), pos rising from 0 to 100 (% of the band), rgb 0xRRGGBB;
  * as many stops as the band has rows: each row its own, exactly (paint_stops) */
 typedef struct {

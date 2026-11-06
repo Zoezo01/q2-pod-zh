@@ -2289,6 +2289,22 @@ static int np_marquee(const void *info) {
     return 0;
 }
 
+/* A looping stock hscroll_label (Now Playing's title and artist) ends a pass on its lull and then
+ * its delay, both with its end in view, and only then snaps back and scrolls on: its start never
+ * held. The end-of-pass widget_add_timer comes here (HSCROLL_LULL in tools/build.py): the lull's
+ * end puts the start back first, so the delay holds there. A yoyo label goes back by scrolling.
+ * An only_focus label stock won't restart (unfocused) now rests on its start, not its end. */
+static int (*hscroll_lulled)(const void *);
+static int hscroll_lull_end(const void *info) {
+    void *w = P(info, TIMER_CTX);
+    if (!((const char *)w)[HSCROLL_YOYO]) hscroll_label_set_xoffset(w, 0);
+    return hscroll_lulled(info);
+}
+unsigned ringnav_hscroll_lull(void *w, int (*lulled)(const void *), unsigned ms) {
+    hscroll_lulled = lulled;
+    return widget_add_timer(w, hscroll_lull_end, ms);
+}
+
 /* Minimal's Home labels are HOME_CAPS_PX small capitals over their transparent stock ink
  * (ringnav_style_color), white on the selected row, else SUDO_MUTED; the status bar's idle "Q2" is
  * the 1.0.1 wordmark's MARK_PX grey capitals; Now Playing's album (docs/ipod.md#now-playing) is
@@ -6105,6 +6121,9 @@ void restart_confirm(int setting, int value) {
     if (setting == SETTING_THEME) theme_preset(&themes[value], 0);
     ringnav_reboot();
 }
+/* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
+static const unsigned char theme_rows[] = { 0, 2, 1 };
+_Static_assert(sizeof theme_rows == THEME_N, "a row per theme");
 static int theme_pick(void *ctx, void *event) {
     int t = (int)(long)ctx;
     accent();
@@ -6116,9 +6135,10 @@ static int theme_pick(void *ctx, void *event) {
     theme_select(t);
     void *win = window_manager_get_top_window(window_manager());
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
-    for (unsigned i = 0; view && view == theme_view && i < widget_count_children(view); ++i)
+    for (unsigned i = 0;
+         view && view == theme_view && i < THEME_N && i < widget_count_children(view); ++i)
         image_base_set_image(widget_get_child(widget_get_child(widget_get_child(view, i), 0), 0),
-                             (int)i == t ? "select" : "unselect");
+                             theme_rows[i] == t ? "select" : "unselect");
     return 0;
 }
 
@@ -6231,10 +6251,12 @@ int ringnav_display(void *win, void *ctx) {
     if (title) widget_set_text_utf8(title, titles[sub]);
     if (sub == DISPLAY_THEMES) { /* the built-ins */
         accent();
-        for (int t = 0; t < THEME_N; ++t)
+        for (int i = 0; i < THEME_N; ++i) {
+            int t = theme_rows[i];
             widget_set_text_utf8(
                 list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
                 themes[t].name);
+        }
         theme_view = view;
         return result;
     }

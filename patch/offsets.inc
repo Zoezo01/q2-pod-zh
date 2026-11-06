@@ -278,12 +278,15 @@ static inline int arc_out(int r, int y) {
 #define NP_TITLE_PX 22
 #define NP_META_PX 18
 #define NP_ALBUM_RGB 0xbbbbbb
-/* A line too long to fit holds MARQUEE_HOLD_MS at its start: the Minimal album marquee
- * (navigation.c) and the stock title and artist labels' delay and lull (tools/ipod.py). */
+/* A line too long to fit holds MARQUEE_HOLD_MS at its start and its end: the Minimal album marquee
+ * (navigation.c) and the stock title and artist labels' delay and lull (tools/ipod.py,
+ * ringnav_hscroll_lull). */
 #define MARQUEE_HOLD_MS 1500
 #define MARQUEE_PASSES 3 /* the selected row's title: navigation.c marq_poll */
 #define HSCROLL_ONLY_FOCUS 0x78 /* hscroll_label_t, a char: hscroll_label_set_only_focus */
 #define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
+#define HSCROLL_YOYO 0x7b       /* a char: it scrolls back instead of snapping (0x5e8a44) */
+#define TIMER_CTX 0x20          /* timer_info_t.ctx: stock's hscroll lull reads its label there */
 /* iPod Now Playing's lyrics (lyrics.c, docs/ipod.md#lyrics): a line of one row is LYRIC_SLOT high,
  * its text and the gap to the next, a longer one more; the first after a blank LYRIC_SLOT
  * (tools/ipod.py's list layout) so it can sit in the middle as the playing line does; text LYRIC_X

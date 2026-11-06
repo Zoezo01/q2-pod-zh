@@ -382,6 +382,10 @@ ID3_PATH = (0x5148e8, 0x0320f809)
 # The Now Playing timer's jalr scroll_view_scroll_to(scroll_lrc, 0, y, 10) (lw $t9 at 0x52bec0), its lyric
 # follow, becomes jal ringnav_lyric_follow, which pads the content so the view's end is a row top.
 LYRIC_FOLLOW = (0x52bed0, 0x0320f809)
+# hscroll_label's timer, at a looping label's end of pass, adds its lull with jalr widget_add_timer (lw $t9 at
+# 0x5e8ae4): jal ringnav_hscroll_lull, which snaps the label back to its start when the lull ends, so the
+# delay holds there instead of at the end.
+HSCROLL_LULL = (0x5e8ae8, 0x0320f809)
 # The page refresh's bal to the lyric row builder (0x529f0c, which ends at offset 0) becomes jal
 # ringnav_lyric_rows, which keeps the offset: Play/Pause no longer flicks the lyrics to the top.
 LYRIC_ROWS = (0x52b8f8, 0x0411f984)
@@ -1061,6 +1065,7 @@ FUNCTIONS = {
  'hscroll_label_set_xoffset': ('int', 'void *, int'),
  'hscroll_label_start': ('int', 'void *'),
  'hscroll_label_stop': ('int', 'void *'),
+ 'widget_add_timer': ('unsigned', 'void *, int (*)(const void *), unsigned'),
  'widget_set_text': ('int', 'void *, const unsigned *'),
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
  'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (navigation.c library_rows)
@@ -1608,6 +1613,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x52bec0))[0] == 0x8f99c004,
           'lyric follow: expected scroll_view_scroll_to import')
     patch_word(patched, *LYRIC_FOLLOW, jal(ps['ringnav_lyric_follow']), 'lyric rows whole at the top')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5e8ae4))[0] == 0x8f99a858,
+          'hscroll lull: expected widget_add_timer import')
+    patch_word(patched, *HSCROLL_LULL, jal(ps['ringnav_hscroll_lull']), 'a scrolling label holds at its start')
     patch_word(patched, *LYRIC_ROWS, jal(ps['ringnav_lyric_rows']), 'lyrics keep their place on a refresh')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5a9c54))[0] == 0x8f99f4e8,
           'lyric file: expected fopen import')

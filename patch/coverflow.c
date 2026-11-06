@@ -2971,8 +2971,8 @@ static void home_width(void *w, int outer, int inner, int x, int end, int depth)
         void *child = widget_get_child(w, i);
         if (!tk_strcmp(widget_get_type(child), "hscroll_label")) {
             widget_move_resize(child, x, I(child, W_Y), inner - x - end, I(child, W_H));
-            /* Modern's bold, Classic's face; Minimal paints its own (paint_caps) */
-            theme_font(child, ROLE_NP, -1);
+            /* Classic's face; Minimal paints its own (paint_caps) */
+            theme_font(child, ROLE_HOME, -1);
         }
         else
             home_width(child, outer, inner, x, end, depth + 1);

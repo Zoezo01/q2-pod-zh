@@ -60,7 +60,7 @@
   </view>
   <view name="playing">
     <element name="art" square="1"/>
-    <element name="title" font="classic-light"/>
+    <element name="title" font="classic-light" font_px="27"/>
     <element name="album" caps="0" opacity="255"/>
     <element name="state" opacity="255"/>
   </view>
@@ -70,7 +70,7 @@
        a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is. Its colour is stated at 0 and 100,
        as a stops list must end at 100 -->
   <view name="home">
-    <element name="rows" top="0" text_x="20" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
+    <element name="rows" top="0" text_x="20" font="classic-light" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
     <element name="chevron" visible="1" x="168"/>
     <element name="pane" light.stops="#63717b 0, #63717b 100" dark.stops="#1c1c1c 0, #1c1c1c 100" light_a="0" shadow="#000000" shadow_w="0"
              shadow_a="116 100 93 86 79 73 68 62 56 50 44 39 34 28 24 19 16 13 10 8 6 4 3 2 1"

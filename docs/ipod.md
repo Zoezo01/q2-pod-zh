@@ -748,6 +748,7 @@ Now Playing uses 24 px monochrome control glyphs on 28 px canvases inside the ex
 
 ### Theme
 
+The Theme list shows Minimal, Modern, Classic (`theme_rows`), whatever their stored numbers.
 **Theme: Minimal** (`THEME=0`, the default) is the look described above. **Theme: Classic**
 (`1`) is a light iPod look with a dark half, on its own layout (below). **Theme: Modern** (`2`)
 is 1.6.5's Classic on Minimal's layout (below). A stored `THEME=3` or past reads as Minimal.
@@ -777,7 +778,7 @@ so `playing_page` clears it in every state. 1.3.9 first painted it white, which 
 **Theme: Modern** is the iPod look 1.0.1 to 1.6.5 called Classic, drawn at runtime over Minimal's
 layout and assets: the accent's full-width selection bar under white text (an inset pill under
 Rounded Corners), with Home's chevron on its bar, coloured settings icons and the stock
-`list_into`, a bold Now Playing title, and Now Playing's 8-pixel capsule and play/pause glyph.
+`list_into`, Home's menu in the stock font, a bold Now Playing title, and Now Playing's 8-pixel capsule and play/pause glyph.
 Its status bar is black, as Minimal's (an iPod's flat grey, `LIGHT_BAR`, in Light Mode), and its battery charges green.
 
 Minimal and Modern share a geometry set, so a change between them applies at once, as Accent

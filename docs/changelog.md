@@ -1,5 +1,9 @@
 # Changelog
 
+- **1.6.8**:
+  - Now Playing: a title or artist too long to fit now pauses at its start before each scroll, as it does at its end. It used to jump back to the start and scroll on at once.
+  - Display: **Theme: Modern**'s Home menu is in Shanling's own font again, as before 1.5.8. Its Now Playing title stays bold.
+  - Display: the Theme list is in the order Minimal, Modern, Classic.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.

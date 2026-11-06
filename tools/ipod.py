@@ -576,7 +576,7 @@ def playing_page(root, g=SET0):
     title[1] = [NP_TEXT_X, top, text_w, 28]
     # every state: the labels are disabled (enable false), so a lone normal size would not apply
     title[2].update({'style': 's_scrlabel_white20l', **{f'style:{s}:font_size': str(NP_TITLE_PX) for s in ('normal', 'disable', 'focused')}})
-    # stock's lull only pauses between loops; delay holds a new song's start too, as the album's marquee
+    # lull holds the end, delay the start (navigation.c ringnav_hscroll_lull snaps back between them), as the album's marquee
     for n in (title, artist):
         n[2].update(delay=str(inc('MARQUEE_HOLD_MS')), lull=str(inc('MARQUEE_HOLD_MS')))
     artist[1] = [NP_TEXT_X, top + 34, text_w, 22]
