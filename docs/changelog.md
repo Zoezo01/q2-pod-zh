@@ -30,6 +30,7 @@
   - Controls: a short Return straight after a Hold Return that went Home could do nothing the first time. It now works on the first press.
   - Cover Flow: under **Theme: Classic** a wheel step eases into place: each tick moves where the covers are heading without kicking their speed, a cover moving in no longer swells towards you or swings past its place, and it lands without a stutter. Home's Carousel and Photos keep their steps.
   - Cover Flow: under **Theme: Classic** the wheel holds the covers directly: turn slowly and a cover stays part-way until you let go; spin and they run up to 20 albums a second in a narrower row, with the caption going on ahead, and land on the album it names. Wheel Sensitivity scales it as it does other lists, and the art no longer jumps as a spin starts or stops.
+  - Audiobooks: **Chapters** in the Now Playing hold menu is offered for any file in **Podcasts** or **Audiobooks**, such as an MP3 with chapters, not only an `.m4b`. On a CUE track of an `.m4b`, it lists that track's chapters at that track's times, and jumps to the right place. Chapters stored out of order are listed in order, where the list said "Could not read chapters".
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.
