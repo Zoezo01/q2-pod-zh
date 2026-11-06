@@ -932,18 +932,26 @@ def test_the_scan_goes_on_below_65000(fw, songs):
     assert fw.fn('ringnav_scan_room', C.c_int, C.c_int)(songs) == 1
 
 
-@pytest.mark.parametrize('path, m4b', [
-    (None, 0), (b'', 0), (b'/a/b.m4b', 1), (b'/a/b.M4B', 1), (b'/a/b.m4a', 0), (b'/a/m4b', 0), (b'/a.m4b/b', 0), (b'x.mp3.m4b', 1), (b'x.m4b.mp3', 0), (b'.m4b', 1),
+@pytest.mark.parametrize('path, cue, m4b', [
+    (None, 0, 0), (b'', 0, 0), (b'/a/b.m4b', 0, 1), (b'/a/b.M4B', 0, 1), (b'/a/b.m4a', 0, 0), (b'/a/m4b', 0, 0), (b'/a.m4b/b', 0, 0),
+    (b'x.mp3.m4b', 0, 1), (b'x.m4b.mp3', 0, 0), (b'.m4b', 0, 1), (b'/a/b.m4b', 5, 1),
+    (b'/mnt/mmc/Audiobooks/b.mp3', 0, 1), (b'/mnt/mmc/podcasts/a/b.ogg', 0, 1), (b'/mnt/mmc/Audiobooks/b.flac', 5, 0),
+    (b'/mnt/mmc/Audiobooksx/b.mp3', 0, 0), (b'/mnt/mmc/Music/b.mp3', 0, 0), (b'/mnt/mmc/Books/b.mp3', 0, 0),
 ])
-def test_chapter_file(fw, path, m4b):
-    assert fw.fn('navigation__chapter_file', C.c_int, C.c_char_p)(path) == m4b
+def test_chapter_file(fw, path, cue, m4b):
+    """An M4B, or a spoken file that is not a CUE track (its sheet lists its chapters)."""
+    strings(fw)
+    assert fw.fn('navigation__chapter_file', C.c_int, C.c_void_p)(record([], path, cue=cue)) == m4b
 
 
 def test_chapter_file_any_path(fw, heap):
+    strings(fw)
     check = fw.fn('navigation__chapter_file', C.c_int, C.c_void_p)
     for data in hostile(random.Random(0xc4), [b'/a/b.m4b', b'/a/b.M4B', b'x.m4b.mp3', b'.m4b'], 1500):
         path = heap.string(data)
-        assert check(path) == (b'.' in data and data.rsplit(b'.', 1)[1].lower() == b'm4b')
+        r = C.create_string_buffer(0x60)
+        struct.pack_into('<Q', r, REC_PATH, path)
+        assert check(r) == (b'.' in data and data.rsplit(b'.', 1)[1].lower() == b'm4b')
         heap.free(path)
 
 

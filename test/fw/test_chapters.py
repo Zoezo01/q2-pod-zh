@@ -129,8 +129,8 @@ def test_a_bad_chapter_fails_the_whole_list(fw, chapter):
     assert parsed(fw, meta(row(0, b'good'), chapter)) == -1
 
 
-def test_time_going_back_fails_but_a_tie_is_kept(fw):
-    assert parsed(fw, meta(row(5000, b'a'), row(4999, b'b'))) == -1
+def test_time_going_back_is_sorted_and_a_tie_is_kept(fw):
+    assert parsed(fw, meta(row(5000, b'a'), row(4999, b'b'))) == [(4, b'b'), (5, b'a')]
     assert parsed(fw, meta(row(5000, b'a'), row(5999, b'b'))) == [(5, b'a'), (5, b'b')]
 
 
