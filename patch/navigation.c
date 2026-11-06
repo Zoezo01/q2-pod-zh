@@ -1703,8 +1703,10 @@ _Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN
 #include "themes.inc" /* tools/theme.py, from assets/themes/<id>/theme.xml */
 _Static_assert(DRIFT_TEXELS >= 4 * (375 - HOME_SPLIT_W) * CLIENT_H_MAX,
                "Home drift frame fits every set");
+#if __SIZEOF_POINTER__ == 4 /* the Q2's layout; test/fw's 64-bit build has its own */
 _Static_assert(__builtin_offsetof(theme_t, geom) == THEME_GEOM_OFF, "test/patch.py's set_geom");
 _Static_assert(__builtin_offsetof(scheme_t, mode) == SCHEME_MODE_OFF, "test/patch.py patches it");
+#endif
 /* A value of the set theme_boot wrote (st.geom), never the live theme's: V_BAR, ... */
 static int geom_val(int v) { return geom_vals[st.geom][v]; }
 int client_h(void) { return 320 - geom_val(V_BAR); }

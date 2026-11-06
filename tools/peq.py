@@ -197,6 +197,13 @@ LIBC = {
     'write': ('int', 'int, const void *, unsigned'),
 }
 
+# The payload's C beside navigation.c (build.py compile_payload), in link order; test/fw builds the same set.
+UI_SOURCES = ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']
+
+def function_macros(address):
+    """Each stock function in address (name -> its C address) as a macro calling it there."""
+    return [f'#define {name} (({ret} (*)({args})){address[name]})' for name, (ret, args) in FUNCTIONS.items() if name in address]
+
 def compile_common(out, binary, player=False, flac_experiments=()):
     got = {}
     for line in run('readelf', '-AW', binary).splitlines():
@@ -243,9 +250,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):
             asm += [f'.globl {name}', f'.set {name}, peq_lib_{name}']
     if not player:
         syms = symbols(binary) | PRIVATE_FUNCTIONS
-        for name, (ret, args) in FUNCTIONS.items():
-            if name in syms and syms[name]:
-                header.append(f'#define {name} (({ret} (*)({args}))0x{syms[name]:x}u)')
+        header += function_macros({name: f'0x{syms[name]:x}u' for name in FUNCTIONS if syms.get(name)})
         # build.py has already checked each is a one-byte global.
         header += [f'#define {name} (*(volatile unsigned char *)0x{syms[name]:x}u)' for name in GLOBALS]
     else:
@@ -257,7 +262,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):
     flags = [*FLAGS, '-fno-math-errno', '-ffunction-sections', '-fdata-sections']
     if player: flags += ['-mnan=2008']
     objects = []
-    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else ['peq.c', 'peq_ui.c', 'coverflow.c', 'library_scope.c', 'scrobble.c', 'photos.c', 'books.c', 'games.c', 'visualizer.c', 'playback.c', 'upnext.c', 'spotify.c', 'addon.c', 'addon_library.c', 'radio.c', 'tidal.c', 'netupdate.c', 'onlinematch.c', 'crossfade.c', 'nightshift.c', 'headset.c', 'lockscreen.c', 'chapters.c', 'lyrics.c']:
+    for name in (['peq.c', 'peq_player.c', 'mp3_gapless.c', 'lavf_gapless.c'] + [f'flac_{n}.c' for n in flac_experiments]) if player else UI_SOURCES:
         obj = out/(name+'.o')
         run('clang', *flags, '-I', out, '-c', ROOT/'patch'/name, '-o', obj)
         objects.append(obj)

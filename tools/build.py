@@ -785,6 +785,9 @@ FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-class
 CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, and renamed. '
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
+def classic_light_font():
+    return subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
+
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
     value, in file order; the offsets past each change move with it."""
@@ -1435,6 +1438,33 @@ def patch_bluealsa(raw):
         struct.pack_into('<I', image, fileoff(raw, address), new)
     return bytes(image)
 
+STOCK_VERSION = 'V1.32'
+
+def stock_header(context, ranges, themes, dev=0, repo=REPO):
+    """stock.h, which the payload's C includes: context maps each CONTEXT_DATA name to the C address of
+    its data (demo's symbol on the Q2; test/fw/host.py's own array), ranges are the fonts' range macros
+    (subset_font) and themes theme.builtins()'s."""
+    from ipod import SETTINGS_ICONS
+    from theme import theme_keys
+    header = [f'#define RING_STEP {RING_STEP}', *ranges]
+    header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
+    header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
+    header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
+    header += [f'#define {name} ((const unsigned char *){context[name]})' for name in CONTEXT_DATA]
+    # iPod's image hook leaves the settings icons' category colours alone (navigation.c settings_icon).
+    names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
+    header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
+    header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
+    # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
+    header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
+               f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
+               f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
+               f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
+               f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
+    header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
+    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
+    return '\n'.join(header)+'\n'
+
 def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):  # pragma: no mutate block
     from flac import selection
     flac_experiments = selection(flac_experiments)
@@ -1464,7 +1494,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
               'recovery-update/xImage','recovery-update/rootfs.squashfs'], 'Unexpected package members')
         blobs = {m.name:t.extractfile(m).read() for m in meta if m.isfile()}
     info = blobs['firmware_v20.info'].decode().splitlines()
-    check(info[:2] == ['Shanling Q2','V1.32'], 'Wrong model/version')
+    check(info[:2] == ['Shanling Q2', STOCK_VERSION], 'Wrong model/version')
     sq = out/'stock.squashfs'; sq.write_bytes(blobs['recovery-update/rootfs.squashfs'])
     def cat(path): return subprocess.check_output(['unsquashfs', '-cat', str(sq), path])
     raw_demo = cat('release/bin/demo')
@@ -1507,33 +1537,17 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    classic_light, classic_light_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
-    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, classic_light_ranges]
-    header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
-    header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
-    header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
+    classic_light, classic_light_ranges = classic_light_font()
     for name in GLOBALS:
         check(re.search(rf'\b1\s+OBJECT\s+GLOBAL\s+DEFAULT\s+\d+\s+{name}$',
                         symbol_table, re.M), f'{name}: byte global size mismatch')
     for name, size in CONTEXT_DATA.items():
         check(re.search(rf'\b{size}\s+OBJECT\s+GLOBAL\s+DEFAULT\s+\d+\s+{name}$',
                         symbol_table, re.M), f'{name}: context data size mismatch')
-        header.append(f'#define {name} ((const unsigned char *)0x{syms[name]:x}u)')
-    # iPod's image hook leaves the settings icons' category colours alone (navigation.c settings_icon).
-    names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
-    header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
-    header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
-    # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
-    header += [f'#define STOCK_VERSION "{info[1]}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
-               f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
-               f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
-               f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
-               f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
-    from theme import builtins, emit, geometry_sets, theme_keys
+    from theme import builtins, emit, geometry_sets
     themes = builtins()
-    header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
-    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
-    (out/'stock.h').write_text('\n'.join(header)+'\n')
+    (out/'stock.h').write_text(stock_header({name: f'0x{syms[name]:x}u' for name in CONTEXT_DATA},
+                                            [bold_ranges, classic_light_ranges], themes, dev, repo))
     set_pages, redirects = {}, {}
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
         for path, data in set_assets(cat, g).items():
