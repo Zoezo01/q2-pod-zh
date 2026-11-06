@@ -35,7 +35,7 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'volume.panel.painter': {'stock': 'VOL_STOCK', 'classic-light': 'VOL_CLASSIC_LIGHT'},
            'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT'},
            **dict.fromkeys(('playing.title.font', 'playing.meta.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
-           'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED', 'classic-light': 'NP_CLASSIC_LIGHT'},
+           'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 # coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb)
 CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 'fast_full': 1000, 'top_speed': 100, 'track': 1000,
@@ -50,7 +50,7 @@ EASINGS = ('linear', 'quadratic_in', 'quadratic_out', 'quadratic_inout', 'cubic_
 ANIMS = ('htranslate', 'vtranslate', 'fade', 'center_scale', 'popup', 'popdown', 'slide_up', 'slide_down', 'slide_left', 'slide_right')
 # theme.h's MOTION_* order: what a window animates on load or open, what a widget glide takes
 MOTION_WINDOW = ('page', 'payload', 'playing', 'dialog', 'coverflow', 'home')
-MOTION_WIDGET = ('volume', 'inplace', 'swap', 'step', 'step_fast', 'coverflow_step', 'coverflow_step_fast')
+MOTION_WIDGET = ('inplace', 'swap', 'step', 'step_fast', 'coverflow_step', 'coverflow_step_fast')
 
 
 @dataclasses.dataclass(frozen=True)
@@ -139,7 +139,6 @@ SCHEMA = {k.path: k for k in (
     key('playing.scrubber.height', 'np_bar', 'int', 375),
     key('playing.scrubber.scrub_height', 'np_scrub', 'int', 375),
     Key('playing.scrubber.stops', 'np_track', 'stops', 0, 0, (), 'live', True),  # Classic's track, final (paint_scrubber); (): stock's bar
-    key('playing.cover.radius', 'np_art_radius', 'int', 83),
     # the tilted cover: its corners' rows on its widget, in 1/10 px (coverflow.c cover_tilt); bl 0: no tilt
     *(key(f'playing.tilt.{c}', f'np_tilt_{c}', 'int', 2400) for c in ('tl', 'tr', 'br', 'bl')),
     # its reflection: the paper's alpha over the mirrored cover (of 256; 0: none), until this widget row, then to
@@ -190,7 +189,7 @@ SCHEMA = {k.path: k for k in (
     # the light half's flip ends; the dark half's are fixed, #000000 and #ffffff
     Key('scheme.paper', 'paper', 'color', 0, 0xffffff, O['LIGHT_PAPER'] * 0x010101, 'live'),
     Key('scheme.ink', 'ink', 'color', 0, 0xffffff, O['LIGHT_INK'] * 0x010101, 'live'),
-    Key('playing.layout', 'np_layout', 'enum', 0, 2, 0, 'open'),  # the 'open' fields: after n_opts
+    Key('playing.layout', 'np_layout', 'enum', 0, 1, 0, 'open'),  # the 'open' fields: after n_opts
     *(Key(f'coverflow.{e}.{a}', f'cf.{a}', 'int', lo, hi, 0, 'open') for e, a, lo, hi in (
         ('shelf', 'top', 0, 50), ('shelf', 'x1', 0, 1023), ('shelf', 'xs', 0, 799), ('shelf', 'z1', 0, 799),
         ('shelf', 'zs', 0, 799), ('shelf', 'eye', 1, 2046), ('shelf', 'bright1', 1, 256), ('shelf', 'bright2', 1, 256),
@@ -217,7 +216,7 @@ SCHEMA = {k.path: k for k in (
     Key('bar.state.edge', 'state_edge', 'stops', 0, 0, (), 'art'),
     Key('bar.state.halo_light', 'state_halo_light', 'int', 0, 255, 0, 'art'),
     Key('bar.state.halo_dark', 'state_halo_dark', 'int', 0, 255, 0, 'art'),
-    *(Key(f'playing.controls.{c}', f'ctl_{c}', 'color', 0, 0xffffff, 0, 'art') for c in ('light_off', 'light_on', 'dark_off', 'dark_on')),
+    *(Key(f'playing.controls.{c}', f'ctl_{c}', 'color', 0, 0xffffff, 0, 'art') for c in ('light_on', 'dark_on')),
     Key('playing.noart.stops', 'noart_stops', 'stops', 0, 0, (), 'art'),
     Key('playing.noart.note', 'noart_note', 'stops', 0, 0, (), 'art'),
     Key('playing.noart.band_a', 'noart_band_a', 'int', 0, 255, 0, 'art'),
@@ -227,8 +226,7 @@ SCHEMA = {k.path: k for k in (
       for k in (*MOTION_WINDOW, *MOTION_WIDGET) for a, t, hi in (('ms', 'int', 2000), ('easing', 'easing', len(EASINGS) - 1))),
     *(Key(f'motion.{k}.anim', f'motion.{k}.anim', 'anim', 0, len(ANIMS) - 1, 0, 'motion') for k in MOTION_WINDOW),
     Key('motion.recall.ms', 'recall_ms', 'int', 0, 2000, 0, 'motion'),
-    Key('motion.bump.px', 'bump_px', 'int', 0, 12, 0, 'motion'),
-    Key('motion.volume.hold', 'vol_hold_ms', 'int', 0, 20000, 0, 'motion'))}
+    Key('motion.bump.px', 'bump_px', 'int', 0, 12, 0, 'motion'))}
 FIELDS = {k.field: k for k in SCHEMA.values()}
 
 
@@ -268,10 +266,10 @@ MOTION_ROLES = {'motion.page.ms': 'PAGE_SLIDE_MS', 'motion.page.easing': 'EASE_C
 ROLE_MACROS = {
     'minimal': {'home_top': 'HOME_TOP', 'home_full_row': 'HOME_FULL_ROW', 'home_text_x': 'HOME_DOT_X + HOME_DOT + HOME_DOT_GAP',
                 'home_label_end[0]': 'HOME_SPLIT_LABEL_END', 'home_label_end[1]': 'HOME_LABEL_END', 'set_top': 'SET_TOP',
-                'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC', 'np_art_radius': 'NP_ART_RADIUS',
+                'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC',
                 'fill': 'MINIMAL_FILL', 'chevron': 'MINIMAL_CHEVRON', 'muted': 'SUDO_MUTED', 'bar_light': '0', **CF_ROLES, **MOTION_ROLES},
     # Classic: what its theme.xml doesn't state itself (Now Playing's bar, the bars outside its gloss)
-    'classic-light': {'set_top': '0', 'fill': '0', 'chevron': '0',
+    'classic-light': {'set_top': '0', 'np_bar': 'NP_BAR_IPOD', 'np_scrub': 'NP_BAR_IPOD', 'fill': '0', 'chevron': '0',
                       'bar_light': 'LIGHT_BAR'},
     'modern': {'home_top': '0', 'home_full_row': 'HOME_MODERN_ROW', 'home_text_x': 'HOME_MODERN_TEXT_X',
                'home_label_end[0]': 'HOME_MODERN_LABEL_END', 'home_label_end[1]': 'HOME_MODERN_LABEL_END', 'set_top': '0',
@@ -342,9 +340,6 @@ GEOM_RANGES = {
     'home_lib': (0, 1),  # Home's Library row slides in a list of the Library's rows
     'np_ipod': (0, 1),  # Now Playing as an iPod classic's (tools/ipod.py playing_page)
     'home_row': (28, lambda g: (320 - g.bar - O['HOME_TOP']) // 7),  # seven Home rows under HOME_TOP fit the client
-    'np_bar_x': (0, 375),  # 0: from the glass, SET0's
-    'np_bar_w': (0, lambda g: 375 - g.np_bar_x),
-    'np_mark_y': (0, 294),  # stock's A-B markers' row in the window (0: the asset's)
     'stock_row': (28, 78),
     'stock_body': (24, lambda g: g.stock_row),
     'stock_title_y': (0, lambda g: g.stock_body - 20),
@@ -1058,12 +1053,9 @@ def validate(t, name):
                 err(f"{o['key']}: set {s} has a {sets(t)[s].bar} px bar, the theme's is {bar}")
     for e in t['elems']:
         el = f"{e['view']}.{e['alias']}"
-        scrubber = e['alias'] == 'scrubber'
-        if scrubber and (e['x'] is not None or e['w'] is not None):
-            err(f"{el}: x and w are the geometry set's np_bar")
-        rect = [e[k] for k in ('y', 'h') if scrubber] or [e[k] for k in 'xywh']
+        rect = [e[k] for k in 'xywh']
         if None in rect and any(v is not None for v in rect):
-            err(f"{el}: {'y and h' if scrubber else 'x, y, w and h'} go together")
+            err(f"{el}: x, y, w and h go together")
         if e['y'] is None:
             continue
         x, y, w, h = e['x'], e['y'], e['w'], e['h']
@@ -1076,7 +1068,7 @@ def validate(t, name):
                     if room < inset:
                         err(f'{el}: {edge} edge at row {bar + y + r / 10} crosses the glass ({room} from the side, needs {inset})')
         # slides spans the window: a container, whose pages' own content clears the glass; tilt's corners are checked above
-        if not scrubber and e['alias'] not in ('slides', 'tilt'):
+        if e['alias'] not in ('slides', 'tilt'):
             inset = corner_x(bar + y, h)
             if x < inset or x + w > 375 - inset:
                 err(f'{el}: {x}..{x + w} at y {bar + y}..{bar + y + h} crosses the glass ({inset}..{375 - inset})')
@@ -1157,7 +1149,7 @@ def stops_c(v):
 
 
 def motion_fields(t):
-    """theme_t.motion's rows and the recall, bump and volume hold after them, as emit's (C field, value) pairs."""
+    """theme_t.motion's rows and the recall and bump after them, as emit's (C field, value) pairs."""
     def hint(k):
         ms, anim, easing = (t[f'motion.{k}.{a}'] for a in ('ms', 'anim', 'easing'))
         tail = '' if EASINGS[easing] == 'cubic_out' else f',easing={EASINGS[easing]}'  # cubic_out: the window animator's own default
@@ -1165,7 +1157,7 @@ def motion_fields(t):
         return 0 if not ms or k == 'page' and h == SLIDE else json.dumps(h)  # 0: the window keeps its asset hint, page's already being SLIDE
     return [*((f'motion[MOTION_{k.upper()}].hint', hint(k)) for k in MOTION_WINDOW),
             *((f'motion[MOTION_{k.upper()}].{a}', t[f'motion.{k}.{a}']) for k in MOTION_WIDGET for a in ('ms', 'easing')),
-            ('recall_ms', t['recall_ms']), ('bump_px', t['bump_px']), ('vol_hold_ms', t['vol_hold_ms'])]
+            ('recall_ms', t['recall_ms']), ('bump_px', t['bump_px'])]
 
 
 def emit(themes, out, redirects={}):

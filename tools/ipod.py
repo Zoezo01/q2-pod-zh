@@ -77,9 +77,6 @@ class Geometry:
     home_row: int = 39  # Home's and its Settings list's row height; Python only, no C reads it
     home_lib: int = 0  # Home's Library row, in Split, slides in a list of the Library's rows (coverflow.c home_library)
     np_ipod: int = 0  # Now Playing as an iPod classic's: the art's box NP_REFLECT taller for its reflection, the times beside the bar
-    np_bar_x: int = 0  # Now Playing's progress bar: its x and width, stock's A-B markers' too (0: from the glass)
-    np_bar_w: int = 0
-    np_mark_y: int = 0  # stock's A-B markers' row in the window, an immediate (0: stock's 250)
     # Stock's own list pages (STOCK_ROWS, Lock Screen): their rows, its title's y and box, stock's at 78. The one rule to reverse them.
     stock_row: int = 78
     stock_body: int = 70
@@ -202,7 +199,7 @@ def immediate_values(g=SET0):
     """{value name: word} for the named ipod.json immediates under geometry g."""
     geo = with_geometry(g)
     values = {k: v for k, v in dataclasses.asdict(g).items() if k in VALUE_NAMES}
-    return values | {'scroll': geo.BOTTOM - (g.action_row or 50), 'np_bar_x': g.np_bar_x or geo.NP_BAR[0], 'np_bar_w': g.np_bar_w or geo.NP_BAR[2], 'np_mark_y': g.np_mark_y or 250}
+    return values | {'scroll': geo.BOTTOM - (g.action_row or 50), 'np_bar_x': geo.NP_BAR[0], 'np_bar_w': geo.NP_BAR[2]}
 
 
 IPOD = with_geometry(SET0)
@@ -712,48 +709,6 @@ def playing_page(root, g=SET0):
         root[3][at:at] = [named['label_playtime'], remain]
         buttons[3].remove(named['img_more'])
         root[3].append(named['img_more'])
-
-
-# Classic's Now Playing (theme.xml playing layout="classic-light"): the iPod page's widgets under
-# their stock names, the art, the text column, "3 of 12" and the controls in the art page's view, so the
-# playing view's elements (navigation.c theme_elements) place every one.
-PLAYING_CLASSIC_LIGHT = 'playing_page_classic_light.bin'
-def playing_page_classic_light(root, g=SET0):
-    playing_page(root, g)
-    named = {n[2].get('name'): n for n in walk(root)}
-    buttons, album = named['view_buttons'], named['view_album']
-    buttons[3].remove(named['label_ipod_pos'])
-    album[3] += [named['label_ipod_pos'],
-                 ['image', [0, 0, 0, 0], {'name': 'img_np_hearts', 'draw_type': 'center', 'clickable': 'true', 'focusable': 'false', 'style': 'default'}, []]]
-    buttons[1] = [0, 0, 375, 0]
-    # More, repeat and shuffle over the top right of every page: the window's, last, their images the payload's
-    # (navigation.c np_controls).
-    more = named['img_more']
-    buttons[3].remove(more)
-    more[2] = {k: v for k, v in more[2].items() if not k.endswith('bg_image')} | {'draw_type': 'center'}
-    root[3] += [more, *(['image', [0, 0, 0, 0], {'name': n, 'draw_type': 'center', 'clickable': 'true', 'focusable': 'false', 'style': 'default'}, []]
-                        for n in ('img_np_repeat', 'img_np_shuffle'))]
-    album[3].insert(0, ['view', [0, 0, 0, 0], {'name': 'np_tilt', 'sensitive': 'false'}, []])
-    # The pages span the tilted cover and its reflection (theme.xml's slides), over the times' row: the
-    # times and the bar come after them, so they stay on top and take the touch.
-    named['slide_view'][2]['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'
-    named['slide_indicator1'][2]['visible'] = 'false'
-    # The bar is the payload's, drawn on its own widget under stock's slider (navigation.c np_scrubber), which paints
-    # nothing at opacity 0 and keeps the touch.
-    root[3].insert(root[3].index(named['slider_play']), ['view', [0, 0, 0, 0], {'name': 'np_bar', 'sensitive': 'false'}, []])
-    # ... and the lyrics stay on their rows, below the top controls: 7 px, the pages' rise
-    named['view_lrc'][2]['self_layout'] = 'default(x=0,y=21,w=375,h=178)'
-    named['label_lyricmsg'][1][1] += 21
-    for name in ('label_playtime', 'label_playlen', 'label_ipod_remain'):
-        root[3].remove(named[name])
-        root[3].insert(root[3].index(named['slider_play']), named[name])
-
-
-def playing_classic_light(data, g=SET0):
-    check(sha(data) == UI_ASSETS[PLAYING_PAGE], f'{PLAYING_PAGE}: unaudited UI asset')
-    root = decode(data)
-    playing_page_classic_light(root, g)
-    return encode(root)
 
 
 # Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the

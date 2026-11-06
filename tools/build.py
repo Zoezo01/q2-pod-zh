@@ -1500,7 +1500,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
                       QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
-                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock, PLAYING_CLASSIC_LIGHT, playing_classic_light,
+                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
                       set_assets)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
     check(contexts, 'No navigation contexts audited')
@@ -1564,8 +1564,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
             rel = like.removeprefix('release/assets/default/raw/ui/')
             set_pages[path] = (like, english_ui(rel, data) if rel in chinese else data)
             redirects[rel.removesuffix('.bin')] = redirects.get(rel.removesuffix('.bin'), 0) | 1 << i
-        set_pages[ui + f'{g.name}_{PLAYING_CLASSIC_LIGHT}'] = (ui + 'playing_page.bin', english_ui(PLAYING_PAGE, playing_classic_light(cat(ui + 'playing_page.bin'), g)))
-        redirects[PLAYING_CLASSIC_LIGHT.removesuffix('.bin')] = redirects.get(PLAYING_CLASSIC_LIGHT.removesuffix('.bin'), 0) | 1 << i
     emit(themes, out, redirects)
     ps = compile_payload(out)
     payload = (out/'patch.bin').read_bytes()

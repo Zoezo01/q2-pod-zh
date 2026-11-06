@@ -336,8 +336,7 @@ int lyrics_on(void *lrc) {
            (unsigned)widget_count_children(lrc) == ly.rows;
 }
 
-/* Lines are drawn in the theme's face where it has their characters (theme_face), else the system
- * font, LYRIC_BOLD more times a pixel right for weight. */
+/* Lines are drawn in the system font, LYRIC_BOLD more times a pixel right for weight. */
 #define LYRIC_BOLD 2
 static int ly_cjk(unsigned c) {
     return (c >= 0x2e80 && c < 0xa000) || (c >= 0xac00 && c < 0xd7b0) ||
@@ -372,13 +371,11 @@ static int ly_wrap(ly_line *l, const unsigned *s, const unsigned short *adv) {
 static void ly_layout(void *canvas, ly_line *l) {
     const unsigned *s = ly.tab->text + l->text;
     unsigned short *adv = ly.tab->adv + l->text;
-    int px = LYRIC_PX;
-    const char *face = theme_face(s, (int)l->n, &px);
-    canvas_set_font(canvas, face, px);
+    canvas_set_font(canvas, (const char *)0, LYRIC_PX); /* the system default font */
     for (unsigned k = 0; k < l->n; ++k)
         adv[k] = (unsigned short)(canvas_measure_text(canvas, s + k, 1) + 0.5f);
     int rows = ly_wrap(l, s, adv);
-    l->px = px, l->rows = rows < LYRIC_ROWS ? rows : LYRIC_ROWS;
+    l->px = LYRIC_PX, l->rows = rows < LYRIC_ROWS ? rows : LYRIC_ROWS;
 }
 
 /* Stock built lrc's rows (navigation.c ringnav_lyric_rows), a label a line: their table is the
@@ -613,7 +610,7 @@ void lyrics_paint(void *row, void *canvas) {
         y = (h - l->rows * pitch) / 2 + (pitch - l->px) / 2, w = I(row, W_W);
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
     canvas_get_clip_rect(canvas, base);
-    canvas_set_font(canvas, theme_face(ly.tab->text + l->text, (int)l->n, 0), l->px);
+    canvas_set_font(canvas, (const char *)0, l->px);
     for (unsigned r = 0; r < l->rows; lit -= l->w[r++], y += pitch) {
         const unsigned *s = ly.tab->text + l->text + l->start[r];
         int cut = lit <= 0 ? LYRIC_X : lit >= l->w[r] ? w : LYRIC_X + lit;

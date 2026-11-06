@@ -282,15 +282,6 @@
       ]
     },
     {
-      "value": "np_mark_y",
-      "purpose": "Now Playing A-B markers' row",
-      "sites": [
-        ["0x52a410", "0x240600fa"],
-        ["0x52a49c", "0x240600fa"],
-        ["0x52a4b8", "0x240600fa"]
-      ]
-    },
-    {
       "value": "np_bar_x",
       "purpose": "Now Playing A-B markers start at the iPod progress bar's left end",
       "sites": [

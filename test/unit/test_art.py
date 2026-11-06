@@ -26,7 +26,7 @@ QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowga
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('station', 'sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', 'cover', 'bigcover', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'more_l', 'more_d', 'repeat_off_l', 'repeat_off_d', 'repeat_all_l', 'repeat_all_d', 'repeat_one_l', 'repeat_one_d', 'shuffle_off_l', 'shuffle_off_d', 'shuffle_on_l', 'shuffle_on_d', *(f'hearts{n}_{h}' for n in range(6) for h in 'ld'))}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('station', 'sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', 'cover', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', *(f'hearts{n}_{h}' for n in range(2) for h in 'ld'))}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -375,28 +375,6 @@ def test_station_cover_is_the_no_art_family():
     assert min(at(80, 70)[:3]) > 0xe8 and at(10, 10) == cover(10, 10)  # the mast's head, in the note's ink
 
 
-def test_no_art_cover_at_the_full_screen_size():
-    from ipod import BC_ART
-    t = theme.builtins()[1]
-    got = art.images(t)
-    w, h, at = pixels(got['classic_light_bigcover'])
-    assert (w, h) == (BC_ART, BC_ART) and got['classic_light_bigcover'] != got['classic_light_cover']
-    small = pixels(got['classic_light_cover'])[2]
-    # the same drawing at its own size: the gradient's end, the note's place at both, its one source
-    assert at(w - 1, h - 1) == small(159, 159)
-    assert all(min(at(x * w // 160, 30 * w // 160)[:3]) > 0xf0 for x in (70, 75))
-    assert got['classic_light_bigcover'] == art.png(w, h, art.noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], BC_ART))
-
-
-def test_top_right_glyphs():
-    got = art.images(theme.builtins()[1])
-    ink = lambda name: {at(x, y)[:3] for w, h, at in [pixels(got[f'classic_light_{name}'])] for x in range(w) for y in range(h) if at(x, y)[3] == 255}
-    assert pixels(got['classic_light_more_l'])[:2] == (26, 20)
-    assert ink('repeat_off_l') == {(0xb4, 0xb4, 0xb4)} and ink('repeat_all_l') == {(0x4c, 0x4c, 0x4c)} == ink('more_l') == ink('shuffle_on_l')
-    assert ink('shuffle_off_d') == {(0x5a, 0x5a, 0x5a)} and ink('repeat_one_d') == {(0xc6, 0xc3, 0xc6)} == ink('more_d')
-    assert got['classic_light_repeat_one_l'] != got['classic_light_repeat_all_l']  # the one
-
-
 def test_hearts():
     got = art.images(theme.builtins()[1])
     def row(name):  # (filled-looking centre pixels, inked columns)
@@ -404,9 +382,9 @@ def test_hearts():
         return (w, h), [x for x in range(w) if any(at(x, y)[3] for y in range(h))], [at(8 + 20 * i, 13)[3] == 255 and at(8 + 20 * i, 13)[:3] for i in range(5)]
     size, inked, centres = row('hearts0_l')
     assert size == (96, 30) and inked[0] < 3 and inked[-1] < 16 and centres == [False] * 5  # one outline
-    size, inked, centres = row('hearts3_l')
-    assert inked[-1] < 56 and centres == [(0x4c, 0x4c, 0x4c)] * 3 + [False] * 2
-    assert row('hearts5_d')[2] == [(0xc6, 0xc3, 0xc6)] * 5
+    size, inked, centres = row('hearts1_l')
+    assert inked[-1] < 16 and centres == [(0x4c, 0x4c, 0x4c)] + [False] * 4
+    assert row('hearts1_d')[2] == [(0xc6, 0xc3, 0xc6)] + [False] * 4
 
 
 def test_every_literal_corner_radius_is_in_the_table():

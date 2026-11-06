@@ -826,9 +826,8 @@ def validate_assets(directory):
         else: raise AssertionError('Accepted a changed asset')
     # Every geometry set's built list windows take the row height of the page's pitch
     # immediates (art pages take art_pitch), and its rows fit.
-    from theme import ALIASES, builtins, geometry_sets, SCHEMA
-    from ipod import CLASSIC_LIGHT_FONT_SRC, PAGE_KIND as page_kind, page_rows, PLAYING_CLASSIC_LIGHT, PLAYING_STOCK, VALUE_NAMES
-    placed_aliases = 0
+    from theme import builtins, geometry_sets, SCHEMA
+    from ipod import CLASSIC_LIGHT_FONT_SRC, PAGE_KIND as page_kind, page_rows
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
     for g in geometry_sets(builtins()):
         assert g.body <= g.pitch and g.art_body <= g.art_pitch and g.song_body <= g.song_pitch, g.name
@@ -863,35 +862,6 @@ def validate_assets(directory):
                     assert surface[1][1] == 0 and surface[2]['default_item_height'] == str(g.song_pitch) and 'item_height' not in surface[2]
                 else:
                     assert [n[1][1] for n in new[3] if n[0] == 'list_item'] == [0, g.pitch]
-        # A theme's placed widgets are on the page its layout loads, each a child of the window or of
-        # view_album, where no parent layouter moves it.
-        for t in builtins():
-            if g not in geometry_sets([t]) or (g == SET0 and t['np_layout'] == 2): continue  # it runs on its own sets only
-            base = ('playing_page.bin', PLAYING_STOCK, PLAYING_CLASSIC_LIGHT)[t['np_layout']]
-            mine = ui + f'{g.name}_{base}'
-            page = decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + base))
-            parent = {c[2].get('name'): n for n in walk(page) for c in n[3]}
-            for e in t['elems']:
-                n = parent[ALIASES[e['view']][e['alias']]]
-                assert n is page or n[2].get('name') == 'view_album', (t['id'], g.name, e['alias'])
-                placed_aliases += 1
-        assert g != SET0 or 'squashfs-root/' + ui + PLAYING_CLASSIC_LIGHT not in built  # no theme loads it on SET0
-        if g != SET0:
-            # Classic's Now Playing, in its own sets: the iPod page's names, "N of M" and
-            # More in the art page's view, the top row empty; its sets' words put stock's A-B markers on its bar.
-            mine = ui + f'{g.name}_{PLAYING_PAGE}'
-            ipod_page = decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + PLAYING_PAGE))
-            page = decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_CLASSIC_LIGHT}'))
-            names = {n[2].get('name'): n for n in walk(page)}
-            assert set(names) - {n[2].get('name') for n in walk(ipod_page)} == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar'}, g.name
-            assert {n[2].get('name') for n in walk(ipod_page)} <= set(names), g.name
-            assert names['view_buttons'][1] == [0, 0, 375, 0] and [c[2]['name'] for c in names['view_buttons'][3]] == ['img_return']
-            assert 'label_ipod_pos' in {c[2].get('name') for c in names['view_album'][3]}
-            assert [c[2].get('name') for c in page[3]][-3:] == ['img_more', 'img_np_repeat', 'img_np_shuffle']
-            row = struct.unpack_from(f'<{len(VALUE_NAMES)}H', demo, fileoff(demo, symbols(directory/'patch.elf')['boot_values']) +
-                                     2 * len(VALUE_NAMES) * geometry_sets(builtins()).index(g))
-            assert (0x24420000 | row[VALUE_NAMES.index('np_bar_x')], 0x24020000 | row[VALUE_NAMES.index('np_bar_w')]) == (0x24420000 | 63, 0x24020000 | 248), g.name
-            assert row[VALUE_NAMES.index('np_mark_y')] == 222, g.name  # on the bar's gloss, in the word stock moves the markers with
         assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name
         # Home's rows are the set's and fit; a theme with Home's chevron ends its labels short of the
         # glyph (x 20 of list_into) in both widths, as Classic's below.
@@ -940,7 +910,6 @@ def validate_assets(directory):
             assert xm >= corner_inset((g.bar - 2 - g.batt_h) // 2) and g.batt_h <= g.bar - 1 and bar['view_right'][2]['children_layout'].endswith(f'xm={xm},s={inc("STATUS_GAP")})'), g.name
             size = SCHEMA['bar.title.font_size'].field
             assert {t[size] for t in builtins() if g in geometry_sets([t])} == {g.bar_px}, g.name  # the theme's bar text is the set's
-    assert placed_aliases, "a built-in theme places widgets"
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

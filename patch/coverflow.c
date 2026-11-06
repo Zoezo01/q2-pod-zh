@@ -1806,8 +1806,8 @@ static void *opaque_frame(int w, int h) {
     return b;
 }
 
-/* Now Playing's cover under a theme that tilts it (playing.tilt): turned about a vertical axis, so
- * its left and right edges are the frame's first and last columns and each column between is one
+/* A streaming page's cover under a theme that tilts it (playing.tilt): turned about a vertical
+ * axis, so its left and right edges are the frame's first and last columns and each column between is one
  * texture column scaled between the top and bottom edges, the theme's rows at each end (1/10 px).
  * Cover Flow's column() fits neither: its covers share one horizon, these edges don't meet on a
  * row. Under the bottom edge each column continues in its mirror image, the paper over it. Rendered

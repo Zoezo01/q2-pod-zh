@@ -127,11 +127,11 @@ CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, '
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'payload', 'playing', 'dialog', 'coverflow', 'home') for a in ('ms', 'easing', 'anim')},
-                **{f'motion.{k}.{a}': 0 for k in ('volume', 'inplace', 'swap', 'step', 'step_fast', 'coverflow_step', 'coverflow_step_fast') for a in ('ms', 'easing')},
+                **{f'motion.{k}.{a}': 0 for k in ('inplace', 'swap', 'step', 'step_fast', 'coverflow_step', 'coverflow_step_fast') for a in ('ms', 'easing')},
                 'motion.page.ms': 120, 'motion.page.easing': 5, 'motion.swap.ms': 120, 'motion.swap.easing': 8,
                 'motion.step.ms': 200, 'motion.step.easing': 8, 'motion.step_fast.ms': 120, 'motion.step_fast.easing': 8,
                 'motion.coverflow_step.ms': 200, 'motion.coverflow_step.easing': 8, 'motion.coverflow_step_fast.ms': 120, 'motion.coverflow_step_fast.easing': 8,
-                'recall_ms': 300, 'bump_px': 6, 'vol_hold_ms': 0}
+                'recall_ms': 300, 'bump_px': 6}
 
 
 MINIMAL = {
@@ -142,7 +142,7 @@ MINIMAL = {
     'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'font[ROLE_NP_META]': 0, 'font_px[ROLE_NP_META]': 0, 'font[ROLE_INFO]': 0, 'font_px[ROLE_INFO]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
     'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': (), 'pane_light_a': 0, 'pane_icon_x': 0, 'pane_icon_y': 0, 'pane_note_x': 0, 'pane_note_y': 0, 'pane_count_y': 0, 'pane_count_w': 0, 'pane_count_px': 0, 'pane_svc_x': 0, 'pane_svc_y': 0, 'pane_svc_px': 0,
-    'set_top': 8, 'set_text': 0, 'painter[PAINT_SCRUB]': 0, 'painter[PAINT_VOLUME]': 0, 'painter[PAINT_CONFIRM]': 0, 'np_rows[0]': (), 'np_rows[1]': (), 'np_rows[2]': (), 'np_rows[3]': (), 'np_mark': 0, 'np_bar': 4, 'np_scrub': 8, 'np_track': (), 'np_art_radius': O['NP_ART_RADIUS'], 'np_tilt_tl': 0, 'np_tilt_tr': 0, 'np_tilt_br': 0, 'np_tilt_bl': 0, 'np_reflect': 0, 'np_reflect_from': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_HOME]': 0, 'font_px[ROLE_HOME]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'art_placeholder': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'letter_raw': 0, 'letter_px': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'sb_w': 0, 'sb_right': 0, 'sb_top': 0, 'sb_bottom': 0, 'sb_min': 0, 'sb_thumb': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'noart_stops': (), 'noart_note': (), 'noart_band_a': 0, 'noart_shadow_a': 0, 'ctl_light_off': 0, 'ctl_light_on': 0, 'ctl_dark_off': 0, 'ctl_dark_on': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
+    'set_top': 8, 'set_text': 0, 'painter[PAINT_SCRUB]': 0, 'painter[PAINT_VOLUME]': 0, 'painter[PAINT_CONFIRM]': 0, 'np_rows[0]': (), 'np_rows[1]': (), 'np_rows[2]': (), 'np_rows[3]': (), 'np_mark': 0, 'np_bar': 4, 'np_scrub': 8, 'np_track': (), 'np_tilt_tl': 0, 'np_tilt_tr': 0, 'np_tilt_br': 0, 'np_tilt_bl': 0, 'np_reflect': 0, 'np_reflect_from': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_HOME]': 0, 'font_px[ROLE_HOME]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'art_placeholder': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'letter_raw': 0, 'letter_px': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'sb_w': 0, 'sb_right': 0, 'sb_top': 0, 'sb_bottom': 0, 'sb_min': 0, 'sb_thumb': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'noart_stops': (), 'noart_note': (), 'noart_band_a': 0, 'noart_shadow_a': 0, 'ctl_light_on': 0, 'ctl_dark_on': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
@@ -419,9 +419,9 @@ def test_resolve_takes_a_long_name():
 
 MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('chevron_sel', 0), ('art_x', 0), ('art_text_x', 0), ('art_text_end', 0), ('art_placeholder', 0), ('row_text_end', 0), ('sep', '{{0}, {0}}'), ('font[ROLE_TALL]', 'FONT_DEFAULT'), ('font_px[ROLE_TALL]', 0), ('chevron_x', 0), ('home_chevron_x', 0), ('letter_raw', 0), ('letter_px', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
-                  ('font[ROLE_NP]', 'FONT_DEFAULT'), ('font[ROLE_NP_META]', 'FONT_DEFAULT'), ('font_px[ROLE_NP_META]', 0), ('font[ROLE_INFO]', 'FONT_DEFAULT'), ('font_px[ROLE_INFO]', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
-                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font_px[ROLE_NP]', 0), ('font[ROLE_HOME]', 'FONT_DEFAULT'), ('font_px[ROLE_HOME]', 0), ('home_pane', '{{0}, {0}}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('pane_svc_x', 0), ('pane_svc_y', 0), ('pane_svc_px', 0), ('set_top', 8), ('set_text', 0), ('painter[PAINT_SCRUB]', 'SCRUB_STOCK'), ('painter[PAINT_VOLUME]', 'VOL_STOCK'), ('painter[PAINT_CONFIRM]', 'CONFIRM_STOCK'), ('np_rows[0]', '{0}'), ('np_rows[1]', '{0}'), ('np_rows[2]', '{0}'), ('np_rows[3]', '{0}'), ('np_mark', 0), ('np_bar', 4),
-                  ('np_scrub', 8), ('np_track', '{{0}, {0}}'), ('np_art_radius', O['NP_ART_RADIUS']), ('np_tilt_tl', 0), ('np_tilt_tr', 0), ('np_tilt_br', 0), ('np_tilt_bl', 0), ('np_reflect', 0), ('np_reflect_from', 0), ('art_square', 0), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
+                  ('font[ROLE_NP]', 'FONT_DEFAULT'), ('font_px[ROLE_NP]', 0), ('font[ROLE_NP_META]', 'FONT_DEFAULT'), ('font_px[ROLE_NP_META]', 0), ('font[ROLE_INFO]', 'FONT_DEFAULT'), ('font_px[ROLE_INFO]', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
+                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font[ROLE_HOME]', 'FONT_DEFAULT'), ('font_px[ROLE_HOME]', 0), ('home_pane', '{{0}, {0}}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('pane_svc_x', 0), ('pane_svc_y', 0), ('pane_svc_px', 0), ('set_top', 8), ('set_text', 0), ('painter[PAINT_SCRUB]', 'SCRUB_STOCK'), ('painter[PAINT_VOLUME]', 'VOL_STOCK'), ('painter[PAINT_CONFIRM]', 'CONFIRM_STOCK'), ('np_rows[0]', '{0}'), ('np_rows[1]', '{0}'), ('np_rows[2]', '{0}'), ('np_rows[3]', '{0}'), ('np_mark', 0), ('np_bar', 4),
+                  ('np_scrub', 8), ('np_track', '{{0}, {0}}'), ('np_tilt_tl', 0), ('np_tilt_tr', 0), ('np_tilt_br', 0), ('np_tilt_bl', 0), ('np_reflect', 0), ('np_reflect_from', 0), ('art_square', 0), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
                   ('font_px[ROLE_TITLE]', 0), ('font_px[ROLE_META]', 0), ('font[ROLE_BAR]', 'FONT_DEFAULT'), ('font_px[ROLE_BAR]', 0),
                   ('batt', '{0}'), ('batt_line', '{0, 0}'), ('batt_empty', '{0}'), ('batt_low', 0), ('batt_low_w', 0), ('batt_edge', 0), ('batt_corner_a', 0), ('batt_foot_a', 0), ('batt_shade_a', 0), ('batt_soft_a', 0), ('batt_soft_top_a', 0), ('batt_emboss_a', 0), ('batt_emboss_nub_a', 0), ('bar_bt_dy', 0), ('bar_wifi_dy', 0), ('sb_w', 0), ('sb_right', 0), ('sb_top', 0), ('sb_bottom', 0), ('sb_min', 0), ('sb_thumb', '{0, 0}'),
                   ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
@@ -429,9 +429,9 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'
                   ('undeclared', 0), ('np_layout', 'NP_IPOD'),
                   *CF_TODAY.items(), ('page_row', 48), ('page_detail', 64), ('page_title_h', 48), ('page_x', 36), ('page_cap_y', 4), ('page_cap_h', 32), ('page_det_y', 36), ('page_det_h', 24), ('geom', 0),
                   *((f'motion[MOTION_{k}].hint', 0) for k in ('PAGE', 'PAYLOAD', 'PLAYING', 'DIALOG', 'COVERFLOW', 'HOME')),
-                  *((f'motion[MOTION_{k}].{a}', v) for k, ms, e in (('VOLUME', 0, 0), ('INPLACE', 0, 0), ('SWAP', 120, 8), ('STEP', 200, 8), ('STEP_FAST', 120, 8), ('COVERFLOW_STEP', 200, 8), ('COVERFLOW_STEP_FAST', 120, 8))
+                  *((f'motion[MOTION_{k}].{a}', v) for k, ms, e in (('INPLACE', 0, 0), ('SWAP', 120, 8), ('STEP', 200, 8), ('STEP_FAST', 120, 8), ('COVERFLOW_STEP', 200, 8), ('COVERFLOW_STEP_FAST', 120, 8))
                     for a, v in (('ms', ms), ('easing', e))),
-                  ('recall_ms', 300), ('bump_px', 6), ('vol_hold_ms', 0)]
+                  ('recall_ms', 300), ('bump_px', 6)]
 
 
 def test_emit(tmp_path):
@@ -479,7 +479,7 @@ def test_emit_both(tmp_path):
 
 
 def test_playing_layout_builtins_ipod():
-    assert [t['np_layout'] for t in theme.builtins()] == [0, 2]
+    assert [t['np_layout'] for t in theme.builtins()] == [0, 0, 0]
 
 
 def test_playing_layout_resolves_centred():
@@ -493,8 +493,7 @@ def test_playing_layout_rejects_unknown():
 
 def test_emit_np_layout(tmp_path):
     theme.emit(theme.builtins(), tmp_path)
-    inc = (tmp_path/'themes.inc').read_text()
-    assert inc.count('.np_layout = NP_IPOD,') == 1 and inc.count('.np_layout = NP_CLASSIC_LIGHT,') == 1
+    assert (tmp_path/'themes.inc').read_text().count('.np_layout = NP_IPOD,') == 3
 
 
 # Placed widgets: Q2 Pod aliases with typed, whitelisted properties; the rect clears the glass.
@@ -520,7 +519,7 @@ def test_classic_light_cover_clears_the_glass():  # the cover's four corners and
     assert (e['x'], e['x'] + e['w'], top + t['np_tilt_tl'] / 10, top + t['np_tilt_tr'] / 10, top + t['np_tilt_br'] / 10, top + t['np_tilt_bl'] / 10, top + e['h']) == (10, 171, 44.6, 56.9, 197.3, 204.1, 276)
 
 
-TILT = '<view name="playing" layout="classic-light"><element name="slides" x="0" y="0" w="375" h="280"/><element name="tilt" x="{x}" y="{y}" w="{w}" h="{h}" tl="{tl}" tr="129" br="1533" bl="1601"/></view>'
+TILT = '<view name="playing"><element name="slides" x="0" y="0" w="375" h="280"/><element name="tilt" x="{x}" y="{y}" w="{w}" h="{h}" tl="{tl}" tr="129" br="1533" bl="1601"/></view>'
 
 
 @pytest.mark.parametrize('values, message', [
@@ -556,7 +555,6 @@ def test_placed_slides_first():  # containers move before the children converted
     ('name="artist" align="justify"', 'playing.artist.align: unknown value justify'),
     ('name="artist" caps="1"', 'unknown key playing.artist.caps'),
     ('name="slider_play" x="0"', 'unknown element playing.slider_play'),
-    ('name="scrubber" x="63" y="205" w="248" h="44"', 'playing.scrubber: x and w are the geometry set\'s np_bar'),
 ])
 def test_placed_rejects(attrs, message):
     t = error(lambda: theme.validate(resolved(f'<view name="playing"><element {attrs}/></view>'), 't.xml'))
@@ -568,7 +566,7 @@ def test_emit_elements(tmp_path):
     text = (tmp_path/'themes.inc').read_text()
     assert 'enum { VIEW_PLAYING, VIEW_N };' in text
     assert '{VIEW_PLAYING, E_PLAYING_ARTIST, 187, 82, 173, 20, 255, 255, FONT_CLASSIC_LIGHT, 22, 0xffc6c3c6, 255}' in text
-    assert text.count('.elems = 0,') == 1 and text.count('.n_elems = 0,') == 1  # Minimal
+    assert text.count('.elems = 0,') == 2 and text.count('.n_elems = 0,') == 2  # Minimal and Modern
     assert 'static const char *const elem_widgets[ELEM_N] = {"slide_view_view", "scrlabel_title", "scrlabel_artist", ' in text
 
 
@@ -582,7 +580,7 @@ def test_view_attr():
 def test_emit_names_enums_and_counts(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     assert [inc.count(f'.painter[PAINT_SELECTION] = {p},') for p in ('SEL_CARD', 'SEL_STOPS', 'SEL_BAR')] == [1, 1, 1]
-    assert inc.count('.np_layout = NP_IPOD,') == 2 and inc.count('.np_layout = NP_CLASSIC_LIGHT,') == 1 and '.np_layout = 0,' not in inc
+    assert inc.count('.np_layout = NP_IPOD,') == 3 and '.np_layout = 0,' not in inc
     for name, (_, values) in theme.SETTINGS.items():
         assert f'#define SETTING_N_{name.upper()} {len(values)}\n' in inc
 
@@ -702,10 +700,10 @@ def test_emit_cf(tmp_path):
 
 # page_list's rows, detail rows and in-page title: 48/64/48 unless a theme sets them (open class).
 def test_page_rows_defaults_and_classic_light():
-    assert [(t['page_row'], t['page_detail'], t['page_title_h']) for t in theme.builtins()] == [(48, 64, 48), (32, 52, 0)]
-    assert [t['page_x'] for t in theme.builtins()] == [O['CF_EDGE'], 20]
+    assert [(t['page_row'], t['page_detail'], t['page_title_h']) for t in theme.builtins()] == [(48, 64, 48), (32, 52, 0), (48, 64, 48)]
+    assert [t['page_x'] for t in theme.builtins()] == [O['CF_EDGE'], 20, O['CF_EDGE']]
     # a detail row's boxes; a box holds its font at Classic's sizes (a label draws nothing in a shorter one)
-    assert [(t['page_cap_y'], t['page_cap_h'], t['page_det_y'], t['page_det_h']) for t in theme.builtins()] == [(4, 32, 36, 24), (-1, 28, 28, 18)]
+    assert [(t['page_cap_y'], t['page_cap_h'], t['page_det_y'], t['page_det_h']) for t in theme.builtins()] == [(4, 32, 36, 24), (-1, 28, 28, 18), (4, 32, 36, 24)]
     cl = theme.builtins()[1]
     assert cl['page_cap_h'] >= cl['font_px[ROLE_TALL]'] and cl['page_det_h'] >= cl['font_px[ROLE_META]'] and cl['page_row'] >= cl['font_px[ROLE_TITLE]']
     t = resolved('<view name="page"><element name="rows" height="30" detail_height="56" detail_y="30" detail_h="24"/><element name="title" height="0"/></view>')
@@ -731,7 +729,7 @@ def test_page_rows_reject(body, message):
 def test_emit_page_rows(tmp_path):
     theme.emit(theme.builtins(), tmp_path)
     text = (tmp_path/'themes.inc').read_text()
-    assert text.count('.page_row = 48,') == 1 and text.count('.page_detail = 52,') == 1 and text.count('.page_title_h = 0,') == 1 and text.count('.page_cap_y = -1,') == 1
+    assert text.count('.page_row = 48,') == 2 and text.count('.page_detail = 52,') == 1 and text.count('.page_title_h = 0,') == 1 and text.count('.page_cap_y = -1,') == 1
 
 
 TEST = Geometry(name='test', pitch=28)
@@ -1148,10 +1146,10 @@ def test_emit_boot_tables(tmp_path):
     inc = boot_inc(tmp_path, set0_builtins())
     names = ipod.VALUE_NAMES
     sites = [(int(a, 16), g['value']) for g in ipod.AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
-    assert len(sites) == 93
+    assert len(sites) == 90
     assert inc.index('enum { GEOM_IPOD, GEOM_N };') > inc.index('static const theme_t themes[THEME_N]')
     assert 'enum { ' + ', '.join(f'G_{n.upper()}' for n in names) + ', G_N };' in inc
-    assert '#define BOOT_SITES 93' in inc and '#define CLIENT_H_MAX 290' in inc
+    assert '#define BOOT_SITES 90' in inc and '#define CLIENT_H_MAX 290' in inc
     assert 'const boot_site_t boot_sites[BOOT_SITES] = {' + ', '.join(f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};' in inc
     row = ', '.join(str(ipod.immediate_values(SET0)[n]) for n in names)
     assert f'const volatile unsigned short boot_values[GEOM_N][G_N] = {{{{{row}}}}};' in inc
@@ -1211,19 +1209,10 @@ def test_emit_classic_light_sets(tmp_path):
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '1', '0'] and '.accent_slot = &st.own[0],' in inc
 
 
-def test_classic_light_top_right_hit_areas():
-    rows = {e['alias']: e for t in theme.builtins() if t['id'] == 'classic-light' for e in t['elems'] if e['alias'] in ('more', 'repeat', 'shuffle')}
-    more, repeat, shuffle = rows['more'], rows['repeat'], rows['shuffle']
-    assert all(e['w'] >= 30 for e in rows.values()) and more['x'] + more['w'] <= repeat['x'] and repeat['x'] + repeat['w'] <= shuffle['x']
-    # their glyphs, 26 x 20, centred, at the approved places
-    assert [e['x'] + (e['w'] - 26) // 2 for e in (more, repeat, shuffle)] == [262, 293, 324] and all(e['y'] + (e['h'] - 20) // 2 == 7 for e in rows.values())
-
-
 def test_classic_light_hearts_hit_area():
     rows = {e['alias']: e for t in theme.builtins() if t['id'] == 'classic-light' for e in t['elems']}
     hearts = rows['hearts']
     assert (hearts['x'], hearts['y'] + 6, hearts['w']) == (188, 126, 96) and hearts['h'] >= 30  # the row at the approved place
-    assert rows['fav']['visible'] == 0 and rows['playmode']['visible'] == 0
 
 
 def test_rows_key():
@@ -1264,8 +1253,8 @@ def test_motion_today(tmp_path):  # Minimal: the asset hint kept (0), today's nu
 
 
 MOTION_CLASSIC_LIGHT = {**MOTION_TODAY, 'motion.home.ms': 270, 'motion.payload.ms': 120, 'motion.payload.easing': 5, 'motion.dialog.ms': 300,
-                        'motion.dialog.easing': 2, 'motion.dialog.anim': 2, 'motion.volume.ms': 230, 'motion.volume.easing': 2,
-                        'motion.swap.ms': 170, 'motion.swap.easing': 0, 'motion.inplace.ms': 120, 'motion.inplace.easing': 5, 'recall_ms': 0, 'bump_px': 0, 'vol_hold_ms': 5300,
+                        'motion.dialog.easing': 2, 'motion.dialog.anim': 2,
+                        'motion.swap.ms': 170, 'motion.swap.easing': 0, 'motion.inplace.ms': 120, 'motion.inplace.easing': 5, 'recall_ms': 0, 'bump_px': 0,
                         'motion.coverflow_step.ms': 81, 'motion.coverflow_step.easing': 24, 'motion.coverflow_step_fast.ms': 81, 'motion.coverflow_step_fast.easing': 24}
 
 
@@ -1281,16 +1270,15 @@ def test_motion_classic_light(tmp_path):
     inc = boot_inc(tmp_path, theme.builtins())
     for line in ('.motion[MOTION_HOME].hint = "htranslate(duration=270,easing=linear)",',
                  '.motion[MOTION_PAYLOAD].hint = "htranslate(duration=120)",',  # no asset hint to keep
-                 '.motion[MOTION_DIALOG].hint = "fade(duration=300,easing=quadratic_out)",', '.vol_hold_ms = 5300,'):
+                 '.motion[MOTION_DIALOG].hint = "fade(duration=300,easing=quadratic_out)",'):
         assert inc.count(line) == 1, line
-    assert inc.count('.motion[MOTION_PAGE].hint = 0,') == 2  # today's: the asset's own
+    assert inc.count('.motion[MOTION_PAGE].hint = 0,') == 3  # today's: the asset's own
 
 
 def test_motion_composes_hints(tmp_path):
     t = resolved('<view name="motion"><element name="page" ms="300" easing="sin_inout"/>'
                  '<element name="dialog" anim="fade" ms="300" easing="quadratic_out"/>'
                  '<element name="coverflow" anim="slide_left" ms="230" easing="cubic_out"/>'  # the animator's default: no easing=
-                 '<element name="volume" ms="230" easing="quadratic_out" hold="5300"/>'
                  '<element name="playing" anim="fade" easing="back_out" ms="0"/>'  # 0: the window as it is
                  '<element name="step" ms="250" easing="quadratic_out"/><element name="inplace" ms="300"/>'
                  '<element name="recall" ms="0"/><element name="bump" px="0"/></view>')
@@ -1299,7 +1287,6 @@ def test_motion_composes_hints(tmp_path):
     for line in ('.motion[MOTION_PAGE].hint = "htranslate(duration=300,easing=sin_inout)",',
                  '.motion[MOTION_DIALOG].hint = "fade(duration=300,easing=quadratic_out)",',
                  '.motion[MOTION_COVERFLOW].hint = "slide_left(duration=230)",',
-                 '.motion[MOTION_VOLUME].ms = 230,', '.motion[MOTION_VOLUME].easing = 2,', '.vol_hold_ms = 5300,',
                  '.motion[MOTION_STEP].ms = 250,', '.motion[MOTION_STEP].easing = 2,',
                  '.motion[MOTION_INPLACE].ms = 300,', '.recall_ms = 0,', '.bump_px = 0,'):
         assert inc.count(line) == 1, line
@@ -1311,8 +1298,7 @@ def test_motion_composes_hints(tmp_path):
     ('<element name="page" ms="2001"/>', r'motion\.page\.ms: 2001 outside'),
     ('<element name="dialog" anim="spin"/>', r'motion\.dialog\.anim: spin'),
     ('<element name="step" anim="fade"/>', r'motion\.step\.anim'),  # widget kinds take no animator
-    ('<element name="volume" anim="slide_left"/>', r'motion\.volume\.anim'),
-    ('<element name="volume" hold="20001"/>', r'motion\.volume\.hold: 20001 outside')])
+])
 def test_motion_rejects(element, message):
     with pytest.raises(theme.ThemeError, match=message):
         resolved(f'<view name="motion">{element}</view>')

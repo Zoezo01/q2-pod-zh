@@ -345,45 +345,6 @@ def test_playing_page_lyrics_and_info(page):
     assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=375,h=178)'
 
 
-# Classic's page: the iPod page's widgets under every stock name, "N of M" and More in the art
-# page's view (its elements place them there), the top row empty.
-@pytest.fixture
-def classic_light_page():
-    root = playing()
-    ipod.playing_page_classic_light(root)
-    ipod.encode(root)
-    return root, named(root)
-
-
-def test_playing_page_classic_light_keeps_every_name(classic_light_page, page):
-    assert set(page[1]) <= set(classic_light_page[1]) and set(classic_light_page[1]) - set(page[1]) == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar'}
-
-
-def test_playing_page_classic_light_regroups(classic_light_page):
-    root, n = classic_light_page
-    assert n['view_buttons'][1] == [0, 0, 375, 0]
-    assert [c[2]['name'] for c in n['view_buttons'][3]] == ['img_return']
-    assert [c[2].get('name') for c in n['view_album'][3]][-3:] == ['img_fav', 'label_ipod_pos', 'img_np_hearts']
-    top = [c[2].get('name') for c in root[3]][-3:]  # the window's, over the pages: on every page
-    assert top == ['img_more', 'img_np_repeat', 'img_np_shuffle'] and all(n[t][2]['draw_type'] == 'center' for t in top) and n['img_np_shuffle'][2]['clickable'] == 'true'
-    assert not [k for k in n['img_more'][2] if k.endswith('bg_image')]  # stock's dots gone
-
-
-def test_playing_page_classic_light_pages_span_the_tilted_cover(classic_light_page):
-    root, n = classic_light_page
-    assert [c[2].get('name') for c in n['view_album'][3]][:2] == ['np_tilt', 'img_cover']  # the frame under the stock image's tap
-    assert n['slide_view'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)' and n['slide_indicator1'][2]['visible'] == 'false'
-    order = [c[2].get('name') for c in root[3]]  # over the pages' reflection, under the bar
-    assert order.index('slide_view_view') < order.index('np_bar') < min(order.index(t) for t in ('label_playtime', 'label_playlen', 'label_ipod_remain')) < order.index('slider_play')
-    assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=21,w=375,h=178)' and n['label_lyricmsg'][1][1] == 4 + 21  # below the top controls, on the same rows
-
-
-def test_classic_light_sets_bar_immediates():
-    assert ipod.immediate_values(CLASSIC_LIGHT)['np_bar_x'] == 63 and ipod.immediate_values(CLASSIC_LIGHT)['np_bar_w'] == 248
-    assert ipod.immediate_values(ipod.SET0)['np_bar_x'] == 21 and ipod.immediate_values(ipod.SET0)['np_bar_w'] == 333
-    assert ipod.immediate_values(CLASSIC_LIGHT)['np_mark_y'] == 222 and ipod.immediate_values(ipod.SET0)['np_mark_y'] == 250  # stock's
-
-
 def test_playing_page_swipe_area(page):
     _, n = page
     assert n['slide_view_view'][1] == [0, ipod.NP_TOP, 375, ipod.NP_SLIDE_H + 6]
@@ -531,17 +492,6 @@ def test_playing_stock(audited):
     assert n['img_fav'][1] == [2, 132, 86, 73]
     assert n['slider_play'][1] == [50, 208 + 41 + 6 - ipod.NP_TOUCH // 2, 290, ipod.NP_TOUCH]
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])
-
-
-def test_playing_classic_light_takes_the_audited_page(audited):
-    data, want = audited(playing()), playing()
-    with pytest.raises(ValueError, match=r'^playing_page.bin: unaudited UI asset$'):
-        ipod.playing_classic_light(b'other')
-    ipod.playing_page_classic_light(want)
-    assert ipod.playing_classic_light(data) == ipod.encode(want)
-    want = playing()
-    ipod.playing_page_classic_light(want, CLASSIC_LIGHT)
-    assert ipod.playing_classic_light(data, CLASSIC_LIGHT) == ipod.encode(want)
 
 
 def test_playing_stock_is_audited(audited):
@@ -990,7 +940,7 @@ SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
 
 def test_immediates_every_site_once():
     sites = [a for g in ipod.AUDIT['immediates'] for a, _ in g['sites']]
-    assert len(sites) == 106 and len(set(sites)) == 106
+    assert len(sites) == 103 and len(set(sites)) == 103
 
 
 def test_immediate_values_set0_are_the_baked_values():
@@ -998,9 +948,8 @@ def test_immediate_values_set0_are_the_baked_values():
     assert set(values) == set(ipod.VALUE_NAMES)
     assert (values['np_bar_x'], values['np_bar_w']) == (ipod.NP_BAR[0], ipod.NP_BAR[2])
     assert ipod.VALUE_NAMES[0] == 'pitch'
-    assert values['np_mark_y'] == 250  # stock's row, as baked
     for name in ipod.VALUE_NAMES:
-        if not name.startswith(('np_bar', 'np_mark', 'stock_', 'search_')):
+        if not name.startswith(('np_bar', 'stock_', 'search_')):
             assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_').removeprefix('song_')], name
 
 

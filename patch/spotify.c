@@ -502,7 +502,7 @@ void spot_paint(void *w, void *canvas) {
         int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H; /* Modern's capsule: Classic's 13 drawn 8 */
         if (theme()->painter[PAINT_SCRUB] == SCRUB_ROWS) {
             int ww = I(w, W_W);
-            paint_rows_bar(canvas, 0, (I(w, W_H) - h) / 2, ww, h,
+            paint_rows_bar(canvas, 0, (I(w, W_H) - NP_ROWS) / 2, ww, NP_ROWS,
                            (int)((ms >> 4) * (unsigned)ww / ((sp.duration >> 4) | 1)), ui.scrub);
             stock_canvas_set_fill_color(canvas, fill);
             return;

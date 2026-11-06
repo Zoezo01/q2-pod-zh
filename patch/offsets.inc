@@ -161,7 +161,6 @@ static inline int arc_out(int r, int y) {
 }
 #define PLACEHOLDER "default_album_flow" /* Cover Flow's and Spotify's missing art */
 #define VOL_POLL_MS 50 /* how often the volume indicator checks for a change */
-#define VOL_PUSH_TICK_MS 16 /* a frame of the row's push */
 /* The volume panel off Now Playing (vol_paint): exactly over Quick Settings' brightness row
  * (tools/ipod.py checks it), its rounded corners clear of the 80px glass corners. */
 #define VOL_PANEL_X 26
@@ -206,8 +205,6 @@ static inline int arc_out(int r, int y) {
 /* iPod: the full-screen art (stock's bigcover_page) shows the song name BC_MS, then it and its shade
  * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
-#define BC_RADIUS 20 /* a tilted cover's theme: the art's corners, at a BC_RADIUS_AT px art */
-#define BC_RADIUS_AT 292
 #define QS_SWIPE_STOCK 295 /* stock's handler (0x4a0cc0): Quick Settings' swipe up starts from here down, */
 #define QS_SWIPE_Y 250     /* and Classic Light's from here, its slider above stock's line */
 /* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x52bffc) counts it down while a
@@ -215,9 +212,6 @@ static inline int arc_out(int r, int y) {
 #define BC_IDLE 0x99f660
 #define BC_IDLE_FULL 40
 #define BC_TITLE_PAD 12 /* the song name's inset from the art's sides */
-/* A tilted cover's theme: the name's band on that page, its height and colour (black at 0xa0). */
-#define BC_BAND_H 44
-#define BC_BAND_RGBA 0xa0000000
 /* The screen glass's rounded corners and how far content keeps clear of them (tools/ipod.py). */
 #define GLASS_R 80
 #define GLASS_SLACK 4
@@ -640,9 +634,6 @@ static inline int arc_out(int r, int y) {
 #define BOOTVOL_ADD 0x4b45a8      /* img_add's click */
 #define BOOTVOL_CHANGING 0x4b48f4 /* slider_bootvol's EVT_VALUE_CHANGING */
 #define BOOTVOL_CHANGED 0x4b4300  /* slider_bootvol's EVT_VALUE_CHANGED */
-/* signed byte, on_volume_tsup_fun's idle count: a 100 ms timer (0x4a1c18) does lbu, +1, seb, sb and
- * slti 0x1f on it, so the volume dialog closes at 31, and any key clears it */
-#define VOL_IDLE_TICKS 0xa271e0
 #define SCAN_THREAD 0xa271d8
 /* byte, 1 for the whole library's scan, 0 for a folder's (the same init): our reading of stock's
  * code, not checked on a device */

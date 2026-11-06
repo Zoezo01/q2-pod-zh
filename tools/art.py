@@ -9,7 +9,7 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from build import ROOT
-from ipod import BC_ART, CLASSIC_LIGHT_FONT_SRC, STATE_W
+from ipod import CLASSIC_LIGHT_FONT_SRC, STATE_W
 
 SUB = 8  # sub-rows per pixel; columns are exact within a sub-row
 
@@ -309,13 +309,7 @@ STATE_BOX = (266, 0, STATE_W, 22)  # the frame the state art is drawn in, on the
 STATE_Y = (4, 19)  # the fill's and edge's first and last rows
 
 
-# Now Playing's top right, 26 x 20: original strokes, in the half's dim (off) or dark (on) ink (playing.controls)
-CONTROLS = {'more': ('M5 10h.01M13 10h.01M21 10h.01', 3.4),
-            'repeat': ('M4 11V8.5A3.5 3.5 0 0 1 7.5 5H22M22 9v2.5a3.5 3.5 0 0 1-3.5 3.5H4M18.5 1.5 22 5l-3.5 3.5M7.5 11.5 4 15l3.5 3.5', 2.2),
-            'shuffle': ('M1 5h4.5c6 0 8 10 14 10H23M1 15h4.5c6 0 8-10 14-10H23M20 1.5 24 5l-4 3.5M20 11.5 24 15l-4 3.5', 2.2)}
-CONTROL_ONE = ('M11.8 8.4 13.6 7.2V12.8', 1.5)  # repeat one's figure, between its arrows
-CONTROL_BOX = (0, 0, 26, 20)
-# The hearts under the album: the row left-aligned in its 96 x 30 tap area, 16 x 15 each, 4 px apart, 6 rows down
+# A radio's heart (playing.hearts): the row left-aligned in its 96 x 30 tap area, 16 x 15 each, 4 px apart, 6 rows down
 HEART = 'M8 14C3 10 1 7.5 1 4.8 1 1 6 0 8 3.6 10 0 15 1 15 4.8 15 7.5 13 10 8 14Z'
 HEARTS_BOX = (0, -6, 96, 30)
 @functools.cache
@@ -324,11 +318,6 @@ def hearts(n, rgb):
     at = lambda i: [[(x + 20 * i, y) for x, y in poly] for poly in path(HEART)]
     shapes = [q for i in range(n) for q in at(i)]
     return png(*HEARTS_BOX[2:], compose(HEARTS_BOX, [(shapes + stroke(shapes or at(0), 1.4), lambda x, y: (rgb, 1))]))
-@functools.cache
-def control(strokes, rgb):
-    """strokes [(d, width)]: each d's open subpaths stroked, in rgb."""
-    polys = [q for d, width in strokes for sub in re.findall(r'M[^M]*', d) for q in stroke(path(sub), width, closed=False)]
-    return png(*CONTROL_BOX[2:], compose(CONTROL_BOX, [(polys, lambda x, y: (rgb, 1))]))
 
 
 # The volume's speakers and the slider pages' suns, their boxes the image; drawn on the bar and page in these colours.
@@ -895,17 +884,11 @@ def images(t):
     drawing = ROOT/f'assets/themes/{t["id"]}/note.svg'
     if drawing.exists():
         out[f'{prefix}_note'] = png(*NOTE_BOX[2:], note(drawing.read_text()))
-    if t['ctl_light_on']:
-        for half, off, on in (('l', t['ctl_light_off'], t['ctl_light_on']), ('d', t['ctl_dark_off'], t['ctl_dark_on'])):
-            more, repeat, shuffle = (CONTROLS[n] for n in ('more', 'repeat', 'shuffle'))
-            out |= {f'{prefix}_more_{half}': control((more,), on),
-                    f'{prefix}_repeat_off_{half}': control((repeat,), off), f'{prefix}_repeat_all_{half}': control((repeat,), on),
-                    f'{prefix}_repeat_one_{half}': control((repeat, CONTROL_ONE), on),
-                    f'{prefix}_shuffle_off_{half}': control((shuffle,), off), f'{prefix}_shuffle_on_{half}': control((shuffle,), on),
-                    **{f'{prefix}_hearts{n}_{half}': hearts(n, on) for n in range(6)}}
+    if t['ctl_light_on']:  # a radio's heart, empty or full
+        for half, on in (('l', t['ctl_light_on']), ('d', t['ctl_dark_on'])):
+            out |= {f'{prefix}_hearts{n}_{half}': hearts(n, on) for n in range(2)}
     if t['noart_stops']:
-        for name, px in (('cover', 160), ('bigcover', BC_ART)):  # Now Playing's, the full-screen art's
-            out[f'{prefix}_{name}'] = png(px, px, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], px))
+        out[f'{prefix}_cover'] = png(160, 160, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], 160))
         out[f'{prefix}_station'] = png(160, 160, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], 160, NOART_STATION))
     if t['pane_icon_x']:
         for name, d in PANE_ICONS.items():
