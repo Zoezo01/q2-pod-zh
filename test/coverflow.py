@@ -1096,6 +1096,196 @@ static void classic_light_shelf(void) {
 #undef F
 }
 
+/* Classic's step (coverflow.shelf.swing): at rest, the bytes of its path switched off; mid-way the near edge swells
+   to about 173 px (165 at rest) and eases out to 3 px past its rest place, where switched off it reaches about 198 and 48 px. */
+static void cf_near_edge(const unsigned *f, int H, int hz, int j, int *reach, int *rows) { /* cover j, on the right */
+    int edge = -1, n = 0;
+    for (int x = CF_CX; x < CF_VIEW_W; ++x) edge = f[hz * PITCH + x] == colours[j] ? x : edge;
+    assert(edge >= CF_CX);
+    for (int y = 0; y < H; ++y) { /* most of the row: the reflection stays under that */
+        unsigned p = f[y * PITCH + edge];
+        n += ch(p, 0) + ch(p, 1) + ch(p, 2) >= 256;
+    }
+    *reach = edge + 1 - CF_CX, *rows = n;
+}
+static void cf_step_peak(unsigned *f, int H, int hz, const unsigned *const *ring, int *reach, int *tallest) {
+    *reach = *tallest = 0;
+    for (int fr = -ONE / 2; fr < ONE / 2; fr += ONE / 128) { /* the cover turning on the right: the centre's, then the next */
+        int x, rows;
+        coverflow_render(f, PITCH, fr, ring);
+        cf_near_edge(f, H, hz, fr < 0 ? 3 : 4, &x, &rows);
+        *reach = x > *reach ? x : *reach, *tallest = rows > *tallest ? rows : *tallest;
+    }
+}
+/* The largest change of an edge's speed from one frame to the next (1/16 px), through a follow of 81 ms from rest at
+   60 fps: t falling from 1 for the cover moving in, rising from 0 for the one moving out. */
+int cf_path_x(int t, int u);
+static int cf_step_jerk(int moving_in, int u, int first) { /* from frame first */
+    enum { FRAMES = 33 };
+    int x[FRAMES + 1], worst = 0;
+    for (int i = 0; i <= FRAMES; ++i) {
+        double s = i * (1000 / 60.0) / 81;
+        int eased = i == FRAMES ? ONE : (int)(ONE * (1 - (1 + s) * exp(-s)));
+        x[i] = cf_path_x(moving_in ? ONE - eased : eased, u);
+    }
+    for (int i = first; i < FRAMES; ++i) {
+        int jerk = abs(x[i + 1] - 2 * x[i] + x[i - 1]);
+        worst = jerk > worst ? jerk : worst;
+    }
+    return worst;
+}
+static void classic_light_step(void) {
+    static unsigned f[300 * PITCH], off[300 * PITCH];
+    cf_style_t *c = &shim_themes[1].cf;
+    const unsigned *ring[7];
+    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    int H = c->view_h, hz = c->top + 160 * c->horizon / 100, rest, rows, reach, tallest;
+    assert(c->swing == 1 && c->lift == 20);
+    classic = 1, frame_fail = 0, square_art = 1;
+    c->swing = 0;
+    open_page();
+    for (unsigned i = 0; i < sizeof(off) / 4; ++i) off[i] = f[i] = 0;
+    coverflow_render(off, PITCH, 0, ring);
+    cf_step_peak(f, H, hz, ring, &reach, &tallest);
+    assert(reach > 160 && tallest > 190); /* what the swing takes away */
+    close_page();
+    c->swing = 1;
+    open_page();
+    for (unsigned i = 0; i < sizeof(f) / 4; ++i) f[i] = 0;
+    coverflow_render(f, PITCH, 0, ring);
+    assert(!memcmp(f, off, sizeof(f)));
+    cf_near_edge(f, H, hz, 4, &rest, &rows);
+    cf_step_peak(f, H, hz, ring, &reach, &tallest);
+    assert(reach > rest && reach <= rest + 3);
+    assert(abs(tallest - 173) <= 1 && abs(rows - 165) <= 1);
+    /* no corner in the path: about 3 px a frame moving in, 6 at most moving out, where the near edge's quick start
+       settles without a stop and the far edge's start is steep on any path through this short an eye. The landing,
+       the last 300 ms: a px or two moving in, under a px moving out, with no dead stop. */
+    enum { NEAR = 16 * 80, FAR = -NEAR };
+    assert(cf_step_jerk(1, FAR, 1) <= 56 && cf_step_jerk(1, NEAR, 1) <= 28);
+    assert(cf_step_jerk(0, NEAR, 1) <= 78 && cf_step_jerk(0, FAR, 1) <= 96);
+    assert(cf_step_jerk(1, FAR, 15) <= 34 && cf_step_jerk(1, NEAR, 15) <= 28);
+    assert(cf_step_jerk(0, NEAR, 15) <= 4 && cf_step_jerk(0, FAR, 15) <= 12);
+    close_page();
+    classic = 0, square_art = 0;
+    open_page(); /* Minimal's values again */
+    close_page();
+}
+
+/* A cover's far edge under the widened eye (coverflow.shelf.eye_turn): the near edge's path and height stay, the far edge's
+   is the model's, and every rest pose is the bytes it was. */
+static void classic_light_eye(void) {
+    static unsigned f[300 * PITCH], off[300 * PITCH];
+    cf_style_t *c = &shim_themes[1].cf;
+    const unsigned *ring[7];
+    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    enum { NEAR = 16 * 80, FAR = -NEAR };
+    assert(c->eye_turn == 150);
+    classic = 1, frame_fail = 0, square_art = 1;
+    c->eye_turn = 0;
+    open_page();
+    coverflow_render(off, PITCH, 0, ring);
+    int near0[5], slot0[3][2];
+    for (int i = 1; i < 5; ++i) near0[i] = cf_path_x(i * ONE / 5, NEAR);
+    for (int i = 0; i < 3; ++i) slot0[i][0] = cf_path_x((i + 1) * ONE, NEAR), slot0[i][1] = cf_path_x((i + 1) * ONE, FAR);
+    close_page();
+    c->eye_turn = 150;
+    open_page();
+    coverflow_render(f, PITCH, 0, ring);
+    assert(!memcmp(f, off, sizeof(f)));
+    for (int i = 0; i < 3; ++i) /* the slots: both edges, as with no widening */
+        assert(cf_path_x((i + 1) * ONE, NEAR) == slot0[i][0] && cf_path_x((i + 1) * ONE, FAR) == slot0[i][1]);
+    const double T = 89 * M_PI / 180, s1 = sin(T), c1 = cos(T), E0 = 94, HW = 80, Z1 = 77;
+    const double PK = (116 + HW * c1) * E0 / (E0 + Z1 - HW * s1) + 3;
+    for (int i = 1; i < 5; ++i) {
+        double u = i / 5.0, s = sin(T * u), co = cos(T * u), z0 = Z1 * s / s1 - 20 * u * (1 - u), d0 = E0 + z0 - HW * s;
+        double O = u < .45 ? PK - (PK - 80) * (.45 - u) * (.45 - u) / (.45 * .45) : PK - 3 * (u - .45) * (u - .45) / (.55 * .55);
+        double E = E0 + 150 * (1 - u * u * u * u), xc = O * d0 / E0 - HW * co, zc = E * d0 / E0 - E + HW * s;
+        double far = (xc - HW * co) * E / (E + zc + HW * s), near = (xc + HW * co) * E / (E + zc - HW * s);
+        assert(fabs(cf_path_x(i * ONE / 5, FAR) / 16.0 - far) < .5);
+        assert(fabs(cf_path_x(i * ONE / 5, NEAR) / 16.0 - near) < .5);
+        assert(abs(cf_path_x(i * ONE / 5, NEAR) - near0[i]) <= 2);
+    }
+    /* A tap mid-turn lands on the cover drawn there, under the wider eye. Down to the horizon: every cover's body,
+       above any reflection. */
+    int hz = c->top + 160 * c->horizon / 100, hits = 0;
+    for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 8) {
+        coverflow_render(f, PITCH, frac, ring);
+        for (int y = 1; y <= hz; ++y)
+            for (int x = 1; x < CF_VIEW_W - 1; ++x) {
+                int j = coverflow_hit(frac, x, y), same = 1;
+                for (int d = 0; d < 4; ++d) same &= coverflow_hit(frac, x + (d & 1 ? d - 2 : 0), y + (d & 1 ? 0 : d - 1)) == j;
+                if (!same || j == 99) continue;
+                assert(slot_of(f[y * PITCH + x]) == j + 3);
+                ++hits;
+            }
+    }
+    assert(hits > 100000);
+    close_page();
+    classic = 0, square_art = 0;
+    open_page();
+    close_page();
+}
+
+/* Classic's step as a follow: the shares stock's animator gets, as the whole px it writes, against the critically damped
+   model, from rest and through ticks that move the goal mid-step, with its speed carried across each. */
+float coverflow_follow(float);
+int coverflow_follow_aim(int, int, int);
+static double follow_x, follow_v; /* the model: px, px/ms */
+static void follow_step(double goal, double ms, double tau) {
+    double w = 1 / tau, y = follow_x - goal, B = follow_v + w * y, e = exp(-w * ms);
+    follow_x = goal + (y + B * ms) * e, follow_v = (B - w * (y + B * ms)) * e;
+}
+static void classic_light_follow(void) {
+    enum { TAU = 81, STRIDE = 110 };
+    /* from rest: the share is the model's, starts at no speed, stays inside the goal and ends on it */
+    int T = coverflow_follow_aim(-STRIDE, TAU, -1);
+    assert(T >= 550 && T <= 650);
+    assert(abs((int)(-STRIDE * coverflow_follow((float)(T - 1) / T)) + STRIDE) <= 1); /* the last move: a whole px */
+    follow_x = 0, follow_v = 0;
+    double last = 0;
+    for (int t = 0; t < T; t += 16) {
+        double m = (double)t / TAU, want = 1 - (1 + m) * exp(-m), got = coverflow_follow((float)t / T);
+        assert(fabs(got - want) < .002 && got >= last && got < 1);
+        last = got;
+    }
+    assert(coverflow_follow(1) == 1);
+    /* ticks at these ms after the one before: the whole px against the model, the speed across each */
+    static const int gaps[] = { 75, 120, 40, 200, 60 };
+    int from = 0, goal = -STRIDE, elapsed = -1;
+    follow_x = 0, follow_v = 0;
+    T = coverflow_follow_aim(goal - from, TAU, elapsed);
+    for (unsigned i = 0; i < sizeof gaps / sizeof *gaps; ++i) {
+        double before = 0;
+        for (int t = 16; t <= gaps[i]; t += 16) {
+            follow_step(goal, 16, TAU);
+            int px = (int)(from + (goal - from) * (double)coverflow_follow((float)t / T));
+            assert(abs(px - (int)follow_x) <= 1);
+            before = (goal - from) * ((double)coverflow_follow((float)t / T) - coverflow_follow((float)(t - 1) / T));
+        }
+        int at = gaps[i] / 16 * 16;
+        from = (int)(from + (goal - from) * (double)coverflow_follow((float)at / T));
+        follow_x = from;
+        goal -= STRIDE;
+        T = coverflow_follow_aim(goal - from, TAU, at);
+        double after = (goal - from) * ((double)coverflow_follow(1.0f / T) - coverflow_follow(0));
+        assert(fabs(after - before) < .08); /* px a ms: nothing a frame could show */
+    }
+    /* A reversal carries on a moment, then comes back, with the same speed at the turn. */
+    double before = (goal - from) * ((double)coverflow_follow(101.0f / T) - coverflow_follow(100.0f / T));
+    assert(before < 0);
+    from = (int)(from + (goal - from) * (double)coverflow_follow(100.0f / T)), goal = from + 60;
+    T = coverflow_follow_aim(goal - from, TAU, 100);
+    assert(fabs((goal - from) * ((double)coverflow_follow(1.0f / T) - coverflow_follow(0)) - before) < .08);
+    assert(coverflow_follow(4.0f / T) < 0 && coverflow_follow(1) == 1);
+    /* A goal right ahead of a fast cover never overshoots, and a goal where it stands is no division by nothing. */
+    T = coverflow_follow_aim(-STRIDE * 8, TAU, -1);
+    T = coverflow_follow_aim(-3, TAU, 150);
+    for (int t = 0; t < T; t += 8) assert(coverflow_follow((float)t / T) < 1);
+    T = coverflow_follow_aim(0, TAU, 100);
+    assert(T > 0 && fabs(coverflow_follow(.5f)) < 2);
+}
+
 static void depth(void) {
     renderer();
     pinned();
@@ -1759,6 +1949,9 @@ int main(void) {
     depth();
     restyle();
     classic_light_shelf();
+    classic_light_step();
+    classic_light_eye();
+    classic_light_follow();
     flip_frames();
     sorting();
     artist_only();

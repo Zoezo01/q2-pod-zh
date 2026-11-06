@@ -186,7 +186,8 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
     stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *);
 extern void *coverflow_tracks(void *page);
-extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w);
+extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w),
+    coverflow_slide(void *w);
 extern void coverflow_lost_touch(void);
 extern void *coverflow_album(void *page), *coverflow_album_tracks(void *r);
 extern int coverflow_turning(void);
@@ -947,6 +948,8 @@ static int cf_letter_expire(const void *info) {
     return 0;
 }
 
+extern float coverflow_follow(float k);
+extern int coverflow_follow_aim(int d, int tau, int elapsed);
 /* w's one animator, the wheel's and Coverflow's touch's, from the live offset to goal in ms with
  * easing (AWTK's easing_type_t), made on first use; 0 if it cannot be, the move committed at once.
  */
@@ -958,7 +961,8 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing) {
         a = (void *)0;
     }
     if (!a) {
-        a = ms ? widget_animator_scroll_create(w, ms, 0, easing) : (void *)0;
+        a = ms ? widget_animator_scroll_create(w, ms, 0, easing == EASE_FOLLOW ? 0 : easing)
+               : (void *)0;
         if (a && !widget_animator_on(a, EVT_ANIM_END, home_done, w)) {
             widget_animator_destroy(a);
             a = (void *)0;
@@ -977,10 +981,14 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing) {
     }
     widget_animator_pause(a);
     widget_animator_scroll_set_params(a, I(w, SLIDE_OFFSET), 0, goal, 0);
+    if (easing == EASE_FOLLOW) /* ms is its time constant; the distance gives the run's length */
+        ms = (unsigned)coverflow_follow_aim(
+            goal - I(w, SLIDE_OFFSET), (int)ms,
+            P(a, ANIM_EASING) == (void *)coverflow_follow ? I(a, ANIM_ELAPSED) : -1);
     I(a, ANIM_ELAPSED) = I(a, ANIM_START_TIME) = 0;
     I(a, ANIM_DURATION) = ms;
-    P(a, ANIM_EASING) =
-        easing_get(easing); /* scroll_create's own, so a reused one takes this run's */
+    /* scroll_create's own, so a reused one takes this run's */
+    P(a, ANIM_EASING) = easing == EASE_FOLLOW ? (void *)coverflow_follow : easing_get(easing);
     widget_animator_start(a);
     return 1;
 }
@@ -1018,7 +1026,8 @@ static void home_step(void *w, int dir, unsigned now, int jump) {
         rearm(&st.cf_letter_timer, cf_letter_expire, LETTER_MS);
     else
         stop_timer(&st.cf_letter_timer);
-    const motion_t *glide = &theme()->motion[fast ? MOTION_STEP_FAST : MOTION_STEP];
+    const motion_t *glide =
+        &theme()->motion[(coverflow_slide(w) ? MOTION_COVERFLOW_STEP : MOTION_STEP) + fast];
     if (!carousel_glide(w, goal, glide->ms, glide->easing)) {
         st.home_surface = (void *)0;
         return;

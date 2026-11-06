@@ -82,9 +82,11 @@ typedef struct {
 } theme_key_t;
 typedef struct {
     /* coverflow.shelf (px, brightness of 256; tilt: degrees, horizon: % down the cover, third: the
-     * third cover out stays, view_h: the frame's rows), coverflow.caption: offsets.inc's CF_* */
+     * third cover out stays, swing: a step's depth follows the turn and the near edge eases to just
+     * past its rest place, lift: px nearer mid-way, view_h: the frame's rows), coverflow.caption:
+     * offsets.inc's CF_* */
     short top, x1, xs, z1, zs, eye, bright1, bright2, reflect, reflect_top, stride, radius;
-    short tilt, horizon, third, view_h;
+    short tilt, horizon, third, swing, lift, view_h, eye_turn;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
 enum { ELEM_ALIGN_LEFT, ELEM_ALIGN_CENTER, ELEM_ALIGN_RIGHT };
@@ -118,6 +120,8 @@ enum {
     MOTION_SWAP,
     MOTION_STEP,
     MOTION_STEP_FAST,
+    MOTION_COVERFLOW_STEP, /* as each step, its fast kind right after it */
+    MOTION_COVERFLOW_STEP_FAST,
     MOTION_N
 };
 typedef struct {

@@ -2454,13 +2454,14 @@ for start in (0,0xfffffff0):
             m.advance(200); settled=m.get(w+O['SLIDE_INDEX']); m.advance(500)
             assert m.get(w+O['SLIDE_INDEX'])==settled and not m.slides
             passed()
-# The theme's Cover Flow and carousel steps: a glide takes its kind's ms and easing, fast ticks too.
+# The theme's carousel and Photos viewer steps: a glide takes its kind's ms and easing, fast ticks too.
 # Classic's are 200 and 120 ms, sin_inout; another theme's rows are read the same way.
 def step_ticks(m,w,*ticks):
     for gap,ms,e in ticks:
         m.slide_easing=e; assert m.call(gap=gap)==11 and slide(m,w)[3]==ms
         assert m.get(m.get(w+O['SLIDE_ANIMATOR'])+O['ANIM_EASING'])==m.call(address=syms['easing_get'],args=(e,0,0,0),gap=0)
 m=classic_light_new(Machine); w=m.page('home_page','slide_menu'); step_ticks(m,w,(0,200,8),(50,120,8))
+m=classic_light_new(Machine); w=m.page('photos_page','slide_menu'); step_ticks(m,w,(0,200,8),(50,120,8))
 m=Machine(); w=m.page('home_page','slide_menu'); set_motion(m,'step',250,2); set_motion(m,'step_fast',170,4)
 step_ticks(m,w,(0,250,2),(50,170,4)); passed()
 # A step's ms of 0 is an immediate move: no animator, a running one gone, the index there at once.
@@ -5536,6 +5537,7 @@ class CoverflowMachine(QueueMachine):
         self.returns(ret,clobber=True)
     def open(self):
         """Home with the card at index 2: centre confirms its image, whose click opens Coverflow."""
+        if self.config.get('THEME')=='1': self.slide_easing=0  # Classic's follow is set after the create, which takes linear
         view,self.imgs=home_list(self); self.img=self.imgs[2]; self.home=self.top; self.stack=[self.top]
         self.art=named(self,self.top,'img_homeart'); self.list=named(self,self.top,'list_view_home')
         assert self.call(address=home_hook[0],args=(self.top,0,0,0),gap=0)==0
@@ -8008,6 +8010,46 @@ for name,want in (('١ Song',ord('#')),('० Song',ord('#')),('-Song',ord('#')),
     assert cf_jump(m,0,1)==(1,want); passed()
 m=CoverflowMachine(albums=2); m.word(m.albums[1]+O['REC_ALBUM'],m.string('Unknown Album'))
 m.word(m.albums[1]+O['REC_ID'],0xffffffff); m.open(); assert cf_jump(m,0,1)==(1,ord('#')); passed()
+# Cover Flow's wheel step is its own kind: Classic's the follow, Minimal's as the carousel's.
+m=CoverflowMachine(albums=3); m.open(); step_ticks(m,m.slide,(0,200,8),(50,120,8))
+set_motion(m,'coverflow_step',250,2); set_motion(m,'coverflow_step_fast',170,4); set_motion(m,'step',90,1)
+step_ticks(m,m.slide,(500,250,2),(50,170,4)); passed()
+# Classic's step is a follow of the goal, its ms the time constant. The easing is what stock's animator calls
+# (widget_animator_time_elapse: k in $f12, the share back in $f0). A tick moves the goal, carries the speed, and
+# the run still ends through home_done on ANIM_X_TO.
+def follow_share(m,k):
+    m.u.reg_write(UC_MIPS_REG_F12,struct.unpack('<I',struct.pack('<f',k))[0])
+    m.call(address=payload_syms['coverflow_follow'],args=(0,0,0,0),gap=0,clear=False)
+    return struct.unpack('<f',struct.pack('<I',m.u.reg_read(UC_MIPS_REG_F0)&0xffffffff))[0]
+def follow_to(m,w,ms):  # the animator ms into its run, the offset as stock's update writes it: whole px, truncated
+    a,origin,goal,T=slide(m,w)
+    m.word(a+O['ANIM_ELAPSED'],ms); m.word(w+O['SLIDE_OFFSET'],int(origin+(goal-origin)*follow_share(m,ms/T)))
+    return signed(m.get(w+O['SLIDE_OFFSET']))
+def follow_speed(m,w,ms):  # px a ms, at ms into the run
+    a,origin,goal,T=slide(m,w)
+    return (goal-origin)*(follow_share(m,(ms+1)/T)-follow_share(m,ms/T))
+m=classic_light_new(CoverflowMachine,albums=9); m.open(); w=m.slide; index=m.get(w+O['SLIDE_INDEX'])
+assert m.call(gap=1000)==11
+a,origin,goal,T=slide(m,w); stride=-goal
+assert origin==0 and stride>0 and m.get(a+O['ANIM_EASING'])==payload_syms['coverflow_follow']
+assert 6*81<=T<=8*81  # within a px of the goal: about 7 time constants
+for ms,want in ((81,.2642),(162,.5940),(243,.8009),(405,.9596)): assert abs(follow_share(m,ms/T)-want)<.002
+assert follow_share(m,1.0)==1.0 and follow_share(m,0.0)==0.0
+at=follow_to(m,w,100); speed=follow_speed(m,w,100)
+assert m.call(gap=0)==11  # a tick mid-step: the goal moves one album, from the live offset, the speed goes on
+a2,origin,goal,T2=slide(m,w)
+assert a2==a and origin==at and goal==-2*stride and T2>T*.9 and m.get(a+O['ANIM_ELAPSED'])==0
+assert abs(follow_speed(m,w,0)-speed)<.05 and signed(m.get(a+O['ANIM_X_TO']))==-2*stride
+m.advance(T2); assert not m.slides and m.get(w+O['SLIDE_ANIMATOR'])==0 and m.get(w+O['SLIDE_OFFSET'])==0
+assert m.get(w+O['SLIDE_INDEX'])==(index+2)%9; passed()
+# A tick on a touch's glide starts the follow from rest: that speed isn't the follow's to read. The glide itself
+# keeps its own easing; a ms of 0 stays the immediate move.
+m=classic_light_new(CoverflowMachine,albums=9); m.open(); w=m.slide
+cubic=m.call(address=syms['easing_get'],args=(O['EASE_CUBIC_OUT'],0,0,0),gap=0)
+assert m.call(gap=1000)==11; a=m.get(w+O['SLIDE_ANIMATOR'])
+assert m.call(address=payload_syms['carousel_glide'],args=(w,0,300,O['EASE_CUBIC_OUT']),gap=0)==1 and m.get(a+O['ANIM_EASING'])==cubic and m.get(a+O['ANIM_DURATION'])==300
+m.word(a+O['ANIM_ELAPSED'],100); m.word(w+O['SLIDE_OFFSET'],-40)
+assert m.call(gap=0)==11 and m.get(a+O['ANIM_EASING'])==payload_syms['coverflow_follow'] and abs(follow_speed(m,w,0))<.02; passed()
 # Coverflow owns both halves of a wheel tick: the stock press filter runs, then stops before
 # native focus navigation can move the Artists list underneath; release still moves the covers.
 m=CoverflowMachine(albums=3)
@@ -9274,6 +9316,15 @@ for light,paper in (('0',0),('1',0xff)):
     frame_bytes=c.draws[0][5]; assert frame_bytes[0:3]==bytes([paper])*3
     c_tex={u:bytes(c.u.mem_read(c.pixels[u],160*160*4)) for u in c.pixels}
     assert host_render([c_tex[c.loads[1+i%3]] for i in range(7)],[(0,127)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None)[0]==frame_bytes  # square art
+    passed()
+# ... and mid-step, along coverflow.shelf.swing's path: the payload's arithmetic, the host's frames.
+cases=[(16384,127),(-16384,127),(26214,127),(32767,127),(-32768,127)]
+want=host_render(textures,cases,{**cl_style,'cf.radius':0},paper=0xffffff)
+tex=c.big_alloc(7*160*160*4); c.u.mem_write(tex,b''.join(textures)); ring=c.big_alloc(28); frame=c.big_alloc(4*O['CF_VIEW_W']*cl_style['cf.view_h'])
+for k in range(7): c.word(ring+4*k,tex+k*160*160*4)
+for (frac,_),host in zip(cases,want):
+    c.call(address=ps['coverflow_render'],args=(frame,O['CF_VIEW_W'],frac,ring),gap=0,count=50_000_000)
+    assert bytes(c.u.mem_read(frame,len(host)))==host,frac
     passed()
 # A non-square cover is fitted whole and centred between black bars, not cropped (#74).
 def fitted(px,w,h):

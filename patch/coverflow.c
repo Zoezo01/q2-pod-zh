@@ -1346,6 +1346,10 @@ int image_show(void *img, const char *url, unsigned *size) {
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
 static cf_style_t cfs __attribute__((section(".scratch")));
+/* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1 */
+static int cf_s1 __attribute__((section(".scratch")));
+static int cf_rest16 __attribute__((section(".scratch")));
+#define CF_SWING_T (CF_ONE * 45 / 100)
 #define CF_EYE16 (16 * cfs.eye)
 #define CF_HALF16 (16 * ART_SIZE / 2)
 /* the horizon every cover shares, and a cover h high (1/256 px)'s top row on it */
@@ -1363,9 +1367,10 @@ static const int cf_sin90[17] = { 0,     6424,  12785, 19024, 25080, 30893, 3641
                                   50660, 54491, 57798, 60547, 62714, 64277, 65220, 65536 };
 
 /* A right-hand cover t (16.16, >= 0) from the visual position: centre xc and depth zc (1/16 px),
- * rotation c, s (16.16) and brightness (of 256). Left covers mirror it. */
+ * rotation c, s (16.16), brightness (of 256) and the eye it is seen from (1/16 px). Left covers
+ * mirror it. */
 typedef struct {
-    int xc, zc, c, s, bright;
+    int xc, zc, c, s, bright, eye;
 } pose_t;
 
 static void pose(int t, pose_t *p) {
@@ -1373,6 +1378,7 @@ static void pose(int t, pose_t *p) {
     if (other) a = a * cfs.tilt / 90;
     const int *cs = other ? cf_cos90 : cf_cos, *sn = other ? cf_sin90 : cf_sin;
     int i = a >> 12, f = a & 4095;
+    p->eye = CF_EYE16;
     p->c = cs[i] + (i < 16 ? (cs[i + 1] - cs[i]) * f >> 12 : 0);
     p->s = sn[i] + (i < 16 ? (sn[i + 1] - sn[i]) * f >> 12 : 0);
     if (t < CF_ONE) {
@@ -1381,6 +1387,24 @@ static void pose(int t, pose_t *p) {
         int sq = (int)((unsigned)t * (unsigned)t >> 16);
         p->xc = (16 * (2 * cfs.x1 - cfs.xs) * t + 16 * (cfs.xs - cfs.x1) * sq) >> 16;
         p->zc = 16 * cfs.z1 * t >> 16;
+        if (cfs.swing) {
+            /* Depth follows the turn, less a small swell of lift px mid-way. The near edge's screen
+             * x is two parabolas meeting flat at 45% of the way, 3 px past its rest place, and xc
+             * follows from it, so the far edge goes on swinging out with no corner in the path.
+             * t = 1 lands on the rest pose below. */
+            p->zc = 16 * cfs.z1 * (p->s >> 4) / (cf_s1 >> 4) - (16 * cfs.lift * (t - sq) >> 16);
+            int den = CF_EYE16 + p->zc - (CF_HALF16 * p->s >> 16);
+            int peak = cf_rest16 + 48, rising = t < CF_SWING_T;
+            int q = ((rising ? CF_SWING_T - t : t - CF_SWING_T) << 12) /
+                    (rising ? CF_SWING_T : CF_ONE - CF_SWING_T); /* 0 at the peak, 4096 at each end */
+            int near = peak - ((rising ? peak - CF_HALF16 : 48) * (q * q >> 12) >> 12);
+            p->xc = near * den / CF_EYE16 - (CF_HALF16 * p->c >> 16);
+            /* The eye draws back mid-turn, by eye_turn (1 - t^4), so the far edge is less steep.
+             * Depth goes with it, which keeps the near edge's place and height; at t = 0 and 1 no
+             * pixel moves. */
+            p->eye += 16 * cfs.eye_turn * (CF_ONE - (int)((unsigned)sq * (unsigned)sq >> 16)) >> 16;
+            p->zc = p->eye * den / CF_EYE16 - p->eye + (CF_HALF16 * p->s >> 16);
+        }
         p->bright = 256 - ((256 - cfs.bright1) * t >> 16);
     } else {
         int e = t - CF_ONE;
@@ -1399,17 +1423,25 @@ static void pose(int t, pose_t *p) {
 
 /* Screen x (1/16 px right of the centre line) of the cover point u (1/16 px from its middle). */
 static int project(const pose_t *p, int u) {
-    return (p->xc + (u * p->c >> 16)) * CF_EYE16 / (CF_EYE16 + p->zc - (u * p->s >> 16));
+    return (p->xc + (u * p->c >> 16)) * p->eye / (p->eye + p->zc - (u * p->s >> 16));
 }
+#ifdef PEQ_HOST
+/* For test/coverflow.py: an edge's path, finer than a frame's pixels. */
+int cf_path_x(int t, int u) {
+    pose_t p;
+    pose(t, &p);
+    return project(&p, u);
+}
+#endif
 
 /* The cover point under screen x dx (1/16 px right of the centre line), the inverse of project;
  * 0 when the column misses the cover. *h gets the cover's projected height there (1/256 px). */
 static int unproject(const pose_t *p, int dx, int *u, int *h) {
-    int den = (CF_EYE16 * p->c + dx * p->s) >> 16;
+    int den = (p->eye * p->c + dx * p->s) >> 16;
     if (den <= 0) return 0;
-    *u = (dx * (CF_EYE16 + p->zc) - CF_EYE16 * p->xc) / den;
+    *u = (dx * (p->eye + p->zc) - p->eye * p->xc) / den;
     if (*u < -CF_HALF16 || *u >= CF_HALF16) return 0;
-    *h = ART_SIZE * 256 * CF_EYE16 / (CF_EYE16 + p->zc - (*u * p->s >> 16));
+    *h = ART_SIZE * 256 * p->eye / (p->eye + p->zc - (*u * p->s >> 16));
     return 1;
 }
 
@@ -1509,7 +1541,12 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 static unsigned short cf_inset[ART_SIZE] __attribute__((section(".scratch"))); /* 1/256 texel, symmetric */
 
 /* Copy the theme's Cover Flow values to cfs. */
-static void cf_restyle(void) { cfs = theme()->cf; }
+static void cf_restyle(void) {
+    pose_t rest;
+    cfs = theme()->cf;
+    pose(CF_ONE, &rest);
+    cf_s1 = rest.s, cf_rest16 = project(&rest, CF_HALF16);
+}
 /* cf_inset follows the theme's radius, or none under square art. */
 static void cf_corners(void) {
     static short filled __attribute__((section(".scratch")));
@@ -1810,6 +1847,7 @@ int visual(void *s, int n, int *c, int *frac) { /* shared with photos.c */
 /* An artist's albums stop at both ends (home_step bounces there): a ring of one or two albums
  * would otherwise repeat round the shelf. */
 int coverflow_bounded(void *w) { return w && w == cf.slide && cf.scoped == ARTIST_ALBUMS; }
+int coverflow_slide(void *w) { return w && w == cf.slide; }
 
 static int retitle(const void *unused);
 
@@ -1991,6 +2029,45 @@ static int flip_paint(void *w, void *canvas) {
     return 1;
 }
 
+#if Q2POD_DEV
+/* --dev builds only (docs/internals.md#coverflow-step): each frame of a run in RAM, a store a
+ * frame. They go to /tmp/q2-cf-gaps.log at the first paint after the run, if /tmp/q2-cf-gaps.on
+ * exists. */
+#define GAP_FRAMES 128
+#define GAP_MAX_BYTES 262144
+static struct {
+    unsigned n, last;
+    struct {
+        unsigned short gap, decode, render;
+        short offset;
+    } row[GAP_FRAMES];
+} gaps __attribute__((section(".scratch")));
+static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
+    unsigned i = gaps.n++ % GAP_FRAMES;
+    gaps.row[i].gap = (unsigned short)(t0 - gaps.last);
+    gaps.row[i].decode = (unsigned short)(t1 - t0);
+    gaps.row[i].render = (unsigned short)(t2 - t1);
+    gaps.row[i].offset = (short)I(w, SLIDE_OFFSET);
+    gaps.last = t0;
+    if (P(w, SLIDE_ANIMATOR)) return;
+    void *on = gaps.n > 1 ? fopen("/tmp/q2-cf-gaps.on", "rb") : 0;
+    void *f = on ? fopen("/tmp/q2-cf-gaps.log", "ab") : 0;
+    if (on) fclose(on);
+    if (f && !fseek(f, 0, 2) && ftell(f) < GAP_MAX_BYTES) {
+        char s[64];
+        tk_snprintf(s, sizeof s, "== run at %u ms: %u frames\n", t0, gaps.n);
+        fputs(s, f);
+        for (i = gaps.n > GAP_FRAMES ? gaps.n - GAP_FRAMES : 0; i < gaps.n; ++i) {
+            unsigned k = i % GAP_FRAMES;
+            tk_snprintf(s, sizeof s, "gap=%u decode=%u render=%u offset=%d\n", gaps.row[k].gap,
+                        gaps.row[k].decode, gaps.row[k].render, gaps.row[k].offset);
+            fputs(s, f);
+        }
+    }
+    if (f) fclose(f);
+    gaps.n = 0;
+}
+#endif
 /* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
  * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
  * position or a texture has changed. */
@@ -2001,7 +2078,13 @@ void coverflow_paint(void *w, void *canvas) {
         !visual(w, n = (int)widget_count_children(w), &c, &frac))
         return;
     const unsigned *ring[CF_RING];
+#if Q2POD_DEV
+    unsigned gap_t0 = (unsigned)time_now_ms();
+#endif
     fx_ring(c, n, ring);
+#if Q2POD_DEV
+    unsigned gap_t1 = (unsigned)time_now_ms();
+#endif
     if (!fx.drawn || c != fx.c || frac != fx.frac) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
@@ -2009,6 +2092,9 @@ void coverflow_paint(void *w, void *canvas) {
         bitmap_unlock_buffer(fx.frame);
         fx.c = c, fx.frac = frac, fx.drawn = 1;
     }
+#if Q2POD_DEV
+    gap_note(w, gap_t0, gap_t1, (unsigned)time_now_ms());
+#endif
     if (c + 1 != cf.titled && !cf.title_timer) cf.title_timer = timer_add(retitle, 0, 0);
     int r[4] = { 0, 0, CF_VIEW_W, cfs.view_h };
     canvas_draw_image(canvas, fx.frame, r, r);
@@ -2024,6 +2110,47 @@ void coverflow_paint(void *w, void *canvas) {
 extern int carousel_glide(void *w, int goal, unsigned ms, int easing);
 #define CF_SAMPLES 8
 #define ABS(x) ((x) < 0 ? -(x) : (x))
+
+/* EASE_FOLLOW (docs/internals.md#coverflow-step): a step follows its goal, critically damped, so a
+ * tick moves the goal and never the speed. Over s time constants from the live offset, d px short
+ * of the goal with speed v, what is left is (d + (d - v tau) s) e^-s, and the animator's share is
+ * 1 - (1 + a s) e^-s with a = 1 - v tau / d. Run by stock's animator, as a float easing. */
+static struct {
+    int d, tau;
+    float a, span; /* span: the run's length, in time constants */
+} ff __attribute__((section(".scratch")));
+
+/* e^-s, s under 256: (e^(-s/256))^256, smooth and falling, about .1% over at s = 7. */
+static float ff_decay(float s) {
+    float x = 1 - s / 256 + s * s / 131072;
+    for (int i = 0; i < 8; ++i) x *= x;
+    return x;
+}
+float coverflow_follow(float k) {
+    if (k >= 1) return 1;
+    float s = k * ff.span;
+    return 1 - (1 + ff.a * s) * ff_decay(s);
+}
+/* A run d px long at time constant tau ms, picking up the speed elapsed ms into the last one (< 0:
+ * from rest). Returns its ms: until within half a px of the goal, as stock's update truncates, so
+ * the share's jump to 1 is one whole px at most. A goal right ahead of a cover too fast to stop for
+ * it (a < 0) gives up the speed it can't use. */
+int coverflow_follow_aim(int d, int tau, int elapsed) {
+    float a = 1, e = 1, s = 0, size = (float)ABS(d);
+    if (elapsed >= 0 && d) {
+        s = (float)elapsed / (float)ff.tau;
+        float v = (float)ff.d * (1 - ff.a + ff.a * s) * ff_decay(s) / (float)ff.tau;
+        a = 1 - v * (float)tau / (float)d;
+        if (a < 0) a = 0;
+    }
+    s = 0;
+    do {
+        s += .25f;
+        e *= .7788008f; /* e^-1/4 */
+    } while (size * (1 + a * s) * e > .5f);
+    ff.d = d, ff.tau = tau, ff.a = a, ff.span = s;
+    return (int)(s * (float)tau);
+}
 static struct {
     int down, drag, caught, x, y, from, n; /* from: the offset at the press, or the drag's start */
     int sx[CF_SAMPLES];
