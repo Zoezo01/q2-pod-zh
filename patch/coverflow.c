@@ -9,6 +9,7 @@
 #endif
 #include "library_scope.h"
 #include "playback.h"
+#include "xiph.h"
 
 /* On the card, beside stock's own cover cache (/mnt/mmc/.sldp). */
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
@@ -28,7 +29,8 @@ enum { ARTIST_ALBUMS = 1, RATED_ALBUMS, ALBUM_TRACKS }; /* cf.scoped */
 
 extern int stock_home_trampoline(void *win, void *ctx), stock_scan_all_trampoline(void *, void *),
     stock_scan_folder_trampoline(void *, void *), stock_delete_song_trampoline(void *, void *),
-    stock_file_created_trampoline(const char *);
+    stock_file_created_trampoline(const char *),
+    stock_album_cover_trampoline(const char *, const char *, int, int);
 
 enum { PREPARING, COVERS, TRACKS };
 typedef struct {
@@ -312,6 +314,21 @@ static int grid_cover(const char *track, const char *dst, int w, int h, int albu
     if (!ok && exited && miss && !access(track, 4)) miss[n++ % 1024] = key;
     return ok;
 }
+
+/* toolsGetAlbumCover's entry, so every embedded-art read: player_parsecover_thd's Now Playing art,
+ * the GRID_COVER calls and build_art. libtag_c's taglib_album_picture gives an .ogg to
+ * get_oggfile_albumpic, XiphComment::pictureList after TagLib's whole parse, about 4 times the
+ * comment header (docs/internals.md#oversized-ogg-tags). One over OGG_TAGS_MAX gets none from
+ * stock, so its caller's fallback (coverflow_player_cover, grid_cover, build_art) hands it to
+ * ffmpeg, which the kernel kills before demo. Stock reads no .opus or .oga picture, so those are
+ * not measured. */
+#ifndef PEQ_HOST
+int ringnav_album_cover(const char *track, const char *dst, int w, int h) {
+    const char *dot = strrchr(track, '.');
+    if (dot && !strcasecmp(dot, ".ogg") && ogg_tags(track, 0)) return 0;
+    return stock_album_cover_trampoline(track, dst, w, h);
+}
+#endif
 
 int coverflow_grid_cover(const char *track, const char *dst, int w, int h) {
     return grid_cover(track, dst, w, h, 0);

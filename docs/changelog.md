@@ -12,7 +12,7 @@
   - Library: under **Theme: Classic** the Playlists page no longer repeats "Playlists" beside its + and list buttons, where it didn't fit. The title bar names the page.
   - Library: under **Theme: Classic** the Library's first row is **Search**, which opens the search with the keyboard up, as pulling the list down does. In Home's Split list the pull was easy to miss.
   - Cover Flow: a large library's first open no longer freezes until the Q2 restarts.
-  - Library: **Update Local Music** no longer runs out of memory on Opus or Ogg files carrying very large embedded pictures; their tags are read without the pictures.
+  - Library: **Update Local Music** no longer runs out of memory on Opus or Ogg files carrying very large embedded pictures; their tags are read without the pictures, and showing their covers no longer risks it either.
   - System: q2-crash.log names the file a library update or Cover Flow's artwork build was reading and shows how the Q2's memory grew during it, and it now also covers the player ending on its own without an error.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.

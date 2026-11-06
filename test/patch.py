@@ -14684,6 +14684,30 @@ assert t.stock_calls==0 and not t.fixes and t.u.mem_read(info,0x6a0)==bytes(0x6a
 for path in ('/mnt/mmc/small.opus','/mnt/mmc/flac.opus','/mnt/mmc/none.opus'):  # under the cap, not Ogg, missing: stock's
     t.info(path); assert t.stock_calls==1 and not t.fixes,path
 assert not t.handles; passed()
+# Embedded art (toolsGetAlbumCover's entry, so Now Playing's, the Albums grids' and Coverflow's): an .ogg whose
+# comment header is over OGG_TAGS_MAX gets none from stock (get_oggfile_albumpic parses TagLib's whole header),
+# so the grid's fallback hands it to ffmpeg; one under the cap goes to stock, as an .opus does, never measured.
+assert struct.unpack_from('<I',demo,fileoff(demo,HOOKS['toolsGetAlbumCover'][0]))[0]==j(payload_syms['ringnav_album_cover'])
+class OggCoverMachine(TagMachine):
+    def __init__(self,files):
+        super().__init__(files); self.stock_covers=[]; self.ffmpeg=0
+        self.handlers.pop(syms['toolsGetAlbumCover'],None)  # the hook runs; stock's body is mocked
+        tramp=int(manifest['patch_symbols']['stock_album_cover_trampoline'],16)
+        self.handlers[tramp]='stock_album_cover'; self.u.hook_add(UC_HOOK_CODE,self.hook,begin=tramp,end=tramp)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address)
+        if name=='stock_album_cover': self.stock_covers.append(self.text(u.reg_read(REGS[0]))); return self.returns(1,clobber=True)
+        if name!='b:waitpid@GLIBC_2.0': return super().hook(u,address,size,unused)
+        self.ffmpeg+=1; self.files[self.dst+'.ff']=bytearray(b'jpeg')  # ffmpeg wrote its picture and exited 0
+        self.word(u.reg_read(REGS[1]),0); self.returns(u.reg_read(REGS[0]),clobber=True)
+    def cover(self,track):
+        self.stock_covers=[]; self.ffmpeg=0; self.dst='/mnt/mmc/.sldp/x0.jpg'
+        return self.call(address=payload_syms['coverflow_grid_cover'],args=(self.string(track),self.string(self.dst),110,110),gap=0)
+t=OggCoverMachine({'/mnt/mmc/big.ogg':big,'/mnt/mmc/small.ogg':opus(b'TITLE=Small',picture=100000),'/mnt/mmc/big.opus':big})
+assert t.cover('/mnt/mmc/big.ogg')==1 and not t.stock_covers and t.ffmpeg==1 and t.files[t.dst]==b'jpeg'
+for path in ('/mnt/mmc/small.ogg','/mnt/mmc/big.opus'):
+    assert t.cover(path)==1 and t.stock_covers==[path] and not t.ffmpeg,path
+assert not t.handles; passed()
 # The crash log's scan record (navigation.c crash_note): each tag read names its file in /tmp/q2-scan-file
 # before stock reads it, and every 500th appends "<count> <VmRSS kB> <path>" to /tmp/q2-scan.log, which
 # each demo starts afresh and stops past 64 KB.

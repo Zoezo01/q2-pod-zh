@@ -86,6 +86,8 @@ HOOKS = {
     'read_artistype_value': (0x4f4724, 'ringnav_read_artistype', None),
     # Tag reads: a FLAC's "ALBUM ARTIST" when stock's libtag finds no ALBUMARTIST
     'toolsGetMusicInfo': (0x5c5f40, 'ringnav_music_info', 'music_info'),
+    # Embedded art: none from stock's TagLib for an .ogg whose comment header is over OGG_TAGS_MAX (coverflow.c)
+    'toolsGetAlbumCover': (0x5c4444, 'ringnav_album_cover', 'album_cover'),
     # Power gains Charge limit; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4cc4cc, 'ringnav_systemset', 'systemset'),
     'systemset_display_page_init': (0x4c1d04, 'ringnav_display', 'display'),
