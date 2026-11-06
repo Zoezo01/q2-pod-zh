@@ -462,7 +462,8 @@ static void spot_refresh(void) {
         times(ms);
     }
     /* only when the drawn width (spot_paint's) or the scrub's colour moves: this runs every tick */
-    unsigned bar = (unsigned)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)) << 1 | (ui.scrub != 0);
+    unsigned bw = (unsigned)I(ui.bar, W_W); /* Classic's 201, the others' SPOT_BAR_W */
+    unsigned bar = (unsigned)((ms >> 4) * bw / ((sp.duration >> 4) | 1)) << 1 | (ui.scrub != 0);
     if (bar + 1 != ui.bar_drawn) {
         ui.bar_drawn = bar + 1;
         widget_invalidate_force(ui.bar, 0);
@@ -500,7 +501,8 @@ void spot_paint(void *w, void *canvas) {
     } else if (w == ui.bar) {
         unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
-        int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H; /* Modern's capsule: Classic's 13 drawn 8 */
+        /* Minimal's 4 px line, Modern's 8 px capsule: the view's height at most */
+        int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H;
         box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
         if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
     } else { /* a triangle playing, two bars otherwise */
