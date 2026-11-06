@@ -1,6 +1,7 @@
 """tools/ipod.py's page rewrites on small synthetic UI trees built to the shape each one checks for."""
 import copy
 import dataclasses
+import re
 
 import pytest
 
@@ -344,6 +345,64 @@ def test_playing_page_lyrics_and_info(page):
     assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=375,h=178)'
 
 
+# Classic's page: the iPod page's widgets under every stock name, "N of M" and More in the art
+# page's view (its elements place them there), the top row empty.
+@pytest.fixture
+def classic_light_page():
+    root = playing()
+    ipod.playing_page_classic_light(root)
+    ipod.encode(root)
+    return root, named(root)
+
+
+def test_playing_page_classic_light_keeps_every_name(classic_light_page, page):
+    assert set(page[1]) <= set(classic_light_page[1]) and set(classic_light_page[1]) - set(page[1]) - {n + '_value' for n in ('label_a', 'label_b')} == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar'}
+
+
+def test_playing_page_classic_light_regroups(classic_light_page):
+    root, n = classic_light_page
+    assert n['view_buttons'][1] == [0, 0, 375, 0]
+    assert [c[2]['name'] for c in n['view_buttons'][3]] == ['img_return']
+    assert [c[2].get('name') for c in n['view_album'][3]][-3:] == ['img_fav', 'label_ipod_pos', 'img_np_hearts']
+    top = [c[2].get('name') for c in root[3]][-3:]  # the window's, over the pages: on every page
+    assert top == ['img_more', 'img_np_repeat', 'img_np_shuffle'] and all(n[t][2]['draw_type'] == 'center' for t in top) and n['img_np_shuffle'][2]['clickable'] == 'true'
+    assert not [k for k in n['img_more'][2] if k.endswith('bg_image')]  # stock's dots gone
+
+
+def test_playing_page_classic_light_pages_span_the_tilted_cover(classic_light_page):
+    root, n = classic_light_page
+    assert [c[2].get('name') for c in n['view_album'][3]][:2] == ['np_tilt', 'img_cover']  # the frame under the stock image's tap
+    assert n['slide_view'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)' and n['slide_indicator1'][2]['visible'] == 'false'
+    order = [c[2].get('name') for c in root[3]]  # over the pages' reflection, under the bar
+    assert order.index('slide_view_view') < order.index('np_bar') < min(order.index(t) for t in ('label_playtime', 'label_playlen', 'label_ipod_remain')) < order.index('slider_play')
+    assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=21,w=375,h=178)' and n['label_lyricmsg'][1][1] == 4 + 21  # below the top controls, on the same rows
+
+
+def test_playing_page_classic_light_info_is_rows():
+    root = playing()
+    info = named(root)['view_info'][3]
+    info.append(['label', [0, 135, 9, 60], {'name': 'label_tall', 'line_wrap': 'true', 'word_wrap': 'true', 'style:normal:text_align_v': 'top'}, []])
+    ipod.playing_page_classic_light(root, CLASSIC_LIGHT)
+    assert [c[1] for c in info[:3]] == [[20, 32 * i, 140, 32] for i in range(3)]  # the set's pitch, holding the row's 27 px font
+    assert all(c[2]['style:normal:text_align_h'] == 'left' and 'line_wrap' not in c[2] and 'style:normal:text_align_v' not in c[2] for c in info[:3])
+    assert [c[1] for c in info[3:]] == [[141, 32 * i, 215, 32] for i in range(3)]  # right edge 356; ellipsized as a settings value
+    assert [c[2]['name'] for c in info[3:]] == ['label_a_value', 'label_b_value', 'label_tall_value']
+    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20r' and c[2]['ellipses'] == 'true' and c[2]['only_focus'] == 'true' for c in info[3:])
+    # stock's nine rows have no scroll: they share the height above list_end, the last clear of the glass, each holding the font
+    root = playing()
+    info = named(root)['view_info'][3]
+    info += [['label', [0, 135, 9, 60], {'name': f'label_{i}'}, []] for i in range(9 - len(info))]
+    ipod.playing_page_classic_light(root, CLASSIC_LIGHT)
+    row = info[1][1][1]
+    assert (row, info[8][1][1] + row) == (28, 252) and row * 9 <= CLASSIC_LIGHT.list_end and row >= 27
+
+
+def test_classic_light_sets_bar_immediates():
+    assert ipod.immediate_values(CLASSIC_LIGHT)['np_bar_x'] == 63 and ipod.immediate_values(CLASSIC_LIGHT)['np_bar_w'] == 248
+    assert ipod.immediate_values(ipod.SET0)['np_bar_x'] == 21 and ipod.immediate_values(ipod.SET0)['np_bar_w'] == 333
+    assert ipod.immediate_values(CLASSIC_LIGHT)['np_mark_y'] == 222 and ipod.immediate_values(ipod.SET0)['np_mark_y'] == 250  # stock's
+
+
 def test_playing_page_swipe_area(page):
     _, n = page
     assert n['slide_view_view'][1] == [0, ipod.NP_TOP, 375, ipod.NP_SLIDE_H + 6]
@@ -456,6 +515,17 @@ def test_playing_stock(audited):
     assert n['img_fav'][1] == [2, 132, 86, 73]
     assert n['slider_play'][1] == [50, 208 + 41 + 6 - ipod.NP_TOUCH // 2, 290, ipod.NP_TOUCH]
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])
+
+
+def test_playing_classic_light_takes_the_audited_page(audited):
+    data, want = audited(playing()), playing()
+    with pytest.raises(ValueError, match=r'^playing_page.bin: unaudited UI asset$'):
+        ipod.playing_classic_light(b'other')
+    ipod.playing_page_classic_light(want)
+    assert ipod.playing_classic_light(data) == ipod.encode(want)
+    want = playing()
+    ipod.playing_page_classic_light(want, CLASSIC_LIGHT)
+    assert ipod.playing_classic_light(data, CLASSIC_LIGHT) == ipod.encode(want)
 
 
 def test_playing_stock_is_audited(audited):
@@ -724,6 +794,15 @@ def test_status_bar_wants_the_stock_height():
 # above the bar's two lines; title and clock share one box height and y (-1, the baseline at row 17); the
 # title's text starts where the glass ends at the caps' top, g.bar_title_w wide; stock's hscroll_label keeps 2 px
 # each side of the box, so the box is 4 wider; the clock is centred on the screen.
+def test_fallback_scale_matches_the_faces():  # theme_font's bold.ttf, at the Classic face's cap height: stb's scale, a font's ascent - descent its size
+    from fontTools.ttLib import TTFont
+    def cap(path):
+        f = TTFont(path, lazy=True)
+        return f['OS/2'].sCapHeight / (f['hhea'].ascent - f['hhea'].descent)
+    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (ipod.ROOT/'patch/navigation.c').read_text())
+    assert int(pct[1]) == round(100*cap(ipod.ROOT/'assets/fonts/texgyreheros-bold.otf')/cap(ipod.ROOT/'assets/fonts/LiberationSans-Bold.ttf')) == 83
+
+
 def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     g = CLASSIC_LIGHT
     m = ipod.status_metrics(g, ipod.CLASSIC_LIGHT_FONT_SRC)
@@ -837,6 +916,19 @@ def test_patch_asset_rows_and_lists_follow_the_geometry(monkeypatch):
     assert n['list_view'][1] == [0, 0, 375, 290] and n['row'][1][3] == 72 and n['art'][1][1] == 8
 
 
+# Streaming follows Row Art: 52 px rows under classic-light, 28 under classic-light-text, SET0's settings rows as before.
+# The list keeps the settings lists' box: a set with list_end's takes the window.
+def test_stream_page_rows_per_set(monkeypatch):
+    page = w('stream_page', w('view_navbar', at=[0, 0, 370, 50]),
+             w('list_view', kind='list_view', at=[0, 50, 375, 240], default_item_height=str(ipod.SET_STOCK_ROW)), kind='window')
+    data = ipod.encode(page)
+    monkeypatch.setitem(ipod.UI_ASSETS, 'stream_page.bin', ipod.sha(data))
+    for g, row, h in ((ipod.SET0, ipod.SET_ROW, ipod.SET_ROWS * ipod.SET_ROW), (CLASSIC_LIGHT, 52, 294), (CLASSIC_LIGHT_TEXT, 32, 294)):
+        assert g.stream_row == row
+        n = named(ipod.decode(ipod.patch_asset('stream_page.bin', data, g=g)))
+        assert n['list_view'][2]['default_item_height'] == str(row) and n['list_view'][1][3] == h, g.name
+
+
 PAGE_T = ipod.Geometry(name='t', pitch=28, body=26, art_pitch=52, art_body=50, art=44, art_inset=3,
                        text_art_inset=5, title24_y=2, title_y=4, meta_y=6, count_y=6)
 
@@ -882,7 +974,7 @@ SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
 
 def test_immediates_every_site_once():
     sites = [a for g in ipod.AUDIT['immediates'] for a, _ in g['sites']]
-    assert len(sites) == 71 and len(set(sites)) == 71
+    assert len(sites) == 106 and len(set(sites)) == 106
 
 
 def test_immediate_values_set0_are_the_baked_values():
@@ -890,8 +982,9 @@ def test_immediate_values_set0_are_the_baked_values():
     assert set(values) == set(ipod.VALUE_NAMES)
     assert (values['np_bar_x'], values['np_bar_w']) == (ipod.NP_BAR[0], ipod.NP_BAR[2])
     assert ipod.VALUE_NAMES[0] == 'pitch'
+    assert values['np_mark_y'] == 250  # stock's row, as baked
     for name in ipod.VALUE_NAMES:
-        if not name.startswith('np_bar'):
+        if not name.startswith(('np_bar', 'np_mark', 'stock_', 'search_')):
             assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_').removeprefix('song_')], name
 
 
@@ -921,6 +1014,7 @@ UI = 'release/assets/default/raw/ui/'
 @pytest.fixture
 def fake_assets(monkeypatch):
     monkeypatch.setattr(ipod, 'UI_ASSETS', {'system_bar.bin': '', 'dialog/volume_dialog.bin': '', 'home_page.bin': ''})
+    monkeypatch.setattr(ipod, 'STOCK_ROWS', {})
     monkeypatch.setattr(ipod, 'patch_asset', lambda rel, data, g=ipod.SET0: data + (b'!' if g.bar != 30 and rel != 'home_page.bin' else b''))
 
 
@@ -940,7 +1034,7 @@ def test_classic_light_sets():
     n, t = CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT
     assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 32, 32, 52, 52, 52, 0, 0, 0)
     assert (n.song_pitch, n.song_body, n.song_title24_y, n.song_meta_y) == (52, 52, 1, 29) == (t.song_pitch, t.song_body, t.song_title24_y, t.song_meta_y)
-    assert dataclasses.replace(t, name='classic-light', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29) == n
+    assert dataclasses.replace(t, name='classic-light', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29, stream_row=52) == n
     assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (4, 6, 8, 8, 1, 29, 4, 8)
     assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (32, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
     assert ipod.immediate_values(n)['scroll'] == 262
@@ -955,9 +1049,22 @@ def test_home_library_list():
     assert lib[2]['name'] == 'list_view_homelib' and lib[2]['visible'] == 'false' and lib[1][3] == 294
     assert lib[3][0][2]['name'] == 'scroll_view_localmusic' and lib[3][0][3] == [] and lib[3][0][2]['yslidable'] == 'true'
     assert 'img_library' in rows and 'img_localmusic' not in rows
-    assert 'img_localmusic' in named(root[3][4])  # the carousel's
+    assert 'img_localmusic' in named(root[3][5])  # the carousel's
     root = home(); ipod.ipod_home(root); rows = named(root[3][1])
     assert 'list_view_homelib' not in named(root) and 'img_library' not in rows and 'img_localmusic' in rows
+
+
+# Streaming the same way: a second hidden list, its empty view named as the Streaming page's, the row's image renamed so stock
+# binds it nowhere. The Carousel's card and a set without home_lib keep stock's binding.
+def test_home_streaming_list():
+    root = home(); ipod.ipod_home(root, g=CLASSIC_LIGHT); rows = named(root[3][1])
+    stream = root[3][4]
+    assert stream[2]['name'] == 'list_view_homestream' and stream[2]['visible'] == 'false' and stream[2]['item_height'] == '32' and stream[1][3] == 294
+    assert stream[3][0][2]['name'] == 'scroll_view_streamsset' and stream[3][0][3] == [] and stream[3][0][2]['yslidable'] == 'true'
+    assert 'img_services' in rows and 'img_stream' not in rows
+    assert 'btn_stream' in named(root[3][5])  # the carousel's
+    root = home(); ipod.ipod_home(root); rows = named(root[3][1])
+    assert 'list_view_homestream' not in named(root) and 'img_services' not in rows and 'img_stream' in rows
 
 
 # Songs' action bar under Classic: a row of the set's action_row, the list and the empty panel under it, and stock's recreated
@@ -984,6 +1091,100 @@ def test_settings_lists_follow_the_set(monkeypatch):
     for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (CLASSIC_LIGHT, [0, 0, 375, 294], '32')):
         n = named(ipod.decode(ipod.patch_asset(path, data, g=g)))
         assert n['list_view'][1] == box and n['list_view'][2]['default_item_height'] == row and 'item_height' not in n['list_view'][2]
+
+
+# Stock's own list pages, each as its bin has it, under Classic: the rows of 78 take the approved pitch, by the one rule (stock_row), and the toolbars go. SET0 gets the bin back, byte for byte.
+STOCK_ROW_REVERSED = dataclasses.replace(CLASSIC_LIGHT, stock_row=78, stock_body=70, stock_title_y=11, stock_title_h=20)
+
+
+def stock_list_page(name, *rows):
+    return w(name, w('view_navbar', at=[0, 0, 375, 50]),
+             w('list_view', w('scroll_view', *rows, kind='scroll_view', at=[0, 0, 375, 100]), kind='list_view', at=[0, 50, 375, 210], default_item_height='78'), kind='window')
+
+
+def stock_table_page(name, *more):
+    return w(name, w('view_navbar', at=[0, 0, 375, 50]),
+             w('table_view', w('table_client', kind='table_client', at=[0, 0, 365, 100], row_height='78', self_layout='default(x=0,y=0,w=365,h=100%)'), kind='table_view', at=[0, 50, 375, 190]), *more, kind='window')
+
+
+def audited_rows(monkeypatch, path, page):
+    data = ipod.encode(page); monkeypatch.setitem(ipod.STOCK_ROWS, path, ipod.sha(data))
+    assert ipod.patch_asset(path, data) == data
+    return data
+
+
+@pytest.mark.parametrize('path', ['playermore_page.bin', 'updatemusic_page.bin'])
+def test_stock_lists_take_settings_rows(monkeypatch, path):
+    label = w('hscroll_label_1', kind='hscroll_label', at=[10, 25, 266, 20])
+    row = w('list_item_1', w('button_1', label, kind='button', at=[20, 0, 335, 70]), kind='list_item', at=[0, 0, 0, 78])
+    data = audited_rows(monkeypatch, path, stock_list_page(path[:-4], row))
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == n['view_navbar'][2]['enable'] == 'false'
+    assert n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '32' and 'item_height' not in n['list_view'][2]
+    assert n['hscroll_label_1'][1] == [10, 0, 266, 70]  # takes the row, whose font a 20 px box wouldn't hold
+    assert 'anim_hint' not in ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT))[2]
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=STOCK_ROW_REVERSED)))  # the rule reversed: stock's pitch, the toolbar still hidden
+    assert n['view_navbar'][2]['visible'] == 'false' and n['list_view'][2]['default_item_height'] == '78' and n['list_view'][1] == [0, 0, 375, 294]
+
+
+def test_queue_under_the_bar(monkeypatch):
+    path = 'playerqueue_page.bin'
+    data = audited_rows(monkeypatch, path, stock_table_page('playerqueue_page'))
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == 'false' and n['table_view'][1] == [0, 0, 375, 294]
+    assert n['table_client'][2]['row_height'] == '32' and n['table_client'][1][2] == 375
+
+
+@pytest.mark.parametrize('path', ['playerjumpinfo_page.bin', 'specfolder_page.bin'])
+def test_stock_tables_keep_their_toolbar_and_boxes(monkeypatch, path):
+    page = stock_table_page(path[:-4], w('startscan_view', at=[0, 210, 375, 60]))
+    data = audited_rows(monkeypatch, path, page)
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
+    assert 'visible' not in n['view_navbar'][2] and n['table_view'][1] == [0, 50, 375, 190] and n['startscan_view'][1] == [0, 210, 375, 60]
+    assert n['table_client'][2]['row_height'] == '32'
+    assert ipod.patch_asset(path, data, g=STOCK_ROW_REVERSED) == ipod.encode(ipod.decode(data))
+
+
+def test_toolbar_switch_pages(monkeypatch):
+    # Lock Screen is a settings list, and the Sleep Timer's panel makes room for the row its switch becomes. Crossfade's page keeps its toolbar. SET0's keep theirs and their rows.
+    lock, sleep, boot = 'systemset/screensaver_page.bin', 'systemset/sleepshutdown_page.bin', 'playset/bootvol_page.bin'
+    pages = {lock: stock_list_page('screensaver_page'),
+             sleep: w('sleepshutdown_page', w('view_navbar', at=[0, 0, 375, 50]), w('view_sleep', at=[0, 50, 375, 240]), kind='window'),
+             boot: w('bootvol_page', w('view_navbar', at=[0, 0, 375, 50]), w('view_bootvol', at=[0, 50, 375, 240]),
+                     w('slider', kind='slider', at=[50, 100, 275, 8]), w('a', kind='image', at=[0, 0, 50, 50], image='vol_left'), w('b', kind='image', at=[0, 0, 50, 50], image='vol_right'), kind='window')}
+    for path, page in pages.items():
+        monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(ipod.encode(page)))
+    data = {path: ipod.encode(page) for path, page in pages.items()}
+    n = named(ipod.decode(ipod.patch_asset(lock, data[lock], g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == 'false' and n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '32'
+    assert named(ipod.decode(ipod.patch_asset(lock, data[lock], g=STOCK_ROW_REVERSED)))['list_view'][2]['default_item_height'] == '78'
+    n = named(ipod.decode(ipod.patch_asset(sleep, data[sleep], g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == 'false' and n['view_sleep'][1] == [0, 32, 375, 240] and 28 + 240 <= 294
+    assert 'visible' not in named(ipod.decode(ipod.patch_asset(boot, data[boot], g=CLASSIC_LIGHT)))['view_navbar'][2]
+    for path in (lock, sleep, boot):
+        n = named(ipod.decode(ipod.patch_asset(path, data[path])))
+        assert 'visible' not in n['view_navbar'][2] and n[{lock: 'list_view', sleep: 'view_sleep', boot: 'view_bootvol'}[path]][1][1] == 50
+    assert named(ipod.decode(ipod.patch_asset(lock, data[lock])))['list_view'][2]['default_item_height'] == '78'
+
+
+def test_search_rows_are_stocks_under_set0():
+    values, want = ipod.immediate_values(ipod.SET0), {'search_row': 78, 'search_body': 70, 'search_art': 50, 'search_title_y': 11, 'search_title24_y': 14, 'search_title_h': 24, 'search_meta_y': 41, 'search_meta_h': 16}
+    assert {n: values[n] for n in want} == want
+    for group in ipod.AUDIT['immediates']:
+        if group['value'] in want:
+            assert all(int(word, 16) & 0xffff == want[group['value']] for _, word in group['sites']), group['value']
+    assert (CLASSIC_LIGHT.search_row, CLASSIC_LIGHT.search_body, CLASSIC_LIGHT.search_art, CLASSIC_LIGHT.search_title_h, CLASSIC_LIGHT.search_meta_h) == (52, 52, 0, 28, 20)
+    assert CLASSIC_LIGHT.search_title_y + CLASSIC_LIGHT.search_title_h <= CLASSIC_LIGHT.search_body and CLASSIC_LIGHT.search_meta_y + CLASSIC_LIGHT.search_meta_h <= CLASSIC_LIGHT.search_body
+
+
+def test_stock_rows_are_stocks_under_set0():
+    values = ipod.immediate_values(ipod.SET0)
+    assert (values['stock_row'], values['stock_body'], values['stock_title_y'], values['stock_title_h']) == (78, 70, 11, 20) and ipod.SET0.toolbar == 1
+    for group in ipod.AUDIT['immediates']:
+        if group['value'] in ('stock_row', 'stock_body', 'stock_title_y', 'stock_title_h'):
+            assert all(int(word, 16) & 0xffff == values[group['value']] for _, word in group['sites'])
+    assert (CLASSIC_LIGHT.stock_row, CLASSIC_LIGHT.stock_body, CLASSIC_LIGHT.toolbar) == (32, 32, 0)
+    assert CLASSIC_LIGHT.stock_title_h >= 27 and CLASSIC_LIGHT.stock_title_y + CLASSIC_LIGHT.stock_title_h <= CLASSIC_LIGHT.stock_body  # the box holds the row's font
 
 
 def test_lists_beside_settings_rows_take_item_height(monkeypatch):

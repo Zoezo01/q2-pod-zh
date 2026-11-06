@@ -1,11 +1,15 @@
 """Original raster art the theme files state in numbers, drawn at build time: small vector shapes, antialiased
 over sub-rows, written as 8-bit RGBA PNGs. No Apple assets or reference pixels; every shape is drawn here."""
+import functools
 import math
 import re
 import struct
 import zlib
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.ttLib import TTFont
 from build import ROOT
-from ipod import STATE_W
+from ipod import BC_ART, CLASSIC_LIGHT_FONT_SRC, STATE_W
 
 SUB = 8  # sub-rows per pixel; columns are exact within a sub-row
 
@@ -143,23 +147,34 @@ def gradient(stops, y0, y1):
     return at
 
 
+def laid(w, h, layers):
+    """RGBA bytes: layers (coverage per pixel, paint(x, y) -> (0xRRGGBB, alpha 0 to 1)) source-over, straight alpha."""
+    px = [(0.0, 0.0, 0.0, 0.0)] * (w * h)
+    for cov, paint in layers:
+        for i, c in enumerate(cov):
+            if c:
+                rgb, a = paint(i % w + 0.5, i // w + 0.5)
+                a *= min(c, 1)
+                if not a:
+                    continue
+                r, g, b, d = px[i]
+                out = a + d * (1 - a)
+                if not out:  # a soft layer's clear pixel, on nothing
+                    continue
+                px[i] = (*((v * d * (1 - a) + (rgb >> s & 255) * a) / out for v, s in ((r, 16), (g, 8), (b, 0))), out)
+    return b''.join(bytes((round(r), round(g), round(b), round(a * 255))) for r, g, b, a in px)
+
+
 def compose(box, layers):
     """box's RGBA bytes: layers (polygons, paint(x, y) -> (0xRRGGBB, alpha 0 to 1)[, clip polygons]) source-over,
     straight alpha."""
     x0, y0, w, h = box
-    px = [(0.0, 0.0, 0.0, 0.0)] * (w * h)
-    for polys, paint, *clip in layers:
+    def layer(polys, paint, *clip):
         cov = coverage(polys, box)
         if clip:
             cov = [a * b for a, b in zip(cov, coverage(clip[0], box))]
-        for i, c in enumerate(cov):
-            if c:
-                rgb, a = paint(x0 + i % w + 0.5, y0 + i // w + 0.5)
-                a *= min(c, 1)
-                r, g, b, d = px[i]
-                out = a + d * (1 - a)
-                px[i] = (*((v * d * (1 - a) + (rgb >> s & 255) * a) / out for v, s in ((r, 16), (g, 8), (b, 0))), out)
-    return b''.join(bytes((round(r), round(g), round(b), round(a * 255))) for r, g, b, a in px)
+        return cov, lambda x, y: paint(x0 + x, y0 + y)
+    return laid(w, h, [layer(*l) for l in layers])
 
 
 def png(w, h, rgba):
@@ -245,9 +260,595 @@ def icon(d, fit):
 
 
 NOTE_BOX = (222, 66, 100, 115)  # the drawing's viewBox
+# The generic cover (playing.noart), an original drawing on a 320 px square, drawn at the size it fills: the
+# light band across its top, and the note. The note's gradient and the shadow are stated at 160 px.
+NOART_BAND = 'M0 0H320V64L240 80 0 120Z'
+NOART_NOTE = ('M105 64 238 38V226C238 243 222 250 203 250 184 250 170 240 172 224 174 205 196 193 224 198V101L120 125 119 244'
+              'C118 258 102 268 84 268 66 268 52 258 54 244 56 224 78 212 105 218Z')
+NOART_STATION = ('M96 86a90 90 0 0 0 0 110l18-14a66 66 0 0 1 0-82ZM224 86a90 90 0 0 1 0 110l-18-14a66 66 0 0 0 0-82Z'
+                 'M126 108a50 50 0 0 0 0 66l16-13a28 28 0 0 1 0-40ZM194 108a50 50 0 0 1 0 66l-16-13a28 28 0 0 0 0-40Z'
+                 'M160 118a23 23 0 1 1-.1 0ZM150 170h20l28 100h-76Z')  # Internet Radio's: a mast, in the note's place
+NOART_NOTE_Y = (19, 134)  # the note's gradient's ends, in the image's rows
+NOART_SHADOW = (1.5, 2.5)  # the shadow: rows down, and its blur's standard deviation in px
+@functools.cache
+def noart(stops, note_stops, band_a, shadow_a, size=160, shape=NOART_NOTE):
+    """The generic cover's RGBA bytes, size px square: its rows' gradient, the band, the note (or shape) over its soft shadow."""
+    scale = size / 160
+    placed = lambda d: [[(x * scale / 2, y * scale / 2) for x, y in poly] for poly in path(d)]
+    box = (0, 0, size, size)
+    note_shape, down, sd, reach = placed(shape), NOART_SHADOW[0] * scale, NOART_SHADOW[1] * scale, round(8 * scale)
+    held = coverage([[(x, y + down) for x, y in poly] for poly in note_shape], box)
+    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
+    total = sum(kernel)
+    at = lambda v, x, y: v[max(0, min(size - 1, y)) * size + max(0, min(size - 1, x))]
+    across = [sum(w * at(held, x + k - reach, y) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
+    shadow = [sum(w * at(across, x, y + k - reach) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
+    whole = [[(0, 0), (size, 0), (size, size), (0, size)]]
+    fill, ink = gradient(stops, 0, size), gradient(note_stops, *(y * scale for y in NOART_NOTE_Y))
+    return compose(box, [(whole, lambda x, y: (fill(y), 1)),
+                         (placed(NOART_BAND), lambda x, y: (0xffffff, band_a / 255)),
+                         (whole, lambda x, y: (0, shadow[int(y) * size + int(x)] * shadow_a / 255)),
+                         (note_shape, lambda x, y: (ink(y), 1))])
 STATE = {'play': 'M270.5 4.5 282.5 11.5 270.5 18.5Z', 'pause': 'M270.5 4.5H275V18.5H270.5ZM278 4.5H282.5V18.5H278Z'}
 STATE_BOX = (266, 0, STATE_W, 22)  # the frame the state art is drawn in, on the bar's rows; the art itself is position-free
 STATE_Y = (4, 19)  # the fill's and edge's first and last rows
+
+
+# Now Playing's top right, 26 x 20: original strokes, in the half's dim (off) or dark (on) ink (playing.controls)
+CONTROLS = {'more': ('M5 10h.01M13 10h.01M21 10h.01', 3.4),
+            'repeat': ('M4 11V8.5A3.5 3.5 0 0 1 7.5 5H22M22 9v2.5a3.5 3.5 0 0 1-3.5 3.5H4M18.5 1.5 22 5l-3.5 3.5M7.5 11.5 4 15l3.5 3.5', 2.2),
+            'shuffle': ('M1 5h4.5c6 0 8 10 14 10H23M1 15h4.5c6 0 8-10 14-10H23M20 1.5 24 5l-4 3.5M20 11.5 24 15l-4 3.5', 2.2)}
+CONTROL_ONE = ('M11.8 8.4 13.6 7.2V12.8', 1.5)  # repeat one's figure, between its arrows
+CONTROL_BOX = (0, 0, 26, 20)
+# The hearts under the album: the row left-aligned in its 96 x 30 tap area, 16 x 15 each, 4 px apart, 6 rows down
+HEART = 'M8 14C3 10 1 7.5 1 4.8 1 1 6 0 8 3.6 10 0 15 1 15 4.8 15 7.5 13 10 8 14Z'
+HEARTS_BOX = (0, -6, 96, 30)
+@functools.cache
+def hearts(n, rgb):
+    """n filled hearts, or with 0 one outline."""
+    at = lambda i: [[(x + 20 * i, y) for x, y in poly] for poly in path(HEART)]
+    shapes = [q for i in range(n) for q in at(i)]
+    return png(*HEARTS_BOX[2:], compose(HEARTS_BOX, [(shapes + stroke(shapes or at(0), 1.4), lambda x, y: (rgb, 1))]))
+@functools.cache
+def control(strokes, rgb):
+    """strokes [(d, width)]: each d's open subpaths stroked, in rgb."""
+    polys = [q for d, width in strokes for sub in re.findall(r'M[^M]*', d) for q in stroke(path(sub), width, closed=False)]
+    return png(*CONTROL_BOX[2:], compose(CONTROL_BOX, [(polys, lambda x, y: (rgb, 1))]))
+
+
+# The volume's speakers and the slider pages' suns, their boxes the image; drawn on the bar and page in these colours.
+SPEAKER = 'M0 4.5h3.5L9 .5v13L3.5 9.5H0Z'
+SPEAKER_ARCS = ('M12 4.5a3.5 3.5 0 0 1 0 5', 'M14.5 2.5a7 7 0 0 1 0 9', 'M17 .8a10 10 0 0 1 0 12.4')
+SPEAKER_INKS = {'l': 0x393c39, 'd': 0xc6c3c6, 'w': 0xffffff}
+SUNS = {'small': (16, 3.5, 5.5, 7.5), 'big': (22, 4.5, 7, 10)}  # box, then in a 22 unit square scaled to it: disc's radius, a ray's first and last radius
+DARK_STATE = {'play': 'M1.53 1.45 8.47 5.5 1.53 9.55Z', 'pause': 'M1.53 1.45H4.13V9.55H1.53ZM5.87 1.45H8.47V9.55H5.87Z'}  # 10 x 11
+# The page under the slider pages, the Set Time pages, the message screens and the info screen, drawn at a quarter of its 375 x 294 and stretched: a vertical
+# ramp (row, colour) under a glow falling linearly from its alpha at the centre to nothing at the ellipse's edge.
+PAGE_RAMP = ((0, 0x65747b), (1, 0x7a8c96), (3, 0x8498a3), (13.5, 0x8294a2), (30, 0x7f919f), (51, 0x798b99), (105, 0x6d7b86),
+             (186, 0x555f69), (227, 0x4b535e), (260, 0x464f56), (294, 0x464f56))
+PAGE_GLOW, PAGE_GLOW_A, PAGE_GLOW_AT, PAGE_GLOW_R = 0xe4f0ff, 64, (187.5, 11), (185, 300)
+PAGE_SIZE, PAGE_FULL = (94, 74), (375, 294)
+PAGE_RAMP_AT = gradient(tuple((row * 100 / PAGE_FULL[1], rgb) for row, rgb in PAGE_RAMP), 0, PAGE_FULL[1])
+def page_px(fx, fy):
+    """The page's opaque RGBA at a point in the full page's coordinates: the ramp under the glow."""
+    d = math.hypot((fx - PAGE_GLOW_AT[0]) / PAGE_GLOW_R[0], (fy - PAGE_GLOW_AT[1]) / PAGE_GLOW_R[1])
+    a = max(0, 1 - d) * PAGE_GLOW_A / 255
+    base = PAGE_RAMP_AT(fy)
+    return bytes(round((base >> s & 255) * (1 - a) + (PAGE_GLOW >> s & 255) * a) for s in (16, 8, 0)) + b'\xff'
+def page():
+    """The page's opaque RGBA bytes, each pixel sampled at its centre in the full page's coordinates."""
+    w, h = PAGE_SIZE
+    return b''.join(page_px((x + .5) * PAGE_FULL[0] / w, (y + .5) * PAGE_FULL[1] / h) for y in range(h) for x in range(w))
+def page_top():
+    """The page's first two rows at full width, unstretched: stretching softens them."""
+    return b''.join(page_px(x + .5, y + .5) for y in range(2) for x in range(PAGE_FULL[0]))
+def sun(box, disc, r0, r1):
+    """A white disc and its 8 rays at 45 degrees, stroked 1.6 with round caps, in 22 units scaled to a box px square."""
+    c, k = box / 2, box / 22
+    disc, r0, r1 = disc * k, r0 * k, r1 * k
+    at = lambda r, a: (c + r * math.cos(a * math.pi / 4), c + r * math.sin(a * math.pi / 4))
+    circle = [(c + disc * math.cos(a * math.pi / 24), c + disc * math.sin(a * math.pi / 24)) for a in range(48)]
+    rays = [q for a in range(8) for q in stroke([[at(r0, a), at(r1, a)]], 1.6 * k, closed=False)]
+    return png(box, box, compose((0, 0, box, box), [([circle, *rays], lambda x, y: (0xffffff, 1))]))
+def speaker(loud, rgb):
+    """The speaker, with its three arcs when loud."""
+    w = 22 if loud else 12
+    arcs = [q for d in SPEAKER_ARCS for q in stroke(path(d), 1.5, closed=False)] if loud else []
+    return png(w, 14, compose((0, 0, w, 14), [(path(SPEAKER) + arcs, lambda x, y: (rgb, 1))]))
+
+
+# The soft shadows and edges of the slider pages' and panels' boxes, as CSS's box-shadow draws them: name, the box's
+# w, h and corner radius, the shadow's blur, its drop and alpha, a 1 px ring's alpha. The image reaches blur + 2 past
+# the shadow's box on every side and is clear under the box itself.
+SHADOWS = {'band_shadow': (322, 46, 8, 5, 2, 0x66, 0), 'panel_shadow': (319, 48, 12, 6, 2, 0x33, 0),
+           'rate_shadow': (304, 110, 12, 6, 2, 0x33, 0), 'tray_shadow': (125, 44, 9, 6, 2, 0x77, 0x66)}
+BLACK, WHITE = 0, 255
+@functools.cache
+def classic_light_font():
+    """The theme face's source, opened once a build."""
+    return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
+# Quick Settings' page, one form in both halves: 60 px buttons of the rounded box's R, a neutral or lit ramp, a gloss in
+# the ellipse's top half, a white glyph; own drawings. Stock's image names (the demo's own strings) decide which button.
+QS_R = 10.5
+QS_LIT = ((0, 0x5fb0f5), (50, 0x2178d6), (100, 0x0f4fae))
+QS_NEUTRAL = ((0, 0xa2a7af), (50, 0x5c616a), (100, 0x34383e))
+QS_GLOSS = 'M-12 0A42 29 0 1 1 72 0A42 29 0 1 1 -12 0Z'
+QS_GLOSS_A = ((-5.8, 0), (0, 0x75), (29, 0x26))  # row, white's alpha
+def circle(cx, cy, r):
+    return f'M{cx - r} {cy}A{r} {r} 0 1 1 {cx + r} {cy}A{r} {r} 0 1 1 {cx - r} {cy}Z'
+SPOKES = tuple(tuple((round(r * math.sin(math.radians(a)), 3), round(-r * math.cos(math.radians(a)), 3)) for r in (8, 12)) for a in range(0, 360, 45))
+# A glyph on a -30..30 box, centre at 0: its ink, (stroke's width, open paths, closed paths), filled discs (x, y, r), segments 3 wide.
+QS_INK, QS_DARK = 0xffffff, 0x333333
+QS_GLYPHS = {
+    'wifi': (QS_INK, (3, ('M-14 -3a20 20 0 0 1 28 0', 'M-8 3a11 11 0 0 1 16 0'), ()), ((0, 9, 2.8),), ()),
+    'bt': (QS_INK, (2.6, ('M-7 -7 7 6 0 12V-12L7 -6-7 7',), ()), (), ()),
+    'lock': (QS_DARK, (2.4, ('M-5 -3v-4a5 5 0 0 1 10 0v4',), ('M-7 -3H7A2 2 0 0 1 9 -1V9A2 2 0 0 1 7 11H-7A2 2 0 0 1 -9 9V-1A2 2 0 0 1 -7 -3Z',)), (), ()),
+    'usb': (QS_INK, (2.4, ('M0 12V-10', 'M0 6l-7-6V-5', 'M0 2l7-6V-8'), ('M0 -13l-4 5h8Z',)), (), ()),
+    'sl': (QS_DARK, (2.4, ('M-8 -12V12', 'M0 -12V12', 'M8 -12V12'), ()), ((-8, 3, 3.6), (0, -4, 3.6), (8, 5, 3.6)), ()),
+    'gear': (QS_DARK, (2.4, (), (circle(0, 0, 5),)), (), SPOKES),
+}
+QS_FONT_PX, QS_LINE = 15, 17
+QS_TEXT_SHADOW = 0x77
+# Stock's name: glyph or text lines, lit, the glyph's opacity.
+QS_BUTTONS = {
+    'wifi': ('wifi', 0, 1), 'wifiopen': ('wifi', 1, 1), 'bt': ('bt', 0, 1), 'btopen': ('bt', 1, 1),
+    'keylock': ('lock', 0, .72), 'keylockopen': ('lock', 1, 1),
+    'lowgain': (('Low', 'Gain'), 0, .72), 'lowgaindisable': (('Low', 'Gain'), 0, .72),
+    'highgain': (('High', 'Gain'), 1, 1), 'highgaindisable': (('High', 'Gain'), 0, .72),
+    'lo': (('LO',), 1, 1), 'po': (('PO',), 0, 1), 'sa': (('SA',), 0, 1),
+    'usbstorage': ('usb', 1, 1), 'usbaudio': ('usb', 1, 1), 'usbdac': ('usb', 1, 1),
+    'playset': ('sl', 0, 1), 'sysset': ('gear', 0, 1),
+}
+def rounded_path(x, y, w, h, r):
+    return (f'M{x + r} {y}H{x + w - r}A{r} {r} 0 0 1 {x + w} {y + r}V{y + h - r}A{r} {r} 0 0 1 {x + w - r} {y + h}'
+            f'H{x + r}A{r} {r} 0 0 1 {x} {y + h - r}V{y + r}A{r} {r} 0 0 1 {x + r} {y}Z')
+def rounded(w, h, x, y, bw, bh, r):
+    """A rounded box's coverage of a w x h image, 0 to 1 per pixel."""
+    return [min(c, 1) for c in coverage(path(rounded_path(x, y, bw, bh, r)), (0, 0, w, h))]
+# The message screens' round icon, an original drawing on a -50..50 box: the circle's rows, an inner ring, its glyph, a soft shadow.
+ORB_STOPS = ((2, 0xfff7c2), (14.6, 0xffe8a6), (21, 0xffdb8b), (25, 0xfed072), (30, 0xf7c155), (35.4, 0xfaaa2d), (40.6, 0xf09310),
+             (45.8, 0xe48600), (51, 0xdc8001), (72, 0xda8100), (81, 0xe98001), (94, 0xeb951a), (98, 0xdc9f42))
+ORB_R, ORB_RING_R, ORB_RING_W, ORB_RING, ORB_RING_A = 49.5, 48.6, 1.1, 0xffe2a0, .55
+ORB_INK = 0x160b00
+ORB_PAD, ORB_DROP, ORB_SIGMA, ORB_SHADOW_A = 8, 2, 4, 0x66  # px past the box for the shadow, its drop and blur on the screen
+ORB_NOTE = 'M-15 -19 20 -26V14A9 7 0 1 1 13 7V-13L-8 -9V21A9 7 0 1 1 -15 14Z'
+ORB_USB = ('M0 28V-20', 'M0 14 -18 0V-10', 'M0 6 18 -8V-18')  # stroked 5 wide, under its heads
+ORB_USB_HEADS = 'M0 -32 -8 -20H8Z'
+ORB_USB_SQUARE = 'M13 -24H23V-15H13Z'
+ORB_USB_DISCS = ((-18, -13, 5), (0, 29, 6))
+# Set Time and Set Date. A box's soft shadow as CSS's box-shadow draws it, clear under the box. Each image reaches past
+# its box by its PAD; navigation.c's TIME_*_PAD say the same.
+TRAY_H, TRAY_R, TRAY_PAD, TRAY_WIDTHS = 48, 7, 7, (108, 165, 164)
+TRAY_STOPS = ((0, 0x565c66), (20, 0x3a3f47), (44, 0x22252c), (50, 0x121419), (100, 0x0f1014))
+CELL_H, CELL_R, CELL_PAD, CELL_WIDTHS = 42, 6, 4, (45, 60)
+CELL_LIT = ((0, 0x7cc3f8), (22, 0x4aa3ee), (49, 0x2f8de4), (50, 0x0d68cc), (100, 0x0a5ab8))
+CELL_OFF = ((0, 0x454c56), (22, 0x353b44), (49, 0x2a2f37), (50, 0x0e1116), (100, 0x13161b))
+TILE_W, TILE_H, TILE_PAD, TILE_HEAD = 118, 100, 6, 22
+TILE_PAGE = ((0, 0xffffff), (100, 0xf4f5f7))
+TILE_TOP = ((0, 0xef6a72), (55, 0xe0444e), (100, 0xcf2a35))
+CLOCK_PX, CLOCK_SHADOW = 110, (86, 26)
+CLOCK_RING = ((0, 0xffffff), (24, 0xf4f6f8), (46, 0xb4bbc3), (58, 0x7f8892), (72, 0xa9b0b9), (100, 0xe8ecf0))
+CLOCK_RIM = ((0, 0x6d7680), (100, 0xd5dae0))
+def blurred(cov, w, h, sigma):
+    """cov under a Gaussian of sigma, its edge values carried on past the image."""
+    r = math.ceil(3 * sigma)
+    k = [math.exp(-i * i / (2 * sigma * sigma)) for i in range(-r, r + 1)]
+    k = [v / sum(k) for v in k]
+    across = [sum(v * cov[y * w + min(max(x + i - r, 0), w - 1)] for i, v in enumerate(k)) for y in range(h) for x in range(w)]
+    return [sum(v * across[min(max(y + i - r, 0), h - 1) * w + x] for i, v in enumerate(k)) for y in range(h) for x in range(w)]
+def inked(w, h, layers):
+    """RGBA bytes of layers (coverage, alpha 0 to 255, grey), the first on top."""
+    out = bytearray()
+    for i in range(w * h):
+        a = g = 0.0
+        for cov, alpha, grey in layers:
+            x = cov[i] * alpha / 255 * (1 - a)
+            g, a = g + grey * x, a + x
+        v = round(a * 255) and round(g / a)
+        out += bytes((v, v, v, round(a * 255)))
+    return bytes(out)
+def outside(cov, box):
+    return [c * (1 - b) for c, b in zip(cov, box)]
+@functools.lru_cache(maxsize=None)
+def shadow(bw, bh, r, blur, drop, alpha, ring):
+    """box-shadow: 0 drop blur black at alpha, under 0 0 0 1px black at ring; the image's first row is the shadow's less blur + 2."""
+    pad = blur + 2
+    w, h = bw + 2 * pad, bh + 2 * pad
+    box = rounded(w, h, pad, pad - drop, bw, bh, r)
+    soft = blurred(rounded(w, h, pad, pad, bw, bh, r), w, h, blur / 2)
+    rim = outside(rounded(w, h, pad - 1, pad - drop - 1, bw + 2, bh + 2, r + 1), box)
+    return png(w, h, inked(w, h, [(rim, ring, BLACK), (outside(soft, box), alpha, BLACK)]))
+@functools.lru_cache(maxsize=None)
+def track_inset():
+    """The switch's 100 x 26, R 6 track: inset 0 2px 2px at 0xdd, inset 0 0 0 1px at 0x88, 0 1px white at 0x29 under it."""
+    w, h, r, p = 100, 26, 6, 3
+    open_ = [1 - c for c in rounded(w + 2 * p, h + 2 * p + 1, p, p + 2, w, h, r)]
+    soft = blurred(open_, w + 2 * p, h + 2 * p + 1, 1)
+    soft = [soft[(y + p) * (w + 2 * p) + x + p] for y in range(h + 1) for x in range(w)]
+    box = rounded(w, h + 1, 0, 0, w, h, r)
+    rim = [b * (1 - c) for b, c in zip(box, rounded(w, h + 1, 1, 1, w - 2, h - 2, r - 1))]
+    return png(w, h + 1, inked(w, h + 1, [([b * s for b, s in zip(box, soft)], 0xdd, BLACK), (rim, 0x88, BLACK),
+                                          (outside(rounded(w, h + 1, 0, 1, w, h, r), box), 0x29, WHITE)]))
+@functools.lru_cache(maxsize=None)
+def lit_edge():
+    """The lit cell's 50 x 26, R 6 edges, the image a pixel larger each way: inset 0 1px white at 0x73, inset 0 -1px at 0x59, 0 0 0 1px at 0x77."""
+    w, h = 52, 28
+    box = rounded(w, h, 1, 1, 50, 26, 6)
+    inner = lambda dy: [b * (1 - c) for b, c in zip(box, rounded(w, h, 1, 1 + dy, 50, 26, 6))]
+    return png(w, h, inked(w, h, [(inner(1), 0x73, WHITE), (inner(-1), 0x59, BLACK),
+                                  (outside(rounded(w, h, 0, 0, w, h, 7), box), 0x77, BLACK)]))
+def over(top, under):
+    """RGBA bytes of straight-alpha top source-over under."""
+    out = bytearray()
+    for i in range(0, len(top), 4):
+        a, d = top[i + 3] / 255, under[i + 3] / 255
+        e = a + d * (1 - a)
+        out += bytes(round((top[i + k] * a + under[i + k] * d * (1 - a)) / e) if e else 0 for k in range(3)) + bytes((round(e * 255),))
+    return bytes(out)
+def butt_stroke(poly, width, closed=False):
+    """An SVG default stroke's polygons: butt caps, mitre joins under its limit of 4, else bevelled."""
+    r, out = width / 2, []
+    pts = [p for i, p in enumerate(poly) if not i or math.dist(p, poly[i - 1]) > 1e-6]
+    if closed:
+        pts += [pts[0]] if math.dist(pts[-1], pts[0]) > 1e-6 else []
+    def normal(a, b):
+        n = math.hypot(b[0] - a[0], b[1] - a[1])
+        return (b[1] - a[1]) / n * r, (a[0] - b[0]) / n * r
+    for a, b in zip(pts, pts[1:]):
+        nx, ny = normal(a, b)
+        out.append([(a[0] + nx, a[1] + ny), (b[0] + nx, b[1] + ny), (b[0] - nx, b[1] - ny), (a[0] - nx, a[1] - ny)])
+    for a, b, c in zip(pts, pts[1:], pts[2:] + (pts[1:2] if closed else [])):
+        (ax, ay), (bx, by) = normal(a, b), normal(b, c)
+        cross = ax * by - ay * bx
+        if abs(cross) < 1e-9:
+            continue
+        s = 1 if cross > 0 else -1  # the outer side
+        ax, ay, bx, by = ax * s, ay * s, bx * s, by * s
+        mx, my = ax + bx, ay + by
+        scale = 2 * r * r / (mx * mx + my * my)  # 2 * scale is the squared mitre ratio
+        tip = [(b[0] + mx * scale, b[1] + my * scale)] if 2 * scale <= 16 else []
+        out.append([b, (b[0] + ax, b[1] + ay), *tip, (b[0] + bx, b[1] + by)])
+    return out
+def qs_text(lines, dy=0):
+    """Text lines' outlines from the theme's face, centred on the button, QS_LINE apart. One polygon a glyph: its contours
+    joined, each edge between them walked twice, so that coverage's even-odd keeps the counters."""
+    from fontTools.pens.basePen import BasePen
+    font = classic_light_font()
+    glyphs, cmap, k = font.getGlyphSet(), font.getBestCmap(), QS_FONT_PX / font['head'].unitsPerEm
+    hhea = font['hhea']
+    out = []
+    class Flat(BasePen):
+        def __init__(self, x, y):
+            super().__init__(glyphs)
+            self.x, self.y, self.polys = x, y, []
+        def at(self, p):
+            return self.x + p[0] * k, self.y - p[1] * k
+        def _moveTo(self, p):
+            self.polys.append([self.at(p)])
+        def _lineTo(self, p):
+            self.polys[-1].append(self.at(p))
+        def _curveToOne(self, a, b, c):
+            p0, ctrl = self.polys[-1][-1], [self.at(q) for q in (a, b, c)]
+            for t in (i / 12 for i in range(1, 13)):
+                u = 1 - t
+                self.polys[-1].append(tuple(u**3 * p0[n] + 3 * u * u * t * ctrl[0][n] + 3 * u * t * t * ctrl[1][n] + t**3 * ctrl[2][n] for n in (0, 1)))
+    for i, line in enumerate(lines):
+        width = sum(glyphs[cmap[ord(c)]].width for c in line) * k
+        # the line box's baseline, as CSS centres the face's ascent and descent in it
+        y = 30 - len(lines) * QS_LINE / 2 + i * QS_LINE + (QS_LINE + (hhea.ascent + hhea.descent) * k) / 2 + dy
+        x = 30 - width / 2
+        for c in line:
+            pen = Flat(x, y)
+            glyphs[cmap[ord(c)]].draw(pen)
+            out.append([p for contour in pen.polys for p in (*contour, contour[0])] + [pen.polys[0][0]])
+            x += glyphs[cmap[ord(c)]].width * k
+    return out
+def qs_glyph(glyph):
+    """A glyph's layers for compose on the button's 60 x 60 box."""
+    if isinstance(glyph, tuple):  # text: its shadow, a row up, then its white
+        return [(qs_text(glyph, -1), lambda x, y: (0, QS_TEXT_SHADOW / 255)), (qs_text(glyph), lambda x, y: (0xffffff, 1))]
+    ink, (width, opened, closed), discs, segments = QS_GLYPHS[glyph]
+    moved = lambda poly: [(x + 30, y + 30) for x, y in poly]
+    polys = [q for d in opened for poly in path(d) for q in butt_stroke(moved(poly), width)]
+    polys += [q for d in closed for poly in path(d) for q in butt_stroke(moved(poly), width, closed=True)]
+    polys += [q for a, b in segments for q in butt_stroke(moved([a, b]), 3)]
+    polys += [poly for x, y, r in discs for poly in map(moved, path(circle(x, y, r)))]
+    return [(polys, lambda x, y: (ink, 1))]
+@functools.lru_cache(maxsize=None)
+def qs_button(glyph, lit, opacity):
+    """One button's RGBA bytes: ramp, gloss, then the glyph at opacity as one group."""
+    box = (0, 0, 60, 60)
+    shape = path(rounded_path(0, 0, 60, 60, QS_R))
+    ramp = gradient(QS_LIT if lit else QS_NEUTRAL, 0, 60)
+    def gloss(x, y):
+        for (y0, a0), (y1, a1) in zip(QS_GLOSS_A, QS_GLOSS_A[1:]):
+            if y0 <= y <= y1:
+                return 0xffffff, (a0 + (a1 - a0) * (y - y0) / (y1 - y0)) / 255
+        return 0xffffff, 0
+    base = compose(box, [(shape, lambda x, y: (ramp(y), 1)), (path(QS_GLOSS), gloss, shape)])
+    mark = bytearray(compose(box, qs_glyph(glyph)))
+    mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
+    return png(60, 60, over(bytes(mark), base))
+@functools.lru_cache(maxsize=None)
+def qs_shadow():
+    """box-shadow: 0 2px 3px #000c over 0 0 0 1px #000a, a 60 px button's at (6, 6) of 72, clear under the button."""
+    w = 72
+    button = rounded(w, w, 6, 6, 60, 60, QS_R)
+    soft = blurred(rounded(w, w, 6, 8, 60, 60, QS_R), w, w, 1.5)
+    ring = rounded(w, w, 5, 5, 62, 62, QS_R + 1)
+    return png(w, w, inked(w, w, [(outside(soft, button), 0xcc, 0), (outside(ring, button), 0xaa, 0)]))
+@functools.lru_cache(maxsize=None)
+def qs_pressed():
+    """The button darkened: black at 0x40 in its shape."""
+    return png(60, 60, compose((0, 0, 60, 60), [(path(rounded_path(0, 0, 60, 60, QS_R)), lambda x, y: (0, 0x40 / 255))]))
+@functools.lru_cache(maxsize=None)
+def qs_track():
+    """The brightness track's edges over its 239 x 11, R 6 rows: inset 0 1px 2px black, and the row under it, white at 0x22."""
+    w, h, r, p = 239, 11, 6, 4
+    W, H = w + 2 * p, h + 2 * p
+    soft = blurred([1 - c for c in rounded(W, H, p, p + 1, w, h, r)], W, H, 1)
+    soft = [soft[(y + p) * W + x + p] if y < h else 0 for y in range(h + 1) for x in range(w)]
+    box = rounded(w, h + 1, 0, 0, w, h, r)
+    return png(w, h + 1, inked(w, h + 1, [([b * s for b, s in zip(box, soft)], 255, 0), (outside(rounded(w, h + 1, 0, 1, w, h, r), box), 0x22, 255)]))
+@functools.lru_cache(maxsize=None)
+def qs_knob():
+    """The 23 px knob at (3, 3) of 29: its ramp over box-shadow 0 1px 3px #000c."""
+    w = 29
+    disc = rounded(w, w, 3, 3, 23, 23, 11.5)
+    soft = blurred(rounded(w, w, 3, 4, 23, 23, 11.5), w, w, 1.5)
+    ramp = gradient(((0, 0xffffff), (50, 0xd9dbde), (100, 0xb8bbc0)), 3, 26)
+    top = compose((0, 0, w, w), [(path(circle(14.5, 14.5, 11.5)), lambda x, y: (ramp(y), 1))])
+    return png(w, w, over(top, inked(w, w, [(outside(soft, disc), 0xcc, 0)])))
+# The lock screen's hint: the soft shadow (0 1px 2px #00000080) of stock's three marks, drawn at 24 x 13, HINT_PAD past them all round.
+HINT_MARK = 'M1.5 1.5L8.2 8L1.5 14.5'
+HINT_MARKS, HINT_PAD, HINT_DROP, HINT_SIGMA, HINT_A = (0, 10.5, 21), 4, 1, 1, 0x80
+def hint_shadow():
+    w, h = 24 + 2 * HINT_PAD, 13 + 2 * HINT_PAD
+    marks = [[((x + at) * 0.8 + HINT_PAD, y * 0.8 + HINT_PAD + HINT_DROP) for x, y in poly] for at in HINT_MARKS for poly in stroke(path(HINT_MARK), 2.6, closed=False)]
+    return png(w, h, inked(w, h, [(blurred([min(v, 1) for v in coverage(marks, (0, 0, w, h))], w, h, HINT_SIGMA), HINT_A, 0)]))
+
+
+# The confirm tray's soft shadow on the page (0, 2, blur 6, #00000077): the box where the payload draws it, the
+# tray's rounded box, and the blur's standard deviation, half its radius.
+TRAY_SHADOW_BOX = (30, 248, 315, 68)
+TRAY = 'M47 254H328A9 9 0 0 1 337 263V297A9 9 0 0 1 328 306H47A9 9 0 0 1 38 297V263A9 9 0 0 1 47 254Z'
+TRAY_SHADOW = (2, 3, 0x77)  # rows down, standard deviation, alpha
+
+
+def tray_shadow():
+    """The shadow's RGBA bytes: black, its alpha the tray's coverage blurred across and then down."""
+    w, h = TRAY_SHADOW_BOX[2:]
+    down, sd, alpha = TRAY_SHADOW
+    held = coverage([[(x, y + down) for x, y in poly] for poly in path(TRAY)], TRAY_SHADOW_BOX)
+    reach = 3 * sd
+    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
+    total = sum(kernel)
+    at = lambda v, x, y: v[y * w + x] if 0 <= x < w and 0 <= y < h else 0
+    across = [sum(c * at(held, x + k - reach, y) for k, c in enumerate(kernel)) / total for y in range(h) for x in range(w)]
+    soft = [sum(c * at(across, x, y + k - reach) for k, c in enumerate(kernel)) / total for y in range(h) for x in range(w)]
+    return b''.join(bytes((0, 0, 0, round(v * alpha))) for v in soft)
+@functools.cache
+def orb(side, usb):
+    """The icon's RGBA bytes: side px for its box, ORB_PAD more all round, the circle centred."""
+    size, k = side + 2 * ORB_PAD, side / 100
+    c = size / 2
+    placed = lambda polys: [[(c + x * k, c + y * k) for x, y in poly] for poly in polys]
+    disc = lambda x, y, r: placed([[(x + r * math.cos(a * math.pi / 64), y + r * math.sin(a * math.pi / 64)) for a in range(128)]])
+    box = (0, 0, size, size)
+    if usb:
+        ink = [q for d in ORB_USB for q in stroke(placed(path(d)), 5 * k, closed=False)] + placed(path(ORB_USB_HEADS)) + placed(path(ORB_USB_SQUARE))
+        ink += [q for a in ORB_USB_DISCS for q in disc(*a)]
+    else:
+        ink = placed(path(ORB_NOTE))
+    shape = disc(0, 0, ORB_R)
+    held = coverage([[(x, y + ORB_DROP) for x, y in poly] for poly in shape], box)
+    shadow = blurred([min(v, 1) for v in held], size, size, ORB_SIGMA)
+    fill = gradient(((0, ORB_STOPS[0][1]), *ORB_STOPS, (100, ORB_STOPS[-1][1])), c - ORB_R * k, c + ORB_R * k)
+    return compose(box, [([[(0, 0), (size, 0), (size, size), (0, size)]], lambda x, y: (0, shadow[int(y) * size + int(x)] * ORB_SHADOW_A / 255)),
+                         (shape, lambda x, y: (fill(y), 1)),
+                         (stroke(disc(0, 0, ORB_RING_R), ORB_RING_W * k), lambda x, y: (ORB_RING, ORB_RING_A)),
+                         (ink, lambda x, y: (ORB_INK, 1))])
+# The info screen's dark face, on a -50..50 box at CLOCK_DARK_PX: its numerals in the theme's own outlines. The hands are the payload's (navigation.c paint_clock).
+CLOCK_DARK_PX = 96
+def outlines(text, size, cx, baseline):
+    """text's glyphs centred on cx, in the theme's face at size, as one even-odd polygon per glyph."""
+    from fontTools.pens.basePen import BasePen
+    font = classic_light_font()
+    glyphs, cmap, k = font.getGlyphSet(), font.getBestCmap(), size / font['head'].unitsPerEm
+    names = [cmap[ord(c)] for c in text]
+    x = cx - sum(glyphs[n].width for n in names) * k / 2
+
+    class Flat(BasePen):
+        def __init__(self):
+            super().__init__(glyphs)
+            self.parts = []
+
+        def _moveTo(self, p):
+            self.parts.append([p])
+
+        def _lineTo(self, p):
+            self.parts[-1].append(p)
+
+        def _curveToOne(self, a, b, c):
+            p0 = self.parts[-1][-1]
+            for i in range(1, 9):
+                t = i / 8
+                self.parts[-1].append(tuple((1 - t)**3 * p0[j] + 3 * (1 - t)**2 * t * a[j] + 3 * (1 - t) * t**2 * b[j] + t**3 * c[j] for j in (0, 1)))
+    out = []
+    for name in names:
+        pen = Flat()
+        glyphs[name].draw(pen)
+        placed = [[(x + px * k, baseline - py * k) for px, py in part] for part in pen.parts]
+        if placed:
+            out.append([q for part in placed for q in (*part, part[0], placed[0][0])])
+        x += glyphs[name].width * k
+    return out
+
+
+def clock_dark():
+    """The dark face's RGBA bytes: disc r 49, its stroke, numerals 1..12 at r 38."""
+    size = CLOCK_DARK_PX
+    k = size / 100
+    place = lambda polys: [[((x + 50) * k, (y + 50) * k) for x, y in poly] for poly in polys]
+    circle = [(49 * math.cos(a * math.pi / 60), 49 * math.sin(a * math.pi / 60)) for a in range(120)]
+    numerals = []
+    for i in range(1, 13):
+        a = i * math.pi / 6
+        numerals += outlines(str(i), 11, 38 * math.sin(a), 4 - 38 * math.cos(a))
+    return compose((0, 0, size, size), [(place([circle]), lambda x, y: (0x0c0f15, 1)),
+                                        (stroke(place([circle]), .8 * k), lambda x, y: (0xffffff, 0x66 / 255)),
+                                        (place(numerals), lambda x, y: (0xffffff, 1))])
+
+
+# The T9 keyboard's glyphs and the search field, each in its own box.
+KB_GLYPHS = {'kb_del': ((22, 18), (('M8 1h15v16H8L1 9Z', None, 0xffffff), ('M12 6 18 12', 2, 0x5b6472), ('M18 6 12 12', 2, 0x5b6472))),
+             'kb_shift': ((22, 18), (('M9 1 17 10h-4v7H5v-7H1Z', None, 0xffffff),)),
+             'kb_back': ((13, 24), (('M12 2 2 12l10 10', 2.6, 0xffffff),)),
+             'field_glass': ((16, 16), (('M11 6.5A4.5 4.5 0 1 1 2 6.5 4.5 4.5 0 1 1 11 6.5Z', 2, 0x8a8f96), ('M10 10l4.5 4.5', 2.4, 0x8a8f96)))}
+KB_VIEW = {'kb_del': (24, 18), 'kb_shift': (18, 18), 'kb_back': (14, 24), 'field_glass': (16, 16)}
+def kb_glyph(name):
+    """A glyph's PNG: its viewBox fitted and centred in its box, each part filled, or stroked open at its width."""
+    (w, h), parts = KB_GLYPHS[name]
+    vw, vh = KB_VIEW[name]
+    k = min(w / vw, h / vh)
+    dx, dy = (w - vw * k) / 2, (h - vh * k) / 2
+    place = lambda polys: [[(x * k + dx, y * k + dy) for x, y in poly] for poly in polys]
+    layers = [((place(path(d)) if width is None else place(stroke(path(d), width, closed=d.endswith('Z')))), lambda x, y, c=rgb: (c, 1)) for d, width, rgb in parts]
+    return png(w, h, compose((0, 0, w, h), layers))
+
+
+FIELD_W, FIELD_H = 32, 31  # the field's image: 15 px caps round a column the payload stretches, the row below it in the image
+def field():
+    """The search field's RGBA bytes: R 15 white, its ring inside, its top inset soft (0, 2, blur 2), the row below it."""
+    w, h, box = FIELD_W, FIELD_H, (0, 0, FIELD_W, FIELD_H)
+    body = path(rounded_path(0, 0, 32, 30, 15))[0]
+    inner = path(rounded_path(1, 1, 30, 28, 14))[0]
+    ring = [*body, body[0], inner[0], *inner[::-1], inner[0], body[0]]
+    held = coverage([[(x, y + 2) for x, y in body]], box)  # the inset's hole, 2 rows down
+    kernel = [math.exp(-k * k / 2) for k in range(-3, 4)]
+    at = lambda v, x, y: v[max(0, min(h - 1, y)) * w + max(0, min(w - 1, x))]
+    across = [sum(a * at(held, x + i - 3, y) for i, a in enumerate(kernel)) / sum(kernel) for y in range(h) for x in range(w)]
+    soft = [sum(a * at(across, x, y + i - 3) for i, a in enumerate(kernel)) / sum(kernel) for y in range(h) for x in range(w)]
+    return compose(box, [([[(x, y + 1) for x, y in body]], lambda x, y: (0xffffff, 0x59 / 255)), ([body], lambda x, y: (0xffffff, 1)),
+                         ([body], lambda x, y: (0, (1 - soft[int(y) * w + int(x)]) * 0x4d / 255)), ([ring], lambda x, y: (0, 0x2e / 255))])
+
+# The band's rim as images, as its corners bend it: inset 0 1px white at 0x59 along its top, 0 1px white at 0x1f under its
+# foot; a strip each of the corner's rows and the rim's, for the band's 322 x 46, R 8.
+@functools.lru_cache(maxsize=None)
+def band_rim():
+    w, h = 322, 47
+    box, down = rounded(w, h, 0, 0, w, 46, 8), rounded(w, h, 0, 1, w, 46, 8)
+    rgba = inked(w, h, [([b * (1 - d) for b, d in zip(box, down)], 0x59, WHITE), (outside(down, box), 0x1f, WHITE)])
+    return png(w, 9, rgba[:9 * 4 * w]), png(w, 9, rgba[(h - 9) * 4 * w:])
+
+
+# A coverage table per radius of the round boxes the painter draws a row at a time (navigation.c paint_round_rows): their
+# corners' pixels take the row's colour at this alpha, so they stay the scheme's.
+CORNERS = (5, 6, 7, 8, 9, 10, 12, 13)
+def corner_cover(r):
+    """A radius r corner's coverage out of 255, r rows of r pixels, the outermost first."""
+    n = 16
+    inside = lambda x, y: sum(math.hypot(r - x - (i + .5) / n, r - y - (j + .5) / n) <= r for i in range(n) for j in range(n))
+    return bytes(round(inside(x, y) * 255 / n ** 2) for y in range(r) for x in range(r))
+def corner_table():
+    """The tables as a C initialiser, by radius."""
+    rows = (f'[{r}] = (const unsigned char[]){{ {",".join(map(str, corner_cover(r)))} }}' for r in CORNERS)
+    return '{ ' + ', '.join(rows) + ' }'
+
+
+# The rating panel's hearts: filled, or the outline alone, in the panel's ink; 32 x 30.
+RATE_HEART = 'M16 28C6 20 2 15 2 9.6 2 2 12 0 16 7.2 20 0 30 2 30 9.6 30 15 26 20 16 28Z'
+RATE_HEART_INKS = {'l': 0x000000, 'd': 0xffffff}
+def rate_heart(on, rgb):
+    shape = path(RATE_HEART)
+    return png(32, 30, compose((0, 0, 32, 30), [((shape if on else []) + stroke(shape, 2.4), lambda x, y: (rgb, 1))]))
+def ink(rgb, alpha):
+    return lambda x, y: (rgb, alpha / 255)
+@functools.lru_cache(maxsize=None)
+def tray(bw):
+    """A tray: rows, a light row under it, 0 2px 5px black at 0x66. The box's top-left is at TRAY_PAD, TRAY_PAD."""
+    p = TRAY_PAD
+    w, h = bw + 2 * p, TRAY_H + 2 * p + 2
+    box = rounded(w, h, p, p, bw, TRAY_H, TRAY_R)
+    soft = blurred(rounded(w, h, p, p + 2, bw, TRAY_H, TRAY_R), w, h, 2.5)
+    rows = gradient(TRAY_STOPS, p, p + TRAY_H)
+    return png(w, h, laid(w, h, [(outside(soft, box), ink(0, 0x66)),
+                                 (outside(rounded(w, h, p, p + 1, bw, TRAY_H, TRAY_R), box), ink(0xffffff, 0x26)),
+                                 (box, lambda x, y: (rows(y), 1))]))
+@functools.lru_cache(maxsize=None)
+def cell(bw, lit):
+    """A cell. Lit: inset 0 1px white at 0x66, 0 1px 2px black at 0xaa. Unlit: inset 0 1px 1px black at 0xaa, a 1 px ring
+    inside at 0x77, a light row under it. The box's top-left is at CELL_PAD, CELL_PAD."""
+    p = CELL_PAD
+    w, h = bw + 2 * p, CELL_H + 2 * p
+    box, lower = (rounded(w, h, p, p + d, bw, CELL_H, CELL_R) for d in (0, 1))
+    rows = gradient(CELL_LIT if lit else CELL_OFF, p, p + CELL_H)
+    fill = (box, lambda x, y: (rows(y), 1))
+    if lit:
+        top = [b * (1 - c) for b, c in zip(box, lower)]
+        layers = [(outside(blurred(lower, w, h, 1), box), ink(0, 0xaa)), fill, (top, ink(0xffffff, 0x66))]
+    else:
+        inner = rounded(w, h, p + 1, p + 1, bw - 2, CELL_H - 2, CELL_R - 1)
+        layers = [(outside(lower, box), ink(0xffffff, 0x24)), fill, ([b * (1 - c) for b, c in zip(box, inner)], ink(0, 0x77)),
+                  ([b * (1 - c) for b, c in zip(box, blurred(lower, w, h, .5))], ink(0, 0xaa))]
+    return png(w, h, laid(w, h, layers))
+@functools.lru_cache(maxsize=None)
+def tile():
+    """The calendar tile: its page, its 22-row header (a light top row), R 6 above and 7 below; black at 0x66 on the row
+    under it, 0 3px 4px black at 0x59. The box's top-left is at TILE_PAD, TILE_PAD."""
+    p, bw, bh = TILE_PAD, TILE_W, TILE_H
+    w, h = bw + 2 * p, bh + 2 * p
+    def shape(dy):
+        x0, x1, y0, y1 = p, p + bw, p + dy, p + bh + dy
+        d = (f'M{x0 + 6} {y0}H{x1 - 6}A6 6 0 0 1 {x1} {y0 + 6}V{y1 - 7}A7 7 0 0 1 {x1 - 7} {y1}'
+             f'H{x0 + 7}A7 7 0 0 1 {x0} {y1 - 7}V{y0 + 6}A6 6 0 0 1 {x0 + 6} {y0}Z')
+        return [min(c, 1) for c in coverage(path(d), (0, 0, w, h))]
+    box = shape(0)
+    page, head = gradient(TILE_PAGE, p, p + bh), gradient(TILE_TOP, p, p + TILE_HEAD)
+    rows = lambda a, b: [c if a <= i // w - p < b else 0 for i, c in enumerate(box)]
+    return png(w, h, laid(w, h, [(outside(blurred(shape(3), w, h, 2), box), ink(0, 0x59)), (outside(shape(1), box), ink(0, 0x66)),
+                                 (box, lambda x, y: (page(y), 1)), (rows(0, TILE_HEAD), lambda x, y: (head(y), 1)),
+                                 (rows(0, 1), ink(0xffffff, 0x55))]))
+def numeral(text, size, cx, cy):
+    """text's outlines in the theme's font as one even-odd polygon each glyph, centred on cx, its baseline 3.3 / 9.5 of size under cy."""
+    font = classic_light_font()
+    glyphs, cmap, s = font.getGlyphSet(), font.getBestCmap(), size / font['head'].unitsPerEm
+    x = cx - sum(glyphs[cmap[ord(c)]].width for c in text) * s / 2
+    out = []
+    for c in text:
+        glyph = glyphs[cmap[ord(c)]]
+        pen = SVGPathPen(glyphs, ntos=lambda v: f'{v:.3f}')
+        glyph.draw(TransformPen(pen, (s, 0, 0, -s, x, cy + size * 3.3 / 9.5)))
+        contours = path(pen.getCommands())
+        out.append([q for one in contours for q in (*one, one[0], contours[0][0])])  # the bridges cancel: counters stay open
+        x += glyph.width * s
+    return out
+@functools.lru_cache(maxsize=None)
+def clock_chrome():
+    """The clock without its hands, drawn on a -50..50 box."""
+    k = CLOCK_PX / 100
+    fit = lambda polys: [[(CLOCK_PX / 2 + x * k, CLOCK_PX / 2 + y * k) for x, y in poly] for poly in polys]
+    disc = lambda r: path(f'M{-r} 0A{r} {r} 0 1 1 {r} 0A{r} {r} 0 1 1 {-r} 0Z')
+    ramp = lambda stops, r: gradient(stops, CLOCK_PX / 2 - r * k, CLOCK_PX / 2 + r * k)
+    ring, rim = ramp(CLOCK_RING, 49.5), ramp(CLOCK_RIM, 44)
+    a = [i * math.pi / 6 for i in range(1, 13)]
+    numerals = [q for i in range(12) for q in numeral(str(i + 1), 9.5, 34 * math.sin(a[i]), -34 * math.cos(a[i]))]
+    box = (0, 0, CLOCK_PX, CLOCK_PX)
+    return png(CLOCK_PX, CLOCK_PX, compose(box, [
+        (fit(disc(49.5)), lambda x, y: (ring(y), 1)),
+        (fit(stroke(path('M-41 -22A46.5 46.5 0 0 1 41 -22'), 1.6, closed=False)), ink(0xffffff, .95 * 255)),
+        (fit(disc(44)), ink(0xffffff, 255)),
+        (fit(stroke(disc(44), 1.2)), lambda x, y: (rim(y), 1)),
+        (fit(numerals), ink(0x5a6068, 255))]))
+@functools.lru_cache(maxsize=None)
+def clock_shadow():
+    """The shadow under the face: a radial ramp out to the corners' ellipse, as CSS's, inside the box's own ellipse."""
+    w, h = CLOCK_SHADOW
+    def paint(x, y):
+        d = math.hypot((x - w / 2) / (w / 2), (y - h / 2) / (h / 2)) / math.sqrt(2)
+        a = 0x70 + (0x40 - 0x70) * d / .45 if d < .45 else 0x40 * max(0, .72 - d) / .27
+        return 0, a / 255
+    return png(w, h, compose((0, 0, w, h), [(path(f'M0 {h / 2}A{w / 2} {h / 2} 0 1 1 {w} {h / 2}A{w / 2} {h / 2} 0 1 1 0 {h / 2}Z'), paint)]))
 
 
 def images(t):
@@ -274,8 +875,44 @@ def images(t):
     drawing = ROOT/f'assets/themes/{t["id"]}/note.svg'
     if drawing.exists():
         out[f'{prefix}_note'] = png(*NOTE_BOX[2:], note(drawing.read_text()))
+    if t['ctl_light_on']:
+        for half, off, on in (('l', t['ctl_light_off'], t['ctl_light_on']), ('d', t['ctl_dark_off'], t['ctl_dark_on'])):
+            more, repeat, shuffle = (CONTROLS[n] for n in ('more', 'repeat', 'shuffle'))
+            out |= {f'{prefix}_more_{half}': control((more,), on),
+                    f'{prefix}_repeat_off_{half}': control((repeat,), off), f'{prefix}_repeat_all_{half}': control((repeat,), on),
+                    f'{prefix}_repeat_one_{half}': control((repeat, CONTROL_ONE), on),
+                    f'{prefix}_shuffle_off_{half}': control((shuffle,), off), f'{prefix}_shuffle_on_{half}': control((shuffle,), on),
+                    **{f'{prefix}_hearts{n}_{half}': hearts(n, on) for n in range(6)}}
+    if t['noart_stops']:
+        for name, px in (('cover', 160), ('bigcover', BC_ART)):  # Now Playing's, the full-screen art's
+            out[f'{prefix}_{name}'] = png(px, px, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], px))
+        out[f'{prefix}_station'] = png(160, 160, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], 160, NOART_STATION))
     if t['pane_icon_x']:
         for name, d in PANE_ICONS.items():
             fit = name != 'note'
             out[f'{prefix}_icon_{name}'] = png(*(ICON_BOX if fit else NOTE_BOX)[2:], icon(d, fit))
+    if t['painter[PAINT_VOLUME]']:
+        for half, rgb in SPEAKER_INKS.items():
+            out |= {f'{prefix}_spk_quiet_{half}': speaker(False, rgb), f'{prefix}_spk_loud_{half}': speaker(True, rgb)}
+        out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
+        out |= {f'{prefix}_{name}_w': png(10, 11, compose((0, 0, 10, 11), [(path(d), lambda x, y: (0xffffff, 1))])) for name, d in DARK_STATE.items()}
+        out[f'{prefix}_page'] = png(*PAGE_SIZE, page())
+        out[f'{prefix}_page_top'] = png(PAGE_FULL[0], 2, page_top())
+        out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
+        out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
+        out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}
+        out |= {f'{prefix}_drop_{name}': qs_button(*a) for name, a in QS_BUTTONS.items()}
+        out |= {f'{prefix}_drop_shadow': qs_shadow(), f'{prefix}_drop_pressed': qs_pressed(), f'{prefix}_drop_track': qs_track(), f'{prefix}_drop_knob': qs_knob()}
+        out[f'{prefix}_clock_dark'] = png(CLOCK_DARK_PX, CLOCK_DARK_PX, clock_dark())
+        out |= {f'{prefix}_{name}': kb_glyph(name) for name in KB_GLYPHS}
+        out[f'{prefix}_field'] = png(FIELD_W, FIELD_H, field())
+        out[f'{prefix}_band_top'], out[f'{prefix}_band_foot'] = band_rim()
+        for half, rgb in RATE_HEART_INKS.items():
+            out |= {f'{prefix}_heart_on_{half}': rate_heart(True, rgb), f'{prefix}_heart_off_{half}': rate_heart(False, rgb)}
+        out |= {f'{prefix}_tray_{w}': tray(w) for w in TRAY_WIDTHS}
+        for w in CELL_WIDTHS:
+            out |= {f'{prefix}_cell_{w}': cell(w, False), f'{prefix}_cell_lit_{w}': cell(w, True)}
+        out |= {f'{prefix}_tile': tile(), f'{prefix}_clock_chrome': clock_chrome(), f'{prefix}_clock_shadow': clock_shadow(), f'{prefix}_hint_shadow': hint_shadow()}
+    if t['painter[PAINT_CONFIRM]']:
+        out[f'{prefix}_confirm_shadow'] = png(*TRAY_SHADOW_BOX[2:], tray_shadow())
     return out

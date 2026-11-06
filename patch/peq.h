@@ -202,8 +202,15 @@ typedef struct {
 /* The payload's shared helpers: coverflow.c's pages, hashes and worker, photos.c's, navigation.c's. */
 void *text(void *parent, int x, int y, int w, int h);
 void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *));
-void *page_title(void *body, const char *caption);
+void motion_open(void *page, const char *name); /* navigation.c: page_open's page takes the theme's hint */
+void *page_title(void *body, const char *caption, int n);
+#define PAGE_TITLE "_page_title" /* the caption the bar reads (navigation.c page_caption) */
+#define PAGE_TALL "_page_tall"   /* a two-line row, its separators' (paint_separators) */
+int page_h(int h);
+int page_x(void);
+void page_retitle(void *page, void *title, const char *caption);
 void *page_list(void *page, void *body, void **title, const char *caption, int n, int item_h);
+int page_push(void *view, int dir);
 void *page_row_detail(void *view, int index, const char *caption, const char *detail,
                       int (*click)(void *, void *));
 void *page_row_detail_into(void *view, int index, const char *caption, const char *detail,
@@ -356,15 +363,48 @@ int video_start(const char *file, int radio); /* books.c */
  * keyboard is up. */
 #define EDIT_NAME "q2_edit"
 void *edit_create(void *item, const char *input_type, int y, int h);
+void t9_box(void *page, void *edit); /* navigation.c: a search box's look under Classic */
 const char *output_device(char *vol);         /* books.c */
 void dac_take(void);                          /* books.c */
 /* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
  * font */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
-const char *theme_face(const unsigned *s, int n);
+const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
+/* navigation.c's painters for Classic's info screen (lockscreen.c); colours are final. */
+typedef struct {
+    unsigned rgb;       /* 0xRRGGBB */
+    short r;            /* a disc's radius in tenths of the -50..50 box; 0: pts */
+    unsigned char n;    /* pts */
+    unsigned char hand; /* 1 the hour's angle, 2 the minute's */
+    short pts[5][2];    /* tenths, pointing at 12 */
+} clock_part_t;
+void paint_clock(void *w, void *canvas, int x, int y, int size, const char *art, int h, int m,
+                 const clock_part_t *parts, int n);
+void paint_page(void *w, void *canvas, int y);
+void paint_art(void *w, void *canvas, const char *name, int x, int y);
+void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key);
+void paint_tray(void *canvas, int x, int y, int w, int h);
+void text_shadow(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
+                 unsigned alpha);
+void final_text(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
+                unsigned color);
+unsigned dark_bar_key(const unsigned *t);
+int clock_minutes(void), bar_status(void);
+void slider_label(void *w, int x, int y, int ww, int h, int px, const char *face);
+void text_ink(void *w, unsigned color, int n); /* a label's final 0xAARRGGBB, in either half */
+void slider_number(void *label), slider_tray_dirty(void *page),
+    slider_centre_hint(void *page, int night);
+void switch_row(void *win, void *view); /* the toolbar's, as a row */
+void stock_more_speed(void *win);
+void info_poll(void);      /* lockscreen.c: the info screen's timer, with the screen lit */
+int xfade_page(void *top); /* crossfade.c */
+int ipod_battery(void);    /* navigation.c: IPOD BATTERY, 0 Icon, else a percentage */
+int title_gone(void *w, void *event); /* ... and looks for its source again at the next sync */
+int bar_title_fits(void *label);      /* label's text fits the bar's title box */
 int ipod_light(void);   /* navigation.c: Light Mode */
+unsigned unflip(unsigned v); /* navigation.c: the grey Light Mode's flip turns into v */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */

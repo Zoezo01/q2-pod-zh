@@ -906,7 +906,7 @@ void books_open(const char *root) {
     if (!page) return;
     BLOB_IO(BOOK_MARKS, bk.marks, 0);
     void *f = widget_factory();
-    int h = widget_get_prop_int(page, "h", 290);
+    int h = widget_get_prop_int(page, "h", client_h());
     bk.list = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     bk.reader = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     bk.sheet = widget_factory_create_widget(f, "view", bk.reader, 0, 0, 375, h);

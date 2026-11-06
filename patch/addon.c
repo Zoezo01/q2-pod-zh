@@ -47,6 +47,7 @@
 #define ADDON_DEPTH 6
 #define ADDON_ROWS 50
 #define PROGRESS_H 8            /* a progress row's bar: a flat strip under its text */
+#define PROGRESS_GLOSS 17       /* ... or, under the scrubber's rows, all of their gloss */
 #define PROGRESS_TRACK 0x3a3a3a /* its unfilled part, dim against the black row */
 /* ponytail: replies a level appends (page_next), 500 rows, under ringnav's MAX_ENTRIES (512), which
  * walks every row per wheel event; 2,000 needs MAX_ENTRIES 2048 after measuring, or a table_client
@@ -60,6 +61,7 @@
 #define APP_ID 16        /* an id's bytes, its NUL included */
 #define QR_PX 186        /* the code's white plate: 5 px modules up to a 33-module code */
 #define QR_COL 214       /* the text beside it */
+#define QR_LIGHT_PX 166  /* Classic's plate: 5 px modules up to 29, 4 up to 37 */
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
@@ -909,6 +911,7 @@ static struct {
      * flight (page_next). */
     char *buf[ADDON_PAGES], **f;
     int pages, paging;
+    signed char moved; /* the depth's change the next rows or error push in: 1 deeper, -1 back */
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -956,18 +959,29 @@ static void stop_row(int i) {
     page_row_detail(pg.view, i, t, 0, clicked);
 }
 
-/* A progress row: page_row_detail's item re-dressed, its title left and subtitle right on one line
- * over a bar the caption's width, which addon_paint fills from the left: its _pml prop, permille,
- * clamped to 0 to 1000 here; strtol saturates what overflows, which atoi leaves undefined. */
+static int progress_h(void) {
+    return theme()->painter[PAINT_SCRUB] == SCRUB_ROWS ? PROGRESS_GLOSS : PROGRESS_H;
+}
+
+/* A progress row: page_row_detail's item re-dressed, its title and subtitle in the caption's box
+ * (the theme's: an empty detail has moved the label), left and right on one line, over a bar
+ * centred in the detail's, which addon_paint fills from the left: its _pml prop, permille, clamped
+ * to 0 to 1000 here; strtol saturates what overflows, which atoi leaves undefined. */
 static void progress_row(void *item, long permille) {
+    const theme_t *T = theme();
     void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
-    int x = I(t, W_X), w = I(t, W_W);
-    widget_move_resize(t, x, 4, w * 3 / 5, 32);
+    int x = I(t, W_X), w = I(t, W_W), y = T->page_cap_y, h = T->page_cap_h;
+    int dx = I(s, W_X), dy = I(s, W_Y), dw = I(s, W_W), dh = I(s, W_H);
+    widget_move_resize(t, x, y, w * 3 / 5, h);
     widget_use_style(s, "s_scrlabel_white20r"); /* the style drops the detail's size and grey */
     widget_set_prop_int(s, "style:normal:font_size", 16);
     widget_set_prop_int(s, "style:normal:text_color", (int)SPOT_GREY);
-    widget_move_resize(s, x + w * 3 / 5, 4, w - w * 3 / 5, 32);
-    void *bar = widget_factory_create_widget(widget_factory(), "view", item, x, 44, w, PROGRESS_H);
+    widget_set_prop_int(s, "_font", -1); /* and its face */
+    theme_font(s, ROLE_META, FONT_ROW);
+    widget_move_resize(s, x + w * 3 / 5, y, w - w * 3 / 5, h);
+    int bh = progress_h();
+    void *bar = widget_factory_create_widget(widget_factory(), "view", item, dx, dy + (dh - bh) / 2,
+                                             dw, bh);
     widget_set_prop_int(bar, "_pml", permille < 0 ? 0 : permille > 1000 ? 1000 : (int)permille);
 }
 
@@ -1018,13 +1032,13 @@ static void append(lv_t *l, int from) {
     if (cur == from && l->sel > from) cur = l->sel;
     if (n && cur >= n) cur = n - 1; /* past an empty last page: its last row */
     if (cur < n - 1 || !pg.paging || l->sel < cur) l->sel = cur; /* unless still on its way */
-    if ((from + 1) * 64 <= I(pg.view, W_H)) { /* page_list shrank a short first page: rebuilt */
+    if ((from + 1) * page_h(64) <= I(pg.view, W_H)) { /* page_list shrank a short first page: rebuilt */
         show();
         return;
     }
     widget_destroy(widget_get_child(pg.view, (unsigned)from));
     for (int i = from; i < n; ++i) row(l, i);
-    widget_set_prop_int(pg.view, "virtual_h", n * 64);
+    widget_set_prop_int(pg.view, "virtual_h", n * page_h(64));
     ringnav_select(pg.view, cur, n);
 }
 
@@ -1048,9 +1062,11 @@ static void show(void) {
                         l->retry ? "Retry" : "Install it again in System settings → App Store", 0,
                         clicked);
         if (n > 1) stop_row(1);
+        page_push(pg.view, pg.moved), pg.moved = 0;
     } else {
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0), 64);
         for (int i = 0; i < n; ++i) row(l, i);
+        page_push(pg.view, pg.moved), pg.moved = 0;
     }
     if (n) ringnav_select(pg.view, l->sel < n ? l->sel : n - 1, n);
 }
@@ -1078,6 +1094,7 @@ static void push(const char *op, const char *args, unsigned base, const char *ti
     drop();
     l->n = 0, l->state = K_LOAD;
     pg.lv[pg.depth++] = next;
+    pg.moved = 1;
     show();
 }
 
@@ -1088,6 +1105,7 @@ static void pop(void) {
     drop();
     --pg.depth;
     top()->state = K_LOAD;
+    pg.moved = -1;
     show();
 }
 
@@ -1242,6 +1260,7 @@ static int go(const void *unused) {
             keep_sel();
             widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
             pg.edit = edit_create(pg.page, "text", 2, 26);
+            t9_box(pg.page, pg.edit);
             widget_set_prop_str(pg.edit, "tips", app()->tips);
             widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
             widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
@@ -1419,6 +1438,18 @@ static void set(void *w, const char *s) {
     if (tk_strcmp(widget_get_prop_str(w, "text", ""), s)) widget_set_text_utf8(w, s);
 }
 
+/* A QR page label in the theme's face, where the info role has its own, for the text it holds now,
+ * at the label's own size.
+ * ponytail: a font-only theme_font role would save the size rewrite. */
+static int qr_light(void) { return theme()->font[ROLE_INFO] == FONT_CLASSIC_LIGHT; }
+static void *qr_face(void *l, int px) {
+    if (qr_light()) {
+        theme_font(l, ROLE_INFO, FONT_ROW);
+        widget_set_prop_int(l, "style:normal:font_size", px);
+    }
+    return l;
+}
+
 static void qr_refresh(void) {
     char raw[QR_RAW], addr[64], pin[16], note[128], spaced[16];
     int n = (int)state_read(qp.state, raw, sizeof raw);
@@ -1443,10 +1474,13 @@ static void qr_refresh(void) {
     if (strlen(pin) == 6) /* 548 001 */
         memcpy(spaced, pin, 3), spaced[3] = ' ', memcpy(spaced + 4, pin + 3, 4);
     widget_set_prop_int(qp.addr, "style:normal:font_size",
-                        strlen(addr) > 17 ? 14 : 16); /* 192.168.100.200:8080 */
+                        qr_light()          ? 19
+                        : strlen(addr) > 17 ? 14
+                                            : 16); /* 192.168.100.200:8080 */
     set(qp.addr, addr);
     set(qp.pin, strlen(pin) == 6 ? spaced : pin);
     set(qp.note, note);
+    qr_face(qp.note, qr_light() ? 16 : 14);
     widget_invalidate_force(qp.qr, 0);
 }
 
@@ -1477,6 +1511,11 @@ static int qr_closed(void *ctx, void *event) {
     return 0;
 }
 
+static void *qr_label(void *parent, int x, int y, int w, int h, const char *style, int px,
+                      unsigned color) {
+    return qr_face(label(parent, x, y, w, h, style, px, color), px);
+}
+
 static void qr_open(const char *state, const char *title) {
     if (qp.page || !(qp.hex = calloc(QR_HEX, 1))) return;
     if (!(qp.page = page_open("qrcode_page", qr_closed, qr_keyup))) {
@@ -1484,30 +1523,65 @@ static void qr_open(const char *state, const char *title) {
         return;
     }
     void *f = widget_factory(), *page = qp.page;
-    int h = widget_get_prop_int(page, "h", 290);
+    int h = widget_get_prop_int(page, "h", client_h()), cl = qr_light();
+    /* the two text lines, or open, the address, PIN, its value, the note: y, height, px */
+    static const short rows[2][7][3] = {
+        { { 2, 22, 18 },
+          { 24, 22, 18 },
+          { 60, 18, 14 },
+          { 78, 22, 16 },
+          { 112, 18, 14 },
+          { 130, 28, 24 },
+          { 172, 20, 14 } },
+        { { 17, 23, 19 },
+          { 38, 23, 19 },
+          { 71, 20, 16 },
+          { 88, 23, 19 },
+          { 119, 20, 16 },
+          { 133, 28, 24 },
+          { 213, 20, 16 } },
+    };
+    const short (*r)[3] = rows[cl];
+    /* Classic's column has the page, as its note runs under the plate; its name is the bar's
+     */
+    int x = cl ? 200 : 0, w = cl ? 163 : 375 - QR_COL - 12, short_w = cl ? 163 : 140;
     qp.state = state;
-    widget_set_text_utf8(label(page, 16, 12, 240, 16, "s_scrlabel_white20l", 16, SPOT_GREY), title);
-    qp.qr = widget_factory_create_widget(f, "view", page, 16, 40, QR_PX, QR_PX);
-    qp.col = widget_factory_create_widget(f, "view", page, QR_COL, 40, 375 - QR_COL - 12, QR_PX);
-    widget_set_text_utf8(label(qp.col, 0, 2, 140, 22, "s_scrlabel_white20l", 18, 0xffffffffu),
-                         "Scan with your");
-    widget_set_text_utf8(label(qp.col, 0, 24, 140, 22, "s_scrlabel_white20l", 18, 0xffffffffu),
-                         "phone's camera");
-    widget_set_text_utf8(label(qp.col, 0, 60, 140, 18, "s_scrlabel_white20l", 14, SPOT_GREY),
-                         "or open");
-    qp.addr = label(qp.col, 0, 78, 375 - QR_COL - 12, 22, "s_scrlabel_white20l", 16, 0xffffffffu);
-    widget_set_text_utf8(label(qp.col, 0, 112, 140, 18, "s_scrlabel_white20l", 14, SPOT_GREY),
-                         "PIN");
-    qp.pin = label(qp.col, 0, 130, 140, 28, "s_scrlabel_white20l", 24, 0xffffffffu);
-    qp.note = label(qp.col, 0, 172, 375 - QR_COL - 12, 20, "s_scrlabel_white20l", 14, SPOT_GREY);
+    void *name = qr_label(page, 16, 12, 240, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_set_text_utf8(name, title);
+    qr_face(name, 16);
+    if (cl) {
+        widget_set_name(name, PAGE_TITLE);
+        widget_set_visible(name, 0, 0);
+    }
+    qp.qr = cl ? widget_factory_create_widget(f, "view", page, 22, 18, QR_LIGHT_PX, QR_LIGHT_PX)
+               : widget_factory_create_widget(f, "view", page, 16, 40, QR_PX, QR_PX);
+    qp.col = cl ? widget_factory_create_widget(f, "view", page, 0, 0, 375, h)
+                : widget_factory_create_widget(f, "view", page, QR_COL, 40, w, QR_PX);
+    widget_set_text_utf8(
+        qr_label(qp.col, x, r[0][0], short_w, r[0][1], "s_scrlabel_white20l", r[0][2], 0xffffffffu),
+        cl ? "Scan with your phone's" : "Scan with your");
+    widget_set_text_utf8(
+        qr_label(qp.col, x, r[1][0], short_w, r[1][1], "s_scrlabel_white20l", r[1][2], 0xffffffffu),
+        cl ? "camera" : "phone's camera");
+    widget_set_text_utf8(
+        qr_label(qp.col, x, r[2][0], short_w, r[2][1], "s_scrlabel_white20l", r[2][2], SPOT_GREY),
+        "or open");
+    qp.addr = qr_label(qp.col, x, r[3][0], w, r[3][1], "s_scrlabel_white20l", r[3][2], 0xffffffffu);
+    widget_set_text_utf8(
+        qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY),
+        "PIN");
+    qp.pin =
+        qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
+    qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",
+                       r[6][2], SPOT_GREY);
     void *scroll[] = { qp.addr, qp.note };
     for (unsigned i = 0; i < 2; ++i)
         hscroll_label_set_only_focus(scroll[i], 0), hscroll_label_set_ellipses(scroll[i], 0);
     qp.msg = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
-    qp.say =
-        label(qp.msg, CF_EDGE, 100, 375 - 2 * CF_EDGE, 30, "s_scrlabel_white20c", 20, 0xffffffffu);
+    qp.say = qr_label(qp.msg, CF_EDGE, 100, 375 - 2 * CF_EDGE, 30, "s_scrlabel_white20c", 20,
+                      0xffffffffu);
     qp.sub =
-        label(qp.msg, CF_EDGE, 134, 375 - 2 * CF_EDGE, 24, "s_scrlabel_white20c", 16, SPOT_GREY);
+        qr_label(qp.msg, CF_EDGE, 134, 375 - 2 * CF_EDGE, 24, "s_scrlabel_white20c", 16, SPOT_GREY);
     qp.seen = 0; /* nothing read yet: no read hashes to 0 but by chance, and then only once */
     qr_refresh();
     qp.timer = timer_add(qr_tick, 0, 1000);
@@ -1523,16 +1597,21 @@ static void plate(void *canvas, int x, int y, int w, int h, unsigned color, unsi
 
 /* ringnav_paint, every widget after stock painted it: a progress row's bar, a flat rectangle filled
  * position/1000 of its width from the left, square, with no knob (the accent's light tone, as
- * Spotify's bar, over a dim track); and the code, dark modules on the white plate, a row's run of
- * them one rectangle, inside a quiet zone of two modules. */
+ * Spotify's bar, over a dim track; the scrubber's rows under a theme that has them); and the code,
+ * dark modules on the white plate, a row's run of them one rectangle, inside a quiet zone of two
+ * modules. */
 void addon_paint(void *w, void *canvas) {
     /* the height first: no prop lookup for the page's other widgets */
-    int pml = pg.page && I(w, W_H) == PROGRESS_H && P(canvas, CANVAS_LCD)
+    int pml = pg.page && I(w, W_H) == progress_h() && P(canvas, CANVAS_LCD)
                   ? widget_get_prop_int(w, "_pml", -1)
                   : -1;
     if (pml >= 0) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         int bw = I(w, W_W), h = I(w, W_H), x = bw * pml / 1000;
+        if (theme()->painter[PAINT_SCRUB] == SCRUB_ROWS) {
+            paint_scrubber(canvas, 0, 0, bw, h, x, 0);
+            return;
+        }
         canvas_set_fill_color(canvas, rgba(PROGRESS_TRACK, 255));
         canvas_fill_rect(canvas, 0, 0, bw, h);
         canvas_set_fill_color(canvas, rgba(accent_tone(2), 255));
@@ -1542,8 +1621,10 @@ void addon_paint(void *w, void *canvas) {
     }
     if (!qp.page || w != qp.qr || !P(canvas, CANVAS_LCD) || qp.size < 21) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    int n = qp.size, m = QR_PX / (n + 4), o = (QR_PX - m * n) / 2, digits = (n + 3) / 4;
-    plate(canvas, 0, 0, QR_PX, QR_PX, 0xffffffffu, 10);
+    int side = qr_light() ? QR_LIGHT_PX : QR_PX;
+    int n = qp.size, m = side / (n + 4), o = (side - m * n) / 2, digits = (n + 3) / 4;
+    if (qr_light()) plate(canvas, -1, -1, side + 2, side + 2, 0x22000000u, 9);
+    plate(canvas, 0, 0, side, side, 0xffffffffu, qr_light() ? 8 : 10);
     canvas_set_fill_color(canvas, rgba(0x000000, 255));
     for (int y = 0; y < n; ++y)
         for (int x = 0; x < n;) {

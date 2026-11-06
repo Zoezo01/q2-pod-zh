@@ -1,5 +1,7 @@
 """tools/art.py: the theme images it draws, from the shipped theme's values."""
+import math
 import pathlib
+import re
 import struct
 import sys
 import zlib
@@ -17,10 +19,14 @@ def pixels(data):
     return w, h, lambda x, y: tuple(raw[y * (4 * w + 1) + 1 + 4 * x + i] for i in range(4))
 
 
+# Stock's quick settings images, every drop_ name its demo sets (strings demo | grep '^drop_').
+QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowgain', 'lowgaindisable', 'highgain', 'highgaindisable', 'lo', 'po', 'sa', 'usbstorage', 'usbaudio', 'usbdac', 'playset', 'sysset')
+
+
 def test_classic_draws_its_images_and_minimal_none():
     themes = theme.builtins()
     assert not art.images(themes[0])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('station', 'sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'cover', 'bigcover', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'more_l', 'more_d', 'repeat_off_l', 'repeat_off_d', 'repeat_all_l', 'repeat_all_d', 'repeat_one_l', 'repeat_one_d', 'shuffle_off_l', 'shuffle_off_d', 'shuffle_on_l', 'shuffle_on_d', *(f'hearts{n}_{h}' for n in range(6) for h in 'ld'))}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -66,6 +72,227 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
     assert at(290 - x0, 10 - y0)[3] == 0 and at(315 - x0, 10 - y0)[3] == 0
     plug = pixels(got['classic_light_plug'])[2]
     assert plug(301 - x0, 11 - y0) == (0x3c, 0x4a, 0x34, 255) and plug(290 - x0, 11 - y0)[3] == 0
+
+
+def test_the_volume_and_slider_page_images():
+    got = art.images(theme.builtins()[1])
+    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'play_w': (10, 11), 'pause_w': (10, 11), 'page': (94, 74), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
+    for name, wh in size.items():
+        for n in ([f'{name}_{h}' for h in 'ldw'] if name.startswith('spk') else [name]):
+            w, h, at = pixels(got[f'classic_light_{n}'])
+            assert (w, h) == wh
+            assert all(at(x, y)[3] == 255 for x in (0, w - 1) for y in (0, h - 1)) == (n == 'page')
+    inks = {'l': (0x39, 0x3c, 0x39), 'd': (0xc6, 0xc3, 0xc6), 'w': (255, 255, 255)}
+    for half, rgb in inks.items():
+        for n in ('quiet', 'loud'):
+            w, h, at = pixels(got[f'classic_light_spk_{n}_{half}'])
+            assert at(5, 7) == (*rgb, 255) and {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {rgb}  # the cone; no other colour
+            assert any(at(x, y)[3] for x in range(11, w) for y in range(h)) == (n == 'loud')  # only loud has arcs
+    for n in ('sun_small', 'sun_big', 'play_w', 'pause_w'):
+        w, h, at = pixels(got[f'classic_light_{n}'])
+        assert {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {(255, 255, 255)}
+    assert pixels(got['classic_light_sun_big'])[2](11, 11)[3] == 255 and pixels(got['classic_light_sun_small'])[2](8, 8)[3] == 255
+    for n, side in (('sun_small', 12), ('sun_big', 22)):  # the ink's bounding box, a quarter's alpha or more
+        w, h, at = pixels(got[f'classic_light_{n}'])
+        inked = [(x, y) for x in range(w) for y in range(h) if at(x, y)[3] >= 64]
+        assert max(p[0] for p in inked) - min(p[0] for p in inked) + 1 == side and max(p[1] for p in inked) - min(p[1] for p in inked) + 1 == side, n
+    assert pixels(got['classic_light_play_w'])[2](3, 5)[3] == 255 and pixels(got['classic_light_pause_w'])[2](5, 5)[3] < 64
+
+
+def test_the_confirm_shadow_falls_soft_and_black_under_the_tray():
+    got = art.images(theme.builtins()[1])['classic_light_confirm_shadow']
+    w, h, at = pixels(got)
+    assert (w, h) == (315, 68) and all(at(x, y)[:3] == (0, 0, 0) for x in (0, 157, 314) for y in (0, 34, 67))
+    # the tray at 8, 6 in the image; its shadow two rows down, at most the alpha, gone by the image's edge
+    assert at(157, 34)[3] == 0x77 and at(157, 67)[3] < 8 and at(0, 34)[3] < 8 and at(157, 0)[3] < 3
+    assert at(157, 6)[3] < at(157, 8)[3] < at(157, 10)[3] and at(157, 60)[3] > at(157, 64)[3]
+    assert len(got) < 8192
+
+
+def test_the_page_stands_on_its_ramp_and_glow():
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_page'])
+    stops = ((0, 0x65747b), (1, 0x7a8c96), (3, 0x8498a3), (13.5, 0x8294a2), (30, 0x7f919f), (51, 0x798b99), (105, 0x6d7b86), (186, 0x555f69), (227, 0x4b535e), (260, 0x464f56), (294, 0x464f56))
+    def want(x, y):
+        fx, fy = (x + .5) * 375 / 94, (y + .5) * 294 / 74
+        a = max(0, 1 - ((fx - 187.5)**2 / 185**2 + (fy - 11)**2 / 300**2)**.5) * 64 / 255
+        (r0, c0), (r1, c1) = next((p, q) for p, q in zip(stops, stops[1:]) if fy <= q[0])
+        ramp = [(c0 >> s & 255) + ((c1 >> s & 255) - (c0 >> s & 255)) * (fy - r0) / (r1 - r0) for s in (16, 8, 0)]
+        return [v * (1 - a) + (0xe4f0ff >> s & 255) * a for v, s in zip(ramp, (16, 8, 0))]
+    spots = [(0, 0), (93, 0), (0, 73), (93, 73)] + [(187 * 94 // 375, y * 74 // 294) for y in (11, 150, 293)]
+    for x, y in spots:
+        assert all(abs(p - q) <= 1 for p, q in zip(at(x, y), want(x, y))), (x, y)
+    assert at(46, 2)[2] > at(0, 2)[2]  # the glow, brightest at the top's middle and gone by the edge
+    assert at(0, 2)[:3] == at(93, 2)[:3]
+
+
+def test_the_pages_first_two_rows_are_sharp_ramp_and_glow():
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_page_top'])
+    assert (w, h) == (375, 2)
+    for x, y, rgb in ((187, 0, 0x8c9ba6), (187, 1, 0x95a6b2), (5, 0, 0x718089), (5, 1, 0x7c8f99), (300, 0, 0x7a8a93)):
+        assert all(abs(p - (rgb >> s & 255)) <= 2 for p, s in zip(at(x, y), (16, 8, 0))), (x, y, at(x, y))
+    assert at(0, 0)[3] == 255
+
+
+def test_the_round_icons_are_centred_opaque_circles_in_their_shadow():
+    got = art.images(theme.builtins()[1])
+    for name, side, r in (('orb_note', 116, 49.5), ('orb_usb', 130, 49.5 * 1.14)):
+        w, h, at = pixels(got[f'classic_light_{name}'])
+        assert (w, h) == (side, side)
+        assert at(w // 2, h // 2)[3] == 255
+        assert [at(x, y)[3] for x in (0, w - 1) for y in (0, h - 1)] == [0, 0, 0, 0]
+        assert at(w // 2, round(side / 2 - r + 3))[3] == 255 and at(w // 2, round(side / 2 + r - 3))[3] == 255  # the rim, inside its radius
+        below = at(w // 2, round(side / 2 + r + 2))  # the shadow: black, translucent, a drop below the circle stronger than above
+        above = at(w // 2, round(side / 2 - r - 3))
+        assert below[:3] == (0, 0, 0) and above[3] < below[3] <= 0x66
+    note, usb = pixels(got['classic_light_orb_note'])[2], pixels(got['classic_light_orb_usb'])[2]
+    assert note(58 + 16, 58 - 10)[:3] == (0x16, 0x0b, 0x00)  # the note's right stem
+    assert usb(65, 65)[:3] == (0x16, 0x0b, 0x00) and usb(65, 65 + 33)[:3] == (0x16, 0x0b, 0x00)  # the trident's stem, its foot
+    assert note(58, 58 + 44)[:3] != (0x16, 0x0b, 0x00) and note(58, 58 + 44)[0] > 0xc0  # the circle's lower rows, in its colours
+
+
+def test_the_soft_shadows_are_their_boxes_blurred():
+    got = art.images(theme.builtins()[1])
+    tail = lambda d, sigma: .5 * math.erfc(d / (sigma * 2**.5))  # a straight edge's blur, d past it
+    for name, (bw, bh, blur, alpha) in {'band_shadow': (322, 46, 5, 0x66), 'panel_shadow': (319, 48, 6, 0x33), 'rate_shadow': (304, 110, 6, 0x33), 'tray_shadow': (125, 44, 6, 0x77)}.items():
+        w, h, at = pixels(got[f'classic_light_{name}'])
+        pad = blur + 2
+        assert (w, h) == (bw + 2 * pad, bh + 2 * pad)
+        assert {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {(0, 0, 0)}  # black in either half
+        assert max(at(x, y)[3] for x in range(w) for y in (0, h - 1)) <= 1 and max(at(x, y)[3] for x in (0, w - 1) for y in range(h)) <= 1  # nothing cut at the image's edge
+        for y in range(pad + bh - 2 + (name == 'tray_shadow'), h):  # under the box's foot (its y offset is 2) and any ring, down the middle
+            assert abs(at(w // 2, y)[3] - alpha * tail(y + .5 - pad - bh, blur / 2)) <= 1, (name, y)
+        assert at(w // 2, pad + bh // 2)[3] == 0 and at(w // 2, pad + bh - 3)[3] == 0  # none under the box, as CSS clips it
+        assert at(w // 2, pad - 4)[3] < at(w // 2, h - pad + 1)[3] and at(pad - 1, h // 2)[3] == at(w - pad, h // 2)[3]  # the foot darker than the head; the sides alike
+    # the tray's ring, over its shadow
+    w, h, at = pixels(got['classic_light_tray_shadow'])
+    under = 0x77 / 255 * tail(2.5, 3)
+    assert abs(at(w // 2, 8 - 2 - 1)[3] - 255 * (1 - (1 - 0x66 / 255) * (1 - under))) <= 1
+
+
+def test_the_switch_edges():
+    got = art.images(theme.builtins()[1])
+    w, h, at = pixels(got['classic_light_track_inset'])
+    assert (w, h) == (100, 27) and at(50, 13)[3] == 0
+    top = 0xdd / 255 * (1 - .5 * math.erfc(1.5 / 2**.5))
+    assert at(50, 0)[:3] == (0, 0, 0) and abs(at(50, 0)[3] - 255 * (1 - (1 - top) * (1 - 0x88 / 255))) <= 1  # the inset's blur over its 1 px ring
+    assert at(50, 26) == (255, 255, 255, 0x29) and at(0, 26)[3] == 0  # the light row under it, rounded
+    w, h, at = pixels(got['classic_light_lit_edge'])
+    assert (w, h) == (52, 28) and at(26, 14)[3] == 0
+    assert at(26, 0) == (0, 0, 0, 0x77) and at(26, 27) == (0, 0, 0, 0x77) and at(0, 14) == (0, 0, 0, 0x77)  # its ring
+    assert at(26, 1) == (255, 255, 255, 0x73) and at(26, 26) == (0, 0, 0, 0x59)  # its light top row, dark last
+
+
+def test_quick_settings_buttons():
+    got = art.images(theme.builtins()[1])
+    lit = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbstorage', 'usbaudio', 'usbdac'}
+    for n in QS_NAMES:
+        w, h, at = pixels(got[f'classic_light_drop_{n}'])
+        assert (w, h) == (60, 60)
+        assert all(at(x, y)[3] == 0 for x in (0, 59) for y in (0, 59)) and at(30, 0)[3] == at(0, 30)[3] == 255  # R 10.5, full on its edges
+        assert at(4, 1)[3] < 255 and at(11, 0)[3] == 255
+        # the ramp's last row, where no gloss reaches, and its first, under the gloss at its strongest: lit or neutral
+        want = (0x0f, 0x4f, 0xae) if n in lit else (0x34, 0x38, 0x3e)
+        assert all(abs(a - b) <= 3 for a, b in zip(at(30, 59), want)), n
+        top = (0x5f, 0xb0, 0xf5) if n in lit else (0xa2, 0xa7, 0xaf)
+        assert all(abs(a - (b + (255 - b) * 0x75 / 255)) <= 3 for a, b in zip(at(30, 0), top)), n
+    # the gloss ends on the ellipse's curve: at column 8 near row 24.7, at the middle only by row 29
+    w, h, at = pixels(got['classic_light_drop_wifi'])
+    assert at(8, 23)[0] > at(8, 27)[0] + 20 and at(30, 27)[0] > at(8, 27)[0] + 20
+
+
+def test_quick_settings_glyphs_take_the_look_s_inks_and_state():
+    got = art.images(theme.builtins()[1])
+    def brightest(n):
+        w, h, at = pixels(got[f'classic_light_drop_{n}'])
+        return max(min(at(x, y)[:3]) for x in range(15, 45) for y in range(32, 45))
+    def darkest(n):
+        w, h, at = pixels(got[f'classic_light_drop_{n}'])
+        return min(max(at(x, y)[:3]) for x in range(15, 45) for y in range(22, 42))
+    # Lock, Playback and System are dark marks: #333 where they're solid, 72 % of the way from the ramp where dimmed; the rest white
+    assert darkest('sysset') <= 0x38 and darkest('playset') <= 0x38 and darkest('keylockopen') <= 0x38 and brightest('usbaudio') >= 250
+    assert 0x38 < darkest('keylock') < 0x70
+    assert 170 <= brightest('lowgain') <= 215 and 170 <= brightest('lowgaindisable') <= 215 and got['classic_light_drop_lowgain'] == got['classic_light_drop_lowgaindisable']
+    assert brightest('highgain') >= 250 and 170 <= brightest('highgaindisable') <= 215
+    assert all(got[f'classic_light_drop_{a}'] != got[f'classic_light_drop_{b}'] for a, b in (('wifi', 'wifiopen'), ('bt', 'btopen'), ('lo', 'po'), ('po', 'sa'), ('lowgain', 'highgain')))
+    assert got['classic_light_drop_usbaudio'] == got['classic_light_drop_usbdac']
+    # the text keeps its counter: the O of PO is ramp in its middle, not white
+    w, h, at = pixels(got['classic_light_drop_po'])
+    row = [min(at(x, 30)[:3]) for x in range(30, 45)]
+    assert max(row) >= 240 and min(row[row.index(max(row)):]) < 170
+
+
+def test_quick_settings_shadow_track_and_knob():
+    got = art.images(theme.builtins()[1])
+    w, h, at = pixels(got['classic_light_drop_shadow'])
+    assert (w, h) == (72, 72) and at(36, 36)[3] == 0  # clear under the button
+    assert 0xaa <= at(36, 5)[3] <= 0xb4 and at(36, 67)[3] > at(36, 4)[3]  # the ring above; the soft shadow falls below
+    assert {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {(0, 0, 0)}
+    w, h, at = pixels(got['classic_light_drop_pressed'])
+    assert (w, h) == (60, 60) and at(30, 30) == (0, 0, 0, 0x40) and at(0, 0)[3] == 0
+    w, h, at = pixels(got['classic_light_drop_track'])
+    assert (w, h) == (239, 12)
+    assert at(120, 0)[3] > at(120, 5)[3] and at(120, 0)[:3] == (0, 0, 0)  # the inset darkens from the top
+    assert at(120, 11) == (255, 255, 255, 0x22) and at(0, 0)[3] == 0
+    w, h, at = pixels(got['classic_light_drop_knob'])
+    assert (w, h) == (29, 29) and min(at(14, 3)[:3]) >= 0xfb and at(14, 14)[3] == 255 and at(0, 0)[3] < 16
+    assert abs(at(14, 14)[0] - 0xd9) <= 1 and at(14, 26)[:3] == (0, 0, 0) and at(14, 25)[0] < 0xc0  # the ramp's middle; the shadow's row below the disc
+
+
+def test_the_dark_clock_face():
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_clock_dark'])
+    assert (w, h) == (96, 96) and at(0, 0)[3] == 0 and at(95, 95)[3] == 0 and at(48, 48) == (0x0c, 0x0f, 0x15, 255)
+    k = .96
+    ink = lambda x, y: at(int((x + 50) * k), int((y + 50) * k))
+    assert max(ink(x, y)[0] for x in range(-4, 5) for y in range(-38, -30)) > 200  # the 12
+    assert max(ink(x, y)[0] for x in range(30, 42) for y in range(-3, 5)) > 200  # the 3
+    assert at(48, 1)[3] > 0 and at(48, 1)[0] > 0x0c  # the rim's stroke over the disc
+
+
+def test_the_keyboard_glyphs_and_the_field():
+    got = art.images(theme.builtins()[1])
+    for name, size in (('kb_del', (22, 18)), ('kb_shift', (22, 18)), ('kb_back', (13, 24)), ('field_glass', (16, 16)), ('field', (32, 31))):
+        assert pixels(got[f'classic_light_{name}'])[:2] == size
+    at = pixels(got['classic_light_kb_del'])[2]
+    assert at(16, 2)[:3] == (255, 255, 255) and at(0, 0)[3] == 0 and at(14, 9)[2] < 200  # the body; the cross's slate
+    assert pixels(got['classic_light_kb_shift'])[2](11, 9)[:3] == (255, 255, 255)
+    at = pixels(got['classic_light_kb_back'])[2]
+    assert at(1, 12)[3] > 128 and at(12, 12)[3] == 0
+    at = pixels(got['classic_light_field_glass'])[2]
+    assert at(6, 2)[:3] == (0x8a, 0x8f, 0x96) and at(6, 6)[3] == 0 and at(13, 13)[3] > 128
+    at = pixels(got['classic_light_field'])[2]
+    assert at(16, 20) == (255, 255, 255, 255) and at(16, 1)[0] < at(16, 8)[0] and at(0, 0)[3] == 0  # white, its top soft, its corner out
+    assert at(16, 30)[:3] == (255, 255, 255) and 0x50 <= at(16, 30)[3] <= 0x60  # the row below
+
+
+def test_set_time_and_set_date_images():
+    got = art.images(theme.builtins()[1])
+    w = {'tray_108': (122, 64), 'tray_165': (179, 64), 'tray_164': (178, 64), 'cell_45': (53, 50), 'cell_lit_45': (53, 50), 'cell_60': (68, 50), 'cell_lit_60': (68, 50), 'tile': (130, 112), 'clock_chrome': (110, 110), 'clock_shadow': (86, 26)}
+    for n, wh in w.items():
+        assert pixels(got[f'classic_light_{n}'])[:2] == wh, n
+    near = lambda p, rgb: p[3] == 255 and all(abs(p[i] - (rgb >> s & 255)) <= 1 for i, s in enumerate((16, 8, 0)))
+    _, _, face = pixels(got['classic_light_clock_chrome'])
+    assert face(55, 55) == (255, 255, 255, 255) and face(0, 0)[3] == 0  # the middle of the face; outside the ring
+    assert any(face(x, y)[:3] != (255, 255, 255) and face(x, y)[3] for x in range(50, 60) for y in range(13, 26))  # the 12, from the font's outlines
+    assert any(face(x, 55) == (255, 255, 255, 255) for x in range(14, 20)) and any(face(x, 55)[:3] != (255, 255, 255) for x in range(14, 20))  # the 9's ink and its open counter
+    _, _, tile = pixels(got['classic_light_tile'])
+    row = lambda stops, y, h: art.gradient(stops, 0, h)(y + .5)  # a row's stop: its middle
+    over = lambda rgb, a: sum(round((rgb >> s & 255) + (255 - (rgb >> s & 255)) * a / 255) << s for s in (16, 8, 0))
+    assert near(tile(65, 6), over(row(art.TILE_TOP, 0, 22), 0x55)) and near(tile(65, 27), row(art.TILE_TOP, 21, 22)) and near(tile(65, 28), row(art.TILE_PAGE, 22, 100))
+    assert tile(65, 106)[:3] == (0, 0, 0) and tile(65, 106)[3] >= 0x66  # the row under it, over the soft shadow
+    assert tile(0, 0)[3] == 0
+    _, _, sh = pixels(got['classic_light_clock_shadow'])
+    assert abs(sh(43, 13)[3] - 0x70) <= 4 and sh(0, 0)[3] == 0 and sh(0, 13)[3] < 10
+    w, h, hint = pixels(got['classic_light_hint_shadow'])  # stock's marks, a row down, blurred: 0 1px 2px #00000080
+    assert (w, h) == (32, 21) and hint(0, 0)[3] == 0 and hint(31, 20)[3] == 0 and hint(8, 11)[:3] == (0, 0, 0)
+    assert 0x38 < hint(10, 11)[3] <= 0x80 and hint(8, 1)[3] == 0
+    _, _, lit = pixels(got['classic_light_cell_lit_45'])
+    assert near(lit(26, 4), over(row(art.CELL_LIT, 0, 42), 0x66)) and near(lit(26, 45), row(art.CELL_LIT, 41, 42))
+    assert lit(26, 46)[:3] == (0, 0, 0) and lit(26, 46)[3] > 0x40  # the row below: black, soft
+    _, _, off = pixels(got['classic_light_cell_45'])
+    assert off(26, 46)[:3] == (255, 255, 255) and abs(off(26, 46)[3] - 0x24) <= 1 and off(26, 4)[3] == 255
+    _, _, tray = pixels(got['classic_light_tray_108'])
+    assert near(tray(60, 7), row(art.TRAY_STOPS, 0, 48)) and tray(60, 55)[0] > 80 and tray(60, 55)[3] > 0x26  # the light row under it, over the shadow
+    assert tray(0, 0)[3] < 12
 
 
 def test_the_note_is_white_and_translucent():
@@ -117,3 +344,99 @@ def test_path_reads_arcs_and_further_subpaths():
     assert art.coverage([[(0, 0), (2, 0), (2, 2), (0, 2)]], (0, 0, 3, 1)) == [1.0, 1.0, 0.0]
     # a span inside another adds nothing: the union, not a sum
     assert art.coverage([[(0, 0), (3, 0), (3, 1), (0, 1)], [(1, 0), (1.5, 0), (1.5, 1), (1, 1)]], (0, 0, 3, 1)) == [1.0, 1.0, 1.0]
+
+
+def test_no_art_cover():
+    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_cover'])
+    assert (w, h) == (160, 160) and all(at(x, y)[3] == 255 for x, y in ((0, 0), (159, 0), (0, 159), (159, 159), (80, 80)))
+    assert at(159, 159)[:3] == (0x6b, 0x75, 0x84)  # the gradient's end, below the band and the note
+    top = at(159, 0)[:3]  # its start, with 5 % of white over it in the band
+    assert all(abs(v - round(c + (255 - c) * .05)) <= 1 for v, c in zip(top, (0x94, 0xa2, 0xa5)))
+    assert at(70, 30)[:3] == at(75, 30)[:3] and min(at(70, 30)[:3]) > 0xf0  # the note, near white at its top
+
+
+def test_station_cover_is_the_no_art_family():
+    t = theme.builtins()[1]
+    got = art.images(t)
+    w, h, at = pixels(got['classic_light_station'])
+    cover = pixels(got['classic_light_cover'])[2]
+    assert (w, h) == (160, 160) and got['classic_light_station'] != got['classic_light_cover']
+    assert at(159, 159) == cover(159, 159) and at(159, 0) == cover(159, 0)  # its gradient and band
+    assert min(at(80, 70)[:3]) > 0xe8 and at(10, 10) == cover(10, 10)  # the mast's head, in the note's ink
+
+
+def test_no_art_cover_at_the_full_screen_size():
+    from ipod import BC_ART
+    t = theme.builtins()[1]
+    got = art.images(t)
+    w, h, at = pixels(got['classic_light_bigcover'])
+    assert (w, h) == (BC_ART, BC_ART) and got['classic_light_bigcover'] != got['classic_light_cover']
+    small = pixels(got['classic_light_cover'])[2]
+    # the same drawing at its own size: the gradient's end, the note's place at both, its one source
+    assert at(w - 1, h - 1) == small(159, 159)
+    assert all(min(at(x * w // 160, 30 * w // 160)[:3]) > 0xf0 for x in (70, 75))
+    assert got['classic_light_bigcover'] == art.png(w, h, art.noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], BC_ART))
+
+
+def test_top_right_glyphs():
+    got = art.images(theme.builtins()[1])
+    ink = lambda name: {at(x, y)[:3] for w, h, at in [pixels(got[f'classic_light_{name}'])] for x in range(w) for y in range(h) if at(x, y)[3] == 255}
+    assert pixels(got['classic_light_more_l'])[:2] == (26, 20)
+    assert ink('repeat_off_l') == {(0xb4, 0xb4, 0xb4)} and ink('repeat_all_l') == {(0x4c, 0x4c, 0x4c)} == ink('more_l') == ink('shuffle_on_l')
+    assert ink('shuffle_off_d') == {(0x5a, 0x5a, 0x5a)} and ink('repeat_one_d') == {(0xc6, 0xc3, 0xc6)} == ink('more_d')
+    assert got['classic_light_repeat_one_l'] != got['classic_light_repeat_all_l']  # the one
+
+
+def test_hearts():
+    got = art.images(theme.builtins()[1])
+    def row(name):  # (filled-looking centre pixels, inked columns)
+        w, h, at = pixels(got[f'classic_light_{name}'])
+        return (w, h), [x for x in range(w) if any(at(x, y)[3] for y in range(h))], [at(8 + 20 * i, 13)[3] == 255 and at(8 + 20 * i, 13)[:3] for i in range(5)]
+    size, inked, centres = row('hearts0_l')
+    assert size == (96, 30) and inked[0] < 3 and inked[-1] < 16 and centres == [False] * 5  # one outline
+    size, inked, centres = row('hearts3_l')
+    assert inked[-1] < 56 and centres == [(0x4c, 0x4c, 0x4c)] * 3 + [False] * 2
+    assert row('hearts5_d')[2] == [(0xc6, 0xc3, 0xc6)] * 5
+
+
+def test_every_literal_corner_radius_is_in_the_table():
+    source = (pathlib.Path(__file__).parents[2] / 'patch/navigation.c').read_text()
+    def literal(names):
+        return {int(r) for r in re.findall(rf'(?:{names})\([^;]*?,\s*(\d+)(?:,[^;]*?)?\);', source)}
+    radii = literal('paint_round_rows|round_row|row_below|inset_top|round_ring')
+    assert radii and radii <= set(art.CORNERS)
+    assert {r - 1 for r in literal('round_ring')} <= set(art.CORNERS)  # a ring reads its radius less one too
+    lit = {int(r) for r in re.findall(r'cover_of\((\d+)\)', source)}
+    assert lit and lit <= set(art.CORNERS)  # pale_lit's
+
+
+def test_the_round_corners_cover_their_arcs():
+    for r in art.CORNERS:
+        cover = art.corner_cover(r)
+        assert len(cover) == r * r and cover == bytes(cover[x * r + y] for y in range(r) for x in range(r))  # about its diagonal
+        assert cover[0] == 0 and cover[-1] == 255
+        for y, x, drawn in ((y, x, v) for y in range(r) for x, v in enumerate(art.rounded(r, r, 0, 0, 2 * r, 2 * r, r)[y * r:(y + 1) * r])):
+            assert abs(cover[y * r + x] - drawn * 255) <= 16, (r, x, y)  # the images' own corners, their sampling apart
+    assert all(f'[{r}] = ' in art.corner_table() for r in art.CORNERS)
+
+
+def test_the_bands_rim_follows_its_corners():
+    got = art.images(theme.builtins()[1])
+    w, h, top = pixels(got['classic_light_band_top'])
+    assert (w, h) == (322, 9)
+    assert top(100, 0) == (255, 255, 255, 0x59) and top(100, 1)[3] == 0  # inset 0 1px, white at 0x59, its own row
+    assert 0 < top(1, 3)[3] <= 0x59 and top(0, 0)[3] == 0 and top(320, 3) == top(1, 3)  # on the arc, mirrored
+    w, h, foot = pixels(got['classic_light_band_foot'])
+    assert (w, h) == (322, 9) and foot(100, 8) == (255, 255, 255, 0x1f) and foot(100, 7)[3] == 0  # 0 1px under the band, white at 0x1f
+    assert foot(0, 8)[3] == 0 and 0 < foot(1, 5)[3] <= 0x1f and foot(320, 5) == foot(1, 5)
+
+
+def test_the_rating_hearts_are_the_panels_size_and_ink():
+    got = art.images(theme.builtins()[1])
+    for half, ink in (('l', (0, 0, 0)), ('d', (255, 255, 255))):
+        w, h, on = pixels(got[f'classic_light_heart_on_{half}'])
+        assert (w, h) == (32, 30) and on(16, 16) == (*ink, 255)  # filled
+        _, _, off = pixels(got[f'classic_light_heart_off_{half}'])
+        assert off(16, 16)[3] == 0 and off(16, 26)[:3] == ink and off(16, 26)[3] > 200  # its outline: the stroke at the point
+        assert on(0, 0)[3] == 0 == off(0, 0)[3]
+        assert max(x for x in range(32) if any(off(x, y)[3] for y in range(30))) == 31  # the stroke reaches its box's width
