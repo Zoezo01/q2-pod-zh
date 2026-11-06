@@ -3128,7 +3128,7 @@ static int ogg_music_info(int a, char *info, const char *path) {
     xiph_tags t;
     if (!ogg_tags(path, &t)) return 0;
     for (unsigned k = 0; t.kind && k < sizeof at / sizeof *at; k++) {
-        char latin1[XIPH_TEXT], out[0x100] = { 0 };
+        char latin1[XIPH_TEXT] = { 0 }, out[0x100] = { 0 }; /* utf8_latin1 ends no invalid text */
         int latin = utf8_latin1(t.text[k], latin1) == 2;
         toolsFixId3ErrorCode(latin, latin1, t.text[k], out, k + 1);
         if (at[k] == 0x200)
