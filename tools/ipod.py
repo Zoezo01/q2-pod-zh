@@ -741,21 +741,9 @@ def playing_page_classic_light(root, g=SET0):
     # The bar is the payload's, drawn on its own widget under stock's slider (navigation.c np_scrubber), which paints
     # nothing at opacity 0 and keeps the touch.
     root[3].insert(root[3].index(named['slider_play']), ['view', [0, 0, 0, 0], {'name': 'np_bar', 'sensitive': 'false'}, []])
-    # ... and the lyrics and the info stay on their rows, below the top controls: 7 px, the pages' rise
+    # ... and the lyrics stay on their rows, below the top controls: 7 px, the pages' rise
     named['view_lrc'][2]['self_layout'] = 'default(x=0,y=21,w=375,h=178)'
     named['label_lyricmsg'][1][1] += 21
-    # The info page's rows, from the window's top: stock's label the name, a second label the value (navigation.c
-    # ringnav_np_info), right-aligned and ellipsized as a settings row's value. A label draws nothing in a box
-    # shorter than its font: these hold the row's 27 px. The page has no scroll: its rows share the height above
-    # the set's list_end, so the last clears the glass, the set's pitch at most.
-    info = named['view_info'][3]
-    row = min(g.pitch, g.list_end // len(info)) if g.list_end else g.pitch
-    for i, n in enumerate(list(info)):
-        n[1] = [20, row * i, 140, row]
-        n[2] = {k: v for k, v in n[2].items() if k not in ('line_wrap', 'word_wrap', 'style:normal:text_align_v')}
-        n[2]['style:normal:text_align_h'] = 'left'
-        info.append(['hscroll_label', [141, row * i, 215, row], {'name': n[2]['name'] + '_value', 'style': 's_scrlabel_white20r',
-                                                               'only_focus': 'true', 'ellipses': 'true'}, []])
     for name in ('label_playtime', 'label_playlen', 'label_ipod_remain'):
         root[3].remove(named[name])
         root[3].insert(root[3].index(named['slider_play']), named[name])

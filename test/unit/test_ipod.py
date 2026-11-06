@@ -356,7 +356,7 @@ def classic_light_page():
 
 
 def test_playing_page_classic_light_keeps_every_name(classic_light_page, page):
-    assert set(page[1]) <= set(classic_light_page[1]) and set(classic_light_page[1]) - set(page[1]) - {n + '_value' for n in ('label_a', 'label_b')} == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar'}
+    assert set(page[1]) <= set(classic_light_page[1]) and set(classic_light_page[1]) - set(page[1]) == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar'}
 
 
 def test_playing_page_classic_light_regroups(classic_light_page):
@@ -376,25 +376,6 @@ def test_playing_page_classic_light_pages_span_the_tilted_cover(classic_light_pa
     order = [c[2].get('name') for c in root[3]]  # over the pages' reflection, under the bar
     assert order.index('slide_view_view') < order.index('np_bar') < min(order.index(t) for t in ('label_playtime', 'label_playlen', 'label_ipod_remain')) < order.index('slider_play')
     assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=21,w=375,h=178)' and n['label_lyricmsg'][1][1] == 4 + 21  # below the top controls, on the same rows
-
-
-def test_playing_page_classic_light_info_is_rows():
-    root = playing()
-    info = named(root)['view_info'][3]
-    info.append(['label', [0, 135, 9, 60], {'name': 'label_tall', 'line_wrap': 'true', 'word_wrap': 'true', 'style:normal:text_align_v': 'top'}, []])
-    ipod.playing_page_classic_light(root, CLASSIC_LIGHT)
-    assert [c[1] for c in info[:3]] == [[20, 32 * i, 140, 32] for i in range(3)]  # the set's pitch, holding the row's 27 px font
-    assert all(c[2]['style:normal:text_align_h'] == 'left' and 'line_wrap' not in c[2] and 'style:normal:text_align_v' not in c[2] for c in info[:3])
-    assert [c[1] for c in info[3:]] == [[141, 32 * i, 215, 32] for i in range(3)]  # right edge 356; ellipsized as a settings value
-    assert [c[2]['name'] for c in info[3:]] == ['label_a_value', 'label_b_value', 'label_tall_value']
-    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20r' and c[2]['ellipses'] == 'true' and c[2]['only_focus'] == 'true' for c in info[3:])
-    # stock's nine rows have no scroll: they share the height above list_end, the last clear of the glass, each holding the font
-    root = playing()
-    info = named(root)['view_info'][3]
-    info += [['label', [0, 135, 9, 60], {'name': f'label_{i}'}, []] for i in range(9 - len(info))]
-    ipod.playing_page_classic_light(root, CLASSIC_LIGHT)
-    row = info[1][1][1]
-    assert (row, info[8][1][1] + row) == (28, 252) and row * 9 <= CLASSIC_LIGHT.list_end and row >= 27
 
 
 def test_classic_light_sets_bar_immediates():

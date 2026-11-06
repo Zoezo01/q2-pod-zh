@@ -460,11 +460,10 @@ typedef struct {
     unsigned np_tilt_key;    /* what cover_tilt's frame holds */
     int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* a streaming page's cover and bar (stream_cover); the info page in front (np_slid) */
+    /* a streaming page's cover and bar (stream_cover) */
     void *stream_tilt, *stream_bar;
     const char *stream_file;
     unsigned stream_art;
-    unsigned char np_info_on;
     /* Centred Now Playing's full-screen lyrics (np_full) and where the last touch on them came
      * down (np_lyric_touch) */
     int np_full, np_tap_x, np_tap_y;
@@ -5805,7 +5804,7 @@ static void *vol_band(void *wm) {
  * player's second and restarts stock's timer: the target is read, and the timer cleared, after
  * it. */
 static void scrub_start(void) {
-    if (st.scrub || !st.np_slider || st.np_info_on) return;
+    if (st.scrub || !st.np_slider) return;
     void *vol = vol_band(window_manager());
     if (vol) window_close(vol);
     st.scrub = 1;
@@ -5872,7 +5871,6 @@ static int np_gone(void *win, void *event) {
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
             st.np_slide = st.np_lrc = st.np_title = st.np_artist = st.np_tilt = st.np_repeat =
                 st.np_shuffle = st.np_bar = (void *)0;
-        st.np_info_on = 0;
         cover_tilt_close();
         st.scrub_moved = 0; /* the page is going: no seek */
         st.np_off = st.np_full = 0;
@@ -5963,22 +5961,6 @@ static int np_lyric_touch(void *ctx, void *event) {
     return 0;
 }
 
-/* Classic's info page is a list of its own, under its own title. Settled on it, the pages
- * come over the times, the bar and the controls, on the paper; the volume takes its panel and no
- * scrub starts (st.np_info_on). */
-int title_gone(void *w, void *event);
-static int np_slid(void *ctx, void *event) {
-    int on = widget_get_prop_int(st.np_slide, "value", 0) == 2;
-    if (on == st.np_info_on) return 0;
-    void *col = P(st.np_slide, W_PARENT);
-    st.np_info_on = (unsigned char)on;
-    widget_restack(col, on ? widget_count_children(st.np_win) : widget_index_of(st.np_bar));
-    widget_set_prop_str(col, "style:normal:bg_color", on ? "#000000" : "#00000000");
-    title_gone(0, 0); /* the next paint asks bar_title_of again */
-    widget_invalidate_force(st.np_win, (void *)0);
-    return 0;
-}
-
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
  */
 int ringnav_playing(void *win, void *ctx) {
@@ -6009,8 +5991,6 @@ int ringnav_playing(void *win, void *ctx) {
     st.np_tilt_key = 0;
     st.np_bold = -1;
     st.np_slide = widget_lookup(win, "slide_view", 1);
-    st.np_info_on = 0;
-    if (st.np_bar && st.np_slide) widget_on(st.np_slide, EVT_VALUE_CHANGED, np_slid, (void *)0);
     st.np_lrc = widget_lookup(win, "scroll_lrc", 1);
     st.lyric_song = st.lyric_rows_song = np_track(); /* no song change at the start */
     lyric_init();                                    /* the rows stock's init built */
@@ -6372,8 +6352,7 @@ static void vol_push(void *top, int leaving) {
 /* The volume dialog loading over Now Playing, before its first paint. vol_poll restores the row,
  * even when the dialog closes before it paints. */
 static void volume_open(void *dlg) {
-    if (!st.np_win || st.np_info_on ||
-        tk_strcmp(widget_get_prop_str(dlg, "name", ""), "volume_dialog"))
+    if (!st.np_win || tk_strcmp(widget_get_prop_str(dlg, "name", ""), "volume_dialog"))
         return;
     void *wm = window_manager();
     unsigned n = widget_count_children(wm);
@@ -7375,8 +7354,7 @@ static void vol_paint(void *top, void *canvas) {
     unsigned n = widget_count_children(wm);
     void *vol = widget_lookup(top, "slider_vol", 1), *label = widget_lookup(top, "label_vol", 1);
     if (n < 2 || !vol) return;
-    int np =
-        widget_get_child(wm, n - 2) == st.np_win && st.np_slider && st.np_elapsed && !st.np_info_on;
+    int np = widget_get_child(wm, n - 2) == st.np_win && st.np_slider && st.np_elapsed;
     const theme_t *T = theme();
     int gloss = T->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
     rect_t area, bar, text, lo, hi;
@@ -7710,7 +7688,7 @@ static void *page_caption(void *win) {
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
     if (tk_str_start_with(name, "playing_page"))
-        return win == st.np_win && st.np_info_on ? "Info" : "Now Playing";
+        return "Now Playing";
     if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
     if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
@@ -8641,7 +8619,6 @@ static void genre_fill(void *win, void *label, const char *text) {
         st.genre_off = 0;
         hscroll_label_set_xoffset(s, 0);
     }
-    theme_font(s, ROLE_INFO, FONT_ROW);
     if (win != st.np_win) return;
     st.genre_label = s;
     if (!same) stop_timer(&st.genre_timer); /* the new text holds at its start */
@@ -8706,9 +8683,7 @@ static int theme_pick(void *ctx, void *event) {
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
  * ("35.92 MB", "16-bit", "950 kbps", "44.1 kHz"), the folder its Location label, and an unknown
- * value, en_US's first player_unknown ("Unknown Artist"), reads "Unknown". Classic's page has
- * rows (tools/ipod.py): stock's label keeps the name and its <name>_value the value, in the theme's
- * value grey (written through the flip, its own inverse on white paper and black ink). */
+ * value, en_US's first player_unknown ("Unknown Artist"), reads "Unknown". */
 int ringnav_np_info(void *win) {
     static const char *const names[] = { "label_album", "label_genre",  "label_size",
                                          "label_year",  "label_encode", "label_bits",
@@ -8716,7 +8691,7 @@ int ringnav_np_info(void *win) {
                              *const units[] = {
                                  "", "", " MB", "", "", "-bit", " kbps", " kHz", ""
                              };
-    int result = np_info(win), rows = np_layout() == NP_CLASSIC_LIGHT;
+    int result = np_info(win);
     char where[64] = "";
     getFormatString("player_location", where, sizeof where);
     const char *loc =
@@ -8740,25 +8715,6 @@ int ringnav_np_info(void *win) {
         int len = (int)strlen(v), u = (int)strlen(unit);
         int split = u && len > u && !strcmp(v + len - u, unit) && v[len - u - 1] >= '0' &&
                     v[len - u - 1] <= '9';
-        if (rows) {
-            char key[24];
-            tk_snprintf(key, sizeof key, "%s_value", names[i]);
-            void *value = widget_lookup(win, key, 1);
-            tk_snprintf(out, sizeof out, "%.*s", n, name);
-            widget_set_text_utf8(label, out);
-            theme_font(label, ROLE_TITLE, FONT_ROW);
-            if (!value) continue;
-            tk_snprintf(out, sizeof out, "%.*s%s", split ? len - u : len, v, split ? units[i] : "");
-            if (widget_get_text_utf8(value, s, sizeof s) || strcmp(s, out))
-                widget_set_text_utf8(value, out);
-            theme_font(value, ROLE_TITLE, FONT_ROW);
-            int ink = (int)ui_ink(RGBA(theme()->np_info_value[ipod_light()]));
-            if (widget_get_prop_int(value, "_ink", 0) != ink) {
-                widget_set_prop_int(value, "_ink", ink);
-                widget_set_prop_int(value, "style:normal:text_color", ink);
-            }
-            continue;
-        }
         tk_snprintf(out, sizeof out, "%.*s: %.*s%s", n, name, split ? len - u : len, v,
                     split ? units[i] : "");
         if (i == 1) {
@@ -8766,7 +8722,6 @@ int ringnav_np_info(void *win) {
             continue;
         }
         if (strcmp(out, s)) widget_set_text_utf8(label, out);
-        theme_font(label, ROLE_INFO, FONT_ROW);
     }
     return result;
 }

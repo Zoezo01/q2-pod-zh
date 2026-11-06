@@ -18912,36 +18912,6 @@ for _ in range(2):
     assert [c[1] for c in m.calls if c[0]=='np_info']==[win] and [m.nodes[l]['text'] for l in lines.values()]==want, [m.nodes[l]['text'] for l in lines.values()]
 assert next(n for n in m.nodes.values() if n.get('name')=='ringnav_genre_scroll')['text']=='Genre: Unknown'
 passed()
-# Minimal's keep the style.
-im=InfoMachine(); im.config.update(THEME='0'); im.handlers[syms['getFormatString']]='i:format'
-ilines=[im.node('label',k,text=v) for k,v in stock_lines.items()]; iwin=im.node('window','playing_page',ilines)
-for l in ilines: im.word(l+O['W_PARENT'],iwin)
-im.call(address=payload_syms['ringnav_np_info'],args=(iwin,0,0,0),gap=0)
-shown=[l for k,l in zip(stock_lines,ilines) if k!='label_genre']+[k for k,n in im.nodes.items() if n.get('name')=='ringnav_genre_scroll']
-assert {(im.nodes[l].get('style:normal:font_name'),im.nodes[l].get('style:normal:font_size')) for l in shown}=={(None,None)}
-passed()
-# Classic's page is rows: each stock label the bold name at the row's 27 px, its <name>_value the value in the
-# theme's grey, no scroller, the value's text set once. Written through the flip: on the light half a colour the style
-# hook takes to #8e9196; on the dark half #8a8a8a. A Cyrillic value falls to the bold face at 0.83 of 27.
-INFO_NAMES=['Album','Genre','File Size','Year','Encoding','Bit Depth','Bitrate','Sample Rate','Location']
-INFO_VALUES=['Kid A','Unknown','35.92 MB','2000','FLAC','16-bit','950 kbps','44.1 kHz','SD:/Music/Radiohead']
-def info_rows(light):
-    im=InfoMachine(); im.config.update(THEME='1',LIGHT=light); im.handlers[syms['getFormatString']]='i:format'
-    ilines=[im.node('label',k,text=v) for k,v in stock_lines.items()]
-    ivals=[im.node('hscroll_label',k+'_value') for k in stock_lines]; iwin=im.node('window','playing_page',ilines+ivals)
-    for l in ilines+ivals: im.word(l+O['W_PARENT'],iwin)
-    return im,iwin,ilines,ivals
-for light,ink in (('1',0xff696e71),('0',0xff8a8a8a)):
-    im,iwin,ilines,ivals=info_rows(light)
-    for _ in range(2): im.call(address=payload_syms['ringnav_np_info'],args=(iwin,0,0,0),gap=0)
-    assert [im.nodes[l]['text'] for l in ilines]==INFO_NAMES and [im.nodes[l]['text'] for l in ivals]==INFO_VALUES
-    assert {(im.nodes[l]['style:normal:font_name'],im.nodes[l]['style:normal:font_size']) for l in ilines+ivals}=={('classic-light',27)}
-    assert {im.nodes[l]['style:normal:text_color']&0xffffffff for l in ivals}=={ink}
-    assert not [n for n in im.nodes.values() if n.get('name')=='ringnav_genre_scroll']
-    assert not [c for c in im.calls if c[0]=='widget_set_text_utf8' and c[1]==ivals[0]]  # the second pass: its calls alone
-im,iwin,ilines,ivals=info_rows('1'); im.nodes[ilines[0]]['text']='Album:Группа крови'
-im.call(address=payload_syms['ringnav_np_info'],args=(iwin,0,0,0),gap=0)
-assert (im.nodes[ivals[0]]['style:normal:font_name'],im.nodes[ivals[0]]['style:normal:font_size'])==('bold',22); passed()
 # Genre shows in a private scroller, stock's label hidden as its source and left alone; its text is set once,
 # so stock's next 250 ms fill resets nothing. Only a value wider than the label moves, on the album marquee's
 # chain, and only in front, lit, on the info page.
@@ -18997,38 +18967,6 @@ m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'; m.location=b'(p
 folder='SD:/Music/'+'\u97f3\u697d'*150; label=m.node('label','label_location',text=folder)
 m.call(address=payload_syms['ringnav_np_info'],args=(m.node('window','playing_page',[label]),0,0,0),gap=0)
 assert m.nodes[label]['text']=='Location: '+folder; passed()
-# Settled on Classic's info page the pages come over the times, the bar and the controls, on the paper, and the bar
-# says Info; leaving puts them back where they were, under the bar. The volume takes its panel there, and no scrub starts.
-class InfoPage(UiLoad,GenreMachine): restack=True
-SETUP[:]=[classic_light]; im=InfoPage(queue=3,pos=1); SETUP.clear(); im.handlers[np_page+12]='stock_playing'
-isv=im.node('slide_view','slide_view',value=0); icol=im.node('view','slide_view_view',[isv]); ibar=im.node('view','np_bar')
-islider=im.node('slider','slider_play',max=225,value=100); itimes=im.node('label','label_playtime')
-iwin=im.node('window','playing_page',[icol,ibar,itimes,islider])
-for w,parent in ((isv,icol),(icol,iwin),(ibar,iwin),(itimes,iwin),(islider,iwin),(iwin,im.wm)): im.word(w+O['W_PARENT'],parent)
-im.top=iwin; im.call(address=np_page,args=(iwin,7,0,0),gap=0)
-ititle=im.node('hscroll_label','label_title'); ibarw=classic_light_bar(im,ititle)
-def ipaint(): im.call(address=HOOKS['widget_on_paint_background'][0],args=(ibarw,im.canvas,0,0),gap=0)
-def islid(v):
-    im.nodes[isv]['value']=v; f,ctx=im.handler(isv,O['EVT_VALUE_CHANGED']); im.call(address=f,args=(ctx,im.event,0,0),gap=0)
-order=list(im.nodes[iwin]['children'])
-ipaint(); assert im.nodes[ititle]['text']=='Now Playing'
-islid(1); assert im.nodes[iwin]['children']==order and not [c for c in im.calls if c[0]=='widget_restack']
-islid(2); assert im.nodes[iwin]['children']==order[1:]+[icol] and im.nodes[icol]['style:normal:bg_color']=='#000000'
-assert ('widget_invalidate_force',iwin) in [c[:2] for c in im.calls]
-ipaint(); assert im.nodes[ititle]['text']=='Info'
-# the volume over it is the panel any other page has: no time's row, the slider's place untouched
-ivol=im.node('dialog','volume_dialog',[im.node('slider','slider_vol',max=100,value=40)]); im.word(ivol+O['W_PARENT'],im.wm)
-for w in im.nodes[ivol]['children']: im.word(w+O['W_PARENT'],ivol)
-im.nodes[im.wm]={'children':[iwin,ivol]}; im.top=ivol
-ui_loaded(im,'volume_dialog',ivol); assert im.nodes[itimes]['visible']==1
-im.call(address=HOOKS['widget_on_paint_background'][0],args=(ivol,im.canvas,0,0),gap=0)
-assert im.nodes[itimes]['visible']==1 and im.get(im.nodes[ivol]['children'][0]+O['W_Y'])==O['VOL_PANEL_Y']
-im.top=iwin; im.nodes[im.wm]={'children':[iwin]}
-def iscrub(): im.call(address=payload_syms['np_scrub'],gap=0); return ('widget_invalidate_force',islider) in [c[:2] for c in im.calls]
-assert not iscrub()
-islid(0); assert im.nodes[iwin]['children']==order and im.nodes[icol]['style:normal:bg_color']=='#00000000'
-ipaint(); assert im.nodes[ititle]['text']=='Now Playing' and iscrub(); passed()
-
 # on_wm_idle_status's player_mainscheduling (its status round trip) runs every MAINSCHEDULING_MS, a second
 # while dark with nothing playing.
 from build import MAINSCHEDULING_CALL

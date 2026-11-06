@@ -182,7 +182,6 @@ typedef struct {
      * then rising to opaque at the widget's last */
     unsigned np_rows[4][NP_ROWS]; /* SCRUB_ROWS: 0xAARRGGBB; dark track, fill, light track, fill */
     short np_mark;                /* ... the scrub's diamond's half size, centred this far down */
-    unsigned np_info_value[2];    /* the info page's values, final: [0] dark, [1] light */
     short np_art_radius, np_tilt_tl, np_tilt_tr, np_tilt_br, np_tilt_bl, np_reflect,
         np_reflect_from;
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:

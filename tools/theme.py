@@ -101,7 +101,6 @@ SCHEMA = {k.path: k for k in (
     key('playing.meta.font_size', 'font_px[ROLE_NP_META]', 'int', 64),
     key('playing.info.font', 'font[ROLE_INFO]', 'enum'),  # the info page's lines
     key('playing.info.font_size', 'font_px[ROLE_INFO]', 'int', 64),
-    key('playing.info.value', 'np_info_value', 'color', final=True),  # the info page's values, right of their names
     key('playing.album.opacity', 'np_album_op', 'int', 255),
     key('playing.state.opacity', 'np_state_op', 'int', 255),
     key('home.rows.top', 'home_top', 'int', 375),

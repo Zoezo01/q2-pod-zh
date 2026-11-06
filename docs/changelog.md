@@ -13,7 +13,6 @@
   - Library: back from an opened playlist keeps your row, and going back past **Add to Playlist** no longer leaves the Playlists page looking like the picker.
   - Library: under **Theme: Classic** the Library's first row is **Search**, which opens the search with the keyboard up, as pulling the list down does. In Home's Split list the pull was easy to miss.
   - Now Playing: under **Theme: Classic** Now Playing is its own page: a tilted cover over its reflection and its own progress bar.
-  - Now Playing: under **Theme: Classic** the info page is a list of rows, each name on the left and its value on the right in grey.
   - Streaming: under **Theme: Classic** Spotify's and Internet Radio's Now Playing look like the local one, tilted cover and all. Internet Radio shows a station cover.
   - Display: under **Theme: Classic** confirm prompts have a two-part Cancel and OK control, deleting a playlist asks in a dark tray over the page, the hold menu and Shuffle, Repeat and Group by open over the page you're on, and toasts are a small box instead of a whole screen.
   - Display: under **Theme: Classic** the lock screen is an information screen: the date on a dark bar, a clock tray with a face beside the time (Standard) or the large time alone (Large), and the song on a tray, over the wallpaper.

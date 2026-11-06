@@ -107,9 +107,8 @@
          A label draws nothing in a box shorter than its font, so the position's and the times' boxes hold it, centred on their rows. -->
     <element name="title" x="187" y="57" w="173" h="24" font="classic-light"/>
     <element name="meta" font="classic-light" font_size="22"/>
-    <!-- The theme's face at a small size: the QR pages', and a radio's time from its first hour. The info page's rows
-         are list rows, their names in the ink and their values in this grey, final in each half. -->
-    <element name="info" font="classic-light" font_size="17" light.value="#8e9196" dark.value="#8a8a8a"/>
+    <!-- The theme's face at a small size: the QR pages', and a radio's time from its first hour -->
+    <element name="info" font="classic-light" font_size="17"/>
     <element name="artist" x="187" y="82" w="173" h="20" color="#c6c3c6" font="classic-light" font_size="22"/>
     <element name="album" caps="0" opacity="255" x="187" y="103" w="173" h="20" color="#c6c3c6" font="classic-light" font_size="22"/>
     <element name="position" x="187" y="145" w="173" h="22" font="classic-light" font_size="22" color="#c6c3c6" align="left"/>

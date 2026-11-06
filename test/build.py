@@ -883,20 +883,11 @@ def validate_assets(directory):
             ipod_page = decode(read('rootfs.squashfs', mine if 'squashfs-root/' + mine in built else ui + PLAYING_PAGE))
             page = decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_CLASSIC_LIGHT}'))
             names = {n[2].get('name'): n for n in walk(page)}
-            info_names = [c[2]['name'] for c in names['view_info'][3]][:9]
-            assert set(names) - {n[2].get('name') for n in walk(ipod_page)} == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar', *(n + '_value' for n in info_names)}, g.name
+            assert set(names) - {n[2].get('name') for n in walk(ipod_page)} == {'np_tilt', 'img_np_repeat', 'img_np_shuffle', 'img_np_hearts', 'np_bar'}, g.name
             assert {n[2].get('name') for n in walk(ipod_page)} <= set(names), g.name
             assert names['view_buttons'][1] == [0, 0, 375, 0] and [c[2]['name'] for c in names['view_buttons'][3]] == ['img_return']
             assert 'label_ipod_pos' in {c[2].get('name') for c in names['view_album'][3]}
             assert [c[2].get('name') for c in page[3]][-3:] == ['img_more', 'img_np_repeat', 'img_np_shuffle']
-            # A label draws nothing in a box shorter than its font: the info page's rows hold the row's font.
-            row_px = next(t for t in builtins() if t['np_layout'] == 2)['font_px[ROLE_TITLE]']
-            assert len(names['view_info'][3]) == 18 and all(n[1][3] == 28 >= row_px for n in names['view_info'][3]), (g.name, row_px)
-            # ... and clips at its width: each name's advance holds its box, at stb's scale (ascent - descent is the size), each glyph rounded up.
-            face = TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
-            scale, cmap = row_px / (face['hhea'].ascent - face['hhea'].descent), face.getBestCmap()
-            for key, n in zip((b'album', b'genre', b'player_filesize', b'player_era', b'player_encoding', b'player_bitdepth', b'player_bitrate', b'player_samplerate', b'player_location'), names['view_info'][3]):
-                assert sum(-(-face['hmtx'][cmap[ord(c)]][0] * scale // 1) for c in table[key].decode()) <= n[1][2], (g.name, table[key])
             row = struct.unpack_from(f'<{len(VALUE_NAMES)}H', demo, fileoff(demo, symbols(directory/'patch.elf')['boot_values']) +
                                      2 * len(VALUE_NAMES) * geometry_sets(builtins()).index(g))
             assert (0x24420000 | row[VALUE_NAMES.index('np_bar_x')], 0x24020000 | row[VALUE_NAMES.index('np_bar_w')]) == (0x24420000 | 63, 0x24020000 | 248), g.name
