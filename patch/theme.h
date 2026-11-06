@@ -14,8 +14,10 @@ enum {
 enum { VOL_STOCK, VOL_CLASSIC_LIGHT }; /* painter[PAINT_VOLUME]: the volume, slider pages, rating */
 /* painter[PAINT_CONFIRM]: the confirm control, hold menu, toast and small dialogs */
 enum { CONFIRM_STOCK, CONFIRM_CLASSIC_LIGHT };
-enum { SCRUB_STOCK, SCRUB_ROWS }; /* painter[PAINT_SCRUB]: Now Playing's bar (Classic: its rows) */
-enum { NP_ROWS = 31 };            /* theme_t.np_rows[][]: the rows painter's most rows */
+/* painter[PAINT_SCRUB]: SCRUB_ROWS, a gloss bar's rows (np_rows) for the volume panel and a card
+ * app's progress */
+enum { SCRUB_STOCK, SCRUB_ROWS };
+enum { NP_ROWS = 31 }; /* theme_t.np_rows[][]: the rows painter's most rows */
 /* painter[PAINT_SELECTION]: Minimal's card, Classic's stops, Modern's bar */
 enum { SEL_CARD, SEL_STOPS, SEL_BAR };
 enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic gloss) */
@@ -25,16 +27,15 @@ enum {
 }; /* painter[PAINT_BATTERY]: the bar's battery and status marks */
 enum { SCHEME_CARD = 1, SCHEME_RAW_RED = 2 };      /* scheme_t.flags (Ivory in Minimal; Crimson) */
 enum { SCHEME_DERIVE, SCHEME_LIGHT, SCHEME_DARK }; /* scheme_t.mode */
-enum { NP_IPOD, NP_CENTRED, NP_N }; /* theme_t.np_layout: np_pages[] index */
+enum { NP_IPOD, NP_CENTRED, NP_N };                /* theme_t.np_layout: np_pages[] index */
 enum {
     FONT_DEFAULT,
     FONT_BOLD,
     FONT_CLASSIC_LIGHT
 }; /* theme_t.font[]: stock's, bold.ttf, classic-light.ttf */
 /* theme_t.font[] index: list title, list second line, bar title, Now Playing title, a two-line
- * row's title, Home rows, Now Playing's artist and album (a theme stating them has its title at the
- * two-line row's), the info rows */
-enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_TALL, ROLE_HOME, ROLE_NP_META, ROLE_INFO, ROLE_N };
+ * row's title, Home rows, small text (the QR pages, the Time Zone caption, page notes) */
+enum { ROLE_TITLE, ROLE_META, ROLE_BAR, ROLE_NP, ROLE_TALL, ROLE_HOME, ROLE_INFO, ROLE_N };
 /* an N-stop gradient, n stops (0: none), pos rising from 0 to 100 (% of the band), rgb 0xRRGGBB;
  * as many stops as the band has rows: each row its own, exactly (paint_stops) */
 typedef struct {
@@ -97,17 +98,6 @@ typedef struct {
     short row_shrink, row_flat, row_out, row_edge, row_width, row_key, row_reach;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
-enum { ELEM_ALIGN_LEFT, ELEM_ALIGN_CENTER, ELEM_ALIGN_RIGHT };
-#define ELEM_UNSET (-32768) /* x, y, w, h not placed */
-#define ELEM_KEEP 0xff /* visible, opacity, font, font_size, align left as the asset has them */
-/* a stock widget a theme places (tools/theme.py ALIASES) */
-typedef struct {
-    unsigned char view, alias; /* VIEW_*, E_* (themes.inc) */
-    short x, y, w, h;          /* the window's coordinates; ELEM_UNSET: not placed */
-    unsigned char visible, opacity, font, font_size; /* ELEM_KEEP: unchanged; opacity 0..254 */
-    unsigned color;      /* 0xffRRGGBB in stock's terms (Light Mode flips it); 0: unchanged */
-    unsigned char align; /* ELEM_ALIGN_*; ELEM_KEEP */
-} elem_t;
 typedef struct {
     unsigned addr;
     unsigned char group;
@@ -122,7 +112,7 @@ enum {
     MOTION_PLAYING,
     MOTION_DIALOG,
     MOTION_COVERFLOW,
-    MOTION_HOME,   /* a page right over Home */
+    MOTION_HOME, /* a page right over Home */
     MOTION_INPLACE,
     MOTION_SWAP,
     MOTION_STEP,
@@ -141,8 +131,8 @@ typedef struct {
     const char *name;   /* "Minimal": the Theme row's "Theme: %s" */
     unsigned char geom; /* second: THEME_GEOM_OFF (4) never moves */
     motion_t motion[MOTION_N];
-    unsigned short recall_ms;   /* a remembered row's glide; 0: shown at once */
-    unsigned char bump_px;      /* the wheel's bump at a list's end */
+    unsigned short recall_ms; /* a remembered row's glide; 0: shown at once */
+    unsigned char bump_px;    /* the wheel's bump at a list's end */
     unsigned char painter[PAINTER_N];
     unsigned char chevron_home, chevron_sel, set_text, caps_mark, caps_home, caps_np, icons_mono,
         icons_badge_muted, icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
@@ -175,13 +165,7 @@ typedef struct {
         set_top, np_bar, np_scrub;
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */
-    /* A streaming page's tilted cover: its corner rows on its widget (cover_tilt, 1/10 px); its
-     * reflection's paper alpha (of 256, 0: none) until a widget row, then rising to opaque at the
-     * widget's last */
     unsigned np_rows[4][NP_ROWS]; /* SCRUB_ROWS: 0xAARRGGBB; dark track, fill, light track, fill */
-    short np_mark;                /* ... the scrub's diamond's half size, centred this far down */
-    short np_tilt_tl, np_tilt_tr, np_tilt_br, np_tilt_bl, np_reflect,
-        np_reflect_from;
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:
      * HOME_PLACEHOLDER. pane_shadow is
      * 0xRRGGBB, the shadow down its left edge; _w in columns, _a each column's alpha. pane_light_a
@@ -203,8 +187,6 @@ typedef struct {
     unsigned char n_schemes; /* ACCENT_N, then the theme's own (Classic: 10) */
     const option_t *opts;    /* Appearance rows after Theme, in order */
     unsigned char n_opts;
-    const elem_t *elems; /* the widgets it places, a container before its children */
-    unsigned char n_elems;
     unsigned undeclared;     /* SETTING_* bits of the theme options it does not declare */
     unsigned char np_layout; /* NP_* */
     cf_style_t cf;
@@ -219,34 +201,9 @@ int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stor
 const scheme_t *scheme(void);     /* theme()'s scheme accent(), in the half Light Mode picks */
 int client_h(void); /* the window under the bar of the set theme_boot wrote (navigation.c) */
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s); /* navigation.c */
-/* coverflow.c: the tilted cover's frame on w, and letting it go */
-int cover_tilt(void *w, void *canvas, const char *file, unsigned paper, int bake);
-void cover_tilt_close(void);
-/* The rows painter: the track across w, the played part over its first fill_w px, a diamond at
- * fill_w when mark is set; final colours (Spotify, Internet Radio, the volume panel, a card app). */
-void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w, int mark);
-/* A page of the payload's own on the playing view: w takes that element's place and style.
- * 0 when the theme doesn't place it. */
-enum {
-    PLACE_COVER,
-    PLACE_TITLE,
-    PLACE_ARTIST,
-    PLACE_ALBUM,
-    PLACE_ELAPSED,
-    PLACE_REMAIN,
-    PLACE_BAR,
-    PLACE_TILT,
-    PLACE_POSITION,
-    PLACE_HEARTS
-};
-int theme_place(int place, void *w, void *root);
-/* A streaming page's tilted cover, and bar if it paints none itself (always full): page's tilt
- * shows file, redrawn when file, art or the half's paper changes. Each tick while the page is up.
- */
-void stream_cover(void *page, void *tilt, void *bar, const char *file, unsigned art);
-void stream_gone(void *tilt);
-void np_image(void *w, const char *glyph); /* the theme's named glyph in this half, on w */
-int theme_rect(int alias, int r[4]);
+/* The rows painter: the track across w, the played part over its first fill_w px; final colours
+ * (the volume panel away from Now Playing, a card app's progress). */
+void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w);
 /* 0xRRGGBB to an opaque color_t, whose bytes are r, g, b, a. */
 #define RGBA(c) (0xff000000u | ((c) & 255) << 16 | ((c) & 0xff00) | (c) >> 16)
 #endif

@@ -139,14 +139,14 @@ MINIMAL = {
     'page_row': 48, 'page_detail': 64, 'page_title_h': 48, 'page_x': 36, 'page_cap_y': 4, 'page_cap_h': 32, 'page_det_y': 36, 'page_det_h': 24,
     'id': 'minimal', 'index': 0, 'name': 'Minimal', 'accents': 0x1ff, 'accent_key': 'MINIMAL_ACCENT',
     'painter[PAINT_SELECTION]': 0, 'painter[PAINT_BAR]': 0, 'painter[PAINT_BATTERY]': 0, 'chevron_home': 0, 'chevron_sel': 0, 'caps_mark': 1, 'caps_home': 1, 'caps_np': 1,
-    'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'font[ROLE_NP_META]': 0, 'font_px[ROLE_NP_META]': 0, 'font[ROLE_INFO]': 0, 'font_px[ROLE_INFO]': 0, 'np_album_op': 0, 'np_state_op': 0,
+    'icons_mono': 1, 'icons_badge_muted': 1, 'icons_addon_mono': 1, 'font[ROLE_NP]': 0, 'font[ROLE_INFO]': 0, 'font_px[ROLE_INFO]': 0, 'np_album_op': 0, 'np_state_op': 0,
     'home_top': 8, 'home_full_row': 375, 'home_text_x': 39, 'home_label_end[0]': 8, 'home_label_end[1]': 33,
     'home_pane': (), 'pane_shadow': 0, 'pane_shadow_w': 0, 'pane_shadow_a': (), 'pane_light_a': 0, 'pane_icon_x': 0, 'pane_icon_y': 0, 'pane_note_x': 0, 'pane_note_y': 0, 'pane_count_y': 0, 'pane_count_w': 0, 'pane_count_px': 0, 'pane_svc_x': 0, 'pane_svc_y': 0, 'pane_svc_px': 0,
-    'set_top': 8, 'set_text': 0, 'painter[PAINT_SCRUB]': 0, 'painter[PAINT_VOLUME]': 0, 'painter[PAINT_CONFIRM]': 0, 'np_rows[0]': (), 'np_rows[1]': (), 'np_rows[2]': (), 'np_rows[3]': (), 'np_mark': 0, 'np_bar': 4, 'np_scrub': 8, 'np_track': (), 'np_tilt_tl': 0, 'np_tilt_tr': 0, 'np_tilt_br': 0, 'np_tilt_bl': 0, 'np_reflect': 0, 'np_reflect_from': 0, 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_HOME]': 0, 'font_px[ROLE_HOME]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'art_placeholder': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'letter_raw': 0, 'letter_px': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'sb_w': 0, 'sb_right': 0, 'sb_top': 0, 'sb_bottom': 0, 'sb_min': 0, 'sb_thumb': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'noart_stops': (), 'noart_note': (), 'noart_band_a': 0, 'noart_shadow_a': 0, 'ctl_light_on': 0, 'ctl_dark_on': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
+    'set_top': 8, 'set_text': 0, 'painter[PAINT_SCRUB]': 0, 'painter[PAINT_VOLUME]': 0, 'painter[PAINT_CONFIRM]': 0, 'np_rows[0]': (), 'np_rows[1]': (), 'np_rows[2]': (), 'np_rows[3]': (), 'np_bar': 4, 'np_scrub': 8, 'np_track': (), 'font[ROLE_TITLE]': 0, 'font[ROLE_META]': 0, 'font_px[ROLE_TITLE]': 0, 'font_px[ROLE_META]': 0, 'font_px[ROLE_NP]': 0, 'font[ROLE_HOME]': 0, 'font_px[ROLE_HOME]': 0, 'font[ROLE_BAR]': 0, 'font_px[ROLE_BAR]': 0, 'art_square': 0, 'art_x': 0, 'art_text_x': 0, 'art_text_end': 0, 'art_placeholder': 0, 'row_text_end': 0, 'sep': (), 'font[ROLE_TALL]': 0, 'font_px[ROLE_TALL]': 0, 'chevron_x': 0, 'home_chevron_x': 0, 'letter_raw': 0, 'letter_px': 0, 'batt': (), 'batt_empty': (), 'batt_low': 0, 'batt_low_w': 0, 'batt_line': 0, 'batt_edge': 0, 'batt_corner_a': 0, 'batt_foot_a': 0, 'batt_shade_a': 0, 'batt_soft_a': 0, 'batt_soft_top_a': 0, 'batt_emboss_a': 0, 'batt_emboss_nub_a': 0, 'bar_bt_dy': 0, 'bar_wifi_dy': 0, 'sb_w': 0, 'sb_right': 0, 'sb_top': 0, 'sb_bottom': 0, 'sb_min': 0, 'sb_thumb': 0, 'bolt': 0, 'bolt_halo_a': 0, 'state_stops': (), 'state_edge': (), 'state_halo_light': 0, 'state_halo_dark': 0, 'light': {}, 'np_layout': 0, 'geom_set': 'ipod', 'geoms': {},
     'schemes': [{**MINIMAL_ROLES, 'raw_red': int(v == 1), 'card': int(v == 7)} for v in range(9)],
     'opts': [opt('SETTING_LIGHT', preset=0, keep=2), opt('SETTING_ACCENT', default=7, preset=0),
              opt('SETTING_ROUNDED', preset=1), opt('SETTING_HOME', preset=0), opt('SETTING_SHORTCUT'),
-             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], 'undeclared': [], 'elems': [], **CF_TODAY}
+             opt('SETTING_BATTERY'), opt('SETTING_TIMETITLE', preset=1), opt('SETTING_NPCENTRED')], 'undeclared': [], **CF_TODAY}
 # Modern: the hand-written table's Classic, before Classic took Classic Light's look.
 MODERN = {
     **MINIMAL, 'id': 'modern', 'index': 2, 'name': 'Modern', 'accents': 0x17f, 'accent_key': 'ACCENT',
@@ -419,13 +419,13 @@ def test_resolve_takes_a_long_name():
 
 MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'), ('painter[PAINT_BAR]', 'BAR_FLAT'), ('painter[PAINT_BATTERY]', 'BATT_STOCK'), ('chevron_home', 0), ('chevron_sel', 0), ('art_x', 0), ('art_text_x', 0), ('art_text_end', 0), ('art_placeholder', 0), ('row_text_end', 0), ('sep', '{{0}, {0}}'), ('font[ROLE_TALL]', 'FONT_DEFAULT'), ('font_px[ROLE_TALL]', 0), ('chevron_x', 0), ('home_chevron_x', 0), ('letter_raw', 0), ('letter_px', 0), ('caps_mark', 1),
                   ('caps_home', 1), ('caps_np', 1), ('icons_mono', 1), ('icons_badge_muted', 1), ('icons_addon_mono', 1),
-                  ('font[ROLE_NP]', 'FONT_DEFAULT'), ('font_px[ROLE_NP]', 0), ('font[ROLE_NP_META]', 'FONT_DEFAULT'), ('font_px[ROLE_NP_META]', 0), ('font[ROLE_INFO]', 'FONT_DEFAULT'), ('font_px[ROLE_INFO]', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
-                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font[ROLE_HOME]', 'FONT_DEFAULT'), ('font_px[ROLE_HOME]', 0), ('home_pane', '{{0}, {0}}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('pane_svc_x', 0), ('pane_svc_y', 0), ('pane_svc_px', 0), ('set_top', 8), ('set_text', 0), ('painter[PAINT_SCRUB]', 'SCRUB_STOCK'), ('painter[PAINT_VOLUME]', 'VOL_STOCK'), ('painter[PAINT_CONFIRM]', 'CONFIRM_STOCK'), ('np_rows[0]', '{0}'), ('np_rows[1]', '{0}'), ('np_rows[2]', '{0}'), ('np_rows[3]', '{0}'), ('np_mark', 0), ('np_bar', 4),
-                  ('np_scrub', 8), ('np_track', '{{0}, {0}}'), ('np_tilt_tl', 0), ('np_tilt_tr', 0), ('np_tilt_br', 0), ('np_tilt_bl', 0), ('np_reflect', 0), ('np_reflect_from', 0), ('art_square', 0), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
+                  ('font[ROLE_NP]', 'FONT_DEFAULT'), ('font_px[ROLE_NP]', 0), ('font[ROLE_INFO]', 'FONT_DEFAULT'), ('font_px[ROLE_INFO]', 0), ('np_album_op', 0), ('np_state_op', 0), ('home_top', 8), ('home_full_row', 375),
+                  ('home_text_x', 39), ('home_label_end[0]', 8), ('home_label_end[1]', 33), ('font[ROLE_HOME]', 'FONT_DEFAULT'), ('font_px[ROLE_HOME]', 0), ('home_pane', '{{0}, {0}}'), ('pane_shadow', 0), ('pane_shadow_w', 0), ('pane_shadow_a', '{0}'), ('pane_light_a', 0), ('pane_icon_x', 0), ('pane_icon_y', 0), ('pane_note_x', 0), ('pane_note_y', 0), ('pane_count_y', 0), ('pane_count_w', 0), ('pane_count_px', 0), ('pane_svc_x', 0), ('pane_svc_y', 0), ('pane_svc_px', 0), ('set_top', 8), ('set_text', 0), ('painter[PAINT_SCRUB]', 'SCRUB_STOCK'), ('painter[PAINT_VOLUME]', 'VOL_STOCK'), ('painter[PAINT_CONFIRM]', 'CONFIRM_STOCK'), ('np_rows[0]', '{0}'), ('np_rows[1]', '{0}'), ('np_rows[2]', '{0}'), ('np_rows[3]', '{0}'), ('np_bar', 4),
+                  ('np_scrub', 8), ('np_track', '{{0}, {0}}'), ('art_square', 0), ('font[ROLE_TITLE]', 'FONT_DEFAULT'), ('font[ROLE_META]', 'FONT_DEFAULT'),
                   ('font_px[ROLE_TITLE]', 0), ('font_px[ROLE_META]', 0), ('font[ROLE_BAR]', 'FONT_DEFAULT'), ('font_px[ROLE_BAR]', 0),
                   ('batt', '{0}'), ('batt_line', '{0, 0}'), ('batt_empty', '{0}'), ('batt_low', 0), ('batt_low_w', 0), ('batt_edge', 0), ('batt_corner_a', 0), ('batt_foot_a', 0), ('batt_shade_a', 0), ('batt_soft_a', 0), ('batt_soft_top_a', 0), ('batt_emboss_a', 0), ('batt_emboss_nub_a', 0), ('bar_bt_dy', 0), ('bar_wifi_dy', 0), ('sb_w', 0), ('sb_right', 0), ('sb_top', 0), ('sb_bottom', 0), ('sb_min', 0), ('sb_thumb', '{0, 0}'),
                   ('accent_slot', '&st.minimal_accent'), ('accent_key', '"MINIMAL_ACCENT"'),
-                  ('schemes', 'minimal_schemes'), ('light', 'minimal_schemes'), ('n_schemes', 9), ('opts', 'minimal_opts'), ('n_opts', 8), ('elems', 0), ('n_elems', 0),
+                  ('schemes', 'minimal_schemes'), ('light', 'minimal_schemes'), ('n_schemes', 9), ('opts', 'minimal_opts'), ('n_opts', 8),
                   ('undeclared', 0), ('np_layout', 'NP_IPOD'),
                   *CF_TODAY.items(), ('page_row', 48), ('page_detail', 64), ('page_title_h', 48), ('page_x', 36), ('page_cap_y', 4), ('page_cap_h', 32), ('page_det_y', 36), ('page_det_h', 24), ('geom', 0),
                   *((f'motion[MOTION_{k}].hint', 0) for k in ('PAGE', 'PAYLOAD', 'PLAYING', 'DIALOG', 'COVERFLOW', 'HOME')),
@@ -455,9 +455,6 @@ def test_emit(tmp_path):
         '    { .setting = SETTING_TIMETITLE, .def = -1, .preset = 1, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_NPCENTRED, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
         '};',
-        'enum { VIEW_PLAYING, VIEW_N };',
-        'enum { ' + ', '.join(f'E_PLAYING_{a.upper()}' for a in theme.ALIASES['playing']) + ', ELEM_N };',
-        'static const char *const elem_widgets[ELEM_N] = {' + ', '.join(f'"{w}"' for w in theme.ALIASES['playing'].values()) + '};',
         'static const theme_t themes[THEME_N] = {',
         '    {', *(f'        .{k} = {v},' for k, v in MINIMAL_FIELDS), '    },',
         '};', '']))
@@ -469,7 +466,7 @@ def test_emit_both(tmp_path):
     assert [l.split(' = ')[0] for l in text.splitlines() if l.startswith('static const')] == [
         'static const scheme_t minimal_schemes[]', 'static const option_t minimal_opts[]',
         'static const scheme_t modern_schemes[]', 'static const option_t modern_opts[]',
-        'static const char *const elem_widgets[ELEM_N]', 'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
+        'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
     assert ('    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000, '
             '.sel = {0}, .sel_top = 0x000000, .sel_edge = 0x000000, .sel_tall_edge = 0x000000, .sel_tall_line = 0x000000, .sel_tall_top = 0x000000, .sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, '
             '.ink = 0x161616, .bar = {0}, .bar_line = 0x000000, .bar_line2 = 0x000000 },\n    { .tones = accents[8]') in text
@@ -494,80 +491,6 @@ def test_playing_layout_rejects_unknown():
 def test_emit_np_layout(tmp_path):
     theme.emit(theme.builtins(), tmp_path)
     assert (tmp_path/'themes.inc').read_text().count('.np_layout = NP_IPOD,') == 3
-
-
-# Placed widgets: Q2 Pod aliases with typed, whitelisted properties; the rect clears the glass.
-def test_placed_element_resolves():
-    t = resolved('<view name="playing"><element name="artist" x="188" y="78" w="173" h="20" color="#393c39" align="left"/></view>')
-    theme.validate(t, 't.xml')
-    assert t['elems'] == [{'view': 'playing', 'alias': 'artist', 'x': 188, 'y': 78, 'w': 173, 'h': 20, 'visible': None,
-                           'opacity': None, 'font': None, 'font_size': None, 'color': 0xff393c39, 'align': 0}]
-
-
-def test_placed_schema_key_wins():  # playing.album.opacity stays theme_t.np_album_op
-    t = resolved('<view name="playing"><element name="album" opacity="0" x="188" y="98" w="173" h="20"/></view>')
-    assert t['np_album_op'] == 0 and t['elems'][0]['opacity'] is None
-
-
-def test_classic_light_cover_clears_the_glass():  # the cover's four corners and the reflection's foot, on their screen rows
-    t = next(t for t in theme.builtins() if t['id'] == 'classic-light')
-    e = next(e for e in t['elems'] if e['alias'] == 'tilt')
-    top = t['geoms'][t['geom_set']].bar + e['y']
-    for room, corners in ((e['x'], ('tl', 'bl')), (375 - e['x'] - e['w'], ('tr', 'br'))):
-        for row in (*(top + t[f'np_tilt_{c}'] // 10 for c in corners), top + e['h']):
-            assert room >= ipod.corner_inset(row), (room, row)
-    assert (e['x'], e['x'] + e['w'], top + t['np_tilt_tl'] / 10, top + t['np_tilt_tr'] / 10, top + t['np_tilt_br'] / 10, top + t['np_tilt_bl'] / 10, top + e['h']) == (10, 171, 44.6, 56.9, 197.3, 204.1, 276)
-
-
-TILT = '<view name="playing"><element name="slides" x="0" y="0" w="375" h="280"/><element name="tilt" x="{x}" y="{y}" w="{w}" h="{h}" tl="{tl}" tr="129" br="1533" bl="1601"/></view>'
-
-
-@pytest.mark.parametrize('values, message', [
-    (dict(x=10, y=14, w=161, h=236, tl=6), 'left edge at row 40.6 crosses the glass (10 from the side, needs 11)'),  # the cover's y before it moved 4 px down
-    (dict(x=2, y=18, w=161, h=232, tl=6), 'left edge at row 44.6 crosses the glass (2 from the side, needs 9)'),
-    (dict(x=205, y=18, w=168, h=232, tl=6), 'right edge at row 56.9 crosses the glass (2 from the side, needs 4)'),
-])
-def test_tilt_past_the_glass_fails_the_build(values, message):
-    def tilted():
-        t = resolved(TILT.format(**values))
-        t['geoms'], t['geom_set'] = {'classic-light': ipod.Geometry(name='classic-light', bar=26)}, 'classic-light'
-        return t
-    assert message in error(lambda: theme.validate(tilted(), 't.xml'))
-
-
-def test_tilt_clear_of_the_glass_passes():
-    theme.validate(next(t for t in theme.builtins() if t['id'] == 'classic-light'), 't.xml')
-
-
-def test_placed_slides_first():  # containers move before the children converted against them; slides spans the glass, its pages' content clears it
-    t = resolved('<view name="playing"><element name="cover" x="14" y="21" w="152" h="152"/>'
-                 '<element name="slides" x="0" y="21" w="375" h="192"/></view>')
-    theme.validate(t, 't.xml')
-    assert [e['alias'] for e in t['elems']] == ['slides', 'cover']
-
-
-@pytest.mark.parametrize('attrs, message', [
-    ('name="artist" x="50%" y="78" w="173" h="20"', 'playing.artist.x: expected an integer'),
-    ('name="artist" x="188"', 'playing.artist: x, y, w and h go together'),
-    ('name="artist" x="2" y="0" w="173" h="20"', 'playing.artist: 2..175 at y 30..50 crosses the glass (22..353)'),
-    ('name="artist" x="188" y="280" w="173" h="20"', 'playing.artist: y 280 + h 20 exceeds the client height 290'),
-    ('name="artist" opacity="255"', 'playing.artist.opacity: 255 outside 0..254'),
-    ('name="artist" align="justify"', 'playing.artist.align: unknown value justify'),
-    ('name="artist" caps="1"', 'unknown key playing.artist.caps'),
-    ('name="slider_play" x="0"', 'unknown element playing.slider_play'),
-])
-def test_placed_rejects(attrs, message):
-    t = error(lambda: theme.validate(resolved(f'<view name="playing"><element {attrs}/></view>'), 't.xml'))
-    assert t.endswith(message), t
-
-
-def test_emit_elements(tmp_path):
-    theme.emit(theme.builtins(), tmp_path)
-    text = (tmp_path/'themes.inc').read_text()
-    assert 'enum { VIEW_PLAYING, VIEW_N };' in text
-    assert '{VIEW_PLAYING, E_PLAYING_ARTIST, 187, 82, 173, 20, 255, 255, FONT_CLASSIC_LIGHT, 22, 0xffc6c3c6, 255}' in text
-    assert text.count('.elems = 0,') == 2 and text.count('.n_elems = 0,') == 2  # Minimal and Modern
-    assert 'static const char *const elem_widgets[ELEM_N] = {"slide_view_view", "scrlabel_title", "scrlabel_artist", ' in text
 
 
 def test_view_attr():
@@ -1209,12 +1132,6 @@ def test_emit_classic_light_sets(tmp_path):
     assert re.findall(r'\.geom = (\d+)', inc) == ['0', '1', '0'] and '.accent_slot = &st.own[0],' in inc
 
 
-def test_classic_light_hearts_hit_area():
-    rows = {e['alias']: e for t in theme.builtins() if t['id'] == 'classic-light' for e in t['elems']}
-    hearts = rows['hearts']
-    assert (hearts['x'], hearts['y'] + 6, hearts['w']) == (188, 126, 96) and hearts['h'] >= 30  # the row at the approved place
-
-
 def test_rows_key():
     t = theme.builtins()[1]
     assert t['painter[PAINT_VOLUME]'] == 1
@@ -1224,11 +1141,6 @@ def test_rows_key():
     assert t['np_rows[2]'][0] == 0xffe7e7e7 and t['np_rows[0]'][17] == 0x56424142  # #rrggbb is opaque, #rrggbbaa its own alpha
     with pytest.raises(theme.ThemeError, match='up to 31'):
         resolved('<view name="playing"><element name="scrubber" light_track="#12345"/></view>')
-
-
-def test_classic_light_labels_hold_their_fonts():
-    rows = {e['alias']: e for t in theme.builtins() if t['id'] == 'classic-light' for e in t['elems']}
-    assert all(rows[a]['h'] >= rows[a]['font_size'] for a in ('position', 'elapsed', 'remain'))  # else a label draws nothing
 
 
 def test_easings_are_awtk():

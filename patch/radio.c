@@ -155,9 +155,8 @@ static struct {
 } ui __attribute__((section(".scratch")));
 
 static struct {
-    void *page, *station, *artist, *song, *info, *elapsed, *heart, *tilt, *bar;
+    void *page, *station, *artist, *song, *info, *elapsed, *heart;
     unsigned timer, leave, seen; /* seen: rd.serial the heart shows */
-    int fav, hours;              /* hours: the time in its small size */
 } np __attribute__((section(".scratch")));
 
 static void list_free(list_t *l) {
@@ -395,20 +394,16 @@ static void np_refresh(void) {
     memcpy(artist, rd.title, a);
     artist[a] = 0;
     set(np.station, rd.list.n ? name_of(&rd.list, rd.at) : "");
-    theme_font(np.station, ROLE_TALL, FONT_ROW); /* the local page's title; by its text */
     set(np.artist, artist);
-    theme_font(np.artist, ROLE_NP_META, FONT_ROW); /* the local page's; by their text */
     if (np.seen != rd.serial && rd.list.n) {
         list_t favs = { 0 };
         favs_read(&favs, 0);
         np.seen = rd.serial;
-        np.fav = fav_index(&favs, url_of(&rd.list, rd.at)) >= 0;
-        if (!np.tilt) image_base_set_image(np.heart, np.fav ? "play_fav" : "play_unfav");
+        image_base_set_image(np.heart, fav_index(&favs, url_of(&rd.list, rd.at)) < 0 ? "play_unfav"
+                                                                                     : "play_fav");
         list_free(&favs);
     }
-    if (np.tilt) np_image(np.heart, np.fav ? "hearts1" : "hearts0");
     set(np.song, song);
-    theme_font(np.song, ROLE_NP_META, FONT_ROW);
     if (!rd.pid)
         tk_snprintf(t, sizeof t,
                     tk_strcmp(rd.state, "error") ? "Stopped"
@@ -420,24 +415,10 @@ static void np_refresh(void) {
     else
         tk_snprintf(t, sizeof t, rd.bitrate[0] ? "%s  %s kbps" : "%s", rd.codec, rd.bitrate);
     set(np.info, t);
-    theme_font(np.info, ROLE_NP_META, FONT_ROW);
     t[0] = 0;
-    int sec = 0;
-    if (rd.pid && rd.since) {
-        sec = (int)((unsigned)(now_ms() - rd.since) / 1000); /* 32-bit: 49 days */
-        toolsTimeItoa(t, sec);
-    }
+    if (rd.pid && rd.since)
+        toolsTimeItoa(t, (int)((unsigned)(now_ms() - rd.since) / 1000)); /* 32-bit: 49 days */
     set(np.elapsed, t);
-    if (!np.tilt) return;
-    /* An hour's h:mm:ss outgrows the time's box, the bar right after it: the info role's small
-     * size. ponytail: ten hours still clip; a stream that long has no one reading the seconds. */
-    if ((sec >= 3600) != np.hours) {
-        np.hours = sec >= 3600;
-        theme_place(PLACE_ELAPSED, np.elapsed, np.page);
-        if (np.hours)
-            widget_set_prop_int(np.elapsed, "style:normal:font_size", theme()->font_px[ROLE_INFO]);
-    }
-    stream_cover(np.page, np.tilt, np.bar, "classic_light_station", 0);
 }
 
 static int np_tick(const void *unused) {
@@ -458,7 +439,6 @@ static int np_keyup(void *ctx, void *event) {
 static int np_closed(void *ctx, void *event) {
     stop_timer(&np.timer);
     stop_timer(&np.leave);
-    if (np.tilt) stream_gone(np.tilt);
     memset(&np, 0, sizeof np);
     return 0;
 }
@@ -474,8 +454,8 @@ static int np_heart(void *ctx, void *event) {
 static void np_open(void) {
     if (np.page || !(np.page = page_open("radionp_page", np_closed, np_keyup))) return;
     void *page = np.page;
-    void *name = label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
-    widget_set_text_utf8(name, "Internet Radio");
+    widget_set_text_utf8(label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY),
+                         "Internet Radio");
     void *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
@@ -485,12 +465,6 @@ static void np_open(void) {
                       0xff000000u | NP_ARTIST_RGB);
     np.song = label(page, SPOT_TEXT_X, SPOT_ART_Y + 103, SPOT_TEXT_W, 22, "s_scrlabel_white20l", NP_META_PX,
               0xff000000u | NP_ALBUM_RGB);
-    if (theme()->np_tilt_bl) {
-        np.tilt = widget_factory_create_widget(widget_factory(), "view", page, 0, 0, 0, 0);
-        widget_set_sensitive(np.tilt, 0);
-        theme_place(PLACE_TILT, np.tilt, page);
-        widget_set_visible(art, 0, 0);
-    }
     np.info = label(page, SPOT_TIME_X, SPOT_TIMES_Y, 375 - 2 * SPOT_TIME_X - 80, 16, "s_scrlabel_white20l", 14, SPOT_GREY);
     np.elapsed = label(page, 375 - SPOT_TIME_X - 80, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20r",
                        14, SPOT_GREY);
@@ -500,21 +474,6 @@ static void np_open(void) {
     image_set_draw_type(np.heart, IMAGE_DRAW_CENTER);
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);
-    /* A theme's playing view places them as on the local page, its bar naming the page: the stream
-     * in the position's place, the time on the left of a bar that is always full, painted, and that
-     * no wheel moves. */
-    if (theme_place(PLACE_COVER, art, page)) widget_set_visible(name, 0, 0);
-    theme_place(PLACE_TITLE, np.station, page);
-    theme_place(PLACE_ARTIST, np.artist, page);
-    theme_place(PLACE_ALBUM, np.song, page);
-    theme_place(PLACE_POSITION, np.info, page);
-    theme_place(PLACE_ELAPSED, np.elapsed, page);
-    theme_place(PLACE_HEARTS, np.heart, page);
-    if (np.tilt) {
-        np.bar = widget_factory_create_widget(widget_factory(), "view", page, 0, 0, 0, 0);
-        widget_set_sensitive(np.bar, 0);
-        theme_place(PLACE_BAR, np.bar, page);
-    }
     np.seen = ~rd.serial;
     np.timer = timer_add(np_tick, 0, 500);
     np_refresh();

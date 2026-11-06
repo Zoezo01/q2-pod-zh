@@ -275,49 +275,9 @@ def icon(d, fit):
 
 
 NOTE_BOX = (222, 66, 100, 115)  # the drawing's viewBox
-# The generic cover (playing.noart), an original drawing on a 320 px square, drawn at the size it fills: the
-# light band across its top, and the note. The note's gradient and the shadow are stated at 160 px.
-NOART_BAND = 'M0 0H320V64L240 80 0 120Z'
-NOART_NOTE = ('M105 64 238 38V226C238 243 222 250 203 250 184 250 170 240 172 224 174 205 196 193 224 198V101L120 125 119 244'
-              'C118 258 102 268 84 268 66 268 52 258 54 244 56 224 78 212 105 218Z')
-NOART_STATION = ('M96 86a90 90 0 0 0 0 110l18-14a66 66 0 0 1 0-82ZM224 86a90 90 0 0 1 0 110l-18-14a66 66 0 0 0 0-82Z'
-                 'M126 108a50 50 0 0 0 0 66l16-13a28 28 0 0 1 0-40ZM194 108a50 50 0 0 1 0 66l-16-13a28 28 0 0 0 0-40Z'
-                 'M160 118a23 23 0 1 1-.1 0ZM150 170h20l28 100h-76Z')  # Internet Radio's: a mast, in the note's place
-NOART_NOTE_Y = (19, 134)  # the note's gradient's ends, in the image's rows
-NOART_SHADOW = (1.5, 2.5)  # the shadow: rows down, and its blur's standard deviation in px
-@functools.cache
-def noart(stops, note_stops, band_a, shadow_a, size=160, shape=NOART_NOTE):
-    """The generic cover's RGBA bytes, size px square: its rows' gradient, the band, the note (or shape) over its soft shadow."""
-    scale = size / 160
-    placed = lambda d: [[(x * scale / 2, y * scale / 2) for x, y in poly] for poly in path(d)]
-    box = (0, 0, size, size)
-    note_shape, down, sd, reach = placed(shape), NOART_SHADOW[0] * scale, NOART_SHADOW[1] * scale, round(8 * scale)
-    held = coverage([[(x, y + down) for x, y in poly] for poly in note_shape], box)
-    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
-    total = sum(kernel)
-    at = lambda v, x, y: v[max(0, min(size - 1, y)) * size + max(0, min(size - 1, x))]
-    across = [sum(w * at(held, x + k - reach, y) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
-    shadow = [sum(w * at(across, x, y + k - reach) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
-    whole = [[(0, 0), (size, 0), (size, size), (0, size)]]
-    fill, ink = gradient(stops, 0, size), gradient(note_stops, *(y * scale for y in NOART_NOTE_Y))
-    return compose(box, [(whole, lambda x, y: (fill(y), 1)),
-                         (placed(NOART_BAND), lambda x, y: (0xffffff, band_a / 255)),
-                         (whole, lambda x, y: (0, shadow[int(y) * size + int(x)] * shadow_a / 255)),
-                         (note_shape, lambda x, y: (ink(y), 1))])
 STATE = {'play': 'M270.5 4.5 282.5 11.5 270.5 18.5Z', 'pause': 'M270.5 4.5H275V18.5H270.5ZM278 4.5H282.5V18.5H278Z'}
 STATE_BOX = (266, 0, STATE_W, 22)  # the frame the state art is drawn in, on the bar's rows; the art itself is position-free
 STATE_Y = (4, 19)  # the fill's and edge's first and last rows
-
-
-# A radio's heart (playing.hearts): the row left-aligned in its 96 x 30 tap area, 16 x 15 each, 4 px apart, 6 rows down
-HEART = 'M8 14C3 10 1 7.5 1 4.8 1 1 6 0 8 3.6 10 0 15 1 15 4.8 15 7.5 13 10 8 14Z'
-HEARTS_BOX = (0, -6, 96, 30)
-@functools.cache
-def hearts(n, rgb):
-    """n filled hearts, or with 0 one outline."""
-    at = lambda i: [[(x + 20 * i, y) for x, y in poly] for poly in path(HEART)]
-    shapes = [q for i in range(n) for q in at(i)]
-    return png(*HEARTS_BOX[2:], compose(HEARTS_BOX, [(shapes + stroke(shapes or at(0), 1.4), lambda x, y: (rgb, 1))]))
 
 
 # The volume's speakers and the slider pages' suns, their boxes the image; drawn on the bar and page in these colours.
@@ -884,12 +844,6 @@ def images(t):
     drawing = ROOT/f'assets/themes/{t["id"]}/note.svg'
     if drawing.exists():
         out[f'{prefix}_note'] = png(*NOTE_BOX[2:], note(drawing.read_text()))
-    if t['ctl_light_on']:  # a radio's heart, empty or full
-        for half, on in (('l', t['ctl_light_on']), ('d', t['ctl_dark_on'])):
-            out |= {f'{prefix}_hearts{n}_{half}': hearts(n, on) for n in range(2)}
-    if t['noart_stops']:
-        out[f'{prefix}_cover'] = png(160, 160, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], 160))
-        out[f'{prefix}_station'] = png(160, 160, noart(t['noart_stops'], t['noart_note'], t['noart_band_a'], t['noart_shadow_a'], 160, NOART_STATION))
     if t['pane_icon_x']:
         for name, d in PANE_ICONS.items():
             fit = name != 'note'

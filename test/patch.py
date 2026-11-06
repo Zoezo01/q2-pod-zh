@@ -10567,35 +10567,6 @@ def loaded(name):
     return [m.text(c[1]) for c in m.calls if c[0]=='stock_ui_load']
 assert loaded('playing_page')==['playing_page_stock'] and loaded('home_page')==['home_page']
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert loaded('playing_page')==['playing_page']; passed()
-# A streaming page's tilted cover (coverflow.c tilt_render), drawn into one frame: tilt_twin is its twin, tilt_page
-# a Classic Now Playing to open the streaming pages over.
-def tilt_shade(p,b): return ((p&0xff00ff)*b>>8&0xff00ff)|((p&0xff00)*b>>8&0xff00)
-def tilt_mix(a,b,w): return tilt_shade(a,256-w)+tilt_shade(b,w)
-def tilt_texel(tex,u,v):
-    last=159<<8; u=max(0,min(u-128,last)); v=max(0,min(v-128,last)); i=(v>>8)*160+(u>>8); r=int(u<last); d=160 if v<last else 0
-    return tilt_mix(tilt_mix(tex[i],tex[i+r],u&255),tilt_mix(tex[i+d],tex[i+d+r],u&255),v&255)
-TILT=dict(x=10,y=18,w=161,h=232,tl=6,tr=129,br=1533,bl=1601,reflect=128,reflect_from=153)
-def tilt_twin(tex,paper):  # coverflow.c tilt_render
-    w,h,tl,tr,br,bl,edge,fr=[TILT[k] for k in ('w','h','tl','tr','br','bl','reflect','reflect_from')]; left,right=bl-tl,br-tr; out=[0]*(w*h)
-    for c in range(w):
-        t=2*c+1; rest=2*w-t; top=(tl*rest+tr*t)*64//(5*w); bottom=(bl*rest+br*t)*64//(5*w); u=((t*right)<<11)//(rest*left+t*right)*20
-        for y in range(h):
-            f,e=max(y<<8,top),min((y+1)<<8,bottom); px=paper
-            if (y+1)<<8>bottom:  # under the bottom edge: the cover mirrored about it, under the paper
-                a=edge if y<fr else edge+(256-edge)*(2*(y-fr)+1)//(2*(h-fr))
-                px=tilt_mix(tilt_texel(tex,u,(160<<8)-max(0,(y<<8)+128-bottom)*(160<<8)//(bottom-top)),paper,a)
-            if e>f: px=tilt_mix(px,tilt_texel(tex,u,max(0,(y<<8)+128-top)*(160<<8)//(bottom-top)),e-f)
-            out[y*w+c]=px|0xff000000
-    return struct.pack(f'<{w*h}I',*out)
-def tilt_page(light='1',cls=None):
-    SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT=light),k)]; tm=(cls or DepthMachine)(queue=3,pos=1); SETUP.clear()
-    tm.cov=tm.node('image','img_cover',image='file:///tmp/a.jpg'); tm.tilt=tm.node('view','np_tilt')
-    for k,v in (('W_W',TILT['w']),('W_H',TILT['h'])): tm.word(tm.tilt+O[k],v)
-    win=tm.node('window','playing_page',[tm.tilt,tm.cov]); tm.word(win+O['W_PARENT'],tm.wm)
-    for w in (tm.tilt,tm.cov): tm.word(w+O['W_PARENT'],win)
-    tm.top=win; tm.handlers[playing+12]='stock_playing'; tm.word(syms['system_bar'],tm.node('window','system_bar'))
-    assert tm.call(address=playing,args=(win,7,0,0),gap=0)==0; return tm
-def tilt_tex(tm,url,w=160,h=160): return struct.unpack(f'<{w*h}I',bytes(tm.u.mem_read(tm.pixels[url],w*h*4)))
 # Geometry sets: the first system_bar load rewrites only the stock immediates whose set value differs.
 settings_m=m  # the Appearance cases go on with it below
 from build import segments
@@ -10644,28 +10615,6 @@ m=Machine(); m.record_syscalls(); m.handlers[int(manifest['patch_symbols']['stoc
 def redirect(name): m.word(payload_syms['ui_redirects'],m.string(name)); m.u.mem_write(payload_syms['ui_redirects']+4,b'\1')
 redirect('system_bar'); assert loaded('system_bar')==['ipod_system_bar'] and loaded('home_page')==['home_page']
 redirect('dialog/volume_dialog'); assert loaded('dialog/volume_dialog')==['dialog/ipod_volume_dialog']; passed()
-# Classic's Now Playing is the iPod page: no element of the playing view lands on it
-# (they place the streaming pages' widgets, theme_place).
-class LoadMachine(Machine):
-    def __init__(self):
-        super().__init__(); self.root=0
-        self.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='load:stock_ui_load'
-    def hook(self,u,address,size,unused):
-        if self.handlers.get(address)!='load:stock_ui_load': return super().hook(u,address,size,unused)
-        self.calls.append(('stock_ui_load',u.reg_read(REGS[0]))); self.returns(self.root)
-def np_root(lm):  # the iPod page's places (tools/ipod.py playing_page)
-    def put(w,*g):
-        for k,v in zip(('W_X','W_Y','W_W','W_H'),g): lm.word(w+O[k],v)
-    artist=lm.node('hscroll_label','scrlabel_artist'); album=lm.node('view','view_album',[artist])
-    slide=lm.node('slide_view','slide_view',[album]); slides=lm.node('view','slide_view_view',[slide])
-    elapsed=lm.node('label','label_playtime'); root=lm.node('window','playing_page',[slides,elapsed])
-    for c,p in ((artist,album),(album,slide),(slide,slides),(slides,root),(elapsed,root)): lm.word(c+O['W_PARENT'],p)
-    put(slides,0,40,375,192); put(slide,0,0,375,186); put(album,0,0,375,186)
-    return root,artist,elapsed,slides
-lm=LoadMachine(); classic_light(lm); lm.root,artist,elapsed,slides=np_root(lm)
-lm.call(address=load,args=(lm.string('playing_page'),0,0,0),gap=0)
-assert [lm.text(c[1]) for c in lm.calls if c[0]=='stock_ui_load']==['playing_page']
-assert 'self_layout' not in lm.nodes[artist] and not did(lm,'widget_set_self_layout_params'); passed()
 # Classic's first system_bar writes its set (every pitch word 32) and loads the set's own bar.
 nm=Machine(); assert classic_light_boot(nm)==['classic-light_system_bar']
 assert {nm.get(a)&0xffff for a,v in SITES.items() if v=='pitch'}=={32}; passed()
@@ -14157,86 +14106,6 @@ assert m.nodes[icon]['image']=='stream_spotify' and m.nodes[label]['text']=='Spo
 page=spot_open(m,button); info,msg=m.nodes[page]['children']
 assert not m.nodes[info]['visible'] and m.nodes[msg]['visible'] and texts(msg)==["Spotify isn't on the card",'See the Q2 Pod guide to add it']
 m.poll(); assert not m.systems; m.close(); passed()
-# Spotify under Classic, its set written: art, bar and times at the playing view's places, its label and glyph hidden; the same bar.
-sp=classic_light_new(SpotMachine,files={BIN:bytearray()}); classic_light_boot(sp)
-assert sp.call(address=payload_syms['spot_np'],args=(0,0,0,0),gap=0,count=5_000_000)==0
-sp.page=sp.top
-sinfo=sp.nodes[sp.top]['children'][0]
-slabel,sglyph,sart,_,sartist,salbum,stilt,sbar,selapsed,sremain=sp.nodes[sinfo]['children'][:10]
-srect=lambda w:[signed(sp.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H')]
-assert srect(sart)==[15,19,156,160] and srect(sbar)==[63,213,248,43] and srect(selapsed)==[18,217,45,24] and srect(sremain)==[311,217,50,24]
-assert srect(stilt)==[10,18,161,232] and sp.nodes[slabel]['visible']==0 and sp.nodes[sglyph]['visible']==0
-# the cover is drawn on its own view, from the image the hidden art holds, as on the local page
-assert sp.nodes[sart]['visible']==0 and not [c for c in sp.calls if c[0]=='widget_set_opacity' and c[1] in (sart,sbar)]
-assert sp.nodes[sart]['image']=='classic_light_cover'  # no cover: the theme's generic one, as on the local page
-stitle=sp.node('hscroll_label','label_title'); sbarw=classic_light_bar(sp,stitle)
-sp.call(address=HOOKS['widget_on_paint_background'][0],args=(sbarw,sp.canvas,0,0),gap=0); assert sp.nodes[stitle]['text']=='Spotify'
-sp.bands=[]; sp.call(address=HOOKS['widget_on_paint_border'][0],args=(sbar,sp.canvas,0,0),gap=0)
-assert [b[:4] for b in sp.bands if b[2]==248]==[(0,6+i,248,1) for i in range(31)]; sp.close(); passed()
-# Its title is the local page's: the theme's face at the two-line row's 28 px, chosen each time the text changes, in the
-# local title's widget type and box. Cyrillic falls to the bold face and CJK to stock's, and the next Latin title comes back.
-STREAM_FACES=(('With You','classic-light'),('Навстречу','bold'),('日本語','default'),('Power Core','classic-light'))
-def stream_title(m,w,show):
-    assert m.nodes[w]['type']=='hscroll_label' and [signed(m.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[187,57,173,24]
-    for text,face in STREAM_FACES:
-        show(text); assert m.nodes[w]['text']==text
-        assert [(m.nodes[w][f'style:{s}:font_name'],m.nodes[w][f'style:{s}:font_size']) for s in ('normal','focused','disable')]==[(face,23 if face=='bold' else 28)]*3,text
-def spot_title_page(setup):
-    SETUP[:]=[setup]
-    try: k=SpotMachine({BIN:bytearray()})
-    finally: SETUP.clear()
-    page=spot_open(k,stream_page(k)); w=k.nodes[k.nodes[page]['children'][0]]['children'][3]
-    def show(text): k.state('playing',title=text); k.poll(); k.advance(0)
-    return k,w,show
-k,w,show=spot_title_page(classic_light); stream_title(k,w,show); k.close(); passed()
-# Its artist and album take the local page's role, Cyrillic in the bold fallback at 0.83 of 22 px; its cover, tilted as the
-# local page's on its view, from the image the hidden art holds. A new track's cover, in the same file, redraws it; leaving lets the frame go.
-k,w,show=spot_title_page(classic_light); kids=k.nodes[k.nodes[k.top]['children'][0]]['children']; kart,kartist,kalbum,ktilt=kids[2],kids[4],kids[5],kids[6]
-k.state('playing',title='Группа крови',artist='Виктор Цой',album='Кино'); k.poll(); k.advance(0)
-assert [(k.nodes[x]['style:normal:font_name'],k.nodes[x]['style:normal:font_size']) for x in (kartist,kalbum)]==[('bold',18)]*2
-def kpaint(): k.draws=[]; k.calls=[]; k.call(address=HOOKS['widget_on_paint_border'][0],args=(ktilt,k.canvas,0,0),gap=0)
-k.word(ktilt+O['W_W'],TILT['w']); k.word(ktilt+O['W_H'],TILT['h']); k.top=k.page if hasattr(k,'page') else k.top
-kpaint(); assert [k.text(c[2]) for c in k.calls if c[0]=='widget_load_image']==['classic_light_cover']
-assert k.draws[0][5]==tilt_twin(tilt_tex(k,'classic_light_cover'),0xffffff)
-kpaint(); assert not [c for c in k.calls if c[0]=='widget_load_image']  # a repaint only blits
-k.files[STATE+'.jpg']=bytearray(b'jpeg')
-for track in ('t2','t3'):
-    k.state('playing',track=track,cover=1); k.poll(); k.advance(0); assert [c for c in k.calls if c[0]=='widget_invalidate_force' and c[1]==ktilt],track
-    kpaint(); assert [k.text(c[2]) for c in k.calls if c[0]=='widget_load_image']==['file:///tmp/q2spot.jpg'],track
-    assert k.draws[0][5]==tilt_twin(tilt_tex(k,'file:///tmp/q2spot.jpg'),0xffffff)
-k.poll(); k.advance(0); assert not [c for c in k.calls if c[0]=='widget_invalidate_force' and c[1]==ktilt]  # the same track: no redraw
-k.calls=[]; k.close(); assert [c for c in k.calls if c[0]=='bitmap_destroy']; passed()
-# Light Auto's flip draws the frame again, over the other half's paper.
-k,w,show=spot_title_page(lambda c:(c.config.update(LIGHT='2'),classic_light(c))); ktilt=k.nodes[k.nodes[k.top]['children'][0]]['children'][6]
-k.word(ktilt+O['W_W'],TILT['w']); k.word(ktilt+O['W_H'],TILT['h']); k.state('playing'); k.poll(); k.advance(0); kpaint()
-assert k.draws[0][5]==tilt_twin(tilt_tex(k,'classic_light_cover'),0xffffff)
-k.poll(); k.advance(0); assert not [c for c in k.calls if c[0]=='widget_invalidate_force' and c[1]==ktilt]
-k.clock=(19,0); k.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0); k.poll(); k.advance(0)
-assert [c for c in k.calls if c[0]=='widget_invalidate_force' and c[1]==ktilt]
-kpaint(); assert k.draws[0][5]==tilt_twin(tilt_tex(k,'classic_light_cover'),0); k.close(); passed()
-# Two streaming pages, one frame. A page under another takes the slots only when none are held and never asks for a redraw;
-# the page on top takes them and does; a page coming back draws its own cover; closing the holder frees them.
-sm=tilt_page(); spa,spb=sm.node('window','a'),sm.node('window','b'); sta,stb=sm.node('view','a'),sm.node('view','b'); slocal=sm.top
-for t in (sta,stb): sm.word(t+O['W_W'],TILT['w']); sm.word(t+O['W_H'],TILT['h'])
-sfile={sta:sm.string('file:///tmp/a.jpg'),stb:sm.string('file:///tmp/b.jpg')}
-def scover(page,tilt):
-    sm.calls=[]; sm.call(address=payload_syms['stream_cover'],args=(page,tilt,0,sfile[tilt]),stack=(0,),gap=0,clear=False)
-    return [c[1] for c in sm.calls if c[0]=='widget_invalidate_force']
-def spaint(tilt):
-    sm.calls=[]; sm.draws=[]; sm.call(address=HOOKS['widget_on_paint_border'][0],args=(tilt,sm.canvas,0,0),gap=0,clear=False)
-    return len(sm.draws),[sm.text(c[2]) for c in sm.calls if c[0]=='widget_load_image']
-assert scover(spa,sta)==[] and spaint(sta)==(1,['file:///tmp/a.jpg'])  # none held: under the local page, it takes them
-assert scover(spb,stb)==[] and spaint(stb)==(0,[]) and spaint(sta)==(1,[])  # held: the other's stay
-sm.top=spb; assert scover(spb,stb)==[stb] and spaint(stb)==(1,['file:///tmp/b.jpg']) and spaint(sta)==(0,[])
-assert scover(spb,stb)==[]  # on top, its frame drawn
-sm.top=spa; assert scover(spb,stb)==[] and scover(spa,sta)==[sta] and spaint(sta)==(1,['file:///tmp/a.jpg'])  # back: its own
-sm.call(address=payload_syms['stream_gone'],args=(sta,0,0,0),gap=0); sm.top=slocal
-assert scover(spb,stb)==[] and spaint(stb)==(1,['file:///tmp/b.jpg']); passed()
-# Minimal writes no font: the title stays the style's, at its own size.
-for setup in (lambda c: c.config.update(THEME='0'),):
-    k,w,show=spot_title_page(setup); show('With You')
-    assert k.nodes[w]['text']=='With You' and 'style:normal:font_name' not in k.nodes[w] and k.nodes[w]['style:normal:font_size']==O['NP_TITLE_PX'] and '_font' not in k.nodes[w]; k.close()
-passed()
 # With it, the first open starts it once (its launcher backgrounds itself); with no state yet, or no
 # Connect session, the page waits for a confirmed authentication response.
 m=SpotMachine({BIN:bytearray()}); button=stream_page(m); page=spot_open(m,button); info,msg=m.nodes[page]['children']
@@ -14491,73 +14360,6 @@ heart_y=O['NP_ART_TOP']+O['SPOT_ART_PX']-50+O['NP_ICON_PAD']
 from ipod import NP_ICONS_END, NP_ICON
 heart_x=NP_ICONS_END-NP_ICON
 assert m.nodes[heart]['image']=='play_unfav' and [m.get(heart+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[heart_x,heart_y,50,50]; passed()
-# Radio under Classic: the local page's layout, an album. The tilted station cover and the reflection on the view
-# under the times; station, artist and song in the title's, artist's and album's places; the stream in the position's; the
-# heart in the hearts' place, one outline or filled; the time on the left and nothing on the right.
-rq=classic_light_new(RadioMachine,files={RDIR+'/favourites.m3u':bytearray(b'#EXTM3U\r\n#EXTINF:-1,One\r\nhttp://one/a\r\nhttp://two/b\r\n'),
-                 RDIR+'/x.pls':bytearray(b'[playlist]\nFile1=https://three/c?x=1\nTitle1=Three\nNumberOfEntries=1\n'),
-                 RDIR+'/notes.txt':bytearray(b'http://no/')})
-classic_light_boot(rq); rq.tree[RDIR]=[('favourites.m3u',8),('x.pls',8),('notes.txt',8),('._x.pls',8)]; radio_open(rq)
-rq.row(0); rq.forked=0; rq.row(2); rq.forked=4343; rq.row(2); rnp=rq.top
-rlabel,rart,rstation,rartist,rsong,rtilt,rinfo,relapsed,rheart,rbar=rq.nodes[rnp]['children'][:10]
-rrect=lambda w:[signed(rq.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H')]
-assert rrect(rstation)==[187,57,173,24] and rrect(rartist)==[187,82,173,20] and rrect(rsong)==[187,103,173,20]
-assert rrect(rtilt)==[10,18,161,232] and rrect(rinfo)==[187,145,173,22] and rrect(relapsed)==[18,217,45,24]
-assert rrect(rheart)==[188,120,96,30] and rrect(rbar)==[63,213,248,43]
-assert rq.nodes[rlabel]['visible']==0 and rq.nodes[rart]['visible']==0 and rq.nodes[rtilt].get('sensitive',0)==0
-assert rq.nodes[rinfo]['style:normal:font_size']==22 and rq.nodes[relapsed]['style:normal:text_align_h']=='left'
-assert rq.nodes[rheart]['image']=='classic_light_hearts0_l'
-rq.calls=[]; rq.draws=[]; rq.call(address=HOOKS['widget_on_paint_border'][0],args=(rtilt,rq.canvas,0,0),gap=0)
-assert [rq.text(c[2]) for c in rq.calls if c[0]=='widget_load_image']==['classic_light_station']
-assert rq.draws[0][5]==tilt_twin(tilt_tex(rq,'classic_light_station'),0xffffff)
-# The bar: always full, no diamond, painted on its view, the wheel the volume's and never a scrub.
-def rbands():
-    rq.bands=[]; rq.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,rq.canvas,0,0),gap=0)
-    return [b[:4] for b in rq.bands]
-want=rbands(); assert want==[(0,6+i,248,1) for i in range(31) for _ in 'tf']  # each row's track and fill, the same width
-rq.key(O['KEY_NEXT']); assert rbands()==want
-assert not [c for c in rq.calls if c[0]=='player_seek_time']
-# Favourited, filled, in the half's image.
-rq.click(rheart); rq.advance(500); assert rq.nodes[rheart]['image']=='classic_light_hearts1_l'
-rq.click(rheart); rq.advance(500); assert rq.nodes[rheart]['image']=='classic_light_hearts0_l'
-rtitle=rq.node('hscroll_label','label_title'); rbarw=classic_light_bar(rq,rtitle)
-rq.call(address=HOOKS['widget_on_paint_background'][0],args=(rbarw,rq.canvas,0,0),gap=0); assert rq.nodes[rtitle]['text']=='Internet Radio'; passed()
-# Its artist and song take the local page's role: Cyrillic in the bold fallback at 0.83 of 22 px, and back. From its
-# first hour the time drops to the small size, h:mm:ss outgrowing its box; a new start puts it back.
-rq.files[RSTATE]=bytearray(f'state=playing\ntitle=Виктор Цой - Группа крови\ncodec=MP3\nbitrate=128\nat={rq.now}\n'.encode())
-rq.poll(); rq.advance(500)
-assert [(rq.nodes[w]['style:normal:font_name'],rq.nodes[w]['style:normal:font_size']) for w in (rartist,rsong)]==[('bold',18)]*2
-assert (rq.nodes[rinfo]['style:normal:font_name'],rq.nodes[rinfo]['style:normal:font_size'])==('classic-light',22)
-rq.files[RSTATE]=bytearray(f'state=playing\ntitle=Some Artist - A Song\ncodec=MP3\nbitrate=128\nat={rq.now}\n'.encode())
-rq.poll(); rq.advance(500)
-assert [(rq.nodes[w]['style:normal:font_name'],rq.nodes[w]['style:normal:font_size']) for w in (rartist,rsong)]==[('classic-light',22)]*2
-assert rq.nodes[relapsed]['style:normal:font_size']==23
-rq.now+=4_000_000; rq.timers={k:(v[0]+4_000_000,*v[1:]) for k,v in rq.timers.items()}  # the clock past an hour, its timers with it
-def ran(sec):  # the sound started about sec ago
-    rq.files[RSTATE]=bytearray(f'state=playing\ntitle=Some Artist - A Song\ncodec=MP3\nbitrate=128\nat={rq.now-sec*1000}\n'.encode())
-    rq.poll(); rq.advance(500); return rq.nodes[relapsed]['text'],rq.nodes[relapsed]['style:normal:font_size']
-t,px=ran(3590); assert t.startswith('59:') and px==23,(t,px)
-t,px=ran(3610); assert t.startswith('1:00:') and px==17,(t,px)
-t,px=ran(5); assert t.startswith('0:0') and px==23,(t,px)
-# Leaving lets the frame go; Minimal has no tilt, no bar and stock's heart and icon (the cases above).
-f,ctx=rq.handler(rnp,O['EVT_DESTROY']); rq.call(address=f,args=(ctx,rq.event,0,0),gap=0); assert [c for c in rq.calls if c[0]=='bitmap_destroy']; passed()
-# Its title too, here the station's name, each change of it; Minimal writes no font.
-def radio_title_page(setup):
-    SETUP[:]=[setup]
-    try: k=RadioMachine({RDIR+'/favourites.m3u':bytearray(''.join(f'#EXTINF:-1,{t}\nhttp://s/{i}\n' for i,(t,_) in enumerate(STREAM_FACES)).encode())})
-    finally: SETUP.clear()
-    k.tree[RDIR]=[('favourites.m3u',8)]; radio_open(k); k.row(0); k.forked=4343; k.row(0); w=k.nodes[k.top]['children'][2]
-    return k,w
-k,w=radio_title_page(classic_light)
-at=iter(range(9))
-def show(text):
-    if next(at): k.waited=4343; k.key(O['KEY_FWD_BTN'])
-    k.advance(500); k.poll()
-stream_title(k,w,show); k.close(); passed()
-for setup in (lambda c: c.config.update(THEME='0'),):
-    k,w=radio_title_page(setup); k.advance(500); k.poll()
-    assert k.nodes[w]['text']=='With You' and 'style:normal:font_name' not in k.nodes[w] and k.nodes[w]['style:normal:font_size']==O['NP_TITLE_PX'] and '_font' not in k.nodes[w]; k.close()
-passed()
 # Playing: its tags (the StreamTitle as artist - title), the stream and the time since the sound
 # started; standby and auto power-off held (not the screen's timer) and the DAC kept on.
 m.word(syms['g_dacoff_time'],5)

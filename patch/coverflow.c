@@ -1748,25 +1748,23 @@ static struct {
  * Only 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha,
  * composited over the page (black or Light Mode's paper). The image manager's copy is only read,
  * and a cover's load is dropped again at once, as stock does. */
-static int decode(void *widget, const char *url, unsigned *out, int unload, int crop) {
+static int decode(const char *url, unsigned *out, int unload) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned bitmap[64]; /* bitmap_t */
-    if (widget_load_image(widget, url, bitmap)) return 0;
+    if (widget_load_image(cf.page, url, bitmap)) return 0;
     unsigned w = bitmap[0], h = bitmap[1], format = ((unsigned short *)bitmap)[7] - 1u;
     const unsigned char *data =
         format < 4 && w && h && w <= 4096 && h <= 4096 ? bitmap_lock_buffer_for_read(bitmap) : 0;
     if (data) {
         const unsigned char *o = at[format];
-        unsigned stride = bitmap_get_line_length(bitmap), side = (w > h) != crop ? w : h;
-        unsigned xoff[ART_SIZE];
+        unsigned stride = bitmap_get_line_length(bitmap), side = w > h ? w : h, xoff[ART_SIZE];
         unsigned paper = ipod_light() ? scheme()->paper & 255 : 0;
         for (unsigned x = 0; x < ART_SIZE; ++x) { /* ~0u: a bar; left of the image wraps to one */
-            unsigned sx = x * side / ART_SIZE + ((int)w - (int)side) / 2;
+            unsigned sx = x * side / ART_SIZE - (side - w) / 2;
             xoff[x] = sx < w ? sx * 4 : ~0u;
         }
         for (unsigned y = 0; y < ART_SIZE; ++y) {
-            /* wraps above the image */
-            unsigned sy = y * side / ART_SIZE + ((int)h - (int)side) / 2;
+            unsigned sy = y * side / ART_SIZE - (side - h) / 2; /* wraps above the image */
             for (unsigned x = 0; x < ART_SIZE; ++x) {
                 if (sy >= h || xoff[x] == ~0u) {
                     *out++ = 0xff000000u;
@@ -1783,7 +1781,7 @@ static int decode(void *widget, const char *url, unsigned *out, int unload, int 
         }
         bitmap_unlock_buffer(bitmap);
     }
-    if (unload) widget_unload_image(widget, bitmap);
+    if (unload) widget_unload_image(cf.page, bitmap);
     return data != 0;
 }
 
@@ -1795,7 +1793,7 @@ static void fx_close(void) {
 
 static void fx_placeholder(void) {
     unsigned *placeholder = fx.tex + FX_SLOTS * CF_TEXELS;
-    if (!decode(cf.page, PLACEHOLDER, placeholder, 0, 0)) /* a theme image: the manager keeps it */
+    if (!decode(PLACEHOLDER, placeholder, 0)) /* a theme image: the manager keeps it */
         for (int i = 0; i < CF_TEXELS; ++i) placeholder[i] = 0xff3a3a3au;
     fx.light = ipod_light();
 }
@@ -1806,86 +1804,8 @@ static void *opaque_frame(int w, int h) {
     return b;
 }
 
-/* A streaming page's cover under a theme that tilts it (playing.tilt): turned about a vertical
- * axis, so its left and right edges are the frame's first and last columns and each column between is one
- * texture column scaled between the top and bottom edges, the theme's rows at each end (1/10 px).
- * Cover Flow's column() fits neither: its covers share one horizon, these edges don't meet on a
- * row. Under the bottom edge each column continues in its mirror image, the paper over it. Rendered
- * once per track (decoding the cover is the cost anyway); a repaint only blits. */
-static void *tilt_frame __attribute__((section(".scratch")));
-
 HOT unsigned tilt_mix(unsigned a, unsigned b, unsigned w) { /* a to b, w of 256 */
     return shade(a, 256 - w) + shade(b, w);
-}
-/* The texture at u, v (1/256 texel, clamped), bilinear. */
-HOT unsigned tilt_texel(const unsigned *tex, int u, int v) {
-    const int last = (ART_SIZE - 1) << 8;
-    u = u < 128 ? 0 : u - 128 > last ? last : u - 128;
-    v = v < 128 ? 0 : v - 128 > last ? last : v - 128;
-    const unsigned *p = tex + (v >> 8) * ART_SIZE + (u >> 8);
-    int right = u < last, down = v < last ? ART_SIZE : 0;
-    return tilt_mix(tilt_mix(p[0], p[right], u & 255), tilt_mix(p[down], p[down + right], u & 255),
-                    v & 255);
-}
-static void tilt_render(unsigned *d, int pitch, int w, int h, const unsigned *tex, unsigned paper) {
-    const theme_t *T = theme();
-    int tl = T->np_tilt_tl, tr = T->np_tilt_tr, bl = T->np_tilt_bl, br = T->np_tilt_br;
-    int left = bl - tl, right = br - tr;
-    for (int c = 0; c < w; ++c, ++d) {
-        /* the column's middle at t of 2w: edges straight on screen, the texture in perspective */
-        int t = 2 * c + 1, rest = 2 * w - t;
-        int top = (tl * rest + tr * t) * 64 / (5 * w), bottom = (bl * rest + br * t) * 64 / (5 * w);
-        int u = (int)(((unsigned)(t * right) << 11) / (unsigned)(rest * left + t * right)) * 20;
-        unsigned scale = (unsigned)(ART_SIZE << 8);
-        for (int y = 0; y < h; ++y) {
-            int from = y << 8 > top ? y << 8 : top;
-            int to = (y + 1) << 8 < bottom ? (y + 1) << 8 : bottom;
-            unsigned colour = paper;
-            if (T->np_reflect && (y + 1) << 8 > bottom) { /* mirrored about the bottom edge */
-                int dist = (y << 8) + 128 - bottom, from_row = T->np_reflect_from;
-                unsigned a = (unsigned)T->np_reflect;
-                if (y >= from_row)
-                    a += (256 - a) * (unsigned)(2 * (y - from_row) + 1) /
-                         (unsigned)(2 * (h - from_row));
-                unsigned up = (dist < 0 ? 0 : (unsigned)dist * scale) / (unsigned)(bottom - top);
-                colour = tilt_mix(tilt_texel(tex, u, (int)scale - (int)up), paper, a);
-            }
-            if (to > from) {
-                int mid = (y << 8) + 128 - top;
-                colour = tilt_mix(colour, tilt_texel(tex, u, (mid < 0 ? 0 : (unsigned)mid * scale) /
-                                                                 (unsigned)(bottom - top)),
-                                  (unsigned)(to - from));
-            }
-            d[y * pitch] = colour | 0xff000000u;
-        }
-    }
-}
-
-/* Paints the frame on w, first drawing it from image file (cropped square, over paper) when bake is
- * set, as a track's or a Light Mode's change sets it: no art, or a file that won't load, shows the
- * theme's generic cover. 1: the frame holds that image. */
-int cover_tilt(void *w, void *canvas, const char *file, unsigned paper, int bake) {
-    int ww = I(w, W_W), h = I(w, W_H), ok = !bake;
-    if (!tilt_frame) tilt_frame = opaque_frame(ww, h), bake = 1, ok = 0;
-    unsigned *tex = bake && tilt_frame ? calloc(CF_TEXELS, 4) : 0;
-    if (tex) {
-        unsigned *d;
-        if (!*file || !tk_strcmp(file, "play_defaultcover") || !decode(w, file, tex, 1, 1))
-            decode(w, "classic_light_cover", tex, 0, 1); /* a theme image: the manager keeps it */
-        if ((d = (unsigned *)bitmap_lock_buffer_for_write(tilt_frame))) {
-            tilt_render(d, (int)(bitmap_get_line_length(tilt_frame) / 4), ww, h, tex, paper);
-            bitmap_unlock_buffer(tilt_frame);
-            ok = 1;
-        }
-        free(tex);
-    }
-    int r[4] = { 0, 0, ww, h };
-    if (tilt_frame) canvas_draw_image(canvas, tilt_frame, r, r);
-    return ok;
-}
-void cover_tilt_close(void) {
-    if (tilt_frame) bitmap_destroy(tilt_frame);
-    tilt_frame = 0;
 }
 
 /* The frame and every texture at once, or neither: the flat covers then stand in. */
@@ -1905,7 +1825,7 @@ static const unsigned *fx_load(int a, unsigned *buf) {
     char url[600] = "file://";
     if ((unsigned)a < deque_size(cf.albums)) {
         art_path(url + 7, album_key(deque_at(cf.albums, (unsigned)a)), "");
-        if (art_exists(url) && decode(cf.page, url, buf, 1, 0)) return buf;
+        if (art_exists(url) && decode(url, buf, 1)) return buf;
     }
     return fx.tex + FX_SLOTS * CF_TEXELS;
 }

@@ -26,7 +26,7 @@ QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowga
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('station', 'sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', 'cover', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', *(f'hearts{n}_{h}' for n in range(2) for h in 'ld'))}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -354,37 +354,6 @@ def test_path_reads_arcs_and_further_subpaths():
     assert art.coverage([[(0, 0), (2, 0), (2, 2), (0, 2)]], (0, 0, 3, 1)) == [1.0, 1.0, 0.0]
     # a span inside another adds nothing: the union, not a sum
     assert art.coverage([[(0, 0), (3, 0), (3, 1), (0, 1)], [(1, 0), (1.5, 0), (1.5, 1), (1, 1)]], (0, 0, 3, 1)) == [1.0, 1.0, 1.0]
-
-
-def test_no_art_cover():
-    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_cover'])
-    assert (w, h) == (160, 160) and all(at(x, y)[3] == 255 for x, y in ((0, 0), (159, 0), (0, 159), (159, 159), (80, 80)))
-    assert at(159, 159)[:3] == (0x6b, 0x75, 0x84)  # the gradient's end, below the band and the note
-    top = at(159, 0)[:3]  # its start, with 5 % of white over it in the band
-    assert all(abs(v - round(c + (255 - c) * .05)) <= 1 for v, c in zip(top, (0x94, 0xa2, 0xa5)))
-    assert at(70, 30)[:3] == at(75, 30)[:3] and min(at(70, 30)[:3]) > 0xf0  # the note, near white at its top
-
-
-def test_station_cover_is_the_no_art_family():
-    t = theme.builtins()[1]
-    got = art.images(t)
-    w, h, at = pixels(got['classic_light_station'])
-    cover = pixels(got['classic_light_cover'])[2]
-    assert (w, h) == (160, 160) and got['classic_light_station'] != got['classic_light_cover']
-    assert at(159, 159) == cover(159, 159) and at(159, 0) == cover(159, 0)  # its gradient and band
-    assert min(at(80, 70)[:3]) > 0xe8 and at(10, 10) == cover(10, 10)  # the mast's head, in the note's ink
-
-
-def test_hearts():
-    got = art.images(theme.builtins()[1])
-    def row(name):  # (filled-looking centre pixels, inked columns)
-        w, h, at = pixels(got[f'classic_light_{name}'])
-        return (w, h), [x for x in range(w) if any(at(x, y)[3] for y in range(h))], [at(8 + 20 * i, 13)[3] == 255 and at(8 + 20 * i, 13)[:3] for i in range(5)]
-    size, inked, centres = row('hearts0_l')
-    assert size == (96, 30) and inked[0] < 3 and inked[-1] < 16 and centres == [False] * 5  # one outline
-    size, inked, centres = row('hearts1_l')
-    assert inked[-1] < 16 and centres == [(0x4c, 0x4c, 0x4c)] + [False] * 4
-    assert row('hearts1_d')[2] == [(0xc6, 0xc3, 0xc6)] + [False] * 4
 
 
 def test_every_literal_corner_radius_is_in_the_table():

@@ -90,39 +90,22 @@
   <!-- Now Playing, an iPod classic's: the art turned in perspective over its reflection (the classic-light sets' np_ipod,
        coverflow.c slant_render), and the progress bar's track, a row each of its NP_BAR_IPOD (13): faint 1 px top
        and bottom lines round a near-white inside; the dark half's Apple's capture darkened, its step at the middle
-       kept; the accent's band fills the played part (navigation.c paint_scrubber) -->
+       kept; the accent's band fills the played part (navigation.c paint_scrubber). Its rows painter's 31 rows, fixed
+       colours (#rrggbbaa its own alpha), are the volume panel's away from Now Playing and a card app's progress -->
   <view name="playing">
     <element name="art" square="1"/>
     <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 8, #ffffff 17, #ffffff 25, #fafafa 33, #fafafa 42, #f6f6f6 50, #f6f6f6 58, #f6f6f6 67, #f4f4f4 75, #f4f4f4 83, #f4f4f4 92, #cecece 100"
              dark.stops="#313131 0, #373737 8, #383838 17, #373737 25, #363636 33, #353535 42, #323232 50, #313131 58, #323232 67, #343434 75, #353535 83, #343434 92, #2b2b2b 100"
-             x="63" y="213" w="248" h="43" painter="rows" mark="8"
+             painter="rows"
              light_track="#e7e7e7 #eeeeee #ffffff #fdfdfd #f7f7f7 #f7f7f7 #f3f3f3 #f0f0f0 #ebebeb #e4e4e4 #dedede #dfdfdf #e6e6e6 #ededed #ececec #d1d1d1 #d0d0d0 #fdfdfd #f0f0f0 #efefef #f5f5f5 #f8f8f8 #f4f4f4 #efefef #efefef #efefef #f6f6f6 #f7f7f7 #f7f7f7 #f7f7f7 #f9f9f9"
              light_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #c7f2ff #c7f2ff #ceefff #d2ecfd #d2ecfd #daedfe #deeefe #deeefe #e7f1fd #eef5ff #eef5ff #f8f9fe #fcfcfe #fcfcfe"
              dark_track="#4e4d4e #585758 #555455 #515151 #4e4e4e #4b4a4b #474747 #444444 #424242 #434343 #444444 #454445 #454545 #464546 #474647 #484748 #383838 #42414256 #42414250 #42414249 #42414243 #4241423d #42414236 #42414230 #42414229 #42414223 #4241421d #42414216 #42414210 #4241420a #42414203"
              dark_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #46b1ff4f #46b1ff49 #46b1ff43 #46b1ff3d #46b1ff37 #46b1ff32 #46b1ff2c #46b1ff26 #46b1ff20 #46b1ff1a #46b1ff14 #46b1ff0f #46b1ff09 #46b1ff03"/>
-    <element name="title" font="classic-light" font_px="27" x="187" y="57" w="173" h="24"/>
-    <element name="album" caps="0" opacity="255" x="187" y="103" w="173" h="20" color="#c6c3c6" font="classic-light" font_size="22"/>
+    <element name="title" font="classic-light" font_px="27"/>
+    <element name="album" caps="0" opacity="255"/>
     <element name="state" opacity="0"/>  <!-- no play/pause glyph on the art, as Minimal -->
-    <!-- The theme's face at a small size: the QR pages', and a radio's time from its first hour -->
+    <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes -->
     <element name="info" font="classic-light" font_size="17"/>
-    <!-- Spotify's and Internet Radio's Now Playing (navigation.c theme_place): the cover, turned and drawn on its own
-         widget, its corners' rows given in 1/10 px from the widget's top, over its reflection, the cover mirrored about its
-         bottom edge under the paper, half at the edge until reflect_from, opaque at the widget's end; the title's, album's
-         and scrubber's places above, the rest here. The scrubber's rows, the gloss over its reflection, are fixed colours,
-         not the accent: the light half's reflection opaque, the dark half's fading over the paper (#rrggbbaa). -->
-    <element name="tilt" x="10" y="18" w="161" h="232" tl="6" tr="129" br="1533" bl="1601" reflect="128" reflect_from="153"/>
-    <!-- No art: the generic cover, tools/art.py's drawing in these colours; a radio's station cover from the same family -->
-    <element name="noart" stops="#94a2a5 0, #6b7584 100" note="#ffffff 0, #f3f5f8 45, #c0c8ca 100" band_a="13" shadow_a="85"/>
-    <element name="cover" x="15" y="19" w="156" h="160"/>
-    <!-- The artist and album are stock's #c6c3c6, the light half's flip #393c39 -->
-    <element name="meta" font="classic-light" font_size="22"/>
-    <element name="artist" x="187" y="82" w="173" h="20" color="#c6c3c6" font="classic-light" font_size="22"/>
-    <element name="position" x="187" y="145" w="173" h="22" font="classic-light" font_size="22" color="#c6c3c6" align="left"/>
-    <!-- A radio's heart, tools/art.py's glyph left-aligned 6 rows down this tap area, in the half's dark ink -->
-    <element name="controls" light_on="#4c4c4c" dark_on="#c6c3c6"/>
-    <element name="hearts" x="188" y="120" w="96" h="30"/>
-    <element name="elapsed" x="18" y="217" w="45" h="24" font="classic-light" font_size="23" color="#ffffff" align="left"/>
-    <element name="remain" x="311" y="217" w="50" h="24" font="classic-light" font_size="23" color="#ffffff" align="right"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,

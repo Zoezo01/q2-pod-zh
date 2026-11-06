@@ -1608,7 +1608,7 @@ void addon_paint(void *w, void *canvas) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         int bw = I(w, W_W), h = I(w, W_H), x = bw * pml / 1000;
         if (theme()->painter[PAINT_SCRUB] == SCRUB_ROWS) {
-            paint_rows_bar(canvas, 0, 0, bw, h, x, 0);
+            paint_rows_bar(canvas, 0, 0, bw, h, x);
             return;
         }
         canvas_set_fill_color(canvas, rgba(PROGRESS_TRACK, 255));

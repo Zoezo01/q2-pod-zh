@@ -456,13 +456,8 @@ typedef struct {
     unsigned letter_timer;   /* the fast-scroll letter shows while this runs */
     /* Now Playing's window and payload-filled widgets, and the sources they last showed. */
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
-    unsigned np_tilt_key;    /* what cover_tilt's frame holds */
     int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* a streaming page's cover and bar (stream_cover) */
-    void *stream_tilt, *stream_bar;
-    const char *stream_file;
-    unsigned stream_art;
     /* Centred Now Playing's full-screen lyrics (np_full) and where the last touch on them came
      * down (np_lyric_touch) */
     int np_full, np_tap_x, np_tap_y;
@@ -2527,18 +2522,11 @@ int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUND
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
  * NP_ART_RADIUS at 166px, painted over it in the page's
  * black: each corner row outside the arc, then its edge pixel at the alpha of its uncovered part
- * (1/16 px). A streaming page's tilted cover is its own widget's (cover_tilt). */
-static unsigned stream_key(void);
+ * (1/16 px). */
 static void paint_cover(void *w, void *canvas) {
     if (!w || !P(canvas, CANVAS_LCD)) return;
     if (w == st.np_cover && I(w, W_H) > I(w, W_W)) { /* Classic's room for a reflection */
         coverflow_slant(w, canvas, scheme()->paper & 255);
-        return;
-    }
-    if (w == st.stream_tilt) {
-        unsigned key = stream_key();
-        if (cover_tilt(w, canvas, st.stream_file, RGBA(scheme()->paper), key != st.np_tilt_key))
-            st.np_tilt_key = key;
         return;
     }
     if (ipod_square_art()) return;
@@ -3435,7 +3423,6 @@ static void paint_scrollbar(void *canvas, void *bar, int table) {
 
 /* Stock paints children first and calls this with the surface's canvas origin restored. */
 static void paint_scrubber(void *w, void *canvas);
-static void np_scrubber(void *w, void *canvas);
 static void slider_scrub(void *w, void *canvas);
 static void quick_scrub(void *w, void *canvas);
 static void search_over(void *w, void *canvas);
@@ -3478,7 +3465,6 @@ int ringnav_paint(void *w, void *canvas) {
     paint_letter(w, canvas);
     paint_cover(w, canvas);
     paint_scrubber(w, canvas);
-    np_scrubber(w, canvas);
     slider_scrub(w, canvas);
     quick_scrub(w, canvas);
     search_over(w, canvas);
@@ -5398,29 +5384,16 @@ static void scrub_row(void *canvas, unsigned c, int x, int y, int w) {
     stock_canvas_set_fill_color(canvas, (RGBA(c & 0xffffffu) & 0xffffffu) | (c & 0xff000000u));
     canvas_fill_rect(canvas, x, y, w, 1);
 }
-void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w, int mark) {
+void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w) {
     const theme_t *T = theme();
     const unsigned (*rows)[NP_ROWS] = T->np_rows + 2 * ipod_light();
-    unsigned ink = RGBA(scheme()->ink), fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     for (int j = 0; j < h && j < NP_ROWS; ++j) {
         scrub_row(canvas, rows[0][j], x, y + j, w);
         if (fill_w > 0) scrub_row(canvas, rows[1][j], x, y + j, fill_w < w ? fill_w : w);
     }
-    for (int j = -T->np_mark; mark && j <= T->np_mark;
-         ++j) { /* wide on its middle row, on the gloss */
-        int half = T->np_mark - (j < 0 ? -j : j);
-        scrub_row(canvas, ink, x + fill_w - half, y + T->np_mark + j, 2 * half + 1);
-    }
     stock_canvas_set_fill_color(canvas, fill);
 }
-/* The border hook on a streaming page's bar (stream_cover): no position to show, always full, no
- * mark, the rows painter's whole height. */
-static void np_scrubber(void *w, void *canvas) {
-    if (!w || w != st.stream_bar || !P(canvas, CANVAS_LCD)) return;
-    int ww = I(w, W_W);
-    paint_rows_bar(canvas, 0, (I(w, W_H) - NP_ROWS) / 2, ww, NP_ROWS, ww, 0);
-}
-
 /* The Theme's progress bar over the asset's (Minimal's square 4px line): its np_bar, Modern's
  * NP_BAR_CLASSIC capsule or Classic's NP_BAR_IPOD (paint_scrubber draws it), and stock's play-state
  * glyph, which Minimal and Classic hide (playing.state.opacity). */
@@ -5852,20 +5825,6 @@ static unsigned np_art(const char **file) {
     if (type == 3) *file = "play_defaultcover"; /* none: stock's placeholder */
     return *file ? fnv(hash_bytes(FNV_SEED, &type, 1), (const unsigned char *)P(r, REC_PATH)) : 0;
 }
-static unsigned stream_key(void) {
-    return fnv(st.stream_art ^ scheme()->paper, (const unsigned char *)st.stream_file);
-}
-/* The page on top takes the slots, or the first page when none has them. */
-void stream_cover(void *page, void *tilt, void *bar, const char *file, unsigned art) {
-    int top = window_manager_get_top_window(window_manager()) == page;
-    if (!top && st.stream_tilt && st.stream_tilt != tilt) return;
-    st.stream_tilt = tilt, st.stream_bar = bar, st.stream_file = file, st.stream_art = art;
-    if (top && stream_key() != st.np_tilt_key) widget_invalidate_force(tilt, (void *)0);
-}
-void stream_gone(void *tilt) {
-    if (st.stream_tilt == tilt) st.stream_tilt = st.stream_bar = (void *)0;
-    cover_tilt_close();
-}
 static void np_art_poll(void) {
     const char *file;
     if (!st.np_cover || !g_backlight_status) return;
@@ -6136,55 +6095,6 @@ extern void *stock_ui_load_trampoline(const char *name, void *parent);
 static const char *style_key(char *key, const char *state, const char *name) {
     tk_snprintf(key, STYLE_KEY, "style:%s:%s", state, name);
     return key;
-}
-/* A theme's placed element on a streaming page's widget (theme_place, docs/internals.md#themes):
- * it takes the element's rect now and as its self_layout, so relayouts keep it, in its parent's
- * coordinates (rects are the window's), and its style in every state its class has. Colours are in
- * stock's terms
- * (the dark half's) and written as they are: the style hook flips them in Light Mode like any
- * style colour, so a Light Mode or Auto change needs no reload. */
-static void theme_element(const elem_t *e, void *w, void *root) {
-    static const char *const state[] = { "normal", "focused", "disable", "over", "pressed" };
-    static const char *const align[] = { "left", "center", "right" }; /* [ELEM_ALIGN_*] */
-    if (e->y != ELEM_UNSET) {
-        int x = e->x, y = e->y, width = e->w;
-        for (void *p = P(w, W_PARENT); p && p != root; p = P(p, W_PARENT))
-            x -= I(p, W_X), y -= I(p, W_Y);
-        char r[4][8];
-        tk_snprintf(r[0], 8, "%d", x), tk_snprintf(r[1], 8, "%d", y);
-        tk_snprintf(r[2], 8, "%d", width), tk_snprintf(r[3], 8, "%d", e->h);
-        widget_set_self_layout_params(w, r[0], r[1], r[2], r[3]);
-        widget_move_resize(w, x, y, width, e->h);
-    }
-    if (e->visible != ELEM_KEEP) widget_set_visible(w, e->visible, 0);
-    unsigned n = tk_strcmp(widget_get_type(w), "button") ? 3 : 5;
-    for (unsigned s = 0; s < n; ++s) {
-        char key[STYLE_KEY];
-        if (e->font_size != ELEM_KEEP)
-            widget_set_prop_int(w, style_key(key, state[s], "font_size"), e->font_size);
-        if (e->font != ELEM_KEEP)
-            widget_set_prop_str(w, style_key(key, state[s], "font_name"), font_faces[e->font]);
-        if (e->color)
-            widget_set_prop_int(w, style_key(key, state[s], "text_color"),
-                                (int)RGBA(e->color & 0xffffff));
-        if (e->align != ELEM_KEEP)
-            widget_set_prop_str(w, style_key(key, state[s], "text_align_h"), align[e->align]);
-    }
-}
-/* A streaming page's widget at the element's place. */
-int theme_place(int place, void *w, void *root) {
-    static const unsigned char alias[] = { E_PLAYING_COVER,    E_PLAYING_TITLE,
-                                           E_PLAYING_ARTIST,   E_PLAYING_ALBUM,
-                                           E_PLAYING_ELAPSED,  E_PLAYING_REMAIN,
-                                           E_PLAYING_SCRUBBER, E_PLAYING_TILT,
-                                           E_PLAYING_POSITION, E_PLAYING_HEARTS };
-    const theme_t *T = theme();
-    for (unsigned i = 0; i < T->n_elems; ++i)
-        if (T->elems[i].alias == alias[place]) {
-            theme_element(&T->elems[i], w, root);
-            return 1;
-        }
-    return 0;
 }
 /* Classic's slider pages, one shape over stock's four windows: a dark bar (dark_bar_rows),
  * the page image, a band holding the slider between its ends, the caption. Only the painter reads
@@ -7187,7 +7097,7 @@ static void vol_paint(void *top, void *canvas) {
     if (gloss) { /* no number */
         int L = ipod_light(), bx = 68, bw = 243, y = 271;
         paint_panel(top, canvas, &area, "classic_light_panel_shadow");
-        paint_rows_bar(canvas, bx, y, bw, 17, max > 0 ? bw * clamp_step(0, max, level) / max : 0, 0);
+        paint_rows_bar(canvas, bx, y, bw, 17, max > 0 ? bw * clamp_step(0, max, level) / max : 0);
         paint_art(top, canvas, L ? "classic_light_spk_quiet_l" : "classic_light_spk_quiet_d", 52,
                   y + 2);
         paint_art(top, canvas, L ? "classic_light_spk_loud_l" : "classic_light_spk_loud_d", 317,
@@ -7473,8 +7383,7 @@ static void *page_caption(void *win) {
  * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
-    if (tk_str_start_with(name, "playing_page"))
-        return "Now Playing";
+    if (tk_str_start_with(name, "playing_page")) return "Now Playing";
     if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
     if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
@@ -10681,7 +10590,7 @@ static const char *hearts_text(char *s, int n) {
 }
 
 /* A theme's glyph on w (tools/art.py): the half's image, set only on a change. */
-void np_image(void *w, const char *glyph) {
+static void np_image(void *w, const char *glyph) {
     char name[40];
     tk_snprintf(name, sizeof name, "classic_light_%s_%s", glyph, ipod_light() ? "l" : "d");
     if (w && tk_strcmp(widget_get_prop_str(w, "image", ""), name)) {
@@ -15361,7 +15270,7 @@ int ringnav(void *ctx, void *event) {
         return dir && window_manager_is_animating(wm) ? hold_wheel(ctx, event, dir) : STOP;
     }
     coverflow_lost_touch();
-    if (!dir) coverflow_wheel_land(); /* Centre opens the album the caption names */
+    if (!dir) coverflow_wheel_land();     /* Centre opens the album the caption names */
     if (books_key(top, key)) return STOP; /* the reader's pages and caption */
     void *w = surface_under(top, (void *)0, (void *)0, dir != 0);
     if (!is_home(top, w) || w != st.home_surface) st.home_surface = (void *)0;

@@ -7,7 +7,7 @@ import json
 import math
 import re
 from build import ROOT, check
-from ipod import AUDIT, GEOM_VALS, INC, O, SET0, SLIDE, VALUE_NAMES, Geometry, corner_inset, corner_x, immediate_values
+from ipod import AUDIT, GEOM_VALS, INC, O, SET0, SLIDE, VALUE_NAMES, Geometry, corner_inset, immediate_values
 
 
 ACCENTS_BLOCK = re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0]
@@ -34,7 +34,7 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'playing.scrubber.painter': {'stock': 'SCRUB_STOCK', 'rows': 'SCRUB_ROWS'},
            'volume.panel.painter': {'stock': 'VOL_STOCK', 'classic-light': 'VOL_CLASSIC_LIGHT'},
            'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT'},
-           **dict.fromkeys(('playing.title.font', 'playing.meta.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
+           **dict.fromkeys(('playing.title.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 # coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb)
@@ -97,9 +97,7 @@ SCHEMA = {k.path: k for k in (
     key('list.icons.addon_mono', 'icons_addon_mono', 'bool'),
     key('playing.title.font', 'font[ROLE_NP]', 'enum'),
     key('playing.title.font_px', 'font_px[ROLE_NP]', 'int', 64),
-    key('playing.meta.font', 'font[ROLE_NP_META]', 'enum'),  # the artist and album; a size puts the title at list.row.tall_px
-    key('playing.meta.font_size', 'font_px[ROLE_NP_META]', 'int', 64),
-    key('playing.info.font', 'font[ROLE_INFO]', 'enum'),  # the info page's lines
+    key('playing.info.font', 'font[ROLE_INFO]', 'enum'),  # small text: the QR pages, the Time Zone caption, page notes
     key('playing.info.font_size', 'font_px[ROLE_INFO]', 'int', 64),
     key('playing.album.opacity', 'np_album_op', 'int', 255),
     key('playing.state.opacity', 'np_state_op', 'int', 255),
@@ -130,21 +128,15 @@ SCHEMA = {k.path: k for k in (
     key('playing.scrubber.painter', 'painter[PAINT_SCRUB]', 'enum'),
     key('volume.panel.painter', 'painter[PAINT_VOLUME]', 'enum'),
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
-    # the rows painter's pixel rows, top to bottom over the bar's height: the track, the played part over it (final colours)
+    # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
+    # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),
     Key('playing.scrubber.dark_fill', 'np_rows[1]', 'rows', 0, 0, (), 'live'),
     Key('playing.scrubber.light_track', 'np_rows[2]', 'rows', 0, 0, (), 'live'),
     Key('playing.scrubber.light_fill', 'np_rows[3]', 'rows', 0, 0, (), 'live'),
-    key('playing.scrubber.mark', 'np_mark', 'int', 16),  # the scrub's diamond, half its size: centred this many rows down the bar
     key('playing.scrubber.height', 'np_bar', 'int', 375),
     key('playing.scrubber.scrub_height', 'np_scrub', 'int', 375),
     Key('playing.scrubber.stops', 'np_track', 'stops', 0, 0, (), 'live', True),  # Classic's track, final (paint_scrubber); (): stock's bar
-    # the tilted cover: its corners' rows on its widget, in 1/10 px (coverflow.c cover_tilt); bl 0: no tilt
-    *(key(f'playing.tilt.{c}', f'np_tilt_{c}', 'int', 2400) for c in ('tl', 'tr', 'br', 'bl')),
-    # its reflection: the paper's alpha over the mirrored cover (of 256; 0: none), until this widget row, then to
-    # opaque at the widget's last row
-    key('playing.tilt.reflect', 'np_reflect', 'int', 255),
-    key('playing.tilt.reflect_from', 'np_reflect_from', 'int', 320),
     key('playing.art.square', 'art_square', 'bool'),
     key('list.row.font', 'font[ROLE_TITLE]', 'enum'),
     key('list.row.meta_font', 'font[ROLE_META]', 'enum'),
@@ -216,11 +208,6 @@ SCHEMA = {k.path: k for k in (
     Key('bar.state.edge', 'state_edge', 'stops', 0, 0, (), 'art'),
     Key('bar.state.halo_light', 'state_halo_light', 'int', 0, 255, 0, 'art'),
     Key('bar.state.halo_dark', 'state_halo_dark', 'int', 0, 255, 0, 'art'),
-    *(Key(f'playing.controls.{c}', f'ctl_{c}', 'color', 0, 0xffffff, 0, 'art') for c in ('light_on', 'dark_on')),
-    Key('playing.noart.stops', 'noart_stops', 'stops', 0, 0, (), 'art'),
-    Key('playing.noart.note', 'noart_note', 'stops', 0, 0, (), 'art'),
-    Key('playing.noart.band_a', 'noart_band_a', 'int', 0, 255, 0, 'art'),
-    Key('playing.noart.shadow_a', 'noart_shadow_a', 'int', 0, 255, 0, 'art'),
     Key('geometry.set', 'geom_set', 'set', 0, 0, 'ipod', 'boot'),
     *(Key(f'motion.{k}.{a}', f'motion.{k}.{a}', t, 0, hi, 0, 'motion')
       for k in (*MOTION_WINDOW, *MOTION_WIDGET) for a, t, hi in (('ms', 'int', 2000), ('easing', 'easing', len(EASINGS) - 1))),
@@ -240,16 +227,6 @@ ELEMENTS = {p.rpartition('.')[0] for p in SCHEMA if view_attr(p)}
 VIEWS = {e.partition('.')[0] for e in ELEMENTS}
 CHILDREN = {'theme': {'colorSchemes', 'colorScheme', 'geometry', 'option', 'view'}, 'view': {'element'}, 'option': {'value'}}
 OPTION_ATTRS = {'setting', 'key', 'label', 'default', 'preset', 'keep', 'values'}
-# Placed widgets, per view: Q2 Pod alias -> stock widget. This table is the allow-list: a window
-# child or a view_album child that no parent layouter and no payload code moves (test/build.py).
-ALIASES = {'playing': {'slides': 'slide_view_view', 'title': 'scrlabel_title', 'artist': 'scrlabel_artist',
-                       'album': 'label_ipod_album', 'position': 'label_ipod_pos', 'elapsed': 'label_playtime',
-                       'remain': 'label_ipod_remain', 'cover': 'img_cover', 'state': 'img_playstate',
-                       'wait': 'image_wait', 'fav': 'img_fav', 'more': 'img_more', 'playmode': 'img_playmode',
-                       'scrubber': 'slider_play', 'tilt': 'np_tilt', 'repeat': 'img_np_repeat', 'shuffle': 'img_np_shuffle', 'hearts': 'img_np_hearts'}}  # one view: Home's table and re-apply come with its first alias
-PLACED = ('x', 'y', 'w', 'h', 'visible', 'opacity', 'font', 'font_size', 'color', 'align')
-ALIGN = ('left', 'center', 'right')
-PLACED_RANGES = {**dict.fromkeys('xywh', (0, 375)), 'visible': (0, 1), 'opacity': (0, 254), 'font_size': (1, 64)}
 # Per-theme numbers stay in offsets.inc: theme id -> {C field: expression over O}.
 CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF_Z1', 'cf.zs': 'CF_ZS', 'cf.eye': 'CF_EYE',
             'cf.bright1': 'CF_BRIGHT1', 'cf.bright2': 'CF_BRIGHT2', 'cf.reflect': 'CF_REFLECT',
@@ -637,35 +614,6 @@ def value(node, path, text, macros):
     return ranged(node, k, v)
 
 
-def placed(e, path, k, text):
-    """An aliased element's placed attribute k: its value for an elem_t row."""
-    def err(message): fail(e.file, e.line, message)
-    if k in ('font', 'align'):
-        names = list(FONTS) if k == 'font' else ALIGN
-        if text not in names:
-            err(f'{path}: unknown value {text}')
-        return names.index(text)
-    if k == 'color':
-        if not re.fullmatch('#[0-9a-fA-F]{6}', text):
-            err(f'{path}: expected #rrggbb')
-        return 0xff000000 | int(text[1:], 16)
-    if not re.fullmatch('[0-9]+', text):
-        err(f'{path}: expected an integer')
-    lo, hi = PLACED_RANGES[k]
-    if not lo <= int(text) <= hi:
-        err(f'{path}: {text} outside {lo}..{hi}')
-    return int(text)
-
-
-def elem_row(t, view, alias):
-    """t's row for (view, alias): the base theme's, which this one's attributes update, else a new one."""
-    row = next((e for e in t['elems'] if (e['view'], e['alias']) == (view, alias)), None)
-    if not row:
-        row = {'view': view, 'alias': alias, **dict.fromkeys(PLACED)}
-        t['elems'].append(row)
-    return row
-
-
 def own_key(node, key):
     """A theme's own IPOD key: never the payload's."""
     if not re.fullmatch('[A-Z][A-Z0-9_]*', key):
@@ -771,7 +719,7 @@ def resolve(root, by_id, seen=()):
             err(root, f'extends unknown theme {a["extends"]}')
         t = resolve(by_id[a['extends']], by_id, seen + (tid,))  # a fresh dict: ours to change
     else:
-        t = {'accents': ALL_ACCENTS, 'accent_key': None, 'schemes': [zero_scheme() for _ in ACCENT_NAMES], 'opts': [], 'geoms': {}, 'elems': [],
+        t = {'accents': ALL_ACCENTS, 'accent_key': None, 'schemes': [zero_scheme() for _ in ACCENT_NAMES], 'opts': [], 'geoms': {},
              **{k.field: k.default for k in SCHEMA.values() if not k.path.startswith('scheme.')}, 'light': {}}
     t.update(id=tid, name=a['name'], index=int(a['index']), line=root.line)
     macros = ROLE_MACROS.get(tid, {})
@@ -884,16 +832,11 @@ def resolve(root, by_id, seen=()):
                         err(c, f'unknown key view.{k}')
                     t[SCHEMA[f'{v}.{k}'].field] = value(c, f'{v}.{k}', text, macros)
             for e in c.children:
-                name = e.attrs.get('name', '')
-                el = f'{v}.{name}'
-                aliased = name in ALIASES.get(v, ())
-                if el not in ELEMENTS and not aliased:
+                el = f'{v}.{e.attrs.get("name", "")}'
+                if el not in ELEMENTS:
                     err(e, f'unknown element {el}')
                 for attr, text in e.attrs.items():
                     if attr != 'name':
-                        if aliased and attr in PLACED and f'{el}.{attr}' not in SCHEMA:  # a SCHEMA key keeps its theme_t field
-                            elem_row(t, v, name)[attr] = placed(e, f'{el}.{attr}', attr, text)
-                            continue
                         h, k = split_half(attr)
                         x = value(e, f'{el}.{k}', text, macros)
                         f = SCHEMA[f'{el}.{k}']
@@ -934,7 +877,6 @@ def resolve(root, by_id, seen=()):
         if o['setting'] == 'SETTING_ACCENT':
             o['values'] = 0 if t['accents'] == ALL_ACCENTS else t['accents']
     t['undeclared'] = [m for m, _ in SETTINGS.values() if m not in [o['setting'] for o in t['opts']]]
-    t['elems'].sort(key=lambda e: list(ALIASES[e['view']]).index(e['alias']))  # slides first: its children convert against its place
     return t
 
 
@@ -1051,27 +993,6 @@ def validate(t, name):
         for s in o['sets']:  # theme_t has one bar; the caption check above then holds for every set
             if sets(t)[s].bar != bar:
                 err(f"{o['key']}: set {s} has a {sets(t)[s].bar} px bar, the theme's is {bar}")
-    for e in t['elems']:
-        el = f"{e['view']}.{e['alias']}"
-        rect = [e[k] for k in 'xywh']
-        if None in rect and any(v is not None for v in rect):
-            err(f"{el}: x, y, w and h go together")
-        if e['y'] is None:
-            continue
-        x, y, w, h = e['x'], e['y'], e['w'], e['h']
-        if y + h > 320 - bar:
-            err(f'{el}: y {y} + h {h} exceeds the client height {320 - bar}')
-        if e['alias'] == 'tilt' and t['np_tilt_bl']:  # its corners, on their screen rows, and the reflection's foot
-            for edge, room, rows in (('left', x, (t['np_tilt_tl'], t['np_tilt_bl'])), ('right', 375 - x - w, (t['np_tilt_tr'], t['np_tilt_br']))):
-                for r in (*rows, h * 10):
-                    inset = max(corner_inset(bar + y + r // 10), corner_inset(bar + y + (r + 9) // 10))
-                    if room < inset:
-                        err(f'{el}: {edge} edge at row {bar + y + r / 10} crosses the glass ({room} from the side, needs {inset})')
-        # slides spans the window: a container, whose pages' own content clears the glass; tilt's corners are checked above
-        if e['alias'] not in ('slides', 'tilt'):
-            inset = corner_x(bar + y, h)
-            if x < inset or x + w > 375 - inset:
-                err(f'{el}: {x}..{x + w} at y {bar + y}..{bar + y + h} crosses the glass ({inset}..{375 - inset})')
 
 
 def accent_default(t):
@@ -1198,22 +1119,6 @@ def emit(themes, out, redirects={}):
         lines += [f'    {{ .setting = {setting(o)}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
                   f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
         lines.append('};')
-    def elem_name(e): return f"VIEW_{e['view'].upper()}, E_{e['view'].upper()}_{e['alias'].upper()}"
-    def elem_c(e):  # elem_t's order; unset: ELEM_UNSET, ELEM_KEEP, 0
-        rect = ['ELEM_UNSET' if e[k] is None else e[k] for k in 'xywh']
-        keep = [255 if e[k] is None else e[k] for k in ('visible', 'opacity')]
-        font = 255 if e['font'] is None else list(FONTS.values())[e['font']]
-        size = 255 if e['font_size'] is None else e['font_size']
-        color = f"0x{e['color']:08x}" if e['color'] else 0
-        align = 255 if e['align'] is None else f"ELEM_ALIGN_{ALIGN[e['align']].upper()}"
-        return '    {' + ', '.join(map(str, (elem_name(e), *rect, *keep, font, size, color, align))) + '},'
-    lines += ['enum { ' + ', '.join(f'VIEW_{v.upper()}' for v in ALIASES) + ', VIEW_N };',
-              'enum { ' + ', '.join(f'E_{v.upper()}_{a.upper()}' for v in ALIASES for a in ALIASES[v]) + ', ELEM_N };',
-              'static const char *const elem_widgets[ELEM_N] = {' + ', '.join(
-                  json.dumps(w) for v in ALIASES for w in ALIASES[v].values()) + '};']
-    for t in themes:
-        if t['elems']:
-            lines += [f'static const elem_t {c_name(t)}_elems[] = {{', *map(elem_c, t['elems']), '};']
     lines.append('static const theme_t themes[THEME_N] = {')
     for t in themes:
         # a final field's halves {dark, light}, flipped between the default accent's light paper and ink
@@ -1227,7 +1132,6 @@ def emit(themes, out, redirects={}):
                   ('schemes', f'{c_name(t)}_schemes'), ('light', f'{c_name(t)}_schemes' if shared(t) else f'{c_name(t)}_light'),
                   ('n_schemes', len(t['schemes'])),
                   ('opts', f'{c_name(t)}_opts'), ('n_opts', len(t['opts'])),
-                  ('elems', f'{c_name(t)}_elems' if t['elems'] else 0), ('n_elems', len(t['elems'])),
                   ('undeclared', ' | '.join(f'(1 << {m})' for m in t['undeclared']) or 0),
                   *((k.field, c(k, t[k.field])) for k in SCHEMA.values() if k.cls == 'open'),
                   ('geom', sets.index(geometry(t))), *motion_fields(t)]
