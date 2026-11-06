@@ -102,6 +102,7 @@ python3 test/bluealsa.py /tmp/q2-build     # the patched bluealsa's DROP paths a
 python3 test/alsa.py BUILD QEMU_MIPSEL     # ALSA startup lock regression (see internals.md)
 python3 test/ui_preview.py BEFORE AFTER OUT_DIR  # not a test: side-by-side iPod layout review sheets of two builds (or one build's two themes; --themes, ImageMagick)
 python3 -m pytest test/unit                # the changed tools/ functions: no stock ZIP, no build, no Q2 (pip install -r test/unit/requirements.txt); GitHub runs it on every pull request
+python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # the firmware's C on this machine: no stock ZIP, no build, no Q2 (see Firmware tests)
 ```
 
 - **MIPS suite:** `test/patch.py` executes the actual patched payload and the stock key and touch filters under Unicorn. UI services are mocked; the one other mocked boundary is the `system()` call that Key Tone uses to click the speaker. Case coverage lives in `test/patch.py`. Run the payload, headset worker, metadata dispatch and packaging checks for both Stock and iPod builds.
@@ -112,6 +113,28 @@ python3 -m pytest test/unit                # the changed tools/ functions: no st
 - **Manifest checks:** the runner refuses a `manifest.json` whose `source_sha256` doesn't match the current patch sources, and verifies the stock, patched and payload hashes against it.
 - **Guards:** the builder rejects any `patch/contexts.inc` name that isn't a window name in the stock rootfs UI assets, so an allowlist typo can't silently disable a screen. Widget offsets and shared ABI constants live in `patch/offsets.inc`, which both the payload and the test mocks read.
 - **Limits:** instruction counts are mocked-service measurements, not hardware latency.
+
+## Firmware tests
+
+`test/patch.py` runs the real MIPS payload, but it needs a build, so a stock ZIP. `test/fw` runs the firmware's C without one, on every pull request and push to `main` (`.github/workflows/firmware.yml`, with the host suites above that need no build).
+
+`test/fw/host.py` compiles `navigation.c` and `tools/peq.py`'s `UI_SOURCES`, the payload's own files, as they are for the Q2, not through `PEQ_HOST`, and links them into one library the tests load with ctypes. Their `stock.h` is `tools/build.py`'s own (`stock_header`) and `themes.inc` `tools/theme.py`'s, and `peq_platform.h` lays stock's functions out as `tools/peq.py` does, so the colour path through `peq.h` is the device's. A stock call, or a libc call with effects outside the process, is a stub: it records the call and returns 0 of its declared type (a float in the float register), or what the test's `fw.mock` returns; `tk_snprintf` and `tk_strcmp` answer as `vsnprintf` and `strcmp` unless mocked. So a test can't touch the card, the network or this machine.
+
+```sh
+python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw
+Q2_FW_SANITIZE=1 ASAN_OPTIONS=detect_leaks=0:allocator_may_return_null=1 LD_PRELOAD=$(cc -print-file-name=libasan.so) \
+    python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw-asan  # AddressSanitizer and UBSan
+Q2_FW_COVERAGE=1 python3 -m pytest test/fw  # .gcda files for gcov
+Q2_FW_STRICT=1 python3 -m pytest test/fw    # fail a test that reaches a stub tools/ doesn't declare, unmocked
+```
+
+- **Where it writes:** each test loads its own copy of the library (about 20 MB, more under ASan), deleted as soon as it's loaded, and a passing test's directory goes (`tmp_path_retention_policy`); a run leaves the session's build, a few MB. pytest's default base is under `/tmp`, which is RAM on many systems, so `--basetemp` on disk is the safer habit. A test that crashes the C (a segfault, a divide by zero) ends the whole run: `-v` names it.
+- **Python:** stock's fixed addresses (0x400000-0xc00000) must be free, so the python has to be position-independent. Debian's and Ubuntu's own `/usr/bin/python3` isn't; one built with the toolchain's default `-pie` (Arch's, Fedora's, `actions/setup-python`'s builds) is. conftest stops with a message on one that isn't.
+- **Mirrors:** `fw.var` checks a ctypes Structure mirror against the symbol's size, so a C struct that changed fails there instead of reading wrong offsets; `host.offsets(obj, type)` reads a struct's offsets from the debug info where a mirror would be fragile.
+
+- **Writing one:** `fw.fn('lyrics__lrc_time', restype, *argtypes)` reaches a static as `<file>__<name>`, and `fw.mock` and `fw.calls` take stub names: a stock function's, or `fw_<name>` for libc (`fw_fopen`). Work out the expected answer from what the function is for before running it.
+- **A known bug** stays as `@pytest.mark.xfail(strict=True, reason='BUG: ...')`: the test fails the job as soon as the bug is fixed, until the mark goes.
+- **Limits:** the code runs 64-bit, so `long` and pointers are wider than on the Q2, and stock widgets' layouts don't hold. Code that depends on those stays with `test/patch.py`. `peq_player.c`, `mp3_gapless.c` and the FLAC paths are the player's, tested by `test/peq.py`, `test/mp3_gapless.py` and the `test/flac_*.py` scripts.
 
 ## Mutation tests
 
@@ -130,10 +153,10 @@ python3 test/unit/report.py --survivors /tmp/survivors.txt  # score, table, each
 
 ### C
 
-mutmut mutates Python only, so none of `patch/*.c` is covered: 1,158 functions added or changed since 1.2.0, 394 of them in `navigation.c`. The way to cover them is a source-level mutator ([universalmutator](https://github.com/agroce/universalmutator), or a small one of our own) run on the same schedule against the host-compiled tests, one file at a time, starting with what is small and fast:
+mutmut mutates Python only. For the C (1,158 functions added or changed since 1.2.0, 394 of them in `navigation.c`), the way is a source-level mutator ([universalmutator](https://github.com/agroce/universalmutator), or a small one of our own) run on the same schedule, one file at a time, against tests that run in seconds:
 
-1. `library_scope.c`, `mp3_gapless.c` and `chapters.c`: 25 functions with small tests of their own. `test/library_scope.py` takes half a second; the other two need ffmpeg.
-2. `coverflow.c`, `peq.c`, `peq_ui.c` and `peq_player.c`: 180 functions, through `test/coverflow.py` and `test/peq.py`, which need the 32-bit libraries.
-3. `navigation.c` and `playback.c`: their tests need a stock build and `test/patch.py` takes about 6 minutes a run, so they can't run per mutant in public CI. They need a fast stock-free harness first, or a self-hosted runner holding the firmware.
+1. `library_scope.c`, `mp3_gapless.c` and `chapters.c`, through their own scripts. `test/library_scope.py` takes half a second; the other two need ffmpeg.
+2. `coverflow.c` and the `peq*` files, through `test/coverflow.py` and `test/peq.py`, which need the 32-bit libraries.
+3. Everything `test/fw` reaches, `navigation.c` and `playback.c` among them: the whole suite takes about 20 seconds, and a mutant needs only the tests of its own file. `test/patch.py` takes about 6 minutes a run and needs a stock build, so it can't run per mutant in public CI.
 
 Mutants of C run as real code, so they belong in a container with no network, as the fence above can't reach them.

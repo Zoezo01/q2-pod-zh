@@ -31,6 +31,12 @@
   - Cover Flow: under **Theme: Classic** a wheel step eases into place: each tick moves where the covers are heading without kicking their speed, a cover moving in no longer swells towards you or swings past its place, and it lands without a stutter. Home's Carousel and Photos keep their steps.
   - Cover Flow: under **Theme: Classic** the wheel holds the covers directly: turn slowly and a cover stays part-way until you let go; spin and they run up to 20 albums a second in a narrower row, with the caption going on ahead, and land on the album it names. Wheel Sensitivity scales it as it does other lists, and the art no longer jumps as a spin starts or stops.
   - Audiobooks: **Chapters** in the Now Playing hold menu is offered for any file in **Podcasts** or **Audiobooks**, such as an MP3 with chapters, not only an `.m4b`. On a CUE track of an `.m4b`, it lists that track's chapters at that track's times, and jumps to the right place. Chapters stored out of order are listed in order, where the list said "Could not read chapters".
+  - View Queue: deleting a song while Shuffle Songs, Shuffle Albums or a Repeat mode is on keeps your **Play Next** songs and what Previous goes back to. Deleting the song that's playing, Previous goes to the one before it. Next no longer plays past the end of the shorter queue.
+  - Streaming: hiding or showing a service for the first time no longer saves stray characters with the list of hidden services.
+  - Books: an EPUB whose chapters link to a folder beside their own (`../`) gets every chapter, not only the first.
+  - Books: going back a page in a book with damaged text no longer reads beyond the book's text.
+  - Card apps: a press made just as an app's page refreshes, or shows an error, does nothing, where it could act on another row or stop the app.
+  - EQ: a Preamp picked for a preset whose file name is longer than 63 characters now stays with that preset.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.

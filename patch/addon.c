@@ -1047,6 +1047,10 @@ static void append(lv_t *l, int from) {
 static void show(void) {
     lv_t *l = top();
     int n = 0;
+    /* a queued click names a row of the old list, so any rebuild drops it. ponytail: a short first
+     * page that append() rebuilds drops it too, row kept or not; match the row by identity in go()
+     * if that is ever pressed for. */
+    if (pg.next == G_ROW) stop_timer(&pg.go);
     pg.view = pg.edit = 0;
     if (l->state == K_LOAD && !((req.running || req.done) && !pg.act && req.id == l->id)) fetch(l);
     if (l->state == K_LOAD || l->state == K_WAIT) {

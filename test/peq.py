@@ -43,7 +43,7 @@ class DSP(C.Structure):
 def compile_host(tmp, name, *sources):
     path = tmp/name
     subprocess.run(['cc', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
-                    '-shared', '-fPIC', *map(str, sources), '-lm', '-o', str(path)], check=True)
+                    '-Wno-unused-result', '-shared', '-fPIC', *map(str, sources), '-lm', '-o', str(path)], check=True)  # glibc's fortified system()
     return C.CDLL(str(path))
 
 def library(tmp):
