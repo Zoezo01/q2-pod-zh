@@ -383,8 +383,7 @@ def patch_style(data, audit):
 STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state', 'label_eq']
 STATE_W = 18  # Classic's play state's width: its ink's last column is 282 (tools/art.py STATE_BOX)
-BAR_PAD = 6  # Classic's bar: the title's and the Home play state's ink this far clear of the glass (bar_right gives the battery's)
-HOME_STATE_X = 52 + BAR_PAD  # Classic's play state on Home, in the title's place: 52 the glass's reach into its ink (test_art)
+BAR_PAD = 6  # Classic's bar: the title's ink and the play state's this far clear of the glass (bar_right gives the battery's)
 STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
@@ -398,9 +397,9 @@ BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
 # Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery. On Home's own list the play state is
-# img_home_state instead, in the title's place, "Q2 Pod" hidden.
-STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
+# bar_state_sync), Bluetooth, Wi-Fi and the battery. The play state is at the bar's left instead, where the
+# title starts: the two share that run, and the payload shows one or the other (navigation.c state_own_place).
+STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT]
 CLOCK_GAP = 4
 CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
 CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
@@ -423,8 +422,11 @@ def status_metrics(g, font):
     label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
     inset = corner_inset(cap_top) + BAR_PAD
     pad = 2  # the hscroll_label's margin each side
+    # The play state's 18 px box comes first in that run: the glyph shows whenever a player plays, and the
+    # title starts after it, 2 px of its own margin away. Its box runs to x 164, so four hanzi fit before
+    # the clock's ink (a 24-hour "16:35" inks from 169); upstream's 98 px stopped at 152 and held four too.
     return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset, 'clock_text': clock_text,
-            'title': [inset - pad, label_y, g.bar_title_w + 2 * pad, h],
+            'title': [inset - pad + 20, label_y, g.bar_title_w + 2 * pad - 8, h],
             'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
 
 
@@ -450,9 +452,10 @@ def status_bar(root, g=SET0):
         pct[2].update({f'style:{s}:font_size': str(BATT_PCT_PX), f'style:{s}:text_align_h': 'right'})
     pct[2]['visible'] = 'false'
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
-    # Classic's set (bar_px): the title on the left in the Classic face, the clock centred, the icons right of it
+    # Classic's set (bar_px): the play state and the title at the left in the Classic face, the clock centred,
+    # the icons right of it.
     m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
-    left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
+    left[3] = [widgets['img_state']] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
     xm = g.bar_right if m else STATUS_MARGIN
     for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
@@ -478,15 +481,11 @@ def status_bar(root, g=SET0):
         # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
         eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
         eq[2].update({'floating': 'true', **face})
-        # The play state is in the row: Wi-Fi's ink ends on column 261 with it, and it closes up without it.
+        # The play state is at the left, its 18 px box the first in the left view's row.
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, put Bluetooth's ink (a row into its canvas) on the battery's top row
         right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 - 1) + 16
         left[1][3] = widgets['img_state'][1][3] = right[1][3]  # the state's 22 px art, its ink centred on the caps
-        home = copy.deepcopy(widgets['img_state'])
-        home[1][:] = [HOME_STATE_X, right[1][1], STATE_W, right[1][3]]
-        home[2].update(name='img_home_state', visible='false')
-        root[3].append(home)
         # The payload writes the top window's title (bar_title_sync) and the local time (ringnav_paint_bg).
         for name, style in (('title', 's_scrlabel_white20l'), ('clock', 's_scrlabel_white20c')):
             root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',

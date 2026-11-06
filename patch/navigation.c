@@ -441,10 +441,9 @@ typedef struct {
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
      * level, charge and low state. Classic's bar also has a title (bar_title_sync), from the
-     * top window title_win and, when a label holds it, title_lbl (both found once per window), and
-     * a play state of Home's own (home_state), which takes the title's place there (bar_home). */
+     * top window title_win and, when a label holds it, title_lbl (both found once per window). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
-        *bar_title, *home_state, *title_win, *title_lbl,
+        *bar_title, *title_win, *title_lbl,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
     int codec, codec_step, batt_mode;
     unsigned codec_timer, batt_key, bar_timer;
@@ -488,7 +487,7 @@ typedef struct {
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled, bar_bold, bar_home;
+    int time_title, bar_titled, bar_bold, bar_home, bar_own;
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;
@@ -3860,6 +3859,19 @@ static int pct_width(unsigned level) {
     return (level >= 100 ? 3 : level >= 10 ? 2 : 1) * st.pct_digit + st.pct_sign;
 }
 
+/* Whether the bar's left belongs to the play state alone: no page name there to show, so the
+ * glyph and its word take that room. Home's own list is one ("Q2 Pod" makes way for them), Now
+ * Playing's page the other (it has no title: bar_title_of). Minimal's bar has no title at all.
+ * A dialog keeps the page under it (bar_own), as it keeps that page's title. */
+static int state_own_place(void) {
+    if (!st.bar_title) return 1;
+    void *top = window_manager_get_top_window(window_manager());
+    if (top && !tk_strcmp(widget_get_type(top), "window"))
+        st.bar_own = home_menu(top) ||
+                     tk_str_start_with(widget_get_prop_str(top, "name", ""), "playing_page");
+    return st.bar_own;
+}
+
 /* img_state follows whichever player plays, stock's or Spotify's, radio's or a video's, and
  * label_idle shows when neither it nor label_eq does. Returns whether a state image changed. */
 static int bar_state_sync(void *bar) {
@@ -3874,23 +3886,22 @@ static int bar_state_sync(void *bar) {
         st.bar_state = widget_lookup(bar, "img_state", 1);
         st.bar_eq = widget_lookup(bar, "label_eq", 1);
         st.bar_title = widget_lookup(bar, "label_title", 1);
-        st.home_state = widget_lookup(bar, "img_home_state", 1);
     }
     int on = 0;
     if (st.bar_state) {
         int status = media_owner() == 1 ? mclGetPlayStatus() :
                      video_status() ?: radio_status() ?: spot_status();
         on = status == 2 || status == 3;
-        /* Classic: by the battery, but on Home's own list in the title's place, "Q2 Pod" hidden */
-        void *at = !on ? (void *)0 : st.bar_home && st.home_state ? st.home_state : st.bar_state;
-        for (void *const *w = (void *const[]){ st.bar_state, st.home_state }, *const *e = w + 2;
-             w < e; ++w)
-            if (*w && (*w == at) != !!widget_get_visible(*w)) {
-                widget_set_visible(*w, *w == at, 0);
-                changed = 1;
-            }
-        if (st.home_state && st.bar_title) widget_set_visible(st.bar_title, at != st.home_state, 0);
-        if (at) {
+        /* Classic's glyph sits at the bar's left, in the title's run (tools/ipod.py), and shows
+         * whenever a player plays; the title starts after it and never covers it. */
+        if (on != !!widget_get_visible(st.bar_state)) {
+            widget_set_visible(st.bar_state, on, 0);
+            changed = 1;
+        }
+        /* The word needs the title's room (bar_word_sync): on a page with a name of its own the
+         * name wins, everywhere else the state takes it. */
+        if (st.bar_title) widget_set_visible(st.bar_title, !(on && state_own_place()), 0);
+        if (on) {
             /* BATT_CLASSIC_LIGHT's play state is its own art (tools/art.py), by state and half */
             static const char *const classic_light_icon[2][2] = {
                 { "classic_light_play_d", "classic_light_pause_d" },
@@ -3900,8 +3911,8 @@ static int bar_state_sync(void *bar) {
                                    ? classic_light_icon[ipod_light()][status != 2]
                                : status == 2 ? "bar_play"
                                              : "bar_pause";
-            if (tk_strcmp(widget_get_prop_str(at, "image", ""), icon)) {
-                image_base_set_image(at, icon);
+            if (tk_strcmp(widget_get_prop_str(st.bar_state, "image", ""), icon)) {
+                image_base_set_image(st.bar_state, icon);
                 changed = 1;
             }
         }
@@ -3945,10 +3956,8 @@ static int bar_repaint(const void *info) {
  * EQ badge when it shows. */
 static void play_word_create(void *bar) {
     if (st.play_word || !st.bar_state) return;
-    /* Classic's bar names the page on the left and puts the play glyph beside the battery on the
-     * right: four hanzi there have no room and push into the clock, so that theme keeps the glyph
-     * alone and the state reads from it, as upstream's layout intends. */
-    if (theme()->set_text) return;
+    /* The word is the glyph's next sibling, in the same row: Minimal's bar is the glyph then the
+     * EQ badge, Classic's the glyph alone at the title's left. */
     void *left = P(st.bar_state, W_PARENT);
     if (!left) return;
     st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
@@ -3969,7 +3978,7 @@ static int bar_word_sync(void *bar) {
                  video_status() ?: radio_status() ?: spot_status();
     play_word_create(bar);
     if (!st.play_word) return 0;
-    int show = (status == 2 || status == 3) && !theme()->set_text &&
+    int show = (status == 2 || status == 3) && state_own_place() &&
                !(st.bar_eq && widget_get_visible(st.bar_eq));
     /* What the bar shows: the glyph's state, and whether the word has its room (bit 3). */
     int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
@@ -4028,9 +4037,7 @@ static void bar_sync(void *bar) {
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Classic: the play state or EQ shares the group */
-        if (classic_light && st.bar_state && widget_get_visible(st.bar_state))
-            reach += I(st.bar_state, W_W) + STATUS_GAP;
+        /* Classic: the EQ badge shares the group (the play state sits at the bar's left) */
         if (classic_light && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
         /* Classic's Percent Inside is the icon's own width: the icon would win no room */
@@ -5348,9 +5355,11 @@ static void *page_caption(void *win) {
 
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
-    if (tk_str_start_with(name, "playing_page")) return "Now Playing";
-    if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
-    if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
+    /* Now Playing's page has no title of its own: the play state's word takes the room and says
+     * which of the two it is (bar_word_sync), where a title could only repeat it. */
+    if (tk_str_start_with(name, "playing_page")) return 0;
+    if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow"; /* the feature's own name, as the menu's */
+    if (!tk_strcmp(name, "equalizer_page")) return "均衡器"; /* its 48 px row is the tabs' own label */
     void *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
         for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
