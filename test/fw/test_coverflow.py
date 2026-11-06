@@ -35,10 +35,11 @@ class Touch(C.Structure):
 
 
 class Home(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'win art list sets lib'.split()] + [('carousel', C.c_void_p * 3)] + \
+    _fields_ = [(k, C.c_void_p) for k in 'win art list sets lib stream'.split()] + [('carousel', C.c_void_p * 3)] + \
                [(k, C.c_uint) for k in 'key repaint drift drift_ms drift_last'.split()] + \
                [('tex', C.c_void_p), ('frame', C.c_void_p)] + [(k, C.c_int) for k in 'tw rx ry u0 v0 du dv pane'.split()] + \
-               [('row', C.c_void_p)] + [(k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()] + \
+               [(k, C.c_void_p) for k in 'row row_image row_label svc'.split()] + [('svc_name', C.c_char * 72)] + \
+               [(k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()] + \
                [('count_thread', C.c_ulong)] + [(k, C.c_uint) for k in 'asked pane_read count_timer pane_timer'.split()] + \
                [('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int)]
 

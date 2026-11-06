@@ -62,7 +62,7 @@ class Pg(C.Structure):
     _fields_ = [(n, C.c_void_p) for n in ('page', 'view', 'edit')] + [(n, C.c_uint) for n in ('timer', 'go', 'leave', 'again')] + \
                [(n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code')] + \
                [('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
-                ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int)]
+                ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte)]
 
 
 class Qp(C.Structure):

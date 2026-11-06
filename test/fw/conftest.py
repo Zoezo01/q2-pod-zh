@@ -44,6 +44,9 @@ def library(tmp_path_factory):
 @pytest.fixture
 def fw(library, tmp_path):
     loaded = host.Fw(library, tmp_path)
+    # page_list sizes its rows by its title label's fields (I(t, W_H)): a zeroed widget to read
+    label = C.create_string_buffer(0x400)
+    loaded.mock('hscroll_label_create', lambda *_: C.addressof(label))
     yield loaded
     unknown = loaded.unknown()
     loaded.close()
