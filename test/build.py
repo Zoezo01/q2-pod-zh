@@ -886,6 +886,9 @@ def validate_assets(directory):
             m = status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
             assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
+            # its title names the page, so the playlist page's toolbar (+ and list buttons) drops its own
+            pl = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'localmusic/{g.name}_playlist_page.bin')))}
+            assert pl['scrlabel_title'][2]['visible'] == 'false' and pl['view_navbar'][2].get('visible') != 'false', g.name
             assert 2 * m['cap_top'] + m['cap'] in (g.bar - 3, g.bar - 2) and m['inset'] >= corner_inset(m['cap_top']), g.name
             assert 2 * m['clock'][0] + m['clock'][2] == 375, g.name
             # the battery's nub ends clear of the glass, at its top row, above the bar's two lines

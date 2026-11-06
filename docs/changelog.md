@@ -8,6 +8,9 @@
   - Now Playing: **Theme: Classic** no longer shows the play/pause symbol over the album art, as Minimal doesn't. Modern still does.
   - Display: with square album art (**Theme: Modern** with **Rounded Corners** off, and **Theme: Classic**), the grey disc shown for an album with no art is square too, in Cover Flow, Now Playing, the full-screen art and album lists. Its corners stayed rounded.
   - Now Playing: under **Theme: Classic** the album art is larger and turned at an angle with its reflection under it, the place in the queue ("25 of 40") is under the album, and the progress bar is the iPod's, with the times on either side of it, as on an iPod classic.
+  - Now Playing: under **Theme: Classic** turning the volume shows it on the progress bar between two speakers, in place of the times, as on an iPod classic. The "Volume 40" line under the bar, small and hard to read, is gone. Minimal and Modern still show it.
+  - Library: under **Theme: Classic** the Playlists page no longer repeats "Playlists" beside its + and list buttons, where it didn't fit. The title bar names the page.
+  - Library: under **Theme: Classic** the Library's first row is **Search**, which opens the search with the keyboard up, as pulling the list down does. In Home's Split list the pull was easy to miss.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.

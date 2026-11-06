@@ -20,7 +20,7 @@ def pixels(data):
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -91,6 +91,16 @@ def test_sort_is_three_white_bars():
         ink = [x for x in range(w) if at(x, y) == (255, 255, 255, 255)]
         assert ink == list(range({0: 16, 1: 16, 5: 11, 6: 11, 10: 6, 11: 6}.get(y, 0))), y
         assert all(at(x, y)[3] == 0 for x in range(w) if x not in ink), y
+
+
+def test_the_volume_ends_are_white_speakers_the_loud_one_with_waves():
+    got = art.images(theme.builtins()[1])
+    (lw, lh, lo), (hw, hh, hi) = (pixels(got[f'classic_light_vol_{n}']) for n in ('lo', 'hi'))
+    assert (lw, lh, hw, hh) == (8, 13, 18, 13)
+    assert all(lo(x, y)[:3] == (255, 255, 255) for x in range(lw) for y in range(lh) if lo(x, y)[3])
+    assert all(hi(x, y) == lo(x, y) for x in range(7) for y in range(lh))  # the same speaker
+    waves = [x for x in range(9, hw) if any(hi(x, y)[3] for y in range(hh))]
+    assert waves and max(waves) == hw - 1
 
 
 def test_the_pane_icons_fit_their_box_and_keep_their_holes():

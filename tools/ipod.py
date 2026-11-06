@@ -1062,6 +1062,10 @@ def patch_asset(path, data, g=SET0):
         for n in nav[0][3]:
             if n[2].get('name') == 'gif_returnplay':
                 n[1][0] = 375 - corner_x(g.bar, n[1][3]) - n[1][2]
+            # a bar that names the page reads this title hidden (bar_title_of), so the page's
+            # copy goes: beside stock's + and list buttons it didn't fit
+            if n[2].get('name') == 'scrlabel_title' and g.bar_title_w:
+                n[2]['visible'] = 'false'
     for n in root[3]:
         if n is nav[0]:
             continue

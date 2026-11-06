@@ -2447,7 +2447,7 @@ static struct {
     int clipped;
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
-    home_lib_on(void), row_preview_on(void);
+    home_lib_on(void), row_preview_on(void), library_search(void);
 extern void library_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql);
@@ -2896,7 +2896,7 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
     int kind = PANE_LIBRARY;
     if (!row_preview_on()) kind = PANE_NOW; /* Row Preview off: Now Playing's on every row */
     else if (list == home.sets) kind = PANE_SETTINGS;
-    else if (list == home.lib) kind = id ? PANE_LIBRARY : PANE_SHUFFLE;
+    else if (list == home.lib) kind = id == library_search() ? PANE_SHUFFLE : PANE_LIBRARY;
     else {
         static const char *const names[] = { "img_playing", "img_library", 0,
                                               "img_coverflow", "img_folder", 0,

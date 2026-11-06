@@ -6202,11 +6202,15 @@ for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',O['NP_BAR_IPOD'],ACCENTS[4]
       assert fills==[(*band,color_t(0))],fills  # then the capsule, as the progress bar
       assert [(r['rect'],r['radius'],r['color']) for r in m.rounded]==[(bar,bh//2,color_t(O['TRACK_COLOR'])),((24,bar[1],327*40//100,bh),bh//2,color_t(fill))],m.rounded
   assert [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==[('Volume 40',(0,295,375,16),O['NP_TIMES_PX'])]; passed()
-  if theme=='1':  # Classic's times beside the bar: "Volume N" under the bar and its reflection
-      put(elapsed,16,247,50,21); m.bands.clear(); m.rounded.clear(); m.letters.clear(); paint(dlg); fills=[b[:5] for b in m.bands]
-      under=bar[1]+bh+O['SCRUB_REFLECT_ROWS']; assert fills[0]==((0,270,375,under+21-270,color_t(0))),fills; ipod_rows(bar[1])
-      assert [(t['text'],t['rect']) for t in m.letters]==[('Volume 40',(0,under,375,21))]; passed()
-      put(elapsed,16,265,80,16)
+  if theme=='1':  # Classic's times beside the bar, an iPod classic's: paper over the times alone, the bar the volume,
+      # the speakers (tools/art.py) where the times' text sat, no number; the slider over those rows
+      put(elapsed,16,247,50,21); put(remain,309,248,50,20); m.image_size=(8,13); m.calls=[]
+      m.bands.clear(); m.rounded.clear(); m.letters.clear(); m.image_draws.clear(); paint(dlg); fills=[b[:5] for b in m.bands]
+      assert fills[:2]==[(16,277,50,21,color_t(0)),(309,278,50,20,color_t(0))],fills; del fills[0]; ipod_rows(bar[1])
+      assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[0,277,375,21] and not m.letters
+      assert loaded(m)==['classic_light_vol_lo','classic_light_vol_hi']
+      assert [d for _,d in m.image_draws]==[(58,bar[1],8,13),(309,bar[1],8,13)]; passed()
+      put(elapsed,16,265,80,16); m.image_size=(50,50)
 assert len(m.timers)==1; poll=next(iter(m.timers))
 m.advance(O['VOL_POLL_MS']); assert not did('widget_invalidate_force') and poll in m.timers  # unchanged: nothing
 m.nodes[sv]['value']=41; m.advance(O['VOL_POLL_MS'])  # changed: the whole dialog repaints
@@ -9112,12 +9116,14 @@ for lt,mark in (('1','l'),('0','d')):
 same=bytes([0x48,0x14,0xff,0x80,0x80,0x80,0x80,0xff])+b'\xee'*4  # image()'s pixels
 assert image({},'classic_light_play_l',prep=classic_light)==[same,same] and image({'LIGHT':'0'},'classic_light_bolt',prep=classic_light)==[same,same]
 assert image({'THEME':'1','LIGHT':'1'},'bar_play')!=[same,same]; passed()
-# Sort's bars are a mark, not final art: drawn white, they flip to the ink on the light half's paper (black) and stay white
+# Sort's bars and the volume's speakers are marks, not final art: drawn white, they flip to the ink on the light half's paper (black) and stay white
 # on the dark half's. The theme's other art stays final.
 bars=[bytes([0xff,0xff,0xff,0xff]),bytes([0,0,0,0])]; barw=lambda v: bytes([v,v,v,0xff])+bytes([0,0,0,0])+b'\xee'*4
 ink0=image({'LIGHT':'1'},'bar_aac',prep=classic_light)[0][0]
 assert image({'LIGHT':'1'},'classic_light_sort_bars',prep=classic_light,px=bars)==[barw(ink0)]*2 and ink0<0x40,image({'LIGHT':'1'},'classic_light_sort_bars',prep=classic_light,px=bars)
 assert image({'LIGHT':'0'},'classic_light_sort_bars',prep=classic_light,px=bars)==[barw(0xff)]*2
+for v in ('lo','hi'):
+    assert image({'LIGHT':'1'},'classic_light_vol_'+v,prep=classic_light,px=bars)==[barw(ink0)]*2 and image({'LIGHT':'0'},'classic_light_vol_'+v,prep=classic_light,px=bars)==[barw(0xff)]*2
 assert image({'LIGHT':'1'},'classic_light_chevron',prep=classic_light,px=bars)==[barw(0xff)]*2; passed()
 # The codec badge (bar_aac, ...) is the scheme's ink, its alpha kept: Classic's monochrome marks.
 ink=bytes([0,0,0,0x80,0,0,0,0xff])+b'\xee'*4
@@ -10417,6 +10423,13 @@ fk,ck=m.handler(page,O['EVT_KEY_UP'])
 ev=m.alloc(0x40); m.word(ev,O['EVT_KEY_UP']); m.word(ev+O['EVENT_KEY'],O['KEY_RETURN'])
 assert m.call(address=fk,args=(ck,ev,0,0),gap=0)==11 and [c[0] for c in m.calls].count('navigator_back')==1
 m.close(); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.top!=page and m.nodes[m.top]['name']=='shuffle_page'; passed()
+# Classic (no Library icons): Search first, iconless, its press the pull-down's stock search.
+cm=classic_light_on(classic_light_new(ShuffleMachine))  # its own names: the cases below go on with m's Library
+cview=cm.node('scroll_view','scroll_view_localmusic',[cm.node('list_item') for _ in range(11)]); cm.top=cm.node('window','localmusic_page',[cview])
+assert cm.call(address=HOOKS['localmusic_page_init'][0],args=(cm.top,5,0,0),gap=0)==0
+ckids=cm.nodes[cview]['children']; cbutton=cm.nodes[ckids[0]]['children'][0]; clabel=cm.nodes[cbutton]['children'][0]
+assert len(ckids)==18 and cm.nodes[clabel]['text']=='Search' and cm.nodes[cm.nodes[cm.nodes[ckids[1]]['children'][0]]['children'][1]]['text']=='Shuffle'
+assert cm.handler(cbutton,O['EVT_CLICK'])==(syms['stock_search'],0); passed()
 def home_settings(full,modern=0):
         # Home's Rockbox row shows only while the card has Rockbox: hidden, it moves after Settings, so the
         # list's layout leaves no gap; it comes back after Folder once the card has it.
@@ -10514,9 +10527,9 @@ assert ltitled()=='Library'; passed()
 m.calls=[]; assert m.call(O['KEY_RETURN'])==11 and m.nodes[lst]['visible'] and not m.nodes[lib]['visible'] and ltitled()=='Q2 Pod'; passed()
 f,ctx=m.handler(named(m,m.top,'img_settings'),O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert ltitled()=='Settings'; passed()
 m.call(O['KEY_RETURN']); assert ltitled()=='Q2 Pod'
-# Open it again: the list comes back with the same rows (the real constructor rebuilds them, the mock keeps them; stock's constructor runs, its count no longer stock's), in Home's shape.
+# Open it again: the list comes back with the same rows (the real constructor rebuilds them, the mock keeps them; stock's constructor runs, its count no longer stock's; Classic's Search first), in Home's shape.
 lbefore=list(m.nodes[lview]['children']); m.calls=[]; f,ctx=m.handler(named(m,m.top,'img_library'),O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
-assert m.nodes[lview]['children']==lbefore and len(lbefore)==17 and any(c[0]=='stock_localmusic' for c in m.calls) and not any(c[0]=='widget_restack' for c in m.calls)
+assert m.nodes[lview]['children']==lbefore and len(lbefore)==18 and any(c[0]=='stock_localmusic' for c in m.calls) and not any(c[0]=='widget_restack' for c in m.calls)
 assert m.nodes[lib]['visible'] and ltitled()=='Library'
 for r in lbefore:
     lb=m.nodes[r]['children'][0]; assert m.get(lb+O['W_X'])==0 and m.get(lb+O['W_W'])==O['HOME_SPLIT_W'],lb
@@ -10602,12 +10615,11 @@ def pane_cases():
     m=pane_home(SHORTCUT='8'); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
     for _ in range(4): m.call()
     assert pane_shows(m)==(['classic_light_icon_folder'],[]); passed()
-    # Library's list: Shuffle's note and the song count; its other rows the Library's; Settings' list the gear.
+    # Library's list: Shuffle's note and the song count, under Search (library_search); its other rows the Library's; Settings' list the gear.
     m=pane_home(); m.advance(1500); art=named(m,m.top,'img_homeart'); lib=named(m,m.top,'list_view_homelib'); lview=named(m,m.top,'scroll_view_localmusic'); pane_nocover(m)
     m.nodes[lview]['children']=[m.entry(lview,i*28) for i in range(11)]
-    for name in ('coverflow_home_row',):
-        m.call(address=payload_syms[name],args=(lview,m.nodes[lview]['children'][0],0,0),gap=0); assert pane_shows(m)==(['classic_light_icon_note'],['7 Songs'])
-        m.call(address=payload_syms[name],args=(lview,m.nodes[lview]['children'][3],3,0),gap=0); assert pane_shows(m)==(['classic_light_note'],['7 Songs'])
+    for i,want in ((1,'classic_light_icon_note'),(0,'classic_light_note'),(3,'classic_light_note')):
+        m.call(address=payload_syms['coverflow_home_row'],args=(lview,m.nodes[lview]['children'][i],i,0),gap=0); assert pane_shows(m)==([want],['7 Songs']),i
     sets=named(m,m.top,'scroll_view_homeset'); m.call(address=payload_syms['coverflow_home_row'],args=(sets,m.nodes[sets]['children'][0],0,0),gap=0); assert pane_shows(m)==(['classic_light_icon_gear'],['4.0 GB Free']); passed()
 pane_cases()
 

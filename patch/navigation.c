@@ -5126,6 +5126,17 @@ int ringnav_bigcover(void *win, void *ctx) {
     return result;
 }
 
+/* A volume bar's end where the time it replaces sits: the speaker image name (tools/art.py) from x,
+ * or ending at x when right, centred on bar's rows. */
+static void vol_end(void *top, void *canvas, const char *name, int x, int right,
+                    const rect_t *bar) {
+    unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
+    if (widget_load_image(top, name, bitmap)) return;
+    int w = (int)bitmap[0], h = (int)bitmap[1];
+    rect_t src = { 0, 0, w, h }, dst = { right ? x - w : x, bar->y + (bar->h - h) / 2, w, h };
+    canvas_draw_image(canvas, bitmap, &src, &dst);
+}
+
 /* Every VOL_POLL_MS while the dialog vol_paint drew is still on top: a changed volume repaints it
  * whole. Stock's own invalidation of the hidden slider does not reliably reach the screen, so the
  * bar would stop following the wheel after a tick or two. */
@@ -5145,11 +5156,12 @@ static int vol_poll(const void *info) {
 /* The volume, drawn by stock's dialog/volume_dialog itself: transparent and full-screen (its
  * dimming highlight removed at build time, tools/ipod.py), it opens on the wheel's volume and
  * sets its slider_vol. Over Now Playing, as on an iPod classic, the band from the progress bar to
- * the times turns black with a white bar over the track and "Volume N"; over any other window
- * (Quick Settings included) a VOL_PANEL_* rounded panel in the fast-scroll letter's style holds
- * a pill bar and the number alone. slider_vol and label_vol are hidden, and slider_vol is moved
- * onto the area drawn, so stock's partial repaints land on it; vol_poll catches the changes those
- * miss. */
+ * the times turns black with a white bar over the track and "Volume N"; with Classic's times beside
+ * its bar, the bar shows the volume between the iPod's speakers in the times' place (vol_end), no
+ * number. Over any other window (Quick Settings included) a VOL_PANEL_* rounded panel in the
+ * fast-scroll letter's style holds a pill bar and the number alone. slider_vol and label_vol are
+ * hidden, and slider_vol is moved onto the area drawn, so stock's partial repaints land on it;
+ * vol_poll catches the changes those miss. */
 static void vol_paint(void *top, void *canvas) {
     void *wm = window_manager(), *lcd = P(canvas, CANVAS_LCD);
     if (!lcd || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return;
@@ -5157,16 +5169,25 @@ static void vol_paint(void *top, void *canvas) {
     void *vol = widget_lookup(top, "slider_vol", 1), *label = widget_lookup(top, "label_vol", 1);
     if (n < 2 || !vol) return;
     int np = widget_get_child(wm, n - 2) == st.np_win && st.np_slider && st.np_elapsed;
-    rect_t area, bar, text;
+    rect_t area, bar, text, lo, hi;
+    int beside = 0;
     if (np) {
         void *slider = st.np_slider, *times = st.np_elapsed;
         int dy = I(st.np_win, W_Y) - I(top, W_Y), y = dy + I(slider, W_Y),
             bh = widget_get_prop_int(slider, "bar_size", 8), ty = dy + I(times, W_Y);
         bar = (rect_t){ I(slider, W_X), y + (I(slider, W_H) - bh) / 2, I(slider, W_W), bh };
-        if (ty < bar.y + bh) /* Classic's times sit beside the bar: under it and its reflection */
-            ty = bar.y + bh + SCRUB_REFLECT_ROWS;
         text = (rect_t){ 0, ty, I(st.np_win, W_W), I(times, W_H) };
         area = (rect_t){ 0, y, text.w, ty + text.h - y };
+        /* Classic's times share the bar's rows: their boxes, and the bar with its reflection */
+        beside = ty < bar.y + bh && st.np_remain;
+        if (beside) {
+            lo = (rect_t){ I(times, W_X), ty, I(times, W_W), text.h };
+            hi = (rect_t){ I(st.np_remain, W_X), dy + I(st.np_remain, W_Y), I(st.np_remain, W_W),
+                           I(st.np_remain, W_H) };
+            int end = bar.y + bh + SCRUB_REFLECT_ROWS;
+            area.y = ty < bar.y ? ty : bar.y;
+            area.h = (ty + text.h > end ? ty + text.h : end) - area.y;
+        }
     } else {
         area = (rect_t){ VOL_PANEL_X, VOL_PANEL_Y, I(top, W_W) - 2 * VOL_PANEL_X, VOL_PANEL_H };
         int x = area.x + VOL_PANEL_PAD, bw = area.w - 2 * VOL_PANEL_PAD - VOL_PANEL_TEXT;
@@ -5183,7 +5204,12 @@ static void vol_paint(void *top, void *canvas) {
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[12] = { 'V', 'o', 'l', 'u', 'm', 'e', ' ' },
              k = np ? 7 : 0;
     int w = max > 0 ? bar.w * clamp_step(0, max, level) / max : 0;
-    if (np) {
+    if (beside) { /* paper over the times alone; ponytail: the elapsed time's box also takes the
+                   * reflection's faint last rows (internals.md) */
+        canvas_set_fill_color(canvas, RGBA(0));
+        canvas_fill_rect(canvas, lo.x, lo.y, lo.w, lo.h);
+        canvas_fill_rect(canvas, hi.x, hi.y, hi.w, hi.h);
+    } else if (np) {
         canvas_set_fill_color(canvas, RGBA(0));
         canvas_fill_rect(canvas, area.x, area.y, area.w, area.h);
     } else {
@@ -5198,6 +5224,11 @@ static void vol_paint(void *top, void *canvas) {
         if (w) fill_box(canvas, &on, RGBA(np ? accent_tone(TONE_LIGHT) : 0xffffff), bar.h / 2);
     }
     stock_canvas_set_fill_color(canvas, fill);
+    if (beside) {
+        vol_end(top, canvas, "classic_light_vol_lo", lo.x + lo.w, 1, &bar);
+        vol_end(top, canvas, "classic_light_vol_hi", hi.x, 0, &bar);
+        return;
+    }
     k += put_num(s + k, (unsigned)clamp_step(0, 999, level));
     draw_centred(canvas, s, k, &text, np ? NP_TIMES_PX : VOL_PANEL_PX, 0xffffffff);
 }
@@ -5757,9 +5788,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
     /* The images a BATT_CLASSIC_LIGHT theme generates (tools/art.py) are final, but for Sort's
-     * bars: a mark on the list's paper, in the half's ink */
+     * bars and the volume's speakers: marks on the paper, in the half's ink */
     if (s && !*s && T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT &&
-        tk_str_start_with(name, "classic_light_") && tk_strcmp(name, "classic_light_sort_bars"))
+        tk_str_start_with(name, "classic_light_") && tk_strcmp(name, "classic_light_sort_bars") &&
+        !tk_str_start_with(name, "classic_light_vol_"))
         s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
      * secondary text's grey, legible on the black list and on the selected row's off-white card. */
@@ -9301,9 +9333,14 @@ static void library_look(void *view) {
     }
 }
 
-/* The Library: one Shuffle row opening its menu, browsing, the user's own lists, listening
- * history, the card's other media, then upkeep. The added rows' buttons have no name, so stock's
- * row click (atoi of the name, 0x5241fc) never sees them. */
+/* 1 when the Library leads with Search, in a set without Library icons (Classic): the pull-down's
+ * own stock search (0x5241c4, which ignores its arguments) shown, as Home's Split list hides the
+ * pull. Home's pane counts Shuffle's row from it (coverflow.c coverflow_home_row). */
+int library_search(void) { return !geom_val(V_LIB_ART); }
+
+/* The Library: Search (library_search), one Shuffle row opening its menu, browsing, the user's own
+ * lists, listening history, the card's other media, then upkeep. The added rows' buttons have no
+ * name, so stock's row click (atoi of the name, 0x5241fc) never sees them. */
 int ringnav_localmusic(void *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
@@ -9311,6 +9348,8 @@ int ringnav_localmusic(void *win, void *ctx) {
     void *stock[L_STOCK];
     for (int i = 0; i < L_STOCK; i++) stock[i] = widget_get_child(view, i);
     unsigned n = 0; /* each row moves to n as it comes, so Update Local Music, left, ends last */
+    if (library_search())
+        widget_restack(library_into(view, (void *)0, stock_search, 0, "Search"), n++);
     widget_restack(library_into(view, "local_shuffle", shuffle_menu, 0, "Shuffle"), n++);
     static const unsigned char middle[] = { L_ARTISTS,   L_ALBUMS, L_SONGS, L_GENRES,
                                             L_PLAYLISTS, L_FAV,    L_ADDED, L_RECENT };

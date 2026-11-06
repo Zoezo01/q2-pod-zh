@@ -204,6 +204,13 @@ SORT = 'M0 0H16V2H0ZM0 5H11V7H0ZM0 10H6V12H0Z'
 SORT_BOX = (0, 0, 16, 12)  # Songs' Sort, white as stock's glyphs: Light Mode flips it to the ink
 # Home's pane (coverflow.c): original drawings in the note's coordinates. Each but the note is fitted into a 92 px box
 # centred on PANE_CENTRE, the note's own place standing for its size; all share one fill and stroke (icon).
+# The volume bar's two ends (navigation.c vol_paint), where an iPod classic's are: a speaker, and one with its
+# waves, the iPod bar's height; white as SORT, Light Mode flips them to the ink. The waves end within the cone's
+# height, so the box's rows hold them.
+SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'
+WAVES = [f'M{7 + r * math.cos(a):.2f} {6.5 - r * math.sin(a):.2f}A{r} {r} 0 0 1 {7 + r * math.cos(a):.2f} {6.5 + r * math.sin(a):.2f}'
+         for r in (3.2, 6.6, 10) for a in (math.asin(min(math.sin(math.radians(48)), 5.6 / r)),)]
+SPEAKER_BOX, WAVES_BOX = (0, 0, 8, 13), (0, 0, 18, 13)
 PANE_ICONS = {
     'note': 'M254 82.5 317 71.5V156A16 12.5 -12 1 1 308.5 145.5V101L262 109.5V165A17 12.5 -12 1 1 254 153.5Z',
     'folder': 'M230 92q0-6 6-6h24l8 9h43q6 0 6 6v60q0 6-6 6h-75q-6 0-6-6Z',
@@ -262,6 +269,11 @@ def images(t):
         out[f'{prefix}_bolt'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(stroke(shape, 1.6), lambda x, y: (0xffffff, t['bolt_halo_a'] / 255)),
                                                                        (shape, lambda x, y: (t['bolt'], 1))]))
         out[f'{prefix}_plug'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(path(PLUG), lambda x, y: (t['bolt'], 1))]))
+    if t['np_track']:  # the iPod's bar on Now Playing: its volume's ends
+        white = lambda x, y: (0xffffff, 1)
+        waves = stroke([p for d in WAVES for p in path(d)], 1.5, closed=False)
+        out[f'{prefix}_vol_lo'] = png(*SPEAKER_BOX[2:], compose(SPEAKER_BOX, [(path(SPEAKER), white)]))
+        out[f'{prefix}_vol_hi'] = png(*WAVES_BOX[2:], compose(WAVES_BOX, [(path(SPEAKER), white), (waves, white)]))
     if t['state_stops']:
         fill, edge = gradient(t['state_stops'], *STATE_Y), gradient(t['state_edge'], *STATE_Y)
         for name, d in STATE.items():
