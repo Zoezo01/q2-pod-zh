@@ -9,7 +9,7 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from build import ROOT
-from ipod import CLASSIC_LIGHT_FONT_SRC, STATE_W
+from ipod import CLASSIC_LIGHT_FONT_SRC, STATE_W, inc
 
 SUB = 8  # sub-rows per pixel; columns are exact within a sub-row
 
@@ -275,6 +275,34 @@ def icon(d, fit):
 
 
 NOTE_BOX = (222, 66, 100, 115)  # the drawing's viewBox
+# Internet Radio's cover under Classic (playing.station, #204's generic cover's family), an original drawing on a 320 px
+# square, drawn at the size it fills: its rows' gradient, a light band across its top, and a mast over its soft shadow.
+# The mast's gradient and the shadow are stated at 160 px.
+STATION_BAND = 'M0 0H320V64L240 80 0 120Z'
+STATION_MAST = ('M96 86a90 90 0 0 0 0 110l18-14a66 66 0 0 1 0-82ZM224 86a90 90 0 0 1 0 110l-18-14a66 66 0 0 0 0-82Z'
+                'M126 108a50 50 0 0 0 0 66l16-13a28 28 0 0 1 0-40ZM194 108a50 50 0 0 1 0 66l-16-13a28 28 0 0 0 0-40Z'
+                'M160 118a23 23 0 1 1-.1 0ZM150 170h20l28 100h-76Z')
+STATION_MAST_Y = (19, 134)  # the mast's gradient's ends, in the image's rows
+STATION_SHADOW = (1.5, 2.5)  # the shadow: rows down, and its blur's standard deviation in px
+@functools.cache
+def station(stops, mast_stops, band_a, shadow_a, size):
+    """The station cover's RGBA bytes, size px square."""
+    scale = size / 160
+    placed = lambda d: [[(x * scale / 2, y * scale / 2) for x, y in poly] for poly in path(d)]
+    box = (0, 0, size, size)
+    mast, down, sd, reach = placed(STATION_MAST), STATION_SHADOW[0] * scale, STATION_SHADOW[1] * scale, round(8 * scale)
+    held = coverage([[(x, y + down) for x, y in poly] for poly in mast], box)
+    kernel = [math.exp(-(k * k) / (2 * sd * sd)) for k in range(-reach, reach + 1)]
+    total = sum(kernel)
+    at = lambda v, x, y: v[max(0, min(size - 1, y)) * size + max(0, min(size - 1, x))]
+    across = [sum(w * at(held, x + k - reach, y) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
+    shadow = [sum(w * at(across, x, y + k - reach) for k, w in enumerate(kernel)) / total for y in range(size) for x in range(size)]
+    whole = [[(0, 0), (size, 0), (size, size), (0, size)]]
+    fill, ink = gradient(stops, 0, size), gradient(mast_stops, *(y * scale for y in STATION_MAST_Y))
+    return compose(box, [(whole, lambda x, y: (fill(y), 1)),
+                         (placed(STATION_BAND), lambda x, y: (0xffffff, band_a / 255)),
+                         (whole, lambda x, y: (0, shadow[int(y) * size + int(x)] * shadow_a / 255)),
+                         (mast, lambda x, y: (ink(y), 1))])
 STATE = {'play': 'M270.5 4.5 282.5 11.5 270.5 18.5Z', 'pause': 'M270.5 4.5H275V18.5H270.5ZM278 4.5H282.5V18.5H278Z'}
 STATE_BOX = (266, 0, STATE_W, 22)  # the frame the state art is drawn in, on the bar's rows; the art itself is position-free
 STATE_Y = (4, 19)  # the fill's and edge's first and last rows
@@ -872,4 +900,7 @@ def images(t):
         out |= {f'{prefix}_tile': tile(), f'{prefix}_clock_chrome': clock_chrome(), f'{prefix}_clock_shadow': clock_shadow(), f'{prefix}_hint_shadow': hint_shadow()}
     if t['painter[PAINT_CONFIRM]']:
         out[f'{prefix}_confirm_shadow'] = png(*TRAY_SHADOW_BOX[2:], tray_shadow())
+    if t['station_stops']:  # Internet Radio's Now Playing art, as large as the slanted art (navigation.c stream_ipod)
+        px = inc('NP_IPOD_ART')
+        out[f'{prefix}_station'] = png(px, px, station(t['station_stops'], t['station_mast'], t['station_band_a'], t['station_shadow_a'], px))
     return out

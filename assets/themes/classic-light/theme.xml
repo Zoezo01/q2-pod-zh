@@ -89,14 +89,15 @@
              edge="#114c8f 0, #135999 100" halo_light="0" halo_dark="0"/>
   </view>
   <!-- Now Playing, an iPod classic's: the art turned in perspective over its reflection (the classic-light sets' np_ipod,
-       coverflow.c slant_render), and the progress bar's track, a row each of its NP_BAR_IPOD (13): faint 1 px top
-       and bottom lines round a near-white inside; the dark half's Apple's capture darkened, its step at the middle
+       coverflow.c slant_render), and the progress bar's track over its NP_BAR_IPOD (17) rows: faint 1 px top
+       and bottom lines round a near-white inside, the inner stops from 6 to 94 so no row past the first and before the
+       last takes an edge's colour; the dark half's Apple's capture darkened, its step at the middle
        kept; the accent's band fills the played part (navigation.c paint_scrubber). Its rows painter's 31 rows, fixed
        colours (#rrggbbaa its own alpha), are the volume panel's away from Now Playing and a card app's progress -->
   <view name="playing">
     <element name="art" square="1"/>
-    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 8, #ffffff 17, #ffffff 25, #fafafa 33, #fafafa 42, #f6f6f6 50, #f6f6f6 58, #f6f6f6 67, #f4f4f4 75, #f4f4f4 83, #f4f4f4 92, #cecece 100"
-             dark.stops="#313131 0, #373737 8, #383838 17, #373737 25, #363636 33, #353535 42, #323232 50, #313131 58, #323232 67, #343434 75, #353535 83, #343434 92, #2b2b2b 100"
+    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 6, #ffffff 15, #ffffff 24, #fafafa 32, #fafafa 41, #f6f6f6 50, #f6f6f6 59, #f6f6f6 68, #f4f4f4 76, #f4f4f4 85, #f4f4f4 94, #cecece 100"
+             dark.stops="#313131 0, #373737 6, #383838 15, #373737 24, #363636 32, #353535 41, #323232 50, #313131 59, #323232 68, #343434 76, #353535 85, #343434 94, #2b2b2b 100"
              painter="rows"
              light_track="#e7e7e7 #eeeeee #ffffff #fdfdfd #f7f7f7 #f7f7f7 #f3f3f3 #f0f0f0 #ebebeb #e4e4e4 #dedede #dfdfdf #e6e6e6 #ededed #ececec #d1d1d1 #d0d0d0 #fdfdfd #f0f0f0 #efefef #f5f5f5 #f8f8f8 #f4f4f4 #efefef #efefef #efefef #f6f6f6 #f7f7f7 #f7f7f7 #f7f7f7 #f9f9f9"
              light_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #c7f2ff #c7f2ff #ceefff #d2ecfd #d2ecfd #daedfe #deeefe #deeefe #e7f1fd #eef5ff #eef5ff #f8f9fe #fcfcfe #fcfcfe"
@@ -105,8 +106,11 @@
     <element name="title" font="classic-light" font_px="27"/>
     <element name="album" caps="0" opacity="255"/>
     <element name="state" opacity="0"/>  <!-- no play/pause glyph on the art, as Minimal -->
-    <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes -->
-    <element name="info" font="classic-light" font_size="17"/>
+    <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes, and Now Playing's info rows,
+         their names in the ink and their values in this grey, final in each half -->
+    <element name="info" font="classic-light" font_size="17" light.value="#8e9196" dark.value="#8a8a8a"/>
+    <!-- Internet Radio's cover under the slanted art (tools/art.py station): a slate gradient, a light band, a white mast -->
+    <element name="station" stops="#94a2a5 0, #6b7584 100" mast="#ffffff 0, #f3f5f8 45, #c0c8ca 100" band_a="13" shadow_a="85"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,

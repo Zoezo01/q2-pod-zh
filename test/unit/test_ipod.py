@@ -1,6 +1,7 @@
 """tools/ipod.py's page rewrites on small synthetic UI trees built to the shape each one checks for."""
 import copy
 import dataclasses
+import math
 import re
 
 import pytest
@@ -388,8 +389,18 @@ def test_playing_page_classic_ipod():
     assert cover[0] == ipod.NP_MARGIN and cover[2:] == [ipod.NP_IPOD_ART, ipod.NP_IPOD_ART + ipod.NP_REFLECT]
     assert cover[1] > 0 and ipod.corner_x(top, 0) <= cover[0] < ipod.corner_x(top - 1, 0)
     assert n['slide_view'][1][3] == cover[1] + cover[3] <= view[3]
-    for k in ('label_lyricmsg', 'view_lrc', 'label_a', 'label_b', 'slide_indicator1'):
+    for k in ('label_lyricmsg', 'view_lrc', 'slide_indicator1'):
         assert n[k][1][1] == b[k][1][1] + lift, k
+    # the info page's rows, from the top row's end (the page's lift) to the dots, clear of the glass: each of stock's
+    # labels the name, left, and a <name>_value beside it, right-aligned and ellipsized, its right edge mirroring x
+    info, row = n['view_info'][3], ipod.NP_DOTS_Y // 2
+    ix = max(g.text_x, ipod.corner_x(g.bar + ipod.NP_TOP, row), ipod.corner_x(g.bar + ipod.NP_TOP + row, row))
+    assert [c[2]['name'] for c in info] == ['label_a', 'label_b', 'label_a_value', 'label_b_value']
+    assert [c[1] for c in info] == [[ix, lift + row * i, ipod.NP_INFO_NAME_W, row] for i in range(2)] + [
+        [ix + ipod.NP_INFO_NAME_W, lift + row * i, 375 - 2 * ix - ipod.NP_INFO_NAME_W, row] for i in range(2)]
+    assert lift + 2 * row <= n['slide_indicator1'][1][1] and all(c[2]['style:normal:text_align_h'] == 'left' for c in info[:2])
+    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20r' and c[2]['ellipses'] == 'true' for c in info[2:])
+    assert [c[1] for c in b['view_info'][3]] == [[5 + (375 - 225) // 2, 6, 7, 8], [10 + (375 - 225) // 2, 6, 7, 8]]  # the others' lines
     assert n['view_lrc'][2]['self_layout'] == f'default(x=0,y={lift},w=375,h=178)'
     assert root[3][-1] is n['img_more'] and n['img_more'][1] == b['img_more'][1]
     after = [c[2].get('name') for c in root[3]][root[3].index(n['slide_view_view']) + 1:][:2]
@@ -398,8 +409,9 @@ def test_playing_page_classic_ipod():
     assert n['label_ipod_pos'] in n['view_album'][3] and pos[0] == album[0] == title[0] == cover[0] + cover[2] + 12
     assert view[1] + title[1] >= n['img_more'][1][3] - 2 and pos[1] == album[1] + 28
     assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
-    assert x == ipod.with_geometry(dataclasses.replace(g, np_ipod=0)).NP_BAR[0] + ipod.NP_IPOD_TIME_W + ipod.NP_IPOD_TIME_GAP and x + w_ == 375 - x
     play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
+    assert play[1][0] == ipod.corner_x(g.bar + play[1][1], play[1][3]) and x + w_ == 375 - x and w_ >= 170  # the times' rows clear the glass
+    assert play[1][3] == bar + 4 and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_W
     assert play[1][0] + play[1][2] + ipod.NP_IPOD_TIME_GAP == x and remain[1][0] == x + w_ + ipod.NP_IPOD_TIME_GAP
     assert 2 * play[1][1] + play[1][3] == 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar
     assert play[2]['style:normal:font_name'] == ipod.CLASSIC_LIGHT_FONT_NAME == remain[2]['style:normal:font_name']
@@ -1158,3 +1170,16 @@ def test_lists_beside_settings_rows_take_item_height(monkeypatch):
     data = ipod.encode(list_page(path)); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
     assert named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))['list_view'][2]['item_height'] == '32'
     assert 'item_height' not in named(ipod.decode(ipod.patch_asset(path, data)))['list_view'][2]
+
+
+def test_classic_times_fit():
+    """Classic's times: "-1:02:03" fits NP_IPOD_TIME_W at NP_IPOD_TIME_PX with no switch for the hours, in the model
+    status_metrics uses (stb scales a font so that ascent - descent is its size; advances, no kerning), and
+    NP_IPOD_TIME_PX is the largest whose line fits the box's height, the bar's rows and two each side."""
+    from fontTools.ttLib import TTFont
+    f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
+    asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
+    width = lambda px: math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in '-1:02:03') * px / (asc - desc))
+    px, box = ipod.NP_IPOD_TIME_PX, ipod.inc('NP_BAR_IPOD') + 4
+    assert (px, width(px), ipod.NP_IPOD_TIME_W) == (21, 56, 56)
+    assert width(px) <= ipod.NP_IPOD_TIME_W and px <= box < px + 1

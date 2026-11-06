@@ -172,18 +172,23 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # clears the glass by CORNER_SLACK, as the full-screen art's do; "3 of 12" under the album; the art's box NP_REFLECT
 # taller, the room its reflection takes under the near edge (coverflow.c slant_render); the times in the
 # Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-1:02:03" fits: stb scales
-# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows.
-NP_IPOD_ART = 198
+# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows,
+# two rows more each side (NP_IPOD_TIME_H), the outer edges clear of the glass over those rows.
+NP_IPOD_ART = inc('NP_IPOD_ART')
 NP_IPOD_LIFT = 30
 NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
-NP_IPOD_TIME_W = 47
-NP_IPOD_TIME_GAP = 8
+NP_IPOD_TIME_W = inc('NP_IPOD_TIME_W')
+NP_IPOD_TIME_GAP = inc('NP_IPOD_TIME_GAP')
 NP_IPOD_TIME_PX = inc('NP_IPOD_TIME_PX')
+NP_IPOD_TIME_H = inc('NP_BAR_IPOD') + 4
+NP_INFO_NAME_W = 100  # the info page's names ("Sample Rate" 76 px in the info role's 17)
+NP_IPOD_TIME_Y = 255 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2  # the slider centred on 255
 
 
 def with_geometry(g):
     """The row sizes and the Now Playing insets that clear the glass, for a window starting at g.bar."""
-    bar_x = max(MARGIN, corner_x(g.bar + 251, 8)) + g.np_ipod * (NP_IPOD_TIME_W + NP_IPOD_TIME_GAP)
+    edge = corner_x(g.bar + NP_IPOD_TIME_Y, NP_IPOD_TIME_H) if g.np_ipod else corner_x(g.bar + 251, 8)
+    bar_x = max(MARGIN, edge) + g.np_ipod * (NP_IPOD_TIME_W + NP_IPOD_TIME_GAP)
     return types.SimpleNamespace(
         BOTTOM=320 - g.bar, PITCH=g.pitch, BODY=g.body, ART=g.art, ART_INSET=g.art_inset,
         NP_POS_X=max(NP_MARGIN, corner_x(g.bar + (NP_TOP - 16) // 2, 16)) + 6,  # "3 of 12", 16px text
@@ -658,9 +663,22 @@ def playing_page(root, g=SET0):
     # its y set as laid out too: visualizer.c places its page by it before the first layout
     named['view_lrc'][1][1] = lift
     named['view_lrc'][2]['self_layout'] = f'default(x=0,y={lift},w=375,h=178)'
-    for n in named['view_info'][3]:
-        n[1][0] += column
-        n[1][1] += lift
+    info = named['view_info'][3]
+    if g.np_ipod:  # Classic: the track's details as rows (navigation.c ringnav_np_info), from the top row's end to the dots:
+        # stock's label the name, left, and a <name>_value hscroll_label beside it the value, right-aligned and
+        # ellipsized as a settings value; both in the info role's face, whose size the rows hold (test/build.py).
+        row = NP_DOTS_Y // len(info)  # the page's rows from lift (the window's NP_TOP) to the dots at NP_DOTS_Y + lift
+        x = max(g.text_x, *(corner_x(g.bar + NP_TOP + row * i, row) for i in range(len(info))))
+        for i, n in enumerate(list(info)):
+            n[1] = [x, lift + row * i, NP_INFO_NAME_W, row]
+            n[2] = {k: v for k, v in n[2].items() if k not in ('line_wrap', 'word_wrap', 'style:normal:text_align_v')}
+            n[2]['style:normal:text_align_h'] = 'left'
+            info.append(['hscroll_label', [x + NP_INFO_NAME_W, n[1][1], 375 - 2 * x - NP_INFO_NAME_W, row], {
+                'name': n[2]['name'] + '_value', 'style': 's_scrlabel_white20r', 'only_focus': 'true', 'ellipses': 'true'}, []])
+    else:
+        for n in info:
+            n[1][0] += column
+            n[1][1] += lift
     # Classic's page reaches past the dots, down to its art's reflection, so a swipe takes it along
     slide_h = max(NP_SLIDE_H + lift, art_y + art + g.np_ipod * NP_REFLECT)
     named['slide_view_view'][1] = [0, NP_TOP - lift, 375, max(NP_DOTS_Y + lift + 10, slide_h)]
@@ -692,10 +710,10 @@ def playing_page(root, g=SET0):
         for key in n[2]:
             if key.endswith(':text_color'): n[2][key] = NP_GREY
     if g.np_ipod:  # an iPod classic's times: beside the bar, centred on its rows as stock centres them
-        top = y + h // 2 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2
+        check(y + h // 2 == 255, 'Classic\'s times are centred on the bar at 255')
         for n, box_x, align in ((named['label_playtime'], x - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W, 'right'),
                                 (remain, x + w + NP_IPOD_TIME_GAP, 'left')):
-            n[1] = [box_x, top, NP_IPOD_TIME_W, inc('NP_BAR_IPOD') + 4]
+            n[1] = [box_x, NP_IPOD_TIME_Y, NP_IPOD_TIME_W, NP_IPOD_TIME_H]
             for state in [k.split(':')[1] for k in n[2] if k.endswith(':text_color')]:
                 n[2].update({f'style:{state}:text_color': '#FFFFFF', f'style:{state}:font_name': CLASSIC_LIGHT_FONT_NAME,
                              f'style:{state}:font_size': str(NP_IPOD_TIME_PX), f'style:{state}:text_align_h': align})
@@ -709,6 +727,12 @@ def playing_page(root, g=SET0):
         root[3][at:at] = [named['label_playtime'], remain]
         buttons[3].remove(named['img_more'])
         root[3].append(named['img_more'])
+        # Spotify's and Internet Radio's pages take these places (navigation.c stream_ipod), in the window
+        dy = NP_TOP - lift
+        check([NP_MARGIN, dy + art_y, art, text_x, dy + title[1][1], fav_x, dy + icons_y, x, NP_IPOD_TIME_Y + 2,
+               *(n[1][1] - title[1][1] for n in (artist, album, pos))] ==
+              [inc('SPOT_ART_X'), *(inc('NP_IPOD_' + k) for k in 'ART_Y ART TEXT_X TEXT_Y FAV_X FAV_Y BAR_X BAR_Y'.split()), 34, 62, 90],
+              "NP_IPOD_* != Classic's Now Playing")
 
 
 # Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the

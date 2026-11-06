@@ -113,7 +113,7 @@ static struct {
     void *page, *info, *msg, *art, *bar, *glyph, *title, *artist, *album, *elapsed, *remain, *note,
         *sub;
     unsigned timer, leave, scrub_at, shown, playing, press, press_at, bar_drawn; /* bar_drawn: its state + 1 */
-    int scrub, scrub_ms;
+    int scrub, scrub_ms, ipod;         /* ipod: Classic's layout (stream_ipod) */
     char art_track[64], art_tried[64]; /* art_tried: the track whose cover failed, tried art_tries times */
     int art_tries;
 } ui __attribute__((section(".scratch")));
@@ -437,13 +437,15 @@ static void spot_refresh(void) {
         if (text_differs(fields[i], values[i])) {
             widget_set_text_utf8(fields[i], values[i]);
             widget_set_prop_int(fields[i], "xoffset", 0);
+            if (ui.ipod && !i)
+                theme_font(fields[i], ROLE_NP, FONT_ROW); /* the local page's title */
         }
     /* ponytail: the cover is sized on the UI thread, one decode a track; a worker if it stutters */
     /* A cover that fails (written after its state line, or bad) is tried again on the next 3 ticks. */
     if (tk_strcmp(ui.art_tried, sp.track)) ui.art_tries = 0;
     if (sp.cover && tk_strcmp(ui.art_track, sp.track) && ui.art_tries < 4) {
-        if (thumb(SPOT_COVER, SPOT_ART, SPOT_ART_PX, SPOT_ART_PX) &&
-            image_show(ui.art, "file://" SPOT_ART, 0))
+        int px = I(ui.art, W_W); /* Classic's slanted art is wider */
+        if (thumb(SPOT_COVER, SPOT_ART, px, px) && image_show(ui.art, "file://" SPOT_ART, 0))
             tk_snprintf(ui.art_track, sizeof ui.art_track, "%s", sp.track);
         else {
             tk_snprintf(ui.art_tried, sizeof ui.art_tried, "%s", sp.track);
@@ -490,7 +492,12 @@ void spot_paint(void *w, void *canvas) {
     if (!ui.page || !w || !P(canvas, CANVAS_LCD) || (w != ui.bar && w != ui.glyph)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     unsigned tone = rgba(accent_tone(2), 255);
-    if (w == ui.bar) {
+    if (w == ui.bar && ui.ipod) { /* Classic's, as the local page's, its scrub's cue on it */
+        int bw = I(w, W_W);
+        unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
+        ipod_bar(canvas, 0, 0, bw, (int)((ms >> 4) * (unsigned)bw / ((sp.duration >> 4) | 1)),
+                 ui.scrub);
+    } else if (w == ui.bar) {
         unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
         int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H; /* Modern's capsule: Classic's 13 drawn 8 */
@@ -547,8 +554,8 @@ static void spot_np(void) {
     int h = widget_get_prop_int(page, "h", client_h());
     ui.info = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     ui.msg = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
-    widget_set_text_utf8(label(ui.info, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY),
-                         "Spotify");
+    void *name = label(ui.info, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_set_text_utf8(name, "Spotify");
     ui.glyph = widget_factory_create_widget(f, "view", ui.info, 337, 13, 14, 14); /* NP's top row */
     ui.art = image_create(ui.info, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(ui.art, 4); /* as Coverflow's covers */
@@ -572,6 +579,10 @@ static void spot_np(void) {
         label(ui.info, SPOT_TIME_X, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20l", 14, SPOT_GREY);
     ui.remain = label(ui.info, 375 - SPOT_TIME_X - 80, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20r",
                       14, SPOT_GREY);
+    /* Classic: the local page's places, its title bar naming the page and showing the play state */
+    void *rows[4] = { ui.title, ui.artist, ui.album, 0 };
+    ui.ipod = stream_ipod(ui.art, rows, ui.elapsed, ui.remain, ui.bar, 0);
+    if (ui.ipod) widget_set_visible(name, 0, 0), widget_set_visible(ui.glyph, 0, 0);
     ui.note =
         label(ui.msg, CF_EDGE, 100, 375 - 2 * CF_EDGE, 30, "s_scrlabel_white20c", 20, 0xffffffffu);
     ui.sub =

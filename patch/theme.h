@@ -168,6 +168,7 @@ typedef struct {
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */
     unsigned np_rows[4][NP_ROWS]; /* SCRUB_ROWS: 0xAARRGGBB; dark track, fill, light track, fill */
+    unsigned np_info_value[2];    /* the info page's values, final: [0] dark, [1] light */
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:
      * HOME_PLACEHOLDER. pane_shadow is
      * 0xRRGGBB, the shadow down its left edge; _w in columns, _a each column's alpha. pane_light_a

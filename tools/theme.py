@@ -100,6 +100,7 @@ SCHEMA = {k.path: k for k in (
     key('playing.title.font_px', 'font_px[ROLE_NP]', 'int', 64),
     key('playing.info.font', 'font[ROLE_INFO]', 'enum'),  # small text: the QR pages, the Time Zone caption, page notes
     key('playing.info.font_size', 'font_px[ROLE_INFO]', 'int', 64),
+    key('playing.info.value', 'np_info_value', 'color', final=True),  # Now Playing's info rows' values, right of their names
     key('playing.album.opacity', 'np_album_op', 'int', 255),
     key('playing.state.opacity', 'np_state_op', 'int', 255),
     key('home.rows.top', 'home_top', 'int', 375),
@@ -209,6 +210,10 @@ SCHEMA = {k.path: k for k in (
     Key('bar.state.edge', 'state_edge', 'stops', 0, 0, (), 'art'),
     Key('bar.state.halo_light', 'state_halo_light', 'int', 0, 255, 0, 'art'),
     Key('bar.state.halo_dark', 'state_halo_dark', 'int', 0, 255, 0, 'art'),
+    Key('playing.station.stops', 'station_stops', 'stops', 0, 0, (), 'art'),  # Internet Radio's cover (tools/art.py station)
+    Key('playing.station.mast', 'station_mast', 'stops', 0, 0, (), 'art'),
+    Key('playing.station.band_a', 'station_band_a', 'int', 0, 255, 0, 'art'),
+    Key('playing.station.shadow_a', 'station_shadow_a', 'int', 0, 255, 0, 'art'),
     Key('geometry.set', 'geom_set', 'set', 0, 0, 'ipod', 'boot'),
     *(Key(f'motion.{k}.{a}', f'motion.{k}.{a}', t, 0, hi, 0, 'motion')
       for k in (*MOTION_WINDOW, *MOTION_WIDGET) for a, t, hi in (('ms', 'int', 2000), ('easing', 'easing', len(EASINGS) - 1))),

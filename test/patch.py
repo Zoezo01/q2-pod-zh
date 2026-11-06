@@ -6560,9 +6560,10 @@ for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',O['NP_BAR_IPOD'],ACCENTS[4]
       put(elapsed,16,247,50,21); put(remain,309,248,50,20); m.image_size=(8,13); m.calls=[]
       m.bands.clear(); m.rounded.clear(); m.letters.clear(); m.image_draws.clear(); paint(dlg); fills=[b[:5] for b in m.bands]
       assert fills[:2]==[(16,277,50,21,color_t(0)),(309,278,50,20,color_t(0))],fills; del fills[0]; ipod_rows(bar[1])
-      assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[0,277,375,21] and not m.letters
-      assert loaded(m)==['classic_light_vol_lo','classic_light_vol_hi']
-      assert [d for _,d in m.image_draws]==[(58,bar[1],8,13),(309,bar[1],8,13)]; passed()
+      top,end=min(277,bar[1]),max(277+21,bar[1]+bh+O['SCRUB_REFLECT_ROWS'])  # the times' boxes and the bar with its reflection
+      assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[0,top,375,end-top] and not m.letters
+      assert loaded(m)==['classic_light_vol_lo','classic_light_vol_hi']  # the speakers centred on the bar's rows
+      assert [d for _,d in m.image_draws]==[(58,bar[1]+(bh-13)//2,8,13),(309,bar[1]+(bh-13)//2,8,13)]; passed()
       put(elapsed,16,265,80,16); m.image_size=(50,50)
 assert len(m.timers)==1; poll=next(iter(m.timers))
 m.advance(O['VOL_POLL_MS']); assert not did('widget_invalidate_force') and poll in m.timers  # unchanged: nothing
@@ -7546,6 +7547,25 @@ for key,end in ((O['KEY_NEXT'],225),(O['KEY_PREV'],0)):
 assert step(m,gap=300)==11 and m.nodes[m.slider]['value']==5 and m.seeks==[]; passed()
 # Centre commits the target once; nothing seeks afterwards.
 centre(m,50); step(m,O['SCRUB_MS'],wait=True); ended(m,[5]); passed()
+# Classic: the scrub's cue, an iPod's: a diamond in the ink (the dark half's white) NP_SCRUB_MARK each side of its
+# middle row and column, at the fill's end on the bar's gloss, inside its 1 px edge lines; kept inside the bar at
+# either end; gone once the scrub ends. The volume's bar over the page never has it.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+def cue(m):  # the slider's paint: the ink's rows
+    m.bands.clear(); m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slider,m.canvas,0,0),gap=0)
+    return [b[:4] for b in m.bands if b[4]==color_t(0xffffff)]
+def diamond(x):
+    M,top=O['NP_SCRUB_MARK'],(44-O['NP_BAR_IPOD'])//2
+    return [(x-(M-abs(j)),top+(O['NP_BAR_IPOD']-1)//2+j,2*(M-abs(j))+1,1) for j in range(-M,M+1)]
+m=scrub_page()
+for k,v in zip(('W_X','W_Y','W_W','W_H'),(87,233,201,44)): m.word(m.slider+O[k],v)
+assert cue(m)==[]; centre(m); assert cue(m)==diamond(201*100//225),cue(m)
+d=diamond(201*100//225); assert d[0][1]==(44-O['NP_BAR_IPOD'])//2+1 and d[-1][1]==(44-O['NP_BAR_IPOD'])//2+O['NP_BAR_IPOD']-2
+for key,x in ((O['KEY_PREV'],O['NP_SCRUB_MARK']),(O['KEY_NEXT'],200-O['NP_SCRUB_MARK'])):
+    for _ in range(40): step(m,key,gap=20)
+    assert cue(m)==diamond(x),(key,cue(m))
+centre(m,50); step(m,O['SCRUB_MS'],wait=True); assert cue(m)==[]; passed()
+CONFIG.clear()
 # Paused (mclGetPlayStatus 3), the seek alone, in file seconds (a CUE track's start added), not
 # player_seek_time, which resumes the track: the player's second stands still until Play, the bar
 # keeps the target and stock's timer stays off until it plays; playing, SETTLE_PLAY_MS without
@@ -14229,6 +14249,40 @@ m.rounded=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(bar,m.canv
 track,fill=m.rounded
 assert track['rect']==(0,0,333,bar_height) and track['color']==color_t(O['TRACK_COLOR']) and fill['rect']==(0,0,(12500>>4)*333//((200000>>4)|1),bar_height)
 assert fill['color']==color_t(O['MINIMAL_FILL']); passed()
+# Classic (stream_ipod): the local page's places (NP_IPOD_*, tools/ipod.py checks them against the page): the art's box
+# taller than wide, so its paint slants the image it shows over the reflection (coverflow_slant, keyed by that image:
+# test/coverflow.py), its cover thumbnailed at the art's width; title, artist and album in the local rows, the title in
+# its face; the times beside the bar in Classic's face; the bar Classic's, with the scrub's cue while a scrub runs; the
+# page's name and play state left to the title bar.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+c=SpotMachine({BIN:bytearray()}); c.top=c.node('window','home_page')  # Classic's Streaming is Home's list: the row's handler
+for f in ('spot_open','spot_np'): assert c.call(address=payload_syms[f],args=(0,c.event,0,0),gap=0,count=5_000_000)==0
+cpage=c.page=c.top; assert c.nodes[cpage]['name']=='spotify_page'; cinfo=c.nodes[cpage]['children'][0]
+c.state('playing',position=10000,at=c.now+500,cover=1); c.files[STATE+'.jpg']=bytearray(b'cover'); c.poll(); c.advance(0)
+A,bx,by=O['NP_IPOD_ART'],O['NP_IPOD_BAR_X'],O['NP_IPOD_BAR_Y']; bw,R=375-2*bx,(A*O['SLANT_REFLECT_PCT']+99)//100
+def kids(mm,w,kind):  # under() walks the global m's widgets
+    def within(x):
+        while x and x!=w: x=mm.get(x+O['W_PARENT']) if mm.get(x+O['W_PARENT']) in mm.nodes else 0
+        return x==w
+    return [x for x in mm.nodes if mm.nodes[x]['type']==kind and x!=w and within(x)]
+cart=kids(c,cinfo,'image')[0]
+assert cf_geometry(c,cart)==(O['SPOT_ART_X'],O['NP_IPOD_ART_Y'],A,A+R) and c.thumbs==[(STATE+'.jpg','/tmp/q2spot.jpg',A,A)]
+rows={c.nodes[w].get('text'):w for w in kids(c,cinfo,'hscroll_label')}
+assert [cf_geometry(c,rows[t]) for t in ('Song','A, B','LP')]==[(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y']+dy,375-16-O['NP_IPOD_TEXT_X'],h) for dy,h in ((0,28),(34,22),(62,22))]
+assert (c.nodes[rows['Song']]['style:normal:font_name'],c.nodes[rows['Song']]['style:normal:font_size'])==('classic-light',27)
+assert c.nodes[rows['Spotify']]['visible']==0 and not [w for w in kids(c,cinfo,'view') if c.nodes[w].get('visible')!=0 and cf_geometry(c,w)==(337,13,14,14)]
+W,GAP=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP']
+for t,x,style in (('0:10',bx-GAP-W,'s_scrlabel_white20r'),('-3:10',bx+bw+GAP,'s_scrlabel_white20l')):
+    n=c.nodes[rows[t]]
+    assert cf_geometry(c,rows[t])==(x,by-2,W,O['NP_BAR_IPOD']+4) and n['style']==style,(t,cf_geometry(c,rows[t]),n['style'])
+    assert (n['style:normal:font_name'],n['style:normal:font_size'],n['style:normal:text_color'])==('classic-light',O['NP_IPOD_TIME_PX'],-1)
+cbar=next(w for w in kids(c,cinfo,'view') if cf_geometry(c,w)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']))
+c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.canvas,0,0),gap=0,clear=False)
+on=next(b[2] for b in c.bands if b[0]==0)  # the played share
+assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
+c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
+assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']; c.close(); passed()
+CONFIG.clear()
 # Play/Pause and the side buttons are Spotify's, on any page, after stock's key-lock filter, while it
 # is the last thing played; stock's downstream handler never sees them.
 m.top=m.node('window','home_page')
@@ -14415,6 +14469,30 @@ heart_y=O['NP_ART_TOP']+O['SPOT_ART_PX']-50+O['NP_ICON_PAD']
 from ipod import NP_ICONS_END, NP_ICON
 heart_x=NP_ICONS_END-NP_ICON
 assert m.nodes[heart]['image']=='play_unfav' and [m.get(heart+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[heart_x,heart_y,50,50]; passed()
+# Classic (stream_ipod): the local page's places, as an album: the build's station cover in the slanted art's box, the
+# station, artist and song in the title's, artist's and album's rows, the stream in "3 of 12"'s, the heart at local Now
+# Playing's, the running time left of a bar of its own, painted always full, that takes no touch; the name in the bar.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+r=RadioMachine({RDIR+'/favourites.m3u':bytearray(b'#EXTM3U\n#EXTINF:-1,One\nhttp://one/a\n')}); r.tree[RDIR]=[('favourites.m3u',8)]
+r.top=r.node('window','home_page'); assert r.call(address=payload_syms['radio_open'],args=(0,r.event,0,0),gap=0,count=5_000_000)==0
+r.advance(0,clear=False); r.page=r.top; assert r.nodes[r.page]['name']=='radio_page'
+r.row(0); r.forked=4343; r.row(0); rnp=r.top; assert r.nodes[rnp]['name']=='radionp_page'; r.advance(500)
+rart=next(w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='image' and r.nodes[w].get('image')=='classic_light_station')
+assert cf_geometry(r,rart)==(O['SPOT_ART_X'],O['NP_IPOD_ART_Y'],A,A+R)
+rl={r.nodes[w].get('text'):w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='hscroll_label'}
+assert cf_geometry(r,rl['One'])==(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y'],375-16-O['NP_IPOD_TEXT_X'],28) and r.nodes[rl['Internet Radio']]['visible']==0
+assert cf_geometry(r,rl['Connecting…'])==(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y']+90,375-16-O['NP_IPOD_TEXT_X'],20) and r.nodes[rl['Connecting…']]['style:normal:font_size']==16
+rheart=next(w for w in r.nodes[rnp]['children'] if r.nodes[w].get('image') in ('play_fav','play_unfav'))
+assert cf_geometry(r,rheart)==(O['NP_IPOD_FAV_X'],O['NP_IPOD_FAV_Y'],50,50) and r.nodes[rheart]['image']=='play_fav'
+relapsed=next(w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='hscroll_label' and cf_geometry(r,w)[0]==bx-GAP-W)
+assert cf_geometry(r,relapsed)==(bx-GAP-W,by-2,W,O['NP_BAR_IPOD']+4) and r.nodes[relapsed]['style:normal:font_size']==O['NP_IPOD_TIME_PX']
+rbar=r.nodes[rnp]['children'][-1]  # last: over the art's box
+assert r.nodes[rbar]['type']=='view' and cf_geometry(r,rbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and r.nodes[rbar]['sensitive']==0
+r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)
+assert {(b[0],b[2]) for b in r.bands if b[2]}=={(0,bw)} and sorted({b[1] for b in r.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),r.bands
+r.destroy(rart); r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)
+assert not r.bands; r.destroy(rnp); passed()  # its page going (the art's destroy), nothing paints there
+CONFIG.clear()
 # Playing: its tags (the StreamTitle as artist - title), the stream and the time since the sound
 # started; standby and auto power-off held (not the screen's timer) and the DAC kept on.
 m.word(syms['g_dacoff_time'],5)
@@ -18454,6 +18532,27 @@ for _ in range(2):
     assert [c[1] for c in m.calls if c[0]=='np_info']==[win] and [m.nodes[l]['text'] for l in lines.values()]==want, [m.nodes[l]['text'] for l in lines.values()]
 assert next(n for n in m.nodes.values() if n.get('name')=='ringnav_genre_scroll')['text']=='Genre: Unknown'
 passed()
+# Classic's page has rows (#204's): beside each of stock's labels a <name>_value one (tools/ipod.py np_ipod); stock's
+# keeps the name, the value goes beside it, both in the info role's face and size, the value in playing.info.value's
+# grey for the half, the genre with them (no scroller); a second pass writes nothing.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'
+lines={k:m.node('label',k,text=v) for k,v in stock_lines.items()}
+values={k:m.node('hscroll_label',k+'_value') for k in stock_lines}
+win=m.node('window','playing_page',[*lines.values(),*values.values()])
+for l in (*lines.values(),*values.values()): m.word(l+O['W_PARENT'],win)
+names=['Album','Genre','File Size','Year','Encoding','Bit Depth','Bitrate','Sample Rate','Location']
+got=['Kid A','Unknown','35.92 MB','2000','FLAC','16-bit','950 kbps','44.1 kHz','SD:/Music/Radiohead']
+for i in range(2):
+    m.calls=[]; m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
+    assert [m.nodes[l]['text'] for l in lines.values()]==names and [m.nodes[v]['text'] for v in values.values()]==got
+    assert not i or not [c for c in m.calls if c[0]=='widget_set_text_utf8' and c[1] in values.values()]  # the same values: none written
+    for k in stock_lines: m.nodes[lines[k]]['text']=stock_lines[k]  # stock's next fill
+for w in (*lines.values(),*values.values()):
+    assert (m.nodes[w]['style:normal:font_name'],m.nodes[w]['style:normal:font_size'])==('classic-light',17),m.nodes[w]
+assert {m.nodes[v]['style:normal:text_color'] for v in values.values()}=={signed(color_t(0x8a8a8a))}
+assert not any(n.get('name')=='ringnav_genre_scroll' for n in m.nodes.values()); passed()
+CONFIG.clear()
 # Genre shows in a private scroller, stock's label hidden as its source and left alone; its text is set once,
 # so stock's next 250 ms fill resets nothing. Only a value wider than the label moves, on the album marquee's
 # chain, and only in front, lit, on the info page.
