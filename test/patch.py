@@ -7908,6 +7908,7 @@ class TagTextMachine(Machine):
         self.handlers[syms['strcpy@GLIBC_2.0']]='t:strcpy'; self.handlers[syms['toolsIconvConvert']]='t:iconv'
         self.handlers[syms['strcmp@GLIBC_2.0']]='t:strcmp'  # on bytes: GBK isn't UTF-8
         self.mock('snprintf@GLIBC_2.0'); self.iconv=0
+        self.handlers.pop(syms['toolsFixId3ErrorCode'])  # stock's own runs here (ogg_music_info calls it)
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('t:'): return super().hook(u,address,size,unused)
@@ -14636,6 +14637,53 @@ assert t.album_artist('/mnt/mmc/d.mp3')=='' and t.album_artist('/mnt/mmc/none.fl
 assert t.album_artist('/mnt/mmc/e.flac')=='Past the cover'
 assert not t.handles  # every file closed
 passed()
+# An Ogg file whose comment header is over OGG_TAGS_MAX (4 MB; MusicBee's base64 pictures) is read by
+# xiph.c, not stock's TagLib, which held it ~4 times over and got demo OOM-killed in a scan: each text
+# field through stock's toolsFixId3ErrorCode, as libtag_c's (isLatin1, Latin-1, UTF-8) would reach it.
+def ogg_pages(*packets):  # each packet from a fresh page, 255 lacing values a page
+    out=bytearray(); seq=0
+    for p in packets:
+        lac=[255]*(len(p)//255)+[len(p)%255]; at=0
+        for j in range(0,len(lac),255):
+            seg=lac[j:j+255]; n=sum(seg)
+            out+=b'OggS\0'+bytes([(1 if j else 0)|(0 if seq else 2)])+bytes(8)+struct.pack('<III',1,seq,0)+bytes([len(seg)])+bytes(seg)+p[at:at+n]
+            at+=n; seq+=1
+    return out
+def opus(*comments,picture=0):
+    items=([b'METADATA_BLOCK_PICTURE='+b'A'*picture] if picture else [])+list(comments)
+    tags=b'OpusTags'+struct.pack('<I',4)+b'test'+struct.pack('<I',len(items))+b''.join(struct.pack('<I',len(c))+c for c in items)
+    return ogg_pages(b'OpusHead'+bytes([1,2])+struct.pack('<HIhB',312,48000,0,0),tags,b'\xfc'*40)
+class OggTagMachine(TagMachine):
+    def __init__(self,files):
+        super().__init__(files); self.fixes=[]; self.stock_calls=0
+        self.handlers[syms['toolsFixId3ErrorCode']]='fix_id3'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address)
+        if name=='stock_music_info': self.stock_calls+=1
+        if name!='fix_id3': return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]
+        self.fixes.append((self.get(u.reg_read(UC_MIPS_REG_SP)+16),a,self.raw(b),self.raw(c)))
+        u.mem_write(d,self.raw(c)[:255]+b'\0'); self.returns(0,clobber=True)  # stock's snprintf of the UTF-8 copy
+    def info(self,path,a=0):
+        info=self.alloc(0x6a0); self.u.mem_write(info,bytes(0x6a0)); self.fixes=[]; self.stock_calls=0
+        assert self.call(address=HOOKS['toolsGetMusicInfo'][0],args=(a,info,self.string(path),0),gap=0)==1
+        return info
+big=opus(b'TITLE=Born Dead Buried Alive',b'ARTIST=Hypocrisy','artist=ピーター'.encode(),b'ALBUM=The Arrival',b'GENRE='+b'x'*200,
+         'COMPOSER=Peter Tägtgren'.encode(),b'ALBUMARTIST=Hypocrisy',b'DATE=2004',b'TRACKNUMBER=1/11',b'DISCNUMBER=2',
+         b'MQAENCODER=MQAEncode',picture=4500000)
+t=OggTagMachine({'/mnt/mmc/big.opus':big,'/mnt/mmc/cut.opus':big[:big.rfind(b'OggS',0,big.rfind(b'OggS'))],'/mnt/mmc/small.opus':opus(b'TITLE=Small',picture=100000),
+                 '/mnt/mmc/flac.opus':flac(b'TITLE=no')})
+for a in (0,1):
+    info=t.info('/mnt/mmc/big.opus',a)
+    assert t.stock_calls==0 and [t.text(info+o) for o in (0x280,0x100,0,0x200,0x480,0x580)]==['Born Dead Buried Alive',
+        'Hypocrisy / ピーター','The Arrival','x'*127,'Peter Tägtgren','Hypocrisy']  # the genre through GENRE_COPY
+    assert [t.get(info+o) for o in (0x680,0x684,0x688,0x68c,0x690)]==[2004,2,1,0x110 if a else 0x100,48000 if a else 0]  # disc, track
+    assert [f[:2] for f in t.fixes]==[(k,k!=2) for k in range(1,7)] and t.fixes[1][2]==b'Hypocrisy / \xd4\xfc\xbf\xfc' and t.fixes[4][2:]==(b'Peter T\xe4gtgren','Peter Tägtgren'.encode())
+info=t.info('/mnt/mmc/cut.opus',1)  # its last pages gone, the header never ends: TagLib's no tag, info untouched
+assert t.stock_calls==0 and not t.fixes and t.u.mem_read(info,0x6a0)==bytes(0x6a0)
+for path in ('/mnt/mmc/small.opus','/mnt/mmc/flac.opus','/mnt/mmc/none.opus'):  # under the cap, not Ogg, missing: stock's
+    t.info(path); assert t.stock_calls==1 and not t.fixes,path
+assert not t.handles; passed()
 # The crash log's scan record (navigation.c crash_note): each tag read names its file in /tmp/q2-scan-file
 # before stock reads it, and every 500th appends "<count> <VmRSS kB> <path>" to /tmp/q2-scan.log, which
 # each demo starts afresh and stops past 64 KB.

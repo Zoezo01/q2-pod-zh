@@ -7,6 +7,7 @@
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h"
+#include "xiph.h"
 
 /* Lyrics from tags: stock reads a local track's lyrics only from a .lrc beside it. Without one,
  * the track's LYRICS tag (else UNSYNCEDLYRICS) fills stock's list. A tag in LRC form, a
@@ -15,10 +16,11 @@
  * a line with several stamps once for each, and lines without one (LRC's "[ar:...]" tags) left out.
  * Plain text fills it a line each, at a time no track reaches, so the page stays at its top as
  * before a .lrc's first stamp. libtag_c's property calls are found from taglib_file_new's address,
- * which that call binds in demo's GOT. ponytail: no SYLT frame, and lines starting in its first
- * LYRIC_TAG_MAX bytes. The lines keep their milliseconds and A2 word stamps ("<mm:ss.xx>" before
- * a word, cut from the text) for iPod's lyrics page (lyrics.c), lose the spaces at their ends, and
- * blank ones go; a .lrc's synced lines replace stock's, read alike. */
+ * which that call binds in demo's GOT. ponytail: no SYLT frame, lines starting in its first
+ * LYRIC_TAG_MAX bytes, and none from an Ogg file whose comment header is over OGG_TAGS_MAX (xiph.h:
+ * TagLib would hold it ~4 times over). The lines keep their milliseconds and A2 word stamps
+ * ("<mm:ss.xx>" before a word, cut from the text) for iPod's lyrics page (lyrics.c), lose the
+ * spaces at their ends, and blank ones go; a .lrc's synced lines replace stock's, read alike. */
 #define LYRIC_TAG_MAX 65536
 extern int stock_lyric_trampoline(void);
 
@@ -197,7 +199,7 @@ int ringnav_lyric(void) {
     unsigned pos = (unsigned)I(MCL_POS, 0);
     if (!(mclGetLyricSize() > 0 || (unsigned)(I(MCL_TYPE, 0) - 0xf1) < 2 || !q ||
           pos >= deque_size(q) || !(r = deque_at(q, pos)) || I(r, REC_TYPE) != 8 ||
-          !P(r, REC_PATH) || *(char *)P(r, REC_PATH) != '/'))
+          !P(r, REC_PATH) || *(char *)P(r, REC_PATH) != '/' || ogg_tags(P(r, REC_PATH), 0)))
         f = taglib_file_new(P(r, REC_PATH), 0);
     if (f) {
         unsigned at = (unsigned)I(TAGLIB_NEW_GOT, 0);

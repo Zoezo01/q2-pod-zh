@@ -1106,6 +1106,7 @@ FUNCTIONS = {
  'taglib_file_tag': ('void *', 'void *'),
  'toolsCheckItemExist': ('int', 'void *, const char *, int'),
  'toolsGetMusicInfo': ('int', 'int, char *, const char *'),
+ 'toolsFixId3ErrorCode': ('void', 'int, const char *, char *, char *, int'),  # navigation.c ogg_music_info
  'toolsUpdateDbTable': ('int', 'const char *, const char *'),
  'toolsTrimRight': ('void', 'char *'),
  'toolsHanziToPinyin': ('int', 'const char *, char *'),

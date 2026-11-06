@@ -306,7 +306,7 @@ int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap
 void album_memory(void *r);
 void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, unsigned px, unsigned color);
 unsigned book_char(const unsigned char *t, unsigned n, unsigned *i); /* books.c: UTF-8, else Latin-1 */
-int utf8_text(const char *s); /* navigation.c: valid UTF-8, a 4-byte character too */
+int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */
