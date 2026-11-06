@@ -108,6 +108,8 @@
     <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes, and Now Playing's info rows,
          their names in the ink and their values in this grey, final in each half -->
     <element name="info" font="classic-light" font_size="17" light.value="#8e9196" dark.value="#8a8a8a"/>
+    <!-- Internet Radio's cover under the slanted art (tools/art.py station): a slate gradient, a light band, a white mast -->
+    <element name="station" stops="#94a2a5 0, #6b7584 100" mast="#ffffff 0, #f3f5f8 45, #c0c8ca 100" band_a="13" shadow_a="85"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,

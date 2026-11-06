@@ -158,6 +158,20 @@
 #define NP_IPOD_TIME_W 56
 #define NP_IPOD_TIME_GAP 8
 #define NP_SCRUB_MARK 7 /* the scrub's diamond: 15 rows, one in from the bar's edge lines */
+/* Classic's Spotify and Internet Radio Now Playing take the local page's np_ipod places, in the
+ * window (navigation.c stream_ipod; tools/ipod.py playing_page checks them): the art NP_IPOD_ART
+ * square at SPOT_ART_X, NP_IPOD_ART_Y, its box its reflection's room taller; the title's row at
+ * NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y, the artist's, album's and "3 of 12"'s 34, 62 and 90 under it; the
+ * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge, its rows from
+ * NP_IPOD_BAR_Y, the times' boxes beside it two rows taller each side. */
+#define NP_IPOD_ART 198
+#define NP_IPOD_ART_Y 12
+#define NP_IPOD_TEXT_X 226
+#define NP_IPOD_TEXT_Y 38
+#define NP_IPOD_FAV_X 300
+#define NP_IPOD_FAV_Y 175
+#define NP_IPOD_BAR_X 87
+#define NP_IPOD_BAR_Y 246
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
     int d = 2 * (r - y) - 1, v = (4 * r * r - d * d) * 64, s = 0;

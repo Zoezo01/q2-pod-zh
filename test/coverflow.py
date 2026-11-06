@@ -370,7 +370,8 @@ int canvas_draw_image(void *c, void *b, const void *src, const void *dst) {
     ++draws;
     assert(!memcmp(r, q, 16) && ((unsigned short *)b)[6] & 1); /* 1:1, and marked opaque */
     memcpy(drawn, r, sizeof drawn);
-    for (int y = 0; y < CF_VIEW_H; ++y) memcpy(shown + y * CF_VIEW_W, *(unsigned char **)((char *)b + 0x14) + y * ((unsigned *)b)[2], CF_VIEW_W * 4);
+    unsigned fw = ((unsigned *)b)[0] < CF_VIEW_W ? ((unsigned *)b)[0] : CF_VIEW_W, fh = ((unsigned *)b)[1] < CF_VIEW_H ? ((unsigned *)b)[1] : CF_VIEW_H;
+    for (unsigned y = 0; y < fh; ++y) memcpy(shown + y * CF_VIEW_W, *(unsigned char **)((char *)b + 0x14) + y * ((unsigned *)b)[2], fw * 4);
     return 0;
 }
 int stock_home_trampoline(void *win, void *ctx) { return 0; }
@@ -2465,6 +2466,37 @@ int main(void) {
                fr[49 * S] == 0xffffffffu);
 #undef CH
     }
+    /* Its one frame (coverflow_slant) serves local Now Playing and Classic's Spotify and Internet Radio
+       pages: keyed by the cover's url and pixels, so local, Spotify, local each show their own, drawn
+       again at each change of page and not while one stays; a new size closes it. */
+    extern void coverflow_slant(void *, void *, unsigned), coverflow_slant_close(void);
+    {
+        enum { S = 40, R = 50 };
+        static unsigned seen[3][S * R];
+        static const char *const files[] = { PEQ_ROOT "/tmp/coverpic.jpg", PEQ_ROOT "/tmp/q2spot.jpg" };
+        void *art[2];
+        mkdir(PEQ_ROOT "/tmp", 0755);
+        for (int i = 0; i < 2; ++i) {
+            FILE *f = fopen(files[i], "w"); fputs("jpg", f); fclose(f);
+            art[i] = placed(make(0, "image"), 0, 0, S, R);
+            snprintf(W(art[i])->image, sizeof W(art[i])->image, "file://%s", files[i]);
+        }
+        static const int order[] = { 0, 0, 1, 0 }; /* local, again, Spotify, local */
+        int before = frames, loaded = loads; /* coverflow_slant keeps stock's copy loaded: no unload to match */
+        for (int k = 0, was = locks, drew = draws; k < 4; ++k) {
+            coverflow_slant(art[order[k]], (void *)1, 255);
+            assert(locks == was + (k != 1) && draws == drew + 1 && frames == before + 1);
+            was = locks, drew = draws;
+            unsigned *into = seen[k < 2 ? 0 : k - 1];
+            for (int y = 0; y < R; ++y) memcpy(into + y * S, shown + y * CF_VIEW_W, S * 4);
+        }
+        assert(memcmp(seen[0], seen[1], sizeof seen[0]) && !memcmp(seen[0], seen[2], sizeof seen[0]));
+        placed(art[0], 0, 0, S + 2, R + 2);
+        coverflow_slant(art[0], (void *)1, 255);
+        coverflow_slant_close();
+        assert(frames == before);
+        loads = loaded;
+    }
     assert(mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != MAP_FAILED);
     deque queue = {0};
@@ -2825,7 +2857,7 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art and its one frame\'s key passed.')
 
 
 if __name__ == '__main__':

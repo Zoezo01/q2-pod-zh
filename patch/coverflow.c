@@ -3645,8 +3645,10 @@ void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *te
 }
 
 /* Classic's art over stock's flat cover, on the page's grey paper (a byte): slant.frame, rendered
- * again only when the cover (its size and 8 x 8 of its pixels: the player writes every track's
- * cover to the same file, so its name tells none apart) or the paper changes. Its layout (fixed
+ * again only when the cover (its url, size and 8 x 8 of its pixels: the player writes every track's
+ * cover to the same file, so its name tells none apart) or the paper changes. The one frame serves
+ * local Now Playing and Classic's Spotify and Internet Radio pages (navigation.c stream_ipod): the
+ * key says whose cover it holds, so a page coming back redraws its own. Its layout (fixed
  * while the page is open) makes the art's widget taller
  * than wide (tools/ipod.py np_ipod), room for the reflection under it, so a repaint of the bar
  * below repaints it too.
@@ -3673,7 +3675,9 @@ void coverflow_slant(void *w, void *canvas, unsigned paper) {
     if (!data) return;
     int side = I(w, W_W), rows = I(w, W_H), t = 2 * side;
     unsigned stride = bitmap_get_line_length(bitmap),
-             key = hash_bytes(FNV_SEED, (const unsigned char *)bitmap, 8) ^ paper;
+             key = hash_bytes(fnv(FNV_SEED, (const unsigned char *)url),
+                              (const unsigned char *)bitmap, 8) ^
+                   paper;
     for (unsigned j = 1; j < 16; j += 2)
         for (unsigned i = 1; i < 16; i += 2)
             key = hash_bytes(key, data + bh * j / 16 * stride + bw * i / 16 * 4, 4);

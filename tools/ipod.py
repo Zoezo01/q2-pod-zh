@@ -174,7 +174,7 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-1:02:03" fits: stb scales
 # ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows,
 # two rows more each side (NP_IPOD_TIME_H), the outer edges clear of the glass over those rows.
-NP_IPOD_ART = 198
+NP_IPOD_ART = inc('NP_IPOD_ART')
 NP_IPOD_LIFT = 30
 NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
 NP_IPOD_TIME_W = inc('NP_IPOD_TIME_W')
@@ -727,6 +727,12 @@ def playing_page(root, g=SET0):
         root[3][at:at] = [named['label_playtime'], remain]
         buttons[3].remove(named['img_more'])
         root[3].append(named['img_more'])
+        # Spotify's and Internet Radio's pages take these places (navigation.c stream_ipod), in the window
+        dy = NP_TOP - lift
+        check([NP_MARGIN, dy + art_y, art, text_x, dy + title[1][1], fav_x, dy + icons_y, x, NP_IPOD_TIME_Y + 2,
+               *(n[1][1] - title[1][1] for n in (artist, album, pos))] ==
+              [inc('SPOT_ART_X'), *(inc('NP_IPOD_' + k) for k in 'ART_Y ART TEXT_X TEXT_Y FAV_X FAV_Y BAR_X BAR_Y'.split()), 34, 62, 90],
+              "NP_IPOD_* != Classic's Now Playing")
 
 
 # Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the

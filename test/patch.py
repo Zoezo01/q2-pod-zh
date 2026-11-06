@@ -14194,6 +14194,40 @@ m.rounded=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(bar,m.canv
 track,fill=m.rounded
 assert track['rect']==(0,0,333,bar_height) and track['color']==color_t(O['TRACK_COLOR']) and fill['rect']==(0,0,(12500>>4)*333//((200000>>4)|1),bar_height)
 assert fill['color']==color_t(O['MINIMAL_FILL']); passed()
+# Classic (stream_ipod): the local page's places (NP_IPOD_*, tools/ipod.py checks them against the page): the art's box
+# taller than wide, so its paint slants the image it shows over the reflection (coverflow_slant, keyed by that image:
+# test/coverflow.py), its cover thumbnailed at the art's width; title, artist and album in the local rows, the title in
+# its face; the times beside the bar in Classic's face; the bar Classic's, with the scrub's cue while a scrub runs; the
+# page's name and play state left to the title bar.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+c=SpotMachine({BIN:bytearray()}); c.top=c.node('window','home_page')  # Classic's Streaming is Home's list: the row's handler
+for f in ('spot_open','spot_np'): assert c.call(address=payload_syms[f],args=(0,c.event,0,0),gap=0,count=5_000_000)==0
+cpage=c.page=c.top; assert c.nodes[cpage]['name']=='spotify_page'; cinfo=c.nodes[cpage]['children'][0]
+c.state('playing',position=10000,at=c.now+500,cover=1); c.files[STATE+'.jpg']=bytearray(b'cover'); c.poll(); c.advance(0)
+A,bx,by=O['NP_IPOD_ART'],O['NP_IPOD_BAR_X'],O['NP_IPOD_BAR_Y']; bw,R=375-2*bx,(A*O['SLANT_REFLECT_PCT']+99)//100
+def kids(mm,w,kind):  # under() walks the global m's widgets
+    def within(x):
+        while x and x!=w: x=mm.get(x+O['W_PARENT']) if mm.get(x+O['W_PARENT']) in mm.nodes else 0
+        return x==w
+    return [x for x in mm.nodes if mm.nodes[x]['type']==kind and x!=w and within(x)]
+cart=kids(c,cinfo,'image')[0]
+assert cf_geometry(c,cart)==(O['SPOT_ART_X'],O['NP_IPOD_ART_Y'],A,A+R) and c.thumbs==[(STATE+'.jpg','/tmp/q2spot.jpg',A,A)]
+rows={c.nodes[w].get('text'):w for w in kids(c,cinfo,'hscroll_label')}
+assert [cf_geometry(c,rows[t]) for t in ('Song','A, B','LP')]==[(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y']+dy,375-16-O['NP_IPOD_TEXT_X'],h) for dy,h in ((0,28),(34,22),(62,22))]
+assert (c.nodes[rows['Song']]['style:normal:font_name'],c.nodes[rows['Song']]['style:normal:font_size'])==('classic-light',27)
+assert c.nodes[rows['Spotify']]['visible']==0 and not [w for w in kids(c,cinfo,'view') if c.nodes[w].get('visible')!=0 and cf_geometry(c,w)==(337,13,14,14)]
+W,GAP=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP']
+for t,x,style in (('0:10',bx-GAP-W,'s_scrlabel_white20r'),('-3:10',bx+bw+GAP,'s_scrlabel_white20l')):
+    n=c.nodes[rows[t]]
+    assert cf_geometry(c,rows[t])==(x,by-2,W,O['NP_BAR_IPOD']+4) and n['style']==style,(t,cf_geometry(c,rows[t]),n['style'])
+    assert (n['style:normal:font_name'],n['style:normal:font_size'],n['style:normal:text_color'])==('classic-light',O['NP_IPOD_TIME_PX'],-1)
+cbar=next(w for w in kids(c,cinfo,'view') if cf_geometry(c,w)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']))
+c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.canvas,0,0),gap=0,clear=False)
+on=next(b[2] for b in c.bands if b[0]==0)  # the played share
+assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
+c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
+assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']; c.close(); passed()
+CONFIG.clear()
 # Play/Pause and the side buttons are Spotify's, on any page, after stock's key-lock filter, while it
 # is the last thing played; stock's downstream handler never sees them.
 m.top=m.node('window','home_page')
@@ -14380,6 +14414,30 @@ heart_y=O['NP_ART_TOP']+O['SPOT_ART_PX']-50+O['NP_ICON_PAD']
 from ipod import NP_ICONS_END, NP_ICON
 heart_x=NP_ICONS_END-NP_ICON
 assert m.nodes[heart]['image']=='play_unfav' and [m.get(heart+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[heart_x,heart_y,50,50]; passed()
+# Classic (stream_ipod): the local page's places, as an album: the build's station cover in the slanted art's box, the
+# station, artist and song in the title's, artist's and album's rows, the stream in "3 of 12"'s, the heart at local Now
+# Playing's, the running time left of a bar of its own, painted always full, that takes no touch; the name in the bar.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+r=RadioMachine({RDIR+'/favourites.m3u':bytearray(b'#EXTM3U\n#EXTINF:-1,One\nhttp://one/a\n')}); r.tree[RDIR]=[('favourites.m3u',8)]
+r.top=r.node('window','home_page'); assert r.call(address=payload_syms['radio_open'],args=(0,r.event,0,0),gap=0,count=5_000_000)==0
+r.advance(0,clear=False); r.page=r.top; assert r.nodes[r.page]['name']=='radio_page'
+r.row(0); r.forked=4343; r.row(0); rnp=r.top; assert r.nodes[rnp]['name']=='radionp_page'; r.advance(500)
+rart=next(w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='image' and r.nodes[w].get('image')=='classic_light_station')
+assert cf_geometry(r,rart)==(O['SPOT_ART_X'],O['NP_IPOD_ART_Y'],A,A+R)
+rl={r.nodes[w].get('text'):w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='hscroll_label'}
+assert cf_geometry(r,rl['One'])==(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y'],375-16-O['NP_IPOD_TEXT_X'],28) and r.nodes[rl['Internet Radio']]['visible']==0
+assert cf_geometry(r,rl['Connecting…'])==(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y']+90,375-16-O['NP_IPOD_TEXT_X'],20) and r.nodes[rl['Connecting…']]['style:normal:font_size']==16
+rheart=next(w for w in r.nodes[rnp]['children'] if r.nodes[w].get('image') in ('play_fav','play_unfav'))
+assert cf_geometry(r,rheart)==(O['NP_IPOD_FAV_X'],O['NP_IPOD_FAV_Y'],50,50) and r.nodes[rheart]['image']=='play_fav'
+relapsed=next(w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='hscroll_label' and cf_geometry(r,w)[0]==bx-GAP-W)
+assert cf_geometry(r,relapsed)==(bx-GAP-W,by-2,W,O['NP_BAR_IPOD']+4) and r.nodes[relapsed]['style:normal:font_size']==O['NP_IPOD_TIME_PX']
+rbar=r.nodes[rnp]['children'][-1]  # last: over the art's box
+assert r.nodes[rbar]['type']=='view' and cf_geometry(r,rbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and r.nodes[rbar]['sensitive']==0
+r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)
+assert {(b[0],b[2]) for b in r.bands if b[2]}=={(0,bw)} and sorted({b[1] for b in r.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),r.bands
+r.destroy(rart); r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)
+assert not r.bands; r.destroy(rnp); passed()  # its page going (the art's destroy), nothing paints there
+CONFIG.clear()
 # Playing: its tags (the StreamTitle as artist - title), the stream and the time since the sound
 # started; standby and auto power-off held (not the screen's timer) and the DAC kept on.
 m.word(syms['g_dacoff_time'],5)

@@ -506,6 +506,9 @@ typedef struct {
     int np_off, np_over;
     unsigned np_marquee;
     unsigned np_remain_timer; /* remain_due */
+    /* Classic's Spotify or Internet Radio Now Playing (stream_ipod): its slanted art's widget, and
+     * the radio's bar, always full */
+    void *stream_art, *stream_bar;
     /* The info page's Genre line: its label, np_info's copy (genre_fill), and px scrolled. */
     void *genre_label;
     int genre_off;
@@ -2528,7 +2531,8 @@ int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUND
  * (1/16 px). */
 static void paint_cover(void *w, void *canvas) {
     if (!w || !P(canvas, CANVAS_LCD)) return;
-    if (w == st.np_cover && I(w, W_H) > I(w, W_W)) { /* Classic's room for a reflection */
+    if ((w == st.np_cover || w == st.stream_art) &&
+        I(w, W_H) > I(w, W_W)) { /* Classic's room for a reflection */
         coverflow_slant(w, canvas, scheme()->paper & 255);
         return;
     }
@@ -5385,6 +5389,8 @@ int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark) {
 /* Classic's progress bar over stock's plain one, centred in the slider as stock's, the scrub's cue
  * on it while a scrub runs; the times sit beside it (tools/ipod.py np_ipod). */
 static void paint_scrubber(void *w, void *canvas) {
+    if (w && w == st.stream_bar && P(canvas, CANVAS_LCD))
+        ipod_bar(canvas, 0, 0, I(w, W_W), I(w, W_W), 0);
     if (!w || w != st.np_slider || !P(canvas, CANVAS_LCD)) return;
     int bw = I(w, W_W), lo = widget_get_prop_int(w, "min", 0),
         n = widget_get_prop_int(w, "max", 100) - lo,
@@ -5849,6 +5855,55 @@ static void np_art_poll(void) {
     image_base_set_image(st.np_cover, file);
     coverflow_slant_close(); /* the same file, another cover: Classic's art drawn again */
     widget_invalidate_force(st.np_cover, (void *)0);
+}
+
+/* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it. */
+static int stream_gone(void *ctx, void *event) {
+    st.stream_art = st.stream_bar = (void *)0;
+    coverflow_slant_close();
+    return 0;
+}
+/* Classic's Spotify and Internet Radio Now Playing (spotify.c, radio.c) take the local page's
+ * places (NP_IPOD_*): the art, its box taller than wide, so paint_cover slants the image it shows
+ * over its reflection (coverflow_slant, whose one frame is keyed by the image's url and pixels, so
+ * the local page and this one never show each other's); the title's, artist's, album's and "3 of
+ * 12"'s rows (text, any 0 left out); the times in their boxes beside the bar, in Classic's face;
+ * the bar, which the page paints with ipod_bar, or with none a bar of its own, last so over the
+ * art's box, that paint_scrubber paints always full and that takes no touch; the heart. 0 under the
+ * other themes, whose pages keep their own layout. */
+int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,
+                void *heart) {
+    static const unsigned char dy[] = { 0, 34, 62, 90 }, h[] = { 28, 22, 22, 20 };
+    if (theme()->np_track[0].n < 2) return 0;
+    int reflect = (NP_IPOD_ART * SLANT_REFLECT_PCT + 99) / 100, bw = 375 - 2 * NP_IPOD_BAR_X;
+    widget_move_resize(art, SPOT_ART_X, NP_IPOD_ART_Y, NP_IPOD_ART, NP_IPOD_ART + reflect);
+    st.stream_art = art;
+    widget_on(art, EVT_DESTROY, stream_gone, (void *)0);
+    for (unsigned i = 0; i < 4; ++i)
+        if (text[i])
+            widget_move_resize(text[i], NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y + dy[i],
+                               375 - SPOT_ART_X - NP_IPOD_TEXT_X, h[i]);
+    if (text[3]) widget_set_prop_int(text[3], "style:normal:font_size", 16); /* "3 of 12"'s */
+    void *times[] = { elapsed, remain };
+    for (unsigned i = 0; i < 2; ++i) {
+        if (!times[i]) continue;
+        widget_move_resize(times[i],
+                           i ? NP_IPOD_BAR_X + bw + NP_IPOD_TIME_GAP
+                             : NP_IPOD_BAR_X - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W,
+                           NP_IPOD_BAR_Y - 2, NP_IPOD_TIME_W, NP_BAR_IPOD + 4);
+        widget_use_style(times[i], i ? "s_scrlabel_white20l" : "s_scrlabel_white20r");
+        widget_set_prop_str(times[i], "style:normal:font_name", font_faces[FONT_CLASSIC_LIGHT]);
+        widget_set_prop_int(times[i], "style:normal:font_size", NP_IPOD_TIME_PX);
+        widget_set_prop_int(times[i], "style:normal:text_color", (int)0xffffffffu);
+    }
+    if (!bar) {
+        bar = st.stream_bar =
+            widget_factory_create_widget(widget_factory(), "view", P(art, W_PARENT), 0, 0, 0, 0);
+        widget_set_sensitive(bar, 0);
+    }
+    widget_move_resize(bar, NP_IPOD_BAR_X, NP_IPOD_BAR_Y, bw, NP_BAR_IPOD + SCRUB_REFLECT_ROWS);
+    if (heart) widget_move_resize(heart, NP_IPOD_FAV_X, NP_IPOD_FAV_Y, 50, 50); /* local NP's */
+    return 1;
 }
 
 /* Centred Now Playing's lyrics page (ringnav_playing): a touch that lifts within TAP_PX of where it

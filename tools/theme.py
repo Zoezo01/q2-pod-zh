@@ -209,6 +209,10 @@ SCHEMA = {k.path: k for k in (
     Key('bar.state.edge', 'state_edge', 'stops', 0, 0, (), 'art'),
     Key('bar.state.halo_light', 'state_halo_light', 'int', 0, 255, 0, 'art'),
     Key('bar.state.halo_dark', 'state_halo_dark', 'int', 0, 255, 0, 'art'),
+    Key('playing.station.stops', 'station_stops', 'stops', 0, 0, (), 'art'),  # Internet Radio's cover (tools/art.py station)
+    Key('playing.station.mast', 'station_mast', 'stops', 0, 0, (), 'art'),
+    Key('playing.station.band_a', 'station_band_a', 'int', 0, 255, 0, 'art'),
+    Key('playing.station.shadow_a', 'station_shadow_a', 'int', 0, 255, 0, 'art'),
     Key('geometry.set', 'geom_set', 'set', 0, 0, 'ipod', 'boot'),
     *(Key(f'motion.{k}.{a}', f'motion.{k}.{a}', t, 0, hi, 0, 'motion')
       for k in (*MOTION_WINDOW, *MOTION_WIDGET) for a, t, hi in (('ms', 'int', 2000), ('easing', 'easing', len(EASINGS) - 1))),
