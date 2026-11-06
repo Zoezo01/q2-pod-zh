@@ -889,6 +889,78 @@ def test_previous_after_stocks_delete_stays_on_the_queue(player):
     assert player.s.n == 4 and player.mcl.pos < 4
 
 
+def album(player, n):
+    """One album's n tracks in queue order, playing in that order; a track's number names it after a delete."""
+    player.load([player.song(b'/m/A/%02d.flac' % t, b'A', track=t) for t in range(1, n + 1)])
+    assert player.set(0, 0) == 1 and player.set(1, ONE_PASS) == 1
+
+
+def delete(player, at):
+    """Stock's View Queue delete: the row goes; a position past it moves down with it."""
+    player.deques[player.handle].pop(at)
+    if player.mcl.pos > at:
+        player.mcl.pos -= 1
+
+
+def tracks(player, indices):
+    return [player.track(i) for i in indices]
+
+
+def test_stocks_delete_of_a_middle_row_keeps_play_next_and_previous(fw, player):
+    album(player, 6)
+    player.run(2)  # 1, 2, 3 played
+    player.s.pend[0], player.s.npend = 5, 1  # Play Next: track 6
+    delete(player, 1)  # track 2
+    fw.fn('playback_poll', None)()
+    assert player.s.n == 5 and tracks(player, player.history()) == [1, 3] and tracks(player, player.pending()) == [6]
+    assert player.next(0) >= 0 and player.track(player.mcl.pos) == 6
+    assert player.prev() == 0 and player.track(player.mcl.pos) == 3
+    assert player.prev() == 0 and player.track(player.mcl.pos) == 1
+
+
+def test_stocks_delete_of_the_playing_row_goes_back_to_the_one_before(fw, player):
+    album(player, 5)
+    player.run(2)  # 1, 2, 3, playing 3
+    delete(player, 2)  # stock's position now names track 4
+    assert player.prev() == 0 and player.track(player.mcl.pos) == 2
+    assert tracks(player, player.history()) == [1, 2] and player.run(9) == [2, 3]  # tracks 4 and 5 left
+
+
+@pytest.mark.parametrize('key', ['prev', 'next'])
+def test_stocks_delete_of_the_last_row_while_it_plays(fw, player, key):
+    album(player, 4)
+    player.run(3)  # playing track 4, the last
+    delete(player, 3)
+    assert player.mcl.pos == 3 == len(player.deques[player.handle])
+    if key == 'prev':  # back to the one before it, not two back
+        assert player.prev() == 0 and player.track(player.mcl.pos) == 3 and player.s.n == 3
+    else:  # nothing after it: the queue ends, as at its own end
+        assert player.next(0) == -1 and fw.calls('mclStop')
+
+
+def test_stocks_delete_off_the_ui_thread_waits_for_its_pass(fw, player):
+    poll = fw.fn('playback_poll', None)
+    album(player, 5)
+    poll()  # the UI thread: pthread_self's 0 here
+    player.s.pend[0], player.s.npend = 4, 1
+    delete(player, 1)
+    fw.mock('fw_pthread_self', lambda *_: 7)  # a headset key's thread
+    fw.mock('stock_next_trampoline', lambda *_: 33)
+    assert player.next(0) == 33 and player.s.n == 5 and player.pending() == [4]  # stock's way, nothing touched
+    fw.mock('fw_pthread_self', lambda *_: 0)
+    poll()
+    assert player.s.n == 4 and player.pending() == [3]
+
+
+def test_a_queue_stock_grew_gets_a_new_order(fw, player):
+    album(player, 4)
+    player.run(1)
+    player.s.pend[0], player.s.npend = 3, 1
+    player.deques[player.handle].append(player.song(b'/m/A/05.flac', b'A', track=5))
+    fw.fn('playback_poll', None)()
+    assert player.s.n == 5 and player.pending() == [] and player.history() == [1]
+
+
 def test_move_makes_a_track_next(fw, player):
     move = fw.fn('playback_move', C.c_int, C.c_uint)
     player.load(player.albums(6))
