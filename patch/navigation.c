@@ -3423,7 +3423,7 @@ static int pod_click(void *ctx, void *event) {
         coverflow_sort_step();
     else if (i == POD_CF_REFRESH) {
         coverflow_refresh_art();
-        toast("Cover Flow rebuilds its artwork next time");
+        toast("Cover Flow rebuilds artwork next time");
     } else if (i == POD_ARTISTS) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;

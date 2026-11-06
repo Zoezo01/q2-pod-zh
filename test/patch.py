@@ -9218,7 +9218,7 @@ m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.nodes[cf_label]['text']
 sort_label,refresh_label=(m.nodes[m.nodes[r]['children'][0]]['children'][1] for r in (cf_sort,cf_refresh))
 assert m.nodes[sort_label]['text']=='Cover Flow Sort: Album' and m.nodes[refresh_label]['text']=='Refresh Cover Flow'
 f,ctx=m.handler(m.nodes[cf_refresh]['children'][0],O['EVT_CLICK']); m.mock('opendir@GLIBC_2.0'); m.calls=[]
-assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Cover Flow rebuilds its artwork next time'
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.toasts[-1][3]=='Cover Flow rebuilds artwork next time'
 assert [m.text(c[1]) for c in m.calls if c[0]=='opendir@GLIBC_2.0']==['/mnt/mmc/.coverflow','/mnt/mmc/.sldp']
 assert did(m,'image_manager_unload_all') and m.nodes[refresh_label]['text']=='Refresh Cover Flow'; passed()
 # Shortcut: no key is Rockbox on a card with it, else Favorites.
