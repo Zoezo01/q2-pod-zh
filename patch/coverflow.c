@@ -2656,7 +2656,9 @@ int coverflow_wheel_poll(int usable, int gated) {
     /* At the cap for jump_ms the spin goes by letters, where the sort has them: one each
      * jump_ticks of travel at any rate from fast_at, the first at once, so a moderate turn reads
      * them. A lift, a turn back (th_turn), the rate under fast_at or no tick for stop_ms ends them:
-     * albums again from the letter's, under the thumb. */
+     * albums again from the letter's, under the thumb.
+     * ponytail: fast_at is the one floor; a thumb hovering on it may drop to albums on a slow pass.
+     * A leave rate of its own under fast_at if that shows on the wheel. */
     int since = (int)(now - th.tick_at);
     th.capped = th.finger && th.rate >= th_cap_rate() ? th.capped + ms : 0;
     if (th.jump && (!th.finger || th.rate < cfs.fast_at || since > cfs.stop_ms))
