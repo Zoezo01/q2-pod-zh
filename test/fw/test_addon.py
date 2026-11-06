@@ -1146,23 +1146,49 @@ def test_a_failed_refresh_shows_the_error(fw):
     assert p.top.state == K_ERROR and p.top.live == 1
 
 
-def test_a_refresh_drops_a_click_on_its_old_rows(fw):
-    p = live(fw, rows_of(0, 5))
+def fire(p):
+    """The page's next timer pass: a queued click's go(), if it is still queued."""
+    if p.pg.go:
+        p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+
+
+def queued(p, row, **reply):
+    """A click on row of a live level's five, then, in the same timer pass and first, its refresh."""
     p.world.ms += 2000
     p.tick()
-    p.press(4)                 # the row's click, its go() queued for the next timer pass
-    p.answer(msg=b'refresh', rows=rows_of(0, 1))  # this tick came first
-    assert p.pg.go == 0
+    p.press(row)
+    p.answer(**reply)
+    fire(p)
 
 
-@pytest.mark.parametrize('next_, rows', [(0, rows_of(0, 5)), (1, rows_of(0, 1))])
-def test_a_refresh_keeps_a_click_on_the_same_rows_or_a_redraw(fw, next_, rows):
+@pytest.mark.parametrize('rows', [rows_of(0, 1), rows_of(5, 5)])
+def test_a_refresh_with_new_rows_drops_a_click_on_its_old_ones(fw, rows):
+    p = live(fw, rows_of(0, 5))
+    queued(p, 4, msg=b'refresh', rows=rows)
+    assert p.pg.go == 0 and not p.req.running  # neither op4 nor what row 4 holds now (op9) was asked
+
+
+def test_an_error_page_drops_a_click_on_the_rows_before_it(fw):
+    p = live(fw, rows_of(0, 5))
+    queued(p, 1, status=b'error')
+    # Row 1 is now [Retry, Stop]'s Stop: the click doesn't end the app
+    assert p.top.state == K_ERROR and p.pg.go == 0
+    assert b'Foo stopped' not in p.toasts and p.backs == 0 and p.ap.a[0].launched == 1
+
+
+def test_a_refresh_with_the_same_rows_keeps_the_click(fw):
+    p = live(fw, rows_of(0, 5))
+    queued(p, 4, msg=b'refresh', rows=rows_of(0, 5))
+    assert p.req.running and p.request().endswith(b'\top4\n')  # row 4's action
+
+
+def test_a_search_box_s_redraw_stays_queued_over_a_refresh(fw):
     p = live(fw, rows_of(0, 5))
     p.world.ms += 2000
     p.tick()
     p.press(4)
-    p.pg.next = next_          # 1: G_SHOW, a search box's blur
-    p.answer(msg=b'refresh', rows=rows)
+    p.pg.next = 1  # G_SHOW: a search box's blur
+    p.answer(msg=b'refresh', rows=rows_of(0, 1))
     assert p.pg.go != 0
 
 
