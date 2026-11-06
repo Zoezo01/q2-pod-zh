@@ -12494,6 +12494,14 @@ def pane_cases():
     cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
     pane_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
     print(f'Classic pane on Settings: {cost[0]} instructions'); passed()
+    # Library on Home off (HOMELIB 0), and a set without home_lib, whose Streaming row keeps stock's img_stream: Streaming's pane either way.
+    for homelib,stock_name in (('0',0),('1',1)):
+        m=pane_home(SHORTCUT='6',HOMELIB=homelib); view=named(m,m.top,'scroll_view_home'); pane_nocover(m)
+        if stock_name: m.nodes[named(m,m.top,'img_services')]['name']='img_stream'
+        m.advance(1500); m.paint(view)
+        for _ in range(5): m.call()
+        assert pane_shows(m)==want[5],(homelib,pane_shows(m))
+    passed()
     m=pane_home(); m.db.execute("delete from songtable where id>1"); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
     for _ in range(2): m.call()
     assert pane_shows(m)[1]==['1 Album']; m.call(O['KEY_RETURN']); m.call(); assert pane_shows(m)[1]==['1 Song']; passed()

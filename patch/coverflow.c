@@ -3929,6 +3929,8 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
                                              "img_rockbox",   "img_services", "img_settings" };
         for (unsigned i = 0; i < sizeof names / sizeof *names; ++i)
             if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
+        /* a set without home_lib: stock's name */
+        if (!tk_strcmp(name, "img_stream")) kind = PANE_STREAM;
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
