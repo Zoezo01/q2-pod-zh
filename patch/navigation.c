@@ -1878,19 +1878,21 @@ int ipod_home_rockbox(void) {
     return shortcut() || st.home_rockbox;
 }
 const char *ipod_home_shortcut(void) {
-    static const char *const names[] = { "Rockbox",      "Artists", "Albums", "Favorites",
-                                         "Rated Albums", "Shuffle", "Games",  "Playlists" };
+    static const char *const names[] = { "Rockbox",      "Artists",   "Albums", "Favorites",
+                                         "Rated Albums", "Shuffle",   "Games",  "Playlists",
+                                         "Podcasts",     "Audiobooks" };
     _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
     return names[shortcut()];
 }
 extern int rockbox_open(void *, void *);
-static int rated_albums(void *, void *), shuffle_menu(void *, void *);
+static int rated_albums(void *, void *), shuffle_menu(void *, void *), media_click(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
     int s = shortcut();
     if (!s) return rockbox_open(ctx, event);
     if (s == 4) return rated_albums(ctx, event);
     if (s == 5) return shuffle_menu(ctx, event);
     if (s == 6) return games_open(ctx, event);
+    if (s >= 8) return media_click((void *)(long)(s - 7), event); /* MEDIA's Podcasts, Audiobooks */
     if (s == 7)
         return navigator_to_with_context("localmusic/playlist_page",
                                          (void *)0); /* as stock's Home */
@@ -5911,7 +5913,7 @@ static int setting_click(void *ctx, void *event) {
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
     /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games */
-    static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 0, 1 };
+    static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 8, 1, 9, 0 };
     _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
                    "one per shortcut");
     /* Graphite, ..., Plum, Green, then Ivory (Classic's mask skips it to its own Classic Blue) */
@@ -8973,19 +8975,23 @@ static int media_find(int kind, char *path) {
     return found;
 }
 
+/* A Local Music row's, or Home's Shortcut's (Podcasts, Audiobooks): the folder found again, as the
+ * card may have changed since; without it, a toast. */
 static int media_click(void *ctx, void *event) {
     int kind = (int)(long)ctx;
-    char root[sizeof st.media_root];
-    if (kind == PHOTOS || kind == BOOKS) {
-        if (!media_find(kind, root)) return 0;
-        if (kind == PHOTOS)
-            photos_open(root);
-        else
-            books_open(root);
-        return 0;
+    char root[sizeof st.media_root], t[48];
+    if (!media_find(kind, root)) {
+        tk_snprintf(t, sizeof t, "No %s folder on the card", MEDIA[kind - 1]);
+        toast(t);
+    } else if (kind == PHOTOS)
+        photos_open(root);
+    else if (kind == BOOKS)
+        books_open(root);
+    else {
+        memcpy(st.media_root, root, sizeof root);
+        st.media_open = 1;
+        navigator_to("folder_page");
     }
-    st.media_open = media_find(kind, st.media_root);
-    if (st.media_open) navigator_to("folder_page");
     return 0;
 }
 

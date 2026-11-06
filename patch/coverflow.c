@@ -2788,11 +2788,13 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
                                               "img_rockbox", "img_stream", "img_settings" };
         for (unsigned i = 0; i < sizeof names / sizeof *names; ++i)
             if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
-        if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games */
+        if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
+                                     * Podcasts and Audiobooks, folders, Folder's */
             const char *s = ipod_home_shortcut();
             kind = !tk_strcmp(s, "Games")     ? PANE_GAMES
                    : !tk_strcmp(s, "Rockbox") ? PANE_ROCKBOX
                    : !tk_strcmp(s, "Shuffle") ? PANE_SHUFFLE
+                   : !tk_strcmp(s, "Podcasts") || !tk_strcmp(s, "Audiobooks") ? PANE_FOLDER
                                               : PANE_LIBRARY;
         }
     }
