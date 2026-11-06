@@ -10864,9 +10864,9 @@ assert bm.get(bw_['img_bt']+O['W_Y'])==1 and bm.get(bw_['img_wifi']+O['W_Y'])&0x
 assert bands[:LEVEL]==outline
 SHADE=[(27,y+1,1,13,a_(0,64))]
 assert bands[LEVEL:]==[(BX,y+1+j,13,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]  # 50%: the last column's shade over the dark rows
-# The dark half (LIGHT=0): the stated dark.line #9c9e9c, no soft edge or emboss; the level's hues and the dark rows as they are.
+# The dark half (LIGHT=0): the stated dark.line #010101, no soft edge or emboss; the level's hues and the dark rows as they are.
 bm,bw_,dark=classic_light_battery_bar(0,light='0')
-assert dark==body_bands(color_t(0x9c9e9c))+bands[LEVEL:-2]; passed()
+assert dark==body_bands(color_t(0x010101))+bands[LEVEL:-2]; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%')  # full: the level's last column shaded
 assert bands[LEVEL:]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_charge','63%')  # full, then the bolt: the generated image on the inside, at its real size

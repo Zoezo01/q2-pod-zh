@@ -79,7 +79,7 @@
     <!-- The battery's inside: one colour per row, the bright one at y 7, the dark rows past the level, a red sliver
          when low; its edges and the white that sits under it on the light half's gloss. Alphas of 255. The bolt
          (charging) and the plug (full on power): colour and the bolt's white halo, tools/art.py draws them. -->
-    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#9c9e9c" edge="#5b6c52"
+    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#010101" edge="#5b6c52"
              stops="#90b27d 0, #c4ebac 8, #dcf9c5 17, #cbefb1 25, #ade586 33, #a6e27b 42, #92ce68 50, #67a83f 58, #4e972c 67, #4e972d 75, #56a035 83, #58a437 92, #539933 100"
              empty="#56585d 0, #595a61 8, #5f6168 17, #63656c 25, #6b6d73 33, #76787e 42, #85878d 50, #898b92 58, #8d8f96 67, #94969c 75, #9ea0a5 83, #a0a3a6 92, #797b7c 100"
              low="#d9402e" low_w="3" corner_a="191" foot_a="128" shade_a="64" soft_a="51" soft_top_a="28" emboss_a="179" emboss_nub_a="153" bolt="#3c4a34" bolt_halo_a="102"/>
