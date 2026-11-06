@@ -7047,7 +7047,8 @@ static int vol_poll(const void *info) {
  * the times turns black with a white bar over the track and "Volume N"; with Classic's times beside
  * its bar, the bar shows the volume between the iPod's speakers in the times' place (vol_end), no
  * number. Over any other window (Quick Settings included) a VOL_PANEL_* rounded panel in the
- * fast-scroll letter's style holds a pill bar and the number alone. slider_vol and label_vol are
+ * fast-scroll letter's style holds a pill bar and the number alone; Classic's, VOL_CL_X in, the
+ * rows painter's gloss between two speakers. slider_vol and label_vol are
  * hidden, and slider_vol is moved onto the area drawn, so stock's partial repaints land on it;
  * vol_poll catches the changes those miss. */
 static void vol_paint(void *top, void *canvas) {
