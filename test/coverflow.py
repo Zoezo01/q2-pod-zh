@@ -1472,6 +1472,17 @@ int main(void) {
     open_page();
     assert(calls == 3 && !strcmp(made[2], "cover.jpg") && size("New") == 9);
     close_page();
+    /* Only a cold open (the albums queried, or art to build) touches /mnt/data/q2-cf-trace, and
+       removes it when it ends; a warm one leaves even a stale one alone. */
+    mkdir(PEQ_ROOT "/mnt/data", 0755);
+    fclose(fopen(PEQ_ROOT "/mnt/data/q2-cf-trace", "w"));
+    open_page();
+    assert(calls == 3 && !access(PEQ_ROOT "/mnt/data/q2-cf-trace", 0));
+    close_page();
+    rescan();
+    open_page();
+    assert(calls == 3 && access(PEQ_ROOT "/mnt/data/q2-cf-trace", 0));
+    close_page();
 
     /* Cancel mid-build (Return on the progress screen) keeps the finished thumbnails, leaves no
        .tmp, and shows the covers; the next open resumes with the rest. */

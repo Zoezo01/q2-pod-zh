@@ -1990,11 +1990,14 @@ static int poll(const void *unused) {
     return 0;
 }
 
-/* The open's progress (docs/internals.md#watchdog): a line per phase, synced to /mnt/data and
- * removed when load() ends, so one left at boot names the phase a stalled open reached. A few
- * lines per open: flash, never per album. */
+/* A cold open's progress (docs/internals.md#watchdog): a line per phase, synced to /mnt/data and
+ * removed when load() ends, so one left at boot names the phase a stalled open reached. Only an
+ * open that queries the albums or finds albums without art writes it (cf_cold); a warm one, the
+ * usual, writes nothing. A few lines per open: flash, never per album. */
 #define CF_TRACE PEQ_ROOT "/mnt/data/q2-cf-trace"
+static int cf_traced; /* this open is a cold one */
 static void cf_trace(unsigned t0, const char *what, unsigned a, unsigned b) {
+    if (!cf_traced) return;
     char line[96];
     int n = b ? snprintf(line, sizeof line, "%s%u/%u %u ms\n", what, a, b, time_now_ms() - t0)
               : snprintf(line, sizeof line, "%s%u %u ms\n", what, a, time_now_ms() - t0);
@@ -2005,6 +2008,13 @@ static void cf_trace(unsigned t0, const char *what, unsigned a, unsigned b) {
     fsync(fileno(f));
     fclose(f);
 }
+/* From here this open traces, from a fresh file's "start". */
+static void cf_cold(unsigned t0) {
+    if (cf_traced) return;
+    cf_traced = 1;
+    unlink(CF_TRACE);
+    cf_trace(t0, "start albums=", cf.stock ? deque_size(cf.stock) : 0, 0);
+}
 
 /* On open: the albums, then art for the ones with no cache file (PictureFlow's first-launch build;
  * later opens resume). The albums are queried again only after the library changed (or Refresh
@@ -2012,10 +2022,9 @@ static void cf_trace(unsigned t0, const char *what, unsigned a, unsigned b) {
 static void load_albums(unsigned t0);
 static void load(void) {
     unsigned t0 = time_now_ms();
-    unlink(CF_TRACE);
-    cf_trace(t0, "start albums=", cf.stock ? deque_size(cf.stock) : 0, 0);
+    cf_traced = 0;
     load_albums(t0);
-    unlink(CF_TRACE);
+    if (cf_traced) unlink(CF_TRACE);
 }
 static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
@@ -2039,6 +2048,7 @@ static void load_albums(unsigned t0) {
     else if (cf.stock)
         n = (int)deque_size(cf.stock);
     else if (!library_scanning()) {
+        cf_cold(t0);
         cf.stock = staged(albums, 0, &n);
         cf_trace(t0, "staged albums=", n, 0);
         if (n > 0) {
@@ -2086,6 +2096,7 @@ static void load_albums(unsigned t0) {
         if (key == cf.saved_album && !on_sort && !cf.scoped) cf.album = (int)i;
         job_t *j = cf.jobs ? &cf.jobs[cf.total] : 0;
         if (j && P(r, REC_PATH) && access(art_path(path, key, ""), 0) && (j->track = strdup(P(r, REC_PATH)))) {
+            cf_cold(t0);
             j->key = key;
             j->shared = shared ? shared[i] : 1; /* no memory: no cover.jpg that may be another's */
             ++cf.total;
