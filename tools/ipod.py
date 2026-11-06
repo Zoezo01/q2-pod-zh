@@ -936,7 +936,7 @@ SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW, SET_STOCK_BODY = (inc(n) for n in ('S
 # The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder), the Library's are its own
 # (lib_*), text pages' carry none. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
 PAGE_KIND = {'localmusic/allmusic_page.bin': 'song', 'localmusic/albuminfo_page.bin': 'text',
-             'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
+             'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'playlist',
              'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'lib',
              'localmusic/localclass_page.bin': 'text'}
 
@@ -944,7 +944,10 @@ PAGE_KIND = {'localmusic/allmusic_page.bin': 'song', 'localmusic/albuminfo_page.
 def page_rows(g, kind):
     """(pitch, body, artwork inset) of a page kind's rows under g."""
     return {'art': (g.art_pitch, g.art_body, g.art_inset), 'lib': (g.lib_pitch, g.lib_body, g.lib_inset),
-            'song': (g.song_pitch, g.song_body, g.text_art_inset)}.get(kind, (g.pitch, g.body, g.text_art_inset))
+            'song': (g.song_pitch, g.song_body, g.text_art_inset),
+            # a set without toolbars gives Playlists two-line rows; navigation.c's pl_dress sizes them
+            'playlist': (g.pitch, g.body, g.text_art_inset) if g.toolbar else (g.song_pitch, g.song_body, g.text_art_inset)
+            }.get(kind, (g.pitch, g.body, g.text_art_inset))
 
 
 def text_y(g, y):
@@ -1142,7 +1145,7 @@ def patch_asset(path, data, g=SET0):
     nav = [n for n in root[3] if n[2].get('name') == 'view_navbar']
     check(len(nav) == 1 and nav[0][1] in ([0, 0, 375, 50], [0, 0, 370, 50]), f'{path}: unexpected toolbar')  # 370: stream_page
     # Keep the widget (and callback lookups) alive. Children may be recreated by stock.
-    playlist = path == 'localmusic/playlist_page.bin'
+    playlist = path == 'localmusic/playlist_page.bin' and g.toolbar  # keeps stock's toolbar, under it
     if path in TOOLBAR_SWITCHES and not plain:
         slider_plain(path, root)
         return encode(root)
@@ -1162,10 +1165,6 @@ def patch_asset(path, data, g=SET0):
         for n in nav[0][3]:
             if n[2].get('name') == 'gif_returnplay':
                 n[1][0] = 375 - corner_x(g.bar, n[1][3]) - n[1][2]
-            # a bar that names the page reads this title hidden (bar_title_of), so the page's
-            # copy goes: beside stock's + and list buttons it didn't fit
-            if n[2].get('name') == 'scrlabel_title' and g.bar_title_w:
-                n[2]['visible'] = 'false'
     for n in root[3]:
         if n is nav[0]:
             continue
@@ -1185,7 +1184,7 @@ def patch_asset(path, data, g=SET0):
             check(box == [0, 50, 375, 50], f'{path}: unexpected action bar')
             box[1] = 0
         elif kind == 'list_item':  # playlist editing actions
-            box[1] = 10 + ((box[1] - 60) // 78) * pitch
+            box[1] = (10 if g.toolbar else 0) + ((box[1] - 60) // 78) * pitch  # navigation.c ringnav_playlistsmore
         elif props.get('name') == 'view':  # allmusic's stock empty-state panel
             box[1] -= 50
         elif path in NAVBAR_ONLY:  # settings panels and notes keep their size; text ends clear of a top corner

@@ -850,6 +850,19 @@ def validate_assets(directory):
                         assert n[2][prop] == str(page_rows(g, kind)[0]), (g.name, short, prop)
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
+        # A set without toolbars: Playlists' toolbar hides, stock's widgets alive for its rows' clicks, its list takes the
+        # bar's room with rows of their own heights (no item_height forces them); More's rows start at the top.
+        if not g.toolbar:
+            for short in ('localmusic/playlist_page.bin', 'localmusic/playlistsmore_page.bin'):
+                folder, _, base = short.rpartition('/')
+                new = decode(read('rootfs.squashfs', ui + f'{folder}/{g.name}_{base}'))
+                nav = next(n for n in new[3] if n[2].get('name') == 'view_navbar')
+                assert nav[2]['visible'] == 'false' and nav[2]['enable'] == 'false', short
+                if short == 'localmusic/playlist_page.bin':
+                    surface = next(n for n in new[3] if n[0] == 'list_view')
+                    assert surface[1][1] == 0 and surface[2]['default_item_height'] == str(g.song_pitch) and 'item_height' not in surface[2]
+                else:
+                    assert [n[1][1] for n in new[3] if n[0] == 'list_item'] == [0, g.pitch]
         # A theme's placed widgets are on the page its layout loads, each a child of the window or of
         # view_album, where no parent layouter moves it.
         for t in builtins():
@@ -929,9 +942,6 @@ def validate_assets(directory):
             m = status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
             assert bar['label_title'][1] == m['title'] and bar['label_title'][2]['ellipses'] == 'true' and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
-            # its title names the page, so the playlist page's toolbar (+ and list buttons) drops its own
-            pl = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'localmusic/{g.name}_playlist_page.bin')))}
-            assert pl['scrlabel_title'][2]['visible'] == 'false' and pl['view_navbar'][2].get('visible') != 'false', g.name
             assert 2 * m['cap_top'] + m['cap'] in (g.bar - 3, g.bar - 2) and m['inset'] >= corner_inset(m['cap_top']), g.name
             assert 2 * m['clock'][0] + m['clock'][2] == 375, g.name
             # the battery's nub ends clear of the glass, at its top row, above the bar's two lines
