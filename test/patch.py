@@ -7373,7 +7373,7 @@ for restore in (False,True):
     m.scope_markers={'/mnt/mmc/Hidden/database.ignore'}
     if restore: m.scope_markers.add('/mnt/mmc/Hidden/Keep/database.unignore')
     m.scope_scan()
-    assert m.open_era()==['Era','80s','2 albums' if restore else '1 album','90s','2 albums','2000s','1 album']
+    assert m.open_era()==['年代','80 年代','2 张专辑' if restore else '1 张专辑','90 年代','2 张专辑','2000 年代','1 张专辑']
     shown=m.decade(0)
     assert ('Restored' in shown)==restore and 'Hidden' not in shown
     passed()

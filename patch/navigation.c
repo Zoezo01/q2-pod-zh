@@ -3945,6 +3945,10 @@ static int bar_repaint(const void *info) {
  * EQ badge when it shows. */
 static void play_word_create(void *bar) {
     if (st.play_word || !st.bar_state) return;
+    /* Classic's bar names the page on the left and puts the play glyph beside the battery on the
+     * right: four hanzi there have no room and push into the clock, so that theme keeps the glyph
+     * alone and the state reads from it, as upstream's layout intends. */
+    if (theme()->set_text) return;
     void *left = P(st.bar_state, W_PARENT);
     if (!left) return;
     st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
@@ -3965,7 +3969,8 @@ static int bar_word_sync(void *bar) {
                  video_status() ?: radio_status() ?: spot_status();
     play_word_create(bar);
     if (!st.play_word) return 0;
-    int show = (status == 2 || status == 3) && !(st.bar_eq && widget_get_visible(st.bar_eq));
+    int show = (status == 2 || status == 3) && !theme()->set_text &&
+               !(st.bar_eq && widget_get_visible(st.bar_eq));
     /* What the bar shows: the glyph's state, and whether the word has its room (bit 3). */
     int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
     if (key == st.bar_key) return 0;
