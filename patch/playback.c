@@ -19,13 +19,16 @@
 extern int stock_load_trampoline(void *, int, int), stock_next_trampoline(int),
     stock_prev_trampoline(void), stock_mode_trampoline(int), stock_preload_trampoline(void),
     stock_memory_trampoline(void *), stock_savequeue_trampoline(void), stock_change_trampoline(int),
+    stock_seek_time_trampoline(int), stock_seek_start_trampoline(void),
     stock_reboot_trampoline(void), stock_checkfw_trampoline(void *, void *),
-    stock_speed_trampoline(int), stock_open_preload_trampoline(void), stock_start_queue_trampoline(int);
+    stock_speed_trampoline(int), stock_open_preload_trampoline(void), stock_start_queue_trampoline(int),
+    stock_player_start_trampoline(void *, int, int, int);
 extern void *staged(int (*)(void *), void *, int *);
 extern int album_before(const void *, const void *), folder_cmp(void *, void *),
     album_only(void *, void *, int);
 extern unsigned queue_hash(void *); /* navigation.c */
 extern int resume_held(void);       /* navigation.c */
+extern void resume_return(void), resume_restart(void);
 
 typedef struct {
     unsigned index, group, rank;
@@ -137,26 +140,136 @@ static void wheel_post(char *info, int key) {
         ((void (*)(void *))WHEEL_POST)(info);
     }
 }
+/* The wheel's thread and the threads reading it share these, a word each. wheel_frame_at: its last
+ * frame with pressure. wh_tick_at, wh_since: its last tick wanted, and how many since Return armed
+ * the stop (wh_armed). wheel_mute: the stop, below. */
+volatile unsigned wheel_frame_at __attribute__((section(".scratch")));
+static volatile unsigned wh_tick_at __attribute__((section(".scratch"))),
+    wh_since __attribute__((section(".scratch"))), wh_armed_at __attribute__((section(".scratch")));
+static volatile int wh_armed __attribute__((section(".scratch")));
+volatile int wheel_mute __attribute__((section(".scratch")));
+#if Q2POD_DEV
+/* ponytail: temporary, --dev builds only, comes out once the runaway report is explained. The last
+ * WL_FRAMES ring frames in RAM, a store per frame; a copy goes to /mnt/data/q2-wheel.log, synced to
+ * outlast a forced restart, when Return stops a run, a run passes WL_RUN_MS with no WHEEL_FRESH_MS gap
+ * or tick_gate starts dropping: WL_FLUSHES a boot, never past WL_MAX_BYTES, one writer at a time (a
+ * flush while one writes is lost). The next boot moves it to the card (tools/build.py WHEEL_LOG_HOOK). */
+#define WL_FRAMES 64
+#define WL_RUN_MS 30000
+#define WL_FLUSHES 8
+#define WL_MAX_BYTES 32768
+typedef struct {
+    int x, pressure;
+    unsigned ms;
+} wl_frame;
+static wl_frame wl_frames[WL_FRAMES] __attribute__((section(".scratch"))),
+    wl_copy[WL_FRAMES] __attribute__((section(".scratch")));
+static unsigned wl_next __attribute__((section(".scratch"))),
+    wl_copy_next __attribute__((section(".scratch"))),
+    wl_copy_at __attribute__((section(".scratch"))), wl_flushes __attribute__((section(".scratch"))),
+    wl_run_at __attribute__((section(".scratch"))), wl_drop_at __attribute__((section(".scratch"))),
+    wl_stops __attribute__((section(".scratch"))), wl_drops __attribute__((section(".scratch")));
+static int wl_run __attribute__((section(".scratch"))); /* 0 none, 1 going, 2 logged */
+static int wl_busy __attribute__((section(".scratch")));
+static const char *wl_why __attribute__((section(".scratch")));
+static void *wl_write(void *unused) {
+    void *f = fopen("/mnt/data/q2-wheel.log", "ab");
+    long size = f && !fseek(f, 0, 2) ? ftell(f) : -1;
+    if (size >= 0 && size < WL_MAX_BYTES) {
+        char s[80];
+        tk_snprintf(s, sizeof s, "== wheel: %s at %u ms: gate drops %u, stops %u\n", wl_why,
+                    wl_copy_at, wl_drops, wl_stops);
+        fputs(s, f);
+        for (unsigned i = 0; i < WL_FRAMES; ++i) {
+            const wl_frame *k = &wl_copy[(wl_copy_next + i) % WL_FRAMES];
+            if (!k->ms) continue; /* not filled yet */
+            tk_snprintf(s, sizeof s, "%u x=%d p=%d\n", k->ms, k->x, k->pressure);
+            fputs(s, f);
+        }
+        fflush(f);
+        fsync(fileno(f));
+    }
+    if (f) fclose(f);
+    wl_busy = 0;
+    return unused;
+}
+/* Any thread. The copy may catch one frame half written, which a log can bear. */
+static void wl_flush(const char *why) {
+    unsigned long thread;
+    if (!__sync_bool_compare_and_swap(&wl_busy, 0, 1)) return;
+    if (wl_flushes >= WL_FLUSHES) {
+        wl_busy = 0;
+        return;
+    }
+    wl_flushes++;
+    wl_why = why;
+    wl_copy_next = wl_next;
+    wl_copy_at = (unsigned)time_now_ms();
+    memcpy(wl_copy, wl_frames, sizeof wl_copy);
+    if (pthread_create(&thread, 0, wl_write, 0))
+        wl_busy = 0;
+    else
+        pthread_detach(thread);
+}
+/* tick_gate, for a tick with no frame: a run of them leaves a line that tells it from a ghost. */
+void wheel_gate_note(void) {
+    unsigned now = (unsigned)time_now_ms();
+    wl_drops++;
+    if (now - wl_drop_at >= WHEEL_FRESH_MS) wl_flush("a tick with no ring frame");
+    wl_drop_at = now;
+}
+static void wl_note_frame(const int *s) {
+    wl_frame *k = &wl_frames[wl_next++ % WL_FRAMES];
+    k->x = s[0], k->pressure = s[2], k->ms = (unsigned)time_now_ms();
+    if (!s[2]) wl_run = 0;
+}
+static void wl_note_stop(void) {
+    wl_stops++;
+    wl_run = 2;
+    wl_flush("Return stopped a run");
+}
+static void wl_note_tick(unsigned now, unsigned before) {
+    if (!wl_run || now - before >= WHEEL_FRESH_MS) wl_run = 1, wl_run_at = now;
+    if (wl_run == 1 && now - wl_run_at >= WL_RUN_MS) {
+        wl_run = 2;
+        wl_flush("a run past 30 s");
+    }
+}
+#else
+#define wl_note_frame(s) ((void)0)
+#define wl_note_stop() ((void)0)
+#define wl_note_tick(now, before) ((void)(before))
+#endif
+
 /* main_loop_queue_event (tools/build.py QUEUE_LEAF): the one way into the UI loop's queue, for every
  * input thread, SyncLink's keys and idle requests alike; full, it drops its oldest event. The touch
  * thread (tslib_run, 0x622d70) posts an event of type 0 for every sample with no pressure while it
- * holds no finger down, which the loop hands the window manager as EVT_NONE. Wheel QS's lift writes
- * BTN_TOUCH 0 to the panel's node, so a thumb that rests on the screen's edge after the swipe is
- * reported without a touch the input core passes on, and streams those at the panel's rate; twenty
- * of them while the pull-down opened would evict the lift's release (inferred; q2-wheel.log shows
- * thread=0, last=move), and the wheel and Centre were dead until a tap. They mean nothing, so they are not queued;
- * everything else goes to stock's poster. A rim button going down is noted here for Wheel QS
- * (qs_start): this runs on the posting thread, ahead of a UI thread a track start may be blocking,
- * so chord_gate's edge_held would come too late. */
-static volatile unsigned qs_key_at __attribute__((section(".scratch")));
+ * holds no finger down, which the loop hands the window manager as EVT_NONE. Twenty of them would
+ * evict a queued release, and the wheel and Centre were dead until a tap (inferred; q2-wheel.log
+ * showed thread=0, last=move). They mean nothing, so they are not queued; everything else goes to
+ * stock's poster.
+ * Return's stop. A first Return only does its normal job: a thumb can slide from the ring to Return and
+ * back with no lift, and a turn begun on Back carries on. One past WHEEL_ARM_MS after it is a new first.
+ * A second one with WHEEL_STOP_TICKS ticks since the first, and ticks and frames still arriving, stops the ticks until a
+ * real lift or a WHEEL_FRESH_MS gap in frames (wheel_sample), and tick_gate refuses those queued. So
+ * under a ghost the first Return closes the volume bar or goes up, and the second ends it. Here, at
+ * the press, so a stalled UI doesn't move it. ponytail: a real turn with two rim presses within
+ * WHEEL_ARM_MS in one touch stops until its lift; nothing else ever limits a turn. */
 int ringnav_queue_event(void *loop, const unsigned *r) {
     int (*post)(void *, const void *) =
         loop ? *(int (**)(void *, const void *))((char *)loop + LOOP_POST) : 0;
     if (!post || !r) return 0x10; /* RET_BAD_PARAMS, as stock */
-    if (r[0] == EVT_KEY_DOWN) {
-        unsigned key = r[EVENT_KEY / 4];
-        if (key == KEY_RETURN || key == KEY_PLAY || key == KEY_BACK_BTN || key == KEY_FWD_BTN)
-            qs_key_at = (unsigned)time_now_ms();
+    if (r[0] == EVT_KEY_DOWN && r[EVENT_KEY / 4] == KEY_RETURN && wh_anchor && !wheel_mute) {
+        unsigned now = (unsigned)time_now_ms();
+        if (!wh_armed || (int)(now - wh_armed_at) >= WHEEL_ARM_MS) {
+            wh_since = 0;
+            wh_armed = 1;
+            wh_armed_at = now;
+        } else if (wh_since >= WHEEL_STOP_TICKS && (int)(now - wh_tick_at) < WHEEL_ESCAPE_TICK_MS &&
+                   (int)(now - wheel_frame_at) < WHEEL_FRESH_MS) {
+            wheel_mute = 1;
+            wl_note_stop();
+        }
     }
     return r[0] ? post(loop, r) : 0;
 }
@@ -165,152 +278,31 @@ volatile int wheel_raw __attribute__((section(".scratch")));
 volatile int wheel_travel __attribute__((section(".scratch")));
 volatile int wheel_held __attribute__((section(".scratch"))); /* a finger on the wheel */
 
-/* Quick Settings from the wheel: a swipe straight across it, as on a touchpad. The ring has no
- * middle, so the swipe is a touch at one edge and then, within QS_GAP_MS, one at the opposite edge
- * (lifted over Centre) or a jump there mid-touch. Each touch travels under QS_SLACK units, so no
- * turn counts. The payload writes a finger on the screen (q2remote's swipe, docs/remote.md) to
- * hyn_ts, so stock opens or closes the pull-down and slides it as for a finger, streamed with the
- * gesture: the second touch puts the finger down and, for the gap over Centre the ring cannot
- * sense, straight at where the gesture's pace puts it; each of the touch's samples moves it on at
- * that pace, and the lift ends it at the far end. A second touch that turns (QS_SLACK) takes it
- * back: stock slides the pull-down, on the release, the way the swipe started it
- * (g_slide_direction, set once as it starts), wherever the finger lifts, so the finger lifts where
- * it is and ringnav_dispatch turns that release's slide back to how the pull-down was (qs_back).
- * Writes are a few dozen bytes a sample, on the encoder thread, only during a gesture.
- * Next then Previous is also a touch at one edge and then at the opposite one, and a press is not
- * a swipe (#189), so a rim button going down since the last touch began, or within QS_GAP_MS
- * before it (inferred: the ring's first sample may trail the switch), rules the second touch out
- * (qs_key_at).
- * ponytail: a touch that only brushes the rim and then a press still swipes, as the finger starts
- * on the second touch's first sample, ahead of its button; let the press lift a live finger if
- * that shows up.
- * ponytail: the pace is the first touch's down to the second's, doubled (clamped QS_MIN_MS to
- * QS_MAX_MS), a straight line with no easing; either way across toggles it, as the wheel's x has
- * no known top; gate on the first touch's x once a device trace finds the top. */
-#define QS_SPAN 70 /* of the wheel's 200 units: a jump this far is the opposite edge */
-#define QS_SLACK 20
-#define QS_GAP_MS 400
-#define QS_MIN_MS 150 /* the swipe's duration: the gesture's own, clamped */
-#define QS_MAX_MS 500
-int ringnav_wheel_qs(void); /* navigation.c: Q2POD WHEELQS, the Controls row */
-static int qs_fd __attribute__((section(".scratch"))); /* hyn_ts + 1; 0 not found yet */
-static int qs_x __attribute__((section(".scratch")));  /* where the last touch left */
-static unsigned qs_at __attribute__((section(".scratch")));
-static unsigned qs_t0 __attribute__((section(".scratch"))); /* the gesture's first touch down */
-static int qs_left __attribute__((section(".scratch"))),
-    qs_travel __attribute__((section(".scratch"))), qs_armed __attribute__((section(".scratch")));
-/* the streamed finger: down (qs_live), from and to on the screen, over qs_ms from qs_t0 */
-volatile int qs_live __attribute__((section(".scratch"))); /* navigation.c stale_note reads it (--dev) */
-static int qs_from __attribute__((section(".scratch"))), qs_to __attribute__((section(".scratch")));
-static unsigned qs_ms __attribute__((section(".scratch")));
-volatile int qs_back __attribute__((section(".scratch"))), qs_down __attribute__((section(".scratch")));
-
-/* One frame of the finger at screen y (upright, x 187): down first, moved, or lifted. */
-static void qs_write(int y, int down, int lift) {
-    int n = 0, ev[5][4] = { 0 };
-#define EV(type, code, value) ev[n][2] = (type) | (code) << 16, ev[n++][3] = (value)
-    if (lift) {
-        EV(3, 0x18, 0), EV(1, 0x14a, 0);
-    } else { /* the panel's ABS_X is 319 - y */
-        EV(3, 0, 319 - y), EV(3, 1, 187);
-        if (down) EV(3, 0x18, 1), EV(1, 0x14a, 1); /* ABS_PRESSURE, BTN_TOUCH */
-    }
-    EV(0, 0, 0);
-#undef EV
-    write(qs_fd - 1, ev, n * sizeof ev[0]);
-}
-/* The finger where the gesture's pace has it now. */
-static void qs_follow(void) {
-    unsigned t = (unsigned)time_now_ms() - qs_t0;
-    if (t > qs_ms) t = qs_ms;
-    qs_write(qs_from + (qs_to - qs_from) * (int)t / (int)qs_ms, 0, 0);
-}
-/* The second touch: the finger down where the swipe starts, then on across the gap. */
-static void qs_begin(void) {
-    int state = *(volatile int *)g_dropdown_menu_state;
-    if (!g_backlight_status || (state && state != 3) || !ringnav_wheel_qs() || addon_game_on())
-        return; /* a card game would take its swipe as a touch */
-    char path[32], name[16];
-    for (int i = 0; !qs_fd && i < 16; ++i) {
-        tk_snprintf(path, sizeof path, "/dev/input/event%d", i);
-        int fd = open(path, 0x80001); /* O_WRONLY | O_CLOEXEC, MIPS */
-        if (fd < 0) continue;
-        memset(name, 0, sizeof name);
-        if (ioctl(fd, 0x40104506u, name) > 0 && !strcmp(name, "hyn_ts"))
-            qs_fd = fd + 1;
-        else
-            close(fd);
-    }
-    if (!qs_fd) return;
-    /* Upright y 5 to 220 opens it and 310 to 0 closes it. */
-    qs_from = state ? 310 : 5, qs_to = state ? 0 : 220;
-    unsigned ms = 2 * ((unsigned)time_now_ms() - qs_t0);
-    qs_ms = ms < QS_MIN_MS ? QS_MIN_MS : ms > QS_MAX_MS ? QS_MAX_MS : ms;
-    qs_back = 0, qs_down = 1;
-    qs_write(qs_from, 1, 0);
-    qs_live = 1;
-    qs_follow();
-}
-/* The lift: at the far end for a swipe; for a turn where the finger is, the slide set back first
- * (closed from 5, open from 310). */
-static void qs_finish(int swipe) {
-    if (!qs_live) return;
-    if (swipe)
-        qs_write(qs_to, 0, 0);
-    else
-        qs_back = (qs_from != 5) + 1;
-    qs_write(0, 0, 1);
-    qs_live = 0;
-}
-static void qs_end(int x) {
-    qs_finish(qs_travel < QS_SLACK);
-    qs_armed = 0, qs_x = x, qs_left = qs_travel, qs_at = (unsigned)time_now_ms();
-}
-static void qs_start(int x) {
-    int span = x > qs_x ? x - qs_x : qs_x - x;
-    if (span > 100) span = 200 - span;
-    qs_armed = qs_at && (unsigned)time_now_ms() - qs_at < QS_GAP_MS && qs_left < QS_SLACK &&
-               span >= QS_SPAN && (int)(qs_key_at - qs_t0) < -QS_GAP_MS;
-    qs_travel = 0;
-    if (qs_armed)
-        qs_begin();
-    else
-        qs_t0 = (unsigned)time_now_ms(); /* a first touch; the second keeps it */
-}
-
 /* struct ts_sample {int x, y; unsigned pressure; struct timeval tv;} */
 void wheel_sample(int *s, int ret, char *info) {
     if (ret <= 0) return;
+    wl_note_frame(s); /* x as it came, before anything judges it */
     if (!s[2]) { /* lifted */
-        if (wh_anchor) qs_end(wh_last);
-        if (wh_anchor) s[0] = wh_anchor;
+        /* Stock's lift path (0x625b88) ticks on an x away from its touch-down x, 0 once it has seen
+         * this touch's lift, per sample and past wheel_post's guard: it only ever sees that x. */
+        s[0] = wh_anchor;
         wh_anchor = 0;
+        wheel_mute = wh_armed = 0;
         if (wh_guard != DARK_OPEN) wh_guard = 0;
         wheel_held = 0;
         return;
     }
+    unsigned now = (unsigned)time_now_ms();
+    if (now - wheel_frame_at >= WHEEL_FRESH_MS) wheel_mute = wh_armed = 0;
+    wheel_frame_at = now;
     if (!wh_anchor) {
         wh_anchor = wh_last = s[0];
         wh_acc = 0;
-        qs_start(s[0]);
         wheel_held = 1;
         return;
     }
     int d = s[0] - wh_last, units = wheel_units ? wheel_units : WHEEL_TICK_UNITS * WHEEL_FINE;
     d = d < -100 ? d + 200 : d > 100 ? d - 200 : d;
-    if ((d >= QS_SPAN || d <= -QS_SPAN) && g_backlight_status &&
-        ringnav_wheel_qs()) { /* across the middle: two touches */
-        qs_end(wh_last);
-        qs_start(s[0]);
-        d = 0;
-    }
-    qs_travel += d < 0 ? -d : d;
-    if (qs_live) { /* the second touch: on at the pace, or a turn takes it back */
-        if (qs_travel < QS_SLACK)
-            qs_follow();
-        else
-            qs_finish(0);
-    }
     d *= WHEEL_FINE;
     wh_last = s[0];
     if (wheel_raw) { /* games.c's Vortex reads the travel itself; nothing is queued for a menu */
@@ -329,8 +321,12 @@ void wheel_sample(int *s, int ret, char *info) {
     wh_acc = dark_held(&d) ? 0 : wh_acc + d;
     while (wh_acc >= units || wh_acc <= -units) {
         int dir = wh_acc > 0 ? 1 : -1;
+        unsigned before = wh_tick_at;
         wh_acc -= dir * units;
-        wheel_post(info, dir > 0 ? KEY_PREV : KEY_NEXT); /* x rising is back, as stock */
+        wh_tick_at = now;
+        wh_since++;
+        wl_note_tick(now, before);
+        if (!wheel_mute) wheel_post(info, dir > 0 ? KEY_PREV : KEY_NEXT); /* x rising is back, as stock */
     }
     s[0] = wh_anchor;
 }
@@ -786,8 +782,14 @@ static void commit(unsigned next) {
  * the order carries on after it and it neither plays again later in the pass nor drops the tracks
  * it jumped; an ordered queue's in place, so the tracks after it follow. A pick inside a pending
  * Play Next takes only its entry off the list, the rest stay pending. */
+#define VIEW_QUEUE_RET 0x529944 /* View Queue's row, past its bounds checks */
 int ringnav_start_queue(int at) {
     unsigned x = (unsigned)at;
+    if (__builtin_return_address(0) == (void *)VIEW_QUEUE_RET && x == (unsigned)M(MCL_POS) &&
+        playback_keeps(queue(), at)) {
+        playback_np();
+        return 1;
+    }
     if (s.active && x < s.n && x != (unsigned)M(MCL_POS) && queue() && deque_size(queue()) == s.n) {
         close_preload();
         if (s.shuffle == 1 && pend_find(x) == s.npend) play_now(x);
@@ -829,6 +831,7 @@ int ringnav_load(void *q, int at, int type) {
     if (s.restoring == 2)
         s.restoring = 0;
     else if (!s.restoring) {
+        press_stamp(); /* a list pick, after stock's load names the queue's type */
         s.resume_key = s.resume_pending = 0;
         s.npend = 0;
         /* Shuffle Albums/Folders end with any other queue; a repeat or Shuffle track mode carries on */
@@ -882,7 +885,7 @@ static int list_end(void) {
            (unsigned)M(MCL_POS) + 1 == deque_size(queue());
 }
 unsigned auto_nexts __attribute__((section(".scratch"))); /* tracks that ended by themselves */
-int ringnav_next(int automatic) {
+static int next_song(int automatic) {
     auto_nexts += automatic != 0;
     if (!s.active) {
         if (list_end()) {
@@ -904,6 +907,16 @@ int ringnav_next(int automatic) {
     close_preload();
     M(MCL_POS) = next;
     return mclStartPlayer();
+}
+/* A natural change (mclAutoChange's, its only automatic caller) forgets the last press and stamps nothing:
+ * a Folder Skip's rollover loads its next folder in here (on_player_autochange, ringnav_load). */
+int ringnav_next(int automatic) {
+    if (!automatic) return next_song(0);
+    press_forget();
+    press_natural = 2; /* 2: start_mute's too, 1 being the other natural starts */
+    int result = next_song(1);
+    press_natural = 0;
+    return result;
 }
 int playback_back(void) {
     int to = back_to - 1;
@@ -946,29 +959,44 @@ static int change_restarts(int next) {
     if (M(MCL_TYPE) != 1 || !*(volatile unsigned char *)MCL_JUMPFOLDER || mclGetPlayM3uFlag()) return 1;
     return !next && M(MCL_MODE) == 2 && !M(MCL_LASTPOS);
 }
-/* A press that would restart a track holding a place only asks; a second within RESTART_ASK_MS goes
- * ahead, and resume_poll forgets the place as for any move to the start. */
+/* A local queue's only: a DLNA controller or an online queue (0xf1, 0xf2) keeps stock's way. */
+static int local_class(int cls) { return cls == 1 || (cls & 0xf000) == 0xf000; }
+static int place_held(void) { return local_class(M(MCL_TYPE)) && resume_held(); }
+/* A press that would restart a track holding a place only asks; a second of the same key within
+ * RESTART_ASK_MS goes ahead, and resume_poll forgets the place as for any move to the start. Another
+ * key asks again and arms for itself, so Previous can't confirm what a stray Next asked. */
 #define RESTART_ASK_MS 3000
 static unsigned restart_at;
+static int restart_key; /* change_music's next: 0 Previous, 1 Next */
 static int restart_ask; /* set here, maybe off the UI thread; toasted by the poll */
-static int restart_refused(int next) {
-    if (!resume_held() || !change_restarts(next)) return restart_at = 0;
+int restart_armed(int key) {
+    return restart_at && restart_key == key && (unsigned)time_now_ms() - restart_at <= RESTART_ASK_MS;
+}
+static int restart_refused(int key, int restarts) {
+    if (!restarts) return restart_at = 0;
     unsigned now = (unsigned)time_now_ms();
-    if (restart_at && now - restart_at <= RESTART_ASK_MS) return restart_at = 0;
+    if (restart_armed(key)) {
+        resume_restart();
+        return restart_at = 0;
+    }
     restart_at = now | !now; /* never 0, no press yet */
+    restart_key = key;
     return restart_ask = 1;
 }
 /* Manual Next/Prev (player_change_music). List Play stops at a library queue's end, as above. At
  * queue index 0 or n-1 stock wraps or loads a sibling folder itself; in Repeat All without Folder
  * Skip every branch calls mclNextSong(0)/mclPrevSong, so advanced order applies. MCL_MODE is
  * written directly: mclSetPlayMode would end advanced play. */
-int ringnav_change(int next) {
+static int change_music(int next) {
     /* 无耳机不播放 (headset.c): a pocket press of Next or Previous must not start a stopped queue
      * either. Refused whole, so the queue keeps the track it had; -1 and -5 stay the caller's
      * failures (no storage). */
     if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
-    if (restart_refused(next)) return 0; /* the caller toasts -1 (no storage) and -5 */
+    /* Stock's skip past a file it can't play is automatic, and never asks. */
+    if (!press_natural && restart_refused(next, place_held() && change_restarts(next)))
+        return 0; /* the caller toasts -1 (no storage) and -5 */
+    press_stamp();
     if (!s.active) {
         if (!next || !list_end()) return stock_change_trampoline(next);
         ringnav_next(0); /* stops */
@@ -983,6 +1011,70 @@ int ringnav_change(int next) {
     M(MCL_MODE) = mode;
     *skip = was;
     return result;
+}
+/* on_wm_timer_dialog's skip past a file it can't play (jalr player_next_music, 0x4ea840, which tail-branches
+ * here with ra restored) is the only Next nobody pressed; its Folder Skip load stamps nothing either. */
+#define UNPLAYABLE_NEXT_RET 0x4ea848
+int ringnav_change(int next) {
+    press_natural = __builtin_return_address(0) == (void *)UNPLAYABLE_NEXT_RET;
+    int result = change_music(next);
+    press_natural = 0;
+    return result;
+}
+/* A user's seek stamps: a scrub or chapter (player_seek_time; Resume Songs' jump goes past this hook) and
+ * Previous restarting the track. A-B Repeat and a phone call mclSetSeek themselves. */
+int ringnav_seek_time(int sec) {
+    press_stamp();
+    return stock_seek_time_trampoline(sec);
+}
+/* player_prev_music's first move, its only caller, on anything playing or paused: past 10 s stock seeks
+ * to the track's start and returns 1, in any queue and mode, without reaching player_change_music. A
+ * refusal returns 1 too, so it goes no further. Under 11 s stock returns 0 and Previous changes track. */
+int ringnav_seek_start(void) {
+    int restarts = player_playtime() > 10;
+    if (restart_refused(0, restarts && place_held())) return 1;
+    if (restarts) press_stamp();
+    return stock_seek_start_trampoline();
+}
+/* Is q's entry at the file playing or paused, the same CUE track, on a track holding a place? */
+int playback_keeps(void *q, int at) {
+    unsigned pos = (unsigned)M(MCL_POS);
+    if (mclGetPlayStatus() == 1 || !place_held() || !q || !queue() || (unsigned)at >= deque_size(q) ||
+        pos >= deque_size(queue()))
+        return 0;
+    void *ra = deque_at(q, (unsigned)at), *rb = deque_at(queue(), pos);
+    const char *a = P(ra, REC_PATH), *b = P(rb, REC_PATH);
+    return a && b && !strcmp(a, b) && I(ra, REC_CUE_START) == I(rb, REC_CUE_START) &&
+           I(ra, REC_CUE_END) == I(rb, REC_CUE_END);
+}
+/* Now Playing, as on_backplay_click opens it, class 0xff: a pick means play this, so a paused file goes
+ * on. Its Play waits for the DAC by itself (dac_resume), so no stamp. */
+void playback_np(void) {
+    static const int context[4] = { 0, 0, 0xff, 2 };
+    navigator_switch_to_with_context("playing_page", context, 0);
+    if (mclGetPlayStatus() == 3) player_play_pause();
+}
+/* Picks of the playing file reach player_start from each of these; none reads its result. */
+#define PAGE_PICK_RET 0x52cc1c  /* playing_page_init, which opens Now Playing itself */
+#define ALBUM_PLAY_RET 0x4a5d6c /* the album page's play (0x4a5c6c), which stays on its page */
+#define ALBUMINFO_PLAY_RET 0x4a9c48
+/* The same row of the same list: nothing starts. SyncLink's (0x51b73c, 0x51b90c), off the UI thread, stays
+ * silent, the track playing on. From another list stock loads it, and the poll goes back to the place. Not a
+ * press: an app's .play (press_natural), Shuffle Albums' load, DLNA and online. */
+int ringnav_player_start(void *q, int at, int cls, int mode) {
+    void *from = __builtin_return_address(0);
+    if (!press_natural && !s.grouping && local_class(cls) && playback_keeps(q, at)) {
+        if (at != M(MCL_POS) || deque_size(q) != deque_size(queue()) || cls != M(MCL_TYPE))
+            resume_return();
+        else {
+            if (from == (void *)ALBUM_PLAY_RET || from == (void *)ALBUMINFO_PLAY_RET)
+                playback_np();
+            else if (from == (void *)PAGE_PICK_RET && mclGetPlayStatus() == 3)
+                player_play_pause();
+            return 1;
+        }
+    }
+    return stock_player_start_trampoline(q, at, cls, mode);
 }
 int playback_group_skip(int forward) {
     if (!s.active && !playback_set(2, s.folder)) return 0;
@@ -1029,6 +1121,7 @@ int playback_group_skip(int forward) {
     }
     close_preload();
     M(MCL_POS) = (int)next;
+    press_stamp();
     mclStartPlayer();
     playback_save();
     return 1;
@@ -1471,15 +1564,54 @@ int playback_resumed(void *r) {
     return pending && s.resume_elapsed && (unsigned)M(MCL_POS) == s.resume_pos &&
            fnv(FNV_SEED, P(r, REC_PATH)) == s.resume_key;
 }
+/* Stock Shuffle's next, drawn ahead so Crossfade can ask about the file. Stock's pick (0x5a8120) takes
+ * the current index out of the pool and sets the position to a random one left there, which stays
+ * until it is current: so ringnav_shuffle overrides the position with this draw, a uniform one of the
+ * same set. Neither touches the pool. The two records say the queue under it hasn't changed.
+ * ponytail: with under 2 in the pool the pick refills it (or Folder Skip jumps): -2, unknown. */
+static struct { unsigned at, index; void *now, *next; } peek __attribute__((section(".scratch")));
+static int peek_holds(unsigned at) {
+    void *q = queue();
+    unsigned n = q ? deque_size(q) : 0;
+    return peek.now && peek.at == at && at < n && peek.index < n && deque_at(q, at) == peek.now &&
+           deque_at(q, peek.index) == peek.next;
+}
+static int shuffle_peek(unsigned at) {
+    if (peek_holds(at)) return (int)peek.index;
+    void *pool = P(MCL_POOL, 0);
+    unsigned k = pool ? deque_size(pool) : 0, n = deque_size(queue());
+    peek.now = 0;
+    for (int tries = 0; k >= 2 && tries < 8; ++tries) {
+        unsigned x = *(unsigned *)deque_at(pool, rand_below(k));
+        if (x != at && x < n) {
+            peek.at = at, peek.index = x;
+            peek.now = deque_at(queue(), at), peek.next = deque_at(queue(), x);
+            return (int)x;
+        }
+    }
+    return -2;
+}
+int playback_peek(unsigned at) {
+    int to = peek_holds(at) ? (int)peek.index : -1;
+    peek.now = 0;
+    return to;
+}
 /* The track that plays after this one, or -1: Crossfade's next (crossfade.c). Stock preloads pos+1
- * only in order and repeat-all (mclSetPlayMode's modes 0 and 3); stock Shuffle (2) draws its next
- * at the change, so it is -2, unknown but another track's. */
+ * only in order and repeat-all (mclSetPlayMode's modes 0 and 3), repeat-all's wrapping to 0; stock
+ * Shuffle (2) goes back after a Previous, to a Play next, or to the draw above. */
 static int playback_next(void) {
     if (s.active) return playback_successor(1);
     unsigned at = (unsigned)M(MCL_POS);
     int mode = M(MCL_MODE);
     unsigned n = queue() ? deque_size(queue()) : 0;
-    if (mode == 2) return at < n && n > 1 ? -2 : -1;
+    if (mode == 2) {
+        if (at >= n || n < 2) return -1;
+        int to = shuffle_forced();
+        if (to >= 0) return to;
+        if (back_to && (int)at == back_at && (unsigned)back_to <= n) return back_to - 1;
+        return shuffle_peek(at);
+    }
+    if (mode == 3 && n && at + 1 == n) return 0;
     return (mode == 0 || mode == 3) && at + 1 < n ? (int)at + 1 : -1;
 }
 void playback_poll(void) {
@@ -1492,7 +1624,7 @@ void playback_poll(void) {
         restart_ask = 0;
         toast("再按一次从头播放");
     }
-    xfade_poll(playback_next());
+    xfade_poll(playback_next(), !s.active && M(MCL_MODE) == 2);
     mono_sync();
     unsigned now = time_now_ms();
     /* playback_save writes only what changed, at most every 5 s. A track that just plays on

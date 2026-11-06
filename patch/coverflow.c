@@ -18,7 +18,8 @@
 #define CF_W (375 - 2 * CF_EDGE)
 #define MIN_FREE_MB 16 /* no new cache files below this much free space on the card */
 #define ART_NEAR 3 /* real art only this many covers either side, like PictureFlow's cache */
-#define HOME_PLACEHOLDER "default_album_home" /* Classic Home's, at 290px (stock's: 110) */
+/* Home's without a theme's pane (home_pane_paint), at 290px (stock's: 110) */
+#define HOME_PLACEHOLDER "default_album_home"
 enum { ARTIST_ALBUMS = 1, RATED_ALBUMS, ALBUM_TRACKS }; /* cf.scoped */
 /* after the albums: an artist's All albums (two or more), the rated albums' Sort; none after the
  * library's, whose Sort and Refresh are Display settings' Coverflow Sort and Refresh Coverflow
@@ -1284,9 +1285,11 @@ int image_show(void *img, const char *url, unsigned *size) {
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
 #define CF_RING (2 * CF_REACH + 1)
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
-#define CF_EYE16 (16 * CF_EYE)
+/* the active theme's Cover Flow values, copied at page open (cf_restyle) */
+static cf_style_t cfs __attribute__((section(".scratch")));
+#define CF_EYE16 (16 * cfs.eye)
 #define CF_HALF16 (16 * ART_SIZE / 2)
-#define CF_MID256 (256 * (CF_TOP + ART_SIZE / 2)) /* the horizon every cover centres on */
+#define CF_MID256 (256 * (cfs.top + ART_SIZE / 2)) /* the horizon every cover centres on */
 
 /* cos and sin of 0 to CF_ANGLE (60) degrees in 16 steps, 16.16 */
 static const int cf_cos[17] = { 65536, 65396, 64975, 64277, 63303, 62058, 60547, 58777, 56756,
@@ -1308,15 +1311,15 @@ static void pose(int t, pose_t *p) {
         /* xc = A t + B t^2: CF_X1 at t = 1, arriving at the stack's CF_XS slope, and quick at
          * first, so the covers turning in and out mid-step keep clear of each other. */
         int sq = (int)((unsigned)t * (unsigned)t >> 16);
-        p->xc = (16 * (2 * CF_X1 - CF_XS) * t + 16 * (CF_XS - CF_X1) * sq) >> 16;
-        p->zc = 16 * CF_Z1 * t >> 16;
-        p->bright = 256 - ((256 - CF_BRIGHT1) * t >> 16);
+        p->xc = (16 * (2 * cfs.x1 - cfs.xs) * t + 16 * (cfs.xs - cfs.x1) * sq) >> 16;
+        p->zc = 16 * cfs.z1 * t >> 16;
+        p->bright = 256 - ((256 - cfs.bright1) * t >> 16);
     } else {
         int e = t - CF_ONE;
-        p->xc = 16 * CF_X1 + (16 * CF_XS * e >> 16);
-        p->zc = 16 * CF_Z1 + (16 * CF_ZS * e >> 16);
-        p->bright = e < CF_ONE ? CF_BRIGHT1 - ((CF_BRIGHT1 - CF_BRIGHT2) * e >> 16)
-                    : e < 2 * CF_ONE ? CF_BRIGHT2 * (2 * CF_ONE - e) >> 16 : 0;
+        p->xc = 16 * cfs.x1 + (16 * cfs.xs * e >> 16);
+        p->zc = 16 * cfs.z1 + (16 * cfs.zs * e >> 16);
+        p->bright = e < CF_ONE ? cfs.bright1 - ((cfs.bright1 - cfs.bright2) * e >> 16)
+                    : e < 2 * CF_ONE ? cfs.bright2 * (2 * CF_ONE - e) >> 16 : 0;
     }
 }
 
@@ -1400,9 +1403,9 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
         }
     }
     /* The reflection starts where the body ends, sharing the row the body only partly covers. */
-    int reflect = h * CF_REFLECT / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
+    int reflect = h * cfs.reflect / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
     int fade = (256 << 16) / reflect; /* fading per 1/256 px, 16.16 */
-    unsigned dim = (unsigned)bright * CF_REFLECT_TOP >> 8;
+    unsigned dim = (unsigned)bright * cfs.reflect_top >> 8;
     wash = shade(cf_paper, 256u - dim);
     if (stop > CF_VIEW_H) stop = CF_VIEW_H;
     for (y = (bottom + ins) >> 8, px = d + y * pitch; y < stop; ++y, px += pitch) {
@@ -1431,6 +1434,20 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 /* The cover t (16.16, signed) turns from the visual position, under what is drawn. */
 static unsigned short cf_inset[ART_SIZE] __attribute__((section(".scratch"))); /* 1/256 texel, symmetric */
 
+/* Copy the theme's Cover Flow values to cfs. */
+static void cf_restyle(void) { cfs = theme()->cf; }
+/* cf_inset follows the theme's radius, or none under square art. */
+static void cf_corners(void) {
+    static short filled __attribute__((section(".scratch")));
+    int radius = ipod_square_art() ? 0 : cfs.radius;
+    if (radius == filled) return;
+    filled = (short)radius;
+    int r = ART_SIZE * radius / 166;
+    memset(cf_inset, 0, sizeof cf_inset);
+    for (int k = 0; k < r; ++k)
+        cf_inset[k] = cf_inset[ART_SIZE - 1 - k] = (unsigned short)(arc_out(r, k) * 16);
+}
+
 static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
@@ -1456,11 +1473,8 @@ static int slot(int frac, int k, int i) {
  * texture of the cover j - CF_REACH from the centre, or 0 to leave it out. Nearest first; nearer
  * covers and their reflections overlap farther ones. */
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ring[CF_RING]) {
-    if (!cf_inset[0]) { /* once, including callers which render without opening the page */
-        int r = ART_SIZE * NP_ART_RADIUS / 166;
-        for (int k = 0; k < r; ++k)
-            cf_inset[k] = cf_inset[ART_SIZE - 1 - k] = (unsigned short)(arc_out(r, k) * 16);
-    }
+    if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
+    cf_corners();
     cf_paper = ipod_light() ? LIGHT_PAPER * 0x010101u : 0;
     shelf_t f;
     f.d = d, f.pitch = pitch;
@@ -1875,9 +1889,10 @@ static int retitle(const void *unused) {
 
 /* One child per album plus the cards (CARDS), moved by the wheel and by touch on the covers' view
  * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step repaints all of it, and its CF_VIEW_H square
- * items with a negative spacer move one album per CF_STRIDE px; the children stay empty under the
- * frame. The flat fallback is the stock images, 160 px, as before. ponytail: one child per album;
- * if large libraries lag on hardware, virtualize to a recycled window of children. */
+ * items with a negative spacer move one album per the theme's stride in px; the children stay
+ * empty under the frame. The flat fallback is the stock images, 160 px, as before. ponytail: one
+ * child per album; if large libraries lag, virtualize to a recycled window of
+ * children. */
 static void covers(void) {
     cf.screen = COVERS;
     if (cf.text_albums) {
@@ -1891,10 +1906,10 @@ static void covers(void) {
     if (!cf.covers) {
         void *f = widget_factory();
         int depth = fx_open();
-        cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, 290);
+        cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, client_h());
         cf.slide = widget_factory_create_widget(f, "slide_menu", cf.covers, 0, depth ? 0 : 24, 375,
                                                 depth ? CF_VIEW_H : ART_SIZE);
-        if (depth) slide_menu_set_spacer(cf.slide, CF_STRIDE - CF_VIEW_H);
+        if (depth) slide_menu_set_spacer(cf.slide, cfs.stride - CF_VIEW_H);
         widget_set_sensitive(cf.slide, 0);
         for (unsigned i = 0, n = deque_size(cf.albums); i < n + CARDS; ++i) {
             void *img = image_create(cf.slide, 0, 0, 0, 0);
@@ -1905,10 +1920,11 @@ static void covers(void) {
         }
         /* Album over artist under the frame, white and larger, then grey, clear of the rounded
          * glass (docs/ipod.md#coverflow). */
-        cf.name = text(cf.covers, CF_EDGE, CF_TEXT_Y, 375 - 2 * CF_EDGE, CF_NAME_H);
-        widget_set_prop_int(cf.name, "style:normal:font_size", CF_NAME_PX);
-        cf.artist = text(cf.covers, CF_EDGE, CF_TEXT_Y + CF_NAME_H, 375 - 2 * CF_EDGE, CF_ARTIST_H);
-        widget_set_prop_int(cf.artist, "style:normal:font_size", CF_ARTIST_PX);
+        cf.name = text(cf.covers, CF_EDGE, cfs.text_y, 375 - 2 * CF_EDGE, CF_NAME_H);
+        widget_set_prop_int(cf.name, "style:normal:font_size", cfs.name_px);
+        cf.artist =
+            text(cf.covers, CF_EDGE, cfs.text_y + CF_NAME_H, 375 - 2 * CF_EDGE, CF_ARTIST_H);
+        widget_set_prop_int(cf.artist, "style:normal:font_size", cfs.artist_px);
         widget_set_prop_int(cf.artist, "style:normal:text_color", (int)CF_GREY);
         slide_menu_set_value(cf.slide, cf.album);
         widget_on(cf.slide, EVT_VALUE_CHANGED, changed, 0);
@@ -1959,7 +1975,8 @@ static void load(void) {
     widget_destroy_children(cf.page);
     cf.covers = cf.slide = cf.name = cf.artist = 0; /* destroyed with the page's children */
     cf.album = 0;
-    cf.body = widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, 290);
+    cf.body =
+        widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, client_h());
     int n = 0;
     unsigned gen = library_gen;
     if (cf.albums_gen != gen && !cf.scoped) drop_albums();
@@ -2125,7 +2142,7 @@ static int to_tracks(const void *unused) {
     }
     void *view = list(P(r, REC_ALBUM), n);
     /* the album over its tracks, all centred */
-    widget_set_prop_int(cf.title, "style:normal:font_size", CF_NAME_PX);
+    widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
     for (int i = 0; i < n; ++i) {
         void *row = page_row_detail(
             view, i, track_name(name, sizeof name, deque_at(cf.tracks, (unsigned)i)), 0, play);
@@ -2274,6 +2291,7 @@ static int closed(void *ctx, void *event) {
 
 /* A Coverflow page: the covers' moves and release are taken here (touch). */
 static void *open_page(void) {
+    cf_restyle();
     void *page = page_open("coverflow_page", closed, keyup);
     static const unsigned short kinds[] = { EVT_POINTER_MOVE_BEFORE, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
     for (unsigned k = 0; page && k < sizeof kinds / sizeof *kinds; ++k) widget_on(page, kinds[k], touch, 0);
@@ -2342,7 +2360,8 @@ int coverflow_goto_album(void *r) {
     cf.scoped = ALBUM_TRACKS;
     cf.covers = cf.slide = cf.name = cf.artist = 0;
     cf.album = 0;
-    cf.body = widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, 290);
+    cf.body =
+        widget_factory_create_widget(widget_factory(), "view", cf.page, 0, 0, 375, client_h());
     to_tracks(0);
     return 1;
 }
@@ -2398,10 +2417,11 @@ const char *now_tag(void *r, int field) {
     return P(r, field);
 }
 
-#define HOME_PW (375 - HOME_SPLIT_W) /* Split's art panel, 290 high */
+#define HOME_PW (375 - HOME_SPLIT_W) /* Split's art panel, client_h() high */
 /* iPod Home (docs/ipod.md): the playing track's art beside the list. */
 static struct {
     void *win, *art, *list, *sets; /* sets: the Settings list, in the list's place while open */
+    void *lib; /* the Library's rows the same way: only a set with home_lib has it */
     void *carousel[3]; /* Home: Carousel's slide_menu and its img_left, img_right */
     unsigned key, repaint; /* repaint: the timer of home_repaint */
     /* drift: home_drift's timer; drift_ms: the pan's phase, ms shown */
@@ -2411,11 +2431,26 @@ static struct {
     unsigned *tex;
     void *frame;
     int tw, rx, ry, u0, v0, du, dv;
+    int pane; /* no cover shows: coverflow_home_clip paints the theme's pane */
+    void *row; /* the highlighted row and what it shows in the pane (PANE_*) */
+    int kind;
+    /* the pane's captions, read off the wheel's path (home_counts), 0 unknown; counted: songs and
+     * albums answer asked, the library_gen they were asked at; counting: 1 count_worker runs, 2 it
+     * has answered in got_*; pane_read: when home_pane_read last ran, | 1, 0 never */
+    int songs, albums, services, games, free_tenths, counted;
+    volatile int counting;
+    int got_songs, got_albums;
+    unsigned long count_thread;
+    unsigned asked, pane_read, count_timer, pane_timer;
     unsigned ring[4][HOME_PW];
     int clip[4];  /* the canvas clip while the art paints, restored after */
     int clipped;
 } home __attribute__((section(".scratch")));
-extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *);
+extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
+    home_lib_on(void), row_preview_on(void);
+extern void library_rows(void *list);
+extern void home_pane_read(int *services, int *games, int *free_tenths);
+extern int library_count(const char *sql);
 extern const char *ipod_home_shortcut(void);
 /* Split's menu width; the art fills the rest. */
 
@@ -2455,17 +2490,33 @@ static int pan_u(void) { return home.u0 * 256 + drift_at(home.rx, DRIFT_X_MS); }
 static int pan_v(void) { return home.v0 * 256 + drift_at(home.ry, DRIFT_Y_MS); }
 
 /* A step repaints only the panel, once the pan has moved; coverflow_home_clip draws it. */
-static void drift_place(void) {
-    if (pan_u() == home.du && pan_v() == home.dv) return;
-    static int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, 290 }; /* rect_t, in the parent */
+static void pane_invalidate(void) {
+    int pane[4] = { HOME_SPLIT_W, 0, HOME_PW, client_h() }; /* rect_t, in the parent */
     widget_invalidate_force(P(home.art, W_PARENT), pane);
 }
+static void drift_place(void) {
+    if (pan_u() == home.du && pan_v() == home.dv) return;
+    pane_invalidate();
+}
+
+/* What a highlighted row shows in Split's pane (theme()->pane_icon_x): Now Playing's and the
+ * Library's rows the cover, or with none the note and a count; the others their icon and
+ * caption. */
+enum { PANE_NOW, PANE_LIBRARY, PANE_SHUFFLE, PANE_COVERFLOW, PANE_FOLDER, PANE_GAMES, PANE_ROCKBOX,
+       PANE_STREAM, PANE_SETTINGS };
+static const char *const pane_icons[] = {
+    "classic_light_note", "classic_light_note", "classic_light_icon_note",
+    "classic_light_icon_stack", "classic_light_icon_folder", "classic_light_icon_game",
+    "classic_light_icon_game", "classic_light_icon_wave", "classic_light_icon_gear"
+};
+static int pane_covers(void) { return home.kind <= PANE_LIBRARY && !home.pane; }
 
 /* The pan runs only while it shows: Home on top and not sliding (its snapshot would not move), the
- * screen lit, a cover that pans (the placeholder does not; Full never paints the art). */
+ * screen lit, a cover that pans (the placeholder does not; Full never paints the art), on a row
+ * that shows it. */
 static int drift_live(void) {
     void *wm = window_manager();
-    return home.tw && g_backlight_status && !g_lockscreen_pageflag &&
+    return home.tw && pane_covers() && g_backlight_status && !g_lockscreen_pageflag &&
            window_manager_get_top_window(wm) == home.win && !window_manager_is_animating(wm);
 }
 
@@ -2484,7 +2535,7 @@ static int home_drift(const void *unused) {
 
 /* A w x h image's size just covering the panel at its proportions; unknown sizes fill it. */
 static void home_fit(unsigned w, unsigned h, int *fw, int *fh) {
-    int pw = HOME_PW, ph = 290;
+    int pw = HOME_PW, ph = client_h();
     *fw = pw, *fh = ph;
     if (w && h && w <= 8192 && h <= 8192) {
         if ((unsigned)pw * h > (unsigned)ph * w)
@@ -2534,7 +2585,7 @@ static int home_tex(const char *url) {
     home_fit(w, h, &fw, &fh);
     int tw = fw * DRIFT_ZOOM_PCT / 100, th = fh * DRIFT_ZOOM_PCT / 100;
     const unsigned char *data = 0;
-    if (!home.frame) home.frame = opaque_frame(HOME_PW, 290);
+    if (!home.frame) home.frame = opaque_frame(HOME_PW, client_h());
     if (home.frame && format < 4 && w && h && w <= 8192 && h <= 8192 && tw <= DRIFT_TEXELS / th) {
         free(home.tex);
         home.tex = calloc((unsigned)(th + 3) * (unsigned)(tw + 3), 4);
@@ -2580,7 +2631,7 @@ static int home_tex(const char *url) {
         for (int y = th + 1; y < th + 3; ++y)
             memcpy(home.tex + y * ts, home.tex + th * ts, (unsigned)ts * 4);
         home.tw = tw, home.rx = tw - fw, home.ry = th - fh;
-        home.u0 = (fw - HOME_PW) / 2, home.v0 = (fh - 290) / 2, home.du = -1;
+        home.u0 = (fw - HOME_PW) / 2, home.v0 = (fh - client_h()) / 2, home.du = -1;
     }
     widget_unload_image(home.art, bitmap);
     return data != 0;
@@ -2614,7 +2665,7 @@ static void home_render(unsigned *d, int pitch, int u, int v) {
     bspline_w((unsigned)u & 255, wx), bspline_w((unsigned)v & 255, wy);
     int ts = home.tw + 3;
     const unsigned *s = home.tex + (v >> 8) * ts + (u >> 8); /* texel -1, -1 from u, v */
-    for (int y = -3; y < 290; ++y, s += ts) {
+    for (int y = -3, h = client_h(); y < h; ++y, s += ts) {
         unsigned *o = home.ring[(y + 3) & 3];
         for (int x = 0; x < HOME_PW; ++x) o[x] = tap4(s[x], s[x + 1], s[x + 2], s[x + 3], wx);
         if (y < 0) continue;
@@ -2627,7 +2678,7 @@ static void home_render(unsigned *d, int pitch, int u, int v) {
 
 /* The pan's frame over the art (its image is empty), rendered again only once the pan moved. */
 static void home_paint(void *canvas) {
-    int u = pan_u(), v = pan_v(), r[4] = { 0, 0, HOME_PW, 290 };
+    int u = pan_u(), v = pan_v(), r[4] = { 0, 0, HOME_PW, client_h() };
     if (u != home.du || v != home.dv) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(home.frame);
         if (!d) return;
@@ -2638,12 +2689,193 @@ static void home_paint(void *canvas) {
     canvas_draw_image(canvas, home.frame, r, r);
 }
 
-/* The player's cover, else the Coverflow cache of the track's album (now_tag), else the
- * placeholder. The player's files belong to the track whose path it copies to g_lastcover_url
- * after writing them, so right after a track change they count only once that is this track. Runs
- * whenever a window or the status bar paints (at least once a second), for Home in Split, and
- * reloads only when the track, the cover it can use or its parsed tags change; home_repaint then
- * shows the new art whole. */
+/* The theme's pane shadow down the panel's left edge at x, y. */
+static void pane_shadow(void *canvas, int x, int y, int h) {
+    const theme_t *T = theme();
+    int sw = T->pane_shadow_w;
+    for (int i = 0; i < sw; ++i) {
+        stock_canvas_set_fill_color(canvas, (RGBA(T->pane_shadow) & 0xffffff) |
+                                                (unsigned)T->pane_shadow_a[i] << 24);
+        canvas_fill_rect(canvas, x + i, y, 1, h);
+    }
+}
+
+/* n of what the caption counts, in t: "1 Song", "12 Songs"; 0: unknown, none. */
+static int pane_count(char *t, unsigned size, unsigned n, const char *one, const char *many) {
+    return !n ? 0 : tk_snprintf(t, size, n == 1 ? one : many, n);
+}
+
+/* The caption of the row's pane in t, its length. */
+static int pane_caption(char *t, unsigned size) {
+    unsigned at, n;
+    switch (home.kind) {
+    case PANE_NOW:
+        queue_now(&at, &n);
+        return pane_count(t, size, n, "1 Song", "%u Songs");
+    case PANE_LIBRARY:
+    case PANE_SHUFFLE:
+        return pane_count(t, size, (unsigned)home.songs, "1 Song", "%u Songs");
+    case PANE_COVERFLOW:
+        return pane_count(t, size, (unsigned)home.albums, "1 Album", "%u Albums");
+    case PANE_GAMES:
+        return pane_count(t, size, (unsigned)home.games, "1 Game", "%u Games");
+    case PANE_STREAM:
+        return pane_count(t, size, (unsigned)home.services, "1 Service", "%u Services");
+    case PANE_SETTINGS:
+        return home.free_tenths ? tk_snprintf(t, size, "%u.%u GB Free", home.free_tenths / 10,
+                                              home.free_tenths % 10)
+                                : 0;
+    }
+    return 0;
+}
+
+/* Split's panel in the theme's home_pane, the half's: the stops, its light, a shadow down its left edge, the
+ * row's image from the theme (tools/art.py) and its caption. Raw colours, but the caption's: ui_ink
+ * flips black to the light half's white paper, and the dark half draws white as it is. */
+void home_pane_paint(void *canvas, int x, int y, int w, int h) {
+    const theme_t *T = theme();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), bitmap[64]; /* bitmap_t */
+    paint_stops(canvas, x, y, w, h, &T->home_pane[ipod_light()]);
+    /* the light: a band per alpha, as eight bits can tell no finer */
+    for (int a = T->pane_light_a, n = a; a > 0; --a) {
+        int x0 = w * (n - a) / n;
+        stock_canvas_set_fill_color(canvas, 0xffffffu | (unsigned)a << 24);
+        canvas_fill_rect(canvas, x + x0, y, w * (n - a + 1) / n - x0, h);
+    }
+    pane_shadow(canvas, x, y, h);
+    if (!widget_load_image(home.art, pane_icons[home.kind], bitmap)) {
+        int note = home.kind <= PANE_SHUFFLE;
+        int src[4] = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
+            dst[4] = { x + (note ? T->pane_note_x : T->pane_icon_x),
+                       y + (note ? T->pane_note_y : T->pane_icon_y), src[2], src[3] };
+        canvas_draw_image(canvas, bitmap, src, dst);
+    }
+    char t[20];
+    int len = pane_caption(t, sizeof t);
+    if (len > 0) {
+        unsigned s[20];
+        for (int i = 0; i < len; ++i) s[i] = (unsigned char)t[i];
+        int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
+        draw_centred(canvas, s, (unsigned)len, box, T->pane_count_px,
+                     RGBA(ipod_light() ? 0u : 0xffffffu));
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
+
+/* A paint can't invalidate (AWTK drops it with the frame), so the frame after. */
+static int pane_after(const void *unused) {
+    home.pane_timer = 0;
+    pane_invalidate();
+    return 0; /* RET_REMOVE */
+}
+
+/* The row now highlighted on Home's surface: the pane follows it. No I/O: its image is in the image
+ * cache (home_counts) and its caption in home. On a wheel move (painting 0) the pane joins the
+ * row's frame; a paint catches every other way a row changes (Return's first row, a tap, a list
+ * sliding in). Names are compared only when the row changes. */
+void coverflow_home_row(void *surface, void *row, int id, int painting) {
+    if (row == home.row || !home.art || !theme()->pane_icon_x || ipod_home()) return;
+    home.row = row;
+    void *list = P(surface, W_PARENT);
+    const char *name = widget_get_prop_str(row, "name", "");
+    int kind = PANE_LIBRARY;
+    if (!row_preview_on()) kind = PANE_NOW; /* Row Preview off: Now Playing's on every row */
+    else if (list == home.sets) kind = PANE_SETTINGS;
+    else if (list == home.lib) kind = id ? PANE_LIBRARY : PANE_SHUFFLE;
+    else {
+        static const char *const names[] = { "img_playing", "img_library", 0,
+                                              "img_coverflow", "img_folder", 0,
+                                              "img_rockbox", "img_stream", "img_settings" };
+        for (unsigned i = 0; i < sizeof names / sizeof *names; ++i)
+            if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
+        if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games */
+            const char *s = ipod_home_shortcut();
+            kind = !tk_strcmp(s, "Games")     ? PANE_GAMES
+                   : !tk_strcmp(s, "Rockbox") ? PANE_ROCKBOX
+                   : !tk_strcmp(s, "Shuffle") ? PANE_SHUFFLE
+                                              : PANE_LIBRARY;
+        }
+    }
+    if (kind == home.kind) return;
+    home.kind = kind;
+    if (painting)
+        rearm(&home.pane_timer, pane_after, 0);
+    else
+        pane_invalidate();
+}
+
+#define PANE_COUNT_MS 400 /* once Home has slid back */
+#define PANE_BOOT_MS 1500 /* once boot's first paints are over */
+#define PANE_READ_MS 60000 /* the card's I/O, at most this often */
+/* The two counts, a whole library's grouping among them, take seconds on a large one: off the UI
+ * thread, and home_counts publishes them. -1: no answer. */
+static void *count_worker(void *unused) {
+    home.got_songs = library_count("select count(*) from songtable where " MUSIC_WHERE);
+    /* Coverflow's rows: a row per album, and one for all the songs with no album */
+    if (home.got_albums < 0)
+        home.got_albums = library_count("select sum(e=0)+max(e) from (select ifnull(album,'')='' e "
+                                        "from songtable where " MUSIC_WHERE ALBUM_GROUP ")");
+    home.counting = 2;
+    return 0;
+}
+
+/* The pane's captions and images, once Home's window is back on top and after boot: not on a wheel
+ * move, and at most one query per library change, or per Home after one that failed. A scan
+ * running: the counts it will change are unknown, and this looks again until it ends. Home in Full
+ * or Carousel, or Row Preview off, shows no count and asks nothing; the next foreground asks.
+ * ponytail: home_pane_read's card I/O stays on the UI thread (addon_scan's table is the UI's) at
+ * most once a PANE_READ_MS, so a fresh app or the free space can lag that long. */
+static int home_counts(const void *unused) {
+    int answered = home.counting == 2;
+    if (answered) {
+        pthread_join(home.count_thread, 0);
+        home.counting = 0;
+        home.counted = home.got_songs >= 0 && home.got_albums >= 0;
+        if (home.counted) home.songs = home.got_songs, home.albums = home.got_albums;
+        pane_invalidate();
+    }
+    if (home.counting) return 8; /* RET_REPEAT */
+    unsigned gen = library_gen;
+    if (library_scanning()) {
+        if (home.songs || home.albums) pane_invalidate();
+        home.songs = home.albums = home.counted = 0;
+        return 8;
+    }
+    int pane = !ipod_home() && row_preview_on(); /* the counts' only reader */
+    if (pane && (gen != home.asked || (!home.counted && !answered))) {
+        home.asked = gen;
+        /* Coverflow's own list when it has one */
+        home.got_albums = cf.stock && !cf.scoped && cf.albums_gen == gen ? (int)deque_size(cf.stock) : -1;
+        home.counting = 1;
+        if (!pthread_create(&home.count_thread, 0, count_worker, 0)) return 8;
+        home.counting = 0;
+    }
+    home.count_timer = 0;
+    if (!pane) return 0; /* RET_REMOVE */
+    unsigned now = time_now_ms();
+    if (!home.pane_read || now - home.pane_read >= PANE_READ_MS) {
+        home.pane_read = now | 1;
+        home_pane_read(&home.services, &home.games, &home.free_tenths);
+        unsigned bitmap[64]; /* bitmap_t: decoded once, so no row's first show reads it */
+        for (unsigned i = 0; i < sizeof pane_icons / sizeof *pane_icons; ++i)
+            widget_load_image(home.art, pane_icons[i], bitmap);
+        pane_invalidate();
+    }
+    return 0;
+}
+
+static int home_foreground(void *ctx, void *event) {
+    rearm(&home.count_timer, home_counts, PANE_COUNT_MS);
+    home.row = 0; /* the pane's kind again: Row Preview may have changed in Settings */
+    return 0;
+}
+
+/* The player's cover, else the Coverflow cache of the track's album (now_tag), else the theme's
+ * pane or the placeholder. The player's files belong to the track whose path it copies to
+ * g_lastcover_url after writing them, so right after a track change they count only once that is
+ * this track. Runs whenever a window or the status bar paints (at least once a second), for Home
+ * in Split, and reloads only when the track, the cover it can use or its parsed tags change;
+ * home_repaint then shows the new art whole. */
 void coverflow_home_art(void *top) {
     if (!home.art || top != home.win || !widget_get_visible(home.art)) return;
     if (!home.drift && drift_live()) {
@@ -2660,10 +2892,11 @@ void coverflow_home_art(void *top) {
                               (const unsigned char *)&album, sizeof(album));
     if (key == home.key) return;
     home.key = key;
+    home.pane = 0;
     char url[600] = "file://";
     if (r) art_path(url + 7, album, "");
     unsigned size[2] = { 0, 0 };
-    int fw = HOME_PW, fh = 290;
+    int ch = client_h(), fw = HOME_PW, fh = ch;
     home.tw = 0;
     const char *src = cover;
     /* the player writes every track's cover to the same file: drop AWTK's cached bitmap of the
@@ -2674,14 +2907,19 @@ void coverflow_home_art(void *top) {
     if (pans > 0) {
         image_base_set_image(home.art, ""); /* home_paint draws it */
     } else {
-        /* still, sized to the image's fit and centred, so the native fill draws it whole and the
-         * clip crops it evenly */
-        if (!(pans == 0 && image_show(home.art, src, size)) &&
-            !image_show(home.art, HOME_PLACEHOLDER, size))
-            image_base_set_image(home.art, HOME_PLACEHOLDER);
-        home_fit(size[0], size[1], &fw, &fh);
+        int shown = pans == 0 && image_show(home.art, src, size);
+        if (!shown && theme()->home_pane[ipod_light()].n) {
+            image_base_set_image(home.art, ""); /* home_pane_paint draws it, the whole panel */
+            home.pane = 1;
+        } else {
+            /* still, sized to the image's fit and centred, so the native fill draws it whole and
+             * the clip crops it evenly */
+            if (!shown && !image_show(home.art, HOME_PLACEHOLDER, size))
+                image_base_set_image(home.art, HOME_PLACEHOLDER);
+            home_fit(size[0], size[1], &fw, &fh);
+        }
     }
-    widget_move_resize(home.art, HOME_SPLIT_W + (HOME_PW - fw) / 2, (290 - fh) / 2, fw, fh);
+    widget_move_resize(home.art, HOME_SPLIT_W + (HOME_PW - fw) / 2, (ch - fh) / 2, fw, fh);
     rearm(&home.repaint, home_repaint, 0);
 }
 
@@ -2690,9 +2928,19 @@ void coverflow_home_art(void *top) {
  * origin is the widget's) before stock draws it, and ringnav_paint puts the old clip back after its
  * children, the pan's frame painted inside it first. */
 void coverflow_home_clip(void *w, void *canvas, int begin) {
-    if (!w || (w != home.art && w != home.list && w != home.sets)) return;
+    if (!w || (w != home.art && w != home.list && w != home.sets && w != home.lib)) return;
     if (!begin) {
-        if (w == home.art && home.tw) home_paint(canvas);
+        int covers = pane_covers();
+        if (w == home.art && covers && home.tw) home_paint(canvas);
+        /* The art's box is the image's fit, so the panel's edge and rows are measured from it. */
+        else if (w == home.art && !covers)
+            home_pane_paint(canvas, HOME_SPLIT_W - I(w, W_X), -I(w, W_Y), HOME_PW, client_h());
+        /* a cover: the pane's own shadow over it, where the left column meets it */
+        if (w == home.art && covers && theme()->pane_shadow_w) {
+            unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+            pane_shadow(canvas, HOME_SPLIT_W - I(w, W_X), -I(w, W_Y), client_h());
+            stock_canvas_set_fill_color(canvas, fill);
+        }
         if (home.clipped) canvas_set_clip_rect(canvas, home.clip);
         home.clipped = 0;
         return;
@@ -2700,7 +2948,7 @@ void coverflow_home_clip(void *w, void *canvas, int begin) {
     int clip[4], art = w == home.art, x = HOME_SPLIT_W, pane = widget_get_visible(home.art) ? x : 375;
     clip_within(canvas, home.clip, clip, I(canvas, CANVAS_X) - I(w, W_X) + (art ? x : 0),
                 I(canvas, CANVAS_Y) - I(w, W_Y) + (art ? 0 : I(w, W_Y)), art ? 375 - x : pane,
-                art ? 290 : I(w, W_H));
+                art ? client_h() : I(w, W_H));
     canvas_set_clip_rect(canvas, clip);
     home.clipped = 1;
 }
@@ -2708,20 +2956,21 @@ void coverflow_home_clip(void *w, void *canvas, int begin) {
 /* Whether w is in one of Home's menus (Minimal draws their labels, paint_caps). */
 int coverflow_home_owns(void *w) {
     for (; w && home.list; w = P(w, W_PARENT))
-        if (w == home.list || w == home.sets) return 1;
+        if (w == home.list || w == home.sets || w == home.lib) return 1;
     return 0;
 }
 
 /* Both menus' lists span outer, their rows and tap targets inner; labels start at x and end end
  * before the row's edge (Classic: before the chevron). */
 static void home_width(void *w, int outer, int inner, int x, int end, int depth) {
-    widget_move_resize(w, I(w, W_X), depth ? I(w, W_Y) : ipod_classic() ? 0 : HOME_TOP,
+    widget_move_resize(w, I(w, W_X), depth ? I(w, W_Y) : theme()->home_top,
                        depth < 2 ? outer : inner, I(w, W_H));
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         void *child = widget_get_child(w, i);
         if (!tk_strcmp(widget_get_type(child), "hscroll_label")) {
             widget_move_resize(child, x, I(child, W_Y), inner - x - end, I(child, W_H));
-            bold_label(child, -1); /* Classic's bold; Minimal paints its own (paint_caps) */
+            /* Classic's bold, Classic's face; Minimal paints its own (paint_caps) */
+            theme_font(child, ROLE_NP, -1);
         }
         else
             home_width(child, outer, inner, x, end, depth + 1);
@@ -2735,12 +2984,13 @@ static void home_show(void *w, int on) {
 }
 
 /* Stored HOME=0/1/2 is Split/Full/Carousel in both themes: Split halves the screen, the art in the
- * right panel; Full hides the art and widens the list, its rows to HOME_FULL_ROW (Minimal) or
- * HOME_CLASSIC_ROW; Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
+ * right panel; Full hides the art and widens the list, its rows to the theme's home_full_row;
+ * Carousel hides the art and shows stock's cards (tools/ipod.py ipod_home) in the
  * lists' place, and leaving it, the main list. Hidden Rockbox is restacked last because the native
  * layout includes hidden rows, and made insensitive, as hidden rows keep their taps. */
 void coverflow_home_layout(void) {
-    int mode = ipod_home(), full = mode == 1, carousel = mode == 2, classic = ipod_classic();
+    int mode = ipod_home(), full = mode == 1, carousel = mode == 2;
+    const theme_t *T = theme();
     /* The art goes back to the panel; Split's next paint resumes the pan. */
     stop_timer(&home.drift);
     if (!home.list) return;
@@ -2758,13 +3008,16 @@ void coverflow_home_layout(void) {
                                  ipod_home_shortcut());
     }
     int split = HOME_SPLIT_W, outer = full ? 375 : split,
-        inner = !full ? split : classic ? HOME_CLASSIC_ROW : HOME_FULL_ROW,
-        x = classic ? HOME_CLASSIC_TEXT_X : HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
-        end = classic ? HOME_CLASSIC_LABEL_END : full ? HOME_LABEL_END : HOME_SPLIT_LABEL_END;
+        inner = !full ? split : T->home_full_row, x = T->home_text_x,
+        end = T->home_label_end[full];
     home_width(home.list, outer, inner, x, end, 0);
     if (home.sets) home_width(home.sets, outer, inner, x, end, 0);
-    widget_move_resize(home.art, split, 0, 375 - split, 290);
+    widget_move_resize(home.art, split, 0, 375 - split, client_h());
     widget_set_visible(home.art, !mode, 0);
+    if (mode && home.lib && widget_get_visible(home.lib)) { /* Split's alone */
+        home_show(home.lib, 0);
+        home_show(home.list, 1);
+    }
     if (home.carousel[0] && carousel != widget_get_visible(home.carousel[0])) {
         for (int i = 0; i < 3; ++i) home_show(home.carousel[i], carousel);
         home_show(home.list, !carousel);
@@ -2781,6 +3034,7 @@ static void home_swap(void *from, void *to, int dx) {
     home_show(from, 0); /* only the shown list takes taps */
     widget_move_resize(to, dx, I(to, W_Y), I(to, W_W), I(to, W_H));
     home_show(to, 1);
+    bar_title_sync(home.win); /* the bar's text follows the list at once, not at its next second */
     void *a = widget_animator_prop_create(to, PAGE_SLIDE_MS, 0, SLIDE_EASING, "x");
     if (!a) {
         widget_move_resize(to, 0, I(to, W_Y), I(to, W_W), I(to, W_H));
@@ -2795,11 +3049,46 @@ static int home_settings(void *ctx, void *event) {
     return 0;
 }
 
-/* Return on Home with Settings open: 1 when it went back to the list. */
+/* Home's Library row in Split (a set with home_lib, Library on Home on): its rows slide in as Settings' do, each filled
+ * by the page's own constructor (navigation.c library_rows) in Home's rows' shape, and open what
+ * they open from the page. Full and Carousel keep the page. */
+static int home_library(void *ctx, void *event) {
+    if (ipod_home() || !home.lib || !home_lib_on()) return on_home_music_onclick(ctx, event);
+    if (widget_get_visible(home.lib)) return 0;
+    const theme_t *T = theme();
+    library_rows(home.lib);
+    home_width(home.lib, HOME_SPLIT_W, HOME_SPLIT_W, T->home_text_x, T->home_label_end[0], 0);
+    void *view = widget_count_children(home.lib) ? widget_get_child(home.lib, 0) : (void *)0;
+    for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
+        void *row = widget_get_child(view, i);
+        void *b = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+        if (b) widget_move_resize(b, 0, I(b, W_Y), HOME_SPLIT_W, I(b, W_H));
+    }
+    widget_layout(home.lib);
+    home_swap(home.list, home.lib, I(home.list, W_W));
+    return 0;
+}
+
+/* The list open on Home, 0: its main list. */
+static void *home_open(void) {
+    return home.lib && widget_get_visible(home.lib)    ? home.lib
+           : home.sets && widget_get_visible(home.sets) ? home.sets
+                                                        : (void *)0;
+}
+
+/* Return on Home with a list open: 1 when it went back to the main list. */
 int coverflow_home_back(void *top) {
-    if (!home.sets || top != home.win || !widget_get_visible(home.sets)) return 0;
-    home_swap(home.sets, home.list, -I(home.list, W_W));
+    void *open = top == home.win ? home_open() : (void *)0;
+    if (!open) return 0;
+    home_swap(open, home.list, -I(home.list, W_W));
     return 1;
+}
+
+/* Classic's bar title on Home (navigation.c bar_title_sync): coverflow_home_name on its own list. */
+const char coverflow_home_name[] = "Q2 Pod";
+const char *coverflow_home_title(void) {
+    void *open = home_open();
+    return !open ? coverflow_home_name : open == home.lib ? "Library" : "Settings";
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,
@@ -2819,12 +3108,21 @@ int coverflow_home(void *win, void *ctx) {
     home.list = list; /* a new Home window's own, so still the asset's width */
     home.sets = widget_lookup(win, "list_view_homeset", 1);
     if (home.sets) widget_set_sensitive(home.sets, 0);
+    home.lib = widget_lookup(win, "list_view_homelib", 1);
+    if (home.lib) {
+        widget_set_sensitive(home.lib, 0);
+        widget_on(widget_lookup(win, "img_library", 1), EVT_CLICK, home_library, win);
+    }
     static const char *const carousel[] = { "slide_menu", "img_left", "img_right" };
     for (int i = 0; i < 3; ++i) home.carousel[i] = widget_lookup(win, carousel[i], 1);
     /* The carousel's own Coverflow and Shortcut cards; the lists' come first in the window. */
     widget_on(widget_lookup(home.carousel[0], "img_coverflow", 1), EVT_CLICK, coverflow_open, 0);
     widget_on(widget_lookup(home.carousel[0], "img_rockbox", 1), EVT_CLICK, home_shortcut_open, 0);
     coverflow_home_layout();
+    if (theme()->pane_icon_x) {
+        widget_on(win, EVT_WINDOW_FOREGROUND, home_foreground, 0);
+        rearm(&home.count_timer, home_counts, PANE_BOOT_MS);
+    }
     return result;
 }
 

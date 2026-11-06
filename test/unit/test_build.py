@@ -273,6 +273,27 @@ def test_bold_font_must_keep_its_characters(monkeypatch):
         build.bold_font()
 
 
+def test_classic_light_font():
+    from fontTools.ttLib import TTFont
+    font_bytes, ranges = build.subset_font(build.ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', build.CLASSIC_LIGHT_NOTICE)
+    font, source = TTFont(io.BytesIO(font_bytes)), TTFont(build.ROOT/'assets/fonts/texgyreheros-bold.otf')
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    assert sorted(font.getBestCmap()) == have and 0x41 in have and 0xe9 in have
+    names = {rec.nameID: str(rec) for rec in font['name'].names}
+    assert names[1].replace(' ', '').startswith('Q2PodClassicLight') and names[6].startswith('Q2PodClassicLight')  # the Windows record is TeXGyreHeros, unspaced
+    assert all(len(names[i]) <= 31 for i in (1, 4, 6))  # AWTK font names
+    for i in (1, 3, 4, 6, 16, 17, 18, 21, 22):
+        assert 'TeX Gyre' not in names.get(i, '') and 'TeXGyre' not in names.get(i, '')
+    assert names[0] == str(source['name'].getName(0, 3, 1, 0x409))
+    assert names[7] == str(source['name'].getName(7, 3, 1, 0x409))
+    assert 'Modified version of TeX Gyre Heros Bold' in names[10] and 'gust.org.pl' in names[10]  # LPPL 6(a), 6(b), 6(d)2
+    assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
+    if 'CFF ' in font:
+        assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
+    assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
+    assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
+
+
 def test_source_sha256_hashes_every_input_by_path(tmp_path, monkeypatch):
     monkeypatch.setattr(build, 'ROOT', tmp_path)
     files = ['assets/icons/a.png', 'assets/b.jpg', 'patch/c.c', 'tools/d.py', 'tools/e.c', 'tools/f.h', 'tools/g.S',

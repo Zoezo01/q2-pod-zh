@@ -76,6 +76,7 @@ static inline int ink_vgcanvas_set_fill_linear_gradient(void *vg, float sx, floa
 #define vgcanvas_set_fill_linear_gradient ink_vgcanvas_set_fill_linear_gradient
 #endif
 #endif
+#include "theme.h"
 
 #define PEQ_BANDS 30 /* 10 per side plus 10 shared, as L/R APO files use */
 #define PEQ_CHANNELS 8
@@ -150,13 +151,25 @@ void peq_process(peq_dsp *d, float *audio, unsigned frames);
 #define VIS_RING 65536 /* a power of two: 1.5 s at 44.1 kHz, room for VIS_LATENCY_MS */
 typedef struct { unsigned seq, rate; long long stamp; unsigned want, pad; float ring[VIS_RING][2]; } vis_tap;
 long long now_ns(void);
+unsigned long long now_ms(void);
 /* Crossfade (docs/internals.md#crossfade): demo writes the next track change's fade, an int in ms,
  * 0 for none; hciplayer's filter maps the file read-only and holds the outgoing track's tail for it. */
-#define XFADE_FILE PEQ_ROOT "/tmp/q2xfade"
+#define XFADE_FILE PEQ_ROOT "/tmp/q2xfade" /* the next fade's ms (XF_MS), under demo's count of stops (XF_STOPS) */
+#define XF_MS 0xffff
+#define XF_STOPS 16
 /* Mono Audio: demo writes an int, 1 to mix both channels into each; hciplayer's filter and q2video map
  * it read-only (video.c keeps its own copy of the path). */
 #define MONO_FILE PEQ_ROOT "/tmp/q2mono"
 #define SWAP_FILE PEQ_ROOT "/tmp/q2swap"
+/* The wired outputs' wait (docs/internals.md#wired-start): demo writes now_ms, never 0, at a press that starts
+ * a track or seeks, and 0 at a natural change; hciplayer reads it at init's end and seek's unmute. */
+#define PRESS_FILE PEQ_ROOT "/tmp/q2press"
+extern int press_natural; /* crossfade.c: inside a track change nobody pressed for, nothing stamps */
+void press_stamp(void), press_forget(void);
+/* An unpause goes back to where the fade began (docs/internals.md#unpause): demo writes now_ms, never 0, just
+ * before a pause's mute; hciplayer reads it at the resume. */
+#define MUTE_FILE PEQ_ROOT "/tmp/q2mute"
+void mute_stamp(void);
 /* librespot (spotify.c) and its restart loop, whose pid its launcher left, stopped: Spotify's idle
  * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe. */
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
@@ -198,6 +211,8 @@ void *page_row_detail_into(void *view, int index, const char *caption, const cha
 void page_row_into(void *view, int index, const char *caption, int (*click)(void *, void *));
 void row_into(void *item, int h);
 void list_toggle(void *label, const char *title, int on); /* navigation.c: a row's switch */
+/* navigation.c: Classic's value */
+void list_value(void *label, const char *title, const char *value);
 char *csv_find(char *list, const char *item);                /* navigation.c: comma lists */
 int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
@@ -254,6 +269,8 @@ void tidal_clear(void);
  * end and waited for on the Apps page's worker. */
 #define APPS_MAX 8 /* card apps on the card at once */
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
+int addon_games_last(void); /* the card's games as the last addon_scan found them */
+#define GAMES_BUILTIN 4     /* games.c's Sudoku, Vortex, Solitaire and Snake */
 const char *addon_name(int a), *addon_id(int a), *addon_icon(int a);
 int addon_is_icon(const char *name); /* a card app's Streaming icon, by its file:// name */
 void addon_poll(void), addon_stop(void), addon_paint(void *w, void *canvas), addon_card_away(void);
@@ -277,6 +294,7 @@ int songs_open(const char *path, const char *title, int album);
 void *app_album_songs(const char *dir); /* navigation.c: a folder's songs by name, for addon.c */
 int addon_goto(const char *path, const char *title, int album); /* Go to on a card app's song */
 int addon_goes(const char *path); /* addon.c: Go to on path opens a page */
+int addon_scrobbles(const char *path); /* addon.c: not when path's app says scrobble=0 */
 extern unsigned auto_nexts; /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);
@@ -342,10 +360,14 @@ int video_start(const char *file, int radio); /* books.c */
 void *edit_create(void *item, const char *input_type, int y, int h);
 const char *output_device(char *vol);         /* books.c */
 void dac_take(void);                          /* books.c */
-int ipod_classic(void); /* navigation.c: Theme: Classic */
-int bold_label(void *w, int was); /* navigation.c: Classic's bold font for w's text, or stock's */
+/* navigation.c: the theme's font for role on w, or stock's; canvas text's face, 0: the system
+ * font */
+int theme_font(void *w, int role, int was);
+#define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
+const char *theme_face(const unsigned *s, int n);
+void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 int ipod_light(void);   /* navigation.c: Light Mode */
-#define np_bar_h() (ipod_classic() ? NP_BAR_CLASSIC : NP_BAR_MINIMAL)
+int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
 void toast(const char *text); /* navigation.c */

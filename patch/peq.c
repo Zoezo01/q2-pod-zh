@@ -485,3 +485,8 @@ long long now_ns(void) {
     clock_gettime(1, (void *)&t); /* CLOCK_MONOTONIC: the same clock in hciplayer and demo */
     return t.s * 1000000000LL + t.ns;
 }
+unsigned long long now_ms(void) { /* not now_ns() / 1e6: no __udivdi3 here */
+    struct { long s, ns; } t;
+    clock_gettime(1, (void *)&t); /* CLOCK_MONOTONIC, librespot's at= clock and the press stamp's on both sides */
+    return (unsigned long long)(unsigned)t.s * 1000 + (unsigned)t.ns / 1000000;
+}

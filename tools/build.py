@@ -10,7 +10,7 @@ ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 # the ZIP it came in (-- with no ZIP, this is the only input build() accepts).
 TAR_SHA = '0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.6.4'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.6.6'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -67,6 +67,9 @@ HOOKS = {
     # A song's added date: the card's creation stamp, not the access time (coverflow.c)
     'toolsGetFileCreateTime': (0x5bddc4, 'ringnav_file_created', 'file_created'),
     'player_play_pause': (0x515728, 'ringnav_play_pause', 'pause'),
+    # A user's seek stamps a press for hciplayer's wait for the DAC (docs/internals.md#wired-start)
+    'player_seek_time': (0x51454c, 'ringnav_seek_time', 'seek_time'),
+    'player_seek_start': (0x5143a8, 'ringnav_seek_start', 'seek_start'),
     'mclSetBtVol': (0x5accec, 'ringnav_btvol', 'btvol'),
     'mclSetOutputWay': (0x5aae54, 'ringnav_output', 'output'),
     'write_int_config': (0x4f3f4c, 'ringnav_write_config', 'write_config'),
@@ -91,7 +94,7 @@ HOOKS = {
     'read_artistype_value': (0x4f4724, 'ringnav_read_artistype', None),
     # Tag reads: a FLAC's "ALBUM ARTIST" when stock's libtag finds no ALBUMARTIST
     'toolsGetMusicInfo': (0x5c5f40, 'ringnav_music_info', 'music_info'),
-    # Power gains Charge limit and Low power; Playback gains Artists (Album Artist)
+    # Power gains Charge limit; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4cc4cc, 'ringnav_systemset', 'systemset'),
     'systemset_display_page_init': (0x4c1d04, 'ringnav_display', 'display'),
     # Lock screen (patch/lockscreen.c): the built-in wallpapers in the picture list, the Lock screen
@@ -139,6 +142,8 @@ HOOKS = {
     'mclStartPlayer': (0x5ad6ac, 'ringnav_start_player', 'start_player'),
     # View Queue's row and Up Next's (navigation.c): a picked queue index, kept in advanced play's order
     'player_start_queue': (0x5160dc, 'ringnav_start_queue', 'start_queue'),
+    # A list pick of the playing file only asks (playback.c)
+    'player_start': (0x515e38, 'ringnav_player_start', 'player_start'),
     # Card apps (patch/addon.c): USB mode's page, before it unmounts the card, ends them first
     'usbmode_page_init': (0x530cd4, 'ringnav_usbmode', 'usbmode'),
     # Tidal cache (patch/tidal.c): the stream URL thread's player start, with its song id in $s2
@@ -277,19 +282,24 @@ REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
 LOG_HOOK = (b'        while :; do\n            /release/bin/demo\n',
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
-# --dev only: the wheel's stale-press notes (navigation.c stale_note) go to the card's q2-wheel.log, appended, when
-# the card is up. In BOOT_HOOK's start path.
+# --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
+# card's q2-wheel.log, appended, when the card is up, up to 256 KB. In BOOT_HOOK's start path.
 WHEEL_LOG_HOOK = (b'        rb=/mnt/mmc/.rockbox\n',
                   b'        w=/mnt/data/q2-wheel.log\n'
                   b'        [ -f $w ] && (\n'
                   b'            i=0\n'
                   b"            while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done\n"
-                  b"            grep -q ' /mnt/mmc ' /proc/mounts && cat $w >> /mnt/mmc/q2-wheel.log && sync && rm -f $w\n"
+                  b"            grep -q ' /mnt/mmc ' /proc/mounts || exit\n"
+                  b'            c=/mnt/mmc/q2-wheel.log\n'
+                  b'            n=$(wc -c 2>/dev/null <$c)\n'
+                  b'            [ "${n:-0}" -lt 262144 ] || { rm -f $w; exit; }\n'
+                  # renamed first: a flush after this makes a new file for the next boot
+                  b'            mv -f $w $w.m && cat $w.m >> $c && sync && rm -f $w.m\n'
                   b'        ) &\n'
                   b'        rb=/mnt/mmc/.rockbox\n')
 # The byte in bluealsa's AAC capability holding the 44.1 kHz bit; see docs/internals.md.
 BLUEALSA = 'usr/bin/bluealsa'
-# Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM between songs, so
+# Its launcher: keep the A2DP transport open 5 s after hciplayer closes the PCM (a stop, a skip, a cold start), so
 # a track change doesn't restart the stream (true-wireless buds started one ear first).
 BLUEALSA2 = 'usr/bin/bluealsa2'
 BT_KEEPALIVE = (b'bluealsa -c LDAC', b'bluealsa --keep-alive=5 -c LDAC')
@@ -332,6 +342,9 @@ WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
 LOCK_CLOCK_12H = (b'hh:mm\0\0\0HH:TT\0', b'hh:mm\0\0\0H:mm\0\0')
 # Now Playing's info page: its one fill (0x52a508), a bal, becomes jal ringnav_np_info, which tidies the lines.
 NP_INFO_CALL = 0x52baf4
+# Songs' row bind (0x4a90e4): a record with no artist gets stock's "Unknown Artist" through this getFormatString jalr,
+# which becomes jal ringnav_song_unknown.
+SONG_UNKNOWN_CALL = 0x4a9320
 # Folder row names are text, not printf formats ("99% Invisible" crashes stock's formatter).
 # tk_strncpy writes its terminator at n, so reserve the last byte of the 512-byte buffer.
 FOLDER_NAME = ((0x522384, 0x24050200, 0x240601ff),  # a2 = 511
@@ -355,6 +368,9 @@ STANDBY_WAKE = (0x4f7d24, 0x0411ff26, 0x24020001)
 # mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
 # The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
 MAINSCHEDULING_CALL = (0x4e9d28, 0x0320f809)
+# mclStartPlayer's wired mute and sleep from the idle player (crossfade.c start_mute, docs/internals.md#wired-start).
+START_MUTE_CALL = (0x5ad1bc, 0x0411ff00)  # bal mclSetMute; its delay slot (a0=1) stays
+START_SLEEP_CALL = (0x5ad1d4, 0x0320f809)  # jalr usleep, a0=100000
 # checkBluetoothStatus' jalr player_save_start once a headset's A2DP comes up (a0 0: the queue restarts
 # unpaused, whatever it was doing). It becomes jal ringnav_bt_connect_start (docs/internals.md#resume-on-connect).
 BT_CONNECT_START = (0x4f358c, 0x0320f809)
@@ -399,6 +415,10 @@ SORT_TRIMS = (0x5b9e38, 0x5b9ea4, 0x5ba750, 0x5ba7bc)
 # ("m" + 鷖...). That round trip's strcmp (jalr, with the round trip's copy in its delay slot) becomes jal
 # ringnav_gbk_tag, which also asks that the bytes read as GBK; otherwise TagLib's UTF-8 copy is kept.
 TAG_TEXT = (0x5c5e7c, 0x0320f809)
+# toolsGetMusicInfo's genre strcpy (dst info+0x200 at 0x5c62d0, the 0x80-byte style field before
+# title at +0x280) becomes jal ringnav_genre_copy. Its delay slot still loads the joined genre into
+# a1; bounding this one copy covers both the library scan and the player's tag reads.
+GENRE_COPY = (0x5c62dc, 0x0320f809)
 # The CUE sheet parser (the unnamed function after toolsFreeStSongInfo) ran each field through the same
 # toolsIconvConvert(field, "utf-8", "gbk"); its seven bal become jal ringnav_cue_text.
 CUE_TEXT = (0x5c06d0, 0x5c0794, 0x5c084c, 0x5c0908, 0x5c0bc8, 0x5c0f84, 0x5c130c)
@@ -495,6 +515,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('list_baidu', 'Baidu Netdisk(BETA)', 'Baidu Netdisk'), ('msg_poweroff', 'Confirm Shutdown?', 'Shut Down?'),
     ('system_prove', '技术证明', 'Certification'),  # About's regulatory row, Chinese in stock's English
     ('genre', 'Genres', 'Genre'), ('player_era', 'Era', 'Year'), ('batch_addplaylist', 'Add to playlist', 'Add to Playlist'),
+    ('msg_importplaylist', 'Import Playlist?', 'Import Playlists?'),  # it imports the whole folder
     ('scan_startscan', 'Scanning', 'Scan')))  # Scan specified folders' button; wifi_scan keeps its "Scanning"
 
 # Wi-Fi transfer's web page (stock thttpd on :8888): in English, an Upload Folder button, and a folder,
@@ -727,33 +748,60 @@ def font_quotes(data):
     font.save(out, reorderTables=False)
     return out.getvalue()
 
-# Classic's bold (navigation.c bold_label): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
-# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
-# label holding anything else (CJK, say) keeps the stock font.
-BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
-
-def bold_font():
+def subset_font(src, family, ranges_macro, notice=None):
+    """src cut to its Latin, Greek, Cyrillic and punctuation, renamed family (its own name is the font's
+    reserved name under OFL and GUST alike): the font's bytes and ranges_macro listing exactly what it
+    keeps. notice, if any, goes in its description (name ID 10)."""
     from fontTools import subset
     from fontTools.ttLib import TTFont
-    font = TTFont(ROOT/'assets/fonts/LiberationSans-Bold.ttf', recalcTimestamp=False)
+    font = TTFont(src, recalcTimestamp=False)
+    old = font['name'].getDebugName(1)
+    label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
-    sub = subset.Subsetter(subset.Options())
+    options = subset.Options()
+    if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
+    sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
     sub.subset(font)
-    check(sorted(font.getBestCmap()) == have, 'Bold font subset lost characters')
-    # A subset is an OFL Modified Version: it may not carry the Reserved Font Name "Liberation" (its
-    # names, not the copyright and trademark notices, IDs 0 and 7)
+    check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
+    # A subset is a Modified Version: it may not carry the Reserved Font Name (its names; the notices
+    # are the licence files FONT_NOTICES ships beside it)
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
-            rec.string = str(rec).replace('Liberation Sans', 'Q2 Pod Sans').replace('LiberationSans', 'Q2PodSans')
-            check('Liberation' not in str(rec), f'Bold font name {rec.nameID} keeps Liberation')
+            rec.string = str(rec).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', ''))
+            check(old.split()[0] not in str(rec), f'{label} font name {rec.nameID} keeps {old.split()[0]}')
+    if notice:
+        font['name'].setName(notice, 10, 3, 1, 0x409)
+    if 'CFF ' in font:  # the outlines' own names (PostScript FontName, FullName, FamilyName)
+        cff = font['CFF '].cff
+        top = cff.topDictIndex[0]
+        cff.fontNames = [n.replace(old, family).replace(old.replace(' ', ''), family.replace(' ', '')) for n in cff.fontNames]
+        for key in ('FullName', 'FamilyName'):
+            setattr(top, key, getattr(top, key).replace(old, family).replace(old.replace(' ', ''), family.replace(' ', '')))
+        check(old.split()[0] not in ''.join(cff.fontNames + [top.FullName, top.FamilyName]), f'{label} font CFF name keeps {old.split()[0]}')
     out = io.BytesIO()
     font.save(out, reorderTables=False)
     runs = []
     for u in have:
         if runs and runs[-1][1] + 1 == u: runs[-1][1] = u
         else: runs.append([u, u])
-    return out.getvalue(), '#define BOLD_RANGES {' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+    return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
+
+# The bold face (navigation.c theme_font; Classic's fallback where its own lacks a character): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
+# label holding anything else (CJK, say) keeps the stock font.
+BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
+
+def bold_font():
+    return subset_font(ROOT/'assets/fonts/LiberationSans-Bold.ttf', 'Q2 Pod Sans', 'BOLD_RANGES')
+
+# Classic's font (navigation.c theme_font): TeX Gyre Heros Bold (GUST Font License, assets/fonts), the same cut.
+# The LPPL asks a modified font to say so itself, and where the original is: assets/fonts/README-classic-light.txt
+CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
+# OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
+FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-classic-light.txt')
+CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, and renamed. '
+               'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
@@ -1032,7 +1080,13 @@ FUNCTIONS = {
  'set_hscroll_label_attribute': ('void', 'void *'),
  'hscroll_label_set_only_focus': ('int', 'void *, int'),
  'hscroll_label_set_ellipses': ('int', 'void *, int'),
+ 'hscroll_label_set_xoffset': ('int', 'void *, int'),
+ 'hscroll_label_start': ('int', 'void *'),
+ 'hscroll_label_stop': ('int', 'void *'),
+ 'widget_set_text': ('int', 'void *, const unsigned *'),
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
+ 'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (navigation.c library_rows)
+ 'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
  'window_close': ('int', 'void *'),
  'dialog_quit': ('int', 'void *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a0a28)
  'window_manager_close_window_force': ('int', 'void *, void *'),
@@ -1128,6 +1182,8 @@ FUNCTIONS = {
  'playing_timer_start': ('int', 'void *'),
  'playing_timer_clear': ('int', 'void *'),
  'player_seek_time': ('int', 'int'),
+ 'player_playtime': ('int', 'void'),
+ 'prev_quick_click': ('int', 'void'), 'next_quick_click': ('int', 'void'),
  'player_mainscheduling': ('int', 'void'),
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),
@@ -1244,7 +1300,6 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'tidalStreamingLevelNow': 4,  # the quality the Tidal URL thread asked for
                 'stTidalTracks': 16,  # a Tidal track list: total, limit, offset, its deque
                 'g_dropdown_menu_state': 4,  # Quick Settings: 1, 2 while it slides or follows a swipe, 3 open
-                'g_slide_direction': 4,  # where its release slides it: 1 open, 0 closed (set as a swipe starts)
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
                 'bt_connectstatus': 4}  # a link thread runs (1), ended (2), checked (3)
@@ -1284,7 +1339,7 @@ def compile_payload(out):
     run('clang',*FLAGS,'-c',out/'trampoline.S','-o',out/'trampoline.o')
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
-        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
+        f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
@@ -1450,7 +1505,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
                       QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
-                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock)
+                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
+                      set_assets)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
     check(contexts, 'No navigation contexts audited')
     windows, chinese = set(), set()  # chinese: the UI assets english_ui rewrites
@@ -1475,7 +1531,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    header = [f'#define RING_STEP {RING_STEP}', bold_ranges]
+    classic_light, classic_light_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
+    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, classic_light_ranges]
     header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
     header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
     header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
@@ -1496,7 +1553,20 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
+    from theme import builtins, emit, geometry_sets, theme_keys
+    themes = builtins()
+    header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
+    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
     (out/'stock.h').write_text('\n'.join(header)+'\n')
+    set_pages, redirects = {}, {}
+    for i, g in enumerate(geometry_sets(themes)[1:], 1):
+        for path, data in set_assets(cat, g).items():
+            folder, _, base = path.rpartition('/')
+            like = f'{folder}/{base.removeprefix(g.name + "_")}'
+            rel = like.removeprefix('release/assets/default/raw/ui/')
+            set_pages[path] = (like, english_ui(rel, data) if rel in chinese else data)
+            redirects[rel.removesuffix('.bin')] = redirects.get(rel.removesuffix('.bin'), 0) | 1 << i
+    emit(themes, out, redirects)
     ps = compile_payload(out)
     payload = (out/'patch.bin').read_bytes()
     check(len(payload) < SCRATCH-BASE, 'Payload overlaps its scratch page')
@@ -1554,6 +1624,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                'long Return destination after stock input gates')
     patch_word(patched, *STANDBY_WAKE, 'Standby resume stays dark')
     patch_word(patched, *MAINSCHEDULING_CALL, jal(ps['ringnav_mainscheduling']), 'player scheduling paced')
+    patch_word(patched, *START_MUTE_CALL, jal(ps['start_mute']), 'natural start: no mute before the end')
+    patch_word(patched, *START_SLEEP_CALL, jal(ps['start_sleep']), 'natural start: no sleep before the end')
     for address, old, new, fn in HOLD_KEYS:
         patch_word(patched, address, old, new or jal(ps[fn]), 'Play/Pause and Return hold time')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51300c))[0] == 0x8f99b6e4,
@@ -1585,6 +1657,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *BT_AUTOLINK, jal(ps['headset_bt_autolink']), 'Bluetooth: auto-link keeps an incoming link')
     patch_word(patched, *SCAN_REFRESH, jal(ps['ringnav_scan_refresh']), 'folder scan refreshes existing tags')
     patch_word(patched, *TAG_TEXT, jal(ps['ringnav_gbk_tag']), 'tag text GBK only when it reads as GBK')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GENRE_COPY[0] - 4))[0] == 0x8f99f5bc,
+          'genre copy: expected strcpy import')
+    patch_word(patched, *GENRE_COPY, jal(ps['ringnav_genre_copy']),
+               'long genre tags stay inside the style field')
     for address in CUE_TEXT:
         patch_word(patched, address, branch(0x04110000, address, syms['toolsIconvConvert']),
                    jal(ps['ringnav_cue_text']), 'CUE text read as UTF-8, GBK or Windows-1252')
@@ -1603,6 +1679,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', patched, fileoff(patched, LYRIC_SAVE_FMT[0]))[0] == LYRIC_SAVE_FMT[1],
           'Unexpected Download Cover & Lyrics save')
     patch_word(patched, LYRIC_SAVE_CALL, 0x0320f809, jal(ps['ringnav_lyric_save']), 'lyrics saved beside the song')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SONG_UNKNOWN_CALL-8))[0] == 0x8f99a908,
+          "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
+    patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
     for word in FOLDER_NAME:
         patch_word(patched, *word, 'folder names are literal text')
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
@@ -1759,14 +1838,19 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     icons['default_album_home.png'] = ('default_album_big.png', art)
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
     ui = 'release/assets/default/raw/ui/'
-    pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin'))))}
+    pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
-    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages,
+    from art import images as theme_images
+    from theme import builtins as builtin_themes
+    drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
+    for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),
                                SCROBBLE_CA: ('etc/hosts', (ROOT/'assets/scrobble-ca.pem').read_bytes()),
                                BOOT: (HELPER_LIKE, compile_helper(out, cat, 'boot', 'q2boot', HELPER_LIBS[:1])),
                                **({LOGO_LIGHT: (xx+'list_tidal.png', light)} if light else {}),  # the swapped logo.jpg has no stock inode left
                                BOLD_TTF: (FONT, bold),
+                               CLASSIC_LIGHT_TTF: (FONT, classic_light),
+                               **{'release/assets/default/raw/fonts/' + n: ('etc/hosts', (ROOT/'assets/fonts'/n).read_bytes()) for n in FONT_NOTICES},
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
         stock = inode(p, like.encode())
         check(stock is not None, f'Missing stock inode for {path}')

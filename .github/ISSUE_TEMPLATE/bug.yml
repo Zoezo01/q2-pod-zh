@@ -1,0 +1,23 @@
+name: Bug report
+description: Something on the Q2 doesn't work as it should
+body:
+  - type: input
+    attributes:
+      label: Version
+      description: The CFW. Version row in System settings → About
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Output
+      options: [Wired, Bluetooth, USB, Not about sound]
+  - type: textarea
+    attributes:
+      label: Crash log
+      description: Attach q2-crash.log from the card's root, if there is one

@@ -103,6 +103,9 @@ int headset_guard_start(void) {
 int ringnav_play_pause(void) {
     if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
+    int status = mclGetPlayStatus();
+    if (status == 1) press_stamp(); /* Play from a stop starts a track */
+    if (status == 2) mute_stamp();  /* stock's next step is mclSetMute(2), then a pause */
     return stock_pause_trampoline();
 }
 int media_owner(void) { return video_status() ? 4 : radio_status() ? 3 : spot_status() ? 2 : 1; }

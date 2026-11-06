@@ -1,0 +1,102 @@
+<!-- Theme: Classic (IPOD/THEME 1, docs/ipod.md#display-settings): a light iPod look, with a dark half, on its own
+     geometry sets, declared below. Its numbers are this file's, but for what ROLE_MACROS (tools/theme.py) and Minimal supply. Its id, classic-light,
+     names its art, sets and face (classic_light_*, classic-light*). -->
+<theme format="1" id="classic-light" name="Classic" index="1" extends="minimal">
+  <!-- Classic's geometry sets: a 26 px bar over a 294 px window, 32 px rows, nine of them filling it (4 px above and
+       below a 24 px line box). The Library is always 32 px text.
+       classic-light (Row Art on) has 52 px album rows with the stock art drawn 1:1; classic-light-text (Row Art off)
+       makes those lists 32 px and has no artwork. Songs are two lines at 52 px under both. classic-light states every field, so the built-in set's defaults never reach Classic. Text
+       y centres stock's 24, 20 and 16 px label boxes in a 32 px row (AWTK centres the text in its
+       box); 52 px art rows centre their two lines. list_end is eight rows: a ninth row's text would sit under the glass. -->
+  <geometry name="classic-light" bar="26" pitch="32" body="32" art="52" art_inset="0" art_pitch="52"
+            art_body="52" text_art="0" text_art_inset="0" lib_pitch="32" lib_body="32" lib_inset="0"
+            lib_art="0" title24_y="4" title_y="6" meta_y="8"
+            count_y="8" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
+            song_meta_y="29" set_row="32" set_top="0" set_rows="9"
+            set_icon="0" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1"/>
+  <geometry name="classic-light-text" extends="classic-light" art="0" art_pitch="32" art_body="32" art_title24_y="4"
+            art_meta_y="8"/>
+  <geometry set="classic-light"/>
+  <!-- every scheme: white text on the band in both halves; a row's second line #949294, which the light half
+       flips onto #6b6d6b; the light half on white paper, black ink; the status bar's gloss over
+       its 1 px line, and the light half's second line above that; the dark half's bar is flat over a hairline -->
+  <colorScheme sel.text="#ffffff" muted="#949294" light.paper="#ffffff" light.ink="#000000" light.sel.text="#ffffff"
+               light.bar.stops="#ffffff 0, #e7e7e7 26, #cecbce 53, #adaaad 79, #9c9e9c 100" light.bar.line="#5a595a" bar.line2="#848584"
+               dark.bar.stops="#1c1c1c 0, #1c1c1c 100" dark.bar.line="#333333"/>
+  <!-- Classic Blue: Cobalt's tones and its own band: its 1 px top line, the stops below it, its edge, and a tall
+       row's second and last lines. The light lines are the light half's: on black the band starts on its first stop
+       and ends on its dark edge. The other accents get this band turned to their own top tone -->
+  <colorScheme name="classic-blue" label="Classic Blue" base="cobalt" light.sel.top="#94c7de" dark.sel.top="#08a6e7"
+               sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
+               sel.edge="#004184" sel.tall_edge="#004aa3" light.sel.tall_line="#688db3" dark.sel.tall_line="#004aa3" light.sel.tall_top="#27ade5" dark.sel.tall_top="#08a6e7"/>
+  <colorSchemes accents="classic-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
+  <!-- Classic's face: list rows (title 27 px, 28 on a two-line row, second line 17 px in stock's regular face), the bar title and clock (21 px, stated again as the set's bar_px: three quarters of a row's caps, an iPod's bar to its rows), the Now Playing title and Home rows (27 px); the bar's fill is the scheme's gloss; the white chevron on the selected row only, tools/art.py's 12 x 16 drawing, centred on the row at these x. The classic-light battery: a grey
+       outline and a gloss green level, a hue in both halves -->
+  <view name="list">
+    <element name="selection" painter="stops"/>
+    <element name="icons" mono="0" badge_muted="0" addon_mono="0"/>
+    <element name="row" font="classic-light" title_px="27" meta_px="17" text_end="350" tall_font="classic-light" tall_px="28"/>
+    <!-- Songs' rows and Play All's end on these three rows, each row its stop; none on the selected row -->
+    <element name="separator" light.stops="#fcfcfc 0, #e2e3e2 50, #f7f7f7 100" dark.stops="#000000 0, #2c2c2c 50, #000000 100"/>
+    <!-- Albums' and the other 52 px rows: the cover, drawn square, then two lines of text; it clears the glass at the row under the bar by 1 px -->
+    <element name="art" x="22" text_x="82" text_end="310" placeholder="38"/>
+    <element name="chevron" selected="1" x="317"/>
+  </view>
+  <view name="bar">
+    <element name="title" font="classic-light" font_size="21" caps="0"/>
+    <element name="fill" painter="gloss"/>
+    <!-- The battery's inside: one colour per row, the bright one at y 7, the dark rows past the level, a red sliver
+         when low; its edges and the white that sits under it on the light half's gloss. Alphas of 255. The bolt
+         (charging) and the plug (full on power): colour and the bolt's white halo, tools/art.py draws them. -->
+    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#9c9e9c" edge="#5b6c52"
+             stops="#90b27d 0, #c4ebac 8, #dcf9c5 17, #cbefb1 25, #ade586 33, #a6e27b 42, #92ce68 50, #67a83f 58, #4e972c 67, #4e972d 75, #56a035 83, #58a437 92, #539933 100"
+             empty="#56585d 0, #595a61 8, #5f6168 17, #63656c 25, #6b6d73 33, #76787e 42, #85878d 50, #898b92 58, #8d8f96 67, #94969c 75, #9ea0a5 83, #a0a3a6 92, #797b7c 100"
+             low="#d9402e" low_w="3" corner_a="191" foot_a="128" shade_a="64" soft_a="51" soft_top_a="28" emboss_a="179" emboss_nub_a="153" bolt="#3c4a34" bolt_halo_a="102"/>
+    <element name="icons" bt_dy="1" wifi_dy="-1"/>
+    <!-- The play state's fill and 1 px edge, top to bottom, with no halo (an iPod's has none); tools/art.py draws
+         the triangle and the bars. -->
+    <element name="state" stops="#0f4f93 0, #1a76b3 20, #2ea8e1 33, #39c7f8 47, #38c7f5 53, #32b1e9 60, #2699d7 67, #2085c3 73, #1c73b1 80, #1666a5 87, #135999 100"
+             edge="#114c8f 0, #135999 100" halo_light="0" halo_dark="0"/>
+  </view>
+  <view name="playing">
+    <element name="art" square="1"/>
+    <element name="title" font="classic-light"/>
+    <element name="album" caps="0" opacity="255"/>
+    <element name="state" opacity="255"/>
+  </view>
+  <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
+       across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,
+       centred on the pane's first count_w columns, its 24 px line box at count_y. The pane follows the highlighted row:
+       a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is. Its colour is stated at 0 and 100,
+       as a stops list must end at 100 -->
+  <view name="home">
+    <element name="rows" top="0" text_x="20" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
+    <element name="chevron" visible="1" x="168"/>
+    <element name="pane" light.stops="#63717b 0, #63717b 100" dark.stops="#1c1c1c 0, #1c1c1c 100" light_a="0" shadow="#000000" shadow_w="0"
+             shadow_a="116 100 93 86 79 73 68 62 56 50 44 39 34 28 24 19 16 13 10 8 6 4 3 2 1"
+             icon_x="43" icon_y="67" note_x="40" note_y="57" count_y="185" count_w="182" count_px="27"/>
+  </view>
+  <!-- a settings row is its title with the value right-aligned -->
+  <view name="settings"><element name="values" text="1"/></view>
+  <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
+  <option setting="light" preset="on" keep="auto"/>
+  <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>
+  <option setting="home" preset="split"/>
+  <option setting="shortcut"/>
+  <!-- Battery: the plain icon, chosen with Classic, or Percent Inside, the percent on or off. default is what a stored
+       Percent or Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
+  <option setting="battery" values="icon inside" default="inside"/>
+  <option setting="time_title" preset="on"/>
+  <!-- Row Art, Classic's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
+       art lists (the classic-light set), Off makes those lists 32 px text (classic-light-text). The Library is text either way.
+       A change restarts the Q2. Choosing Classic presets On. -->
+  <!-- Classic's Home in Split, each its own switch, on as chosen, as Classic presets its own: Library on Home slides
+       the Library's rows in on Home (off, Library opens its page), Row Preview has the pane follow the highlighted row
+       (off, it shows Now Playing's art on every row) -->
+  <option key="HOMELIB" label="Library on Home" default="On" preset="On"><value label="Off"/><value label="On"/></option>
+  <option key="ROWPREVIEW" label="Row Preview" default="On" preset="On"><value label="Off"/><value label="On"/></option>
+  <option key="ROWART" label="Row Art" default="On" preset="On">
+    <value label="Off" set="classic-light-text"/>
+    <value label="On" set="classic-light"/>
+  </option>
+</theme>

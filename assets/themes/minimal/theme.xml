@@ -1,0 +1,27 @@
+<!-- Theme: Minimal (IPOD/THEME 0, docs/ipod.md#display-settings). Its numbers (Home rows, the settings
+     top, the progress bar, the scheme colours) come from patch/offsets.inc via tools/theme.py ROLE_MACROS. -->
+<theme format="1" id="minimal" name="Minimal" index="0">
+  <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum ivory green"/>
+  <colorScheme name="crimson" raw_red="1"/>  <!-- stock's own reds: the identity -->
+  <colorScheme name="ivory" card="1"/>       <!-- the off-white card with dark ink -->
+  <option setting="light" preset="off" keep="auto"/>
+  <option setting="accent" key="MINIMAL_ACCENT" default="ivory" preset="graphite"/>
+  <option setting="corners" preset="round"/>
+  <option setting="home" preset="split"/>
+  <option setting="shortcut"/>
+  <option setting="battery"/>
+  <option setting="time_title" preset="on"/>
+  <option setting="np_layout"/>
+  <view name="bar"><element name="title" caps="1"/></view>
+  <view name="list">
+    <element name="selection" painter="card"/>
+    <element name="icons" mono="1" badge_muted="1" addon_mono="1"/>
+  </view>
+  <view name="home"><element name="chevron" visible="0"/><element name="rows" caps="1"/></view>
+  <view name="playing" layout="ipod">
+    <element name="art" square="0"/>
+    <element name="title" font="regular"/>
+    <element name="album" caps="1" opacity="0"/>
+    <element name="state" opacity="0"/>
+  </view>
+</theme>

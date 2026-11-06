@@ -154,6 +154,12 @@ int main(int argc, char **argv) {
         at += (4 if flags & 2 else 0) + (100 if flags & 4 else 0) + (4 if flags & 8 else 0)
         h[at:at+len(encoder)] = encoder
         h[at+21:at+24] = ((delay << 12) | pad).to_bytes(3, 'big')
+        crc = 0
+        for byte in h[:at+34]:
+            crc ^= byte
+            for _ in range(8):
+                crc = crc >> 1 ^ 0xa001 if crc & 1 else crc >> 1
+        h[at+34:at+36] = crc.to_bytes(2, 'big')
         return bytes(h)
 
     for version in (3, 2, 0):
@@ -166,11 +172,104 @@ int main(int argc, char **argv) {
                     assert parse(h) == expected, (version, mono, flags, crc, shifted, parse(h))
                     for n in range(len(h)):
                         assert parse(h[:n]) is None
-    for encoder in (b'Lavc61.1', b'Lavf61.1'):
-        assert parse(header(encoder=encoder))
-    for h in (header(flags=0), header(encoder=b'unknown'), header(delay=0, pad=0),
-              header(delay=4095), header(pad=4095), b'', bytes(500)):
-        assert parse(h) is None
+    # LAME's and FFmpeg's names in any case, a nonzero revision nibble, and any other printable name whose CRC holds.
+    for encoder in (b'Lavc61.1', b'Lavf61.1', b'lavf', b'L3.99r', b'L3.100', b'GOGO3.13', b'FhGIIS 4'):
+        assert parse(header(encoder=encoder)) == parse(header()), encoder
+    for encoder, kept in ((b'L3.99r', False), (b'GOGO3.13', False), (b'LAME3.100', True), (b'Lame3.100', True), (b'Lavf61.1', True)):
+        h = bytearray(header(encoder=encoder))
+        h[190] ^= 1  # the CRC, with all four optional fields in the frame
+        assert parse(bytes(h)) == (parse(header()) if kept else (1152, 0, 44100, 2)), encoder
+    assert parse(header(encoder=b'LAME3.100\x14')) == parse(header())
+    # A real encoder's own spelling, valid CRC and all. FFmpeg's check is case-sensitive too and mpg123's isn't there.
+    assert parse(header(encoder=b'Lame3.100')) == parse(header())
+    # A tag frame without a usable extension (nothing, binary, a longer name running over the field bytes, or a
+    # count missing): no delays to trim, but the frame's own silence goes.
+    frame_only = (1152, 0, 44100, 2)
+    for h in (header(flags=0), header(flags=14), header(encoder=b''), header(encoder=bytes(range(200, 230))),
+              header(encoder=b'Some Encoder Version 1.2.3 build 45'), header(delay=0, pad=0),
+              header(delay=4095), header(pad=4095)):
+        assert parse(h) == frame_only, h[36:60]
+    assert parse(header(version=2, flags=0)) == (576, 0, 22050, 2)
+    assert parse(header(mono=True, flags=0)) == (1152, 0, 44100, 1)
+    # A protected frame's CRC is not side info; the side info is what says a frame has no audio.
+    for crc_layout in (False, True):
+        h = bytearray(header(flags=0, crc=True, shifted=crc_layout))
+        h[4:6] = b'\x12\x34'
+        assert parse(bytes(h)) == frame_only
+        h[6] = 1
+        assert parse(bytes(h)) is None
+    for at in (4, 5, 20, 35):
+        h = bytearray(header(flags=0))
+        h[at] = 1
+        assert parse(bytes(h)) is None, at
+    vbri = bytearray(header(flags=0))
+    vbri[36:48] = b'VBRI\0\1' + bytes(6)
+    assert parse(bytes(vbri)) == frame_only
+    assert parse(bytes(vbri[:417])) == frame_only
+    # VBRI's version, and a VBRI frame carrying audio or too short for its name, stay stock's.
+    for at, value in ((41, 2), (40, 1), (10, 1)):
+        h = bytearray(vbri)
+        h[at] = value
+        assert parse(bytes(h)) is None, at
+    # Audio frames and non-frames stay stock's.
+    assert parse(bytes(417)) is None and parse(b'') is None and parse(bytes(500)) is None
+    audio = bytearray(header(flags=0))
+    audio[36:40] = bytes(4)
+    assert parse(bytes(audio)) is None
+    # iTunSMPB, with the counts of the real iTunes 12.7.0.166 file measured in docs/internals.md: no tag frame at all there.
+    lib.mp3_smpb.argtypes = [C.c_char_p, C.c_uint, C.c_char_p] + [C.c_void_p] * 4
+    def smpb(h, text):
+        fields = [C.c_uint() for _ in range(4)]
+        return tuple(x.value for x in fields) if lib.mp3_smpb(h, len(h), text, *map(C.byref, fields)) else None
+    def itunes(priming=0x210, remainder=0x86a, samples=0x66486):
+        return b' 00000000 %08X %08X %016X 00000000 0002DA9D 00000000' % (priming, remainder, samples)
+    audio = bytes.fromhex('fffba040') + bytes(16) + b'\x01' + bytes(501)  # 160 kbit/s, no tag name
+    assert parse(audio) is None
+    assert smpb(audio, itunes()) == (1057, 1625, 44100, 2)
+    assert smpb(audio, itunes().lower()) == (1057, 1625, 44100, 2)
+    assert smpb(audio, itunes(priming=0)) == (529, 1625, 44100, 2)
+    assert smpb(audio, itunes(priming=16384))[0] == 16384 + 529
+    assert smpb(audio, itunes(remainder=4095))[1] == 4095 - 529
+    assert smpb(audio, itunes(remainder=100))[1] == 0
+    for text in (itunes(priming=16385), itunes(remainder=4096), itunes(samples=0), itunes(samples=1 << 40), b'', b' 0 210 86A',
+                 b' 0 210 86A 66486'.replace(b'210', b'00000000000000210'), b'iTunSMPB'):
+        assert smpb(audio, text) is None, text
+    assert smpb(audio[:300], itunes()) is None and smpb(bytes(522), itunes()) is None
+    # A tag frame: the sum has to come to its frames, which leave it out, and its own samples go too.
+    def counted(frames, version=3, name=b'Info'):
+        h = bytearray(header(version=version, flags=1, encoder=b''))
+        h[36 if version == 3 else 21:48 if version == 3 else 33] = name + struct.pack('>II', 1, frames)
+        return bytes(h)
+    assert smpb(counted(366), itunes()) == (1152 + 1057, 1625, 44100, 2)
+    assert smpb(counted(366, name=b'Xing'), itunes()) == (1152 + 1057, 1625, 44100, 2)
+    assert smpb(counted(732, version=2), itunes()) == (576 + 1057, 1625, 22050, 2)
+    assert smpb(counted(367), itunes()) is None and smpb(counted(365), itunes()) is None
+    assert smpb(counted(366), itunes(remainder=0x86b)) is None
+    assert smpb(counted(0), itunes()) == (1152 + 1057, 1625, 44100, 2)  # no count, nothing to check, as FFmpeg
+    vbri_count = bytearray(vbri)
+    vbri_count[50:54] = struct.pack('>I', 366)
+    assert smpb(bytes(vbri_count), itunes()) == (1152 + 1057, 1625, 44100, 2)
+    vbri_count[50:54] = struct.pack('>I', 365)
+    assert smpb(bytes(vbri_count), itunes()) is None
+    has_audio = bytearray(counted(366))
+    has_audio[10] = 1
+    assert smpb(bytes(has_audio), itunes()) is None
+    # Tail tags: what stays of the file is what the demuxer plays, an APEv2 tag's only if its footer is sane, and
+    # says it has a header for the caller to find.
+    lib.mp3_tail.argtypes, lib.mp3_tail.restype = [C.c_char_p, C.c_uint, C.c_void_p], C.c_longlong
+    def tail(t):
+        ape = C.c_longlong()
+        return lib.mp3_tail(t, len(t), C.byref(ape)), ape.value
+    def ape(size, flags=0x80000000, version=2000):
+        return b'APETAGEX' + struct.pack('<IIII', version, size, 1, flags) + bytes(8)
+    id3v1 = b'TAG' + bytes(125)
+    for t, want in ((bytes(160), (0, 0)), (bytes(32) + id3v1, (128, 0)), (bytes(128) + ape(5000), (0, 5032)),
+                    (ape(5000) + id3v1, (128, 5160)), (bytes(40), (0, 0)), (b'TAG', (0, 0)),
+                    (bytes(128) + ape(5000, flags=0), (0, 0)),               # no header to confirm it
+                    (ape(5000, flags=0) + id3v1, (128, 0)),
+                    (bytes(128) + ape(5000, flags=0xa0000000), (0, 0)),      # this is a header, not a footer
+                    (bytes(128) + ape(5000, version=2001), (0, 0)), (bytes(128) + ape(31), (0, 0))):
+        assert tail(t) == want, (t[-32:], want)
     assert parse(header(pad=100))[1] == 0
     h = bytearray(header())
     h[2] = 0  # free-format: no trustworthy first-frame boundary

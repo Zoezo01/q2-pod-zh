@@ -64,19 +64,23 @@
       "value": "pitch",
       "purpose": "row creation, reset or artwork offset divisor",
       "sites": [
+        ["0x4a6fa8", "0x2402004e"],
+        ["0x4ad8e4", "0x2410004e"],
+        ["0x4addd0", "0x2402004e"],
+        ["0x4b2ec0", "0x2402004e"],
+        ["0x4b2f0c", "0x2402004e"],
+        ["0x4b0f88", "0x2402004e"]
+      ]
+    },
+    {
+      "value": "art_pitch",
+      "purpose": "row creation, reset or artwork offset divisor",
+      "sites": [
         ["0x4a2c5c", "0x2402004e"],
         ["0x4a2c60", "0x2406004e"],
         ["0x4a2f24", "0x2404004e"],
         ["0x4a44c8", "0x2410004e"],
         ["0x4a4b9c", "0x2402004e"],
-        ["0x4a6fa8", "0x2402004e"],
-        ["0x4a9ad8", "0x2410004e"],
-        ["0x4aa35c", "0x2402004e"],
-        ["0x4ad8e4", "0x2410004e"],
-        ["0x4addd0", "0x2402004e"],
-        ["0x4b0f88", "0x2402004e"],
-        ["0x4b2ec0", "0x2402004e"],
-        ["0x4b2f0c", "0x2402004e"],
         ["0x5217d4", "0x2405004e"],
         ["0x521a84", "0x2403004e"],
         ["0x5228f8", "0x2410004e"],
@@ -94,36 +98,51 @@
       "value": "body",
       "purpose": "row background, hit target and full-height children",
       "sites": [
-        ["0x4a4bb8", "0x24150046"],
         ["0x4a62d0", "0x24020046"],
-        ["0x4aa388", "0x24120046"],
         ["0x4addec", "0x24120046"],
         ["0x4adfe4", "0x24020046"],
-        ["0x4b0fc0", "0x24110046"],
         ["0x4b2880", "0x24130046"],
         ["0x4b2a44", "0x24170046"],
         ["0x4b2f2c", "0x24130046"],
+        ["0x4b0fc0", "0x24110046"]
+      ]
+    },
+    {
+      "value": "art_body",
+      "purpose": "row background, hit target and full-height children",
+      "sites": [
+        ["0x4a4bb8", "0x24150046"],
         ["0x5223ec", "0x24060046"],
-        ["0x523100", "0x24110046"],
-        ["0x524820", "0x24140046"]
+        ["0x523100", "0x24110046"]
       ]
     },
     {
       "value": "body",
       "purpose": "text/icon container inside row; stock child layout stretches to parent",
       "sites": [
-        ["0x4a4d50", "0x24020078"],
         ["0x4a63fc", "0x24020078"],
         ["0x4a6530", "0x24020078"],
-        ["0x4aa510", "0x24020078"],
         ["0x4ae288", "0x24020078"]
+      ]
+    },
+    {
+      "value": "art_body",
+      "purpose": "text/icon container inside row; stock child layout stretches to parent",
+      "sites": [
+        ["0x4a4d50", "0x24020078"]
       ]
     },
     {
       "value": "art",
       "purpose": "stock 52px artwork drawn 1:1 in the inset row widget",
       "sites": [
-        ["0x4a4c70", "0x24070032"],
+        ["0x4a4c70", "0x24070032"]
+      ]
+    },
+    {
+      "value": "text_art",
+      "purpose": "text pages' stock 50px artwork (Songs, an artist's songs, Artists): 52 drawn 1:1, 0 hides it",
+      "sites": [
         ["0x4aa42c", "0x24070032"],
         ["0x4adfec", "0x24070032"],
         ["0x4b1058", "0x24070032"]
@@ -134,11 +153,30 @@
       "purpose": "artwork and playing overlay at the 8px top/left inset",
       "sites": [
         ["0x4a4ce4", "0x24060009"],
-        ["0x4aa4a4", "0x24060009"],
-        ["0x4ae05c", "0x24060009"],
         ["0x5231c4", "0x24060009"],
-        ["0x523234", "0x24060009"],
+        ["0x523234", "0x24060009"]
+      ]
+    },
+    {
+      "value": "lib_body",
+      "purpose": "the Library's row height (its constructor; navigation.c list_row_core reads it live)",
+      "sites": [
+        ["0x524820", "0x24140046"]
+      ]
+    },
+    {
+      "value": "lib_inset",
+      "purpose": "the Library's row icon x (its constructor; navigation.c list_row_core reads it live)",
+      "sites": [
         ["0x524944", "0x2405000a"]
+      ]
+    },
+    {
+      "value": "text_art_inset",
+      "purpose": "text pages' playing overlay at the 8px top inset",
+      "sites": [
+        ["0x4aa4a4", "0x24060009"],
+        ["0x4ae05c", "0x24060009"]
       ]
     },
     {
@@ -149,16 +187,21 @@
       ]
     },
     {
-      "value": 13,
+      "value": "title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a4d9c", "0x2406000e"],
-        ["0x4a6580", "0x2406000e"],
-        ["0x4aa55c", "0x2406000e"]
+        ["0x4a6580", "0x2406000e"]
       ]
     },
     {
-      "value": 10,
+      "value": "art_title24_y",
+      "purpose": "24px title position in the 68px body, font unchanged",
+      "sites": [
+        ["0x4a4d9c", "0x2406000e"]
+      ]
+    },
+    {
+      "value": "title_y",
       "purpose": "title position in the 68px body, font unchanged",
       "sites": [
         ["0x4ae314", "0x2406000b"],
@@ -166,20 +209,55 @@
       ]
     },
     {
-      "value": 39,
+      "value": "meta_y",
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a4e04", "0x24060028"],
         ["0x4a661c", "0x24060028"],
-        ["0x4aa5ac", "0x24060028"],
         ["0x4ae38c", "0x24060028"]
       ]
     },
     {
-      "value": 40,
+      "value": "art_meta_y",
+      "purpose": "16px metadata position in the 68px body, font unchanged",
+      "sites": [
+        ["0x4a4e04", "0x24060028"]
+      ]
+    },
+    {
+      "value": "count_y",
       "purpose": "playlist count position in the 68px body",
       "sites": [
         ["0x4b2c38", "0x24060029"]
+      ]
+    },
+    {
+      "value": "song_pitch",
+      "purpose": "Songs: row creation and the page's row divisor, its own so a set can make them taller than the text rows",
+      "sites": [
+        ["0x4a9ad8", "0x2410004e"],
+        ["0x4aa35c", "0x2402004e"]
+      ]
+    },
+    {
+      "value": "song_body",
+      "purpose": "Songs: row background and its text container",
+      "sites": [
+        ["0x4aa388", "0x24120046"],
+        ["0x4aa510", "0x24020078"]
+      ]
+    },
+    {
+      "value": "song_title24_y",
+      "purpose": "Songs: 24px title position in the body, font unchanged",
+      "sites": [
+        ["0x4aa55c", "0x2406000e"]
+      ]
+    },
+    {
+      "value": "song_meta_y",
+      "purpose": "Songs: 16px metadata position in the body, font unchanged",
+      "sites": [
+        ["0x4aa5ac", "0x24060028"]
       ]
     },
     {
@@ -207,22 +285,30 @@
       "value": 225,
       "purpose": "toolbar switch pages: the title spans to the switch",
       "sites": [
-        ["0x4b4b58", "0x2407006e"], ["0x4ca0a8", "0x2407006e"], ["0x4c96c8", "0x2407006e"]
+        ["0x4b4b58", "0x2407006e"],
+        ["0x4ca0a8", "0x2407006e"],
+        ["0x4c96c8", "0x2407006e"]
       ]
     },
     {
       "value": 305,
       "purpose": "toolbar switch pages: the switch takes the right-hand slot",
       "sites": [
-        ["0x4b4c3c", "0x240500bd"], ["0x4ca184", "0x240500bd"], ["0x4c97a4", "0x240500bd"]
+        ["0x4b4c3c", "0x240500bd"],
+        ["0x4ca184", "0x240500bd"],
+        ["0x4c97a4", "0x240500bd"]
       ]
     },
     {
       "value": 0,
       "purpose": "toolbar switch pages: no Home or Now Playing button (the keys go there)",
       "sites": [
-        ["0x4b4cc4", "0x24070032"], ["0x4b4d30", "0x24070032"], ["0x4ca210", "0x24070032"],
-        ["0x4ca27c", "0x24070032"], ["0x4c982c", "0x24070032"], ["0x4c9898", "0x24070032"]
+        ["0x4b4cc4", "0x24070032"],
+        ["0x4b4d30", "0x24070032"],
+        ["0x4ca210", "0x24070032"],
+        ["0x4ca27c", "0x24070032"],
+        ["0x4c982c", "0x24070032"],
+        ["0x4c9898", "0x24070032"]
       ]
     }
   ],

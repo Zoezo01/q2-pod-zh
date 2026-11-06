@@ -53,6 +53,7 @@
 #define EVT_KEY_UP 0x114          /* wm keyup dispatch @0x523eb8 */
 #define EVT_KEY_UP_BEFORE 0x115   /* wm keyup-before dispatch @0x523e80 */
 #define EVT_WINDOW_BACKGROUND 0x12a
+#define EVT_WINDOW_FOREGROUND 0x12b
 #define EVT_WINDOW_CLOSE 0x12c
 #define PULL_SEARCH_PX 48       /* device tuning: release distance from the initial touch */
 #define PULL_CLAIM_PX 8
@@ -213,14 +214,10 @@ static inline int arc_out(int r, int y) {
 #define HOME_DOT_X 25
 #define HOME_DOT 6
 #define HOME_DOT_GAP 8
-/* iPod Theme: Classic (IPOD/THEME 1, docs/ipod.md#display-settings) puts the pre-1.0.1 look back
- * over the Minimal assets at runtime. In Home's Full the rows end at HOME_CLASSIC_ROW, so the
- * chevron's glyph (x 20 to 30 of list_into) sits close to the panel edge without touching the
- * glass on the bottom row. Labels start at HOME_CLASSIC_TEXT_X and leave room for the glyph.
- * The progress bar is an NP_BAR_CLASSIC capsule
- * (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
+/* Classic's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
+#define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
 /* Split's cover pans (docs/ipod.md#home): zoomed DRIFT_ZOOM_PCT, each axis a linear ping-pong of
  * its own period across the zoom's margin (about 1.5 px/s on a square cover, as iPod.js's), drawn
  * at sub-pixel positions every DRIFT_TICK_MS, a step at most DRIFT_MAX_STEP_MS. A cover whose zoomed
@@ -231,15 +228,10 @@ static inline int arc_out(int r, int y) {
 #define DRIFT_Y_MS 26000
 #define DRIFT_TICK_MS 200
 #define DRIFT_MAX_STEP_MS 500 /* 2.5 ticks: a late tick keeps its time */
-#define DRIFT_TEXELS 218080 /* four panels: 4 x 188 x 290 */
-#define HOME_CLASSIC_ROW 369
-#define HOME_TOP 8 /* Minimal's decorative inset; Classic starts below the status bar. */
+#define DRIFT_TEXELS 221088 /* four panels: 4 x 188 x 294, the tallest set's client */
+#define HOME_TOP 8 /* Minimal's decorative inset */
 #define HOME_CHEVRON_SHIFT 15
 #define HOME_FULL_CHEVRON_SHIFT 10
-#define HOME_CLASSIC_TEXT_X 33
-/* Labels end 10 px before Split's chevron glyph (x 20 of list_into, HOME_CHEVRON_SHIFT in), 5 px
- * before Full's, so Liberation Sans Bold's "Now Playing" (119 px) fits Split's row. */
-#define HOME_CLASSIC_LABEL_END 33
 #define NP_BAR_CLASSIC 8
 #define NP_BAR_MINIMAL 4
 #define MINIMAL_FILL 0xeeeeec
@@ -256,7 +248,7 @@ static inline int arc_out(int r, int y) {
 #define LIGHT_CHROMA 40
 #define LIGHT_GLYPH 0xa0
 #define LIGHT_SURFACE 4
-#define LIGHT_BAR 0xdedede      /* Classic's status bar in Light Mode, as an iPod's, flat */
+#define LIGHT_BAR 0xdedede      /* a flat bar's Light Mode grey (scheme bar_light); Classic's gloss bar ignores it */
 /* Minimal's small capitals are SUDO_TRACK px apart (draw_spaced); secondary text is SUDO_MUTED. */
 #define SUDO_TRACK 2
 #define SUDO_MUTED 0x8c8c8c
@@ -282,6 +274,9 @@ static inline int arc_out(int r, int y) {
 /* A line too long to fit holds MARQUEE_HOLD_MS at its start: the Minimal album marquee
  * (navigation.c) and the stock title and artist labels' delay and lull (tools/ipod.py). */
 #define MARQUEE_HOLD_MS 1500
+#define MARQUEE_PASSES 3 /* the selected row's title: navigation.c marq_poll */
+#define HSCROLL_ONLY_FOCUS 0x78 /* hscroll_label_t, a char: hscroll_label_set_only_focus */
+#define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
 /* iPod Now Playing's lyrics (lyrics.c, docs/ipod.md#lyrics): a line of one row is LYRIC_SLOT high,
  * its text and the gap to the next, a longer one more; the first after a blank LYRIC_SLOT
  * (tools/ipod.py's list layout) so it can sit in the middle as the playing line does; text LYRIC_X
@@ -308,7 +303,7 @@ static inline int arc_out(int r, int y) {
 #define SPOT_BAR_X 21
 #define SPOT_BAR_Y 251
 #define SPOT_BAR_W 333
-#define SPOT_BAR_H 8 /* the bar's view; iPod's Minimal paints its 4px line at the top (np_bar_h) */
+#define SPOT_BAR_H 8 /* the bar's view; Minimal paints its 4px line at the top (theme_t.np_bar) */
 #define SPOT_TIMES_Y 265
 #define SPOT_TIME_X 46
 /* iPod settings rows (docs/ipod.md#settings): Minimal starts SET_TOP below the status bar, Classic
@@ -336,6 +331,8 @@ static inline int arc_out(int r, int y) {
 #define LIST_DEFAULT_ITEM_HEIGHT 0x7c  /* list_view default_item_height */
 #define LIST_VIEW_LAYOUT 0x5e9eb4      /* children_layouter_list_view's layout */
 #define LIST_VIEW_LAYOUT_SLOT 0x926930 /* its vtable slot (vtable 0x926928 + 8) */
+#define LIBRARY_ROW_BODY 0x524820      /* localmusic_page_init's row body immediate (ipod.json) */
+#define LIBRARY_ROW_ICON_X 0x524944    /* its icon x (art_inset) */
 #define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x9272c0 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a
@@ -476,6 +473,14 @@ static inline int arc_out(int r, int y) {
  * been still WHEEL_DARK_IDLE_MS, which also restarts an unfinished guard. Calibration knobs. */
 #define WHEEL_DARK_GUARD 100
 #define WHEEL_DARK_IDLE_MS 1500
+/* A tick needs a ring frame with pressure this recent (tick_gate, navigation.c), and the same gap in
+ * frames ends Return's stop. Return's stop (ringnav_queue_event, playback.c): a second Return with
+ * WHEEL_STOP_TICKS ticks since the first, the last within WHEEL_ESCAPE_TICK_MS, and the first within
+ * WHEEL_ARM_MS. Calibration knobs. */
+#define WHEEL_FRESH_MS 1000
+#define WHEEL_ARM_MS 2000
+#define WHEEL_ESCAPE_TICK_MS 300
+#define WHEEL_STOP_TICKS 3
 #define BOOT_KEY_GUARD 0xa37c8a /* no symbol: set after a Standby resume, on_wm_keyup_fun drops the next centre release */
 #define RETURN_RELEASE_LATCH 0xa37c8b /* stock long Return arms it; the key-up filter consumes it */
 
