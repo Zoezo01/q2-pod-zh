@@ -3131,9 +3131,39 @@ char *ringnav_genre_copy(char *dst, const char *joined) {
     return dst;
 }
 
-/* toolsGetMusicInfo (the library scan and the player's tag reads): an empty album artist falls back
- * to flac_album_artist. */
+/* The crash log's records (docs/boot.md), for a library scan's tag reads and Coverflow's art build:
+ * file holds the path in progress, and every `every`th call appends "<count> <VmRSS kB> <path>" to
+ * log, which each demo starts afresh and stops past CRASH_NOTE_MAX bytes, so an OOM kill names the
+ * file and shows whether demo grew. n is the caller's {calls, bytes logged}. tmpfs, no locks: a
+ * thread racing on n only shifts a line. */
+#define CRASH_NOTE_MAX 65536
+void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n) {
+    int fd = open(file, 0x80301, 0644); /* O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC */
+    if (fd >= 0) write(fd, path, strlen(path)), write(fd, "\n", 1), close(fd);
+    if (++n[0] % every || n[1] >= CRASH_NOTE_MAX) return;
+    char m[64], line[600];
+    unsigned pages = 0;
+    fd = open("/proc/self/statm", 0x80000); /* O_RDONLY | O_CLOEXEC: "size resident ..." in pages */
+    int got = fd < 0 ? 0 : read(fd, m, sizeof m - 1);
+    if (fd >= 0) close(fd);
+    m[got > 0 ? got : 0] = 0;
+    const char *p = m;
+    while (*p && *p != ' ') ++p;
+    while (*p == ' ') ++p;
+    while (*p >= '0' && *p <= '9') pages = pages * 10 + (*p++ - '0');
+    /* O_WRONLY | O_CREAT | O_CLOEXEC, and O_APPEND, or O_TRUNC for this demo's first line */
+    fd = open(log, n[1] ? 0x80109 : 0x80301, 0644);
+    if (fd < 0) return;
+    int len = snprintf(line, sizeof line, "%u %u %.500s\n", n[0], pages * 4, path);
+    if (write(fd, line, len) == len) n[1] += len;
+    close(fd);
+}
+static unsigned scan_counts[2];
+
+/* toolsGetMusicInfo (the library scan and the player's tag reads): crash_note first, then an empty
+ * album artist falls back to flac_album_artist. */
 int ringnav_music_info(int a, char *info, const char *path) {
+    if (path) crash_note(path, "/tmp/q2-scan-file", "/tmp/q2-scan.log", 500, scan_counts);
     int r = stock_music_info_trampoline(a, info, path);
     if (path && !info[MUSIC_INFO_ALBUM_ARTIST])
         flac_album_artist(path, info + MUSIC_INFO_ALBUM_ARTIST);

@@ -208,16 +208,44 @@ int thumb(const char *src, const char *dst, int w, int h) {
     return ok || (!access(src, 4) && ff_thumb(src, dst, w, h)); /* none for a missing file */
 }
 
-/* Whether another album has a track in this one's folder. ponytail: a scan of every album per
- * job, albums squared; a per-folder count if large libraries lag. */
-static int folder_shared(unsigned key, const char *track) {
-    const char *slash = strrchr(track, '/');
-    for (unsigned i = 0; slash && i < deque_size(cf.albums); ++i) {
-        void *r = deque_at(cf.albums, i);
+/* Which albums share a folder with another album (job_t.shared), one byte per album; 0 without
+ * memory. Albums with a path are sorted by folder (its FNV hash, then the folder itself, then the
+ * album key), so each folder's albums sit together, and a folder holding two keys marks all of
+ * them. A scan of every album per album here was albums squared on the UI thread, the likely
+ * (inferred, not reproduced) cause of a big library's first open stalling past the watchdog. */
+typedef struct {
+    unsigned hash, len, key, idx;
+    const char *path;
+} folder_t;
+static int folder_before(const void *a, const void *b) {
+    const folder_t *x = a, *y = b;
+    int c = x->hash != y->hash ? (x->hash < y->hash ? -1 : 1)
+            : x->len != y->len ? (x->len < y->len ? -1 : 1)
+                               : memcmp(x->path, y->path, x->len);
+    return c ? c : (x->key > y->key) - (x->key < y->key);
+}
+/* noinline: test/patch.py calls it */
+__attribute__((noinline)) static unsigned char *folders_shared(void *albums, unsigned count) {
+    folder_t *v = calloc(count + 1, sizeof *v);
+    unsigned char *shared = calloc(count + 1, 1);
+    unsigned n = 0;
+    for (unsigned i = 0; v && shared && i < count; ++i) {
+        void *r = deque_at(albums, i);
         const char *p = P(r, REC_PATH), *s = p ? strrchr(p, '/') : 0;
-        if (s && s - p == slash - track && !memcmp(p, track, s - p) && album_key(r) != key) return 1;
+        if (s)
+            v[n++] = (folder_t){ hash_bytes(FNV_SEED, (const unsigned char *)p, s - p), s - p,
+                                 album_key(r), i, p };
     }
-    return 0;
+    if (n) qsort(v, n, sizeof *v, folder_before);
+    for (unsigned a = 0, b; a < n; a = b) {
+        for (b = a + 1; b < n && v[b].hash == v[a].hash && v[b].len == v[a].len &&
+                        !memcmp(v[b].path, v[a].path, v[a].len);
+             ++b);
+        for (unsigned k = a; v[a].key != v[b - 1].key && k < b; ++k) shared[v[k].idx] = 1;
+    }
+    if (!v) free(shared), shared = 0;
+    free(v);
+    return shared;
 }
 
 /* The cover and folder images beside track through fit (none when shared: a folder shared with
@@ -361,8 +389,10 @@ static void build_art(const job_t *j) {
     if (f) fclose(f);
 }
 
+static unsigned art_counts[2]; /* crash_note's, every 50th album */
 static void *worker(void *unused) {
     while (cf.done < cf.total && !cf.cancel) {
+        crash_note(cf.jobs[cf.done].track, "/tmp/q2-art-file", "/tmp/q2-art.log", 50, art_counts);
         build_art(&cf.jobs[cf.done]);
         ++cf.done;
     }
@@ -1960,10 +1990,34 @@ static int poll(const void *unused) {
     return 0;
 }
 
+/* The open's progress (docs/internals.md#watchdog): a line per phase, synced to /mnt/data and
+ * removed when load() ends, so one left at boot names the phase a stalled open reached. A few
+ * lines per open: flash, never per album. */
+#define CF_TRACE PEQ_ROOT "/mnt/data/q2-cf-trace"
+static void cf_trace(unsigned t0, const char *what, unsigned a, unsigned b) {
+    char line[96];
+    int n = b ? snprintf(line, sizeof line, "%s%u/%u %u ms\n", what, a, b, time_now_ms() - t0)
+              : snprintf(line, sizeof line, "%s%u %u ms\n", what, a, time_now_ms() - t0);
+    void *f = fopen(CF_TRACE, "a");
+    if (!f) return;
+    fwrite(line, 1, n, f);
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+}
+
 /* On open: the albums, then art for the ones with no cache file (PictureFlow's first-launch build;
  * later opens resume). The albums are queried again only after the library changed (or Refresh
  * Coverflow): stock's sort converts both names to pinyin on every comparison. */
+static void load_albums(unsigned t0);
 static void load(void) {
+    unsigned t0 = time_now_ms();
+    unlink(CF_TRACE);
+    cf_trace(t0, "start albums=", cf.stock ? deque_size(cf.stock) : 0, 0);
+    load_albums(t0);
+    unlink(CF_TRACE);
+}
+static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
     if (cf.resort && !cf.scoped) { /* Coverflow Sort changed: its order read again */
@@ -1986,9 +2040,16 @@ static void load(void) {
         n = (int)deque_size(cf.stock);
     else if (!library_scanning()) {
         cf.stock = staged(albums, 0, &n);
-        if (n > 0) cf.stock = music_albums(split(cf.stock));
+        cf_trace(t0, "staged albums=", n, 0);
+        if (n > 0) {
+            void *v = split(cf.stock);
+            cf_trace(t0, "split albums=", deque_size(v), 0);
+            cf.stock = music_albums(v);
+            cf_trace(t0, "music_albums albums=", deque_size(cf.stock), 0);
+        }
         cf.albums_gen = gen;
         drop_unknown();
+        cf_trace(t0, "drop_unknown albums=", deque_size(cf.stock), 0);
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
@@ -2001,6 +2062,7 @@ static void load(void) {
         if (!cf.sort_read) BLOB_IO(SORT_FILE, cf.sort, 0), cf.sort_read = 1;
         cf.sort = sort_next(0);
         cf.albums = sorted();
+        cf_trace(t0, "sorted albums=", deque_size(cf.albums), 0);
     }
     if (n <= 0) {
         drop_albums(); /* only a real list is kept */
@@ -2016,17 +2078,21 @@ static void load(void) {
     char path[512];
     if (!cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 0); /* outlives a reboot */
     cf.jobs = calloc(count, sizeof(job_t));
+    unsigned char *shared = folders_shared(cf.albums, count);
     for (unsigned i = 0; i < count; ++i) {
+        if (i && !(i % 1000)) cf_trace(t0, "jobs ", i, count);
         void *r = deque_at(cf.albums, i);
         unsigned key = album_key(r);
         if (key == cf.saved_album && !on_sort && !cf.scoped) cf.album = (int)i;
         job_t *j = cf.jobs ? &cf.jobs[cf.total] : 0;
         if (j && P(r, REC_PATH) && access(art_path(path, key, ""), 0) && (j->track = strdup(P(r, REC_PATH)))) {
             j->key = key;
-            j->shared = folder_shared(key, j->track);
+            j->shared = shared ? shared[i] : 1; /* no memory: no cover.jpg that may be another's */
             ++cf.total;
         }
     }
+    free(shared);
+    cf_trace(t0, "done jobs=", cf.total, count);
     if (on_sort) cf.album = (int)count; /* the Sort card, pressed again and again */
     mkdir(ART_DIR, 0755);
     cf.done = cf.cancel = 0;

@@ -11,6 +11,8 @@
   - Now Playing: under **Theme: Classic** turning the volume shows it on the progress bar between two speakers, in place of the times, as on an iPod classic. The "Volume 40" line under the bar, small and hard to read, is gone. Minimal and Modern still show it.
   - Library: under **Theme: Classic** the Playlists page no longer repeats "Playlists" beside its + and list buttons, where it didn't fit. The title bar names the page.
   - Library: under **Theme: Classic** the Library's first row is **Search**, which opens the search with the keyboard up, as pulling the list down does. In Home's Split list the pull was easy to miss.
+  - Cover Flow: a large library's first open no longer freezes until the Q2 restarts.
+  - System: q2-crash.log names the file a library update or Cover Flow's artwork build was reading and shows how the Q2's memory grew during it, and it now also covers the player ending on its own without an error.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.

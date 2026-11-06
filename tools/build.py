@@ -215,8 +215,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
                 echo "== demo did not end: a forced restart, or the battery ran out"
             }} > $c
             {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
+            # Coverflow's open never finished (coverflow.c cf_trace): the phase it reached
+            [ -f /mnt/data/q2-cf-trace ] && {{ echo "== cover flow"; cat /mnt/data/q2-cf-trace; }} >> $c
             rm -f $m
         }}
+        rm -f /mnt/data/q2-cf-trace
         [ -f $c ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
@@ -249,17 +252,23 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             rockbox
             kill $! 2>/dev/null
         done
-        case $s in 0|143) rm -f $m ;; *)
+        # 0 and 143 are a power-off's, but a clean end (ringnav_clean_end) removes $m first: still there, it wasn't one
+        case $s in 0|143) [ -f $m ] || s= ;; esac
+        if [ "$s" ]; then
             {{
                 echo "== date"; date
                 echo "== demo exit $s"
                 echo "== dmesg"; dmesg | tail -n 200
                 echo "== meminfo"; cat /proc/meminfo
                 echo "== ps"; ps
+                [ -f /tmp/q2-scan-file ] && {{ echo "== last scanned"; cat /tmp/q2-scan-file; }}
+                [ -f /tmp/q2-scan.log ] && {{ echo "== scan"; tail -n 60 /tmp/q2-scan.log; }}
+                [ -f /tmp/q2-art-file ] && {{ echo "== last art"; cat /tmp/q2-art-file; }}
+                [ -f /tmp/q2-art.log ] && {{ echo "== art"; tail -n 60 /tmp/q2-art.log; }}
                 [ -f /tmp/q2-demo.log ] && {{ echo "== q2-demo.log"; tail -n 200 /tmp/q2-demo.log; }}
             }} > $c.tmp 2>&1; mv $c.tmp $c
-            sync ;;
-        esac
+            sync
+        fi
     ) &
 '''.encode())
 # User boot logo (docs/boot.md#custom-boot-logo): demo copies the card's to /mnt/data, which
