@@ -84,7 +84,7 @@ SCHEMA = {k.path: k for k in (
     key('home.rows.label_end_split', 'home_label_end[0]', 'int', 375),
     key('home.rows.label_end_full', 'home_label_end[1]', 'int', 375),
     key('home.rows.font_px', 'font_px[ROLE_NP]', 'int', 64),  # the role's: Now Playing's title follows it
-    Key('home.pane.stops', 'home_pane', 'stops', 0, 0, (), 'live'),  # Split with no cover; (): the placeholder image
+    Key('home.pane.stops', 'home_pane', 'stops', 0, 0, (), 'live', True),  # Split with no cover, final; (): the placeholder image
     key('home.pane.shadow', 'pane_shadow', 'color'),
     key('home.pane.shadow_w', 'pane_shadow_w', 'int', 32),
     Key('home.pane.shadow_a', 'pane_shadow_a', 'alphas', 0, 0, (), 'live'),  # its alpha per column

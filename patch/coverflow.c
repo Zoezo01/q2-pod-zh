@@ -2729,13 +2729,13 @@ static int pane_caption(char *t, unsigned size) {
     return 0;
 }
 
-/* Split's panel in the theme's home_pane: the stops, its light, a shadow down its left edge, the
+/* Split's panel in the theme's home_pane, the half's: the stops, its light, a shadow down its left edge, the
  * row's image from the theme (tools/art.py) and its caption. Raw colours, but the caption's: ui_ink
  * flips black to the light half's white paper, and the dark half draws white as it is. */
 void home_pane_paint(void *canvas, int x, int y, int w, int h) {
     const theme_t *T = theme();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), bitmap[64]; /* bitmap_t */
-    paint_stops(canvas, x, y, w, h, &T->home_pane);
+    paint_stops(canvas, x, y, w, h, &T->home_pane[ipod_light()]);
     /* the light: a band per alpha, as eight bits can tell no finer */
     for (int a = T->pane_light_a, n = a; a > 0; --a) {
         int x0 = w * (n - a) / n;
@@ -2908,7 +2908,7 @@ void coverflow_home_art(void *top) {
         image_base_set_image(home.art, ""); /* home_paint draws it */
     } else {
         int shown = pans == 0 && image_show(home.art, src, size);
-        if (!shown && theme()->home_pane.n) {
+        if (!shown && theme()->home_pane[ipod_light()].n) {
             image_base_set_image(home.art, ""); /* home_pane_paint draws it, the whole panel */
             home.pane = 1;
         } else {

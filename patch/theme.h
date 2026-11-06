@@ -106,12 +106,13 @@ typedef struct {
         art_placeholder; /* stock's Folder tile drawn this size in its row's middle, 0: as stock */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
-    /* Split's panel where no cover shows (home_pane_paint), n 0: HOME_PLACEHOLDER. pane_shadow is
+    /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:
+     * HOME_PLACEHOLDER. pane_shadow is
      * 0xRRGGBB, the shadow down its left edge; _w in columns, _a each column's alpha. pane_light_a
      * the white over the stops at the left edge, falling to 0 at the right. A row's icon's top-left
      * (0: the pane stays the current cover or the note whatever the row), the note's and the
      * count's line box in the panel, the count's px. */
-    stops_t home_pane;
+    stops_t home_pane[2];
     unsigned pane_shadow;
     unsigned char pane_shadow_a[32];
     short pane_shadow_w, pane_light_a, pane_icon_x, pane_icon_y, pane_note_x, pane_note_y,

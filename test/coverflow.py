@@ -232,7 +232,7 @@ static theme_t shim_themes[2] = {
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
       .home_pane =
-          { 2, { 0, 100 }, { 0x63717b, 0x63717b } }, .pane_shadow = 0,
+          { { 2, { 0, 100 }, { 0x262b2f, 0x262b2f } }, { 2, { 0, 100 }, { 0x63717b, 0x63717b } } }, .pane_shadow = 0,
       .pane_shadow_w = 0,
       .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 0, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
       .pane_count_px = 27, .cf = CF_STYLE0 } };
@@ -1711,7 +1711,7 @@ int main(void) {
     *(unsigned *)(lcd + LCD_FILL_COLOR) = 0x12345678;
     fills = 0; stops_calls = 0; memset(note_drawn, 0, sizeof note_drawn); coverflow_home_clip(home_art, canvas, 0);
     assert(stops_calls == 1 && !memcmp(stops_rect, (int[]){ 0, 0, 375 - HOME_SPLIT_W, 294 }, 16) &&
-           stops_arg == &shim_themes[1].home_pane);
+           stops_arg == &shim_themes[1].home_pane[0]); /* the dark half's (light 0) */
     for (int i = 0, x = 0; i < 40; x += fill[i++].w) {
         assert(fill[i].x == x && fill[i].h == 294 && fill[i].color >> 24 == 40u - i && (fill[i].color & 0xffffff) == 0xffffff);
         assert(fill[i].w == 4 || fill[i].w == 5);
@@ -1728,6 +1728,7 @@ int main(void) {
     assert(fill_color == 0x12345678); /* the LCD's fill back */
     light = 1; fills = 0; coverflow_home_clip(home_art, canvas, 0);
     assert(!(centred_color & 0xffffff)); /* the light half: black, which ui_ink draws as the white paper */
+    assert(stops_arg == &shim_themes[1].home_pane[1]); /* and its own pane */
     light = 0;
     note_fail = 1; fills = 0; coverflow_home_clip(home_art, canvas, 0); note_fail = 0;
     assert(fills == 65 && !strcmp(centred_text, "12 Songs")); /* a missing image: the rest still draws */
@@ -1794,7 +1795,7 @@ def main():
     # Classic's are its theme.xml's, resolved; home_top 0 is unset in the shim.
     classic_light, tight = builtins()[1], re.sub(r'\s', '', shim[1])
     assert classic_light['home_top'] == 0 and f"home_label_end={{{classic_light['home_label_end[0]']},{classic_light['home_label_end[1]']}}}" in tight
-    assert 'home_pane=' + stops_c(classic_light['home_pane']).replace(' ', '') in tight, 'shim_themes drifted from Classic'
+    assert 'home_pane={' + ','.join(stops_c(p).replace(' ', '') for p in (classic_light['home_pane'], classic_light['light']['home_pane'])) + '}' in tight, 'shim_themes drifted from Classic'
     assert 'pane_shadow_a={' + ','.join(map(str, classic_light['pane_shadow_a'])) in tight, 'shim_themes drifted from Classic'
     for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_light_a', 'pane_note_x', 'pane_note_y', 'pane_count_y', 'pane_count_w', 'pane_count_px'):
         assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == classic_light[field], f'shim_themes drifted from Classic: {field}'

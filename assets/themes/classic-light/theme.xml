@@ -65,14 +65,14 @@
     <element name="state" opacity="255"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
-       across it, no shadow down its left edge), the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,
+       across it, no shadow down its left edge), slate on paper and a charcoal slate on black, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,
        centred on the pane's first count_w columns, its 24 px line box at count_y. The pane follows the highlighted row:
        a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is. Its colour is stated at 0 and 100,
        as a stops list must end at 100 -->
   <view name="home">
     <element name="rows" top="0" text_x="20" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
     <element name="chevron" visible="1" x="168"/>
-    <element name="pane" stops="#63717b 0, #63717b 100" light_a="0" shadow="#000000" shadow_w="0"
+    <element name="pane" light.stops="#63717b 0, #63717b 100" dark.stops="#262b2f 0, #262b2f 100" light_a="0" shadow="#000000" shadow_w="0"
              shadow_a="116 100 93 86 79 73 68 62 56 50 44 39 34 28 24 19 16 13 10 8 6 4 3 2 1"
              icon_x="43" icon_y="67" note_x="40" note_y="57" count_y="185" count_w="182" count_px="27"/>
   </view>
