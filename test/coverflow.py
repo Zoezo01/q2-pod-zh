@@ -232,7 +232,7 @@ static theme_t shim_themes[2] = {
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
       .home_pane =
-          { { 2, { 0, 100 }, { 0x262b2f, 0x262b2f } }, { 2, { 0, 100 }, { 0x63717b, 0x63717b } } }, .pane_shadow = 0,
+          { { 2, { 0, 100 }, { 0x1c1c1c, 0x1c1c1c } }, { 2, { 0, 100 }, { 0x63717b, 0x63717b } } }, .pane_shadow = 0,
       .pane_shadow_w = 0,
       .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 0, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
       .pane_count_px = 27, .cf = CF_STYLE0 } };
@@ -1782,7 +1782,7 @@ def main():
     a = ap.parse_args()
     # shim_themes stands in for the generated themes[]: each theme's .home_* fields must match the
     # offsets.inc expressions tools/theme.py ROLE_MACROS gives it (0, unset in the shim, left out).
-    from theme import ROLE_MACROS, builtins, stops_c
+    from theme import ROLE_MACROS, builtins, stops_c, half, accent_default
     def home_fields(text):
         return [re.findall(r'\.(home_\w+) = (\{[^}]*\}|[^,{}\n]+)', t.split('.n_opts')[0]) for t in text]
     nav = [[(k, v) for k, v in (('home_top', m['home_top']), ('home_full_row', m['home_full_row']),
@@ -1795,7 +1795,9 @@ def main():
     # Classic's are its theme.xml's, resolved; home_top 0 is unset in the shim.
     classic_light, tight = builtins()[1], re.sub(r'\s', '', shim[1])
     assert classic_light['home_top'] == 0 and f"home_label_end={{{classic_light['home_label_end[0]']},{classic_light['home_label_end[1]']}}}" in tight
-    assert 'home_pane={' + ','.join(stops_c(p).replace(' ', '') for p in (classic_light['home_pane'], classic_light['light']['home_pane'])) + '}' in tight, 'shim_themes drifted from Classic'
+    d = classic_light['schemes'][max(accent_default(classic_light), 0)]  # the halves as emit() writes them
+    panes = [half(classic_light, light, d['paper'], d['ink'])['home_pane'] for light in (False, True)]
+    assert 'home_pane={' + ','.join(stops_c(p).replace(' ', '') for p in panes) + '}' in tight, 'shim_themes drifted from Classic'
     assert 'pane_shadow_a={' + ','.join(map(str, classic_light['pane_shadow_a'])) in tight, 'shim_themes drifted from Classic'
     for field in ('home_text_x', 'home_full_row', 'pane_shadow', 'pane_shadow_w', 'pane_light_a', 'pane_note_x', 'pane_note_y', 'pane_count_y', 'pane_count_w', 'pane_count_px'):
         assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == classic_light[field], f'shim_themes drifted from Classic: {field}'
