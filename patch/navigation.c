@@ -5803,11 +5803,11 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                                                      : flip_v(p[o[c]], fp, fi));
         bitmap_unlock_buffer(bitmap);
     }
-    /* A theme's art placeholder size (Classic's 38): stock's grey tiles, as tall as the row (a
-     * folder, a song, an album, an artist, a genre without art), drawn at that size in its middle,
-     * so they have room above and below; a real cover (a file path) keeps the row's size. */
-    static const char *const tiles[] = { "list_folder", "list_song", "list_album", "list_artist",
-                                         "list_genre" };
+    /* A theme's art placeholder size (Classic's 38): stock's grey tiles, as tall as the row (Folder
+     * view's folders and songs; list_song is Album info's row image too), drawn at that size in
+     * its middle, so they have room above and below; a real cover (a file path) keeps the row's
+     * size. */
+    static const char *const tiles[] = { "list_folder", "list_song" };
     for (unsigned k = 0;
          T->art_placeholder && s && !*s && format < 4 && k < sizeof tiles / sizeof *tiles; ++k)
         if (!tk_strcmp(name, tiles[k])) shrink_centred(bitmap, T->art_placeholder, at[format][3]);

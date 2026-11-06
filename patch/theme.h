@@ -38,7 +38,7 @@ typedef struct {
     unsigned sel_edge; /* its last pixel row, 0 none */
     unsigned sel_tall_edge, sel_tall_line; /* a row taller than the set's pitch: its last two rows,
                                               0 sel_edge alone */
-    unsigned sel_tall_top;                 /* ... and its second, 0 the stops */
+    unsigned sel_tall_top;                 /* ... and its second, 0 in both halves the stops */
     unsigned sel_text;                     /* text on it, 0: the row's own */
     stops_t bar;                           /* BAR_GLOSS: the status bar's rows above its line */
     unsigned bar_line;                     /* BAR_GLOSS: the bar's last pixel row */
@@ -102,8 +102,8 @@ typedef struct {
     /* the theme's classic_light_chevron's box on screen: a full-width list's, Split's; 0: stock's
      * list_into
      */
-    short chevron_x, home_chevron_x,
-        art_placeholder; /* stock's Folder tile drawn this size in its row's middle, 0: as stock */
+    short chevron_x, home_chevron_x, art_placeholder; /* stock's grey tiles (list_folder, list_song)
+                                                         this size, centred, 0: as stock */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:

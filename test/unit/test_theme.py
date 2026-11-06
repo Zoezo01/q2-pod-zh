@@ -730,11 +730,11 @@ def test_classic_blue_own_scheme():
     assert (blue['label'], blue['base'], blue['sel'], blue['light']['sel_top'], blue['sel_edge']) == ('Classic Blue', 4, theme.GLOSS, theme.GLOSS_TOP, theme.GLOSS_EDGE)
     # the light rim is the light half's; on black the dark half's top row is the band's first stop, no rim
     # (as emitted: half() fills a dark 0 from the light half), and a tall row's second row too; it ends on its dark edge
-    for s in classic_light['schemes']:
+    for i, s in enumerate(classic_light['schemes']):
         if s['sel']:
             dark, light = theme.scheme_half(s, False), theme.scheme_half(s, True)
-            assert dark['sel_top'] == dark['sel_tall_top'] == s['sel'][0][1] and dark['sel_tall_line'] == dark['sel_tall_edge'], s['label']
-            assert light['sel_tall_top'] != s['sel'][0][1] and light['sel_tall_line'] != light['sel_tall_edge'], s['label']
+            assert dark['sel_top'] == dark['sel_tall_top'] == s['sel'][0][1] and dark['sel_tall_line'] == dark['sel_tall_edge'], i
+            assert light['sel_tall_top'] != s['sel'][0][1] and light['sel_tall_line'] != light['sel_tall_edge'], i
     assert classic_light['accents'] == 0x37f and classic_light['opts'][1] == opt('SETTING_ACCENT', default=9, preset=9, values=0x37f)
     # each offered band is the same in both halves (Graphite's grey gloss is designed, not flipped)
     assert all(theme.scheme_half(s, True)['sel'] == theme.scheme_half(s, False)['sel'] for s in classic_light['schemes'])

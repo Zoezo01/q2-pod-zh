@@ -62,7 +62,7 @@ SCHEMA = {k.path: k for k in (
     key('list.art.x', 'art_x', 'int', 375),  # a row with art, on screen: the cover, 0: stock's layout
     key('list.art.text_x', 'art_text_x', 'int', 375),  # ... its text's first and last columns
     key('list.art.text_end', 'art_text_end', 'int', 375),
-    key('list.art.placeholder', 'art_placeholder', 'int', 51),  # stock's grey tiles (list_folder, list_song, ...) this size, centred in their row; 0: stock's
+    key('list.art.placeholder', 'art_placeholder', 'int', 51),  # stock's grey tiles (list_folder, list_song) this size, centred in their row; 0: stock's
     key('list.row.text_end', 'row_text_end', 'int', 375),  # a two-line row without art (Songs'): its text's last column on screen
     Key('list.separator.stops', 'sep', 'stops', 0, 0, (), 'live', True),  # ... its last rows, one stop a row, final
     key('list.row.tall_font', 'font[ROLE_TALL]', 'enum'),  # a two-line row's title
@@ -134,7 +134,7 @@ SCHEMA = {k.path: k for k in (
     key('scheme.sel.edge', 'sel_edge', 'color', final=True),
     key('scheme.sel.tall_edge', 'sel_tall_edge', 'color', final=True),  # a row taller than the set's pitch ends on these two rows, 0: its edge
     key('scheme.sel.tall_line', 'sel_tall_line', 'color', final=True),
-    key('scheme.sel.tall_top', 'sel_tall_top', 'color', final=True),  # ... and has this second row, 0: the stops
+    key('scheme.sel.tall_top', 'sel_tall_top', 'color', final=True),  # ... and has this second row, 0 in both halves: the stops (a dark 0 takes the light half's: half())
     key('scheme.sel.text', 'sel_text', 'color', final=True),
     Key('scheme.bar.stops', 'bar', 'stops', 0, 0, (), 'live', True),
     key('scheme.bar.line', 'bar_line', 'color', final=True),
