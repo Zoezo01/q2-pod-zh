@@ -5327,7 +5327,7 @@ for only_focus,want,stepped in ((1,7,False),(0,None,True)):
 # The rows this polish renamed or added fit stock's ellipsis: the settings text's 275 px less its 4 px of margins.
 from fontTools.ttLib import TTFont
 font=TTFont(B/'default.ttf'); advance=lambda s: sum(font['hmtx'][font.getBestCmap()[ord(c)]][0] for c in s)*24/font['head'].unitsPerEm
-assert all(advance(s)<=271 for s in ('Artist View: Cover Flow','Refresh Cover Flow','Cover Flow Sort: Album','Time in Title')); passed()
+assert all(advance(s)<=271 for s in ('表演者专辑：Cover Flow','刷新 Cover Flow','Cover Flow 排序：专辑','标题栏显示时间')); passed()
 # The selected row's long title scrolls after MARQUEE_HOLD_MS for MARQUEE_PASSES passes, a hold
 # after each; it stops as the selection moves or the screen darkens; a title that fits or stock
 # scrolls by itself is left alone; in a table's pool, a new row in the same widget counts as a move.
@@ -6137,7 +6137,7 @@ m.advance(O['VOL_POLL_MS']); assert not did('widget_invalidate_force') and poll 
 m.nodes[sv]['value']=41; m.advance(O['VOL_POLL_MS'])  # changed: the whole dialog repaints
 assert [c[0] for c in did('widget_invalidate_force')]==[dlg]; passed()
 m.nodes[sv]['value']=100; paint(dlg)
-assert m.rounded[-1]['rect'][2]==327 and m.letters[0]['text']=='Volume 100' and len(m.timers)==1; passed()
+assert m.rounded[-1]['rect'][2]==327 and m.letters[0]['text']=='音量 100' and len(m.timers)==1; passed()
 
 m.nodes[m.wm]['children']=[win]; m.top=win; m.advance(O['VOL_POLL_MS']); assert not m.timers; passed()  # closed: it stops
 # Over any other window (Quick Settings included) a rounded panel in the fast-scroll letter's
@@ -8720,7 +8720,7 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and not did(m,'image_ma
 assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'IPOD','KEEPLIT')]
 m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 # Time in Title (IPOD TIMETITLE): a switch, on (the clock) unless chosen, that only saves; bar_title reads it.
-title_label=m.nodes[m.nodes[time_title]['children'][0]]['children'][1]; assert m.nodes[title_label]['text']=='Time in Title'
+title_label=m.nodes[m.nodes[time_title]['children'][0]]['children'][1]; assert m.nodes[title_label]['text']=='标题栏显示时间'
 f,ctx=m.handler(m.nodes[time_title]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and not did(m,'image_manager_unload_all')
 assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'IPOD','TIMETITLE')]
@@ -8852,7 +8852,7 @@ def bt_titled(win):
     return btm.nodes[bttl].get('text')
 btnav=btm.node('view','view_navbar',[btm.node('image','img_return'),btm.node('hscroll_label',text='Songs')],visible=0)
 btcap=btm.node('hscroll_label',text='Shuffle'); btm.word(btcap+O['W_H'],48); btwins={}
-for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'Now Playing'),('coverflow_page',[],'Cover Flow'),
+for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'正在播放'),('coverflow_page',[],'Cover Flow'),
                                 ('equalizer_page',[],'EQ'),
                                 ('allmusic_page',[btnav],'Songs'),('shuffle_page',[btcap],'Shuffle')):
     btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
@@ -9037,11 +9037,11 @@ def title_value(r):  # (title, value) of a value row, or None
     v=[k['text'] for k in kids if k['name']=='_setting_value']
     return (kids[1]['text'],v[0]) if v else None
 assert [title_value(r) for r in dm.nodes[dv]['children']]==[('Theme','Classic'),('Light Mode','On'),('Accent','Classic Blue'),('Home','Split'),
-                                                           ('Shortcut','Rockbox'),('Battery','Icon'),('Time in Title','On'),('Library on Home','On'),('Row Preview','On'),('Row Art','On')]
+                                                           ('Shortcut','Rockbox'),('Battery','Icon'),('标题栏显示时间','On'),('Library on Home','On'),('Row Preview','On'),('Row Art','On')]
 assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Controls' switches read On/Off as values under Classic.
 dm,dv=classic_light_display(sub=3)
-assert ('Single Press Scrub','Off') in [title_value(r) for r in dm.nodes[dv]['children']]; passed()
+assert ('单按拖动','关闭') in [title_value(r) for r in dm.nodes[dv]['children']]; passed()
 # Radio rows: select draws the ink tick (13x8, an original drawing) centred in its image;
 # unselect draws nothing; stock's ring images are empty under Classic.
 rm=classic_light_on(Machine()); rimg=rm.node('image','img_sel',image='select'); rm.word(rimg+O['W_W'],50); rm.word(rimg+O['W_H'],28)
@@ -9157,16 +9157,16 @@ for value,text in ((1,'On'),(2,'自动'),(0,'Off')):
 passed()
 # Minimal's accents (MINIMAL_ACCENT): Ivory, then Classic's; a coloured one is the card's fill.
 for value,name in ((0,'Graphite'),(1,'Crimson'),(2,'Tidal'),(3,'Champagne'),(4,'Cobalt'),(5,'Tangerine'),(6,'Plum'),(8,'Green'),(7,'Ivory')):
-    writes=click(0); assert [(w[0],m.text(w[2])) for w in writes]==[(value,'MINIMAL_ACCENT')] and texts()[0]=='Accent: '+name
+    writes=click(0); assert [(w[0],m.text(w[2])) for w in writes]==[(value,'MINIMAL_ACCENT')] and texts()[0]=='强调色：'+name
     m.paint(view); assert not m.bands and m.rounded[0]['color']==color_t(0xeeeeec if value==7 else ACCENTS[value][0])
 passed()
 bar=m.node('window','system_bar'); m.word(syms['system_bar'],bar)
 for value,name in ((1,'Percent'),(2,'Icon + Percent'),(3,'电池显示：图标内百分比'),(0,'Icon')):
-    writes=click(2); assert [(w[0],m.text(w[2])) for w in writes]==[(value,'BATTERY')] and texts()[2]=='Battery: '+name
+    writes=click(2); assert [(w[0],m.text(w[2])) for w in writes]==[(value,'BATTERY')] and texts()[2]=='电池显示：'+name
     assert ('widget_invalidate_force',bar) in [c[:2] for c in m.calls] and not [c for c in m.calls if c[0]=='image_manager_unload_all']
 passed()
-m,view,rows=display({'ACCENT':'2','HOME':'1','BATTERY':'2','SHORTCUT':'1'}); got=[m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][1]]['text'] for r in rows]; assert got==['Accent: Ivory','Home: Full','Battery: Icon + Percent','Theme: Minimal']; passed()
-m,view,rows=display({'BATTERY':'3'}); assert m.nodes[m.nodes[m.nodes[rows[2]]['children'][0]]['children'][1]]['text']=='Battery: Percent Inside'; passed()
+m,view,rows=display({'ACCENT':'2','HOME':'1','BATTERY':'2','SHORTCUT':'1'}); got=[m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][1]]['text'] for r in rows]; assert got==['强调色：象牙白','主菜单：全屏','电池显示：图标与百分比','主题：简约']; passed()
+m,view,rows=display({'BATTERY':'3'}); assert m.nodes[m.nodes[m.nodes[rows[2]]['children'][0]]['children'][1]]['text']=='电池显示：图标内百分比'; passed()
 # Home's Rockbox row (docs/boot.md#rockbox-from-home): its click saves the queue as power-off does,
 # stops the player, leaves S90play's flag and kills demo; without Rockbox on the card it says so.
 class RockboxMachine(Machine):
@@ -9419,9 +9419,9 @@ accent_row=m.nodes[view]['children'][2]; f,ctx=m.handler(m.nodes[accent_row]['ch
 m.paint(view); assert CL_SEL(3) in [b[4] for b in m.bands] and CL_SEL(2) not in [b[4] for b in m.bands]; passed()
 # Appearance is Theme, then the theme's options in order: Classic opened fresh with a stored Ivory shows Classic Blue; THEME=3 is Minimal.
 m,view,rows=display({'THEME':'1','CLASSIC_LIGHT_ACCENT':'7'})
-assert [row_text(r) for r in m.nodes[view]['children']][:3]==['Theme: Classic','Light Mode: Off','Accent: Classic Blue']
+assert [row_text(r) for r in m.nodes[view]['children']][:3]==['主题：经典','浅色模式：关','强调色：经典蓝']
 m,view,rows=display({'THEME':'3'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing']
+assert [row_text(r) for r in m.nodes[view]['children']]==['主题：简约','浅色模式：关','强调色：象牙白','圆角','主菜单：分栏','快捷入口：Rockbox','电池显示：图标','标题栏显示时间','居中正在播放']
 passed()
 # Classic's stops painter: a 52 px selected row is the #94c7de top line, Classic Blue's six stops over the
 # 50 rows below it and the #004184 edge on its last, full width and square, its colours final
@@ -9535,9 +9535,9 @@ def tt_bar(timetitle):
         return ttm.nodes[ttt].get('text',''),ttm.nodes[ttc].get('text')
     return ttm,ttc,show
 ttm,ttc,show=tt_bar('1')
-assert show(ttm.node('window','playing_page'))==('Now Playing','6:14 PM') and show(ttm.node('window','bare_page'))==('','6:14 PM'); passed()
+assert show(ttm.node('window','playing_page'))==('正在播放','6:14 PM') and show(ttm.node('window','bare_page'))==('','6:14 PM'); passed()
 ttm,ttc,show=tt_bar('0'); clock=show(ttm.node('window','bare_page'))
-assert clock==('','6:14 PM') and show(ttm.node('window','playing_page'))==('Now Playing','')
+assert clock==('','6:14 PM') and show(ttm.node('window','playing_page'))==('正在播放','')
 ttm.clock=(18,15); ttm.advance(61000); assert ttm.nodes[ttc]['text']==''  # the clock's minute stays out of it
 assert show(ttm.node('window','bare_page'))==('','6:15 PM')
 assert not any(k.endswith('font_name') for k in ttm.nodes[ttc]); passed()
@@ -9659,17 +9659,17 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
 passed()
 # THEME=1: its Appearance is Theme and Classic's own options.
 m,view,rows=display({'THEME':'1'},setup=classic_light)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Library on Home: On','Row Preview: On','Row Art: On']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['主题：经典','浅色模式：开','强调色：经典蓝','主菜单：分栏','快捷入口：Rockbox','电池显示：图标','标题栏显示时间：打开','主菜单显示资料库：打开','行预览：打开','行封面：打开']; passed()
 # Classic's Accent is Classic Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
 # Classic does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
 # then Classic Blue, each band its own gloss: Classic Blue's stops, the others derived from their tones.
 for stored,name in ((None,'Classic Blue'),('7','Classic Blue'),('12','Classic Blue'),('4','Cobalt')):
     m,view,rows=display({} if stored is None else {'CLASSIC_LIGHT_ACCENT':stored},setup=classic_light)
-    assert row_text(rows[0])=='Accent: '+name,stored
+    assert row_text(rows[0])=='强调色：'+name,stored
 m,view,rows=display({},setup=classic_light); f,ctx=m.handler(m.nodes[rows[0]]['children'][0],O['EVT_CLICK'])
 for value,name in ((0,'Graphite'),(1,'Crimson'),(2,'Tidal'),(3,'Champagne'),(4,'Cobalt'),(5,'Tangerine'),(6,'Plum'),(8,'Green'),(9,'Classic Blue')):
     m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
-    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'CLASSIC_LIGHT_ACCENT')] and row_text(rows[0])=='Accent: '+name
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'CLASSIC_LIGHT_ACCENT')] and row_text(rows[0])=='强调色：'+name
     m.paint(view); top=NB_TOP if value==9 else int(turn(GLOSS_TOP,ACCENTS[value][0])[1:],16)  # the first row: the top line
     assert m.bands[0][4]==color_t(top),(name,hex(m.bands[0][4]))
 passed()
@@ -9678,7 +9678,7 @@ passed()
 # key is read 15th, after CLASSIC_LIGHT_ACCENT, on unless chosen; Centre writes the next value under the theme's
 # key; the stored value picks the set the first system_bar boots: Off classic-light-text, On (or unreadable) classic-light.
 m,view,rows=display({},setup=classic_light); art=m.nodes[view]['children'][9]
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Library on Home: On','Row Preview: On','Row Art: On']
+assert [row_text(r) for r in m.nodes[view]['children']]==['主题：经典','浅色模式：开','强调色：经典蓝','主菜单：分栏','快捷入口：Rockbox','电池显示：图标','标题栏显示时间：打开','主菜单显示资料库：打开','行预览：打开','行封面：打开']
 assert m.config_reads[13:17]==[('/mnt/data/config.ini','IPOD',k,v) for k,v in (('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]
 def art_boot(config):  # the names a fresh Classic's first system_bar loaded, with config stored
     k=Machine(); k.config.update(config); return classic_light_boot(k)
@@ -9689,10 +9689,10 @@ passed()
 # key as usual. A stored Percent or Icon + Percent reads as Percent Inside and stays stored; a key that is not
 # stored reads as Icon. Minimal and Classic on the same build keep all four, whatever Classic's values say.
 m,view,_=display({},setup=classic_light); row=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
-assert row_text(row)=='Battery: Icon'
+assert row_text(row)=='电池显示：图标'
 for value,name in ((3,'Percent Inside'),(0,'Icon'),(3,'Percent Inside')):
     m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
-    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'BATTERY')] and row_text(row)=='Battery: '+name
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(value,'BATTERY')] and row_text(row)=='电池显示：'+name
 passed()
 # Percent Inside fits its value box at the row's 27 px, inside the 2 px hscroll_label keeps each side by default (stock
 # draws an ellipsis past that). The box ends at screen x 356 and the title stops 8
@@ -9707,16 +9707,16 @@ assert row_w('Percent Inside')<=vw-4 and bx+vx+vw==356
 assert m.get(title+O['W_X'])+m.get(title+O['W_W'])==vx-8; passed()
 for stored in ('1','2'):
     m,view,_=display({'BATTERY':stored},setup=classic_light); row=m.nodes[view]['children'][5]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK'])
-    assert row_text(row)=='Battery: Percent Inside' and not [c for c in m.calls if c[0]=='write_int_config'] and m.config['BATTERY']==stored
+    assert row_text(row)=='电池显示：图标内百分比' and not [c for c in m.calls if c[0]=='write_int_config'] and m.config['BATTERY']==stored
     assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==3
     m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # from what it reads as: on to Icon
-    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'BATTERY')] and row_text(row)=='Battery: Icon'
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0,'BATTERY')] and row_text(row)=='电池显示：图标'
 passed()
 for t in ('0',):  # Minimal: every value is its own (Classic's Percent and Icon + Percent read as Percent Inside, above)
     def on_t(k,t=t): classic_light(k); k.config['THEME']=t
     for stored,name in (('0','Icon'),('1','Percent'),('2','Icon + Percent'),('3','Percent Inside')):
         m,view,rows=display({'BATTERY':stored},setup=on_t)
-        assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==int(stored) and row_text(rows[2])=='Battery: '+name,(t,stored)
+        assert m.call(address=payload_syms['ipod_battery'],args=(0,0,0,0),gap=0)==int(stored) and row_text(rows[2])=='电池显示：'+name,(t,stored)
 passed()
 # Theme opens the picker (Display's page again, its rows the themes) and writes nothing; the current
 # theme's row holds select.
@@ -9742,7 +9742,7 @@ for answer,light,want in ((0,'0',[]),(10,'0',[(1,'THEME'),(1,'LIGHT'),(9,'CLASSI
                           (10,'2',[(1,'THEME'),(9,'CLASSIC_LIGHT_ACCENT'),(1,'TIMETITLE'),(1,'HOMELIB'),(1,'ROWART')])):
     m,view,_=display({'CLASSIC_LIGHT_ACCENT':'4','ROWART':'0','HOMELIB':'0','TIMETITLE':'0','LIGHT':light,'BATTERY':'3'},sub=4,cls=RestartMachine)
     m.answer=answer; m.prompts=[]; m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
-    assert m.call(address=payload_syms['theme_pick'],args=(1,0,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
+    assert m.call(address=payload_syms['theme_pick'],args=(1,0,0,0),gap=0)==0 and m.prompts==['重启以应用？']
     writes=[(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
     assert writes==want,writes
     assert [c[0] for c in m.calls if c[0] in ('write_int_config','stock_reboot')]==['write_int_config']*len(want)+['stock_reboot'][:answer==10]
@@ -9754,13 +9754,13 @@ m,view,_=display({},sub=4,cls=RestartMachine,setup=classic_light); m.u.mem_prote
 m.handlers[int(manifest['patch_symbols']['stock_ui_load_trampoline'],16)]='stock_ui_load'
 m.call(address=load,args=(m.string('system_bar'),0,0,0),gap=0); m.calls=[]
 m.call(address=payload_syms['theme_pick'],args=(0,0,0,0),gap=0)
-assert m.prompts==['Restart to apply?'] and not [c for c in m.calls if c[0]=='write_int_config']
+assert m.prompts==['重启以应用？'] and not [c for c in m.calls if c[0]=='write_int_config']
 for answer,want in ((0,[]),(10,[(0,'ROWART')])):
     m,view,_=display({},cls=RestartMachine,setup=classic_light); m.answer=answer; m.prompts=[]
     m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'
     art=m.nodes[view]['children'][9]; f,ctx=m.handler(m.nodes[art]['children'][0],O['EVT_CLICK']); m.calls=[]
-    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
-    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='Row Art: On'
+    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['重启以应用？']
+    assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='行封面：打开'
     assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot'][:answer==10]
 # Library on Home and Row Preview are plain choices (no set): on the booted set a click saves Off at once and asks nothing.
 for i,key,label in ((7,'HOMELIB','Library on Home'),(8,'ROWPREVIEW','Row Preview')):
@@ -10433,7 +10433,7 @@ def pane_cases():
     print(f'Classic pane on Settings: {cost[0]} instructions'); passed()
     m=pane_home(); m.db.execute("delete from songtable where id>1"); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
     for _ in range(2): m.call()
-    assert pane_shows(m)[1]==['1 Album']; m.call(O['KEY_RETURN']); m.call(); assert pane_shows(m)[1]==['1 Song']; passed()
+    assert pane_shows(m)[1]==['1 张专辑']; m.call(O['KEY_RETURN']); m.call(); assert pane_shows(m)[1]==['1 Song']; passed()
     # Rockbox as the Shortcut's row: the game icon alone, a game count wouldn't match what it opens. A scan running: its counts are
     # unknown, and a row shows its icon alone.
     m=pane_home(SHORTCUT='0'); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
@@ -12740,7 +12740,7 @@ def streaming():
 assert streaming()==[1,'Spotify','Deezer','Soulseek','Tidal 下载','网络电台','AirPlay','流媒体设置']
 m.click(rows['流媒体设置']); m.page=m.top; assert m.nodes[m.page]['name']=='streamconf_page'
 SVC=['TIDAL','Spotify','Deezer','Soulseek','Tidal 下载','网络电台','AirPlay']
-assert m.labels()==['流媒体设置','Tidal Cache: 2 GB','Spotify Cache: 2 GB','清除 Spotify 数据','停止流媒体服务',*SVC]
+assert m.labels()==['流媒体设置','Tidal 缓存：2 GB','Spotify 缓存：2 GB','清除 Spotify 数据','停止流媒体服务',*SVC]
 cap=m.rows()[4]; assert not m.nodes[cap]['children'] and not m.nodes[cap].get('handlers')
 def ticks(): return [switch(m,i)=='switch_on' for i in range(5,len(m.rows()))]  # Shanling's switches
 assert ticks()==[True]*7
@@ -12766,7 +12766,7 @@ SLABELS=['Soulseek','Phone Remote','192.168.1.23:8080','搜索','Online as alice
          'Nothing is shared','Stop Soulseek','']
 # Gone from the card since Streaming listed it: the page says so and nothing starts.
 m=SlskMachine(); m.gone(); m.open()
-assert m.labels()==["Soulseek isn't on the card",'Install it again in System settings → App Store'] and not m.systems and not m.threads
+assert m.labels()==["Soulseek isn't on the card",'请前往系统设置 → 应用商店重新安装'] and not m.systems and not m.threads
 m.row(0); assert not m.threads; m.poll(); assert not m.systems; m.close(); passed()
 # With it: started, the menu asked; no socket yet is the add-on starting, asked again; its rows.
 m=SlskMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==['加载中…']
@@ -13000,7 +13000,7 @@ FMENU=[('remote','','Open on Your Phone','http://192.168.1.23:8000 · PIN 548 00
 FLABELS=['File Browser','Open on Your Phone','http://192.168.1.23:8000 · PIN 548 001','Card: 12.3 GB free','of 59.4 GB','Read Only: Off',
          'The phone can upload, rename, move and delete','Turn Off File Browser','It also turns off after 15 minutes unused']
 m=FileBrowserMachine(); m.gone(); m.open()
-assert m.labels()==["File Browser isn't on the card",'Install it again in System settings → App Store'] and not m.systems; m.close(); passed()
+assert m.labels()==["File Browser isn't on the card",'请前往系统设置 → 应用商店重新安装'] and not m.systems; m.close(); passed()
 m=FileBrowserMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.filebrowser/run'] and m.labels()==['Loading…']
 m.worker(); assert m.labels()==['Starting File Browser…']; m.advance(500)
 m.files[FSTATE]=bytearray(f"addr=192.168.1.23:8000\nhold=0\nnote=Manage the card's files there\npin=548001\nqr={hexed}\nqrsize=21\nversion=q2f-v1.0\n".encode())
@@ -13119,7 +13119,7 @@ DZBIN,DZBROWSE,DZSTATE,DZPID='/mnt/mmc/.deezer/q2-deezer','/tmp/q2-deezer.browse
 class DeezerMachine(AppMachine):
     app,manifest='deezer','name=Deezer\nsearch=Search Deezer\nqr=0\n'
 m=DeezerMachine(); m.gone(); m.open()
-assert m.labels()==["Deezer isn't on the card",'Install it again in System settings → App Store'] and not m.systems; m.close(); passed()
+assert m.labels()==["Deezer isn't on the card",'请前往系统设置 → 应用商店重新安装'] and not m.systems; m.close(); passed()
 # Started, the menu asked; signed out, its sign-in row opens the code over its status file (and only
 # then: Deezer's row doesn't open it by itself).
 m=DeezerMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.deezer/run'] and m.labels()==['加载中…']
@@ -13447,7 +13447,7 @@ m.on_open=scan_starts
 # while one plays.
 m.word(0xa3beac,2); n=len(m.opened); m.files[LIB]=bytearray(f'8\nimport {EXP}/Navidrome - Mix.m3u\n'.encode()); m.poll()
 assert len(m.imports)==1; m.word(0xa3beac,3); m.poll()
-assert len(m.opened)==n and len(m.imports)==2 and m.files[DONE]==b'8 ok\n' and m.toasts[-1][3]=='Playlists updated',m.toasts[-1:]; passed()
+assert len(m.opened)==n and len(m.imports)==2 and m.files[DONE]==b'8 ok\n' and m.toasts[-1][3]=='歌单已更新',m.toasts[-1:]; passed()
 # Errors, each at once and nothing run: a line it doesn't know, a file outside the folder or not an .m3u, one
 # not there, no card.
 for seq,body,why in (('9','rescan\n','Unknown request: rescan'),('10','import /mnt/mmc/Music/x.m3u\n','Not a playlist in /mnt/mmc/_explaylist_data: /mnt/mmc/Music/x.m3u'),
@@ -13547,7 +13547,7 @@ assert m.files[DONE]==b'302 ok\n' and imported()==['Mine.m3u'],m.files[DONE]; pa
 # add whose name a playlist has left alone and reported; the toast as for any import.
 playlists('Mine','Mix'); n,k=len(m.opened),len(m.imports)
 m.files[LIB]=bytearray(f'303\nscan\nimport {EXP}/Mix.m3u\nadd {EXP}/New.m3u\nadd {EXP}/Mine.m3u\n'.encode()); m.poll(); m.word(O['SCAN_DONE'],1); m.poll(); m.poll()
-assert len(m.opened)==n+1 and len(m.imports)==k+1 and imported()==['New.m3u','Mix.m3u'] and m.toasts[-1][3]=='Playlists updated'
+assert len(m.opened)==n+1 and len(m.imports)==k+1 and imported()==['New.m3u','Mix.m3u'] and m.toasts[-1][3]=='歌单已更新'
 assert m.files[DONE]==f'303 ok\nexists {EXP}/Mine.m3u\n'.encode(),m.files[DONE]; passed()
 # The exists lines follow an error too: a file the import couldn't create.
 playlists('Mine'); m.uncreated={'New'}; m.files[LIB]=bytearray(f'304\nadd {EXP}/New.m3u\nadd {EXP}/Mine.m3u\n'.encode()); m.poll()
@@ -14175,7 +14175,7 @@ passed()
 # Volume guard (#46; its wheel engine in test/playback.py): off by default, the dark wheel as stock;
 # the row saves VOLGUARD and sets wheel_guard, which the encoder thread reads.
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',stock_rows=3,sub=3)
-assert texts()==['Wheel Sensitivity: 50%','长按返回：最近页面','单按拖动','system_keytone','戴耳机时按键音','system_keylock','唤醒：单击','音量防误触']  # stock's two by key, for their translations
+assert texts()==['滚轮灵敏度：50%','长按返回：最近页面','单按拖动','system_keytone','戴耳机时按键音','system_keylock','唤醒：单击','音量防误触']  # stock's two by key, for their translations
 assert icons==['system_display','playset_folderjump','playset_covermode','system_keytone','system_keytone','system_keylock','system_keylock','system_keylock']
 guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='音量防误触' and guard()==1
@@ -14626,12 +14626,12 @@ for config,text in (({},'Recent'),({'HOLDRETURN':'1'},'Home')):
     m,rows,texts,icons,click=settings_page('display','scroll_view_display',config,stock_rows=3,sub=3)
     assert texts()[1]=='长按返回：'+text and icons[1]=='playset_folderjump'
     assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][1]==rows[1],config
-assert click(1)==[(0,'Q2POD','HOLDRETURN')] and texts()[1]=='Hold Return: Recent'
-assert click(1)==[(1,'Q2POD','HOLDRETURN')] and texts()[1]=='Hold Return: Home'
+assert click(1)==[(0,'Q2POD','HOLDRETURN')] and texts()[1]=='长按返回：最近页面'
+assert click(1)==[(1,'Q2POD','HOLDRETURN')] and texts()[1]=='长按返回：主菜单'
 passed()
 # Wheel QS is gone: a saved Q2POD WHEELQS=1 is a key nobody reads, no row and nothing written.
 m,rows,texts,icons,click=settings_page('display','scroll_view_display',{'WHEELQS':'1'},stock_rows=3,sub=3)
-assert 'Wheel QS' not in texts() and texts()[:2]==['Wheel Sensitivity: 50%','Hold Return: Recent'] and click(1)==[(1,'Q2POD','HOLDRETURN')]; passed()
+assert 'Wheel QS' not in texts() and texts()[:2]==['滚轮灵敏度：50%','长按返回：最近页面'] and click(1)==[(1,'Q2POD','HOLDRETURN')]; passed()
 # Its row opens stock's Boot volume page re-dressed (crossfade.c): titled, no switch, the percent
 # beside the slider, which runs 50-200 in tens. The wheel and +/- step 10%, live and saved, the
 # slider snaps to a ten, a drag is live but saved once at its release, and Centre goes back (edit_key, as on Brightness).
@@ -14704,7 +14704,7 @@ for config,text in (({},'Off'),({'NIGHTSHIFT':'1'},'3400K'),({'NIGHTSHIFT':'1','
                     ({'NIGHTSHIFT':'1','NIGHTK':'2750'},'3400K'),({'NIGHTSHIFT':'1','NIGHTK':'6500'},'3400K'),({'NIGHTK':'2000'},'Off')):
     m,rows,texts,icons,click=settings_page('display','scroll_view_display',config,stock_rows=3)
     label=m.nodes[m.nodes[rows[1]]['children'][0]]['children'][1]
-    assert texts()[1]=='Night Shift: '+text and icons[1]=='display_backlight' and m.nodes[label]['name']=='label_night',config
+    assert texts()[1]=='夜览：'+text and icons[1]=='display_backlight' and m.nodes[label]['name']=='label_night',config
     assert m.nodes[named(m,m.top,'scroll_view_display')]['children'][3]==rows[1],config  # after Smart Awake
 passed()
 # Its row opens the same page with its switch, Off. The switch turns it on and off and saves it; the
@@ -15268,7 +15268,7 @@ for mode in (0o100755,0):
     assert kids[:3]+kids[4:7]+kids[8:]==[entries[i] for i in (1,2,3,4,5,0,9,10,6,7,8,11)]
     assert [m.nodes[entries[i]]['visible'] for i in (6,7,8)]==[0,0,0]
     apps,controls=(m.nodes[kids[i]]['children'][0] for i in (7,3))
-    assert m.nodes[m.nodes[apps]['children'][1]]['text']=='App Store' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
+    assert m.nodes[m.nodes[apps]['children'][1]]['text']=='应用商店' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
     assert m.nodes[m.nodes[controls]['children'][1]]['text']=='控制'
     f,ctx=m.handler(controls,O['EVT_CLICK']); assert f==payload_syms['display_open'] and ctx==3
     passed()
@@ -15441,10 +15441,10 @@ m.top=m.node('window','home_page'); m.stream(); view=m.nodes[m.top]['children'][
 conf=m.nodes[m.nodes[view]['children'][5]]['children'][0]; icon,label=m.nodes[conf]['children'][:2]
 assert m.nodes[icon]['image']=='stream_config' and m.nodes[label]['text']=='流媒体设置'
 m.click(conf); m.page=m.top; assert m.nodes[m.page]['name']=='streamconf_page'
-assert m.labels()==['流媒体设置','Tidal Cache: 2 GB','Spotify Cache: 2 GB','清除 Spotify 数据','停止流媒体服务','TIDAL','Spotify','Tidal 下载','网络电台','AirPlay']
-m.row(0); assert m.files[TCAP]==b'4096M' and m.labels()[1]=='Tidal Cache: 4 GB' and endpoint(m,'stream_cache',0)==3
-m.row(0); m.row(0); assert m.files[TCAP]==b'512M' and m.labels()[1]=='Tidal Cache: 512 MB'
-m.row(1); assert m.files[SCAP]==b'4096M' and m.labels()[2]=='Spotify Cache: 4 GB' and endpoint(m,'stream_cache',1)==3
+assert m.labels()==['流媒体设置','Tidal 缓存：2 GB','Spotify 缓存：2 GB','清除 Spotify 数据','停止流媒体服务','TIDAL','Spotify','Tidal 下载','网络电台','AirPlay']
+m.row(0); assert m.files[TCAP]==b'4096M' and m.labels()[1]=='Tidal 缓存：4 GB' and endpoint(m,'stream_cache',0)==3
+m.row(0); m.row(0); assert m.files[TCAP]==b'512M' and m.labels()[1]=='Tidal 缓存：512 MB'
+m.row(1); assert m.files[SCAP]==b'4096M' and m.labels()[2]=='Spotify 缓存：4 GB' and endpoint(m,'stream_cache',1)==3
 m.files[SCAP]=bytearray(b'9G'); assert endpoint(m,'stream_cache',1)==2  # not a choice: 2 GB
 m.word(O['MCL_TYPE'],5); m.play=2; m.waited=m.forked
 m.row(3); m.top=m.node('window','home_page')
@@ -15458,7 +15458,7 @@ def conf_open(m):
     m.top=m.node('window','home_page'); m.stream(); view=m.nodes[m.top]['children'][0]
     m.click(m.nodes[m.nodes[view]['children'][5]]['children'][0]); m.page=m.top
 m=ShelfMachine({SCAP:bytearray(b'4096M')}); conf_open(m)
-assert m.labels()[2:5]==['Spotify Cache: 4 GB','清除 Spotify 数据','停止流媒体服务']
+assert m.labels()[2:5]==['Spotify 缓存：4 GB','清除 Spotify 数据','停止流媒体服务']
 m.row(2); assert m.labels()[3]=='再按一次以清除登录信息与缓存' and not m.threads
 m.row(0); assert m.labels()[3]=='清除 Spotify 数据'  # another row's press drops it
 m.row(2); m.destroy(m.page); conf_open(m); assert m.labels()[3]=='清除 Spotify 数据'  # so does leaving
@@ -15467,7 +15467,7 @@ m.row(2); m.row(2); assert m.toasts[-1][3]=='等当前任务完成' and len(m.th
 worker,arg=m.threads[-1]; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=50_000_000)==0
 assert 'rm -rf /mnt/mmc/.spotify/cache /mnt/mmc/.spotify/.cache-size' in m.systems; del m.files[SCAP]; m.advance(500,clear=False)
 assert m.toasts[-1][3]=="Spotify's login and cache erased" and KILL in m.systems[-1]
-assert m.labels()[2:4]==['Spotify Cache: 2 GB','清除 Spotify 数据']; passed()
+assert m.labels()[2:4]==['Spotify 缓存：2 GB','清除 Spotify 数据']; passed()
 # The wheel drives only allowlisted windows (patch/contexts.inc), so every runtime list page needs an
 # entry; the two streaming Now Playing pages and a card app's QR code page (no list) handle their own keys.
 pages=set(re.findall(r'page_open\("(\w+)"',''.join(p.read_text() for p in (ROOT/'patch').glob('*.c'))))

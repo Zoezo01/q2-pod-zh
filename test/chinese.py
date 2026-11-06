@@ -51,7 +51,7 @@ def check(directory):
     dialog = decode(asset('ui/dialog/confirminfo_dialog.bin'))
     assert [node[2]['text'] for node in dialog[3]] == ['取消', '确定']
     payload = (directory / 'patch.bin').read_bytes()
-    for label in ('评价', '播放最多', '低功耗模式：打开', '音量防误触：打开',
+    for label in ('评价', '播放最多', '音量防误触：打开',
                   '随机播放歌曲', '查看队列', '网络电台', '待机时限：关闭',
                   '单声道音频', '断点续播：关闭', '上一页', '下一页',
                   '左右声道互换', '章节', '前往文件夹', '编辑播放列表',
@@ -62,6 +62,8 @@ def check(directory):
                   '已应用', '应用失败，当前均衡器未变',
                   '夜览', '主菜单：轮播', '单按拖动', '戴耳机时按键音', '主菜单：分栏',
                   '主菜单：全屏', '浅色模式：自动', '正在播放', '暂无专辑',
+                  '标题栏显示时间', '播放列表', '主菜单显示资料库', '行预览', '行封面',
+                  '重启以应用？', '没有存储卡', '蓝牙设备均衡',
                   '请等应用商店完成', '卡上没有它', '无法启动'):
         assert label.encode() + b'\0' in payload, label
     # The localized labels must never replace the names of SD card directories.
