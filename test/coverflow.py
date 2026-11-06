@@ -2354,14 +2354,57 @@ static void thumb_shipped(void) {
     }
     assert(spread);
     assert(letters >= letters0 + 3);
-    /* Slowing under the cap: album by album again under the thumb; the lift lands on what's named. */
-    th_spin(40, 100); /* the rate falls in rate_down */
-    int jumped = letters;
-    float g0 = AT();
-    th_spin(40, 400);
-    assert(letters == jumped && AT() != g0);
+    /* Once in, letters while the thumb turns on from fast_at: a re-grip (a still moment, then a slow
+       turn) keeps them, no album moving, and the cap's speed again goes on at once, no second dwell. */
+    #define LANDED() (th[T_POS] == 0 && th[T_GOAL] == 0 && CAPTION(*index) && \
+                      (*index == 0 || initial_of(*index) != initial_of(*index - 1)))
+    int was = letters;
+    th_spin(0, 34);
+    for (int i = 0; i < 8; ++i) th_spin(50, 17), assert(th[T_GOAL] == 0 && th[T_POS] == 0);
+    assert(letters > was);
+    was = letters;
+    th_spin(150, 102);
+    assert(letters >= was + 2 && LANDED());
+    /* A moderate turn (40 ticks/s, under half the cap's) reads them: one each jump_ticks, each
+       landed on its letter's first album. */
+    th_spin(40, 102); /* the rate falls to it in rate_down */
+    was = letters;
+    for (int i = 0; i < 59; ++i) {
+        int before = letters;
+        th_spin(40, 17);
+        assert(letters - before <= 1 && (letters == before || LANDED()));
+    }
+    assert(letters >= was + 40 / shipped.jump_ticks - 1 && letters <= was + 40 / shipped.jump_ticks + 1);
+    /* Under fast_at: album by album again under the thumb, on from the letter's album, never back. */
+    th_spin(15, 102);
+    int jumped = letters, from = *index;
+    th_spin(15, 600);
+    float on = AT() - (float)from;
+    on -= (float)n * floorf(on / (float)n + .5f);
+    assert(letters == jumped && on > .3f && on < 3);
     th_rest();
     assert(CAPTION(*index) && !*(int *)(s->raw + SLIDE_OFFSET));
+    /* A lift in letters lands on the letter shown, its first album. */
+    th_down();
+    for (t = 0; letters == jumped && t < 2000; t += 17) th_spin(150, 17);
+    for (was = letters; letters == was;) th_spin(150, 17);
+    from = *index;
+    assert(LANDED() && letter_shown == (unsigned)initial_of(from));
+    th_rest();
+    assert(*index == from && !*(int *)(s->raw + SLIDE_OFFSET));
+    jumped = letters;
+    #undef LANDED
+    /* A pass a ms after the last moves the goal as one a frame long: the same ticks, as far. */
+    float by[2];
+    for (int k = 0; k < 2; ++k) {
+        th_down();
+        for (int i = 0; i < 20; ++i) th_pass(-10, 16);
+        float a = AT();
+        th_pass(-10, k ? 1 : 16);
+        by[k] = AT() - a;
+        th_rest();
+    }
+    assert(by[0] > .1f && fabsf(by[0] - by[1]) < 1e-4f && letters == jumped);
 
     /* Over 2000 albums under the cap (no letters), then a lift: SLIDE_INDEX takes the whole
        albums, so the follower's numbers stay small and it lands exactly, on the album named. */

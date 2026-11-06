@@ -60,7 +60,8 @@
        art_persp: a side cover's art 13% of the way from even to the plane's own spacing, so cover 1's near half is
        1.23 times as wide as its far half (the plane's own would be 2.76), at rest and in the row alike.
        thumb: the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel.
-       jump_ms at top_speed, a spin goes by letters, one each jump_ticks of travel (0: never). -->
+       jump_ms at top_speed, a spin goes by letters, one each jump_ticks of travel (jump_ticks 0: never), until a lift, a
+       turn back, the rate under fast_at or no tick for stop_ms. -->
   <view name="coverflow">
     <element name="shelf" top="32" eye="94" tilt="89" x1="116" xs="34" z1="77" zs="1" horizon="63" third="1"
              swing="1" lift="20" eye_turn="150" bright1="256" bright2="256" reflect="46" reflect_top="90" view_h="242"

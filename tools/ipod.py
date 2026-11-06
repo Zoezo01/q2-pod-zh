@@ -665,14 +665,16 @@ def playing_page(root, g=SET0):
     named['view_lrc'][2]['self_layout'] = f'default(x=0,y={lift},w=375,h=178)'
     info = named['view_info'][3]
     if g.np_ipod:  # Classic: the track's details as rows (navigation.c ringnav_np_info), from the top row's end to the dots:
-        # stock's label the name, left, and a <name>_value hscroll_label beside it the value, right-aligned and
-        # ellipsized as a settings value; both in the info role's face, whose size the rows hold (test/build.py).
+        # stock's label the name, left, and a <name>_value hscroll_label beside it the value, right-aligned; both
+        # ellipsized as a settings row is (stock's label can't be, so the name's is an hscroll_label too: stock's
+        # np_info only looks it up and sets its text), in the info role's face, whose size the rows hold (test/build.py).
         row = NP_DOTS_Y // len(info)  # the page's rows from lift (the window's NP_TOP) to the dots at NP_DOTS_Y + lift
         x = max(g.text_x, *(corner_x(g.bar + NP_TOP + row * i, row) for i in range(len(info))))
         for i, n in enumerate(list(info)):
             n[1] = [x, lift + row * i, NP_INFO_NAME_W, row]
+            n[0] = 'hscroll_label'
             n[2] = {k: v for k, v in n[2].items() if k not in ('line_wrap', 'word_wrap', 'style:normal:text_align_v')}
-            n[2]['style:normal:text_align_h'] = 'left'
+            n[2].update({'style': 's_scrlabel_white20l', 'style:normal:text_align_h': 'left', 'only_focus': 'true', 'ellipses': 'true'})
             info.append(['hscroll_label', [x + NP_INFO_NAME_W, n[1][1], 375 - 2 * x - NP_INFO_NAME_W, row], {
                 'name': n[2]['name'] + '_value', 'style': 's_scrlabel_white20r', 'only_focus': 'true', 'ellipses': 'true'}, []])
     else:

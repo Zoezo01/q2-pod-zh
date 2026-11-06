@@ -5868,8 +5868,10 @@ static void np_art_poll(void) {
     widget_invalidate_force(st.np_cover, (void *)0);
 }
 
-/* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it. */
+/* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it.
+ * Only the latest page's art: an old page destroyed after a new one set its own leaves that be. */
 static int stream_gone(void *ctx, void *event) {
+    if (ctx != st.stream_art) return 0;
     st.stream_art = st.stream_bar = (void *)0;
     coverflow_slant_close();
     return 0;
@@ -5888,8 +5890,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
     if (theme()->np_track[0].n < 2) return 0;
     int reflect = (NP_IPOD_ART * SLANT_REFLECT_PCT + 99) / 100, bw = 375 - 2 * NP_IPOD_BAR_X;
     widget_move_resize(art, SPOT_ART_X, NP_IPOD_ART_Y, NP_IPOD_ART, NP_IPOD_ART + reflect);
-    st.stream_art = art;
-    widget_on(art, EVT_DESTROY, stream_gone, (void *)0);
+    st.stream_art = art, st.stream_bar = (void *)0;
+    widget_on(art, EVT_DESTROY, stream_gone, art);
     for (unsigned i = 0; i < 4; ++i)
         if (text[i])
             widget_move_resize(text[i], NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y + dy[i],
@@ -12663,8 +12665,7 @@ static int pl_due(const void *info) {
     void *w = pl_find(win, action);
     if (w) stock_dispatch_trampoline(w, pointer_event_init(click, EVT_CLICK, w, 0, 0));
     /* a dialog's up, or gone: its close rebuilds the rows */
-    void *top = window_manager_get_top_window(wm);
-    if (top == win && pl_page(top)) pl_rows(win);
+    if (window_manager_get_top_window(wm) == win) pl_rows(win); /* pl_page(win) above */
     return 0;
 }
 /* The latest row clicked in a pass is the one that runs. */
@@ -12800,7 +12801,9 @@ static void pl_dress(void *win, int first) {
     int add = widget_get_prop_int(win, PL_MODE, 0);
     if (!view) return;
     /* the rows' click goes through pl_pick first (qm's guarded picker keeps its own), then select
-     * mode's second handler */
+     * mode's second handler, pl_marked: both are appended, and to stock's fresh rows, as
+     * ringnav_playlist dresses only after stock's rebuild, whose row button has PLAYLIST_PICK
+     * alone, so the rebind leaves pl_pick its one handler and pl_marked goes on after it */
     if (win != st.qm_playlist) qm_playlist_bind(win, 0, pl_pick);
     for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
         void *item = widget_get_child(view, i);

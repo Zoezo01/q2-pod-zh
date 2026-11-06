@@ -480,6 +480,7 @@ static void np_open(void) {
     image_set_draw_type(np.heart, IMAGE_DRAW_CENTER);
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);
+    np.seen = ~rd.serial;
     void *rows[4] = { np.station, np.artist, np.song, np.info };
     np.ipod = stream_ipod(art, rows, np.elapsed, 0, 0, np.heart);
     if (np.ipod) {

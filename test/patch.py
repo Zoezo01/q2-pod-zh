@@ -4164,6 +4164,10 @@ ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
 m.mock('tk_thread_create','tk_thread_start','widget_set_enable')
 m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False); assert not m.mores and any(c[0]=='tk_thread_create' for c in m.calls); passed()
 
+# A playlist row's click runs pl_pick, then pl_marked: every dress is on stock's fresh rows, PLAYLIST_PICK their one.
+m=ClassicPlaylistMachine(); m.rebuild(); m.rebuild()
+for t in LISTS: assert [f for e,f,c in m.nodes[m.row_button(t)]['handlers'] if e==O['EVT_CLICK']]==[payload_syms['pl_pick'],payload_syms['pl_marked']]
+passed()
 # A row's More: in the normal list a tap on the dots is stock's, and the hold finds the row by them; a row of ours has no
 # menu, so its hold does nothing under Classic (never Play/Pause).
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
@@ -9774,8 +9778,8 @@ m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
 # At the cap for jump_ms a spin goes by letters, as Minimal's wheel does: each re-centres the covers, at rest, on the
-# next letter's first album, its letter shown and a click; slowing under the cap gives albums back under the thumb,
-# and a lift lands on the album named.
+# next letter's first album, its letter shown and a click. Once in, a moderate turn from fast_at keeps them, one each
+# jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands on the album named.
 def letter_on(m): return any(v[1]==ps['cf_letter_expire'] for v in m.timers.values())
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
 m=classic_light_new(DepthMachine,albums=9)
@@ -9787,6 +9791,11 @@ for _ in range(25):
     tspin(m,17,-30); i=tindex(m)
     if seen[-1]!=i: seen.append(i); assert toff(m)==0 and tcaption(m)==FRUIT[i]
 assert letter_on(m) and len(seen)>=4 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i) and did(m,'buzzeer_switch')
+seen=[tindex(m)]
+for _ in range(30):  # 42 ticks/s, under half the cap's: a letter each 7 passes or so
+    tspin(m,17,-4); i=tindex(m)
+    if seen[-1]!=i: seen.append(i); assert toff(m)==0 and tcaption(m)==FRUIT[i]
+assert 4<=len(seen)<=6 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i)
 tspin(m,100,-2); index=tindex(m); tspin(m,500,-2)  # 21 ticks/s
 assert tindex(m)!=index or toff(m)!=0
 trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)]; passed()
@@ -14306,6 +14315,13 @@ cbar=next(w for w in kids(c,cinfo,'view') if cf_geometry(c,w)==(bx,by,bw,O['NP_B
 c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.canvas,0,0),gap=0,clear=False)
 on=next(b[2] for b in c.bands if b[0]==0)  # the played share
 assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
+c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
+assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']
+# An old page's art destroyed after a new page set its own: the new page keeps its slant.
+old,rows4=c.node('image'),c.alloc(16)
+for i in range(4): c.word(rows4+4*i,0)
+for art in (old,cart): assert c.call(address=payload_syms['stream_ipod'],args=(art,rows4,0,0),stack=(cbar,0),gap=0)==1
+f,ctx=next((f,x) for t,f,x in c.nodes[old]['handlers'] if t==O['EVT_DESTROY']); c.call(address=f,args=(ctx,c.event,0,0),gap=0)
 c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
 assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']; c.close(); passed()
 CONFIG.clear()
