@@ -411,7 +411,8 @@ other long-key destination changes.
 destination: Recent (0, the default) is the behaviour above; Home (1) calls the stock Home
 destination from any page but Home, Now Playing included, and clears `np_origin`. On Home the hold
 still opens Now Playing, as does iPod's short Return on Home's first row (on any other row it first
-selects that row). The release latch on the way Home: [internals.md](internals.md#hold-return).
+selects that row). A list open on Home (Library, Streaming, Settings) closes first: at once under a page
+going Home, with its slide when held on the list itself. The release latch on the way Home: [internals.md](internals.md#hold-return).
 
 ## Transitions
 
@@ -456,7 +457,8 @@ composers), the album list and folder rows that are not songs, hidden in multi-s
 it, aligned with those (see [internals.md](internals.md#drawing)), only on the `DRILL` windows in
 `patch/contexts.inc`: Home and the playlist list, whose rows open their tracks. Classic draws
 only the highlighted row's, white, on Home and every list, so it moves with the selection band
-(`chevron_sel`: stock's own are emptied); Minimal's Home has none. Tiles narrower
+(`chevron_sel`: stock's own are emptied); on Now Playing's More, only on rows that open a
+screen, not A-B Repeat, Speed or Delete; Minimal's Home has none. Tiles narrower
 than half the list (playlist Import/Export) get none. Those two tiles, built by stock at run time,
 have no icon: the build gives the icon no width and stretches the label across the tile in stock's
 centred `s_scrlabel_white24c` (`tools/ipod.py`). The artist page's Albums tab drills but has no

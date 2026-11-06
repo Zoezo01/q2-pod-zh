@@ -1623,6 +1623,7 @@ void addon_paint(void *w, void *canvas) {
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     int side = qr_light() ? QR_LIGHT_PX : QR_PX;
     int n = qp.size, m = side / (n + 4), o = (side - m * n) / 2, digits = (n + 3) / 4;
+    unsigned raw = ui_ink_raw(1); /* a code reads dark on white in either half */
     if (qr_light()) plate(canvas, -1, -1, side + 2, side + 2, 0x22000000u, 9);
     plate(canvas, 0, 0, side, side, 0xffffffffu, qr_light() ? 8 : 10);
     canvas_set_fill_color(canvas, rgba(0x000000, 255));
@@ -1636,5 +1637,6 @@ void addon_paint(void *w, void *canvas) {
             if (run) canvas_fill_rect(canvas, o + x * m, o + y * m, run * m, m);
             x += run ? run : 1;
         }
+    ui_ink_raw(raw);
     stock_canvas_set_fill_color(canvas, fill);
 }

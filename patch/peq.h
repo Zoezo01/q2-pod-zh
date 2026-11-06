@@ -29,6 +29,7 @@ void ringnav_clean_end(void); /* a clean end begins: the watchdog stops, the sta
  * setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read back
  * from the LCD, which has passed already. */
 unsigned ui_ink(unsigned rgba);
+unsigned ui_ink_raw(unsigned raw);
 static inline int stock_canvas_set_fill_color(void *c, unsigned x) {
     return canvas_set_fill_color(c, x);
 }
@@ -204,6 +205,7 @@ void *text(void *parent, int x, int y, int w, int h);
 void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *));
 void motion_open(void *page, const char *name); /* navigation.c: page_open's page takes the theme's hint */
 void *page_title(void *body, const char *caption, int n);
+void page_empty(void *body, const char *name);
 #define PAGE_TITLE "_page_title" /* the caption the bar reads (navigation.c page_caption) */
 #define PAGE_TALL "_page_tall"   /* a two-line row, its separators' (paint_separators) */
 int page_h(int h);
@@ -385,6 +387,7 @@ void paint_clock(void *w, void *canvas, int x, int y, int size, const char *art,
 void paint_page(void *w, void *canvas, int y);
 void paint_art(void *w, void *canvas, const char *name, int x, int y);
 void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key);
+int dark_title_y(void);
 void paint_tray(void *canvas, int x, int y, int w, int h);
 void text_shadow(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                  unsigned alpha);
@@ -398,6 +401,7 @@ void slider_number(void *label), slider_tray_dirty(void *page),
     slider_centre_hint(void *page, int night);
 void switch_row(void *win, void *view); /* the toolbar's, as a row */
 void stock_more_speed(void *win);
+void stock_more_into(void *win);
 void info_poll(void);      /* lockscreen.c: the info screen's timer, with the screen lit */
 int xfade_page(void *top); /* crossfade.c */
 int ipod_battery(void);    /* navigation.c: IPOD BATTERY, 0 Icon, else a percentage */

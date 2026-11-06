@@ -159,7 +159,7 @@ static struct {
     void *thumb[WALLS], *small[WALLS];     /* the picker's built-in thumbnails and theirs */
 } lk __attribute__((section(".scratch")));
 
-#define INFO_DATE_PX 22
+#define INFO_DATE_PX (theme()->font_px[ROLE_BAR])
 #define INFO_TITLE_PX 27
 #define INFO_ARTIST_PX 21
 static int wall_id(const char *name) {
@@ -314,7 +314,7 @@ static void info_screen(void *win, void *img, int id) {
     if (info) widget_move_resize(info, 0, 0, 375, large ? 192 : 172);
     if (shade) widget_set_visible(shade, 0, 0);
     if (date) {
-        info_label(date, 0, 0, 375, 25, INFO_DATE_PX, "classic-light", "center");
+        info_label(date, 0, dark_title_y(), 375, 25, INFO_DATE_PX, "classic-light", "center");
         widget_set_prop_str(date, "format", "MMM D, Y");
     }
     if (time) {
@@ -366,7 +366,7 @@ static void info_paint(void *w, void *canvas) {
     px = INFO_ARTIST_PX;
     info_face(lk.artist, &px);
     px = INFO_DATE_PX;
-    const char *date_face = info_face(lk.date, &px);
+    info_face(lk.date, &px);
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     if (lk.page) paint_page(w, canvas, 26);
     if (lk.black) { /* whichever half: the window's own black flips */
@@ -376,10 +376,6 @@ static void info_paint(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
     paint_dark_bar(w, canvas, (const unsigned *)0,
                    dark_bar_key(lk.pct ? widget_get_text(lk.pct) : 0));
-    if (lk.date) {
-        int under[4] = { 0, -1, 375, 25 };
-        text_shadow(canvas, date_face, widget_get_text(lk.date), under, (unsigned)px, 0xb0);
-    }
     paint_tray(canvas, 16, 44, 343, lk.large ? 128 : 116);
     if (lk.card && widget_get_visible(lk.card)) paint_tray(canvas, 16, 186, 343, 84);
     if (lk.hint && widget_get_visible(lk.hint)) /* its box's 175, 283 less the image's pad */

@@ -2937,6 +2937,8 @@ static struct {
     int pane; /* no cover shows: coverflow_home_clip paints the theme's pane */
     void *row; /* the highlighted row and what it shows in the pane (PANE_*) */
     void *row_image, *row_label; /* a Streaming row's image and name widgets, found once per row */
+    void *svc;                   /* a card app's icon at the pane's size (pane_scaled), its name */
+    char svc_name[72];
     int kind;
     /* the pane's captions, read off the wheel's path (home_counts), 0 unknown; counted: songs and
      * albums answer asked, the library_gen they were asked at; counting: 1 count_worker runs, 2 it
@@ -3252,6 +3254,48 @@ static const char *service_icon(void *image, char *t, unsigned size) {
     return t;
 }
 
+/* bitmap, the icon named name, bilinear at the theme's px, once for a name, so the paints after it
+ * only draw it: alpha-weighted, as its edge's transparent pixels hold no colour. bitmap itself when
+ * that can't be done.
+ * ponytail: one icon's frame, kept once made; the row's next app scales again. */
+static void *pane_scaled(void *bitmap, const char *name, unsigned px) {
+    static const unsigned char at[4][4] = BITMAP_RGBA_AT;
+    unsigned *b = bitmap, w = b[0], h = b[1], format = ((unsigned short *)bitmap)[7] - 1u;
+    if (!tk_strcmp(home.svc_name, name)) return home.svc;
+    if (format >= 4 || !w || !h || w > 512 || h > 512) return bitmap;
+    if (!home.svc) home.svc = bitmap_create_ex(px, px, px * 4, 1 /* RGBA8888 */);
+    const unsigned char *data = home.svc ? bitmap_lock_buffer_for_read(bitmap) : 0;
+    unsigned *d = data ? (unsigned *)bitmap_lock_buffer_for_write(home.svc) : 0;
+    if (!d) {
+        if (data) bitmap_unlock_buffer(bitmap);
+        return bitmap;
+    }
+    const unsigned char *o = at[format];
+    unsigned stride = bitmap_get_line_length(bitmap), line = bitmap_get_line_length(home.svc) / 4;
+    for (unsigned y = 0; y < px; ++y) {
+        /* the pixels' centres, in 1/256 of a source pixel */
+        unsigned sy = (2 * y + 1) * h * 128 / px, y0 = sy < 128 ? 0 : (sy - 128) >> 8;
+        unsigned fy = sy < 128 ? 0 : (sy - 128) & 255, y1 = y0 + 1 < h ? y0 + 1 : y0;
+        for (unsigned x = 0; x < px; ++x) {
+            unsigned sx = (2 * x + 1) * w * 128 / px, x0 = sx < 128 ? 0 : (sx - 128) >> 8;
+            unsigned fx = sx < 128 ? 0 : (sx - 128) & 255, x1 = x0 + 1 < w ? x0 + 1 : x0;
+            const unsigned char *r0 = data + y0 * stride, *r1 = data + y1 * stride;
+            const unsigned char *s[4] = { r0 + x0 * 4, r0 + x1 * 4, r1 + x0 * 4, r1 + x1 * 4 };
+            unsigned k[4] = { (256 - fx) * (256 - fy), fx * (256 - fy), (256 - fx) * fy, fx * fy };
+            unsigned r = 0, g = 0, bl = 0, a = 0; /* each under 2^16 x 255 x 255 */
+            for (int i = 0; i < 4; ++i) {
+                unsigned v = k[i] * s[i][o[3]];
+                r += v * s[i][o[0]], g += v * s[i][o[1]], bl += v * s[i][o[2]], a += v;
+            }
+            d[y * line + x] = a ? (a >> 16) << 24 | bl / a << 16 | g / a << 8 | r / a : 0;
+        }
+    }
+    bitmap_unlock_buffer(home.svc);
+    bitmap_unlock_buffer(bitmap);
+    tk_snprintf(home.svc_name, sizeof home.svc_name, "%s", name);
+    return home.svc;
+}
+
 /* The pane on a Streaming row: its icon, a card app's scaled to the theme's size, else the card
  * apps' own, and its name in the count's place. A name too wide for the count's column shrinks to
  * three quarters of its size, then loses its end. */
@@ -3260,11 +3304,17 @@ static void pane_service(void *canvas, int x, int y) {
     unsigned bitmap[64], s[33], n = 0; /* bitmap_t */
     char t[72];
     if (!home.row) return;
-    if (!widget_load_image(home.art, service_icon(home.row_image, t, sizeof t), bitmap) ||
-        !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
-        int src[4] = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
-            dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, T->pane_svc_px, T->pane_svc_px };
-        canvas_draw_image(canvas, bitmap, src, dst);
+    const char *icon = service_icon(home.row_image, t, sizeof t);
+    int own = !widget_load_image(home.art, icon, bitmap);
+    if (own || !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
+        int px = T->pane_svc_px;
+        void *art = own && (int)bitmap[0] != px && tk_str_start_with(icon, "file://")
+                        ? pane_scaled(bitmap, icon, (unsigned)px)
+                        : bitmap;
+        int own_size = art == bitmap;
+        int src[4] = { 0, 0, own_size ? (int)bitmap[0] : px, own_size ? (int)bitmap[1] : px },
+            dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, px, px };
+        canvas_draw_image(canvas, art, src, dst);
     }
     void *label = home.row_label;
     const unsigned *name = label ? widget_get_text(label) : (const unsigned *)0;
@@ -3707,6 +3757,18 @@ int coverflow_home_back(void *top) {
     if (!open) return 0;
     home_swap(open, home.list, -I(home.list, W_W));
     return 1;
+}
+
+/* A hold going Home (navigation.c compact_now_playing) from under a list open there: the main list,
+ * with no slide, as the windows over it are about to close. Only while this Home is the bottom
+ * window, so its lists are alive. */
+void coverflow_home_top(void) {
+    void *wm = window_manager();
+    if (!home.win || !widget_count_children(wm) || widget_get_child(wm, 0) != home.win) return;
+    void *open = home_open();
+    if (!open) return;
+    home_show(open, 0);
+    home_show(home.list, 1);
 }
 
 /* Classic's bar title on Home (navigation.c bar_title_sync): coverflow_home_name on its own list. */

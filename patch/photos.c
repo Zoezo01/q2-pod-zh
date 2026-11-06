@@ -254,6 +254,7 @@ static int to_grid(const void *unused) {
                              : ph.nalbums ? "All Photos"
                                           : "Photos",
                              n);
+    if (!n) page_empty(ph.grid, "Photos");
     if (!theme()->page_title_h) title_gone(0, 0), bar_title_sync(ph.page); /* no more the albums' */
     /* A bare scroll view: a list_view would lay its children out as full-width rows. */
     int rows = (n + PH_COLS - 1) / PH_COLS;

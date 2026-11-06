@@ -197,6 +197,7 @@ extern void coverflow_home_layout(void);
 extern int ringnav_reboot(void);
 extern void coverflow_home_clip(void *w, void *canvas, int begin);
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
+extern void coverflow_home_top(void);
 extern const char *coverflow_home_title(void);
 extern const char coverflow_home_name[];
 extern void coverflow_home_row(void *surface, void *row, int id, int painting);
@@ -487,7 +488,7 @@ typedef struct {
      * bar and the title's place under it; the volume in the time row's place. */
     void *rate_box, *slider_win, *slider_w, *slider_sw;
     const __WCHAR_TYPE__ *slider_hint; /* its caption */
-    void *t9_page;                     /* t9_box's page, while its box lives */
+    void *t9_page, *t9_back;           /* t9_box's page and chevron, while its box lives */
     /* Classic's message screens (msg_open): USB's page; the scan's dialog, stock's label_msg
      * in it, our line, btn_no, the songs before the scan, the bar's part in px, stock's text as
      * last read and the poll following it. msg_counting: 1 msg_count runs, 3 + n it has answered
@@ -1790,6 +1791,12 @@ unsigned unflip(unsigned v) {
  * the style and image hooks: flipped in Light Mode. A clear colour stays 0: stock tests for it
  * (Now Playing's slider draws no dragger under a #00000000 border). */
 unsigned ui_ink(unsigned c) { return !st.raw_ink && ipod_light() && c >> 24 ? flip(c) : c; }
+/* Sets whether ui_ink leaves colours alone (final colours follow); the last setting, to restore. */
+unsigned ui_ink_raw(unsigned raw) {
+    unsigned old = st.raw_ink;
+    st.raw_ink = raw;
+    return old;
+}
 
 /* The 0xRRGGBB j/n of the way from one color to another, per channel. Shared with visualizer.c. */
 unsigned mix(unsigned from, unsigned to, int j, int n) {
@@ -2339,13 +2346,15 @@ static int drill(void *w) {
 }
 
 static int geom(int group);
-/* A page_list drill row under a selected-only chevron: row_into's image, hidden, its last child
- * (geometry only: no string on the paint path). */
-static int page_into(void *row) {
-    unsigned n = widget_count_children(row);
-    void *c = n ? widget_get_child(row, n - 1) : (void *)0;
+/* row_into's image, hidden, w's last child (geometry only: no string on the paint path). */
+static int into_mark(void *w) {
+    unsigned n = widget_count_children(w);
+    void *c = n ? widget_get_child(w, n - 1) : (void *)0;
     return c && !widget_get_visible(c) && I(c, W_X) == 302 && I(c, W_W) == 50;
 }
+/* A drill row under a selected-only chevron: a page_list row's own mark, or on the list item of a
+ * stock button (stock_more_into), whose own children are set_row's. */
+static int page_into(void *row) { return into_mark(row) || into_mark(P(row, W_PARENT)); }
 
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
  * list_into: not in multi-select, and not on grid tiles. Home has none but a home_chevron_x theme's
@@ -4675,16 +4684,14 @@ static int dark_bar(void *top) {
     return slider_page(top) || time_form(top) ||
            (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "usbmode_page"));
 }
-/* Their title's face for its text (0: the system's), and the px to draw it at. */
-static const char *dark_title_face(void *t, int *px) {
-    const unsigned *s = widget_get_text(t);
-    *px = 22;
-    return theme_face(s, (int)wide_len(s), px);
-}
+/* The real bar's title's row, set for bar_px, so a dark bar's title sits on the same rows. */
+int dark_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
+/* Their title at the bar's size, in the face its text has (none: the system's). */
 static void dark_title(void *t) {
-    int px;
-    const char *face = dark_title_face(t, &px);
-    slider_label(t, 0, 0, 375, 25, px, face ? face : "default");
+    const unsigned *s = widget_get_text(t);
+    int px = theme()->font_px[ROLE_BAR];
+    const char *face = theme_face(s, (int)wide_len(s), &px);
+    slider_label(t, 0, dark_title_y(), 375, 25, px, face ? face : "default");
 }
 /* w at x, y on the screen, unless it's there. */
 static void bar_place(void *w, int x, int y, int ww, int h) {
@@ -6159,13 +6166,10 @@ static void volume_open(void *dlg) {
     if (!st.vol_timer) st.vol_timer = timer_add(vol_poll, (void *)0, VOL_POLL_MS);
 }
 
-/* Classic's slider pages, one shape over stock's four windows: a dark bar (bar_dark_rows),
+/* Classic's slider pages, one shape over stock's four windows: a dark bar (dark_bar_rows),
  * the page image, a band holding the slider between its ends, the caption. Only the painter reads
  * these tables. */
-static const stops_t bar_dark_rows = { 5,
-                                       { 0, 25, 50, 75, 100 },
-                                       { 0x323639, 0x292d30, 0x202427, 0x171b1c, 0x100f14 } },
-                     slider_band = { 8,
+static const stops_t slider_band = { 8,
                                      { 0, 8, 22, 38, 49, 50, 92, 100 },
                                      { 0x6a707a, 0x565c66, 0x464b54, 0x343840, 0x23262d, 0x0e1014,
                                        0x0b0d11, 0x181b21 } },
@@ -6289,9 +6293,12 @@ static void slider_open(void *win) {
     widget_move_resize(P(s, W_PARENT), 0, 0, 375, 294);
     widget_move_resize(s, 81, maxvol ? 111 : 117, 204,
                        70); /* its bar's rows 31..38 of a wide touch */
-    /* stock's slider fills its knob in this colour, and draws none when it's clear */
-    for (unsigned i = 0; i < sizeof states / sizeof *states; ++i)
+    /* stock's slider fills its knob in this colour, then draws the theme's icon (rounded_n) on it,
+     * and has no knob with neither: an icon that's no string reads as none (value_str) */
+    for (unsigned i = 0; i < sizeof states / sizeof *states; ++i) {
         widget_set_prop_int(s, style_key(key, states[i], "border_color"), 0);
+        widget_set_prop_int(s, style_key(key, states[i], "icon"), 0);
+    }
     st.slider_win = win;
     st.slider_w = s;
     st.slider_kind = (unsigned char)kind;
@@ -6373,10 +6380,13 @@ unsigned dark_bar_key(const unsigned *t) {
     return (level > 100 ? 100 : level) << 3 | (unsigned)(icon && !tk_strcmp(icon, "bar_charge"))
                                                   << 1;
 }
-/* The dark bar's rows and line, over the bar's own line, with no second one. Final colours. */
+/* The dark bar's rows and line, the scheme's dark half in either half, over the bar's own line,
+ * with no second one. Final colours. */
 static void dark_bar_rows(void *canvas, int w) {
-    paint_stops(canvas, 0, 0, w, 25, &bar_dark_rows);
-    bar_rect(canvas, RGBA(0x00050d), 0, 25, w, 1);
+    const theme_t *T = theme();
+    const scheme_t *S = &T->schemes[*T->accent_slot];
+    paint_stops(canvas, 0, 0, w, 25, &S->bar);
+    bar_rect(canvas, RGBA(S->bar_line), 0, 25, w, 1);
 }
 /* The dark bar on a full-screen window, which the system bar doesn't paint over: its rows and line,
  * a title if it has one, the play state and the battery by dark_bar_key's key. Final colours; the
@@ -6388,11 +6398,10 @@ void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key) 
     int status = bar_status();
     dark_bar_rows(canvas, 375);
     if (title) { /* as the real bar's dark_title */
-        int px = 22;
+        int px = theme()->font_px[ROLE_BAR];
         const char *face = theme_face(title, -1, &px);
-        text_shadow(canvas, face, title, &(rect_t){ 0, -1, 375, 25 }, (unsigned)px, 0xb0);
-        draw_in_face(canvas, face, title, wide_len(title), &(rect_t){ 0, 0, 375, 25 }, (unsigned)px,
-                     RGBA(flip_if(ipod_light(), 0xffffff)));
+        draw_in_face(canvas, face, title, wide_len(title), &(rect_t){ 0, dark_title_y(), 375, 25 },
+                     (unsigned)px, RGBA(flip_if(ipod_light(), 0xffffff)));
     }
     dark_battery(canvas, 285, 1, key);
     if (status == 2 || status == 3)
@@ -6551,11 +6560,7 @@ static void search_field_style(void *edit) {
 }
 static int search_key(unsigned key);
 static int t9_gone(void *ctx, void *event) {
-    st.t9_page = (void *)0;
-    return 0;
-}
-static int t9_back(void *ctx, void *event) {
-    search_key(KEY_RETURN);
+    st.t9_page = st.t9_back = (void *)0;
     return 0;
 }
 /* A search box alone on a page (peq.h edit_create), its keyboard about to open, under Classic
@@ -6564,12 +6569,11 @@ static int t9_back(void *ctx, void *event) {
  * page y 30, so the keyboard doesn't move the page. */
 void t9_box(void *page, void *edit) {
     if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT) return;
-    void *title = text(page, 0, 0, 375, 28), *back = image_create(page, 30, 0, 40, 30);
+    void *title = text(page, 0, 0, 375, 28);
     widget_set_text_utf8(title, "Search");
     widget_set_name(title, PAGE_TITLE);
     widget_set_visible(title, 0, 0);
-    widget_set_prop_str(back, "clickable", "true");
-    widget_on(back, EVT_CLICK, t9_back, 0);
+    st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
     widget_move_resize(edit, 72, 2, 244, 27);
     search_field_style(edit);
     widget_on(edit, EVT_DESTROY, t9_gone, 0);
@@ -6679,6 +6683,8 @@ static void search_tabs_paint(void *group, void *canvas) {
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     int paper = ipod_light();
+    /* stock's init renames the tabs after the load */
+    static const __WCHAR_TYPE__ names[4][8] = { L"Songs", L"Artists", L"Albums", L"Genres" };
     rect_t track = { 0, 0, 327, 30 };
     row_below(canvas, &track, 6, paper ? 0xb0ffffffu : 0x29ffffffu);
     paint_round_rows(canvas, &track, paper ? &light : &confirm_dark, 6);
@@ -6690,7 +6696,10 @@ static void search_tabs_paint(void *group, void *canvas) {
     for (unsigned i = 0, n = widget_count_children(group); i < n && i < 4; ++i) {
         void *tab = widget_get_child(group, i);
         int x = (int)i * 327 / 4, w = (int)(i + 1) * 327 / 4 - x, fpx = 21;
-        const unsigned *s = widget_get_text(tab);
+        const unsigned *s = widget_get_text(tab), *name = (const unsigned *)names[i];
+        unsigned k = 0;
+        while (s && s[k] && s[k] == name[k]) ++k;
+        if (!s || s[k] != name[k]) widget_set_text(tab, name), s = widget_get_text(tab);
         if (widget_get_prop_int(tab, "value", 0)) pale_lit(canvas, &(rect_t){ x, 0, w, 30 }, i < 3);
         rect_t under = { x, -1, w, 30 };
         text_shadow(canvas, theme_face(s, (int)wide_len(s), &fpx), s, &under, (unsigned)fpx, 0x4d);
@@ -7438,6 +7447,19 @@ void bar_title_sync(void *win) {
     }
 }
 
+/* A page_title's caption was an empty page's message, and the bar holds captions: the message stays
+ * the first line, and the bar reads name, the page's, from the hidden label. */
+void page_empty(void *body, const char *name) {
+    if (theme()->page_title_h) return;
+    char message[64];
+    void *caption = widget_get_child(body, 0);
+    if (widget_get_text_utf8(caption, message, sizeof message)) return;
+    widget_set_name(page_title(body, message, 0), "");
+    widget_set_text_utf8(caption, name);
+    widget_set_visible(caption, 0, 0);
+    bar_title_sync(window_manager_get_top_window(window_manager()));
+}
+
 /* Whether label's text fits the bar's title box: measured on the bar's canvas in the face and size
  * the title would take, against the box less hscroll_label's two 2 px margins. A bar not found yet
  * fits nothing. */
@@ -7519,11 +7541,6 @@ int ringnav_paint_bg(void *w, void *canvas) {
         const scheme_t *S = scheme();
         if (st.bar_dark) {
             dark_bar_rows(canvas, I(w, W_W));
-            /* its title's shadow: under the label, a pixel up */
-            int px;
-            const char *face = dark_title_face(st.bar_title, &px);
-            text_shadow(canvas, face, widget_get_text(st.bar_title), &(rect_t){ 0, -1, 375, 25 },
-                        (unsigned)px, 0xb0);
         } else if (T->painter[PAINT_BAR] ==
                    BAR_GLOSS) { /* Classic: the gloss rows over the line, final */
             int h = I(w, W_H) - 1;
@@ -7592,6 +7609,9 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
     /* Text inputs' selected text (an edit's T9 pending letter) is stock near-black on their light
      * blue selected_bg_color, which Light Mode keeps: it stays, not flipped to paper. */
     if (name && !tk_strcmp(name, "selected_text_color")) return color;
+    /* An edit's hint with no colour of its own: stock's default is its text colour, already mapped.
+     */
+    if (name && *color == fallback && !tk_strcmp(name, "tips_text_color")) return color;
     const scheme_t *S = scheme();
     const theme_t *T = theme();
     if (T->sb_w && st.paint_w && name &&
@@ -8498,6 +8518,13 @@ static void hide_outline(void) {
 }
 
 int ringnav_touch(void *ctx, void *event) {
+    /* T9's chevron goes back, as Return, before the press blurs the box: that blur searches. */
+    if (st.t9_back && event && I(event, EVENT_TYPE) == EVT_POINTER_DOWN) {
+        int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) };
+        widget_to_local(st.t9_back, xy);
+        if (xy[0] >= 0 && xy[0] < I(st.t9_back, W_W) && xy[1] >= 0 && xy[1] < I(st.t9_back, W_H))
+            search_key(KEY_RETURN);
+    }
     /* settle_timer while paused on the scrubbed track: a paused seek still waiting for Play. */
     int hold =
         st.settle_timer && st.np_slider && np_track() == st.scrub_track && mclGetPlayStatus() == 3;
@@ -8738,7 +8765,13 @@ static int compact_row_layout(void *layout, void *row) {
          * side (the move's below, after stock's layout); a two-line row's from the set's text
          * inset, unless stock's choice box shows. */
         if (tall && !plain) width = T->art_text_end - T->art_text_x + 4;
-        if (plain && !choice) width = T->row_text_end - geom_val(V_TEXT_X) + 2;
+        if (plain && !choice) {
+            /* stock's chevron last, as Search's Artists: the text ends where an art row's does */
+            void *last = widget_get_child(row, count - 1);
+            int into = last != text && widget_get_visible(last) &&
+                       !tk_strcmp(widget_get_prop_str(last, "image", ""), "list_into");
+            width = (into ? T->art_text_end : T->row_text_end) - geom_val(V_TEXT_X) + 2;
+        }
         if (width < 0) width = 0;
         widget_resize(text, width, I(text, W_H));
         /* Stock's rows scroll a long title once as the page opens, every row at a time, its
@@ -8869,6 +8902,17 @@ void stock_more_speed(void *win) {
         }
     }
 }
+/* More's rows that open a screen, under a selected-only chevron: page_into's mark on the list item.
+ * Their kind is read here, once, so no paint compares a string. */
+void stock_more_into(void *win) {
+    void *view = theme()->chevron_sel ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
+    if (!view || widget_count_children(view) != PLAYMORE_COUNT) return;
+    for (unsigned i = 0; i < PLAYMORE_COUNT; ++i) {
+        int kind = ((const int *)PLAYMORE_ROWS)[i];
+        if (kind >= PLAYMORE_INTO_FIRST && kind <= PLAYMORE_INTO_LAST)
+            widget_set_visible(image_create(widget_get_child(view, i), 302, 0, 50, 0), 0, 0);
+    }
+}
 
 /* Settings rows (docs/ipod.md#settings). One stock child in row coordinates: full-height children
  * fill the row and shorter ones keep their centre; the icon shrinks to the set's icon size, or
@@ -8955,6 +8999,12 @@ static void set_row(void *item) {
         for (unsigned j = 0; j < n; ++j)
             set_child(widget_get_child(b, j), row_w, row_h,
                       row_w - SET_EDGE - 50 - SET_STOCK_X - trail);
+        /* a marked row's text ends before the chevron's box, as row_into's */
+        for (unsigned j = 0; into_mark(item) && j < n; ++j) {
+            void *c = widget_get_child(b, j);
+            if (!tk_strcmp(widget_get_type(c), "hscroll_label"))
+                widget_resize(c, theme()->chevron_x - 1 - I(c, W_X), I(c, W_H));
+        }
     }
 }
 
@@ -9030,8 +9080,11 @@ int compact_now_playing(void) {
     if (usable() && top && !window_manager_is_animating(wm)) {
         const char *name = widget_get_prop_str(top, "name", "");
         pod_settings();
-        if (st.hold_home && tk_strcmp(name, "home_page")) {
+        if (st.hold_home && coverflow_home_back(top)) {
+            /* a list open on Home: its main list */
+        } else if (st.hold_home && tk_strcmp(name, "home_page")) {
             st.np_origin = (void *)0;
+            coverflow_home_top();
             navigator_back_to_home();
         } else if (!tk_strcmp(name, "playing_page")) {
             /* ponytail: np_origin is only compared, never followed; a reused address goes Back
@@ -9040,10 +9093,12 @@ int compact_now_playing(void) {
             int back = n >= 2 && widget_get_child(wm, n - 1) == top &&
                        widget_get_child(wm, n - 2) == st.np_origin;
             st.np_origin = (void *)0;
-            if (back)
+            if (back) {
                 navigator_back();
-            else
+            } else {
+                coverflow_home_top();
                 navigator_back_to_home();
+            }
         } else {
             static const int context[4] = { 0, 0, 0xff, 2 };
             st.np_origin = top;
@@ -10001,6 +10056,7 @@ static int most_played(void *ctx, void *event) {
     st.mp_list = ranked;
     void *view =
         page_list(st.mp_page, st.mp_page, 0, top ? "Most Played" : "No plays yet", top, 64);
+    if (!top) page_empty(st.mp_page, "Most Played");
     char name[512], detail[300];
     for (int i = 0; i < top; i++) { /* the artist, if tagged, and the play count, under the title */
         void *t = deque_at(st.mp_list, (unsigned)i);
@@ -10053,6 +10109,7 @@ static int chapter_poll(const void *unused) {
                            : n           ? "Chapters"
                                          : "No embedded chapters",
                            n, 64);
+    if (!n) page_empty(st.ch_page, "Chapters");
     int sec = 0, total, current = 0;
     player_playtime_and_length(&sec, &total);
     for (int i = 0; i < n; ++i) {
@@ -10171,6 +10228,7 @@ static void *songs_rows(const char *dir, const char *title, int tidal, int album
     int n = (int)deque_size(st.td_list);
     void *view =
         page_list(st.td_page, st.td_page, 0, n ? title : "No downloads yet", n + (tidal && n), 48);
+    if (!n) page_empty(st.td_page, title);
     char name[256];
     for (int i = 0; i < n; i++) {
         song_label(P(deque_at(st.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);

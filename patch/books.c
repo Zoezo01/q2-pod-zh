@@ -917,6 +917,7 @@ void books_open(const char *root) {
     if (bk.buf && bk.path) scan(root, 1);
     if (bk.n) qsort(bk.path, (unsigned)bk.n, sizeof *bk.path, by_string);
     bk.view = page_list(page, bk.list, 0, bk.n ? "Books" : "No books", bk.n, 48);
+    if (!bk.n) page_empty(bk.list, "Books");
     char name[256];
     for (int k = 0; k < bk.n; ++k)
         page_row_detail_into(bk.view, k, title(bk.path[k], name), 0, open_book);

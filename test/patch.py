@@ -6506,7 +6506,7 @@ assert wbox(bk,bsl)==(81,117,204,70) and wbox(bk,bsl_view)==(0,0,375,294)
 assert not any(bk.nodes[w]['visible'] for w in (bl,br,bdec,badd,blab)) and bk.nodes[bwin]['children'] and named(bk,bwin,'img_add')==badd  # kept by name
 cap=named(bk,bwin,'caption'); assert wbox(bk,cap)==(0,228,375,32) and bk.nodes[cap]['text']=='Press Centre When Finished' and bk.nodes[cap]['style:normal:font_size']==31 and bk.nodes[cap]['style:normal:font_name']=='classic-light'
 assert bk.nodes[cap]['style:normal:text_color']&0xffffffff==color_t(0)  # the light half's style hook flips it back to white
-assert all(bk.nodes[bsl][f'style:{s}:border_color']==0 for s in ('normal','pressed','over','disable','focused'))  # stock's slider draws its knob in this colour, none when clear
+assert all(bk.nodes[bsl][f'style:{s}:border_color']==0 and bk.nodes[bsl][f'style:{s}:icon']==0 for s in ('normal','pressed','over','disable','focused'))  # stock's slider draws its knob in this colour and the theme's icon over it, none with neither
 bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.canvas,0,0),gap=0); slider=bk.bands
 assert [b[:4] for b in slider[:8]]==[(1,31,202,1),*[(0,31+i,204,1) for i in range(1,7)],(1,38,202,1)]
 assert slider[0][4]==color_t(0x2f4052) and slider[7][4]==color_t(0x26333f) and slider[8][:4]==(1,31,66,1) and slider[8][4]==color_t(0xf7ffff) and slider[15][4]==color_t(0xc6cbcf)
@@ -6585,7 +6585,7 @@ ns=boot_page(ctx=3); assert ns.nodes[named(ns,ns.win,'caption')]['text']=='Press
 wheel=boot_page(ctx=1); wsw=wheel.switch; assert wheel.nodes[wheel.title]['text']=='Wheel Sensitivity' and not wheel.nodes[wsw]['visible'] and wheel.nodes[wheel.vol]['visible']==1 and wheel.nodes[wheel.vol]['text']=='50%'
 bare(wheel); bg(wheel,wheel.win); assert art_at(wheel)[2:]==BAND_ART and shadows(wheel)==[CAPTION] and not triangle(wheel)
 wheel.calls=[]; assert wheel.call(O['KEY_NEXT'])==11 and [c for c in wheel.calls if c[0]=='write_int_config'] and not dirty(wheel,wheel.win); passed()  # no tray
-# The dark bar: the gloss swapped while a slider page is on top, title across, clock and marks hidden; back on leaving.
+# The dark bar: the dark half's flat bar and hairline in either half while a slider page is on top, title across on the bar title's rows, clock and marks hidden; back on leaving.
 def dark_setup(light='1',state=0,name='Balance'):
     db=LoadPlain(); db.config.update(THEME='1',LIGHT=light); classic_light_boot(db)
     if state: db.handlers.pop(syms['mclGetPlayStatus'],None); db.word(0xa3beac,state)
@@ -6610,25 +6610,25 @@ ck,ckbar,_,_,ckclock,*_,ckhome=dark_setup(); ck.clock_minutes=True; ck.top=ckhom
 ck_show(); assert ck.nodes[ckclock]['text']=='6:14 PM',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
 # Set Time and Set Date are under it too.
 tdb,tbar,_,ttitle,tclock,*_,thome=dark_setup(); tdb.top=thome; bg(tdb,tbar); assert tdb.nodes[tclock]['visible']==1 and wbox(tdb,ttitle)[0]==20
-tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(0,0,375,25) and tdb.nodes[tclock]['visible']==0; passed()
+tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(0,-1,375,25) and tdb.nodes[tclock]['visible']==0; passed()
 db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup(state=2)
 assert db.nodes[dpct]['visible']==1
 db.style_ints.update({(db.style,'text_align_h'):3,(db.style,'text_color'):signed(0xff112233)})  # what the title's style says, neither left nor white
 for _ in range(2): bg(db,dwin); bg(db,dbar)
 db.bands=[]; cost=[0]; chook=db.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); bg(db,dbar); db.u.hook_del(chook); darkrows=[b for b in db.bands if b[2]==375]; assert cost[0]<100000,cost
-assert [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x323639) and darkrows[24][4]==color_t(0x100f14) and darkrows[25][4]==color_t(0x00050d) and wbox(db,dtitle)==(0,0,375,25)
-assert db.nodes[dtitle]['style:normal:font_size']==22 and db.nodes[dtitle]['style:normal:font_name']=='classic-light' and db.nodes[dtitle]['style:normal:text_align_h']=='center' and db.nodes[dtitle]['style:normal:text_color']&0xffffffff==color_t(0)
+assert [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333) and wbox(db,dtitle)==(0,-1,375,25)
+assert db.nodes[dtitle]['style:normal:font_size']==21 and db.nodes[dtitle]['style:normal:font_name']=='classic-light' and db.nodes[dtitle]['style:normal:text_align_h']=='center' and db.nodes[dtitle]['style:normal:text_color']&0xffffffff==color_t(0)
 assert db.nodes[dclock]['visible']==0 and wbox(db,dbt)[0]==-400 and wbox(db,dwifi)[0]==-400 and db.nodes[dpct]['visible']==0
 sx,sy,sw_,sh=wbox(db,dst); assert (200+sx+(sw_-10)//2,2+sy+(sh-11)//2)==(278,7) and (sw_,sh)==(18,22)  # its box keeps its size: centred, the 10 x 11 glyph lands here
 assert db.nodes[dst]['image']=='classic_light_play_w' and wbox(db,dslot)==(285-200,1-2,37,21); passed()
-# ... the title's shadow, under its label: a pixel up, in black at 0xb0, in its box and font; in the dark half too.
-db.letters=[]; bg(db,dbar); assert shadows(db)==[('Balance',(0,-1,375,25),('classic-light',22),0xb0000000)]; passed()
-dd,ddbar,*_,ddwin,_=dark_setup(light='0'); bg(dd,ddwin); bg(dd,ddbar); bg(dd,ddbar); dd.letters=[]; bg(dd,ddbar); assert shadows(dd)==[('Balance',(0,-1,375,25),('classic-light',22),0xb0000000)]; passed()
-# ... a title the theme's face hasn't: the fallback faces, the shadow with its label; a font smaller than its box either way.
-for name,face,px in (('Баланс','bold',18),('平衡','default',22)):
+# ... the title has no shadow, as the flat bar's has none; in the dark half too.
+db.letters=[]; bg(db,dbar); assert not shadows(db); passed()
+dd,ddbar,*_,ddwin,_=dark_setup(light='0'); bg(dd,ddwin); bg(dd,ddbar); bg(dd,ddbar); dd.letters=[]; bg(dd,ddbar); assert not shadows(dd); passed()
+# ... a title the theme's face hasn't: the fallback faces at the flat bar's sizes; a font smaller than its box either way.
+for name,face,px in (('Баланс','bold',17),('平衡','default',21)):
     df,dfbar,_,dftitle,*_,dfwin,_=dark_setup(name=name); bg(df,dfwin); bg(df,dfbar); bg(df,dfbar); df.letters=[]; bg(df,dfbar)
     assert df.nodes[dftitle]['style:normal:font_name']==face and df.nodes[dftitle]['style:normal:font_size']==px and df.nodes[dftitle]['text']==name
-    assert shadows(df)==[(name,(0,-1,375,25),(face,px),0xb0000000)] and wbox(df,dftitle)[3]>=px; passed()
+    assert not shadows(df) and wbox(df,dftitle)[3]>=px; passed()
 db.word(0xa3beac,3); bg(db,dbar); assert db.nodes[dst]['image']=='classic_light_pause_w'; passed()  # paused
 db.bands=[]; bg(db,dslot); LV=(0xe2e2e2,0xd7d7d7,0xd3d3d3,0xd4d4d4,0xd7d7d7,0xdedede)
 assert [b[:5] for b in db.bands[:3]]==[(9,6,26,13,color_t(0xf5f5f5)),(10,7,24,11,color_t(0x050505)),(35,10,2,5,color_t(0xf5f5f5))] and [b[:4] for b in db.bands[3:]]==[(11,8+j,11,1) for j in range(9)]
@@ -7025,7 +7025,7 @@ def msg_fill(m): return [b for b in m.bands if 72<=b[0] and 218<=b[1]<232 and b[
 for light in '10':
     um,uwin,uanim,umsg,uscan,ubtn=msg_dialog(light=light); bare(um); bg(um,uwin); uhead,uline=named(um,uwin,'msg_heading'),named(um,uwin,'msg_line')
     darkrows=[b for b in um.bands if b[2]==375 and b[1]<26]
-    assert um.image_draws[0]==((0,0,94,74),(0,26,375,294)) and [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x323639) and darkrows[24][4]==color_t(0x100f14) and darkrows[25][4]==color_t(0x00050d)
+    assert um.image_draws[0]==((0,0,94,74),(0,26,375,294)) and [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333)
     assert not [b for b in um.bands if b[2]==375 and b[1] in (26,27)] and um.image_draws[1][1][:2]==(0,26)  # the page's first rows, unstretched
     assert [um.nodes[w]['visible'] for w in (uanim,umsg,uscan)]==[0,0,0] and named(um,uwin,'btn_no')==ubtn and um.nodes[ubtn]['visible']==1
     assert [um.text(c[2]) for c in um.calls if c[0]=='widget_load_image']==['classic_light_page','classic_light_page_top','classic_light_orb_note'] and um.image_draws[2][1][:2]==(129,38)
@@ -7035,7 +7035,7 @@ for light in '10':
     assert um.nodes[uhead]['style:normal:text_color']&0xffffffff==white and um.nodes[uline]['style:normal:text_color']&0xffffffff==white and um.nodes[uhead]['style:normal:text_align_h']=='center'
     for state in ('normal','pressed','over','disable','focused'):
         assert um.nodes[ubtn][f'style:{state}:bg_color']==0 and um.nodes[ubtn][f'style:{state}:font_size']==23 and um.nodes[ubtn][f'style:{state}:font_name']=='classic-light' and um.nodes[ubtn][f'style:{state}:text_color']&0xffffffff==white
-    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('Update Library',(0,-1,375,25),22),('Update Library',(0,0,375,25),22),('Updating Local Music',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
+    assert [(t['text'],t['rect'],t['font'][1]) for t in um.letters]==[('Update Library',(0,0,375,25),21),('Updating Local Music',(16,160,343,32),29),('0 of 704 songs',(16,189,343,20),18)]
     assert [b[:5] for b in um.bands if b[1]<=7 and b[0]>=294 and b[2]==26]==[(294,7,26,13,color_t(0xf5f5f5))]  # the battery, on the screen
     cancel,rest=round_box([b for b in um.bands if 248<=b[1]<283],127,248,121,34,7)
     assert cancel[0]==color_t(0x232c33) and cancel[33]==color_t(0x333c43)
@@ -7090,15 +7090,16 @@ for mode,line in ((0,'Eject before disconnecting'),(2,'Eject before disconnectin
     assert ub.nodes[bhead]['text']=='Connected' and ub.nodes[bline].get('text','')==line and wbox(ub,bhead)==(16,228-26,343,32) and wbox(ub,bline)==(16,255-26,343,20)
     assert ub.image_draws[0]==((0,0,94,74),(0,0,375,294)) and ub.image_draws[2][1][:2]==(122,67-26) and [ub.text(c[2]) for c in ub.calls if c[0]=='widget_load_image']==['classic_light_page','classic_light_page_top','classic_light_orb_usb']
     assert [ub.nodes[w]['visible'] for w in (bimg,binfo,bret,bcharge,bdac)]==[0,0,1,1,1] and wbox(ub,bret)==(20,0,80,60) and wbox(ub,bcharge)==(247,0,50,50) and wbox(ub,bdac)==(305,0,50,50)
-    assert not [b for b in ub.bands if b[2]==375 and b[4]==color_t(0x323639)] and not msg_track(ub) and not ub.timers  # the real bar's above it; no count
+    assert not [b for b in ub.bands if b[2]==375 and b[4]==color_t(0x1c1c1c)] and not msg_track(ub) and not ub.timers  # the real bar's above it; no count
     assert [(t['text'],t['rect']) for t in ub.letters]==[('Connected',(16,229-26,343,32))]+([(line,(16,256-26,343,20))] if line else []) and ub.lcd_colors()==LCD_COLORS; passed()
 # ... under the real bar it's a dark page, titled; a window that covers the bar paints its own.
 db,dbar,dright,dtitle,dclock,dbt,dwifi,dpct,dslot,dst,dwin,dhome=dark_setup()
 uw=db.node('window','usbmode_page'); db.word(uw+O['W_PARENT'],db.wm); place(db,uw,0,26,375,294); ui_loaded(db,'usbmode_page',uw); db.top=uw; db.nodes[db.wm]={'children':[uw]}
 for _ in range(2): bg(db,uw); bg(db,dbar)
-assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(0,0,375,25) and db.nodes[dclock]['visible']==0; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0x323639); passed()
+assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(0,-1,375,25) and db.nodes[dclock]['visible']==0; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0x1c1c1c); passed()
+db.word(uw+O['W_Y'],0); db.letters=[]; bg(db,uw); assert db.letters[0]['text']=='Q2 Pod' and db.letters[0]['rect']==(0,-1,375,25); passed()  # a window over the bar paints the title on the bar title's rows
 uc,cwin,*_=usb_page(0,y=0); bare(uc); bg(uc,cwin)
-assert uc.image_draws[0]==((0,0,94,74),(0,26,375,294)) and uc.image_draws[2][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x323639) and uc.letters[0]['text']=='Q2 Pod' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
+assert uc.image_draws[0]==((0,0,94,74),(0,26,375,294)) and uc.image_draws[2][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x1c1c1c) and uc.letters[0]['text']=='Q2 Pod' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
 # ... a cable opening it over the scan's dialog: each paints its own, and the dialog's end leaves the page.
 sd,swin,_,smsg,_,_=msg_dialog(); ub2=sd.node('window','usbmode_page'); sd.word(ub2+O['W_PARENT'],sd.wm); place(sd,ub2,0,26,375,294); ui_loaded(sd,'usbmode_page',ub2)
 bare(sd); bg(sd,ub2); assert sd.image_draws[0][1]==(0,0,375,294) and sd.image_draws[2][1][:2]==(122,41) and not msg_track(sd)
@@ -10794,6 +10795,24 @@ m,view=stock_list(lambda _:None,78); item,button,icon,labels,images=speed_row(m,
 m.handlers[int(manifest['patch_symbols']['stock_playermore_trampoline'],16)]='stock_playermore'
 assert m.call(address=HOOKS['playermore_page_init'][0],args=(m.top,0,0,0),gap=0)==0; lay(m,view)
 assert m.nodes[icon]['visible'] and geometry(m,labels[0])==(72,12,40,20) and 'style:normal:font_size' not in m.nodes[labels[0]]; passed()
+# More's white chevron: on the selected row only, and only where its kind opens a screen (PLAYMORE_ROWS: Queue, Add to Playlist, Download Cover & Lyrics, Album and Artist info), not on Delete's dialog, A-B Repeat's switch or Speed's buttons. Those rows' text ends before its box at 317.
+def more_rows(boot):
+    m,view=stock_list(boot,32 if boot is classic_light_on else 78); labels=[]
+    for _ in range(6):
+        labels.append(box(m,'hscroll_label','hscroll_label',72,0,253,70)); stock_row(m,view,[box(m,'image','image',10,0,52,70),labels[-1]])
+    ab=box(m,'hscroll_label','hscroll_label',72,0,200,70); stock_row(m,view,[box(m,'image','image',10,0,52,70),ab,box(m,'image','img_abmode',276,0,50,70)])
+    speed_row(m,view)
+    m.handlers[int(manifest['patch_symbols']['stock_playermore_trampoline'],16)]='stock_playermore'
+    assert m.call(address=HOOKS['playermore_page_init'][0],args=(m.top,0,0,0),gap=0)==0; lay(m,view)
+    return m,view,labels,ab
+m,view,labels,ab=more_rows(classic_light_on)
+assert [geometry(m,l)[0]+geometry(m,l)[2] for l in labels]==[316]*5+[350] and all(geometry(m,l)[3]>=27 and m.nodes[l]['style:normal:font_size']==27 for l in labels)
+for row,want in enumerate([1,1,1,1,1,0,0]):
+    m.paint(view); assert m.selected(view)==row and [i[:2] for i in m.icons]==([(317+25,m.sel()[1]+16)] if want else []),(row,m.icons,m.sel())
+    m.call()
+m.paint(view); assert m.selected(view)==7 and not m.icons
+m.touch(); m.paint(view); assert not m.icons; passed()
+m,view,labels,ab=more_rows(lambda _:None); assert all(len(m.nodes[i]['children'])==1 for i in m.nodes[view]['children']) and not m.icons; passed()  # Minimal's stays stock's
 # ... as it reaches Queue's, a table row of the new pitch; the separators and chevrons of a list of one-line rows stay off it.
 qm=classic_light_on(Machine()); qw,qr,qe=qm.table_page(name='playerqueue_page'); qm.word(qw+O['ROW_HEIGHT'],32); qm.word(qw+O['W_W'],375)
 for i,(r,e) in enumerate(zip(qr,qe)): qm.word(r+O['W_Y'],i*32); qm.word(r+O['W_H'],32); qm.word(e+O['W_H'],32)
@@ -12108,6 +12127,12 @@ def prow(pm,view,i,caption,detail=None,into=False):
 def box(pm,w): return [signed(pm.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H')]
 def page_kids(pm,kind): return [c for c in pm.nodes[pm.top]['children'] if pm.nodes[c]['type']==kind]
 pm=classic_light_new(CoverflowMachine); assert classic_light_client(pm)==294; pbar=page_bar(pm)
+# An empty page: its message the first line, in the row's box and face; the bar keeps the page's name. A theme with a title row keeps the message there.
+pm.top=pm.node('window','tidal_downloads'); plist(pm,'No downloads yet',0,48)
+pm.call(address=payload_syms['page_empty'],args=(pm.top,pm.string('Tidal Downloads'),0,0),gap=0)
+pe_msg=[c for c in pm.nodes[pm.top]['children'] if pm.nodes[c]['type']=='hscroll_label' and pm.nodes[c]['visible']]
+assert [pm.nodes[c]['text'] for c in pe_msg]==['No downloads yet'] and box(pm,pe_msg[0])[3]>=pm.nodes[pe_msg[0]]['style:normal:font_size'] and pm.nodes[pe_msg[0]].get('name','')==''
+assert pm.nodes[pbar]['text']=='Tidal Downloads',pm.nodes[pbar]['text']; passed()
 pm.top=pm.node('window','shuffle_page'); pm.calls=[]
 view=plist(pm,'Shuffle',20,48)
 lv,=page_kids(pm,'list_view'); title,=page_kids(pm,'hscroll_label')
@@ -14843,7 +14868,17 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
         m.calls=[]; assert m.call()==11
         assert not [c[0] for c in m.calls if c[0] in ('opendir@GLIBC_2.0','fopen@GLIBC_2.2','toolsReadConfig')],i  # the wheel's path reads nothing
     loaded,draws,caption=stream_shows(m)
-    assert loaded==[icon],(i,loaded); assert draws==[((0,0,40,40),PANE)],(i,draws)
+    assert loaded==[icon],(i,loaded); assert draws==[((0,0,96,96) if icon.startswith('file:') else (0,0,40,40),PANE)],(i,draws)
+    if icon.startswith('file:'):  # a card app's, bilinear once, to a 96 px frame: the next paint only draws it; a pixel's four neighbours, weighted by alpha
+        frames=[f for f in m.frames if m.get(f)==96]; assert len(frames)==1 and m.u.mem_read(frames[0]+0xe,2)==b'\x01\x00'
+        cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); assert stream_shows(m)[1]==draws; m.u.hook_del(hook); assert cost[0]<100000,cost
+        src=bytes(m.u.mem_read(m.pixels[icon],40*40*4)); out=bytes(m.u.mem_read(m.get(frames[0]+0x14),96*96*4))
+        at=lambda x,y: src[(y*40+x)*4:(y*40+x)*4+4]
+        for x,y in ((0,0),(95,95),(48,17),(13,70)):
+            sx,sy=max((2*x+1)*40*128//96-128,0),max((2*y+1)*40*128//96-128,0); x0,y0,fx,fy=sx>>8,sy>>8,sx&255,sy&255; x1,y1=min(x0+1,39),min(y0+1,39)
+            near=[(at(x0,y0),(256-fx)*(256-fy)),(at(x1,y0),fx*(256-fy)),(at(x0,y1),(256-fx)*fy),(at(x1,y1),fx*fy)]
+            a=sum(p[3]*k for p,k in near); want_px=bytes(sum(p[c]*p[3]*k for p,k in near)//a if a else 0 for c in range(3))+bytes([a>>16])
+            assert out[(y*96+x)*4:(y*96+x)*4+4]==want_px,(x,y,out[(y*96+x)*4:(y*96+x)*4+4],want_px)
     if i==2: assert caption[0].endswith('…') and BOOK_PITCH*len(caption[0])<=182 and caption[0].startswith('A long'),caption
     else: assert caption==[text],(i,caption)
 cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
@@ -14871,6 +14906,13 @@ m.calls=[]; m.call(address=payload_syms['coverflow_home_row'],args=(sview,m.node
 m.image_fail=['file:///mnt/mmc/.deezer/icon.png']
 loaded,draws,_=stream_shows(m); assert loaded==['file:///mnt/mmc/.deezer/icon.png','classic_light_stream_app'] and draws==[((0,0,40,40),PANE)],(loaded,draws); m.image_fail=[]; passed()
 m.calls=[]; assert m.call(O['KEY_RETURN'])==11 and m.nodes[lst]['visible'] and not m.nodes[slist]['visible'] and m.nodes[slist]['sensitive']==0 and stitled()=='Q2 Pod'; passed()
+# Hold Return from a page over Home's open list: the main list under the closing windows, no slide; held on the open list itself, its Return's slide; on the main list, Now Playing as ever.
+hh=split_stream(); hh.config['HOLDRETURN']='1'; hh.mock('netdisk_folder_clear','navigator_back_to_home','awake_screen','getFormatString','navigator_to_with_context','navigator_window_is_exist')
+hh_home=hh.top; hh_main,hh_list=[named(hh,hh_home,n) for n in ('list_view_home','list_view_homestream')]; hh_view=named(hh,hh_home,'scroll_view_streamsset'); stock_tidal(hh,hh_view); stream_open(hh)
+hh_page=hh.node('window','mostplayed_page'); hh.nodes[hh.wm]={'children':[hh_home,hh_page]}; hh.top=hh_page; hh.nodes[hh_main]['animated']=None; hh.calls=[]
+assert long_return(hh)==0 and destinations(hh)[0][0]=='navigator_back_to_home' and hh.nodes[hh_main]['visible'] and not hh.nodes[hh_list]['visible'] and hh.nodes[hh_main]['animated'] is None; passed()
+stock_tidal(hh,hh_view); hh.top=hh_home; stream_open(hh); hh.call(170,gap=0); hh.calls=[]; assert long_return(hh)==0 and not destinations(hh) and hh.nodes[hh_main]['visible'] and hh.nodes[hh_main]['animated']=='x' and not hh.nodes[hh_list]['visible']; passed()
+hh.call(170,gap=0); hh.calls=[]; assert long_return(hh)==0 and destinations(hh)[0][0]=='navigator_switch_to_with_context'; passed()
 # Open it again: the list is rebuilt, and no old row is read.
 stock_tidal(m,sview); m.calls=[]; assert stream_open(m)==0 and len(m.nodes[sview]['children'])==8 and m.nodes[slist]['visible']; assert stream_shows(m)[0]==['classic_light_icon_wave']; passed()
 # The list's rows are Home's, not the page's: the list layouter, which matches the view by name, maps none of them to settings rows.
@@ -15225,6 +15267,10 @@ for qn_n,qn_mod in ((21,6),(25,5),(29,5),(33,4)):
     qn_digits=(qn_n+3)//4; qn.files[SSTATE]=bytearray(f"addr=192.168.1.23:8080\ndl=0\nhold=0\nnote=Online as alice\npin=548001\nqr={'f'*(qn_digits*qn_n)}\nqrsize={qn_n}\n".encode()); qn.advance(1000)
     qn.bands.clear(); qn.rounded.clear(); qn.call(address=HOOKS['widget_on_paint_border'][0],args=(qn_plate,qn.canvas,0,0))
     qn_o=(166-qn_mod*qn_n)//2; assert qn_o>=2*qn_mod and [b[:4] for b in qn.bands]==[(qn_o,qn_o+y*qn_mod,qn_n*qn_mod,qn_mod) for y in range(qn_n)] and [r['rect'] for r in qn.rounded]==[(-1,-1,168,168),(0,0,166,166)] and qn.rounded[1]['radius']==8,(qn_n,qn.bands[:2],qn.rounded)
+# ... dark modules on a white plate in both halves: Light Mode's flip doesn't reach a code, and is back on after it.
+qn.bands.clear(); qn.rounded.clear(); qn.call(address=HOOKS['widget_on_paint_border'][0],args=(qn_plate,qn.canvas,0,0))
+assert {b[4] for b in qn.bands}=={color_t(0)} and qn.rounded[1]['color']==0xffffffff and qn.rounded[0]['color']==0x22000000,(qn.bands[:1],qn.rounded)
+assert qn.call(address=payload_syms['ui_ink'],args=(color_t(0),0,0,0),gap=0)&0xffffffff!=color_t(0)
 qn.files[SSTATE]=bytearray(f"addr=192.168.1.23:8080\ndl=0\nhold=0\nnote=Online as alice\npin=548001\nqr={'0'*126}\nqrsize=21\n".encode()); qn.advance(1000)
 qn.files[SSTATE]=bytearray(f'addr=192.168.1.23:8080\ndl=0\nhold=0\nnote=Привет\npin=548001\nqr={'0'*126}\nqrsize=21\n'.encode()); qn.advance(1000)
 assert qr_fonts()['Привет']==('bold',16); qn.destroy(qn.top); passed()
@@ -15234,12 +15280,30 @@ assert wbox(tq,tq_edit)==(72,2,244,27) and sum(wbox(tq,tq_edit)[1::2])<=30 and t
 for tq_state in ('normal','focused','empty','empty_focus'):
     assert tq.nodes[tq_edit][f'style:{tq_state}:bg_color']==0 and tq.nodes[tq_edit][f'style:{tq_state}:round_radius']==0 and tq.nodes[tq_edit][f'style:{tq_state}:font_size']==26 and tq.nodes[tq_edit][f'style:{tq_state}:margin_left']==32 and tq.nodes[tq_edit][f'style:{tq_state}:text_color']&0xffffffff==TQ_INK
 tq_title=named(tq,tq_win,'_page_title'); assert tq.nodes[tq_title]['text']=='Search' and tq.nodes[tq_title]['visible']==0
-tq_back=next(c for c in tq.nodes[tq_win]['children'] if tq.nodes[c]['type']=='image'); assert wbox(tq,tq_back)==(30,0,40,30) and tq.nodes[tq_back]['clickable']=='true'
+tq_back=next(c for c in tq.nodes[tq_win]['children'] if tq.nodes[c]['type']=='image'); assert wbox(tq,tq_back)==(30,0,40,30)
 tq_bg=lambda: (tq.bands.clear(),tq.image_draws.clear(),tq.calls.clear(),tq.call(address=HOOKS['widget_on_paint_background'][0],args=(tq_win,tq.canvas,0,0),gap=0))
 tq.word(tq_win+O['W_PARENT'],tq.wm); tq.image_draws=[]; tq_bg(); tq_ramp=[b for b in tq.bands if b[2]==375]
 assert [b[1] for b in tq_ramp]==list(range(34)),tq_ramp[:2]
 tq_art=[tq.text(c[2]) for c in tq.calls if c[0]=='widget_load_image']; assert tq_art==['classic_light_kb_back','classic_light_field','classic_light_field_glass'],tq_art
 tq_h=next((f,c) for t,f,c in tq.nodes[tq_edit]['handlers'] if t==O['EVT_DESTROY']); tq.call(address=tq_h[0],args=(tq_h[1],tq.event,0,0),gap=0); tq_bg(); assert not tq.bands and not tq.image_draws; passed()  # the box gone, the page its own
+# ... a hint with no colour of its own: stock's default is the text's, already mapped, which a second flip would make the field's white; one of its own still maps.
+class TipsMachine(Machine):
+    def hook(self,u,address,size,x):
+        if self.handlers.get(address)=='stock_color':
+            a=u.reg_read(UC_MIPS_REG_A0); self.word(a,self.stock_color); self.returns(a); return
+        super().hook(u,address,size,x)
+    def tips(self,stock,fallback):
+        out=self.alloc(4); self.stock_color=stock
+        self.call(address=HOOKS['style_get_color'][0],args=(out,0x1234,self.string('tips_text_color'),fallback),gap=0); return self.get(out)
+tq_ink=TipsMachine(); tq_ink.config={'THEME':'1','LIGHT':'1'}; tq_ink.handlers[int(manifest['patch_symbols']['stock_color_trampoline'],16)]='stock_color'; tq_dark=color_t(0x111111)
+assert tq_ink.tips(tq_dark,tq_dark)==tq_dark and tq_ink.tips(color_t(0),tq_dark)!=color_t(0); passed()
+# T9's chevron takes the press, before it blurs the box, whose blur would search what's typed: as Return, the box emptied and the keyboard shut. A press elsewhere leaves them.
+tb=classic_light_new(SearchMachine); classic_light_on(tb); tb_page=tb.node('window','addon_page'); tb.word(tb_page+O['W_Y'],26); tb.nodes[tb.edit]['name']='q2_edit'; tb.nodes[tb.edit]['text']='a'
+tb.call(address=payload_syms['t9_box'],args=(tb_page,tb.edit,0,0),gap=0)
+def tb_press(x,y,kind='EVT_POINTER_DOWN'): tb.word(tb.event+O['EVENT_Y'],y); tb.call(x,address=HOOKS['on_wm_tsdown_before_fun'][0],event_type=O[kind],gap=0)
+tb_press(200,40); tb_press(50,40,'EVT_POINTER_MOVE_BEFORE'); tb_press(50,60); assert tb.nodes[tb.edit]['text']=='a' and tb.nodes[tb.edit]['focused']==1
+tb_press(50,40); assert tb.nodes[tb.edit]['text']=='' and tb.nodes[tb.edit]['focused']==0 and tb.get(tb.im+O['IM_WIDGET'])==0; passed()
+tb_h=next((f,c) for t,f,c in tb.nodes[tb.edit]['handlers'] if t==O['EVT_DESTROY']); tb.call(address=tb_h[0],args=(tb_h[1],tb.event,0,0),gap=0); tb.calls=[]; tb_press(50,40); assert not [c for c in tb.calls if c[0]=='widget_to_local']; passed()  # the box gone, no more
 # ... Auto Light Mode's turn: the field's ink follows the half in every state.
 SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT='2'),k)]
 try: tu=SlskMachine()
@@ -17229,13 +17293,13 @@ assert box_('img_slide')==(175,283,24,13) and lk.nodes[w['img_slide']]['draw_typ
 draws=lock_paint(lk,w); rows=[b for b in lk.bands if b[3]==1 and b[2]==375]
 assert [d[1][:2] for d in draws]==[(0,26),(0,26),(171,279),(29,54)] and draws[0]==((0,0,94,74),(0,26,375,294)) and lk.nodes[w['img_screensaver']]['image']==''
 assert [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_page','classic_light_page_top','classic_light_hint_shadow','classic_light_clock_dark']
-assert [b[1] for b in rows[:26]]==list(range(26)) and rows[0][4]==color_t(0x323639) and rows[25][4]==color_t(0x00050d)
+assert [b[1] for b in rows[:26]]==list(range(26)) and rows[0][4]==color_t(0x1c1c1c) and rows[25][4]==color_t(0x333333)
 trays=[b for b in lk.bands if b[0]>=16 and b[0]+b[2]<=359 and b[3]==1 and b[4]>>24==0xff and b[4] in (color_t(0x474e58),color_t(0x14161b))]
 tray_in=corner_in(9); assert [b[:4] for b in trays]==[(16+tray_in,y,343-2*tray_in,1) for y in (44,159,186,269)]  # each opaque between its corners' pixels
-t=lk.letters[0]; assert t['text']=='Nov 5, 2026' and t['rect']==(0,-1,375,25) and t['color']==0xb0000000 and t['font']==('classic-light',22) and font_('clock_date')==('classic-light',22) and lk.lcd_colors()==LCD_COLORS; passed()
+assert not lk.letters and box_('clock_date')[2:]==(375,25) and font_('clock_date')==('classic-light',21) and lk.lcd_colors()==LCD_COLORS; passed()
 # ... each label takes the face its text has, as stock writes it after the window loads: bold for Cyrillic, the system font for CJK, at the fallback's size; a paint with nothing new restyles nothing.
 lk.nodes[w['scrlabel_title']]['text']='Песня'; lk.nodes[w['scrlabel_artist']]['text']='歌手'; lk.nodes[w['clock_date']]['text']='Ноя 5, 2026'; lock_paint(lk,w)
-assert font_('scrlabel_title')[0]=='bold' and font_('scrlabel_title')[1]<27 and font_('scrlabel_artist')[0]=='default' and font_('clock_date')[0]=='bold' and lk.letters[0]['font']==font_('clock_date')
+assert font_('scrlabel_title')[0]=='bold' and font_('scrlabel_title')[1]<27 and font_('scrlabel_artist')[0]=='default' and font_('clock_date')==('bold',17)
 lk.calls=[]; lock_paint(lk,w); assert not [c for c in lk.calls if c[0]=='widget_set_prop_str']; passed()
 # Its lock screen hides stock's battery image: stock's timer writes the image back, never its visibility.
 lk,w=lock_cl(); assert lk.nodes[w['img_battery']]['visible']==0 and lk.nodes[w['pgbar_battery']]['visible']==0
@@ -17276,7 +17340,7 @@ blank(lk); lk.call(address=payload_syms['pale_lit'],args=(lk.canvas,r,1,0),gap=0
 # ... a picture: no page image; a chosen picture the same; the trays and bar still paint.
 for pic in ('q2pod:aurora','/mnt/mmc/lockscreenimage/a.jpg'):
     lk,w=lock_cl(picture=pic); draws=lock_paint(lk,w); assert [d[1][:2] for d in draws][-1]==(29,54) and (0,26) not in [d[1][:2] for d in draws] and [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_hint_shadow','classic_light_clock_dark']
-    assert [b for b in lk.bands if b[:2]==(0,0) and b[2]==375][0][4]==color_t(0x323639) and color_t(0x474e58) in [b[4] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==('' if 'q2pod' in pic else pic)
+    assert [b for b in lk.bands if b[:2]==(0,0) and b[2]==375][0][4]==color_t(0x1c1c1c) and color_t(0x474e58) in [b[4] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==('' if 'q2pod' in pic else pic)
     passed()
 lk,w=lock_cl(picture='q2pod:black',light='1'); lock_paint(lk,w); assert (0,26,375,294,color_t(0)) in [b[:5] for b in lk.bands]; passed()  # Black keeps black, in the light half too
 # ... Auto Light Mode's turn with the screen up: date, time, title and artist, the artist keeping its alpha.
@@ -17347,7 +17411,7 @@ def search_new(light='1',theme_='1'):
     if theme_=='1': classic_light_boot(q)
     n={}
     def add(kind,name,*kids,**kw): n[name]=q.node(kind,name,list(kids),**kw); return n[name]
-    tabs=[add('tab_button',t,text=l) for t,l in (('btn_track','Songs'),('btn_artist','Artists'),('btn_album','Albums'),('btn_genre','Genres'))]
+    tabs=[add('tab_button',t,text=l) for t,l in (('btn_track','track'),('btn_artist','Artist'),('btn_album','Album'),('btn_genre','Genre'))]  # stock's init writes these
     q.nodes[n['btn_track']]['value']=1
     group=add('tab_button_group','tab_button_group',*tabs)
     views=[add('view','view_'+t,q.node('list_view','list_view',[add('scroll_view','scroll_view_'+t)]),add('label',f'label_{t}_msg')) for t in ('track','artist','album','genre')]
@@ -17421,6 +17485,11 @@ items=[n_ for n_,v in k.nodes.items() if v['type']=='list_item']; assert [signed
 info=next(c for c in kids if k.nodes[c]['type']=='view'); title,meta=k.nodes[info]['children'][:2]
 assert k.nodes[kids[0]]['visible']==0 and k.nodes[title]['style:normal:font_size']==28 and k.nodes[meta]['style:normal:font_size']==17 and k.nodes[title]['style:normal:font_name']=='classic-light'
 assert geometry(k,title)[1]==1 and geometry(k,title)[3]==28 and geometry(k,meta)[1]==29 and geometry(k,meta)[3]==20; passed()
+# ... a row with stock's chevron last (Artists, Albums, Genres): its text ends before the chevron at 323; with none, at the set's 350.
+k=search_rows(classic_light_on); button,=[n_ for n_,v in k.nodes.items() if v['type']=='button']; native_row_layout(k,button); info=next(c for c in k.nodes[button]['children'] if k.nodes[c]['type']=='view')
+sr_end=lambda: signed(k.get(info+O['W_W']))
+sr_w=sr_end(); sr_into=k.node('image','img_into',image='list_into'); k.nodes[button]['children'].append(sr_into); k.word(sr_into+O['W_PARENT'],button); k.word(sr_into+O['W_W'],50); k.word(sr_into+O['W_H'],52); native_row_layout(k,button)
+assert sr_w-sr_end()==40,(sr_w,sr_end()); passed()
 k=search_rows(lambda k: k.config.update(THEME='0')); button,=[n_ for n_,v in k.nodes.items() if v['type']=='button']; items=[n_ for n_,v in k.nodes.items() if v['type']=='list_item']
 assert [signed(k.get(i+O['W_H'])) for i in items]==[78] and signed(k.get(button+O['W_H']))==70; passed()
 # Boxes hold their fonts and nothing crosses the glass: every rect above, at y 280 for the hint.

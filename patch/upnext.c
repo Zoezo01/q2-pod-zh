@@ -40,6 +40,7 @@ static void un_fill(int sel) {
     un.hash = q ? queue_hash(q) : 0;
     void *view = un.view =
         page_list(un.page, un.page, 0, n ? "View Queue" : "Nothing to play next", n, 64);
+    if (!n) page_empty(un.page, "View Queue");
     char name[512];
     for (unsigned i = 0; i < n; i++) { /* the title over the artist, if tagged */
         void *t = deque_at(q, idx[i]);

@@ -563,6 +563,7 @@ static void show(int level) {
         n = l->n;
         ui.view = page_list(ui.page, ui.page, 0,
                             level == PICK ? ui.genre ? "Genres" : "Countries" : ui.caption, n, 48);
+        if (!n && level == STATIONS) page_empty(ui.page, "Favourites"); /* its only empty list */
         for (int i = 0; i < n; ++i)
             if (level == PICK)
                 page_row_into(ui.view, i, name_of(l, i), pick_click);
@@ -578,6 +579,7 @@ static void note(const char *caption) {
     ui.note = 1;
     ui.view = ui.edit = 0;
     page_list(ui.page, ui.page, 0, caption, 0, 48);
+    page_empty(ui.page, "Internet Radio");
 }
 
 static void fetch_cancel(void) {
