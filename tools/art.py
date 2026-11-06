@@ -359,34 +359,28 @@ BLACK, WHITE = 0, 255
 def classic_light_font():
     """The theme face's source, opened once a build."""
     return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
-# Quick Settings' page, one form in both halves: 60 px buttons of the rounded box's R, a neutral or lit ramp, a gloss in
-# the ellipse's top half, a white glyph; own drawings. Stock's image names (the demo's own strings) decide which button.
-QS_R = 10.5
-QS_LIT = ((0, 0x5fb0f5), (50, 0x2178d6), (100, 0x0f4fae))
-QS_NEUTRAL = ((0, 0xa2a7af), (50, 0x5c616a), (100, 0x34383e))
-QS_GLOSS = 'M-12 0A42 29 0 1 1 72 0A42 29 0 1 1 -12 0Z'
-QS_GLOSS_A = ((-5.8, 0), (0, 0x75), (29, 0x26))  # row, white's alpha
+# Quick Settings' page under Classic: navigation.c quick_page fills each 60 px button flat (the accent, or qs_off), and these
+# are the glyphs over it: white, or CONFIRM_SURFACE (_k) on a light fill. Own drawings; stock's image names (the demo's own
+# strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):
     return f'M{cx - r} {cy}A{r} {r} 0 1 1 {cx + r} {cy}A{r} {r} 0 1 1 {cx - r} {cy}Z'
 SPOKES = tuple(tuple((round(r * math.sin(math.radians(a)), 3), round(-r * math.cos(math.radians(a)), 3)) for r in (8, 12)) for a in range(0, 360, 45))
-# A glyph on a -30..30 box, centre at 0: its ink, (stroke's width, open paths, closed paths), filled discs (x, y, r), segments 3 wide.
-QS_INK, QS_DARK = 0xffffff, 0x333333
+# A glyph on a -30..30 box, centre at 0: (stroke's width, open paths, closed paths), filled discs (x, y, r), segments 3 wide.
 QS_GLYPHS = {
-    'wifi': (QS_INK, (3, ('M-14 -3a20 20 0 0 1 28 0', 'M-8 3a11 11 0 0 1 16 0'), ()), ((0, 9, 2.8),), ()),
-    'bt': (QS_INK, (2.6, ('M-7 -7 7 6 0 12V-12L7 -6-7 7',), ()), (), ()),
-    'lock': (QS_DARK, (2.4, ('M-5 -3v-4a5 5 0 0 1 10 0v4',), ('M-7 -3H7A2 2 0 0 1 9 -1V9A2 2 0 0 1 7 11H-7A2 2 0 0 1 -9 9V-1A2 2 0 0 1 -7 -3Z',)), (), ()),
-    'usb': (QS_INK, (2.4, ('M0 12V-10', 'M0 6l-7-6V-5', 'M0 2l7-6V-8'), ('M0 -13l-4 5h8Z',)), (), ()),
-    'sl': (QS_DARK, (2.4, ('M-8 -12V12', 'M0 -12V12', 'M8 -12V12'), ()), ((-8, 3, 3.6), (0, -4, 3.6), (8, 5, 3.6)), ()),
-    'gear': (QS_DARK, (2.4, (), (circle(0, 0, 5),)), (), SPOKES),
+    'wifi': ((3, ('M-14 -3a20 20 0 0 1 28 0', 'M-8 3a11 11 0 0 1 16 0'), ()), ((0, 9, 2.8),), ()),
+    'bt': ((2.6, ('M-7 -7 7 6 0 12V-12L7 -6-7 7',), ()), (), ()),
+    'lock': ((2.4, ('M-5 -3v-4a5 5 0 0 1 10 0v4',), ('M-7 -3H7A2 2 0 0 1 9 -1V9A2 2 0 0 1 7 11H-7A2 2 0 0 1 -9 9V-1A2 2 0 0 1 -7 -3Z',)), (), ()),
+    'usb': ((2.4, ('M0 12V-10', 'M0 6l-7-6V-5', 'M0 2l7-6V-8'), ('M0 -13l-4 5h8Z',)), (), ()),
+    'sl': ((2.4, ('M-8 -12V12', 'M0 -12V12', 'M8 -12V12'), ()), ((-8, 3, 3.6), (0, -4, 3.6), (8, 5, 3.6)), ()),
+    'gear': ((2.4, (), (circle(0, 0, 5),)), (), SPOKES),
 }
-QS_FONT_PX, QS_LINE = 15, 17
-QS_TEXT_SHADOW = 0x77
-# Stock's name: glyph or text lines, lit, the glyph's opacity.
+QS_FONT_PX, QS_LINE, QS_DIM = 15, 17, .45
+# Stock's name: glyph or text lines, on, the glyph's opacity (disabled: dimmed).
 QS_BUTTONS = {
     'wifi': ('wifi', 0, 1), 'wifiopen': ('wifi', 1, 1), 'bt': ('bt', 0, 1), 'btopen': ('bt', 1, 1),
-    'keylock': ('lock', 0, .72), 'keylockopen': ('lock', 1, 1),
-    'lowgain': (('Low', 'Gain'), 0, .72), 'lowgaindisable': (('Low', 'Gain'), 0, .72),
-    'highgain': (('High', 'Gain'), 1, 1), 'highgaindisable': (('High', 'Gain'), 0, .72),
+    'keylock': ('lock', 0, 1), 'keylockopen': ('lock', 1, 1),
+    'lowgain': (('Low', 'Gain'), 0, 1), 'lowgaindisable': (('Low', 'Gain'), 0, QS_DIM),
+    'highgain': (('High', 'Gain'), 1, 1), 'highgaindisable': (('High', 'Gain'), 0, QS_DIM),
     'lo': (('LO',), 1, 1), 'po': (('PO',), 0, 1), 'sa': (('SA',), 0, 1),
     'usbstorage': ('usb', 1, 1), 'usbaudio': ('usb', 1, 1), 'usbdac': ('usb', 1, 1),
     'playset': ('sl', 0, 1), 'sysset': ('gear', 0, 1),
@@ -501,7 +495,7 @@ def butt_stroke(poly, width, closed=False):
         tip = [(b[0] + mx * scale, b[1] + my * scale)] if 2 * scale <= 16 else []
         out.append([b, (b[0] + ax, b[1] + ay), *tip, (b[0] + bx, b[1] + by)])
     return out
-def qs_text(lines, dy=0):
+def qs_text(lines):
     """Text lines' outlines from the theme's face, centred on the button, QS_LINE apart. One polygon a glyph: its contours
     joined, each edge between them walked twice, so that coverage's even-odd keeps the counters."""
     from fontTools.pens.basePen import BasePen
@@ -527,7 +521,7 @@ def qs_text(lines, dy=0):
     for i, line in enumerate(lines):
         width = sum(glyphs[cmap[ord(c)]].width for c in line) * k
         # the line box's baseline, as CSS centres the face's ascent and descent in it
-        y = 30 - len(lines) * QS_LINE / 2 + i * QS_LINE + (QS_LINE + (hhea.ascent + hhea.descent) * k) / 2 + dy
+        y = 30 - len(lines) * QS_LINE / 2 + i * QS_LINE + (QS_LINE + (hhea.ascent + hhea.descent) * k) / 2
         x = 30 - width / 2
         for c in line:
             pen = Flat(x, y)
@@ -535,44 +529,27 @@ def qs_text(lines, dy=0):
             out.append([p for contour in pen.polys for p in (*contour, contour[0])] + [pen.polys[0][0]])
             x += glyphs[cmap[ord(c)]].width * k
     return out
-def qs_glyph(glyph):
-    """A glyph's layers for compose on the button's 60 x 60 box."""
-    if isinstance(glyph, tuple):  # text: its shadow, a row up, then its white
-        return [(qs_text(glyph, -1), lambda x, y: (0, QS_TEXT_SHADOW / 255)), (qs_text(glyph), lambda x, y: (0xffffff, 1))]
-    ink, (width, opened, closed), discs, segments = QS_GLYPHS[glyph]
+def qs_glyph(glyph, ink):
+    """A glyph's layers for compose on the button's 60 x 60 box, in ink."""
+    paint = lambda x, y: (ink, 1)
+    if isinstance(glyph, tuple):  # text
+        return [(qs_text(glyph), paint)]
+    (width, opened, closed), discs, segments = QS_GLYPHS[glyph]
     moved = lambda poly: [(x + 30, y + 30) for x, y in poly]
     polys = [q for d in opened for poly in path(d) for q in butt_stroke(moved(poly), width)]
     polys += [q for d in closed for poly in path(d) for q in butt_stroke(moved(poly), width, closed=True)]
     polys += [q for a, b in segments for q in butt_stroke(moved([a, b]), 3)]
     polys += [poly for x, y, r in discs for poly in map(moved, path(circle(x, y, r)))]
-    return [(polys, lambda x, y: (ink, 1))]
+    return [(polys, paint)]
 @functools.lru_cache(maxsize=None)
-def qs_button(glyph, lit, opacity):
-    """One button's RGBA bytes: ramp, gloss, then the glyph at opacity as one group."""
-    box = (0, 0, 60, 60)
-    shape = path(rounded_path(0, 0, 60, 60, QS_R))
-    ramp = gradient(QS_LIT if lit else QS_NEUTRAL, 0, 60)
-    def gloss(x, y):
-        for (y0, a0), (y1, a1) in zip(QS_GLOSS_A, QS_GLOSS_A[1:]):
-            if y0 <= y <= y1:
-                return 0xffffff, (a0 + (a1 - a0) * (y - y0) / (y1 - y0)) / 255
-        return 0xffffff, 0
-    base = compose(box, [(shape, lambda x, y: (ramp(y), 1)), (path(QS_GLOSS), gloss, shape)])
-    mark = bytearray(compose(box, qs_glyph(glyph)))
+def qs_mark(glyph, opacity, ink):
+    """One button's glyph, RGBA bytes on clear, at opacity."""
+    mark = bytearray(compose((0, 0, 60, 60), qs_glyph(glyph, ink)))
     mark[3::4] = bytes(round(a * opacity) for a in mark[3::4])
-    return png(60, 60, over(bytes(mark), base))
-@functools.lru_cache(maxsize=None)
-def qs_shadow():
-    """box-shadow: 0 2px 3px #000c over 0 0 0 1px #000a, a 60 px button's at (6, 6) of 72, clear under the button."""
-    w = 72
-    button = rounded(w, w, 6, 6, 60, 60, QS_R)
-    soft = blurred(rounded(w, w, 6, 8, 60, 60, QS_R), w, w, 1.5)
-    ring = rounded(w, w, 5, 5, 62, 62, QS_R + 1)
-    return png(w, w, inked(w, w, [(outside(soft, button), 0xcc, 0), (outside(ring, button), 0xaa, 0)]))
-@functools.lru_cache(maxsize=None)
-def qs_pressed():
-    """The button darkened: black at 0x40 in its shape."""
-    return png(60, 60, compose((0, 0, 60, 60), [(path(rounded_path(0, 0, 60, 60, QS_R)), lambda x, y: (0, 0x40 / 255))]))
+    return png(60, 60, bytes(mark))
+def qs_lit():
+    """QS_LIT: the names whose button is on, NUL-separated, for navigation.c."""
+    return ''.join(f'drop_{n}\\0' for n, (_, lit, _) in QS_BUTTONS.items() if lit)
 @functools.lru_cache(maxsize=None)
 def qs_track():
     """The brightness track's edges over its 239 x 11, R 6 rows: inset 0 1px 2px black, and the row under it, white at 0x22."""
@@ -887,8 +864,9 @@ def images(t):
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
         out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}
-        out |= {f'{prefix}_drop_{name}': qs_button(*a) for name, a in QS_BUTTONS.items()}
-        out |= {f'{prefix}_drop_shadow': qs_shadow(), f'{prefix}_drop_pressed': qs_pressed(), f'{prefix}_drop_track': qs_track(), f'{prefix}_drop_knob': qs_knob()}
+        for name, (glyph, _, opacity) in QS_BUTTONS.items():
+            out |= {f'{prefix}_drop_{name}': qs_mark(glyph, opacity, 0xffffff), f'{prefix}_drop_{name}_k': qs_mark(glyph, opacity, inc('CONFIRM_SURFACE'))}
+        out |= {f'{prefix}_drop_track': qs_track(), f'{prefix}_drop_knob': qs_knob()}
         out[f'{prefix}_clock_dark'] = png(CLOCK_DARK_PX, CLOCK_DARK_PX, clock_dark())
         out |= {f'{prefix}_{name}': kb_glyph(name) for name in KB_GLYPHS}
         out[f'{prefix}_field'] = png(FIELD_W, FIELD_H, field())

@@ -3777,7 +3777,7 @@ static int quick_down(void *icon, void *event) {
     rearm(&quick.timer, quick_long, RATE_HOLD_MS);
     return 0;
 }
-/* Classic's page (quick_page, quick_scrub, one form in both halves), in the window's
+/* Classic's page (quick_page, quick_scrub), in the window's
  * coordinates: each icon at opacity 0 keeps stock's image name, tap and hold, and paints nothing.
  */
 static const char *const quick_icons[] = { "img_wifiswitch", "img_btswitch", "img_lock",
@@ -3795,7 +3795,7 @@ static int quick_moved(void *view, void *event) {
 static void quick_open(void *win) {
     void *c = widget_lookup(win, "view_menu", 1);
     if (c) widget_move_resize(c, 0, 0, I(c, W_W), I(c, W_Y) + I(c, W_H));
-    static const short column[] = { 30, 115, 199, 283 };
+    static const short column[] = { 31, 115, 199, 283 }; /* 24 apart */
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
         if (!(c = widget_lookup(win, quick_icons[i], 1))) continue;
         widget_move_resize(c, column[i % 4], i < 4 ? 20 : 138, 60, 60);
@@ -7250,6 +7250,20 @@ static void album_tile(void *w) {
     if (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "artistinfo_page")) album_children(w, 0);
 }
 
+/* 1 if name is in names, NUL-separated and ended by an empty name. */
+static int named_in(const char *names, const char *name) {
+    for (const char *n = names; *n;) {
+        if (!tk_strcmp(name, n)) return 1;
+        while (*n++) {}
+    }
+    return 0;
+}
+/* 1 if an active control's white glyph turns CONFIRM_SURFACE on tone, 0xRRGGBB: perceived
+ * brightness over GLYPH_LIGHT_MAX (Graphite's silver). */
+static int bright_tone(unsigned tone) {
+    return ((tone >> 16) * 299 + (tone >> 8 & 255) * 587 + (tone & 255) * 114) / 1000 >
+           GLYPH_LIGHT_MAX;
+}
 /* Quick Settings' brightness slider fills as Now Playing's bar does (np_fill), set before its
  * paint; QFILL holds the fill it last got, so a new accent or Light Mode reaches it. */
 #define QFILL "_ringnav_fill"
@@ -7278,11 +7292,9 @@ static void quick_fill(void *w) {
 #define QS_TEXT_PX 17
 #define QS_TEXT_LINE 14 /* a line's pitch, tighter than a label's font and its 2 px spacer */
 #define QS_TEXT_BOX 18  /* each line's box, holding the font */
-/* One line of a label, in x, y's box: first its shadow, a second draw a row down. */
+/* One line of a label, white in x, y's box. */
 static void quick_line(void *canvas, const unsigned *s, unsigned n, int x, int y) {
-    rect_t r = { x, y + 1, QS_TEXT_W, QS_TEXT_BOX };
-    draw_centred(canvas, s, n, &r, QS_TEXT_PX, 0xff000000u);
-    r.y = y;
+    rect_t r = { x, y, QS_TEXT_W, QS_TEXT_BOX };
     draw_centred(canvas, s, n, &r, QS_TEXT_PX, 0xffffffffu);
 }
 /* A label under its icon, x, y its first line's box. The page draws its lines: stock's label keeps
@@ -7314,23 +7326,33 @@ static void quick_label(void *canvas, void *label, int x, int y) {
     }
     st.raw_ink = raw;
 }
-/* Quick Settings' page under Classic, in its window's coordinates: the ground, then each
- * button by the image stock last gave its icon, darkened while pressed, and its label's shadow. */
+/* Quick Settings' buttons under Classic, flat, in final colours: the ground is Home's pane in the
+ * half, an off button qs_off, the pane lifted; an on one (QS_LIT, tools/art.py) takes the accent's
+ * red tone, as a lit switch does. */
+#define QS_R 12
+static const unsigned qs_off[2] = { 0x333333, 0x7f8b93 }; /* dark, light */
+static unsigned quick_on(void) { return flip_if(ipod_light(), accent_tone(TONE_RED)); }
+/* The page, in its window's coordinates: the ground, then each button by the image stock last gave
+ * its icon, a sixth darker while pressed, its glyph white or, on a bright tone, CONFIRM_SURFACE
+ * (_k); and its label. */
 static void quick_page(void *win, void *canvas) {
-    static const stops_t ground = { 3, { 0, 55, 100 }, { 0x1a1c20, 0x0a0b0d, 0x030304 } };
-    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    paint_stops(canvas, 0, 0, I(win, W_W), I(win, W_H), &ground);
+    int light = ipod_light();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = quick_on();
+    paint_stops(canvas, 0, 0, I(win, W_W), I(win, W_H), &theme()->home_pane[light]);
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
         void *icon = widget_lookup(win, quick_icons[i], 1);
         void *label = widget_lookup(win, quick_labels[i], 1);
         if (!icon) continue;
         char name[40];
-        int x = I(icon, W_X), y = I(icon, W_Y);
-        tk_snprintf(name, sizeof name, "classic_light_%s", widget_get_prop_str(icon, "image", ""));
-        paint_art(win, canvas, "classic_light_drop_shadow", x - 6, y - 6);
-        paint_art(win, canvas, name, x, y);
-        if (icon == quick.pressed) paint_art(win, canvas, "classic_light_drop_pressed", x, y);
-        if (label) quick_label(canvas, label, x - 10, y + 64);
+        const char *image = widget_get_prop_str(icon, "image", "");
+        unsigned c = named_in(QS_LIT, image) ? on : qs_off[light];
+        if (icon == quick.pressed) c = mix(c, 0, 1, 6);
+        rect_t r = { I(icon, W_X), I(icon, W_Y), 60, 60 };
+        stops_t flat = { 2, { 0, 100 }, { c, c } };
+        paint_round_rows(canvas, &r, &flat, QS_R);
+        tk_snprintf(name, sizeof name, "classic_light_%s%s", image, bright_tone(c) ? "_k" : "");
+        paint_art(win, canvas, name, r.x, r.y);
+        if (label) quick_label(canvas, label, r.x - 10, r.y + 64);
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
@@ -7820,13 +7842,7 @@ void *ringnav_style_gradient(void *style, const char *name, void *out) {
 
 /* 1 if name is one of the settings rows' category icons (SETTINGS_ICON_NAMES in stock.h, from
  * ipod.json): their red is a category colour, like the purple and orange ones, not an accent. */
-static int settings_icon(const char *name) {
-    for (const char *n = SETTINGS_ICON_NAMES; *n;) {
-        if (!tk_strcmp(name, n)) return 1;
-        while (*n++) {}
-    }
-    return 0;
-}
+static int settings_icon(const char *name) { return named_in(SETTINGS_ICON_NAMES, name); }
 
 /* Decoded theme images are mapped once, before the image manager caches them. Only a plain asset
  * name is the theme's: covers by path or URL (a '/' or ':') never are. Minimal also greys built-in
@@ -7960,9 +7976,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     int paper = ipod_light(); /* Light Mode: tone_of's tones, flipped as drawn */
     unsigned tone = dark ? CONFIRM_SURFACE : flip_if(paper, tone_of(tones_of(preset), TONE_RED)),
              glyph = 0xffffff, light = flip_if(paper, tone_of(tones_of(preset), TONE_LIGHT));
-    if (control && ((tone >> 16) * 299 + (tone >> 8 & 255) * 587 + (tone & 255) * 114) / 1000 >
-                       GLYPH_LIGHT_MAX)
-        glyph = CONFIRM_SURFACE;
+    if (control && bright_tone(tone)) glyph = CONFIRM_SURFACE;
     while (s && *s && *s != '/' && *s != ':') ++s;
     /* Home: Carousel's cards keep stock's colours in every Theme, accent and Light Mode; its white
      * arrows (menu_left, menu_right) still flip in Light Mode, or they vanish on the paper */

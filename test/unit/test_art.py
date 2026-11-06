@@ -26,7 +26,7 @@ QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowga
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}{k}' for n in QS_NAMES for k in ('', '_k')), 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -182,53 +182,37 @@ def test_the_switch_edges():
     assert at(26, 1) == (255, 255, 255, 0x73) and at(26, 26) == (0, 0, 0, 0x59)  # its light top row, dark last
 
 
-def test_quick_settings_buttons():
+def test_quick_settings_glyphs_are_flat_marks_on_clear():
+    # navigation.c fills each button; its art is the glyph alone, white or CONFIRM_SURFACE (_k), no gloss, rim or shadow
     got = art.images(theme.builtins()[1])
-    lit = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbstorage', 'usbaudio', 'usbdac'}
     for n in QS_NAMES:
-        w, h, at = pixels(got[f'classic_light_drop_{n}'])
-        assert (w, h) == (60, 60)
-        assert all(at(x, y)[3] == 0 for x in (0, 59) for y in (0, 59)) and at(30, 0)[3] == at(0, 30)[3] == 255  # R 10.5, full on its edges
-        assert at(4, 1)[3] < 255 and at(11, 0)[3] == 255
-        # the ramp's last row, where no gloss reaches, and its first, under the gloss at its strongest: lit or neutral
-        want = (0x0f, 0x4f, 0xae) if n in lit else (0x34, 0x38, 0x3e)
-        assert all(abs(a - b) <= 3 for a, b in zip(at(30, 59), want)), n
-        top = (0x5f, 0xb0, 0xf5) if n in lit else (0xa2, 0xa7, 0xaf)
-        assert all(abs(a - (b + (255 - b) * 0x75 / 255)) <= 3 for a, b in zip(at(30, 0), top)), n
-    # the gloss ends on the ellipse's curve: at column 8 near row 24.7, at the middle only by row 29
-    w, h, at = pixels(got['classic_light_drop_wifi'])
-    assert at(8, 23)[0] > at(8, 27)[0] + 20 and at(30, 27)[0] > at(8, 27)[0] + 20
+        for k, ink in (('', (255, 255, 255)), ('_k', tuple(ipod.inc('CONFIRM_SURFACE') >> s & 255 for s in (16, 8, 0)))):
+            w, h, at = pixels(got[f'classic_light_drop_{n}{k}'])
+            assert (w, h) == (60, 60)
+            assert all(at(x, y)[3] == 0 for x in range(60) for y in (0, 59)) and all(at(x, y)[3] == 0 for x in (0, 59) for y in range(60)), n
+            assert {at(x, y)[:3] for x in range(60) for y in range(60) if at(x, y)[3]} == {ink}, n  # one ink, flat
 
 
-def test_quick_settings_glyphs_take_the_look_s_inks_and_state():
+def test_quick_settings_glyphs_dim_only_when_disabled():
     got = art.images(theme.builtins()[1])
-    def brightest(n):
-        w, h, at = pixels(got[f'classic_light_drop_{n}'])
-        return max(min(at(x, y)[:3]) for x in range(15, 45) for y in range(32, 45))
-    def darkest(n):
-        w, h, at = pixels(got[f'classic_light_drop_{n}'])
-        return min(max(at(x, y)[:3]) for x in range(15, 45) for y in range(22, 42))
-    # Lock, Playback and System are dark marks: #333 where they're solid, 72 % of the way from the ramp where dimmed; the rest white
-    assert darkest('sysset') <= 0x38 and darkest('playset') <= 0x38 and darkest('keylockopen') <= 0x38 and brightest('usbaudio') >= 250
-    assert 0x38 < darkest('keylock') < 0x70
-    assert 170 <= brightest('lowgain') <= 215 and 170 <= brightest('lowgaindisable') <= 215 and got['classic_light_drop_lowgain'] == got['classic_light_drop_lowgaindisable']
-    assert brightest('highgain') >= 250 and 170 <= brightest('highgaindisable') <= 215
-    assert all(got[f'classic_light_drop_{a}'] != got[f'classic_light_drop_{b}'] for a, b in (('wifi', 'wifiopen'), ('bt', 'btopen'), ('lo', 'po'), ('po', 'sa'), ('lowgain', 'highgain')))
-    assert got['classic_light_drop_usbaudio'] == got['classic_light_drop_usbdac']
-    # the text keeps its counter: the O of PO is ramp in its middle, not white
+    alpha = lambda n: max(pixels(got[f'classic_light_drop_{n}'])[2](x, y)[3] for x in range(60) for y in range(60))
+    assert {n for n in QS_NAMES if alpha(n) < 255} == {'lowgaindisable', 'highgaindisable'}
+    assert alpha('highgaindisable') == round(255 * art.QS_DIM)
+    assert all(got[f'classic_light_drop_{a}'] != got[f'classic_light_drop_{b}'] for a, b in (('lo', 'po'), ('po', 'sa'), ('lowgain', 'highgain')))
+    assert got['classic_light_drop_wifi'] == got['classic_light_drop_wifiopen'] and got['classic_light_drop_usbaudio'] == got['classic_light_drop_usbdac']
+    # the text keeps its counter: the O of PO is clear in its middle
     w, h, at = pixels(got['classic_light_drop_po'])
-    row = [min(at(x, 30)[:3]) for x in range(30, 45)]
-    assert max(row) >= 240 and min(row[row.index(max(row)):]) < 170
+    row = [at(x, 30)[3] for x in range(30, 45)]
+    assert max(row) == 255 and min(row[row.index(max(row)):]) < 90
 
 
-def test_quick_settings_shadow_track_and_knob():
+def test_quick_settings_lit_names_are_the_on_buttons():
+    lit = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbstorage', 'usbaudio', 'usbdac'}
+    assert art.qs_lit() == ''.join(f'drop_{n}\\0' for n in art.QS_BUTTONS if n in lit) and set(art.QS_BUTTONS) == set(QS_NAMES)
+
+
+def test_quick_settings_track_and_knob():
     got = art.images(theme.builtins()[1])
-    w, h, at = pixels(got['classic_light_drop_shadow'])
-    assert (w, h) == (72, 72) and at(36, 36)[3] == 0  # clear under the button
-    assert 0xaa <= at(36, 5)[3] <= 0xb4 and at(36, 67)[3] > at(36, 4)[3]  # the ring above; the soft shadow falls below
-    assert {at(x, y)[:3] for x in range(w) for y in range(h) if at(x, y)[3]} == {(0, 0, 0)}
-    w, h, at = pixels(got['classic_light_drop_pressed'])
-    assert (w, h) == (60, 60) and at(30, 30) == (0, 0, 0, 0x40) and at(0, 0)[3] == 0
     w, h, at = pixels(got['classic_light_drop_track'])
     assert (w, h) == (239, 12)
     assert at(120, 0)[3] > at(120, 5)[3] and at(120, 0)[:3] == (0, 0, 0)  # the inset darkens from the top
