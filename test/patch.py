@@ -15738,9 +15738,9 @@ for name,number,args,error in (('chapter_pipe2',4328,(0x1001000,0x80000,0,0),Fal
 
 # Chapter extraction is tested with real FFmpeg in chapters.py; here only that boundary is mocked.
 class ChapterMachine(CoverflowMachine):
-    def __init__(self, count=3, failed=False, ready=True):
+    def __init__(self, count=3, failed=False, ready=True, path='/mnt/mmc/Book ; $x.M4B'):
         super().__init__(page='playing_page', pos=1)
-        self.ready=ready; self.cancelled=0; self.playtime=70; self.fits=1
+        self.ready=ready; self.cancelled=0; self.playtime=70; self.fits=1; self.path=path
         self.job=self.alloc(32+512*260)
         for off,v in ((12,0),(16,int(failed)),(20,count)): self.word(self.job+off,v)
         for i,(sec,title) in enumerate(((0,'Opening'),(60,''),(120,'日本語'))):
@@ -15751,15 +15751,15 @@ class ChapterMachine(CoverflowMachine):
         self.mock('navigator_back')
         self.handlers.pop(syms['mclGetPlayStatus'],None); self.word(0xa3beac,2)
         self.track=self.items(self.get(syms['mcl_pdeqplaylist']))[1]
-        self.word(self.track+O['REC_PATH'],self.string('/mnt/mmc/Book ; $x.M4B'))
+        self.word(self.track+O['REC_PATH'],self.string(path))
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('chapter:'): return super().hook(u,address,size,unused)
         a=u.reg_read(REGS[0]); ret=0
         if name=='chapter:chapters_start':
-            assert self.text(a)=='/mnt/mmc/Book ; $x.M4B'; ret=self.job
+            assert self.text(a)==self.path; ret=self.job
         elif name=='chapter:mp4_fits':
-            assert self.text(a)=='/mnt/mmc/Book ; $x.M4B'; ret=self.fits
+            assert self.text(a)==self.path; ret=self.fits
         elif name=='chapter:chapters_poll':
             ret=int(self.ready)
             if ret: self.word(self.job+12,1)
@@ -15780,6 +15780,17 @@ for ext,shown in (('m4b',True),('M4B',True),('M4b',True),('mp3',False),('m4b.mp3
     m=playing_menu(); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]
     m.word(r+O['REC_PATH'],m.string('/p/book.'+ext))
     m.press(6000); assert m.hold()==11 and ('Chapters' in m.labels())==shown; passed()
+# A spoken file in any format has Chapters (ffmpeg reads ID3, FLAC and Ogg chapters too); a CUE track
+# other than an M4B's doesn't, as its player times start at its CUE chapter.
+for path,cue,shown in (('/mnt/mmc/Audiobooks/Book/01.mp3',0,True),('/mnt/mmc/podcasts/Show/e.MP3',0,True),
+                       ('/mnt/mmc/AUDIOBOOKS/b.flac',0,True),('/mnt/mmc/Music/book.mp3',0,False),
+                       ('/mnt/mmc/AudiobooksX/b.mp3',0,False),('/p/Audiobooks/b.mp3',0,False),
+                       ('/mnt/mmc/Audiobooks/b.mp3',10,False),('/p/b.m4b',10,True)):
+    m=playing_menu(); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]
+    m.word(r+O['REC_PATH'],m.string(path)); m.word(r+O['REC_CUE_START'],cue)
+    m.press(6000); assert m.hold()==11 and ('Chapters' in m.labels())==shown,path; passed()
+m=ChapterMachine(path='/mnt/mmc/Audiobooks/Book ; $x/01.mp3'); m.open_chapters(); m.advance(50)
+assert 'Chapter 2' in m.texts() and '日本語' in m.texts(); passed()
 for state in (2,3):
     m=ChapterMachine(); m.word(0xa3beac,state); m.open_chapters()
     assert 'Loading chapters…' in m.texts()

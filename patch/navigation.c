@@ -7911,10 +7911,13 @@ static int most_played(void *ctx, void *event) {
     return 0;
 }
 
-/* M4B chapters are read only while this snapshot is open. */
-static int chapter_file(const char *path) {
-    const char *ext = path ? strrchr(path, '.') : 0;
-    return ext && !strcasecmp(ext, ".m4b");
+/* Chapters are read only while this snapshot is open: an M4B's, or a spoken file's in any format
+ * ffmpeg reads them from, such as an MP3 book's ID3 chapters. A spoken CUE track's times start at
+ * its CUE chapter, not its file's, so only an M4B of one is offered, as before. */
+static int chapter_file(void *r) {
+    const char *path = P(r, REC_PATH), *ext = path ? strrchr(path, '.') : 0;
+    if (ext && !strcasecmp(ext, ".m4b")) return 1;
+    return spoken(path) && !I(r, REC_CUE_START) && !I(r, REC_CUE_END);
 }
 static int chapter_pick(void *ctx, void *event) {
     unsigned i = (unsigned)(long)ctx;
@@ -7965,7 +7968,7 @@ static int chapter_poll(const void *unused) {
     return 0;
 }
 static void chapters_open(void *r) {
-    if (st.ch || !chapter_file(P(r, REC_PATH))) return;
+    if (st.ch || !chapter_file(r)) return;
     if (!mp4_fits(P(r, REC_PATH))) {
         toast("Too long to read chapters on the Q2");
         return;
@@ -10274,7 +10277,7 @@ static int qm_open(const void *unused) {
     acts[n++] = QA_NEXT;
     acts[n++] = QA_ADD;
     if (st.qm_kind == QM_PLAYING) {
-        if (chapter_file(P(r, REC_PATH))) acts[n++] = QA_CHAPTERS;
+        if (chapter_file(r)) acts[n++] = QA_CHAPTERS;
         acts[n++] = QA_QUEUE;
     }
     if (!song) acts[n++] = QA_SHUFFLE;
