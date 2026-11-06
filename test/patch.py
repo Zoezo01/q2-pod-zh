@@ -255,7 +255,7 @@ class Machine:
             x,y,w,h=self.rounded[0]['rect']
             return (x-O['SEL_INSET'],y,w+2*O['SEL_INSET'],h) if x else (x,y,w,h)  # Minimal's card; a square list row's spans the surface
         ys=[b[1] for b in self.bands]; x=min(b[0] for b in self.bands); w=max(b[2] for b in self.bands)
-        if x==O['SEL_INSET']: x,w=0,w+2*O['SEL_INSET']  # Classic's list pill, inset as Minimal's card
+        if x==O['SEL_INSET']: x,w=0,w+2*O['SEL_INSET']  # Modern's list pill, inset as Minimal's card
         return (x,min(ys),w,max(ys)-min(ys)+1)
         x,y,w,h=self.rounded[0]['rect'] if self.rounded else self.strokes[0][:4]
         return (x-1,y-1,w+2,h+2)
@@ -971,10 +971,12 @@ s.word(syms['system_bar'],bar)
 def bg(w): return s.call(address=HOOKS['widget_on_paint_background'][0],args=(w,s.canvas,0,0),gap=0)
 assert bg(bar)==0 and [b[:5] for b in s.bands]==[(0,0,375,30,color_t(O['BAR_COLOR']))]
 assert s.lcd_colors()==LCD_COLORS; passed()
-k=Machine(); k.config['THEME']='2'; kb=k.node('system_bar','system_bar'); k.word(syms['system_bar'],kb)
-k.word(kb+O['W_PARENT'],k.wm); k.word(kb+O['W_W'],375); k.word(kb+O['W_H'],30)
-k.call(address=HOOKS['widget_on_paint_background'][0],args=(kb,k.canvas,0,0))
-assert [b[:5] for b in k.bands]==[(0,0,375,30,color_t(O['BAR_COLOR']))]; passed()  # Modern's black, as Minimal's
+for light,color in (('0',O['BAR_COLOR']),('1',O['LIGHT_BAR'])):  # Modern's black, as Minimal's; an iPod's grey in Light Mode
+    k=Machine(); k.config.update(THEME='2',LIGHT=light); kb=k.node('system_bar','system_bar'); k.word(syms['system_bar'],kb)
+    k.word(kb+O['W_PARENT'],k.wm); k.word(kb+O['W_W'],375); k.word(kb+O['W_H'],30)
+    k.call(address=HOOKS['widget_on_paint_background'][0],args=(kb,k.canvas,0,0))
+    assert [b[:5] for b in k.bands]==[(0,0,375,30,color_t(color))],light
+passed()
 # A pressed grid tile (the album grid's three 110 px buttons in a table_row) greys its selection
 # card inside the tile, rounded under Rounded Corners; the row draws nothing, the tile no stock box.
 for rounded in ('0','1'):
@@ -2715,23 +2717,30 @@ assert m.call(O['KEY_NEXT'])==11 and m.selected(w)==1
 m.click(deep); assert m.selected(w)==0
 m.click(m.node('button')); assert m.selected(w)==0; passed()
 # Real canvas ABI, translation and clip code execute; only the LCD rectangle sink is mocked.
-# A 20px row at canvas origin (7,20) under a (10,30)-(229,199) clip; iPod in Classic, whose band is one-pixel rows.
-m=Machine(); w=m.page(); m.word(w+O['W_H'],96)
-m.config.update(THEME='1')
-e=m.entry(w,0); m.word(e+O['W_H'],20); m.nodes[w]['children']=[e]
-sink='lcd_fill_rect'
-for name in ('canvas_get_clip_rect','canvas_set_clip_rect',
-             'canvas_fill_rect'):
-    del m.handlers[syms[name]]
-m.mock(sink)
-m.word(m.lcd+0x3c,1); m.word(m.lcd+0xb0,240); m.word(m.lcd+0xb4,240)
-m.word(m.canvas+O['CANVAS_X'],7); m.word(m.canvas+O['CANVAS_Y'],20)
-for off,val in [(0x10,10),(0x14,30),(0x18,229),(0x1c,199)]: m.word(m.canvas+off,val)
-m.paint(w)
-# The band's rows reach the LCD only inside the clip, each from its left edge.
-assert [(c[2],c[3]) for c in m.calls if c[0]==sink]==[(10,y) for y in range(30,40)]
-assert [m.get(m.canvas+off) for off in (0x10,0x14,0x18,0x1c)]==[10,30,229,199]
-assert m.lcd_colors()==LCD_COLORS; passed()
+# A 20px row at canvas origin (7,20) under a (10,30)-(229,199) clip. Classic's band is one-pixel rows, each reaching the
+# LCD from the clip's left edge; Modern's Rounded pill only its row pixels inside the clip.
+pill=[]
+for band_y in range(10,20):
+    n,frac=chord(band_y,20)
+    pill.append((7+O['SEL_INSET']+n,20+band_y))
+    if frac: pill.extend([(7+O['SEL_INSET']+n-1,20+band_y),(7+240-O['SEL_INSET']-n,20+band_y)])
+for config,want in (({'THEME':'1'},[(10,y) for y in range(30,40)]),({'THEME':'2','ROUNDED':'1'},[(x,y) for x,y in pill if 10<=x<=229])):
+    m=Machine(); w=m.page(); m.word(w+O['W_H'],96)
+    m.config.update(config)
+    e=m.entry(w,0); m.word(e+O['W_H'],20); m.nodes[w]['children']=[e]
+    sink='lcd_fill_rect'
+    for name in ('canvas_get_clip_rect','canvas_set_clip_rect',
+                 'canvas_fill_rect'):
+        del m.handlers[syms[name]]
+    m.mock(sink)
+    m.word(m.lcd+0x3c,1); m.word(m.lcd+0xb0,240); m.word(m.lcd+0xb4,240)
+    m.word(m.canvas+O['CANVAS_X'],7); m.word(m.canvas+O['CANVAS_Y'],20)
+    for off,val in [(0x10,10),(0x14,30),(0x18,229),(0x1c,199)]: m.word(m.canvas+off,val)
+    m.paint(w)
+    assert [(c[2],c[3]) for c in m.calls if c[0]==sink]==want
+    assert [m.get(m.canvas+off) for off in (0x10,0x14,0x18,0x1c)]==[10,30,229,199]
+    assert m.lcd_colors()==LCD_COLORS
+passed()
 # Wheel selection is immediate even when restoration animations would still be running.
 m=Machine(); w,es=m.page_list(6)
 m.paint(w); m.glide=False
@@ -9873,17 +9882,18 @@ assert [m.nodes[m.nodes[m.nodes[r]['children'][0]]['children'][0]]['image'] for 
 # Classic needs its own set: the confirm asks; Cancel writes nothing and stays Minimal; OK writes THEME and Classic's
 # presets in option order (Light Mode On unless Auto is stored; Classic Blue; Time in Title, Library on Home and Row Art
 # On where they were Off; the battery as stored), then restarts through device_reboot (the queue saved first); the
-# running theme stays Minimal until the restart.
+# running theme stays Minimal until the restart, Light Mode as it was.
 for answer,light,want in ((0,'0',[]),(10,'0',[(1,'THEME'),(1,'LIGHT'),(9,'CLASSIC_LIGHT_ACCENT'),(1,'TIMETITLE'),(1,'HOMELIB'),(1,'ROWART')]),
                           (10,'2',[(1,'THEME'),(9,'CLASSIC_LIGHT_ACCENT'),(1,'TIMETITLE'),(1,'HOMELIB'),(1,'ROWART')])):
     m,view,_=display({'CLASSIC_LIGHT_ACCENT':'4','ROWART':'0','HOMELIB':'0','TIMETITLE':'0','LIGHT':light,'BATTERY':'3'},sub=4,cls=RestartMachine)
+    lit=m.call(address=payload_syms['ipod_light'],args=(0,0,0,0),gap=0)
     m.answer=answer; m.prompts=[]; m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
     assert m.call(address=payload_syms['theme_pick'],args=(1,0,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
     writes=[(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
     assert writes==want,writes
     assert [c[0] for c in m.calls if c[0] in ('write_int_config','stock_reboot')]==['write_int_config']*len(want)+['stock_reboot'][:answer==10]
     t=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert m.text(m.get(t))=='Minimal'
+    assert m.text(m.get(t))=='Minimal' and m.call(address=payload_syms['ipod_light'],args=(0,0,0,0),gap=0)==lit
 passed()
 # From a booted Classic, Minimal needs SET0's code back: a restart too. Row Art the same; Cancel keeps On.
 m,view,_=display({},sub=4,cls=RestartMachine,setup=classic_light); m.u.mem_protect(*TEXT,5); m.record_syscalls(); m.prompts=[]
@@ -9898,6 +9908,16 @@ for answer,want in ((0,[]),(10,[(0,'ROWART')])):
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='Row Art: On'
     assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot'][:answer==10]
+# Modern restarts from Classic too: OK saves THEME and Modern's presets where they differ (Cobalt, Square over a stored
+# Rounded, which Classic doesn't offer, Time in Title Off; Light Mode is On already), and Classic runs until the restart.
+m,view,_=display({'ROUNDED':'1'},sub=4,cls=RestartMachine,setup=classic_light); classic_light_on(m); m.answer=10; m.prompts=[]
+m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'; m.calls=[]
+assert m.call(address=payload_syms['theme_pick'],args=(2,0,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
+writes=[(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']
+assert writes==[(2,'THEME'),(4,'ACCENT'),(0,'ROUNDED'),(0,'TIMETITLE')],writes
+assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot']
+t=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+assert m.text(m.get(t))=='Classic'
 # Library on Home and Row Preview are plain choices (no set): on the booted set a click saves Off at once and asks nothing.
 for i,key,label in ((7,'HOMELIB','Library on Home'),(8,'ROWPREVIEW','Row Preview')):
     m,view,_=display({},cls=RestartMachine,setup=classic_light); classic_light_on(m); m.prompts=[]

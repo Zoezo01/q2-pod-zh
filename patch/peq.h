@@ -365,7 +365,7 @@ int theme_font(void *w, int role, int was);
 const char *theme_face(const unsigned *s, int n);
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 int ipod_light(void);   /* navigation.c: Light Mode */
-int ipod_square_art(void); /* navigation.c: Classic under Square */
+int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
 void toast(const char *text); /* navigation.c */

@@ -1781,6 +1781,7 @@ static void light_apply(const int *tm) {
 __attribute__((noinline)) static void settings_read(void) {
     for (int i = 0; i < 4; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
+    _Static_assert(SETTING_N_SHORTCUT <= 10, "config_value reads one digit");
     st.shortcut = config_value("IPOD", "SHORTCUT", SETTING_N_SHORTCUT,
                                SETTING_N_SHORTCUT); /* no key, see shortcut() */
     st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
@@ -1884,6 +1885,11 @@ const char *ipod_home_shortcut(void) {
     _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
     return names[shortcut()];
 }
+/* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
+ * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
+ * Books books.c. */
+enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
+static const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
 extern int rockbox_open(void *, void *);
 static int rated_albums(void *, void *), shuffle_menu(void *, void *), media_click(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
@@ -1892,7 +1898,7 @@ int home_shortcut_open(void *ctx, void *event) {
     if (s == 4) return rated_albums(ctx, event);
     if (s == 5) return shuffle_menu(ctx, event);
     if (s == 6) return games_open(ctx, event);
-    if (s >= 8) return media_click((void *)(long)(s - 7), event); /* MEDIA's Podcasts, Audiobooks */
+    if (s == 8 || s == 9) return media_click((void *)(long)(s == 8 ? PODCASTS : AUDIOBOOKS), event);
     if (s == 7)
         return navigator_to_with_context("localmusic/playlist_page",
                                          (void *)0); /* as stock's Home */
@@ -2463,34 +2469,35 @@ static void paint_selection(void *w, void *canvas) {
                 !st.sel_home
             ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
             : (void *)0;
-    if (band && painter == SEL_BAR && (!tile || g_menu.kind == 4)) {
-        /* Modern's bar, a list row's a pill under Rounded Corners, inset like Minimal's card */
-        rect_t bar = r;
-        int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
-        if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
-        gradient(canvas, bar, S->tones[0], S->tones[1], S->tones[4], pill);
-    } else if (band && (!tile || g_menu.kind == 4)) {
-        /* Classic's band (SEL_STOPS): square and full width, the glass clips it */
-        int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
-            edge = tall ? 2 : !!S->sel_edge;
-        if (tall) paint_stops(canvas, r.x, r.y, r.w, r.h, &S->sel); /* its lines go over them */
-        if (top) {
-            stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
-            canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
-        }
-        if (tall && S->sel_tall_top) {
-            stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_top));
-            canvas_fill_rect(canvas, r.x, r.y + top, r.w, 1);
-        }
-        if (!tall) paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
-        if (tall) {
-            stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_edge));
-            canvas_fill_rect(canvas, r.x, r.y + r.h - 2, r.w, 1);
-            stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_line));
-            canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
-        } else if (edge) {
-            stock_canvas_set_fill_color(canvas, RGBA(S->sel_edge));
-            canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
+    if (band && (!tile || g_menu.kind == 4)) {
+        if (painter == SEL_STOPS) { /* Classic's band: square and full width, the glass clips it */
+            int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
+                edge = tall ? 2 : !!S->sel_edge;
+            if (tall) paint_stops(canvas, r.x, r.y, r.w, r.h, &S->sel); /* its lines go over them */
+            if (top) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_top));
+                canvas_fill_rect(canvas, r.x, r.y, r.w, 1);
+            }
+            if (tall && S->sel_tall_top) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_top));
+                canvas_fill_rect(canvas, r.x, r.y + top, r.w, 1);
+            }
+            if (!tall) paint_stops(canvas, r.x, r.y + top, r.w, r.h - top - edge, &S->sel);
+            if (tall) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_edge));
+                canvas_fill_rect(canvas, r.x, r.y + r.h - 2, r.w, 1);
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_tall_line));
+                canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
+            } else if (edge) {
+                stock_canvas_set_fill_color(canvas, RGBA(S->sel_edge));
+                canvas_fill_rect(canvas, r.x, r.y + r.h - 1, r.w, 1);
+            }
+        } else {
+            /* Modern's bar, a list row's a pill under Rounded Corners, inset like Minimal's card */
+            rect_t bar = r;
+            int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
+            if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
+            gradient(canvas, bar, S->tones[0], S->tones[1], S->tones[4], pill);
         }
     } else if (home) {
         rect_t dot = { HOME_DOT_X, r.y + (r.h - HOME_DOT) / 2, HOME_DOT, HOME_DOT };
@@ -4324,8 +4331,8 @@ static void np_fill(int scrub) {
     widget_invalidate_force(st.np_slider, (void *)0);
 }
 
-/* The Theme's progress bar over the asset's (Minimal's square 4px line): Classic's NP_BAR_CLASSIC
- * capsule, and stock's play-state glyph, which Minimal hides. */
+/* The Theme's progress bar over the asset's (Minimal's square 4px line): Classic's and Modern's
+ * NP_BAR_CLASSIC capsule, and stock's play-state glyph, which Minimal hides. */
 static void np_theme(void) {
     static const char *const radius[] = { "style:normal:round_radius", "style:pressed:round_radius",
                                           "style:over:round_radius", "style:disable:round_radius",
@@ -5120,7 +5127,7 @@ static void vol_paint(void *top, void *canvas) {
 
 /* Both native album constructors use 110px square covers, with playing overlays either
  * beside the cover or nested inside it. Keep their local origins together when padding the tile.
- * Both themes inset the cover, so the selection card frames it rather than hiding under it. */
+ * Every theme insets the cover, so the selection card frames it rather than hiding under it. */
 static void album_children(void *w, int nested) {
     int pad = TILE_INSET + TILE_CLEARANCE, size = 110 - 2 * pad;
     for (unsigned i = 0; i < widget_count_children(w); ++i) {
@@ -5207,7 +5214,7 @@ static int press_repaint(const void *info) {
     return 0;
 }
 
-/* A touched list row's grey is the selection's shape: the whole row, as Classic's bar (the
+/* A touched list row's grey is the selection's shape: the whole row, as Modern's bar (the
  * Library's button leaves x 0-20, 355-375 and the pitch's last 4 px), or under Rounded Corners the
  * inset pill. Drawn as the row's background; the button's own box is skipped (1). The press
  * invalidates the whole surface (ringnav_touch), its release only the button, so the row's edges
@@ -5940,7 +5947,7 @@ static void setting_put(int *value, int v, const char *key) {
 /* live 0 saves the preset alone (restart_confirm: the running state keeps the booted theme). */
 static void theme_preset(const theme_t *T, int live) {
     int buf[11];
-    st.light_day = light_day(clock_now(buf));
+    if (live) st.light_day = light_day(clock_now(buf));
     for (int k = 0; k < T->n_opts; ++k) {
         const option_t *o = &T->opts[k];
         int *v = option_slot(T, o->setting), was = *v;
@@ -5955,7 +5962,8 @@ static int setting_click(void *ctx, void *event) {
     const theme_t *T = theme();
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
-    /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games */
+    /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts,
+     * Audiobooks */
     static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 8, 1, 9, 0 };
     _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
                    "one per shortcut");
@@ -8956,12 +8964,6 @@ static int upload_scrobbles(void *ctx, void *event) {
                           : "Upload failed");
     return 0;
 }
-
-/* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
- * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
- * Books books.c. */
-enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
-static const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
 
 /* 1 + the MEDIA folder s names (up to its end or a '/'), 0 for none. MEDIA is letters only. */
 static int media_kind(const char *s) {

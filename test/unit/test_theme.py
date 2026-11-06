@@ -189,7 +189,7 @@ def test_extends():
     t = resolved('<colorSchemes accents="cobalt green"/><option setting="accent" key="ACCENT" default="cobalt"/>',
                  'id="t" name="T" index="2" extends="modern"')
     assert (t['accents'], t['schemes'][0], t['schemes'][4], t['opts']) == (0x110, ZERO, MODERN_ROLES, [opt('SETTING_ACCENT', default=4, values=0x110)])
-    # resolve() takes it, but builtins() rejects it beside Classic, whose ACCENT takes other colours
+    # resolve() takes it, but builtins() rejects it beside Modern, whose ACCENT takes other colours
     assert resolved('<view name="home"><element name="rows" top="12"/></view>')['home_top'] == 12  # a card theme states numbers
     assert resolved('<colorScheme name="graphite" fill="#112233"/>')['schemes'][0]['fill'] == 0x112233
     assert resolved('<colorScheme name="graphite" fill="#AbCdEf"/>')['schemes'][0]['fill'] == 0xabcdef
@@ -325,10 +325,19 @@ def test_builtins_rejects_a_shared_accent_key(tmp_path):
     shared = 'id="t" name="T" index="2" extends="modern"'
     put('t', shared, '<colorSchemes accents="cobalt green"/><option setting="accent" key="ACCENT" default="cobalt"/>')
     assert error(theme.builtins, tmp_path) == 't/theme.xml:1: accent key ACCENT is modern\'s, with other colorSchemes or default'
-    put('t', shared, '<option setting="accent" key="ACCENT" default="graphite"/>')
+    put('t', shared, '')
     assert [t['id'] for t in theme.builtins(tmp_path)] == ['minimal', 'modern', 't']  # Modern's own: allowed
     put('t', shared, '<option setting="accent" key="ACCENT" default="tidal"/>')
     assert error(theme.builtins, tmp_path) == 't/theme.xml:1: accent key ACCENT is modern\'s, with other colorSchemes or default'
+
+
+def test_builtins_rejects_other_options_on_a_set(tmp_path):
+    """Themes on one set switch live, relabelling the booted theme's Appearance rows, so they declare the same options."""
+    set0_themes(tmp_path)
+    (tmp_path/'t').mkdir()
+    (tmp_path/'t'/'theme.xml').write_text('<theme format="1" id="t" name="T" index="2" extends="modern">'
+                                          '<option setting="accent" key="ACCENT" default="graphite"/></theme>')
+    assert error(theme.builtins, tmp_path) == "t/theme.xml:1: t runs on minimal's set, with other options"
 
 
 def test_builtins_rejects_a_duplicate_id(tmp_path):
@@ -816,13 +825,14 @@ def test_payload_option_values_rejects(body, message):
 
 def test_builtins_rejects_a_shared_own_key(tmp_path):
     """Themes sharing an own key share its stored value, so they must declare the same values and default;
-    each presets it as it likes (as Minimal and Classic preset LIGHT)."""
+    each presets it as it likes (as Minimal and Classic preset LIGHT). Both on a set of their own: an option Minimal
+    lacks can't share its set."""
     set0_themes(tmp_path)
     def put(folder, index, label, presets=''):
         (tmp_path/folder).mkdir(exist_ok=True)
         (tmp_path/folder/'theme.xml').write_text(
-            f'<theme format="1" id="{folder}" name="{folder}" index="{index}" extends="modern">'
-            f'<option setting="accent" key="ACCENT" default="graphite"/><option key="ART" label="{label}"{presets}>{V}</option></theme>')
+            f'<theme format="1" id="{folder}" name="{folder}" index="{index}" extends="modern"><geometry name="pico"/><geometry set="pico"/>'
+            f'<option setting="accent" key="ACCENT" default="graphite"/><option key="ART" label="{label}"{presets}>{V.replace("ipod", "pico")}</option></theme>')
     put('a', 2, 'Art', ' preset="On"'); put('b', 3, 'Art', ' preset="Off" keep="On"')
     assert list(theme.theme_keys(theme.builtins(tmp_path))) == ['ART']  # one key, one slot
     assert {t['id']: (t['opts'][-1]['preset'], t['opts'][-1]['keep']) for t in theme.builtins(tmp_path)[2:]} == {'a': (1, -1), 'b': (0, 1)}

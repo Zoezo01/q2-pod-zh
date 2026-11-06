@@ -910,6 +910,11 @@ def builtins(root=ROOT/'assets/themes'):
     for (_, _, t), (_, n, u) in itertools.combinations(found, 2):
         if t['accent_key'] == u['accent_key'] and (t['accents'], accent_default(t)) != (u['accents'], accent_default(u)):
             fail(n.file, n.line, f'accent key {u["accent_key"]} is {t["id"]}\'s, with other colorSchemes or default')
+    # Themes on one set switch live (theme_select), relabelling the booted one's Appearance rows: the same rows.
+    def rows(t): return [o['key'] if o['setting'] == 'SETTING_OWN' else o['setting'] for o in t['opts']]
+    for (_, _, t), (_, n, u) in itertools.combinations(found, 2):
+        if t['geom_set'] == u['geom_set'] and rows(t) != rows(u):
+            fail(n.file, n.line, f"{u['id']} runs on {t['id']}'s set, with other options")
     # An own key is one stored value too: its values and default alike; its preset is each theme's (as LIGHT's).
     def shape(e): return e[:2] + ({k: v for k, v in e[2].items() if k not in ('preset', 'keep')} if e[2] else None,)
     owners = {}

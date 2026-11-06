@@ -120,7 +120,7 @@ The background view paints before the transparent menus, and both menus are clip
 window while sliding.
 
 Display settings offers **Home: Split / Full / Carousel**, stored as `IPOD/HOME` 0, 1 or 2; invalid or absent
-values mean Split. `coverflow_home_layout` moves the asset's widgets at runtime, in both themes:
+values mean Split. `coverflow_home_layout` moves the asset's widgets at runtime, in every theme:
 Split narrows both menus to `HOME_SPLIT_W` (187, half the screen) and shows the cover itself in the 290-pixel-high panel right of them
 (`img_homeart` is an `image` for this, fitted to the cover's proportions and clipped to the panel,
 the menus clipped left of it; `default_album_home` without a cover); Full hides the art and
@@ -519,7 +519,7 @@ mode (shuffle/order) and Favourite icons sit at the foot of the art page under t
 favourite centred directly beneath More at x 303, with the play-mode control 56 pixels to its left, leaving a 6 px gap between touch targets;
 the three lines centre in the art's height above them. Both retain their 50 px touch targets and
 vertical position. Both keep their stock images and handlers and swipe away with the art.
-Internet Radio uses the same heart alignment in both iPod themes.
+Internet Radio uses the same heart alignment in every theme.
 
 The bar is a four-pixel plain-colour line inside a 44-pixel seek target: a `#1C1C1C` track
 (`TRACK_COLOR`) and an off-white `MINIMAL_FILL` fill, with no thumb. **Theme: Classic** and **Modern** make it an
@@ -804,7 +804,7 @@ shared layout, in Classic's accent and Light Mode.
 
 **Light Mode: Auto** (`LIGHT=2`) is light from 07:00 to 18:59 by the device clock and dark the rest of the day. The row cycles Off, On, Auto on each click. It switches at 07:00 and 19:00 while the device is on, and the cached images are dropped and an open screen repaints then (`clock_show`, at each minute with the status bar's clock). The boot logo picks its mode by the same hours, in the saved time zone ([boot](boot.md#light-mode)).
 
-**Light Mode: On** (`LIGHT=1`) turns both themes light at runtime, over the same assets. Every
+**Light Mode: On** (`LIGHT=1`) turns every theme light at runtime, over the same assets. Every
 neutral colour (channels within `LIGHT_SPREAD`) flips per channel, black to `LIGHT_PAPER` (`#F4F4F4`)
 and white to `LIGHT_INK` (`#161616`), or Classic's white paper and black ink, alpha kept; other hues are left as they are. Stock's colours
 flip in the style hooks (`accent_map`, after the accent), the payload's own in `ui_ink`, which
