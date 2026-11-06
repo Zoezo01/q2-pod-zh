@@ -35,6 +35,8 @@ FLAGS = ['-O0', '-g', '-fno-builtin', '-ffreestanding', '-fPIC', '-fkeep-static-
          '-Wno-pointer-to-int-cast', '-Wno-builtin-declaration-mismatch', '-Wno-incompatible-pointer-types',
          '-Wno-format', '-Wno-attributes', '-D__asm__(...)=']
 STUB_ARGS = 6
+# Stock's context data as host arrays; a 4-byte cell holds a pointer (P(x, 0) reads one), 8 bytes here.
+CONTEXT = {name: max(size, 8) for name, size in tools_build.CONTEXT_DATA.items()}
 FLOATS = ('float', 'double')
 
 
@@ -60,7 +62,7 @@ def platform_header():
 
 
 def stock_header(themes):
-    lines = [f'extern unsigned char fw_ctx_{name}[{size}];' for name, size in tools_build.CONTEXT_DATA.items()]
+    lines = [f'extern unsigned char fw_ctx_{name}[{size}];' for name, size in CONTEXT.items()]
     ranges = [tools_build.bold_font()[1], tools_build.classic_light_font()[1]]
     context = {name: f'fw_ctx_{name}' for name in tools_build.CONTEXT_DATA}
     return '\n'.join(lines) + '\n' + tools_build.stock_header(context, ranges, themes, repo='owner/repo')
@@ -131,7 +133,7 @@ def build(out, extra=()):
         subprocess.run(['objcopy', *renames, str(obj)], check=True)
     system = {'__stack_chk_fail', '_GLOBAL_OFFSET_TABLE_', *PURE}
     system |= {n for n in undefined if n.startswith(('__gcov', '__asan', '__ubsan', '__lsan'))}
-    data = {f'fw_ctx_{name}': size for name, size in tools_build.CONTEXT_DATA.items()} | {name: 1 for name in tools_build.GLOBALS}
+    data = {f'fw_ctx_{name}': size for name, size in CONTEXT.items()} | {name: 1 for name in tools_build.GLOBALS}
     names = sorted(undefined - defined - system - set(data))
     (out/'fw_stubs.c').write_text(stubs_source(names, data))
     stubs = out/'fw_stubs.o'
@@ -185,11 +187,13 @@ class Fw:
         return f
 
     def var(self, name, ctype):
-        """A firmware global as ctype: a struct or array mirror must be the symbol's whole size (a C
-        struct that grew a field fails here, not as wrong offsets); a scalar reads its start."""
+        """A firmware global as ctype: a struct mirror (or an array of them) must be the symbol's whole
+        size, so a C struct that grew a field fails here, not as wrong offsets; a scalar or an array of
+        them may view its start."""
         size = self.sizes.get(name)
         if size is not None:
-            whole = issubclass(ctype, (ctypes.Structure, ctypes.Union, ctypes.Array))
+            item = ctype._type_ if issubclass(ctype, ctypes.Array) else ctype
+            whole = issubclass(item, (ctypes.Structure, ctypes.Union))
             assert ctypes.sizeof(ctype) == size if whole else ctypes.sizeof(ctype) <= size, \
                 f'{name} is {size} bytes, {ctype.__name__} {ctypes.sizeof(ctype)}: the C changed, update the mirror'
         return ctype.in_dll(self.lib, name)

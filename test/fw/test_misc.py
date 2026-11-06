@@ -1164,64 +1164,12 @@ def test_play_flips_the_pause_at_once(fw):
     assert video(fw).paused == 0
 
 
-# q2video's samples
-
-def pcm(values):
-    return (C.c_short * len(values))(*values)
-
-
-def test_mono_each_frame_s_channels_their_mean(fw):
-    mono = fw.fn('mono', None, C.c_void_p, C.c_uint)
-    s = pcm([100, 200, -100, -300, 32767, 32767, -32768, -32768, 32767, -32768, 1, 2, -1, -2])
-    mono(s, 7)
-    assert list(s) == [150, 150, -200, -200, 32767, 32767, -32768, -32768, -1, -1, 1, 1, -2, -2]
-
-
-def test_mono_stops_at_its_last_frame(fw):
-    mono = fw.fn('mono', None, C.c_void_p, C.c_uint)
-    s = exact(C.c_short, 4)
-    s[:] = [10, 20, 30, 40]
-    mono(s, 2)
-    assert list(s) == [15, 15, 35, 35]
-    mono(s, 0)
-    libc.free(C.addressof(s))
-
-
-def test_swap_exchanges_each_frame_s_channels(fw):
-    swap = fw.fn('swap', None, C.c_void_p, C.c_uint)
-    s = pcm([1, 2, 3, 4, -32768, 32767])
-    swap(s, 3)
-    assert list(s) == [2, 1, 4, 3, 32767, -32768]
-    swap(s, 3)
-    assert list(s) == [1, 2, 3, 4, -32768, 32767]
-
-
-def test_swap_stops_at_its_last_frame(fw):
-    swap = fw.fn('swap', None, C.c_void_p, C.c_uint)
-    s = exact(C.c_short, 2)
-    s[:] = [10, 20]
-    swap(s, 1)
-    swap(s, 0)
-    assert list(s) == [20, 10]
-    libc.free(C.addressof(s))
-
-
-def test_mono_then_swap_is_mono(fw):
-    rng = random.Random(5)
-    mono, swap = fw.fn('mono', None, C.c_void_p, C.c_uint), fw.fn('swap', None, C.c_void_p, C.c_uint)
-    s = pcm([rng.randrange(-32768, 32768) for _ in range(400)])
-    mono(s, 200)
-    before = list(s)
-    swap(s, 200)
-    assert list(s) == before and all(before[k] == before[k + 1] for k in range(0, 400, 2))
-
-
 # Crossfade's page
 
 class Xf(C.Structure):
-    _fields_ = [(k, C.c_int) for k in 'read on seconds done'.split()] + [('key', C.c_int * 5)] + \
-               [(k, C.c_int) for k in 'ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap mqa_read mqa'.split()] + \
-               [(k, C.c_void_p) for k in 'flag mono_flag swap_flag swap_label mqa_label mono_label page sw view slider dec add label'.split()] + \
+    _fields_ = [(k, C.c_int) for k in 'read on seconds done'.split()] + [('key', C.c_int * 6)] + \
+               [(k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap mqa_read mqa'.split()] + \
+               [(k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mqa_label mono_label page sw view slider dec add label'.split()] + \
                [('press', C.c_uint), ('press_at', C.c_uint)]
 
 
@@ -1409,11 +1357,11 @@ def test_centre_on_a_page_with_no_switch_goes_to_stock(fw):
     assert key(0x7000, CENTER) == 0
 
 
-def int_files(fw, fd=4, fail_open=False, fail_truncate=False, fail_map=False, fail_rename=False):
+def int_files(fw, fd=4, fail_open=False, fail_write=False, fail_map=False, fail_rename=False):
     flags = {}
     cells = {}
     fw.mock('fw_open', lambda *_: -1 if fail_open else fd)
-    fw.mock('fw_ftruncate', lambda *_: -1 if fail_truncate else 0)
+    fw.mock('fw_write', lambda fd, buf, n, *_: -1 if fail_write else n)  # the int's zero, written whole
 
     def mapped(*_):
         cells[len(cells)] = C.c_int(0x7f)
@@ -1434,7 +1382,7 @@ def test_a_shared_int_is_made_whole_then_renamed(fw):
     assert shared(fw) == C.addressof(cells[0]) and flags == {'closed': 1}
 
 
-@pytest.mark.parametrize('how', ('fail_open', 'fail_truncate', 'fail_map', 'fail_rename'))
+@pytest.mark.parametrize('how', ('fail_open', 'fail_write', 'fail_map', 'fail_rename'))
 def test_a_shared_int_that_can_t_be_made_is_tried_again_later(fw, how):
     flags, _ = int_files(fw, **{how: True})
     assert shared(fw) is None
@@ -1644,13 +1592,21 @@ def test_list_files_says_why_it_is_empty(fw):
 SAVED = '/mnt/data/peq-presets'
 
 
+def typed(fw, text):
+    """The rename edit holding text: its UTF-8 copy and the wide text rename_preset checks for any."""
+    wide = (C.c_uint * (len(text) + 1))(*text)
+    fw.keep.append(wide)
+    fw.mock('widget_get_text', lambda *_: C.addressof(wide))
+    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: (C.memmove(out, text + b'\0', min(len(text) + 1, n)), 0)[1])
+
+
 def renamer(fw, text, old='Rock', others=()):
     u = ui(fw)
     u.edit, u.screen = 0x7000, 11
     u.destination = f'{SAVED}/{old}.peq'.encode()
     u.name, u.applied = old.encode(), b'Other'
     card = Card(fw, {f'{SAVED}/{old}.peq': b'p', **{f'{SAVED}/{n}.peq': b'q' for n in others}})
-    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: (C.memmove(out, text + b'\0', min(len(text) + 1, n)), 0)[1])
+    typed(fw, text)
     fw.fn('peq_ui__rename_preset', None)()
     return u, card
 
@@ -1666,7 +1622,12 @@ def test_a_rename_trims_what_fat_drops(fw):
     assert f'{SAVED}/Jazz.peq' in card.files
 
 
-@pytest.mark.parametrize('text', (b'', b'   ', b'...', b'.hidden', b'a/b', b'a\\b', b'a:b', b'a*b', b'a?b', b'a"b', b'a<b', b'a>b', b'a|b'))
+def test_an_empty_edit_goes_back_to_the_list(fw):
+    u, card = renamer(fw, b'')  # Return's cancel leaves it so
+    assert u.screen == RENAMES and u.status == b'' and list(card.files) == [f'{SAVED}/Rock.peq']
+
+
+@pytest.mark.parametrize('text', (b'   ', b'...', b'.hidden', b'a/b', b'a\\b', b'a:b', b'a*b', b'a?b', b'a"b', b'a<b', b'a>b', b'a|b'))
 def test_a_name_fat_can_t_hold_keeps_the_preset(fw, text):
     u, card = renamer(fw, text)
     assert u.status == b'Name not allowed; preset kept' and list(card.files) == [f'{SAVED}/Rock.peq']
@@ -1680,7 +1641,7 @@ def test_a_name_taken_keeps_the_preset(fw):
 def test_a_case_change_is_a_rename_though_fat_finds_the_name(fw):
     u = ui(fw)
     u.edit, u.destination, u.name = 0x7000, f'{SAVED}/Rock.peq'.encode(), b'Rock'
-    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: (C.memmove(out, b'ROCK\0', 5), 0)[1])
+    typed(fw, b'ROCK')
     fw.mock('fw_access', lambda *_: 0)  # FAT: ROCK.peq "exists"
     fw.fn('peq_ui__rename_preset', None)()
     assert u.status == b'Renamed to ROCK' and u.name == b'ROCK'
@@ -1696,7 +1657,7 @@ def test_a_failed_rename_says_so(fw):
     u.edit, u.destination = 0x7000, f'{SAVED}/Rock.peq'.encode()
     card = Card(fw, {f'{SAVED}/Rock.peq': b'p'})
     card.bad_rename = True
-    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: (C.memmove(out, b'Jazz\0', 5), 0)[1])
+    typed(fw, b'Jazz')
     fw.fn('peq_ui__rename_preset', None)()
     assert u.status == b'Rename failed; preset kept'
 
@@ -1865,9 +1826,9 @@ def test_a_preamp_pick_sticks_to_a_long_named_preset(fw):
 
 
 HOME, BAND, PRESETS, IMPORTS, SAVES, CONFIRM, DELETES, PICK, ADJUST, STOCKS, RENAMES, NAMING = range(12)
-ACT_BACK, ACT_APPLY, ACT_RESET, ACT_BYPASS, ACT_MENU, ACT_IMPORT, ACT_SAVE, ACT_ENABLE, ACT_TYPE, ACT_RAISE, ACT_LOWER, ACT_TYPED, ACT_CHANNEL, \
-    ACT_STEP, ACT_YES, ACT_CANCEL, ACT_DELETE, ACT_BALANCE, ACT_PREAMP, ACT_GAIN, ACT_FREQUENCY, ACT_QUALITY = range(1000, 1022)
-ACT_STOCK, ACT_FILE_PREV, ACT_FILE_NEXT = 1023, 1024, 1025
+ACT_BACK, ACT_APPLY, ACT_RESET, ACT_BYPASS, ACT_PER_OUTPUT, ACT_MENU, ACT_IMPORT, ACT_SAVE, ACT_ENABLE, ACT_TYPE, ACT_RAISE, ACT_LOWER, \
+    ACT_TYPED, ACT_CHANNEL, ACT_STEP, ACT_YES, ACT_CANCEL, ACT_DELETE, ACT_BALANCE, ACT_PREAMP, ACT_GAIN, ACT_FREQUENCY, ACT_QUALITY, \
+    ACT_KEYBOARD, ACT_STOCK, ACT_FILE_PREV, ACT_FILE_NEXT, ACT_RENAME, ACT_NAMED = range(1000, 1029)
 
 
 def act(fw, *ids):
@@ -2124,7 +2085,7 @@ def test_a_display_only_row_does_nothing(fw):
 
 class E3(C.Structure):
     _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint)] + \
-               [(k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()] + [('gain', C.c_double * 3), ('status', C.c_char_p)]
+               [(k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()] + [('gain', C.c_double * 3), ('status', C.c_char_p), ('caption', C.c_int)]
 
 
 E3_TABS, E3_SWITCH, E3_PRESETS, E3_RESET, E3_LOW, E3_MID, E3_HIGH = range(7)
@@ -2324,7 +2285,7 @@ def test_upnext_closed_forgets_only_its_page(fw):
 def test_a_row_plays_its_track_only_while_the_queue_holds_it(fw, at, size, plays):
     u = un(fw)
     u.idx[3] = at
-    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 0x5000
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0x5000  # a 32-bit pointer's cell, as on the Q2
     fw.mock('fw_deque_size', lambda *_: size)
     assert fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(3, None) == 0
     assert [c[1][0] for c in fw.calls('player_start_queue')] == ([at] if plays else [])
@@ -2347,7 +2308,7 @@ def test_up_next_opens_one_page_at_a_time(fw):
 def test_a_move_with_the_page_gone_or_a_row_out_of_range_does_nothing(fw):
     u = un(fw)
     move = fw.fn('upnext__un_move', C.c_int, C.c_void_p)
-    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_void_p).value = 0x5000
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0x5000  # a 32-bit pointer's cell, as on the Q2
     u.n, u.row = 2, 1
     move(None)  # no page
     u.page, u.row = 0x7000, 2

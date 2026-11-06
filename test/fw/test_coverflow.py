@@ -35,9 +35,11 @@ class Touch(C.Structure):
 
 
 class Home(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'win art list sets'.split()] + [('carousel', C.c_void_p * 3)] + \
+    _fields_ = [(k, C.c_void_p) for k in 'win art list sets lib'.split()] + [('carousel', C.c_void_p * 3)] + \
                [(k, C.c_uint) for k in 'key repaint drift drift_ms drift_last'.split()] + \
-               [('tex', C.c_void_p), ('frame', C.c_void_p)] + [(k, C.c_int) for k in 'tw rx ry u0 v0 du dv'.split()] + \
+               [('tex', C.c_void_p), ('frame', C.c_void_p)] + [(k, C.c_int) for k in 'tw rx ry u0 v0 du dv pane'.split()] + \
+               [('row', C.c_void_p)] + [(k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()] + \
+               [('count_thread', C.c_ulong)] + [(k, C.c_uint) for k in 'asked pane_read count_timer pane_timer'.split()] + \
                [('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int)]
 
 
@@ -78,7 +80,8 @@ def api(fw):
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_player_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow__marked_empty': (i, C.c_char_p),
-           'coverflow__scan_all_kept': (i, ptr, ptr), 'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p)}
+           'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p)}
+    fw.fn('coverflow__cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
 
@@ -1689,7 +1692,7 @@ def test_folder_cover_what_it_can_t_list_is_stock_s_song_alone(fw, track):
 
 def player_rig(fw, track=b'/m/a.mp3', id3_path=b'/m/a.mp3', artist=b'Art', album=b'Alb'):
     formatter(fw)
-    buf = fw.var('fw_ctx_g_play_id3_info', C.c_char * 3476)
+    buf = fw.var('fw_ctx_g_play_id3_info', C.c_char * 2716)
     C.memmove(C.addressof(buf), id3_path + b'\0', len(id3_path) + 1)
     C.memmove(C.addressof(buf) + 0x504, artist + b'\0', len(artist) + 1)
     C.memmove(C.addressof(buf) + 0x404, album + b'\0', len(album) + 1)
@@ -1812,30 +1815,6 @@ def test_sort_next_in_the_page_s_own_orders(fw):
     assert g.sort_next(1) == SORT_RATING  # the rated orders wrap
     c.sort = SORT_RANDOM  # not a rated order
     assert g.sort_next(1) == SORT_RATING
-
-
-def test_a_full_update_keeps_the_library_s_dates(fw):
-    g = api(fw)
-    scripts = []
-    fw.mock('toolsUpdateDbTable', lambda db, sql, *_: (scripts.append(C.string_at(sql)), 1)[1])
-    fw.mock('stock_scan_all_trampoline', lambda a, b, *_: (scripts.append(b'SCAN'), 7)[1])
-    assert g.scan_all_kept(1, 1) == 7
-    assert scripts[1] == b'SCAN' and re.search(rb'create table (if not exists )?ringnav_added', scripts[0])
-    assert b'update songtable' in scripts[2]
-
-
-def test_a_failed_copy_skips_the_write_back(fw):
-    g = api(fw)
-    scripts = []
-    fw.mock('toolsUpdateDbTable', lambda db, sql, *_: scripts.append(C.string_at(sql)))
-    g.scan_all_kept(1, 1)
-    assert len(scripts) == 1
-
-
-def test_a_folder_update_copies_nothing(fw):
-    g = api(fw)
-    g.scan_all_kept(1, 0)
-    assert not fw.calls('toolsUpdateDbTable') and fw.calls('stock_scan_all_trampoline')
 
 
 def test_the_library_generation_moves_before_and_after_a_scan(fw):

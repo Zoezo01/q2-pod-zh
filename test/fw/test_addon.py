@@ -139,7 +139,7 @@ class World:
         fw.mock('fw_clock_gettime', self.clock)
 
     def clock(self, which, ts, *_):
-        t = C.cast(ts, C.POINTER(C.c_long if which == 7 else C.c_int))  # now_ms's is o32's two ints, boot_s's a struct of longs
+        t = C.cast(ts, C.POINTER(C.c_long))  # now_ms's and boot_s's: a struct of two longs
         t[0], t[1] = self.now, 0
 
     def fopen(self, path, mode, *_):
@@ -1572,7 +1572,7 @@ def worker(fw, script, connect=0):
         return len(piece)
     def clock(which, ts, *_):
         world.now += 1
-        t = C.cast(ts, C.POINTER(C.c_int))
+        t = C.cast(ts, C.POINTER(C.c_long))
         t[0], t[1] = world.now, 0
     fw.mock('fw_clock_gettime', clock)
     fw.mock('fw_socket', lambda *_: 5)

@@ -1,11 +1,9 @@
 """patch/navigation.c: tag and CUE text, comma lists, Light Mode's colours, Era's and the playlists' rows, config."""
 import ctypes as C
 import datetime
-import os
 import random
 import re
 import struct
-import subprocess
 
 import pytest
 
@@ -65,19 +63,8 @@ def strings(fw):
 
 @pytest.fixture(scope='module')
 def scratch(library):
-    """scratch_t's field offsets as this build lays it out: its pointers move them, so the debug info says."""
-    dump = subprocess.run(['readelf', '--debug-dump=info', str(library.parent/'navigation.o')],
-                          capture_output=True, text=True, check=True).stdout
-    kind = re.search(r': scratch_t\n(?:.*\n)*?\s+<\w+>\s+DW_AT_type\s*: <0x(\w+)>', dump)[1]
-    body = dump[dump.index(f' <1><{kind}>:'):]
-    body = body[:body.index('\n <1>')]
-    found = {}
-    for chunk in body.split('\n <2>')[1:]:
-        name = re.search(r'DW_AT_name\s*:\s*(?:\(indirect string[^)]*\): )?(\w+)', chunk)
-        where = re.search(r'DW_AT_data_member_location\s*:\s*(\d+)', chunk)
-        if name and where:
-            found[name[1]] = int(where[1])
-    return found
+    """scratch_t's field offsets as this build lays it out: its pointers move them."""
+    return host.offsets(library.parent/'navigation.o', 'scratch_t')
 
 
 @pytest.fixture
@@ -176,12 +163,12 @@ def test_neutral_is_a_spread_of_16(fw, color, neutral):
 
 @pytest.mark.parametrize('value, flipped', [(0, PAPER), (255, INK), (128, PAPER - 128 * (PAPER - INK) // 255)])
 def test_flip_v_runs_paper_to_ink(fw, value, flipped):
-    assert fw.fn('navigation__flip_v', C.c_uint, C.c_uint)(value) == flipped
+    assert fw.fn('navigation__flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)(value, PAPER, INK) == flipped
 
 
 def test_flip_v_only_falls(fw):
-    flip_v = fw.fn('navigation__flip_v', C.c_uint, C.c_uint)
-    values = [flip_v(v) for v in range(256)]
+    flip_v = fw.fn('navigation__flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)
+    values = [flip_v(v, PAPER, INK) for v in range(256)]
     assert values == sorted(values, reverse=True) and min(values) == INK and max(values) == PAPER
 
 
@@ -197,8 +184,9 @@ def test_flip(fw, color, flipped):
 
 
 def test_flip_is_per_channel_on_a_slightly_coloured_grey(fw):
-    flip_v = fw.fn('navigation__flip_v', C.c_uint, C.c_uint)
-    assert fw.fn('navigation__flip', C.c_uint, C.c_uint)(0xff102010) == 0xff000000 | flip_v(0x10) << 16 | flip_v(0x20) << 8 | flip_v(0x10)
+    flip_v = fw.fn('navigation__flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)
+    assert fw.fn('navigation__flip', C.c_uint, C.c_uint)(0xff102010) == \
+        0xff000000 | flip_v(0x10, PAPER, INK) << 16 | flip_v(0x20, PAPER, INK) << 8 | flip_v(0x10, PAPER, INK)
 
 
 def test_flip_if(fw):
@@ -329,19 +317,19 @@ def test_accent_map_in_light_mode_flips_neutrals_and_keeps_clear(fw, clock):
 
 
 def test_a_neutral_accent_in_light_mode_takes_its_silver_for_both(fw, clock):
-    Config(fw, LIGHT=b'1', THEME=b'1', ACCENT=b'0')
+    Config(fw, LIGHT=b'1', THEME=b'2', ACCENT=b'0')
     tone = fw.fn('accent_tone', C.c_uint, C.c_int)
     assert tone(0) == tone(2) == ACCENTS[0][3]
 
 
 def test_a_coloured_accent_keeps_its_tones(fw, clock):
-    Config(fw, THEME=b'1', ACCENT=b'4')
+    Config(fw, THEME=b'2', ACCENT=b'4')
     tone = fw.fn('accent_tone', C.c_uint, C.c_int)
     assert [tone(i) for i in range(5)] == ACCENTS[4]
 
 
 def test_ivory_is_minimal_only(fw, clock):
-    Config(fw, THEME=b'1', ACCENT=b'7')
+    Config(fw, THEME=b'2', ACCENT=b'7')
     tone = fw.fn('accent_tone', C.c_uint, C.c_int)
     assert tone(0) == ACCENTS[0][0]  # Classic has no Ivory: Graphite
 
@@ -383,7 +371,7 @@ def test_config_value_any_text(fw):
         assert value(b'S', b'K', n, default) == want
 
 
-@pytest.mark.parametrize('i, choices', [(0, 2), (1, 2), (2, 2), (3, 3), (4, 2), (10, 2), (11, 4), (12, 2), (15, 2)])
+@pytest.mark.parametrize('i, choices', [(0, 2), (1, 2), (2, 3), (3, 2), (4, 2), (10, 4), (11, 2), (12, 2), (15, 2)])
 def test_pod_rows_choices(fw, i, choices):
     assert fw.fn('navigation__pod_choices', C.c_int, C.c_uint)(i) == choices
 
@@ -391,17 +379,17 @@ def test_pod_rows_choices(fw, i, choices):
 def test_pod_settings_defaults(fw):
     Config(fw)
     assert fw.fn('ringnav_artist_view', C.c_int)() == 1  # Artist albums defaults to Coverflow
-    assert [fw.fn(name, C.c_int)() for name in ('ringnav_wheel_qs', 'ringnav_year_old', 'ringnav_artist_az',
-                                                'ringnav_lock_clock', 'ringnav_bt_resume')] == [0] * 5
+    assert [fw.fn(name, C.c_int)() for name in ('ringnav_year_old', 'ringnav_artist_az',
+                                                'ringnav_lock_clock', 'ringnav_bt_resume')] == [0] * 4
 
 
 def test_pod_settings_read_their_keys_once(fw):
-    Config(fw, WHEELQS=b'1', YEAROLD=b'1', ARTISTCF=b'2', ARTISTAZ=b'9', VOLGUARD=b'1')
-    assert fw.fn('ringnav_wheel_qs', C.c_int)() == 1 and fw.fn('ringnav_artist_view', C.c_int)() == 2
+    Config(fw, YEAROLD=b'1', ARTISTCF=b'2', ARTISTAZ=b'9', VOLGUARD=b'1')
+    assert fw.fn('ringnav_artist_view', C.c_int)() == 2
     assert fw.fn('ringnav_year_old', C.c_int)() == 1 and fw.fn('ringnav_artist_az', C.c_int)() == 0
     assert fw.var('wheel_guard', C.c_int).value == 1
     count = len(fw.calls('toolsReadConfig'))
-    fw.fn('ringnav_wheel_qs', C.c_int)()
+    fw.fn('ringnav_year_old', C.c_int)()
     assert len(fw.calls('toolsReadConfig')) == count
 
 
@@ -414,17 +402,19 @@ def test_artists_default_to_album_artist(fw):
     assert fw.var('fw_ctx_artist_type', C.c_int).value == 0
 
 
-@pytest.mark.parametrize('values, classic, home, light', [
-    ({}, 0, 0, 0), (dict(THEME=b'1', HOME=b'2', LIGHT=b'1'), 1, 2, 1), (dict(THEME=b'7', HOME=b'3', LIGHT=b'3'), 0, 0, 0),
+@pytest.mark.parametrize('values, theme, home, light', [
+    ({}, 0, 0, 0), (dict(THEME=b'2', HOME=b'2', LIGHT=b'1'), 2, 2, 1), (dict(THEME=b'7', HOME=b'3', LIGHT=b'3'), 0, 0, 0),
 ])
-def test_display_settings(fw, clock, values, classic, home, light):
+def test_display_settings(fw, clock, st, values, theme, home, light):
     Config(fw, **values)
-    assert (fw.fn('ipod_classic', C.c_int)(), fw.fn('ipod_home', C.c_int)(), fw.fn('ipod_light', C.c_int)()) == (classic, home, light)
+    assert (fw.fn('ipod_home', C.c_int)(), fw.fn('ipod_light', C.c_int)(), st('theme').value) == (home, light, theme)
 
 
 @pytest.mark.parametrize('value, rockbox, name', [
     (b'', 1, b'Rockbox'), (b'', 0, b'Favorites'), (b'0', 0, b'Rockbox'), (b'1', 0, b'Artists'), (b'2', 0, b'Albums'),
-    (b'4', 0, b'Rated Albums'), (b'5', 0, b'Shuffle'), (b'6', 0, b'Games'), (b'7', 0, b'Favorites'),
+    (b'3', 0, b'Favorites'),
+    (b'4', 0, b'Rated Albums'), (b'5', 0, b'Shuffle'), (b'6', 0, b'Games'), (b'7', 0, b'Playlists'), (b'8', 0, b'Podcasts'),
+    (b'9', 0, b'Audiobooks'),
 ])
 def test_shortcut(fw, clock, value, rockbox, name):
     Config(fw, **({'SHORTCUT': value} if value else {}))
@@ -1291,9 +1281,8 @@ def test_td_named_sorts_by_name_and_no_name_first(fw):
 def test_card_songs_newest_first(fw):
     keep = []
     deques = Deques(fw)
-    dir_list, rows = deques.new(), [record(keep, b'/m/%d' % i, kind=8 if i < 2 else 4) for i in range(3)]
-    fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value = dir_list
-    fw.mock('toolsLoadDirectory', lambda *_: deques[dir_list].extend(rows) and 0)
+    rows = [record(keep, b'/m/%d' % i, kind=8 if i < 2 else 4) for i in range(3)]
+    fw.mock('toolsLoadDirectory', lambda *_: deques[directory(fw)].extend(rows) and 0)
     def stat(version, path, info, *_):
         C.c_uint.from_address(info + 64).value = {b'/m/0': 5, b'/m/1': 9}[C.string_at(path)]
         return 0
@@ -1302,13 +1291,16 @@ def test_card_songs_newest_first(fw):
     assert deques[out] == [rows[1], rows[0]]  # a row that isn't a song is left out
 
 
+def directory(fw):
+    """The deque stock's queries fill: staged() puts its own there for each query (Deques masks the high half)."""
+    return fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value
+
+
 class Tree:
-    """toolsLoadDirectory over a dict of folders, through staged's staging deque."""
+    """toolsLoadDirectory over a dict of folders, into staged's deque."""
     def __init__(self, fw, folders):
         self.deques, self.folders, self.keep = Deques(fw), folders, []
-        self.staging = self.deques.new()
-        fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value = self.staging
-        fw.mock('toolsLoadDirectory', lambda path, *_: self.deques[self.staging].__setitem__(slice(None), self.rows(C.string_at(path))))
+        fw.mock('toolsLoadDirectory', lambda path, *_: self.deques[directory(fw)].__setitem__(slice(None), self.rows(C.string_at(path))))
         printf(fw)
 
     def rows(self, path):
@@ -1574,18 +1566,14 @@ def test_a_gone_app_has_nothing_to_toggle(fw, st, scratch):
     assert not services.written
 
 
-@pytest.mark.skipif(os.environ.get('Q2_FW_SANITIZE') is not None, reason="AddressSanitizer's fake stack gives each call a new frame to stale")
-def test_no_streamhide_key_hides_nothing(fw, st, scratch):
-    services = Services(fw, st, scratch)
-    seen = {}
-    def read(path, section, key, out, default, *_):
-        seen['hide'] = out
-    fw.mock('toolsReadConfig', read)
-    services.toggle(3)
-    C.memmove(seen['hide'], b'stale\0', 6)  # what the stack held before
-    services.written.clear()
-    services.toggle(3)
-    assert services.written == [b'RADIO']
+def test_no_streamhide_key_hides_nothing(fw):
+    """Stock leaves out alone for a missing key with an empty default (root_read's note): svc_hidden
+    empties it first, whatever the stack held."""
+    seen = []
+    fw.mock('toolsReadConfig', lambda path, section, key, out, *_: seen.append(C.string_at(out)))  # no key: out kept
+    hide = text(b'stale')
+    fw.fn('navigation__svc_hidden', None, C.c_char_p)(hide)
+    assert seen == [b''] and hide.value == b''
 
 
 def test_root_click_saves_the_next_folder(fw):
@@ -1760,8 +1748,8 @@ def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
     state = fw.var('navigation__era', Era)
     state.v, state.m, state.cap = C.cast(heap.calloc(2, C.sizeof(EraRow)), C.POINTER(EraRow)), 1, 1
     state.v[0].year = 1975
-    staging = deques.new([record(keep, id_=i) for i in (5, 9, 1, 7, 3)])
-    fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value = staging
+    songs = [record(keep, id_=i) for i in (5, 9, 1, 7, 3)]
+    fw.mock('getAllMusic', lambda *_: deques[directory(fw)].extend(songs) or len(songs))
     def run(db, sql, callback, *_):
         if callback:
             call = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)(callback)
@@ -2659,7 +2647,7 @@ def test_artist_songs_by_the_artist_setting(fw):
 
 
 def test_artist_songs_of_the_unknown_artist(fw):
-    fw.var('fw_ctx_g_local_classinfo_save', C.c_char * 16)[0xa] = b'\1'
+    fw.var('fw_ctx_g_local_classinfo_save', C.c_char * host.tools_build.CONTEXT_DATA['g_local_classinfo_save'])[0xa] = b'\1'
     fw.fn('navigation__artist_songs', C.c_int, C.c_void_p)(None)
     assert fw.calls('getMusicBySonger')[0][1][0] == 0
 

@@ -6,6 +6,13 @@ import random
 
 import pytest
 
+import host
+
+# stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
+TAG = host.tools_build.VERSION.encode()
+NEWER = b'%d.%d.%d' % (*[int(n) for n in TAG.split(b'.')][:2], int(TAG.split(b'.')[2]) + 1)
+OLDER = b'0.9.9'
+
 SH_MAX = 16
 SH_CAP = 1 << 30
 SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = range(8)
@@ -714,7 +721,7 @@ ASSET = LATEST + b'/download/update.tar'
 PART = b'/mnt/mmc/update.tar.part'
 
 
-def update(fw, code=302, location=b'https://github.com/owner/repo/releases/tag/1.2.0', asset=(0, 200, None), card=None):
+def update(fw, code=302, location=b'https://github.com/owner/repo/releases/tag/' + NEWER, asset=(0, 200, None), card=None):
     net = Net(fw, {ASSET: asset, LATEST: (0, code, location)})
     card = card or Card(fw)
     nu = fw.var('netupdate__nu', Nu)
@@ -728,7 +735,7 @@ def test_a_newer_tag_downloads_and_renames_once_whole(fw):
     assert card.of('rename') == [(PART, b'/mnt/mmc/update.tar')]
 
 
-@pytest.mark.parametrize('tag', [b'1.0.0', b'0.9.9'])
+@pytest.mark.parametrize('tag', [TAG, OLDER])
 def test_nothing_older_or_equal_is_ever_flashed(fw, tag):
     state, net, _ = update(fw, location=b'https://github.com/owner/repo/releases/tag/' + tag)
     assert state == NU_LATEST and net.urls == [LATEST]

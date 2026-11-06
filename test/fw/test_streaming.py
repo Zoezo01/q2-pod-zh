@@ -436,7 +436,7 @@ def test_no_log_refuses_nothing(fw):
 def test_the_position_runs_on_while_playing_up_to_the_end(fw):
     sp = fw.var('spotify__sp', Sp)
     def clock(which, ts, *_):
-        t = C.cast(ts, C.POINTER(C.c_int))
+        t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
         t[0], t[1] = 100, 500000000  # 100.5 s
     fw.mock('fw_clock_gettime', clock)
     sp.position, sp.duration, sp.at, sp.playing = 5000, 200000, 100000, 1
@@ -451,7 +451,7 @@ def test_the_position_runs_on_while_playing_up_to_the_end(fw):
 def test_now_ms_keeps_the_seconds_past_32_bits(fw):
     def clock(which, ts, *_):
         assert which == 1
-        t = C.cast(ts, C.POINTER(C.c_int))
+        t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
         t[0], t[1] = 5000000, 999999999
     fw.mock('fw_clock_gettime', clock)
     assert fw.fn('now_ms', C.c_ulonglong)() == 5000000999
@@ -526,7 +526,7 @@ def worker(fw, script, connect=0, clock=None):
     ms = [0]
     def tick(which, ts, *_):
         ms[0] += 1
-        t = C.cast(ts, C.POINTER(C.c_int))
+        t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
         t[0], t[1] = ms[0], 0
     fw.mock('fw_clock_gettime', tick)
     fw.mock('fw_socket', lambda *_: 5)
@@ -1135,7 +1135,7 @@ class Stream:
     def __init__(self, fw):
         self.ms, self.status, self.at = 1000, 2, C.c_uint(0)
         def clock(which, ts, *_):
-            t = C.cast(ts, C.POINTER(C.c_int))
+            t = C.cast(ts, C.POINTER(C.c_long))  # struct { long s, ns; }
             t[0], t[1] = self.ms // 1000, self.ms % 1000 * 1000000
         fw.mock('fw_clock_gettime', clock)
         fw.mock('mclGetPlayStatus', lambda *_: self.status)
