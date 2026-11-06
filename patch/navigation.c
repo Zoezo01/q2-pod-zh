@@ -7660,9 +7660,11 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
     /* Text inputs' selected text (an edit's T9 pending letter) is stock near-black on their light
      * blue selected_bg_color, which Light Mode keeps: it stays, not flipped to paper. */
     if (name && !tk_strcmp(name, "selected_text_color")) return color;
-    /* An edit's hint with no colour of its own: stock's default is its text colour, already mapped.
-     */
-    if (name && *color == fallback && !tk_strcmp(name, "tips_text_color")) return color;
+    /* Classic: an edit's hint with no colour of its own is stock's default, its text colour,
+     * already mapped (Minimal and Modern keep main's second mapping) */
+    if (name && *color == fallback && !tk_strcmp(name, "tips_text_color") &&
+        theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT)
+        return color;
     const scheme_t *S = scheme();
     const theme_t *T = theme();
     if (T->sb_w && st.paint_w && name &&
@@ -9157,11 +9159,13 @@ int compact_now_playing(void) {
     if (usable() && top && !window_manager_is_animating(wm)) {
         const char *name = widget_get_prop_str(top, "name", "");
         pod_settings();
-        if (st.hold_home && coverflow_home_back(top)) {
+        /* Classic's hold leaves a list open on Home for Home's main list */
+        int classic = theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+        if (st.hold_home && classic && coverflow_home_back(top)) {
             /* a list open on Home: its main list */
         } else if (st.hold_home && tk_strcmp(name, "home_page")) {
             st.np_origin = (void *)0;
-            coverflow_home_top();
+            if (classic) coverflow_home_top();
             navigator_back_to_home();
         } else if (!tk_strcmp(name, "playing_page")) {
             /* ponytail: np_origin is only compared, never followed; a reused address goes Back
@@ -9173,7 +9177,7 @@ int compact_now_playing(void) {
             if (back) {
                 navigator_back();
             } else {
-                coverflow_home_top();
+                if (classic) coverflow_home_top();
                 navigator_back_to_home();
             }
         } else {
