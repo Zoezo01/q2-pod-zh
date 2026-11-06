@@ -6519,9 +6519,10 @@ for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',O['NP_BAR_IPOD'],ACCENTS[4]
       put(elapsed,16,247,50,21); put(remain,309,248,50,20); m.image_size=(8,13); m.calls=[]
       m.bands.clear(); m.rounded.clear(); m.letters.clear(); m.image_draws.clear(); paint(dlg); fills=[b[:5] for b in m.bands]
       assert fills[:2]==[(16,277,50,21,color_t(0)),(309,278,50,20,color_t(0))],fills; del fills[0]; ipod_rows(bar[1])
-      assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[0,277,375,21] and not m.letters
-      assert loaded(m)==['classic_light_vol_lo','classic_light_vol_hi']
-      assert [d for _,d in m.image_draws]==[(58,bar[1],8,13),(309,bar[1],8,13)]; passed()
+      top,end=min(277,bar[1]),max(277+21,bar[1]+bh+O['SCRUB_REFLECT_ROWS'])  # the times' boxes and the bar with its reflection
+      assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==[0,top,375,end-top] and not m.letters
+      assert loaded(m)==['classic_light_vol_lo','classic_light_vol_hi']  # the speakers centred on the bar's rows
+      assert [d for _,d in m.image_draws]==[(58,bar[1]+(bh-13)//2,8,13),(309,bar[1]+(bh-13)//2,8,13)]; passed()
       put(elapsed,16,265,80,16); m.image_size=(50,50)
 assert len(m.timers)==1; poll=next(iter(m.timers))
 m.advance(O['VOL_POLL_MS']); assert not did('widget_invalidate_force') and poll in m.timers  # unchanged: nothing
@@ -7505,6 +7506,25 @@ for key,end in ((O['KEY_NEXT'],225),(O['KEY_PREV'],0)):
 assert step(m,gap=300)==11 and m.nodes[m.slider]['value']==5 and m.seeks==[]; passed()
 # Centre commits the target once; nothing seeks afterwards.
 centre(m,50); step(m,O['SCRUB_MS'],wait=True); ended(m,[5]); passed()
+# Classic: the scrub's cue, an iPod's: a diamond in the ink (the dark half's white) NP_SCRUB_MARK each side of its
+# middle row and column, at the fill's end on the bar's gloss, inside its 1 px edge lines; kept inside the bar at
+# either end; gone once the scrub ends. The volume's bar over the page never has it.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+def cue(m):  # the slider's paint: the ink's rows
+    m.bands.clear(); m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slider,m.canvas,0,0),gap=0)
+    return [b[:4] for b in m.bands if b[4]==color_t(0xffffff)]
+def diamond(x):
+    M,top=O['NP_SCRUB_MARK'],(44-O['NP_BAR_IPOD'])//2
+    return [(x-(M-abs(j)),top+(O['NP_BAR_IPOD']-1)//2+j,2*(M-abs(j))+1,1) for j in range(-M,M+1)]
+m=scrub_page()
+for k,v in zip(('W_X','W_Y','W_W','W_H'),(87,233,201,44)): m.word(m.slider+O[k],v)
+assert cue(m)==[]; centre(m); assert cue(m)==diamond(201*100//225),cue(m)
+d=diamond(201*100//225); assert d[0][1]==(44-O['NP_BAR_IPOD'])//2+1 and d[-1][1]==(44-O['NP_BAR_IPOD'])//2+O['NP_BAR_IPOD']-2
+for key,x in ((O['KEY_PREV'],O['NP_SCRUB_MARK']),(O['KEY_NEXT'],200-O['NP_SCRUB_MARK'])):
+    for _ in range(40): step(m,key,gap=20)
+    assert cue(m)==diamond(x),(key,cue(m))
+centre(m,50); step(m,O['SCRUB_MS'],wait=True); assert cue(m)==[]; passed()
+CONFIG.clear()
 # Paused (mclGetPlayStatus 3), the seek alone, in file seconds (a CUE track's start added), not
 # player_seek_time, which resumes the track: the player's second stands still until Play, the bar
 # keeps the target and stock's timer stays off until it plays; playing, SETTLE_PLAY_MS without

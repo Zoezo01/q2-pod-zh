@@ -5360,26 +5360,36 @@ static void bar_part(void *canvas, const stops_t *s, int x, int y, int w, int h,
 
 /* Classic's bar (playing.scrubber.stops), an iPod classic's, bw wide and the theme's np_bar high at
  * x, y: the accent's band over the first `on` columns, the track's rows after them, square ends,
- * each mirrored under it. 0 when the theme has none. The canvas's fill colour is left as it was. */
-static int ipod_bar(void *canvas, int x, int y, int bw, int on) {
+ * each mirrored under it. With mark, a scrub's cue on the gloss: a diamond in the ink,
+ * NP_SCRUB_MARK each side of its middle row and column, at the fill's end, kept inside the bar. 0
+ * when the theme has none. The canvas's fill colour is left as it was. */
+int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark) {
     const theme_t *T = theme();
     const stops_t *track = &T->np_track[ipod_light()];
     if (track->n < 2) return 0;
     unsigned saved = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), paper = scheme()->paper;
     bar_part(canvas, &scheme()->sel, x, y, on, T->np_bar, paper);
     bar_part(canvas, track, x + on, y, bw - on, T->np_bar, paper);
+    stock_canvas_set_fill_color(canvas, RGBA(scheme()->ink));
+    int end = bw - 1 - NP_SCRUB_MARK, cx = on < NP_SCRUB_MARK ? NP_SCRUB_MARK : on,
+        cy = y + (T->np_bar - 1) / 2;
+    if (cx > end) cx = end;
+    for (int j = -NP_SCRUB_MARK; mark && j <= NP_SCRUB_MARK; ++j) {
+        int half = NP_SCRUB_MARK - (j < 0 ? -j : j);
+        canvas_fill_rect(canvas, x + cx - half, cy + j, 2 * half + 1, 1);
+    }
     stock_canvas_set_fill_color(canvas, saved);
     return 1;
 }
 
-/* Classic's progress bar over stock's plain one, centred in the slider as stock's; the times sit
- * beside it (tools/ipod.py np_ipod). */
+/* Classic's progress bar over stock's plain one, centred in the slider as stock's, the scrub's cue
+ * on it while a scrub runs; the times sit beside it (tools/ipod.py np_ipod). */
 static void paint_scrubber(void *w, void *canvas) {
     if (!w || w != st.np_slider || !P(canvas, CANVAS_LCD)) return;
     int bw = I(w, W_W), lo = widget_get_prop_int(w, "min", 0),
         n = widget_get_prop_int(w, "max", 100) - lo,
         v = clamp_step(0, n, widget_get_prop_int(w, "value", 0) - lo);
-    ipod_bar(canvas, 0, (I(w, W_H) - theme()->np_bar) / 2, bw, n > 0 ? bw * v / n : 0);
+    ipod_bar(canvas, 0, (I(w, W_H) - theme()->np_bar) / 2, bw, n > 0 ? bw * v / n : 0, st.scrub);
 }
 
 /* One row of final colour, its alpha the row's. */
@@ -7123,7 +7133,7 @@ static void vol_paint(void *top, void *canvas) {
     }
     /* Pills, like the progress capsule: a non-zero fill is at least round, never a sliver. Over
      * Classic's Now Playing, its own bar. */
-    if (!np || !ipod_bar(canvas, bar.x, bar.y, bar.w, w)) {
+    if (!np || !ipod_bar(canvas, bar.x, bar.y, bar.w, w, 0)) {
         fill_box(canvas, &bar, RGBA(np ? TRACK_COLOR : VOL_PANEL_TRACK), bar.h / 2);
         rect_t on = { bar.x, bar.y, w < bar.h ? bar.h : w, bar.h };
         /* Over Now Playing it is the progress bar's own: the accent's fill */

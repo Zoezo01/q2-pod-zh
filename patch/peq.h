@@ -376,6 +376,7 @@ int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
 const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
+int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark);
 /* navigation.c's painters for Classic's info screen (lockscreen.c); colours are final. */
 typedef struct {
     unsigned rgb;       /* 0xRRGGBB */

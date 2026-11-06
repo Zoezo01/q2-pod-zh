@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """JPEG checks; optionally pass the stock ZIP to test packaging with a custom logo and quoted paths too."""
-import io, re, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
+import io, math, re, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
 from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, COVERMODE
 
 logo = (ROOT/'assets/boot-logo.jpg').read_bytes()
@@ -910,6 +910,17 @@ def validate_assets(directory):
             assert xm >= corner_inset((g.bar - 2 - g.batt_h) // 2) and g.batt_h <= g.bar - 1 and bar['view_right'][2]['children_layout'].endswith(f'xm={xm},s={inc("STATUS_GAP")})'), g.name
             size = SCHEMA['bar.title.font_size'].field
             assert {t[size] for t in builtins() if g in geometry_sets([t])} == {g.bar_px}, g.name  # the theme's bar text is the set's
+        if g.np_ipod:  # Classic's Now Playing: its text fits, in status_metrics' model (stb scales ascent - descent to the size)
+            from fontTools.ttLib import TTFont
+            face = TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
+            cmap = face.getBestCmap()
+            ink = lambda text, px: math.ceil(sum(face['hmtx'][cmap[ord(c)]][0] for c in text) * px / (face['hhea'].ascent - face['hhea'].descent))
+            page = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_PAGE}')))}
+            # the times beside the bar hold "-1:02:03" and their font's line, their outer edges and the bar's ends clear of the glass
+            for name in ('label_playtime', 'label_ipod_remain'):
+                x, y, w, h = page[name][1]
+                assert ink('-1:02:03', inc('NP_IPOD_TIME_PX')) <= w and inc('NP_IPOD_TIME_PX') <= h, (g.name, name)
+                assert min(x, 375 - x - w) >= corner_x(g.bar + y, h), (g.name, name)
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

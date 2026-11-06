@@ -157,6 +157,7 @@
 #define NP_IPOD_TIME_PX 21
 #define NP_IPOD_TIME_W 56
 #define NP_IPOD_TIME_GAP 8
+#define NP_SCRUB_MARK 7 /* the scrub's diamond: 15 rows, one in from the bar's edge lines */
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
     int d = 2 * (r - y) - 1, v = (4 * r * r - d * d) * 64, s = 0;
