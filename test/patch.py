@@ -62,7 +62,8 @@ SCOPE_RULES='/mnt/data/q2-library-scope'  # library_scope.c's folder marker rule
 TRACE=open(os.environ['Q2_TRACE'],'w') if os.environ.get('Q2_TRACE') else None
 def trace(*fields):
     if TRACE: TRACE.write('\t'.join(fields)+'\n')
-TRACE_ARGS={'canvas_get_clip_rect':'_','canvas_set_clip_rect':'_r','canvas_set_global_alpha':'_i',
+TRACE_ARGS={'canvas_get_clip_rect':'_','canvas_set_clip_rect':'_r','canvas_set_global_alpha':'_i','canvas_translate':'_ii','canvas_offline_create':'iii',
+    **dict.fromkeys(('canvas_offline_begin_draw','canvas_offline_end_draw','canvas_offline_destroy'),'_'),
     **dict.fromkeys(('canvas_set_fill_color','canvas_set_stroke_color','canvas_set_text_color'),'_x'),
     **dict.fromkeys(('canvas_fill_rect','canvas_stroke_rect'),'_iiii'),'canvas_draw_icon':'_xii','canvas_set_font':'_si',
     'canvas_draw_text_in_rect':'_wr','canvas_draw_text':'_wii','canvas_measure_text':'_w','canvas_draw_image':'_xrr',
@@ -5433,7 +5434,7 @@ class CoverflowMachine(QueueMachine):
     FREE=0x1000010  # stock free's GOT slot is 0 until lazy binding; give it a stub
     def __init__(self,albums=3,cached=True,**queue):
         super().__init__(rows=4,**queue)
-        self.cached=cached; self.missing=False; self.joins=[]; self.threads=[]; self.plays=[]; self.homes=0; self.freed=0
+        self.cached=cached; self.missing=False; self.joins=[]; self.threads=[]; self.plays=[]; self.homes=0; self.freed=0; self.live={}
         for n in ('window_create','widget_factory_create_widget','image_base_set_image','getAllAlbum','list_view_create',
                   'scroll_view_create','navigator_back_to_home','navigator_to_with_context','access@GLIBC_2.0',
                   'calloc@GLIBC_2.0','strdup@GLIBC_2.0','mkdir@GLIBC_2.0','statfs@GLIBC_2.0','pthread_create@GLIBC_2.2',
@@ -5491,10 +5492,10 @@ class CoverflowMachine(QueueMachine):
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in rows]
             ret=len(rows)
         elif name=='qsort': self.qsort(a,b,c,d)  # sorted by the payload's comparator, run nested
-        elif name=='calloc': ret=self.alloc(a*b+4)
+        elif name=='calloc': ret=self.alloc(a*b+4); self.live[ret]=a*b
         elif name=='strdup': ret=self.string(self.text(a))
         elif name=='free':
-            self.freed+=a!=0
+            self.freed+=a!=0; self.live.pop(a,0)
             if a in getattr(self,'poison',{}): self.u.mem_write(a,b'\0'*self.poison.pop(a))
         elif name=='statfs': self.word(b+4,4096); self.word(b+28,1<<20)
         elif name=='pthread_create': self.word(a,77); self.threads.append((c,d))
@@ -5538,9 +5539,11 @@ class CoverflowMachine(QueueMachine):
             if parent not in self.nodes or w not in self.nodes[parent]['children']: return False
             w=parent
         return True
-    def key(self,k=O['KEY_RETURN']):
+    def key(self,k=O['KEY_RETURN'],run=True):
         f,ctx=self.handler(self.page,O['EVT_KEY_UP']); ev=self.alloc(0x40); self.word(ev,O['EVT_KEY_UP']); self.word(ev+O['EVENT_KEY'],k)
-        ret=self.call(address=f,args=(ctx,ev,0,0),gap=0); self.advance(0); return ret
+        ret=self.call(address=f,args=(ctx,ev,0,0),gap=0)
+        if run: self.advance(0)
+        return ret
 
 # Local playlist editor: real MIPS UI/control code and real SQLite transactions at its ABI boundary.
 class PlaylistEditMachine(CoverflowMachine):
@@ -9082,7 +9085,7 @@ class DepthMachine(CoverflowMachine):
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         a,b,c,d=[u.reg_read(r) for r in REGS]
-        if name=='c:calloc@GLIBC_2.0' and a*b>0x10000: ret=self.big_alloc(a*b)
+        if name=='c:calloc@GLIBC_2.0' and a*b>0x10000: ret=self.big_alloc(a*b); self.live[ret]=a*b
         elif name=='bitmap_create_ex':
             ret=self.big_alloc(0x48); data=self.big_alloc(b*c)
             self.word(ret,a); self.word(ret+4,b); self.word(ret+8,c); self.u.mem_write(ret+0xc,struct.pack('<HH',0,d)); self.word(ret+0x14,data)
@@ -9108,8 +9111,8 @@ class DepthMachine(CoverflowMachine):
         self.calls.append((name,a,b,c))
         self.returns(ret,clobber=True)
 
-def host_render(textures,cases,style=None):
-    """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases. style: a theme's cf.* values."""
+def host_render(textures,cases,style=None,paper=None):
+    """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases. style: a theme's cf.* values; paper: the light half's."""
     import subprocess, tempfile
     from coverflow import SHIM_H
     from theme import ROLE_MACROS
@@ -9121,9 +9124,9 @@ int client_h(void) { return 290; }
 const theme_t *theme(void) { return &t; }
 #include <stdio.h>
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
-int ipod_light(void) { return 0; }
+int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
-const scheme_t *scheme(void) { static scheme_t s; return &s; }
+const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
 static unsigned tex[7][160 * 160], frame[%d * %d];
 int main(void) {
     const unsigned *ring[7];
@@ -9136,7 +9139,7 @@ int main(void) {
         fflush(stdout);
     }
     return 0;
-}""" % (cf,rows,O['CF_VIEW_W'],O['CF_VIEW_W'])
+}""" % (cf,paper is not None,paper or 0,rows,O['CF_VIEW_W'],O['CF_VIEW_W'])
     with tempfile.TemporaryDirectory(prefix='q2-render-') as d:
         d=pathlib.Path(d); (d/'shim.h').write_text(SHIM_H); (d/'main.c').write_text(main)
         subprocess.run(['cc','-O1','-DPEQ_HOST','-DPEQ_ROOT=""','-D_GNU_SOURCE',
@@ -9194,7 +9197,7 @@ for light,paper in (('0',0),('1',0xff)):
     paint(c); assert c.draws[0][2]==c.draws[0][3]==(0,0,O['CF_VIEW_W'],cl_style['cf.view_h'])
     frame_bytes=c.draws[0][5]; assert frame_bytes[0:3]==bytes([paper])*3
     c_tex={u:bytes(c.u.mem_read(c.pixels[u],160*160*4)) for u in c.pixels}
-    if light=='0': assert host_render([c_tex[c.loads[1+i%3]] for i in range(7)],[(0,127)],{**cl_style,'cf.radius':0})[0]==frame_bytes  # square art
+    assert host_render([c_tex[c.loads[1+i%3]] for i in range(7)],[(0,127)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None)[0]==frame_bytes  # square art
     passed()
 # A non-square cover is fitted whole and centred between black bars, not cropped (#74).
 def fitted(px,w,h):
@@ -9230,6 +9233,200 @@ class Starved(DepthMachine):
 m=Starved(); m.open(); s=m.slide
 assert cf_geometry(m,s)==(0,24,375,160) and all(m.nodes[c].get('image') for c in m.nodes[s]['children'])
 paint(m); assert not m.draws; passed()
+# The flip: Centre on a cover under Classic. Its stock calls are mocked here; the offline canvas is
+# stock's own window snapshot path. widget_paint stands in for the panel's paint: a pattern at its screen
+# place, BGRA as the screen's lcd, so the frames show what was captured and where.
+class FlipMachine(DepthMachine):
+    def __init__(self,**kw):
+        super().__init__(**kw); self.lcds=[]; self.pattern=0x00203040; self.boxes=[]
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        a,b,c,d=[u.reg_read(r) for r in REGS]
+        if name in ('c:list_view_create','c:scroll_view_create'): self.boxes.append((b,c,d,self.get(u.reg_read(UC_MIPS_REG_SP)+16)))  # the machine keeps only some of a box
+        if name=='canvas_offline_create':
+            ret=self.big_alloc(0x90); lcd=self.big_alloc(0x140); fb=self.big_alloc(a*b*4); self.word(ret+O['CANVAS_LCD'],lcd)
+            self.word(lcd+O['LCD_W'],a); self.word(lcd+O['LCD_H'],b); self.word(lcd+O['LCD_LINE_LENGTH'],a*4); self.word(lcd+O['LCD_FORMAT'],c); self.word(lcd+O['LCD_OFFLINE_FB'],fb)
+            self.lcds.append(fb)
+        elif name=='widget_paint':
+            assert self.nodes[a]['visible'],'a hidden widget paints nothing'
+            px=struct.pack('<I',0xff000000|self.pattern); self.u.mem_write(self.lcds[-1],px*(375*320))
+            ret=0
+        else: return super().hook(u,address,size,unused)
+        self.calls.append((name,a,b,c))
+        self.returns(ret,clobber=True)
+    def covers(self): return self.get(self.slide+O['W_PARENT'])
+    def panel(self): return next((w for w in self.nodes[self.page]['children'] if cf_geometry(self,w)[2]==295),0)
+    def frame(self):
+        self.draws=[]; self.call(address=HOOKS['widget_on_paint_border'][0],args=(self.covers(),self.canvas,0,0),gap=0,clear=False,count=50_000_000)
+        assert len(self.draws)==1 and self.draws[0][2]==self.draws[0][3]==(0,0,375,294) and self.draws[0][4]&1
+        return self.draws[0][5]
+    def row_labels(self,i): return self.nodes[self.nodes[self.find('scroll_view')]['children'][i]]['children']
+    def face(self,w): return self.nodes[w]["style:normal:font_name"],self.nodes[w]["style:normal:font_size"]
+def flip_click(m):  # Centre's click, then the page's timer: the turn has just started
+    f,ctx=m.handler(m.nodes[m.slide]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
+def flip_open(**kw):
+    m=classic_light_new(FlipMachine,**kw); m.open(); flip_click(m); return m
+def px_at(frame,x,y): return struct.unpack_from('<I',frame,4*(y*375+x))[0]
+
+# Cover Flow's tracks under Classic: the panel at 40,35 over the covers; header 57 rows, title 22 px bold, artist 16 px regular, alpha c0; the theme's rows with duration right.
+PANEL_ROW=theme_builtins()[1]['page_row']; PANEL_SHOWN=(285-57)//PANEL_ROW; assert PANEL_SHOWN==7
+for light,white in (('0',0xffffff),('1',0)):
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300)
+    panel=m.panel(); kids=m.nodes[panel]['children']; sheet=kids[0]; lv=m.find('list_view',panel); view=m.find('scroll_view',panel); rows=m.nodes[view]['children']
+    title,artist=[w for w in kids if m.nodes[w]['type']=='hscroll_label']
+    assert cf_geometry(m,panel)==(40,9,295,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,295,285)
+    assert m.get(panel+O['W_PARENT'])==m.page and m.nodes[m.page]['children'].index(panel)>m.nodes[m.page]['children'].index(m.covers())
+    assert cf_geometry(m,title)==(12,6,270,24) and cf_geometry(m,artist)==(12,30,270,20) and m.face(title)==('classic-light',22) and m.face(artist)==('default',16)
+    assert m.nodes[title]['text']=='Album 0' and m.nodes[artist]['text']=='Artist'
+    assert m.nodes[title]['style:normal:text_color']&0xffffffff==0xff000000|white and m.nodes[artist]['style:normal:text_color']&0xffffffff==0xc0000000|white
+    assert m.boxes==[(0,57,294,228),(0,0,294,228)] and m.nodes[view]['yslidable']==1 and m.nodes[view]['virtual_h']==9*PANEL_ROW
+    assert [cf_geometry(m,r) for r in rows]==[(0,i*PANEL_ROW,294,PANEL_ROW) for i in range(9)] and kids.index(lv)<kids.index(title)
+    t,dur=m.row_labels(0); gt,gd=cf_geometry(m,t),cf_geometry(m,dur)
+    assert gt[:2]==(12,0) and gt[0]+gt[2]<gd[0] and gd[0]+gd[2]==282 and gt[3]==gd[3]==PANEL_ROW and m.face(t)==('classic-light',18) and m.face(dur)==('default',16)
+    assert m.nodes[dur]['style:normal:text_align_h']=='right' and m.nodes[dur]['style:normal:text_color']&0xffffffff==0xffaaaaaa and m.nodes[t]['text']=='T0'
+    for w,px in ((title,22),(artist,16),(t,18),(dur,16)): assert cf_geometry(m,w)[3]>=px  # boxes hold their fonts
+    # No text crosses the glass: the last whole row's stays clear, and what shows of the row under it ends before its text starts.
+    assert 40+12>=corner_inset(26+9+57+(PANEL_SHOWN-1)*PANEL_ROW+(PANEL_ROW+18)//2) and 285-57-PANEL_SHOWN*PANEL_ROW<(PANEL_ROW-18)//2
+    assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
+    assert not [w for w in m.nodes if m.nodes[w].get('name')==O.get('PAGE_TITLE')]; passed()  # no caption row: the bar's title is the page's name
+# Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the ring outside.
+m=flip_open(); m.advance(300); panel=m.panel(); sheet=m.nodes[panel]['children'][0]
+m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False)
+fill=[b for b in m.bands if b[3]==1]; assert m.bands[0][:4]==(0,0,295,285) and len(fill)==57 and [b[1] for b in fill]==list(range(57)) and all(b[0]==0 and b[2]==294 and b[4]>>24==0xf0 for b in fill)
+assert fill[0][4]&0xffffff==0xb28d6d and fill[-1][4]&0xffffff==0xd0ac8b
+m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(panel,m.canvas,0,0),gap=0,clear=False)
+shade=[(b[1],b[4]>>24) for b in m.bands if b[2]==294 and b[3]==1]; ring=[b[:4] for b in m.bands if b[4]==0x22000000]
+assert shade==[(55+j,a) for j,a in enumerate((0,28,54,50,41,27,14,0))] or shade==[(55+j,a) for j,a in enumerate((0,28,54,50,41,27,14,0)) if a]
+assert sorted(ring)==sorted([(-1,-1,297,1),(-1,285,297,1),(-1,0,1,285),(295,0,1,285)]); passed()
+# A short album: the list only as tall as its rows, the paper below. 8 tracks: 7 show, the list scrolls under the header, which stays.
+m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.tracks(0); m.advance(300)
+assert m.boxes==[(0,57,294,PANEL_ROW),(0,0,294,PANEL_ROW)]; passed()
+# Decode and query first: nothing turns until the panel is captured, by stock's offline canvas, as the screen's format, at the panel's screen place.
+m=flip_open(); names=[c[0] for c in m.calls]
+for a,b in (('getMusicByAlbum','canvas_offline_create'),('canvas_offline_create','canvas_offline_begin_draw'),('canvas_offline_begin_draw','canvas_translate'),('canvas_translate','widget_paint'),('widget_paint','canvas_offline_end_draw'),('canvas_offline_end_draw','canvas_offline_destroy')):
+    assert names.index(a)<names.index(b),(a,b)
+c=[c for c in m.calls if c[0]=='canvas_offline_create'][0]; assert c[1:4]==(375,320,3)
+assert [c[2:4] for c in m.calls if c[0]=='canvas_translate']==[(signed(m.get(m.page+O['W_X'])),signed(m.get(m.page+O['W_Y'])))]
+assert [c[1] for c in m.calls if c[0]=='widget_paint']==[m.panel()] and not m.nodes[m.panel()]['visible'] and not m.draws[1:]; passed()
+# No canvas: no text on the back, the paper instead; the panel still comes.
+class NoCanvas(FlipMachine):
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address,'')=='canvas_offline_create': self.returns(0,clobber=True); return
+        return super().hook(u,address,size,unused)
+n=classic_light_new(NoCanvas); n.open(); n.tracks(0); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(1); assert n.nodes[n.panel()]['visible']; passed()
+# The turn: no timer of its own past 270 ms; the first frame the cover with no reflection, its sides as the shelf drew them;
+# half way the side covers part 12, nothing on the axis; at the end the panel's capture, swapped to the frame's byte order, parted 24.
+m=flip_open(); covers=m.covers(); assert not m.nodes[m.panel()]['visible']
+f0=m.frame(); m.advance(135); f1=m.frame(); m.advance(140); assert m.nodes[m.panel()]['visible']; f2=m.frame()
+assert px_at(f2,187,150)==px_at(f2,40,9)==px_at(f2,333,293)==0xff403020  # the panel's, red and blue swapped
+assert px_at(f0,187,150)!=0xffffffff and px_at(f0,187,32+162)==0xffffffff  # the cover, nothing under it
+assert px_at(f1,187,100)==px_at(f1,186,100)==px_at(f1,187,200)==0xffffffff  # edge on: the paper; each side parted 12
+assert f0!=f1!=f2; passed()
+# The wheel, Centre and Return wait during the turn; a second Centre or Return does nothing; a held tick lands after it.
+m=flip_open(); n0=len(m.lcds)
+assert m.key()==11 and len(m.lcds)==n0 and m.nodes[m.panel()]['visible']==0
+assert m.call(O['KEY_CENTER'],gap=2000)==11 and not [c for c in m.calls if c[0] in ('on_home_music_onclick','screen_action')]
+assert m.call(gap=0)==11
+m.advance(300); view=m.find('scroll_view'); m.paint(view); assert m.selected(view)==1 and len(m.lcds)==n0; passed()
+# Return: the panel captured again as it stands, hidden, the same frames backwards, then the covers again and every buffer freed.
+def flip_held(m): return dict(m.live),set(m.frames)-set(m.destroyed)
+FLIP_BACK=294*285*4  # the back buffer, 4 bytes a pixel, by the size calloc was asked for
+def flip_backs(m): return [p for p,n in m.live.items() if n==FLIP_BACK]
+m=classic_light_new(FlipMachine); m.open(); held=flip_held(m); flip_click(m); assert len(flip_backs(m))==1; forward=[]
+for t in (0,45,45,45,45,45): m.advance(t); forward.append(m.frame())
+m.advance(60); frames0=len(m.frames); destroyed=len(m.destroyed); assert m.key()==11; assert m.lcds[1:] and not m.nodes[m.panel()]['visible']
+assert m.key()==11  # a second Return is nothing
+back=[]
+for t in (45,45,45,45,45): m.advance(t); back.append(m.frame())
+assert back==forward[:0:-1],'the same run backwards'
+m.advance(50)
+assert not m.panel() and m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['sensitive']==1 and all(m.nodes[w]['visible'] for w in m.nodes[m.covers()]['children'])
+assert len(m.destroyed)==destroyed+1 and flip_held(m)==held and not [t for t in m.timers.values() if t[1] in (payload_syms['flip_tick'],)]
+m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000); assert m.draws[-1][3][3]==242 and m.key()==11 and m.homes==1; passed()
+# The page closing mid-turn frees them, and leaves nothing timed.
+m=classic_light_new(FlipMachine); m.open(); flip_click(m); made=list(m.frames); assert len(flip_backs(m))==1
+m.close(); assert sorted(m.destroyed)==sorted(made) and not flip_backs(m) and not [t for t in m.timers.values() if t[1]==payload_syms['flip_tick']]; passed()
+# Centre in the gap before Return's flip_close, or a stray timer: the live frame and back are kept, one panel, no text list; the next Return goes back and frees them.
+for armed,gap in ((1,0),(0,0),(0,100)):
+    m=classic_light_new(FlipMachine); m.open(); held=flip_held(m); flip_click(m); m.advance(gap or 300); panel=m.panel(); live=flip_backs(m),list(m.frames); lcds=len(m.lcds); kids=m.nodes[panel]['children']
+    if armed: assert m.key(run=False)==11
+    flip_click(m)
+    assert (flip_backs(m),list(m.frames))==live and len(m.lcds)==lcds and m.panel()==panel and m.nodes[panel]['children']==kids and len([w for w in m.nodes[m.page]['children'] if cf_geometry(m,w)[2]==295])==1 and not m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['visible']
+    m.advance(300); assert m.nodes[panel]['visible']; assert m.key()==11; m.advance(0); m.advance(300)
+    assert not m.panel() and flip_held(m)==held and m.nodes[m.slide]['visible']; passed()
+# Centre plays the row, Return as today; a missing card says so in the header.
+m=flip_open(); m.advance(300); view=m.find('scroll_view'); r=m.nodes[view]['children'][1]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+assert m.plays[-1][0]=='playing_page' and m.plays[-1][2]==1 and m.plays[-1][3]==0xff10 and m.play_names==['T1','T2'] and m.nodes[m.panel()]['visible']; passed()
+m=flip_open(); m.advance(300); m.missing=True; r=m.nodes[m.find('scroll_view')]['children'][0]; f,ctx=m.handler(r,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+assert not m.plays and m.nodes[[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['text']=='Storage unavailable'; passed()
+# The list scrolls by the wheel inside the panel, the header its sibling, so it stays; Go to Album's tracks alone have no covers to turn.
+m=classic_light_new(FlipMachine); m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300); view=m.find('scroll_view')
+for _ in range(8): m.call()
+head=[w for w in m.nodes[m.panel()]['children'] if m.nodes[w]['type']=='hscroll_label']; assert m.selected(view)==8 and all(m.get(w+O['W_PARENT'])==m.panel() for w in head) and view not in m.nodes[m.panel()]['children']; passed()
+m=classic_light_new(FlipMachine); m.open(); assert m.call(address=payload_syms['coverflow_goto_album'],args=(m.albums[0],0,0,0),gap=0)==1; m.page=m.top; assert not m.panel() and not [c for c in m.calls if c[0]=='canvas_offline_create'] and m.nodes[m.find('scroll_view')]['children'] and cf_geometry(m,m.nodes[m.find('scroll_view')]['children'][0])[2]==375; passed()
+# The selection on a row: the band across the list's 294, its labels white over it.
+m=flip_open(); m.advance(300); view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()[0]==0 and m.sel()[2]==294 and m.sel()[3]==PANEL_ROW; passed()
+# ... a CJK title in the system font, a Cyrillic one in bold at the fallback's px: each box holds its font.
+m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('波')); m.tracks(0); m.advance(300)
+assert m.face(m.row_labels(0)[0])==('default',18)
+m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.word(m.found[0]+O['REC_TITLE'],m.string('Выход')); m.tracks(0); m.advance(300)
+assert m.face(m.row_labels(0)[0])==('bold',15); passed()
+# An unknown length is blank and what the cache has shows, m:ss, hours when long. The panel starts no worker and writes nothing;
+# Long Songs fills the cache, and the next panel has it.
+class FlipLengths(FileMocks,FlipMachine):
+    def __init__(self,**kw):
+        super().__init__(**kw); self.file_mocks('fl:'); self.lengths={}; self.probed=[]
+        for n in ('fseek@GLIBC_2.0','ftell@GLIBC_2.0','taglib_file_new','taglib_file_audioproperties','taglib_file_free','getAllMusic'): self.handlers[syms[n]]='fl:'+n
+        self.handlers[0x1000030]='fl:length'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('fl:'): return super().hook(u,address,size,unused)
+        name=name[3:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
+        if name in ('fopen','fread','fwrite','fclose','rename'): ret=self.file_op(u,name,a,b,c,d)
+        elif name=='ftell': ret=len(self.files[self.open_files[a][0]])
+        elif name=='taglib_file_new':
+            path=self.text(a); self.probed.append(path); ret=self.alloc(8); props=self.alloc(8); vt=self.alloc(16); self.word(props,vt); self.word(vt+12,0x1000030); self.word(ret,props); self.word(props+4,self.lengths[path])
+        elif name=='taglib_file_audioproperties': ret=self.get(a)
+        elif name=='length': ret=self.get(a+4)
+        elif name=='getAllMusic': self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',r) for r in self.found]; ret=len(self.found)
+        self.returns(ret,clobber=True)
+def path_key(s):
+    h=2166136261
+    for c in s.encode()+b'\0': h=(h^c)*16777619&0xffffffff
+    return h
+m=classic_light_new(FlipLengths); m.open(); paths=[m.text(m.get(r+O['REC_PATH'])) for r in m.found]; m.lengths=dict.fromkeys(paths,60); m.lengths[paths[0]]=3725
+cached=struct.pack('<2I',path_key(paths[1]),294); m.files['/mnt/data/ringnav-lengths']=cached
+m.threads=[]; flip_click(m); text=lambda i: m.nodes[m.row_labels(i)[1]].get('text','')
+assert text(0)=='' and text(1)=='4:54'; m.advance(300); assert m.nodes[m.panel()]['visible'] and text(0)=='' and text(1)=='4:54'
+assert not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached and [v[1] for v in m.timers.values()]==[payload_syms['home_counts']]; passed()
+assert m.key()==11; m.advance(0); m.advance(300); assert not m.panel() and not m.threads and not m.probed and m.files['/mnt/data/ringnav-lengths']==cached
+shelf=m.page; m.top=m.node('window','localmusic_page'); view=m.node('scroll_view','scroll_view_localmusic',[m.node('list_item') for _ in range(11)])
+m.nodes[m.top]['children']=[view]; m.call(address=HOOKS['localmusic_page_init'][0],args=(m.top,5,0,0),gap=0)
+walk=lambda w:[w]+[x for c in m.nodes[w]['children'] for x in walk(c)]; row=next(c for c in m.nodes[view]['children'] if any(m.nodes[w].get('text')=='Long Songs' for w in walk(c)))
+f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+worker,arg=m.threads[0]; m.call(address=worker,args=(arg,0,0,0),gap=0); m.advance(250); assert path_key(paths[0]) in struct.unpack(f"<{len(m.files['/mnt/data/ringnav-lengths'])//4}I",m.files['/mnt/data/ringnav-lengths'])
+m.page=m.top=shelf; flip_click(m); assert text(0)=='1:02:05' and text(1)=='4:54'; passed()
+# Minimal: Centre opens the text list as today, no flip, no buffers.
+for theme in '0':
+    CONFIG['THEME']=theme
+    try: m=FlipMachine()
+    finally: del CONFIG['THEME']
+    m.open(); frames=len(m.frames); view=m.tracks(0)
+    assert not [c for c in m.calls if c[0].startswith('canvas_offline')] and len(m.frames)==frames and not m.panel() and not m.nodes[m.covers()]['visible']
+    assert m.nodes[m.nodes[view]['children'][0]]['type']=='list_item' and cf_geometry(m,m.nodes[view]['children'][0])[2]==375 and m.nodes[m.nodes[m.nodes[view]['children'][0]]['children'][0]]['style']=='s_scrlabel_white20c'
+    assert m.key()==11; m.advance(0); assert m.nodes[m.covers()]['visible']; passed()
+# Under Classic with no depth (out of memory) the text list stays, and Go to Album's lone tracks have no covers to turn.
+class FlipStarved(FlipMachine):
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address,'')=='bitmap_create_ex': self.returns(0,clobber=True); return
+        return super().hook(u,address,size,unused)
+m=classic_light_new(FlipStarved); m.open(); view=m.tracks(0); assert not m.panel() and not [c for c in m.calls if c[0]=='canvas_offline_create'] and cf_geometry(m,m.nodes[view]['children'][0])[2]==375; passed()
+# Out of memory for the turn alone: the text list as well, and only the shelf's frame stays held.
+class FlipSecond(FlipMachine):
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address,'')=='bitmap_create_ex' and self.frames: self.returns(0,clobber=True); return
+        return super().hook(u,address,size,unused)
+m=classic_light_new(FlipSecond); m.open(); view=m.tracks(0); assert not m.panel() and len(m.frames)==1 and not [c for c in m.calls if c[0]=='canvas_offline_create']; passed()
 print(f'Coverflow depth on MIPS: {rest_cost} instructions for the first paint (decoding the covers in reach, then the frame), {turn_cost} for a frame a quarter turn on (payload only; stock drawing mocked)')
 
 # Home's Split pan (DRIFT_*): the cover is box filtered once to its fit zoomed DRIFT_ZOOM_PCT, sharpened
@@ -9430,6 +9627,15 @@ begin(m,labels[0]); assert style_color(m,0xffffffff)[1]==0xffffffff
 end(m,labels[0]); begin(m,labels[1]); assert style_color(m,0xffffffff)[1]==0xffaaaaaa
 end(m,labels[1]); end(m,view); passed()
 
+# Cover Flow's panel: on the selected row the title and the length are white over the band, in either half; on the others its ink and its muted.
+for light,ink,muted in (('0',0xffffffff,0xff949294),('1',0xff000000,0xff6b6d6b)):
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(3)]; m.tracks(0); m.advance(300)
+    m.u.hook_add(UC_HOOK_CODE,m.hook,begin=tramp['color'],end=tramp['color'])  # FlipMachine runs fast: a payload address hooks on its own
+    view=m.find('scroll_view'); m.word(view+O['W_W'],294); m.paint(view); m.call(); m.paint(view); assert m.selected(view)==1
+    for i,want in ((1,(0xffffffff,0xffffffff)),(0,(ink,muted))):
+        row=m.nodes[view]['children'][i]; t,dur=m.row_labels(i); begin(m,view); begin(m,row); begin(m,t); got=style_color(m,0xffffffff)[1]; end(m,t); begin(m,dur)
+        assert (got,style_color(m,m.nodes[dur]['style:normal:text_color']&0xffffffff)[1])==want,(light,i); end(m,dur); end(m,row); end(m,view)
+    passed()
 # Decorative action labels may be disabled themselves; availability belongs to the button.
 for label_name in ('label_del','label_rename'):
     m=Machine(); label=m.node('hscroll_label',label_name); m.nodes[label]['enable']=0
@@ -12165,6 +12371,11 @@ def leaving(): q=vol_np(push=1); vol_wait(q,230); vol_wait(q,VOL_HOLD+100); asse
 pv=leaving()
 pv.u.mem_write(VOL_TICKS,b'\0'); pv.advance(O['VOL_POLL_MS']); assert not push_ticks(pv) and row_shown(pv)==[0,0] and row_x(pv)==home and vol_bar_x(pv)==63
 vol_wait(pv,VOL_HOLD-200); assert row_shown(pv)==[0,0] and not closes(pv); passed()
+# The loop's idle sleep waits out the push: no key has come for IDLE_MS, but the row's frames run at the loop's pace.
+pv=leaving(); pv.handlers[sleep_hook+12]='stock_sleep'; pv.calls=[]
+pv.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0); assert not [c for c in pv.calls if c[0]=='sleep_ms']
+vol_wait(pv,230); assert not push_ticks(pv); pv.calls=[]
+pv.call(address=sleep_hook,args=(0x1234,0,0,0),gap=0); assert [c[1] for c in pv.calls if c[0]=='sleep_ms']==[O['IDLE_SLEEP_MS']]; passed()
 # The dialog gone mid-push (a scrub's start, Return): the time row is back at once, nothing left running.
 for pv in (leaving(),vol_np(push=1)):
     vol_wait(pv,50); assert push_ticks(pv) and row_x(pv)!=home; pv.nodes[pv.wm]['children']=[pv.win]; pv.top=pv.win; pv.advance(O['VOL_POLL_MS'])
@@ -16402,6 +16613,20 @@ assert wake(DOWN,RET,gap=1000) and wake(UP,RET,gap=100) and wake(DOWN,RET,gap=60
 # The stamp rounds up (| 1): a ghost in the same even millisecond as the release is still inside the window.
 assert wake(DOWN,RET,gap=1000); m.now+=hold; m.now+=m.now&1
 assert wake(UP,RET,gap=0) and not wake(DOWN,RET,gap=0) and not wake(UP,RET,gap=30); passed()
+# A hold whose release stock never saw (the windows closing under it) leaves its release latch armed, which would swallow
+# the next short Return: a new press clears it, a held press's repeats and a ghost (dropped whole) do not.
+LATCH=O['RETURN_RELEASE_LATCH']
+assert wake(DOWN,RET,gap=1000); m.byte(LATCH,1); assert wake(DOWN,RET,gap=100) and m.u.mem_read(LATCH,1)==b'\1'
+assert wake(UP,RET,gap=hold) and not wake(DOWN,RET,gap=60) and m.u.mem_read(LATCH,1)==b'\1' and not wake(UP,RET,gap=30)
+assert wake(DOWN,RET,gap=200) and m.u.mem_read(LATCH,1)==b'\0' and wake(UP,RET,gap=30); passed()
+# The symptom: left armed, stock's filter eats a short Return's release and Home does nothing; the new press clears it, and that first release reaches Home.
+def home_after_hold(press):
+    h=NavigationMachine(); view,_=home_list(h); h.order=[h.top]; h.sync_order(); h.paint(view)
+    for _ in range(3): h.call()
+    assert h.selected(view)==3; h.byte(LATCH,1); h.handlers[inp+12]='stock_input'
+    if press: h.call(RET,address=inp,args=(h.wm,h.event,0,0),event_type=DOWN,gap=1000,clear=False)
+    h.call(RET); return h.selected(view)
+assert home_after_hold(False)==3 and home_after_hold(True)==0; passed()
 # Every edge button guards Centre as Return does: a thumb on the rim closes Centre with Play/Pause,
 # Previous or Next too. Centre pressed first passes, but an edge press within CHORD_MS of it ends
 # Centre's hold timer, so stock's Centre hold (Shut Down) never comes; a later one leaves it.
@@ -18147,4 +18372,60 @@ for own,v,want in ((False,0x40,(0xf4-0x40)*255//(0xf4-0x16)),(False,0x10,255),(F
 um=Machine(); um.config.update(THEME='1',LIGHT='1'); classic_light_on(um); face=um.call(address=payload_syms['unflip'],args=(0xf2,0,0,0),gap=0)
 assert um.call(address=payload_syms['ui_ink'],args=(0xff000000|face*0x010101,0,0,0),gap=0)&0xffffffff==0xfff2f2f2
 um=Machine(); um.config.update(THEME='0',LIGHT='0'); assert um.call(address=payload_syms['unflip'],args=(0x40,0,0,0),gap=0)==0x40; passed()
+# Classic's scrollbar: a thumb alone, no track, 4 px wide and 2 px in from the list's right edge, its ends round
+# (their corner pixels at a radius 2 corner's coverage); in proportion to the page and at its place, clear of the glass
+# (from screen y 59 to 261), over the rows. Stock's bar is clear. Its own h is not the list's: a list of 96 under a bar of 240.
+def sb_machine(on,content,value,light='1',y=60,table=False,h=96):
+    m=Machine()
+    if on: m.config['LIGHT']=light; classic_light(m)
+    if table: w,_,_=m.table_page(); m.word(w+O['TABLE_ROWS'],content//48)
+    else: w,_=m.page_list(20,height=h,extent=content)
+    bar=m.node('scroll_bar_m'); m.word(bar+O['W_H'],240); m.word(bar+O['BAR_MAX'],max(content,240)); m.word(bar+O['BAR_VALUE'],value)
+    parent=m.node('list_view' if not table else 'table_view',children=[w,bar]); m.word(parent+O['W_W'],240); m.word(parent+O['W_H'],h)
+    m.word(w+O['W_PARENT'],parent); m.word(bar+O['W_PARENT'],parent); m.nodes[m.top]['children']=[parent]
+    m.word(m.canvas+O['CANVAS_Y'],y); return m,parent,bar
+def sb_stock(m,bar,name='fg_color'):  # stock's grey asked for while its bar paints
+    begin(m,bar); m.handlers[int(manifest['patch_symbols']['stock_color_trampoline'],16)]='stock_color'; out=m.alloc(4); m.word(out,0xff808080)
+    m.call(address=HOOKS['style_get_color'][0],args=(out,0x1234,m.string(name),0),gap=0); return m.get(out)
+def sb_drawn(m,parent): m.bands=[]; m.paint(parent); return [b[:5] for b in m.bands if b[0]>=229]
+def sb_thumb(y,n,rgb):
+    c,a,b=(color_t(rgb)&0xffffff|k<<24 for k in (255,81,234)); x=234
+    ends=lambda y:([(x,y,1,1,a),(x+3,y,1,1,a),(x+1,y,1,1,b),(x+2,y,1,1,b)],[(x,y,1,1,b),(x+3,y,1,1,b),(x+1,y,2,1,c)])
+    top,bottom=ends(y),ends(y+n-1)
+    return top[0]+[(b_[0],b_[1]+1,*b_[2:]) for b_ in top[1]]+[(x,y+2,4,n-4,c)]*(n>4)+[(b_[0],b_[1]-1,*b_[2:]) for b_ in bottom[1]]+bottom[0]
+m_,parent,bar=sb_machine(True,960,480); before=m_.lcd_colors()
+assert sb_drawn(m_,parent)==sb_thumb(40,16,0x8f98a8)  # the 16 px floor, halfway
+assert m_.lcd_colors()==before
+assert sb_stock(m_,bar)==0x808080 and sb_stock(m_,bar,'bg_color')==0x808080; passed()
+# Its length is the page's share of the whole content: 96 of 480 is 19 rows of the 96 px track, and at the content's
+# last value it ends with the track.
+m_,parent,bar=sb_machine(True,480,240); assert sb_drawn(m_,parent)==sb_thumb(38,19,0x8f98a8)
+m_.word(bar+O['BAR_VALUE'],480); assert sb_drawn(m_,parent)==sb_thumb(77,19,0x8f98a8); passed()
+# The dark half (LIGHT=0).
+m_,parent,bar=sb_machine(True,960,480,'0'); assert sb_drawn(m_,parent)==sb_thumb(40,16,0x6e7380); passed()
+# The longest thumb, content just over the list on a track of 202: its ends and one fill, inside the instruction cap; five rows has a middle of one.
+m_,parent,bar=sb_machine(True,257,0,y=26,h=256); assert sb_drawn(m_,parent)==sb_thumb(33,201,0x8f98a8); passed()
+m_,parent,bar=sb_machine(True,960,0,y=256); assert sb_drawn(m_,parent)==sb_thumb(0,5,0x8f98a8); passed()
+# A huge list doesn't overflow: halfway and the end of 100 M px, on the 96 px track; a value past its range stays on the track.
+m_,parent,bar=sb_machine(True,100_000_000,50_000_000); assert sb_drawn(m_,parent)==sb_thumb(40,16,0x8f98a8)
+m_.word(bar+O['BAR_VALUE'],100_000_000); assert sb_drawn(m_,parent)==sb_thumb(80,16,0x8f98a8)
+m_.word(bar+O['BAR_VALUE'],(-20)&0xffffffff); assert sb_drawn(m_,parent)==sb_thumb(0,16,0x8f98a8); passed()
+# Its ends stop at the glass: a list from screen y 30 starts the track at 59, 29 rows into the list; one running to 296
+# ends it at 261; a track shorter than the floor is the whole thumb.
+m_,parent,bar=sb_machine(True,960,0,y=30); assert sb_drawn(m_,parent)==sb_thumb(29,16,0x8f98a8); passed()
+m_,parent,bar=sb_machine(True,960,960,y=200); assert sb_drawn(m_,parent)==sb_thumb(45,16,0x8f98a8); passed()
+m_,parent,bar=sb_machine(True,960,960,y=250); assert sb_drawn(m_,parent)==sb_thumb(0,11,0x8f98a8); passed()
+# A table_view's the same: rows x row height is its content.
+m_,parent,bar=sb_machine(True,960,480,table=True); assert sb_drawn(m_,parent)==sb_thumb(40,16,0x8f98a8); passed()
+# Nothing scrolls, nothing drawn, though stock's max is never under the bar's own 240 (a 6-row menu); stock's bar stays clear.
+for table in (False,True):
+    m_,parent,bar=sb_machine(True,96,0,table=table); assert sb_drawn(m_,parent)==[]
+    assert sb_stock(m_,bar)==0x808080; passed()
+# A list with no bar, a bar that has no range yet, a track wholly under the glass: nothing, and no crash.
+m_,parent,bar=sb_machine(True,960,0); m_.nodes[parent]['children']=m_.nodes[parent]['children'][:1]; assert sb_drawn(m_,parent)==[]
+m_,parent,bar=sb_machine(True,960,0); m_.word(bar+O['BAR_MAX'],0); assert sb_drawn(m_,parent)==[]
+m_,parent,bar=sb_machine(True,960,0,y=261); assert sb_drawn(m_,parent)==[]; passed()
+# Minimal: nothing drawn, stock's bar keeps its colour.
+m_,parent,bar=sb_machine(False,960,0); m_.config['THEME']='0'; assert sb_drawn(m_,parent)==[]
+assert sb_stock(m_,bar)>>24==0xff; passed()
 print(f'{checks} MIPS execution scenarios passed; toolkit services mocked, stock lock filter executed.')

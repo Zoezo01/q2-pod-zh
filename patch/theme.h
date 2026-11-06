@@ -146,6 +146,10 @@ typedef struct {
     short batt_corner_a, batt_foot_a, batt_shade_a, batt_soft_a, batt_soft_top_a, batt_emboss_a,
         batt_emboss_nub_a;        /* of 255 */
     short bar_bt_dy, bar_wifi_dy; /* rows off the bar's row layout: Bluetooth, Wi-Fi */
+    /* A list's scrollbar, a thumb alone (paint_scrollbar): width (0: stock's fading bar) and its
+     * place from the list's right; the screen rows its ends stay in; its shortest length */
+    short sb_w, sb_right, sb_top, sb_bottom, sb_min;
+    unsigned sb_thumb[2]; /* final: [0] dark, [1] light */
     /* a row with art, on screen: the cover's x and its text's first and last columns; 0: stock's */
     short art_x, art_text_x, art_text_end;
     short row_text_end; /* a two-line row without art: its text's last column on screen */

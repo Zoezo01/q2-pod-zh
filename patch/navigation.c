@@ -189,6 +189,7 @@ extern void *coverflow_tracks(void *page);
 extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w);
 extern void coverflow_lost_touch(void);
 extern void *coverflow_album(void *page), *coverflow_album_tracks(void *r);
+extern int coverflow_turning(void);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
 extern unsigned coverflow_scope(void *page);
 extern void coverflow_home_art(void *top);
@@ -2186,7 +2187,7 @@ static void round_row(void *canvas, const rect_t *r, int R, int i, unsigned c) {
         scrub_row(canvas, a << 24 | (c & 0xffffff), r->x + n, r->y + i, 1);
         scrub_row(canvas, a << 24 | (c & 0xffffff), r->x + r->w - 1 - n, r->y + i, 1);
     }
-    scrub_row(canvas, c, r->x + n, r->y + i, r->w - 2 * n);
+    if (r->w > 2 * n) scrub_row(canvas, c, r->x + n, r->y + i, r->w - 2 * n);
 }
 /* The gradient s over r, one row at a time, its corners rounded by R and antialiased. */
 static void paint_round_rows(void *canvas, const rect_t *r, const stops_t *s, int R) {
@@ -3244,6 +3245,56 @@ static void paint_into(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
+/* The theme's scrollbar (theme_t.sb_*), a thumb alone: stock's mobile bar fades, so it is drawn
+ * from the list's border paint, after its children, in a final colour. list_bar is the scroll_bar_m
+ * of a list that scrolls: stock's max is at least the bar's own h, which can pass a short list's,
+ * so the content is read off its sibling. ponytail: a type compare per list paint under the theme
+ * only; cache the bar per list if paints get heavy. */
+static void *list_bar(void *w) {
+    const char *type = widget_get_type(w);
+    if (tk_strcmp(type, "list_view") && tk_strcmp(type, "table_view")) return (void *)0;
+    void *bar = (void *)0;
+    int scrolls = 0;
+    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
+        void *c = widget_get_child(w, i);
+        const char *t = widget_get_type(c);
+        if (!tk_strcmp(t, "scroll_bar_m"))
+            bar = c;
+        else if (!tk_strcmp(t, "scroll_view"))
+            scrolls |= I(c, VIEW_CONTENT_H) > I(c, W_H);
+        else if (!tk_strcmp(t, "table_client"))
+            scrolls |= I(c, TABLE_ROWS) * I(c, ROW_HEIGHT) > I(c, W_H);
+    }
+    return scrolls ? bar : (void *)0;
+}
+static void paint_scrollbar(void *canvas, void *bar) {
+    const theme_t *T = theme();
+    void *list = P(bar, W_PARENT), *lcd = P(canvas, CANVAS_LCD);
+    int max = I(bar, BAR_MAX), value = I(bar, BAR_VALUE);
+    int y0 = I(canvas, CANVAS_Y), h = I(list, W_H);
+    int top = (y0 > T->sb_top ? y0 : T->sb_top) - y0,
+        bottom = (y0 + h < T->sb_bottom ? y0 + h : T->sb_bottom) - y0, track = bottom - top;
+    if (!lcd || max <= 0 || track <= 0) return;
+    int len = track * h / max;
+    if (len < T->sb_min) len = T->sb_min;
+    if (len > track) len = track;
+    value = value < 0 ? 0 : value > max ? max : value;
+    while (max >> 22) max >>= 1, value >>= 1; /* (track - len) * value stays in an int */
+    rect_t r = { I(list, W_W) - T->sb_right - T->sb_w, top + (track - len) * value / max, T->sb_w,
+                 len };
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), c = 0xff000000u | T->sb_thumb[ipod_light()];
+    for (int i = 0; i < len; ++i) { /* radius 2: two round rows at each end, one fill between */
+        if (i != 2 || len <= 4) {
+            round_row(canvas, &r, 2, i, c);
+            continue;
+        }
+        stock_canvas_set_fill_color(canvas, (RGBA(c & 0xffffffu) & 0xffffffu) | 0xff000000u);
+        canvas_fill_rect(canvas, r.x, r.y + 2, r.w, len - 4);
+        i = len - 3;
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
+
 /* Stock paints children first and calls this with the surface's canvas origin restored. */
 static void np_scrubber(void *w, void *canvas);
 static void slider_scrub(void *w, void *canvas);
@@ -3267,6 +3318,10 @@ int ringnav_paint(void *w, void *canvas) {
     photos_paint(w, canvas);
     books_paint(w, canvas);
     spot_paint(w, canvas);
+    if (theme()->sb_w) {
+        void *bar = w ? list_bar(w) : (void *)0;
+        if (bar) paint_scrollbar(canvas, bar);
+    }
     addon_paint(w, canvas);
     peq_paint(w, canvas);
     visualizer_paint(w, canvas);
@@ -7539,6 +7594,12 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
     if (name && !tk_strcmp(name, "selected_text_color")) return color;
     const scheme_t *S = scheme();
     const theme_t *T = theme();
+    if (T->sb_w && st.paint_w && name &&
+        (tk_str_end_with(name, "fg_color") || tk_str_end_with(name, "bg_color")) &&
+        !tk_strcmp(widget_get_type(st.paint_w), "scroll_bar_m")) {
+        *color &= 0xffffff; /* paint_scrollbar draws it */
+        return color;
+    }
     if (T->np_tilt_bl && painting_in(st.bc[2])) return color; /* its full-screen art stays black */
     if (st.paint_w && name && tk_str_end_with(name, "text_color")) {
         if (kb_key(st.paint_w)) { /* kb_paint_key draws it */
@@ -8958,7 +9019,8 @@ void ringnav_boot(const char *page, const int *ctx) {
  * from any page but Home itself, where it still opens Now Playing.
  * ponytail: going Home leaves the latch to the stock release filter, as stock's own Home call
  * here did, relying on the hold's key-up reaching it once the windows close; clearing it would
- * let that release act on Home. */
+ * let that release act on Home. A release that never arrives leaves it for chord_gate's next
+ * press to clear. */
 int compact_now_playing(void) {
     pull_cancel();
     drop_input();
@@ -11164,6 +11226,12 @@ static int ls_poll(const void *unused) {
     tk_snprintf(t, sizeof t, "Measuring songs\xe2\x80\xa6 %d/%d", ls.done, ls.total);
     page_retitle(st.rt_page, ls.title, t);
     return 8; /* RET_REPEAT */
+}
+
+/* Cover Flow's tracks panel (coverflow.c): r's seconds from the cache, -1 when never probed. */
+int song_seconds(void *r) {
+    lengths_read();
+    return song_length(r);
 }
 
 /* Long Songs' row: the files never probed are probed first, with their count and Cancel, which
@@ -13724,7 +13792,7 @@ static void bt_volume_poll(void) {
  * drawn while dark, or only partly, stays on screen until the next input; after a centre press woke
  * it, it also restarts Wake's window for a dropped press (woke_at). With the screen on, a pass
  * idles IDLE_SLEEP_MS once input and window animations have been still for IDLE_MS, except while
- * Now Playing animates. */
+ * Now Playing animates or the volume row's push runs (it leaves 5.3 s after the last key). */
 static volatile int dark_quiet; /* read by ringnav_dark_usleep on stock's threads */
 int ringnav_dark_usleep(unsigned us) {
     return usleep(dark_quiet && us < DARK_POLL_US ? DARK_POLL_US : us);
@@ -13794,7 +13862,8 @@ int ringnav_sleep(void *loop) {
         if (st.clock_timer) clock_show(); /* a time set while dark */
         widget_invalidate_force(window_manager(), (void *)0);
     } else if (time_now_ms() - st.last_input >= IDLE_MS &&
-               !window_manager_is_animating(window_manager()) && !np_animating())
+               !window_manager_is_animating(window_manager()) && !np_animating() &&
+               !coverflow_turning() && !st.vol_tick)
         sleep_ms(IDLE_SLEEP_MS);
     return stock_sleep_trampoline(loop);
 }
@@ -13909,8 +13978,11 @@ static int chord_gate(void *e) {
             st.return_up = /* return_at may run a ms late, its | 1 */
                 st.return_at && now - st.return_at + 1 >= KEY_HOLD_MS ? now | 1 : 0;
             st.return_at = 0;
-        } else if (!st.return_at)
+        } else if (!st.return_at) {
             st.return_at = now | 1; /* never 0 while held */
+            /* a hold's release can miss stock's filter as the windows close: its latch is stale */
+            if (type == EVT_KEY_DOWN) *(volatile unsigned char *)RETURN_RELEASE_LATCH = 0;
+        }
         return 0;
     }
     if (key != KEY_CENTER) return 0;
@@ -14664,6 +14736,9 @@ int ringnav(void *ctx, void *event) {
     if (usable() && rate_key(window_manager_get_top_window(window_manager()), key)) return STOP;
     /* A game's keys, before stock's lock filter, media keys and screen-off double Centre */
     if (usable() && games_key(window_manager_get_top_window(window_manager()), key)) return STOP;
+    /* Cover Flow's flip: a Centre during it does nothing. Its Return is the page's (coverflow.c
+     * keyup), the wheel waits at the page's no surface (hold_wheel). */
+    if (key == KEY_CENTER && coverflow_turning() && !g_power_longkey) return STOP;
     /* Return or Centre closes quick settings, as its swipe up does (dialog_quit); stock leaves
      * Return to its Home button and Centre to turning the screen off. A held Return's release
      * goes to the stock filter, which consumes its latch (a hold may go Home from here). */

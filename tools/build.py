@@ -1162,6 +1162,12 @@ FUNCTIONS = {
  'bitmap_lock_buffer_for_read': ('const unsigned char *', 'void *'),
  'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
  'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (navigation.c search_paint)
+ # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
+ 'canvas_offline_create': ('void *', 'unsigned, unsigned, unsigned'),
+ 'canvas_offline_begin_draw': ('int', 'void *'),
+ 'canvas_offline_end_draw': ('int', 'void *'),
+ 'canvas_offline_destroy': ('int', 'void *'),
+ 'canvas_translate': ('int', 'void *, int, int'),
  'widget_on_paint_children': ('int', 'void *, void *'),  # a wallpaper thumbnail's check badge (lockscreen.c)
  'slide_menu_set_spacer': ('int', 'void *, int'),
  'playing_timer_start': ('int', 'void *'),

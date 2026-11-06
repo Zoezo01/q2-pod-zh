@@ -4,6 +4,7 @@ import colorsys
 import dataclasses
 import itertools
 import json
+import math
 import re
 from build import ROOT, check
 from ipod import AUDIT, GEOM_VALS, INC, O, SET0, SLIDE, VALUE_NAMES, Geometry, corner_inset, corner_x, immediate_values
@@ -160,6 +161,8 @@ SCHEMA = {k.path: k for k in (
     key('bar.battery.emboss_nub_a', 'batt_emboss_nub_a', 'int', 255),  # ... and under the nub
     Key('bar.icons.bt_dy', 'bar_bt_dy', 'int', -4, 4, 0, 'live'),  # rows Bluetooth and Wi-Fi sit off the row layout's
     Key('bar.icons.wifi_dy', 'bar_wifi_dy', 'int', -4, 4, 0, 'live'),
+    *(key(f'list.scrollbar.{a}', f'sb_{a}', 'int', 375) for a in ('w', 'right', 'top', 'bottom', 'min')),  # paint_scrollbar's thumb
+    key('list.scrollbar.thumb', 'sb_thumb', 'color', final=True),
     key('scheme.card', 'card', 'bool'),
     key('scheme.raw_red', 'raw_red', 'bool'),
     key('scheme.fill', 'fill', 'color'),
@@ -935,6 +938,17 @@ def validate(t, name):
     for s in settings:
         if settings.count(s) > 1:
             err(f'{s} declared twice')
+    for end in ('top', 'bottom') if t['sb_w'] else ():  # the thumb's round end gives its corner pixel to the glass
+        y = t['sb_' + end]
+        if corner_inset(y) > t['sb_right'] + 1:
+            err(f'list.scrollbar: {end} {y} is under the glass (inset {corner_inset(y)} > right {t["sb_right"]} + 1)')
+    if t['sb_w']:
+        if t['sb_top'] >= t['sb_bottom']:
+            err(f"list.scrollbar: top {t['sb_top']} is not above bottom {t['sb_bottom']}")
+        if not t['sb_min']:
+            err('list.scrollbar: no min')
+        if not t['sb_thumb'] and not t['light'].get('sb_thumb'):
+            err('list.scrollbar: no thumb colour')
     if any(o.get('key') == t['accent_key'] for o in t['opts']):
         err(f"{t['accent_key']} declared twice")
     if not t['accents']:
@@ -975,6 +989,9 @@ def validate(t, name):
     shelf = t['cf.top'] + 160 + t['cf.reflect']  # 160: coverflow.c's ART_SIZE
     if shelf > t['cf.view_h']:
         err(f"coverflow.shelf: top + 160 + reflect = {shelf} exceeds {t['cf.view_h']}")
+    near = 80 * math.sin(math.radians(t['cf.tilt']))  # half a side cover's width turned toward the eye
+    if t['cf.eye'] + t['cf.z1'] <= near:
+        err(f"coverflow.shelf: eye + z1 = {t['cf.eye'] + t['cf.z1']} doesn't clear 80 sin(tilt) = {near:.1f}")
     if t['cf.bright2'] > t['cf.bright1']:
         err(f'coverflow.shelf: bright2 {t["cf.bright2"]} exceeds bright1 {t["cf.bright1"]}')
     h = O['CF_NAME_H'] + O['CF_ARTIST_H']

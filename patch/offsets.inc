@@ -438,6 +438,7 @@ static inline int arc_out(int r, int y) {
 #define LYRIC_PUSH_DETENTS 2
 #define LYRIC_PUSH_MS 1000
 #define BAR_VALUE 0x7c /* scroll_bar native value, maintained by list/table scroll callbacks */
+#define BAR_MAX 0x78 /* scroll_bar_set_params: the whole content, at least the bar's own h */
 #define KEY_CENTER 218
 #define KEY_PREV 172
 #define KEY_NEXT 173

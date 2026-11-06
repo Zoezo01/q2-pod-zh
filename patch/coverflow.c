@@ -1176,6 +1176,21 @@ void *page_title(void *body, const char *caption, int n) {
     return title;
 }
 
+/* A list view in parent from y, w wide and at most h high, for n item_h rows; its scroll view. */
+static void *rows_view(void *parent, int y, int w, int h, int n, int item_h) {
+    int rows = n * item_h < h ? n * item_h : h;
+    void *lv = list_view_create(parent, 0, y, w, rows);
+    widget_set_prop_int(lv, "item_height", item_h);
+    /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
+    widget_set_prop_int(lv, "style:normal:bg_color", (int)0xff000000u);
+    widget_set_prop_int(lv, "style:normal:border_color", 0);
+    void *view = scroll_view_create(lv, 0, 0, w, rows);
+    widget_set_prop_int(view, "yslidable", 1);
+    widget_set_prop_int(view, "xslidable", 0);
+    widget_set_prop_int(view, "virtual_h", n * item_h);
+    return view;
+}
+
 /* The peq_ui.c page: a title bar (*title, unless 0: its caller writes it again, so it stays on show)
  * over n item_h rows (page_h) in body, down to the page's bottom (the last row's selection meets the
  * screen's edge) or shrunk so the list's white background never shows below a short list. Shared
@@ -1187,17 +1202,7 @@ void *page_list(void *page, void *body, void **title, const char *caption, int n
     widget_set_visible(body, 1, 0);
     void *t = page_title(body, caption, title ? TITLE_ON_SHOW : n);
     if (title) *title = t;
-    int top = I(t, W_H), rows = h - top;
-    if (n * item_h < rows) rows = n * item_h;
-    void *lv = list_view_create(body, 0, top, 375, rows);
-    widget_set_prop_int(lv, "item_height", item_h);
-    /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
-    widget_set_prop_int(lv, "style:normal:bg_color", (int)0xff000000u);
-    widget_set_prop_int(lv, "style:normal:border_color", 0);
-    void *view = scroll_view_create(lv, 0, 0, 375, rows);
-    widget_set_prop_int(view, "yslidable", 1);
-    widget_set_prop_int(view, "xslidable", 0);
-    widget_set_prop_int(view, "virtual_h", n * item_h);
+    void *view = rows_view(body, I(t, W_H), 375, h - I(t, W_H), n, item_h);
     if (!theme()->page_title_h) bar_title_sync(page);
     widget_invalidate_force(page, 0);
     return view;
@@ -1800,24 +1805,195 @@ int coverflow_bounded(void *w) { return w && w == cf.slide && cf.scoped == ARTIS
 
 static int retitle(const void *unused);
 
-/* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
- * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
- * position or a texture has changed. */
-void coverflow_paint(void *w, void *canvas) {
-    int c, frac, n;
-    if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
-        !visual(w, n = (int)widget_count_children(w), &c, &frac))
-        return;
-    const unsigned *ring[CF_RING];
+/* The covers round album c of n for this frame, in Light Mode's colours. */
+static void fx_ring(int c, int n, const unsigned *ring[CF_RING]) {
     if (fx.light != ipod_light()) {
         fx_placeholder();
         memset(fx.album, 0, sizeof fx.album); /* decoded art may have transparent corners too */
         fx.drawn = 0;
     }
     fx_window(c, n, ring);
-    if (coverflow_bounded(w)) /* no wrap: only the artist's real neighbours, never repeats */
+    if (coverflow_bounded(cf.slide)) /* no wrap: only the artist's real neighbours, never repeats */
         for (int j = 0; j < CF_RING; ++j)
             if ((unsigned)(c + j - CF_REACH) >= (unsigned)n) ring[j] = 0;
+}
+
+/* The flip (docs/ipod.md#cover-flow), under Classic's painter: Centre on a cover turns it
+ * about the vertical axis on the centre line, right edge toward the viewer, and it grows into the
+ * tracks panel on its back, the side covers parting; Return runs the same frames backwards. The
+ * shelf's frame, rendered once without the centre cover, holds the side covers. fl.frame and
+ * fl.back live from Centre to the end of the way back. */
+#define FLIP_MS 270
+#define FLIP_TICK_MS 16
+#define FLIP_H 294   /* the frame's rows, the client area's */
+#define FLIP_EYE 700 /* px; the shelf's eye can be nearer than the panel's half width */
+#define FLIP_EYE_Y 147 /* the row the eye looks along, the frame's middle */
+#define FLIP_PART 24 /* px each way */
+#define BACK_W 294
+#define BACK_H 285
+#define PANEL_X 40 /* back's first column: the axis less half of it */
+#define PANEL_Y 9
+#define PANEL_HEAD 57
+#define PANEL_MUTED 0xffaaaaaau /* stock's second line: the theme's muted, white when selected */
+static struct {
+    void *frame;         /* bitmap_t *, CF_VIEW_W x FLIP_H */
+    unsigned *back;      /* BACK_W x BACK_H, the panel as painted */
+    const unsigned *front;
+    void *panel, *sheet, *title, *artist;
+    unsigned timer, t0;
+    int dir;   /* 1 turning to the panel, -1 back, 0 at rest */
+    int drawn; /* the e the frame holds */
+    int light;
+} fl __attribute__((section(".scratch")));
+
+int coverflow_turning(void) { return fl.dir != 0; }
+
+/* The time's share of the turn (16.16) at ms of FLIP_MS: ease-in-out, .42, 0, .58, 1, at each
+ * sixteenth of the time. Its own mirror, so backwards it's the same frames. */
+int coverflow_flip_eased(int ms) {
+    static const int eased[17] = { 0,     497,   2039,  4686,  8465,  13339, 19187, 25776, 32768,
+                                   39760, 46349, 52197, 57071, 60850, 63497, 65039, 65536 };
+    if (ms <= 0) return 0;
+    if (ms >= FLIP_MS) return CF_ONE;
+    int at = ms * 65536 / FLIP_MS, i = at >> 12;
+    return eased[i] + ((eased[i + 1] - eased[i]) * (at & 4095) >> 12);
+}
+
+/* The frame at e (16.16, the cover's 0 to the panel's CF_ONE) from tex: the side covers (CF_VIEW_W
+ * x view_h), the cover, the back. e sets the turn (180 degrees), the parting and, linearly, the
+ * quad's size and place. A flat BACK_W wide face seen from FLIP_EYE: the size shrinks x and y but
+ * not depth, so u (-1 to 1 across the face, 12 bits) reaches 147 px towards the eye at any size.
+ * Each screen column is one texture column, nearest, its slanted ends by row coverage. */
+void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const tex[3]) {
+    unsigned paper = (ipod_light() ? scheme()->paper : 0) | 0xff000000u;
+    int part = FLIP_PART * e >> 16, right = CF_CX + part;
+    for (int y = 0; y < FLIP_H; ++y) {
+        unsigned *o = d + y * pitch;
+        const unsigned *s = tex[0] + y * CF_VIEW_W;
+        int shelf = y < cfs.view_h, from = shelf ? CF_CX - part : 0, to = shelf ? right : CF_VIEW_W;
+        if (shelf) {
+            memcpy(o, s + part, (unsigned)from * 4);
+            memcpy(o + right, s + CF_CX, (unsigned)(CF_VIEW_W - right) * 4);
+        }
+        for (int x = from; x < to; ++x) o[x] = paper;
+    }
+    /* cos and sin of 180 e from the quarter's table, mirrored past 90 */
+    int a = e <= CF_ONE / 2 ? e : CF_ONE - e, pos = a * 32, i = pos >> 16, f = (pos & 65535) >> 4;
+    int c = cf_cos90[i] + (i < 16 ? (cf_cos90[i + 1] - cf_cos90[i]) * f >> 12 : 0);
+    int sn = cf_sin90[i] + (i < 16 ? (cf_sin90[i + 1] - cf_sin90[i]) * f >> 12 : 0);
+    int back = a != e, at = e >> 4; /* at: 12 bits */
+    const unsigned *t = tex[back ? 2 : 1];
+    if (!c || !t) return; /* edge on */
+    int tw = back ? BACK_W : ART_SIZE, th = back ? BACK_H : ART_SIZE;
+    int half = 1280 + (16 * (BACK_W / 2 - ART_SIZE / 2) * at >> 12); /* half the width, 1/16 px */
+    int top = 256 * cfs.top + (256 * (PANEL_Y - cfs.top) * at >> 12); /* 1/256 px */
+    int bottom = top + 40960 + (256 * (BACK_H - ART_SIZE) * at >> 12), eye_y = 256 * FLIP_EYE_Y;
+    int depth = sn * (BACK_W / 2) / FLIP_EYE, cw = half * (back ? -c : c) >> 12;
+    for (int x = 0; x < CF_VIEW_W; ++x) {
+        int dx = (2 * x + 1 - 2 * CF_CX) * 8, den = cw + (dx * depth >> 12);
+        if (!den) continue;
+        int u = dx * 65536 / den;
+        if (u < -4096 || u >= 4096) continue;
+        int k = (1 << 28) / (65536 - (depth * u >> 12)); /* the eye's scale there, 12 bits */
+        int y0 = eye_y + ((top - eye_y) * k >> 12), y1 = eye_y + ((bottom - eye_y) * k >> 12);
+        int h = y1 - y0;
+        if (h < 16) continue;
+        int col = (back ? 4095 - u : u + 4096) * tw >> 13, step = (th << 20) / (h >> 4);
+        int ins = back ? 0 : h * cf_inset[col] / (ART_SIZE * 256), from = y0 + ins, to = y1 - ins;
+        int first = from >> 8, last = (to - 1) >> 8, y = first < 0 ? 0 : first;
+        unsigned *o = d + y * pitch + x;
+        for (; y <= last && y < FLIP_H; ++y, o += pitch) {
+            int v = (((y << 8) + 128 - y0) >> 4) * step >> 20; /* texel row */
+            unsigned px = t[(v < 0 ? 0 : v >= th ? th - 1 : v) * tw + col] | 0xff000000u;
+            if (y != first && y != last) {
+                *o = px;
+                continue;
+            }
+            int a0 = y << 8 > from ? y << 8 : from, a1 = (y + 1) << 8 < to ? (y + 1) << 8 : to;
+            *o = tilt_mix(*o, px, (unsigned)(a1 - a0)) | 0xff000000u;
+        }
+    }
+}
+
+/* The side covers round cf.album, in the shelf's frame, which is drawn afresh back on the shelf;
+ * the cover is the ring's middle: the no-art cover when it has no texture. */
+static void flip_sides(void) {
+    const unsigned *ring[CF_RING];
+    fx_ring(cf.album, (int)widget_count_children(cf.slide), ring);
+    fl.front = ring[CF_REACH];
+    ring[CF_REACH] = 0;
+    unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
+    if (d) {
+        coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), 0, ring);
+        bitmap_unlock_buffer(fx.frame);
+    }
+    fx.drawn = 0;
+    fl.light = ipod_light();
+}
+
+/* White on the header in either half: the grey Light Mode turns white. */
+static void panel_ink(void) {
+    unsigned white = unflip(255) * 0x010101u;
+    widget_set_prop_int(fl.title, "style:normal:text_color", (int)(0xff000000u | white));
+    widget_set_prop_int(fl.artist, "style:normal:text_color", (int)(0xc0000000u | white));
+}
+
+/* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
+static int flip_paint(void *w, void *canvas) {
+    if (w == fl.sheet) { /* first in the panel: its paper, and the header's fill */
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, 0, 0, BACK_W + 1, BACK_H);
+        for (int j = 0; j < PANEL_HEAD; ++j) {
+            unsigned rgb = RGBA(mix(0x6d8db2, 0x8bacd0, j, PANEL_HEAD - 1)) & 0xffffff;
+            stock_canvas_set_fill_color(canvas, rgb | 0xf0000000u);
+            canvas_fill_rect(canvas, 0, j, BACK_W, 1);
+        }
+    } else if (w == fl.panel) { /* last: the header's shadow over the rows, its one edge outside */
+        static const unsigned char shadow[8] = { 0, 28, 54, 50, 41, 27, 14, 0 };
+        for (int j = 0; j < 8; ++j) {
+            stock_canvas_set_fill_color(canvas, (unsigned)shadow[j] << 24);
+            canvas_fill_rect(canvas, 0, PANEL_HEAD - 2 + j, BACK_W, 1);
+        }
+        stock_canvas_set_fill_color(canvas, 0x22000000u);
+        canvas_fill_rect(canvas, -1, -1, BACK_W + 3, 1);
+        canvas_fill_rect(canvas, -1, BACK_H, BACK_W + 3, 1);
+        canvas_fill_rect(canvas, -1, 0, 1, BACK_H);
+        canvas_fill_rect(canvas, BACK_W + 1, 0, 1, BACK_H);
+    }
+    if (w != cf.covers) return 0;
+    if (fl.light != ipod_light()) {
+        flip_sides();
+        panel_ink();
+        fl.drawn = -1;
+    }
+    int ms = (int)((unsigned)time_now_ms() - fl.t0);
+    int e = !fl.dir ? CF_ONE : coverflow_flip_eased(fl.dir > 0 ? ms : FLIP_MS - ms);
+    if (e != fl.drawn) {
+        unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fl.frame);
+        const unsigned *tex[3] = { (const unsigned *)bitmap_lock_buffer_for_read(fx.frame), fl.front,
+                                   fl.back };
+        if (d && tex[0])
+            coverflow_flip_render(d, (int)(bitmap_get_line_length(fl.frame) / 4), e, tex);
+        if (tex[0]) bitmap_unlock_buffer(fx.frame);
+        if (d) bitmap_unlock_buffer(fl.frame);
+        fl.drawn = e;
+    }
+    int r[4] = { 0, 0, CF_VIEW_W, FLIP_H };
+    canvas_draw_image(canvas, fl.frame, r, r);
+    return 1;
+}
+
+/* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
+ * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
+ * position or a texture has changed. */
+void coverflow_paint(void *w, void *canvas) {
+    int c, frac, n;
+    if (fl.frame && w && flip_paint(w, canvas)) return;
+    if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
+        !visual(w, n = (int)widget_count_children(w), &c, &frac))
+        return;
+    const unsigned *ring[CF_RING];
+    fx_ring(c, n, ring);
     if (!fx.drawn || c != fx.c || frac != fx.frac) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
@@ -2278,6 +2454,168 @@ void *coverflow_album_tracks(void *r) {
     return in_order(staged_music(albums, r, &n), r);
 }
 
+/* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
+ * text as theme_font has it; else stock's regular, as the theme's rows' second lines. */
+static void panel_font(void *label, int px, int bold) {
+    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
+                                         "style:disable:font_name" },
+                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                                "style:disable:font_size" };
+    const char *face = bold ? theme_face(widget_get_text(label), -1, &px) : (const char *)0;
+    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
+        widget_set_prop_str(label, names[i], face ? face : "default");
+        widget_set_prop_int(label, sizes[i], px);
+    }
+}
+
+static void *panel_label(void *parent, int x, int y, int w, int h, const char *s, int px,
+                         int bold) {
+    void *label = text(parent, x, y, w, h);
+    widget_use_style(label, "s_scrlabel_white20l");
+    widget_set_text_utf8(label, s);
+    panel_font(label, px, bold);
+    return label;
+}
+
+/* A row's length as stock's clock writes it, blank until it's known (or a file nothing could read). */
+static void panel_length(void *label, void *track) {
+    int sec = song_seconds(track);
+    char t[16] = "";
+    if (sec > 0) toolsTimeItoa(t, sec);
+    widget_set_text_utf8(label, t);
+}
+
+/* The panel as it stands into fl.back, hidden after: painted by stock on an offline canvas of the
+ * screen's size and format, at its screen place, as stock's window snapshots are, so the paint
+ * hooks' coordinates hold. The screen's lcd is BGRA8888; the frame's RGBA. No canvas, or a layout
+ * not the screen's: the paper, so the turn still runs. */
+static void flip_capture(void) {
+    void *c = canvas_offline_create(CF_VIEW_W, 320, LCD_BGRA8888);
+    const unsigned *fb = 0;
+    if (c) {
+        canvas_offline_begin_draw(c);
+        int sy = I(cf.page, W_Y);
+        canvas_translate(c, I(cf.page, W_X), sy);
+        widget_set_visible(fl.panel, 1, 0);
+        widget_layout(fl.panel);
+        widget_paint(fl.panel, c);
+        canvas_offline_end_draw(c);
+        void *lcd = P(c, CANVAS_LCD);
+        if (I(lcd, LCD_W) == CF_VIEW_W && I(lcd, LCD_H) == 320 &&
+            I(lcd, LCD_LINE_LENGTH) == CF_VIEW_W * 4 && I(lcd, LCD_FORMAT) == LCD_BGRA8888 &&
+            sy + PANEL_Y + BACK_H <= 320)
+            fb = (const unsigned *)P(lcd, LCD_OFFLINE_FB);
+        if (fb) fb += (sy + PANEL_Y) * CF_VIEW_W + PANEL_X + I(cf.page, W_X);
+    }
+    unsigned *o = fl.back, paper = (ipod_light() ? scheme()->paper : 0) | 0xff000000u;
+    for (int y = 0; y < BACK_H; ++y)
+        for (int x = 0; x < BACK_W; ++x) {
+            unsigned p = fb ? fb[y * CF_VIEW_W + x] : paper;
+            *o++ = 0xff000000u | (p & 0xff00) | (p & 255) << 16 | (p >> 16 & 255);
+        }
+    if (c) canvas_offline_destroy(c);
+    widget_set_visible(fl.panel, 0, 0);
+}
+
+static void flip_done(void);
+static int flip_tick(const void *unused);
+static void flip_start(int dir) {
+    fl.dir = dir, fl.drawn = -1;
+    fl.t0 = (unsigned)time_now_ms();
+    if (!(fl.timer = timer_add(flip_tick, 0, FLIP_TICK_MS))) flip_done();
+    widget_invalidate_force(cf.covers, 0);
+}
+
+static int flip_tick(const void *unused) {
+    if ((unsigned)time_now_ms() - fl.t0 < FLIP_MS) {
+        widget_invalidate_force(cf.covers, 0);
+        return 8; /* RET_REPEAT */
+    }
+    fl.timer = 0;
+    flip_done();
+    return 0;
+}
+
+/* The buffers go; the widgets are the page's, or flip_done's. */
+static void flip_free(void) {
+    stop_timer(&fl.timer);
+    if (fl.frame) bitmap_destroy(fl.frame);
+    free(fl.back);
+    memset(&fl, 0, sizeof fl);
+}
+
+/* Captions and the wheel's surface: off for the panel, on again for the shelf. */
+static void flip_shelf(int on) {
+    widget_set_visible(cf.slide, on, 0);
+    widget_set_visible(cf.name, on, 0);
+    widget_set_visible(cf.artist, on, 0);
+}
+
+/* The album's panel and its first turn, or 0: not this theme or page, or no room, so the text list.
+ * Nothing starts until the panel is built and painted: a slow album waits at the cover. Stock's
+ * hit test skips insensitive widgets, and the wheel a hidden slide_menu. */
+static int flip_open(void *r, int n) {
+    if (fl.frame) return 1; /* Centre before flip_close's timer: the panel and buffers stand */
+    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT || !cf.covers || !fx.frame) return 0;
+    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
+    fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
+    if (!fl.back) {
+        flip_free();
+        return 0;
+    }
+    void *f = widget_factory();
+    fl.panel =
+        widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W + 1, BACK_H);
+    fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W + 1, BACK_H);
+    int row = theme()->page_row;
+    void *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, BACK_H - PANEL_HEAD, n, row);
+    char name[512];
+    for (int i = 0; i < n; ++i) {
+        void *t = deque_at(cf.tracks, (unsigned)i);
+        void *item = list_item_create(view, 0, i * row, BACK_W, row);
+        widget_use_style(item, "s_listitem_black");
+        panel_label(item, 12, 0, 204, row, track_name(name, sizeof name, t), 18, 1);
+        void *length = panel_label(item, 222, 0, 60, row, "", 16, 0);
+        widget_set_prop_str(length, "style:normal:text_align_h", "right");
+        widget_set_prop_int(length, "style:normal:text_color", (int)PANEL_MUTED);
+        panel_length(length, t);
+        widget_on(item, EVT_CLICK, play, (void *)(long)i);
+    }
+    /* cf.title: where a row's "Storage unavailable" goes */
+    cf.title = fl.title = panel_label(fl.panel, 12, 6, 270, 24, album_name(r), 22, 1);
+    fl.artist = panel_label(fl.panel, 12, 30, 270, 20, cover_artist(r), 16, 0);
+    panel_ink();
+    widget_set_sensitive(cf.covers, 0);
+    flip_shelf(0);
+    flip_sides();
+    flip_capture();
+    flip_start(1);
+    return 1;
+}
+
+/* Return on the panel, once a click's handling is over: its selection and scroll as they stand. */
+static int flip_close(const void *unused) {
+    cf.timer = 0;
+    flip_capture();
+    flip_start(-1);
+    return 0;
+}
+
+static void flip_done(void) {
+    int to_panel = fl.dir > 0;
+    fl.dir = 0;
+    if (to_panel) {
+        widget_set_visible(fl.panel, 1, 0);
+        widget_invalidate_force(cf.page, 0);
+        return;
+    }
+    widget_destroy(fl.panel);
+    flip_free();
+    cf.title = 0;
+    flip_shelf(1);
+    to_covers(0);
+}
+
 static int to_tracks(const void *unused) {
     cf.timer = 0;
     int n;
@@ -2291,6 +2629,7 @@ static int to_tracks(const void *unused) {
     cf.tracks = coverflow_album_tracks(r);
     n = (int)deque_size(cf.tracks);
     cf.screen = TRACKS;
+    if (flip_open(r, n)) return 0;
     if (cf.covers) { /* none in the text list; stock's hit test skips insensitive, not hidden,
                       * widgets, and the covers' view over the list would take its taps and swipes */
         widget_set_visible(cf.covers, 0, 0);
@@ -2413,6 +2752,10 @@ static void *artist_under(void) {
  * covers or the message -> Home, or back out of a scoped page (one album's tracks too). */
 static int keyup(void *ctx, void *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
+    if (fl.frame) { /* the panel's way back; during a turn, nothing */
+        if (!fl.dir) rearm(&cf.timer, flip_close, 0);
+        return 11; /* RET_STOP */
+    }
     if ((cf.screen == TRACKS && cf.scoped != ALBUM_TRACKS) || cf.screen == PREPARING)
         rearm(&cf.timer, to_covers, 0);
     else if (cf.scoped) {
@@ -2432,6 +2775,7 @@ static int closed(void *ctx, void *event) {
     stop_timer(&cf.title_timer);
     tc.down = 0;
     if (cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 1);
+    flip_free();
     drop();
     cf.page = cf.body = cf.covers = cf.slide = 0;
     if (cf.scoped == RATED_ALBUMS) {

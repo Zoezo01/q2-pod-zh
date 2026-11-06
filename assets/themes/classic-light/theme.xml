@@ -48,6 +48,9 @@
     <element name="chevron" selected="1" x="317"/>
     <!-- The fast-scroll letter, the same in both halves -->
     <element name="letter" raw="1" px="60"/>
+    <!-- A list that scrolls keeps a thin thumb at its right edge, over the rows, with no track; its ends stay clear
+         of the glass -->
+    <element name="scrollbar" w="4" right="2" top="59" bottom="261" min="16" light.thumb="#8f98a8" dark.thumb="#6e7380"/>
   </view>
   <!-- Cover Flow's shelf, from the look's measured geometry: side covers almost edge-on, so their top and bottom edges
        meet at the centre column, on a horizon 63% down the cover, unshaded out to the third; the reflections go under

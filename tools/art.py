@@ -744,7 +744,7 @@ def band_rim():
 
 # A coverage table per radius of the round boxes the painter draws a row at a time (navigation.c paint_round_rows): their
 # corners' pixels take the row's colour at this alpha, so they stay the scheme's.
-CORNERS = (5, 6, 7, 8, 9, 10, 12, 13)
+CORNERS = (2, 5, 6, 7, 8, 9, 10, 12, 13)
 def corner_cover(r):
     """A radius r corner's coverage out of 255, r rows of r pixels, the outermost first."""
     n = 16

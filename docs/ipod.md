@@ -356,12 +356,16 @@ accent's red tone (`DROPDOWN_SUN`).
 
 The covers are drawn with depth ([internals](internals.md#coverflow-depth)): the
 selected cover at its native 160 pixels, two angled neighbours a side and a faint reflection, all
-in the top 210 pixels of the page. The album name sits under them (`CF_TEXT_Y`) in 24-pixel white,
+in the top 210 pixels of the page (Classic: 242, `coverflow.shelf.view_h`). The album name sits under them (`CF_TEXT_Y`) in 24-pixel white,
 the artist under that in 20-pixel grey (`#AAAAAA`, stock secondary text), and both, like the
 track list's title and rows and the progress and empty messages, keep 36 pixels (`CF_EDGE`) from
 each side, where the lowest visible track row's text clears the bottom corners. Classic has its own shelf: side covers nearly edge-on, three a side with no darkening, longer reflections running under the caption. Long names still
 scroll within that. A card (an artist's All albums, the rated albums' Sort) uses the album line.
 Values are `CF_*` in `patch/offsets.inc`.
+
+Under Classic (`T->painter[PAINT_VOLUME]`), Centre on a cover turns it over: the album's query and its panel come first, so a slow album waits at the cover, and then over 270 ms, eased `.42, 0, .58, 1`, the cover turns 180 degrees about the vertical axis on the centre line, right edge toward the viewer, growing from its 160 × 160 place to the panel at (40, 35), while the side covers and their reflections part 24 pixels each way. The caption goes on the first frame and the turning cover has no reflection. Return runs the same frames backwards, from the panel as it then stands. A key during the turn waits or does nothing: the wheel's ticks land after it, a Centre or Return is dropped. The covers stay insensitive behind the panel, parted.
+
+The panel is 295 × 285 on paper, ringed by 1 pixel of `#00000022`. Its 57-row header doesn't scroll: fill rows `#6d8db2` to `#8bacd0` at alpha `0xf0`, darker on top, the album in the theme's 22-pixel face, the artist in stock's regular 16 pixels at alpha `0xc0`, both white in either half, and a soft shadow over rows 55 to 62 falling on the rows. Rows are the theme's 32 pixels and 294 wide in a list from row 57, seven showing and 4 pixels of the eighth, none of its text: the title in the theme's 18-pixel face, the length right-aligned to 282 in stock's regular 16 pixels, `muted`, m:ss. A length is blank until [Long Songs](internals.md#long-songs) has measured its file; the panel reads that cache each time it opens. The bar says Cover Flow; there is no caption row. Its bottom corners sit under the glass by design; no text crosses it. With no depth (no memory for the shelf's frame or the turn's), with no covers under the tracks (Go to Album), or under Minimal, Centre opens the text list as before ([internals](internals.md#coverflow-depth)).
 
 ## Rounded corners
 

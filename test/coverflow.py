@@ -63,7 +63,8 @@ timer_add timer_remove navigator_back_to_home navigator_back window_manager_clos
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
-on_home_music_onclick on_home_stream_onclick widget_layout
+on_home_music_onclick on_home_stream_onclick widget_layout widget_destroy widget_paint canvas_translate widget_set_prop_str
+canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy toolsTimeItoa
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
@@ -72,6 +73,7 @@ void *shim_calloc(size_t, size_t);
 
 TEST = r"""
 #include <assert.h>
+#include <math.h>
 #include <stdarg.h>
 #include <sys/mman.h>
 #include "peq.h"
@@ -237,6 +239,18 @@ int library_count(const char *sql) {
 int on_home_music_onclick(void *ctx, void *e) { return 0; }
 int on_home_stream_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
+int widget_paint(void *w, void *c) { return 0; }
+int widget_set_prop_str(void *w, const char *k, const char *v) { return 0; }
+int widget_destroy(void *w) { return 0; }
+int canvas_translate(void *c, int x, int y) { return 0; }
+void *canvas_offline_create(unsigned ww, unsigned h, unsigned f) { return 0; }
+int canvas_offline_begin_draw(void *c) { return 0; }
+int canvas_offline_end_draw(void *c) { return 0; }
+int canvas_offline_destroy(void *c) { return 0; }
+int song_seconds(void *r) { return -1; }
+int toolsTimeItoa(char *s, int sec) { return 0; }
+unsigned unflip(unsigned v) { return v; }
+unsigned mix(unsigned a, unsigned b, int j, int n) { return a; }
 void bar_title_sync(void *win) {}
 int bar_title_fits(void *label) { return 1; }
 void list_value(void *l, const char *t, const char *v) { (void)l, (void)t, (void)v; }
@@ -902,6 +916,84 @@ static void pinned(void) {
         }
     light = 0;
     assert(hash == PINNED_FRAMES);
+}
+
+/* The flip's frames: the quad from its formula at 0, 45, 90, 135 and 180 degrees, the cover to 90 and
+   the back after, narrowed to the axis at 90; the back reads right at the end; the eased time; the side
+   covers parting over the same ease. */
+void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
+int coverflow_flip_eased(int);
+static void flip_frames(void) {
+    static unsigned f[294 * 375], sides[294 * 375], front[160 * 160], back[285 * 294], flatf[160 * 160], flatb[285 * 294];
+    const cf_style_t *cs = &shim_themes[1].cf;
+    classic = 1, frame_fail = 0, square_art = 1;
+    open_page();
+    int H = cs->view_h, top = cs->top;
+    for (int y = 0; y < H; ++y) for (int x = 0; x < 375; ++x) sides[y * 375 + x] = 0xff000000u | (unsigned)x;
+    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xff000000u | (unsigned)(i % 160) << 8 | (unsigned)(i / 160) << 16, flatf[i] = 0xff0000ffu;
+    for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff000000u | (unsigned)(i % 294) << 8 | (unsigned)(i / 294) << 16, flatb[i] = 0xff00ff00u;
+    static unsigned plain[294 * 375];
+    for (int i = 0; i < 294 * 375; ++i) plain[i] = 0xffff0000u;
+    const unsigned *flat_tex[3] = { plain, flatf, flatb }, *tex[3] = { sides, front, back };
+    for (int deg = 0; deg <= 180; deg += 45) {
+        double E = deg / 180.0, S = sin(deg * M_PI / 180), C = cos(deg * M_PI / 180), hw = 80 + 67 * E, t0 = top + (9 - top) * E, b0 = t0 + 160 + 125 * E;
+        double kr = 1 / (1 - 147 * S / 700), kl = 1 / (1 + 147 * S / 700); /* the right and left edge of the cover's own */
+        double xr = 187 + hw * C * kr, xl = 187 - hw * C * kl;
+        coverflow_flip_render(f, 375, deg * 65536 / 180, flat_tex);
+        unsigned want = deg < 90 ? 0xff0000ffu : 0xff00ff00u, other = deg < 90 ? 0xff00ff00u : 0xff0000ffu;
+        int first = -1, last = -1;
+        for (int x = 0; x < 375; ++x)
+            for (int y = 0; y < 294; ++y) {
+                assert(f[y * 375 + x] != other);
+                if (f[y * 375 + x] == want) { if (first < 0) first = x; last = x; }
+            }
+        if (deg == 90) { assert(first < 0); continue; } /* edge on, on the axis */
+        double lo = xl < xr ? xl : xr, hi = xl < xr ? xr : xl, klo = xl < xr ? kl : kr, khi = xl < xr ? kr : kl;
+        assert(fabs(first - lo) <= 1 && fabs(last + 1 - hi) <= 1);
+        for (int side = 0; side < 2; ++side) {
+            int x = side ? last : first, y0 = -1, y1 = -1;
+            double k = side ? khi : klo;
+            for (int y = 0; y < 294; ++y) if (f[y * 375 + x] == want) { if (y0 < 0) y0 = y; y1 = y; }
+            double wt = 147 + (t0 - 147) * k, wb = 147 + (b0 - 147) * k;
+            assert(fabs(y0 - (wt < 0 ? 0 : wt)) <= 2 && fabs(y1 + 1 - (wb > 294 ? 294 : wb)) <= 2);
+        }
+    }
+    /* The cover where the shelf has it, 1:1; the back reading right, 1:1 at the panel's place. */
+    coverflow_flip_render(f, 375, 0, tex);
+    for (int y = 0; y < 160; ++y) for (int x = 0; x < 160; ++x) assert(f[(top + y) * 375 + 107 + x] == front[y * 160 + x]);
+    assert((f[(top + 5) * 375 + 106] & 0xffffffu) == 106);
+    coverflow_flip_render(f, 375, 65536, tex);
+    for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * 375 + 40 + x] == back[y * 294 + x]);
+    /* The eased time: 90 degrees at half of it, and its own mirror, so Return is the same frames. Six frames on a 45 ms clock. */
+    assert(coverflow_flip_eased(0) == 0 && coverflow_flip_eased(135) == 32768 && coverflow_flip_eased(270) == 65536 && coverflow_flip_eased(300) == 65536);
+    int was = 0, count = 0;
+    for (int ms = 45; ms <= 270; ms += 45, ++count) { int e = coverflow_flip_eased(ms); assert(e > was); was = e; }
+    assert(count == 6);
+    for (int ms = 0; ms <= 270; ++ms) { assert(abs(coverflow_flip_eased(ms) + coverflow_flip_eased(270 - ms) - 65536) <= 6); assert(coverflow_flip_eased(ms + 1) >= coverflow_flip_eased(ms)); }
+    /* ... the bezier's own values, a sixteenth at a time and between */
+    assert(abs(coverflow_flip_eased(67) - 8337) <= 100 && abs(coverflow_flip_eased(203) - 57199) <= 100);
+    /* The sides part over the same ease: none at the start, 12 at half, 24 at the end, the paper between and under the shelf. */
+    const unsigned *none[3] = { sides, 0, 0 };
+    for (int half = 0; half < 2; ++half) {
+        light = half;
+        unsigned paper = half ? 0xffffffffu : 0xff000000u;
+        static const struct { int e, part; } at[3] = { { 0, 0 }, { 32768, 12 }, { 65536, 24 } };
+        for (int i = 0; i < 3; ++i) {
+            int p = at[i].part;
+            coverflow_flip_render(f, 375, at[i].e, none);
+            for (int y = 0; y < 294; ++y)
+                for (int x = 0; x < 375; ++x) {
+                    unsigned got = f[y * 375 + x], want = y >= H || (x >= 187 - p && x < 187 + p) ? paper : 0xff000000u | (unsigned)(x < 187 ? x + p : x - p);
+                    assert(got == want);
+                }
+        }
+    }
+    light = 0;
+    square_art = 0;
+    close_page();
+    classic = 0;
+    open_page(); /* Minimal's values again */
+    close_page();
 }
 
 /* Classic's shelf: side covers facing the centre, their edges meeting there, on a horizon 63%
@@ -1664,6 +1756,7 @@ int main(void) {
     depth();
     restyle();
     classic_light_shelf();
+    flip_frames();
     sorting();
     artist_only();
     unknown_card();
@@ -2015,7 +2108,7 @@ def main():
         subprocess.run(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unused-function',
                         *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
-                        str(tmp/'test.c'), '-o', str(binary)], check=True)
+                        str(tmp/'test.c'), '-lm', '-o', str(binary)], check=True)
         env = dict(os.environ)
         if a.captures:  # capture the reflection intensity
             (tmp/'frames').mkdir()

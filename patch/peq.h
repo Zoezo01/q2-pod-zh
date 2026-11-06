@@ -405,6 +405,7 @@ int title_gone(void *w, void *event); /* ... and looks for its source again at t
 int bar_title_fits(void *label);      /* label's text fits the bar's title box */
 int ipod_light(void);   /* navigation.c: Light Mode */
 unsigned unflip(unsigned v); /* navigation.c: the grey Light Mode's flip turns into v */
+int song_seconds(void *r); /* navigation.c, its lengths' cache, for Cover Flow's tracks panel */
 int ipod_square_art(void); /* navigation.c: Classic under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
