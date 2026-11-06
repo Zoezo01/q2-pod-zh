@@ -11,6 +11,12 @@
   - Now Playing: under **Theme: Classic** turning the volume shows it on the progress bar between two speakers, in place of the times, as on an iPod classic. The "Volume 40" line under the bar, small and hard to read, is gone. Minimal and Modern still show it.
   - Library: under **Theme: Classic** the Playlists page no longer repeats "Playlists" beside its + and list buttons, where it didn't fit. The title bar names the page.
   - Library: under **Theme: Classic** the Library's first row is **Search**, which opens the search with the keyboard up, as pulling the list down does. In Home's Split list the pull was easy to miss.
+  - View Queue: deleting a song while Shuffle Songs, Shuffle Albums or a Repeat mode is on keeps your **Play Next** songs and what Previous goes back to. Deleting the song that's playing, Previous goes to the one before it. Next no longer plays past the end of the shorter queue.
+  - Streaming: hiding or showing a service for the first time no longer saves stray characters with the list of hidden services.
+  - Books: an EPUB whose chapters link to a folder beside their own (`../`) gets every chapter, not only the first.
+  - Books: going back a page in a book with damaged text no longer reads beyond the book's text.
+  - Card apps: a press made just as an app's page refreshes, or shows an error, does nothing, where it could act on another row or stop the app.
+  - EQ: a Preamp picked for a preset whose file name is longer than 63 characters now stays with that preset.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.
