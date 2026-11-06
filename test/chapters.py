@@ -53,7 +53,8 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
     assert parse(';FFMETADATA1\n[CHAPTER]')[0] == -1
     assert parse(metadata('7', '2/3', '')) == (1, [(4, '')])
     assert parse(metadata().replace('TIMEBASE=1/1000\n', ''))[0] == -1
-    assert parse(metadata() + metadata('0').split('\n', 1)[1])[0] == -1
+    assert parse(metadata() + metadata('0', title='title=first').split('\n', 1)[1]) == (
+        2, [(0, 'first'), (12, 'Café=一;#\\line\nnext')])
     assert parse(';FFMETADATA1\n' + '[CHAPTER]\nTIMEBASE=1/1\nSTART=0\n' * 513)[0] == -1
     def now(): return int(time.monotonic()*1000)
     def finish(c, at=None):
