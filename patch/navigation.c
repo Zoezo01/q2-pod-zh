@@ -474,7 +474,7 @@ typedef struct {
     void *vol_dialog;
     int vol_drawn;
     unsigned vol_timer;
-    /* Classic (VOL_CLASSIC_LIGHT): the rating panel, the slider page and its slider; the dark
+    /* Classic (classic_pages): the rating panel, the slider page and its slider; the dark
      * bar and the title's place under it; the volume in the time row's place. */
     void *rate_box, *slider_win, *slider_w, *slider_sw;
     const __WCHAR_TYPE__ *slider_hint; /* its caption */
@@ -1855,7 +1855,7 @@ int client_h(void) { return 320 - geom_val(V_BAR); }
 /* Stock's Time Zone caption, between rows 0 and 1, sits 20 px down its item and over row 1: Classic
  * gives it the item, the set's row. */
 static void zone_caption(void *item) {
-    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT) return;
+    if (!classic_pages()) return;
     void *list = P(item, W_PARENT); /* item is its last child, the caption's the one before */
     int n = list ? widget_count_children(list) : 0;
     void *cap = n > 1 ? widget_get_child(list, n - 2) : (void *)0;
@@ -3752,7 +3752,7 @@ static void quick_press(void *icon) {
 }
 static int quick_down(void *icon, void *event) {
     int page = widget_get_prop_int(icon, QUICK_HOLD, 0);
-    if (theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT) quick_press(icon);
+    if (classic_pages()) quick_press(icon);
     if (!page) return 0; /* a button with no hold */
     prop(icon, QUICK_HOLD, page < 0 ? -page : page);
     quick.win = window_manager_get_top_window(window_manager());
@@ -3805,7 +3805,7 @@ int ringnav_quick_settings(void *win, void *ctx) {
             prop(icon, QUICK_HOLD, i + 1);
             widget_on(icon, EVT_POINTER_DOWN, quick_down, icon);
         }
-        if (theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT) quick_open(win);
+        if (classic_pages()) quick_open(win);
         widget_on(win, EVT_DESTROY, quick_cancel, win);
         widget_on(win, EVT_WINDOW_CLOSE, quick_cancel, win);
         widget_on(win, EVT_WINDOW_BACKGROUND, quick_cancel, win);
@@ -4517,8 +4517,7 @@ static int selects(menu_t *m, void *target) {
  * setter rebinds the row under a click; a swipe with no press stays where it was put. */
 static void whole_row(menu_t *m, int i) {
     rect_t r = bounds(m, i);
-    if (m->kind == 1 && theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT &&
-        (r.y < 0 || r.y + r.h > sel_height(m)))
+    if (m->kind == 1 && classic_pages() && (r.y < 0 || r.y + r.h > sel_height(m)))
         reveal(m, m->id[i], 1);
 }
 
@@ -4840,8 +4839,7 @@ static void bar_off(void *w) {
  * clock gone, and back as its style and box were. bar_sync places the rest. */
 static void bar_dark_sync(void *bar) {
     void *t = st.bar_title;
-    if (!t || !st.bar_slot || !st.bar_state || theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT)
-        return;
+    if (!t || !st.bar_slot || !st.bar_state || !classic_pages()) return;
     int dark = dark_bar(window_manager_get_top_window(window_manager()));
     if (dark == st.bar_dark) return;
     void *clock = widget_lookup(bar, "label_clock", 1), *style = P(t, W_ASTYLE);
@@ -6187,7 +6185,7 @@ static const char *number_face(void *label, int *px) {
     return face ? face : "default";
 }
 void slider_number(void *label) {
-    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT) return;
+    if (!classic_pages()) return;
     int px;
     widget_set_visible(label, 1, 0);
     st.number_face = number_face(label, &px);
@@ -6539,7 +6537,7 @@ static int t9_gone(void *ctx, void *event) {
  */
 void t9_box(void *page, void *edit, const char *tips) {
     widget_set_prop_str(edit, "tips", tips);
-    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT) return;
+    if (!classic_pages()) return;
     void *title = text(page, 0, 0, 375, 28);
     widget_set_text_utf8(title, "Search");
     widget_set_name(title, PAGE_TITLE);
@@ -6985,7 +6983,7 @@ void *ringnav_ui_load(const char *name, void *parent) {
         (!tk_strcmp(widget_get_prop_str(root, "name", ""), "showsn_dialog") ||
          !tk_strcmp(widget_get_prop_str(root, "name", ""), "checkfw_dialog")))
         widget_set_prop_str(root, "highlight", "");
-    if (root && theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT) {
+    if (root && classic_pages()) {
         const char *loaded = widget_get_prop_str(root, "name", "");
         if (slider_page(root)) slider_open(root);
         msg_open(root);
@@ -7185,7 +7183,7 @@ static int quick_slider(void *w) {
 static void quick_fill(void *w) {
     if (!quick_slider(w)) return;
     /* Classic's bar is quick_scrub's: stock's goes clear, and 1 says it went */
-    int clear = theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+    int clear = classic_pages();
     int color = clear ? 1 : (int)RGBA(accent_tone(TONE_LIGHT));
     if (widget_get_prop_int(w, QFILL, 0) == color) return;
     widget_set_prop_int(w, QFILL, color);
@@ -7262,9 +7260,7 @@ static void quick_page(void *win, void *canvas) {
 static void quick_scrub(void *w, void *canvas) {
     static const stops_t track = { 2, { 0, 100 }, { 0x0a0a0a, 0x3a3c40 } };
     static const stops_t lit = { 3, { 0, 50, 100 }, { 0x8cc4f8, 0x2f85df, 0x165fc0 } };
-    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT || !quick_slider(w) ||
-        !P(canvas, CANVAS_LCD))
-        return;
+    if (!classic_pages() || !quick_slider(w) || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     void *view = P(w, W_PARENT);
     int ox = -I(view, W_X) - I(w, W_X), oy = -I(view, W_Y) - I(w, W_Y);
@@ -7571,7 +7567,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         else
             time_paint(w, canvas);
     }
-    if (theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT && P(canvas, CANVAS_LCD) &&
+    if (classic_pages() && P(canvas, CANVAS_LCD) &&
         !tk_strcmp(widget_get_prop_str(w, "name", ""), "statusbar_dialog"))
         quick_page(w, canvas);
     if (w == st.msg_win || w == st.usb_win) msg_paint(w, canvas);
@@ -7665,8 +7661,7 @@ unsigned *ringnav_style_color(unsigned *color, void *style, const char *name, un
     if (name && !tk_strcmp(name, "selected_text_color")) return color;
     /* Classic: an edit's hint with no colour of its own is stock's default, its text colour,
      * already mapped (Minimal and Modern keep main's second mapping) */
-    if (name && *color == fallback && !tk_strcmp(name, "tips_text_color") &&
-        theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT)
+    if (name && *color == fallback && !tk_strcmp(name, "tips_text_color") && classic_pages())
         return color;
     const scheme_t *S = scheme();
     const theme_t *T = theme();
@@ -8649,8 +8644,7 @@ static int time_click(void *target, void *event) {
 static void quick_swipe(void *target, void *event) {
     int from = I(g_pressdown_y, 0);
     if (from < QS_SWIPE_Y || from >= QS_SWIPE_STOCK || from - I(event, EVENT_Y) < SLIDE_PX ||
-        I(g_dropdown_menu_state, 0) != 3 || (quick.slider && quick.slide > 0) ||
-        theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT ||
+        I(g_dropdown_menu_state, 0) != 3 || (quick.slider && quick.slide > 0) || !classic_pages() ||
         tk_strcmp(widget_get_prop_str(target, "name", ""), "statusbar_dialog"))
         return;
     I(g_pressdown_y, 0) = QS_SWIPE_STOCK;
@@ -9163,7 +9157,7 @@ int compact_now_playing(void) {
         const char *name = widget_get_prop_str(top, "name", "");
         pod_settings();
         /* Classic's hold leaves a list open on Home for Home's main list */
-        int classic = theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+        int classic = classic_pages();
         if (st.hold_home && classic && coverflow_home_back(top)) {
             /* a list open on Home: its main list */
         } else if (st.hold_home && tk_strcmp(name, "home_page")) {
@@ -10662,7 +10656,7 @@ static int rate_panel_gone(void *win, void *event) {
 static void *rate_panel(void *win) {
     void *panel = widget_lookup(win, "rate_panel", 0);
     /* Classic's panel paints itself (ringnav_paint_bg) */
-    int gloss = theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+    int gloss = classic_pages();
     if (panel) {
         if (gloss) st.rate_box = panel;
         return panel;
@@ -10711,7 +10705,7 @@ static void *rate_panel(void *win) {
 static void rate_paint(void) {
     void *panel = rate_panel(st.rate_on);
     char t[24] = "Unrated";
-    int gloss = theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+    int gloss = classic_pages();
     for (int i = 0; i < 5; i++) {
         void *heart = widget_get_child(panel, (unsigned)i + 1);
         if (gloss)
@@ -13247,7 +13241,7 @@ int ringnav_keylong(void *ctx, void *event) {
     int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) || un_hold(top);
     if (!taken && qm_hold()) return STOP;
     /* Stock has no Play/Pause hold, so its release would play or pause: Classic's does nothing. */
-    if (taken || (usable() && theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT)) {
+    if (taken || (usable() && classic_pages())) {
         char *key = play_key();
         if (key) st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
         drop_input();
@@ -14271,8 +14265,8 @@ int ringnav_sleep(void *loop) {
     keep_lit_poll();
     info_poll();
     np_art_poll();
-    if ((st.np_slide && widget_get_prop_int(st.np_slide, "value", 0)) ||     /* off the art page */
-        (st.rate_on && theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT)) /* over the picker */
+    if ((st.np_slide && widget_get_prop_int(st.np_slide, "value", 0)) || /* off the art page */
+        (st.rate_on && classic_pages()))                                 /* over the picker */
         *(volatile signed char *)BC_IDLE = BC_IDLE_FULL;
     if (st.bc[0] && np_track() != st.bc_track) bc_show();
     if (!g_backlight_status) {
@@ -14614,7 +14608,7 @@ static int slider_page(void *top) {
 
 /* Classic's Set Date and Set Time: no OK stop, and AM/PM a field in 12-hour. */
 static int time_form(void *top) {
-    return top && theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT &&
+    return top && classic_pages() &&
            !tk_strcmp(widget_get_prop_str(top, "name", ""), "manualtime_page");
 }
 
