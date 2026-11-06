@@ -204,7 +204,7 @@ static inline int arc_out(int r, int y) {
 /* iPod drill rows: the stock list_into image sits where stock rows put their own img_into, its left
  * edge CHEVRON_W from the row's right edge (8 px margin + 50 px image), so every `>` lines up. */
 #define CHEVRON_W 58
-/* iPod Home: Split gives the menu half the screen (HOME_SPLIT_W) in both themes, the art the rest right of it;
+/* iPod Home: Split gives the menu half the screen (HOME_SPLIT_W) in every theme, the art the rest right of it;
  * Minimal's Full rows are full width. Labels end HOME_LABEL_END from the row's edge. The selection
  * dot (HOME_DOT px) sits at HOME_DOT_X, clear of the bottom row's corner, HOME_DOT_GAP before the
  * labels (HOME_TEXT_X in tools/ipod.py). */
@@ -214,7 +214,7 @@ static inline int arc_out(int r, int y) {
 #define HOME_DOT_X 25
 #define HOME_DOT 6
 #define HOME_DOT_GAP 8
-/* Classic's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
+/* Classic's and Modern's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
 #define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
@@ -229,9 +229,16 @@ static inline int arc_out(int r, int y) {
 #define DRIFT_TICK_MS 200
 #define DRIFT_MAX_STEP_MS 500 /* 2.5 ticks: a late tick keeps its time */
 #define DRIFT_TEXELS 221088 /* four panels: 4 x 188 x 294, the tallest set's client */
-#define HOME_TOP 8 /* Minimal's decorative inset */
+#define HOME_TOP 8 /* Minimal's decorative inset; Modern starts below the status bar. */
 #define HOME_CHEVRON_SHIFT 15
 #define HOME_FULL_CHEVRON_SHIFT 10
+/* Modern's Home: Full's rows end at HOME_MODERN_ROW, so the chevron's glyph (x 20 to 30 of list_into)
+ * sits close to the panel edge without touching the glass on the bottom row. Labels start at
+ * HOME_MODERN_TEXT_X and end 10 px before Split's glyph (HOME_CHEVRON_SHIFT in), 5 px before Full's,
+ * so Liberation Sans Bold's "Now Playing" (119 px) fits Split's row. */
+#define HOME_MODERN_ROW 369
+#define HOME_MODERN_TEXT_X 33
+#define HOME_MODERN_LABEL_END 33
 #define NP_BAR_CLASSIC 8
 #define NP_BAR_MINIMAL 4
 #define MINIMAL_FILL 0xeeeeec
@@ -248,7 +255,7 @@ static inline int arc_out(int r, int y) {
 #define LIGHT_CHROMA 40
 #define LIGHT_GLYPH 0xa0
 #define LIGHT_SURFACE 4
-#define LIGHT_BAR 0xdedede      /* a flat bar's Light Mode grey (scheme bar_light); Classic's gloss bar ignores it */
+#define LIGHT_BAR 0xdedede      /* Modern's flat bar in Light Mode, as an iPod's (scheme bar_light); Classic's gloss bar ignores it */
 /* Minimal's small capitals are SUDO_TRACK px apart (draw_spaced); secondary text is SUDO_MUTED. */
 #define SUDO_TRACK 2
 #define SUDO_MUTED 0x8c8c8c

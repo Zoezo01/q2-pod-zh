@@ -17,9 +17,9 @@ def pixels(data):
     return w, h, lambda x, y: tuple(raw[y * (4 * w + 1) + 1 + 4 * x + i] for i in range(4))
 
 
-def test_classic_draws_its_images_and_minimal_none():
+def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
-    assert not art.images(themes[0])
+    assert not art.images(themes[0]) and not art.images(themes[2])
     assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d')}
 
 

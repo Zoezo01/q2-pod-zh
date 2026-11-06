@@ -3,7 +3,8 @@
 /* The built-in themes' shape (docs/internals.md#themes); the table is navigation.c's themes[]. */
 
 enum { PAINT_SELECTION, PAINT_BAR, PAINT_BATTERY, PAINTER_N }; /* theme_t.painter[] index */
-enum { SEL_CARD, SEL_STOPS }; /* painter[PAINT_SELECTION] (Minimal card, Classic stops) */
+/* painter[PAINT_SELECTION]: Minimal's card, Classic's stops, Modern's bar */
+enum { SEL_CARD, SEL_STOPS, SEL_BAR };
 enum { BAR_FLAT, BAR_GLOSS }; /* painter[PAINT_BAR]: the status bar's fill (Classic gloss) */
 enum {
     BATT_STOCK,

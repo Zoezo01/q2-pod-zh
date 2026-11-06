@@ -1824,7 +1824,7 @@ static int light_on(const theme_t *T, int v) {
     return m == SCHEME_LIGHT || (m == SCHEME_DERIVE && !(T->undeclared >> SETTING_LIGHT & 1) &&
                                  (st.light == 2 ? st.light_day : st.light));
 }
-/* The half Light Mode picks; Minimal's and Classic's two halves are one row. */
+/* The half Light Mode picks; Minimal's and Modern's two halves are one row. */
 const scheme_t *scheme(void) {
     int v = accent();
     const theme_t *T = &themes[st.theme];
@@ -1992,6 +1992,40 @@ static int pill_radius(void *row, int h, int inset) {
     return r;
 }
 
+/* A vertical gradient in one-pixel bands, then a one-pixel top highlight; equal ends give a solid
+ * fill. r.h is at least 2. A pill (radius, at most r.h / 2) insets the bands at either end to that
+ * radius's circle; 0 is square. Plain fills keep this off the stock gradient_t ABI, which is not
+ * audited. */
+static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsigned hi,
+                     int radius) {
+    for (int j = 0; j < r.h; ++j) {
+        int out = 0, D = 2 * radius, d = 2 * j + 1 - r.h;
+        d = (d < 0 ? -d : d) - (r.h - D); /* half pixels past the end circle's centre */
+        if (radius && d > 0) {            /* 1/16-pixel chord, sampled at the band's centre. */
+            int v = (D * D - d * d) * 64, k = 0;
+            int end = 8 * D;
+            while (k < end) {
+                int mid = (k + end + 1) / 2;
+                if (mid * mid <= v)
+                    k = mid;
+                else
+                    end = mid - 1;
+            }
+            out = 8 * D - k;
+        }
+        int in = (out + 15) / 16;
+        unsigned color = RGBA(j ? mix(top, bottom, j, r.h - 1) : hi);
+        canvas_set_fill_color(canvas, color);
+        canvas_fill_rect(canvas, r.x + in, r.y + j, r.w - 2 * in, 1);
+        if (out & 15) {
+            canvas_set_fill_color(canvas,
+                                  (color & 0xffffff) | (unsigned)(16 - (out & 15)) * 17 << 24);
+            canvas_fill_rect(canvas, r.x + in - 1, r.y + j, 1, 1);
+            canvas_fill_rect(canvas, r.x + r.w - in, r.y + j, 1, 1);
+        }
+    }
+}
+
 /* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
  * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
  * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
@@ -2091,9 +2125,10 @@ static int drill(void *w) {
 
 static int geom(int group);
 /* The iPod `>` of each drill row, where stock rows place img_into, as stock hides its own
- * list_into: not in multi-select, and not on grid tiles. Home has none but a home_chevron_x theme's
- * (Classic's), and a chevron_sel theme (Classic) draws only the selected row's, white. The image
- * manager caches the bitmap. */
+ * list_into: not in multi-select, and not on grid tiles. Home has none but a chevron_home theme's:
+ * Modern's rides its selection bar alone, nudge included, Classic's sits at home_chevron_x. A
+ * chevron_sel theme (Classic) draws only the selected row's, white. The image manager caches the
+ * bitmap. */
 static void paint_chevrons(void *w, void *canvas) {
     unsigned bitmap[64], white[64]; /* bitmap_t */
     rect_t old;
@@ -2172,9 +2207,9 @@ static void paint_letter(void *w, void *canvas) {
     canvas_set_clip_rect(canvas, &old);
 }
 
-/* Classic (art_square; Corners is not its option): an iPod's square art on Now Playing, the
- * full-screen art, Cover Flow (coverflow_render) and list thumbnails; stock's placeholder and Home:
- * Carousel's cards keep their own corners. */
+/* An art_square theme (Classic, which has no Corners; Modern under Square): an iPod's square art on
+ * Now Playing, the full-screen art, Cover Flow (coverflow_render) and list thumbnails; stock's
+ * placeholder and Home: Carousel's cards keep their own corners. */
 int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUNDED); }
 
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
@@ -2364,7 +2399,7 @@ static int marq_moved(const void *info) {
 }
 
 /* Load and settle the painted surface's selection, then draw it behind the rows: Minimal's card
- * (a dot on Home) or Classic's stops band (SEL_STOPS). */
+ * (a dot on Home), Modern's full-width accent bar (SEL_BAR) or Classic's stops band (SEL_STOPS). */
 static void paint_selection(void *w, void *canvas) {
     if (kind(w)) st.sel_w = st.sel_widget = st.sel_accent = (void *)0;
     if (!w || !canvas || !kind(w)) return;
@@ -2413,8 +2448,9 @@ static void paint_selection(void *w, void *canvas) {
         void *row = P(g_menu.at[i], W_PARENT);
         if (!I(g_menu.at[i], W_Y) && is_row(row) && I(row, W_H) > r.h) r.h = I(row, W_H);
     }
-    /* Classic: its stops band under the rows' own ink. Minimal: its card (sel_widget), off-white
-     * with dark ink under its own accent, else the accent's under the rows' own ink. */
+    /* Classic: its stops band, Modern: the accent's bar, under the rows' own ink. Minimal: its card
+     * (sel_widget), off-white with dark ink under its own accent, else the accent's under the rows'
+     * own ink. */
     int painter = theme()->painter[PAINT_SELECTION], band = painter != SEL_CARD,
         corners = setting(SETTING_ROUNDED);
     const scheme_t *S = scheme();
@@ -2427,8 +2463,14 @@ static void paint_selection(void *w, void *canvas) {
                 !st.sel_home
             ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
             : (void *)0;
-    /* Classic's band (SEL_STOPS): square and full width, the glass clips it */
-    if (band && (!tile || g_menu.kind == 4)) {
+    if (band && painter == SEL_BAR && (!tile || g_menu.kind == 4)) {
+        /* Modern's bar, a list row's a pill under Rounded Corners, inset like Minimal's card */
+        rect_t bar = r;
+        int pill = !tile && corners ? pill_radius(g_menu.at[i], r.h, SEL_INSET) : 0;
+        if (pill) bar.x += SEL_INSET, bar.w -= 2 * SEL_INSET;
+        gradient(canvas, bar, S->tones[0], S->tones[1], S->tones[4], pill);
+    } else if (band && (!tile || g_menu.kind == 4)) {
+        /* Classic's band (SEL_STOPS): square and full width, the glass clips it */
         int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
             edge = tall ? 2 : !!S->sel_edge;
         if (tall) paint_stops(canvas, r.x, r.y, r.w, r.h, &S->sel); /* its lines go over them */
@@ -2471,7 +2513,7 @@ static void paint_selection(void *w, void *canvas) {
     }
     /* a pop-up button's tile: framed white on any accent; Classic's band has its own top line and
      * edge, as an iPod's */
-    if (g_menu.kind == 4 && r.w < I(g_menu.w, W_W) && !band)
+    if (g_menu.kind == 4 && r.w < I(g_menu.w, W_W) && painter != SEL_STOPS)
         frame_box(canvas, &r, 0xffffffff, SEL_RADIUS);
     /* Save/restore explicitly: this firmware's canvas_save/restore cover neither clip nor
      * either color, and the global alpha is deliberately never touched. */
@@ -4191,7 +4233,7 @@ static void np_sync(void *top) {
     clock_text(st.np_remain, 1, left);
 }
 
-/* Time in Title off: the bar's centre names the page in front, as an iPod's, in Classic's bold:
+/* Time in Title off: the bar's centre names the page in front, as an iPod's, in Modern's bold:
  * Now Playing or Cover Flow, else stock's title in the page's hidden navbar (scrlabel_title, or a
  * settings page's unnamed first child). Home, a page showing its navbar and an untitled page keep
  * the clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
@@ -5356,8 +5398,8 @@ int ringnav_paint_bg(void *w, void *canvas) {
             stock_canvas_set_fill_color(canvas, RGBA(S->bar_line));
             canvas_fill_rect(canvas, 0, h, I(w, W_W), 1);
         } else {
-            /* a scheme's bar_light in Light Mode, flat (final colour): no built-in flat bar has one
-             */
+            /* Modern in Light Mode: an iPod's grey bar (its scheme's bar_light), flat (final
+             * colour) */
             int grey = S->bar_light && ipod_light();
             stock_canvas_set_fill_color(canvas,
                                         grey ? RGBA(S->bar_light) : ui_ink(RGBA(BAR_COLOR)));
@@ -5889,8 +5931,9 @@ static void settings_layout(void *w) {
  * and the screen repaints; Home takes its new layout and Streaming label at once (never
  * recreated), and an open Now Playing its progress bar. */
 /* A Theme's preset (its theme.xml's), applied as it is chosen: Classic light, Classic Blue, Time
- * in Title and its own switches on; Minimal dark, Graphite, rounded, Time in Title on; both Split.
- * Light Mode's Auto, the battery and Centred Now Playing are kept. Only a change is saved. */
+ * in Title and its own switches on; Modern light, Cobalt, square, Time in Title off; Minimal dark,
+ * Graphite, rounded, Time in Title on; all Split. Light Mode's Auto, the battery and Centred Now
+ * Playing are kept. Only a change is saved. */
 static void setting_put(int *value, int v, const char *key) {
     if (*value != v) write_int_config(*value = v, "IPOD", key);
 }
@@ -5916,7 +5959,8 @@ static int setting_click(void *ctx, void *event) {
     static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 8, 1, 9, 0 };
     _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
                    "one per shortcut");
-    /* Graphite, ..., Plum, Green, then Ivory (Classic's mask skips it to its own Classic Blue) */
+    /* Graphite, ..., Plum, Green, then Ivory (masks skip it: Modern's to Graphite, Classic's to its
+     * own Classic Blue) */
     static const int accent_next[] = { 1, 2, 3, 4, 5, 6, 8, 0, MINIMAL_ACCENT };
     _Static_assert(sizeof accent_next / sizeof *accent_next == ACCENT_N, "one per ACCENTS row");
     if (i == 4)

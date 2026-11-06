@@ -378,17 +378,17 @@ the hook and shows every recoloured part; nothing needs a restart.
 
 ## Themes
 
-Minimal (`THEME` 0) and Classic (1) are rows of `themes[]` (`patch/navigation.c`; the types are in
+Minimal (`THEME` 0), Classic (1) and Modern (2) are rows of `themes[]` (`patch/navigation.c`; the types are in
 `patch/theme.h`); a stored `THEME` past the last row reads as 0 (`config_value`). Code asks the active theme for a field, never which theme it is. `theme()` and
 `scheme()` read the settings first (`accent()`), then return `&themes[st.theme]` and its scheme for
 the stored accent.
 
-- `theme_t` holds the painters (`painter[PAINT_SELECTION]`: Minimal's `SEL_CARD` or Classic's `SEL_STOPS`), the
+- `theme_t` holds the painters (`painter[PAINT_SELECTION]`: Minimal's `SEL_CARD`, Classic's `SEL_STOPS` or Modern's `SEL_BAR`), the
   surface flags (capitals, chevrons, monochrome icons, bold labels, Now Playing opacities), the Home
   and settings geometry, the Now Playing bar heights, `art_square` (art takes Corners: Square,
   `ipod_square_art`), `batt_fill` (the battery's charge colour, 0 for its outline's), the accent's
   slot and config key
-  (`accent_slot`/`accent_key`: Minimal's `MINIMAL_ACCENT`, Classic's `CLASSIC_LIGHT_ACCENT`), its schemes and its options.
+  (`accent_slot`/`accent_key`: Minimal's `MINIMAL_ACCENT`, Classic's `CLASSIC_LIGHT_ACCENT`, Modern's `ACCENT`), its schemes and its options.
 - `scheme_t`: one per `ACCENTS` row and theme's own accent, indexed by the stored value; its tones are that row, read
   through `tones()` or `tones_of(v)`. `SCHEME_CARD` (Minimal's Ivory) draws the selection as a card
   in `fill`; `SCHEME_RAW_RED` (Crimson) keeps stock red. The roles `fill`, `chevron`, `muted` and
@@ -405,10 +405,10 @@ each theme in this order: the schema defaults, its `extends` base, its own eleme
 scheme colours) from `patch/offsets.inc`, so a theme file never names a macro. Any unknown name or
 value stops the build. The tool writes `themes.inc` into the build directory, which navigation.c
 includes after the accent tables, where the hand-written table stood, and `THEME_N` into `stock.h`,
-because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in both themes.
+because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in every theme.
 
 **Now Playing layout.** `theme_t.np_layout` (`<view name="playing" layout="ipod|centred">`, ipod in
-both built-ins) picks the page `ringnav_ui_load` loads for `playing_page`: `np_pages[np_layout()]`,
+every built-in) picks the page `ringnav_ui_load` loads for `playing_page`: `np_pages[np_layout()]`,
 where Centred Now Playing (`NPCENTRED`) forces `NP_CENTRED` (`playing_page_stock`).
 `ringnav_playing` binds the lyric tap on the centred page only.
 
@@ -453,6 +453,8 @@ takes the written set's `pitch` and `body` (`geom()`).
 
 **Classic.** THEME 1, `assets/themes/classic-light/theme.xml`. Its id stays `classic-light`, so its art (`classic_light_*`), geometry sets (`classic-light`, `classic-light-text`), face (`fonts/classic-light.ttf`) and accent key (`CLASSIC_LIGHT_ACCENT`) keep that name. It extends Minimal and states its own numbers in its theme.xml; what it leaves out is Minimal's (Cover Flow's `CF_*`) or its `ROLE_MACROS` row's (`NP_BAR_CLASSIC`). The values for Settings and dialogs, which have no measured reference, start from iPod.js (https://github.com/tvillarete/ipod-classic-js, MIT): values only, no files, code or marks.
 
+**Modern.** THEME 2, `assets/themes/modern/theme.xml`: 1.6.5's Classic, kept on Minimal's set (SET0) with its own Home inset (`HOME_MODERN_*`), the accent's bar (`SEL_BAR`: `gradient()`, a pill under Rounded Corners) and its accent in `ACCENT`, 1.6.5's Classic's key.
+
 **Geometry sets.** Classic's two sets are `classic-light` (Row Art on: 52 px art rows) and `classic-light-text` (all 32). A built-in theme declares its sets in its theme.xml (`<geometry name="classic-light" bar="26" …/>`, each omitted field the built-in set's or its `extends=` set's), and `tools/theme.py` checks each field's range (`GEOM_RANGES`) and builds the asset copies and boot tables from them.
 
 - Values that follow the written set but are not immediates (the bar, the settings rows, the battery body, the text inset) are `geom_vals[st.geom][V_*]`, and `client_h()` is `320 - geom_val(V_BAR)`.
@@ -463,7 +465,7 @@ takes the written set's `pitch` and `body` (`geom()`).
 
 **A theme's own options.** A theme declares them in theme.xml (`<option key="ROWART" label="Row Art" default="On">` over `<value label="Off" set="classic-light-text"/>` rows). The payload draws, cycles and stores them generically (`SETTING_OWN`, `theme_keys[]`, `st.own[]`) and reads their keys after the thirteen in declaration order, and `theme_geom(T)` boots the set that the stored value of its first option with sets names. Classic's Row Art is one such option; a change to it that names another set asks "Restart to apply?" (`restart_confirm`). Every value of an option names a set, or none does: one that names none is a plain choice the payload reads as `st.own[OWN_<KEY>]` through `theme_own` (0 while the active theme does not offer it), saved at once with no restart. `tools/theme.py` accepts only the plain keys in `PLAIN_KEYS`, the ones the payload reads: Classic's `HOMELIB` (`home_lib_on`) and `ROWPREVIEW` (`row_preview_on`). An own option takes `preset` and `keep` as a payload setting does (into its `option_t` line), so `theme_preset()` writes it on a switch to the theme, and the restart test applies the presets first. Undeclared options (Corners and Centred NP under Classic) take the theme's value, and their stored keys are untouched: `ipod_square_art()` reads Corners that way, so a theme with `playing.art.square` that leaves Corners out is always square.
 
-**The picker.** The Theme row opens a picker. A pick that changes the set asks "Restart to apply?" (`theme_restart`), and Minimal and Classic boot different sets, so every pick does. Cancel writes nothing, and OK writes `THEME` and the theme's preset (`theme_preset`) and reboots through `device_reboot`. A pick that kept the set would switch at once (`theme_select`); no pair of built-ins does.
+**The picker.** The Theme row opens a picker. A pick that changes the set asks "Restart to apply?" (`theme_restart`): Classic boots its own sets, so any pick to or from it does. Cancel writes nothing, and OK writes `THEME` and the theme's preset (`theme_preset`) and reboots through `device_reboot`. A pick that keeps the set, Minimal to Modern and back, switches at once (`theme_select`).
 
 **Painters.** `SEL_STOPS`, `BAR_GLOSS` and `BATT_CLASSIC_LIGHT` draw final colours (`paint_stops`), and `home_pane_paint` draws the Split placeholder in `home.pane.stops`, final in each half (Classic: a slate on paper, and on black the dark bar's `#1c1c1c`, so the two read as one surface). `list.separator.stops` are a two-line row's and Play All's last rows, one stop a row, final in each half (`paint_separators`). `list.row.tall_font`/`tall_px` (`ROLE_TALL`) are a two-line row's title, and `scheme.sel.tall_top` the band's row 1 on a tall row, whose stops span the whole row. A final scheme value of 0 in the dark half takes the light half's (`half()`), so a dark half that wants none states its own (Classic's band: its first stop).
 

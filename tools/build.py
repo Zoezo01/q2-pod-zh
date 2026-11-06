@@ -765,7 +765,7 @@ def subset_font(src, family, ranges_macro, notice=None):
         else: runs.append([u, u])
     return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
 
-# The bold face (navigation.c theme_font; Classic's fallback where its own lacks a character): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
+# The bold face (navigation.c theme_font; Modern's Now Playing title, Classic's fallback where its own lacks a character): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
 # Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
 # label holding anything else (CJK, say) keeps the stock font.
 BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'

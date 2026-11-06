@@ -226,8 +226,8 @@ int library_count(const char *sql) {
 int on_home_music_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
 void bar_title_sync(void *win) {}
-/* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS; Classic inherits it */
-static theme_t shim_themes[2] = {
+/* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS; Classic and Modern inherit it */
+static theme_t shim_themes[3] = {
     { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
     { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
@@ -235,7 +235,9 @@ static theme_t shim_themes[2] = {
           { { 2, { 0, 100 }, { 0x1c1c1c, 0x1c1c1c } }, { 2, { 0, 100 }, { 0x63717b, 0x63717b } } }, .pane_shadow = 0,
       .pane_shadow_w = 0,
       .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 0, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
-      .pane_count_px = 27, .cf = CF_STYLE0 } };
+      .pane_count_px = 27, .cf = CF_STYLE0 },
+    { .home_full_row = HOME_MODERN_ROW, .home_text_x = HOME_MODERN_TEXT_X,
+      .home_label_end = { HOME_MODERN_LABEL_END, HOME_MODERN_LABEL_END }, .cf = CF_STYLE0 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
 int client_h(void) { return 320 - stub_bar_h; }
@@ -1645,8 +1647,9 @@ int main(void) {
     coverflow_home_art(win);
     assert(!strcmp(art, player) && loads == unloads);
     /* Home layout from the asset's full-width list: Split narrows the list, its rows and their tap
-       targets to HOME_SPLIT_W and shows the art; Full widens them (rows to HOME_FULL_ROW, labels ending
-       before the chevron) and hides the art. Minimal's labels start after the dot. */
+       targets to HOME_SPLIT_W and shows the art; Full widens them (rows to HOME_FULL_ROW in Minimal,
+       HOME_MODERN_ROW in Modern, labels ending before the chevron) and hides the art. Minimal's labels
+       start after the dot, Modern's at HOME_MODERN_TEXT_X. */
     extern void coverflow_home_layout(void);
     home_list = make(0, "list_view");
     widget *sv = make(home_list, "scroll_view"), *row = make(sv, "view"), *label = make(row, "hscroll_label"),
@@ -1667,6 +1670,18 @@ int main(void) {
     assert(*(int *)(label->raw + W_W) == HOME_SPLIT_W - dot_x - HOME_SPLIT_LABEL_END && W(home_art)->visible);
     coverflow_home_art(win);
     assert(loads == before + 2 && !strcmp(art, player)); /* home_tex tries it, then the still fill */
+    classic = 2; /* Modern halves the screen: the 160px cover fills 290px from 187 + (188 - 290) / 2 */
+    coverflow_home_layout();
+    for (int i = 0; i < 4; ++i) assert(*(int *)(all[i]->raw + W_W) == HOME_SPLIT_W);
+    assert(*(int *)(label->raw + W_X) == HOME_MODERN_TEXT_X &&
+           *(int *)(label->raw + W_W) == HOME_SPLIT_W - HOME_MODERN_TEXT_X - HOME_MODERN_LABEL_END);
+    coverflow_home_art(win);
+    static const int modern_geo[4] = { 136, 0, 290, 290 };
+    assert(loads == before + 4 && !strcmp(art, player) && !memcmp(geo, modern_geo, sizeof modern_geo));
+    home_mode = 1;
+    coverflow_home_layout();
+    for (int i = 0; i < 4; ++i) assert(*(int *)(all[i]->raw + W_W) == (i < 2 ? 375 : HOME_MODERN_ROW));
+    assert(*(int *)(label->raw + W_W) == HOME_MODERN_ROW - HOME_MODERN_TEXT_X - HOME_MODERN_LABEL_END && !W(home_art)->visible);
     classic = 0; home_mode = 0;
     coverflow_home_layout();
     assert(*(int *)(label->raw + W_X) == dot_x && !memcmp(geo, split, sizeof split) && loads == unloads);
@@ -1788,10 +1803,10 @@ def main():
     nav = [[(k, v) for k, v in (('home_top', m['home_top']), ('home_full_row', m['home_full_row']),
                                 ('home_text_x', m['home_text_x']),
                                 ('home_label_end', f'{{ {m["home_label_end[0]"]}, {m["home_label_end[1]"]} }}')) if v != '0']
-           for m in (ROLE_MACROS['minimal'],)]
-    shim = re.search(r'shim_themes\[2\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
+           for m in (ROLE_MACROS['minimal'], ROLE_MACROS['modern'])]
+    shim = re.search(r'shim_themes\[3\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
-    assert norm(home_fields(shim[:1])) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    assert norm(home_fields(shim[::2])) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
     # Classic's are its theme.xml's, resolved; home_top 0 is unset in the shim.
     classic_light, tight = builtins()[1], re.sub(r'\s', '', shim[1])
     assert classic_light['home_top'] == 0 and f"home_label_end={{{classic_light['home_label_end[0]']},{classic_light['home_label_end[1]']}}}" in tight
@@ -1884,7 +1899,7 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in both themes, and Classic\'s pane, passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed.')
 
 
 if __name__ == '__main__':
