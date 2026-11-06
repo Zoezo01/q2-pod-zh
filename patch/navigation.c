@@ -475,6 +475,7 @@ typedef struct {
      */
     int np_off, np_over;
     unsigned np_marquee;
+    unsigned np_remain_timer; /* remain_due */
     /* The info page's Genre line: its label, np_info's copy (genre_fill), and px scrolled. */
     void *genre_label;
     int genre_off;
@@ -2033,9 +2034,6 @@ static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsi
     }
 }
 
-/* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
- * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
- * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
 /* Row j of h of the stops s, 0xRRGGBB: one stop a row when there are h of them. */
 static unsigned stops_row(const stops_t *s, int j, int h) {
     if (s->n == h) return s->rgb[j];
@@ -2044,6 +2042,9 @@ static unsigned stops_row(const stops_t *s, int j, int h) {
     int lo = s->pos[k] * 256;
     return mix(s->rgb[k], s->rgb[k + 1], p - lo, s->pos[k + 1] * 256 - lo);
 }
+/* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
+ * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
+ * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s) {
     if (s->n < 2) return;
     for (int j = 0; j < h; ++j) {
@@ -4240,11 +4241,20 @@ const char *theme_face(const unsigned *s, int n) {
 
 /* The remaining time, once after a frame whose paint np_sync wrote it in: its invalidate there is
  * lost with the frame's dirty rects (#116). Minimal's and Modern's sit in the rect the slider's and
- * the elapsed time's repaint takes each second, Classic's beside the bar outside it. */
+ * the elapsed time's repaint takes each second; only times beside the bar (np_beside) need it. */
 static int remain_due(const void *info) {
     (void)info;
+    st.np_remain_timer = 0;
     if (st.np_remain) widget_invalidate_force(st.np_remain, (void *)0);
     return 0;
+}
+
+/* 1 when Now Playing's times sit on its bar's rows, beside it (Classic's iPod page; its Centred
+ * page and the other themes' put them under the bar): outside the slider's repaint. */
+static int np_beside(void) {
+    if (!st.np_remain || !st.np_slider || !st.np_elapsed) return 0;
+    int bh = widget_get_prop_int(st.np_slider, "bar_size", 8);
+    return I(st.np_elapsed, W_Y) < I(st.np_slider, W_Y) + (I(st.np_slider, W_H) + bh) / 2;
 }
 
 /* Now Playing's "3 of 12", album and remaining time (slider max less value, stock's seconds, so a
@@ -4403,8 +4413,9 @@ static void paint_scrubber(void *w, void *canvas) {
     ipod_bar(canvas, 0, (I(w, W_H) - theme()->np_bar) / 2, bw, n > 0 ? bw * v / n : 0);
 }
 
-/* The Theme's progress bar over the asset's (Minimal's square 4px line): Classic's and Modern's
- * NP_BAR_CLASSIC capsule, and stock's play-state glyph, which Minimal hides. */
+/* The Theme's progress bar over the asset's (Minimal's square 4px line): its np_bar, Modern's
+ * NP_BAR_CLASSIC capsule or Classic's NP_BAR_IPOD (paint_scrubber draws it), and stock's play-state
+ * glyph, which Minimal and Classic hide (playing.state.opacity). */
 static void np_theme(void) {
     static const char *const radius[] = { "style:normal:round_radius", "style:pressed:round_radius",
                                           "style:over:round_radius", "style:disable:round_radius",
@@ -4807,6 +4818,7 @@ static int np_gone(void *win, void *event) {
         st.scrub_moved = 0; /* the page is going: no seek */
         st.np_off = st.np_full = 0;
         stop_timer(&st.np_marquee);
+        stop_timer(&st.np_remain_timer);
         stop_timer(&st.genre_timer);
         st.genre_label = (void *)0;
         np_cancel();
@@ -5179,7 +5191,7 @@ static void vol_paint(void *top, void *canvas) {
         text = (rect_t){ 0, ty, I(st.np_win, W_W), I(times, W_H) };
         area = (rect_t){ 0, y, text.w, ty + text.h - y };
         /* Classic's times share the bar's rows: their boxes, and the bar with its reflection */
-        beside = ty < bar.y + bh && st.np_remain;
+        beside = np_beside();
         if (beside) {
             lo = (rect_t){ I(times, W_X), ty, I(times, W_W), text.h };
             hi = (rect_t){ I(st.np_remain, W_X), dy + I(st.np_remain, W_Y), I(st.np_remain, W_W),
@@ -5535,7 +5547,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         bar_title_sync(top);
         bar_title(bar, top);
         if (st.action_view) action_row(st.action_view);
-        if (np_sync(top)) timer_add(remain_due, (void *)0, 0); /* mid-paint */
+        if (np_sync(top) && np_beside()) rearm(&st.np_remain_timer, remain_due, 0); /* mid-paint */
         if (w == top) vol_paint(top, canvas);
         /* Boot may paint Home before the screen is usable, so nothing chose or drew its first
          * row. Once, when the list is first reachable, repaint it. */

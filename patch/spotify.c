@@ -493,7 +493,7 @@ void spot_paint(void *w, void *canvas) {
     if (w == ui.bar) {
         unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
-        int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H; /* Classic's 13: 8 */
+        int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H; /* Modern's capsule: Classic's 13 drawn 8 */
         box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
         if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
     } else { /* a triangle playing, two bars otherwise */

@@ -527,7 +527,7 @@ The bar is a four-pixel plain-colour line inside a 44-pixel seek target: a `#1C1
 8-pixel capsule (`NP_BAR_CLASSIC`; `bar_size` and `round_radius` set on the slider at runtime,
 `np_theme`) filled in the accent's light tone (Graphite `#6E6E6E`, 3.3:1; see [Display
 settings](#display-settings)), and shows stock's play/pause glyph on the art again. **Theme: Classic** makes it an iPod classic's
-13-pixel bar with the times beside it and turns the art in perspective over its reflection ([internals.md](internals.md#slanted-art)). Spotify's bar follows the same theme.
+13-pixel bar with the times beside it and turns the art in perspective over its reflection ([internals.md](internals.md#slanted-art)). Spotify's bar follows the theme's height up to its 8-pixel view: Minimal's line and Modern's capsule, and Classic's drawn as Modern's.
 The asset holds Graphite's; `ringnav_playing` sets the current accent's. The volume shown over the page draws the same bar in the same fill. Tap or drag anywhere in the bar's taller target to seek; the page dots sit just above it so page swipes keep a separate target. The elapsed time
 is stock's label; the remaining time replaces stock's total. Sizes are `NP_*` constants in
 `tools/ipod.py`; see [internals.md](internals.md#now-playing-ipod).

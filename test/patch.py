@@ -6217,6 +6217,19 @@ m.nodes[sv]['value']=41; m.advance(O['VOL_POLL_MS'])  # changed: the whole dialo
 assert [c[0] for c in did('widget_invalidate_force')]==[dlg]; passed()
 m.nodes[sv]['value']=100; paint(dlg)
 assert m.rounded[-1]['rect'][2]==327 and m.letters[0]['text']=='Volume 100' and len(m.timers)==1; passed()
+# The remaining time repaints after the frame whose paint wrote it (remain_due, #116) only where the times sit
+# beside the bar, outside the slider's per-second repaint: Classic's iPod page. Under it (Minimal), no extra frame.
+for theme,ty,want in (('0',265,0),('1',247,1)):
+  CONFIG.clear(); CONFIG.update(THEME=theme)
+  m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'
+  slider,elapsed,remain=m.node('slider','slider_play',max=225,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
+  win=m.node('window','playing_page',[slider,elapsed,remain]); m.word(win+O['W_PARENT'],m.wm); m.top=win
+  put(win,0,30,375,290); put(slider,24,240,327,30); put(elapsed,16,ty,50,21)
+  m.word(syms['system_bar'],m.node('window','system_bar'))
+  assert m.call(address=playing,args=(win,7,0,0),gap=0)==0
+  m.nodes[m.wm]={'children':[win]}; m.nodes[slider]['value']=101; paint(win)  # a second on: the paint writes it
+  assert m.nodes[remain]['text']=='-2:04' and len([t for t in m.timers.values() if t[1]==payload_syms['remain_due']])==want,theme; passed()
+CONFIG.clear()
 
 m.nodes[m.wm]['children']=[win]; m.top=win; m.advance(O['VOL_POLL_MS']); assert not m.timers; passed()  # closed: it stops
 # Over any other window (Quick Settings included) a rounded panel in the fast-scroll letter's

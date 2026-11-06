@@ -371,6 +371,14 @@ def test_alphas_rejects(alphas, message):
         resolved(f'<view name="home"><element name="pane" shadow_a="{alphas}"/></view>')
 
 
+def test_the_ipod_now_playing_and_its_bar_come_together():
+    classic = theme.builtins()[1]
+    with pytest.raises(theme.ThemeError, match="np_ipod needs playing.scrubber.stops"):
+        theme.validate({**classic, 'np_track': ()}, 't.xml')
+    with pytest.raises(theme.ThemeError, match="np_ipod needs playing.scrubber.stops"):
+        theme.validate({**theme.builtins()[0], 'np_track': classic['np_track']}, 't.xml')
+
+
 def test_a_shadow_past_its_alphas_is_an_error():
     t = {**theme.builtins()[0], 'pane_shadow_w': 3, 'pane_shadow_a': (9, 8)}
     with pytest.raises(theme.ThemeError, match=r'home.pane.shadow_w: 3 past its 2 alphas'):

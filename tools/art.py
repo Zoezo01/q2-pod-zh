@@ -208,9 +208,17 @@ SORT_BOX = (0, 0, 16, 12)  # Songs' Sort, white as stock's glyphs: Light Mode fl
 # waves, the iPod bar's height; white as SORT, Light Mode flips them to the ink. The waves end within the cone's
 # height, so the box's rows hold them.
 SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'
-WAVES = [f'M{7 + r * math.cos(a):.2f} {6.5 - r * math.sin(a):.2f}A{r} {r} 0 0 1 {7 + r * math.cos(a):.2f} {6.5 + r * math.sin(a):.2f}'
-         for r in (3.2, 6.6, 10) for a in (math.asin(min(math.sin(math.radians(48)), 5.6 / r)),)]
 SPEAKER_BOX, WAVES_BOX = (0, 0, 8, 13), (0, 0, 18, 13)
+
+
+def wave(r, cx=7, cy=6.5, half=5.6):
+    """An arc of radius r about the cone's tip, 96 degrees, or as much of it as keeps within half above and below."""
+    dy = min(r * math.sin(math.radians(48)), half)
+    dx = math.sqrt(r * r - dy * dy)
+    return f'M{cx + dx:.2f} {cy - dy:.2f}A{r} {r} 0 0 1 {cx + dx:.2f} {cy + dy:.2f}'
+
+
+WAVES = [wave(r) for r in (3.2, 6.6, 10)]
 PANE_ICONS = {
     'note': 'M254 82.5 317 71.5V156A16 12.5 -12 1 1 308.5 145.5V101L262 109.5V165A17 12.5 -12 1 1 254 153.5Z',
     'folder': 'M230 92q0-6 6-6h24l8 9h43q6 0 6 6v60q0 6-6 6h-75q-6 0-6-6Z',

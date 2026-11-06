@@ -2785,6 +2785,8 @@ void coverflow_slant(void *w, void *canvas, unsigned paper) {
     for (unsigned j = 1; j < 16; j += 2)
         for (unsigned i = 1; i < 16; i += 2)
             key = hash_bytes(key, data + bh * j / 16 * stride + bw * i / 16 * 4, 4);
+    const unsigned *f = slant.frame; /* bitmap_t: width @0, height @4 */
+    if (f && (f[0] != (unsigned)side || f[1] != (unsigned)rows)) coverflow_slant_close();
     if (!slant.frame) slant.frame = opaque_frame(side, rows);
     unsigned *tex = slant.frame && key != slant.key ? calloc((unsigned)(t * t), 4) : 0;
     unsigned *d = tex ? (unsigned *)bitmap_lock_buffer_for_write(slant.frame) : 0;
