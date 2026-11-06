@@ -54,7 +54,8 @@ typedef struct {
 /* path's comment header when it is an .opus, .ogg or .oga file's and over OGG_TAGS_MAX: 0 when it
  * is not, and TagLib may read it; else 1, with t (unless 0) its fields read here. */
 int ogg_tags(const char *path, xiph_tags *t);
-/* A FLAC's "ALBUM ARTIST" (foobar2000's spelling) into out, 0x100 bytes, when it has one. */
+/* A FLAC's first "ALBUM ARTIST" (foobar2000's spelling) into out, 0x100 bytes, when it has one: its
+ * first 0xff bytes as they are, UTF-8 or not, as before xiph.c (albums are grouped by it). */
 void flac_album_artist(const char *path, char *out);
 /* Whether s is UTF-8: 0 not, 1 UTF-8, 2 with every character below U+0100 (String::isLatin1).
  * latin1 (unless 0) takes libtag_c's Latin-1 copy (String::to8Bit(false)): each UTF-16 unit's low

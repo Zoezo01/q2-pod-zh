@@ -91,15 +91,17 @@ static const char *const keys[XIPH_TEXTS + XIPH_NUMBERS] = {
  * count (none at all when 4 bytes each would overrun), then "KEY=value" comments until one runs
  * past the end. A key matches case aside (String::upper); a value ends at a zero byte, addField
  * keeps no empty one, and one that is not UTF-8 decodes empty. ponytail: UTF-8 is checked up to a
- * value's first zero byte, in its first XIPH_VALUE bytes. */
-static void xiph_parse(xiph_in *o, unsigned rem, xiph_tags *t) {
+ * value's first zero byte, in its first XIPH_VALUE bytes. With raw, only the first "ALBUM ARTIST"
+ * with a byte of value is taken, its first 0xff bytes copied as they are into raw, and the count
+ * goes unchecked: flac_album_artist's rules before xiph.c, which albums are grouped by. */
+static void xiph_parse(xiph_in *o, unsigned rem, xiph_tags *t, char *raw) {
     unsigned char b[XIPH_VALUE + 1];
     unsigned n, c;
     if (rem < 8 || !xiph_read(o, b, 4) || (c = le32(b)) > rem - 8 || !xiph_read(o, 0, c) ||
         !xiph_read(o, b, 4))
         return;
     rem -= 8 + c;
-    for (n = 4 * le32(b) > rem ? 0 : le32(b); n-- && rem >= 4 && xiph_read(o, b, 4);) {
+    for (n = !raw && le32(b) > rem / 4 ? 0 : le32(b); n-- && rem >= 4 && xiph_read(o, b, 4);) {
         if ((c = le32(b)) > (rem -= 4)) break;
         rem -= c;
         unsigned got = c < XIPH_VALUE ? c : XIPH_VALUE, eq = 0, k = 0;
@@ -109,6 +111,12 @@ static void xiph_parse(xiph_in *o, unsigned rem, xiph_tags *t) {
                (eq != strlen(keys[k]) || strncasecmp((char *)b, keys[k], eq)))
             ++k;
         if (eq == got || k == XIPH_TEXTS + XIPH_NUMBERS) continue;
+        if (raw) {
+            if (k != XIPH_ALBUM_ARTIST || c == eq + 1) continue;
+            n = c - eq - 1 > 0xff ? 0xff : c - eq - 1;
+            memcpy(raw, b + eq + 1, n), raw[n] = 0;
+            return;
+        }
         unsigned end = got; /* a value cut short by the read ends before the character it cut */
         if (got < c)
             for (end = got - 3; (b[end] & 0xc0) == 0x80;) --end;
@@ -155,7 +163,7 @@ int ogg_tags(const char *path, xiph_tags *t) {
                 big = 0; /* ponytail: Ogg FLAC, Speex and the like keep TagLib's read */
         }
         if (t->kind) {
-            xiph_parse(&o, n - (t->kind == 1 ? 8 : 7), t);
+            xiph_parse(&o, n - (t->kind == 1 ? 8 : 7), t, 0);
             t->year = pick(t, XIPH_DATE, XIPH_YEAR, 0);
             t->track = pick(t, XIPH_TRACKNUM, XIPH_TRACKNUMBER, 0);
             t->disc = pick(t, XIPH_DISC, XIPH_DISCNUMBER, 1000);
@@ -176,11 +184,8 @@ void flac_album_artist(const char *path, char *out) {
         while (fread(h, 4, 1, f) == 1) {
             unsigned left = (unsigned)h[1] << 16 | h[2] << 8 | h[3];
             if ((h[0] & 0x7f) == 4) { /* VORBIS_COMMENT: one run, the block */
-                xiph_tags t = { 0 };
                 xiph_in o = { f, 1, left, 1, 0, 0 };
-                xiph_parse(&o, left, &t);
-                if (*t.text[XIPH_ALBUM_ARTIST])
-                    memcpy(out, t.text[XIPH_ALBUM_ARTIST], 0xff), out[0xff] = 0;
+                xiph_parse(&o, left, 0, out);
                 break;
             }
             if (h[0] & 0x80 || fseek(f, (long)left, 1)) break;

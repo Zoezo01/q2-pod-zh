@@ -133,6 +133,94 @@ def test_multi_values(lib):
     assert (t.year, t.track, t.disc, t.mqa) == (1999, 9, 3, 1)
 
 
+def test_count_overflow(lib):
+    tags = comments(b'OpusTags', picture(5_000_000), b'TITLE=Wraps')
+    at = 8 + 4 + len(b'q2 test')
+    tags = tags[:at] + struct.pack('<I', 0x40000001) + tags[at + 4:]  # 4 times it wraps to 4
+    big, t = read(lib, ogg([OPUS_HEAD, tags]))
+    assert big == 1 and t.kind == 1 and text(t, 0) == ''  # TagLib: a count past the end, no fields
+
+
+OLD_FLAC = r"""
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
+static unsigned le32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
+void old_flac_album_artist(const char *path, char *out) {  /* navigation.c before dcef912 */
+    const char *ext = strrchr(path, '.');
+    if (!ext || strcasecmp(ext, ".flac")) return;
+    FILE *f = fopen(path, "rb");
+    unsigned char h[13];
+    if (!f) return;
+    if (fread(h, 4, 1, f) == 1 && !memcmp(h, "fLaC", 4))
+        while (fread(h, 4, 1, f) == 1) {
+            unsigned left = (unsigned)h[1] << 16 | h[2] << 8 | h[3], c;
+            if ((h[0] & 0x7f) != 4) {
+                if (h[0] & 0x80 || fseek(f, (long)left, 1)) break;
+                continue;
+            }
+            if (left < 8 || fread(h, 4, 1, f) != 1 || (c = le32(h)) > left - 8 ||
+                fseek(f, (long)c, 1) || fread(h, 4, 1, f) != 1)
+                break;
+            left -= 8 + c;
+            for (unsigned n = le32(h); n-- && left >= 4 && fread(h, 4, 1, f) == 1;) {
+                c = le32(h);
+                left -= 4;
+                if (c > left) break;
+                left -= c;
+                if (c > 13) {
+                    if (fread(h, 13, 1, f) != 1) break;
+                    if (!strncasecmp((char *)h, "ALBUM ARTIST=", 13)) {
+                        c = c - 13 > 0xff ? 0xff : c - 13;
+                        out[fread(out, c, 1, f) == 1 ? c : 0] = 0;
+                        break;
+                    }
+                    c -= 13;
+                }
+                if (fseek(f, (long)c, 1)) break;
+            }
+            break;
+        }
+    fclose(f);
+}
+"""
+
+
+def flac(*items, count=None):
+    block = comments(b'', *items)
+    if count is not None: block = block[:11] + struct.pack('<I', count) + block[15:]
+    info = bytes([0, 0, 0, 34]) + bytes(34)
+    return b'fLaC' + info + bytes([0x84]) + len(block).to_bytes(3, 'big') + block
+
+
+@pytest.mark.parametrize('items,count', [
+    ((b'ALBUM ARTIST=First', b'album artist=Second'), None),  # the first value only, not "A / B"
+    ((b'ALBUM ARTIST=', b'ALBUM ARTIST=\xff\xfe bad'), None),  # an empty one passed, invalid UTF-8 kept
+    ((b'ALBUM ARTIST=\0hidden', b'ALBUM ARTIST=Later'), None),  # a zero byte first: empty, and the end
+    ((b'ALBUMARTIST=No', b'ALBUM ARTIST=' + 'é'.encode() * 200), None),  # cut at 0xff bytes, mid-character
+    ((b'ARTIST=x', b'METADATA_BLOCK_PICTURE=' + b'A' * 5000, b'ALBUM ARTIST=Past'), None),
+    ((b'ALBUM ARTIST=Counted',), 0x40000001),  # no count check, as before
+    ((b'ARTIST=none',), None)])
+def test_flac_album_artist_as_before(lib, items, count):
+    d = lib.dir
+    if not (d/'old.so').exists():
+        (d/'old.c').write_text(OLD_FLAC)
+        subprocess.run(['clang', '-shared', '-fPIC', '-w', str(d/'old.c'), '-o', str(d/'old.so')], check=True)
+    old = C.CDLL(str(d/'old.so'))
+    path = d/'a.flac'
+    path.write_bytes(flac(*items, count=count))
+    try:
+        outs = []
+        for fn in (old.old_flac_album_artist, lib.flac_album_artist):
+            out = C.create_string_buffer(b'\x55' * 0x100)
+            out[0] = 0
+            fn(str(path).encode(), out)
+            outs.append(out.raw)
+        assert outs[0] == outs[1]
+    finally:
+        path.unlink()
+
+
 def test_cut_short(lib):
     tags = comments(b'OpusTags', picture(8_000_000), b'TITLE=Lost')
     whole = ogg([OPUS_HEAD, tags])
