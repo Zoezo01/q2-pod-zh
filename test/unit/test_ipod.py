@@ -370,6 +370,41 @@ def test_playing_page_progress_row(page):
     assert n['label_playlen'][2]['style:normal:text_color'] == '#1'
 
 
+def test_playing_page_classic_ipod():
+    """Classic (np_ipod): the art NP_IPOD_ART, up in the top row beside More, its box taking its reflection's
+    room, the swipeable pages with it, their other content and the dots where they were on screen; More the
+    window's last child, over the pages; "3 of 12" under the album; the times beside a bar narrowed for them,
+    in the Classic face, centred on its rows, restacked over the art's page."""
+    g = dataclasses.replace(ipod.SET0, np_ipod=1, bar=26)  # Classic's bar: its art comes down off the glass
+    root, base = playing(), playing()
+    ipod.playing_page(root, g)
+    ipod.playing_page(base, dataclasses.replace(g, np_ipod=0))
+    ipod.encode(root)
+    n, b, (x, _, w_, _) = named(root), named(base), ipod.with_geometry(g).NP_BAR
+    lift, view, cover = ipod.NP_IPOD_LIFT, n['slide_view_view'][1], n['img_cover'][1]
+    assert view[1] == b['slide_view_view'][1][1] - lift
+    top = g.bar + view[1] + cover[1]  # on screen: the first row whose corner clears the glass
+    assert cover[0] == ipod.NP_MARGIN and cover[2:] == [ipod.NP_IPOD_ART, ipod.NP_IPOD_ART + ipod.NP_REFLECT]
+    assert cover[1] > 0 and ipod.corner_x(top, 0) <= cover[0] < ipod.corner_x(top - 1, 0)
+    assert n['slide_view'][1][3] == cover[1] + cover[3] <= view[3]
+    for k in ('label_lyricmsg', 'view_lrc', 'label_a', 'label_b', 'slide_indicator1'):
+        assert n[k][1][1] == b[k][1][1] + lift, k
+    assert n['view_lrc'][2]['self_layout'] == f'default(x=0,y={lift},w=375,h=178)'
+    assert root[3][-1] is n['img_more'] and n['img_more'][1] == b['img_more'][1]
+    after = [c[2].get('name') for c in root[3]][root[3].index(n['slide_view_view']) + 1:][:2]
+    assert after == ['label_playtime', 'label_ipod_remain']  # over the art's reflection
+    title, album, pos = n['scrlabel_title'][1], n['label_ipod_album'][1], n['label_ipod_pos'][1]
+    assert n['label_ipod_pos'] in n['view_album'][3] and pos[0] == album[0] == title[0] == cover[0] + cover[2] + 12
+    assert view[1] + title[1] >= n['img_more'][1][3] - 2 and pos[1] == album[1] + 28
+    assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
+    assert x == ipod.with_geometry(dataclasses.replace(g, np_ipod=0)).NP_BAR[0] + ipod.NP_IPOD_TIME_W + ipod.NP_IPOD_TIME_GAP and x + w_ == 375 - x
+    play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
+    assert play[1][0] + play[1][2] + ipod.NP_IPOD_TIME_GAP == x and remain[1][0] == x + w_ + ipod.NP_IPOD_TIME_GAP
+    assert 2 * play[1][1] + play[1][3] == 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar
+    assert play[2]['style:normal:font_name'] == ipod.CLASSIC_LIGHT_FONT_NAME == remain[2]['style:normal:font_name']
+    assert play[2]['style:normal:text_align_h'] == 'right' and remain[2]['style:normal:text_align_h'] == 'left'
+
+
 def test_playing_page_final_order(page):
     root, _ = page
     assert [c[2].get('name') for c in root[3]] == ['view_buttons', 'label_playtime', 'label_playlen', 'label_ipod_remain',

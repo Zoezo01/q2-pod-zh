@@ -193,6 +193,7 @@ extern void coverflow_home_art(void *top);
 extern void coverflow_home_layout(void);
 extern int ringnav_reboot(void);
 extern void coverflow_home_clip(void *w, void *canvas, int begin);
+extern void coverflow_slant(void *w, void *canvas, unsigned paper), coverflow_slant_close(void);
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
 extern const char *coverflow_home_title(void);
 extern const char coverflow_home_name[];
@@ -2035,15 +2036,18 @@ static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsi
 /* An N-stop gradient s over x, y, w, h in one-pixel bands; pixel row j sits j / (h - 1) of the way
  * down, mixed between the stops around it. A screen-colour painter's: its colours are final, never
  * flipped. As many stops as rows: each row its own. Fewer than two stops draw nothing. */
+/* Row j of h of the stops s, 0xRRGGBB: one stop a row when there are h of them. */
+static unsigned stops_row(const stops_t *s, int j, int h) {
+    if (s->n == h) return s->rgb[j];
+    int p = h > 1 ? j * 25600 / (h - 1) : 0, k = 0; /* 1/256 % */
+    while (k + 2 < s->n && p > s->pos[k + 1] * 256) ++k;
+    int lo = s->pos[k] * 256;
+    return mix(s->rgb[k], s->rgb[k + 1], p - lo, s->pos[k + 1] * 256 - lo);
+}
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s) {
     if (s->n < 2) return;
-    for (int j = 0, k = 0; j < h; ++j) {
-        int p = h > 1 ? j * 25600 / (h - 1) : 0; /* 1/256 % */
-        while (k + 2 < s->n && p > s->pos[k + 1] * 256) ++k;
-        int lo = s->pos[k] * 256;
-        stock_canvas_set_fill_color(canvas, RGBA(s->n == h ? s->rgb[j]
-                                                           : mix(s->rgb[k], s->rgb[k + 1], p - lo,
-                                                                 s->pos[k + 1] * 256 - lo)));
+    for (int j = 0; j < h; ++j) {
+        stock_canvas_set_fill_color(canvas, RGBA(stops_row(s, j, h)));
         canvas_fill_rect(canvas, x, y + j, w, 1);
     }
 }
@@ -2214,8 +2218,9 @@ static void paint_letter(void *w, void *canvas) {
 }
 
 /* An art_square theme (Classic, which has no Corners; Modern under Square): an iPod's square art on
- * Now Playing, the full-screen art, Cover Flow (coverflow_render) and list thumbnails; stock's
- * placeholder and Home: Carousel's cards keep their own corners. */
+ * Now Playing, the full-screen art, Cover Flow (coverflow_render) and list thumbnails, their disc
+ * placeholders squared too (square_disc); Home's art and Home: Carousel's cards keep their own
+ * corners. */
 int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUNDED); }
 
 /* Playing art is rounded after scaling, so opposite corners share the same pixel grid.
@@ -2223,7 +2228,12 @@ int ipod_square_art(void) { return theme()->art_square && !setting(SETTING_ROUND
  * black: each corner row outside the arc, then its edge pixel at the alpha of its uncovered part
  * (1/16 px). */
 static void paint_cover(void *w, void *canvas) {
-    if (!w || !P(canvas, CANVAS_LCD) || ipod_square_art()) return;
+    if (!w || !P(canvas, CANVAS_LCD)) return;
+    if (w == st.np_cover && I(w, W_H) > I(w, W_W)) { /* Classic's room for a reflection */
+        coverflow_slant(w, canvas, scheme()->paper & 255);
+        return;
+    }
+    if (ipod_square_art()) return;
     int x = 0, y0 = 0;
     if (w == st.bc[2]) {
         w = widget_lookup(w, "img_bigcover", 1);
@@ -2661,6 +2671,7 @@ static void paint_into(void *w, void *canvas) {
 }
 
 /* Stock paints children first and calls this with the surface's canvas origin restored. */
+static void paint_scrubber(void *w, void *canvas);
 int ringnav_paint(void *w, void *canvas) {
     if (st.pull_page && !pull_live()) pull_cancel();
     int result = stock_paint_trampoline(w, canvas);
@@ -2696,6 +2707,7 @@ int ringnav_paint(void *w, void *canvas) {
     paint_into(w, canvas);
     paint_letter(w, canvas);
     paint_cover(w, canvas);
+    paint_scrubber(w, canvas);
     if (w && st.np_lrc && P(w, W_PARENT) == st.np_lrc) lyrics_paint(w, canvas);
     paint_caps(w, canvas);
     coverflow_home_clip(w, canvas, 0);
@@ -4143,8 +4155,6 @@ static void paint_battery(void *w, void *canvas) {
     canvas_fill_rect(canvas, 0, y + 1, 1, bh - 2);
     canvas_fill_rect(canvas, bw - 1, y + 1, 1, bh - 2);
     canvas_fill_rect(canvas, bw, y + (bh - nh) / 2, BATT_NUB_W, nh);
-    /* Classic: an iPod's green charge under the outline, red when low */
-    if (theme()->batt_fill && !(key & 1)) canvas_set_fill_color(canvas, RGBA(theme()->batt_fill));
     canvas_fill_rect(canvas, 2, y + 2, (bw - 4) * (key & 2 ? 100 : level) / 100, bh - 4);
     if (st.batt_mode == 2) {
         int x = bw + BATT_NUB_W + BATT_GAP;
@@ -4228,10 +4238,20 @@ const char *theme_face(const unsigned *s, int n) {
     return face_has(FONT_BOLD, s, n) ? "bold" : (const char *)0;
 }
 
+/* The remaining time, once after a frame whose paint np_sync wrote it in: its invalidate there is
+ * lost with the frame's dirty rects (#116). Minimal's and Modern's sit in the rect the slider's and
+ * the elapsed time's repaint takes each second, Classic's beside the bar outside it. */
+static int remain_due(const void *info) {
+    (void)info;
+    if (st.np_remain) widget_invalidate_force(st.np_remain, (void *)0);
+    return 0;
+}
+
 /* Now Playing's "3 of 12", album and remaining time (slider max less value, stock's seconds, so a
- * drag or scrub previews it). Labels are written only when their source changes. */
-static void np_sync(void *top) {
-    if (!top || top != st.np_win) return;
+ * drag or scrub previews it). Labels are written only when their source changes; 1 when the
+ * remaining time was. */
+static int np_sync(void *top) {
+    if (!top || top != st.np_win) return 0;
     st.np_bold = theme_font(st.np_title, ROLE_NP, st.np_bold); /* the title, as it changes */
     unsigned at, n;
     void *r = queue_now(&at, &n);
@@ -4251,9 +4271,10 @@ static void np_sync(void *top) {
     int left =
         widget_get_prop_int(st.np_slider, "max", 0) - widget_get_prop_int(st.np_slider, "value", 0);
     if (left < 0) left = 0;
-    if (left == st.np_left) return;
+    if (left == st.np_left) return 0;
     st.np_left = left;
     clock_text(st.np_remain, 1, left);
+    return 1;
 }
 
 /* Time in Title off: the bar's centre names the page in front, as an iPod's, in Modern's bold:
@@ -4345,6 +4366,41 @@ static void np_fill(int scrub) {
     if (T->np_scrub != T->np_bar)
         widget_set_prop_int(st.np_slider, "bar_size", scrub ? T->np_scrub : T->np_bar);
     widget_invalidate_force(st.np_slider, (void *)0);
+}
+
+/* One part of Classic's bar, w wide at x, y: the stops' rows h high, then mirrored under them from
+ * SCRUB_REFLECT_A/256 to the paper over SCRUB_REFLECT_ROWS. */
+static void bar_part(void *canvas, const stops_t *s, int x, int y, int w, int h, unsigned paper) {
+    paint_stops(canvas, x, y, w, h, s);
+    for (int k = 0; k < SCRUB_REFLECT_ROWS; ++k) {
+        int a = SCRUB_REFLECT_A * (SCRUB_REFLECT_ROWS - k) / SCRUB_REFLECT_ROWS;
+        stock_canvas_set_fill_color(canvas, RGBA(mix(paper, stops_row(s, h - 1 - k, h), a, 256)));
+        canvas_fill_rect(canvas, x, y + h + k, w, 1);
+    }
+}
+
+/* Classic's bar (playing.scrubber.stops), an iPod classic's, bw wide and the theme's np_bar high at
+ * x, y: the accent's band over the first `on` columns, the track's rows after them, square ends,
+ * each mirrored under it. 0 when the theme has none. The canvas's fill colour is left as it was. */
+static int ipod_bar(void *canvas, int x, int y, int bw, int on) {
+    const theme_t *T = theme();
+    const stops_t *track = &T->np_track[ipod_light()];
+    if (track->n < 2) return 0;
+    unsigned saved = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), paper = scheme()->paper;
+    bar_part(canvas, &scheme()->sel, x, y, on, T->np_bar, paper);
+    bar_part(canvas, track, x + on, y, bw - on, T->np_bar, paper);
+    stock_canvas_set_fill_color(canvas, saved);
+    return 1;
+}
+
+/* Classic's progress bar over stock's plain one, centred in the slider as stock's; the times sit
+ * beside it (tools/ipod.py np_ipod). */
+static void paint_scrubber(void *w, void *canvas) {
+    if (!w || w != st.np_slider || !P(canvas, CANVAS_LCD)) return;
+    int bw = I(w, W_W), lo = widget_get_prop_int(w, "min", 0),
+        n = widget_get_prop_int(w, "max", 100) - lo,
+        v = clamp_step(0, n, widget_get_prop_int(w, "value", 0) - lo);
+    ipod_bar(canvas, 0, (I(w, W_H) - theme()->np_bar) / 2, bw, n > 0 ? bw * v / n : 0);
 }
 
 /* The Theme's progress bar over the asset's (Minimal's square 4px line): Classic's and Modern's
@@ -4754,6 +4810,7 @@ static int np_gone(void *win, void *event) {
         stop_timer(&st.genre_timer);
         st.genre_label = (void *)0;
         np_cancel();
+        coverflow_slant_close();
         lyrics_gone(); /* the next page's rows may take its rows' place */
     }
     return 0;
@@ -4784,6 +4841,7 @@ static void np_art_poll(void) {
     if (!file) return;
     image_manager_unload_bitmap_by_name(image_manager(), file);
     image_base_set_image(st.np_cover, file);
+    coverflow_slant_close(); /* the same file, another cover: Classic's art drawn again */
     widget_invalidate_force(st.np_cover, (void *)0);
 }
 
@@ -5103,10 +5161,12 @@ static void vol_paint(void *top, void *canvas) {
     if (np) {
         void *slider = st.np_slider, *times = st.np_elapsed;
         int dy = I(st.np_win, W_Y) - I(top, W_Y), y = dy + I(slider, W_Y),
-            bh = widget_get_prop_int(slider, "bar_size", 8);
-        area = (rect_t){ 0, y, I(st.np_win, W_W), dy + I(times, W_Y) + I(times, W_H) - y };
+            bh = widget_get_prop_int(slider, "bar_size", 8), ty = dy + I(times, W_Y);
         bar = (rect_t){ I(slider, W_X), y + (I(slider, W_H) - bh) / 2, I(slider, W_W), bh };
-        text = (rect_t){ 0, dy + I(times, W_Y), area.w, I(times, W_H) };
+        if (ty < bar.y + bh) /* Classic's times sit beside the bar: under it and its reflection */
+            ty = bar.y + bh + SCRUB_REFLECT_ROWS;
+        text = (rect_t){ 0, ty, I(st.np_win, W_W), I(times, W_H) };
+        area = (rect_t){ 0, y, text.w, ty + text.h - y };
     } else {
         area = (rect_t){ VOL_PANEL_X, VOL_PANEL_Y, I(top, W_W) - 2 * VOL_PANEL_X, VOL_PANEL_H };
         int x = area.x + VOL_PANEL_PAD, bw = area.w - 2 * VOL_PANEL_PAD - VOL_PANEL_TEXT;
@@ -5129,12 +5189,13 @@ static void vol_paint(void *top, void *canvas) {
     } else {
         fill_box(canvas, &area, (LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
     }
-    /* Pills, like the progress capsule: a non-zero fill is at least round, never a sliver. */
-    fill_box(canvas, &bar, RGBA(np ? TRACK_COLOR : VOL_PANEL_TRACK), bar.h / 2);
-    if (w) {
+    /* Pills, like the progress capsule: a non-zero fill is at least round, never a sliver. Over
+     * Classic's Now Playing, its own bar. */
+    if (!np || !ipod_bar(canvas, bar.x, bar.y, bar.w, w)) {
+        fill_box(canvas, &bar, RGBA(np ? TRACK_COLOR : VOL_PANEL_TRACK), bar.h / 2);
         rect_t on = { bar.x, bar.y, w < bar.h ? bar.h : w, bar.h };
         /* Over Now Playing it is the progress bar's own: the accent's fill */
-        fill_box(canvas, &on, RGBA(np ? accent_tone(TONE_LIGHT) : 0xffffff), bar.h / 2);
+        if (w) fill_box(canvas, &on, RGBA(np ? accent_tone(TONE_LIGHT) : 0xffffff), bar.h / 2);
     }
     stock_canvas_set_fill_color(canvas, fill);
     k += put_num(s + k, (unsigned)clamp_step(0, 999, level));
@@ -5443,7 +5504,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         bar_title_sync(top);
         bar_title(bar, top);
         if (st.action_view) action_row(st.action_view);
-        np_sync(top);
+        if (np_sync(top)) timer_add(remain_due, (void *)0, 0); /* mid-paint */
         if (w == top) vol_paint(top, canvas);
         /* Boot may paint Home before the screen is usable, so nothing chose or drew its first
          * row. Once, when the list is first reachable, repaint it. */
@@ -5582,6 +5643,35 @@ static void round_corners(unsigned char *px, int w, int h, int stride, int alpha
     }
 }
 
+/* Stock's disc placeholders where the art follows Corners (ipod_square_art): Now Playing's, the
+ * full-screen art's, Cover Flow's and Spotify's (PLACEHOLDER), the album grids' and rows'. Under
+ * square art their transparent rounded corners are filled with their own top edge's grey, so
+ * they are square as the real covers there; the opaque flag set, as nothing shows through. */
+static void square_disc(const char *name, void *bitmap, const unsigned char at[4]) {
+    static const char *const discs[] = { "play_defaultcover", "default_bigcover", PLACEHOLDER,
+                                         "default_album_big", "default_album_small" };
+    unsigned i = 0;
+    while (i < sizeof discs / sizeof *discs && tk_strcmp(name, discs[i])) ++i;
+    int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
+    unsigned char *px = i < sizeof discs / sizeof *discs && w > 0 && h > 0 && stride >= w * 4
+                            ? bitmap_lock_buffer_for_write(bitmap)
+                            : (void *)0;
+    if (!px) return;
+    const unsigned char *edge = px + 4 * (w / 2);
+    if (edge[at[3]] == 255) {
+        for (int y = 0; y < h; ++y)
+            for (unsigned char *p = px + y * stride, *end = p + 4 * w; p < end; p += 4) {
+                unsigned a = p[at[3]];
+                for (int c = 0; c < 3; ++c)
+                    p[at[c]] =
+                        (unsigned char)((p[at[c]] * a + edge[at[c]] * (255 - a) + 127) / 255);
+                p[at[3]] = 255;
+            }
+        *(unsigned short *)((char *)bitmap + 0xc) |= 1;
+    }
+    bitmap_unlock_buffer(bitmap);
+}
+
 /* Zeroes every pixel of a decoded 32-bit bitmap (bitmap_t w @0, h @4), alpha included, row padding
  * kept, and clears its opaque flag (@0xc bit 0) as round_corners' callers do: it draws nothing. */
 static void clear_bitmap(void *bitmap) {
@@ -5650,6 +5740,7 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
             }
         }
     }
+    if (format < 4 && name && ipod_square_art()) square_disc(name, bitmap, at[format]);
     const char *s = name;
     int dark = s && tk_str_start_with(s, CONFIRM_IMAGE);
     int control = s && tk_str_start_with(s, DROPDOWN_IMAGE) && !tk_str_start_with(s, DROPDOWN_SUN);

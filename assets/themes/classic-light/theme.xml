@@ -13,7 +13,7 @@
             lib_art="0" title24_y="4" title_y="6" meta_y="8"
             count_y="8" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
             song_meta_y="29" set_row="32" set_top="0" set_rows="9"
-            set_icon="0" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1"/>
+            set_icon="0" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"/>
   <geometry name="classic-light-text" extends="classic-light" art="0" art_pitch="32" art_body="32" art_title24_y="4"
             art_meta_y="8"/>
   <geometry set="classic-light"/>
@@ -58,11 +58,17 @@
     <element name="state" stops="#0f4f93 0, #1a76b3 20, #2ea8e1 33, #39c7f8 47, #38c7f5 53, #32b1e9 60, #2699d7 67, #2085c3 73, #1c73b1 80, #1666a5 87, #135999 100"
              edge="#114c8f 0, #135999 100" halo_light="0" halo_dark="0"/>
   </view>
+  <!-- Now Playing, an iPod classic's: the art turned in perspective over its reflection (the classic-light sets' np_ipod,
+       coverflow.c slant_render), and the progress bar's track, a row each of its NP_BAR_IPOD (13): faint 1 px top
+       and bottom lines round a near-white inside; the dark half's Apple's capture darkened, its step at the middle
+       kept; the accent's band fills the played part (navigation.c paint_scrubber) -->
   <view name="playing">
     <element name="art" square="1"/>
+    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 8, #ffffff 17, #ffffff 25, #fafafa 33, #fafafa 42, #f6f6f6 50, #f6f6f6 58, #f6f6f6 67, #f4f4f4 75, #f4f4f4 83, #f4f4f4 92, #cecece 100"
+             dark.stops="#313131 0, #373737 8, #383838 17, #373737 25, #363636 33, #353535 42, #323232 50, #313131 58, #323232 67, #343434 75, #353535 83, #343434 92, #2b2b2b 100"/>
     <element name="title" font="classic-light" font_px="27"/>
     <element name="album" caps="0" opacity="255"/>
-    <element name="state" opacity="255"/>
+    <element name="state" opacity="0"/>  <!-- no play/pause glyph on the art, as Minimal -->
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,

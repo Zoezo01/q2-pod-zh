@@ -1130,9 +1130,9 @@ def battery_checks():
                   (2,y+2,fill,bh-4,color_t(rgb))]
         assert [x[:5] for x in bands]==expected
         assert [(l['text'],l['rect'],l['color'],l['font'],l['align']) for l in letters]==[(text+'%',(bw+O['BATT_NUB_W']+O['BATT_GAP'],0,pct,30),color_t(rgb),('default',O['BATT_PX']),(1,1))]
-    # Modern: the icon's charge is green at any level, red when low; the outline stays white.
+    # Modern, as Minimal: the level white, green only while charging (full), red when low.
     b,bar,w,paint=battery_bar(0,THEME='2'); b.nodes[w['img_bt']]['visible']=0
-    for image,fill in (('bar_battery',O['BATT_CHARGE_RGB']),('bar_lowcharge',O['BATT_LOW_RGB'])):
+    for image,fill in (('bar_battery',0xffffff),('bar_lowcharge',O['BATT_LOW_RGB'])):
         b.nodes[w['img_battery']]['image']=image; b.nodes[w['label_battery']]['text']='50%'
         paint(); paint(w['view_battery']); paint(); b.bands=[]; paint(w['view_battery'])
         assert b.bands[-1][2:5]==((O['BATT_BODY_W']-4)*50//100,O['BATT_BODY_H']-4,color_t(fill)),b.bands[-1]
@@ -6170,9 +6170,9 @@ b.nodes[img]['image']='default_bigcover'; assert fit()==bc_mv and geo(img)==sq; 
 # the band from the progress bar to the times: black, the track, a white fill to the volume and
 # "Volume N". Its slider and label hide, the slider moved onto the band so stock's invalidation
 # repaints it. Over any other window it draws a compact panel.
-# The page's bar is the Theme's: Minimal's 4px line, Classic's and Modern's 8px capsule (np_theme), Modern's
-# in its default Graphite.
-for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',8,ACCENTS[4][2]),('2',8,ACCENTS[0][2])):
+# The page's bar is the Theme's: Minimal's 4px line, Modern's 8px capsule (np_theme) in its default Graphite,
+# Classic's iPod bar (ipod_bar): the accent's band and the track's rows, mirrored under it.
+for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',O['NP_BAR_IPOD'],ACCENTS[4][2]),('2',8,ACCENTS[0][2])):
   CONFIG.clear(); CONFIG.update(THEME=theme)
   m=QueueMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'
   slider,elapsed,remain=m.node('slider','slider_play',max=225,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
@@ -6193,9 +6193,20 @@ for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',8,ACCENTS[4][2]),('2',8,ACC
   assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==list(band)
   assert m.nodes[slider]['bar_size']==bh and m.nodes[slider]['style:pressed:round_radius']==bh//2
   fills=[b[:5] for b in m.bands]
-  assert fills==[(*band,color_t(0))],fills  # then the capsule, as the progress bar
-  assert [(r['rect'],r['radius'],r['color']) for r in m.rounded]==[(bar,bh//2,color_t(O['TRACK_COLOR'])),((24,bar[1],327*40//100,bh),bh//2,color_t(fill))],m.rounded
+  def ipod_rows(top):  # Classic: the band and the track, a row each, down through the reflection
+      on=327*40//100; rows=fills[1:]
+      assert not m.rounded and {(b[0],b[2]) for b in rows}=={(24,on),(24+on,327-on)},rows
+      assert sorted({b[1] for b in rows})==list(range(top,top+bh+O['SCRUB_REFLECT_ROWS'])),rows
+  if theme=='1': assert fills[0]==(*band,color_t(0)),fills; ipod_rows(bar[1])
+  else:
+      assert fills==[(*band,color_t(0))],fills  # then the capsule, as the progress bar
+      assert [(r['rect'],r['radius'],r['color']) for r in m.rounded]==[(bar,bh//2,color_t(O['TRACK_COLOR'])),((24,bar[1],327*40//100,bh),bh//2,color_t(fill))],m.rounded
   assert [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==[('Volume 40',(0,295,375,16),O['NP_TIMES_PX'])]; passed()
+  if theme=='1':  # Classic's times beside the bar: "Volume N" under the bar and its reflection
+      put(elapsed,16,247,50,21); m.bands.clear(); m.rounded.clear(); m.letters.clear(); paint(dlg); fills=[b[:5] for b in m.bands]
+      under=bar[1]+bh+O['SCRUB_REFLECT_ROWS']; assert fills[0]==((0,270,375,under+21-270,color_t(0))),fills; ipod_rows(bar[1])
+      assert [(t['text'],t['rect']) for t in m.letters]==[('Volume 40',(0,under,375,21))]; passed()
+      put(elapsed,16,265,80,16)
 assert len(m.timers)==1; poll=next(iter(m.timers))
 m.advance(O['VOL_POLL_MS']); assert not did('widget_invalidate_force') and poll in m.timers  # unchanged: nothing
 m.nodes[sv]['value']=41; m.advance(O['VOL_POLL_MS'])  # changed: the whole dialog repaints
@@ -6260,15 +6271,15 @@ for (x,y),alpha in pixels.items():
     assert pixels.get((x,BC_ART-1-y))==alpha
 assert m.get(m.lcd+O['LCD_FILL_COLOR'])==0x12345678; passed()
 
-# Stock's play-state glyph and album label are Classic's (np_theme): opaque there, hidden in Minimal.
-for theme,op in (('0',0),('1',255)):
+# Stock's play-state glyph is Modern's alone, its album label Classic's and Modern's (np_theme): opaque there, hidden in Minimal.
+for theme,op in (('0',[0,0]),('1',[0,255]),('2',[255,255])):
     CONFIG.clear(); CONFIG.update(THEME=theme); q=QueueMachine(queue=3,pos=1); q.handlers[playing+12]='stock_playing'
     glyph,album=q.node('image','img_playstate'),q.node('label','label_ipod_album')
     for w in (glyph,album): q.byte(w+0x34,0x80)
     win=q.node('window','playing_page',[q.node('slider','slider_play',max=225,value=100,bar_size=4),glyph,album])
     q.word(win+O['W_PARENT'],q.wm); q.top=win
     assert q.call(address=playing,args=(win,7,0,0),gap=0)==0
-    assert [q.u.mem_read(w+0x34,1)[0] for w in (glyph,album)]==[op,op],theme
+    assert [q.u.mem_read(w+0x34,1)[0] for w in (glyph,album)]==op,theme
 passed()
 
 # Scrub: a double centre press toggles it; the wheel then moves a target of SCRUB_STEP
@@ -8571,6 +8582,25 @@ for t in ('1','2'):
     m.u.mem_write(bm+0xc,struct.pack('<HH',3,1)); m.word(bm+0x14,data); source=(bytes([47,47,47,255])*w+b'\xee'*8)*h; m.u.mem_write(data,source)
     m.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,m.string('file:///mnt/mmc/.sldp/album0.jpg'),bm,0),gap=0)
     assert bytes(m.u.mem_read(data,stride*h))==source,t; passed()
+# There the disc placeholders are squared too: a transparent corner takes the top edge's grey, a half
+# covered pixel blends onto it, the rest and the row padding stay; Minimal and Modern under Round keep
+# the rounded disc, and another image under square art is untouched.
+for config,name,square in (({'THEME':'1'},'play_defaultcover',1),({'THEME':'2'},'default_album_flow',1),({'THEME':'2'},'default_album_small',1),
+                           ({'THEME':'2','ROUNDED':'1'},'play_defaultcover',0),({},'play_defaultcover',0),({'THEME':'1'},'default_album_home',0)):
+  for fmt in (1,2):
+    CONFIG.update(config); m=Machine(); CONFIG.clear(); m.handlers[tramp['image']]='stock_image'
+    w,h,stride=6,4,32; bm=m.alloc(0x60); data=m.alloc(stride*h); m.word(bm,w); m.word(bm+4,h); m.word(bm+8,stride)
+    m.u.mem_write(bm+0xc,struct.pack('<HH',2,fmt)); m.word(bm+0x14,data)
+    at=((0,1,2,3),(3,2,1,0))[fmt-1]
+    def px(c,a): p=bytearray(4); [p.__setitem__(o,v) for o,v in zip(at,(*c,a))]; return bytes(p)
+    tile=px((119,118,117),255); rows=[[tile]*w for _ in range(h)]; rows[0][0]=px((0,0,0),0); rows[3][5]=px((255,255,255),102)
+    source=b''.join(b''.join(r)+b'\xee'*8 for r in rows); m.u.mem_write(data,source)
+    m.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,m.string(name),bm,0),gap=0)
+    out=bytes(m.u.mem_read(data,stride*h)); want=bytearray(source)
+    if square:
+        want[0:4]=tile; want[3*stride+20:3*stride+24]=px(tuple((255*102+e*153+127)//255 for e in (119,118,117)),255)
+        assert m.get(bm+0xc)&1,(config,name)
+    assert out==bytes(want),(config,name,fmt,out.hex()); passed()
 # Artwork is rounded before caching, including the cached opacity flag. Straight RGB and row
 # padding survive; every byte order and an already transparent source corner are supported.
 for name in ('file:///mnt/mmc/.sldp/album0.jpg', 'file:///tmp/coverpic.jpg',

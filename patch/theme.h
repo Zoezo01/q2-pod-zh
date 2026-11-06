@@ -107,6 +107,8 @@ typedef struct {
                                                          this size, centred, 0: as stock */
     short home_top, home_full_row, home_text_x, home_label_end[2] /* [0] split, [1] full */,
         set_top, np_bar, np_scrub;
+    stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
+                            light; n 0: stock's plain bar */
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:
      * HOME_PLACEHOLDER. pane_shadow is
      * 0xRRGGBB, the shadow down its left edge; _w in columns, _a each column's alpha. pane_light_a
@@ -130,7 +132,6 @@ typedef struct {
     unsigned char np_layout; /* NP_* */
     cf_style_t cf;
     unsigned char art_square; /* art takes Corners: Square */
-    unsigned batt_fill;       /* 0xRRGGBB under the battery's outline; 0: the outline's own */
 } theme_t;
 const theme_t *theme(void);       /* accent(); return &themes[st.theme]; */
 int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stored values */

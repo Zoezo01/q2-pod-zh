@@ -1557,6 +1557,24 @@ int main(void) {
            line[3] == 0xff726a5au && line[4] == 0xff143c8cu);
     unsigned flat[3] = { 0xff123456u, 0xff123456u, 0xff123456u };
     home_sharpen(flat, 3, 1); assert(flat[0] == 0xff123456u && flat[1] == 0xff123456u && flat[2] == 0xff123456u);
+    /* Classic's slanted art (slant_render), a cover blue over red on white paper: the near edge the
+       side high, unflipped; the far edge SLANT_FAR/256 of it, centred, its top row by coverage; under
+       the near edge the mirror, red at about SLANT_REFLECT_A/256, fading to the paper by
+       SLANT_REFLECT_PCT of the height. */
+    extern void slant_render(unsigned *, int, int, int, const unsigned *, int, unsigned);
+    {
+        enum { S = 40, R = 50, T = 2 * S };
+        static unsigned tex[T * T], fr[S * R];
+        for (int i = 0; i < T * T; ++i) tex[i] = i < T * T / 2 ? 0xffff0000u : 0xff0000ffu;
+        slant_render(fr, S, S, R, tex, T, 255);
+#define CH(p, s) ((p) >> (s) & 255)
+        assert(CH(fr[0], 16) == 255 && CH(fr[0], 0) < 16 && CH(fr[39 * S], 0) == 255 && CH(fr[39 * S], 16) < 16);
+        assert(fr[S - 1] == 0xffffffffu && CH(fr[2 * S + S - 1], 0) > 100 && CH(fr[2 * S + S - 1], 0) < 140 &&
+               fr[3 * S + S - 1] == 0xffff0000u && fr[30 * S + S - 1] == 0xff0000ffu);
+        assert(CH(fr[40 * S], 8) > 170 && CH(fr[40 * S], 8) < 182 && CH(fr[44 * S], 8) > CH(fr[40 * S], 8) &&
+               fr[49 * S] == 0xffffffffu);
+#undef CH
+    }
     assert(mmap((void *)(MCL_POS & ~4095), 4096, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != MAP_FAILED);
     deque queue = {0};
@@ -1899,7 +1917,7 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art passed.')
 
 
 if __name__ == '__main__':

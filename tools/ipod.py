@@ -73,6 +73,7 @@ class Geometry:
     list_end: int = 0  # the screen row under the bar where a selected row's scroll stops: below it the glass hides its text (0: stock's end)
     home_row: int = 39  # Home's and its Settings list's row height; Python only, no C reads it
     home_lib: int = 0  # Home's Library row, in Split, slides in a list of the Library's rows (coverflow.c home_library)
+    np_ipod: int = 0  # Now Playing as an iPod classic's: the art's box NP_REFLECT taller for its reflection, the times beside the bar
 
 
 SET0 = Geometry()
@@ -147,11 +148,24 @@ NP_ART_Y = (NP_DOTS_Y - NP_ART - (NP_TOP - 16) // 2) // 2
 NP_TOUCH = 44
 NP_TIMES_Y = 265  # 14px text in a 16px label, clear of the 10px A-B markers
 NP_TEXT_X = NP_MARGIN + NP_ART + 12
+# Classic's Now Playing (Geometry.np_ipod), an iPod classic's: the art NP_IPOD_ART, up beside More in
+# the top row, its swipeable pages NP_IPOD_LIFT higher (the lyrics, info and visualizer keep their
+# place on screen, that much down them), its top down to the first row where its square top-left corner
+# clears the glass by CORNER_SLACK, as the full-screen art's do; "3 of 12" under the album; the art's box NP_REFLECT
+# taller, the room its reflection takes under the near edge (coverflow.c slant_render); the times in the
+# Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-1:02:03" fits: stb scales
+# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows.
+NP_IPOD_ART = 198
+NP_IPOD_LIFT = 30
+NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
+NP_IPOD_TIME_W = 47
+NP_IPOD_TIME_GAP = 8
+NP_IPOD_TIME_PX = inc('NP_IPOD_TIME_PX')
 
 
 def with_geometry(g):
     """The row sizes and the Now Playing insets that clear the glass, for a window starting at g.bar."""
-    bar_x = max(MARGIN, corner_x(g.bar + 251, 8))
+    bar_x = max(MARGIN, corner_x(g.bar + 251, 8)) + g.np_ipod * (NP_IPOD_TIME_W + NP_IPOD_TIME_GAP)
     return types.SimpleNamespace(
         BOTTOM=320 - g.bar, PITCH=g.pitch, BODY=g.body, ART=g.art, ART_INSET=g.art_inset,
         NP_POS_X=max(NP_MARGIN, corner_x(g.bar + (NP_TOP - 16) // 2, 16)) + 6,  # "3 of 12", 16px text
@@ -559,33 +573,43 @@ def playing_page(root, g=SET0):
         if 'image' in n[2]:
             n[2]['draw_type'] = 'center'
     named['img_more'][1] = [geo.NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
-    buttons[3].append(['label', [geo.NP_POS_X, 0, geo.NP_ICONS_END - NP_ICON - geo.NP_POS_X, NP_TOP], {
+    pos = ['label', [geo.NP_POS_X, 0, geo.NP_ICONS_END - NP_ICON - geo.NP_POS_X, NP_TOP], {
         'name': 'label_ipod_pos', 'style:normal:font_size': '16', 'style:normal:text_color': NP_GREY,
-        'style:normal:text_align_h': 'left'}, []])
+        'style:normal:text_align_h': 'left'}, []]
 
-    art_y = NP_ART_Y
-    text_w = 375 - NP_MARGIN - NP_TEXT_X
+    lift = g.np_ipod * NP_IPOD_LIFT
+    art_y, art = (NP_ART_Y, NP_ART)
+    if g.np_ipod:
+        art, slide_top = NP_IPOD_ART, g.bar + NP_TOP - lift
+        art_y = next(y for y in range(NP_TOP) if corner_x(slide_top + y, 0) <= NP_MARGIN)
+    text_x = NP_MARGIN + art + 12
+    text_w = 375 - NP_MARGIN - text_x
     # Favourite centres beneath More; leave 6px between its target and shuffle/order. The row ends
     # with the art, clear of the dots: the 28px glyphs, centred, end 15px above their frame's bottom.
-    icons_y = art_y + NP_ART - NP_ICON + NP_ICON_PAD
+    icons_y = art_y + art - NP_ICON + NP_ICON_PAD
     fav_x = named['img_more'][1][0]
     for name, x in (('img_playmode', fav_x - NP_ICON - 6), ('img_fav', fav_x)):
         buttons[3].remove(named[name])
         named[name][1] = [x, icons_y, NP_ICON, NP_ICON]
-    top = art_y + (icons_y - NP_ICON_PAD - art_y - (28 + 6 + 22 + 6 + 22)) // 2
-    title[1] = [NP_TEXT_X, top, text_w, 28]
+    top = art_y + (icons_y - NP_ICON_PAD - art_y - (28 + 6 + 22 + 6 + 22 + g.np_ipod * (6 + 20))) // 2
+    if g.np_ipod:  # the text starts under More, "3 of 12" under the album
+        top = max(top, lift - 2)
+        pos[1] = [text_x, top + 90, text_w, 20]
+    else:
+        buttons[3].append(pos)
+    title[1] = [text_x, top, text_w, 28]
     # every state: the labels are disabled (enable false), so a lone normal size would not apply
     title[2].update({'style': 's_scrlabel_white20l', **{f'style:{s}:font_size': str(NP_TITLE_PX) for s in ('normal', 'disable', 'focused')}})
     # lull holds the end, delay the start (navigation.c ringnav_hscroll_lull snaps back between them), as the album's marquee
     for n in (title, artist):
         n[2].update(delay=str(inc('MARQUEE_HOLD_MS')), lull=str(inc('MARQUEE_HOLD_MS')))
-    artist[1] = [NP_TEXT_X, top + 34, text_w, 22]
+    artist[1] = [text_x, top + 34, text_w, 22]
     for key in artist[2]:
         if key.endswith(':font_size'): artist[2][key] = str(NP_META_PX)
         if key.endswith(':text_color'): artist[2][key] = NP_GREY
         if key.endswith(':text_align_h'): artist[2][key] = 'left'
     album = copy.deepcopy(artist)
-    album[1] = [NP_TEXT_X, top + 62, text_w, 22]
+    album[1] = [text_x, top + 62, text_w, 22]
     album[2].update(name='label_ipod_album', text='')
     for key in album[2]:
         if key.endswith(':text_color'): album[2][key] = f'#{inc("NP_ALBUM_RGB"):06X}'
@@ -593,12 +617,14 @@ def playing_page(root, g=SET0):
         if key.endswith(':text_color'): artist[2][key] = f'#{inc("NP_ARTIST_RGB"):06X}'
     for n, px in ((title, NP_TITLE_PX), (artist, NP_META_PX), (album, NP_META_PX)):
         check({v for k, v in n[2].items() if k.endswith(':font_size')} == {str(px)}, 'Now Playing text keeps a state size')
-    named['img_cover'][1] = [NP_MARGIN, art_y, NP_ART, NP_ART]
-    named['img_playstate'][1] = [NP_MARGIN + (NP_ART - 120) // 2, art_y + (NP_ART - 120) // 2, 120, 120]
+    # Classic's box holds the reflection too (navigation.c paint_cover takes a box taller than wide for it)
+    named['img_cover'][1] = [NP_MARGIN, art_y, art, art + g.np_ipod * NP_REFLECT]
+    named['img_playstate'][1] = [NP_MARGIN + (art - 120) // 2, art_y + (art - 120) // 2, 120, 120]
     named['img_playstate'][2]['opacity'] = '0'  # retain stock gesture target without a transport glyph
-    named['view_album'][3] += [title, artist, album, named['img_playmode'], named['img_fav']]
+    named['view_album'][3] += [title, artist, album, named['img_playmode'], named['img_fav']] + [pos] * g.np_ipod
     column = (375 - 225) // 2
     named['label_lyricmsg'][1][0] += column
+    named['label_lyricmsg'][1][1] += lift
     # The payload paints each lyric line over its stock row, a blank label LYRIC_SLOT high for a line of one
     # row (patch/lyrics.c): the rows span the page, and the list layout (stock's list_view(m=0,s=0) otherwise,
     # the payload's own once it opens) starts them a slot down, so the first line can sit in the middle.
@@ -607,23 +633,28 @@ def playing_page(root, g=SET0):
     check(3 * inc('LYRIC_SLOT') <= 178, 'Three lyric lines must fit the page')
     lrc['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'
     lrc['children_layout'] = f'list_view(x=0,y={inc("LYRIC_SLOT")},s=0)'
-    named['view_lrc'][2]['self_layout'] = 'default(x=0,y=0,w=375,h=178)'
+    # its y set as laid out too: visualizer.c places its page by it before the first layout
+    named['view_lrc'][1][1] = lift
+    named['view_lrc'][2]['self_layout'] = f'default(x=0,y={lift},w=375,h=178)'
     for n in named['view_info'][3]:
         n[1][0] += column
-    named['slide_view_view'][1] = [0, NP_TOP, 375, NP_SLIDE_H + 6]
-    named['slide_view'][1] = [0, 0, 375, NP_SLIDE_H]
+        n[1][1] += lift
+    # Classic's page reaches past the dots, down to its art's reflection, so a swipe takes it along
+    slide_h = max(NP_SLIDE_H + lift, art_y + art + g.np_ipod * NP_REFLECT)
+    named['slide_view_view'][1] = [0, NP_TOP - lift, 375, max(NP_DOTS_Y + lift + 10, slide_h)]
+    named['slide_view'][1] = [0, 0, 375, slide_h]
     dots = named['slide_indicator1']
     for key in dots[2]:
         if key.endswith(':selected_fg_color'): dots[2][key] = '#eeeeee'
         elif key.endswith(':fg_color'): dots[2][key] = '#555555'
-    dots[1][1] = NP_DOTS_Y
-    dots[2]['self_layout'] = f'default(x=0,y={NP_DOTS_Y},w=100%,h=10)'
+    dots[1][1] = NP_DOTS_Y + lift
+    dots[2]['self_layout'] = f'default(x=0,y={NP_DOTS_Y + lift},w=100%,h=10)'
     # Without an anchor, stock's indicator centres its dots on the slide_view as widget_to_screen places it,
     # which takes away the view's own xoffset, a swipe's drag: dots laid out mid-swipe (any relayout lays them
     # out) slid with the page until the next layout. The same point as the indicator's own anchor: the
     # slide_view's centre, and above the indicator's middle, which puts the dots on its top edge.
     dots[2].update(anchor_x=f'{375 // 2}px', anchor_y='0px')
-    named['image_wait'][1] = [NP_MARGIN + (NP_ART - 54) // 2, NP_TOP + art_y + (NP_ART - 54) // 2, 54, 54]
+    named['image_wait'][1] = [NP_MARGIN + (art - 54) // 2, NP_TOP - lift + art_y + (art - 54) // 2, 54, 54]
 
     x, y, w, h = geo.NP_BAR
     np_slider(named['slider_play'], x, y + h // 2, w, h)
@@ -638,8 +669,24 @@ def playing_page(root, g=SET0):
     for n in (named['label_playtime'], remain):
         for key in n[2]:
             if key.endswith(':text_color'): n[2][key] = NP_GREY
+    if g.np_ipod:  # an iPod classic's times: beside the bar, centred on its rows as stock centres them
+        top = y + h // 2 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2
+        for n, box_x, align in ((named['label_playtime'], x - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W, 'right'),
+                                (remain, x + w + NP_IPOD_TIME_GAP, 'left')):
+            n[1] = [box_x, top, NP_IPOD_TIME_W, inc('NP_BAR_IPOD') + 4]
+            for state in [k.split(':')[1] for k in n[2] if k.endswith(':text_color')]:
+                n[2].update({f'style:{state}:text_color': '#FFFFFF', f'style:{state}:font_name': CLASSIC_LIGHT_FONT_NAME,
+                             f'style:{state}:font_size': str(NP_IPOD_TIME_PX), f'style:{state}:text_align_h': align})
     root[3][1:3] = []
     root[3].insert(3, remain)
+    if g.np_ipod:  # the times over the art's page, whose reflection reaches their row (its frame is opaque);
+        # More over the pages now in its row, the window's last child so it takes its own touches
+        for n in (named['label_playtime'], remain):
+            root[3].remove(n)
+        at = root[3].index(named['slide_view_view']) + 1
+        root[3][at:at] = [named['label_playtime'], remain]
+        buttons[3].remove(named['img_more'])
+        root[3].append(named['img_more'])
 
 
 # Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the
@@ -892,7 +939,8 @@ def row_icon(data):
 # Each stock placeholder's replacement size: stock's own, but Now Playing's and the full-screen art's at
 # the art they fill (stock's 188 scaled down there on the device, jagged), and the album grids' at
 # album_children's inset cover (110 less TILE_INSET + TILE_CLEARANCE a side), drawn 1:1 by its scale-down.
-# The square ones keep the disc's transparent corners, so a selected row's bar shows through them.
+# The square ones keep the disc's transparent corners, so a selected row's bar shows through them; under
+# square art (ipod_square_art) navigation.c's square_disc fills them as they load.
 ART_PLACEHOLDERS = {'default_album_big.png': 110 - 2 * (inc('TILE_INSET') + inc('TILE_CLEARANCE')), 'default_album_small.png': 52,
                     'play_defaultcover.png': NP_ART, 'scrsaver_playcover.png': 60,
                     'default_smallcover.png': 140, 'default_bigcover.png': BC_ART}

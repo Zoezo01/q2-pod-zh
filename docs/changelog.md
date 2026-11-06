@@ -4,6 +4,10 @@
   - Now Playing: a title or artist too long to fit now pauses at its start before each scroll, as it does at its end. It used to jump back to the start and scroll on at once.
   - Display: **Theme: Modern**'s Home menu is in Shanling's own font again, as before 1.5.8. Its Now Playing title stays bold.
   - Display: the Theme list is in the order Minimal, Modern, Classic.
+  - Display: under **Theme: Modern** the battery icon is green only while charging, as in Minimal. It used to be green at every level.
+  - Now Playing: **Theme: Classic** no longer shows the play/pause symbol over the album art, as Minimal doesn't. Modern still does.
+  - Display: with square album art (**Theme: Modern** with **Rounded Corners** off, and **Theme: Classic**), the grey disc shown for an album with no art is square too, in Cover Flow, Now Playing, the full-screen art and album lists. Its corners stayed rounded.
+  - Now Playing: under **Theme: Classic** the album art is larger and turned at an angle with its reflection under it, the place in the queue ("25 of 40") is under the album, and the progress bar is the iPod's, with the times on either side of it, as on an iPod classic.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.

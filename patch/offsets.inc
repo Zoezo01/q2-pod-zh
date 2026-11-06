@@ -139,6 +139,18 @@
 #define CONFIRM_PROMPT_PX 24
 #define NP_TIMES_PX 14 /* Now Playing's times, and the volume text in their place */
 #define NP_ART_RADIUS 12 /* Now Playing's art corners (paint_cover), as stock's play_defaultcover scaled to the art */
+/* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, navigation.c paint_scrubber),
+ * fitted to Apple's own 320 x 240 capture: the art's far edge SLANT_FAR/256 of its near one (118 of
+ * 135 px); its reflection from SLANT_REFLECT_A/256 fading out over SLANT_REFLECT_PCT of the
+ * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from SCRUB_REFLECT_A/256
+ * over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX (tools/ipod.py NP_IPOD_TIME_W). */
+#define SLANT_FAR 224
+#define SLANT_REFLECT_A 84
+#define SLANT_REFLECT_PCT 22
+#define NP_BAR_IPOD 13
+#define SCRUB_REFLECT_A 38
+#define SCRUB_REFLECT_ROWS 5
+#define NP_IPOD_TIME_PX 15
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
     int d = 2 * (r - y) - 1, v = (4 * r * r - d * d) * 64, s = 0;
@@ -214,7 +226,7 @@ static inline int arc_out(int r, int y) {
 #define HOME_DOT_X 25
 #define HOME_DOT 6
 #define HOME_DOT_GAP 8
-/* Classic's and Modern's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line). Minimal's settings icons are grey and list_into
+/* Modern's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line, Classic's NP_BAR_IPOD). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
 #define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */

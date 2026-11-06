@@ -2567,6 +2567,35 @@ void home_sharpen(unsigned *t, int n, int step) { /* test/coverflow.py */
     }
 }
 
+/* The decoded image (data, stride, channel order o, w x h) box filtered to tw x th texels at out,
+ * ostride texels a row, over the grey paper (a byte). Alpha-weighted sums, so only the average
+ * divides; at most 4 x 4 samples a texel, so a huge embedded cover filters as quickly as a small
+ * one. */
+static void box_filter(const unsigned char *data, unsigned stride, const unsigned char *o,
+                       unsigned w, unsigned h, unsigned *out, int ostride, int tw, int th,
+                       unsigned paper) {
+    for (int y = 0; y < th; ++y) {
+        unsigned *px_out = out + y * ostride;
+        unsigned y0 = (unsigned)y * h / (unsigned)th, y1 = (unsigned)(y + 1) * h / (unsigned)th;
+        y1 += y1 == y0;
+        for (int x = 0; x < tw; ++x) {
+            unsigned x0 = (unsigned)x * w / (unsigned)tw, x1 = (unsigned)(x + 1) * w / (unsigned)tw;
+            x1 += x1 == x0;
+            unsigned r = 0, g = 0, b = 0, a = 0, n = 0, xs = (x1 - x0 + 3) / 4 * 4,
+                     ys = (y1 - y0 + 3) / 4;
+            for (unsigned sy = y0; sy < y1; sy += ys)
+                for (const unsigned char *px = data + sy * stride + x0 * 4,
+                                         *end = data + sy * stride + x1 * 4;
+                     px < end; px += xs, n += 255) {
+                    unsigned k = px[o[3]];
+                    r += px[o[0]] * k, g += px[o[1]] * k, b += px[o[2]] * k, a += k;
+                }
+            unsigned bg = paper * (n - a);
+            *px_out++ = 0xff000000u | (r + bg) / n | (g + bg) / n << 8 | (b + bg) / n << 16;
+        }
+    }
+}
+
 /* The cover at url, box filtered once to its fit zoomed DRIFT_ZOOM_PCT (home.tex, tw x th) and
  * composited over the page as Coverflow's decode does, for the pan to draw from. It pans across
  * the zoom's margin only (rx ry), from the old crop (u0 v0), so its edges never show. 1 when it
@@ -2592,33 +2621,10 @@ static int home_tex(const char *url) {
         data = home.tex ? bitmap_lock_buffer_for_read(bitmap) : 0;
     }
     if (data) {
-        const unsigned char *o = at[format];
         unsigned stride = bitmap_get_line_length(bitmap), paper = ipod_light() ? LIGHT_PAPER : 0;
         int ts = tw + 3;                   /* home.tex's row, its border included */
         unsigned *tex = home.tex + ts + 1; /* texel 0, 0 */
-        for (int y = 0; y < th; ++y) {
-            unsigned *out = tex + y * ts;
-            unsigned y0 = (unsigned)y * h / (unsigned)th, y1 = (unsigned)(y + 1) * h / (unsigned)th;
-            y1 += y1 == y0;
-            for (int x = 0; x < tw; ++x) {
-                unsigned x0 = (unsigned)x * w / (unsigned)tw,
-                         x1 = (unsigned)(x + 1) * w / (unsigned)tw;
-                x1 += x1 == x0;
-                /* alpha-weighted sums, so only the average divides; at most 4 x 4 samples, so a
-                 * huge embedded cover filters as quickly as a small one */
-                unsigned r = 0, g = 0, b = 0, a = 0, n = 0, xs = (x1 - x0 + 3) / 4 * 4,
-                         ys = (y1 - y0 + 3) / 4;
-                for (unsigned sy = y0; sy < y1; sy += ys)
-                    for (const unsigned char *px = data + sy * stride + x0 * 4,
-                                             *end = data + sy * stride + x1 * 4;
-                         px < end; px += xs, n += 255) {
-                        unsigned k = px[o[3]];
-                        r += px[o[0]] * k, g += px[o[1]] * k, b += px[o[2]] * k, a += k;
-                    }
-                unsigned bg = paper * (n - a);
-                *out++ = 0xff000000u | (r + bg) / n | (g + bg) / n << 8 | (b + bg) / n << 16;
-            }
-        }
+        box_filter(data, stride, at[format], w, h, tex, ts, tw, th, paper);
         bitmap_unlock_buffer(bitmap);
         for (int y = 0; y < th; ++y) home_sharpen(tex + y * ts, tw, 1);
         for (int x = 0; x < tw; ++x) home_sharpen(tex + x, th, ts);
@@ -2687,6 +2693,115 @@ static void home_paint(void *canvas) {
         home.du = u, home.dv = v;
     }
     canvas_draw_image(canvas, home.frame, r, r);
+}
+
+/* a to b by k of 256, per channel */
+HOT unsigned lerp(unsigned a, unsigned b, unsigned k) {
+    const unsigned w[4] = { 256 - k, k, 0, 0 };
+    return tap4(a, b, 0, 0, w);
+}
+
+/* The t x t texture at u, v (texels from its top-left corner), bilinear, its edge texels held. */
+HOT unsigned bilerp(const unsigned *tex, int t, float u, float v) {
+    int x = (int)(u * 256) - 128, y = (int)(v * 256) - 128, end = (t - 1) * 256 - 1;
+    x = x < 0 ? 0 : x > end ? end : x, y = y < 0 ? 0 : y > end ? end : y;
+    unsigned fx = (unsigned)x & 255, fy = (unsigned)y & 255,
+             w[4] = { (256 - fx) * (256 - fy) >> 8, fx * (256 - fy) >> 8, (256 - fx) * fy >> 8, 0 };
+    w[3] = 256 - w[0] - w[1] - w[2];
+    const unsigned *p = tex + (y >> 8) * t + (x >> 8);
+    return tap4(p[0], p[1], p[t], p[t + 1], w);
+}
+
+/* Classic's Now Playing art (docs/internals.md#slanted-art), an iPod classic's: the cover turned in
+ * perspective, its near (left) edge the art's side high, its far edge SLANT_FAR/256 of that,
+ * centred; under it the reflection, each column mirrored about its own bottom edge, from
+ * SLANT_REFLECT_A/256 fading to the paper over SLANT_REFLECT_PCT of the column's height. Into d
+ * (pitch pixels a row), side wide and rows high, from tex, the cover box filtered to t x t, twice
+ * the art: each pixel is two half columns of two bilinear taps, the slanted edges by coverage.
+ * test/coverflow.py */
+void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *tex, int t,
+                  unsigned paper) {
+    unsigned bg = 0xff000000u | paper * 0x010101u;
+    float near = (float)side, far = side * SLANT_FAR / 256.f;
+    for (int x = 0; x < side; ++x)
+        for (int half = 0; half < 2; ++half) {
+            /* u: the texture is linear in depth, so in 1 / h */
+            float c = x + .25f + .5f * half, h = near - (near - far) * c / near,
+                  top = (near - h) / 2, bot = top + h, fade = h * SLANT_REFLECT_PCT / 100,
+                  u = t * (near - h) * far / (h * (near - far)), k = t / h;
+            for (int y = 0; y < rows; ++y) {
+                /* the pixel's shares of the cover, the reflection and the paper, of 256 */
+                unsigned cover = bg, mirror = bg, w[4] = { 0, 0, 256, 0 };
+                float a = y > top ? y : top, b = y + 1 < bot ? y + 1 : bot, q = (b - a) / 4;
+                if (b > a) {
+                    cover = lerp(bilerp(tex, t, u, (a + q - top) * k),
+                                 bilerp(tex, t, u, (b - q - top) * k), 128);
+                    w[0] = (unsigned)((b - a) * 256);
+                }
+                a = y > bot ? y : bot, b = y + 1 < bot + fade ? y + 1 : bot + fade, q = (b - a) / 4;
+                if (b > a) {
+                    unsigned s = lerp(bilerp(tex, t, u, t - (a + q - bot) * k),
+                                      bilerp(tex, t, u, t - (b - q - bot) * k), 128);
+                    mirror = lerp(bg, s, (unsigned)(SLANT_REFLECT_A * (1 - ((a + b) / 2 - bot) / fade)));
+                    w[1] = (unsigned)((b - a) * 256);
+                }
+                w[2] = 256 - w[0] - w[1];
+                unsigned out = tap4(cover, mirror, bg, bg, w), *px = d + y * pitch + x;
+                *px = half ? lerp(*px, out, 128) : out;
+            }
+        }
+}
+
+/* Classic's art over stock's flat cover, on the page's grey paper (a byte): slant.frame, rendered
+ * again only when the cover (its size and 8 x 8 of its pixels: the player writes every track's
+ * cover to the same file, so its name tells none apart) or the paper changes. Its layout (fixed
+ * while the page is open) makes the art's widget taller
+ * than wide (tools/ipod.py np_ipod), room for the reflection under it, so a repaint of the bar
+ * below repaints it too.
+ * ponytail: stock still draws its flat cover under the frame each paint, as it always did; a 16-bit
+ * decode, or no memory for the frame or texture, leaves stock's, scale_auto in the taller box. */
+static struct {
+    void *frame;
+    unsigned key;
+} slant;
+
+void coverflow_slant_close(void) {
+    if (slant.frame) bitmap_destroy(slant.frame);
+    memset(&slant, 0, sizeof slant);
+}
+
+void coverflow_slant(void *w, void *canvas, unsigned paper) {
+    static const unsigned char at[4][4] = BITMAP_RGBA_AT;
+    unsigned bitmap[64]; /* bitmap_t */
+    const char *url = widget_get_prop_str(w, "image", (void *)0);
+    if (!url || !*url || widget_load_image(w, url, bitmap)) return; /* stock's copy: kept loaded */
+    unsigned bw = bitmap[0], bh = bitmap[1], format = ((unsigned short *)bitmap)[7] - 1u;
+    const unsigned char *data =
+        format < 4 && bw && bh && bw <= 8192 && bh <= 8192 ? bitmap_lock_buffer_for_read(bitmap) : 0;
+    if (!data) return;
+    int side = I(w, W_W), rows = I(w, W_H), t = 2 * side;
+    unsigned stride = bitmap_get_line_length(bitmap),
+             key = hash_bytes(FNV_SEED, (const unsigned char *)bitmap, 8) ^ paper;
+    for (unsigned j = 1; j < 16; j += 2)
+        for (unsigned i = 1; i < 16; i += 2)
+            key = hash_bytes(key, data + bh * j / 16 * stride + bw * i / 16 * 4, 4);
+    if (!slant.frame) slant.frame = opaque_frame(side, rows);
+    unsigned *tex = slant.frame && key != slant.key ? calloc((unsigned)(t * t), 4) : 0;
+    unsigned *d = tex ? (unsigned *)bitmap_lock_buffer_for_write(slant.frame) : 0;
+    if (d) { /* fitted whole and centred on the paper */
+        unsigned fit = bw > bh ? bw : bh;
+        int tw = (int)(t * bw / fit), th = (int)(t * bh / fit);
+        for (int i = 0; i < t * t; ++i) tex[i] = 0xff000000u | paper * 0x010101u;
+        box_filter(data, stride, at[format], bw, bh, tex + (t - th) / 2 * t + (t - tw) / 2, t, tw,
+                   th, paper);
+        slant_render(d, (int)(bitmap_get_line_length(slant.frame) / 4), side, rows, tex, t, paper);
+        bitmap_unlock_buffer(slant.frame);
+        slant.key = key;
+    }
+    free(tex);
+    bitmap_unlock_buffer(bitmap);
+    int r[4] = { 0, 0, side, rows };
+    if (slant.frame && slant.key == key) canvas_draw_image(canvas, slant.frame, r, r);
 }
 
 /* The theme's pane shadow down the panel's left edge at x, y. */

@@ -485,7 +485,8 @@ moves the pages: they are anchored on their own row, at the slide_view's centre.
 The art's corners are rounded at 12 pixels (`NP_ART_RADIUS`), the radius of stock's own
 placeholder cover at this size, so real art and the placeholder match; Classic's art is always
 an iPod's square instead (`ipod_square_art`: Now Playing, the full-screen art,
-Cover Flow and list thumbnails; stock's placeholder and Home: Carousel's cards keep their corners). The payload paints them
+Cover Flow and list thumbnails, and the disc placeholders shown there, squared on their own grey as they load,
+`square_disc`; Home's art and Home: Carousel's cards keep their corners). The payload paints them
 over the scaled image in the page's black, with an anti-aliased
 edge pixel, so opposite corners share the same pixel grid. The title is 22 pixels
 white (`NP_TITLE_PX`) over the 18-pixel (`NP_META_PX`) artist, `#CCCCCC` (`NP_ARTIST_RGB`), and
@@ -522,10 +523,11 @@ vertical position. Both keep their stock images and handlers and swipe away with
 Internet Radio uses the same heart alignment in every theme.
 
 The bar is a four-pixel plain-colour line inside a 44-pixel seek target: a `#1C1C1C` track
-(`TRACK_COLOR`) and an off-white `MINIMAL_FILL` fill, with no thumb. **Theme: Classic** and **Modern** make it an
+(`TRACK_COLOR`) and an off-white `MINIMAL_FILL` fill, with no thumb. **Theme: Modern** makes it an
 8-pixel capsule (`NP_BAR_CLASSIC`; `bar_size` and `round_radius` set on the slider at runtime,
 `np_theme`) filled in the accent's light tone (Graphite `#6E6E6E`, 3.3:1; see [Display
-settings](#display-settings)), and shows stock's play/pause glyph on the art again. Spotify's bar follows the same theme.
+settings](#display-settings)), and shows stock's play/pause glyph on the art again. **Theme: Classic** makes it an iPod classic's
+13-pixel bar with the times beside it and turns the art in perspective over its reflection ([internals.md](internals.md#slanted-art)). Spotify's bar follows the same theme.
 The asset holds Graphite's; `ringnav_playing` sets the current accent's. The volume shown over the page draws the same bar in the same fill. Tap or drag anywhere in the bar's taller target to seek; the page dots sit just above it so page swipes keep a separate target. The elapsed time
 is stock's label; the remaining time replaces stock's total. Sizes are `NP_*` constants in
 `tools/ipod.py`; see [internals.md](internals.md#now-playing-ipod).
@@ -779,7 +781,7 @@ so `playing_page` clears it in every state. 1.3.9 first painted it white, which 
 layout and assets: the accent's full-width selection bar under white text (an inset pill under
 Rounded Corners), with Home's chevron on its bar, coloured settings icons and the stock
 `list_into`, Home's menu in the stock font, a bold Now Playing title, and Now Playing's 8-pixel capsule and play/pause glyph.
-Its status bar is black, as Minimal's (an iPod's flat grey, `LIGHT_BAR`, in Light Mode), and its battery charges green.
+Its battery is Minimal's, and so is its status bar, but in Light Mode the bar is an iPod's flat grey (`LIGHT_BAR`).
 
 Minimal and Modern share a geometry set, so a change between them applies at once, as Accent
 does: the image cache is dropped and the screen repaints (icons and chevrons reload in the new
@@ -796,7 +798,7 @@ shared layout, in Classic's accent and Light Mode.
 - **The bar.** A gloss bar (the dark half's flat `#1c1c1c` over a hairline) with the page's title on the left, the clock centred, and EQ (while it is on and nothing plays), Bluetooth, Wi-Fi, the play state and the battery on the right. On Home's own list, whose title would be "Q2 Pod", the title hides while music plays or is paused and a second image, `img_home_state`, shows the play state in its place (x 58, `HOME_STATE_X` in `tools/ipod.py`); Home's Library and Settings lists are titled pages, so there the play state stays by the battery. The title and clock are 21 px, three quarters of a row's caps. Under this bar **Time in Title** decides the clock alone (on unless chosen, and choosing Classic turns it on): off, the clock makes way while the page has a title, so the bar names the page once, and the title takes the clock's room. The play state is a blue gloss triangle or pair of bars with a dark edge and no halo, as an iPod's. The battery has five states: low (a red sliver), part full, full, charging (a bolt) and full on power (a plug). **Battery** is Icon or Percent Inside (Icon by default); a stored Percent or Icon + Percent reads as Percent Inside.
 - **Lists.** 32 px rows, eight to a screen, the values on the right, the white chevron on the selected row only, no settings or Library icons; other icons keep their colours. The selection is the accent's gloss band, square and full width, over the whole row on a taller one; its light 1 px top line is the light half's, and on black the band starts on its first stop. Stock's grey placeholder tiles, Folder view's folders and songs (`list_folder`, `list_song`; Album info's rows use `list_song` too, so theirs is 38 px as well), are drawn 38 px in the middle of their 52 px row (`list.art.placeholder`, by the image hook), so they have room above and below; a real cover keeps the row's size. A long title on the selected row scrolls, as in Minimal. Songs are two lines at 52 px, title and artist; Play All and Sort are a plain row at the top of Songs, reached by touch, not the wheel.
 - **Row Art.** It decides album covers only, in 52 px rows, and they are square: the Library is always 32 px text. A change restarts the Q2.
-- **Now Playing.** Square art, the title in Classic's face, the album line as a label, stock's play/pause glyph on the art and the 8-pixel capsule ([Now Playing](#now-playing)).
+- **Now Playing.** An iPod classic's: the art, 198 px, up beside More and turned in perspective over its reflection, with no play/pause glyph on it; "3 of 12" under the album; the title in Classic's face and the album line as a label; and a 13-pixel bar, the accent's gloss over a near-white track with a faint reflection, the elapsed and remaining times beside it in Classic's face ([Now Playing](#now-playing), [internals.md](internals.md#slanted-art)).
 - **Appearance's rows.** Theme, Light Mode, Accent, Home, Shortcut, Battery, Time in Title, Library on Home, Row Preview and Row Art. Corners and Centred Now Playing are Minimal's only, and their stored values stay for it. Light Mode Off is Classic's dark half; choosing Classic turns Light Mode on unless it is on Auto.
 - **Home.** 32 px rows in Classic's face, the gloss band and the white chevron on the selected row. In Split, with **Library on Home** on, Library is a list on Home's left with the pane beside it (off, Library opens its page). With **Row Preview** on, the pane shows the highlighted row (off, it shows Now Playing's art on every row, and Home reads no counts). Both are Classic's own switches (`IPOD HOMELIB`, `IPOD ROWPREVIEW`, on unless chosen), saved at once with no restart, and choosing Classic turns them on. With both on: Now Playing and the Library's rows the current cover, Shuffle the note and the song count, Cover Flow the album count, Folder its icon, Games the game count, Streaming the services, Settings the card's free space.
 - **Its font.** The face is a subset of TeX Gyre Heros Bold (`assets/fonts`, GUST Font License), renamed and shipped as `fonts/classic-light.ttf`; `assets/fonts/README-classic-light.txt` says what changed and where the original is. Where it lacks a character, `fonts/bold.ttf` stands in ([Home](#home)).

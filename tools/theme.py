@@ -102,8 +102,8 @@ SCHEMA = {k.path: k for k in (
     key('settings.values.text', 'set_text', 'bool'),
     key('playing.scrubber.height', 'np_bar', 'int', 375),
     key('playing.scrubber.scrub_height', 'np_scrub', 'int', 375),
+    Key('playing.scrubber.stops', 'np_track', 'stops', 0, 0, (), 'live', True),  # Classic's track, final (paint_scrubber); (): stock's bar
     key('playing.art.square', 'art_square', 'bool'),
-    key('bar.battery.fill', 'batt_fill', 'color'),
     key('list.row.font', 'font[ROLE_TITLE]', 'enum'),
     key('list.row.meta_font', 'font[ROLE_META]', 'enum'),
     key('list.row.title_px', 'font_px[ROLE_TITLE]', 'int', 64),
@@ -181,14 +181,14 @@ CF_ROLES = {'cf.top': 'CF_TOP', 'cf.x1': 'CF_X1', 'cf.xs': 'CF_XS', 'cf.z1': 'CF
 ROLE_MACROS = {
     'minimal': {'home_top': 'HOME_TOP', 'home_full_row': 'HOME_FULL_ROW', 'home_text_x': 'HOME_DOT_X + HOME_DOT + HOME_DOT_GAP',
                 'home_label_end[0]': 'HOME_SPLIT_LABEL_END', 'home_label_end[1]': 'HOME_LABEL_END', 'set_top': 'SET_TOP',
-                'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC', 'batt_fill': '0',
+                'np_bar': 'NP_BAR_MINIMAL', 'np_scrub': 'NP_BAR_CLASSIC',
                 'fill': 'MINIMAL_FILL', 'chevron': 'MINIMAL_CHEVRON', 'muted': 'SUDO_MUTED', 'bar_light': '0', **CF_ROLES},
-    # Classic: what its theme.xml doesn't state itself (Now Playing's bar, the stock battery's fill, the bars outside its gloss)
-    'classic-light': {'set_top': '0', 'np_bar': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB', 'fill': '0', 'chevron': '0',
+    # Classic: what its theme.xml doesn't state itself (Now Playing's bar, the bars outside its gloss)
+    'classic-light': {'set_top': '0', 'np_bar': 'NP_BAR_IPOD', 'np_scrub': 'NP_BAR_IPOD', 'fill': '0', 'chevron': '0',
                       'bar_light': 'LIGHT_BAR'},
     'modern': {'home_top': '0', 'home_full_row': 'HOME_MODERN_ROW', 'home_text_x': 'HOME_MODERN_TEXT_X',
                'home_label_end[0]': 'HOME_MODERN_LABEL_END', 'home_label_end[1]': 'HOME_MODERN_LABEL_END', 'set_top': '0',
-               'np_bar': 'NP_BAR_CLASSIC', 'batt_fill': 'BATT_CHARGE_RGB', 'fill': '0', 'chevron': '0', 'muted': '0',
+               'np_bar': 'NP_BAR_CLASSIC', 'fill': '0', 'chevron': '0', 'muted': '0',
                'bar_light': 'LIGHT_BAR'},
 }
 
@@ -252,6 +252,7 @@ GEOM_RANGES = {
     'action_row': (0, 50),
     'list_end': (0, lambda g: 320 - g.bar),  # ... and list_end's, inside the window
     'home_lib': (0, 1),  # Home's Library row slides in a list of the Library's rows
+    'np_ipod': (0, 1),  # Now Playing as an iPod classic's (tools/ipod.py playing_page)
     'home_row': (28, lambda g: (320 - g.bar - O['HOME_TOP']) // 7),  # seven Home rows under HOME_TOP fit the client
 }
 THEME_GEOM_OFF = 4  # offsetof(theme_t, geom), right after name so no field moves it; asserted in navigation.c; test/patch.py pokes it
