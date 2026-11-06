@@ -564,6 +564,10 @@ static inline int arc_out(int r, int y) {
 /* localmusic/playlist_page's add mode (g_play_info + 0x7894): non-zero while it is Add to Playlist;
  * 0 when browsing the Playlists list, whose rows' trailing dots open playlistsmore_page. */
 #define PLAYLIST_ADD_MODE 0xa27894
+#define PL_RENAME_ROW 0xa278a0 /* the playlist row playlistsmore_page_init saved (0x4b3980) */
+/* g_allselect_flag: playlist_page's Select All (0x4b1b88) toggles on it; a row's mark sets it to
+ * whether every row is now marked (0x4b1e38). */
+#define G_ALLSELECT_FLAG 0xa38ac0
 /* Marked folders stay indexed for playlists; the wrappers expand this before grouping. */
 #include "library_scope.h"
 #define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b' and " LIBRARY_SCOPE_TOKEN

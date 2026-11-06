@@ -829,6 +829,10 @@ def validate_assets(directory):
     from theme import builtins, geometry_sets, SCHEMA
     from ipod import CLASSIC_LIGHT_FONT_SRC, PAGE_KIND as page_kind, page_rows
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
+    # Classic's Playlists rows (pl_row) are the theme's page_detail high in a list pitched at song_pitch: one height.
+    for t in builtins():
+        for g in geometry_sets([t]):
+            if not g.toolbar: assert g.song_pitch == t['page_detail'], (t['name'], g.name)
     for g in geometry_sets(builtins()):
         assert g.body <= g.pitch and g.art_body <= g.art_pitch and g.song_body <= g.song_pitch, g.name
         assert g.art + 2*g.art_inset <= g.art_body, g.name

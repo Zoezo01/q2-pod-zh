@@ -4111,8 +4111,14 @@ cpm_centre(m); assert m.marks==[0,1,0] and m.bar()=='1 Selected' and m.selected(
 assert m.rows()==['Select All']+LISTS+['Import Playlists','Export 1 Playlist','Delete 1 Playlist…','Done']
 m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected' and m.rows()[-3:-1]==['Export 2 Playlists','Delete 2 Playlists…']
 m.tap(m.row_button('Select All')); assert m.marks==[1,1,1] and m.bar()=='3 Selected' and m.rows()[-2]=='Delete 3 Playlists…'
-# ... Select All again clears them, stock's toggle.
-m.tap(m.row_button('Select All')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists' and m.rows()[-2:]==['Import Playlists','Done']; passed()
+# ... and then reads Deselect All, which clears them: stock's toggle on g_allselect_flag.
+assert m.rows()[0]=='Deselect All' and m.u.mem_read(O['G_ALLSELECT_FLAG'],1)==b'\1'
+m.tap(m.row_button('Deselect All')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists' and m.rows()[-2:]==['Import Playlists','Done']
+assert m.rows()[0]=='Select All'
+# ... every row marked by hand sets the flag too, so it reads Deselect All and clears them.
+for name in LISTS: m.tap(m.row_button(name))
+assert m.marks==[1,1,1] and m.rows()[0]=='Deselect All'
+m.tap(m.row_button('Deselect All')); assert m.marks==[0,0,0] and m.rows()[0]=='Select All'; passed()
 
 # Export in select mode reaches stock's handler, marked: exportPlayList's first argument 0 and the marks kept.
 m=ClassicPlaylistMachine(); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
@@ -4178,6 +4184,41 @@ choice=next(k for k in m.nodes[m.row_button('List 1')]['children'] if m.nodes[k]
 assert m.nodes[choice]['image']=='select' and m.marks==[0,1,0]
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(choice,m.canvas,0,0),gap=0)
 assert [c[2:] for c in m.calls if c[0]=='canvas_fill_rect'][0]==(18,22); passed()
+
+# The list's `>` sits in stock's More hit (x from 286): a tap in its column opens the playlist, the dots left of it are More;
+# in select mode any tap marks. The picker draws no `>`: a pick adds and closes.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.icons
+m.tap(m.row_button('List 2'),330); assert not m.mores and any(c[0]=='navigator_to_with_context' for c in m.calls)
+m.tap(m.row_button('List 2'),300); assert m.mores==[2]
+m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 2'),330); assert m.mores==[2] and m.marks==[0,0,1]
+m=ClassicPlaylistMachine(3,1); m.rebuild(); m.icons=[]; m.paint(m.view); assert not m.icons; passed()
+
+# A page destroyed in select mode (held Return to Home) clears stock's flag; one destroyed outside it leaves the flag alone.
+m=ClassicPlaylistMachine(); m.rebuild()
+gone=[(f,ctx) for t,f,ctx in m.nodes[m.top]['handlers'] if t==O['EVT_DESTROY']]; assert len(gone)==1; f,ctx=gone[0]
+m.byte(syms['g_navbar_status'],1); m.call(address=f,args=(ctx,0,0,0),gap=0,clear=False); assert m.navbar()==1
+m.byte(syms['g_navbar_status'],0); m.tap(m.row_button(EDIT)); m.stack_rows(); assert m.navbar()==1
+m.call(address=f,args=(ctx,0,0,0),gap=0,clear=False); assert m.navbar()==0; passed()
+
+# Return in select mode: the latest click of a pass wins (Done over a Delete just tapped), and without Done's target it is stock's.
+m=ClassicPlaylistMachine(); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
+ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.on_click(m.row_button('Delete 1 Playlist…'),ev)
+f,ctx=m.handler(m.top,O['EVT_KEY_UP']); key=m.alloc(0x40); m.word(key,O['EVT_KEY_UP']); m.word(key+O['EVENT_KEY'],O['KEY_RETURN'])
+assert m.call(address=f,args=(ctx,key,0,0),gap=0,clear=False)==11; m.advance(0,clear=False)
+assert not m.confirms and not m.deletes and m.navbar()==0 and m.rows()==LISTS+[NEW,EDIT]
+m.tap(m.row_button(EDIT)); m.stack_rows()
+for w,v in m.nodes.items():  # stock's Done gone from every widget it was bound to
+    if (O['EVT_CLICK'],0x4b1ad0) in [h[:2] for h in v.get('handlers',())]: m.word(m.get(m.get(w+O['W_EMITTER']))+12,0)
+assert m.call(address=f,args=(ctx,key,0,0),gap=0,clear=False)==11 and any(c[0] in ('q:window_close','window_close') for c in m.calls); passed()
+
+# Stock's relayout of a playlist row (its own layouter, compact_row_layout) keeps pl_fit's places.
+m=ClassicPlaylistMachine(); m.rebuild(); button=m.row_button('List 1')
+info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info'); title,second=m.nodes[info]['children']
+more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
+assert m.get(m.get(button+O['W_CHILDREN_LAYOUT'])+O['CHILDREN_LAYOUT_VTABLE'])!=O['DEFAULT_LAYOUT_VTABLE']
+native_row_layout(m,button)
+assert (m.get(info+O['W_X']),m.get(info+O['W_W']),m.get(more+O['W_X']),m.get(more+O['W_W']))==(20,262,273,50)
+assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28; passed()
 
 # Stock's add mode is one global, left by a picker however it closes: a page coming back rebuilds as what it opened as.
 for cls in (PlaylistMachine,ClassicPlaylistMachine):
@@ -6143,7 +6184,7 @@ m=playlist_hold(1); m.found=[m.song('dir',4)]; assert m.run(0)=='Queue unchanged
 m=playlist_hold(); m.press(7100); assert m.hold()==11 and m.release()==0
 m.word(syms['p_deque_playlist'],m.deque([m.song('Other',4)])); m.pick(3); m.advance(0)
 assert not [o for o in m.opened if o[0]=='localmusic/playlistsmore_page']; passed()  # the list changed: nothing
-m=playlist_hold(1); m.word(O['PLAYLIST_ADD_MODE'],1); m.press(7300)
+m=playlist_hold(1); m.nodes[m.top]['_pl_mode']=1; m.press(7300)  # the page's own mode, not the global
 assert m.hold()!=11 and not [o for o in m.opened if o[0]=='localmusic/playlistsmore_page']; passed()
 for count in (0,1):
     m=PlaylistEditMachine(count); m.open_editor(); before=m.order()
