@@ -30,6 +30,8 @@
   - Display: under **Theme: Classic** a list that scrolls keeps a thin thumb at its right edge, in place of stock's bar that faded. A list that doesn't scroll has none.
   - Display: under **Theme: Classic** an empty list says so on the page while the title bar keeps the page's name, and Hold Return reaches Home's main list from under Library, Streaming or Settings.
   - Controls: a short Return straight after a Hold Return that went Home could do nothing the first time. It now works on the first press.
+  - Cover Flow: under **Theme: Classic** a wheel step eases into place: each tick moves where the covers are heading without kicking their speed, a cover moving in no longer swells towards you or swings past its place, and it lands without a stutter. Home's Carousel and Photos keep their steps.
+  - Cover Flow: under **Theme: Classic** the wheel holds the covers directly: turn slowly and a cover stays part-way until you let go; spin and they run up to 20 albums a second in a narrower row, with the caption going on ahead, and land on the album it names. Wheel Sensitivity scales it as it does other lists, and the art no longer jumps as a spin starts or stops.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.

@@ -54,10 +54,20 @@
   </view>
   <!-- Cover Flow's shelf, from the look's measured geometry: side covers almost edge-on, so their top and bottom edges
        meet at the centre column, on a horizon 63% down the cover, unshaded out to the third; the reflections go under
-       the caption, so the frame is taller than the other themes'. -->
+       the caption, so the frame is taller than the other themes'. Mid-step the near edge grows lift's small swell and
+       eases out to 3 px past its rest place, as a door swings on its outer edge, and the eye draws back by eye_turn px
+       (1 - t^4), which lengthens the far edge and leaves the near edge and every rest pose where they are.
+       art_persp: a side cover's art 13% of the way from even to the plane's own spacing, so cover 1's near half is
+       1.23 times as wide as its far half (the plane's own would be 2.76), at rest and in the row alike.
+       thumb: the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel. -->
   <view name="coverflow">
     <element name="shelf" top="32" eye="94" tilt="89" x1="116" xs="34" z1="77" zs="1" horizon="63" third="1"
-             bright1="256" bright2="256" reflect="46" reflect_top="90" view_h="242"/>
+             swing="1" lift="20" eye_turn="150" bright1="256" bright2="256" reflect="46" reflect_top="90" view_h="242"
+             thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30" snap="25"
+             spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120" rate_down="50"
+             back="50" dead="1" contact_ms="40" aim_snap="30" lead_from="25" lead_full="100" lead_ms="45" row_shift="20"
+             row_from="100" row_full="300" row_shrink="8" row_flat="200" row_out="33" row_edge="160" row_width="60"
+             row_key="72" row_reach="22" art_persp="13"/>
     <!-- The album and the artist in the title's face, 24 px apart: their boxes overlap, as each must hold the font -->
     <element name="caption" name_px="27" artist_px="27" text_y="220" artist_y="26"/>
   </view>
@@ -171,7 +181,8 @@
   </option>
   <!-- How things move. A window kind with no ms keeps its asset's hint, or none. Home is a page right over Home; payload
        a page with no hint of its own. The volume is the row's push over Now Playing, and hold how long it stays once
-       idle. The selection jumps, with no glide and no bump. -->
+       idle. The selection jumps, with no glide and no bump. Cover Flow's step follows its goal: under easing="follow",
+       ms is the follow's time constant, not the run's length. -->
   <view name="motion">
     <element name="page" ms="120" easing="cubic_out"/>
     <element name="payload" ms="120" easing="cubic_out"/>
@@ -182,6 +193,8 @@
     <element name="inplace" ms="120" easing="cubic_out"/>
     <element name="step" ms="200" easing="sin_inout"/>
     <element name="step_fast" ms="120" easing="sin_inout"/>
+    <element name="coverflow_step" ms="81" easing="follow"/>
+    <element name="coverflow_step_fast" ms="81" easing="follow"/>
     <element name="recall" ms="0"/>
     <element name="bump" px="0"/>
   </view>

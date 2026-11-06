@@ -123,13 +123,14 @@ HOMELIB, ROWPREVIEW = (own(k, label, ('Off', 'On'), None, default=1, preset=1) f
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.view_h': 210, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32}
+            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': 0 for a in theme.CF_THUMB}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'payload', 'playing', 'dialog', 'coverflow', 'home') for a in ('ms', 'easing', 'anim')},
-                **{f'motion.{k}.{a}': 0 for k in ('volume', 'inplace', 'swap', 'step', 'step_fast') for a in ('ms', 'easing')},
+                **{f'motion.{k}.{a}': 0 for k in ('volume', 'inplace', 'swap', 'step', 'step_fast', 'coverflow_step', 'coverflow_step_fast') for a in ('ms', 'easing')},
                 'motion.page.ms': 120, 'motion.page.easing': 5, 'motion.swap.ms': 120, 'motion.swap.easing': 8,
                 'motion.step.ms': 200, 'motion.step.easing': 8, 'motion.step_fast.ms': 120, 'motion.step_fast.easing': 8,
+                'motion.coverflow_step.ms': 200, 'motion.coverflow_step.easing': 8, 'motion.coverflow_step_fast.ms': 120, 'motion.coverflow_step_fast.easing': 8,
                 'recall_ms': 300, 'bump_px': 6, 'vol_hold_ms': 0}
 
 
@@ -428,7 +429,7 @@ MINIMAL_FIELDS = [('name', '"Minimal"'), ('painter[PAINT_SELECTION]', 'SEL_CARD'
                   ('undeclared', 0), ('np_layout', 'NP_IPOD'),
                   *CF_TODAY.items(), ('page_row', 48), ('page_detail', 64), ('page_title_h', 48), ('page_x', 36), ('page_cap_y', 4), ('page_cap_h', 32), ('page_det_y', 36), ('page_det_h', 24), ('geom', 0),
                   *((f'motion[MOTION_{k}].hint', 0) for k in ('PAGE', 'PAYLOAD', 'PLAYING', 'DIALOG', 'COVERFLOW', 'HOME')),
-                  *((f'motion[MOTION_{k}].{a}', v) for k, ms, e in (('VOLUME', 0, 0), ('INPLACE', 0, 0), ('SWAP', 120, 8), ('STEP', 200, 8), ('STEP_FAST', 120, 8))
+                  *((f'motion[MOTION_{k}].{a}', v) for k, ms, e in (('VOLUME', 0, 0), ('INPLACE', 0, 0), ('SWAP', 120, 8), ('STEP', 200, 8), ('STEP_FAST', 120, 8), ('COVERFLOW_STEP', 200, 8), ('COVERFLOW_STEP_FAST', 120, 8))
                     for a, v in (('ms', ms), ('easing', e))),
                   ('recall_ms', 300), ('bump_px', 6), ('vol_hold_ms', 0)]
 
@@ -592,7 +593,8 @@ def with_role(monkeypatch, **cf):
 
 @pytest.mark.parametrize('field,value', [('eye', 2047), ('eye', 0), ('xs', 800), ('zs', 800), ('x1', 1024), ('reflect', 0),
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
-    ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('view_h', 209), ('view_h', 295)])
+    ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
+    ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
     with_role(monkeypatch, **{field: value})
     with pytest.raises(theme.ThemeError, match=rf'coverflow\.\w+\.{field}: {value} outside'):
@@ -608,10 +610,56 @@ def test_coverflow_cross_rejects(field, value, message):
         theme.validate({**theme.builtins()[0], field: value}, 't.xml')
 
 
+def test_coverflow_eye_turn_stays_in_range():
+    theme.validate({**theme.builtins()[0], 'cf.eye': 1646, 'cf.eye_turn': 400}, 't.xml')
+    with pytest.raises(theme.ThemeError, match='eye \\+ eye_turn = 2047 exceeds 2046'):
+        theme.validate({**theme.builtins()[0], 'cf.eye': 1647, 'cf.eye_turn': 400}, 't.xml')
+
+
+CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
+                     detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
+                     lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
+                     row_edge=160, row_width=60, row_key=72, row_reach=22)
+
+
+def test_coverflow_thumb_is_classics_alone():  # the page's numbers, all retunable; Minimal stays on ticks
+    assert set(CLASSIC_THUMB) == set(theme.CF_THUMB)
+    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
+    assert {a: c[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB
+    assert not any(theme.builtins()[0][f'cf.{a}'] for a in CLASSIC_THUMB)
+
+
+@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'])
+def test_coverflow_thumb_needs_its_divisors(field):
+    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
+    with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: thumb needs {field}'):
+        theme.validate({**c, f'cf.{field}': 0}, 't.xml')
+
+
+@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
+def test_coverflow_thumb_ranges_run_upward(lo, hi):
+    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
+    with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: {hi} {c[f"cf.{lo}"]} must pass {lo} {c[f"cf.{lo}"]}'):
+        theme.validate({**c, f'cf.{hi}': c[f'cf.{lo}']}, 't.xml')
+    theme.validate({**c, 'cf.thumb': 0, f'cf.{hi}': 0}, 't.xml')  # off, they're not read
+
+
 def test_coverflow_shelf_near_edge_clears_the_eye():
     with pytest.raises(theme.ThemeError, match="eye \\+ z1 = 69 doesn't clear 80 sin\\(tilt\\) = 69\\.3$"):
         theme.validate({**theme.builtins()[0], 'cf.eye': 39, 'cf.z1': 30}, 't.xml')
     theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30}, 't.xml')
+
+
+def test_coverflow_swing_near_edge_clears_the_eye_mid_step():
+    tight = {**theme.builtins()[0], 'cf.eye': 41, 'cf.z1': 0, 'cf.tilt': 30}  # rest clears by 1, mid-step it doesn't
+    theme.validate(tight, 't.xml')
+    with pytest.raises(theme.ThemeError, match="lift / 4 = -39\\.0$"):
+        theme.validate({**tight, 'cf.swing': 1}, 't.xml')
+    theme.validate({**tight, 'cf.swing': 1, 'cf.eye': 86}, 't.xml')
+    with pytest.raises(theme.ThemeError, match='lift / 4 = 0\\.0$'):
+        theme.validate({**tight, 'cf.swing': 1, 'cf.eye': 85, 'cf.lift': 20}, 't.xml')
+    with pytest.raises(theme.ThemeError, match='rests 9072 px out, past 2048$'):
+        theme.validate({**theme.builtins()[0], 'cf.swing': 1, 'cf.eye': 81, 'cf.z1': 0, 'cf.tilt': 90}, 't.xml')
 
 
 def test_coverflow_caption_follows_the_bar(monkeypatch):
@@ -639,6 +687,7 @@ def test_classic_light_shelf():  # its side covers' geometry from its keys; the 
     for n, (x, h) in enumerate(((121, 166), (154, 164), (187.5, None))):
         assert abs(outer(n)[0] - x) <= 1 and (h is None or abs(outer(n)[1] - h) <= 1)
     assert (t['cf.top'] + t['geoms'][t['geom_set']].bar, t['cf.horizon'], t['cf.third']) == (58, 63, 1)
+    assert (t['cf.swing'], t['cf.lift'], t['cf.eye_turn']) == (1, 20, 150)
     assert (t['cf.reflect'], t['cf.bright1'], t['cf.bright2']) == (46, 256, 256) and abs(t['cf.reflect_top'] * 100 / 256 - 35) < 1
     assert t['cf.top'] + 160 + t['cf.reflect'] <= t['cf.view_h'] <= 320 - t['geoms'][t['geom_set']].bar
     foot = t['cf.top'] + 160 * t['cf.horizon'] // 100 + outer(0)[1] * (100 - t['cf.horizon']) / 100
@@ -1195,9 +1244,10 @@ def test_classic_light_labels_hold_their_fonts():
 
 
 def test_easings_are_awtk():
-    assert len(theme.EASINGS) == 24 and theme.EASINGS[O['SLIDE_EASING']] == 'sin_inout' \
+    assert len(theme.EASINGS) == 25 and theme.EASINGS[O['SLIDE_EASING']] == 'sin_inout' \
         and theme.EASINGS[O['EASE_CUBIC_OUT']] == 'cubic_out' and theme.EASINGS[2] == 'quadratic_out' \
-        and theme.EASINGS[19] == 'back_out' and theme.EASINGS[-1] == 'bounce_inout'
+        and theme.EASINGS[19] == 'back_out' and theme.EASINGS[23] == 'bounce_inout' \
+        and theme.EASINGS[O['EASE_FOLLOW']] == 'follow'  # ours, one past AWTK's 24
 
 
 def test_motion_today(tmp_path):  # Minimal: the asset hint kept (0), today's numbers
@@ -1216,7 +1266,14 @@ def test_motion_today(tmp_path):  # Minimal: the asset hint kept (0), today's nu
 
 MOTION_CLASSIC_LIGHT = {**MOTION_TODAY, 'motion.home.ms': 270, 'motion.payload.ms': 120, 'motion.payload.easing': 5, 'motion.dialog.ms': 300,
                         'motion.dialog.easing': 2, 'motion.dialog.anim': 2, 'motion.volume.ms': 230, 'motion.volume.easing': 2,
-                        'motion.swap.ms': 170, 'motion.swap.easing': 0, 'motion.inplace.ms': 120, 'motion.inplace.easing': 5, 'recall_ms': 0, 'bump_px': 0, 'vol_hold_ms': 5300}
+                        'motion.swap.ms': 170, 'motion.swap.easing': 0, 'motion.inplace.ms': 120, 'motion.inplace.easing': 5, 'recall_ms': 0, 'bump_px': 0, 'vol_hold_ms': 5300,
+                        'motion.coverflow_step.ms': 81, 'motion.coverflow_step.easing': 24, 'motion.coverflow_step_fast.ms': 81, 'motion.coverflow_step_fast.easing': 24}
+
+
+@pytest.mark.parametrize('kind', [k for k in (*theme.MOTION_WINDOW, *theme.MOTION_WIDGET) if not k.startswith('coverflow_step')])
+def test_follow_is_cover_flow_steps_alone(kind):  # stock's easing_get has no such id, and a window's anim_hint no such name
+    with pytest.raises(theme.ThemeError, match=rf'motion\.{kind}\.easing: follow is only for coverflow_step and coverflow_step_fast'):
+        theme.validate({**theme.builtins()[1], f'motion.{kind}.easing': theme.EASINGS.index('follow')}, 't.xml')
 
 
 def test_motion_classic_light(tmp_path):

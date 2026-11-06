@@ -534,6 +534,7 @@ static inline int arc_out(int r, int y) {
 #define SLIDE_EASING 8          /* stock scroll_to easing */
 #define ANIM_EASING 0x38 /* widget_animator_init (0x665eb4) stores easing_get(type) here */
 #define EASE_CUBIC_OUT 5 /* AWTK easing_type_t: starts at 3x the mean speed, then decelerates */
+#define EASE_FOLLOW 24 /* past AWTK's 24: coverflow.c's follow, never handed to easing_get */
 #define EVT_ANIM_END 0x125
 
 /* Play/Pause hold queue menu (docs/internals.md). AWTK input_device_status lives at
@@ -680,6 +681,7 @@ static inline int arc_out(int r, int y) {
 #define CF_REFLECT 24
 #define CF_REFLECT_TOP 48
 #define CF_STRIDE 110
+#define CF_BOUNCE 5 /* an artist's last album: a step past kicks it 1/5 of a stride, then back */
 #define CF_ANGLE 60   /* a side cover's turn, degrees */
 #define CF_HORIZON 50 /* % down the cover its centre sits on the shared horizon */
 #define CF_THIRD 0    /* 1: the third out stays, gone half a step past it */

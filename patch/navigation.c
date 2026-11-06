@@ -186,8 +186,11 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
     stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *);
 extern void *coverflow_tracks(void *page);
-extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w);
-extern void coverflow_lost_touch(void);
+extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w),
+    coverflow_slide(void *w);
+extern void coverflow_lost_touch(void), coverflow_wheel_land(void);
+extern int coverflow_wheel_live(void), coverflow_wheel_poll(int usable, int gated),
+    coverflow_wheel_on(void *w);
 extern void *coverflow_album(void *page), *coverflow_album_tracks(void *r);
 extern int coverflow_turning(void);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
@@ -252,8 +255,6 @@ static int ple_key(unsigned key, int phase);
 #define STOP 11
 #define SCROLL_MARGIN 12
 #define HOME_FAST_WINDOW_MS 200
-#define CF_BOUNCE                                                                                  \
-    5 /* an artist's last album: a step past kicks it 1/CF_BOUNCE of a stride, springing back */
 #define WHEEL_RUN_MS 140
 #define WHEEL_RAMP_MS 100 /* scrub and the pixel fallback: one step for this long, then */
 #define WHEEL_MAX_STEP 8  /* one more per this much spin, up to this many */
@@ -949,6 +950,8 @@ static int cf_letter_expire(const void *info) {
     return 0;
 }
 
+extern float coverflow_follow(float k);
+extern int coverflow_follow_aim(int d, int tau, int elapsed);
 /* w's one animator, the wheel's and Coverflow's touch's, from the live offset to goal in ms with
  * easing (AWTK's easing_type_t), made on first use; 0 if it cannot be, the move committed at once.
  */
@@ -960,7 +963,8 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing) {
         a = (void *)0;
     }
     if (!a) {
-        a = ms ? widget_animator_scroll_create(w, ms, 0, easing) : (void *)0;
+        a = ms ? widget_animator_scroll_create(w, ms, 0, easing == EASE_FOLLOW ? 0 : easing)
+               : (void *)0;
         if (a && !widget_animator_on(a, EVT_ANIM_END, home_done, w)) {
             widget_animator_destroy(a);
             a = (void *)0;
@@ -979,10 +983,14 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing) {
     }
     widget_animator_pause(a);
     widget_animator_scroll_set_params(a, I(w, SLIDE_OFFSET), 0, goal, 0);
+    if (easing == EASE_FOLLOW) /* ms is its time constant; the distance gives the run's length */
+        ms = (unsigned)coverflow_follow_aim(
+            goal - I(w, SLIDE_OFFSET), (int)ms,
+            P(a, ANIM_EASING) == (void *)coverflow_follow ? I(a, ANIM_ELAPSED) : -1);
     I(a, ANIM_ELAPSED) = I(a, ANIM_START_TIME) = 0;
     I(a, ANIM_DURATION) = ms;
-    P(a, ANIM_EASING) =
-        easing_get(easing); /* scroll_create's own, so a reused one takes this run's */
+    /* scroll_create's own, so a reused one takes this run's */
+    P(a, ANIM_EASING) = easing == EASE_FOLLOW ? (void *)coverflow_follow : easing_get(easing);
     widget_animator_start(a);
     return 1;
 }
@@ -1020,7 +1028,8 @@ static void home_step(void *w, int dir, unsigned now, int jump) {
         rearm(&st.cf_letter_timer, cf_letter_expire, LETTER_MS);
     else
         stop_timer(&st.cf_letter_timer);
-    const motion_t *glide = &theme()->motion[fast ? MOTION_STEP_FAST : MOTION_STEP];
+    const motion_t *glide =
+        &theme()->motion[(coverflow_slide(w) ? MOTION_COVERFLOW_STEP : MOTION_STEP) + fast];
     if (!carousel_glide(w, goal, glide->ms, glide->easing)) {
         st.home_surface = (void *)0;
         return;
@@ -14183,6 +14192,21 @@ int ringnav_mainscheduling(void) {
     return player_mainscheduling();
 }
 
+/* Cover Flow's thumb, every UI loop pass before lyric_poll, so a wheel handed between them ends up
+ * the lyrics' or, rewritten next pass, the covers'. The gates ticks have, for raw travel: stock's
+ * lockout after Centre or Return, as ringnav keeps it; Return's stop; no frame in WHEEL_FRESH_MS.
+ * No key event comes, so a turn times the loop's idle and the screen's timeout itself. */
+static void thumb_poll(void) {
+    if (!coverflow_wheel_live()) return;
+    unsigned now = (unsigned)time_now_ms();
+    int gated = *(volatile signed char *)KEY_LOCKOUT > 8 - LOCKOUT_KEEP || wheel_mute ||
+                (int)(now - wheel_frame_at) >= WHEEL_FRESH_MS;
+    int r = coverflow_wheel_poll(usable(), gated);
+    if (r) st.last_input = now;
+    if (r & THUMB_TURNED) reset_poweroptions_timer(1, 1, 1);
+    if (r & THUMB_CLICK) buzzeer_switch(1);
+}
+
 int ringnav_sleep(void *loop) {
     stale_heal();
     quick_poll();
@@ -14197,6 +14221,7 @@ int ringnav_sleep(void *loop) {
     resume_poll();
     scrobble_auto();
     power_poll();
+    thumb_poll();
     lyric_poll();
     keep_lit_poll();
     info_poll();
@@ -15230,6 +15255,7 @@ int ringnav(void *ctx, void *event) {
         return dir && window_manager_is_animating(wm) ? hold_wheel(ctx, event, dir) : STOP;
     }
     coverflow_lost_touch();
+    if (!dir) coverflow_wheel_land(); /* Centre opens the album the caption names */
     if (books_key(top, key)) return STOP; /* the reader's pages and caption */
     void *w = surface_under(top, (void *)0, (void *)0, dir != 0);
     if (!is_home(top, w) || w != st.home_surface) st.home_surface = (void *)0;
@@ -15278,6 +15304,7 @@ int ringnav(void *ctx, void *event) {
     }
     st.touch_mode = 0;
     if (is_home(top, w)) {
+        if (coverflow_wheel_on(w)) return STOP; /* a tick queued as the wheel went raw */
         int speed = ramp(top, w, g_menu.scope, g_menu.ctx, dir, now, CF_FIRST_MS, LIST_RAMP_MS);
         home_step(w, dir, now, speed > 1);
         widget_invalidate_force(w, (void *)0);
