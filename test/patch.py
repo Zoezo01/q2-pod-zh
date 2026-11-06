@@ -9789,11 +9789,11 @@ class NoCanvas(FlipMachine):
     def hook(self,u,address,size,unused):
         if self.handlers.get(address,'')=='canvas_offline_create': self.returns(0,clobber=True); return
         return super().hook(u,address,size,unused)
-n=classic_light_new(NoCanvas); n.open(); n.tracks(0); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(1); assert n.nodes[n.panel()]['visible']; passed()
+n=classic_light_new(NoCanvas); n.open(); flip_click(n); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(20); assert n.nodes[n.panel()]['visible']; passed()
 # The turn: no timer of its own past 270 ms; the first frame the cover with no reflection, its sides as the shelf drew them;
 # half way the side covers part 12, nothing on the axis; at the end the panel's capture, swapped to the frame's byte order, parted 24.
 m=flip_open(); covers=m.covers(); assert not m.nodes[m.panel()]['visible']
-f0=m.frame(); m.advance(135); f1=m.frame(); m.advance(140); assert m.nodes[m.panel()]['visible']; f2=m.frame()
+f0=m.frame(); m.advance(135); f1=m.frame(); m.now+=135; f2=m.frame(); m.advance(5); assert m.nodes[m.panel()]['visible']
 assert px_at(f2,187,150)==px_at(f2,40,9)==px_at(f2,333,293)==0xff403020  # the panel's, red and blue swapped
 assert px_at(f0,187,150)!=0xffffffff and px_at(f0,187,32+162)==0xffffffff  # the cover, nothing under it
 assert px_at(f1,187,100)==px_at(f1,186,100)==px_at(f1,187,200)==0xffffffff  # edge on: the paper; each side parted 12
@@ -9819,6 +9819,24 @@ m.advance(50)
 assert not m.panel() and m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['sensitive']==1 and all(m.nodes[w]['visible'] for w in m.nodes[m.covers()]['children'])
 assert len(m.destroyed)==destroyed+1 and flip_held(m)==held and not [t for t in m.timers.values() if t[1] in (payload_syms['flip_tick'],)]
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000); assert m.draws[-1][3][3]==242 and m.key()==11 and m.homes==1; passed()
+# At rest the turn's buffers are gone: the shelf's frame, parted, drawn as the turn's last frame showed it outside the panel;
+# Return takes them again for the way back, which still draws, and frees them at its end.
+def rest_view(m):  # the covers' paint composed: each draw's source rect at its place, then each fill
+    m.draws=[]; m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.covers(),m.canvas,0,0),gap=0,clear=False,count=50_000_000)
+    img=[[None]*375 for _ in range(294)]
+    for _,b,src,dst,_,_ in m.draws:
+        line,data=m.get(b+8),m.get(b+0x14)
+        for y in range(dst[3]):
+            row=bytes(m.u.mem_read(data+(src[1]+y)*line+4*src[0],4*dst[2])); img[dst[1]+y][dst[0]:dst[0]+dst[2]]=struct.unpack(f'<{dst[2]}I',row)
+    for x,y,w,h,c,_ in m.bands:
+        for yy in range(y,y+h): img[yy][x:x+w]=[c]*w
+    return img
+for light in ('0','1'):
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); held=flip_held(m); flip_click(m); m.now+=270; last=m.frame(); m.advance(20)
+    assert m.nodes[m.panel()]['visible'] and flip_held(m)==held and not flip_backs(m),light
+    rest=rest_view(m); assert len(m.draws)==2 and all(rest[y][x]==px_at(last,x,y) for y in range(294) for x in range(375) if not (40<=x<335 and y>=9)),light
+    assert m.key()==11 and len(flip_backs(m))==1; m.advance(135); assert m.frame()!=last; m.advance(200)
+    assert not m.panel() and flip_held(m)==held and m.nodes[m.slide]['visible'],light; passed()
 # The page closing mid-turn frees them, and leaves nothing timed.
 m=classic_light_new(FlipMachine); m.open(); flip_click(m); made=list(m.frames); assert len(flip_backs(m))==1
 m.close(); assert sorted(m.destroyed)==sorted(made) and not flip_backs(m) and not [t for t in m.timers.values() if t[1]==payload_syms['flip_tick']]; passed()

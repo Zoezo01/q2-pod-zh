@@ -1899,7 +1899,8 @@ static void fx_ring(int c, int n, const unsigned **ring) {
  * about the vertical axis on the centre line, right edge toward the viewer, and it grows into the
  * tracks panel on its back, the side covers parting; Return runs the same frames backwards. The
  * shelf's frame, rendered once without the centre cover, holds the side covers. fl.frame and
- * fl.back live from Centre to the end of the way back. */
+ * fl.back live only while a turn runs (about 776 KB): at rest the panel stands over the shelf's
+ * frame, parted, drawn as it is. */
 #define FLIP_MS 270
 #define FLIP_TICK_MS 16
 #define FLIP_H 294     /* the frame's rows, the client area's */
@@ -2043,6 +2044,19 @@ static int flip_paint(void *w, void *canvas) {
         panel_ink();
         fl.drawn = -1;
     }
+    if (!fl.frame) { /* at rest: the turn's last frame where the panel doesn't cover it */
+        unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+        int h = cfs.view_h, side = CF_VIEW_W - CF_CX - FLIP_PART;
+        int ls[4] = { FLIP_PART, 0, CF_CX - FLIP_PART, h }, ld[4] = { 0, 0, CF_CX - FLIP_PART, h };
+        int rs[4] = { CF_CX, 0, side, h }, rd[4] = { CF_CX + FLIP_PART, 0, side, h };
+        canvas_draw_image(canvas, fx.frame, ls, ld);
+        canvas_draw_image(canvas, fx.frame, rs, rd);
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, CF_CX - FLIP_PART, 0, 2 * FLIP_PART, h);
+        canvas_fill_rect(canvas, 0, h, CF_VIEW_W, FLIP_H - h);
+        stock_canvas_set_fill_color(canvas, fill);
+        return 1;
+    }
     int ms = (int)((unsigned)time_now_ms() - fl.t0);
     int e = !fl.dir ? CF_ONE : coverflow_flip_eased(fl.dir > 0 ? ms : FLIP_MS - ms);
     if (e != fl.drawn) {
@@ -2104,7 +2118,7 @@ static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
  * position or a texture has changed. */
 void coverflow_paint(void *w, void *canvas) {
     int c, frac, n;
-    if (fl.frame && w && flip_paint(w, canvas)) return;
+    if (fl.panel && w && flip_paint(w, canvas)) return;
     if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
         !visual(w, n = (int)widget_count_children(w), &c, &frac))
         return;
@@ -2535,7 +2549,7 @@ static void th_turn(void *s, int travel, unsigned now, int n) {
 /* usable: navigation.c's; gated: travel is to be dropped (its gates). Answers THUMB_*. */
 int coverflow_wheel_poll(int usable, int gated) {
     void *s = cf.slide, *wm = window_manager();
-    int shown = usable && cfs.thumb && fx.frame && !fl.frame && covers_live() &&
+    int shown = usable && cfs.thumb && fx.frame && !fl.panel && covers_live() &&
                 widget_count_children(s) && window_manager_get_top_window(wm) == cf.page &&
                 !window_manager_is_animating(wm);
     int raw = shown && !window_manager_get_pointer_pressed(wm);
@@ -2905,11 +2919,25 @@ static int flip_tick(const void *unused) {
     return 0;
 }
 
-/* The buffers go; the widgets are the page's, or flip_done's. */
-static void flip_free(void) {
-    stop_timer(&fl.timer);
+/* The turn's buffers go, as each turn ends. */
+static void flip_drop(void) {
     if (fl.frame) bitmap_destroy(fl.frame);
     free(fl.back);
+    fl.frame = 0, fl.back = 0;
+}
+
+/* A turn's buffers, both or neither. */
+static int flip_alloc(void) {
+    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
+    fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
+    if (!fl.back) flip_drop();
+    return fl.back != 0;
+}
+
+/* Everything goes; the widgets are the page's, or flip_done's. */
+static void flip_free(void) {
+    stop_timer(&fl.timer);
+    flip_drop();
     memset(&fl, 0, sizeof fl);
 }
 
@@ -2924,14 +2952,8 @@ static void flip_shelf(int on) {
  * Nothing starts until the panel is built and painted: a slow album waits at the cover. Stock's
  * hit test skips insensitive widgets, and the wheel a hidden slide_menu. */
 static int flip_open(void *r, int n) {
-    if (fl.frame) return 1; /* Centre before flip_close's timer: the panel and buffers stand */
-    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT || !cf.covers || !fx.frame) return 0;
-    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
-    fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
-    if (!fl.back) {
-        flip_free();
-        return 0;
-    }
+    if (fl.panel) return 1; /* Centre before flip_close's timer: the panel stands */
+    if (!classic_pages() || !cf.covers || !fx.frame || !flip_alloc()) return 0;
     void *f = widget_factory();
     fl.panel =
         widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W + 1, BACK_H);
@@ -2966,6 +2988,10 @@ static int flip_open(void *r, int n) {
 /* Return on the panel, once a click's handling is over: its selection and scroll as they stand. */
 static int flip_close(const void *unused) {
     cf.timer = 0;
+    if (!flip_alloc()) { /* no room to turn back: straight to the covers */
+        flip_done();
+        return 0;
+    }
     flip_capture();
     flip_start(-1);
     return 0;
@@ -2975,6 +3001,7 @@ static void flip_done(void) {
     int to_panel = fl.dir > 0;
     fl.dir = 0;
     if (to_panel) {
+        flip_drop();
         widget_set_visible(fl.panel, 1, 0);
         widget_invalidate_force(cf.page, 0);
         return;
@@ -3122,7 +3149,7 @@ static void *artist_under(void) {
  * covers or the message -> Home, or back out of a scoped page (one album's tracks too). */
 static int keyup(void *ctx, void *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
-    if (fl.frame) { /* the panel's way back; during a turn, nothing */
+    if (fl.panel) { /* the panel's way back; during a turn, nothing */
         if (!fl.dir) rearm(&cf.timer, flip_close, 0);
         return 11; /* RET_STOP */
     }
