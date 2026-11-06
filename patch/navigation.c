@@ -363,6 +363,7 @@ typedef struct {
     void *ch_page;
     chapters *ch;
     unsigned ch_timer, ch_track, ch_key;
+    int ch_cue, ch_end;        /* the Chapters track's CUE start and end, file seconds */
     void *sc_page, *sc_row[3]; /* Streaming's Configuration page, its cache rows and Erase's */
     int sc_armed;              /* Erase Spotify Data pressed once: the next press erases */
 /* Streaming's services (svc): five fixed, and at most APPS_MAX card apps. */
@@ -7912,8 +7913,9 @@ static int most_played(void *ctx, void *event) {
 }
 
 /* Chapters are read only while this snapshot is open: an M4B's, or a spoken file's in any format
- * ffmpeg reads them from, such as an MP3 book's ID3 chapters. A spoken CUE track's times start at
- * its CUE chapter, not its file's, so only an M4B of one is offered, as before. */
+ * ffmpeg reads them from, such as an MP3 book's ID3 chapters. A spoken CUE track other than an
+ * M4B's has none, as before: its sheet lists its chapters. An M4B CUE track's rows are moved to
+ * its own clock in chapter_poll. */
 static int chapter_file(void *r) {
     const char *path = P(r, REC_PATH), *ext = path ? strrchr(path, '.') : 0;
     if (ext && !strcasecmp(ext, ".m4b")) return 1;
@@ -7948,7 +7950,23 @@ static int chapter_poll(const void *unused) {
         st.ch = 0;
         return 0;
     }
-    int n = st.ch->failed ? 0 : st.ch->count;
+    /* ffmpeg's times are the file's; the player's clock and seek start at a CUE track's start. Rows
+     * move to the track's clock: the chapter playing at its start shows at 0:00, earlier ones go,
+     * and so do those from its end on. Untitled rows keep the file's numbering. */
+    int n = 0;
+    for (int i = 0; !st.ch->failed && i < st.ch->count; ++i) {
+        chapter *c = &st.ch->rows[i];
+        int sec = c->sec - st.ch_cue;
+        if (st.ch_end && c->sec >= st.ch_end) break;
+        if (!*c->title) tk_snprintf(c->title, sizeof c->title, "Chapter %d", i + 1);
+        if (st.ch_cue && sec <= 0) {
+            n = 0;
+            sec = 0;
+        }
+        if (n != i) st.ch->rows[n] = *c;
+        st.ch->rows[n++].sec = sec;
+    }
+    st.ch->count = n;
     void *view = page_list(st.ch_page, st.ch_page, 0,
                            st.ch->failed ? "Could not read chapters"
                            : n           ? "Chapters"
@@ -7957,11 +7975,10 @@ static int chapter_poll(const void *unused) {
     int sec = 0, total, current = 0;
     player_playtime_and_length(&sec, &total);
     for (int i = 0; i < n; ++i) {
-        char name[32], at[32];
+        char at[32];
         chapter *c = &st.ch->rows[i];
-        tk_snprintf(name, sizeof name, "Chapter %d", i + 1);
         tk_snprintf(at, sizeof at, "%d:%02d:%02d", c->sec / 3600, c->sec / 60 % 60, c->sec % 60);
-        page_row_detail(view, i, *c->title ? c->title : name, at, chapter_pick);
+        page_row_detail(view, i, c->title, at, chapter_pick);
         if (c->sec <= sec) current = i;
     }
     if (n) ringnav_select(view, current, n);
@@ -7974,6 +7991,8 @@ static void chapters_open(void *r) {
         return;
     }
     st.ch_track = np_track();
+    st.ch_cue = I(r, REC_CUE_START);
+    st.ch_end = I(r, REC_CUE_END);
     st.ch = chapters_start(P(r, REC_PATH), time_now_ms());
     if (!st.ch) {
         toast("Could not read chapters");
