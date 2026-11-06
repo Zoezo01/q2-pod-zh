@@ -7,6 +7,7 @@ import random
 import pytest
 
 import host
+from conftest import block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -38,18 +39,6 @@ class Sh(C.Structure):
 
 class Nu(C.Structure):
     _fields_ = [('thread', C.c_ulong), ('state', C.c_int), ('cancel', C.c_int), ('percent', C.c_int), ('label', C.c_void_p)]
-
-
-def libc(fw, stub, real):
-    """The stub answered by libc's real function, its registers passed straight through."""
-    C.c_void_p.in_dll(fw.lib, f'fw_mock_{stub}').value = C.cast(getattr(fw.lib, real), C.c_void_p).value
-
-
-def block(fw, data=b'', size=None):
-    """A heap block of data and a NUL, or of size bytes exactly, so ASan sees a byte past it."""
-    p = fw.fn('calloc', C.c_void_p, C.c_size_t, C.c_size_t)(1, len(data) + 1 if size is None else size or 1)
-    C.memmove(p, data, len(data))
-    return p
 
 
 def hostile(seed, samples, count=2000, alphabet=b'"\\:/ \n{}[],\x00.'):
@@ -463,7 +452,6 @@ class Card:
     def __init__(self, fw, files=None, dirs=()):
         self.files, self.dirs, self.log, self.at, self.names = dict(files or {}), set(dirs), [], {}, {}
         self.written, self.system = {}, lambda cmd: 0
-        libc(fw, 'tk_snprintf', 'snprintf')
         def fopen(path, mode, *_):
             name, how = C.string_at(path), C.string_at(mode)
             if b'r' in how and name not in self.files:
@@ -784,7 +772,6 @@ def fetch(fw, url=b'https://x', tag_size=64, file=None):
 
 def test_a_header_fetch_sends_no_body_and_keeps_the_tag(fw):
     net = Net(fw, {b'https': (0, 302, b'https://g/releases/tag/1.2.3')})
-    libc(fw, 'tk_snprintf', 'snprintf')
     assert fetch(fw) == (0, b'1.2.3', 302)
     assert net.opts[44] == 1 and 52 not in net.opts  # NOBODY, no FOLLOWLOCATION
 
@@ -801,7 +788,6 @@ def test_no_curl_handle_is_an_error(fw):
 
 def test_a_redirect_with_no_location_clears_the_tag(fw):
     Net(fw, {b'https': (0, 302, None)})
-    libc(fw, 'tk_snprintf', 'snprintf')
     assert fetch(fw)[:2] == (0, b'')
 
 

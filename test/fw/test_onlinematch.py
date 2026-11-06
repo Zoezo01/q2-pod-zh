@@ -8,6 +8,8 @@ import urllib.parse
 
 import pytest
 
+from conftest import block
+
 LRC_CANCELLED, LRC_CARD, LRC_OFFLINE, LRC_BUSY, LRC_NONE, LRC_SAVED = -4, -3, -2, -1, 0, 1
 LJ_DONE, LJ_OFFLINE, LJ_CARD, LJ_CANCELLED = range(4)
 LRCLIB_MAX, COVER_MAX = 512 << 10, 256 << 10
@@ -30,13 +32,6 @@ class Body(C.Structure):
 
 class Al(C.Structure):
     _fields_ = [('job', Job), ('tracks', C.c_void_p), ('thread', C.c_ulong), ('running', C.c_int), ('label', C.c_void_p)]
-
-
-def block(fw, data=b'', size=None):
-    """A heap block of data and a NUL, or of size bytes exactly, so ASan sees a byte past it."""
-    p = fw.fn('calloc', C.c_void_p, C.c_size_t, C.c_size_t)(1, len(data) + 1 if size is None else size or 1)
-    C.memmove(p, data, len(data))
-    return p
 
 
 def joined(fw, parts, n=256, lucene=0):

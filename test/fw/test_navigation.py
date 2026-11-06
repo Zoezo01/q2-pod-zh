@@ -9,7 +9,7 @@ import pytest
 
 import host
 from conftest import text
-from test_playback import Deques, FNV_PRIME, Files, O, claim, fnv1a, in_fork, mcl, printf  # noqa: F401
+from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
 PAPER, INK = O['LIGHT_PAPER'], O['LIGHT_INK']
@@ -57,7 +57,6 @@ class Config:
 
 def strings(fw):
     """Stock's AWTK string helpers, which the C leans on."""
-    fw.mock('tk_strcmp', lambda a, b, *_: C.string_at(a) != C.string_at(b))
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
 
 
@@ -554,7 +553,6 @@ def test_no_card_is_the_card(fw):
     (b'Music', 0o100644, 0, 0), (b'Music', 0o040755, -1, 0),
 ])
 def test_folder_root_opens_only_a_top_level_folder(fw, name, mode, stat, opens):
-    printf(fw)
     Config(fw, FOLDERROOT=name)
     def xstat(version, path, info, *_):
         C.c_uint.from_address(info + 20).value = mode
@@ -566,7 +564,6 @@ def test_folder_root_opens_only_a_top_level_folder(fw, name, mode, stat, opens):
 
 
 def test_folder_root_any_saved_name(fw):
-    printf(fw)
     config = Config(fw)
     fw.mock('fw___xstat', lambda version, path, info, *_: C.c_uint.from_address(info + 20).__setattr__('value', 0o040755))
     root_dir = fw.fn('navigation__root_dir', C.c_int, C.c_void_p)
@@ -580,7 +577,6 @@ def test_folder_root_any_saved_name(fw):
 
 def test_folder_root_of_the_longest_name_fits(fw):
     name = b'n' * 255
-    printf(fw)
     Config(fw, FOLDERROOT=name)
     path = C.create_string_buffer(265)
     fw.fn('navigation__root_dir', C.c_int, C.c_void_p)(path)
@@ -987,14 +983,12 @@ def test_ple_has_any_text(fw, heap):
     (None, 1, b''),
 ])
 def test_song_label(fw, heap, name, tidal, label):
-    printf(fw)
     out = heap.string(b'', 64)
     fw.fn('navigation__song_label', None, C.c_char_p, C.c_int, C.c_void_p, C.c_uint)(name, tidal, out, 64)
     assert C.string_at(out) == label
 
 
 def test_song_label_any_name_in_any_room(fw, heap):
-    printf(fw)
     label = fw.fn('navigation__song_label', None, C.c_void_p, C.c_int, C.c_void_p, C.c_uint)
     rng = random.Random(0x50)
     for data in hostile(rng, [b'123-Q Song.flac', b'01 - Title [987].flac', b'[', b' [', b'.', b' ]'], 2500):
@@ -1171,7 +1165,6 @@ def test_music_info_of_no_path(fw, heap):
 
 
 def id3_path(fw, heap, tags, cue, path=b'/a/b.flac'):
-    printf(fw)
     id3 = heap.string(b'', 0xa84)
     for offset, value in tags.items():
         C.memmove(id3 + offset, value + b'\0', len(value) + 1)
@@ -1301,7 +1294,6 @@ class Tree:
     def __init__(self, fw, folders):
         self.deques, self.folders, self.keep = Deques(fw), folders, []
         fw.mock('toolsLoadDirectory', lambda path, *_: self.deques[directory(fw)].__setitem__(slice(None), self.rows(C.string_at(path))))
-        printf(fw)
 
     def rows(self, path):
         return [record(self.keep, b'%s/%s' % (path, name), kind=8) if kind == 8 else record(self.keep, name=name, kind=kind)
@@ -1458,7 +1450,6 @@ def test_wifi_signal_any_bytes(fw):
 class Clock:
     def __init__(self, fw, clock):
         self.labels, self.timers, self.time = [], [], (0, 0, 12)
-        printf(fw)
         Config(fw)
         def local(when, out, *_):
             for i, v in enumerate(self.time):
@@ -1579,7 +1570,6 @@ def test_no_streamhide_key_hides_nothing(fw):
 def test_root_click_saves_the_next_folder(fw):
     Card(fw, FOLDERS)
     Config(fw, FOLDERROOT=b'art')
-    printf(fw)
     seen = []
     fw.mock('toolsWriteConfig', lambda path, section, key, value, *_: seen.append((C.string_at(key), C.string_at(value))) and 0)
     fw.fn('navigation__root_click', C.c_int, C.c_void_p, C.c_void_p)(None, None)
@@ -1744,7 +1734,6 @@ def test_a_full_ratings_table_refuses(fw):
 # Era's Shuffle.
 def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
     keep, deques = [], Deques(fw)
-    printf(fw)
     state = fw.var('navigation__era', Era)
     state.v, state.m, state.cap = C.cast(heap.calloc(2, C.sizeof(EraRow)), C.POINTER(EraRow)), 1, 1
     state.v[0].year = 1975
@@ -1896,7 +1885,6 @@ def test_era_key_cmp_is_unsigned(fw, a, b, order):
 
 @pytest.mark.parametrize('decade, name', [(1960, b'60s'), (1990, b'90s'), (1900, b'00s'), (2000, b'2000s'), (2010, b'2010s')])
 def test_era_name(fw, decade, name):
-    printf(fw)
     out = C.create_string_buffer(16)
     assert fw.fn('navigation__era_name', C.c_char_p, C.c_void_p, C.c_int)(out, decade) == name
 
@@ -1904,7 +1892,6 @@ def test_era_name(fw, decade, name):
 # Playlists and SQL rows.
 def playlist_delete(fw, sql_fail=(), confirm=10, row_=0, ids=(3,)):
     keep, deques = [], Deques(fw)
-    printf(fw)
     sql = Sql(fw, fail=sql_fail)
     seen = []
     def navigate(name, *_):
@@ -2006,7 +1993,6 @@ class Sql:
 
 
 def create(fw, name, ids=(), **kwargs):
-    printf(fw)
     sql = Sql(fw, ids, **kwargs)
     return fw.fn('ringnav_playlist_create', C.c_int, C.c_void_p, C.c_char_p)(0x10, name), sql
 
@@ -2072,7 +2058,6 @@ def test_ple_mutate_refuses_before_the_database(fw, dest, a, b):
 # The library's SQL.
 class Query:
     def __init__(self, fw):
-        printf(fw)
         self.seen = []
         for name in ('stock_dbquery_trampoline', 'stock_sorted_query_trampoline'):
             fw.mock(name, lambda db, sql, row_, sort, *_: self.seen.append((C.string_at(sql), sort)) and 0)
@@ -2653,7 +2638,6 @@ def test_artist_songs_of_the_unknown_artist(fw):
 
 
 def test_a_badge_is_stocks_none(fw):
-    printf(fw)
     out = C.create_string_buffer(16)
     assert fw.fn('ringnav_badge', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'/a.flac', out, 16) == 0 and out.value == b'null'
 

@@ -5,6 +5,8 @@ import struct
 
 import pytest
 
+from conftest import block
+
 MAX = 512
 BYTES = 256 * 1024
 EOVERFLOW = 79
@@ -17,13 +19,6 @@ class Chapter(C.Structure):
 class Chapters(C.Structure):
     _fields_ = [('pid', C.c_int), ('fd', C.c_int), ('used', C.c_int), ('done', C.c_int), ('failed', C.c_int),
                 ('count', C.c_int), ('at', C.c_ulonglong), ('rows', Chapter * MAX), ('raw', C.c_char * (BYTES + 1))]
-
-
-def block(fw, data):
-    """data in a heap block of its exact size and a NUL, so ASan sees a byte past it."""
-    p = fw.fn('calloc', C.c_void_p, C.c_size_t, C.c_size_t)(1, len(data) + 1)
-    C.memmove(p, data, len(data))
-    return p
 
 
 def parsed(fw, raw):

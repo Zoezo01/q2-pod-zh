@@ -4,7 +4,6 @@ import ctypes as C
 import io
 import math
 import random
-import re
 import struct
 import zipfile
 
@@ -35,22 +34,6 @@ class Exact:
 
     def __exit__(self, *_):
         libc.free(self.p)
-
-
-def formatter(fw):
-    """tk_snprintf and tk_strcmp, stock calls, as far as their six registers reach."""
-    def fmt(buf, size, f, *rest):
-        args = iter(rest)
-
-        def one(m):
-            v, kind = next(args), m.group(0)[-1]
-            return C.string_at(v).decode('latin1') if kind == 's' else m.group(0) % v
-        s = re.sub(r'%[-0-9.]*[sdux]', one, C.string_at(f).decode()).replace('%%', '%').encode('latin1')
-        if size:
-            C.memmove(buf, s[:size - 1] + b'\0', min(len(s), size - 1) + 1)
-        return len(s)
-    fw.mock('tk_snprintf', fmt)
-    fw.mock('tk_strcmp', lambda a, b, *_: C.string_at(a) != C.string_at(b))
 
 
 def config(fw, values=None):
@@ -907,7 +890,6 @@ def listing(fw, tree):
 
 
 def scanned(fw, root=b'/Books', depth=1):
-    formatter(fw)
     b = bk(fw)
     paths = exact(C.c_void_p, 500)
     b.path, b.n = C.addressof(paths), 0
@@ -938,7 +920,6 @@ def test_scan_of_no_folder_finds_nothing(fw):
 
 
 def test_a_title_is_the_file_name_without_its_extension(fw):
-    formatter(fw)
     title = fw.fn('books__title', C.c_char_p, C.c_char_p, C.c_void_p)
     out = C.create_string_buffer(256)
     assert title(b'/a/My.Book.txt', out) == b'My.Book'
@@ -947,7 +928,6 @@ def test_a_title_is_the_file_name_without_its_extension(fw):
 
 
 def reader(fw, data=b'x' * 40000, pos=20000):
-    formatter(fw)
     b, card, keep = book_open(fw, data, marks=((5, pos),))
     b.page, b.screen, b.end, b.prev = 0x7000, 1, pos + 500, pos - 500
     return b, card, keep, fw.fn('books_key', C.c_int, C.c_void_p, C.c_uint)
@@ -992,7 +972,6 @@ def test_centre_toggles_the_caption_even_while_preparing(fw):
 
 @pytest.mark.parametrize('pos, size, pct', ((0, 1000, 0), (500, 1000, 45), (999, 1000, 90), (2**31, 2**32 - 1, 49)))
 def test_the_caption_says_how_far_in(fw, pos, size, pct):
-    formatter(fw)
     b = bk(fw)
     b.info, b.pos, b.size, b.current = 0x7100, pos, size, 0
     keep = (C.c_char_p * 1)(b'/a/Book.txt')
@@ -1005,7 +984,6 @@ def test_the_caption_says_how_far_in(fw, pos, size, pct):
 
 
 def test_a_finished_conversion_opens_the_cache_or_says_it_can_t(fw):
-    formatter(fw)
     card = Card(fw, {'/x.tmp': b'text'})
     b = bk(fw)
     buf = exact(C.c_char, 32 << 10)
@@ -1046,7 +1024,6 @@ def video(fw):
 
 
 def test_books_video_only_plays_a_video_file(fw):
-    formatter(fw)
     Card(fw)
     play = fw.fn('books_video', C.c_int, C.c_char_p)
     fw.mock('fw_fork', lambda *_: 77)
@@ -1057,7 +1034,6 @@ def test_books_video_only_plays_a_video_file(fw):
 
 
 def test_a_video_starts_from_its_mark(fw):
-    formatter(fw)
     g = fw.fn('fnv', C.c_uint, C.c_uint, C.c_char_p)
     key = g(FNV, b'/m/a.mp4')
     card = Card(fw, {MARKS_FILE: struct.pack('<II', key, 321) + bytes(504)})
@@ -1067,7 +1043,6 @@ def test_a_video_starts_from_its_mark(fw):
 
 
 def test_a_second_video_waits_for_the_first(fw):
-    formatter(fw)
     Card(fw)
     fw.mock('fw_fork', lambda *_: 77)
     video(fw).pid = 5
@@ -1076,7 +1051,6 @@ def test_a_second_video_waits_for_the_first(fw):
 
 
 def stopped(fw, place):
-    formatter(fw)
     card = Card(fw, {'/tmp/q2video.place': place} if place is not None else {})
     fw.mock('fw_waitpid', lambda *_: 1234)
     v = video(fw)
@@ -1097,7 +1071,6 @@ def test_a_video_never_resumed_takes_no_slot(fw):
 
 
 def test_a_resumed_video_stopped_near_its_start_forgets_its_place(fw):
-    formatter(fw)
     card = Card(fw, {'/tmp/q2video.place': struct.pack('<I', 0)})
     fw.mock('fw_waitpid', lambda *_: 1234)
     v = video(fw)
@@ -1107,7 +1080,6 @@ def test_a_resumed_video_stopped_near_its_start_forgets_its_place(fw):
 
 
 def test_a_paused_video_quits_after_30_s(fw):
-    formatter(fw)
     Card(fw)
     v = video(fw)
     v.pid, v.paused = 1, 1
@@ -1126,7 +1098,6 @@ def test_a_paused_video_quits_after_30_s(fw):
 
 
 def test_a_key_restarts_the_pause_s_30_s(fw):
-    formatter(fw)
     v = video(fw)
     v.paused_at = 5
     fw.fn('video_key', None, C.c_uint)(0)
@@ -1138,7 +1109,6 @@ def test_a_key_restarts_the_pause_s_30_s(fw):
     (PREV, 0, 0, 100, 0), (PREV, 0, 60, 40, 59), (NEXT, 1, 50, 100, 50), (PREV, 1, 50, 100, 50)))
 def test_the_wheel_is_the_volume_up_to_its_limits_unless_seeking(fw, key, seek, volume, maxvol, want):
     written = config(fw)
-    formatter(fw)
     video(fw).seek = seek
     fw.var('g_volume', C.c_ubyte).value = volume
     fw.var('g_maxvolume', C.c_ubyte).value = maxvol
@@ -1149,14 +1119,12 @@ def test_the_wheel_is_the_volume_up_to_its_limits_unless_seeking(fw, key, seek, 
 
 @pytest.mark.parametrize('stored, want', ((0, 1), (1, 0)))
 def test_centre_toggles_seeking(fw, stored, want):
-    formatter(fw)
     video(fw).seek = stored
     fw.fn('video_key', None, C.c_uint)(CENTER)
     assert video(fw).seek == want
 
 
 def test_play_flips_the_pause_at_once(fw):
-    formatter(fw)
     fw.mock('time_now_ms', lambda *_: 5000)
     fw.fn('video_key', None, C.c_uint)(PLAY)
     assert video(fw).paused == 1 and video(fw).control_at == 5000
@@ -1205,7 +1173,6 @@ def test_resume_minutes_are_read_once(fw):
 
 def page(fw, ctx, values=None):
     written = config(fw, values)
-    formatter(fw)
     fw.mock('window_manager', lambda *_: 0x9000)
     fw.fn('crossfade__settings', None)()
     x = xf(fw)

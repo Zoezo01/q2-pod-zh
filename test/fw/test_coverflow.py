@@ -1309,21 +1309,6 @@ class Card:
         return 0
 
 
-def formatter(fw):
-    """tk_snprintf, a stock call: what the firmware passes it, as far as its six registers reach."""
-    def fmt(buf, size, f, *rest):
-        args = iter(rest)
-
-        def one(m):
-            v, kind = next(args), m.group(0)[-1]
-            return C.string_at(v).decode('latin1') if kind == 's' else m.group(0) % v
-        s = re.sub(r'%[-0-9.]*[sdux]', one, C.string_at(f).decode()).encode('latin1')[:size - 1]
-        C.memmove(buf, s + b'\0', len(s) + 1)
-        return len(s)
-    fw.mock('tk_snprintf', fmt)
-    fw.mock('tk_strcmp', lambda a, b, *_: C.string_at(a) != C.string_at(b))
-
-
 def test_file_size(fw):
     g = api(fw)
     Card(fw, {'/a': b'12345', '/e': b''})
@@ -1376,7 +1361,6 @@ def statuses(fw, status):
 @pytest.mark.parametrize('status, exited', ((0, 1), (1 << 8, 1), (127 << 8, 0), (9, 0), (0x80 | 9, 0)))
 def test_ff_run_a_run_that_reached_ffmpeg_s_own_exit(fw, status, exited):
     g = api(fw)
-    formatter(fw)
     Card(fw, {'/d.ff': b'jpg'})
     statuses(fw, status)
     got = C.c_int(-1)
@@ -1387,7 +1371,6 @@ def test_ff_run_a_run_that_reached_ffmpeg_s_own_exit(fw, status, exited):
 
 def test_ff_run_success_renames_the_picture_into_place(fw):
     g = api(fw)
-    formatter(fw)
     card = Card(fw, {'/d.ff': b'jpg'})
     statuses(fw, 0)
     assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 1 and card.files == {'/d': b'jpg'}
@@ -1395,7 +1378,6 @@ def test_ff_run_success_renames_the_picture_into_place(fw):
 
 def test_ff_run_an_empty_or_failed_output_leaves_the_destination_alone(fw):
     g = api(fw)
-    formatter(fw)
     card = Card(fw, {'/d.ff': b'', '/d': b'old'})
     statuses(fw, 0)
     assert g.ff_run(b'/s', b'/d', 160, 160, r(C.c_int())) == 0 and card.files == {'/d': b'old'}
@@ -1406,7 +1388,6 @@ def test_ff_run_an_empty_or_failed_output_leaves_the_destination_alone(fw):
 
 def test_ff_run_a_refused_fork_counts_as_killed(fw):
     g = api(fw)
-    formatter(fw)
     Card(fw)
     fw.mock('fw_fork', lambda *_: -1)
     got = C.c_int(-1)
@@ -1416,7 +1397,6 @@ def test_ff_run_a_refused_fork_counts_as_killed(fw):
 
 def test_ff_run_a_signal_mid_wait_waits_again(fw):
     g = api(fw)
-    formatter(fw)
     Card(fw, {'/d.ff': b'jpg'})
     fw.mock('fw_fork', lambda *_: 1234)
     errno = C.c_int(4)
@@ -1443,7 +1423,6 @@ def job(track, key=0xabc, shared=0):
 
 def builder(fw, card, cover=False, thumb=False, ff=None):
     """The art calls: stock's cover read, stock's thumbnailer, and ffmpeg's exit status (None: a refused fork)."""
-    formatter(fw)
     fw.mock('toolsGetAlbumCover', lambda t, dst, *_: (card.files.update({C.string_at(dst).decode(): b'art'}), 1)[1] if cover else 0)
     fw.mock('toolsThumbSpecCover', lambda src, dst, *_: (card.files.update({C.string_at(dst).decode(): b'art'}), 1)[1] if thumb else 0)
     if ff is None:
@@ -1520,7 +1499,6 @@ def test_build_art_holds_both_stock_locks_round_stock_s_call(fw):
 
 
 def ogg_rig(fw, cover=0, status=1 << 8, ogg=b'/m/a.ogg'):
-    formatter(fw)
     card = Card(fw, {ogg.decode(): b''})
     fw.mock('toolsGetAlbumCover', lambda *_: cover)
     statuses(fw, status)
@@ -1626,7 +1604,6 @@ class Listing:
 
 
 def folder_rig(fw, names, art_for=()):
-    formatter(fw)
     Card(fw)
     tried = []
 
@@ -1691,7 +1668,6 @@ def test_folder_cover_what_it_can_t_list_is_stock_s_song_alone(fw, track):
 
 
 def player_rig(fw, track=b'/m/a.mp3', id3_path=b'/m/a.mp3', artist=b'Art', album=b'Alb'):
-    formatter(fw)
     buf = fw.var('fw_ctx_g_play_id3_info', C.c_char * 2716)
     C.memmove(C.addressof(buf), id3_path + b'\0', len(id3_path) + 1)
     C.memmove(C.addressof(buf) + 0x504, artist + b'\0', len(artist) + 1)
@@ -1735,7 +1711,6 @@ def test_player_cover_stock_s_external_first_then_ffmpeg_unless_marked_empty(fw)
 
 def test_now_cover_needs_the_player_to_have_parsed_this_track(fw):
     g = api(fw)
-    formatter(fw)
     url = fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024)
     C.memmove(C.addressof(url), b'/m/a.mp3\0', 9)
     fw.var('g_playcover_type', C.c_ubyte).value = 2
@@ -1749,7 +1724,6 @@ def test_now_cover_needs_the_player_to_have_parsed_this_track(fw):
 @pytest.mark.parametrize('kind, name', ((1, b'coverpic.jpg'), (2, b'externpic.jpg'), (4, b'externpic.jpg'), (3, None), (0, None), (5, None), (9, None)))
 def test_now_cover_each_type_s_file(fw, kind, name):
     g = api(fw)
-    formatter(fw)
     url = fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024)
     C.memmove(C.addressof(url), b'/m/a.mp3\0', 9)
     fw.var('g_playcover_type', C.c_ubyte).value = kind

@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from conftest import text
+from conftest import block, text
 
 REPLY_MAX = 64 << 10
 RADIO_MAX = 200
@@ -60,18 +60,6 @@ class Fx(C.Structure):
 
 class Dirent(C.Structure):  # test/fw/host.py's
     _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
-
-
-def libc(fw, stub, real):
-    """The stub answered by libc's real function, its registers passed straight through."""
-    C.c_void_p.in_dll(fw.lib, f'fw_mock_{stub}').value = C.cast(getattr(fw.lib, real), C.c_void_p).value
-
-
-def block(fw, data=b'', size=None):
-    """A heap block of data and a NUL, or of size bytes exactly, so ASan sees a byte past it."""
-    p = fw.fn('calloc', C.c_void_p, C.c_size_t, C.c_size_t)(1, len(data) + 1 if size is None else size or 1)
-    C.memmove(p, data, len(data))
-    return p
 
 
 def hostile(seed, samples, count=2000, alphabet=b'%\t\n0aF'):
@@ -207,7 +195,6 @@ def test_hostile_replies(fw):
 
 
 def field(fw, raw, key, n=64):
-    libc(fw, 'tk_snprintf', 'snprintf')
     out = block(fw, size=n)
     fw.fn('field', None, C.c_void_p, C.c_char_p, C.c_void_p, C.c_uint)(block(fw, raw), key, out, n)
     return C.string_at(out)
@@ -242,7 +229,6 @@ def test_a_value_is_cut_to_its_buffer_at_a_whole_character(fw):
 
 
 def number(fw, raw, key):
-    libc(fw, 'tk_snprintf', 'snprintf')
     return fw.fn('number', C.c_ulonglong, C.c_char_p, C.c_char_p)(raw, key)
 
 
@@ -304,7 +290,6 @@ def test_a_state_file_stops_at_its_buffer(fw):
 
 class Spot:
     def __init__(self, fw):
-        libc(fw, 'tk_snprintf', 'snprintf')
         self.fw, self.sp = fw, fw.var('spotify__sp', Sp)
 
     def parse(self, raw):
@@ -484,7 +469,6 @@ def test_media_keys_are_spotifys_only_while_its_active(fw):
 
 def yielded(fw, states, playing=1):
     """spot_yield with the state file saying each of states in turn."""
-    libc(fw, 'tk_snprintf', 'snprintf')
     sp = fw.var('spotify__sp', Sp)
     sp.playing, sp.active = playing, 1
     files = Files(fw, {b'/tmp/q2-librespot.state': b''})
@@ -568,8 +552,6 @@ class Browser:
     """Spotify's browser driven as the UI drives it, on stubs. The worker's pthread never runs: answer()
     puts its reply where the pthread would and the page's tick takes it; a click runs through go()."""
     def __init__(self, fw):
-        libc(fw, 'tk_snprintf', 'snprintf')
-        fw.mock('tk_strcmp', lambda a, b, *_: (a and C.string_at(a)) != (b and C.string_at(b)))
         self.fw, self.now, self.sel, self.timers, self.drawn, self.toasts = fw, 1000, 0, 0, 0, []
         self.page, self.view = block(fw, size=4096), block(fw, size=4096)  # a widget's bytes, all zero
         self.sp, self.br, self.wk = fw.var('spotify__sp', Sp), fw.var('spotify__br', Br), fw.var('spotify__wk', Wk)
@@ -1102,7 +1084,6 @@ def directory(fw, names):
 
 
 def cached(fw, names, key=b'12-5', ext=b'.flac', n=296):
-    libc(fw, 'tk_snprintf', 'snprintf')
     directory(fw, names)
     path = block(fw, size=n)
     found = fw.fn('tidal__cached', C.c_int, C.c_char_p, C.c_char_p, C.c_void_p, C.c_uint)(key, ext, path, n)
@@ -1188,7 +1169,6 @@ def test_the_clock_wrapping_32_bits_still_measures_the_stop(fw):
 def test_clear_all_removes_all_but_dot_files_and_stops_the_download(fw):
     td = fw.var('tidal__td', Td)
     td.job = 1
-    libc(fw, 'tk_snprintf', 'snprintf')
     directory(fw, [b'.cache-size', b'a.flac', b'b.flac.tmp'])
     gone = []
     fw.mock('fw_unlink', lambda p, *_: gone.append(C.string_at(p)))
@@ -1200,7 +1180,6 @@ def test_clear_all_removes_all_but_dot_files_and_stops_the_download(fw):
 class Play:
     """tidal_play's world: nothing cached, a card with room, no queue."""
     def __init__(self, fw):
-        libc(fw, 'tk_snprintf', 'snprintf')
         self.td, self.played = fw.var('tidal__td', Td), []
         fw.mock('stock_tidal_trampoline', lambda url, *_: self.played.append(C.string_at(url) if url else None))
         fw.mock('fw_statfs', self.statfs)

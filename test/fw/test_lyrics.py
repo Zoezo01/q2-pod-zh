@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from conftest import text
+from conftest import block, text
 
 FAR = 0x7fffffff
 TAG_MAX = 65536
@@ -38,13 +38,6 @@ class Ly(C.Structure):
 
 def state(fw):
     return fw.var('lyrics__ly', Ly)
-
-
-def block(fw, data):
-    """data in a heap block of its exact size and a NUL, so ASan sees a byte past it."""
-    p = fw.fn('calloc', C.c_void_p, C.c_size_t, C.c_size_t)(1, len(data) + 1)
-    C.memmove(p, data, len(data))
-    return p
 
 
 def stamp(fw, s, opener=b'[', closer=b']'):

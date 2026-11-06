@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from conftest import text
+from conftest import block, text
 
 APPS_MAX = 8
 REPLY_MAX = 64 << 10
@@ -94,18 +94,6 @@ class Dirent(C.Structure):  # test/fw/host.py's
     _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
 
 
-def libc(fw, stub, real):
-    """The stub answered by libc's real function, its registers passed straight through."""
-    C.c_void_p.in_dll(fw.lib, f'fw_mock_{stub}').value = C.cast(getattr(fw.lib, real), C.c_void_p).value
-
-
-def block(fw, data=b'', size=None):
-    """A heap block of data and a NUL, or of size bytes exactly, so ASan sees a byte past it."""
-    p = fw.fn('calloc', C.c_void_p, C.c_size_t, C.c_size_t)(1, len(data) + 1 if size is None else size or 1)
-    C.memmove(p, data, len(data))
-    return p
-
-
 def hostile(seed, samples, count=1500, alphabet=b'%\t\n=/. \r'):
     """Random bytes, every truncation of the samples, and mutations of them."""
     r = random.Random(seed)
@@ -127,9 +115,7 @@ class World:
         self.fw, self.files, self.dirs, self.now, self.ms = fw, dict(files or {}), dict(dirs or {}), now, 1000
         self.log, self.at, self.names, self.written, self.lists, self.mtime = [], {}, {}, {}, {}, {}
         self.fail_write = lambda name: False
-        libc(fw, 'tk_snprintf', 'snprintf')
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
-        fw.mock('tk_strcmp', lambda a, b, *_: (a and C.string_at(a)) != (b and C.string_at(b)))
         for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
                          ('fw_unlink', self.unlink), ('fw_system', self.system), ('fw_access', self.access), ('fw___xstat', self.stat),
                          ('fw_opendir', self.opendir), ('fw_readdir', self.readdir)):

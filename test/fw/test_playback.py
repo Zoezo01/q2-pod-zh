@@ -1,21 +1,13 @@
 """patch/playback.c: the grouped queue's order, Play Next's list, the wheel's ticks and the queue snapshot."""
 import ctypes as C
-import functools
-import os
-import pathlib
-import pickle
 import random
 import re
 import struct
-import traceback
 
 import pytest
 
-import host
+from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork, libc  # noqa: F401
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
-O = {k: int(v, 0) for k, v in re.findall(r'^#define (\w+) +(0x[0-9a-f]+|\d+)\b', (ROOT/'patch/offsets.inc').read_text(), re.M)}
-FNV_SEED, FNV_PRIME = 2166136261, 16777619
 MAGIC = 0x5132524e
 HEADER = '<14I'
 QUEUE_FILE = '/mnt/data/ringnav-queue'
@@ -23,71 +15,6 @@ CHECKPOINT = QUEUE_FILE + '-elapsed'
 FOLDER, LIBRARY = 1, 0xf001
 ONE_SONG, ONE_GROUP, ONE_PASS, REPEAT_SONG, REPEAT_GROUP, REPEAT_ALL = range(6)
 SEEDS = (1, 7, 0x2545f491, 0xdeadbeef, 12345)
-libc = C.CDLL(None)
-libc.mmap.restype, libc.mmap.argtypes = C.c_void_p, [C.c_void_p, C.c_size_t, C.c_int, C.c_int, C.c_int, C.c_long]
-libc.mprotect.argtypes = [C.c_void_p, C.c_size_t, C.c_int]
-
-
-def claim(address):
-    """The C uses stock's fixed addresses as they are: mapped here if free, and if python's own (a non-PIE
-    python is at 0x400000-0xba7000), writable."""
-    page = address & ~0xfff
-    if libc.mmap(page, 0x2000, 7, 0x100022, -1, 0) != page:  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
-        assert not libc.mprotect(page, 0x2000, 7)
-
-
-def in_fork(test):
-    """The test in a child, as what it writes at stock's code addresses is python's own text here."""
-    @functools.wraps(test)
-    def run(*args, **kwargs):
-        read, write = os.pipe()
-        child = os.fork()
-        if not child:
-            try:
-                test(*args, **kwargs)
-                os.write(write, b'')
-            except BaseException:
-                os.write(write, traceback.format_exc().encode())
-                os._exit(1)
-            os._exit(0)
-        os.close(write)
-        failure = b''
-        while chunk := os.read(read, 65536):
-            failure += chunk
-        os.close(read)
-        status = os.waitpid(child, 0)[1]
-        if status:
-            pytest.fail(f'child status {status:#x}\n' + failure.decode())
-    return run
-
-
-def fnv1a(data, h=FNV_SEED):
-    for byte in data:
-        h = (h ^ byte) * FNV_PRIME & 0xffffffff
-    return h
-
-
-def printf(fw):
-    """tk_snprintf with real formatting. A stub sees six registers: an argument past them prints as ?."""
-    def format_(buf, size, fmt, *args):
-        args = list(args)
-        def field(m):
-            spec = m[0]
-            if spec == b'%%':
-                return b'%'
-            if not args:
-                return b'?'
-            if spec == b'%s':
-                return C.string_at(args.pop(0))
-            if spec == b'%.*s':
-                size = args.pop(0)
-                return C.string_at(args.pop(0), size)
-            value = args.pop(0)
-            return (spec.decode() % (C.c_int(value).value if spec[-1:] == b'd' else value & 0xffffffff)).encode()
-        out = re.sub(rb'%0?\d*[dux]|%\.\*s|%s|%%', field, C.string_at(fmt))
-        C.memmove(buf, out[:size - 1] + b'\0', min(len(out), size - 1) + 1)
-        return len(out)
-    fw.mock('tk_snprintf', format_)
 
 
 class Entry(C.Structure):
@@ -105,112 +32,6 @@ class State(C.Structure):
                 fields('saved_pos saved_sum saved_queue', C.c_uint) + fields('next_valid next_value') +
                 fields('next_pos resume_key resume_pos', C.c_uint) + fields('order cycle', C.POINTER(Entry)) +
                 fields('groups seen history', C.POINTER(C.c_uint)) + [('poll_stamp', C.c_uint)])
-
-
-class Mcl:
-    """Stock's player globals, at their fixed addresses: an int each, by name."""
-    def __getattr__(self, name):
-        return C.c_int.from_address(O['MCL_' + name.upper()]).value
-
-    def __setattr__(self, name, value):
-        C.c_int.from_address(O['MCL_' + name.upper()]).value = value
-
-
-@pytest.fixture
-def mcl():
-    """The block is python's sys.int_info descriptor and its neighbours on a non-PIE python: read at startup
-    only, so it can hold the player's globals for a test."""
-    start, size = O['MCL_POOL'], O['MCL_FD'] + 4 - O['MCL_POOL']
-    claim(start)
-    saved = C.string_at(start, size)
-    C.memset(start, 0, size)
-    yield Mcl()
-    C.memmove(start, saved, size)
-
-
-class Deques:
-    """Stock's libcstl deques as lists; a handle is a number, as nothing here dereferences one. A context slot
-    is 4 bytes on the host and P() reads 8, so its neighbour lands in a handle's high half: masked off."""
-    def __init__(self, fw):
-        self.lists = {}
-        fw.mock('fw__create_deque', lambda *_: self.new())
-        fw.mock('fw_deque_size', lambda q, *_: len(self[q]))
-        fw.mock('fw_deque_at', lambda q, i, *_: self[q][i])
-        fw.mock('fw__deque_push_back', lambda q, v, *_: self[q].append(v))
-        fw.mock('fw_deque_clear', lambda q, *_: self[q].clear())
-        fw.mock('fw_deque_assign', lambda q, other, *_: self.assign(q, other))
-        fw.mock('fw_deque_init_copy', lambda q, other, *_: self.assign(q, other))
-        fw.mock('fw_deque_destroy', lambda q, *_: self.lists.pop(q & 0xffffffff) and 0)
-
-    def new(self, rows=()):
-        handle = len(self.lists) + 0x1000 + sum(self.lists) % 7
-        while handle in self.lists:
-            handle += 1
-        self.lists[handle] = list(rows)
-        return handle
-
-    def assign(self, q, other):
-        self[q][:] = self[other]
-
-    def __getitem__(self, q):
-        return self.lists[q & 0xffffffff]
-
-
-class Files:
-    """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole."""
-    def __init__(self, fw, files=None):
-        self.files = files if files is not None else {}
-        self.open = {}
-        self.fail_rename = False
-        fw.mock('fw_fopen', self.fopen)
-        fw.mock('fw_fread', self.fread)
-        fw.mock('fw_fseek', self.fseek)
-        fw.mock('fw_ftell', lambda f, *_: self.open[f][1])
-        fw.mock('fw_fwrite', self.fwrite)
-        fw.mock('fw_fclose', self.fclose)
-        fw.mock('fw_rename', self.rename)
-        fw.mock('fw_unlink', lambda path, *_: self.files.pop(C.string_at(path).decode(), None) and 0)
-
-    def fopen(self, path, mode, *_):
-        path, mode = C.string_at(path).decode(), C.string_at(mode).decode()
-        if 'r' in mode and path not in self.files:
-            return 0
-        handle = 0x2000 + len(self.open)
-        self.open[handle] = [path, 0, b'' if 'w' in mode else None]
-        return handle
-
-    def fread(self, out, size, count, f, *_):
-        state = self.open[f]
-        data = self.files[state[0]]
-        have = max(0, min(count, (len(data) - state[1]) // size))
-        C.memmove(out, data[state[1]:state[1] + have * size], have * size)
-        state[1] += have * size
-        return have
-
-    def fseek(self, f, offset, whence, *_):
-        state = self.open[f]
-        offset = C.c_int(offset).value
-        target = offset + {0: 0, 1: state[1], 2: len(self.files[state[0]])}[whence]
-        if target < 0:
-            return -1
-        state[1] = target
-        return 0
-
-    def fwrite(self, data, size, count, f, *_):
-        self.open[f][2] += C.string_at(data, size * count)
-        return count
-
-    def fclose(self, f, *_):
-        path, _, written = self.open.pop(f)
-        if written is not None:
-            self.files[path] = written
-        return 0
-
-    def rename(self, old, new, *_):
-        if self.fail_rename:
-            return -1
-        self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
-        return 0
 
 
 class Player:
@@ -1511,7 +1332,6 @@ def test_wheel_sensitivity_changed_mid_turn_keeps_the_carrys_share(fw):
     (b'0100', 50), (b' 100', 50), (b'100 ', 50), (b'+100', 50), (b'abc', 50), (b'-100', 50), (b'4294967396', 50),
 ])
 def test_wheel_sensitivity_config(fw, value, pct):
-    printf(fw)
     fw.mock('toolsReadConfig', lambda path, section, key, out, default, *_: C.memmove(out, value + b'\0', len(value) + 1) and 0)
     assert fw.fn('wheel_pct', C.c_int)() == pct
     assert fw.var('playback__wheel_units', C.c_int).value == (28 * 16 * 50 + pct // 2) // pct
@@ -1522,14 +1342,12 @@ def test_wheel_sensitivity_is_read_once(fw):
     assert pct() == 50 and pct() == 50 and len(fw.calls('toolsReadConfig')) == 1
 
 
-def test_wheel_sensitivity_any_text(library, tmp_path):
+def test_wheel_sensitivity_any_text(fw):
     rng = random.Random(0xfee1)
-    printf_fw = host.Fw(library, tmp_path)
-    printf(printf_fw)
     current = {}
-    printf_fw.mock('toolsReadConfig', lambda path, section, key, out, default, *_: C.memmove(out, current['v'] + b'\0', len(current['v']) + 1) and 0)
-    read = printf_fw.var('playback__wheel_read', C.c_int)
-    pct = printf_fw.fn('wheel_pct', C.c_int)
+    fw.mock('toolsReadConfig', lambda path, section, key, out, default, *_: C.memmove(out, current['v'] + b'\0', len(current['v']) + 1) and 0)
+    read = fw.var('playback__wheel_read', C.c_int)
+    pct = fw.fn('wheel_pct', C.c_int)
     for value in names(rng, [b'100', b'200', b'50', b'150', b'040'], 1500):
         current['v'] = value[:15]
         read.value = 0
@@ -1671,7 +1489,6 @@ class Saved(Player):
     def __init__(self, fw, mcl):
         super().__init__(fw, mcl)
         self.disk = Files(fw)
-        printf(fw)
         self.save = fw.fn('playback_save', None)
         self.memory = fw.fn('ringnav_memory', C.c_int, C.c_void_p)
         self.sec = 0
