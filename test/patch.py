@@ -9573,17 +9573,20 @@ for wtt,wwide in (('0',222-54),('1',98)):
         return wm.get(wt+O['W_W'])
     wgot=wshow(wm.node('window','playing_page')),wshow(wm.node('window','bare_page')); assert wgot==(wwide,98),(wtt,wgot)
 passed()
-# Classic (list.art.placeholder 38): stock's 52 px Folder tile is drawn 38 px in its middle, the rest clear; a cover keeps
-# the row's size.
+# Classic (list.art.placeholder 38): stock's 52 px grey tiles (a folder, a song, ...) are drawn 38 px in their middle, the
+# rest clear; a cover keeps the row's size, and another list_ image is left alone.
 fm=classic_light_on(Machine()); fm.handlers[tramp['image']]='stock_image'
 def ftile(name):
     bm=fm.alloc(0x60); data=fm.alloc(4*52*52)
     fm.word(bm,52); fm.word(bm+4,52); fm.word(bm+8,4*52); fm.u.mem_write(bm+0xe,struct.pack('<H',3)); fm.word(bm+0x14,data)
-    fm.u.mem_write(data,bytes([0x80,0x80,0x80,255])*(52*52))
+    fm.u.mem_write(data,(bytes([0,0,255,255])+bytes([0x80,0x80,0x80,255])*51)*52)  # column 0 red (BGRA): scaled, it lands at 7
     fm.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,fm.string(name),bm,0),gap=0,count=20_000_000)
-    raw=bytes(fm.u.mem_read(data,4*52*52)); return lambda x,y: raw[4*(52*y+x)+3]
-fa=ftile('list_folder'); assert [fa(x,26) for x in (6,7,44,45)]==[0,255,255,0] and [fa(26,y) for y in (6,7,44,45)]==[0,255,255,0]
-fa=ftile('file:///mnt/mmc/.downpic/fd1.jpg'); assert fa(0,0)==fa(51,26)==255; passed()
+    raw=bytes(fm.u.mem_read(data,4*52*52)); return lambda x,y,c=3: raw[4*(52*y+x)+c]
+for fname in ('list_folder','list_song','list_album','list_artist','list_genre'):
+    fa=ftile(fname); assert [fa(x,26) for x in (6,7,44,45)]==[0,255,255,0] and [fa(26,y) for y in (6,7,44,45)]==[0,255,255,0],fname
+    assert fa(7,26,2)>0xf0 and fa(7,26,0)<0x10 and fa(8,26,2)<0xa0,fname  # the red column, the tile's edge
+for fname in ('file:///mnt/mmc/.downpic/fd1.jpg','list_tf'): fa=ftile(fname); assert fa(0,0)==fa(51,26)==255,fname
+passed()
 # With no row to select the wheel scrolls the view itself, to its own end, not list_end's 42 px past it.
 for lthm,lend in (('1',672-294),('0',672-294)):
     lm=Machine(); lm.config.update(THEME=lthm)
