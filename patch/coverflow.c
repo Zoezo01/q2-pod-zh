@@ -1915,7 +1915,8 @@ static void fx_ring(int c, int n, const unsigned **ring) {
  * about the vertical axis on the centre line, right edge toward the viewer, and it grows into the
  * tracks panel on its back, the side covers parting; Return runs the same frames backwards. The
  * shelf's frame, rendered once without the centre cover, holds the side covers. fl.frame and
- * fl.back live from Centre to the end of the way back. */
+ * fl.back live only while a turn runs (about 776 KB): at rest the panel stands over the shelf's
+ * frame, parted, drawn as it is. */
 #define FLIP_MS 270
 #define FLIP_TICK_MS 16
 #define FLIP_H 294     /* the frame's rows, the client area's */
@@ -2059,6 +2060,19 @@ static int flip_paint(void *w, void *canvas) {
         panel_ink();
         fl.drawn = -1;
     }
+    if (!fl.frame) { /* at rest: the turn's last frame where the panel doesn't cover it */
+        unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+        int h = cfs.view_h, side = CF_VIEW_W - CF_CX - FLIP_PART;
+        int ls[4] = { FLIP_PART, 0, CF_CX - FLIP_PART, h }, ld[4] = { 0, 0, CF_CX - FLIP_PART, h };
+        int rs[4] = { CF_CX, 0, side, h }, rd[4] = { CF_CX + FLIP_PART, 0, side, h };
+        canvas_draw_image(canvas, fx.frame, ls, ld);
+        canvas_draw_image(canvas, fx.frame, rs, rd);
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, CF_CX - FLIP_PART, 0, 2 * FLIP_PART, h);
+        canvas_fill_rect(canvas, 0, h, CF_VIEW_W, FLIP_H - h);
+        stock_canvas_set_fill_color(canvas, fill);
+        return 1;
+    }
     int ms = (int)((unsigned)time_now_ms() - fl.t0);
     int e = !fl.dir ? CF_ONE : coverflow_flip_eased(fl.dir > 0 ? ms : FLIP_MS - ms);
     if (e != fl.drawn) {
@@ -2120,7 +2134,7 @@ static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
  * position or a texture has changed. */
 void coverflow_paint(void *w, void *canvas) {
     int c, frac, n;
-    if (fl.frame && w && flip_paint(w, canvas)) return;
+    if (fl.panel && w && flip_paint(w, canvas)) return;
     if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
         !visual(w, n = (int)widget_count_children(w), &c, &frac))
         return;
@@ -2593,7 +2607,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
 /* usable: navigation.c's; gated: travel is to be dropped (its gates). Answers THUMB_*. */
 int coverflow_wheel_poll(int usable, int gated) {
     void *s = cf.slide, *wm = window_manager();
-    int shown = usable && cfs.thumb && fx.frame && !fl.frame && covers_live() &&
+    int shown = usable && cfs.thumb && fx.frame && !fl.panel && covers_live() &&
                 widget_count_children(s) && window_manager_get_top_window(wm) == cf.page &&
                 !window_manager_is_animating(wm);
     int raw = shown && !window_manager_get_pointer_pressed(wm);
@@ -2982,11 +2996,25 @@ static int flip_tick(const void *unused) {
     return 0;
 }
 
-/* The buffers go; the widgets are the page's, or flip_done's. */
-static void flip_free(void) {
-    stop_timer(&fl.timer);
+/* The turn's buffers go, as each turn ends. */
+static void flip_drop(void) {
     if (fl.frame) bitmap_destroy(fl.frame);
     free(fl.back);
+    fl.frame = 0, fl.back = 0;
+}
+
+/* A turn's buffers, both or neither. */
+static int flip_alloc(void) {
+    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
+    fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
+    if (!fl.back) flip_drop();
+    return fl.back != 0;
+}
+
+/* Everything goes; the widgets are the page's, or flip_done's. */
+static void flip_free(void) {
+    stop_timer(&fl.timer);
+    flip_drop();
     memset(&fl, 0, sizeof fl);
 }
 
@@ -3001,14 +3029,8 @@ static void flip_shelf(int on) {
  * Nothing starts until the panel is built and painted: a slow album waits at the cover. Stock's
  * hit test skips insensitive widgets, and the wheel a hidden slide_menu. */
 static int flip_open(void *r, int n) {
-    if (fl.frame) return 1; /* Centre before flip_close's timer: the panel and buffers stand */
-    if (theme()->painter[PAINT_VOLUME] != VOL_CLASSIC_LIGHT || !cf.covers || !fx.frame) return 0;
-    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
-    fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
-    if (!fl.back) {
-        flip_free();
-        return 0;
-    }
+    if (fl.panel) return 1; /* Centre before flip_close's timer: the panel stands */
+    if (!classic_pages() || !cf.covers || !fx.frame || !flip_alloc()) return 0;
     void *f = widget_factory();
     fl.panel =
         widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W + 1, BACK_H);
@@ -3043,6 +3065,10 @@ static int flip_open(void *r, int n) {
 /* Return on the panel, once a click's handling is over: its selection and scroll as they stand. */
 static int flip_close(const void *unused) {
     cf.timer = 0;
+    if (!flip_alloc()) { /* no room to turn back: straight to the covers */
+        flip_done();
+        return 0;
+    }
     flip_capture();
     flip_start(-1);
     return 0;
@@ -3052,6 +3078,7 @@ static void flip_done(void) {
     int to_panel = fl.dir > 0;
     fl.dir = 0;
     if (to_panel) {
+        flip_drop();
         widget_set_visible(fl.panel, 1, 0);
         widget_invalidate_force(cf.page, 0);
         return;
@@ -3199,7 +3226,7 @@ static void *artist_under(void) {
  * covers or the message -> Home, or back out of a scoped page (one album's tracks too). */
 static int keyup(void *ctx, void *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
-    if (fl.frame) { /* the panel's way back; during a turn, nothing */
+    if (fl.panel) { /* the panel's way back; during a turn, nothing */
         if (!fl.dir) rearm(&cf.timer, flip_close, 0);
         return 11; /* RET_STOP */
     }
@@ -3877,23 +3904,31 @@ static void *pane_scaled(void *bitmap, const char *name, unsigned px) {
 
 /* The pane on a Streaming row: its icon, a card app's scaled to the theme's size, else the card
  * apps' own, and its name in the count's place. A name too wide for the count's column shrinks to
- * three quarters of its size, then loses its end. */
+ * three quarters of its size, then loses its end. A card app's file, up to 512 px square, leaves
+ * the image cache once drawn or scaled: its scaled copy is what stays.
+ * ponytail: a card app highlighted again after another decodes its file again; a scaled copy per
+ * app if that shows on the wheel. */
 static void pane_service(void *canvas, int x, int y) {
     const theme_t *T = theme();
     unsigned bitmap[64], s[33], n = 0; /* bitmap_t */
     char t[72];
     if (!home.row) return;
     const char *icon = service_icon(home.row_image, t, sizeof t);
-    int own = !widget_load_image(home.art, icon, bitmap);
-    if (own || !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
-        int px = T->pane_svc_px;
-        void *art = own && (int)bitmap[0] != px && tk_str_start_with(icon, "file://")
-                        ? pane_scaled(bitmap, icon, (unsigned)px)
-                        : bitmap;
-        int own_size = art == bitmap;
-        int src[4] = { 0, 0, own_size ? (int)bitmap[0] : px, own_size ? (int)bitmap[1] : px },
-            dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, px, px };
-        canvas_draw_image(canvas, art, src, dst);
+    int side = T->pane_svc_px, card = tk_str_start_with(icon, "file://");
+    int src[4] = { 0, 0, side, side },
+        dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, side, side };
+    if (card && home.svc && !tk_strcmp(home.svc_name, icon)) {
+        canvas_draw_image(canvas, home.svc, src, dst);
+    } else {
+        int own = !widget_load_image(home.art, icon, bitmap);
+        if (own || !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
+            void *art = own && (int)bitmap[0] != side && card
+                            ? pane_scaled(bitmap, icon, (unsigned)side)
+                            : bitmap;
+            if (art == bitmap) src[2] = (int)bitmap[0], src[3] = (int)bitmap[1];
+            canvas_draw_image(canvas, art, src, dst);
+        }
+        if (own && card) widget_unload_image(home.art, bitmap);
     }
     void *label = home.row_label;
     const unsigned *name = label ? widget_get_text(label) : (const unsigned *)0;
@@ -3979,6 +4014,8 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
                                              "img_rockbox",   "img_services", "img_settings" };
         for (unsigned i = 0; i < sizeof names / sizeof *names; ++i)
             if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
+        /* a set without home_lib: stock's name */
+        if (!tk_strcmp(name, "img_stream")) kind = PANE_STREAM;
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
@@ -4272,8 +4309,8 @@ static int home_settings(void *ctx, void *event) {
 }
 
 /* A list its page's constructor just filled, slid in in Home's rows' shape. service: Streaming's,
- * whose 70 px rows take Home's row height, and their icons are decoded now, not on the wheel's path
- * (coverflow_home_row). */
+ * whose 70 px rows take Home's row height, and the build's icons are decoded now, not on the
+ * wheel's path (coverflow_home_row). */
 static void home_fill(void *list, int service) {
     const theme_t *T = theme();
     home_width(list, HOME_SPLIT_W, HOME_SPLIT_W, T->home_text_x, T->home_label_end[0], 0);
@@ -4289,9 +4326,10 @@ static void home_fill(void *list, int service) {
             void *label = child_of_type(b, "hscroll_label");
             unsigned bitmap[64]; /* bitmap_t */
             char t[72];
+            const char *icon = service_icon(child_of_type(b, "image"), t, sizeof t);
             if (label) widget_move_resize(label, I(label, W_X), 0, I(label, W_W), I(b, W_H));
-            widget_load_image(home.art, service_icon(child_of_type(b, "image"), t, sizeof t),
-                              bitmap);
+            /* the build's icons; a card app's file waits for the pane (pane_service) */
+            if (!tk_str_start_with(icon, "file://")) widget_load_image(home.art, icon, bitmap);
         }
     }
     widget_layout(list);

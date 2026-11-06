@@ -1442,10 +1442,10 @@ static void set(void *w, const char *s) {
     if (tk_strcmp(widget_get_prop_str(w, "text", ""), s)) widget_set_text_utf8(w, s);
 }
 
-/* A QR page label in the theme's face, where the info role has its own, for the text it holds now,
+/* Classic's QR page: its layout, and a label in the info role's face for the text it holds now,
  * at the label's own size.
  * ponytail: a font-only theme_font role would save the size rewrite. */
-static int qr_light(void) { return theme()->font[ROLE_INFO] == FONT_CLASSIC_LIGHT; }
+static int qr_light(void) { return classic_pages(); }
 static void *qr_face(void *l, int px) {
     if (qr_light()) {
         theme_font(l, ROLE_INFO, FONT_ROW);

@@ -135,6 +135,9 @@
   <view name="volume"><element name="panel" painter="classic-light"/></view>
   <!-- The confirm control's two forms, the hold menu over the page, the toast and small dialogs -->
   <view name="dialog"><element name="confirm" painter="classic-light"/></view>
+  <!-- Its own pages: Quick Settings, the slider pages, the rating, T9 and Search, Set Time and Date, the message
+       screens, the lock info screen, Cover Flow's flip -->
+  <view name="pages"><element name="own" painter="classic-light"/></view>
   <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>

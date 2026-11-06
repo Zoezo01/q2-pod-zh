@@ -9864,11 +9864,11 @@ class NoCanvas(FlipMachine):
     def hook(self,u,address,size,unused):
         if self.handlers.get(address,'')=='canvas_offline_create': self.returns(0,clobber=True); return
         return super().hook(u,address,size,unused)
-n=classic_light_new(NoCanvas); n.open(); n.tracks(0); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(1); assert n.nodes[n.panel()]['visible']; passed()
+n=classic_light_new(NoCanvas); n.open(); flip_click(n); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(20); assert n.nodes[n.panel()]['visible']; passed()
 # The turn: no timer of its own past 270 ms; the first frame the cover with no reflection, its sides as the shelf drew them;
 # half way the side covers part 12, nothing on the axis; at the end the panel's capture, swapped to the frame's byte order, parted 24.
 m=flip_open(); covers=m.covers(); assert not m.nodes[m.panel()]['visible']
-f0=m.frame(); m.advance(135); f1=m.frame(); m.advance(140); assert m.nodes[m.panel()]['visible']; f2=m.frame()
+f0=m.frame(); m.advance(135); f1=m.frame(); m.now+=135; f2=m.frame(); m.advance(5); assert m.nodes[m.panel()]['visible']
 assert px_at(f2,187,150)==px_at(f2,40,9)==px_at(f2,333,293)==0xff403020  # the panel's, red and blue swapped
 assert px_at(f0,187,150)!=0xffffffff and px_at(f0,187,32+162)==0xffffffff  # the cover, nothing under it
 assert px_at(f1,187,100)==px_at(f1,186,100)==px_at(f1,187,200)==0xffffffff  # edge on: the paper; each side parted 12
@@ -9894,6 +9894,24 @@ m.advance(50)
 assert not m.panel() and m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['sensitive']==1 and all(m.nodes[w]['visible'] for w in m.nodes[m.covers()]['children'])
 assert len(m.destroyed)==destroyed+1 and flip_held(m)==held and not [t for t in m.timers.values() if t[1] in (payload_syms['flip_tick'],)]
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000); assert m.draws[-1][3][3]==242 and m.key()==11 and m.homes==1; passed()
+# At rest the turn's buffers are gone: the shelf's frame, parted, drawn as the turn's last frame showed it outside the panel;
+# Return takes them again for the way back, which still draws, and frees them at its end.
+def rest_view(m):  # the covers' paint composed: each draw's source rect at its place, then each fill
+    m.draws=[]; m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.covers(),m.canvas,0,0),gap=0,clear=False,count=50_000_000)
+    img=[[None]*375 for _ in range(294)]
+    for _,b,src,dst,_,_ in m.draws:
+        line,data=m.get(b+8),m.get(b+0x14)
+        for y in range(dst[3]):
+            row=bytes(m.u.mem_read(data+(src[1]+y)*line+4*src[0],4*dst[2])); img[dst[1]+y][dst[0]:dst[0]+dst[2]]=struct.unpack(f'<{dst[2]}I',row)
+    for x,y,w,h,c,_ in m.bands:
+        for yy in range(y,y+h): img[yy][x:x+w]=[c]*w
+    return img
+for light in ('0','1'):
+    CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); held=flip_held(m); flip_click(m); m.now+=270; last=m.frame(); m.advance(20)
+    assert m.nodes[m.panel()]['visible'] and flip_held(m)==held and not flip_backs(m),light
+    rest=rest_view(m); assert len(m.draws)==2 and all(rest[y][x]==px_at(last,x,y) for y in range(294) for x in range(375) if not (40<=x<335 and y>=9)),light
+    assert m.key()==11 and len(flip_backs(m))==1; m.advance(135); assert m.frame()!=last; m.advance(200)
+    assert not m.panel() and flip_held(m)==held and m.nodes[m.slide]['visible'],light; passed()
 # The page closing mid-turn frees them, and leaves nothing timed.
 m=classic_light_new(FlipMachine); m.open(); flip_click(m); made=list(m.frames); assert len(flip_backs(m))==1
 m.close(); assert sorted(m.destroyed)==sorted(made) and not flip_backs(m) and not [t for t in m.timers.values() if t[1]==payload_syms['flip_tick']]; passed()
@@ -12551,6 +12569,14 @@ def pane_cases():
     cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
     pane_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
     print(f'Classic pane on Settings: {cost[0]} instructions'); passed()
+    # Library on Home off (HOMELIB 0), and a set without home_lib, whose Streaming row keeps stock's img_stream: Streaming's pane either way.
+    for homelib,stock_name in (('0',0),('1',1)):
+        m=pane_home(SHORTCUT='6',HOMELIB=homelib); view=named(m,m.top,'scroll_view_home'); pane_nocover(m)
+        if stock_name: m.nodes[named(m,m.top,'img_services')]['name']='img_stream'
+        m.advance(1500); m.paint(view)
+        for _ in range(5): m.call()
+        assert pane_shows(m)==want[5],(homelib,pane_shows(m))
+    passed()
     m=pane_home(); m.db.execute("delete from songtable where id>1"); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
     for _ in range(2): m.call()
     assert pane_shows(m)[1]==['1 Album']; m.call(O['KEY_RETURN']); m.call(); assert pane_shows(m)[1]==['1 Song']; passed()
@@ -15226,7 +15252,7 @@ for r in srows:
     assert not m.nodes[m.nodes[b]['children'][0]]['visible'],names[-1]  # the icon; a list_into stays, stock's is empty
 assert names==['TIDAL','Spotify','A long name for a card app here','Soulseek','Tidal Downloads','Internet Radio','AirPlay','Configuration'],names
 want=['classic_light_list_tidal','classic_light_stream_spotify','file:///mnt/mmc/.deezer/icon.png','classic_light_stream_app','classic_light_list_tidal','classic_light_stream_radio','classic_light_stream_airplay','classic_light_stream_config']
-assert m.image_loads[:8]==want,m.image_loads  # decoded here, not on the wheel's path
+assert m.image_loads[:7]==[w for w in want if not w.startswith('file:')],m.image_loads  # the build's decoded here, not on the wheel's path; a card app's file waits for the pane
 passed()
 # The pane on each row, by the wheel: 96 px at 46, 62 of the pane, whatever the icon's size; the name, cut to the pane's count_w.
 m.art_size=(40,40); m.paint(sview); m.advance(10); m.paint(sview)
@@ -15241,7 +15267,9 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
     assert loaded==[icon],(i,loaded); assert draws==[((0,0,96,96) if icon.startswith('file:') else (0,0,40,40),PANE)],(i,draws)
     if icon.startswith('file:'):  # a card app's, bilinear once, to a 96 px frame: the next paint only draws it; a pixel's four neighbours, weighted by alpha
         frames=[f for f in m.frames if m.get(f)==96]; assert len(frames)==1 and m.u.mem_read(frames[0]+0xe,2)==b'\x01\x00'
-        cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); assert stream_shows(m)[1]==draws; m.u.hook_del(hook); assert cost[0]<100000,cost
+        assert [c for c in m.calls if c[0]=='widget_unload_image' and c[1]==art]  # the file's bitmap leaves the cache once scaled
+        cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); again=stream_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
+        assert again[:2]==([],draws)  # the scaled copy alone: nothing loaded
         src=bytes(m.u.mem_read(m.pixels[icon],40*40*4)); out=bytes(m.u.mem_read(m.get(frames[0]+0x14),96*96*4))
         at=lambda x,y: src[(y*40+x)*4:(y*40+x)*4+4]
         for x,y in ((0,0),(95,95),(48,17),(13,70)):
@@ -15273,8 +15301,9 @@ assert stream_shows(m)[2]==['A long name for \u2026'] and m.font[1]==20,(m.lette
 m.calls=[]; f,ctx=m.handler(m.nodes[srows[1]]['children'][0],O['EVT_CLICK']); assert f==payload_syms['spot_open'],f; passed()
 # A missing or broken card icon: the app's fallback. The list going, Return: the main list, the pane back to Streaming's row.
 m.calls=[]; m.call(address=payload_syms['coverflow_home_row'],args=(sview,m.nodes[srows[2]]['children'][0],2,0),gap=0)
-m.image_fail=['file:///mnt/mmc/.deezer/icon.png']
-loaded,draws,_=stream_shows(m); assert loaded==['file:///mnt/mmc/.deezer/icon.png','classic_light_stream_app'] and draws==[((0,0,40,40),PANE)],(loaded,draws); m.image_fail=[]; passed()
+dimg=[c for c in m.nodes[m.nodes[srows[2]]['children'][0]]['children'] if m.nodes[c]['type']=='image'][0]; m.nodes[dimg]['image']=broken='file:///mnt/mmc/.deezer/icon-40.png'
+m.image_fail=[broken]
+loaded,draws,_=stream_shows(m); assert loaded==[broken,'classic_light_stream_app'] and draws==[((0,0,40,40),PANE)],(loaded,draws); m.image_fail=[]; passed()
 m.calls=[]; assert m.call(O['KEY_RETURN'])==11 and m.nodes[lst]['visible'] and not m.nodes[slist]['visible'] and m.nodes[slist]['sensitive']==0 and stitled()=='Q2 Pod'; passed()
 # Hold Return from a page over Home's open list: the main list under the closing windows, no slide; held on the open list itself, its Return's slide; on the main list, Now Playing as ever.
 hh=split_stream(); hh.config['HOLDRETURN']='1'; hh.mock('netdisk_folder_clear','navigator_back_to_home','awake_screen','getFormatString','navigator_to_with_context','navigator_window_is_exist')

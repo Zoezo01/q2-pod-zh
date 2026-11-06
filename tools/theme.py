@@ -34,6 +34,7 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'playing.scrubber.painter': {'stock': 'SCRUB_STOCK', 'rows': 'SCRUB_ROWS'},
            'volume.panel.painter': {'stock': 'VOL_STOCK', 'classic-light': 'VOL_CLASSIC_LIGHT'},
            'dialog.confirm.painter': {'stock': 'CONFIRM_STOCK', 'classic-light': 'CONFIRM_CLASSIC_LIGHT'},
+           'pages.own.painter': {'stock': 'PAGES_STOCK', 'classic-light': 'PAGES_CLASSIC_LIGHT'},
            **dict.fromkeys(('playing.title.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
@@ -130,6 +131,7 @@ SCHEMA = {k.path: k for k in (
     key('playing.scrubber.painter', 'painter[PAINT_SCRUB]', 'enum'),
     key('volume.panel.painter', 'painter[PAINT_VOLUME]', 'enum'),
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
+    key('pages.own.painter', 'painter[PAINT_PAGES]', 'enum'),  # the theme's own pages (theme.h classic_pages)
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),

@@ -398,7 +398,7 @@ int lockscreen_init(void *win, void *ctx) {
     int result = stock_saver_trampoline(win, ctx);
     void *img = widget_lookup(win, "img_screensaver", 1);
     int id = wall_id(PICTURE);
-    int info = img && theme()->painter[PAINT_VOLUME] == VOL_CLASSIC_LIGHT;
+    int info = img && classic_pages();
     lk.built_in = id >= 0;
     if (img && id >= 0) {
         image_base_set_image(img, ""); /* nothing to look up on every paint */
