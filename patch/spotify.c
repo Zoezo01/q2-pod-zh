@@ -1059,8 +1059,7 @@ static int go(const void *unused) {
             l->sel = widget_get_prop_int(br.view, "_ringnav_index", 0);
             widget_destroy_children(br.page), br.view = 0; /* the box alone: the keyboard leaves no room for the rows */
             br.edit = edit_create(br.page, "text", 2, 26);
-            t9_box(br.page, br.edit);
-            widget_set_prop_str(br.edit, "tips", "Search Spotify");
+            t9_box(br.page, br.edit, "Search Spotify");
             widget_on(br.edit, EVT_VALUE_CHANGED, searched, 0);
             widget_on(br.edit, EVT_IM_ACTION, searched, 0);
             widget_on(br.edit, EVT_BLUR, search_left, 0);

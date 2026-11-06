@@ -1260,8 +1260,7 @@ static int go(const void *unused) {
             keep_sel();
             widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
             pg.edit = edit_create(pg.page, "text", 2, 26);
-            t9_box(pg.page, pg.edit);
-            widget_set_prop_str(pg.edit, "tips", app()->tips);
+            t9_box(pg.page, pg.edit, app()->tips);
             widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
             widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
             widget_on(pg.edit, EVT_BLUR, search_left, 0);

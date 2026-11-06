@@ -1208,6 +1208,14 @@ void *page_list(void *page, void *body, void **title, const char *caption, int n
     return view;
 }
 
+/* page_list for a page with a name of its own and a message for no rows (page_empty): the bar still
+ * reads the name. */
+void *page_list_or(void *page, void *body, const char *name, const char *none, int n, int item_h) {
+    void *view = page_list(page, body, 0, n ? name : none, n, item_h);
+    if (!n) page_empty(body, name);
+    return view;
+}
+
 /* The stock page_list heights, 48 a row and 64 a row with a detail, as the theme's. */
 int page_h(int h) {
     const theme_t *T = theme();
@@ -2567,6 +2575,7 @@ static int flip_open(void *r, int n) {
     fl.panel =
         widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W + 1, BACK_H);
     fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W + 1, BACK_H);
+    /* Font sizes are AWTK's, a face's whole height: 1.43 of its em in the theme's face. */
     int row = theme()->page_row;
     void *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, BACK_H - PANEL_HEAD, n, row);
     char name[512];
@@ -2574,16 +2583,16 @@ static int flip_open(void *r, int n) {
         void *t = deque_at(cf.tracks, (unsigned)i);
         void *item = list_item_create(view, 0, i * row, BACK_W, row);
         widget_use_style(item, "s_listitem_black");
-        panel_label(item, 12, 0, 204, row, track_name(name, sizeof name, t), 18, 1);
-        void *length = panel_label(item, 222, 0, 60, row, "", 16, 0);
+        panel_label(item, 12, 0, 204, row, track_name(name, sizeof name, t), 25, 1);
+        void *length = panel_label(item, 222, 0, 60, row, "", 23, 1);
         widget_set_prop_str(length, "style:normal:text_align_h", "right");
         widget_set_prop_int(length, "style:normal:text_color", (int)PANEL_MUTED);
         panel_length(length, t);
         widget_on(item, EVT_CLICK, play, (void *)(long)i);
     }
     /* cf.title: where a row's "Storage unavailable" goes */
-    cf.title = fl.title = panel_label(fl.panel, 12, 6, 270, 24, album_name(r), 22, 1);
-    fl.artist = panel_label(fl.panel, 12, 30, 270, 20, cover_artist(r), 16, 0);
+    cf.title = fl.title = panel_label(fl.panel, 12, 1, 270, 33, album_name(r), 31, 1);
+    fl.artist = panel_label(fl.panel, 12, 30, 270, 20, cover_artist(r), 18, 0);
     panel_ink();
     widget_set_sensitive(cf.covers, 0);
     flip_shelf(0);
@@ -3761,10 +3770,12 @@ int coverflow_home_back(void *top) {
 
 /* A hold going Home (navigation.c compact_now_playing) from under a list open there: the main list,
  * with no slide, as the windows over it are about to close. Only while this Home is the bottom
- * window, so its lists are alive. */
+ * window but the bar (application_init's first), so its lists are alive. */
 void coverflow_home_top(void) {
     void *wm = window_manager();
-    if (!home.win || !widget_count_children(wm) || widget_get_child(wm, 0) != home.win) return;
+    unsigned n = widget_count_children(wm),
+             bottom = n && widget_get_child(wm, 0) == *(void *const *)system_bar;
+    if (!home.win || bottom >= n || widget_get_child(wm, bottom) != home.win) return;
     void *open = home_open();
     if (!open) return;
     home_show(open, 0);

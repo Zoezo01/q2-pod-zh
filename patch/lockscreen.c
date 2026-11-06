@@ -340,9 +340,9 @@ static void info_screen(void *win, void *img, int id) {
     info_label(title, 85, 17, 245, 28, INFO_TITLE_PX, "classic-light", "left");
     info_label(artist, 85, 44, 245, 22, INFO_ARTIST_PX, "classic-light", "left");
     if (artist) text_ink(artist, 0xc8ffffffu, 1);
-    if (hint) { /* stock's 30 x 16 >>> at 24 wide, its white at 85% */
-        widget_move_resize(hint, 175, 283, 24, 13);
-        image_set_draw_type(hint, IMAGE_DRAW_SCALE_DOWN);
+    if (hint) { /* stock's 30 x 16 >>> flat, at 21 x 7, its white at 85% */
+        widget_move_resize(hint, 177, 288, 21, 7);
+        image_set_draw_type(hint, IMAGE_DRAW_FILL);
         widget_set_opacity(hint, 216);
     }
     lk.date = date, lk.pct = pct, lk.card = card, lk.title = title, lk.artist = artist;
@@ -378,8 +378,8 @@ static void info_paint(void *w, void *canvas) {
                    dark_bar_key(lk.pct ? widget_get_text(lk.pct) : 0));
     paint_tray(canvas, 16, 44, 343, lk.large ? 128 : 116);
     if (lk.card && widget_get_visible(lk.card)) paint_tray(canvas, 16, 186, 343, 84);
-    if (lk.hint && widget_get_visible(lk.hint)) /* its box's 175, 283 less the image's pad */
-        paint_art(w, canvas, "classic_light_hint_shadow", 171, 279);
+    if (lk.hint && widget_get_visible(lk.hint)) /* its box's 177, 288 less the image's pad */
+        paint_art(w, canvas, "classic_light_hint_shadow", 173, 284);
     if (!lk.large) {
         int minutes = clock_minutes();
         paint_clock(w, canvas, 29, 54, 96, "classic_light_clock_dark", minutes / 60, minutes % 60,

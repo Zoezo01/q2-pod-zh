@@ -111,6 +111,8 @@ HOOKS = {
     'kugou_obtainlyric': (0x510744, 'ringnav_lyric_search', None),
     # its ⋯ page: Download Album Lyrics under stock's Download Cover & Lyrics (onlinematch.c)
     'playermore_page_init': (0x528c14, 'ringnav_playermore', 'playermore'),
+    # Classic's Search: its tabs' words, after stock's init writes them (navigation.c)
+    'dialog_search_dialog_init': (0x49eb58, 'ringnav_search_init', 'search_init'),
     # The sleep timer's switch as a row, under a set that hides its toolbar (navigation.c)
     'systemset_sleepshutdown_page_init': (0x4c9fd0, 'ringnav_sleeptimer', 'sleeptimer'),
     # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (navigation.c)
@@ -1055,6 +1057,7 @@ FUNCTIONS = {
  'scroll_view_set_offset': ('int', 'void *, int, int'),
  'scroll_view_scroll_to': ('int', 'void *, int, int, int'),
  'table_client_scroll_to': ('int', 'void *, int'),
+ 'table_client_get_virtual_h': ('int', 'void *'),
  'scroll_view_scroll_delta_to': ('int', 'void *, int, int, int'),
  'widget_destroy_children': ('int', 'void *'),
  'widget_destroy': ('int', 'void *'),  # Streaming's Baidu Netdisk row (navigation.c ringnav_stream)

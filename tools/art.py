@@ -599,12 +599,12 @@ def qs_knob():
     ramp = gradient(((0, 0xffffff), (50, 0xd9dbde), (100, 0xb8bbc0)), 3, 26)
     top = compose((0, 0, w, w), [(path(circle(14.5, 14.5, 11.5)), lambda x, y: (ramp(y), 1))])
     return png(w, w, over(top, inked(w, w, [(outside(soft, disc), 0xcc, 0)])))
-# The lock screen's hint: the soft shadow (0 1px 2px #00000080) of stock's three marks, drawn at 24 x 13, HINT_PAD past them all round.
+# The lock screen's hint: the soft shadow (0 1px 2px #00000080) of stock's three marks, drawn at 21 x 7, HINT_PAD past them all round.
 HINT_MARK = 'M1.5 1.5L8.2 8L1.5 14.5'
 HINT_MARKS, HINT_PAD, HINT_DROP, HINT_SIGMA, HINT_A = (0, 10.5, 21), 4, 1, 1, 0x80
 def hint_shadow():
-    w, h = 24 + 2 * HINT_PAD, 13 + 2 * HINT_PAD
-    marks = [[((x + at) * 0.8 + HINT_PAD, y * 0.8 + HINT_PAD + HINT_DROP) for x, y in poly] for at in HINT_MARKS for poly in stroke(path(HINT_MARK), 2.6, closed=False)]
+    w, h = 21 + 2 * HINT_PAD, 7 + 2 * HINT_PAD
+    marks = [[((x + at) * 0.7 + HINT_PAD, y * 7 / 16 + HINT_PAD + HINT_DROP) for x, y in poly] for at in HINT_MARKS for poly in stroke(path(HINT_MARK), 2.6, closed=False)]
     return png(w, h, inked(w, h, [(blurred([min(v, 1) for v in coverage(marks, (0, 0, w, h))], w, h, HINT_SIGMA), HINT_A, 0)]))
 
 

@@ -15,6 +15,7 @@ from peq import LIBC
 PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in for
 
 SHIM_H = r"""
+extern char system_bar[];
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
@@ -170,6 +171,7 @@ int image_manager_unload_all(void *m) { ++drops; return 0; }
 void set_hscroll_label_attribute(void *x) { assert(!strcmp(W(x)->type, "hscroll_label")); }
 int slide_menu_set_value(void *x, int value) { *(int *)(W(x)->raw + SLIDE_INDEX) = value; return 0; }
 int widget_set_name(void *x, const char *s) { snprintf(W(x)->type, 32, "%s", s); return 0; }
+void page_empty(void *body, const char *name) { (void)body; (void)name; } /* navigation.c: page_list_or only */
 int widget_use_style(void *x, const char *s) { return 0; }
 int widget_set_text_utf8(void *x, const char *s) { snprintf(W(x)->text, 160, "%s", s); return 0; }
 int widget_restack(void *x, unsigned i) { return 0; }
@@ -194,6 +196,7 @@ unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
 int widget_destroy_children(void *x) { W(x)->nkids = 0; return 0; }
 static int wm_repaints; /* whole-screen invalidations, from outside a paint */
 void *window_manager(void) { return &wm_repaints; }
+char system_bar[sizeof(void *)];  /* no bar: the window manager's first child is whatever the test put there */
 void *window_manager_get_top_window(void *wm) { return 0; }
 int window_manager_is_animating(void *wm) { return 0; }
 static unsigned clock_ms, pressed = 1, paused;

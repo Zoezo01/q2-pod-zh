@@ -349,6 +349,7 @@ static inline int arc_out(int r, int y) {
 #define LIBRARY_ROW_ICON_X 0x524944    /* its icon x (art_inset) */
 #define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x9272c0 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
+#define IMAGE_DRAW_FILL 8              /* "fill", the same table: stretched to the box */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a
  * LETTER_BOX square of the stock dark surface at LETTER_ALPHA, centred over the list. */
 #define LETTER_BOX 80

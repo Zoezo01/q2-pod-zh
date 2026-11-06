@@ -129,7 +129,7 @@ def test_the_pages_first_two_rows_are_sharp_ramp_and_glow():
     w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_page_top'])
     assert (w, h) == (375, 2)
     for x, y, rgb in ((187, 0, 0x8c9ba6), (187, 1, 0x95a6b2), (5, 0, 0x718089), (5, 1, 0x7c8f99), (300, 0, 0x7a8a93)):
-        assert all(abs(p - (rgb >> s & 255)) <= 2 for p, s in zip(at(x, y), (16, 8, 0))), (x, y, at(x, y))
+        assert all(abs(p - (rgb >> s & 255)) <= 1 for p, s in zip(at(x, y), (16, 8, 0))), (x, y, at(x, y))
     assert at(0, 0)[3] == 255
 
 
@@ -283,8 +283,8 @@ def test_set_time_and_set_date_images():
     _, _, sh = pixels(got['classic_light_clock_shadow'])
     assert abs(sh(43, 13)[3] - 0x70) <= 4 and sh(0, 0)[3] == 0 and sh(0, 13)[3] < 10
     w, h, hint = pixels(got['classic_light_hint_shadow'])  # stock's marks, a row down, blurred: 0 1px 2px #00000080
-    assert (w, h) == (32, 21) and hint(0, 0)[3] == 0 and hint(31, 20)[3] == 0 and hint(8, 11)[:3] == (0, 0, 0)
-    assert 0x38 < hint(10, 11)[3] <= 0x80 and hint(8, 1)[3] == 0
+    assert (w, h) == (29, 15) and hint(0, 0)[3] == 0 and hint(28, 14)[3] == 0 and hint(8, 8)[:3] == (0, 0, 0)
+    assert 0x20 < hint(8, 8)[3] <= 0x80 and hint(8, 1)[3] == 0
     _, _, lit = pixels(got['classic_light_cell_lit_45'])
     assert near(lit(26, 4), over(row(art.CELL_LIT, 0, 42), 0x66)) and near(lit(26, 45), row(art.CELL_LIT, 41, 42))
     assert lit(26, 46)[:3] == (0, 0, 0) and lit(26, 46)[3] > 0x40  # the row below: black, soft
