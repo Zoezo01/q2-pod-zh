@@ -2394,6 +2394,18 @@ static void thumb_shipped(void) {
     assert(*index == from && !*(int *)(s->raw + SLIDE_OFFSET));
     jumped = letters;
     #undef LANDED
+    /* A pass a ms after the last moves the goal as one a frame long: the same ticks, as far. */
+    float by[2];
+    for (int k = 0; k < 2; ++k) {
+        th_down();
+        for (int i = 0; i < 20; ++i) th_pass(-10, 16);
+        float a = AT();
+        th_pass(-10, k ? 1 : 16);
+        by[k] = AT() - a;
+        th_rest();
+    }
+    assert(by[0] > .1f && fabsf(by[0] - by[1]) < 1e-4f && letters == jumped);
+
     /* Over 2000 albums under the cap (no letters), then a lift: SLIDE_INDEX takes the whole
        albums, so the follower's numbers stay small and it lands exactly, on the album named. */
     th_down();

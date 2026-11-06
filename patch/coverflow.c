@@ -2528,6 +2528,7 @@ static void th_rebase(void *s, int q, int n) {
     th.clicked -= q;
 }
 #define TH_REBASE 64 /* albums: a float's step there is 8e-6 */
+#define TH_FRAME_MS 16 /* a frame at 60 Hz: the shortest pass th_turn's own rate is taken over */
 
 /* The thumb's rate at which the goal moves top_speed albums a second: the rate the speed's blend
  * is whole (fast_full), or the slow share's own (top_speed ticks_album), whichever comes first. */
@@ -2568,8 +2569,11 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
     float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
     float step = (sr + (top > sr ? top - sr : 0) * f) / r;
     /* the cap, at the filtered rate or this pass's own, the faster: while the rate is still rising
-     * to a spin's, and past top_speed ticks_album ticks/s, the share would outrun it */
-    float inst = ticks * 1000 / (float)ms, cap = top / (inst > r ? inst : r);
+     * to a spin's, and past top_speed ticks_album ticks/s, the share would outrun it. This pass's
+     * own is over a frame at least: a pass a ms or two after the last would read its ticks as a
+     * spin many times the cap's and throw them away. */
+    float inst = ticks * 1000 / (float)(ms < TH_FRAME_MS ? TH_FRAME_MS : ms),
+          cap = top / (inst > r ? inst : r);
     step = step > slow ? step : slow;
     th.ticks += ticks;
     th.tick_at = now;
