@@ -3827,23 +3827,31 @@ static void *pane_scaled(void *bitmap, const char *name, unsigned px) {
 
 /* The pane on a Streaming row: its icon, a card app's scaled to the theme's size, else the card
  * apps' own, and its name in the count's place. A name too wide for the count's column shrinks to
- * three quarters of its size, then loses its end. */
+ * three quarters of its size, then loses its end. A card app's file, up to 512 px square, leaves
+ * the image cache once drawn or scaled: its scaled copy is what stays.
+ * ponytail: a card app highlighted again after another decodes its file again; a scaled copy per
+ * app if that shows on the wheel. */
 static void pane_service(void *canvas, int x, int y) {
     const theme_t *T = theme();
     unsigned bitmap[64], s[33], n = 0; /* bitmap_t */
     char t[72];
     if (!home.row) return;
     const char *icon = service_icon(home.row_image, t, sizeof t);
-    int own = !widget_load_image(home.art, icon, bitmap);
-    if (own || !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
-        int px = T->pane_svc_px;
-        void *art = own && (int)bitmap[0] != px && tk_str_start_with(icon, "file://")
-                        ? pane_scaled(bitmap, icon, (unsigned)px)
-                        : bitmap;
-        int own_size = art == bitmap;
-        int src[4] = { 0, 0, own_size ? (int)bitmap[0] : px, own_size ? (int)bitmap[1] : px },
-            dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, px, px };
-        canvas_draw_image(canvas, art, src, dst);
+    int side = T->pane_svc_px, card = tk_str_start_with(icon, "file://");
+    int src[4] = { 0, 0, side, side },
+        dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, side, side };
+    if (card && home.svc && !tk_strcmp(home.svc_name, icon)) {
+        canvas_draw_image(canvas, home.svc, src, dst);
+    } else {
+        int own = !widget_load_image(home.art, icon, bitmap);
+        if (own || !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
+            void *art = own && (int)bitmap[0] != side && card
+                            ? pane_scaled(bitmap, icon, (unsigned)side)
+                            : bitmap;
+            if (art == bitmap) src[2] = (int)bitmap[0], src[3] = (int)bitmap[1];
+            canvas_draw_image(canvas, art, src, dst);
+        }
+        if (own && card) widget_unload_image(home.art, bitmap);
     }
     void *label = home.row_label;
     const unsigned *name = label ? widget_get_text(label) : (const unsigned *)0;
@@ -4224,8 +4232,8 @@ static int home_settings(void *ctx, void *event) {
 }
 
 /* A list its page's constructor just filled, slid in in Home's rows' shape. service: Streaming's,
- * whose 70 px rows take Home's row height, and their icons are decoded now, not on the wheel's path
- * (coverflow_home_row). */
+ * whose 70 px rows take Home's row height, and the build's icons are decoded now, not on the
+ * wheel's path (coverflow_home_row). */
 static void home_fill(void *list, int service) {
     const theme_t *T = theme();
     home_width(list, HOME_SPLIT_W, HOME_SPLIT_W, T->home_text_x, T->home_label_end[0], 0);
@@ -4241,9 +4249,10 @@ static void home_fill(void *list, int service) {
             void *label = child_of_type(b, "hscroll_label");
             unsigned bitmap[64]; /* bitmap_t */
             char t[72];
+            const char *icon = service_icon(child_of_type(b, "image"), t, sizeof t);
             if (label) widget_move_resize(label, I(label, W_X), 0, I(label, W_W), I(b, W_H));
-            widget_load_image(home.art, service_icon(child_of_type(b, "image"), t, sizeof t),
-                              bitmap);
+            /* the build's icons; a card app's file waits for the pane (pane_service) */
+            if (!tk_str_start_with(icon, "file://")) widget_load_image(home.art, icon, bitmap);
         }
     }
     widget_layout(list);

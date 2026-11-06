@@ -15119,7 +15119,7 @@ for r in srows:
     assert not m.nodes[m.nodes[b]['children'][0]]['visible'],names[-1]  # the icon; a list_into stays, stock's is empty
 assert names==['TIDAL','Spotify','A long name for a card app here','Soulseek','Tidal Downloads','Internet Radio','AirPlay','Configuration'],names
 want=['classic_light_list_tidal','classic_light_stream_spotify','file:///mnt/mmc/.deezer/icon.png','classic_light_stream_app','classic_light_list_tidal','classic_light_stream_radio','classic_light_stream_airplay','classic_light_stream_config']
-assert m.image_loads[:8]==want,m.image_loads  # decoded here, not on the wheel's path
+assert m.image_loads[:7]==[w for w in want if not w.startswith('file:')],m.image_loads  # the build's decoded here, not on the wheel's path; a card app's file waits for the pane
 passed()
 # The pane on each row, by the wheel: 96 px at 46, 62 of the pane, whatever the icon's size; the name, cut to the pane's count_w.
 m.art_size=(40,40); m.paint(sview); m.advance(10); m.paint(sview)
@@ -15134,7 +15134,9 @@ for i,(icon,text) in enumerate(zip(want,['TIDAL','Spotify','A long name for a ca
     assert loaded==[icon],(i,loaded); assert draws==[((0,0,96,96) if icon.startswith('file:') else (0,0,40,40),PANE)],(i,draws)
     if icon.startswith('file:'):  # a card app's, bilinear once, to a 96 px frame: the next paint only draws it; a pixel's four neighbours, weighted by alpha
         frames=[f for f in m.frames if m.get(f)==96]; assert len(frames)==1 and m.u.mem_read(frames[0]+0xe,2)==b'\x01\x00'
-        cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); assert stream_shows(m)[1]==draws; m.u.hook_del(hook); assert cost[0]<100000,cost
+        assert [c for c in m.calls if c[0]=='widget_unload_image' and c[1]==art]  # the file's bitmap leaves the cache once scaled
+        cost=[0]; hook=m.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1); again=stream_shows(m); m.u.hook_del(hook); assert cost[0]<100000,cost
+        assert again[:2]==([],draws)  # the scaled copy alone: nothing loaded
         src=bytes(m.u.mem_read(m.pixels[icon],40*40*4)); out=bytes(m.u.mem_read(m.get(frames[0]+0x14),96*96*4))
         at=lambda x,y: src[(y*40+x)*4:(y*40+x)*4+4]
         for x,y in ((0,0),(95,95),(48,17),(13,70)):
@@ -15166,8 +15168,9 @@ assert stream_shows(m)[2]==['A long name for \u2026'] and m.font[1]==20,(m.lette
 m.calls=[]; f,ctx=m.handler(m.nodes[srows[1]]['children'][0],O['EVT_CLICK']); assert f==payload_syms['spot_open'],f; passed()
 # A missing or broken card icon: the app's fallback. The list going, Return: the main list, the pane back to Streaming's row.
 m.calls=[]; m.call(address=payload_syms['coverflow_home_row'],args=(sview,m.nodes[srows[2]]['children'][0],2,0),gap=0)
-m.image_fail=['file:///mnt/mmc/.deezer/icon.png']
-loaded,draws,_=stream_shows(m); assert loaded==['file:///mnt/mmc/.deezer/icon.png','classic_light_stream_app'] and draws==[((0,0,40,40),PANE)],(loaded,draws); m.image_fail=[]; passed()
+dimg=[c for c in m.nodes[m.nodes[srows[2]]['children'][0]]['children'] if m.nodes[c]['type']=='image'][0]; m.nodes[dimg]['image']=broken='file:///mnt/mmc/.deezer/icon-40.png'
+m.image_fail=[broken]
+loaded,draws,_=stream_shows(m); assert loaded==[broken,'classic_light_stream_app'] and draws==[((0,0,40,40),PANE)],(loaded,draws); m.image_fail=[]; passed()
 m.calls=[]; assert m.call(O['KEY_RETURN'])==11 and m.nodes[lst]['visible'] and not m.nodes[slist]['visible'] and m.nodes[slist]['sensitive']==0 and stitled()=='Q2 Pod'; passed()
 # Hold Return from a page over Home's open list: the main list under the closing windows, no slide; held on the open list itself, its Return's slide; on the main list, Now Playing as ever.
 hh=split_stream(); hh.config['HOLDRETURN']='1'; hh.mock('netdisk_folder_clear','navigator_back_to_home','awake_screen','getFormatString','navigator_to_with_context','navigator_window_is_exist')
