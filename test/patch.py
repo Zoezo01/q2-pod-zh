@@ -4164,6 +4164,10 @@ ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
 m.mock('tk_thread_create','tk_thread_start','widget_set_enable')
 m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False); assert not m.mores and any(c[0]=='tk_thread_create' for c in m.calls); passed()
 
+# A playlist row's click runs pl_pick, then pl_marked: every dress is on stock's fresh rows, PLAYLIST_PICK their one.
+m=ClassicPlaylistMachine(); m.rebuild(); m.rebuild()
+for t in LISTS: assert [f for e,f,c in m.nodes[m.row_button(t)]['handlers'] if e==O['EVT_CLICK']]==[payload_syms['pl_pick'],payload_syms['pl_marked']]
+passed()
 # A row's More: in the normal list a tap on the dots is stock's, and the hold finds the row by them; a row of ours has no
 # menu, so its hold does nothing under Classic (never Play/Pause).
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)

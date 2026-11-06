@@ -12671,8 +12671,7 @@ static int pl_due(const void *info) {
     void *w = pl_find(win, action);
     if (w) stock_dispatch_trampoline(w, pointer_event_init(click, EVT_CLICK, w, 0, 0));
     /* a dialog's up, or gone: its close rebuilds the rows */
-    void *top = window_manager_get_top_window(wm);
-    if (top == win && pl_page(top)) pl_rows(win);
+    if (window_manager_get_top_window(wm) == win) pl_rows(win); /* pl_page(win) above */
     return 0;
 }
 /* The latest row clicked in a pass is the one that runs. */
@@ -12808,7 +12807,9 @@ static void pl_dress(void *win, int first) {
     int add = widget_get_prop_int(win, PL_MODE, 0);
     if (!view) return;
     /* the rows' click goes through pl_pick first (qm's guarded picker keeps its own), then select
-     * mode's second handler */
+     * mode's second handler, pl_marked: both are appended, and to stock's fresh rows, as
+     * ringnav_playlist dresses only after stock's rebuild, whose row button has PLAYLIST_PICK
+     * alone, so the rebind leaves pl_pick its one handler and pl_marked goes on after it */
     if (win != st.qm_playlist) qm_playlist_bind(win, 0, pl_pick);
     for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
         void *item = widget_get_child(view, i);
