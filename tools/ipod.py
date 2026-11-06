@@ -181,6 +181,7 @@ NP_IPOD_TIME_W = inc('NP_IPOD_TIME_W')
 NP_IPOD_TIME_GAP = inc('NP_IPOD_TIME_GAP')
 NP_IPOD_TIME_PX = inc('NP_IPOD_TIME_PX')
 NP_IPOD_TIME_H = inc('NP_BAR_IPOD') + 4
+NP_INFO_NAME_W = 100  # the info page's names ("Sample Rate" 76 px in the info role's 17)
 NP_IPOD_TIME_Y = 255 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2  # the slider centred on 255
 
 
@@ -662,9 +663,22 @@ def playing_page(root, g=SET0):
     # its y set as laid out too: visualizer.c places its page by it before the first layout
     named['view_lrc'][1][1] = lift
     named['view_lrc'][2]['self_layout'] = f'default(x=0,y={lift},w=375,h=178)'
-    for n in named['view_info'][3]:
-        n[1][0] += column
-        n[1][1] += lift
+    info = named['view_info'][3]
+    if g.np_ipod:  # Classic: the track's details as rows (navigation.c ringnav_np_info), from the top row's end to the dots:
+        # stock's label the name, left, and a <name>_value hscroll_label beside it the value, right-aligned and
+        # ellipsized as a settings value; both in the info role's face, whose size the rows hold (test/build.py).
+        row = NP_DOTS_Y // len(info)  # the page's rows from lift (the window's NP_TOP) to the dots at NP_DOTS_Y + lift
+        x = max(g.text_x, *(corner_x(g.bar + NP_TOP + row * i, row) for i in range(len(info))))
+        for i, n in enumerate(list(info)):
+            n[1] = [x, lift + row * i, NP_INFO_NAME_W, row]
+            n[2] = {k: v for k, v in n[2].items() if k not in ('line_wrap', 'word_wrap', 'style:normal:text_align_v')}
+            n[2]['style:normal:text_align_h'] = 'left'
+            info.append(['hscroll_label', [x + NP_INFO_NAME_W, n[1][1], 375 - 2 * x - NP_INFO_NAME_W, row], {
+                'name': n[2]['name'] + '_value', 'style': 's_scrlabel_white20r', 'only_focus': 'true', 'ellipses': 'true'}, []])
+    else:
+        for n in info:
+            n[1][0] += column
+            n[1][1] += lift
     # Classic's page reaches past the dots, down to its art's reflection, so a swipe takes it along
     slide_h = max(NP_SLIDE_H + lift, art_y + art + g.np_ipod * NP_REFLECT)
     named['slide_view_view'][1] = [0, NP_TOP - lift, 375, max(NP_DOTS_Y + lift + 10, slide_h)]

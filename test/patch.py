@@ -18419,6 +18419,27 @@ for _ in range(2):
     assert [c[1] for c in m.calls if c[0]=='np_info']==[win] and [m.nodes[l]['text'] for l in lines.values()]==want, [m.nodes[l]['text'] for l in lines.values()]
 assert next(n for n in m.nodes.values() if n.get('name')=='ringnav_genre_scroll')['text']=='Genre: Unknown'
 passed()
+# Classic's page has rows (#204's): beside each of stock's labels a <name>_value one (tools/ipod.py np_ipod); stock's
+# keeps the name, the value goes beside it, both in the info role's face and size, the value in playing.info.value's
+# grey for the half, the genre with them (no scroller); a second pass writes nothing.
+CONFIG.clear(); CONFIG.update(THEME='1',LIGHT='0')
+m=InfoMachine(); m.handlers[syms['getFormatString']]='i:format'
+lines={k:m.node('label',k,text=v) for k,v in stock_lines.items()}
+values={k:m.node('hscroll_label',k+'_value') for k in stock_lines}
+win=m.node('window','playing_page',[*lines.values(),*values.values()])
+for l in (*lines.values(),*values.values()): m.word(l+O['W_PARENT'],win)
+names=['Album','Genre','File Size','Year','Encoding','Bit Depth','Bitrate','Sample Rate','Location']
+got=['Kid A','Unknown','35.92 MB','2000','FLAC','16-bit','950 kbps','44.1 kHz','SD:/Music/Radiohead']
+for i in range(2):
+    m.calls=[]; m.call(address=payload_syms['ringnav_np_info'],args=(win,0,0,0),gap=0)
+    assert [m.nodes[l]['text'] for l in lines.values()]==names and [m.nodes[v]['text'] for v in values.values()]==got
+    assert not i or not [c for c in m.calls if c[0]=='widget_set_text_utf8' and c[1] in values.values()]  # the same values: none written
+    for k in stock_lines: m.nodes[lines[k]]['text']=stock_lines[k]  # stock's next fill
+for w in (*lines.values(),*values.values()):
+    assert (m.nodes[w]['style:normal:font_name'],m.nodes[w]['style:normal:font_size'])==('classic-light',17),m.nodes[w]
+assert {m.nodes[v]['style:normal:text_color'] for v in values.values()}=={signed(color_t(0x8a8a8a))}
+assert not any(n.get('name')=='ringnav_genre_scroll' for n in m.nodes.values()); passed()
+CONFIG.clear()
 # Genre shows in a private scroller, stock's label hidden as its source and left alone; its text is set once,
 # so stock's next 250 ms fill resets nothing. Only a value wider than the label moves, on the album marquee's
 # chain, and only in front, lit, on the info page.

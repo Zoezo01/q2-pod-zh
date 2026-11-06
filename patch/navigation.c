@@ -8392,7 +8392,10 @@ static int theme_pick(void *ctx, void *event) {
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
  * ("35.92 MB", "16-bit", "950 kbps", "44.1 kHz"), the folder its Location label, and an unknown
- * value, en_US's first player_unknown ("Unknown Artist"), reads "Unknown". */
+ * value, en_US's first player_unknown ("Unknown Artist"), reads "Unknown". Classic's page has
+ * rows (tools/ipod.py np_ipod, #204's): stock's label keeps the name and its <name>_value the
+ * value, in the info role's face, the value in the theme's grey (written through the flip, its own
+ * inverse on the half's paper and ink), the genre with them, not genre_fill's marquee. */
 int ringnav_np_info(void *win) {
     static const char *const names[] = { "label_album", "label_genre",  "label_size",
                                          "label_year",  "label_encode", "label_bits",
@@ -8400,7 +8403,7 @@ int ringnav_np_info(void *win) {
                              *const units[] = {
                                  "", "", " MB", "", "", "-bit", " kbps", " kHz", ""
                              };
-    int result = np_info(win);
+    int result = np_info(win), rows = win && widget_lookup(win, "label_album_value", 1);
     char where[64] = "";
     getFormatString("player_location", where, sizeof where);
     const char *loc =
@@ -8424,6 +8427,25 @@ int ringnav_np_info(void *win) {
         int len = (int)strlen(v), u = (int)strlen(unit);
         int split = u && len > u && !strcmp(v + len - u, unit) && v[len - u - 1] >= '0' &&
                     v[len - u - 1] <= '9';
+        if (rows) {
+            char key[24];
+            tk_snprintf(key, sizeof key, "%s_value", names[i]);
+            void *value = widget_lookup(win, key, 1);
+            tk_snprintf(out, sizeof out, "%.*s", n, name);
+            if (strcmp(out, s)) widget_set_text_utf8(label, out);
+            theme_font(label, ROLE_INFO, FONT_ROW);
+            if (!value) continue;
+            tk_snprintf(out, sizeof out, "%.*s%s", split ? len - u : len, v, split ? units[i] : "");
+            if (widget_get_text_utf8(value, s, sizeof s) || strcmp(s, out))
+                widget_set_text_utf8(value, out);
+            theme_font(value, ROLE_INFO, FONT_ROW);
+            int ink = (int)ui_ink(RGBA(theme()->np_info_value[ipod_light()]));
+            if (widget_get_prop_int(value, "_ink", 0) != ink) {
+                widget_set_prop_int(value, "_ink", ink);
+                widget_set_prop_int(value, "style:normal:text_color", ink);
+            }
+            continue;
+        }
         tk_snprintf(out, sizeof out, "%.*s: %.*s%s", n, name, split ? len - u : len, v,
                     split ? units[i] : "");
         if (i == 1) {

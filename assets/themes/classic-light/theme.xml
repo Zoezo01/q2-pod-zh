@@ -105,8 +105,9 @@
     <element name="title" font="classic-light" font_px="27"/>
     <element name="album" caps="0" opacity="255"/>
     <element name="state" opacity="0"/>  <!-- no play/pause glyph on the art, as Minimal -->
-    <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes -->
-    <element name="info" font="classic-light" font_size="17"/>
+    <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes, and Now Playing's info rows,
+         their names in the ink and their values in this grey, final in each half -->
+    <element name="info" font="classic-light" font_size="17" light.value="#8e9196" dark.value="#8a8a8a"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,

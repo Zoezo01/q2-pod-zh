@@ -389,8 +389,18 @@ def test_playing_page_classic_ipod():
     assert cover[0] == ipod.NP_MARGIN and cover[2:] == [ipod.NP_IPOD_ART, ipod.NP_IPOD_ART + ipod.NP_REFLECT]
     assert cover[1] > 0 and ipod.corner_x(top, 0) <= cover[0] < ipod.corner_x(top - 1, 0)
     assert n['slide_view'][1][3] == cover[1] + cover[3] <= view[3]
-    for k in ('label_lyricmsg', 'view_lrc', 'label_a', 'label_b', 'slide_indicator1'):
+    for k in ('label_lyricmsg', 'view_lrc', 'slide_indicator1'):
         assert n[k][1][1] == b[k][1][1] + lift, k
+    # the info page's rows, from the top row's end (the page's lift) to the dots, clear of the glass: each of stock's
+    # labels the name, left, and a <name>_value beside it, right-aligned and ellipsized, its right edge mirroring x
+    info, row = n['view_info'][3], ipod.NP_DOTS_Y // 2
+    ix = max(g.text_x, ipod.corner_x(g.bar + ipod.NP_TOP, row), ipod.corner_x(g.bar + ipod.NP_TOP + row, row))
+    assert [c[2]['name'] for c in info] == ['label_a', 'label_b', 'label_a_value', 'label_b_value']
+    assert [c[1] for c in info] == [[ix, lift + row * i, ipod.NP_INFO_NAME_W, row] for i in range(2)] + [
+        [ix + ipod.NP_INFO_NAME_W, lift + row * i, 375 - 2 * ix - ipod.NP_INFO_NAME_W, row] for i in range(2)]
+    assert lift + 2 * row <= n['slide_indicator1'][1][1] and all(c[2]['style:normal:text_align_h'] == 'left' for c in info[:2])
+    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20r' and c[2]['ellipses'] == 'true' for c in info[2:])
+    assert [c[1] for c in b['view_info'][3]] == [[5 + (375 - 225) // 2, 6, 7, 8], [10 + (375 - 225) // 2, 6, 7, 8]]  # the others' lines
     assert n['view_lrc'][2]['self_layout'] == f'default(x=0,y={lift},w=375,h=178)'
     assert root[3][-1] is n['img_more'] and n['img_more'][1] == b['img_more'][1]
     after = [c[2].get('name') for c in root[3]][root[3].index(n['slide_view_view']) + 1:][:2]

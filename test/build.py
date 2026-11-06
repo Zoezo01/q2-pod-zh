@@ -921,6 +921,18 @@ def validate_assets(directory):
                 x, y, w, h = page[name][1]
                 assert ink('-1:02:03', inc('NP_IPOD_TIME_PX')) <= w and inc('NP_IPOD_TIME_PX') <= h, (g.name, name)
                 assert min(x, 375 - x - w) >= corner_x(g.bar + y, h), (g.name, name)
+            # the info page's rows (navigation.c ringnav_np_info): each holds the info role's size, its name fits, the rows end above
+            # the dots and both columns clear the glass
+            px = {t['font_px[ROLE_INFO]'] for t in builtins() if g in geometry_sets([t])}
+            assert len(px) == 1, g.name
+            px = px.pop()
+            info = page['view_info'][3]
+            dy = g.bar + page['slide_view_view'][1][1]
+            for key, n in zip((b'album', b'genre', b'player_filesize', b'player_era', b'player_encoding', b'player_bitdepth', b'player_bitrate', b'player_samplerate', b'player_location'), info):
+                value = page[n[2]['name'] + '_value']
+                assert n[1][3] == value[1][3] >= px and ink(table[key].decode(), px) <= n[1][2] and value[1][0] == n[1][0] + n[1][2], (g.name, table[key])
+                assert min(n[1][0], 375 - value[1][0] - value[1][2]) >= corner_x(dy + n[1][1], n[1][3]), (g.name, table[key])
+            assert len(info) == 18 and info[8][1][1] + info[8][1][3] <= page['slide_indicator1'][1][1], g.name
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

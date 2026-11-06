@@ -99,6 +99,7 @@ SCHEMA = {k.path: k for k in (
     key('playing.title.font_px', 'font_px[ROLE_NP]', 'int', 64),
     key('playing.info.font', 'font[ROLE_INFO]', 'enum'),  # small text: the QR pages, the Time Zone caption, page notes
     key('playing.info.font_size', 'font_px[ROLE_INFO]', 'int', 64),
+    key('playing.info.value', 'np_info_value', 'color', final=True),  # Now Playing's info rows' values, right of their names
     key('playing.album.opacity', 'np_album_op', 'int', 255),
     key('playing.state.opacity', 'np_state_op', 'int', 255),
     key('home.rows.top', 'home_top', 'int', 375),
