@@ -372,6 +372,8 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </ol>
   <p>These folders at the card’s root each add their own <b>Library</b> entry: <code>Podcasts/</code>, <code>Audiobooks/</code>, <code>Photos/</code>, <code>Books/</code> and <code>Videos/</code>; <code>EQ/</code> holds EQ presets to import. Other folder names, such as <code>Images/</code>, aren’t picked up. See <a href="#card">What goes on the microSD card</a> for supported formats.</p>
   <p>Update Local Music adds up to 65,000 songs (stock stopped at 20,000), so with a larger library run it again after updating.</p>
+  <p><b>A large library:</b> Update Local Music goes through every folder on the card before it starts counting songs, so with tens of thousands of songs or a slow card it can stay at <b>No.0</b> for a long time. Leave it running; Return stops it. To add new music later without going through the whole card again, choose <b>System settings → Update Library → Scan Folders</b>, tick the folders you copied to, and press <b>Scan</b>.</p>
+  <p><b>Finding a song:</b> in <b>Library</b>, pull the list down from the top until “Release to search” appears, then type. In Cover Flow, turn fast to jump one initial at a time.</p>
   <p><b>Hiding a folder:</b> to keep a folder out of <b>Songs</b>, <b>Albums</b>, <b>Artists</b>, Cover Flow and library shuffle, put an empty file named <code>database.ignore</code> in it and run <b>Update Local Music</b> again. Its songs still play from Folder view and from playlists, so a folder of singles or needledrops stays reachable without filling your library. An empty <code>database.unignore</code> in a subfolder lets that subfolder back in. Name the markers <code>.database.ignore</code> and <code>.database.unignore</code>, with a leading dot, if other players shouldn’t list them. Remove the marker and update the library to show the folder again.</p>
   <p>Settings, play counts, ratings, resume points and book pages are stored on the Q2 itself, not the card, so they stay put when you swap cards.</p>
 
@@ -449,7 +451,14 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     </tbody>
   </table>
   <p>Changes apply the next time the playlist loads; the queue that’s playing keeps its order. Only local playlists can be edited.</p>
-  <p>Playlist import, a stock feature, reads M3U files only from the <code>_explaylist_data</code> folder at the card’s root, the folder playlist export creates. Export a playlist once to create it, or make the folder yourself, then put your <code>.m3u</code> files in it and import.</p>
+  <p>Playlist import, a stock feature, reads M3U files only from the <code>_explaylist_data</code> folder at the card’s root, the folder playlist export creates. Export a playlist once to create it, or make the folder yourself, then put your <code>.m3u</code> files in it and choose <b>Library → Playlists → Import playlist</b>.</p>
+  <ul>
+    <li><b>The whole folder:</b> import takes every <code>.m3u</code> in it. To import only some, keep just those in the folder. A playlist with the same name is replaced, not doubled.</li>
+    <li><b>One song per line:</b> paths such as <code>A:\Music\Artist\Album\01 Song.m4a</code>, as iTunes exporters write them, or <code>/mnt/mmc/Music/…</code>.</li>
+    <li><b>Comment lines:</b> only lines with <code>#EXT</code> in them, such as <code>#EXTM3U</code> and <code>#EXTINF</code>, are skipped. Any other line starting with <code>#</code> is read as a song and shows as a broken entry, so delete it.</li>
+    <li><b>Long playlists take time:</b> import reads every song’s tags, and the Q2 doesn’t respond until it’s done. An import running longer than 15 minutes restarts the Q2, so import a few playlists at a time.</li>
+    <li><b>Up to 100 playlists:</b> for more, open the <code>.m3u</code> files in Folder view. They play without importing, but can’t be edited.</li>
+  </ul>
   <p><b>Library → Era</b> (after Genre) lists each decade that has dated albums, oldest first, with how many albums it holds. A decade opens <b>Play All</b> (its albums by year, each in track order), <b>Shuffle</b> (all their songs, as Shuffle Songs) and its albums, each shown with its artist and year; press Centre on one to see its tracks in Cover Flow. An album’s year is its latest track’s, from the <b>Year</b> tag; untagged years leave an album out.</p>
   <p><b>Library → Long Songs</b> (after Hi-Res) lists the songs over 10 minutes, longest first, with their length. The first open measures every song once (“Measuring songs… n/N”); later opens measure only new ones. <b>Cancel</b> keeps what was measured.</p>
 
@@ -511,7 +520,7 @@ PERCENT=50</pre>
   </div>
   <div class="sub">
   <h3>Upload automatically (optional)</h3>
-  <p>To have the Q2 upload by itself whenever it’s on Wi-Fi, add <code>AUTO=1</code> to the <code>[SCROBBLE]</code> section (with <code>ALBUM_ARTIST=1</code> too, if you use it). It sends nothing until you’ve listened to something. A single listen goes up within about three hours, and the more you listen, the sooner your listens go, down to hourly. It never turns Wi-Fi on and shows no messages.</p>
+  <p>To have the Q2 upload by itself whenever it’s on Wi-Fi, add <code>AUTO=1</code> to the <code>[SCROBBLE]</code> section (with <code>ALBUM_ARTIST=1</code> too, if you use it). It sends nothing until you’ve listened to something, and it isn’t immediate: a single listen goes up within about three hours, and the more you listen, the sooner your listens go, down to hourly. It never turns Wi-Fi on and shows no messages. To send your listens right away, choose <b>Upload Scrobbles</b>.</p>
   <pre>[SCROBBLE]
 AUTO=1</pre>
   <p class="task">Upload your listens:</p>
@@ -1048,7 +1057,8 @@ http://stream.radioparadise.com/mp3-128</pre>
     <li><b>Want stock’s EQ presets?</b> <b>EQ → Advanced → Presets → Stock presets</b> has Pop, Rock, Jazz and the rest; the ten default bands work as a 10-band graphic EQ.</li>
     <li><b>Wheel click gone?</b> Key Tone is the Q2’s own speaker, so it stays quiet while headphones, Bluetooth or a USB DAC are connected, unless <b>System settings → Controls → Click With Headphones</b> (under Key Tone) is on.</li>
     <li><b>Lock screen look:</b> six built-in wallpapers and a large clock: see Chapter 6.</li>
-    <li><b>Importing an M3U playlist?</b> It has to be in <code>_explaylist_data/</code>: see Chapter 2.</li>
+    <li><b>Importing an M3U playlist?</b> It has to be in <code>_explaylist_data/</code>, and a <code>#</code> line without <code>#EXT</code> shows as a broken song: see Chapter 2.</li>
+    <li><b>Added a few albums?</b> <b>System settings → Update Library → Scan Folders</b> scans just their folders.</li>
   </ul>
 
   </div>
