@@ -4298,7 +4298,7 @@ closes=lambda m: [c[:3] for c in m.calls if c[0]=='window_manager_close_window_f
 for cls,page in ((0xf003,'album_page'),(0xf003,'localclass_page'),(0xf004,'localclass_page'),(0xf005,'localclass_page'),(0xf006,'localclass_page')):
     m=empty(cls,page); top=m.stack[-1]
     assert closes(m)==[('window_manager_close_window_force',m.wm,top)]
-    assert m.toasts==[('dialog/msginfo_dialog',1,2000,{0xf003:'No albums',0xf004:'No artists',0xf005:'No composers',0xf006:'No genres'}[cls])] and not m.timers
+    assert m.toasts==[('dialog/msginfo_dialog',1,2000,{0xf003:'暂无专辑',0xf004:'暂无表演者',0xf005:'暂无作曲家',0xf006:'暂无流派'}[cls])] and not m.timers
     passed()
 m=empty(0xf003,'album_page',stage=2)  # created, its open animation still running
 assert not closes(m) and not m.toasts and len(m.timers)==1
@@ -4311,7 +4311,7 @@ assert not closes(m) and m.toasts and not m.timers; passed()  # left before it o
 m=empty(0xf003,'album_page',leave=True)
 assert not closes(m) and m.toasts and not m.timers; passed()
 m=empty(0xf004,'localclass_page',shown=0xf006)  # Genres' page on top by now: not Artists' to close
-assert not closes(m) and m.toasts==[('dialog/msginfo_dialog',1,2000,'No artists')]; passed()
+assert not closes(m) and m.toasts==[('dialog/msginfo_dialog',1,2000,'暂无表演者')]; passed()
 # Library -> Songs reads straight into the showlist: stock's load holds its copy and the staging deque
 # together, the library twice. The staging pointer comes back, its deque cleared as stock leaves it.
 class SongsMachine(ClassMachine):
