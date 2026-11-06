@@ -2558,6 +2558,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
         float l = th.goal - th.pos, m = cfs.back / 100.f;
         th.goal = th.pos + (l > m ? m : l < -m ? -m : l);
         th.rate = 0;
+        th.jump = 0; /* letters end: the turn back moves the covers */
     }
     th.dir = dir;
     /* Wheel Sensitivity scales the travel, 50% as the theme has it */
@@ -2649,9 +2650,12 @@ int coverflow_wheel_poll(int usable, int gated) {
     th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
     th.ticks = 0;
     /* At the cap for jump_ms the spin goes by letters, where the sort has them: one each
-     * jump_ticks of travel, the first at once. Under the cap, or lifted, it's albums again. */
+     * jump_ticks of travel at any rate from fast_at, the first at once, so a moderate turn reads
+     * them. A lift, a turn back (th_turn), the rate under fast_at or no tick for stop_ms ends them:
+     * albums again from the letter's, under the thumb. */
+    int since = (int)(now - th.tick_at);
     th.capped = th.finger && th.rate >= th_cap_rate() ? th.capped + ms : 0;
-    if (!th.capped)
+    if (th.jump && (!th.finger || th.rate < cfs.fast_at || since > cfs.stop_ms))
         th.jump = 0;
     else if (!th.jump && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s))
         th.jump = 1, th.stretch = cfs.jump_ticks;
@@ -2661,7 +2665,7 @@ int coverflow_wheel_poll(int usable, int gated) {
     }
     /* Part-way is for a slow thumb that stays: a lift, the hold's timeout or a stop from speed goes
      * to the album named. */
-    int since = (int)(now - th.tick_at), idle = since > cfs.hold_ms;
+    int idle = since > cfs.hold_ms;
     float left = ABS(th.goal - th.pos);
     if (th.goal != (float)cf_round(th.goal) &&
         (!th.finger || idle || (since > cfs.stop_ms && left * 100 > cfs.stop_left)))

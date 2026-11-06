@@ -9774,8 +9774,8 @@ m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
 # At the cap for jump_ms a spin goes by letters, as Minimal's wheel does: each re-centres the covers, at rest, on the
-# next letter's first album, its letter shown and a click; slowing under the cap gives albums back under the thumb,
-# and a lift lands on the album named.
+# next letter's first album, its letter shown and a click. Once in, a moderate turn from fast_at keeps them, one each
+# jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands on the album named.
 def letter_on(m): return any(v[1]==ps['cf_letter_expire'] for v in m.timers.values())
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
 m=classic_light_new(DepthMachine,albums=9)
@@ -9787,6 +9787,11 @@ for _ in range(25):
     tspin(m,17,-30); i=tindex(m)
     if seen[-1]!=i: seen.append(i); assert toff(m)==0 and tcaption(m)==FRUIT[i]
 assert letter_on(m) and len(seen)>=4 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i) and did(m,'buzzeer_switch')
+seen=[tindex(m)]
+for _ in range(30):  # 42 ticks/s, under half the cap's: a letter each 7 passes or so
+    tspin(m,17,-4); i=tindex(m)
+    if seen[-1]!=i: seen.append(i); assert toff(m)==0 and tcaption(m)==FRUIT[i]
+assert 4<=len(seen)<=6 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i)
 tspin(m,100,-2); index=tindex(m); tspin(m,500,-2)  # 21 ticks/s
 assert tindex(m)!=index or toff(m)!=0
 trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)]; passed()
