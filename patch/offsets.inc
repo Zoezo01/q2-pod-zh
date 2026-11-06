@@ -659,6 +659,7 @@ static inline int arc_out(int r, int y) {
 #define CF_REFLECT 24
 #define CF_REFLECT_TOP 48
 #define CF_STRIDE 110
+#define CF_BOUNCE 5 /* an artist's last album: a step past kicks it 1/5 of a stride, then back */
 #define CF_ANGLE 60   /* a side cover's turn, degrees */
 #define CF_HORIZON 50 /* % down the cover its centre sits on the shared horizon */
 #define CF_THIRD 0    /* 1: the third out stays, gone half a step past it */

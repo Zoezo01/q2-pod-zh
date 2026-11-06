@@ -59,7 +59,7 @@ image_base_set_image widget_load_image widget_unload_image widget_set_name widge
 widget_set_text_utf8 widget_restack widget_animator_prop_create widget_animator_prop_set_params widget_animator_start widget_set_visible widget_get_prop_int widget_set_prop_int
 widget_get_prop_str widget_on widget_destroy_children widget_invalidate_force
 widget_count_children widget_get_child widget_lookup widget_move_resize widget_get_visible
-canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp
+canvas_get_clip_rect canvas_set_clip_rect widget_set_sensitive widget_get_type tk_strcmp widget_animator_destroy
 timer_add timer_remove navigator_back_to_home navigator_back window_manager_close_window_force navigator_to_with_context bitmap_create_ex bitmap_destroy bitmap_unlock_buffer
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
@@ -197,17 +197,29 @@ int widget_destroy_children(void *x) { W(x)->nkids = 0; return 0; }
 static int wm_repaints; /* whole-screen invalidations, from outside a paint */
 void *window_manager(void) { return &wm_repaints; }
 char system_bar[sizeof(void *)];  /* no bar: the window manager's first child is whatever the test put there */
-void *window_manager_get_top_window(void *wm) { return 0; }
-int window_manager_is_animating(void *wm) { return 0; }
+static void *top_window;
+static int animating;
+void *window_manager_get_top_window(void *wm) { return top_window; }
+int window_manager_is_animating(void *wm) { return animating; }
 static unsigned clock_ms, pressed = 1, paused;
 unsigned time_now_ms(void) { return clock_ms; }
 int window_manager_get_pointer_pressed(void *wm) { return pressed; }
 int widget_animator_pause(void *a) { ++paused; return 0; }
+static int animators_gone;
+int widget_animator_destroy(void *a) { ++animators_gone; return 0; }
 int widget_to_local(void *x, void *p) { int *r = (int *)W(x)->raw, *q = p; q[0] -= r[0], q[1] -= r[1]; return 0; }
 /* navigation.c's: the glide asked for, the animator standing in as running until glide_end. */
 static int glides, glide_goal, glide_ms, glide_easing;
 void motion_open(void *p, const char *n) {}
 int carousel_glide(void *x, int goal, unsigned ms, int easing) {
+    if (!ms) { /* the immediate move, as navigation.c's: the index moves, the offset is 0 */
+        int n = W(x)->nkids, stride = slide_menu_item_width(x) + *(int *)(W(x)->raw + SLIDE_SPACER);
+        int id = (*(int *)(W(x)->raw + SLIDE_INDEX) - goal / stride) % n;
+        *(void **)(W(x)->raw + SLIDE_ANIMATOR) = 0;
+        *(int *)(W(x)->raw + SLIDE_OFFSET) = 0;
+        slide_menu_set_value(x, id < 0 ? id + n : id);
+        return 0;
+    }
     *(void **)(W(x)->raw + SLIDE_ANIMATOR) = (void *)1;
     ++glides, glide_goal = goal, glide_ms = (int)ms, glide_easing = easing;
     return 1;
@@ -1814,6 +1826,421 @@ static void player_cover(void) {
     memset(shim_id3, 0, sizeof(shim_id3));
 }
 
+/* ---- Classic's thumb: the follower's numbers, as tuned. ---- */
+volatile int wheel_raw, wheel_travel, wheel_held;
+static int test_wheel_pct = 50;
+int wheel_pct(void) { return test_wheel_pct; }
+int coverflow_wheel_live(void), coverflow_wheel_poll(int usable, int gated), coverflow_wheel_on(void *);
+void coverflow_wheel_land(void), cf_thumb(float *out), cf_thumb_lead(float lead);
+enum { T_POS, T_VEL, T_GOAL, T_LEAD, T_RATE, T_ON };
+static float th[6];
+static int th_pass(int travel, int ms) {
+    clock_ms += ms;
+    wheel_travel += travel;
+    int r = coverflow_wheel_poll(1, 0);
+    cf_thumb(th);
+    return r;
+}
+/* The wheel turned at ticks a second going forward (x falls), 17 ms a pass. */
+static void th_spin(float ticks, int ms) {
+    static float carry;
+    for (int t = 0; t < ms; t += 17) {
+        carry += ticks * 200 / 36 * 17 / 1000;
+        int u = (int)carry;
+        carry -= u;
+        th_pass(-u, 17);
+    }
+}
+static void th_down(void) { wheel_held = 1; th_pass(0, 50); th_pass(0, 50); }
+static void th_rest(void) {
+    wheel_held = 0;
+    for (int i = 0; i < 400 && (i < 8 || th[T_ON]); ++i) th_pass(0, 17);
+    assert(!th[T_ON]);
+}
+/* One cover alone in the frame, a albums from frac 0's centre, at a lead. */
+static void row_alone(unsigned *f, float lead, int a, const unsigned *art) {
+    const unsigned *one[15] = { 0 };
+    one[a + 7] = art;
+    cf_thumb_lead(lead);
+    coverflow_render(f, PITCH, 0, one + 4);
+}
+static int col_top(const unsigned *f, int x) {
+    for (int y = 0; y < CF_VIEW_H; ++y)
+        if (slot_of(f[y * PITCH + x]) >= 0) return y;
+    return -1;
+}
+static void thumb_wheel(void) {
+    const unsigned *wide[15], **ring = wide + 4;
+    static unsigned f[300 * PITCH], g2[300 * PITCH], tex[15][160 * 160];
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
+    open_page();
+    widget *s = slide(), *covers_view = &w[s->parent];
+    char *raw = s->raw;
+    int n = s->nkids, canvas[16] = { 0 }, H = shim_themes[1].cf.view_h;
+    int *index = (int *)(raw + SLIDE_INDEX), *offset = (int *)(raw + SLIDE_OFFSET);
+    top_window = page;
+    #define CAPTION(a) (!strcmp(album_caption(covers_view), names[((a) % n + n) % n]))
+    for (int i = 0; i < 15; ++i) {
+        wide[i] = tex[i];
+        for (int k = 0; k < 160 * 160; ++k) tex[i][k] = colours[i % 7];
+    }
+    assert(coverflow_wheel_live());
+    th_pass(0, 17);
+    assert(wheel_raw == 2 && !wheel_travel);
+
+    /* The facing point's lead at steady speeds; none at all while slow. */
+    static const struct { int rate; float lead; } steady[] = { { 30, 0 }, { 50, 0 }, { 70, 1.7f }, { 90, 3 }, { 110, 4.8f }, { 130, 5.1f } };
+    for (unsigned i = 0; i < sizeof steady / sizeof *steady; ++i) {
+        th_down();
+        th_spin((float)steady[i].rate, 3000);
+        assert(fabsf(th[T_LEAD] - steady[i].lead) < .4f);
+        th_rest();
+    }
+
+    /* Wheel Sensitivity scales the travel: 100% goes twice as far as 50%. */
+    test_wheel_pct = 100;
+    th_down();
+    th_pass(-36, 17);
+    assert(fabsf(th[T_GOAL] - 2 * 35 * 36 / 200.f / 13) < .01f);
+    test_wheel_pct = 50;
+    th_rest();
+
+    /* Slow: about 72 units an album, and a cover part-way stays while the thumb does, frames or none,
+       its shake inside the dead band moving nothing. The hold's timeout lands it, Return's way or not. */
+    th_down();
+    int from = *index, before;
+    for (int i = 0; i < 18; ++i) th_pass(-2, 100);
+    th_pass(0, 200);
+    float held = th[T_POS];
+    assert(th[T_ON] && held > .35f && held < .65f && *offset == -(int)floorf(held * 110 + .5f));
+    assert(fabsf(th[T_GOAL] - 35 * 36 / 200.f / 13) < .01f && th[T_LEAD] == 0); /* the dead band keeps a unit */
+    th_pass(1, 17); th_pass(-1, 17); th_pass(1, 17); th_pass(0, 17);
+    for (int i = 0; i < 4 * 60; ++i) th_pass(0, 17);
+    assert(fabsf(th[T_POS] - held) < .001f && th[T_ON] && *index == from);
+    for (int i = 0; i < 80; ++i) th_pass(0, 17);
+    assert(!th[T_ON] && *index == (from + 0) % n + (held >= .5f) && !*offset);
+    wheel_held = 0;
+
+    /* One album's worth, slowly, lands on it. */
+    th_down();
+    from = *index;
+    for (int i = 0; i < 37; ++i) th_pass(-2, 60);
+    th_rest();
+    assert(*index == (from + 1) % n && !*offset && CAPTION(from + 1));
+
+    /* A stop from speed: the caption already names where it lands, and speed only falls, from the
+       thumb's last frame to rest; with the thumb still down. */
+    th_down();
+    from = *index;
+    th_spin(110, 2000);
+    char last[64];
+    #define KEEP(buf) snprintf(buf, sizeof buf, "%s", album_caption(covers_view))
+    KEEP(last);
+    float was = fabsf(th[T_VEL]);
+    assert(th[T_LEAD] > 3);
+    before = *index;
+    for (int i = 0; i < 200 && th[T_ON]; ++i) {
+        th_pass(0, 17);
+        assert(fabsf(th[T_VEL]) <= was + .0005f);
+        was = fabsf(th[T_VEL]);
+        assert(!strcmp(album_caption(covers_view), last));
+    }
+    assert(!th[T_ON] && th[T_LEAD] == 0 && !strcmp(album_caption(covers_view), last) && *index != before);
+    assert(CAPTION(*index));
+    wheel_held = 0;
+    th_rest();
+
+    /* From slow to full speed and back: nothing snaps, in the facing point or the shift. */
+    th_down();
+    float top = 0;
+    for (int r = 20; r <= 130; r += 2) {
+        for (int k = 0; k < 6; ++k) {
+            float l0 = th[T_LEAD];
+            th_spin((float)r, 17);
+            assert(fabsf(th[T_LEAD] - l0) < .12f);
+            top = th[T_LEAD] > top ? th[T_LEAD] : top;
+        }
+    }
+    assert(top > 4.5f);
+    for (int r = 130; r >= 20; r -= 2)
+        for (int k = 0; k < 6; ++k) {
+            float l0 = th[T_LEAD];
+            th_spin((float)r, 17);
+            assert(fabsf(th[T_LEAD] - l0) < .15f);
+        }
+    th_rest();
+
+    /* Elapsed time, not a frame's step: the same spin at 25 ms a pass comes out alike. */
+    th_down();
+    for (int t = 0; t < 2000; t += 25) th_pass(-14, 25); /* 100 ticks/s, near enough */
+    float slower = th[T_LEAD];
+    th_rest();
+    th_down();
+    th_spin(100, 2000);
+    assert(fabsf(th[T_LEAD] - slower) < .4f);
+
+    /* Turning back drops what's queued: the goal within half an album of the covers, the rate 0. */
+    assert(th[T_GOAL] - th[T_POS] > 1);
+    th_pass(+6, 17);
+    assert(fabsf(th[T_GOAL] - th[T_POS]) < .55f && th[T_RATE] < 60);
+    float rate = th[T_RATE];
+    th_pass(+6, 17);
+    assert(th[T_RATE] < rate + 60);
+    th_rest();
+
+    /* A contact under 40 ms is nothing (a press only anchors, so its travel here is what a stray
+       frame could add); a real one's first frames count once it is real. */
+    wheel_held = 0;
+    th_pass(0, 100);
+    int rest_index = *index;
+    wheel_held = 1; th_pass(-30, 20);
+    wheel_held = 0; th_pass(0, 20);
+    th_pass(-30, 20); th_pass(0, 100);
+    assert(!th[T_ON] && *index == rest_index && !*offset);
+    wheel_held = 1; th_pass(-30, 20); assert(!th[T_ON]);
+    th_pass(0, 40); assert(th[T_ON] && th[T_GOAL] > .3f);
+    /* A lift that short while moving doesn't settle; a longer one does. */
+    th_spin(80, 400);
+    float g0 = th[T_GOAL];
+    wheel_held = 0; th_pass(0, 17); th_pass(0, 17);
+    assert(th[T_GOAL] == g0);
+    wheel_held = 1; th_pass(0, 17); th_pass(-6, 17);
+    assert(th[T_GOAL] > g0);
+    wheel_held = 0; th_pass(0, 17); th_pass(0, 17); th_pass(0, 17); th_pass(0, 17);
+    assert(th[T_GOAL] == floorf(th[T_GOAL]));
+    th_rest();
+
+    /* Gated travel moves nothing, and is gone. */
+    th_down();
+    wheel_travel = -300; clock_ms += 17;
+    assert(!coverflow_wheel_poll(1, 1) && !wheel_travel);
+    cf_thumb(th);
+    assert(!th[T_ON]);
+    /* A turn answers that it moved, turned and, once an album, clicked. */
+    int clicks = 0, turned = 0, moved = 0;
+    for (int i = 0; i < 37 * 4; ++i) {
+        int r = th_pass(-2, 60);
+        clicks += !!(r & 4), turned += !!(r & 2), moved += !!(r & 1);
+    }
+    assert(clicks == 4 && turned >= 37 * 4 - 2 && moved >= turned);
+    th_rest();
+
+    /* A tick queued as the wheel went raw goes nowhere while the thumb holds the covers. */
+    assert(!coverflow_wheel_on(s));
+    th_down(); th_pass(-30, 17);
+    assert(coverflow_wheel_on(s));
+    th_rest();
+
+    /* Centre: at once, on the album the caption names. */
+    th_down();
+    th_spin(110, 1500);
+    char shown_album[64];
+    KEEP(shown_album);
+    coverflow_wheel_land();
+    cf_thumb(th);
+    assert(!th[T_ON] && !*offset && !strcmp(album_caption(covers_view), shown_album) && CAPTION(*index));
+    th_rest();
+
+    /* A touch during a spin settles first: no drag, no tap, the row runs down to the album named.
+       At rest again a tap hits what's drawn. */
+    th_down();
+    th_spin(110, 1500);
+    KEEP(shown_album);
+    int g = glides, side = CF_CX + 121 - 3, mid = shim_themes[1].cf.top + 106;
+    pressed = 1;
+    touch_at(EVT_POINTER_DOWN, 200, mid, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 280, mid, 20);
+    th_pass(0, 17);
+    assert(!wheel_raw && th[T_ON]);
+    wheel_held = 0;
+    float o0 = (float)*offset;
+    for (int i = 0; i < 200 && th[T_ON]; ++i) th_pass(0, 17);
+    assert(!th[T_ON] && (float)*offset != o0 && !*offset && !strcmp(album_caption(covers_view), shown_album));
+    touch_at(EVT_POINTER_UP_BEFORE, 280, mid, 2000);
+    assert(glides == g && !timer_fn);
+    pressed = 0;
+    th_pass(0, 17);
+    assert(wheel_raw == 2);
+    from = *index;
+    for (int j = 0; j <= 3; ++j) assert(coverflow_hit(0, CF_CX + (j ? 121 + 33 * (j - 1) - 3 : 0), mid) == j);
+    touch_at(EVT_POINTER_DOWN, side, mid, 3000); touch_at(EVT_POINTER_UP_BEFORE, side, mid, 3080);
+    assert(glides == g + 1 && glide_goal == -shim_themes[1].cf.stride);
+    glide_end(s);
+    /* A touch's glide still running when the thumb turns: the covers take over from where it is
+       and go on to its goal. */
+    *(void **)(raw + SLIDE_ANIMATOR) = 0;
+    th_pass(0, 17);
+    static int fake_anim[64];
+    fake_anim[ANIM_X_TO / 4] = -2 * shim_themes[1].cf.stride;
+    *(void **)(raw + SLIDE_ANIMATOR) = fake_anim;
+    *offset = -20;
+    int gone = animators_gone;
+    th_down(); th_pass(-6, 17);
+    assert(animators_gone == gone + 1 && !*(void **)(raw + SLIDE_ANIMATOR) && th[T_GOAL] > 2 && th[T_POS] < .5f);
+    wheel_held = 0;
+    th_rest();
+
+    /* Leaving: another window, a dialog, a window animating, the screen dark or locked (not usable),
+       the finger down, each lands the covers and gives the wheel back, dropping travel. */
+    for (int exit_kind = 0; exit_kind < 4; ++exit_kind) {
+        th_down();
+        th_spin(80, 300);
+        assert(wheel_raw == 2);
+        KEEP(shown_album);
+        int use = 1;
+        if (exit_kind == 0) top_window = &w[1];
+        if (exit_kind == 1) animating = 1;
+        if (exit_kind == 2) use = 0;
+        if (exit_kind == 3) pressed = 1;
+        wheel_travel = -40;
+        clock_ms += 17;
+        coverflow_wheel_poll(use, 0);
+        cf_thumb(th);
+        assert(!wheel_raw && !wheel_travel);
+        if (exit_kind != 3) assert(!th[T_ON] && !*offset);
+        wheel_held = 0;
+        top_window = page, animating = 0;
+        for (int i = 0; i < 200 && th[T_ON]; ++i) th_pass(0, 17);
+        pressed = 0;
+        assert(!strcmp(album_caption(covers_view), shown_album));
+        th_pass(0, 17);
+        assert(wheel_raw == 2);
+    }
+
+    /* The row. At rest and on the path with no lead the frame is the shelf's, byte for byte; a tiny
+       lead draws the same covers; a full lead shows more of them, narrower, all in the frame. */
+    #define R(buf, fr) do { for (unsigned i_ = 0; i_ < sizeof(buf) / 4; ++i_) buf[i_] = 0x12345678u; coverflow_render(buf, PITCH, fr, ring); } while (0)
+    for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 8) {
+        cf_thumb_lead(0);
+        R(f, frac);
+        cf_thumb_lead(-1);
+        R(g2, frac);
+        assert(!memcmp(f, g2, sizeof f));
+        cf_thumb_lead(1e-4f);
+        R(g2, frac);
+        int differ = 0;
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < CF_VIEW_W; ++x) differ += abs(ch(f[y * PITCH + x], 1) - ch(g2[y * PITCH + x], 1)) > 40;
+        
+        assert(differ < H * 8); /* a cover's edge, a row of a px at most, either side */
+    }
+    int spans = 0, prev = -1, rows = shim_themes[1].cf.top + 90;
+    cf_thumb_lead(5);
+    R(f, 0);
+    for (int y = 0; y < 300; ++y)
+        for (int x = 0; x < PITCH; ++x) assert((y < H && x < CF_VIEW_W) == (f[y * PITCH + x] != 0x12345678u));
+    for (int x = 0; x < CF_VIEW_W; ++x) {
+        int j = slot_of(f[rows * PITCH + x]);
+        spans += j >= 0 && j != prev;
+        prev = j >= 0 ? j : prev;
+    }
+    
+    assert(spans >= 9);
+    /* The row's numbers, on one cover at a time so nothing hides its edges. Below the row a cover's
+       edges are its pose's, lead * row_shift px on: linear in the lead. */
+    const cf_style_t *cs = &shim_themes[1].cf;
+    int fr, to;
+    #define SPAN() do { fr = to = -1; for (int x = 0; x < CF_VIEW_W; ++x) if (slot_of(f[rows * PITCH + x]) >= 0) to = x, fr = fr < 0 ? x : fr; } while (0)
+    #define SMOOTH(v) ((v) >= 1 ? 1.f : (v) * (v) * (3 - 2 * (v)))
+    static const float below[] = { .1f, .25f, .4f, .8f };
+    for (unsigned i = 0; i < sizeof below / sizeof *below; ++i) {
+        float shift = below[i] * cs->row_shift;
+        int t = (int)(below[i] * ONE);
+        row_alone(f, below[i], 0, tex[7]);
+        SPAN();
+        assert(fabsf((float)(fr - CF_CX) - (shift - cf_path_x(t, 1280) / 16.f)) <= 2);
+        assert(fabsf((float)(to - CF_CX) - (shift - cf_path_x(t, -1280) / 16.f)) <= 2);
+    }
+    /* The facing cover forms with the lead: shrunk, the shift shrinking with it. */
+    for (int a = 1; a <= 3; ++a) {
+        float v = (float)(a * 100 - cs->row_from) / (float)(cs->row_full - cs->row_from);
+        float sh = 1 - SMOOTH(v) * cs->row_shrink / 100, tall = 0;
+        row_alone(f, (float)a, a, tex[a + 7]);
+        SPAN();
+        for (int y = 0; y < H; ++y) tall += f[y * PITCH + fr + 40] == colours[a];
+        assert(fabsf(tall - 160 * sh) <= 2);
+        assert(fabsf((float)(fr - CF_CX) - (float)(a * cs->row_shift - 80) * sh) <= 2);
+    }
+    /* Away from the focus at a full lead: thinner, spaced by row_out past row_flat, and no smaller
+       there; a cover's far side keeps (100 - row_key)% of the keystone it has at rest. */
+    float sh = 1 - cs->row_shrink / 100.f, shift16 = (float)(3 * cs->row_shift * 16);
+    static const int away[] = { 2, 1, -2 };
+    int outer[3] = { 0 }, slope = 0;
+    for (int i = 0; i < 3; ++i) {
+        int t = 3 - away[i], tz = t * 100 > cs->row_flat ? cs->row_flat / 100 : t;
+        float v = (float)t * 100 / (float)cs->row_edge, e = SMOOTH(v);
+        float near = (float)cf_path_x(tz * ONE, 1280) + (float)((t - tz) * cs->row_out * 16);
+        float wide16 = (float)(cf_path_x(tz * ONE, 1280) - cf_path_x(tz * ONE, -1280)) * (1 - e * cs->row_width / 100);
+        row_alone(f, 3, away[i], tex[away[i] + 7]);
+        SPAN();
+        assert(fabsf((float)(fr - CF_CX) - (shift16 - near) * sh / 16) <= 2);
+        assert(fabsf((float)(to - CF_CX) - (shift16 - near + wide16) * sh / 16) <= 2);
+        outer[i] = col_top(f, fr + 2);
+        if (t == 2) slope = col_top(f, to - 2) - outer[i];
+    }
+    assert(abs(outer[2] - outer[1]) <= 1);
+    row_alone(f, 0, 2, tex[9]);
+    SPAN();
+    assert(fabsf((float)slope - (float)(col_top(f, fr + 2) - col_top(f, to - 2)) * sh * (1 - cs->row_key / 100.f)) <= 2);
+    cf_thumb_lead(-1);
+    cf_thumb(th);
+    th_pass(0, 17);
+    assert(wheel_raw == 2);
+    coverflow_paint(s, canvas);
+    /* Closed mid-spin with no pass between, the album named is the one kept. */
+    th_down();
+    th_spin(110, 1000);
+    KEEP(shown_album);
+    int kept = -1;
+    for (int i = 0; i < n; ++i) kept = !strcmp(names[i], shown_album) ? i : kept;
+    assert(kept >= 0);
+    wheel_held = 0;
+    close_page();
+    assert(last_album(kept));
+    top_window = 0;
+    th_pass(0, 17);
+    assert(!wheel_raw && !coverflow_wheel_live());
+
+    /* An artist's albums stop at their ends: the first push past kicks the covers out by a fifth of
+       a stride, once, they spring back, and the thumb never wraps to the other end. */
+    deque *d = _create_deque(0);
+    d->at[d->n++] = records[6], d->at[d->n++] = records[8];
+    page = &w[nw + 1];
+    assert(coverflow_artist(d));
+    run();
+    s = slide(), top_window = page;
+    index = (int *)(s->raw + SLIDE_INDEX), n = s->nkids;
+    for (int dir = 1; dir >= -1; dir -= 2) {
+        int end = dir > 0 ? n - 1 : 0;
+        float past = 0;
+        wheel_held = 1, wheel_travel = 0;
+        th_pass(0, 50); th_pass(0, 50);
+        for (int i = 0; i < 300; ++i) {
+            th_pass(-dir * 3, 17);
+            float e = (float)(end - *index);
+            past = (th[T_POS] - e) * (float)dir > past ? (th[T_POS] - e) * (float)dir : past;
+            assert(th[T_ON] ? th[T_GOAL] * (float)dir <= e * (float)dir : 1);
+        }
+        assert(past > .1f && past <= .21f);
+        th_rest();
+        assert(*index == end && !*(int *)(s->raw + SLIDE_OFFSET));
+    }
+    close_page();
+    top_window = 0;
+    th_pass(0, 17);
+
+    /* Minimal: never raw, no wider ring, the wheel is ticks. */
+    classic = 0;
+    open_page();
+    s = slide();
+    top_window = page;
+    assert(!coverflow_wheel_live() && !wheel_raw);
+    coverflow_paint(s, canvas);
+    close_page();
+    top_window = 0;
+    pressed = 1, frame_fail = 0, square_art = 0;
+}
+
 int main(void) {
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
@@ -1952,6 +2379,7 @@ int main(void) {
     classic_light_step();
     classic_light_eye();
     classic_light_follow();
+    thumb_wheel();
     flip_frames();
     sorting();
     artist_only();
@@ -2239,7 +2667,9 @@ def main():
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
                 for i, m in enumerate((ROLE_MACROS['minimal'],))]
-    cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
+    # The wheel's numbers are retuned on the device: these cases pin the model, with its own fixed ones.
+    fixture = {**classic_light, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120}
+    cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DPINNED_FRAMES=0x8c470fe7u')
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):

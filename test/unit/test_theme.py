@@ -123,7 +123,7 @@ HOMELIB, ROWPREVIEW = (own(k, label, ('Off', 'On'), None, default=1, preset=1) f
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32}
+            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': 0 for a in theme.CF_THUMB}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'payload', 'playing', 'dialog', 'coverflow', 'home') for a in ('ms', 'easing', 'anim')},
@@ -579,7 +579,8 @@ def with_role(monkeypatch, **cf):
 
 @pytest.mark.parametrize('field,value', [('eye', 2047), ('eye', 0), ('xs', 800), ('zs', 800), ('x1', 1024), ('reflect', 0),
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
-    ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295)])
+    ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
+    ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
     with_role(monkeypatch, **{field: value})
     with pytest.raises(theme.ThemeError, match=rf'coverflow\.\w+\.{field}: {value} outside'):
@@ -599,6 +600,34 @@ def test_coverflow_eye_turn_stays_in_range():
     theme.validate({**theme.builtins()[0], 'cf.eye': 1646, 'cf.eye_turn': 400}, 't.xml')
     with pytest.raises(theme.ThemeError, match='eye \\+ eye_turn = 2047 exceeds 2046'):
         theme.validate({**theme.builtins()[0], 'cf.eye': 1647, 'cf.eye_turn': 400}, 't.xml')
+
+
+CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
+                     detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
+                     lead_from=25, lead_full=100, lead_ms=45, row_shift=50, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
+                     row_edge=160, row_width=60, row_key=72, row_reach=22)
+
+
+def test_coverflow_thumb_is_classics_alone():  # the page's numbers, all retunable; Minimal stays on ticks
+    assert set(CLASSIC_THUMB) == set(theme.CF_THUMB)
+    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
+    assert {a: c[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB
+    assert not any(theme.builtins()[0][f'cf.{a}'] for a in CLASSIC_THUMB)
+
+
+@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'])
+def test_coverflow_thumb_needs_its_divisors(field):
+    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
+    with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: thumb needs {field}'):
+        theme.validate({**c, f'cf.{field}': 0}, 't.xml')
+
+
+@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
+def test_coverflow_thumb_ranges_run_upward(lo, hi):
+    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
+    with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: {hi} {c[f"cf.{lo}"]} must pass {lo} {c[f"cf.{lo}"]}'):
+        theme.validate({**c, f'cf.{hi}': c[f'cf.{lo}']}, 't.xml')
+    theme.validate({**c, 'cf.thumb': 0, f'cf.{hi}': 0}, 't.xml')  # off, they're not read
 
 
 def test_coverflow_shelf_near_edge_clears_the_eye():

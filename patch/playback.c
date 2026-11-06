@@ -275,6 +275,7 @@ int ringnav_queue_event(void *loop, const unsigned *r) {
 }
 
 volatile int wheel_raw __attribute__((section(".scratch")));
+static int wh_raw __attribute__((section(".scratch")));
 volatile int wheel_travel __attribute__((section(".scratch")));
 volatile int wheel_held __attribute__((section(".scratch"))); /* a finger on the wheel */
 
@@ -298,6 +299,7 @@ void wheel_sample(int *s, int ret, char *info) {
     if (!wh_anchor) {
         wh_anchor = wh_last = s[0];
         wh_acc = 0;
+        wh_raw = 0;
         wheel_held = 1;
         return;
     }
@@ -308,6 +310,12 @@ void wheel_sample(int *s, int ret, char *info) {
     if (wheel_raw) { /* games.c's Vortex reads the travel itself; nothing is queued for a menu */
         __sync_fetch_and_add(&wheel_travel, d / WHEEL_FINE);
         wh_acc = 0;
+        /* Cover Flow's thumb (2): its travel counts as ticks towards Return's stop */
+        if (wheel_raw == 2)
+            for (wh_raw += d < 0 ? -d : d; wh_raw >= units; wh_raw -= units) {
+                wh_tick_at = now;
+                wh_since++;
+            }
         s[0] = wh_anchor;
         return;
     }

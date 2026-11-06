@@ -37,6 +37,12 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS'},
            **dict.fromkeys(('playing.title.font', 'playing.meta.font', 'playing.info.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED', 'classic-light': 'NP_CLASSIC_LIGHT'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
+# coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb)
+CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 'fast_full': 1000, 'top_speed': 100, 'track': 1000,
+            'snap': 1000, 'spin': 1000, 'far_left': 2000, 'detent': 100, 'hold_ms': 30000, 'stop_ms': 1000, 'stop_left': 500,
+            'rate_up': 1000, 'rate_down': 1000, 'back': 500, 'dead': 20, 'contact_ms': 200, 'aim_snap': 100, 'lead_from': 500,
+            'lead_full': 1000, 'lead_ms': 1000, 'row_shift': 200, 'row_from': 1000, 'row_full': 2000, 'row_shrink': 50, 'row_flat': 800,
+            'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100, 'row_reach': 100}
 # AWTK's easing_type_t, in enum order: a value's index is its number
 EASINGS = ('linear', 'quadratic_in', 'quadratic_out', 'quadratic_inout', 'cubic_in', 'cubic_out', 'sin_in', 'sin_out', 'sin_inout',
            'pow_in', 'pow_out', 'pow_inout', 'circular_in', 'circular_out', 'circular_inout', 'elastic_in', 'elastic_out', 'elastic_inout',
@@ -189,7 +195,8 @@ SCHEMA = {k.path: k for k in (
         ('shelf', 'zs', 0, 799), ('shelf', 'eye', 1, 2046), ('shelf', 'bright1', 1, 256), ('shelf', 'bright2', 1, 256),
         ('shelf', 'reflect', 1, 50), ('shelf', 'reflect_top', 0, 256), ('shelf', 'stride', 1, 375),
         ('shelf', 'radius', 0, 83), ('shelf', 'tilt', 30, 90), ('shelf', 'horizon', 1, 99), ('shelf', 'third', 0, 1),
-        ('shelf', 'swing', 0, 1), ('shelf', 'lift', 0, 40), ('shelf', 'eye_turn', 0, 400), ('shelf', 'view_h', O['CF_VIEW_H'], 294), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
+        ('shelf', 'swing', 0, 1), ('shelf', 'lift', 0, 40), ('shelf', 'eye_turn', 0, 400), ('shelf', 'view_h', O['CF_VIEW_H'], 294),
+        *(('shelf', a, 0, hi) for a, hi in CF_THUMB.items()), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
         ('caption', 'text_y', 210, 290), ('caption', 'artist_y', 20, 32))),
     Key('page.rows.height', 'page_row', 'int', 20, 64, 48, 'open'),
     Key('page.rows.detail_height', 'page_detail', 'int', 20, 80, 64, 'open'),
@@ -1003,6 +1010,13 @@ def validate(t, name):
             err(f"coverflow.shelf: swing's near edge rests {rest:.0f} px out, past 2048")
     if t['cf.eye'] + t['cf.eye_turn'] > 2046:  # unproject's 1/16 px eye times a 16.16 cosine stays in 32 bits
         err(f"coverflow.shelf: eye + eye_turn = {t['cf.eye'] + t['cf.eye_turn']} exceeds 2046")
+    if t['cf.thumb']:  # coverflow_wheel_poll and draw_row divide by these
+        for a in ('ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'):
+            if not t[f'cf.{a}']:
+                err(f'coverflow.shelf: thumb needs {a}')
+        for lo, hi in (('fast_at', 'fast_full'), ('lead_from', 'lead_full'), ('row_from', 'row_full')):
+            if t[f'cf.{hi}'] <= t[f'cf.{lo}']:
+                err(f'coverflow.shelf: {hi} {t[f"cf.{hi}"]} must pass {lo} {t[f"cf.{lo}"]}')
     for k in (*MOTION_WINDOW, *MOTION_WIDGET):
         if not k.startswith('coverflow_step') and EASINGS[t[f'motion.{k}.easing']] == 'follow':
             err(f'motion.{k}.easing: follow is only for coverflow_step and coverflow_step_fast')
