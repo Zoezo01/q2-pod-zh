@@ -328,7 +328,7 @@ class Machine:
         elif name in ('tk_snprintf','snprintf@GLIBC_2.0'):
             fmt=self.text(c); values=iter([d]+[self.get(u.reg_read(UC_MIPS_REG_SP)+off) for off in range(16,80,4)])
             params=[]  # %.*s takes a length, then the string (its bytes)
-            for star,kind in re.findall(r'%(\.\*)?\d*([sdxXu])',fmt):
+            for star,kind in re.findall(r'%(\.\*)?\d*(?:\.\d+)?([sdxXu])',fmt):  # %.500s: Python's % applies the precision
                 if star: n=next(values); params.append(bytes(self.u.mem_read(next(values),n)).split(b'\0')[0].decode())
                 else: value=next(values); params.append(self.text(value) if kind=='s' else value if kind in 'xXu' else signed(value))
             result=(re.sub(r'%\.\*s','%s',fmt) % tuple(params)).encode(); self.u.mem_write(a,result[:b-1]+b'\0'); ret=len(result)
@@ -9289,6 +9289,7 @@ class TagTextMachine(Machine):
         self.handlers[syms['strcpy@GLIBC_2.0']]='t:strcpy'; self.handlers[syms['toolsIconvConvert']]='t:iconv'
         self.handlers[syms['strcmp@GLIBC_2.0']]='t:strcmp'  # on bytes: GBK isn't UTF-8
         self.mock('snprintf@GLIBC_2.0'); self.iconv=0
+        self.handlers.pop(syms['toolsFixId3ErrorCode'])  # stock's own runs here (ogg_music_info calls it)
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('t:'): return super().hook(u,address,size,unused)
@@ -17257,6 +17258,142 @@ assert t.album_artist('/mnt/mmc/d.mp3')=='' and t.album_artist('/mnt/mmc/none.fl
 assert t.album_artist('/mnt/mmc/e.flac')=='Past the cover'
 assert not t.handles  # every file closed
 passed()
+# An Ogg file whose comment header is over OGG_TAGS_MAX (4 MB; MusicBee's base64 pictures) is read by
+# xiph.c, not stock's TagLib, which held it ~4 times over and got demo OOM-killed in a scan: each text
+# field through stock's toolsFixId3ErrorCode, as libtag_c's (isLatin1, Latin-1, UTF-8) would reach it.
+def ogg_pages(*packets):  # each packet from a fresh page, 255 lacing values a page
+    out=bytearray(); seq=0
+    for p in packets:
+        lac=[255]*(len(p)//255)+[len(p)%255]; at=0
+        for j in range(0,len(lac),255):
+            seg=lac[j:j+255]; n=sum(seg)
+            out+=b'OggS\0'+bytes([(1 if j else 0)|(0 if seq else 2)])+bytes(8)+struct.pack('<III',1,seq,0)+bytes([len(seg)])+bytes(seg)+p[at:at+n]
+            at+=n; seq+=1
+    return out
+def opus(*comments,picture=0):
+    items=([b'METADATA_BLOCK_PICTURE='+b'A'*picture] if picture else [])+list(comments)
+    tags=b'OpusTags'+struct.pack('<I',4)+b'test'+struct.pack('<I',len(items))+b''.join(struct.pack('<I',len(c))+c for c in items)
+    return ogg_pages(b'OpusHead'+bytes([1,2])+struct.pack('<HIhB',312,48000,0,0),tags,b'\xfc'*40)
+class OggTagMachine(TagMachine):
+    def __init__(self,files):
+        super().__init__(files); self.fixes=[]; self.stock_calls=0
+        self.handlers[syms['toolsFixId3ErrorCode']]='fix_id3'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address)
+        if name=='stock_music_info': self.stock_calls+=1
+        if name!='fix_id3': return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]
+        self.fixes.append((self.get(u.reg_read(UC_MIPS_REG_SP)+16),a,self.raw(b),self.raw(c)))
+        u.mem_write(d,self.raw(c)[:255]+b'\0'); self.returns(0,clobber=True)  # stock's snprintf of the UTF-8 copy
+    def info(self,path,a=0):
+        info=self.alloc(0x6a0); self.u.mem_write(info,bytes(0x6a0)); self.fixes=[]; self.stock_calls=0
+        assert self.call(address=HOOKS['toolsGetMusicInfo'][0],args=(a,info,self.string(path),0),gap=0)==1
+        return info
+big=opus(b'TITLE=Born Dead Buried Alive',b'ARTIST=Hypocrisy','artist=ピーター'.encode(),b'ALBUM=The Arrival',b'GENRE='+b'x'*200,
+         'COMPOSER=Peter Tägtgren'.encode(),b'ALBUMARTIST=Hypocrisy',b'DATE=2004',b'TRACKNUMBER=1/11',b'DISCNUMBER=2',
+         b'MQAENCODER=MQAEncode',picture=4500000)
+t=OggTagMachine({'/mnt/mmc/big.opus':big,'/mnt/mmc/cut.opus':big[:big.rfind(b'OggS',0,big.rfind(b'OggS'))],'/mnt/mmc/small.opus':opus(b'TITLE=Small',picture=100000),
+                 '/mnt/mmc/flac.opus':flac(b'TITLE=no')})
+for a in (0,1):
+    info=t.info('/mnt/mmc/big.opus',a)
+    assert t.stock_calls==0 and [t.text(info+o) for o in (0x280,0x100,0,0x200,0x480,0x580)]==['Born Dead Buried Alive',
+        'Hypocrisy / ピーター','The Arrival','x'*127,'Peter Tägtgren','Hypocrisy']  # the genre through GENRE_COPY
+    assert [t.get(info+o) for o in (0x680,0x684,0x688,0x68c,0x690)]==[2004,2,1,0x110 if a else 0x100,48000 if a else 0]  # disc, track
+    assert [f[:2] for f in t.fixes]==[(k,k!=2) for k in range(1,7)] and t.fixes[1][2]==b'Hypocrisy / \xd4\xfc\xbf\xfc' and t.fixes[4][2:]==(b'Peter T\xe4gtgren','Peter Tägtgren'.encode())
+info=t.info('/mnt/mmc/cut.opus',1)  # its last pages gone, the header never ends: TagLib's no tag, info untouched
+assert t.stock_calls==0 and not t.fixes and t.u.mem_read(info,0x6a0)==bytes(0x6a0)
+for path in ('/mnt/mmc/small.opus','/mnt/mmc/flac.opus','/mnt/mmc/none.opus'):  # under the cap, not Ogg, missing: stock's
+    t.info(path); assert t.stock_calls==1 and not t.fixes,path
+assert not t.handles; passed()
+# Embedded art (toolsGetAlbumCover's entry, so Now Playing's, the Albums grids' and Coverflow's): an .ogg whose
+# comment header is over OGG_TAGS_MAX gets none from stock (get_oggfile_albumpic parses TagLib's whole header),
+# so the grid's fallback hands it to ffmpeg; one under the cap goes to stock, as an .opus does, never measured.
+assert struct.unpack_from('<I',demo,fileoff(demo,HOOKS['toolsGetAlbumCover'][0]))[0]==j(payload_syms['ringnav_album_cover'])
+class OggCoverMachine(TagMachine):
+    def __init__(self,files):
+        super().__init__(files); self.stock_covers=[]; self.ffmpeg=0
+        self.handlers.pop(syms['toolsGetAlbumCover'],None)  # the hook runs; stock's body is mocked
+        tramp=int(manifest['patch_symbols']['stock_album_cover_trampoline'],16)
+        self.handlers[tramp]='stock_album_cover'; self.u.hook_add(UC_HOOK_CODE,self.hook,begin=tramp,end=tramp)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address)
+        if name=='stock_album_cover': self.stock_covers.append(self.text(u.reg_read(REGS[0]))); return self.returns(1,clobber=True)
+        if name!='b:waitpid@GLIBC_2.0': return super().hook(u,address,size,unused)
+        self.ffmpeg+=1; self.files[self.dst+'.ff']=bytearray(b'jpeg')  # ffmpeg wrote its picture and exited 0
+        self.word(u.reg_read(REGS[1]),0); self.returns(u.reg_read(REGS[0]),clobber=True)
+    def cover(self,track):
+        self.stock_covers=[]; self.ffmpeg=0; self.dst='/mnt/mmc/.sldp/x0.jpg'
+        return self.call(address=payload_syms['coverflow_grid_cover'],args=(self.string(track),self.string(self.dst),110,110),gap=0)
+t=OggCoverMachine({'/mnt/mmc/big.ogg':big,'/mnt/mmc/small.ogg':opus(b'TITLE=Small',picture=100000),'/mnt/mmc/big.opus':big})
+assert t.cover('/mnt/mmc/big.ogg')==1 and not t.stock_covers and t.ffmpeg==1 and t.files[t.dst]==b'jpeg'
+for path in ('/mnt/mmc/small.ogg','/mnt/mmc/big.opus'):
+    assert t.cover(path)==1 and t.stock_covers==[path] and not t.ffmpeg,path
+assert not t.handles; passed()
+# The crash log's scan record (navigation.c crash_note): each tag read names its file in /tmp/q2-scan-file
+# before stock reads it, and every 500th appends "<count> <VmRSS kB> <path>" to /tmp/q2-scan.log, which
+# each demo starts afresh and stops past 64 KB.
+class ScanNoteMachine(TagMachine):
+    STATM=b'30000 22750 1200 1 0 25000 0\n'  # 22,750 resident pages: 91,000 kB
+    def __init__(self,files):
+        super().__init__(files); self.fds={}; self.seen=[]
+        for n in ('open','read','write','close'): self.handlers[syms[n+'@GLIBC_2.0']]='s:'+n
+        self.mock('snprintf@GLIBC_2.0')
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        a,b,c=(u.reg_read(r) for r in REGS[:3]); ret=0
+        if name=='stock_music_info': self.seen.append(bytes(self.files.get('/tmp/q2-scan-file',b'')))
+        if not name.startswith('s:'): return super().hook(u,address,size,unused)
+        if name=='s:open':
+            path=self.text(a); ret=0xffffffff
+            if path=='/proc/self/statm' and b&3==0: self.files[path]=bytearray(self.STATM)
+            if path in self.files or b&0x100:
+                if b&0x200 or path not in self.files: self.files[path]=bytearray()
+                ret=100+len(self.fds); self.fds[ret]=[path,b]
+        elif name=='s:read': data=bytes(self.files[self.fds[a][0]][:c]); u.mem_write(b,data); ret=len(data)
+        elif name=='s:write': assert self.fds[a][1]&3==1; self.files[self.fds[a][0]]+=bytes(u.mem_read(b,c)); ret=c
+        elif name=='s:close': self.fds.pop(a,None)
+        self.returns(ret,clobber=True)
+t=ScanNoteMachine({'/mnt/mmc/a.flac':flac(b'ALBUM ARTIST=A'),'/tmp/q2-scan.log':bytearray(b'a past demo\n')})
+assert t.album_artist('/mnt/mmc/a.flac')=='A' and t.seen==[b'/mnt/mmc/a.flac\n']  # named before stock reads it
+assert t.files['/tmp/q2-scan-file']==b'/mnt/mmc/a.flac\n' and t.files['/tmp/q2-scan.log']==b'a past demo\n'
+for i in range(2,500): t.album_artist(f'/mnt/mmc/{i}.opus')
+assert t.files['/tmp/q2-scan-file']==b'/mnt/mmc/499.opus\n' and t.files['/tmp/q2-scan.log']==b'a past demo\n'
+t.album_artist('/mnt/mmc/500.opus')
+assert t.files['/tmp/q2-scan.log']==b'500 91000 /mnt/mmc/500.opus\n'  # this demo's first line starts the file
+t.STATM=b'30000 23000 1200 1 0 25000 0\n'
+for i in range(501,1001): t.album_artist(f'/mnt/mmc/{i}.opus')
+assert t.files['/tmp/q2-scan.log']==b'500 91000 /mnt/mmc/500.opus\n1000 92000 /mnt/mmc/1000.opus\n'
+long='/mnt/mmc/'+'x'*700  # a line holds 500 bytes of path at most
+t.word(payload_syms['scan_counts'],1499); t.album_artist(long)
+assert t.files['/tmp/q2-scan.log'].split(b'\n')[2]==b'1500 92000 '+long[:500].encode()
+t.word(payload_syms['scan_counts']+4,65536); before=bytes(t.files['/tmp/q2-scan.log'])
+t.word(payload_syms['scan_counts'],1999); t.album_artist('/mnt/mmc/2000.opus')
+assert t.files['/tmp/q2-scan.log']==before and t.files['/tmp/q2-scan-file']==b'/mnt/mmc/2000.opus\n'  # capped
+assert not t.fds and not t.handles; passed()
+# Coverflow's shared folders (coverflow.c folders_shared, one sorted pass): exactly the old rule, an album
+# shares when another album key has a track in its folder, the folder compared whole, so an FNV collision
+# never shares.
+def fnv1a(b,h=2166136261):
+    for c in b: h=((h^c)*16777619)&0xffffffff
+    return h
+assert fnv1a(b'/m/1062789')==fnv1a(b'/m/1279192')  # one folder hash, two folders
+m=CoverflowMachine()
+fixture=[('/m/Mix/a.mp3','A','X'),('/m/Mix/b.mp3','B','Y'),  # two albums in one folder
+         ('/m/Purple/CD1/1.flac','Baroness','Purple'),('/m/Purple/CD1/2.flac','Baroness','Purple'),  # one album, one folder
+         ('/m/Purple/Disc 2/1.flac','Baroness','Purple'),('/m/Other Purple/1.flac','STP','Purple'),  # disc folders; same name elsewhere
+         (None,'C','Z'),('loose.mp3','D','Z'),('/top.mp3','E','W'),('/top2.mp3','E','W'),  # no path, no folder, the root's
+         ('/m/Three/1.mp3','F','V'),('/m/Three/2.mp3','F','V'),('/m/Three/3.mp3','G','V'),  # two keys among three
+         ('/m/1062789/a.mp3','H','U'),('/m/1279192/b.mp3','I','U')]  # colliding folders
+recs=[]
+for path,artist,album in fixture:
+    r=m.song('t'); m.word(r+O['REC_PATH'],m.string(path) if path else 0)
+    m.word(r+O['REC_ARTIST'],m.string(artist)); m.word(r+O['REC_ALBUM'],m.string(album)); recs.append(r)
+def folder(p): return p[:p.rfind('/')] if p and '/' in p else None
+old=[int(folder(p) is not None and any(folder(q)==folder(p) and (a2,b2)!=(a,b) for q,a2,b2 in fixture)) for p,a,b in fixture]
+assert old==[1,1,0,0,0,0,0,0,0,0,1,1,1,0,0]
+marks=m.call(address=payload_syms['folders_shared'],args=(m.deque(recs),len(recs),0,0),gap=0)
+assert list(m.u.mem_read(marks,len(recs)))==old
+assert m.call(address=payload_syms['folders_shared'],args=(m.deque([]),0,0,0),gap=0); passed()  # no albums: no marks, not a failure
 # Boot reads it too (ringnav_bootmode), so Audio settings shows it before any Library page has opened.
 for config,text in (({},'Artists: Album Artist'),({'ARTISTTYPE':'0'},'Artists: Artist')):
     shown=settings_page('audioset','scroll_view_playset',config,stock_rows=15,boot=True,sub=1)[2]

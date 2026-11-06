@@ -18,12 +18,18 @@ static inline void child_oom_first(void) {
     int fd = open("/proc/self/oom_score_adj", O_WRONLY);
     if (fd >= 0) write(fd, "1000", 4), close(fd);
 }
+static inline void crash_note(const char *path, const char *file, const char *log, unsigned every,
+                              unsigned *n) {
+    (void)path, (void)file, (void)log, (void)every, (void)n; /* the device's crash log only */
+}
 #else
 #include "peq_platform.h"
 #define PEQ_ROOT "" /* host tests pass a scratch directory */
 void child_exit(int status) __attribute__((noreturn));
 void child_oom_first(void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
 void ringnav_clean_end(void); /* a clean end begins: the watchdog stops, the state record goes (navigation.c) */
+/* The crash log's record of a long job's current file and demo's memory (navigation.c) */
+void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n);
 #ifdef canvas_set_fill_color
 /* Light Mode: every colour the payload draws passes ui_ink (navigation.c) on its way to these stock
  * setters, as stock's own colours pass the style and image hooks. stock_* sets a colour read back
@@ -311,7 +317,7 @@ int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap
 void album_memory(void *r);
 void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, unsigned px, unsigned color);
 unsigned book_char(const unsigned char *t, unsigned n, unsigned *i); /* books.c: UTF-8, else Latin-1 */
-int utf8_text(const char *s); /* navigation.c: valid UTF-8, a 4-byte character too */
+int utf8_text(const char *s); /* xiph.c: valid UTF-8, a 4-byte character too */
 /* Lyrics as lyrics.c's loader reads them: each line's start (ms, LRC_FAR unsynced), the order it
  * came in, its UTF-8 text and its word stamps (A2's <mm:ss.xx>), each the ms a word starts and its
  * byte offset in the text. */

@@ -4,6 +4,7 @@
 #include "peq.h" /* libc/libcstl imports (deque_*, send) and the shared helpers */
 #include "playback.h"
 #include "stock.h"
+#include "xiph.h"
 #undef select /* the UI selection helper below; headset.c uses libc select */
 extern int stock_sorted_query_trampoline(const char *, const char *, void *, int);
 extern int stock_seek_time_trampoline(int);
@@ -3932,50 +3933,6 @@ static int bt_link(void) {
 void ringnav_read_artistype(void) {
     I(artist_type, 0) = config_value("PLAYSET", "ARTISTTYPE", 2, 1);
 }
-static unsigned le32(const unsigned char *p) {
-    return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24;
-}
-/* A FLAC's "ALBUM ARTIST" Vorbis comment (foobar2000's spelling) into out (0x100 bytes); stock's
- * libtag reads only ALBUMARTIST. ponytail: FLAC only; Ogg/Opus would need page reassembly. */
-static void flac_album_artist(const char *path, char *out) {
-    const char *ext = strrchr(path, '.');
-    if (!ext || strcasecmp(ext, ".flac")) return;
-    void *f = fopen(path, "rb");
-    unsigned char h[13];
-    if (!f) return;
-    if (fread(h, 4, 1, f) == 1 && !memcmp(h, "fLaC", 4))
-        while (fread(h, 4, 1, f) == 1) {
-            unsigned left = (unsigned)h[1] << 16 | h[2] << 8 | h[3], c;
-            if ((h[0] & 0x7f) != 4) {
-                if (h[0] & 0x80 || fseek(f, (long)left, 1)) break;
-                continue;
-            }
-            /* vendor length and string, the comment count, then each comment's length and bytes,
-             * read a field at a time: a cover kept in the comments can make the block megabytes */
-            if (left < 8 || fread(h, 4, 1, f) != 1 || (c = le32(h)) > left - 8 ||
-                fseek(f, (long)c, 1) || fread(h, 4, 1, f) != 1)
-                break;
-            left -= 8 + c;
-            for (unsigned n = le32(h); n-- && left >= 4 && fread(h, 4, 1, f) == 1;) {
-                c = le32(h);
-                left -= 4;
-                if (c > left) break;
-                left -= c;
-                if (c > 13) {
-                    if (fread(h, 13, 1, f) != 1) break;
-                    if (!strncasecmp((char *)h, "ALBUM ARTIST=", 13)) {
-                        c = c - 13 > 0xff ? 0xff : c - 13;
-                        out[fread(out, c, 1, f) == 1 ? c : 0] = 0;
-                        break;
-                    }
-                    c -= 13;
-                }
-                if (fseek(f, (long)c, 1)) break;
-            }
-            break;
-        }
-    fclose(f);
-}
 /* toolsGetMusicInfo's genre strcpy (GENRE_COPY): TagLib joins multi-value genres with " / ",
  * but style has only 0x80 bytes before name. Keep whole entries that fit, or as many whole
  * characters of an oversized first one as fit 0x7f bytes; the tag file is untouched.
@@ -4002,9 +3959,69 @@ char *ringnav_genre_copy(char *dst, const char *joined) {
     return dst;
 }
 
-/* toolsGetMusicInfo (the library scan and the player's tag reads): an empty album artist falls back
+/* The crash log's records (docs/boot.md), for a library scan's tag reads and Coverflow's art build:
+ * file holds the path in progress, and every `every`th call appends "<count> <VmRSS kB> <path>" to
+ * log, which each demo starts afresh and stops past CRASH_NOTE_MAX bytes, so an OOM kill names the
+ * file and shows whether demo grew. n is the caller's {calls, bytes logged}. tmpfs, no locks: a
+ * thread racing on n only shifts a line. */
+#define CRASH_NOTE_MAX 65536
+void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n) {
+    int fd = open(file, 0x80301, 0644); /* O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC */
+    if (fd >= 0) write(fd, path, strlen(path)), write(fd, "\n", 1), close(fd);
+    if (++n[0] % every || n[1] >= CRASH_NOTE_MAX) return;
+    char m[64], line[600];
+    unsigned pages = 0;
+    fd = open("/proc/self/statm", 0x80000); /* O_RDONLY | O_CLOEXEC: "size resident ..." in pages */
+    int got = fd < 0 ? 0 : read(fd, m, sizeof m - 1);
+    if (fd >= 0) close(fd);
+    m[got > 0 ? got : 0] = 0;
+    const char *p = m;
+    while (*p && *p != ' ') ++p;
+    while (*p == ' ') ++p;
+    while (*p >= '0' && *p <= '9') pages = pages * 10 + (*p++ - '0');
+    /* O_WRONLY | O_CREAT | O_CLOEXEC, and O_APPEND, or O_TRUNC for this demo's first line */
+    fd = open(log, n[1] ? 0x80109 : 0x80301, 0644);
+    if (fd < 0) return;
+    int len = snprintf(line, sizeof line, "%u %u %.500s\n", n[0], pages * 4, path);
+    if (write(fd, line, len) == len) n[1] += len;
+    close(fd);
+}
+static unsigned scan_counts[2];
+
+/* toolsGetMusicInfo's TagLib branch (0x5c6084-0x5c64d0) for an Ogg file whose comment header is
+ * over OGG_TAGS_MAX, from xiph.c's fields: each text field through stock's toolsFixId3ErrorCode as
+ * libtag_c's pair of copies (Latin-1, UTF-8) and isLatin1 would reach it, then strcpy'd (the genre
+ * through GENRE_COPY's ringnav_genre_copy); year, track() split into disc (high half, +0x684) and
+ * track (+0x688), mqaflag into +0x68c's 0x100 bit; with a, the audio properties' sample rate and 16
+ * bits. A header TagLib would find no tag in leaves info as stock does. */
+static int ogg_music_info(int a, char *info, const char *path) {
+    static const unsigned short at[] = { 0x280, 0x100, 0, 0x200, 0x480, MUSIC_INFO_ALBUM_ARTIST };
+    xiph_tags t;
+    if (!ogg_tags(path, &t)) return 0;
+    for (unsigned k = 0; t.kind && k < sizeof at / sizeof *at; k++) {
+        char latin1[XIPH_TEXT] = { 0 }, out[0x100] = { 0 }; /* utf8_latin1 ends no invalid text */
+        int latin = utf8_latin1(t.text[k], latin1) == 2;
+        toolsFixId3ErrorCode(latin, latin1, t.text[k], out, k + 1);
+        if (at[k] == 0x200)
+            ringnav_genre_copy(info + at[k], out);
+        else
+            memcpy(info + at[k], out, strlen(out) + 1);
+    }
+    if (t.kind) {
+        unsigned track = (unsigned)t.disc << 16 | (unsigned)t.track;
+        I(info, 0x680) = t.year, I(info, 0x684) = track >> 16, I(info, 0x688) = track & 0xffff;
+        I(info, 0x68c) |= t.mqa << 8;
+        if (a) I(info, 0x690) = t.rate, I(info, 0x68c) |= 16;
+    }
+    return 1;
+}
+
+/* toolsGetMusicInfo (the library scan and the player's tag reads): crash_note first, an Ogg file
+ * with an oversized comment header read by ogg_music_info, then an empty album artist falls back
  * to flac_album_artist. */
 int ringnav_music_info(int a, char *info, const char *path) {
+    if (path) crash_note(path, "/tmp/q2-scan-file", "/tmp/q2-scan.log", 500, scan_counts);
+    if (path && ogg_music_info(a, info, path)) return 1;
     int r = stock_music_info_trampoline(a, info, path);
     if (path && !info[MUSIC_INFO_ALBUM_ARTIST])
         flac_album_artist(path, info + MUSIC_INFO_ALBUM_ARTIST);
@@ -4067,28 +4084,6 @@ char *ringnav_id3_path(char *id3, const char *path) {
  * (q2-deezer's stream cache in .deezer/stream) never joins the Library. */
 int ringnav_scan_dir(const char *name, const char *dot) {
     return name[0] == '.' ? 0 : strcmp(name, dot);
-}
-
-/* Whether s is UTF-8: every lead byte with its continuation bytes, nothing overlong, no surrogate,
- * nothing past U+10FFFF. */
-int utf8_text(const char *s) {
-    for (const unsigned char *p = (const unsigned char *)s; *p;) {
-        unsigned c = *p++, n = c < 0x80                ? 0
-                               : c >= 0xc2 && c < 0xe0 ? 1
-                               : c >= 0xe0 && c < 0xf0 ? 2
-                               : c >= 0xf0 && c < 0xf5 ? 3
-                                                       : 4;
-        if (n == 4) return 0;
-        unsigned v = c & (0x3f >> n);
-        for (unsigned i = 0; i < n; ++i, ++p) {
-            if ((*p & 0xc0) != 0x80) return 0;
-            v = v << 6 | (*p & 63);
-        }
-        if ((n == 2 && (v < 0x800 || (v >= 0xd800 && v < 0xe000))) ||
-            (n == 3 && (v < 0x10000 || v > 0x10ffff)))
-            return 0;
-    }
-    return 1;
 }
 
 static int ascii_letter(unsigned c) { return (c | 32) >= 'a' && (c | 32) <= 'z'; }
@@ -4180,9 +4175,12 @@ int ringnav_scan_refresh(void *row, const char *table, int type) {
     char info[0x698] = { 0 }, sql[8192];
     int cue = I(row, REC_CUE_START) || I(row, REC_CUE_END);
     if (!cue) {
-        /* Stock returns success even when TagLib cannot open/read a tag; keep the old tags then. */
-        void *file = taglib_file_new(path, 0);
-        int valid = file && taglib_file_tag(file);
+        /* Stock returns success even when TagLib cannot open/read a tag; keep the old tags then.
+         * An oversized Ogg header is xiph.c's to read (ogg_music_info), not TagLib's. */
+        xiph_tags t;
+        int big = ogg_tags(path, &t);
+        void *file = big ? 0 : taglib_file_new(path, 0);
+        int valid = big ? t.kind : file && taglib_file_tag(file);
         if (file) taglib_file_free(file);
         /* Refresh tags without the audio-properties probe that can walk the whole file. */
         if (!valid || toolsGetMusicInfo(0, info, path) != 1) return exists;
@@ -11344,7 +11342,8 @@ static int by_key(const void *a, const void *b) {
 /* AudioProperties::length(), as libtag_c's taglib_audioproperties_length calls it: vtable +0xc. */
 static void *ls_worker(void *unused) {
     while (ls.done < ls.total && !ls.cancel) {
-        void *f = taglib_file_new(ls.paths[ls.done], 1);
+        /* ponytail: an oversized Ogg header (ogg_tags) would cost TagLib ~4 times it; no length */
+        void *f = ogg_tags(ls.paths[ls.done], 0) ? 0 : taglib_file_new(ls.paths[ls.done], 1);
         void *p = f ? taglib_file_audioproperties(f) : (void *)0;
         int sec = p ? ((int (*)(void *))(*(void ***)p)[3])(p) : 0;
         ls.jobs[ls.done].sec = sec > 0 ? (unsigned)sec : 0;
