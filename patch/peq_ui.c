@@ -136,10 +136,10 @@ static const char *eq_output_caption(void) {
     if (!ringnav_eq_output()) return 0;
     if (!eq_owner[0]) owner_read();
     return !eq_owner[0]                     ? 0
-           : !strcmp(eq_owner, "3.5mm")     ? "EQ for 3.5 mm"
-           : !strcmp(eq_owner, "4.4mm")     ? "EQ for 4.4 mm"
-           : !strcmp(eq_owner, "usb")       ? "EQ for USB"
-                                            : "EQ for this Bluetooth device";
+           : !strcmp(eq_owner, "3.5mm")     ? "3.5 mm 均衡"
+           : !strcmp(eq_owner, "4.4mm")     ? "4.4 mm 均衡"
+           : !strcmp(eq_owner, "usb")       ? "USB 均衡"
+                                            : "蓝牙设备均衡";
 }
 /* What plays, as now, into owner's file, if there is an owner. A PEQ_ACTIVE that exists but can't be
  * read isn't filed over a good slot. 0 if the file can't be saved. */

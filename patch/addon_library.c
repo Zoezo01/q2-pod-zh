@@ -247,7 +247,7 @@ static void library_take(const char *id) {
     libup.scan = 0;
     libup.list[0] = 0; /* no files until library_parse moves them there */
     const char *bad = n >= LIB_MAX - 2            ? "请求过长"
-                      : access("/tmp/mmc_add", 0) ? "No memory card"
+                      : access("/tmp/mmc_add", 0) ? "没有存储卡"
                                                   : library_parse(body, why, sizeof why);
     if (bad || (!libup.scan && !libup.list[0])) { /* a seq alone: nothing to do */
         library_done(bad);

@@ -1687,6 +1687,21 @@ static const char *const accent_names[] = {
     "强调色：橘橙", "强调色：梅紫", "强调色：象牙白", "强调色：青绿"
 };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
+/* The built-in themes' names and their own options' labels, as the Chinese interface reads them:
+ * tools/theme.py and assets/themes/<id>/theme.xml carry the English, and only the interface shows
+ * either (the Theme row, the Theme list and Classic's own switches). */
+static const char *theme_zh(const char *name) {
+    return !tk_strcmp(name, "Minimal") ? "简约" : !tk_strcmp(name, "Classic") ? "经典" : name;
+}
+static const char *theme_word_zh(const char *word) {
+    return !tk_strcmp(word, "Library on Home") ? "主菜单显示资料库"
+         : !tk_strcmp(word, "Row Preview")      ? "行预览"
+         : !tk_strcmp(word, "Row Art")          ? "行封面"
+         : !tk_strcmp(word, "Classic Blue")     ? "经典蓝"
+         : !tk_strcmp(word, "Off")              ? "关闭"
+         : !tk_strcmp(word, "On")               ? "打开"
+                                                : word;
+}
 enum {
     SETTING_ACCENT,
     SETTING_HOME,
@@ -2691,7 +2706,7 @@ static void *list_row_into(void *view, const char *icon, int (*click)(void *, vo
  * peq_ui.c's). */
 void list_toggle(void *label, const char *title, int on) {
     if (theme()->set_text) {
-        list_value(label, title, on ? "On" : "Off");
+        list_value(label, title, on ? "打开" : "关闭");
         return;
     }
     void *button = P(label, W_PARENT);
@@ -2726,23 +2741,37 @@ void list_value(void *label, const char *title, const char *value) {
     theme_font(text, ROLE_TITLE, FONT_ROW);
 }
 
-/* A settings row's "Title: value" text; a set_text theme shows it as list_value, its bare text
- * (Accent's name) under Accent. */
+/* A settings row's "标题：值" text; a set_text theme shows it as list_value, its bare text
+ * (Accent's name) under Accent. The colon is full width in this interface and ASCII from a caller
+ * that still passes one, so both split. */
 static void row_label(void *label, const char *text) {
     if (!theme()->set_text) {
         widget_set_text_utf8(label, text);
         return;
     }
     const char *value = text;
-    while (*value && !(value[0] == ':' && value[1] == ' ')) ++value;
-    char title[40] = "Accent";
+    unsigned sep = 0;
+    while (*value) {
+        if (value[0] == ':' && value[1] == ' ') {
+            sep = 2;
+            break;
+        }
+        if ((unsigned char)value[0] == 0xef && (unsigned char)value[1] == 0xbc &&
+            (unsigned char)value[2] == 0x9a) { /* ： */
+            sep = 3;
+            break;
+        }
+        ++value;
+    }
+    char title[40] = "强调色";
     unsigned n = (unsigned)(value - text);
-    if (*value) {
+    if (sep) {
         if (n >= sizeof title) n = sizeof title - 1;
         memcpy(title, text, n);
         title[n] = 0;
+        value += sep;
     }
-    list_value(label, title, *value ? value + 2 : text);
+    list_value(label, title, sep ? value : text);
 }
 
 /* item's place in list, comma separated, or 0; an empty item is never in it. Shared with
@@ -4297,7 +4326,7 @@ static void np_sync(void *top) {
  * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 static void bar_title(void *bar, void *top) {
     static const unsigned
-        now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
+        now_playing[] = { 0x6b63, 0x5728, 0x64ad, 0x653e, 0 }, /* 正在播放 */
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
@@ -5935,22 +5964,23 @@ static void setting_text(int i) {
                                   (const char *)0 };
     char text[64];
     if (i == 0 && S->label) {
-        tk_snprintf(text, sizeof text, "强调色：%s", S->label);
+        tk_snprintf(text, sizeof text, "强调色：%s", theme_word_zh(S->label));
         row_label(st.setting_label[0], text);
         return;
     }
     if (i == 3 || i == 4 || i >= SETTING_OWN) {
         if (i == 3)
-            tk_snprintf(text, sizeof text, "主题：%s", theme()->name);
+            tk_snprintf(text, sizeof text, "主题：%s", theme_zh(theme()->name));
         else if (i == 4)
             tk_snprintf(text, sizeof text, "快捷入口：%s", ipod_home_shortcut());
         else {
             const theme_key_t *K = &theme_keys[i - SETTING_OWN];
+            const char *value = theme_word_zh(K->names[st.own[i - SETTING_OWN]]);
             if (theme()->set_text) { /* the label and the value's name, unsplit */
-                list_value(st.setting_label[i], K->label, K->names[st.own[i - SETTING_OWN]]);
+                list_value(st.setting_label[i], theme_word_zh(K->label), value);
                 return;
             }
-            tk_snprintf(text, sizeof text, "%s: %s", K->label, K->names[st.own[i - SETTING_OWN]]);
+            tk_snprintf(text, sizeof text, "%s：%s", theme_word_zh(K->label), value);
         }
         row_label(st.setting_label[i], text);
         return;
@@ -6142,7 +6172,7 @@ void restart_confirm(int setting, int value) {
     struct {
         int kind, ms;
         char text[0x400];
-    } prompt = { 1, 0, "Restart to apply?" };
+    } prompt = { 1, 0, "重启以应用？" };
     if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
     const theme_t *T = theme();
     setting_put(option_slot(T, setting), value, option_key(T, setting));
@@ -6278,7 +6308,7 @@ int ringnav_display(void *win, void *ctx) {
         for (int t = 0; t < THEME_N; ++t)
             widget_set_text_utf8(
                 list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
-                themes[t].name);
+                theme_zh(themes[t].name));
         theme_view = view;
         return result;
     }
@@ -8614,7 +8644,7 @@ static int fill_take_row(void *unused, int n, char **v, char **c) {
 }
 int ringnav_fill_albums(int (*row)(void *, const char *, const char *, const char *), void *ctx) {
     fill_take = row, fill_take_ctx = ctx;
-    int ok = era_sql(ERA_ALBUMS, fill_take_row);
+    int ok = era_sql(ERA_ALBUMS, fill_take_row, 0);
     fill_take = 0, fill_take_ctx = 0;
     return ok;
 }
@@ -8635,7 +8665,7 @@ int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char
     fill_song_take = row, fill_song_ctx = ctx;
     int ok = era_sql("select name,songer,fileurl from songtable where " MUSIC_WHERE
                      " and ifnull(album,'')='' and ifnull(time,0)=0 and ifnull(time_end,0)=0",
-                     fill_song_row);
+                     fill_song_row, 0);
     fill_song_take = 0, fill_song_ctx = 0;
     return ok;
 }

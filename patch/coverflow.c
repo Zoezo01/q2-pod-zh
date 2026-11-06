@@ -2700,7 +2700,7 @@ static void pane_shadow(void *canvas, int x, int y, int h) {
     }
 }
 
-/* n of what the caption counts, in t: "1 Song", "12 Songs"; 0: unknown, none. */
+/* n of what the caption counts, in t: "1 首", "12 首"; 0: unknown, none. */
 static int pane_count(char *t, unsigned size, unsigned n, const char *one, const char *many) {
     return !n ? 0 : tk_snprintf(t, size, n == 1 ? one : many, n);
 }
@@ -2711,18 +2711,18 @@ static int pane_caption(char *t, unsigned size) {
     switch (home.kind) {
     case PANE_NOW:
         queue_now(&at, &n);
-        return pane_count(t, size, n, "1 Song", "%u Songs");
+        return pane_count(t, size, n, "1 首", "%u 首");
     case PANE_LIBRARY:
     case PANE_SHUFFLE:
-        return pane_count(t, size, (unsigned)home.songs, "1 Song", "%u Songs");
+        return pane_count(t, size, (unsigned)home.songs, "1 首", "%u 首");
     case PANE_COVERFLOW:
-        return pane_count(t, size, (unsigned)home.albums, "1 Album", "%u Albums");
+        return pane_count(t, size, (unsigned)home.albums, "1 张专辑", "%u 张专辑");
     case PANE_GAMES:
-        return pane_count(t, size, (unsigned)home.games, "1 Game", "%u Games");
+        return pane_count(t, size, (unsigned)home.games, "1 个游戏", "%u 个游戏");
     case PANE_STREAM:
-        return pane_count(t, size, (unsigned)home.services, "1 Service", "%u Services");
+        return pane_count(t, size, (unsigned)home.services, "1 项服务", "%u 项服务");
     case PANE_SETTINGS:
-        return home.free_tenths ? tk_snprintf(t, size, "%u.%u GB Free", home.free_tenths / 10,
+        return home.free_tenths ? tk_snprintf(t, size, "可用 %u.%u GB", home.free_tenths / 10,
                                               home.free_tenths % 10)
                                 : 0;
     }
@@ -2790,9 +2790,9 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
             if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games */
             const char *s = ipod_home_shortcut();
-            kind = !tk_strcmp(s, "Games")     ? PANE_GAMES
+            kind = !tk_strcmp(s, "游戏")     ? PANE_GAMES
                    : !tk_strcmp(s, "Rockbox") ? PANE_ROCKBOX
-                   : !tk_strcmp(s, "Shuffle") ? PANE_SHUFFLE
+                   : !tk_strcmp(s, "随机播放") ? PANE_SHUFFLE
                                               : PANE_LIBRARY;
         }
     }
@@ -3088,7 +3088,7 @@ int coverflow_home_back(void *top) {
 const char coverflow_home_name[] = "Q2 Pod";
 const char *coverflow_home_title(void) {
     void *open = home_open();
-    return !open ? coverflow_home_name : open == home.lib ? "Library" : "Settings";
+    return !open ? coverflow_home_name : open == home.lib ? "音乐" : "设置";
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,
