@@ -4,16 +4,20 @@ No global widget hook: excluded pages stay byte-identical; iPod's list style edi
 The audit records full original instructions and asset hashes, not search/replace patterns.
 """
 import copy
+import dataclasses
 import functools
 import json
 import math
 import pathlib
 import re
 import struct
-from build import ROOT, check, fileoff, sha, jal
+import types
+from build import CLASSIC_LIGHT_TTF, ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
+# The named immediates' values (ipod.json): text rows' plain, art rows' art_.
+VALUE_NAMES = list(dict.fromkeys(g['value'] for g in AUDIT['immediates'] if isinstance(g['value'], str)))
 INC = (ROOT/'patch/offsets.inc').read_text()
 
 
@@ -21,14 +25,57 @@ INC = (ROOT/'patch/offsets.inc').read_text()
 O = {m[1]: int(m[2], 0) for m in re.finditer(r'^#define\s+(\w+)\s+(0x[0-9A-Fa-f]+|\d+)\b', INC, re.M)}
 inc = O.__getitem__
 
-# The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
-# 72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
-# 68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
-BOTTOM = 290
-PITCH = 72
-BODY = PITCH - 4
-ART = 52
-ART_INSET = (BODY - ART) // 2
+@dataclasses.dataclass(frozen=True)
+class Geometry:
+    """The app window is the 375x320 screen minus the 30px status bar, so a 290px list holds four
+    72px rows. The stock 52px artwork is drawn 1:1 (no rescaling) with an 8px inset inside the
+    68px row body. Rows keep the row layout's eight-pixel left margin for the artwork.
+    text_art, text_art_inset: the text pages' artwork and its inset (0 hides it, a Classic text row).
+    set_row, set_top, set_rows, set_icon: settings lists hold set_rows rows of set_row from set_top, the
+    icon at set_icon (0 hides it); payload rows are built 70 px high (SET_STOCK_BODY), stock's shape,
+    and mapped like stock's.
+    SET0 is the built-in set; a theme declares its others in its theme.xml (<geometry name>, tools/theme.py)."""
+    name: str = 'ipod'
+    bar: int = 30
+    pitch: int = 72
+    body: int = 68
+    art: int = 52
+    art_inset: int = 8
+    art_pitch: int = 72
+    art_body: int = 68
+    text_art: int = 52
+    text_art_inset: int = 8
+    lib_pitch: int = 72  # the Library's rows, a kind of their own: its pitch, body, icon inset and icon (0 hides it)
+    lib_body: int = 68
+    lib_inset: int = 8
+    lib_art: int = 52
+    title24_y: int = 13  # text y in the body: the 24px title, the title, metadata, playlist count
+    title_y: int = 10
+    meta_y: int = 39
+    count_y: int = 40
+    art_title24_y: int = 13
+    art_meta_y: int = 39
+    song_pitch: int = 72  # Songs' rows, a kind of their own: its pitch, body, title and metadata y
+    song_body: int = 68
+    song_title24_y: int = 13
+    song_meta_y: int = 39
+    set_row: int = inc('SET_ROW')
+    set_top: int = inc('SET_TOP')
+    set_rows: int = inc('SET_ROWS')
+    set_icon: int = inc('SET_ICON')
+    bar_px: int = 0  # the status bar's title and clock px in the Classic face (status_metrics); 0: stock's bar, no title
+    bar_title_w: int = 0  # the bar title's text width (status_metrics)
+    bar_right: int = 0  # Classic's bar: the right group's margin, from the nub's last column to the screen's edge
+    batt_w: int = inc('BATT_BODY_W')  # the battery body under BATT_CLASSIC_LIGHT (navigation.c classic_light_battery), its nub outside
+    batt_h: int = inc('BATT_BODY_H')
+    text_x: int = 0  # list text's left edge, clear of the glass at the first row (0: stock's)
+    action_row: int = 0  # Songs' action bar as a plain row this high (0: stock's 50 px bar)
+    list_end: int = 0  # the screen row under the bar where a selected row's scroll stops: below it the glass hides its text (0: stock's end)
+    home_row: int = 39  # Home's and its Settings list's row height; Python only, no C reads it
+    home_lib: int = 0  # Home's Library row, in Split, slides in a list of the Library's rows (coverflow.c home_library)
+
+
+SET0 = Geometry()
 MARGIN = 8
 # The 375x320 panel's glass has rounded corners that hide whatever is drawn in them. CORNER_R is
 # the device calibration knob: the corner radius in pixels, fitted to device photos (V5.4I cut
@@ -74,23 +121,21 @@ CLOCK_TEXT = 70
 # calibration knob.
 SLIDE = f'htranslate(duration={inc("PAGE_SLIDE_MS")})'
 HOME_TOP = inc('HOME_TOP')
-HOME_ROW = 39
+HOME_ROW = SET0.home_row
 HOME_TEXT_X = inc('HOME_DOT_X') + inc('HOME_DOT') + inc('HOME_DOT_GAP')  # labels after the selection dot
 HOME_LABEL_END = inc('HOME_LABEL_END')  # mirror the text inset, clear of the lower-right glass
 HOME_LIST_W = 375
 # iPod Now Playing (Rockbox iVideo): a 40px top row, the art band below it, then the progress bar
 # with the times under its ends. Stock draws the 3x10 A-B markers at y 250; the 4px line sits at
 # 253; their x follows NP_BAR through the np_bar_* immediates in ipod.json. The window starts
-# at screen y 30; the top and bottom rows take their insets from the corners. The bar is a capsule
-# (round_radius half its height) and the payload rounds the art's corners (paint_cover).
+# at screen y Geometry.bar; the top and bottom rows take their insets from the corners. The bar
+# is a capsule (round_radius half its height) and the payload rounds the art's corners (paint_cover).
 # The art and the metadata keep NP_MARGIN from the sides, 12px apart; the art is as large as that
 # leaves while the text column keeps NP_TEXT_W, and "3 of 12" starts in line with the art.
 NP_TOP = 40
 NP_ICON = 50                     # the stock 50px control icons, centred in the top row
 NP_ICON_PAD = inc('NP_ICON_PAD')  # play_fav/play_order: 28px, centred, glyph ends 4px above
 NP_MARGIN = 16
-NP_POS_X = max(NP_MARGIN, corner_x(30 + (NP_TOP - 16) // 2, 16)) + 6  # "3 of 12", 16px text
-NP_ICONS_END = 375 - corner_x(30, NP_TOP)  # the 50px icon images fill the row's height
 NP_TEXT_W = 165
 NP_TITLE_PX = inc('NP_TITLE_PX')  # the title over the NP_META_PX artist and album, as Apple's hierarchy
 NP_META_PX = inc('NP_META_PX')
@@ -99,12 +144,34 @@ NP_SLIDE_H = 186                 # the swipeable art, lyrics and info pages; the
 NP_DOTS_Y = NP_SLIDE_H - 4       # above the seek bar's NP_TOUCH target
 # The art's gap below to the dots matches its gap above to "3 of 12"'s 16px text.
 NP_ART_Y = (NP_DOTS_Y - NP_ART - (NP_TOP - 16) // 2) // 2
-NP_BAR_X = max(MARGIN, corner_x(30 + 251, 8))
-NP_BAR = [NP_BAR_X, 253, 375 - 2 * NP_BAR_X, 4]
 NP_TOUCH = 44
 NP_TIMES_Y = 265  # 14px text in a 16px label, clear of the 10px A-B markers
-NP_TIME_X = max(MARGIN, corner_x(30 + NP_TIMES_Y + 1, 14))
 NP_TEXT_X = NP_MARGIN + NP_ART + 12
+
+
+def with_geometry(g):
+    """The row sizes and the Now Playing insets that clear the glass, for a window starting at g.bar."""
+    bar_x = max(MARGIN, corner_x(g.bar + 251, 8))
+    return types.SimpleNamespace(
+        BOTTOM=320 - g.bar, PITCH=g.pitch, BODY=g.body, ART=g.art, ART_INSET=g.art_inset,
+        NP_POS_X=max(NP_MARGIN, corner_x(g.bar + (NP_TOP - 16) // 2, 16)) + 6,  # "3 of 12", 16px text
+        NP_ICONS_END=375 - corner_x(g.bar, NP_TOP),  # the 50px icon images fill the row's height
+        NP_BAR_X=bar_x, NP_BAR=[bar_x, 253, 375 - 2 * bar_x, 4],
+        NP_TIME_X=max(MARGIN, corner_x(g.bar + NP_TIMES_Y + 1, 14)))
+
+
+GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h', 'text_x', 'lib_art', 'list_end', 'action_row')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
+
+
+def immediate_values(g=SET0):
+    """{value name: word} for the named ipod.json immediates under geometry g."""
+    geo = with_geometry(g)
+    values = {k: v for k, v in dataclasses.asdict(g).items() if k in VALUE_NAMES}
+    return values | {'scroll': geo.BOTTOM - (g.action_row or 50), 'np_bar_x': geo.NP_BAR[0], 'np_bar_w': geo.NP_BAR[2]}
+
+
+IPOD = with_geometry(SET0)
+globals().update(vars(IPOD))
 check([NP_MARGIN, NP_ART, NP_TEXT_X, NP_TEXT_W, *NP_BAR[::2], NP_TIMES_Y, NP_TIME_X] ==  # Spotify's and Radio's
       [inc('SPOT_' + n) for n in 'ART_X ART_PX TEXT_X TEXT_W BAR_X BAR_W TIMES_Y TIME_X'.split()], 'SPOT_* != NP_*')
 check(inc('NP_ART_TOP') == NP_TOP + NP_ART_Y, 'NP_ART_TOP != NP_TOP + NP_ART_Y')
@@ -226,7 +293,7 @@ def home_card(menu, at, row, text):
 # holding stock's own Playback and System setting rows (labelled Playback and System), into the list's place.
 HOME_ROWS = ['playing', 'localmusic', 'coverflow', 'folder', 'rockbox', 'stream', 'settings']
 HOME_SETS = ['playset', 'sysset']
-HOME_LITERAL = {'coverflow': 'Coverflow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
+HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
 # Stock's visitor translates label_localmusic, label_playset and label_sysset by name; renamed, they keep
 # these shorter literals.
 HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback'},
@@ -238,8 +305,9 @@ LIST_CLEAR = {f'style:{state}:{prop}': '#00000000' for state in ('normal', 'disa
               for prop in ('bg_color', 'border_color')}
 
 
-def home_list(name, rows, extra=None):
-    """A Home list_view of HOME_ROW rows: each a label under a full-row transparent tap image."""
+def home_list(name, rows, g, extra=None):
+    """A Home list_view of g.home_row rows: each a label under a full-row transparent tap image. With no rows, a
+    window-high list the Library page's constructor fills (coverflow.c home_library), its view named as the page's."""
     views = []
     for i, row in enumerate(rows):
         # Long translations ellipsize and scroll inside the shared text margins.
@@ -247,24 +315,26 @@ def home_list(name, rows, extra=None):
         if row in HOME_LITERAL:
             label['text'] = HOME_LITERAL[row]
         label.update(HOME_RENAMED.get(row, {}))
-        views.append(['view', [0, i * HOME_ROW, HOME_LIST_W, HOME_ROW], {'name': 'btn_' + row}, [
-            ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, HOME_ROW], label, []],
-            ['image', [0, 0, HOME_LIST_W, HOME_ROW], {'name': 'img_' + row, 'clickable': 'true'}, []]]])
+        views.append(['view', [0, i * g.home_row, HOME_LIST_W, g.home_row], {'name': 'btn_' + row}, [
+            ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, g.home_row], label, []],
+            ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': 'img_library' if g.home_lib and row == 'localmusic' else 'img_' + row, 'clickable': 'true'}, []]]])
     # The list_view's layout (0x5ea3a4) makes its scroll view vertical only for a mobile scroll bar,
     # which Home has none of, and scroll_view_create leaves it off; the payload navigates only
     # vertical scroll views.
-    view = ['scroll_view', [0, 0, HOME_LIST_W, HOME_ROW * len(views)],
-            {'name': 'scroll_view_' + name, 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, views]
-    return ['list_view', [0, HOME_TOP, HOME_LIST_W, HOME_ROW * len(views)],
-            {'name': 'list_view_' + name, 'item_height': str(HOME_ROW), **LIST_CLEAR, **(extra or {})}, [view]]
+    h = g.home_row * len(views) or 320 - g.bar
+    view = ['scroll_view', [0, 0, HOME_LIST_W, h],
+            {'name': 'scroll_view_' + (name if rows else 'localmusic'), 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, views]
+    return ['list_view', [0, HOME_TOP, HOME_LIST_W, h],
+            {'name': 'list_view_' + name, 'item_height': str(g.home_row), **LIST_CLEAR, **(extra or {})}, [view]]
 
 
-def ipod_home(root):
+def ipod_home(root, g=SET0):
+    geo = with_geometry(g)
     check([n[0] for n in root[3]] == ['slide_menu', 'image', 'image'], 'Unexpected home carousel')
     check([n[2]['name'] for n in root[3][0][3]] == ['btn_' + r for r in
             ('playing', 'localmusic', 'folder', 'stream', 'playset', 'sysset')], 'Unexpected home cards')
     menu = root[3][0]
-    home_card(menu, 2, 'coverflow', 'Coverflow')
+    home_card(menu, 2, 'coverflow', 'Cover Flow')
     home_card(menu, 4, 'rockbox', 'Rockbox')
     menu[3][1][3][1][2].update(LIBRARY)
     # Home: Carousel's (coverflow_home_layout): the carousel and its arrows, over the lists, hidden and
@@ -272,8 +342,9 @@ def ipod_home(root):
     for n in root[3]:
         n[2].update(visible='false', sensitive='false')
     # An image for the playing track's art, moved to the right panel and fitted by coverflow_home_art.
-    root[3] = [['image', [0, 0, 375, 290], {'name': 'img_homeart', 'draw_type': 'fill'}, []],
-               home_list('home', HOME_ROWS), home_list('homeset', HOME_SETS, {'visible': 'false'}), *root[3]]
+    root[3] = [['image', [0, 0, 375, geo.BOTTOM], {'name': 'img_homeart', 'draw_type': 'fill'}, []],
+               home_list('home', HOME_ROWS, g), home_list('homeset', HOME_SETS, g, {'visible': 'false'}),
+               *([home_list('homelib', [], g, {'visible': 'false'})] if g.home_lib else []), *root[3]]
 
 
 def style_props(data):
@@ -311,6 +382,9 @@ def patch_style(data, audit):
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
 STATUS_BAR = 'system_bar.bin'
 STATUS_LEFT = ['img_state', 'label_eq']
+STATE_W = 18  # Classic's play state's width: its ink's last column is 282 (tools/art.py STATE_BOX)
+BAR_PAD = 6  # Classic's bar: the title's and the Home play state's ink this far clear of the glass (bar_right gives the battery's)
+HOME_STATE_X = 52 + BAR_PAD  # Classic's play state on Home, in the title's place: 52 the glass's reach into its ink (test_art)
 STATUS_RIGHT = ['img_bt', 'img_wifi', 'label_battery', 'view_battery', 'img_battery']
 STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 # The Battery setting (navigation.c bar_sync) shows one of the last three: the stock icon, stock's
@@ -323,15 +397,45 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
+# Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
+# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery. On Home's own list the play state is
+# img_home_state instead, in the title's place, "Q2 Pod" hidden.
+STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
+CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
+CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
+CLASSIC_LIGHT_FONT_NAME = pathlib.Path(CLASSIC_LIGHT_TTF).stem
 
 
-def status_bar(root):
+def status_metrics(g, font):
+    """Classic's bar text boxes. Caps of g.bar_px text sit centred on the rows above the bar's two lines, the
+    fractional top row counted: the title's first ink clears the glass there. Stock's hscroll_label keeps
+    2 px each side of its box, so the title's box is that much wider than its g.bar_title_w of text; the
+    clock is centred, clock_text ("12:59 PM") its widest. Model:
+    stb scales a font so that ascent - descent is its size, and AWTK centres the line box in the label."""
+    from fontTools.ttLib import TTFont
+    f = TTFont(font, lazy=True)
+    asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
+    scale = g.bar_px / (asc - desc)
+    clock_text = math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in '12:59 PM') * scale)
+    cap, h = math.ceil(f['OS/2'].sCapHeight * scale), g.bar - 1
+    cap_top = (g.bar - 2 - cap) // 2
+    label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
+    inset = corner_inset(cap_top) + BAR_PAD
+    pad = 2  # the hscroll_label's margin each side
+    return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset, 'clock_text': clock_text,
+            'title': [inset - pad, label_y, g.bar_title_w + 2 * pad, h],
+            'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
+
+
+def status_bar(root, g=SET0):
     left, right = root[3]
     root[2]['style:normal:bg_color'] = '#000000'
     # Clear, not black: AWTK draws the border over the bar's fill, and Light Mode flips black to paper.
     root[2].update({f'style:{s}:border_color': '#00000000' for s in ('normal', 'disable', 'focused')})
     check([left[2].get('name'), right[2].get('name')] == ['view_left', 'view_right'], 'Unexpected status bar')
+    check(root[1][3] == left[1][3] == right[1][3] == 30, 'Unexpected status bar height')
+    root[1][3] = left[1][3] = right[1][3] = g.bar
     widgets = {n[2]['name']: n for n in left[3] + right[3]}
     check(sorted([*widgets, 'view_battery']) == sorted(STATUS_LEFT + STATUS_RIGHT + STATUS_HIDDEN), 'Unexpected status bar widgets')
     widgets['img_wifi'][1][2] = 14
@@ -346,30 +450,65 @@ def status_bar(root):
         pct[2].update({f'style:{s}:font_size': str(BATT_PCT_PX), f'style:{s}:text_align_h': 'right'})
     pct[2]['visible'] = 'false'
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
-    left[3] = [widgets[n] for n in STATUS_LEFT]
-    right[3] = [widgets[n] for n in STATUS_RIGHT]
-    for view in (left, right):
+    # Classic's set (bar_px): the title on the left in the Classic face, the clock centred, the icons right of it
+    m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
+    left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
+    right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
+    xm = g.bar_right if m else STATUS_MARGIN
+    for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
         layout = view[2]['children_layout']
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
-        view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={STATUS_MARGIN},s={inc("STATUS_GAP")}')
+        view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
+    room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + (CLASSIC_LIGHT_CLOCK_GAP if m else CLOCK_GAP)))
+    if m:  # every icon, the battery with the column of soft edge left of it, and EQ 2 px short of Bluetooth's ink
+        gap = inc('STATUS_GAP')
+        reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
+        check(reach <= room, f'Status bar battery needs {reach}px of {room}px')
+        # bar_sync's gate reads BATT_ROOM, the built-in bar's: a mode it lets through must still fit this room (a theme on this bar offers only modes the gate exempts: test_theme)
+        check(room >= BATT_ROOM - 1, f'BATT_ROOM {BATT_ROOM} past the bar\'s room {room}')
+        for name in STATUS_HIDDEN:
+            box = widgets[name][1]
+            box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
+            root[3].append(widgets[name])
+        face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
+                for k, v in (('font_size', str(g.bar_px)), ('font_name', CLASSIC_LIGHT_FONT_NAME))}
+        # EQ floats at the room's left edge, not left of img_bt's whole canvas, whose last BT_REACH px alone hold ink:
+        # there it would reach the clock's text.
+        # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs
+        # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
+        eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
+        eq[2].update({'floating': 'true', **face})
+        # The play state is in the row: Wi-Fi's ink ends on column 261 with it, and it closes up without it.
+        widgets['img_state'][1][2] = STATE_W
+        # Stock's 16 px icon canvases, centred, put Bluetooth's ink (a row into its canvas) on the battery's top row
+        right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 - 1) + 16
+        left[1][3] = widgets['img_state'][1][3] = right[1][3]  # the state's 22 px art, its ink centred on the caps
+        home = copy.deepcopy(widgets['img_state'])
+        home[1][:] = [HOME_STATE_X, right[1][1], STATE_W, right[1][3]]
+        home[2].update(name='img_home_state', visible='false')
+        root[3].append(home)
+        # The payload writes the top window's title (bar_title_sync) and the local time (ringnav_paint_bg).
+        for name, style in (('title', 's_scrlabel_white20l'), ('clock', 's_scrlabel_white20c')):
+            root[3].append(['hscroll_label', m[name], {'name': 'label_' + name, 'style': style, 'only_focus': 'true',
+                                                       'ellipses': 'true', **face}, []])
+        return
     shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES] for v in (left, right)]
     extent = max(STATUS_MARGIN + sum(n[1][2] for n in v) + inc('STATUS_GAP') * (len(v) - 1) for v in shown)
     width = 375 - 2 * extent
     check(width >= CLOCK_MIN and right[1][0] + right[1][2] == 375, f'Status bar clock {width}px, too narrow')
-    room = int(375 - STATUS_MARGIN - (375 / 2 + CLOCK_TEXT / 2 + CLOCK_GAP))
     reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + max(BATT_PCT_W, BATT_H_W, inc('BATT_INSIDE_W') + inc('BATT_NUB_W'))
     check(BATT_ROOM == room and reach <= room, f'Status bar battery needs {reach}px of {room}px')
     for name in STATUS_HIDDEN:
-        g = widgets[name][1]
-        g[0], g[3] = -200, 30  # still updated by stock, drawn off-screen
+        box = widgets[name][1]
+        box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
         root[3].append(widgets[name])
-    root[3].append(['label', [STATUS_MARGIN, 0, 28, 30], {
+    root[3].append(['label', [STATUS_MARGIN, 0, 28, g.bar], {
         'name': 'label_idle', 'text': 'Q2', 'visible': 'false',
         'style:normal:font_size': '18', 'style:normal:text_color': '#FFFFFF',
         'style:normal:text_align_h': 'left'}, []])
     # The payload writes the local time here (ringnav_paint_bg).
-    root[3].append(['hscroll_label', [extent, 0, width, 30], {
-        'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true'}, []])
+    root[3].append(['hscroll_label', [extent, 0, width, g.bar], {
+        'name': 'label_clock', 'style': 's_scrlabel_white20c', 'style:normal:font_size': '16', 'only_focus': 'true', 'ellipses': 'true'}, []])
 
 
 # Stock finds every Now Playing widget by name, recursively, so they can move: title, artist
@@ -405,7 +544,8 @@ def np_slider(slider, x, cy, w, h):
         if key.endswith(':round_radius'): slider[2][key] = str(h // 2)  # a capsule, track and fill
 
 
-def playing_page(root):
+def playing_page(root, g=SET0):
+    geo = with_geometry(g)
     named = {n[2].get('name'): n for n in walk(root)}
     check([n[2].get('name') for n in root[3]] == [
         'view_buttons', 'scrlabel_title', 'scrlabel_artist', 'label_playtime', 'label_playlen',
@@ -418,8 +558,8 @@ def playing_page(root):
         n[2] = {k: v for k, v in n[2].items() if not k.endswith(('_offset', 'text_align_h'))}
         if 'image' in n[2]:
             n[2]['draw_type'] = 'center'
-    named['img_more'][1] = [NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
-    buttons[3].append(['label', [NP_POS_X, 0, NP_ICONS_END - NP_ICON - NP_POS_X, NP_TOP], {
+    named['img_more'][1] = [geo.NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
+    buttons[3].append(['label', [geo.NP_POS_X, 0, geo.NP_ICONS_END - NP_ICON - geo.NP_POS_X, NP_TOP], {
         'name': 'label_ipod_pos', 'style:normal:font_size': '16', 'style:normal:text_color': NP_GREY,
         'style:normal:text_align_h': 'left'}, []])
 
@@ -485,16 +625,16 @@ def playing_page(root):
     dots[2].update(anchor_x=f'{375 // 2}px', anchor_y='0px')
     named['image_wait'][1] = [NP_MARGIN + (NP_ART - 54) // 2, NP_TOP + art_y + (NP_ART - 54) // 2, 54, 54]
 
-    x, y, w, h = NP_BAR
+    x, y, w, h = geo.NP_BAR
     np_slider(named['slider_play'], x, y + h // 2, w, h)
     for name in ('img_repeata', 'img_repeatb'):
         named[name][1][0] = x
     total = named['label_playlen']
     remain = copy.deepcopy(total)
-    remain[1] = [375 - NP_TIME_X - 80, NP_TIMES_Y, 80, 16]
+    remain[1] = [375 - geo.NP_TIME_X - 80, NP_TIMES_Y, 80, 16]
     remain[2].update(name='label_ipod_remain', text='')
     total[2]['visible'] = 'false'
-    named['label_playtime'][1] = [NP_TIME_X, NP_TIMES_Y, 80, 16]
+    named['label_playtime'][1] = [geo.NP_TIME_X, NP_TIMES_Y, 80, 16]
     for n in (named['label_playtime'], remain):
         for key in n[2]:
             if key.endswith(':text_color'): n[2][key] = NP_GREY
@@ -667,6 +807,26 @@ def volume_dialog(root):
 NAVBAR_ONLY = AUDIT['navbar_only']
 SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW = (inc(n) for n in ('SET_ROW', 'SET_TOP', 'SET_ROWS', 'SET_STOCK_ROW'))
 
+# The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder), the Library's are its own
+# (lib_*), text pages' carry none. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
+PAGE_KIND = {'localmusic/allmusic_page.bin': 'song', 'localmusic/albuminfo_page.bin': 'text',
+             'localmusic/artistinfo_page.bin': 'text', 'localmusic/playlist_page.bin': 'text',
+             'localmusic/album_page.bin': 'art', 'folder_page.bin': 'art', 'localmusic_page.bin': 'lib',
+             'localmusic/localclass_page.bin': 'text'}
+
+
+def page_rows(g, kind):
+    """(pitch, body, artwork inset) of a page kind's rows under g."""
+    return {'art': (g.art_pitch, g.art_body, g.art_inset), 'lib': (g.lib_pitch, g.lib_body, g.lib_inset),
+            'song': (g.song_pitch, g.song_body, g.text_art_inset)}.get(kind, (g.pitch, g.body, g.text_art_inset))
+
+
+def text_y(g, y):
+    """A stock row label's y in the 70px body in g's body: the 20px title (11), the 24px title (14),
+    a 28px label (21), metadata (40) and a count (41)."""
+    return {11: g.title_y, 14: g.title24_y, 21: (g.body - 28) // 2, 40: g.meta_y, 41: g.count_y}[y]
+
+
 # The settings rows' stock 52px artwork (SET_STOCK_ICON), pinned by hash in ipod.json,
 # is pre-sized to SET_ICON at build time so the rows draw it 1:1 instead of scaling it on the device.
 # ImageMagick's Lanczos resize weights colour by alpha, so edges keep their colour and transparency;
@@ -803,13 +963,28 @@ def patch_word(data, address, old, new, purpose, changes=None):
         changes.append(dict(address=hex(address), original=hex(old), patched=hex(new), purpose=purpose))
 
 
-def patch_asset(path, data):
+def songs_action_row(root, g):
+    """Songs' action bar as a plain row: the row and what is under it. Stock rebuilds the row's children on each refresh, so the
+    payload shapes those as it paints (navigation.c action_row)."""
+    row = next(n for n in root[3] if n[2].get('name') == 'view_navbar_allplay')
+    row[1][3] = g.action_row
+    for n in root[3]:
+        if n[1][1] == 50 and n is not row:
+            if n[0] == 'table_view':
+                n[1][3] = 320 - g.bar - g.action_row
+            n[1][1] = g.action_row
+
+
+def patch_asset(path, data, g=SET0):
+    geo = with_geometry(g)
+    pitch, body, inset = page_rows(g, PAGE_KIND.get(path, 'text'))
     check(sha(data) == UI_ASSETS[path], f'{path}: unaudited UI asset')
     root = decode(data)
     check(encode(root) == data, f'{path}: UI round trip differs')
     if path == ARTIST_PAGE:
         artist_tabs(root)
-    whole = {HOME_PAGE: ipod_home, STATUS_BAR: status_bar, PLAYING_PAGE: playing_page, QUICK_SETTINGS: quick_settings,
+    whole = {HOME_PAGE: functools.partial(ipod_home, g=g), STATUS_BAR: functools.partial(status_bar, g=g),
+             PLAYING_PAGE: functools.partial(playing_page, g=g), QUICK_SETTINGS: quick_settings,
              CONFIRM: confirm_dialog, VOLUME: volume_dialog, BIGCOVER: bigcover_page}
     if path in whole:
         whole[path](root)
@@ -838,39 +1013,41 @@ def patch_asset(path, data):
     else:  # the toolbar's right button keeps the iPod glyphs' corner clearance
         for n in nav[0][3]:
             if n[2].get('name') == 'gif_returnplay':
-                n[1][0] = 375 - corner_x(30, n[1][3]) - n[1][2]
+                n[1][0] = 375 - corner_x(g.bar, n[1][3]) - n[1][2]
     for n in root[3]:
         if n is nav[0]:
             continue
-        kind, g, props, _ = n
+        kind, box, props, _ = n
         if kind == 'list_view' and path in NAVBAR_ONLY:  # settings rows: see ipod_list_layout
-            check(g[1] == 50 and props.get('default_item_height') == str(SET_STOCK_ROW) and
+            check(box[1] == 50 and props.get('default_item_height') == str(SET_STOCK_ROW) and
                     'item_height' not in props, f'{path}: unexpected settings list')
-            props['default_item_height'] = str(SET_ROW)
-            g[1], g[3] = SET_TOP, SET_ROWS * SET_ROW
+            props['default_item_height'] = str(g.set_row)
+            box[1], box[3] = g.set_top, geo.BOTTOM - g.set_top if g.list_end else g.set_rows * g.set_row
         elif kind in ('list_view', 'table_view', 'tab_control'):
-            check(g[1] in (50, 100), f'{path}: unexpected list position')
+            check(box[1] in (50, 100), f'{path}: unexpected list position')
             if not playlist:
-                g[1] -= 50
-            g[3] = BOTTOM - g[1]
+                box[1] -= 50
+            box[3] = geo.BOTTOM - box[1]
         elif props.get('name') == 'view_navbar_allplay':
-            check(g == [0, 50, 375, 50], f'{path}: unexpected action bar')
-            g[1] = 0
+            check(box == [0, 50, 375, 50], f'{path}: unexpected action bar')
+            box[1] = 0
         elif kind == 'list_item':  # playlist editing actions
-            g[1] = 10 + ((g[1] - 60) // 78) * PITCH
+            box[1] = 10 + ((box[1] - 60) // 78) * pitch
         elif props.get('name') == 'view':  # allmusic's stock empty-state panel
-            g[1] -= 50
+            box[1] -= 50
         elif path in NAVBAR_ONLY:  # settings panels and notes keep their size; text ends clear of a top corner
-            check(g[1] >= 50, f'{path}: unexpected content under the toolbar')
-            g[1] -= 50
-            if kind in ('label', 'hscroll_label') and corner_inset(30 + g[1]):
-                g[2] = min(g[2], 375 - g[0] - corner_x(30 + g[1], 0))
+            check(box[1] >= 50, f'{path}: unexpected content under the toolbar')
+            box[1] -= 50
+            if kind in ('label', 'hscroll_label') and corner_inset(g.bar + box[1]):
+                box[2] = min(box[2], 375 - box[0] - corner_x(g.bar + box[1], 0))
     if path in NAVBAR_ONLY:
         slider_plain(path, root)
         return encode(root)
+    if path == 'localmusic/allmusic_page.bin' and g.action_row:
+        songs_action_row(root, g)
 
     def rows(n, in_row=False):
-        kind, g, props, children = n
+        kind, box, props, children = n
         if path == 'localmusic/album_page.bin' and props.get('name') == 'button1':  # inline black grid buttons
             for key, value in props.items():
                 if key.endswith(':bg_color') and value == '#000000':
@@ -879,32 +1056,47 @@ def patch_asset(path, data):
             # the full width, as the Library's scroll_view: the scroll bar overlays the row's right
             # edge, and the selection card and chevrons line up with every other list
             props['self_layout'] = props['self_layout'].replace('w=365', 'w=375')
-            g[2] = 375
-        in_row = in_row or kind in ('list_item', 'table_row') and g[3] in (0, 78)
+            box[2] = 375
+        in_row = in_row or kind in ('list_item', 'table_row') and box[3] in (0, 78)
         for prop in ('row_height', 'default_item_height'):
             if props.get(prop) == '78':
-                props[prop] = str(PITCH)
+                props[prop] = str(pitch)
+        if kind == 'list_view' and props.get('default_item_height') == str(g.set_row) and 'item_height' not in props:
+            props['item_height'] = props['default_item_height']  # not a settings list (navigation.c settings_list)
         if in_row:
-            if kind in ('list_item', 'table_row') and g[3] == 78:
-                g[3] = PITCH
-            elif g[3] == 70:
-                g[3] = BODY
-            if g[1] in (11, 14, 21, 40, 41):
-                # titles and metadata keep their stock centring: the body shrank by two pixels
-                g[1] -= 1
-            elif g[1] in (9, 10) and kind == 'image':
-                g[1] = ART_INSET
+            if kind in ('list_item', 'table_row') and box[3] == 78:
+                box[3] = pitch
+            elif box[3] == 70:
+                box[3] = body
+            if box[1] in (11, 14, 21, 40, 41):
+                box[1] = text_y(g, box[1])  # titles and metadata at the set's y in its body
+            elif box[1] in (9, 10) and kind == 'image':
+                box[1] = inset
         if path == ARTIST_PAGE:
             if kind == 'pages':
                 check(props.get('self_layout') == 'default(x=0,y=40,w=100%,h=170)', 'Unexpected tabs layout')
-                props['self_layout'] = f'default(x=0,y=40,w=100%,h={BOTTOM - 40})'
-                g[3] = BOTTOM - 40
+                props['self_layout'] = f'default(x=0,y=40,w=100%,h={geo.BOTTOM - 40})'
+                box[3] = geo.BOTTOM - 40
             if props.get('name') == 'list_view_album':
-                g[3] = BOTTOM - 40
+                box[3] = geo.BOTTOM - 40
         for child in children:
             rows(child, in_row)
     rows(root)
     return encode(root)
+
+
+def set_assets(cat, g):
+    """The UI windows g draws differently from SET0, as <g.name>_<name>.bin beside the stock one.
+    The prefix goes on the basename: stock opens subdirectory windows by path."""
+    # ponytail: playing_page_stock gets no set copy; add it when a set needs one
+    ui, out = 'release/assets/default/raw/ui/', {}
+    for rel in UI_ASSETS:
+        data = cat(ui + rel)
+        mine = patch_asset(rel, data, g=g)
+        if mine != patch_asset(rel, data):
+            folder, _, base = rel.rpartition('/')
+            out[ui + (folder and folder + '/') + f'{g.name}_{base}'] = mine
+    return out
 
 
 def patch_code(data, symbols):
@@ -918,9 +1110,9 @@ def patch_code(data, symbols):
         word(address + 4, 0x0320f809, 0x0320f809, 'lookup close call')
         word(address + 8, 0, 0x8fa40000 | name_slot, 'lookup close receives the top window name')
 
+    values = immediate_values(SET0)
     for group in AUDIT['immediates']:
-        value = {'pitch': PITCH, 'body': BODY, 'art': ART, 'art_inset': ART_INSET,
-                 'scroll': BOTTOM - 50, 'np_bar_x': NP_BAR[0], 'np_bar_w': NP_BAR[2]}.get(group['value'], group['value'])
+        value = values[group['value']] if isinstance(group['value'], str) else group['value']
         for address, instruction in group['sites']:
             old = int(instruction, 16)
             word(int(address, 16), old, (old & 0xffff0000) | value, group['purpose'])

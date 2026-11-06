@@ -2,7 +2,8 @@
  * settings' Apps from their own GitHub releases (netupdate.c) or unzipped to the card by hand, as
  * Spotify's librespot is. Q2 Pod knows none of them by name: each is a card folder .<id> holding
  *   q2app    its manifest, key=value lines: name (its Streaming row's), search (the search box's
- *            hint) and qr (1: its row turns it on and shows its QR code once it answers);
+ *            hint), qr (1: its row turns it on and shows its QR code once it answers) and scrobble
+ *            (0: its songs stay out of the scrobble log, addon_scrobbles);
  *   run      its launcher, which copies the app to /tmp and runs it there in a restart loop, so
  *            the card is never kept busy, leaving the loop's pid in /tmp/q2-<id>;
  *   q2-<id>  the app;
@@ -331,7 +332,9 @@ static int stream_start(const void *unused) {
             tk_snprintf(sm.last, sizeof sm.last, "%s",
                         (const char *)P(deque_at(songs, n - 1), REC_NAME));
         sm.state = S_PLAY;
+        press_natural = 1;             /* the app's .play, from its poll: nobody here pressed */
         play_folder(songs, 0, 0xf001); /* playing_page copies the queue at once */
+        press_natural = 0;
         sm.loads = playback_loads;     /* its load, which play_folder has done (playback_groups) */
     }
     deque_destroy(songs);
@@ -603,6 +606,7 @@ static struct {
 } gm __attribute__((section(".scratch")));
 
 int addon_games(void) { return addon_scan(), ap.games; }
+int addon_games_last(void) { return ap.games; }
 const char *addon_game_name(int k) { return k >= 0 && k < ap.games ? ap.a[ap.game[k]].name : 0; }
 int addon_game_on(void) { return gm.pid; }
 
@@ -1357,6 +1361,19 @@ static app_t *goto_app(const char *path) {
 int addon_goes(const char *path) {
     char id[APP_ID];
     return !card_id(path, id) || goto_app(path);
+}
+/* Whether a listen of path goes in the scrobble log (navigation.c scrobble): not when it is in an
+ * app's folder and its q2app says scrobble=0, a line a Windows editor may end in \r. Compared as
+ * text: number() is 0 for a missing key or a word too.
+ * ponytail: by folder, not by who queued it: a song an app's .m3u or local row names outside its
+ * own folder still logs. Knowing the app means keeping it per queue, if one ever needs that. */
+int addon_scrobbles(const char *path) {
+    char id[APP_ID], raw[512], file[64], v[4];
+    if (!card_id(path, id)) return 1;
+    tk_snprintf(file, sizeof file, CARD "/.%s/q2app", id);
+    state_read(file, raw, sizeof raw);
+    field(raw, "scrobble", v, sizeof v);
+    return strcmp(v, "0") && strcmp(v, "0\r");
 }
 
 /* Go to Album (album) or Go to Artist on a song in a card app's folder, /mnt/mmc/.<id>/…

@@ -1109,7 +1109,7 @@ int games_open(void *ctx, void *event) {
     g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     widget_set_visible(g->sheet, 0, 0);
     int cards = addon_games(); /* then the card's games (addon.c), by name */
-    g->rows = 4 + cards;
+    g->rows = GAMES_BUILTIN + cards;
     g->view = page_list(page, g->list, 0, "Games", g->rows, 48);
     page_row_into(g->view, 0, "Sudoku", pick_game);
     page_row_into(g->view, 1, "Vortex", pick_game);

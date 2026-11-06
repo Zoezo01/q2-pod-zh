@@ -27,8 +27,10 @@ static struct {
 static int un_play(void *ctx, void *event) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned at = un.idx[(long)ctx];
-    if (q && at < deque_size(q)) player_start_queue((int)at);
+    int keeps = q && playback_keeps(q, (int)at);
+    if (!keeps && q && at < deque_size(q)) press_stamp(), player_start_queue((int)at);
     navigator_back();
+    if (keeps) playback_np();
     return 0;
 }
 /* The rows, taken again; sel, if not -1, the row selected. */

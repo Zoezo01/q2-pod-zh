@@ -64,8 +64,8 @@ def test_validate_runs_every_suite(tmp_path, scripts):
     s = str(d)
     assert names == [('peq.py', []), ('build.py', ['--build', s]), ('patch.py', [s]), ('playback.py', [s]), ('m4b.py', [s]),
                      ('ldac.py', [s]), ('id3.py', [s]), ('headset_io.py', [s]), ('bluealsa.py', [s]), ('coverflow.py', []),
-                     ('mp3.py', []), ('mp3_gapless.py', []), ('mp3_gapless_player.py', [s]), ('bt_resample.py', [s]),
-                     ('xfade_player.py', [s]), ('remote.py', [])]
+                     ('mp3.py', []), ('mp3_gapless.py', []), ('mp3_gapless_player.py', [s]), ('player_seam.py', [s]), ('bt_resample.py', [s]),
+                     ('xfade_player.py', [s]), ('hci_natural.py', [s]), ('hci_ao.py', [s]), ('hci_wait.py', [s]), ('remote.py', [])]
     assert all(k == dict(check=True) for _, k in scripts)
     assert all(a[0] == release.sys.executable and a[1] == release.ROOT/'test'/n for (a, _), (n, _) in zip(scripts, names))
 

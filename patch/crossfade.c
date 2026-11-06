@@ -25,12 +25,12 @@
 #define RS_DEFAULT 30
 
 static struct {
-    int read, on, seconds, done, key[5];
+    int read, on, seconds, done, key[6], stops, counted;
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
     int mono_read, mono, swap_read, swap, mqa_read, mqa;
-    volatile int *flag, *mono_flag, *swap_flag;
+    volatile int *flag, *mono_flag, *swap_flag, *press_file, *mute_file;
     void *swap_label, *mqa_label;
     void *mono_label; /* the Mono Audio row's, while Playback is open */
     void *page, *sw, *view, *slider, *dec, *add, *label;
@@ -115,12 +115,13 @@ void night_row(void *label) {
 }
 
 /* An int shared with hciplayer's filter (and q2video): made whole under tmp and renamed, as the
- * visualizer's tap is, then mapped; 0 if it cannot be made yet, so the caller tries next pass. */
+ * visualizer's tap is, then mapped; 0 if it cannot be made yet, so the caller tries next pass.
+ * Written, not ftruncate'd: that allocates no page, so a full tmpfs would SIGBUS the first store. */
 static volatile int *shared_int(const char *tmp, const char *path) {
     void *p = (void *)-1;
-    int fd = open(tmp, 0x302, 0644); /* O_RDWR | O_CREAT | O_TRUNC (MIPS) */
+    int zero = 0, fd = open(tmp, 0x302, 0644); /* O_RDWR | O_CREAT | O_TRUNC (MIPS) */
     if (fd < 0) return 0;
-    if (!ftruncate(fd, sizeof(int))) {
+    if (write(fd, &zero, sizeof zero) == sizeof zero) {
         p = mmap(0, sizeof(int), 3, 1, fd, 0); /* PROT_READ | PROT_WRITE, MAP_SHARED */
         if (p != (void *)-1 && rename(tmp, path)) {
             munmap(p, sizeof(int));
@@ -129,6 +130,46 @@ static volatile int *shared_int(const char *tmp, const char *path) {
     }
     close(fd);
     return p != (void *)-1 ? p : 0;
+}
+
+/* What waits for the DAC (docs/internals.md#wired-start) is opt in: a site missed keeps the old cut, a
+ * stamp on a change nobody pressed for would lengthen its gap. Only a local queue's: DLNA and online
+ * queues (0xf1, 0xf2) start tracks by themselves through the same calls. One int write per press. */
+int press_natural __attribute__((section(".scratch")));
+static int press_word(void) {
+    unsigned type = *(volatile unsigned *)MCL_TYPE;
+    if (!(type == 1 || (type & 0xf000) == 0xf000)) return 0;
+    if (!xf.press_file) xf.press_file = shared_int(PRESS_FILE ".tmp", PRESS_FILE);
+    return xf.press_file != 0;
+}
+void press_stamp(void) {
+    if (!press_natural && press_word()) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
+}
+/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5ad1bc, 0x5ad1d4). A natural start
+ * skips both, so the old track is heard to its end, and leaves an even mark for ao_init, whose reopen mutes
+ * after the drain, or which keeps the PCM open. Only ringnav_next(1) sets press_natural to 2: anything else,
+ * or no word to leave the mark in, keeps stock's. */
+static int start_quiet __attribute__((section(".scratch")));
+int start_mute(int value) {
+    start_quiet = press_natural == 2 && press_word();
+    if (!start_quiet) {
+        if (xf.press_file && !(*xf.press_file & 1)) *xf.press_file = 0; /* muted: an unspent mark isn't for this start */
+        return mclSetMute(value);
+    }
+    int at = (int)now_ms() & ~1; /* even, and never 0 */
+    *xf.press_file = at ? at : 2;
+    return 0;
+}
+int start_sleep(unsigned us) {
+    if (start_quiet) return start_quiet = 0;
+    return usleep(us);
+}
+void mute_stamp(void) {
+    if (!xf.mute_file) xf.mute_file = shared_int(MUTE_FILE ".tmp", MUTE_FILE);
+    if (xf.mute_file) *xf.mute_file = (int)now_ms() | 1; /* odd: never 0 */
+}
+void press_forget(void) {
+    if (xf.press_file) *xf.press_file = 0;
 }
 
 /* The PEQ filter into the chain, in bypass, for the visualizer's tap, a fade or Mono Audio: boot
@@ -420,26 +461,45 @@ int xfade_key(void *top, unsigned key) {
 
 /* playback_poll, each UI pass: the next change's fade into XFADE_FILE, made whole under another
  * name first as the visualizer's tap is. A fade only when Crossfade and stock's Gapless are on and
- * the next track is another album's (album_cmp), so albums stay gapless; stock Shuffle's next (-2)
- * is drawn at the change, so it counts as another album's. Its change is a cold start (stock
- * preloads nothing in Shuffle), which the filter's tail waits out (XF_STALE_NS). */
-void xfade_poll(int next) {
+ * the next track is another album's (album_cmp), so albums stay gapless; stock Shuffle's next
+ * always counts as another album's, and is -2 when not drawn ahead (playback.c shuffle_peek). Its
+ * change is a cold start (stock preloads nothing in Shuffle), which the filter's tail waits out
+ * (XF_COLD_NS). Each stop moves the count beside the fade, so no tail outlives a stop: status 1 and
+ * no file error. An error's status is no stop: stock's dialog timer takes the file away and shows
+ * its modal toast, passes running under it, before it plays the next (on_wm_timer_dialog,
+ * 0x4ea784). A stop during a toast isn't counted. */
+static int fades_into(void *r) {
+    const char *p = P(r, REC_PATH), *e = p ? strrchr(p, '.') : 0;
+    unsigned st[36];
+    /* DSD skips the filter; a missing or empty file never plays: nothing would mix the tail */
+    if (e && (!strcasecmp(e, ".dsf") || !strcasecmp(e, ".dff") || !strcasecmp(e, ".iso"))) return 0;
+    /* over 2 GB, o32's stat fails: that's a file */
+    return !p || p[0] != '/' || (!access(p, 0) && (__xstat(3, p, st) || st[12]));
+}
+void xfade_poll(int next, int shuffled) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned pos = (unsigned)I(MCL_POS, 0), n = q ? deque_size(q) : 0;
     if (!xf.flag && (next == -1 || pos >= n)) return; /* nothing playing on: no config read yet */
     settings();
-    if (xf.flag && *xf.flag) peq_chain(); /* the fade runs in the filter, once something plays */
+    if (xf.flag && *xf.flag & XF_MS) peq_chain(); /* the fade runs in the filter, once something plays */
     int in = next >= 0 && pos < n && (unsigned)next < n; /* records, not positions: a new queue */
-    int key[5] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
+    if (mclGetPlayStatus() != 1)
+        xf.counted = 0;
+    else if (xf.flag && !xf.counted && access("/tmp/notfile", 0) && access("/tmp/notsupport", 0) &&
+             !navigator_window_is_exist("msginfo_dialog"))
+        xf.counted = 1, ++xf.stops;
+    int key[6] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
                    in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
-                   next == -2 && pos < n };
+                   shuffled && next != -1 && pos < n, xf.stops };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;
     memcpy(xf.key, key, sizeof key);
-    int ms = key[0] && key[1] && (key[4] || (key[2] != key[3] && album_cmp((void *)key[2], (void *)key[3])))
+    int ms = key[0] && key[1] &&
+                     (key[4] || (key[2] != key[3] && album_cmp((void *)key[2], (void *)key[3]))) &&
+                     (!key[3] || fades_into((void *)key[3]))
                  ? key[0] * 1000
                  : 0;
     xf.done = 0; /* until the player is told: a file that cannot be made yet is tried next pass */
     if (!xf.flag && ms && !(xf.flag = shared_int(XFADE_FILE ".tmp", XFADE_FILE))) return;
-    if (xf.flag) *xf.flag = ms;
+    if (xf.flag) *xf.flag = ms | (xf.stops & 0x7fff) << XF_STOPS;
     xf.done = 1;
 }

@@ -833,65 +833,6 @@ assert post(0x103)==(0,[0x103]) and post(0xff)==(0,[0xff]) and post(0x110)==(0,[
 assert post(0)==(0,[]) and post(0x103,loop_ok=0)==(0x10,[]) and post(0x103,slot_ok=0)==(0x10,[])
 m=PostMachine(); loop=m.alloc(0x60); m.word(loop+O['LOOP_POST'],m.slot); assert m.fn('ringnav_queue_event',loop,0)==0x10 and not m.posted
 checks+=1
-# Wheel QS (playback.c qs_begin): a touch at one edge, then within QS_GAP_MS one at the opposite edge,
-# streams a finger on the screen to hyn_ts: down at the swipe's start and on across the gap at the
-# gesture's pace (first touch to second, doubled, clamped), on with each sample, at the far end on the
-# lift. A second touch that turns lifts where it is and leaves qs_back, the slide back to how it was.
-class QsMachine(PostMachine):
-    def __init__(self,on=1):
-        super().__init__(); self.frames=[]; self.on=on; self.handlers[O['WHEEL_POST']]='wheel_post'
-        for n in ('open@GLIBC_2.0','ioctl@GLIBC_2.0','write@GLIBC_2.0','close@GLIBC_2.0'): self.handlers[syms[n]]='qs:'+n.split('@')[0]
-        self.handlers[ps['ringnav_wheel_qs']]='qs:on'
-        self.byte(syms['g_backlight_status'],1); self.word(syms['g_dropdown_menu_state'],0)
-    def hook(self,u,address,size,unused):
-        name=self.handlers.get(address,'')
-        if not name.startswith('qs:'): return super().hook(u,address,size,unused)
-        name=name[3:]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
-        if name=='open': ret=5
-        elif name=='ioctl': u.mem_write(c,b'hyn_ts\0'); ret=7
-        elif name=='on': ret=self.on
-        elif name=='write':
-            ev=struct.unpack(f'<{c//4}i',bytes(u.mem_read(b,c)))
-            f={(e[2]&0xffff,e[2]>>16):e[3] for e in zip(*[iter(ev)]*4)}
-            self.frames.append('lift' if f.get((1,0x14a))==0 else ('down' if (1,0x14a) in f else 'move',319-f[(3,0)]))
-        self.returns(ret,clobber=True)
-def qs(samples,on=1,state=0):
-    m=QsMachine(on); m.word(syms['g_dropdown_menu_state'],state)
-    info,s,loop,q=m.alloc(0x60),m.alloc(20),m.alloc(0x60),m.alloc(8)
-    m.word(info+O['WHEEL_INFO_LOOP'],loop); m.word(loop+O['LOOP_QUEUE'],q); m.u.mem_write(q,struct.pack('<4H',15,15,0,20))
-    m.word(loop+O['LOOP_POST'],m.slot); r=m.alloc(0x30)
-    for step in samples:
-        if isinstance(step,str):  # a key going down, through the queue's one way in
-            m.word(r,O['EVT_KEY_DOWN']); m.word(r+O['EVENT_KEY'],O[step]); m.fn('ringnav_queue_event',loop,r); continue
-        gap,x,pr=step; m.now+=gap; m.word(s,x); m.word(s+8,pr); m.fn('wheel_sample',s,1,info)
-    m.frames.append(('back',m.get(ps['qs_back']))); m.frames.append(('held',m.get(ps['qs_down'])))
-    return m.frames
-# 10 and 110, opposite edges (x 0 is no touch): 100 ms down to down is a 200 ms swipe, half of it gone
-# when the second touch lands
-swipe=[(1000,10,1),(40,10,0),(60,110,1),(50,110,1),(100,110,1),(10,110,0)]
-assert qs(swipe)==[('down',5),('move',112),('move',166),('move',220),('move',220),'lift',('back',0),('held',1)],qs(swipe)
-assert qs(swipe,state=3)==[('down',310),('move',155),('move',78),('move',0),('move',0),'lift',('back',0),('held',1)],qs(swipe,state=3)  # closes
-assert qs(swipe,on=0)==[('back',0),('held',0)] and qs(swipe,state=1)==[('back',0),('held',0)]  # off, or the pull-down sliding
-assert qs([(1000,10,1),(40,10,0),(500,110,1),(10,110,0)])==[('back',0),('held',0)]  # past QS_GAP_MS
-assert qs([(1000,10,1),(40,40,1),(10,40,0),(60,110,1),(10,110,0)])==[('back',0),('held',0)]  # the first touch turned
-t=qs([(1000,10,1),(40,10,0),(60,110,1),(20,140,1),(10,140,0)])
-assert t==[('down',5),('move',112),'lift',('back',1),('held',1)],t  # the second turned: lifted there, slides back closed
-t=qs([(1000,10,1),(40,10,0),(60,110,1),(20,140,1),(10,140,0)],state=3)
-assert t==[('down',310),('move',155),'lift',('back',2),('held',1)],t  # open: slides back open
-# Next then Previous is two touches at opposite edges too: a rim button going down since the last
-# touch began makes it a press, not a swipe (#189), and three presses in a row stay presses. So does
-# a switch that beats the ring's first sample. Only the rim's: a wheel tick or Centre during a
-# swipe, or a press well before its first touch, leaves it one.
-none=[('back',0),('held',0)]
-for key in ('KEY_FWD_BTN','KEY_BACK_BTN','KEY_RETURN','KEY_PLAY'):
-    assert qs([(1000,10,1),key,(40,10,0),(60,110,1),(50,110,0)])==none,key
-assert qs([(1000,10,1),'KEY_FWD_BTN',(40,10,0),(60,110,1),'KEY_BACK_BTN',(40,110,0),(60,10,1),'KEY_FWD_BTN',(40,10,0)])==none
-for extra in ('KEY_NEXT','KEY_PREV','KEY_CENTER'):
-    assert qs([(1000,10,1),extra,(40,10,0),(60,110,1),(50,110,1),(100,110,1),(10,110,0)])==qs(swipe),extra
-assert qs(['KEY_FWD_BTN',(1000,10,1),(40,10,0),(60,110,1),(50,110,1),(100,110,1),(10,110,0)])==qs(swipe)
-assert qs([(1000,10,1),(40,10,0),'KEY_FWD_BTN',(60,110,1),(50,110,0)])==none  # a press between the touches
-assert qs([(1000,0,0),'KEY_FWD_BTN',(20,10,1),(40,10,0),(60,110,1),(50,110,0)])==none  # the switch first
-checks+=1
 if 'wheel_raw' in ps:  # iPod: while games.c's Vortex sets wheel_raw, nothing ticks and the travel adds up raw
     raw=lambda on: lambda m: m.word(ps['wheel_raw'],on)
     m=PlaybackMachine()
@@ -942,6 +883,335 @@ assert wheel([(10,1),(10+U-1,1),fast,(10+U,1),(9+U+U//2,1)])[0]==[P] and wheel([
 # From 100%, 13 of 14 is 26 of 28: two more units tick, one does not; a reversal still starts over.
 for more,want in ((1,[]),(2,[P]),(-1,[])):
     assert wheel([(10,1),(23,1),slow,(23+more,1)],sensitivity('100')[0])[0]==want,more
+checks+=1
+import random,zlib
+# The encoder thread whole, with no finger assumed: stock's own loop (0x6259e8, get_direction's tail,
+# with ringnav_ts_read in it) reads a mock ts_read and posts to a 20-event queue that drops its oldest,
+# as main_loop_simple_queue_event does. A UI that drains after each read is one keeping up.
+INPUT=HOOKS['window_manager_dispatch_input_event'][0]; LOG='/mnt/data/q2-wheel.log'; DEV=manifest['dev']
+class EncoderMachine(PlaybackMachine):
+    GP=0xa26cc0
+    def __init__(self,pct=50):
+        super().__init__(); self.q=[]; self.sample=None; self.keys=[]
+        self.sp=self.alloc(0x4000)+0x3000; self.info=self.sp+0x20
+        loop,self.qw=self.alloc(0x60),self.alloc(8)
+        self.word(self.info+O['WHEEL_INFO_LOOP'],loop); self.word(loop+O['LOOP_QUEUE'],self.qw); self.word(self.sp+0x2c,1); self.word(self.sp+0x18,self.GP)
+        self.handlers[O['WHEEL_POST']]='enc:post'; self.handlers[self.get(self.GP-0xa84)]='enc:read'
+        # the path a button takes, ringnav_queue_event, posting through the loop's own poster
+        self.loop=self.alloc(0x60); self.word(self.loop+O['LOOP_POST'],0x1000020); self.handlers[0x1000020]='enc:loop'; self.loop_posts=[]
+        self.handlers[ps['stock_input_trampoline']]='stock_input'
+        self.log=b''; self.log_opens=0; self.synced=0; self.log_fail=False; self.threads=[]; self.spawned=0; self.hold=False; self.thread_fail=0
+        for name,short in (('fopen@GLIBC_2.2','fopen'),('fclose@GLIBC_2.2','fclose'),('fputs@GLIBC_2.0','fputs'),('fseek@GLIBC_2.0','fseek'),
+                           ('ftell@GLIBC_2.0','ftell'),('fflush@GLIBC_2.0','fflush'),('fileno@GLIBC_2.0','fileno'),('fsync@GLIBC_2.0','fsync'),
+                           ('pthread_create@GLIBC_2.2','thread'),('pthread_detach@GLIBC_2.0','detach')):
+            self.handlers[syms[name]]='enc:'+short
+        self.sync(); self.fn('wheel_set_pct',pct)
+        self.start=self.now; self.now=1<<30  # long past any frame's stamp, which is what the gate is about
+    def sync(self):
+        n=len(self.q); self.u.mem_write(self.qw,struct.pack('<4H',15,(15+n)%20,n==20,20))
+    def push(self,event):
+        self.q.append(event); self.q[:-20]=[]; self.sync()
+    def drain(self): self.q=[]; self.sync()
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('enc:'): return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
+        if name=='enc:post':
+            event=self.get(self.info+O['WHEEL_INFO_EVENT']),self.get(self.info+O['WHEEL_INFO_KEY'])
+            self.push(event)
+            if event[0]==0x110: self.keys.append(event[1])
+        elif name=='enc:read':
+            x,p,ret=self.sample
+            for i,v in enumerate((x,0,p,self.now//1000,self.now%1000*1000)): self.word(b+4*i,v)
+        elif name=='enc:loop': self.loop_posts.append((self.get(b),self.get(b+O['EVENT_KEY'])))
+        elif name=='enc:fopen':
+            assert self.text(a)==LOG and self.text(b)=='ab'
+            self.log_opens+=1; ret=0 if self.log_fail else 0x777
+        elif name=='enc:fputs': self.log+=self.text(a).encode()
+        elif name=='enc:ftell': ret=len(self.log)
+        elif name=='enc:fsync': self.synced+=1
+        elif name=='enc:thread':
+            ret=self.thread_fail
+            if not ret: self.threads.append(c); self.spawned+=1
+        return self.returns(ret)
+    def run_threads(self):  # a flush's thread, once its creator is off the emulator
+        if self.hold: return
+        while self.threads: self.call(address=self.threads.pop(),args=(0,0,0,0),gap=0,clear=False)
+    def read(self,x,p,ret=1,gap=10):  # one pass of the thread's loop: the ticks it posted
+        self.now+=gap; self.sample=(x,p,ret); self.keys=[]
+        for r,v in ((UC_MIPS_REG_SP,self.sp),(UC_MIPS_REG_GP,self.GP),(UC_MIPS_REG_S0,O['WHEEL_POST']),(UC_MIPS_REG_S1,self.info),
+                    (UC_MIPS_REG_S4,self.get(self.GP-0x7f44)),(UC_MIPS_REG_RA,0x1000000),(REGS[0],1)): self.u.reg_write(r,v)
+        self.u.emu_start(0x6259ec,0x6259e8,count=500000)
+        assert self.u.reg_read(UC_MIPS_REG_PC)==0x6259e8 and self.u.reg_read(UC_MIPS_REG_SP)==self.sp
+        keys=self.keys; self.run_threads(); return keys
+    def turn(self,n,step,gap,x=100):  # a finger going round: the ticks, stamped
+        ticks=[]
+        if x: self.read(x,1,gap=gap); self.x=x
+        for _ in range(n):
+            self.x=(self.x+step-1)%200+1
+            ticks+=[(self.now+gap,k) for k in self.read(self.x,1,gap=gap)]; self.drain()
+        return ticks
+    def press(self,key=O['KEY_RETURN'],kind=0x110):  # a button's event, as its thread posts it
+        r=self.alloc(0x40); self.word(r,kind); self.word(r+O['EVENT_KEY'],key)
+        self.call(address=ps['ringnav_queue_event'],args=(self.loop,r,0,0),gap=0,clear=False); self.run_threads()
+    def input(self,kind,key):  # what ringnav_input lets on to stock's window manager
+        self.call(key,address=INPUT,args=(self.wm,self.event,0,0),event_type=kind,gap=0)
+        n=sum(c[0]=='stock_input' for c in self.calls); self.run_threads(); return n
+    def gated(self):  # the queue, through ringnav_input only
+        through=[(kind,key) for kind,key in self.q if self.input(kind,key)]
+        self.drain(); return through
+    def deliver(self):  # the same, and a release it passes reaches ringnav, as stock's would
+        through=[]
+        for kind,key in self.q:
+            if self.input(kind,key):
+                through.append((kind,key))
+                if kind==0x114: self.call(key,gap=0)
+        self.drain(); return through
+    def mute(self): return self.get(ps['wheel_mute'])
+SIXTEENTHS_MOST=lambda pct: 100*16//SIXTEENTHS[pct]+1  # half a turn's ticks, and the carry's
+# Ordinary use, stamped, at four sensitivities: a slow turn over the seam, a fast one, a reversal, a
+# rest, a tap and a flick. The same ticks at the same times mean the same list ramp downstream; this
+# number is the code before the gate and Return's stop, so normal feel did not move. It covers what's
+# in it: none of Volume Guard, the raw travel, a fractional step or a lost lift.
+ORDINARY_WANT=0x1ac3e3c3
+def ordinary(pct):
+    m=EncoderMachine(pct); m.now=m.start; out=[]
+    out+=m.turn(300,1,20); m.read(m.x,0); m.now+=300
+    out+=m.turn(40,15,10,x=30); m.read(m.x,0); m.now+=150
+    out+=m.turn(60,3,15,x=150); out+=m.turn(60,-3,15,x=0); m.now+=800; out+=m.turn(30,2,15,x=0); m.read(m.x,0); m.now+=500
+    assert not m.read(40,1)+m.read(40,0); m.now+=90
+    out+=m.turn(4,12,10,x=60); m.read(m.x,0)
+    return out
+assert zlib.crc32(repr([ordinary(pct) for pct in (50,100,130,200)]).encode())==ORDINARY_WANT
+# The same with what the CRC left out, against its own number from the code before: a lost lift (the
+# next touch goes on from it) and a fractional step, 130%'s, over a mid-turn change; Volume Guard's
+# own checks follow this block.
+ORDINARY2_WANT=0xb7bde5ad
+def ordinary2(pct):
+    m=EncoderMachine(pct); m.now=m.start; out=m.turn(50,3,15); m.now+=2000; out+=m.turn(50,3,15,x=0); m.fn('wheel_set_pct',130); out+=m.turn(50,3,15,x=0); m.read(m.x,0)
+    return out
+assert zlib.crc32(repr([ordinary2(pct) for pct in (50,200)]).encode())==ORDINARY2_WANT
+checks+=1
+# The driver's x is a byte, and no arc of it is dead: past 200 and at 0 a frame ticks like any other.
+for x,want,back in ((200,[P],200-U),(201,[P],201-U),(255,[P],255-U),(1,[N],1+U),(0,[N],U)):
+    m=EncoderMachine(); m.read(back,1)
+    assert m.read(x,1)==want,x
+# A real lift leaves stock's path nothing to tick on, however many samples with no pressure follow.
+m=EncoderMachine(); m.turn(3,U,10); m.read(m.x,0)
+for x in (21,50,99,101,150,179): assert not m.read(x,0)
+checks+=1
+r=random.Random(0x5117)
+# A fixed seed's hostile samples, any byte (a lift in any state, the seam, repeats, a lost lift, bursts,
+# a busy UI, Return at any moment): no lift, however many or wherever they say the finger is, posts a
+# tick; one sample is at most half a turn's ticks; a busy UI always leaves a button's press and release
+# their slots; and after a lift nothing is stopped.
+def hostile(last):
+    k=r.randrange(6)
+    return last if k==0 else (last+r.randint(-3,3)-1)%200+1 if k==1 else r.choice((1,2,199,200)) if k==2 else r.choice((0,201,255)) if k==3 else r.randint(0,255)
+for pct in (50,100,130,200):
+    m=EncoderMachine(pct); most=SIXTEENTHS_MOST(pct); last=100
+    for touch in range(50):
+        for _ in range(r.randrange(1,25)):
+            x=hostile(last); gap=r.choice((0,1,10,10,10,40,500)); ret=r.random()>.05
+            k=m.read(x,1,ret=int(ret),gap=gap)
+            assert len(k)<=most,(pct,x,k)
+            if ret: last=x
+            assert len(m.q)<=20-O['WHEEL_QUEUE_FREE'],len(m.q)  # the queue as a stalled UI leaves it
+            if r.random()<.5: m.drain()
+            if r.random()<.1: m.press()
+        m.drain()
+        if r.random()<.2: continue  # a lost lift: the next touch goes on from it
+        for _ in range(r.randrange(1,25)):  # the lift, then whatever follows it with no finger
+            k=m.read(hostile(last),0,ret=1,gap=r.choice((0,1,10,1000,6000)))
+            assert not k and not m.mute(),(pct,k)
+checks+=1
+# ringnav_input's gate, from the frame on. The encoder's ticks pass, with their frames fresh; a tick
+# whose last frame is WHEEL_FRESH_MS old goes nowhere, its release with it; a release follows its own
+# press's decision whatever the frames did in between.
+FRESH=O['WHEEL_FRESH_MS']; DOWN_,UP_=0x110,0x114
+for kind in (P,N):
+    move=100+(U if kind==P else -U)
+    m=EncoderMachine()
+    m.read(100,1); m.read(move,1); assert len(m.q)==2
+    q=list(m.q); assert m.deliver()==q
+    m.read(100,1); m.drain(); m.read(move,1); q=list(m.q); m.now+=FRESH-1; assert m.deliver()==q  # just in time
+    m.read(100,1); m.drain(); m.read(move,1); m.now+=FRESH; assert m.deliver()==[]
+    # a frame stamped just after the gate read its clock: no wrap, no tick dropped mid-spin
+    m.word(ps['wheel_frame_at'],m.now+5); assert m.input(DOWN_,kind) and m.input(UP_,kind)
+    # a tick with no frame ever, and frames with no pressure: nothing lets it in
+    m=EncoderMachine(); assert not m.input(DOWN_,kind) and not m.input(UP_,kind)
+    m.read(100,1); m.read(100,0); m.now+=FRESH
+    for x in (50,60,70): m.read(x,0,gap=1)
+    m.drain(); assert not m.input(DOWN_,kind) and not m.input(UP_,kind)
+    # a dropped press's release is dropped with a frame in between, a passed one's passes with none
+    m=EncoderMachine(); assert not m.input(DOWN_,kind)
+    m.read(100,1); assert not m.input(UP_,kind)
+    assert m.input(DOWN_,kind); m.now+=FRESH*5; assert m.input(UP_,kind)
+    assert m.input(UP_,kind)  # a release with no press stays stock's business
+    # a dropped press whose release was lost: the next press passes, and owns its release
+    m=EncoderMachine(); assert not m.input(DOWN_,kind); m.read(100,1); assert m.input(DOWN_,kind) and m.input(UP_,kind)
+    # the two wheel keys keep their own decision
+    other=N if kind==P else P
+    m.now+=FRESH; assert not m.input(DOWN_,kind); m.read(100,1); assert m.input(DOWN_,other) and m.input(UP_,other) and not m.input(UP_,kind)
+# Every other key and event goes by, with no frame; a tick on a page that holds it replays with its
+# frames long gone (replay_wheel calls ringnav itself): the queue's tick was decided at the gate.
+m=EncoderMachine()
+for key in (O['KEY_RETURN'],O['KEY_CENTER'],O['KEY_PLAY'],O['KEY_BACK_BTN'],O['KEY_FWD_BTN']):
+    assert m.input(DOWN_,key) and m.input(UP_,key),key
+w,_=m.page_list(); m.animating=1; m.call(N,gap=0); assert any(v[1]==ps['replay_wheel'] for v in m.timers.values())
+before=m.selected(w); m.animating=0; m.word(ps['wheel_frame_at'],0); m.advance(100); assert m.selected(w)!=before and not m.timers
+checks+=1
+# A real finger, however long: ten minutes at 21 ticks a second one way (and a minute the other), every
+# frame's ticks through the gate: never a tick lost or a stop, and a --dev log writes once, past 30 s.
+for step,minutes in ((6,10),(-6,1)):
+    m=EncoderMachine(); m.read(100,1); m.x=100; n=0; frames=minutes*6000
+    for i in range(frames):
+        m.x=(m.x+step-1)%200+1; m.read(m.x,1,gap=10); q=len(m.q); assert len(m.gated())==q; n+=q//2
+    assert not m.mute() and abs(n-frames*abs(step)//U)<=1 and 21<=n/(frames/100)<22,(n,frames)
+    assert m.log_opens==(1 if DEV else 0) and m.log.count(b'== wheel: a run past 30 s')==(1 if DEV else 0)
+# A turn slower than any tick gap, the thumb resting up to 999 ms between frames: every tick arrives.
+m=EncoderMachine(); m.read(100,1); m.x=100; n=0
+for i in range(100):
+    m.x=(m.x+U-1)%200+1; k=m.read(m.x,1,gap=FRESH-1); assert k==[P]; n+=len(m.deliver())
+assert n==200
+# And past that: a tick is made by the frame that stamps it, so a 5 s rest between frames loses none.
+m=EncoderMachine(); m.read(100,1); m.x=100; n=0
+for i in range(10):
+    m.x=(m.x+U-1)%200+1; assert m.read(m.x,1,gap=5000)==[P]; n+=len(m.deliver())
+assert n==20
+checks+=1
+# Return's stop takes two. One Return is a rim press: a thumb can slide to it and carry on with no
+# lift, and every tick arrives (35 in 3 s, a 0.8 s rest, on); a lift just after it arms nothing for the
+# next touch; a normal Back never stops anything.
+def ghost(m,n,step,gap=10,ui=False):
+    out=[]
+    for _ in range(n):
+        m.x=(m.x+step-1)%200+1; out+=m.read(m.x,1,gap=gap)
+        if len(m.q)>=8: m.deliver() if ui else m.drain()
+    return out
+R=O['KEY_RETURN']; TICK=O['WHEEL_ESCAPE_TICK_MS']; STOP=O['WHEEL_STOP_TICKS']
+m=EncoderMachine(); m.read(100,1); m.x=100; assert ghost(m,20,5); m.press(); assert not m.mute()
+for i in range(35):
+    assert ghost(m,1,U,gap=85)==[P] and not m.mute(),i
+    m.drain()
+m.x=(m.x+U-1)%200+1; assert m.read(m.x,1,gap=800)==[P]; assert ghost(m,3,U,gap=85)==[P]*3
+m=EncoderMachine(); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); m.read(m.x,0,gap=1)    # lifted straight after it
+m.read(100,1); m.x=100; ghost(m,20,5); m.press(); assert not m.mute() and ghost(m,20,5)
+m=EncoderMachine()
+for i in range(20):                                                                          # scroll and Back, over and over
+    m.read(100,1); m.x=100; assert ghost(m,20,5); m.drain(); m.press(); m.read(m.x,0); assert not m.mute()
+assert m.log_opens==0
+# A ghost, ring reporting pressure and a moving x with no lift, on a list, on Home each way and under
+# Now Playing's volume_dialog. The first Return does its job and ticks carry on; the second, its press
+# posted as ever, stops them: what is queued goes nowhere, and no tick for as long as the frames run. A
+# lift, and the next touch works, with nothing left behind: no replay timer, the row where it was.
+for name,make,step in (('list',lambda m:m.page_list()[0],5),('home next',lambda m:m.page('home_page','slide_menu'),-5),('home prev',lambda m:m.page('home_page','slide_menu'),5),('now playing',lambda m:m.page('playing_page'),5)):
+    m=EncoderMachine(); w=make(m); m.read(100,1); m.x=100
+    assert ghost(m,50,step,ui=True),name; m.deliver()
+    if name=='now playing': dlg=m.node('dialog','volume_dialog'); page=m.top; m.top=dlg  # the tick opened it
+    m.press(); m.press(kind=UP_); m.call(R,gap=0); assert not m.mute(),name
+    if name=='now playing': m.top=page  # Return closes it (0x4a2134)
+    assert ghost(m,60,step),name; m.drain()
+    ghost(m,12,step); assert m.q,name; m.press(); assert m.loop_posts[-1]==(DOWN_,R) and m.mute(),name
+    assert not m.deliver(),name   # the ticks queued ahead of it
+    m.press(kind=UP_); assert m.loop_posts[-1]==(UP_,R); m.call(R,gap=0)
+    shown=m.selected(w) if name=='list' else None
+    for _ in range(3000):  # 30 s: nothing comes to move a row or reopen the bar
+        m.x=(m.x+step-1)%200+1; assert not m.read(m.x,1),name
+    assert not m.q and m.mute(),name; m.advance(5000)
+    assert not any(v[1]==ps['replay_wheel'] for v in m.timers.values()),name
+    if shown is not None: assert m.selected(w)==shown
+    assert not m.read(m.x,0) and not m.mute(),name
+    m.byte(O['KEY_LOCKOUT'],0)  # Return's own lockout, long over
+    k=m.read(100,1)+m.read(100-U,1); assert k==[N] and m.deliver()==[(DOWN_,N),(UP_,N)],name
+    if shown is not None: assert m.selected(w)!=shown,name
+# Exactly when: ticks since the first Return (the count runs on through a third press), a tick just now
+# and a frame just now; its release, another key or no finger arm nothing; and a stop's Returns count once.
+def armed():
+    m=EncoderMachine(); m.read(100,1); m.x=100; ghost(m,20,5); m.drain(); m.press(); return m
+def since(m,n):
+    for _ in range(n): assert ghost(m,1,U)==[P]; m.drain()
+m=armed(); since(m,STOP-1); m.press(); assert not m.mute(); since(m,1); m.press(); assert m.mute()
+m=armed(); since(m,STOP); m.now+=TICK-1; m.press(); assert m.mute()
+m=armed(); since(m,STOP); m.now+=TICK; m.press(); assert not m.mute()
+m=armed(); since(m,STOP); m.word(ps['wheel_frame_at'],m.now-FRESH); m.press(); assert not m.mute()
+m=armed(); m.read(m.x,0); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute()         # a lift disarms
+m=armed(); m.now+=FRESH; since(m,STOP); m.press(); assert not m.mute()                                  # so does a gap in frames
+ARM=O['WHEEL_ARM_MS']  # the two within this of each other; a later press is a new first, with its own count
+m=armed(); since(m,STOP); m.word(ps['wh_armed_at'],m.now-ARM+1); m.press(); assert m.mute()
+m=armed(); since(m,STOP); m.word(ps['wh_armed_at'],m.now-ARM); m.press(); assert not m.mute(); since(m,STOP-1); m.press(); assert not m.mute(); since(m,1); m.press(); assert m.mute()
+m=armed()                                                                                                # a long touch's early Return, then an ordinary one
+for _ in range(ARM//85+1): assert ghost(m,1,U,gap=85)==[P]; m.drain()
+m.press(); assert not m.mute(); assert ghost(m,3,U,gap=85)==[P]*3
+m=EncoderMachine(); m.read(100,1); m.x=100; m.press(kind=UP_); m.press(O['KEY_CENTER']); m.press(O['KEY_PLAY']); since(m,STOP); m.press(); assert not m.mute()
+m=EncoderMachine(); m.press(); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute() and m.loop_posts==[(DOWN_,R),(DOWN_,R)]  # nothing on the ring
+m=EncoderMachine(); m.read(100,1); m.x=100; since(m,STOP); m.read(m.x,0); m.press(); m.read(100,1); m.x=100; since(m,STOP); m.press(); assert not m.mute()  # Back between touches: no first press
+m=armed(); since(m,STOP); m.press(); assert m.mute(); m.loop_posts=[]; m.press(); ghost(m,60,5); m.press(); ghost(m,20,5); assert m.mute() and len(m.loop_posts)==2
+if DEV: assert m.get(ps['wl_stops'])==1
+# The stop ends at a real lift, or a rest in frames from the very first frame after it, however long,
+# and with the log's flush done or not: 999 ms is the ghost going on, 1000 a run that ended with no
+# lift seen. Then it takes two Returns again.
+def stopped():
+    m=armed(); since(m,STOP); m.press(); assert m.mute(); return m
+for rest in (FRESH,1500,5000,60000):
+    m=stopped(); m.x=(m.x+U-1)%200+1; assert m.read(m.x,1,gap=rest)==[P] and not m.mute(),rest   # the first frame after it
+    m.drain(); since(m,STOP); assert not m.mute(); m.press(); assert not m.mute(); since(m,STOP); m.press(); assert m.mute()
+m=stopped()
+for _ in range(3): m.x=(m.x+U-1)%200+1; assert not m.read(m.x,1,gap=FRESH-1) and m.mute()
+# A ghost that never lifts: stopped for as long as it lasts, with the buttons free. The clock stands
+# still across a Standby, so that is no rest: the stop outlasts it. An hour's rest awake ends it.
+m=stopped(); ghost(m,100,5); assert m.mute(); m.press(O['KEY_CENTER']); assert m.loop_posts[-1][1]==O['KEY_CENTER'] and m.input(DOWN_,O['KEY_CENTER'])
+m.x=(m.x+4)%200+1; assert not m.read(m.x,1,gap=0) and m.mute()
+m.x=(m.x+4)%200+1; m.read(m.x,1,gap=3600*1000); assert not m.mute() and ghost(m,20,5)
+# Volume Guard: no shield from a ghost. Screen off, it holds the first half turn of any touch, then a
+# ghost with no lift ticks on (docs/internals.md); the stop works dark too.
+m=EncoderMachine(); m.word(ps['wheel_guard'],1); m.byte(syms['g_backlight_status'],0)
+m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain(); m.press(); since(m,STOP); m.press(); assert m.mute() and not ghost(m,20,5)
+# Vortex and the lyrics read the raw travel with a thumb held down as long as they like: not ticks.
+m=EncoderMachine(); m.word(ps['wheel_raw'],1); n=m.turn(3000,2,20)
+assert m.get(ps['wheel_travel'])==2*3000 and not m.q and not n; m.word(ps['wheel_raw'],0)
+checks+=1
+# A normal build keeps no trace: none of the log's state, and no thread or file for a stop or a drop.
+if not DEV:
+    assert not {'wl_frames','wl_flush','wheel_gate_note','wl_stops'}&set(ps)
+    m=stopped(); m.drain(); m.read(m.x,0); m.now+=FRESH; assert not m.input(DOWN_,N)
+    assert m.spawned==0 and m.log_opens==0 and not m.log
+else:
+    # The frame log. A frame is stores: no call but the clock; x is noted as it came, whatever it is.
+    m=EncoderMachine(); m.read(100,1); m.read(255,1); m.read(0,0); assert m.spawned==0 and not m.log
+    # The stop writes once, off the wheel's thread, synced, with the frames in order, the oldest of the
+    # last 64, and the counts.
+    m=EncoderMachine(); m.read(100,1); m.x=100; ghost(m,99,5); m.read(250,1); m.read(100,1); m.x=100; m.press(); since(m,STOP); m.press(); assert m.mute() and m.spawned==1 and m.log_opens==1 and m.synced==1
+    rows=m.log.decode().splitlines(); assert rows[0].startswith('== wheel: Return stopped a run') and 'stops 1' in rows[0] and len(rows)==65
+    ms=[int(l.split()[0]) for l in rows[1:]]; assert ms==sorted(ms) and 'x=250 p=1' in m.log.decode()
+    ghost(m,3100,5); assert m.log_opens==1  # past 30 s, the same run: nothing more
+    # One writer: a flush while one writes is lost, not raced; the next after it goes. A thread that can't
+    # start leaves the way clear.
+    m=EncoderMachine(); m.hold=True; m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==1 and not m.log
+    m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==1 and m.mute()
+    m.hold=False; m.run_threads(); assert m.log_opens==1
+    m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==2 and m.log_opens==2
+    m=EncoderMachine(); m.thread_fail=11; m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.mute() and m.spawned==0
+    m.thread_fail=0; m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,20,5); m.press(); since(m,STOP); m.press(); assert m.spawned==1
+    # A run past 30 s writes once; a lift and another, up to eight a boot, never past the size; gaps of a
+    # second in ticks never get there; a log it cannot open costs nothing else.
+    m=EncoderMachine(); m.read(100,1); m.x=100; assert ghost(m,2999,5); assert m.log_opens==0; ghost(m,300,5); assert m.log_opens==1 and m.log.startswith(b'== wheel: a run past 30 s')
+    for i in range(20):
+        m.drain(); m.read(m.x,0); m.read(100,1); m.x=100; ghost(m,3300,5)
+    assert m.log_opens==8 and len(m.log)<=32768+64*40
+    m=EncoderMachine(); m.log=b'x'*32768; m.read(100,1); m.x=100; ghost(m,3300,5); assert m.log_opens==1 and m.log==b'x'*32768 and not m.synced
+    m=EncoderMachine(); m.read(100,1); m.x=100
+    for _ in range(6): ghost(m,1000,5); m.now+=FRESH
+    assert m.log_opens==0
+    m=EncoderMachine(); m.log_fail=True; m.read(100,1); m.x=100; assert ghost(m,3300,5) and m.log_opens==1
+    # The gate's first drop of a run leaves its own line, once a run however many follow; a second's quiet
+    # is a new run; the ticks a stop refuses are the stop's, not the gate's.
+    m=EncoderMachine(); m.read(100,1); m.now+=FRESH
+    for _ in range(50):
+        assert not m.input(DOWN_,N) and not m.input(UP_,N); m.now+=50
+    assert m.log_opens==1 and m.log.startswith(b'== wheel: a tick with no ring frame') and m.get(ps['wl_drops'])==50
+    m.now+=FRESH; assert not m.input(DOWN_,N); assert m.log_opens==2
+    m=stopped(); n=m.log_opens; m.read(m.x,1,gap=1); assert not m.input(DOWN_,N) and not m.input(UP_,N) and m.log_opens==n and m.get(ps['wl_drops'])==0
 checks+=1
 # Volume guard on (Q2POD VOLGUARD, #46), screen off: a touch's first WHEEL_DARK_GUARD units one way
 # tick nothing and are dropped; then it ticks as lit, reversals and new touches too, until WHEEL_DARK_IDLE_MS without travel. A
@@ -1092,6 +1362,7 @@ class HeldMachine(ChangeMachine):
         super().__init__(); self.handlers.pop(ps['resume_held']); self.play=(0,0); self.seeks=[]
         self.handlers[ps['stock_sleep_trampoline']]='stock_sleep'
         for n in ('player_playtime_and_length','player_seek_time'): self.handlers[syms[n]]='h:'+n
+        self.handlers[ps['stock_seek_time_trampoline']]='h:player_seek_time'
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('h:'): return super().hook(u,address,size,unused)
@@ -1112,6 +1383,228 @@ assert press()==0 and not m.seen and m.get(ps['restart_ask'])==1
 m.poll(100); assert m.places()==place and m.toasts[-1]=='Press again to restart'
 assert press()==1 and m.seen; m.poll(0,3); assert m.places()==[] and not m.seeks
 checks+=1
+
+# The same guard from the real keys: on_wm_keyup_fun's prev_quick_click and next_quick_click, through stock's
+# player_prev_music, whose first move on anything playing or paused is player_seek_start: past 10 s it seeks to the
+# start, in any queue and mode, without reaching player_change_music. Everything above enters below that seek, and
+# with one key at a time.
+PREV_KEY,NEXT_KEY=syms['prev_quick_click'],syms['next_quick_click']
+class KeyMixin:
+    def keys(self,status=2,sec=100):
+        for n in ('mclGetPlayStatus','mclGetPlayPos','mclGetPlayType','prev_quick_click','next_quick_click','player_prev_music','player_next_music','player_seek_start'): self.handlers.pop(syms[n],None)
+        self.word(0xa3beac,status); self.sec=sec; self.set_seeks=[]
+        for n in ('toolsmtimer','player_playtime','mclSetSeek','mclSetResume','mclSetMute','mclGetCueFlag','dmrSendPause','dmrSendPlay','usleep@GLIBC_2.0'):
+            self.handlers[syms[n]]='k:'+n.split('@')[0]
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('k:'): return super().hook(u,address,size,unused)
+        ret=0; name=name[2:]; a=signed(u.reg_read(REGS[0]))
+        if name=='toolsmtimer': ret=self.now
+        elif name=='player_playtime': ret=self.sec
+        elif name=='mclSetSeek': self.set_seeks.append(a); self.sec=a; ret=1
+        self.returns(ret,clobber=True)
+    def key(self,which,gap=600):  # above prev_quick_click's own 500 ms filter
+        self.now+=gap; del self.seen[:]; del self.set_seeks[:]; self.word(ps['restart_ask'],0)
+        self.call(address=which,args=(0,0,0,0),gap=0)
+        moved=[e for e in self.seen if e!='resume_held']
+        if self.set_seeks: assert self.set_seeks==[0] and not self.get(ps['restart_ask']); return 'seek'
+        if self.get(ps['restart_ask']): assert not moved,moved; return 'ask'
+        return 'change' if moved else 'none'
+class KeyMachine(KeyMixin,ChangeMachine): pass
+def keyed(k=1,mode=0,cls=1,skip=0,status=2,sec=100,held=1):
+    m=KeyMachine(); m.install([(str(i),'/a/'+str(i),'A',0,i,0,0) for i in range(k)],0); m.held=held; m.keys(status,sec)
+    m.word(O['MCL_TYPE'],cls); m.word(O['MCL_MODE'],mode); m.byte(O['MCL_JUMPFOLDER'],skip); m.word(O['MCL_POOL'],m.deque([]))
+    return m
+IN,OUT=O_RESTART,3001
+# Only the same key confirms: another key inside the window asks and arms for itself.
+m=keyed(); assert m.key(NEXT_KEY)=='ask' and m.key(PREV_KEY)=='ask' and m.key(PREV_KEY)=='seek'
+m=keyed(); assert m.key(PREV_KEY)=='ask' and m.key(NEXT_KEY)=='ask' and m.key(NEXT_KEY)=='change'
+m=keyed(); assert m.key(NEXT_KEY)=='ask' and m.key(PREV_KEY)=='ask' and m.key(NEXT_KEY)=='ask'  # back and forth never confirms
+for which,done in ((PREV_KEY,'seek'),(NEXT_KEY,'change')):
+    m=keyed(); assert m.key(which)=='ask' and m.key(which,IN)==done  # the same key inside the window
+    m=keyed(); assert m.key(which)=='ask' and m.key(which,OUT)=='ask' and m.key(which,IN)==done  # outside it: asks again, and arms
+# The window ends when a press no longer would restart: resume_held false, or change_restarts false, then back.
+m=keyed(); assert m.key(NEXT_KEY)=='ask'; m.held=0; assert m.key(NEXT_KEY)=='change'; m.held=1; assert m.key(NEXT_KEY)=='ask'
+m=keyed(); assert m.key(PREV_KEY)=='ask'; m.held=0; assert m.key(PREV_KEY)=='seek'; m.held=1; m.sec=100; assert m.key(PREV_KEY)=='ask'
+m=keyed(); assert m.key(NEXT_KEY)=='ask'; m.word(O['MCL_TYPE'],0xf001); assert m.key(NEXT_KEY)=='none' and m.stops==1
+m.word(O['MCL_TYPE'],1); assert m.key(NEXT_KEY)=='ask'
+# Previous asks past 10 s in any queue, mode, class, Folder Skip, playing or paused; the second press seeks to the start.
+for k in (1,3):
+    for mode in (0,1,2,3):
+        for cls in (1,0xff10,0xf001):
+            for skip in (0,1):
+                for status in (2,3):
+                    m=keyed(k=k,mode=mode,cls=cls,skip=skip,status=status); assert m.key(PREV_KEY)=='ask',(k,mode,cls,skip,status)
+                    assert m.key(PREV_KEY,IN)=='seek'; checks+=1
+# Nothing held: stock's seek at once. Under 11 s stock changes track: a queue moves on, and Next in one moves on too.
+m=keyed(k=3,held=0); assert m.key(PREV_KEY)=='seek'
+m=keyed(k=3,mode=1,sec=10); r=m.key(PREV_KEY); assert r=='change' and m.current()==2,(r,m.seen,m.current())
+m=keyed(k=3,sec=11); assert m.key(PREV_KEY)=='ask'
+m=keyed(k=3); assert m.key(NEXT_KEY)=='change' and m.current()==1
+m=keyed(k=3,status=1); assert m.key(PREV_KEY)=='change'  # stopped: no seek
+m=keyed(status=1); assert m.key(PREV_KEY)=='ask'  # stopped, alone in the queue: player_change_music's restart
+checks+=8
+# Through the real Resume poll: the place stays and the toast shows; the second Previous seeks; the poll forgets it.
+class RealKeyMachine(KeyMixin,HeldMachine):
+    sec=property(lambda self:self.play[0],lambda self,v:setattr(self,'play',(v,self.play[1])))
+m=RealKeyMachine(); m.install([('book','/a/book.m4b','B',0,0,0,0)],0); m.word(O['MCL_TYPE'],1); m.keys()
+m.poll(0,2); m.poll(100,3); place=m.places(); assert [s for _,s in place]==[100]
+assert m.key(PREV_KEY)=='ask'; m.word(ps['restart_ask'],1); m.poll(100); assert m.places()==place and m.toasts[-1]=='Press again to restart'
+assert m.key(PREV_KEY,600)=='seek'; m.poll(0,3); assert m.places()==[]
+# The time is live, not the poll's: a scrub to 100 s before the next poll asks; a third Previous after a restart, with no
+# poll yet, restarts unasked; Previous within a second of Next, on a track at 0, doesn't ask for the one left.
+def book(sec=100):
+    m=RealKeyMachine(); m.install([('book','/a/book.m4b','B',0,0,0,0)],0); m.word(O['MCL_TYPE'],1); m.keys(); m.poll(0,2); m.poll(sec,3); return m
+m=book(20); m.play=(100,3600); assert m.key(PREV_KEY)=='ask'
+m=book(); m.play=(20,3600); assert m.key(PREV_KEY)=='seek'
+m=book(); assert m.key(PREV_KEY)=='ask' and m.key(PREV_KEY)=='seek' and m.key(PREV_KEY)=='change'
+m=book(); m.play=(0,3600); assert m.key(PREV_KEY)=='change'
+m=book(3580); assert m.key(PREV_KEY)=='seek'  # the last 30 s keep no place
+# Started again after a stop, with the same key: back to the place it stopped at, the place kept. A load's -1 (still
+# playing) is no stop, a confirmed restart isn't sent back, and a stop in the last 30 s has nothing to go back to.
+def stopped(m,status=1): m.word(0xa3beac,status); m.play=(0,0); m.now+=1000; m.fn('ringnav_sleep',0x1234)
+m=book(); kept=m.places(); stopped(m); m.word(0xa3beac,2); m.poll(1); assert m.seeks==[100] and m.places()==kept; m.poll(100,3); assert m.places()==kept
+m=book(); m.seeks=[]; stopped(m,2); m.poll(1); assert not m.seeks
+m=book(); m.seeks=[]; stopped(m); assert m.key(PREV_KEY)=='ask'; assert m.key(PREV_KEY)=='change'; m.word(0xa3beac,2); m.poll(1); assert not m.seeks
+m=book(3580); m.seeks=[]; stopped(m); m.word(0xa3beac,2); m.poll(1); assert not m.seeks
+# A remote's Previous on a DLNA or online queue stays stock's: its seek at once.
+for cls in (2,3,0xf1,0xf2):
+    m=keyed(cls=cls); m.call(address=syms['player_prev_music'],args=(0,0,0,0),gap=0); assert m.set_seeks==[0] and not m.get(ps['restart_ask']),cls
+# The toast's msginfo_dialog stops Previous, Next and Play itself, in stock's own words (0x49a478), so a second press under
+# it would never reach on_wm_keyup_fun; the before-hook sends the same key on. Another key stays stopped, and armed.
+m=keyed(); m.u.reg_write(UC_MIPS_REG_GP,0xa26cc0)
+for key,stop in ((O['KEY_BACK_BTN'],1),(O['KEY_FWD_BTN'],1),(0xab,1),(0x40,0)):
+    assert m.call(key,address=0x49a478,args=(0,m.event,0,0),gap=0)==(11 if stop else 0),key
+def under_toast(m,key,gap=600):
+    m.top=m.node('dialog','msginfo_dialog'); m.now+=gap; del m.set_seeks[:]; del m.seen[:]; m.word(ps['restart_ask'],0)
+    return m.call(key,gap=0)
+m=keyed(); assert m.key(PREV_KEY)=='ask'; assert under_toast(m,O['KEY_BACK_BTN'])==11 and m.set_seeks==[0]
+m=keyed(); assert m.key(NEXT_KEY)=='ask'; assert under_toast(m,O['KEY_FWD_BTN'])==11 and m.seen and not m.get(ps['restart_ask'])
+m=keyed(); assert m.key(NEXT_KEY)=='ask'; m.mock('on_wm_keyup_fun'); under_toast(m,O['KEY_BACK_BTN']); assert not m.set_seeks and m.get(ps['restart_at'])
+m=keyed(); assert m.key(PREV_KEY)=='ask'; m.mock('on_wm_keyup_fun'); under_toast(m,O['KEY_BACK_BTN'],3100); assert not m.set_seeks  # the window over
+m=keyed(); assert m.key(PREV_KEY)=='ask' and under_toast(m,O['KEY_BACK_BTN'],100) is not None and not m.set_seeks  # prev_quick_click's 500 ms filter
+# The wheel's gate and stop don't come between the toast and its confirm: ticks with no frame behind them go nowhere and
+# leave the window armed, and the buttons aren't ticks, whatever the wheel is doing.
+m=keyed(); assert m.key(PREV_KEY)=='ask'; at=m.get(ps['restart_at']); m.word(ps['wheel_mute'],1)
+for kind in (DOWN_,UP_): m.call(O['KEY_PREV'],address=INPUT,args=(m.wm,m.event,0,0),event_type=kind,gap=0)
+assert m.get(ps['restart_at'])==at and under_toast(m,O['KEY_BACK_BTN'])==11 and m.set_seeks==[0] and m.get(ps['wheel_mute'])==1
+m=EncoderMachine(); m.word(ps['wheel_mute'],1)
+for key in (O['KEY_BACK_BTN'],O['KEY_FWD_BTN']):
+    for kind in (DOWN_,UP_): assert m.input(kind,key)==1 and m.mute(),(key,kind)
+checks+=24
+# A CUE track holds no place to lose at a chapter's start: Previous restarts it unasked.
+m=RealKeyMachine(); m.install([('ch','/a/book.m4b','B',0,0,600,1200)],0); m.word(O['MCL_TYPE'],1); m.keys(); m.poll(0,2); m.poll(100,3)
+assert m.key(PREV_KEY)=='seek'
+checks+=2
+
+# A list pick of the playing file, from each caller's own words into player_start. No caller reads its result: the same
+# row of the same list starts nothing, what the page does after depends on who called. A short song keeps stock's restart.
+class PickMachine(ChangeMachine):
+    PAGE=(0x52cbfc,0x52cc1c); ALBUM=(0x4a5d54,0x4a5d6c); INFO=(0x4a9c30,0x4a9c48); SYNC=(0x51b724,0x51b73c); SYNC2=(0x51b8f4,0x51b90c); ROW=(0x529938,0x529944)
+    def __init__(self,status=2,cls=1):
+        super().__init__(); self.install([('x','/a/x','A',0,0,0,0),('1','/a/1','A',0,1,0,0)],1); self.held=1; self.word(O['MCL_TYPE'],cls); self.word(O['MCL_MODE'],0); self.byte(O['MCL_JUMPFOLDER'],0)
+        for n in ('player_start','player_start_queue','player_play_pause','navigator_back'): self.handlers.pop(syms[n],None)
+        self.handlers[ps['stock_player_start_trampoline']]='x:stock_start'; self.handlers[ps['stock_start_queue_trampoline']]='x:stock_queue'
+        self.handlers[ps['stock_pause_trampoline']]='x:unpause'; self.handlers[ps['resume_return']]='x:go_back'
+        self.handlers[syms['navigator_switch_to_with_context']]='pick:np'; self.handlers[syms['navigator_back']]='x:back'
+        self.handlers.pop(syms['mclGetPlayStatus'],None); self.word(0xa3beac,status)
+        self.ctx=self.alloc(16); self.cell=self.alloc(4); self.np=[]
+        self.same=self.rows_of('/a/x','/a/1'); self.other=self.rows_of('/a/y','/a/z')
+    def rows_of(self,*paths):
+        rows=[]
+        for p in paths: r=self.song(p); self.word(r+O['REC_PATH'],self.string(p)); rows.append(r)
+        return self.deque(rows)
+    def hook(self,u,address,size,unused):
+        if address==self.enter_at:
+            self.keep=[u.reg_read(r) for r in (UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2)]
+            for r,v in zip((UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2),self.regs): u.reg_write(r,v)
+        if address==self.stops_at or (address==0x52cc24 and self.stops_at==0x52cc1c):  # the page's 0xff skips the call
+            for r,v in zip((UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2),self.keep): u.reg_write(r,v)
+            return u.reg_write(UC_MIPS_REG_PC,0x1000000)
+        if self.handlers.get(address)=='pick:np':
+            self.np.append((self.text(u.reg_read(REGS[0])),self.get(u.reg_read(REGS[1])+8))); self.seen.append('np'); return self.returns(0,clobber=True)
+        return super().hook(u,address,size,unused)
+    enter_at=stops_at=None
+    def at_site(self,site,q=None,at=1,cls=1):
+        self.enter_at,self.stops_at=site; del self.seen[:]; del self.np[:]; self.now+=600; self.word(ps['restart_ask'],0); queue=self.get(syms['mcl_pdeqplaylist'])
+        q=q or self.same; self.word(self.cell,cls)
+        if site==self.PAGE:
+            for i,v in enumerate((q,at,cls,2)): self.word(self.ctx+4*i,v)
+            self.regs=(0,self.ctx,0); args=(0,0,cls,0)
+        elif site in (self.ALBUM,self.INFO): self.regs=(q,at,self.cell); args=(0,0,0,0)
+        elif site in (self.SYNC,self.SYNC2): self.regs=(q,at,cls); args=(0,0,0,0)
+        else: self.regs=(0,at,0); args=(0,0,0,0)
+        self.u.reg_write(UC_MIPS_REG_GP,0xa26cc0); self.call(address=site[0],args=args,gap=0)
+        assert not self.get(ps['restart_ask']) and self.get(syms['mcl_pdeqplaylist'])==queue
+        return [e for e in self.seen if e!='resume_held']
+    def picked(self,**kw): return self.at_site(self.PAGE,**kw)
+START,GO=['stock_start'],['go_back','stock_start']
+for site in (PickMachine.PAGE,PickMachine.SYNC):
+    m=PickMachine(); assert m.at_site(site)==[] and m.at_site(site)==[]  # the same row, twice, without asking or arming
+# Album pages stay on their page after a start: refused, they open Now Playing, class 0xff as on_backplay_click.
+for site in (PickMachine.ALBUM,PickMachine.INFO):
+    m=PickMachine(); assert m.at_site(site)==['np'] and m.np==[('playing_page',0xff)]
+    m=PickMachine(status=3); assert m.at_site(site)==['np','unpause']  # paused: a pick means play this
+# SyncLink, off the UI thread: silent, no window and no Play.
+for site in (PickMachine.SYNC,PickMachine.SYNC2):
+    m=PickMachine(status=3); assert m.at_site(site)==[],site
+m=PickMachine(status=3); assert m.picked()==['unpause']  # the page opens itself
+m=PickMachine(status=1); assert m.picked()==START  # stopped: a real start, never Now Playing in silence
+m=PickMachine(); m.held=0; assert m.picked()==START and PickMachine().picked()==[]  # a short song, or no place to lose
+m=PickMachine(); assert m.picked(at=0)==START  # another row
+m=PickMachine(); assert m.picked(at=5)==START  # stock's to refuse
+# Another list with the same file: stock loads it and the poll goes back. By position, by size, by class.
+m=PickMachine(); assert m.picked(q=m.other,at=1)==START
+m=PickMachine(); assert m.picked(q=m.rows_of('/a/1'),at=0)==GO
+m=PickMachine(); assert m.picked(q=m.rows_of('/a/x','/a/1','/a/w'),at=1)==GO
+m=PickMachine(); assert m.picked(q=m.rows_of('/a/1','/a/x'),at=0)==GO
+m=PickMachine(); assert m.picked(cls=0xff10)==GO
+# A CUE row of the file playing whole is another track, the first chapter too (start 0, an end): stock, nothing to go back to.
+for start,end in ((600,1200),(0,600),(600,0)):
+    m=PickMachine(); q=m.rows_of('/a/x','/a/1'); r=list(m.items(q))[1]; m.word(r+O['REC_CUE_START'],start); m.word(r+O['REC_CUE_END'],end); assert m.picked(q=q)==START,(start,end)
+for cls in (2,3,0xf1,0xf2): m=PickMachine(); m.word(O['MCL_TYPE'],cls); assert m.picked(cls=cls)==START,cls  # DLNA, online: nobody pressed here
+m=PickMachine(); m.word(O['MCL_TYPE'],2); assert m.picked(cls=1)==START  # a local list over a remote queue
+m=PickMachine(); m.word(ps['press_natural'],1); assert m.picked()==START  # an app's .play
+m=PickMachine(); m.word(ps['s']+24,1); assert m.picked()==START  # Shuffle Albums' load
+m=PickMachine(); assert m.picked(cls=0xff)==[]  # 0xff: Now Playing's own open, no player_start
+# View Queue's row of the playing file: Now Playing, unpaused; another row, or anyone else's call, stock's.
+m=PickMachine(); assert m.at_site(m.ROW)==['np']
+m=PickMachine(status=3); assert m.at_site(m.ROW)==['np','unpause']
+m=PickMachine(); assert m.at_site(m.ROW,at=0)==['stock_queue']
+m=PickMachine(status=1); assert m.at_site(m.ROW)==['stock_queue']
+m=PickMachine(); m.held=0; assert m.at_site(m.ROW)==['stock_queue']
+m=PickMachine(); m.handlers.pop(syms['player_start_queue'],None); m.fn('ringnav_start_queue',1); assert m.seen==['resume_held','stock_queue'] or m.seen==['stock_queue'],m.seen  # DLNA, a delete
+# Up Next's row of it closes the page, then opens Now Playing. Any other row plays, as before.
+m=PickMachine(); m.word(O['MCL_POS'],0); del m.seen[:]; m.fn('un_play',0); assert [e for e in m.seen if e!='resume_held']==['back','np'],m.seen
+m=PickMachine(); m.held=0; m.word(O['MCL_POS'],0); del m.seen[:]; m.fn('un_play',0); assert [e for e in m.seen if e!='resume_held']==['stock_queue','back'],m.seen
+checks+=30
+# player_start's real body: another list loads and starts through the hook, past stock's mclLoadPlayList and mclStartPlayer.
+class BodyMachine(PickMachine):
+    def __init__(self):
+        super().__init__(); self.handlers.pop(ps['stock_player_start_trampoline'])
+        for a in (0x50f1a4,0x4f6bbc,0x5146bc,0x5195e8,0x504c9c,0x5199e0,0x51c808,0x51b068,0x5061e8,0x512700,0x503f74,0x764940): self.handlers[a]='x:body'
+        for name in ('mclSetPlayMode','sendBtHeadsetPlayStatus','sendBtHeadsetPlayInfo','dmrRenderQplayQueueSize'):
+            if name in syms: self.handlers[syms[name]]='x:body'
+        self.handlers[ps['stock_load_trampoline']]='x:loaded'; self.handlers[syms['mclStartPlayer']]='x:started'
+m=BodyMachine(); r=[e for e in m.picked(q=m.rows_of('/a/1'),at=0) if e!='body']; assert r==['go_back','loaded','started'],r
+m=BodyMachine(); r=[e for e in m.picked() if e!='body']; assert r==[],r
+# The return itself, through the real poll: stock's load plays the file from 0, the poll seeks back and the place stands.
+class ReturnMachine(RealKeyMachine):
+    def __init__(self):
+        super().__init__(); self.install([('book','/a/book.m4b','B',0,0,0,0)],0); self.word(O['MCL_TYPE'],1); self.keys(); self.poll(0,2); self.poll(100,3)
+        self.handlers.pop(syms['player_start'],None); self.handlers[ps['stock_player_start_trampoline']]='r:start'; self.started=0; self.seeks=[]
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)=='r:start': self.started+=1; self.play=(0,3600); return self.returns(1,clobber=True)
+        return super().hook(u,address,size,unused)
+    def pick(self,*paths,at=0,cls=0xff10):
+        rows=[]
+        for p in paths: r=self.song(p); self.word(r+O['REC_PATH'],self.string(p)); rows.append(r)
+        self.call(address=syms['player_start'],args=(self.deque(rows),at,cls,2),gap=0)
+m=ReturnMachine(); kept=m.places(); m.pick('/a/book.m4b'); assert m.started==1 and m.places()==kept
+m.poll(0); assert not m.seeks; m.poll(1); assert m.seeks==[100] and m.places()==kept; m.poll(100,3); assert m.places()==kept
+m=ReturnMachine(); kept=m.places(); m.pick('/a/book.m4b'); m.poll(100,9); assert not m.seeks and m.started==1  # it never restarted: the wait runs out
+m=ReturnMachine(); m.pick('/a/other'); assert m.started==1; m.poll(0,2); assert not m.seeks  # another file: nothing to go back to here
+checks+=5
 
 print(f'{checks} advanced playback/wheel MIPS checks passed')
 
@@ -1295,9 +1788,11 @@ print('Folder speed: persistence, exact parents, reconnect, gapless and failed s
 # on; while one is set, the filter goes into the chain (peq_chain).
 class XfadeMachine(PlaybackMachine):
     def __init__(self, on='1'):
-        super().__init__(); self.flag=self.alloc(4); self.attaches=0
+        super().__init__(); self.flag=self.alloc(4); self.attaches=0; self.written=4
         self.config.update(XFADE=on, XFADESEC='7')
-        for n in ('open','ftruncate','mmap','close'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
+        for n in ('open','write','mmap','close','__xstat'): self.handlers[syms[n+'@GLIBC_2.0']]='xf:'+n
+        self.handlers[syms['navigator_window_is_exist']]='xf:exist'; self.handlers[syms['mcl_shuffle_pick']]='xf:pick'
+        self.missing|={'/tmp/notfile','/tmp/notsupport'}; self.toast=0; self.empty=set(); self.drawn=0
         self.handlers[ps['peq_attach']]='xf:attach'
         self.handlers.pop(syms['mclGetPlayStatus']); self.word(0xa3beac,2)  # playing
         self.word(syms['g_equalizer_flag'],0); self.byte(O['MCL_GAPLESS'],1)
@@ -1306,7 +1801,14 @@ class XfadeMachine(PlaybackMachine):
         if not name.startswith('xf:'): return super().hook(u,address,size,unused)
         if name=='xf:open': self.files[self.text(u.reg_read(REGS[0]))]=b''
         self.attaches+=name=='xf:attach'
-        self.returns(self.flag if name=='xf:mmap' else 3 if name=='xf:open' else 0)
+        if name=='xf:__xstat': self.word(u.reg_read(REGS[2])+48,0 if self.text(u.reg_read(REGS[1])) in self.empty else 4096)
+        if name=='xf:exist': return self.returns(self.toast)
+        if name=='xf:pick':  # as stock, forward: the current index out of the pool, a random one left is the position
+            pool=self.get(O['MCL_POOL']); left=[self.get(e) for e in self.items(pool) if self.get(e)!=self.mcl('MCL_POS')]
+            self.word(O['MCL_LASTPOS'],self.mcl('MCL_POS')); self.word(O['MCL_POOL'],self.deque(left,'int'))
+            self.drawn=left[0]; self.word(O['MCL_POS'],left[0]); return self.returns(1)
+        if name=='xf:prevstub': self.word(O['MCL_POS'],1); return self.returns(1)
+        self.returns(self.flag if name=='xf:mmap' else 3 if name=='xf:open' else self.written if name=='xf:write' else 0)
     def fade(self,pos=None):
         if pos is not None: self.word(O['MCL_POS'],pos)
         self.fn('playback_poll'); return self.get(self.flag)
@@ -1321,6 +1823,73 @@ m.word(O['MCL_MODE'],2); assert m.fade()==7000  # stock Shuffle: the next is dra
 m.byte(O['MCL_GAPLESS'],0); assert m.fade()==0; m.byte(O['MCL_GAPLESS'],1)
 m.word(O['MCL_MODE'],0); assert m.fade()==7000
 m.word(O['MCL_MODE'],0); assert m.fade(6)==0  # the last track
+# Repeat All at the queue's end: stock preloads position 0, so the wrap fades when that's another album's.
+m.word(O['MCL_MODE'],3); assert m.fade(6)==0  # 'ALBUM A' back to 'album a': gapless
+m.word(m.library_rows[6]+O['REC_ALBUM'],m.string('Album C')); assert m.fade(3)==0 and m.fade(6)==7000 and m.fade(0)==7000
+m.word(O['MCL_MODE'],0); assert m.fade(6)==0
+# A DSD next never fades (the filter can't mix under it): any case of the three extensions. DSD going
+# out is the filter's to pass through, so the policy still fades out of one.
+for name in ('/B/x.dsf','/B/x.DFF','/B/x.iso'):
+    m=XfadeMachine(); m.word(m.library_rows[1]+O['REC_PATH'],m.string(name))
+    assert m.fade(0)==0,name
+m=XfadeMachine(); m.word(m.library_rows[0]+O['REC_PATH'],m.string('/A/x.dsf')); assert m.fade(0)==7000
+# Each stop moves the count above the fade's ms: a natural change, which never reads as stopped, doesn't.
+m=XfadeMachine(); assert m.fade(0)==7000 and m.fade(0)==7000
+m.word(0xa3beac,1); assert m.fade()==7000|1<<16 and m.fade()==7000|1<<16
+m.word(0xa3beac,2); assert m.fade()==7000|1<<16
+m.word(0xa3beac,3); assert m.fade()==7000|1<<16
+m.word(0xa3beac,1); assert m.fade()==7000|2<<16
+# The count alone is no fade: with none asked, the filter isn't put in the chain for it.
+m.word(0xa3beac,2); m.byte(O['MCL_GAPLESS'],0); assert m.fade()==2<<16
+n=m.attaches; assert m.fade()==2<<16 and m.fade()==2<<16 and m.attaches==n
+# A file error's status 1 isn't a stop: the error file there, then gone with stock's modal toast up,
+# then Next. Nothing moves the count, so the next track mixes the tail. A stop right after still counts.
+m=XfadeMachine(); assert m.fade(0)==7000
+m.word(0xa3beac,1); m.missing.discard('/tmp/notfile'); assert m.fade()==7000
+m.missing.add('/tmp/notfile'); m.missing.discard('/tmp/notsupport'); assert m.fade()==7000
+m.missing.add('/tmp/notsupport'); m.toast=1; assert m.fade()==7000 and m.fade()==7000
+m.toast=0; m.word(0xa3beac,2); assert m.fade()==7000
+m.word(0xa3beac,1); assert m.fade()==7000|1<<16
+# A next file missing or empty asks no fade: it never plays, so that song ends whole. A URL isn't looked at.
+m=XfadeMachine(); m.missing.add('/B/01.flac'); assert m.fade(0)==0,m.fade(0)
+m=XfadeMachine(); m.empty.add('/B/01.flac'); assert m.fade(0)==0
+m=XfadeMachine(); m.word(m.library_rows[1]+O['REC_PATH'],m.string('http://x/y.flac')); m.missing.add('http://x/y.flac'); assert m.fade(0)==7000
+# Stock Shuffle's next drawn ahead: the file asked about is the one that plays, the pick overridden; a
+# DSD or missing draw asks no fade, any other fades whichever album. Uniform over the pool but the current,
+# which the draw leaves alone; Previous, a Play next and a new queue go their own way.
+def shuffled(pool=None):
+    m=XfadeMachine(); m.word(O['MCL_MODE'],2); m.word(O['MCL_POS'],0)
+    m.word(O['MCL_POOL'],m.deque(pool if pool is not None else list(range(7)),'int')); return m
+m=shuffled(); assert m.fade()==7000
+seen=[]
+for _ in range(120):  # one machine: its generator runs on, as the device's
+    m.word(O['MCL_POOL'],m.deque(list(range(7)),'int')); m.word(O['MCL_POS'],0)
+    m.fn('playback_poll'); assert m.fn('ringnav_shuffle',1)==1
+    x=m.mcl('MCL_POS'); seen.append(x); assert 0<x<7,x
+    assert sorted(m.get(e) for e in m.items(m.get(O['MCL_POOL'])))==list(range(1,7))  # the pick's erase only
+    m.word(O['MCL_POS'],x); m.fn('playback_poll')  # the next pass redraws from the new track
+assert set(seen)==set(range(1,7)) and max(seen.count(x) for x in range(1,7))<60,seen
+for bad in ('dsd','missing'):
+    m=shuffled([0,1]); r=m.library_rows[1]
+    if bad=='dsd': m.word(r+O['REC_PATH'],m.string('/B/x.iso'))
+    else: m.missing.add('/B/01.flac')
+    assert m.fade()==0,bad; assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==1
+m=shuffled([0,1]); assert m.fade()==7000 and m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==1
+# Under two in the pool: the refill's draw is unknown, and still fades, with no override.
+m=shuffled([0]); assert m.fade()==7000
+# A new queue under the draw: the old index isn't forced on it (the records no longer match).
+m=shuffled([0,1,2]); m.fn('playback_poll'); rows=list(m.library_rows); rows[1],rows[2]=rows[2],rows[1]
+m.word(syms['mcl_pdeqplaylist'],m.deque(rows)); m.word(O['MCL_POOL'],m.deque([0,5],'int'))
+assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==m.drawn==5
+# Previous then Next returns to the track left, and the policy asks about that one: a DSD one asks no fade.
+m=shuffled(); m.word(O['MCL_POS'],6); m.handlers[ps['stock_prev_trampoline']]='xf:prevstub'
+m.word(m.library_rows[6]+O['REC_PATH'],m.string('/A/left.dsf'))  # one row in six: a draw would fade
+m.fn('ringnav_prev'); assert m.mcl('MCL_POS')==1,m.mcl('MCL_POS'); assert m.fade()==0
+assert m.fn('ringnav_shuffle',1)==1 and m.mcl('MCL_POS')==6
+# A Play Next changes the answer mid-track, both ways: the poll reads the next record each pass.
+m=XfadeMachine(); rows=list(m.library_rows); assert m.fade(3)==0
+m.word(syms['mcl_pdeqplaylist'],m.deque(rows[:4]+[rows[0]]+rows[4:])); assert m.fade()==7000
+m.word(syms['mcl_pdeqplaylist'],m.deque(rows)); assert m.fade()==0
 m=XfadeMachine('0'); assert m.fade()==0 and not m.files and not m.attaches  # off: no file
 # Shuffle Songs (the reports' mode, #164): the next is the shuffle's successor, not pos + 1, and
 # the fade follows album_cmp of the two records at every automatic change.
@@ -1333,3 +1902,152 @@ for _ in range(6):
     assert m.advance_song(1)>=0
 assert fades=={0,7000},fades  # both cases met along the way
 print('Crossfade: the next change\'s fade, album and Gapless gates, the shared file, the filter and Shuffle Songs passed')
+
+# What waits for the DAC (crossfade.c press_stamp, docs/internals.md#wired-start): demo's stamp in PRESS_FILE.
+class PressMachine(XfadeMachine):
+    def __init__(self):
+        super().__init__('0'); self.now=5000; self.handlers.pop(ps['press_stamp']); self.handlers.pop(ps['mute_stamp'])
+        self.handlers[syms['clock_gettime@GLIBC_2.2']]='xf:clock'; self.handlers[syms['rename@GLIBC_2.0']]='xf:rename'
+        self.handlers[0x4ea848]='xf:dialog'; self.handlers[syms['mclStartPlayer']]='xf:start'
+        self.stock=[]; self.nested_load=0; self.held=0; self.sec=100
+        for name in ('change','next','load','pause','seek_time','seek_start','player_start'): self.handlers[ps[f'stock_{name}_trampoline']]='xf:'+name
+        self.handlers[ps['resume_held']]='xf:held'; self.handlers[syms['player_playtime']]='xf:playtime'
+        self.word(O['MCL_TYPE'],0xf001)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name=='xf:clock':
+            b=u.reg_read(REGS[1]); self.word(b,self.now//1000&0xffffffff); self.word(b+4,self.now%1000*1000000); return self.returns(0)
+        if name=='xf:rename': self.files[self.text(u.reg_read(REGS[1]))]=b''; return self.returns(0)
+        if name=='xf:dialog': return u.reg_write(UC_MIPS_REG_PC,0x1000000)  # back in on_wm_timer_dialog
+        if name=='xf:held': return self.returns(self.held)
+        if name=='xf:playtime': return self.returns(self.sec)
+        if name[3:] in ('change','next','load','pause','seek_time','seek_start','start','player_start'):
+            self.stock.append(name); self.seen=self.get(self.flag)
+            if name=='xf:start': self.start_natural=self.get(ps['press_natural'])
+            if name in ('xf:next','xf:change') and self.nested_load:  # Folder Skip's load, as stock's do within them
+                self.nested_load=0; self.nested(ps['ringnav_load'],self.get(syms['mcl_pdeqplaylist']),0,1)
+            return self.returns(0)
+        return super().hook(u,address,size,unused)
+    def at(self): return self.get(self.flag)
+    def nothing(self): return not {'/tmp/q2press','/tmp/q2press.tmp'}&set(self.files)
+    def enter(self,name,*args):  # through the hook, not the fixtures' mock
+        self.handlers.pop(syms[name],None); return self.call(address=syms[name],args=tuple(args)+(0,)*(4-len(args)),gap=0)
+# Nothing is created until the first press or start_mute's mark: a poll, ringnav_next(1)'s forget and the Stop that ends a queue make no file.
+m=PressMachine(); m.fn('playback_poll'); m.advance_song(1); assert m.nothing() and m.stock==['xf:next']
+# A manual Next or Previous stamps, odd and so never 0, the low 32 bits of the monotonic clock's ms, before stock runs.
+m.enter('player_next_music'); assert '/tmp/q2press' in m.files and m.at()==5001 and m.seen==5001
+m.now=6000; m.fn('ringnav_change',0); assert m.at()==6001
+m.now=(1<<32)+1002; m.fn('ringnav_change',1); assert m.at()==1003
+# A natural change forgets it and stamps nothing, before stock's next or advanced play's mclStartPlayer; a rollover too.
+m=PressMachine(); m.fn('ringnav_change',1); m.advance_song(1); assert m.at()==0 and m.seen==0 and m.get(ps['press_natural'])==0
+m=PressMachine(); m.options(1,5,0); m.fn('ringnav_change',1); m.stock=[]; m.advance_song(1); assert m.stock==['xf:start'] and m.seen==0
+m=PressMachine(); m.fn('ringnav_change',1); m.nested_load=1; m.advance_song(1); assert m.at()==0 and 'xf:load' in m.stock
+m=PressMachine(); m.nested_load=1; m.advance_song(1); assert m.nothing() and 'xf:load' in m.stock
+# ringnav_next(0) is reached only under ringnav_change, which has stamped: alone it neither stamps nor forgets.
+m=PressMachine(); m.advance_song(0); assert m.nothing()
+m=PressMachine(); m.fn('ringnav_change',1); m.now=7000; m.advance_song(0); assert m.at()==5001
+# A list pick stamps, after stock's load. Memory Playback's restore doesn't, in its load or player_start's second.
+m=PressMachine(); m.fn('ringnav_load',m.get(syms['mcl_pdeqplaylist']),0,0xf001); assert m.at()==5001 and m.seen==0
+s=PlaybackMachine(); s.options(4,5,0); s.advance_song(0); s.fn('playback_save')
+m=PressMachine(); m.handlers.pop(ps['stock_load_trampoline']); m.files.update(s.files); m.byte(syms['g_memory_play'],2); out=m.deque([])
+at=m.fn('ringnav_memory',out); assert at>=0 and m.nothing(); m.fn('ringnav_load',out,at,1); assert m.nothing()
+# Only a local queue's press: DLNA's (2, 3) and the online ones' (0xf1, 0xf2) start tracks by themselves.
+for kind,stamps in ((1,True),(0xff10,True),(0xf001,True),(2,False),(3,False),(0xf1,False),(0xf2,False)):
+    m=PressMachine(); m.word(O['MCL_TYPE'],kind); m.fn('ringnav_load',m.get(syms['mcl_pdeqplaylist']),0,kind); assert m.nothing()!=stamps,kind
+    m=PressMachine(); m.word(O['MCL_TYPE'],kind); m.fn('ringnav_change',1); assert m.nothing()!=stamps,kind
+# Stock's own player_start_queue hook doesn't stamp (DLNA, SyncLink's URL plays); Up Next's row does, before it.
+m=PressMachine(); m.handlers[ps['stock_start_queue_trampoline']]='xf:none'; m.fn('ringnav_start_queue',2); assert m.nothing()
+m=PressMachine(); m.handlers[syms['player_start_queue']]='xf:start'; m.handlers[syms['navigator_back']]='xf:none'
+m.fn('un_play',0); assert m.stock==['xf:start'] and m.seen==5001
+# Play from a stop stamps, a headset's own too (media_set_playing, through the same hook); playing or paused doesn't.
+m=PressMachine(); m.word(0xa3beac,1); m.enter('player_play_pause'); assert m.at()==5001 and m.stock==['xf:pause']
+m=PressMachine(); m.handlers.pop(syms['player_play_pause'],None); m.word(0xa3beac,1); m.fn('media_set_playing',1); assert m.at()==5001 and m.stock==['xf:pause']
+for status in (2,3):
+    m=PressMachine(); m.word(0xa3beac,status); m.enter('player_play_pause'); assert m.nothing(),status
+# The fade's start (docs/internals.md#unpause): a Pause from playing stamps MUTE_FILE before stock's mute(2), and nothing else does.
+m=PressMachine(); m.word(0xa3beac,2); m.enter('player_play_pause'); assert '/tmp/q2mute' in m.files and m.seen==5001 and m.stock==['xf:pause']
+for status in (1,3):
+    m=PressMachine(); m.word(0xa3beac,status); m.enter('player_play_pause'); assert '/tmp/q2mute' not in m.files,status
+m=PressMachine(); m.options(3,0,0); m.fn('playback_group_skip',1); assert m.at()==5001  # Next Group, a press
+# A user's scrub and Previous restarting the track stamp, through the hooks, and go on to stock.
+m=PressMachine(); m.enter('player_seek_time',50); assert m.at()==5001 and m.stock==['xf:seek_time'] and m.seen==5001
+m=PressMachine(); m.enter('player_seek_start'); assert m.at()==5001 and m.stock==['xf:seek_start'] and m.seen==5001
+# The skip past a file stock can't play: on_wm_timer_dialog's own words into stock's player_next_music, and nobody
+# pressed, for a Folder Skip load in it too. The same Next from anywhere else stamps (above).
+for load in (0,1):
+    m=PressMachine(); m.handlers.pop(syms['player_next_music'],None); m.u.reg_write(UC_MIPS_REG_GP,0xa26cc0); m.nested_load=load
+    m.call(address=0x4eaa8c,args=(0,0,0,0),gap=0); assert 'xf:change' in m.stock and m.nothing(),load
+    assert m.get(ps['press_natural'])==0
+# A full tmpfs: the file isn't made and nothing is stored, so no SIGBUS; the next press tries again.
+m=PressMachine(); m.written=-1; m.word(m.flag,0xdead); m.fn('ringnav_change',1); assert m.at()==0xdead and '/tmp/q2press' not in m.files
+m.written=4; m.fn('ringnav_change',1); assert m.at()==5001
+# A press the restart guard refuses plays nothing, so it stamps nothing, not even the file; its confirmation stamps before
+# stock runs. Under 11 s the seek hook stamps nothing either: player_change_music does, if it goes ahead.
+def asks(m,name,*args): m.handlers.pop(syms[name],None); return signed(m.call(address=syms[name],args=tuple(args)+(0,)*(4-len(args)),gap=0))
+def guarded(machine=None):
+    m=(machine or PressMachine)(); m.held=1; m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa3beac,2); m.install([('a','/a/a','A',0,0,0,0)],0); m.word(O['MCL_TYPE'],1); m.word(O['MCL_MODE'],0); m.byte(O['MCL_JUMPFOLDER'],0); return m
+m=guarded(); assert asks(m,'player_seek_start')==1 and m.nothing() and not m.stock
+m.now+=2000; asks(m,'player_seek_start'); assert m.stock==['xf:seek_start'] and m.seen==7001 and m.at()==7001
+m=guarded(); assert asks(m,'player_change_music',1)==0 and m.nothing() and not m.stock
+m.now+=2000; asks(m,'player_change_music',1); assert m.stock==['xf:change'] and m.seen==7001 and m.at()==7001
+# A pick that starts nothing stamps nothing; one of a short song goes on to stock, where ringnav_load stamps.
+m=guarded(); q=m.get(syms['mcl_pdeqplaylist']); assert asks(m,'player_start',q,0,1,2)==1 and m.nothing() and not m.stock
+m.now+=2000; assert asks(m,'player_start',q,0,1,2)==1 and m.nothing() and not m.stock
+m=guarded(); m.word(0xa3beac,3); q=m.get(syms['mcl_pdeqplaylist']); assert asks(m,'player_start',q,0,1,2)==1 and m.nothing()
+m=guarded(); m.held=0; q=m.get(syms['mcl_pdeqplaylist']); asks(m,'player_start',q,0,1,2); assert m.stock==['xf:player_start']
+m=guarded(); m.sec=10; asks(m,'player_seek_start'); assert m.stock==['xf:seek_start'] and m.nothing()
+# An earlier stamp stands through a refusal: the press it was for, not this one.
+m=guarded(); m.held=0; asks(m,'player_change_music',1); assert m.at()==5001; m.held=1; m.now=9000; asks(m,'player_seek_start'); assert m.at()==5001
+# Never an automatic change: on_wm_timer_dialog's skip past an unplayable file goes to stock, unasked and unstamped.
+m=guarded(); m.handlers.pop(syms['player_next_music'],None); m.u.reg_write(UC_MIPS_REG_GP,0xa26cc0)
+m.call(address=0x4eaa8c,args=(0,0,0,0),gap=0); assert m.stock==['xf:change'] and m.nothing() and not m.get(ps['restart_ask'])
+print('Press: Next, Previous, a list pick and a user\'s seek stamp; a natural change forgets, stamps nothing and makes no file')
+# What mclStartPlayer does on the jack from the idle player, its own code run from the way's test to the send (0x5ad1a8-0x5ad1e4).
+class StartMachine(PressMachine):
+    def __init__(self):
+        super().__init__(); self.quiet=[]
+        self.handlers[syms['mclSetMute']]='xf:mute'; self.handlers[syms['usleep@GLIBC_2.0']]='xf:usleep'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name in ('xf:mute','xf:usleep'): self.quiet.append((name[3:],u.reg_read(REGS[0]))); return self.returns(0)
+        return super().hook(u,address,size,unused)
+    def site(self):
+        self.quiet=[]; sp=self.u.reg_read(UC_MIPS_REG_SP)-0x100
+        self.word(sp+0x20,0xa26cc0); self.u.reg_write(UC_MIPS_REG_SP,sp); self.u.reg_write(UC_MIPS_REG_GP,0xa26cc0); self.u.reg_write(UC_MIPS_REG_FP,0xa40000)
+        self.u.emu_start(0x5ad1a8,0x5ad1e4,count=200000); self.u.reg_write(UC_MIPS_REG_SP,sp+0x100)
+        return self.quiet
+STOCK=[('mute',1),('usleep',100000)]
+m=StartMachine(); assert m.get(0x5ad1bc)==jal(ps['start_mute']) and m.get(0x5ad1d4)==jal(ps['start_sleep'])
+assert m.site()==STOCK and m.nothing()  # outside a natural change: a press, a boot, a resume, an app
+m.word(ps['press_natural'],1); assert m.site()==STOCK and m.nothing()  # the natural starts ringnav_next(1) doesn't make
+m.word(ps['press_natural'],2); assert m.site()==[] and m.at()==5000  # even: not a press's stamp
+assert m.site()==[] and m.at()==5000
+m.fn('start_sleep',150000); assert m.quiet==[('usleep',150000)]  # the skip is one sleep's, whatever comes next
+m.now=(1<<32)+1; m.quiet=[]; assert m.site()==[] and m.at()==2  # and never 0
+m.now=5000
+m.word(ps['press_natural'],0); assert m.site()==STOCK and m.at()==0  # the skip doesn't outlast its start, and a start that mutes clears an unspent mark
+m=StartMachine(); m.fn('ringnav_change',1); assert m.at()==5001; m.site(); assert m.at()==5001  # a press's stamp stays
+m.word(ps['press_natural'],2); m.now=7001; assert m.site()==[] and m.at()==7000
+for cls in (0xf1,0xf2,2,3,5):  # DLNA and the online queues stay stock's
+    m=StartMachine(); m.word(ps['press_natural'],2); m.word(O['MCL_TYPE'],cls); assert m.site()==STOCK and m.nothing(),cls
+m=StartMachine(); m.word(ps['press_natural'],2); m.written=-1; assert m.site()==STOCK and '/tmp/q2press' not in m.files  # no word to tell hciplayer
+m=StartMachine(); m.word(ps['press_natural'],2); m.word(0xa3beb0,1); assert m.site()==[] and m.nothing()  # stock's own test: the jack's only
+# ringnav_next(1) is what sets it, and only for its own span; a rollover's load inside it keeps the local class.
+m=PressMachine(); m.options(1,5,0); m.stock=[]; m.advance_song(1); assert m.stock==['xf:start'] and m.start_natural==2 and m.get(ps['press_natural'])==0
+m=PressMachine(); m.nested_load=1; m.advance_song(1); assert m.get(ps['press_natural'])==0
+# The restart guard around the marks: a refused press or a pick that starts nothing leaves a natural start's even mark as
+# it was, so it can't read as a press, and the next natural start marks afresh. A confirmed press stamps odd, its own start
+# mutes as stock's, and a natural change after it forgets the word, so no wait comes of it.
+m=guarded(StartMachine); q=m.get(syms['mcl_pdeqplaylist']); m.word(ps['press_natural'],2); assert m.site()==[] and m.at()==5000; m.word(ps['press_natural'],0)
+assert asks(m,'player_seek_start')==1 and m.at()==5000 and not m.stock
+assert asks(m,'player_change_music',1)==0 and m.at()==5000 and not m.stock  # another key: it asks again
+assert asks(m,'player_start',q,0,1,2)==1 and m.at()==5000 and not m.stock
+m.word(ps['press_natural'],2); m.now=6000; assert m.site()==[] and m.at()==6000; m.word(ps['press_natural'],0)
+m=guarded(StartMachine); assert asks(m,'player_change_music',1)==0 and m.nothing()
+m.now+=2000; asks(m,'player_change_music',1); assert m.at()==7001 and m.stock==['xf:change'] and m.site()==STOCK and m.at()==7001
+m.handlers[syms['player_change_music']]='xf:none'; m.advance_song(1); assert m.at()==0 and m.get(ps['press_natural'])==0
+m=guarded(StartMachine); assert asks(m,'player_seek_start')==1; m.now+=2000; asks(m,'player_seek_start'); assert m.at()==7001 and m.site()==STOCK and m.at()==7001
+m.advance_song(1); assert m.at()==0
+m=guarded(StartMachine); m.word(ps['press_natural'],2); m.site(); m.word(ps['press_natural'],0); m.held=0; asks(m,'player_start',m.get(syms['mcl_pdeqplaylist']),0,1,2)
+assert m.stock==['xf:player_start'] and m.site()==STOCK and m.at()==0  # a real pick's start mutes, and clears the mark it isn't for
+print('Start: a natural start on the jack skips demo\'s mute and sleep and marks the word; everything else keeps stock\'s')

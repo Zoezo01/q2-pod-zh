@@ -118,12 +118,6 @@ static struct {
     int art_tries;
 } ui __attribute__((section(".scratch")));
 
-unsigned long long now_ms(void) { /* shared with radio.c; not now_ns() / 1e6: no __udivdi3 here */
-    int ts[2];            /* o32 timespec */
-    clock_gettime(1, ts); /* CLOCK_MONOTONIC, librespot's at= clock */
-    return (unsigned long long)(unsigned)ts[0] * 1000 + (unsigned)ts[1] / 1000000;
-}
-
 /* c to the datagram socket at path, *sock opened on first use. Shared with radio.c. */
 void dgram_send(int *sock, const char *path, const char *c, unsigned n) {
     if (*sock <= 0) *sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
@@ -499,7 +493,7 @@ void spot_paint(void *w, void *canvas) {
     if (w == ui.bar) {
         unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
-        int h = np_bar_h();
+        int h = theme()->np_bar;
         box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
         if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
     } else { /* a triangle playing, two bars otherwise */

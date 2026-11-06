@@ -59,7 +59,9 @@ def validate(directory):
                         ('playback', directory), ('m4b', directory), ('ldac', directory),
                         ('id3', directory), ('headset_io', directory), ('bluealsa', directory),
                         ('coverflow',), ('mp3',), ('mp3_gapless',),
-                        ('mp3_gapless_player', directory), ('bt_resample', directory), ('xfade_player', directory), ('remote',)):
+                        ('mp3_gapless_player', directory), ('player_seam', directory), ('bt_resample', directory), ('xfade_player', directory), ('hci_natural', directory),
+                        ('hci_ao', directory), ('hci_wait', directory),
+                        ('remote',)):
         subprocess.run([sys.executable, ROOT/f'test/{test}.py', *map(str, args)], check=True)
 
 

@@ -500,7 +500,6 @@ void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, un
 }
 /* iPod builds' theme: Classic's Graphite light tone, or Minimal's fill. */
 static int shim_classic_on = 1;
-int ipod_classic(void) { return shim_classic_on; }
 unsigned accent_tone(int tone) { return shim_classic_on ? 0x6e6e6e : 0xeeeeec; }
 void shim_classic(int on) { shim_classic_on = on; }
 int widget_set_prop_str(void *x, const char *k, const char *v) {
@@ -1438,6 +1437,7 @@ int peq_open(af_instance *af);
 
 char *peq_mpctx; /* the player's MPContext pointer; null: no codec to check */
 double peq_pts = -1; /* written_audio_pts: seconds decoded */
+int peq_next_flag;   /* the next and stop flags, up at a press's uninit */
 int peq_length;      /* {media-info}'s whole seconds */
 static unsigned clock_reads;
 static long clock_skew; /* seconds added: a pause without waiting for one */
@@ -1608,19 +1608,55 @@ static void crossfade_check(void) {
         }
     }
     b.uninit(&b);
-    /* Another channel count drops it: the next track plays alone. */
+    /* A mono track next: each held frame's mean (ramp and level 1) under it, all of it. */
     track(&a, 48000);
-    for (n = 0; n < 10 * 48000;) block(&a, buf, 1024, &n, 1, 48000);
+    for (n = out = 0; n < 10 * 48000;) out += block(&a, buf, 1024, &n, 1, 48000);
     a.uninit(&a);
     memset(&b, 0, sizeof b);
     assert(peq_open(&b) == 1);
     af_data mono_in = {0, 0, 48000, 1, 0x1d, 4};
     assert(negotiate(&b, &mono_in) == 1);
-    for (unsigned i = 0; i < 1024; ++i) buf[i] = 0;
-    peq_pts = 1024.0 / 48000;
-    af_data d1 = {buf, 1024 * 4, 48000, 1, 0x1d, 4};
-    assert(b.play(&b, &d1) == &d1 && d1.len == 1024 * 4 && buf[0] == 0 && buf[1023] == 0);
+    for (m = 0; m < 48000; m += 1024) {
+        for (unsigned i = 0; i < 1024; ++i) buf[i] = 0;
+        peq_pts = (m + 1024.0) / 48000;
+        af_data d1 = {buf, 1024 * 4, 48000, 1, 0x1d, 4};
+        assert(b.play(&b, &d1) == &d1 && d1.len == 1024 * 4);
+        for (unsigned i = 0; i < 1024 && m + i < 48000; ++i)
+            assert(fabsf(buf[i] - (out + m + i + 1.0f) / 2 * cosf((m + i + 0.5f) / 48000 * 1.5707963f)) < 1);
+    }
     b.uninit(&b);
+    /* The flag clearing in the hold finishes it: in order, no jump, what is held mixed next. */
+    xfade_view(1000);
+    track(&a, 48000);
+    for (n = out = 0; n < 10 * 48000;) {
+        if (n >= 7 * 48000) xfade_view(0);
+        unsigned k = block(&a, buf, 1024, &n, 1, 48000);
+        for (unsigned i = 0; i < k; ++i) assert(buf[2 * i] == (float)out++);
+    }
+    a.uninit(&a);
+    held = n - out;
+    assert(held > 0 && held < 48000);
+    track(&b, 48000);
+    for (m = mixed = 0; mixed < held;) {
+        unsigned k = block(&b, buf, 1024, &m, 0, 48000);
+        for (unsigned i = 0; i < k && mixed < held; ++i, ++mixed) {
+            float p = (mixed + 0.5f) / held * 1.5707963f;
+            assert(fabsf(buf[2 * i + 1] - cosf(p)) < 1e-5f);
+            assert(fabsf(buf[2 * i] - (mixed * sinf(p) + (out + mixed) * cosf(p))) < 1);
+        }
+    }
+    b.uninit(&b);
+    /* A stop since the hold began drops the tail, however soon the next track comes. */
+    xfade_view(1000);
+    track(&a, 48000);
+    for (n = 0; n < 10 * 48000;) block(&a, buf, 1024, &n, 1, 48000);
+    a.uninit(&a);
+    xfade_view(1 << XF_STOPS);
+    track(&b, 48000);
+    m = 0;
+    assert(block(&b, buf, 1024, &m, 0, 48000) == 1024 && buf[0] == 0 && buf[1] == 0);
+    b.uninit(&b);
+    xfade_view(1000);
     /* The same instance starting over at the end (a chain kept across the change) is the next track. */
     track(&a, 48000);
     for (n = 0; n < 10 * 48000;) block(&a, buf, 1024, &n, 1, 48000);

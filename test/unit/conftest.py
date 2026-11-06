@@ -17,7 +17,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 # build first: the others import it, or each other in this order, while they load.
-for name in ('build', 'module_elf', 'rotator', 'ipod', 'peq', 'aic', 'flac', 'mcu_park', 'pwm', 'q2remote', 'release'):
+for name in ('build', 'module_elf', 'rotator', 'ipod', 'theme', 'peq', 'aic', 'flac', 'mcu_park', 'pwm', 'q2remote', 'release'):
     sys.modules[name] = importlib.import_module('tools.' + name)
 
 # The compilers a test may run. A mutant changes these tools' commands before they run, and
