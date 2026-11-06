@@ -11,7 +11,7 @@
   - Now Playing: under **Theme: Classic** turning the volume shows it on the progress bar between two speakers, in place of the times, as on an iPod classic. The "Volume 40" line under the bar, small and hard to read, is gone. Minimal and Modern still show it.
   - Library: under **Theme: Classic** the Playlists page no longer repeats "Playlists" beside its + and list buttons, where it didn't fit. The title bar names the page.
   - Library: under **Theme: Classic** the Library's first row is **Search**, which opens the search with the keyboard up, as pulling the list down does. In Home's Split list the pull was easy to miss.
-  - Audiobooks: **Chapters** in the Now Playing hold menu also reads the chapters of a file in **Podcasts** or **Audiobooks** in another format, such as an MP3's ID3 chapters, where it read only an `.m4b`'s. A book too long for the Q2's memory as one `.m4b` can be an MP3 and keep its chapters. A track of a CUE sheet other than an `.m4b` has no Chapters row, as its sheet lists them.
+  - Audiobooks: **Chapters** in the Now Playing hold menu is offered for any file in **Podcasts** or **Audiobooks**, such as an MP3 with chapters, not only an `.m4b`. On a CUE track of an `.m4b`, it lists that track's chapters at that track's times, and jumps to the right place. Chapters stored out of order are listed in order, where the list said "Could not read chapters".
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.
