@@ -83,10 +83,10 @@ typedef struct {
 typedef struct {
     /* coverflow.shelf (px, brightness of 256; tilt: degrees, horizon: % down the cover, third: the
      * third cover out stays, swing: a step's depth follows the turn and the near edge eases to just
-     * past its rest place, lift: px nearer mid-way, view_h: the frame's rows), coverflow.caption:
-     * offsets.inc's CF_* */
+     * past its rest place, lift: px nearer mid-way, view_h: the frame's rows, art_persp: % of the
+     * plane's own spacing of a cover's art, 0 even), coverflow.caption: offsets.inc's CF_* */
     short top, x1, xs, z1, zs, eye, bright1, bright2, reflect, reflect_top, stride, radius;
-    short tilt, horizon, third, swing, lift, view_h, eye_turn;
+    short tilt, horizon, third, swing, lift, view_h, eye_turn, art_persp;
     /* coverflow.shelf, the thumb (docs/internals.md#coverflow-thumb; thumb 0: ticks and the step's
      * animator). Ticks are 200 / ticks_turn raw units; far_left, stop_left, back, aim_snap, lead_*
      * and row_from, _full, _flat, _edge are 1/100 album; others ms, ticks/s, albums/s, px or %. */

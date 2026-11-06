@@ -198,6 +198,8 @@ SCHEMA = {k.path: k for k in (
         ('shelf', 'swing', 0, 1), ('shelf', 'lift', 0, 40), ('shelf', 'eye_turn', 0, 400), ('shelf', 'view_h', O['CF_VIEW_H'], 294),
         *(('shelf', a, 0, hi) for a, hi in CF_THUMB.items()), ('caption', 'name_px', 1, 32), ('caption', 'artist_px', 1, 28),
         ('caption', 'text_y', 210, 290), ('caption', 'artist_y', 20, 32))),
+    # % of the plane's own spacing of a cover's art, from even (0); 100, the plane's, is Minimal's
+    Key('coverflow.shelf.art_persp', 'cf.art_persp', 'int', 0, 100, 100, 'open'),
     Key('page.rows.height', 'page_row', 'int', 20, 64, 48, 'open'),
     Key('page.rows.detail_height', 'page_detail', 'int', 20, 80, 64, 'open'),
     Key('page.title.height', 'page_title_h', 'int', 0, 48, 48, 'open'),

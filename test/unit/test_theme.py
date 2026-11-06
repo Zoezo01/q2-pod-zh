@@ -123,7 +123,7 @@ HOMELIB, ROWPREVIEW = (own(k, label, ('Off', 'On'), None, default=1, preset=1) f
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': 0 for a in theme.CF_THUMB}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32}
+            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': 0 for a in theme.CF_THUMB}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'payload', 'playing', 'dialog', 'coverflow', 'home') for a in ('ms', 'easing', 'anim')},
@@ -580,7 +580,7 @@ def with_role(monkeypatch, **cf):
 @pytest.mark.parametrize('field,value', [('eye', 2047), ('eye', 0), ('xs', 800), ('zs', 800), ('x1', 1024), ('reflect', 0),
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
     ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
-    ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101)])
+    ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
     with_role(monkeypatch, **{field: value})
     with pytest.raises(theme.ThemeError, match=rf'coverflow\.\w+\.{field}: {value} outside'):
@@ -604,7 +604,7 @@ def test_coverflow_eye_turn_stays_in_range():
 
 CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
                      detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
-                     lead_from=25, lead_full=100, lead_ms=45, row_shift=50, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
+                     lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
                      row_edge=160, row_width=60, row_key=72, row_reach=22)
 
 

@@ -1944,6 +1944,9 @@ static void thumb_wheel(void) {
         assert(fabsf(th[T_VEL]) <= was + .0005f);
         was = fabsf(th[T_VEL]);
         assert(!strcmp(album_caption(covers_view), last));
+        /* once the wheel's stopped, the facing point never passes the album the covers land on */
+        float left = th[T_GOAL] - th[T_POS];
+        assert(i * 17 <= 60 || th[T_LEAD] * left <= 0 || fabsf(th[T_LEAD]) <= fabsf(left) + 1e-5f);
     }
     assert(!th[T_ON] && th[T_LEAD] == 0 && !strcmp(album_caption(covers_view), last) && *index != before);
     assert(CAPTION(*index));
@@ -2123,6 +2126,42 @@ static void thumb_wheel(void) {
             for (int x = 0; x < CF_VIEW_W; ++x) differ += abs(ch(f[y * PITCH + x], 1) - ch(g2[y * PITCH + x], 1)) > 40;
         
         assert(differ < H * 8); /* a cover's edge, a row of a px at most, either side */
+    }
+    /* One mapping of the art across a cover, at rest and in the row: with each texel's column in its
+       low byte and its cover in the next, a tiny lead puts the same texel in each column, give or take
+       one or two. Alone, cover 1's near half is about 1.22 times as wide as its far half (art_persp),
+       where the plane's own would be 2.76; the outlines at rest stay the bytes they were. */
+    {
+        static unsigned idx[15][160 * 160];
+        const unsigned *iring[15], *one[15] = { 0 };
+        for (int i = 0; i < 15; ++i) {
+            iring[i] = idx[i];
+            for (int k = 0; k < 160 * 160; ++k) idx[i][k] = 0xff000000u | (unsigned)(i + 1) << 8 | (unsigned)(k % 160);
+        }
+        int hz = shim_themes[1].cf.top + 160 * shim_themes[1].cf.horizon / 100, same = 0, near = 0, far = 0;
+        cf_thumb_lead(0);
+        coverflow_render(f, PITCH, 0, iring + 4);
+        cf_thumb_lead(1e-4f);
+        coverflow_render(g2, PITCH, 0, iring + 4);
+        for (int x = 0; x < CF_VIEW_W; ++x) {
+            unsigned a = f[hz * PITCH + x], b = g2[hz * PITCH + x];
+            if ((a >> 8 & 255) != (b >> 8 & 255) || !(a >> 8 & 255)) continue; /* another cover, by an edge */
+            ++same;
+            assert(abs((int)(a & 255) - (int)(b & 255)) <= 2);
+        }
+        assert(same > CF_VIEW_W * 9 / 10);
+        one[8] = idx[8];
+        cf_thumb_lead(0);
+        coverflow_render(f, PITCH, 0, one + 4);
+        for (int x = 0; x < CF_VIEW_W; ++x)
+            if ((f[hz * PITCH + x] >> 8 & 255) == 9) ++*((f[hz * PITCH + x] & 255) < 80 ? &far : &near);
+        assert(far && fabsf((float)near / (float)far - 1.22f) <= .1f);
+        unsigned hash = 2166136261u;
+        for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 5) {
+            R(f, frac);
+            for (unsigned i = 0; i < sizeof f / 4; ++i) hash = (hash ^ f[i]) * 16777619u;
+        }
+        assert(hash == 0xe9548ed4u);
     }
     int spans = 0, prev = -1, rows = shim_themes[1].cf.top + 90;
     cf_thumb_lead(5);
@@ -2666,7 +2705,7 @@ def main():
         assert int(re.search(rf'\.{field}=(\w+)', tight)[1], 0) == classic_light[field], f'shim_themes drifted from Classic: {field}'
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
-                for i, m in enumerate((ROLE_MACROS['minimal'],))]
+                for i, m in enumerate(({**ROLE_MACROS['minimal'], 'cf.art_persp': builtins()[0]['cf.art_persp']},))]
     # The wheel's numbers are retuned on the device: these cases pin the model, with its own fixed ones.
     fixture = {**classic_light, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120}
     cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')

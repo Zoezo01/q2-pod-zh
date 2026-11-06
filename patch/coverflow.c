@@ -1587,6 +1587,20 @@ static void cf_corners(void) {
         cf_inset[k] = cf_inset[ART_SIZE - 1 - k] = (unsigned short)(arc_out(r, k) * 16);
 }
 
+/* One mapping of the art across a cover, at rest (draw_cover) and in the row (draw_quad): the texel
+ * (0 at the far edge) at x of n from the far edge, the near half q (of 256) times as wide as the
+ * far half; 256 spaces them evenly. Unsigned, x q stays under 2^32 / ART_SIZE. */
+static int cf_texel(int x, int n, int q) {
+    unsigned k = (unsigned)x * (unsigned)q * ART_SIZE / (unsigned)((n - x) * 256 + x * q);
+    return k >= ART_SIZE ? ART_SIZE - 1 : (int)k;
+}
+/* A cover's q, near and far heights hn and hf: on the screen (per hf), r, from 1 at
+ * coverflow.shelf.art_persp 0 to the plane's own hn / hf at 100; over the plane's own spacing
+ * (per hn), r / (hn / hf), so 100 leaves it exactly as it is. */
+static int cf_art_q(int hn, int hf, int per) {
+    return ((hf + (hn - hf) * cfs.art_persp / 100) << 8) / per;
+}
+
 static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
@@ -1594,25 +1608,29 @@ static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     if (p.bright <= 0 || !tex) return;
     int a = project(&p, -CF_HALF16), b = project(&p, CF_HALF16);
     int lo = (16 * CF_CX + (a < b ? a : b)) >> 4, hi = (16 * CF_CX + (a < b ? b : a)) >> 4;
+    /* the edges' depths: far over near is the near edge's height over the far edge's */
+    int dn = p.eye + p.zc - (CF_HALF16 * p.s >> 16), df = dn + 2 * (CF_HALF16 * p.s >> 16);
+    int q = cf_art_q(df, dn, df);
     for (int v = lo; v <= hi; ++v) { /* v: the column as if the cover were on the right */
         int col = side > 0 ? v : 2 * CF_CX - 1 - v, u, h;
         if (col < 0 || col >= CF_VIEW_W || !unproject(&p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h)) continue;
-        int k = (u + CF_HALF16) >> 4;
+        int k = cf_texel(u + CF_HALF16, 2 * CF_HALF16, q);
         column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k), h, p.bright, cf_inset[k]);
     }
 }
 
-/* A cover whose near and far edges have left its pose: the plane's own mapping between xl and xr
- * (1/16 px right of the centre line), its height hl to hr (1/256 px) straight across. */
+/* A cover whose near and far edges have left its pose, between xl and xr (1/16 px right of the
+ * centre line), its height hl to hr (1/256 px) straight across; the shorter edge is the far one. */
 static void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, int bright) {
     int lo = (16 * CF_CX + xl) >> 4, hi = (16 * CF_CX + xr) >> 4;
+    int left = hr < hl, hf = left ? hr : hl, q = hf > 0 ? cf_art_q(hl + hr - hf, hf, hf) : 256;
     lo = lo < 0 ? 0 : lo, hi = hi >= CF_VIEW_W ? CF_VIEW_W - 1 : hi;
     for (int col = lo; xr > xl && col <= hi; ++col) {
         int dx = (2 * col + 1 - 2 * CF_CX) * 8 - xl;
         if (dx < 0 || dx >= xr - xl) continue;
         float p = (float)dx / (float)(xr - xl);
-        int k = (int)(p * (float)hl / ((1 - p) * (float)hr + p * (float)hl) * ART_SIZE);
-        k = k >= ART_SIZE ? ART_SIZE - 1 : k;
+        int k = cf_texel(left ? xr - xl - dx : dx, xr - xl, q);
+        k = left ? ART_SIZE - 1 - k : k;
         column(f, col, tex + k, (int)((float)hl + (float)(hr - hl) * p), bright, cf_inset[k]);
     }
 }
@@ -2669,6 +2687,11 @@ int coverflow_wheel_poll(int usable, int gated) {
     float want = l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
     th_follow(&th.lead, &th.lead_v, want, cfs.lead_ms, (float)ms);
     if (!want && ABS(th.lead) < 1e-4f && ABS(th.lead_v) < 1e-5f) th.lead = th.lead_v = 0;
+    /* Once the wheel's stopped, the facing point's follow, lagging as it shrinks, never passes the
+     * album the covers land on, or the next one faces for a moment and turns back. While it turns,
+     * the gap jumps with each tick, so it's left alone then. */
+    if (since > cfs.stop_ms && th.lead * l > 0 && ABS(th.lead) > ABS(l))
+        th.lead = l, th.lead_v = -th.vel;
     I(s, SLIDE_OFFSET) = -cf_round(th.pos * (float)stride_of(s));
     if (ABS(th.pos - th.seen) >= 1 / 4096.f || ABS(th.lead - th.seen_lead) >= 1 / 4096.f ||
         !th.lead != !th.seen_lead) {

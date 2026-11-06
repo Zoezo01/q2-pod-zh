@@ -9234,7 +9234,7 @@ def host_render(textures,cases,style=None,paper=None):
     import subprocess, tempfile
     from coverflow import SHIM_H
     from theme import ROLE_MACROS
-    style=style or {f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')}
+    style=style or {**{f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')},'cf.art_persp':100}
     cf=', '.join(f'.{f[3:]} = {v}' for f,v in style.items()); rows=style['cf.view_h']
     main=r"""#include "theme.h"
 static theme_t t = { .cf = { %s } };
