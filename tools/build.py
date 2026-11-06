@@ -21,7 +21,7 @@ def dev_tag(number):
     for _ in range(3): n, d = divmod(n, 36); digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[d] + digits
     return 'V' + digits + 'i'
 BASE = 0xb00000
-SCRATCH = 0xb90000  # 576 KB of payload text below it
+SCRATCH = 0xbc0000  # 768 KB of payload text below it
 RING_STEP = 48
 HOOKS = {
     'createPlayListItem': (0x50d32c, 'ringnav_playlist_create', None),
@@ -111,6 +111,12 @@ HOOKS = {
     'kugou_obtainlyric': (0x510744, 'ringnav_lyric_search', None),
     # its ⋯ page: Download Album Lyrics under stock's Download Cover & Lyrics (onlinematch.c)
     'playermore_page_init': (0x528c14, 'ringnav_playermore', 'playermore'),
+    # Classic's Search: its tabs' words, after stock's init writes them (navigation.c)
+    'dialog_search_dialog_init': (0x49eb58, 'ringnav_search_init', 'search_init'),
+    # The sleep timer's switch as a row, under a set that hides its toolbar (navigation.c)
+    'systemset_sleepshutdown_page_init': (0x4c9fd0, 'ringnav_sleeptimer', 'sleeptimer'),
+    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (navigation.c)
+    'systemset_manualtime_page_init': (0x4c5d34, 'ringnav_manualtime', 'manualtime'),
     # any Tidal track asked for, from a queue or Now Playing, wakes its stream thread (tidal.c)
     'get_tidal_trackurl': (0x483188, 'ringnav_tidal_track', 'tidaltrack'),
     # its cover match: MusicBrainz/Cover Art Archive and iTunes candidates, then stock's Kugou search
@@ -988,6 +994,7 @@ FUNCTIONS = {
  'widget_get_visible': ('int', 'void *'),
  'widget_get_prop_bool': ('int', 'void *, const char *, int'),
  'widget_get_prop_int': ('int', 'void *, const char *, int'),
+ 'style_get_int': ('int', 'void *, const char *, int'),
  'widget_get_prop_str': ('const char *', 'void *, const char *, const char *'),
  'widget_get_text': ('const unsigned *', 'void *'),
  'widget_get_text_utf8': ('int', 'void *, char *, unsigned'),
@@ -1054,6 +1061,7 @@ FUNCTIONS = {
  'scroll_view_set_offset': ('int', 'void *, int, int'),
  'scroll_view_scroll_to': ('int', 'void *, int, int, int'),
  'table_client_scroll_to': ('int', 'void *, int'),
+ 'table_client_get_virtual_h': ('int', 'void *'),
  'scroll_view_scroll_delta_to': ('int', 'void *, int, int, int'),
  'widget_destroy_children': ('int', 'void *'),
  'widget_destroy': ('int', 'void *'),  # Streaming's Baidu Netdisk row (navigation.c ringnav_stream)
@@ -1070,6 +1078,7 @@ FUNCTIONS = {
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
  'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (navigation.c library_rows)
  'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
+ 'on_home_stream_onclick': ('int', 'void *, void *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
  'window_close': ('int', 'void *'),
  'dialog_quit': ('int', 'void *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a0a28)
  'window_manager_close_window_force': ('int', 'void *, void *'),
@@ -1160,6 +1169,13 @@ FUNCTIONS = {
  'bitmap_destroy': ('int', 'void *'),
  'bitmap_lock_buffer_for_read': ('const unsigned char *', 'void *'),
  'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
+ 'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (navigation.c search_paint)
+ # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
+ 'canvas_offline_create': ('void *', 'unsigned, unsigned, unsigned'),
+ 'canvas_offline_begin_draw': ('int', 'void *'),
+ 'canvas_offline_end_draw': ('int', 'void *'),
+ 'canvas_offline_destroy': ('int', 'void *'),
+ 'canvas_translate': ('int', 'void *, int, int'),
  'widget_on_paint_children': ('int', 'void *, void *'),  # a wallpaper thumbnail's check badge (lockscreen.c)
  'slide_menu_set_spacer': ('int', 'void *, int'),
  'playing_timer_start': ('int', 'void *'),
@@ -1266,6 +1282,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
+           'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value']  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
 # Audited stock browsing state, deque pointers, art locks, the status bar widget
 # (system_bar_init stores it), the playing cover's track path and the playing track's tags as
@@ -1282,6 +1299,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'pdeq_albumcoverlist': 4, 'aclist_mutex': 24,
                 'tidalStreamingLevelNow': 4,  # the quality the Tidal URL thread asked for
                 'stTidalTracks': 16,  # a Tidal track list: total, limit, offset, its deque
+                'g_pressdown_y': 4,  # the touch's start, the window manager's pointer-down writes it
                 'g_dropdown_menu_state': 4,  # Quick Settings: 1, 2 while it slides or follows a swipe, 3 open
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
@@ -1481,7 +1499,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
                       QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
-                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
+                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock, PLAYING_CLASSIC_LIGHT, playing_classic_light,
                       set_assets)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
     check(contexts, 'No navigation contexts audited')
@@ -1533,8 +1551,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     themes = builtins()
     header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
     header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
+    from art import corner_table
+    header.append(f'#define ROUND_COVER {corner_table()}')  # navigation.c paint_round_rows
     (out/'stock.h').write_text('\n'.join(header)+'\n')
     set_pages, redirects = {}, {}
+    ui = 'release/assets/default/raw/ui/'
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
         for path, data in set_assets(cat, g).items():
             folder, _, base = path.rpartition('/')
@@ -1542,6 +1563,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
             rel = like.removeprefix('release/assets/default/raw/ui/')
             set_pages[path] = (like, english_ui(rel, data) if rel in chinese else data)
             redirects[rel.removesuffix('.bin')] = redirects.get(rel.removesuffix('.bin'), 0) | 1 << i
+        set_pages[ui + f'{g.name}_{PLAYING_CLASSIC_LIGHT}'] = (ui + 'playing_page.bin', english_ui(PLAYING_PAGE, playing_classic_light(cat(ui + 'playing_page.bin'), g)))
+        redirects[PLAYING_CLASSIC_LIGHT.removesuffix('.bin')] = redirects.get(PLAYING_CLASSIC_LIGHT.removesuffix('.bin'), 0) | 1 << i
     emit(themes, out, redirects)
     ps = compile_payload(out)
     payload = (out/'patch.bin').read_bytes()
@@ -1811,16 +1834,18 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     icons['stream_airplay.png'] = ('list_tidal.png', cat(xx+'netservice_airplay.png'))  # iPod resizes stock's
     art = (ROOT/'assets/icons/default_album_home.png').read_bytes()
     # Streaming's rows draw them at SET_ICON; Home's placeholder at the art panel's 290px
+    from theme import builtins as builtin_themes
+    pane = max(t['pane_svc_px'] for t in builtin_themes())  # Home's pane on Streaming's list, 1:1 (coverflow.c pane_service)
     for n in ('spotify', 'radio', 'app', 'airplay', 'config'):
         like, data = icons[f'stream_{n}.png']
+        icons[f'classic_light_stream_{n}.png'] = (like, row_icon(data, pane))
         icons[f'stream_{n}.png'] = (like, row_icon(data))
+    icons['classic_light_list_tidal.png'] = ('list_tidal.png', row_icon(cat(xx+'list_tidal.png'), pane))
     icons['default_album_home.png'] = ('default_album_big.png', art)
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
-    ui = 'release/assets/default/raw/ui/'
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
     from art import images as theme_images
-    from theme import builtins as builtin_themes
     drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),

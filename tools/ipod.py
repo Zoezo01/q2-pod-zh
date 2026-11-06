@@ -16,6 +16,7 @@ from build import CLASSIC_LIGHT_TTF, ROOT, check, fileoff, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
+STOCK_ROWS = AUDIT['stock_rows']  # pages left as stock made them until a set re-pitches them (Geometry.stock_row)
 # The named immediates' values (ipod.json): text rows' plain, art rows' art_.
 VALUE_NAMES = list(dict.fromkeys(g['value'] for g in AUDIT['immediates'] if isinstance(g['value'], str)))
 INC = (ROOT/'patch/offsets.inc').read_text()
@@ -34,6 +35,7 @@ class Geometry:
     set_row, set_top, set_rows, set_icon: settings lists hold set_rows rows of set_row from set_top, the
     icon at set_icon (0 hides it); payload rows are built 70 px high (SET_STOCK_BODY), stock's shape,
     and mapped like stock's.
+    stream_row: Streaming's settings rows, which follow Row Art; taller than set_row, they have SET_ICON's icon.
     SET0 is the built-in set; a theme declares its others in its theme.xml (<geometry name>, tools/theme.py)."""
     name: str = 'ipod'
     bar: int = 30
@@ -63,6 +65,7 @@ class Geometry:
     set_top: int = inc('SET_TOP')
     set_rows: int = inc('SET_ROWS')
     set_icon: int = inc('SET_ICON')
+    stream_row: int = inc('SET_ROW')
     bar_px: int = 0  # the status bar's title and clock px in the Classic face (status_metrics); 0: stock's bar, no title
     bar_title_w: int = 0  # the bar title's text width (status_metrics)
     bar_right: int = 0  # Classic's bar: the right group's margin, from the nub's last column to the screen's edge
@@ -74,6 +77,24 @@ class Geometry:
     home_row: int = 39  # Home's and its Settings list's row height; Python only, no C reads it
     home_lib: int = 0  # Home's Library row, in Split, slides in a list of the Library's rows (coverflow.c home_library)
     np_ipod: int = 0  # Now Playing as an iPod classic's: the art's box NP_REFLECT taller for its reflection, the times beside the bar
+    np_bar_x: int = 0  # Now Playing's progress bar: its x and width, stock's A-B markers' too (0: from the glass)
+    np_bar_w: int = 0
+    np_mark_y: int = 0  # stock's A-B markers' row in the window, an immediate (0: stock's 250)
+    # Stock's own list pages (STOCK_ROWS, Lock Screen): their rows, its title's y and box, stock's at 78. The one rule to reverse them.
+    stock_row: int = 78
+    stock_body: int = 70
+    stock_title_y: int = 11
+    stock_title_h: int = 20
+    # Search's rows, stock's at 78. search_art 0 makes them two lines of text, as Songs'.
+    search_row: int = 78
+    search_body: int = 70
+    search_art: int = 50
+    search_title_y: int = 11
+    search_title24_y: int = 14
+    search_title_h: int = 24
+    search_meta_y: int = 41
+    search_meta_h: int = 16
+    toolbar: int = 1  # 0: the toolbars of TOOLBAR_SWITCHES and STOCK_ROWS hide and the bar holds the title, as on NAVBAR_ONLY pages
 
 
 SET0 = Geometry()
@@ -174,14 +195,14 @@ def with_geometry(g):
         NP_TIME_X=max(MARGIN, corner_x(g.bar + NP_TIMES_Y + 1, 14)))
 
 
-GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h', 'text_x', 'lib_art', 'list_end', 'action_row')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
+GEOM_VALS = ('bar', 'set_row', 'set_icon', 'batt_w', 'batt_h', 'text_x', 'lib_art', 'list_end', 'action_row', 'stream_row', 'stock_row', 'toolbar')  # Geometry fields the payload reads at run time (themes.inc geom_vals), not immediates
 
 
 def immediate_values(g=SET0):
     """{value name: word} for the named ipod.json immediates under geometry g."""
     geo = with_geometry(g)
     values = {k: v for k, v in dataclasses.asdict(g).items() if k in VALUE_NAMES}
-    return values | {'scroll': geo.BOTTOM - (g.action_row or 50), 'np_bar_x': geo.NP_BAR[0], 'np_bar_w': geo.NP_BAR[2]}
+    return values | {'scroll': geo.BOTTOM - (g.action_row or 50), 'np_bar_x': g.np_bar_x or geo.NP_BAR[0], 'np_bar_w': g.np_bar_w or geo.NP_BAR[2], 'np_mark_y': g.np_mark_y or 250}
 
 
 IPOD = with_geometry(SET0)
@@ -319,9 +340,12 @@ LIST_CLEAR = {f'style:{state}:{prop}': '#00000000' for state in ('normal', 'disa
               for prop in ('bg_color', 'border_color')}
 
 
-def home_list(name, rows, g, extra=None):
+HOME_LISTED = {'localmusic': 'img_library', 'stream': 'img_services'}  # under home_lib: renamed, so stock's name match binds them nowhere
+
+
+def home_list(name, rows, g, extra=None, view_name=None):
     """A Home list_view of g.home_row rows: each a label under a full-row transparent tap image. With no rows, a
-    window-high list the Library page's constructor fills (coverflow.c home_library), its view named as the page's."""
+    window-high list a page's constructor fills (coverflow.c home_library, home_streaming), its view named as the page's."""
     views = []
     for i, row in enumerate(rows):
         # Long translations ellipsize and scroll inside the shared text margins.
@@ -331,13 +355,13 @@ def home_list(name, rows, g, extra=None):
         label.update(HOME_RENAMED.get(row, {}))
         views.append(['view', [0, i * g.home_row, HOME_LIST_W, g.home_row], {'name': 'btn_' + row}, [
             ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, g.home_row], label, []],
-            ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': 'img_library' if g.home_lib and row == 'localmusic' else 'img_' + row, 'clickable': 'true'}, []]]])
+            ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': g.home_lib and HOME_LISTED.get(row) or 'img_' + row, 'clickable': 'true'}, []]]])
     # The list_view's layout (0x5ea3a4) makes its scroll view vertical only for a mobile scroll bar,
     # which Home has none of, and scroll_view_create leaves it off; the payload navigates only
     # vertical scroll views.
     h = g.home_row * len(views) or 320 - g.bar
     view = ['scroll_view', [0, 0, HOME_LIST_W, h],
-            {'name': 'scroll_view_' + (name if rows else 'localmusic'), 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, views]
+            {'name': 'scroll_view_' + (view_name or name), 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, views]
     return ['list_view', [0, HOME_TOP, HOME_LIST_W, h],
             {'name': 'list_view_' + name, 'item_height': str(g.home_row), **LIST_CLEAR, **(extra or {})}, [view]]
 
@@ -358,7 +382,8 @@ def ipod_home(root, g=SET0):
     # An image for the playing track's art, moved to the right panel and fitted by coverflow_home_art.
     root[3] = [['image', [0, 0, 375, geo.BOTTOM], {'name': 'img_homeart', 'draw_type': 'fill'}, []],
                home_list('home', HOME_ROWS, g), home_list('homeset', HOME_SETS, g, {'visible': 'false'}),
-               *([home_list('homelib', [], g, {'visible': 'false'})] if g.home_lib else []), *root[3]]
+               *([home_list('homelib', [], g, {'visible': 'false'}, 'localmusic'),
+                  home_list('homestream', [], g, {'visible': 'false'}, 'streamsset')] if g.home_lib else []), *root[3]]
 
 
 def style_props(data):
@@ -689,6 +714,60 @@ def playing_page(root, g=SET0):
         root[3].append(named['img_more'])
 
 
+# Classic's Now Playing (theme.xml playing layout="classic-light"): the iPod page's widgets under
+# their stock names, the art, the text column, "3 of 12" and the controls in the art page's view, so the
+# playing view's elements (navigation.c theme_elements) place every one.
+PLAYING_CLASSIC_LIGHT = 'playing_page_classic_light.bin'
+def playing_page_classic_light(root, g=SET0):
+    playing_page(root, g)
+    named = {n[2].get('name'): n for n in walk(root)}
+    buttons, album = named['view_buttons'], named['view_album']
+    buttons[3].remove(named['label_ipod_pos'])
+    album[3] += [named['label_ipod_pos'],
+                 ['image', [0, 0, 0, 0], {'name': 'img_np_hearts', 'draw_type': 'center', 'clickable': 'true', 'focusable': 'false', 'style': 'default'}, []]]
+    buttons[1] = [0, 0, 375, 0]
+    # More, repeat and shuffle over the top right of every page: the window's, last, their images the payload's
+    # (navigation.c np_controls).
+    more = named['img_more']
+    buttons[3].remove(more)
+    more[2] = {k: v for k, v in more[2].items() if not k.endswith('bg_image')} | {'draw_type': 'center'}
+    root[3] += [more, *(['image', [0, 0, 0, 0], {'name': n, 'draw_type': 'center', 'clickable': 'true', 'focusable': 'false', 'style': 'default'}, []]
+                        for n in ('img_np_repeat', 'img_np_shuffle'))]
+    album[3].insert(0, ['view', [0, 0, 0, 0], {'name': 'np_tilt', 'sensitive': 'false'}, []])
+    # The pages span the tilted cover and its reflection (theme.xml's slides), over the times' row: the
+    # times and the bar come after them, so they stay on top and take the touch.
+    named['slide_view'][2]['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'
+    named['slide_indicator1'][2]['visible'] = 'false'
+    # The bar is the payload's, drawn on its own widget under stock's slider (navigation.c np_scrubber), which paints
+    # nothing at opacity 0 and keeps the touch.
+    root[3].insert(root[3].index(named['slider_play']), ['view', [0, 0, 0, 0], {'name': 'np_bar', 'sensitive': 'false'}, []])
+    # ... and the lyrics and the info stay on their rows, below the top controls: 7 px, the pages' rise
+    named['view_lrc'][2]['self_layout'] = 'default(x=0,y=21,w=375,h=178)'
+    named['label_lyricmsg'][1][1] += 21
+    # The info page's rows, from the window's top: stock's label the name, a second label the value (navigation.c
+    # ringnav_np_info), right-aligned and ellipsized as a settings row's value. A label draws nothing in a box
+    # shorter than its font: these hold the row's 27 px. The page has no scroll: its rows share the height above
+    # the set's list_end, so the last clears the glass, the set's pitch at most.
+    info = named['view_info'][3]
+    row = min(g.pitch, g.list_end // len(info)) if g.list_end else g.pitch
+    for i, n in enumerate(list(info)):
+        n[1] = [20, row * i, 140, row]
+        n[2] = {k: v for k, v in n[2].items() if k not in ('line_wrap', 'word_wrap', 'style:normal:text_align_v')}
+        n[2]['style:normal:text_align_h'] = 'left'
+        info.append(['hscroll_label', [141, row * i, 215, row], {'name': n[2]['name'] + '_value', 'style': 's_scrlabel_white20r',
+                                                               'only_focus': 'true', 'ellipses': 'true'}, []])
+    for name in ('label_playtime', 'label_playlen', 'label_ipod_remain'):
+        root[3].remove(named[name])
+        root[3].insert(root[3].index(named['slider_play']), named[name])
+
+
+def playing_classic_light(data, g=SET0):
+    check(sha(data) == UI_ASSETS[PLAYING_PAGE], f'{PLAYING_PAGE}: unaudited UI asset')
+    root = decode(data)
+    playing_page_classic_light(root, g)
+    return encode(root)
+
+
 # Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the
 # title and artist, as PLAYING_STOCK (navigation.c ringnav_ui_load); the payload binds it by the same names.
 # It keeps stock's layout; the title and artist hold at their start as the iPod page's do, and the lyrics
@@ -852,7 +931,7 @@ def volume_dialog(root):
 # SET_ROWS complete SET_ROW rows from SET_TOP; ipod_list_layout (patch/navigation.c) lays the native
 # rows out to match. Tidal keeps its navbars: most hold a search button with no hardware equivalent.
 NAVBAR_ONLY = AUDIT['navbar_only']
-SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW = (inc(n) for n in ('SET_ROW', 'SET_TOP', 'SET_ROWS', 'SET_STOCK_ROW'))
+SET_ROW, SET_TOP, SET_ROWS, SET_STOCK_ROW, SET_STOCK_BODY = (inc(n) for n in ('SET_ROW', 'SET_TOP', 'SET_ROWS', 'SET_STOCK_ROW', 'SET_STOCK_BODY'))
 
 # The re-pitched list pages' rows: art pages' carry artwork (Albums, Folder), the Library's are its own
 # (lib_*), text pages' carry none. Any other page rows() re-pitches (the playlist actions) is text. test/build.py imports it.
@@ -929,10 +1008,10 @@ def status_icon(name, data):
 
 
 
-def row_icon(data):
-    """A 52px row icon pre-sized to SET_ICON, so the rows draw it 1:1 (set_child) instead of
+def row_icon(data, size=SET_ICON):
+    """A 52px row icon pre-sized to SET_ICON, or the pane's size, so it draws 1:1 (set_child) instead of
     scaling it on the device with hard edges."""
-    return imagemagick('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize', f'{SET_ICON}x{SET_ICON}!',
+    return imagemagick('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize', f'{size}x{size}!',
                        *PNG_OUT, data=data)
 
 
@@ -968,6 +1047,9 @@ SETTINGS_SLIDERS = ('systemset/backlight_page.bin', 'playset/balance_page.bin',
                     'playset/maxvol_page.bin', 'playset/bootvol_page.bin')
 # Pages whose init puts an on/off switch in the toolbar (img_bootswitch, img_switch); they keep it.
 TOOLBAR_SWITCHES = ('systemset/sleepshutdown_page.bin', 'playset/bootvol_page.bin', 'systemset/screensaver_page.bin')
+# Pages that keep their toolbar under any set: the slider page's is Crossfade's and its own; these two hold buttons or have no switch to move.
+KEEP_TOOLBAR = ('playset/bootvol_page.bin', 'playerjumpinfo_page.bin', 'specfolder_page.bin')
+SLEEP_TIMER, LOCK_SCREEN = 'systemset/sleepshutdown_page.bin', 'systemset/screensaver_page.bin'
 
 
 def slider_plain(path, root):
@@ -1026,7 +1108,15 @@ def songs_action_row(root, g):
 def patch_asset(path, data, g=SET0):
     geo = with_geometry(g)
     pitch, body, inset = page_rows(g, PAGE_KIND.get(path, 'text'))
-    check(sha(data) == UI_ASSETS[path], f'{path}: unaudited UI asset')
+    stock = path in STOCK_ROWS
+    check(sha(data) == (STOCK_ROWS if stock else UI_ASSETS)[path], f'{path}: unaudited UI asset')
+    if stock and g.toolbar and g.stock_row == SET0.stock_row:
+        return data
+    if stock:
+        pitch, body = g.stock_row, g.stock_body
+    plain = not g.toolbar and path not in KEEP_TOOLBAR  # the bar holds the title, a switch moves to a row (navigation.c switch_row)
+    fits = g.stock_row == g.set_row  # at any other pitch stock's rows aren't settings rows: ipod_list_layout
+    settings = (path in NAVBAR_ONLY and (fits or not plain or path != LOCK_SCREEN)) or (stock and plain and fits and path != 'playerqueue_page.bin')
     root = decode(data)
     check(encode(root) == data, f'{path}: UI round trip differs')
     if path == ARTIST_PAGE:
@@ -1045,15 +1135,25 @@ def patch_asset(path, data, g=SET0):
         return encode(root)
     # Home is never reopened; Now Playing, Coverflow and the dialogs open at once.
     check(root[0] == 'window' and not any(k.endswith('anim_hint') for k in root[2]), f'{path}: unexpected window')
-    root[2]['anim_hint'] = SLIDE
+    if not stock:
+        root[2]['anim_hint'] = SLIDE
     if path in AUDIT['slide_only']:  # the PEQ editor builds its own children (patch/peq_ui.c)
         return encode(root)
     nav = [n for n in root[3] if n[2].get('name') == 'view_navbar']
     check(len(nav) == 1 and nav[0][1] in ([0, 0, 375, 50], [0, 0, 370, 50]), f'{path}: unexpected toolbar')  # 370: stream_page
     # Keep the widget (and callback lookups) alive. Children may be recreated by stock.
     playlist = path == 'localmusic/playlist_page.bin'
-    if path in TOOLBAR_SWITCHES:
+    if path in TOOLBAR_SWITCHES and not plain:
         slider_plain(path, root)
+        return encode(root)
+    if stock and not plain:  # the rows alone, under the toolbar; the lists keep their boxes
+        def table_rows(n):
+            for prop in ('row_height', 'default_item_height'):
+                if n[2].get(prop) == '78':
+                    n[2][prop] = str(g.stock_row)
+            for child in n[3]:
+                table_rows(child)
+        table_rows(root)
         return encode(root)
     if not playlist:
         nav[0][2]['visible'] = 'false'
@@ -1070,11 +1170,12 @@ def patch_asset(path, data, g=SET0):
         if n is nav[0]:
             continue
         kind, box, props, _ = n
-        if kind == 'list_view' and path in NAVBAR_ONLY:  # settings rows: see ipod_list_layout
+        if kind == 'list_view' and settings:  # settings rows: see ipod_list_layout
             check(box[1] == 50 and props.get('default_item_height') == str(SET_STOCK_ROW) and
                     'item_height' not in props, f'{path}: unexpected settings list')
-            props['default_item_height'] = str(g.set_row)
-            box[1], box[3] = g.set_top, geo.BOTTOM - g.set_top if g.list_end else g.set_rows * g.set_row
+            row = g.stream_row if path == 'stream_page.bin' else g.set_row
+            props['default_item_height'] = str(row)
+            box[1], box[3] = g.set_top, geo.BOTTOM - g.set_top if g.list_end else g.set_rows * g.set_row // row * row
         elif kind in ('list_view', 'table_view', 'tab_control'):
             check(box[1] in (50, 100), f'{path}: unexpected list position')
             if not playlist:
@@ -1089,11 +1190,16 @@ def patch_asset(path, data, g=SET0):
             box[1] -= 50
         elif path in NAVBAR_ONLY:  # settings panels and notes keep their size; text ends clear of a top corner
             check(box[1] >= 50, f'{path}: unexpected content under the toolbar')
-            box[1] -= 50
+            box[1] -= 50 - (g.set_row if path == SLEEP_TIMER and plain else 0)  # under the row its switch moves to
             if kind in ('label', 'hscroll_label') and corner_inset(g.bar + box[1]):
                 box[2] = min(box[2], 375 - box[0] - corner_x(g.bar + box[1], 0))
     if path in NAVBAR_ONLY:
         slider_plain(path, root)
+        return encode(root)
+    if settings:  # a 20 px label in Update Library's row: it takes the row, whose font it wouldn't hold
+        for n in walk(root):
+            if n[0] == 'hscroll_label' and n[1][1:2] == [25] and n[1][3] == 20:
+                n[1][1], n[1][3] = 0, SET_STOCK_BODY
         return encode(root)
     if path == 'localmusic/allmusic_page.bin' and g.action_row:
         songs_action_row(root, g)
@@ -1142,7 +1248,7 @@ def set_assets(cat, g):
     The prefix goes on the basename: stock opens subdirectory windows by path."""
     # ponytail: playing_page_stock gets no set copy; add it when a set needs one
     ui, out = 'release/assets/default/raw/ui/', {}
-    for rel in UI_ASSETS:
+    for rel in UI_ASSETS | STOCK_ROWS:
         data = cat(ui + rel)
         mine = patch_asset(rel, data, g=g)
         if mine != patch_asset(rel, data):
@@ -1172,6 +1278,9 @@ def patch_code(data, symbols):
     for address, instruction in group['sites']:
         word(int(address, 16), int(instruction, 16),
              jal(symbols['compact_set_row_layout']), group['purpose'])
+    for name, call in (('stock_row_layout_calls', 'stock_set_row_layout'), ('stock_row_text_calls', 'stock_row_text'), ('stock_row_style_calls', 'stock_row_style')):
+        for address, instruction in AUDIT[name]['sites']:
+            word(int(address, 16), int(instruction, 16), jal(symbols[call]), AUDIT[name]['purpose'])
     word(0x522410, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter')
     # Playlist page's Import/Export tiles: no icon (0 wide), the label spans the 164px tile in
     # stock's centred s_scrlabel_white24c (0x769220) instead of 91px after the icon.

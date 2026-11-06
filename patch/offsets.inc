@@ -14,6 +14,8 @@
 #define IM_KEYBOARD                                                                                \
     0x0c /* the default input method's open keyboard window, 0 once it closes (@0x68bbec) */
 #define W_EMITTER 0x60
+#define W_ASTYLE 0x64 /* widget_update_style reads it at 0x65e230; 0x74 is the vtable */
+#define ALIGN_H_LEFT 2 /* stock's align_h_t, in a style's text_align_h */
 #define W_CHILDREN_LAYOUT 0x68
 #define CHILDREN_LAYOUT_VTABLE 0x10
 #define DEFAULT_LAYOUT_X_MARGIN 0x18
@@ -159,6 +161,7 @@ static inline int arc_out(int r, int y) {
 }
 #define PLACEHOLDER "default_album_flow" /* Cover Flow's and Spotify's missing art */
 #define VOL_POLL_MS 50 /* how often the volume indicator checks for a change */
+#define VOL_PUSH_TICK_MS 16 /* a frame of the row's push */
 /* The volume panel off Now Playing (vol_paint): exactly over Quick Settings' brightness row
  * (tools/ipod.py checks it), its rounded corners clear of the 80px glass corners. */
 #define VOL_PANEL_X 26
@@ -203,11 +206,18 @@ static inline int arc_out(int r, int y) {
 /* iPod: the full-screen art (stock's bigcover_page) shows the song name BC_MS, then it and its shade
  * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
+#define BC_RADIUS 20 /* a tilted cover's theme: the art's corners, at a BC_RADIUS_AT px art */
+#define BC_RADIUS_AT 292
+#define QS_SWIPE_STOCK 295 /* stock's handler (0x4a0cc0): Quick Settings' swipe up starts from here down, */
+#define QS_SWIPE_Y 250     /* and Classic Light's from here, its slider above stock's line */
 /* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x52bffc) counts it down while a
  * song plays there and opens bigcover_page at 0, then sets it back to BC_IDLE_FULL (10 s). */
 #define BC_IDLE 0x99f660
 #define BC_IDLE_FULL 40
 #define BC_TITLE_PAD 12 /* the song name's inset from the art's sides */
+/* A tilted cover's theme: the name's band on that page, its height and colour (black at 0xa0). */
+#define BC_BAND_H 44
+#define BC_BAND_RGBA 0xa0000000
 /* The screen glass's rounded corners and how far content keeps clear of them (tools/ipod.py). */
 #define GLASS_R 80
 #define GLASS_SLACK 4
@@ -230,6 +240,7 @@ static inline int arc_out(int r, int y) {
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
 #define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
+#define STREAM_BG 0x52ec40 /* Streaming's, the same */
 /* Split's cover pans (docs/ipod.md#home): zoomed DRIFT_ZOOM_PCT, each axis a linear ping-pong of
  * its own period across the zoom's margin (about 1.5 px/s on a square cover, as iPod.js's), drawn
  * at sub-pixel positions every DRIFT_TICK_MS, a step at most DRIFT_MAX_STEP_MS. A cover whose zoomed
@@ -284,6 +295,9 @@ static inline int arc_out(int r, int y) {
 #define NP_CAPS_PX 15
 #define NP_CAPS_INSET 2
 #define PAGE_SLIDE_MS 120
+#define GLIDE_MS 300 /* a remembered row's recall glide */
+#define HOME_SLIDE_MS 200 /* Cover Flow's and the carousel's wheel step */
+#define HOME_FAST_SLIDE_MS 120 /* ... and within HOME_FAST_WINDOW_MS of the last */
 #define NP_ARTIST_RGB 0xcccccc
 /* Now Playing's text (local, Spotify and Radio): the title over the artist and album, the album
  * lighter than the other grey text so it reads at a glance. */
@@ -357,6 +371,7 @@ static inline int arc_out(int r, int y) {
 #define LIBRARY_ROW_ICON_X 0x524944    /* its icon x (art_inset) */
 #define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x9272c0 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
+#define IMAGE_DRAW_FILL 8              /* "fill", the same table: stretched to the box */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a
  * LETTER_BOX square of the stock dark surface at LETTER_ALPHA, centred over the list. */
 #define LETTER_BOX 80
@@ -446,6 +461,7 @@ static inline int arc_out(int r, int y) {
 #define LYRIC_PUSH_DETENTS 2
 #define LYRIC_PUSH_MS 1000
 #define BAR_VALUE 0x7c /* scroll_bar native value, maintained by list/table scroll callbacks */
+#define BAR_MAX 0x78 /* scroll_bar_set_params: the whole content, at least the bar's own h */
 #define KEY_CENTER 218
 #define KEY_PREV 172
 #define KEY_NEXT 173
@@ -584,10 +600,14 @@ static inline int arc_out(int r, int y) {
 #define TAGLIB_PROPERTY_FREE 0xb700
 /* Now Playing's ⋯ page (playermore_page_init @0x528c14): its 8 rows' kinds by position, which the
  * row click (0x528a70) reads at the button name's atoi, and Download Cover & Lyrics' kind
- * (get_playmore_showinfo @0x501208: player_onlinesearch). */
+ * (get_playmore_showinfo @0x501208: player_onlinesearch). Kinds 2 to 6 open a screen (Queue, Add to
+ * Playlist, Download Cover & Lyrics, Album and Artist info); 0 A-B Repeat, 1 Speed and 7 Delete's
+ * confirm don't. */
 #define PLAYMORE_ROWS 0x7728a0
 #define PLAYMORE_COUNT 8
 #define PLAYMORE_SEARCH 4
+#define PLAYMORE_INTO_FIRST 2
+#define PLAYMORE_INTO_LAST 6
 #define MCL_LASTPOS 0xa3be90    /* shuffle "previous" index, -1 none */
 #define MCL_PREPOS 0xa3be94
 #define MCL_PRELOAD 0xa3be98    /* 1 preloaded, 0 none, -1 closed for this track */
@@ -619,7 +639,13 @@ static inline int arc_out(int r, int y) {
 #define BOOTVOL_ADD 0x4b45a8      /* img_add's click */
 #define BOOTVOL_CHANGING 0x4b48f4 /* slider_bootvol's EVT_VALUE_CHANGING */
 #define BOOTVOL_CHANGED 0x4b4300  /* slider_bootvol's EVT_VALUE_CHANGED */
+/* signed byte, on_volume_tsup_fun's idle count: a 100 ms timer (0x4a1c18) does lbu, +1, seb, sb and
+ * slti 0x1f on it, so the volume dialog closes at 31, and any key clears it */
+#define VOL_IDLE_TICKS 0xa271e0
 #define SCAN_THREAD 0xa271d8
+/* byte, 1 for the whole library's scan, 0 for a folder's (the same init): our reading of stock's
+ * code, not checked on a device */
+#define SCAN_WHOLE 0xa271d0
 #define SCAN_DONE 0xa271d4
 /* Coverflow text: every label, captions included, sits CF_EDGE from the sides, where the lowest
  * track row's text clears the bottom corners. Album names and artists scroll
@@ -631,6 +657,7 @@ static inline int arc_out(int r, int y) {
 #define CF_ARTIST_PX 20
 #define CF_ARTIST_H 28
 #define CF_GREY 0xffaaaaaa /* color_t #AAAAAA */
+#define CF_GREY_BOLD 0xff8a8a8a /* Classic Light's dark half */
 /* Coverflow depth (docs/internals.md#coverflow-depth): the covers are drawn in software into one
  * CF_VIEW_W x CF_VIEW_H frame, the top of the client area. The selected cover is ART_SIZE (160)
  * square with its top CF_TOP from the frame's; side covers turn CF_ANGLE (60) degrees inward (the
@@ -653,6 +680,9 @@ static inline int arc_out(int r, int y) {
 #define CF_REFLECT 24
 #define CF_REFLECT_TOP 48
 #define CF_STRIDE 110
+#define CF_ANGLE 60   /* a side cover's turn, degrees */
+#define CF_HORIZON 50 /* % down the cover its centre sits on the shared horizon */
+#define CF_THIRD 0    /* 1: the third out stays, gone half a step past it */
 #define CF_TEXT_Y 212 /* the album caption's top, under the frame; the artist follows */
 /* Touch on the covers (coverflow.c, docs/internals.md#coverflow-touch) */
 #define CF_DRAG_PX 90      /* finger travel per album: about the centre cover's own on screen */
@@ -665,7 +695,8 @@ static inline int arc_out(int r, int y) {
 #define CF_SETTLE_MS 280   /* a release with no flick settles on the nearest cover */
 #define CF_TAP_MS 320      /* a tapped side cover's glide to the centre */
 /* Photos (patch/photos.c, docs/internals.md#photos): under a 48px title, PH_COLS columns of
- * PH_TILE_W x PH_TILE_H tiles from x PH_GRID_X, three whole rows in the 240px below it, each a
+ * PH_TILE_W x PH_TILE_H tiles from x PH_GRID_X, three whole rows in the 240px below it (with the
+ * title in the bar, the view runs to the page's foot), each a
  * thumbnail of at most PH_THUMB_W x PH_THUMB_H centred in its tile, so the selection shows round
  * it. The viewer's screen-size copy fits PH_SHOT_W x PH_SHOT_H (the client area). PH_GREY marks a
  * thumbnail not made yet or a file that will not open. */

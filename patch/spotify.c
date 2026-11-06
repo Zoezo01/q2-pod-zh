@@ -110,10 +110,11 @@ static struct {
 
 /* The page, while open. */
 static struct {
-    void *page, *info, *msg, *art, *bar, *glyph, *title, *artist, *album, *elapsed, *remain, *note,
-        *sub;
+    void *page, *info, *msg, *art, *tilt, *bar, *glyph, *title, *artist, *album, *elapsed, *remain,
+        *note, *sub;
     unsigned timer, leave, scrub_at, shown, playing, press, press_at, bar_drawn; /* bar_drawn: its state + 1 */
     int scrub, scrub_ms;
+    const char *noart; /* no cover's image: stock's, or the theme's generic one */
     char art_track[64], art_tried[64]; /* art_tried: the track whose cover failed, tried art_tries times */
     int art_tries;
 } ui __attribute__((section(".scratch")));
@@ -437,6 +438,8 @@ static void spot_refresh(void) {
         if (text_differs(fields[i], values[i])) {
             widget_set_text_utf8(fields[i], values[i]);
             widget_set_prop_int(fields[i], "xoffset", 0);
+            /* the local page's; by their text */
+            theme_font(fields[i], i ? ROLE_NP_META : ROLE_TALL, FONT_ROW);
         }
     /* ponytail: the cover is sized on the UI thread, one decode a track; a worker if it stutters */
     /* A cover that fails (written after its state line, or bad) is tried again on the next 3 ticks. */
@@ -448,12 +451,15 @@ static void spot_refresh(void) {
         else {
             tk_snprintf(ui.art_tried, sizeof ui.art_tried, "%s", sp.track);
             ui.art_tries++;
-            image_base_set_image(ui.art, PLACEHOLDER);
+            image_base_set_image(ui.art, ui.noart);
         }
     } else if (!sp.cover && ui.art_track[0]) {
         ui.art_track[0] = 0;
-        image_base_set_image(ui.art, PLACEHOLDER);
+        image_base_set_image(ui.art, ui.noart);
     }
+    if (ui.tilt)
+        stream_cover(ui.page, ui.tilt, 0, widget_get_prop_str(ui.art, "image", ""),
+                     fnv(FNV_SEED, (const unsigned char *)ui.art_track));
     unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
     if (ms / 1000 + 1 != ui.shown) {
         ui.shown = ms / 1000 + 1;
@@ -494,6 +500,13 @@ void spot_paint(void *w, void *canvas) {
         unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
         int x = (int)((ms >> 4) * SPOT_BAR_W / ((sp.duration >> 4) | 1)); /* 32-bit to 57 h */
         int h = theme()->np_bar < SPOT_BAR_H ? theme()->np_bar : SPOT_BAR_H; /* Modern's capsule: Classic's 13 drawn 8 */
+        if (theme()->painter[PAINT_SCRUB] == SCRUB_ROWS) {
+            int ww = I(w, W_W);
+            paint_rows_bar(canvas, 0, (I(w, W_H) - h) / 2, ww, h,
+                           (int)((ms >> 4) * (unsigned)ww / ((sp.duration >> 4) | 1)), ui.scrub);
+            stock_canvas_set_fill_color(canvas, fill);
+            return;
+        }
         box(canvas, 0, 0, SPOT_BAR_W, h, rgba(TRACK_COLOR, 255), h / 2);
         if (x) box(canvas, 0, 0, x < h ? h : x, h, ui.scrub ? 0xffffffffu : tone, h / 2);
     } else { /* a triangle playing, two bars otherwise */
@@ -527,6 +540,7 @@ static int closed(void *ctx, void *event) {
     stop_timer(&ui.leave);
     stop_timer(&ui.press);
     if (ui.scrub) scrub_commit();
+    if (ui.tilt) stream_gone(ui.tilt);
     memset(&ui, 0, sizeof ui);
     return 0;
 }
@@ -544,15 +558,15 @@ void *label(void *parent, int x, int y, int w, int h, const char *style, int px,
 static void spot_np(void) {
     if (ui.page || !(ui.page = page_open("spotify_page", closed, keyup))) return;
     void *f = widget_factory(), *page = ui.page;
-    int h = widget_get_prop_int(page, "h", 290);
+    int h = widget_get_prop_int(page, "h", client_h());
     ui.info = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     ui.msg = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
-    widget_set_text_utf8(label(ui.info, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY),
-                         "Spotify");
+    void *name = label(ui.info, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_set_text_utf8(name, "Spotify");
     ui.glyph = widget_factory_create_widget(f, "view", ui.info, 337, 13, 14, 14); /* NP's top row */
     ui.art = image_create(ui.info, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(ui.art, 4); /* as Coverflow's covers */
-    image_base_set_image(ui.art, PLACEHOLDER);
+    image_base_set_image(ui.art, ui.noart = PLACEHOLDER);
     ui.title =
         label(ui.info, SPOT_TEXT_X, SPOT_ART_Y + 41, SPOT_TEXT_W, 28, "s_scrlabel_white20l", NP_TITLE_PX, 0xffffffffu);
     ui.artist =
@@ -566,12 +580,26 @@ static void spot_np(void) {
         hscroll_label_set_only_focus(fields[i], 0);
         hscroll_label_set_ellipses(fields[i], 0);
     }
+    if (theme()->np_tilt_bl) { /* the local page's cover, drawn from ui.art's image */
+        ui.tilt = widget_factory_create_widget(f, "view", ui.info, 0, 0, 0, 0);
+        widget_set_sensitive(ui.tilt, 0);
+        theme_place(PLACE_TILT, ui.tilt, page);
+        widget_set_visible(ui.art, 0, 0);
+    }
     ui.bar = widget_factory_create_widget(f, "view", ui.info, SPOT_BAR_X, SPOT_BAR_Y, SPOT_BAR_W,
                                           SPOT_BAR_H);
     ui.elapsed =
         label(ui.info, SPOT_TIME_X, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20l", 14, SPOT_GREY);
     ui.remain = label(ui.info, 375 - SPOT_TIME_X - 80, SPOT_TIMES_Y, 80, 16, "s_scrlabel_white20r",
                       14, SPOT_GREY);
+    /* A theme's playing view places them as on the local page; its bar names the page. */
+    void *places[] = { ui.art, ui.title, ui.artist, ui.album, ui.elapsed, ui.remain, ui.bar };
+    for (unsigned i = 0; i < sizeof places / sizeof *places; ++i)
+        if (theme_place((int)i, places[i], page) && !i) {
+            widget_set_visible(name, 0, 0);
+            widget_set_visible(ui.glyph, 0, 0);
+            image_base_set_image(ui.art, ui.noart = "classic_light_cover");
+        }
     ui.note =
         label(ui.msg, CF_EDGE, 100, 375 - 2 * CF_EDGE, 30, "s_scrlabel_white20c", 20, 0xffffffffu);
     ui.sub =
@@ -1031,7 +1059,7 @@ static int go(const void *unused) {
             l->sel = widget_get_prop_int(br.view, "_ringnav_index", 0);
             widget_destroy_children(br.page), br.view = 0; /* the box alone: the keyboard leaves no room for the rows */
             br.edit = edit_create(br.page, "text", 2, 26);
-            widget_set_prop_str(br.edit, "tips", "Search Spotify");
+            t9_box(br.page, br.edit, "Search Spotify");
             widget_on(br.edit, EVT_VALUE_CHANGED, searched, 0);
             widget_on(br.edit, EVT_IM_ACTION, searched, 0);
             widget_on(br.edit, EVT_BLUR, search_left, 0);

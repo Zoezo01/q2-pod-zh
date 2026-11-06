@@ -801,8 +801,9 @@ static void sh_rows(void) {
         sh.rows = 0;
         void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
         for (int r = 0; r < n; ++r)
+            /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
             sh.row[r] = page_row_detail(view, r, map[r] == ROW_NONE ? "App list" : apps[map[r]].name,
-                                        "", sh_click);
+                                        theme()->sep[0].n ? " " : "", sh_click);
         sh.rows = n;
     }
     sh_refresh();

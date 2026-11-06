@@ -15,6 +15,7 @@ from peq import LIBC
 PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in for
 
 SHIM_H = r"""
+extern char system_bar[];
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
@@ -44,6 +45,10 @@ extern unsigned char shim_memory[0x800];
 #define g_backlight_status 0 /* dark: Home's cover never pans here */
 #define g_lockscreen_pageflag 0
 int shim_lock(void *), shim_unlock(void *), shim_statfs(const char *, void *);
+int tk_str_start_with(const char *, const char *);
+const unsigned *widget_get_text(void *);
+int canvas_set_font(void *, const char *, unsigned);
+float canvas_measure_text(void *, const unsigned *, unsigned);
 """ + ''.join(f'{r} {n}({a});\n' for n in """
 canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
 deque_init _deque_push_back deque_pop_back
@@ -59,7 +64,8 @@ timer_add timer_remove navigator_back_to_home navigator_back window_manager_clos
 bitmap_lock_buffer_for_read bitmap_lock_buffer_for_write bitmap_get_line_length
 canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_window window_manager_is_animating time_now_ms
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
-on_home_music_onclick widget_layout
+on_home_music_onclick on_home_stream_onclick widget_layout widget_destroy widget_paint canvas_translate widget_set_prop_str
+canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy toolsTimeItoa
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
@@ -68,6 +74,7 @@ void *shim_calloc(size_t, size_t);
 
 TEST = r"""
 #include <assert.h>
+#include <math.h>
 #include <stdarg.h>
 #include <sys/mman.h>
 #include "peq.h"
@@ -108,7 +115,7 @@ int image_set_draw_type(void *x, int t) { return 0; }
 int image_base_set_image(void *x, const char *s) { snprintf(W(x)->image, 600, "%s", s); return 0; }
 /* A zero-length "no art" marker does not decode. Every successful load is unloaded again and
    decodes to art_w x art_h (bitmap_t w @0, h @4). */
-static int loads, unloads, theme_placeholder, cover_fail;
+static int loads, unloads, theme_placeholder, cover_fail, clear_cover;
 static unsigned art_w = 160, art_h = 160;
 /* Decoded art (bitmap_t w @0, h @4, line length @8, format @0xe, and here the pixels @0x14):
    RGBA8888, a pattern whose colour comes from the file's path, so every album looks different. */
@@ -147,7 +154,7 @@ int widget_load_image(void *x, const char *url, void *b) {
         for (const char *c = strrchr(url, '/') ? strrchr(url, '/') : url; *c; ++c) seed = seed * 31 + (unsigned char)*c; /* the key, not the scratch path */
         unsigned char *px = pixels[next_pixels++ % 16];
         pattern(px, seed % 1000);
-        if (themed) memset(px, 0, sizeof pixels[0]); /* transparent theme placeholder */
+        if (themed || clear_cover) memset(px, 0, sizeof pixels[0]); /* transparent theme placeholder */
         bm[0] = art_w, bm[1] = art_h, bm[2] = art_w * 4;
         ((unsigned short *)b)[7] = 1; /* RGBA8888 */
         *(unsigned char **)((char *)b + 0x14) = px;
@@ -164,6 +171,7 @@ int image_manager_unload_all(void *m) { ++drops; return 0; }
 void set_hscroll_label_attribute(void *x) { assert(!strcmp(W(x)->type, "hscroll_label")); }
 int slide_menu_set_value(void *x, int value) { *(int *)(W(x)->raw + SLIDE_INDEX) = value; return 0; }
 int widget_set_name(void *x, const char *s) { snprintf(W(x)->type, 32, "%s", s); return 0; }
+void page_empty(void *body, const char *name) { (void)body; (void)name; } /* navigation.c: page_list_or only */
 int widget_use_style(void *x, const char *s) { return 0; }
 int widget_set_text_utf8(void *x, const char *s) { snprintf(W(x)->text, 160, "%s", s); return 0; }
 int widget_restack(void *x, unsigned i) { return 0; }
@@ -188,6 +196,7 @@ unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
 int widget_destroy_children(void *x) { W(x)->nkids = 0; return 0; }
 static int wm_repaints; /* whole-screen invalidations, from outside a paint */
 void *window_manager(void) { return &wm_repaints; }
+char system_bar[sizeof(void *)];  /* no bar: the window manager's first child is whatever the test put there */
 void *window_manager_get_top_window(void *wm) { return 0; }
 int window_manager_is_animating(void *wm) { return 0; }
 static unsigned clock_ms, pressed = 1, paused;
@@ -197,6 +206,7 @@ int widget_animator_pause(void *a) { ++paused; return 0; }
 int widget_to_local(void *x, void *p) { int *r = (int *)W(x)->raw, *q = p; q[0] -= r[0], q[1] -= r[1]; return 0; }
 /* navigation.c's: the glide asked for, the animator standing in as running until glide_end. */
 static int glides, glide_goal, glide_ms, glide_easing;
+void motion_open(void *p, const char *n) {}
 int carousel_glide(void *x, int goal, unsigned ms, int easing) {
     *(void **)(W(x)->raw + SLIDE_ANIMATOR) = (void *)1;
     ++glides, glide_goal = goal, glide_ms = (int)ms, glide_easing = easing;
@@ -216,6 +226,12 @@ int home_lib_on(void) { return 1; }
 int row_preview_on(void) { return 1; }
 int library_search(void) { return 1; }
 void library_rows(void *list) {}
+void stream_rows(void *list) {}
+int tk_str_start_with(const char *s, const char *p) { return !strncmp(s, p, strlen(p)); }
+const unsigned *widget_get_text(void *w) { return 0; }
+int canvas_set_font(void *c, const char *f, unsigned px) { return 0; }
+float canvas_measure_text(void *c, const unsigned *s, unsigned n) { return 0; }
+const char *theme_face(const unsigned *s, int n, int *px) { return 0; }
 void home_pane_read(int *services, int *games, int *free_tenths) { *services = 5; *games = 4; *free_tenths = 412; }
 extern volatile unsigned library_gen;
 static int count_calls, count_answer = 704;
@@ -225,22 +241,43 @@ int library_count(const char *sql) {
     return strstr(sql, "sum(e=0)") ? count_answer == 704 ? 312 : count_answer : count_answer;
 }
 int on_home_music_onclick(void *ctx, void *e) { return 0; }
+int on_home_stream_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
+int widget_paint(void *w, void *c) { return 0; }
+int widget_set_prop_str(void *w, const char *k, const char *v) { return 0; }
+int widget_destroy(void *w) { return 0; }
+int canvas_translate(void *c, int x, int y) { return 0; }
+void *canvas_offline_create(unsigned ww, unsigned h, unsigned f) { return 0; }
+int canvas_offline_begin_draw(void *c) { return 0; }
+int canvas_offline_end_draw(void *c) { return 0; }
+int canvas_offline_destroy(void *c) { return 0; }
+int song_seconds(void *r) { return -1; }
+int toolsTimeItoa(char *s, int sec) { return 0; }
+unsigned unflip(unsigned v) { return v; }
+unsigned mix(unsigned a, unsigned b, int j, int n) { return a; }
 void bar_title_sync(void *win) {}
-/* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS; Classic and Modern inherit it */
+int bar_title_fits(void *label) { return 1; }
+void list_value(void *l, const char *t, const char *v) { (void)l, (void)t, (void)v; }
+/* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS (Modern inherits it);
+ * CF_STYLE1: Classic's, resolved */
 static theme_t shim_themes[3] = {
-    { .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
+    { .page_row = 48, .page_detail = 64, .page_title_h = 48, .page_x = 36, .page_cap_y = 4, .page_cap_h = 32, .page_det_y = 36, .page_det_h = 24, .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
       .home_label_end = { HOME_SPLIT_LABEL_END, HOME_LABEL_END }, .cf = CF_STYLE0 },
-    { .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
+    { .page_row = 32, .page_detail = 52, .page_title_h = 0, .page_x = 20, .page_cap_y = -1, .page_cap_h = 28, .page_det_y = 28, .page_det_h = 18, .home_label_end = { 20, 33 }, .home_text_x = 20, .home_full_row = 375,
       .home_pane =
           { { 2, { 0, 100 }, { 0x1c1c1c, 0x1c1c1c } }, { 2, { 0, 100 }, { 0x63717b, 0x63717b } } }, .pane_shadow = 0,
       .pane_shadow_w = 0,
       .pane_shadow_a = { 116, 100, 93, 86, 79, 73, 68, 62, 56, 50, 44, 39, 34, 28, 24, 19, 16, 13, 10, 8, 6, 4, 3, 2, 1 }, .pane_light_a = 0, .pane_note_x = 40, .pane_note_y = 57, .pane_count_y = 185, .pane_count_w = 182,
-      .pane_count_px = 27, .cf = CF_STYLE0 },
-    { .home_full_row = HOME_MODERN_ROW, .home_text_x = HOME_MODERN_TEXT_X,
+      .pane_count_px = 27, .cf = CF_STYLE1 },
+    { .page_row = 48, .page_detail = 64, .page_title_h = 48, .page_x = 36, .page_cap_y = 4, .page_cap_h = 32, .page_det_y = 36, .page_det_h = 24, .home_full_row = HOME_MODERN_ROW, .home_text_x = HOME_MODERN_TEXT_X,
       .home_label_end = { HOME_MODERN_LABEL_END, HOME_MODERN_LABEL_END }, .cf = CF_STYLE0 } };
 static short stub_bar_h = 30;
 const theme_t *theme(void) { return &shim_themes[classic]; }
+const scheme_t *scheme(void) { /* light is only asked of it in its light half */
+    static scheme_t s;
+    s.paper = classic == 1 ? 0xffffffu : LIGHT_PAPER * 0x010101u;
+    return &s;
+}
 int client_h(void) { return 320 - stub_bar_h; }
 int theme_font(void *w, int role, int was) { return was; } /* the font only: no geometry */
 /* The Split pane's painters: the stops asked for, each fill in the colour last set, the count's text. */
@@ -874,8 +911,198 @@ static void restyle(void) {
     close_page();
 }
 
+/* Minimal's frames, dark and light, at rest and mid-turn: the same bytes whatever other themes add. */
+static void pinned(void) {
+    const unsigned *ring[7];
+    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art : flat[j];
+    unsigned hash = 2166136261u;
+    for (light = 0; light < 2; ++light)
+        for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 5) {
+            render(frac, ring);
+            for (unsigned i = 0; i < sizeof(frame) / 4; ++i) hash = (hash ^ frame[i]) * 16777619u;
+        }
+    light = 0;
+    assert(hash == PINNED_FRAMES);
+}
+
+/* The flip's frames: the quad from its formula at 0, 45, 90, 135 and 180 degrees, the cover to 90 and
+   the back after, narrowed to the axis at 90; the back reads right at the end; the eased time; the side
+   covers parting over the same ease. */
+void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
+int coverflow_flip_eased(int);
+static void flip_frames(void) {
+    static unsigned f[294 * 375], sides[294 * 375], front[160 * 160], back[285 * 294], flatf[160 * 160], flatb[285 * 294];
+    const cf_style_t *cs = &shim_themes[1].cf;
+    classic = 1, frame_fail = 0, square_art = 1;
+    open_page();
+    int H = cs->view_h, top = cs->top;
+    for (int y = 0; y < H; ++y) for (int x = 0; x < 375; ++x) sides[y * 375 + x] = 0xff000000u | (unsigned)x;
+    for (int i = 0; i < 160 * 160; ++i) front[i] = 0xff000000u | (unsigned)(i % 160) << 8 | (unsigned)(i / 160) << 16, flatf[i] = 0xff0000ffu;
+    for (int i = 0; i < 285 * 294; ++i) back[i] = 0xff000000u | (unsigned)(i % 294) << 8 | (unsigned)(i / 294) << 16, flatb[i] = 0xff00ff00u;
+    static unsigned plain[294 * 375];
+    for (int i = 0; i < 294 * 375; ++i) plain[i] = 0xffff0000u;
+    const unsigned *flat_tex[3] = { plain, flatf, flatb }, *tex[3] = { sides, front, back };
+    for (int deg = 0; deg <= 180; deg += 45) {
+        double E = deg / 180.0, S = sin(deg * M_PI / 180), C = cos(deg * M_PI / 180), hw = 80 + 67 * E, t0 = top + (9 - top) * E, b0 = t0 + 160 + 125 * E;
+        double kr = 1 / (1 - 147 * S / 700), kl = 1 / (1 + 147 * S / 700); /* the right and left edge of the cover's own */
+        double xr = 187 + hw * C * kr, xl = 187 - hw * C * kl;
+        coverflow_flip_render(f, 375, deg * 65536 / 180, flat_tex);
+        unsigned want = deg < 90 ? 0xff0000ffu : 0xff00ff00u, other = deg < 90 ? 0xff00ff00u : 0xff0000ffu;
+        int first = -1, last = -1;
+        for (int x = 0; x < 375; ++x)
+            for (int y = 0; y < 294; ++y) {
+                assert(f[y * 375 + x] != other);
+                if (f[y * 375 + x] == want) { if (first < 0) first = x; last = x; }
+            }
+        if (deg == 90) { assert(first < 0); continue; } /* edge on, on the axis */
+        double lo = xl < xr ? xl : xr, hi = xl < xr ? xr : xl, klo = xl < xr ? kl : kr, khi = xl < xr ? kr : kl;
+        assert(fabs(first - lo) <= 1 && fabs(last + 1 - hi) <= 1);
+        for (int side = 0; side < 2; ++side) {
+            int x = side ? last : first, y0 = -1, y1 = -1;
+            double k = side ? khi : klo;
+            for (int y = 0; y < 294; ++y) if (f[y * 375 + x] == want) { if (y0 < 0) y0 = y; y1 = y; }
+            double wt = 147 + (t0 - 147) * k, wb = 147 + (b0 - 147) * k;
+            assert(fabs(y0 - (wt < 0 ? 0 : wt)) <= 2 && fabs(y1 + 1 - (wb > 294 ? 294 : wb)) <= 2);
+        }
+    }
+    /* The cover where the shelf has it, 1:1; the back reading right, 1:1 at the panel's place. */
+    coverflow_flip_render(f, 375, 0, tex);
+    for (int y = 0; y < 160; ++y) for (int x = 0; x < 160; ++x) assert(f[(top + y) * 375 + 107 + x] == front[y * 160 + x]);
+    assert((f[(top + 5) * 375 + 106] & 0xffffffu) == 106);
+    coverflow_flip_render(f, 375, 65536, tex);
+    for (int y = 0; y < 285; ++y) for (int x = 0; x < 294; ++x) assert(f[(9 + y) * 375 + 40 + x] == back[y * 294 + x]);
+    /* The eased time: 90 degrees at half of it, and its own mirror, so Return is the same frames. Six frames on a 45 ms clock. */
+    assert(coverflow_flip_eased(0) == 0 && coverflow_flip_eased(135) == 32768 && coverflow_flip_eased(270) == 65536 && coverflow_flip_eased(300) == 65536);
+    int was = 0, count = 0;
+    for (int ms = 45; ms <= 270; ms += 45, ++count) { int e = coverflow_flip_eased(ms); assert(e > was); was = e; }
+    assert(count == 6);
+    for (int ms = 0; ms <= 270; ++ms) { assert(abs(coverflow_flip_eased(ms) + coverflow_flip_eased(270 - ms) - 65536) <= 6); assert(coverflow_flip_eased(ms + 1) >= coverflow_flip_eased(ms)); }
+    /* ... the bezier's own values, a sixteenth at a time and between */
+    assert(abs(coverflow_flip_eased(67) - 8337) <= 100 && abs(coverflow_flip_eased(203) - 57199) <= 100);
+    /* The sides part over the same ease: none at the start, 12 at half, 24 at the end, the paper between and under the shelf. */
+    const unsigned *none[3] = { sides, 0, 0 };
+    for (int half = 0; half < 2; ++half) {
+        light = half;
+        unsigned paper = half ? 0xffffffffu : 0xff000000u;
+        static const struct { int e, part; } at[3] = { { 0, 0 }, { 32768, 12 }, { 65536, 24 } };
+        for (int i = 0; i < 3; ++i) {
+            int p = at[i].part;
+            coverflow_flip_render(f, 375, at[i].e, none);
+            for (int y = 0; y < 294; ++y)
+                for (int x = 0; x < 375; ++x) {
+                    unsigned got = f[y * 375 + x], want = y >= H || (x >= 187 - p && x < 187 + p) ? paper : 0xff000000u | (unsigned)(x < 187 ? x + p : x - p);
+                    assert(got == want);
+                }
+        }
+    }
+    light = 0;
+    square_art = 0;
+    close_page();
+    classic = 0;
+    open_page(); /* Minimal's values again */
+    close_page();
+}
+
+/* Classic's shelf: side covers facing the centre, their edges meeting there, on a horizon 63%
+   down the cover, each flat colour exact out to the third, reflections under the slanted feet. */
+static void classic_light_shelf(void) {
+    static unsigned f[300 * PITCH], g[300 * PITCH];
+    const cf_style_t *c = &shim_themes[1].cf;
+    const unsigned *ring[7];
+    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    classic = 1, frame_fail = 0, square_art = 1;
+    open_page();
+    widget *s = slide();
+    int *geo = (int *)s->raw, H = c->view_h, canvas[16] = { 0 }, top = c->top, hz = top + 160 * c->horizon / 100;
+    /* The page: one frame as tall as the theme says, its stride kept, drawn 1:1; the captions in their boxes. */
+    assert(frames == 1 && geo[3] == H && slide_menu_item_width(s) + *(int *)(s->raw + SLIDE_SPACER) == c->stride);
+    *(int *)(s->raw + SLIDE_INDEX) = 3; *(int *)(s->raw + SLIDE_OFFSET) = 0;
+    coverflow_paint(s, canvas);
+    assert(drawn[2] == CF_VIEW_W && drawn[3] == H);
+#define F(x, y) f[(y) * PITCH + (x)]
+    for (unsigned i = 0; i < sizeof(f) / 4; ++i) f[i] = 0x12345678u;
+    coverflow_render(f, PITCH, 0, ring);
+    for (int y = 0; y < 300; ++y)
+        for (int x = 0; x < PITCH; ++x) assert((y < H && x < CF_VIEW_W) == (F(x, y) != 0x12345678u));
+    /* The outer edge, its height and where it sits on the horizon, a cover at a time; no shading. */
+    static const int out[3] = { 121, 154, 188 }, tall[2] = { 166, 164 };
+    int prev = 0, h1 = 0;
+    for (int j = 1; j <= 3; ++j) {
+        int edge = -1, rows = 0, first = -1;
+        for (int x = CF_CX; x < CF_VIEW_W; ++x)
+            if (F(x, hz) == colours[3 + j]) edge = x;
+        assert(abs(edge + 1 - CF_CX - out[j - 1]) <= 1);
+        if (j > 1 && j < 3) assert(abs(edge + 1 - CF_CX - prev - 33) <= 1);
+        prev = edge + 1 - CF_CX;
+        for (int y = 0; y < H; ++y) /* most of the row: the reflection stays under that */
+            if (ch(F(edge, y), 0) + ch(F(edge, y), 1) + ch(F(edge, y), 2) >= 256) first = first < 0 ? y : first, ++rows;
+        if (j < 3) assert(abs(rows - tall[j - 1]) <= 2);
+        if (j == 1) h1 = rows;
+        assert(abs((hz - first) * 100 / rows - 63) <= 2);
+        for (int x = 0; x < CF_VIEW_W; ++x) assert(F(x, H - 1) == 0xff000000u); /* no reflection cut */
+    }
+    assert(h1);
+    /* Top and bottom edges of the first cover meet within 3 px of the centre column. */
+    int xs[2] = { CF_CX + 84, CF_CX + 118 }, hs[2] = { 0, 0 };
+    for (int i = 0; i < 2; ++i)
+        for (int y = 0; y < H; ++y) hs[i] += F(xs[i], y) == colours[4];
+    assert(hs[1] > hs[0]);
+    assert(abs((xs[0] - CF_CX) - hs[0] * (xs[1] - xs[0]) / (hs[1] - hs[0])) <= 3);
+    /* The centre cover is square at 58 to 218 on the screen under the 26 px bar. */
+    assert(top + 26 == 58 && F(CF_CX, top - 1) == 0xff000000u && F(CF_CX, top) == colours[3] && F(CF_CX, top + 159) == colours[3]);
+    /* Its reflection: 46 rows, from 35% of the cover, never brighter going down, all in the frame. */
+    int rows = 0, last = 256;
+    for (int y = top + 160; y < H; ++y) {
+        int v = ch(F(CF_CX, y), 0);
+        assert(v <= last);
+        if (y == top + 160) assert(abs(v - 255 * 35 / 100) <= 3);
+        rows += v > 0, last = v;
+    }
+    assert(rows >= 45 && rows <= 46);
+    /* The side covers' reflections start at their own feet, lower towards the outer edge. */
+    int foot[2];
+    for (int i = 0; i < 2; ++i) {
+        foot[i] = 0;
+        for (int y = hz; y < H; ++y) foot[i] = F(xs[i], y) == colours[4] ? y + 1 : foot[i];
+        assert(slot_of(F(xs[i], foot[i] + 1)) == 4 && F(xs[i], foot[i] + 1) != colours[4]);
+    }
+    assert(foot[1] > foot[0]);
+    /* The hit test follows the horizon; the third cover is a target. */
+    assert(coverflow_hit(0, CF_CX, top - 1) == 99 && coverflow_hit(0, CF_CX, top) == 0);
+    assert(coverflow_hit(0, CF_CX, top + 159) == 0 && coverflow_hit(0, CF_CX, top + 160) == 99);
+    assert(coverflow_hit(0, CF_CX + 100, hz) == 1 && coverflow_hit(0, CF_CX + 140, hz) == 2 && coverflow_hit(0, 373, hz) == 3);
+    assert(coverflow_hit(0, 2 * CF_CX - 1 - 373, hz) == -3);
+    /* Mid-turn every step changes only a little, including at the fourth cover's edge of reach and
+       where the centre changes hands. */
+    const unsigned *next[7];
+    for (int j = 0; j < 7; ++j) next[j] = ring[(j + 1) % 7];
+    int worst = 0;
+    for (int fr = -ONE / 2; fr + ONE / 256 < ONE / 2; fr += ONE / 256) {
+        coverflow_render(f, PITCH, fr, ring);
+        coverflow_render(g, PITCH, fr + ONE / 256, ring);
+        int d = differ(f, g, 24);
+        worst = d > worst ? d : worst;
+    }
+    assert(worst < CF_VIEW_W * CF_VIEW_H / 50);
+    coverflow_render(f, PITCH, ONE / 2 - 1, ring);
+    coverflow_render(g, PITCH, -ONE / 2, next);
+    assert(differ(f, g, 6) < 200);
+    /* The light half: the shelf is the scheme's paper, and the reflection fades into it. */
+    light = 1;
+    coverflow_render(f, PITCH, 0, ring);
+    assert(F(0, 0) == 0xffffffffu && F(CF_CX, top) == colours[3]);
+    assert(abs(ch(F(CF_CX, top + 160), 2) - 255 * 65 / 100) <= 3 && F(CF_CX, top + 160 + 46) == 0xffffffffu);
+    light = 0;
+    close_page();
+    classic = 0, square_art = 0;
+    open_page(); /* Minimal's values again */
+    close_page();
+#undef F
+}
+
 static void depth(void) {
     renderer();
+    pinned();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
        under the drawn covers; the captions sit under the frame. */
     frame_fail = 0;
@@ -1535,6 +1762,8 @@ int main(void) {
     assert(loads == unloads);
     depth();
     restyle();
+    classic_light_shelf();
+    flip_frames();
     sorting();
     artist_only();
     unknown_card();
@@ -1793,6 +2022,18 @@ int main(void) {
     int drew = draws;
     coverflow_home_clip(home_art, canvas, 0);
     assert(draws == drew + 1);
+    /* A transparent cover pans over the half's paper: the theme's own, else Light Mode's, else black. */
+    clear_cover = 1;
+    static const struct { int classic, light; unsigned paper; } papers[] = {
+        { 1, 1, 0xffffffffu }, { 0, 1, 0xff000000u | LIGHT_PAPER * 0x010101u }, { 0, 0, 0xff000000u } };
+    for (int i = 0; i < 3; ++i) {
+        classic = papers[i].classic, light = papers[i].light;
+        coverflow_home_layout();
+        coverflow_home_art(win);
+        coverflow_home_clip(home_art, canvas, 0);
+        assert(shown[0] == papers[i].paper && shown[100 * CF_VIEW_W + 90] == papers[i].paper);
+    }
+    clear_cover = 0;
 
     embedded_first();
     return 0;
@@ -1826,6 +2067,8 @@ def main():
     shim = re.search(r'shim_themes\[3\] = \{(.*?)\} \};', TEST, re.S)[1].split('},\n')
     norm = lambda fs: [[(k, ' '.join(v.split())) for k, v in f] for f in fs]
     assert norm(home_fields(shim[::2])) == norm(nav), 'shim_themes drifted from tools/theme.py ROLE_MACROS'
+    page = [tuple(map(int, re.search(r'\.page_row = (\d+), \.page_detail = (\d+), \.page_title_h = (\d+), \.page_x = (\d+), \.page_cap_y = (-?\d+), \.page_cap_h = (\d+), \.page_det_y = (\d+), \.page_det_h = (\d+)', t).groups())) for t in shim]
+    assert page == [tuple(t[f] for f in ('page_row', 'page_detail', 'page_title_h', 'page_x', 'page_cap_y', 'page_cap_h', 'page_det_y', 'page_det_h')) for t in builtins()[:len(page)]], 'shim_themes page rows drifted from the theme files'
     # Classic's are its theme.xml's, resolved; home_top 0 is unset in the shim.
     classic_light, tight = builtins()[1], re.sub(r'\s', '', shim[1])
     assert classic_light['home_top'] == 0 and f"home_label_end={{{classic_light['home_label_end[0]']},{classic_light['home_label_end[1]']}}}" in tight
@@ -1838,6 +2081,8 @@ def main():
     # Each theme's .cf, as designated initialisers, so neither a CF_ROLES change nor a field reorder drifts.
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
                 for i, m in enumerate((ROLE_MACROS['minimal'],))]
+    cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
+    cf_style.append('-DPINNED_FRAMES=0x8c470fe7u')
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]
@@ -1901,7 +2146,7 @@ def main():
         subprocess.run(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unused-function',
                         *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
-                        str(tmp/'test.c'), '-o', str(binary)], check=True)
+                        str(tmp/'test.c'), '-lm', '-o', str(binary)], check=True)
         env = dict(os.environ)
         if a.captures:  # capture the reflection intensity
             (tmp/'frames').mkdir()

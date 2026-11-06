@@ -519,6 +519,7 @@ void visualizer_attach(void *win) {
     /* The art is the window's child, over the slide area's centre, for the same reason as the drawing. */
     vz.ox = 0, vz.oy = top;
     for (void *p = slide; p && p != win; p = P(p, W_PARENT)) vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
+    if (theme()->np_tilt_bl) vz.oy += 14; /* its slides start at the window's top: the info rows */
     vz.art = image_create(win, vz.ox + (vz.w - VIS_ART) / 2, vz.oy + (VIS_H - VIS_ART) / 2, VIS_ART, VIS_ART);
     widget_set_sensitive(vz.art, 0);
     widget_set_visible(vz.art, 0, 0);

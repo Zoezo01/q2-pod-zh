@@ -49,7 +49,7 @@ enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE
        FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
 #define FILE_PAGE 128
 #define GRAPH_W (375 - 2 * PEQ_GRAPH_X)
-#define ROW_X CF_EDGE /* the text column clear of the rounded glass, as coverflow.c's */
+#define ROW_X page_x() /* the theme's text column, as coverflow.c's page rows */
 #define TONE accent_tone(2) /* the light tone */
 /* The page's two tabs: Simple, 3EQ's sliders (e3), and Advanced, the PEQ editor (ui.screen). */
 enum { SIMPLE, ADVANCED };
@@ -204,18 +204,32 @@ static int action(void *ctx, void *event);
  * that opens a screen or picker (INTO: coverflow.c's row_into). Returns the last label, the
  * value's if any. Rows start under the graph where it heads the list. */
 enum { DIM = 1, INTO = 2, SMALL = 4 };
+/* The curve's height in the list: whole rows of the theme's, so whole rows fill it at either
+ * end. */
+static int graph_head(void) {
+    int rh = page_h(48);
+    return (PEQ_GRAPH_H + rh - 1) / rh * rh;
+}
+/* A label with too long a text for the theme's row font: the row style's 20 px. Returns it. */
+static void *fit(void *label) {
+    widget_set_prop_int(label, "style:normal:font_size", 20);
+    return label;
+}
 static void *row_dim(void *view, int index, const char *text, const char *value, int id, int flags) {
-    void *item = list_item_create(view, 0, (ui.graph ? PEQ_GRAPH_H : 0) + index * 48, 375, 48), *label = 0;
+    int rh = page_h(48);
+    void *item = list_item_create(view, 0, (ui.graph ? graph_head() : 0) + index * rh, 375, rh),
+         *label = 0;
     widget_use_style(item, "s_listitem_black");
     for (int i = 0; i < 1 + !!value; ++i) {
-        label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, 48);
+        label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, rh);
         widget_use_style(label, "s_label_white20l");
         if (i || flags & DIM || id < 0) widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
         if (i) widget_set_prop_str(label, "style:normal:text_align_h", "right");
-        if (!i && flags & SMALL) widget_set_prop_int(label, "style:normal:font_size", 16);
         widget_set_text_utf8(label, i ? value : text);
+        theme_font(label, ROLE_TITLE, FONT_ROW); /* by its text */
+        if (!i && flags & SMALL) widget_set_prop_int(label, "style:normal:font_size", 16);
     }
-    if (flags & INTO) row_into(item, 48);
+    if (flags & INTO) row_into(item, rh);
     widget_on(item, EVT_CLICK, action, (void *)(long)id);
     return label;
 }
@@ -652,9 +666,9 @@ static int render(const void *unused) {
     e3.view = 0;
     int selection = 0, offset = 0;
     int height = widget_get_prop_int(ui.page, "h", 320), graph = ui.screen == HOME || ui.screen == BAND;
-    int head = graph * PEQ_GRAPH_H; /* two rows, so whole rows still fill the list at either end */
+    int head = graph * graph_head(), rh = page_h(48);
     /* Whole rows only, so the last row is never clipped. */
-    int rows = (height - 48) / 48 * 48;
+    int rows = (height - 48) / rh * rh;
     if (ui.view && ui.rendered == ui.screen) {
         selection = widget_get_prop_int(ui.view, "_ringnav_index", 0);
         offset = widget_get_prop_int(ui.view, "yoffset", 0);
@@ -664,14 +678,14 @@ static int render(const void *unused) {
         selection = r < 0 ? 0 : r > last ? last : (int)r;
         if (ui.pick == PREAMP && on_auto()) selection = 0;
         else if (ui.pick == PREAMP && !selection) selection = 1;
-        offset = selection * 48 - (rows - 48) / 2;
-        offset = offset < 0 ? 0 : offset > (last + 1) * 48 - rows ? (last + 1) * 48 - rows : offset;
+        offset = selection * rh - (rows - rh) / 2;
+        offset = offset < 0 ? 0 : offset > (last + 1) * rh - rows ? (last + 1) * rh - rows : offset;
     }
     ui.rendered = ui.screen;
     ui.edit = 0;
     widget_destroy_children(ui.page);
-    /* No item_height: stock's layout (0x5ea5f4) would give the graph its 48 px; the rows are 48
-     * high themselves. */
+    /* No item_height: stock's layout (0x5ea5f4) would give the graph a row's height; the rows are
+     * the theme's high themselves. */
     void *list = list_view_create(ui.page, 0, 48, 375, rows);
     /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
     widget_set_prop_int(list, "style:normal:bg_color", (int)0xff000000u);
@@ -704,16 +718,19 @@ static int render(const void *unused) {
             snprintf(value, sizeof(value), "%.1f dB", ui.draft.preamp);
         void *shown = row_dim(view, n++, "Preamp", value, PREAMP, INTO);
         /* At 20px two double-digit cuts overrun the iPod's 280px column beside the caption and
-         * chevron; at 16 the longest, -60.0 at both, leaves 6px (the stock font's widths). */
-        if (on_auto()) widget_set_prop_int(shown, "style:normal:font_size", 16);
-        row_dim(view, n++, "Presets", ui.name[0] ? ui.name : 0, MENU, INTO); /* the draft's preset */
+         * chevron; at 16 the longest, -60.0 at both, leaves 6px (the stock font's widths), and a
+         * theme's row font, its caption wider, 4 at 15. */
+        if (on_auto()) widget_set_prop_int(shown, "style:normal:font_size", rh == 48 ? 16 : 15);
+        /* the draft's preset */
+        shown = row_dim(view, n++, "Presets", ui.name[0] ? ui.name : 0, MENU, INTO);
+        if (ui.name[0]) fit(shown);
         /* 16px band captions leave room for the gain and chevron, even at 20000 Hz on one channel. */
         for (int i = 0; i < PEQ_BANDS && (i < 10 || i <= ui.draft.count); ++i) {
             peq_band *b = &ui.draft.bands[i];
             snprintf(text, sizeof(text), "%d  %s %.0f Hz%s", i + 1, types[b->type], b->frequency,
                      (const char *[]){"", "", " L", " R"}[b->enabled]);
             snprintf(value, sizeof(value), b->enabled ? "%+.1f dB" : "Off", b->gain);
-            row_dim(view, n++, text, value, i, (b->enabled ? 0 : DIM) | INTO | SMALL);
+            fit(row_dim(view, n++, text, value, i, (b->enabled ? 0 : DIM) | INTO | SMALL));
         }
     } else if (ui.screen == BAND) {
         peq_band *b = &ui.draft.bands[ui.band];
@@ -744,15 +761,16 @@ static int render(const void *unused) {
             else if (ui.pick == PREAMP && !i)
                 auto_text(text, sizeof(text));
             else snprintf(text, sizeof(text), "%+.1f dB", v);
-            row(view, n++, text, i);
+            void *shown = row(view, n++, text, i);
+            if (ui.pick == PREAMP && !i) fit(shown);
         }
     } else if (ui.screen == NAMING) { /* the name in the edit over the title (below); the row is Done */
         row(view, n++, "Rename", NAMED);
     } else if (ui.screen == CONFIRM && ui.previous == DELETES) {
-        snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting()); row(view, n++, text, YES);
+        snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting()); fit(row(view, n++, text, YES));
         row(view, n++, "Cancel", CANCEL);
     } else if (ui.screen == CONFIRM) {
-        row(view, n++, "Replace existing preset? Confirm", YES);
+        fit(row(view, n++, "Replace existing preset? Confirm", YES));
         row(view, n++, "Cancel replacement", CANCEL);
     } else if (ui.screen == STOCKS) {
         for (int i = 0; i < STOCK_N; ++i) row(view, n++, stock_names[i], i);
@@ -777,12 +795,12 @@ static int render(const void *unused) {
         for (int i = 0, start = ui.file_page * FILE_PAGE; i < FILE_PAGE && start + i < ui.count; ++i)
             row(view, n++, ui.names[start + i], i);
     }
-    widget_set_prop_int(view, "virtual_h", head + n * 48);
+    widget_set_prop_int(view, "virtual_h", head + n * rh);
     /* ringnav keeps the selection above on a view whose row count it already knows. */
     if (ui.screen == PICK) widget_set_prop_int(view, "_ringnav_count", n);
-    if (head + n * 48 < rows) { /* short lists: shrink so the list's white background never shows below the rows */
-        widget_resize(list, 375, head + n * 48);
-        widget_resize(view, 375, head + n * 48);
+    if (head + n * rh < rows) { /* short lists: shrink so the list's white background never shows below the rows */
+        widget_resize(list, 375, head + n * rh);
+        widget_resize(view, 375, head + n * rh);
     }
     scroll_view_set_offset(view, 0, offset);
     /* A message takes the title bar until the next action, so it never shrinks the list; on the
@@ -1041,7 +1059,7 @@ int peq_page_init(void *page, void *context) {
     ui.dirty = 0;
     page_load();
     e3.focus = E3_LOW;
-    e3.h = widget_get_prop_int(page, "h", 290);
+    e3.h = widget_get_prop_int(page, "h", client_h());
     widget_on(page, EVT_DESTROY, closed, 0);
     widget_on(page, EVT_KEY_UP, keyup, 0);
     widget_on(page, EVT_POINTER_MOVE_BEFORE, e3_touch, 0); /* a slider's drag */

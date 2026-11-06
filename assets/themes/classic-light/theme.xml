@@ -13,9 +13,14 @@
             lib_art="0" title24_y="4" title_y="6" meta_y="8"
             count_y="8" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
             song_meta_y="29" set_row="32" set_top="0" set_rows="9"
-            set_icon="0" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"/>
+            set_icon="0" stream_row="52" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_bar_x="63" np_bar_w="248" np_mark_y="222"
+            stock_row="32" stock_body="32" stock_title_y="0" stock_title_h="32" toolbar="0"
+            search_row="52" search_body="52" search_art="0" search_title_y="1" search_title24_y="1" search_title_h="28"
+            search_meta_y="29" search_meta_h="20"/>
+  <!-- Stock's own list pages (Lock Screen, Update Library, More, Queue, Go to, Special Folders) take the set's rows: stock_row and the two
+       after it; 78, 70, 11 and 20 give back stock's. toolbar 0 hides their toolbars but for Go to's and Special Folders', and the Sleep Timer's. -->
   <geometry name="classic-light-text" extends="classic-light" art="0" art_pitch="32" art_body="32" art_title24_y="4"
-            art_meta_y="8"/>
+            art_meta_y="8" stream_row="32"/>
   <geometry set="classic-light"/>
   <!-- every scheme: white text on the band in both halves; a row's second line #949294, which the light half
        flips onto #6b6d6b; the light half on white paper, black ink; the status bar's gloss over
@@ -41,6 +46,20 @@
     <!-- Albums' and the other 52 px rows: the cover, drawn square, then two lines of text; it clears the glass at the row under the bar by 1 px -->
     <element name="art" x="22" text_x="82" text_end="310" placeholder="38"/>
     <element name="chevron" selected="1" x="317"/>
+    <!-- The fast-scroll letter, the same in both halves -->
+    <element name="letter" raw="1" px="60"/>
+    <!-- A list that scrolls keeps a thin thumb at its right edge, over the rows, with no track; its ends stay clear
+         of the glass -->
+    <element name="scrollbar" w="4" right="2" top="59" bottom="261" min="16" light.thumb="#8f98a8" dark.thumb="#6e7380"/>
+  </view>
+  <!-- Cover Flow's shelf, from the look's measured geometry: side covers almost edge-on, so their top and bottom edges
+       meet at the centre column, on a horizon 63% down the cover, unshaded out to the third; the reflections go under
+       the caption, so the frame is taller than the other themes'. -->
+  <view name="coverflow">
+    <element name="shelf" top="32" eye="94" tilt="89" x1="116" xs="34" z1="77" zs="1" horizon="63" third="1"
+             bright1="256" bright2="256" reflect="46" reflect_top="90" view_h="242"/>
+    <!-- The album and the artist in the title's face, 24 px apart: their boxes overlap, as each must hold the font -->
+    <element name="caption" name_px="27" artist_px="27" text_y="220" artist_y="26"/>
   </view>
   <view name="bar">
     <element name="title" font="classic-light" font_size="21" caps="0"/>
@@ -58,32 +77,77 @@
     <element name="state" stops="#0f4f93 0, #1a76b3 20, #2ea8e1 33, #39c7f8 47, #38c7f5 53, #32b1e9 60, #2699d7 67, #2085c3 73, #1c73b1 80, #1666a5 87, #135999 100"
              edge="#114c8f 0, #135999 100" halo_light="0" halo_dark="0"/>
   </view>
-  <!-- Now Playing, an iPod classic's: the art turned in perspective over its reflection (the classic-light sets' np_ipod,
-       coverflow.c slant_render), and the progress bar's track, a row each of its NP_BAR_IPOD (13): faint 1 px top
-       and bottom lines round a near-white inside; the dark half's Apple's capture darkened, its step at the middle
-       kept; the accent's band fills the played part (navigation.c paint_scrubber) -->
-  <view name="playing">
+  <!-- Now Playing's places, in the window under the bar: the art's page, the cover left and its text right, the
+       times under them. -->
+  <view name="playing" layout="classic-light">
     <element name="art" square="1"/>
-    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 8, #ffffff 17, #ffffff 25, #fafafa 33, #fafafa 42, #f6f6f6 50, #f6f6f6 58, #f6f6f6 67, #f4f4f4 75, #f4f4f4 83, #f4f4f4 92, #cecece 100"
-             dark.stops="#313131 0, #373737 8, #383838 17, #373737 25, #363636 33, #353535 42, #323232 50, #313131 58, #323232 67, #343434 75, #353535 83, #343434 92, #2b2b2b 100"/>
-    <element name="title" font="classic-light" font_px="27"/>
-    <element name="album" caps="0" opacity="255"/>
-    <element name="state" opacity="0"/>  <!-- no play/pause glyph on the art, as Minimal -->
+    <!-- The pages from the window's top to its foot: the info page's rows need all of it. -->
+    <element name="slides" x="0" y="0" w="375" h="294"/>
+    <!-- The cover, turned: drawn on its own widget, its corners' rows given in 1/10 px from the widget's top. The
+         stock image under it paints nothing and keeps the tap that opens the full-screen art. Its reflection, the
+         cover mirrored about its bottom edge under the paper: half at the edge until reflect_from, opaque at the widget's end. -->
+    <element name="tilt" x="10" y="18" w="161" h="232" tl="6" tr="129" br="1533" bl="1601" reflect="128" reflect_from="153"/>
+    <!-- A song with no art: the generic cover, tools/art.py's drawing in these colours, stock's no-art image under this theme only. -->
+    <element name="noart" stops="#94a2a5 0, #6b7584 100" note="#ffffff 0, #f3f5f8 45, #c0c8ca 100" band_a="13" shadow_a="85"/>
+    <element name="cover" x="15" y="19" w="156" h="160" radius="0" opacity="0"/>
+    <element name="wait" x="63" y="71" w="54" h="54"/>
+    <!-- stock's play state glyph takes a tap but does nothing with it: a pixel, so the whole cover opens the full-screen art -->
+    <element name="state" x="16" y="16" w="1" h="1" opacity="0"/>
+    <!-- The title at the two-line row's size. The artist, album and position are stock's #c6c3c6, the light half's flip #393c39.
+         A label draws nothing in a box shorter than its font, so the position's and the times' boxes hold it, centred on their rows. -->
+    <element name="title" x="187" y="57" w="173" h="24" font="classic-light"/>
+    <element name="meta" font="classic-light" font_size="22"/>
+    <!-- The theme's face at a small size: the QR pages', and a radio's time from its first hour. The info page's rows
+         are list rows, their names in the ink and their values in this grey, final in each half. -->
+    <element name="info" font="classic-light" font_size="17" light.value="#8e9196" dark.value="#8a8a8a"/>
+    <element name="artist" x="187" y="82" w="173" h="20" color="#c6c3c6" font="classic-light" font_size="22"/>
+    <element name="album" caps="0" opacity="255" x="187" y="103" w="173" h="20" color="#c6c3c6" font="classic-light" font_size="22"/>
+    <element name="position" x="187" y="145" w="173" h="22" font="classic-light" font_size="22" color="#c6c3c6" align="left"/>
+    <!-- The top right, left to right: More, repeat, shuffle, their 26 x 20 glyphs (tools/art.py) centred in these tap areas,
+         on every page; off in the half's dim ink, on in its dark, More always dark. They replace stock's play mode button. -->
+    <element name="controls" light_off="#b4b4b4" light_on="#4c4c4c" dark_off="#5a5a5a" dark_on="#c6c3c6"/>
+    <element name="more" x="260" y="3" w="30" h="28"/>
+    <element name="repeat" x="291" y="3" w="30" h="28"/>
+    <element name="shuffle" x="322" y="3" w="30" h="28"/>
+    <element name="playmode" visible="0"/>
+    <!-- The Q2's ratings under the album, tools/art.py's row left-aligned 6 rows down this tap area: it reaches over the
+         edges of the album's and the position's boxes, which take no touch, but not their text. Stock's heart goes. -->
+    <element name="hearts" x="188" y="120" w="96" h="30"/>
+    <element name="fav" visible="0"/>
+    <!-- The progress bar: its rows, the gloss over its reflection, on its touch area's middle 31 rows; the played part's a hard step
+         at the same row. Fixed colours, not the accent. The light half's reflection is opaque, the dark half's fades over the paper
+         (#rrggbbaa). While scrubbing, a diamond in the ink, on the gloss. -->
+    <element name="scrubber" y="213" h="43" painter="rows" height="31" scrub_height="31" mark="8"
+             light_track="#e7e7e7 #eeeeee #ffffff #fdfdfd #f7f7f7 #f7f7f7 #f3f3f3 #f0f0f0 #ebebeb #e4e4e4 #dedede #dfdfdf #e6e6e6 #ededed #ececec #d1d1d1 #d0d0d0 #fdfdfd #f0f0f0 #efefef #f5f5f5 #f8f8f8 #f4f4f4 #efefef #efefef #efefef #f6f6f6 #f7f7f7 #f7f7f7 #f7f7f7 #f9f9f9"
+             light_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #c7f2ff #c7f2ff #ceefff #d2ecfd #d2ecfd #daedfe #deeefe #deeefe #e7f1fd #eef5ff #eef5ff #f8f9fe #fcfcfe #fcfcfe"
+             dark_track="#4e4d4e #585758 #555455 #515151 #4e4e4e #4b4a4b #474747 #444444 #424242 #434343 #444444 #454445 #454545 #464546 #474647 #484748 #383838 #42414256 #42414250 #42414249 #42414243 #4241423d #42414236 #42414230 #42414229 #42414223 #4241421d #42414216 #42414210 #4241420a #42414203"
+             dark_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #46b1ff4f #46b1ff49 #46b1ff43 #46b1ff3d #46b1ff37 #46b1ff32 #46b1ff2c #46b1ff26 #46b1ff20 #46b1ff1a #46b1ff14 #46b1ff0f #46b1ff09 #46b1ff03"/>
+    <element name="elapsed" x="18" y="217" w="45" h="24" font="classic-light" font_size="23" color="#ffffff" align="left"/>
+    <element name="remain" x="311" y="217" w="50" h="24" font="classic-light" font_size="23" color="#ffffff" align="right"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,
        centred on the pane's first count_w columns, its 24 px line box at count_y. The pane follows the highlighted row:
-       a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is. Its colour is stated at 0 and 100,
+       a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is; on Streaming's list the service's icon, svc_px square at svc_x, svc_y. Its colour is stated at 0 and 100,
        as a stops list must end at 100 -->
   <view name="home">
     <element name="rows" top="0" text_x="20" font="classic-light" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
     <element name="chevron" visible="1" x="168"/>
     <element name="pane" light.stops="#63717b 0, #63717b 100" dark.stops="#1c1c1c 0, #1c1c1c 100" light_a="0" shadow="#000000" shadow_w="0"
              shadow_a="116 100 93 86 79 73 68 62 56 50 44 39 34 28 24 19 16 13 10 8 6 4 3 2 1"
-             icon_x="43" icon_y="67" note_x="40" note_y="57" count_y="185" count_w="182" count_px="27"/>
+             icon_x="43" icon_y="67" note_x="40" note_y="57" count_y="185" count_w="182" count_px="27" svc_x="46" svc_y="62" svc_px="96"/>
+  </view>
+  <!-- page_list's rows (the Library's Shuffle, Most Played, Era, card apps...): 32 px, or Songs' two lines at 52 with a
+       detail, their boxes holding the fonts and centring them where Songs' do; the bar holds the title, so no title row -->
+  <view name="page">
+    <element name="rows" height="32" detail_height="52" text_x="20" title_y="-1" title_h="28" detail_y="28" detail_h="18"/>
+    <element name="title" height="0"/>
   </view>
   <!-- a settings row is its title with the value right-aligned -->
   <view name="settings"><element name="values" text="1"/></view>
+  <view name="volume"><element name="panel" painter="classic-light"/></view>
+  <!-- The confirm control's two forms, the hold menu over the page, the toast and small dialogs -->
+  <view name="dialog"><element name="confirm" painter="classic-light"/></view>
   <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>
@@ -105,4 +169,20 @@
     <value label="Off" set="classic-light-text"/>
     <value label="On" set="classic-light"/>
   </option>
+  <!-- How things move. A window kind with no ms keeps its asset's hint, or none. Home is a page right over Home; payload
+       a page with no hint of its own. The volume is the row's push over Now Playing, and hold how long it stays once
+       idle. The selection jumps, with no glide and no bump. -->
+  <view name="motion">
+    <element name="page" ms="120" easing="cubic_out"/>
+    <element name="payload" ms="120" easing="cubic_out"/>
+    <element name="home" ms="270" easing="linear"/>
+    <element name="dialog" anim="fade" ms="300" easing="quadratic_out"/>
+    <element name="volume" ms="230" easing="quadratic_out" hold="5300"/>
+    <element name="swap" ms="170" easing="linear"/>
+    <element name="inplace" ms="120" easing="cubic_out"/>
+    <element name="step" ms="200" easing="sin_inout"/>
+    <element name="step_fast" ms="120" easing="sin_inout"/>
+    <element name="recall" ms="0"/>
+    <element name="bump" px="0"/>
+  </view>
 </theme>
