@@ -450,7 +450,7 @@ typedef struct {
     unsigned letter_timer;   /* the fast-scroll letter shows while this runs */
     /* Now Playing's window and payload-filled widgets, and the sources they last showed. */
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
-    int np_bold;             /* the title's font: 1 bold, 0 stock's, -1 not set yet */
+    int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
     /* Centred Now Playing's full-screen lyrics (np_full) and where the last touch on them came
      * down (np_lyric_touch) */
@@ -5197,8 +5197,6 @@ static int pressed_pill(void *w, void *canvas) {
     return b == w; /* a page row's own (clear) background */
 }
 
-/* The bar title for window win: Now Playing, Coverflow and EQ by name; else 0, and *label is
- * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 /* A payload page's 48 px caption: a child of win, or the first in one of its children (Games' list
  * comes after its sheet). */
 static void *page_caption(void *win) {
@@ -5211,6 +5209,8 @@ static void *page_caption(void *win) {
     return 0;
 }
 
+/* The bar title for window win: Now Playing, Coverflow and EQ by name; else 0, and *label is
+ * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
     if (tk_str_start_with(name, "playing_page")) return "Now Playing";
@@ -5892,14 +5892,15 @@ static void settings_layout(void *w) {
 static void setting_put(int *value, int v, const char *key) {
     if (*value != v) write_int_config(*value = v, "IPOD", key);
 }
-static void theme_preset(void) {
-    const theme_t *T = theme();
+/* live 0 saves the preset alone (restart_confirm: the running state keeps the booted theme). */
+static void theme_preset(const theme_t *T, int live) {
     int buf[11];
     st.light_day = light_day(clock_now(buf));
     for (int k = 0; k < T->n_opts; ++k) {
         const option_t *o = &T->opts[k];
-        int *v = option_slot(T, o->setting);
-        if (o->preset >= 0 && *v != o->keep) setting_put(v, o->preset, option_key(T, o->setting));
+        int *v = option_slot(T, o->setting), was = *v;
+        if (o->preset >= 0 && *v != o->keep)
+            setting_put(live ? v : &was, o->preset, option_key(T, o->setting));
     }
 }
 
@@ -6021,7 +6022,7 @@ static void genre_fill(void *win, void *label, const char *text) {
  * everything repainted. */
 void theme_select(int t) {
     setting_put(&st.theme, t, "THEME");
-    theme_preset();
+    theme_preset(theme(), 1);
     coverflow_home_layout();
     settings_layout(window_manager());
     np_theme();
@@ -6034,9 +6035,10 @@ void theme_select(int t) {
     widget_invalidate_force(window_manager(), (void *)0);
 }
 int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
-/* A choice that needs another geometry set: confirmed, setting takes value (a theme its presets
+/* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
- * first; cancelled, nothing is written and nothing changes. */
+ * first; the running state stays the booted set's theme until then, as theme_boot requires.
+ * Cancelled, nothing is written and nothing changes. */
 void restart_confirm(int setting, int value) {
     struct {
         int kind, ms;
@@ -6044,8 +6046,9 @@ void restart_confirm(int setting, int value) {
     } prompt = { 1, 0, "Restart to apply?" };
     if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
     const theme_t *T = theme();
-    setting_put(option_slot(T, setting), value, option_key(T, setting));
-    if (setting == SETTING_THEME) theme_preset();
+    int was = *option_slot(T, setting);
+    setting_put(&was, value, option_key(T, setting));
+    if (setting == SETTING_THEME) theme_preset(&themes[value], 0);
     ringnav_reboot();
 }
 static int theme_pick(void *ctx, void *event) {
