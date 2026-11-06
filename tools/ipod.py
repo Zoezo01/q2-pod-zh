@@ -172,18 +172,22 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # clears the glass by CORNER_SLACK, as the full-screen art's do; "3 of 12" under the album; the art's box NP_REFLECT
 # taller, the room its reflection takes under the near edge (coverflow.c slant_render); the times in the
 # Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-1:02:03" fits: stb scales
-# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows.
+# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows,
+# two rows more each side (NP_IPOD_TIME_H), the outer edges clear of the glass over those rows.
 NP_IPOD_ART = 198
 NP_IPOD_LIFT = 30
 NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
-NP_IPOD_TIME_W = 47
-NP_IPOD_TIME_GAP = 8
+NP_IPOD_TIME_W = inc('NP_IPOD_TIME_W')
+NP_IPOD_TIME_GAP = inc('NP_IPOD_TIME_GAP')
 NP_IPOD_TIME_PX = inc('NP_IPOD_TIME_PX')
+NP_IPOD_TIME_H = inc('NP_BAR_IPOD') + 4
+NP_IPOD_TIME_Y = 255 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2  # the slider centred on 255
 
 
 def with_geometry(g):
     """The row sizes and the Now Playing insets that clear the glass, for a window starting at g.bar."""
-    bar_x = max(MARGIN, corner_x(g.bar + 251, 8)) + g.np_ipod * (NP_IPOD_TIME_W + NP_IPOD_TIME_GAP)
+    edge = corner_x(g.bar + NP_IPOD_TIME_Y, NP_IPOD_TIME_H) if g.np_ipod else corner_x(g.bar + 251, 8)
+    bar_x = max(MARGIN, edge) + g.np_ipod * (NP_IPOD_TIME_W + NP_IPOD_TIME_GAP)
     return types.SimpleNamespace(
         BOTTOM=320 - g.bar, PITCH=g.pitch, BODY=g.body, ART=g.art, ART_INSET=g.art_inset,
         NP_POS_X=max(NP_MARGIN, corner_x(g.bar + (NP_TOP - 16) // 2, 16)) + 6,  # "3 of 12", 16px text
@@ -692,10 +696,10 @@ def playing_page(root, g=SET0):
         for key in n[2]:
             if key.endswith(':text_color'): n[2][key] = NP_GREY
     if g.np_ipod:  # an iPod classic's times: beside the bar, centred on its rows as stock centres them
-        top = y + h // 2 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2
+        check(y + h // 2 == 255, 'Classic\'s times are centred on the bar at 255')
         for n, box_x, align in ((named['label_playtime'], x - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W, 'right'),
                                 (remain, x + w + NP_IPOD_TIME_GAP, 'left')):
-            n[1] = [box_x, top, NP_IPOD_TIME_W, inc('NP_BAR_IPOD') + 4]
+            n[1] = [box_x, NP_IPOD_TIME_Y, NP_IPOD_TIME_W, NP_IPOD_TIME_H]
             for state in [k.split(':')[1] for k in n[2] if k.endswith(':text_color')]:
                 n[2].update({f'style:{state}:text_color': '#FFFFFF', f'style:{state}:font_name': CLASSIC_LIGHT_FONT_NAME,
                              f'style:{state}:font_size': str(NP_IPOD_TIME_PX), f'style:{state}:text_align_h': align})

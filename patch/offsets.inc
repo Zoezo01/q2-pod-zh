@@ -144,15 +144,19 @@
 /* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, navigation.c paint_scrubber),
  * fitted to Apple's own 320 x 240 capture: the art's far edge SLANT_FAR/256 of its near one (118 of
  * 135 px); its reflection from SLANT_REFLECT_A/256 fading out over SLANT_REFLECT_PCT of the
- * column's height; the progress bar NP_BAR_IPOD high, Apple's, mirrored under it from SCRUB_REFLECT_A/256
- * over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX (tools/ipod.py NP_IPOD_TIME_W). */
+ * column's height; the progress bar NP_BAR_IPOD high, Apple's, mirrored under it from
+ * SCRUB_REFLECT_A/256 over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX, the largest
+ * whose line fits their box (the bar's rows and two each side), in NP_IPOD_TIME_W boxes that hold
+ * "-1:02:03" NP_IPOD_TIME_GAP from the bar (tools/ipod.py, test_ipod.py measures it). */
 #define SLANT_FAR 224
 #define SLANT_REFLECT_A 84
 #define SLANT_REFLECT_PCT 22
 #define NP_BAR_IPOD 17
 #define SCRUB_REFLECT_A 38
 #define SCRUB_REFLECT_ROWS 6
-#define NP_IPOD_TIME_PX 15
+#define NP_IPOD_TIME_PX 21
+#define NP_IPOD_TIME_W 56
+#define NP_IPOD_TIME_GAP 8
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
     int d = 2 * (r - y) - 1, v = (4 * r * r - d * d) * 64, s = 0;

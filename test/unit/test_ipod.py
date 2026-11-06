@@ -1,6 +1,7 @@
 """tools/ipod.py's page rewrites on small synthetic UI trees built to the shape each one checks for."""
 import copy
 import dataclasses
+import math
 import re
 
 import pytest
@@ -398,8 +399,9 @@ def test_playing_page_classic_ipod():
     assert n['label_ipod_pos'] in n['view_album'][3] and pos[0] == album[0] == title[0] == cover[0] + cover[2] + 12
     assert view[1] + title[1] >= n['img_more'][1][3] - 2 and pos[1] == album[1] + 28
     assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
-    assert x == ipod.with_geometry(dataclasses.replace(g, np_ipod=0)).NP_BAR[0] + ipod.NP_IPOD_TIME_W + ipod.NP_IPOD_TIME_GAP and x + w_ == 375 - x
     play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
+    assert play[1][0] == ipod.corner_x(g.bar + play[1][1], play[1][3]) and x + w_ == 375 - x and w_ >= 170  # the times' rows clear the glass
+    assert play[1][3] == bar + 4 and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_W
     assert play[1][0] + play[1][2] + ipod.NP_IPOD_TIME_GAP == x and remain[1][0] == x + w_ + ipod.NP_IPOD_TIME_GAP
     assert 2 * play[1][1] + play[1][3] == 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar
     assert play[2]['style:normal:font_name'] == ipod.CLASSIC_LIGHT_FONT_NAME == remain[2]['style:normal:font_name']
@@ -1158,3 +1160,16 @@ def test_lists_beside_settings_rows_take_item_height(monkeypatch):
     data = ipod.encode(list_page(path)); monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(data))
     assert named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))['list_view'][2]['item_height'] == '32'
     assert 'item_height' not in named(ipod.decode(ipod.patch_asset(path, data)))['list_view'][2]
+
+
+def test_classic_times_fit():
+    """Classic's times: "-1:02:03" fits NP_IPOD_TIME_W at NP_IPOD_TIME_PX with no switch for the hours, in the model
+    status_metrics uses (stb scales a font so that ascent - descent is its size; advances, no kerning), and
+    NP_IPOD_TIME_PX is the largest whose line fits the box's height, the bar's rows and two each side."""
+    from fontTools.ttLib import TTFont
+    f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
+    asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
+    width = lambda px: math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in '-1:02:03') * px / (asc - desc))
+    px, box = ipod.NP_IPOD_TIME_PX, ipod.inc('NP_BAR_IPOD') + 4
+    assert (px, width(px), ipod.NP_IPOD_TIME_W) == (21, 56, 56)
+    assert width(px) <= ipod.NP_IPOD_TIME_W and px <= box < px + 1
