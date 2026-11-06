@@ -9703,7 +9703,7 @@ for gate,clear in ((lambda m:m.byte(O['KEY_LOCKOUT'],8),lambda m:m.byte(O['KEY_L
                    (lambda m:m.word(ps['wheel_mute'],1),lambda m:m.word(ps['wheel_mute'],0)),
                    (lambda m:setattr(m,'fresh',0) or m.word(ps['wheel_frame_at'],m.now-O['WHEEL_FRESH_MS']),lambda m:setattr(m,'fresh',1))):
     m=thumb_page(); tp(m); thold(m); gate(m); tp(m,-50); assert toff(m)==0 and not m.get(ps['wheel_travel']) and traw(m)==2
-    clear(m); tp(m,-50); assert toff(m)<0; passed()
+    clear(m); tp(m,-50); tp(m); assert toff(m)<0; passed()  # a pass on: one pass's burst is held to the cap
 # A turn times the idle loop and the screen itself, and clicks once an album; the thumb holding still doesn't keep
 # the screen on.
 m=thumb_page(); tp(m); thold(m); m.calls=[]
@@ -9751,10 +9751,10 @@ trest(m); assert toff(m)==0; passed()
 def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
-tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); tspin(m,2500,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4
+tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # short of jump_ms
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
-# Centre opens the album the caption names, at once, however far ahead of the covers that is.
-m=thumb_page(); tp(m); thold(m); tspin(m,1000,-110); shown=tcaption(m); assert toff(m)!=0
+# Centre opens the album the caption names, at once, however far ahead of the covers that is (short of letters).
+m=thumb_page(); tp(m); thold(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown
 index=tindex(m); assert m.dispatched()[-1][1]==m.nodes[m.slide]['children'][index] and shown==f'Album {index}'; passed()
 
