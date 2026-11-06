@@ -224,6 +224,10 @@ int carousel_glide(void *x, int goal, unsigned ms, int easing) {
     ++glides, glide_goal = goal, glide_ms = (int)ms, glide_easing = easing;
     return 1;
 }
+/* navigation.c's big letter: the last one shown, and how many */
+static unsigned letter_shown;
+static int letters;
+void coverflow_letter(void *x, unsigned letter, unsigned now) { letter_shown = letter, ++letters; }
 int widget_invalidate_force(void *x, void *y) { wm_repaints += x == &wm_repaints; return 0; }
 unsigned widget_count_children(void *x) { return x == &wm_repaints ? 0 : W(x)->nkids; } /* no window stack */
 void *widget_get_child(void *x, unsigned i) { return &w[W(x)->kids[i]]; }
@@ -1864,7 +1868,7 @@ static void th_rest(void) {
 /* One cover alone in the frame, a albums from frac 0's centre, at a lead. */
 static void row_alone(unsigned *f, float lead, int a, const unsigned *art) {
     const unsigned *one[15] = { 0 };
-    one[a + 7] = art;
+    one[a - (int)floorf(lead + .5f) + 7] = art; /* the ring goes round the facing cover */
     cf_thumb_lead(lead);
     coverflow_render(f, PITCH, 0, one + 4);
 }
@@ -1904,7 +1908,7 @@ static void thumb_wheel(void) {
     /* Wheel Sensitivity scales the travel: 100% goes twice as far as 50%. */
     test_wheel_pct = 100;
     th_down();
-    th_pass(-36, 17);
+    for (int i = 0; i < 36; ++i) th_pass(-1, 17); /* slow: a burst would meet the cap */
     assert(fabsf(th[T_GOAL] - 2 * 35 * 36 / 200.f / 13) < .01f);
     test_wheel_pct = 50;
     th_rest();
@@ -2284,6 +2288,105 @@ static void thumb_wheel(void) {
     pressed = 1, frame_fail = 0, square_art = 0;
 }
 
+/* ---- Classic's thumb on the shipped numbers (theme.xml's coverflow.shelf): the cap at every
+   sensitivity, the letters after the dwell and back, and a long spin's landing. ---- */
+static int initial_of(int i) { char c = names[i][0]; return c >= 'a' && c <= 'z' ? c - 32 : c; }
+static void thumb_shipped(void) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    const cf_style_t fixture = shim_themes[1].cf;
+    shim_themes[1].cf = shipped;
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
+    open_page();
+    widget *s = slide(), *covers_view = &w[s->parent];
+    int n = s->nkids, *index = (int *)(s->raw + SLIDE_INDEX);
+    top_window = page;
+    th_pass(0, 17);
+    assert(wheel_raw == 2);
+    #define AT() ((float)*index + th[T_GOAL]) /* the goal in albums, wherever SLIDE_INDEX is */
+
+    /* The cap: top_speed albums a second at every Wheel Sensitivity, whatever the thumb does past it
+       (th_spin's ticks are 50%'s: 100 is 400 ticks/s at 200%, 57 albums/s uncapped). No letters yet. */
+    static const int pcts[] = { 50, 100, 200 };
+    for (int k = 0; k < 3; ++k) {
+        test_wheel_pct = pcts[k];
+        int letters0 = letters;
+        th_down();
+        th_spin(100, 340);
+        float from = AT(), peak = 0;
+        for (int i = 0; i < 15; ++i) {
+            th_spin(100, 17);
+            peak = fabsf(th[T_VEL]) > peak ? fabsf(th[T_VEL]) : peak;
+        }
+        float moved = AT() - from;
+        moved -= (float)n * floorf(moved / (float)n + .5f);
+        moved = moved < 0 ? moved + (float)n : moved; /* a small library wraps */
+        assert(moved > 20 * .255f * .9f && moved < 20 * .255f * 1.05f);
+        assert(peak < .0205f); /* albums a ms */
+        assert(letters == letters0);
+        th_rest();
+    }
+    test_wheel_pct = 50;
+
+    /* At the cap for jump_ms, letters: each re-centres the row, at rest, on a letter's first album,
+       its letter shown; on in the album order, one a jump_ticks of travel. */
+    th_down();
+    int letters0 = letters, t = 0, prev = -1, spread = 0, canvas[16] = { 0 };
+    while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
+    assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 300);
+    for (int i = 0; i < 30; ++i) {
+        int was = letters;
+        if (i) th_spin(150, 17);
+        if (letters == was && i) continue;
+        assert(th[T_POS] == 0 && th[T_GOAL] == 0 && th[T_LEAD] == 0 && th[T_ON]);
+        assert(CAPTION(*index) && (*index == 0 || initial_of(*index) != initial_of(*index - 1)));
+        assert(letter_shown == (unsigned)initial_of(*index) || (!letter_shown && *index == 0));
+        assert(prev < 0 || *index > prev || *index == 0); /* forward, wrapping to the first */
+        prev = *index;
+        /* a frame decodes two covers at most, nearest first; the poll asks for frames until done */
+        int l0 = loads;
+        for (int f = 0; f < 10; ++f) {
+            int l1 = loads;
+            coverflow_paint(s, canvas);
+            assert(loads - l1 <= 2);
+        }
+        spread += loads - l0 > 2;
+    }
+    assert(spread);
+    assert(letters >= letters0 + 3);
+    /* Slowing under the cap: album by album again under the thumb; the lift lands on what's named. */
+    th_spin(40, 100); /* the rate falls in rate_down */
+    int jumped = letters;
+    float g0 = AT();
+    th_spin(40, 400);
+    assert(letters == jumped && AT() != g0);
+    th_rest();
+    assert(CAPTION(*index) && !*(int *)(s->raw + SLIDE_OFFSET));
+
+    /* Over 2000 albums under the cap (no letters), then a lift: SLIDE_INDEX takes the whole
+       albums, so the follower's numbers stay small and it lands exactly, on the album named. */
+    th_down();
+    float went = 0, last = AT(), most = 0;
+    for (int i = 0; i < 6600; ++i) {
+        th_spin(80, 17);
+        float d = AT() - last;
+        went += d - (float)n * floorf(d / (float)n + .5f);
+        last = AT();
+        most = fabsf(th[T_GOAL]) > most ? fabsf(th[T_GOAL]) : most;
+    }
+    assert(went > 2000 && most < 70 && letters == jumped);
+    char named[64];
+    snprintf(named, sizeof named, "%s", album_caption(covers_view));
+    th_rest();
+    assert(!strcmp(album_caption(covers_view), named) && CAPTION(*index));
+    assert(!*(int *)(s->raw + SLIDE_OFFSET) && th[T_POS] == 0 && th[T_GOAL] == 0);
+
+    close_page();
+    top_window = 0;
+    th_pass(0, 17);
+    shim_themes[1].cf = fixture;
+    #undef AT
+}
+
 int main(void) {
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
@@ -2423,6 +2526,7 @@ int main(void) {
     classic_light_eye();
     classic_light_follow();
     thumb_wheel();
+    thumb_shipped();
     flip_frames();
     sorting();
     artist_only();
@@ -2742,8 +2846,10 @@ def main():
     cf_style = [f'-DCF_STYLE{i}={{ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in m.items() if f.startswith('cf.')) + ' }'
                 for i, m in enumerate(({**ROLE_MACROS['minimal'], 'cf.art_persp': builtins()[0]['cf.art_persp']},))]
     # The wheel's numbers are retuned on the device: these cases pin the model, with its own fixed ones.
-    fixture = {**classic_light, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120}
+    # (letters off: thumb_shipped has them on the shipped numbers)
+    fixture = {**classic_light, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120, 'cf.jump_ticks': 0}
     cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')
+    cf_style.append('-DCF_SHIPPED={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DPINNED_FRAMES=0x8c470fe7u')
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):

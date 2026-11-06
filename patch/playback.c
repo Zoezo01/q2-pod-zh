@@ -315,7 +315,7 @@ void wheel_sample(int *s, int ret, char *info) {
         __sync_fetch_and_add(&wheel_travel, d / WHEEL_FINE);
         wh_acc = 0;
         /* Cover Flow's thumb (2): its travel counts as ticks towards Return's stop */
-        if (wheel_raw == 2)
+        if (wheel_raw == WHEEL_THUMB)
             for (wh_raw += d < 0 ? -d : d; wh_raw >= units; wh_raw -= units) {
                 wh_tick_at = now;
                 wh_since++;

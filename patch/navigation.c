@@ -982,6 +982,17 @@ int carousel_glide(void *w, int goal, unsigned ms, int easing) {
     return 1;
 }
 
+/* Cover Flow's big letter over w for LETTER_MS, or none: the wheel's jumps and the thumb's. */
+void coverflow_letter(void *w, unsigned letter, unsigned now) {
+    st.cf_letter = letter;
+    st.cf_letter_at = now;
+    st.cf_letter_surface = w;
+    if (letter)
+        rearm(&st.cf_letter_timer, cf_letter_expire, LETTER_MS);
+    else
+        stop_timer(&st.cf_letter_timer);
+}
+
 static void home_step(void *w, int dir, unsigned now, int jump) {
     int n = (int)widget_count_children(w);
     int stride = slide_menu_item_width(w) + I(w, SLIDE_SPACER);
@@ -1008,13 +1019,7 @@ static void home_step(void *w, int dir, unsigned now, int jump) {
         if (a && (goal - live) * dir < 0) return; /* still arriving at the end */
         I(w, SLIDE_OFFSET) = live = goal - dir * stride / CF_BOUNCE;
     }
-    st.cf_letter = letter;
-    st.cf_letter_at = now;
-    st.cf_letter_surface = w;
-    if (letter)
-        rearm(&st.cf_letter_timer, cf_letter_expire, LETTER_MS);
-    else
-        stop_timer(&st.cf_letter_timer);
+    coverflow_letter(w, letter, now);
     const motion_t *glide =
         &theme()->motion[(coverflow_slide(w) ? MOTION_COVERFLOW_STEP : MOTION_STEP) + fast];
     if (!carousel_glide(w, goal, glide->ms, glide->easing)) {
@@ -5613,7 +5618,8 @@ static void lyric_poll(void) {
     }
     if (on != st.lyric_raw) {
         __sync_lock_test_and_set(&wheel_travel, 0);
-        wheel_raw = st.lyric_raw = on;
+        st.lyric_raw = on;
+        if (on || wheel_raw == WHEEL_RAW) wheel_raw = on; /* never the thumb's, handed over */
     }
     int travel = on ? __sync_lock_test_and_set(&wheel_travel, 0) : 0;
     /* Following, the wheel meets the resistance of a list's end: travel short of

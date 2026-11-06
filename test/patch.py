@@ -9565,8 +9565,8 @@ counter=m.u.hook_add(UC_HOOK_BLOCK,count_block,begin=BASE,end=SCRATCH-1)
 paint(m); rest_cost=instructions[0]
 assert len(m.draws)==1 and m.draws[0][1]==m.frames[0] and m.draws[0][2]==m.draws[0][3]==(0,0,O['CF_VIEW_W'],O['CF_VIEW_H'])
 assert m.draws[0][4]&1  # BITMAP_FLAG_OPAQUE
-# The placeholder first (fx_open), then the ring from -3 round album 0 of three, which repeats as the
-# slide_menu wraps: 0, 1, 2, 0, 1, 2, 0, each album decoded once.
+# The placeholder first (fx_open), then the ring round album 0 of three, nearest first, which repeats as
+# the slide_menu wraps: 0, 1, 2, 0, 1, 2, 0 from -3, each album decoded once.
 assert len(m.loads)==4 and m.loads[0]=='default_album_flow' and all(u.startswith('file://') for u in m.loads[1:]) and m.unloads==3
 tex_of={u:bytes(m.u.mem_read(m.pixels[u],160*160*4)) for u in m.pixels}
 ring_tex=[tex_of[m.loads[1+i%3]] for i in range(7)]
@@ -9584,8 +9584,8 @@ for light,paper in (('0',0),('1',0xff)):
     assert signed(c.get(cs+O['SLIDE_SPACER']))+cl_style['cf.view_h']==cl_style['cf.stride']
     paint(c); assert c.draws[0][2]==c.draws[0][3]==(0,0,O['CF_VIEW_W'],cl_style['cf.view_h'])
     frame_bytes=c.draws[0][5]; assert frame_bytes[0:3]==bytes([paper])*3
-    c_tex={u:bytes(c.u.mem_read(c.pixels[u],160*160*4)) for u in c.pixels}  # its ring of 15 loads from 7 back: album 2, 0, 1
-    assert host_render([c_tex[c.loads[1+(i+1)%3]] for i in range(7)],[(0,127)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None)[0]==frame_bytes  # square art
+    c_tex={u:bytes(c.u.mem_read(c.pixels[u],160*160*4)) for u in c.pixels}  # its ring of 15 loads nearest first: album 0, 1, 2
+    assert host_render([c_tex[c.loads[1+i%3]] for i in range(7)],[(0,127)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None)[0]==frame_bytes  # square art
     passed()
 # ... and mid-step, along coverflow.shelf.swing's path: the payload's arithmetic, the host's frames.
 cases=[(16384,127),(-16384,127),(26214,127),(32767,127),(-32768,127)]
@@ -9744,18 +9744,32 @@ for gate,clear in ((lambda m:m.byte(O['KEY_LOCKOUT'],8),lambda m:m.byte(O['KEY_L
                    (lambda m:m.word(ps['wheel_mute'],1),lambda m:m.word(ps['wheel_mute'],0)),
                    (lambda m:setattr(m,'fresh',0) or m.word(ps['wheel_frame_at'],m.now-O['WHEEL_FRESH_MS']),lambda m:setattr(m,'fresh',1))):
     m=thumb_page(); tp(m); thold(m); gate(m); tp(m,-50); assert toff(m)==0 and not m.get(ps['wheel_travel']) and traw(m)==2
-    clear(m); tp(m,-50); assert toff(m)<0; passed()
+    clear(m); tp(m,-50); tp(m); assert toff(m)<0; passed()  # a pass on: one pass's burst is held to the cap
 # A turn times the idle loop and the screen itself, and clicks once an album; the thumb holding still doesn't keep
-# the screen on. No letter jump: the speed curve replaces it, and every album the wheel passes is one it can land on.
+# the screen on.
 m=thumb_page(); tp(m); thold(m); m.calls=[]
 for _ in range(20*3): tp(m,-2,ms=60)
 assert len(did(m,'reset_poweroptions_timer'))>=20*3-2 and len(did(m,'buzzeer_switch'))==3
 m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
-m=thumb_page(); tp(m); thold(m); index=tindex(m); tspin(m,3000,-110)  # full speed for 3 s
-assert not any(v[1]==ps['cf_letter_expire'] for v in m.timers.values()) and index==tindex(m); shown=tcaption(m)
-trest(m); assert tcaption(m)==shown and m.texts()[0]==f'Album {tindex(m)}'; passed()
+# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does: each re-centres the covers, at rest, on the
+# next letter's first album, its letter shown and a click; slowing under the cap gives albums back under the thumb,
+# and a lift lands on the album named.
+def letter_on(m): return any(v[1]==ps['cf_letter_expire'] for v in m.timers.values())
+FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
+m=classic_light_new(DepthMachine,albums=9)
+for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
+m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
+tp(m); thold(m); tspin(m,500,-30); assert not letter_on(m)  # 318 ticks/s; the cap's 90 a little in
+seen=[tindex(m)]; m.calls=[]
+for _ in range(25):
+    tspin(m,17,-30); i=tindex(m)
+    if seen[-1]!=i: seen.append(i); assert toff(m)==0 and tcaption(m)==FRUIT[i]
+assert letter_on(m) and len(seen)>=4 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i) and did(m,'buzzeer_switch')
+tspin(m,100,-2); index=tindex(m); tspin(m,500,-2)  # 21 ticks/s
+assert tindex(m)!=index or toff(m)!=0
+trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)]; passed()
 # chord_gate: Centre under a held Return is dropped whole while the wheel's raw, the covers not landed for it.
 def twake(m,kind,key=O['KEY_CENTER'],gap=30):
     inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; n=len(m.calls)
@@ -9778,10 +9792,10 @@ trest(m); assert toff(m)==0; passed()
 def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
-tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); tspin(m,2500,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4
+tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # short of jump_ms
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
-# Centre opens the album the caption names, at once, however far ahead of the covers that is.
-m=thumb_page(); tp(m); thold(m); tspin(m,1000,-110); shown=tcaption(m); assert toff(m)!=0
+# Centre opens the album the caption names, at once, however far ahead of the covers that is (short of letters).
+m=thumb_page(); tp(m); thold(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown
 index=tindex(m); assert m.dispatched()[-1][1]==m.nodes[m.slide]['children'][index] and shown==f'Album {index}'; passed()
 

@@ -42,7 +42,8 @@ CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 
             'snap': 1000, 'spin': 1000, 'far_left': 2000, 'detent': 100, 'hold_ms': 30000, 'stop_ms': 1000, 'stop_left': 500,
             'rate_up': 1000, 'rate_down': 1000, 'back': 500, 'dead': 20, 'contact_ms': 200, 'aim_snap': 100, 'lead_from': 500,
             'lead_full': 1000, 'lead_ms': 1000, 'row_shift': 200, 'row_from': 1000, 'row_full': 2000, 'row_shrink': 50, 'row_flat': 800,
-            'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100, 'row_reach': 100}
+            'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100, 'row_reach': 100,
+            'jump_ms': 5000, 'jump_ticks': 200}
 # AWTK's easing_type_t, in enum order: a value's index is its number
 EASINGS = ('linear', 'quadratic_in', 'quadratic_out', 'quadratic_inout', 'cubic_in', 'cubic_out', 'sin_in', 'sin_out', 'sin_inout',
            'pow_in', 'pow_out', 'pow_inout', 'circular_in', 'circular_out', 'circular_inout', 'elastic_in', 'elastic_out', 'elastic_inout',
