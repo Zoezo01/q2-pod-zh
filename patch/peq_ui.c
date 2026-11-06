@@ -49,7 +49,7 @@ enum { BACK = 1000, APPLY, RESET, BYPASS, PER_OUTPUT, MENU, IMPORT, SAVE, ENABLE
        FREQUENCY, QUALITY, /* and these two the value menu */ KEYBOARD, STOCK, FILE_PREV, FILE_NEXT, RENAME, NAMED };
 #define FILE_PAGE 128
 #define GRAPH_W (375 - 2 * PEQ_GRAPH_X)
-#define ROW_X page_x() /* the theme's text column, as coverflow.c's page rows */
+#define ROW_X page_x()      /* the theme's text column, as coverflow.c's page rows */
 #define TONE accent_tone(2) /* the light tone */
 /* The page's two tabs: Simple, 3EQ's sliders (e3), and Advanced, the PEQ editor (ui.screen). */
 enum { SIMPLE, ADVANCED };
@@ -767,7 +767,8 @@ static int render(const void *unused) {
     } else if (ui.screen == NAMING) { /* the name in the edit over the title (below); the row is Done */
         row(view, n++, "Rename", NAMED);
     } else if (ui.screen == CONFIRM && ui.previous == DELETES) {
-        snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting()); fit(row(view, n++, text, YES));
+        snprintf(text, sizeof(text), "Delete %.100s? Confirm", deleting());
+        fit(row(view, n++, text, YES));
         row(view, n++, "Cancel", CANCEL);
     } else if (ui.screen == CONFIRM) {
         fit(row(view, n++, "Replace existing preset? Confirm", YES));
@@ -798,7 +799,8 @@ static int render(const void *unused) {
     widget_set_prop_int(view, "virtual_h", head + n * rh);
     /* ringnav keeps the selection above on a view whose row count it already knows. */
     if (ui.screen == PICK) widget_set_prop_int(view, "_ringnav_count", n);
-    if (head + n * rh < rows) { /* short lists: shrink so the list's white background never shows below the rows */
+    if (head + n * rh <
+        rows) { /* short lists: shrink so the list's white background never shows below the rows */
         widget_resize(list, 375, head + n * rh);
         widget_resize(view, 375, head + n * rh);
     }

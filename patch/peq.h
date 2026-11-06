@@ -203,7 +203,8 @@ typedef struct {
 /* The payload's shared helpers: coverflow.c's pages, hashes and worker, photos.c's, navigation.c's. */
 void *text(void *parent, int x, int y, int w, int h);
 void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *));
-void motion_open(void *page, const char *name); /* navigation.c: page_open's page takes the theme's hint */
+void motion_open(void *page,
+                 const char *name); /* navigation.c: page_open's page takes the theme's hint */
 void *page_title(void *body, const char *caption, int n);
 void page_empty(void *body, const char *name);
 #define PAGE_TITLE "_page_title" /* the caption the bar reads (navigation.c page_caption) */
@@ -410,7 +411,7 @@ int title_gone(void *w, void *event); /* ... and looks for its source again at t
 int bar_title_fits(void *label);      /* label's text fits the bar's title box */
 int ipod_light(void);   /* navigation.c: Light Mode */
 unsigned unflip(unsigned v); /* navigation.c: the grey Light Mode's flip turns into v */
-int song_seconds(void *r); /* navigation.c, its lengths' cache, for Cover Flow's tracks panel */
+int song_seconds(void *r);   /* navigation.c, its lengths' cache, for Cover Flow's tracks panel */
 int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */

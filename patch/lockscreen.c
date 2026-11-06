@@ -304,11 +304,15 @@ static void info_label(void *w, int x, int y, int ww, int h, int px, const char 
  * so the date's format is all there is to set; both clocks keep stock's format otherwise. */
 static void info_screen(void *win, void *img, int id) {
     int large = ringnav_lock_clock();
-    void *info = widget_lookup(win, "view_timeinfo", 1), *time = widget_lookup(win, "clock_time", 1),
-         *date = widget_lookup(win, "clock_date", 1), *pct = widget_lookup(win, "label_battery", 1),
-         *batt = widget_lookup(win, "img_battery", 1), *bar = widget_lookup(win, "pgbar_battery", 1),
-         *shade = widget_lookup(win, "view_shade", 1), *card = widget_lookup(win, "view_playinfo", 1),
-         *cover = widget_lookup(win, "img_playcover", 1), *hint = widget_lookup(win, "img_slide", 1);
+    void *info = widget_lookup(win, "view_timeinfo", 1),
+         *time = widget_lookup(win, "clock_time", 1), *date = widget_lookup(win, "clock_date", 1),
+         *pct = widget_lookup(win, "label_battery", 1),
+         *batt = widget_lookup(win, "img_battery", 1),
+         *bar = widget_lookup(win, "pgbar_battery", 1),
+         *shade = widget_lookup(win, "view_shade", 1),
+         *card = widget_lookup(win, "view_playinfo", 1),
+         *cover = widget_lookup(win, "img_playcover", 1),
+         *hint = widget_lookup(win, "img_slide", 1);
     /* Large's clock box holds its font, over the card's top rows: stock's card is above it, and
      * AWTK looks through the children from the last, so those taps stay the card's */
     if (info) widget_move_resize(info, 0, 0, 375, large ? 192 : 172);
@@ -330,7 +334,8 @@ static void info_screen(void *win, void *img, int id) {
     /* hidden, not emptied: stock's battery timer (0x52d474) writes its image again */
     if (batt) widget_set_visible(batt, 0, 0);
     if (bar) widget_set_visible(bar, 0, 0);
-    if (card) { /* its box holds the tray's ring and the row under it, so a hidden card takes them */
+    if (card) { /* its box holds the tray's ring and the row under it, so a hidden card takes them
+                 */
         widget_move_resize(card, 15, 185, 345, 87);
         widget_set_prop_int(card, "style:normal:bg_color", 0);
     }

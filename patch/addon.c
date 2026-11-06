@@ -1032,7 +1032,8 @@ static void append(lv_t *l, int from) {
     if (cur == from && l->sel > from) cur = l->sel;
     if (n && cur >= n) cur = n - 1; /* past an empty last page: its last row */
     if (cur < n - 1 || !pg.paging || l->sel < cur) l->sel = cur; /* unless still on its way */
-    if ((from + 1) * page_h(64) <= I(pg.view, W_H)) { /* page_list shrank a short first page: rebuilt */
+    if ((from + 1) * page_h(64) <=
+        I(pg.view, W_H)) { /* page_list shrank a short first page: rebuilt */
         show();
         return;
     }
