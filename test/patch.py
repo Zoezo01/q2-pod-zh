@@ -14286,6 +14286,13 @@ c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.
 on=next(b[2] for b in c.bands if b[0]==0)  # the played share
 assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
 c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
+assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']
+# An old page's art destroyed after a new page set its own: the new page keeps its slant.
+old,rows4=c.node('image'),c.alloc(16)
+for i in range(4): c.word(rows4+4*i,0)
+for art in (old,cart): assert c.call(address=payload_syms['stream_ipod'],args=(art,rows4,0,0),stack=(cbar,0),gap=0)==1
+f,ctx=next((f,x) for t,f,x in c.nodes[old]['handlers'] if t==O['EVT_DESTROY']); c.call(address=f,args=(ctx,c.event,0,0),gap=0)
+c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
 assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']; c.close(); passed()
 CONFIG.clear()
 # Play/Pause and the side buttons are Spotify's, on any page, after stock's key-lock filter, while it

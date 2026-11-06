@@ -5870,8 +5870,10 @@ static void np_art_poll(void) {
     widget_invalidate_force(st.np_cover, (void *)0);
 }
 
-/* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it. */
+/* Classic's Spotify or Internet Radio Now Playing closing: its art's slanted frame goes with it.
+ * Only the latest page's art: an old page destroyed after a new one set its own leaves that be. */
 static int stream_gone(void *ctx, void *event) {
+    if (ctx != st.stream_art) return 0;
     st.stream_art = st.stream_bar = (void *)0;
     coverflow_slant_close();
     return 0;
@@ -5890,8 +5892,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
     if (theme()->np_track[0].n < 2) return 0;
     int reflect = (NP_IPOD_ART * SLANT_REFLECT_PCT + 99) / 100, bw = 375 - 2 * NP_IPOD_BAR_X;
     widget_move_resize(art, SPOT_ART_X, NP_IPOD_ART_Y, NP_IPOD_ART, NP_IPOD_ART + reflect);
-    st.stream_art = art;
-    widget_on(art, EVT_DESTROY, stream_gone, (void *)0);
+    st.stream_art = art, st.stream_bar = (void *)0;
+    widget_on(art, EVT_DESTROY, stream_gone, art);
     for (unsigned i = 0; i < 4; ++i)
         if (text[i])
             widget_move_resize(text[i], NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y + dy[i],
