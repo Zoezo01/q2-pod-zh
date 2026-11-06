@@ -8358,7 +8358,8 @@ for label_name in ('label_del','label_rename'):
 passed()
 
 m=Machine(); style_color(m,red)
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','10'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+# config_value passes its default as one digit, '0' + def: SHORTCUT's SETTING_N_SHORTCUT (10) is ':', out of range, so no shortcut
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT',':'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; a missing MINIMAL_ACCENT is Ivory, the card (flags 1); Crimson is raw red (flags 2) in both.
