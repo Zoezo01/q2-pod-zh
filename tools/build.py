@@ -1110,6 +1110,7 @@ FUNCTIONS = {
  'deleteMusicFromFav': ('int', 'void *'),
  'batch_init_selectrecord': ('int', 'int'),
  'batch_set_selectitem': ('int', 'int'),
+ 'batch_get_selectitem': ('int', 'int'),
  'batch_add_file': ('int', 'int, int, void *, void *, int'),
  'navigator_window_is_exist': ('int', 'const char *'),
  'mclStartPlayer': ('int', 'void'),

@@ -458,8 +458,11 @@ it, aligned with those (see [internals.md](internals.md#drawing)), only on the `
 `patch/contexts.inc`: Home and the playlist list, whose rows open their tracks. Classic draws
 only the highlighted row's, white, on Home and every list, so it moves with the selection band
 (`chevron_sel`: stock's own are emptied); on Now Playing's More, only on rows that open a
-screen, not A-B Repeat, Speed or Delete; Minimal's Home has none. Tiles narrower
-than half the list (playlist Import/Export) get none. Those two tiles, built by stock at run time,
+screen, not A-B Repeat, Speed or Delete, and on a playlist's More, on Rename and Edit Playlist, not
+Delete Playlist; Minimal's Home has none. Under Classic, Playlists is a list of two-line rows with no
+toolbar: New Playlist… and Edit Playlists… end it, Edit Playlists is stock's select mode with Select
+All, Import, Export, Delete and Done as rows, and Return leaves that mode ([internals.md](internals.md#classics-playlists)). Tiles narrower
+than half the list (Minimal's playlist Import/Export) get none. Those two tiles, built by stock at run time,
 have no icon: the build gives the icon no width and stretches the label across the tile in stock's
 centred `s_scrlabel_white24c` (`tools/ipod.py`). The artist page's Albums tab drills but has no
 stock chevron or payload row layouter, so it has none.

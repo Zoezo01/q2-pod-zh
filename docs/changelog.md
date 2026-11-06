@@ -1,6 +1,8 @@
 # Changelog
 
 - **1.6.7**:
+  - Classic: **Playlists** is a list like Songs: two-line rows with each playlist's song count, quiet dots for More, and **New Playlist…** and **Edit Playlists…** at the end, so the wheel reaches them. Edit Playlists holds Select All, Import, Export and Delete, naming how many you've marked, and Return leaves it without leaving the page. **New Playlist** and **Rename** take the keyboard's look, with the bar saying what's asked; **Add to Playlist** has no dots, and **More** and **Add Songs** lose an empty gap and an extra first line.
+  - Playlists: back from an opened playlist keeps your row, and going back past **Add to Playlist** no longer leaves the normal page looking like the picker.
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Classic: **Now Playing** is its own page: a tilted cover over its reflection, its own scrubber, and Info as a list of rows. Spotify and Internet Radio look the same, and **Streaming**'s pages take the theme's rows.
   - Classic: confirm prompts get a two-part Cancel and OK control, deleting a playlist asks in a dark tray over the page, the hold menu and Shuffle, Repeat and Group by open over the page you're on, and toasts are a small box instead of a whole screen.

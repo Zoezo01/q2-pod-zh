@@ -3814,7 +3814,7 @@ class PlayingPlaylistMachine(QueueMachine):
         self.added=[]
         self.handlers[self.STOCK_PICK]='playlist_pick'
     def hook(self,u,address,size,unused):
-        if address==self.STOCK_PICK:
+        if address==self.STOCK_PICK and address in self.handlers:
             self.added.append(self.names()[1])
             self.returns(0); return
         opening=self.handlers.get(address)=='q:navigator_to_with_context' and self.text(u.reg_read(UC_MIPS_REG_A0))=='localmusic/playlist_page'
@@ -3915,6 +3915,236 @@ for stale in (False,True):
     if stale: m.word(O['MCL_POS'],2)
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
     assert m.added==([] if stale else ['B']); passed()
+
+# Classic's Playlists: rows over stock's own page. Stock's toolbar builder, row builder, row click and
+# its handlers run for real; each hidden widget's click runs its real handlers, nested, as stock's dispatch.
+class ClassicPlaylistMachine(PlaylistMachine):
+    REBUILD_DONE=0x4b3180
+    def __init__(self,count=3,mode=0):
+        SETUP[:]=[classic_light]
+        try: super().__init__(count,mode)
+        finally: SETUP.clear()
+        classic_light_boot(self,'1')
+        self.handlers.pop(self.STOCK_PICK); self.handlers.pop(0x4b1438)
+        self.handlers[syms['widget_restack']]='picker_restack'
+        self.mock('batch_get_selectitem','batch_set_selectitem','batch_init_selectrecord','batch_clear_selectrecord','batch_empty_selectrecord',
+                  'batch_set_allselect','batch_delete_file','exportPlayList','list_selectbox_visiable','list_selectbox_value','set_allchoice_img',
+                  'widget_layout','widget_set_children_layout','load_localclass_list','navbar_show_playgif','hscroll_label_set_only_focus',
+                  'getFormatString','gif_image_create','widget_add_timer','widget_set_tr_text','image_animation_play','image_animation_pause','navigator_to_with_context')
+        self.nav=self.node('view','view_navbar',visible=0); self.nodes[self.nav]['enable']=0; self.word(self.nav+O['W_PARENT'],self.top)
+        self.nodes[self.top]['children'].insert(0,self.nav)
+        # Stock's page init binds Return as widget_on(win, EVT_KEY_UP, 0x4b1310, win) at 0x4b3304; the bytes and the
+        # GOT entries it loads ($25 widget_on, $6 0x4b0000) pin this fixture's ctx to what the device runs.
+        gp=0x4b329c+0x573a24
+        assert [self.get(0x4b3304+4*i) for i in range(8)]==[0x24050114,0x8fbc0010,0x02003825,0x02002025,0x8f86aec4,0x8f99a7c0,0x0320f809,0x24c61310]
+        assert self.get(gp-0x5840)==syms['widget_on'] and self.get(gp-0x513c)==0x4b0000
+        self.nodes[self.top].setdefault('handlers',[]).append((O['EVT_KEY_UP'],0x4b1310,self.top))
+        self.word(syms['g_class_type'],0xf00b)
+        self.marks=[]; self.answer=10; self.confirms=[]; self.exports=[]; self.deletes=[]; self.dialogs=[]; self.mores=[]
+        self.on_click=lambda w,e:[self.nested(f,ctx,e,0,0) for t,f,ctx in list(self.nodes[w].get('handlers',())) if t==O['EVT_CLICK']]
+        self.stack=[self.node('window','localmusic_page'),self.top]; self.lists(*[f'List {i}' for i in range(count)])
+        self.word(syms['tools_pdeq_directory'],self.deque([self.song(c) for c in 'ABC']))  # a playlist's songs, as stock's query leaves them
+    def lists(self,*names):
+        records=[self.song(n) for n in names]
+        for r,n in zip(records,names): self.word(r+O['REC_TITLE'],self.string(n))
+        self.word(syms['p_deque_playlist'],self.deque(records))
+    def rebuild(self):
+        assert self.call(address=0x4b2dac,args=(self.top,0,0,0),gap=0,clear=False)==0
+        self.stack_rows(); return self.nodes[self.view]['children']
+    def stack_rows(self):  # stock's list layout: the shown rows in order, each its own height
+        y=0
+        for row in self.nodes[self.view]['children']:
+            if self.nodes[row]['visible']: self.word(row+O['W_Y'],y); y+=self.get(row+O['W_H'])
+        self.word(self.view+O['VIEW_CONTENT_H'],y); self.word(self.view+O['W_H'],294); self.word(self.view+O['W_W'],375)
+    def rows(self):  # the shown rows' first lines
+        return [self.row_text(r) for r in self.nodes[self.view]['children'] if self.nodes[r]['visible']]
+    def row_text(self,row):
+        button=self.nodes[row]['children'][0]; kids=self.nodes[button]['children']
+        info=next((k for k in kids if self.nodes[k]['name']=='view_info'),None)
+        return self.nodes[self.nodes[info]['children'][0] if info else kids[0]].get('text')
+    def row_button(self,text):
+        return next(self.nodes[r]['children'][0] for r in self.nodes[self.view]['children'] if self.row_text(r)==text)
+    def navbar(self): return self.u.mem_read(syms['g_navbar_status'],1)[0]
+    def bar(self): return self.nodes[self.nodes[self.nav]['children'][0]].get('text')
+    def tap(self,button,x=0):
+        ev=self.alloc(0x30); self.word(ev,O['EVT_CLICK']); self.word(ev+O['EVENT_X'],x)
+        self.on_click(button,ev); self.advance(0,clear=False)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,''); a,b,c,d=[u.reg_read(r) for r in REGS]
+        ret=None
+        if name=='widget_set_name': self.word(a+0x10,self.string(self.text(b)))  # stock's row click reads the field itself
+        if name=='batch_init_selectrecord': self.marks=[0]*a; ret=0
+        elif name=='batch_clear_selectrecord': self.marks=[]; ret=0
+        elif name=='batch_empty_selectrecord': ret=int(not any(self.marks))
+        elif name=='batch_set_selectitem': self.marks[a]^=1; ret=int(all(self.marks))
+        elif name=='batch_get_selectitem': ret=self.marks[a] if a<len(self.marks) else 0
+        elif name=='batch_set_allselect': self.marks=[a]*len(self.marks); ret=0
+        elif name=='batch_delete_file': self.deletes.append(list(self.marks)); ret=0
+        elif name=='exportPlayList': self.exports.append((a,list(self.marks))); ret=0
+        elif name=='list_selectbox_visiable' or name=='list_selectbox_value':
+            def walk(w):
+                for k in self.nodes[w]['children']:
+                    nm=self.nodes[k].get('name','') or ''
+                    if nm.startswith('img_choice'):
+                        if name.endswith('visiable'): self.nodes[k]['visible']=b; self.nodes[k]['image']='unselect'
+                        else: self.nodes[k]['image']='mulselect' if b else 'unselect'
+                    if nm.startswith('img_more') and name.endswith('visiable'): self.nodes[k]['visible']=int(not b)
+                    walk(k)
+            walk(a); ret=0
+        elif name=='widget_layout': self.stack_rows(); ret=0
+        elif name=='getFormatString': self.u.mem_write(b,b'Total %d songs\0'); ret=0
+        elif name=='navigator_to_with_context':
+            page=self.text(a)
+            if page=='dialog/confirminfo_dialog': self.confirms.append(self.get(b)); ret=self.answer
+            elif page=='localmusic/playlistsmore_page': self.mores.append(b); ret=0
+            else: ret=0
+        elif name=='picker_dialog' and self.text(a)=='dialog/addplaylist_dialog':
+            self.dialogs.append(self.text(a)); ret=0
+        if ret is not None:
+            self.calls.append((name,a,b,c)); self.returns(ret); return
+        super().hook(u,address,size,unused)
+def cpm_wheel(m,key,n=1):
+    for _ in range(n): m.call(key); m.stack_rows()
+    m.paint(m.view)
+def cpm_centre(m):  # Centre on the selected row, the row's click running as stock's dispatch does
+    m.confirm(); m.advance(0,clear=False); m.stack_rows(); m.paint(m.view)
+NEW,EDIT='New Playlist…','Edit Playlists…'
+LISTS=['List 0','List 1','List 2']
+
+# The list: stock's rows two lines high, its tile row and toolbar hidden; New Playlist and Edit
+# Playlists follow, each 32 px; the bar says Playlists; none of select mode's rows show.
+m=ClassicPlaylistMachine(); kids=m.rebuild()
+assert m.rows()==LISTS+[NEW,EDIT] and m.bar()=='Playlists'
+assert m.nodes[kids[0]]['visible']==0 and m.nodes[m.nav]['visible']==0
+for row,text in zip(kids[2:5],LISTS):
+    button=m.nodes[row]['children'][0]; info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
+    title,second=m.nodes[info]['children']
+    assert m.get(row+O['W_H'])==52 and m.get(button+O['W_H'])==52 and m.get(button+O['W_W'])==375 and m.nodes[row]['name']=='_page_tall'
+    # A label draws nothing in a box shorter than its font: 28 and 17 px under Classic.
+    assert m.nodes[second]['text']=='3 Songs' and m.get(title+O['W_H'])==28 and m.get(second+O['W_H'])==18
+    assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==262
+    more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
+    assert m.nodes[more]['visible']==1 and m.get(more+O['W_X'])==273 and m.nodes[more]['image']=='unselect'
+action=[r for r in kids if m.row_text(r)==NEW][0]
+assert m.get(action+O['W_H'])==32 and m.get(m.nodes[m.nodes[action]['children'][0]]['children'][0]+O['W_H'])==32>=27
+# ... the separators: every shown row but the list's last.
+assert [m.nodes[r]['name'] for r in kids if m.nodes[r]['visible']]==['_page_tall']*4+['']; passed()
+
+# New Playlist and Edit Playlists end the list, so the wheel reaches them, and Centre reaches stock's own handlers.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
+cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==2
+cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==4 and not m.dialogs
+cpm_wheel(m,O['KEY_PREV']); assert m.selected(m.view)==3
+cpm_centre(m); assert m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0; passed()
+
+# Edit Playlists is stock's select mode with its toolbar hidden: Select All first, Import and Done last, the bar's own
+# word; the selection goes on the first playlist. Return leaves the mode, not the page, and stock's rows come back.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_NEXT'],4); cpm_centre(m)
+assert m.navbar()==1 and m.marks==[0,0,0] and m.nodes[m.nav]['visible']==0
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists' and m.selected(m.view)==1
+button=m.row_button('List 0'); choice=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_choice'))
+info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
+assert m.nodes[choice]['visible']==1 and m.get(choice+O['W_X'])==333 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==309
+f,ctx=m.handler(m.top,O['EVT_KEY_UP']); assert f!=0x4b1310
+ev=m.alloc(0x40); m.word(ev,O['EVT_KEY_UP']); m.word(ev+O['EVENT_KEY'],O['KEY_RETURN'])
+assert m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)==11; m.advance(0,clear=False)
+assert m.navbar()==0 and m.top in m.stack and m.rows()==LISTS+[NEW,EDIT] and m.bar()=='Playlists' and m.selected(m.view)==0
+# ... and out of it, Return is stock's: the page closes.
+assert m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)==11 and any(c[0]=='q:window_close' or c[0]=='window_close' for c in m.calls); passed()
+
+# Marks name their count: Export and Delete appear once one is marked, the selection stays on its row as they do.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); m.tap(m.row_button(EDIT)); m.stack_rows(); m.paint(m.view)
+cpm_wheel(m,O['KEY_NEXT']); assert m.selected(m.view)==2
+cpm_centre(m); assert m.marks==[0,1,0] and m.bar()=='1 Selected' and m.selected(m.view)==2
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Export 1 Playlist','Delete 1 Playlist…','Done']
+m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected' and m.rows()[-3:-1]==['Export 2 Playlists','Delete 2 Playlists…']
+m.tap(m.row_button('Select All')); assert m.marks==[1,1,1] and m.bar()=='3 Selected' and m.rows()[-2]=='Delete 3 Playlists…'
+# ... Select All again clears them, stock's toggle.
+m.tap(m.row_button('Select All')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists' and m.rows()[-2:]==['Import Playlists','Done']; passed()
+
+# Export in select mode reaches stock's handler, marked: exportPlayList's first argument 0 and the marks kept.
+m=ClassicPlaylistMachine(); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
+m.tap(m.row_button('Export 1 Playlist'))
+assert m.confirms and m.exports==[(0,[0,1,0])] and not m.deletes
+# A dialog's close is stock's mode's end: its foreground handler rebuilds, and the rows follow.
+m.answer=0; assert m.call(address=m.REBUILD_DONE,args=(m.top,0,0,0),gap=0,clear=False)==0; m.stack_rows()
+assert m.navbar()==0 and m.rows()==LISTS+[NEW,EDIT] and m.bar()=='Playlists'
+# ... and Export all goes through Select All.
+m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('Select All')); m.answer=10; m.tap(m.row_button('Export 3 Playlists'))
+assert m.exports[-1]==(0,[1,1,1]); passed()
+
+# Delete takes stock's confirm, once: Cancel deletes nothing, and OK deletes the marked. A row scrolled past or a selection
+# moved can't reach it: each row clicks its own action, and a turn of the wheel cancels a pending Centre.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); m.tap(m.row_button(EDIT)); m.stack_rows(); m.paint(m.view)
+m.tap(m.row_button('List 2')); m.stack_rows(); m.paint(m.view)
+assert m.rows()[-2]=='Delete 1 Playlist…'
+cpm_wheel(m,O['KEY_NEXT'],5); assert m.selected(m.view)==6   # Delete's row
+m.call(O['KEY_CENTER']); m.call(O['KEY_PREV'],gap=10); m.advance(O['DOUBLE_CLICK_MS'],clear=False); m.advance(0,clear=False); m.paint(m.view)
+assert not m.confirms and not m.deletes and m.selected(m.view)==5  # Export's row, never fired
+cpm_wheel(m,O['KEY_PREV'],3); assert m.selected(m.view)==2
+cpm_centre(m); assert m.marks==[0,1,1] and not m.confirms and not m.deletes  # the row's mark, nothing more
+m.answer=0; m.tap(m.row_button('Delete 2 Playlists…')); assert len(m.confirms)==1 and not m.deletes
+m.answer=10; m.tap(m.row_button('Delete 2 Playlists…')); assert len(m.confirms)==2 and m.deletes==[[0,1,1]]; passed()
+
+# Import is inside Edit Playlists, and on an empty list a row of its own beside New Playlist, over a label that holds its font.
+m=ClassicPlaylistMachine(0); kids=m.rebuild()
+assert m.rows()==[NEW,'Import Playlists'] and m.nodes[m.row_button(NEW)]['visible']
+note=next(k for k in m.nodes[m.top]['children'] if m.nodes[k]['name']=='_pl_none')
+assert m.nodes[note]['text']=='No Playlists' and m.nodes[note]['visible']==1 and m.get(note+O['W_H'])==32>=27 and m.get(note+O['W_Y'])==124
+m.tap(m.row_button('Import Playlists')); assert m.confirms and any(c[0]=='importPlayList' for c in m.calls)
+m.lists('Made'); m.rebuild(); assert m.rows()==['Made',NEW,EDIT] and m.nodes[note]['visible']==0
+m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('Import Playlists')); assert any(c[0]=='importPlayList' for c in m.calls); passed()
+
+# The picker: no toolbar, the list's rows without dots, New Playlist last, and a tap where dots would be picks, never More.
+m=ClassicPlaylistMachine(3,1); kids=m.rebuild()
+assert m.rows()==LISTS+[NEW] and m.bar()=='Playlists'
+button=m.row_button('List 1'); more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
+assert m.nodes[more]['visible']==0
+f,ctx=m.handler(button,O['EVT_CLICK']); assert f!=m.STOCK_PICK
+m.tap(m.row_button(NEW)); assert m.dialogs==['dialog/addplaylist_dialog']
+ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
+m.mock('tk_thread_create','tk_thread_start','widget_set_enable')
+m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False); assert not m.mores and any(c[0]=='tk_thread_create' for c in m.calls); passed()
+
+# A row's More: in the normal list a tap on the dots is stock's, and the hold finds the row by them; a row of ours has no
+# menu, so its hold does nothing under Classic (never Play/Pause).
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
+ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
+m.nested(0x4b1d24,m.row_button('List 2'),ev,0,0); assert m.mores==[2]
+m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog' and m.labels()[-1]=='More\u2026'
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV'],2)  # the end's bump, then the ring
+assert m.selected(m.view)==4
+m.press(200); before=m.top; assert m.hold()==11 and m.top==before; passed()
+
+# Dots and tick: the theme's own, in the row's coordinates, white or grey by the band: 18 px across, centred in the row.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
+more=next(k for k in m.nodes[m.row_button('List 1')]['children'] if m.nodes[k]['name'].startswith('img_more'))
+m.rounded=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(more,m.canvas,0,0),gap=0)
+assert [r['rect'] for r in m.rounded]==[(16,24,4,4),(23,24,4,4),(30,24,4,4)]; passed()
+m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
+choice=next(k for k in m.nodes[m.row_button('List 1')]['children'] if m.nodes[k]['name'].startswith('img_choice'))
+assert m.nodes[choice]['image']=='select' and m.marks==[0,1,0]
+m.call(address=HOOKS['widget_on_paint_border'][0],args=(choice,m.canvas,0,0),gap=0)
+assert [c[2:] for c in m.calls if c[0]=='canvas_fill_rect'][0]==(18,22); passed()
+
+# Stock's add mode is one global, left by a picker however it closes: a page coming back rebuilds as what it opened as.
+for cls in (PlaylistMachine,ClassicPlaylistMachine):
+    m=cls(3,0); kids=m.rebuild(); home=m.top; shown=len(kids)
+    picker=m.node('window','playlist_page',[m.node('scroll_view','scroll_view')]); m.word(m.nodes[picker]['children'][0]+O['W_PARENT'],picker)
+    m.word(m.mode,1); m.top,m.view=picker,m.nodes[picker]['children'][0]
+    if cls is ClassicPlaylistMachine: m.nav=m.node('view','view_navbar',visible=0); m.nodes[picker]['children'].insert(0,m.nav)
+    kids=m.rebuild(); assert m.get(m.mode)==1 and len(kids)==3+(cls is ClassicPlaylistMachine)
+    m.top,m.view=home,m.nodes[home]['children'][-1]
+    if cls is ClassicPlaylistMachine: m.nav=m.nodes[home]['children'][0]
+    kids=m.rebuild(); assert m.get(m.mode)==0 and len(kids)==shown; passed()
+
+# Back from an opened playlist keeps its row: opening one writes the browsing state the other lists' memory hashes.
+for cls in (PlaylistMachine,ClassicPlaylistMachine):
+    m=cls(3,0); kids=m.rebuild(); m.paint(m.view)
+    for _ in range(2): m.call(O['KEY_NEXT'])
+    m.paint(m.view); row=m.selected(m.view); assert row==2
+    m.u.mem_write(syms['g_local_classinfo_save']+4,b'\x07\0\0\0'); m.word(syms['g_class_type'],0xff13)
+    kids=m.rebuild(); m.paint(m.view); assert m.selected(m.view)==row; passed()
 
 # Short press toggles once; a hold opens one menu titled by its row, its release is swallowed and
 # the next short press toggles again. A repeated long event of the same press opens nothing.
@@ -18655,4 +18885,56 @@ m_,parent,bar=sb_machine(True,960,0,y=261); assert sb_drawn(m_,parent)==[]; pass
 # Minimal: nothing drawn, stock's bar keeps its colour.
 m_,parent,bar=sb_machine(False,960,0); m_.config['THEME']='0'; assert sb_drawn(m_,parent)==[]
 assert sb_stock(m_,bar)>>24==0xff; passed()
+# New Playlist and Rename under Classic, as they load: stock's edit at the keyboard's field, stock's Return under the chevron,
+# the status bar over the page's ramp, a field with no glass, a hint in the muted that holds in either half, and the bar's word.
+def pl_box(name,item,edit,light='1'):
+    SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT=light),k)]  # stored before QueueMachine's constructor reads it
+    try: q=LoadQueue()
+    finally: SETUP.clear()
+    q.mock('widget_paint'); classic_light_boot(q)
+    n={}
+    def add(kind,w,*kids): n[w]=q.node(kind,w,list(kids)); return n[w]
+    win=q.node('dialog',name,[add('list_item',item,add('edit',edit)),add('image','img_return')])
+    parents(q,win); q.word(win+O['W_PARENT'],q.wm); put(q,win,0,0,375,320); q.top=win; q.nodes[q.wm]=dict(type='window_manager',name='',children=[win],visible=1)
+    q.bar_title=q.node('hscroll_label','label_title'); q.bar=q.node('window','system_bar',[q.bar_title]); q.word(q.bar+O['W_PARENT'],q.wm); q.word(syms['system_bar'],q.bar)
+    ui_loaded(q,'dialog/'+name,win); q.image_size=(34,33); return q,win,n
+for name,item,edit,title,tips in (('addplaylist_dialog','list_item_ssedit','ssedit','New Playlist','Playlist Name'),
+                                  ('renameplaylist_dialog','list_item_edit','edit','Rename','Road Trip')):
+    q,win,n=pl_box(name,item,edit)
+    r=q.song('x'); q.word(r+O['REC_TITLE'],q.string('Road Trip')); q.word(syms['p_deque_playlist'],q.deque([q.song('y'),r])); q.word(0xa278a0,1)
+    bg(q,q.bar); q.nodes[n[edit]]['tips']='stock'; q.advance(0,clear=False)  # stock's init wrote its own
+    assert q.nodes[n[edit]]['tips']==tips and q.nodes[n[edit]]['style:empty:margin_left']==15
+    assert sb(q,n[item])==sb(q,n[edit])==(72,28,244,30) and sb(q,n['img_return'])==(30,26,42,34) and q.nodes[n['img_return']]['style']=='default'
+    assert q.nodes[n[item]]['style:normal:bg_color']==0 and q.nodes[q.bar_title]['text']==title
+    blank(q); bg(q,win)
+    assert [q.text(c[2]) for c in q.calls if c[0]=='widget_load_image']==['classic_light_kb_back','classic_light_field'] and ('widget_paint',q.bar) in [c[:2] for c in q.calls]
+    rows=[b[1] for b in q.bands if b[2]==375 and b[3]==1]; assert rows==list(range(320)); passed()
+
+# A long name's hint takes the size that fits, at the field's own width.
+q,win,n=pl_box('renameplaylist_dialog','list_item_edit','edit')
+r=q.song('x'); q.word(r+O['REC_TITLE'],q.string('Coding - Hacking Mode and Then Some')); q.word(syms['p_deque_playlist'],q.deque([r])); q.word(0xa278a0,0); q.advance(0,clear=False)
+assert q.nodes[n['edit']]['style:empty:font_size']==214*100//(39*35+1); passed()
+
+# More: its rows from the top under Classic, the row's whole width; Rename and Edit Playlist drill, Delete Playlist asks.
+def pl_more():
+    m=classic_light_new(PlaylistEditMachine); classic_light_boot(m,'1'); more=m.node('window','playlistsmore_page'); m.word(more+O['W_PARENT'],m.wm)
+    m.word(more+O['W_W'],375); m.word(more+O['W_H'],290); m.top=more; m.stack.append(more); rows=[]
+    for i,(item,name) in enumerate((('item_rename','label_rename'),('item_del','label_del'))):
+        button=m.node('button'); label=m.node('hscroll_label',name); m.nodes[button]['children'].append(label); m.word(label+O['W_PARENT'],button)
+        row=m.node('list_item',item,children=[button]); m.word(button+O['W_PARENT'],row); m.word(row+O['W_PARENT'],more); m.word(row+O['W_Y'],i*32); m.nodes[more]['children'].append(row); rows.append(row)
+    m.call(address=HOOKS['localmusic_playlistsmore_page_init'][0],args=(more,0,0,0),gap=0)
+    return m,more,rows
+m,more,rows=pl_more(); added=m.nodes[more]['children'][-1]
+assert wbox(m,added)[1]==64 and wbox(m,added)[3]==32
+for row,mark in zip((rows[0],rows[1],added),(True,False,True)):
+    button=m.nodes[row]['children'][0]; label=next(k for k in m.nodes[button]['children'] if m.nodes[k]['type']=='hscroll_label')
+    assert wbox(m,button)==(0,0,375,32) and wbox(m,label)[0]==20
+    last=m.nodes[row]['children'][-1]; assert (last!=button and m.nodes[last]['visible']==0 and wbox(m,last)[0]==302)==mark
+passed()
+
+# Add Songs: the bar holds the task's name and the list starts at its Search row, its long rows still only as selected.
+m,more,rows=pl_more(); f,ctx=m.handler(m.nodes[m.nodes[more]['children'][-1]]['children'][0],O['EVT_CLICK'])
+m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.page=m.top; m.view=m.find('scroll_view')
+m.choose(0); assert m.showlabels()[0]=='Search' and m.nodes[m.nodes[m.page]['children'][0]]['text']=='Add Songs'
+assert any(c[0]=='hscroll_label_set_only_focus' for c in m.calls); passed()
 print(f'{checks} MIPS execution scenarios passed; toolkit services mocked, stock lock filter executed.')

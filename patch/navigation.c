@@ -500,7 +500,9 @@ typedef struct {
     unsigned msg_timer;
     char msg_seen[128];
     /* Classic's T9 keyboard window, and Search with its tab group (search_open). */
-    void *kb_win, *search_win, *search_tabs;
+    void *kb_win, *search_win, *search_tabs, *pl_box;
+    unsigned pl_timer; /* pl_click's pending row, pl_action its index */
+    int pl_action;
     int search_px;           /* search_edit's size in its disabled state, 0 until set */
     const char *number_face; /* the slider page's value's, as slider_number last set it */
     int title_color;
@@ -1138,6 +1140,8 @@ typedef struct {
     const unsigned *title; /* the first text itself, for the iPod fast-scroll letter */
 } row_id_t;
 
+#define PL_MODE "_pl_mode" /* a playlist_page's add mode (ringnav_playlist) */
+
 /* The library browsing state both position memory and the queue menu key on. */
 static unsigned local_hash(unsigned h) {
     h = hash_bytes(h, g_class_type, 4);
@@ -1194,6 +1198,10 @@ static int context_now(unsigned *scope) {
         while (n < 1024 && g_folder_path[n]) ++n;
         if (!n || n == 1024) return -1;
         *scope = hash_bytes(FNV_SEED, g_folder_path, n);
+    } else if (!tk_strcmp(name, "playlist_page")) {
+        /* The list is the same whatever opening a row saves in the browsing state, so back keeps
+         * the row; the Add to Playlist picker keeps its own. */
+        *scope = (unsigned)widget_get_prop_int(top, PL_MODE, 0) + 1;
     } else if (contexts[ctx].kind == CTX_LOCAL) {
         unsigned h = local_hash(FNV_SEED);
         int cls = I(g_class_type, 0);
@@ -2337,10 +2345,14 @@ static void *more_image(void *w) {
     return (void *)0;
 }
 
+/* Classic's Playlists rows that aren't playlists (pl_action), which carry their own mark. */
+#define PL_ACTION "_pl_action"
 /* A widget in a DRILL window (contexts.inc). Its own window decides, not the top one, so a window
  * painted during a transition keeps its own rows. */
 static int drill(void *w) {
-    if (more_image(w)) return 0; /* stock's More hit test owns the trailing area */
+    /* stock's More hit test owns the trailing area, but for a selected-only chevron, left of it */
+    if (!theme()->chevron_sel && more_image(w)) return 0;
+    if (!tk_strcmp(widget_get_prop_str(w, "name", ""), PL_ACTION)) return 0;
     w = window_of(w);
     int ctx = w ? context_id(widget_get_prop_str(w, "name", (void *)0)) : -1;
     return ctx >= 0 && (contexts[ctx].flags & DRILL);
@@ -3186,11 +3198,13 @@ static void paint_separators(void *w, void *canvas) {
         int top = I(w, SCROLL_Y), h = T->page_detail, n = (int)widget_count_children(w);
         for (int i = top > 0 ? top / h : 0; i < n; ++i) {
             void *row = widget_get_child(w, i);
-            int y = I(row, W_Y) - top;
+            int y = I(row, W_Y) - top, rh = I(row, W_H);
             if (y >= I(w, W_H)) break;
-            if (row != sel_child && I(row, W_H) == h &&
+            /* the selected one may be the row's button (Classic's Playlists) */
+            if (row != sel_child && (rh == h || rh == geom(G_PITCH)) &&
+                (!sel_child || P(sel_child, W_PARENT) != row) &&
                 !tk_strcmp(widget_get_prop_str(row, "name", ""), PAGE_TALL))
-                paint_stops(canvas, 0, y + h - lines->n, I(w, W_W), lines->n, lines);
+                paint_stops(canvas, 0, y + rh - lines->n, I(w, W_W), lines->n, lines);
         }
     }
     stock_canvas_set_fill_color(canvas, fill);
@@ -3213,10 +3227,23 @@ static void paint_radio(void *w, void *canvas) {
         const scheme_t *S = scheme();
         /* Classic: a checked row's tick (dy, x, w of each 1 px line), the theme's own mark,
          * in the selection's text or the ink; stock's ring images are empty (ringnav_image_add). */
-        if (!P(canvas, CANVAS_LCD) || tk_strcmp(widget_get_prop_str(w, "image", ""), "select"))
-            return;
+        const char *image = widget_get_prop_str(w, "image", "");
+        if (!P(canvas, CANVAS_LCD)) return;
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         int x = I(w, W_W) / 2 - 6, y = I(w, W_H) / 2 - 4;
+        /* A playlist's quiet More: stock's dots, emptied as a ring (pl_row), in the second line's
+         * grey, white on the band: 4 px dots, 7 px apart. */
+        if (!tk_strcmp(image, "unselect") &&
+            tk_str_start_with(widget_get_prop_str(w, "name", ""), "img_more")) {
+            unsigned ink = painting_in(st.sel_accent) ? RGBA(S->sel_text) : ui_ink(RGBA(S->muted));
+            for (int i = 0; i < 3; ++i) {
+                rect_t dot = { x - 3 + i * 7, y + 2, 4, 4 };
+                fill_box(canvas, &dot, ink, 2);
+            }
+            stock_canvas_set_fill_color(canvas, fill);
+            return;
+        }
+        if (tk_strcmp(image, "select")) return;
         stock_canvas_set_fill_color(canvas, RGBA(hold_list(w)                 ? 0xfffffa
                                                  : painting_in(st.sel_accent) ? S->sel_text
                                                                               : S->ink));
@@ -6540,9 +6567,8 @@ static void kb_paint_key(void *w, void *canvas) {
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
-/* The field's image: 15 px caps round a stretched column, the row under it included; the glass in
- * it. */
-static void paint_field(void *w, void *canvas, int x, int y, int fw) {
+/* The field's image: 15 px caps round a stretched column, the row under it included. */
+static void paint_field_plain(void *w, void *canvas, int x, int y, int fw) {
     unsigned bitmap[64]; /* bitmap_t */
     if (widget_load_image(w, "classic_light_field", bitmap)) return;
     rect_t left = { 0, 0, 15, 31 }, mid = { 15, 0, 2, 31 }, right = { 17, 0, 15, 31 };
@@ -6551,6 +6577,10 @@ static void paint_field(void *w, void *canvas, int x, int y, int fw) {
     canvas_draw_image(canvas, bitmap, &left, &to_left);
     canvas_draw_image(canvas, bitmap, &mid, &to_mid);
     canvas_draw_image(canvas, bitmap, &right, &to_right);
+}
+/* ... with the glass in it. */
+static void paint_field(void *w, void *canvas, int x, int y, int fw) {
+    paint_field_plain(w, canvas, x, y, fw);
     paint_art(w, canvas, "classic_light_field_glass", x + 10, y + 7);
 }
 /* Stock's search_edit is disabled, so it paints in that state, hint and query alike: the hint's
@@ -6610,8 +6640,8 @@ static int search_gone(void *win, void *event) {
     if (win == st.search_win) st.search_win = st.search_tabs = (void *)0;
     return 0;
 }
-/* An edit clear, in the field's dark text, over paint_field's image. */
-static void search_field_style(void *edit) {
+/* An edit clear, in the field's dark text, over paint_field's image, its text margin in from it. */
+static void search_field_margin(void *edit, int margin) {
     static const char *const edit_state[] = { "normal", "focused",    "disable",
                                               "error",  "empty",      "empty_focus",
                                               "over",   "empty_over", "changed" };
@@ -6619,12 +6649,26 @@ static void search_field_style(void *edit) {
     for (unsigned k = 0; k < sizeof edit_state / sizeof *edit_state; ++k) {
         widget_set_prop_int(edit, style_key(key, edit_state[k], "bg_color"), 0);
         widget_set_prop_int(edit, style_key(key, edit_state[k], "round_radius"), 0);
-        widget_set_prop_int(edit, style_key(key, edit_state[k], "margin_left"), 32);
+        widget_set_prop_int(edit, style_key(key, edit_state[k], "margin_left"), margin);
         widget_set_prop_int(edit, style_key(key, edit_state[k], "margin_top"), 0);
         widget_set_prop_int(edit, style_key(key, edit_state[k], "margin_bottom"), 0);
         widget_set_prop_int(edit, style_key(key, edit_state[k], "font_size"), 26);
     }
     text_ink(edit, 0xff111111u, INK_EDIT);
+}
+static void search_field_style(void *edit) { search_field_margin(edit, 32); }
+/* A hint too wide for the room at the typed text's 26 takes a size of its own; none under 12, the
+ * smallest worth reading, however long a playlist's name.
+ * ponytail: stock's face averages 0.39 px a character per px; a hint of wide letters can still cut.
+ */
+static void field_tips(void *edit, const char *tips, int room) {
+    static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
+    char key[STYLE_KEY];
+    int fit = room * 100 / (39 * (int)strlen(tips) + 1);
+    if (fit < 12) fit = 12;
+    widget_set_prop_str(edit, "tips", tips);
+    for (unsigned k = 0; fit < 26 && k < sizeof empty / sizeof *empty; ++k)
+        widget_set_prop_int(edit, style_key(key, empty[k], "font_size"), fit);
 }
 static int search_key(unsigned key);
 static int t9_gone(void *ctx, void *event) {
@@ -6634,10 +6678,8 @@ static int t9_gone(void *ctx, void *event) {
 /* A search box alone on a page (peq.h edit_create), its keyboard about to open, with its hint;
  * under Classic Light, the keyboard's look. The page stays under the bar, unlike Search's
  * full-screen dialog, so the dark bar fills the strip between them and the bar says Search. The
- * box's foot clears T9's top, page y 30, so the keyboard doesn't move the page. A hint too wide for
- * the 212 px past the glass at the typed text's 26 takes a size of its own, as Search's does.
- * ponytail: stock's face averages 0.39 px a character per px; a hint of wide letters can still cut.
- * A card app's is 31 bytes at most (17 px); no hint goes under 12, the smallest worth reading.
+ * box's foot clears T9's top, page y 30, so the keyboard doesn't move the page. Its hint has the
+ * 212 px past the glass, as Search's does.
  */
 void t9_box(void *page, void *edit, const char *tips) {
     widget_set_prop_str(edit, "tips", tips);
@@ -6649,16 +6691,82 @@ void t9_box(void *page, void *edit, const char *tips) {
     st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
     widget_move_resize(edit, 72, 2, 244, 27);
     search_field_style(edit);
-    int fit = 212 * 100 / (39 * (int)strlen(tips) + 1);
-    if (fit < 12) fit = 12;
-    if (fit < 26) {
-        static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
-        char key[STYLE_KEY];
-        for (unsigned k = 0; k < sizeof empty / sizeof *empty; ++k)
-            widget_set_prop_int(edit, style_key(key, empty[k], "font_size"), fit);
-    }
+    field_tips(edit, tips, 212);
     widget_on(edit, EVT_DESTROY, t9_gone, 0);
     st.t9_page = page;
+}
+/* New Playlist and Rename, stock's dialogs as they load under Classic: the keyboard's page under
+ * the status bar, which says what's asked, the white chevron over stock's Return, a field with no
+ * glass, its hint a page's muted. Every name stock looks up stays. */
+#define PL_RENAME_ROW 0xa278a0 /* the row playlistsmore_page_init saved (0x4b3980) */
+static int pl_box_gone(void *win, void *event) {
+    if (win == st.pl_box) st.pl_box = (void *)0;
+    return 0;
+}
+/* Next pass: stock's init, which writes its own hint, has returned; the bar title stays until the
+ * dialog goes, as bar_title_sync doesn't name a dialog. */
+static int pl_box_due(const void *info) {
+    (void)info;
+    static const char *const empty[] = { "empty", "empty_focus", "empty_over" };
+    char key[STYLE_KEY];
+    void *win = st.pl_box, *lists = P(p_deque_playlist, 0);
+    if (!win) return 0;
+    void *edit = widget_lookup(win, "ssedit", 1), *r = (void *)0;
+    const char *title = "New Playlist", *tips = "Playlist Name";
+    if (!edit) {
+        edit = widget_lookup(win, "edit", 1);
+        title = "Rename";
+        if (lists && (unsigned)I(PL_RENAME_ROW, 0) < deque_size(lists))
+            r = deque_at(lists, (unsigned)I(PL_RENAME_ROW, 0));
+        tips = r ? P(r, REC_TITLE) : title;
+    }
+    if (edit) {
+        field_tips(edit, tips, 214);
+        for (unsigned k = 0; k < sizeof empty / sizeof *empty; ++k)
+            widget_set_prop_int(edit, style_key(key, empty[k], "tips_text_color"),
+                                (int)RGBA(flip_if(ipod_light(), 0x6b6d6b)));
+    }
+    if (st.bar_title) {
+        widget_set_text_utf8(st.bar_title, title);
+        theme_font(st.bar_title, ROLE_BAR, FONT_ROW);
+        widget_invalidate_force(st.bar_title, (void *)0);
+    }
+    return 0;
+}
+static void pl_box_open(void *win) {
+    static const char *const state[] = { "normal", "pressed", "over", "disable", "focused" };
+    static const char *const prop_name[] = { "bg_color", "border_color", "round_radius" };
+    char key[STYLE_KEY];
+    void *item =
+             widget_lookup(win, "list_item_ssedit", 1) ?: widget_lookup(win, "list_item_edit", 1),
+         *edit = widget_lookup(win, "ssedit", 1) ?: widget_lookup(win, "edit", 1),
+         *back = widget_lookup(win, "img_return", 1);
+    if (!item || !edit || !back) return;
+    for (unsigned s = 0; s < sizeof state / sizeof *state; ++s)
+        for (unsigned k = 0; k < sizeof prop_name / sizeof *prop_name; ++k)
+            widget_set_prop_int(item, style_key(key, state[s], prop_name[k]), 0);
+    widget_move_resize(item, 72, 28, 244, 30);
+    widget_move_resize(edit, 0, 0, 244, 30);
+    search_field_margin(edit, 15);
+    widget_use_style(back, "default");
+    widget_move_resize(back, 30, 26, 42, 34);
+    st.pl_box = win;
+    widget_on(win, EVT_DESTROY, pl_box_gone, win);
+    timer_add(pl_box_due, (void *)0, 0);
+}
+/* The dialog's own paint, under its children; the bar goes after the page, as Search's. */
+static void pl_box_paint(void *w, void *canvas) {
+    void *lcd = P(canvas, CANVAS_LCD), *bar = *(void *const *)system_bar;
+    if (!lcd) return;
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
+    for (int y = 0; y < 60; ++y)
+        bar_rect(canvas, RGBA(mix(0xb4bdc9, 0x8b93a0, y, 60)), 0, y, 375, 1);
+    paint_ramp(canvas, 60, 320, 0);
+    paint_art(w, canvas, "classic_light_kb_back", 43, 33);
+    paint_field_plain(w, canvas, 72, 28, 244);
+    if (bar) widget_paint(bar, canvas);
+    st.paint_w = w;
+    stock_canvas_set_fill_color(canvas, fill);
 }
 /* The dialog as it loads, before its init: every name stock looks up stays. It covers the bar, so
  * it paints the bar (search_paint); it's at 0, 0, so these boxes are the screen's. */
@@ -7029,6 +7137,8 @@ void *ringnav_ui_load(const char *name, void *parent) {
         msg_open(root);
         if (!tk_strcmp(loaded, "search_dialog")) search_open(root);
         if (!tk_strcmp(loaded, "kb_default_t9")) kb_open(root);
+        if (!tk_strcmp(loaded, "addplaylist_dialog") || !tk_strcmp(loaded, "renameplaylist_dialog"))
+            pl_box_open(root);
         if (time_form(root)) time_open(root);
     }
     if (root) motion_load(root, np);
@@ -7614,6 +7724,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         quick_page(w, canvas);
     if (w == st.msg_win || w == st.usb_win) msg_paint(w, canvas);
     if (w == st.search_win) search_paint(w, canvas);
+    if (w && w == st.pl_box) pl_box_paint(w, canvas);
     if (w == st.t9_page && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         dark_bar_rows(canvas, 0, 375, 34);
@@ -8814,8 +8925,14 @@ static void row_meta(void *w) {
 
 /* Only audited ordinary row constructors install this per-instance layouter. Stock still
  * positions every child, skips hidden controls, and owns clone/destruction and text overflow. */
+static void pl_fit(void *button);
 static int compact_row_layout(void *layout, void *row) {
     void *text = (void *)0, *title = (void *)0;
+    /* Classic's playlist rows hold their children in their own places: stock's layout has none */
+    if (!tk_strcmp(widget_get_prop_str(P(row, W_PARENT), "name", ""), PAGE_TALL)) {
+        pl_fit(row);
+        return 0;
+    }
     unsigned count = widget_count_children(row);
     const theme_t *T = theme();
     int tall = T->art_x && I(row, W_H) > geom(G_PITCH), plain = two_lines(row), choice = 0;
@@ -12212,7 +12329,9 @@ static void ple_show(void) {
                 : mode == 2 ? "Song Actions"
                             : "Remove song?",
                 ple.name);
-    ple.view = page_list(ple.page, ple.page, 0, title, n, 48);
+    /* a bar that holds captions has room for the task's name alone, and no first line for it */
+    ple.view = page_list(ple.page, ple.page, 0,
+                         mode == 1 && !theme()->page_title_h ? "Add Songs" : title, n, 48);
     static const char *const actions[] = { "Move Up", "Move Down", "Remove from Playlist" };
     if (mode == 1) {
         char search[160];
@@ -12239,6 +12358,9 @@ static void ple_show(void) {
                                          deque_at(ple.songs, (unsigned)(i - (mode == 0 ? 2 : 0))));
             page_row_detail(ple.view, i, caption, 0, ple_pick);
         }
+    /* only the selected row's long title moves, as Songs' */
+    for (int i = 0; !geom_val(V_TOOLBAR) && i < (int)widget_count_children(ple.view); ++i)
+        hscroll_label_set_only_focus(widget_get_child(widget_get_child(ple.view, i), 0), 1);
     if (n) ringnav_select(ple.view, mode == 0 ? ple.selected + 2 < n ? ple.selected + 2 : 0 : 0, n);
 }
 static int ple_open(void *ctx, void *event) {
@@ -12368,7 +12490,8 @@ int ringnav_playlistsmore(void *win, void *ctx) {
          * (SET0 72), holding a 335 px s_btn_listitem, its body high (68), its 52px icon at x 10 and
          * its 20px label at x 72. Edit Playlist follows the Delete row at the same spacing. */
         int h = geom(G_PITCH), inner = geom(G_BODY);
-        void *item = list_item_create(win, 0, 10 + 2 * h, 375, h);
+        /* (tools/ipod.py: a set without toolbars has them from the top) */
+        void *item = list_item_create(win, 0, (geom_val(V_TOOLBAR) ? 10 : 0) + 2 * h, 375, h);
         widget_use_style(item, "s_listitem_black");
         void *button = button_create(item, 20, 0, 335, inner);
         widget_use_style(button, "s_btn_listitem");
@@ -12389,8 +12512,15 @@ int ringnav_playlistsmore(void *win, void *ctx) {
             void *c = rows[i][1];
             if (rows[i][0]) widget_set_visible(rows[i][0], 0, 0);
             if (!c) continue;
-            widget_move_resize(c, geom_val(V_TEXT_X) - SET_STOCK_X, I(c, W_Y), I(c, W_W),
-                               I(c, W_H));
+            /* the row's whole width, so its chevron is the theme's: on all but Delete */
+            void *row = P(c, W_PARENT), *row_item = row ? P(row, W_PARENT) : (void *)0;
+            int x = geom_val(V_TEXT_X) - SET_STOCK_X;
+            if (row_item) {
+                widget_move_resize(row, 0, 0, 375, h);
+                x = geom_val(V_TEXT_X);
+                if (i != 1) widget_set_visible(image_create(row_item, 302, 0, 50, 0), 0, 0);
+            }
+            widget_move_resize(c, x, I(c, W_Y), I(c, W_W), I(c, W_H));
             theme_font(c, ROLE_TITLE, FONT_ROW);
         }
     }
@@ -12445,12 +12575,15 @@ static void qm_select(void) {
 /* Stock playlist rows use the queue in add mode 2. Guard their final dispatch as well. */
 #define PLAYLIST_PICK ((int (*)(void *, void *))0x4b1d24)
 static int qm_playlist_pick(void *ctx, void *event) {
+    char click[0x30];
     if (!qm_record()) {
         toast("Queue unchanged");
         return 0; /* a STOP would leave the list's scroll_view holding its grab */
     }
     qm_select();
-    return PLAYLIST_PICK(ctx, event);
+    /* Classic's picker has no dots: a tap at their place picks */
+    return PLAYLIST_PICK(
+        ctx, geom_val(V_TOOLBAR) ? event : pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
 
 static int qm_playlist_gone(void *ctx, void *event) {
@@ -12458,25 +12591,297 @@ static int qm_playlist_gone(void *ctx, void *event) {
     return 0;
 }
 
-static void qm_playlist_bind(void *w, int depth) {
+static int pl_pick(void *ctx, void *event);
+static void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
     if (!w || depth == 16) return;
     void *emitter = P(w, W_EMITTER);
     for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
-        if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == (void *)PLAYLIST_PICK &&
-            !B(item, EMIT_PENDING_REMOVE)) {
+        if (I(item, EMIT_TYPE) == EVT_CLICK && !B(item, EMIT_PENDING_REMOVE) &&
+            (P(item, 12) == (void *)PLAYLIST_PICK || P(item, 12) == (void *)pl_pick)) {
             void *ctx = P(item, 0);
-            widget_off_by_func(w, EVT_CLICK, (void *)PLAYLIST_PICK, ctx);
-            widget_on(w, EVT_CLICK, qm_playlist_pick, ctx);
+            widget_off_by_func(w, EVT_CLICK, P(item, 12), ctx);
+            widget_on(w, EVT_CLICK, pick, ctx);
             break;
         }
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
-        qm_playlist_bind(widget_get_child(w, i), depth + 1);
+        qm_playlist_bind(widget_get_child(w, i), depth + 1, pick);
 }
 
-/* Rebind the guarded Now Playing picker after stock rebuilds its rows. */
+/* Classic's Playlists: under a set without toolbars (toolbar 0) the page is rows, as Songs'. Stock
+ * still builds everything: its toolbar, hidden (tools/ipod.py), and its Import and Export tile row,
+ * hidden, stay as the click targets; the rows stock can't have are added after each rebuild and
+ * click those hidden widgets, so its mode, marks, dialogs and reload stay its own. Stock's own
+ * handlers, which the rows' dispatch looks up: */
+enum { PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE, PL_N };
+static const unsigned pl_stock[PL_N] = { 0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0,
+                                         0x4b2528, 0x4b23c0, 0x4b1ad0 };
+#define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4b1310)
+#define PL_MARKING "_pl_marks" /* the rows pl_rows last showed were select mode's */
+#define PL_NONE "_pl_none"     /* the empty list's label */
+
+/* A row's place on the list's two heights: name over second line in the page rows' boxes, which
+ * hold their fonts; the dots in stock's hit (x from 286) left of the chevron's column, or a mark at
+ * the picker's tick's. The text ends clear of whichever shows. */
+static void pl_fit(void *button) {
+    const theme_t *T = theme();
+    int h = I(button, W_H), width = 289;
+    for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
+        void *c = widget_get_child(button, i);
+        const char *name = widget_get_prop_str(c, "name", "");
+        if (tk_str_start_with(name, "img_more") && widget_get_visible(c)) {
+            width = 262;
+            widget_move_resize(c, 273, 0, 50, h);
+        } else if (tk_str_start_with(name, "img_choice") && widget_get_visible(c)) {
+            width = 309;
+            widget_move_resize(c, 333, 0, 26, h);
+            /* stock's mark is a disc: as a picker's, for paint_radio's tick */
+            if (!tk_strcmp(widget_get_prop_str(c, "image", ""), "mulselect"))
+                image_base_set_image(c, "select");
+        }
+    }
+    void *info = widget_lookup(button, "view_info", 0);
+    if (!info || widget_count_children(info) < 2) return;
+    widget_move_resize(info, T->page_x, 0, width, h);
+    widget_move_resize(widget_get_child(info, 0), 0, T->page_cap_y, width, T->page_cap_h);
+    widget_move_resize(widget_get_child(info, 1), 0, T->page_det_y, width, T->page_det_h);
+}
+
+/* Stock's row, as the list's other two-line rows: its art goes, its count reads "N Songs". */
+static void pl_row(void *item) {
+    const theme_t *T = theme();
+    char count[32];
+    void *button = widget_get_child(item, 0), *info = widget_lookup(button, "view_info", 0);
+    int h = T->page_detail;
+    if (!info || widget_count_children(info) < 2) return;
+    widget_set_name(item, PAGE_TALL);
+    widget_resize(item, I(item, W_W), h);
+    widget_move_resize(button, 0, 0, 375, h);
+    for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
+        void *c = widget_get_child(button, i);
+        const char *name = widget_get_prop_str(c, "name", "");
+        if (tk_str_start_with(name, "img_more")) {
+            /* emptied under the theme: paint_radio draws the dots; a picker has none */
+            image_base_set_image(c, "unselect");
+            if (I(PLAYLIST_ADD_MODE, 0)) widget_set_visible(c, 0, 0);
+        } else if (c != info && !tk_str_start_with(name, "img_choice"))
+            widget_set_visible(c, 0, 0);
+    }
+    void *title = widget_get_child(info, 0), *second = widget_get_child(info, 1);
+    const unsigned *s = widget_get_text(second);
+    unsigned songs = 0;
+    while (s && *s && (*s < '0' || *s > '9')) ++s;
+    while (s && *s >= '0' && *s <= '9') songs = songs * 10 + (*s++ - '0');
+    tk_snprintf(count, sizeof count, "%u %s", songs, songs == 1 ? "Song" : "Songs");
+    widget_set_text_utf8(second, count);
+    hscroll_label_set_only_focus(title, 1);
+    theme_font(title, ROLE_TALL, FONT_ROW);
+    row_meta(second);
+    pl_fit(button);
+}
+
+/* Each row's click runs next pass: stock's handler may rebuild the rows under it (a dialog's close
+ * does) and it finds its widget by handler, as nothing stock names. The row is the action, whatever
+ * scrolled: no index reaches stock. */
+static void pl_rows(void *win);
+static int pl_page(void *win) {
+    return win && !tk_strcmp(widget_get_prop_str(win, "name", ""), "playlist_page");
+}
+static void *pl_target(void *parent, unsigned fn) {
+    for (unsigned i = 0, n = parent ? widget_count_children(parent) : 0; i < n; ++i) {
+        void *w = widget_get_child(parent, i), *emitter = P(w, W_EMITTER);
+        for (void *item = emitter ? P(emitter, 0) : 0; item; item = P(item, EMIT_NEXT))
+            if (I(item, EMIT_TYPE) == EVT_CLICK && P(item, 12) == (void *)fn &&
+                !B(item, EMIT_PENDING_REMOVE))
+                return w;
+    }
+    return (void *)0;
+}
+static int pl_due(const void *info) {
+    (void)info;
+    void *wm = window_manager(), *win = window_manager_get_top_window(wm);
+    int action = st.pl_action;
+    char click[0x30];
+    st.pl_timer = 0;
+    if (!pl_page(win)) return 0;
+    void *view = widget_lookup(win, "scroll_view", 1);
+    void *w = pl_target(widget_lookup(win, "view_navbar", 1), pl_stock[action]);
+    if (!w && view && widget_count_children(view))
+        w = pl_target(widget_get_child(view, 0), pl_stock[action]);
+    if (w) stock_dispatch_trampoline(w, pointer_event_init(click, EVT_CLICK, w, 0, 0));
+    /* a dialog's up, or gone: its close rebuilds the rows */
+    if (window_manager_get_top_window(wm) == win) pl_rows(win);
+    return 0;
+}
+static int pl_click(void *action, void *event) {
+    (void)event;
+    if (!st.pl_timer) {
+        st.pl_action = (int)(long)action;
+        st.pl_timer = timer_add(pl_due, (void *)0, 0);
+    }
+    return 0;
+}
+static void pl_action(void *view, const char *caption, int action, int into) {
+    int h = geom(G_PITCH);
+    void *item = list_item_create(view, 0, 0, 0, h);
+    widget_use_style(item, "s_listitem_black");
+    void *button = button_create(item, 0, 0, 375, h);
+    widget_use_style(button, "s_btn_listitem");
+    widget_set_name(button, PL_ACTION);
+    widget_on(button, EVT_CLICK, pl_click, (void *)(long)action);
+    void *label = hscroll_label_create(button, theme()->page_x, 0, 289, h);
+    widget_use_style(label, "s_scrlabel_white20l");
+    set_hscroll_label_attribute(label);
+    hscroll_label_set_only_focus(label, 1);
+    widget_set_text_utf8(label, caption);
+    theme_font(label, ROLE_TITLE, FONT_ROW);
+    if (into) widget_set_visible(image_create(button, 302, 0, 50, 0), 0, 0); /* page_into's */
+}
+
+/* Which rows the mode shows, their words, the bar's: on every rebuild, and after a click or mark.
+ * Moving between normal and select mode the selection stays on its playlist; marks only add rows
+ * after it, so the count that load() would reset it on follows. */
+static void pl_rows(void *win) {
+    void *view = widget_lookup(win, "scroll_view", 1), *nav = widget_lookup(win, "view_navbar", 1);
+    void *lists = P(p_deque_playlist, 0);
+    if (!view) return;
+    int add = I(PLAYLIST_ADD_MODE, 0), marking = !add && g_navbar_status == 1, marks = 0,
+        was = widget_get_prop_int(win, PL_MARKING, 0), n = lists ? (int)deque_size(lists) : 0,
+        count = (int)widget_count_children(view);
+    for (int i = 0; marking && i < n; ++i) marks += batch_get_selectitem(i) == 1;
+    char words[48];
+    void *row[PL_N] = { 0 };
+    int show[PL_N] = { marking,   !marking, !marking && n > 0, marking || !n, marks > 0,
+                       marks > 0, marking };
+    if (add)
+        row[PL_NEW] = count ? widget_get_child(view, count - 1) : (void *)0;
+    else if (count >= PL_N)
+        for (int i = 0; i < PL_N; ++i) row[i] = widget_get_child(view, i ? count - PL_N + i : 1);
+    /* PAGE_TALL's the separators': every row shown but the list's last */
+    int last = 1;
+    for (int i = PL_N - 1; i >= 0; --i) {
+        if (!row[i]) continue;
+        int shown = show[i];
+        widget_set_visible(row[i], shown, 0);
+        widget_set_name(row[i], shown && !last ? PAGE_TALL : "");
+        if (shown) last = 0;
+        if (!shown) widget_move_resize(row[i], 0, 0, 375, geom(G_PITCH));
+    }
+    for (int i = PL_EXPORT; marks && i <= PL_DELETE && row[i]; ++i) {
+        tk_snprintf(words, sizeof words, "%s %d Playlist%s%s", i == PL_EXPORT ? "Export" : "Delete",
+                    marks, marks == 1 ? "" : "s", i == PL_EXPORT ? "" : "\xe2\x80\xa6");
+        widget_set_text_utf8(widget_get_child(widget_get_child(row[i], 0), 0), words);
+    }
+    /* the bar reads the toolbar's first label, which stock writes with the last list opened */
+    tk_snprintf(words, sizeof words,
+                marks     ? "%d Selected"
+                : marking ? "Edit Playlists"
+                          : "Playlists",
+                marks);
+    if (nav && widget_count_children(nav)) widget_set_text_utf8(widget_get_child(nav, 0), words);
+    bar_title_sync(win);
+    void *none = widget_lookup(win, PL_NONE, 0);
+    if (!none && !n) {
+        none = text(win, 0, 124, 375, 32);
+        widget_set_name(none, PL_NONE);
+        widget_set_text_utf8(none, "No Playlists");
+        theme_font(none, ROLE_TITLE, FONT_ROW);
+        widget_set_prop_int(none, "style:normal:text_color", (int)SPOT_GREY);
+    }
+    if (none) widget_set_visible(none, !n, 0);
+    widget_set_prop_int(win, PL_MARKING, marking);
+    if (!marking && marking == was) return;
+    /* Stock showed its marks or the dots: the rows go to their places, the list to its new height.
+     */
+    for (int i = add ? 0 : 1; i < count; ++i) {
+        void *item = widget_get_child(view, i);
+        if (!tk_strcmp(widget_get_prop_str(widget_get_child(item, 0), "name", ""), PL_ACTION))
+            continue;
+        pl_fit(widget_get_child(item, 0));
+    }
+    widget_layout(view);
+    if (load_rows(&g_menu, view)) {
+        int id = widget_get_prop_int(view, SEL, -1);
+        if (marking != was) id = marking ? (n ? 1 : 0) : id <= 0 ? 0 : id <= n ? id - 1 : n + 1;
+        prop(view, COUNT, g_menu.rows);
+        prop(view, SEL, id);
+        if (marking != was) reveal(&g_menu, id, 1);
+    }
+    widget_invalidate_force(win, (void *)0);
+}
+/* The second handler of a playlist row, after stock's marked it. */
+static int pl_marked(void *win, void *event) {
+    (void)event;
+    if (g_navbar_status == 1) pl_rows(win);
+    return 0;
+}
+/* A picker has only stock's row click, without its More: a tap anywhere picks. */
+static int pl_pick(void *ctx, void *event) {
+    char click[0x30];
+    (void)event;
+    return PLAYLIST_PICK(ctx, pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
+}
+/* Return in select mode is Done, not the page. */
+static int pl_keyup(void *win, void *event) {
+    if (I(event, EVENT_KEY) == KEY_RETURN && g_navbar_status == 1) {
+        pl_click((void *)PL_DONE, event);
+        return STOP;
+    }
+    return PLAYLIST_KEYUP(win, event);
+}
+/* Stock leaves its mode set for a page gone in it (held Return, to Home). */
+static int pl_gone(void *win, void *event) {
+    (void)win, (void)event;
+    g_navbar_status = 0;
+    return 0;
+}
+static void pl_dress(void *win, int first) {
+    void *view = widget_lookup(win, "scroll_view", 1);
+    int add = I(PLAYLIST_ADD_MODE, 0);
+    if (!view) return;
+    /* the rows' second handler is select mode's; a picker's click loses its More */
+    for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
+        void *item = widget_get_child(view, i);
+        if (!i && !add) {
+            widget_set_visible(item, 0, 0);
+            continue;
+        }
+        pl_row(item);
+        if (!add) widget_on(widget_get_child(item, 0), EVT_CLICK, pl_marked, win);
+    }
+    if (add) {
+        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1);
+        if (win != st.qm_playlist)
+            qm_playlist_bind(win, 0, pl_pick); /* qm's guard ends in it too */
+    } else {
+        pl_action(view, "Select All", PL_SELECT_ALL, 0);
+        widget_restack(widget_get_child(view, widget_count_children(view) - 1), 1);
+        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1);
+        pl_action(view, "Edit Playlists\xe2\x80\xa6", PL_EDIT, 1);
+        pl_action(view, "Import Playlists", PL_IMPORT, 0);
+        pl_action(view, "Export", PL_EXPORT, 0);
+        pl_action(view, "Delete", PL_DELETE, 0);
+        pl_action(view, "Done", PL_DONE, 0);
+    }
+    pl_rows(win);
+    if (first && !add) { /* stock binds it with ctx win (0x4b3304) */
+        widget_off_by_func(win, EVT_KEY_UP, (void *)PLAYLIST_KEYUP, win);
+        widget_on(win, EVT_KEY_UP, pl_keyup, win);
+        widget_on(win, EVT_DESTROY, pl_gone, win);
+    }
+}
+
+/* After stock rebuilds its rows: the guarded Now Playing picker's rebind, Classic's rows. Stock's
+ * add mode is one global, left by any picker that closes, which it reads as this page comes back:
+ * each page keeps the one it opened with. */
 int ringnav_playlist(void *win) {
+    int mode = widget_get_prop_int(win, PL_MODE, -1), first = mode < 0;
+    if (first)
+        widget_set_prop_int(win, PL_MODE, I(PLAYLIST_ADD_MODE, 0));
+    else
+        I(PLAYLIST_ADD_MODE, 0) = mode;
     int result = stock_playlist_trampoline(win);
-    if (win == st.qm_playlist) qm_playlist_bind(win, 0);
+    if (win == st.qm_playlist) qm_playlist_bind(win, 0, qm_playlist_pick);
+    if (!geom_val(V_TOOLBAR)) pl_dress(win, first);
     return result;
 }
 
@@ -12546,7 +12951,7 @@ static int qm_run(const void *unused) {
             void *top = window_manager_get_top_window(window_manager());
             if (!tk_strcmp(widget_get_prop_str(top, "name", ""), "playlist_page")) {
                 st.qm_playlist = top;
-                qm_playlist_bind(top, 0);
+                qm_playlist_bind(top, 0, qm_playlist_pick);
                 widget_on(top, EVT_DESTROY, qm_playlist_gone, top);
             }
         }
