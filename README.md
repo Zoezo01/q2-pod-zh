@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/DiamondBond/q2-pod?style=flat-square&label=download&color=3D424B&cacheSeconds=86400" height="26"></a>
+  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/badge/download-latest-3D424B?style=flat-square" height="26"></a>
   <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-B99AC8?style=flat-square" height="26"></a>
   <a href="https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-D77868?style=flat-square" height="26"></a>
   <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-6FA3A0?style=flat-square" height="26"></a>
