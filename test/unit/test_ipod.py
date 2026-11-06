@@ -399,6 +399,7 @@ def test_playing_page_classic_ipod():
     assert [c[1] for c in info] == [[ix, lift + row * i, ipod.NP_INFO_NAME_W, row] for i in range(2)] + [
         [ix + ipod.NP_INFO_NAME_W, lift + row * i, 375 - 2 * ix - ipod.NP_INFO_NAME_W, row] for i in range(2)]
     assert lift + 2 * row <= n['slide_indicator1'][1][1] and all(c[2]['style:normal:text_align_h'] == 'left' for c in info[:2])
+    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20l' and c[2]['ellipses'] == 'true' for c in info[:2])
     assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20r' and c[2]['ellipses'] == 'true' for c in info[2:])
     assert [c[1] for c in b['view_info'][3]] == [[5 + (375 - 225) // 2, 6, 7, 8], [10 + (375 - 225) // 2, 6, 7, 8]]  # the others' lines
     assert n['view_lrc'][2]['self_layout'] == f'default(x=0,y={lift},w=375,h=178)'
