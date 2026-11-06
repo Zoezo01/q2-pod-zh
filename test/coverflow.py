@@ -1899,7 +1899,7 @@ def main():
         (tmp/'ffmpeg').chmod(0o755)
         binary = tmp/'coverflow_test'
         subprocess.run(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"',
-                        f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unused-function',
+                        f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-result', '-Wno-unused-parameter', '-Wno-unused-function',
                         *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(ROOT/'patch/coverflow.c'),
                         str(tmp/'test.c'), '-o', str(binary)], check=True)
         env = dict(os.environ)

@@ -1154,6 +1154,7 @@ static void got(void) {
         l->live = !strcmp(f[2], "refresh");
         pg.again = now + ADDON_LIVE_MS;
         if (l->state != K_READY || hash != l->hash) {
+            if (pg.next == G_ROW) stop_timer(&pg.go); /* a queued click belongs to the old rows */
             keep_sel();
             drop();
             pg.buf[0] = reply, pg.pages = 1, reply = 0;

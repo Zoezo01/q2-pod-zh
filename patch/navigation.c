@@ -8195,6 +8195,7 @@ static const char *svc(int i, int label) {
     return svc_fixed[i < 2 ? i : i - st.svc_n][label];
 }
 static void svc_hidden(char *s) {
+    s[0] = 0; /* as root_read: a missing key leaves s alone */
     toolsReadConfig("/mnt/data/config.ini", "Q2POD", "STREAMHIDE", s, "");
 }
 static char *svc_find(char *hide, int i) {

@@ -609,6 +609,15 @@ static int rebuild(int keep) {
     s.dirty = 1;
     return 1;
 }
+/* Stock's own queue edits (View Queue's delete) resize the queue behind advanced play, so its
+ * indices name other tracks or none: a new order over the queue as it is now, as a new load of
+ * a local queue gets (the only kind advanced play runs on). Play Next's list goes with it. */
+static void follow_queue(void) {
+    if (!s.active || (queue() ? deque_size(queue()) : 0) == s.n) return;
+    close_preload();
+    s.npend = 0;
+    s.active = rebuild(0);
+}
 int playback_option(int kind) {
     return kind == 0 ? (s.active ? s.shuffle : 0) : kind == 1 ? (s.active ? s.repeat : 2) : s.folder;
 }
@@ -785,6 +794,7 @@ static void commit(unsigned next) {
 #define VIEW_QUEUE_RET 0x529944 /* View Queue's row, past its bounds checks */
 int ringnav_start_queue(int at) {
     unsigned x = (unsigned)at;
+    follow_queue();
     if (__builtin_return_address(0) == (void *)VIEW_QUEUE_RET && x == (unsigned)M(MCL_POS) &&
         playback_keeps(queue(), at)) {
         playback_np();
@@ -887,6 +897,7 @@ static int list_end(void) {
 unsigned auto_nexts __attribute__((section(".scratch"))); /* tracks that ended by themselves */
 static int next_song(int automatic) {
     auto_nexts += automatic != 0;
+    follow_queue();
     if (!s.active) {
         if (list_end()) {
             close_preload();
@@ -924,6 +935,7 @@ int playback_back(void) {
     return to >= 0 && M(MCL_POS) == back_at && queue() && (unsigned)to < deque_size(queue()) ? to : -1;
 }
 int ringnav_prev(void) {
+    follow_queue();
     if (!s.active) {
         int left = M(MCL_POS), result = stock_prev_trampoline();
         back_to = M(MCL_MODE) == 2 && M(MCL_POS) != left ? left + 1 : 0;
@@ -1620,6 +1632,7 @@ void playback_poll(void) {
         restart_ask = 0;
         toast("Press again to restart");
     }
+    follow_queue(); /* before Crossfade reads the next track */
     xfade_poll(playback_next(), !s.active && M(MCL_MODE) == 2);
     mono_sync();
     unsigned now = time_now_ms();
