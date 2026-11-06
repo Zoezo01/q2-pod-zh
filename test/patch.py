@@ -12169,17 +12169,20 @@ ctx,param=m.alloc(0x104),m.alloc(16); m.word(ctx+0x100,param); m.word(param+12,1
 assert m.nested(m.opts[20108],0x5150,ctx,0)==0 and m.get(param+12)==0x200001  # | X509_V_FLAG_NO_CHECK_TIME
 m.back(); assert m.labels()[0]=='Internet Radio'
 m.wifi=-1; m.row(3); assert m.labels()==['No Wi-Fi'] and len(m.threads)==1; m.back(); m.wifi=3; passed()
-# By Genre: the tags' CSV, then a tag's stations by its name, %-encoded.
+# By Genre: the tags' CSV, then a tag's stations by its name, %-encoded. Both A-Z, a leading article
+# skipped as in the library; a search pulled over them keeps the directory's vote order.
 m.row(5); m.reply=b'name,stationcount\npop,6387\nclassic rock,3312\n'; m.worker()
-assert m.labels()==['Genres','pop','classic rock']
-m.row(1); m.reply=b'#EXTM3U\n#EXTINF:1,Rock FM\nhttp://rock/fm\n'; m.worker()
+assert m.labels()==['Genres','classic rock','pop']
+m.row(0); m.reply=b'#EXTM3U\n#EXTINF:1,Rock FM\nhttp://rock/fm\n#EXTINF:1,The Arrow\nhttp://arrow/fm\n#EXTINF:1,Absolute\nhttp://abs/fm\n'; m.worker()
 assert m.opts[10002]=='https://all.api.radio-browser.info/m3u/stations/bytagexact/classic%20rock?order=votes&reverse=true&limit=100&hidebroken=true'
-assert m.labels()==['classic rock','Rock FM']
+assert m.labels()==['classic rock','Absolute','The Arrow','Rock FM']
+search('rock'); m.reply=b'#EXTM3U\n#EXTINF:1,Rock FM\nhttp://rock/fm\n#EXTINF:1,Absolute\nhttp://abs/fm\n'; m.worker()
+assert m.labels()==['rock','Rock FM','Absolute']; m.back(); assert m.labels()[0]=='Genres'
 # By Country: by code; a name may be quoted. A failed fetch says so; Return leaves the note.
-m.back(); m.back(); m.row(4); m.reply=b'name,iso_3166_1,stationcount\n"Taiwan, Republic Of China",TW,214\nGermany,DE,6496\n'; m.worker()
-assert m.labels()==['Countries','Taiwan, Republic Of China','Germany']
-m.row(0); m.code=0; m.worker(); assert m.labels()==['Directory unavailable'] and 'bycountrycodeexact/TW?' in m.opts[10002]
-m.back(); assert m.labels()==['Countries','Taiwan, Republic Of China','Germany']
+m.back(); m.row(4); m.reply=b'name,iso_3166_1,stationcount\n"Taiwan, Republic Of China",TW,214\nGermany,DE,6496\nThe Netherlands,NL,1200\n'; m.worker()
+assert m.labels()==['Countries','Germany','The Netherlands','Taiwan, Republic Of China']
+m.row(2); m.code=0; m.worker(); assert m.labels()==['Directory unavailable'] and 'bycountrycodeexact/TW?' in m.opts[10002]
+m.back(); assert m.labels()==['Countries','Germany','The Netherlands','Taiwan, Republic Of China']
 m.back(); m.calls=[]; m.back(); assert 'navigator_back' in [c[0] for c in m.calls]; m.close(); passed()
 
 # Download Cover & Lyrics' lyrics (onlinematch.c ringnav_lyric_search, at kugou_obtainlyric's entry): LRCLIB

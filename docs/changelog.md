@@ -3,6 +3,7 @@
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.
+  - Streaming: in **Internet Radio**, **By Country** and **By Genre** list their countries, genres and stations A to Z. Top Stations and Search still list the most-voted first.
 - **1.6.6**:
   - Display: **Theme: Classic** has a new look, closer to the iPod's: a glossy title bar that names the page, with the clock in the middle and the play state beside the battery (on Home it takes the place of "Q2 Pod"); smaller rows; glossy selection bars; a green battery; two-line Songs; and on Home in Split a pane that follows the highlighted row. It's light by default, with a dark version under Light Mode Off. Its accent starts on the iPod's Classic Blue, with the other colours as glossy bars. Its own **Library on Home**, **Row Preview** and **Row Art** settings, on by default, can turn off Home's slide-in Library, the pane's row preview and album covers in Albums. Corners and Centred Now Playing stay Minimal's. Choosing a theme now restarts the Q2, and the Theme row opens a list with the current theme marked, where it used to cycle.
   - Display: Home's **Shortcut** row can open **Playlists**.

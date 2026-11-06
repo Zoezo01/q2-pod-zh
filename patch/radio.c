@@ -144,11 +144,12 @@ enum { MENU, PICK, STATIONS };
 enum { R_PLAYING, R_FAVS, R_FEATURED, R_TOP, R_COUNTRY, R_GENRE, A_PICK, A_SEARCH, A_SHOW };
 
 /* The lists page and the Now Playing page, while open. note: a caption over no rows (loading or a
- * failed fetch) stands in for level's list; want is the level a fetch fills. */
+ * failed fetch) stands in for level's list; want is the level a fetch fills, az whether it sorts it
+ * A-Z. */
 static struct {
     void *page, *view, *edit; /* edit: the pull-down's search box */
     unsigned timer, go, leave;
-    int level, next, arg, want, note, genre, favs, from, rows[6], sel[3];
+    int level, next, arg, want, az, note, genre, favs, from, rows[6], sel[3];
     list_t pick, list;
     char caption[64];
 } ui __attribute__((section(".scratch")));
@@ -186,6 +187,27 @@ static void list_copy(list_t *to, const list_t *from) {
 
 static const char *name_of(const list_t *l, int i) { return l->buf + l->name[i]; }
 static const char *url_of(const list_t *l, int i) { return l->buf + l->url[i]; }
+
+extern void ringnav_sort_key(char *s);
+
+/* a before b A-Z, as the library sorts: without a leading article, ASCII case ignored. */
+static int before(const char *a, const char *b) {
+    char x[64], y[64];
+    tk_snprintf(x, sizeof x, "%s", a), tk_snprintf(y, sizeof y, "%s", b);
+    ringnav_sort_key(x), ringnav_sort_key(y);
+    return strcasecmp(x, y) < 0;
+}
+
+/* l A-Z, stable, so equal names keep the directory's vote order. ponytail: insertion sort,
+ * RADIO_MAX (200) rows once per fetch; qsort with precomputed keys if lists grow. */
+static void list_sort(list_t *l) {
+    for (int i = 1; i < l->n; ++i)
+        for (int k = i; k > 0 && before(name_of(l, k), name_of(l, k - 1)); --k) {
+            unsigned n = l->name[k], u = l->url[k];
+            l->name[k] = l->name[k - 1], l->url[k] = l->url[k - 1];
+            l->name[k - 1] = n, l->url[k - 1] = u;
+        }
+}
 
 /* path's bytes appended to buf at *n, below cap, then a newline. */
 static int slurp(const char *path, char *buf, unsigned *n, unsigned cap) {
@@ -545,10 +567,11 @@ static void fetch_cancel(void) {
     fx.body = 0;
 }
 
-/* RADIO_API path fetched on fx's pthread for level want, "Loading…" meanwhile. */
-static void fetch(const char *path, int want) {
+/* RADIO_API path fetched on fx's pthread for level want, A-Z when az, "Loading…" meanwhile. */
+static void fetch(const char *path, int want, int az) {
     fetch_cancel();
     ui.want = want;
+    ui.az = az;
     ui.sel[want] = 0;
     tk_snprintf(fx.url, sizeof fx.url, RADIO_API "%s", path);
     fx.n = 0;
@@ -601,6 +624,7 @@ static int tick(const void *unused) {
     if (fx.code == 200 && fx.n) {
         list_t *l = ui.want == PICK ? &ui.pick : &ui.list;
         list_set(l, fx.body, fx.n, ui.want == PICK, !ui.genre);
+        if (ui.az) list_sort(l);
         if (l->n)
             show(ui.want);
         else
@@ -631,15 +655,15 @@ static int go(const void *unused) {
     } else if (ui.next == A_SEARCH) {
         url_escape(ui.caption, key, sizeof key);
         tk_snprintf(path, sizeof path, "/m3u/stations/byname/%s" RADIO_QUERY, key);
-        fetch(path, STATIONS);
+        fetch(path, STATIONS, 0); /* Search and Top Stations stay by votes */
     } else if (ui.next == R_TOP) {
         tk_snprintf(ui.caption, sizeof ui.caption, "Top Stations");
-        fetch("/m3u/stations/topvote/100?hidebroken=true", STATIONS);
+        fetch("/m3u/stations/topvote/100?hidebroken=true", STATIONS, 0);
     } else if (ui.next != A_PICK) {
         ui.genre = ui.next == R_GENRE;
         fetch(ui.genre ? "/csv/tags?order=stationcount&reverse=true&limit=60"
                        : "/csv/countries?order=stationcount&reverse=true&limit=60",
-              PICK);
+              PICK, 1);
     } else {
         url_escape(url_of(&ui.pick, i), key, sizeof key);
         tk_snprintf(path, sizeof path,
@@ -647,7 +671,7 @@ static int go(const void *unused) {
                              : "/m3u/stations/bycountrycodeexact/%s" RADIO_QUERY,
                     key);
         tk_snprintf(ui.caption, sizeof ui.caption, "%s", name_of(&ui.pick, i));
-        fetch(path, STATIONS);
+        fetch(path, STATIONS, 1);
     }
     return 0;
 }
