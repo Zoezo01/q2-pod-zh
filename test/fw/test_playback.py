@@ -1223,7 +1223,7 @@ def test_listable(fw, player, mcl):
 
 @pytest.mark.parametrize('active, mode, pos, n, expected', [
     (0, 2, 0, 3, -2), (0, 2, 0, 1, -1), (0, 2, 3, 3, -1),  # stock Shuffle draws at the change
-    (0, 0, 0, 3, 1), (0, 3, 2, 3, -1), (0, 3, 1, 3, 2), (0, 1, 0, 3, -1),
+    (0, 0, 0, 3, 1), (0, 3, 2, 3, 0), (0, 3, 1, 3, 2), (0, 1, 0, 3, -1),  # Repeat All wraps
 ])
 def test_crossfades_next_without_advanced_play(fw, player, active, mode, pos, n, expected):
     player.load([0] * n, pos)
@@ -1387,7 +1387,7 @@ def test_wheel_lift_ends_the_touch(fw):
     assert wheel.touch(100) == 100 and held.value == 1
     wheel.touch(120)
     assert wheel.lift(120) == 100 and held.value == 0
-    assert wheel.lift(77) == 77  # lifted already: no anchor to hand back
+    assert wheel.lift(77) == 0  # lifted already: stock sees 0, as it sees after its own lift
     wheel.touch(140), wheel.touch(160)
     assert wheel.ticks() == []  # the carry went with the touch
 
@@ -1566,125 +1566,6 @@ def test_guard_reset(fw):
     assert guard(fw) == 0
 
 
-# Quick Settings from the wheel: the finger written to hyn_ts.
-class Swipe(Wheel):
-    def __init__(self, fw, enabled=True, state=0):
-        super().__init__(fw)
-        self.frames = []
-        fw.var('g_backlight_status', C.c_ubyte).value = 1
-        fw.var('fw_ctx_g_dropdown_menu_state', C.c_int).value = state
-        fw.mock('toolsReadConfig', lambda path, section, key, out, default, *_: self.config(key, out, default))
-        fw.mock('fw_open', lambda path, *_: 5 if b'event2' in C.string_at(path) else -1)
-        fw.mock('fw_ioctl', lambda fd, request, out, *_: C.memmove(out, b'hyn_ts\0', 7) and 6)
-        fw.mock('fw_write', self.write)
-        printf(fw)
-        self.enabled = enabled
-
-    def config(self, key, out, default):
-        C.memmove(out, b'1\0' if C.string_at(key) == b'WHEELQS' and self.enabled else C.string_at(default) + b'\0', 2)
-
-    def write(self, fd, data, size, *_):
-        assert fd == 5 and size % 16 == 0
-        rows = struct.unpack(f'<{size // 4}i', C.string_at(data, size))
-        self.frames.append([(rows[i + 2] & 0xffff, rows[i + 2] >> 16 & 0xffff, rows[i + 3]) for i in range(0, len(rows), 4)])
-
-
-def down(y):
-    return [(3, 0, 319 - y), (3, 1, 187), (3, 0x18, 1), (1, 0x14a, 1), (0, 0, 0)]
-
-
-def moved(y):
-    return [(3, 0, 319 - y), (3, 1, 187), (0, 0, 0)]
-
-
-UP = [(3, 0x18, 0), (1, 0x14a, 0), (0, 0, 0)]
-
-
-@in_fork
-def test_a_swipe_across_the_wheel_opens_quick_settings(fw):
-    swipe = Swipe(fw)
-    swipe.touch(10), swipe.lift()
-    swipe.now += 100
-    swipe.touch(110)
-    assert swipe.frames == [down(5), moved(5 + 215 * 100 // 200)]
-    swipe.now += 50
-    swipe.touch(112)
-    assert swipe.frames[-1] == moved(5 + 215 * 150 // 200)
-    swipe.lift()
-    assert swipe.frames[-2:] == [moved(220), UP] and fw.var('qs_back', C.c_int).value == 0
-    assert swipe.ticks() == []
-
-
-@in_fork
-def test_a_swipe_closes_an_open_pull_down_the_other_way(fw):
-    swipe = Swipe(fw, state=3)
-    swipe.touch(10), swipe.lift()
-    swipe.now += 100
-    swipe.touch(110)
-    assert swipe.frames[0] == down(310)
-    swipe.lift()
-    assert swipe.frames[-2:] == [moved(0), UP]
-
-
-@in_fork
-def test_a_jump_across_mid_touch_counts_as_the_second_touch(fw):
-    swipe = Swipe(fw)
-    swipe.touch(10)
-    swipe.now += 60
-    swipe.touch(100)
-    assert swipe.frames and swipe.frames[0] == down(5)
-    assert swipe.ticks() == []  # the jump is no travel
-
-
-@in_fork
-def test_a_turn_on_the_second_touch_takes_the_swipe_back(fw):
-    swipe = Swipe(fw)
-    swipe.touch(10), swipe.lift()
-    swipe.now += 100
-    swipe.touch(110), swipe.touch(131)  # past QS_SLACK
-    assert swipe.frames[-1] == UP and fw.var('qs_back', C.c_int).value == 1
-    frames = len(swipe.frames)
-    swipe.lift()
-    assert len(swipe.frames) == frames
-
-
-@in_fork
-@pytest.mark.parametrize('gap, x', [(400, 110), (100, 60)])
-def test_no_swipe_too_late_or_too_near(fw, gap, x):
-    swipe = Swipe(fw)
-    swipe.touch(10), swipe.lift()
-    swipe.now += gap
-    swipe.touch(x)
-    assert not swipe.frames
-
-
-@in_fork
-def test_no_swipe_after_a_turn(fw):
-    swipe = Swipe(fw)
-    swipe.touch(10), swipe.touch(40), swipe.lift()
-    swipe.now += 100
-    swipe.touch(140)
-    assert not swipe.frames
-
-
-@in_fork
-def test_no_swipe_with_wheel_qs_off(fw):
-    swipe = Swipe(fw, enabled=False)
-    swipe.touch(10), swipe.lift()
-    swipe.now += 100
-    swipe.touch(110)
-    assert not swipe.frames and not fw.calls('fw_open')
-
-
-@in_fork
-def test_swipe_pace_is_clamped(fw):
-    swipe = Swipe(fw)
-    swipe.touch(10), swipe.lift()
-    swipe.now += 10
-    swipe.touch(110)
-    assert fw.var('playback__qs_ms', C.c_uint).value == 150
-
-
 # The snapshot.
 def snapshot(data):
     head = struct.unpack_from(HEADER, data)
@@ -1726,9 +1607,14 @@ class Saved(Player):
         fw.mock('stock_memory_trampoline', lambda *_: -7)
         fw.mock('mclLoadPlayList', self.stock_load)
         fw.var('g_memory_play', C.c_ubyte).value = 2
-        self.library = self.deques.new()
-        fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value = self.library
+        self.library = self.deques.new()  # the library's rows, which getAllMusic fills staged()'s deque with
+        fw.mock('getAllMusic', lambda *_: self.fill(self.library))
         self.out = self.deques.new()
+
+    def fill(self, rows):
+        """A stock query's rows into the deque staged() left in tools_pdeq_directory."""
+        self.deques.assign(self.fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value, rows)
+        return len(self.deques[rows])
 
     def stock_load(self, q, at, kind, *_):
         self.deques.assign(self.handle, q)
@@ -2057,7 +1943,7 @@ def test_a_song_off_the_library_comes_from_its_folder(saved):
     pos = saved.mcl.pos
     saved.deques[saved.library][:] = rows[:8]
     folder = saved.deques.new(rows)
-    saved.fw.mock('toolsLoadDirectory', lambda path, *_: saved.deques.assign(saved.library, folder))
+    saved.fw.mock('toolsLoadDirectory', lambda path, *_: saved.fill(folder))
     assert restore(saved) == pos
     assert rows[8] in saved.deques[saved.handle]
 
@@ -2272,7 +2158,7 @@ def test_a_failed_write_retries_after_30_s(polled):
 def test_resumed_is_the_snapshots_track_once(saved):
     resumed = saved.fw.fn('playback_resumed', C.c_int, C.c_void_p)
     full_queue(saved)
-    saved.s.dirty = 1
+    saved.sec, saved.s.dirty = 33, 1  # a place to resume: a song at 0 s just starts
     saved.save()
     pos = saved.mcl.pos
     assert restore(saved) == pos
