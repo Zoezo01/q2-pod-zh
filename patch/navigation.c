@@ -1529,6 +1529,7 @@ void ringnav_select(void *w, int id, int rows) {
  * selection with the visible row nearest the viewport centre (ties go to the earlier row), so a
  * swipe never leaves the highlight pinned to the top edge. An interrupted recall glide is
  * retried once instead: the remembered row must not be silently replaced by a visible one. */
+static int pl_first(menu_t *m, int cur);
 static int reconcile(menu_t *m, int settle) {
     int id = m->kind == 3 ? slide_index(m->w) : widget_get_prop_int(m->w, SEL, -1);
     int cur = index_of(m, id);
@@ -1566,6 +1567,7 @@ static int reconcile(menu_t *m, int settle) {
         }
     }
     cur = best >= 0 ? best : partial;
+    if (!had && cur >= 0) cur = pl_first(m, cur);
     st.reveal_surface = (void *)0;
     select(m, cur >= 0 ? m->id[cur] : -1);
     return cur;
@@ -12675,7 +12677,8 @@ static int pl_click(void *action, void *event) {
     st.pl_timer = timer_add(pl_due, action, 0);
     return 0;
 }
-static void pl_action(void *view, const char *caption, int action, int into) {
+/* The row goes to index at, or after the rest when at < 0. */
+static void pl_action(void *view, const char *caption, int action, int into, int at) {
     int h = geom(G_PITCH);
     void *item = list_item_create(view, 0, 0, 0, h);
     widget_use_style(item, "s_listitem_black");
@@ -12691,6 +12694,7 @@ static void pl_action(void *view, const char *caption, int action, int into) {
     widget_set_text_utf8(label, caption);
     theme_font(label, ROLE_TITLE, FONT_ROW);
     if (into) widget_set_visible(image_create(button, 302, 0, 50, 0), 0, 0); /* page_into's */
+    if (at >= 0) widget_restack(item, at);
 }
 
 /* Which rows the mode shows, their words, the bar's: on every rebuild, and after a click or mark.
@@ -12711,17 +12715,19 @@ static void pl_rows(void *win) {
     for (int i = 0; i < count; ++i) {
         void *item = widget_get_child(view, i);
         int action = widget_get_prop_int(item, PL_ACT, 0) - 1;
-        if (action >= 0 && action < PL_N) row[action] = item;
+        if (action < 0 || action >= PL_N) continue;
+        row[action] = item;
+        widget_set_visible(item, show[action], 0);
+        if (!show[action]) widget_move_resize(item, 0, 0, 375, geom(G_PITCH));
     }
-    /* PAGE_TALL's the separators': every row shown but the list's last */
-    int last = 1;
-    for (int i = PL_N - 1; i >= 0; --i) {
-        if (!row[i]) continue;
-        int shown = show[i];
-        widget_set_visible(row[i], shown, 0);
-        widget_set_name(row[i], shown && !last ? PAGE_TALL : "");
+    /* PAGE_TALL's the separators': every row shown but the list's last, a playlist's or ours */
+    for (int i = count - 1, last = 1; i >= 0; --i) {
+        void *item = widget_get_child(view, i);
+        if (!widget_get_prop_int(item, PL_ACT, 0) && !widget_get_prop_int(item, PL_ROW, 0))
+            continue;
+        int shown = widget_get_visible(item);
+        widget_set_name(item, shown && !last ? PAGE_TALL : "");
         if (shown) last = 0;
-        if (!shown) widget_move_resize(row[i], 0, 0, 375, geom(G_PITCH));
     }
     if (row[PL_SELECT_ALL])
         widget_set_text_utf8(widget_get_child(widget_get_child(row[PL_SELECT_ALL], 0), 0),
@@ -12759,12 +12765,24 @@ static void pl_rows(void *win) {
     widget_layout(view);
     if (load_rows(&g_menu, view)) {
         int id = widget_get_prop_int(view, SEL, -1);
-        if (marking != was) id = marking ? (n ? 1 : 0) : id <= 0 ? 0 : id <= n ? id - 1 : n + 1;
+        /* select mode's rows: Select All, the playlists, its actions; the list's: New, Edit (with
+         * playlists), the playlists. Leaving, Select All goes to the first playlist, an action to
+         * Edit (Import on an empty list). */
+        if (marking != was)
+            id = marking ? (n ? 1 : 0) : id <= 0 ? (n ? 2 : 0) : id <= n ? id + 1 : 1;
         prop(view, COUNT, g_menu.rows);
         prop(view, SEL, id);
         if (marking != was) reveal(&g_menu, id, 1);
     }
     widget_invalidate_force(win, (void *)0);
+}
+/* With nothing remembered (a first open, or a count changed) Classic's Playlists starts on its
+ * first playlist, below New and Edit, as stock's and the iPod's lists of playlists alone do; an
+ * empty list on New. */
+static int pl_first(menu_t *m, int cur) {
+    for (int i = cur; i < m->n && widget_get_prop_int(P(m->at[cur], W_PARENT), PL_ACT, 0); ++i)
+        if (widget_get_prop_int(P(m->at[i], W_PARENT), PL_ROW, 0)) return i;
+    return cur;
 }
 /* The second handler of a playlist row, after stock's marked it. */
 static int pl_marked(void *win, void *event) {
@@ -12814,17 +12832,18 @@ static void pl_dress(void *win, int first) {
         pl_row(item);
         if (!add) widget_on(widget_get_child(item, 0), EVT_CLICK, pl_marked, win);
     }
+    /* New and Edit head the list, after the hidden tile row (a picker has none); Select All, select
+     * mode's first row, sits with them, as the two modes never show both */
     if (add) {
-        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1);
+        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 0);
     } else {
-        pl_action(view, "Select All", PL_SELECT_ALL, 0);
-        widget_restack(widget_get_child(view, widget_count_children(view) - 1), 1);
-        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1);
-        pl_action(view, "Edit Playlists\xe2\x80\xa6", PL_EDIT, 1);
-        pl_action(view, "Import Playlists", PL_IMPORT, 0);
-        pl_action(view, "Export", PL_EXPORT, 0);
-        pl_action(view, "Delete", PL_DELETE, 0);
-        pl_action(view, "Done", PL_DONE, 0);
+        pl_action(view, "Select All", PL_SELECT_ALL, 0, 1);
+        pl_action(view, "New Playlist\xe2\x80\xa6", PL_NEW, 1, 2);
+        pl_action(view, "Edit Playlists\xe2\x80\xa6", PL_EDIT, 1, 3);
+        pl_action(view, "Import Playlists", PL_IMPORT, 0, -1);
+        pl_action(view, "Export", PL_EXPORT, 0, -1);
+        pl_action(view, "Delete", PL_DELETE, 0, -1);
+        pl_action(view, "Done", PL_DONE, 0, -1);
     }
     pl_rows(win);
     if (first && !add) { /* stock binds it with ctx win (0x4b3304) */

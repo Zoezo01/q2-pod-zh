@@ -4064,14 +4064,16 @@ NEW,EDIT='New Playlist…','Edit Playlists…'
 LISTS=['List 0','List 1','List 2']
 
 # The list: stock's rows two lines high, its tile row and toolbar hidden; New Playlist and Edit
-# Playlists follow, each 32 px; the bar says Playlists; none of select mode's rows show.
+# Playlists head it, each 32 px; the bar says Playlists; none of select mode's rows show.
 m=ClassicPlaylistMachine(); kids=m.rebuild()
-assert m.rows()==LISTS+[NEW,EDIT] and m.bar()=='Playlists'
+assert m.rows()==[NEW,EDIT]+LISTS and m.bar()=='Playlists'
 assert m.nodes[kids[0]]['visible']==0 and m.nodes[m.nav]['visible']==0
-for row,text in zip(kids[2:5],LISTS):
+assert [m.row_text(r) for r in kids[1:4]]==['Select All',NEW,EDIT]
+for row,text in zip(kids[4:7],LISTS):
     button=m.nodes[row]['children'][0]; info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
     title,second=m.nodes[info]['children']
-    assert m.get(row+O['W_H'])==52 and m.get(button+O['W_H'])==52 and m.get(button+O['W_W'])==375 and m.nodes[row]['name']=='_page_tall'
+    assert m.get(row+O['W_H'])==52 and m.get(button+O['W_H'])==52 and m.get(button+O['W_W'])==375
+    assert m.nodes[row]['name']==('' if text==LISTS[-1] else '_page_tall')
     # A label draws nothing in a box shorter than its font: 28 and 17 px under Classic.
     assert m.nodes[second]['text']=='3 Songs' and m.get(title+O['W_H'])==28 and m.get(second+O['W_H'])==18
     assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==262
@@ -4082,16 +4084,20 @@ assert m.get(action+O['W_H'])==32 and m.get(m.nodes[m.nodes[action]['children'][
 # ... the separators: every shown row but the list's last.
 assert [m.nodes[r]['name'] for r in kids if m.nodes[r]['visible']]==['_page_tall']*4+['']; passed()
 
-# New Playlist and Edit Playlists end the list, so the wheel reaches them, and Centre reaches stock's own handlers.
-m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
-cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==2
-cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==4 and not m.dialogs
-cpm_wheel(m,O['KEY_PREV']); assert m.selected(m.view)==3
-cpm_centre(m); assert m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0; passed()
+# New Playlist and Edit Playlists head the list; the page opens on its first playlist below them, as stock's and the
+# iPod's lists of playlists alone do. The wheel reaches them, and Centre reaches stock's own handlers.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==2 and m.rows()[2]=='List 0'
+cpm_wheel(m,O['KEY_NEXT'],2); assert m.selected(m.view)==4
+cpm_wheel(m,O['KEY_PREV'],3); assert m.selected(m.view)==1 and not m.dialogs
+cpm_wheel(m,O['KEY_PREV']); assert m.selected(m.view)==0
+cpm_centre(m); assert m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0
+cpm_wheel(m,O['KEY_NEXT']); cpm_centre(m); assert m.navbar()==1 and m.dialogs==['dialog/addplaylist_dialog']; passed()
+# ... an empty list opens on New Playlist.
+m=ClassicPlaylistMachine(0); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==0; passed()
 
 # Edit Playlists is stock's select mode with its toolbar hidden: Select All first, Import and Done last, the bar's own
 # word; the selection goes on the first playlist. Return leaves the mode, not the page, and stock's rows come back.
-m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_NEXT'],4); cpm_centre(m)
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV']); cpm_centre(m)
 assert m.navbar()==1 and m.marks==[0,0,0] and m.nodes[m.nav]['visible']==0
 assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists' and m.selected(m.view)==1
 button=m.row_button('List 0'); choice=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_choice'))
@@ -4100,7 +4106,7 @@ assert m.nodes[choice]['visible']==1 and m.get(choice+O['W_X'])==333 and m.get(i
 f,ctx=m.handler(m.top,O['EVT_KEY_UP']); assert f!=0x4b1310
 ev=m.alloc(0x40); m.word(ev,O['EVT_KEY_UP']); m.word(ev+O['EVENT_KEY'],O['KEY_RETURN'])
 assert m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)==11; m.advance(0,clear=False)
-assert m.navbar()==0 and m.top in m.stack and m.rows()==LISTS+[NEW,EDIT] and m.bar()=='Playlists' and m.selected(m.view)==0
+assert m.navbar()==0 and m.top in m.stack and m.rows()==[NEW,EDIT]+LISTS and m.bar()=='Playlists' and m.selected(m.view)==2
 # ... and out of it, Return is stock's: the page closes.
 assert m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)==11 and any(c[0]=='q:window_close' or c[0]=='window_close' for c in m.calls); passed()
 
@@ -4126,7 +4132,7 @@ m.tap(m.row_button('Export 1 Playlist'))
 assert m.confirms and m.exports==[(0,[0,1,0])] and not m.deletes
 # A dialog's close is stock's mode's end: its foreground handler rebuilds, and the rows follow.
 m.answer=0; assert m.call(address=m.REBUILD_DONE,args=(m.top,0,0,0),gap=0,clear=False)==0; m.stack_rows()
-assert m.navbar()==0 and m.rows()==LISTS+[NEW,EDIT] and m.bar()=='Playlists'
+assert m.navbar()==0 and m.rows()==[NEW,EDIT]+LISTS and m.bar()=='Playlists'
 # ... and Export all goes through Select All.
 m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('Select All')); m.answer=10; m.tap(m.row_button('Export 3 Playlists'))
 assert m.exports[-1]==(0,[1,1,1]); passed()
@@ -4150,12 +4156,14 @@ assert m.rows()==[NEW,'Import Playlists'] and m.nodes[m.row_button(NEW)]['visibl
 note=next(k for k in m.nodes[m.top]['children'] if m.nodes[k]['name']=='_pl_none')
 assert m.nodes[note]['text']=='No Playlists' and m.nodes[note]['visible']==1 and m.get(note+O['W_H'])==32>=27 and m.get(note+O['W_Y'])==124
 m.tap(m.row_button('Import Playlists')); assert m.confirms and any(c[0]=='importPlayList' for c in m.calls)
-m.lists('Made'); m.rebuild(); assert m.rows()==['Made',NEW,EDIT] and m.nodes[note]['visible']==0
+m.lists('Made'); m.rebuild(); assert m.rows()==[NEW,EDIT,'Made'] and m.nodes[note]['visible']==0
 m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('Import Playlists')); assert any(c[0]=='importPlayList' for c in m.calls); passed()
 
-# The picker: no toolbar, the list's rows without dots, New Playlist last, and a tap where dots would be picks, never More.
-m=ClassicPlaylistMachine(3,1); kids=m.rebuild()
-assert m.rows()==LISTS+[NEW] and m.bar()=='Playlists'
+# The picker: no toolbar, the list's rows without dots, New Playlist first (no Edit), opening on the first playlist,
+# and a tap where dots would be picks, never More.
+m=ClassicPlaylistMachine(3,1); kids=m.rebuild(); m.paint(m.view)
+assert m.rows()==[NEW]+LISTS and m.bar()=='Playlists' and m.selected(m.view)==1
+assert [m.nodes[r]['name'] for r in kids]==['_page_tall']*3+['']
 button=m.row_button('List 1'); more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
 assert m.nodes[more]['visible']==0
 f,ctx=m.handler(button,O['EVT_CLICK']); assert f!=m.STOCK_PICK
@@ -4174,8 +4182,8 @@ m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
 ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
 m.nested(0x4b1d24,m.row_button('List 2'),ev,0,0); assert m.mores==[2]
 m.press(100); assert m.hold()==11 and m.nodes[m.top]['name']=='sortselect_dialog' and m.labels()[-1]=='More\u2026'
-m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV'],2)  # the end's bump, then the ring
-assert m.selected(m.view)==4
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PREV'],2)
+assert m.selected(m.view)==0
 m.press(200); before=m.top; assert m.hold()==11 and m.top==before; passed()
 
 # Dots and tick: the theme's own, in the row's coordinates, white or grey by the band: 18 px across, centred in the row.
@@ -4209,7 +4217,7 @@ m=ClassicPlaylistMachine(); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows
 ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.on_click(m.row_button('Delete 1 Playlist…'),ev)
 f,ctx=m.handler(m.top,O['EVT_KEY_UP']); key=m.alloc(0x40); m.word(key,O['EVT_KEY_UP']); m.word(key+O['EVENT_KEY'],O['KEY_RETURN'])
 assert m.call(address=f,args=(ctx,key,0,0),gap=0,clear=False)==11; m.advance(0,clear=False)
-assert not m.confirms and not m.deletes and m.navbar()==0 and m.rows()==LISTS+[NEW,EDIT]
+assert not m.confirms and not m.deletes and m.navbar()==0 and m.rows()==[NEW,EDIT]+LISTS
 m.tap(m.row_button(EDIT)); m.stack_rows()
 for w,v in m.nodes.items():  # stock's Done gone from every widget it was bound to
     if (O['EVT_CLICK'],0x4b1ad0) in [h[:2] for h in v.get('handlers',())]: m.word(m.get(m.get(w+O['W_EMITTER']))+12,0)
@@ -4239,9 +4247,18 @@ for cls in (PlaylistMachine,ClassicPlaylistMachine):
 for cls in (PlaylistMachine,ClassicPlaylistMachine):
     m=cls(3,0); kids=m.rebuild(); m.paint(m.view)
     for _ in range(2): m.call(O['KEY_NEXT'])
-    m.paint(m.view); row=m.selected(m.view); assert row==2
+    m.paint(m.view); row=m.selected(m.view); assert row==2+2*(cls is ClassicPlaylistMachine)
     m.u.mem_write(syms['g_local_classinfo_save']+4,b'\x07\0\0\0'); m.word(syms['g_class_type'],0xff13)
     kids=m.rebuild(); m.paint(m.view); assert m.selected(m.view)==row; passed()
+
+# Classic: a recreated page comes back on the remembered playlist by its name, New and Edit above it and a playlist
+# added before it shifting it down; the picker keeps its own.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_NEXT']); assert m.rows()[m.selected(m.view)]=='List 1'
+m.lists('Added',*LISTS)
+page=m.node('window','playlist_page',[m.node('scroll_view','scroll_view')]); m.word(m.nodes[page]['children'][0]+O['W_PARENT'],page)
+m.nav=m.node('view','view_navbar',visible=0); m.nodes[page]['children'].insert(0,m.nav)
+m.stack[-1]=m.top=page; m.view=m.nodes[page]['children'][-1]; m.rebuild(); m.paint(m.view)
+assert m.rows()==[NEW,EDIT,'Added']+LISTS and m.rows()[m.selected(m.view)]=='List 1'; passed()
 
 # Short press toggles once; a hold opens one menu titled by its row, its release is swallowed and
 # the next short press toggles again. A repeated long event of the same press opens nothing.
