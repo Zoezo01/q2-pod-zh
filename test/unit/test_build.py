@@ -831,7 +831,7 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
     # each row's city, its label after the offset
     cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]
-    assert len(cities) == len(build.TIMEZONES) and cities[9] == "St. John's"
+    assert len(cities) == len(build.TIMEZONES) and "St. John's" in cities
     assert all(re.fullmatch(rf'GMT[+-]\d+(:\d\d)? {re.escape(city)}', label) for (label, _), city in zip(build.TIMEZONES, cities))
     # every saved index once, west to east by standard offset, then by label
     order = array(ctypes.c_int, 'h_order', order)

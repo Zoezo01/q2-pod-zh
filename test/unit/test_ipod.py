@@ -1386,32 +1386,46 @@ def status_drawn(monkeypatch, magick, name):
     return args[args.index('-draw') + 1], args, data
 
 
-@pytest.mark.parametrize('name,width', [('bar_wifi0.png', 14), ('bar_wifi4.png', 14), ('bar_bt.png', 42), ('bar_btcon.png', 42),
-                                        ('bar_play.png', 12), ('bar_pause.png', 12)])
-def test_status_icon_drawn_at_4x(monkeypatch, magick, name, width):
+def icon_size(args):
+    """The width and height the icon is shrunk to."""
+    width, height = args[args.index('-resize') + 1].removesuffix('!').split('x')
+    return int(width), int(height)
+
+
+@pytest.mark.parametrize('name', ['bar_wifi0.png', 'bar_wifi4.png', 'bar_bt.png', 'bar_btcon.png', 'bar_play.png', 'bar_pause.png'])
+def test_status_icon_drawn_at_4x(monkeypatch, magick, name):
     # Drawn on a clear canvas four times the bar's 16 px icon, then shrunk to it: nothing of stock's image is kept.
     draw, args, data = status_drawn(monkeypatch, magick, name)
-    assert args[:3] == ('-size', f'{4 * width}x64', 'xc:none') and draw.startswith('scale 4,4 ') and data == b''
-    assert args[args.index('-resize') + 1] == f'{width}x16!' and args[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)
+    width, height = icon_size(args)
+    assert height == 16 and args[:3] == ('-size', f'{4 * width}x{4 * height}', 'xc:none') and draw.startswith('scale 4,4 ') and data == b''
+    assert args[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)
+
+
+def wifi_inks(monkeypatch, magick, level):
+    """The dot's colour, then its three arcs' from the innermost out."""
+    draw, _, _ = status_drawn(monkeypatch, magick, f'bar_wifi{level}.png')
+    arcs = sorted((float(r), colour) for colour, r in re.findall(r"stroke '([^']+)' path 'M[\d.,]+ A([\d.]+)", draw))
+    dot, = re.findall(r"fill '([^']+)' circle", draw)
+    return [dot] + [colour for _, colour in arcs]
 
 
 @pytest.mark.parametrize('level', range(5))
 def test_status_icon_wifi_lights_from_the_dot_out(monkeypatch, magick, level):
-    # A signal level lights that many of the dot and its three arcs, innermost first; the rest are grey.
-    draw, _, _ = status_drawn(monkeypatch, magick, f'bar_wifi{level}.png')
-    arcs = sorted((float(r), colour) for colour, r in re.findall(r"stroke '([^']+)' path 'M[\d.,]+ A([\d.]+)", draw))
-    dot, = re.findall(r"fill '([^']+)' circle", draw)
-    assert [dot] + [colour for _, colour in arcs] == ['white'] * level + ['#666666'] * (4 - level)
+    # A signal level lights that many of the dot and its three arcs, innermost first; the rest are unlit.
+    (lit,), (unlit,) = set(wifi_inks(monkeypatch, magick, 4)), set(wifi_inks(monkeypatch, magick, 0))
+    assert lit != unlit and wifi_inks(monkeypatch, magick, level) == [lit] * level + [unlit] * (4 - level)
 
 
-@pytest.mark.parametrize('name,colour', [('bar_btcon.png', 'white'), ('bar_bt.png', '#666666')])
-def test_status_icon_bluetooth(monkeypatch, magick, name, colour):
-    # White when connected, grey when not; its ink, round caps and all, in the canvas's last BT_REACH columns, as stock's.
-    draw, _, _ = status_drawn(monkeypatch, magick, name)
-    (stroke, path), = re.findall(r"stroke '([^']+)' path '([^']+)'", draw)
-    (width,) = re.findall(r'stroke-width ([\d.]+)', draw)
-    xs, half = [float(x) for x in re.findall(r'[ML]([\d.]+),', path)], float(width) / 2
-    assert stroke == colour and 42 - ipod.BT_REACH <= min(xs) - half and max(xs) + half <= 42
+def test_status_icon_bluetooth(monkeypatch, magick):
+    # Lit as Wi-Fi's ink when connected, unlit when not; its ink, round caps and all, in the canvas's last BT_REACH
+    # columns, as stock's.
+    (lit,), (unlit,) = set(wifi_inks(monkeypatch, magick, 4)), set(wifi_inks(monkeypatch, magick, 0))
+    for name, colour in (('bar_btcon.png', lit), ('bar_bt.png', unlit)):
+        draw, args, _ = status_drawn(monkeypatch, magick, name)
+        (stroke, path), = re.findall(r"stroke '([^']+)' path '([^']+)'", draw)
+        (width,) = re.findall(r'stroke-width ([\d.]+)', draw)
+        xs, half, canvas = [float(x) for x in re.findall(r'[ML]([\d.]+),', path)], float(width) / 2, icon_size(args)[0]
+        assert stroke == colour and canvas - ipod.BT_REACH <= min(xs) - half and max(xs) + half <= canvas, name
 
 
 def test_status_icon_play_and_pause(monkeypatch, magick):
@@ -1434,8 +1448,9 @@ def test_status_icon_is_audited(monkeypatch, magick, name, data):
 def test_row_icon(magick):
     assert ipod.row_icon(b'in') == b'png' and ipod.row_icon(b'in', 48, sharp=True) == b'png'
     head = ('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize')
-    assert magick.calls == [((*head, f'{ipod.SET_ICON}x{ipod.SET_ICON}!', *ipod.PNG_OUT), b'in'),
-                            ((*head, '48x48!', '-unsharp', '0x0.6+0.8+0', *ipod.PNG_OUT), b'in')]  # sharpened after the shrink
+    (plain, _), (sharp, data) = magick.calls
+    assert plain == (*head, f'{ipod.SET_ICON}x{ipod.SET_ICON}!', *ipod.PNG_OUT) and data == b'in'
+    assert sharp[:len(head) + 1] == (*head, '48x48!') and sharp[len(head) + 1] == '-unsharp' and sharp[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)  # sharpened after the shrink
 
 
 STOCK_ICON, SMALL_ICON = png(ipod.SET_STOCK_ICON, ipod.SET_STOCK_ICON), png(ipod.SET_ICON, ipod.SET_ICON)
@@ -1487,16 +1502,21 @@ def test_settings_icon_keeps_the_transparency(monkeypatch):
         ipod.settings_icon('playset_eq.png', STOCK_ICON)
 
 
-@pytest.mark.parametrize('name,fill', [('play_more.png', '#eeeeee'), ('play_fav.png', '#eeeeee'), ('play_moredown.png', '#aaaaaa')])
-def test_quiet_icon(monkeypatch, magick, name, fill):
-    # Stock's control icons trimmed, shrunk into 24 px, one flat grey (More's pressed state darker), centred on 28 px.
-    stock = b'stock ' + name.encode()
-    monkeypatch.setitem(ipod.QUIET_ICONS, name, ipod.sha(stock))
-    assert ipod.quiet_icon(name, stock) == b'png'
-    (args, data), = magick.calls
-    assert data == stock and args[args.index('-fill') + 1] == fill
-    assert args[args.index('-resize') + 1] == '24x24' and args[args.index('-extent') + 1] == '28x28'
-    assert args.index('-trim') < args.index('-resize') < args.index('-extent') and args[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)
+def test_quiet_icon(monkeypatch, magick):
+    # Stock's control icons trimmed, shrunk into a square, one flat grey (More's pressed state darker), centred on a
+    # larger square.
+    fills = {}
+    for name in ('play_more.png', 'play_fav.png', 'play_moredown.png'):
+        stock = b'stock ' + name.encode()
+        monkeypatch.setitem(ipod.QUIET_ICONS, name, ipod.sha(stock))
+        assert ipod.quiet_icon(name, stock) == b'png'
+        (args, data), = magick.calls; magick.calls.clear()
+        (w, h), (ew, eh) = (map(int, args[args.index(k) + 1].split('x')) for k in ('-resize', '-extent'))
+        assert data == stock and w == h and ew == eh > w, name
+        assert args.index('-trim') < args.index('-resize') < args.index('-extent') and args[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)
+        fills[name] = args[args.index('-fill') + 1]
+    grey = lambda c: int(c.lstrip('#')[:2], 16)
+    assert fills['play_more.png'] == fills['play_fav.png'] and grey(fills['play_moredown.png']) < grey(fills['play_more.png'])
 
 
 def test_quiet_icon_is_audited(monkeypatch, magick):

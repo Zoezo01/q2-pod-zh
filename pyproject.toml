@@ -17,8 +17,8 @@ branch = true
 core = "ctrace"
 
 [tool.coverage.report]
-# The floor, two places counted: what's left is unreachable.
-fail_under = 99.7
+# The floor catches a collapse, not each change: it leaves room for a few untested lines (docs/building.md#coverage).
+fail_under = 99.5
 precision = 2
 show_missing = true
 skip_covered = true

@@ -167,7 +167,7 @@ Both workflows count what their stock-free runs reach and fail under a floor, an
 
 - **`tools/`:** `tests.yml` runs `test/unit` under [coverage.py](https://coverage.readthedocs.io), every branch counted, and fails under `fail_under` in `pyproject.toml`. The functions in `targets.py`'s `NEEDS_STOCK` and the command lines are left out, so the floor is all of the rest.
 - **C:** `firmware.yml` runs `test/fw` and the host suites with `test/coverage/cc` first on `PATH`: `cc` with gcov counters, which keeps each compile's counts under `$Q2_COV` when a suite deletes its build folder. [gcovr](https://gcovr.com) reads them, fails under the line and branch floors in the workflow, and uploads the per-line pages as `c-coverage`. The ASan run isn't counted. Most of `navigation.c` is `test/patch.py`'s, which needs a stock build, so it stays low here.
-- **Raising a floor:** when tests land, set the floor to the new figure, rounded down, in the same pull request.
+- **Floors:** they catch a collapse (a suite or the wrapper that stopped counting), not each change, so they sit a little under the measured figures. Raise one by hand when the measured figure is well clear of it. The host suites run only counted in CI; `test/fw` also runs plain under ASan.
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
