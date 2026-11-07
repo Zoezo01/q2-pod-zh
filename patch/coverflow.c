@@ -2527,7 +2527,7 @@ static void covers(int dir) {
     widget_invalidate_force(cf.page, 0);
 }
 
-/* The thumb (docs/internals.md#coverflow-thumb), every UI pass while Classic's covers are open
+/* The thumb (docs/internals.md#coverflow-thumb), every UI pass while the covers are open
  * (navigation.c thumb_poll): the wheel's raw travel, 200 units a turn, moves a goal, and the
  * position follows it, critically damped and exact for any step, so its speed stays continuous
  * whatever the wheel or a slow frame does. */

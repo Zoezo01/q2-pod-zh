@@ -8545,7 +8545,7 @@ for key in (O['KEY_PREV'],O['KEY_NEXT']):
     assert not m.dispatched()
 passed()
 
-# Slow steps stay precise. Continuous 50ms ticks cross Coverflow's 700ms threshold and jump groups.
+# Ticks (the covers' wheel when the thumb isn't on): slow steps stay precise. Continuous 50ms ticks cross Coverflow's 700ms threshold and jump groups.
 m=CoverflowMachine(albums=19)
 for r,name in zip(m.albums,['A1','A2','A3','D1','D2','D3']+[f'G{i}' for i in range(1,12)]+['Z1','Z2']): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open()
@@ -9847,7 +9847,7 @@ def flip_open(**kw):
     m=classic_light_new(FlipMachine,**kw); m.open(); flip_click(m); return m
 def px_at(frame,x,y): return struct.unpack_from('<I',frame,4*(y*375+x))[0]
 
-# Classic's covers held by the thumb (docs/internals.md#coverflow-thumb): each UI pass reads the wheel raw,
+# The covers held by the thumb, every theme's (docs/internals.md#coverflow-thumb): each UI pass reads the wheel raw,
 # and nothing it did with ticks is lost. test/coverflow.py has the follower's numbers on the host; here, on the
 # real payload, who owns the wheel and what guards it.
 def thumb_page(cls=None,**kw):
@@ -9869,14 +9869,19 @@ def trest(m):
 def tindex(m): return m.get(m.slide+O['SLIDE_INDEX'])
 def toff(m): return signed(m.get(m.slide+O['SLIDE_OFFSET']))
 def tcaption(m): return m.texts()[0]
-# Raw on Classic's covers, each pass; a turn writes the offset itself and no tick or animator is about. The whole
-# wider ring is allocated at the open; Minimal's stays seven, and it's never raw.
-m=thumb_page(); tp(m); assert traw(m)==2 and not m.slides
-assert (15+1)*160*160*4 in m.live.values()
-thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel'])
-trest(m); assert toff(m)==0; passed()
-m=DepthMachine(albums=9); m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1; m.word(ps['wheel_held'],1); n=len(m.calls)
-tp(m,-30); assert traw(m)==0 and m.get(ps['wheel_travel'])==-30&0xffffffff and toff(m)==0 and (8)*160*160*4 in m.live.values(); passed()
+CF_FIELDS=[f for l in re.findall(r'^\s*short ([^;]+);',re.search(r'typedef struct \{([^}]*)\} cf_style_t;',(ROOT/'patch/theme.h').read_text())[1],re.M) for f in re.split(r',\s*',l)]
+def no_letters(m): m.u.mem_write(ps['cfs']+2*CF_FIELDS.index('jump_ticks'),b'\0\0')  # the open page's cfs: jump_ticks 0, the cap alone
+# Raw on the covers, each pass, in every theme; a turn writes the offset itself and no tick or animator is about.
+# The whole wider ring is allocated at the open.
+for theme in ('1','0','2'):
+    SETUP[:]=[lambda k:(k.config.update(THEME=theme),k)]
+    try: m=DepthMachine(albums=9)
+    finally: SETUP.clear()
+    m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
+    tp(m); assert traw(m)==2 and not m.slides,theme
+    assert (15+1)*160*160*4 in m.live.values(),theme
+    thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel']),theme
+    trest(m); assert toff(m)==0,theme; passed()
 # wheel_raw never stays set: each way off the covers gives the wheel back at the next pass, the travel gone, the
 # covers landed on what was shown (a finger on the screen lets them run down), and coming back takes it again.
 def to_other(m): m.top=m.node('window','home_page')
@@ -9943,7 +9948,7 @@ FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Gra
 m=classic_light_new(DepthMachine,albums=9)
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
-tp(m); thold(m); tspin(m,500,-30); assert not letter_on(m)  # 318 ticks/s; the cap's 90 a little in
+tp(m); thold(m); tspin(m,300,-30); assert not letter_on(m)  # 318 ticks/s; at the cap, short of jump_ms
 seen=[tindex(m)]; m.calls=[]
 for _ in range(25):
     tspin(m,17,-30); i=tindex(m)
@@ -9979,10 +9984,10 @@ trest(m); assert toff(m)==0; passed()
 def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
-tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # short of jump_ms
+tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
-# Centre opens the album the caption names, at once, however far ahead of the covers that is (short of letters).
-m=thumb_page(); tp(m); thold(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
+# Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
+m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown
 index=tindex(m); assert m.dispatched()[-1][1]==m.nodes[m.slide]['children'][index] and shown==f'Album {index}'; passed()
 

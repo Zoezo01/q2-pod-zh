@@ -274,7 +274,7 @@ unsigned mix(unsigned a, unsigned b, int j, int n) { return a; }
 void bar_title_sync(void *win) {}
 int bar_title_fits(void *label) { return 1; }
 void list_value(void *l, const char *t, const char *v) { (void)l, (void)t, (void)v; }
-/* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS (Modern inherits it);
+/* CF_STYLE0: main() passes Minimal's .cf from tools/theme.py ROLE_MACROS, thumb off: the tick cases' (Modern inherits it);
  * CF_STYLE1: Classic's, resolved */
 static theme_t shim_themes[3] = {
     { .page_row = 48, .page_detail = 64, .page_title_h = 48, .page_x = 36, .page_cap_y = 4, .page_cap_h = 32, .page_det_y = 36, .page_det_h = 24, .home_top = HOME_TOP, .home_full_row = HOME_FULL_ROW, .home_text_x = HOME_DOT_X + HOME_DOT + HOME_DOT_GAP,
@@ -1835,7 +1835,7 @@ static void player_cover(void) {
     memset(shim_id3, 0, sizeof(shim_id3));
 }
 
-/* ---- Classic's thumb: the follower's numbers, as tuned. ---- */
+/* ---- The thumb (Classic's covers here): the follower's numbers, as tuned. ---- */
 volatile int wheel_raw, wheel_travel, wheel_held;
 static int test_wheel_pct = 50;
 int wheel_pct(void) { return test_wheel_pct; }
@@ -2277,15 +2277,26 @@ static void thumb_wheel(void) {
     top_window = 0;
     th_pass(0, 17);
 
-    /* Minimal: never raw, no wider ring, the wheel is ticks. */
+    /* Minimal and Modern, as shipped (Minimal's theme.xml): their covers are the thumb's too, and
+       give the wheel back as Classic's do. */
+    static const cf_style_t shipped0 = CF_SHIPPED0;
+    const cf_style_t ticks = shim_themes[0].cf;
+    shim_themes[0].cf = shim_themes[2].cf = shipped0;
+    for (classic = 0; classic <= 2; classic += 2) {
+        open_page();
+        s = slide();
+        top_window = page;
+        assert(coverflow_wheel_live());
+        th_pass(0, 17);
+        assert(wheel_raw == 2);
+        coverflow_paint(s, canvas);
+        close_page();
+        top_window = 0;
+        th_pass(0, 17);
+        assert(!wheel_raw);
+    }
+    shim_themes[0].cf = shim_themes[2].cf = ticks;
     classic = 0;
-    open_page();
-    s = slide();
-    top_window = page;
-    assert(!coverflow_wheel_live() && !wheel_raw);
-    coverflow_paint(s, canvas);
-    close_page();
-    top_window = 0;
     pressed = 1, frame_fail = 0, square_art = 0;
 }
 
@@ -2943,6 +2954,7 @@ def main():
     fixture = {**classic_light, 'cf.ticks_album': 13, 'cf.fast_at': 25, 'cf.fast_full': 120, 'cf.jump_ticks': 0}
     cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
+    cf_style.append('-DCF_SHIPPED0={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in builtins()[0].items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DPINNED_FRAMES=0x8c470fe7u')
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):

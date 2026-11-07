@@ -121,9 +121,15 @@ def own(key, label, names, sets, default=-1, preset=-1, keep=-1):  # a theme's o
 HOMELIB, ROWPREVIEW = (own(k, label, ('Off', 'On'), None, default=1, preset=1) for k, label in (('HOMELIB', 'Library on Home'), ('ROWPREVIEW', 'Row Preview')))
 
 
+CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
+                     detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
+                     lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
+                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=400, jump_ticks=5)
+
+
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
             'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': 0 for a in theme.CF_THUMB}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
+            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow') for a in ('ms', 'easing', 'anim')},
@@ -518,6 +524,10 @@ def with_role(monkeypatch, **cf):
     ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101),
     ('jump_ms', 5001), ('jump_ticks', 201)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
+    if field in theme.CF_THUMB:  # Minimal's theme.xml states the thumb, not offsets.inc
+        with pytest.raises(theme.ThemeError, match=rf'coverflow\.shelf\.{field}: {value} outside'):
+            resolved(f'<view name="coverflow"><element name="shelf" {field}="{value}"/></view>')
+        return
     with_role(monkeypatch, **{field: value})
     with pytest.raises(theme.ThemeError, match=rf'coverflow\.\w+\.{field}: {value} outside'):
         theme.builtins()
@@ -538,17 +548,12 @@ def test_coverflow_eye_turn_stays_in_range():
         theme.validate({**theme.builtins()[0], 'cf.eye': 1647, 'cf.eye_turn': 400}, 't.xml')
 
 
-CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
-                     detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
-                     lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
-                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=400, jump_ticks=5)
-
-
-def test_coverflow_thumb_is_classics_alone():  # the page's numbers, all retunable; Minimal stays on ticks
+def test_coverflow_thumb_is_every_themes():  # the page's numbers, all retunable: Classic's, in all three
     assert set(CLASSIC_THUMB) == set(theme.CF_THUMB)
-    c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
-    assert {a: c[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB
-    assert not any(theme.builtins()[0][f'cf.{a}'] for a in CLASSIC_THUMB)
+    ts = theme.builtins()
+    assert sorted(t['id'] for t in ts) == ['classic-light', 'minimal', 'modern']
+    for t in ts:
+        assert {a: t[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB, t['id']
 
 
 @pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'])
