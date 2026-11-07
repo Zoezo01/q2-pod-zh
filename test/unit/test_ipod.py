@@ -812,7 +812,7 @@ def test_classic_light_status_bar_battery_and_play_state_right():
     assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
     assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
     assert n['view_right'][2]['children_layout'].endswith(f'xm=63,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 311
-    assert 375 - ipod.corner_inset(4) - 1 - (311 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 4, BAR_PAD clear of the glass; the nub's rows lower still
+    assert 375 - ipod.corner_inset(5) - 1 - (311 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD + 3  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
@@ -832,35 +832,35 @@ def test_classic_light_status_bar_eq_in_the_room():
         == {str(CLASSIC_LIGHT.bar_px), ipod.CLASSIC_LIGHT_FONT_NAME}
 
 
-# Where the row layout puts the icons: right-aligned from the group's margin, the slot 31 (its soft edge, the body,
+# Where the row layout puts the icons: right-aligned from the group's margin, the slot 29 (its soft edge, the body,
 # the nub), hidden children taking no room. Bluetooth's and Wi-Fi's canvases are stock's; their ink lands on the
 # columns and rows Classic's look states, and with the play state hidden they close up on the battery.
 def test_classic_light_status_bar_icons_on_their_columns():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     view = n['view_right']
-    assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3; the payload moves Bluetooth a row down, Wi-Fi a row up (bar.icons)
+    assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3, centred on the battery's row 11; the payload moves Bluetooth a row down, Wi-Fi a row up (bar.icons)
     assert n['img_state'][2].get('floating') is None
     def lay(*names):
         x, out = 315, {}
         for name in reversed(names):
-            w = 31 if name == 'view_battery' else n[name][1][2]
+            w = 29 if name == 'view_battery' else n[name][1][2]
             x -= w
             out[name] = (x, x + w)
             x -= ipod.inc('STATUS_GAP')
         return out
     full = lay('img_bt', 'img_wifi', 'img_state', 'view_battery')
-    assert full['img_bt'][1] == 240 and {k: v for k, v in full.items() if k != 'img_bt'} == {
-        'view_battery': (284, 315), 'img_state': (262, 280), 'img_wifi': (244, 258)}
-    assert full['img_bt'][1] - ipod.BT_REACH == 230  # Bluetooth's ink
+    assert full['img_bt'][1] == 242 and {k: v for k, v in full.items() if k != 'img_bt'} == {
+        'view_battery': (286, 315), 'img_state': (264, 282), 'img_wifi': (246, 260)}
+    assert full['img_bt'][1] - ipod.BT_REACH == 232  # Bluetooth's ink
     bare = lay('img_bt', 'img_wifi', 'view_battery')
-    assert bare['img_wifi'] == (266, 280) and bare['img_bt'][1] - ipod.BT_REACH == 252
-    assert n['label_eq'][1][0] + view[1][0] + 28 < 252  # EQ, widest with a 12-hour clock: 222 to 250
+    assert bare['img_wifi'] == (268, 282) and bare['img_bt'][1] - ipod.BT_REACH == 254
+    assert n['label_eq'][1][0] + view[1][0] + 28 < 254  # EQ, widest with a 12-hour clock: 222 to 250
 
 
 def test_classic_light_status_bar_battery_must_fit():
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 90 of 90
+    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 88 of 90
     with pytest.raises(ValueError, match=r'^Status bar battery needs 91px of 90px$'):
-        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 1))
+        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 3))
 
 
 def test_playing_page_follows_the_bar():

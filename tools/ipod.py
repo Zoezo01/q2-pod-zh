@@ -537,8 +537,8 @@ def status_bar(root, g=SET0):
         eq[2].update({'floating': 'true', **face})
         # The play state is in the row: Wi-Fi's ink ends on column 261 with it, and it closes up without it.
         widgets['img_state'][1][2] = STATE_W
-        # Stock's 16 px icon canvases, centred, put Bluetooth's ink (a row into its canvas) on the battery's top row
-        right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 - 1) + 16
+        # Stock's 16 px icon canvases, centred, on the battery's middle row (paint_battery's body top plus half its height)
+        right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 + g.batt_h // 2)
         left[1][3] = widgets['img_state'][1][3] = right[1][3]  # the state's 22 px art, its ink centred on the caps
         home = copy.deepcopy(widgets['img_state'])
         home[1][:] = [HOME_STATE_X, right[1][1], STATE_W, right[1][3]]

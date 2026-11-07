@@ -11003,14 +11003,14 @@ for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','d
     btm.call(address=payload_syms['bar_title_fits'],args=(btm.nodes[btnav]['children'][1],0,0,0),gap=0)
     assert btm.font==(bt_face,17 if bt_face=='bold' else 21),(bt_text,btm.font)  # measured as it is drawn
 passed()
-# Classic battery (BATT_CLASSIC_LIGHT): body 28x15 on rows 4 to 18, its soft edge's column at x 0 of the slot (screen 288): a
-# #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, one stop per row
-# of the level over its 13 inner rows, the last column shaded. Light only: the soft edge and the emboss. Charging fills
+# Classic battery (BATT_CLASSIC_LIGHT): body 26x13 on rows 5 to 17, its soft edge's column at x 0 of the slot (screen 290): a
+# #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, the level's stops
+# over its 11 inner rows, the last column shaded. Light only: the soft edge and the emboss. Charging fills
 # it and draws classic_light_bolt; low is a 3 px #d9402e sliver; full on power draws classic_light_plug; Percent and Icon + Percent draw the
 # digits in Classic's bar size. Everything stays under the instruction cap.
 def classic_light_battery_bar(mode,image='bar_battery',text='50%',light='1',status=None,eq=None,wifi=0,state=0,cable=0):
     bm=Machine(); bm.config.update(LIGHT=light,BATTERY=str(mode)); classic_light_on(bm)  # before the boot reads the settings
-    bm.image_size=(26,13)  # classic_light_bolt's and classic_light_plug's real size (test/unit/test_art.py)
+    bm.image_size=(24,11)  # classic_light_bolt's and classic_light_plug's real size (test/unit/test_art.py)
     bm.word(syms['g_power_chargestate'],state); bm.byte(syms['g_usbdet_value'],cable)  # 2: Full
     if status is not None: bm.handlers.pop(syms['mclGetPlayStatus'],None); bm.word(0xa3beac,status)  # local's play state
     lv=bm.node('progress_bar','progress_battery',value=50)
@@ -11026,37 +11026,37 @@ def classic_light_battery_bar(mode,image='bar_battery',text='50%',light='1',stat
     cost=[0]; hook=bm.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
     paint(bw_['view_battery']); bm.u.hook_del(hook); assert cost[0]<100000,cost  # the battery under the cap
     return bm,bw_,[b[:5] for b in bm.bands]
-LINE,PAPER,EDGE=color_t(0x717070),color_t(0xffffff),color_t(0x5b6c52); y=4; BX=2; BW=26
+LINE,PAPER,EDGE=color_t(0x717070),color_t(0xffffff),color_t(0x5b6c52); y=5; BX=2; BW=24
 def a_(rgb,a): return color_t(rgb)&0xffffff|a<<24
-SOFT=[(0,y,1,15,a_(0,51)),(1,y-1,28,1,a_(0,28))]
-EMPTY=(0x56585d,0x595a61,0x5f6168,0x63656c,0x6b6d73,0x76787e,0x85878d,0x898b92,0x8d8f96,0x94969c,0x9ea0a5,0xa0a3a6,0x797b7c)
+SOFT=[(0,y,1,13,a_(0,51)),(1,y-1,26,1,a_(0,28))]
+EMPTY=(0x56585d,0x5a5b62,0x606269,0x686a70,0x73757b,0x85878d,0x898b92,0x8f9198,0x9a9ca1,0x9fa2a5,0x797b7c)  # the 13 stops mixed over 11 rows
 def body_bands(line):
-    return [(BX,y,BW,1,line),(1,y+1,1,13,line),(28,y+1,1,13,line),(29,9,1,1,line),(29,13,1,1,line),(30,10,1,3,line),
-            (1,y,1,1,line&0xffffff|191<<24),(28,y,1,1,line&0xffffff|191<<24),(30,9,1,1,line&0xffffff|191<<24),(30,13,1,1,line&0xffffff|191<<24),
-            (1,y+14,1,1,line&0xffffff|128<<24),(28,y+14,1,1,line&0xffffff|128<<24),
-            (BX,y+14,BW,1,EDGE),*((BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(EMPTY))]
-EMBOSS=[(1,20,27,1,a_(0xffffff,179)),(29,14,2,2,a_(0xffffff,153))]
-ROWS=(0x90b27d,0xc4ebac,0xdcf9c5,0xcbefb1,0xade586,0xa6e27b,0x92ce68,0x67a83f,0x4e972c,0x4e972d,0x56a035,0x58a437,0x539933)
+    return [(BX,y,BW,1,line),(1,y+1,1,11,line),(26,y+1,1,11,line),(27,9,1,1,line),(27,13,1,1,line),(28,10,1,3,line),
+            (1,y,1,1,line&0xffffff|191<<24),(26,y,1,1,line&0xffffff|191<<24),(28,9,1,1,line&0xffffff|191<<24),(28,13,1,1,line&0xffffff|191<<24),
+            (1,y+12,1,1,line&0xffffff|128<<24),(26,y+12,1,1,line&0xffffff|128<<24),
+            (BX,y+12,BW,1,EDGE),*((BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(EMPTY))]
+EMBOSS=[(1,19,25,1,a_(0xffffff,179)),(27,14,2,2,a_(0xffffff,153))]
+ROWS=(0x90b27d,0xc9eeb1,0xd5f5bd,0xb8e896,0xa7e27d,0x92ce68,0x61a43a,0x4e972c,0x539c32,0x57a336,0x539933)
 outline=SOFT+body_bands(LINE); LEVEL=len(outline)
 bm,bw_,bands=classic_light_battery_bar(0)
-assert bm.get(bw_['view_battery']+O['W_W'])==31 and bm.get(bw_['view_battery']+O['W_H'])==26
+assert bm.get(bw_['view_battery']+O['W_W'])==29 and bm.get(bw_['view_battery']+O['W_H'])==26
 assert bm.get(bw_['img_bt']+O['W_Y'])==1 and bm.get(bw_['img_wifi']+O['W_Y'])&0xffffffff==0xffffffff  # a row down, a row up
 assert bands[:LEVEL]==outline
-SHADE=[(27,y+1,1,13,a_(0,64))]
-assert bands[LEVEL:]==[(BX,y+1+j,13,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]  # 50%: the last column's shade over the dark rows
-# The dark half (LIGHT=0): the stated dark.line #010101, no soft edge or emboss; the level's hues and the dark rows as they are.
+SHADE=[(25,y+1,1,11,a_(0,64))]
+assert bands[LEVEL:]==[(BX,y+1+j,12,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]  # 50%: the last column's shade over the dark rows
+# The dark half (LIGHT=0): the stated dark.line #717070, the light half's, no soft edge or emboss; the level's hues and the dark rows as they are.
 bm,bw_,dark=classic_light_battery_bar(0,light='0')
-assert dark==body_bands(color_t(0x010101))+bands[LEVEL:-2]; passed()
+assert dark==body_bands(LINE)+bands[LEVEL:-2]; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%')  # full: the level's last column shaded
 assert bands[LEVEL:]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_charge','63%')  # full, then the bolt: the generated image on the inside, at its real size
-assert [b[:4] for b in bands[LEVEL:LEVEL+13]]==[(BX,y+1+j,BW,1) for j in range(13)] and 'classic_light_bolt' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
-assert bm.image_draws==[((0,0,26,13),(BX,y+1,26,13))],bm.image_draws
+assert [b[:4] for b in bands[LEVEL:LEVEL+11]]==[(BX,y+1+j,BW,1) for j in range(11)] and 'classic_light_bolt' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
+assert bm.image_draws==[((0,0,BW,11),(BX,y+1,BW,11))],bm.image_draws
 # Full on power, a Q2 on the charger: the plain icon's status from stock, the cable from stock's flag, both memory; the
 # level full and the plug drawn. Either one alone: no glyph. Charging wins over Full. Percent Inside keeps its digits, no glyph.
 bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%',state=2,cable=1)
-assert bands[LEVEL:LEVEL+13]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)] and 'classic_light_plug' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
-assert bm.image_draws==[((0,0,26,13),(BX,y+1,26,13))],bm.image_draws
+assert bands[LEVEL:LEVEL+11]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)] and 'classic_light_plug' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
+assert bm.image_draws==[((0,0,BW,11),(BX,y+1,BW,11))],bm.image_draws
 for state,cable in ((2,0),(1,1),(0,1)):
     bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%',state=state,cable=cable); assert not bm.image_draws,(state,cable)
 bm,bw_,bands=classic_light_battery_bar(0,'bar_charge','100%',state=2,cable=1); assert 'classic_light_plug' not in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
@@ -11064,17 +11064,17 @@ bm,bw_,bands=classic_light_battery_bar(3,'bar_battery','100%',state=2,cable=1); 
 bm,bw_,bands=classic_light_battery_bar(3,'bar_charge','63%')  # Percent Inside: digits, no bolt
 assert not bm.image_draws; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_lowcharge','5%')
-assert bands[LEVEL:]==[(BX,y+1,3,13,color_t(0xd9402e))]+SHADE+EMBOSS; passed()
+assert bands[LEVEL:]==[(BX,y+1,3,11,color_t(0xd9402e))]+SHADE+EMBOSS; passed()
 for mode in (1,2,3):  # Percent Inside (digits in the body), and the stored values that read as it
     bm,bw_,bands=classic_light_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
-    assert letters==[('50',(BX,y+1,BW,13))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==31,(mode,letters); passed()
+    assert letters==[('50',(BX,y+1,BW,11))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==29,(mode,letters); passed()
 # Percent Inside's digits read in both halves: dark on the level, whatever its colour (the gloss, full while
 # charging, the sliver when low), and past its end white, on the dark rows, in both halves.
 # Each part is clipped to its side of the level's end, and the canvas's clip comes back.
 for lt,past in (('1',0xffffff),('0',0xffffff)):
-    for batt_img,batt_text,f in (('bar_battery','50%',13),('bar_battery','100%',26),('bar_charge','63%',26),('bar_lowcharge','5%',3),('bar_battery','0%',0)):
+    for batt_img,batt_text,f in (('bar_battery','50%',12),('bar_battery','100%',24),('bar_charge','63%',24),('bar_lowcharge','5%',3),('bar_battery','0%',0)):
         bm,bw_,bands=classic_light_battery_bar(3,batt_img,batt_text,lt); digits=batt_text[:-1]
-        want=[(digits,(BX,y+1,BW,13),color_t(0),(BX,y+1,f,13))][:f>0]+[(digits,(BX,y+1,BW,13),color_t(past),(BX+f,y+1,BW-f,13))][:f<BW]
+        want=[(digits,(BX,y+1,BW,11),color_t(0),(BX,y+1,f,11))][:f>0]+[(digits,(BX,y+1,BW,11),color_t(past),(BX+f,y+1,BW-f,11))][:f<BW]
         assert [(l['text'],l['rect'],l['color'],l['clip']) for l in bm.letters]==want,(lt,batt_img,batt_text,bm.letters)
         assert bm.clip not in [w[3] for w in want]
 passed()
@@ -11083,7 +11083,7 @@ passed()
 for status,eq,eq_on in ((0,0,0),(2,0,0),(0,1,1),(2,1,0)):
     bm,bw_,bands=classic_light_battery_bar(3,status=status,eq=eq,wifi=1)
     assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq_on),(status,eq)
-    assert bm.get(bw_['view_battery']+O['W_W'])==31 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
+    assert bm.get(bw_['view_battery']+O['W_W'])==29 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
 passed()
 # Classic's play state is its own art (tools/art.py), by state and half, in place of stock's glyph; the image hook leaves
 # any classic_light_ image as drawn. Classic keeps stock's.
