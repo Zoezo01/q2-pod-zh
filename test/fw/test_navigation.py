@@ -1156,6 +1156,28 @@ def test_flac_any_file(fw, heap):
     assert not files.open  # every file closed
 
 
+def opus(tags):
+    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
+    pages, seq = [], 0
+    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
+        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
+        for at in range(0, len(lacing), 255):
+            part = lacing[at:at + 255]
+            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
+                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
+            seq += 1
+    return b''.join(pages)
+
+
+@pytest.mark.parametrize('size, big', [(1000, 0), ((4 << 20) + 1, 1)])
+def test_ogg_tags_only_over_the_cap(fw, size, big):
+    """xiph.c as the Q2 builds it, through the card's file calls: only a header over OGG_TAGS_MAX is
+    its own (test/unit/test_xiph.py checks the fields it reads)."""
+    files = Files(fw, {'/a/b.opus': opus(b'OpusTags' + comments(b'TITLE=x', b'P=' + b'v' * size))})
+    assert fw.fn('ogg_tags', C.c_int, C.c_char_p, C.c_void_p)(b'/a/b.opus', None) == big
+    assert not files.open
+
+
 def test_music_info_fills_only_an_empty_album_artist(fw, heap):
     Files(fw, {'/a/b.flac': GOOD})
     info = heap.string(b'', 0x698)
