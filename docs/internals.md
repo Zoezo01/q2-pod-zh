@@ -545,6 +545,8 @@ takes the written set's `pitch` and `body` (`geom()`).
 
 **Dialogs.** `painter[PAINT_CONFIRM]` covers the confirm control, the hold menu, the toast and the small dialogs. `confirm_form` picks a confirm's form: the tray for a prompt `confirm_over` asked for, the page for any other, so a prompt stock opens over it stays a question.
 
+**Hold menu panel.** Under Classic `hold_open` dresses the hold menu as Cover Flow's flip panel: `PANEL_X` (40) in, `BACK_W` (294) rows wide, a `QM_HEAD` (44) header holding stock's navbar with its title alone (31 px, the theme's bold face, white in either half), then the theme's 32 px page rows in the same face at 25 px, `QM_ROWS` (6) at most before the list scrolls. The panel is centred in the rows under the bar, so at its tallest (236 rows, 55 to 291) its square corners clear the glass by `corner_x`. The dialog keeps its clear background and no dim; `hold_paint` draws the panel behind the dialog's children and the header's shadow and ring after them, with `coverflow_panel_paint`, which the flip panel uses too. Its rows take the theme's selection band, as the flip panel's do.
+
 **A page's switch.** A set with no toolbar (`V_TOOLBAR` 0) moves stock's toolbar switch to a row reading On or Off: `switch_row` on Lock Screen, `ringnav_sleeptimer` on Sleep Timer.
 
 **Final text.** `text_ink` stores a label's final colour as what Light Mode's style hook turns into it, so the stored value depends on the half. `light_apply`'s `text_inks` walks the windows at Auto's turn and writes each again.
