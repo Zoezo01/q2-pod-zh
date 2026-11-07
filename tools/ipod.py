@@ -171,10 +171,10 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # place on screen, that much down them), its top down to the first row where its square top-left corner
 # clears the glass by CORNER_SLACK, as the full-screen art's do; "3 of 12" under the album; the art's box NP_REFLECT
 # taller, the room its reflection takes under the near edge (coverflow.c slant_render); the times in the
-# Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-9:59:59" fits: stb scales
+# Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W1 boxes ("-9:59" fits: stb scales
 # ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, NP_IPOD_TIME_H high over its NP_BAR_IPOD rows
 # (half a row high of centre when one is odd), the outer edges clear of the glass over those rows. At run time the
-# boxes narrow to the track's length (NP_IPOD_TIME_WS, navigation.c ipod_times), the bar widening between them.
+# boxes widen to the track's length (NP_IPOD_TIME_WS, navigation.c ipod_times), the bar narrowing between them.
 NP_IPOD_ART = inc('NP_IPOD_ART')
 NP_IPOD_LIFT = 30
 NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
@@ -191,7 +191,7 @@ NP_IPOD_TIME_Y = 255 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - (N
 def with_geometry(g):
     """The row sizes and the Now Playing insets that clear the glass, for a window starting at g.bar."""
     edge = corner_x(g.bar + NP_IPOD_TIME_Y, NP_IPOD_TIME_H) if g.np_ipod else corner_x(g.bar + 251, 8)
-    bar_x = max(MARGIN, edge) + g.np_ipod * (NP_IPOD_TIME_W + NP_IPOD_TIME_GAP)
+    bar_x = max(MARGIN, edge) + g.np_ipod * (NP_IPOD_TIME_WS[0] + NP_IPOD_TIME_GAP)
     return types.SimpleNamespace(
         BOTTOM=320 - g.bar, PITCH=g.pitch, BODY=g.body, ART=g.art, ART_INSET=g.art_inset,
         NP_POS_X=max(NP_MARGIN, corner_x(g.bar + (NP_TOP - 16) // 2, 16)) + 6,  # "3 of 12", 16px text
@@ -538,10 +538,10 @@ def status_bar(root, g=SET0):
         # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
         eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
         eq[2].update({'floating': 'true', **face})
-        # The play state is in the row: Wi-Fi's ink ends on column 261 with it, and it closes up without it.
+        # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
-        # Stock's 16 px icon canvases, centred, put Bluetooth's ink (a row into its canvas) on the battery's top row
-        right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 - 1) + 16
+        # Stock's 16 px icon canvases, centred, on the battery's middle row (paint_battery's body top plus half its height)
+        right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 + g.batt_h // 2)
         left[1][3] = widgets['img_state'][1][3] = right[1][3]  # the state's 22 px art, its ink centred on the caps
         home = copy.deepcopy(widgets['img_state'])
         home[1][:] = [HOME_STATE_X, right[1][1], STATE_W, right[1][3]]
@@ -730,9 +730,9 @@ def playing_page(root, g=SET0):
     if g.np_ipod:  # an iPod classic's times: beside the bar, centred on its rows as stock centres them
         check(y + h // 2 == 255, 'Classic\'s times are centred on the bar at 255')
         check(time_widths(CLASSIC_LIGHT_FONT_SRC) == NP_IPOD_TIME_WS, 'NP_IPOD_TIME_W1, _W2, _W != the times\' measures')
-        for n, box_x, align in ((named['label_playtime'], x - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W, 'right'),
+        for n, box_x, align in ((named['label_playtime'], x - NP_IPOD_TIME_GAP - NP_IPOD_TIME_WS[0], 'right'),
                                 (remain, x + w + NP_IPOD_TIME_GAP, 'left')):
-            n[1] = [box_x, NP_IPOD_TIME_Y, NP_IPOD_TIME_W, NP_IPOD_TIME_H]
+            n[1] = [box_x, NP_IPOD_TIME_Y, NP_IPOD_TIME_WS[0], NP_IPOD_TIME_H]
             for state in [k.split(':')[1] for k in n[2] if k.endswith(':text_color')]:
                 n[2].update({f'style:{state}:text_color': '#FFFFFF', f'style:{state}:font_name': CLASSIC_LIGHT_FONT_NAME,
                              f'style:{state}:font_size': str(NP_IPOD_TIME_PX), f'style:{state}:text_align_h': align})

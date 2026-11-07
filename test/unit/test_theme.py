@@ -128,8 +128,8 @@ CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_ful
 
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
-            'cf.bright2': 128, 'cf.reflect': 24, 'cf.reflect_top': 48, 'cf.stride': 110, 'cf.radius': 12,
-            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 0, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 210, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
+            'cf.bright2': 128, 'cf.reflect': 46, 'cf.reflect_top': 90, 'cf.stride': 110, 'cf.radius': 12,
+            'cf.tilt': 60, 'cf.horizon': 50, 'cf.third': 1, 'cf.swing': 0, 'cf.lift': 0, 'cf.eye_turn': 0, 'cf.view_h': 220, **{f'cf.{a}': v for a, v in CLASSIC_THUMB.items()}, 'cf.name_px': 24, 'cf.artist_px': 20, 'cf.text_y': 212, 'cf.artist_y': 32, 'cf.art_persp': 100}
 
 
 MOTION_TODAY = {**{f'motion.{k}.{a}': 0 for k in ('page', 'playing', 'coverflow') for a in ('ms', 'easing', 'anim')},
@@ -534,7 +534,7 @@ def test_coverflow_range_rejects(monkeypatch, field, value):
 
 
 @pytest.mark.parametrize('field,value,message', [
-    ('cf.top', 27, 'top \\+ 160 \\+ reflect = 211 exceeds 210'), ('cf.reflect', 38, 'top \\+ 160 \\+ reflect = 211 exceeds 210'),
+    ('cf.top', 15, 'top \\+ 160 \\+ reflect = 221 exceeds 220'), ('cf.reflect', 48, 'top \\+ 160 \\+ reflect = 221 exceeds 220'),
     ('cf.view_h', 291, 'view_h 291 exceeds the client height 290'),
     ('cf.bright2', 193, 'bright2 193 exceeds bright1 192'), ('cf.text_y', 231, 'text_y \\+ 60 = 291 exceeds the client height 290')])
 def test_coverflow_cross_rejects(field, value, message):
@@ -598,7 +598,7 @@ def test_coverflow_caption_follows_the_bar(monkeypatch):
 
 
 def test_coverflow_edges_pass(monkeypatch):   # each limit itself is allowed
-    for edge in ({'cf.top': 26}, {'cf.text_y': 230}, {'cf.bright2': 192}):
+    for edge in ({'cf.top': 14}, {'cf.text_y': 230}, {'cf.bright2': 192}):
         theme.validate({**theme.builtins()[0], **edge}, 't.xml')
     with_role(monkeypatch, eye=2046, x1=1023, xs=0)
     theme.builtins()
@@ -769,8 +769,8 @@ def test_bar_battery_painter_rejects():
 
 def test_theme_level_halves():
     classic_light = theme.builtins()[1]
-    assert classic_light['batt_line'] == 0x010101 and classic_light['light']['batt_line'] == 0x717070  # both halves stated
-    assert theme.half(classic_light, False, 0xffffff, 0)['batt_line'] == 0x010101
+    assert classic_light['batt_line'] == classic_light['light']['batt_line'] == 0x717070  # both halves stated, the same grey
+    assert theme.half(classic_light, False, 0xffffff, 0)['batt_line'] == 0x717070
     assert theme.half({**classic_light, 'batt_line': 0}, False, 0xffffff, 0)['batt_line'] != 0  # one stated: the other derives
     assert error(resolved, '<view name="bar"><element name="battery" light.painter="classic-light"/></view>') == \
         't.xml:1: bar.battery.painter: one value for both halves'

@@ -360,6 +360,9 @@ AB_X_CALLS = (0x52a408, 0x52a484, 0x52a494)
 # Songs' row bind (0x4a90e4): a record with no artist gets stock's "Unknown Artist" through this getFormatString jalr,
 # which becomes jal ringnav_song_unknown.
 SONG_UNKNOWN_CALL = 0x4a9320
+# table_client's load loop: its on_load_data jalr becomes jal ringnav_table_load, which calls it and
+# then re-picks the row's faces for the text it bound (the load is lw t9, TABLE_LOAD_DATA(s4) at -0x14).
+TABLE_LOAD_CALL = 0x5ca0fc
 # Folder row names are text, not printf formats ("99% Invisible" crashes stock's formatter).
 # tk_strncpy writes its terminator at n, so reserve the last byte of the 512-byte buffer.
 FOLDER_NAME = ((0x522384, 0x24050200, 0x240601ff),  # a2 = 511
@@ -1728,6 +1731,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SONG_UNKNOWN_CALL-8))[0] == 0x8f99a908,
           "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
     patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, TABLE_LOAD_CALL-0x14))[0] == 0x8e9900e4,
+          "table load: expected on_load_data's callback")  # lw t9, 0xe4(s4)
+    patch_word(patched, TABLE_LOAD_CALL, 0x0320f809, jal(ps['ringnav_table_load']), "a bound table row's faces")
     for word in FOLDER_NAME:
         patch_word(patched, *word, 'folder names are literal text')
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),

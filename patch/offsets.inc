@@ -32,6 +32,7 @@
 #define VIEW_CONTENT_H 0x7c     /* scroll_view content height (same slot) */
 #define SCROLL_X 0x80           /* scroll_view horizontal offset */
 #define TABLE_TOP 0x80          /* table_client viewport top (same slot) */
+#define TABLE_LOAD_DATA 0xe4    /* table_client on_load_data, its ctx at 0xe0 (table_client_set_on_load_data) */
 #define SCROLL_Y 0x84           /* scroll_view viewport top */
 #define VIEW_HORIZONTAL 0x90    /* scroll_view xslidable */
 #define VIEW_VERTICAL 0x91      /* scroll_view yslidable */
@@ -147,9 +148,9 @@
  * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from
  * SCRUB_REFLECT_A/256 over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX, the largest
  * whose line fits their NP_IPOD_TIME_H box, NP_IPOD_TIME_GAP from the bar, in
- * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59",
- * NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59", the build's layout (tools/ipod.py
- * measures them). The boxes' outer edges stay; the bar takes what they leave. */
+ * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59", the build's
+ * layout, NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59" (tools/ipod.py measures them).
+ * The boxes' outer edges stay; the bar takes what they leave. */
 #define SLANT_FAR 224
 #define SLANT_REFLECT_A 84
 #define SLANT_REFLECT_PCT 22
@@ -167,7 +168,7 @@
  * window (navigation.c stream_ipod; tools/ipod.py playing_page checks them): the art NP_IPOD_ART
  * square at SPOT_ART_X, NP_IPOD_ART_Y, its box its reflection's room taller; the title's row at
  * NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y, the artist's, album's and "3 of 12"'s 34, 62 and 90 under it; the
- * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the widest boxes';
+ * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the "-9:59" boxes';
  * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' NP_IPOD_TIME_H boxes
  * beside it, centred on its rows. */
 #define NP_IPOD_ART 178
@@ -177,7 +178,7 @@
 #define NP_IPOD_TEXT_Y 38
 #define NP_IPOD_FAV_X 300
 #define NP_IPOD_FAV_Y 165
-#define NP_IPOD_BAR_X 87
+#define NP_IPOD_BAR_X 66
 #define NP_IPOD_BAR_Y 245
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
@@ -698,11 +699,12 @@ static inline int arc_out(int r, int y) {
  * square with its top CF_TOP from the frame's; side covers turn CF_ANGLE (60) degrees inward (the
  * sine table in coverflow.c), sit CF_X1 px from the centre, then CF_XS apart, CF_Z1 px and then
  * CF_ZS more behind it, seen from CF_EYE px. Brightness (of 256) is 256 at the centre, CF_BRIGHT1
- * one cover out and CF_BRIGHT2 two out, reaching 0 three out. Each cover's reflection is
- * CF_REFLECT px high at native size, from CF_REFLECT_TOP (of 256) of its brightness down to black.
- * The wheel moves one album every CF_STRIDE px. Starting values, to be tuned together on the Q2. */
+ * one cover out and CF_BRIGHT2 two and three out, reaching 0 half a step past the third, as the row
+ * draws it while the wheel holds the covers. Each cover's reflection is CF_REFLECT px high at native
+ * size, from CF_REFLECT_TOP (of 256) of its brightness down to black: Classic's, so the frame runs
+ * to its end, under the caption. The wheel moves one album every CF_STRIDE px. */
 #define CF_VIEW_W 375
-#define CF_VIEW_H 210
+#define CF_VIEW_H 220 /* CF_TOP + 160 + CF_REFLECT, and a row to spare */
 #define CF_CX 187 /* the centre line lies between screen columns 186 and 187 */
 #define CF_TOP 13
 #define CF_EYE 300
@@ -712,13 +714,13 @@ static inline int arc_out(int r, int y) {
 #define CF_ZS 20
 #define CF_BRIGHT1 192
 #define CF_BRIGHT2 128
-#define CF_REFLECT 24
-#define CF_REFLECT_TOP 48
+#define CF_REFLECT 46
+#define CF_REFLECT_TOP 90
 #define CF_STRIDE 110
 #define CF_BOUNCE 5 /* an artist's last album: a step past kicks it 1/5 of a stride, then back */
 #define CF_ANGLE 60   /* a side cover's turn, degrees */
 #define CF_HORIZON 50 /* % down the cover its centre sits on the shared horizon */
-#define CF_THIRD 0    /* 1: the third out stays, gone half a step past it */
+#define CF_THIRD 1    /* 1: the third out stays, gone half a step past it */
 #define CF_TEXT_Y 212 /* the album caption's top, under the frame; the artist follows */
 /* Touch on the covers (coverflow.c, docs/internals.md#coverflow-touch) */
 #define CF_DRAG_PX 90      /* finger travel per album: about the centre cover's own on screen */

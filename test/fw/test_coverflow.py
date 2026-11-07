@@ -12,7 +12,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CX, TOP, ART, ONE, MISS = 187, 13, 160, 65536, 99
-VIEW_W, VIEW_H = 375, 210
+VIEW_W, VIEW_H = 375, 220
 HOME_PW, HOME_H = 188, 290
 PREPARING, COVERS, TRACKS = range(3)
 ARTIST_ALBUMS = 1
@@ -360,7 +360,8 @@ def test_a_side_cover_s_pose_by_its_distance(fw):
     assert (p.xc, p.zc, p.c, p.s, p.bright) == (16 * 112, 16 * 90, 32768, 56756, 192)
     p = pose(g, 2 * ONE)
     assert (p.xc, p.zc, p.bright) == (16 * (112 + 48), 16 * (90 + 20), 128)
-    assert pose(g, 3 * ONE).bright == 0  # reaching 0 three out
+    assert pose(g, 3 * ONE).bright == 128  # the third out stays (CF_THIRD)
+    assert pose(g, 13 * ONE // 4).bright == 64 and pose(g, 7 * ONE // 2).bright == 0  # gone half a step on
     assert pose(g, 4 * ONE).bright == 0
 
 
@@ -432,9 +433,9 @@ def test_hit_across_the_shelf_at_rest(fw):
     g = api(fw)
     got = [g.coverflow_hit(0, x, 93) for x in range(VIEW_W)]
     hits = [h for h in got if h != MISS]
-    assert sorted(set(hits)) == [-2, -1, 0, 1, 2]  # three out, a cover under a quarter bright is no target
+    assert sorted(set(hits)) == [-3, -2, -1, 0, 1, 2, 3]  # the third out stays, at CF_BRIGHT2
     assert hits == sorted(hits)
-    assert got[0] == MISS and got[-1] == MISS
+    assert got[0] == -3 and got[-1] == 3  # the third out runs off the frame
     assert got[CX - 81] == -1 and got[CX + 80] == 1
 
 
@@ -476,7 +477,7 @@ def test_hit_names_the_cover_drawn_there(fw):
                 got = g.coverflow_hit(frac, x, y)
                 if j is None:
                     assert got == MISS, (frac, x, y)
-                elif abs((j - 3) * ONE - frac) < 5 * ONE // 2:  # at least a quarter bright
+                elif abs((j - 3) * ONE - frac) < 13 * ONE // 4:  # at least a quarter bright
                     assert got == j - 3, (frac, x, y)
                     checked += 1
     assert checked > 2000
@@ -499,7 +500,7 @@ def test_the_centre_cover_comes_out_texel_for_texel(fw):
         libc.free(C.addressof(t))
 
 
-def test_the_reflection_mirrors_the_cover_and_fades_out_in_24_px(fw):
+def test_the_reflection_mirrors_the_cover_and_fades_out_in_46_px(fw):
     g = api(fw)
     tex = exact(C.c_uint, ART * ART)
     tex[:] = [0xff000000 | (y + 60) for y in range(ART) for x in range(ART)]
@@ -508,12 +509,11 @@ def test_the_reflection_mirrors_the_cover_and_fades_out_in_24_px(fw):
     ring[3] = C.addressof(tex)
     g.coverflow_render(d, VIEW_W, 0, ring)
     bottom = TOP + ART
-    for k in range(24):
+    for k in range(46):
         red = d[(bottom + k) * VIEW_W + CX] & 255
         mirrored = ART - 1 - k + 60
-        assert abs(red - mirrored * 48 / 256 * (1 - (k + .5) / 24)) <= 2, k
-    assert d[(bottom + 24) * VIEW_W + CX] == 0xff000000
-    assert all(d[y * VIEW_W + CX] == 0xff000000 for y in range(bottom + 24, VIEW_H))
+        assert abs(red - mirrored * 90 / 256 * (1 - (k + .5) / 46)) <= 2, k
+    assert all(d[y * VIEW_W + CX] == 0xff000000 for y in range(bottom + 46, VIEW_H))
     for t in (tex, d):
         libc.free(C.addressof(t))
 

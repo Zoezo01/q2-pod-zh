@@ -6699,8 +6699,8 @@ assert not m.bands and [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==
 m.nodes[sv2]['value']=1; paint(dlg2)  # a sliver is still a round dot
 assert m.rounded[2]['rect']==(*bar[:2],BH,BH),m.rounded; passed()
 R=O['LETTER_RADIUS']; assert math.hypot(80-(X+R),Y+H-R-240)+R<=80  # its rounded corner clears the glass's
-# Classic's times beside the bar fit the track's length (ipod_times): "-9:59" boxes and a wider bar under 10:00,
-# the build's "-9:59:59" ones and 201 px from an hour, the boxes' outer edges and the gap kept. The page opens fitted;
+# Classic's times beside the bar fit the track's length (ipod_times): the build's "-9:59" boxes and its widest bar under
+# 10:00, "-9:59:59" ones and 201 px from an hour, the boxes' outer edges and the gap kept. The page opens fitted;
 # a seek keeps the class; a new length refits off the paint that saw it (np_fit_due), each widget repainted where it
 # was and where it goes. The volume over it takes the bar's current width, a speaker in each box; an A-B marker's x,
 # stock's on the boot set's bar, is the same share of the fitted one (ringnav_ab_x).
@@ -6711,9 +6711,9 @@ class ABMachine(QueueMachine):
         self.calls.append(('ab_x',u.reg_read(UC_MIPS_REG_A0))); self.returns(self.ab,clobber=True)
 CONFIG.clear(); CONFIG.update(THEME='1')
 m=ABMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'; m.handlers[0x52a268]='ab:x'
-slider,elapsed,remain=m.node('slider','slider_play',max=225,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
+slider,elapsed,remain=m.node('slider','slider_play',max=7200,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
 win=m.node('window','playing_page',[slider,elapsed,remain]); m.word(win+O['W_PARENT'],m.wm); m.top=win
-BX,TW,GAP,TY=O['NP_IPOD_BAR_X'],O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_BAR_Y']-(O['NP_IPOD_TIME_H']-O['NP_BAR_IPOD']+1)//2
+BX,TW,GAP,TY=O['NP_IPOD_BAR_X'],O['NP_IPOD_TIME_W1'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_BAR_Y']-(O['NP_IPOD_TIME_H']-O['NP_BAR_IPOD']+1)//2
 def lay(tw):
     x=BX-TW+tw
     return {elapsed:(x-GAP-tw,TY,tw,21),remain:(375-x+GAP,TY,tw,21),slider:(x,233,375-2*x,44)}
@@ -6729,14 +6729,18 @@ from ipod import VALUE_NAMES
 for n,v in (('np_bar_x',BX),('np_bar_w',375-2*BX)):  # Classic's boot set: row 0 stands in for it (st.geom 0)
     m.u.mem_write(payload_syms['boot_values']+2*VALUE_NAMES.index(n),struct.pack('<H',v))
 m.word(syms['system_bar'],m.node('window','system_bar'))
-assert m.call(address=playing,args=(win,7,0,0),gap=0)==0
-assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W1']) and lay(O['NP_IPOD_TIME_W1'])[slider][:3:2]==(66,243)
+assert m.call(address=playing,args=(win,7,0,0),gap=0)==0  # a two-hour track: the build's 243 px bar narrows at once
+assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W']) and lay(TW)[slider][:3:2]==(66,243) and lay(O['NP_IPOD_TIME_W'])[slider][:3:2]==(87,201)
 assert refit()==[elapsed,remain,slider]
 m.nodes[m.wm]={'children':[win]}; m.calls=[]; paint(win); assert not m.timers or payload_syms['np_fit_due'] not in [t[1] for t in m.timers.values()]
 from build import AB_X_CALLS  # the placement's three calls of the x go through ringnav_ab_x
 assert [struct.unpack_from('<I',demo,fileoff(demo,a))[0] for a in AB_X_CALLS]==[jal(payload_syms['ringnav_ab_x'])]*3
 def ab_x(x): m.ab=x; m.calls=[]; r=signed(m.call(address=payload_syms['ringnav_ab_x'],args=(77,0,0,0),gap=0)); assert m.calls[0]==('ab_x',77); return r
-assert [ab_x(x) for x in (BX,BX+89,BX+200,0)]==[66,66+89*243//201,66+200*243//201,0]; passed()  # 0: no point to mark
+assert [ab_x(x) for x in (BX,BX+89,BX+242,0)]==[87,87+89*201//243,87+242*201//243,0]  # 0: no point to mark
+m.nodes[slider]['max']=225; m.calls=[]; paint(win)  # a 3:45 track: mid-paint nothing moves
+assert geo(slider)==lay(O['NP_IPOD_TIME_W'])[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
+m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(TW) and refit()==[elapsed,remain,slider]
+assert ab_x(BX+89)==BX+89; passed()  # the build's bar: stock's own
 sv,lv=m.node('slider','slider_vol',max=100,value=40),m.node('label','label_vol')
 dlg=m.node('dialog','volume_dialog',[sv,lv]); m.word(dlg+O['W_PARENT'],m.wm); put(dlg,0,0,375,320)
 m.nodes[m.wm]={'children':[win,dlg]}; m.top=dlg; m.image_size=(8,13); m.bands.clear(); m.image_draws.clear(); m.calls=[]; paint(dlg)
@@ -6745,13 +6749,12 @@ assert fills[:2]==[(23,TY+30,35,21,color_t(0)),(317,TY+30,35,21,color_t(0))],fil
 assert {(b[0],b[2]) for b in fills[2:]}=={(66,on),(66+on,243-on)},fills  # the bar between the speakers, as wide as the page's
 assert [d[0] for _,d in m.image_draws]==[23+35-8,317],m.image_draws; passed()
 m.nodes[m.wm]={'children':[win]}; m.top=win; m.image_size=(50,50)
-m.nodes[slider]['value']=200; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(O['NP_IPOD_TIME_W1'])[slider] and not refit()  # a seek
-m.nodes[slider]['max']=7200; m.calls=[]; paint(win)  # a two-hour track: mid-paint nothing moves
-assert geo(slider)==lay(O['NP_IPOD_TIME_W1'])[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
-m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(TW) and lay(TW)[slider][2]==201
+m.nodes[slider]['value']=200; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(TW)[slider] and not refit()  # a seek
+m.nodes[slider]['max']=7200; m.calls=[]; paint(win)  # a two-hour track again: mid-paint nothing moves
+assert geo(slider)==lay(TW)[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
+m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W']) and geo(slider)[2]==201
 assert refit()==[elapsed,remain,slider]
-m.nodes[slider]['max']=0; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(TW)[slider] and not refit()  # unknown: kept
-assert ab_x(BX+89)==BX+89  # the build's bar: stock's own
+m.nodes[slider]['max']=0; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(O['NP_IPOD_TIME_W'])[slider] and not refit()  # unknown: kept
 m.nodes[slider]['max']=700; paint(win); m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W2']) and geo(slider)[:3:2]==(74,227); passed()
 CONFIG.clear()
 
@@ -7517,8 +7520,8 @@ def msg_dialog(theme_='1',light='1',songs=704,whole=1,text='Updating No.0',count
     win,anim,msg,scan,btn=msg_win(m,text)
     if counted: m.counted()
     return m,win,anim,msg,scan,btn
-def usb_page(mode,theme_='1',light='1',y=26):
-    m=MsgMachine(); m.config.update(THEME=theme_,LIGHT=light); m.byte(syms['g_usbmode'],mode)
+def usb_page(mode,theme_='1',light='1',y=26,machine=None):
+    m=(machine or MsgMachine)(); m.config.update(THEME=theme_,LIGHT=light); m.byte(syms['g_usbmode'],mode)
     ret,img,info,charge,dacset=m.node('image','img_return'),m.node('image','img_usbmode'),m.node('hscroll_label','scrlabel_info'),m.node('image','img_daccharge'),m.node('image','img_dacset')
     win=m.node('window','usbmode_page',[ret,img,info,charge,dacset]); parents(m,win); m.word(win+O['W_PARENT'],m.wm)
     place(m,win,0,y,375,320-y); place(m,ret,20,0,80,60); place(m,charge,247,0,50,50); place(m,dacset,305,0,50,50); m.top=win; m.nodes[m.wm]={'children':[win]}; ui_loaded(m,'usbmode_page',win)
@@ -8716,6 +8719,27 @@ class FileMocks:
             if data: self.files[path]=data
         elif name=='rename': self.files[self.text(b)]=self.files.pop(self.text(a))
         return 0
+# USB Storage's page, every theme: the card's LUN read open, then empty, is the computer's eject: OK to Disconnect, once.
+# Empty before it was ever open, or no file (no gadget), is no eject; Audio and DAC have no poll.
+USB_LUN='/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file'
+class UsbMachine(FileMocks,MsgMachine):
+    def __init__(self): super().__init__(); self.file_mocks('u:'); self.widget_timers=True
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('u:'): return super().hook(u,address,size,unused)
+        name=name[2:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; self.calls.append((name,a,b,c)); self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
+for theme_ in '102':
+    m,win,_,_,info,*_=usb_page(0,theme_=theme_,machine=UsbMachine)
+    said=lambda: {n.get('text') for n in m.nodes.values() if isinstance(n,dict) and n.get('visible',1)} & {'Connected','OK to Disconnect'}
+    for data in (None,b'',b'/dev/mmcblk0p1\n'):
+        if data is not None: m.files[USB_LUN]=data
+        m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,(theme_,data)
+    m.files.pop(USB_LUN); m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,theme_  # torn down after a path: no eject
+    m.files[USB_LUN]=b''; m.advance(500); assert 'OK to Disconnect' in said() and not m.timers and [c[1] for c in m.calls if c[0]=='widget_invalidate_force']==[win],theme_
+    if theme_=='1': assert said()=={'OK to Disconnect'} and m.nodes[named(m,win,'msg_line')]['text']==''
+    else: assert m.nodes[info]['visible']==0
+    m,*_=usb_page(1,theme_=theme_,machine=UsbMachine); assert not m.timers
+passed()
 class AlbumRateMachine(FileMocks,CoverflowMachine):
     def __init__(self,files=None,**kw): super().__init__(**kw); self.file_mocks('a:',files)
     def hook(self,u,address,size,unused):
@@ -9260,7 +9284,7 @@ assert all(n['type']=='hscroll_label' and n['loop']==1 and n['set_hscroll_label_
 # Wheel only: the covers' slide_menu takes no touch.
 m=CoverflowMachine(); m.open()
 assert m.nodes[m.slide].get('sensitive')==0; passed()
-# Text geometry: album over artist under the covers' frame (CF_TEXT_Y), the album larger and white,
+# Text geometry: album over artist under the covers, over their reflections' tail (CF_TEXT_Y), the album larger and white,
 # the artist grey, CF_EDGE from the sides and clear of the rounded glass, as is every other label
 # (the track list's title and rows, whose last visible row is lowest).
 from ipod import corner_inset
@@ -9270,7 +9294,7 @@ def clear(x,top,w,px):  # a label's text band, in screen rows (the window starts
 m=CoverflowMachine(); page=m.open(); labels=[w for w in m.nodes[m.get(m.slide+O['W_PARENT'])]['children'] if m.nodes[w]['type']=='hscroll_label']
 name,artist=labels
 E=O['CF_EDGE']; y=O['CF_TEXT_Y']
-assert y>=O['CF_VIEW_H'] and y+O['CF_NAME_H']+O['CF_ARTIST_H']<=290
+assert y>=O['CF_TOP']+160 and y+O['CF_NAME_H']+O['CF_ARTIST_H']<=290
 assert [cf_geometry(m,w) for w in labels]==[(E,y,375-2*E,O['CF_NAME_H']),(E,y+O['CF_NAME_H'],375-2*E,O['CF_ARTIST_H'])]
 assert m.nodes[name]['style:normal:font_size']==O['CF_NAME_PX']==24 and m.nodes[artist]['style:normal:font_size']==O['CF_ARTIST_PX']==20
 assert m.nodes[artist]['style:normal:text_color']==signed(O['CF_GREY']) and 'style:normal:text_color' not in m.nodes[name]
@@ -11003,14 +11027,14 @@ for bt_text,bt_face in (('Навстречу Ветру','bold'),('日本語','d
     btm.call(address=payload_syms['bar_title_fits'],args=(btm.nodes[btnav]['children'][1],0,0,0),gap=0)
     assert btm.font==(bt_face,17 if bt_face=='bold' else 21),(bt_text,btm.font)  # measured as it is drawn
 passed()
-# Classic battery (BATT_CLASSIC_LIGHT): body 28x15 on rows 4 to 18, its soft edge's column at x 0 of the slot (screen 288): a
-# #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, one stop per row
-# of the level over its 13 inner rows, the last column shaded. Light only: the soft edge and the emboss. Charging fills
+# Classic battery (BATT_CLASSIC_LIGHT): body 26x13 on rows 5 to 17, its soft edge's column at x 0 of the slot (screen 286): a
+# #717070 outline with half-covered corners, #5b6c52 along the bottom, a hollow nub, the dark rows inside, the level's stops
+# over its 11 inner rows, the last column shaded. Light only: the soft edge and the emboss. Charging fills
 # it and draws classic_light_bolt; low is a 3 px #d9402e sliver; full on power draws classic_light_plug; Percent and Icon + Percent draw the
 # digits in Classic's bar size. Everything stays under the instruction cap.
 def classic_light_battery_bar(mode,image='bar_battery',text='50%',light='1',status=None,eq=None,wifi=0,state=0,cable=0):
     bm=Machine(); bm.config.update(LIGHT=light,BATTERY=str(mode)); classic_light_on(bm)  # before the boot reads the settings
-    bm.image_size=(26,13)  # classic_light_bolt's and classic_light_plug's real size (test/unit/test_art.py)
+    bm.image_size=(24,11)  # classic_light_bolt's and classic_light_plug's real size (test/unit/test_art.py)
     bm.word(syms['g_power_chargestate'],state); bm.byte(syms['g_usbdet_value'],cable)  # 2: Full
     if status is not None: bm.handlers.pop(syms['mclGetPlayStatus'],None); bm.word(0xa3beac,status)  # local's play state
     lv=bm.node('progress_bar','progress_battery',value=50)
@@ -11026,37 +11050,37 @@ def classic_light_battery_bar(mode,image='bar_battery',text='50%',light='1',stat
     cost=[0]; hook=bm.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)
     paint(bw_['view_battery']); bm.u.hook_del(hook); assert cost[0]<100000,cost  # the battery under the cap
     return bm,bw_,[b[:5] for b in bm.bands]
-LINE,PAPER,EDGE=color_t(0x717070),color_t(0xffffff),color_t(0x5b6c52); y=4; BX=2; BW=26
+LINE,PAPER,EDGE=color_t(0x717070),color_t(0xffffff),color_t(0x5b6c52); y=5; BX=2; BW=24
 def a_(rgb,a): return color_t(rgb)&0xffffff|a<<24
-SOFT=[(0,y,1,15,a_(0,51)),(1,y-1,28,1,a_(0,28))]
-EMPTY=(0x56585d,0x595a61,0x5f6168,0x63656c,0x6b6d73,0x76787e,0x85878d,0x898b92,0x8d8f96,0x94969c,0x9ea0a5,0xa0a3a6,0x797b7c)
+SOFT=[(0,y,1,13,a_(0,51)),(1,y-1,26,1,a_(0,28))]
+EMPTY=(0x56585d,0x5a5b62,0x606269,0x686a70,0x73757b,0x85878d,0x898b92,0x8f9198,0x9a9ca1,0x9fa2a5,0x797b7c)  # the 13 stops mixed over 11 rows
 def body_bands(line):
-    return [(BX,y,BW,1,line),(1,y+1,1,13,line),(28,y+1,1,13,line),(29,9,1,1,line),(29,13,1,1,line),(30,10,1,3,line),
-            (1,y,1,1,line&0xffffff|191<<24),(28,y,1,1,line&0xffffff|191<<24),(30,9,1,1,line&0xffffff|191<<24),(30,13,1,1,line&0xffffff|191<<24),
-            (1,y+14,1,1,line&0xffffff|128<<24),(28,y+14,1,1,line&0xffffff|128<<24),
-            (BX,y+14,BW,1,EDGE),*((BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(EMPTY))]
-EMBOSS=[(1,20,27,1,a_(0xffffff,179)),(29,14,2,2,a_(0xffffff,153))]
-ROWS=(0x90b27d,0xc4ebac,0xdcf9c5,0xcbefb1,0xade586,0xa6e27b,0x92ce68,0x67a83f,0x4e972c,0x4e972d,0x56a035,0x58a437,0x539933)
+    return [(BX,y,BW,1,line),(1,y+1,1,11,line),(26,y+1,1,11,line),(27,9,1,1,line),(27,13,1,1,line),(28,10,1,3,line),
+            (1,y,1,1,line&0xffffff|191<<24),(26,y,1,1,line&0xffffff|191<<24),(28,9,1,1,line&0xffffff|191<<24),(28,13,1,1,line&0xffffff|191<<24),
+            (1,y+12,1,1,line&0xffffff|128<<24),(26,y+12,1,1,line&0xffffff|128<<24),
+            (BX,y+12,BW,1,EDGE),*((BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(EMPTY))]
+EMBOSS=[(1,19,25,1,a_(0xffffff,179)),(27,14,2,2,a_(0xffffff,153))]
+ROWS=(0x90b27d,0xc9eeb1,0xd5f5bd,0xb8e896,0xa7e27d,0x92ce68,0x61a43a,0x4e972c,0x539c32,0x57a336,0x539933)
 outline=SOFT+body_bands(LINE); LEVEL=len(outline)
 bm,bw_,bands=classic_light_battery_bar(0)
-assert bm.get(bw_['view_battery']+O['W_W'])==31 and bm.get(bw_['view_battery']+O['W_H'])==26
+assert bm.get(bw_['view_battery']+O['W_W'])==29 and bm.get(bw_['view_battery']+O['W_H'])==26
 assert bm.get(bw_['img_bt']+O['W_Y'])==1 and bm.get(bw_['img_wifi']+O['W_Y'])&0xffffffff==0xffffffff  # a row down, a row up
 assert bands[:LEVEL]==outline
-SHADE=[(27,y+1,1,13,a_(0,64))]
-assert bands[LEVEL:]==[(BX,y+1+j,13,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]  # 50%: the last column's shade over the dark rows
-# The dark half (LIGHT=0): the stated dark.line #010101, no soft edge or emboss; the level's hues and the dark rows as they are.
+SHADE=[(25,y+1,1,11,a_(0,64))]
+assert bands[LEVEL:]==[(BX,y+1+j,12,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]  # 50%: the last column's shade over the dark rows
+# The dark half (LIGHT=0): the stated dark.line #717070, the light half's, no soft edge or emboss; the level's hues and the dark rows as they are.
 bm,bw_,dark=classic_light_battery_bar(0,light='0')
-assert dark==body_bands(color_t(0x010101))+bands[LEVEL:-2]; passed()
+assert dark==body_bands(LINE)+bands[LEVEL:-2]; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%')  # full: the level's last column shaded
 assert bands[LEVEL:]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)]+SHADE+EMBOSS,bands[LEVEL:]; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_charge','63%')  # full, then the bolt: the generated image on the inside, at its real size
-assert [b[:4] for b in bands[LEVEL:LEVEL+13]]==[(BX,y+1+j,BW,1) for j in range(13)] and 'classic_light_bolt' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
-assert bm.image_draws==[((0,0,26,13),(BX,y+1,26,13))],bm.image_draws
+assert [b[:4] for b in bands[LEVEL:LEVEL+11]]==[(BX,y+1+j,BW,1) for j in range(11)] and 'classic_light_bolt' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
+assert bm.image_draws==[((0,0,BW,11),(BX,y+1,BW,11))],bm.image_draws
 # Full on power, a Q2 on the charger: the plain icon's status from stock, the cable from stock's flag, both memory; the
 # level full and the plug drawn. Either one alone: no glyph. Charging wins over Full. Percent Inside keeps its digits, no glyph.
 bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%',state=2,cable=1)
-assert bands[LEVEL:LEVEL+13]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)] and 'classic_light_plug' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
-assert bm.image_draws==[((0,0,26,13),(BX,y+1,26,13))],bm.image_draws
+assert bands[LEVEL:LEVEL+11]==[(BX,y+1+j,BW,1,color_t(c)) for j,c in enumerate(ROWS)] and 'classic_light_plug' in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
+assert bm.image_draws==[((0,0,BW,11),(BX,y+1,BW,11))],bm.image_draws
 for state,cable in ((2,0),(1,1),(0,1)):
     bm,bw_,bands=classic_light_battery_bar(0,'bar_battery','100%',state=state,cable=cable); assert not bm.image_draws,(state,cable)
 bm,bw_,bands=classic_light_battery_bar(0,'bar_charge','100%',state=2,cable=1); assert 'classic_light_plug' not in [bm.text(c[2]) for c in bm.calls if c[0]=='widget_load_image']
@@ -11064,17 +11088,17 @@ bm,bw_,bands=classic_light_battery_bar(3,'bar_battery','100%',state=2,cable=1); 
 bm,bw_,bands=classic_light_battery_bar(3,'bar_charge','63%')  # Percent Inside: digits, no bolt
 assert not bm.image_draws; passed()
 bm,bw_,bands=classic_light_battery_bar(0,'bar_lowcharge','5%')
-assert bands[LEVEL:]==[(BX,y+1,3,13,color_t(0xd9402e))]+SHADE+EMBOSS; passed()
+assert bands[LEVEL:]==[(BX,y+1,3,11,color_t(0xd9402e))]+SHADE+EMBOSS; passed()
 for mode in (1,2,3):  # Percent Inside (digits in the body), and the stored values that read as it
     bm,bw_,bands=classic_light_battery_bar(mode); letters=[(l['text'],l['rect']) for l in bm.letters]
-    assert letters==[('50',(BX,y+1,BW,13))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==31,(mode,letters); passed()
+    assert letters==[('50',(BX,y+1,BW,11))]*2 and bands[:LEVEL]==outline and bm.get(bw_['view_battery']+O['W_W'])==29,(mode,letters); passed()
 # Percent Inside's digits read in both halves: dark on the level, whatever its colour (the gloss, full while
 # charging, the sliver when low), and past its end white, on the dark rows, in both halves.
 # Each part is clipped to its side of the level's end, and the canvas's clip comes back.
 for lt,past in (('1',0xffffff),('0',0xffffff)):
-    for batt_img,batt_text,f in (('bar_battery','50%',13),('bar_battery','100%',26),('bar_charge','63%',26),('bar_lowcharge','5%',3),('bar_battery','0%',0)):
+    for batt_img,batt_text,f in (('bar_battery','50%',12),('bar_battery','100%',24),('bar_charge','63%',24),('bar_lowcharge','5%',3),('bar_battery','0%',0)):
         bm,bw_,bands=classic_light_battery_bar(3,batt_img,batt_text,lt); digits=batt_text[:-1]
-        want=[(digits,(BX,y+1,BW,13),color_t(0),(BX,y+1,f,13))][:f>0]+[(digits,(BX,y+1,BW,13),color_t(past),(BX+f,y+1,BW-f,13))][:f<BW]
+        want=[(digits,(BX,y+1,BW,11),color_t(0),(BX,y+1,f,11))][:f>0]+[(digits,(BX,y+1,BW,11),color_t(past),(BX+f,y+1,BW-f,11))][:f<BW]
         assert [(l['text'],l['rect'],l['color'],l['clip']) for l in bm.letters]==want,(lt,batt_img,batt_text,bm.letters)
         assert bm.clip not in [w[3] for w in want]
 passed()
@@ -11083,7 +11107,7 @@ passed()
 for status,eq,eq_on in ((0,0,0),(2,0,0),(0,1,1),(2,1,0)):
     bm,bw_,bands=classic_light_battery_bar(3,status=status,eq=eq,wifi=1)
     assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq_on),(status,eq)
-    assert bm.get(bw_['view_battery']+O['W_W'])==31 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
+    assert bm.get(bw_['view_battery']+O['W_W'])==29 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
 passed()
 # Classic's play state is its own art (tools/art.py), by state and half, in place of stock's glyph; the image hook leaves
 # any classic_light_ image as drawn. Classic keeps stock's.
@@ -12193,6 +12217,36 @@ for setup in (None,lambda k: k.config.update(THEME='2')):  # Minimal and Modern
 # Cyrillic never takes the scale: its px is the style's, nothing written.
 fw=fk.node('hscroll_label',text='Songs'); fl=lambda t,want: (fk.nodes[fw].__setitem__('text',t),fk.call(address=payload_syms['theme_font'],args=(fw,0,-2,0),gap=0),[(fk.nodes[fw][f'style:{s}:font_name'],fk.nodes[fw][f'style:{s}:font_size']) for s in STATES]==[want]*3)[-1]
 assert fl('Songs',('classic-light',27)) and fl('Песни',('bold',22)) and fl('Songs',('classic-light',27)) and fl('歌',('default',27)); passed()
+# A virtual table binds a pooled row's text with no relayout (table_client's load loop, #217): ringnav_table_load runs stock's on_load_data (a PIC
+# call), then each label its layout gave a face finds it again for the new text, at its own role's size (a title 27, a tall title 28); a label never
+# themed stays as it was. Minimal's rows have no faces: the bind is stock's.
+from build import TABLE_LOAD_CALL
+assert struct.unpack_from('<I',demo,fileoff(demo,TABLE_LOAD_CALL))[0]==jal(payload_syms['ringnav_table_load'])
+class LoadMachine(Machine):
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)!='tbl:load': return super().hook(u,address,size,unused)
+        self.calls.append(('tbl:load',*[u.reg_read(r) for r in REGS[:3]]))
+        for w,t in self.bound: self.nodes[w]['text']=t
+        self.returns(0)
+def table_load_faces(setup):
+    lk=LoadMachine()
+    if setup: setup(lk)
+    title,tall,plain=(lk.node('hscroll_label',text='WurtS') for _ in range(3))
+    box=lk.node('view',children=[tall,plain]); row=lk.node('table_row',children=[title,box]); client=lk.node('table_client',children=[row])  # as stock's rows: labels in a box too
+    for w,parent in ((title,row),(box,row),(tall,box),(plain,box)): lk.word(w+O['W_PARENT'],parent)
+    lk.word(row+O['W_PARENT'],client); lk.word(client+O['TABLE_LOAD_DATA'],0x1000900); lk.handlers[0x1000900]='tbl:load'
+    for w,role in ((title,0),(tall,4)): lk.call(address=payload_syms['theme_font'],args=(w,role,-2,0),gap=0)
+    def load(*texts):
+        lk.bound=list(zip((title,tall,plain),texts)); lk.calls=[]
+        assert lk.call(address=payload_syms['ringnav_table_load'],args=(0x1234,7,row,0),gap=0)==0 and lk.calls[0]==('tbl:load',0x1234,7,row)
+        return [(lk.nodes[w].get('style:normal:font_name'),lk.nodes[w].get('style:normal:font_size')) for w in (title,tall,plain)]
+    if setup:
+        assert load('WurtS','yama','x')==[('classic-light',27),('classic-light',28),(None,None)]
+        assert load('星野 源','須田景凪','原因は自分にある。')==[('default',27),('default',28),(None,None)]
+        assert load('YOASOBI','Навстречу','x')==[('classic-light',27),('bold',23),(None,None)]
+    else: assert load('星野 源','須田景凪','x')==[(None,None)]*3 and not [p for w in (title,tall) for p in lk.nodes[w] if p=='_font']
+for setup in (classic_light,None): table_load_faces(setup)
+passed()
 for config,face in (({},'default'),):
     ck=Machine(); ck.config.update(config); cw=ck.node('hscroll_label',text='Песни'); ck.call(address=payload_syms['theme_font'],args=(cw,3,-1,0),gap=0)
     assert ck.nodes[cw]['style:normal:font_name']==face and 'style:normal:font_size' not in ck.nodes[cw],config
@@ -14529,8 +14583,8 @@ rows={c.nodes[w].get('text'):w for w in kids(c,cinfo,'hscroll_label')}
 assert [cf_geometry(c,rows[t]) for t in ('Song','A, B','LP')]==[(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y']+dy,375-16-O['NP_IPOD_TEXT_X'],h) for dy,h in ((0,28),(34,22),(62,22))]
 assert (c.nodes[rows['Song']]['style:normal:font_name'],c.nodes[rows['Song']]['style:normal:font_size'])==('classic-light',27)
 assert c.nodes[rows['Spotify']]['visible']==0 and not [w for w in kids(c,cinfo,'view') if c.nodes[w].get('visible')!=0 and cf_geometry(c,w)==(337,13,14,14)]
-# a 3:20 track: the times' boxes "-9:59"'s and the bar between them wider (ipod_times), the outer edges the build's
-W,GAP,W1=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_TIME_W1']; edge=bx-GAP-W; bx,bw=edge+W1+GAP,375-2*(edge+W1+GAP)
+# a 3:20 track: the build's "-9:59" boxes and its widest bar between them (ipod_times), the outer edges the build's
+W,GAP,W1=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_TIME_W1']; edge=bx-GAP-W1
 for t,x,style in (('0:10',edge,'s_scrlabel_white20r'),('-3:10',bx+bw+GAP,'s_scrlabel_white20l')):
     n=c.nodes[rows[t]]
     assert cf_geometry(c,rows[t])==(x,by-TO,W1,O['NP_IPOD_TIME_H']) and n['style']==style,(t,cf_geometry(c,rows[t]),n['style'])
@@ -14540,7 +14594,7 @@ assert bw==243 and 375-(bx+bw+GAP+W1)==edge
 c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.canvas,0,0),gap=0,clear=False)
 on=next(b[2] for b in c.bands if b[0]==0)  # the played share
 assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
-# a two-hour track: the build's widest boxes, the bar 201 again; its elapsed time's box repainted where it was and goes
+# a two-hour track: the hours' boxes, the bar 201; its elapsed time's box repainted where it was and goes
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t2',duration=7200000); c.poll(); c.advance(0)
 assert cf_geometry(c,cbar)==(edge+W+GAP,by,201,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and cf_geometry(c,rows['0:10'])==(edge,by-TO,W,O['NP_IPOD_TIME_H'])
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t1'); c.poll(); c.advance(0); assert cf_geometry(c,cbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])
