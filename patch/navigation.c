@@ -7384,12 +7384,12 @@ static void quick_label(void *canvas, void *label, int x, int y) {
     st.raw_ink = raw;
 }
 /* Quick Settings' buttons under Classic, in final colours, on Home's pane in the half: each a 60 px
- * tile, corners of 12, a 1 px border round a 2-stop vertical fill, lighter at the top. Off is
- * silver in light, graphite in dark; on (QS_LIT, tools/art.py) a fixed blue in both, not the
+ * tile, corners of 12, a 1 px border round a fill: off a 2-stop vertical one, lighter at the top,
+ * silver in light, graphite in dark; on (QS_LIT, tools/art.py) a flat fixed blue in both, not the
  * accent, so Graphite's on reads as on. [on][light]: the fill's top and foot, the border. */
 static const unsigned qs_tile[2][2][3] = {
     { { 0x33373c, 0x282b2f, 0x40444a }, { 0xe9ebee, 0xd3d6dc, 0x9ba2aa } },
-    { { 0x2b88e8, 0x1670d4, 0x2b88e8 }, { 0x2b88e8, 0x1670d4, 0x125cb0 } },
+    { { 0x207cde, 0x207cde, 0x207cde }, { 0x207cde, 0x207cde, 0x125cb0 } },
 };
 /* The page, in its window's coordinates: the ground, then each button by the image stock last gave
  * its icon, a sixth darker while pressed, its glyph in the tile's ink (white on, _l or _d off);
