@@ -9276,7 +9276,11 @@ static int stream_list(void *view) {
  * settings row (only the iPod settings pages) gets settings rows: items stock made SET_STOCK_ROW
  * high take it before the stock layout stacks them and sizes the scroll view, then each row is
  * mapped. Settings code never moves, resizes or scrolls its rows afterwards
- * (docs/ipod.md#settings). */
+ * (docs/ipod.md#settings). A set whose pitch is its settings row (Classic) gives every re-pitched
+ * list an item_height (tools/ipod.py), which stock forces on each row: a grid's rows (the artist
+ * page's albums, 160 px list_items of 110 px tiles) keep their own height, or each would be one
+ * pitch high, and stock's list painter, which culls a row by its own box, would skip the tiles'
+ * covers and names wherever a repaint misses that box, under the selection card it paints. */
 int ipod_list_layout(void *layout, void *view) {
     void *list = view ? P(view, W_PARENT) : (void *)0;
     int settings = settings_list(list);
@@ -9288,7 +9292,15 @@ int ipod_list_layout(void *layout, void *view) {
         void *button = I(item, W_H) == SET_STOCK_ROW ? set_button(item) : (void *)0;
         if (button) I(item, W_H) = set_row_h(button, row);
     }
+    int forced = list ? I(list, ROW_HEIGHT) : 0, grid = 0; /* list_view's item_height */
+    for (unsigned i = 0, k = forced ? widget_count_children(view) : 0; i < k && !grid; ++i) {
+        void *item = widget_get_child(view, i),
+             *b = widget_count_children(item) ? widget_get_child(item, 0) : (void *)0;
+        grid = b && !tk_strcmp(widget_get_type(b), "button") && tile_in(b, list);
+    }
+    if (grid) I(list, ROW_HEIGHT) = 0; /* this layout only: settings_list reads it */
     int ret = ((int (*)(void *, void *))LIST_VIEW_LAYOUT)(layout, view);
+    if (grid) I(list, ROW_HEIGHT) = forced;
     /* Stock neither places nor sizes a hidden row (no keep_invisible): mapped at 0x0 its button
      * would stay empty once shown (Display's Accent), so it is mapped after its first layout. */
     for (unsigned i = 0; i < n; ++i) {
