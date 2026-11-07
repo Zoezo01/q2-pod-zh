@@ -41,14 +41,18 @@ VG_MOCKS=[n for n in syms if n.startswith(('vgcanvas_','vg_gradient_'))]
 def _fp64_fix():
     """The stock binary is -mfp64 (FR=1); Unicorn's MIPS32 FPU only implements FR=0, so
     L-format conversions are rewritten to their W equivalents when an image is loaded. Every
-    value the traversed canvas code converts fits 32 bits, so the results are identical."""
+    value the traversed canvas code converts fits 32 bits, so the results are identical. An mthc1
+    just before one (the 64-bit integer's high word, as hscroll_label_step's 0x5e85c8) is dropped:
+    the W form doesn't read it, and under FR=0 it would overwrite the odd register beside it."""
     data=(B/'demo').read_bytes(); fixes=[]
     for _,(t,o,v,_,f,m,flags,_) in segments(data):
         if t!=1 or not flags&1: continue
-        for off in range(o,o+f,4):
-            w=struct.unpack_from('<I',data,off)[0]
+        words=struct.unpack_from(f'<{f//4}I',data,o)
+        for i,w in enumerate(words):
             if w>>26&0x3f==0x11 and w>>21&0x1f==0x15:
-                fixes.append((v+off-o,(w&~(0x1f<<21))|(0x14<<21)))
+                fixes.append((v+4*i,(w&~(0x1f<<21))|(0x14<<21)))
+            elif w>>26&0x3f==0x11 and w>>21&0x1f==0x07 and any(x>>26&0x3f==0x11 and x>>21&0x1f==0x15 for x in words[i+1:i+4]):
+                fixes.append((v+4*i,0))
     return fixes
 FP64_FIX=_fp64_fix()
 REGS=[UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3]
@@ -156,6 +160,7 @@ class Machine:
         self.style_ints={}  # (a style, its name): what style_get_int answers; else the fallback
         self.clock=(18,14)  # local (hour, minute) for time/localtime, or the one of them that fails
         self.clock_minutes=False; self.marquee=False
+        self.widget_timers=False  # widget_add_timer schedules (real_hscroll), else it is only recorded
         self.wall=(86400,86400)  # time's result, and the seconds localtime must be given
         self.rockbox_mode=0o100755
         self.handlers[syms['__xstat@GLIBC_2.0']]='rockbox_stat'
@@ -501,8 +506,9 @@ class Machine:
             if ret:
                 self.next_timer+=1
                 # the bar's clock (clock_due) runs only where a check asks for it (clock_minutes)
-                # likewise the selected row's marquee (marq_moved, marq_poll): marquee
-                if (a!=payload_syms.get('clock_due') or self.clock_minutes) and (self.marquee or a not in (payload_syms.get('marq_moved'),payload_syms.get('marq_poll'))): self.timers[ret]=(self.now+c,a,b,c)
+                # likewise the selected row's marquee (marq_moved): marquee
+                if (a!=payload_syms.get('clock_due') or self.clock_minutes) and (self.marquee or a!=payload_syms.get('marq_moved')): self.timers[ret]=(self.now+c,a,b,c)
+        elif name=='widget_add_timer' and self.widget_timers: ret=self.next_timer; self.next_timer+=1; self.timers[ret]=(self.now+c,b,a,c)
         elif name=='timer_remove': self.timers.pop(a,None); ret=0
         elif name=='screen_action': self.screens.append(a); ret=1
         elif name=='player_start': self.started.append((a,b,c,d)); ret=1
@@ -689,9 +695,9 @@ class Machine:
             self.now=due
             del self.timers[tid]
             info=self.alloc(0x58)
-            self.word(info+0x20,ctx); self.word(info+0x28,tid)
+            self.word(info+0x20,ctx); self.word(info+0x28,tid); self.word(info+0x40,period)  # timer_info_t's duration
             ret=self.call(address=callback,args=(info,0,0,0),gap=0,clear=False)
-            assert ret in (0,8) and (ret==0 or period>0)
+            assert ret in (0,7,8) and (ret!=8 or period>0)  # RET_OK or RET_REMOVE ends it; RET_REPEAT re-arms
             if ret==8 and tid not in self.timers: self.timers[tid]=(due+period,callback,ctx,period)
         self.now=end
         for a,values in list(self.props.items()):
@@ -5750,7 +5756,7 @@ for n,gap in ((40,141),(16,100)):
     for _ in range(6): m.call(gap=gap)
     m.paint(w,gap=0); assert not m.letters and not m.timers; passed()
 # Stock's own scroll tick (0x5e8914), executed from the image, not mocked: it stops an unfocused
-# only_focus label at once and steps any other, which is why marq_poll clears only_focus.
+# only_focus label at once and steps any other, which is why marq_moved clears only_focus.
 for only_focus,want,stepped in ((1,7,False),(0,None,True)):
     m=Machine(); t=m.node('hscroll_label'); m.byte(t+O['HSCROLL_ONLY_FOCUS'],only_focus)
     m.handlers[0x5e7f28]='hscroll_label_cast'; m.handlers[0x5e8500]='hscroll_label_step'
@@ -5761,41 +5767,97 @@ for only_focus,want,stepped in ((1,7,False),(0,None,True)):
 from fontTools.ttLib import TTFont
 font=TTFont(B/'default.ttf'); advance=lambda s: sum(font['hmtx'][font.getBestCmap()[ord(c)]][0] for c in s)*24/font['head'].unitsPerEm
 assert all(advance(s)<=271 for s in ('Artist View: Cover Flow','Refresh Cover Flow','Cover Flow Sort: Album','Time in Title')); passed()
-# The selected row's long title scrolls after MARQUEE_HOLD_MS for MARQUEE_PASSES passes, a hold
-# after each; it stops as the selection moves or the screen darkens; a title that fits or stock
-# scrolls by itself is left alone; in a table's pool, a new row in the same widget counts as a move.
+# Every scrolling label's holds and pace (ringnav_hscroll_start, ringnav_hscroll_lull) through stock's
+# own hscroll_label code, run from the image: start, its delay, tick (0x5e8914), step, lull and stop.
+# A label shows its offset while it runs; stopped, stock paints its start with the ellipsis ('rest').
+def hscroll_machine():
+    m=Machine(); m.widget_timers=True
+    for name in ('hscroll_label_start','hscroll_label_stop','hscroll_label_set_xoffset'): m.handlers.pop(syms[name])
+    m.mock('widget_invalidate'); return m
+def hscroll_label(m,text_w=300,w=200,speed=0.1,delay=0,lull=2000,loop=1,yoyo=0,only_focus=0):
+    """Stock's defaults (0x5e8af8) after set_hscroll_label_attribute (speed 0.1, lull 2000); range text_w+4-w."""
+    t=m.node('hscroll_label'); m.u.mem_write(t+0x78,bytes(0x38)); m.word(t+O['W_W'],w); m.word(t+O['HSCROLL_TEXT_W'],text_w)
+    m.word(t+0x9c,0xffffffff); m.word(t+0x84,5000); m.word(t+0x80,lull); m.word(t+O['HSCROLL_DELAY'],delay)
+    m.byte(t+O['HSCROLL_LOOP'],loop); m.byte(t+O['HSCROLL_YOYO'],yoyo); m.byte(t+O['HSCROLL_ONLY_FOCUS'],only_focus)
+    m.u.mem_write(t+O['HSCROLL_SPEED'],struct.pack('<f',speed)); return t
+def shown(m,t,over=104):
+    if not m.get(t+O['HSCROLL_TIMER']): return 'rest'
+    x=m.get(t+0x90); return 'start' if x==0 else 'end' if x==over else 'moving'
+def timeline(m,t,ms):
+    """What t shows each ms for ms, as [state, ms] runs."""
+    runs=[]
+    for _ in range(ms):
+        m.advance(1); v=shown(m,t)
+        if runs and runs[-1][0]==v: runs[-1][1]+=1
+        else: runs.append([v,1])
+    return runs
+hold=O['MARQUEE_HOLD_MS']; scroll=int(104/struct.unpack('<f',struct.pack('<I',O['HSCROLL_PACE']))[0])  # 2079: NP's pace
+assert scroll==2079
+def pass_ok(runs,yoyo=False):
+    """Its start held hold (until the second 16 ms tick moves it a whole pixel), a scroll at the pace, its end held hold."""
+    assert len(runs)>=3, runs; (s,start),(v,moving),(e,end)=runs[:3]
+    assert (s,v,e)==('start','moving','end') and hold<=start<hold+40 and abs(moving+start+end-2*hold-scroll)<40, runs
+    assert end==hold+16*yoyo, runs  # a yoyo label's end moves on its first tick back
+# A delay-0 label at stock's row pace (0.1 px/ms) and lull, Now Playing's title (lull and the old delay 1500,
+# 0.05) and a label with no speed (its 5 s duration) run the same: hold, scroll, hold, snap back, hold, scroll.
+seen=[]
+for kw in (dict(),dict(speed=0.05,delay=1500,lull=1500),dict(speed=0.0)):
+    m=hscroll_machine(); t=hscroll_label(m,**kw)
+    m.call(address=syms['hscroll_label_start'],args=(t,),gap=0); runs=timeline(m,t,2*(hold+scroll+hold)+100)
+    pass_ok(runs); pass_ok(runs[3:]); assert runs[6][0]=='start'
+    assert m.get(t+O['HSCROLL_DELAY'])==hold and m.get(t+O['HSCROLL_SPEED'])==O['HSCROLL_PACE']; seen.append(runs)
+assert seen[0]==seen[1]==seen[2]; passed()
+# A slower label keeps its pace.
+m=hscroll_machine(); t=hscroll_label(m,speed=0.02); m.call(address=syms['hscroll_label_start'],args=(t,),gap=0)
+runs=timeline(m,t,hold+5300); assert runs[1][0]=='moving' and runs[1][1]>5000; passed()
+# A yoyo label scrolls back, holding hold at each end, not its lull as well.
+m=hscroll_machine(); t=hscroll_label(m,yoyo=1); m.call(address=syms['hscroll_label_start'],args=(t,),gap=0)
+runs=timeline(m,t,2*(hold+scroll)+2*hold+100); pass_ok(runs,yoyo=True)
+assert runs[3][0]=='moving' and runs[4][0]=='start' and hold<=runs[4][1]<hold+60,runs; passed()  # its last tick lands on 0
+# An unfocused only_focus label stops on its first tick, as stock's, and rests on its start.
+m=hscroll_machine(); t=hscroll_label(m,only_focus=1); m.call(address=syms['hscroll_label_start'],args=(t,),gap=0)
+assert timeline(m,t,hold+100)==[['start',hold+15],['rest',85]] and not m.timers and m.get(t+0x90)==0; passed()
+# A label that doesn't loop (HSCROLL_ONCE) scrolls once, holds its end, and rests on its start; a yoyo one
+# too, where stock parked it on its end; a running one isn't restarted.
+from build import HSCROLL_ONCE
+assert struct.unpack_from('<I',demo,fileoff(demo,HSCROLL_ONCE[0]))[0]==HSCROLL_ONCE[2]
+for yoyo in (0,1):
+    m=hscroll_machine(); t=hscroll_label(m,loop=0,yoyo=yoyo); m.call(address=syms['hscroll_label_start'],args=(t,),gap=0)
+    m.advance(100); m.call(address=syms['hscroll_label_start'],args=(t,),gap=0)
+    runs=timeline(m,t,hold+scroll+hold+100); runs[0][1]+=100; pass_ok(runs)
+    assert runs[3:]==[['rest',200]] and not m.timers and m.get(t+0x90)==0,runs; passed()
+# The selected row's long title scrolls as soon as the selection settles, MARQUEE_PASSES of those
+# passes, then rests on its start; it stops as the selection moves or the screen darkens; a title
+# that fits or stock scrolls by itself is left alone; in a table's pool, a new row in the same
+# widget counts as a move.
 def marquee_list(over=True,only_focus=1):
-    m=Machine(); m.marquee=True; w,es=m.page_list(4,height=192,extent=192,name='folder_page')
+    m=hscroll_machine(); m.marquee=True; w,es=m.page_list(4,height=192,extent=192,name='folder_page')
     labels=[]
     for e in es:
-        t=m.node('hscroll_label'); m.nodes[e]['children']=[t]; m.word(t+O['W_PARENT'],e); m.word(t+O['W_W'],200)
-        m.word(t+O['HSCROLL_TEXT_W'],300 if over else 150); m.byte(t+O['HSCROLL_ONLY_FOCUS'],only_focus); labels.append(t)
+        t=hscroll_label(m,text_w=300 if over else 150,loop=0,only_focus=only_focus); m.nodes[e]['children']=[t]; m.word(t+O['W_PARENT'],e); labels.append(t)
     m.call(); m.paint(w,gap=0)
     return m,w,labels
-hold=O['MARQUEE_HOLD_MS']
+running=lambda m,labels: [t for t in labels if m.get(t+O['HSCROLL_TIMER'])]
+focus_only=lambda m,t: m.u.mem_read(t+O['HSCROLL_ONLY_FOCUS'],1)[0]
 m,w,labels=marquee_list(); sel=m.selected(w); assert sel>=0
-m.advance(hold-1); assert not any(m.nodes[t].get('scrolling') for t in labels)
-m.advance(2); on=[t for t in labels if m.nodes[t].get('scrolling')]; assert on==[labels[sel]]
-pass_ms=104*50//2; assert m.nodes[on[0]]['loop']==0 and m.nodes[on[0]]['duration']==pass_ms; passed()
-for _ in range(O['MARQUEE_PASSES']-1):
-    m.advance(pass_ms+hold); assert not m.nodes[on[0]]['scrolling'] and m.u.mem_read(on[0]+O['HSCROLL_ONLY_FOCUS'],1)[0]==1
-    m.advance(hold); assert m.nodes[on[0]]['scrolling']
-m.advance(pass_ms+hold); assert not m.nodes[on[0]]['scrolling'] and not m.timers
-m.paint(w,gap=0); assert not m.timers; passed()  # passes spent: nothing until the selection moves
-m,w,labels=marquee_list(); m.advance(hold+1); on=[t for t in labels if m.nodes[t].get('scrolling')]
-m.call(); m.paint(w,gap=0); m.advance(1); assert not any(m.nodes[t].get('scrolling') for t in labels) and m.u.mem_read(on[0]+O['HSCROLL_ONLY_FOCUS'],1)[0]==1
-m.advance(hold); assert [t for t in labels if m.nodes[t].get('scrolling')]==[labels[m.selected(w)]]; passed()
-m.byte(syms['g_backlight_status'],0); m.advance(pass_ms+hold); assert not any(m.nodes[t].get('scrolling') for t in labels) and not m.timers
-m.byte(syms['g_backlight_status'],1); m.paint(w,gap=0); m.advance(hold+1); assert any(m.nodes[t].get('scrolling') for t in labels); passed()
+runs=timeline(m,labels[sel],O['MARQUEE_PASSES']*(hold+scroll+hold)+100)
+for k in range(O['MARQUEE_PASSES']): pass_ok(runs[3*k:])
+assert runs[3*O['MARQUEE_PASSES']:]==[['rest',runs[-1][1]]] and focus_only(m,labels[sel])==1 and not m.timers
+assert running(m,labels)==[] and all(m.get(t+0x90)==0 for t in labels)
+m.paint(w,gap=0); m.advance(1); assert not m.timers; passed()  # passes spent: nothing until the selection moves
+m,w,labels=marquee_list(); m.advance(hold+100); on=running(m,labels); assert on==[labels[m.selected(w)]] and shown(m,on[0])=='moving'
+m.call(); m.paint(w,gap=0); m.advance(1); assert focus_only(m,on[0])==1 and shown(m,on[0])=='rest'
+assert running(m,labels)==[labels[m.selected(w)]] and shown(m,labels[m.selected(w)])=='start'; passed()
+m.byte(syms['g_backlight_status'],0); m.advance(hold+scroll+hold); assert running(m,labels)==[] and not m.timers
+m.byte(syms['g_backlight_status'],1); m.paint(w,gap=0); m.advance(1); assert len(running(m,labels))==1; passed()
 for kw in (dict(over=False),dict(only_focus=0)):
-    m,w,labels=marquee_list(**kw); m.advance(hold+1); assert not any(m.nodes[t].get('scrolling') for t in labels) and not m.timers; passed()
-m=Machine(); m.marquee=True; w,rs,es=m.table_page(rebind=False); labels={}
+    m,w,labels=marquee_list(**kw); m.advance(hold+1); assert not running(m,labels) and not m.timers; passed()
+m=hscroll_machine(); m.marquee=True; w,rs,es=m.table_page(rebind=False); labels={}
 for e in es:
-    t=m.node('hscroll_label'); m.nodes[e]['children']=[t]; m.word(t+O['W_PARENT'],e); m.word(t+O['W_W'],200)
-    m.word(t+O['HSCROLL_TEXT_W'],300); m.byte(t+O['HSCROLL_ONLY_FOCUS'],1); labels[e]=t
-m.call(); m.paint(w,gap=0); m.advance(hold+1); on=[t for t in labels.values() if m.nodes[t].get('scrolling')]; assert len(on)==1
+    t=hscroll_label(m,loop=0,only_focus=1); m.nodes[e]['children']=[t]; m.word(t+O['W_PARENT'],e); labels[e]=t
+m.call(); m.paint(w,gap=0); m.advance(hold+100); on=running(m,labels.values()); assert len(on)==1 and shown(m,on[0])=='moving'
 first=m.selected(w); m.call(); m.bind(rs,48); m.paint(w,gap=0); assert m.selected(w)==first+1  # the pool moved with it: the same widget
-m.advance(1); assert not m.nodes[on[0]]['scrolling']; m.advance(hold); assert m.nodes[on[0]]['scrolling']; passed()
+m.advance(1); assert running(m,labels.values())==on and shown(m,on[0])=='start'; passed()  # stopped, then started on its new row
 # Touch drops the spin, and with it the letter.
 m,w,rs,es=letter_machine(False)
 for _ in range(5): m.call(gap=100)
@@ -9448,18 +9510,9 @@ assert ys==[110,0,20,110] and m.get(lrc+O['VIEW_CONTENT_H'])==288,ys
 m.word(lrc+O['VIEW_CONTENT_H'],100); m.call(address=payload_syms['ringnav_lyric_follow'],args=(lrc,0,0,10),gap=0)
 assert m.get(lrc+O['VIEW_CONTENT_H'])==100 and m.get(lrc+O['SCROLL_Y'])==0; passed()
 
-# A looping label's lull (HSCROLL_LULL): stock's own timer, ending on its start before stock's lull callback
-# (hscroll_label_start stands in), so the delay holds there; a yoyo label stays at its end, to scroll back.
+# A looping label's lull (HSCROLL_LULL) comes to the payload; its holds are tested with the marquee's.
 from build import HSCROLL_LULL
-assert struct.unpack_from('<I',demo,fileoff(demo,HSCROLL_LULL[0]))[0]==jal(payload_syms['ringnav_hscroll_lull'])
-for yoyo in (0,1):
-    m=Machine(); w=m.node('hscroll_label'); m.byte(w+O['HSCROLL_YOYO'],yoyo); info=m.alloc(); m.word(info+O['TIMER_CTX'],w)
-    m.call(address=payload_syms['ringnav_hscroll_lull'],args=(w,syms['hscroll_label_start'],1500,0),gap=0)
-    (_,a,f,ms),=[c for c in m.calls if c[0]=='widget_add_timer']; assert (a,ms)==(w,1500)
-    m.call(address=f,args=(info,0,0,0),gap=0)
-    assert [c[:2] for c in m.calls if c[0].startswith('hscroll')]==[('hscroll_label_set_xoffset',w)]*(1-yoyo)+[('hscroll_label_start',info)]
-    assert m.nodes[w].get('hscroll_label_set_xoffset',-1)==(-1 if yoyo else 0)
-passed()
+assert struct.unpack_from('<I',demo,fileoff(demo,HSCROLL_LULL[0]))[0]==jal(payload_syms['ringnav_hscroll_lull']); passed()
 
 # A refresh's lyric rebuild (LYRIC_ROWS), which stock ends at offset 0, keeps the view where it was.
 from build import LYRIC_ROWS
