@@ -339,8 +339,8 @@ BLACK, WHITE = 0, 255
 def classic_light_font():
     """The theme face's source, opened once a build."""
     return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
-# Quick Settings' page under Classic: navigation.c quick_page fills each 60 px button flat (the accent, or qs_off), and these
-# are the glyphs over it: white, or CONFIRM_SURFACE (_k) on a light fill. Own drawings; stock's image names (the demo's own
+# Quick Settings' page under Classic: navigation.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
+# over it in the tile's ink: QS_INK, white on, _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
 # strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):
     return f'M{cx - r} {cy}A{r} {r} 0 1 1 {cx + r} {cy}A{r} {r} 0 1 1 {cx - r} {cy}Z'
@@ -355,6 +355,7 @@ QS_GLYPHS = {
     'gear': ((2.4, (), (circle(0, 0, 5),)), (), SPOKES),
 }
 QS_FONT_PX, QS_LINE, QS_DIM = 15, 17, .45
+QS_INK = {'': 0xffffff, '_l': 0x262626, '_d': 0xe4e6e9}
 # Stock's name: glyph or text lines, on, the glyph's opacity (disabled: dimmed).
 QS_BUTTONS = {
     'wifi': ('wifi', 0, 1), 'wifiopen': ('wifi', 1, 1), 'bt': ('bt', 0, 1), 'btopen': ('bt', 1, 1),
@@ -693,7 +694,7 @@ def band_rim():
 
 # A coverage table per radius of the round boxes the painter draws a row at a time (navigation.c paint_round_rows): their
 # corners' pixels take the row's colour at this alpha, so they stay the scheme's.
-CORNERS = (2, 5, 6, 7, 8, 9, 10, 12, 13)
+CORNERS = (2, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 def corner_cover(r):
     """A radius r corner's coverage out of 255, r rows of r pixels, the outermost first."""
     n = 16
@@ -842,8 +843,8 @@ def images(t):
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
         out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}
-        for name, (glyph, _, opacity) in QS_BUTTONS.items():
-            out |= {f'{prefix}_drop_{name}': qs_mark(glyph, opacity, 0xffffff), f'{prefix}_drop_{name}_k': qs_mark(glyph, opacity, inc('CONFIRM_SURFACE'))}
+        for name, (glyph, lit, opacity) in QS_BUTTONS.items():
+            out |= {f'{prefix}_drop_{name}{k}': qs_mark(glyph, opacity, QS_INK[k]) for k in ([''] if lit else ['_l', '_d'])}
         out |= {f'{prefix}_drop_track': qs_track(), f'{prefix}_drop_knob': qs_knob()}
         out[f'{prefix}_clock_dark'] = png(CLOCK_DARK_PX, CLOCK_DARK_PX, clock_dark())
         out |= {f'{prefix}_{name}': kb_glyph(name) for name in KB_GLYPHS}

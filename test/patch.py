@@ -6814,14 +6814,16 @@ QS_ICONS=('img_wifiswitch','img_btswitch','img_lock','img_gain','img_usbmode','i
 QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbstorage','drop_po','drop_playset','drop_sysset')
 QS_LABELS=(('label_wifi','WiFi'),('label_bt','BT'),('label_lock','Off'),('label_gain','Low'),('label_usbmode','USB'),('label_outputway','Output Options'),('label_playset','Play'),('label_sysset','Set'))
 QS_X=(31,115,199,283)
-QS_GROUND,QS_OFF,QS_ON={'1':0x63717b,'0':0x1c1c1c},{'1':0x7f8b93,'0':0x333333},0x447cdd  # Home's pane, it lifted, Classic Blue's red tone (Cobalt's)
+QS_GROUND={'1':0x63717b,'0':0x1c1c1c}  # Home's pane
+QS_TILE={(0,'1'):(0xe9ebee,0xd3d6dc,0x9ba2aa),(0,'0'):(0x33373c,0x282b2f,0x40444a),(1,'1'):(0x2b88e8,0x1670d4,0x125cb0),(1,'0'):(0x2b88e8,0x1670d4,0x2b88e8)}  # (on, half): fill's top, its foot, the border
+def qs_ink(on,light): return '' if on else '_l' if light=='1' else '_d'
 QS_AT=[(QS_X[i%4],(20,138)[i//4]) for i in range(8)]
 def qs_new(light='1',theme='1',**config):
     SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light,**config),k)]
     try: q=LoadQueue()
     finally: SETUP.clear()
     q.mock('dialog_quit','widget_dispatch_event_to_target_recursive'); q.image_size=(60,60)
-    q.budget=400000  # the page paints eight tiles row by row, each row's corners a pixel at a time
+    q.budget=900000  # the page paints eight tiles, each a border box and its fill in it, row by row, each row's corners a pixel at a time
     q.handlers[int(manifest['patch_symbols']['stock_quicksettings_trampoline'],16)]='stock_quicksettings'
     q.btns=[q.node('image',n,image=i) for n,i in zip(QS_ICONS,QS_IMAGES)]
     q.labels=[q.node('label',n,text=t) for n,t in QS_LABELS]
@@ -6846,42 +6848,45 @@ def qs_down(q,w):
 def qs_event(q,w,kind):
     q.word(q.event+O['EVENT_X'],30); q.word(q.event+O['EVENT_Y'],40)
     return q.call(key=30,address=HOOKS['widget_dispatch'][0],args=(w,q.event,0,0),event_type=kind,gap=0)
-# The page's 320 rows, Home's pane in the half, eight flat tiles at their places, the one on (USB) in the accent, each glyph
+# The page's 320 rows, Home's pane in the half, eight tiles at their places, the one on (USB) blue, each glyph in its ink
 # over it; stock's images hidden and still tappable; final colours.
-def qs_tiles(q,rows,i=None):  # each tile's colour, from the bands after the ground
+def qs_tiles(q,rows,i=None):  # each tile's (top, foot, border), from the bands after the ground: a flat R 12 box, a 58 px R 11 fill in it
     out=[]
-    for a in QS_AT:
-        tile,rows=round_box(rows,*a,60,60,12); assert len(set(tile))==1; out.append(tile[0])
+    for x,y in QS_AT:
+        line,rows=round_box(rows,x,y,60,60,12); face,rows=round_box(rows,x+1,y+1,58,58,11); assert len(set(line))==1
+        assert all(min(a>>k&255,b>>k&255)<=c>>k&255<=max(a>>k&255,b>>k&255) for c in face for k in (0,8,16) for a,b in [(face[0],face[-1])])  # one ramp
+        out.append((face[0],face[-1],line[0]))
     return out
+def qs_want(c): return tuple(map(color_t,c))
 for light in '01':
     q=qs_new(light); arts=qs_paint(q); rows=q.bands[:320]
     assert [r[:4] for r in rows]==[(0,y,375,1) for y in range(320)] and {r[4] for r in rows}=={color_t(QS_GROUND[light])}
-    assert qs_tiles(q,q.bands[320:])==[color_t(QS_ON if i==4 else QS_OFF[light]) for i in range(8)]
-    assert arts==[('classic_light_'+n,QS_AT[i]) for i,n in enumerate(QS_IMAGES)]
+    assert qs_tiles(q,q.bands[320:])==[qs_want(QS_TILE[i==4,light]) for i in range(8)]
+    assert arts==[('classic_light_'+n+qs_ink(i==4,light),QS_AT[i]) for i,n in enumerate(QS_IMAGES)]
     assert wbox(q,q.menu)==(0,0,375,244) and [wbox(q,w) for w in q.btns]==[(*a,60,60) for a in QS_AT]
     assert all(q.u.mem_read(w+0x34,1)[0]==0 and q.nodes[w].get('visible',1) for w in q.btns)
     assert qs_event(q,q.btns[0],O['EVT_CLICK'])==0 and any(c[0]=='stock_dispatch' for c in q.calls)
     assert q.lcd_colors()==LCD_COLORS; passed()
-# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are the accent's.
+# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are blue.
 q=qs_new()
 LIT={'wifiopen','btopen','keylockopen','highgain','lo','usbstorage','usbaudio','usbdac'}
 for n in ('wifi','wifiopen','bt','btopen','keylock','keylockopen','lowgain','lowgaindisable','highgain','highgaindisable','lo','po','sa','usbstorage','usbaudio','usbdac','playset','sysset'):
-    q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n,(31,20))
-    assert qs_tiles(q,q.bands[320:])[0]==color_t(QS_ON if n in LIT else QS_OFF['1']),n; passed()
-# Graphite: its silver red tone takes the dark glyph (_k) in the dark half; in the light half it flips dark, under white.
-for light,want,glyph in (('0',0xd8d8d8,'_k'),('1',0x272727,'')):
+    q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n+qs_ink(n in LIT,'1'),(31,20))
+    assert qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[n in LIT,'1']),n; passed()
+# Graphite: on is the same blue, not the accent's silver, white glyph, in both halves.
+for light in '01':
     q=qs_new(light,CLASSIC_LIGHT_ACCENT='0'); q.nodes[q.btns[0]]['image']='drop_wifiopen'  # 0: Graphite's row
-    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen'+glyph,(31,20)) and qs_tiles(q,q.bands[320:])[0]==color_t(want),light; passed()
-# Pressed: every button darkens a sixth under the finger, flat, until the release; its hold is as today.
+    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen',(31,20)) and qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[1,light]),light; passed()
+# Pressed: every button's fill and border darken a sixth under the finger, until the release; its hold is as today.
 def qs_dark(c): return sum(((c>>k&255)*5//6)<<k for k in (0,8,16))
 for i,w in enumerate(q.btns):
     q=qs_new(); w=q.btns[i]; q.calls=[]; qs_down(q,w)
     assert ('widget_invalidate_force',w) in [c[:2] for c in q.calls]
-    arts=qs_paint(q); tiles=qs_tiles(q,q.bands[320:]); want=[QS_ON if j==4 else QS_OFF['1'] for j in range(8)]
-    assert tiles==[color_t(qs_dark(c) if j==i else c) for j,c in enumerate(want)] and arts==[('classic_light_'+n,QS_AT[j]) for j,n in enumerate(QS_IMAGES)]
+    arts=qs_paint(q); tiles=qs_tiles(q,q.bands[320:]); want=[QS_TILE[j==4,'1'] for j in range(8)]
+    assert tiles==[qs_want(map(qs_dark,c) if j==i else c) for j,c in enumerate(want)] and arts==[('classic_light_'+n+qs_ink(j==4,'1'),QS_AT[j]) for j,n in enumerate(QS_IMAGES)]
     q.calls=[]; qs_event(q,w,O['EVT_POINTER_UP_BEFORE']); assert ('widget_invalidate_force',w) in [c[:2] for c in q.calls]
-    assert qs_tiles(q,(qs_paint(q),q.bands)[1][320:])==[color_t(c) for c in want] and bool(q.timers)==False; passed()
-q=qs_new(); qs_down(q,q.btns[0]); qs_event(q,q.btns[0],O['EVT_POINTER_ABORT']); qs_paint(q); assert qs_tiles(q,q.bands[320:])[0]==color_t(QS_OFF['1']); passed()
+    assert qs_tiles(q,(qs_paint(q),q.bands)[1][320:])==[qs_want(c) for c in want] and bool(q.timers)==False; passed()
+q=qs_new(); qs_down(q,q.btns[0]); qs_event(q,q.btns[0],O['EVT_POINTER_ABORT']); qs_paint(q); assert qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[0,'1']); passed()
 q=qs_new(); qs_down(q,q.btns[2]); assert not q.timers; q.advance(O['RATE_HOLD_MS']); assert not q.opened; passed()  # Lock has no hold
 q=qs_new(); qs_down(q,q.btns[0]); q.advance(O['RATE_HOLD_MS'])
 assert q.opened==[('systemset/wifi_page',None)] and [c[1:3] for c in q.calls if c[0]=='dialog_quit']==[(q.win,0)]
@@ -18049,10 +18054,10 @@ def ring(R):
     lk,_=lock_cl(); r=lk.alloc(16)
     for i,v in enumerate((20,40,60,30)): lk.word(r+4*i,v)
     blank(lk); lk.call(address=payload_syms['round_ring'],args=(lk.canvas,r,R,0xff112233),gap=0); return lk
-for R in (11,12,0):
+for R in (14,5,0):  # 14 has no table; 5 has, 4 hasn't
     rows={}; [rows.setdefault(b[1],[]).append(b) for b in ring(R).bands]; assert sorted(rows)==list(range(40,70))
     for y in range(41,69): assert len(rows[y])==2 and rows[y][0][0]<=rows[y][1][0] and rows[y][0][0]-20==20+60-1-rows[y][1][0],(R,y)  # its sides, mirrored
-    assert rows[55][0][0]==20 and rows[55][1][0]==79 and (R==0 or rows[42][0][0]>20)
+    assert rows[55][0][0]==20 and rows[55][1][0]==79 and (R in (0,5) or rows[42][0][0]>20)  # 5's arc is in by row 2 less than a pixel
 passed()
 # The pale form's lit cell keeps its fade's 30 rows: a taller cell has no shade past them.
 lk,_=lock_cl(); r=lk.alloc(16)

@@ -7378,18 +7378,20 @@ static void quick_label(void *canvas, void *label, int x, int y) {
     }
     st.raw_ink = raw;
 }
-/* Quick Settings' buttons under Classic, flat, in final colours: the ground is Home's pane in the
- * half, an off button qs_off, the pane lifted; an on one (QS_LIT, tools/art.py) takes the accent's
- * red tone, as a lit switch does. */
-#define QS_R 12
-static const unsigned qs_off[2] = { 0x333333, 0x7f8b93 }; /* dark, light */
-static unsigned quick_on(void) { return flip_if(ipod_light(), accent_tone(TONE_RED)); }
+/* Quick Settings' buttons under Classic, in final colours, on Home's pane in the half: each a 60 px
+ * tile, corners of 12, a 1 px border round a 2-stop vertical fill, lighter at the top. Off is
+ * silver in light, graphite in dark; on (QS_LIT, tools/art.py) a fixed blue in both, not the
+ * accent, so Graphite's on reads as on. [on][light]: the fill's top and foot, the border. */
+static const unsigned qs_tile[2][2][3] = {
+    { { 0x33373c, 0x282b2f, 0x40444a }, { 0xe9ebee, 0xd3d6dc, 0x9ba2aa } },
+    { { 0x2b88e8, 0x1670d4, 0x2b88e8 }, { 0x2b88e8, 0x1670d4, 0x125cb0 } },
+};
 /* The page, in its window's coordinates: the ground, then each button by the image stock last gave
- * its icon, a sixth darker while pressed, its glyph white or, on a bright tone, CONFIRM_SURFACE
- * (_k); and its label. */
+ * its icon, a sixth darker while pressed, its glyph in the tile's ink (white on, _l or _d off);
+ * and its label. */
 static void quick_page(void *win, void *canvas) {
     int light = ipod_light();
-    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), on = quick_on();
+    unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_stops(canvas, 0, 0, I(win, W_W), I(win, W_H), &theme()->home_pane[light]);
     for (unsigned i = 0; i < sizeof quick_icons / sizeof *quick_icons; ++i) {
         void *icon = widget_lookup(win, quick_icons[i], 1);
@@ -7397,12 +7399,16 @@ static void quick_page(void *win, void *canvas) {
         if (!icon) continue;
         char name[40];
         const char *image = widget_get_prop_str(icon, "image", "");
-        unsigned c = named_in(QS_LIT, image) ? on : qs_off[light];
-        if (icon == quick.pressed) c = mix(c, 0, 1, 6);
-        rect_t r = { I(icon, W_X), I(icon, W_Y), 60, 60 };
-        stops_t flat = { 2, { 0, 100 }, { c, c } };
-        paint_round_rows(canvas, &r, &flat, QS_R);
-        tk_snprintf(name, sizeof name, "classic_light_%s%s", image, bright_tone(c) ? "_k" : "");
+        int on = named_in(QS_LIT, image);
+        unsigned c[3];
+        for (int k = 0; k < 3; ++k)
+            c[k] =
+                icon == quick.pressed ? mix(qs_tile[on][light][k], 0, 1, 6) : qs_tile[on][light][k];
+        rect_t r = { I(icon, W_X), I(icon, W_Y), 60, 60 }, in = { r.x + 1, r.y + 1, 58, 58 };
+        stops_t line = { 2, { 0, 100 }, { c[2], c[2] } }, face = { 2, { 0, 100 }, { c[0], c[1] } };
+        paint_round_rows(canvas, &r, &line, 12);
+        paint_round_rows(canvas, &in, &face, 11);
+        tk_snprintf(name, sizeof name, "classic_light_%s%s", image, on ? "" : light ? "_l" : "_d");
         paint_art(win, canvas, name, r.x, r.y);
         if (label) quick_label(canvas, label, r.x - 10, r.y + 64);
     }

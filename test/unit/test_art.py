@@ -20,13 +20,15 @@ def pixels(data):
 
 
 # Stock's quick settings images, every drop_ name its demo sets (strings demo | grep '^drop_').
+QS_LIT = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbstorage', 'usbaudio', 'usbdac'}
+QS_INKS = lambda n: ('',) if n in QS_LIT else ('_l', '_d')  # on: white; off: the light and the dark half's
 QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowgain', 'lowgaindisable', 'highgain', 'highgaindisable', 'lo', 'po', 'sa', 'usbstorage', 'usbaudio', 'usbdac', 'playset', 'sysset')
 
 
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}{k}' for n in QS_NAMES for k in ('', '_k')), 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}{k}' for n in QS_NAMES for k in QS_INKS(n)), 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -159,32 +161,33 @@ def test_the_switch_edges():
 
 
 def test_quick_settings_glyphs_are_flat_marks_on_clear():
-    # navigation.c fills each button; its art is the glyph alone, white or CONFIRM_SURFACE (_k), no gloss, rim or shadow
+    # navigation.c paints each button; its art is the glyph alone in the tile's ink: white on, #262626 / #e4e6e9 off
     got = art.images(theme.builtins()[1])
+    inks = {'': (255, 255, 255), '_l': (0x26, 0x26, 0x26), '_d': (0xe4, 0xe6, 0xe9)}
     for n in QS_NAMES:
-        for k, ink in (('', (255, 255, 255)), ('_k', tuple(ipod.inc('CONFIRM_SURFACE') >> s & 255 for s in (16, 8, 0)))):
+        for k in QS_INKS(n):
             w, h, at = pixels(got[f'classic_light_drop_{n}{k}'])
             assert (w, h) == (60, 60)
             assert all(at(x, y)[3] == 0 for x in range(60) for y in (0, 59)) and all(at(x, y)[3] == 0 for x in (0, 59) for y in range(60)), n
-            assert {at(x, y)[:3] for x in range(60) for y in range(60) if at(x, y)[3]} == {ink}, n  # one ink, flat
+            assert {at(x, y)[:3] for x in range(60) for y in range(60) if at(x, y)[3]} == {inks[k]}, n  # one ink, flat
 
 
 def test_quick_settings_glyphs_dim_only_when_disabled():
     got = art.images(theme.builtins()[1])
-    alpha = lambda n: max(pixels(got[f'classic_light_drop_{n}'])[2](x, y)[3] for x in range(60) for y in range(60))
+    mark = lambda n: got[f'classic_light_drop_{n}{QS_INKS(n)[0]}']
+    alpha = lambda n: max(pixels(mark(n))[2](x, y)[3] for x in range(60) for y in range(60))
     assert {n for n in QS_NAMES if alpha(n) < 255} == {'lowgaindisable', 'highgaindisable'}
     assert alpha('highgaindisable') == round(255 * art.QS_DIM)
-    assert all(got[f'classic_light_drop_{a}'] != got[f'classic_light_drop_{b}'] for a, b in (('lo', 'po'), ('po', 'sa'), ('lowgain', 'highgain')))
-    assert got['classic_light_drop_wifi'] == got['classic_light_drop_wifiopen'] and got['classic_light_drop_usbaudio'] == got['classic_light_drop_usbdac']
+    assert all(mark(a) != mark(b) for a, b in (('lo', 'sa'), ('po', 'sa'), ('lowgain', 'highgaindisable')))
+    assert mark('usbaudio') == mark('usbdac')
     # the text keeps its counter: the O of PO is clear in its middle
-    w, h, at = pixels(got['classic_light_drop_po'])
+    w, h, at = pixels(mark('po'))
     row = [at(x, 30)[3] for x in range(30, 45)]
     assert max(row) == 255 and min(row[row.index(max(row)):]) < 90
 
 
 def test_quick_settings_lit_names_are_the_on_buttons():
-    lit = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbstorage', 'usbaudio', 'usbdac'}
-    assert art.qs_lit() == ''.join(f'drop_{n}\\0' for n in art.QS_BUTTONS if n in lit) and set(art.QS_BUTTONS) == set(QS_NAMES)
+    assert art.qs_lit() == ''.join(f'drop_{n}\\0' for n in art.QS_BUTTONS if n in QS_LIT) and set(art.QS_BUTTONS) == set(QS_NAMES)
 
 
 def test_quick_settings_track_and_knob():
