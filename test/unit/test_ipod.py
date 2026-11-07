@@ -403,9 +403,9 @@ def test_playing_page_classic_ipod():
     assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
     play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
     assert play[1][0] == ipod.corner_x(g.bar + play[1][1], play[1][3]) and x + w_ == 375 - x and w_ >= 170  # the times' rows clear the glass
-    assert play[1][3] == bar + 4 and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_W
+    assert play[1][3] == ipod.NP_IPOD_TIME_H and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_W
     assert play[1][0] + play[1][2] + ipod.NP_IPOD_TIME_GAP == x and remain[1][0] == x + w_ + ipod.NP_IPOD_TIME_GAP
-    assert 2 * play[1][1] + play[1][3] == 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar
+    assert 0 <= 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar - (2 * play[1][1] + play[1][3]) <= 1  # centred, or half a row high
     assert play[2]['style:normal:font_name'] == ipod.CLASSIC_LIGHT_FONT_NAME == remain[2]['style:normal:font_name']
     assert play[2]['style:normal:text_align_h'] == 'right' and remain[2]['style:normal:text_align_h'] == 'left'
 
@@ -1169,7 +1169,7 @@ def test_classic_times_fit():
     f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
     asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
     width = lambda text, px: math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in text) * px / (asc - desc))
-    px, box = ipod.NP_IPOD_TIME_PX, ipod.inc('NP_BAR_IPOD') + 4
+    px, box = ipod.NP_IPOD_TIME_PX, ipod.inc('NP_IPOD_TIME_H')
     assert (px, ipod.NP_IPOD_TIME_WS) == (21, [35, 43, 56]) == (px, ipod.time_widths(ipod.CLASSIC_LIGHT_FONT_SRC))
     for w, longest in zip(ipod.NP_IPOD_TIME_WS, ('9:59', '59:59', '9:59:59')):
         for d in '0123456789':

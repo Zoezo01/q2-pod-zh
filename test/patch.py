@@ -6701,7 +6701,7 @@ CONFIG.clear(); CONFIG.update(THEME='1')
 m=ABMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'; m.handlers[0x52a268]='ab:x'
 slider,elapsed,remain=m.node('slider','slider_play',max=225,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
 win=m.node('window','playing_page',[slider,elapsed,remain]); m.word(win+O['W_PARENT'],m.wm); m.top=win
-BX,TW,GAP,TY=O['NP_IPOD_BAR_X'],O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_BAR_Y']-2
+BX,TW,GAP,TY=O['NP_IPOD_BAR_X'],O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_BAR_Y']-(O['NP_IPOD_TIME_H']-O['NP_BAR_IPOD']+1)//2
 def lay(tw):
     x=BX-TW+tw
     return {elapsed:(x-GAP-tw,TY,tw,21),remain:(375-x+GAP,TY,tw,21),slider:(x,233,375-2*x,44)}
@@ -7728,7 +7728,7 @@ def diamond(x):
 m=scrub_page()
 for k,v in zip(('W_X','W_Y','W_W','W_H'),(66,233,243,44)): m.word(m.slider+O[k],v)  # fitted to the 3:45 track (ipod_times)
 assert cue(m)==[]; centre(m); assert cue(m)==diamond(243*100//225),cue(m)
-d=diamond(243*100//225); assert d[0][1]==(44-O['NP_BAR_IPOD'])//2+1 and d[-1][1]==(44-O['NP_BAR_IPOD'])//2+O['NP_BAR_IPOD']-2
+d=diamond(243*100//225); assert d[0][1]==(44-O['NP_BAR_IPOD'])//2+1 and d[-1][1]==(44-O['NP_BAR_IPOD'])//2+O['NP_BAR_IPOD']-3
 for key,x in ((O['KEY_PREV'],O['NP_SCRUB_MARK']),(O['KEY_NEXT'],242-O['NP_SCRUB_MARK'])):
     for _ in range(40): step(m,key,gap=20)
     assert cue(m)==diamond(x),(key,cue(m))
@@ -14493,7 +14493,7 @@ c=SpotMachine({BIN:bytearray()}); c.top=c.node('window','home_page')  # Classic'
 for f in ('spot_open','spot_np'): assert c.call(address=payload_syms[f],args=(0,c.event,0,0),gap=0,count=5_000_000)==0
 cpage=c.page=c.top; assert c.nodes[cpage]['name']=='spotify_page'; cinfo=c.nodes[cpage]['children'][0]
 c.state('playing',position=10000,at=c.now+500,cover=1); c.files[STATE+'.jpg']=bytearray(b'cover'); c.poll(); c.advance(0)
-A,bx,by=O['NP_IPOD_ART'],O['NP_IPOD_BAR_X'],O['NP_IPOD_BAR_Y']; bw,R=375-2*bx,(A*O['SLANT_REFLECT_PCT']+99)//100
+A,bx,by=O['NP_IPOD_ART'],O['NP_IPOD_BAR_X'],O['NP_IPOD_BAR_Y']; bw,R=375-2*bx,(A*O['SLANT_REFLECT_PCT']+99)//100; TO=(O['NP_IPOD_TIME_H']-O['NP_BAR_IPOD']+1)//2  # the times' box above the bar
 def kids(mm,w,kind):  # under() walks the global m's widgets
     def within(x):
         while x and x!=w: x=mm.get(x+O['W_PARENT']) if mm.get(x+O['W_PARENT']) in mm.nodes else 0
@@ -14509,7 +14509,7 @@ assert c.nodes[rows['Spotify']]['visible']==0 and not [w for w in kids(c,cinfo,'
 W,GAP,W1=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_TIME_W1']; edge=bx-GAP-W; bx,bw=edge+W1+GAP,375-2*(edge+W1+GAP)
 for t,x,style in (('0:10',edge,'s_scrlabel_white20r'),('-3:10',bx+bw+GAP,'s_scrlabel_white20l')):
     n=c.nodes[rows[t]]
-    assert cf_geometry(c,rows[t])==(x,by-2,W1,O['NP_BAR_IPOD']+4) and n['style']==style,(t,cf_geometry(c,rows[t]),n['style'])
+    assert cf_geometry(c,rows[t])==(x,by-TO,W1,O['NP_IPOD_TIME_H']) and n['style']==style,(t,cf_geometry(c,rows[t]),n['style'])
     assert (n['style:normal:font_name'],n['style:normal:font_size'],n['style:normal:text_color'])==('classic-light',O['NP_IPOD_TIME_PX'],-1)
 cbar=next(w for w in kids(c,cinfo,'view') if cf_geometry(c,w)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']))
 assert bw==243 and 375-(bx+bw+GAP+W1)==edge
@@ -14518,7 +14518,7 @@ on=next(b[2] for b in c.bands if b[0]==0)  # the played share
 assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
 # a two-hour track: the build's widest boxes, the bar 201 again; its elapsed time's box repainted where it was and goes
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t2',duration=7200000); c.poll(); c.advance(0)
-assert cf_geometry(c,cbar)==(edge+W+GAP,by,201,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and cf_geometry(c,rows['0:10'])==(edge,by-2,W,O['NP_BAR_IPOD']+4)
+assert cf_geometry(c,cbar)==(edge+W+GAP,by,201,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and cf_geometry(c,rows['0:10'])==(edge,by-TO,W,O['NP_IPOD_TIME_H'])
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t1'); c.poll(); c.advance(0); assert cf_geometry(c,cbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])
 c.call(address=HOOKS['widget_on_paint_border'][0],args=(cart,c.canvas,0,0),gap=0)
 assert [c.text(x[2]) for x in c.calls if x[0]=='widget_load_image']==['file:///tmp/q2spot.jpg']
@@ -14734,7 +14734,7 @@ assert cf_geometry(r,rheart)==(O['NP_IPOD_FAV_X'],O['NP_IPOD_FAV_Y'],50,50) and 
 # the running time in "-59:59"'s box until the hour (ipod_times), the bar between it and its mirror
 W2=O['NP_IPOD_TIME_W2']; bx,bw=edge+W2+GAP,375-2*(edge+W2+GAP)
 relapsed=next(w for w in r.nodes[rnp]['children'] if r.nodes[w]['type']=='hscroll_label' and cf_geometry(r,w)[0]==edge)
-assert cf_geometry(r,relapsed)==(edge,by-2,W2,O['NP_BAR_IPOD']+4) and r.nodes[relapsed]['style:normal:font_size']==O['NP_IPOD_TIME_PX']
+assert cf_geometry(r,relapsed)==(edge,by-TO,W2,O['NP_IPOD_TIME_H']) and r.nodes[relapsed]['style:normal:font_size']==O['NP_IPOD_TIME_PX']
 rbar=r.nodes[rnp]['children'][-1]  # last: over the art's box
 assert r.nodes[rbar]['type']=='view' and cf_geometry(r,rbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and r.nodes[rbar]['sensitive']==0 and bw==227
 r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)

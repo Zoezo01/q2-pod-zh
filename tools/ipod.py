@@ -183,9 +183,9 @@ NP_IPOD_TIME_GAP = inc('NP_IPOD_TIME_GAP')
 NP_IPOD_TIME_WS = [inc('NP_IPOD_TIME_W1'), inc('NP_IPOD_TIME_W2'), NP_IPOD_TIME_W]  # under 10:00, under 1:00:00, longer
 NP_IPOD_TIME_TEXT = ['-0:00', '-00:00', '-0:00:00']  # each class's widest time, before the widest digit
 NP_IPOD_TIME_PX = inc('NP_IPOD_TIME_PX')
-NP_IPOD_TIME_H = inc('NP_BAR_IPOD') + 4
+NP_IPOD_TIME_H = inc('NP_IPOD_TIME_H')
 NP_INFO_NAME_W = 100  # the info page's names ("Sample Rate" 76 px in the info role's 17)
-NP_IPOD_TIME_Y = 255 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - 2  # the slider centred on 255
+NP_IPOD_TIME_Y = 255 - NP_TOUCH // 2 + (NP_TOUCH - inc('NP_BAR_IPOD')) // 2 - (NP_IPOD_TIME_H - inc('NP_BAR_IPOD') + 1) // 2  # the slider centred on 255
 
 
 def with_geometry(g):
@@ -745,7 +745,7 @@ def playing_page(root, g=SET0):
         root[3].append(named['img_more'])
         # Spotify's and Internet Radio's pages take these places (navigation.c stream_ipod), in the window
         dy = NP_TOP - lift
-        check([NP_MARGIN, dy + art_y, art, text_x, dy + title[1][1], fav_x, dy + icons_y, x, NP_IPOD_TIME_Y + 2,
+        check([NP_MARGIN, dy + art_y, art, text_x, dy + title[1][1], fav_x, dy + icons_y, x, NP_IPOD_TIME_Y + (NP_IPOD_TIME_H - inc('NP_BAR_IPOD') + 1) // 2,
                *(n[1][1] - title[1][1] for n in (artist, album, pos))] ==
               [inc('SPOT_ART_X'), *(inc('NP_IPOD_' + k) for k in 'ART_Y ART TEXT_X TEXT_Y FAV_X FAV_Y BAR_X BAR_Y'.split()), 34, 62, 90],
               "NP_IPOD_* != Classic's Now Playing")

@@ -5912,7 +5912,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
         widget_move_resize(times[i],
                            i ? NP_IPOD_BAR_X + bw + NP_IPOD_TIME_GAP
                              : NP_IPOD_BAR_X - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W,
-                           NP_IPOD_BAR_Y - 2, NP_IPOD_TIME_W, NP_BAR_IPOD + 4);
+                           NP_IPOD_BAR_Y - (NP_IPOD_TIME_H - NP_BAR_IPOD + 1) / 2, NP_IPOD_TIME_W,
+                           NP_IPOD_TIME_H);
         widget_use_style(times[i], i ? "s_scrlabel_white20l" : "s_scrlabel_white20r");
         widget_set_prop_str(times[i], "style:normal:font_name", font_faces[FONT_CLASSIC_LIGHT]);
         widget_set_prop_int(times[i], "style:normal:font_size", NP_IPOD_TIME_PX);

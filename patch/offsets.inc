@@ -144,31 +144,32 @@
 /* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, navigation.c paint_scrubber),
  * fitted to Apple's own 320 x 240 capture: the art's far edge SLANT_FAR/256 of its near one (118 of
  * 135 px); its reflection from SLANT_REFLECT_A/256 fading out over SLANT_REFLECT_PCT of the
- * column's height; the progress bar NP_BAR_IPOD high, Apple's, mirrored under it from
+ * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from
  * SCRUB_REFLECT_A/256 over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX, the largest
- * whose line fits their box (the bar's rows and two each side), NP_IPOD_TIME_GAP from the bar, in
+ * whose line fits their NP_IPOD_TIME_H box, NP_IPOD_TIME_GAP from the bar, in
  * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59",
  * NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59", the build's layout (tools/ipod.py
  * measures them). The boxes' outer edges stay; the bar takes what they leave. */
 #define SLANT_FAR 224
 #define SLANT_REFLECT_A 84
 #define SLANT_REFLECT_PCT 22
-#define NP_BAR_IPOD 17
+#define NP_BAR_IPOD 20
 #define SCRUB_REFLECT_A 38
 #define SCRUB_REFLECT_ROWS 6
 #define NP_IPOD_TIME_PX 21
+#define NP_IPOD_TIME_H 21 /* the times' box over the bar's rows, as near centred as an odd box goes */
 #define NP_IPOD_TIME_W1 35
 #define NP_IPOD_TIME_W2 43
 #define NP_IPOD_TIME_W 56
 #define NP_IPOD_TIME_GAP 8
-#define NP_SCRUB_MARK 7 /* the scrub's diamond: 15 rows, one in from the bar's edge lines */
+#define NP_SCRUB_MARK 8 /* the scrub's diamond: 17 rows, one in from the bar's top line, two from its foot */
 /* Classic's Spotify and Internet Radio Now Playing take the local page's np_ipod places, in the
  * window (navigation.c stream_ipod; tools/ipod.py playing_page checks them): the art NP_IPOD_ART
  * square at SPOT_ART_X, NP_IPOD_ART_Y, its box its reflection's room taller; the title's row at
  * NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y, the artist's, album's and "3 of 12"'s 34, 62 and 90 under it; the
  * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the widest boxes';
- * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' boxes beside it two
- * rows taller each side. */
+ * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' NP_IPOD_TIME_H boxes
+ * beside it, centred on its rows. */
 #define NP_IPOD_ART 198
 #define NP_IPOD_ART_Y 12
 #define NP_IPOD_TEXT_X 226
@@ -176,7 +177,7 @@
 #define NP_IPOD_FAV_X 300
 #define NP_IPOD_FAV_Y 175
 #define NP_IPOD_BAR_X 87
-#define NP_IPOD_BAR_Y 246
+#define NP_IPOD_BAR_Y 245
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
     int d = 2 * (r - y) - 1, v = (4 * r * r - d * d) * 64, s = 0;
