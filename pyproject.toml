@@ -19,6 +19,7 @@ filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 # Type check (docs/building.md#type-check): mypy over tools/, test/unit and test/fw.
 [tool.mypy]
 mypy_path = "tools"
+python_version = "3.12"  # CI's setup-python, whatever runs it locally
 # Few functions carry annotations, so check every body. The tests' mocks return list.append's None,
 # and an empty list or dict needs no annotation.
 check_untyped_defs = true
