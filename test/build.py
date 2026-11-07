@@ -42,7 +42,8 @@ def boot_check():
         r = pathlib.Path(tmp)
         def host(hook):
             script = hook.decode().replace(' &\n', '\n')
-            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log'):
+            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
+                        '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
         # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
@@ -60,7 +61,9 @@ def boot_check():
         def exe(path, body): (r/path).write_text('#!/bin/sh\n' + body + '\n'); (r/path).chmod(0o755)
         # demo takes Home's Rockbox row (leaves the flag) as many times as the shortcuts file says
         flag, shortcuts = f'{r}{ROCKBOX_FLAG}', r/'shortcuts'
+        # a demo that leaves q2-state (r/keep): it ended without ringnav_clean_end
         exe('release/bin/demo', f'echo demo >> {r}/ran; echo demo >> {r}/order; n=$(cat {shortcuts}); '
+            f'[ -f {r}/keep ] && echo running > {r}/mnt/data/q2-state; '
             f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && : > {flag}; '
             f's=$(head -n1 {r}/code); [ $(wc -l < {r}/code) -gt 1 ] && sed -i 1d {r}/code; exit $s')  # one status per run, the last repeats
         rb, target = r/'mnt/mmc/.rockbox/rockbox', r/'mnt/data/boot-target'
@@ -127,11 +130,37 @@ def boot_check():
         assert 'demo exit 139' in out and cp is False
         assert logged(0, True) == (False, False) and logged(143, True) == (False, False)
         assert logged([137, 0], True, 1) == (False, False)  # the Rockbox hand-over's kill, then a clean demo
+        # 0 or 143 with q2-state still there was no clean end (ringnav_clean_end removes it first): logged as a crash
+        keep, state = r/'keep', r/'mnt/data/q2-state'
+        keep.write_text('')
+        for status in (0, 143):
+            out, cp = logged(status, False)
+            assert f'== demo exit {status}\n' in out and '== dmesg' in out and cp is False and state.exists()
+        keep.unlink(); state.unlink()
+        # a library scan's and Coverflow's art build's records (navigation.c crash_note): the file in progress and
+        # the last 60 memory lines
+        for name, last, every in (('scan', 'last scanned', 500), ('art', 'last art', 50)):
+            note_file, note_log = r/f'tmp/q2-{name}-file', r/f'tmp/q2-{name}.log'
+            note_file.write_text('/mnt/mmc/Music/a.opus\n')
+            note_log.write_text(''.join(f'{n * every} {91000 + n} /mnt/mmc/{n}.opus\n' for n in range(1, 71)))
+            out, cp = logged(137, False)
+            assert f'== {last}\n/mnt/mmc/Music/a.opus\n' in out
+            lines = out.split(f'== {name}\n')[1].split('== ')[0].splitlines()
+            assert len(lines) == 60 and lines[0].startswith(f'{11 * every} 91011 ') and lines[-1] == f'{70 * every} 91070 /mnt/mmc/70.opus'
+            note_file.unlink(); note_log.unlink()
+            out, cp = logged(137, False)
+            assert f'== {last}' not in out and f'== {name}\n' not in out
         # /mnt/data/q2-state (navigation.c state_poll) still there at boot: the last session ended in a forced
         # restart, or the battery. It goes into q2-crash.log, a new one that says so or the crash's, and goes.
         state, line = r/'mnt/data/q2-state', 'screen:off power:suspending cable:out battery:57 play:paused out:jack\n'
         state.write_text(line); out, cp = logged(0, False)
         assert 'did not end' in out and '== last state' in out and line in out and not state.exists() and cp is False
+        # a Coverflow open that never finished (coverflow.c cf_trace) goes in after the state, and goes
+        trace = r/'mnt/data/q2-cf-trace'
+        state.write_text(line); trace.write_text('start albums=0 0 ms\nstaged albums=20000 900 ms\n'); out, cp = logged(0, False)
+        assert '== last state' in out and out.endswith('== cover flow\nstart albums=0 0 ms\nstaged albums=20000 900 ms\n') and not trace.exists()
+        trace.write_text('stale\n'); out, cp = logged(0, False)
+        assert out is False and not trace.exists()  # no forced restart: dropped, not reported
         for f in (crash, copy): f.unlink(missing_ok=True)
         crash.write_text('== demo exit 137\n'); state.write_text(line); boot(True, False, status=0)
         assert crash.read_text().startswith('== demo exit 137\n== last state\n') and line in crash.read_text() and not state.exists()

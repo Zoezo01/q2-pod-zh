@@ -38,6 +38,9 @@
   - Books: going back a page in a book with damaged text no longer reads beyond the book's text.
   - Card apps: a press made just as an app's page refreshes, or shows an error, does nothing, where it could act on another row or stop the app.
   - EQ: a Preamp picked for a preset whose file name is longer than 63 characters now stays with that preset.
+  - Cover Flow: a large library's first open no longer freezes until the Q2 restarts.
+  - Library: **Update Local Music** no longer runs out of memory on Opus or Ogg files carrying very large embedded pictures; their tags are read without the pictures, and showing their covers no longer risks it either.
+  - System: q2-crash.log names the file a library update or Cover Flow's artwork build was reading and shows how the Q2's memory grew during it, and it now also covers the player ending on its own without an error.
 - **1.6.7**:
   - Display: Home's **Shortcut** row can open **Podcasts** or **Audiobooks**, as their Library rows do. Without that folder on the card, it says so.
   - Display: **Theme: Modern** brings back 1.6.5's Classic look, the accent's bar over Minimal's layout, as a third theme. Choosing it from Minimal, or back, needs no restart.
