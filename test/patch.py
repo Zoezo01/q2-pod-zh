@@ -18226,11 +18226,11 @@ for light in '10':
     assert cells and all(b[0]>=0 and b[0]+b[2]<=81 for b in cells) and [l['text'] for l in q.letters]==['Songs','Artists','Albums','Genres'] and q.letters[0]['rect']==(0,-1,81,30) and q.letters[0]['color']==0x4d000000
     assert color_t(0x647ca0 if light=='1' else 0x14171c) in [b[4] for b in q.bands if b[1]==0]
     lit=lambda y: [b[:3] for b in q.bands if b[1]==y and b[4]>>24==0xff and b[2]>1 and b[2]<300]  # a row of the lit cell, the track's own rows aside
-    assert all(len(lit(y))==1 and 0<lit(y)[0][0]<=6 and sum(lit(y)[0][::2])==81 for y in (0,29)) and lit(15)==[(0,15,81)]  # the first: the track's round end left, square right
+    assert all(len(lit(y))==1 and 0<lit(y)[0][0]<=6 and sum(lit(y)[0][::2])==81 for y in (0,29,30)) and lit(15)==[(0,15,81)]  # the first: the track's round end left, square right
     q.nodes[n['btn_track']]['value']=0; q.nodes[n['btn_album']]['value']=1; blank(q); bg(q,n['tab_button_group']); cells=[b for b in q.bands if b[4]==color_t(0x08a6e7)]; assert cells and all(b[0]>=163 and b[0]+b[2]<=245 for b in cells)
-    assert all(lit(y)==[(163,y,82)] for y in (0,15,29)) and not [b for b in q.bands if b[2]==1 and 245<=b[0]<=248]  # a middle one fills its slot, square both sides
+    assert all(lit(y)==[(163,y,82)] for y in (0,15,30)) and not [b for b in q.bands if b[2]==1 and 245<=b[0]<=248]  # a middle one fills its slot, square both sides
     q.nodes[n['btn_album']]['value']=0; q.nodes[n['btn_genre']]['value']=1; blank(q); bg(q,n['tab_button_group']); assert not fill_at(q,327,2)  # the last tab: no shade past the track
-    assert all(len(lit(y))==1 and lit(y)[0][0]==245 and 321<=sum(lit(y)[0][::2])<327 for y in (0,29)) and lit(15)==[(245,15,82)]  # square left, the track's round end right
+    assert all(len(lit(y))==1 and lit(y)[0][0]==245 and 321<=sum(lit(y)[0][::2])<327 for y in (0,29,30)) and lit(15)==[(245,15,82)]  # square left, the track's round end right
     for t in ('track','artist','album','genre'):
         assert q.nodes[q.get(n['scroll_view_'+t]+O['W_PARENT'])]['default_item_height']==52 and q.nodes[n[f'label_{t}_msg']]['style:normal:font_size']==15
     assert all(q.nodes[n['label_tip']][f'style:{state}:font_size']==15 for state in ('normal','disable','focused'))

@@ -6883,9 +6883,10 @@ static void search_tabs_paint(void *group, void *canvas) {
         int x = (int)i * 327 / 4, w = (int)(i + 1) * 327 / 4 - x, fpx = 21;
         const unsigned *s = widget_get_text(tab);
         /* the lit tab fills its slot: rounded as the track at the track's ends, square beside
-         * the other tabs, so no track shows between them */
+         * the other tabs, so no track shows between them, and over the light row below the
+         * track, which under it read as a gap */
         if (widget_get_prop_int(tab, "value", 0))
-            lit_rows(canvas, &(rect_t){ x, 0, w, 30 },
+            lit_rows(canvas, &(rect_t){ x, 0, w, 31 },
                      (i ? 0 : ROUND_LEFT) | (i + 1 < n && i < 3 ? 0 : ROUND_RIGHT));
         rect_t under = { x, -1, w, 30 };
         text_shadow(canvas, theme_face(s, (int)wide_len(s), &fpx), s, &under, (unsigned)fpx, 0x4d);
