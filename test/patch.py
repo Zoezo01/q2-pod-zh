@@ -6687,12 +6687,13 @@ def qs_new(light='1',theme='1',**config):
     try: q=LoadQueue()
     finally: SETUP.clear()
     q.mock('dialog_quit','widget_dispatch_event_to_target_recursive'); q.image_size=(60,60)
+    q.budget=400000  # the page paints eight tiles row by row, each row's corners a pixel at a time
     q.handlers[int(manifest['patch_symbols']['stock_quicksettings_trampoline'],16)]='stock_quicksettings'
     q.btns=[q.node('image',n,image=i) for n,i in zip(QS_ICONS,QS_IMAGES)]
     q.labels=[q.node('label',n,text=t) for n,t in QS_LABELS]
     q.menu=q.node('view','view_menu',[*q.btns,*q.labels]); place(q,q.menu,0,20,375,224)
     for i,w in enumerate(q.btns): place(q,w,QS_X[i%4]+3,118*(i//4),60,60); q.byte(w+0x34,255)  # the page says each icon's x, whatever stock's is
-    for i,w in enumerate(q.labels): place(q,w,QS_X[i%4]-10,118*(i//4)+66,80,40)
+    for i,w in enumerate(q.labels): place(q,w,(30,115,199,283)[i%4]-10,118*(i//4)+66,80,40)  # stock's columns
     q.slider=q.node('slider','slider_backlight',min=1,max=10,value=4); place(q,q.slider,68,0,239,48)
     q.suns=[q.node('image','image0'),q.node('image','image1')]
     q.view=q.node('view','view_backlight',[q.slider,*q.suns]); place(q,q.view,0,256,375,48)
