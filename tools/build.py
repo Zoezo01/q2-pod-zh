@@ -1872,15 +1872,15 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     icons['list_delete.png'] = ('navbar_delete.png', cat(xx+'navbar_delete.png'))
     for n in ('spotify', 'radio', 'app', 'config'):  # Streaming's Spotify, Internet Radio, card app and Configuration rows
         icons[f'stream_{n}.png'] = ('list_tidal.png', (ROOT/'assets/icons'/f'stream_{n}.png').read_bytes())
-    icons['stream_airplay.png'] = ('list_tidal.png', cat(xx+'netservice_airplay.png'))  # iPod resizes stock's
+    icons['stream_airplay.png'] = ('list_tidal.png', cat(xx+'netservice_airplay.png'))
     art = (ROOT/'assets/icons/default_album_home.png').read_bytes()
-    # Streaming's rows draw them at SET_ICON; Home's placeholder at the art panel's 290px
+    # Streaming's rows keep their 52px bytes and scale them down at SET_ICON as list_tidal's (set_child): a Lanczos
+    # copy there looked softer than Tidal's beside it. Home's placeholder at the art panel's 290px
     from theme import builtins as builtin_themes
     pane = max(t['pane_svc_px'] for t in builtin_themes())  # Home's pane on Streaming's list, 1:1 (coverflow.c pane_service)
     for n in ('spotify', 'radio', 'app', 'airplay', 'config'):
         like, data = icons[f'stream_{n}.png']
         icons[f'classic_light_stream_{n}.png'] = (like, row_icon(data, pane))
-        icons[f'stream_{n}.png'] = (like, row_icon(data))
     icons['classic_light_list_tidal.png'] = ('list_tidal.png', row_icon(cat(xx+'list_tidal.png'), pane))
     icons['default_album_home.png'] = ('default_album_big.png', art)
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
