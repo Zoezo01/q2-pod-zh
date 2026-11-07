@@ -12838,11 +12838,11 @@ assert [b[1] for b in sep_bands(lm)]==[lm.get(e+O['W_Y'])+49+j for e in [head,le
 # Geometry sets: Edit Playlist's row follows the live pitch and body, as the page's asset rows do.
 m=PlaylistEditMachine(); set_value(m,'pitch',28); set_value(m,'body',26); m.open_editor(28,26); passed()
 gm=PlaylistEditMachine(); set_geom(gm,GEOM_CLASSIC_LIGHT); gm.open_editor(); passed()  # the set theme_boot wrote, SET0
-# Classic's Settings list pushes in over 170 ms, linear; Minimal keeps its 120 ms, sin_inout.
+# Classic's Settings list pushes in over 120 ms, linear; Minimal's is 120 ms too, sin_inout.
 def swap_values(m,ms,easing):
     f,ctx=m.handler(named(m,m.top,'img_settings'),O['EVT_CLICK']); m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)
     assert [c[2] for c in m.calls if c[0]=='widget_animator_prop_create'][:1]==[ms] and m.nodes[named(m,m.top,'list_view_homeset')]['animated_easing']==easing
-m=classic_light_home(); swap_values(m,170,0)
+m=classic_light_home(); swap_values(m,120,0)
 CONFIG.update(SHORTCUT='0',HOME='0'); m=ShuffleMachine(); del CONFIG['SHORTCUT'],CONFIG['HOME']; m.rockbox_mode=0; home_list(m)
 assert m.call(address=home_hook[0],args=(m.top,0,0,0),gap=0)==0; m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start')
 swap_values(m,120,8); passed()

@@ -1167,7 +1167,7 @@ def test_motion_today(tmp_path):  # Minimal: the asset hint kept (0), today's nu
 
 
 MOTION_CLASSIC_LIGHT = {**MOTION_TODAY,
-                        'motion.swap.ms': 170, 'motion.swap.easing': 0, 'motion.inplace.ms': 120, 'motion.inplace.easing': 5, 'recall_ms': 0, 'bump_px': 0,
+                        'motion.swap.ms': 120, 'motion.swap.easing': 0, 'motion.inplace.ms': 120, 'motion.inplace.easing': 5, 'recall_ms': 0, 'bump_px': 0,
                         'motion.coverflow_step.ms': 81, 'motion.coverflow_step.easing': 24, 'motion.coverflow_step_fast.ms': 81, 'motion.coverflow_step_fast.easing': 24}
 
 
