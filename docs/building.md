@@ -76,14 +76,14 @@ python3 test/coverflow.py --captures /tmp/cf  # the same, plus the renderer's fr
 python3 test/mp3.py                        # native Xing seek bounds, CRC and truncated headers; TXXX encodings
 python3 test/mp3_gapless.py                # gapless parser/PCM and generated LAME/FFmpeg comparisons (cc, lame, ffmpeg, pkg-config, libavcodec/libavutil/libmad development files)
 python3 test/mp3_gapless_player.py BUILD   # the built gapless hooks, then stock's demuxer and libmad under Unicorn on generated files (lame, unsquashfs, readelf)
-python3 test/build.py                      # JPEG header checks; no emulator required
+python3 test/build.py                      # JPEG headers, dev tags, and the boot scripts (S90play's dual boot and crash log, S11logo's splash) under the host sh; no ZIP or emulator
 python3 test/build.py 'Q2 Firmware V1.32.zip'   # packaging checks (custom logo, quoted paths)
 python3 test/build.py --build BUILD         # a finished build's payloads and packaging
 python3 test/aic.py STOCKFS               # stopped audio notifier: actual MIPS hooks and modeled wait races
 python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, default/experimental packaging
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
 python3 test/rotator.py STOCK_MODULE        # actual MIPS rotator clock ownership and failure paths
-python3 test/rotator_build.py BUILD...      # dev-only guard and packed/default module isolation
+python3 test/rotator_build.py [BUILD...]    # dev-only guard (no build needed); given builds, packed/default module isolation
 python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks
 python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios
 python3 test/chapters.py                   # embedded chapter parsing, both MP4 formats and async extraction

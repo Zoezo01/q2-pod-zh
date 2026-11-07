@@ -66,16 +66,17 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
     t = theme.builtins()[1]
     got = art.images(t)
     x0, y0 = art.BOLT_BOX[:2]
+    g = theme.sets(t)['classic-light']
     for name in ('classic_light_bolt', 'classic_light_plug'):
-        assert pixels(got[name])[:2] == tuple(art.BOLT_BOX[2:]) == (26, 13)  # the inside, x 290 to 315, rows 5 to 17
+        assert pixels(got[name])[:2] == tuple(art.BOLT_BOX[2:]) == (g.batt_w - 2, g.batt_h - 2) == (24, 11)  # the inside, BOLT_BOX's frame: x 290 to 313, rows 5 to 15
     at = pixels(got['classic_light_bolt'])[2]
     assert at(301 - x0, 10 - y0) == (0x3c, 0x4a, 0x34, 255)  # its colour, opaque
     assert t['bolt'] == 0x3c4a34 and t['bolt_halo_a'] == 102
-    halo = at(305 - x0, 10 - y0)  # past the bolt's edge: white, no stronger than its alpha
+    halo = at(304 - x0, 10 - y0)  # past the bolt's edge: white, no stronger than its alpha
     assert halo[:3] == (255, 255, 255) and 0 < halo[3] <= 102
-    assert at(290 - x0, 10 - y0)[3] == 0 and at(315 - x0, 10 - y0)[3] == 0
+    assert at(290 - x0, 10 - y0)[3] == 0 and at(313 - x0, 10 - y0)[3] == 0
     plug = pixels(got['classic_light_plug'])[2]
-    assert plug(301 - x0, 11 - y0) == (0x3c, 0x4a, 0x34, 255) and plug(290 - x0, 11 - y0)[3] == 0
+    assert plug(300 - x0, 10 - y0) == (0x3c, 0x4a, 0x34, 255) and plug(290 - x0, 11 - y0)[3] == 0
 
 
 def test_the_volume_and_slider_page_images():

@@ -486,7 +486,7 @@ typedef struct {
      * last read and the poll following it. msg_counting: 1 msg_count runs, 3 + n it has answered
      * n (-1 failed): one word, so the UI thread can't see the flag before the value. */
     void *usb_win, *msg_win, *msg_src, *msg_line, *msg_btn;
-    int msg_total;
+    int msg_total, usb_lun; /* usb_lun: USB Storage's card has read open (usb_poll) */
     volatile int msg_counting;
     short msg_part;
     unsigned msg_timer;
@@ -5132,7 +5132,8 @@ static int face_has(int face, const unsigned *c, int n) {
  * that does (classic-light, then bold, at FACE_FALLBACK_PCT of the px), else stock's, which has
  * CJK; and its px, if the theme sets one. Written in every state the labels style, only when the
  * answer (face | px << 2) differs from was; returns it. A code-built row passes FONT_ROW: the
- * answer lives in its own "_font" prop, and a role the theme leaves to the style writes nothing. */
+ * answer lives in its own "_font" prop with the role above it (row_faces reads it), and a role the
+ * theme leaves to the style writes nothing. */
 static const char *const font_faces[] = { "default", "bold", "classic-light" }; /* [FONT_*] */
 /* bold.ttf standing in for classic-light.ttf: that much of the px gives the same capitals, their
  * cap heights' ratio (test_ipod). Only the fallback takes it: Classic's bold stays at its px. */
@@ -5157,14 +5158,32 @@ int theme_font(void *w, int role, int was) {
         face = FONT_DEFAULT; /* CJK */
     else if (fell)
         px = fallback_px(px);
-    int answer = face | px << 2;
-    if (!w || answer == was) return answer;
+    int answer = face | px << 2, kept = row ? answer | role << 16 : answer;
+    if (!w || kept == was) return answer;
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
         widget_set_prop_str(w, names[i], font_faces[face]);
         if (px) widget_set_prop_int(w, sizes[i], px);
     }
-    if (row) widget_set_prop_int(w, "_font", answer);
+    if (row) widget_set_prop_int(w, "_font", kept);
     return answer;
+}
+
+/* Each label under w that theme_font gave a face finds it again for its text, in its own role. */
+static void row_faces(void *w) {
+    int kept = widget_get_prop_int(w, "_font", -1);
+    if (kept >= 0) theme_font(w, kept >> 16, FONT_ROW);
+    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
+        row_faces(widget_get_child(w, i));
+}
+
+/* A virtual table's bind of a pooled row (table_client's load loop, TABLE_LOAD_CALL): stock's
+ * on_load_data writes the row's text with no relayout, so the faces its layout picked would stay
+ * with the last text: a CJK name in Classic's face, which has none of it, drew blank (#217). */
+int ringnav_table_load(void *ctx, unsigned index, void *row) {
+    int ret =
+        ((int (*)(void *, unsigned, void *))P(P(row, W_PARENT), TABLE_LOAD_DATA))(ctx, index, row);
+    row_faces(row);
+    return ret;
 }
 
 /* Canvas text in the theme's face where it has the characters, else bold.ttf where it has them
@@ -5182,20 +5201,21 @@ const char *theme_face(const unsigned *s, int n, int *px) {
  * "-59:59" under an hour, else "-9:59:59" (NP_IPOD_TIME_W*, tools/ipod.py measures them), their
  * outer edges and the gap kept; the bar takes the rest, mirrored. */
 static int ipod_bar_x(int sec) {
-    return NP_IPOD_BAR_X - NP_IPOD_TIME_W +
+    return NP_IPOD_BAR_X - NP_IPOD_TIME_W1 +
            (sec < 600    ? NP_IPOD_TIME_W1
             : sec < 3600 ? NP_IPOD_TIME_W2
                          : NP_IPOD_TIME_W);
 }
 
 /* Classic's elapsed and remaining times and bar (with none, the radio's own) fitted to a track sec
- * long (ipod_bar_x); unknown (0 or less) leaves them, so the page keeps the build's widest boxes or
- * the last track's, whose times hold the 0:00 an unknown length shows. Each keeps its y and height
- * and repaints where it was and where it goes, so the caller is outside a paint, which loses its
- * invalidates (#116). 1 when any moved. */
+ * long (ipod_bar_x); unknown (0 or less) leaves them, so the page keeps the build's "-9:59" boxes
+ * and widest bar, or the last track's, whose times hold the 0:00 an unknown length shows. Each
+ * keeps its y and height and repaints where it was and where it goes, so the caller is outside a
+ * paint, which loses its invalidates (#116). 1 when any moved. */
 int ipod_times(void *elapsed, void *remain, void *bar, int sec) {
     if (sec <= 0) return 0;
-    int x = ipod_bar_x(sec), tw = x - (NP_IPOD_BAR_X - NP_IPOD_TIME_W), bw = 375 - 2 * x, moved = 0;
+    int x = ipod_bar_x(sec), tw = x - (NP_IPOD_BAR_X - NP_IPOD_TIME_W1), bw = 375 - 2 * x,
+        moved = 0;
     void *w[] = { elapsed, remain, bar ? bar : st.stream_bar };
     const int to[3][2] = { { x - NP_IPOD_TIME_GAP - tw, tw },
                            { x + bw + NP_IPOD_TIME_GAP, tw },
@@ -5887,7 +5907,7 @@ static int stream_gone(void *ctx, void *event) {
  * places (NP_IPOD_*): the art, its box taller than wide, so paint_cover slants the image it shows
  * over its reflection (coverflow_slant, whose one frame is keyed by the image's url and pixels, so
  * the local page and this one never show each other's); the title's, artist's, album's and "3 of
- * 12"'s rows (text, any 0 left out); the times in their widest boxes beside the bar, in Classic's
+ * 12"'s rows (text, any 0 left out); the times in "-9:59"'s boxes beside the bar, in Classic's
  * face, until the page fits them to its track (ipod_times); the bar, which the page paints with
  * ipod_bar, or with none a bar of its own, last so over the art's box, that paint_scrubber paints
  * always full and that takes no touch; the heart. 0 under the other themes, whose pages keep their
@@ -5910,8 +5930,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
         if (!times[i]) continue;
         widget_move_resize(times[i],
                            i ? NP_IPOD_BAR_X + bw + NP_IPOD_TIME_GAP
-                             : NP_IPOD_BAR_X - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W,
-                           NP_IPOD_BAR_Y - (NP_IPOD_TIME_H - NP_BAR_IPOD + 1) / 2, NP_IPOD_TIME_W,
+                             : NP_IPOD_BAR_X - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W1,
+                           NP_IPOD_BAR_Y - (NP_IPOD_TIME_H - NP_BAR_IPOD + 1) / 2, NP_IPOD_TIME_W1,
                            NP_IPOD_TIME_H);
         widget_use_style(times[i], i ? "s_scrlabel_white20l" : "s_scrlabel_white20r");
         widget_set_prop_str(times[i], "style:normal:font_name", font_faces[FONT_CLASSIC_LIGHT]);
@@ -6005,7 +6025,12 @@ int ringnav_playing(void *win, void *ctx) {
         rearm(&st.settle_timer, settle_poll, SETTLE_MS);
     } else
         st.held_sec = 0;
-    np_fit_due((void *)0); /* the page opens fitted */
+    /* The page opens fitted when the length is known; a track just picked reports 0 until stock's
+     * status poll (mclSyncPlayerStatus) has it, so it opens on the build's widest bar and np_sync
+     * narrows it for a long track.
+     * ponytail: inferred, not traced on the device; a 10:00+ track picked from a list still narrows
+     * once after the open. Fit from the file's own length at open if that shows. */
+    np_fit_due((void *)0);
     np_sync(win);
     visualizer_attach(win);
     return result;
@@ -7102,6 +7127,37 @@ static void msg_paint(void *w, void *canvas) {
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
+/* USB Storage's page, every theme: the computer's eject (SCSI START STOP UNIT, LoEj) closes the
+ * card's LUN in the kernel's f_mass_storage, and its configfs file then reads empty. Once it has
+ * read open, empty is the eject: the heading (Classic) or stock's line (scrlabel_info, which
+ * stock's timer rewrites "USB Connected" every 500 ms, so a label of its style covers it) says OK
+ * to Disconnect. No file (the gadget not built yet, or torn down) is no eject. The LUN stays closed
+ * until stock rebuilds the gadget, so the poll ends there.
+ * ponytail: only a host that sends LoEj counts (macOS, Linux, Explorer's Eject); Windows' Safely
+ * Remove Hardware may only stop the device, leaving the page on Connected. The upgrade is
+ * telling that apart from a cable still in (the gadget's suspend state, which configfs doesn't
+ * show). */
+#define USB_LUN "/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file"
+static int usb_poll(const void *info) {
+    void *win = P(info, TIMER_CTX), *c;
+    char path[2];
+    void *f = fopen(USB_LUN, "rb");
+    int n = f ? (int)fread(path, 1, sizeof path, f) : -1;
+    if (f) fclose(f);
+    if (n > 0) st.usb_lun = 1;
+    if (n || !st.usb_lun) return 8; /* RET_REPEAT */
+    if ((c = widget_lookup(win, "msg_heading", 1))) {
+        widget_set_text_utf8(c, "OK to Disconnect");
+        widget_set_text_utf8(widget_lookup(win, "msg_line", 1), "");
+    } else if ((c = widget_lookup(win, "scrlabel_info", 1))) {
+        void *ok = hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
+        widget_use_style(ok, "s_scrlabel_white24c");
+        widget_set_text_utf8(ok, "OK to Disconnect");
+        widget_set_visible(c, 0, 0);
+    }
+    widget_invalidate_force(win, (void *)0);
+    return 7; /* RET_REMOVE */
+}
 
 void *ringnav_ui_load(const char *name, void *parent) {
     char path[64]; /* this call's own: a window stock loads inside this one keeps its name */
@@ -7130,6 +7186,8 @@ void *ringnav_ui_load(const char *name, void *parent) {
             pl_box_open(root);
         if (time_form(root)) time_open(root);
     }
+    if (root && g_usbmode != 1 && !tk_strcmp(widget_get_prop_str(root, "name", ""), "usbmode_page"))
+        st.usb_lun = 0, widget_add_timer(root, usb_poll, 500);
     if (root) motion_load(root, np);
     return root;
 }
