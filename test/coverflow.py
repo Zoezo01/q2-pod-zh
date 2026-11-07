@@ -2290,6 +2290,19 @@ static void thumb_wheel(void) {
         th_pass(0, 17);
         assert(wheel_raw == 2);
         coverflow_paint(s, canvas);
+        /* Their row settles onto the shelf with no pop: a tiny lead draws the rest frame's covers,
+           the third out included (CF_THIRD). */
+        for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 8) {
+            cf_thumb_lead(-1);
+            R(f, frac);
+            cf_thumb_lead(1e-4f);
+            R(g2, frac);
+            int differ = 0;
+            for (int y = 0; y < shipped0.view_h; ++y)
+                for (int x = 0; x < CF_VIEW_W; ++x) differ += abs(ch(f[y * PITCH + x], 1) - ch(g2[y * PITCH + x], 1)) > 40;
+            assert(differ < shipped0.view_h * 8);
+        }
+        cf_thumb_lead(-1);
         close_page();
         top_window = 0;
         th_pass(0, 17);
