@@ -4211,6 +4211,9 @@ m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.icons
 for x in (330,300):
     m.calls.clear(); m.tap(m.row_button('List 2'),x); assert not m.mores and any(c[0]=='navigator_to_with_context' for c in m.calls), x
 m.tap(m.row_button('List 2'),340); assert m.mores==[2]
+# ... the band's row draws its `>` and no dots: a tap there opens to the edge, its More is the hold's
+assert m.selected(m.view)==2; m.calls.clear(); m.tap(m.row_button('List 0'),340)
+assert m.mores==[2] and any(c[0]=='navigator_to_with_context' for c in m.calls)
 m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 2'),330); assert m.mores==[2] and m.marks==[0,0,1]
 m=ClassicPlaylistMachine(3,1); m.rebuild(); m.icons=[]; m.paint(m.view); assert not m.icons; passed()
 

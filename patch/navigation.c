@@ -12677,6 +12677,7 @@ static const unsigned pl_stock[PL_N] = { 0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0,
  * hold their fonts; the dots or a mark at the right edge, centred on the picker's tick's column
  * (x 346), where the selected row's chevron (x 317) shows in their place. The text ends clear of
  * whichever shows. */
+#define PL_MARK_X 333 /* the tick's column, the dots' hit */
 static void pl_fit(void *button) {
     const theme_t *T = theme();
     int h = I(button, W_H), width = 289;
@@ -12687,7 +12688,7 @@ static void pl_fit(void *button) {
             widget_move_resize(c, 321, 0, 50, h);
         } else if (tk_str_start_with(name, "img_choice") && widget_get_visible(c)) {
             width = 309;
-            widget_move_resize(c, 333, 0, 26, h);
+            widget_move_resize(c, PL_MARK_X, 0, 26, h);
             /* stock's mark is a disc: as a picker's, for paint_radio's tick */
             if (!tk_strcmp(widget_get_prop_str(c, "image", ""), "mulselect"))
                 image_base_set_image(c, "select");
@@ -12888,13 +12889,15 @@ static int pl_marked(void *win, void *event) {
     return 0;
 }
 /* Stock's row click opens More from x 286 outside select mode (0x4b1d90, 0x4b1e70): a picker has
- * no More, so a tap anywhere picks; in the list the dots' column at the edge (from x 333, the
- * tick's) stays More, and a tap left of it, the chevron's column (from x 317) too, opens the
- * playlist. A pick or an open is a fresh click at x 0. */
+ * no More, so a tap anywhere picks; in the list the dots' column at the edge (PL_MARK_X on) stays
+ * More, and a tap left of it, the chevron's column (from x 317) too, opens the playlist. The band's
+ * row draws its chevron and no dots, so it opens to the edge; its More is the hold's. A pick or an
+ * open is a fresh click at x 0. */
 static int pl_pick(void *ctx, void *event) {
     char click[0x30];
+    int lit = st.sel_accent && (ctx == st.sel_accent || P(ctx, W_PARENT) == st.sel_accent);
     if (!widget_get_prop_int(window_of(ctx), PL_MODE, 0) &&
-        (g_navbar_status == 1 || I(event, EVENT_X) >= 333))
+        (g_navbar_status == 1 || (!lit && I(event, EVENT_X) >= PL_MARK_X)))
         return PLAYLIST_PICK(ctx, event);
     return PLAYLIST_PICK(ctx, pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
