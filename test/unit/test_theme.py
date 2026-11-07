@@ -764,8 +764,8 @@ def test_bar_battery_painter_rejects():
 
 def test_theme_level_halves():
     classic_light = theme.builtins()[1]
-    assert classic_light['batt_line'] == 0x9c9e9c and classic_light['light']['batt_line'] == 0x717070  # both halves stated
-    assert theme.half(classic_light, False, 0xffffff, 0)['batt_line'] == 0x9c9e9c
+    assert classic_light['batt_line'] == 0x010101 and classic_light['light']['batt_line'] == 0x717070  # both halves stated
+    assert theme.half(classic_light, False, 0xffffff, 0)['batt_line'] == 0x010101
     assert theme.half({**classic_light, 'batt_line': 0}, False, 0xffffff, 0)['batt_line'] != 0  # one stated: the other derives
     assert error(resolved, '<view name="bar"><element name="battery" light.painter="classic-light"/></view>') == \
         't.xml:1: bar.battery.painter: one value for both halves'
