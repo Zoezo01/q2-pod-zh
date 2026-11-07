@@ -627,9 +627,6 @@ def playing_page(root, g=SET0):
     title[1] = [text_x, top, text_w, 28]
     # every state: the labels are disabled (enable false), so a lone normal size would not apply
     title[2].update({'style': 's_scrlabel_white20l', **{f'style:{s}:font_size': str(NP_TITLE_PX) for s in ('normal', 'disable', 'focused')}})
-    # lull holds the end, delay the start (navigation.c ringnav_hscroll_lull snaps back between them), as the album's marquee
-    for n in (title, artist):
-        n[2].update(delay=str(inc('MARQUEE_HOLD_MS')), lull=str(inc('MARQUEE_HOLD_MS')))
     artist[1] = [text_x, top + 34, text_w, 22]
     for key in artist[2]:
         if key.endswith(':font_size'): artist[2][key] = str(NP_META_PX)
@@ -739,7 +736,7 @@ def playing_page(root, g=SET0):
 
 # Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the
 # title and artist, as PLAYING_STOCK (navigation.c ringnav_ui_load); the payload binds it by the same names.
-# It keeps stock's layout; the title and artist hold at their start as the iPod page's do, and the lyrics
+# It keeps stock's layout; the title and artist hold at their start as every scrolling label does, and the lyrics
 # span their column, as the iPod page's span the screen (patch/lyrics.c wraps at the rows' width).
 PLAYING_STOCK = 'playing_page_stock.bin'
 def playing_stock(data):
@@ -747,8 +744,6 @@ def playing_stock(data):
     root = decode(data)
     named = {n[2].get('name'): n for n in walk(root)}
     check(root[2].get('name') == 'playing_page' and named['slide_view'][1][2] == 225, 'Unexpected stock Now Playing')
-    for name in ('scrlabel_title', 'scrlabel_artist'):
-        named[name][2].update(delay=str(inc('MARQUEE_HOLD_MS')), lull=str(inc('MARQUEE_HOLD_MS')))
     lrc = named['scroll_lrc'][2]
     check(lrc['self_layout'].startswith('default(x=0,y=0,w=-10,'), 'Unexpected lyrics scroll view')
     lrc['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'

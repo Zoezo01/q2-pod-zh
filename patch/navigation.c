@@ -184,7 +184,8 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_systemset_trampoline(void *, void *), stock_audioset_trampoline(void *, void *),
     stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
-    stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *);
+    stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *),
+    stock_hscroll_start_trampoline(void *);
 extern void *coverflow_tracks(void *page);
 extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w),
     coverflow_slide(void *w);
@@ -512,7 +513,7 @@ typedef struct {
     void *genre_label;
     int genre_off;
     unsigned genre_timer;
-    /* The selected row's marquee (marq_poll); Time in Title off (bar_title). */
+    /* The selected row's marquee (marq_moved); Time in Title off (bar_title). */
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
@@ -2614,22 +2615,6 @@ static int np_marquee(const void *info) {
     return 0;
 }
 
-/* A looping stock hscroll_label (Now Playing's title and artist) ends a pass on its lull and then
- * its delay, both with its end in view, and only then snaps back and scrolls on: its start never
- * held. The end-of-pass widget_add_timer comes here (HSCROLL_LULL in tools/build.py): the lull's
- * end puts the start back first, so the delay holds there. A yoyo label goes back by scrolling.
- * An only_focus label stock won't restart (unfocused) now rests on its start, not its end. */
-static int (*hscroll_lulled)(const void *);
-static int hscroll_lull_end(const void *info) {
-    void *w = P(info, TIMER_CTX);
-    if (!((const char *)w)[HSCROLL_YOYO]) hscroll_label_set_xoffset(w, 0);
-    return hscroll_lulled(info);
-}
-unsigned ringnav_hscroll_lull(void *w, int (*lulled)(const void *), unsigned ms) {
-    hscroll_lulled = lulled;
-    return widget_add_timer(w, hscroll_lull_end, ms);
-}
-
 /* Minimal's Home labels are HOME_CAPS_PX small capitals over their transparent stock ink
  * (ringnav_style_color), white on the selected row, else SUDO_MUTED; the status bar's idle "Q2" is
  * the 1.0.1 wordmark's MARK_PX grey capitals; Now Playing's album (docs/ipod.md#now-playing) is
@@ -2671,14 +2656,16 @@ static void paint_caps(void *w, void *canvas) {
                 I(w, W_W));
 }
 
-/* The selected row's long title scrolls, as an iPod's does, MARQUEE_HOLD_MS after the selection
- * settles and at the album marquee's pace, MARQUEE_PASSES times (each repaints every 16 ms: stock's
- * tick, 0x5e86d8); every other row keeps its ellipsis. Only a title stock would scroll on focus
- * alone (only_focus; no row is focused): stock's timer stops such a label on its first tick unless
- * it is focused (0x5e897c), so only_focus is off while this one runs. A pass ends by itself, so a
- * dark screen or a covered page costs at most the rest of one. A row is its widget and its id, as a
- * table's pool can hold the selection in one widget (paint_selection; a paint would drop
- * hscroll_label_stop's invalidate, so marq_moved stops it). */
+/* The selected row's long title scrolls, as an iPod's does, MARQUEE_PASSES times as soon as the
+ * selection settles, through stock's scroller with every label's holds and pace
+ * (ringnav_hscroll_start); every other row keeps its ellipsis. Only a title stock would scroll on
+ * focus alone (only_focus; no row is focused): stock's timer stops such a label on its first tick
+ * unless it is focused (0x5e897c), so only_focus is off while this one runs. It loops, so each pass
+ * ends on its lull (ringnav_hscroll_lull), which counts it and stops it after the last, or once the
+ * row isn't the selected one on a lit, usable screen: a dark screen or a covered page costs at most
+ * the rest of one pass. A row is its widget and its id, as a table's pool can hold the selection in
+ * one widget (paint_selection; a paint would drop hscroll_label_stop's invalidate, so marq_moved
+ * stops it from a timer). */
 static int marq_gone(void *ctx, void *event) {
     (void)ctx, (void)event;
     st.marq_label = (void *)0;
@@ -2703,46 +2690,79 @@ static void *row_scroller(void *w, int depth) {
     }
     return (void *)0;
 }
-static int marq_poll(const void *info) {
-    (void)info;
-    st.marq_timer = 0;
+/* The marquee's row while it is the selected one on a usable screen; else 0. */
+static void *marq_row(void) {
     void *w = usable() ? surface((void *)0, (void *)0) : (void *)0;
     int i = st.sel_row;
     void *row = w && w == st.sel_w && load_rows(&g_menu, w) && i >= 0 && i < g_menu.n &&
                         g_menu.id[i] == st.marq_id
                     ? g_menu.at[i]
                     : (void *)0;
-    if (!row || row != st.marq_row) {
-        marq_stop();
+    return row == st.marq_row ? row : (void *)0;
+}
+static int marq_moved(const void *info) {
+    (void)info;
+    st.marq_timer = 0;
+    marq_stop();
+    st.marq_passes = 0;
+    void *row = marq_row();
+    if (!row) {
         st.marq_row = (void *)0; /* the next paint with a selection starts over */
-        return 0;
-    }
-    if (st.marq_label) { /* a pass and the hold after it: back to the start, for the next */
-        marq_stop();
-        if (++st.marq_passes < MARQUEE_PASSES)
-            st.marq_timer = timer_add(marq_poll, (void *)0, MARQUEE_HOLD_MS);
         return 0;
     }
     void *label = row_scroller(row, 2);
     /* stock's two margins (2 px each by default, 0x5e8428) count towards its ellipsis */
     int over = label ? I(label, HSCROLL_TEXT_W) + 4 - I(label, W_W) : 0;
-    if (over <= 0 || !((const char *)label)[HSCROLL_ONLY_FOCUS]) return 0; /* until it moves */
-    unsigned ms = (unsigned)over * MARQUEE_MS / MARQUEE_PX;
-    widget_set_prop_int(label, "loop", 0);
-    widget_set_prop_int(label, "duration", (int)ms);
+    if (over <= 0 || !B(label, HSCROLL_ONLY_FOCUS)) return 0; /* until it moves */
+    B(label, HSCROLL_LOOP) = 1;
     st.marq_label = label;
     widget_on(label, EVT_DESTROY, marq_gone, (void *)0);
     hscroll_label_set_only_focus(label, 0);
     hscroll_label_start(label);
-    st.marq_timer = timer_add(marq_poll, (void *)0, ms + MARQUEE_HOLD_MS);
     return 0;
 }
-static int marq_moved(const void *info) {
-    (void)info;
-    marq_stop();
-    st.marq_passes = 0;
-    st.marq_timer = timer_add(marq_poll, (void *)0, MARQUEE_HOLD_MS);
-    return 0;
+
+/* Every hscroll_label's holds and pace. Stock's start (hscroll_label_start, which its focus, its
+ * paint on a new text, its lull and the payload all call) waits the label's delay, 0 unless set,
+ * before the first step, and a looping label ends a pass on its lull (2000 or 3000 ms) with its end
+ * in view, then starts again: most labels raced off their start at once and parked on their end.
+ * Every start now waits MARQUEE_HOLD_MS, showing where the text is (its start, or a yoyo label's
+ * end), and runs at HSCROLL_PACE at most (or at it, for a label with no speed, which would cover
+ * any length in its duration). Stock's start does nothing for a running label. */
+int ringnav_hscroll_start(void *w) {
+    unsigned speed = (unsigned)I(w, HSCROLL_SPEED);
+    I(w, HSCROLL_DELAY) = MARQUEE_HOLD_MS;
+    if (!speed || speed > HSCROLL_PACE) I(w, HSCROLL_SPEED) = HSCROLL_PACE;
+    return stock_hscroll_start_trampoline(w);
+}
+/* The end-of-pass widget_add_timer comes here (HSCROLL_LULL in tools/build.py): the lull holds the
+ * end MARQUEE_HOLD_MS, then puts the start back before stock's callback restarts the label, so its
+ * delay holds there. A looping yoyo label scrolls back from its end, which that delay holds: its
+ * lull is 0. A label that doesn't loop comes here too (HSCROLL_ONCE): its lull's end stops it, back
+ * on its start, as stock's lull callback ends (the timer id cleared, so hscroll_label_stop leaves
+ * this firing timer to RET_REMOVE). An only_focus label stock won't restart (unfocused) rests on
+ * its start, not its end. */
+static int (*hscroll_lulled)(const void *);
+static int hscroll_lull_end(const void *info) {
+    void *w = P(info, TIMER_CTX);
+    if (!B(w, HSCROLL_LOOP)) {
+        I(w, HSCROLL_TIMER) = 0;
+        hscroll_label_stop(w);
+        return 7; /* RET_REMOVE */
+    }
+    if (!B(w, HSCROLL_YOYO)) hscroll_label_set_xoffset(w, 0);
+    int ret = hscroll_lulled(info);
+    if (w == st.marq_label && !marq_row())
+        st.marq_row = (void *)0, marq_stop(); /* the next paint with a selection starts over */
+    else if (w == st.marq_label && ++st.marq_passes >= MARQUEE_PASSES)
+        marq_stop(); /* passes spent: nothing until the selection moves */
+    return ret;
+}
+unsigned ringnav_hscroll_lull(void *w, int (*lulled)(const void *), unsigned ms) {
+    (void)ms;
+    hscroll_lulled = lulled;
+    return widget_add_timer(w, hscroll_lull_end,
+                            B(w, HSCROLL_YOYO) && B(w, HSCROLL_LOOP) ? 0 : MARQUEE_HOLD_MS);
 }
 
 /* Classic's dialogs (CONFIRM_CLASSIC_LIGHT), in screen pixels and final colours. A dialog
@@ -8360,7 +8380,7 @@ static int genre_over(void) {
     if (!s || !g_backlight_status || window_manager_get_top_window(window_manager()) != st.np_win ||
         widget_get_prop_int(st.np_slide, "value", 0) != 2) /* view_info */
         return 0;
-    return I(s, HSCROLL_TEXT_W) + 4 - I(s, W_W); /* stock's two 2 px margins, as marq_poll */
+    return I(s, HSCROLL_TEXT_W) + 4 - I(s, W_W); /* stock's two 2 px margins, as marq_moved */
 }
 static int genre_step(const void *info) {
     (void)info;

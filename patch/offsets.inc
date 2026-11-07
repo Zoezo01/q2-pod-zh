@@ -318,13 +318,21 @@ static inline int arc_out(int r, int y) {
 #define NP_META_PX 18
 #define NP_ALBUM_RGB 0xbbbbbb
 /* A line too long to fit holds MARQUEE_HOLD_MS at its start and its end: the Minimal album marquee
- * (navigation.c) and the stock title and artist labels' delay and lull (tools/ipod.py,
+ * (navigation.c) and every stock hscroll_label's delay and lull (ringnav_hscroll_start,
  * ringnav_hscroll_lull). */
 #define MARQUEE_HOLD_MS 1500
-#define MARQUEE_PASSES 3 /* the selected row's title: navigation.c marq_poll */
+#define MARQUEE_PASSES 3        /* the selected row's title: navigation.c marq_moved */
 #define HSCROLL_ONLY_FOCUS 0x78 /* hscroll_label_t, a char: hscroll_label_set_only_focus */
-#define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
+#define HSCROLL_LOOP 0x7a       /* a char: a pass ends on its lull and starts again (0x5e8a20) */
 #define HSCROLL_YOYO 0x7b       /* a char: it scrolls back instead of snapping (0x5e8a44) */
+#define HSCROLL_DELAY 0x88      /* ms its start waits before the first step (hscroll_label_start) */
+#define HSCROLL_SPEED 0x8c      /* a float, px per ms; 0 runs a pass in its duration (0x5e8564) */
+#define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
+#define HSCROLL_TIMER 0xa4      /* its running timer's id; 0 stopped (stock paints the ellipsis) */
+/* Every pass's fastest pace, 0.05f px per ms: stock Now Playing's title and artist (0x52b8d4); its
+ * set_hscroll_label_attribute sets 0.1, some pages 0.2. As float bits, which order as their values
+ * for any positive float. */
+#define HSCROLL_PACE 0x3d4ccccd
 #define TIMER_CTX 0x20          /* timer_info_t.ctx: stock's hscroll lull reads its label there */
 /* iPod Now Playing's lyrics (lyrics.c, docs/ipod.md#lyrics): a line of one row is LYRIC_SLOT high,
  * its text and the gap to the next, a longer one more; the first after a blank LYRIC_SLOT

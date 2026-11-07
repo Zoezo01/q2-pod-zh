@@ -166,6 +166,8 @@ HOOKS = {
     'image_manager_add': (0x6445d4, 'ringnav_image_add', 'image'),
     # Song rows: no format badge (navigation.c ringnav_badge)
     'list_get_img_pic': (0x501948, 'ringnav_badge', None),
+    # Every scrolling label's start: its delay and pace (navigation.c ringnav_hscroll_start)
+    'hscroll_label_start': (0x5e867c, 'ringnav_hscroll_start', 'hscroll_start'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -389,9 +391,13 @@ ID3_PATH = (0x5148e8, 0x0320f809)
 # follow, becomes jal ringnav_lyric_follow, which pads the content so the view's end is a row top.
 LYRIC_FOLLOW = (0x52bed0, 0x0320f809)
 # hscroll_label's timer, at a looping label's end of pass, adds its lull with jalr widget_add_timer (lw $t9 at
-# 0x5e8ae4): jal ringnav_hscroll_lull, which snaps the label back to its start when the lull ends, so the
-# delay holds there instead of at the end.
+# 0x5e8ae4): jal ringnav_hscroll_lull, which holds the end MARQUEE_HOLD_MS and snaps the label back to its
+# start when the lull ends, so the start's delay (ringnav_hscroll_start) holds there instead of at the end.
 HSCROLL_LULL = (0x5e8ae8, 0x0320f809)
+# A pass of a label that doesn't loop ends at once, its timer removed (bnez loop at 0x5e8a28 falls through), so
+# stock paints its start with the ellipsis the moment it reaches its end. The branch goes to the lull for
+# every label (b 0x5e8ac0): ringnav_hscroll_lull holds the end, and its end stops a single pass there.
+HSCROLL_ONCE = (0x5e8a28, 0x14400025, 0x10000025)
 # The page refresh's bal to the lyric row builder (0x529f0c, which ends at offset 0) becomes jal
 # ringnav_lyric_rows, which keeps the offset: Play/Pause no longer flicks the lyrics to the top.
 LYRIC_ROWS = (0x52b8f8, 0x0411f984)
@@ -1652,6 +1658,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5e8ae4))[0] == 0x8f99a858,
           'hscroll lull: expected widget_add_timer import')
     patch_word(patched, *HSCROLL_LULL, jal(ps['ringnav_hscroll_lull']), 'a scrolling label holds at its start')
+    patch_word(patched, *HSCROLL_ONCE, 'a single pass holds its end')
     patch_word(patched, *LYRIC_ROWS, jal(ps['ringnav_lyric_rows']), 'lyrics keep their place on a refresh')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5a9c54))[0] == 0x8f99f4e8,
           'lyric file: expected fopen import')

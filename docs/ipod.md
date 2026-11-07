@@ -49,16 +49,18 @@ the shared widget implementation nor album grids are hooked. The folder rebind's
 140/190-pixel resize call is disabled so recycled titles retain their computed
 width. Title styles and ellipsis settings are untouched; the title scrolls only while focused
 (`hscroll_label_set_only_focus`), which no row is, so a long title keeps its ellipsis instead of
-every row's scrolling once as the page opens. The selected row's scrolls, as an iPod's does:
-`MARQUEE_HOLD_MS` after the selection settles the payload runs stock's scroller on it
-(`hscroll_label_start`) at the album marquee's pace, `MARQUEE_PASSES` (3) times with that hold after
-each and again at the start, then rests until the selection moves, as each pass repaints every
-16 ms. `only_focus` is off while it runs, since stock's timer (`0x5e897c`) stops an unfocused
-`only_focus` label on its first tick; once running, stock's paint (`0x5e9154`) drops the ellipsis. A
-paint that moves the selection, to another widget or to another row in the same pooled widget, stops
-it from a timer. A title that fits costs one timer per selection. ponytail: the first
-`hscroll_label` of the row is taken as its title, and a dark screen, a covered page or a touch's
-hidden selection stops it only at the end of its pass, not at once.
+every row's scrolling once as the page opens. The selected row's scrolls, as an iPod's does: once
+the selection settles the payload runs stock's scroller on it (`hscroll_label_start`) as a looping
+label, with every label's holds and pace (docs/internals.md, `ringnav_hscroll_start`): its start
+held `MARQUEE_HOLD_MS`, a scroll at Now Playing's pace, its end held as long, then back to its start.
+The lull at each pass's end counts it, and after `MARQUEE_PASSES` (3) the title rests on its start
+until the selection moves; each pass repaints every 16 ms while it moves. `only_focus` is off while
+it runs, since stock's timer (`0x5e897c`) stops an unfocused `only_focus` label on its first tick;
+once running, stock's paint (`0x5e9154`) drops the ellipsis, so the selected title shows its start
+without one as it holds. A paint that moves the selection, to another widget or to another row in the
+same pooled widget, stops it from a timer. A title that fits costs one timer per selection.
+ponytail: the first `hscroll_label` of the row is taken as its title, and a dark screen, a covered
+page or a touch's hidden selection stops it only at the end of its pass, not at once.
 
 ## Flat rows and selection
 

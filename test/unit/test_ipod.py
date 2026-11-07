@@ -319,8 +319,6 @@ def test_playing_page_text_column(page):
     assert title['style'] == 's_scrlabel_white20l'
     for s in STATES:
         assert title[f'style:{s}:font_size'] == str(ipod.NP_TITLE_PX)
-    hold = str(ipod.inc('MARQUEE_HOLD_MS'))
-    assert title['delay'] == title['lull'] == artist['delay'] == artist['lull'] == hold
     assert artist['style:normal:font_size'] == str(ipod.NP_META_PX) and artist['style:normal:text_align_h'] == 'left'
     assert artist['style:normal:text_color'] == f'#{ipod.inc("NP_ARTIST_RGB"):06X}'
     assert album['style:normal:text_color'] == f'#{ipod.inc("NP_ALBUM_RGB"):06X}'
@@ -493,9 +491,6 @@ def audited(monkeypatch):
 
 def test_playing_stock(audited):
     n = named(ipod.decode(ipod.playing_stock(audited(stock_page()))))
-    hold = str(ipod.inc('MARQUEE_HOLD_MS'))
-    for name in ('scrlabel_title', 'scrlabel_artist'):
-        assert n[name][2]['delay'] == n[name][2]['lull'] == hold
     assert n['scroll_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)'
     assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert n['label_lyricmsg'][2]['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
