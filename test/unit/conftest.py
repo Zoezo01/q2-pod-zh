@@ -7,6 +7,7 @@ folder has its own rootdir entry on sys.path, so test/build.py can't shadow tool
 import importlib
 import os
 import pathlib
+import resource
 import socket
 import subprocess
 import sys
@@ -15,6 +16,10 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+# A mutant can loop forever, growing a list (art's path() with `i = 1` for `i += 1` took 500 MB a second),
+# and fill the machine long before mutmut's timeout. Over 4 GB a process raises MemoryError: killed.
+_, HARD = resource.getrlimit(resource.RLIMIT_AS)
+resource.setrlimit(resource.RLIMIT_AS, (4 << 30 if HARD == resource.RLIM_INFINITY else min(4 << 30, HARD), HARD))
 sys.path.insert(0, str(ROOT))
 # build first: the others import it, or each other in this order, while they load.
 for name in ('build', 'module_elf', 'rotator', 'ipod', 'theme', 'art', 'peq', 'aic', 'flac', 'mcu_park', 'pwm', 'q2remote', 'release'):
