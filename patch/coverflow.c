@@ -1970,9 +1970,7 @@ static void fx_ring(int c, int n, const unsigned **ring) {
 #define FLIP_EYE 700   /* px; the shelf's eye can be nearer than the panel's half width */
 #define FLIP_EYE_Y 147 /* the row the eye looks along, the frame's middle */
 #define FLIP_PART 24   /* px each way */
-#define BACK_W 294
 #define BACK_H 285
-#define PANEL_X 40 /* back's first column: the axis less half of it */
 #define PANEL_Y 9
 #define PANEL_HEAD 57
 #define PANEL_MUTED 0xffaaaaaau /* stock's second line: the theme's muted, white when selected */
@@ -2080,27 +2078,36 @@ static void panel_ink(void) {
 }
 
 /* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
-static int flip_paint(void *w, void *canvas) {
-    if (w == fl.sheet) { /* first in the panel: its paper, and the header's fill */
+/* The panel BACK_W + 1 wide from (x, y), h rows, its header head: before its rows (over 0) its
+ * paper and the header's fill, after them (over 1) the header's shadow over the rows and the ring
+ * round it, its one edge outside. Shared with navigation.c's hold menu. */
+void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over) {
+    if (!over) {
         stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
-        canvas_fill_rect(canvas, 0, 0, BACK_W + 1, BACK_H);
-        for (int j = 0; j < PANEL_HEAD; ++j) {
-            unsigned rgb = RGBA(mix(0x6d8db2, 0x8bacd0, j, PANEL_HEAD - 1)) & 0xffffff;
+        canvas_fill_rect(canvas, x, y, BACK_W + 1, h);
+        for (int j = 0; j < head; ++j) {
+            unsigned rgb = RGBA(mix(0x6d8db2, 0x8bacd0, j, head - 1)) & 0xffffff;
             stock_canvas_set_fill_color(canvas, rgb | 0xf0000000u);
-            canvas_fill_rect(canvas, 0, j, BACK_W, 1);
+            canvas_fill_rect(canvas, x, y + j, BACK_W, 1);
         }
-    } else if (w == fl.panel) { /* last: the header's shadow over the rows, its one edge outside */
-        static const unsigned char shadow[8] = { 0, 28, 54, 50, 41, 27, 14, 0 };
-        for (int j = 0; j < 8; ++j) {
-            stock_canvas_set_fill_color(canvas, (unsigned)shadow[j] << 24);
-            canvas_fill_rect(canvas, 0, PANEL_HEAD - 2 + j, BACK_W, 1);
-        }
-        stock_canvas_set_fill_color(canvas, 0x22000000u);
-        canvas_fill_rect(canvas, -1, -1, BACK_W + 3, 1);
-        canvas_fill_rect(canvas, -1, BACK_H, BACK_W + 3, 1);
-        canvas_fill_rect(canvas, -1, 0, 1, BACK_H);
-        canvas_fill_rect(canvas, BACK_W + 1, 0, 1, BACK_H);
+        return;
     }
+    static const unsigned char shadow[8] = { 0, 28, 54, 50, 41, 27, 14, 0 };
+    for (int j = 0; j < 8; ++j) {
+        stock_canvas_set_fill_color(canvas, (unsigned)shadow[j] << 24);
+        canvas_fill_rect(canvas, x, y + head - 2 + j, BACK_W, 1);
+    }
+    stock_canvas_set_fill_color(canvas, 0x22000000u);
+    canvas_fill_rect(canvas, x - 1, y - 1, BACK_W + 3, 1);
+    canvas_fill_rect(canvas, x - 1, y + h, BACK_W + 3, 1);
+    canvas_fill_rect(canvas, x - 1, y, 1, h);
+    canvas_fill_rect(canvas, x + BACK_W + 1, y, 1, h);
+}
+
+/* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
+static int flip_paint(void *w, void *canvas) {
+    if (w == fl.sheet || w == fl.panel) /* the sheet first in the panel, the panel last */
+        coverflow_panel_paint(canvas, 0, 0, PANEL_HEAD, BACK_H, w == fl.panel);
     if (w != cf.covers) return 0;
     if (fl.light != ipod_light()) {
         flip_sides();
@@ -3019,7 +3026,7 @@ void *coverflow_album_tracks(void *r) {
 
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
  * text as theme_font has it; else stock's regular, as the theme's rows' second lines. */
-static void panel_font(void *label, int px, int bold) {
+void panel_font(void *label, int px, int bold) { /* shared with navigation.c */
     static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
                                          "style:disable:font_name" },
                              *const sizes[] = { "style:normal:font_size", "style:focused:font_size",

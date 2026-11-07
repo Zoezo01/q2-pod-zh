@@ -844,73 +844,26 @@ static int slides(void *win) {
 }
 
 /* win's anim_hint becomes the theme's for kind, at load or open only. A theme with no hint for kind
- * reads and writes nothing. Now Playing takes it as close_anim_hint, its open stays immediate; a
- * dialog's highlight, if it has one, fades in from 0 with it. */
+ * reads and writes nothing. Now Playing takes it as close_anim_hint, its open stays immediate. No
+ * kind reaches a dialog: a clear one's snapshot would show black under its animation. */
 static void motion_hint(void *win, int kind) {
     const char *hint = theme()->motion[kind].hint;
     if (!hint) return;
     const char *prop = kind == MOTION_PLAYING ? "close_anim_hint" : "anim_hint";
     if (tk_strcmp(widget_get_prop_str(win, prop, ""), hint)) widget_set_prop_str(win, prop, hint);
-    if (kind != MOTION_DIALOG) return;
-    static const char start[] = ",start_alpha=0)";
-    const char *dim = widget_get_prop_str(win, "highlight", "");
-    unsigned n = strlen(dim);
-    char faded[64];
-    if (!n || dim[n - 1] != ')' || n - 1 + sizeof start > sizeof faded) return;
-    /* already has it */
-    if (n >= sizeof start - 1 && !tk_strcmp(dim + n - (sizeof start - 1), start)) return;
-    memcpy(faded, dim, n - 1);
-    memcpy(faded + n - 1, start, sizeof start);
-    widget_set_prop_str(win, "highlight", faded);
 }
-static int name_in_n(const char *name, const char *const *names, unsigned n) {
-    while (n--)
-        if (!tk_strcmp(name, names[n])) return 1;
-    return 0;
-}
-#define name_in(name, names) name_in_n(name, names, sizeof names / sizeof *names)
-/* A page just added to the window manager: Home's hint right over Home, else kind's. */
-static void motion_push(void *win, int kind) {
-    if (theme()->motion[MOTION_HOME].hint) {
-        void *wm = window_manager();
-        unsigned n = widget_count_children(wm);
-        if (n > 1 && home_menu(widget_get_child(wm, n - 2))) kind = MOTION_HOME;
-    }
-    motion_hint(win, kind);
-}
-/* A window as it loads, by name. Themes with no window hints read nothing. */
+/* A window as it loads. Themes with no window hints read nothing. */
 static void motion_load(void *root, int np) {
-    /* Stock's pages over Now Playing, without a slide of their own */
-    static const char *const EXTRA[] = { "playerqueue_page", "playermore_page",
-                                         "playerjumpinfo_page" },
-                             *const FADES[] = { "confirminfo_dialog", "sortselect_dialog",
-                                                "addplaylist_dialog" };
     const motion_t *M = theme()->motion;
-    if (!M[MOTION_PAGE].hint && !M[MOTION_PAYLOAD].hint && !M[MOTION_HOME].hint &&
-        !M[MOTION_PLAYING].hint && !M[MOTION_DIALOG].hint)
-        return;
-    const char *name = widget_get_prop_str(root, "name", "");
+    if (!M[MOTION_PAGE].hint && !M[MOTION_PLAYING].hint) return;
     if (np)
         motion_hint(root, MOTION_PLAYING);
-    else if (name_in(name, FADES))
-        motion_hint(root, MOTION_DIALOG);
-    else if (name_in(name, EXTRA))
-        motion_hint(root, MOTION_PAYLOAD);
     else if (slides(root))
-        motion_push(root, MOTION_PAGE);
+        motion_hint(root, MOTION_PAGE);
 }
-/* page_open's page: Cover Flow's, or a payload page whose rows are all there at its first paint.
- * Pages that fill their rows later stay immediate: a slide would show them empty. */
+/* page_open's page: Cover Flow's takes the theme's hint, if it has one. */
 void motion_open(void *page, const char *name) {
-    static const char *const INCLUDE[] = { "shuffle_page", "mostplayed_page",   "ratings_page",
-                                           "rated_page",   "era_page",          "era_albums_page",
-                                           "upnext_page",  "playlistedit_page", "streamconf_page",
-                                           "games_page",   "books_page",        "apps_page" };
-    if (!tk_strcmp(name, "coverflow_page"))
-        motion_hint(page, MOTION_COVERFLOW);
-    else if ((theme()->motion[MOTION_PAYLOAD].hint || theme()->motion[MOTION_HOME].hint) &&
-             name_in(name, INCLUDE))
-        motion_push(page, MOTION_PAYLOAD);
+    if (!tk_strcmp(name, "coverflow_page")) motion_hint(page, MOTION_COVERFLOW);
 }
 
 /* The animator's destination is the intended icon, even before stock commits its index.
@@ -2761,7 +2714,6 @@ static int marq_moved(const void *info) {
  * is full-screen (0, 0, 375, 320) and its background clear, so the bar and the page show through.
  */
 #define BAR_ROWS geom_val(V_BAR)
-#define HOLD_ROW 30
 #define CONFIRM_CELL_PX 23
 enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
 static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h);
@@ -2775,10 +2727,6 @@ static int confirm_form(void *win) {
         return FORM_NONE;
     if (st.confirm_verb && !st.confirm_win) st.confirm_win = win;
     return st.confirm_verb && win == st.confirm_win ? FORM_TRAY : FORM_PAGE;
-}
-/* Whether w is in the hold menu qm_open dressed. */
-static int hold_list(void *w) {
-    return dialogs_painted() && st.qm_dialog && window_of(w) == st.qm_dialog;
 }
 /* An inset shadow from above (0, 2, blur 2): of its alpha a, what a gaussian leaves on each row. */
 static void inset_top(void *canvas, const rect_t *r, int R, unsigned a) {
@@ -3007,22 +2955,16 @@ static void confirm_labels(void *w, void *canvas) {
                                                                      : 0xcfd6dc));
     }
 }
-/* The hold menu's page: its rows' fill behind the list, and the shadow it drops below it. */
-static void hold_paint(void *w, void *canvas) {
-    static const unsigned char at[] = { 0, 12, 26, 40, 54 },
-                               alpha[] = { 0xba, 0x73, 0x42, 0x1f, 5 };
-    void *list =
-        w == st.qm_dialog && w && dialogs_painted() ? widget_lookup(w, "list_view", 1) : (void *)0;
+/* The hold menu's panel, Cover Flow's flip panel (coverflow_panel_paint): the navbar its header,
+ * the list its rows. over: 0 before the dialog's children, 1 after them. */
+static void hold_paint(void *w, void *canvas, int over) {
+    void *nav = w && w == st.qm_dialog && dialogs_painted() ? widget_lookup(w, "view_navbar", 1)
+                                                            : (void *)0,
+         *list = nav ? widget_lookup(w, "list_view", 1) : (void *)0;
     if (!list || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    int h = I(list, W_H), k = 0;
-    for (int j = 0; j < h; ++j)
-        scrub_row(canvas, 0xf2000000u | mix(0x6e6e6e, 0x27272a, j, 180), 0, BAR_ROWS + j, 375);
-    for (int j = 0; j < at[4]; ++j) {
-        if (j >= at[k + 1]) ++k;
-        int a = alpha[k] + (alpha[k + 1] - alpha[k]) * (j - at[k]) / (at[k + 1] - at[k]);
-        scrub_row(canvas, (unsigned)a << 24, 0, BAR_ROWS + h + j, 375);
-    }
+    coverflow_panel_paint(canvas, I(nav, W_X), I(nav, W_Y), I(nav, W_H), I(nav, W_H) + I(list, W_H),
+                          over);
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The toast (msginfo_dialog) and the update's dialog: stock's full-screen dialog, clear, under a
@@ -3162,17 +3104,7 @@ static void paint_selection(void *w, void *canvas) {
                 !st.sel_home
             ? (home ? P(g_menu.at[i], W_PARENT) : g_menu.at[i])
             : (void *)0;
-    if (hold_list(w)) { /* its own 30 rows, its text its own too */
-        static const unsigned hold_sel[HOLD_ROW] = {
-            0xb3d5ee, 0x6ea4ca, 0x529bd0, 0x4c9eda, 0x4c9eda, 0x4c9cd9, 0x4d99d5, 0x4c96d3,
-            0x4994d5, 0x4792d5, 0x468fd3, 0x478dd3, 0x4488d1, 0x4486d0, 0x4284d0, 0x4082ce,
-            0x3f7ecd, 0x3d7ccb, 0x3b7aca, 0x3a78cb, 0x3975cb, 0x3874ca, 0x3871ca, 0x366fc8,
-            0x346dc7, 0x336cc6, 0x346bc8, 0x3a69c5, 0x2c4ca3, 0x162964
-        };
-        for (int j = 0; j < HOLD_ROW; ++j)
-            bar_rect(canvas, RGBA(hold_sel[j]), r.x, r.y + j, r.w, 1);
-        st.sel_accent = (void *)0;
-    } else if (band && (!tile || g_menu.kind == 4)) {
+    if (band && (!tile || g_menu.kind == 4)) {
         if (speed) st.sel_accent = speed;
         if (painter == SEL_STOPS) { /* Classic's band: square and full width, the glass clips it */
             int top = !!S->sel_top, tall = S->sel_tall_edge && r.h > geom(G_PITCH),
@@ -3265,16 +3197,7 @@ static void paint_separators(void *w, void *canvas) {
     /* st.sel_row counts load_rows' clickable entries, which a view's children needn't all be */
     int sel = st.sel_w == w ? st.sel_row : -1;
     void *sel_child = st.sel_w == w ? st.sel_accent : (void *)0;
-    if (k == 1 && hold_list(w)) { /* each row but the selected and the last: its bottom 3 rows */
-        int top = I(w, SCROLL_Y), n = (int)widget_count_children(w);
-        for (int i = 0; i < n - 1; ++i) {
-            int y = I(widget_get_child(w, i), W_Y) - top + HOLD_ROW - 3;
-            if (i == sel) continue;
-            scrub_row(canvas, 0x24000000u, 0, y, I(w, W_W));
-            scrub_row(canvas, 0x33000000u, 0, y + 1, I(w, W_W));
-            scrub_row(canvas, 0x21ffffffu, 0, y + 2, I(w, W_W));
-        }
-    } else if (k == 2) {
+    if (k == 2) {
         for (int i = 0; i < g_menu.n; ++i)
             if (i != sel && two_lines(g_menu.at[i])) {
                 rect_t r = bounds(&g_menu, i);
@@ -3330,9 +3253,8 @@ static void paint_radio(void *w, void *canvas) {
             return;
         }
         if (tk_strcmp(image, "select")) return;
-        stock_canvas_set_fill_color(canvas, RGBA(hold_list(w)                 ? 0xfffffa
-                                                 : painting_in(st.sel_accent) ? S->sel_text
-                                                                              : S->ink));
+        stock_canvas_set_fill_color(canvas,
+                                    RGBA(painting_in(st.sel_accent) ? S->sel_text : S->ink));
         paint_tick(canvas, x, y);
         stock_canvas_set_fill_color(canvas, fill);
         return;
@@ -3505,6 +3427,7 @@ int ringnav_paint(void *w, void *canvas) {
     search_over(w, canvas);
     if (w && st.np_lrc && P(w, W_PARENT) == st.np_lrc) lyrics_paint(w, canvas);
     paint_caps(w, canvas);
+    hold_paint(w, canvas, 1);
     coverflow_home_clip(w, canvas, 0);
     st.paint_w = w ? P(w, W_PARENT) : (void *)0;
     return result;
@@ -7743,7 +7666,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
         confirm_track(w, canvas, form);
         confirm_check(w, canvas);
     }
-    hold_paint(w, canvas);
+    hold_paint(w, canvas, 0);
     if (w && w == st.search_tabs) search_tabs_paint(w, canvas);
     paint_selection(w, canvas);
     if (form) confirm_labels(w, canvas);
@@ -12985,9 +12908,6 @@ static int qm_open(const void *unused);
 static int qm_run(const void *unused) {
     st.qm_timer = 0;
     if (!st.qm_dialog) return 0;
-    /* No fade: stock keeps an animated window on top until it ends, and everything below reads the
-     * page. Return's close (qm_back) keeps it. */
-    widget_set_prop_str(st.qm_dialog, "anim_hint", "");
     qm_close();
     void *r = qm_record();
     int a = st.qm_action, cls = st.qm_kind == QM_COVERFLOW ? 0xf001 : (int)st.qm_cls;
@@ -13095,25 +13015,46 @@ static int qm_pick(void *action, void *event) {
 /* Hold menu rows: stock sortselect's list is 210, so three whole rows and the reading margin
  * (SCROLL_MARGIN) show at every scroll, never a half row under the title. */
 #define QM_ROW 66
-/* The hold menu over the page, once its rows are built: no navbar or dim, the list under the bar,
- * six rows at most (past them it scrolls), its background clear; hold_paint draws the page. */
-static void hold_open(void *dialog, void *view, int n) {
+/* Under Classic (dialogs_painted) the hold menu is Cover Flow's flip panel
+ * (docs/ipod.md#cover-flow) centred under the bar, opaque: QM_HEAD rows of header holding the
+ * navbar's title, then the theme's page rows, QM_ROWS at most (past them it scrolls), all clear of
+ * the glass. No dim; hold_paint draws the panel. */
+#define QM_HEAD 44
+#define QM_ROWS 6
+static void hold_open(void *dialog, int n) {
     void *nav = widget_lookup(dialog, "view_navbar", 1),
          *list = widget_lookup(dialog, "list_view", 1);
+    if (!nav || !list) return;
+    int row = theme()->page_row, rows = n < QM_ROWS ? n : QM_ROWS, h = QM_HEAD + rows * row,
+        y = BAR_ROWS + (320 - BAR_ROWS - h) / 2;
+    void *title = widget_lookup(nav, "scrlabel_title", 1);
     widget_set_prop_str(dialog, "highlight", "");
     widget_set_prop_int(dialog, "style:normal:bg_color", 0);
-    if (nav) widget_set_visible(nav, 0, 0);
-    if (list) {
-        widget_set_prop_int(list, "style:normal:bg_color", 0);
-        widget_move_resize(list, 0, BAR_ROWS, 375, (n < 6 ? n : 6) * HOLD_ROW);
-    }
+    widget_set_prop_int(nav, "style:normal:bg_color", 0);
+    widget_move_resize(nav, PANEL_X, y, BACK_W, QM_HEAD);
+    widget_set_visible(widget_lookup(nav, "img_return", 1), 0, 0);
+    widget_move_resize(title, 12, (QM_HEAD - 33) / 2, BACK_W - 24, 33);
+    panel_font(title, 31, 1);
+    text_ink(title, 0xffffffffu, INK_LABEL); /* white on the header in either half */
+    widget_set_prop_int(list, "style:normal:bg_color", 0);
+    widget_move_resize(list, PANEL_X, y + QM_HEAD, BACK_W, rows * row);
+    widget_set_prop_str(widget_lookup(list, "scroll_view", 1), "self_layout",
+                        "default(x=0,y=0,w=100%,h=100%)");
 }
-/* A hold row's label: the row's full width, its text centred, the last row's pixel left. */
+/* A row's label as the flip panel's track: the theme's face, left; Light Mode flips its white. */
 static void hold_label(void *item, void *label) {
     widget_set_prop_int(item, "style:normal:bg_color", 0);
-    widget_move_resize(label, 0, 0, 375, HOLD_ROW - 1);
-    face_label(label, 26);
-    text_ink(label, 0xfffffffau, INK_LABEL);
+    widget_move_resize(label, 12, 0, BACK_W - 24, theme()->page_row);
+    panel_font(label, 25, 1);
+}
+/* The title, as Now Playing's: a looping hscroll_label holding MARQUEE_HOLD_MS at its start
+ * (delay) and its end (lull). Stock's sortselect title has neither, nor loop. */
+static void qm_title(void *dialog, const char *s) {
+    void *title = widget_lookup(dialog, "scrlabel_title", 1);
+    widget_set_prop_int(title, "loop", 1);
+    widget_set_prop_int(title, "delay", MARQUEE_HOLD_MS);
+    widget_set_prop_int(title, "lull", MARQUEE_HOLD_MS);
+    widget_set_text_utf8(title, s);
 }
 static int qm_open(const void *unused) {
     st.qm_timer = 0;
@@ -13157,24 +13098,23 @@ static int qm_open(const void *unused) {
         const char *const *names = kind == 0   ? shuffle[folder]
                                    : kind == 1 ? repeat[folder]
                                                : groups;
-        widget_set_text_utf8(widget_lookup(dialog, "scrlabel_title", 1), kind == 0   ? "Shuffle"
-                                                                         : kind == 1 ? "Repeat"
-                                                                                     : "Group by");
+        qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
         widget_destroy_children(view);
-        int painted = dialogs_painted(), row = painted ? HOLD_ROW : QM_ROW;
+        int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
+            w = painted ? BACK_W : 375;
         for (int i = 0; i < count; ++i) {
-            void *item = list_item_create(view, 0, i * row, 375, row);
+            void *item = list_item_create(view, 0, i * row, w, row);
             widget_use_style(item, "s_listitem_black");
             void *label = hscroll_label_create(item, 30, 0, 310, row);
             widget_use_style(label, "s_scrlabel_white24l");
             widget_set_text_utf8(label, names[i]);
             if (painted) hold_label(item, label);
             if (i == playback_option(kind))
-                image_base_set_image(image_create(item, 340, 0, 24, row), "select");
+                image_base_set_image(image_create(item, w - 35, 0, 24, row), "select");
             widget_on(item, EVT_CLICK, qm_pick, (void *)(long)(100 + i));
         }
         widget_set_prop_int(view, "virtual_h", count * row);
-        if (painted) hold_open(dialog, view, count);
+        if (painted) hold_open(dialog, count);
         st.qm_dialog = dialog;
         ringnav_select(view, playback_option(kind), count);
         return 0;
@@ -13190,7 +13130,7 @@ static int qm_open(const void *unused) {
                         : tag && *tag            ? tag
                         : song                   ? track_name(name, sizeof name, r)
                                                  : P(r, REC_NAME);
-    widget_set_text_utf8(widget_lookup(dialog, "scrlabel_title", 1), title ? title : "");
+    qm_title(dialog, title ? title : "");
     widget_destroy_children(view);
     /* Songs favourite, as stock's heart, and go to their album and artist; collections shuffle.
      * Go to is left out where its single-instance page is already open, or the album is the page.
@@ -13258,9 +13198,9 @@ static int qm_open(const void *unused) {
                                         "More…" };
     char rated[32];
     /* stock sortselect row styles */
-    int painted = dialogs_painted(), pitch = painted ? HOLD_ROW : QM_ROW;
+    int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
     for (int i = 0; i < n; ++i) {
-        void *item = list_item_create(view, 0, i * pitch, 375, pitch);
+        void *item = list_item_create(view, 0, i * pitch, painted ? BACK_W : 375, pitch);
         widget_use_style(item, "s_listitem_black");
         void *label = hscroll_label_create(item, 30, 0, 266, pitch);
         widget_use_style(label, "s_scrlabel_white24l");
@@ -13281,7 +13221,7 @@ static int qm_open(const void *unused) {
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);
     }
     widget_set_prop_int(view, "virtual_h", n * pitch);
-    if (painted) hold_open(dialog, view, n);
+    if (painted) hold_open(dialog, n);
     st.qm_dialog = dialog;
     return 0;
 }

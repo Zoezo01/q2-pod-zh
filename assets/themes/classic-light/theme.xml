@@ -160,15 +160,11 @@
     <value label="Off" set="classic-light-text"/>
     <value label="On" set="classic-light"/>
   </option>
-  <!-- How things move. A window kind with no ms keeps its asset's hint, or none. Home is a page right over Home; payload
-       a page with no hint of its own. The selection jumps, with no glide and no bump. Cover Flow's step follows its goal: under easing="follow",
+  <!-- How things move. A window kind with no ms keeps its asset's hint, or none: pages open as Minimal's do. The selection jumps, with no glide and no bump. Cover Flow's step follows its goal: under easing="follow",
        ms is the follow's time constant, not the run's length. -->
   <view name="motion">
     <element name="page" ms="120" easing="cubic_out"/>
-    <element name="payload" ms="120" easing="cubic_out"/>
-    <element name="home" ms="270" easing="linear"/>
-    <element name="dialog" anim="fade" ms="300" easing="quadratic_out"/>
-    <element name="swap" ms="170" easing="linear"/>
+    <element name="swap" ms="120" easing="linear"/>
     <element name="inplace" ms="120" easing="cubic_out"/>
     <element name="step" ms="200" easing="sin_inout"/>
     <element name="step_fast" ms="120" easing="sin_inout"/>

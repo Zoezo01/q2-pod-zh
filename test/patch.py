@@ -3673,8 +3673,7 @@ class QueueMachine(Machine):
         elif name=='toolsGetDirectoryM3u8': self.deqs[b][1]=[self.copy('stSongInfo',r) for r in self.m3u_files]; ret=len(self.m3u_files)
         elif name=='checkFavExist': ret=self.text(self.get(a+O['REC_NAME'])) in self.favs
         elif name=='navigator_window_is_exist': ret=self.text(a) in self.open_pages
-        elif name=='window_close':  # stock's: the hold menu with a hint stays the top window through its fade
-            if not (self.nodes[a].get('anim_hint') and self.nodes[a].get('name')=='sortselect_dialog'): self.stack.remove(a); self.top=self.stack[-1]
+        elif name=='window_close': self.stack.remove(a); self.top=self.stack[-1]
         elif name=='widget_destroy_children': self.nodes[a]['children']=[]
         elif name=='widget_on':
             self.nodes[a].setdefault('handlers',[]).append((b,c,d)); ret=1
@@ -7304,38 +7303,42 @@ assert any(b[1]==265 and b[3]==1 and b[2]==1 and b[4]&0xffffff==0 and 0<b[4]>>24
 assert well[0][1]==265 and well[0][4]==color_t(0x07090d) and [l['text'] for l in letters][1::2]==['Cancel','Delete'] and letters[1]['color']==color_t(0xffffff)
 # ... and the flag ends with the call: the next prompt, a question, is the page.
 tm.top=dq=tm.node('dialog','confirminfo_dialog'); tm.word(dq+O['W_PARENT'],tm.wm); place(tm,dq,0,0,375,320); ce=cl_cells(tm,dq); tm.nodes[dq]['children']=ce; parents(tm,dq); tm.paint(dq); assert wbox(tm,ce[0])[1]==258 and tm.nodes[ce[1]]['text']=='OK'; passed()
-# Hold menu under Classic: rows of 30 from 26, the selected row's 30 colours, the shadow's 54 rows below; no navbar.
-SEL30=[0xb3d5ee,0x6ea4ca,0x529bd0,0x4c9eda,0x4c9eda,0x4c9cd9,0x4d99d5,0x4c96d3,0x4994d5,0x4792d5,0x468fd3,0x478dd3,0x4488d1,0x4486d0,0x4284d0,0x4082ce,0x3f7ecd,0x3d7ccb,0x3b7aca,0x3a78cb,0x3975cb,0x3874ca,0x3871ca,0x366fc8,0x346dc7,0x336cc6,0x346bc8,0x3a69c5,0x2c4ca3,0x162964]
+# Hold menu under Classic: Cover Flow's flip panel, centred under the bar and clear of the glass: a 44-row header holding the title, then
+# the theme's 32 px rows, six at most; opaque, with no dim. Its title loops as Now Playing's, holding at its start and its end.
+from ipod import corner_x
 def hold_cl(light='1'):
     CONFIG['LIGHT']=light; m=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(m)
     m.press(6000); assert m.hold()==11; d=m.top; m.word(d+O['W_PARENT'],m.wm); place(m,d,0,0,375,320); parents(m,d); m.clip=(0,0,375,320); m.calls=[]
-    lst=named(m,d,'list_view'); place(m,m.view,0,0,375,wbox(m,lst)[3]); m.word(m.view+O['VIEW_CONTENT_H'],30*len(m.nodes[m.view]['children'])); return m,d,lst
-hm,hd,hl=hold_cl(); items=hm.nodes[hm.view]['children'][:]; nav=named(hm,hd,'view_navbar')
-assert wbox(hm,hl)==(0,26,375,180) and len(items)==6; hm.paint(hd)
-assert [wbox(hm,i)[1::2] for i in items]==[(30*k,30) for k in range(len(items))] and hm.nodes[nav]['visible']==0 and hm.nodes[hd]['style:normal:bg_color']==0 and hm.nodes[hd]['highlight']=='' and hm.nodes[hl]['style:normal:bg_color']==0
-L=wbox(hm,hl)[3]; fill=[b for b in hm.bands if b[4]>>24==0xf2]; shadow=[b for b in hm.bands if b[1]>=26+L]
-assert [(b[0],b[1],b[2]) for b in fill]==[(0,26+j,375) for j in range(L)] and fill[0][4]==0xf2000000|color_t(0x6e6e6e)&0xffffff
-assert len(shadow)==54 and shadow[0][4]>>24==0xba and shadow[12][4]>>24==0x73 and shadow[26][4]>>24==0x42 and shadow[40][4]>>24==0x1f and shadow[53][1]==26+L+53 and all(b[4]&0xffffff==0 for b in shadow)
-hm.paint(hm.view); selrows=[b for b in hm.bands if b[4]>>24==0xff and b[3]==1 and b[2]==375]
-assert [b[4] for b in selrows]==[color_t(c) for c in SEL30] and [b[1] for b in selrows]==list(range(30)) and hm.lcd_colors()==LCD_COLORS
-lines=[b for b in hm.bands if b[4] in (0x24000000,0x33000000,0x21ffffff)]; n=len(items)
-assert [b[1:4] for b in lines]==[(30*k+27+j,375,1) for k in range(1,n-1) for j in range(3)] and lines[0][4]==0x24000000 and lines[2][4]==0x21ffffff
+    lst=named(m,d,'list_view'); place(m,m.view,0,0,294,wbox(m,lst)[3]); m.word(m.view+O['VIEW_CONTENT_H'],32*len(m.nodes[m.view]['children'])); return m,d,lst
+def hold_panel(m,d,paper):
+    m.paint(d); L=wbox(m,named(m,d,'list_view'))[3]; H=44+L; y=26+(294-H)//2; rows=[b[:5] for b in m.bands]
+    assert rows[0][:4]==(40,y,295,H) and rows[0][4]>>24==0xff and (paper is None or rows[0][4]==paper) and [b[:4] for b in rows[1:45]]==[(40,y+j,294,1) for j in range(44)] and rows[1][4]>>24==0xf0
+    assert [b[:4] for b in rows[45:53]]==[(40,y+42+j,294,1) for j in range(8)] and rows[46][4]==28<<24 and all(b[4]==0x22000000 for b in rows[53:57])
+    assert corner_x(y-1,H+1)<=39; return y
+hm,hd,hl=hold_cl(); items=hm.nodes[hm.view]['children'][:]; nav=named(hm,hd,'view_navbar'); title=named(hm,nav,'scrlabel_title')
+assert wbox(hm,hl)==(40,99,294,192) and wbox(hm,nav)==(40,55,294,44) and len(items)==6
+assert [wbox(hm,i) for i in items]==[(0,32*k,294,32) for k in range(len(items))] and hm.nodes[nav].get('visible',1) and hm.nodes[named(hm,nav,'img_return')]['visible']==0
+assert hm.nodes[hd]['style:normal:bg_color']==0 and hm.nodes[hd]['highlight']=='' and hm.nodes[hl]['style:normal:bg_color']==0 and hm.nodes[nav]['style:normal:bg_color']==0
+assert wbox(hm,title)==(12,5,270,33) and (hm.nodes[title]['style:normal:font_name'],hm.nodes[title]['style:normal:font_size'])==(CL_FONT,31) and hm.nodes[title]['_final']&0xffffffff==0xffffffff
+assert (hm.nodes[title]['loop'],hm.nodes[title]['delay'],hm.nodes[title]['lull'])==(1,O['MARQUEE_HOLD_MS'],O['MARQUEE_HOLD_MS'])
+assert hold_panel(hm,hd,None)==55
 lab=[c for c in hm.nodes[items[0]]['children'] if hm.nodes[c]['type']=='hscroll_label'][0]
-assert wbox(hm,lab)==(0,0,375,29) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==(CL_FONT,26) and hm.nodes[lab]['style:normal:text_align_h']=='center' and hm.nodes[lab]['style:normal:text_color']&0xffffffff==color_t(0x000005)  # the light half's: Light Mode's style hook flips it back to #fffffa
-hd0,hd1,hl0=hold_cl(light='0'); lab0=hd0.nodes[hd0.nodes[hd0.view]['children'][0]]['children'][0]; assert hd0.nodes[lab0]['style:normal:text_color']&0xffffffff==color_t(0xfffffa)
-hd0.paint(hd1); fill0=[b for b in hd0.bands if b[4]>>24==0xf2]; assert [b[:5] for b in fill0]==[b[:5] for b in fill] and len([b for b in hd0.bands if b[1]>=26+L])==54
-hd0.paint(hd0.view); assert [b[4] for b in hd0.bands if b[4]>>24==0xff and b[3]==1 and b[2]==375]==[color_t(c) for c in SEL30]; passed()
-# ... a failed boot reads as Minimal: the menu keeps stock's own box, with none of this one's fill.
+assert wbox(hm,lab)==(12,0,270,32) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==(CL_FONT,25) and 'style:normal:text_align_h' not in hm.nodes[lab] and '_final' not in hm.nodes[lab]
+hm.paint(hm.view); assert [b[1] for b in hm.bands if b[2]==294 and b[4]>>24==0xff][:1]==[0] and hm.lcd_colors()==LCD_COLORS
+assert not [b for b in hm.bands if b[4] in (0x24000000,0x33000000,0x21ffffff)]
+hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000)==55; passed()
+# ... a failed boot reads as Minimal: the menu keeps stock's own box, with none of the panel.
 CONFIG['LIGHT']='1'; fm=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(fm,fail=lambda page:True); fm.press(6000); assert fm.hold()==11; fd=fm.top; fm.word(fd+O['W_PARENT'],fm.wm); place(fm,fd,0,0,375,320); parents(fm,fd); fm.clip=(0,0,375,320); fl=named(fm,fd,'list_view')
-assert wbox(fm,fl)[:2]!=(0,26); fm.paint(fd); assert not [b for b in fm.bands if b[4]>>24==0xf2]; passed()
-# ... eight rows: the list stops at 180 and scrolls; the sort list keeps its tick.
+assert wbox(fm,fl)[:2]!=(40,99); fm.paint(fd); assert not [b for b in fm.bands if b[4]>>24==0xf0]
+ft=named(fm,fd,'scrlabel_title'); assert (fm.nodes[ft]['loop'],fm.nodes[ft]['delay'],fm.nodes[ft]['lull'])==(1,O['MARQUEE_HOLD_MS'],O['MARQUEE_HOLD_MS']); passed()  # its title as Now Playing's too
+# ... more than six rows: the list stops at 192 and scrolls; the sort list keeps its tick at the row's right.
 em=classic_light_new(QueueMachine,page='playing_page',pos=1); classic_light_boot(em); em.press(6000); assert em.hold()==11; ed=em.top; eitems=em.nodes[em.view]['children']
-assert len(eitems)>6 and wbox(em,named(em,ed,'list_view'))==(0,26,375,180) and [wbox(em,i)[1] for i in eitems]==[30*k for k in range(len(eitems))] and em.nodes[em.view]['virtual_h']==30*len(eitems)
-em.word(ed+O['W_PARENT'],em.wm); parents(em,ed); em.top=ed; place(em,em.view,0,0,375,180); em.word(em.view+O['VIEW_CONTENT_H'],30*len(eitems)); em.paint(em.view)
+assert len(eitems)>6 and wbox(em,named(em,ed,'list_view'))==(40,99,294,192) and [wbox(em,i)[1] for i in eitems]==[32*k for k in range(len(eitems))] and em.nodes[em.view]['virtual_h']==32*len(eitems)
+em.word(ed+O['W_PARENT'],em.wm); parents(em,ed); em.top=ed; place(em,em.view,0,0,294,192); em.word(em.view+O['VIEW_CONTENT_H'],32*len(eitems)); em.paint(em.view)
 for _ in range(7): assert em.call()==11
-assert em.selected(em.view)==7 and em.get(em.view+O['SCROLL_Y'])>0; em.paint(em.view); assert [b[1] for b in em.bands if b[4]==color_t(SEL30[0])]==[210-em.get(em.view+O['SCROLL_Y'])]
-em.release(); em.pick(8); em.advance(0); cd=em.top; citems=em.nodes[em.view]['children']; assert em.labels()[0]=='Play One Song' and [wbox(em,i)[1::2] for i in citems]==[(30*k,30) for k in range(6)] and wbox(em,named(em,cd,'list_view'))==(0,26,375,180)
-tick=[c for i in citems for c in em.nodes[i]['children'] if em.nodes[c]['type']=='image']; assert [em.nodes[c]['image'] for c in tick]==['select'] and wbox(em,tick[0])==(340,0,24,30); passed()
+top=em.get(em.view+O['SCROLL_Y']); assert em.selected(em.view)==7 and top>0; em.paint(em.view); assert [b[1] for b in em.bands if b[2]==294 and b[4]>>24==0xff][:1]==[224-top]
+em.release(); em.pick(8); em.advance(0); cd=em.top; citems=em.nodes[em.view]['children']; assert em.labels()[0]=='Play One Song' and [wbox(em,i)[1::2] for i in citems]==[(32*k,32) for k in range(6)] and wbox(em,named(em,cd,'list_view'))==(40,99,294,192)
+tick=[c for i in citems for c in em.nodes[i]['children'] if em.nodes[c]['type']=='image']; assert [em.nodes[c]['image'] for c in tick]==['select'] and wbox(em,tick[0])==(259,0,24,32); passed()
 # A toast: #2b2b2bee in both halves, 22 px, its box holding its font; 24 rows a further line.
 def toast_cl(light,name='msginfo_dialog',text='Update Local Music first'):
     m=Machine(); m.config['LIGHT']=light; classic_light_boot(m); d=m.node('dialog',name); m.word(d+O['W_PARENT'],m.wm); place(m,d,0,0,375,320); m.top=d
@@ -7364,11 +7367,10 @@ for light,grey in (('1',0xffcccccc),('0',0xff333333)):
     pm=Machine(); pm.config['LIGHT']=light; classic_light_boot(pm); row=pm.node('list_item'); pm.word(row+O['W_W'],375); pm.word(row+O['W_H'],28); b=pm.node('button','',style='s_btn_listitem',state_for_style='pressed'); pm.nodes[row]['children']=[b]; pm.word(b+O['W_PARENT'],row); pm.word(b+O['W_W'],375); pm.word(b+O['W_H'],28)
     bg(pm,row); assert [(r['rect'],r['radius'],r['color']) for r in pm.rounded if r['kind']=='fill']==[((0,0,375,28),0,grey)]
 passed()
-# Nothing crosses the glass, read from what was painted: tray, its track, Form A's track, the toast, the hold rows' widest text.
+# Nothing crosses the glass, read from what was painted: tray, its track, Form A's track, the toast, the hold menu's panel and its ring at its tallest.
 def span(rows): x,y=min(b[0] for b in rows),min(b[1] for b in rows); return x,y,max(b[0]+b[2] for b in rows)-x,max(b[1]+b[3] for b in rows)-y
-hold_font=TTFont(CLASSIC_LIGHT_FONT_SRC,lazy=True); hold_w=max(sum(hold_font['hmtx'][hold_font.getBestCmap()[ord(c)]][0] for c in s) for s in ('Play Next','Add to Favourites'))*26/(hold_font['hhea'].ascent-hold_font['hhea'].descent)
 t,td,_=toast_cl('1'); bg(t,td)
-for x,y,w,h in (span(trayrows),span(well),span(trackrows),[r['rect'] for r in t.rounded if r['kind']=='fill'][0],(int((375-hold_w)/2),26,int(hold_w)+1,29)):
+for x,y,w,h in (span(trayrows),span(well),span(trackrows),[r['rect'] for r in t.rounded if r['kind']=='fill'][0],(39,54,297,238)):
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 passed()
 # Minimal: confirm rows, QM_ROW 66, the toast and the press as today, no images.
@@ -7520,9 +7522,9 @@ for ink_day,ink_night in ((color_t(0),color_t(0xffffff)),):
     um2,u2win,*_,u2btn=msg_dialog(light='2'); binks=lambda: {um2.nodes[u2btn][f'style:{s}:text_color']&0xffffffff for s in ('normal','pressed','over','disable','focused')}
     bg(um2,u2win); assert binks()=={ink_day}; half_turn(um2,19); assert binks()=={ink_night}
 passed()
-# ... the hold menu's rows.
-def hold_inks(m,d):
-    m.nodes[m.wm]={'children':[d]}; return [m.nodes[next(c for c in m.nodes[i]['children'] if m.nodes[c]['type']=='hscroll_label')]['style:normal:text_color'] for i in m.nodes[m.view]['children']]
+# ... the hold menu's title.
+def hold_inks(m,d):  # its title's white, final in either half
+    m.nodes[m.wm]={'children':[d]}; return m.nodes[named(m,d,'scrlabel_title')]['style:normal:text_color']
 ha,had,_=hold_cl('2'); assert hold_inks(ha,had)==hold_inks(*hold_cl('1')[:2]); half_turn(ha,19); assert hold_inks(ha,had)==hold_inks(*hold_cl('0')[:2]); passed()
 # ... the dark bar's title; back on a page with the bar's own title, it keeps that colour through the next turn.
 dh,dhbar,_,dhtitle,*_,dhwin,dhhome=dark_setup('2'); dh.nodes[dh.wm]={'children':[dhbar,dhwin]}; bg(dh,dhwin); bg(dh,dhbar); bg(dh,dhbar)
@@ -8680,11 +8682,10 @@ assert rk.panel() is None and not rk.nodes[out]['visible'] and rk.kept()==[] and
 assert rk.run(4) is None and rk.panel() and rk.nodes[out]['visible'] and rk.call(O['KEY_RETURN'])==11 and rk.panel() is None and not rk.nodes[out]['visible']; passed()
 rm=AlbumRateMachine(); rm.open(); rm.word(rm.slide+O['SLIDE_INDEX'],1); assert rm.run(4) is None and rm.panel()
 assert not [w for w in rm.nodes[rm.page]['children'] if rm.nodes[w].get('name')=='rate_out'] and rate_poll(rm)==5; passed()
-# A hold menu's rows act on the page under it. Classic's dialog hint would keep the closing menu the top window for its fade (stock's close),
-# so a pick closes it at once, for every row, both halves, Cover Flow's cover and Library's Albums; Return keeps the fade.
-def faded_pick(m,row):
+# A hold menu's rows act on the page under it under Classic: every row, both halves, Cover Flow's cover and Library's Albums.
+def hold_pick(m,row):
     n=len(m.toasts); m.t=getattr(m,'t',7000)+1; m.press(m.t); assert m.hold()==11 and m.release()==0
-    m.handlers[syms['widget_set_prop_str']]='widget_set_prop_str'; m.nodes[m.top]['anim_hint']='fade(duration=300,easing=quadratic_out)'; m.pick(row); m.advance(0)
+    m.pick(row); m.advance(0)
     return m.toasts[-1][3] if len(m.toasts)>n else None
 def classic_half(machine,light,**kw):
     SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT=light),k)]
@@ -8693,16 +8694,14 @@ def classic_half(machine,light,**kw):
     fm.mock('strstr@GLIBC_2.0'); return fm
 for light in '01':
     fm=classic_half(AlbumRateMachine,light); fm.open(); fm.word(fm.slide+O['SLIDE_INDEX'],1); a1=fm.aid(fm.albums[1])
-    assert faded_pick(fm,4) is None and fm.top==fm.page and fm.panel() and fm.nodes[fm.page]['name']=='coverflow_page'
+    assert hold_pick(fm,4) is None and fm.top==fm.page and fm.panel() and fm.nodes[fm.page]['name']=='coverflow_page'
     for k in [O['KEY_NEXT']]*3: assert fm.call(k)==11
     assert fm.call(O['KEY_CENTER'])==11 and fm.panel() is None and fm.kept()==[(a1&~7)|3] and not song_side_effects(fm)  # the existing path: the album's table, no song touched
-    assert faded_pick(fm,3) is None and fm.kept()==[(a1&~7)|5]  # Add to Favourites
+    assert hold_pick(fm,3) is None and fm.kept()==[(a1&~7)|5]  # Add to Favourites
     fm=classic_half(AlbumRateMachine,light); fm.open(); fm.word(fm.slide+O['SLIDE_INDEX'],1)
-    assert faded_pick(fm,0) is None and fm.top==fm.page and fm.query[:1]==('getMusicByAlbum',); passed()  # Play Next finds the cover's album
+    assert hold_pick(fm,0) is None and fm.top==fm.page and fm.query[:1]==('getMusicByAlbum',); passed()  # Play Next finds the cover's album
     fm=classic_half(AlbumRateMachine,light,page='album_page',cls=O['CLASS_ALBUMS'],pos=2); fm.page=fm.top
-    assert faded_pick(fm,4) is None and fm.top==fm.page and fm.panel(); passed()
-    fm=classic_half(AlbumRateMachine,light); fm.open(); fm.word(fm.slide+O['SLIDE_INDEX'],1); fm.t=7001; fm.press(fm.t); assert fm.hold()==11 and fm.release()==0
-    dlg=fm.top; fm.handlers[syms['widget_set_prop_str']]='widget_set_prop_str'; fm.nodes[dlg]['anim_hint']='fade(duration=300)'; f,ctx=fm.handler(fm.back,O['EVT_CLICK']); fm.call(O['KEY_RETURN'],address=f,args=(ctx,fm.event,0,0),gap=0); assert fm.nodes[dlg]['anim_hint'].startswith('fade'); passed()
+    assert hold_pick(fm,4) is None and fm.top==fm.page and fm.panel(); passed()
 # Folder's selected row: stock's foreground rebuilds the table's rows, so the list draws its chevron by the row's record, a folder's and not a song's; its own image draws none.
 fc=classic_light_new(QueueMachine,page='folder_page'); fc.word(fc.surface+O['W_PARENT'],fc.top); fc.word(fc.top+O['W_PARENT'],fc.wm); fc.call(); fc.paint(fc.surface); assert fc.bands and not fc.icons  # a song's
 for r in range(4): fc.word(fc.row(r)+O['REC_TYPE'],4)
@@ -12926,20 +12925,20 @@ assert [b[1] for b in sep_bands(lm)]==[lm.get(e+O['W_Y'])+49+j for e in [head,le
 # Geometry sets: Edit Playlist's row follows the live pitch and body, as the page's asset rows do.
 m=PlaylistEditMachine(); set_value(m,'pitch',28); set_value(m,'body',26); m.open_editor(28,26); passed()
 gm=PlaylistEditMachine(); set_geom(gm,GEOM_CLASSIC_LIGHT); gm.open_editor(); passed()  # the set theme_boot wrote, SET0
-# Classic's Settings list pushes in over 170 ms, linear; Minimal keeps its 120 ms, sin_inout.
+# Classic's Settings list pushes in over 120 ms, linear; Minimal's is 120 ms too, sin_inout.
 def swap_values(m,ms,easing):
     f,ctx=m.handler(named(m,m.top,'img_settings'),O['EVT_CLICK']); m.calls=[]; m.call(address=f,args=(ctx,m.event,0,0),gap=0)
     assert [c[2] for c in m.calls if c[0]=='widget_animator_prop_create'][:1]==[ms] and m.nodes[named(m,m.top,'list_view_homeset')]['animated_easing']==easing
-m=classic_light_home(); swap_values(m,170,0)
+m=classic_light_home(); swap_values(m,120,0)
 CONFIG.update(SHORTCUT='0',HOME='0'); m=ShuffleMachine(); del CONFIG['SHORTCUT'],CONFIG['HOME']; m.rockbox_mode=0; home_list(m)
 assert m.call(address=home_hook[0],args=(m.top,0,0,0),gap=0)==0; m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start')
 swap_values(m,120,8); passed()
 # Windows from the theme: what each kind's hint does to a window as it loads or opens.
-HOME_HINT='htranslate(duration=270,easing=linear)'; DIALOG_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
+OTHER_HINT='htranslate(duration=270,easing=linear)'; FADE_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
 HINT_PROPS=('anim_hint','open_anim_hint','close_anim_hint','highlight')
 EXTRA=('playerqueue_page','playermore_page','playerjumpinfo_page')
 PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','books_page','apps_page')
-FADES=('sortselect_dialog','addplaylist_dialog','confirminfo_dialog')
+DIALOGS=('confirminfo_dialog','addplaylist_dialog','sortselect_dialog')
 class MotionMachine(UiLoad,CoverflowMachine): pass
 def motion_machine(t):
     SETUP[:]=[lambda k:(k.config.update(THEME=t,LIGHT='1'),k)]
@@ -12951,50 +12950,43 @@ def motion_load(m,name,kind='window',**props):  # as stock's loader hands it ove
     w=m.node(kind,name.rsplit('/')[-1]); m.nodes[w].update(props); ui_loaded(m,name,w); return w
 def motion_open(m,name): return m.call(address=payload_syms['page_open'],args=(m.string(name),0,0,0),gap=0)&0xffffffff
 def motion_over(m,name): m.nodes[m.wm]={'children':[m.node('window',name),m.node('window','opening')]}  # stock has added what opens by then
-# A stock page with a slide takes Home's push right over Home, once, and keeps the asset's over anything else; Minimal keeps it and writes nothing.
-for t,below,want,writes in (('0','home_page',ASSET_HINT,0),('1','album_page',ASSET_HINT,0),('1',None,ASSET_HINT,0),('1','home_page',HOME_HINT,1)):
-    for carried,n in ((ASSET_HINT,writes),(want,0)):  # what it already carries is left alone
+# Classic's pages open as Minimal's: a stock page with a slide keeps the asset's, over Home or anything else, and nothing is written.
+for t in '01':
+    for below in ('home_page','album_page',None):
         m=motion_machine(t)
         if below: motion_over(m,below)
-        w=motion_load(m,'localmusic/albuminfo_page',anim_hint=carried); assert m.nodes[w]['anim_hint']==want and hint_writes(m)==n,(t,below)
+        w=motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT); assert m.nodes[w]['anim_hint']==ASSET_HINT and hint_writes(m)==0,(t,below)
 passed()
-# A theme's page hint holds over any other window, and over Home when it has no hint for Home.
-m=motion_machine('1'); set_hint(m,'page',DIALOG_HINT); assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==DIALOG_HINT
-m=motion_machine('1'); set_hint(m,'page',DIALOG_HINT); m.word(theme_at(m)+THEME_MOTION_OFF+8*MOTION_WINDOW.index('home'),0); motion_over(m,'home_page')
-assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==DIALOG_HINT; passed()
-# Queue, More and Go to push under Classic; a page with no slide and no name here stays instant.
-for t,want in (('0',None),('1',ASSET_HINT)):
-    m=motion_machine(t); assert all(m.nodes[motion_load(m,n)].get('anim_hint')==want for n in EXTRA),t
-m=motion_machine('1'); assert 'anim_hint' not in m.nodes[motion_load(m,'wifi_page')]; passed()
-# Payload pages whose rows are there at first paint push under Classic; other pages and other themes stay instant.
-for name in PAYLOAD:
-    m=motion_machine('1'); assert m.nodes[motion_open(m,name)].get('anim_hint')==ASSET_HINT,name
-    motion_over(m,'album_page'); assert m.nodes[motion_open(m,name)].get('anim_hint')==ASSET_HINT,name
-    motion_over(m,'home_page'); assert m.nodes[motion_open(m,name)].get('anim_hint')==HOME_HINT,name
-for t,name in (('0','shuffle_page'),('1','addon_page'),('1','radionp_page'),('1','spotify_page'),('1','chapters_page'),('1','coverflow_page')):
-    m=motion_machine(t); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
-    motion_over(m,'home_page'); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
+# A theme's page hint holds over any window, Home included.
+for below in ('album_page','home_page'):
+    m=motion_machine('1'); set_hint(m,'page',FADE_HINT); motion_over(m,below); assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==FADE_HINT,below
+passed()
+# Queue, More and Go to, a page with no slide, and the payload's own pages stay instant in every theme, over Home too.
+for t in '01':
+    m=motion_machine(t); assert all('anim_hint' not in m.nodes[motion_load(m,n)] for n in (*EXTRA,'wifi_page')),t
+    for name in (*PAYLOAD,'addon_page','radionp_page','spotify_page','chapters_page','coverflow_page'):
+        m=motion_machine(t); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
+        motion_over(m,'home_page'); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
 passed()
 # A theme with a Cover Flow hint: its page takes it, and no other page does.
-m=motion_machine('1'); set_hint(m,'coverflow',DIALOG_HINT); assert m.nodes[motion_open(m,'coverflow_page')]['anim_hint']==DIALOG_HINT; passed()
+m=motion_machine('1'); set_hint(m,'coverflow',FADE_HINT); assert m.nodes[motion_open(m,'coverflow_page')]['anim_hint']==FADE_HINT; passed()
 # Now Playing stays instant under Classic. A theme with a hint pushes it back on Return only.
 m=motion_machine('1'); np=motion_load(m,'playing_page'); assert not {'anim_hint','open_anim_hint','close_anim_hint'}&set(m.nodes[np])
-m=motion_machine('1'); set_hint(m,'playing',HOME_HINT); np=motion_load(m,'playing_page')
-assert m.nodes[np]['close_anim_hint']==HOME_HINT and not {'anim_hint','open_anim_hint'}&set(m.nodes[np]); passed()
+m=motion_machine('1'); set_hint(m,'playing',OTHER_HINT); np=motion_load(m,'playing_page')
+assert m.nodes[np]['close_anim_hint']==OTHER_HINT and not {'anim_hint','open_anim_hint'}&set(m.nodes[np]); passed()
 # The list under a close-hinted Now Playing draws its held row while Now Playing slides out.
 def under_np(hint):
     q=vol_np(); vol_closed(q)
     if hint: set_hint(q,'playing',hint)
     w,_=q.page_list(3); q.paint(w); assert q.call()==11 and q.selected(w)==1; q.word(w+O['W_PARENT'],q.top); q.word(q.top+O['W_PARENT'],q.wm)
     q.top=q.win; bare(q); q.strokes=[]; q.paint(w,gap=0); return q,w
-q,w=under_np(HOME_HINT); assert q.drawn() and q.selected(w)==1
+q,w=under_np(OTHER_HINT); assert q.drawn() and q.selected(w)==1
 q,w=under_np(None); assert not q.drawn(); passed()
-# A confirm, the hold menu and add to playlist fade in, over a dim that fades from 0 where the asset has one.
-for name in FADES:
+# Dialogs show at once under Classic: a confirm, add to playlist and the hold menu take no hint, and keep their dim as the asset has it.
+for name in DIALOGS:
     m=motion_machine('1'); d=motion_load(m,name,'dialog',highlight='default(alpha=200)')
-    assert m.nodes[d]['anim_hint']==DIALOG_HINT and m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)',name
-m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog'); assert m.nodes[d]['anim_hint']==DIALOG_HINT and 'highlight' not in m.nodes[d]
-m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog',highlight='default(alpha=200,start_alpha=0)'); assert m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)'; passed()
+    assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=200)' and hint_writes(m)==0,name
+passed()
 # The volume dialog is no window slide, and a dialog not named here stays as it is.
 m=motion_machine('1'); d=motion_load(m,'dialog/volume_dialog','dialog'); assert 'anim_hint' not in m.nodes[d]
 m=motion_machine('1'); d=motion_load(m,'dialog/other_dialog','dialog',highlight='default(alpha=200)'); assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=200)'; passed()
@@ -13004,11 +12996,11 @@ try: am=ArtistCoverflow(page='localclass_page',cls=0xff01,rows=2)
 finally: SETUP.clear()
 am.handed=[]; am.config['ARTISTCF']='1'; am.split=[am.song('Baroness'),am.song('STP')]; am.word(am.row(1)+O['REC_ALBUM'],am.string('Other album'))
 for r in am.split: am.word(r+O['REC_ALBUM_ARTIST'],am.get(r+O['REC_NAME']))
-am.found=[am.split[0]]; am.artist_page('artistinfo_page'); am.nodes[am.top]['anim_hint']=HOME_HINT
+am.found=[am.split[0]]; am.artist_page('artistinfo_page'); am.nodes[am.top]['anim_hint']=OTHER_HINT
 am.call(address=HOOKS['load_localartist_list'][0],args=(1,0,0,0),gap=0); assert am.nodes[am.top]['anim_hint']==''
-am.advance(0); assert am.handed==[1] and am.nodes[am.top]['anim_hint']==HOME_HINT; passed()
-# A sliding payload page holds wheel ticks as a stock page does.
-m=motion_machine('1'); p=motion_open(m,'shuffle_page'); assert m.nodes[p]['anim_hint']==ASSET_HINT
+am.advance(0); assert am.handed==[1] and am.nodes[am.top]['anim_hint']==OTHER_HINT; passed()
+# A sliding page of ours holds wheel ticks as a stock page does.
+m=motion_machine('1'); p=motion_open(m,'shuffle_page'); m.nodes[p]['anim_hint']=ASSET_HINT
 w,es=m.page_list(10); m.top=p; m.nodes[p]['children']=[w]; m.word(w+O['W_PARENT'],p); m.paint(w); m.animating=1
 for gap in (1000,20,20): assert m.call(gap=gap)==11
 assert m.selected(w)==0; m.animating=0
@@ -13017,7 +13009,7 @@ assert not m.timers; passed()
 # Minimal: no load or open writes a hint or a highlight.
 for t in ('0',):
     m=motion_machine(t); hints=0; motion_over(m,'home_page')
-    for n,kw in (('playing_page',{}),('localmusic/albuminfo_page',{'anim_hint':ASSET_HINT}),*((n,{'highlight':'default(alpha=200)'}) for n in (*FADES,*EXTRA))):
+    for n,kw in (('playing_page',{}),('localmusic/albuminfo_page',{'anim_hint':ASSET_HINT}),*((n,{'highlight':'default(alpha=200)'}) for n in (*DIALOGS,*EXTRA))):
         motion_load(m,n,**kw); hints+=hint_writes(m)
     motion_open(m,'shuffle_page'); hints+=hint_writes(m); motion_open(m,'coverflow_page'); hints+=hint_writes(m); assert hints==0,t
 passed()

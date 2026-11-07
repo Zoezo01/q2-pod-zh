@@ -435,19 +435,14 @@ folders reloads the folder page in place, so only opening and leaving that page 
 drops every key and touch while a page slides; none is queued
 ([internals.md](internals.md#page-transitions-ipod)).
 
-A theme can set these from its `motion` view, and Classic does; Minimal stays as
-above. Under Classic the hinted pages keep their 120 ms push. So do Queue, More and Go to over
-Now Playing, and the pages the payload builds with all their rows there at first paint: Shuffle,
-Most Played, Ratings and its lists, Era and its decades, Up Next, Edit Playlist, Configuration,
-Games, Books and Apps. A page opened right over the split Home pushes in over 270 ms, linear, and
-goes back the same way. Pages that fill their rows later (card apps, Spotify, Internet Radio,
-Chapters, Long Songs, Photos) stay immediate, as do Now Playing and Cover Flow. Inside a page, a
+A theme can set these from its `motion` view, but no builtin theme does: Classic's pages open and
+close as Minimal's, with stock's slide or none, as above, and confirms, add to playlist, the hold
+menu and every other dialog show at once, with no fade. Classic's own motion is inside a page: a
 level's list pushes in from the right over 120 ms, and Return's from the left: a card app's levels
 (when their rows arrive), an artist's text albums and their tracks, a Photos album and a folder and
 its sub-folders. A list that only refreshes stays still, and keys and the wheel work during the
-push. A confirm, the hold menu and add to playlist fade in over 300 ms, their dim fading from 0.
-Home's Settings list slides in over 170 ms. The selection jumps between rows with no glide or end bump, and a list shows its
-remembered row at once.
+push. Home's Settings list slides in over 120 ms. The selection jumps between rows with no glide or
+end bump, and a list shows its remembered row at once.
 
 ## Chevrons
 

@@ -208,6 +208,11 @@ typedef struct {
 
 /* The payload's shared helpers: coverflow.c's pages, hashes and worker, photos.c's, navigation.c's. */
 void *text(void *parent, int x, int y, int w, int h);
+/* coverflow.c's flip panel, which navigation.c's hold menu wears under Classic */
+#define PANEL_X 40 /* the panel's first column: Cover Flow's axis less half of it */
+#define BACK_W 294 /* its rows' width; the panel is a column wider */
+void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over);
+void panel_font(void *label, int px, int bold);
 void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(void *, void *));
 void motion_open(void *page,
                  const char *name); /* navigation.c: page_open's page takes the theme's hint */
