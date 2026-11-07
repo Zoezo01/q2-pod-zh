@@ -12938,6 +12938,15 @@ static void hold_label(void *item, void *label) {
     widget_move_resize(label, 12, 0, BACK_W - 24, theme()->page_row);
     panel_font(label, 25, 1);
 }
+/* The title, as Now Playing's: a looping hscroll_label holding MARQUEE_HOLD_MS at its start
+ * (delay) and its end (lull). Stock's sortselect title has neither, nor loop. */
+static void qm_title(void *dialog, const char *s) {
+    void *title = widget_lookup(dialog, "scrlabel_title", 1);
+    widget_set_prop_int(title, "loop", 1);
+    widget_set_prop_int(title, "delay", MARQUEE_HOLD_MS);
+    widget_set_prop_int(title, "lull", MARQUEE_HOLD_MS);
+    widget_set_text_utf8(title, s);
+}
 static int qm_open(const void *unused) {
     st.qm_timer = 0;
     void *wm = window_manager(), *page = window_manager_get_top_window(wm);
@@ -12980,9 +12989,7 @@ static int qm_open(const void *unused) {
         const char *const *names = kind == 0   ? shuffle[folder]
                                    : kind == 1 ? repeat[folder]
                                                : groups;
-        widget_set_text_utf8(widget_lookup(dialog, "scrlabel_title", 1), kind == 0   ? "Shuffle"
-                                                                         : kind == 1 ? "Repeat"
-                                                                                     : "Group by");
+        qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
         widget_destroy_children(view);
         int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -13014,7 +13021,7 @@ static int qm_open(const void *unused) {
                         : tag && *tag            ? tag
                         : song                   ? track_name(name, sizeof name, r)
                                                  : P(r, REC_NAME);
-    widget_set_text_utf8(widget_lookup(dialog, "scrlabel_title", 1), title ? title : "");
+    qm_title(dialog, title ? title : "");
     widget_destroy_children(view);
     /* Songs favourite, as stock's heart, and go to their album and artist; collections shuffle.
      * Go to is left out where its single-instance page is already open, or the album is the page.
