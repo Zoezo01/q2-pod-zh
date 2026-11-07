@@ -6816,7 +6816,7 @@ for over,light in (('statusbar_dialog','1'),('search_dialog','1'),('statusbar_di
     assert [d[1][:2] for d in vp.image_draws]==[(20,250),(52,273),(317,273)] and art_at(vp)[0][0]=='classic_light_panel_shadow'; passed()  # the panel's soft shadow first, under its ring
 # Quick Settings under Classic, the dialog as its asset leaves it and stock's init left it.
 QS_ICONS=('img_wifiswitch','img_btswitch','img_lock','img_gain','img_usbmode','img_po','img_playset','img_sysset')
-QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbstorage','drop_po','drop_playset','drop_sysset')
+QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbdac','drop_po','drop_playset','drop_sysset')
 QS_LABELS=(('label_wifi','WiFi'),('label_bt','BT'),('label_lock','Off'),('label_gain','Low'),('label_usbmode','USB'),('label_outputway','Output Options'),('label_playset','Play'),('label_sysset','Set'))
 QS_X=(31,115,199,283)
 QS_GROUND={'1':0x63717b,'0':0x1c1c1c}  # Home's pane
@@ -6874,7 +6874,7 @@ for light in '01':
     assert q.lcd_colors()==LCD_COLORS; passed()
 # Each state: the name is read from stock's image on each paint, for all 18, and the on ones are blue.
 q=qs_new()
-LIT={'wifiopen','btopen','keylockopen','highgain','lo','usbstorage','usbaudio','usbdac'}
+LIT={'wifiopen','btopen','keylockopen','highgain','lo','usbaudio','usbdac'}
 for n in ('wifi','wifiopen','bt','btopen','keylock','keylockopen','lowgain','lowgaindisable','highgain','highgaindisable','lo','po','sa','usbstorage','usbaudio','usbdac','playset','sysset'):
     q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n+qs_ink(n in LIT,'1'),(31,20))
     assert qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[n in LIT,'1']),n; passed()
