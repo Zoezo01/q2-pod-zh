@@ -6008,7 +6008,9 @@ int ringnav_playing(void *win, void *ctx) {
         st.held_sec = 0;
     /* The page opens fitted when the length is known; a track just picked reports 0 until stock's
      * status poll (mclSyncPlayerStatus) has it, so it opens on the build's widest bar and np_sync
-     * narrows it for a long track. */
+     * narrows it for a long track.
+     * ponytail: inferred, not traced on the device; a 10:00+ track picked from a list still narrows
+     * once after the open. Fit from the file's own length at open if that shows. */
     np_fit_due((void *)0);
     np_sync(win);
     visualizer_attach(win);
