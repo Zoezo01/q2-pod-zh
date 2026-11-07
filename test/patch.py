@@ -7372,10 +7372,14 @@ def hold_cl(light='1'):
     CONFIG['LIGHT']=light; m=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(m)
     m.press(6000); assert m.hold()==11; d=m.top; m.word(d+O['W_PARENT'],m.wm); place(m,d,0,0,375,320); parents(m,d); m.clip=(0,0,375,320); m.calls=[]
     lst=named(m,d,'list_view'); place(m,m.view,0,0,294,wbox(m,lst)[3]); m.word(m.view+O['VIEW_CONTENT_H'],32*len(m.nodes[m.view]['children'])); return m,d,lst
-def hold_panel(m,d,paper):
+def panel_frame(bands,x,y,w,h,light):  # the flip panel's border (coverflow_panel_paint): one flat opaque colour a half, a pixel outside the panel all round,
+    c=color_t(0xb4b9c0 if light=='1' else 0x333333); sides=[b[:4] for b in bands if b[4]==c]  # so its left and right columns and its top and bottom rows match
+    assert sorted(sides)==sorted([(x-1,y-1,w+2,1),(x-1,y+h,w+2,1),(x-1,y,1,h),(x+w,y,1,h)]),sides
+    inside=[b for b in bands if b[4]!=c]; assert {b[0] for b in inside}=={x} and {b[0]+b[2] for b in inside}=={x+w},inside  # paper, header, shadow: edge to edge, nothing a column short on one side
+def hold_panel(m,d,paper,light='1'):
     m.paint(d); L=wbox(m,named(m,d,'list_view'))[3]; H=44+L; y=26+(294-H)//2; rows=[b[:5] for b in m.bands]
-    assert rows[0][:4]==(40,y,295,H) and rows[0][4]>>24==0xff and (paper is None or rows[0][4]==paper) and [b[:4] for b in rows[1:45]]==[(40,y+j,294,1) for j in range(44)] and rows[1][4]>>24==0xf0
-    assert [b[:4] for b in rows[45:53]]==[(40,y+42+j,294,1) for j in range(8)] and rows[46][4]==28<<24 and all(b[4]==0x22000000 for b in rows[53:57])
+    assert rows[0][:4]==(40,y,294,H) and rows[0][4]>>24==0xff and (paper is None or rows[0][4]==paper) and [b[:4] for b in rows[1:45]]==[(40,y+j,294,1) for j in range(44)] and rows[1][4]>>24==0xf0
+    assert [b[:4] for b in rows[45:53]]==[(40,y+42+j,294,1) for j in range(8)] and rows[46][4]==28<<24; panel_frame(rows[:57],40,y,294,H,light)
     assert corner_x(y-1,H+1)<=39; return y
 hm,hd,hl=hold_cl(); items=hm.nodes[hm.view]['children'][:]; nav=named(hm,hd,'view_navbar'); title=named(hm,nav,'scrlabel_title')
 assert wbox(hm,hl)==(40,99,294,192) and wbox(hm,nav)==(40,55,294,44) and len(items)==6
@@ -7388,7 +7392,7 @@ lab=[c for c in hm.nodes[items[0]]['children'] if hm.nodes[c]['type']=='hscroll_
 assert wbox(hm,lab)==(12,0,270,32) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==(CL_FONT,25) and 'style:normal:text_align_h' not in hm.nodes[lab] and '_final' not in hm.nodes[lab]
 hm.paint(hm.view); assert [b[1] for b in hm.bands if b[2]==294 and b[4]>>24==0xff][:1]==[0] and hm.lcd_colors()==LCD_COLORS
 assert not [b for b in hm.bands if b[4] in (0x24000000,0x33000000,0x21ffffff)]
-hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000)==55; passed()
+hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000,'0')==55; passed()
 # ... a failed boot reads as Minimal: the menu keeps stock's own box, with none of the panel.
 CONFIG['LIGHT']='1'; fm=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(fm,fail=lambda page:True); fm.press(6000); assert fm.hold()==11; fd=fm.top; fm.word(fd+O['W_PARENT'],fm.wm); place(fm,fd,0,0,375,320); parents(fm,fd); fm.clip=(0,0,375,320); fl=named(fm,fd,'list_view')
 assert wbox(fm,fl)[:2]!=(40,99); fm.paint(fd); assert not [b for b in fm.bands if b[4]>>24==0xf0]
@@ -7432,7 +7436,7 @@ passed()
 # Nothing crosses the glass, read from what was painted: tray, its track, Form A's track, the toast, the hold menu's panel and its ring at its tallest.
 def span(rows): x,y=min(b[0] for b in rows),min(b[1] for b in rows); return x,y,max(b[0]+b[2] for b in rows)-x,max(b[1]+b[3] for b in rows)-y
 t,td,_=toast_cl('1'); bg(t,td)
-for x,y,w,h in (span(trayrows),span(well),span(trackrows),[r['rect'] for r in t.rounded if r['kind']=='fill'][0],(39,54,297,238)):
+for x,y,w,h in (span(trayrows),span(well),span(trackrows),[r['rect'] for r in t.rounded if r['kind']=='fill'][0],(39,54,296,238)):
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 passed()
 # Minimal: confirm rows, QM_ROW 66, the toast and the press as today, no images.
@@ -9815,7 +9819,7 @@ class FlipMachine(DepthMachine):
         self.calls.append((name,a,b,c))
         self.returns(ret,clobber=True)
     def covers(self): return self.get(self.slide+O['W_PARENT'])
-    def panel(self): return next((w for w in self.nodes[self.page]['children'] if cf_geometry(self,w)[2]==295),0)
+    def panel(self): return next((w for w in self.nodes[self.page]['children'] if cf_geometry(self,w)[2]==294),0)
     def frame(self):
         self.draws=[]; self.call(address=HOOKS['widget_on_paint_border'][0],args=(self.covers(),self.canvas,0,0),gap=0,clear=False,count=50_000_000)
         assert len(self.draws)==1 and self.draws[0][2]==self.draws[0][3]==(0,0,375,294) and self.draws[0][4]&1
@@ -9973,7 +9977,7 @@ for light,white in (('0',0xffffff),('1',0)):
     CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300)
     panel=m.panel(); kids=m.nodes[panel]['children']; sheet=kids[0]; lv=m.find('list_view',panel); view=m.find('scroll_view',panel); rows=m.nodes[view]['children']
     title,artist=[w for w in kids if m.nodes[w]['type']=='hscroll_label']
-    assert cf_geometry(m,panel)==(40,9,295,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,295,285)
+    assert cf_geometry(m,panel)==(40,9,294,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,294,285)
     assert m.get(panel+O['W_PARENT'])==m.page and m.nodes[m.page]['children'].index(panel)>m.nodes[m.page]['children'].index(m.covers())
     assert cf_geometry(m,title)==(12,1,270,33) and cf_geometry(m,artist)==(12,30,270,20) and m.face(title)==('classic-light',31) and m.face(artist)==('default',18)
     assert m.nodes[title]['text']=='Album 0' and m.nodes[artist]['text']=='Artist'
@@ -9988,15 +9992,18 @@ for light,white in (('0',0xffffff),('1',0)):
     assert 40+12>=corner_inset(26+9+57+(PANEL_SHOWN-1)*PANEL_ROW+(PANEL_ROW+25)//2) and 285-57-PANEL_SHOWN*PANEL_ROW<(PANEL_ROW-25)//2+6
     assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
     assert not [w for w in m.nodes if m.nodes[w].get('name')==O.get('PAGE_TITLE')]; passed()  # no caption row: the bar's title is the page's name
-# Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the ring outside.
+# Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the border outside, flat, the same on every side.
 m=flip_open(); m.advance(300); panel=m.panel(); sheet=m.nodes[panel]['children'][0]
-m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False)
-fill=[b for b in m.bands if b[3]==1]; assert m.bands[0][:4]==(0,0,295,285) and len(fill)==57 and [b[1] for b in fill]==list(range(57)) and all(b[0]==0 and b[2]==294 and b[4]>>24==0xf0 for b in fill)
+m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False); sheet_bands=m.bands[:]
+fill=[b for b in m.bands if b[3]==1]; assert m.bands[0][:4]==(0,0,294,285) and len(fill)==57 and [b[1] for b in fill]==list(range(57)) and all(b[0]==0 and b[2]==294 and b[4]>>24==0xf0 for b in fill)
 assert fill[0][4]&0xffffff==0xb28d6d and fill[-1][4]&0xffffff==0xd0ac8b
 m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(panel,m.canvas,0,0),gap=0,clear=False)
-shade=[(b[1],b[4]>>24) for b in m.bands if b[2]==294 and b[3]==1]; ring=[b[:4] for b in m.bands if b[4]==0x22000000]
+shade=[(b[1],b[4]>>24) for b in m.bands if b[2]==294 and b[3]==1]
 assert shade==[(55+j,a) for j,a in enumerate((0,28,54,50,41,27,14,0))] or shade==[(55+j,a) for j,a in enumerate((0,28,54,50,41,27,14,0)) if a]
-assert sorted(ring)==sorted([(-1,-1,297,1),(-1,285,297,1),(-1,0,1,285),(295,0,1,285)]); passed()
+panel_frame(sheet_bands+m.bands,0,0,294,285,'1')
+CONFIG['LIGHT']='0'; m=flip_open(); del CONFIG['LIGHT']; m.advance(300); panel=m.panel(); m.bands=[]
+for w in (m.nodes[panel]['children'][0],panel): m.call(address=HOOKS['widget_on_paint_border'][0],args=(w,m.canvas,0,0),gap=0,clear=False)
+assert m.bands[0][4]==0xff000000; panel_frame(m.bands,0,0,294,285,'0'); passed()
 # A short album: the list only as tall as its rows, the paper below. 8 tracks: 7 show, the list scrolls under the header, which stays.
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.tracks(0); m.advance(300)
 assert m.boxes==[(0,57,294,PANEL_ROW),(0,0,294,PANEL_ROW)]; passed()
@@ -10068,7 +10075,7 @@ for armed,gap in ((1,0),(0,0),(0,100)):
     m=classic_light_new(FlipMachine); m.open(); held=flip_held(m); flip_click(m); m.advance(gap or 300); panel=m.panel(); live=flip_backs(m),list(m.frames); lcds=len(m.lcds); kids=m.nodes[panel]['children']
     if armed: assert m.key(run=False)==11
     flip_click(m)
-    assert (flip_backs(m),list(m.frames))==live and len(m.lcds)==lcds and m.panel()==panel and m.nodes[panel]['children']==kids and len([w for w in m.nodes[m.page]['children'] if cf_geometry(m,w)[2]==295])==1 and not m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['visible']
+    assert (flip_backs(m),list(m.frames))==live and len(m.lcds)==lcds and m.panel()==panel and m.nodes[panel]['children']==kids and len([w for w in m.nodes[m.page]['children'] if cf_geometry(m,w)[2]==294])==1 and not m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['visible']
     m.advance(300); assert m.nodes[panel]['visible']; assert m.key()==11; m.advance(0); m.advance(300)
     assert not m.panel() and flip_held(m)==held and m.nodes[m.slide]['visible']; passed()
 # Centre plays the row, Return as today; a missing card says so in the header.

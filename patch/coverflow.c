@@ -2077,14 +2077,14 @@ static void panel_ink(void) {
     widget_set_prop_int(fl.artist, "style:normal:text_color", (int)(0xc0000000u | white));
 }
 
-/* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
-/* The panel BACK_W + 1 wide from (x, y), h rows, its header head: before its rows (over 0) its
- * paper and the header's fill, after them (over 1) the header's shadow over the rows and the ring
- * round it, its one edge outside. Shared with navigation.c's hold menu. */
+/* The panel BACK_W wide from (x, y), h rows, its header head: before its rows (over 0) its paper
+ * and the header's fill, after them (over 1) the header's shadow over the rows and a 1 px border
+ * just outside it, flat and opaque, so its four sides are one colour whatever lies under them
+ * (a translucent ring took Cover Flow's sides under it). Shared with navigation.c's hold menu. */
 void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over) {
     if (!over) {
         stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
-        canvas_fill_rect(canvas, x, y, BACK_W + 1, h);
+        canvas_fill_rect(canvas, x, y, BACK_W, h);
         for (int j = 0; j < head; ++j) {
             unsigned rgb = RGBA(mix(0x6d8db2, 0x8bacd0, j, head - 1)) & 0xffffff;
             stock_canvas_set_fill_color(canvas, rgb | 0xf0000000u);
@@ -2097,11 +2097,11 @@ void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over
         stock_canvas_set_fill_color(canvas, (unsigned)shadow[j] << 24);
         canvas_fill_rect(canvas, x, y + head - 2 + j, BACK_W, 1);
     }
-    stock_canvas_set_fill_color(canvas, 0x22000000u);
-    canvas_fill_rect(canvas, x - 1, y - 1, BACK_W + 3, 1);
-    canvas_fill_rect(canvas, x - 1, y + h, BACK_W + 3, 1);
+    stock_canvas_set_fill_color(canvas, RGBA(ipod_light() ? 0xb4b9c0 : 0x333333));
+    canvas_fill_rect(canvas, x - 1, y - 1, BACK_W + 2, 1);
+    canvas_fill_rect(canvas, x - 1, y + h, BACK_W + 2, 1);
     canvas_fill_rect(canvas, x - 1, y, 1, h);
-    canvas_fill_rect(canvas, x + BACK_W + 1, y, 1, h);
+    canvas_fill_rect(canvas, x + BACK_W, y, 1, h);
 }
 
 /* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
@@ -3143,9 +3143,8 @@ static int flip_open(void *r, int n) {
     if (fl.panel) return 1; /* Centre before flip_close's timer: the panel stands */
     if (!classic_pages() || !cf.covers || !fx.frame || !flip_alloc()) return 0;
     void *f = widget_factory();
-    fl.panel =
-        widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W + 1, BACK_H);
-    fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W + 1, BACK_H);
+    fl.panel = widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W, BACK_H);
+    fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W, BACK_H);
     /* Font sizes are AWTK's, a face's whole height: 1.43 of its em in the theme's face. */
     int row = theme()->page_row;
     void *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, BACK_H - PANEL_HEAD, n, row);
