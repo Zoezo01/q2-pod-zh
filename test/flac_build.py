@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile every FLAC selection and check hook isolation and the release gate."""
+"""Compile every FLAC selection and check hook isolation and build()'s refusal of an invalid selection."""
 import argparse
 import itertools
 import pathlib
@@ -24,12 +24,12 @@ def verify(stock, out, baseline=None):
     assert selection('output,sync') == ('sync', 'output') and selection('') == ()
     refused = out / 'must-not-be-created'
     try:
-        build(out/'absent.zip', refused, out/'absent.jpg', flac_experiments='lpc')
+        build(out/'absent.zip', refused, out/'absent.jpg', flac_experiments='all')
     except ValueError as e:
-        assert 'require --dev' in str(e)
+        assert str(e) == 'FLAC experiments must be a comma-separated subset of sync,lpc,output without duplicates'
     else:
-        raise AssertionError('release accepted experiment')
-    assert not refused.exists(), 'release rejection wrote output'
+        raise AssertionError('build accepted an invalid selection')
+    assert not refused.exists(), 'refused build wrote output'
     raw = stock.read_bytes()
     all_addresses = set(SYNC_CALLS)
     for pointers in POINTERS.values():
@@ -56,7 +56,7 @@ def verify(stock, out, baseline=None):
         if not selected and baseline:
             assert new == baseline.read_bytes(), 'default player differs from baseline'
         print('PASS', selected or ('default',), flush=True)
-    print('All eight build selections, original fallbacks, invalid names and release gate passed.')
+    print('All eight build selections, original fallbacks, invalid names and build validation passed.')
 
 
 if __name__ == '__main__':
