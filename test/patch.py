@@ -6588,6 +6588,22 @@ for theme,ty,want in (('1',247,1),('0',265,0)):  # Minimal's last: its panel ove
   m.nodes[m.wm]={'children':[win]}; m.nodes[slider]['value']=101; paint(win)  # a second on: the paint writes it
   assert m.nodes[remain]['text']=='-2:04' and len([t for t in m.timers.values() if t[1]==payload_syms['remain_due']])==want,theme; passed()
 CONFIG.clear()
+
+m.nodes[m.wm]['children']=[win]; m.top=win; m.advance(O['VOL_POLL_MS']); assert not m.timers; passed()  # closed: it stops
+# Over any other window (Quick Settings included) a rounded panel in the fast-scroll letter's
+# style holds a pill bar on a grey track and the number, clear of the glass corners.
+other=m.node('window','home_page'); m.word(other+O['W_PARENT'],m.wm); sv2,lv2=m.node('slider','slider_vol',max=100,value=7),m.node('label','label_vol')
+dlg2=m.node('dialog','volume_dialog',[sv2,lv2]); m.word(dlg2+O['W_PARENT'],m.wm); put(dlg2,0,0,375,320)
+m.nodes[m.wm]['children']=[win,other,dlg2]; m.top=dlg2; paint(dlg2)
+X,Y,H,P,T=(O['VOL_PANEL_'+k] for k in ('X','Y','H','PAD','TEXT')); panel=(X,Y,375-2*X,H); bw=panel[2]-2*P-T
+assert [m.nodes[w]['visible'] for w in (sv2,lv2)]==[0,0] and [signed(m.get(sv2+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==list(panel)
+BH=O['VOL_PANEL_BAR']; bar=(X+P,Y+(H-BH)//2,bw,BH)
+assert [(r['rect'],r['radius'],r['color']) for r in m.rounded]==[(panel,O['LETTER_RADIUS'],(O['LETTER_ALPHA']<<24)|O['FILL_RGB']),
+    (bar,BH//2,color_t(O['VOL_PANEL_TRACK'])),((*bar[:2],bw*7//100,BH),BH//2,color_t(0xffffff))],m.rounded
+assert not m.bands and [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==[('7',(X+P+bw,Y,T,H),O['VOL_PANEL_PX'])]; passed()
+m.nodes[sv2]['value']=1; paint(dlg2)  # a sliver is still a round dot
+assert m.rounded[2]['rect']==(*bar[:2],BH,BH),m.rounded; passed()
+R=O['LETTER_RADIUS']; assert math.hypot(80-(X+R),Y+H-R-240)+R<=80  # its rounded corner clears the glass's
 # Classic's times beside the bar fit the track's length (ipod_times): "-9:59" boxes and a wider bar under 10:00,
 # the build's "-9:59:59" ones and 201 px from an hour, the boxes' outer edges and the gap kept. The page opens fitted;
 # a seek keeps the class; a new length refits off the paint that saw it (np_fit_due), each widget repainted where it
@@ -6643,22 +6659,6 @@ m.nodes[slider]['max']=0; m.calls=[]; paint(win); m.advance(0); assert geo(slide
 assert ab_x(BX+89)==BX+89  # the build's bar: stock's own
 m.nodes[slider]['max']=700; paint(win); m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W2']) and geo(slider)[:3:2]==(74,227); passed()
 CONFIG.clear()
-
-m.nodes[m.wm]['children']=[win]; m.top=win; m.advance(O['VOL_POLL_MS']); assert not m.timers; passed()  # closed: it stops
-# Over any other window (Quick Settings included) a rounded panel in the fast-scroll letter's
-# style holds a pill bar on a grey track and the number, clear of the glass corners.
-other=m.node('window','home_page'); m.word(other+O['W_PARENT'],m.wm); sv2,lv2=m.node('slider','slider_vol',max=100,value=7),m.node('label','label_vol')
-dlg2=m.node('dialog','volume_dialog',[sv2,lv2]); m.word(dlg2+O['W_PARENT'],m.wm); put(dlg2,0,0,375,320)
-m.nodes[m.wm]['children']=[win,other,dlg2]; m.top=dlg2; paint(dlg2)
-X,Y,H,P,T=(O['VOL_PANEL_'+k] for k in ('X','Y','H','PAD','TEXT')); panel=(X,Y,375-2*X,H); bw=panel[2]-2*P-T
-assert [m.nodes[w]['visible'] for w in (sv2,lv2)]==[0,0] and [signed(m.get(sv2+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==list(panel)
-BH=O['VOL_PANEL_BAR']; bar=(X+P,Y+(H-BH)//2,bw,BH)
-assert [(r['rect'],r['radius'],r['color']) for r in m.rounded]==[(panel,O['LETTER_RADIUS'],(O['LETTER_ALPHA']<<24)|O['FILL_RGB']),
-    (bar,BH//2,color_t(O['VOL_PANEL_TRACK'])),((*bar[:2],bw*7//100,BH),BH//2,color_t(0xffffff))],m.rounded
-assert not m.bands and [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==[('7',(X+P+bw,Y,T,H),O['VOL_PANEL_PX'])]; passed()
-m.nodes[sv2]['value']=1; paint(dlg2)  # a sliver is still a round dot
-assert m.rounded[2]['rect']==(*bar[:2],BH,BH),m.rounded; passed()
-R=O['LETTER_RADIUS']; assert math.hypot(80-(X+R),Y+H-R-240)+R<=80  # its rounded corner clears the glass's
 
 CL_BAR_LINE={'1':0x5a595a,'0':0x333333}
 # Classic's volume, slider pages and rating: windows as stock's loader hands them over.
