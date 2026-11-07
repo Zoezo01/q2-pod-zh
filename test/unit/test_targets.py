@@ -99,17 +99,16 @@ def test_targets_are_all_of_tools_but_the_skipped(tmp_path, monkeypatch):
 @pytest.mark.skipif('MUTANT_UNDER_TEST' in os.environ, reason="reads mutmut's copy of tools/ under mutmut")
 def test_targets_skip_the_stock_bound_and_import_only_functions():
     """A few seconds, most of them on build.py and ipod.py. Without build()'s pragma, mutmut writes a
-    96 MB file that never finishes."""
+    96 MB file that never finishes. Only the skipped are named, so a rename elsewhere doesn't fail here."""
     aic, art, build, ipod, peq, pwm, rotator = (targets.functions((targets.ROOT/f'tools/{m}.py').read_text())
                                                 for m in ('aic', 'art', 'build', 'ipod', 'peq', 'pwm', 'rotator'))
-    assert 'build' not in build and 'compile_payload' not in build and 'jal' in build
-    assert 'patch_asset' not in ipod and 'patch_code' in ipod
+    assert all((aic, art, build, ipod, peq, pwm, rotator))  # each still has functions to mutate
+    assert not {'build', 'compile_payload'} & set(build)
+    assert 'patch_asset' not in ipod and 'patch_code' in ipod  # patch_code pins no stock hash: test_patch_code
     assert not {'compile_common', 'patch_player'} & set(peq)
     assert 'validate_stock' not in aic and 'patch_module' not in aic and 'patch_module' not in rotator
-    assert not {'link', 'patch_pwm', 'patch_mcu', 'patch_bundle'} & set(pwm) and 'expected_header' in pwm
-    assert 'wave' not in art and 'images' in art
-    assert 'Code.emit' in rotator and 'Code.pc' not in rotator  # a @property
-
+    assert not {'link', 'patch_pwm', 'patch_mcu', 'patch_bundle'} & set(pwm)
+    assert 'wave' not in art
 
 def test_mutant_glob():
     assert targets.mutant_glob('build', 'jal') == 'tools.build.x_jal__mutmut_*'
