@@ -6,6 +6,8 @@ import struct
 import sys
 import zlib
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).parents[2]/'tools'))
 import art
 import ipod
@@ -319,6 +321,46 @@ def test_path_reads_arcs_and_further_subpaths():
     assert art.coverage([[(0, 0), (2, 0), (2, 2), (0, 2)]], (0, 0, 3, 1)) == [1.0, 1.0, 0.0]
     # a span inside another adds nothing: the union, not a sum
     assert art.coverage([[(0, 0), (3, 0), (3, 1), (0, 1)], [(1, 0), (1.5, 0), (1.5, 1), (1, 1)]], (0, 0, 3, 1)) == [1.0, 1.0, 1.0]
+
+
+@pytest.mark.parametrize('rx, ry, sweep', [(1, 1, 1), (1, 2, 1), (2, 1, 0)])
+def test_path_arc_too_small_for_its_chord_grows_to_fit(rx, ry, sweep):
+    # SVG's rule (F.6.6): radii that can't span the ends scale up, in proportion, until they just do: half an
+    # ellipse about the chord's middle, on the side sweep says (1: the positive angles, up in SVG's y-down space)
+    arc, = art.path(f'M0 0A{rx} {ry} 0 0 {sweep} 10 0')
+    rx, ry = 5, 5 * ry / rx  # the chord is 10 along x
+    assert math.dist(arc[-1], (10, 0)) < 1e-9
+    assert all(abs(((x - 5) / rx)**2 + (y / ry)**2 - 1) < 1e-9 for x, y in arc)
+    assert all(y * (1 if sweep else -1) < 1e-9 for _, y in arc) and abs(max(abs(y) for _, y in arc) - ry) < 1e-9
+
+
+def test_gradient_holds_the_last_stops_colour_past_it():
+    g = art.gradient(((0, 0x000000), (50, 0x2080ff)), 10, 20)  # as an SVG linearGradient's: its end pads
+    assert g(10) == 0 and g(15) == g(17.5) == g(20) == g(30) == 0x2080ff
+
+
+def test_gradient_holds_the_first_stops_colour_before_it():
+    g = art.gradient(((50, 0x204060), (100, 0xffffff)), 0, 100)
+    assert g(10) == g(50) == 0x204060
+
+
+@pytest.mark.parametrize('poly', [[(1, 2), (5, 2), (9, 2)], [(1, 2), (9, 2), (5, 2)]])
+def test_butt_stroke_joins_nothing_where_the_line_goes_straight_on_or_back(poly):
+    # no corner there; doubled back, the two sides' normals cancel and a mitre has no direction
+    parts = art.butt_stroke(poly, 2)
+    assert len(parts) == 2  # the segments alone
+    assert art.coverage(parts, (0, 0, 10, 4)) == art.coverage([[(1, 1), (9, 1), (9, 3), (1, 3)]], (0, 0, 10, 4))
+
+
+def test_outlines_a_space_is_an_advance_with_no_polygon():
+    font = art.classic_light_font()
+    glyphs, cmap, k = font.getGlyphSet(), font.getBestCmap(), 20 / font['head'].unitsPerEm
+    one, space = (glyphs[cmap[ord(c)]].width * k for c in '1 ')
+    single, = art.outlines('1', 20, 0, 50)
+    first, second = art.outlines('1 1', 20, 0, 50)
+    # the line centred on x 0: each 1 half its own advance and the space's from the middle
+    for poly, dx in ((first, -(one + space) / 2), (second, (one + space) / 2)):
+        assert len(poly) == len(single) and all(math.dist(p, (x + dx, y)) < 1e-9 for p, (x, y) in zip(poly, single))
 
 
 def test_every_literal_corner_radius_is_in_the_table():

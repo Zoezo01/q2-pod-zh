@@ -1,5 +1,6 @@
 """q2remote's commands as they leave for the Q2, with no Q2: a fake shell() or socket answers them."""
 import bisect
+import contextlib
 import hashlib
 import io
 import pathlib
@@ -279,6 +280,44 @@ def test_input_path(shell):
         q.input_path('tap')
 
 
+DEVICES = '''I: Bus=0019 Vendor=0001 Product=0001 Version=0100
+N: Name="md-gpio-keys"
+P: Phys=gpio-keys/input0
+H: Handlers=kbd event1
+B: PROP=0
+B: EV=3
+B: KEY=28 0 101080 0 0 0
+
+I: Bus=0018 Vendor=0000 Product=0000 Version=0000
+N: Name="hyn_ts"
+H: Handlers=event2
+B: EV=b
+B: KEY=400 0 0 0 0 0 0 0 0 0 0
+B: ABS=1000003
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="no-evdev"
+H: Handlers=kbd
+B: EV=3
+'''
+
+
+def test_parse_devices():
+    gpio, touch = q.parse_devices(DEVICES)  # no-evdev has no event node to write to
+    assert (gpio['name'], gpio['event'], gpio['handlers'], gpio['ABS']) == ('md-gpio-keys', 1, 'kbd event1', 0)
+    assert (touch['name'], touch['event'], touch['handlers']) == ('hyn_ts', 2, 'event2')
+    # the kernel's unpadded words, most significant first, 32 bits each
+    assert q.bits(gpio['KEY']) == set(q.KEYS.values()) == {103, 108, 116, 163, 165}
+    assert q.bits(touch['KEY']) == {q.BTN_TOUCH} and q.bits(touch['ABS']) == {q.ABS_X, q.ABS_Y, q.ABS_PRESSURE}
+
+
+def test_decode_events():
+    stream = struct.pack('<IIHHi', 5, 7, q.EV_KEY, 116, 1) + q.event(q.EV_SYN, 0, 0)
+    assert q.decode_events(stream) == [(5, 7, q.EV_KEY, 116, 1), (0, 0, q.EV_SYN, 0, 0)] and q.decode_events(b'') == []
+    with pytest.raises(ValueError, match=r'^truncated input-event stream$'):
+        q.decode_events(stream[:-1])
+
+
 def test_config(shell):
     fake = shell(b'A=1\xff')
     assert q.config() == 'A=1�'
@@ -369,6 +408,63 @@ def test_frame(shell):
         shell(junk)
         with pytest.raises(ValueError, match=r'^invalid framebuffer response$'):
             q.frame()
+
+
+def png_rgba(data):
+    """A PNG's (width, height, RGBA bytes), read with struct and zlib alone: 8-bit RGBA, not interlaced."""
+    assert data[:8] == b'\x89PNG\r\n\x1a\n'
+    at, chunks = 8, []
+    while at < len(data):
+        n, tag = struct.unpack_from('>I4s', data, at)
+        body = data[at + 8:at + 8 + n]
+        assert struct.unpack_from('>I', data, at + 8 + n)[0] == zlib.crc32(tag + body), tag
+        chunks.append((tag, body))
+        at += 12 + n
+    assert chunks[0][0] == b'IHDR' and chunks[-1] == (b'IEND', b'')
+    w, h, *form = struct.unpack('>IIBBBBB', chunks[0][1])
+    assert form == [8, 6, 0, 0, 0]
+    raw, span = zlib.decompress(b''.join(body for tag, body in chunks if tag == b'IDAT')), 1 + 4 * w
+    assert len(raw) == h * span
+    out, up = bytearray(), bytes(4 * w)
+    for y in range(h):
+        kind, row = raw[y * span], bytearray(raw[y * span + 1:(y + 1) * span])
+        for i in range(4 * w) if kind else ():  # PNG's filters: left (a), up (b) and up-left (c) predict each byte
+            a, b, c = row[i - 4] if i >= 4 else 0, up[i], up[i - 4] if i >= 4 else 0
+            p = a + b - c
+            paeth = a if abs(p - a) <= abs(p - b) and abs(p - a) <= abs(p - c) else b if abs(p - b) <= abs(p - c) else c
+            row[i] = (row[i] + (a, b, (a + b) // 2, paeth)[kind - 1]) & 255
+        out += row
+        up = row
+    return w, h, bytes(out)
+
+
+def test_framebuffer_png_is_the_page_turned_upright():
+    # The panel's page is 320 columns by 375 rows, BGRA, each row padded to its stride; turned counterclockwise,
+    # the screen is 375 by 320 and page column c, row r is screen x r, y 319 - c: where touch_xy puts a tap there.
+    w, h, stride = q.W, q.H, q.W * 4 + 8
+    colour = lambda c, r: (c & 255, r & 255, c >> 8 | r >> 8 << 4, (c + r) & 255)  # B, G, R, A: each pixel its own
+    page = b''.join(b''.join(bytes(colour(c, r)) for c in range(w)) + b'\xee' * 8 for r in range(h))
+    pw, ph, rgba = png_rgba(q.framebuffer_png(b'Q2FB\0' + struct.pack('<IIII', w, h, stride, len(page)) + page))
+    assert (pw, ph) == (375, 320)
+    assert rgba == b''.join(bytes((R, G, B, A)) for y in range(ph) for x in range(pw) for B, G, R, A in (colour(319 - y, x),))
+
+
+@pytest.mark.parametrize('data', [b'', b'Q2FB\0' + bytes(15), b'Q2FX\0' + struct.pack('<IIII', 320, 375, 1280, 480000) + bytes(480000)])
+def test_framebuffer_png_refuses_a_foreign_reply(data):
+    with pytest.raises(ValueError, match=r'^invalid framebuffer response$'):
+        q.framebuffer_png(data)
+
+
+@pytest.mark.parametrize('w, h, stride, size, sent', [
+    (375, 320, 1500, 480000, 480000),  # landscape: not the Q2's panel
+    (320, 375, 1276, 478500, 478500),  # a stride short of a row's pixels
+    (320, 375, 1280, 479999, 479999),  # a size that isn't its rows'
+    (320, 375, 1280, 480000, 479999),  # cut short
+    (320, 375, 1280, 480000, 480001),  # more than it said
+])
+def test_framebuffer_png_refuses_a_bad_page(w, h, stride, size, sent):
+    with pytest.raises(ValueError, match=r'^invalid or truncated framebuffer data$'):
+        q.framebuffer_png(b'Q2FB\0' + struct.pack('<IIII', w, h, stride, size) + bytes(sent))
 
 
 @pytest.fixture
@@ -907,6 +1003,12 @@ def test_input_wheel_errors(inputs, args, message):
     with pytest.raises(ValueError, match=message):
         q.input_action('wheel', args)
     assert not inputs.scripts
+
+
+def test_input_unknown_kind_writes_nothing(inputs):
+    with contextlib.suppress(ValueError):  # refused or ignored, but never written to an event node
+        q.input_action('pinch', ['1', '2'])
+    assert not inputs.scripts and not inputs.kinds
 
 
 class Main:

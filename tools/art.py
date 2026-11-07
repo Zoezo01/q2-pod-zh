@@ -139,7 +139,7 @@ def coverage(polys, box):
 def gradient(stops, y0, y1):
     """A y -> 0xRRGGBB function: stops (pos %, 0xRRGGBB) from y0 to y1, as an SVG linearGradient's."""
     def at(y):
-        p = max(0, min(100, (y - y0) * 100 / (y1 - y0)))
+        p = max(stops[0][0], min(100, (y - y0) * 100 / (y1 - y0)))  # before the first stop, its colour
         for (pa, ca), (pb, cb) in zip(stops, stops[1:]):
             if p <= pb:
                 t = (p - pa) / (pb - pa)

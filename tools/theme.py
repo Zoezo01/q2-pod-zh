@@ -918,9 +918,13 @@ def validate(t, name):
         err('colorSchemes is empty')
     if len(t['schemes']) > 10:  # config_value reads one digit
         err(f"{len(t['schemes'])} accents, at most 10")
-    if t['painter[PAINT_SELECTION]'] == 'SEL_STOPS' and not all(s['sel'] for i, s in enumerate(t['schemes']) if t['accents'] >> i & 1):
+    # an enum holds its CHOICES index (value()); paint_stops draws nothing from no stops; a half that states
+    # none takes the other's (half())
+    stops = list(CHOICES['list.selection.painter']).index('stops')
+    if t['painter[PAINT_SELECTION]'] == stops and not all(s['sel'] or s['light'].get('sel') for i, s in enumerate(t['schemes'])
+                                                          if t['accents'] >> i & 1):
         err('selection: painter stops needs every offered scheme\'s sel.stops')
-    if t['painter[PAINT_BATTERY]'] == 'BATT_CLASSIC_LIGHT' and not t['batt']:
+    if t['painter[PAINT_BATTERY]'] == list(CHOICES['bar.battery.painter']).index('classic-light') and not t['batt']:
         err('battery: this painter needs stops')
     for n in sorted({t['geom_set'], *(s for o in t['opts'] for s in o.get('sets') or ())}):
         g = sets(t)[n]  # the bar's own label is laid out at bar_px (tools/ipod.py status_metrics), its text drawn at font_size

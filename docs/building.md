@@ -174,3 +174,19 @@ mutmut mutates Python only. For the C (1,158 functions added or changed since 1.
 3. Everything `test/fw` reaches, `navigation.c` and `playback.c` among them: the whole suite takes about 20 seconds, and a mutant needs only the tests of its own file. `test/patch.py` takes about 6 minutes a run and needs a stock build, so it can't run per mutant in public CI.
 
 Mutants of C run as real code, so they belong in a container with no network, as the fence above can't reach them.
+
+## Coverage
+
+Both workflows count what their stock-free runs reach and fail under a floor, and each run's summary has the table.
+
+- **`tools/`:** `tests.yml` runs `test/unit` under [coverage.py](https://coverage.readthedocs.io), every branch counted, and fails under `fail_under` in `pyproject.toml`. The functions in `targets.py`'s `NEEDS_STOCK` and the command lines are left out, so the floor is all of the rest.
+- **C:** `firmware.yml` runs `test/fw` and the host suites with `test/coverage/cc` first on `PATH`: `cc` with gcov counters, which keeps each compile's counts under `$Q2_COV` when a suite deletes its build folder. [gcovr](https://gcovr.com) reads them, fails under the line and branch floors in the workflow, and uploads the per-line pages as `c-coverage`. The ASan run isn't counted. Most of `navigation.c` is `test/patch.py`'s, which needs a stock build, so it stays low here.
+- **Floors:** they catch a collapse (a suite or the wrapper that stopped counting), not each change, so they sit a little under the measured figures. Raise one by hand when the measured figure is well clear of it. The host suites run only counted in CI; `test/fw` also runs plain under ASan.
+
+```sh
+pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
+coverage run -m pytest test/unit --basetemp ~/.cache/q2-pytest/unit && coverage report  # needs clang, lld and llvm
+export Q2_COV=~/.cache/q2-cov; rm -rf $Q2_COV; mkdir -p $Q2_COV  # counts add up across runs: start empty
+PATH=$PWD/test/coverage:$PATH python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # and the host suites, the same way
+gcovr --root . --filter patch/ --gcov-ignore-errors=source_not_found --html-details ~/.cache/c-coverage.html $Q2_COV
+```
