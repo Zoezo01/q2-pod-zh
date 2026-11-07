@@ -2598,13 +2598,6 @@ static void th_rebase(void *s, int q, int n) {
 #define TH_REBASE 64 /* albums: a float's step there is 8e-6 */
 #define TH_FRAME_MS 16 /* a frame at 60 Hz: the shortest pass th_turn's own rate is taken over */
 
-/* The thumb's rate at which the goal moves top_speed albums a second: the rate the speed's blend
- * is whole (fast_full), or the slow share's own (top_speed ticks_album), whichever comes first. */
-static float th_cap_rate(void) {
-    int slow = cfs.top_speed * cfs.ticks_album;
-    return (float)(cfs.fast_full < slow ? cfs.fast_full : slow);
-}
-
 /* A letter on, Minimal's jump (coverflow_jump): the covers at rest on that letter's first album,
  * or the previous letter's turning back, its letter shown over them. */
 static void th_letter(void *s, int n, unsigned now) {
@@ -2721,14 +2714,19 @@ int coverflow_wheel_poll(int usable, int gated) {
     float inst = th.ticks * 1000 / (float)ms, tc = inst > th.rate ? cfs.rate_up : cfs.rate_down;
     th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
     th.ticks = 0;
-    /* At the cap for jump_ms the spin goes by letters, where the sort has them: one each
+    /* At jump_at or more for jump_ms the spin goes by letters, where the sort has them: one each
      * jump_ticks of travel at any rate from fast_at, the first at once, so a moderate turn reads
      * them. A lift, a turn back (th_turn), the rate under fast_at or no tick for stop_ms ends them:
      * albums again from the letter's, under the thumb.
      * ponytail: fast_at is the one floor; a thumb hovering on it may drop to albums on a slow pass.
      * A leave rate of its own under fast_at if that shows on the wheel. */
     int since = (int)(now - th.tick_at);
-    th.capped = th.finger && th.rate >= th_cap_rate() ? th.capped + ms : 0;
+    /* jump_at counts towards jump_ms; a dip under it, still at fast_at (a thumb re-gripping),
+     * drains the count rather than dropping it; a lift or a rate under fast_at drops it. */
+    th.capped = !th.finger || th.rate < cfs.fast_at ? 0
+                : th.rate >= cfs.jump_at       ? th.capped + ms
+                : th.capped > ms               ? th.capped - ms
+                                               : 0;
     if (th.jump && (!th.finger || th.rate < cfs.fast_at || since > cfs.stop_ms))
         th.jump = 0;
     else if (!th.jump && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s))

@@ -2346,7 +2346,7 @@ static void thumb_shipped(void) {
     top_window = page;
     th_pass(0, 17);
 
-    /* At the cap for jump_ms, letters: each re-centres the row, at rest, on a letter's first album,
+    /* At jump_at for jump_ms, letters: each re-centres the row, at rest, on a letter's first album,
        its letter shown; on in the album order, one a jump_ticks of travel. */
     th_down();
     int letters0 = letters, t = 0, prev = -1, spread = 0, canvas[16] = { 0 };
@@ -2424,12 +2424,12 @@ static void thumb_shipped(void) {
     }
     assert(by[0] > .1f && fabsf(by[0] - by[1]) < 1e-4f && letters == jumped);
 
-    /* Over 2000 albums under the cap (no letters), then a lift: SLIDE_INDEX takes the whole
+    /* Over 2000 albums under jump_at (no letters), then a lift: SLIDE_INDEX takes the whole
        albums, so the follower's numbers stay small and it lands exactly, on the album named. */
     th_down();
     float went = 0, last = AT(), most = 0;
-    for (int i = 0; i < 6600; ++i) {
-        th_spin(80, 17);
+    for (int i = 0; i < 7600; ++i) {
+        th_spin(70, 17);
         float d = AT() - last;
         went += d - (float)n * floorf(d / (float)n + .5f);
         last = AT();
@@ -2441,6 +2441,23 @@ static void thumb_shipped(void) {
     th_rest();
     assert(!strcmp(album_caption(covers_view), named) && CAPTION(*index));
     assert(!*(int *)(s->raw + SLIDE_OFFSET) && th[T_POS] == 0 && th[T_GOAL] == 0);
+
+    /* Under jump_at, however long: albums, never letters. */
+    th_down();
+    int l0 = letters;
+    th_spin(60, 2000);
+    assert(letters == l0);
+    th_rest();
+    /* A re-grip's dip under jump_at, still over fast_at, drains the dwell rather than dropping it:
+       letters come before a dwell started again after the dip would bring them. */
+    th_down();
+    int tl = 0;
+    th_spin(150, 255), tl += 255;
+    th_spin(40, 102), tl += 102;
+    assert(letters == l0);
+    while (letters == l0 && tl < 2000) th_spin(150, 17), tl += 17;
+    assert(letters > l0 && tl < 255 + 102 + shipped.jump_ms);
+    th_rest();
 
     close_page();
     top_window = 0;

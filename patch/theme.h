@@ -100,7 +100,7 @@ typedef struct {
     short far_left, detent, hold_ms, stop_ms, stop_left, rate_up, rate_down, back, dead;
     short contact_ms, aim_snap, lead_from, lead_full, lead_ms, row_shift, row_from, row_full;
     short row_shrink, row_flat, row_out, row_edge, row_width, row_key, row_reach;
-    short jump_ms, jump_ticks;
+    short jump_ms, jump_ticks, jump_at;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
 typedef struct {
