@@ -419,8 +419,11 @@ static void np_refresh(void) {
         tk_snprintf(t, sizeof t, rd.bitrate[0] ? "%s  %s kbps" : "%s", rd.codec, rd.bitrate);
     set(np.info, t);
     t[0] = 0;
-    if (rd.pid && rd.since)
-        toolsTimeItoa(t, (int)((unsigned)(now_ms() - rd.since) / 1000)); /* 32-bit: 49 days */
+    int sec = rd.pid && rd.since ? (int)((unsigned)(now_ms() - rd.since) / 1000) : -1; /* 49 days */
+    if (sec >= 0) toolsTimeItoa(t, sec);
+    /* Classic: boxes for "-59:59" until the hour, then the hours': the running time only grows, so
+     * they never shrink while a stream plays; the next one starts on the minutes' again */
+    if (np.ipod) ipod_times(np.elapsed, 0, 0, sec < 3600 ? 600 : sec);
     set(np.elapsed, t);
 }
 

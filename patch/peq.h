@@ -380,6 +380,9 @@ void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win *
  * under the other themes; Classic's bar on a canvas (its scrub cue with mark), 0 where none. */
 int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,
                 void *heart);
+/* navigation.c: Classic's times and bar fitted to a track sec long (the bar 0: the radio's); 1 when
+ * they moved. Not in a paint. */
+int ipod_times(void *elapsed, void *remain, void *bar, int sec);
 int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark);
 /* navigation.c's painters for Classic's info screen (lockscreen.c); colours are final. */
 typedef struct {
