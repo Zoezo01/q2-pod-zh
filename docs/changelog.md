@@ -1,5 +1,14 @@
 # Changelog
 
+- **1.6.9**:
+  - Cover Flow: Minimal and Modern scroll the covers as Classic does: they follow your thumb, speed up as you turn faster, and settle on the album named under them.
+  - Cover Flow: keep turning fast and Album and Artist sorts go by initials, each letter shown big, after 0.4 s instead of 0.7 s.
+  - Library: after **Update Local Music** finishes, Return or Cancel closes its screen at once. It used to do nothing for about a second and a half, so it seemed to need a second press.
+  - Library: under **Theme: Classic** each playlist's dots sit at the right edge of its row. On the highlighted row the `>` takes their place, and a tap anywhere from it to the edge opens the playlist.
+  - Display: under **Theme: Classic** with **Light Mode** off, Quick Settings' off buttons are flat dark grey, without a gradient or a light rim.
+  - Display: under **Theme: Classic** Quick Settings' USB button shows stock's three marks again: a USB stick for USB Storage, grey as it is off, a USB-C port for USB DAC and the USB symbol for USB Audio.
+  - Display: under **Theme: Classic** Quick Settings' on buttons and the brightness bar take your accent colour, flat, as Minimal's do. Classic Blue keeps its own blue.
+  - Streaming: the Spotify, Internet Radio, AirPlay, Configuration and app icons are sharper, as crisp as Tidal's.
 - **1.6.8**:
   - Now Playing: a title or artist too long to fit now pauses at its start before each scroll, as it does at its end. It used to jump back to the start and scroll on at once.
   - Controls: a title too long for the Play/Pause hold menu now scrolls as Now Playing's does, pausing at its start and its end. It used to run to its end and stay there.
