@@ -1047,7 +1047,7 @@ GOOD = flac(block(0, b'\0' * 34), block(4, comments(b'TITLE=x', b'ALBUM ARTIST=T
 def album_artist(fw, heap, data, name=b'/a/b.flac'):
     files = Files(fw, {name.decode(): data})
     out = heap.string(b'', 0x100)
-    fw.fn('navigation__flac_album_artist', None, C.c_char_p, C.c_void_p)(name, out)
+    fw.fn('flac_album_artist', None, C.c_char_p, C.c_void_p)(name, out)
     return C.string_at(out), files
 
 
@@ -1101,7 +1101,7 @@ def test_flac_extension_case_aside(fw, heap):
 def test_flac_missing_file(fw, heap):
     Files(fw)
     out = heap.string(b'', 0x100)
-    fw.fn('navigation__flac_album_artist', None, C.c_char_p, C.c_void_p)(b'/a/b.flac', out)
+    fw.fn('flac_album_artist', None, C.c_char_p, C.c_void_p)(b'/a/b.flac', out)
     assert C.string_at(out) == b''
 
 
@@ -1141,7 +1141,7 @@ def flac_mutations(rng, base, count):
 
 
 def test_flac_any_file(fw, heap):
-    scan = fw.fn('navigation__flac_album_artist', None, C.c_char_p, C.c_void_p)
+    scan = fw.fn('flac_album_artist', None, C.c_char_p, C.c_void_p)
     rng = random.Random(0xf1ac)
     files = Files(fw)
     long_value = flac(block(0, b'\0' * 34), block(4, comments(b'A=b', b'ALBUM ARTIST=' + b'v' * 300), True))
@@ -2295,7 +2295,7 @@ def test_not_while_a_computer_has_the_card(fw):
 
 @pytest.mark.parametrize('data, value', [(b'\x78\x56\x34\x12', 0x12345678), (b'\xff\xff\xff\xff', 0xffffffff), (b'\0\0\0\x80', 0x80000000), (b'\x01\0\0\0', 1)])
 def test_le32(fw, data, value):
-    assert fw.fn('navigation__le32', C.c_uint, C.c_char_p)(data) == value
+    assert fw.fn('xiph__le32', C.c_uint, C.c_char_p)(data) == value
 
 
 def test_lengths_any_file(fw):

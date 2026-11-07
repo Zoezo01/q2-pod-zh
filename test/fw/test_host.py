@@ -6,7 +6,7 @@ import host
 
 
 def test_a_static_is_reachable(fw):
-    le32 = fw.fn('navigation__le32', C.c_uint, C.c_char_p)
+    le32 = fw.fn('xiph__le32', C.c_uint, C.c_char_p)
     assert le32(b'\x78\x56\x34\x12') == 0x12345678
 
 
