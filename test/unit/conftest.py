@@ -43,9 +43,9 @@ def refuse(what):
 @pytest.fixture(autouse=True, scope='session')
 def uncached():
     """mutmut runs each mutant's tests in a fork of a process that has run them all, so a cached function's
-    answers from the unmutated code would hide every mutant under it (art's qs_mark, shadow, station).
-    Once a session: within it the cache is the mutant's own, and art's tests stay fast."""
-    for m in [m for name, m in sys.modules.items() if name.startswith('tools.')]:
+    answers from the unmutated code would hide every mutant under it (art's qs_mark, shadow, station,
+    test_art's classic). Once a session: within it the cache is the mutant's own, and art's tests stay fast."""
+    for m in [m for name, m in sys.modules.items() if name.startswith(('tools.', 'test_'))]:
         for f in list(vars(m).values()):
             if hasattr(f, 'cache_clear'):
                 f.cache_clear()

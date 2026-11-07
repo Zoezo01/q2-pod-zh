@@ -1,4 +1,5 @@
 """tools/art.py: the theme images it draws, from the shipped theme's values."""
+import functools
 import math
 import pathlib
 import re
@@ -12,9 +13,11 @@ import ipod
 import theme
 
 
+@functools.cache
 def classic():
     """Classic's images without the pane's icons, which take most of the drawing time. Every art.py
-    mutant runs these tests, so only the two that read the icons draw them."""
+    mutant runs these tests, so only the two that read the icons draw them, and the rest share one
+    drawing a session (conftest's uncached clears it for each mutant). Read it, don't change it."""
     return art.images({**theme.builtins()[1], 'pane_icon_x': 0})
 
 
