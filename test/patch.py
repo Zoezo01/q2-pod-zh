@@ -9260,7 +9260,7 @@ assert all(n['type']=='hscroll_label' and n['loop']==1 and n['set_hscroll_label_
 # Wheel only: the covers' slide_menu takes no touch.
 m=CoverflowMachine(); m.open()
 assert m.nodes[m.slide].get('sensitive')==0; passed()
-# Text geometry: album over artist under the covers' frame (CF_TEXT_Y), the album larger and white,
+# Text geometry: album over artist under the covers, over their reflections' tail (CF_TEXT_Y), the album larger and white,
 # the artist grey, CF_EDGE from the sides and clear of the rounded glass, as is every other label
 # (the track list's title and rows, whose last visible row is lowest).
 from ipod import corner_inset
@@ -9270,7 +9270,7 @@ def clear(x,top,w,px):  # a label's text band, in screen rows (the window starts
 m=CoverflowMachine(); page=m.open(); labels=[w for w in m.nodes[m.get(m.slide+O['W_PARENT'])]['children'] if m.nodes[w]['type']=='hscroll_label']
 name,artist=labels
 E=O['CF_EDGE']; y=O['CF_TEXT_Y']
-assert y>=O['CF_VIEW_H'] and y+O['CF_NAME_H']+O['CF_ARTIST_H']<=290
+assert y>=O['CF_TOP']+160 and y+O['CF_NAME_H']+O['CF_ARTIST_H']<=290
 assert [cf_geometry(m,w) for w in labels]==[(E,y,375-2*E,O['CF_NAME_H']),(E,y+O['CF_NAME_H'],375-2*E,O['CF_ARTIST_H'])]
 assert m.nodes[name]['style:normal:font_size']==O['CF_NAME_PX']==24 and m.nodes[artist]['style:normal:font_size']==O['CF_ARTIST_PX']==20
 assert m.nodes[artist]['style:normal:text_color']==signed(O['CF_GREY']) and 'style:normal:text_color' not in m.nodes[name]
