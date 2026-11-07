@@ -11,7 +11,9 @@ from conftest import block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
-NEWER = b'%d.%d.%d' % (*[int(n) for n in TAG.split(b'.')][:2], int(TAG.split(b'.')[2]) + 1)
+# the next single-digit tag (1.6.9 -> 1.7.0), as netupdate's strcmp orders them
+_n = int(TAG.replace(b'.', b'')) + 1
+NEWER = b'%d.%d.%d' % (_n // 100, _n // 10 % 10, _n % 10)
 OLDER = b'0.9.9'
 
 SH_MAX = 16
