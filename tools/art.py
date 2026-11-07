@@ -314,26 +314,6 @@ SPEAKER_ARCS = ('M12 4.5a3.5 3.5 0 0 1 0 5', 'M14.5 2.5a7 7 0 0 1 0 9', 'M17 .8a
 SPEAKER_INKS = {'l': 0x393c39, 'd': 0xc6c3c6, 'w': 0xffffff}
 SUNS = {'small': (16, 3.5, 5.5, 7.5), 'big': (22, 4.5, 7, 10)}  # box, then in a 22 unit square scaled to it: disc's radius, a ray's first and last radius
 DARK_STATE = {'play': 'M1.53 1.45 8.47 5.5 1.53 9.55Z', 'pause': 'M1.53 1.45H4.13V9.55H1.53ZM5.87 1.45H8.47V9.55H5.87Z'}  # 10 x 11
-# The page under the slider pages, the Set Time pages, the message screens and the info screen, drawn at a quarter of its 375 x 294 and stretched: a vertical
-# ramp (row, colour) under a glow falling linearly from its alpha at the centre to nothing at the ellipse's edge.
-PAGE_RAMP = ((0, 0x65747b), (1, 0x7a8c96), (3, 0x8498a3), (13.5, 0x8294a2), (30, 0x7f919f), (51, 0x798b99), (105, 0x6d7b86),
-             (186, 0x555f69), (227, 0x4b535e), (260, 0x464f56), (294, 0x464f56))
-PAGE_GLOW, PAGE_GLOW_A, PAGE_GLOW_AT, PAGE_GLOW_R = 0xe4f0ff, 64, (187.5, 11), (185, 300)
-PAGE_SIZE, PAGE_FULL = (94, 74), (375, 294)
-PAGE_RAMP_AT = gradient(tuple((row * 100 / PAGE_FULL[1], rgb) for row, rgb in PAGE_RAMP), 0, PAGE_FULL[1])
-def page_px(fx, fy):
-    """The page's opaque RGBA at a point in the full page's coordinates: the ramp under the glow."""
-    d = math.hypot((fx - PAGE_GLOW_AT[0]) / PAGE_GLOW_R[0], (fy - PAGE_GLOW_AT[1]) / PAGE_GLOW_R[1])
-    a = max(0, 1 - d) * PAGE_GLOW_A / 255
-    base = PAGE_RAMP_AT(fy)
-    return bytes(round((base >> s & 255) * (1 - a) + (PAGE_GLOW >> s & 255) * a) for s in (16, 8, 0)) + b'\xff'
-def page():
-    """The page's opaque RGBA bytes, each pixel sampled at its centre in the full page's coordinates."""
-    w, h = PAGE_SIZE
-    return b''.join(page_px((x + .5) * PAGE_FULL[0] / w, (y + .5) * PAGE_FULL[1] / h) for y in range(h) for x in range(w))
-def page_top():
-    """The page's first two rows at full width, unstretched: stretching softens them."""
-    return b''.join(page_px(x + .5, y + .5) for y in range(2) for x in range(PAGE_FULL[0]))
 def sun(box, disc, r0, r1):
     """A white disc and its 8 rays at 45 degrees, stroked 1.6 with round caps, in 22 units scaled to a box px square."""
     c, k = box / 2, box / 22
@@ -882,8 +862,6 @@ def images(t):
     if t['painter[PAINT_PAGES]']:
         out |= {f'{prefix}_sun_{name}': sun(*a) for name, a in SUNS.items()}
         out |= {f'{prefix}_{name}_w': png(10, 11, compose((0, 0, 10, 11), [(path(d), lambda x, y: (0xffffff, 1))])) for name, d in DARK_STATE.items()}
-        out[f'{prefix}_page'] = png(*PAGE_SIZE, page())
-        out[f'{prefix}_page_top'] = png(PAGE_FULL[0], 2, page_top())
         out |= {f'{prefix}_orb_note': png(116, 116, orb(100, False)), f'{prefix}_orb_usb': png(130, 130, orb(114, True))}
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
         out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}

@@ -6361,14 +6361,10 @@ static void slider_switch(void *w, void *canvas, void *sw) {
     draw_centred(canvas, off, 3, &left, 21, white);
     draw_centred(canvas, on, 2, &right, 21, white);
 }
-/* The page image at (0, y, 375, 294), its first two rows sharp: stretching softens them. */
+/* The page at (0, y, 375, 294): flat in the half's Home pane colour (theme home_pane), final. */
 void paint_page(void *w, void *canvas, int y) {
-    unsigned bitmap[64]; /* bitmap_t */
-    if (!widget_load_image(w, "classic_light_page", bitmap)) {
-        rect_t src = { 0, 0, 94, 74 }, dst = { 0, y, 375, 294 };
-        canvas_draw_image(canvas, bitmap, &src, &dst);
-    }
-    paint_art(w, canvas, "classic_light_page_top", 0, y);
+    (void)w;
+    bar_rect(canvas, RGBA(theme()->home_pane[ipod_light()].rgb[0]), 0, y, 375, 294);
 }
 /* A nul-ended string centred in r in face (0: the system font) at px, in a final 0xAARRGGBB, never
  * flipped. Text colour and alignment are restored, the font is not. */

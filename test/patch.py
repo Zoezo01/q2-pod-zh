@@ -6626,6 +6626,7 @@ def parents(m,w):
 def bg(m,w): m.call(address=HOOKS['widget_on_paint_background'][0],args=(w,m.canvas,0,0),gap=0)
 def bare(m): m.bands=[]; m.letters=[]; m.rounded=[]; m.image_draws=[]; m.image_loads=[]; m.calls=[]
 def dirty(m,win): return [c[2] and tuple(signed(m.get(c[2]+4*i)) for i in range(4)) for c in m.calls if c[0]=='widget_invalidate_force' and c[1]==win]  # each invalidate's rect
+def page_fill(m,y=0,rgb=0x63717b): return m.bands[0][:5]==(0,y,375,294,color_t(rgb))  # the page: one flat fill first, the half's Home pane colour
 def art_at(m): return list(zip([m.text(c[2]) for c in m.calls if c[0]=='widget_load_image'],[d[1][:2] for d in m.image_draws]))
 CAPTION=('Press Centre When Finished',(0,229,375,32),('classic-light',31),0x59000000)
 from art import corner_cover
@@ -6807,11 +6808,11 @@ def slider_win(m,name,slider,view,label,ends,y=0,**kw):
     m.top=win; m.nodes[m.wm]={'children':[win]}; ui_loaded(m,name,win); return win,s,v,lab,nav,l,r,dec,add
 def slider_new(*a,light='1',**kw):
     m=LoadPlain(); m.config.update(THEME='1',LIGHT=light); return (m,*slider_win(m,*a,**kw))
-# A slider page under Classic (Brightness): dark bar, page image, band, suns; the track and fill on their 8 rows; 4 of 1..10.
+# A slider page under Classic (Brightness): dark bar, flat page, band, suns; the track and fill on their 8 rows; 4 of 1..10.
 bk,bwin,bsl,bsl_view,blab,bnav,bl,br,bdec,badd=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),min=1,max=10,value=4)
-bare(bk); bg(bk,bwin); bandrows,rest=round_box(bk.bands,28,129,322,46,8)
-assert bk.image_draws[0]==((0,0,94,74),(0,0,375,294)) and art_at(bk)[1]==('classic_light_page_top',(0,0))  # the page's first rows, unstretched
-assert art_at(bk)[2:]==[('classic_light_band_shadow',(21,124)),('classic_light_band_top',(28,129)),('classic_light_band_foot',(28,167)),('classic_light_sun_small',(48,144)),('classic_light_sun_big',(311,141))]
+bare(bk); bg(bk,bwin); bandrows,rest=round_box(bk.bands[1:],28,129,322,46,8)
+assert page_fill(bk)
+assert art_at(bk)==[('classic_light_band_shadow',(21,124)),('classic_light_band_top',(28,129)),('classic_light_band_foot',(28,167)),('classic_light_sun_small',(48,144)),('classic_light_sun_big',(311,141))]
 assert not triangle(bk) and shadows(bk)==[CAPTION]  # no triangle here; the caption's shadow, behind its label
 assert bandrows[0]==color_t(0x6a707a) and bandrows[45]==color_t(0x181b21) and not rest  # its rim is the two images
 assert bk.lcd_colors()==LCD_COLORS
@@ -6824,7 +6825,7 @@ bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.can
 assert [b[:4] for b in slider[:8]]==[(1,31,202,1),*[(0,31+i,204,1) for i in range(1,7)],(1,38,202,1)]
 assert slider[0][4]==color_t(0x2f4052) and slider[7][4]==color_t(0x26333f) and slider[8][:4]==(1,31,66,1) and slider[8][4]==color_t(0xf7ffff) and slider[15][4]==color_t(0xc6cbcf)
 assert slider[9][2]==68 and bk.nodes[bsl_view]['visible']==1; passed()
-bd,bdwin,*_=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),light='0',min=1,max=10,value=4); bare(bd); bg(bd,bdwin); assert shadows(bd)==[CAPTION]; passed()  # black in the dark half too
+bd,bdwin,*_=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),light='0',min=1,max=10,value=4); bare(bd); bg(bd,bdwin); assert shadows(bd)==[CAPTION] and page_fill(bd,0,0x1c1c1c); passed()  # black in the dark half too
 # ... paints from what it recorded: no string compare or widget look-up on its way.
 bare(bk); bg(bk,bwin); assert not {'widget_lookup','tk_strcmp'}&slider_paint_calls(bk); passed()
 bk.nodes[bsl]['min']=bk.nodes[bsl]['max']=5; bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.canvas,0,0),gap=0); assert len(bk.bands)==8; passed()  # max<=min: no fill
@@ -6835,7 +6836,7 @@ bare(bk); bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.canvas
 mv,mwin,mv_slider,mv_view,mlab,_,_,_,_,_=slider_new('maxvol_page','slider_maxvol','view_maxvol','label_vol',('img_volleft','img_volright'),max=100,value=50)
 bare(mv); bg(mv,mwin); tri=[b for b in mv.bands if 155<=b[1]<=160 and b[2]<=10]
 assert wbox(mv,mv_slider)[1]==111 and [t[:2] for t in tri]==[(81+102-1,155),(81+102-1,156),(81+102-2,157),(81+102-3,158),(81+102-4,159),(81+102-5,160)]
-assert [t[2] for t in tri]==[2,2,4,6,8,10] and {t[4] for t in tri}=={color_t(0xffffff)} and [d[1][:2] for d in mv.image_draws[2:]]==[(21,124),(28,129),(28,167),(50,139),(311,139)] and mv.nodes[mlab]['visible']==0; passed()
+assert [t[2] for t in tri]==[2,2,4,6,8,10] and {t[4] for t in tri}=={color_t(0xffffff)} and [d[1][:2] for d in mv.image_draws]==[(21,124),(28,129),(28,167),(50,139),(311,139)] and mv.nodes[mlab]['visible']==0; passed()
 mv.nodes[mv_slider]['value']=0; bare(mv); bg(mv,mwin); assert [b[0] for b in mv.bands if 155<=b[1]<=160 and b[2]<=10][-1]==76; passed()  # it follows the value
 # ... past the slider's rect at its ends, so a step repaints the band, on a drag too: the triangle's whole reach is inside it.
 for kind in ('EVT_VALUE_CHANGING','EVT_VALUE_CHANGED'):
@@ -6865,16 +6866,16 @@ hit=named(dv,win,'switch_hit'); assert wbox(dv,hit)==(125,28,125,44)
 f,ctx=next((f,c) for t,f,c in dv.nodes[hit]['handlers'] if t==O['EVT_CLICK']); dv.clicks=[]; dv.calls=[]
 assert dv.call(address=f,args=(ctx,dv.event,0,0),gap=0)==0 and dv.clicks==[dv.switch] and [c[1] for c in dv.calls if c[0]=='widget_invalidate_force']==[win]
 bare(dv); bg(dv,win); rows=dv.bands
-assert art_at(dv)[2:]==[('classic_light_tray_shadow',(117,22)),('classic_light_track_inset',(138,37)),('classic_light_lit_edge',(187,36)),('classic_light_band_shadow',(21,124)),('classic_light_band_top',(28,129)),('classic_light_band_foot',(28,167)),('classic_light_spk_quiet_w',(50,145)),('classic_light_spk_loud_w',(311,145))]
+assert art_at(dv)==[('classic_light_tray_shadow',(117,22)),('classic_light_track_inset',(138,37)),('classic_light_lit_edge',(187,36)),('classic_light_band_shadow',(21,124)),('classic_light_band_top',(28,129)),('classic_light_band_foot',(28,167)),('classic_light_spk_quiet_w',(50,145)),('classic_light_spk_loud_w',(311,145))]
 assert wbox(dv,dv.slider)==(81,117,204,70) and dv.nodes[dv.bar_title]['text']=='Default Volume' and not triangle(dv)
-tray,rest=round_box(rows,125,28,125,44,9); assert tray[0]==color_t(0x6a707a) and tray[-1]==color_t(0x1b1f26)  # the tray
+tray,rest=round_box(rows[1:],125,28,125,44,9); assert tray[0]==color_t(0x6a707a) and tray[-1]==color_t(0x1b1f26)  # the tray
 track,rest=round_box(rest,138,37,100,26,6); assert track[0]==color_t(0x07090d)  # the track
 _,rest=round_box(rest,188,37,50,26,6); round_box(rest,28,129,322,46,8)  # On lit, in the scheme's band; the band
 assert [(t['text'],t['rect'],t['font']) for t in dv.letters[:2]]==[('Off',(138,37,50,26),('classic-light',21)),('On',(188,37,50,26),('classic-light',21))] and shadows(dv)[2:]==[CAPTION]; passed()
-dv.nodes[dv.switch]['image']='switch_off'; bare(dv); bg(dv,win); _,rest=round_box(dv.bands,125,28,125,44,9); _,rest=round_box(rest,138,37,100,26,6); round_box(rest,138,37,50,26,6); assert ('classic_light_lit_edge',(137,36)) in art_at(dv); passed()  # Off lit
+dv.nodes[dv.switch]['image']='switch_off'; bare(dv); bg(dv,win); _,rest=round_box(dv.bands[1:],125,28,125,44,9); _,rest=round_box(rest,138,37,100,26,6); round_box(rest,138,37,50,26,6); assert ('classic_light_lit_edge',(137,36)) in art_at(dv); passed()  # Off lit
 bare(dv); bg(dv,win); assert not {'widget_lookup','tk_strcmp'}&slider_paint_calls(dv) and not [c for c in dv.calls if c[0]=='widget_lookup' and dv.text(c[2])=='img_bootswitch']; passed()  # the switch as found at the first paint: no look-up after it
 dv.nodes[dv.view]['visible']=0; bare(dv); bg(dv,win)
-assert not any(b[1]>=129 for b in dv.bands) and len(dv.image_draws)==5 and dv.nodes[named(dv,win,'caption')]['visible']==1 and shadows(dv)[2:]==[CAPTION]; passed()  # stock hid the view: the tray and caption
+assert not any(b[1]>=129 for b in dv.bands) and len(dv.image_draws)==3 and dv.nodes[named(dv,win,'caption')]['visible']==1 and shadows(dv)[2:]==[CAPTION]; passed()  # stock hid the view: the tray and caption
 dv.nodes[dv.switch]['visible']=0; bare(dv); dv.clicks=[]; bg(dv,win); assert shadows(dv)==[CAPTION] and dv.call(address=f,args=(ctx,dv.event,0,0),gap=0)==0 and not dv.clicks; passed()  # no switch, no tray, no hit
 # Balance and Crossfade: the number's box, L and R; Crossfade's switch; Wheel Sensitivity has none, its keys as today.
 ba,bawin,bas,_,label_balance,_,_,_,_,_=slider_new('balance_page','slider_balance','view_balance','label_balance',('img_left','img_right'),min=-10,max=10,value=0)
@@ -6882,7 +6883,7 @@ L,R=[next(c for c in ba.nodes[bawin]['children'] if ba.nodes[c].get('text')==t) 
 BAND_ART=[('classic_light_band_shadow',(21,124)),('classic_light_band_top',(28,129)),('classic_light_band_foot',(28,167))]
 assert wbox(ba,label_balance)==(0,85,375,34) and ba.nodes[label_balance]['visible']==1 and ba.nodes[label_balance]['style:normal:font_size']==32 and ba.nodes[label_balance]['style:normal:font_name']=='classic-light'
 assert wbox(ba,L)==(50,139,20,26) and wbox(ba,R)==(306,139,20,26) and ba.nodes[L]['style:normal:font_size']==24==ba.nodes[R]['style:normal:font_size'] and wbox(ba,bas)==(81,117,204,70)
-bare(ba); bg(ba,bawin); assert art_at(ba)[2:]==BAND_ART and not triangle(ba); passed()
+bare(ba); bg(ba,bawin); assert art_at(ba)==BAND_ART and not triangle(ba); passed()
 # ... the text stock writes after the load picks the number's face at the next paint, and a paint that changes nothing writes nothing.
 for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',32),('L 3','classic-light',32)):
     ba.nodes[label_balance]['text']=bn_text; bare(ba); bg(ba,bawin); assert (ba.nodes[label_balance]['style:normal:font_name'],ba.nodes[label_balance]['style:normal:font_size'])==(bn_face,bn_px),bn_text
@@ -6890,13 +6891,13 @@ for bn_text,bn_face,bn_px in (('Баланс','bold',27),('平衡','default',32)
 passed()
 xf0=boot_page(ctx=0); assert xf0.nodes[xf0.switch]['visible']==1 and xf0.nodes[xf0.vol]['visible']==1 and wbox(xf0,xf0.vol)==(0,85,375,34) and xf0.nodes[xf0.view]['visible']==1
 cap0=named(xf0,xf0.win,'caption'); assert xf0.nodes[cap0]['text']=='Press Centre to Turn On or Off'; bare(xf0); bg(xf0,xf0.win); assert shadows(xf0)[-1][0]=='Press Centre to Turn On or Off' and shadows(xf0)[-1][1:]==CAPTION[1:]
-bare(xf0); bg(xf0,xf0.win); assert xf0.nodes[xf0.bar_title]['text']=='Crossfade' and len(xf0.image_draws)==8 and [t['text'] for t in xf0.letters[:2]]==['Off','On'] and any(b[1]==129 for b in xf0.bands) and not triangle(xf0)  # no ends
+bare(xf0); bg(xf0,xf0.win); assert xf0.nodes[xf0.bar_title]['text']=='Crossfade' and len(xf0.image_draws)==6 and [t['text'] for t in xf0.letters[:2]]==['Off','On'] and any(b[1]==129 for b in xf0.bands) and not triangle(xf0)  # no ends
 hit=named(xf0,xf0.win,'switch_hit'); f,ctx=next((f,c) for t,f,c in xf0.nodes[hit]['handlers'] if t==O['EVT_CLICK']); xf0.clicks=[]
 assert xf0.call(address=f,args=(ctx,xf0.event,0,0),gap=0)==0 and xf0.clicks==[xf0.switch]; passed()
 xf0.calls=[]; assert xf0.call(O['KEY_NEXT'])==11 and dirty(xf0,xf0.win)==[(125,28,125,44)]; passed()  # the wheel can turn it on: the tray repaints, and only it
 ns=boot_page(ctx=3); assert ns.nodes[named(ns,ns.win,'caption')]['text']=='Press Centre to Change Mode'; bare(ns); bg(ns,ns.win); assert shadows(ns)[-1][0]=='Press Centre to Change Mode'; passed()  # Centre cycles here
 wheel=boot_page(ctx=1); wsw=wheel.switch; assert wheel.nodes[wheel.title]['text']=='Wheel Sensitivity' and not wheel.nodes[wsw]['visible'] and wheel.nodes[wheel.vol]['visible']==1 and wheel.nodes[wheel.vol]['text']=='50%'
-bare(wheel); bg(wheel,wheel.win); assert art_at(wheel)[2:]==BAND_ART and shadows(wheel)==[CAPTION] and not triangle(wheel)
+bare(wheel); bg(wheel,wheel.win); assert art_at(wheel)==BAND_ART and shadows(wheel)==[CAPTION] and not triangle(wheel)
 wheel.calls=[]; assert wheel.call(O['KEY_NEXT'])==11 and [c for c in wheel.calls if c[0]=='write_int_config'] and not dirty(wheel,wheel.win); passed()  # no tray
 # The dark bar: the dark half's flat bar and hairline in either half while a slider page is on top, title across on the bar title's rows, clock and marks hidden; back on leaving.
 def dark_setup(light='1',state=0,name='Balance'):
@@ -6980,10 +6981,10 @@ tm_idx=lambda m,f: m.get(m.sels[f]+O['SELECTOR_INDEX'])
 tm_field=lambda m: m.nodes[m.win].get('_edit_field',0)
 tm_fire=lambda m,w: [m.call(address=f,args=(c,m.event,0,0),gap=0) for t,f,c in m.nodes[w]['handlers'] if t==O['EVT_VALUE_CHANGED']]
 TM_WHITE=color_t(0xffffff)
-# Set Time, 24-hour: the page, the clock's shadow and tm_art, the tray, two cells, the hour lit; Save in tm_place of OK. Window-local: the window is at y 26.
+# Set Time, 24-hour: the flat page, the clock's shadow and tm_art, the tray, two cells, the hour lit; Save in tm_place of OK. Window-local: the window is at y 26.
 tm=time_form(); tm_shown=tm_on_time(tm); tm_art=[tm.text(c[2]) for c in tm.calls if c[0]=='widget_load_image']
-assert tm.image_draws[0]==((0,0,94,74),(0,0,375,294)) and [d[1][:2] for d in tm.image_draws[2:4]]==[(58,166),(46,73)]
-assert tm_art[:6]==[f'classic_light_{n}' for n in ('page','page_top','clock_shadow','clock_chrome','tray_108','cell_lit_45')] and [d[1][:2] for d in tm.image_draws[4:7]]==[(204,97),(210,103),(267,103)]
+assert page_fill(tm) and [d[1][:2] for d in tm.image_draws[0:2]]==[(58,166),(46,73)]
+assert tm_art[:4]==[f'classic_light_{n}' for n in ('clock_shadow','clock_chrome','tray_108','cell_lit_45')] and [d[1][:2] for d in tm.image_draws[2:5]]==[(204,97),(210,103),(267,103)]
 assert wbox(tm,tm.sels[3])==(214,107,45,42) and wbox(tm,tm.sels[4])==(271,107,45,42) and wbox(tm,tm.ok)==(0,244,375,26) and tm.nodes[tm.ok]['text']=='Save'
 assert tm_shown[(214,107,45,42)]['text']=='16' and tm_shown[(271,107,45,42)]['text']=='42' and tm_shown[(259,107,12,42)]['text']==':' and tm_shown[(0,244,375,26)]['text']=='Save'
 assert tm_shown[(0,245,375,26)]['color']==0x59000000 and tm_shown[(0,244,375,26)]['color']==(0xb8000000|TM_WHITE&0xffffff)
@@ -7043,7 +7044,7 @@ tm_fire(tm,tm.slide); assert tm_field(tm)==1; passed()  # a swipe between the pa
 tm=time_form(1,vals=(4,10,4,23,0)); tm.nodes[tm.slide]['value']=1; tm.word(tm.sels[3]+O['SELECTOR_INDEX'],4); tm_fire(tm,tm.sels[3]); assert tm_idx(tm,3)==4 and tm_field(tm)==3; passed()  # 24-hour has no half
 # Set Date: the tile, the tray, year 60 wide; Centre on day turns to the time page; the bar's title follows the selectors, written on a change and not in a paint.
 tm=time_form(); tm_shown=time_shown(tm); tm_art=[tm.text(c[2]) for c in tm.calls if c[0]=='widget_load_image']
-assert tm_art[:6]==[f'classic_light_{n}' for n in ('page','page_top','tile','tray_164','cell_lit_60','cell_45')] and [d[1][:2] for d in tm.image_draws[2:7]]==[(34,72),(176,97),(182,103),(246,103),(295,103)]
+assert page_fill(tm) and tm_art[:4]==[f'classic_light_{n}' for n in ('tile','tray_164','cell_lit_60','cell_45')] and [d[1][:2] for d in tm.image_draws[0:5]]==[(34,72),(176,97),(182,103),(246,103),(295,103)]
 assert wbox(tm,tm.sels[0])==(186,107,60,42) and wbox(tm,tm.sels[1])==(250,107,45,42) and wbox(tm,tm.sels[2])==(299,107,45,42)
 assert tm_shown[(186,107,60,42)]['text']=='2026' and tm_shown[(250,107,45,42)]['text']=='11' and tm_shown[(299,107,45,42)]['text']=='05'
 assert tm_shown[(40,76,118,30)]['text']=='Nov' and tm_shown[(40,98,118,82)]['text']=='05' and tm_shown[(40,98,118,82)]['color']==color_t(0x1b2030) and tm_shown[(40,76,118,30)]['font'][1]==28 and tm_shown[(40,98,118,82)]['font'][1]==79
@@ -7345,10 +7346,9 @@ def msg_fill(m): return [b for b in m.bands if 72<=b[0] and 218<=b[1]<232 and b[
 for light in '10':
     um,uwin,uanim,umsg,uscan,ubtn=msg_dialog(light=light); bare(um); bg(um,uwin); uhead,uline=named(um,uwin,'msg_heading'),named(um,uwin,'msg_line')
     darkrows=[b for b in um.bands if b[2]==375 and b[1]<26]
-    assert um.image_draws[0]==((0,0,94,74),(0,26,375,294)) and [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333)
-    assert not [b for b in um.bands if b[2]==375 and b[1] in (26,27)] and um.image_draws[1][1][:2]==(0,26)  # the page's first rows, unstretched
+    assert page_fill(um,26,0x63717b if light=='1' else 0x1c1c1c) and [b[:4] for b in darkrows]==[(0,j,375,1) for j in range(26)] and darkrows[0][4]==color_t(0x1c1c1c) and darkrows[24][4]==color_t(0x1c1c1c) and darkrows[25][4]==color_t(0x333333)
     assert [um.nodes[w]['visible'] for w in (uanim,umsg,uscan)]==[0,0,0] and named(um,uwin,'btn_no')==ubtn and um.nodes[ubtn]['visible']==1
-    assert [um.text(c[2]) for c in um.calls if c[0]=='widget_load_image']==['classic_light_page','classic_light_page_top','classic_light_orb_note'] and um.image_draws[2][1][:2]==(129,38)
+    assert [um.text(c[2]) for c in um.calls if c[0]=='widget_load_image']==['classic_light_orb_note'] and um.image_draws[0][1][:2]==(129,38)
     assert wbox(um,ubtn)==(127,248,121,34) and wbox(um,uhead)==(16,159,343,32) and um.nodes[uhead]['text']=='Updating Local Music' and wbox(um,uline)==(16,188,343,20)
     assert um.nodes[uhead]['style:normal:font_size']==29 and um.nodes[uhead]['style:normal:font_name']=='classic-light' and um.nodes[uline]['style:normal:font_size']==18 and um.nodes[uline]['style:normal:font_name']=='default'
     white=color_t(0 if light=='1' else 0xffffff)  # Light Mode's style hook flips it back
@@ -7408,7 +7408,7 @@ assert not [t for t in um.timers.values() if t[1]==payload_syms['msg_poll']] and
 for mode,line in ((0,'Eject before disconnecting'),(2,'Eject before disconnecting'),(1,'')):
     ub,bwin,bret,bimg,binfo,bcharge,bdac=usb_page(mode); bare(ub); bg(ub,bwin); bhead,bline=named(ub,bwin,'msg_heading'),named(ub,bwin,'msg_line')
     assert ub.nodes[bhead]['text']=='Connected' and ub.nodes[bline].get('text','')==line and wbox(ub,bhead)==(16,228-26,343,32) and wbox(ub,bline)==(16,255-26,343,20)
-    assert ub.image_draws[0]==((0,0,94,74),(0,0,375,294)) and ub.image_draws[2][1][:2]==(122,67-26) and [ub.text(c[2]) for c in ub.calls if c[0]=='widget_load_image']==['classic_light_page','classic_light_page_top','classic_light_orb_usb']
+    assert page_fill(ub) and ub.image_draws[0][1][:2]==(122,67-26) and [ub.text(c[2]) for c in ub.calls if c[0]=='widget_load_image']==['classic_light_orb_usb']
     assert [ub.nodes[w]['visible'] for w in (bimg,binfo,bret,bcharge,bdac)]==[0,0,1,1,1] and wbox(ub,bret)==(20,0,80,60) and wbox(ub,bcharge)==(247,0,50,50) and wbox(ub,bdac)==(305,0,50,50)
     assert not [b for b in ub.bands if b[2]==375 and b[4]==color_t(0x1c1c1c)] and not msg_track(ub) and not ub.timers  # the real bar's above it; no count
     assert [(t['text'],t['rect']) for t in ub.letters]==[('Connected',(16,229-26,343,32))]+([(line,(16,256-26,343,20))] if line else []) and ub.lcd_colors()==LCD_COLORS; passed()
@@ -7419,13 +7419,13 @@ for _ in range(2): bg(db,uw); bg(db,dbar)
 assert db.nodes[dtitle]['text']=='Q2 Pod' and wbox(db,dtitle)==(0,-1,375,25) and db.nodes[dclock]['visible']==0; db.bands=[]; bg(db,dbar); assert [b for b in db.bands if b[2]==375][0][4]==color_t(0x1c1c1c); passed()
 db.word(uw+O['W_Y'],0); db.letters=[]; bg(db,uw); assert db.letters[0]['text']=='Q2 Pod' and db.letters[0]['rect']==(0,-1,375,25); passed()  # a window over the bar paints the title on the bar title's rows
 uc,cwin,*_=usb_page(0,y=0); bare(uc); bg(uc,cwin)
-assert uc.image_draws[0]==((0,0,94,74),(0,26,375,294)) and uc.image_draws[2][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x1c1c1c) and uc.letters[0]['text']=='Q2 Pod' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
+assert page_fill(uc,26) and uc.image_draws[0][1][:2]==(122,67) and [b for b in uc.bands if b[2]==375 and b[1]==0][0][4]==color_t(0x1c1c1c) and uc.letters[0]['text']=='Q2 Pod' and wbox(uc,named(uc,cwin,'msg_heading'))==(16,228,343,32); passed()
 # ... a cable opening it over the scan's dialog: each paints its own, and the dialog's end leaves the page.
 sd,swin,_,smsg,_,_=msg_dialog(); ub2=sd.node('window','usbmode_page'); sd.word(ub2+O['W_PARENT'],sd.wm); place(sd,ub2,0,26,375,294); ui_loaded(sd,'usbmode_page',ub2)
-bare(sd); bg(sd,ub2); assert sd.image_draws[0][1]==(0,0,375,294) and sd.image_draws[2][1][:2]==(122,41) and not msg_track(sd)
-bare(sd); bg(sd,swin); assert sd.image_draws[0][1]==(0,26,375,294) and sd.image_draws[2][1][:2]==(129,38)
+bare(sd); bg(sd,ub2); assert page_fill(sd) and sd.image_draws[0][1][:2]==(122,41) and not msg_track(sd)
+bare(sd); bg(sd,swin); assert page_fill(sd,26) and sd.image_draws[0][1][:2]==(129,38)
 f,ctx=next((f,c) for t,f,c in sd.nodes[swin]['handlers'] if t==O['EVT_DESTROY']); sd.call(address=f,args=(ctx,sd.event,0,0),gap=0)
-assert not [t for t in sd.timers.values() if t[1]==payload_syms['msg_poll']]; bare(sd); bg(sd,ub2); assert sd.image_draws[2][1][:2]==(122,41); passed()
+assert not [t for t in sd.timers.values() if t[1]==payload_syms['msg_poll']]; bare(sd); bg(sd,ub2); assert sd.image_draws[0][1][:2]==(122,41); passed()
 # Auto Light Mode's turn with a page open: every label's stored ink follows the half, which the style hook hands back white.
 def half_turn(m,hour): m.clock=(hour,0); m.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0)
 for ink_day,ink_night in ((color_t(0),color_t(0xffffff)),):
@@ -17866,8 +17866,8 @@ assert box_('label_battery')==(226,0,48,26) and font_('label_battery')==('defaul
 assert box_('img_playcover')==(28,198,60,60) and box_('scrlabel_title')==(100,202,245,28) and font_('scrlabel_title')==('classic-light',27) and box_('scrlabel_artist')==(100,229,245,22) and font_('scrlabel_artist')==('classic-light',21)
 assert box_('img_slide')==(177,288,21,7) and lk.nodes[w['img_slide']]['draw_type']==O['IMAGE_DRAW_FILL'] and lk.get(w['img_slide']+0x34)&255==216 and lk.nodes[w['scrlabel_artist']]['style:normal:text_color']>>24&255==0xc8 and lk.nodes[w['view_playinfo']]['style:normal:bg_color']==0
 draws=lock_paint(lk,w); rows=[b for b in lk.bands if b[3]==1 and b[2]==375]
-assert [d[1][:2] for d in draws]==[(0,26),(0,26),(173,284),(29,54)] and draws[0]==((0,0,94,74),(0,26,375,294)) and lk.nodes[w['img_screensaver']]['image']==''
-assert [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_page','classic_light_page_top','classic_light_hint_shadow','classic_light_clock_dark']
+assert [d[1][:2] for d in draws]==[(173,284),(29,54)] and (0,26,375,294,color_t(0x63717b)) in [b[:5] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==''
+assert [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_hint_shadow','classic_light_clock_dark']
 assert [b[1] for b in rows[:26]]==list(range(26)) and rows[0][4]==color_t(0x1c1c1c) and rows[25][4]==color_t(0x333333)
 trays=[b for b in lk.bands if b[0]>=16 and b[0]+b[2]<=359 and b[3]==1 and b[4]>>24==0xff and b[4] in (color_t(0x474e58),color_t(0x14161b))]
 tray_in=corner_in(9); assert [b[:4] for b in trays]==[(16+tray_in,y,343-2*tray_in,1) for y in (44,159,186,269)]  # each opaque between its corners' pixels
@@ -17888,7 +17888,7 @@ for light in '01':
     passed()
 # ... Large: clock_time at 166 px, in a box that holds it, its middle the tray's, no face, tray 128 high.
 lk,w=lock_cl(large=1); assert screen_box(lk,w['clock_time'])==(16,24,343,168) and wbox(lk,w['view_timeinfo'])[3]>=192 and lk.nodes[w['clock_time']]['style:normal:font_size']==166 and lk.nodes[w['clock_time']]['style:normal:font_name']=='classic-light'
-draws=lock_paint(lk,w); assert [d[1][:2] for d in draws]==[(0,26),(0,26),(173,284)] and color_t(0x14161b) in [b[4] for b in lk.bands if b[1]==171]; passed()
+draws=lock_paint(lk,w); assert [d[1][:2] for d in draws]==[(173,284)] and color_t(0x14161b) in [b[4] for b in lk.bands if b[1]==171]; passed()
 # ... Large's clock box reaches y 192, over the card's top rows: AWTK looks through a widget's children last to first, stock's window has the card after the clock, so those taps are the card's.
 gesture=lk.nodes[lk.top]['children'][0]; kids=lk.nodes[gesture]['children']
 stock_kids=[c[2]['name'] for c in decode(subprocess.check_output(['unsquashfs','-cat',str(B/'rootfs.squashfs'),'release/assets/default/raw/ui/saverscreen_page.bin']))[3][0][3]]
@@ -17914,7 +17914,7 @@ for i,v in enumerate((20,40,60,44)): lk.word(r+4*i,v)
 blank(lk); lk.call(address=payload_syms['pale_lit'],args=(lk.canvas,r,1,0),gap=0); assert all(fill_at(lk,80,y) for y in (42,46)) and not [b for b in lk.bands if b[0]>=80 and b[1]>=40+27]; passed()
 # ... a picture: no page image; a chosen picture the same; the trays and bar still paint.
 for pic in ('q2pod:aurora','/mnt/mmc/lockscreenimage/a.jpg'):
-    lk,w=lock_cl(picture=pic); draws=lock_paint(lk,w); assert [d[1][:2] for d in draws][-1]==(29,54) and (0,26) not in [d[1][:2] for d in draws] and [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_hint_shadow','classic_light_clock_dark']
+    lk,w=lock_cl(picture=pic); draws=lock_paint(lk,w); assert [d[1][:2] for d in draws][-1]==(29,54) and not [b for b in lk.bands if b[:4]==(0,26,375,294)] and [lk.text(c[2]) for c in lk.calls if c[0]=='widget_load_image']==['classic_light_hint_shadow','classic_light_clock_dark']
     assert [b for b in lk.bands if b[:2]==(0,0) and b[2]==375][0][4]==color_t(0x1c1c1c) and color_t(0x474e58) in [b[4] for b in lk.bands] and lk.nodes[w['img_screensaver']]['image']==('' if 'q2pod' in pic else pic)
     passed()
 lk,w=lock_cl(picture='q2pod:black',light='1'); lock_paint(lk,w); assert (0,26,375,294,color_t(0)) in [b[:5] for b in lk.bands]; passed()  # Black keeps black, in the light half too

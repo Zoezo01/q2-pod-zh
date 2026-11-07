@@ -117,7 +117,7 @@
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,
        centred on the pane's first count_w columns, its 24 px line box at count_y. The pane follows the highlighted row:
        a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is; on Streaming's list the service's icon, svc_px square at svc_x, svc_y. Its colour is stated at 0 and 100,
-       as a stops list must end at 100 -->
+       as a stops list must end at 100. Its first stop also fills Classic's own full-screen pages (navigation.c paint_page) -->
   <view name="home">
     <element name="rows" top="0" text_x="20" font="classic-light" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
     <element name="chevron" visible="1" x="168"/>

@@ -26,7 +26,7 @@ QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowga
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
-    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'page', 'page_top', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
+    assert set(art.images(themes[1])) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}' for n in QS_NAMES), 'drop_shadow', 'drop_pressed', 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
 
 
 # The approved rendered rows, within 1 per channel: the fill down column 272 of the pause bars
@@ -76,12 +76,12 @@ def test_the_bolt_and_the_plug_fill_the_batterys_inside():
 
 def test_the_volume_and_slider_page_images():
     got = art.images(theme.builtins()[1])
-    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'play_w': (10, 11), 'pause_w': (10, 11), 'page': (94, 74), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
+    size = {'spk_quiet': (12, 14), 'spk_loud': (22, 14), 'sun_small': (16, 16), 'sun_big': (22, 22), 'play_w': (10, 11), 'pause_w': (10, 11), 'orb_note': (116, 116), 'orb_usb': (130, 130)}
     for name, wh in size.items():
         for n in ([f'{name}_{h}' for h in 'ldw'] if name.startswith('spk') else [name]):
             w, h, at = pixels(got[f'classic_light_{n}'])
             assert (w, h) == wh
-            assert all(at(x, y)[3] == 255 for x in (0, w - 1) for y in (0, h - 1)) == (n == 'page')
+            assert not all(at(x, y)[3] == 255 for x in (0, w - 1) for y in (0, h - 1))
     inks = {'l': (0x39, 0x3c, 0x39), 'd': (0xc6, 0xc3, 0xc6), 'w': (255, 255, 255)}
     for half, rgb in inks.items():
         for n in ('quiet', 'loud'):
@@ -107,30 +107,6 @@ def test_the_confirm_shadow_falls_soft_and_black_under_the_tray():
     assert at(157, 34)[3] == 0x77 and at(157, 67)[3] < 8 and at(0, 34)[3] < 8 and at(157, 0)[3] < 3
     assert at(157, 6)[3] < at(157, 8)[3] < at(157, 10)[3] and at(157, 60)[3] > at(157, 64)[3]
     assert len(got) < 8192
-
-
-def test_the_page_stands_on_its_ramp_and_glow():
-    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_page'])
-    stops = ((0, 0x65747b), (1, 0x7a8c96), (3, 0x8498a3), (13.5, 0x8294a2), (30, 0x7f919f), (51, 0x798b99), (105, 0x6d7b86), (186, 0x555f69), (227, 0x4b535e), (260, 0x464f56), (294, 0x464f56))
-    def want(x, y):
-        fx, fy = (x + .5) * 375 / 94, (y + .5) * 294 / 74
-        a = max(0, 1 - ((fx - 187.5)**2 / 185**2 + (fy - 11)**2 / 300**2)**.5) * 64 / 255
-        (r0, c0), (r1, c1) = next((p, q) for p, q in zip(stops, stops[1:]) if fy <= q[0])
-        ramp = [(c0 >> s & 255) + ((c1 >> s & 255) - (c0 >> s & 255)) * (fy - r0) / (r1 - r0) for s in (16, 8, 0)]
-        return [v * (1 - a) + (0xe4f0ff >> s & 255) * a for v, s in zip(ramp, (16, 8, 0))]
-    spots = [(0, 0), (93, 0), (0, 73), (93, 73)] + [(187 * 94 // 375, y * 74 // 294) for y in (11, 150, 293)]
-    for x, y in spots:
-        assert all(abs(p - q) <= 1 for p, q in zip(at(x, y), want(x, y))), (x, y)
-    assert at(46, 2)[2] > at(0, 2)[2]  # the glow, brightest at the top's middle and gone by the edge
-    assert at(0, 2)[:3] == at(93, 2)[:3]
-
-
-def test_the_pages_first_two_rows_are_sharp_ramp_and_glow():
-    w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_page_top'])
-    assert (w, h) == (375, 2)
-    for x, y, rgb in ((187, 0, 0x8c9ba6), (187, 1, 0x95a6b2), (5, 0, 0x718089), (5, 1, 0x7c8f99), (300, 0, 0x7a8a93)):
-        assert all(abs(p - (rgb >> s & 255)) <= 1 for p, s in zip(at(x, y), (16, 8, 0))), (x, y, at(x, y))
-    assert at(0, 0)[3] == 255
 
 
 def test_the_round_icons_are_centred_opaque_circles_in_their_shadow():
