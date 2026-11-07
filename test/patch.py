@@ -11416,6 +11416,56 @@ for page in ('updatemusic_page','screensaver_page'):
     lay(m,view); m.paint(view); assert m.selected(view)==0 and m.sel()==(0,0,375,32),(page,m.selected(view),m.sel())
     m.call(); m.paint(view); assert m.selected(view)==1 and m.sel()==(0,32,375,32),(page,m.selected(view),m.sel())
 passed()
+# The artist page's Albums grid under Classic (stock 0x4ac084: three 110 x 160 tiles to a 160 px list_item of
+# list_view_album). Its item_height, the set's pitch, made each row one pitch high: the rows overlapped, and stock's
+# list painter, culling a row by its own box (0x5eb818), left the tiles' covers and names unpainted under the
+# selection card. The rows keep their height for the layout and the item_height is back after it; text rows in such
+# a list still take the pitch. The wheel moves the card from tile to tile inside each tile, the selected album's name
+# in the selection's white over it, the others' in the page's ink.
+def grid_rows(m,view,n):
+    rows,tiles,names=[],[],[]
+    for r in range(n):
+        item=m.node('list_item'); m.word(item+O['W_PARENT'],view); m.word(item+O['W_H'],160); m.nodes[view]['children'].append(item); rows.append(item)
+        for x in (14,132,250):
+            cover=box(m,'image',f'imgalbum_{len(tiles)}',0,0,110,110); name=box(m,'hscroll_label','',0,116,110,20)
+            b=box(m,'button',f'album_{len(tiles)}',x,0,110,160); m.nodes[b]['children']=[cover,name]; m.word(b+O['W_PARENT'],item)
+            for c in (cover,name): m.word(c+O['W_PARENT'],b)
+            em=m.alloc(4); it=m.alloc(0x28); m.word(b+O['W_EMITTER'],em); m.word(em,it); m.word(it+O['EMIT_TYPE'],O['EVT_CLICK'])
+            m.nodes[item]['children'].append(b); tiles.append(b); names.append(name)
+    return rows,tiles,names
+m,view=stock_list(classic_light_on,32); m.nodes[m.top]['name']='artistinfo_page'
+lst=m.get(view+O['W_PARENT']); m.word(lst+O['ROW_HEIGHT'],32); m.word(lst+O['W_W'],375)
+rows,tiles,names=grid_rows(m,view,2)
+lay(m,view)
+assert [geometry(m,r)[1::2] for r in rows]==[(0,160),(160,160)] and m.get(view+O['VIEW_CONTENT_H'])==320
+assert m.get(lst+O['ROW_HEIGHT'])==32
+assert all(geometry(m,n)[1]+geometry(m,n)[3]<=geometry(m,m.get(m.get(n+O['W_PARENT'])+O['W_PARENT']))[3] for n in names)
+t,_=stock_row(m,view,[box(m,'hscroll_label','hscroll_label',72,0,204,70)],78); m.nodes[view]['children']=[t]; lay(m,view); assert geometry(m,t)[3]==32; passed()
+m,view=stock_list(classic_light_on,32); m.nodes[m.top]['name']='artistinfo_page'
+lst=m.get(view+O['W_PARENT']); m.word(lst+O['ROW_HEIGHT'],32); m.word(lst+O['W_W'],375)
+rows,tiles,names=grid_rows(m,view,2); lay(m,view); i=O['TILE_INSET']
+m.paint(view); assert m.selected(view)==0 and m.rounded[-1]['rect']==(14+i,i,110-2*i,160-2*i),m.rounded[-1]
+for k in (1,2,3):
+    m.call(); m.paint(view); assert m.selected(view)==k and m.rounded[-1]['rect']==(14+118*(k%3)+i,160*(k//3)-m.get(view+O['SCROLL_Y'])+i,110-2*i,160-2*i),(k,m.rounded[-1],m.get(view+O['SCROLL_Y']))
+white=color_t(0xffffff)
+for n,want in ((names[3],white),(names[0],None)):
+    m.paint(n); got=style_color(m,white)[1]; assert (got==want) if want else got!=white,(hex(got),)
+passed()
+# The artist page's title: load_artistinfo_list writes "%s" of the record's artist, glibc's "(null)" for an artist
+# with no name; the tab's load writes the language's Unknown Artist over it before the navbar is built from it, and
+# leaves a named artist's alone.
+class TitleMachine(ArtistMachine):
+    def hook(self,u,address,size,unused):
+        if address==syms['getFormatString']:
+            self.keys.append(self.text(u.reg_read(REGS[0]))); self.u.mem_write(u.reg_read(REGS[1]),'Unknown Artist'.encode()+b'\0'); self.returns(0); return
+        return super().hook(u,address,size,unused)
+for stock,want,keys in (('(null)','Unknown Artist',['player_unknown']),('Baroness','Baroness',[]),('(null) Jazz','(null) Jazz',[])):
+    m=TitleMachine(page='artistinfo_page',cls=0xff01,rows=2); m.keys=[]; m.word(syms['g_local_classinfo_save'],0xff01)
+    m.split=[m.song('Baroness')]; m.word(m.split[0]+O['REC_ALBUM_ARTIST'],m.string('Baroness'))
+    m.u.mem_write(O['ARTIST_TITLE'],stock.encode()+b'\0')
+    for tab in (1,0): m.call(address=HOOKS['load_localartist_list'][0],args=(tab,0,0,0),gap=0)
+    assert m.text(O['ARTIST_TITLE'])==want and m.keys==keys,(stock,m.text(O['ARTIST_TITLE']),m.keys)
+passed()
 m,view=stock_list(lambda _:None,78); item,button,icon,labels,images=speed_row(m,view)
 m.handlers[int(manifest['patch_symbols']['stock_playermore_trampoline'],16)]='stock_playermore'
 assert m.call(address=HOOKS['playermore_page_init'][0],args=(m.top,0,0,0),gap=0)==0; lay(m,view)

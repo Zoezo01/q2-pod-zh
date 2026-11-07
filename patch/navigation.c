@@ -5320,6 +5320,10 @@ static void bar_title(void *bar, void *top) {
                 : t ? widget_get_text(t)
                     : (void *)0;
         if (title && !*title) title = (void *)0;
+        static const unsigned null_name[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
+        const unsigned *a = title, *b = null_name; /* stock's "%s" of a NULL name: no title */
+        while (a && *a && *a == *b) ++a, ++b;
+        if (a && !*a && !*b) title = (void *)0;
     }
     if (!title) {
         if (!st.bar_titled) return;
@@ -7631,7 +7635,9 @@ void bar_title_sync(void *win) {
     if (!t) {
         *s = 0;
         if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
-        t = !tk_strcmp(s, "Channel Balance") ? "Balance" : s; /* English's only */
+        t = !tk_strcmp(s, "Channel Balance") ? "Balance" /* English's only */
+            : !tk_strcmp(s, "(null)")        ? ""        /* stock's "%s" of a NULL name: no title */
+                                             : s;
     }
     if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t)) {
         widget_set_text_utf8(st.bar_title, t);
@@ -9276,7 +9282,11 @@ static int stream_list(void *view) {
  * settings row (only the iPod settings pages) gets settings rows: items stock made SET_STOCK_ROW
  * high take it before the stock layout stacks them and sizes the scroll view, then each row is
  * mapped. Settings code never moves, resizes or scrolls its rows afterwards
- * (docs/ipod.md#settings). */
+ * (docs/ipod.md#settings). A set whose pitch is its settings row (Classic) gives every re-pitched
+ * list an item_height (tools/ipod.py), which stock forces on each row: a grid's rows (the artist
+ * page's albums, 160 px list_items of 110 px tiles) keep their own height, or each would be one
+ * pitch high, and stock's list painter, which culls a row by its own box, would skip the tiles'
+ * covers and names wherever a repaint misses that box, under the selection card it paints. */
 int ipod_list_layout(void *layout, void *view) {
     void *list = view ? P(view, W_PARENT) : (void *)0;
     int settings = settings_list(list);
@@ -9288,7 +9298,15 @@ int ipod_list_layout(void *layout, void *view) {
         void *button = I(item, W_H) == SET_STOCK_ROW ? set_button(item) : (void *)0;
         if (button) I(item, W_H) = set_row_h(button, row);
     }
+    int forced = list ? I(list, ROW_HEIGHT) : 0, grid = 0; /* list_view's item_height */
+    for (unsigned i = 0, k = forced ? widget_count_children(view) : 0; i < k && !grid; ++i) {
+        void *item = widget_get_child(view, i),
+             *b = widget_count_children(item) ? widget_get_child(item, 0) : (void *)0;
+        grid = b && !tk_strcmp(widget_get_type(b), "button") && tile_in(b, list);
+    }
+    if (grid) I(list, ROW_HEIGHT) = 0; /* this layout only: settings_list reads it */
     int ret = ((int (*)(void *, void *))LIST_VIEW_LAYOUT)(layout, view);
+    if (grid) I(list, ROW_HEIGHT) = forced;
     /* Stock neither places nor sizes a hidden row (no keep_invisible): mapped at 0x0 its button
      * would stay empty once shown (Display's Accent), so it is mapped after its first layout. */
     for (unsigned i = 0; i < n; ++i) {
@@ -9753,6 +9771,10 @@ static void artist_bar(void) {
 static int artist_list(int tab) {
     int n = stock_artist_trampoline(tab);
     void *list = P(p_deque_showlist, 0), *all;
+    /* An artist with no name: its title (the navbar's, the bar's) is the language's "Unknown
+     * Artist", as Songs' rows say, not glibc's "(null)" */
+    if (!strcmp((const char *)ARTIST_TITLE, "(null)"))
+        getFormatString("player_unknown", (char *)ARTIST_TITLE, 0x200);
     artist_bar();
     artist_keys_free();
     if (tab != 1 || n <= 0 || !(st.art_keys = calloc((unsigned)n, sizeof(char *)))) return n;
