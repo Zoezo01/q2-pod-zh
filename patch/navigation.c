@@ -15419,11 +15419,12 @@ int ringnav(void *ctx, void *event) {
             dialog_quit(top, 0);
             return STOP;
         }
-        /* The library scan's dialog, once its scan has ended: stock's Return only stops a scan
-         * (0x4a0fc4) and does nothing until its timer (0x4a1560) has counted SCAN_DONE to 3 and
-         * slept 1 s, ~1.4 s, then closes it itself; so a Return there seemed lost. dialog_quit
-         * is safe twice, so the timer's own close after ours does nothing. */
-        if (key == KEY_RETURN && top && *(volatile int *)SCAN_DONE &&
+        /* The library scan's dialog, once its scan has ended: stock's Return and Cancel only stop
+         * a scan (0x4a0fc4) and do nothing until its timer (0x4a1560) has counted SCAN_DONE to 3
+         * and slept 1 s, ~1.4 s, then close it itself; so a press there seemed lost. The dialog's
+         * init clears SCAN_DONE (0x4a1798). dialog_quit is safe twice, so the timer's own close
+         * after ours does nothing. */
+        if (top && *(volatile int *)SCAN_DONE &&
             !tk_strcmp(widget_get_prop_str(top, "name", ""), "updatemusic_dialog")) {
             dialog_quit(top, 0);
             return STOP;

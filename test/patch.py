@@ -1690,10 +1690,10 @@ assert long_return(m) == 0 and [c[0] for c in destinations(m)] == ['navigator_ba
 assert m.call(170, gap=0) == 11 and not [c for c in m.calls if c[0] == 'dialog_quit']
 assert m.call(170, gap=0) == 11 and [c[1:3] for c in m.calls if c[0] == 'dialog_quit'] == [(m.top, 0)]
 passed()
-# Return on the scan's dialog: stock's own while the scan runs (it stops it), closes it at once after the end.
-for done in (0, 1):
+# Return or Centre (Cancel) on the scan's dialog: stock's own while the scan runs (it stops it), closes it at once after.
+for done, key in ((0, 170), (1, 170), (0, O['KEY_CENTER']), (1, O['KEY_CENTER'])):
     m = Machine(); m.mock('dialog_quit'); m.top = m.node('dialog', 'updatemusic_dialog'); m.word(O['SCAN_DONE'], done)
-    m.call(170, gap=0); assert [c[1:3] for c in m.calls if c[0] == 'dialog_quit'] == ([(m.top, 0)] if done else []), done
+    m.call(key, gap=0); assert [c[1:3] for c in m.calls if c[0] == 'dialog_quit'] == ([(m.top, 0)] if done else []), (done, key)
 passed()
 # Now Playing opened over Home, which lies right under it: Recent would go Back, Home goes Home.
 m = long_machine(); m.mock('navigator_back'); m.config['HOLDRETURN'] = '1'; m.page('home_page'); home = m.top
