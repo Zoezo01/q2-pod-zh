@@ -170,12 +170,12 @@
  * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the widest boxes';
  * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' NP_IPOD_TIME_H boxes
  * beside it, centred on its rows. */
-#define NP_IPOD_ART 198
+#define NP_IPOD_ART 178
 #define NP_IPOD_ART_Y 12
-#define NP_IPOD_TEXT_X 226
+#define NP_IPOD_TEXT_X 206
 #define NP_IPOD_TEXT_Y 38
 #define NP_IPOD_FAV_X 300
-#define NP_IPOD_FAV_Y 175
+#define NP_IPOD_FAV_Y 155
 #define NP_IPOD_BAR_X 87
 #define NP_IPOD_BAR_Y 245
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */

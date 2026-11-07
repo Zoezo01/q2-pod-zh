@@ -364,6 +364,7 @@ def test_the_rating_hearts_are_the_panels_size_and_ink():
 
 def test_the_station_cover_fills_the_slanted_arts_square():
     w, h, at = pixels(art.images(theme.builtins()[1])['classic_light_station'])
-    assert (w, h) == (198, 198) and at(0, 0)[3] == at(197, 197)[3] == 255  # opaque: the slant's paper never shows
-    assert at(99, 197)[:3] != at(99, 0)[:3]  # its gradient, top to bottom
+    a = art.inc('NP_IPOD_ART')
+    assert (w, h) == (a, a) and at(0, 0)[3] == at(a - 1, a - 1)[3] == 255  # opaque: the slant's paper never shows
+    assert at(a // 2, a - 1)[:3] != at(a // 2, 0)[:3]  # its gradient, top to bottom
     assert min(at(54, 87)[:3]) > 200  # the left wave's white, at its widest
