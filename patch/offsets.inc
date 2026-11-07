@@ -597,6 +597,11 @@ static inline int arc_out(int r, int y) {
  * 0 when browsing the Playlists list, whose rows' trailing dots open playlistsmore_page. */
 #define PLAYLIST_ADD_MODE 0xa27894
 #define PL_RENAME_ROW 0xa278a0 /* the playlist row playlistsmore_page_init saved (0x4b3980) */
+/* The artist page's navbar title (g_play_info + 0x7680, 512 bytes): localmusic_artistinfo_page_init
+ * copies g_local_classinfo_save + 0x10d into it, which load_artistinfo_list wrote as "%s" of the
+ * record's REC_ARTIST: "(null)" for an artist with no name. Each tab's navbar build (0x4aad10)
+ * reads it after load_localartist_list. */
+#define ARTIST_TITLE 0xa27680
 /* g_allselect_flag: playlist_page's Select All (0x4b1b88) toggles on it; a row's mark sets it to
  * whether every row is now marked (0x4b1e38). */
 #define G_ALLSELECT_FLAG 0xa38ac0

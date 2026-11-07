@@ -5320,6 +5320,10 @@ static void bar_title(void *bar, void *top) {
                 : t ? widget_get_text(t)
                     : (void *)0;
         if (title && !*title) title = (void *)0;
+        static const unsigned null_name[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
+        const unsigned *a = title, *b = null_name; /* stock's "%s" of a NULL name: no title */
+        while (a && *a && *a == *b) ++a, ++b;
+        if (a && !*a && !*b) title = (void *)0;
     }
     if (!title) {
         if (!st.bar_titled) return;
@@ -7631,7 +7635,9 @@ void bar_title_sync(void *win) {
     if (!t) {
         *s = 0;
         if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
-        t = !tk_strcmp(s, "Channel Balance") ? "Balance" : s; /* English's only */
+        t = !tk_strcmp(s, "Channel Balance") ? "Balance" /* English's only */
+            : !tk_strcmp(s, "(null)")        ? ""        /* stock's "%s" of a NULL name: no title */
+                                             : s;
     }
     if (widget_get_text_utf8(st.bar_title, now, sizeof now) || tk_strcmp(now, t)) {
         widget_set_text_utf8(st.bar_title, t);
@@ -9765,6 +9771,10 @@ static void artist_bar(void) {
 static int artist_list(int tab) {
     int n = stock_artist_trampoline(tab);
     void *list = P(p_deque_showlist, 0), *all;
+    /* An artist with no name: its title (the navbar's, the bar's) is the language's "Unknown
+     * Artist", as Songs' rows say, not glibc's "(null)" */
+    if (!strcmp((const char *)ARTIST_TITLE, "(null)"))
+        getFormatString("player_unknown", (char *)ARTIST_TITLE, 0x200);
     artist_bar();
     artist_keys_free();
     if (tab != 1 || n <= 0 || !(st.art_keys = calloc((unsigned)n, sizeof(char *)))) return n;
