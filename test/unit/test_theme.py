@@ -280,8 +280,7 @@ N = 'id="t" name="T" index="2"'
 A = '<option setting="accent" key="ACCENT"/>'
 V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
 P = '<geometry name="pico" bar="26"/>'
-PAINTER_BUG = pytest.mark.xfail(strict=True, reason="BUG: validate() compares painter[...] with the C names SEL_STOPS and "
-                                                    "BATT_CLASSIC_LIGHT, but resolve() stores an enum's index, so these rules never fire")
+C = '<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" default="cobalt" preset="cobalt"/>'
 @pytest.mark.parametrize('body, attrs, message', [
     ('<option setting="light"/>', None, 'no accent option'),
     ('<option setting="accent"/>', N, 'accent: no key'),
@@ -303,10 +302,11 @@ PAINTER_BUG = pytest.mark.xfail(strict=True, reason="BUG: validate() compares pa
     (A + '<option setting="battery" default="percent"/>', None,
      "SETTING_BATTERY: default has no effect without values (settings_read holds a stock setting's default)"),
     ('<colorSchemes accents="cobalt"/>' + A, None, 'accent: slot 0 is not offered, so a missing key needs a default'),
-    pytest.param('<view name="list"><element name="selection" painter="stops"/></view>', None,
-                 "selection: painter stops needs every offered scheme's sel.stops", marks=PAINTER_BUG),
-    pytest.param('<view name="bar"><element name="battery" painter="classic-light"/></view>', None,
-                 'battery: this painter needs stops', marks=PAINTER_BUG),
+    ('<view name="list"><element name="selection" painter="stops"/></view>', None,
+     "selection: painter stops needs every offered scheme's sel.stops"),
+    (C.replace('"cobalt"/>', '"cobalt green"/>', 1) + '<colorScheme name="cobalt" sel.stops="#08a6e7 0, #0065d6 100"/>'
+     '<view name="list"><element name="selection" painter="stops"/></view>', None, "selection: painter stops needs every offered scheme's sel.stops"),
+    ('<view name="bar"><element name="battery" painter="classic-light"/></view>', None, 'battery: this painter needs stops'),
 ])
 def test_validate_rejects(body, attrs, message):
     t = resolved(body, *([attrs] if attrs else []))
@@ -314,8 +314,18 @@ def test_validate_rejects(body, attrs, message):
 
 
 def test_validate_accepts():
-    t = resolved('<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" default="cobalt" preset="cobalt"/>')
+    t = resolved(C)
     assert theme.validate(t, 't.xml') is None
+
+
+@pytest.mark.parametrize('body', [
+    '<colorScheme name="cobalt" sel.stops="#08a6e7 0, #0065d6 100"/><view name="list"><element name="selection" painter="stops"/></view>',
+    # one half's stops serve both: half() flips them for the other
+    '<colorScheme name="cobalt" light.sel.stops="#08a6e7 0, #0065d6 100"/><view name="list"><element name="selection" painter="stops"/></view>',
+    '<view name="bar"><element name="battery" painter="classic-light" stops="#90b27d 0, #539933 100"/></view>',
+])
+def test_validate_accepts_a_painter_with_its_stops(body):
+    assert theme.validate(resolved(C + body), 't.xml') is None
 
 
 def test_key():
