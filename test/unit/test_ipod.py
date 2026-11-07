@@ -1174,13 +1174,23 @@ def test_lists_beside_settings_rows_take_item_height(monkeypatch):
 
 
 def test_classic_times_fit():
-    """Classic's times: "-1:02:03" fits NP_IPOD_TIME_W at NP_IPOD_TIME_PX with no switch for the hours, in the model
-    status_metrics uses (stb scales a font so that ascent - descent is its size; advances, no kerning), and
-    NP_IPOD_TIME_PX is the largest whose line fits the box's height, the bar's rows and two each side."""
+    """Classic's times: each length class's widest remaining time fits its box at NP_IPOD_TIME_PX, in the model
+    status_metrics uses (stb scales a font so that ascent - descent is its size; advances, no kerning), every
+    digit tried; NP_IPOD_TIME_PX is the largest whose line fits the box's height, the bar's rows and two each side."""
     from fontTools.ttLib import TTFont
     f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
     asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
-    width = lambda px: math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in '-1:02:03') * px / (asc - desc))
+    width = lambda text, px: math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in text) * px / (asc - desc))
     px, box = ipod.NP_IPOD_TIME_PX, ipod.inc('NP_BAR_IPOD') + 4
-    assert (px, width(px), ipod.NP_IPOD_TIME_W) == (21, 56, 56)
-    assert width(px) <= ipod.NP_IPOD_TIME_W and px <= box < px + 1
+    assert (px, ipod.NP_IPOD_TIME_WS) == (21, [35, 43, 56]) == (px, ipod.time_widths(ipod.CLASSIC_LIGHT_FONT_SRC))
+    for w, longest in zip(ipod.NP_IPOD_TIME_WS, ('9:59', '59:59', '9:59:59')):
+        for d in '0123456789':
+            assert width('-' + re.sub(r'\d', d, longest), px) <= w and width(re.sub(r'\d', d, longest), px) <= w
+    assert width('-1:02:03', px) == ipod.NP_IPOD_TIME_W and px <= box < px + 1
+
+
+def test_classic_time_classes():
+    """The bar between the fitted boxes (navigation.c ipod_bar_x): the boxes' outer edges and the gap kept, centred."""
+    edge = ipod.inc('NP_IPOD_BAR_X') - ipod.NP_IPOD_TIME_GAP - ipod.NP_IPOD_TIME_W
+    bars = [(edge + w + ipod.NP_IPOD_TIME_GAP, 375 - 2 * (edge + w + ipod.NP_IPOD_TIME_GAP)) for w in ipod.NP_IPOD_TIME_WS]
+    assert edge == 23 and bars == [(66, 243), (74, 227), (87, 201)] and bars[-1][0] == ipod.with_geometry(CLASSIC_LIGHT).NP_BAR_X
