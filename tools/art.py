@@ -340,7 +340,7 @@ def classic_light_font():
     """The theme face's source, opened once a build."""
     return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
 # Quick Settings' page under Classic: navigation.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
-# over it in the tile's ink: QS_INK, white on, _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
+# over it in the tile's ink: QS_INK, white on (_l on a bright accent, Graphite's silver), _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
 # strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):
     return f'M{cx - r} {cy}A{r} {r} 0 1 1 {cx + r} {cy}A{r} {r} 0 1 1 {cx - r} {cy}Z'
@@ -350,6 +350,9 @@ QS_GLYPHS = {
     'wifi': ((3, ('M-14 -3a20 20 0 0 1 28 0', 'M-8 3a11 11 0 0 1 16 0'), ()), ((0, 9, 2.8),), ()),
     'bt': ((2.6, ('M-7 -7 7 6 0 12V-12L7 -6-7 7',), ()), (), ()),
     'lock': ((2.4, ('M-5 -3v-4a5 5 0 0 1 10 0v4',), ('M-7 -3H7A2 2 0 0 1 9 -1V9A2 2 0 0 1 7 11H-7A2 2 0 0 1 -9 9V-1A2 2 0 0 1 -7 -3Z',)), (), ()),
+    # stock's three USB modes, each its own: storage a stick, DAC a USB-C port, audio the trident
+    'stick': ((2.4, (), ('M-4 -14H4V-8H-4Z', 'M-7 -8H7V10A2 2 0 0 1 5 12H-5A2 2 0 0 1 -7 10Z')), (), ()),
+    'usbc': ((2.4, (), ('M-7 -8A7 7 0 0 1 7 -8V8A7 7 0 0 1 -7 8Z',)), (), (((0, -7), (0, 7)),)),
     'usb': ((2.4, ('M0 12V-10', 'M0 6l-7-6V-5', 'M0 2l7-6V-8'), ('M0 -13l-4 5h8Z',)), (), ()),
     'sl': ((2.4, ('M-8 -12V12', 'M0 -12V12', 'M8 -12V12'), ()), ((-8, 3, 3.6), (0, -4, 3.6), (8, 5, 3.6)), ()),
     'gear': ((2.4, (), (circle(0, 0, 5),)), (), SPOKES),
@@ -363,7 +366,7 @@ QS_BUTTONS = {
     'lowgain': (('Low', 'Gain'), 0, 1), 'lowgaindisable': (('Low', 'Gain'), 0, QS_DIM),
     'highgain': (('High', 'Gain'), 1, 1), 'highgaindisable': (('High', 'Gain'), 0, QS_DIM),
     'lo': (('LO',), 1, 1), 'po': (('PO',), 0, 1), 'sa': (('SA',), 0, 1),
-    'usbstorage': ('usb', 1, 1), 'usbaudio': ('usb', 1, 1), 'usbdac': ('usb', 1, 1),
+    'usbstorage': ('stick', 0, 1), 'usbaudio': ('usb', 1, 1), 'usbdac': ('usbc', 1, 1),
     'playset': ('sl', 0, 1), 'sysset': ('gear', 0, 1),
 }
 def rounded_path(x, y, w, h, r):
@@ -844,7 +847,7 @@ def images(t):
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
         out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}
         for name, (glyph, lit, opacity) in QS_BUTTONS.items():
-            out |= {f'{prefix}_drop_{name}{k}': qs_mark(glyph, opacity, QS_INK[k]) for k in ([''] if lit else ['_l', '_d'])}
+            out |= {f'{prefix}_drop_{name}{k}': qs_mark(glyph, opacity, QS_INK[k]) for k in (['', '_l'] if lit else ['_l', '_d'])}
         out |= {f'{prefix}_drop_track': qs_track(), f'{prefix}_drop_knob': qs_knob()}
         out[f'{prefix}_clock_dark'] = png(CLOCK_DARK_PX, CLOCK_DARK_PX, clock_dark())
         out |= {f'{prefix}_{name}': kb_glyph(name) for name in KB_GLYPHS}

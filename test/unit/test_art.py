@@ -20,8 +20,8 @@ def pixels(data):
 
 
 # Stock's quick settings images, every drop_ name its demo sets (strings demo | grep '^drop_').
-QS_LIT = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbstorage', 'usbaudio', 'usbdac'}
-QS_INKS = lambda n: ('',) if n in QS_LIT else ('_l', '_d')  # on: white; off: the light and the dark half's
+QS_LIT = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbaudio', 'usbdac'}
+QS_INKS = lambda n: ('', '_l') if n in QS_LIT else ('_l', '_d')  # on: white, or dark on a bright accent; off: the light and the dark half's
 QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowgain', 'lowgaindisable', 'highgain', 'highgaindisable', 'lo', 'po', 'sa', 'usbstorage', 'usbaudio', 'usbdac', 'playset', 'sysset')
 
 
@@ -179,7 +179,8 @@ def test_quick_settings_glyphs_dim_only_when_disabled():
     assert {n for n in QS_NAMES if alpha(n) < 255} == {'lowgaindisable', 'highgaindisable'}
     assert alpha('highgaindisable') == round(255 * art.QS_DIM)
     assert all(mark(a) != mark(b) for a, b in (('lo', 'sa'), ('po', 'sa'), ('lowgain', 'highgaindisable')))
-    assert mark('usbaudio') == mark('usbdac')
+    # stock's three USB modes, three marks: storage off, as stock's grey disc
+    assert len({got[f'classic_light_drop_{n}_l'] for n in ('usbstorage', 'usbaudio', 'usbdac')}) == 3 and 'usbstorage' not in QS_LIT  # one ink, three marks
     # the text keeps its counter: the O of PO is clear in its middle
     w, h, at = pixels(mark('po'))
     row = [at(x, 30)[3] for x in range(30, 45)]
