@@ -340,7 +340,7 @@ def classic_light_font():
     """The theme face's source, opened once a build."""
     return TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
 # Quick Settings' page under Classic: navigation.c quick_page paints each 60 px button (qs_tile), and these are the glyphs
-# over it in the tile's ink: QS_INK, white on, _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
+# over it in the tile's ink: QS_INK, white on (_l on a bright accent, Graphite's silver), _l and _d off in the light and dark half. Own drawings; stock's image names (the demo's own
 # strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):
     return f'M{cx - r} {cy}A{r} {r} 0 1 1 {cx + r} {cy}A{r} {r} 0 1 1 {cx - r} {cy}Z'
@@ -847,7 +847,7 @@ def images(t):
         out |= {f'{prefix}_{name}': shadow(*a) for name, a in SHADOWS.items()}
         out |= {f'{prefix}_track_inset': track_inset(), f'{prefix}_lit_edge': lit_edge()}
         for name, (glyph, lit, opacity) in QS_BUTTONS.items():
-            out |= {f'{prefix}_drop_{name}{k}': qs_mark(glyph, opacity, QS_INK[k]) for k in ([''] if lit else ['_l', '_d'])}
+            out |= {f'{prefix}_drop_{name}{k}': qs_mark(glyph, opacity, QS_INK[k]) for k in (['', '_l'] if lit else ['_l', '_d'])}
         out |= {f'{prefix}_drop_track': qs_track(), f'{prefix}_drop_knob': qs_knob()}
         out[f'{prefix}_clock_dark'] = png(CLOCK_DARK_PX, CLOCK_DARK_PX, clock_dark())
         out |= {f'{prefix}_{name}': kb_glyph(name) for name in KB_GLYPHS}

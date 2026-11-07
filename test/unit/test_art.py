@@ -21,7 +21,7 @@ def pixels(data):
 
 # Stock's quick settings images, every drop_ name its demo sets (strings demo | grep '^drop_').
 QS_LIT = {'wifiopen', 'btopen', 'keylockopen', 'highgain', 'lo', 'usbaudio', 'usbdac'}
-QS_INKS = lambda n: ('',) if n in QS_LIT else ('_l', '_d')  # on: white; off: the light and the dark half's
+QS_INKS = lambda n: ('', '_l') if n in QS_LIT else ('_l', '_d')  # on: white, or dark on a bright accent; off: the light and the dark half's
 QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowgain', 'lowgaindisable', 'highgain', 'highgaindisable', 'lo', 'po', 'sa', 'usbstorage', 'usbaudio', 'usbdac', 'playset', 'sysset')
 
 

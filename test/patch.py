@@ -6872,16 +6872,19 @@ for light in '01':
     assert all(q.u.mem_read(w+0x34,1)[0]==0 and q.nodes[w].get('visible',1) for w in q.btns)
     assert qs_event(q,q.btns[0],O['EVT_CLICK'])==0 and any(c[0]=='stock_dispatch' for c in q.calls)
     assert q.lcd_colors()==LCD_COLORS; passed()
-# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are blue.
+# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are Classic Blue's blue.
 q=qs_new()
 LIT={'wifiopen','btopen','keylockopen','highgain','lo','usbaudio','usbdac'}
 for n in ('wifi','wifiopen','bt','btopen','keylock','keylockopen','lowgain','lowgaindisable','highgain','highgaindisable','lo','po','sa','usbstorage','usbaudio','usbdac','playset','sysset'):
     q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n+qs_ink(n in LIT,'1'),(31,20))
     assert qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[n in LIT,'1']),n; passed()
-# Graphite: on is the same blue, not the accent's silver, white glyph, in both halves.
-for light in '01':
-    q=qs_new(light,CLASSIC_LIGHT_ACCENT='0'); q.nodes[q.btns[0]]['image']='drop_wifiopen'  # 0: Graphite's row
-    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen',(31,20)) and qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[1,light]),light; passed()
+# Another accent: on is its red tone, flat, as Minimal's lit discs; the light half's border a quarter darker. Graphite's silver
+# takes the dark glyph (_l) in the dark half and flips dark, under white, in the light one; a hue keeps white.
+def qs_quarter(c): return sum(((c>>k&255)*3//4)<<k for k in (0,8,16))
+for preset,light,want,glyph in (('0','0',0xd8d8d8,'_l'),('0','1',0x272727,''),('3','0',ACCENTS[3][3],'')):
+    q=qs_new(light,CLASSIC_LIGHT_ACCENT=preset); q.nodes[q.btns[0]]['image']='drop_wifiopen'  # 0: Graphite's row
+    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen'+glyph,(31,20))
+    assert qs_tiles(q,q.bands[320:])[0]==qs_want((want,want,qs_quarter(want) if light=='1' else want)),(preset,light); passed()
 # Pressed: every button's fill and border darken a sixth under the finger, until the release; its hold is as today.
 def qs_dark(c): return sum(((c>>k&255)*5//6)<<k for k in (0,8,16))
 for i,w in enumerate(q.btns):
