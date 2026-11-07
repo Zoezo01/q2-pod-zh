@@ -18014,11 +18014,15 @@ for light in '10':
     assert [wbox(q,n[t])[0] for t in TABS]==[0,81,163,245] and [wbox(q,n[t])[2] for t in TABS]==[81,82,82,82] and not q.nodes[n['btn_track']].get('handlers')  # the tabs' clicks stay stock's
     blank(q); q.call(address=HOOKS['widget_on_paint_border'][0],args=(win,q.canvas,0,0),gap=0); assert (0,108,375,1,0x55000000) in [b[:5] for b in q.bands]
     blank(q); bg(q,n['tab_button_group']); cells=[b for b in q.bands if b[4]==color_t(0x08a6e7)]
-    assert {l['font'] for l in q.letters}=={('classic-light',21)} and 0x4dffffff in [b[4] for b in q.bands] and fill_at(q,81,2)[-1]>>24==47 and not [b for b in q.bands if b[4]>>24==0x44 and b[4]&0xffffff==0]
+    assert {l['font'] for l in q.letters}=={('classic-light',21)} and 0x4dffffff not in [b[4] for b in q.bands] and not [b for b in q.bands if b[2]==1 and 81<=b[0]<=84] and not [b for b in q.bands if b[4]>>24==0x44 and b[4]&0xffffff==0]
     assert cells and all(b[0]>=0 and b[0]+b[2]<=81 for b in cells) and [l['text'] for l in q.letters]==['Songs','Artists','Albums','Genres'] and q.letters[0]['rect']==(0,-1,81,30) and q.letters[0]['color']==0x4d000000
     assert color_t(0x647ca0 if light=='1' else 0x14171c) in [b[4] for b in q.bands if b[1]==0]
+    lit=lambda y: [b[:3] for b in q.bands if b[1]==y and b[4]>>24==0xff and b[2]>1 and b[2]<300]  # a row of the lit cell, the track's own rows aside
+    assert all(len(lit(y))==1 and 0<lit(y)[0][0]<=6 and sum(lit(y)[0][::2])==81 for y in (0,29)) and lit(15)==[(0,15,81)]  # the first: the track's round end left, square right
     q.nodes[n['btn_track']]['value']=0; q.nodes[n['btn_album']]['value']=1; blank(q); bg(q,n['tab_button_group']); cells=[b for b in q.bands if b[4]==color_t(0x08a6e7)]; assert cells and all(b[0]>=163 and b[0]+b[2]<=245 for b in cells)
+    assert all(lit(y)==[(163,y,82)] for y in (0,15,29)) and not [b for b in q.bands if b[2]==1 and 245<=b[0]<=248]  # a middle one fills its slot, square both sides
     q.nodes[n['btn_album']]['value']=0; q.nodes[n['btn_genre']]['value']=1; blank(q); bg(q,n['tab_button_group']); assert not fill_at(q,327,2)  # the last tab: no shade past the track
+    assert all(len(lit(y))==1 and lit(y)[0][0]==245 and 321<=sum(lit(y)[0][::2])<327 for y in (0,29)) and lit(15)==[(245,15,82)]  # square left, the track's round end right
     for t in ('track','artist','album','genre'):
         assert q.nodes[q.get(n['scroll_view_'+t]+O['W_PARENT'])]['default_item_height']==52 and q.nodes[n[f'label_{t}_msg']]['style:normal:font_size']==15
     assert all(q.nodes[n['label_tip']][f'style:{state}:font_size']==15 for state in ('normal','disable','focused')) and sb(q,n['view'])==(0,108,375,212) and sb(q,n['view_tip'])==(0,108,375,212)
@@ -18034,6 +18038,23 @@ einks=lambda: {q.nodes[n['search_edit']][f'style:{s}:text_color']&0xffffffff for
 fresh=search_new('0')[0:3:2]; fresh_e=fresh[0].nodes[fresh[1]['search_edit']]['style:empty:text_color']&0xffffffff
 blank(q); bg(q,win); assert tinks()=={color_t(0)} and len(einks())==1
 half_turn(q,19); assert tinks()=={color_t(0xffffff)} and einks()=={fresh_e}; passed()
+# The history's delete buttons, stock's s_btn_cancel_navbar (each row's X) and s_btn_delete_navbar (the header's trash): no border, whose
+# opaque black Light Mode turns white over the selection; the X is the theme's mark in the half's ink, 3 px runs 15 x 13 centred,
+# not stock's image; the trash keeps stock's.
+inks=set()
+for light in '10':
+    q,win,n=search_new(light); lv=q.nodes[n['view']]['children'][0]
+    x=q.node('button','',[],style='s_btn_cancel_navbar'); trash=q.node('button','',[],style='s_btn_delete_navbar'); other=q.node('button','',[],style='s_btn_listitem')
+    q.nodes[lv]['children']=[q.node('list_item','',[x,other])]; q.nodes[n['view']]['children'].insert(0,q.node('list_item','saerch_list_item',[trash])); parents(q,win)
+    for b in (x,trash,other): put(q,b,325,0,50,50)
+    blank(q); bg(q,x); runs=[b[:4] for b in q.bands]; inks|={b[4] for b in q.bands}
+    assert len(runs)==25 and {r[2:] for r in runs}=={(3,1)} and {r[1] for r in runs}==set(range(19,32)) and min(r[0] for r in runs)==18 and max(r[0]+r[2] for r in runs)==33 and 'stock_paint_bg' not in [c[0] for c in q.calls]
+    assert len({b[4] for b in q.bands})==1 and q.lcd_colors()==LCD_COLORS
+    blank(q); bg(q,trash); assert 'stock_paint_bg' in [c[0] for c in q.calls] and not q.bands
+    for b,stock in ((x,0),(trash,0),(other,1)):
+        blank(q); q.call(address=HOOKS['widget_on_paint_border'][0],args=(b,q.canvas,0,0),gap=0); assert ('stock_paint' in [c[0] for c in q.calls])==stock
+    passed()
+assert len(inks)==2; passed()  # each half its own ink
 # Stock's search_edit is disabled, so hint and query paint in that state: the hint's size while it's empty, the typed text's otherwise; written once per change.
 q,win,n=search_new(); dis=lambda: q.nodes[n['search_edit']]['style:disable:font_size']
 blank(q); bg(q,win); assert dis()==19; q.nodes[n['search_edit']]['text']='abc'; blank(q); bg(q,win); assert dis()==26
