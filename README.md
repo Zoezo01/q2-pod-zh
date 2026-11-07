@@ -177,7 +177,7 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
-    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
+    <td>Stream concerts from the Internet Archive's Live Music Archive. See its <a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">mini-guide</a>.</td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
