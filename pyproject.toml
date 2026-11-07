@@ -8,6 +8,24 @@ pytest_add_cli_args_test_selection = ["test/unit"]
 mutate_only_covered_lines = false
 timeout_multiplier = 10.0
 
+# Coverage of tools/ by test/unit (docs/building.md#coverage), every branch counted.
+[tool.coverage.run]
+source = ["tools"]
+branch = true
+
+[tool.coverage.report]
+# The floor, two places counted: what's left is unreachable, or behind theme.validate's xfail.
+fail_under = 99.7
+precision = 2
+show_missing = true
+skip_covered = true
+# Left to the suites with a stock ZIP (test/patch.py and the rest in docs/building.md), as
+# test/unit/targets.py's NEEDS_STOCK: these hash or link against Shanling's files. And the command lines.
+exclude_also = [
+    "def (build|compile_payload|validate_stock|patch_module|patch_asset|patch_code|compile_common|patch_player|link|patch_pwm|patch_mcu|patch_bundle)\\(",
+    "if __name__ *== *.__main__.:",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["test/unit", "test/fw"]
 # A passing test's tmp_path goes at once: test/fw's run otherwise leaves gigabytes (docs/building.md).

@@ -3,6 +3,10 @@ import copy
 import dataclasses
 import math
 import re
+import shutil
+import struct
+import subprocess
+import zlib
 
 import pytest
 
@@ -1182,3 +1186,369 @@ def test_classic_time_classes():
     edge = ipod.inc('NP_IPOD_BAR_X') - ipod.NP_IPOD_TIME_GAP - ipod.NP_IPOD_TIME_W
     bars = [(edge + w + ipod.NP_IPOD_TIME_GAP, 375 - 2 * (edge + w + ipod.NP_IPOD_TIME_GAP)) for w in ipod.NP_IPOD_TIME_WS]
     assert edge == 23 and bars == [(66, 243), (74, 227), (87, 201)] and bars[-1][0] == ipod.with_geometry(CLASSIC_LIGHT).NP_BAR_X
+
+
+# Artist detail: stock's tabs carry literal Chinese text in every language; they take the string table's keys,
+# and the Albums tab and its page (the pages' second) start active.
+def artist_page():
+    tabs = w('view_tabs', w('btn_track', kind='tab_button', text='单曲', style='s_tab'), w('btn_album', kind='tab_button', text='专辑'))
+    return w('artistinfo_page', tabs, w('pages', w('view_songs'), w('view_albums'), kind='pages'))
+
+
+def test_artist_tabs():
+    root = artist_page()
+    ipod.artist_tabs(root)
+    n = named(root)
+    assert n['btn_track'][2] == {'name': 'btn_track', 'tr_text': 'local_allsongs', 'style': 's_tab'}
+    assert n['btn_album'][2] == {'name': 'btn_album', 'tr_text': 'album', 'value': 'true'}
+    assert n['pages'][2] == {'name': 'pages', 'value': '1'} and n['pages'][3][1][2]['name'] == 'view_albums'
+
+
+@pytest.mark.parametrize('change,message', [
+    (lambda n: n['btn_track'].__setitem__(0, 'button'), 'btn_track: unexpected tab'),
+    (lambda n: n['btn_album'][2].update(text='Albums'), 'btn_album: unexpected tab'),
+    (lambda n: n['pages'][2].update(value='0'), 'Unexpected artist pages'),
+    (lambda n: n['pages'].__setitem__(0, 'view'), 'Unexpected artist tabs'),
+    (lambda n: n['view_tabs'][3].pop(0), 'Unexpected artist tabs'),
+    (lambda n: n['view_tabs'][3].append(copy.deepcopy(n['btn_album'])), 'Unexpected artist tabs'),
+])
+def test_artist_tabs_wants_stock(change, message):
+    root = artist_page()
+    change(named(root))
+    with pytest.raises(ValueError, match=f'^{message}$'):
+        ipod.artist_tabs(root)
+
+
+def volume():
+    return w('volume_dialog', w('slider_vol', kind='slider', value='30'), w('label_vol', kind='label', text='30'),
+             kind='dialog', highlight='default(alpha=200)', anim_hint='popup')
+
+
+def test_volume_dialog():
+    # No highlighter, so nothing under the dialog dims; stock's controls hidden from the first paint, the payload draws the volume.
+    root = volume()
+    ipod.volume_dialog(root)
+    assert root[2] == {'name': 'volume_dialog', 'anim_hint': 'popup'}
+    assert [c[2] for c in root[3]] == [{'name': 'slider_vol', 'value': '30', 'visible': 'false'}, {'name': 'label_vol', 'text': '30', 'visible': 'false'}]
+    assert [c[:2] for c in root[3]] == [c[:2] for c in volume()[3]]
+
+
+@pytest.mark.parametrize('change,message', [
+    (lambda r: r.__setitem__(0, 'window'), 'Unexpected volume dialog'),
+    (lambda r: r[2].update(name='x'), 'Unexpected volume dialog'),
+    (lambda r: r[2].update(highlight='default(alpha=100)'), 'Unexpected volume dialog'),
+    (lambda r: r[2].pop('highlight'), 'Unexpected volume dialog'),
+    (lambda r: r[3].reverse(), 'Unexpected volume controls'),
+    (lambda r: r[3][1].__setitem__(0, 'hscroll_label'), 'Unexpected volume controls'),
+    (lambda r: r[3].append(w('img_vol', kind='image')), 'Unexpected volume controls'),
+])
+def test_volume_dialog_wants_stock(change, message):
+    root = volume()
+    change(root)
+    with pytest.raises(ValueError, match=f'^{message}$'):
+        ipod.volume_dialog(root)
+
+
+def style_file(entries):
+    """An AWTK style file: magic, version and count; a 100-byte entry per (widget, style, state), the offset of its
+    properties, then its state, style and widget names in 32 bytes each; at that offset the properties' count, then
+    each one's type, key length (its NUL counted), value size, key and value."""
+    table, blocks, start = b'', b'', 12 + 100 * len(entries)
+    for (widget, style, state), props in entries.items():
+        table += struct.pack('<I32s32s32s', start + len(blocks), state.encode(), style.encode(), widget.encode())
+        blocks += struct.pack('<I', len(props))
+        for key, value in props.items():
+            blocks += struct.pack('<BBH', 1, len(key) + 1, len(value)) + key.encode() + b'\0' + value
+    return struct.pack('<3I', 0xfafbfcfd, 1, len(entries)) + table + blocks
+
+
+def test_style_props():
+    entries = {('button', 's_btn_listitem', 'normal'): {'bg_color': bytes.fromhex('2b2b2bff'), 'font_size': struct.pack('<I', 20)},
+               ('label', 'default', 'focused'): {'text_color': bytes.fromhex('ffffffff')}, ('view', 'empty', 'normal'): {}}
+    data = style_file(entries)
+    got = list(ipod.style_props(data))
+    assert [g[:4] + g[5:] for g in got] == [(*entry, key, value) for entry, props in entries.items() for key, value in props.items()]
+    for *_, key, at, value in got:  # each offset its value's own bytes, after its key
+        assert data[at - len(key) - 1:at + len(value)] == key.encode() + b'\0' + value
+
+
+def test_style_props_wants_the_magic():
+    data = bytearray(style_file({('button', 'default', 'normal'): {'bg_color': bytes(4)}}))
+    data[0] ^= 1
+    with pytest.raises(ValueError, match='^Unexpected AWTK style magic$'):
+        list(ipod.style_props(bytes(data)))
+
+
+GREY, RED, CLEAR, PRESSED = (bytes.fromhex(c) for c in ('2b2b2bff', '3d1920ff', '00000000', '333333ff'))
+CLEAR_ROWS = ('button', 's_btn_listitem', 'bg_color', '2b2b2bff', '00000000', 2)
+
+
+def list_styles(normal=GREY, pressed=RED, focused=GREY):
+    # The edited style's bg_color in three states; the same value under another property, style or widget stays.
+    return style_file({('button', 's_btn_listitem', 'normal'): {'bg_color': normal, 'text_color': GREY},
+                       ('button', 's_btn_listitem', 'pressed'): {'bg_color': pressed},
+                       ('button', 's_btn_listitem', 'focused'): {'bg_color': focused},
+                       ('button', 'default', 'normal'): {'bg_color': GREY},
+                       ('label', 's_btn_listitem', 'normal'): {'bg_color': GREY}})
+
+
+def style_audit(*edits):
+    return {'sha256': ipod.sha(list_styles()), 'edits': [list(e) for e in edits]}
+
+
+def test_patch_style():
+    assert ipod.patch_style(list_styles(), style_audit(CLEAR_ROWS)) == list_styles(normal=CLEAR, focused=CLEAR)
+    pressed = ('button', 's_btn_listitem', 'bg_color', '3d1920ff', '333333ff', 1)
+    assert ipod.patch_style(list_styles(), style_audit(CLEAR_ROWS, pressed)) == list_styles(CLEAR, PRESSED, CLEAR)
+
+
+@pytest.mark.parametrize('edit,message', [
+    (CLEAR_ROWS[:4] + ('000000', 2), 's_btn_listitem.bg_color: edit changes size'),
+    (CLEAR_ROWS[:5] + (3,), 's_btn_listitem.bg_color: expected 3 states with 2b2b2bff, found 2'),
+    (CLEAR_ROWS[:5] + (1,), 's_btn_listitem.bg_color: expected 1 states with 2b2b2bff, found 2'),
+    (('button', 's_btn_listitem', 'bg_color', 'ffffffff', '00000000', 1), 's_btn_listitem.bg_color: expected 1 states with ffffffff, found 0'),
+    (('button', 's_btn_listitem', 'border_color', '2b2b2bff', '00000000', 1), 's_btn_listitem.border_color: expected 1 states with 2b2b2bff, found 0'),
+])
+def test_patch_style_wants_each_edit_as_audited(edit, message):
+    with pytest.raises(ValueError, match=f'^{message}$'):
+        ipod.patch_style(list_styles(), style_audit(edit))
+
+
+def test_patch_style_is_audited():
+    with pytest.raises(ValueError, match='^Unaudited style file$'):
+        ipod.patch_style(list_styles(pressed=GREY), style_audit(CLEAR_ROWS))
+
+
+def png(width, height, depth=8, colour=6):
+    """A whole PNG, every sample 0: the signature, IHDR, one IDAT and IEND."""
+    def chunk(kind, body):
+        return struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body))
+    row = 1 + (width * {0: 1, 2: 3, 4: 2, 6: 4}[colour] * depth + 7) // 8  # a filter byte, then the samples
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, depth, colour, 0, 0, 0)) +
+            chunk(b'IDAT', zlib.compress(bytes(row * height))) + chunk(b'IEND', b''))
+
+
+@pytest.mark.parametrize('header', [(52, 52, 8, 6), (40, 3, 8, 2), (1, 7, 16, 0)])
+def test_png_header(header):
+    assert ipod.png_header(png(*header)) == header
+
+
+@pytest.mark.parametrize('data', [b'', b'\xff\xd8\xff\xe0' + bytes(30), b'\x89PNG\r\n\x1a\r' + png(4, 4)[8:],
+                                  png(4, 4)[:12] + b'IDAT' + png(4, 4)[16:]])  # IHDR must come first
+def test_png_header_wants_a_png(data):
+    with pytest.raises(ValueError, match='^Not a PNG$'):
+        ipod.png_header(data)
+
+
+@pytest.mark.parametrize('found,tool', [({'magick': '/usr/bin/magick', 'convert': '/usr/bin/convert'}, '/usr/bin/magick'),
+                                        ({'convert': '/usr/bin/convert'}, '/usr/bin/convert')])
+def test_imagemagick_runs_magick_or_convert(monkeypatch, found, tool):
+    # ImageMagick 7's magick, else 6's convert: the arguments after it, the input on stdin, its stdout the result, a failure raised.
+    runs = []
+    monkeypatch.setattr(shutil, 'which', lambda name: found.get(name))
+    monkeypatch.setattr(subprocess, 'run', lambda args, **kw: runs.append((args, kw)) or subprocess.CompletedProcess(args, 0, stdout=b'out'))
+    assert ipod.imagemagick('png:-', '-trim', 'png:-', data=b'in') == b'out'
+    (args, kw), = runs
+    assert args == [tool, 'png:-', '-trim', 'png:-'] and kw['input'] == b'in' and kw['stdout'] == subprocess.PIPE and kw['check'] is True
+
+
+def test_imagemagick_is_required(monkeypatch):
+    monkeypatch.setattr(shutil, 'which', lambda name: None)
+    monkeypatch.setattr(subprocess, 'run', lambda *args, **kw: pytest.fail('ran without ImageMagick'))
+    with pytest.raises(ValueError, match=r'^ImageMagick \(magick or convert\) is required for the iPod settings icons$'):
+        ipod.imagemagick('-version', data=b'')
+
+
+class Magick:
+    """Stands in for ipod.imagemagick: keeps each call's arguments and input, and answers reply(args, data)."""
+    def __init__(self, reply=lambda args, data: b'png'):
+        self.calls, self.reply = [], reply
+
+    def __call__(self, *args, data):
+        self.calls.append((args, data))
+        return self.reply(args, data)
+
+
+@pytest.fixture
+def magick(monkeypatch):
+    m = Magick()
+    monkeypatch.setattr(ipod, 'imagemagick', m)
+    return m
+
+
+def status_drawn(monkeypatch, magick, name):
+    """name's icon made from its audited stock bytes: its -draw script, ImageMagick's arguments and input."""
+    stock = b'stock ' + name.encode()
+    monkeypatch.setitem(ipod.STATUS_ICONS, name, ipod.sha(stock))
+    assert ipod.status_icon(name, stock) == b'png'
+    args, data = magick.calls.pop()
+    return args[args.index('-draw') + 1], args, data
+
+
+@pytest.mark.parametrize('name,width', [('bar_wifi0.png', 14), ('bar_wifi4.png', 14), ('bar_bt.png', 42), ('bar_btcon.png', 42),
+                                        ('bar_play.png', 12), ('bar_pause.png', 12)])
+def test_status_icon_drawn_at_4x(monkeypatch, magick, name, width):
+    # Drawn on a clear canvas four times the bar's 16 px icon, then shrunk to it: nothing of stock's image is kept.
+    draw, args, data = status_drawn(monkeypatch, magick, name)
+    assert args[:3] == ('-size', f'{4 * width}x64', 'xc:none') and draw.startswith('scale 4,4 ') and data == b''
+    assert args[args.index('-resize') + 1] == f'{width}x16!' and args[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)
+
+
+@pytest.mark.parametrize('level', range(5))
+def test_status_icon_wifi_lights_from_the_dot_out(monkeypatch, magick, level):
+    # A signal level lights that many of the dot and its three arcs, innermost first; the rest are grey.
+    draw, _, _ = status_drawn(monkeypatch, magick, f'bar_wifi{level}.png')
+    arcs = sorted((float(r), colour) for colour, r in re.findall(r"stroke '([^']+)' path 'M[\d.,]+ A([\d.]+)", draw))
+    dot, = re.findall(r"fill '([^']+)' circle", draw)
+    assert [dot] + [colour for _, colour in arcs] == ['white'] * level + ['#666666'] * (4 - level)
+
+
+@pytest.mark.parametrize('name,colour', [('bar_btcon.png', 'white'), ('bar_bt.png', '#666666')])
+def test_status_icon_bluetooth(monkeypatch, magick, name, colour):
+    # White when connected, grey when not; its ink, round caps and all, in the canvas's last BT_REACH columns, as stock's.
+    draw, _, _ = status_drawn(monkeypatch, magick, name)
+    (stroke, path), = re.findall(r"stroke '([^']+)' path '([^']+)'", draw)
+    (width,) = re.findall(r'stroke-width ([\d.]+)', draw)
+    xs, half = [float(x) for x in re.findall(r'[ML]([\d.]+),', path)], float(width) / 2
+    assert stroke == colour and 42 - ipod.BT_REACH <= min(xs) - half and max(xs) + half <= 42
+
+
+def test_status_icon_play_and_pause(monkeypatch, magick):
+    play, _, _ = status_drawn(monkeypatch, magick, 'bar_play.png')
+    (path,) = re.findall(r"path '([^']+)'", play)
+    assert 'fill white' in play and len(re.findall(r'[ML]', path)) == 3 and path.endswith('Z')  # a filled triangle
+    pause, _, _ = status_drawn(monkeypatch, magick, 'bar_pause.png')
+    bars = re.findall(r'M([\d.]+),([\d.]+) L([\d.]+),([\d.]+)', pause)
+    assert len(bars) == 2 and all(x0 == x1 and y0 != y1 for x0, y0, x1, y1 in bars)  # two upright bars
+
+
+@pytest.mark.parametrize('name,data', [('bar_wifi2.png', b'other'), ('bar_other.png', b'stock')])
+def test_status_icon_is_audited(monkeypatch, magick, name, data):
+    monkeypatch.setitem(ipod.STATUS_ICONS, 'bar_wifi2.png', ipod.sha(b'stock'))
+    with pytest.raises(ValueError, match=f'^{name}: unaudited status icon$'):
+        ipod.status_icon(name, data)
+    assert magick.calls == []
+
+
+def test_row_icon(magick):
+    assert ipod.row_icon(b'in') == b'png' and ipod.row_icon(b'in', 48, sharp=True) == b'png'
+    head = ('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize')
+    assert magick.calls == [((*head, f'{ipod.SET_ICON}x{ipod.SET_ICON}!', *ipod.PNG_OUT), b'in'),
+                            ((*head, '48x48!', '-unsharp', '0x0.6+0.8+0', *ipod.PNG_OUT), b'in')]  # sharpened after the shrink
+
+
+STOCK_ICON, SMALL_ICON = png(ipod.SET_STOCK_ICON, ipod.SET_STOCK_ICON), png(ipod.SET_ICON, ipod.SET_ICON)
+
+
+def settings_magick(monkeypatch, stock=STOCK_ICON, out=SMALL_ICON, opaque=(b'False', b'False')):
+    """playset_eq.png audited as stock; ImageMagick's resize gives out, its %[opaque] opaque[0] for stock and opaque[1] for out."""
+    monkeypatch.setitem(ipod.SETTINGS_ICONS, 'playset_eq.png', ipod.sha(stock))
+    m = Magick(lambda args, data: (opaque[0] if data == stock else opaque[1]) if '%[opaque]' in args else out)
+    monkeypatch.setattr(ipod, 'imagemagick', m)
+    return m
+
+
+def test_settings_icon(monkeypatch):
+    m = settings_magick(monkeypatch)
+    assert ipod.settings_icon('playset_eq.png', STOCK_ICON) == SMALL_ICON
+    (resize, data), *opaque = m.calls
+    assert data == STOCK_ICON and f'{ipod.SET_ICON}x{ipod.SET_ICON}!' in resize  # row_icon's, to SET_ICON
+    assert [d for _, d in opaque] == [STOCK_ICON, SMALL_ICON]  # the transparency, before and after
+
+
+@pytest.mark.parametrize('name,data', [('playset_eq.png', STOCK_ICON + b'\0'), ('other.png', STOCK_ICON)])
+def test_settings_icon_is_audited(monkeypatch, name, data):
+    m = settings_magick(monkeypatch)
+    with pytest.raises(ValueError, match=f'^{name}: unaudited settings icon$'):
+        ipod.settings_icon(name, data)
+    assert m.calls == []
+
+
+@pytest.mark.parametrize('stock', [png(ipod.SET_STOCK_ICON, ipod.SET_STOCK_ICON, colour=2), png(ipod.SET_STOCK_ICON, ipod.SET_STOCK_ICON + 1),
+                                   png(ipod.SET_STOCK_ICON, ipod.SET_STOCK_ICON, depth=16)])
+def test_settings_icon_wants_stock_rgba(monkeypatch, stock):
+    settings_magick(monkeypatch, stock=stock)
+    with pytest.raises(ValueError, match='^playset_eq.png: unexpected stock icon format$'):
+        ipod.settings_icon('playset_eq.png', stock)
+
+
+@pytest.mark.parametrize('out', [png(ipod.SET_ICON + 1, ipod.SET_ICON), png(ipod.SET_ICON, ipod.SET_ICON, colour=4),
+                                 png(ipod.SET_ICON, ipod.SET_ICON, depth=16)])
+def test_settings_icon_wants_set_icon_rgba(monkeypatch, out):
+    settings_magick(monkeypatch, out=out)
+    with pytest.raises(ValueError, match=f'^playset_eq.png: filtered icon is not {ipod.SET_ICON}px RGBA$'):
+        ipod.settings_icon('playset_eq.png', STOCK_ICON)
+
+
+def test_settings_icon_keeps_the_transparency(monkeypatch):
+    settings_magick(monkeypatch, opaque=(b'False', b'True'))
+    with pytest.raises(ValueError, match='^playset_eq.png: filtering changed the transparency$'):
+        ipod.settings_icon('playset_eq.png', STOCK_ICON)
+
+
+@pytest.mark.parametrize('name,fill', [('play_more.png', '#eeeeee'), ('play_fav.png', '#eeeeee'), ('play_moredown.png', '#aaaaaa')])
+def test_quiet_icon(monkeypatch, magick, name, fill):
+    # Stock's control icons trimmed, shrunk into 24 px, one flat grey (More's pressed state darker), centred on 28 px.
+    stock = b'stock ' + name.encode()
+    monkeypatch.setitem(ipod.QUIET_ICONS, name, ipod.sha(stock))
+    assert ipod.quiet_icon(name, stock) == b'png'
+    (args, data), = magick.calls
+    assert data == stock and args[args.index('-fill') + 1] == fill
+    assert args[args.index('-resize') + 1] == '24x24' and args[args.index('-extent') + 1] == '28x28'
+    assert args.index('-trim') < args.index('-resize') < args.index('-extent') and args[-len(ipod.PNG_OUT):] == tuple(ipod.PNG_OUT)
+
+
+def test_quiet_icon_is_audited(monkeypatch, magick):
+    monkeypatch.setitem(ipod.QUIET_ICONS, 'play_fav.png', ipod.sha(b'stock'))
+    with pytest.raises(ValueError, match='^play_fav.png: unaudited control icon$'):
+        ipod.quiet_icon('play_fav.png', b'other')
+    assert magick.calls == []
+
+
+# MIPS branches count words from the delay slot, at + 4, in a signed 16-bit offset.
+@pytest.mark.parametrize('op,at,target,word', [
+    (0x10000000, 0x400000, 0x400004, 0x10000000),
+    (0x10000000, 0x400000, 0x400000, 0x1000ffff),  # b . (a branch to itself)
+    (0x10000000, 0x400000, 0x400010, 0x10000003),
+    (0x10000000, 0x400000, 0x400004 + 4 * 32767, 0x10007fff),
+    (0x04110000, 0x400000, 0x400004 - 4 * 32768, 0x04118000),
+])
+def test_branch(op, at, target, word):
+    assert ipod.branch(op, at, target) == word
+
+
+@pytest.mark.parametrize('target', [0x400004 + 4 * 32768, 0x400004 - 4 * 32769])
+def test_branch_out_of_range(target):
+    with pytest.raises(ValueError, match='^0x400000: branch out of range$'):
+        ipod.branch(0x10000000, 0x400000, target)
+
+
+def test_artist_albums_branch():
+    # The artist page's init: stock's bal builds the Songs view (0x4adcbc); the patch's calls the Albums tab handler (0x4ac7ec).
+    at, stock, patched = ipod.ARTIST_ALBUMS[1]
+    assert (stock, patched) == (ipod.branch(0x04110000, at, 0x4adcbc), ipod.branch(0x04110000, at, 0x4ac7ec))
+
+
+def program(*words, base=0x400000):
+    """A MIPS ELF with one LOAD segment: words at base, from file offset 0x100."""
+    data = bytearray(0x100) + struct.pack(f'<{len(words)}I', *words)
+    struct.pack_into('<I', data, 28, 52)  # e_phoff
+    struct.pack_into('<HH', data, 42, 32, 1)  # e_phentsize, e_phnum
+    struct.pack_into('<8I', data, 52, 1, 0x100, base, base, 4 * len(words), 4 * len(words), 5, 0x1000)
+    return data
+
+
+def test_patch_word():
+    data, changes = program(0x0320f809, 0x0411fc39, 0), []
+    ipod.patch_word(data, 0x400004, 0x0411fc39, 0x0411f705, 'artist detail opens on Albums', changes)
+    assert data == program(0x0320f809, 0x0411f705, 0)
+    assert changes == [{'address': '0x400004', 'original': '0x411fc39', 'patched': '0x411f705', 'purpose': 'artist detail opens on Albums'}]
+    ipod.patch_word(data, 0x400008, 0, 0x27bdffe0, 'not recorded')
+    assert data == program(0x0320f809, 0x0411f705, 0x27bdffe0) and len(changes) == 1
+
+
+def test_patch_word_wants_the_stock_instruction():
+    data, changes = program(0x0320f809, 0x0411fc39), []
+    with pytest.raises(ValueError, match='^0x400004: unexpected instruction$'):
+        ipod.patch_word(data, 0x400004, 0x0320f809, 0, 'x', changes)
+    assert data == program(0x0320f809, 0x0411fc39) and changes == []

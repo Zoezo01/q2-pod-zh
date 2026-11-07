@@ -12,6 +12,8 @@ __pycache__/
 mutants/
 q2remote.key
 .build-number
+.coverage
+c-coverage/
 docs/manual/*.pdf
 graphify-out/
 

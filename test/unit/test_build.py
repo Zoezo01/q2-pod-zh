@@ -1,10 +1,12 @@
 """tools/build.py's helpers: synthetic images and UI files stand in for stock's."""
+import ctypes
 import hashlib
 import io
 import pathlib
 import re
 import shutil
 import struct
+import subprocess
 
 import pytest
 
@@ -275,7 +277,7 @@ def test_bold_font_must_keep_its_characters(monkeypatch):
 
 def test_classic_light_font():
     from fontTools.ttLib import TTFont
-    font_bytes, ranges = build.subset_font(build.ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', build.CLASSIC_LIGHT_NOTICE)
+    font_bytes, ranges = build.classic_light_font()
     font, source = TTFont(io.BytesIO(font_bytes)), TTFont(build.ROOT/'assets/fonts/texgyreheros-bold.otf')
     have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0xe9 in have
@@ -292,6 +294,185 @@ def test_classic_light_font():
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
+
+
+HEART = [(50, -10), (1250, -10), (1250, 1490), (50, 1490)]
+EMPTY_HEART = [(2, 84), (77, 159), (152, 84), (77, 9)]  # stock's ♡ box: x from 2, y up to 159
+
+
+def hearts_font(empty=EMPTY_HEART, composite=False, drop=()):
+    """A TrueType font with the stock font's quirks: curly quotes on wide glyphs of their own, and a
+    ♡ smaller than its ♥. drop leaves characters out of its Unicode cmaps."""
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+
+    def outline(points):
+        pen = TTGlyphPen(None)
+        pen.moveTo(points[0])
+        for p in points[1:]:
+            pen.lineTo(p)
+        pen.closePath()
+        return pen.glyph()
+
+    metrics = {'.notdef': (1000, 100), 'quotesingle': (600, 100), 'quotedbl': (800, 100), 'quoteleft': (2048, 100),
+               'quotedblleft': (2048, 100), 'heart': (1300, 50), 'heartwhite': (2048, 2)}
+    fb = FontBuilder(2048, isTTF=True)
+    fb.setupGlyphOrder(list(metrics))
+    cmap = {0x22: 'quotedbl', 0x27: 'quotesingle', 0x2018: 'quoteleft', 0x2019: 'quoteleft', 0x201c: 'quotedblleft',
+            0x201d: 'quotedblleft', 0x2661: 'heartwhite', 0x2665: 'heart'}
+    fb.setupCharacterMap({c: g for c, g in cmap.items() if c not in drop})
+    glyphs = {name: outline([(100, 1000), (300, 1000), (300, 1400), (100, 1400)]) for name in metrics}
+    glyphs['heart'] = outline(HEART)
+    glyphs['heartwhite'] = outline(empty)
+    if composite:
+        pen = TTGlyphPen(glyphs)
+        pen.addComponent('heart', (1, 0, 0, 1, 0, 0))
+        glyphs['heartwhite'] = pen.glyph()
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics(metrics)
+    fb.setupHorizontalHeader(ascent=1854, descent=-434)
+    fb.setupNameTable({'familyName': 'Hearts', 'styleName': 'Regular'})
+    fb.setupOS2()
+    fb.setupPost()
+    mac = CmapSubtable.newSubtable(6)  # Mac Roman: its codes aren't Unicode (0xd4 is ‘)
+    mac.platformID, mac.platEncID, mac.language = 1, 0, 0
+    mac.cmap = {0x22: 'quotedbl', 0x27: 'quotesingle', 0xd4: 'quoteleft', 0xd5: 'quoteleft'}
+    fb.font['cmap'].tables.append(mac)
+    fb.font['head'].created = fb.font['head'].modified = 0xb0000000
+    fb.font.recalcTimestamp = False
+    out = io.BytesIO()
+    fb.save(out)
+    return out.getvalue()
+
+
+def cmaps(data):
+    from fontTools.ttLib import TTFont
+    return {(t.platformID, t.platEncID): dict(t.cmap) for t in TTFont(io.BytesIO(data))['cmap'].tables}
+
+
+def test_font_quotes_maps_curly_quotes_to_straight():
+    src = hearts_font()
+    before, after = cmaps(src), cmaps(build.font_quotes(src))
+    unicode = [p for p in after if p != (1, 0)]
+    assert unicode and sorted(after) == sorted(before)
+    for p in unicode:
+        assert after[p] == {**before[p], 0x2018: 'quotesingle', 0x2019: 'quotesingle', 0x201c: 'quotedbl', 0x201d: 'quotedbl'}
+    assert after[(1, 0)] == before[(1, 0)]
+
+
+def test_font_quotes_fits_the_empty_heart_to_the_full_one():
+    from fontTools.ttLib import TTFont
+    font = TTFont(io.BytesIO(build.font_quotes(hearts_font())))
+    glyf, hmtx = font['glyf'], font['hmtx']
+    # ♡ stretched onto ♥'s box: x 2..152 onto 50..1250 (8 times), y 9..159 onto -10..1490 (10 times)
+    assert list(glyf['heartwhite'].coordinates) == [(50 + (x - 2) * 8, -10 + (y - 9) * 10) for x, y in EMPTY_HEART]
+    assert list(glyf['heart'].coordinates) == HEART
+    assert hmtx['heart'] == hmtx['heartwhite'] == (1300 + 32, 50)  # ♥'s advance and a gap, the shared box's side bearing
+    assert hmtx['quotesingle'] == (600, 100) and hmtx['quoteleft'] == (2048, 100)
+
+
+def test_font_quotes_keeps_the_rest_of_the_font():
+    from fontTools.ttLib import TTFont
+    src = hearts_font()
+    before, after = TTFont(io.BytesIO(src)), TTFont(io.BytesIO(build.font_quotes(src)))
+    assert after['head'].modified == before['head'].modified == 0xb0000000  # reproducible
+    for tag in ('name', 'OS/2'):
+        assert after.reader[tag] == before.reader[tag]
+
+
+@pytest.mark.parametrize('font,message', [
+    (dict(drop=(0x27,)), 'Font without straight quotes'), (dict(drop=(0x22,)), 'Font without straight quotes'),
+    (dict(empty=[(x + 1, y) for x, y in EMPTY_HEART]), 'Unexpected ♡ glyph'),
+    (dict(empty=[(x, y + 1) for x, y in EMPTY_HEART]), 'Unexpected ♡ glyph'),
+    (dict(composite=True), 'Unexpected ♡ glyph')])
+def test_font_quotes_wants_the_stock_glyphs(font, message):
+    with pytest.raises(ValueError, match=f'^{message}$'):
+        build.font_quotes(hearts_font(**font))
+
+
+def strings_bin(pairs):
+    """A strings/*.bin: u16 0, u16 pair count, a u32 file offset to each key and value, then the NUL-ended text."""
+    texts = [t for pair in pairs for t in pair]
+    offsets, at = [], 4 + 4 * len(texts)
+    for t in texts:
+        offsets.append(at)
+        at += len(t) + 1
+    return struct.pack(f'<HH{len(texts)}I', 0, len(pairs), *offsets) + b''.join(t + b'\0' for t in texts)
+
+
+def test_relabel():
+    # in an order of their own, so each change moves offsets past it that later ones have moved too
+    pairs = [(b'powerm_sleep', b'Sleep Timer'), *[(k, old) for k, old, _ in reversed(build.LABELS)],
+             (b'player_unknown', b'Unknown Artist')]
+    new = {k: n for k, _, n in build.LABELS}
+    out = build.relabel(strings_bin(pairs))
+    assert isinstance(out, bytes) and out == strings_bin([(k, new.get(k, v)) for k, v in pairs])
+
+
+@pytest.mark.parametrize('change', ['renamed', 'missing', 'twice'])
+def test_relabel_wants_each_stock_label(change):
+    pairs = [(b'powerm_sleep', b'Sleep Timer'), *[(k, old) for k, old, _ in build.LABELS]]
+    key = build.LABELS[1][0]
+    if change == 'renamed':
+        pairs[2] = (key, build.LABELS[1][2])
+    elif change == 'missing':
+        del pairs[2]
+    else:
+        pairs.append(pairs[2])
+    with pytest.raises(ValueError, match=f'^Unexpected {key.decode()} label$'):
+        build.relabel(strings_bin(pairs))
+
+
+SOI = b'\xff\xd8'
+
+
+def segment(marker, body):
+    """A JPEG marker segment: its length counts itself and the body."""
+    return bytes([0xff, marker]) + struct.pack('>H', len(body) + 2) + body
+
+
+def frame(marker=0xc0, bits=8, height=375, width=320, components=3):
+    """A start of frame: precision, lines, samples per line, then 3 bytes for each component."""
+    return segment(marker, struct.pack('>BHHB', bits, height, width, components) + bytes(3 * components))
+
+
+JFIF = segment(0xe0, b'JFIF\0\1\1\0\0\1\0\1\0\0')
+
+
+@pytest.mark.parametrize('head', [
+    JFIF + segment(0xdb, bytes(65)),
+    b'\xff\xff\xff' + JFIF[1:],  # fill bytes before a marker
+    b'\xff\x01\xff\xd0\xff\xd7',  # TEM and RSTn stand alone, with no length
+    frame(0xc4, height=1, width=1) + frame(0xc8, height=1, width=1) + frame(0xcc, height=1, width=1)])  # DHT, JPG, DAC
+def test_jpeg_size(head):
+    assert build.jpeg_size(SOI + head + frame() + segment(0xda, bytes(10)) + b'\xff\xd9') == (320, 375)
+
+
+NOT_BASELINE_RGB = 'Logo must be an 8-bit, three-component baseline JPEG (not grayscale/CMYK)'
+
+
+@pytest.mark.parametrize('data,message', [
+    (b'', 'Logo must be a JPEG'), (b'\x89PNG\r\n\x1a\n', 'Logo must be a JPEG'),
+    (SOI, 'No JPEG size marker'), (SOI + JFIF, 'No JPEG size marker'),
+    (SOI + b'\xff\xd9' + frame(), 'No JPEG size marker'),  # EOI: the image ended
+    (SOI + b'\xff\xda' + frame(), 'No JPEG size marker'),  # a scan before any frame
+    (SOI + b'\0' + frame(), 'Malformed JPEG'),
+    (SOI + JFIF + b'\xff\xff', 'Truncated JPEG marker'),
+    (SOI + b'\xff\x00' + frame(), 'Malformed JPEG marker'),  # a stuffed zero, not a marker
+    (SOI + SOI + frame(), 'Malformed JPEG marker'),
+    (SOI + b'\xff\xe0\x00', 'Truncated JPEG segment'),
+    (SOI + b'\xff\xe0\x00\x01' + frame(), 'Invalid JPEG segment length'),
+    (SOI + JFIF[:-1], 'Invalid JPEG segment length'), (SOI + frame()[:-1], 'Invalid JPEG segment length'),
+    (SOI + segment(0xc0, struct.pack('>BHHB', 8, 375, 320, 3) + bytes(6)), 'Invalid JPEG frame length'),
+    (SOI + segment(0xc0, struct.pack('>BHH', 8, 375, 320)), 'Invalid JPEG frame length'),
+    *((SOI + frame(m), NOT_BASELINE_RGB) for m in (0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf)),
+    (SOI + frame(bits=12), NOT_BASELINE_RGB), (SOI + frame(components=1), NOT_BASELINE_RGB),
+    (SOI + frame(components=4), NOT_BASELINE_RGB),
+    (SOI + frame(width=0), 'Invalid JPEG dimensions'), (SOI + frame(height=0), 'Invalid JPEG dimensions')])  # 0: DNL's
+def test_jpeg_size_refuses(data, message):
+    with pytest.raises(ValueError, match=f'^{re.escape(message)}$'):
+        build.jpeg_size(data)
 
 
 def test_source_sha256_hashes_every_input_by_path(tmp_path, monkeypatch):
@@ -455,3 +636,215 @@ def test_patch_bluealsa_payload_must_fit(silence, monkeypatch):
     monkeypatch.setattr(build, 'BT_SILENCE', build.BT_DROP_PAYLOAD + 8)
     with pytest.raises(ValueError, match='^Bluetooth DROP payload too long$'):
         build.patch_bluealsa(bluealsa())
+
+
+def elf(*headers, size=0x3000):
+    """An ELF32 image of size bytes whose program headers, (type, offset, vaddr, filesz, memsz) each, start at 52."""
+    data = bytearray(size)
+    struct.pack_into('<I', data, 28, 52)
+    struct.pack_into('<HH', data, 42, 32, len(headers))
+    for i, (kind, offset, vaddr, filesz, memsz) in enumerate(headers):
+        struct.pack_into('<8I', data, 52 + 32 * i, kind, offset, vaddr, vaddr, filesz, memsz, 5, 0x1000)
+    return data
+
+
+# A PT_NOTE where nothing is loaded, a LOAD with a bss past its file bytes, and a second LOAD.
+SEGMENTS = (4, 0x100, 0x500000, 0x100, 0x100), (1, 0x1000, 0x400000, 0x800, 0x2000), (1, 0x2000, 0x410000, 0x100, 0x100)
+
+
+def test_fileoff_finds_the_segment_holding_the_address():
+    b = elf(*SEGMENTS)
+    assert [build.fileoff(b, a) for a in (0x400000, 0x4007ff, 0x410000, 0x4100ff)] == [0x1000, 0x17ff, 0x2000, 0x20ff]
+
+
+@pytest.mark.parametrize('address', [0x3fffff, 0x400800, 0x401fff, 0x410100, 0x500000])
+def test_fileoff_refuses_an_address_without_file_bytes(address):
+    with pytest.raises(ValueError, match=f'^Unmapped address {address:x}$'):
+        build.fileoff(elf(*SEGMENTS), address)
+
+
+@pytest.mark.parametrize('load', [0, 0x100000])
+def test_machine(load):
+    from unicorn.mips_const import UC_MIPS_REG_A0
+    b = elf((1, 0x1000, 0x400123, 0x10, 0x2000), (4, 0x1000, 0x800000, 0x10, 0x10), (1, 0x2000, 0x410000, 8, 0x100))
+    b[0x1000:] = b'\xee' * (len(b) - 0x1000)  # bytes past a segment's filesz aren't its own
+    struct.pack_into('<2I', b, 0x2000, 0x2402002a, 0xac820000)  # addiu v0, zero, 42; sw v0, 0(a0)
+    u = build.machine(bytes(b), 0x2000000, load)
+    # whole pages around each LOAD's memsz; nothing for the PT_NOTE
+    assert sorted(r[:2] for r in u.mem_regions()) == [(load + 0x400000, load + 0x402fff), (load + 0x410000, load + 0x410fff),
+                                                      (0x2000000, 0x200ffff)]
+    assert u.mem_read(load + 0x400000, 0x3000) == bytes(0x123) + b'\xee' * 0x10 + bytes(0x3000 - 0x133)
+    assert u.mem_read(load + 0x410000, 0x1000)[8:] == bytes(0xff8)
+    u.reg_write(UC_MIPS_REG_A0, 0x2000000)
+    u.emu_start(load + 0x410000, load + 0x410008)
+    assert u.mem_read(0x2000000, 4) == b'\x2a\0\0\0'  # little-endian, into the scratch
+
+
+# The TagLib cover library's layout (test/m4b.py): the M4A test's beq at SITE to the MP4 extractor
+# (0x1040004a, to SITE + 4 + 0x4a * 4), the next format's test after its delay slot, gp and strcasecmp's GOT slot.
+SITE, MP4, NEXT, GP, STRCASECMP = 0x125ac, 0x126d8, 0x125b4, 0x327e0, 0x327e0 - 0x7e90
+
+
+def taglib():
+    lib = elf((1, 0x1000, 0x12000, 0x1000, 0x1000), (1, 0x2000, 0x2a000, 0x1000, 0x1000), (0, 0, 0, 0, 0))
+    struct.pack_into('<I', lib, build.fileoff(lib, SITE), 0x1040004a)
+    return bytes(lib)
+
+
+@pytest.fixture
+def tag_c(monkeypatch):
+    lib = taglib()
+    monkeypatch.setattr(build, 'TAG_C_SHA', hashlib.sha256(lib).hexdigest())  # the pin is stock's library
+    return lib
+
+
+def dispatch(lib, ext, load):
+    """Where lib's cover dispatch goes for ext, entered at SITE with strcasecmp's answer for m4a in v0,
+    loaded at load; and what else strcasecmp was asked to compare ext with."""
+    from unicorn import UC_HOOK_CODE
+    from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_GP, UC_MIPS_REG_PC, UC_MIPS_REG_RA,
+                                    UC_MIPS_REG_S0, UC_MIPS_REG_SP, UC_MIPS_REG_V0)
+    scratch = 0x2000000
+    u = build.machine(lib, scratch, load)
+    strcasecmp, name, sp = scratch, scratch + 0x100, scratch + 0x8000
+    build.word(u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
+    build.word(u, sp + 16, load + GP)  # o32: the caller's gp, saved
+    u.mem_write(name, ext.encode() + b'\0')
+    for reg, value in ((UC_MIPS_REG_S0, name), (UC_MIPS_REG_GP, load + GP), (UC_MIPS_REG_SP, sp),
+                       (UC_MIPS_REG_V0, int(ext.lower() != 'm4a'))):
+        u.reg_write(reg, value)
+    compared, reached = [], []
+
+    def string(p):
+        return bytes(u.mem_read(p, 16)).split(b'\0')[0]
+
+    def hook(u, address, size, _):
+        if address == strcasecmp:
+            a, b = string(u.reg_read(UC_MIPS_REG_A0)), string(u.reg_read(UC_MIPS_REG_A1))
+            compared.append(b)
+            u.reg_write(UC_MIPS_REG_V0, int(a.lower() != b.lower()))
+            u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+        elif address - load in (MP4, NEXT):
+            reached.append(address - load)
+            u.emu_stop()
+    u.hook_add(UC_HOOK_CODE, hook)
+    u.emu_start(load + SITE, 0, count=32)
+    return reached, compared
+
+
+@pytest.mark.parametrize('load', [0, 0x7700000])  # a shared library goes anywhere
+@pytest.mark.parametrize('ext,goes,compared', [
+    ('m4a', MP4, []), ('M4A', MP4, []), ('m4b', MP4, [b'm4b']), ('M4B', MP4, [b'm4b']), ('m4B', MP4, [b'm4b']),
+    ('mp3', NEXT, [b'm4b']), ('m4bx', NEXT, [b'm4b']), ('m4', NEXT, [b'm4b'])])
+def test_patch_m4b_cover_sends_m4b_to_the_mp4_extractor(tag_c, load, ext, goes, compared):
+    assert dispatch(build.patch_m4b_cover(tag_c), ext, load) == ([goes], compared)
+
+
+def test_cover_dispatch_without_the_patch():
+    assert dispatch(taglib(), 'm4b', 0) == ([NEXT], []) and dispatch(taglib(), 'm4a', 0) == ([MP4], [])
+
+
+def test_patch_m4b_cover_segment(tag_c):
+    out = build.patch_m4b_cover(tag_c)
+    at, header = build.segments(out)[-1]
+    offset = header[1]
+    assert header == (1, offset, 0x30000, 0x30000, 48, 48, 5, 0x10000)  # read and execute: nothing in it changes
+    assert offset % 0x10000 == 0 and offset >= len(tag_c) and len(out) == offset + 48
+    assert out[len(tag_c):offset] == bytes(offset - len(tag_c)) and out[-4:] == b'm4b\0'
+    # in the library itself, only the M4A branch and the PT_NULL slot change
+    site = build.fileoff(tag_c, SITE)
+    rest = bytearray(out[:len(tag_c)])
+    assert rest[site:site + 4] != tag_c[site:site + 4]
+    rest[site:site + 4], rest[at:at + 32] = tag_c[site:site + 4], tag_c[at:at + 32]
+    assert rest == tag_c
+
+
+def test_patch_m4b_cover_wants_the_pinned_library():
+    with pytest.raises(ValueError, match='^Unexpected TagLib cover library$'):
+        build.patch_m4b_cover(taglib())
+
+
+def test_patch_m4b_cover_wants_the_m4a_branch(monkeypatch):
+    lib = bytearray(taglib())
+    struct.pack_into('<I', lib, build.fileoff(lib, SITE), 0x1040004b)
+    monkeypatch.setattr(build, 'TAG_C_SHA', hashlib.sha256(lib).hexdigest())
+    with pytest.raises(ValueError, match='^Unexpected TagLib M4A cover branch$'):
+        build.patch_m4b_cover(bytes(lib))
+
+
+RANGES = ['#define BOLD_RANGES {0x20,0x7e}', '#define CLASSIC_LIGHT_RANGES {0x20,0x7e,0x2013,0x2014}']
+
+
+def stock_h(dev=0, repo=build.REPO):
+    from theme import builtins
+    context = {name: f'0x{0x700000 + 16 * i:x}u' for i, name in enumerate(build.CONTEXT_DATA)}  # as demo's symbols
+    return build.stock_header(context, RANGES, builtins(), dev, repo)
+
+
+@pytest.mark.parametrize('dev,repo,version,tag,flag', [(0, build.REPO, f'{build.VERSION} Pod', build.VERSION, '0'),
+                                                       (7, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
+def test_stock_header_versions(dev, repo, version, tag, flag):
+    header = stock_h(dev, repo)
+    lines = header.splitlines()
+    assert header.endswith('\n') and all(line.startswith('#define ') for line in lines)
+    macros = dict(line.split(' ', 2)[1:] for line in lines)
+    assert len(macros) == len(lines) and [f'#define {name} {macros[name]}' for name in ('BOLD_RANGES', 'CLASSIC_LIGHT_RANGES')] == RANGES
+    assert macros['Q2POD_VERSION'] == f'"{version}"' and macros['Q2POD_DEV'] == flag
+    assert macros['Q2POD_TAG'] == f'"{tag}"'  # a dev build has none, and takes any release
+    assert macros['Q2POD_REPO'] == f'"{repo}"'
+    assert macros['Q2POD_UA'] == f'"Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)"'  # the app's contact, not the fork's
+    assert macros['bt_showcoding'] == '((const unsigned char *)0x700000u)'
+
+
+@pytest.mark.skipif(not shutil.which('clang'), reason='no clang')
+def test_stock_header_is_c(tmp_path):
+    """stock.h as the payload's C reads it: built into a host library whose data ctypes reads back."""
+    import art
+    import ipod
+    import theme
+    themes = theme.builtins()
+    (tmp_path/'stock.h').write_text(stock_h())
+    (tmp_path/'h.c').write_text(f'''#include "stock.h"
+const int h_ints[] = {{RING_STEP, THEME_N, THEME_KEYS, Q2POD_DEV}};
+const char *const h_strings[] = {{ROCKBOX_FLAG, STOCK_VERSION, Q2POD_VERSION, Q2POD_TAG, Q2POD_REPO, Q2POD_UA}};
+const char *const h_zones[] = TIMEZONE_NAMES;
+const char *const h_cities[] = TIMEZONE_CITIES;
+const int h_order[] = TIMEZONE_ORDER;
+const char h_icons[] = SETTINGS_ICON_NAMES;
+const char h_lit[] = QS_LIT;
+const unsigned char *const h_context[] = {{{', '.join(build.CONTEXT_DATA)}}};
+const unsigned char *const h_round[] = ROUND_COVER;
+const unsigned short h_bold[] = BOLD_RANGES;
+const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cities / sizeof *h_cities,
+    sizeof h_order / sizeof *h_order, sizeof h_icons, sizeof h_lit, sizeof h_round / sizeof *h_round, sizeof h_bold / sizeof *h_bold}};
+''')
+    subprocess.run(['clang', '-shared', '-fPIC', '-std=c11', '-Wall', '-Wextra', '-Werror', str(tmp_path/'h.c'), '-o', str(tmp_path/'h.so')],
+                   check=True)
+    lib = ctypes.CDLL(str(tmp_path/'h.so'))
+
+    def array(kind, name, n):
+        return list((kind * n).in_dll(lib, name))
+    zones, cities, order, icons, lit, rounds, bold = array(ctypes.c_ulong, 'h_sizes', 7)
+    assert array(ctypes.c_int, 'h_ints', 4) == [build.RING_STEP, len(themes), len(theme.theme_keys(themes)), 0]
+    assert [s.decode() for s in array(ctypes.c_char_p, 'h_strings', 6)] == [
+        build.ROCKBOX_FLAG, 'V1.32', f'{build.VERSION} Pod', build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
+    assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
+    # each row's city, its label after the offset
+    cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]
+    assert len(cities) == len(build.TIMEZONES) and cities[9] == "St. John's"
+    assert all(re.fullmatch(rf'GMT[+-]\d+(:\d\d)? {re.escape(city)}', label) for (label, _), city in zip(build.TIMEZONES, cities))
+    # every saved index once, west to east by standard offset, then by label
+    order = array(ctypes.c_int, 'h_order', order)
+    rows = [(build.timezone_offset(build.TIMEZONES[i][0]), build.TIMEZONES[i][0]) for i in order]
+    assert sorted(order) == list(range(len(build.TIMEZONES))) and rows == sorted(rows)
+    # named_in's lists: NUL-separated names, an empty one last
+    icons, lit = ((ctypes.c_char * n).in_dll(lib, name).raw for n, name in ((icons, 'h_icons'), (lit, 'h_lit')))
+    assert icons.endswith(b'\0\0') and all(n.endswith('.png') for n in ipod.SETTINGS_ICONS)
+    assert sorted(icons[:-2].split(b'\0')) == sorted(n.removesuffix('.png').encode() for n in ipod.SETTINGS_ICONS)
+    assert lit.endswith(b'\0\0') and lit[:-2].split(b'\0') == [f'drop_{n}'.encode() for n, (_, on, _) in art.QS_BUTTONS.items() if on]
+    assert array(ctypes.c_void_p, 'h_context', len(build.CONTEXT_DATA)) == [0x700000 + 16 * i for i in range(len(build.CONTEXT_DATA))]
+    # by radius: r rows of r pixels for each corner, NULL between
+    assert rounds == max(art.CORNERS) + 1
+    for r, p in enumerate(array(ctypes.c_void_p, 'h_round', rounds)):
+        assert (ctypes.string_at(p, r * r) if p else None) == (bytes(art.corner_cover(r)) if r in art.CORNERS else None)
+    assert array(ctypes.c_ushort, 'h_bold', bold) == [0x20, 0x7e]

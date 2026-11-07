@@ -253,6 +253,9 @@ M = 'id="minimal" name="M" index="0"'
     ('<view name="list"><element/></view>', None, 'unknown element list.'),
     ('<view name="home"><element name="rows" top="8"/></view>', M, 'home.rows.top comes from patch/offsets.inc'),
     ('<colorScheme name="graphite" fill="#eeeeec"/>', M, 'scheme.fill comes from patch/offsets.inc'),
+    ('<colorScheme name="graphite" sel.top="#000000"/>', None, 'scheme.sel.top: #000000 reads as unset; use #010101'),
+    ('<colorScheme name="graphite" light.sel.text="#000000"/>', None, 'scheme.sel.text: #000000 reads as unset; use #010101'),
+    ('<view name="bar"><element name="battery" line="#000000"/></view>', None, 'bar.battery.line: #000000 reads as unset; use #010101'),
 ])
 def test_resolve_rejects(body, attrs, message):
     assert error(resolved, body, *([attrs] if attrs else [])) == f't.xml:1: {message}'
@@ -277,6 +280,8 @@ N = 'id="t" name="T" index="2"'
 A = '<option setting="accent" key="ACCENT"/>'
 V = '<value label="Off" set="ipod"/><value label="On" set="ipod"/>'
 P = '<geometry name="pico" bar="26"/>'
+PAINTER_BUG = pytest.mark.xfail(strict=True, reason="BUG: validate() compares painter[...] with the C names SEL_STOPS and "
+                                                    "BATT_CLASSIC_LIGHT, but resolve() stores an enum's index, so these rules never fire")
 @pytest.mark.parametrize('body, attrs, message', [
     ('<option setting="light"/>', None, 'no accent option'),
     ('<option setting="accent"/>', N, 'accent: no key'),
@@ -293,6 +298,15 @@ P = '<geometry name="pico" bar="26"/>'
      "ART: default On boots pico, the theme's geometry is ipod"),
     (A + P + '<option key="ART" label="Art" default="Off"><value label="Off" set="ipod"/><value label="On" set="pico"/></option>', None,
      "ART: set pico has a 26 px bar, the theme's is 30"),
+    (A + '<colorScheme name="sky" base="cobalt" label="Sky"/><colorScheme name="sea" base="tidal" label="Sea"/>', None,
+     '11 accents, at most 10'),
+    (A + '<option setting="battery" default="percent"/>', None,
+     "SETTING_BATTERY: default has no effect without values (settings_read holds a stock setting's default)"),
+    ('<colorSchemes accents="cobalt"/>' + A, None, 'accent: slot 0 is not offered, so a missing key needs a default'),
+    pytest.param('<view name="list"><element name="selection" painter="stops"/></view>', None,
+                 "selection: painter stops needs every offered scheme's sel.stops", marks=PAINTER_BUG),
+    pytest.param('<view name="bar"><element name="battery" painter="classic-light"/></view>', None,
+                 'battery: this painter needs stops', marks=PAINTER_BUG),
 ])
 def test_validate_rejects(body, attrs, message):
     t = resolved(body, *([attrs] if attrs else []))
@@ -804,6 +818,13 @@ def test_halves():
     assert theme.flip(0x636163, 0xffffff, 0) == 0x9c9e9c and theme.unflip(0x9c9e9c, 0xffffff, 0) == 0x636163
 
 
+def test_a_hue_stated_in_one_half_is_the_others():
+    # flip and its inverse turn neutrals only: a hue reads the same on either paper
+    s = resolved('<colorScheme name="cobalt" light.sel.text="#94c7de" sel.edge="#94c7de"/>')['schemes'][4]
+    assert theme.scheme_half(s, False)['sel_text'] == theme.scheme_half(s, True)['sel_edge'] == 0x94c7de
+    assert theme.unflip(0x94c7de, 0xffffff, 0) == 0x94c7de
+
+
 @pytest.mark.parametrize('body, message', [
     ('<colorScheme name="cobalt" light.paper="#ff0000"/>', 'scheme.paper: expected a grey'),
     ('<colorScheme light.ink="#000001"/>', 'scheme.ink: expected a grey'),
@@ -896,9 +917,24 @@ def test_classic_blue_own_scheme():
     ('<colorScheme name="sky" base="cobalt" label=""/>', 'sky: an own scheme needs a label'),
     ('<colorScheme name="cobalt" base="cobalt" label="C"/>', 'cobalt: an ACCENTS row takes no base'),
     ('<colorSchemes accents="graphite" derive="matte"/>', 'colorSchemes.derive: unknown value matte'),
+    *((f'<colorScheme name="sky" base="cobalt" label="{label}"/>', 'sky: label: expected 1..48 bytes, no control characters')
+      for label in ('A\x7fB', 'A\x85B', 'x' * 49, 'é' * 25)),  # as a theme's name
 ])
 def test_own_scheme_rejects(body, message):
     assert error(resolved, body) == f't.xml:1: {message}'
+
+
+def test_own_scheme_label_takes_48_bytes():
+    t = resolved(f'<colorScheme name="sky" base="cobalt" label="{"é" * 24}"/>')
+    assert theme.scheme_names(t)[9:] == ['sky'] and t['schemes'][9]['label'] == 'é' * 24
+
+
+def test_own_scheme_restated_is_its_row():
+    # a theme on Classic restating Classic Blue, its own scheme, changes that row and adds none
+    t = resolved('<colorScheme name="classic-blue" base="cobalt" label="Classic Blue" muted="#123456"/>',
+                 'id="t" name="T" index="2" extends="classic-light"')
+    assert theme.scheme_names(t)[9:] == ['classic-blue'] and t['schemes'][9]['muted'] == 0x123456
+    assert t['accents'] == 0x37f  # Classic's: every row but Ivory's
 
 
 def test_emit_own_scheme(tmp_path):
