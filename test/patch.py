@@ -7617,10 +7617,10 @@ def diamond(x):
     M,top=O['NP_SCRUB_MARK'],(44-O['NP_BAR_IPOD'])//2
     return [(x-(M-abs(j)),top+(O['NP_BAR_IPOD']-1)//2+j,2*(M-abs(j))+1,1) for j in range(-M,M+1)]
 m=scrub_page()
-for k,v in zip(('W_X','W_Y','W_W','W_H'),(87,233,201,44)): m.word(m.slider+O[k],v)
-assert cue(m)==[]; centre(m); assert cue(m)==diamond(201*100//225),cue(m)
-d=diamond(201*100//225); assert d[0][1]==(44-O['NP_BAR_IPOD'])//2+1 and d[-1][1]==(44-O['NP_BAR_IPOD'])//2+O['NP_BAR_IPOD']-2
-for key,x in ((O['KEY_PREV'],O['NP_SCRUB_MARK']),(O['KEY_NEXT'],200-O['NP_SCRUB_MARK'])):
+for k,v in zip(('W_X','W_Y','W_W','W_H'),(66,233,243,44)): m.word(m.slider+O[k],v)  # fitted to the 3:45 track (ipod_times)
+assert cue(m)==[]; centre(m); assert cue(m)==diamond(243*100//225),cue(m)
+d=diamond(243*100//225); assert d[0][1]==(44-O['NP_BAR_IPOD'])//2+1 and d[-1][1]==(44-O['NP_BAR_IPOD'])//2+O['NP_BAR_IPOD']-2
+for key,x in ((O['KEY_PREV'],O['NP_SCRUB_MARK']),(O['KEY_NEXT'],242-O['NP_SCRUB_MARK'])):
     for _ in range(40): step(m,key,gap=20)
     assert cue(m)==diamond(x),(key,cue(m))
 centre(m,50); step(m,O['SCRUB_MS'],wait=True); assert cue(m)==[]; passed()
