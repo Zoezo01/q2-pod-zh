@@ -5,6 +5,7 @@
   - Display: **Theme: Modern**'s Home menu is in Shanling's own font again, as before 1.5.8. Its Now Playing title stays bold.
   - Display: the Theme list is in the order Minimal, Modern, Classic.
   - Display: under **Theme: Modern** the battery icon is green only while charging, as in Minimal. It used to be green at every level.
+  - Display: under **Theme: Classic** the USB, Updating Library, slider, Set Time and Date and lock info screens have a flat background instead of a gradient.
   - Now Playing: **Theme: Classic** no longer shows the play/pause symbol over the album art, as Minimal doesn't. Modern still does.
   - Display: with square album art (**Theme: Modern** with **Rounded Corners** off, and **Theme: Classic**), the grey disc shown for an album with no art is square too, in Cover Flow, Now Playing, the full-screen art and album lists. Its corners stayed rounded.
   - Now Playing: under **Theme: Classic** the album art is larger and turned at an angle with its reflection under it, the place in the queue ("25 of 40") is under the album, and the progress bar is the iPod's, as tall as Apple's, with larger times on either side of it, as on an iPod classic. While you scrub, a diamond on the bar marks the point.
