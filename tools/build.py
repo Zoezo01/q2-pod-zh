@@ -1880,7 +1880,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     for n in ('spotify', 'radio', 'app', 'airplay', 'config'):
         like, data = icons[f'stream_{n}.png']
         icons[f'classic_light_stream_{n}.png'] = (like, row_icon(data, pane))
-        icons[f'stream_{n}.png'] = (like, row_icon(data))
+        icons[f'stream_{n}.png'] = (like, row_icon(data, sharp=True))
     icons['classic_light_list_tidal.png'] = ('list_tidal.png', row_icon(cat(xx+'list_tidal.png'), pane))
     icons['default_album_home.png'] = ('default_album_big.png', art)
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
