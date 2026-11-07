@@ -34,5 +34,5 @@ jobs:
           Q2_FW_SANITIZE: '1'
           ASAN_OPTIONS: detect_leaks=0:allocator_may_return_null=1
         run: LD_PRELOAD="$(cc -print-file-name=libasan.so)" python3 -m pytest test/fw -q
-      - name: Host suites
-        run: for t in library_scope mp3 peq coverflow chapters mp3_gapless remote; do python3 "test/$t.py"; done
+      - name: Host suites  # build and rotator_build: only their checks that need no ZIP or build
+        run: for t in library_scope mp3 peq coverflow chapters mp3_gapless remote build rotator_build; do python3 "test/$t.py"; done
