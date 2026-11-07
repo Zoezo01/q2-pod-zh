@@ -13,7 +13,7 @@
             lib_art="0" title24_y="4" title_y="6" meta_y="8"
             count_y="8" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
             song_meta_y="29" set_row="32" set_top="0" set_rows="9"
-            set_icon="0" stream_row="52" bar_px="21" bar_title_w="91" bar_right="63" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"
+            set_icon="0" stream_row="52" bar_px="21" bar_title_w="91" bar_right="60" batt_w="26" batt_h="13" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"
             stock_row="32" stock_body="32" stock_title_y="0" stock_title_h="32" toolbar="0"
             search_row="52" search_body="52" search_art="0" search_title_y="1" search_title24_y="1" search_title_h="28"
             search_meta_y="29" search_meta_h="20"/>
@@ -70,10 +70,10 @@
   <view name="bar">
     <element name="title" font="classic-light" font_size="21" caps="0"/>
     <element name="fill" painter="gloss"/>
-    <!-- The battery's inside: one colour per row, the bright one at y 7, the dark rows past the level, a red sliver
+    <!-- The battery's inside: its stops mixed over the rows, the bright one at y 8, the dark rows past the level, a red sliver
          when low; its edges and the white that sits under it on the light half's gloss. Alphas of 255. The bolt
          (charging) and the plug (full on power): colour and the bolt's white halo, tools/art.py draws them. -->
-    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#010101" edge="#5b6c52"
+    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#717070" edge="#5b6c52"
              stops="#90b27d 0, #c4ebac 8, #dcf9c5 17, #cbefb1 25, #ade586 33, #a6e27b 42, #92ce68 50, #67a83f 58, #4e972c 67, #4e972d 75, #56a035 83, #58a437 92, #539933 100"
              empty="#56585d 0, #595a61 8, #5f6168 17, #63656c 25, #6b6d73 33, #76787e 42, #85878d 50, #898b92 58, #8d8f96 67, #94969c 75, #9ea0a5 83, #a0a3a6 92, #797b7c 100"
              low="#d9402e" low_w="3" corner_a="191" foot_a="128" shade_a="64" soft_a="51" soft_top_a="28" emboss_a="179" emboss_nub_a="153" bolt="#3c4a34" bolt_halo_a="102"/>
