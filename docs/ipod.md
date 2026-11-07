@@ -435,14 +435,14 @@ folders reloads the folder page in place, so only opening and leaving that page 
 drops every key and touch while a page slides; none is queued
 ([internals.md](internals.md#page-transitions-ipod)).
 
-A theme can set these from its `motion` view, and Classic does; its pages open and close as
-Minimal's, with stock's slide or none, as above. Inside a page, a level's list pushes in from the
-right over 120 ms, and Return's from the left: a card app's levels (when their rows arrive), an
-artist's text albums and their tracks, a Photos album and a folder and its sub-folders. A list
-that only refreshes stays still, and keys and the wheel work during the push. A confirm and add to
-playlist fade in over 300 ms, their dim fading from 0; the hold menu shows at once. Home's
-Settings list slides in over 170 ms. The selection jumps between rows with no glide or end bump,
-and a list shows its remembered row at once.
+A theme can set these from its `motion` view, but no builtin theme does: Classic's pages open and
+close as Minimal's, with stock's slide or none, as above, and confirms, add to playlist, the hold
+menu and every other dialog show at once, with no fade. Classic's own motion is inside a page: a
+level's list pushes in from the right over 120 ms, and Return's from the left: a card app's levels
+(when their rows arrive), an artist's text albums and their tracks, a Photos album and a folder and
+its sub-folders. A list that only refreshes stays still, and keys and the wheel work during the
+push. Home's Settings list slides in over 170 ms. The selection jumps between rows with no glide or
+end bump, and a list shows its remembered row at once.
 
 ## Chevrons
 

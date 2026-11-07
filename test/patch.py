@@ -12847,11 +12847,11 @@ CONFIG.update(SHORTCUT='0',HOME='0'); m=ShuffleMachine(); del CONFIG['SHORTCUT']
 assert m.call(address=home_hook[0],args=(m.top,0,0,0),gap=0)==0; m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start')
 swap_values(m,120,8); passed()
 # Windows from the theme: what each kind's hint does to a window as it loads or opens.
-OTHER_HINT='htranslate(duration=270,easing=linear)'; DIALOG_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
+OTHER_HINT='htranslate(duration=270,easing=linear)'; FADE_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
 HINT_PROPS=('anim_hint','open_anim_hint','close_anim_hint','highlight')
 EXTRA=('playerqueue_page','playermore_page','playerjumpinfo_page')
 PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','books_page','apps_page')
-FADES=('addplaylist_dialog','confirminfo_dialog')
+DIALOGS=('confirminfo_dialog','addplaylist_dialog','sortselect_dialog')
 class MotionMachine(UiLoad,CoverflowMachine): pass
 def motion_machine(t):
     SETUP[:]=[lambda k:(k.config.update(THEME=t,LIGHT='1'),k)]
@@ -12872,7 +12872,7 @@ for t in '01':
 passed()
 # A theme's page hint holds over any window, Home included.
 for below in ('album_page','home_page'):
-    m=motion_machine('1'); set_hint(m,'page',DIALOG_HINT); motion_over(m,below); assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==DIALOG_HINT,below
+    m=motion_machine('1'); set_hint(m,'page',FADE_HINT); motion_over(m,below); assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==FADE_HINT,below
 passed()
 # Queue, More and Go to, a page with no slide, and the payload's own pages stay instant in every theme, over Home too.
 for t in '01':
@@ -12882,7 +12882,7 @@ for t in '01':
         motion_over(m,'home_page'); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
 passed()
 # A theme with a Cover Flow hint: its page takes it, and no other page does.
-m=motion_machine('1'); set_hint(m,'coverflow',DIALOG_HINT); assert m.nodes[motion_open(m,'coverflow_page')]['anim_hint']==DIALOG_HINT; passed()
+m=motion_machine('1'); set_hint(m,'coverflow',FADE_HINT); assert m.nodes[motion_open(m,'coverflow_page')]['anim_hint']==FADE_HINT; passed()
 # Now Playing stays instant under Classic. A theme with a hint pushes it back on Return only.
 m=motion_machine('1'); np=motion_load(m,'playing_page'); assert not {'anim_hint','open_anim_hint','close_anim_hint'}&set(m.nodes[np])
 m=motion_machine('1'); set_hint(m,'playing',OTHER_HINT); np=motion_load(m,'playing_page')
@@ -12895,13 +12895,11 @@ def under_np(hint):
     q.top=q.win; bare(q); q.strokes=[]; q.paint(w,gap=0); return q,w
 q,w=under_np(OTHER_HINT); assert q.drawn() and q.selected(w)==1
 q,w=under_np(None); assert not q.drawn(); passed()
-# A confirm and add to playlist fade in, over a dim that fades from 0 where the asset has one; the hold menu (and stock's sort list) shows at once.
-for name in FADES:
+# Dialogs show at once under Classic: a confirm, add to playlist and the hold menu take no hint, and keep their dim as the asset has it.
+for name in DIALOGS:
     m=motion_machine('1'); d=motion_load(m,name,'dialog',highlight='default(alpha=200)')
-    assert m.nodes[d]['anim_hint']==DIALOG_HINT and m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)',name
-m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog'); assert m.nodes[d]['anim_hint']==DIALOG_HINT and 'highlight' not in m.nodes[d]
-m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog',highlight='default(alpha=200,start_alpha=0)'); assert m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)'
-m=motion_machine('1'); d=motion_load(m,'sortselect_dialog','dialog',highlight='default(alpha=100)'); assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=100)' and hint_writes(m)==0; passed()
+    assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=200)' and hint_writes(m)==0,name
+passed()
 # The volume dialog is no window slide, and a dialog not named here stays as it is.
 m=motion_machine('1'); d=motion_load(m,'dialog/volume_dialog','dialog'); assert 'anim_hint' not in m.nodes[d]
 m=motion_machine('1'); d=motion_load(m,'dialog/other_dialog','dialog',highlight='default(alpha=200)'); assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=200)'; passed()
@@ -12924,7 +12922,7 @@ assert not m.timers; passed()
 # Minimal: no load or open writes a hint or a highlight.
 for t in ('0',):
     m=motion_machine(t); hints=0; motion_over(m,'home_page')
-    for n,kw in (('playing_page',{}),('localmusic/albuminfo_page',{'anim_hint':ASSET_HINT}),*((n,{'highlight':'default(alpha=200)'}) for n in (*FADES,*EXTRA))):
+    for n,kw in (('playing_page',{}),('localmusic/albuminfo_page',{'anim_hint':ASSET_HINT}),*((n,{'highlight':'default(alpha=200)'}) for n in (*DIALOGS,*EXTRA))):
         motion_load(m,n,**kw); hints+=hint_writes(m)
     motion_open(m,'shuffle_page'); hints+=hint_writes(m); motion_open(m,'coverflow_page'); hints+=hint_writes(m); assert hints==0,t
 passed()

@@ -842,41 +842,20 @@ static int slides(void *win) {
 }
 
 /* win's anim_hint becomes the theme's for kind, at load or open only. A theme with no hint for kind
- * reads and writes nothing. Now Playing takes it as close_anim_hint, its open stays immediate; a
- * dialog's highlight, if it has one, fades in from 0 with it. */
+ * reads and writes nothing. Now Playing takes it as close_anim_hint, its open stays immediate. No
+ * kind reaches a dialog: a clear one's snapshot would show black under its animation. */
 static void motion_hint(void *win, int kind) {
     const char *hint = theme()->motion[kind].hint;
     if (!hint) return;
     const char *prop = kind == MOTION_PLAYING ? "close_anim_hint" : "anim_hint";
     if (tk_strcmp(widget_get_prop_str(win, prop, ""), hint)) widget_set_prop_str(win, prop, hint);
-    if (kind != MOTION_DIALOG) return;
-    static const char start[] = ",start_alpha=0)";
-    const char *dim = widget_get_prop_str(win, "highlight", "");
-    unsigned n = strlen(dim);
-    char faded[64];
-    if (!n || dim[n - 1] != ')' || n - 1 + sizeof start > sizeof faded) return;
-    /* already has it */
-    if (n >= sizeof start - 1 && !tk_strcmp(dim + n - (sizeof start - 1), start)) return;
-    memcpy(faded, dim, n - 1);
-    memcpy(faded + n - 1, start, sizeof start);
-    widget_set_prop_str(win, "highlight", faded);
 }
-static int name_in_n(const char *name, const char *const *names, unsigned n) {
-    while (n--)
-        if (!tk_strcmp(name, names[n])) return 1;
-    return 0;
-}
-#define name_in(name, names) name_in_n(name, names, sizeof names / sizeof *names)
-/* A window as it loads, by name. Themes with no window hints read nothing. */
+/* A window as it loads. Themes with no window hints read nothing. */
 static void motion_load(void *root, int np) {
-    static const char *const FADES[] = { "confirminfo_dialog", "addplaylist_dialog" };
     const motion_t *M = theme()->motion;
-    if (!M[MOTION_PAGE].hint && !M[MOTION_PLAYING].hint && !M[MOTION_DIALOG].hint) return;
-    const char *name = widget_get_prop_str(root, "name", "");
+    if (!M[MOTION_PAGE].hint && !M[MOTION_PLAYING].hint) return;
     if (np)
         motion_hint(root, MOTION_PLAYING);
-    else if (name_in(name, FADES))
-        motion_hint(root, MOTION_DIALOG);
     else if (slides(root))
         motion_hint(root, MOTION_PAGE);
 }

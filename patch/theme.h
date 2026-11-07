@@ -114,7 +114,6 @@ typedef struct {
 enum {
     MOTION_PAGE,
     MOTION_PLAYING,
-    MOTION_DIALOG,
     MOTION_COVERFLOW,
     MOTION_INPLACE,
     MOTION_SWAP,

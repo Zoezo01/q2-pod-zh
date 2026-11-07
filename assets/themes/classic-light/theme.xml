@@ -164,7 +164,6 @@
        ms is the follow's time constant, not the run's length. -->
   <view name="motion">
     <element name="page" ms="120" easing="cubic_out"/>
-    <element name="dialog" anim="fade" ms="300" easing="quadratic_out"/>
     <element name="swap" ms="170" easing="linear"/>
     <element name="inplace" ms="120" easing="cubic_out"/>
     <element name="step" ms="200" easing="sin_inout"/>
