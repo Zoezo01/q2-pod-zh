@@ -5750,6 +5750,10 @@ for virtual in (False,True):
     assert m.call(gap=100)==11; m.advance(O['LETTER_MS']-1); m.paint(w,gap=0); assert m.letters
     m.advance(1); assert any(c[:2]==('widget_invalidate_force',w) for c in m.calls)
     m.paint(w,gap=0); assert not m.letters and canvas_state(m)==before; passed()
+# Nor on Library's category list, which Home's split shows beside the pane (localmusic_page's own is CTX_FIXED).
+m=Machine(); w,es=m.page_list(40,extent=40*48,name='scroll_view_localmusic'); m.paint(w,gap=0)
+for _ in range(6): m.call(gap=100)
+m.paint(w,gap=0); assert not m.letters; passed()
 # Never at one row per detent, nor on a list of at most SHORT_LIST_MAX (16) rows.
 for n,gap in ((40,141),(16,100)):
     m,w,rs,es=letter_machine(False,n)
