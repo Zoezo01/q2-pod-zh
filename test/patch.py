@@ -7517,8 +7517,8 @@ def msg_dialog(theme_='1',light='1',songs=704,whole=1,text='Updating No.0',count
     win,anim,msg,scan,btn=msg_win(m,text)
     if counted: m.counted()
     return m,win,anim,msg,scan,btn
-def usb_page(mode,theme_='1',light='1',y=26):
-    m=MsgMachine(); m.config.update(THEME=theme_,LIGHT=light); m.byte(syms['g_usbmode'],mode)
+def usb_page(mode,theme_='1',light='1',y=26,machine=None):
+    m=(machine or MsgMachine)(); m.config.update(THEME=theme_,LIGHT=light); m.byte(syms['g_usbmode'],mode)
     ret,img,info,charge,dacset=m.node('image','img_return'),m.node('image','img_usbmode'),m.node('hscroll_label','scrlabel_info'),m.node('image','img_daccharge'),m.node('image','img_dacset')
     win=m.node('window','usbmode_page',[ret,img,info,charge,dacset]); parents(m,win); m.word(win+O['W_PARENT'],m.wm)
     place(m,win,0,y,375,320-y); place(m,ret,20,0,80,60); place(m,charge,247,0,50,50); place(m,dacset,305,0,50,50); m.top=win; m.nodes[m.wm]={'children':[win]}; ui_loaded(m,'usbmode_page',win)
@@ -8716,6 +8716,26 @@ class FileMocks:
             if data: self.files[path]=data
         elif name=='rename': self.files[self.text(b)]=self.files.pop(self.text(a))
         return 0
+# USB Storage's page, every theme: the card's LUN read open, then empty, is the computer's eject: OK to Disconnect, once.
+# Empty before it was ever open, or no file (no gadget), is no eject; Audio and DAC have no poll.
+USB_LUN='/sys/kernel/config/usb_gadget/storage_demo/functions/mass_storage.msg/lun.0/file'
+class UsbMachine(FileMocks,MsgMachine):
+    def __init__(self): super().__init__(); self.file_mocks('u:'); self.widget_timers=True
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('u:'): return super().hook(u,address,size,unused)
+        name=name[2:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; self.calls.append((name,a,b,c)); self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
+for theme_ in '102':
+    m,win,_,_,info,*_=usb_page(0,theme_=theme_,machine=UsbMachine)
+    said=lambda: {n.get('text') for n in m.nodes.values() if isinstance(n,dict) and n.get('visible',1)} & {'Connected','OK to Disconnect'}
+    for data in (None,b'',b'/dev/mmcblk0p1\n'):
+        if data is not None: m.files[USB_LUN]=data
+        m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,(theme_,data)
+    m.files[USB_LUN]=b''; m.advance(500); assert 'OK to Disconnect' in said() and not m.timers and [c[1] for c in m.calls if c[0]=='widget_invalidate_force']==[win],theme_
+    if theme_=='1': assert said()=={'OK to Disconnect'} and m.nodes[named(m,win,'msg_line')]['text']==''
+    else: assert m.nodes[info]['visible']==0
+    m,*_=usb_page(1,theme_=theme_,machine=UsbMachine); assert not m.timers
+passed()
 class AlbumRateMachine(FileMocks,CoverflowMachine):
     def __init__(self,files=None,**kw): super().__init__(**kw); self.file_mocks('a:',files)
     def hook(self,u,address,size,unused):
