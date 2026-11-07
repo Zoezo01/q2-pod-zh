@@ -172,8 +172,8 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # clears the glass by CORNER_SLACK, as the full-screen art's do; "3 of 12" under the album; the art's box NP_REFLECT
 # taller, the room its reflection takes under the near edge (coverflow.c slant_render); the times in the
 # Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-9:59:59" fits: stb scales
-# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows,
-# two rows more each side (NP_IPOD_TIME_H), the outer edges clear of the glass over those rows. At run time the
+# ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, NP_IPOD_TIME_H high over its NP_BAR_IPOD rows
+# (half a row high of centre when one is odd), the outer edges clear of the glass over those rows. At run time the
 # boxes narrow to the track's length (NP_IPOD_TIME_WS, navigation.c ipod_times), the bar widening between them.
 NP_IPOD_ART = inc('NP_IPOD_ART')
 NP_IPOD_LIFT = 30

@@ -1164,7 +1164,7 @@ def test_lists_beside_settings_rows_take_item_height(monkeypatch):
 def test_classic_times_fit():
     """Classic's times: each length class's widest remaining time fits its box at NP_IPOD_TIME_PX, in the model
     status_metrics uses (stb scales a font so that ascent - descent is its size; advances, no kerning), every
-    digit tried; NP_IPOD_TIME_PX is the largest whose line fits the box's height, the bar's rows and two each side."""
+    digit tried; NP_IPOD_TIME_PX is the largest whose line fits the box's height, NP_IPOD_TIME_H."""
     from fontTools.ttLib import TTFont
     f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
     asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
