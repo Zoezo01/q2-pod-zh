@@ -535,7 +535,7 @@ def status_bar(root, g=SET0):
         # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
         eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
         eq[2].update({'floating': 'true', **face})
-        # The play state is in the row: Wi-Fi's ink ends on column 261 with it, and it closes up without it.
+        # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, on the battery's middle row (paint_battery's body top plus half its height)
         right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 + g.batt_h // 2)

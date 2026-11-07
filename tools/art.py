@@ -187,7 +187,7 @@ def png(w, h, rgba):
 # Screen coordinates, the bar's rows and columns; each image's box is where the payload draws it.
 BOLT = 'M301.67 6 298.56 11.24 300.85 11.24 300.2 15.16 303.64 9.76 301.35 9.76 302.49 6Z'
 PLUG = 'M295.45 8.78h2.78v1.23H295.45ZM295.45 10.99h2.78v1.23H295.45ZM298.07 7.47h3.52a3.03 3.03 0 0 1 0 6.05h-3.52ZM303.64 9.93h4.09v1.23h-4.09Z'
-BOLT_BOX = (290, 5, 24, 11)  # the battery's inside, the set's batt_w - 2 x batt_h - 2 (navigation.c classic_light_battery)
+BOLT_BOX = (290, 5, 24, 11)  # the battery's inside, the set's batt_w - 2 x batt_h - 2, in a frame of its own: classic_light_battery draws it at the inside's top-left
 def note(svg):
     """The note's RGBA bytes from its drawing, note.svg: see that file."""
     def linear(name):

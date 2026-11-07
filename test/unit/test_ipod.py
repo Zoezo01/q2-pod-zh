@@ -811,8 +811,8 @@ def test_classic_light_status_bar_battery_and_play_state_right():
     home, state = n['img_home_state'], n['img_state']
     assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
     assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
-    assert n['view_right'][2]['children_layout'].endswith(f'xm=63,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 311
-    assert 375 - ipod.corner_inset(5) - 1 - (311 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD + 3  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
+    assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
+    assert 375 - ipod.corner_inset(5) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
@@ -822,7 +822,7 @@ def test_classic_light_status_bar_eq_in_the_room():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     m, eq = ipod.status_metrics(CLASSIC_LIGHT, ipod.CLASSIC_LIGHT_FONT_SRC), n['label_eq']
     x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
-    edge = 312  # the group's right edge: the nub ends at x 311
+    edge = 315  # the group's right edge: the nub ends at x 314
     assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], ipod.CLASSIC_LIGHT_EQ_W, m['title'][3]]
     assert x == 222 and x >= 375 / 2 + m['clock_text'] / 2 + ipod.CLASSIC_LIGHT_CLOCK_GAP  # the widest clock, CLASSIC_LIGHT_CLOCK_GAP clear
     assert classic_light_text_w('EQ') <= ipod.CLASSIC_LIGHT_EQ_W  # the bar's face fits its box
@@ -858,9 +858,9 @@ def test_classic_light_status_bar_icons_on_their_columns():
 
 
 def test_classic_light_status_bar_battery_must_fit():
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 88 of 90
-    with pytest.raises(ValueError, match=r'^Status bar battery needs 91px of 90px$'):
-        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 3))
+    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 88 of 93
+    with pytest.raises(ValueError, match=r'^Status bar battery needs 94px of 93px$'):
+        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 6))
 
 
 def test_playing_page_follows_the_bar():
