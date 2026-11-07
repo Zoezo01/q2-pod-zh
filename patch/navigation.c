@@ -7427,10 +7427,11 @@ static void quick_page(void *win, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* ringnav_paint, after stock's slider, whose bar quick_fill cleared: the suns, the track, the fill
- * and the knob, in the window's coordinates less the slider's. */
+ * (Classic Blue's own stops, another accent's light tone flat, as Minimal's fill) and the knob, in
+ * the window's coordinates less the slider's. */
 static void quick_scrub(void *w, void *canvas) {
     static const stops_t track = { 2, { 0, 100 }, { 0x0a0a0a, 0x3a3c40 } };
-    static const stops_t lit = { 3, { 0, 50, 100 }, { 0x8cc4f8, 0x2f85df, 0x165fc0 } };
+    static const stops_t blue = { 3, { 0, 50, 100 }, { 0x8cc4f8, 0x2f85df, 0x165fc0 } };
     if (!classic_pages() || !quick_slider(w) || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     void *view = P(w, W_PARENT);
@@ -7446,6 +7447,11 @@ static void quick_scrub(void *w, void *canvas) {
     paint_round_rows(canvas, &r, &track, 6);
     paint_art(w, canvas, "classic_light_drop_track", r.x, r.y);
     r.w = part;
+    stops_t lit = blue;
+    if (!theme()->schemes[accent()].label) { /* labelled: the theme's own, Classic Blue */
+        unsigned c = flip_if(ipod_light(), accent_tone(TONE_LIGHT));
+        lit = (stops_t){ 2, { 0, 100 }, { c, c } };
+    }
     if (part >= 12) paint_round_rows(canvas, &r, &lit, 6); /* under that the knob covers it */
     paint_art(w, canvas, "classic_light_drop_knob", r.x + part - 11 - 3, 269 - 3 + oy);
     stock_canvas_set_fill_color(canvas, fill);

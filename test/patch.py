@@ -6881,7 +6881,7 @@ for n in ('wifi','wifiopen','bt','btopen','keylock','keylockopen','lowgain','low
 # Another accent: on is its red tone, flat, as Minimal's lit discs; the light half's border a quarter darker. Graphite's silver
 # takes the dark glyph (_l) in the dark half and flips dark, under white, in the light one; a hue keeps white.
 def qs_quarter(c): return sum(((c>>k&255)*3//4)<<k for k in (0,8,16))
-for preset,light,want,glyph in (('0','0',0xd8d8d8,'_l'),('0','1',0x272727,''),('3','0',ACCENTS[3][3],'')):
+for preset,light,want,glyph in (('0','0',0xd8d8d8,'_l'),('0','1',0x272727,''),('3','0',ACCENTS[3][3],''),('3','1',ACCENTS[3][3],'')):
     q=qs_new(light,CLASSIC_LIGHT_ACCENT=preset); q.nodes[q.btns[0]]['image']='drop_wifiopen'  # 0: Graphite's row
     arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen'+glyph,(31,20))
     assert qs_tiles(q,q.bands[320:])[0]==qs_want((want,want,qs_quarter(want) if light=='1' else want)),(preset,light); passed()
@@ -6923,6 +6923,10 @@ assert all(q.nodes[q.slider][f'style:{s}:{c}_color']==0 for s in ('normal','pres
 assert arts==[('classic_light_sun_small',(35,272)),('classic_light_sun_big',(321,269)),('classic_light_drop_track',(68,275)),('classic_light_drop_knob',(68+79-11-3,269-3))]
 track,rest=round_box(bands,68,275,239,11,6); assert (track[0],track[10])==(color_t(0x0a0a0a),color_t(0x3a3c40))
 fill,_=round_box(rest,68,275,79,11,6); assert (fill[0],fill[10])==(color_t(0x8cc4f8),color_t(0x165fc0)) and q.lcd_colors()==LCD_COLORS; passed()
+# ... another accent fills flat in its light tone, as Minimal's fill; Classic Blue keeps the stops above.
+for preset,light in (('3','0'),('3','1'),('0','0')):
+    q=qs_new(light,CLASSIC_LIGHT_ACCENT=preset); arts,bands=qs_scrub(q); fill,_=round_box(round_box(bands,68,275,239,11,6)[1],68,275,79,11,6)
+    assert set(fill)=={color_t(ACCENTS[int(preset)][2])},(preset,light); passed()
 assert q.call()==11 and q.nodes[q.slider]['value']==5; arts,bands=qs_scrub(q); assert arts[-1][1]==(68+106-14,266); round_box(round_box(bands,68,275,239,11,6)[1],68,275,106,11,6); passed()
 for kind in (O['EVT_VALUE_CHANGING'],O['EVT_VALUE_CHANGED']):
     f,ctx=q.handler(q.slider,kind); q.calls=[]; q.call(address=f,args=(ctx,q.event,0,0),event_type=kind,gap=0); assert ('widget_invalidate_force',q.view) in [c[:2] for c in q.calls]; passed()
