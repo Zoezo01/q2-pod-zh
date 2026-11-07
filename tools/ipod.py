@@ -992,11 +992,13 @@ def status_icon(name, data):
 
 
 
-def row_icon(data, size=SET_ICON):
+def row_icon(data, size=SET_ICON, sharp=False):
     """A 52px row icon pre-sized to SET_ICON, or the pane's size, so it draws 1:1 (set_child) instead of
-    scaling it on the device with hard edges."""
+    scaling it on the device with hard edges. sharp: a light unsharp mask after the shrink, so the
+    Streaming logos stay as crisp as list_tidal beside them (the audited settings icons keep stock's
+    plain filter, test/build.py compares their colours)."""
     return imagemagick('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize', f'{size}x{size}!',
-                       *PNG_OUT, data=data)
+                       *(['-unsharp', '0x0.6+0.8+0'] if sharp else []), *PNG_OUT, data=data)
 
 
 # Each stock placeholder's replacement size: stock's own, but Now Playing's and the full-screen art's at
