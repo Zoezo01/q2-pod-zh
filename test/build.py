@@ -228,7 +228,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC, NP_IPOD_TIME_WS)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -949,11 +949,21 @@ def validate_assets(directory):
             cmap = face.getBestCmap()
             ink = lambda text, px: math.ceil(sum(face['hmtx'][cmap[ord(c)]][0] for c in text) * px / (face['hhea'].ascent - face['hhea'].descent))
             page = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_PAGE}')))}
-            # the times beside the bar hold "-1:02:03" and their font's line, their outer edges and the bar's ends clear of the glass
+            # the times beside the bar hold "-1:02:03" and their font's line, their outer edges and the bar's ends clear of the glass;
+            # so in every length class navigation.c ipod_times fits them to: each class's longest times, any digit, the outer
+            # edges where the build put them, the gap kept, the bar between
             for name in ('label_playtime', 'label_ipod_remain'):
                 x, y, w, h = page[name][1]
                 assert ink('-1:02:03', inc('NP_IPOD_TIME_PX')) <= w and inc('NP_IPOD_TIME_PX') <= h, (g.name, name)
                 assert min(x, 375 - x - w) >= corner_x(g.bar + y, h), (g.name, name)
+            (ex, ey, _, eh), (sx, sy, _, sh) = page['label_playtime'][1], page['slider_play'][1]
+            for tw, longest in zip(NP_IPOD_TIME_WS, ('9:59', '59:59', '9:59:59')):
+                bx = ex + tw + inc('NP_IPOD_TIME_GAP')
+                for d in '0123456789':
+                    assert ink('-' + re.sub(r'\d', d, longest), inc('NP_IPOD_TIME_PX')) <= tw, (g.name, tw, d)
+                top = sy + (sh - inc('NP_BAR_IPOD')) // 2
+                assert bx - inc('NP_IPOD_TIME_GAP') - tw == ex and bx >= corner_x(g.bar + top, inc('NP_BAR_IPOD') + inc('SCRUB_REFLECT_ROWS')), (g.name, tw)
+                assert 375 - 2 * bx > page['slider_play'][1][2] or tw == NP_IPOD_TIME_WS[-1], (g.name, tw)
             # the info page's rows (navigation.c ringnav_np_info): each holds the info role's size, its name fits, the rows end above
             # the dots and both columns clear the glass
             px = {t['font_px[ROLE_INFO]'] for t in builtins() if g in geometry_sets([t])}

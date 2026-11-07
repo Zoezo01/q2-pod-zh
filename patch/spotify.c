@@ -456,13 +456,16 @@ static void spot_refresh(void) {
         ui.art_track[0] = 0;
         image_base_set_image(ui.art, PLACEHOLDER);
     }
+    if (ui.ipod)
+        ipod_times(ui.elapsed, ui.remain, ui.bar, (int)(sp.duration / 1000)); /* a new length */
     unsigned ms = ui.scrub ? (unsigned)ui.scrub_ms : spot_position();
     if (ms / 1000 + 1 != ui.shown) {
         ui.shown = ms / 1000 + 1;
         times(ms);
     }
     /* only when the drawn width (spot_paint's) or the scrub's colour moves: this runs every tick */
-    unsigned bw = (unsigned)I(ui.bar, W_W); /* Classic's 201, the others' SPOT_BAR_W */
+    /* Classic's fitted to the track (ipod_times), the others' SPOT_BAR_W */
+    unsigned bw = (unsigned)I(ui.bar, W_W);
     unsigned bar = (unsigned)((ms >> 4) * bw / ((sp.duration >> 4) | 1)) << 1 | (ui.scrub != 0);
     if (bar + 1 != ui.bar_drawn) {
         ui.bar_drawn = bar + 1;

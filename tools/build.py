@@ -351,6 +351,9 @@ WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
 LOCK_CLOCK_12H = (b'hh:mm\0\0\0HH:TT\0', b'hh:mm\0\0\0H:mm\0\0')
 # Now Playing's info page: its one fill (0x52a508), a bal, becomes jal ringnav_np_info, which tidies the lines.
 NP_INFO_CALL = 0x52baf4
+# Now Playing's A-B markers (0x52a334): its three calls of their x (0x52a268), each a bal, become jal ringnav_ab_x,
+# which puts them on Classic's bar as ipod_times fitted it to the track.
+AB_X_CALLS = (0x52a408, 0x52a484, 0x52a494)
 # Songs' row bind (0x4a90e4): a record with no artist gets stock's "Unknown Artist" through this getFormatString jalr,
 # which becomes jal ringnav_song_unknown.
 SONG_UNKNOWN_CALL = 0x4a9320
@@ -1249,6 +1252,7 @@ FUNCTIONS = {
  'albumcoverinfo_init': ('int', 'void *'),  # a list's cover tasks, each a copy of its row's name and path
  'class_icon': ('int', 'void *, int'),  # Artists, Composers and Genres rows' img_icon (CLASS_ICON)
  'np_info': ('int', 'void *'),  # Now Playing's info page labels (ringnav_np_info)
+ 'ab_x': ('int', 'int'),  # an A-B marker's x for a point (ringnav_ab_x)
  'getFormatString': ('int', 'const char *, char *, int'),  # a string's label in the language: key, out, size
  # Lyrics and cover search (onlinematch.c): demo's cJSON, a node's valuestring at +16
  'cJSON_Parse': ('void *', 'const char *'), 'cJSON_Delete': ('void', 'void *'),
@@ -1285,6 +1289,7 @@ PRIVATE_FUNCTIONS = {
     "folder_click": HOOKS['folder_click'][0],  # folder_page's row click (folder_enter, then a file's queue)
     "saver_cover": HOOKS['saver_cover'][0],  # the lock window's img_playcover from the playing track
     "np_info": 0x52a508,  # Now Playing's info page labels, from the track (NP_INFO_CALL)
+    "ab_x": 0x52a268,  # an A-B marker's x, on the boot set's np_bar_x and np_bar_w (AB_X_CALLS)
     "fwupdate_tf": 0x4c2994,  # systemset_fwupdate_page's row 0 click (0x4c2fac): stock's TF card update
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
@@ -1713,6 +1718,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         patch_word(patched, *word, 'folder names are literal text')
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
                jal(ps['ringnav_np_info']), "Now Playing's info lines")
+    for site in AB_X_CALLS:
+        patch_word(patched, site, branch(0x04110000, site, PRIVATE_FUNCTIONS['ab_x']),
+                   jal(ps['ringnav_ab_x']), "A-B markers on Classic's fitted bar")
     for address, old, new in LDAC_HQ:
         patch_word(patched, address, old, new, 'LDAC HQ sends 990 kbps')
     patch_word(patched, WHEEL_TS_READ[0], WHEEL_TS_READ[1], jal(ps['ringnav_ts_read']), 'wheel ticks')

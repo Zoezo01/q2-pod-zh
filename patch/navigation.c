@@ -506,6 +506,7 @@ typedef struct {
     int np_off, np_over;
     unsigned np_marquee;
     unsigned np_remain_timer; /* remain_due */
+    unsigned np_fit_timer;    /* np_fit_due */
     /* Classic's Spotify or Internet Radio Now Playing (stream_ipod): its slanted art's widget, and
      * the radio's bar, always full */
     void *stream_art, *stream_bar;
@@ -5234,6 +5235,38 @@ const char *theme_face(const unsigned *s, int n, int *px) {
     return "bold";
 }
 
+/* Classic's bar's left end for a track sec long: the times' boxes hold "-9:59" under 10:00,
+ * "-59:59" under an hour, else "-9:59:59" (NP_IPOD_TIME_W*, tools/ipod.py measures them), their
+ * outer edges and the gap kept; the bar takes the rest, mirrored. */
+static int ipod_bar_x(int sec) {
+    return NP_IPOD_BAR_X - NP_IPOD_TIME_W +
+           (sec < 600    ? NP_IPOD_TIME_W1
+            : sec < 3600 ? NP_IPOD_TIME_W2
+                         : NP_IPOD_TIME_W);
+}
+
+/* Classic's elapsed and remaining times and bar (with none, the radio's own) fitted to a track sec
+ * long (ipod_bar_x); unknown (0 or less) leaves them, so the page keeps the build's widest boxes or
+ * the last track's, whose times hold the 0:00 an unknown length shows. Each keeps its y and height
+ * and repaints where it was and where it goes, so the caller is outside a paint, which loses its
+ * invalidates (#116). 1 when any moved. */
+int ipod_times(void *elapsed, void *remain, void *bar, int sec) {
+    if (sec <= 0) return 0;
+    int x = ipod_bar_x(sec), tw = x - (NP_IPOD_BAR_X - NP_IPOD_TIME_W), bw = 375 - 2 * x, moved = 0;
+    void *w[] = { elapsed, remain, bar ? bar : st.stream_bar };
+    const int to[3][2] = { { x - NP_IPOD_TIME_GAP - tw, tw },
+                           { x + bw + NP_IPOD_TIME_GAP, tw },
+                           { x, bw } };
+    for (unsigned i = 0; i < 3; ++i) {
+        if (!w[i] || (I(w[i], W_X) == to[i][0] && I(w[i], W_W) == to[i][1])) continue;
+        widget_invalidate_force(w[i], (void *)0);
+        widget_move_resize(w[i], to[i][0], I(w[i], W_Y), to[i][1], I(w[i], W_H));
+        widget_invalidate_force(w[i], (void *)0);
+        moved = 1;
+    }
+    return moved;
+}
+
 /* The remaining time, once after a frame whose paint np_sync wrote it in: its invalidate there is
  * lost with the frame's dirty rects (#116). Minimal's and Modern's sit in the rect the slider's and
  * the elapsed time's repaint takes each second; only times beside the bar (np_beside) need it. */
@@ -5252,9 +5285,21 @@ static int np_beside(void) {
     return I(st.np_elapsed, W_Y) < I(st.np_slider, W_Y) + (I(st.np_slider, W_H) + bh) / 2;
 }
 
+/* Classic's times and bar fitted to the playing track's length (the slider's max), off the paint
+ * whose np_sync found them stale. */
+static int np_fit_due(const void *info) {
+    (void)info;
+    st.np_fit_timer = 0;
+    if (np_beside())
+        ipod_times(st.np_elapsed, st.np_remain, st.np_slider,
+                   widget_get_prop_int(st.np_slider, "max", 0));
+    return 0;
+}
+
 /* Now Playing's "3 of 12", album and remaining time (slider max less value, stock's seconds, so a
  * drag or scrub previews it). Labels are written only when their source changes; 1 when the
- * remaining time was. */
+ * remaining time was. Classic's times beside the bar refit when the length's class changes: a
+ * seek, a pause or a rate change keeps it. */
 static int np_sync(void *top) {
     if (!top || top != st.np_win) return 0;
     st.np_bold = theme_font(st.np_title, ROLE_NP, st.np_bold); /* the title, as it changes */
@@ -5273,8 +5318,10 @@ static int np_sync(void *top) {
         st.np_off = 0;
         stop_timer(&st.np_marquee); /* the next paint restarts it if the album overflows */
     }
-    int left =
-        widget_get_prop_int(st.np_slider, "max", 0) - widget_get_prop_int(st.np_slider, "value", 0);
+    int max = widget_get_prop_int(st.np_slider, "max", 0),
+        left = max - widget_get_prop_int(st.np_slider, "value", 0);
+    if (max > 0 && !st.np_fit_timer && np_beside() && I(st.np_slider, W_X) != ipod_bar_x(max))
+        st.np_fit_timer = timer_add(np_fit_due, (void *)0, 0); /* mid-paint */
     if (left < 0) left = 0;
     if (left == st.np_left) return 0;
     st.np_left = left;
@@ -5842,6 +5889,7 @@ static int np_gone(void *win, void *event) {
         st.np_off = st.np_full = 0;
         stop_timer(&st.np_marquee);
         stop_timer(&st.np_remain_timer);
+        stop_timer(&st.np_fit_timer);
         stop_timer(&st.genre_timer);
         st.genre_label = (void *)0;
         np_cancel();
@@ -5892,10 +5940,11 @@ static int stream_gone(void *ctx, void *event) {
  * places (NP_IPOD_*): the art, its box taller than wide, so paint_cover slants the image it shows
  * over its reflection (coverflow_slant, whose one frame is keyed by the image's url and pixels, so
  * the local page and this one never show each other's); the title's, artist's, album's and "3 of
- * 12"'s rows (text, any 0 left out); the times in their boxes beside the bar, in Classic's face;
- * the bar, which the page paints with ipod_bar, or with none a bar of its own, last so over the
- * art's box, that paint_scrubber paints always full and that takes no touch; the heart. 0 under the
- * other themes, whose pages keep their own layout. */
+ * 12"'s rows (text, any 0 left out); the times in their widest boxes beside the bar, in Classic's
+ * face, until the page fits them to its track (ipod_times); the bar, which the page paints with
+ * ipod_bar, or with none a bar of its own, last so over the art's box, that paint_scrubber paints
+ * always full and that takes no touch; the heart. 0 under the other themes, whose pages keep their
+ * own layout. */
 int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, void *bar,
                 void *heart) {
     static const unsigned char dy[] = { 0, 34, 62, 90 }, h[] = { 28, 22, 22, 20 };
@@ -6008,6 +6057,7 @@ int ringnav_playing(void *win, void *ctx) {
         rearm(&st.settle_timer, settle_poll, SETTLE_MS);
     } else
         st.held_sec = 0;
+    np_fit_due((void *)0); /* the page opens fitted */
     np_sync(win);
     visualizer_attach(win);
     return result;
@@ -6177,6 +6227,16 @@ static const char *ui_redirect(const char *name, char *buf) {
 
 /* The value of group (G_PITCH, G_BODY, ...) in the set theme_boot wrote (st.geom). */
 static int geom(int group) { return boot_values[st.geom][group]; }
+
+/* An A-B marker's x for point t (stock 0x52a268, from its three calls in the markers' placement:
+ * AB_X_CALLS in tools/build.py), on the boot set's bar (the np_bar_x and np_bar_w immediates):
+ * Classic's bar fitted to the track (ipod_times) takes it along, at the same share of it. 0, no
+ * point to mark, stays. */
+int ringnav_ab_x(int t) {
+    int x = ab_x(t), x0 = geom(G_NP_BAR_X), w0 = geom(G_NP_BAR_W);
+    if (!st.np_slider || x < x0 || w0 <= 0) return x;
+    return I(st.np_slider, W_X) + (x - x0) * I(st.np_slider, W_W) / w0;
+}
 
 /* ui_loader_load_widget_with_parent, every window's asset (window_open's): the theme's layout
  * (np_layout(); Centred Now Playing forces NP_CENTRED) picks the page. Stock's own page

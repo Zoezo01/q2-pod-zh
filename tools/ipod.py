@@ -171,14 +171,17 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # place on screen, that much down them), its top down to the first row where its square top-left corner
 # clears the glass by CORNER_SLACK, as the full-screen art's do; "3 of 12" under the album; the art's box NP_REFLECT
 # taller, the room its reflection takes under the near edge (coverflow.c slant_render); the times in the
-# Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-1:02:03" fits: stb scales
+# Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W boxes ("-9:59:59" fits: stb scales
 # ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, centred on its NP_BAR_IPOD rows,
-# two rows more each side (NP_IPOD_TIME_H), the outer edges clear of the glass over those rows.
+# two rows more each side (NP_IPOD_TIME_H), the outer edges clear of the glass over those rows. At run time the
+# boxes narrow to the track's length (NP_IPOD_TIME_WS, navigation.c ipod_times), the bar widening between them.
 NP_IPOD_ART = inc('NP_IPOD_ART')
 NP_IPOD_LIFT = 30
 NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
 NP_IPOD_TIME_W = inc('NP_IPOD_TIME_W')
 NP_IPOD_TIME_GAP = inc('NP_IPOD_TIME_GAP')
+NP_IPOD_TIME_WS = [inc('NP_IPOD_TIME_W1'), inc('NP_IPOD_TIME_W2'), NP_IPOD_TIME_W]  # under 10:00, under 1:00:00, longer
+NP_IPOD_TIME_TEXT = ['-0:00', '-00:00', '-0:00:00']  # each class's widest time, before the widest digit
 NP_IPOD_TIME_PX = inc('NP_IPOD_TIME_PX')
 NP_IPOD_TIME_H = inc('NP_BAR_IPOD') + 4
 NP_INFO_NAME_W = 100  # the info page's names ("Sample Rate" 76 px in the info role's 17)
@@ -469,6 +472,18 @@ def status_metrics(g, font):
             'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
 
 
+def time_widths(font, px=NP_IPOD_TIME_PX):
+    """Classic's time boxes beside the bar, one a track length class (NP_IPOD_TIME_TEXT), in status_metrics'
+    model: the remaining time's longest text, every digit the face's widest. The elapsed time is never wider."""
+    from fontTools.ttLib import TTFont
+    f = TTFont(font, lazy=True)
+    cmap = f.getBestCmap()
+    adv = lambda c: f['hmtx'][cmap[ord(c)]][0]
+    wide = max('0123456789', key=adv)
+    return [math.ceil(sum(adv(c) for c in t.replace('0', wide)) * px / (f['hhea'].ascent - f['hhea'].descent))
+            for t in NP_IPOD_TIME_TEXT]
+
+
 def status_bar(root, g=SET0):
     left, right = root[3]
     root[2]['style:normal:bg_color'] = '#000000'
@@ -713,6 +728,7 @@ def playing_page(root, g=SET0):
             if key.endswith(':text_color'): n[2][key] = NP_GREY
     if g.np_ipod:  # an iPod classic's times: beside the bar, centred on its rows as stock centres them
         check(y + h // 2 == 255, 'Classic\'s times are centred on the bar at 255')
+        check(time_widths(CLASSIC_LIGHT_FONT_SRC) == NP_IPOD_TIME_WS, 'NP_IPOD_TIME_W1, _W2, _W != the times\' measures')
         for n, box_x, align in ((named['label_playtime'], x - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W, 'right'),
                                 (remain, x + w + NP_IPOD_TIME_GAP, 'left')):
             n[1] = [box_x, NP_IPOD_TIME_Y, NP_IPOD_TIME_W, NP_IPOD_TIME_H]
