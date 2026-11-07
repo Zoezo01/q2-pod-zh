@@ -6814,14 +6814,16 @@ QS_ICONS=('img_wifiswitch','img_btswitch','img_lock','img_gain','img_usbmode','i
 QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbstorage','drop_po','drop_playset','drop_sysset')
 QS_LABELS=(('label_wifi','WiFi'),('label_bt','BT'),('label_lock','Off'),('label_gain','Low'),('label_usbmode','USB'),('label_outputway','Output Options'),('label_playset','Play'),('label_sysset','Set'))
 QS_X=(31,115,199,283)
-QS_GROUND,QS_OFF,QS_ON={'1':0x63717b,'0':0x1c1c1c},{'1':0x7f8b93,'0':0x333333},0x447cdd  # Home's pane, it lifted, Classic Blue's red tone (Cobalt's)
+QS_GROUND={'1':0x63717b,'0':0x1c1c1c}  # Home's pane
+QS_TILE={(0,'1'):(0xe9ebee,0xd3d6dc,0x9ba2aa),(0,'0'):(0x33373c,0x282b2f,0x40444a),(1,'1'):(0x2b88e8,0x1670d4,0x125cb0),(1,'0'):(0x2b88e8,0x1670d4,0x2b88e8)}  # (on, half): fill's top, its foot, the border
+def qs_ink(on,light): return '' if on else '_l' if light=='1' else '_d'
 QS_AT=[(QS_X[i%4],(20,138)[i//4]) for i in range(8)]
 def qs_new(light='1',theme='1',**config):
     SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light,**config),k)]
     try: q=LoadQueue()
     finally: SETUP.clear()
     q.mock('dialog_quit','widget_dispatch_event_to_target_recursive'); q.image_size=(60,60)
-    q.budget=400000  # the page paints eight tiles row by row, each row's corners a pixel at a time
+    q.budget=900000  # the page paints eight tiles, each a border box and its fill in it, row by row, each row's corners a pixel at a time
     q.handlers[int(manifest['patch_symbols']['stock_quicksettings_trampoline'],16)]='stock_quicksettings'
     q.btns=[q.node('image',n,image=i) for n,i in zip(QS_ICONS,QS_IMAGES)]
     q.labels=[q.node('label',n,text=t) for n,t in QS_LABELS]
@@ -6846,42 +6848,45 @@ def qs_down(q,w):
 def qs_event(q,w,kind):
     q.word(q.event+O['EVENT_X'],30); q.word(q.event+O['EVENT_Y'],40)
     return q.call(key=30,address=HOOKS['widget_dispatch'][0],args=(w,q.event,0,0),event_type=kind,gap=0)
-# The page's 320 rows, Home's pane in the half, eight flat tiles at their places, the one on (USB) in the accent, each glyph
+# The page's 320 rows, Home's pane in the half, eight tiles at their places, the one on (USB) blue, each glyph in its ink
 # over it; stock's images hidden and still tappable; final colours.
-def qs_tiles(q,rows,i=None):  # each tile's colour, from the bands after the ground
+def qs_tiles(q,rows,i=None):  # each tile's (top, foot, border), from the bands after the ground: a flat R 12 box, a 58 px R 11 fill in it
     out=[]
-    for a in QS_AT:
-        tile,rows=round_box(rows,*a,60,60,12); assert len(set(tile))==1; out.append(tile[0])
+    for x,y in QS_AT:
+        line,rows=round_box(rows,x,y,60,60,12); face,rows=round_box(rows,x+1,y+1,58,58,11); assert len(set(line))==1
+        assert all(min(a>>k&255,b>>k&255)<=c>>k&255<=max(a>>k&255,b>>k&255) for c in face for k in (0,8,16) for a,b in [(face[0],face[-1])])  # one ramp
+        out.append((face[0],face[-1],line[0]))
     return out
+def qs_want(c): return tuple(map(color_t,c))
 for light in '01':
     q=qs_new(light); arts=qs_paint(q); rows=q.bands[:320]
     assert [r[:4] for r in rows]==[(0,y,375,1) for y in range(320)] and {r[4] for r in rows}=={color_t(QS_GROUND[light])}
-    assert qs_tiles(q,q.bands[320:])==[color_t(QS_ON if i==4 else QS_OFF[light]) for i in range(8)]
-    assert arts==[('classic_light_'+n,QS_AT[i]) for i,n in enumerate(QS_IMAGES)]
+    assert qs_tiles(q,q.bands[320:])==[qs_want(QS_TILE[i==4,light]) for i in range(8)]
+    assert arts==[('classic_light_'+n+qs_ink(i==4,light),QS_AT[i]) for i,n in enumerate(QS_IMAGES)]
     assert wbox(q,q.menu)==(0,0,375,244) and [wbox(q,w) for w in q.btns]==[(*a,60,60) for a in QS_AT]
     assert all(q.u.mem_read(w+0x34,1)[0]==0 and q.nodes[w].get('visible',1) for w in q.btns)
     assert qs_event(q,q.btns[0],O['EVT_CLICK'])==0 and any(c[0]=='stock_dispatch' for c in q.calls)
     assert q.lcd_colors()==LCD_COLORS; passed()
-# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are the accent's.
+# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are blue.
 q=qs_new()
 LIT={'wifiopen','btopen','keylockopen','highgain','lo','usbstorage','usbaudio','usbdac'}
 for n in ('wifi','wifiopen','bt','btopen','keylock','keylockopen','lowgain','lowgaindisable','highgain','highgaindisable','lo','po','sa','usbstorage','usbaudio','usbdac','playset','sysset'):
-    q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n,(31,20))
-    assert qs_tiles(q,q.bands[320:])[0]==color_t(QS_ON if n in LIT else QS_OFF['1']),n; passed()
-# Graphite: its silver red tone takes the dark glyph (_k) in the dark half; in the light half it flips dark, under white.
-for light,want,glyph in (('0',0xd8d8d8,'_k'),('1',0x272727,'')):
+    q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n+qs_ink(n in LIT,'1'),(31,20))
+    assert qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[n in LIT,'1']),n; passed()
+# Graphite: on is the same blue, not the accent's silver, white glyph, in both halves.
+for light in '01':
     q=qs_new(light,CLASSIC_LIGHT_ACCENT='0'); q.nodes[q.btns[0]]['image']='drop_wifiopen'  # 0: Graphite's row
-    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen'+glyph,(31,20)) and qs_tiles(q,q.bands[320:])[0]==color_t(want),light; passed()
-# Pressed: every button darkens a sixth under the finger, flat, until the release; its hold is as today.
+    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen',(31,20)) and qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[1,light]),light; passed()
+# Pressed: every button's fill and border darken a sixth under the finger, until the release; its hold is as today.
 def qs_dark(c): return sum(((c>>k&255)*5//6)<<k for k in (0,8,16))
 for i,w in enumerate(q.btns):
     q=qs_new(); w=q.btns[i]; q.calls=[]; qs_down(q,w)
     assert ('widget_invalidate_force',w) in [c[:2] for c in q.calls]
-    arts=qs_paint(q); tiles=qs_tiles(q,q.bands[320:]); want=[QS_ON if j==4 else QS_OFF['1'] for j in range(8)]
-    assert tiles==[color_t(qs_dark(c) if j==i else c) for j,c in enumerate(want)] and arts==[('classic_light_'+n,QS_AT[j]) for j,n in enumerate(QS_IMAGES)]
+    arts=qs_paint(q); tiles=qs_tiles(q,q.bands[320:]); want=[QS_TILE[j==4,'1'] for j in range(8)]
+    assert tiles==[qs_want(map(qs_dark,c) if j==i else c) for j,c in enumerate(want)] and arts==[('classic_light_'+n+qs_ink(j==4,'1'),QS_AT[j]) for j,n in enumerate(QS_IMAGES)]
     q.calls=[]; qs_event(q,w,O['EVT_POINTER_UP_BEFORE']); assert ('widget_invalidate_force',w) in [c[:2] for c in q.calls]
-    assert qs_tiles(q,(qs_paint(q),q.bands)[1][320:])==[color_t(c) for c in want] and bool(q.timers)==False; passed()
-q=qs_new(); qs_down(q,q.btns[0]); qs_event(q,q.btns[0],O['EVT_POINTER_ABORT']); qs_paint(q); assert qs_tiles(q,q.bands[320:])[0]==color_t(QS_OFF['1']); passed()
+    assert qs_tiles(q,(qs_paint(q),q.bands)[1][320:])==[qs_want(c) for c in want] and bool(q.timers)==False; passed()
+q=qs_new(); qs_down(q,q.btns[0]); qs_event(q,q.btns[0],O['EVT_POINTER_ABORT']); qs_paint(q); assert qs_tiles(q,q.bands[320:])[0]==qs_want(QS_TILE[0,'1']); passed()
 q=qs_new(); qs_down(q,q.btns[2]); assert not q.timers; q.advance(O['RATE_HOLD_MS']); assert not q.opened; passed()  # Lock has no hold
 q=qs_new(); qs_down(q,q.btns[0]); q.advance(O['RATE_HOLD_MS'])
 assert q.opened==[('systemset/wifi_page',None)] and [c[1:3] for c in q.calls if c[0]=='dialog_quit']==[(q.win,0)]
@@ -7372,10 +7377,14 @@ def hold_cl(light='1'):
     CONFIG['LIGHT']=light; m=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(m)
     m.press(6000); assert m.hold()==11; d=m.top; m.word(d+O['W_PARENT'],m.wm); place(m,d,0,0,375,320); parents(m,d); m.clip=(0,0,375,320); m.calls=[]
     lst=named(m,d,'list_view'); place(m,m.view,0,0,294,wbox(m,lst)[3]); m.word(m.view+O['VIEW_CONTENT_H'],32*len(m.nodes[m.view]['children'])); return m,d,lst
-def hold_panel(m,d,paper):
+def panel_frame(bands,x,y,w,h,light):  # the flip panel's border (coverflow_panel_paint): one flat opaque colour a half, a pixel outside the panel all round,
+    c=color_t(0xb4b9c0 if light=='1' else 0x333333); sides=[b[:4] for b in bands if b[4]==c]  # so its left and right columns and its top and bottom rows match
+    assert sorted(sides)==sorted([(x-1,y-1,w+2,1),(x-1,y+h,w+2,1),(x-1,y,1,h),(x+w,y,1,h)]),sides
+    inside=[b for b in bands if b[4]!=c]; assert {b[0] for b in inside}=={x} and {b[0]+b[2] for b in inside}=={x+w},inside  # paper, header, shadow: edge to edge, nothing a column short on one side
+def hold_panel(m,d,paper,light='1'):
     m.paint(d); L=wbox(m,named(m,d,'list_view'))[3]; H=44+L; y=26+(294-H)//2; rows=[b[:5] for b in m.bands]
-    assert rows[0][:4]==(40,y,295,H) and rows[0][4]>>24==0xff and (paper is None or rows[0][4]==paper) and [b[:4] for b in rows[1:45]]==[(40,y+j,294,1) for j in range(44)] and rows[1][4]>>24==0xf0
-    assert [b[:4] for b in rows[45:53]]==[(40,y+42+j,294,1) for j in range(8)] and rows[46][4]==28<<24 and all(b[4]==0x22000000 for b in rows[53:57])
+    assert rows[0][:4]==(40,y,294,H) and rows[0][4]>>24==0xff and (paper is None or rows[0][4]==paper) and [b[:4] for b in rows[1:45]]==[(40,y+j,294,1) for j in range(44)] and rows[1][4]>>24==0xf0
+    assert [b[:4] for b in rows[45:53]]==[(40,y+42+j,294,1) for j in range(8)] and rows[46][4]==28<<24; panel_frame(rows[:57],40,y,294,H,light)
     assert corner_x(y-1,H+1)<=39; return y
 hm,hd,hl=hold_cl(); items=hm.nodes[hm.view]['children'][:]; nav=named(hm,hd,'view_navbar'); title=named(hm,nav,'scrlabel_title')
 assert wbox(hm,hl)==(40,99,294,192) and wbox(hm,nav)==(40,55,294,44) and len(items)==6
@@ -7388,7 +7397,7 @@ lab=[c for c in hm.nodes[items[0]]['children'] if hm.nodes[c]['type']=='hscroll_
 assert wbox(hm,lab)==(12,0,270,32) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==(CL_FONT,25) and 'style:normal:text_align_h' not in hm.nodes[lab] and '_final' not in hm.nodes[lab]
 hm.paint(hm.view); assert [b[1] for b in hm.bands if b[2]==294 and b[4]>>24==0xff][:1]==[0] and hm.lcd_colors()==LCD_COLORS
 assert not [b for b in hm.bands if b[4] in (0x24000000,0x33000000,0x21ffffff)]
-hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000)==55; passed()
+hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000,'0')==55; passed()
 # ... a failed boot reads as Minimal: the menu keeps stock's own box, with none of the panel.
 CONFIG['LIGHT']='1'; fm=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(fm,fail=lambda page:True); fm.press(6000); assert fm.hold()==11; fd=fm.top; fm.word(fd+O['W_PARENT'],fm.wm); place(fm,fd,0,0,375,320); parents(fm,fd); fm.clip=(0,0,375,320); fl=named(fm,fd,'list_view')
 assert wbox(fm,fl)[:2]!=(40,99); fm.paint(fd); assert not [b for b in fm.bands if b[4]>>24==0xf0]
@@ -7432,7 +7441,7 @@ passed()
 # Nothing crosses the glass, read from what was painted: tray, its track, Form A's track, the toast, the hold menu's panel and its ring at its tallest.
 def span(rows): x,y=min(b[0] for b in rows),min(b[1] for b in rows); return x,y,max(b[0]+b[2] for b in rows)-x,max(b[1]+b[3] for b in rows)-y
 t,td,_=toast_cl('1'); bg(t,td)
-for x,y,w,h in (span(trayrows),span(well),span(trackrows),[r['rect'] for r in t.rounded if r['kind']=='fill'][0],(39,54,297,238)):
+for x,y,w,h in (span(trayrows),span(well),span(trackrows),[r['rect'] for r in t.rounded if r['kind']=='fill'][0],(39,54,296,238)):
     assert corner_inset(y)<=x and corner_inset(y+h-1)<=x and x+w<=375-max(corner_inset(y),corner_inset(y+h-1)),(x,y,w,h)
 passed()
 # Minimal: confirm rows, QM_ROW 66, the toast and the press as today, no images.
@@ -9815,7 +9824,7 @@ class FlipMachine(DepthMachine):
         self.calls.append((name,a,b,c))
         self.returns(ret,clobber=True)
     def covers(self): return self.get(self.slide+O['W_PARENT'])
-    def panel(self): return next((w for w in self.nodes[self.page]['children'] if cf_geometry(self,w)[2]==295),0)
+    def panel(self): return next((w for w in self.nodes[self.page]['children'] if cf_geometry(self,w)[2]==294),0)
     def frame(self):
         self.draws=[]; self.call(address=HOOKS['widget_on_paint_border'][0],args=(self.covers(),self.canvas,0,0),gap=0,clear=False,count=50_000_000)
         assert len(self.draws)==1 and self.draws[0][2]==self.draws[0][3]==(0,0,375,294) and self.draws[0][4]&1
@@ -9973,7 +9982,7 @@ for light,white in (('0',0xffffff),('1',0)):
     CONFIG['LIGHT']=light; m=classic_light_new(FlipMachine); del CONFIG['LIGHT']; m.open(); m.found=[m.song(f'T{i}') for i in range(9)]; m.tracks(0); m.advance(300)
     panel=m.panel(); kids=m.nodes[panel]['children']; sheet=kids[0]; lv=m.find('list_view',panel); view=m.find('scroll_view',panel); rows=m.nodes[view]['children']
     title,artist=[w for w in kids if m.nodes[w]['type']=='hscroll_label']
-    assert cf_geometry(m,panel)==(40,9,295,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,295,285)
+    assert cf_geometry(m,panel)==(40,9,294,285) and m.nodes[panel]['visible'] and cf_geometry(m,sheet)==(0,0,294,285)
     assert m.get(panel+O['W_PARENT'])==m.page and m.nodes[m.page]['children'].index(panel)>m.nodes[m.page]['children'].index(m.covers())
     assert cf_geometry(m,title)==(12,1,270,33) and cf_geometry(m,artist)==(12,30,270,20) and m.face(title)==('classic-light',31) and m.face(artist)==('default',18)
     assert m.nodes[title]['text']=='Album 0' and m.nodes[artist]['text']=='Artist'
@@ -9988,15 +9997,18 @@ for light,white in (('0',0xffffff),('1',0)):
     assert 40+12>=corner_inset(26+9+57+(PANEL_SHOWN-1)*PANEL_ROW+(PANEL_ROW+25)//2) and 285-57-PANEL_SHOWN*PANEL_ROW<(PANEL_ROW-25)//2+6
     assert m.nodes[m.slide]['visible']==0 and m.nodes[[w for w in m.nodes[m.covers()]['children'] if m.nodes[w]['type']=='hscroll_label'][0]]['visible']==0 and m.nodes[m.covers()]['sensitive']==0 and m.nodes[m.covers()]['visible']
     assert not [w for w in m.nodes if m.nodes[w].get('name')==O.get('PAGE_TITLE')]; passed()  # no caption row: the bar's title is the page's name
-# Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the ring outside.
+# Its painters: the sheet the paper and the header's fill at f0, darker on top; over the rows the soft shadow, and the border outside, flat, the same on every side.
 m=flip_open(); m.advance(300); panel=m.panel(); sheet=m.nodes[panel]['children'][0]
-m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False)
-fill=[b for b in m.bands if b[3]==1]; assert m.bands[0][:4]==(0,0,295,285) and len(fill)==57 and [b[1] for b in fill]==list(range(57)) and all(b[0]==0 and b[2]==294 and b[4]>>24==0xf0 for b in fill)
+m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(sheet,m.canvas,0,0),gap=0,clear=False); sheet_bands=m.bands[:]
+fill=[b for b in m.bands if b[3]==1]; assert m.bands[0][:4]==(0,0,294,285) and len(fill)==57 and [b[1] for b in fill]==list(range(57)) and all(b[0]==0 and b[2]==294 and b[4]>>24==0xf0 for b in fill)
 assert fill[0][4]&0xffffff==0xb28d6d and fill[-1][4]&0xffffff==0xd0ac8b
 m.bands=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(panel,m.canvas,0,0),gap=0,clear=False)
-shade=[(b[1],b[4]>>24) for b in m.bands if b[2]==294 and b[3]==1]; ring=[b[:4] for b in m.bands if b[4]==0x22000000]
+shade=[(b[1],b[4]>>24) for b in m.bands if b[2]==294 and b[3]==1]
 assert shade==[(55+j,a) for j,a in enumerate((0,28,54,50,41,27,14,0))] or shade==[(55+j,a) for j,a in enumerate((0,28,54,50,41,27,14,0)) if a]
-assert sorted(ring)==sorted([(-1,-1,297,1),(-1,285,297,1),(-1,0,1,285),(295,0,1,285)]); passed()
+panel_frame(sheet_bands+m.bands,0,0,294,285,'1')
+CONFIG['LIGHT']='0'; m=flip_open(); del CONFIG['LIGHT']; m.advance(300); panel=m.panel(); m.bands=[]
+for w in (m.nodes[panel]['children'][0],panel): m.call(address=HOOKS['widget_on_paint_border'][0],args=(w,m.canvas,0,0),gap=0,clear=False)
+assert m.bands[0][4]==0xff000000; panel_frame(m.bands,0,0,294,285,'0'); passed()
 # A short album: the list only as tall as its rows, the paper below. 8 tracks: 7 show, the list scrolls under the header, which stays.
 m=classic_light_new(FlipMachine); m.open(); m.found=[m.song('T')]; m.tracks(0); m.advance(300)
 assert m.boxes==[(0,57,294,PANEL_ROW),(0,0,294,PANEL_ROW)]; passed()
@@ -10068,7 +10080,7 @@ for armed,gap in ((1,0),(0,0),(0,100)):
     m=classic_light_new(FlipMachine); m.open(); held=flip_held(m); flip_click(m); m.advance(gap or 300); panel=m.panel(); live=flip_backs(m),list(m.frames); lcds=len(m.lcds); kids=m.nodes[panel]['children']
     if armed: assert m.key(run=False)==11
     flip_click(m)
-    assert (flip_backs(m),list(m.frames))==live and len(m.lcds)==lcds and m.panel()==panel and m.nodes[panel]['children']==kids and len([w for w in m.nodes[m.page]['children'] if cf_geometry(m,w)[2]==295])==1 and not m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['visible']
+    assert (flip_backs(m),list(m.frames))==live and len(m.lcds)==lcds and m.panel()==panel and m.nodes[panel]['children']==kids and len([w for w in m.nodes[m.page]['children'] if cf_geometry(m,w)[2]==294])==1 and not m.nodes[m.slide]['visible'] and m.nodes[m.covers()]['visible']
     m.advance(300); assert m.nodes[panel]['visible']; assert m.key()==11; m.advance(0); m.advance(300)
     assert not m.panel() and flip_held(m)==held and m.nodes[m.slide]['visible']; passed()
 # Centre plays the row, Return as today; a missing card says so in the header.
@@ -18092,10 +18104,10 @@ def ring(R):
     lk,_=lock_cl(); r=lk.alloc(16)
     for i,v in enumerate((20,40,60,30)): lk.word(r+4*i,v)
     blank(lk); lk.call(address=payload_syms['round_ring'],args=(lk.canvas,r,R,0xff112233),gap=0); return lk
-for R in (11,12,0):
+for R in (14,5,0):  # 14 has no table; 5 has, 4 hasn't
     rows={}; [rows.setdefault(b[1],[]).append(b) for b in ring(R).bands]; assert sorted(rows)==list(range(40,70))
     for y in range(41,69): assert len(rows[y])==2 and rows[y][0][0]<=rows[y][1][0] and rows[y][0][0]-20==20+60-1-rows[y][1][0],(R,y)  # its sides, mirrored
-    assert rows[55][0][0]==20 and rows[55][1][0]==79 and (R==0 or rows[42][0][0]>20)
+    assert rows[55][0][0]==20 and rows[55][1][0]==79 and (R in (0,5) or rows[42][0][0]>20)  # 5's arc is in by row 2 less than a pixel
 passed()
 # The pale form's lit cell keeps its fade's 30 rows: a taller cell has no shade past them.
 lk,_=lock_cl(); r=lk.alloc(16)
