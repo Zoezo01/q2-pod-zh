@@ -5132,7 +5132,8 @@ static int face_has(int face, const unsigned *c, int n) {
  * that does (classic-light, then bold, at FACE_FALLBACK_PCT of the px), else stock's, which has
  * CJK; and its px, if the theme sets one. Written in every state the labels style, only when the
  * answer (face | px << 2) differs from was; returns it. A code-built row passes FONT_ROW: the
- * answer lives in its own "_font" prop, and a role the theme leaves to the style writes nothing. */
+ * answer lives in its own "_font" prop with the role above it (row_faces reads it), and a role the
+ * theme leaves to the style writes nothing. */
 static const char *const font_faces[] = { "default", "bold", "classic-light" }; /* [FONT_*] */
 /* bold.ttf standing in for classic-light.ttf: that much of the px gives the same capitals, their
  * cap heights' ratio (test_ipod). Only the fallback takes it: Classic's bold stays at its px. */
@@ -5157,14 +5158,32 @@ int theme_font(void *w, int role, int was) {
         face = FONT_DEFAULT; /* CJK */
     else if (fell)
         px = fallback_px(px);
-    int answer = face | px << 2;
-    if (!w || answer == was) return answer;
+    int answer = face | px << 2, kept = row ? answer | role << 16 : answer;
+    if (!w || kept == was) return answer;
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
         widget_set_prop_str(w, names[i], font_faces[face]);
         if (px) widget_set_prop_int(w, sizes[i], px);
     }
-    if (row) widget_set_prop_int(w, "_font", answer);
+    if (row) widget_set_prop_int(w, "_font", kept);
     return answer;
+}
+
+/* Each label under w that theme_font gave a face finds it again for its text, in its own role. */
+static void row_faces(void *w) {
+    int kept = widget_get_prop_int(w, "_font", -1);
+    if (kept >= 0) theme_font(w, kept >> 16, FONT_ROW);
+    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i)
+        row_faces(widget_get_child(w, i));
+}
+
+/* A virtual table's bind of a pooled row (table_client's load loop, TABLE_LOAD_CALL): stock's
+ * on_load_data writes the row's text with no relayout, so the faces its layout picked would stay
+ * with the last text: a CJK name in Classic's face, which has none of it, drew blank (#217). */
+int ringnav_table_load(void *ctx, unsigned index, void *row) {
+    int ret =
+        ((int (*)(void *, unsigned, void *))P(P(row, W_PARENT), TABLE_LOAD_DATA))(ctx, index, row);
+    row_faces(row);
+    return ret;
 }
 
 /* Canvas text in the theme's face where it has the characters, else bold.ttf where it has them

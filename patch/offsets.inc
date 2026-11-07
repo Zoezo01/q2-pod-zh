@@ -32,6 +32,7 @@
 #define VIEW_CONTENT_H 0x7c     /* scroll_view content height (same slot) */
 #define SCROLL_X 0x80           /* scroll_view horizontal offset */
 #define TABLE_TOP 0x80          /* table_client viewport top (same slot) */
+#define TABLE_LOAD_DATA 0xe4    /* table_client on_load_data, its ctx at 0xe0 (table_client_set_on_load_data) */
 #define SCROLL_Y 0x84           /* scroll_view viewport top */
 #define VIEW_HORIZONTAL 0x90    /* scroll_view xslidable */
 #define VIEW_VERTICAL 0x91      /* scroll_view yslidable */

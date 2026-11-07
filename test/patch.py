@@ -12217,6 +12217,36 @@ for setup in (None,lambda k: k.config.update(THEME='2')):  # Minimal and Modern
 # Cyrillic never takes the scale: its px is the style's, nothing written.
 fw=fk.node('hscroll_label',text='Songs'); fl=lambda t,want: (fk.nodes[fw].__setitem__('text',t),fk.call(address=payload_syms['theme_font'],args=(fw,0,-2,0),gap=0),[(fk.nodes[fw][f'style:{s}:font_name'],fk.nodes[fw][f'style:{s}:font_size']) for s in STATES]==[want]*3)[-1]
 assert fl('Songs',('classic-light',27)) and fl('Песни',('bold',22)) and fl('Songs',('classic-light',27)) and fl('歌',('default',27)); passed()
+# A virtual table binds a pooled row's text with no relayout (table_client's load loop, #217): ringnav_table_load runs stock's on_load_data (a PIC
+# call), then each label its layout gave a face finds it again for the new text, at its own role's size (a title 27, a tall title 28); a label never
+# themed stays as it was. Minimal's rows have no faces: the bind is stock's.
+from build import TABLE_LOAD_CALL
+assert struct.unpack_from('<I',demo,fileoff(demo,TABLE_LOAD_CALL))[0]==jal(payload_syms['ringnav_table_load'])
+class LoadMachine(Machine):
+    def hook(self,u,address,size,unused):
+        if self.handlers.get(address)!='tbl:load': return super().hook(u,address,size,unused)
+        self.calls.append(('tbl:load',*[u.reg_read(r) for r in REGS[:3]]))
+        for w,t in self.bound: self.nodes[w]['text']=t
+        self.returns(0)
+def table_load_faces(setup):
+    lk=LoadMachine()
+    if setup: setup(lk)
+    title,tall,plain=(lk.node('hscroll_label',text='WurtS') for _ in range(3))
+    box=lk.node('view',children=[tall,plain]); row=lk.node('table_row',children=[title,box]); client=lk.node('table_client',children=[row])  # as stock's rows: labels in a box too
+    for w,parent in ((title,row),(box,row),(tall,box),(plain,box)): lk.word(w+O['W_PARENT'],parent)
+    lk.word(row+O['W_PARENT'],client); lk.word(client+O['TABLE_LOAD_DATA'],0x1000900); lk.handlers[0x1000900]='tbl:load'
+    for w,role in ((title,0),(tall,4)): lk.call(address=payload_syms['theme_font'],args=(w,role,-2,0),gap=0)
+    def load(*texts):
+        lk.bound=list(zip((title,tall,plain),texts)); lk.calls=[]
+        assert lk.call(address=payload_syms['ringnav_table_load'],args=(0x1234,7,row,0),gap=0)==0 and lk.calls[0]==('tbl:load',0x1234,7,row)
+        return [(lk.nodes[w].get('style:normal:font_name'),lk.nodes[w].get('style:normal:font_size')) for w in (title,tall,plain)]
+    if setup:
+        assert load('WurtS','yama','x')==[('classic-light',27),('classic-light',28),(None,None)]
+        assert load('星野 源','須田景凪','原因は自分にある。')==[('default',27),('default',28),(None,None)]
+        assert load('YOASOBI','Навстречу','x')==[('classic-light',27),('bold',23),(None,None)]
+    else: assert load('星野 源','須田景凪','x')==[(None,None)]*3 and not [p for w in (title,tall) for p in lk.nodes[w] if p=='_font']
+for setup in (classic_light,None): table_load_faces(setup)
+passed()
 for config,face in (({},'default'),):
     ck=Machine(); ck.config.update(config); cw=ck.node('hscroll_label',text='Песни'); ck.call(address=payload_syms['theme_font'],args=(cw,3,-1,0),gap=0)
     assert ck.nodes[cw]['style:normal:font_name']==face and 'style:normal:font_size' not in ck.nodes[cw],config

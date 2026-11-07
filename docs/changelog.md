@@ -5,6 +5,7 @@
   - Display: under **Theme: Classic** the battery icon is a little smaller, and with **Light Mode** off its outline is Light Mode's grey, so it shows on the dark bar.
   - Now Playing: under **Theme: Classic** the progress bar opens at its widest and narrows only for a track of 10 minutes or more. It used to open narrow and widen for most tracks.
   - Library: **USB Storage** shows **OK to Disconnect** once the computer ejects the card. It used to stay on Connected.
+  - Library: under **Theme: Classic** Japanese, Chinese and Korean names no longer go blank as you scroll Artists, Songs and the other long lists, and no row takes another row's font.
 - **1.6.9**:
   - Cover Flow: Minimal and Modern scroll the covers as Classic does: they follow your thumb, speed up as you turn faster, and settle on the album named under them.
   - Cover Flow: keep turning fast and Album and Artist sorts go by initials, each letter shown big, after 0.4 s instead of 0.7 s.
