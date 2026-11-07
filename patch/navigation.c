@@ -3455,9 +3455,10 @@ static void paint_scrubber(void *w, void *canvas);
 static void slider_scrub(void *w, void *canvas);
 static void quick_scrub(void *w, void *canvas);
 static void search_over(void *w, void *canvas);
+static int search_del(void *w);
 int ringnav_paint(void *w, void *canvas) {
     if (st.pull_page && !pull_live()) pull_cancel();
-    int result = stock_paint_trampoline(w, canvas);
+    int result = search_del(w) ? 0 : stock_paint_trampoline(w, canvas);
     night_paint(canvas);
     coverflow_paint(w, canvas);
     lockscreen_paint(w, canvas);
@@ -6810,6 +6811,30 @@ int ringnav_search_init(void *win, void *ctx) {
             widget_set_text(widget_get_child(st.search_tabs, i), (const unsigned *)names[i]);
     return result;
 }
+/* The history's delete buttons, stock's: each row's X (s_btn_cancel_navbar) and the header's trash
+ * (s_btn_delete_navbar). Their styles' opaque black border, unseen on stock's black, turns white in
+ * Light Mode, a frame broken at its round corners over the selection: neither paints its border
+ * (ringnav_paint). 1 the X, 2 the trash, else 0. */
+static int search_del(void *w) {
+    if (!w || !st.search_win || window_of(w) != st.search_win) return 0;
+    const char *s = widget_get_prop_str(w, "style", "");
+    return !tk_strcmp(s, "s_btn_cancel_navbar") ? 1 : !tk_strcmp(s, "s_btn_delete_navbar") ? 2 : 0;
+}
+/* The X in stock's image's place, the theme's own mark as paint_tick's: 3 px runs, 15 x 13, about a
+ * row label's cap height, in the selection's text on the selected row, else the ink. */
+static void search_x(void *w, void *canvas) {
+    void *lcd = P(canvas, CANVAS_LCD);
+    if (!lcd) return;
+    const scheme_t *S = scheme();
+    unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
+    int x = I(w, W_W) / 2 - 7, y = I(w, W_H) / 2 - 6;
+    stock_canvas_set_fill_color(canvas, RGBA(painting_in(st.sel_accent) ? S->sel_text : S->ink));
+    for (int r = 0; r < 13; ++r) {
+        canvas_fill_rect(canvas, x + r, y + r, 3, 1);
+        if (r != 6) canvas_fill_rect(canvas, x + 12 - r, y + r, 3, 1);
+    }
+    stock_canvas_set_fill_color(canvas, fill);
+}
 /* The strip's row below it, over the rows. */
 static void search_over(void *w, void *canvas) {
     if (!w || w != st.search_win || st.kb_win || !P(canvas, CANVAS_LCD)) return;
@@ -7629,6 +7654,8 @@ int ringnav_paint_bg(void *w, void *canvas) {
     int result = 0;
     if (kb_key(w))
         kb_paint_key(w, canvas);
+    else if (search_del(w) == 1)
+        search_x(w, canvas);
     else if (!pressed_pill(w, canvas))
         result = stock_paint_bg_trampoline(w, canvas);
     void *wm = window_manager(), *bar = *(void *const *)system_bar;

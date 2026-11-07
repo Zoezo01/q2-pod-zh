@@ -17901,6 +17901,23 @@ einks=lambda: {q.nodes[n['search_edit']][f'style:{s}:text_color']&0xffffffff for
 fresh=search_new('0')[0:3:2]; fresh_e=fresh[0].nodes[fresh[1]['search_edit']]['style:empty:text_color']&0xffffffff
 blank(q); bg(q,win); assert tinks()=={color_t(0)} and len(einks())==1
 half_turn(q,19); assert tinks()=={color_t(0xffffff)} and einks()=={fresh_e}; passed()
+# The history's delete buttons, stock's s_btn_cancel_navbar (each row's X) and s_btn_delete_navbar (the header's trash): no border, whose
+# opaque black Light Mode turns white over the selection; the X is the theme's mark in the half's ink, 3 px runs 15 x 13 centred,
+# not stock's image; the trash keeps stock's.
+inks=set()
+for light in '10':
+    q,win,n=search_new(light); lv=q.nodes[n['view']]['children'][0]
+    x=q.node('button','',[],style='s_btn_cancel_navbar'); trash=q.node('button','',[],style='s_btn_delete_navbar'); other=q.node('button','',[],style='s_btn_listitem')
+    q.nodes[lv]['children']=[q.node('list_item','',[x,other])]; q.nodes[n['view']]['children'].insert(0,q.node('list_item','saerch_list_item',[trash])); parents(q,win)
+    for b in (x,trash,other): put(q,b,325,0,50,50)
+    blank(q); bg(q,x); runs=[b[:4] for b in q.bands]; inks|={b[4] for b in q.bands}
+    assert len(runs)==25 and {r[2:] for r in runs}=={(3,1)} and {r[1] for r in runs}==set(range(19,32)) and min(r[0] for r in runs)==18 and max(r[0]+r[2] for r in runs)==33 and 'stock_paint_bg' not in [c[0] for c in q.calls]
+    assert len({b[4] for b in q.bands})==1 and q.lcd_colors()==LCD_COLORS
+    blank(q); bg(q,trash); assert 'stock_paint_bg' in [c[0] for c in q.calls] and not q.bands
+    for b,stock in ((x,0),(trash,0),(other,1)):
+        blank(q); q.call(address=HOOKS['widget_on_paint_border'][0],args=(b,q.canvas,0,0),gap=0); assert ('stock_paint' in [c[0] for c in q.calls])==stock
+    passed()
+assert len(inks)==2; passed()  # each half its own ink
 # Stock's search_edit is disabled, so hint and query paint in that state: the hint's size while it's empty, the typed text's otherwise; written once per change.
 q,win,n=search_new(); dis=lambda: q.nodes[n['search_edit']]['style:disable:font_size']
 blank(q); bg(q,win); assert dis()==19; q.nodes[n['search_edit']]['text']='abc'; blank(q); bg(q,win); assert dis()==26
