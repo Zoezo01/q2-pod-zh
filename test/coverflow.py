@@ -2296,6 +2296,7 @@ static void thumb_shipped(void) {
     static const cf_style_t shipped = CF_SHIPPED;
     const cf_style_t fixture = shim_themes[1].cf;
     shim_themes[1].cf = shipped;
+    shim_themes[1].cf.jump_ticks = 0; /* letters off for the cap: its spin outlasts jump_ms */
     classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
     open_page();
     widget *s = slide(), *covers_view = &w[s->parent];
@@ -2306,7 +2307,7 @@ static void thumb_shipped(void) {
     #define AT() ((float)*index + th[T_GOAL]) /* the goal in albums, wherever SLIDE_INDEX is */
 
     /* The cap: top_speed albums a second at every Wheel Sensitivity, whatever the thumb does past it
-       (th_spin's ticks are 50%'s: 100 is 400 ticks/s at 200%, 57 albums/s uncapped). No letters yet. */
+       (th_spin's ticks are 50%'s: 100 is 400 ticks/s at 200%, 57 albums/s uncapped). No letters. */
     static const int pcts[] = { 50, 100, 200 };
     for (int k = 0; k < 3; ++k) {
         test_wheel_pct = pcts[k];
@@ -2327,6 +2328,12 @@ static void thumb_shipped(void) {
         th_rest();
     }
     test_wheel_pct = 50;
+    close_page();
+    shim_themes[1].cf = shipped;
+    open_page();
+    s = slide(), covers_view = &w[s->parent], n = s->nkids, index = (int *)(s->raw + SLIDE_INDEX);
+    top_window = page;
+    th_pass(0, 17);
 
     /* At the cap for jump_ms, letters: each re-centres the row, at rest, on a letter's first album,
        its letter shown; on in the album order, one a jump_ticks of travel. */

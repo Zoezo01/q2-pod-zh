@@ -69,7 +69,7 @@
              spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120" rate_down="50"
              back="50" dead="1" contact_ms="40" aim_snap="30" lead_from="25" lead_full="100" lead_ms="45" row_shift="20"
              row_from="100" row_full="300" row_shrink="8" row_flat="200" row_out="33" row_edge="160" row_width="60"
-             row_key="72" row_reach="22" art_persp="13" jump_ms="700" jump_ticks="5"/>
+             row_key="72" row_reach="22" art_persp="13" jump_ms="400" jump_ticks="5"/>
     <!-- The album and the artist in the title's face, 24 px apart: their boxes overlap, as each must hold the font -->
     <element name="caption" name_px="27" artist_px="27" text_y="220" artist_y="26"/>
   </view>
