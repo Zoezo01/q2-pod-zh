@@ -2956,8 +2956,9 @@ static void lit_rows(void *canvas, const rect_t *c, int ends) {
     round_row_ends(canvas, c, 6, c->h - 1, 0x59000000u, ends);
 }
 /* The pale form's lit cell, 30 rows: an inset light right edge, what its shape leaves a pixel left
- * of itself, and, with a cell to its right, a 4 px shade over that one, fading down the rows. */
-static void pale_lit(void *canvas, const rect_t *c, int more) {
+ * of itself, and, with a cell to its right, a 4 px shade over that one, fading down the rows. Kept
+ * a function of its own with one caller: test/patch.py calls it. */
+__attribute__((noinline)) static void pale_lit(void *canvas, const rect_t *c, int more) {
     static const unsigned char fade[30] = { 255, 255, 255, 255, 255, 242, 230, 217, 204, 191,
                                             178, 166, 153, 140, 127, 115, 102, 92,  83,  73,
                                             63,  53,  44,  34,  24,  15,  5,   0,   0,   0 },
