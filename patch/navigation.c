@@ -867,48 +867,23 @@ static int name_in_n(const char *name, const char *const *names, unsigned n) {
     return 0;
 }
 #define name_in(name, names) name_in_n(name, names, sizeof names / sizeof *names)
-/* A page just added to the window manager: Home's hint right over Home, else kind's. */
-static void motion_push(void *win, int kind) {
-    if (theme()->motion[MOTION_HOME].hint) {
-        void *wm = window_manager();
-        unsigned n = widget_count_children(wm);
-        if (n > 1 && home_menu(widget_get_child(wm, n - 2))) kind = MOTION_HOME;
-    }
-    motion_hint(win, kind);
-}
 /* A window as it loads, by name. Themes with no window hints read nothing. */
 static void motion_load(void *root, int np) {
-    /* Stock's pages over Now Playing, without a slide of their own */
-    static const char *const EXTRA[] = { "playerqueue_page", "playermore_page",
-                                         "playerjumpinfo_page" },
-                             *const FADES[] = { "confirminfo_dialog", "sortselect_dialog",
-                                                "addplaylist_dialog" };
+    static const char *const FADES[] = { "confirminfo_dialog", "sortselect_dialog",
+                                         "addplaylist_dialog" };
     const motion_t *M = theme()->motion;
-    if (!M[MOTION_PAGE].hint && !M[MOTION_PAYLOAD].hint && !M[MOTION_HOME].hint &&
-        !M[MOTION_PLAYING].hint && !M[MOTION_DIALOG].hint)
-        return;
+    if (!M[MOTION_PAGE].hint && !M[MOTION_PLAYING].hint && !M[MOTION_DIALOG].hint) return;
     const char *name = widget_get_prop_str(root, "name", "");
     if (np)
         motion_hint(root, MOTION_PLAYING);
     else if (name_in(name, FADES))
         motion_hint(root, MOTION_DIALOG);
-    else if (name_in(name, EXTRA))
-        motion_hint(root, MOTION_PAYLOAD);
     else if (slides(root))
-        motion_push(root, MOTION_PAGE);
+        motion_hint(root, MOTION_PAGE);
 }
-/* page_open's page: Cover Flow's, or a payload page whose rows are all there at its first paint.
- * Pages that fill their rows later stay immediate: a slide would show them empty. */
+/* page_open's page: Cover Flow's takes the theme's hint, if it has one. */
 void motion_open(void *page, const char *name) {
-    static const char *const INCLUDE[] = { "shuffle_page", "mostplayed_page",   "ratings_page",
-                                           "rated_page",   "era_page",          "era_albums_page",
-                                           "upnext_page",  "playlistedit_page", "streamconf_page",
-                                           "games_page",   "books_page",        "apps_page" };
-    if (!tk_strcmp(name, "coverflow_page"))
-        motion_hint(page, MOTION_COVERFLOW);
-    else if ((theme()->motion[MOTION_PAYLOAD].hint || theme()->motion[MOTION_HOME].hint) &&
-             name_in(name, INCLUDE))
-        motion_push(page, MOTION_PAYLOAD);
+    if (!tk_strcmp(name, "coverflow_page")) motion_hint(page, MOTION_COVERFLOW);
 }
 
 /* The animator's destination is the intended icon, even before stock commits its index.

@@ -12848,7 +12848,7 @@ CONFIG.update(SHORTCUT='0',HOME='0'); m=ShuffleMachine(); del CONFIG['SHORTCUT']
 assert m.call(address=home_hook[0],args=(m.top,0,0,0),gap=0)==0; m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start')
 swap_values(m,120,8); passed()
 # Windows from the theme: what each kind's hint does to a window as it loads or opens.
-HOME_HINT='htranslate(duration=270,easing=linear)'; DIALOG_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
+OTHER_HINT='htranslate(duration=270,easing=linear)'; DIALOG_HINT='fade(duration=300,easing=quadratic_out)'; ASSET_HINT=f"htranslate(duration={O['PAGE_SLIDE_MS']})"
 HINT_PROPS=('anim_hint','open_anim_hint','close_anim_hint','highlight')
 EXTRA=('playerqueue_page','playermore_page','playerjumpinfo_page')
 PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','books_page','apps_page')
@@ -12864,43 +12864,37 @@ def motion_load(m,name,kind='window',**props):  # as stock's loader hands it ove
     w=m.node(kind,name.rsplit('/')[-1]); m.nodes[w].update(props); ui_loaded(m,name,w); return w
 def motion_open(m,name): return m.call(address=payload_syms['page_open'],args=(m.string(name),0,0,0),gap=0)&0xffffffff
 def motion_over(m,name): m.nodes[m.wm]={'children':[m.node('window',name),m.node('window','opening')]}  # stock has added what opens by then
-# A stock page with a slide takes Home's push right over Home, once, and keeps the asset's over anything else; Minimal keeps it and writes nothing.
-for t,below,want,writes in (('0','home_page',ASSET_HINT,0),('1','album_page',ASSET_HINT,0),('1',None,ASSET_HINT,0),('1','home_page',HOME_HINT,1)):
-    for carried,n in ((ASSET_HINT,writes),(want,0)):  # what it already carries is left alone
+# Classic's pages open as Minimal's: a stock page with a slide keeps the asset's, over Home or anything else, and nothing is written.
+for t in '01':
+    for below in ('home_page','album_page',None):
         m=motion_machine(t)
         if below: motion_over(m,below)
-        w=motion_load(m,'localmusic/albuminfo_page',anim_hint=carried); assert m.nodes[w]['anim_hint']==want and hint_writes(m)==n,(t,below)
+        w=motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT); assert m.nodes[w]['anim_hint']==ASSET_HINT and hint_writes(m)==0,(t,below)
 passed()
-# A theme's page hint holds over any other window, and over Home when it has no hint for Home.
-m=motion_machine('1'); set_hint(m,'page',DIALOG_HINT); assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==DIALOG_HINT
-m=motion_machine('1'); set_hint(m,'page',DIALOG_HINT); m.word(theme_at(m)+THEME_MOTION_OFF+8*MOTION_WINDOW.index('home'),0); motion_over(m,'home_page')
-assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==DIALOG_HINT; passed()
-# Queue, More and Go to push under Classic; a page with no slide and no name here stays instant.
-for t,want in (('0',None),('1',ASSET_HINT)):
-    m=motion_machine(t); assert all(m.nodes[motion_load(m,n)].get('anim_hint')==want for n in EXTRA),t
-m=motion_machine('1'); assert 'anim_hint' not in m.nodes[motion_load(m,'wifi_page')]; passed()
-# Payload pages whose rows are there at first paint push under Classic; other pages and other themes stay instant.
-for name in PAYLOAD:
-    m=motion_machine('1'); assert m.nodes[motion_open(m,name)].get('anim_hint')==ASSET_HINT,name
-    motion_over(m,'album_page'); assert m.nodes[motion_open(m,name)].get('anim_hint')==ASSET_HINT,name
-    motion_over(m,'home_page'); assert m.nodes[motion_open(m,name)].get('anim_hint')==HOME_HINT,name
-for t,name in (('0','shuffle_page'),('1','addon_page'),('1','radionp_page'),('1','spotify_page'),('1','chapters_page'),('1','coverflow_page')):
-    m=motion_machine(t); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
-    motion_over(m,'home_page'); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
+# A theme's page hint holds over any window, Home included.
+for below in ('album_page','home_page'):
+    m=motion_machine('1'); set_hint(m,'page',DIALOG_HINT); motion_over(m,below); assert m.nodes[motion_load(m,'localmusic/albuminfo_page',anim_hint=ASSET_HINT)]['anim_hint']==DIALOG_HINT,below
+passed()
+# Queue, More and Go to, a page with no slide, and the payload's own pages stay instant in every theme, over Home too.
+for t in '01':
+    m=motion_machine(t); assert all('anim_hint' not in m.nodes[motion_load(m,n)] for n in (*EXTRA,'wifi_page')),t
+    for name in (*PAYLOAD,'addon_page','radionp_page','spotify_page','chapters_page','coverflow_page'):
+        m=motion_machine(t); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
+        motion_over(m,'home_page'); assert 'anim_hint' not in m.nodes[motion_open(m,name)],(t,name)
 passed()
 # A theme with a Cover Flow hint: its page takes it, and no other page does.
 m=motion_machine('1'); set_hint(m,'coverflow',DIALOG_HINT); assert m.nodes[motion_open(m,'coverflow_page')]['anim_hint']==DIALOG_HINT; passed()
 # Now Playing stays instant under Classic. A theme with a hint pushes it back on Return only.
 m=motion_machine('1'); np=motion_load(m,'playing_page'); assert not {'anim_hint','open_anim_hint','close_anim_hint'}&set(m.nodes[np])
-m=motion_machine('1'); set_hint(m,'playing',HOME_HINT); np=motion_load(m,'playing_page')
-assert m.nodes[np]['close_anim_hint']==HOME_HINT and not {'anim_hint','open_anim_hint'}&set(m.nodes[np]); passed()
+m=motion_machine('1'); set_hint(m,'playing',OTHER_HINT); np=motion_load(m,'playing_page')
+assert m.nodes[np]['close_anim_hint']==OTHER_HINT and not {'anim_hint','open_anim_hint'}&set(m.nodes[np]); passed()
 # The list under a close-hinted Now Playing draws its held row while Now Playing slides out.
 def under_np(hint):
     q=vol_np(); vol_closed(q)
     if hint: set_hint(q,'playing',hint)
     w,_=q.page_list(3); q.paint(w); assert q.call()==11 and q.selected(w)==1; q.word(w+O['W_PARENT'],q.top); q.word(q.top+O['W_PARENT'],q.wm)
     q.top=q.win; bare(q); q.strokes=[]; q.paint(w,gap=0); return q,w
-q,w=under_np(HOME_HINT); assert q.drawn() and q.selected(w)==1
+q,w=under_np(OTHER_HINT); assert q.drawn() and q.selected(w)==1
 q,w=under_np(None); assert not q.drawn(); passed()
 # A confirm, the hold menu and add to playlist fade in, over a dim that fades from 0 where the asset has one.
 for name in FADES:
@@ -12917,11 +12911,11 @@ try: am=ArtistCoverflow(page='localclass_page',cls=0xff01,rows=2)
 finally: SETUP.clear()
 am.handed=[]; am.config['ARTISTCF']='1'; am.split=[am.song('Baroness'),am.song('STP')]; am.word(am.row(1)+O['REC_ALBUM'],am.string('Other album'))
 for r in am.split: am.word(r+O['REC_ALBUM_ARTIST'],am.get(r+O['REC_NAME']))
-am.found=[am.split[0]]; am.artist_page('artistinfo_page'); am.nodes[am.top]['anim_hint']=HOME_HINT
+am.found=[am.split[0]]; am.artist_page('artistinfo_page'); am.nodes[am.top]['anim_hint']=OTHER_HINT
 am.call(address=HOOKS['load_localartist_list'][0],args=(1,0,0,0),gap=0); assert am.nodes[am.top]['anim_hint']==''
-am.advance(0); assert am.handed==[1] and am.nodes[am.top]['anim_hint']==HOME_HINT; passed()
-# A sliding payload page holds wheel ticks as a stock page does.
-m=motion_machine('1'); p=motion_open(m,'shuffle_page'); assert m.nodes[p]['anim_hint']==ASSET_HINT
+am.advance(0); assert am.handed==[1] and am.nodes[am.top]['anim_hint']==OTHER_HINT; passed()
+# A sliding page of ours holds wheel ticks as a stock page does.
+m=motion_machine('1'); p=motion_open(m,'shuffle_page'); m.nodes[p]['anim_hint']=ASSET_HINT
 w,es=m.page_list(10); m.top=p; m.nodes[p]['children']=[w]; m.word(w+O['W_PARENT'],p); m.paint(w); m.animating=1
 for gap in (1000,20,20): assert m.call(gap=gap)==11
 assert m.selected(w)==0; m.animating=0

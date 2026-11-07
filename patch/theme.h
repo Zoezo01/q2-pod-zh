@@ -113,11 +113,9 @@ typedef struct {
 } ui_redirect_t; /* sets with <set>_<name>.bin */
 enum {
     MOTION_PAGE,
-    MOTION_PAYLOAD,
     MOTION_PLAYING,
     MOTION_DIALOG,
     MOTION_COVERFLOW,
-    MOTION_HOME, /* a page right over Home */
     MOTION_INPLACE,
     MOTION_SWAP,
     MOTION_STEP,

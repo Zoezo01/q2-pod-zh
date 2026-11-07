@@ -51,7 +51,7 @@ EASINGS = ('linear', 'quadratic_in', 'quadratic_out', 'quadratic_inout', 'cubic_
            'back_in', 'back_out', 'back_inout', 'bounce_in', 'bounce_out', 'bounce_inout', 'follow')  # follow: ours, EASE_FOLLOW
 ANIMS = ('htranslate', 'vtranslate', 'fade', 'center_scale', 'popup', 'popdown', 'slide_up', 'slide_down', 'slide_left', 'slide_right')
 # theme.h's MOTION_* order: what a window animates on load or open, what a widget glide takes
-MOTION_WINDOW = ('page', 'payload', 'playing', 'dialog', 'coverflow', 'home')
+MOTION_WINDOW = ('page', 'playing', 'dialog', 'coverflow')
 MOTION_WIDGET = ('inplace', 'swap', 'step', 'step_fast', 'coverflow_step', 'coverflow_step_fast')
 
 
