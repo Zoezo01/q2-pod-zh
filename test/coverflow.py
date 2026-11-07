@@ -687,7 +687,7 @@ static void renderer(void) {
     }
     for (int i = 0; i < 160 * 160; ++i) art[i] = 0xff000000u | (unsigned)(i * 2654435761u >> 8 & 0xffffff);
     /* At rest the selected cover is the texture itself, 160 px square at CF_TOP, centred, full
-       brightness; the neighbours at CF_BRIGHT1, then CF_BRIGHT2; the third out is not drawn. */
+       brightness; the neighbours at CF_BRIGHT1, then CF_BRIGHT2, the third out too (CF_THIRD). */
     const unsigned *rest[7] = { flat[0], flat[1], flat[2], art, flat[4], flat[5], flat[6] };
     /* Classic under Square: the corners are the cover too, and a change back rounds them again. */
     square_art = 1;
@@ -703,13 +703,13 @@ static void renderer(void) {
                 assert(px(CF_CX - 80 + x, CF_TOP + y) == art[y * 160 + x]);
     assert(px(CF_CX - 81, CF_TOP + 80) != art[80 * 160] && px(CF_CX, CF_TOP - 1) == 0xff000000u);
     /* Each neighbour's visible run on the horizon, sampled in its middle: its colour at its
-       brightness, two a side, each run a real slice of cover. */
-    for (int j = -2; j <= 2; ++j) {
+       brightness, three a side, each run a real slice of cover. */
+    for (int j = -3; j <= 3; ++j) {
         if (!j) continue;
         int first = -1, last = -1;
         for (int x = 0; x < CF_VIEW_W; ++x)
             if (slot_of(px(x, CF_TOP + 80)) == j + 3) last = x, first = first < 0 ? x : first;
-        assert(last - first >= (abs(j) == 1 ? 40 : 18));
+        assert(last - first >= (abs(j) == 1 ? 40 : abs(j) == 2 ? 18 : 8));
         unsigned p = px((first + last) / 2, CF_TOP + 80), want = colours[j + 3];
         int b = abs(j) == 1 ? CF_BRIGHT1 : CF_BRIGHT2;
         for (int i = 0; i < 3; ++i) assert(abs(ch(p, i) - ch(want, i) * b / 256) <= 1);
@@ -718,7 +718,7 @@ static void renderer(void) {
     memcpy(without, frame, sizeof(frame));
     const unsigned *inner[7] = { 0, flat[1], flat[2], art, flat[4], flat[5], 0 };
     render(0, inner);
-    assert(!memcmp(without, frame, sizeof(frame))); /* the third out is not drawn at rest */
+    assert(memcmp(without, frame, sizeof(frame))); /* the third out stays at rest, as in the row */
     /* Everything, reflections included, fits the frame with room to spare. */
     for (int x = 0; x < CF_VIEW_W; ++x) assert(!(px(x, 0) & 0xffffff) && !(px(x, CF_VIEW_H - 1) & 0xffffff));
     unsigned centre = px(CF_CX, CF_TOP + 80); /* Light Mode: the same covers over paper */
@@ -1311,7 +1311,7 @@ static void depth(void) {
     renderer();
     pinned();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
-       under the drawn covers; the captions sit under the frame. */
+       under the drawn covers; the captions sit under the covers, over the reflections' tail. */
     frame_fail = 0;
     open_page();
     widget *s = slide();
@@ -1327,7 +1327,7 @@ static void depth(void) {
         widget *l = &w[covers_view->kids[i]];
         if (strcmp(l->type, "hscroll_label")) continue;
         int *g = (int *)l->raw;
-        assert(g[0] == CF_EDGE && g[2] == 375 - 2 * CF_EDGE && g[1] == CF_TEXT_Y + labels * CF_NAME_H && g[1] >= CF_VIEW_H);
+        assert(g[0] == CF_EDGE && g[2] == 375 - 2 * CF_EDGE && g[1] == CF_TEXT_Y + labels * CF_NAME_H && g[1] >= CF_TOP + 160);
         ++labels;
     }
     assert(labels == 2);
@@ -2290,6 +2290,19 @@ static void thumb_wheel(void) {
         th_pass(0, 17);
         assert(wheel_raw == 2);
         coverflow_paint(s, canvas);
+        /* Their row settles onto the shelf with no pop: a tiny lead draws the rest frame's covers,
+           the third out included (CF_THIRD). */
+        for (int frac = -ONE / 2; frac < ONE / 2; frac += ONE / 8) {
+            cf_thumb_lead(-1);
+            R(f, frac);
+            cf_thumb_lead(1e-4f);
+            R(g2, frac);
+            int differ = 0;
+            for (int y = 0; y < shipped0.view_h; ++y)
+                for (int x = 0; x < CF_VIEW_W; ++x) differ += abs(ch(f[y * PITCH + x], 1) - ch(g2[y * PITCH + x], 1)) > 40;
+            assert(differ < shipped0.view_h * 8);
+        }
+        cf_thumb_lead(-1);
         close_page();
         top_window = 0;
         th_pass(0, 17);
@@ -2972,7 +2985,7 @@ def main():
     cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED0={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in builtins()[0].items() if f.startswith('cf.')) + ' }')
-    cf_style.append('-DPINNED_FRAMES=0x8c470fe7u')
+    cf_style.append('-DPINNED_FRAMES=0x055534d4u')
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
         line = re.search(r'^#define ' + name + r' (.*)$', source, re.M)[1]
