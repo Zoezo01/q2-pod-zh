@@ -147,9 +147,9 @@
  * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from
  * SCRUB_REFLECT_A/256 over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX, the largest
  * whose line fits their NP_IPOD_TIME_H box, NP_IPOD_TIME_GAP from the bar, in
- * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59",
- * NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59", the build's layout (tools/ipod.py
- * measures them). The boxes' outer edges stay; the bar takes what they leave. */
+ * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59", the build's
+ * layout, NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59" (tools/ipod.py measures them).
+ * The boxes' outer edges stay; the bar takes what they leave. */
 #define SLANT_FAR 224
 #define SLANT_REFLECT_A 84
 #define SLANT_REFLECT_PCT 22
@@ -167,7 +167,7 @@
  * window (navigation.c stream_ipod; tools/ipod.py playing_page checks them): the art NP_IPOD_ART
  * square at SPOT_ART_X, NP_IPOD_ART_Y, its box its reflection's room taller; the title's row at
  * NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y, the artist's, album's and "3 of 12"'s 34, 62 and 90 under it; the
- * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the widest boxes';
+ * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the "-9:59" boxes';
  * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' NP_IPOD_TIME_H boxes
  * beside it, centred on its rows. */
 #define NP_IPOD_ART 178
@@ -177,7 +177,7 @@
 #define NP_IPOD_TEXT_Y 38
 #define NP_IPOD_FAV_X 300
 #define NP_IPOD_FAV_Y 165
-#define NP_IPOD_BAR_X 87
+#define NP_IPOD_BAR_X 66
 #define NP_IPOD_BAR_Y 245
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {

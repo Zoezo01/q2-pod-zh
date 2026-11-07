@@ -403,7 +403,7 @@ def test_playing_page_classic_ipod():
     assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
     play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
     assert play[1][0] == ipod.corner_x(g.bar + play[1][1], play[1][3]) and x + w_ == 375 - x and w_ >= 170  # the times' rows clear the glass
-    assert play[1][3] == ipod.NP_IPOD_TIME_H and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_W
+    assert play[1][3] == ipod.NP_IPOD_TIME_H and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_WS[0]
     assert play[1][0] + play[1][2] + ipod.NP_IPOD_TIME_GAP == x and remain[1][0] == x + w_ + ipod.NP_IPOD_TIME_GAP
     assert 0 <= 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar - (2 * play[1][1] + play[1][3]) <= 1  # centred, or half a row high
     assert play[2]['style:normal:font_name'] == ipod.CLASSIC_LIGHT_FONT_NAME == remain[2]['style:normal:font_name']
@@ -1178,7 +1178,8 @@ def test_classic_times_fit():
 
 
 def test_classic_time_classes():
-    """The bar between the fitted boxes (navigation.c ipod_bar_x): the boxes' outer edges and the gap kept, centred."""
-    edge = ipod.inc('NP_IPOD_BAR_X') - ipod.NP_IPOD_TIME_GAP - ipod.NP_IPOD_TIME_W
+    """The bar between the fitted boxes (navigation.c ipod_bar_x): the boxes' outer edges and the gap kept, centred;
+    the build's the widest, the under-10:00 class's, so a long track's only narrows it."""
+    edge = ipod.inc('NP_IPOD_BAR_X') - ipod.NP_IPOD_TIME_GAP - ipod.NP_IPOD_TIME_WS[0]
     bars = [(edge + w + ipod.NP_IPOD_TIME_GAP, 375 - 2 * (edge + w + ipod.NP_IPOD_TIME_GAP)) for w in ipod.NP_IPOD_TIME_WS]
-    assert edge == 23 and bars == [(66, 243), (74, 227), (87, 201)] and bars[-1][0] == ipod.with_geometry(CLASSIC_LIGHT).NP_BAR_X
+    assert edge == 23 and bars == [(66, 243), (74, 227), (87, 201)] and bars[0][0] == ipod.with_geometry(CLASSIC_LIGHT).NP_BAR_X

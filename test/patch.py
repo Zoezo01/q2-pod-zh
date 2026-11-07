@@ -6699,8 +6699,8 @@ assert not m.bands and [(t['text'],t['rect'],t['font'][1]) for t in m.letters]==
 m.nodes[sv2]['value']=1; paint(dlg2)  # a sliver is still a round dot
 assert m.rounded[2]['rect']==(*bar[:2],BH,BH),m.rounded; passed()
 R=O['LETTER_RADIUS']; assert math.hypot(80-(X+R),Y+H-R-240)+R<=80  # its rounded corner clears the glass's
-# Classic's times beside the bar fit the track's length (ipod_times): "-9:59" boxes and a wider bar under 10:00,
-# the build's "-9:59:59" ones and 201 px from an hour, the boxes' outer edges and the gap kept. The page opens fitted;
+# Classic's times beside the bar fit the track's length (ipod_times): the build's "-9:59" boxes and its widest bar under
+# 10:00, "-9:59:59" ones and 201 px from an hour, the boxes' outer edges and the gap kept. The page opens fitted;
 # a seek keeps the class; a new length refits off the paint that saw it (np_fit_due), each widget repainted where it
 # was and where it goes. The volume over it takes the bar's current width, a speaker in each box; an A-B marker's x,
 # stock's on the boot set's bar, is the same share of the fitted one (ringnav_ab_x).
@@ -6711,9 +6711,9 @@ class ABMachine(QueueMachine):
         self.calls.append(('ab_x',u.reg_read(UC_MIPS_REG_A0))); self.returns(self.ab,clobber=True)
 CONFIG.clear(); CONFIG.update(THEME='1')
 m=ABMachine(queue=3,pos=1); m.handlers[playing+12]='stock_playing'; m.handlers[0x52a268]='ab:x'
-slider,elapsed,remain=m.node('slider','slider_play',max=225,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
+slider,elapsed,remain=m.node('slider','slider_play',max=7200,value=100,bar_size=4),m.node('label','label_playtime'),m.node('label','label_ipod_remain')
 win=m.node('window','playing_page',[slider,elapsed,remain]); m.word(win+O['W_PARENT'],m.wm); m.top=win
-BX,TW,GAP,TY=O['NP_IPOD_BAR_X'],O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_BAR_Y']-(O['NP_IPOD_TIME_H']-O['NP_BAR_IPOD']+1)//2
+BX,TW,GAP,TY=O['NP_IPOD_BAR_X'],O['NP_IPOD_TIME_W1'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_BAR_Y']-(O['NP_IPOD_TIME_H']-O['NP_BAR_IPOD']+1)//2
 def lay(tw):
     x=BX-TW+tw
     return {elapsed:(x-GAP-tw,TY,tw,21),remain:(375-x+GAP,TY,tw,21),slider:(x,233,375-2*x,44)}
@@ -6729,14 +6729,18 @@ from ipod import VALUE_NAMES
 for n,v in (('np_bar_x',BX),('np_bar_w',375-2*BX)):  # Classic's boot set: row 0 stands in for it (st.geom 0)
     m.u.mem_write(payload_syms['boot_values']+2*VALUE_NAMES.index(n),struct.pack('<H',v))
 m.word(syms['system_bar'],m.node('window','system_bar'))
-assert m.call(address=playing,args=(win,7,0,0),gap=0)==0
-assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W1']) and lay(O['NP_IPOD_TIME_W1'])[slider][:3:2]==(66,243)
+assert m.call(address=playing,args=(win,7,0,0),gap=0)==0  # a two-hour track: the build's 243 px bar narrows at once
+assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W']) and lay(TW)[slider][:3:2]==(66,243) and lay(O['NP_IPOD_TIME_W'])[slider][:3:2]==(87,201)
 assert refit()==[elapsed,remain,slider]
 m.nodes[m.wm]={'children':[win]}; m.calls=[]; paint(win); assert not m.timers or payload_syms['np_fit_due'] not in [t[1] for t in m.timers.values()]
 from build import AB_X_CALLS  # the placement's three calls of the x go through ringnav_ab_x
 assert [struct.unpack_from('<I',demo,fileoff(demo,a))[0] for a in AB_X_CALLS]==[jal(payload_syms['ringnav_ab_x'])]*3
 def ab_x(x): m.ab=x; m.calls=[]; r=signed(m.call(address=payload_syms['ringnav_ab_x'],args=(77,0,0,0),gap=0)); assert m.calls[0]==('ab_x',77); return r
-assert [ab_x(x) for x in (BX,BX+89,BX+200,0)]==[66,66+89*243//201,66+200*243//201,0]; passed()  # 0: no point to mark
+assert [ab_x(x) for x in (BX,BX+89,BX+242,0)]==[87,87+89*201//243,87+242*201//243,0]  # 0: no point to mark
+m.nodes[slider]['max']=225; m.calls=[]; paint(win)  # a 3:45 track: mid-paint nothing moves
+assert geo(slider)==lay(O['NP_IPOD_TIME_W'])[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
+m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(TW) and refit()==[elapsed,remain,slider]
+assert ab_x(BX+89)==BX+89; passed()  # the build's bar: stock's own
 sv,lv=m.node('slider','slider_vol',max=100,value=40),m.node('label','label_vol')
 dlg=m.node('dialog','volume_dialog',[sv,lv]); m.word(dlg+O['W_PARENT'],m.wm); put(dlg,0,0,375,320)
 m.nodes[m.wm]={'children':[win,dlg]}; m.top=dlg; m.image_size=(8,13); m.bands.clear(); m.image_draws.clear(); m.calls=[]; paint(dlg)
@@ -6745,13 +6749,12 @@ assert fills[:2]==[(23,TY+30,35,21,color_t(0)),(317,TY+30,35,21,color_t(0))],fil
 assert {(b[0],b[2]) for b in fills[2:]}=={(66,on),(66+on,243-on)},fills  # the bar between the speakers, as wide as the page's
 assert [d[0] for _,d in m.image_draws]==[23+35-8,317],m.image_draws; passed()
 m.nodes[m.wm]={'children':[win]}; m.top=win; m.image_size=(50,50)
-m.nodes[slider]['value']=200; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(O['NP_IPOD_TIME_W1'])[slider] and not refit()  # a seek
-m.nodes[slider]['max']=7200; m.calls=[]; paint(win)  # a two-hour track: mid-paint nothing moves
-assert geo(slider)==lay(O['NP_IPOD_TIME_W1'])[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
-m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(TW) and lay(TW)[slider][2]==201
+m.nodes[slider]['value']=200; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(TW)[slider] and not refit()  # a seek
+m.nodes[slider]['max']=7200; m.calls=[]; paint(win)  # a two-hour track again: mid-paint nothing moves
+assert geo(slider)==lay(TW)[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
+m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W']) and geo(slider)[2]==201
 assert refit()==[elapsed,remain,slider]
-m.nodes[slider]['max']=0; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(TW)[slider] and not refit()  # unknown: kept
-assert ab_x(BX+89)==BX+89  # the build's bar: stock's own
+m.nodes[slider]['max']=0; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(O['NP_IPOD_TIME_W'])[slider] and not refit()  # unknown: kept
 m.nodes[slider]['max']=700; paint(win); m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W2']) and geo(slider)[:3:2]==(74,227); passed()
 CONFIG.clear()
 
@@ -14529,8 +14532,8 @@ rows={c.nodes[w].get('text'):w for w in kids(c,cinfo,'hscroll_label')}
 assert [cf_geometry(c,rows[t]) for t in ('Song','A, B','LP')]==[(O['NP_IPOD_TEXT_X'],O['NP_IPOD_TEXT_Y']+dy,375-16-O['NP_IPOD_TEXT_X'],h) for dy,h in ((0,28),(34,22),(62,22))]
 assert (c.nodes[rows['Song']]['style:normal:font_name'],c.nodes[rows['Song']]['style:normal:font_size'])==('classic-light',27)
 assert c.nodes[rows['Spotify']]['visible']==0 and not [w for w in kids(c,cinfo,'view') if c.nodes[w].get('visible')!=0 and cf_geometry(c,w)==(337,13,14,14)]
-# a 3:20 track: the times' boxes "-9:59"'s and the bar between them wider (ipod_times), the outer edges the build's
-W,GAP,W1=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_TIME_W1']; edge=bx-GAP-W; bx,bw=edge+W1+GAP,375-2*(edge+W1+GAP)
+# a 3:20 track: the build's "-9:59" boxes and its widest bar between them (ipod_times), the outer edges the build's
+W,GAP,W1=O['NP_IPOD_TIME_W'],O['NP_IPOD_TIME_GAP'],O['NP_IPOD_TIME_W1']; edge=bx-GAP-W1
 for t,x,style in (('0:10',edge,'s_scrlabel_white20r'),('-3:10',bx+bw+GAP,'s_scrlabel_white20l')):
     n=c.nodes[rows[t]]
     assert cf_geometry(c,rows[t])==(x,by-TO,W1,O['NP_IPOD_TIME_H']) and n['style']==style,(t,cf_geometry(c,rows[t]),n['style'])
@@ -14540,7 +14543,7 @@ assert bw==243 and 375-(bx+bw+GAP+W1)==edge
 c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.canvas,0,0),gap=0,clear=False)
 on=next(b[2] for b in c.bands if b[0]==0)  # the played share
 assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
-# a two-hour track: the build's widest boxes, the bar 201 again; its elapsed time's box repainted where it was and goes
+# a two-hour track: the hours' boxes, the bar 201; its elapsed time's box repainted where it was and goes
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t2',duration=7200000); c.poll(); c.advance(0)
 assert cf_geometry(c,cbar)==(edge+W+GAP,by,201,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and cf_geometry(c,rows['0:10'])==(edge,by-TO,W,O['NP_IPOD_TIME_H'])
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t1'); c.poll(); c.advance(0); assert cf_geometry(c,cbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])

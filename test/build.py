@@ -949,12 +949,12 @@ def validate_assets(directory):
             cmap = face.getBestCmap()
             ink = lambda text, px: math.ceil(sum(face['hmtx'][cmap[ord(c)]][0] for c in text) * px / (face['hhea'].ascent - face['hhea'].descent))
             page = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_PAGE}')))}
-            # the times beside the bar hold "-1:02:03" and their font's line, their outer edges and the bar's ends clear of the glass;
-            # so in every length class navigation.c ipod_times fits them to: each class's longest times, any digit, the outer
+            # the times beside the bar in "-9:59"'s boxes (the build's class, the widest bar) hold their font's line, their outer
+            # edges and the bar's ends clear of the glass; so in every length class navigation.c ipod_times fits them to: each class's longest times, any digit, the outer
             # edges where the build put them, the gap kept, the bar between
             for name in ('label_playtime', 'label_ipod_remain'):
                 x, y, w, h = page[name][1]
-                assert ink('-1:02:03', inc('NP_IPOD_TIME_PX')) <= w and inc('NP_IPOD_TIME_PX') <= h, (g.name, name)
+                assert w == NP_IPOD_TIME_WS[0] and inc('NP_IPOD_TIME_PX') <= h, (g.name, name)
                 assert min(x, 375 - x - w) >= corner_x(g.bar + y, h), (g.name, name)
             (ex, ey, _, eh), (sx, sy, _, sh) = page['label_playtime'][1], page['slider_play'][1]
             for tw, longest in zip(NP_IPOD_TIME_WS, ('9:59', '59:59', '9:59:59')):
@@ -963,7 +963,7 @@ def validate_assets(directory):
                     assert ink('-' + re.sub(r'\d', d, longest), inc('NP_IPOD_TIME_PX')) <= tw, (g.name, tw, d)
                 top = sy + (sh - inc('NP_BAR_IPOD')) // 2
                 assert bx - inc('NP_IPOD_TIME_GAP') - tw == ex and bx >= corner_x(g.bar + top, inc('NP_BAR_IPOD') + inc('SCRUB_REFLECT_ROWS')), (g.name, tw)
-                assert 375 - 2 * bx > page['slider_play'][1][2] or tw == NP_IPOD_TIME_WS[-1], (g.name, tw)
+                assert 375 - 2 * bx < page['slider_play'][1][2] or tw == NP_IPOD_TIME_WS[0], (g.name, tw)
             # the info page's rows (navigation.c ringnav_np_info): each holds the info role's size, its name fits, the rows end above
             # the dots and both columns clear the glass
             px = {t['font_px[ROLE_INFO]'] for t in builtins() if g in geometry_sets([t])}
