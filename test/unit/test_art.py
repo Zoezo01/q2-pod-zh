@@ -339,8 +339,6 @@ def test_gradient_holds_the_last_stops_colour_past_it():
     assert g(10) == 0 and g(15) == g(17.5) == g(20) == g(30) == 0x2080ff
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: gradient() extrapolates before a first stop above 0 instead of holding its '
-                                       'colour as SVG does; no caller has one: the orb pads its stops with 0 and 100')
 def test_gradient_holds_the_first_stops_colour_before_it():
     g = art.gradient(((50, 0x204060), (100, 0xffffff)), 0, 100)
     assert g(10) == g(50) == 0x204060
