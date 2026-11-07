@@ -26,8 +26,8 @@ class Sudoku(C.Structure):
 
 
 class Vortex(C.Structure):
-    _fields_ = [(k, C.c_int) for k in 'state lives level score pa x y vx vy'.split()] + \
-               [('brick', C.c_ushort * 3), ('pad', C.c_ushort)]
+    _fields_ = [*((k, C.c_int) for k in 'state lives level score pa x y vx vy'.split()),
+                ('brick', C.c_ushort * 3), ('pad', C.c_ushort)]
 
 
 class Sol(C.Structure):
@@ -45,10 +45,10 @@ class Best(C.Structure):
 
 
 class Game(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'page list view sheet'.split()] + \
-               [(k, C.c_uint) for k in 'timer frame at acc'.split()] + \
-               [(k, C.c_int) for k in 'h screen target picking pick confirm paused choice carry dirty'.split()] + \
-               [('sud', Sudoku), ('vx', Vortex), ('best', Best), ('sol', Sol), ('save', C.c_uint), ('pop_at', C.c_uint),
+    _fields_ = [*((k, C.c_void_p) for k in 'page list view sheet'.split()),
+                *((k, C.c_uint) for k in 'timer frame at acc'.split()),
+                *((k, C.c_int) for k in 'h screen target picking pick confirm paused choice carry dirty'.split()),
+                ('sud', Sudoku), ('vx', Vortex), ('best', Best), ('sol', Sol), ('save', C.c_uint), ('pop_at', C.c_uint),
                 ('pop_ring', C.c_int), ('pop_seg', C.c_int), ('trail', (C.c_int * 2) * 4), ('record', C.c_int),
                 ('sn_best', Best), ('sn', Snake)]
 

@@ -6,11 +6,12 @@ import itertools
 import json
 import math
 import re
-from build import ROOT, check
+from typing import NoReturn
+from build import ROOT, check, need
 from ipod import AUDIT, GEOM_VALS, INC, O, SET0, SLIDE, VALUE_NAMES, Geometry, corner_inset, immediate_values
 
 
-ACCENTS_BLOCK = re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC)[0]
+ACCENTS_BLOCK = need(re.search(r'#define ACCENTS (?:.*\\\n)*.*', INC), 'Missing ACCENTS')[0]
 ACCENT_NAMES = [n.lower() for n in re.findall(r'\}\s*,?\s*/\* (\w+)', ACCENTS_BLOCK)]
 ACCENT_TONES = [[int(x, 16) for x in re.findall(r'0x([0-9a-fA-F]{6})', row)] for row in re.findall(r'\{([^}]*)\}', ACCENTS_BLOCK)]
 ALL_ACCENTS = (1 << len(ACCENT_NAMES)) - 1
@@ -24,7 +25,7 @@ ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}
 # The IPOD keys the payload reads itself (navigation.c setting_keys[], every "IPOD", "<KEY>" literal): a
 # theme's own key is never one of them.
 PAYLOAD_KEYS = frozenset(
-    re.findall(r'"([A-Z0-9_]+)"', re.search(r'setting_keys\[\] = \{([^}]*)\}', (ROOT/'patch/navigation.c').read_text())[1])
+    re.findall(r'"([A-Z0-9_]+)"', need(re.search(r'setting_keys\[\] = \{([^}]*)\}', (ROOT/'patch/navigation.c').read_text()), 'Missing setting_keys')[1])
     + [k for f in sorted((ROOT/'patch').glob('*.c')) for k in re.findall(r'"IPOD", "([A-Z0-9_]+)"', f.read_text())])
 # value name -> its C name (theme.h); the font keys take FONTS
 FONTS = {'regular': 'FONT_DEFAULT', 'bold': 'FONT_BOLD', 'classic-light': 'FONT_CLASSIC_LIGHT'}
@@ -408,7 +409,7 @@ class ThemeError(Exception):
     pass
 
 
-def fail(file, line, message):
+def fail(file, line, message) -> NoReturn:
     raise ThemeError(f'{file}:{line}: {message}')
 
 
@@ -569,7 +570,7 @@ def ranged(node, k, v):
 
 def value(node, path, text, macros):
     """SCHEMA[path]'s value for an attribute's text."""
-    def err(message): fail(node.file, node.line, message)
+    def err(message) -> NoReturn: fail(node.file, node.line, message)
     k = SCHEMA.get(path)
     if not k:
         err(f'unknown key {path}')
@@ -609,7 +610,7 @@ def value(node, path, text, macros):
         stops = [re.fullmatch(r'#([0-9a-fA-F]{6}) ([0-9]{1,3})', s.strip()) for s in text.split(',')]
         if not all(stops):
             err(f'{path}: expected "#rrggbb N, ..."')
-        v = tuple((int(m[2]), int(m[1], 16)) for m in stops)
+        v = tuple((int(m[2]), int(m[1], 16)) for m in stops if m)
         if not 2 <= len(v) <= 13:
             err(f'{path}: 2 to 13 stops')
         if v[0][0] != 0 or v[-1][0] != 100 or any(a[0] >= b[0] for a, b in zip(v, v[1:])):
@@ -890,7 +891,7 @@ def resolve(root, by_id, seen=()):
 
 def validate(t, name):
     """The whole-theme rules resolve() can't check per attribute."""
-    def err(message): fail(name, t['line'], message)
+    def err(message) -> NoReturn: fail(name, t['line'], message)
     settings = [o.get('key') or o['setting'] for o in t['opts']]
     accent = next((o for o in t['opts'] if o['setting'] == 'SETTING_ACCENT'), None)
     if not accent:

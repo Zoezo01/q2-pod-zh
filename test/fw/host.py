@@ -151,7 +151,7 @@ def offsets(obj, type_name):
     """A struct typedef's field offsets as this build lays it out (its pointers move them), from obj's
     debug info: {field: offset}."""
     dump = subprocess.run(['readelf', '--debug-dump=info', str(obj)], capture_output=True, text=True, check=True).stdout
-    kind = re.search(rf': {type_name}\n(?:.*\n)*?\s+<\w+>\s+DW_AT_type\s*: <0x(\w+)>', dump)[1]
+    kind = tools_build.need(re.search(rf': {type_name}\n(?:.*\n)*?\s+<\w+>\s+DW_AT_type\s*: <0x(\w+)>', dump), f'No {type_name} in {obj}')[1]
     body = dump[dump.index(f' <1><{kind}>:'):]
     body = body[:body.index('\n <1>')]
     found = {}
@@ -176,9 +176,9 @@ class Fw:
         self.sizes = json.loads((library.parent/'sizes.json').read_text())
 
     def close(self):
-        if self.lib:
+        if 'lib' in vars(self):  # once; fw.lib goes with the library
             _ctypes.dlclose(self.lib._handle)
-            self.lib = None
+            del self.lib
 
     def fn(self, name, restype, *argtypes):
         """A firmware function: `name`, or `file__name` for a static."""
@@ -210,9 +210,9 @@ class Fw:
 
     def log(self):
         count = ctypes.c_int.in_dll(self.lib, 'fw_log_n').value
-        record = type('Call', (ctypes.Structure,), {'_fields_': [('name', ctypes.c_char_p), ('args', ctypes.c_long * STUB_ARGS),
-                                                                  ('mocked', ctypes.c_int)]})
-        return (record * 8192).in_dll(self.lib, 'fw_log')[:count]
+        class Call(ctypes.Structure):
+            _fields_ = [('name', ctypes.c_char_p), ('args', ctypes.c_long * STUB_ARGS), ('mocked', ctypes.c_int)]
+        return (Call * 8192).in_dll(self.lib, 'fw_log')[:count]
 
     def calls(self, name=None):
         """[(stub name, its six arguments)] in order, or just `name`'s."""

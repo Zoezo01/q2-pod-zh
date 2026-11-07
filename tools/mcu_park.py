@@ -100,6 +100,7 @@ def patch_image(stock: bytes, helper: bytes | None = None, *, sleep: bool = Fals
     output[HELPER_OFFSET:HELPER_OFFSET + len(helper)] = helper
     struct.pack_into("<IIII", output, PROTOCOL_OFFSET, 0, 0, MAGIC, 2 if sleep else VERSION)
     if sleep:
+        assert symbols is not None  # compile_helper's, with sleep
         for offset, original, target, delay in [
             (0x1138, (0x8f5b0088, 0x409b7000), "q2_pwm_irq_return", 0x8f5b0088),
             (0x11e0, (0x3c02f400, 0x8c593f90), "q2_pwm_soft_irq", 0),

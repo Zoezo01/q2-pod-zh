@@ -22,26 +22,26 @@ r = C.byref
 
 
 class Cf(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'page body covers slide name artist title albums tracks stock'.split()] + \
-               [(k, C.c_int) for k in 'sort sort_read year_old artists on_sort resort'.split()] + \
-               [('jobs', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('title_timer', C.c_uint), ('titled', C.c_int),
-                ('saved_album', C.c_uint), ('albums_gen', C.c_uint)] + \
-               [(k, C.c_int) for k in 'screen album running text_albums done total cancel scoped all_sort'.split()] + \
-               [(k, C.c_void_p) for k in 'all_albums all_stock hearts'.split()]
+    _fields_ = [*((k, C.c_void_p) for k in 'page body covers slide name artist title albums tracks stock'.split()),
+                *((k, C.c_int) for k in 'sort sort_read year_old artists on_sort resort'.split()),
+                ('jobs', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('title_timer', C.c_uint), ('titled', C.c_int),
+                ('saved_album', C.c_uint), ('albums_gen', C.c_uint),
+                *((k, C.c_int) for k in 'screen album running text_albums done total cancel scoped all_sort'.split()),
+                *((k, C.c_void_p) for k in 'all_albums all_stock hearts'.split())]
 
 
 class Touch(C.Structure):
-    _fields_ = [(k, C.c_int) for k in 'down drag caught x y from_ n'.split()] + [('sx', C.c_int * 8), ('st', C.c_uint * 8)]
+    _fields_ = [*((k, C.c_int) for k in 'down drag caught x y from_ n'.split()), ('sx', C.c_int * 8), ('st', C.c_uint * 8)]
 
 
 class Home(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'win art list sets lib stream'.split()] + [('carousel', C.c_void_p * 3)] + \
-               [(k, C.c_uint) for k in 'key repaint drift drift_ms drift_last'.split()] + \
-               [('tex', C.c_void_p), ('frame', C.c_void_p)] + [(k, C.c_int) for k in 'tw rx ry u0 v0 du dv pane'.split()] + \
-               [(k, C.c_void_p) for k in 'row row_image row_label svc'.split()] + [('svc_name', C.c_char * 72)] + \
-               [(k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()] + \
-               [('count_thread', C.c_ulong)] + [(k, C.c_uint) for k in 'asked pane_read count_timer pane_timer'.split()] + \
-               [('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int)]
+    _fields_ = [*((k, C.c_void_p) for k in 'win art list sets lib stream'.split()), ('carousel', C.c_void_p * 3),
+                *((k, C.c_uint) for k in 'key repaint drift drift_ms drift_last'.split()),
+                ('tex', C.c_void_p), ('frame', C.c_void_p), *((k, C.c_int) for k in 'tw rx ry u0 v0 du dv pane'.split()),
+                *((k, C.c_void_p) for k in 'row row_image row_label svc'.split()), ('svc_name', C.c_char * 72),
+                *((k, C.c_int) for k in 'kind songs albums services games free_tenths counted counting got_songs got_albums'.split()),
+                ('count_thread', C.c_ulong), *((k, C.c_uint) for k in 'asked pane_read count_timer pane_timer'.split()),
+                ('ring', (C.c_uint * HOME_PW) * 4), ('clip', C.c_int * 4), ('clipped', C.c_int)]
 
 
 class Row(C.Structure):
@@ -1717,7 +1717,7 @@ def test_now_cover_needs_the_player_to_have_parsed_this_track(fw):
     fw.var('g_playcover_type', C.c_ubyte).value = 2
     out = C.c_char_p()
     rec = Rec('A', '/m/a.mp3')
-    assert g.now_cover(rec.p, r(out)) == 2 and out.value.endswith(b'/tmp/externpic.jpg')
+    assert g.now_cover(rec.p, r(out)) == 2 and (out.value or b'').endswith(b'/tmp/externpic.jpg')
     assert g.now_cover(Rec('A', '/m/b.mp3').p, r(out)) == 0 and out.value is None
     assert g.now_cover(None, r(out)) == 0
 

@@ -19,25 +19,25 @@ KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = 171, 222, 223
 
 
 class Sp(C.Structure):
-    _fields_ = [(n, C.c_int) for n in ('launched', 'sock', 'playing', 'paused', 'local', 'active', 'played', 'dead')] + \
-               [(n, C.c_uint) for n in ('polled', 'idle_at', 'duration', 'position', 'cover', 'launch_at', 'alive_at')] + \
-               [('at', C.c_ulonglong), ('raw', C.c_char * 1536), ('state', C.c_char * 12), ('track', C.c_char * 64),
+    _fields_ = [*((n, C.c_int) for n in ('launched', 'sock', 'playing', 'paused', 'local', 'active', 'played', 'dead')),
+                *((n, C.c_uint) for n in ('polled', 'idle_at', 'duration', 'position', 'cover', 'launch_at', 'alive_at')),
+                ('at', C.c_ulonglong), ('raw', C.c_char * 1536), ('state', C.c_char * 12), ('track', C.c_char * 64),
                 ('title', C.c_char * 256), ('artist', C.c_char * 256), ('album', C.c_char * 256), ('out', C.c_char * 24),
                 ('auth', C.c_int), ('loading', C.c_int), ('old', C.c_int), ('load_at', C.c_uint), ('log_from', C.c_long),
                 ('wanted', C.c_char * 64), ('from_', C.c_char * 64)]
 
 
 class Level(C.Structure):
-    _fields_ = [(n, C.c_int) for n in ('kind', 'state', 'n', 'sel', 'retry')] + \
-               [('id', C.c_uint), ('buf', C.c_void_p), ('f', C.c_char_p * (4 + 6 * SPOT_ROWS)), ('title', C.c_char * 256),
+    _fields_ = [*((n, C.c_int) for n in ('kind', 'state', 'n', 'sel', 'retry')),
+                ('id', C.c_uint), ('buf', C.c_void_p), ('f', C.c_char_p * (4 + 6 * SPOT_ROWS)), ('title', C.c_char * 256),
                 ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 320), ('cursor', C.c_char * 1100)]
 
 
 class Br(C.Structure):
-    _fields_ = [(n, C.c_void_p) for n in ('page', 'view', 'edit')] + \
-               [(n, C.c_uint) for n in ('timer', 'go', 'leave', 'poll_at', 'until')] + \
-               [(n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'playing')] + \
-               [('rows', C.c_int * 11), ('caps_checked', C.c_int), ('downloads', C.c_int), ('can_download', C.c_int),
+    _fields_ = [*((n, C.c_void_p) for n in ('page', 'view', 'edit')),
+                *((n, C.c_uint) for n in ('timer', 'go', 'leave', 'poll_at', 'until')),
+                *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'playing')),
+                ('rows', C.c_int * 11), ('caps_checked', C.c_int), ('downloads', C.c_int), ('can_download', C.c_int),
                 ('selected', C.c_char * 6500), ('remove_kind', C.c_char * 16), ('remove_note', C.c_char * 128), ('term', C.c_char * 64),
                 ('lv', C.POINTER(Level))]
 

@@ -4,6 +4,7 @@
 --logo swaps the boot splash JPEG (320x375); it defaults to assets/boot-logo.jpg.
 """
 import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarfile, zipfile
+from typing import TypeVar
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
@@ -853,6 +854,11 @@ def j(addr): return 0x08000000 | addr >> 2  # MIPS j
 def jal(addr): return 0x0c000000 | addr >> 2  # MIPS jal
 def check(condition, message):
     if not condition: raise ValueError(message)
+_T = TypeVar('_T')
+def need(value: _T | None, message: str) -> _T:
+    """value, or check's ValueError(message) where a search or lookup came back None."""
+    if value is None: raise ValueError(message)
+    return value
 def jpeg_size(b):
     """Validate the splash's supported JPEG frame header and return its dimensions."""
     check(b[:2] == b'\xff\xd8', 'Logo must be a JPEG')
@@ -953,7 +959,7 @@ LOGO_HOOK = (b'   \tdisplay_logo /release/assets/default/raw/images/xx/logo.jpg\
              b'   \tl=/mnt/data/boot-logo.jpg; [ -f $l ] || { l=/%s; light=0; grep -qx LIGHT=1 /mnt/data/config.ini 2>/dev/null && light=1; grep -qx LIGHT=2 /mnt/data/config.ini 2>/dev/null && { case $(sed -n s/^TIMEZONE=//p /mnt/data/config.ini) in %s esac; case $(TZ=$z date +%%H) in 0[7-9]|1[0-8]) light=1;; esac; }; [ $light = 1 ] && [ -f /%s ] && l=/%s; }; display_logo $l\n'
              % (LOGO.encode(), LOGO_ZONES.encode(), LOGO_LIGHT.encode(), LOGO_LIGHT.encode()))
 def timezone_offset(label):
-    sign, h, m = re.match(r'GMT([+-])(\d+)(?::(\d+))?', label).groups()
+    sign, h, m = need(re.match(r'GMT([+-])(\d+)(?::(\d+))?', label), f'Unexpected time zone {label}').groups()
     return (1 if sign == '+' else -1) * (int(h) * 60 + int(m or 0))
 # The rows, west to east: the saved index each row shows.
 TIMEZONE_ORDER = sorted(range(len(TIMEZONES)), key=lambda i: (timezone_offset(TIMEZONES[i][0]), TIMEZONES[i][0]))
@@ -1540,7 +1546,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         meta = t.getmembers()
         check([m.name for m in meta] == ['firmware_v20.info','recovery-update',
               'recovery-update/xImage','recovery-update/rootfs.squashfs'], 'Unexpected package members')
-        blobs = {m.name:t.extractfile(m).read() for m in meta if m.isfile()}
+        blobs = {m.name:need(t.extractfile(m), f'Unreadable {m.name}').read() for m in meta if m.isfile()}
     info = blobs['firmware_v20.info'].decode().splitlines()
     check(info[:2] == ['Shanling Q2', STOCK_VERSION], 'Wrong model/version')
     sq = out/'stock.squashfs'; sq.write_bytes(blobs['recovery-update/rootfs.squashfs'])
@@ -1798,15 +1804,13 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     run('unsquashfs','-pf',pseudo,sq)
     p = pseudo.read_bytes()
     # mksquashfs takes "/" from the source dir, not the pseudo file; carry stock values over.
-    root = re.search(rb'^/ D (\d+) (\d+) (\d+) (\d+)$',p,re.M)
-    check(root is not None, 'Missing root pseudo inode')
+    root = need(re.search(rb'^/ D (\d+) (\d+) (\d+) (\d+)$',p,re.M), 'Missing root pseudo inode')
     t,mode,uid,gid = (x.decode() for x in root.groups())
     rootargs = ['-root-time',t,'-root-mode',mode,'-root-uid',uid,'-root-gid',gid]
     # Paths are passed through a shell by mksquashfs F entries; quote them explicitly.
     def inode(p, path): return re.search(rb'^'+re.escape(path)+rb' R (\d+) (\d+) (\d+) (\d+) .+$',p,re.M)
     def swap_inode(p, path, src):
-        line = inode(p, path)
-        check(line is not None, f'Missing {path.decode()} pseudo inode')
+        line = need(inode(p, path), f'Missing {path.decode()} pseudo inode')
         return p[:line.start()]+path+b' F '+b' '.join(line.groups())+b' cat '+shlex.quote(str(src)).encode()+p[line.end():]
     s90play = cat(S90PLAY)
     check(s90play.count(BOOT_HOOK[0]) == 1 and s90play.count(REMOTE_HOOK[0]) == 1, 'Unexpected S90play')
@@ -1903,8 +1907,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                                CLASSIC_LIGHT_TTF: (FONT, classic_light),
                                **{'release/assets/default/raw/fonts/' + n: ('etc/hosts', (ROOT/'assets/fonts'/n).read_bytes()) for n in FONT_NOTICES},
                                **({REMOTE: (HELPER_LIKE, compile_helper(out, cat, 'remote', 'q2remote', HELPER_LIBS[:1]))} if dev else {})}.items():
-        stock = inode(p, like.encode())
-        check(stock is not None, f'Missing stock inode for {path}')
+        stock = need(inode(p, like.encode()), f'Missing stock inode for {path}')
         name = path.rsplit('/', 1)[-1]
         if path not in (HELPER, BOOT, REMOTE): (out/name).write_bytes(data)  # package the hashed bytes, as the logo
         path = path.encode()
@@ -1914,8 +1917,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         added.append([path, b'R', *stock.groups()])
     removed = []
     for path in STOCK_EQ + OBSOLETE:
-        line = re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M)
-        check(line is not None, f'Missing stock inode {path}')
+        line = need(re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M), f'Missing stock inode {path}')
         removed.append(line.group().split()[:6])
         p = p[:line.start()]+p[line.end():]
     changed_assets = {}

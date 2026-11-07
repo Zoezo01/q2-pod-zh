@@ -80,7 +80,7 @@ def stamps(fw, s, n=8):
     buf, t = text(s), (C.c_int * max(n, 1))()
     p = C.c_void_p(C.addressof(buf))
     k = fn(C.byref(p), t, n)
-    return list(t[:k]), C.string_at(p.value)
+    return list(t[:k]), C.string_at(p)
 
 
 def test_leading_stamps(fw):

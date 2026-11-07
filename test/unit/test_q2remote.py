@@ -41,6 +41,9 @@ def shell(monkeypatch):
 
 
 class Sock:
+    address: tuple[str, int] | None = None  # what create_connection was given
+    connect_timeout: float | None = None
+
     def __init__(self, *chunks):
         self.chunks, self.sent, self.timeouts, self.how, self.asked = list(chunks), b'', [], None, []
 
@@ -118,9 +121,12 @@ def test_shell_needs_a_host(monkeypatch):
 
 def test_shell_sink_streams_past_the_ok(connect):
     connect(b'O', b'K\nab', b'cd')
-    sink = io.BytesIO()
-    sink.flushes = 0
-    sink.flush = lambda: setattr(sink, 'flushes', sink.flushes + 1)
+    class Sink(io.BytesIO):
+        flushes = 0
+
+        def flush(self):
+            self.flushes += 1
+    sink = Sink()
     assert q.shell('x', host='h', sink=sink) == b''
     assert sink.getvalue() == b'abcd' and sink.flushes == 2
 
@@ -559,7 +565,7 @@ def probes(monkeypatch):
 
 
 def test_find_given_hosts(probes):
-    answers = {'10.0.0.1': b'ERR\n', '10.0.0.3': b'OK\n'}
+    answers: dict = {'10.0.0.1': b'ERR\n', '10.0.0.3': b'OK\n'}  # each answered host's becomes its Sock
     seen = probes(answers)
     assert q.find(['10.0.0.1', '10.0.0.2', '10.0.0.3']) == ['10.0.0.1']
     assert sorted(seen) == [(f'10.0.0.{i}', q.PORT, 2) for i in (1, 2, 3)]
