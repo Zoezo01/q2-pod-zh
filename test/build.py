@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """JPEG checks; optionally pass the stock ZIP to test packaging with a custom logo and quoted paths too."""
-import io, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
+import io, math, re, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
 from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, COVERMODE
 
 logo = (ROOT/'assets/boot-logo.jpg').read_bytes()
@@ -42,7 +42,8 @@ def boot_check():
         r = pathlib.Path(tmp)
         def host(hook):
             script = hook.decode().replace(' &\n', '\n')
-            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log'):
+            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
+                        '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
         # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
@@ -60,7 +61,9 @@ def boot_check():
         def exe(path, body): (r/path).write_text('#!/bin/sh\n' + body + '\n'); (r/path).chmod(0o755)
         # demo takes Home's Rockbox row (leaves the flag) as many times as the shortcuts file says
         flag, shortcuts = f'{r}{ROCKBOX_FLAG}', r/'shortcuts'
+        # a demo that leaves q2-state (r/keep): it ended without ringnav_clean_end
         exe('release/bin/demo', f'echo demo >> {r}/ran; echo demo >> {r}/order; n=$(cat {shortcuts}); '
+            f'[ -f {r}/keep ] && echo running > {r}/mnt/data/q2-state; '
             f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && : > {flag}; '
             f's=$(head -n1 {r}/code); [ $(wc -l < {r}/code) -gt 1 ] && sed -i 1d {r}/code; exit $s')  # one status per run, the last repeats
         rb, target = r/'mnt/mmc/.rockbox/rockbox', r/'mnt/data/boot-target'
@@ -127,11 +130,37 @@ def boot_check():
         assert 'demo exit 139' in out and cp is False
         assert logged(0, True) == (False, False) and logged(143, True) == (False, False)
         assert logged([137, 0], True, 1) == (False, False)  # the Rockbox hand-over's kill, then a clean demo
+        # 0 or 143 with q2-state still there was no clean end (ringnav_clean_end removes it first): logged as a crash
+        keep, state = r/'keep', r/'mnt/data/q2-state'
+        keep.write_text('')
+        for status in (0, 143):
+            out, cp = logged(status, False)
+            assert f'== demo exit {status}\n' in out and '== dmesg' in out and cp is False and state.exists()
+        keep.unlink(); state.unlink()
+        # a library scan's and Coverflow's art build's records (navigation.c crash_note): the file in progress and
+        # the last 60 memory lines
+        for name, last, every in (('scan', 'last scanned', 500), ('art', 'last art', 50)):
+            note_file, note_log = r/f'tmp/q2-{name}-file', r/f'tmp/q2-{name}.log'
+            note_file.write_text('/mnt/mmc/Music/a.opus\n')
+            note_log.write_text(''.join(f'{n * every} {91000 + n} /mnt/mmc/{n}.opus\n' for n in range(1, 71)))
+            out, cp = logged(137, False)
+            assert f'== {last}\n/mnt/mmc/Music/a.opus\n' in out
+            lines = out.split(f'== {name}\n')[1].split('== ')[0].splitlines()
+            assert len(lines) == 60 and lines[0].startswith(f'{11 * every} 91011 ') and lines[-1] == f'{70 * every} 91070 /mnt/mmc/70.opus'
+            note_file.unlink(); note_log.unlink()
+            out, cp = logged(137, False)
+            assert f'== {last}' not in out and f'== {name}\n' not in out
         # /mnt/data/q2-state (navigation.c state_poll) still there at boot: the last session ended in a forced
         # restart, or the battery. It goes into q2-crash.log, a new one that says so or the crash's, and goes.
         state, line = r/'mnt/data/q2-state', 'screen:off power:suspending cable:out battery:57 play:paused out:jack\n'
         state.write_text(line); out, cp = logged(0, False)
         assert 'did not end' in out and '== last state' in out and line in out and not state.exists() and cp is False
+        # a Coverflow open that never finished (coverflow.c cf_trace) goes in after the state, and goes
+        trace = r/'mnt/data/q2-cf-trace'
+        state.write_text(line); trace.write_text('start albums=0 0 ms\nstaged albums=20000 900 ms\n'); out, cp = logged(0, False)
+        assert '== last state' in out and out.endswith('== cover flow\nstart albums=0 0 ms\nstaged albums=20000 900 ms\n') and not trace.exists()
+        trace.write_text('stale\n'); out, cp = logged(0, False)
+        assert out is False and not trace.exists()  # no forced restart: dropped, not reported
         for f in (crash, copy): f.unlink(missing_ok=True)
         crash.write_text('== demo exit 137\n'); state.write_text(line); boot(True, False, status=0)
         assert crash.read_text().startswith('== demo exit 137\n== last state\n') and line in crash.read_text() and not state.exists()
@@ -199,7 +228,7 @@ def validate_assets(directory):
                       QS_LABEL_W, QS_ROW_GAP, QS_PITCH, QS_BAR, QS_TOUCH, QS_EDGE, QS_SUN, HOME_LABEL_END, HOME_LIST_W, HOME_TEXT_X, HOME_TOP, PITCH, ARTIST_PAGE, HOME_PAGE, HOME_ROW, HOME_ROWS, NAVBAR_ONLY, PLAYING_PAGE, SET_ROW, SET_ROWS, SET_TOP, UI_ASSETS,
                       NP_BAR, NP_TOUCH, NP_MARGIN, NP_POS_X, NP_TOP, STATUS_BAR, STATUS_HIDDEN, STATUS_LEFT, STATUS_MARGIN, STATUS_RIGHT, CLOCK_MIN, CLOCK_TEXT, corner_inset, corner_x,
                       STATUS_ICONS, status_icon, QUIET_ICONS, quiet_icon, SET_ICON, SET_STOCK_ICON, SETTINGS_ICONS, SETTINGS_SLIDERS, decode, slider_plain, imagemagick, inc, png_header, settings_icon, walk,
-                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC)
+                      patch_asset, patch_code, patch_style, style_props, SLIDE, SET0, status_metrics, CLASSIC_LIGHT_FONT_SRC, NP_IPOD_TIME_WS)
     manifest = json.loads((directory/'manifest.json').read_text())
     stock = (directory/'stock-demo').read_bytes()
     demo = (directory/'demo').read_bytes()
@@ -214,6 +243,10 @@ def validate_assets(directory):
         off = fileoff(stock, address)
         assert demo[off:off+4] == zones[off:off+4]
     assert manifest['version'].encode()+b'\0' in demo
+    # A widget's style, as stock's widget_update_style passes it to the style's notify: lw $4, W_ASTYLE($16).
+    astyle = int(re.search(r'#define W_ASTYLE (0x[0-9a-f]+)', (ROOT/'patch/offsets.inc').read_text())[1], 16)
+    off = fileoff(stock, 0x65e268)
+    assert int.from_bytes(stock[off:off+4], 'little') == 0x8e040000 | astyle
     # .pdr (build.py PDR), past every LOAD segment, ships zeroed.
     assert demo[PDR[0]:PDR[0]+PDR[1]] == bytes(PDR[1]) and any(stock[PDR[0]:PDR[0]+PDR[1]])
     # The RTC is written in UTC: the one hwclock -w literal gains -u in its own padding.
@@ -823,8 +856,12 @@ def validate_assets(directory):
     # Every geometry set's built list windows take the row height of the page's pitch
     # immediates (art pages take art_pitch), and its rows fit.
     from theme import builtins, geometry_sets, SCHEMA
-    from ipod import PAGE_KIND as page_kind, page_rows
+    from ipod import CLASSIC_LIGHT_FONT_SRC, PAGE_KIND as page_kind, page_rows
     built = set(run('unsquashfs', '-l', directory/'rootfs.squashfs').split())
+    # Classic's Playlists rows (pl_row) are the theme's page_detail high in a list pitched at song_pitch: one height.
+    for t in builtins():
+        for g in geometry_sets([t]):
+            if not g.toolbar: assert g.song_pitch == t['page_detail'], (t['name'], g.name)
     for g in geometry_sets(builtins()):
         assert g.body <= g.pitch and g.art_body <= g.art_pitch and g.song_body <= g.song_pitch, g.name
         assert g.art + 2*g.art_inset <= g.art_body, g.name
@@ -845,6 +882,19 @@ def validate_assets(directory):
                         assert n[2][prop] == str(page_rows(g, kind)[0]), (g.name, short, prop)
                         checked.add(short)
         assert checked == set(page_kind) - {'localmusic/album_page.bin'}, checked  # album_page's grid keeps 160
+        # A set without toolbars: Playlists' toolbar hides, stock's widgets alive for its rows' clicks, its list takes the
+        # bar's room with rows of their own heights (no item_height forces them); More's rows start at the top.
+        if not g.toolbar:
+            for short in ('localmusic/playlist_page.bin', 'localmusic/playlistsmore_page.bin'):
+                folder, _, base = short.rpartition('/')
+                new = decode(read('rootfs.squashfs', ui + f'{folder}/{g.name}_{base}'))
+                nav = next(n for n in new[3] if n[2].get('name') == 'view_navbar')
+                assert nav[2]['visible'] == 'false' and nav[2]['enable'] == 'false', short
+                if short == 'localmusic/playlist_page.bin':
+                    surface = next(n for n in new[3] if n[0] == 'list_view')
+                    assert surface[1][1] == 0 and surface[2]['default_item_height'] == str(g.song_pitch) and 'item_height' not in surface[2]
+                else:
+                    assert [n[1][1] for n in new[3] if n[0] == 'list_item'] == [0, g.pitch]
         assert g.set_top + g.set_rows*g.set_row <= 320 - g.bar, g.name
         # Home's rows are the set's and fit; a theme with Home's chevron ends its labels short of the
         # glyph (x 20 of list_into) in both widths, as Classic's below.
@@ -885,10 +935,7 @@ def validate_assets(directory):
         if g.bar_px:  # Classic's bar: one cap centre, the title clear of the glass, the clock centred, no idle mark
             m = status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
             bar = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_system_bar.bin')))}
-            assert bar['label_title'][1] == m['title'] and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
-            # its title names the page, so the playlist page's toolbar (+ and list buttons) drops its own
-            pl = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'localmusic/{g.name}_playlist_page.bin')))}
-            assert pl['scrlabel_title'][2]['visible'] == 'false' and pl['view_navbar'][2].get('visible') != 'false', g.name
+            assert bar['label_title'][1] == m['title'] and bar['label_title'][2]['ellipses'] == 'true' and bar['label_clock'][1] == m['clock'] and 'label_idle' not in bar, g.name
             assert 2 * m['cap_top'] + m['cap'] in (g.bar - 3, g.bar - 2) and m['inset'] >= corner_inset(m['cap_top']), g.name
             assert 2 * m['clock'][0] + m['clock'][2] == 375, g.name
             # the battery's nub ends clear of the glass, at its top row, above the bar's two lines
@@ -896,6 +943,39 @@ def validate_assets(directory):
             assert xm >= corner_inset((g.bar - 2 - g.batt_h) // 2) and g.batt_h <= g.bar - 1 and bar['view_right'][2]['children_layout'].endswith(f'xm={xm},s={inc("STATUS_GAP")})'), g.name
             size = SCHEMA['bar.title.font_size'].field
             assert {t[size] for t in builtins() if g in geometry_sets([t])} == {g.bar_px}, g.name  # the theme's bar text is the set's
+        if g.np_ipod:  # Classic's Now Playing: its text fits, in status_metrics' model (stb scales ascent - descent to the size)
+            from fontTools.ttLib import TTFont
+            face = TTFont(CLASSIC_LIGHT_FONT_SRC, lazy=True)
+            cmap = face.getBestCmap()
+            ink = lambda text, px: math.ceil(sum(face['hmtx'][cmap[ord(c)]][0] for c in text) * px / (face['hhea'].ascent - face['hhea'].descent))
+            page = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_PAGE}')))}
+            # the times beside the bar in "-9:59"'s boxes (the build's class, the widest bar) hold their font's line, their outer
+            # edges and the bar's ends clear of the glass; so in every length class navigation.c ipod_times fits them to: each class's longest times, any digit, the outer
+            # edges where the build put them, the gap kept, the bar between
+            for name in ('label_playtime', 'label_ipod_remain'):
+                x, y, w, h = page[name][1]
+                assert w == NP_IPOD_TIME_WS[0] and inc('NP_IPOD_TIME_PX') <= h, (g.name, name)
+                assert min(x, 375 - x - w) >= corner_x(g.bar + y, h), (g.name, name)
+            (ex, ey, _, eh), (sx, sy, _, sh) = page['label_playtime'][1], page['slider_play'][1]
+            for tw, longest in zip(NP_IPOD_TIME_WS, ('9:59', '59:59', '9:59:59')):
+                bx = ex + tw + inc('NP_IPOD_TIME_GAP')
+                for d in '0123456789':
+                    assert ink('-' + re.sub(r'\d', d, longest), inc('NP_IPOD_TIME_PX')) <= tw, (g.name, tw, d)
+                top = sy + (sh - inc('NP_BAR_IPOD')) // 2
+                assert bx - inc('NP_IPOD_TIME_GAP') - tw == ex and bx >= corner_x(g.bar + top, inc('NP_BAR_IPOD') + inc('SCRUB_REFLECT_ROWS')), (g.name, tw)
+                assert 375 - 2 * bx < page['slider_play'][1][2] or tw == NP_IPOD_TIME_WS[0], (g.name, tw)
+            # the info page's rows (navigation.c ringnav_np_info): each holds the info role's size, its name fits, the rows end above
+            # the dots and both columns clear the glass
+            px = {t['font_px[ROLE_INFO]'] for t in builtins() if g in geometry_sets([t])}
+            assert len(px) == 1, g.name
+            px = px.pop()
+            info = page['view_info'][3]
+            dy = g.bar + page['slide_view_view'][1][1]
+            for key, n in zip((b'album', b'genre', b'player_filesize', b'player_era', b'player_encoding', b'player_bitdepth', b'player_bitrate', b'player_samplerate', b'player_location'), info):
+                value = page[n[2]['name'] + '_value']
+                assert n[1][3] == value[1][3] >= px and ink(table[key].decode(), px) <= n[1][2] and value[1][0] == n[1][0] + n[1][2], (g.name, table[key])
+                assert min(n[1][0], 375 - value[1][0] - value[1][2]) >= corner_x(dy + n[1][1], n[1][3]), (g.name, table[key])
+            assert len(info) == 18 and info[8][1][1] + info[8][1][3] <= page['slide_indicator1'][1][1], g.name
     payload_symbols = symbols(directory/'patch.elf')
     for address in [AUDIT['immediates'][0]['sites'][0][0], '0x522410', '0x523de0', '0x4b3130', AUDIT['row_layout_calls']['sites'][0][0],
                     hex(inc('LIST_VIEW_LAYOUT_SLOT'))]:

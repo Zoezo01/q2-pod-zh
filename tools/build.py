@@ -7,7 +7,7 @@ import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarf
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.6.7'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.6.9'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -21,7 +21,7 @@ def dev_tag(number):
     for _ in range(3): n, d = divmod(n, 36); digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[d] + digits
     return 'V' + digits + 'i'
 BASE = 0xb00000
-SCRATCH = 0xb90000  # 576 KB of payload text below it
+SCRATCH = 0xbc0000  # 768 KB of payload text below it
 RING_STEP = 48
 HOOKS = {
     'createPlayListItem': (0x50d32c, 'ringnav_playlist_create', None),
@@ -86,6 +86,8 @@ HOOKS = {
     'read_artistype_value': (0x4f4724, 'ringnav_read_artistype', None),
     # Tag reads: a FLAC's "ALBUM ARTIST" when stock's libtag finds no ALBUMARTIST
     'toolsGetMusicInfo': (0x5c5f40, 'ringnav_music_info', 'music_info'),
+    # Embedded art: none from stock's TagLib for an .ogg whose comment header is over OGG_TAGS_MAX (coverflow.c)
+    'toolsGetAlbumCover': (0x5c4444, 'ringnav_album_cover', 'album_cover'),
     # Power gains Charge limit; Playback gains Artists (Album Artist)
     'systemset_sysset_page_init': (0x4cc4cc, 'ringnav_systemset', 'systemset'),
     'systemset_display_page_init': (0x4c1d04, 'ringnav_display', 'display'),
@@ -111,6 +113,12 @@ HOOKS = {
     'kugou_obtainlyric': (0x510744, 'ringnav_lyric_search', None),
     # its ⋯ page: Download Album Lyrics under stock's Download Cover & Lyrics (onlinematch.c)
     'playermore_page_init': (0x528c14, 'ringnav_playermore', 'playermore'),
+    # Classic's Search: its tabs' words, after stock's init writes them (navigation.c)
+    'dialog_search_dialog_init': (0x49eb58, 'ringnav_search_init', 'search_init'),
+    # The sleep timer's switch as a row, under a set that hides its toolbar (navigation.c)
+    'systemset_sleepshutdown_page_init': (0x4c9fd0, 'ringnav_sleeptimer', 'sleeptimer'),
+    # Classic's Set Date and Set Time: the title and the selectors' changes, after stock's init (navigation.c)
+    'systemset_manualtime_page_init': (0x4c5d34, 'ringnav_manualtime', 'manualtime'),
     # any Tidal track asked for, from a queue or Now Playing, wakes its stream thread (tidal.c)
     'get_tidal_trackurl': (0x483188, 'ringnav_tidal_track', 'tidaltrack'),
     # its cover match: MusicBrainz/Cover Art Archive and iTunes candidates, then stock's Kugou search
@@ -160,6 +168,8 @@ HOOKS = {
     'image_manager_add': (0x6445d4, 'ringnav_image_add', 'image'),
     # Song rows: no format badge (navigation.c ringnav_badge)
     'list_get_img_pic': (0x501948, 'ringnav_badge', None),
+    # Every scrolling label's start: its delay and pace (navigation.c ringnav_hscroll_start)
+    'hscroll_label_start': (0x5e867c, 'ringnav_hscroll_start', 'hscroll_start'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -215,8 +225,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
                 echo "== demo did not end: a forced restart, or the battery ran out"
             }} > $c
             {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
+            # Coverflow's open never finished (coverflow.c cf_trace): the phase it reached
+            [ -f /mnt/data/q2-cf-trace ] && {{ echo "== cover flow"; cat /mnt/data/q2-cf-trace; }} >> $c
             rm -f $m
         }}
+        rm -f /mnt/data/q2-cf-trace
         [ -f $c ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
@@ -249,17 +262,23 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             rockbox
             kill $! 2>/dev/null
         done
-        case $s in 0|143) rm -f $m ;; *)
+        # 0 and 143 are a power-off's, but a clean end (ringnav_clean_end) removes $m first: still there, it wasn't one
+        case $s in 0|143) [ -f $m ] || s= ;; esac
+        if [ "$s" ]; then
             {{
                 echo "== date"; date
                 echo "== demo exit $s"
                 echo "== dmesg"; dmesg | tail -n 200
                 echo "== meminfo"; cat /proc/meminfo
                 echo "== ps"; ps
+                [ -f /tmp/q2-scan-file ] && {{ echo "== last scanned"; cat /tmp/q2-scan-file; }}
+                [ -f /tmp/q2-scan.log ] && {{ echo "== scan"; tail -n 60 /tmp/q2-scan.log; }}
+                [ -f /tmp/q2-art-file ] && {{ echo "== last art"; cat /tmp/q2-art-file; }}
+                [ -f /tmp/q2-art.log ] && {{ echo "== art"; tail -n 60 /tmp/q2-art.log; }}
                 [ -f /tmp/q2-demo.log ] && {{ echo "== q2-demo.log"; tail -n 200 /tmp/q2-demo.log; }}
             }} > $c.tmp 2>&1; mv $c.tmp $c
-            sync ;;
-        esac
+            sync
+        fi
     ) &
 '''.encode())
 # User boot logo (docs/boot.md#custom-boot-logo): demo copies the card's to /mnt/data, which
@@ -334,9 +353,15 @@ WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
 LOCK_CLOCK_12H = (b'hh:mm\0\0\0HH:TT\0', b'hh:mm\0\0\0H:mm\0\0')
 # Now Playing's info page: its one fill (0x52a508), a bal, becomes jal ringnav_np_info, which tidies the lines.
 NP_INFO_CALL = 0x52baf4
+# Now Playing's A-B markers (0x52a334): its three calls of their x (0x52a268), each a bal, become jal ringnav_ab_x,
+# which puts them on Classic's bar as ipod_times fitted it to the track.
+AB_X_CALLS = (0x52a408, 0x52a484, 0x52a494)
 # Songs' row bind (0x4a90e4): a record with no artist gets stock's "Unknown Artist" through this getFormatString jalr,
 # which becomes jal ringnav_song_unknown.
 SONG_UNKNOWN_CALL = 0x4a9320
+# table_client's load loop: its on_load_data jalr becomes jal ringnav_table_load, which calls it and
+# then re-picks the row's faces for the text it bound (the load is lw t9, TABLE_LOAD_DATA(s4) at -0x14).
+TABLE_LOAD_CALL = 0x5ca0fc
 # Folder row names are text, not printf formats ("99% Invisible" crashes stock's formatter).
 # tk_strncpy writes its terminator at n, so reserve the last byte of the 512-byte buffer.
 FOLDER_NAME = ((0x522384, 0x24050200, 0x240601ff),  # a2 = 511
@@ -383,9 +408,13 @@ ID3_PATH = (0x5148e8, 0x0320f809)
 # follow, becomes jal ringnav_lyric_follow, which pads the content so the view's end is a row top.
 LYRIC_FOLLOW = (0x52bed0, 0x0320f809)
 # hscroll_label's timer, at a looping label's end of pass, adds its lull with jalr widget_add_timer (lw $t9 at
-# 0x5e8ae4): jal ringnav_hscroll_lull, which snaps the label back to its start when the lull ends, so the
-# delay holds there instead of at the end.
+# 0x5e8ae4): jal ringnav_hscroll_lull, which holds the end MARQUEE_HOLD_MS and snaps the label back to its
+# start when the lull ends, so the start's delay (ringnav_hscroll_start) holds there instead of at the end.
 HSCROLL_LULL = (0x5e8ae8, 0x0320f809)
+# A pass of a label that doesn't loop ends at once, its timer removed (bnez loop at 0x5e8a28 falls through), so
+# stock paints its start with the ellipsis the moment it reaches its end. The branch goes to the lull for
+# every label (b 0x5e8ac0): ringnav_hscroll_lull holds the end, and its end stops a single pass there.
+HSCROLL_ONCE = (0x5e8a28, 0x14400025, 0x10000025)
 # The page refresh's bal to the lyric row builder (0x529f0c, which ends at offset 0) becomes jal
 # ringnav_lyric_rows, which keeps the offset: Play/Pause no longer flicks the lyrics to the top.
 LYRIC_ROWS = (0x52b8f8, 0x0411f984)
@@ -785,6 +814,9 @@ FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-class
 CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, and renamed. '
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
+def classic_light_font():
+    return subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
+
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
     value, in file order; the offsets past each change move with it."""
@@ -988,6 +1020,7 @@ FUNCTIONS = {
  'widget_get_visible': ('int', 'void *'),
  'widget_get_prop_bool': ('int', 'void *, const char *, int'),
  'widget_get_prop_int': ('int', 'void *, const char *, int'),
+ 'style_get_int': ('int', 'void *, const char *, int'),
  'widget_get_prop_str': ('const char *', 'void *, const char *, const char *'),
  'widget_get_text': ('const unsigned *', 'void *'),
  'widget_get_text_utf8': ('int', 'void *, char *, unsigned'),
@@ -1054,6 +1087,7 @@ FUNCTIONS = {
  'scroll_view_set_offset': ('int', 'void *, int, int'),
  'scroll_view_scroll_to': ('int', 'void *, int, int, int'),
  'table_client_scroll_to': ('int', 'void *, int'),
+ 'table_client_get_virtual_h': ('int', 'void *'),
  'scroll_view_scroll_delta_to': ('int', 'void *, int, int, int'),
  'widget_destroy_children': ('int', 'void *'),
  'widget_destroy': ('int', 'void *'),  # Streaming's Baidu Netdisk row (navigation.c ringnav_stream)
@@ -1070,6 +1104,7 @@ FUNCTIONS = {
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
  'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (navigation.c library_rows)
  'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
+ 'on_home_stream_onclick': ('int', 'void *, void *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
  'window_close': ('int', 'void *'),
  'dialog_quit': ('int', 'void *, unsigned'),  # quick settings' close, as its swipe up ends (0x4a0a28)
  'window_manager_close_window_force': ('int', 'void *, void *'),
@@ -1097,6 +1132,7 @@ FUNCTIONS = {
  'taglib_file_tag': ('void *', 'void *'),
  'toolsCheckItemExist': ('int', 'void *, const char *, int'),
  'toolsGetMusicInfo': ('int', 'int, char *, const char *'),
+ 'toolsFixId3ErrorCode': ('void', 'int, const char *, char *, char *, int'),  # navigation.c ogg_music_info
  'toolsUpdateDbTable': ('int', 'const char *, const char *'),
  'toolsTrimRight': ('void', 'char *'),
  'toolsHanziToPinyin': ('int', 'const char *, char *'),
@@ -1106,6 +1142,7 @@ FUNCTIONS = {
  'deleteMusicFromFav': ('int', 'void *'),
  'batch_init_selectrecord': ('int', 'int'),
  'batch_set_selectitem': ('int', 'int'),
+ 'batch_get_selectitem': ('int', 'int'),
  'batch_add_file': ('int', 'int, int, void *, void *, int'),
  'navigator_window_is_exist': ('int', 'const char *'),
  'mclStartPlayer': ('int', 'void'),
@@ -1160,6 +1197,13 @@ FUNCTIONS = {
  'bitmap_destroy': ('int', 'void *'),
  'bitmap_lock_buffer_for_read': ('const unsigned char *', 'void *'),
  'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
+ 'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (navigation.c search_paint)
+ # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
+ 'canvas_offline_create': ('void *', 'unsigned, unsigned, unsigned'),
+ 'canvas_offline_begin_draw': ('int', 'void *'),
+ 'canvas_offline_end_draw': ('int', 'void *'),
+ 'canvas_offline_destroy': ('int', 'void *'),
+ 'canvas_translate': ('int', 'void *, int, int'),
  'widget_on_paint_children': ('int', 'void *, void *'),  # a wallpaper thumbnail's check badge (lockscreen.c)
  'slide_menu_set_spacer': ('int', 'void *, int'),
  'playing_timer_start': ('int', 'void *'),
@@ -1217,6 +1261,7 @@ FUNCTIONS = {
  'albumcoverinfo_init': ('int', 'void *'),  # a list's cover tasks, each a copy of its row's name and path
  'class_icon': ('int', 'void *, int'),  # Artists, Composers and Genres rows' img_icon (CLASS_ICON)
  'np_info': ('int', 'void *'),  # Now Playing's info page labels (ringnav_np_info)
+ 'ab_x': ('int', 'int'),  # an A-B marker's x for a point (ringnav_ab_x)
  'getFormatString': ('int', 'const char *, char *, int'),  # a string's label in the language: key, out, size
  # Lyrics and cover search (onlinematch.c): demo's cJSON, a node's valuestring at +16
  'cJSON_Parse': ('void *', 'const char *'), 'cJSON_Delete': ('void', 'void *'),
@@ -1253,6 +1298,7 @@ PRIVATE_FUNCTIONS = {
     "folder_click": HOOKS['folder_click'][0],  # folder_page's row click (folder_enter, then a file's queue)
     "saver_cover": HOOKS['saver_cover'][0],  # the lock window's img_playcover from the playing track
     "np_info": 0x52a508,  # Now Playing's info page labels, from the track (NP_INFO_CALL)
+    "ab_x": 0x52a268,  # an A-B marker's x, on the boot set's np_bar_x and np_bar_w (AB_X_CALLS)
     "fwupdate_tf": 0x4c2994,  # systemset_fwupdate_page's row 0 click (0x4c2fac): stock's TF card update
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
@@ -1266,6 +1312,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
+           'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value']  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
 # Audited stock browsing state, deque pointers, art locks, the status bar widget
 # (system_bar_init stores it), the playing cover's track path and the playing track's tags as
@@ -1282,6 +1329,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'pdeq_albumcoverlist': 4, 'aclist_mutex': 24,
                 'tidalStreamingLevelNow': 4,  # the quality the Tidal URL thread asked for
                 'stTidalTracks': 16,  # a Tidal track list: total, limit, offset, its deque
+                'g_pressdown_y': 4,  # the touch's start, the window manager's pointer-down writes it
                 'g_dropdown_menu_state': 4,  # Quick Settings: 1, 2 while it slides or follows a swipe, 3 open
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
@@ -1435,6 +1483,36 @@ def patch_bluealsa(raw):
         struct.pack_into('<I', image, fileoff(raw, address), new)
     return bytes(image)
 
+STOCK_VERSION = 'V1.32'
+
+def stock_header(context, ranges, themes, dev=0, repo=REPO):
+    """stock.h, which the payload's C includes: context maps each CONTEXT_DATA name to the C address of
+    its data (demo's symbol on the Q2; test/fw/host.py's own array), ranges are the fonts' range macros
+    (subset_font) and themes theme.builtins()'s."""
+    from ipod import SETTINGS_ICONS
+    from theme import theme_keys
+    header = [f'#define RING_STEP {RING_STEP}', *ranges]
+    header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
+    header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
+    header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
+    header += [f'#define {name} ((const unsigned char *){context[name]})' for name in CONTEXT_DATA]
+    # iPod's image hook leaves the settings icons' category colours alone (navigation.c settings_icon).
+    names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
+    header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
+    header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
+    # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
+    header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
+               f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
+               f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
+               f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
+               f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
+    header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
+    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
+    from art import corner_table, qs_lit
+    header.append(f'#define ROUND_COVER {corner_table()}')  # navigation.c paint_round_rows
+    header.append(f'#define QS_LIT "{qs_lit()}"')  # navigation.c quick_page: Classic's buttons that are on
+    return '\n'.join(header)+'\n'
+
 def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):  # pragma: no mutate block
     from flac import selection
     flac_experiments = selection(flac_experiments)
@@ -1464,7 +1542,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
               'recovery-update/xImage','recovery-update/rootfs.squashfs'], 'Unexpected package members')
         blobs = {m.name:t.extractfile(m).read() for m in meta if m.isfile()}
     info = blobs['firmware_v20.info'].decode().splitlines()
-    check(info[:2] == ['Shanling Q2','V1.32'], 'Wrong model/version')
+    check(info[:2] == ['Shanling Q2', STOCK_VERSION], 'Wrong model/version')
     sq = out/'stock.squashfs'; sq.write_bytes(blobs['recovery-update/rootfs.squashfs'])
     def cat(path): return subprocess.check_output(['unsquashfs', '-cat', str(sq), path])
     raw_demo = cat('release/bin/demo')
@@ -1507,34 +1585,19 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     syms = symbols(demo, symbol_table)
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
-    classic_light, classic_light_ranges = subset_font(ROOT/'assets/fonts/texgyreheros-bold.otf', 'Q2 Pod Classic Light', 'CLASSIC_LIGHT_RANGES', CLASSIC_LIGHT_NOTICE)
-    header = [f'#define RING_STEP {RING_STEP}', bold_ranges, classic_light_ranges]
-    header.append('#define TIMEZONE_NAMES {' + ','.join(json.dumps(zone) for _, zone in TIMEZONES) + '}')
-    header.append('#define TIMEZONE_ORDER {' + ','.join(map(str, TIMEZONE_ORDER)) + '}')
-    header.append('#define TIMEZONE_CITIES {' + ','.join(json.dumps(label.split(' ', 1)[1]) for label, _ in TIMEZONES) + '}')
+    classic_light, classic_light_ranges = classic_light_font()
     for name in GLOBALS:
         check(re.search(rf'\b1\s+OBJECT\s+GLOBAL\s+DEFAULT\s+\d+\s+{name}$',
                         symbol_table, re.M), f'{name}: byte global size mismatch')
     for name, size in CONTEXT_DATA.items():
         check(re.search(rf'\b{size}\s+OBJECT\s+GLOBAL\s+DEFAULT\s+\d+\s+{name}$',
                         symbol_table, re.M), f'{name}: context data size mismatch')
-        header.append(f'#define {name} ((const unsigned char *)0x{syms[name]:x}u)')
-    # iPod's image hook leaves the settings icons' category colours alone (navigation.c settings_icon).
-    names = ''.join(n.removesuffix('.png') + '\\0' for n in SETTINGS_ICONS)
-    header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
-    header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
-    # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
-    header += [f'#define STOCK_VERSION "{info[1]}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
-               f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
-               f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
-               f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches
-               f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
-    from theme import builtins, emit, geometry_sets, theme_keys
+    from theme import builtins, emit, geometry_sets
     themes = builtins()
-    header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
-    header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
-    (out/'stock.h').write_text('\n'.join(header)+'\n')
+    (out/'stock.h').write_text(stock_header({name: f'0x{syms[name]:x}u' for name in CONTEXT_DATA},
+                                            [bold_ranges, classic_light_ranges], themes, dev, repo))
     set_pages, redirects = {}, {}
+    ui = 'release/assets/default/raw/ui/'
     for i, g in enumerate(geometry_sets(themes)[1:], 1):
         for path, data in set_assets(cat, g).items():
             folder, _, base = path.rpartition('/')
@@ -1616,6 +1679,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5e8ae4))[0] == 0x8f99a858,
           'hscroll lull: expected widget_add_timer import')
     patch_word(patched, *HSCROLL_LULL, jal(ps['ringnav_hscroll_lull']), 'a scrolling label holds at its start')
+    patch_word(patched, *HSCROLL_ONCE, 'a single pass holds its end')
     patch_word(patched, *LYRIC_ROWS, jal(ps['ringnav_lyric_rows']), 'lyrics keep their place on a refresh')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5a9c54))[0] == 0x8f99f4e8,
           'lyric file: expected fopen import')
@@ -1661,10 +1725,16 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SONG_UNKNOWN_CALL-8))[0] == 0x8f99a908,
           "song bind: expected getFormatString import")  # lw t9, -0x56f8(gp)
     patch_word(patched, SONG_UNKNOWN_CALL, 0x0320f809, jal(ps['ringnav_song_unknown']), "a song row's empty artist")
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, TABLE_LOAD_CALL-0x14))[0] == 0x8e9900e4,
+          "table load: expected on_load_data's callback")  # lw t9, 0xe4(s4)
+    patch_word(patched, TABLE_LOAD_CALL, 0x0320f809, jal(ps['ringnav_table_load']), "a bound table row's faces")
     for word in FOLDER_NAME:
         patch_word(patched, *word, 'folder names are literal text')
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
                jal(ps['ringnav_np_info']), "Now Playing's info lines")
+    for site in AB_X_CALLS:
+        patch_word(patched, site, branch(0x04110000, site, PRIVATE_FUNCTIONS['ab_x']),
+                   jal(ps['ringnav_ab_x']), "A-B markers on Classic's fitted bar")
     for address, old, new in LDAC_HQ:
         patch_word(patched, address, old, new, 'LDAC HQ sends 990 kbps')
     patch_word(patched, WHEEL_TS_READ[0], WHEEL_TS_READ[1], jal(ps['ringnav_ts_read']), 'wheel ticks')
@@ -1811,16 +1881,18 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     icons['stream_airplay.png'] = ('list_tidal.png', cat(xx+'netservice_airplay.png'))  # iPod resizes stock's
     art = (ROOT/'assets/icons/default_album_home.png').read_bytes()
     # Streaming's rows draw them at SET_ICON; Home's placeholder at the art panel's 290px
+    from theme import builtins as builtin_themes
+    pane = max(t['pane_svc_px'] for t in builtin_themes())  # Home's pane on Streaming's list, 1:1 (coverflow.c pane_service)
     for n in ('spotify', 'radio', 'app', 'airplay', 'config'):
         like, data = icons[f'stream_{n}.png']
-        icons[f'stream_{n}.png'] = (like, row_icon(data))
+        icons[f'classic_light_stream_{n}.png'] = (like, row_icon(data, pane))
+        icons[f'stream_{n}.png'] = (like, row_icon(data, sharp=True))
+    icons['classic_light_list_tidal.png'] = ('list_tidal.png', row_icon(cat(xx+'list_tidal.png'), pane))
     icons['default_album_home.png'] = ('default_album_big.png', art)
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
-    ui = 'release/assets/default/raw/ui/'
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
     from art import images as theme_images
-    from theme import builtins as builtin_themes
     drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
                                HELPER: (HELPER_LIKE, compile_helper(out, cat, 'video', 'q2video', HELPER_LIBS)),

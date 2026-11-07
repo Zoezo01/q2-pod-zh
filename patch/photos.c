@@ -248,13 +248,20 @@ static int to_grid(const void *unused) {
     widget_set_visible(ph.albums, 0, 0);
     widget_destroy_children(ph.grid);
     widget_set_visible(ph.grid, 1, 0);
-    page_title(ph.grid, !n           ? "No photos"
-                        : a >= 0     ? ph.album[a]
-                        : ph.nalbums ? "All Photos"
-                                     : "Photos");
+    void *title = page_title(ph.grid,
+                             !n           ? "No photos"
+                             : a >= 0     ? ph.album[a]
+                             : ph.nalbums ? "All Photos"
+                                          : "Photos",
+                             n);
+    if (!n) page_empty(ph.grid, "Photos");
+    if (!theme()->page_title_h) title_gone(0, 0), bar_title_sync(ph.page); /* no more the albums' */
     /* A bare scroll view: a list_view would lay its children out as full-width rows. */
     int rows = (n + PH_COLS - 1) / PH_COLS;
-    ph.view = scroll_view_create(ph.grid, 0, 48, 375, 240);
+    /* With the title in the bar, down to the page's foot: part of a fourth row. */
+    int top = I(title, W_H);
+    ph.view =
+        scroll_view_create(ph.grid, 0, top, 375, theme()->page_title_h ? 240 : client_h() - top);
     widget_set_prop_int(ph.view, "yslidable", 1);
     widget_set_prop_int(ph.view, "xslidable", 0);
     widget_set_prop_int(ph.view, "virtual_h", rows * PH_TILE_H);
@@ -273,6 +280,7 @@ static int to_grid(const void *unused) {
         poll(0);
     } else
         for (int i = 0; i < n; ++i) ph.state[i] = PH_BAD;
+    if (ph.nalbums) page_push(ph.view, 1); /* none: the page opens on its grid */
     widget_invalidate_force(ph.page, 0);
     return 0;
 }
@@ -308,7 +316,7 @@ static int moved(void *ctx, void *event) {
  * offset, so they slide. */
 static int to_viewer(const void *unused) {
     ph.timer = 0;
-    int h = widget_get_prop_int(ph.page, "h", PH_SHOT_H);
+    int h = widget_get_prop_int(ph.page, "h", client_h());
     if (!ph.slide) {
         void *f = widget_factory();
         ph.slide = widget_factory_create_widget(f, "slide_menu", ph.viewer, 0, 0, 375, h);
@@ -338,9 +346,9 @@ static void to_tiles(void) {
     widget_set_visible(ph.viewer, 0, 0);
     widget_set_visible(ph.grid, 1, 0);
     ringnav_select(ph.view, ph.current, ph.n);
-    int y = ph.current / PH_COLS * PH_TILE_H, top = I(ph.view, SCROLL_Y);
+    int y = ph.current / PH_COLS * PH_TILE_H, top = I(ph.view, SCROLL_Y), h = I(ph.view, W_H);
     if (y < top) top = y;
-    if (y + PH_TILE_H > top + 240) top = y + PH_TILE_H - 240;
+    if (y + PH_TILE_H > top + h) top = y + PH_TILE_H - h;
     scroll_view_set_offset(ph.view, 0, top);
     widget_invalidate_force(ph.page, 0);
 }
@@ -374,6 +382,7 @@ static int leave(const void *unused) {
         ph.view = 0;
         widget_set_visible(ph.grid, 0, 0);
         widget_set_visible(ph.albums, 1, 0);
+        page_push(widget_get_child(ph.albums, 0), -1);
         ph.screen = ALBUMS;
         widget_invalidate_force(ph.page, 0);
     } else
@@ -498,7 +507,7 @@ void photos_open(const char *root) {
     if (!page) return;
     tk_snprintf(ph.root, sizeof ph.root, "%s", root);
     void *f = widget_factory();
-    int h = widget_get_prop_int(page, "h", PH_SHOT_H);
+    int h = widget_get_prop_int(page, "h", client_h());
     ph.albums = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     ph.grid = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);
     ph.viewer = widget_factory_create_widget(f, "view", page, 0, 0, 375, h);

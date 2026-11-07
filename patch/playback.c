@@ -47,6 +47,10 @@ typedef struct {
     unsigned poll_stamp;
 } playback;
 static playback s __attribute__((section(".scratch")));
+/* Each queue entry's identity (its path's hash and CUE start) as the last rebuild took the queue, so
+ * follow_queue can tell which entries a stock edit took out; and playback_poll's thread, the UI's. */
+static unsigned *ids __attribute__((section(".scratch")));
+static unsigned long ui_thread __attribute__((section(".scratch")));
 /* Stock Shuffle's Previous plays the last track, but the track it left stays unplayed in the pool,
  * so stock's Next draws a random one instead: ringnav_shuffle returns to it (playback_back).
  * back_to is that index + 1, back_at where Previous landed. */
@@ -275,6 +279,7 @@ int ringnav_queue_event(void *loop, const unsigned *r) {
 }
 
 volatile int wheel_raw __attribute__((section(".scratch")));
+static int wh_raw __attribute__((section(".scratch")));
 volatile int wheel_travel __attribute__((section(".scratch")));
 volatile int wheel_held __attribute__((section(".scratch"))); /* a finger on the wheel */
 
@@ -298,6 +303,7 @@ void wheel_sample(int *s, int ret, char *info) {
     if (!wh_anchor) {
         wh_anchor = wh_last = s[0];
         wh_acc = 0;
+        wh_raw = 0;
         wheel_held = 1;
         return;
     }
@@ -308,6 +314,12 @@ void wheel_sample(int *s, int ret, char *info) {
     if (wheel_raw) { /* games.c's Vortex reads the travel itself; nothing is queued for a menu */
         __sync_fetch_and_add(&wheel_travel, d / WHEEL_FINE);
         wh_acc = 0;
+        /* Cover Flow's thumb (2): its travel counts as ticks towards Return's stop */
+        if (wheel_raw == WHEEL_THUMB)
+            for (wh_raw += d < 0 ? -d : d; wh_raw >= units; wh_raw -= units) {
+                wh_tick_at = now;
+                wh_since++;
+            }
         s[0] = wh_anchor;
         return;
     }
@@ -446,6 +458,8 @@ static void release(void) {
     if (s.groups) free(s.groups);
     if (s.seen) free(s.seen);
     if (s.history) free(s.history);
+    if (ids) free(ids);
+    ids = 0;
     s.order = s.cycle = 0;
     s.groups = s.seen = s.history = 0;
     s.n = s.hn = s.cursor = s.npend = 0;
@@ -523,6 +537,10 @@ static void history(unsigned at) {
     }
     s.history[s.hn++] = at;
 }
+static unsigned rec_id(unsigned i) {
+    void *r = deque_at(queue(), i);
+    return hash_bytes(fnv(FNV_SEED, P(r, REC_PATH)), (const unsigned char *)r + REC_CUE_START, 4);
+}
 static int rebuild(int keep) {
     s.next_valid = 0;
     unsigned n = queue() ? deque_size(queue()) : 0;
@@ -530,19 +548,23 @@ static int rebuild(int keep) {
     unsigned oldn = s.n, oldhn = s.hn;
     entry *order = calloc(n + 1, sizeof *order), *cycle = calloc(n + 1, sizeof *cycle);
     unsigned *groups = calloc(n + 1, sizeof *groups), *seen = calloc(n + 1, sizeof *seen),
-             *hist = calloc(HISTORY_LIMIT, sizeof *hist);
-    if (!order || !cycle || !groups || !seen || !hist || n > QUEUE_LIMIT) {
+             *hist = calloc(HISTORY_LIMIT, sizeof *hist), *id = calloc(n + 1, sizeof *id);
+    if (!order || !cycle || !groups || !seen || !hist || !id || n > QUEUE_LIMIT) {
         free(order);
         free(cycle);
         free(groups);
         free(seen);
         free(hist);
+        free(id);
         playback_clear(); /* every caller ends advanced play: no older queue's snapshot stays */
         return 0;
     }
     if (s.order) free(s.order);
     if (s.cycle) free(s.cycle);
     if (s.groups) free(s.groups);
+    if (ids) free(ids);
+    for (unsigned i = 0; i < n; ++i) id[i] = rec_id(i);
+    ids = id;
     s.order = order;
     s.cycle = cycle;
     s.groups = groups;
@@ -608,6 +630,46 @@ static int rebuild(int keep) {
     make_order(cycle);
     s.dirty = 1;
     return 1;
+}
+/* Stock's own queue edit (View Queue's delete) takes entries out behind advanced play, so its
+ * indices name other tracks or none. On the UI thread they follow: the entries left keep their seen
+ * marks, history and Play Next places, shifted down as playback_insert shifts them up, and the order
+ * is drawn again over them, as an insert's is. Anything but a deletion (or no memory) takes a new
+ * order over the queue, as a new load gets, Play Next and the history gone. Off the UI thread
+ * (headset keys, a natural change) it returns 1 and the caller takes stock's way this once; the
+ * next UI pass follows. Only a size change is seen: a delete always makes one. */
+static int follow_queue(void) {
+    unsigned m = queue() ? deque_size(queue()) : 0, j = 0, k = 0;
+    if (!s.active || m == s.n) return 0;
+    if (pthread_self() != ui_thread) return 1;
+    close_preload();
+    unsigned *map = ids ? calloc(s.n + 1, sizeof *map) : 0, *seen = calloc(m + 1, sizeof *seen);
+    for (unsigned i = 0; map && i < s.n; ++i) map[i] = j < m && rec_id(j) == ids[i] ? j++ : ~0u;
+    if (!map || !seen || j != m) {
+        free(map);
+        free(seen);
+        s.npend = 0;
+        s.active = rebuild(0);
+        return 0;
+    }
+    for (unsigned i = 0; i < s.n; ++i)
+        if (map[i] != ~0u) seen[map[i]] = s.seen[i];
+    for (unsigned i = 0; i < s.hn; ++i)
+        if (s.history[i] < s.n && map[s.history[i]] != ~0u) s.history[k++] = map[s.history[i]];
+    s.hn = k;
+    k = 0;
+    for (unsigned i = 0; i < s.npend; ++i)
+        if (s.pend[i] < s.n && map[s.pend[i]] != ~0u) s.pend[k++] = map[s.pend[i]];
+    s.npend = k;
+    free(map);
+    free(s.seen);
+    s.seen = seen;
+    s.n = m;
+    unsigned at = (unsigned)M(MCL_POS);
+    /* the playing entry gone, stock's position names the one after it: Previous comes back here */
+    if (at < m && (!s.hn || s.history[s.hn - 1] != at)) history(at);
+    s.active = rebuild(1);
+    return 0;
 }
 int playback_option(int kind) {
     return kind == 0 ? (s.active ? s.shuffle : 0) : kind == 1 ? (s.active ? s.repeat : 2) : s.folder;
@@ -785,6 +847,7 @@ static void commit(unsigned next) {
 #define VIEW_QUEUE_RET 0x529944 /* View Queue's row, past its bounds checks */
 int ringnav_start_queue(int at) {
     unsigned x = (unsigned)at;
+    follow_queue();
     if (__builtin_return_address(0) == (void *)VIEW_QUEUE_RET && x == (unsigned)M(MCL_POS) &&
         playback_keeps(queue(), at)) {
         playback_np();
@@ -887,7 +950,7 @@ static int list_end(void) {
 unsigned auto_nexts __attribute__((section(".scratch"))); /* tracks that ended by themselves */
 static int next_song(int automatic) {
     auto_nexts += automatic != 0;
-    if (!s.active) {
+    if (follow_queue() || !s.active) {
         if (list_end()) {
             close_preload();
             mclStop();
@@ -924,15 +987,17 @@ int playback_back(void) {
     return to >= 0 && M(MCL_POS) == back_at && queue() && (unsigned)to < deque_size(queue()) ? to : -1;
 }
 int ringnav_prev(void) {
-    if (!s.active) {
+    if (follow_queue() || !s.active) {
         int left = M(MCL_POS), result = stock_prev_trampoline();
         back_to = M(MCL_MODE) == 2 && M(MCL_POS) != left ? left + 1 : 0;
         back_at = M(MCL_POS);
         return result;
     }
-    if (s.hn < 2) return 1;
+    /* the playing entry deleted with none after it: back to the one before, which history ends on */
+    unsigned gone = (unsigned)M(MCL_POS) >= s.n;
+    if (s.hn < 2 - gone) return 1;
     s.resume_key = s.resume_pending = 0;
-    --s.hn;
+    s.hn -= !gone;
     unsigned at = s.history[s.hn - 1];
     close_preload();
     /* The track left is unplayed again, so Next comes back to it rather than skipping it. */
@@ -1124,6 +1189,7 @@ int playback_group_skip(int forward) {
 }
 int ringnav_preload(void) {
     if (!s.active) return stock_preload_trampoline();
+    if (follow_queue()) return 1;
     int next = playback_successor(1);
     if (next < 0) return 1;
     M(MCL_PREPOS) = next;
@@ -1611,6 +1677,7 @@ static int playback_next(void) {
     return (mode == 0 || mode == 3) && at + 1 < n ? (int)at + 1 : -1;
 }
 void playback_poll(void) {
+    ui_thread = pthread_self();
     wheel_pct(); /* the saved sensitivity from the first UI pass */
     if (too_long) {
         too_long = 0;
@@ -1620,6 +1687,7 @@ void playback_poll(void) {
         restart_ask = 0;
         toast("Press again to restart");
     }
+    follow_queue(); /* before Crossfade reads the next track */
     xfade_poll(playback_next(), !s.active && M(MCL_MODE) == 2);
     mono_sync();
     unsigned now = time_now_ms();

@@ -9,13 +9,12 @@
 #endif
 #include "library_scope.h"
 #include "playback.h"
+#include "xiph.h"
 
 /* On the card, beside stock's own cover cache (/mnt/mmc/.sldp). */
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define ART_SIZE 160
 #define LAST_ALBUM ART_DIR "/album" /* the centre album's key, so a reboot opens on it */
-#define CF_X CF_EDGE /* the one text column, clear of the rounded glass */
-#define CF_W (375 - 2 * CF_EDGE)
 #define MIN_FREE_MB 16 /* no new cache files below this much free space on the card */
 #define ART_NEAR 3 /* real art only this many covers either side, like PictureFlow's cache */
 /* Home's without a theme's pane (home_pane_paint), at 290px (stock's: 110) */
@@ -28,7 +27,8 @@ enum { ARTIST_ALBUMS = 1, RATED_ALBUMS, ALBUM_TRACKS }; /* cf.scoped */
 
 extern int stock_home_trampoline(void *win, void *ctx), stock_scan_all_trampoline(void *, void *),
     stock_scan_folder_trampoline(void *, void *), stock_delete_song_trampoline(void *, void *),
-    stock_file_created_trampoline(const char *);
+    stock_file_created_trampoline(const char *),
+    stock_album_cover_trampoline(const char *, const char *, int, int);
 
 enum { PREPARING, COVERS, TRACKS };
 typedef struct {
@@ -208,16 +208,44 @@ int thumb(const char *src, const char *dst, int w, int h) {
     return ok || (!access(src, 4) && ff_thumb(src, dst, w, h)); /* none for a missing file */
 }
 
-/* Whether another album has a track in this one's folder. ponytail: a scan of every album per
- * job, albums squared; a per-folder count if large libraries lag. */
-static int folder_shared(unsigned key, const char *track) {
-    const char *slash = strrchr(track, '/');
-    for (unsigned i = 0; slash && i < deque_size(cf.albums); ++i) {
-        void *r = deque_at(cf.albums, i);
+/* Which albums share a folder with another album (job_t.shared), one byte per album; 0 without
+ * memory. Albums with a path are sorted by folder (its FNV hash, then the folder itself, then the
+ * album key), so each folder's albums sit together, and a folder holding two keys marks all of
+ * them. A scan of every album per album here was albums squared on the UI thread, the likely
+ * (inferred, not reproduced) cause of a big library's first open stalling past the watchdog. */
+typedef struct {
+    unsigned hash, len, key, idx;
+    const char *path;
+} folder_t;
+static int folder_before(const void *a, const void *b) {
+    const folder_t *x = a, *y = b;
+    int c = x->hash != y->hash ? (x->hash < y->hash ? -1 : 1)
+            : x->len != y->len ? (x->len < y->len ? -1 : 1)
+                               : memcmp(x->path, y->path, x->len);
+    return c ? c : (x->key > y->key) - (x->key < y->key);
+}
+/* noinline: test/patch.py calls it */
+__attribute__((noinline)) static unsigned char *folders_shared(void *albums, unsigned count) {
+    folder_t *v = calloc(count + 1, sizeof *v);
+    unsigned char *shared = calloc(count + 1, 1);
+    unsigned n = 0;
+    for (unsigned i = 0; v && shared && i < count; ++i) {
+        void *r = deque_at(albums, i);
         const char *p = P(r, REC_PATH), *s = p ? strrchr(p, '/') : 0;
-        if (s && s - p == slash - track && !memcmp(p, track, s - p) && album_key(r) != key) return 1;
+        if (s)
+            v[n++] = (folder_t){ hash_bytes(FNV_SEED, (const unsigned char *)p, s - p), s - p,
+                                 album_key(r), i, p };
     }
-    return 0;
+    if (n) qsort(v, n, sizeof *v, folder_before);
+    for (unsigned a = 0, b; a < n; a = b) {
+        for (b = a + 1; b < n && v[b].hash == v[a].hash && v[b].len == v[a].len &&
+                        !memcmp(v[b].path, v[a].path, v[a].len);
+             ++b);
+        for (unsigned k = a; v[a].key != v[b - 1].key && k < b; ++k) shared[v[k].idx] = 1;
+    }
+    if (!v) free(shared), shared = 0;
+    free(v);
+    return shared;
 }
 
 /* The cover and folder images beside track through fit (none when shared: a folder shared with
@@ -284,6 +312,21 @@ static int grid_cover(const char *track, const char *dst, int w, int h, int albu
     if (!ok && exited && miss && !access(track, 4)) miss[n++ % 1024] = key;
     return ok;
 }
+
+/* toolsGetAlbumCover's entry, so every embedded-art read: player_parsecover_thd's Now Playing art,
+ * the GRID_COVER calls and build_art. libtag_c's taglib_album_picture gives an .ogg to
+ * get_oggfile_albumpic, XiphComment::pictureList after TagLib's whole parse, about 4 times the
+ * comment header (docs/internals.md#oversized-ogg-tags). One over OGG_TAGS_MAX gets none from
+ * stock, so its caller's fallback (coverflow_player_cover, grid_cover, build_art) hands it to
+ * ffmpeg, which the kernel kills before demo. Stock reads no .opus or .oga picture, so those are
+ * not measured. */
+#ifndef PEQ_HOST
+int ringnav_album_cover(const char *track, const char *dst, int w, int h) {
+    const char *dot = strrchr(track, '.');
+    if (dot && !strcasecmp(dot, ".ogg") && ogg_tags(track, 0)) return 0;
+    return stock_album_cover_trampoline(track, dst, w, h);
+}
+#endif
 
 int coverflow_grid_cover(const char *track, const char *dst, int w, int h) {
     return grid_cover(track, dst, w, h, 0);
@@ -361,8 +404,10 @@ static void build_art(const job_t *j) {
     if (f) fclose(f);
 }
 
+static unsigned art_counts[2]; /* crash_note's, every 50th album */
 static void *worker(void *unused) {
     while (cf.done < cf.total && !cf.cancel) {
+        crash_note(cf.jobs[cf.done].track, "/tmp/q2-art-file", "/tmp/q2-art.log", 50, art_counts);
         build_art(&cf.jobs[cf.done]);
         ++cf.done;
     }
@@ -877,12 +922,16 @@ static unsigned initial(int i) {
     return c;
 }
 
+/* Letters mean something on w: the whole library's covers, sorted by album or artist. */
+static int lettered(void *w) {
+    return w && w == cf.slide && cf.screen == COVERS && cf.sort <= SORT_ARTIST && !cf.scoped;
+}
+
 /* Utility cards and wrap edges remain individual stops. Reverse lands at a group's start. */
 int coverflow_jump(void *w, int from, int dir, unsigned *letter) {
     int n = cf.albums ? (int)deque_size(cf.albums) : 0;
     *letter = 0;
-    if (w != cf.slide || cf.screen != COVERS || cf.sort > SORT_ARTIST || cf.scoped ||
-        from < 0 || from >= n) return 1;
+    if (!lettered(w) || from < 0 || from >= n) return 1;
     unsigned c = initial(from);
     int to = from + dir;
     if (dir > 0) {
@@ -1152,60 +1201,119 @@ void *page_open(const char *name, int (*closed)(void *, void *), int (*keyup)(vo
     widget_set_prop_int(page, "style:normal:bg_color", (int)0xff000000u);
     widget_on(page, EVT_DESTROY, closed, page);
     widget_on(page, EVT_KEY_UP, keyup, 0);
+    motion_open(page, name);
     return page;
 }
 
-/* A page's 48px title bar; shared with photos.c. */
-void *page_title(void *body, const char *caption) {
-    void *title = text(body, CF_X, 0, CF_W, 48);
+#define TITLE_ON_SHOW 0 /* page_title's n when the caller writes the title again */
+
+/* A page's title row, the theme's height. 0: the bar holds the caption, and this hidden label is
+ * what it reads, unless the page also needs it as a first line, a row high: with no rows (n 0),
+ * when it's all the page says, or when it doesn't fit the bar's box (bar_title_fits). Shared with
+ * photos.c. */
+void *page_title(void *body, const char *caption, int n) {
+    const theme_t *T = theme();
+    int x = T->page_x, w = 375 - 2 * x;
+    void *title = text(body, x, 0, w, T->page_title_h);
     widget_set_text_utf8(title, caption);
+    if (T->page_title_h) return title;
+    widget_set_name(title, PAGE_TITLE);
+    if (n && bar_title_fits(title)) {
+        widget_set_visible(title, 0, 0);
+    } else {
+        widget_use_style(title, "s_scrlabel_white20l");
+        widget_move_resize(title, x, 0, w, T->page_row);
+        theme_font(title, ROLE_TITLE, FONT_ROW);
+    }
     return title;
 }
 
-/* The peq_ui.c page: a title bar (*title, unless 0) over n item_h rows in body, down to the page's
- * bottom (the last row's selection meets the screen's edge) or shrunk so
- * the list's white background never shows below a short list. Shared with photos.c. */
-void *page_list(void *page, void *body, void **title, const char *caption, int n, int item_h) {
-    int h = widget_get_prop_int(page, "h", 290), rows = h - 48;
-    if (n * item_h < rows) rows = n * item_h;
-    widget_destroy_children(body);
-    widget_set_visible(body, 1, 0);
-    void *t = page_title(body, caption);
-    if (title) *title = t;
-    void *lv = list_view_create(body, 0, 48, 375, rows);
+/* A list view in parent from y, w wide and at most h high, for n item_h rows; its scroll view. */
+static void *rows_view(void *parent, int y, int w, int h, int n, int item_h) {
+    int rows = n * item_h < h ? n * item_h : h;
+    void *lv = list_view_create(parent, 0, y, w, rows);
     widget_set_prop_int(lv, "item_height", item_h);
     /* The theme's default list_view is a light card; stock pages paint theirs black inline. */
     widget_set_prop_int(lv, "style:normal:bg_color", (int)0xff000000u);
     widget_set_prop_int(lv, "style:normal:border_color", 0);
-    void *view = scroll_view_create(lv, 0, 0, 375, rows);
+    void *view = scroll_view_create(lv, 0, 0, w, rows);
     widget_set_prop_int(view, "yslidable", 1);
     widget_set_prop_int(view, "xslidable", 0);
     widget_set_prop_int(view, "virtual_h", n * item_h);
+    return view;
+}
+
+/* The peq_ui.c page: a title bar (*title, unless 0: its caller writes it again, so it stays on
+ * show) over n item_h rows (page_h) in body, down to the page's bottom (the last row's selection
+ * meets the screen's edge) or shrunk so the list's white background never shows below a short list.
+ * Shared with photos.c. */
+void *page_list(void *page, void *body, void **title, const char *caption, int n, int item_h) {
+    int h = widget_get_prop_int(page, "h", client_h());
+    item_h = page_h(item_h);
+    widget_destroy_children(body);
+    widget_set_visible(body, 1, 0);
+    void *t = page_title(body, caption, title ? TITLE_ON_SHOW : n);
+    if (title) *title = t;
+    void *view = rows_view(body, I(t, W_H), 375, h - I(t, W_H), n, item_h);
+    if (!theme()->page_title_h) bar_title_sync(page);
     widget_invalidate_force(page, 0);
     return view;
+}
+
+/* page_list for a page with a name of its own and a message for no rows (page_empty): the bar still
+ * reads the name. */
+void *page_list_or(void *page, void *body, const char *name, const char *none, int n, int item_h) {
+    void *view = page_list(page, body, 0, n ? name : none, n, item_h);
+    if (!n) page_empty(body, name);
+    return view;
+}
+
+/* The stock page_list heights, 48 a row and 64 a row with a detail, as the theme's. */
+int page_h(int h) {
+    const theme_t *T = theme();
+    return h == 64 ? T->page_detail : h == 48 ? T->page_row : h;
+}
+
+/* The theme's page rows' text column. */
+int page_x(void) { return theme()->page_x; }
+
+/* A page_list caption written again, and the bar's when it holds it. */
+void page_retitle(void *page, void *title, const char *caption) {
+    widget_set_text_utf8(title, caption);
+    if (!theme()->page_title_h) bar_title_sync(page);
 }
 
 static void *list(const char *title, int n) {
     return page_list(cf.page, cf.body, &cf.title, title, n, 48);
 }
 
-/* One 48px row of a page_list or, with a detail (navigation.c's Most Played), a 64px one: the caption
- * over the detail in 16px #AAAAAA, stock's s_scrlabel_gray24l grey. iPod left-aligns them, as every
- * stock list. Returns the row. Shared with photos.c. */
+/* One row of a page_list (48px, the theme's page_h) or, with a detail (navigation.c's Most Played),
+ * a taller one: the caption over the detail in 16px #AAAAAA, stock's s_scrlabel_gray24l grey, in
+ * the theme's boxes and fonts. Under a theme's separators an empty detail centres the caption above
+ * them, its label kept for whoever writes it. iPod left-aligns them, as every stock list. Returns
+ * the row. Shared with photos.c. */
 void *page_row_detail(void *view, int index, const char *caption, const char *detail,
                       int (*click)(void *, void *)) {
-    int h = detail ? 64 : 48;
+    const theme_t *T = theme();
+    int h = page_h(detail ? 64 : 48), x = T->page_x, w = 375 - 2 * x,
+        sep = detail && !*detail ? T->sep[0].n : 0;
     void *item = list_item_create(view, 0, index * h, 375, h);
     widget_use_style(item, "s_listitem_black");
-    void *label = text(item, CF_X, detail ? 4 : 0, CF_W, detail ? 32 : 48);
+    void *label = text(item, x, !detail || sep ? 0 : T->page_cap_y, w,
+                       !detail ? h
+                       : sep   ? h - sep
+                               : T->page_cap_h);
     widget_use_style(label, "s_scrlabel_white20l");
     widget_set_text_utf8(label, caption);
+    theme_font(label, detail ? ROLE_TALL : ROLE_TITLE, FONT_ROW);
     if (detail) {
-        label = text(item, CF_X, 36, CF_W, 24);
+        if (T->sep[0].n) widget_set_name(item, PAGE_TALL);
+        label = text(item, x, T->page_det_y, w, T->page_det_h);
         widget_use_style(label, "s_scrlabel_white20l");
         widget_set_prop_int(label, "style:normal:text_color", (int)0xffaaaaaau);
         widget_set_prop_int(label, "style:normal:font_size", 16);
         widget_set_text_utf8(label, detail);
+        theme_font(label, ROLE_META, FONT_ROW);
     }
     widget_on(item, EVT_CLICK, click, (void *)(long)index);
     return item;
@@ -1218,7 +1326,9 @@ void row_into(void *item, int h) {
         void *label = widget_get_child(item, i);
         widget_move_resize(label, I(label, W_X), I(label, W_Y), 316 - I(label, W_X), I(label, W_H));
     }
-    image_base_set_image(image_create(item, 302, 0, 50, h), "list_into");
+    void *into = image_create(item, 302, 0, 50, h);
+    image_base_set_image(into, "list_into");
+    if (theme()->chevron_sel) widget_set_visible(into, 0, 0); /* the selection's chevron instead */
 }
 
 /* A page_row_detail row that opens another page, with row_into's chevron. An empty detail centres
@@ -1226,8 +1336,11 @@ void row_into(void *item, int h) {
 void *page_row_detail_into(void *view, int index, const char *caption, const char *detail,
                            int (*click)(void *, void *)) {
     void *item = page_row_detail(view, index, caption, detail, click);
-    int h = detail ? 64 : 48;
-    if (detail && !*detail) widget_move_resize(widget_get_child(item, 0), CF_X, 0, CF_W, h);
+    const theme_t *T = theme();
+    int h = page_h(detail ? 64 : 48);
+    if (detail && !*detail)
+        widget_move_resize(widget_get_child(item, 0), T->page_x, 0, 375 - 2 * T->page_x,
+                           h - T->sep[0].n);
     row_into(item, h);
     return item;
 }
@@ -1284,58 +1397,133 @@ int image_show(void *img, const char *url, unsigned *size) {
 #define CF_ONE 65536
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
 #define CF_RING (2 * CF_REACH + 1)
+#define CF_WIDE_REACH 7 /* the same under a thumb theme, for the row at speed */
+#define CF_WIDE (2 * CF_WIDE_REACH + 1)
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
 static cf_style_t cfs __attribute__((section(".scratch")));
+/* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1 */
+static int cf_s1 __attribute__((section(".scratch")));
+static int cf_rest16 __attribute__((section(".scratch")));
+#define CF_SWING_T (CF_ONE * 45 / 100)
 #define CF_EYE16 (16 * cfs.eye)
 #define CF_HALF16 (16 * ART_SIZE / 2)
-#define CF_MID256 (256 * (cfs.top + ART_SIZE / 2)) /* the horizon every cover centres on */
+/* the horizon every cover shares, and a cover h high (1/256 px)'s top row on it */
+#define CF_TOP256(h) (256 * cfs.top + 40960 * cfs.horizon / 100 - (h) * cfs.horizon / 100)
+
+/* The covers held by the thumb (docs/internals.md#coverflow-thumb): one follower per UI pass, in
+ * albums from SLIDE_INDEX, its speeds a ms. on: it owns the offset, until it commits. */
+static struct {
+    float pos, vel, goal, lead, lead_v, rate, tau, ticks, seen, seen_lead, stretch;
+    unsigned at, tick_at, edge_at;
+    int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump;
+} th __attribute__((section(".scratch")));
+
+static int cf_floor(float x) {
+    int i = (int)x;
+    return i - (x < (float)i);
+}
+static int cf_round(float x) { return cf_floor(x + .5f); }
+static float cf_smooth(float x) {
+    x = x < 0 ? 0 : x > 1 ? 1 : x;
+    return x * x * (3 - 2 * x);
+}
 
 /* cos and sin of 0 to CF_ANGLE (60) degrees in 16 steps, 16.16 */
 static const int cf_cos[17] = { 65536, 65396, 64975, 64277, 63303, 62058, 60547, 58777, 56756,
                                 54491, 51993, 49273, 46341, 43211, 39896, 36410, 32768 };
 static const int cf_sin[17] = { 0,     4286,  8554,  12785, 16962, 21066, 25080, 28986, 32768,
                                 36410, 39896, 43211, 46341, 49273, 51993, 54491, 56756 };
+/* the same of 0 to 90 degrees, for a theme's other tilt */
+static const int cf_cos90[17] = { 65536, 65220, 64277, 62714, 60547, 57798, 54491, 50660, 46341,
+                                  41576, 36410, 30893, 25080, 19024, 12785, 6424,  0 };
+static const int cf_sin90[17] = { 0,     6424,  12785, 19024, 25080, 30893, 36410, 41576, 46341,
+                                  50660, 54491, 57798, 60547, 62714, 64277, 65220, 65536 };
 
 /* A right-hand cover t (16.16, >= 0) from the visual position: centre xc and depth zc (1/16 px),
- * rotation c, s (16.16) and brightness (of 256). Left covers mirror it. */
+ * rotation c, s (16.16), brightness (of 256) and the eye it is seen from (1/16 px). Left covers
+ * mirror it. */
 typedef struct {
-    int xc, zc, c, s, bright;
+    int xc, zc, c, s, bright, eye;
 } pose_t;
 
 static void pose(int t, pose_t *p) {
-    int a = t < CF_ONE ? t : CF_ONE, i = a >> 12, f = a & 4095;
-    p->c = cf_cos[i] + (i < 16 ? (cf_cos[i + 1] - cf_cos[i]) * f >> 12 : 0);
-    p->s = cf_sin[i] + (i < 16 ? (cf_sin[i + 1] - cf_sin[i]) * f >> 12 : 0);
+    int a = t < CF_ONE ? t : CF_ONE, other = cfs.tilt != CF_ANGLE;
+    if (other) a = a * cfs.tilt / 90;
+    const int *cs = other ? cf_cos90 : cf_cos, *sn = other ? cf_sin90 : cf_sin;
+    int i = a >> 12, f = a & 4095;
+    p->eye = CF_EYE16;
+    p->c = cs[i] + (i < 16 ? (cs[i + 1] - cs[i]) * f >> 12 : 0);
+    p->s = sn[i] + (i < 16 ? (sn[i + 1] - sn[i]) * f >> 12 : 0);
     if (t < CF_ONE) {
         /* xc = A t + B t^2: CF_X1 at t = 1, arriving at the stack's CF_XS slope, and quick at
          * first, so the covers turning in and out mid-step keep clear of each other. */
         int sq = (int)((unsigned)t * (unsigned)t >> 16);
         p->xc = (16 * (2 * cfs.x1 - cfs.xs) * t + 16 * (cfs.xs - cfs.x1) * sq) >> 16;
         p->zc = 16 * cfs.z1 * t >> 16;
+        if (cfs.swing) {
+            /* Depth follows the turn, less a small swell of lift px mid-way. The near edge's screen
+             * x is two parabolas meeting flat at 45% of the way, 3 px past its rest place, and xc
+             * follows from it, so the far edge goes on swinging out with no corner in the path.
+             * t = 1 lands on the rest pose below. */
+            p->zc = 16 * cfs.z1 * (p->s >> 4) / (cf_s1 >> 4) - (16 * cfs.lift * (t - sq) >> 16);
+            int den = CF_EYE16 + p->zc - (CF_HALF16 * p->s >> 16);
+            int peak = cf_rest16 + 48, rising = t < CF_SWING_T;
+            int q =
+                ((rising ? CF_SWING_T - t : t - CF_SWING_T) << 12) /
+                (rising ? CF_SWING_T : CF_ONE - CF_SWING_T); /* 0 at the peak, 4096 at each end */
+            int near = peak - ((rising ? peak - CF_HALF16 : 48) * (q * q >> 12) >> 12);
+            p->xc = near * den / CF_EYE16 - (CF_HALF16 * p->c >> 16);
+            /* The eye draws back mid-turn, by eye_turn (1 - t^4), so the far edge is less steep.
+             * Depth goes with it, which keeps the near edge's place and height; at t = 0 and 1 no
+             * pixel moves. */
+            p->eye += 16 * cfs.eye_turn * (CF_ONE - (int)((unsigned)sq * (unsigned)sq >> 16)) >> 16;
+            p->zc = p->eye * den / CF_EYE16 - p->eye + (CF_HALF16 * p->s >> 16);
+        }
         p->bright = 256 - ((256 - cfs.bright1) * t >> 16);
     } else {
         int e = t - CF_ONE;
         p->xc = 16 * cfs.x1 + (16 * cfs.xs * e >> 16);
         p->zc = 16 * cfs.z1 + (16 * cfs.zs * e >> 16);
-        p->bright = e < CF_ONE ? cfs.bright1 - ((cfs.bright1 - cfs.bright2) * e >> 16)
-                    : e < 2 * CF_ONE ? cfs.bright2 * (2 * CF_ONE - e) >> 16 : 0;
+        if (e < CF_ONE)
+            p->bright = cfs.bright1 - ((cfs.bright1 - cfs.bright2) * e >> 16);
+        else if (cfs.third) /* whole to the third, gone half a step on: the ring's reach ends there
+                             */
+            p->bright = e < 2 * CF_ONE       ? cfs.bright2
+                        : e < 5 * CF_ONE / 2 ? cfs.bright2 * (5 * CF_ONE / 2 - e) >> 15
+                                             : 0;
+        else
+            p->bright = e < 2 * CF_ONE ? cfs.bright2 * (2 * CF_ONE - e) >> 16 : 0;
     }
 }
 
 /* Screen x (1/16 px right of the centre line) of the cover point u (1/16 px from its middle). */
 static int project(const pose_t *p, int u) {
-    return (p->xc + (u * p->c >> 16)) * CF_EYE16 / (CF_EYE16 + p->zc - (u * p->s >> 16));
+    return (p->xc + (u * p->c >> 16)) * p->eye / (p->eye + p->zc - (u * p->s >> 16));
 }
+#ifdef PEQ_HOST
+/* For test/coverflow.py: the follower's state, and a lead (< 0: none) to render at. */
+void cf_thumb(float *out) {
+    out[0] = th.pos, out[1] = th.vel, out[2] = th.goal, out[3] = th.lead, out[4] = th.rate;
+    out[5] = (float)th.on;
+}
+void cf_thumb_lead(float lead) { th.on = lead >= 0, th.lead = lead >= 0 ? lead : 0; }
+/* For test/coverflow.py: an edge's path, finer than a frame's pixels. */
+int cf_path_x(int t, int u) {
+    pose_t p;
+    pose(t, &p);
+    return project(&p, u);
+}
+#endif
 
 /* The cover point under screen x dx (1/16 px right of the centre line), the inverse of project;
  * 0 when the column misses the cover. *h gets the cover's projected height there (1/256 px). */
 static int unproject(const pose_t *p, int dx, int *u, int *h) {
-    int den = (CF_EYE16 * p->c + dx * p->s) >> 16;
+    int den = (p->eye * p->c + dx * p->s) >> 16;
     if (den <= 0) return 0;
-    *u = (dx * (CF_EYE16 + p->zc) - CF_EYE16 * p->xc) / den;
+    *u = (dx * (p->eye + p->zc) - p->eye * p->xc) / den;
     if (*u < -CF_HALF16 || *u >= CF_HALF16) return 0;
-    *h = ART_SIZE * 256 * CF_EYE16 / (CF_EYE16 + p->zc - (*u * p->s >> 16));
+    *h = ART_SIZE * 256 * p->eye / (p->eye + p->zc - (*u * p->s >> 16));
     return 1;
 }
 
@@ -1376,10 +1564,11 @@ static unsigned cf_paper;
 static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, int inset) {
     if (h < 16) return;
     unsigned *d = f->d + col;
-    int top = CF_MID256 - h / 2, bottom = top + h, step = (ART_SIZE << 20) / (h >> 4);
+    int top = CF_TOP256(h), bottom = top + h, step = (ART_SIZE << 20) / (h >> 4);
     int ins = h * inset / (ART_SIZE * 256), clipped_top = top + ins, clipped_bottom = bottom - ins;
     int solid_top = f->solid_top[col], solid_bottom = f->solid_bottom[col];
-    int y = clipped_top >> 8, end = (clipped_bottom + 255) >> 8, last = end < CF_VIEW_H ? end : CF_VIEW_H;
+    int y = clipped_top >> 8, end = (clipped_bottom + 255) >> 8,
+        last = end < cfs.view_h ? end : cfs.view_h;
     int first = y, final = end - 1; /* the rows the edges cross */
     int v = (((y << 8) + 128 - top) >> 4) * step >> 4, pitch = f->pitch; /* v: 16.16 texel row */
     if (y < 0) v -= y * step, y = 0;
@@ -1407,7 +1596,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
     int fade = (256 << 16) / reflect; /* fading per 1/256 px, 16.16 */
     unsigned dim = (unsigned)bright * cfs.reflect_top >> 8;
     wash = shade(cf_paper, 256u - dim);
-    if (stop > CF_VIEW_H) stop = CF_VIEW_H;
+    if (stop > cfs.view_h) stop = cfs.view_h;
     for (y = (bottom + ins) >> 8, px = d + y * pitch; y < stop; ++y, px += pitch) {
         int from = y << 8 > bottom + ins ? y << 8 : bottom + ins,
             dist = ((from + ((y + 1) << 8)) >> 1) - bottom;
@@ -1421,7 +1610,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
     /* The rows this body covers whole are opaque now: join them to the known span, or keep the
      * longer of the two. */
     int s0 = (clipped_top + 255) >> 8, s1 = clipped_bottom >> 8;
-    s0 = s0 < 0 ? 0 : s0, s1 = s1 > CF_VIEW_H ? CF_VIEW_H : s1;
+    s0 = s0 < 0 ? 0 : s0, s1 = s1 > cfs.view_h ? cfs.view_h : s1;
     if (s1 <= s0) return;
     if (solid_bottom > solid_top && s0 <= solid_bottom && s1 >= solid_top) {
         s0 = s0 < solid_top ? s0 : solid_top;
@@ -1435,7 +1624,12 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
 static unsigned short cf_inset[ART_SIZE] __attribute__((section(".scratch"))); /* 1/256 texel, symmetric */
 
 /* Copy the theme's Cover Flow values to cfs. */
-static void cf_restyle(void) { cfs = theme()->cf; }
+static void cf_restyle(void) {
+    pose_t rest;
+    cfs = theme()->cf;
+    pose(CF_ONE, &rest);
+    cf_s1 = rest.s, cf_rest16 = project(&rest, CF_HALF16);
+}
 /* cf_inset follows the theme's radius, or none under square art. */
 static void cf_corners(void) {
     static short filled __attribute__((section(".scratch")));
@@ -1448,6 +1642,20 @@ static void cf_corners(void) {
         cf_inset[k] = cf_inset[ART_SIZE - 1 - k] = (unsigned short)(arc_out(r, k) * 16);
 }
 
+/* One mapping of the art across a cover, at rest (draw_cover) and in the row (draw_quad): the texel
+ * (0 at the far edge) at x of n from the far edge, the near half q (of 256) times as wide as the
+ * far half; 256 spaces them evenly. Unsigned, x q stays under 2^32 / ART_SIZE. */
+static int cf_texel(int x, int n, int q) {
+    unsigned k = (unsigned)x * (unsigned)q * ART_SIZE / (unsigned)((n - x) * 256 + x * q);
+    return k >= ART_SIZE ? ART_SIZE - 1 : (int)k;
+}
+/* A cover's q, near and far heights hn and hf: on the screen (per hf), r, from 1 at
+ * coverflow.shelf.art_persp 0 to the plane's own hn / hf at 100; over the plane's own spacing
+ * (per hn), r / (hn / hf), so 100 leaves it exactly as it is. */
+static int cf_art_q(int hn, int hf, int per) {
+    return ((hf + (hn - hf) * cfs.art_persp / 100) << 8) / per;
+}
+
 static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
@@ -1455,12 +1663,70 @@ static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     if (p.bright <= 0 || !tex) return;
     int a = project(&p, -CF_HALF16), b = project(&p, CF_HALF16);
     int lo = (16 * CF_CX + (a < b ? a : b)) >> 4, hi = (16 * CF_CX + (a < b ? b : a)) >> 4;
+    /* the edges' depths: far over near is the near edge's height over the far edge's */
+    int dn = p.eye + p.zc - (CF_HALF16 * p.s >> 16), df = dn + 2 * (CF_HALF16 * p.s >> 16);
+    int q = cf_art_q(df, dn, df);
     for (int v = lo; v <= hi; ++v) { /* v: the column as if the cover were on the right */
         int col = side > 0 ? v : 2 * CF_CX - 1 - v, u, h;
         if (col < 0 || col >= CF_VIEW_W || !unproject(&p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h)) continue;
-        int k = (u + CF_HALF16) >> 4;
+        int k = cf_texel(u + CF_HALF16, 2 * CF_HALF16, q);
         column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k), h, p.bright, cf_inset[k]);
     }
+}
+
+/* A cover whose near and far edges have left its pose, between xl and xr (1/16 px right of the
+ * centre line), its height hl to hr (1/256 px) straight across; the shorter edge is the far one. */
+static void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, int bright) {
+    int lo = (16 * CF_CX + xl) >> 4, hi = (16 * CF_CX + xr) >> 4;
+    int left = hr < hl, hf = left ? hr : hl, q = hf > 0 ? cf_art_q(hl + hr - hf, hf, hf) : 256;
+    lo = lo < 0 ? 0 : lo, hi = hi >= CF_VIEW_W ? CF_VIEW_W - 1 : hi;
+    for (int col = lo; xr > xl && col <= hi; ++col) {
+        int dx = (2 * col + 1 - 2 * CF_CX) * 8 - xl;
+        if (dx < 0 || dx >= xr - xl) continue;
+        float p = (float)dx / (float)(xr - xl);
+        int k = cf_texel(left ? xr - xl - dx : dx, xr - xl, q);
+        k = left ? ART_SIZE - 1 - k : k;
+        column(f, col, tex + k, (int)((float)hl + (float)(hr - hl) * p), bright, cf_inset[k]);
+    }
+}
+
+/* The shelf with its facing point lead albums on from frac: each cover's t is its distance from
+ * that point, on that side, and the whole shelf slides lead * row_shift px. Past row_from the row
+ * forms: shrunk, no receding past row_flat from the focus, only spacing, each cover away from the
+ * focus thinner and with less keystone. At lead 0 this is coverflow_render's own path, which
+ * draws then. ring[j]: the cover j - CF_REACH from frac's centre, under CF_WIDE, moved on by
+ * round(lead) albums, so the window goes round the facing cover (coverflow_paint). */
+static void draw_row(shelf_t *f, int frac, const unsigned *const *ring) {
+    float lead = th.lead, ld = lead < 0 ? -lead : lead, at = (float)frac / CF_ONE + lead;
+    int moved = cf_round(lead);
+    float shift = lead * cfs.row_shift, lim = 3.5f + (shift < 0 ? -shift : shift) / cfs.row_reach;
+    float b = cf_smooth((ld * 100 - cfs.row_from) / (cfs.row_full - cfs.row_from));
+    float sh = 1 - b * cfs.row_shrink / 100, flat = cfs.row_flat / 100.f;
+    int focus = cf_round(at), after = at < (float)focus;
+    for (int k = 0; k < CF_WIDE; ++k)
+        for (int i = 0; i < (k ? 2 : 1); ++i) {
+            int a = (i == 0) == after ? focus - k : focus + k, j = a - moved;
+            float d = (float)a - at, t = d < 0 ? -d : d;
+            if (j < -CF_WIDE_REACH || j > CF_WIDE_REACH || t > lim || !ring[j + CF_REACH]) continue;
+            float tz = t > flat ? t - (t - flat) * b : t, e = b * cf_smooth(t * 100 / cfs.row_edge);
+            pose_t p;
+            pose((int)(tz * CF_ONE), &p);
+            int near = project(&p, CF_HALF16), inner = project(&p, -CF_HALF16);
+            float hn = ART_SIZE * 256.f * p.eye / (p.eye + p.zc - (CF_HALF16 * p.s >> 16));
+            float hi = ART_SIZE * 256.f * p.eye / (p.eye + p.zc + (CF_HALF16 * p.s >> 16));
+            float out = near + (t - tz) * cfs.row_out * 16;
+            float width = (near - inner) * (1 - e * cfs.row_width / 100);
+            float hf = (hn + (hi - hn) * (1 - e * cfs.row_key / 100)) * sh, right = d >= 0;
+            hn *= sh;
+            float xl = (right ? out - width : -out) + shift * 16;
+            float xr = (right ? out : width - out) + shift * 16;
+            float fade = (lim - t) * 2;
+            int bright = tz < 2 ? p.bright : cfs.bright2;
+            if (fade < 1) bright = (int)((float)bright * fade);
+            if (bright > 0)
+                draw_quad(f, (int)(xl * sh), (int)(xr * sh), (int)(right ? hf : hn),
+                          (int)(right ? hn : hf), ring[j + CF_REACH], bright);
+        }
 }
 
 /* The ring slot of the k-th nearest pair's nearer (i 0) or farther (i 1) cover at frac: the side
@@ -1475,17 +1741,21 @@ static int slot(int frac, int k, int i) {
 void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ring[CF_RING]) {
     if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
     cf_corners();
-    cf_paper = ipod_light() ? LIGHT_PAPER * 0x010101u : 0;
+    cf_paper = ipod_light() ? scheme()->paper : 0;
     shelf_t f;
     f.d = d, f.pitch = pitch;
     for (int x = 0; x < CF_VIEW_W; ++x) f.solid_top[x] = f.solid_bottom[x] = 0;
-    for (int y = 0; y < CF_VIEW_H; ++y) memset(d + y * pitch, 0, CF_VIEW_W * 4);
-    for (int k = 0; k <= CF_REACH; ++k)
-        for (int i = 0; i < (k ? 2 : 1); ++i) {
-            int j = slot(frac, k, i);
-            draw_cover(&f, (j - CF_REACH) * CF_ONE - frac, ring[j]);
-        }
-    for (int y = 0; y < CF_VIEW_H; ++y) { /* over black; a count-down loop, which -Oz keeps tight */
+    for (int y = 0; y < cfs.view_h; ++y) memset(d + y * pitch, 0, CF_VIEW_W * 4);
+    if (th.on && th.lead)
+        draw_row(&f, frac, ring);
+    else
+        for (int k = 0; k <= CF_REACH; ++k)
+            for (int i = 0; i < (k ? 2 : 1); ++i) {
+                int j = slot(frac, k, i);
+                draw_cover(&f, (j - CF_REACH) * CF_ONE - frac, ring[j]);
+            }
+    for (int y = 0; y < cfs.view_h;
+         ++y) { /* over black; a count-down loop, which -Oz keeps tight */
         unsigned *p = d + y * pitch;
         if (cf_paper) { /* over Light Mode's paper, as the page's black flips to it */
             for (int x = 0; x < CF_VIEW_W; ++x) put(p + x, cf_paper, 256);
@@ -1510,21 +1780,26 @@ int coverflow_hit(int frac, int x, int y) {
             pose_t p;
             pose(t * side, &p);
             if (p.bright < 64 || !unproject(&p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h)) continue;
-            int ins = h * cf_inset[(u + CF_HALF16) >> 4] / (ART_SIZE * 256), top = CF_MID256 - h / 2;
+            int ins = h * cf_inset[(u + CF_HALF16) >> 4] / (ART_SIZE * 256), top = CF_TOP256(h);
             if ((y << 8) + 128 >= top + ins && (y << 8) + 128 < top + h - ins) /* column()'s corners */
                 return j - CF_REACH;
         }
     return CF_MISS;
 }
 
+/* Covers decoded either side: more under a thumb theme, whose row shows about 11. */
+static int fx_reach(void) { return cfs.thumb ? CF_WIDE_REACH : CF_REACH; }
+#define FX_SLOTS (2 * fx_reach() + 1)
+
 /* The depth renderer's state: the frame, the textures of the covers around the visual position
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 static struct {
-    void *frame;                  /* bitmap_t *, CF_VIEW_W x CF_VIEW_H RGBA8888 */
-    unsigned *tex;                /* CF_RING texture slots, then the placeholder */
-    int album[CF_RING];           /* each slot's album + 1; 0 is empty */
-    const unsigned *art[CF_RING]; /* its texture: the slot's own, or the placeholder */
-    int c, frac, drawn, light;    /* the position and Light Mode the frame holds, once drawn */
+    void *frame;                     /* bitmap_t *, CF_VIEW_W x cfs.view_h RGBA8888 */
+    unsigned *tex;                   /* fx_reach's texture slots, then the placeholder */
+    int album[CF_WIDE];              /* each slot's album + 1; 0 is empty */
+    const unsigned *art[CF_WIDE];    /* its texture: the slot's own, or the placeholder */
+    int c, frac, drawn, light, lead; /* the position and Light Mode the frame holds, once drawn */
+    int todo;                        /* a slot still waits for its decode (FX_DECODES) */
 } fx __attribute__((section(".scratch")));
 
 /* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE,
@@ -1542,7 +1817,7 @@ static int decode(const char *url, unsigned *out, int unload) {
     if (data) {
         const unsigned char *o = at[format];
         unsigned stride = bitmap_get_line_length(bitmap), side = w > h ? w : h, xoff[ART_SIZE];
-        unsigned paper = ipod_light() ? LIGHT_PAPER : 0;
+        unsigned paper = ipod_light() ? scheme()->paper & 255 : 0;
         for (unsigned x = 0; x < ART_SIZE; ++x) { /* ~0u: a bar; left of the image wraps to one */
             unsigned sx = x * side / ART_SIZE - (side - w) / 2;
             xoff[x] = sx < w ? sx * 4 : ~0u;
@@ -1576,7 +1851,7 @@ static void fx_close(void) {
 }
 
 static void fx_placeholder(void) {
-    unsigned *placeholder = fx.tex + CF_RING * CF_TEXELS;
+    unsigned *placeholder = fx.tex + FX_SLOTS * CF_TEXELS;
     if (!decode(PLACEHOLDER, placeholder, 0)) /* a theme image: the manager keeps it */
         for (int i = 0; i < CF_TEXELS; ++i) placeholder[i] = 0xff3a3a3au;
     fx.light = ipod_light();
@@ -1588,10 +1863,14 @@ static void *opaque_frame(int w, int h) {
     return b;
 }
 
+HOT unsigned tilt_mix(unsigned a, unsigned b, unsigned w) { /* a to b, w of 256 */
+    return shade(a, 256 - w) + shade(b, w);
+}
+
 /* The frame and every texture at once, or neither: the flat covers then stand in. */
 static int fx_open(void) {
-    fx.frame = opaque_frame(CF_VIEW_W, CF_VIEW_H);
-    fx.tex = fx.frame ? calloc(CF_RING + 1, CF_TEXELS * 4) : 0;
+    fx.frame = opaque_frame(CF_VIEW_W, cfs.view_h);
+    fx.tex = fx.frame ? calloc((unsigned)FX_SLOTS + 1, CF_TEXELS * 4) : 0;
     if (!fx.tex) {
         fx_close();
         return 0;
@@ -1607,30 +1886,40 @@ static const unsigned *fx_load(int a, unsigned *buf) {
         art_path(url + 7, album_key(deque_at(cf.albums, (unsigned)a)), "");
         if (art_exists(url) && decode(url, buf, 1)) return buf;
     }
-    return fx.tex + CF_RING * CF_TEXELS;
+    return fx.tex + FX_SLOTS * CF_TEXELS;
 }
 
-/* The CF_RING covers around album c of n stay decoded, others are dropped as movement crosses
- * albums; ring gets each ring slot's texture. A small library repeats albums round the ring, as
- * the slide_menu wraps. */
-static void fx_window(int c, int n, const unsigned *ring[CF_RING]) {
-    int want[CF_RING];
-    for (int j = 0; j < CF_RING; ++j) want[j] = ((c + j - CF_REACH) % n + n) % n + 1;
-    for (int i = 0; i < CF_RING; ++i) {
+/* The FX_SLOTS covers around album c of n stay decoded, others are dropped as movement crosses
+ * albums; ring gets each ring slot's texture: ring[j] the cover j - CF_REACH from the centre, so a
+ * thumb theme's goes either side of the seven (the callers' wide). A small library repeats albums
+ * round the ring, as the slide_menu wraps. Nearest the centre first; while the thumb holds the
+ * covers, FX_DECODES a frame, and at rest the seven a shelf shows at once: the rest show the
+ * placeholder until a later frame (fx.todo) decodes them. ponytail: still on the UI thread, two a
+ * frame; a decoder thread if a letter's re-centring shows its fill-in. */
+#define FX_DECODES 2
+static void fx_window(int c, int n, const unsigned **ring) {
+    int want[CF_WIDE], r = fx_reach(), slots = FX_SLOTS, budget = FX_DECODES;
+    for (int j = 0; j < slots; ++j) want[j] = ((c + j - r) % n + n) % n + 1;
+    for (int i = 0; i < slots; ++i) {
         int keep = 0;
-        for (int j = 0; j < CF_RING; ++j) keep |= fx.album[i] == want[j];
+        for (int j = 0; j < slots; ++j) keep |= fx.album[i] == want[j];
         if (!keep) fx.album[i] = 0;
     }
-    for (int j = 0; j < CF_RING; ++j) {
-        int i = 0;
-        while (i < CF_RING && fx.album[i] != want[j]) ++i;
-        if (i == CF_RING) { /* at most CF_RING albums are wanted, so a slot is free */
+    fx.todo = 0;
+    for (int k = 0; k < slots; ++k) {
+        int d = (k + 1) / 2, j = k & 1 ? r + d : r - d, i = 0;
+        while (i < slots && fx.album[i] != want[j]) ++i;
+        if (i == slots) { /* at most slots albums are wanted, so a slot is free */
             for (i = 0; fx.album[i]; ++i) {}
             fx.album[i] = want[j];
+            fx.art[i] = 0;
+        }
+        if (!fx.art[i] && ((!th.on && d <= CF_REACH) || budget-- > 0)) {
             fx.art[i] = fx_load(want[j] - 1, fx.tex + i * CF_TEXELS);
             fx.drawn = 0;
         }
-        ring[j] = fx.art[i];
+        fx.todo |= !fx.art[i];
+        ring[j + CF_REACH - r] = fx.art[i] ? fx.art[i] : fx.tex + FX_SLOTS * CF_TEXELS;
     }
 }
 
@@ -1652,36 +1941,284 @@ int visual(void *s, int n, int *c, int *frac) { /* shared with photos.c */
 /* An artist's albums stop at both ends (home_step bounces there): a ring of one or two albums
  * would otherwise repeat round the shelf. */
 int coverflow_bounded(void *w) { return w && w == cf.slide && cf.scoped == ARTIST_ALBUMS; }
+int coverflow_slide(void *w) { return w && w == cf.slide; }
 
 static int retitle(const void *unused);
 
-/* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
- * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
- * position or a texture has changed. */
-void coverflow_paint(void *w, void *canvas) {
-    int c, frac, n;
-    if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
-        !visual(w, n = (int)widget_count_children(w), &c, &frac))
-        return;
-    const unsigned *ring[CF_RING];
+/* The covers round album c of n for this frame, in Light Mode's colours. */
+static void fx_ring(int c, int n, const unsigned **ring) {
     if (fx.light != ipod_light()) {
         fx_placeholder();
         memset(fx.album, 0, sizeof fx.album); /* decoded art may have transparent corners too */
         fx.drawn = 0;
     }
     fx_window(c, n, ring);
-    if (coverflow_bounded(w)) /* no wrap: only the artist's real neighbours, never repeats */
-        for (int j = 0; j < CF_RING; ++j)
-            if ((unsigned)(c + j - CF_REACH) >= (unsigned)n) ring[j] = 0;
-    if (!fx.drawn || c != fx.c || frac != fx.frac) {
+    if (coverflow_bounded(cf.slide)) /* no wrap: only the artist's real neighbours, never repeats */
+        for (int j = -fx_reach(); j <= fx_reach(); ++j)
+            if ((unsigned)(c + j) >= (unsigned)n) ring[j + CF_REACH] = 0;
+}
+
+/* The flip (docs/ipod.md#cover-flow), under Classic's painter: Centre on a cover turns it
+ * about the vertical axis on the centre line, right edge toward the viewer, and it grows into the
+ * tracks panel on its back, the side covers parting; Return runs the same frames backwards. The
+ * shelf's frame, rendered once without the centre cover, holds the side covers. fl.frame and
+ * fl.back live only while a turn runs (about 776 KB): at rest the panel stands over the shelf's
+ * frame, parted, drawn as it is. */
+#define FLIP_MS 270
+#define FLIP_TICK_MS 16
+#define FLIP_H 294     /* the frame's rows, the client area's */
+#define FLIP_EYE 700   /* px; the shelf's eye can be nearer than the panel's half width */
+#define FLIP_EYE_Y 147 /* the row the eye looks along, the frame's middle */
+#define FLIP_PART 24   /* px each way */
+#define BACK_H 285
+#define PANEL_Y 9
+#define PANEL_HEAD 57
+#define PANEL_MUTED 0xffaaaaaau /* stock's second line: the theme's muted, white when selected */
+static struct {
+    void *frame;    /* bitmap_t *, CF_VIEW_W x FLIP_H */
+    unsigned *back; /* BACK_W x BACK_H, the panel as painted */
+    const unsigned *front;
+    void *panel, *sheet, *title, *artist;
+    unsigned timer, t0;
+    int dir;   /* 1 turning to the panel, -1 back, 0 at rest */
+    int drawn; /* the e the frame holds */
+    int light;
+} fl __attribute__((section(".scratch")));
+
+int coverflow_turning(void) { return fl.dir != 0; }
+
+/* The time's share of the turn (16.16) at ms of FLIP_MS: ease-in-out, .42, 0, .58, 1, at each
+ * sixteenth of the time. Its own mirror, so backwards it's the same frames. */
+int coverflow_flip_eased(int ms) {
+    static const int eased[17] = { 0,     497,   2039,  4686,  8465,  13339, 19187, 25776, 32768,
+                                   39760, 46349, 52197, 57071, 60850, 63497, 65039, 65536 };
+    if (ms <= 0) return 0;
+    if (ms >= FLIP_MS) return CF_ONE;
+    int at = ms * 65536 / FLIP_MS, i = at >> 12;
+    return eased[i] + ((eased[i + 1] - eased[i]) * (at & 4095) >> 12);
+}
+
+/* The frame at e (16.16, the cover's 0 to the panel's CF_ONE) from tex: the side covers (CF_VIEW_W
+ * x view_h), the cover, the back. e sets the turn (180 degrees), the parting and, linearly, the
+ * quad's size and place. A flat BACK_W wide face seen from FLIP_EYE: the size shrinks x and y but
+ * not depth, so u (-1 to 1 across the face, 12 bits) reaches 147 px towards the eye at any size.
+ * Each screen column is one texture column, nearest, its slanted ends by row coverage. */
+void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const tex[3]) {
+    unsigned paper = (ipod_light() ? scheme()->paper : 0) | 0xff000000u;
+    int part = FLIP_PART * e >> 16, right = CF_CX + part;
+    for (int y = 0; y < FLIP_H; ++y) {
+        unsigned *o = d + y * pitch;
+        const unsigned *s = tex[0] + y * CF_VIEW_W;
+        int shelf = y < cfs.view_h, from = shelf ? CF_CX - part : 0, to = shelf ? right : CF_VIEW_W;
+        if (shelf) {
+            memcpy(o, s + part, (unsigned)from * 4);
+            memcpy(o + right, s + CF_CX, (unsigned)(CF_VIEW_W - right) * 4);
+        }
+        for (int x = from; x < to; ++x) o[x] = paper;
+    }
+    /* cos and sin of 180 e from the quarter's table, mirrored past 90 */
+    int a = e <= CF_ONE / 2 ? e : CF_ONE - e, pos = a * 32, i = pos >> 16, f = (pos & 65535) >> 4;
+    int c = cf_cos90[i] + (i < 16 ? (cf_cos90[i + 1] - cf_cos90[i]) * f >> 12 : 0);
+    int sn = cf_sin90[i] + (i < 16 ? (cf_sin90[i + 1] - cf_sin90[i]) * f >> 12 : 0);
+    int back = a != e, at = e >> 4; /* at: 12 bits */
+    const unsigned *t = tex[back ? 2 : 1];
+    if (!c || !t) return; /* edge on */
+    int tw = back ? BACK_W : ART_SIZE, th = back ? BACK_H : ART_SIZE;
+    int half = 1280 + (16 * (BACK_W / 2 - ART_SIZE / 2) * at >> 12);  /* half the width, 1/16 px */
+    int top = 256 * cfs.top + (256 * (PANEL_Y - cfs.top) * at >> 12); /* 1/256 px */
+    int bottom = top + 40960 + (256 * (BACK_H - ART_SIZE) * at >> 12), eye_y = 256 * FLIP_EYE_Y;
+    int depth = sn * (BACK_W / 2) / FLIP_EYE, cw = half * (back ? -c : c) >> 12;
+    for (int x = 0; x < CF_VIEW_W; ++x) {
+        int dx = (2 * x + 1 - 2 * CF_CX) * 8, den = cw + (dx * depth >> 12);
+        if (!den) continue;
+        int u = dx * 65536 / den;
+        if (u < -4096 || u >= 4096) continue;
+        int k = (1 << 28) / (65536 - (depth * u >> 12)); /* the eye's scale there, 12 bits */
+        int y0 = eye_y + ((top - eye_y) * k >> 12), y1 = eye_y + ((bottom - eye_y) * k >> 12);
+        int h = y1 - y0;
+        if (h < 16) continue;
+        int col = (back ? 4095 - u : u + 4096) * tw >> 13, step = (th << 20) / (h >> 4);
+        int ins = back ? 0 : h * cf_inset[col] / (ART_SIZE * 256), from = y0 + ins, to = y1 - ins;
+        int first = from >> 8, last = (to - 1) >> 8, y = first < 0 ? 0 : first;
+        unsigned *o = d + y * pitch + x;
+        for (; y <= last && y < FLIP_H; ++y, o += pitch) {
+            int v = (((y << 8) + 128 - y0) >> 4) * step >> 20; /* texel row */
+            unsigned px = t[(v < 0 ? 0 : v >= th ? th - 1 : v) * tw + col] | 0xff000000u;
+            if (y != first && y != last) {
+                *o = px;
+                continue;
+            }
+            int a0 = y << 8 > from ? y << 8 : from, a1 = (y + 1) << 8 < to ? (y + 1) << 8 : to;
+            *o = tilt_mix(*o, px, (unsigned)(a1 - a0)) | 0xff000000u;
+        }
+    }
+}
+
+/* The side covers round cf.album, in the shelf's frame, which is drawn afresh back on the shelf;
+ * the cover is the ring's middle: the no-art cover when it has no texture. */
+static void flip_sides(void) {
+    const unsigned *wide[CF_WIDE], **ring = wide + CF_WIDE_REACH - CF_REACH;
+    fx_ring(cf.album, (int)widget_count_children(cf.slide), ring);
+    fl.front = ring[CF_REACH];
+    ring[CF_REACH] = 0;
+    unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
+    if (d) {
+        coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), 0, ring);
+        bitmap_unlock_buffer(fx.frame);
+    }
+    fx.drawn = 0;
+    fl.light = ipod_light();
+}
+
+/* White on the header in either half: the grey Light Mode turns white. */
+static void panel_ink(void) {
+    unsigned white = unflip(255) * 0x010101u;
+    widget_set_prop_int(fl.title, "style:normal:text_color", (int)(0xff000000u | white));
+    widget_set_prop_int(fl.artist, "style:normal:text_color", (int)(0xc0000000u | white));
+}
+
+/* The panel BACK_W wide from (x, y), h rows, its header head: before its rows (over 0) its paper
+ * and the header's fill, after them (over 1) the header's shadow over the rows and a 1 px border
+ * just outside it, flat and opaque, so its four sides are one colour whatever lies under them
+ * (a translucent ring took Cover Flow's sides under it). Shared with navigation.c's hold menu. */
+void coverflow_panel_paint(void *canvas, int x, int y, int head, int h, int over) {
+    if (!over) {
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, x, y, BACK_W, h);
+        for (int j = 0; j < head; ++j) {
+            unsigned rgb = RGBA(mix(0x6d8db2, 0x8bacd0, j, head - 1)) & 0xffffff;
+            stock_canvas_set_fill_color(canvas, rgb | 0xf0000000u);
+            canvas_fill_rect(canvas, x, y + j, BACK_W, 1);
+        }
+        return;
+    }
+    static const unsigned char shadow[8] = { 0, 28, 54, 50, 41, 27, 14, 0 };
+    for (int j = 0; j < 8; ++j) {
+        stock_canvas_set_fill_color(canvas, (unsigned)shadow[j] << 24);
+        canvas_fill_rect(canvas, x, y + head - 2 + j, BACK_W, 1);
+    }
+    stock_canvas_set_fill_color(canvas, RGBA(ipod_light() ? 0xb4b9c0 : 0x333333));
+    canvas_fill_rect(canvas, x - 1, y - 1, BACK_W + 2, 1);
+    canvas_fill_rect(canvas, x - 1, y + h, BACK_W + 2, 1);
+    canvas_fill_rect(canvas, x - 1, y, 1, h);
+    canvas_fill_rect(canvas, x + BACK_W, y, 1, h);
+}
+
+/* ringnav_paint over the panel's widgets; 1 when w was the frame's. */
+static int flip_paint(void *w, void *canvas) {
+    if (w == fl.sheet || w == fl.panel) /* the sheet first in the panel, the panel last */
+        coverflow_panel_paint(canvas, 0, 0, PANEL_HEAD, BACK_H, w == fl.panel);
+    if (w != cf.covers) return 0;
+    if (fl.light != ipod_light()) {
+        flip_sides();
+        panel_ink();
+        fl.drawn = -1;
+    }
+    if (!fl.frame) { /* at rest: the turn's last frame where the panel doesn't cover it */
+        unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
+        int h = cfs.view_h, side = CF_VIEW_W - CF_CX - FLIP_PART;
+        int ls[4] = { FLIP_PART, 0, CF_CX - FLIP_PART, h }, ld[4] = { 0, 0, CF_CX - FLIP_PART, h };
+        int rs[4] = { CF_CX, 0, side, h }, rd[4] = { CF_CX + FLIP_PART, 0, side, h };
+        canvas_draw_image(canvas, fx.frame, ls, ld);
+        canvas_draw_image(canvas, fx.frame, rs, rd);
+        stock_canvas_set_fill_color(canvas, (ipod_light() ? scheme()->paper : 0) | 0xff000000u);
+        canvas_fill_rect(canvas, CF_CX - FLIP_PART, 0, 2 * FLIP_PART, h);
+        canvas_fill_rect(canvas, 0, h, CF_VIEW_W, FLIP_H - h);
+        stock_canvas_set_fill_color(canvas, fill);
+        return 1;
+    }
+    int ms = (int)((unsigned)time_now_ms() - fl.t0);
+    int e = !fl.dir ? CF_ONE : coverflow_flip_eased(fl.dir > 0 ? ms : FLIP_MS - ms);
+    if (e != fl.drawn) {
+        unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fl.frame);
+        const unsigned *tex[3] = { (const unsigned *)bitmap_lock_buffer_for_read(fx.frame),
+                                   fl.front, fl.back };
+        if (d && tex[0])
+            coverflow_flip_render(d, (int)(bitmap_get_line_length(fl.frame) / 4), e, tex);
+        if (tex[0]) bitmap_unlock_buffer(fx.frame);
+        if (d) bitmap_unlock_buffer(fl.frame);
+        fl.drawn = e;
+    }
+    int r[4] = { 0, 0, CF_VIEW_W, FLIP_H };
+    canvas_draw_image(canvas, fl.frame, r, r);
+    return 1;
+}
+
+#if Q2POD_DEV
+/* --dev builds only (docs/internals.md#coverflow-step): each frame of a run in RAM, a store a
+ * frame. They go to /tmp/q2-cf-gaps.log at the first paint after the run, if /tmp/q2-cf-gaps.on
+ * exists. */
+#define GAP_FRAMES 128
+#define GAP_MAX_BYTES 262144
+static struct {
+    unsigned n, last;
+    struct {
+        unsigned short gap, decode, render;
+        short offset;
+    } row[GAP_FRAMES];
+} gaps __attribute__((section(".scratch")));
+static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
+    unsigned i = gaps.n++ % GAP_FRAMES;
+    gaps.row[i].gap = (unsigned short)(t0 - gaps.last);
+    gaps.row[i].decode = (unsigned short)(t1 - t0);
+    gaps.row[i].render = (unsigned short)(t2 - t1);
+    gaps.row[i].offset = (short)I(w, SLIDE_OFFSET);
+    gaps.last = t0;
+    if (P(w, SLIDE_ANIMATOR) || th.on) return;
+    void *on = gaps.n > 1 ? fopen("/tmp/q2-cf-gaps.on", "rb") : 0;
+    void *f = on ? fopen("/tmp/q2-cf-gaps.log", "ab") : 0;
+    if (on) fclose(on);
+    if (f && !fseek(f, 0, 2) && ftell(f) < GAP_MAX_BYTES) {
+        char s[64];
+        tk_snprintf(s, sizeof s, "== run at %u ms: %u frames\n", t0, gaps.n);
+        fputs(s, f);
+        for (i = gaps.n > GAP_FRAMES ? gaps.n - GAP_FRAMES : 0; i < gaps.n; ++i) {
+            unsigned k = i % GAP_FRAMES;
+            tk_snprintf(s, sizeof s, "gap=%u decode=%u render=%u offset=%d\n", gaps.row[k].gap,
+                        gaps.row[k].decode, gaps.row[k].render, gaps.row[k].offset);
+            fputs(s, f);
+        }
+    }
+    if (f) fclose(f);
+    gaps.n = 0;
+}
+#endif
+/* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
+ * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
+ * position or a texture has changed. */
+void coverflow_paint(void *w, void *canvas) {
+    int c, frac, n;
+    if (fl.panel && w && flip_paint(w, canvas)) return;
+    if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
+        !visual(w, n = (int)widget_count_children(w), &c, &frac))
+        return;
+    int lead = (int)(th.lead * CF_ONE), sh = 0;
+    if (th.on) { /* finer than the offset's whole px */
+        int q = cf_round(th.pos);
+        frac = (int)((th.pos - (float)q) * CF_ONE);
+        c = ((I(w, SLIDE_INDEX) + q) % n + n) % n;
+        sh = cf_round(th.lead); /* draw_row's: the window round the facing cover */
+    }
+    const unsigned *wide[CF_WIDE], **ring = wide + CF_WIDE_REACH - CF_REACH;
+#if Q2POD_DEV
+    unsigned gap_t0 = (unsigned)time_now_ms();
+#endif
+    fx_ring(c + sh, n, ring);
+#if Q2POD_DEV
+    unsigned gap_t1 = (unsigned)time_now_ms();
+#endif
+    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
         coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), frac, ring);
         bitmap_unlock_buffer(fx.frame);
-        fx.c = c, fx.frac = frac, fx.drawn = 1;
+        fx.c = c, fx.frac = frac, fx.lead = lead, fx.drawn = 1;
     }
-    if (c + 1 != cf.titled && !cf.title_timer) cf.title_timer = timer_add(retitle, 0, 0);
-    int r[4] = { 0, 0, CF_VIEW_W, CF_VIEW_H };
+#if Q2POD_DEV
+    gap_note(w, gap_t0, gap_t1, (unsigned)time_now_ms());
+#endif
+    if (!th.on && c + 1 != cf.titled && !cf.title_timer) cf.title_timer = timer_add(retitle, 0, 0);
+    int r[4] = { 0, 0, CF_VIEW_W, cfs.view_h };
     canvas_draw_image(canvas, fx.frame, r, r);
 }
 
@@ -1693,8 +2230,50 @@ void coverflow_paint(void *w, void *canvas) {
  * The press is the covers' view's; the moves and the release are the page's, so a release off the
  * covers still ends the touch, and one never seen ends at the next key (coverflow_lost_touch). */
 extern int carousel_glide(void *w, int goal, unsigned ms, int easing);
+extern void coverflow_letter(void *w, unsigned letter, unsigned now);
 #define CF_SAMPLES 8
 #define ABS(x) ((x) < 0 ? -(x) : (x))
+
+/* EASE_FOLLOW (docs/internals.md#coverflow-step): a step follows its goal, critically damped, so a
+ * tick moves the goal and never the speed. Over s time constants from the live offset, d px short
+ * of the goal with speed v, what is left is (d + (d - v tau) s) e^-s, and the animator's share is
+ * 1 - (1 + a s) e^-s with a = 1 - v tau / d. Run by stock's animator, as a float easing. */
+static struct {
+    int d, tau;
+    float a, span; /* span: the run's length, in time constants */
+} ff __attribute__((section(".scratch")));
+
+/* e^-s, s under 256: (e^(-s/256))^256, smooth and falling, about .1% over at s = 7. */
+static float ff_decay(float s) {
+    float x = 1 - s / 256 + s * s / 131072;
+    for (int i = 0; i < 8; ++i) x *= x;
+    return x;
+}
+float coverflow_follow(float k) {
+    if (k >= 1) return 1;
+    float s = k * ff.span;
+    return 1 - (1 + ff.a * s) * ff_decay(s);
+}
+/* A run d px long at time constant tau ms, picking up the speed elapsed ms into the last one (< 0:
+ * from rest). Returns its ms: until within half a px of the goal, as stock's update truncates, so
+ * the share's jump to 1 is one whole px at most. A goal right ahead of a cover too fast to stop for
+ * it (a < 0) gives up the speed it can't use. */
+int coverflow_follow_aim(int d, int tau, int elapsed) {
+    float a = 1, e = 1, s = 0, size = (float)ABS(d);
+    if (elapsed >= 0 && d) {
+        s = (float)elapsed / (float)ff.tau;
+        float v = (float)ff.d * (1 - ff.a + ff.a * s) * ff_decay(s) / (float)ff.tau;
+        a = 1 - v * (float)tau / (float)d;
+        if (a < 0) a = 0;
+    }
+    s = 0;
+    do {
+        s += .25f;
+        e *= .7788008f; /* e^-1/4 */
+    } while (size * (1 + a * s) * e > .5f);
+    ff.d = d, ff.tau = tau, ff.a = a, ff.span = s;
+    return (int)(s * (float)tau);
+}
 static struct {
     int down, drag, caught, x, y, from, n; /* from: the offset at the press, or the drag's start */
     int sx[CF_SAMPLES];
@@ -1808,7 +2387,7 @@ static int touch(void *ctx, void *event) {
     int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
     if (type == EVT_POINTER_DOWN) {
         lift(1, 0); /* a release the input queue dropped */
-        if (!covers_live()) return 0;
+        if (!covers_live() || th.on) return 0; /* the thumb's covers settle first */
         void *a = P(cf.slide, SLIDE_ANIMATOR);
         if (a) widget_animator_pause(a); /* caught where it is */
         tc = (typeof(tc)){ .down = 1, .caught = a != 0, .x = x, .y = y,
@@ -1851,6 +2430,9 @@ static void cover(void *img, unsigned i, int near) {
         image_base_set_image(img, PLACEHOLDER);
 }
 
+/* Classic's caption: both lines in its face, Now Playing's title's. */
+static int caption_bold(void) { return theme()->font[ROLE_TITLE] == FONT_CLASSIC_LIGHT; }
+
 /* The captions name album c (or a card's), once each time it changes. */
 static void titles(unsigned c) {
     unsigned n = widget_count_children(cf.slide);
@@ -1861,6 +2443,10 @@ static void titles(unsigned c) {
                                   : cf.scoped == ARTIST_ALBUMS ? "All albums"
                                                                : sort_names[cf.sort]);
     widget_set_text_utf8(cf.artist, r ? cover_artist(r) : ""); /* NULL leaves the old one */
+    if (caption_bold()) {                                      /* by its text */
+        theme_font(cf.name, ROLE_NP, FONT_ROW);
+        theme_font(cf.artist, ROLE_NP, FONT_ROW);
+    }
     /* Stock draws even a centred caption at -xoffset: a long one's scroll would shift the next
      * left. */
     widget_set_prop_int(cf.name, "xoffset", 0);
@@ -1883,23 +2469,24 @@ static int changed(void *ctx, void *event) {
 /* The centre cover the frame last drew, named outside the paint. */
 static int retitle(const void *unused) {
     cf.title_timer = 0;
-    if (cf.slide && cf.screen == COVERS) titles((unsigned)fx.c);
+    if (cf.slide && cf.screen == COVERS && !th.on) titles((unsigned)fx.c);
     return 0;
 }
 
 /* One child per album plus the cards (CARDS), moved by the wheel and by touch on the covers' view
- * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step repaints all of it, and its CF_VIEW_H square
- * items with a negative spacer move one album per the theme's stride in px; the children stay
- * empty under the frame. The flat fallback is the stock images, 160 px, as before. ponytail: one
- * child per album; if large libraries lag, virtualize to a recycled window of
- * children. */
-static void covers(void) {
+ * (touch); the slide_menu itself takes no touch. With depth it spans the frame, so every step
+ * repaints all of it, and its cfs.view_h square items with a negative spacer move one album per
+ * the theme's stride in px; the children stay empty under the frame. The flat fallback is the
+ * stock images, 160 px, as before. ponytail: one child per album; if large libraries lag,
+ * virtualize to a recycled window of children. */
+static void covers(int dir) {
     cf.screen = COVERS;
     if (cf.text_albums) {
         unsigned n = deque_size(cf.albums);
         void *view = list("Albums", (int)n);
         for (unsigned i = 0; i < n; ++i)
             page_row_into(view, (int)i, P(deque_at(cf.albums, i), REC_ALBUM), pick);
+        page_push(view, dir);
         return;
     }
     widget_set_visible(cf.body, 0, 0);
@@ -1908,8 +2495,8 @@ static void covers(void) {
         int depth = fx_open();
         cf.covers = widget_factory_create_widget(f, "view", cf.page, 0, 0, 375, client_h());
         cf.slide = widget_factory_create_widget(f, "slide_menu", cf.covers, 0, depth ? 0 : 24, 375,
-                                                depth ? CF_VIEW_H : ART_SIZE);
-        if (depth) slide_menu_set_spacer(cf.slide, cfs.stride - CF_VIEW_H);
+                                                depth ? cfs.view_h : ART_SIZE);
+        if (depth) slide_menu_set_spacer(cf.slide, cfs.stride - cfs.view_h);
         widget_set_sensitive(cf.slide, 0);
         for (unsigned i = 0, n = deque_size(cf.albums); i < n + CARDS; ++i) {
             void *img = image_create(cf.slide, 0, 0, 0, 0);
@@ -1923,12 +2510,15 @@ static void covers(void) {
         cf.name = text(cf.covers, CF_EDGE, cfs.text_y, 375 - 2 * CF_EDGE, CF_NAME_H);
         widget_set_prop_int(cf.name, "style:normal:font_size", cfs.name_px);
         cf.artist =
-            text(cf.covers, CF_EDGE, cfs.text_y + CF_NAME_H, 375 - 2 * CF_EDGE, CF_ARTIST_H);
+            text(cf.covers, CF_EDGE, cfs.text_y + cfs.artist_y, 375 - 2 * CF_EDGE, CF_ARTIST_H);
         widget_set_prop_int(cf.artist, "style:normal:font_size", cfs.artist_px);
-        widget_set_prop_int(cf.artist, "style:normal:text_color", (int)CF_GREY);
+        widget_set_prop_int(cf.artist, "style:normal:text_color",
+                            !caption_bold() ? (int)CF_GREY
+                            : ipod_light()  ? (int)0xffffffffu /* the ink, as the album's */
+                                            : (int)CF_GREY_BOLD);
         slide_menu_set_value(cf.slide, cf.album);
         widget_on(cf.slide, EVT_VALUE_CHANGED, changed, 0);
-        tc.down = 0; /* a touch on the covers these replace */
+        tc.down = th.on = 0; /* a touch or thumb on the covers these replace */
         changed(0, 0);
         widget_on(cf.covers, EVT_POINTER_DOWN, touch, 0); /* the rest: open_page */
     }
@@ -1937,10 +2527,273 @@ static void covers(void) {
     widget_invalidate_force(cf.page, 0);
 }
 
+/* The thumb (docs/internals.md#coverflow-thumb), every UI pass while the covers are open
+ * (navigation.c thumb_poll): the wheel's raw travel, 200 units a turn, moves a goal, and the
+ * position follows it, critically damped and exact for any step, so its speed stays continuous
+ * whatever the wheel or a slow frame does. */
+static void th_follow(float *x, float *v, float to, float tau, float ms) {
+    float w = 1 / tau, y = *x - to, b = *v + w * y, q = y + b * ms, e = ff_decay(w * ms);
+    *x = to + q * e;
+    *v = (b - w * q) * e;
+}
+
+/* Where the wheel has got to, the album the caption names and a stop lands on: ahead of the covers
+ * at speed. */
+static int th_aim(void) {
+    float s = cfs.aim_snap / 100.f;
+    if (th.vel < .004f && th.vel > -.004f) return cf_round(th.goal);
+    return th.dir > 0 ? -cf_floor(s - th.goal) : cf_floor(th.goal + s);
+}
+
+static unsigned th_album(int a, unsigned n) {
+    if (!n) return 0;
+    int c = (I(cf.slide, SLIDE_INDEX) + a) % (int)n;
+    return (unsigned)(c < 0 ? c + (int)n : c);
+}
+
+/* At rest on album q: the slide_menu's index moves, as a glide's end does, its offset 0. */
+static void th_commit(int q) {
+    th.on = th.jump = 0, th.lead = th.lead_v = th.vel = th.pos = th.goal = 0;
+    carousel_glide(cf.slide, -q * stride_of(cf.slide), 0, 0);
+    widget_invalidate_force(cf.slide, 0);
+}
+
+/* The covers on the album named, at once: Centre, or nothing to show a landing on. */
+void coverflow_wheel_land(void) {
+    if (th.on && cf.slide) th_commit(th_aim());
+    th.on = 0; /* no covers left to land: a page's load replaced them */
+}
+int coverflow_wheel_live(void) { return th.raw || th.on || (cfs.thumb && cf.slide); }
+int coverflow_wheel_on(void *w) { return th.on && w == cf.slide; }
+
+/* From rest, or from a touch's glide or a held tick's step, whose goal it takes over. */
+static void th_grab(void *s, unsigned now) {
+    void *a = P(s, SLIDE_ANIMATOR);
+    float stride = (float)stride_of(s);
+    th.pos = (float)-I(s, SLIDE_OFFSET) / stride;
+    th.goal = a ? (float)-I(a, ANIM_X_TO) / stride : th.pos;
+    if (a) {
+        widget_animator_pause(a);
+        widget_animator_destroy(a);
+        P(s, SLIDE_ANIMATOR) = 0;
+        th.dir = th.goal < th.pos ? -1 : 1;
+    }
+    th.vel = th.lead = th.lead_v = th.rate = th.ticks = 0;
+    th.capped = th.jump = 0;
+    th.tau = cfs.snap;
+    th.tick_at = now;
+    th.on = 1;
+    th.clicked = cf_round(th.goal);
+}
+
+/* SLIDE_INDEX on by q albums and the follower back by as many, so nothing moves: its numbers stay
+ * small, where a float still resolves the 1e-4 its settling needs. */
+static void th_rebase(void *s, int q, int n) {
+    int i = (I(s, SLIDE_INDEX) + q) % n;
+    I(s, SLIDE_OFFSET) = 0; /* the pass writes it again from pos */
+    slide_menu_set_value(s, i < 0 ? i + n : i);
+    th.pos -= (float)q, th.goal -= (float)q, th.seen -= (float)q;
+    th.clicked -= q;
+}
+#define TH_REBASE 64 /* albums: a float's step there is 8e-6 */
+#define TH_FRAME_MS 16 /* a frame at 60 Hz: the shortest pass th_turn's own rate is taken over */
+
+/* A letter on, Minimal's jump (coverflow_jump): the covers at rest on that letter's first album,
+ * or the previous letter's turning back, its letter shown over them. */
+static void th_letter(void *s, int n, unsigned now) {
+    unsigned letter;
+    int from = (int)th_album(th_aim(), (unsigned)n);
+    th_rebase(s, from - I(s, SLIDE_INDEX) + th.dir * coverflow_jump(s, from, th.dir, &letter), n);
+    th.pos = th.goal = th.vel = th.lead = th.lead_v = 0;
+    th.clicked = 0;
+    coverflow_letter(s, letter, now);
+    widget_invalidate_force(s, 0);
+}
+
+/* travel raw units: the goal on by a share of an album that grows with the thumb's speed, at most
+ * top_speed albums a second; turning back drops what's queued, and the speed with it. Going by
+ * letters, the travel counts towards the next one instead. An artist's albums stop at the ends:
+ * the first push past one kicks the covers out, and they spring back. */
+static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
+    int dir = travel > 0 ? -1 : 1; /* x rises anticlockwise: back */
+    if (dir != th.dir) {
+        float l = th.goal - th.pos, m = cfs.back / 100.f;
+        th.goal = th.pos + (l > m ? m : l < -m ? -m : l);
+        th.rate = 0;
+        th.jump = 0; /* letters end: the turn back moves the covers */
+    }
+    th.dir = dir;
+    /* Wheel Sensitivity scales the travel, 50% as the theme has it */
+    float ticks = (float)ABS(travel) * cfs.ticks_turn * wheel_pct() / 10000,
+          slow = 1.f / cfs.ticks_album;
+    float r = th.rate < 1 ? 1 : th.rate, sr = slow * r, top = cfs.top_speed;
+    float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
+    float step = (sr + (top > sr ? top - sr : 0) * f) / r;
+    /* the cap, at the filtered rate or this pass's own, the faster: while the rate is still rising
+     * to a spin's, and past top_speed ticks_album ticks/s, the share would outrun it. This pass's
+     * own is over a frame at least: a pass a ms or two after the last would read its ticks as a
+     * spin many times the cap's and throw them away. */
+    float inst = ticks * 1000 / (float)(ms < TH_FRAME_MS ? TH_FRAME_MS : ms),
+          cap = top / (inst > r ? inst : r);
+    step = step > slow ? step : slow;
+    th.ticks += ticks;
+    th.tick_at = now;
+    if (th.jump) {
+        th.stretch += ticks;
+        return;
+    }
+    th.goal += (float)dir * ticks * (step < cap ? step : cap);
+    if (coverflow_bounded(s)) {
+        int i = I(s, SLIDE_INDEX);
+        float lo = (float)-i, hi = (float)(n - 1 - i);
+        float g = th.goal < lo ? lo : th.goal > hi ? hi : th.goal;
+        if (g != th.goal) {
+            th.goal = g;
+            if (!th.bounced && ABS(th.pos - g) < .02f)
+                th.pos = g + (float)dir / CF_BOUNCE, th.vel = 0, th.bounced = 1;
+        } else
+            th.bounced = 0;
+    }
+}
+
+/* usable: navigation.c's; gated: travel is to be dropped (its gates). Answers THUMB_*. */
+int coverflow_wheel_poll(int usable, int gated) {
+    void *s = cf.slide, *wm = window_manager();
+    int shown = usable && cfs.thumb && fx.frame && !fl.panel && covers_live() &&
+                widget_count_children(s) && window_manager_get_top_window(wm) == cf.page &&
+                !window_manager_is_animating(wm);
+    int raw = shown && !window_manager_get_pointer_pressed(wm);
+    if (raw != th.raw) {
+        __sync_lock_test_and_set(&wheel_travel, 0);
+        th.raw = raw, th.held = th.finger = th.early = 0;
+        if (!raw && wheel_raw == WHEEL_THUMB) wheel_raw = WHEEL_TICKS;
+    }
+    if (raw) wheel_raw = WHEEL_THUMB; /* decided afresh each pass: lyric_poll may have handed it */
+    if (!shown) {
+        coverflow_wheel_land();
+        return 0;
+    }
+    if (fx.todo) widget_invalidate_force(s, 0); /* covers still to decode, FX_DECODES a frame */
+    unsigned now = (unsigned)time_now_ms();
+    int ms = (int)(now - th.at), travel = raw ? __sync_lock_test_and_set(&wheel_travel, 0) : 0;
+    if (gated) travel = 0;
+    ms = ms < 1 ? 1 : ms > 250 ? 250 : ms;
+    th.at = now;
+    /* A still thumb sends no frames, for seconds: only wheel_held says it's there. A press only
+     * anchors (wheel_sample); a contact under contact_ms is nothing, and a lift that short changes
+     * nothing. */
+    int held = raw && wheel_held;
+    if (held != th.held) {
+        th.held = held, th.edge_at = now;
+        if (held)
+            th.dead = th.bounced = 0;
+        else if (!th.finger)
+            th.early = 0;
+    }
+    if ((int)(now - th.edge_at) >= cfs.contact_ms && th.finger != held) {
+        th.finger = held;
+        travel += th.early;
+        th.early = 0;
+    }
+    if (!th.finger) {
+        if (held) th.early += travel;
+        travel = 0;
+    }
+    /* its shake, a unit or so, moves nothing: travel runs loose in a band of dead units each way */
+    th.dead += travel;
+    travel = th.dead > cfs.dead ? th.dead - cfs.dead : th.dead < -cfs.dead ? th.dead + cfs.dead : 0;
+    th.dead -= travel;
+    if (!th.on && !travel) return 0;
+    if (!th.on) th_grab(s, now);
+    int n = (int)widget_count_children(s), r = THUMB_MOVED;
+    if (travel) {
+        th_turn(s, travel, now, n, ms);
+        r |= THUMB_TURNED;
+    }
+    /* the thumb's rate, ticks/s: quick to fall, so slowing down gives control back at once */
+    float inst = th.ticks * 1000 / (float)ms, tc = inst > th.rate ? cfs.rate_up : cfs.rate_down;
+    th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
+    th.ticks = 0;
+    /* At jump_at or more for jump_ms the spin goes by letters, where the sort has them: one each
+     * jump_ticks of travel at any rate from fast_at, the first at once, so a moderate turn reads
+     * them. A lift, a turn back (th_turn), the rate under fast_at or no tick for stop_ms ends them:
+     * albums again from the letter's, under the thumb.
+     * ponytail: fast_at is the one floor; a thumb hovering on it may drop to albums on a slow pass.
+     * A leave rate of its own under fast_at if that shows on the wheel. */
+    int since = (int)(now - th.tick_at);
+    /* jump_at counts towards jump_ms; a dip under it, still at fast_at (a thumb re-gripping),
+     * drains the count rather than dropping it; a lift or a rate under fast_at drops it. */
+    th.capped = !th.finger || th.rate < cfs.fast_at ? 0
+                : th.rate >= cfs.jump_at       ? th.capped + ms
+                : th.capped > ms               ? th.capped - ms
+                                               : 0;
+    if (th.jump && (!th.finger || th.rate < cfs.fast_at || since > cfs.stop_ms))
+        th.jump = 0;
+    else if (!th.jump && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s))
+        th.jump = 1, th.stretch = cfs.jump_ticks;
+    for (; th.jump && th.stretch >= cfs.jump_ticks; th.stretch -= cfs.jump_ticks) {
+        th_letter(s, n, now);
+        r |= THUMB_CLICK;
+    }
+    /* Part-way is for a slow thumb that stays: a lift, the hold's timeout or a stop from speed goes
+     * to the album named. */
+    int idle = since > cfs.hold_ms;
+    float left = ABS(th.goal - th.pos);
+    if (th.goal != (float)cf_round(th.goal) &&
+        (!th.finger || idle || (since > cfs.stop_ms && left * 100 > cfs.stop_left)))
+        th.goal = (float)th_aim(), left = ABS(th.goal - th.pos);
+    float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
+    float base = idle || !th.finger ? cfs.snap : cfs.track + (float)(cfs.spin - cfs.track) * f;
+    float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(left * 100 / cfs.far_left);
+    /* only the thumb raises it, and how far is left only lets it fall: lag raising it would add lag
+     * and snap the row out at one speed */
+    th.tau = th.tau < rest ? th.tau : rest;
+    th.tau = th.tau > base ? th.tau : base;
+    /* its soft detent, slow and finger down: towards the albums, never against the thumb */
+    int g0 = cf_floor(th.goal);
+    float r0 = th.goal - (float)g0, k = th.finger ? (1 - f) * cfs.detent / 100 : 0;
+    float to = (float)g0 + (1 - k) * r0 + k * r0 * r0 * (3 - 2 * r0);
+    th_follow(&th.pos, &th.vel, to, th.tau, (float)ms);
+    if (ABS(th.pos - th.goal) < 1e-4f && ABS(th.vel) < 1e-5f) th.pos = th.goal, th.vel = 0;
+    /* The facing point is the wheel's target, where the covers will land: off under lead_from, so
+     * slow control is exact, and its short follow only smooths a reversal. */
+    float l = th.goal - th.pos;
+    float want = l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
+    th_follow(&th.lead, &th.lead_v, want, cfs.lead_ms, (float)ms);
+    if (!want && ABS(th.lead) < 1e-4f && ABS(th.lead_v) < 1e-5f) th.lead = th.lead_v = 0;
+    /* Once the wheel's stopped, the facing point's follow, lagging as it shrinks, never passes the
+     * album the covers land on, or the next one faces for a moment and turns back. While it turns,
+     * the gap jumps with each tick, so it's left alone then. */
+    if (since > cfs.stop_ms && th.lead * l > 0 && ABS(th.lead) > ABS(l))
+        th.lead = l, th.lead_v = -th.vel;
+    int q = cf_round(th.pos);
+    if (q >= TH_REBASE || q <= -TH_REBASE) th_rebase(s, q, n);
+    I(s, SLIDE_OFFSET) = -cf_round(th.pos * (float)stride_of(s));
+    if (ABS(th.pos - th.seen) >= 1 / 4096.f || ABS(th.lead - th.seen_lead) >= 1 / 4096.f ||
+        !th.lead != !th.seen_lead) {
+        th.seen = th.pos, th.seen_lead = th.lead;
+        widget_invalidate_force(s, 0);
+    } else if (!(r & THUMB_TURNED))
+        r = 0; /* a thumb holding still: the loop may idle */
+    /* the album named is the one kept, here: closed() may come mid-destroy, with no slide_menu */
+    unsigned c = th_album(th_aim(), (unsigned)n);
+    int was = cf.titled;
+    titles(c);
+    if (cf.titled != was && c + CARDS < (unsigned)n && !cf.scoped)
+        cf.saved_album = album_key(deque_at(cf.albums, c));
+    if (cf_round(th.goal) != th.clicked) {
+        th.clicked = cf_round(th.goal);
+        r |= THUMB_CLICK;
+    }
+    if (!th.jump && !th.lead && th.pos == th.goal && th.goal == (float)cf_round(th.goal))
+        th_commit(cf_round(th.goal));
+    return r;
+}
+
 static int to_covers(const void *unused) {
     cf.timer = 0;
     stop();
-    covers();
+    covers(-1); /* the text list's only way back here is from its tracks */
     return 0;
 }
 
@@ -1955,15 +2808,48 @@ static int poll(const void *unused) {
     char progress[64];
     tk_snprintf(progress, sizeof(progress), "Preparing artwork\xe2\x80\xa6 %d/%d", cf.done,
                 cf.total);
-    widget_set_text_utf8(cf.title, progress);
+    page_retitle(cf.page, cf.title, progress);
     cf.timer = timer_add(poll, 0, 250);
     return 0;
+}
+
+/* A cold open's progress (docs/internals.md#watchdog): a line per phase, synced to /mnt/data and
+ * removed when load() ends, so one left at boot names the phase a stalled open reached. Only an
+ * open that queries the albums or finds albums without art writes it (cf_cold); a warm one, the
+ * usual, writes nothing. A few lines per open: flash, never per album. */
+#define CF_TRACE PEQ_ROOT "/mnt/data/q2-cf-trace"
+static int cf_traced; /* this open is a cold one */
+static void cf_trace(unsigned t0, const char *what, unsigned a, unsigned b) {
+    if (!cf_traced) return;
+    char line[96];
+    int n = b ? snprintf(line, sizeof line, "%s%u/%u %u ms\n", what, a, b, time_now_ms() - t0)
+              : snprintf(line, sizeof line, "%s%u %u ms\n", what, a, time_now_ms() - t0);
+    void *f = fopen(CF_TRACE, "a");
+    if (!f) return;
+    fwrite(line, 1, n, f);
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+}
+/* From here this open traces, from a fresh file's "start". */
+static void cf_cold(unsigned t0) {
+    if (cf_traced) return;
+    cf_traced = 1;
+    unlink(CF_TRACE);
+    cf_trace(t0, "start albums=", cf.stock ? deque_size(cf.stock) : 0, 0);
 }
 
 /* On open: the albums, then art for the ones with no cache file (PictureFlow's first-launch build;
  * later opens resume). The albums are queried again only after the library changed (or Refresh
  * Coverflow): stock's sort converts both names to pinyin on every comparison. */
+static void load_albums(unsigned t0);
 static void load(void) {
+    unsigned t0 = time_now_ms();
+    cf_traced = 0;
+    load_albums(t0);
+    if (cf_traced) unlink(CF_TRACE);
+}
+static void load_albums(unsigned t0) {
     int on_sort = cf.on_sort; /* taken whatever this load shows */
     cf.on_sort = 0;
     if (cf.resort && !cf.scoped) { /* Coverflow Sort changed: its order read again */
@@ -1985,10 +2871,18 @@ static void load(void) {
     else if (cf.stock)
         n = (int)deque_size(cf.stock);
     else if (!library_scanning()) {
+        cf_cold(t0);
         cf.stock = staged(albums, 0, &n);
-        if (n > 0) cf.stock = music_albums(split(cf.stock));
+        cf_trace(t0, "staged albums=", n, 0);
+        if (n > 0) {
+            void *v = split(cf.stock);
+            cf_trace(t0, "split albums=", deque_size(v), 0);
+            cf.stock = music_albums(v);
+            cf_trace(t0, "music_albums albums=", deque_size(cf.stock), 0);
+        }
         cf.albums_gen = gen;
         drop_unknown();
+        cf_trace(t0, "drop_unknown albums=", deque_size(cf.stock), 0);
         n = (int)deque_size(cf.stock);
     }
     if (cf.albums && !cf.scoped && (cf.sort == SORT_YEAR || cf.sort == SORT_ARTIST) &&
@@ -2001,6 +2895,7 @@ static void load(void) {
         if (!cf.sort_read) BLOB_IO(SORT_FILE, cf.sort, 0), cf.sort_read = 1;
         cf.sort = sort_next(0);
         cf.albums = sorted();
+        cf_trace(t0, "sorted albums=", deque_size(cf.albums), 0);
     }
     if (n <= 0) {
         drop_albums(); /* only a real list is kept */
@@ -2010,23 +2905,28 @@ static void load(void) {
     }
     unsigned count = deque_size(cf.albums);
     if (cf.text_albums) {
-        covers();
+        covers(0);
         return; /* Text lists need no cover cache or decoding. */
     }
     char path[512];
     if (!cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 0); /* outlives a reboot */
     cf.jobs = calloc(count, sizeof(job_t));
+    unsigned char *shared = folders_shared(cf.albums, count);
     for (unsigned i = 0; i < count; ++i) {
+        if (i && !(i % 1000)) cf_trace(t0, "jobs ", i, count);
         void *r = deque_at(cf.albums, i);
         unsigned key = album_key(r);
         if (key == cf.saved_album && !on_sort && !cf.scoped) cf.album = (int)i;
         job_t *j = cf.jobs ? &cf.jobs[cf.total] : 0;
         if (j && P(r, REC_PATH) && access(art_path(path, key, ""), 0) && (j->track = strdup(P(r, REC_PATH)))) {
+            cf_cold(t0);
             j->key = key;
-            j->shared = folder_shared(key, j->track);
+            j->shared = shared ? shared[i] : 1; /* no memory: no cover.jpg that may be another's */
             ++cf.total;
         }
     }
+    free(shared);
+    cf_trace(t0, "done jobs=", cf.total, count);
     if (on_sort) cf.album = (int)count; /* the Sort card, pressed again and again */
     mkdir(ART_DIR, 0755);
     cf.done = cf.cancel = 0;
@@ -2063,7 +2963,7 @@ static int play(void *ctx, void *event) {
     int i = (int)(long)ctx;
     void *t = deque_at(cf.tracks, (unsigned)i);
     if (!t || access(P(t, REC_PATH), 0)) {
-        widget_set_text_utf8(cf.title, "Storage unavailable");
+        page_retitle(cf.page, cf.title, "Storage unavailable");
         return 0;
     }
     play_folder(cf.tracks, i, 0xff10);
@@ -2122,6 +3022,182 @@ void *coverflow_album_tracks(void *r) {
     return in_order(staged_music(albums, r, &n), r);
 }
 
+/* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its
+ * text as theme_font has it; else stock's regular, as the theme's rows' second lines. */
+void panel_font(void *label, int px, int bold) { /* shared with navigation.c */
+    static const char *const names[] = { "style:normal:font_name", "style:focused:font_name",
+                                         "style:disable:font_name" },
+                             *const sizes[] = { "style:normal:font_size", "style:focused:font_size",
+                                                "style:disable:font_size" };
+    const char *face = bold ? theme_face(widget_get_text(label), -1, &px) : (const char *)0;
+    for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
+        widget_set_prop_str(label, names[i], face ? face : "default");
+        widget_set_prop_int(label, sizes[i], px);
+    }
+}
+
+static void *panel_label(void *parent, int x, int y, int w, int h, const char *s, int px,
+                         int bold) {
+    void *label = text(parent, x, y, w, h);
+    widget_use_style(label, "s_scrlabel_white20l");
+    widget_set_text_utf8(label, s);
+    panel_font(label, px, bold);
+    return label;
+}
+
+/* A row's length as stock's clock writes it, blank until it's known (or a file nothing could read).
+ */
+static void panel_length(void *label, void *track) {
+    int sec = song_seconds(track);
+    char t[16] = "";
+    if (sec > 0) toolsTimeItoa(t, sec);
+    widget_set_text_utf8(label, t);
+}
+
+/* The panel as it stands into fl.back, hidden after: painted by stock on an offline canvas of the
+ * screen's size and format, at its screen place, as stock's window snapshots are, so the paint
+ * hooks' coordinates hold. The screen's lcd is BGRA8888; the frame's RGBA. No canvas, or a layout
+ * not the screen's: the paper, so the turn still runs. */
+static void flip_capture(void) {
+    void *c = canvas_offline_create(CF_VIEW_W, 320, LCD_BGRA8888);
+    const unsigned *fb = 0;
+    if (c) {
+        canvas_offline_begin_draw(c);
+        int sy = I(cf.page, W_Y);
+        canvas_translate(c, I(cf.page, W_X), sy);
+        widget_set_visible(fl.panel, 1, 0);
+        widget_layout(fl.panel);
+        widget_paint(fl.panel, c);
+        canvas_offline_end_draw(c);
+        void *lcd = P(c, CANVAS_LCD);
+        if (I(lcd, LCD_W) == CF_VIEW_W && I(lcd, LCD_H) == 320 &&
+            I(lcd, LCD_LINE_LENGTH) == CF_VIEW_W * 4 && I(lcd, LCD_FORMAT) == LCD_BGRA8888 &&
+            sy + PANEL_Y + BACK_H <= 320)
+            fb = (const unsigned *)P(lcd, LCD_OFFLINE_FB);
+        if (fb) fb += (sy + PANEL_Y) * CF_VIEW_W + PANEL_X + I(cf.page, W_X);
+    }
+    unsigned *o = fl.back, paper = (ipod_light() ? scheme()->paper : 0) | 0xff000000u;
+    for (int y = 0; y < BACK_H; ++y)
+        for (int x = 0; x < BACK_W; ++x) {
+            unsigned p = fb ? fb[y * CF_VIEW_W + x] : paper;
+            *o++ = 0xff000000u | (p & 0xff00) | (p & 255) << 16 | (p >> 16 & 255);
+        }
+    if (c) canvas_offline_destroy(c);
+    widget_set_visible(fl.panel, 0, 0);
+}
+
+static void flip_done(void);
+static int flip_tick(const void *unused);
+static void flip_start(int dir) {
+    fl.dir = dir, fl.drawn = -1;
+    fl.t0 = (unsigned)time_now_ms();
+    if (!(fl.timer = timer_add(flip_tick, 0, FLIP_TICK_MS))) flip_done();
+    widget_invalidate_force(cf.covers, 0);
+}
+
+static int flip_tick(const void *unused) {
+    if ((unsigned)time_now_ms() - fl.t0 < FLIP_MS) {
+        widget_invalidate_force(cf.covers, 0);
+        return 8; /* RET_REPEAT */
+    }
+    fl.timer = 0;
+    flip_done();
+    return 0;
+}
+
+/* The turn's buffers go, as each turn ends. */
+static void flip_drop(void) {
+    if (fl.frame) bitmap_destroy(fl.frame);
+    free(fl.back);
+    fl.frame = 0, fl.back = 0;
+}
+
+/* A turn's buffers, both or neither. */
+static int flip_alloc(void) {
+    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
+    fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
+    if (!fl.back) flip_drop();
+    return fl.back != 0;
+}
+
+/* Everything goes; the widgets are the page's, or flip_done's. */
+static void flip_free(void) {
+    stop_timer(&fl.timer);
+    flip_drop();
+    memset(&fl, 0, sizeof fl);
+}
+
+/* Captions and the wheel's surface: off for the panel, on again for the shelf. */
+static void flip_shelf(int on) {
+    widget_set_visible(cf.slide, on, 0);
+    widget_set_visible(cf.name, on, 0);
+    widget_set_visible(cf.artist, on, 0);
+}
+
+/* The album's panel and its first turn, or 0: not this theme or page, or no room, so the text list.
+ * Nothing starts until the panel is built and painted: a slow album waits at the cover. Stock's
+ * hit test skips insensitive widgets, and the wheel a hidden slide_menu. */
+static int flip_open(void *r, int n) {
+    if (fl.panel) return 1; /* Centre before flip_close's timer: the panel stands */
+    if (!classic_pages() || !cf.covers || !fx.frame || !flip_alloc()) return 0;
+    void *f = widget_factory();
+    fl.panel = widget_factory_create_widget(f, "view", cf.page, PANEL_X, PANEL_Y, BACK_W, BACK_H);
+    fl.sheet = widget_factory_create_widget(f, "view", fl.panel, 0, 0, BACK_W, BACK_H);
+    /* Font sizes are AWTK's, a face's whole height: 1.43 of its em in the theme's face. */
+    int row = theme()->page_row;
+    void *view = rows_view(fl.panel, PANEL_HEAD, BACK_W, BACK_H - PANEL_HEAD, n, row);
+    char name[512];
+    for (int i = 0; i < n; ++i) {
+        void *t = deque_at(cf.tracks, (unsigned)i);
+        void *item = list_item_create(view, 0, i * row, BACK_W, row);
+        widget_use_style(item, "s_listitem_black");
+        panel_label(item, 12, 0, 204, row, track_name(name, sizeof name, t), 25, 1);
+        void *length = panel_label(item, 222, 0, 60, row, "", 23, 1);
+        widget_set_prop_str(length, "style:normal:text_align_h", "right");
+        widget_set_prop_int(length, "style:normal:text_color", (int)PANEL_MUTED);
+        panel_length(length, t);
+        widget_on(item, EVT_CLICK, play, (void *)(long)i);
+    }
+    /* cf.title: where a row's "Storage unavailable" goes */
+    cf.title = fl.title = panel_label(fl.panel, 12, 1, 270, 33, album_name(r), 31, 1);
+    fl.artist = panel_label(fl.panel, 12, 30, 270, 20, cover_artist(r), 18, 0);
+    panel_ink();
+    widget_set_sensitive(cf.covers, 0);
+    flip_shelf(0);
+    flip_sides();
+    flip_capture();
+    flip_start(1);
+    return 1;
+}
+
+/* Return on the panel, once a click's handling is over: its selection and scroll as they stand. */
+static int flip_close(const void *unused) {
+    cf.timer = 0;
+    if (!flip_alloc()) { /* no room to turn back: straight to the covers */
+        flip_done();
+        return 0;
+    }
+    flip_capture();
+    flip_start(-1);
+    return 0;
+}
+
+static void flip_done(void) {
+    int to_panel = fl.dir > 0;
+    fl.dir = 0;
+    if (to_panel) {
+        flip_drop();
+        widget_set_visible(fl.panel, 1, 0);
+        widget_invalidate_force(cf.page, 0);
+        return;
+    }
+    widget_destroy(fl.panel);
+    flip_free();
+    cf.title = 0;
+    flip_shelf(1);
+    to_covers(0);
+}
+
 static int to_tracks(const void *unused) {
     cf.timer = 0;
     int n;
@@ -2135,19 +3211,22 @@ static int to_tracks(const void *unused) {
     cf.tracks = coverflow_album_tracks(r);
     n = (int)deque_size(cf.tracks);
     cf.screen = TRACKS;
+    if (flip_open(r, n)) return 0;
     if (cf.covers) { /* none in the text list; stock's hit test skips insensitive, not hidden,
                       * widgets, and the covers' view over the list would take its taps and swipes */
         widget_set_visible(cf.covers, 0, 0);
         widget_set_sensitive(cf.covers, 0);
     }
     void *view = list(P(r, REC_ALBUM), n);
-    /* the album over its tracks, all centred */
-    widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
+    /* the album over its tracks, all centred, but under a theme's own rows */
+    int centred = theme()->page_title_h;
+    if (centred) widget_set_prop_int(cf.title, "style:normal:font_size", cfs.name_px);
     for (int i = 0; i < n; ++i) {
         void *row = page_row_detail(
             view, i, track_name(name, sizeof name, deque_at(cf.tracks, (unsigned)i)), 0, play);
-        widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
+        if (centred) widget_use_style(widget_get_child(row, 0), "s_scrlabel_white20c");
     }
+    page_push(view, cf.text_albums && cf.scoped == ARTIST_ALBUMS); /* from a list, not the covers */
     return 0;
 }
 
@@ -2255,6 +3334,10 @@ static void *artist_under(void) {
  * covers or the message -> Home, or back out of a scoped page (one album's tracks too). */
 static int keyup(void *ctx, void *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
+    if (fl.panel) { /* the panel's way back; during a turn, nothing */
+        if (!fl.dir) rearm(&cf.timer, flip_close, 0);
+        return 11; /* RET_STOP */
+    }
     if ((cf.screen == TRACKS && cf.scoped != ALBUM_TRACKS) || cf.screen == PREPARING)
         rearm(&cf.timer, to_covers, 0);
     else if (cf.scoped) {
@@ -2273,7 +3356,9 @@ static int closed(void *ctx, void *event) {
     if (ctx != cf.page) return 0; /* a page scoped_open closed already */
     stop_timer(&cf.title_timer);
     tc.down = 0;
+    th.on = 0; /* the poll kept the album named (the page may be part-destroyed here) */
     if (cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 1);
+    flip_free();
     drop();
     cf.page = cf.body = cf.covers = cf.slide = 0;
     if (cf.scoped == RATED_ALBUMS) {
@@ -2422,6 +3507,7 @@ const char *now_tag(void *r, int field) {
 static struct {
     void *win, *art, *list, *sets; /* sets: the Settings list, in the list's place while open */
     void *lib; /* the Library's rows the same way: only a set with home_lib has it */
+    void *stream;      /* and Streaming's */
     void *carousel[3]; /* Home: Carousel's slide_menu and its img_left, img_right */
     unsigned key, repaint; /* repaint: the timer of home_repaint */
     /* drift: home_drift's timer; drift_ms: the pan's phase, ms shown */
@@ -2433,6 +3519,9 @@ static struct {
     int tw, rx, ry, u0, v0, du, dv;
     int pane; /* no cover shows: coverflow_home_clip paints the theme's pane */
     void *row; /* the highlighted row and what it shows in the pane (PANE_*) */
+    void *row_image, *row_label; /* a Streaming row's image and name widgets, found once per row */
+    void *svc;                   /* a card app's icon at the pane's size (pane_scaled), its name */
+    char svc_name[72];
     int kind;
     /* the pane's captions, read off the wheel's path (home_counts), 0 unknown; counted: songs and
      * albums answer asked, the library_gen they were asked at; counting: 1 count_worker runs, 2 it
@@ -2448,7 +3537,7 @@ static struct {
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
     home_lib_on(void), row_preview_on(void), library_search(void);
-extern void library_rows(void *list);
+extern void library_rows(void *list), stream_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql);
 extern const char *ipod_home_shortcut(void);
@@ -2502,8 +3591,18 @@ static void drift_place(void) {
 /* What a highlighted row shows in Split's pane (theme()->pane_icon_x): Now Playing's and the
  * Library's rows the cover, or with none the note and a count; the others their icon and
  * caption. */
-enum { PANE_NOW, PANE_LIBRARY, PANE_SHUFFLE, PANE_COVERFLOW, PANE_FOLDER, PANE_GAMES, PANE_ROCKBOX,
-       PANE_STREAM, PANE_SETTINGS };
+enum {
+    PANE_NOW,
+    PANE_LIBRARY,
+    PANE_SHUFFLE,
+    PANE_COVERFLOW,
+    PANE_FOLDER,
+    PANE_GAMES,
+    PANE_ROCKBOX,
+    PANE_STREAM,
+    PANE_SETTINGS,
+    PANE_SERVICE /* Streaming's list: home.row's icon and name */
+};
 static const char *const pane_icons[] = {
     "classic_light_note", "classic_light_note", "classic_light_icon_note",
     "classic_light_icon_stack", "classic_light_icon_folder", "classic_light_icon_game",
@@ -2621,7 +3720,8 @@ static int home_tex(const char *url) {
         data = home.tex ? bitmap_lock_buffer_for_read(bitmap) : 0;
     }
     if (data) {
-        unsigned stride = bitmap_get_line_length(bitmap), paper = ipod_light() ? LIGHT_PAPER : 0;
+        unsigned stride = bitmap_get_line_length(bitmap),
+                 paper = ipod_light() ? scheme()->paper & 255 : 0;
         int ts = tw + 3;                   /* home.tex's row, its border included */
         unsigned *tex = home.tex + ts + 1; /* texel 0, 0 */
         box_filter(data, stride, at[format], w, h, tex, ts, tw, th, paper);
@@ -2753,8 +3853,10 @@ void slant_render(unsigned *d, int pitch, int side, int rows, const unsigned *te
 }
 
 /* Classic's art over stock's flat cover, on the page's grey paper (a byte): slant.frame, rendered
- * again only when the cover (its size and 8 x 8 of its pixels: the player writes every track's
- * cover to the same file, so its name tells none apart) or the paper changes. Its layout (fixed
+ * again only when the cover (its url, size and 8 x 8 of its pixels: the player writes every track's
+ * cover to the same file, so its name tells none apart) or the paper changes. The one frame serves
+ * local Now Playing and Classic's Spotify and Internet Radio pages (navigation.c stream_ipod): the
+ * key says whose cover it holds, so a page coming back redraws its own. Its layout (fixed
  * while the page is open) makes the art's widget taller
  * than wide (tools/ipod.py np_ipod), room for the reflection under it, so a repaint of the bar
  * below repaints it too.
@@ -2781,7 +3883,9 @@ void coverflow_slant(void *w, void *canvas, unsigned paper) {
     if (!data) return;
     int side = I(w, W_W), rows = I(w, W_H), t = 2 * side;
     unsigned stride = bitmap_get_line_length(bitmap),
-             key = hash_bytes(FNV_SEED, (const unsigned char *)bitmap, 8) ^ paper;
+             key = hash_bytes(fnv(FNV_SEED, (const unsigned char *)url),
+                              (const unsigned char *)bitmap, 8) ^
+                   paper;
     for (unsigned j = 1; j < 16; j += 2)
         for (unsigned i = 1; i < 16; i += 2)
             key = hash_bytes(key, data + bh * j / 16 * stride + bw * i / 16 * 4, 4);
@@ -2846,6 +3950,110 @@ static int pane_caption(char *t, unsigned size) {
     return 0;
 }
 
+/* w's first child of type, or 0. */
+static void *child_of_type(void *w, const char *type) {
+    for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
+        void *c = widget_get_child(w, i);
+        if (!tk_strcmp(widget_get_type(c), type)) return c;
+    }
+    return (void *)0;
+}
+
+/* A Streaming row's image widget for the pane: a card app's own file, or the build's copy of a
+ * fixed service's icon at the pane's size (tools/build.py), in t. */
+static const char *service_icon(void *image, char *t, unsigned size) {
+    const char *icon = image ? widget_get_prop_str(image, "image", "") : "";
+    if (tk_str_start_with(icon, "file://")) return icon;
+    tk_snprintf(t, size, "classic_light_%s", icon);
+    return t;
+}
+
+/* bitmap, the icon named name, bilinear at the theme's px, once for a name, so the paints after it
+ * only draw it: alpha-weighted, as its edge's transparent pixels hold no colour. bitmap itself when
+ * that can't be done.
+ * ponytail: one icon's frame, kept once made; the row's next app scales again. */
+static void *pane_scaled(void *bitmap, const char *name, unsigned px) {
+    static const unsigned char at[4][4] = BITMAP_RGBA_AT;
+    unsigned *b = bitmap, w = b[0], h = b[1], format = ((unsigned short *)bitmap)[7] - 1u;
+    if (!tk_strcmp(home.svc_name, name)) return home.svc;
+    if (format >= 4 || !w || !h || w > 512 || h > 512) return bitmap;
+    if (!home.svc) home.svc = bitmap_create_ex(px, px, px * 4, 1 /* RGBA8888 */);
+    const unsigned char *data = home.svc ? bitmap_lock_buffer_for_read(bitmap) : 0;
+    unsigned *d = data ? (unsigned *)bitmap_lock_buffer_for_write(home.svc) : 0;
+    if (!d) {
+        if (data) bitmap_unlock_buffer(bitmap);
+        return bitmap;
+    }
+    const unsigned char *o = at[format];
+    unsigned stride = bitmap_get_line_length(bitmap), line = bitmap_get_line_length(home.svc) / 4;
+    for (unsigned y = 0; y < px; ++y) {
+        /* the pixels' centres, in 1/256 of a source pixel */
+        unsigned sy = (2 * y + 1) * h * 128 / px, y0 = sy < 128 ? 0 : (sy - 128) >> 8;
+        unsigned fy = sy < 128 ? 0 : (sy - 128) & 255, y1 = y0 + 1 < h ? y0 + 1 : y0;
+        for (unsigned x = 0; x < px; ++x) {
+            unsigned sx = (2 * x + 1) * w * 128 / px, x0 = sx < 128 ? 0 : (sx - 128) >> 8;
+            unsigned fx = sx < 128 ? 0 : (sx - 128) & 255, x1 = x0 + 1 < w ? x0 + 1 : x0;
+            const unsigned char *r0 = data + y0 * stride, *r1 = data + y1 * stride;
+            const unsigned char *s[4] = { r0 + x0 * 4, r0 + x1 * 4, r1 + x0 * 4, r1 + x1 * 4 };
+            unsigned k[4] = { (256 - fx) * (256 - fy), fx * (256 - fy), (256 - fx) * fy, fx * fy };
+            unsigned r = 0, g = 0, bl = 0, a = 0; /* each under 2^16 x 255 x 255 */
+            for (int i = 0; i < 4; ++i) {
+                unsigned v = k[i] * s[i][o[3]];
+                r += v * s[i][o[0]], g += v * s[i][o[1]], bl += v * s[i][o[2]], a += v;
+            }
+            d[y * line + x] = a ? (a >> 16) << 24 | bl / a << 16 | g / a << 8 | r / a : 0;
+        }
+    }
+    bitmap_unlock_buffer(home.svc);
+    bitmap_unlock_buffer(bitmap);
+    tk_snprintf(home.svc_name, sizeof home.svc_name, "%s", name);
+    return home.svc;
+}
+
+/* The pane on a Streaming row: its icon, a card app's scaled to the theme's size, else the card
+ * apps' own, and its name in the count's place. A name too wide for the count's column shrinks to
+ * three quarters of its size, then loses its end. A card app's file, up to 512 px square, leaves
+ * the image cache once drawn or scaled: its scaled copy is what stays.
+ * ponytail: a card app highlighted again after another decodes its file again; a scaled copy per
+ * app if that shows on the wheel. */
+static void pane_service(void *canvas, int x, int y) {
+    const theme_t *T = theme();
+    unsigned bitmap[64], s[33], n = 0; /* bitmap_t */
+    char t[72];
+    if (!home.row) return;
+    const char *icon = service_icon(home.row_image, t, sizeof t);
+    int side = T->pane_svc_px, card = tk_str_start_with(icon, "file://");
+    int src[4] = { 0, 0, side, side },
+        dst[4] = { x + T->pane_svc_x, y + T->pane_svc_y, side, side };
+    if (card && home.svc && !tk_strcmp(home.svc_name, icon)) {
+        canvas_draw_image(canvas, home.svc, src, dst);
+    } else {
+        int own = !widget_load_image(home.art, icon, bitmap);
+        if (own || !widget_load_image(home.art, "classic_light_stream_app", bitmap)) {
+            void *art = own && (int)bitmap[0] != side && card
+                            ? pane_scaled(bitmap, icon, (unsigned)side)
+                            : bitmap;
+            if (art == bitmap) src[2] = (int)bitmap[0], src[3] = (int)bitmap[1];
+            canvas_draw_image(canvas, art, src, dst);
+        }
+        if (own && card) widget_unload_image(home.art, bitmap);
+    }
+    void *label = home.row_label;
+    const unsigned *name = label ? widget_get_text(label) : (const unsigned *)0;
+    while (name && name[n] && n < 32) s[n] = name[n], ++n;
+    if (!n) return;
+    int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }, px = T->pane_count_px, face = px;
+    canvas_set_font(canvas, theme_face(s, (int)n, &face), (unsigned)face);
+    float w = canvas_measure_text(canvas, s, n);
+    if (w > box[2]) {
+        int fit = (int)((float)px * box[2] / w), least = px * 3 / 4;
+        face = px = fit > least ? fit : least;
+        canvas_set_font(canvas, theme_face(s, (int)n, &face), (unsigned)face);
+        while (n > 1 && canvas_measure_text(canvas, s, n) > box[2]) s[--n - 1] = 0x2026;
+    }
+    draw_centred(canvas, s, n, box, (unsigned)px, RGBA(ipod_light() ? 0u : 0xffffffu));
+}
+
 /* Split's panel in the theme's home_pane, the half's: the stops, its light, a shadow down its left edge, the
  * row's image from the theme (tools/art.py) and its caption. Raw colours, but the caption's: ui_ink
  * flips black to the light half's white paper, and the dark half draws white as it is. */
@@ -2860,6 +4068,11 @@ void home_pane_paint(void *canvas, int x, int y, int w, int h) {
         canvas_fill_rect(canvas, x + x0, y, w * (n - a + 1) / n - x0, h);
     }
     pane_shadow(canvas, x, y, h);
+    if (home.kind == PANE_SERVICE) {
+        pane_service(canvas, x, y);
+        stock_canvas_set_fill_color(canvas, fill);
+        return;
+    }
     if (!widget_load_image(home.art, pane_icons[home.kind], bitmap)) {
         int note = home.kind <= PANE_SHUFFLE;
         int src[4] = { 0, 0, (int)bitmap[0], (int)bitmap[1] },
@@ -2899,12 +4112,18 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
     if (!row_preview_on()) kind = PANE_NOW; /* Row Preview off: Now Playing's on every row */
     else if (list == home.sets) kind = PANE_SETTINGS;
     else if (list == home.lib) kind = id == library_search() ? PANE_SHUFFLE : PANE_LIBRARY;
-    else {
-        static const char *const names[] = { "img_playing", "img_library", 0,
-                                              "img_coverflow", "img_folder", 0,
-                                              "img_rockbox", "img_stream", "img_settings" };
+    else if (list == home.stream) {
+        kind = PANE_SERVICE;
+        home.row_image = child_of_type(row, "image");
+        home.row_label = child_of_type(row, "hscroll_label");
+    } else {
+        static const char *const names[] = { "img_playing",   "img_library",  0,
+                                             "img_coverflow", "img_folder",   0,
+                                             "img_rockbox",   "img_services", "img_settings" };
         for (unsigned i = 0; i < sizeof names / sizeof *names; ++i)
             if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
+        /* a set without home_lib: stock's name */
+        if (!tk_strcmp(name, "img_stream")) kind = PANE_STREAM;
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
@@ -2915,7 +4134,7 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
                                               : PANE_LIBRARY;
         }
     }
-    if (kind == home.kind) return;
+    if (kind == home.kind && kind != PANE_SERVICE) return;
     home.kind = kind;
     if (painting)
         rearm(&home.pane_timer, pane_after, 0);
@@ -3047,7 +4266,9 @@ void coverflow_home_art(void *top) {
  * origin is the widget's) before stock draws it, and ringnav_paint puts the old clip back after its
  * children, the pan's frame painted inside it first. */
 void coverflow_home_clip(void *w, void *canvas, int begin) {
-    if (!w || (w != home.art && w != home.list && w != home.sets && w != home.lib)) return;
+    if (!w ||
+        (w != home.art && w != home.list && w != home.sets && w != home.lib && w != home.stream))
+        return;
     if (!begin) {
         int covers = pane_covers();
         if (w == home.art && covers && home.tw) home_paint(canvas);
@@ -3075,7 +4296,7 @@ void coverflow_home_clip(void *w, void *canvas, int begin) {
 /* Whether w is in one of Home's menus (Minimal draws their labels, paint_caps). */
 int coverflow_home_owns(void *w) {
     for (; w && home.list; w = P(w, W_PARENT))
-        if (w == home.list || w == home.sets || w == home.lib) return 1;
+        if (w == home.list || w == home.sets || w == home.lib || w == home.stream) return 1;
     return 0;
 }
 
@@ -3133,8 +4354,10 @@ void coverflow_home_layout(void) {
     if (home.sets) home_width(home.sets, outer, inner, x, end, 0);
     widget_move_resize(home.art, split, 0, 375 - split, client_h());
     widget_set_visible(home.art, !mode, 0);
-    if (mode && home.lib && widget_get_visible(home.lib)) { /* Split's alone */
-        home_show(home.lib, 0);
+    for (int i = 0; mode && i < 2; ++i) { /* Split's alone */
+        void *open = i ? home.stream : home.lib;
+        if (!open || !widget_get_visible(open)) continue;
+        home_show(open, 0);
         home_show(home.list, 1);
     }
     if (home.carousel[0] && carousel != widget_get_visible(home.carousel[0])) {
@@ -3146,26 +4369,79 @@ void coverflow_home_layout(void) {
     rearm(&home.repaint, home_repaint, 0);
 }
 
+/* w from x+dx to its x over m's ms and easing. Returns 0 without touching w when m->ms is 0;
+ * returns 0 with w back at its x when no animator can be made; else 1. */
+static int push_x(void *w, int dx, const motion_t *m) {
+    if (!m->ms) return 0;
+    int x = I(w, W_X);
+    widget_move_resize(w, x + dx, I(w, W_Y), I(w, W_W), I(w, W_H));
+    void *a = widget_animator_prop_create(w, m->ms, 0, m->easing, "x");
+    if (!a) {
+        widget_move_resize(w, x, I(w, W_Y), I(w, W_W), I(w, W_H));
+        return 0;
+    }
+    widget_animator_prop_set_params(a, x + dx, x);
+    widget_animator_start(a);
+    return 1;
+}
+
+/* After page_list rebuilt a level: its list (view's list_view parent; the title is the bar's under
+ * Classic) slides in from the right (dir 1, deeper) or the left (-1, back) over the theme's
+ * inplace motion. No window animates, so keys and the wheel act on the new list at once. 0 for a
+ * null view or dir 0, when the theme keeps levels still (push_x touches nothing), or when no
+ * animator could be made: the list is at x 0. */
+int page_push(void *view, int dir) {
+    if (!theme()->motion[MOTION_INPLACE].ms) return 0;
+    void *w = view ? P(view, W_PARENT) : (void *)0;
+    if (!w || !dir) return 0;
+    /* A kept level (Photos', a folder's table) still sliding goes to its rest first. */
+    if (I(w, W_X)) widget_move_resize(w, 0, I(w, W_Y), I(w, W_W), I(w, W_H));
+    return push_x(w, dir * I(w, W_W), &theme()->motion[MOTION_INPLACE]);
+}
+
 /* Home's Settings row, as an iPod's submenu: the Settings list (stock's Playback and System
  * setting rows, which stock binds) slides in from the right over the list's place, the art staying;
  * Return (coverflow_home_back) slides the list back in from the left. Each list keeps its row. */
 static void home_swap(void *from, void *to, int dx) {
     home_show(from, 0); /* only the shown list takes taps */
-    widget_move_resize(to, dx, I(to, W_Y), I(to, W_W), I(to, W_H));
+    /* A list still sliding goes to its rest first: push_x's goal, and where no push leaves it. */
+    if (I(to, W_X)) widget_move_resize(to, 0, I(to, W_Y), I(to, W_W), I(to, W_H));
+    push_x(to, dx, &theme()->motion[MOTION_SWAP]);
     home_show(to, 1);
     bar_title_sync(home.win); /* the bar's text follows the list at once, not at its next second */
-    void *a = widget_animator_prop_create(to, PAGE_SLIDE_MS, 0, SLIDE_EASING, "x");
-    if (!a) {
-        widget_move_resize(to, 0, I(to, W_Y), I(to, W_W), I(to, W_H));
-        return;
-    }
-    widget_animator_prop_set_params(a, dx, 0);
-    widget_animator_start(a);
 }
 
 static int home_settings(void *ctx, void *event) {
     if (home.sets && !widget_get_visible(home.sets)) home_swap(home.list, home.sets, I(home.list, W_W));
     return 0;
+}
+
+/* A list its page's constructor just filled, slid in in Home's rows' shape. service: Streaming's,
+ * whose 70 px rows take Home's row height, and the build's icons are decoded now, not on the
+ * wheel's path (coverflow_home_row). */
+static void home_fill(void *list, int service) {
+    const theme_t *T = theme();
+    home_width(list, HOME_SPLIT_W, HOME_SPLIT_W, T->home_text_x, T->home_label_end[0], 0);
+    void *view = widget_count_children(list) ? widget_get_child(list, 0) : (void *)0;
+    void *first = service ? widget_get_child(widget_get_child(home.list, 0), 0) : (void *)0;
+    for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
+        void *row = widget_get_child(view, i);
+        void *b = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+        if (!b) continue;
+        int h = service ? I(first, W_H) : I(b, W_H);
+        widget_move_resize(b, 0, service ? 0 : I(b, W_Y), HOME_SPLIT_W, h);
+        if (service) {
+            void *label = child_of_type(b, "hscroll_label");
+            unsigned bitmap[64]; /* bitmap_t */
+            char t[72];
+            const char *icon = service_icon(child_of_type(b, "image"), t, sizeof t);
+            if (label) widget_move_resize(label, I(label, W_X), 0, I(label, W_W), I(b, W_H));
+            /* the build's icons; a card app's file waits for the pane (pane_service) */
+            if (!tk_str_start_with(icon, "file://")) widget_load_image(home.art, icon, bitmap);
+        }
+    }
+    widget_layout(list);
+    home_swap(home.list, list, I(home.list, W_W));
 }
 
 /* Home's Library row in Split (a set with home_lib, Library on Home on): its rows slide in as Settings' do, each filled
@@ -3174,25 +4450,29 @@ static int home_settings(void *ctx, void *event) {
 static int home_library(void *ctx, void *event) {
     if (ipod_home() || !home.lib || !home_lib_on()) return on_home_music_onclick(ctx, event);
     if (widget_get_visible(home.lib)) return 0;
-    const theme_t *T = theme();
     library_rows(home.lib);
-    home_width(home.lib, HOME_SPLIT_W, HOME_SPLIT_W, T->home_text_x, T->home_label_end[0], 0);
-    void *view = widget_count_children(home.lib) ? widget_get_child(home.lib, 0) : (void *)0;
-    for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
-        void *row = widget_get_child(view, i);
-        void *b = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
-        if (b) widget_move_resize(b, 0, I(b, W_Y), HOME_SPLIT_W, I(b, W_H));
-    }
-    widget_layout(home.lib);
-    home_swap(home.list, home.lib, I(home.list, W_W));
+    home_fill(home.lib, 0);
+    return 0;
+}
+
+/* Home's Streaming row, the same way (navigation.c stream_rows). The rebuild frees the rows, and
+ * home.row is read only under PANE_SERVICE, so that goes first. */
+static int home_streaming(void *ctx, void *event) {
+    if (ipod_home() || !home.stream) return on_home_stream_onclick(ctx, event);
+    if (widget_get_visible(home.stream)) return 0;
+    home.kind = PANE_STREAM;
+    home.row = (void *)0;
+    stream_rows(home.stream);
+    home_fill(home.stream, 1);
     return 0;
 }
 
 /* The list open on Home, 0: its main list. */
 static void *home_open(void) {
-    return home.lib && widget_get_visible(home.lib)    ? home.lib
-           : home.sets && widget_get_visible(home.sets) ? home.sets
-                                                        : (void *)0;
+    return home.lib && widget_get_visible(home.lib)         ? home.lib
+           : home.stream && widget_get_visible(home.stream) ? home.stream
+           : home.sets && widget_get_visible(home.sets)     ? home.sets
+                                                            : (void *)0;
 }
 
 /* Return on Home with a list open: 1 when it went back to the main list. */
@@ -3203,11 +4483,28 @@ int coverflow_home_back(void *top) {
     return 1;
 }
 
+/* A hold going Home (navigation.c compact_now_playing) from under a list open there: the main list,
+ * with no slide, as the windows over it are about to close. Only while this Home is the bottom
+ * window but the bar (application_init's first), so its lists are alive. */
+void coverflow_home_top(void) {
+    void *wm = window_manager();
+    unsigned n = widget_count_children(wm),
+             bottom = n && widget_get_child(wm, 0) == *(void *const *)system_bar;
+    if (!home.win || bottom >= n || widget_get_child(wm, bottom) != home.win) return;
+    void *open = home_open();
+    if (!open) return;
+    home_show(open, 0);
+    home_show(home.list, 1);
+}
+
 /* Classic's bar title on Home (navigation.c bar_title_sync): coverflow_home_name on its own list. */
 const char coverflow_home_name[] = "Q2 Pod";
 const char *coverflow_home_title(void) {
     void *open = home_open();
-    return !open ? coverflow_home_name : open == home.lib ? "Library" : "Settings";
+    return !open                 ? coverflow_home_name
+           : open == home.lib    ? "Library"
+           : open == home.stream ? "Streaming"
+                                 : "Settings";
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,
@@ -3231,6 +4528,12 @@ int coverflow_home(void *win, void *ctx) {
     if (home.lib) {
         widget_set_sensitive(home.lib, 0);
         widget_on(widget_lookup(win, "img_library", 1), EVT_CLICK, home_library, win);
+    }
+    home.stream = widget_lookup(win, "list_view_homestream", 1);
+    if (home.kind == PANE_SERVICE) home.kind = PANE_STREAM; /* the last Home's rows */
+    if (home.stream) {
+        widget_set_sensitive(home.stream, 0);
+        widget_on(widget_lookup(win, "img_services", 1), EVT_CLICK, home_streaming, win);
     }
     static const char *const carousel[] = { "slide_menu", "img_left", "img_right" };
     for (int i = 0; i < 3; ++i) home.carousel[i] = widget_lookup(win, carousel[i], 1);

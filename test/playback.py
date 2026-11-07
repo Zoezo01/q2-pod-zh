@@ -1170,6 +1170,11 @@ m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain()
 # Vortex and the lyrics read the raw travel with a thumb held down as long as they like: not ticks.
 m=EncoderMachine(); m.word(ps['wheel_raw'],1); n=m.turn(3000,2,20)
 assert m.get(ps['wheel_travel'])==2*3000 and not m.q and not n; m.word(ps['wheel_raw'],0)
+m=armed(); m.word(ps['wheel_raw'],1); m.x=100; m.turn(STOP*U,1,20); m.press(); assert not m.mute(); m.word(ps['wheel_raw'],0)  # no stop for them
+# Cover Flow's thumb (2) has no ticks either, and a ghost still moves covers: its travel counts for the second
+# Return, a tick's worth a tick. Fewer, and a Return is only a Return. Nothing's queued, reversals count too.
+m=armed(); m.word(ps['wheel_raw'],2); m.turn(STOP*U-1,1,20); m.press(); assert not m.mute()
+m.x=100; m.turn(1,1,20); assert not m.q; m.press(); assert m.mute() and not m.q; m.word(ps['wheel_raw'],0)
 checks+=1
 # A normal build keeps no trace: none of the log's state, and no thread or file for a stop or a drop.
 if not DEV:

@@ -59,6 +59,13 @@
   "slide_only": {
     "playset/equalizer_page.bin": "37c084eb1ab9642af62d9e73550a6ec1d2e90410b192f81bfa878af2e5c93fbf"
   },
+  "stock_rows": {
+    "playerjumpinfo_page.bin": "4d04b527102c6aa7f468d03517db078cbb8af2688eb7fc58634858cf29fa0343",
+    "playermore_page.bin": "13f334e2523a6631f75eef8a2afcf7fed9ec58c16dda0d609e27ddeb8e119627",
+    "playerqueue_page.bin": "6584b0ee1416a57983cd59cb908eb8355e767f53776ceba5dfbdf241ecbcc934",
+    "specfolder_page.bin": "b3c0480b44c7ecf2b9ba320f814455d5041c6bcd304ee6768a2beff3705309c4",
+    "updatemusic_page.bin": "5d869aa310227cc07087f88f86b43423176a09f06f449b5e62942ae7802b298c"
+  },
   "immediates": [
     {
       "value": "pitch",
@@ -282,6 +289,110 @@
       ]
     },
     {
+      "value": "stock_row",
+      "purpose": "stock's own table rows (Go to, Queue, special folders): creation, Go to's scroll divisor, special folders' row height",
+      "sites": [
+        ["0x527904", "0x2410004e"],
+        ["0x527ac0", "0x2402004e"],
+        ["0x529a98", "0x2402004e"],
+        ["0x52de7c", "0x2405004e"],
+        ["0x52e6d0", "0x2402004e"]
+      ]
+    },
+    {
+      "value": "stock_body",
+      "purpose": "stock's own table rows: the button and its full-height children",
+      "sites": [
+        ["0x527af8", "0x24030046"],
+        ["0x527b5c", "0x24030046"],
+        ["0x529ac4", "0x241e0046"],
+        ["0x52e6fc", "0x24110046"]
+      ]
+    },
+    {
+      "value": "stock_title_y",
+      "purpose": "Go to's title y in its row",
+      "sites": [
+        ["0x527c10", "0x2406000b"]
+      ]
+    },
+    {
+      "value": "stock_title_h",
+      "purpose": "Go to's title box, which holds the row's font",
+      "sites": [
+        ["0x527c04", "0x24020014"]
+      ]
+    },
+    {
+      "value": "search_row",
+      "purpose": "Search's rows: creation (Genres' rows take the list's default height)",
+      "sites": [
+        ["0x49c110", "0x2402004e"],
+        ["0x49d470", "0x2402004e"],
+        ["0x49df34", "0x2402004e"]
+      ]
+    },
+    {
+      "value": "search_body",
+      "purpose": "Search's rows: the button and its full-height children",
+      "sites": [
+        ["0x49c148", "0x24020046"],
+        ["0x49d4a8", "0x24020046"],
+        ["0x49df70", "0x24020046"],
+        ["0x49e2fc", "0x24020046"],
+        ["0x49ba74", "0x24020046"],
+        ["0x49bb60", "0x24020046"],
+        ["0x49c2bc", "0x24020046"],
+        ["0x49d620", "0x24020046"],
+        ["0x49dd5c", "0x24020046"]
+      ]
+    },
+    {
+      "value": "search_art",
+      "purpose": "Search's rows: the artwork's width; 0 makes two lines of text, as Songs'",
+      "sites": [
+        ["0x49ba7c", "0x24070032"]
+      ]
+    },
+    {
+      "value": "search_title_y",
+      "purpose": "Search's Songs rows: the title's y",
+      "sites": [
+        ["0x49c30c", "0x2406000b"]
+      ]
+    },
+    {
+      "value": "search_title24_y",
+      "purpose": "Search's Albums rows: the title's y",
+      "sites": [
+        ["0x49d670", "0x2406000e"]
+      ]
+    },
+    {
+      "value": "search_title_h",
+      "purpose": "Search's rows: the title's box, which holds the row's font",
+      "sites": [
+        ["0x49c300", "0x24020018"],
+        ["0x49d664", "0x24020018"]
+      ]
+    },
+    {
+      "value": "search_meta_y",
+      "purpose": "Search's rows: the second line's y",
+      "sites": [
+        ["0x49c3cc", "0x24060029"],
+        ["0x49d6f0", "0x24060029"]
+      ]
+    },
+    {
+      "value": "search_meta_h",
+      "purpose": "Search's rows: the second line's box, which holds the row's font",
+      "sites": [
+        ["0x49c3c0", "0x24020010"],
+        ["0x49d6e4", "0x24020010"]
+      ]
+    },
+    {
       "value": 225,
       "purpose": "toolbar switch pages: the title spans to the switch",
       "sites": [
@@ -322,6 +433,31 @@
       ["0x4a6394", "0x0320f809"],
       ["0x4adea4", "0x0320f809"],
       ["0x4b2944", "0x0320f809"]
+    ]
+  },
+  "stock_row_layout_calls": {
+    "purpose": "stock's own table rows fit their title on a relayout under a set that re-pitches them",
+    "sites": [
+      ["0x527b54", "0x0320f809"],
+      ["0x52e764", "0x0320f809"],
+      ["0x49c1e4", "0x0320f809"],
+      ["0x49d544", "0x0320f809"],
+      ["0x49e004", "0x0320f809"],
+      ["0x49e394", "0x0320f809"]
+    ]
+  },
+  "stock_row_style_calls": {
+    "purpose": "Queue's rows: the playing row's colour under a set that re-pitches them",
+    "sites": [
+      ["0x5295dc", "0x0320f809"]
+    ]
+  },
+  "stock_row_text_calls": {
+    "purpose": "stock's own table rows: the title's face follows its text, bound with no relayout",
+    "sites": [
+      ["0x5273cc", "0x0320f809"],
+      ["0x529578", "0x0320f809"],
+      ["0x52e36c", "0x0320f809"]
     ]
   },
   "private_prologues": {

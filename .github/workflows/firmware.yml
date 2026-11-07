@@ -1,0 +1,38 @@
+# Every test that needs no stock firmware; see docs/building.md#firmware-tests.
+name: Firmware tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y gcc-multilib clang lld llvm unzip ffmpeg lame
+          libavcodec-dev libavutil-dev libmad0-dev libssl-dev pkg-config
+      - run: pip install -r requirements.txt -r test/unit/requirements.txt
+      - name: Firmware tests  # test/unit runs in tests.yml
+        run: python3 -m pytest test/fw -q
+      - name: Firmware under AddressSanitizer and UBSan
+        env:
+          Q2_FW_SANITIZE: '1'
+          ASAN_OPTIONS: detect_leaks=0:allocator_may_return_null=1
+        run: LD_PRELOAD="$(cc -print-file-name=libasan.so)" python3 -m pytest test/fw -q
+      - name: Host suites  # build and rotator_build: only their checks that need no ZIP or build
+        run: for t in library_scope mp3 peq coverflow chapters mp3_gapless remote build rotator_build; do python3 "test/$t.py"; done

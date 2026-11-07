@@ -13,9 +13,14 @@
             lib_art="0" title24_y="4" title_y="6" meta_y="8"
             count_y="8" art_title24_y="1" art_meta_y="29" song_pitch="52" song_body="52" song_title24_y="1"
             song_meta_y="29" set_row="32" set_top="0" set_rows="9"
-            set_icon="0" bar_px="21" bar_title_w="94" bar_right="60" batt_w="28" batt_h="15" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"/>
+            set_icon="0" stream_row="52" bar_px="21" bar_title_w="91" bar_right="60" batt_w="26" batt_h="13" text_x="20" list_end="256" action_row="32" home_row="32" home_lib="1" np_ipod="1"
+            stock_row="32" stock_body="32" stock_title_y="0" stock_title_h="32" toolbar="0"
+            search_row="52" search_body="52" search_art="0" search_title_y="1" search_title24_y="1" search_title_h="28"
+            search_meta_y="29" search_meta_h="20"/>
+  <!-- Stock's own list pages (Lock Screen, Update Library, More, Queue, Go to, Special Folders) take the set's rows: stock_row and the two
+       after it; 78, 70, 11 and 20 give back stock's. toolbar 0 hides their toolbars but for Go to's and Special Folders', and the Sleep Timer's. -->
   <geometry name="classic-light-text" extends="classic-light" art="0" art_pitch="32" art_body="32" art_title24_y="4"
-            art_meta_y="8"/>
+            art_meta_y="8" stream_row="32"/>
   <geometry set="classic-light"/>
   <!-- every scheme: white text on the band in both halves; a row's second line #949294, which the light half
        flips onto #6b6d6b; the light half on white paper, black ink; the status bar's gloss over
@@ -41,14 +46,34 @@
     <!-- Albums' and the other 52 px rows: the cover, drawn square, then two lines of text; it clears the glass at the row under the bar by 1 px -->
     <element name="art" x="22" text_x="82" text_end="310" placeholder="38"/>
     <element name="chevron" selected="1" x="317"/>
+    <!-- The fast-scroll letter, the same in both halves -->
+    <element name="letter" raw="1" px="60"/>
+    <!-- A list that scrolls keeps a thin thumb at its right edge, over the rows, with no track; its ends stay clear
+         of the glass -->
+    <element name="scrollbar" w="4" right="2" top="59" bottom="261" min="16" light.thumb="#8f98a8" dark.thumb="#6e7380"/>
+  </view>
+  <!-- Cover Flow's shelf, from the look's measured geometry: side covers almost edge-on, so their top and bottom edges
+       meet at the centre column, on a horizon 63% down the cover, unshaded out to the third; the reflections go under
+       the caption, so the frame is taller than the other themes'. Mid-step the near edge grows lift's small swell and
+       eases out to 3 px past its rest place, as a door swings on its outer edge, and the eye draws back by eye_turn px
+       (1 - t^4), which lengthens the far edge and leaves the near edge and every rest pose where they are.
+       art_persp: a side cover's art 13% of the way from even to the plane's own spacing, so cover 1's near half is
+       1.23 times as wide as its far half (the plane's own would be 2.76), at rest and in the row alike. The thumb's
+       numbers are Minimal's, every theme's. -->
+  <view name="coverflow">
+    <element name="shelf" top="32" eye="94" tilt="89" x1="116" xs="34" z1="77" zs="1" horizon="63" third="1"
+             swing="1" lift="20" eye_turn="150" bright1="256" bright2="256" reflect="46" reflect_top="90" view_h="242"
+             art_persp="13"/>
+    <!-- The album and the artist in the title's face, 24 px apart: their boxes overlap, as each must hold the font -->
+    <element name="caption" name_px="27" artist_px="27" text_y="220" artist_y="26"/>
   </view>
   <view name="bar">
     <element name="title" font="classic-light" font_size="21" caps="0"/>
     <element name="fill" painter="gloss"/>
-    <!-- The battery's inside: one colour per row, the bright one at y 7, the dark rows past the level, a red sliver
+    <!-- The battery's inside: its stops mixed over the rows, the bright one at y 8, the dark rows past the level, a red sliver
          when low; its edges and the white that sits under it on the light half's gloss. Alphas of 255. The bolt
          (charging) and the plug (full on power): colour and the bolt's white halo, tools/art.py draws them. -->
-    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#9c9e9c" edge="#5b6c52"
+    <element name="battery" painter="classic-light" light.line="#717070" dark.line="#717070" edge="#5b6c52"
              stops="#90b27d 0, #c4ebac 8, #dcf9c5 17, #cbefb1 25, #ade586 33, #a6e27b 42, #92ce68 50, #67a83f 58, #4e972c 67, #4e972d 75, #56a035 83, #58a437 92, #539933 100"
              empty="#56585d 0, #595a61 8, #5f6168 17, #63656c 25, #6b6d73 33, #76787e 42, #85878d 50, #898b92 58, #8d8f96 67, #94969c 75, #9ea0a5 83, #a0a3a6 92, #797b7c 100"
              low="#d9402e" low_w="3" corner_a="191" foot_a="128" shade_a="64" soft_a="51" soft_top_a="28" emboss_a="179" emboss_nub_a="153" bolt="#3c4a34" bolt_halo_a="102"/>
@@ -59,31 +84,55 @@
              edge="#114c8f 0, #135999 100" halo_light="0" halo_dark="0"/>
   </view>
   <!-- Now Playing, an iPod classic's: the art turned in perspective over its reflection (the classic-light sets' np_ipod,
-       coverflow.c slant_render), and the progress bar's track, a row each of its NP_BAR_IPOD (13): faint 1 px top
-       and bottom lines round a near-white inside; the dark half's Apple's capture darkened, its step at the middle
-       kept; the accent's band fills the played part (navigation.c paint_scrubber) -->
+       coverflow.c slant_render), and the progress bar's track over its NP_BAR_IPOD (20) rows: faint 1 px top
+       and bottom lines round a near-white inside, the inner stops from 5 to 95 so no row past the first and before the
+       last takes an edge's colour; the dark half's Apple's capture darkened, its step at the middle
+       kept; the accent's band fills the played part (navigation.c paint_scrubber). Its rows painter's 31 rows, fixed
+       colours (#rrggbbaa its own alpha), are the volume panel's away from Now Playing and a card app's progress -->
   <view name="playing">
     <element name="art" square="1"/>
-    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 8, #ffffff 17, #ffffff 25, #fafafa 33, #fafafa 42, #f6f6f6 50, #f6f6f6 58, #f6f6f6 67, #f4f4f4 75, #f4f4f4 83, #f4f4f4 92, #cecece 100"
-             dark.stops="#313131 0, #373737 8, #383838 17, #373737 25, #363636 33, #353535 42, #323232 50, #313131 58, #323232 67, #343434 75, #353535 83, #343434 92, #2b2b2b 100"/>
+    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 5, #ffffff 14, #ffffff 23, #fafafa 32, #fafafa 41, #f6f6f6 50, #f6f6f6 59, #f6f6f6 68, #f4f4f4 77, #f4f4f4 86, #f4f4f4 95, #cecece 100"
+             dark.stops="#313131 0, #373737 5, #383838 14, #373737 23, #363636 32, #353535 41, #323232 50, #313131 59, #323232 68, #343434 77, #353535 86, #343434 95, #2b2b2b 100"
+             painter="rows"
+             light_track="#e7e7e7 #eeeeee #ffffff #fdfdfd #f7f7f7 #f7f7f7 #f3f3f3 #f0f0f0 #ebebeb #e4e4e4 #dedede #dfdfdf #e6e6e6 #ededed #ececec #d1d1d1 #d0d0d0 #fdfdfd #f0f0f0 #efefef #f5f5f5 #f8f8f8 #f4f4f4 #efefef #efefef #efefef #f6f6f6 #f7f7f7 #f7f7f7 #f7f7f7 #f9f9f9"
+             light_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #c7f2ff #c7f2ff #ceefff #d2ecfd #d2ecfd #daedfe #deeefe #deeefe #e7f1fd #eef5ff #eef5ff #f8f9fe #fcfcfe #fcfcfe"
+             dark_track="#4e4d4e #585758 #555455 #515151 #4e4e4e #4b4a4b #474747 #444444 #424242 #434343 #444444 #454445 #454545 #464546 #474647 #484748 #383838 #42414256 #42414250 #42414249 #42414243 #4241423d #42414236 #42414230 #42414229 #42414223 #4241421d #42414216 #42414210 #4241420a #42414203"
+             dark_fill="#99afde #87abe9 #72a3e6 #74a6ed #74a6ed #78a2ee #77a6f4 #69aafa #4c9ef0 #3d9df3 #46b1ff #42b8ff #4fc7ff #4fc7ff #57caf6 #50b1d1 #95d5ee #46b1ff4f #46b1ff49 #46b1ff43 #46b1ff3d #46b1ff37 #46b1ff32 #46b1ff2c #46b1ff26 #46b1ff20 #46b1ff1a #46b1ff14 #46b1ff0f #46b1ff09 #46b1ff03"/>
     <element name="title" font="classic-light" font_px="27"/>
     <element name="album" caps="0" opacity="255"/>
     <element name="state" opacity="0"/>  <!-- no play/pause glyph on the art, as Minimal -->
+    <!-- The theme's face at a small size: the QR pages', the Time Zone caption, page notes, and Now Playing's info rows,
+         their names in the ink and their values in this grey, final in each half -->
+    <element name="info" font="classic-light" font_size="17" light.value="#8e9196" dark.value="#8a8a8a"/>
+    <!-- Internet Radio's cover under the slanted art (tools/art.py station): a slate gradient, a light band, a white mast -->
+    <element name="station" stops="#94a2a5 0, #6b7584 100" mast="#ffffff 0, #f3f5f8 45, #c0c8ca 100" band_a="13" shadow_a="85"/>
   </view>
   <!-- Home's rows: the text 20 px in, the white chevron. Where no cover shows, Split's pane: one flat colour (no light
        across it, no shadow down its left edge), slate on paper, and on black the dark bar's #1c1c1c, the note (note.svg, at note_x, note_y in the pane) and the queue's count in white,
        centred on the pane's first count_w columns, its 24 px line box at count_y. The pane follows the highlighted row:
-       a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is. Its colour is stated at 0 and 100,
-       as a stops list must end at 100 -->
+       a row's icon (tools/art.py) at icon_x, icon_y, its caption where the count is; on Streaming's list the service's icon, svc_px square at svc_x, svc_y. Its colour is stated at 0 and 100,
+       as a stops list must end at 100. Its first stop also fills Classic's own full-screen pages (navigation.c paint_page) -->
   <view name="home">
     <element name="rows" top="0" text_x="20" font="classic-light" font_px="27" full_row="375" label_end_split="20" label_end_full="33" caps="0"/>
     <element name="chevron" visible="1" x="168"/>
     <element name="pane" light.stops="#63717b 0, #63717b 100" dark.stops="#1c1c1c 0, #1c1c1c 100" light_a="0" shadow="#000000" shadow_w="0"
              shadow_a="116 100 93 86 79 73 68 62 56 50 44 39 34 28 24 19 16 13 10 8 6 4 3 2 1"
-             icon_x="43" icon_y="67" note_x="40" note_y="57" count_y="185" count_w="182" count_px="27"/>
+             icon_x="43" icon_y="67" note_x="40" note_y="57" count_y="185" count_w="182" count_px="27" svc_x="46" svc_y="62" svc_px="96"/>
+  </view>
+  <!-- page_list's rows (the Library's Shuffle, Most Played, Era, card apps...): 32 px, or Songs' two lines at 52 with a
+       detail, their boxes holding the fonts and centring them where Songs' do; the bar holds the title, so no title row -->
+  <view name="page">
+    <element name="rows" height="32" detail_height="52" text_x="20" title_y="-1" title_h="28" detail_y="28" detail_h="18"/>
+    <element name="title" height="0"/>
   </view>
   <!-- a settings row is its title with the value right-aligned -->
   <view name="settings"><element name="values" text="1"/></view>
+  <view name="volume"><element name="panel" painter="classic-light"/></view>
+  <!-- The confirm control's two forms, the hold menu over the page, the toast and small dialogs -->
+  <view name="dialog"><element name="confirm" painter="classic-light"/></view>
+  <!-- Its own pages: Quick Settings, the slider pages, the rating, T9 and Search, Set Time and Date, the message
+       screens, the lock info screen, Cover Flow's flip -->
+  <view name="pages"><element name="own" painter="classic-light"/></view>
   <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>
@@ -105,4 +154,17 @@
     <value label="Off" set="classic-light-text"/>
     <value label="On" set="classic-light"/>
   </option>
+  <!-- How things move. A window kind with no ms keeps its asset's hint, or none: pages open as Minimal's do. The selection jumps, with no glide and no bump. Cover Flow's step follows its goal: under easing="follow",
+       ms is the follow's time constant, not the run's length. -->
+  <view name="motion">
+    <element name="page" ms="120" easing="cubic_out"/>
+    <element name="swap" ms="120" easing="linear"/>
+    <element name="inplace" ms="120" easing="cubic_out"/>
+    <element name="step" ms="200" easing="sin_inout"/>
+    <element name="step_fast" ms="120" easing="sin_inout"/>
+    <element name="coverflow_step" ms="81" easing="follow"/>
+    <element name="coverflow_step_fast" ms="81" easing="follow"/>
+    <element name="recall" ms="0"/>
+    <element name="bump" px="0"/>
+  </view>
 </theme>

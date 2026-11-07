@@ -43,7 +43,7 @@ class DSP(C.Structure):
 def compile_host(tmp, name, *sources):
     path = tmp/name
     subprocess.run(['cc', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
-                    '-shared', '-fPIC', *map(str, sources), '-lm', '-o', str(path)], check=True)
+                    '-Wno-unused-result', '-shared', '-fPIC', *map(str, sources), '-lm', '-o', str(path)], check=True)  # glibc's fortified system()
     return C.CDLL(str(path))
 
 def library(tmp):
@@ -429,15 +429,16 @@ widget_to_local on_wm_keyup_fun
 #define stock_canvas_set_fill_color canvas_set_fill_color
 """
 SHIM = r"""
-static struct { int parent, y, h, bg; char text[400]; handler click, destroy, keyup, change, focus, down, move, up, action; void *ctx; } w[4096];
+static struct { int parent, x, y, h, bg, px; char text[400]; handler click, destroy, keyup, change, focus, down, move, up, action; void *ctx; } w[4096];
 static int count = 1, timers, removed, backs, chevrons[4096];
 static int (*timer_fn)(const void *);
 volatile unsigned char g_equalizer_flag, g_backlight_status = 1;
 static int stock_eq_calls;
 int stock_eq_trampoline(int mode) { ++stock_eq_calls; return mode; }
 int shim_chained(void) { return stock_eq_calls; }
+int client_h(void) { return 290; }
 static void *make(void *parent, int h) {
-    ++count; w[count].parent = (int)(long)parent; w[count].h = h; w[count].y = 0;
+    ++count; w[count].parent = (int)(long)parent; w[count].h = h; w[count].x = w[count].y = w[count].px = 0;
     w[count].text[0] = 0; chevrons[count] = 0; w[count].click = w[count].change = w[count].focus = w[count].down = w[count].action = 0; w[count].bg = 0; return (void *)(long)count;
 }
 /* The value menu's edit: its text, the keyboard it asks for, whether it took focus; its selection, as
@@ -586,7 +587,25 @@ static int rows_bottom;
 void *list_item_create(void *p, int x, int y, int ww, int h) { void *r = make(p, h); w[(long)r].y = y; rows_bottom = y + h; return r; }
 int shim_row0_y(void) { for (int i = 2; i <= count; ++i) if (w[i].click) return w[i].y; return -1; }
 int shim_rows_bottom(void) { return rows_bottom; }
-void *label_create(void *p, int x, int y, int ww, int h) { return make(p, h); }
+void *label_create(void *p, int x, int y, int ww, int h) { void *r = make(p, h); w[(long)r].x = x; return r; }
+/* The theme's rows: a theme with its own pitch has its own text column and, as navigation.c's
+ * theme_font, its own font size; the stock pitch's themes write none. */
+static int shim_page_row = 48;
+void shim_theme_rows(int h) { shim_page_row = h; }
+int page_h(int h) { return h == 48 ? shim_page_row : h; }
+int page_x(void) { return shim_page_row == 48 ? 36 : 20; }
+int theme_font(void *x, int role, int was) { if (shim_page_row != 48) w[(long)x].px = 27; return 0; }
+/* The label starting with text on a row, or index i of the row reading it: x, px (0: the style's), height. */
+int shim_label(const char *text, int i, int what) {
+    for (int p = 2; p <= count; ++p)
+        for (int k = p + 1; k <= count; ++k)
+            if (w[p].click && w[k].parent == p && !strncmp(w[k].text, text, strlen(text))) {
+                for (int l = k; l <= count; ++l)
+                    if (w[l].parent == p && !i--) return what == 0 ? w[l].x : what == 1 ? w[l].px : w[l].h;
+                return -1;
+            }
+    return -1;
+}
 /* coverflow.c's chevron: a textless child, marked. */
 void row_into(void *item, int h) { chevrons[(long)make(item, h)] = 1; }
 /* Whether the row reading text (as shim_click finds it) ends in list_into. */
@@ -635,6 +654,7 @@ int widget_get_prop_int(void *x, const char *k, int d) {
 }
 int widget_set_prop_int(void *x, const char *k, int v) {
     if (!strcmp(k, "style:normal:bg_color")) w[(long)x].bg = v;
+    if (!strcmp(k, "style:normal:font_size")) w[(long)x].px = v;
     if ((long)x == edit_widget && !strcmp(k, "select_none_when_focused")) select_none = v;
     if (!strcmp(k, "_ringnav_index")) selection = v;
     if (!strcmp(k, "virtual_h")) virtual_h = v;
@@ -1068,6 +1088,26 @@ def editor_check(lib, tmp):
     click('Batch 0256.peq'); click('Delete Batch 0256.peq? Confirm')
     assert not (saved/'Batch 0256.peq').exists() and active.read_bytes() == before
     ui.shim_return(); ui.shim_return()
+    # Under a theme's 28 px rows: the rows step 28 on its text column, the curve's head is whole rows
+    # (the last row at the top of the list is not clipped), the list stays under the 48 px caption,
+    # and every label's box holds its font.
+    ui.shim_close(); ui.shim_theme_rows(28); advanced()
+    assert ui.shim_list_height() == 224 and ui.shim_h(ui.check_graph()) == ui.shim_row0_y() == 112
+    assert ui.shim_row_y(b'EQ per Output') == ui.shim_row_y(b'Enabled') + 28
+    assert ui.shim_row_y(b'2  ') == ui.shim_row_y(b'1  ') + 28 == 112 + 28 * 8
+    assert ui.shim_virtual_h() == ui.shim_rows_bottom() and (ui.shim_rows_bottom() - 112) % 28 == 0
+    px = lambda text, i=0: ui.shim_label(text, i, 1)
+    assert ui.shim_label(b'Balance', 0, 0) == ui.shim_label(b'1  ', 0, 0) == 20
+    assert px(b'Reset to defaults') == px(b'Balance') == px(b'Balance', 1) == 27
+    assert (px(b'1  '), px(b'1  ', 1)) == (16, 20)  # the longest caption leaves room for the gain
+    assert ui.shim_label(b'Balance', 0, 2) == ui.shim_label(b'1  ', 1, 2) == 28
+    # The long texts stay at the style's 20 px, Auto's value at 15 beside the wider caption.
+    assert px(b'Presets', 1) == 20
+    click('Preamp'); assert title() == 'Preamp' and ui.shim_label(b'Auto (', 0, 1) == 20
+    click('Auto ('); assert title() == '' and px(b'Preamp', 1) == 15
+    # A picker opens centred on the pitch: its list 224 high, 8 rows.
+    click('Balance'); assert (ui.shim_selection() * 28 - 98) == ui.shim_offset() > 0
+    ui.shim_return(); ui.shim_close(); ui.shim_theme_rows(48); advanced()
     print('EQ preset pages: all 8,850 imports, sorting, page boundaries, navigation, save/replace, load and deletion passed.')
     eq3_editor_check(lib, ui, tmp)
 

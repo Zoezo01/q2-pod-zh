@@ -308,7 +308,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
       <tr><td>Open the EQ</td><td>In quick settings, hold <b>Playback</b>.</td></tr>
       <tr><td>Skip to a point in a song</td><td>On Now Playing, double-press Centre (press once with <b>Single Press Scrub</b> on), then turn: 5 s per tick. Double-press, Return, touch or wait 3 s to jump.</td></tr>
       <tr><td>Search your songs</td><td>At the top of Library (Local Songs), pull down until “Release to search” appears. In <b>Theme: Classic</b>, choose <b>Search</b>, the first row.</td></tr>
-      <tr><td>Move quickly through Cover Flow</td><td>Turn fast: Album and Artist sorts jump one populated initial per tick. Sort and Refresh remain individual stops.</td></tr>
+      <tr><td>Move quickly through Cover Flow</td><td>Keep turning fast: after a moment, Album and Artist sorts go by initials, each letter shown big. Slow down to go album by album again. Sort and Refresh remain individual stops.</td></tr>
       <tr><td>Open quick settings</td><td>Pull down from the top edge of the screen. In the pull-down, the wheel sets the brightness. Tap Wi-Fi or Bluetooth to toggle it; hold its icon to open its settings.</td></tr>
       <tr><td>Answer a pop-up</td><td>Turn the wheel to move between OK and Cancel.</td></tr>
     </tbody>
@@ -371,7 +371,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     <li>On the Q2, choose <b>Library → Update Local Music</b>.</li>
   </ol>
   <p>These folders at the card’s root each add their own <b>Library</b> entry: <code>Podcasts/</code>, <code>Audiobooks/</code>, <code>Photos/</code>, <code>Books/</code> and <code>Videos/</code>; <code>EQ/</code> holds EQ presets to import. Other folder names, such as <code>Images/</code>, aren’t picked up. See <a href="#card">What goes on the microSD card</a> for supported formats.</p>
-  <p>Update Local Music adds up to 65,000 songs (stock stopped at 20,000), so with a larger library run it again after updating.</p>
+  <p>Update Local Music no longer stops at 20,000 songs, so with a larger library run it again after updating. Shanling rates the Q2 for 20,000 songs: a much larger library takes longer to scan and browse, and isn’t guaranteed to work.</p>
   <p><b>A large library:</b> Update Local Music goes through every folder on the card before it starts counting songs, so with tens of thousands of songs or a slow card it can stay at <b>No.0</b> for a long time. Leave it running; Return stops it. To add new music later without going through the whole card again, choose <b>System settings → Update Library → Scan Folders</b>, tick the folders you copied to, and press <b>Scan</b>. Open a folder, such as <code>Music</code>, to tick the artist or album folders inside it: ticking the whole folder reads every song in it again, which takes about as long as a full update.</p>
   <p><b>Finding a song:</b> in <b>Library</b>, pull the list down from the top until “Release to search” appears, then type. In Cover Flow, turn fast to jump one initial at a time.</p>
   <p><b>Hiding a folder:</b> to keep a folder out of <b>Songs</b>, <b>Albums</b>, <b>Artists</b>, Cover Flow and library shuffle, put an empty file named <code>database.ignore</code> in it and run <b>Update Local Music</b> again. Its songs still play from Folder view and from playlists, so a folder of singles or needledrops stays reachable without filling your library. An empty <code>database.unignore</code> in a subfolder lets that subfolder back in. Name the markers <code>.database.ignore</code> and <code>.database.unignore</code>, with a leading dot, if other players shouldn’t list them. Remove the marker and update the library to show the folder again.</p>
@@ -439,6 +439,17 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   <div class="sec">
   <h2 id="playlists">Playlists and Long Songs</h2>
   <p>In <b>Library → Playlists</b>, <b>New Playlist</b> creates a local playlist. A playlist’s <b>More</b> menu (its three dots, or hold <b>Play/Pause</b> on it and choose <b>More…</b>) has <b>Rename</b>, <b>Delete Playlist</b> and <b>Edit Playlist</b>.</p>
+  <p class="task">In Classic, <b>New Playlist…</b> and <b>Edit Playlists…</b> head the list; the list opens on its first playlist, or the one you last chose. <b>Edit Playlists…</b> marks playlists:</p>
+  <table>
+    <thead><tr><th>To</th><th>Do this</th></tr></thead>
+    <tbody>
+      <tr><td>Mark a playlist</td><td>Centre or a tap on it. Again clears the mark.</td></tr>
+      <tr><td>Mark them all</td><td><b>Select All</b>. Once every playlist is marked it reads <b>Deselect All</b>, which clears them.</td></tr>
+      <tr><td>Export or delete the marked</td><td><b>Export</b> or <b>Delete</b>, which name how many are marked. Delete asks first.</td></tr>
+      <tr><td>Import playlists</td><td><b>Import Playlists</b>.</td></tr>
+      <tr><td>Finish</td><td><b>Done</b> or Return.</td></tr>
+    </tbody>
+  </table>
   <p class="task">While editing a playlist:</p>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
@@ -451,7 +462,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     </tbody>
   </table>
   <p>Changes apply the next time the playlist loads; the queue that’s playing keeps its order. Only local playlists can be edited.</p>
-  <p>Playlist import, a stock feature, reads M3U files only from the <code>_explaylist_data</code> folder at the card’s root, the folder playlist export creates. Export a playlist once to create it, or make the folder yourself, then put your <code>.m3u</code> files in it and choose <b>Library → Playlists → Import playlist</b>.</p>
+  <p>Playlist import, a stock feature, reads M3U files only from the <code>_explaylist_data</code> folder at the card’s root, the folder playlist export creates. Export a playlist once to create it, or make the folder yourself, then put your <code>.m3u</code> files in it and choose <b>Import</b> in <b>Library → Playlists</b>. In Classic it’s in <b>Edit Playlists…</b>.</p>
   <ul>
     <li><b>The whole folder:</b> import takes every <code>.m3u</code> in it. To import only some, keep just those in the folder. A playlist with the same name is replaced, not doubled.</li>
     <li><b>One song per line:</b> paths such as <code>A:\Music\Artist\Album\01 Song.m4a</code>, as iTunes exporters write them, or <code>/mnt/mmc/Music/…</code>.</li>
@@ -759,7 +770,10 @@ http://stream.radioparadise.com/mp3-128</pre>
   <div class="sub">
   <h3>M4B audiobooks</h3>
   <p>Unprotected <code>.m4b</code> files play as they are: copy the original files onto the card, with no renaming or conversion needed. Extensions are case-insensitive. M4B files anywhere on the card resume at any duration and don’t count toward Most Played or scrobbles. <code>Audiobooks/</code> adds a Library shortcut, but is optional for M4B. Embedded artwork uses the MP4 cover reader, with folder artwork as the fallback. M4B audiobooks stay out of Cover Flow and Library Artists and Albums.</p>
-  <p>For embedded M4B chapters, hold Play/Pause on Now Playing and choose <b>Chapters</b>. Turn the wheel and press Centre, or tap a chapter, to jump to its start and return to Now Playing. The list starts on the current chapter and shows titles and start times. Missing titles appear as “Chapter N”; books without chapters show “No embedded chapters”. Chapter jumps use whole seconds and preserve pause. Previous and Next keep their usual behavior.</p>
+  <h3>Chapters</h3>
+  <p>To see a book’s chapters, hold Play/Pause on Now Playing and choose <b>Chapters</b>. It’s there for any <code>.m4b</code>, and for other files in <code>Podcasts/</code> or <code>Audiobooks/</code>, such as an MP3 with chapters.</p>
+  <p>The list starts on the current chapter and shows titles and start times. Turn the wheel and press Centre, or tap a chapter, to jump to its start. Missing titles appear as “Chapter N”. Books without chapters show “No embedded chapters”. Chapter jumps use whole seconds and keep pause. Previous and Next work as usual.</p>
+  <p>On one track of an <code>.m4b</code> with a CUE sheet, the list shows that track’s chapters, timed from its start.</p>
 
   <h3>Books with a CUE sheet</h3>
   <p>A book split into chapters by a <code>.cue</code> sheet remembers one place for the whole book, if it’s an <code>.m4b</code> or sits in <code>Podcasts/</code> or <code>Audiobooks/</code>. Picking a chapter plays that chapter from its start, and it becomes the book’s place once you’re past its first 30 seconds. To continue where you stopped, open the book’s chapters and hold Play/Pause on any of them: <b>Resume</b>, at the top of the menu, plays from the right chapter and position. Music albums with a CUE sheet don’t resume.</p>

@@ -157,6 +157,7 @@ static struct {
 static struct {
     void *page, *station, *artist, *song, *info, *elapsed, *heart;
     unsigned timer, leave, seen; /* seen: rd.serial the heart shows */
+    int ipod;                    /* Classic's layout (stream_ipod) */
 } np __attribute__((section(".scratch")));
 
 static void list_free(list_t *l) {
@@ -394,6 +395,8 @@ static void np_refresh(void) {
     memcpy(artist, rd.title, a);
     artist[a] = 0;
     set(np.station, rd.list.n ? name_of(&rd.list, rd.at) : "");
+    if (np.ipod)
+        theme_font(np.station, ROLE_NP, FONT_ROW); /* the local page's title; by its text */
     set(np.artist, artist);
     if (np.seen != rd.serial && rd.list.n) {
         list_t favs = { 0 };
@@ -416,8 +419,11 @@ static void np_refresh(void) {
         tk_snprintf(t, sizeof t, rd.bitrate[0] ? "%s  %s kbps" : "%s", rd.codec, rd.bitrate);
     set(np.info, t);
     t[0] = 0;
-    if (rd.pid && rd.since)
-        toolsTimeItoa(t, (int)((unsigned)(now_ms() - rd.since) / 1000)); /* 32-bit: 49 days */
+    int sec = rd.pid && rd.since ? (int)((unsigned)(now_ms() - rd.since) / 1000) : -1; /* 49 days */
+    if (sec >= 0) toolsTimeItoa(t, sec);
+    /* Classic: boxes for "-59:59" until the hour, then the hours': the running time only grows, so
+     * they never shrink while a stream plays; the next one starts on the minutes' again */
+    if (np.ipod) ipod_times(np.elapsed, 0, 0, sec < 3600 ? 600 : sec);
     set(np.elapsed, t);
 }
 
@@ -449,13 +455,16 @@ static int np_heart(void *ctx, void *event) {
     return 0;
 }
 
-/* Spotify's Now Playing layout, the radio's icon for the art, and local Now Playing's heart. The wheel and Centre stay stock's:
- * the volume, and the screen. */
+/* Spotify's Now Playing layout, the radio's icon for the art, and local Now Playing's heart. The
+ * wheel and Centre stay stock's: the volume, and the screen. Under Classic the local page's
+ * (stream_ipod), as an album: the build's station cover slanted, the station, artist and song in
+ * the title's, artist's and album's rows, the stream in "3 of 12"'s, the running time left of a bar
+ * that is always full, the heart. */
 static void np_open(void) {
     if (np.page || !(np.page = page_open("radionp_page", np_closed, np_keyup))) return;
     void *page = np.page;
-    widget_set_text_utf8(label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY),
-                         "Internet Radio");
+    void *name = label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_set_text_utf8(name, "Internet Radio");
     void *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
@@ -475,6 +484,12 @@ static void np_open(void) {
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);
     np.seen = ~rd.serial;
+    void *rows[4] = { np.station, np.artist, np.song, np.info };
+    np.ipod = stream_ipod(art, rows, np.elapsed, 0, 0, np.heart);
+    if (np.ipod) {
+        widget_set_visible(name, 0, 0); /* the title bar names the page */
+        image_base_set_image(art, "classic_light_station");
+    }
     np.timer = timer_add(np_tick, 0, 500);
     np_refresh();
 }
@@ -513,7 +528,7 @@ void radio_search(void) {
     if (ui.view) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     widget_destroy_children(ui.page), ui.view = 0; /* the box alone: the keyboard leaves no room for the rows */
     ui.edit = edit_create(ui.page, "text", 2, 26);
-    widget_set_prop_str(ui.edit, "tips", "Search stations");
+    t9_box(ui.page, ui.edit, "Search stations");
     widget_on(ui.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(ui.edit, EVT_IM_ACTION, searched, 0);
     widget_on(ui.edit, EVT_BLUR, search_left, 0);
@@ -541,8 +556,9 @@ static void show(int level) {
     } else {
         const list_t *l = level == PICK ? &ui.pick : &ui.list;
         n = l->n;
-        ui.view = page_list(ui.page, ui.page, 0,
-                            level == PICK ? ui.genre ? "Genres" : "Countries" : ui.caption, n, 48);
+        const char *caption = level == PICK ? ui.genre ? "Genres" : "Countries" : ui.caption;
+        ui.view = page_list(ui.page, ui.page, 0, caption, n, 48);
+        if (!n && level == STATIONS) page_empty(ui.page, ui.favs ? "Favourites" : "Internet Radio");
         for (int i = 0; i < n; ++i)
             if (level == PICK)
                 page_row_into(ui.view, i, name_of(l, i), pick_click);
@@ -557,7 +573,7 @@ static void note(const char *caption) {
     if (ui.view && !ui.note) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     ui.note = 1;
     ui.view = ui.edit = 0;
-    page_list(ui.page, ui.page, 0, caption, 0, 48);
+    page_list_or(ui.page, ui.page, "Internet Radio", caption, 0, 48);
 }
 
 static void fetch_cancel(void) {

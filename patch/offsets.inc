@@ -14,6 +14,8 @@
 #define IM_KEYBOARD                                                                                \
     0x0c /* the default input method's open keyboard window, 0 once it closes (@0x68bbec) */
 #define W_EMITTER 0x60
+#define W_ASTYLE 0x64 /* widget_update_style reads it at 0x65e230; 0x74 is the vtable */
+#define ALIGN_H_LEFT 2 /* stock's align_h_t, in a style's text_align_h */
 #define W_CHILDREN_LAYOUT 0x68
 #define CHILDREN_LAYOUT_VTABLE 0x10
 #define DEFAULT_LAYOUT_X_MARGIN 0x18
@@ -30,6 +32,7 @@
 #define VIEW_CONTENT_H 0x7c     /* scroll_view content height (same slot) */
 #define SCROLL_X 0x80           /* scroll_view horizontal offset */
 #define TABLE_TOP 0x80          /* table_client viewport top (same slot) */
+#define TABLE_LOAD_DATA 0xe4    /* table_client on_load_data, its ctx at 0xe0 (table_client_set_on_load_data) */
 #define SCROLL_Y 0x84           /* scroll_view viewport top */
 #define VIEW_HORIZONTAL 0x90    /* scroll_view xslidable */
 #define VIEW_VERTICAL 0x91      /* scroll_view yslidable */
@@ -142,15 +145,41 @@
 /* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, navigation.c paint_scrubber),
  * fitted to Apple's own 320 x 240 capture: the art's far edge SLANT_FAR/256 of its near one (118 of
  * 135 px); its reflection from SLANT_REFLECT_A/256 fading out over SLANT_REFLECT_PCT of the
- * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from SCRUB_REFLECT_A/256
- * over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX (tools/ipod.py NP_IPOD_TIME_W). */
+ * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from
+ * SCRUB_REFLECT_A/256 over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX, the largest
+ * whose line fits their NP_IPOD_TIME_H box, NP_IPOD_TIME_GAP from the bar, in
+ * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59", the build's
+ * layout, NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59" (tools/ipod.py measures them).
+ * The boxes' outer edges stay; the bar takes what they leave. */
 #define SLANT_FAR 224
 #define SLANT_REFLECT_A 84
 #define SLANT_REFLECT_PCT 22
-#define NP_BAR_IPOD 13
+#define NP_BAR_IPOD 20
 #define SCRUB_REFLECT_A 38
-#define SCRUB_REFLECT_ROWS 5
-#define NP_IPOD_TIME_PX 15
+#define SCRUB_REFLECT_ROWS 6
+#define NP_IPOD_TIME_PX 21
+#define NP_IPOD_TIME_H 21 /* the times' box over the bar's rows, as near centred as an odd box goes */
+#define NP_IPOD_TIME_W1 35
+#define NP_IPOD_TIME_W2 43
+#define NP_IPOD_TIME_W 56
+#define NP_IPOD_TIME_GAP 8
+#define NP_SCRUB_MARK 8 /* the scrub's diamond: 17 rows, one in from the bar's top line, two from its foot */
+/* Classic's Spotify and Internet Radio Now Playing take the local page's np_ipod places, in the
+ * window (navigation.c stream_ipod; tools/ipod.py playing_page checks them): the art NP_IPOD_ART
+ * square at SPOT_ART_X, NP_IPOD_ART_Y, its box its reflection's room taller; the title's row at
+ * NP_IPOD_TEXT_X, NP_IPOD_TEXT_Y, the artist's, album's and "3 of 12"'s 34, 62 and 90 under it; the
+ * heart at NP_IPOD_FAV_X, _Y; the bar from NP_IPOD_BAR_X to the mirrored edge (the "-9:59" boxes';
+ * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' NP_IPOD_TIME_H boxes
+ * beside it, centred on its rows. */
+#define NP_IPOD_ART 178
+#define NP_IPOD_ART_Y 22
+#define NP_IPOD_ART_DROP 10 /* the local page's art this far under the first row clear of the glass */
+#define NP_IPOD_TEXT_X 206
+#define NP_IPOD_TEXT_Y 38
+#define NP_IPOD_FAV_X 300
+#define NP_IPOD_FAV_Y 165
+#define NP_IPOD_BAR_X 66
+#define NP_IPOD_BAR_Y 245
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
 static inline int arc_out(int r, int y) {
     int d = 2 * (r - y) - 1, v = (4 * r * r - d * d) * 64, s = 0;
@@ -203,6 +232,8 @@ static inline int arc_out(int r, int y) {
 /* iPod: the full-screen art (stock's bigcover_page) shows the song name BC_MS, then it and its shade
  * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
+#define QS_SWIPE_STOCK 295 /* stock's handler (0x4a0cc0): Quick Settings' swipe up starts from here down, */
+#define QS_SWIPE_Y 250     /* and Classic Light's from here, its slider above stock's line */
 /* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x52bffc) counts it down while a
  * song plays there and opens bigcover_page at 0, then sets it back to BC_IDLE_FULL (10 s). */
 #define BC_IDLE 0x99f660
@@ -230,6 +261,7 @@ static inline int arc_out(int r, int y) {
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
 #define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
+#define STREAM_BG 0x52ec40 /* Streaming's, the same */
 /* Split's cover pans (docs/ipod.md#home): zoomed DRIFT_ZOOM_PCT, each axis a linear ping-pong of
  * its own period across the zoom's margin (about 1.5 px/s on a square cover, as iPod.js's), drawn
  * at sub-pixel positions every DRIFT_TICK_MS, a step at most DRIFT_MAX_STEP_MS. A cover whose zoomed
@@ -284,6 +316,9 @@ static inline int arc_out(int r, int y) {
 #define NP_CAPS_PX 15
 #define NP_CAPS_INSET 2
 #define PAGE_SLIDE_MS 120
+#define GLIDE_MS 300 /* a remembered row's recall glide */
+#define HOME_SLIDE_MS 200 /* Cover Flow's and the carousel's wheel step */
+#define HOME_FAST_SLIDE_MS 120 /* ... and within HOME_FAST_WINDOW_MS of the last */
 #define NP_ARTIST_RGB 0xcccccc
 /* Now Playing's text (local, Spotify and Radio): the title over the artist and album, the album
  * lighter than the other grey text so it reads at a glance. */
@@ -291,13 +326,21 @@ static inline int arc_out(int r, int y) {
 #define NP_META_PX 18
 #define NP_ALBUM_RGB 0xbbbbbb
 /* A line too long to fit holds MARQUEE_HOLD_MS at its start and its end: the Minimal album marquee
- * (navigation.c) and the stock title and artist labels' delay and lull (tools/ipod.py,
+ * (navigation.c) and every stock hscroll_label's delay and lull (ringnav_hscroll_start,
  * ringnav_hscroll_lull). */
 #define MARQUEE_HOLD_MS 1500
-#define MARQUEE_PASSES 3 /* the selected row's title: navigation.c marq_poll */
+#define MARQUEE_PASSES 3        /* the selected row's title: navigation.c marq_moved */
 #define HSCROLL_ONLY_FOCUS 0x78 /* hscroll_label_t, a char: hscroll_label_set_only_focus */
-#define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
+#define HSCROLL_LOOP 0x7a       /* a char: a pass ends on its lull and starts again (0x5e8a20) */
 #define HSCROLL_YOYO 0x7b       /* a char: it scrolls back instead of snapping (0x5e8a44) */
+#define HSCROLL_DELAY 0x88      /* ms its start waits before the first step (hscroll_label_start) */
+#define HSCROLL_SPEED 0x8c      /* a float, px per ms; 0 runs a pass in its duration (0x5e8564) */
+#define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
+#define HSCROLL_TIMER 0xa4      /* its running timer's id; 0 stopped (stock paints the ellipsis) */
+/* Every pass's fastest pace, 0.05f px per ms: stock Now Playing's title and artist (0x52b8d4); its
+ * set_hscroll_label_attribute sets 0.1, some pages 0.2. As float bits, which order as their values
+ * for any positive float. */
+#define HSCROLL_PACE 0x3d4ccccd
 #define TIMER_CTX 0x20          /* timer_info_t.ctx: stock's hscroll lull reads its label there */
 /* iPod Now Playing's lyrics (lyrics.c, docs/ipod.md#lyrics): a line of one row is LYRIC_SLOT high,
  * its text and the gap to the next, a longer one more; the first after a blank LYRIC_SLOT
@@ -357,6 +400,7 @@ static inline int arc_out(int r, int y) {
 #define LIBRARY_ROW_ICON_X 0x524944    /* its icon x (art_inset) */
 #define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x9272c0 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
+#define IMAGE_DRAW_FILL 8              /* "fill", the same table: stretched to the box */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a
  * LETTER_BOX square of the stock dark surface at LETTER_ALPHA, centred over the list. */
 #define LETTER_BOX 80
@@ -446,6 +490,7 @@ static inline int arc_out(int r, int y) {
 #define LYRIC_PUSH_DETENTS 2
 #define LYRIC_PUSH_MS 1000
 #define BAR_VALUE 0x7c /* scroll_bar native value, maintained by list/table scroll callbacks */
+#define BAR_MAX 0x78 /* scroll_bar_set_params: the whole content, at least the bar's own h */
 #define KEY_CENTER 218
 #define KEY_PREV 172
 #define KEY_NEXT 173
@@ -518,6 +563,7 @@ static inline int arc_out(int r, int y) {
 #define SLIDE_EASING 8          /* stock scroll_to easing */
 #define ANIM_EASING 0x38 /* widget_animator_init (0x665eb4) stores easing_get(type) here */
 #define EASE_CUBIC_OUT 5 /* AWTK easing_type_t: starts at 3x the mean speed, then decelerates */
+#define EASE_FOLLOW 24 /* past AWTK's 24: coverflow.c's follow, never handed to easing_get */
 #define EVT_ANIM_END 0x125
 
 /* Play/Pause hold queue menu (docs/internals.md). AWTK input_device_status lives at
@@ -553,6 +599,15 @@ static inline int arc_out(int r, int y) {
 /* localmusic/playlist_page's add mode (g_play_info + 0x7894): non-zero while it is Add to Playlist;
  * 0 when browsing the Playlists list, whose rows' trailing dots open playlistsmore_page. */
 #define PLAYLIST_ADD_MODE 0xa27894
+#define PL_RENAME_ROW 0xa278a0 /* the playlist row playlistsmore_page_init saved (0x4b3980) */
+/* The artist page's navbar title (g_play_info + 0x7680, 512 bytes): localmusic_artistinfo_page_init
+ * copies g_local_classinfo_save + 0x10d into it, which load_artistinfo_list wrote as "%s" of the
+ * record's REC_ARTIST: "(null)" for an artist with no name. Each tab's navbar build (0x4aad10)
+ * reads it after load_localartist_list. */
+#define ARTIST_TITLE 0xa27680
+/* g_allselect_flag: playlist_page's Select All (0x4b1b88) toggles on it; a row's mark sets it to
+ * whether every row is now marked (0x4b1e38). */
+#define G_ALLSELECT_FLAG 0xa38ac0
 /* Marked folders stay indexed for playlists; the wrappers expand this before grouping. */
 #include "library_scope.h"
 #define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b' and " LIBRARY_SCOPE_TOKEN
@@ -584,10 +639,14 @@ static inline int arc_out(int r, int y) {
 #define TAGLIB_PROPERTY_FREE 0xb700
 /* Now Playing's ⋯ page (playermore_page_init @0x528c14): its 8 rows' kinds by position, which the
  * row click (0x528a70) reads at the button name's atoi, and Download Cover & Lyrics' kind
- * (get_playmore_showinfo @0x501208: player_onlinesearch). */
+ * (get_playmore_showinfo @0x501208: player_onlinesearch). Kinds 2 to 6 open a screen (Queue, Add to
+ * Playlist, Download Cover & Lyrics, Album and Artist info); 0 A-B Repeat, 1 Speed and 7 Delete's
+ * confirm don't. */
 #define PLAYMORE_ROWS 0x7728a0
 #define PLAYMORE_COUNT 8
 #define PLAYMORE_SEARCH 4
+#define PLAYMORE_INTO_FIRST 2
+#define PLAYMORE_INTO_LAST 6
 #define MCL_LASTPOS 0xa3be90    /* shuffle "previous" index, -1 none */
 #define MCL_PREPOS 0xa3be94
 #define MCL_PRELOAD 0xa3be98    /* 1 preloaded, 0 none, -1 closed for this track */
@@ -620,6 +679,9 @@ static inline int arc_out(int r, int y) {
 #define BOOTVOL_CHANGING 0x4b48f4 /* slider_bootvol's EVT_VALUE_CHANGING */
 #define BOOTVOL_CHANGED 0x4b4300  /* slider_bootvol's EVT_VALUE_CHANGED */
 #define SCAN_THREAD 0xa271d8
+/* byte, 1 for the whole library's scan, 0 for a folder's (the same init): our reading of stock's
+ * code, not checked on a device */
+#define SCAN_WHOLE 0xa271d0
 #define SCAN_DONE 0xa271d4
 /* Coverflow text: every label, captions included, sits CF_EDGE from the sides, where the lowest
  * track row's text clears the bottom corners. Album names and artists scroll
@@ -631,16 +693,18 @@ static inline int arc_out(int r, int y) {
 #define CF_ARTIST_PX 20
 #define CF_ARTIST_H 28
 #define CF_GREY 0xffaaaaaa /* color_t #AAAAAA */
+#define CF_GREY_BOLD 0xff8a8a8a /* Classic Light's dark half */
 /* Coverflow depth (docs/internals.md#coverflow-depth): the covers are drawn in software into one
  * CF_VIEW_W x CF_VIEW_H frame, the top of the client area. The selected cover is ART_SIZE (160)
  * square with its top CF_TOP from the frame's; side covers turn CF_ANGLE (60) degrees inward (the
  * sine table in coverflow.c), sit CF_X1 px from the centre, then CF_XS apart, CF_Z1 px and then
  * CF_ZS more behind it, seen from CF_EYE px. Brightness (of 256) is 256 at the centre, CF_BRIGHT1
- * one cover out and CF_BRIGHT2 two out, reaching 0 three out. Each cover's reflection is
- * CF_REFLECT px high at native size, from CF_REFLECT_TOP (of 256) of its brightness down to black.
- * The wheel moves one album every CF_STRIDE px. Starting values, to be tuned together on the Q2. */
+ * one cover out and CF_BRIGHT2 two and three out, reaching 0 half a step past the third, as the row
+ * draws it while the wheel holds the covers. Each cover's reflection is CF_REFLECT px high at native
+ * size, from CF_REFLECT_TOP (of 256) of its brightness down to black: Classic's, so the frame runs
+ * to its end, under the caption. The wheel moves one album every CF_STRIDE px. */
 #define CF_VIEW_W 375
-#define CF_VIEW_H 210
+#define CF_VIEW_H 220 /* CF_TOP + 160 + CF_REFLECT, and a row to spare */
 #define CF_CX 187 /* the centre line lies between screen columns 186 and 187 */
 #define CF_TOP 13
 #define CF_EYE 300
@@ -650,9 +714,13 @@ static inline int arc_out(int r, int y) {
 #define CF_ZS 20
 #define CF_BRIGHT1 192
 #define CF_BRIGHT2 128
-#define CF_REFLECT 24
-#define CF_REFLECT_TOP 48
+#define CF_REFLECT 46
+#define CF_REFLECT_TOP 90
 #define CF_STRIDE 110
+#define CF_BOUNCE 5 /* an artist's last album: a step past kicks it 1/5 of a stride, then back */
+#define CF_ANGLE 60   /* a side cover's turn, degrees */
+#define CF_HORIZON 50 /* % down the cover its centre sits on the shared horizon */
+#define CF_THIRD 1    /* 1: the third out stays, gone half a step past it */
 #define CF_TEXT_Y 212 /* the album caption's top, under the frame; the artist follows */
 /* Touch on the covers (coverflow.c, docs/internals.md#coverflow-touch) */
 #define CF_DRAG_PX 90      /* finger travel per album: about the centre cover's own on screen */
@@ -665,7 +733,8 @@ static inline int arc_out(int r, int y) {
 #define CF_SETTLE_MS 280   /* a release with no flick settles on the nearest cover */
 #define CF_TAP_MS 320      /* a tapped side cover's glide to the centre */
 /* Photos (patch/photos.c, docs/internals.md#photos): under a 48px title, PH_COLS columns of
- * PH_TILE_W x PH_TILE_H tiles from x PH_GRID_X, three whole rows in the 240px below it, each a
+ * PH_TILE_W x PH_TILE_H tiles from x PH_GRID_X, three whole rows in the 240px below it (with the
+ * title in the bar, the view runs to the page's foot), each a
  * thumbnail of at most PH_THUMB_W x PH_THUMB_H centred in its tile, so the selection shows round
  * it. The viewer's screen-size copy fits PH_SHOT_W x PH_SHOT_H (the client area). PH_GREY marks a
  * thumbnail not made yet or a file that will not open. */

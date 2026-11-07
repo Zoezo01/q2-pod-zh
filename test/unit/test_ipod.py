@@ -2,6 +2,8 @@
 and its UI, style, PNG and code readers and patchers on small synthetic files."""
 import copy
 import dataclasses
+import math
+import re
 import shutil
 import struct
 import subprocess
@@ -302,13 +304,6 @@ def test_status_bar_battery_must_fit(monkeypatch):
         ipod.status_bar(bar())
 
 
-def test_classic_light_bar_room_stays_the_gates(monkeypatch):
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 97, wider than BATT_ROOM's 94 the payload's gate reads: safe
-    monkeypatch.setattr(ipod, 'BATT_ROOM', 99)
-    with pytest.raises(ValueError, match=r"^BATT_ROOM \d+ past the bar's room \d+$"):
-        ipod.status_bar(bar(), g=CLASSIC_LIGHT)
-
-
 def test_status_bar_battery_reach(monkeypatch):
     monkeypatch.setattr(ipod, 'BATT_PCT_W', 500)
     with pytest.raises(ValueError, match=r'^Status bar battery needs \d+px of \d+px$'):
@@ -410,8 +405,6 @@ def test_playing_page_text_column(page):
     assert title['style'] == 's_scrlabel_white20l'
     for s in STATES:
         assert title[f'style:{s}:font_size'] == str(ipod.NP_TITLE_PX)
-    hold = str(ipod.inc('MARQUEE_HOLD_MS'))
-    assert title['delay'] == title['lull'] == artist['delay'] == artist['lull'] == hold
     assert artist['style:normal:font_size'] == str(ipod.NP_META_PX) and artist['style:normal:text_align_h'] == 'left'
     assert artist['style:normal:text_color'] == f'#{ipod.inc("NP_ARTIST_RGB"):06X}'
     assert album['style:normal:text_color'] == f'#{ipod.inc("NP_ALBUM_RGB"):06X}'
@@ -476,12 +469,23 @@ def test_playing_page_classic_ipod():
     n, b, (x, _, w_, _) = named(root), named(base), ipod.with_geometry(g).NP_BAR
     lift, view, cover = ipod.NP_IPOD_LIFT, n['slide_view_view'][1], n['img_cover'][1]
     assert view[1] == b['slide_view_view'][1][1] - lift
-    top = g.bar + view[1] + cover[1]  # on screen: the first row whose corner clears the glass
+    top = g.bar + view[1] + cover[1] - ipod.inc('NP_IPOD_ART_DROP')  # on screen: NP_IPOD_ART_DROP under the first row whose corner clears the glass
     assert cover[0] == ipod.NP_MARGIN and cover[2:] == [ipod.NP_IPOD_ART, ipod.NP_IPOD_ART + ipod.NP_REFLECT]
     assert cover[1] > 0 and ipod.corner_x(top, 0) <= cover[0] < ipod.corner_x(top - 1, 0)
     assert n['slide_view'][1][3] == cover[1] + cover[3] <= view[3]
-    for k in ('label_lyricmsg', 'view_lrc', 'label_a', 'label_b', 'slide_indicator1'):
+    for k in ('label_lyricmsg', 'view_lrc', 'slide_indicator1'):
         assert n[k][1][1] == b[k][1][1] + lift, k
+    # the info page's rows, from the top row's end (the page's lift) to the dots, clear of the glass: each of stock's
+    # labels the name, left, and a <name>_value beside it, right-aligned and ellipsized, its right edge mirroring x
+    info, row = n['view_info'][3], ipod.NP_DOTS_Y // 2
+    ix = max(g.text_x, ipod.corner_x(g.bar + ipod.NP_TOP, row), ipod.corner_x(g.bar + ipod.NP_TOP + row, row))
+    assert [c[2]['name'] for c in info] == ['label_a', 'label_b', 'label_a_value', 'label_b_value']
+    assert [c[1] for c in info] == [[ix, lift + row * i, ipod.NP_INFO_NAME_W, row] for i in range(2)] + [
+        [ix + ipod.NP_INFO_NAME_W, lift + row * i, 375 - 2 * ix - ipod.NP_INFO_NAME_W, row] for i in range(2)]
+    assert lift + 2 * row <= n['slide_indicator1'][1][1] and all(c[2]['style:normal:text_align_h'] == 'left' for c in info[:2])
+    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20l' and c[2]['ellipses'] == 'true' for c in info[:2])
+    assert all(c[0] == 'hscroll_label' and c[2]['style'] == 's_scrlabel_white20r' and c[2]['ellipses'] == 'true' for c in info[2:])
+    assert [c[1] for c in b['view_info'][3]] == [[5 + (375 - 225) // 2, 6, 7, 8], [10 + (375 - 225) // 2, 6, 7, 8]]  # the others' lines
     assert n['view_lrc'][2]['self_layout'] == f'default(x=0,y={lift},w=375,h=178)'
     assert root[3][-1] is n['img_more'] and n['img_more'][1] == b['img_more'][1]
     after = [c[2].get('name') for c in root[3]][root[3].index(n['slide_view_view']) + 1:][:2]
@@ -490,10 +494,11 @@ def test_playing_page_classic_ipod():
     assert n['label_ipod_pos'] in n['view_album'][3] and pos[0] == album[0] == title[0] == cover[0] + cover[2] + 12
     assert view[1] + title[1] >= n['img_more'][1][3] - 2 and pos[1] == album[1] + 28
     assert pos[1] + pos[3] < n['img_fav'][1][1] + (ipod.NP_ICON - 28) // 2
-    assert x == ipod.with_geometry(dataclasses.replace(g, np_ipod=0)).NP_BAR[0] + ipod.NP_IPOD_TIME_W + ipod.NP_IPOD_TIME_GAP and x + w_ == 375 - x
     play, remain, bar = n['label_playtime'], n['label_ipod_remain'], ipod.inc('NP_BAR_IPOD')
+    assert play[1][0] == ipod.corner_x(g.bar + play[1][1], play[1][3]) and x + w_ == 375 - x and w_ >= 170  # the times' rows clear the glass
+    assert play[1][3] == ipod.NP_IPOD_TIME_H and play[1][2] == remain[1][2] == ipod.NP_IPOD_TIME_WS[0]
     assert play[1][0] + play[1][2] + ipod.NP_IPOD_TIME_GAP == x and remain[1][0] == x + w_ + ipod.NP_IPOD_TIME_GAP
-    assert 2 * play[1][1] + play[1][3] == 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar
+    assert 0 <= 2 * (n['slider_play'][1][1] + (ipod.NP_TOUCH - bar) // 2) + bar - (2 * play[1][1] + play[1][3]) <= 1  # centred, or half a row high
     assert play[2]['style:normal:font_name'] == ipod.CLASSIC_LIGHT_FONT_NAME == remain[2]['style:normal:font_name']
     assert play[2]['style:normal:text_align_h'] == 'right' and remain[2]['style:normal:text_align_h'] == 'left'
 
@@ -572,9 +577,6 @@ def audited(monkeypatch):
 
 def test_playing_stock(audited):
     n = named(ipod.decode(ipod.playing_stock(audited(stock_page()))))
-    hold = str(ipod.inc('MARQUEE_HOLD_MS'))
-    for name in ('scrlabel_title', 'scrlabel_artist'):
-        assert n[name][2]['delay'] == n[name][2]['lull'] == hold
     assert n['scroll_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)'
     assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert n['label_lyricmsg'][2]['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
@@ -852,14 +854,23 @@ def test_status_bar_wants_the_stock_height():
 # above the bar's two lines; title and clock share one box height and y (-1, the baseline at row 17); the
 # title's text starts where the glass ends at the caps' top, g.bar_title_w wide; stock's hscroll_label keeps 2 px
 # each side of the box, so the box is 4 wider; the clock is centred on the screen.
+def test_fallback_scale_matches_the_faces():  # theme_font's bold.ttf, at the Classic face's cap height: stb's scale, a font's ascent - descent its size
+    from fontTools.ttLib import TTFont
+    def cap(path):
+        f = TTFont(path, lazy=True)
+        return f['OS/2'].sCapHeight / (f['hhea'].ascent - f['hhea'].descent)
+    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (ipod.ROOT/'patch/navigation.c').read_text())
+    assert int(pct[1]) == round(100*cap(ipod.ROOT/'assets/fonts/texgyreheros-bold.otf')/cap(ipod.ROOT/'assets/fonts/LiberationSans-Bold.ttf')) == 83
+
+
 def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     g = CLASSIC_LIGHT
     m = ipod.status_metrics(g, ipod.CLASSIC_LIGHT_FONT_SRC)
     assert m['px'] == g.bar_px == 21 and m['cap'] == 11 and m['cap_top'] == 6 and m['label_y'] == -1
-    assert m['inset'] == ipod.corner_inset(6) + ipod.BAR_PAD == 56  # BAR_PAD clear of the glass at the caps' top
+    assert m['inset'] == ipod.corner_inset(6) + ipod.BAR_PAD == 59  # BAR_PAD clear of the glass at the caps' top
     assert m['clock_text'] == 64 and classic_light_text_w('12:59 PM') <= 64  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [54, -1, 98, g.bar - 1]  # text on columns 56 to 150; a 12-hour clock's starts at 155
+    assert m['title'] == [57, -1, 95, g.bar - 1]  # text on columns 59 to 150; a 12-hour clock's starts at 155
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
     # what a title fits: Local Songs and Now Playing, whole
     assert classic_light_text_w('Local Songs') <= m['title'][2] - 4 and classic_light_text_w('Now Playing') <= m['title'][2] - 4
@@ -894,7 +905,7 @@ def test_classic_light_status_bar_battery_and_play_state_right():
     assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
     assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
     assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
-    assert 375 - ipod.corner_inset(4) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 4, BAR_PAD clear of the glass; the nub's rows lower still
+    assert 375 - ipod.corner_inset(5) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
@@ -905,44 +916,44 @@ def test_classic_light_status_bar_eq_in_the_room():
     m, eq = ipod.status_metrics(CLASSIC_LIGHT, ipod.CLASSIC_LIGHT_FONT_SRC), n['label_eq']
     x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
     edge = 315  # the group's right edge: the nub ends at x 314
-    assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], 28, m['title'][3]]
+    assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], ipod.CLASSIC_LIGHT_EQ_W, m['title'][3]]
     assert x == 222 and x >= 375 / 2 + m['clock_text'] / 2 + ipod.CLASSIC_LIGHT_CLOCK_GAP  # the widest clock, CLASSIC_LIGHT_CLOCK_GAP clear
-    assert classic_light_text_w('EQ') <= 28  # the bar's face fits its box
+    assert classic_light_text_w('EQ') <= ipod.CLASSIC_LIGHT_EQ_W  # the bar's face fits its box
     # 2 px short of Bluetooth's ink: the battery with its soft edge and nub, Wi-Fi, BT_REACH
-    assert x + 28 + 2 <= edge - (1 + CLASSIC_LIGHT.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
+    assert x + ipod.CLASSIC_LIGHT_EQ_W + 2 <= edge - (1 + CLASSIC_LIGHT.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
     assert {eq[2][f'style:{s}:{k}'] for s in ('normal', 'disable', 'focused') for k in ('font_size', 'font_name')} \
         == {str(CLASSIC_LIGHT.bar_px), ipod.CLASSIC_LIGHT_FONT_NAME}
 
 
-# Where the row layout puts the icons: right-aligned from the group's margin, the slot 31 (its soft edge, the body,
+# Where the row layout puts the icons: right-aligned from the group's margin, the slot 29 (its soft edge, the body,
 # the nub), hidden children taking no room. Bluetooth's and Wi-Fi's canvases are stock's; their ink lands on the
 # columns and rows Classic's look states, and with the play state hidden they close up on the battery.
 def test_classic_light_status_bar_icons_on_their_columns():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     view = n['view_right']
-    assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3; the payload moves Bluetooth a row down, Wi-Fi a row up (bar.icons)
+    assert view[1][1::2] == [0, 22]  # the 16 px canvases at y 3, centred on the battery's row 11; the payload moves Bluetooth a row down, Wi-Fi a row up (bar.icons)
     assert n['img_state'][2].get('floating') is None
     def lay(*names):
         x, out = 315, {}
         for name in reversed(names):
-            w = 31 if name == 'view_battery' else n[name][1][2]
+            w = 29 if name == 'view_battery' else n[name][1][2]
             x -= w
             out[name] = (x, x + w)
             x -= ipod.inc('STATUS_GAP')
         return out
     full = lay('img_bt', 'img_wifi', 'img_state', 'view_battery')
-    assert full['img_bt'][1] == 240 and {k: v for k, v in full.items() if k != 'img_bt'} == {
-        'view_battery': (284, 315), 'img_state': (262, 280), 'img_wifi': (244, 258)}
-    assert full['img_bt'][1] - ipod.BT_REACH == 230  # Bluetooth's ink
+    assert full['img_bt'][1] == 242 and {k: v for k, v in full.items() if k != 'img_bt'} == {
+        'view_battery': (286, 315), 'img_state': (264, 282), 'img_wifi': (246, 260)}
+    assert full['img_bt'][1] - ipod.BT_REACH == 232  # Bluetooth's ink
     bare = lay('img_bt', 'img_wifi', 'view_battery')
-    assert bare['img_wifi'] == (266, 280) and bare['img_bt'][1] - ipod.BT_REACH == 252
-    assert n['label_eq'][1][0] + view[1][0] + 28 < 252  # EQ, widest with a 12-hour clock: 222 to 250
+    assert bare['img_wifi'] == (268, 282) and bare['img_bt'][1] - ipod.BT_REACH == 254
+    assert n['label_eq'][1][0] + view[1][0] + 28 < 254  # EQ, widest with a 12-hour clock: 222 to 250
 
 
 def test_classic_light_status_bar_battery_must_fit():
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 93 of 93
+    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 88 of 93
     with pytest.raises(ValueError, match=r'^Status bar battery needs 94px of 93px$'):
-        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 1))
+        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 6))
 
 
 def test_playing_page_follows_the_bar():
@@ -963,6 +974,19 @@ def test_patch_asset_rows_and_lists_follow_the_geometry(monkeypatch):
     assert n['row'][1][3] == 72 and n['art'][1][1] == 4
     n = named(ipod.decode(ipod.patch_asset('folder_page.bin', data)))
     assert n['list_view'][1] == [0, 0, 375, 290] and n['row'][1][3] == 72 and n['art'][1][1] == 8
+
+
+# Streaming follows Row Art: 52 px rows under classic-light, 28 under classic-light-text, SET0's settings rows as before.
+# The list keeps the settings lists' box: a set with list_end's takes the window.
+def test_stream_page_rows_per_set(monkeypatch):
+    page = w('stream_page', w('view_navbar', at=[0, 0, 370, 50]),
+             w('list_view', kind='list_view', at=[0, 50, 375, 240], default_item_height=str(ipod.SET_STOCK_ROW)), kind='window')
+    data = ipod.encode(page)
+    monkeypatch.setitem(ipod.UI_ASSETS, 'stream_page.bin', ipod.sha(data))
+    for g, row, h in ((ipod.SET0, ipod.SET_ROW, ipod.SET_ROWS * ipod.SET_ROW), (CLASSIC_LIGHT, 52, 294), (CLASSIC_LIGHT_TEXT, 32, 294)):
+        assert g.stream_row == row
+        n = named(ipod.decode(ipod.patch_asset('stream_page.bin', data, g=g)))
+        assert n['list_view'][2]['default_item_height'] == str(row) and n['list_view'][1][3] == h, g.name
 
 
 PAGE_T = ipod.Geometry(name='t', pitch=28, body=26, art_pitch=52, art_body=50, art=44, art_inset=3,
@@ -1010,7 +1034,7 @@ SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
 
 def test_immediates_every_site_once():
     sites = [a for g in ipod.AUDIT['immediates'] for a, _ in g['sites']]
-    assert len(sites) == 71 and len(set(sites)) == 71
+    assert len(sites) == 103 and len(set(sites)) == 103
 
 
 def test_immediate_values_set0_are_the_baked_values():
@@ -1019,7 +1043,7 @@ def test_immediate_values_set0_are_the_baked_values():
     assert (values['np_bar_x'], values['np_bar_w']) == (ipod.NP_BAR[0], ipod.NP_BAR[2])
     assert ipod.VALUE_NAMES[0] == 'pitch'
     for name in ipod.VALUE_NAMES:
-        if not name.startswith('np_bar'):
+        if not name.startswith(('np_bar', 'stock_', 'search_')):
             assert values[name] == SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_').removeprefix('song_')], name
 
 
@@ -1049,6 +1073,7 @@ UI = 'release/assets/default/raw/ui/'
 @pytest.fixture
 def fake_assets(monkeypatch):
     monkeypatch.setattr(ipod, 'UI_ASSETS', {'system_bar.bin': '', 'dialog/volume_dialog.bin': '', 'home_page.bin': ''})
+    monkeypatch.setattr(ipod, 'STOCK_ROWS', {})
     monkeypatch.setattr(ipod, 'patch_asset', lambda rel, data, g=ipod.SET0: data + (b'!' if g.bar != 30 and rel != 'home_page.bin' else b''))
 
 
@@ -1068,7 +1093,7 @@ def test_classic_light_sets():
     n, t = CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT
     assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 32, 32, 52, 52, 52, 0, 0, 0)
     assert (n.song_pitch, n.song_body, n.song_title24_y, n.song_meta_y) == (52, 52, 1, 29) == (t.song_pitch, t.song_body, t.song_title24_y, t.song_meta_y)
-    assert dataclasses.replace(t, name='classic-light', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29) == n
+    assert dataclasses.replace(t, name='classic-light', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29, stream_row=52) == n
     assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (4, 6, 8, 8, 1, 29, 4, 8)
     assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (32, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
     assert ipod.immediate_values(n)['scroll'] == 262
@@ -1083,9 +1108,22 @@ def test_home_library_list():
     assert lib[2]['name'] == 'list_view_homelib' and lib[2]['visible'] == 'false' and lib[1][3] == 294
     assert lib[3][0][2]['name'] == 'scroll_view_localmusic' and lib[3][0][3] == [] and lib[3][0][2]['yslidable'] == 'true'
     assert 'img_library' in rows and 'img_localmusic' not in rows
-    assert 'img_localmusic' in named(root[3][4])  # the carousel's
+    assert 'img_localmusic' in named(root[3][5])  # the carousel's
     root = home(); ipod.ipod_home(root); rows = named(root[3][1])
     assert 'list_view_homelib' not in named(root) and 'img_library' not in rows and 'img_localmusic' in rows
+
+
+# Streaming the same way: a second hidden list, its empty view named as the Streaming page's, the row's image renamed so stock
+# binds it nowhere. The Carousel's card and a set without home_lib keep stock's binding.
+def test_home_streaming_list():
+    root = home(); ipod.ipod_home(root, g=CLASSIC_LIGHT); rows = named(root[3][1])
+    stream = root[3][4]
+    assert stream[2]['name'] == 'list_view_homestream' and stream[2]['visible'] == 'false' and stream[2]['item_height'] == '32' and stream[1][3] == 294
+    assert stream[3][0][2]['name'] == 'scroll_view_streamsset' and stream[3][0][3] == [] and stream[3][0][2]['yslidable'] == 'true'
+    assert 'img_services' in rows and 'img_stream' not in rows
+    assert 'btn_stream' in named(root[3][5])  # the carousel's
+    root = home(); ipod.ipod_home(root); rows = named(root[3][1])
+    assert 'list_view_homestream' not in named(root) and 'img_services' not in rows and 'img_stream' in rows
 
 
 # Songs' action bar under Classic: a row of the set's action_row, the list and the empty panel under it, and stock's recreated
@@ -1112,6 +1150,100 @@ def test_settings_lists_follow_the_set(monkeypatch):
     for g, box, row in ((ipod.SET0, [0, 8, 375, 272], '68'), (CLASSIC_LIGHT, [0, 0, 375, 294], '32')):
         n = named(ipod.decode(ipod.patch_asset(path, data, g=g)))
         assert n['list_view'][1] == box and n['list_view'][2]['default_item_height'] == row and 'item_height' not in n['list_view'][2]
+
+
+# Stock's own list pages, each as its bin has it, under Classic: the rows of 78 take the approved pitch, by the one rule (stock_row), and the toolbars go. SET0 gets the bin back, byte for byte.
+STOCK_ROW_REVERSED = dataclasses.replace(CLASSIC_LIGHT, stock_row=78, stock_body=70, stock_title_y=11, stock_title_h=20)
+
+
+def stock_list_page(name, *rows):
+    return w(name, w('view_navbar', at=[0, 0, 375, 50]),
+             w('list_view', w('scroll_view', *rows, kind='scroll_view', at=[0, 0, 375, 100]), kind='list_view', at=[0, 50, 375, 210], default_item_height='78'), kind='window')
+
+
+def stock_table_page(name, *more):
+    return w(name, w('view_navbar', at=[0, 0, 375, 50]),
+             w('table_view', w('table_client', kind='table_client', at=[0, 0, 365, 100], row_height='78', self_layout='default(x=0,y=0,w=365,h=100%)'), kind='table_view', at=[0, 50, 375, 190]), *more, kind='window')
+
+
+def audited_rows(monkeypatch, path, page):
+    data = ipod.encode(page); monkeypatch.setitem(ipod.STOCK_ROWS, path, ipod.sha(data))
+    assert ipod.patch_asset(path, data) == data
+    return data
+
+
+@pytest.mark.parametrize('path', ['playermore_page.bin', 'updatemusic_page.bin'])
+def test_stock_lists_take_settings_rows(monkeypatch, path):
+    label = w('hscroll_label_1', kind='hscroll_label', at=[10, 25, 266, 20])
+    row = w('list_item_1', w('button_1', label, kind='button', at=[20, 0, 335, 70]), kind='list_item', at=[0, 0, 0, 78])
+    data = audited_rows(monkeypatch, path, stock_list_page(path[:-4], row))
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == n['view_navbar'][2]['enable'] == 'false'
+    assert n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '32' and 'item_height' not in n['list_view'][2]
+    assert n['hscroll_label_1'][1] == [10, 0, 266, 70]  # takes the row, whose font a 20 px box wouldn't hold
+    assert 'anim_hint' not in ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT))[2]
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=STOCK_ROW_REVERSED)))  # the rule reversed: stock's pitch, the toolbar still hidden
+    assert n['view_navbar'][2]['visible'] == 'false' and n['list_view'][2]['default_item_height'] == '78' and n['list_view'][1] == [0, 0, 375, 294]
+
+
+def test_queue_under_the_bar(monkeypatch):
+    path = 'playerqueue_page.bin'
+    data = audited_rows(monkeypatch, path, stock_table_page('playerqueue_page'))
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == 'false' and n['table_view'][1] == [0, 0, 375, 294]
+    assert n['table_client'][2]['row_height'] == '32' and n['table_client'][1][2] == 375
+
+
+@pytest.mark.parametrize('path', ['playerjumpinfo_page.bin', 'specfolder_page.bin'])
+def test_stock_tables_keep_their_toolbar_and_boxes(monkeypatch, path):
+    page = stock_table_page(path[:-4], w('startscan_view', at=[0, 210, 375, 60]))
+    data = audited_rows(monkeypatch, path, page)
+    n = named(ipod.decode(ipod.patch_asset(path, data, g=CLASSIC_LIGHT)))
+    assert 'visible' not in n['view_navbar'][2] and n['table_view'][1] == [0, 50, 375, 190] and n['startscan_view'][1] == [0, 210, 375, 60]
+    assert n['table_client'][2]['row_height'] == '32'
+    assert ipod.patch_asset(path, data, g=STOCK_ROW_REVERSED) == ipod.encode(ipod.decode(data))
+
+
+def test_toolbar_switch_pages(monkeypatch):
+    # Lock Screen is a settings list, and the Sleep Timer's panel makes room for the row its switch becomes. Crossfade's page keeps its toolbar. SET0's keep theirs and their rows.
+    lock, sleep, boot = 'systemset/screensaver_page.bin', 'systemset/sleepshutdown_page.bin', 'playset/bootvol_page.bin'
+    pages = {lock: stock_list_page('screensaver_page'),
+             sleep: w('sleepshutdown_page', w('view_navbar', at=[0, 0, 375, 50]), w('view_sleep', at=[0, 50, 375, 240]), kind='window'),
+             boot: w('bootvol_page', w('view_navbar', at=[0, 0, 375, 50]), w('view_bootvol', at=[0, 50, 375, 240]),
+                     w('slider', kind='slider', at=[50, 100, 275, 8]), w('a', kind='image', at=[0, 0, 50, 50], image='vol_left'), w('b', kind='image', at=[0, 0, 50, 50], image='vol_right'), kind='window')}
+    for path, page in pages.items():
+        monkeypatch.setitem(ipod.UI_ASSETS, path, ipod.sha(ipod.encode(page)))
+    data = {path: ipod.encode(page) for path, page in pages.items()}
+    n = named(ipod.decode(ipod.patch_asset(lock, data[lock], g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == 'false' and n['list_view'][1] == [0, 0, 375, 294] and n['list_view'][2]['default_item_height'] == '32'
+    assert named(ipod.decode(ipod.patch_asset(lock, data[lock], g=STOCK_ROW_REVERSED)))['list_view'][2]['default_item_height'] == '78'
+    n = named(ipod.decode(ipod.patch_asset(sleep, data[sleep], g=CLASSIC_LIGHT)))
+    assert n['view_navbar'][2]['visible'] == 'false' and n['view_sleep'][1] == [0, 32, 375, 240] and 28 + 240 <= 294
+    assert 'visible' not in named(ipod.decode(ipod.patch_asset(boot, data[boot], g=CLASSIC_LIGHT)))['view_navbar'][2]
+    for path in (lock, sleep, boot):
+        n = named(ipod.decode(ipod.patch_asset(path, data[path])))
+        assert 'visible' not in n['view_navbar'][2] and n[{lock: 'list_view', sleep: 'view_sleep', boot: 'view_bootvol'}[path]][1][1] == 50
+    assert named(ipod.decode(ipod.patch_asset(lock, data[lock])))['list_view'][2]['default_item_height'] == '78'
+
+
+def test_search_rows_are_stocks_under_set0():
+    values, want = ipod.immediate_values(ipod.SET0), {'search_row': 78, 'search_body': 70, 'search_art': 50, 'search_title_y': 11, 'search_title24_y': 14, 'search_title_h': 24, 'search_meta_y': 41, 'search_meta_h': 16}
+    assert {n: values[n] for n in want} == want
+    for group in ipod.AUDIT['immediates']:
+        if group['value'] in want:
+            assert all(int(word, 16) & 0xffff == want[group['value']] for _, word in group['sites']), group['value']
+    assert (CLASSIC_LIGHT.search_row, CLASSIC_LIGHT.search_body, CLASSIC_LIGHT.search_art, CLASSIC_LIGHT.search_title_h, CLASSIC_LIGHT.search_meta_h) == (52, 52, 0, 28, 20)
+    assert CLASSIC_LIGHT.search_title_y + CLASSIC_LIGHT.search_title_h <= CLASSIC_LIGHT.search_body and CLASSIC_LIGHT.search_meta_y + CLASSIC_LIGHT.search_meta_h <= CLASSIC_LIGHT.search_body
+
+
+def test_stock_rows_are_stocks_under_set0():
+    values = ipod.immediate_values(ipod.SET0)
+    assert (values['stock_row'], values['stock_body'], values['stock_title_y'], values['stock_title_h']) == (78, 70, 11, 20) and ipod.SET0.toolbar == 1
+    for group in ipod.AUDIT['immediates']:
+        if group['value'] in ('stock_row', 'stock_body', 'stock_title_y', 'stock_title_h'):
+            assert all(int(word, 16) & 0xffff == values[group['value']] for _, word in group['sites'])
+    assert (CLASSIC_LIGHT.stock_row, CLASSIC_LIGHT.stock_body, CLASSIC_LIGHT.toolbar) == (32, 32, 0)
+    assert CLASSIC_LIGHT.stock_title_h >= 27 and CLASSIC_LIGHT.stock_title_y + CLASSIC_LIGHT.stock_title_h <= CLASSIC_LIGHT.stock_body  # the box holds the row's font
 
 
 def test_lists_beside_settings_rows_take_item_height(monkeypatch):
@@ -1216,10 +1348,12 @@ def test_patch_word_wants_the_stock_word():
     assert data == before and changes == []
 
 
-SYMBOLS = {'compact_set_row_layout': 0x40a000, 'ipod_list_layout': 0x40b000, 'ringnav_boot': 0x40c000}
+SYMBOLS = {'compact_set_row_layout': 0x40a000, 'ipod_list_layout': 0x40b000, 'ringnav_boot': 0x40c000,
+           'stock_set_row_layout': 0x40d000, 'stock_row_text': 0x40e000, 'stock_row_style': 0x40f000}
 # SET0's word for each named immediate, as test_immediate_values_set0_are_the_baked_values reads SET0_WORDS.
-IMMEDIATES = {name: SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_').removeprefix('song_')]
-              for name in ipod.VALUE_NAMES if not name.startswith('np_bar')} | {'np_bar_x': ipod.NP_BAR[0], 'np_bar_w': ipod.NP_BAR[2]}
+# The stock_ and search_ rows' words are SET0's fields, as immediate_values gives them; that test leaves them out too.
+IMMEDIATES = ipod.immediate_values(ipod.SET0) | {name: SET0_WORDS[name if name in SET0_WORDS else name.removeprefix('art_').removeprefix('song_')]
+              for name in ipod.VALUE_NAMES if not name.startswith(('np_bar', 'stock_', 'search_'))} | {'np_bar_x': ipod.NP_BAR[0], 'np_bar_w': ipod.NP_BAR[2]}
 
 
 def code_patches():
@@ -1239,6 +1373,8 @@ def code_patches():
     # toolsTimeItoa's two formats, back to back
     times = zip(struct.unpack('<7I', b'%02d:%02d:%02d\0\0%02d:%02d\0\0\0'), struct.unpack('<7I', b'%d:%02d:%02d\0\0\0\0%d:%02d\0\0\0\0\0'))
     return [*lookups, *immediates, *[(int(at, 16), int(old, 16), 0x0c102800, rows['purpose']) for at, old in rows['sites']],
+            *[(int(at, 16), int(old, 16), jal, ipod.AUDIT[name]['purpose']) for name, jal in (('stock_row_layout_calls', 0x0c103400), ('stock_row_text_calls', 0x0c103800),
+                                                                                         ('stock_row_style_calls', 0x0c103c00)) for at, old in ipod.AUDIT[name]['sites']],
             (0x522410, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter'), *tiles,
             (ipod.inc('LIST_VIEW_LAYOUT_SLOT'), ipod.inc('LIST_VIEW_LAYOUT'), 0x40b000, 'settings lists stack SET_ROW rows and map their children'),
             *[(0x7778a0 + 4 * i, old, new, 'times without a leading zero') for i, (old, new) in enumerate(times)],
@@ -1254,3 +1390,27 @@ def test_patch_code():
     assert ipod.patch_code(data, dict(SYMBOLS)) == [{'address': hex(at), 'original': hex(old), 'patched': hex(new), 'purpose': why}
                                                      for at, old, new, why in patches]
     assert [struct.unpack_from('<I', data, at - 0x3ff000)[0] for at, *_ in patches] == [new for _, _, new, _ in patches]
+
+
+def test_classic_times_fit():
+    """Classic's times: each length class's widest remaining time fits its box at NP_IPOD_TIME_PX, in the model
+    status_metrics uses (stb scales a font so that ascent - descent is its size; advances, no kerning), every
+    digit tried; NP_IPOD_TIME_PX is the largest whose line fits the box's height, NP_IPOD_TIME_H."""
+    from fontTools.ttLib import TTFont
+    f = TTFont(ipod.CLASSIC_LIGHT_FONT_SRC, lazy=True)
+    asc, desc, cmap = f['hhea'].ascent, f['hhea'].descent, f.getBestCmap()
+    width = lambda text, px: math.ceil(sum(f['hmtx'][cmap[ord(c)]][0] for c in text) * px / (asc - desc))
+    px, box = ipod.NP_IPOD_TIME_PX, ipod.inc('NP_IPOD_TIME_H')
+    assert (px, ipod.NP_IPOD_TIME_WS) == (21, [35, 43, 56]) == (px, ipod.time_widths(ipod.CLASSIC_LIGHT_FONT_SRC))
+    for w, longest in zip(ipod.NP_IPOD_TIME_WS, ('9:59', '59:59', '9:59:59')):
+        for d in '0123456789':
+            assert width('-' + re.sub(r'\d', d, longest), px) <= w and width(re.sub(r'\d', d, longest), px) <= w
+    assert width('-1:02:03', px) == ipod.NP_IPOD_TIME_W and px <= box < px + 1
+
+
+def test_classic_time_classes():
+    """The bar between the fitted boxes (navigation.c ipod_bar_x): the boxes' outer edges and the gap kept, centred;
+    the build's the widest, the under-10:00 class's, so a long track's only narrows it."""
+    edge = ipod.inc('NP_IPOD_BAR_X') - ipod.NP_IPOD_TIME_GAP - ipod.NP_IPOD_TIME_WS[0]
+    bars = [(edge + w + ipod.NP_IPOD_TIME_GAP, 375 - 2 * (edge + w + ipod.NP_IPOD_TIME_GAP)) for w in ipod.NP_IPOD_TIME_WS]
+    assert edge == 23 and bars == [(66, 243), (74, 227), (87, 201)] and bars[0][0] == ipod.with_geometry(CLASSIC_LIGHT).NP_BAR_X
