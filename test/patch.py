@@ -6825,7 +6825,7 @@ QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbstorage'
 QS_LABELS=(('label_wifi','WiFi'),('label_bt','BT'),('label_lock','Off'),('label_gain','Low'),('label_usbmode','USB'),('label_outputway','Output Options'),('label_playset','Play'),('label_sysset','Set'))
 QS_X=(31,115,199,283)
 QS_GROUND={'1':0x63717b,'0':0x1c1c1c}  # Home's pane
-QS_TILE={(0,'1'):(0xe9ebee,0xd3d6dc,0x9ba2aa),(0,'0'):(0x33373c,0x282b2f,0x40444a),(1,'1'):(0x207cde,0x207cde,0x125cb0),(1,'0'):(0x207cde,0x207cde,0x207cde)}  # (on, half): fill's top, its foot, the border
+QS_TILE={(0,'1'):(0xe9ebee,0xd3d6dc,0x9ba2aa),(0,'0'):(0x333333,0x333333,0x333333),(1,'1'):(0x207cde,0x207cde,0x125cb0),(1,'0'):(0x207cde,0x207cde,0x207cde)}  # (on, half): fill's top, its foot, the border
 def qs_ink(on,light): return '' if on else '_l' if light=='1' else '_d'
 QS_AT=[(QS_X[i%4],(20,138)[i//4]) for i in range(8)]
 def qs_new(light='1',theme='1',**config):
