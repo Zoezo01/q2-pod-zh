@@ -110,6 +110,7 @@ def test_targets_skip_the_stock_bound_and_import_only_functions():
     assert not {'link', 'patch_pwm', 'patch_mcu', 'patch_bundle'} & set(pwm)
     assert 'wave' not in art
 
+
 def test_mutant_glob():
     assert targets.mutant_glob('build', 'jal') == 'tools.build.x_jal__mutmut_*'
     assert targets.mutant_glob('rotator', 'Elf.pack') == 'tools.rotator.xǁElfǁpack__mutmut_*'

@@ -22,10 +22,10 @@ fail_under = 99.5
 precision = 2
 show_missing = true
 skip_covered = true
-# Left to the suites with a stock ZIP (test/patch.py and the rest in docs/building.md), as
-# test/unit/targets.py's NEEDS_STOCK: these hash or link against Shanling's files. And the command lines.
+# What mutmut skips too (test/unit/targets.py): mostly functions that hash or link against Shanling's files,
+# left to the suites with a stock ZIP (test/patch.py and the rest in docs/building.md). And the command lines.
 exclude_also = [
-    "def (build|compile_payload|validate_stock|patch_module|patch_asset|patch_code|compile_common|patch_player|link|patch_pwm|patch_mcu|patch_bundle)\\(",
+    "# pragma: no mutate block",
     "if __name__ *== *.__main__.:",
 ]
 

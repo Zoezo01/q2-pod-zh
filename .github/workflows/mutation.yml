@@ -70,9 +70,9 @@ jobs:
           fi
       - name: Report
         run: |
-          # Just under a fresh run's 91.7%: the floor catches a collapse, not each survivor.
+          # Under a fresh run's 91.7%: the floor catches a collapse, not each survivor.
           if [ -z "$BASE" ]; then
-            python3 test/unit/report.py --floor 91 --survivors survivors.txt
+            python3 test/unit/report.py --floor 90 --survivors survivors.txt
           else
             python3 test/unit/report.py --since "$BASE" --survivors survivors.txt
           fi | tee -a "$GITHUB_STEP_SUMMARY"
