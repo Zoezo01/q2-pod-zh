@@ -60,7 +60,7 @@ jobs:
             # mutmut makes these again: cached stats know no tests for a function added since Sunday,
             # and copies of files since deleted would linger. Results stay in mutants/*.meta.
             if [ -d mutants ]; then
-              rm mutants/mutmut-stats.json
+              rm -f mutants/mutmut-stats.json
               rm -rf mutants/assets mutants/docs mutants/patch mutants/test
             fi
             mutmut run 2>&1 | tee mutmut.log | tail -n 3
