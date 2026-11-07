@@ -12,7 +12,7 @@ import pathlib
 import re
 import struct
 import types
-from build import CLASSIC_LIGHT_TTF, ROOT, check, fileoff, sha, jal
+from build import CLASSIC_LIGHT_TTF, ROOT, check, fileoff, need, sha, jal
 
 AUDIT = json.loads((pathlib.Path(__file__).resolve().parents[1]/'patch/ipod.json').read_text())
 UI_ASSETS = AUDIT['assets'] | AUDIT['navbar_only'] | AUDIT['slide_only']
@@ -211,7 +211,10 @@ def immediate_values(g=SET0):
 
 
 IPOD = with_geometry(SET0)
-globals().update(vars(IPOD))
+BOTTOM, PITCH, BODY, ART, ART_INSET = IPOD.BOTTOM, IPOD.PITCH, IPOD.BODY, IPOD.ART, IPOD.ART_INSET
+NP_POS_X, NP_ICONS_END, NP_BAR_X, NP_BAR, NP_TIME_X = IPOD.NP_POS_X, IPOD.NP_ICONS_END, IPOD.NP_BAR_X, IPOD.NP_BAR, IPOD.NP_TIME_X
+check(set(vars(IPOD)) == {'BOTTOM', 'PITCH', 'BODY', 'ART', 'ART_INSET', 'NP_POS_X', 'NP_ICONS_END', 'NP_BAR_X', 'NP_BAR', 'NP_TIME_X'},
+      'a with_geometry field needs its module name above')
 check([NP_MARGIN, NP_ART, NP_TEXT_X, NP_TEXT_W, *NP_BAR[::2], NP_TIMES_Y, NP_TIME_X] ==  # Spotify's and Radio's
       [inc('SPOT_' + n) for n in 'ART_X ART_PX TEXT_X TEXT_W BAR_X BAR_W TIMES_Y TIME_X'.split()], 'SPOT_* != NP_*')
 check(inc('NP_ART_TOP') == NP_TOP + NP_ART_Y, 'NP_ART_TOP != NP_TOP + NP_ART_Y')
@@ -219,7 +222,7 @@ NP_GREY = '#AAAAAA'              # stock secondary text (s_scrlabel_gray24l)
 # The track is TRACK_COLOR; the fill is Graphite's light tone until ringnav_playing sets the
 # accent's (3.3:1 or more on the track for every preset).
 NP_TRACK = f'#{inc("TRACK_COLOR"):06x}'
-NP_FILL = '#' + re.search(r'#define ACCENTS \{ 0x\w+, 0x\w+, 0x(\w+),', INC)[1]
+NP_FILL = '#' + need(re.search(r'#define ACCENTS \{ 0x\w+, 0x\w+, 0x(\w+),', INC), 'Missing ACCENTS')[1]
 
 
 def decode(data):
@@ -616,7 +619,7 @@ def playing_page(root, g=SET0):
         if 'image' in n[2]:
             n[2]['draw_type'] = 'center'
     named['img_more'][1] = [geo.NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
-    pos = ['label', [geo.NP_POS_X, 0, geo.NP_ICONS_END - NP_ICON - geo.NP_POS_X, NP_TOP], {
+    pos: list = ['label', [geo.NP_POS_X, 0, geo.NP_ICONS_END - NP_ICON - geo.NP_POS_X, NP_TOP], {
         'name': 'label_ipod_pos', 'style:normal:font_size': '16', 'style:normal:text_color': NP_GREY,
         'style:normal:text_align_h': 'left'}, []]
 
@@ -955,8 +958,7 @@ def png_header(data):
 
 def imagemagick(*args, data):
     import shutil, subprocess
-    tool = shutil.which('magick') or shutil.which('convert')
-    check(tool is not None, 'ImageMagick (magick or convert) is required for the iPod settings icons')
+    tool = need(shutil.which('magick') or shutil.which('convert'), 'ImageMagick (magick or convert) is required for the iPod settings icons')
     return subprocess.run([tool, *args], input=data, stdout=subprocess.PIPE, check=True).stdout
 
 
@@ -1107,7 +1109,7 @@ def patch_asset(path, data, g=SET0):
     check(encode(root) == data, f'{path}: UI round trip differs')
     if path == ARTIST_PAGE:
         artist_tabs(root)
-    whole = {HOME_PAGE: functools.partial(ipod_home, g=g), STATUS_BAR: functools.partial(status_bar, g=g),
+    whole: dict = {HOME_PAGE: functools.partial(ipod_home, g=g), STATUS_BAR: functools.partial(status_bar, g=g),
              PLAYING_PAGE: functools.partial(playing_page, g=g), QUICK_SETTINGS: quick_settings,
              CONFIRM: confirm_dialog, VOLUME: volume_dialog, BIGCOVER: bigcover_page}
     if path in whole:

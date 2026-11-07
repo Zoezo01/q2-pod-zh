@@ -143,12 +143,12 @@ def patch_bundle(cat,sleep=False):
            'module_driver/soc_mcu.ko':patch_mcu(originals['module_driver/soc_mcu.ko'],image,len(helper),sleep=sleep),
            'usr/data/libmcu-bare.bin':image}
     originals['usr/data/libmcu-bare.bin']=old_image
-    manifest=dict(policy='cooperative-pwm-v1', normal_module_unload=False,
-        mcu=mcu_park.make_manifest(old_image,image,helper,symbols,sleep=sleep),
+    mcu=mcu_park.make_manifest(old_image,image,helper,symbols,sleep=sleep)
+    # Source paths are not part of reproducible build metadata.
+    mcu['assembly']['path']='tools/mcu_park.S'
+    manifest=dict(policy='cooperative-pwm-v1', normal_module_unload=False, mcu=mcu,
         files={path:dict(original_sha256=hashlib.sha256(originals[path]).hexdigest(),
                         sha256=hashlib.sha256(data).hexdigest()) for path,data in files.items()})
-    # Source paths are not part of reproducible build metadata.
-    manifest['mcu']['assembly']['path']='tools/mcu_park.S'
     return files,manifest
 
 if __name__=='__main__':

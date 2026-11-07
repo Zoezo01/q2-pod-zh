@@ -22,6 +22,10 @@ class Tags(C.Structure):
                 ('mqa', C.c_int), ('kind', C.c_int), ('rate', C.c_int), ('size', C.c_uint)]
 
 
+class Lib(C.CDLL):
+    dir: pathlib.Path  # the build folder, for the tests' own files
+
+
 @pytest.fixture(scope='module')
 def lib():
     cache = pathlib.Path(os.environ.get('XDG_CACHE_HOME') or pathlib.Path.home()/'.cache')
@@ -30,7 +34,7 @@ def lib():
     try:
         subprocess.run(['clang', '-shared', '-fPIC', '-DPEQ_HOST', '-Wall', '-Wextra', '-Werror',
                         str(ROOT/'patch/xiph.c'), '-o', str(d/'xiph.so')], check=True)
-        so = C.CDLL(str(d/'xiph.so'))
+        so = Lib(str(d/'xiph.so'))
         so.ogg_tags.argtypes = [C.c_char_p, C.POINTER(Tags)]
         so.utf8_latin1.argtypes = [C.c_char_p, C.c_char_p]
         so.dir = d
@@ -213,7 +217,7 @@ def test_flac_album_artist_as_before(lib, items, count):
         outs = []
         for fn in (old.old_flac_album_artist, lib.flac_album_artist):
             out = C.create_string_buffer(b'\x55' * 0x100)
-            out[0] = 0
+            out[0] = b'\0'
             fn(str(path).encode(), out)
             outs.append(out.raw)
         assert outs[0] == outs[1]

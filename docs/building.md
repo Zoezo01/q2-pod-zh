@@ -136,6 +136,20 @@ Q2_FW_STRICT=1 python3 -m pytest test/fw    # fail a test that reaches a stub to
 - **A known bug** stays as `@pytest.mark.xfail(strict=True, reason='BUG: ...')`: the test fails the job as soon as the bug is fixed, until the mark goes.
 - **Limits:** the code runs 64-bit, so `long` and pointers are wider than on the Q2, and stock widgets' layouts don't hold. Code that depends on those stays with `test/patch.py`. `peq_player.c`, `mp3_gapless.c` and the FLAC paths are the player's, tested by `test/peq.py`, `test/mp3_gapless.py` and the `test/flac_*.py` scripts.
 
+## Type check
+
+`.github/workflows/types.yml` runs [mypy](https://mypy-lang.org) over `tools/`, `test/unit` and `test/fw` on every pull request and push to `main`. Few functions carry annotations, so mypy checks the bodies of unannotated ones too (`check_untyped_defs` in `pyproject.toml`): a misspelt name, a wrong argument count, a `None` used as a value, bytes for a str.
+
+```sh
+pip install -r requirements.txt -r test/unit/requirements.txt mypy==2.4.1
+mypy tools test/unit
+mypy test/fw  # its own run: test/unit has a conftest module too
+```
+
+- **`need(value, message)`** in `tools/build.py` is `check` for a search or lookup that can come back `None`: it returns the value or raises the same `ValueError`. mypy can't see through `check(m is not None, ...)`, and `re.search(...)[1]` alone fails.
+- **Off on purpose:** `func-returns-value` (the tests' mocks return `list.append`'s `None`) and `var-annotated` (an empty list or dict). A name may take a new type (`allow_redefinition_new`), as in `d = pathlib.Path(d)`.
+- **ctypes `_fields_`** is one list, `[*((k, C.c_int) for k in ...), ('x', C.c_void_p)]`: mypy reads lists added together as a list of `object`, which `Structure` refuses.
+
 ## Mutation tests
 
 `.github/workflows/tests.yml` runs `test/unit` on every pull request and push to `main`. Every Sunday, or by hand from the Actions tab after a substantial change to `tools/`, `.github/workflows/mutation.yml` runs [mutmut](https://github.com/boxed/mutmut) on the `tools/` functions changed since tag 1.2.0: the same mutants over unchanged code find nothing new, so it doesn't run nightly. mutmut breaks a copy of each function in one small way at a time and checks that `test/unit` notices. `test/unit/targets.py` lists the functions from git, so a new one joins by itself. The job fails under the score floor in the workflow, and uploads every surviving mutant as `surviving-mutants`. About 6,700 mutants take three and a half minutes on four workers.

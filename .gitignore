@@ -9,6 +9,7 @@ dist/*
 *.squashfs
 
 __pycache__/
+.mypy_cache/
 mutants/
 q2remote.key
 .build-number

@@ -26,9 +26,9 @@ W_W, W_H, CANVAS_LCD = 0x08, 0x0c, 0x38
 
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
-                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56)] + \
-               [(n, C.c_int) for n in ('qr', 'game', 'present', 'launched', 'hold', 'relaunch', 'restart')] + \
-               [(n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play')]
+                ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56),
+                *((n, C.c_int) for n in ('qr', 'game', 'present', 'launched', 'hold', 'relaunch', 'restart')),
+                *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
 class Ap(C.Structure):
@@ -53,21 +53,21 @@ class Req(C.Structure):
 
 
 class Lv(C.Structure):
-    _fields_ = [(n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow')] + \
-               [(n, C.c_uint) for n in ('since', 'base', 'id', 'hash')] + \
-               [('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
+    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow')),
+                *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash')),
+                ('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
 
 
 class Pg(C.Structure):
-    _fields_ = [(n, C.c_void_p) for n in ('page', 'view', 'edit')] + [(n, C.c_uint) for n in ('timer', 'go', 'leave', 'again')] + \
-               [(n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code')] + \
-               [('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
+    _fields_ = [*((n, C.c_void_p) for n in ('page', 'view', 'edit')), *((n, C.c_uint) for n in ('timer', 'go', 'leave', 'again')),
+                *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code')),
+                ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte)]
 
 
 class Qp(C.Structure):
-    _fields_ = [(n, C.c_void_p) for n in ('page', 'qr', 'col', 'msg', 'addr', 'pin', 'note', 'say', 'sub')] + \
-               [(n, C.c_uint) for n in ('timer', 'leave', 'seen')] + [('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p)]
+    _fields_ = [*((n, C.c_void_p) for n in ('page', 'qr', 'col', 'msg', 'addr', 'pin', 'note', 'say', 'sub')),
+                *((n, C.c_uint) for n in ('timer', 'leave', 'seen')), ('state', C.c_void_p), ('size', C.c_int), ('hex', C.c_void_p)]
 
 
 class Taken(C.Structure):

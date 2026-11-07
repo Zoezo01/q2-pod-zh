@@ -106,8 +106,8 @@ class Card:
 # Night Shift
 
 class Ns(C.Structure):
-    _fields_ = [(k, C.c_int) for k in 'read on kelvin built dark saved_on saved_kelvin'.split()] + \
-               [('lcd', C.c_void_p), ('end', C.c_void_p), ('g', C.c_ubyte * 256), ('b', C.c_ubyte * 256)]
+    _fields_ = [*((k, C.c_int) for k in 'read on kelvin built dark saved_on saved_kelvin'.split()),
+                ('lcd', C.c_void_p), ('end', C.c_void_p), ('g', C.c_ubyte * 256), ('b', C.c_ubyte * 256)]
 
 
 class Lcd:
@@ -765,11 +765,11 @@ class Mark(C.Structure):
 
 
 class Bk(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'page list view reader sheet info path'.split()] + \
-               [(k, C.c_int) for k in 'n screen target current state info_on'.split()] + \
-               [('file', C.c_char_p), ('cache', C.c_char * 48), ('tmp', C.c_char * 48)] + \
-               [(k, C.c_uint) for k in 'key size pos end prev base len'.split()] + \
-               [('buf', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('poll', C.c_uint), ('running', C.c_int),
+    _fields_ = [*((k, C.c_void_p) for k in 'page list view reader sheet info path'.split()),
+                *((k, C.c_int) for k in 'n screen target current state info_on'.split()),
+                ('file', C.c_char_p), ('cache', C.c_char * 48), ('tmp', C.c_char * 48),
+                *((k, C.c_uint) for k in 'key size pos end prev base len'.split()),
+                ('buf', C.c_void_p), ('thread', C.c_ulong), ('timer', C.c_uint), ('poll', C.c_uint), ('running', C.c_int),
                 ('finished', C.c_int), ('result', C.c_int), ('cancel', C.c_int), ('marks', Mark * 64)]
 
 
@@ -1015,8 +1015,8 @@ def test_marks_hostile_sweep(fw):
 
 
 class Vid(C.Structure):
-    _fields_ = [(k, C.c_int) for k in 'paused volume gain pid sock seek'.split()] + \
-               [(k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split()]
+    _fields_ = [*((k, C.c_int) for k in 'paused volume gain pid sock seek'.split()),
+                *((k, C.c_uint) for k in 'polled control_at seek_at key at paused_at'.split())]
 
 
 def video(fw):
@@ -1135,10 +1135,10 @@ def test_play_flips_the_pause_at_once(fw):
 # Crossfade's page
 
 class Xf(C.Structure):
-    _fields_ = [(k, C.c_int) for k in 'read on seconds done'.split()] + [('key', C.c_int * 6)] + \
-               [(k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap mqa_read mqa'.split()] + \
-               [(k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mqa_label mono_label page sw view slider dec add label'.split()] + \
-               [('press', C.c_uint), ('press_at', C.c_uint)]
+    _fields_ = [*((k, C.c_int) for k in 'read on seconds done'.split()), ('key', C.c_int * 6),
+                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap mqa_read mqa'.split()),
+                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mqa_label mono_label page sw view slider dec add label'.split()),
+                ('press', C.c_uint), ('press_at', C.c_uint)]
 
 
 def xf(fw):
@@ -1418,9 +1418,9 @@ class EqState(C.Structure):
 
 
 class Ui(C.Structure):
-    _fields_ = [(k, C.c_void_p) for k in 'page view edit graph bar'.split()] + [('timer', C.c_uint), ('keyboard_timer', C.c_uint)] + \
-               [(k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()] + \
-               [('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
+    _fields_ = [*((k, C.c_void_p) for k in 'page view edit graph bar'.split()), ('timer', C.c_uint), ('keyboard_timer', C.c_uint),
+                *((k, C.c_int) for k in 'screen band step count previous rendered dirty pick adjust tries capacity file_page tab tabs from_simple'.split()),
+                ('typed', C.c_double), ('draft', Preset), ('candidate', Preset), ('named', Preset), ('names', C.c_void_p),
                 ('destination', C.c_char * 600), ('status', C.c_char * 160), ('name', C.c_char * 256), ('applied', C.c_char * 256),
                 ('curve', (C.c_float * 343) * 2)]
 
@@ -2051,8 +2051,8 @@ def test_a_display_only_row_does_nothing(fw):
 
 
 class E3(C.Structure):
-    _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint)] + \
-               [(k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()] + [('gain', C.c_double * 3), ('status', C.c_char_p), ('caption', C.c_int)]
+    _fields_ = [('view', C.c_void_p), ('save', C.c_uint), ('press', C.c_uint), ('press_at', C.c_uint),
+                *((k, C.c_int) for k in 'focus adjusting dragging dirty on h'.split()), ('gain', C.c_double * 3), ('status', C.c_char_p), ('caption', C.c_int)]
 
 
 E3_TABS, E3_SWITCH, E3_PRESETS, E3_RESET, E3_LOW, E3_MID, E3_HIGH = range(7)

@@ -34,8 +34,8 @@ class App(C.Structure):
 
 
 class Sh(C.Structure):
-    _fields_ = [('thread', C.c_ulong)] + [(n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')] + \
-               [('map', C.c_int * SH_MAX), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
+    _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
+                ('map', C.c_int * SH_MAX), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
                 ('page', C.c_void_p), ('row', C.c_void_p * SH_MAX)]
 
 

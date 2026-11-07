@@ -43,6 +43,14 @@ class Memory:
         return self.store[address]
 
 
+def test_need():
+    assert build.need(0, 'unused') == 0 and build.need(b'', 'unused') == b''  # only None fails
+    with pytest.raises(ValueError, match=r'^Missing x$'):
+        build.need(None, 'Missing x')
+    with pytest.raises(ValueError, match=r'^Unexpected time zone UTC$'):
+        build.timezone_offset('UTC')
+
+
 def test_word_and_read():
     u = Memory()
     build.word(u, 8, -1)
@@ -245,6 +253,7 @@ def test_bold_font():
     assert names[0] == str(source['name'].getName(0, 3, 1, 0x409))  # the copyright notice stays
     assert font['head'].created == source['head'].created and font['head'].modified == source['head'].modified
     m = re.fullmatch(r'#define BOLD_RANGES \{([0-9a-fx,]+)\}', ranges)
+    assert m, ranges
     bounds = [int(v, 16) for v in m[1].split(',')]
     assert sorted(u for lo, hi in zip(bounds[::2], bounds[1::2]) for u in range(lo, hi + 1)) == have
     assert bounds[:2] == [0x20, 0x7e]  # runs, not single characters

@@ -1167,7 +1167,9 @@ def test_motion_today(tmp_path):  # Minimal: the asset hint kept (0), today's nu
     assert inc.count('.motion[MOTION_COVERFLOW].hint = 0,') == 1 and inc.count('.motion[MOTION_INPLACE].ms = 0,') == 1
     assert '.anim' not in inc
     # theme.h's order is the emitted kinds', which test/patch.py indexes by
-    assert re.findall(r'MOTION_\w+', re.search(r'enum \{\s*MOTION_PAGE.*?\}', (theme.ROOT/'patch/theme.h').read_text(), re.S)[0]) \
+    motions = re.search(r'enum \{\s*MOTION_PAGE.*?\}', (theme.ROOT/'patch/theme.h').read_text(), re.S)
+    assert motions
+    assert re.findall(r'MOTION_\w+', motions[0]) \
         == [f'MOTION_{k.upper()}' for k in (*theme.MOTION_WINDOW, *theme.MOTION_WIDGET)] + ['MOTION_N']
 
 

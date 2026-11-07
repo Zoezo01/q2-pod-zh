@@ -2016,8 +2016,8 @@ class Sql:
         elif b'select changes()' in statement:
             rows = [b'1']
         call = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)(callback) if callback else None
-        for value in rows:
-            if call(ctx, 1, row(value), None):
+        for value in rows:  # sqlite3_exec drops the rows when there's no callback
+            if call and call(ctx, 1, row(value), None):
                 return 4
         return 0
 

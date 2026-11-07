@@ -19,7 +19,7 @@ Apps live in their own repos. To list one on the App Store page, open a pull req
 
 ## Changing the firmware
 
-1. Build and test as in [building.md](docs/building.md). `python3 -m pytest test/unit` runs on every pull request; run the scripts in `test/` that cover what you changed too.
+1. Build and test as in [building.md](docs/building.md). `python3 -m pytest test/unit` and the [type check](docs/building.md#type-check) run on every pull request; run the scripts in `test/` that cover what you changed too.
 2. Try it on a Q2 if you can. A `--dev` build installs over any other and starts [`q2remote`](docs/remote.md) for screenshots and input over Wi-Fi.
 3. Run `./tools/format.sh`.
 4. Add a line for anything a user would notice under the top version in [changelog.md](docs/changelog.md), in plain words: what changed, not how. Don't change `VERSION`.

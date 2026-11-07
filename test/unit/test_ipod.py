@@ -237,7 +237,7 @@ SLIDER = {'style:normal:bg_image': 'a', 'style:normal:fg_image': 'b', 'style:nor
 
 
 def test_plain_slider_is_used_by_np_slider():
-    slider = ['slider', [0, 0, 1, 1], dict(SLIDER), []]
+    slider: list = ['slider', [0, 0, 1, 1], dict(SLIDER), []]
     ipod.np_slider(slider, 10, 100, 50, 4)
     assert slider[1] == [10, 100 - ipod.NP_TOUCH // 2, 50, ipod.NP_TOUCH]
     props = slider[2]
@@ -689,13 +689,10 @@ def test_slider_plain_other_pages_stay():
     assert root == before
 
 
-def test_slider_plain_wants_two_endpoints():
+def test_slider_plain_wants_two_endpoints(monkeypatch):
+    monkeypatch.setattr(ipod, 'SETTINGS_SLIDERS', ('x',))
     with pytest.raises(ValueError, match=r'^x: unexpected slider endpoints$'):
-        ipod.SETTINGS_SLIDERS, saved = ('x',), ipod.SETTINGS_SLIDERS
-        try:
-            ipod.slider_plain('x', settings_page('vol_left'))
-        finally:
-            ipod.SETTINGS_SLIDERS = saved
+        ipod.slider_plain('x', settings_page('vol_left'))
 
 
 def test_sized_art(monkeypatch):
@@ -767,6 +764,7 @@ def test_fallback_scale_matches_the_faces():  # theme_font's bold.ttf, at the Cl
         f = TTFont(path, lazy=True)
         return f['OS/2'].sCapHeight / (f['hhea'].ascent - f['hhea'].descent)
     pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (ipod.ROOT/'patch/navigation.c').read_text())
+    assert pct
     assert int(pct[1]) == round(100*cap(ipod.ROOT/'assets/fonts/texgyreheros-bold.otf')/cap(ipod.ROOT/'assets/fonts/LiberationSans-Bold.ttf')) == 83
 
 

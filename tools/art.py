@@ -8,7 +8,7 @@ import zlib
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
-from build import ROOT
+from build import ROOT, need
 from ipod import CLASSIC_LIGHT_FONT_SRC, STATE_W, inc
 
 SUB = 8  # sub-rows per pixel; columns are exact within a sub-row
@@ -59,6 +59,7 @@ def path(d):
         if tokens[i].isalpha():
             cmd = tokens[i]
             i += 1
+        cmd = need(cmd, 'SVG path data before its first command')
         rel, op = cmd.islower(), cmd.upper()
         if op == 'Z':
             polys.append(pts)
@@ -192,7 +193,7 @@ def note(svg):
     """The note's RGBA bytes from its drawing, note.svg: see that file."""
     def linear(name):
         """The gradient's stops [(pos %, alpha 0 to 1, grey 0 to 1)] and its axis's ends."""
-        g = re.search(rf'<linearGradient id="{name}"([^>]*)>(.*?)</linearGradient>', svg, re.S)
+        g = need(re.search(rf'<linearGradient id="{name}"([^>]*)>(.*?)</linearGradient>', svg, re.S), f'Missing gradient {name}')
         attr = dict(re.findall(r'(\w+)="([^"]*)"', g[1]))
         stops = [(float(a['offset']) * 100, float(a.get('stop-opacity', 1)), int(a['stop-color'][1], 16) / 15)
                  for a in map(lambda t: dict(re.findall(r'([\w-]+)="([^"]*)"', t)), re.findall(r'<stop ([^>]*)/>', g[2]))]
@@ -207,8 +208,8 @@ def note(svg):
             if p <= s1[0]:
                 return s0[channel] + (s1[channel] - s0[channel]) * (p - s0[0]) / (s1[0] - s0[0])
         return stops[-1][channel]
-    shape = path(re.search(r'id="shape" d="([^"]*)"', svg)[1])
-    gloss = path(re.search(r'id="gloss" d="([^"]*)"', svg)[1])
+    shape = path(need(re.search(r'id="shape" d="([^"]*)"', svg), 'Missing shape')[1])
+    gloss = path(need(re.search(r'id="gloss" d="([^"]*)"', svg), 'Missing gloss')[1])
     fill, gfill, fade = linear('shape_fill'), linear('gloss_fill'), linear('gloss_fade')
     return compose(NOTE_BOX, [(shape, lambda x, y: (0xffffff, at(fill, y, 1))),
                               (gloss, lambda x, y: (0xffffff, at(gfill, y, 1) * at(fade, x, 2)), shape),
