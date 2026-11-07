@@ -4081,9 +4081,9 @@ for row,text in zip(kids[4:7],LISTS):
     assert m.nodes[row]['name']==('' if text==LISTS[-1] else '_page_tall')
     # A label draws nothing in a box shorter than its font: 28 and 17 px under Classic.
     assert m.nodes[second]['text']=='3 Songs' and m.get(title+O['W_H'])==28 and m.get(second+O['W_H'])==18
-    assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==262
+    assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==289
     more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
-    assert m.nodes[more]['visible']==1 and m.get(more+O['W_X'])==273 and m.nodes[more]['image']=='unselect'
+    assert m.nodes[more]['visible']==1 and m.get(more+O['W_X'])==321 and m.nodes[more]['image']=='unselect'
 action=[r for r in kids if m.row_text(r)==NEW][0]
 assert m.get(action+O['W_H'])==32 and m.get(m.nodes[m.nodes[action]['children'][0]]['children'][0]+O['W_H'])==32>=27
 # ... the separators: every shown row but the list's last.
@@ -4191,22 +4191,26 @@ m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); cpm_wheel(m,O['KEY_PRE
 assert m.selected(m.view)==0
 m.press(200); before=m.top; assert m.hold()==11 and m.top==before; passed()
 
-# Dots and tick: the theme's own, in the row's coordinates, white or grey by the band: 18 px across, centred in the row.
-m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view)
-more=next(k for k in m.nodes[m.row_button('List 1')]['children'] if m.nodes[k]['name'].startswith('img_more'))
-m.rounded=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(more,m.canvas,0,0),gap=0)
-assert [r['rect'] for r in m.rounded]==[(16,24,4,4),(23,24,4,4),(30,24,4,4)]; passed()
+# Dots and tick: the theme's own, in the row's coordinates, grey, none on the band (its chevron's): 18 px across, centred in the row.
+m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.selected(m.view)==2
+for t,dots in (('List 0',[]),('List 1',[(16,24,4,4),(23,24,4,4),(30,24,4,4)])):
+    more=next(k for k in m.nodes[m.row_button(t)]['children'] if m.nodes[k]['name'].startswith('img_more'))
+    m.call(address=HOOKS['widget_on_paint_background'][0],args=(more,m.canvas,0,0),gap=0)
+    m.rounded=[]; m.call(address=HOOKS['widget_on_paint_border'][0],args=(more,m.canvas,0,0),gap=0,clear=False)
+    assert [r['rect'] for r in m.rounded]==dots, t
+passed()
 m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 1'))
 choice=next(k for k in m.nodes[m.row_button('List 1')]['children'] if m.nodes[k]['name'].startswith('img_choice'))
 assert m.nodes[choice]['image']=='select' and m.marks==[0,1,0]
 m.call(address=HOOKS['widget_on_paint_border'][0],args=(choice,m.canvas,0,0),gap=0)
 assert [c[2:] for c in m.calls if c[0]=='canvas_fill_rect'][0]==(18,22); passed()
 
-# The list's `>` sits in stock's More hit (x from 286): a tap in its column opens the playlist, the dots left of it are More;
-# in select mode any tap marks. The picker draws no `>`: a pick adds and closes.
+# The list's `>` sits in stock's More hit (x from 286): a tap left of the dots' column at the edge (x from 333), the `>`'s
+# with it, opens the playlist, the dots are More; in select mode any tap marks. The picker draws no `>`: a pick adds and closes.
 m=ClassicPlaylistMachine(); m.rebuild(); m.paint(m.view); assert m.icons
-m.tap(m.row_button('List 2'),330); assert not m.mores and any(c[0]=='navigator_to_with_context' for c in m.calls)
-m.tap(m.row_button('List 2'),300); assert m.mores==[2]
+for x in (330,300):
+    m.calls.clear(); m.tap(m.row_button('List 2'),x); assert not m.mores and any(c[0]=='navigator_to_with_context' for c in m.calls), x
+m.tap(m.row_button('List 2'),340); assert m.mores==[2]
 m.tap(m.row_button(EDIT)); m.stack_rows(); m.tap(m.row_button('List 2'),330); assert m.mores==[2] and m.marks==[0,0,1]
 m=ClassicPlaylistMachine(3,1); m.rebuild(); m.icons=[]; m.paint(m.view); assert not m.icons; passed()
 
@@ -4234,7 +4238,7 @@ info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_in
 more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
 assert m.get(m.get(button+O['W_CHILDREN_LAYOUT'])+O['CHILDREN_LAYOUT_VTABLE'])!=O['DEFAULT_LAYOUT_VTABLE']
 native_row_layout(m,button)
-assert (m.get(info+O['W_X']),m.get(info+O['W_W']),m.get(more+O['W_X']),m.get(more+O['W_W']))==(20,262,273,50)
+assert (m.get(info+O['W_X']),m.get(info+O['W_W']),m.get(more+O['W_X']),m.get(more+O['W_W']))==(20,289,321,50)
 assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28; passed()
 
 # Stock's add mode is one global, left by a picker however it closes: a page coming back rebuilds as what it opened as.

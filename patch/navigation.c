@@ -3262,13 +3262,12 @@ static void paint_radio(void *w, void *canvas) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         int x = I(w, W_W) / 2 - 6, y = I(w, W_H) / 2 - 4;
         /* A playlist's quiet More: stock's dots, emptied as a ring (pl_row), in the second line's
-         * grey, white on the band: 4 px dots, 7 px apart. */
+         * grey: 4 px dots, 7 px apart. The band's chevron takes their place (pl_fit). */
         if (!tk_strcmp(image, "unselect") &&
             tk_str_start_with(widget_get_prop_str(w, "name", ""), "img_more")) {
-            unsigned ink = painting_in(st.sel_accent) ? RGBA(S->sel_text) : ui_ink(RGBA(S->muted));
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 3 && !painting_in(st.sel_accent); ++i) {
                 rect_t dot = { x - 3 + i * 7, y + 2, 4, 4 };
-                fill_box(canvas, &dot, ink, 2);
+                fill_box(canvas, &dot, ui_ink(RGBA(S->muted)), 2);
             }
             stock_canvas_set_fill_color(canvas, fill);
             return;
@@ -12675,8 +12674,9 @@ static const unsigned pl_stock[PL_N] = { 0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0,
 #define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4b1310)
 
 /* A row's place on the list's two heights: name over second line in the page rows' boxes, which
- * hold their fonts; the dots in stock's hit (x from 286) left of the chevron's column, or a mark at
- * the picker's tick's. The text ends clear of whichever shows. */
+ * hold their fonts; the dots or a mark at the right edge, centred on the picker's tick's column
+ * (x 346), where the selected row's chevron (x 317) shows in their place. The text ends clear of
+ * whichever shows. */
 static void pl_fit(void *button) {
     const theme_t *T = theme();
     int h = I(button, W_H), width = 289;
@@ -12684,8 +12684,7 @@ static void pl_fit(void *button) {
         void *c = widget_get_child(button, i);
         const char *name = widget_get_prop_str(c, "name", "");
         if (tk_str_start_with(name, "img_more") && widget_get_visible(c)) {
-            width = 262;
-            widget_move_resize(c, 273, 0, 50, h);
+            widget_move_resize(c, 321, 0, 50, h);
         } else if (tk_str_start_with(name, "img_choice") && widget_get_visible(c)) {
             width = 309;
             widget_move_resize(c, 333, 0, 26, h);
@@ -12889,12 +12888,13 @@ static int pl_marked(void *win, void *event) {
     return 0;
 }
 /* Stock's row click opens More from x 286 outside select mode (0x4b1d90, 0x4b1e70): a picker has
- * no More, so a tap anywhere picks; in the list the chevron's column (from x 317) opens the
- * playlist, the dots left of it stay More. Either is a fresh click at x 0. */
+ * no More, so a tap anywhere picks; in the list the dots' column at the edge (from x 333, the
+ * tick's) stays More, and a tap left of it, the chevron's column (from x 317) too, opens the
+ * playlist. A pick or an open is a fresh click at x 0. */
 static int pl_pick(void *ctx, void *event) {
     char click[0x30];
     if (!widget_get_prop_int(window_of(ctx), PL_MODE, 0) &&
-        (g_navbar_status == 1 || I(event, EVENT_X) < 375 - CHEVRON_W))
+        (g_navbar_status == 1 || I(event, EVENT_X) >= 333))
         return PLAYLIST_PICK(ctx, event);
     return PLAYLIST_PICK(ctx, pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
