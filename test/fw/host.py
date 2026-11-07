@@ -26,7 +26,7 @@ import peq as tools_peq  # noqa: E402
 import theme as tools_theme  # noqa: E402
 
 PURE = set('memset memcpy memcmp memmove strcmp strncmp strlen strcasecmp strncasecmp strrchr strstr strcasestr strdup '
-           'calloc realloc free snprintf __isoc99_sscanf qsort pow cos sin log sqrt atoi strtol'.split())
+           'calloc realloc free snprintf __isoc99_sscanf qsort pow cos sin cosf sinf log sqrt atoi strtol'.split())
 SOURCES = [ROOT/'patch'/name for name in ['navigation.c', *tools_peq.UI_SOURCES]]
 # GCC 14 makes these two errors anyway; the rest is the 64-bit build's noise (pointer <-> int casts of
 # stock's 32-bit addresses) or style the Q2's clang build already checks.
