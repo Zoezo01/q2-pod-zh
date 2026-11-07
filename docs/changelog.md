@@ -2,6 +2,7 @@
 
 - **1.6.8**:
   - Now Playing: a title or artist too long to fit now pauses at its start before each scroll, as it does at its end. It used to jump back to the start and scroll on at once.
+  - Display: a long title that scrolls, on any page, now rests on its start for a moment before it moves, scrolls at Now Playing's pace, and rests on its end before it goes back to the start. Most used to race to the end and wait there.
   - Display: **Theme: Modern**'s Home menu is in Shanling's own font again, as before 1.5.8. Its Now Playing title stays bold.
   - Display: the Theme list is in the order Minimal, Modern, Classic.
   - Display: under **Theme: Modern** the battery icon is green only while charging, as in Minimal. It used to be green at every level.
