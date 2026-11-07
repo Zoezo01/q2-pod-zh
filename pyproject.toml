@@ -12,9 +12,12 @@ timeout_multiplier = 10.0
 [tool.coverage.run]
 source = ["tools"]
 branch = true
+# Python 3.14's default, sys.monitoring, counts a one-line if or def as a branch never taken: CI's 3.12 and a
+# local 3.14 run then disagree.
+core = "ctrace"
 
 [tool.coverage.report]
-# The floor, two places counted: what's left is unreachable, or behind theme.validate's xfail.
+# The floor, two places counted: what's left is unreachable.
 fail_under = 99.7
 precision = 2
 show_missing = true

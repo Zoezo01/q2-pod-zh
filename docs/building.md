@@ -171,8 +171,8 @@ Both workflows count what their stock-free runs reach and fail under a floor, an
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
-coverage run -m pytest test/unit && coverage report     # needs clang, lld and llvm
-export Q2_COV=/tmp/q2-cov; mkdir -p $Q2_COV
-PATH=$PWD/test/coverage:$PATH python3 -m pytest test/fw  # and the host suites, the same way
-gcovr --root . --filter patch/ --gcov-ignore-errors=source_not_found --html-details /tmp/c-coverage.html $Q2_COV
+coverage run -m pytest test/unit --basetemp ~/.cache/q2-pytest/unit && coverage report  # needs clang, lld and llvm
+export Q2_COV=~/.cache/q2-cov; rm -rf $Q2_COV; mkdir -p $Q2_COV  # counts add up across runs: start empty
+PATH=$PWD/test/coverage:$PATH python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # and the host suites, the same way
+gcovr --root . --filter patch/ --gcov-ignore-errors=source_not_found --html-details ~/.cache/c-coverage.html $Q2_COV
 ```
