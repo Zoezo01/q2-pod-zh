@@ -6607,7 +6607,11 @@ def lay(tw):
     x=BX-TW+tw
     return {elapsed:(x-GAP-tw,TY,tw,21),remain:(375-x+GAP,TY,tw,21),slider:(x,233,375-2*x,44)}
 def geo(w): return tuple(signed(m.get(w+O[k])) for k in ('W_X','W_Y','W_W','W_H'))
-def refit(): return [c[:2] for c in m.calls if c[0] in ('widget_invalidate_force','widget_move_resize')]
+def refit():  # the widgets moved, each invalidated just before and after its move: where it was and where it goes
+    c=[x[:2] for x in m.calls if x[0] in ('widget_invalidate_force','widget_move_resize')]
+    moved=[(i,w) for i,(n,w) in enumerate(c) if n=='widget_move_resize']
+    assert all(0<i<len(c)-1 and c[i-1]==c[i+1]==('widget_invalidate_force',w) for i,w in moved),c
+    return [w for _,w in moved]
 put(win,0,30,375,290)
 for w,g in lay(TW).items(): put(w,*g)
 from ipod import VALUE_NAMES
@@ -6616,7 +6620,7 @@ for n,v in (('np_bar_x',BX),('np_bar_w',375-2*BX)):  # Classic's boot set: row 0
 m.word(syms['system_bar'],m.node('window','system_bar'))
 assert m.call(address=playing,args=(win,7,0,0),gap=0)==0
 assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W1']) and lay(O['NP_IPOD_TIME_W1'])[slider][:3:2]==(66,243)
-assert refit()==[(n,w) for w in (elapsed,remain,slider) for n in ('widget_invalidate_force','widget_move_resize','widget_invalidate_force')]
+assert refit()==[elapsed,remain,slider]
 m.nodes[m.wm]={'children':[win]}; m.calls=[]; paint(win); assert not m.timers or payload_syms['np_fit_due'] not in [t[1] for t in m.timers.values()]
 from build import AB_X_CALLS  # the placement's three calls of the x go through ringnav_ab_x
 assert [struct.unpack_from('<I',demo,fileoff(demo,a))[0] for a in AB_X_CALLS]==[jal(payload_syms['ringnav_ab_x'])]*3
@@ -6634,7 +6638,7 @@ m.nodes[slider]['value']=200; m.calls=[]; paint(win); m.advance(0); assert geo(s
 m.nodes[slider]['max']=7200; m.calls=[]; paint(win)  # a two-hour track: mid-paint nothing moves
 assert geo(slider)==lay(O['NP_IPOD_TIME_W1'])[slider] and payload_syms['np_fit_due'] in [t[1] for t in m.timers.values()]
 m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(TW) and lay(TW)[slider][2]==201
-assert refit()==[(n,w) for w in (elapsed,remain,slider) for n in ('widget_invalidate_force','widget_move_resize','widget_invalidate_force')]
+assert refit()==[elapsed,remain,slider]
 m.nodes[slider]['max']=0; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(TW)[slider] and not refit()  # unknown: kept
 assert ab_x(BX+89)==BX+89  # the build's bar: stock's own
 m.nodes[slider]['max']=700; paint(win); m.advance(0); assert {w:geo(w) for w in lay(TW)}==lay(O['NP_IPOD_TIME_W2']) and geo(slider)[:3:2]==(74,227); passed()
