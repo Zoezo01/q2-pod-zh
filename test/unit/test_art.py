@@ -180,7 +180,7 @@ def test_quick_settings_glyphs_dim_only_when_disabled():
     assert alpha('highgaindisable') == round(255 * art.QS_DIM)
     assert all(mark(a) != mark(b) for a, b in (('lo', 'sa'), ('po', 'sa'), ('lowgain', 'highgaindisable')))
     # stock's three USB modes, three marks: storage off, as stock's grey disc
-    assert mark('usbaudio') != mark('usbdac') and 'usbstorage' not in QS_LIT
+    assert len({got[f'classic_light_drop_{n}_l'] for n in ('usbstorage', 'usbaudio', 'usbdac')}) == 3 and 'usbstorage' not in QS_LIT  # one ink, three marks
     # the text keeps its counter: the O of PO is clear in its middle
     w, h, at = pixels(mark('po'))
     row = [at(x, 30)[3] for x in range(30, 45)]

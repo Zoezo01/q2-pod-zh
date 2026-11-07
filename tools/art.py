@@ -350,10 +350,10 @@ QS_GLYPHS = {
     'wifi': ((3, ('M-14 -3a20 20 0 0 1 28 0', 'M-8 3a11 11 0 0 1 16 0'), ()), ((0, 9, 2.8),), ()),
     'bt': ((2.6, ('M-7 -7 7 6 0 12V-12L7 -6-7 7',), ()), (), ()),
     'lock': ((2.4, ('M-5 -3v-4a5 5 0 0 1 10 0v4',), ('M-7 -3H7A2 2 0 0 1 9 -1V9A2 2 0 0 1 7 11H-7A2 2 0 0 1 -9 9V-1A2 2 0 0 1 -7 -3Z',)), (), ()),
-    # stock's three USB modes, each its own: storage a drive, DAC a plug, audio a stick
-    'drive': ((2.4, ('M-3 7 3 2', 'M-3 0 3 -5'), ('M-4 -14H4V-9H-4Z', 'M-7 -9H7V13H-7Z')), (), ()),
-    'plug': ((2.4, ('M0 11V15',), ('M-6 -14H6V-5H-6Z', 'M-8 -5H8V6L3 11H-3L-8 6Z')), (), (((-2.5, -11), (-2.5, -8)), ((2.5, -11), (2.5, -8)))),
-    'stick': ((2.4, (), ('M-4 -14H4V-8H-4Z', 'M-7 -8H7V7A7 7 0 0 1 -7 7Z')), (), ()),
+    # stock's three USB modes, each its own: storage a stick, DAC a USB-C port, audio the trident
+    'stick': ((2.4, (), ('M-4 -14H4V-8H-4Z', 'M-7 -8H7V10A2 2 0 0 1 5 12H-5A2 2 0 0 1 -7 10Z')), (), ()),
+    'usbc': ((2.4, (), ('M-7 -8A7 7 0 0 1 7 -8V8A7 7 0 0 1 -7 8Z',)), (), (((0, -7), (0, 7)),)),
+    'usb': ((2.4, ('M0 12V-10', 'M0 6l-7-6V-5', 'M0 2l7-6V-8'), ('M0 -13l-4 5h8Z',)), (), ()),
     'sl': ((2.4, ('M-8 -12V12', 'M0 -12V12', 'M8 -12V12'), ()), ((-8, 3, 3.6), (0, -4, 3.6), (8, 5, 3.6)), ()),
     'gear': ((2.4, (), (circle(0, 0, 5),)), (), SPOKES),
 }
@@ -366,7 +366,7 @@ QS_BUTTONS = {
     'lowgain': (('Low', 'Gain'), 0, 1), 'lowgaindisable': (('Low', 'Gain'), 0, QS_DIM),
     'highgain': (('High', 'Gain'), 1, 1), 'highgaindisable': (('High', 'Gain'), 0, QS_DIM),
     'lo': (('LO',), 1, 1), 'po': (('PO',), 0, 1), 'sa': (('SA',), 0, 1),
-    'usbstorage': ('drive', 0, 1), 'usbaudio': ('stick', 1, 1), 'usbdac': ('plug', 1, 1),
+    'usbstorage': ('stick', 0, 1), 'usbaudio': ('usb', 1, 1), 'usbdac': ('usbc', 1, 1),
     'playset': ('sl', 0, 1), 'sysset': ('gear', 0, 1),
 }
 def rounded_path(x, y, w, h, r):
