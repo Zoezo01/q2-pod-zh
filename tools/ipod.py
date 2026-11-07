@@ -624,7 +624,7 @@ def playing_page(root, g=SET0):
     art_y, art = (NP_ART_Y, NP_ART)
     if g.np_ipod:
         art, slide_top = NP_IPOD_ART, g.bar + NP_TOP - lift
-        art_y = next(y for y in range(NP_TOP) if corner_x(slide_top + y, 0) <= NP_MARGIN)
+        art_y = next(y for y in range(NP_TOP) if corner_x(slide_top + y, 0) <= NP_MARGIN) + inc('NP_IPOD_ART_DROP')
     text_x = NP_MARGIN + art + 12
     text_w = 375 - NP_MARGIN - text_x
     # Favourite centres beneath More; leave 6px between its target and shuffle/order. The row ends

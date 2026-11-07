@@ -376,7 +376,7 @@ def test_playing_page_classic_ipod():
     n, b, (x, _, w_, _) = named(root), named(base), ipod.with_geometry(g).NP_BAR
     lift, view, cover = ipod.NP_IPOD_LIFT, n['slide_view_view'][1], n['img_cover'][1]
     assert view[1] == b['slide_view_view'][1][1] - lift
-    top = g.bar + view[1] + cover[1]  # on screen: the first row whose corner clears the glass
+    top = g.bar + view[1] + cover[1] - ipod.inc('NP_IPOD_ART_DROP')  # on screen: NP_IPOD_ART_DROP under the first row whose corner clears the glass
     assert cover[0] == ipod.NP_MARGIN and cover[2:] == [ipod.NP_IPOD_ART, ipod.NP_IPOD_ART + ipod.NP_REFLECT]
     assert cover[1] > 0 and ipod.corner_x(top, 0) <= cover[0] < ipod.corner_x(top - 1, 0)
     assert n['slide_view'][1][3] == cover[1] + cover[3] <= view[3]

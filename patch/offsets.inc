@@ -171,11 +171,12 @@
  * ipod_times fits them to the track), its rows from NP_IPOD_BAR_Y, the times' NP_IPOD_TIME_H boxes
  * beside it, centred on its rows. */
 #define NP_IPOD_ART 178
-#define NP_IPOD_ART_Y 12
+#define NP_IPOD_ART_Y 22
+#define NP_IPOD_ART_DROP 10 /* the local page's art this far under the first row clear of the glass */
 #define NP_IPOD_TEXT_X 206
 #define NP_IPOD_TEXT_Y 38
 #define NP_IPOD_FAV_X 300
-#define NP_IPOD_FAV_Y 155
+#define NP_IPOD_FAV_Y 165
 #define NP_IPOD_BAR_X 87
 #define NP_IPOD_BAR_Y 245
 /* A radius-r corner's arc at row y (0 the outermost): how far in it starts, in 1/16 pixels. */
