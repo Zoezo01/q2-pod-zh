@@ -439,8 +439,8 @@ A theme can set these from its `motion` view, and Classic does; its pages open a
 Minimal's, with stock's slide or none, as above. Inside a page, a level's list pushes in from the
 right over 120 ms, and Return's from the left: a card app's levels (when their rows arrive), an
 artist's text albums and their tracks, a Photos album and a folder and its sub-folders. A list
-that only refreshes stays still, and keys and the wheel work during the push. A confirm, the hold menu and
-add to playlist fade in over 300 ms, their dim fading from 0. Home's
+that only refreshes stays still, and keys and the wheel work during the push. A confirm and add to
+playlist fade in over 300 ms, their dim fading from 0; the hold menu shows at once. Home's
 Settings list slides in over 170 ms. The selection jumps between rows with no glide or end bump,
 and a list shows its remembered row at once.
 

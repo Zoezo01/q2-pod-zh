@@ -869,8 +869,7 @@ static int name_in_n(const char *name, const char *const *names, unsigned n) {
 #define name_in(name, names) name_in_n(name, names, sizeof names / sizeof *names)
 /* A window as it loads, by name. Themes with no window hints read nothing. */
 static void motion_load(void *root, int np) {
-    static const char *const FADES[] = { "confirminfo_dialog", "sortselect_dialog",
-                                         "addplaylist_dialog" };
+    static const char *const FADES[] = { "confirminfo_dialog", "addplaylist_dialog" };
     const motion_t *M = theme()->motion;
     if (!M[MOTION_PAGE].hint && !M[MOTION_PLAYING].hint && !M[MOTION_DIALOG].hint) return;
     const char *name = widget_get_prop_str(root, "name", "");
@@ -12830,9 +12829,6 @@ static int qm_open(const void *unused);
 static int qm_run(const void *unused) {
     st.qm_timer = 0;
     if (!st.qm_dialog) return 0;
-    /* No fade: stock keeps an animated window on top until it ends, and everything below reads the
-     * page. Return's close (qm_back) keeps it. */
-    widget_set_prop_str(st.qm_dialog, "anim_hint", "");
     qm_close();
     void *r = qm_record();
     int a = st.qm_action, cls = st.qm_kind == QM_COVERFLOW ? 0xf001 : (int)st.qm_cls;

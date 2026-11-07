@@ -3673,8 +3673,7 @@ class QueueMachine(Machine):
         elif name=='toolsGetDirectoryM3u8': self.deqs[b][1]=[self.copy('stSongInfo',r) for r in self.m3u_files]; ret=len(self.m3u_files)
         elif name=='checkFavExist': ret=self.text(self.get(a+O['REC_NAME'])) in self.favs
         elif name=='navigator_window_is_exist': ret=self.text(a) in self.open_pages
-        elif name=='window_close':  # stock's: the hold menu with a hint stays the top window through its fade
-            if not (self.nodes[a].get('anim_hint') and self.nodes[a].get('name')=='sortselect_dialog'): self.stack.remove(a); self.top=self.stack[-1]
+        elif name=='window_close': self.stack.remove(a); self.top=self.stack[-1]
         elif name=='widget_destroy_children': self.nodes[a]['children']=[]
         elif name=='widget_on':
             self.nodes[a].setdefault('handlers',[]).append((b,c,d)); ret=1
@@ -8594,11 +8593,10 @@ assert rk.panel() is None and not rk.nodes[out]['visible'] and rk.kept()==[] and
 assert rk.run(4) is None and rk.panel() and rk.nodes[out]['visible'] and rk.call(O['KEY_RETURN'])==11 and rk.panel() is None and not rk.nodes[out]['visible']; passed()
 rm=AlbumRateMachine(); rm.open(); rm.word(rm.slide+O['SLIDE_INDEX'],1); assert rm.run(4) is None and rm.panel()
 assert not [w for w in rm.nodes[rm.page]['children'] if rm.nodes[w].get('name')=='rate_out'] and rate_poll(rm)==5; passed()
-# A hold menu's rows act on the page under it. Classic's dialog hint would keep the closing menu the top window for its fade (stock's close),
-# so a pick closes it at once, for every row, both halves, Cover Flow's cover and Library's Albums; Return keeps the fade.
-def faded_pick(m,row):
+# A hold menu's rows act on the page under it under Classic: every row, both halves, Cover Flow's cover and Library's Albums.
+def hold_pick(m,row):
     n=len(m.toasts); m.t=getattr(m,'t',7000)+1; m.press(m.t); assert m.hold()==11 and m.release()==0
-    m.handlers[syms['widget_set_prop_str']]='widget_set_prop_str'; m.nodes[m.top]['anim_hint']='fade(duration=300,easing=quadratic_out)'; m.pick(row); m.advance(0)
+    m.pick(row); m.advance(0)
     return m.toasts[-1][3] if len(m.toasts)>n else None
 def classic_half(machine,light,**kw):
     SETUP[:]=[lambda k:(k.config.update(THEME='1',LIGHT=light),k)]
@@ -8607,16 +8605,14 @@ def classic_half(machine,light,**kw):
     fm.mock('strstr@GLIBC_2.0'); return fm
 for light in '01':
     fm=classic_half(AlbumRateMachine,light); fm.open(); fm.word(fm.slide+O['SLIDE_INDEX'],1); a1=fm.aid(fm.albums[1])
-    assert faded_pick(fm,4) is None and fm.top==fm.page and fm.panel() and fm.nodes[fm.page]['name']=='coverflow_page'
+    assert hold_pick(fm,4) is None and fm.top==fm.page and fm.panel() and fm.nodes[fm.page]['name']=='coverflow_page'
     for k in [O['KEY_NEXT']]*3: assert fm.call(k)==11
     assert fm.call(O['KEY_CENTER'])==11 and fm.panel() is None and fm.kept()==[(a1&~7)|3] and not song_side_effects(fm)  # the existing path: the album's table, no song touched
-    assert faded_pick(fm,3) is None and fm.kept()==[(a1&~7)|5]  # Add to Favourites
+    assert hold_pick(fm,3) is None and fm.kept()==[(a1&~7)|5]  # Add to Favourites
     fm=classic_half(AlbumRateMachine,light); fm.open(); fm.word(fm.slide+O['SLIDE_INDEX'],1)
-    assert faded_pick(fm,0) is None and fm.top==fm.page and fm.query[:1]==('getMusicByAlbum',); passed()  # Play Next finds the cover's album
+    assert hold_pick(fm,0) is None and fm.top==fm.page and fm.query[:1]==('getMusicByAlbum',); passed()  # Play Next finds the cover's album
     fm=classic_half(AlbumRateMachine,light,page='album_page',cls=O['CLASS_ALBUMS'],pos=2); fm.page=fm.top
-    assert faded_pick(fm,4) is None and fm.top==fm.page and fm.panel(); passed()
-    fm=classic_half(AlbumRateMachine,light); fm.open(); fm.word(fm.slide+O['SLIDE_INDEX'],1); fm.t=7001; fm.press(fm.t); assert fm.hold()==11 and fm.release()==0
-    dlg=fm.top; fm.handlers[syms['widget_set_prop_str']]='widget_set_prop_str'; fm.nodes[dlg]['anim_hint']='fade(duration=300)'; f,ctx=fm.handler(fm.back,O['EVT_CLICK']); fm.call(O['KEY_RETURN'],address=f,args=(ctx,fm.event,0,0),gap=0); assert fm.nodes[dlg]['anim_hint'].startswith('fade'); passed()
+    assert hold_pick(fm,4) is None and fm.top==fm.page and fm.panel(); passed()
 # Folder's selected row: stock's foreground rebuilds the table's rows, so the list draws its chevron by the row's record, a folder's and not a song's; its own image draws none.
 fc=classic_light_new(QueueMachine,page='folder_page'); fc.word(fc.surface+O['W_PARENT'],fc.top); fc.word(fc.top+O['W_PARENT'],fc.wm); fc.call(); fc.paint(fc.surface); assert fc.bands and not fc.icons  # a song's
 for r in range(4): fc.word(fc.row(r)+O['REC_TYPE'],4)
@@ -12852,7 +12848,7 @@ OTHER_HINT='htranslate(duration=270,easing=linear)'; DIALOG_HINT='fade(duration=
 HINT_PROPS=('anim_hint','open_anim_hint','close_anim_hint','highlight')
 EXTRA=('playerqueue_page','playermore_page','playerjumpinfo_page')
 PAYLOAD=('shuffle_page','mostplayed_page','ratings_page','rated_page','era_page','era_albums_page','upnext_page','playlistedit_page','streamconf_page','games_page','books_page','apps_page')
-FADES=('sortselect_dialog','addplaylist_dialog','confirminfo_dialog')
+FADES=('addplaylist_dialog','confirminfo_dialog')
 class MotionMachine(UiLoad,CoverflowMachine): pass
 def motion_machine(t):
     SETUP[:]=[lambda k:(k.config.update(THEME=t,LIGHT='1'),k)]
@@ -12896,12 +12892,13 @@ def under_np(hint):
     q.top=q.win; bare(q); q.strokes=[]; q.paint(w,gap=0); return q,w
 q,w=under_np(OTHER_HINT); assert q.drawn() and q.selected(w)==1
 q,w=under_np(None); assert not q.drawn(); passed()
-# A confirm, the hold menu and add to playlist fade in, over a dim that fades from 0 where the asset has one.
+# A confirm and add to playlist fade in, over a dim that fades from 0 where the asset has one; the hold menu (and stock's sort list) shows at once.
 for name in FADES:
     m=motion_machine('1'); d=motion_load(m,name,'dialog',highlight='default(alpha=200)')
     assert m.nodes[d]['anim_hint']==DIALOG_HINT and m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)',name
 m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog'); assert m.nodes[d]['anim_hint']==DIALOG_HINT and 'highlight' not in m.nodes[d]
-m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog',highlight='default(alpha=200,start_alpha=0)'); assert m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)'; passed()
+m=motion_machine('1'); d=motion_load(m,'confirminfo_dialog','dialog',highlight='default(alpha=200,start_alpha=0)'); assert m.nodes[d]['highlight']=='default(alpha=200,start_alpha=0)'
+m=motion_machine('1'); d=motion_load(m,'sortselect_dialog','dialog',highlight='default(alpha=100)'); assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=100)' and hint_writes(m)==0; passed()
 # The volume dialog is no window slide, and a dialog not named here stays as it is.
 m=motion_machine('1'); d=motion_load(m,'dialog/volume_dialog','dialog'); assert 'anim_hint' not in m.nodes[d]
 m=motion_machine('1'); d=motion_load(m,'dialog/other_dialog','dialog',highlight='default(alpha=200)'); assert 'anim_hint' not in m.nodes[d] and m.nodes[d]['highlight']=='default(alpha=200)'; passed()
