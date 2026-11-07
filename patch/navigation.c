@@ -6712,6 +6712,8 @@ static void pl_box_paint(void *w, void *canvas) {
     st.paint_w = w;
     stock_canvas_set_fill_color(canvas, fill);
 }
+/* The history's top under Classic: the field (33 to 64), the strip's 7 rows above it and below. */
+#define SEARCH_HISTORY_Y 71
 /* The dialog as it loads, before its init: every name stock looks up stays. It covers the bar, so
  * it paints the bar (search_paint); it's at 0, 0, so these boxes are the screen's. */
 static void search_open(void *win) {
@@ -6769,16 +6771,27 @@ static void search_open(void *win) {
         if ((c = widget_lookup(win, messages[i], 1)))
             for (unsigned k = 0; k < sizeof label_state / sizeof *label_state; ++k)
                 widget_set_prop_int(c, style_key(key, label_state[k], "font_size"), 15);
-    if ((c = widget_lookup(win, "view", 1))) { /* the history's list, where the rows go */
+    /* The history (its header, then the list where the rows go) and its tip show only while the
+     * tabs don't (search_results), so they sit in the tabs' place, right under the field's strip.
+     * Stock never moves them, and neither has a self_layout to put them back. */
+    if ((c = widget_lookup(win, "view", 1))) {
         void *list = widget_lookup(c, "list_view", 1);
-        widget_move_resize(c, 0, 108, 375, 212);
-        if (list) widget_resize(list, 375, 162);
+        widget_move_resize(c, 0, SEARCH_HISTORY_Y, 375, 320 - SEARCH_HISTORY_Y);
+        if (list) widget_resize(list, 375, 320 - SEARCH_HISTORY_Y - 50);
     }
-    if ((c = widget_lookup(win, "view_tip", 1))) widget_move_resize(c, 0, 108, 375, 212);
+    if ((c = widget_lookup(win, "view_tip", 1)))
+        widget_move_resize(c, 0, SEARCH_HISTORY_Y, 375, 320 - SEARCH_HISTORY_Y);
     st.search_win = win;
     st.search_tabs = group;
     widget_on(win, EVT_DESTROY, search_gone, win);
     search_layout(win, 0);
+}
+/* Stock shows the tabs (tab_control, the group's parent) with results, else the history or its
+ * tip (0x49bba4, 0x49d9a8). The strip, the field's and the tabs' with results, ends at 108; with
+ * the history, the field's alone, SEARCH_HISTORY_Y, as far under the field as it starts above. */
+static int search_strip_end(void) {
+    return st.search_tabs && widget_get_visible(P(st.search_tabs, W_PARENT)) ? 108
+                                                                             : SEARCH_HISTORY_Y;
 }
 /* The dialog's own paint, under its children: the dark bar's rows behind the field. The bar goes
  * first: the window manager paints a dialog over it. With the keyboard up there's no bar. */
@@ -6792,7 +6805,7 @@ static void search_paint(void *w, void *canvas) {
         paint_art(w, canvas, "classic_light_kb_back", 42, 18);
         paint_field(w, canvas, 72, 15, 244);
     } else {
-        dark_bar_rows(canvas, 26, 375, 82);
+        dark_bar_rows(canvas, 26, 375, search_strip_end() - 26);
         paint_field(w, canvas, 24, 33, 327);
         if (bar) widget_paint(bar, canvas);
         st.paint_w = w;
@@ -6839,7 +6852,7 @@ static void search_x(void *w, void *canvas) {
 static void search_over(void *w, void *canvas) {
     if (!w || w != st.search_win || st.kb_win || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    scrub_row(canvas, 0x55000000u, 0, 108, 375);
+    scrub_row(canvas, 0x55000000u, 0, search_strip_end(), 375);
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The tabs, in the group's coordinates: the choice control's track, the lit tab, the labels'

@@ -18135,12 +18135,14 @@ def search_new(light='1',theme_='1'):
     q.bar_title=q.node('hscroll_label','label_title'); q.bar=q.node('window','system_bar',[q.bar_title]); q.word(q.bar+O['W_PARENT'],q.wm); q.word(syms['system_bar'],q.bar)
     ui_loaded(q,'dialog/search_dialog',win); q.image_size=(34,33)
     q.handlers[int(manifest['patch_symbols']['stock_search_init_trampoline'],16)]='stock_search_init'
-    assert q.call(address=HOOKS['dialog_search_dialog_init'][0],args=(win,0,0,0),gap=0)==0; return q,win,n
+    assert q.call(address=HOOKS['dialog_search_dialog_init'][0],args=(win,0,0,0),gap=0)==0
+    q.nodes[n['tab_control']]['visible']=q.nodes[n['view_tip']]['visible']=0; return q,win,n  # stock's init shows the history (0x49bba4 with 0)
 sb=lambda q,w: screen_box(q,w)
 TABS=('btn_track','btn_artist','btn_album','btn_genre')
 # Search: the flat dark bar's rows and line in the strip at 26, in either half, field 24,33, tabs 24,71, the lit tab's cell; a tab's tap is stock's; rows at 52 with their fonts; the bar says Search.
 for light in '10':
-    q,win,n=search_new(light); blank(q); bg(q,win); strip=[b for b in q.bands if b[2]==375 and b[3]==1]
+    q,win,n=search_new(light); q.nodes[n['tab_control']]['visible']=1  # results: stock shows the tabs
+    blank(q); bg(q,win); strip=[b for b in q.bands if b[2]==375 and b[3]==1]
     assert [b[1] for b in strip]==list(range(26,108)) and {b[4] for b in strip[:-1]}=={color_t(0x1c1c1c)} and strip[-1][4]==color_t(0x333333) and q.lcd_colors()==LCD_COLORS
     assert ('widget_paint',q.bar) in [c[:2] for c in q.calls] and q.nodes[q.bar_title]['text']=='Search' and q.nodes[n['view_navbar']]['visible']==0 and q.nodes[n['view_navbar']]['enable']==0
     assert sb(q,n['list_item_search'])==(24,33,327,30) and sb(q,n['search_edit'])==(24,33,327,30) and sb(q,n['tab_button_group'])==(24,71,327,30) and sb(q,n['pages'])==(0,108,375,212) and q.nodes[n['pages']]['self_layout']==('0','44','375','212')
@@ -18164,9 +18166,24 @@ for light in '10':
     assert all(len(lit(y))==1 and lit(y)[0][0]==245 and 321<=sum(lit(y)[0][::2])<327 for y in (0,29)) and lit(15)==[(245,15,82)]  # square left, the track's round end right
     for t in ('track','artist','album','genre'):
         assert q.nodes[q.get(n['scroll_view_'+t]+O['W_PARENT'])]['default_item_height']==52 and q.nodes[n[f'label_{t}_msg']]['style:normal:font_size']==15
-    assert all(q.nodes[n['label_tip']][f'style:{state}:font_size']==15 for state in ('normal','disable','focused')) and sb(q,n['view'])==(0,108,375,212) and sb(q,n['view_tip'])==(0,108,375,212)
+    assert all(q.nodes[n['label_tip']][f'style:{state}:font_size']==15 for state in ('normal','disable','focused'))
     f,ctx=next((f,c) for t,f,c in q.nodes[win]['handlers'] if t==O['EVT_DESTROY']); q.call(address=f,args=(ctx,q.event,0,0),gap=0); blank(q); bg(q,win); bg(q,n['tab_button_group']); assert not q.image_draws and color_t(0x1c1c1c) not in [b[4] for b in q.bands]  # gone with the dialog
     passed()
+# ... the history (stock's view, and view_tip when there is none) shows without the tabs, so it sits in their place, right under the
+# field: the strip ends 7 rows under it, as it starts 7 above, with its line and shadow there, and the list fills the rest. Results
+# put the strip back to 108 under the tabs, and the history comes back where it was; stock never moves either view.
+for light in '10':
+    q,win,n=search_new(light); hl=q.nodes[n['view']]['children'][0]
+    def strip_at(end):
+        blank(q); bg(q,win); strip=[b for b in q.bands if b[2]==375 and b[3]==1]
+        assert [b[1] for b in strip]==list(range(26,end)) and {b[4] for b in strip[:-1]}=={color_t(0x1c1c1c)} and strip[-1][4]==color_t(0x333333) and q.lcd_colors()==LCD_COLORS
+        blank(q); q.call(address=HOOKS['widget_on_paint_border'][0],args=(win,q.canvas,0,0),gap=0); assert [b[1] for b in q.bands if b[4]==0x55000000]==[end]
+    strip_at(71); assert sb(q,n['view'])==(0,71,375,249) and sb(q,hl)[2:]==(375,199) and sb(q,n['view_tip'])==(0,71,375,249) and 71+50+199==320
+    assert sb(q,n['list_item_search'])==(24,33,327,30)  # the field stays: 33 to 64, its strip 26 to 71
+    q.nodes[n['tab_control']]['visible']=1; strip_at(108); assert sb(q,n['tab_button_group'])==(24,71,327,30) and sb(q,n['pages'])==(0,108,375,212)
+    q.nodes[n['tab_control']]['visible']=0; strip_at(71); assert sb(q,n['view'])==(0,71,375,249) and sb(q,hl)[2:]==(375,199)
+    passed()
+q,win,n=search_new(theme_='0'); assert sb(q,n['view'])[1]!=71 and sb(q,n['view_tip'])[1]!=71; passed()  # Minimal keeps stock's
 # ... the tabs' words go on once, after stock's init wrote its own, and no paint writes them; Minimal keeps stock's.
 q,win,n=search_new(); order=[c[0] for c in q.calls]; assert order.index('stock_search_init')<order.index('widget_set_text') and order.count('widget_set_text')==4,order
 q.nodes[n['btn_album']]['text']='Album'; q.calls=[]; blank(q); bg(q,n['tab_button_group']); assert 'widget_set_text' not in [c[0] for c in q.calls] and q.nodes[n['btn_album']]['text']=='Album'; passed()
