@@ -204,7 +204,7 @@ def function_macros(address):
     """Each stock function in address (name -> its C address) as a macro calling it there."""
     return [f'#define {name} (({ret} (*)({args})){address[name]})' for name, (ret, args) in FUNCTIONS.items() if name in address]
 
-def compile_common(out, binary, player=False, flac_experiments=()):
+def compile_common(out, binary, player=False, flac_experiments=()):  # pragma: no mutate block
     got = {}
     for line in run('readelf', '-AW', binary).splitlines():
         words = line.split()
@@ -270,7 +270,7 @@ def compile_common(out, binary, player=False, flac_experiments=()):
     run('clang', *flags, '-c', out/'peq_imports.S', '-o', obj)
     return [*objects, obj]
 
-def patch_player(raw, out, flac_experiments=()):
+def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     from flac import selection, EXPORTS, patch_words
     flac_experiments = selection(flac_experiments)
     check(sha(raw) == PLAYER_SHA, 'Unexpected hciplayer')

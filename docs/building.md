@@ -101,7 +101,7 @@ python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simul
 python3 test/bluealsa.py /tmp/q2-build     # the patched bluealsa's DROP paths against stock's, delayed encoder signal
 python3 test/alsa.py BUILD QEMU_MIPSEL     # ALSA startup lock regression (see internals.md)
 python3 test/ui_preview.py BEFORE AFTER OUT_DIR  # not a test: side-by-side iPod layout review sheets of two builds (or one build's two themes; --themes, ImageMagick)
-python3 -m pytest test/unit                # the changed tools/ functions: no stock ZIP, no build, no Q2 (pip install -r test/unit/requirements.txt); GitHub runs it on every pull request
+python3 -m pytest test/unit                # tools/: no stock ZIP, no build, no Q2 (pip install -r test/unit/requirements.txt); GitHub runs it on every pull request
 python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # the firmware's C on this machine: no stock ZIP, no build, no Q2 (see Firmware tests)
 ```
 
@@ -152,17 +152,22 @@ mypy test/fw  # its own run: test/unit has a conftest module too
 
 ## Mutation tests
 
-`.github/workflows/tests.yml` runs `test/unit` on every pull request and push to `main`. Every Sunday, or by hand from the Actions tab after a substantial change to `tools/`, `.github/workflows/mutation.yml` runs [mutmut](https://github.com/boxed/mutmut) on the `tools/` functions changed since tag 1.2.0: the same mutants over unchanged code find nothing new, so it doesn't run nightly. mutmut breaks a copy of each function in one small way at a time and checks that `test/unit` notices. `test/unit/targets.py` lists the functions from git, so a new one joins by itself. The job fails under the score floor in the workflow, and uploads every surviving mutant as `surviving-mutants`. About 6,700 mutants take three and a half minutes on four workers.
+`.github/workflows/tests.yml` runs `test/unit` on every pull request and push to `main`. `.github/workflows/mutation.yml` runs [mutmut](https://github.com/boxed/mutmut) on every function in `tools/`. mutmut breaks a copy of each function in one small way at a time and checks that `test/unit` notices. It uploads every surviving mutant and mutmut's log as `surviving-mutants`.
+
+- **Pull requests:** mutate only the functions they add or change since their base commit (`targets.py --since`), and report the score in the run's summary without failing. `targets.py` asks mutmut's own generator which functions have mutants, so a change to a decorated function (but for a lone `@staticmethod` or `@classmethod`) or to one with nothing to mutate, such as `return self.x`, mutates nothing.
+- **Nightly:** mutmut keeps a hash of each function with its results in `mutants/`, which the workflow caches, and reruns only the mutants of functions whose code changed. It finds each function's tests afresh, so a function added since Sunday gets its tests, and copies `patch/`, `assets/`, `docs/` and `test/` again. A function already marked as reached by no test keeps that until Sunday. A night with no change to `tools/` still makes every mutant and finds the tests, about three minutes on a desktop. A change to `test/unit`, `test/release.py`, the requirements, or a `.S`, `.c` or `.h` file in `tools/` starts the cache afresh: mutmut keeps its old copies of those, and tests read them. The job fails under 91%, a floor just under a fresh run's score: it catches a collapse, not each survivor.
+- **Sundays, and by hand from the Actions tab:** everything from scratch, because a cached result can't see a change outside its own function, such as a module's constant or a function it calls. 15,920 mutants took 75 minutes on four workers of a Ryzen 7 7800X3D desktop, and 91.7% were caught (96.1% outside art.py). art.py's 2,634 take most of that time, each about 5 seconds against everything else's fraction of one. GitHub's runners are slower, so the job allows 240 minutes. Every art.py mutant runs `test_art.py`, so only the two tests that read the pane's icons draw them, the slow part, and the rest share one drawing. One of them checks the other tests' images are the shipped theme's. mutmut forks each mutant's run from a process that has already run the tests, so `conftest.py` clears every `functools` cache at the start of a session, or art's cached images would hide the mutants under them, and caps each process at 4 GB, as a mutant can loop for ever filling memory.
 
 ```sh
 pip install -r requirements.txt -r test/unit/requirements.txt
-mutmut run $(python3 test/unit/targets.py)                  # needs clang, lld and llvm
-python3 test/unit/report.py --survivors /tmp/survivors.txt  # score, table, each survivor's diff
+mutmut run                                                  # all of tools/; needs clang, lld and llvm
+mutmut run $(python3 test/unit/targets.py --since main)     # or only what a branch changes
+python3 test/unit/report.py --survivors /tmp/survivors.txt  # score, table, each survivor's diff (--since as above)
 ```
 
-- **Needs no stock firmware:** the fixtures in `test/unit` are synthetic, and the stock ZIP is neither fetched nor kept. Functions that pin a Shanling file's hash or link against one are in `NEEDS_STOCK` in `targets.py`: `build`, `compile_payload`, `patch_asset`, `compile_common`, `patch_player`, the audio module's `validate_stock` and `patch_module`, the rotator's `patch_module`, and PWM's `link`, `patch_pwm`, `patch_mcu` and `patch_bundle`. They stay with the scripts above, which need a build.
+- **Needs no stock firmware:** the fixtures in `test/unit` are synthetic, and the stock ZIP is neither fetched nor kept. A function that pins a Shanling file's hash or links against one carries `# pragma: no mutate block` on its `def` line, so it has no mutants: `compile_payload`, `patch_asset`, `compile_common`, `patch_player`, the audio module's `validate_stock` and `patch_module`, the rotator's `patch_module`, and PWM's `link`, `patch_pwm`, `patch_mcu` and `patch_bundle`. They stay with the scripts above, which need a build. A new one gets the same pragma.
 - **Keep tests behind the fence:** a mutant changes a command before it runs, and `q2remote`'s commands are shell scripts for a live Q2. `test/unit/conftest.py` refuses every process but the compilers, along with sockets and signals, and hides `Q2_HOST`. `test/remote.py` runs real commands through a real shell, so it stays out of `test/unit`.
-- **`build()`** carries `# pragma: no mutate block`. mutmut writes out a whole copy of a function per mutant, so its 440 lines alone made a 96 MB file that never finished generating.
+- **`build()`** carries `# pragma: no mutate block`. mutmut writes out a whole copy of a function per mutant, so its 440 lines alone made a 96 MB file that never finished generating. The pragma is on art.py's `wave()` too: only `WAVES` calls it, at import, before mutmut can switch a mutant on, so all 21 of its mutants survived.
 - **Survivors are not all gaps.** Most left are equivalent (`<I` as `<i` on a word under 2^31) or machine code in `patch_bluealsa`, which only `test/bluealsa.py` can judge against a build.
 
 ### C

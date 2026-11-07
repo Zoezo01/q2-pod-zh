@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import pathlib
+import re
 import subprocess
 import tarfile
 
@@ -313,6 +314,20 @@ def test_upload_wants_matching_checksums(repo, monkeypatch):
     with pytest.raises(ValueError, match='^Release checksums mismatch$'):
         release.upload(out)
     assert not gh.calls
+
+
+def test_notes_one_bullet_a_sentence(repo):
+    (repo/'docs/changelog.md').write_text(f'# Changelog\n\n- **{release.VERSION}**: Covers load. **Coverflow** opens faster! '
+                                          '"Wake" works? iPod mode stays on, e.g. after a restart, as in 1.6.3. Done.\n'
+                                          '- **1.0.0**: Old.\n')
+    assert release.notes() == (f'**{release.VERSION}**\n- Covers load.\n- **Coverflow** opens faster!\n- "Wake" works?\n'
+                               '- iPod mode stays on, e.g. after a restart, as in 1.6.3.\n- Done.')
+
+
+def test_notes_needs_this_versions_entry(repo):
+    (repo/'docs/changelog.md').write_text('- **1.0.0**: Old.\n')
+    with pytest.raises(ValueError, match='^' + re.escape(f'docs/changelog.md has no - **{release.VERSION}** entry') + '$'):
+        release.notes()
 
 
 def test_release_body(repo):

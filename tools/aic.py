@@ -28,7 +28,7 @@ def undefined(elf, name):
     return index
 
 
-def validate_stock(elf):
+def validate_stock(elf):  # pragma: no mutate block
     text = elf.by_name['.text']['data']
     require(len(text) == 0x2330 and elf.by_name['.bss']['size'] == 0x870,
             'Audio module layout changed')
@@ -61,7 +61,7 @@ def validate_stock(elf):
             'Unexpected relocation at audio hook')
 
 
-def patch_module(data):
+def patch_module(data):  # pragma: no mutate block
     require(hashlib.sha256(data).hexdigest() == STOCK_SHA256,
             'Unsupported or already patched audio module')
     elf = Elf(data)

@@ -1,5 +1,6 @@
 """tools/build.py's helpers: synthetic images and UI files stand in for stock's."""
 import ctypes
+import gc
 import hashlib
 import io
 import pathlib
@@ -20,6 +21,19 @@ def image(size=0x400000, base=0x400000, null=False):
     struct.pack_into('<I', data, 28, 52)
     struct.pack_into('<HH', data, 42, 32, 2 if null else 1)
     struct.pack_into('<8I', data, 52, 1, 0x1000, base, base, size, size, 5, 0x1000)
+    return data
+
+
+NULL = (0,) * 8
+
+
+def program(*rows, size=0x1000, phoff=52):
+    """size bytes of ELF whose program headers, from phoff, are rows: (type, offset, vaddr, paddr, filesz, memsz, flags, align)."""
+    data = bytearray(size)
+    struct.pack_into('<I', data, 28, phoff)
+    struct.pack_into('<HH', data, 42, 32, len(rows))
+    for i, row in enumerate(rows):
+        struct.pack_into('<8I', data, phoff + 32 * i, *row)
     return data
 
 
@@ -59,6 +73,112 @@ def test_word_and_read():
     assert u.store[8] == b'\xff\xff\xff\xff' and build.read(u, 8) == 0xffffffff
     build.word(u, 12, 0x1234567890)
     assert u.store[12] == struct.pack('<I', 0x34567890) and build.read(u, 12) == 0x34567890
+
+
+def test_segments():
+    """Each header's file offset and its eight words, unsigned: a kernel's addresses are past 2^31."""
+    rows = [(1, 0x1000, 0x80000000, 0x80000000, 0x400, 0x800, 7, 0x1000), (4, 0x1100, 0x80000100, 0x80000100, 0x24, 0x24, 4, 4), NULL]
+    assert build.segments(program(*rows, phoff=64)) == [(64, rows[0]), (96, rows[1]), (128, rows[2])]
+
+
+def test_segments_wants_32_byte_headers():
+    data = program(NULL)
+    struct.pack_into('<H', data, 42, 56)  # ELF64's
+    with pytest.raises(ValueError, match='^Unexpected ELF program header size$'):
+        build.segments(data)
+
+
+def two_loads():
+    """A note whose offset disagrees with its LOAD's, a note where nothing is loaded, then two LOAD
+    segments, the first with 0x800 bytes of bss."""
+    return program((4, 0x300, 0x400100, 0x400100, 0x40, 0x40, 4, 4), (4, 0x340, 0x500000, 0x500000, 0x40, 0x40, 4, 4),
+                   (1, 0, 0x400000, 0x400000, 0x800, 0x1000, 5, 0x1000), (1, 0x1800, 0x411800, 0x411800, 0x100, 0x200, 6, 0x1000),
+                   NULL, size=0x1900)
+
+
+def test_fileoff():
+    data = two_loads()
+    assert [build.fileoff(data, a) for a in (0x400000, 0x400100, 0x4007ff, 0x411800, 0x4118ff)] == [0, 0x100, 0x7ff, 0x1800, 0x18ff]
+
+
+@pytest.mark.parametrize('address', [0x3fffff, 0x400800, 0x410fff, 0x411900, 0x500000])
+def test_fileoff_refuses_what_the_file_does_not_hold(address):
+    with pytest.raises(ValueError, match=f'^Unmapped address {address:x}$'):
+        build.fileoff(two_loads(), address)
+
+
+class Mapper:
+    def __init__(self):
+        self.calls = []
+
+    def mem_map(self, address, size):
+        self.calls.append(('map', address, size))
+
+    def mem_write(self, address, data):
+        self.calls.append(('write', address, bytes(data)))
+
+
+def loads():
+    """A PHDR first, a LOAD ending on a page, and a LOAD from mid-page with bss past its file bytes."""
+    data = program((6, 52, 0x400034, 0x400034, 0x80, 0x80, 4, 4), (1, 0, 0x400000, 0x400000, 0x200, 0x1000, 5, 0x1000),
+                   (1, 0x1123, 0x411123, 0x411123, 0x10, 0x2000, 6, 0x1000), NULL, size=0x1200)
+    data[0x1123:0x1133] = bytes(range(1, 17))
+    return bytes(data)
+
+
+def test_load_elf():
+    data, u = loads(), Mapper()
+    build.load_elf(u, data, 0x10000)
+    assert u.calls == [('map', 0x410000, 0x1000), ('write', 0x410000, data[:0x200]),
+                       ('map', 0x421000, 0x3000), ('write', 0x421123, bytes(range(1, 17)))]
+
+
+def test_load_elf_at_the_link_address_by_default():
+    data, u = loads(), Mapper()
+    build.load_elf(u, data)
+    assert [c[:2] for c in u.calls] == [('map', 0x400000), ('write', 0x400000), ('map', 0x411000), ('write', 0x411123)]
+
+
+def test_machine_at_the_link_address_by_default():
+    raw = image(0x2000)
+    raw[0x1000] = 0x5a
+    u = build.machine(bytes(raw), 0x800000)
+    assert sorted(u.mem_regions())[0] == (0x400000, 0x401fff, 7) and u.mem_read(0x400000, 1) == b'\x5a'
+
+
+def appendable(size=0x10001):
+    """A LOAD from offset 0 (its paddr 0, as some linkers leave it), a dynamic segment inside it, and the final PT_NULL slot."""
+    return program((1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), (2, 0x700, 0x400700, 0x400700, 0x80, 0x80, 6, 4), NULL, size=size)
+
+
+def test_append_payload():
+    data = appendable()
+    before = bytes(data)
+    build.append_payload(data, b'\x11' * 6, 0x401001, 0x30, 'x')
+    assert struct.unpack_from('<8I', data, 52 + 64) == (1, 0x20000, 0x401001, 0x401001, 6, 0x30, 7, 0x10000)
+    assert data[:52 + 64] == before[:52 + 64] and data[52 + 96:0x10001] == before[52 + 96:]
+    assert data[0x10001:] == bytes(0x20000 - 0x10001) + b'\x11' * 6
+
+
+def test_append_payload_on_a_64k_boundary_pads_nothing():
+    data = appendable(0x20000)
+    build.append_payload(data, b'\x22' * 4, 0x500000, 4, 'x')
+    assert len(data) == 0x20004 and data[0x20000:] == b'\x22' * 4
+    assert struct.unpack_from('<2I', data, 52 + 64) == (1, 0x20000)
+
+
+@pytest.mark.parametrize('base', [0x400800, 0x401000])
+def test_append_payload_refuses_an_overlap(base):
+    with pytest.raises(ValueError, match='^x: payload mapping overlaps$'):
+        build.append_payload(appendable(), b'', base, 0, 'x')
+
+
+@pytest.mark.parametrize('rows', [[(1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), NULL, (2, 0x700, 0x400700, 0x400700, 0x80, 0x80, 6, 4)],
+                                  [(1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000), NULL, NULL],
+                                  [(1, 0, 0x400000, 0, 0x800, 0x1000, 5, 0x1000)]])
+def test_append_payload_wants_one_final_null_slot(rows):
+    with pytest.raises(ValueError, match='^x: no final PT_NULL slot$'):
+        build.append_payload(program(*rows), b'', 0x500000, 0, 'x')
 
 
 @pytest.mark.parametrize('label,minutes', [('GMT+0 London', 0), ('GMT-3:30 St. John\'s', -210), ('GMT+12:45 Chatham', 765),
@@ -307,13 +427,16 @@ def test_classic_light_font():
 
 HEART = [(50, -10), (1250, -10), (1250, 1490), (50, 1490)]
 EMPTY_HEART = [(2, 84), (77, 159), (152, 84), (77, 9)]  # stock's ♡ box: x from 2, y up to 159
+FONT_ORDER = ('post', 'name', 'cmap', 'OS/2', 'glyf', 'loca', 'hmtx', 'maxp', 'hhea', 'head')
 
 
 def hearts_font(empty=EMPTY_HEART, composite=False, drop=()):
     """A TrueType font with the stock font's quirks: curly quotes on wide glyphs of their own, and a
-    ♡ smaller than its ♥. drop leaves characters out of its Unicode cmaps."""
+    ♡ smaller than its ♥. drop leaves characters out of its Unicode cmaps. Its tables are in
+    FONT_ORDER, neither sorted nor fontTools' own order."""
     from fontTools.fontBuilder import FontBuilder
     from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib.sfnt import SFNTReader, SFNTWriter
     from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 
     def outline(points):
@@ -350,8 +473,13 @@ def hearts_font(empty=EMPTY_HEART, composite=False, drop=()):
     fb.font['cmap'].tables.append(mac)
     fb.font['head'].created = fb.font['head'].modified = 0xb0000000
     fb.font.recalcTimestamp = False
-    out = io.BytesIO()
-    fb.save(out)
+    built = io.BytesIO()
+    fb.save(built)
+    reader, out = SFNTReader(io.BytesIO(built.getvalue())), io.BytesIO()
+    writer = SFNTWriter(out, len(reader.tables), reader.sfntVersion)
+    for tag in FONT_ORDER:
+        writer[tag] = reader[tag]
+    writer.close()
     return out.getvalue()
 
 
@@ -376,6 +504,8 @@ def test_font_quotes_fits_the_empty_heart_to_the_full_one():
     glyf, hmtx = font['glyf'], font['hmtx']
     # ♡ stretched onto ♥'s box: x 2..152 onto 50..1250 (8 times), y 9..159 onto -10..1490 (10 times)
     assert list(glyf['heartwhite'].coordinates) == [(50 + (x - 2) * 8, -10 + (y - 9) * 10) for x, y in EMPTY_HEART]
+    empty = glyf['heartwhite']
+    assert (empty.xMin, empty.yMin, empty.xMax, empty.yMax) == (50, -10, 1250, 1490)
     assert list(glyf['heart'].coordinates) == HEART
     assert hmtx['heart'] == hmtx['heartwhite'] == (1300 + 32, 50)  # ♥'s advance and a gap, the shared box's side bearing
     assert hmtx['quotesingle'] == (600, 100) and hmtx['quoteleft'] == (2048, 100)
@@ -386,7 +516,9 @@ def test_font_quotes_keeps_the_rest_of_the_font():
     src = hearts_font()
     before, after = TTFont(io.BytesIO(src)), TTFont(io.BytesIO(build.font_quotes(src)))
     assert after['head'].modified == before['head'].modified == 0xb0000000  # reproducible
-    for tag in ('name', 'OS/2'):
+    assert after['head'].created == before['head'].created
+    assert sorted(after.reader.tables, key=lambda t: after.reader.tables[t].offset) == list(FONT_ORDER)
+    for tag in ('post', 'name', 'OS/2', 'maxp'):
         assert after.reader[tag] == before.reader[tag]
 
 
@@ -411,9 +543,11 @@ def strings_bin(pairs):
 
 
 def test_relabel():
-    # in an order of their own, so each change moves offsets past it that later ones have moved too
-    pairs = [(b'powerm_sleep', b'Sleep Timer'), *[(k, old) for k, old, _ in reversed(build.LABELS)],
-             (b'player_unknown', b'Unknown Artist')]
+    # in an order of their own, so each change moves offsets past it that later ones have moved too;
+    # each label between two others
+    pairs = [(b'powerm_sleep', b'Sleep Timer')]
+    for k, old, _ in reversed(build.LABELS):
+        pairs += [(k, old), (k + b'_next', b'Kept')]
     new = {k: n for k, _, n in build.LABELS}
     out = build.relabel(strings_bin(pairs))
     assert isinstance(out, bytes) and out == strings_bin([(k, new.get(k, v)) for k, v in pairs])
@@ -442,8 +576,10 @@ def segment(marker, body):
 
 
 def frame(marker=0xc0, bits=8, height=375, width=320, components=3):
-    """A start of frame: precision, lines, samples per line, then 3 bytes for each component."""
-    return segment(marker, struct.pack('>BHHB', bits, height, width, components) + bytes(3 * components))
+    """A start of frame: precision, lines, samples per line, then 3 bytes for each component, numbered
+    from 1 as JFIF does."""
+    return segment(marker, struct.pack('>BHHB', bits, height, width, components) +
+                   b''.join(bytes((c, 0x11, 0)) for c in range(1, components + 1)))
 
 
 JFIF = segment(0xe0, b'JFIF\0\1\1\0\0\1\0\1\0\0')
@@ -453,9 +589,15 @@ JFIF = segment(0xe0, b'JFIF\0\1\1\0\0\1\0\1\0\0')
     JFIF + segment(0xdb, bytes(65)),
     b'\xff\xff\xff' + JFIF[1:],  # fill bytes before a marker
     b'\xff\x01\xff\xd0\xff\xd7',  # TEM and RSTn stand alone, with no length
-    frame(0xc4, height=1, width=1) + frame(0xc8, height=1, width=1) + frame(0xcc, height=1, width=1)])  # DHT, JPG, DAC
+    frame(0xc4, height=1, width=1) + frame(0xc8, height=1, width=1) + frame(0xcc, height=1, width=1),  # DHT, JPG, DAC
+    segment(0xe2, bytes(0x7ffe))])  # an ICC profile's APP2 may run to 32 KB
 def test_jpeg_size(head):
     assert build.jpeg_size(SOI + head + frame() + segment(0xda, bytes(10)) + b'\xff\xd9') == (320, 375)
+
+
+@pytest.mark.parametrize('width,height', [(1, 1), (65535, 40000)])
+def test_jpeg_size_dimensions(width, height):
+    assert build.jpeg_size(SOI + JFIF + frame(width=width, height=height)) == (width, height)
 
 
 NOT_BASELINE_RGB = 'Logo must be an 8-bit, three-component baseline JPEG (not grayscale/CMYK)'
@@ -471,13 +613,14 @@ NOT_BASELINE_RGB = 'Logo must be an 8-bit, three-component baseline JPEG (not gr
     (SOI + b'\xff\x00' + frame(), 'Malformed JPEG marker'),  # a stuffed zero, not a marker
     (SOI + SOI + frame(), 'Malformed JPEG marker'),
     (SOI + b'\xff\xe0\x00', 'Truncated JPEG segment'),
-    (SOI + b'\xff\xe0\x00\x01' + frame(), 'Invalid JPEG segment length'),
+    (SOI + b'\xff\xe0\x00\x00', 'Invalid JPEG segment length'), (SOI + b'\xff\xe0\x00\x01' + frame(), 'Invalid JPEG segment length'),
     (SOI + JFIF[:-1], 'Invalid JPEG segment length'), (SOI + frame()[:-1], 'Invalid JPEG segment length'),
     (SOI + segment(0xc0, struct.pack('>BHHB', 8, 375, 320, 3) + bytes(6)), 'Invalid JPEG frame length'),
+    (SOI + segment(0xc0, struct.pack('>BHHB', 8, 375, 320, 2) + bytes(9)), 'Invalid JPEG frame length'),
     (SOI + segment(0xc0, struct.pack('>BHH', 8, 375, 320)), 'Invalid JPEG frame length'),
     *((SOI + frame(m), NOT_BASELINE_RGB) for m in (0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf)),
     (SOI + frame(bits=12), NOT_BASELINE_RGB), (SOI + frame(components=1), NOT_BASELINE_RGB),
-    (SOI + frame(components=4), NOT_BASELINE_RGB),
+    (SOI + frame(components=4), NOT_BASELINE_RGB), (SOI + frame(components=0), NOT_BASELINE_RGB),
     (SOI + frame(width=0), 'Invalid JPEG dimensions'), (SOI + frame(height=0), 'Invalid JPEG dimensions')])  # 0: DNL's
 def test_jpeg_size_refuses(data, message):
     with pytest.raises(ValueError, match=f'^{re.escape(message)}$'):
@@ -657,21 +800,6 @@ def elf(*headers, size=0x3000):
     return data
 
 
-# A PT_NOTE where nothing is loaded, a LOAD with a bss past its file bytes, and a second LOAD.
-SEGMENTS = (4, 0x100, 0x500000, 0x100, 0x100), (1, 0x1000, 0x400000, 0x800, 0x2000), (1, 0x2000, 0x410000, 0x100, 0x100)
-
-
-def test_fileoff_finds_the_segment_holding_the_address():
-    b = elf(*SEGMENTS)
-    assert [build.fileoff(b, a) for a in (0x400000, 0x4007ff, 0x410000, 0x4100ff)] == [0x1000, 0x17ff, 0x2000, 0x20ff]
-
-
-@pytest.mark.parametrize('address', [0x3fffff, 0x400800, 0x401fff, 0x410100, 0x500000])
-def test_fileoff_refuses_an_address_without_file_bytes(address):
-    with pytest.raises(ValueError, match=f'^Unmapped address {address:x}$'):
-        build.fileoff(elf(*SEGMENTS), address)
-
-
 @pytest.mark.parametrize('load', [0, 0x100000])
 def test_machine(load):
     from unicorn.mips_const import UC_MIPS_REG_A0
@@ -682,6 +810,7 @@ def test_machine(load):
     # whole pages around each LOAD's memsz; nothing for the PT_NOTE
     assert sorted(r[:2] for r in u.mem_regions()) == [(load + 0x400000, load + 0x402fff), (load + 0x410000, load + 0x410fff),
                                                       (0x2000000, 0x200ffff)]
+    assert all(r[2] == 7 for r in u.mem_regions())
     assert u.mem_read(load + 0x400000, 0x3000) == bytes(0x123) + b'\xee' * 0x10 + bytes(0x3000 - 0x133)
     assert u.mem_read(load + 0x410000, 0x1000)[8:] == bytes(0xff8)
     u.reg_write(UC_MIPS_REG_A0, 0x2000000)
@@ -714,6 +843,7 @@ def dispatch(lib, ext, load):
     from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_GP, UC_MIPS_REG_PC, UC_MIPS_REG_RA,
                                     UC_MIPS_REG_S0, UC_MIPS_REG_SP, UC_MIPS_REG_V0)
     scratch = 0x2000000
+    gc.collect()  # a hooked Unicorn is in a cycle, and holds 1 GB of address space until it's collected
     u = build.machine(lib, scratch, load)
     strcasecmp, name, sp = scratch, scratch + 0x100, scratch + 0x8000
     build.word(u, load + STRCASECMP, strcasecmp)  # as the loader fills the GOT
@@ -759,7 +889,9 @@ def test_patch_m4b_cover_segment(tag_c):
     offset = header[1]
     assert header == (1, offset, 0x30000, 0x30000, 48, 48, 5, 0x10000)  # read and execute: nothing in it changes
     assert offset % 0x10000 == 0 and offset >= len(tag_c) and len(out) == offset + 48
-    assert out[len(tag_c):offset] == bytes(offset - len(tag_c)) and out[-4:] == b'm4b\0'
+    assert out[len(tag_c):offset] == bytes(offset - len(tag_c)) and isinstance(out, bytes)
+    words = (0x104089b5, 0, 0x8f998170, 0x02002025, 0x2785d84c, 0x0320f809, 0, 0x104089ae, 0x8fbc0010, 0x10008963, 0)
+    assert out[offset:] == struct.pack('<11I', *words) + b'm4b\0'
     # in the library itself, only the M4A branch and the PT_NULL slot change
     site = build.fileoff(tag_c, SITE)
     rest = bytearray(out[:len(tag_c)])
@@ -779,6 +911,14 @@ def test_patch_m4b_cover_wants_the_m4a_branch(monkeypatch):
     monkeypatch.setattr(build, 'TAG_C_SHA', hashlib.sha256(lib).hexdigest())
     with pytest.raises(ValueError, match='^Unexpected TagLib M4A cover branch$'):
         build.patch_m4b_cover(bytes(lib))
+
+
+def test_patch_m4b_cover_names_itself_in_a_mapping_error(monkeypatch):
+    raw = bytearray(taglib())
+    struct.pack_into('<H', raw, 44, 2)  # no final PT_NULL slot
+    monkeypatch.setattr(build, 'TAG_C_SHA', build.sha(raw))
+    with pytest.raises(ValueError, match='^TagLib cover: no final PT_NULL slot$'):
+        build.patch_m4b_cover(bytes(raw))
 
 
 RANGES = ['#define BOLD_RANGES {0x20,0x7e}', '#define CLASSIC_LIGHT_RANGES {0x20,0x7e,0x2013,0x2014}']

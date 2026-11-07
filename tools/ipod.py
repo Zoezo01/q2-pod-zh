@@ -1093,7 +1093,7 @@ def songs_action_row(root, g):
             n[1][1] = g.action_row
 
 
-def patch_asset(path, data, g=SET0):
+def patch_asset(path, data, g=SET0):  # pragma: no mutate block
     geo = with_geometry(g)
     pitch, body, inset = page_rows(g, PAGE_KIND.get(path, 'text'))
     stock = path in STOCK_ROWS

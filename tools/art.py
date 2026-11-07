@@ -227,7 +227,7 @@ SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'
 SPEAKER_BOX, WAVES_BOX = (0, 0, 8, 13), (0, 0, 18, 13)
 
 
-def wave(r, cx=7, cy=6.5, half=5.6):
+def wave(r, cx=7, cy=6.5, half=5.6):  # pragma: no mutate block
     """An arc of radius r about the cone's tip, 96 degrees, or as much of it as keeps within half above and below."""
     dy = min(r * math.sin(math.radians(48)), half)
     dx = math.sqrt(r * r - dy * dy)

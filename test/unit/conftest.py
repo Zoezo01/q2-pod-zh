@@ -7,6 +7,7 @@ folder has its own rootdir entry on sys.path, so test/build.py can't shadow tool
 import importlib
 import os
 import pathlib
+import resource
 import socket
 import subprocess
 import sys
@@ -15,6 +16,10 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+# A mutant can loop forever, growing a list (art's path() with `i = 1` for `i += 1` took 500 MB a second),
+# and fill the machine long before mutmut's timeout. Over 4 GB a process raises MemoryError: killed.
+_, HARD = resource.getrlimit(resource.RLIMIT_AS)
+resource.setrlimit(resource.RLIMIT_AS, (4 << 30 if HARD == resource.RLIM_INFINITY else min(4 << 30, HARD), HARD))
 sys.path.insert(0, str(ROOT))
 # build first: the others import it, or each other in this order, while they load.
 for name in ('build', 'module_elf', 'rotator', 'ipod', 'theme', 'art', 'peq', 'aic', 'flac', 'mcu_park', 'pwm', 'q2remote', 'release'):
@@ -38,6 +43,17 @@ def refuse(what):
     def refused(*args, **kwargs):
         raise AssertionError(f'a test tried {what}{args!r}')
     return refused
+
+
+@pytest.fixture(autouse=True, scope='session')
+def uncached():
+    """mutmut runs each mutant's tests in a fork of a process that has run them all, so a cached function's
+    answers from the unmutated code would hide every mutant under it (art's qs_mark, shadow, station,
+    test_art's classic). Once a session: within it the cache is the mutant's own, and art's tests stay fast."""
+    for m in [m for name, m in sys.modules.items() if name.startswith(('tools.', 'test_'))]:
+        for f in list(vars(m).values()):
+            if hasattr(f, 'cache_clear'):
+                f.cache_clear()
 
 
 @pytest.fixture(autouse=True)

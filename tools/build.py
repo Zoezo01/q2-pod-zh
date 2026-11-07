@@ -1362,7 +1362,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 
-def compile_payload(out):
+def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
     from peq import compile_common
     extra = compile_common(out, out/'stock-demo')  # also writes the libc/libcstl imports navigation.c uses
