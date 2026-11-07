@@ -5182,20 +5182,21 @@ const char *theme_face(const unsigned *s, int n, int *px) {
  * "-59:59" under an hour, else "-9:59:59" (NP_IPOD_TIME_W*, tools/ipod.py measures them), their
  * outer edges and the gap kept; the bar takes the rest, mirrored. */
 static int ipod_bar_x(int sec) {
-    return NP_IPOD_BAR_X - NP_IPOD_TIME_W +
+    return NP_IPOD_BAR_X - NP_IPOD_TIME_W1 +
            (sec < 600    ? NP_IPOD_TIME_W1
             : sec < 3600 ? NP_IPOD_TIME_W2
                          : NP_IPOD_TIME_W);
 }
 
 /* Classic's elapsed and remaining times and bar (with none, the radio's own) fitted to a track sec
- * long (ipod_bar_x); unknown (0 or less) leaves them, so the page keeps the build's widest boxes or
- * the last track's, whose times hold the 0:00 an unknown length shows. Each keeps its y and height
- * and repaints where it was and where it goes, so the caller is outside a paint, which loses its
- * invalidates (#116). 1 when any moved. */
+ * long (ipod_bar_x); unknown (0 or less) leaves them, so the page keeps the build's "-9:59" boxes
+ * and widest bar, or the last track's, whose times hold the 0:00 an unknown length shows. Each
+ * keeps its y and height and repaints where it was and where it goes, so the caller is outside a
+ * paint, which loses its invalidates (#116). 1 when any moved. */
 int ipod_times(void *elapsed, void *remain, void *bar, int sec) {
     if (sec <= 0) return 0;
-    int x = ipod_bar_x(sec), tw = x - (NP_IPOD_BAR_X - NP_IPOD_TIME_W), bw = 375 - 2 * x, moved = 0;
+    int x = ipod_bar_x(sec), tw = x - (NP_IPOD_BAR_X - NP_IPOD_TIME_W1), bw = 375 - 2 * x,
+        moved = 0;
     void *w[] = { elapsed, remain, bar ? bar : st.stream_bar };
     const int to[3][2] = { { x - NP_IPOD_TIME_GAP - tw, tw },
                            { x + bw + NP_IPOD_TIME_GAP, tw },
@@ -5887,7 +5888,7 @@ static int stream_gone(void *ctx, void *event) {
  * places (NP_IPOD_*): the art, its box taller than wide, so paint_cover slants the image it shows
  * over its reflection (coverflow_slant, whose one frame is keyed by the image's url and pixels, so
  * the local page and this one never show each other's); the title's, artist's, album's and "3 of
- * 12"'s rows (text, any 0 left out); the times in their widest boxes beside the bar, in Classic's
+ * 12"'s rows (text, any 0 left out); the times in "-9:59"'s boxes beside the bar, in Classic's
  * face, until the page fits them to its track (ipod_times); the bar, which the page paints with
  * ipod_bar, or with none a bar of its own, last so over the art's box, that paint_scrubber paints
  * always full and that takes no touch; the heart. 0 under the other themes, whose pages keep their
@@ -5910,8 +5911,8 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
         if (!times[i]) continue;
         widget_move_resize(times[i],
                            i ? NP_IPOD_BAR_X + bw + NP_IPOD_TIME_GAP
-                             : NP_IPOD_BAR_X - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W,
-                           NP_IPOD_BAR_Y - (NP_IPOD_TIME_H - NP_BAR_IPOD + 1) / 2, NP_IPOD_TIME_W,
+                             : NP_IPOD_BAR_X - NP_IPOD_TIME_GAP - NP_IPOD_TIME_W1,
+                           NP_IPOD_BAR_Y - (NP_IPOD_TIME_H - NP_BAR_IPOD + 1) / 2, NP_IPOD_TIME_W1,
                            NP_IPOD_TIME_H);
         widget_use_style(times[i], i ? "s_scrlabel_white20l" : "s_scrlabel_white20r");
         widget_set_prop_str(times[i], "style:normal:font_name", font_faces[FONT_CLASSIC_LIGHT]);
@@ -6005,7 +6006,12 @@ int ringnav_playing(void *win, void *ctx) {
         rearm(&st.settle_timer, settle_poll, SETTLE_MS);
     } else
         st.held_sec = 0;
-    np_fit_due((void *)0); /* the page opens fitted */
+    /* The page opens fitted when the length is known; a track just picked reports 0 until stock's
+     * status poll (mclSyncPlayerStatus) has it, so it opens on the build's widest bar and np_sync
+     * narrows it for a long track.
+     * ponytail: inferred, not traced on the device; a 10:00+ track picked from a list still narrows
+     * once after the open. Fit from the file's own length at open if that shows. */
+    np_fit_due((void *)0);
     np_sync(win);
     visualizer_attach(win);
     return result;
