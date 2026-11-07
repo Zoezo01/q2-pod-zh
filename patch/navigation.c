@@ -2247,17 +2247,25 @@ static int corner_row(const rect_t *r, int R, int i) {
     return i < R ? i : i >= r->h - R ? r->h - 1 - i : -1;
 }
 /* Row i of r, its corners rounded by R and antialiased, in a final 0xAARRGGBB: each corner pixel
- * the colour at its coverage of the colour's alpha. */
-static void round_row(void *canvas, const rect_t *r, int R, int i, unsigned c) {
+ * the colour at its coverage of the colour's alpha. Only the ends named are rounded (ROUND_LEFT,
+ * ROUND_RIGHT); the other side is square. */
+#define ROUND_LEFT 1
+#define ROUND_RIGHT 2
+static void round_row_ends(void *canvas, const rect_t *r, int R, int i, unsigned c, int ends) {
     const unsigned char *cover = cover_of(R);
     int row = corner_row(r, R, i), n = cover ? 0 : round_inset(R, i, r->h);
     for (; cover && row >= 0 && n < R && cover[row * R + n] < 255; ++n) {
         unsigned a = cover[row * R + n] * (c >> 24) / 255;
         if (!a) continue;
-        scrub_row(canvas, a << 24 | (c & 0xffffff), r->x + n, r->y + i, 1);
-        scrub_row(canvas, a << 24 | (c & 0xffffff), r->x + r->w - 1 - n, r->y + i, 1);
+        if (ends & ROUND_LEFT) scrub_row(canvas, a << 24 | (c & 0xffffff), r->x + n, r->y + i, 1);
+        if (ends & ROUND_RIGHT)
+            scrub_row(canvas, a << 24 | (c & 0xffffff), r->x + r->w - 1 - n, r->y + i, 1);
     }
-    if (r->w > 2 * n) scrub_row(canvas, c, r->x + n, r->y + i, r->w - 2 * n);
+    int l = ends & ROUND_LEFT ? n : 0, rr = ends & ROUND_RIGHT ? n : 0;
+    if (r->w > l + rr) scrub_row(canvas, c, r->x + l, r->y + i, r->w - l - rr);
+}
+static void round_row(void *canvas, const rect_t *r, int R, int i, unsigned c) {
+    round_row_ends(canvas, r, R, i, c, ROUND_LEFT | ROUND_RIGHT);
 }
 /* The gradient s over r, one row at a time, its corners rounded by R and antialiased. */
 static void paint_round_rows(void *canvas, const rect_t *r, const stops_t *s, int R) {
@@ -2939,11 +2947,13 @@ static void confirm_track(void *w, void *canvas, int form) {
     row_below(canvas, &t, 6, form == FORM_PAGE && light ? 0xb0ffffffu : 0x29ffffffu);
     stock_canvas_set_fill_color(canvas, fill);
 }
-/* The lit cell, in the scheme's selection: its light top row and dark foot row. */
-static void lit_rows(void *canvas, const rect_t *c) {
-    paint_round_rows(canvas, c, &scheme()->sel, 6);
-    round_row(canvas, c, 6, 0, 0x73ffffffu);
-    round_row(canvas, c, 6, c->h - 1, 0x59000000u);
+/* The lit cell, in the scheme's selection: its light top row and dark foot row, rounded at the
+ * ends named (round_row_ends). */
+static void lit_rows(void *canvas, const rect_t *c, int ends) {
+    for (int i = 0; i < c->h; ++i)
+        round_row_ends(canvas, c, 6, i, 0xff000000u | stops_row(&scheme()->sel, i, c->h), ends);
+    round_row_ends(canvas, c, 6, 0, 0x73ffffffu, ends);
+    round_row_ends(canvas, c, 6, c->h - 1, 0x59000000u, ends);
 }
 /* The pale form's lit cell, 30 rows: an inset light right edge, what its shape leaves a pixel left
  * of itself, and, with a cell to its right, a 4 px shade over that one, fading down the rows. */
@@ -2954,7 +2964,7 @@ static void pale_lit(void *canvas, const rect_t *c, int more) {
                                part[4] = { 7, 5, 3, 1 };
     const unsigned char *cover = cover_of(6);
     int right = c->x + c->w - 1;
-    lit_rows(canvas, c);
+    lit_rows(canvas, c, ROUND_LEFT | ROUND_RIGHT);
     for (int i = 0; i < c->h; ++i) {
         int row = corner_row(c, 6, i);
         if (row < 0) scrub_row(canvas, 0x4dffffffu, right, c->y + i, 1);
@@ -2972,7 +2982,7 @@ static void pale_lit(void *canvas, const rect_t *c, int more) {
 static void tray_lit(void *canvas, const rect_t *c) {
     rect_t ring = { c->x - 1, c->y - 1, c->w + 2, c->h + 2 };
     round_ring(canvas, &ring, 7, 0x77000000u);
-    lit_rows(canvas, c);
+    lit_rows(canvas, c, ROUND_LEFT | ROUND_RIGHT);
 }
 /* Over the selection: each cell's text over its shadow a row up. White, but for the dark half's
  * unlit cell. */
@@ -6829,7 +6839,11 @@ static void search_tabs_paint(void *group, void *canvas) {
         void *tab = widget_get_child(group, i);
         int x = (int)i * 327 / 4, w = (int)(i + 1) * 327 / 4 - x, fpx = 21;
         const unsigned *s = widget_get_text(tab);
-        if (widget_get_prop_int(tab, "value", 0)) pale_lit(canvas, &(rect_t){ x, 0, w, 30 }, i < 3);
+        /* the lit tab fills its slot: rounded as the track at the track's ends, square beside
+         * the other tabs, so no track shows between them */
+        if (widget_get_prop_int(tab, "value", 0))
+            lit_rows(canvas, &(rect_t){ x, 0, w, 30 },
+                     (i ? 0 : ROUND_LEFT) | (i + 1 < n && i < 3 ? 0 : ROUND_RIGHT));
         rect_t under = { x, -1, w, 30 };
         text_shadow(canvas, theme_face(s, (int)wide_len(s), &fpx), s, &under, (unsigned)fpx, 0x4d);
     }
