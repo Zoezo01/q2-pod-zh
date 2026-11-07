@@ -8731,6 +8731,7 @@ for theme_ in '102':
     for data in (None,b'',b'/dev/mmcblk0p1\n'):
         if data is not None: m.files[USB_LUN]=data
         m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,(theme_,data)
+    m.files.pop(USB_LUN); m.advance(500); assert 'OK to Disconnect' not in said() and m.timers,theme_  # torn down after a path: no eject
     m.files[USB_LUN]=b''; m.advance(500); assert 'OK to Disconnect' in said() and not m.timers and [c[1] for c in m.calls if c[0]=='widget_invalidate_force']==[win],theme_
     if theme_=='1': assert said()=={'OK to Disconnect'} and m.nodes[named(m,win,'msg_line')]['text']==''
     else: assert m.nodes[info]['visible']==0
