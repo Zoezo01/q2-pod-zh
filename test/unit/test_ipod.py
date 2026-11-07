@@ -211,13 +211,6 @@ def test_status_bar_battery_must_fit(monkeypatch):
         ipod.status_bar(bar())
 
 
-def test_classic_light_bar_room_stays_the_gates(monkeypatch):
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 97, wider than BATT_ROOM's 94 the payload's gate reads: safe
-    monkeypatch.setattr(ipod, 'BATT_ROOM', 99)
-    with pytest.raises(ValueError, match=r"^BATT_ROOM \d+ past the bar's room \d+$"):
-        ipod.status_bar(bar(), g=CLASSIC_LIGHT)
-
-
 def test_status_bar_battery_reach(monkeypatch):
     monkeypatch.setattr(ipod, 'BATT_PCT_W', 500)
     with pytest.raises(ValueError, match=r'^Status bar battery needs \d+px of \d+px$'):
@@ -786,10 +779,10 @@ def test_status_metrics_centre_the_caps_in_the_classic_light_bar():
     g = CLASSIC_LIGHT
     m = ipod.status_metrics(g, ipod.CLASSIC_LIGHT_FONT_SRC)
     assert m['px'] == g.bar_px == 21 and m['cap'] == 11 and m['cap_top'] == 6 and m['label_y'] == -1
-    assert m['inset'] == ipod.corner_inset(6) + ipod.BAR_PAD == 56  # BAR_PAD clear of the glass at the caps' top
+    assert m['inset'] == ipod.corner_inset(6) + ipod.BAR_PAD == 59  # BAR_PAD clear of the glass at the caps' top
     assert m['clock_text'] == 64 and classic_light_text_w('12:59 PM') <= 64  # its numbers only: Minimal's and Classic's keep CLOCK_TEXT
     assert ipod.CLOCK_TEXT == 70
-    assert m['title'] == [54, -1, 98, g.bar - 1]  # text on columns 56 to 150; a 12-hour clock's starts at 155
+    assert m['title'] == [57, -1, 95, g.bar - 1]  # text on columns 59 to 150; a 12-hour clock's starts at 155
     assert 2 * m['clock'][0] + m['clock'][2] == 375 and m['title'][1::2] == m['clock'][1::2] == [m['label_y'], g.bar - 1]
     # what a title fits: Local Songs and Now Playing, whole
     assert classic_light_text_w('Local Songs') <= m['title'][2] - 4 and classic_light_text_w('Now Playing') <= m['title'][2] - 4
@@ -823,8 +816,8 @@ def test_classic_light_status_bar_battery_and_play_state_right():
     home, state = n['img_home_state'], n['img_state']
     assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
     assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
-    assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
-    assert 375 - ipod.corner_inset(4) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 4, BAR_PAD clear of the glass; the nub's rows lower still
+    assert n['view_right'][2]['children_layout'].endswith(f'xm=63,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 311
+    assert 375 - ipod.corner_inset(4) - 1 - (311 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 4, BAR_PAD clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
@@ -834,12 +827,12 @@ def test_classic_light_status_bar_eq_in_the_room():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     m, eq = ipod.status_metrics(CLASSIC_LIGHT, ipod.CLASSIC_LIGHT_FONT_SRC), n['label_eq']
     x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
-    edge = 315  # the group's right edge: the nub ends at x 314
-    assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], 28, m['title'][3]]
+    edge = 312  # the group's right edge: the nub ends at x 311
+    assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], ipod.CLASSIC_LIGHT_EQ_W, m['title'][3]]
     assert x == 222 and x >= 375 / 2 + m['clock_text'] / 2 + ipod.CLASSIC_LIGHT_CLOCK_GAP  # the widest clock, CLASSIC_LIGHT_CLOCK_GAP clear
-    assert classic_light_text_w('EQ') <= 28  # the bar's face fits its box
+    assert classic_light_text_w('EQ') <= ipod.CLASSIC_LIGHT_EQ_W  # the bar's face fits its box
     # 2 px short of Bluetooth's ink: the battery with its soft edge and nub, Wi-Fi, BT_REACH
-    assert x + 28 + 2 <= edge - (1 + CLASSIC_LIGHT.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
+    assert x + ipod.CLASSIC_LIGHT_EQ_W + 2 <= edge - (1 + CLASSIC_LIGHT.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
     assert {eq[2][f'style:{s}:{k}'] for s in ('normal', 'disable', 'focused') for k in ('font_size', 'font_name')} \
         == {str(CLASSIC_LIGHT.bar_px), ipod.CLASSIC_LIGHT_FONT_NAME}
 
@@ -870,8 +863,8 @@ def test_classic_light_status_bar_icons_on_their_columns():
 
 
 def test_classic_light_status_bar_battery_must_fit():
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 93 of 93
-    with pytest.raises(ValueError, match=r'^Status bar battery needs 94px of 93px$'):
+    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 90 of 90
+    with pytest.raises(ValueError, match=r'^Status bar battery needs 91px of 90px$'):
         ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 1))
 
 

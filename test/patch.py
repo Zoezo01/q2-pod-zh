@@ -6752,19 +6752,21 @@ for over,light in (('statusbar_dialog','1'),('search_dialog','1'),('statusbar_di
 QS_ICONS=('img_wifiswitch','img_btswitch','img_lock','img_gain','img_usbmode','img_po','img_playset','img_sysset')
 QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbstorage','drop_po','drop_playset','drop_sysset')
 QS_LABELS=(('label_wifi','WiFi'),('label_bt','BT'),('label_lock','Off'),('label_gain','Low'),('label_usbmode','USB'),('label_outputway','Output Options'),('label_playset','Play'),('label_sysset','Set'))
-QS_X=(30,115,199,283)
+QS_X=(31,115,199,283)
+QS_GROUND,QS_OFF,QS_ON={'1':0x63717b,'0':0x1c1c1c},{'1':0x7f8b93,'0':0x333333},0x447cdd  # Home's pane, it lifted, Classic Blue's red tone (Cobalt's)
 QS_AT=[(QS_X[i%4],(20,138)[i//4]) for i in range(8)]
-def qs_new(light='1',theme='1'):
-    SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light),k)]
+def qs_new(light='1',theme='1',**config):
+    SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light,**config),k)]
     try: q=LoadQueue()
     finally: SETUP.clear()
     q.mock('dialog_quit','widget_dispatch_event_to_target_recursive'); q.image_size=(60,60)
+    q.budget=400000  # the page paints eight tiles row by row, each row's corners a pixel at a time
     q.handlers[int(manifest['patch_symbols']['stock_quicksettings_trampoline'],16)]='stock_quicksettings'
     q.btns=[q.node('image',n,image=i) for n,i in zip(QS_ICONS,QS_IMAGES)]
     q.labels=[q.node('label',n,text=t) for n,t in QS_LABELS]
     q.menu=q.node('view','view_menu',[*q.btns,*q.labels]); place(q,q.menu,0,20,375,224)
     for i,w in enumerate(q.btns): place(q,w,QS_X[i%4]+3,118*(i//4),60,60); q.byte(w+0x34,255)  # the page says each icon's x, whatever stock's is
-    for i,w in enumerate(q.labels): place(q,w,QS_X[i%4]-10,118*(i//4)+66,80,40)
+    for i,w in enumerate(q.labels): place(q,w,(30,115,199,283)[i%4]-10,118*(i//4)+66,80,40)  # stock's columns
     q.slider=q.node('slider','slider_backlight',min=1,max=10,value=4); place(q,q.slider,68,0,239,48)
     q.suns=[q.node('image','image0'),q.node('image','image1')]
     q.view=q.node('view','view_backlight',[q.slider,*q.suns]); place(q,q.view,0,256,375,48)
@@ -6783,38 +6785,50 @@ def qs_down(q,w):
 def qs_event(q,w,kind):
     q.word(q.event+O['EVENT_X'],30); q.word(q.event+O['EVENT_Y'],40)
     return q.call(key=30,address=HOOKS['widget_dispatch'][0],args=(w,q.event,0,0),event_type=kind,gap=0)
-# The page's 320 rows, eight buttons at their places on their shadows, stock's images hidden and still tappable; final colours, one form in both halves.
-qs_pages={}
+# The page's 320 rows, Home's pane in the half, eight flat tiles at their places, the one on (USB) in the accent, each glyph
+# over it; stock's images hidden and still tappable; final colours.
+def qs_tiles(q,rows,i=None):  # each tile's colour, from the bands after the ground
+    out=[]
+    for a in QS_AT:
+        tile,rows=round_box(rows,*a,60,60,12); assert len(set(tile))==1; out.append(tile[0])
+    return out
 for light in '01':
-    q=qs_new(light); arts=qs_paint(q); rows=q.bands[:320]; qs_pages[light]=(arts,rows)
-    assert [r[:4] for r in rows]==[(0,y,375,1) for y in range(320)] and (rows[0][4],rows[319][4])==(color_t(0x1a1c20),color_t(0x030304))
-    assert all(abs((rows[176][4]>>k&255)-(color_t(0x0a0b0d)>>k&255))<=1 for k in (0,8,16))  # 55 %
-    assert arts==[a for i,n in enumerate(QS_IMAGES) for a in (('classic_light_drop_shadow',(QS_AT[i][0]-6,QS_AT[i][1]-6)),('classic_light_'+n,QS_AT[i]))]
+    q=qs_new(light); arts=qs_paint(q); rows=q.bands[:320]
+    assert [r[:4] for r in rows]==[(0,y,375,1) for y in range(320)] and {r[4] for r in rows}=={color_t(QS_GROUND[light])}
+    assert qs_tiles(q,q.bands[320:])==[color_t(QS_ON if i==4 else QS_OFF[light]) for i in range(8)]
+    assert arts==[('classic_light_'+n,QS_AT[i]) for i,n in enumerate(QS_IMAGES)]
     assert wbox(q,q.menu)==(0,0,375,244) and [wbox(q,w) for w in q.btns]==[(*a,60,60) for a in QS_AT]
     assert all(q.u.mem_read(w+0x34,1)[0]==0 and q.nodes[w].get('visible',1) for w in q.btns)
     assert qs_event(q,q.btns[0],O['EVT_CLICK'])==0 and any(c[0]=='stock_dispatch' for c in q.calls)
     assert q.lcd_colors()==LCD_COLORS; passed()
-assert qs_pages['0']==qs_pages['1']; passed()
-# Each state: the name is read from stock's image on each paint, for all 18.
+# Each state: the name is read from stock's image on each paint, for all 18, and the on ones are the accent's.
 q=qs_new()
+LIT={'wifiopen','btopen','keylockopen','highgain','lo','usbstorage','usbaudio','usbdac'}
 for n in ('wifi','wifiopen','bt','btopen','keylock','keylockopen','lowgain','lowgaindisable','highgain','highgaindisable','lo','po','sa','usbstorage','usbaudio','usbdac','playset','sysset'):
-    q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[1]==('classic_light_drop_'+n,(30,20)); passed()
-# Pressed: every button darkens under the finger, over it, until the release; its hold is as today.
+    q.nodes[q.btns[0]]['image']='drop_'+n; assert qs_paint(q)[0]==('classic_light_drop_'+n,(31,20))
+    assert qs_tiles(q,q.bands[320:])[0]==color_t(QS_ON if n in LIT else QS_OFF['1']),n; passed()
+# Graphite: its silver red tone takes the dark glyph (_k) in the dark half; in the light half it flips dark, under white.
+for light,want,glyph in (('0',0xd8d8d8,'_k'),('1',0x272727,'')):
+    q=qs_new(light,CLASSIC_LIGHT_ACCENT='0'); q.nodes[q.btns[0]]['image']='drop_wifiopen'  # 0: Graphite's row
+    arts=qs_paint(q); assert arts[0]==('classic_light_drop_wifiopen'+glyph,(31,20)) and qs_tiles(q,q.bands[320:])[0]==color_t(want),light; passed()
+# Pressed: every button darkens a sixth under the finger, flat, until the release; its hold is as today.
+def qs_dark(c): return sum(((c>>k&255)*5//6)<<k for k in (0,8,16))
 for i,w in enumerate(q.btns):
     q=qs_new(); w=q.btns[i]; q.calls=[]; qs_down(q,w)
     assert ('widget_invalidate_force',w) in [c[:2] for c in q.calls]
-    arts=qs_paint(q); at=arts.index(('classic_light_'+QS_IMAGES[i],QS_AT[i])); assert arts[at+1]==('classic_light_drop_pressed',QS_AT[i]) and sum(a[0].endswith('pressed') for a in arts)==1
+    arts=qs_paint(q); tiles=qs_tiles(q,q.bands[320:]); want=[QS_ON if j==4 else QS_OFF['1'] for j in range(8)]
+    assert tiles==[color_t(qs_dark(c) if j==i else c) for j,c in enumerate(want)] and arts==[('classic_light_'+n,QS_AT[j]) for j,n in enumerate(QS_IMAGES)]
     q.calls=[]; qs_event(q,w,O['EVT_POINTER_UP_BEFORE']); assert ('widget_invalidate_force',w) in [c[:2] for c in q.calls]
-    assert not [a for a in qs_paint(q) if a[0].endswith('pressed')] and bool(q.timers)==False; passed()
-q=qs_new(); qs_down(q,q.btns[0]); qs_event(q,q.btns[0],O['EVT_POINTER_ABORT']); assert not [a for a in qs_paint(q) if a[0].endswith('pressed')]; passed()
+    assert qs_tiles(q,(qs_paint(q),q.bands)[1][320:])==[color_t(c) for c in want] and bool(q.timers)==False; passed()
+q=qs_new(); qs_down(q,q.btns[0]); qs_event(q,q.btns[0],O['EVT_POINTER_ABORT']); qs_paint(q); assert qs_tiles(q,q.bands[320:])[0]==color_t(QS_OFF['1']); passed()
 q=qs_new(); qs_down(q,q.btns[2]); assert not q.timers; q.advance(O['RATE_HOLD_MS']); assert not q.opened; passed()  # Lock has no hold
 q=qs_new(); qs_down(q,q.btns[0]); q.advance(O['RATE_HOLD_MS'])
 assert q.opened==[('systemset/wifi_page',None)] and [c[1:3] for c in q.calls if c[0]=='dialog_quit']==[(q.win,0)]
 # ... the window gone, a late release touches nothing of it.
 f,ctx=q.handler(q.win,O['EVT_WINDOW_CLOSE']); q.call(address=f,args=(ctx,q.event,0,0),event_type=O['EVT_WINDOW_CLOSE'],gap=0)
 q.calls=[]; qs_event(q,q.btns[0],O['EVT_POINTER_UP_BEFORE']); assert not [c for c in q.calls if c[0]=='widget_invalidate_force']; passed()
-# A label's box holds its font and its lines: 18 for 17, Output Options' in 32. Its own ink is clear: the page draws each line 14 rows apart, on a black second draw a row down, white in either half.
-def qs_lines(a,t,lines=None): return [d for i,l in enumerate(lines or (t,)) for d in ((l,(a[0]-10,a[1]+65+14*i,80,18),0xff000000),(l,(a[0]-10,a[1]+64+14*i,80,18),0xffffffff))]
+# A label's box holds its font and its lines: 18 for 17, Output Options' in 32. Its own ink is clear: the page draws each line 14 rows apart, white in either half, no shadow.
+def qs_lines(a,t,lines=None): return [(l,(a[0]-10,a[1]+64+14*i,80,18),0xffffffff) for i,l in enumerate(lines or (t,))]
 for light in '10':
     q=qs_new(light); qs_paint(q)
     assert [wbox(q,w) for w in q.labels]==[(a[0]-10,a[1]+64,80,32 if n=='label_outputway' else 18) for a,(n,t) in zip(QS_AT,QS_LABELS)]
@@ -6824,11 +6838,11 @@ for light in '10':
     assert canvas_state(q)[:1]==(LCD_COLORS,); passed()
 # ... a repaint doesn't restyle the labels; a text that stops wrapping gets the one-line box; one the face hasn't takes the fallback's, and back.
 q=qs_new(); qs_paint(q); q.calls=[]; bg(q,q.win); assert not [c for c in q.calls if c[0] in ('widget_move_resize','widget_set_prop_str')]
-q.nodes[q.labels[5]]['text']='LO'; qs_paint(q); assert wbox(q,q.labels[5])==(105,202,80,18) and [l['text'] for l in q.letters][10:12]==['LO','LO']; passed()
-q.nodes[q.labels[5]]['text']='Выход'; qs_paint(q); assert q.nodes[q.labels[5]]['style:normal:font_name']=='bold' and q.letters[11]['font'][0]=='bold' and q.letters[11]['rect'][3]>q.letters[11]['font'][1]
+q.nodes[q.labels[5]]['text']='LO'; qs_paint(q); assert wbox(q,q.labels[5])==(105,202,80,18) and [l['text'] for l in q.letters][5]=='LO'; passed()
+q.nodes[q.labels[5]]['text']='Выход'; qs_paint(q); assert q.nodes[q.labels[5]]['style:normal:font_name']=='bold' and q.letters[5]['font'][0]=='bold' and q.letters[5]['rect'][3]>q.letters[5]['font'][1]
 q.nodes[q.labels[5]]['text']='LO'; qs_paint(q); assert q.nodes[q.labels[5]]['style:normal:font_name']=='classic-light' and q.nodes[q.labels[5]]['style:normal:font_size']==17; passed()
 # ... a word too long for the box breaks where it stops fitting.
-q.nodes[q.labels[5]]['text']='Outputoptions'; qs_paint(q); assert [l['text'] for l in q.letters][10:14]==['Outputop','Outputop','tions','tions']; passed()
+q.nodes[q.labels[5]]['text']='Outputoptions'; qs_paint(q); assert [l['text'] for l in q.letters][5:7]==['Outputop','tions']; passed()
 # Brightness: stock's bar clear, its suns hidden; the track at 275, 11 rows; 4 of 1..10 filled to 79; the knob centred on the fill's end; the wheel moves it, and repaints all the knob reaches.
 q=qs_new(); arts,bands=qs_scrub(q)
 assert all(q.nodes[q.slider][f'style:{s}:{c}_color']==0 for s in ('normal','pressed','over','focused') for c in ('fg','bg')) and [q.nodes[w]['visible'] for w in q.suns]==[0,0]

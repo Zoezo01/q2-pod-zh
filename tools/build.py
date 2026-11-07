@@ -1499,8 +1499,9 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
                f'#define Q2POD_UA "Q2Pod/{VERSION} (https://github.com/DiamondBond/q2-pod)"']  # onlinematch.c, as MusicBrainz asks
     header.append(f'#define THEME_N {len(themes)}')  # navigation.c setting_counts[]
     header.append(f'#define THEME_KEYS {len(theme_keys(themes))}')  # navigation.c st.own[], themes.inc theme_keys[]
-    from art import corner_table
+    from art import corner_table, qs_lit
     header.append(f'#define ROUND_COVER {corner_table()}')  # navigation.c paint_round_rows
+    header.append(f'#define QS_LIT "{qs_lit()}"')  # navigation.c quick_page: Classic's buttons that are on
     return '\n'.join(header)+'\n'
 
 def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotator_lazy_clock=False, pwm_idle_clock=False, mcu_idle_sleep=False, flac_experiments='sync,lpc,output'):  # pragma: no mutate block
