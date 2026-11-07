@@ -13067,13 +13067,11 @@ static void hold_label(void *item, void *label) {
     widget_move_resize(label, 12, 0, BACK_W - 24, theme()->page_row);
     panel_font(label, 25, 1);
 }
-/* The title, as Now Playing's: a looping hscroll_label holding MARQUEE_HOLD_MS at its start
- * (delay) and its end (lull). Stock's sortselect title has neither, nor loop. */
+/* The title loops, as Now Playing's; stock's sortselect title doesn't. Its holds at its start and
+ * end are every label's (ringnav_hscroll_start, ringnav_hscroll_lull). */
 static void qm_title(void *dialog, const char *s) {
     void *title = widget_lookup(dialog, "scrlabel_title", 1);
     widget_set_prop_int(title, "loop", 1);
-    widget_set_prop_int(title, "delay", MARQUEE_HOLD_MS);
-    widget_set_prop_int(title, "lull", MARQUEE_HOLD_MS);
     widget_set_text_utf8(title, s);
 }
 static int qm_open(const void *unused) {

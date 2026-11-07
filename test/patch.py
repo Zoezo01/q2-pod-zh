@@ -7366,7 +7366,7 @@ assert well[0][1]==265 and well[0][4]==color_t(0x07090d) and [l['text'] for l in
 # ... and the flag ends with the call: the next prompt, a question, is the page.
 tm.top=dq=tm.node('dialog','confirminfo_dialog'); tm.word(dq+O['W_PARENT'],tm.wm); place(tm,dq,0,0,375,320); ce=cl_cells(tm,dq); tm.nodes[dq]['children']=ce; parents(tm,dq); tm.paint(dq); assert wbox(tm,ce[0])[1]==258 and tm.nodes[ce[1]]['text']=='OK'; passed()
 # Hold menu under Classic: Cover Flow's flip panel, centred under the bar and clear of the glass: a 44-row header holding the title, then
-# the theme's 32 px rows, six at most; opaque, with no dim. Its title loops as Now Playing's, holding at its start and its end.
+# the theme's 32 px rows, six at most; opaque, with no dim. Its title loops as Now Playing's, with every label's holds.
 from ipod import corner_x
 def hold_cl(light='1'):
     CONFIG['LIGHT']=light; m=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(m)
@@ -7382,7 +7382,7 @@ assert wbox(hm,hl)==(40,99,294,192) and wbox(hm,nav)==(40,55,294,44) and len(ite
 assert [wbox(hm,i) for i in items]==[(0,32*k,294,32) for k in range(len(items))] and hm.nodes[nav].get('visible',1) and hm.nodes[named(hm,nav,'img_return')]['visible']==0
 assert hm.nodes[hd]['style:normal:bg_color']==0 and hm.nodes[hd]['highlight']=='' and hm.nodes[hl]['style:normal:bg_color']==0 and hm.nodes[nav]['style:normal:bg_color']==0
 assert wbox(hm,title)==(12,5,270,33) and (hm.nodes[title]['style:normal:font_name'],hm.nodes[title]['style:normal:font_size'])==(CL_FONT,31) and hm.nodes[title]['_final']&0xffffffff==0xffffffff
-assert (hm.nodes[title]['loop'],hm.nodes[title]['delay'],hm.nodes[title]['lull'])==(1,O['MARQUEE_HOLD_MS'],O['MARQUEE_HOLD_MS'])
+assert hm.nodes[title]['loop']==1 and 'delay' not in hm.nodes[title] and 'lull' not in hm.nodes[title]  # every label's holds, not its own
 assert hold_panel(hm,hd,None)==55
 lab=[c for c in hm.nodes[items[0]]['children'] if hm.nodes[c]['type']=='hscroll_label'][0]
 assert wbox(hm,lab)==(12,0,270,32) and (hm.nodes[lab]['style:normal:font_name'],hm.nodes[lab]['style:normal:font_size'])==(CL_FONT,25) and 'style:normal:text_align_h' not in hm.nodes[lab] and '_final' not in hm.nodes[lab]
@@ -7392,7 +7392,7 @@ hd0,hd1,hl0=hold_cl(light='0'); assert hold_panel(hd0,hd1,0xff000000)==55; passe
 # ... a failed boot reads as Minimal: the menu keeps stock's own box, with none of the panel.
 CONFIG['LIGHT']='1'; fm=classic_light_new(QueueMachine); del CONFIG['LIGHT']; classic_light_boot(fm,fail=lambda page:True); fm.press(6000); assert fm.hold()==11; fd=fm.top; fm.word(fd+O['W_PARENT'],fm.wm); place(fm,fd,0,0,375,320); parents(fm,fd); fm.clip=(0,0,375,320); fl=named(fm,fd,'list_view')
 assert wbox(fm,fl)[:2]!=(40,99); fm.paint(fd); assert not [b for b in fm.bands if b[4]>>24==0xf0]
-ft=named(fm,fd,'scrlabel_title'); assert (fm.nodes[ft]['loop'],fm.nodes[ft]['delay'],fm.nodes[ft]['lull'])==(1,O['MARQUEE_HOLD_MS'],O['MARQUEE_HOLD_MS']); passed()  # its title as Now Playing's too
+ft=named(fm,fd,'scrlabel_title'); assert fm.nodes[ft]['loop']==1 and 'delay' not in fm.nodes[ft] and 'lull' not in fm.nodes[ft]; passed()  # its title as Now Playing's too
 # ... more than six rows: the list stops at 192 and scrolls; the sort list keeps its tick at the row's right.
 em=classic_light_new(QueueMachine,page='playing_page',pos=1); classic_light_boot(em); em.press(6000); assert em.hold()==11; ed=em.top; eitems=em.nodes[em.view]['children']
 assert len(eitems)>6 and wbox(em,named(em,ed,'list_view'))==(40,99,294,192) and [wbox(em,i)[1] for i in eitems]==[32*k for k in range(len(eitems))] and em.nodes[em.view]['virtual_h']==32*len(eitems)
