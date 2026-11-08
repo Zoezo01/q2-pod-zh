@@ -4713,20 +4713,24 @@ static int np_line_hold(const void *info) {
 /* Now Playing's lyrics page (ringnav_playing): a touch that stays within TAP_PX of where it came
  * down, so neither a swipe nor a drag of the lines, plays from the line under it once held
  * RATE_HOLD_MS (np_line_hold), else at its lift switches them to full screen and back (np_full),
- * once there are lyrics to show. The slide_view taking the touch for a
- * swipe (its abort) ends full screen at once, so the pages slide in their column. Returns 0: a STOP
- * would keep the slide_view's grab (rate_fav_click). */
-#define TAP_PX 10 /* AWTK's drag threshold */
+ * once there are lyrics to show. With lyrics a finger may roll STICKY_PX sideways: those moves stop
+ * here, so the slide_view behind never takes them for a swipe and the page stays under the hold;
+ * past that it swipes, the page catching up with the finger. The slide_view taking the touch for a
+ * swipe (its abort) ends full screen at once, so the pages slide in their column. Returns 0 but for
+ * those moves: a STOP on the lift would keep the slide_view's grab (rate_fav_click). */
+#define TAP_PX 10    /* AWTK's drag threshold */
+#define STICKY_PX 40 /* sideways, before the lyrics page slides */
 static int np_lyric_touch(void *ctx, void *event) {
     int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
-    int tap = (unsigned)(x - st.np_tap_x + TAP_PX) <= 2 * TAP_PX &&
+    int side = st.np_full || lyrics_on(st.np_lrc) ? STICKY_PX : TAP_PX;
+    int tap = (unsigned)(x - st.np_tap_x + side) <= 2u * side &&
               (unsigned)(y - st.np_tap_y + TAP_PX) <= 2 * TAP_PX;
     if (type == EVT_POINTER_DOWN) {
         st.np_tap_x = x, st.np_tap_y = y;
         rearm(&st.np_line_timer, np_line_hold, RATE_HOLD_MS);
         return 0;
     }
-    if (type == EVT_POINTER_MOVE_BEFORE && tap) return 0;
+    if (type == EVT_POINTER_MOVE_BEFORE && tap) return side == STICKY_PX ? 11 : 0; /* RET_STOP */
     stop_timer(&st.np_line_timer);
     st.np_tap_x = 1 << 20; /* used or taken for a swipe: a later lift is no tap */
     if (type == EVT_POINTER_ABORT) {

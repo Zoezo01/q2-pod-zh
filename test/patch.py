@@ -8389,10 +8389,12 @@ class CentredMachine(KaraokeMachine):
         self.word(self.win+O['W_PARENT'],self.wm); self.stack=[self.win]
         assert self.call(address=playing,args=(self.win,7,0,0),gap=0)==0
         self.handlers[sleep_hook+12]='stock_sleep'; self.word(payload_syms['wheel_held'],1)
-    def touch(self,kind,x=150,y=100):  # a pointer event on the lyrics page
+    def touch(self,kind,x=150,y=100):  # a pointer event on the lyrics page: its handler's answer
         f,ctx=self.handler(self.lyric,O[kind]); ev=self.alloc(0x20)
         for k,v in (('EVENT_TYPE',O[kind]),('EVENT_X',x),('EVENT_Y',y)): self.word(ev+O[k],v)
-        assert self.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)==0  # never STOP: the slide_view's grab
+        r=self.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)
+        assert r==0 or (r==11 and kind=='EVT_POINTER_MOVE_BEFORE'),(kind,r)  # STOP only a held move: the slide_view's grab
+        return r
     def tap(self,x=150,y=100,dx=0,dy=0):  # a finger down and up, a UI loop pass with each: no drag of the lines
         self.touch('EVT_POINTER_DOWN',x,y); self.pressed=1; loop(self)
         self.touch('EVT_POINTER_UP_BEFORE',x+dx,y+dy); self.pressed=0; loop(self)
@@ -8420,7 +8422,7 @@ for end in ('return','abort','page'):
 # that comes back to where it began is no tap at the lift.
 m=centred(); m.tap(); m.top=m.node('window','home_page'); loop(m); m.top=m.win; loop(m); assert m.full()==FULL
 m.touch('EVT_POINTER_DOWN'); m.touch('EVT_POINTER_ABORT'); m.touch('EVT_POINTER_UP_BEFORE'); assert m.full()==COLUMN; passed()
-for dx,dy in ((70,0),(0,40),(11,0)):  # a swipe, a drag of the lines, past TAP_PX: the column untouched
+for dx,dy in ((70,0),(0,40),(41,0),(0,11)):  # a swipe, a drag of the lines, past STICKY_PX and TAP_PX: the column untouched
     m=centred(); m.tap(dx=dx,dy=dy); assert m.full()[:6]==COLUMN[:5]+(None,),(dx,dy,m.full()); passed()
 m=centred(lines=()); m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()  # no lyrics
 # Both layouts' lyrics take np_lyric_touch.
@@ -8452,17 +8454,23 @@ assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%',
 # middle one), and the lift toggles nothing; a drag past TAP_PX, a swipe (the slide_view's abort) or a lift
 # before then seeks nothing; an unsynced line does nothing. The rows (offset 97, the window at y 30): "Three"
 # from 215, so y 160 is on it.
-def press_line(m,y=160,move=0,abort=False,ms=O['RATE_HOLD_MS']):
+def press_line(m,y=160,move=0,abort=False,ms=O['RATE_HOLD_MS'],side=0):
     m.calls=[]; m.touch('EVT_POINTER_DOWN',150,y); m.pressed=1; loop(m)
-    if move: m.touch('EVT_POINTER_MOVE_BEFORE',150,y+move)
+    if move or side: m.moved=m.touch('EVT_POINTER_MOVE_BEFORE',150+side,y+move)
     if abort: m.touch('EVT_POINTER_ABORT',150,y)
-    m.advance(ms,clear=False); seeks=moves(m); m.touch('EVT_POINTER_UP_BEFORE',150,y+move); m.pressed=0; loop(m); return seeks
+    m.advance(ms,clear=False); seeks=moves(m); m.touch('EVT_POINTER_UP_BEFORE',150+side,y+move); m.pressed=0; loop(m); return seeks
 for on in ('1','0'):
     m=centred(centred=on); settle(m); assert y(m)==97
     assert press_line(m)==[('player_seek_time',12)] and m.full()[5]!='#000000' and m.nodes[m.bar]['value']==12; passed()
     for kw in ({'move':11},{'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
         m=centred(centred=on); settle(m); assert press_line(m,**kw)==[] and (m.full()[5]=='#000000')==('ms' in kw),kw; passed()
     m=centred(centred=on); settle(m); assert press_line(m,move=8)==[('player_seek_time',12)]; passed()  # within TAP_PX
+    # A finger rolling up to STICKY_PX sideways still holds: the move stops here, short of the slide_view, so the page
+    # stays under it. Past that it is a swipe's: the slide_view has it, and nothing seeks or goes full screen.
+    m=centred(centred=on); settle(m); assert press_line(m,side=40)==[('player_seek_time',12)] and m.moved==11; passed()
+    m=centred(centred=on); settle(m); assert press_line(m,side=-41)==[] and m.moved==0 and m.full()[5]!='#000000'; passed()
+# No lyrics: a hold means nothing, so the pages swipe at stock's threshold.
+m=centred(lines=()); m.touch('EVT_POINTER_DOWN',150,160); assert m.touch('EVT_POINTER_MOVE_BEFORE',161,160)==0; passed()
 m=centred(lines=((FAR,'x'*15),(FAR,'Two two'),(FAR,'Three'))); settle(m); assert press_line(m)==[] and m.full()[5]!='#000000'; passed()
 # A page without stock's slide_view (a layout of its own) has no column: a tap on its lyrics leaves
 # everything as it was, where np_full read the column off a NULL slide_view (W_PARENT at 0x48).
