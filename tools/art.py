@@ -220,7 +220,7 @@ SORT = 'M0 0H16V2H0ZM0 5H11V7H0ZM0 10H6V12H0Z'
 SORT_BOX = (0, 0, 16, 12)  # Songs' Sort, white as stock's glyphs: Light Mode flips it to the ink
 # Home's pane (coverflow.c): original drawings in the note's coordinates. Each but the note is fitted into a 92 px box
 # centred on PANE_CENTRE, the note's own place standing for its size; all share one fill and stroke (icon).
-# The volume bar's two ends (navigation.c vol_paint), where an iPod classic's are: a speaker, and one with its
+# The volume bar's two ends (volume.c vol_paint), where an iPod classic's are: a speaker, and one with its
 # waves, the iPod bar's height; white as SORT, Light Mode flips them to the ink. The waves end within the cone's
 # height, so the box's rows hold them.
 SPEAKER = 'M0 4.3H3L7.5 0.9V12.1L3 8.7H0Z'

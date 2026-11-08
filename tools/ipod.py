@@ -896,7 +896,7 @@ def confirm_dialog(root):
 
 # The volume dialog loses its highlight="default(alpha=200)", so the window manager
 # creates no highlighter and nothing under it dims; the payload draws the volume into the dialog
-# (navigation.c vol_paint): a band on Now Playing, a panel elsewhere.
+# (volume.c vol_paint): a band on Now Playing, a panel elsewhere.
 VOLUME = 'dialog/volume_dialog.bin'
 
 
