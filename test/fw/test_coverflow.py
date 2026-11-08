@@ -4,6 +4,7 @@ import math
 import pathlib
 import random
 import re
+import sqlite3
 import struct
 import unicodedata
 from types import SimpleNamespace
@@ -1881,3 +1882,50 @@ def test_the_library_generation_moves_before_and_after_a_scan(fw):
     fw.mock('stock_scan_all_trampoline', lambda *_: during.append(gen.value))
     fw.fn('coverflow_scan_all', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     assert during == [1] and gen.value == 2
+
+
+# Stock's songtable, as demo's CREATE TABLE text has it: VARCHAR columns, so text affinity, which LIKE
+# needs to use a NOCASE index.
+SONGTABLE = ('create table songtable(id INTEGER PRIMARY KEY AUTOINCREMENT, filename VARCHAR(512), fileurl VARCHAR(1024), '
+             'album VARCHAR(512), songer VARCHAR(256), style VARCHAR(128), name VARCHAR(512), composer VARCHAR(256), '
+             'albumsonger VARCHAR(256), year INTEGER, track INTEGER, cd_num INTEGER, time INTEGER, time_end INTEGER, '
+             'time_create INTEGER, Initial INTEGER, bitdepth INTEGER, samprate INTEGER)')
+
+
+@pytest.mark.parametrize('scan', ['scan_all', 'scan_folder'])
+def test_a_scan_ends_by_indexing_what_stock_looks_up_alone(fw, scan):
+    """An album's songs, Recently Added and a file's row read the whole table without an index. Update
+    Local Music drops the table, so the indexes come after stock's own writes."""
+    made, during = [], []
+    fw.mock('toolsUpdateDbTable', lambda db, sql, *_: made.append((C.string_at(db), C.string_at(sql).decode())) or 1)
+    fw.mock(f'stock_{scan}_trampoline', lambda *_: during.append(len(made)))
+    fw.fn(f'coverflow_{scan}', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    assert during == [0] and [db for db, _ in made] == [b'/mnt/data/database.db']
+    sent = []
+    fw.mock('stock_dbquery_trampoline', lambda db, sql, *_: sent.append(C.string_at(sql).decode()))
+    query = fw.fn('ringnav_library_query', C.c_int, C.c_char_p, C.c_char_p, C.c_void_p, C.c_int)
+    music = fw.var('navigation__library_music', C.c_int)
+    for staged in (0, 1):  # staged_music's subquery too
+        music.value = staged
+        for sql in (b"select * from songtable where album like 'Abbey Road'",  # getMusicByAlbum
+                    b"select * from songtable where album like 'Abbey Road' and albumsonger like 'The Beatles'",
+                    b'select * from songtable ORDER BY time_create desc limit 100;'):  # getAllRecentAddRecord
+            query(b'/mnt/data/database.db', sql, None, 0)
+    assert len(sent) == 6
+    row = "filename='a.flac' and fileurl='/mnt/mmc/a.flac' and time=0 and time_end=0"
+    sent += [f'select * from songtable where {row}', f'delete from songtable where {row}',  # toolsCheckItemExist, toolsDeleteDbTable
+             f"update songtable set album='b' where {row}"]  # ringnav_scan_refresh
+    bare, indexed = sqlite3.connect(':memory:'), sqlite3.connect(':memory:')
+    for db in bare, indexed:
+        db.execute(SONGTABLE)
+    indexed.executescript(made[0][1])
+    plan = lambda db, sql: ' '.join(row[-1] for row in db.execute('explain query plan ' + sql))  # noqa: E731
+    for sql in sent:
+        assert 'INDEX' not in plan(bare, sql) and 'USING INDEX' in plan(indexed, sql), sql
+    # and the same rows in the same order: songs of one second (a CUE image's tracks) stay in rowid order
+    songs = [(i, f'{i}.flac', f'/mnt/mmc/{i}.flac', ('Abbey Road', 'abbey road')[i % 2], 'The Beatles', i // 3)
+             for i in range(1, 10)]
+    for db in bare, indexed:
+        db.executemany('insert into songtable(id, filename, fileurl, album, songer, time_create) values (?, ?, ?, ?, ?, ?)', songs)
+    for sql in sent[:6]:
+        assert bare.execute(sql).fetchall() == indexed.execute(sql).fetchall(), sql

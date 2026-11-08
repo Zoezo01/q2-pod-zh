@@ -5989,11 +5989,15 @@ class CoverflowMachine(QueueMachine):
         return view
     def rescan(self,writer='scanAllMusicFile'):
         """A songtable writer runs: its hook, then its (mocked) stock body. A scan walks the folder
-        markers into SCOPE_RULES first, a delete doesn't."""
+        markers into SCOPE_RULES first and indexes songtable after it, a delete doesn't."""
         assert self.call(address=HOOKS[writer][0],args=(1,2,0,0),gap=0)==0
         assert [c[:3] for c in self.calls if c[0].startswith('stock_')]==[(WRITERS[writer],1,2)]
         walked=[c for c in self.calls if c[0].startswith('fopen') and self.text(c[1])==SCOPE_RULES+'.tmp']
         assert bool(walked)==(writer!='deleteMusicFromMusicDb')
+        body=[c[0] for c in self.calls].index(WRITERS[writer])
+        indexed=[self.text(c[1]) for c in self.calls if c[0]=='toolsUpdateDbTable']
+        assert indexed==[self.text(c[1]) for c in self.calls[body:] if c[0]=='toolsUpdateDbTable']
+        assert indexed==([] if writer=='deleteMusicFromMusicDb' else ['/mnt/data/database.db'])
     def queried(self): return sum(c[0]=='getAllAlbum' for c in self.calls)
     def close(self):
         f,ctx=self.handler(self.page,O['EVT_DESTROY'])

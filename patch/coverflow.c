@@ -34,10 +34,27 @@ static int library_write(int (*stock)(void *, void *), void *a, void *b) {
     ++library_gen;
     return result;
 }
-int coverflow_scan_all(void *a, void *b) {
+/* Stock's songtable has only its primary key, so an album's songs (getMusicByAlbum's like, on the
+ * UI thread at each album open), a file's row (deleteMusicFromMusicDb, the folder scan's check and
+ * refresh) and Recently Added each read the whole table. Update Local Music drops the table, and
+ * its indexes with it, so a scan ends by adding them: on its own thread and stock's shared handle,
+ * while the library still reads as scanning. A library no scan has run on since has none and reads
+ * as before. A reader on another connection makes the create fail (no busy timeout), until the
+ * next scan. time_create is desc: an index keeps equal keys in rowid order, as stock's sort did,
+ * so songs of one second (a CUE image's tracks) keep their order newest first (Recently Added,
+ * getAllMusic(3)) and reverse oldest first (getAllMusic(4)). ponytail: the album groupings
+ * (getAllAlbum, ALBUM_SQL, an artist's albums) walk songtable_album too, a row lookup each in
+ * album order: over twice a scan's page reads (docs/internals.md). */
+static int library_scan(int (*stock)(void *, void *), void *a, void *b) {
     library_scope_scan();
-    return library_write(stock_scan_all_trampoline, a, b);
+    int result = library_write(stock, a, b);
+    toolsUpdateDbTable("/mnt/data/database.db",
+                       "create index if not exists songtable_album on songtable(album collate nocase);"
+                       "create index if not exists songtable_filename on songtable(filename);"
+                       "create index if not exists songtable_time_create on songtable(time_create desc)");
+    return result;
 }
+int coverflow_scan_all(void *a, void *b) { return library_scan(stock_scan_all_trampoline, a, b); }
 /* toolsGetFileCreateTime (0x5bddc4) dates a song (time_create, Recently Added's order) by stat's
  * st_ctime, on FAT32 the directory entry's creation time, but by st_atime on exFAT cards, where
  * stat has no creation time; every read moves that, so a full update dated the whole library to
@@ -55,10 +72,7 @@ int ringnav_file_created(const char *path) {
     return stock_file_created_trampoline(path);
 }
 #endif
-int coverflow_scan_folder(void *a, void *b) {
-    library_scope_scan();
-    return library_write(stock_scan_folder_trampoline, a, b);
-}
+int coverflow_scan_folder(void *a, void *b) { return library_scan(stock_scan_folder_trampoline, a, b); }
 int coverflow_delete_song(void *a, void *b) { return library_write(stock_delete_song_trampoline, a, b); }
 
 /* The queue menu resolves the live track list again after its dialog closes. */
