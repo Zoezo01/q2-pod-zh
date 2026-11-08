@@ -8401,7 +8401,7 @@ class CentredMachine(KaraokeMachine):
         f,ctx=self.handler(self.lyric,O[kind]); ev=self.alloc(0x20)
         for k,v in (('EVENT_TYPE',O[kind]),('EVENT_X',x),('EVENT_Y',y)): self.word(ev+O[k],v)
         r=self.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)
-        assert r==0 or (r==11 and kind=='EVT_POINTER_MOVE_BEFORE'),(kind,r)  # STOP only a held move: the slide_view's grab
+        assert r==0,(kind,r)  # never STOP: the slide_view's grab, and its swipe from the first move
         return r
     def tap(self,x=150,y=100,dx=0,dy=0):  # a finger down and up, a UI loop pass with each: no drag of the lines
         self.touch('EVT_POINTER_DOWN',x,y); self.pressed=1; loop(self)
@@ -8465,18 +8465,29 @@ assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%',
 def press_line(m,y=160,move=0,abort=False,ms=O['RATE_HOLD_MS'],side=0):
     m.calls=[]; m.touch('EVT_POINTER_DOWN',150,y); m.pressed=1; loop(m)
     if move or side: m.moved=m.touch('EVT_POINTER_MOVE_BEFORE',150+side,y+move)
-    if abort: m.touch('EVT_POINTER_ABORT',150,y)
+    if abort: m.touch('EVT_POINTER_ABORT',150+side,y+move)  # the slide_view's, where the finger is
     m.advance(ms,clear=False); seeks=moves(m); m.touch('EVT_POINTER_UP_BEFORE',150+side,y+move); m.pressed=0; loop(m); return seeks
 for on in ('1','0'):
     m=centred(centred=on); settle(m); assert y(m)==97
     assert press_line(m)==[('player_seek_time',12)] and m.full()[5]!='#000000' and m.nodes[m.bar]['value']==12; passed()
-    for kw in ({'move':11},{'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
+    for kw in ({'move':11},{'side':21},{'side':25,'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
         m=centred(centred=on); settle(m); assert press_line(m,**kw)==[] and (m.full()[5]=='#000000')==('ms' in kw),kw; passed()
     m=centred(centred=on); settle(m); assert press_line(m,move=8)==[('player_seek_time',12)]; passed()  # within TAP_PX
-    # A finger rolling up to STICKY_PX sideways still holds: the move stops here, short of the slide_view, so the page
-    # stays under it. Past that it is a swipe's: the slide_view has it, and nothing seeks or goes full screen.
-    m=centred(centred=on); settle(m); assert press_line(m,side=40)==[('player_seek_time',12)] and m.moved==11; passed()
-    m=centred(centred=on); settle(m); assert press_line(m,side=-41)==[] and m.moved==0 and m.full()[5]!='#000000'; passed()
+    # A finger rolling up to STICKY_PX sideways still holds, and the page follows it: its moves pass (never STOP) to the
+    # slide_view behind, and the abort it sends as it takes the touch past AWTK's 10 px leaves the hold running; stock
+    # springs the page back at the lift. Past STICKY_PX it is a swipe's (the side=21 and 25 cases above).
+    m=centred(centred=on); settle(m); assert press_line(m,side=20)==[('player_seek_time',12)] and m.moved==0; passed()
+    m=centred(centred=on); settle(m); assert press_line(m,side=-15,abort=True)==[('player_seek_time',12)]; passed()
+# Full screen: the slide_view's abort within the box leaves it on (the held line keeps its place), the first move out
+# sideways ends it so the pages slide in their column, and a move out up or down (a drag of the lines) leaves it.
+m=centred(centred='1'); settle(m); m.tap(); assert m.full()==FULL
+m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.calls=[]
+m.touch('EVT_POINTER_MOVE_BEFORE',165,160); m.touch('EVT_POINTER_ABORT',165,160); assert m.full()==FULL
+m.touch('EVT_POINTER_MOVE_BEFORE',175,160); assert m.full()==COLUMN; m.advance(O['RATE_HOLD_MS'],clear=False); assert moves(m)==[]
+m.touch('EVT_POINTER_UP_BEFORE',175,160); m.pressed=0; loop(m); assert m.full()==COLUMN; passed()
+m=centred(centred='1'); settle(m); m.tap(); assert m.full()==FULL
+m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.touch('EVT_POINTER_MOVE_BEFORE',150,175); assert m.full()==FULL
+m.touch('EVT_POINTER_UP_BEFORE',150,175); m.pressed=0; loop(m); assert m.full()==FULL; passed()
 # No lyrics: a hold means nothing, so the pages swipe at stock's threshold.
 m=centred(lines=()); m.touch('EVT_POINTER_DOWN',150,160); assert m.touch('EVT_POINTER_MOVE_BEFORE',161,160)==0; passed()
 m=centred(lines=((FAR,'x'*15),(FAR,'Two two'),(FAR,'Three'))); settle(m); assert press_line(m)==[] and m.full()[5]!='#000000'; passed()
