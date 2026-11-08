@@ -135,6 +135,8 @@ HOOKS = {
     'systemset_powermanager_page_init': (0x4c72d0, 'ringnav_powermanager', 'power'),
     # Standby limit: the suspend to RAM between the RTC wake alarm's set and clear
     'toolsIntoStandby': (0x5be57c, 'ringnav_standby', 'standby'),
+    # Standby's card driver reload: no removed and inserted toasts on the wake
+    'check_cardmount_status': (0x4e9428, 'ringnav_cardmount', 'cardmount'),
     'playset_playset_page_init': (0x4b98d8, 'ringnav_audioset', 'audioset'),
     # Bluetooth's list, rebuilt on every search and link change, gains Resume on connect
     'btmenu_rows': (0x4bee90, 'ringnav_btrows', 'btrows'),

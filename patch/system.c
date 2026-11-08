@@ -9,6 +9,9 @@ static struct {
     int wdt_long;    /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
     int ended; /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
     int suspended;  /* inside Standby's suspend (ringnav_standby), for the state record */
+    int card_quiet; /* a Standby resumed at card_at: its card toasts are dropped (ringnav_cardmount)
+                     */
+    unsigned card_at;
     char state[96]; /* the state record last written (state_poll) */
     /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
     unsigned logo_at;
@@ -16,6 +19,18 @@ static struct {
     volatile int logo_busy;
     const char *volatile logo_err;
 } pw __attribute__((section(".scratch")));
+
+/* Standby unloads the card's driver and waits at most 1.55 s for the mount after reloading it, so
+ * a slower mount reads as the card pulled and put back. Mounting goes on; only the toasts stop.
+ * ponytail: a real swap inside CARD_QUIET_MS shows no toast either. */
+int ringnav_cardmount(void) {
+    int result = stock_cardmount_trampoline();
+    if (pw.card_quiet && (unsigned)time_now_ms() - pw.card_at < CARD_QUIET_MS)
+        *(volatile char *)CARD_TOAST = 0;
+    else
+        pw.card_quiet = 0;
+    return result;
+}
 
 /* Charge limit (docs/internals.md#charge-limit): get_battery_capacity keeps g_power_capacity and
  * g_power_chargestate (1 Charging, 2 Full, the AXP2101's battery status); switch_charge_enable
@@ -303,6 +318,7 @@ int ringnav_standby(void) {
     int result = stock_standby_trampoline();
     wdt_set(1);
     pw.suspended = 0; /* the next pass records the resume */
+    pw.card_quiet = 1, pw.card_at = (unsigned)time_now_ms();
     if (armed) {
         unsigned now = rtc_now();
         rtc_alarm(0);

@@ -1663,6 +1663,28 @@ def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, power):
     assert s.record is None and ('unlink', STALL) in s.log
 
 
+def test_a_standby_wake_drops_the_card_toasts(fw, st, power):
+    now, toast = [5000], C.c_byte.from_address(O['CARD_TOAST'])
+    fw.mock('time_now_ms', lambda *_: now[0])
+    def card(*_):
+        toast.value = 1
+        return 0
+    fw.mock('stock_cardmount_trampoline', card)
+    check = fw.fn('ringnav_cardmount', C.c_int)
+    toast.value = 0
+    check()
+    assert toast.value == 1  # no Standby yet: a real swap
+    st('pod_read').value = 1  # no config.ini to read
+    fw.mock('stock_standby_trampoline', lambda *_: 0)
+    fw.fn('ringnav_standby', C.c_int)()
+    now[0] += O['CARD_QUIET_MS'] - 1
+    check()
+    assert toast.value == 0
+    now[0] += 1
+    check()
+    assert toast.value == 1  # the window is over
+
+
 @pytest.mark.parametrize('stop', ['standby', 'long pass', 'clean end'])
 def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop, power):
     s = Stall(fw, power)
