@@ -119,7 +119,7 @@ class World:
         self.log, self.at, self.names, self.written, self.lists, self.mtime = [], {}, {}, {}, {}, {}
         self.fail_write = lambda name: False
         fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
-        for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
+        for stub, fn in (('fw_fopen', self.fopen), ('fw_fread', self.fread), ('fw_fseek', self.fseek), ('fw_fwrite', self.fwrite), ('fw_rename', self.rename),
                          ('fw_unlink', self.unlink), ('fw_system', self.system), ('fw_access', self.access), ('fw___xstat', self.stat),
                          ('fw_opendir', self.opendir), ('fw_readdir', self.readdir)):
             fw.mock(stub, fn)
@@ -146,6 +146,10 @@ class World:
         C.memmove(buf, piece, len(piece))
         self.at[f] += len(piece)
         return len(piece) // size
+
+    def fseek(self, f, off, *_):
+        self.at[f] = off
+        return 0
 
     def fwrite(self, buf, size, n, f, *_):
         if self.fail_write(self.names[f]):
@@ -1050,6 +1054,11 @@ def art_path(uri, ctx):
     return b'/tmp/q2-foo.art/%08x.jpg' % h
 
 
+def jpeg(w=64, h=64):
+    """A baseline JPEG's start: the SOI and its frame header, all that picture_size reads."""
+    return b'\xff\xd8\xff\xc0\x00\x11\x08' + struct.pack('>HH', h, w) + bytes(16)
+
+
 @pytest.mark.parametrize('cover,kind,art', [
     (None, b'action', 0), (art_path(b'op0', b'x'), b'action', 0), (art_path(b'op1', b''), b'action', 1),
     (art_path(b'op0', b'c'), b'action', 1), (art_path(b'op0', b'c'), b'progress', 0)])
@@ -1058,9 +1067,70 @@ def test_a_cover_for_any_row_draws_the_list_with_covers(fw, cover, kind, art):
     covers; no file, another key, or a progress row in the list keeps the plain rows."""
     p = Page(fw)
     if cover:
-        p.world.files[cover] = b''
+        p.world.files[cover] = jpeg()
     p.answer(rows=[item(0, ctx=b'c'), item(1, kind)])
     assert p.top.art == art
+
+
+@pytest.mark.parametrize('data,art', [
+    (jpeg(128, 128), 1), (jpeg(129, 64), 0), (jpeg(64, 129), 0), (b'', 0), (b'not a picture' * 4, 0)])
+def test_a_cover_over_128_px_or_of_no_known_size_is_none(fw, data, art):
+    """addon.c art_file: the header's size decides, read before the list is drawn, not decoded."""
+    p = Page(fw)
+    p.world.files[art_path(b'op0', b'')] = data
+    p.answer(rows=[item(0)])
+    assert p.top.art == art
+
+
+def test_a_uris_escapes_are_undone_before_the_key(fw):
+    """addon.c art_file hashes the field as spot_reply left it: the app's value, not its wire form."""
+    p = Page(fw)
+    p.world.files[art_path(b'a%b', b'')] = jpeg()
+    p.answer(rows=[(b'action', b'a%25b', b'One', b'', b'', b'')])
+    assert p.top.art == 1
+
+
+def unloads(fw):
+    """Each image_manager_unload_bitmap_by_name's name, read as it is called (art_row's is on the stack)."""
+    names = []
+    fw.mock('image_manager_unload_bitmap_by_name', lambda _, name, *__: names.append(C.string_at(name)) or 0)
+    return names
+
+
+def test_a_rows_bitmap_is_let_go_before_its_image_and_at_the_level_end(fw):
+    """addon.c art_row and drop: a file changed since decodes again; closing the page keeps none of its bitmaps,
+    the file gone by then or not."""
+    p = Page(fw)
+    names = unloads(fw)
+    url = b'file://' + art_path(b'op0', b'')
+    p.world.files[url[7:]] = jpeg()
+    p.answer(rows=[item(0), item(1, b'list')])
+    assert names == [url]
+    del p.world.files[url[7:]], names[:]
+    fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.pg.page, None)
+    assert names == [url, b'file://' + art_path(b'op1', b'')]
+
+
+def test_a_swipe_redecides_covers_for_the_section_it_opens(fw):
+    """addon.c sec_open: lv_t.art is the drawn list's, so a section (each calloc'd level) starts without one and
+    the outgoing section's covers are let go before the level is replaced."""
+    p = sections(fw)
+    fw.mock('pointer_event_init', lambda *_: 0)
+    fw.mock('widget_dispatch_event_to_target_recursive', lambda *_: 0)
+    names = unloads(fw)
+    url = b'file://' + art_path(b'op0', b'')
+    p.world.files[url[7:]] = jpeg()
+    p.answer(rows=[item(0)])
+    assert p.top.art == 1
+    del names[:]
+    swipe(p, -100)
+    assert p.pg.cur == 1 and p.top.art == 0 and names == [url]
+    p.answer(rows=[item(1)])  # no cover in this one
+    assert p.top.art == 0
+    swipe(p, 100)
+    assert p.pg.cur == 0 and p.top.art == 0
+    p.answer(rows=[item(0)])  # back to the covered one, decided again
+    assert p.top.art == 1
 
 
 def test_more_is_a_level_of_its_own_at_the_newest_cursor(fw):

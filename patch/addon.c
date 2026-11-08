@@ -43,8 +43,8 @@
  * key the row's URI, a tab and its context, hashed FNV-1a 32 (hash_bytes from FNV_SEED) and written
  * as 8 lowercase hex digits. A list with a cover for any of its rows is drawn as stock Tidal's
  * lists are (art_row): ART_ROW_H rows, the cover at the left, the title and subtitle beside it; a
- * row without one keeps the cover's room empty. The app sizes the covers (ART_PX square). The
- * protocol is unchanged, so an app without covers, or firmware without "art", shows the plain rows.
+ * row without one keeps the cover's room empty. The app sizes the covers: one over ART_MAX px
+ * either way counts as none. The protocol is unchanged, so an app without covers, or firmware without "art", shows the plain rows.
  *
  * The card-app features this firmware has are words in /tmp/q2-addon.caps (ADDON_CAPS), written at
  * every Streaming scan. */
@@ -84,6 +84,8 @@
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
 #define ART_ROW_H 78 /* a row with a cover: stock Tidal's list_view default_item_height */
 #define ART_PX 64    /* its cover, square, centred in the row's height */
+#define ART_MAX 128  /* the most a cover's file may be, either way; larger counts as none */
+#define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
@@ -1067,8 +1069,26 @@ static void progress_row(void *item, long permille) {
     widget_set_prop_int(bar, "_pml", permille < 0 ? 0 : permille > 1000 ? 1000 : (int)permille);
 }
 
-/* The shown reply let go, and any page it waits for. */
+/* Row i's cover, its file:// URL written to out (ART_URL bytes); whether the file is there, with a
+ * known size of no more than ART_MAX px either way. */
+static int art_file(int i, char *out) {
+    unsigned key = hash_bytes(FNV_SEED, (const unsigned char *)cell(i, 1), strlen(cell(i, 1)));
+    int w = 0, h = 0;
+    key = hash_bytes(key, (const unsigned char *)"\t", 1);
+    key = hash_bytes(key, (const unsigned char *)cell(i, 4), strlen(cell(i, 4)));
+    tk_snprintf(out, ART_URL, "file:///tmp/q2-%s.art/%08x.jpg", app()->id, key);
+    return picture_size(out + 7, &w, &h) && w <= ART_MAX && h <= ART_MAX;
+}
+
+/* The shown reply let go, and any page it waits for; its covers leave the image manager while
+ * pg.f still names their rows, whether or not the files are still there. */
 static void drop(void) {
+    if (pg.pages && top()->art)
+        for (int i = 0; i < top()->n; ++i) {
+            char url[ART_URL];
+            art_file(i, url);
+            image_manager_unload_bitmap_by_name(image_manager(), url);
+        }
     while (pg.pages) free(pg.buf[--pg.pages]);
     pg.paging = 0;
 }
@@ -1088,61 +1108,40 @@ static void page_next(lv_t *l) {
         req_send(app()->browse, l->op, a), l->id = req.id;
 }
 
-/* Row i's cover file, written to out (n bytes); whether it is there. */
-static int art_file(int i, char *out, unsigned n) {
-    unsigned h = hash_bytes(FNV_SEED, (const unsigned char *)cell(i, 1), strlen(cell(i, 1)));
-    h = hash_bytes(h, (const unsigned char *)"\t", 1);
-    h = hash_bytes(h, (const unsigned char *)cell(i, 4), strlen(cell(i, 4)));
-    tk_snprintf(out, n, "/tmp/q2-%s.art/%08x.jpg", app()->id, h);
-    return !access(out, 0);
-}
-
 /* Whether the first count rows are drawn with covers: one has one, and none is a progress row,
  * whose bar is page_row_detail's. */
 static int art_rows(int count) {
-    char path[64];
-    for (int i = 0; i < count; ++i)
+    char url[ART_URL];
+    int art = 0;
+    for (int i = 0; i < count; ++i) {
         if (!strcmp(cell(i, 0), "progress")) return 0;
-    for (int i = 0; i < count; ++i)
-        if (art_file(i, path, sizeof path)) return 1;
-    return 0;
+        art = art || art_file(i, url);
+    }
+    return art;
 }
 
 static int row_h(const lv_t *l) { return l->art ? ART_ROW_H : page_h(64); }
 
-/* A stock Tidal list row: the cover (path, or room for one) at the theme's left, the caption over
- * the detail beside it, and the chevron when it opens a page. */
-static void art_row(int index, const char *caption, const char *detail, const char *path,
+/* A stock Tidal list row, page_row_detail's item moved over: the cover (url, or room for one) at
+ * the theme's left, the theme's label boxes beside it, centred in the taller row, an empty detail
+ * centring the caption, and the chevron when it opens a page. The image goes before row_into, whose
+ * chevron stays the last child (navigation.c into_mark), and is sized after it. */
+static void art_row(int index, const char *caption, const char *detail, const char *url,
                     int into) {
-    const theme_t *T = theme();
-    int x = T->page_x, tx = x + ART_PX + 12, w = (into ? 316 : 375 - x) - tx;
-    void *item = list_item_create(pg.view, 0, index * ART_ROW_H, 375, ART_ROW_H);
-    widget_use_style(item, "s_listitem_black");
-    if (path) {
-        char url[72];
-        tk_snprintf(url, sizeof url, "file://%s", path);
-        void *img = image_create(item, x, (ART_ROW_H - ART_PX) / 2, ART_PX, ART_PX);
+    int x = page_x(), tx = x + ART_PX + 12, w = 375 - x - tx, dy = (ART_ROW_H - page_h(64)) / 2;
+    void *item = page_row_detail(pg.view, index, caption, detail, clicked), *img = 0;
+    void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
+    widget_move_resize(item, 0, index * ART_ROW_H, 375, ART_ROW_H);
+    widget_move_resize(t, tx, *detail ? I(t, W_Y) + dy : 0, w, *detail ? I(t, W_H) : ART_ROW_H);
+    widget_move_resize(s, tx, I(s, W_Y) + dy, w, I(s, W_H));
+    if (url) {
+        img = image_create(item, x, (ART_ROW_H - ART_PX) / 2, ART_PX, ART_PX);
         image_set_draw_type(img, 4); /* scaled to fit, as Cover Flow's covers */
+        image_manager_unload_bitmap_by_name(image_manager(), url); /* a file written since */
         image_base_set_image(img, url);
     }
-    void *label = text(item, tx, *detail ? 12 : 0, w, *detail ? 30 : ART_ROW_H);
-    widget_use_style(label, "s_scrlabel_white20l");
-    widget_set_text_utf8(label, caption);
-    theme_font(label, ROLE_TALL, FONT_ROW);
-    if (*detail) {
-        label = text(item, tx, 42, w, 24);
-        widget_use_style(label, "s_scrlabel_white20l");
-        widget_set_prop_int(label, "style:normal:text_color", (int)0xffaaaaaau);
-        widget_set_prop_int(label, "style:normal:font_size", 16);
-        widget_set_text_utf8(label, detail);
-        theme_font(label, ROLE_META, FONT_ROW);
-    }
-    if (into) {
-        void *chevron = image_create(item, 302, 0, 50, ART_ROW_H);
-        image_base_set_image(chevron, "list_into");
-        if (T->chevron_sel) widget_set_visible(chevron, 0, 0); /* the selection's chevron instead */
-    }
-    widget_on(item, EVT_CLICK, clicked, (void *)(long)index);
+    if (into) row_into(item, ART_ROW_H);
+    if (img) widget_move_resize(img, x, (ART_ROW_H - ART_PX) / 2, ART_PX, ART_PX);
 }
 
 /* Row i of the level's list; i == l->n: the trailing row, Loading… while a page is on its way (a
@@ -1156,8 +1155,8 @@ static void row(lv_t *l, int i) {
         return;
     }
     if (l->art) {
-        char path[64];
-        art_row(i, cell(i, 2), cell(i, 3), art_file(i, path, sizeof path) ? path : 0, opens(i));
+        char url[ART_URL];
+        art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
         return;
     }
     void *item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
@@ -1216,8 +1215,9 @@ static void show(void) {
         if (n > 1) stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
     } else {
-        /* ponytail: pages appended later (append) keep this drawing's choice; their covers count
-         * once the list is drawn again */
+        /* ponytail: the first page decides, as pages appended later (append) keep this drawing's
+         * choice and Back or an action reloads from the first page; a list rebuilt whole with all
+         * its pages there (a short first page, the search box closing) counts them */
         l->art = art_rows(l->n);
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0),
                             l->art ? ART_ROW_H : 64);
