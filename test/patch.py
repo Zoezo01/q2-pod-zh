@@ -16083,14 +16083,28 @@ s.nodes[view]['_ringnav_index']=100; s.answer('ok','pages','',arts(2)); assert s
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','c1',arts(0,2))
 view=s.find('scroll_view'); h=s.get(view+O['W_H']); s.nodes[view]['_ringnav_index']=1; s.answer('ok','pages','',arts(1))
 new=s.find('scroll_view'); assert new!=view and s.get(new+O['W_H'])>h==3*64 and len(s.rows())==52 and s.nodes[new]['_ringnav_index']==1,(h,s.get(new+O['W_H'])); passed()
+# A list's first row of kind search is the title bar's search icon instead (Tidal's s_img_search, addon.c
+# take_find), the title narrowed before it; a tap opens the T9 box as the row did.
+def find_icon(s): return next((w for w in s.nodes[s.page]['children'] if s.nodes[w].get('style')=='s_img_search'),0)
+def find_tap(s,w):
+    f,ctx=s.handler(w,O['EVT_CLICK']); assert s.call(address=f,args=(ctx,s.event,0,0),gap=0,count=5_000_000)==0; s.advance(0,clear=False)
 # Pages that come while the search box is open (no list under it) are kept and the next asked for; leaving the box
-# shows them all, the search row still selected.
+# shows them all, the first row selected, the icon back.
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','c1',[('search','','Search','','','')]+arts(0,49))
-s.pick(0); edit=s.find('edit'); assert edit and not s.find('scroll_view')
+icon=find_icon(s); title=s.nodes[s.page]['children'][0]
+assert icon and len(s.rows())==50 and 'Search' not in s.labels() and s.get(icon+O['W_X'])==302 and s.nodes[icon]['clickable']==1
+assert s.get(title+O['W_X'])+s.get(title+O['W_W'])<=302 and s.get(icon+O['W_H'])==s.get(title+O['W_H'])
+find_tap(s,icon); edit=s.find('edit'); assert edit and not s.find('scroll_view')
 s.answer('ok','pages','c2',arts(1)); assert s.requests[-1]==('downloads','c1') and not s.find('scroll_view')
 s.answer('ok','pages','',arts(2)); assert s.requests[-1]==('downloads','c2') and not s.find('scroll_view')
 f,ctx=s.handler(edit,O['EVT_BLUR']); s.call(address=f,args=(ctx,s.event,0,0),gap=0,count=5_000_000); s.advance(0,clear=False)
-assert not s.find('edit') and len(s.rows())==150 and s.labels()[-2:]==['Artist 149',''] and s.nodes[s.find('scroll_view')]['_ringnav_index']==0; passed()
+assert not s.find('edit') and len(s.rows())==149 and s.labels()[-2:]==['Artist 149',''] and s.nodes[s.find('scroll_view')]['_ringnav_index']==0
+assert find_icon(s); passed()
+# Under Classic (no title bar: the name is in the status bar) the search row stays a row, and opens the box.
+s=classic_light_on(classic_light_new(SlskMachine)); s.open(); s.worker(); s.advance(500); s.answer('ok','refresh','',SMENU)
+s.pick(2); s.answer('ok','pages','',[('search','','Search','','','')]+arts(0,3))
+assert not find_icon(s) and len(s.rows())==4 and 'Search' in s.labels(),s.labels()
+s.pick(0); assert s.find('edit') and not s.find('scroll_view'); passed()
 # An action sent while a page is on its way takes its place: its reply toasted, the level is asked again from its
 # first page (a new list, not appended to the old one) and paged again, its row selected.
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','c1',arts(0))

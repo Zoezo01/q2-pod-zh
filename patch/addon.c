@@ -930,7 +930,8 @@ static int req_done(void) {
  * A level is an op and its arguments; only the top one keeps its reply, cut in place by spot_reply
  * into the header's 4 fields and 6 a row; Back asks again for the one below. A row's kind: list
  * opens the level uri (its context the argument), action sends uri with the context and toasts the
- * reply's message, search opens the T9 box (OK opens "search" for the text), remote opens the QR
+ * reply's message, search opens the T9 box (OK opens "search" for the text; a list's first one is
+ * the title bar's search icon instead, take_find), remote opens the QR
  * code, local plays from the card (uri: a song, or a folder to list; context "album": in track
  * order), info does nothing; its position, when set, is the op a held Play/Pause sends. progress
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
@@ -940,13 +941,14 @@ static int req_done(void) {
  * has a cursor is followed by its next pages (page_next), appended to its list (append) under a
  * Loading… row; any other keeps More…. */
 enum { K_LOAD, K_READY, K_ERROR, K_WAIT }; /* K_WAIT: no socket yet, the app starting */
-enum { G_ROW, G_SHOW, G_SEARCH };
+enum { G_ROW, G_SHOW, G_SEARCH, G_FIND };
 
 /* A level's page that can't show the app's rows (an error, or a load or start taking SLOW_MS) has a
  * Stop row whenever the app may be running, so a frozen one can always be ended. */
 typedef struct {
     int state, n, sel, live, retry;
     int nosock, slow;  /* nosock: the error is no socket; slow: the wait's Stop row shown */
+    int find;          /* its first row, a search, is the title bar's search icon (take_find) */
     unsigned since;    /* when it began loading or waiting, 0 once done */
     unsigned base;     /* args' bytes before a More…'s cursor: the list's own */
     unsigned id, hash; /* id: the fetch whose reply this level takes; hash: its rows' bytes */
@@ -1075,6 +1077,31 @@ static void row(lv_t *l, int i) {
 
 static void show(void);
 
+/* A first row of kind search leaves the list for a search icon at the title bar's right, as
+ * Tidal's navbar has (s_img_search), where the theme has a title bar; under one without (the name
+ * in the status bar) the row stays. The row's title isn't needed: the box's tips are the app's.
+ * Whether it did. */
+static int take_find(lv_t *l) {
+    if (!theme()->page_title_h || !l->n || strcmp(cell(0, 0), "search")) return 0;
+    for (int i = 4; i < 4 + 6 * (l->n - 1); ++i) pg.f[i] = pg.f[i + 6]; /* the rows up one */
+    --l->n;
+    return 1;
+}
+
+static int find_tapped(void *ctx, void *event);
+
+/* The search icon at the title bar's right, the title narrowed to end before it. */
+#define FIND_X 302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
+static void find_icon(void) {
+    void *title = widget_get_child(pg.page, 0);
+    int h = I(title, W_H);
+    widget_move_resize(title, I(title, W_X), 0, FIND_X - I(title, W_X), h);
+    void *icon = image_create(pg.page, FIND_X, 0, 50, h);
+    widget_use_style(icon, "s_img_search");
+    widget_set_prop_int(icon, "clickable", 1); /* an image sends no click unless it is, as Tidal's img_search */
+    widget_on(icon, EVT_CLICK, find_tapped, 0);
+}
+
 /* Rows from.. added to the shown list in place of its trailing row, the rest left as they are;
  * ringnav_select gives ringnav the new count, so it keeps the selection and the scroll. A reload's
  * row (l->sel) is selected once its page is there, unless the user moved off the trailing row; once
@@ -1126,6 +1153,7 @@ static void show(void) {
     } else {
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0), 64);
         for (int i = 0; i < n; ++i) row(l, i);
+        if (l->find) find_icon();
         page_push(pg.view, pg.moved), pg.moved = 0;
     }
     if (n) ringnav_select(pg.view, l->sel < n ? l->sel : n - 1, n);
@@ -1237,6 +1265,7 @@ static void got(void) {
             pg.buf[0] = reply, pg.pages = 1, reply = 0;
             memcpy(pg.f, f, sizeof g); /* pg.f holds ADDON_PAGES replies' rows, g one's */
             l->n = n;
+            l->find = take_find(l);
             l->hash = hash;
             l->state = K_READY;
             /* an app opts in; older ones' lists keep More… */
@@ -1277,6 +1306,25 @@ static int search_left(void *ctx, void *event) {
     return 0;
 }
 
+/* peq_ui.c's T9 edit over the title, its keyboard open: a Search row's press, or its icon's tap. */
+static void search_box(void) {
+    keep_sel();
+    widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
+    pg.edit = edit_create(pg.page, "text", 2, 26);
+    t9_box(pg.page, pg.edit, app()->tips);
+    widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
+    widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
+    widget_on(pg.edit, EVT_BLUR, search_left, 0);
+    widget_set_focused(pg.edit, 1);
+}
+
+/* The icon's tap, on a timer as a row's: the box replaces the page the icon is in. */
+static int find_tapped(void *ctx, void *event) {
+    (void)ctx, (void)event;
+    later(G_FIND, 0);
+    return 0;
+}
+
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
     (void)unused;
@@ -1286,7 +1334,9 @@ static int go(const void *unused) {
     pg.go = 0;
     if (pg.next == G_SHOW)
         show();
-    else if (pg.next == G_SEARCH) {
+    else if (pg.next == G_FIND) {
+        if (l->state == K_READY && l->find) search_box();
+    } else if (pg.next == G_SEARCH) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
@@ -1315,17 +1365,8 @@ static int go(const void *unused) {
             qr_open(app()->state, app()->name);
         else if (!strcmp(kind, "local")) /* a song, or a folder of them, on the card */
             songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
-        else if (!strcmp(kind,
-                         "search")) { /* peq_ui.c's T9 edit over the title, its keyboard open */
-            keep_sel();
-            widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
-            pg.edit = edit_create(pg.page, "text", 2, 26);
-            t9_box(pg.page, pg.edit, app()->tips);
-            widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
-            widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
-            widget_on(pg.edit, EVT_BLUR, search_left, 0);
-            widget_set_focused(pg.edit, 1);
-        }
+        else if (!strcmp(kind, "search"))
+            search_box();
     }
     return 0;
 }

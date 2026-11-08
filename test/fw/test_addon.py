@@ -53,7 +53,7 @@ class Req(C.Structure):
 
 
 class Lv(C.Structure):
-    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow')),
+    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow', 'find')),
                 *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash')),
                 ('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
 
@@ -1210,8 +1210,9 @@ def test_the_search_box_opens_a_level_for_its_text(fw):
 
 def test_an_empty_search_goes_back_to_the_menu(fw):
     p = Page(fw)
-    p.answer(rows=[(b'search', b'', b'Search', b'', b'', b'')])
-    p.click(0)
+    p.answer(rows=[(b'search', b'', b'Search', b'', b'', b'')])  # a first search row: the title bar's icon
+    fw.fn('addon__find_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
     fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     fw.fn('addon__go', C.c_int, C.c_void_p)(None)
     assert p.pg.depth == 1
