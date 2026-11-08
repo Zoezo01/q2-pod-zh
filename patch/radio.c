@@ -306,8 +306,10 @@ static void radio_play(int i) {
     rd.at = (i % n + n) % n;
     radio_halt();
     spot_yield();
-    /* Smart Wi-Fi bringing the radio back: radio_poll starts the station once the link is up */
-    rd.pid = (rd.wait = smart_wifi_wait()) ? 0 : video_start(url_of(&rd.list, rd.at), 1);
+    /* Smart Wi-Fi bringing the radio back: radio_poll starts the station once the link is up, and
+     * the local track stops now, as video_start would stop it */
+    if ((rd.wait = smart_wifi_wait())) player_stop();
+    rd.pid = rd.wait ? 0 : video_start(url_of(&rd.list, rd.at), 1);
     rd.active = 1;
     rd.volume = headset_gain() + 1u;
     rd.since = 0;

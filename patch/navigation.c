@@ -10050,6 +10050,9 @@ static void smart_poll(void) {
     unsigned now = time_now_ms();
     if (sw.at && now - sw.at < SMART_POLL_MS) return;
     sw.at = now | !now;
+    /* ponytail: while stock refuses its switch (smart_ready), a waiter that asks after this expiry
+     * starts another SMART_CONNECT_MS: one more 15 s at most; keep each waiter's own start if it
+     * bites. */
     if (sw.woke_at && now - sw.woke_at >= SMART_CONNECT_MS) sw.woke_at = 0;
     if (!st.smart_wifi || (!g_wififlag && !sw.off)) {
         sw.armed = 0;
@@ -10262,7 +10265,7 @@ static int upload_wait(const void *unused) {
 }
 
 int upload_scrobbles(void *ctx, void *event) {
-    if (get_wifisignal() <= 0 && smart_hold(upload_scrobbles, ctx, 0)) return 0; /* Smart Wi-Fi */
+    if (smart_hold(upload_scrobbles, ctx, 0)) return 0; /* once Smart Wi-Fi's link is up */
     int started = get_wifisignal() > 0 ? scrobble_start() : -2;
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);

@@ -507,8 +507,9 @@ static int al_click(void *ctx, void *event) {
         if (al.running) al.job.cancel = 1, al_show();
         return 0;
     }
+    if (smart_hold(al_click, ctx, 0)) return 0; /* once Smart Wi-Fi's link is up */
     if (get_wifisignal() <= 0) {
-        if (!smart_hold(al_click, ctx, 0)) toast("Connect to Wi-Fi first");
+        toast("Connect to Wi-Fi first");
         return 0;
     }
     void *r = al_playing(), *list = r ? coverflow_album_tracks(r) : 0;
