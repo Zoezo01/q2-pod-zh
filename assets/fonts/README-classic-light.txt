@@ -20,4 +20,4 @@ Copyright (c) 2006, 2009 B. Jackowski and J. M. Nowacki (on behalf of TeX Users 
 
 Both are under the GUST Font License, GUST-FONT-LICENSE.txt in this folder: the LaTeX Project
 Public License 1.3c or later (https://www.latex-project.org/lppl/) with GUST's request about names.
-The rest of this repository is under its MIT LICENSE, which does not cover these fonts.
+The rest of this repository is under the GNU GPL v3 (LICENSE), which does not cover these fonts.

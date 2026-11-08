@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Kernel-side code: licensed GPL-2.0-or-later so it stays compatible with the GPL-2.0-only Linux
+ * kernel it is built against; the rest of Q2 Pod is GPL-3.0-only (LICENSE). */
 /* Exact Q2 soc_aic.ko ABI, pinned by tools/aic.py; no guessed kernel structs.
  *
  * Stock hw_free uses a 20-byte, 4-byte-aligned wait entry at sp+0x20 and the
