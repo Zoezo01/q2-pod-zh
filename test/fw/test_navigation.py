@@ -1,4 +1,4 @@
-"""patch/navigation.c and tags.c: tag and CUE text, comma lists, Light Mode's colours, Era's and the playlists' rows, config."""
+"""patch/navigation.c, tags.c and library_lists.c: tag and CUE text, comma lists, Light Mode's colours, Era's and the playlists' rows, config."""
 import ctypes as C
 import datetime
 import random
