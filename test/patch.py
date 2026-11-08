@@ -8470,14 +8470,16 @@ def press_line(m,y=160,move=0,abort=False,ms=O['RATE_HOLD_MS'],side=0):
 for on in ('1','0'):
     m=centred(centred=on); settle(m); assert y(m)==97
     assert press_line(m)==[('player_seek_time',12)] and m.full()[5]!='#000000' and m.nodes[m.bar]['value']==12; passed()
-    for kw in ({'move':11},{'side':21},{'side':25,'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
+    for kw in ({'move':10},{'side':21},{'side':25,'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
         m=centred(centred=on); settle(m); assert press_line(m,**kw)==[] and (m.full()[5]=='#000000')==('ms' in kw),kw; passed()
-    m=centred(centred=on); settle(m); assert press_line(m,move=8)==[('player_seek_time',12)]; passed()  # within TAP_PX
+    m=centred(centred=on); settle(m); assert press_line(m,move=9)==[('player_seek_time',12)]; passed()  # short of TAP_PX
     # A finger rolling up to STICKY_PX sideways still holds, and the page follows it: its moves pass (never STOP) to the
     # slide_view behind, and the abort it sends as it takes the touch past AWTK's 10 px leaves the hold running; stock
     # springs the page back at the lift. Past STICKY_PX it is a swipe's (the side=21 and 25 cases above).
     m=centred(centred=on); settle(m); assert press_line(m,side=20)==[('player_seek_time',12)] and m.moved==0; passed()
-    m=centred(centred=on); settle(m); assert press_line(m,side=-15,abort=True)==[('player_seek_time',12)]; passed()
+    m=centred(centred=on); settle(m); assert press_line(m,side=-15,abort=True)==[('player_seek_time',12)] and m.full()[5]!='#000000'; passed()
+    # ... and that abort makes the lift no tap: a quick 15 px flick turns the page (stock, past 100 px/s) and toggles nothing.
+    m=centred(centred=on); settle(m); assert press_line(m,side=15,abort=True,ms=O['RATE_HOLD_MS']-50)==[] and m.full()[5]!='#000000'; passed()
 # Full screen: the slide_view's abort within the box leaves it on (the held line keeps its place), the first move out
 # sideways ends it so the pages slide in their column, and a move out up or down (a drag of the lines) leaves it.
 m=centred(centred='1'); settle(m); m.tap(); assert m.full()==FULL
@@ -8487,7 +8489,13 @@ m.touch('EVT_POINTER_MOVE_BEFORE',175,160); assert m.full()==COLUMN; m.advance(O
 m.touch('EVT_POINTER_UP_BEFORE',175,160); m.pressed=0; loop(m); assert m.full()==COLUMN; passed()
 m=centred(centred='1'); settle(m); m.tap(); assert m.full()==FULL
 m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.touch('EVT_POINTER_MOVE_BEFORE',150,175); assert m.full()==FULL
+m.touch('EVT_POINTER_ABORT',150,175); assert m.full()==FULL  # scroll_lrc's STOP comes back to view_lyric as an abort: not a swipe's
 m.touch('EVT_POINTER_UP_BEFORE',150,175); m.pressed=0; loop(m); assert m.full()==FULL; passed()
+# After the hold fired, the box stays: a roll and the slide_view's abort within it leave full screen, and the lift is no tap.
+m=centred(centred='1'); settle(m); m.tap(); settle(m); assert m.full()==FULL
+m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.calls=[]; m.advance(O['RATE_HOLD_MS'],clear=False); held=moves(m)
+m.touch('EVT_POINTER_MOVE_BEFORE',165,160); m.touch('EVT_POINTER_ABORT',165,160); assert m.full()==FULL
+m.touch('EVT_POINTER_UP_BEFORE',165,160); m.pressed=0; loop(m); assert m.full()==FULL and held,held; passed()
 # No lyrics: a hold means nothing, so the pages swipe at stock's threshold.
 m=centred(lines=()); m.touch('EVT_POINTER_DOWN',150,160); assert m.touch('EVT_POINTER_MOVE_BEFORE',161,160)==0; passed()
 m=centred(lines=((FAR,'x'*15),(FAR,'Two two'),(FAR,'Three'))); settle(m); assert press_line(m)==[] and m.full()[5]!='#000000'; passed()

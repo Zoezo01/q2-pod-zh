@@ -4691,7 +4691,7 @@ static int np_line_hold(const void *info) {
     st.np_line_timer = 0;
     void *lrc = st.np_lrc;
     int xy[2] = { st.np_tap_x, st.np_tap_y };
-    st.np_tap_x = 1 << 20;
+    st.np_tap_off = 1; /* its lift is no tap; the box stays for the slide_view's abort */
     if (!lrc || !st.np_slide || !usable() || !pointer_down() || !lyrics_on(lrc) ||
         window_manager_get_top_window(window_manager()) != st.np_win ||
         widget_get_prop_int(st.np_slide, "value", 0) != 1)
@@ -4707,39 +4707,50 @@ static int np_line_hold(const void *info) {
     return 0;
 }
 
-/* Now Playing's lyrics page (ringnav_playing): a touch that stays within TAP_PX of where it came
- * down, so neither a swipe nor a drag of the lines, plays from the line under it once held
- * RATE_HOLD_MS (np_line_hold), else at its lift switches them to full screen and back (np_full),
- * once there are lyrics to show. With lyrics a finger may roll STICKY_PX sideways and still hold:
- * its moves pass, so the slide_view behind takes the touch past AWTK's 10 px as stock does and
- * drags the page along, which shows the roll, and its abort as it does so leaves the hold's timer
- * and full screen alone; at the lift stock springs the page back (its release turns only past half
- * a page or 100 px/s). The first move out of that box is a swipe's or a drag's: the hold is off and
- * the lift no tap, and one out sideways ends full screen, as an abort out of it does, so the pages
- * slide in their column. Returns 0 throughout: a STOP on the lift would keep the slide_view's grab
- * (rate_fav_click), and one on a move keeps it from the swipe until the box's edge. */
-#define TAP_PX 10    /* AWTK's drag threshold */
+/* Now Playing's lyrics page (ringnav_playing): a touch that stays short of TAP_PX up or down and,
+ * with lyrics, within STICKY_PX sideways of where it came down, so neither a swipe nor a drag of
+ * the lines, plays from the line under it once held RATE_HOLD_MS (np_line_hold), else at its lift
+ * switches them to full screen and back (np_full), once there are lyrics to show. Every move
+ * passes, so the slide_view behind takes the touch past AWTK's 10 px as stock does and drags the
+ * page along, which shows a roll under the hold; its abort as it does so, with the finger still in
+ * the box, leaves the hold's timer and full screen alone and only makes the lift no tap (np_tap_off
+ * 1), and at the lift stock springs the page back (its release turns only past half a page or 100
+ * px/s). The first move out of the box is a swipe's or a drag of the lines': the hold is off and
+ * the lift no tap (2), and one out sideways, or the slide_view's abort past TAP_PX sideways, ends
+ * full screen so the pages slide in their column, while the lines' drag (its abort, under that)
+ * leaves it. Returns 0 throughout: a STOP on the lift would keep the slide_view's grab
+ * (rate_fav_click), and one on a move has AWTK abort the slide_view for the rest of the touch (a
+ * child's STOP goes up to each ancestor as EVT_POINTER_DOWN_ABORT): 1.7.2's swipe that needed a
+ * hold first. */
+#define TAP_PX 10 /* AWTK's drag threshold: the scroll view drags at it, the slide_view past it */
 #define STICKY_PX 20 /* sideways, while a hold still holds */
 static int np_lyric_touch(void *ctx, void *event) {
     int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
     int side = st.np_full || lyrics_on(st.np_lrc) ? STICKY_PX : TAP_PX;
-    int tap = (unsigned)(x - st.np_tap_x + side) <= 2u * side &&
-              (unsigned)(y - st.np_tap_y + TAP_PX) <= 2 * TAP_PX;
+    int dx = x - st.np_tap_x, dy = y - st.np_tap_y;
+    int in = (unsigned)(dx + side) <= 2u * side && (unsigned)(dy + TAP_PX - 1) <= 2u * (TAP_PX - 1);
     if (type == EVT_POINTER_DOWN) {
-        st.np_tap_x = x, st.np_tap_y = y;
+        st.np_tap_x = x, st.np_tap_y = y, st.np_tap_off = 0;
         rearm(&st.np_line_timer, np_line_hold, RATE_HOLD_MS);
         return 0;
     }
-    if (tap && type != EVT_POINTER_UP_BEFORE)
-        return 0; /* a roll under the hold: the page follows */
+    if (in && type != EVT_POINTER_UP_BEFORE) { /* a roll under the hold: the page follows */
+        if (type == EVT_POINTER_ABORT && !st.np_tap_off)
+            st.np_tap_off = 1; /* the slide_view took it */
+        return 0;
+    }
     stop_timer(&st.np_line_timer);
-    /* the first move out of the box, sideways: the slide_view has the swipe */
-    int swipe = st.np_tap_x != 1 << 20 && (unsigned)(x - st.np_tap_x + side) > 2u * side;
-    st.np_tap_x = 1 << 20; /* used or taken for a swipe: a later lift is no tap */
     if (type == EVT_POINTER_UP_BEFORE) {
-        if (tap && (st.np_full || lyrics_on(st.np_lrc))) np_full(!st.np_full);
-    } else if (st.np_full && (type == EVT_POINTER_ABORT || swipe))
-        np_full(0); /* so the pages slide in their column */
+        if (in && !st.np_tap_off && (st.np_full || lyrics_on(st.np_lrc))) np_full(!st.np_full);
+    } else if (st.np_full) {
+        /* the slide_view's swipe: its abort past its threshold sideways, or the first move out of
+         * the box sideways; the lines' drag (its abort, under that) leaves full screen */
+        int swipe = type == EVT_POINTER_ABORT
+                        ? (unsigned)(dx + TAP_PX) > 2u * TAP_PX
+                        : st.np_tap_off < 2 && (unsigned)(dx + side) > 2u * side;
+        if (swipe) np_full(0); /* so the pages slide in their column */
+    }
+    st.np_tap_off = 2;
     return 0;
 }
 

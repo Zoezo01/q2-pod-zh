@@ -1,7 +1,7 @@
 # Changelog
 
 - **1.7.3**:
-  - Now Playing: on the lyrics page, a swipe turns the page from the first touch again. 1.7.2 held every sideways move back until the finger had gone 40 px, so a quick swipe did nothing and it took a hold, then a swipe. A finger that rests on a line and rolls a little still plays from it: the page now follows the roll and springs back when the finger lifts.
+  - Now Playing: on the lyrics page, a swipe turns the page from the first touch again. In 1.7.2 the guard that kept a held finger's page still took every swipe with it, so a quick swipe did nothing and it took a hold, then a swipe. A finger that rests on a line and rolls up to 20 px still plays from it, the page follows the roll and springs back when the finger lifts, and dragging the lines up or down in full screen keeps them full screen.
 
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.

@@ -195,6 +195,8 @@ typedef struct {
     /* Now Playing's full-screen lyrics (np_full), where the last touch on them came
      * down and the timer of its hold on a line (np_lyric_touch) */
     int np_full, np_tap_x, np_tap_y;
+    int np_tap_off; /* the lyrics touch: 0 a tap so far, 1 taken (the slide_view's abort, the hold
+                       fired): its lift is no tap, 2 out of the box */
     unsigned np_line_timer;
     int np_was[9]; /* the column before full screen (np_full) */
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
