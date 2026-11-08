@@ -1096,18 +1096,18 @@ static void drop(void) {
     pg.paging = 0;
 }
 
-/* More…'s arguments in a (n bytes): the list's own and the newest cursor, Q2SPOT/1's last; 0 when
- * they don't fit. */
-static int cursor_args(const lv_t *l, char *a, unsigned n) {
+/* The list's own arguments in a (n bytes), and cursor c as Q2SPOT/1's last, none for an empty c (a
+ * page row's for the list's start); 0 when they don't fit. */
+static int cursor_args(const lv_t *l, char *a, unsigned n, const char *c) {
     tk_snprintf(a, n, "%.*s", (int)l->base, l->args);
-    return put(a, n, pg.f[3]);
+    return !c[0] || put(a, n, c);
 }
 
 /* The level's next page asked for, as More… would, its reply appended by got(). */
 static void page_next(lv_t *l) {
     char a[sizeof l->args] = "";
     pg.act = 0;
-    if ((pg.paging = cursor_args(l, a, sizeof a)))
+    if ((pg.paging = cursor_args(l, a, sizeof a, pg.f[3])))
         req_send(app()->browse, l->op, a), l->id = req.id;
 }
 
@@ -1147,41 +1147,24 @@ static void art_row(int index, const char *caption, const char *detail, const ch
     if (img) widget_move_resize(img, x, (ART_ROW_H - ART_PX) / 2, ART_PX, ART_PX);
 }
 
-/* A page row (Previous page, Next page) is as short as the Stop row (page_row_detail's 48), not a
- * whole list row: cut is what each one saves, and the rows after a Previous page move up by it. The
- * app sends one only first or last, so list_h, the height of a list of n rows, looks only there. */
-static int is_page(const lv_t *l, int i) {
-    return i >= 0 && i < l->n && !strcmp(cell(i, 0), "page");
-}
-static int cut(void) { return page_h(64) - page_h(48); }
-static int list_h(const lv_t *l, int n) {
-    return n * page_h(64) - (is_page(l, 0) ? cut() : 0) - (n > 1 && is_page(l, n - 1) ? cut() : 0);
-}
-
 /* Row i of the level's list; i == l->n: the trailing row, Loading… while a page is on its way (a
  * press does nothing), else More…. */
 static void row(lv_t *l, int i) {
-    void *item;
     if (i == l->n) {
-        if (l->art) {
+        if (l->art)
             art_row(i, pg.paging ? "Loading…" : "More…", "", 0, 0);
-            return;
-        }
-        item = page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
-    } else if (l->art) {
+        else
+            page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
+        return;
+    }
+    if (l->art) {
         char url[ART_URL];
         art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
         return;
-    } else if (is_page(l, i)) {
-        item = page_row_detail(pg.view, i, cell(i, 2), 0, clicked);
-    } else {
-        item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
-                                                                    cell(i, 3), clicked);
-        if (!strcmp(cell(i, 0), "progress")) progress_row(item, strtol(cell(i, 5), 0, 10));
     }
-    if (is_page(l, i) || (i && is_page(l, 0))) /* in the list's rows, after a Previous page's 48 */
-        widget_move_resize(item, 0, i * page_h(64) - (i && is_page(l, 0) ? cut() : 0), 375,
-                           I(item, W_H));
+    void *item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
+                                                                     cell(i, 3), clicked);
+    if (!strcmp(cell(i, 0), "progress")) progress_row(item, strtol(cell(i, 5), 0, 10));
 }
 
 static void show(void);
@@ -1242,14 +1225,9 @@ static void show(void) {
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0),
                             l->art ? ART_ROW_H : 64);
         for (int i = 0; i < n; ++i) row(l, i);
-        /* each row its own height (a page row is shorter): a list_view's item_height forces its
-         * own on every row, so the selection would be a whole row high */
-        widget_set_prop_int(P(pg.view, W_PARENT), "item_height", 0);
-        widget_set_prop_int(P(pg.view, W_PARENT), "default_item_height", page_h(64));
-        widget_set_prop_int(pg.view, "virtual_h", list_h(l, n));
         page_push(pg.view, pg.moved), pg.moved = 0;
     }
-    if (n) ringnav_select(pg.view, l->sel < n ? l->sel : n - 1, n);
+    if (n) ringnav_select(pg.view, l->state == K_ERROR ? 0 : l->sel < n ? l->sel : n - 1, n);
 }
 
 /* The selected row kept, from a page showing the level's own rows (not an error or a wait's). */
@@ -1311,12 +1289,11 @@ static void sec_open(int i, int dir) {
  * list instead of stepping back through its pages; dir: 1 a later page, -1 an earlier one. */
 static void page_to(lv_t *l, const char *c, int dir) {
     char a[sizeof l->args] = "";
-    tk_snprintf(a, sizeof a, "%.*s", (int)l->base, l->args);
-    if (!put(a, sizeof a, c)) return;
+    if (!cursor_args(l, a, sizeof a, c)) return;
     req_cancel();
     drop();
     memcpy(l->args, a, sizeof a);
-    l->n = 0, l->hash = 0, l->live = 0, l->state = K_LOAD;
+    l->n = 0, l->state = K_LOAD;
     l->sel = dir > 0 ? 1 : 1 << 20; /* show() clamps it to the last row */
     pg.moved = (signed char)dir;
     show();
@@ -1532,7 +1509,7 @@ static int go(const void *unused) {
         }
     } else if (l->state != K_READY) {
     } else if (i == l->n) { /* More…, as a level of its own; Loading… does nothing */
-        if (!pg.paging && cursor_args(l, a, sizeof a)) push(l->op, a, l->base, l->title);
+        if (!pg.paging && cursor_args(l, a, sizeof a, pg.f[3])) push(l->op, a, l->base, l->title);
     } else {
         const char *kind = cell(i, 0), *uri = cell(i, 1), *ctx = cell(i, 4);
         if (!strcmp(kind, "list")) { /* with remote and a local folder, opens()'s pages */

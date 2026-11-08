@@ -1133,6 +1133,78 @@ def test_a_swipe_redecides_covers_for_the_section_it_opens(fw):
     assert p.top.art == 1
 
 
+NEXT = (b'page', b'next', b'Next page', b'', b'c200', b'')
+
+
+def windowed(fw):
+    """A level whose list (op1, its own argument ctx) is on show, as a window's page row presses."""
+    p = Page(fw)
+    p.answer(rows=[item(1, b'list', b'ctx')])
+    p.click(0)
+    return p
+
+
+def selects(fw):
+    """Each _ringnav_index ringnav_select has written."""
+    sel = []
+    fw.mock('widget_set_prop_int', lambda _, key, v, *__: sel.append(v) if C.string_at(key) == b'_ringnav_index' else 0)
+    return sel
+
+
+@pytest.mark.parametrize('uri', [b'next', b'prev'])
+def test_a_failed_window_selects_retry(fw, uri):
+    """addon.c show: an error page selects its Retry, not the row the window would have selected (its Stop)."""
+    p = windowed(fw)
+    p.answer(rows=[item(2), (b'page', uri, b'Page', b'', b'c200', b'')])
+    sel = selects(fw)
+    p.click(1)
+    p.sel = 7  # ringnav's prop only writes a change
+    p.answer(status=b'error')
+    assert p.top.state == K_ERROR and sel[-1] == 0
+
+
+def test_an_empty_context_asks_for_the_lists_start(fw):
+    """addon.c page_to: a Previous page back to the first window sends no cursor, not an empty last argument."""
+    p = windowed(fw)
+    p.answer(rows=[item(2), (b'page', b'prev', b'Previous page', b'', b'', b'')])
+    p.click(1)
+    assert p.request().endswith(b'\top1\tctx\n') and p.top.base == 4
+
+
+def test_a_reload_asks_for_the_window_on_show(fw):
+    """addon.c page_to replaces the level's arguments, so Back from a deeper level returns to this window."""
+    p = windowed(fw)
+    p.answer(rows=[item(2), NEXT])
+    p.click(1)
+    p.answer(rows=[item(3, b'list')])
+    p.click(0)
+    p.answer(rows=[item(4)])
+    p.back()
+    assert p.top.state == K_LOAD and p.request().endswith(b'\top1\tctx\tc200\n')
+
+
+def test_a_press_with_a_page_in_flight_asks_for_the_window(fw):
+    """addon.c page_to: the next page's request is cancelled and the new window's asked for in its place."""
+    p = windowed(fw)
+    p.answer(msg=b'pages', cursor=b'c1', rows=[item(2), NEXT])
+    assert p.pg.paging == 1 and p.request().endswith(b'\top1\tctx\tc1\n')
+    p.click(1)
+    assert p.pg.paging == 0 and p.request().endswith(b'\top1\tctx\tc200\n') and p.top.id == p.req.id
+    p.answer(rows=[item(3), item(4)])
+    assert p.top.state == K_READY and p.top.n == 2 and p.cell(0, 2) == b'Row 3'
+
+
+def test_a_page_row_in_a_list_with_covers_is_as_high_as_its_rows(fw):
+    """addon.c row: a page row takes art_row's path, 78 px, its cover's room empty, as the trailing row."""
+    p = Page(fw)
+    p.world.files[art_path(b'op0', b'')] = jpeg()
+    moved, images = [], []
+    fw.mock('widget_move_resize', lambda _, x, y, w, h, *__: moved.append((x, y, w, h)) or 0)
+    fw.mock('image_create', lambda *_: images.append(1) or 0)
+    p.answer(rows=[item(0), NEXT])
+    assert p.top.art == 1 and (0, 0, 375, 78) in moved and (0, 78, 375, 78) in moved and len(images) == 1
+
+
 def test_more_is_a_level_of_its_own_at_the_newest_cursor(fw):
     p = Page(fw)
     p.answer(rows=[item(1, b'list', b'x')])

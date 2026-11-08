@@ -16133,21 +16133,19 @@ t=len(s.threads); s.advance(2000); assert len(s.threads)==t; passed()
 # Previous page the list's last row once its pages are in, and Back leaves the list (the menu asked again).
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2)
 s.answer('ok','pages','c1',arts(0)); s.answer('ok','','',[*arts(1,49),('page','next','Next page','','c200','')])
-assert len(s.rows())==100 and s.labels()[-2:]==['','Next page'],s.labels()[-2:]  # a page row is one line, as Stop
-# A page row is the Stop row's height (48), not a list row's (64); the list's height counts it so.
-def geo(r): return s.get(r+O['W_Y']),s.get(r+O['W_H'])
-rows=s.rows(); assert geo(rows[98])==(98*64,64) and geo(rows[99])==(99*64,48) and s.get(s.find('scroll_view')+O['VIEW_CONTENT_H'])==99*64+48
-lv=s.get(s.find('scroll_view')+O['W_PARENT']); assert s.nodes[lv]['item_height']==0 and s.nodes[lv]['default_item_height']==64  # rows keep their own
+assert len(s.rows())==100 and s.labels()[-2:]==['Next page',''],s.labels()[-2:]  # a plain row, its subtitle empty
 s.pick(99); assert s.labels()==['Loading…'],s.labels()
 s.answer('ok','pages','c250',[('page','prev','Previous page','','c0',''),*arts(4,49)]); assert s.requests[-1]==('downloads','c200'),s.requests[-1]
-assert s.labels()[:3]==['Downloads','Previous page','Artist 200'] and s.nodes[s.find('scroll_view')]['_ringnav_index']==1,(s.labels()[:4],s.nodes[s.find('scroll_view')]['_ringnav_index'])
+assert s.labels()[:4]==['Downloads','Previous page','','Artist 200'] and s.nodes[s.find('scroll_view')]['_ringnav_index']==1,(s.labels()[:4],s.nodes[s.find('scroll_view')]['_ringnav_index'])
 s.answer('ok','','',arts(5,10)); assert s.requests[-1]==('downloads','c250') and len(s.rows())==60
-rows=s.rows(); assert geo(rows[0])==(0,48) and geo(rows[1])==(48,64) and geo(rows[59])==(48+58*64,64),(geo(rows[0]),geo(rows[1]),geo(rows[59]))
-assert s.get(s.find('scroll_view')+O['VIEW_CONTENT_H'])==48+59*64
 s.pick(0); assert s.labels()==['Loading…']
 s.answer('ok','pages','c1',arts(0)); assert s.requests[-1]==('downloads','c0'),s.requests[-1]; s.answer('ok','','',[*arts(1,49),('page','next','Next page','','c200','')])
 assert s.nodes[s.find('scroll_view')]['_ringnav_index']==99,s.nodes[s.find('scroll_view')]['_ringnav_index']
 s.back(); s.answer('ok','refresh','',SMENU); assert s.requests[-1]==('menu',) and s.labels()==SLABELS; passed()
+# In a list drawn with covers a page row is a row of that list: 78 px, its caption centred, the cover's room empty.
+page_c=covers((art_file('album','al-1'),),[COVERS[0],('page','next','Next page','','c2','')]); page_tx=O['CF_EDGE']+76
+assert heights(page_c)==[78,78] and [page_c.get(r+O['W_Y']) for r in page_c.rows()]==[0,78] and len(cover_images(page_c))==1,(heights(page_c),cover_images(page_c))
+page_t=page_c.nodes[page_c.rows()[1]]['children'][0]; assert page_c.nodes[page_t]['text']=='Next page' and box(page_c,page_t)==[page_tx,0,375-O['CF_EDGE']-page_tx,78],box(page_c,page_t); passed()
 # A page kept holds its own size, its bytes and their NUL: realloc'd before its fields are cut (the mock moves it
 # and spoils the old block), not the request's 64 KB.
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.resized.clear(); s.answer('ok','pages','c1',arts(0)); s.answer('ok','pages','',arts(1,3))
