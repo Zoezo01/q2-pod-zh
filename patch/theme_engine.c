@@ -184,7 +184,6 @@ int clock_night(void) {
     const int *tm = clock_now(buf);
     return tm && !light_day(tm);
 }
-static void np_fill(int scrub);
 static void text_inks(void *w);
 #define INK_LABEL 1
 #define INK_BUTTON 5

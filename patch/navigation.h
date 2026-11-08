@@ -344,15 +344,31 @@ typedef struct {
 
 extern scratch_t st;
 extern menu_t g_menu; /* the one row list load() fills */
+extern const char *now_tag(void *r, int field);
+extern void *queue_now(unsigned *pos, unsigned *n);
 
 /* navigation.c */
 int clamp_step(int offset, int maximum, int delta);
 void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned put_num(unsigned *s, unsigned v);
 void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow);
+unsigned stops_row(const stops_t *s, int j, int h);
+int clock_due(const void *info);
+int bar_repaint(const void *info);
+void clock_text(void *label, int negative, int t);
+void label_font(void *w, int bold);
 
 /* np_bar.c */
 int np_beside(void);
+int remain_due(const void *info);
+int np_fit_due(const void *info);
+int np_sync(void *top);
+void bar_title(void *bar, void *top);
+void slider_fill(void *slider, unsigned color);
+void np_theme(void);
+void paint_scrubber(void *w, void *canvas);
+void scrub_row(void *canvas, unsigned c, int x, int y, int w);
+void np_fill(int scrub);
 
 /* theme_engine.c */
 enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */

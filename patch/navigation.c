@@ -225,8 +225,6 @@ extern int radio_media(unsigned key), radio_open(void *ctx, void *event);
 extern const char *radio_hold(void *top);
 extern void visualizer_paint(void *w, void *canvas), visualizer_attach(void *win);
 extern int visualizer_live(void), games_live(void);
-extern void *queue_now(unsigned *pos, unsigned *n);
-extern const char *now_tag(void *r, int field);
 extern unsigned char now_cover(void *r, const char **file);
 extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
     scrobble_flag(const char *key), scrobble_value(const char *key);
@@ -1441,7 +1439,7 @@ static void gradient(void *canvas, rect_t r, unsigned top, unsigned bottom, unsi
 }
 
 /* Row j of h of the stops s, 0xRRGGBB: one stop a row when there are h of them. */
-static unsigned stops_row(const stops_t *s, int j, int h) {
+unsigned stops_row(const stops_t *s, int j, int h) {
     if (s->n == h) return s->rgb[j];
     int p = h > 1 ? j * 25600 / (h - 1) : 0, k = 0; /* 1/256 % */
     while (k + 2 < s->n && p > s->pos[k + 1] * 256) ++k;
@@ -1462,7 +1460,6 @@ void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s) {
 static int round_inset(int R, int i, int h) {
     return i < R ? arc_out(R, i) >> 4 : i >= h - R ? arc_out(R, h - 1 - i) >> 4 : 0;
 }
-static void scrub_row(void *canvas, unsigned c, int x, int y, int w);
 /* R's corner pixels' coverage out of 255, by radius (tools/art.py CORNERS); a radius outside the
  * table takes a hard corner. */
 static const unsigned char *const round_cover[] = ROUND_COVER;
@@ -2668,7 +2665,6 @@ static void paint_scrollbar(void *canvas, void *bar, int table) {
 }
 
 /* Stock paints children first and calls this with the surface's canvas origin restored. */
-static void paint_scrubber(void *w, void *canvas);
 static void slider_scrub(void *w, void *canvas);
 static void quick_scrub(void *w, void *canvas);
 static void search_over(void *w, void *canvas);
@@ -3906,7 +3902,7 @@ static int seek_position(int to) {
  * pass after the bar first paints or paints with a new 24-hour setting (ringnav_paint_bg).
  * ponytail: a network time sync while lit shows at the next minute. */
 static void clock_show(void);
-static int clock_due(const void *info) {
+int clock_due(const void *info) {
     (void)info;
     st.clock_timer = 0;
     clock_show();
@@ -4038,7 +4034,7 @@ static int bar_state_sync(void *bar) {
  * img_state keeps its dirty flag, so stock's own invalidates skip it until something else repaints
  * the bar: Now Playing, painting every 250 ms, sees a Play/Pause first and left a stale icon
  * (#116). Repaint the bar once, after the frame. */
-static int bar_repaint(const void *info) {
+int bar_repaint(const void *info) {
     (void)info;
     st.bar_timer = 0;
     widget_invalidate_force(*(void *const *)system_bar, (void *)0);
@@ -4366,13 +4362,13 @@ static void paint_battery(void *w, void *canvas) {
 }
 
 /* Seconds as stock writes label_playtime, after a minus when negative is 1. */
-static void clock_text(void *label, int negative, int t) {
+void clock_text(void *label, int negative, int t) {
     char s[16] = "-";
     toolsTimeItoa(s + negative, t);
     widget_set_text_utf8(label, s);
 }
 
-static void label_font(void *w, int bold) {
+void label_font(void *w, int bold) {
     static const char *const font[] = { "style:normal:font_name", "style:focused:font_name",
                                         "style:disable:font_name" };
     for (unsigned i = 0; i < sizeof font / sizeof *font; ++i)
@@ -4466,8 +4462,6 @@ const char *theme_face(const unsigned *s, int n, int *px) {
     if (px) *px = fallback_px(*px); /* bold here is always the fallback */
     return "bold";
 }
-
-#include "np_bar.c"
 
 /* Paused, the seek waits for Play (scrub_end) and the player's second stands still until then,
  * and the page's timer would put the bar back on it. The bar keeps the

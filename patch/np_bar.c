@@ -1,5 +1,7 @@
 /* Now Playing's bar: Classic's times and bar fitted to the track, the bar's title, the theme's
- * progress bar and its fill. navigation.c #includes this where it stood. */
+ * progress bar and its fill. */
+#include "navigation.h"
+
 /* Classic's bar's left end for a track sec long: the times' boxes hold "-9:59" under 10:00,
  * "-59:59" under an hour, else "-9:59:59" (NP_IPOD_TIME_W*, tools/ipod.py measures them), their
  * outer edges and the gap kept; the bar takes the rest, mirrored. */
@@ -36,7 +38,7 @@ int ipod_times(void *elapsed, void *remain, void *bar, int sec) {
 /* The remaining time, once after a frame whose paint np_sync wrote it in: its invalidate there is
  * lost with the frame's dirty rects (#116). Minimal's and Modern's sit in the rect the slider's and
  * the elapsed time's repaint takes each second; only times beside the bar (np_beside) need it. */
-static int remain_due(const void *info) {
+int remain_due(const void *info) {
     (void)info;
     st.np_remain_timer = 0;
     if (st.np_remain) widget_invalidate_force(st.np_remain, (void *)0);
@@ -53,7 +55,7 @@ int np_beside(void) {
 
 /* Classic's times and bar fitted to the playing track's length (the slider's max), off the paint
  * whose np_sync found them stale. */
-static int np_fit_due(const void *info) {
+int np_fit_due(const void *info) {
     (void)info;
     st.np_fit_timer = 0;
     if (np_beside())
@@ -66,7 +68,7 @@ static int np_fit_due(const void *info) {
  * drag or scrub previews it). Labels are written only when their source changes; 1 when the
  * remaining time was. Classic's times beside the bar refit when the length's class changes: a
  * seek, a pause or a rate change keeps it. */
-static int np_sync(void *top) {
+int np_sync(void *top) {
     if (!top || top != st.np_win) return 0;
     st.np_bold = theme_font(st.np_title, ROLE_NP, st.np_bold); /* the title, as it changes */
     unsigned at, n;
@@ -100,7 +102,7 @@ static int np_sync(void *top) {
  * settings page's unnamed first child). Home, a page showing its navbar and an untitled page keep
  * the clock; a pop-up or keyboard leaves the bar as it is. This runs in a paint, which drops the
  * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
-static void bar_title(void *bar, void *top) {
+void bar_title(void *bar, void *top) {
     static const unsigned
         now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
@@ -174,13 +176,13 @@ static void bar_title(void *bar, void *top) {
  * on exit in track seconds (it adds a CUE track's start), and the timer restarts. */
 /* The accent's light tone (Minimal's own accent: MINIMAL_FILL) fills the progress bar in every
  * state a touch passes through; a white fill (Minimal: a thicker line) marks the scrub. */
-static void slider_fill(void *slider, unsigned color) {
+void slider_fill(void *slider, unsigned color) {
     static const char *const fill[] = { "style:normal:fg_color", "style:pressed:fg_color",
                                         "style:over:fg_color", "style:focused:fg_color" };
     for (unsigned i = 0; i < sizeof fill / sizeof *fill; ++i)
         widget_set_prop_int(slider, fill[i], (int)color);
 }
-static void np_fill(int scrub) {
+void np_fill(int scrub) {
     if (!st.np_slider) return;
     slider_fill(st.np_slider, scrub ? 0xffffffff : RGBA(accent_tone(TONE_LIGHT)));
     /* Minimal's fill is near white already: its scrub thickens the line to Classic's. */
@@ -227,7 +229,7 @@ int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark) {
 
 /* Classic's progress bar over stock's plain one, centred in the slider as stock's, the scrub's cue
  * on it while a scrub runs; the times sit beside it (tools/ipod.py np_ipod). */
-static void paint_scrubber(void *w, void *canvas) {
+void paint_scrubber(void *w, void *canvas) {
     if (w && w == st.stream_bar && P(canvas, CANVAS_LCD))
         ipod_bar(canvas, 0, 0, I(w, W_W), I(w, W_W), 0);
     if (!w || w != st.np_slider || !P(canvas, CANVAS_LCD)) return;
@@ -238,7 +240,7 @@ static void paint_scrubber(void *w, void *canvas) {
 }
 
 /* One row of final colour, its alpha the row's. */
-static void scrub_row(void *canvas, unsigned c, int x, int y, int w) {
+void scrub_row(void *canvas, unsigned c, int x, int y, int w) {
     stock_canvas_set_fill_color(canvas, (RGBA(c & 0xffffffu) & 0xffffffu) | (c & 0xff000000u));
     canvas_fill_rect(canvas, x, y, w, 1);
 }
@@ -255,7 +257,7 @@ void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w) {
 /* The Theme's progress bar over the asset's (Minimal's square 4px line): its np_bar, Modern's
  * NP_BAR_CLASSIC capsule or Classic's NP_BAR_IPOD (paint_scrubber draws it), and stock's play-state
  * glyph, which Minimal and Classic hide (playing.state.opacity). */
-static void np_theme(void) {
+void np_theme(void) {
     static const char *const radius[] = { "style:normal:round_radius", "style:pressed:round_radius",
                                           "style:over:round_radius", "style:disable:round_radius",
                                           "style:focused:round_radius" };
