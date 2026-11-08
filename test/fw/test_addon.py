@@ -2,10 +2,11 @@
 they draw over Q2SPOT/1, their QR codes, library requests, and the database.ignore markers."""
 import ctypes as C
 import random
+import struct
 
 import pytest
 
-from conftest import block, text, Game
+from conftest import block, text, Game, O
 
 APPS_MAX = 8
 REPLY_MAX = 64 << 10
@@ -64,7 +65,7 @@ class Pg(C.Structure):
                 ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
-                *((n, C.c_byte) for n in ('sdown', 'sclaim', 'saborting'))]
+                *((n, C.c_byte) for n in ('sdown', 'sclaim'))]
 
 
 class Qp(C.Structure):
@@ -1278,17 +1279,133 @@ def test_a_row_that_opens(fw, kind, uri, yes):
 def test_sections_are_a_first_replys_list_rows_up_to_eight(fw):
     p = Page(fw)
     rows = [(b'info', b'', b'Note', b'', b'', b''), (b'list', b'', b'No op', b'', b'', b''),
-            (b'list', b'long', b'Too long', b'', b'x' * 200, b'')] + \
+            (b'list', b'long', b'Too long', b'', b'x' * 500, b'')] + \
         [(b'list', b'sec%d' % i, b'Section %d' % i, b'', b'a b' if i == 0 else b'', b'') for i in range(10)]
     p.answer(msg=b'sections', rows=rows)
     assert p.pg.nsec == 8 and p.pg.cur == 0 and p.pg.depth == 1
-    assert p.top.title == b'Section 0' and p.request() == b'Q2SPOT/1\n2\tsec0\ta b\n'
+    assert p.top.title == b'Section 0 1/8' and p.request() == b'Q2SPOT/1\n2\tsec0\ta b\n'
 
 
 def test_a_reply_without_list_rows_is_no_sections(fw):
     p = Page(fw)
     p.answer(msg=b'sections', rows=[item(0)])
     assert p.pg.nsec == 0 and p.top.n == 1 and p.top.title == b'Foo'
+
+
+def touch(p, kind, x, y):
+    e = C.create_string_buffer(0x40)
+    for field, v in (('EVENT_TYPE', O[kind]), ('EVENT_X', x), ('EVENT_Y', y)):
+        struct.pack_into('<i', e, O[field], v)
+    return p.fw.fn('addon__swipe', C.c_int, C.c_void_p, C.c_void_p)(None, e)
+
+
+def sections(fw, n=3):
+    """A page showing the first of n sections, its request in flight; the abort comes back to swipe, as the real
+    dispatch's does (the emulator's mock doesn't)."""
+    p = Page(fw)
+    p.answer(msg=b'sections', rows=[(b'list', b'sec%d' % i, b'S%d' % i, b'', b'', b'') for i in range(n)])
+    fw.mock('pointer_event_init', lambda *_: 0)
+    p.aborts = []
+    def dispatch(*_):
+        p.aborts.append((p.pg.sdown, p.pg.sclaim))
+        touch(p, 'EVT_POINTER_ABORT', 0, 0)
+        p.aborts.append((p.pg.sdown, p.pg.sclaim))
+    fw.mock('widget_dispatch_event_to_target_recursive', dispatch)
+    return p
+
+
+def swipe(p, dx, dy=0):
+    x, y = 200, 100
+    touch(p, 'EVT_POINTER_DOWN', x, y)
+    moved = touch(p, 'EVT_POINTER_MOVE_BEFORE', x + dx // 2, y + dy // 2)
+    lifted = touch(p, 'EVT_POINTER_UP_BEFORE', x + dx, y + dy)
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    return moved, lifted
+
+
+def test_a_claim_survives_its_own_abort_coming_back(fw):
+    p = sections(fw)
+    touch(p, 'EVT_POINTER_DOWN', 200, 100)
+    assert touch(p, 'EVT_POINTER_MOVE_BEFORE', 150, 100) == 11
+    # cleared by the abort from swipe's own dispatch, taken once that returns
+    assert p.aborts == [(1, 0), (0, 0)] and (p.pg.sdown, p.pg.sclaim) == (1, 1)
+    assert touch(p, 'EVT_POINTER_MOVE_BEFORE', 140, 100) == 11 and len(p.aborts) == 2  # once
+    assert touch(p, 'EVT_POINTER_UP_BEFORE', 100, 100) == 11
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert p.pg.cur == 1
+
+
+def test_another_touchs_abort_ends_a_claimed_swipe(fw):
+    p = sections(fw)
+    touch(p, 'EVT_POINTER_DOWN', 200, 100)
+    touch(p, 'EVT_POINTER_MOVE_BEFORE', 150, 100)
+    touch(p, 'EVT_POINTER_ABORT', 0, 0)
+    assert touch(p, 'EVT_POINTER_UP_BEFORE', 100, 100) == 0 and p.pg.cur == 0
+
+
+def test_a_swipe_while_the_sections_request_is_in_flight(fw):
+    p = sections(fw)
+    assert p.req.running and p.request() == b'Q2SPOT/1\n2\tsec0\n'
+    assert swipe(p, -100) == (11, 11)
+    assert p.pg.cur == 1 and p.top.id == p.req.id and p.request() == b'Q2SPOT/1\n3\tsec1\n' and p.top.state == K_LOAD
+    p.answer(rows=[item(1)])
+    assert p.top.state == K_READY and p.top.title == b'S1 2/3' and p.cell(0, 2) == b'Row 1'
+
+
+@pytest.mark.parametrize('dx, dy, cur, why', [
+    (-100, 0, 1, 'a swipe'),
+    (-58, 0, 0, 'too short at the lift'),
+    (-120, 60, 0, 'up or down reaches the claim on the way: the list keeps it'),
+    (-120, 40, 1, 'claimed halfway, further sideways at the lift'),
+    (-60, 20, 1, 'a claim that ends further sideways'),
+])
+def test_a_lift_changes_section_only_past_the_distance(fw, dx, dy, cur, why):
+    p = sections(fw)
+    swipe(p, dx, dy)
+    assert p.pg.cur == cur, why
+
+
+def test_a_claimed_swipe_that_ends_further_down_changes_nothing(fw):
+    p = sections(fw)
+    touch(p, 'EVT_POINTER_DOWN', 200, 100)
+    assert touch(p, 'EVT_POINTER_MOVE_BEFORE', 170, 100) == 11
+    assert touch(p, 'EVT_POINTER_UP_BEFORE', 130, 190) == 11
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert p.pg.cur == 0
+
+
+def test_a_diagonal_move_up_or_down_is_the_lists_however_far_sideways(fw):
+    p = sections(fw)
+    touch(p, 'EVT_POINTER_DOWN', 200, 100)
+    assert touch(p, 'EVT_POINTER_MOVE_BEFORE', 80, 124) == 0 and not p.pg.sdown and not p.aborts
+
+
+def test_a_section_keeps_its_selection_context_and_title(fw):
+    long_ctx, long_name = b'c' * 300, b'N' * 100
+    p = Page(fw)
+    p.answer(msg=b'sections', rows=[(b'list', b'a', long_name, b'', long_ctx, b''), (b'list', b'b', b'B', b'', b'', b'')])
+    assert p.top.title == long_name + b' 1/2' and p.request().endswith(b'\ta\t' + long_ctx + b'\n')
+    fw.mock('pointer_event_init', lambda *_: 0)
+    fw.mock('widget_dispatch_event_to_target_recursive', lambda *_: 0)
+    p.answer(rows=[item(i) for i in range(3)])
+    p.sel = 2
+    swipe(p, -100)
+    p.answer(rows=[item(i) for i in range(5)])
+    assert p.pg.cur == 1 and p.top.sel == 0
+    p.sel = 4
+    swipe(p, 100)
+    assert p.pg.cur == 0 and p.top.sel == 2
+    p.answer(rows=[item(i) for i in range(3)])
+    assert p.top.sel == 2
+    p.sel = 2
+    swipe(p, -100)
+    assert p.top.sel == 4
+
+
+def test_one_section_has_no_position(fw):
+    p = Page(fw)
+    p.answer(msg=b'sections', rows=[(b'list', b'a', b'Only', b'', b'', b'')])
+    assert p.pg.nsec == 1 and p.top.title == b'Only'
 
 
 def test_drop_frees_every_page(fw):

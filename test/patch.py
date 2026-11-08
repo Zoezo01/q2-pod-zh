@@ -15637,7 +15637,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -15928,7 +15928,7 @@ m=app_levels('1'); m.prop_fail=True; m.pick(2); m.answer('ok','','',[('info','',
 assert m.x_pushes()==[] and m.get(m.get(m.find('scroll_view',m.page)+O['W_PARENT'])+O['W_X'])==0; passed()
 # Sections (addon.c sec_take, swipe; docs/internals.md): a first reply whose message is "sections" makes
 # its list rows the sections (other kinds left out), and the first opens at once in its place, titled
-# with its name, no push. A sideways swipe on it opens the next (to the left) or the previous (to the
+# with its name and position, no push. A sideways swipe on it opens the next (to the left) or the previous (to the
 # right), its list pushed in from that side; none past the ends. The swipe's moves and lift are the
 # page's (STOP), the rows told the touch is gone once; a short one, an up-and-down drag or a touch on a
 # deeper level changes nothing, and Back from a deeper level returns to the section.
@@ -15946,26 +15946,26 @@ def sec_aborts(m):  # the rows told the touch is gone: an abort event made, and 
     return [c[3] for c in m.calls if c[0]=='pointer_event_init' and c[2]==O['EVT_POINTER_ABORT']],[c[1] for c in m.calls if c[0]=='widget_dispatch_event_to_target_recursive']
 m=at_theme('1',SlskMachine); m.mock('widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start','widget_dispatch_event_to_target_recursive')
 m.open(); m.answer('ok','sections','',SECS); assert m.requests[-1]==('menu',) and m.labels()==['Loading…']
-m.answer('ok','','',[('info','','No downloads yet','','','')]); assert m.requests[-1]==('downloads',) and m.labels()[:2]==['Downloads','No downloads yet'] and m.x_pushes()==[]; passed()
+m.answer('ok','','',[('info','','No downloads yet','','','')]); assert m.requests[-1]==('downloads',) and m.labels()[:2]==['Downloads 1/3','No downloads yet'] and m.x_pushes()==[]; passed()
 m.calls=[]; assert sec_swipe(m,-100)==(11,11) and sec_aborts(m)==([m.page],[m.page]) and m.labels()==['Loading…']
-m.answer('ok','','',[('list','share','Music','','',''),('info','','Films','','','')]); assert m.requests[-1]==('shares','bob') and m.labels()[:2]==['Shared','Music'] and m.x_pushes()==[(375,0)]
-sec_swipe(m,-100); m.answer('ok','','',[('info','','Find files','','','')]); assert m.labels()[:2]==['Search','Find files'] and m.x_pushes()==[(375,0)]*2
-asked=len(m.threads); assert sec_swipe(m,-100)==(11,11) and len(m.threads)==asked and m.labels()[0]=='Search'  # past the last: nothing
+m.answer('ok','','',[('list','share','Music','','',''),('info','','Films','','','')]); assert m.requests[-1]==('shares','bob') and m.labels()[:2]==['Shared 2/3','Music'] and m.x_pushes()==[(375,0)]
+sec_swipe(m,-100); m.answer('ok','','',[('info','','Find files','','','')]); assert m.labels()[:2]==['Search 3/3','Find files'] and m.x_pushes()==[(375,0)]*2
+asked=len(m.threads); assert sec_swipe(m,-100)==(11,11) and len(m.threads)==asked and m.labels()[0]=='Search 3/3'  # past the last: nothing
 sec_swipe(m,100); m.answer('ok','','',[('list','share','Music','','',''),('info','','Films','','','')])
-assert m.requests[-1]==('shares','bob') and m.labels()[:2]==['Shared','Music'] and m.x_pushes()==[(375,0)]*2+[(-375,0)]; passed()
+assert m.requests[-1]==('shares','bob') and m.labels()[:2]==['Shared 2/3','Music'] and m.x_pushes()==[(375,0)]*2+[(-375,0)]; passed()
 asked=len(m.threads)
 assert sec_swipe(m,-50)==(11,11) and len(m.threads)==asked  # taken (25 px sideways), too short at the lift
 m.calls=[]; assert sec_swipe(m,-70,100)==(0,0) and len(m.threads)==asked and sec_aborts(m)==([],[])  # the list's
 m.pick(0); m.answer('ok','','',[('info','','Song','','','')]); assert m.labels()[:2]==['Music','Song']
 asked=len(m.threads); assert sec_swipe(m,-100)==(0,0) and len(m.threads)==asked and m.labels()[0]=='Music'
-m.back(); m.answer('ok','','',[('list','share','Music','','','')]); assert m.requests[-1]==('shares','bob') and m.labels()[:2]==['Shared','Music']; passed()
+m.back(); m.answer('ok','','',[('list','share','Music','','','')]); assert m.requests[-1]==('shares','bob') and m.labels()[:2]==['Shared 2/3','Music']; passed()
 # The previous before the first: nothing. An app whose first reply has no "sections" never swipes.
 sec_swipe(m,100); m.answer('ok','','',[('info','','No downloads yet','','','')]); asked=len(m.threads)
-assert sec_swipe(m,100)==(11,11) and len(m.threads)==asked and m.labels()[0]=='Downloads'
+assert sec_swipe(m,100)==(11,11) and len(m.threads)==asked and m.labels()[0]=='Downloads 1/3'
 m=SlskMachine(); m.open(); m.answer('ok','','',SMENU); asked=len(m.threads); assert sec_swipe(m,-100)==(0,0) and len(m.threads)==asked and m.labels()==SLABELS; passed()
 # Sections are taken once: a section that answers "sections" as well shows its rows as a list, not asked again.
 m=SlskMachine(); m.open(); m.answer('ok','sections','',SECS); asked=len(m.threads); m.answer('ok','sections','',SECS)
-assert m.requests[-1]==('downloads',) and len(m.threads)==asked and m.labels()[:2]==['Downloads','Downloads'],m.labels(); passed()
+assert m.requests[-1]==('downloads',) and len(m.threads)==asked and m.labels()[:2]==['Downloads 1/3','Downloads'],m.labels(); passed()
 # Gone from the card since Streaming listed it: the page says so and nothing starts.
 m=SlskMachine(); m.gone(); m.open()
 assert m.labels()==["Soulseek isn't on the card",'Install it again in System settings → App Store'] and not m.systems and not m.threads
