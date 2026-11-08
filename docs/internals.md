@@ -448,7 +448,7 @@ the stored accent.
 
 - `theme_t` holds the painters (`painter[PAINT_SELECTION]`: Minimal's `SEL_CARD`, Classic's `SEL_STOPS` or Modern's `SEL_BAR`), the
   surface flags (capitals, chevrons, monochrome icons, codec badges in the half's ink
-  (`icons_badge_ink`), the theme's own art left final (`art_final`), bold labels, Now Playing
+  (`icons_badge_ink`), Classic Light's own art left final (`art_final`, which `tools/theme.py` refuses for another theme), bold labels, Now Playing
   opacities), the Home
   and settings geometry, the Now Playing bar heights, `art_square` (art takes Corners: Square,
   `ipod_square_art`), the accent's slot and config key

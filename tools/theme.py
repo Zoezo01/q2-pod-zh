@@ -134,7 +134,7 @@ SCHEMA = {k.path: k for k in (
     key('volume.panel.painter', 'painter[PAINT_VOLUME]', 'enum'),
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
     key('pages.own.painter', 'painter[PAINT_PAGES]', 'enum'),  # the theme's own pages (theme.h classic_pages)
-    key('pages.own.art_final', 'art_final', 'bool'),  # its own art (tools/art.py's <id>_ images) is final
+    key('pages.own.art_final', 'art_final', 'bool'),  # Classic Light's own art (art.py's classic_light_ images) is final
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),
@@ -903,6 +903,8 @@ def validate(t, name):
     for s in settings:
         if settings.count(s) > 1:
             err(f'{s} declared twice')
+    if t['art_final'] and t['id'] != 'classic-light':  # navigation.c's image hook knows its names alone
+        err('pages.own: art_final is for classic-light\'s own images only')
     for end in ('top', 'bottom') if t['sb_w'] else ():  # the thumb's round end gives its corner pixel to the glass
         y = t['sb_' + end]
         if corner_inset(y) > t['sb_right'] + 1:

@@ -6111,8 +6111,9 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
-    /* An art_final theme's own images (tools/art.py) are final, but for Sort's bars and the
-     * volume's speakers: marks on the paper, in the half's ink */
+    /* art_final, Classic Light's (tools/theme.py refuses it for another theme): its own images
+     * (tools/art.py) are final, but for Sort's bars and the volume's speakers: marks on the paper,
+     * in the half's ink */
     if (s && !*s && T->art_final && tk_str_start_with(name, "classic_light_") &&
         tk_strcmp(name, "classic_light_sort_bars") &&
         !tk_str_start_with(name, "classic_light_vol_"))

@@ -307,6 +307,7 @@ C = '<colorSchemes accents="cobalt"/><option setting="accent" key="ACCENT" defau
     (C.replace('"cobalt"/>', '"cobalt green"/>', 1) + '<colorScheme name="cobalt" sel.stops="#08a6e7 0, #0065d6 100"/>'
      '<view name="list"><element name="selection" painter="stops"/></view>', None, "selection: painter stops needs every offered scheme's sel.stops"),
     ('<view name="bar"><element name="battery" painter="classic-light"/></view>', None, 'battery: this painter needs stops'),
+    (C + '<view name="pages"><element name="own" art_final="1"/></view>', None, "pages.own: art_final is for classic-light's own images only"),
 ])
 def test_validate_rejects(body, attrs, message):
     t = resolved(body, *([attrs] if attrs else []))
