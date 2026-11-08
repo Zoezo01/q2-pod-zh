@@ -78,6 +78,7 @@ def api(fw):
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
            'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr), 'coverflow__build_art': (None, ptr),
+           'thumb': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_player_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow__marked_empty': (i, C.c_char_p),
@@ -1497,6 +1498,45 @@ def test_build_art_holds_both_stock_locks_round_stock_s_call(fw):
     g.build_art(r(j))
     assert [k for k, _ in order] == ['lock', 'lock', 'unlock', 'unlock']
     assert order[0][1] == order[3][1] and order[1][1] == order[2][1] and order[0][1] != order[1][1]
+
+
+def png(w, h):
+    """A PNG's signature and IHDR: all of the file thumb reads."""
+    return b'\x89PNG\r\n\x1a\n' + struct.pack('>I4sIIBBBBB', 13, b'IHDR', w, h, 8, 6, 0, 0, 0) + bytes(4)
+
+
+def segment(marker, body):
+    return struct.pack('>BBH', 0xff, marker, len(body) + 2) + body
+
+
+APP0, EXIF = segment(0xe0, b'JFIF\0' + bytes(9)), segment(0xe1, b'Exif\0\0' + bytes(2000))
+DQT, DHT, DAC = segment(0xdb, bytes(65)), segment(0xc4, bytes(28)), segment(0xcc, bytes(2))
+
+
+def jpeg(sof, w, h, *before):
+    """A JPEG to its scan: SOI, the segments before, the frame header (8 bits, 3 components), SOS."""
+    frame = segment(sof, struct.pack('>BHHB', 8, h, w, 3) + bytes(9))
+    return b'\xff\xd8' + b''.join(before) + frame + segment(0xda, bytes(10)) + bytes(64)
+
+
+@pytest.mark.parametrize('head, big', (
+    (png(4000, 4000), 1), (png(1025, 16), 1), (png(16, 1025), 1), (png(70000, 1), 1), (png(1, 70000), 1),
+    (png(1024, 1024), 0), (png(4000, 4000)[:20], 0),
+    (jpeg(0xc2, 3000, 3000, APP0, EXIF, DQT, DHT, DAC), 1), (jpeg(0xc2, 1025, 16), 1), (jpeg(0xc2, 16, 1025), 1),
+    (jpeg(0xc6, 2000, 2000), 1), (jpeg(0xca, 2000, 2000), 1), (jpeg(0xce, 2000, 2000), 1),
+    (jpeg(0xc2, 1024, 1024, APP0), 0), (jpeg(0xc0, 4000, 4000, APP0, EXIF), 0), (jpeg(0xc1, 4000, 4000), 0),
+    (jpeg(0xc2, 3000, 3000, *[APP0] * 63), 1), (jpeg(0xc2, 3000, 3000, *[APP0] * 64), 0),
+    (b'RIFF\0\0\0\0WEBPVP8 ' + bytes(16), 0)))
+def test_thumb_sends_a_picture_stock_would_decode_whole_to_ffmpeg(fw, head, big):
+    """Stock's PNG reader expands the whole image before its 1024 px test, and libjpeg holds a progressive JPEG's
+    full-size coefficients at any scale, both in demo, the OOM killer's pick (#216): those go to ffmpeg alone, whose
+    child the kernel kills first. A baseline JPEG decodes scaled, so it stays with stock, as does what thumb can't
+    size (a cut-short header, the frame header past the 64th segment, another type)."""
+    g = api(fw)
+    card = Card(fw, {'/p/a': head, '/d.ff': b'jpg'})
+    builder(fw, card, thumb=True, ff=0)
+    assert g.thumb(b'/p/a', b'/d', 160, 160) == 1 and card.files['/d'] == (b'jpg' if big else b'art')
+    assert len(fw.calls('toolsThumbSpecCover')) == 1 - big and len(fw.calls('fw_fork')) == big
 
 
 def ogg_rig(fw, cover=0, status=1 << 8, ogg=b'/m/a.ogg'):
