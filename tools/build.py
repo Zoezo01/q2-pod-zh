@@ -527,7 +527,7 @@ STREAM_POLL_CALLS = ((0x47f824, 'ringnav_baidu_poll'), (0x486404, 'ringnav_tidal
 COVERINFO_CALL = (0x492968, 0x8e240028, 'app_coverinfo_call')
 # Stock routines tidal.c's URL queues call at their addresses (not FUNCTIONS, whose names test/patch.py
 # stands in for everywhere: these run as stock's in its scenarios). Checked against the ELF's symbols.
-APP_URL_CALLS = {'mclGetPlayPos': 0x5ac140, 'mclSetPause': 0x5ab0d4, 'tidal_playurl': 0x5aa264,
+APP_URL_CALLS = {'mclSetPause': 0x5ab0d4, 'tidal_playurl': 0x5aa264, 'curl_stop_httpget': 0x4fb5f8,
                  'toolsFreeStSongInfo': 0x5c01b8, 'player_set_coverinfo': 0x512b4c}
 # The jalr usleep (lw $t9,-0x59c($gp)) of mclSyncPlayerStatus' 200 ms loop becomes jal ringnav_dark_usleep
 # (its argument set in the delay slot): at least DARK_POLL_US while ringnav_sleep finds the Q2 dark, quiet and
@@ -1355,7 +1355,7 @@ PRIVATE_FUNCTIONS = {
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
-           'savestartbt', 'transposition',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
+           'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
            'g_keylock_flag', 'g_keylock_mode',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',

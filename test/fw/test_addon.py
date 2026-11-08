@@ -2643,6 +2643,24 @@ def test_the_game_with_the_sound_ending_clears_a_pause_stuck_on_nothing(fw, stat
     assert gm.pid == 0 and gm.audio == 0 and len(fw.calls('player_stop')) == stops
 
 
+@pytest.mark.parametrize('how', ['poll', 'timer'])
+def test_a_url_queue_waiting_leaves_a_queue_loaded_since(fw, how):
+    world = World(fw, {b'/tmp/q2-a.play': b'1 /tmp/q2-a.urls\n', b'/tmp/q2-a.urls': b'#Q2URLS/1\n'}, now=500)
+    fw.mock('timer_add', lambda *_: 5)
+    app = block(fw, size=512)  # an app_t, its id first
+    C.memmove(app, b'a\0', 2)
+    poll = fw.fn('addon__stream_poll', None, C.c_void_p)
+    poll(app)
+    s = sm(fw)
+    assert s.state == S_WAIT and s.urls and s.timer == 5
+    fw.var('playback_loads', C.c_uint).value += 1
+    if how == 'poll':
+        poll(app)
+    else:
+        fw.fn('addon__urls_start', C.c_int, C.c_void_p)(None)
+    assert s.state == S_DONE and b'/tmp/q2-a.urls' not in world.names.values()
+
+
 @pytest.mark.parametrize('audio, timers', [(1, 0), (0, 1)])
 def test_a_card_apps_first_song_waits_while_a_game_has_the_sound(fw, audio, timers):
     world = World(fw, {b'/tmp/q2-a.play': b'1 /mnt/mmc/.a\n'}, dirs={b'/mnt/mmc/.a': [b'01.flac']}, now=500)

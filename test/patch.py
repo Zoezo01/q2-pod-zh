@@ -16834,8 +16834,16 @@ assert track(0)[0]==1; first=m.threads[0]; assert track(2)[0]==1; m.calls=[]
 m.call(address=first[0],args=(first[1],0,0,0),gap=0,clear=False); assert 'stock_tidal' not in [c[0] for c in m.calls]
 m.call(address=m.threads[0][0],args=(m.threads[0][1],0,0,0),gap=0,clear=False)
 assert [m.text(c[1]) for c in m.calls if c[0]=='stock_tidal']==['http://jf/c.mp3']; passed()
-# A song on the card returns at once: mclStartPlayer plays its REC_PATH as a local file.
-assert track(1)==(1,[]) and not m.threads; passed()
+# A song on the card arms the auto-advance flag and returns at once: mclStartPlayer plays its REC_PATH as a local file.
+assert track(1)==(1,['tidal_playurl']) and [c[1] for c in m.calls if c[0]=='tidal_playurl']==[1] and not m.threads; passed()
+# A Tidal fetch in flight (tidalfurlstart) is stopped as stock does, whichever start this is, so it can't start over this one.
+m.handlers[syms['curl_stop_httpget']]='curl_stop_httpget'; m.byte(syms['tidalfurlstart'],1); track(1)
+assert 'curl_stop_httpget' in [c[0] for c in m.calls] and m.u.mem_read(syms['tidalfurlstart'],1)[0]==0; passed()
+# A start still waiting is dropped when a queue has loaded since (the user's album), and by any later start, a card song's too.
+assert track(0)[0]==1; job=m.threads[0]; m.word(payload_syms['playback_loads'],m.get(payload_syms['playback_loads'])+1)
+m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False); assert 'stock_tidal' not in [c[0] for c in m.calls]
+assert track(0)[0]==1; job=m.threads[0]; assert track(1)[0]==1
+m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False); assert 'stock_tidal' not in [c[0] for c in m.calls]; passed()
 # A Tidal track is stock's, as before.
 assert track(3)==(0,['stock_tidaltrack','sem_post']) and not m.threads; passed()
 # A queue replaced since has no URL for the old ids: the player stays stopped.
@@ -16847,10 +16855,13 @@ n=len(m.plays)
 for body in (b'https://jf/d.flac\tThree\n',b'#Q2URLS/1\tstart=0\n',b''):
     m.files[URLS]=bytearray(body); assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==0,body
 assert len(m.plays)==n; passed()
-# tidal_play (mcl_tidalStartPlayer's hook) never caches an app's id; get_onlineid3info's cover request takes an
-# app's REC_COVER as a URL (type 2), a Tidal record's as stock's (4).
-m.calls=[]; m.call(address=payload_syms['tidal_play'],args=(m.string('https://jf/a.flac'),m.string('app:2:0'),0,0),gap=0,clear=False)
-assert [c[0] for c in m.calls if c[0] in ('stock_tidal','opendir','pthread_create')]==['stock_tidal']
+# A URL or card path of 1024 bytes or more never reaches stock's strcpy into its 0x600 stack buffer (a } counted as the
+# five it's expanded to, in place); start= counts the songs kept.
+n=len(m.plays); m.files[URLS]=bytearray(('#Q2URLS/1\tstart=1\n'+f'https://jf/{"u"*1024}.flac\tBig\n'+f'/mnt/mmc/{"p"*1024}.flac\tBig\n'
+    +f'https://jf/{"}"*300}\tBrace\n'+f'https://jf/{"u"*1012}\tOne\n'+f'/mnt/mmc/{"p"*1014}\tTwo\n').encode())
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+assert [p[2:4] for p in m.plays][n:]==[(1,0xf1)] and [field(e,'REC_TITLE') for e in m.play_recs]==['One','Two'],m.play_recs; passed()
+# get_onlineid3info's cover request takes an app's REC_COVER as a URL (type 2), a Tidal record's as stock's (4).
 m.handlers[syms['player_set_coverinfo']]='player_set_coverinfo'
 def cover(r): m.calls=[]; m.call(address=payload_syms['app_coverinfo'],args=(m.string('c'),m.string('n'),4,r),gap=0,clear=False); return [c[3] for c in m.calls if c[0]=='player_set_coverinfo']
 assert cover(urecs[0])==[2] and cover(tidal_rec)==[4] and cover(0)==[4]; passed()

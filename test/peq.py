@@ -2890,7 +2890,8 @@ static int thumb(const char *s, const char *d, int w, int h) { return 0; }
 #define REC_PATH 0
 #define REC_TYPE 0
 #define tk_str_start_with(s, p) (!strncmp(s, p, strlen(p)))
-static unsigned char savestartbt, transposition;
+static unsigned char savestartbt, transposition, tidalfurlstart;
+static unsigned playback_loads;
 static int networkGetConnectStatus(void) { return 0; }
 static int mclStop(void) { return 0; }
 static void *_create_deque(const char *kind) { return 0; }

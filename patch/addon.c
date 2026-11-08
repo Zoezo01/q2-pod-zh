@@ -371,7 +371,8 @@ static int stream_start(const void *unused) {
 static int urls_start(const void *unused) {
     (void)unused;
     sm.timer = 0;
-    if (sm.state != S_WAIT || scanning()) return 0; /* looked at again after the scan */
+    if (playback_loads != sm.loads) sm.state = S_DONE; /* the user played a queue since */
+    if (sm.state != S_WAIT || scanning()) return 0;    /* looked at again after the scan */
     press_natural = 1;
     app_urls_play(sm.dir);
     press_natural = 0;
@@ -427,7 +428,9 @@ static void stream_poll(app_t *a) {
      * play_folder would open Now Playing over the dialog, so nothing until it closes. */
     int scan = scanning();
     if (sm.state == S_WAIT && sm.urls) { /* played whole at once, by stock's Tidal player */
-        if (!sm.timer && !scan && !addon_game_audio()) /* not under a card game's soung */
+        if (playback_loads != sm.loads)
+            sm.state = S_DONE; /* the user played a queue before it started */
+        else if (!sm.timer && !scan && !addon_game_audio()) /* not under a card game's sound */
             sm.timer = timer_add(urls_start, 0, 0);
         return;
     }

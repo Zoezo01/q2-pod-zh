@@ -33,6 +33,7 @@ char *tidal_name(char *out, unsigned n, const char *key, const char *artist, con
 #ifndef PEQ_HOST
 #include "offsets.inc"
 #include "stock.h"
+#include "playback.h"
 
 extern int stock_tidal_trampoline(const char *url);
 
@@ -216,9 +217,7 @@ int tidal_play(const char *url, const char *id) {
     char ext[8], key[64], name[256], path[sizeof td.path];
     if (!id || strcmp(id, td.id)) ++td.gen; /* another track: cancels the download of the one before */
     int level = I(tidalStreamingLevelNow, 0), start = 0;
-    /* a card app's track (app_track) is never cached */
-    if (!url || !id || !*id || tk_str_start_with(id, "app:") || strstr(id, "/") || strlen(id) > 40 ||
-        !tidal_ext(url, ext, sizeof ext))
+    if (!url || !id || !*id || strstr(id, "/") || strlen(id) > 40 || !tidal_ext(url, ext, sizeof ext))
         return stock_tidal_trampoline(url);
     /* AAC comes in an .mp4, which stock's file lists skip: kept as .m4a, so Tidal Downloads lists it. */
     if (!strcmp(ext, ".mp4")) memcpy(ext, ".m4a", 5);
@@ -328,11 +327,16 @@ int ringnav_tidal_favs(void *offset) {
  * id. A record whose REC_PATH is a card path plays as a local file: mclStartPlayer does that after
  * the call. The URLs are one queue's (au), by its generation. */
 #define AU_MAX (256 << 10) /* the file read this far, as addon.c's M3U_MAX */
+#define AU_SONGS 5000      /* the songs a queue keeps, later lines passed over: records stay small */
+/* A line's URL or card path this long, each } counted as stock's %0x7d, is passed over: stock
+ * strcpys it into a 0x600 stack buffer (mclStartPlayer, mcl_tidalStartPlayer) and then expands
+ * the } in place, unbounded. */
+#define AU_PATH 1024
 /* stock's, at build.py APP_URL_CALLS (checked against the demo's symbols) */
-#define mclGetPlayPos ((int (*)(void))0x5ac140u)
 #define mclSetPause ((int (*)(void))0x5ab0d4u)
 #define tidal_playurl ((int (*)(int))0x5aa264u)
 #define toolsFreeStSongInfo ((void (*)(void *))0x5c01b8u)
+#define curl_stop_httpget ((int (*)(void))0x4fb5f8u)
 #define player_set_coverinfo ((int (*)(const char *, const char *, int))0x512b4cu)
 static struct {
     unsigned lock[16];     /* a zeroed pthread mutex, as td.lock */
@@ -340,13 +344,6 @@ static struct {
     unsigned n, gen, play; /* gen: the queue's; play: app_track's count, the latest start's */
     unsigned start[16];    /* app_start's mutex: one start at a time, as stock's one stream thread */
 } au;
-
-static char *au_dup(const char *s) {
-    unsigned k = strlen(s);
-    char *d = calloc(1, k + 1);
-    if (d) memcpy(d, s, k);
-    return d;
-}
 
 static int web(const char *s) {
     return tk_str_start_with(s, "http://") || tk_str_start_with(s, "https://");
@@ -364,15 +361,11 @@ int app_urls_play(const char *path) {
     line = strstr(raw, "\n");
     char *s = strstr(raw, "start=");
     int start = s && (!line || s < line) ? atoi(s + 6) : 0;
-    unsigned cap = 0, n = 0;
-    for (char *c = raw; *c; ++c) cap += *c == '\n';
-    char **urls = calloc(cap + 1, sizeof *urls);
+    unsigned n = 0, gen = au.gen + 1;
+    char **urls = calloc(AU_SONGS, sizeof *urls);
     void *q = _create_deque("stSongInfo");
     deque_init(q);
-    pthread_mutex_lock(au.lock);
-    unsigned gen = au.gen + 1;
-    pthread_mutex_unlock(au.lock);
-    for (line = line ? line + 1 : 0; urls && line && *line; line = end) {
+    for (line = line ? line + 1 : 0; urls && line && *line && n < AU_SONGS; line = end) {
         if ((end = strstr(line, "\n"))) *end++ = 0;
         char *fld[6], *c = line;
         for (int k = 0; k < 6; ++k) { /* a field missing is empty */
@@ -383,22 +376,24 @@ int app_urls_play(const char *path) {
             else
                 c += strlen(c);
         }
-        if (!*fld[0]) continue;
+        unsigned len = strlen(fld[0]);
+        for (char *b = fld[0]; *b; ++b) len += (*b == '}') * 4;
+        if (!*fld[0] || len >= AU_PATH) continue;
         char id[32];
         tk_snprintf(id, sizeof id, "app:%u:%u", gen, n);
         unsigned rec[0x58 / 4] = { 0 }; /* stSongInfo: _deque_push_back copies it */
-        P(rec, REC_TIDAL_ID) = au_dup(id);
-        P(rec, REC_NAME) = au_dup(*fld[1] ? fld[1] : "Unknown"); /* printed with %s: never NULL */
-        P(rec, REC_PATH) = au_dup(web(fld[0]) ? "" : fld[0]);
-        P(rec, REC_TITLE) = au_dup(fld[1]);
-        if (*fld[2]) P(rec, REC_ARTIST) = au_dup(fld[2]);
-        if (*fld[3]) P(rec, REC_ALBUM) = au_dup(fld[3]);
-        if (*fld[4]) P(rec, REC_COVER) = au_dup(fld[4]);
+        P(rec, REC_TIDAL_ID) = strdup(id);
+        P(rec, REC_NAME) = strdup(*fld[1] ? fld[1] : "Unknown"); /* printed with %s: never NULL */
+        P(rec, REC_PATH) = strdup(web(fld[0]) ? "" : fld[0]);
+        P(rec, REC_TITLE) = strdup(fld[1]);
+        if (*fld[2]) P(rec, REC_ARTIST) = strdup(fld[2]);
+        if (*fld[3]) P(rec, REC_ALBUM) = strdup(fld[3]);
+        if (*fld[4]) P(rec, REC_COVER) = strdup(fld[4]);
         I(rec, REC_TYPE) = 8;
         I(rec, 0x38) = 0xf1;
         _deque_push_back(q, rec);
         toolsFreeStSongInfo(rec);
-        urls[n++] = web(fld[0]) ? au_dup(fld[0]) : 0;
+        urls[n++] = web(fld[0]) ? strdup(fld[0]) : 0;
     }
     free(raw);
     if (!n) return free(urls), deque_destroy(q), 0;
@@ -415,21 +410,24 @@ int app_urls_play(const char *path) {
 }
 
 /* A track's URL to the player, off the caller's thread as stock's stream thread does it (the player
- * waits there), one at a time as that thread's are; a later start drops one still waiting. Then
- * what the stream thread does after mcl_tidalStartPlayer (0x486d88): a start that was to stay paused pauses, and transposition arms Now Playing's tick
+ * waits there), one at a time as that thread's are; a later start, or a queue loaded since, drops
+ * one still waiting. Then what the stream thread does after mcl_tidalStartPlayer (0x486d88): a
+ * start that was to stay paused pauses, and transposition arms Now Playing's tick
  * (get_onlineid3info, auto-advance). The trampoline is stock's own, past tidal_start's hook. */
 typedef struct {
-    unsigned play;
+    unsigned play, loads;
     char url[];
 } au_job;
 
 static void *app_start(void *arg) {
     au_job *j = arg;
     pthread_mutex_lock(au.start);
-    if (j->play == au.play) {
+    if (j->play == au.play && j->loads == playback_loads) {
         stock_tidal_trampoline(j->url);
-        if (savestartbt) savestartbt = 0, mclSetPause();
-        transposition = 1;
+        if (j->play == au.play) { /* a later start's the pause and the tick, then */
+            if (savestartbt) savestartbt = 0, mclSetPause();
+            transposition = 1;
+        }
     }
     pthread_mutex_unlock(au.start);
     free(j);
@@ -438,10 +436,23 @@ static void *app_start(void *arg) {
 
 /* get_tidal_trackurl for an app's record r (id "app:<gen>:<n>"): as stock does around it (0x4831b4,
  * 0x483258), offline gives up, and the player stops before the URL. A queue replaced since (gen) has
- * no URL: the player stays stopped. */
+ * no URL: the player stays stopped. Any start here drops an earlier URL still waiting and, as stock
+ * (0x4831bc), a Tidal fetch in flight, which would start over this one. A card file arms
+ * mclAutoChange's flag itself (-0x426c > 0, which the stream thread's transposition sets for a URL,
+ * so a queue of card files advances): only the idle tick reads it, on the thread that runs nearly
+ * every start, so it can't pass a start before stock has it running. ponytail: a start on another
+ * thread (player_save_start's jack and Bluetooth restarts) could be passed by that tick while the
+ * player is stopped; arm after ringnav_start_player's start if a double skip is ever seen there. */
 static int app_track(void *r, const char *id) {
+    pthread_mutex_lock(au.lock);
+    unsigned play = ++au.play;
+    pthread_mutex_unlock(au.lock);
+    if (tidalfurlstart) tidalfurlstart = 0, curl_stop_httpget();
     const char *path = P(r, REC_PATH);
-    if (path && *path) return 1; /* a card file: mclStartPlayer plays it after this */
+    if (path && *path) { /* mclStartPlayer plays it after this */
+        tidal_playurl(1);
+        return 1;
+    }
     int net = networkGetConnectStatus();
     if (net <= 0) return net;
     tidal_playurl(0);
@@ -452,7 +463,7 @@ static int app_track(void *r, const char *id) {
     pthread_mutex_lock(au.lock);
     const char *url = gen == au.gen && n < au.n ? au.urls[n] : 0;
     au_job *j = url ? calloc(1, sizeof *j + strlen(url) + 1) : 0;
-    if (j) memcpy(j->url, url, strlen(url)), j->play = ++au.play;
+    if (j) memcpy(j->url, url, strlen(url)), j->play = play, j->loads = playback_loads;
     pthread_mutex_unlock(au.lock);
     unsigned long t;
     if (j && pthread_create(&t, 0, app_start, j))
@@ -478,7 +489,7 @@ extern int stock_tidaltrack_trampoline(void *a, void *b, void *c, void *d);
  * answered here (app_track) and never reaches stock's. */
 int ringnav_tidal_track(void *a, void *b, void *c, void *d) {
     void *q = P(mcl_pdeqplaylist, 0);
-    int pos = mclGetPlayPos();
+    int pos = I(MCL_POS, 0);
     void *r = q && pos >= 0 && pos < (int)deque_size(q) ? deque_at(q, (unsigned)pos) : 0;
     const char *id = r ? P(r, REC_TIDAL_ID) : 0;
     if (id && tk_str_start_with(id, "app:")) return app_track(r, id);
