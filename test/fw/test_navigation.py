@@ -1580,7 +1580,7 @@ class Stall:
         return [e[1] for e in self.log if e[0] == 'open']
 
 
-def test_stall_record_at_20_and_45_s(fw, st, power):
+def test_stall_record_at_20_and_45_s(fw, power):
     s = Stall(fw, power)
     s.step()  # the thread's first wake after the pass: the time counts from here
     s.wait(STALL_MS - STALL_POLL_MS)
@@ -1614,7 +1614,7 @@ def test_stall_record_counts_toasts_open(fw, st, power):
     assert depth == [1, 2] and st('toasts').value == 0 and s.record == s.expect(STALL_MS, toasts=2)
 
 
-def test_stall_record_goes_when_the_ui_passes(fw, st, power):
+def test_stall_record_goes_when_the_ui_passes(fw, power):
     s = Stall(fw, power)
     s.step()
     s.wait(STALL_MS)
@@ -1636,7 +1636,7 @@ def test_stall_record_goes_when_the_ui_passes(fw, st, power):
     assert s.log == []  # no record: nothing to remove
 
 
-def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, st, power):
+def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, power):
     """The UI recovers and Rockbox opens before the thread's next wake: S90play's loop starts demo again with no boot
     between, so nothing else would remove it, and a later forced restart would report this stall."""
     s = Stall(fw, power)
@@ -1678,7 +1678,7 @@ def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop
     (0, b''), (-4, b''),                       # an sp at or past the top
     (0x800000, b''),                           # one 8 MB below it: another thread's stack, not read
 ])
-def test_stall_record_reads_only_the_main_stack(fw, st, top, stack, power):
+def test_stall_record_reads_only_the_main_stack(fw, top, stack, power):
     s = Stall(fw, power, top=top)
     s.step()
     s.wait(STALL_MS)
@@ -1686,7 +1686,7 @@ def test_stall_record_reads_only_the_main_stack(fw, st, top, stack, power):
 
 
 @pytest.mark.parametrize('case', ['on the cpu', 'no startstack', 'unaligned sp'])
-def test_stall_record_with_no_stack_to_read(fw, st, case, power):
+def test_stall_record_with_no_stack_to_read(fw, case, power):
     s = Stall(fw, power, syscall=b'running' if case == 'on the cpu' else None)  # registers only for a blocked thread
     want = s.expect(STALL_MS, stack=b'')
     if case == 'on the cpu':

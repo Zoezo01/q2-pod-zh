@@ -413,7 +413,6 @@ int all_songs(void *music);
 long clock_back(long long wall);
 void text_inks(void *w);
 unsigned listen_key(void *r) __attribute__((pure));
-int page_closed(void *ctx, void *event);
 void plays_load(void);
 int songs_unsorted(void *music);
 void drop_input(void);

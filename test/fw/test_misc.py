@@ -2236,15 +2236,10 @@ def un(fw):
     return fw.var('upnext__un', Un)
 
 
-def test_upnext_closed_forgets_only_its_page(fw):
-    closed = fw.fn('upnext_closed', None, C.c_void_p)
+def test_the_page_closing_forgets_it(fw):
     u = un(fw)
     u.page = 0x7000
-    closed(0x7001)
-    assert u.page == 0x7000
-    closed(0x7000)
-    assert u.page is None
-    closed(None)
+    assert fw.fn('upnext__un_closed', C.c_int, C.c_void_p, C.c_void_p)(0x7000, None) == 0
     assert u.page is None
 
 
@@ -2268,7 +2263,7 @@ def test_a_row_with_no_queue_only_closes(fw):
 def test_up_next_opens_one_page_at_a_time(fw):
     u = un(fw)
     u.page = 0x7000
-    fw.fn('up_next', None, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('up_next', None, C.c_void_p)(None)
     assert not fw.calls('window_create') and u.page == 0x7000
 
 

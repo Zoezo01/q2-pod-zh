@@ -1,7 +1,6 @@
 /* Up Next (docs/internals.md#queue-menu): View Queue's list while a shuffle is on, the tracks
- * after the playing one in play order. navigation.c's qm_run opens it (up_next), ringnav_keylong
- * hands a Play/Pause hold on a row to un_hold, and page_closed tells it the page went
- * (upnext_closed). */
+ * after the playing one in play order. navigation.c's qm_run opens it (up_next), and ringnav_keylong
+ * hands a Play/Pause hold on a row to un_hold. */
 #include "offsets.inc"
 #include "peq.h"
 #include "playback.h"
@@ -48,8 +47,13 @@ static void un_fill(int sel) {
     }
     if (sel >= 0 && n) ringnav_select(view, sel, (int)n);
 }
-void up_next(int (*closed)(void *, void *), int (*keyup)(void *, void *)) {
-    if (un.page || !(un.page = page_open("upnext_page", closed, keyup))) return;
+/* The page gone: the next View Queue opens a new one. */
+static int un_closed(void *ctx, void *event) {
+    un.page = 0;
+    return 0;
+}
+void up_next(int (*keyup)(void *, void *)) {
+    if (un.page || !(un.page = page_open("upnext_page", un_closed, keyup))) return;
     un_fill(-1);
 }
 /* A Play/Pause hold on a row (un_hold, deferred out of its dispatch): the row's track plays next
@@ -72,9 +76,4 @@ int un_hold(void *top) {
     if (row < 0 || !timer_add(un_move, (void *)0, 0)) return 0;
     un.row = (unsigned)row;
     return 1;
-}
-
-/* navigation.c's page_closed: the page is gone, so the next View Queue opens a new one. */
-void upnext_closed(void *page) {
-    if (page == un.page) un.page = 0;
 }

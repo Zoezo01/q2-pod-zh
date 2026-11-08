@@ -2,9 +2,9 @@
  * app's local rows), Era and Long Songs. */
 #include "navigation.h"
 
-/* Tidal Downloads' page and songs, its timer, and whether it shows Clear All Downloads'
- * confirmation; the library generation Most Played's kept tracks are of (~library_gen once stale);
- * the Library Shuffle menu's page, kept across picks. */
+/* Tidal Downloads' (or a card app's) songs page and its songs, its timer, and whether it shows
+ * Clear All Downloads' confirmation; the library generation Most Played's kept tracks are of
+ * (~library_gen once stale); the Library Shuffle menu's page, kept across picks. */
 static struct {
     void *td_page, *td_list;
     unsigned td_timer;

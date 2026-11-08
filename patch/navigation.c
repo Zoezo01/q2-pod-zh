@@ -199,8 +199,7 @@ extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *
 extern int books_key(void *top, unsigned key), video_on(void), books_video(const char *path);
 extern void games_paint(void *w, void *canvas);
 extern void spot_poll(void), spot_paint(void *w, void *canvas), *spot_art(void);
-extern void up_next(int (*closed)(void *, void *), int (*keyup)(void *, void *)),
-    upnext_closed(void *page);
+extern void up_next(int (*keyup)(void *, void *));
 extern int un_hold(void *top);
 extern void radio_poll(void);
 extern void xfade_row(void *label), wheel_row(void *label), resume_row(void *label),
@@ -8187,18 +8186,15 @@ int songs_unsorted(void *music) {
     return n;
 }
 
-/* Return and destroy for the payload's own pages, shared with Most Played; Return with
- * netupdate.c's Apps page. */
+/* Return for the payload's own pages; each passes page_open its own close. */
 int page_keyup(void *ctx, void *event) {
     if (I(event, EVENT_KEY) != KEY_RETURN) return 0;
     navigator_back();
     return STOP;
 }
 
-/* The close of navigation.c's own pages: View Queue's (upnext.c), Chapters and Streaming's
- * Configuration. The other files' pages have their own. */
-int page_closed(void *ctx, void *event) {
-    upnext_closed(ctx);
+/* The close of navigation.c's own pages: Chapters and Streaming's Configuration. */
+static int page_closed(void *ctx, void *event) {
     if (ctx == st.ch_page) {
         st.ch_page = 0;
         if (st.ch && !st.ch->done)
@@ -8773,7 +8769,7 @@ static int qm_run(const void *unused) {
             if (queue && at < deque_size(queue) &&
                 rec_hash(deque_at(queue, at)) == st.qm_forced_hash)
                 playback_move(at);
-            up_next(page_closed, page_keyup);
+            up_next(page_keyup);
         } else
             navigator_to("playerqueue_page");
     } else if (a == QA_MORE && st.qm_kind == QM_PLAYLIST) {
