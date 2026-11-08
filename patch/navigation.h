@@ -383,7 +383,8 @@ extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
 
 /* navigation.c */
-void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
+void pod_settings(void);
+void ratings_copy_due(void);
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
@@ -520,6 +521,19 @@ static inline const unsigned *tones(void) { return tones_of(accent()); }
 
 /* volume.c */
 void vol_paint(void *top, void *canvas);
+
+/* smart_wifi.c */
+void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
+int smart_config(const char *section, const char *key);
+void smart_poll(void);
+
+/* system.c */
+int card_mounted(void);
+void charge_poll(void);
+void logo_poll(void);
+void standby_poll(void);
+void state_poll(void);
+void wdt_poll(void);
 
 /* classic_pages.c */
 int kb_key(void *w);

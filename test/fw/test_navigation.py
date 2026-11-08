@@ -1486,7 +1486,7 @@ STALL_STACK = b'812 D %x 0 4a1234 2ab00010\n' % STALL_PC
 
 
 class Stall:
-    """The stall thread's world (navigation.c stall_step): /proc's files as bytes, the UI thread's stack
+    """The stall thread's world (system.c stall_step): /proc's files as bytes, the UI thread's stack
     (a real block: the C reads it in place) with stat's startstack `top` bytes above its sp, the record's
     opens, syncs and bytes, and now_ms's clock. A UI loop pass is wdt_poll; the first arms the watchdog,
     which starts the thread (only recorded here), so its wakes are stall_step, run by hand."""
@@ -1511,11 +1511,11 @@ class Stall:
         fw.mock('fw_fsync', lambda fd, *_: self.log.append(('fsync', len(self.record or b''))))
         fw.mock('fw_close', lambda fd, *_: self.handles.pop(fd) and 0)
         fw.mock('fw_unlink', self.unlink)
-        self.step = fw.fn('navigation__stall_step', None)
-        self.pass_ = fw.fn('navigation__wdt_poll', None)
+        self.step = fw.fn('system__stall_step', None)
+        self.pass_ = fw.fn('wdt_poll', None)
         self.pass_()
         thread = fw.calls('fw_pthread_create')
-        assert st('wdt').value == 3 and len(thread) == 1 and thread[0][1][2] == C.cast(fw.lib.navigation__stall_watch, C.c_void_p).value
+        assert st('wdt').value == 3 and len(thread) == 1 and thread[0][1][2] == C.cast(fw.lib.system__stall_watch, C.c_void_p).value
 
     def expect(self, age, toasts=0, stack=STALL_STACK):
         """What the UI thread was doing, as the files say."""

@@ -632,7 +632,7 @@ static void covers(void) {
     free(body);
 }
 
-/* Smart Wi-Fi (navigation.c smart_needed): Download Album Lyrics running keeps the radio on. */
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Download Album Lyrics running keeps the radio on. */
 int album_lyrics_busy(void) { return al.running; }
 
 /* kugou_obtaincover(keyword), online_coverthd's first source, then com163's and Baidu's: each adds

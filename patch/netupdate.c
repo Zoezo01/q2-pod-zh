@@ -894,6 +894,6 @@ int shelf_open(void *ctx, void *event) {
     return 0;
 }
 
-/* Smart Wi-Fi (navigation.c smart_needed): Network Update's download or an Apps job keeps the radio on. */
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the radio on. */
 int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
 #endif

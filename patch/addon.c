@@ -718,7 +718,7 @@ static void game_poll(void) {
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }
 
-/* Smart Wi-Fi (navigation.c smart_needed): an app started, or restarting after Retry, keeps the radio
+/* Smart Wi-Fi (smart_wifi.c smart_needed): an app started, or restarting after Retry, keeps the radio
  * on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB storage
  * counts once it starts again: the cable holds the radio meanwhile, and an app deleted from the
  * computer, which never starts again, holds nothing. */

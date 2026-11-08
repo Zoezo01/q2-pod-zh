@@ -1215,7 +1215,7 @@ int spot_hold(void *w) {
     return 1;
 }
 
-/* Smart Wi-Fi (navigation.c smart_needed): a running librespot keeps the radio on. */
+/* Smart Wi-Fi (smart_wifi.c smart_needed): a running librespot keeps the radio on. */
 int spot_running(void) { return sp.launched; }
 
 /* iPod's Now Playing corners (navigation.c paint_cover) round the art too. */

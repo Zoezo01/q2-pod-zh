@@ -183,7 +183,7 @@ def boot_check():
         oom, tail = out.split('== oom\n')[1].split('== dmesg\n')
         assert oom == f'{head}\n{summary}\n{kill}\n{reap}\n' and head not in tail and kill in tail
         (r/'bin/dmesg').unlink(); (r/'dmesg').unlink()
-        # /mnt/data/q2-state (navigation.c state_poll) still there at boot: the last session ended in a forced
+        # /mnt/data/q2-state (system.c state_poll) still there at boot: the last session ended in a forced
         # restart, or the battery. It goes into q2-crash.log, a new one that says so or the crash's, and goes.
         state, line = r/'mnt/data/q2-state', 'screen:off power:suspending cable:out battery:57 play:paused out:jack\n'
         state.write_text(line); out, cp = logged(0, False)
@@ -194,7 +194,7 @@ def boot_check():
         assert '== last state' in out and out.endswith('== cover flow\nstart albums=0 0 ms\nstaged albums=20000 900 ms\n') and not trace.exists()
         trace.write_text('stale\n'); out, cp = logged(0, False)
         assert out is False and not trace.exists()  # no forced restart: dropped, not reported
-        # the UI loop's stall record (navigation.c stall_write) goes in last, and goes
+        # the UI loop's stall record (system.c stall_write) goes in last, and goes
         stall, record = r/'mnt/data/q2-stall', 'age 20000 ms\ntoasts 1\nstate D\nwchan wait_on_page_bit_common\n'
         state.write_text(line); trace.write_text('start albums=0 0 ms\n'); stall.write_text(record); out, cp = logged(0, False)
         assert out.endswith('== cover flow\nstart albums=0 0 ms\n== stall\n' + record) and not stall.exists() and not trace.exists()

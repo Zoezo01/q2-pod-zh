@@ -155,7 +155,7 @@ HOOKS = {
     'tidalColTracksThd': (0x4882d4, 'ringnav_tidal_favs', 'tidalfavs'),
     # Ratings (navigation.c rate_bind): Now Playing's heart, held, opens the picker
     'playing_page_init': (0x52ca88, 'ringnav_playing', 'playing'),
-    # The Wi-Fi signal (navigation.c ringnav_wifi_signal): the driver's rx_signal instead of an ioctl
+    # The Wi-Fi signal (system.c ringnav_wifi_signal): the driver's rx_signal instead of an ioctl
     # that takes the radio out of power save; the status bar and the network monitor (a bal) poll it
     'networkGetWifiSignal': (0x5afb48, 'ringnav_wifi_signal', None),
     'playlist_rebuild': (0x4b2dac, 'ringnav_playlist', 'playlist'),
@@ -171,9 +171,9 @@ HOOKS = {
     'list_get_img_pic': (0x501948, 'ringnav_badge', None),
     # Every scrolling label's start: its delay and pace (navigation.c ringnav_hscroll_start)
     'hscroll_label_start': (0x5e867c, 'ringnav_hscroll_start', 'hscroll_start'),
-    # Smart Wi-Fi (navigation.c smart_poll): the Wi-Fi page wakes the radio before it reads g_wififlag
+    # Smart Wi-Fi (smart_wifi.c smart_poll): the Wi-Fi page wakes the radio before it reads g_wififlag
     'systemset_wifi_page_init': (0x4cda08, 'ringnav_wifi_page', 'wifi_page'),
-    # Smart Wi-Fi (navigation.c smart_hold): stock actions that check the link once, held while the
+    # Smart Wi-Fi (smart_wifi.c smart_hold): stock actions that check the link once, held while the
     # radio comes back. Streaming's Tidal row (stream_page_init's row click), Network service's rows
     # (Wi-Fi transfer only) and Now Playing More's Download Cover & Lyrics (its row's case); none has
     # a symbol.
@@ -237,7 +237,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
             # Coverflow's open never finished (coverflow.c cf_trace): the phase it reached
             [ -f /mnt/data/q2-cf-trace ] && {{ echo "== cover flow"; cat /mnt/data/q2-cf-trace; }} >> $c
-            # The UI loop stalled (navigation.c stall_write): what its thread was doing
+            # The UI loop stalled (system.c stall_write): what its thread was doing
             [ -f /mnt/data/q2-stall ] && {{ echo "== stall"; cat /mnt/data/q2-stall; }} >> $c
             rm -f $m
         }}
@@ -528,7 +528,7 @@ LYRIC_SAVE_CALL, LYRIC_SAVE_FMT = 0x525484, (0x525480, 0x24c62630)
 # The encoder thread's ts_read call (jalr $t9) becomes jal ringnav_ts_read, which makes the wheel's
 # ticks from the samples (playback.c wheel_sample).
 WHEEL_TS_READ = (0x625b6c, 0x0320f809)
-# Smart Wi-Fi (navigation.c smart_ready): networkStart and networkStop act only when initNetworkModule's
+# Smart Wi-Fi (smart_wifi.c smart_ready): networkStart and networkStop act only when initNetworkModule's
 # type, the unnamed word NET_TYPE (patch/offsets.inc), is 2: lw $v1,-0x40fc($v0) off GOT page 0xa40000;
 # li $v0,2.
 NET_TYPE_READS = ((0x5af2dc, 0x8c43bf04), (0x5af2e0, 0x24020002), (0x5af5e8, 0x8c43bf04), (0x5af5ec, 0x24020002))
@@ -1306,7 +1306,7 @@ FUNCTIONS = {
  # A card app's library update (addon_library.c): stock's Import Playlists, and its folder listing
  'importPlayList': ('int', 'void'), 'toolsGetDirectoryM3u8': ('int', 'const char *, void *'),
  'mclSetSeek': ('int', 'int'),  # the player's seek in file seconds; it plays on from there, or on Play once paused
- # Smart Wi-Fi (navigation.c smart_poll): stock's Wi-Fi switch, a toggle of g_wififlag (its callers pass 1,
+ # Smart Wi-Fi (smart_wifi.c smart_poll): stock's Wi-Fi switch, a toggle of g_wififlag (its callers pass 1,
  # the background connect), the link and the queue's type
  'wifi_switch': ('int', 'int'),
  'networkGetConnectStatus': ('int', 'void'),  # 0 no link (networkStop), above 0 connected
@@ -1335,7 +1335,7 @@ PRIVATE_FUNCTIONS = {
     "np_info": 0x52a508,  # Now Playing's info page labels, from the track (NP_INFO_CALL)
     "ab_x": 0x52a268,  # an A-B marker's x, on the boot set's np_bar_x and np_bar_w (AB_X_CALLS)
     "fwupdate_tf": 0x4c2994,  # systemset_fwupdate_page's row 0 click (0x4c2fac): stock's TF card update
-    # Smart Wi-Fi's held stock actions (navigation.c smart_hold)
+    # Smart Wi-Fi's held stock actions (smart_wifi.c smart_hold)
     "stream_row": HOOKS['stream_row'][0],  # Streaming's Tidal row: atoi of the button's name
     "netservice_row": HOOKS['netservice_row'][0],  # Network service's DLNA, AirPlay and Wi-Fi transfer
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
@@ -1353,7 +1353,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value',  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
-           # Smart Wi-Fi (navigation.c smart_poll): the Wi-Fi switch's state and stock's own gates on
+           # Smart Wi-Fi (smart_wifi.c smart_poll): the Wi-Fi switch's state and stock's own gates on
            # toggling it (wifi_initstatus 0, wifi_connectstatus not 1, connecting), Network service's
            # AirPlay and DLNA, SyncLink (2: over Wi-Fi) and its session, Wi-Fi transfer and a pending time sync
            'g_wififlag', 'wifi_initstatus', 'wifi_connectstatus', 'g_airplayflag', 'g_dlnaflag',
@@ -1400,7 +1400,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

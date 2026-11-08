@@ -334,7 +334,7 @@ int scrobble_start(void) {
     return 1;
 }
 
-/* Smart Wi-Fi (navigation.c smart_needed): an upload in progress, the user's or the automatic one,
+/* Smart Wi-Fi (smart_wifi.c smart_needed): an upload in progress, the user's or the automatic one,
  * keeps the radio on. */
 int scrobble_busy(void) { return up.running; }
 

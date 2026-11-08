@@ -17030,7 +17030,7 @@ assert m.labels()==['App Store','Check for Updates',BLANK,'Foo','Install'] and m
 # of play, after a pause and on a track change, and jumps back there when it next starts playing near
 # its beginning.
 # A place near either end is forgotten; a short or CUE track, or a paused start, is left alone.
-RECORD='/mnt/data/q2-state'  # navigation.c state_poll's record, written on the first pass and on a change
+RECORD='/mnt/data/q2-state'  # system.c state_poll's record, written on the first pass and on a change
 RECORD_FD=77  # PowerMachine's fileno for it, so its fsync is told apart
 class ResumeMachine(QueueMachine):
     def __init__(self,files=None):
@@ -18701,7 +18701,7 @@ assert m.wdt_opens==1 and not m.ioctls and m.record() and m.standby()==['suspend
 m=WatchdogMachine(key=600,refuse_start=True); m.pass_(1); m.pass_(1)
 assert m.ioctls==[(3,WDT_START,O['WDT_MS'])] and m.record() and m.standby()==['suspend']; passed()
 
-# The Wi-Fi signal (navigation.c ringnav_wifi_signal): networkGetWifiSignal, which the status bar and
+# The Wi-Fi signal (system.c ringnav_wifi_signal): networkGetWifiSignal, which the status bar and
 # the network monitor thread each call about once a second, reads the driver's rx_signal and never
 # sends stock's SIOCGIWSTATS, whose TX report takes the radio out of power save. It answers stock's
 # dBm (the ioctl's unsigned level less 256, get_station's signal_strength less 100), except that

@@ -303,7 +303,7 @@ void addon_forget(const char *dir), addon_quit(const char *dir);
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
 const char *addon_game_name(int k);
 int addon_game_input(void *e), addon_is_game(const char *id);
-void ringnav_wdt_long(void); /* navigation.c: the watchdog's long count for a long pass */
+void ringnav_wdt_long(void); /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
@@ -440,7 +440,7 @@ int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
 void toast(const char *text); /* navigation.c */
-/* navigation.c, Smart Wi-Fi: its radio woken, 1 while its link comes up; its radio off; an action
+/* smart_wifi.c: its radio woken, 1 while its link comes up; its radio off; an action
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */
 int smart_wifi_wait(void), smart_wifi_off(void);
 int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page);
