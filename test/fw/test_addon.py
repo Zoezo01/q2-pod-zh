@@ -62,7 +62,9 @@ class Pg(C.Structure):
     _fields_ = [*((n, C.c_void_p) for n in ('page', 'view', 'edit')), *((n, C.c_uint) for n in ('timer', 'go', 'leave', 'again')),
                 *((n, C.c_int) for n in ('depth', 'act', 'next', 'arg', 'a', 'code')),
                 ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
-                ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte)]
+                ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
+                ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
+                *((n, C.c_byte) for n in ('sdown', 'sclaim', 'saborting'))]
 
 
 class Qp(C.Structure):
@@ -346,7 +348,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1271,6 +1273,22 @@ def test_a_row_that_opens(fw, kind, uri, yes):
     p = Page(fw)
     p.answer(rows=[(kind, uri, b't', b's', b'', b'')])
     assert fw.fn('addon__opens', C.c_int, C.c_int)(0) == yes
+
+
+def test_sections_are_a_first_replys_list_rows_up_to_eight(fw):
+    p = Page(fw)
+    rows = [(b'info', b'', b'Note', b'', b'', b''), (b'list', b'', b'No op', b'', b'', b''),
+            (b'list', b'long', b'Too long', b'', b'x' * 200, b'')] + \
+        [(b'list', b'sec%d' % i, b'Section %d' % i, b'', b'a b' if i == 0 else b'', b'') for i in range(10)]
+    p.answer(msg=b'sections', rows=rows)
+    assert p.pg.nsec == 8 and p.pg.cur == 0 and p.pg.depth == 1
+    assert p.top.title == b'Section 0' and p.request() == b'Q2SPOT/1\n2\tsec0\ta b\n'
+
+
+def test_a_reply_without_list_rows_is_no_sections(fw):
+    p = Page(fw)
+    p.answer(msg=b'sections', rows=[item(0)])
+    assert p.pg.nsec == 0 and p.top.n == 1 and p.top.title == b'Foo'
 
 
 def test_drop_frees_every_page(fw):
