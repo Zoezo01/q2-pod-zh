@@ -1,5 +1,6 @@
-"""patch/addon.c, addon_library.c and library_scope.c: card apps' manifests, playlists, sleep timers, the page
-they draw over Q2SPOT/1, their QR codes, library requests, and the database.ignore markers."""
+"""patch/addon.c, addon_library.c and library_scope.c: card apps' manifests, stream sessions, playlists, sleep
+timers, card games, the page they draw over Q2SPOT/1, their QR codes, library requests, and the database.ignore
+markers."""
 import ctypes as C
 import random
 import struct
@@ -7,7 +8,9 @@ import struct
 import pytest
 
 import host
-from conftest import block, text, Game, O
+from conftest import O, Deques, Game, block, high_halves, libc, text
+from test_netupdate import JOB_INSTALL, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
+from test_radio import Rd  # test_radio.py keeps the mirror
 
 APPS_MAX = 8
 REPLY_MAX = 64 << 10
@@ -23,7 +26,9 @@ K_LOAD, K_READY, K_ERROR, K_WAIT = range(4)
 REQ_OK, REQ_NOSOCK, REQ_FAIL = range(3)
 S_WAIT, S_PLAY, S_DONE = range(3)
 L_IDLE, L_WAIT, L_SCAN, L_IMPORT = range(4)
-W_W, W_H, CANVAS_LCD = 0x08, 0x0c, 0x38
+W_W, W_H, CANVAS_LCD = O['W_W'], O['W_H'], O['CANVAS_LCD']
+REC_NAME, REC_PATH, REC_TYPE = O['REC_NAME'], O['REC_PATH'], O['REC_TYPE']
+LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 
 
 class App(C.Structure):
@@ -589,6 +594,403 @@ def test_m3u_wakes_for_a_batch_a_rewrite_or_the_song_it_wants(fw):
     assert ready() == 1
 
 
+class Songs:
+    """Stock's song records (stSongInfo) with a name and a path both, as a folder's listing has them. On the Q2
+    each is a 4-byte pointer; here P() reads 8, so REC_NAME's high half is REC_PATH's low half. A name below
+    4 GB has a zero high half and a path at a multiple of 4 GB a zero low half: the names share a MAP_32BIT
+    block, wherever the kernel finds room under 2 GB, each path has a page of its own in AddressSanitizer's high
+    memory, at a high half of this file's (conftest.high_halves)."""
+    PATHS = high_halves(0x100)
+
+    def __init__(self):
+        self.maps, self.records, self.keep, self.used = [], {}, [], 0
+        self.names = libc.mmap(0, 0x10000, 3, 0x62, -1, 0)  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT
+        assert self.names and self.names < 1 << 32
+        self.maps.append((self.names, 0x10000))
+
+    def map(self, address, size):
+        assert libc.mmap(address, size, 3, 0x100022, -1, 0) == address  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
+        self.maps.append((address, size))
+        return address
+
+    def free(self):
+        munmap = libc.munmap
+        munmap.argtypes = [C.c_void_p, C.c_size_t]
+        for address, size in self.maps:
+            munmap(address, size)
+
+    def __call__(self, path):
+        """The record of the song at path: the same one at each listing."""
+        if path not in self.records:
+            name = path.rsplit(b'/', 1)[-1]
+            at, high = self.names + self.used, self.PATHS[len(self.records)]
+            C.memmove(at, name + b'\0', len(name) + 1)
+            self.used += len(name) + 1
+            C.memmove(self.map(high << 32, 0x1000), path + b'\0', len(path) + 1)
+            r = C.create_string_buffer(0x60)
+            struct.pack_into('<Q', r, REC_NAME, at)
+            struct.pack_into('<I', r, REC_PATH + 4, high)  # the path's high half; its low half is the name's, 0
+            struct.pack_into('<i', r, REC_TYPE, 8)         # a song
+            self.keep.append(r)
+            self.records[path] = C.addressof(r)
+            assert (string_at(self.records[path], REC_NAME), string_at(self.records[path], REC_PATH)) == (name, path)
+        return self.records[path]
+
+
+def string_at(record, offset):
+    return C.string_at(C.c_uint64.from_address(record + offset).value)
+
+
+@pytest.fixture
+def songs():
+    made = Songs()
+    yield made
+    made.free()
+
+
+SESSION = b'/mnt/mmc/.foo/s1'
+PLAYLIST = b'/mnt/mmc/.foo/queue.m3u'
+M3U_BATCH = 32
+
+
+class Stream:
+    """Stream mode end to end: card apps whose .play names a folder (or playlist) they fill; stock's listing of a
+    folder (toolsLoadDirectory); Now Playing loading into stock's queue what play_folder hands it, which
+    playback_loads counts, as playback_groups does; and the UI loop's passes, addon_poll and then its timers."""
+    def __init__(self, fw, mcl, songs, **apps):
+        self.fw, self.mcl, self.songs = fw, mcl, songs
+        self.world = card(fw, **(apps or {'foo': b'name=Foo\n'}))
+        scan(fw)
+        for i in range(ap(fw).n):  # each started, its loop running
+            ap(fw).a[i].launched = 1
+            self.world.files[ap(fw).a[i].pid] = b'1'
+        self.deques = Deques(fw)
+        self.queue, self.pool, self.cells = self.deques.new(), self.deques.new(), []
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = self.queue
+        C.c_uint.from_address(O['MCL_POOL']).value = self.pool  # stock's shuffle pool, which an add grows
+        fw.mock('fw__deque_push_back', self.push)
+        self.loaded = fw.var('playback_loads', C.c_uint)
+        self.listings, self.timers, self.loads, self.windows, self.ids = {}, {}, [], set(), 0
+        fw.mock('toolsLoadDirectory', self.listing)
+        fw.mock('timer_add', self.timer_add)
+        fw.mock('timer_remove', lambda t, *_: self.timers.pop(t, None))
+        fw.mock('navigator_to_with_context', self.navigate)
+        fw.mock('navigator_window_is_exist', lambda name, *_: C.string_at(name) in self.windows)
+
+    def push(self, q, value, *_):
+        if q & 0xffffffff == self.pool:  # a deque of ints: deque_at gives an element's address
+            self.cells.append(C.c_int(value))
+            value = C.addressof(self.cells[-1])
+        self.deques[q].append(value)
+
+    def listing(self, path, *_):
+        rows = [self.songs(p) for p in self.listings.get(C.string_at(path), [])]
+        self.deques[self.fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value][:] = rows
+        return len(rows)
+
+    def timer_add(self, fn, *_):
+        self.ids += 1
+        self.timers[self.ids] = fn
+        return self.ids
+
+    def navigate(self, name, ctx, *_):
+        if C.string_at(name) == b'playing_page':  # Now Playing copies the queue it is handed, at once
+            self.deques[self.queue][:] = self.deques[C.c_void_p.from_address(ctx).value]
+            self.mcl.pos = C.c_int.from_address(ctx + 8).value
+            self.loaded.value += 1
+            self.loads.append((C.c_int.from_address(ctx + 12).value, self.fw.var('press_natural', C.c_int).value))
+
+    def land(self, *paths):
+        """Songs downloaded: on the card, in their folder's listing, its mtime moved on."""
+        for path in paths:
+            folder, name = path.rsplit(b'/', 1)
+            self.world.files[path] = b''
+            self.world.dirs.setdefault(folder, []).append(name)
+            self.listings.setdefault(folder, []).append(path)
+            self.world.mtime[folder] = self.world.mtime.get(folder, 1) + 1
+
+    def play(self, raw, app=b'foo'):
+        self.world.files[b'/tmp/q2-%s.play' % app] = raw
+
+    def poll(self):
+        self.world.ms += 500
+        self.fw.fn('addon_poll', None)()
+
+    def fire(self):
+        due, self.timers = self.timers, {}
+        for fn in due.values():
+            C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(None)
+
+    def step(self):
+        """A UI loop pass: the poll, then the timers it set."""
+        self.poll()
+        self.fire()
+
+    def queued(self):
+        return [string_at(r, REC_PATH) for r in self.deques[self.queue]]
+
+    def playing(self, app=b'foo'):
+        return self.world.files.get(b'/tmp/q2-%s.playing' % app)
+
+
+def started(fw, mcl, songs, first=SESSION + b'/01 - One [1].flac'):
+    """A folder session playing its first song."""
+    s = Stream(fw, mcl, songs)
+    s.land(first)
+    s.play(b'1 ' + SESSION + b'\n')
+    s.step()
+    s.step()
+    assert s.queued() == [first]
+    return s
+
+
+def test_a_stream_session_plays_its_folder_as_it_fills(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    s.world.dirs[SESSION] = []
+    s.play(b'1 ' + SESSION + b'\n')
+    s.step()
+    assert s.loads == [] and s.queued() == []  # its folder empty: it waits
+    first = SESSION + b'/01 - One [1].flac'
+    s.land(first)
+    s.step()
+    # played from its first song, Now Playing opening as for a press, but no press stamped (nobody pressed)
+    assert s.loads == [(LIBRARY, 1)] and s.queued() == [first] and fw.var('press_natural', C.c_int).value == 0
+    s.step()
+    assert s.playing() == first + b'\n' and (b'/tmp/q2-stream.tmp', b'/tmp/q2-foo.playing') in s.world.of('rename')
+    later = [SESSION + b'/02 - Two [2].flac', SESSION + b'/03 - Three [3].flac']
+    s.land(*reversed(later))  # downloaded in any order: they play in their names'
+    s.step()
+    assert s.queued() == [first, *later] and len(s.loads) == 1  # joined its end, as Add to Queue adds them
+    renames = len(s.world.of('rename'))
+    s.step()
+    assert len(s.world.of('rename')) == renames  # the same song playing: .playing left as it is
+    mcl.pos = 1
+    s.step()
+    assert s.playing() == later[0] + b'\n'
+
+
+def test_downloads_in_progress_and_hidden_files_list_nothing(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    listed = len(fw.calls('toolsLoadDirectory'))
+    for name in (b'02 - Two [2].flac.part', b'02 - Two [2].tmp', b'.nomedia'):
+        s.world.dirs[SESSION].append(name)
+        s.world.mtime[SESSION] += 1
+        s.step()
+    assert len(fw.calls('toolsLoadDirectory')) == listed and len(s.queued()) == 1
+
+
+PLAY_READ = 192 - 2  # stream_poll's raw[192] less state_read's leading newline and NUL: .play's bytes read
+
+
+@pytest.mark.parametrize('raw', [
+    b'1 /tmp/s1\n', b'1 /mnt/mmc/Music\n', b'1 /mnt/mmc/.foo/../Music\n', b'1 /mnt/mmcx/.foo\n', b'1' + SESSION + b'\n',
+    b'1 /tmp/queue.m3u\n',
+    b'1 /mnt/mmc/.foo/' + b'a' * 160 + b'\n',  # longer than the session's folder can hold
+    b'1 /mnt/mmc/.foo/' + b'b' * 180 + b'\n',  # longer than its read of .play, and than the folder
+    # the read ends exactly where the session's folder name does: whole in sm.dir, but .play names s12
+    b'1' * (PLAY_READ - 1 - len(SESSION)) + b' ' + SESSION + b'2\n',
+])
+def test_a_play_file_naming_no_hidden_card_folder_plays_nothing(fw, mcl, songs, raw):
+    s = Stream(fw, mcl, songs)
+    named = raw.partition(b' ')[2].rstrip(b'\n') or SESSION
+    read = raw[:PLAY_READ].partition(b' ')[2].rstrip(b'\n')  # what the read of .play holds of it
+    if named.endswith(b'.m3u'):
+        s.world.files[named] = SESSION + b'/01.flac\n'
+        s.land(SESSION + b'/01.flac')
+    else:
+        s.land(*{p + b'/01.flac' for p in (named[:159], read, named) if p})  # nor what a cut path names
+    s.play(raw)
+    s.step()
+    s.step()
+    assert s.loads == [] and s.queued() == [] and not fw.calls('toolsLoadDirectory')
+
+
+def test_a_play_file_one_byte_short_of_its_read_is_whole_and_plays(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    raw = b'1' * (PLAY_READ - 3 - len(SESSION)) + b' ' + SESSION + b'\n'
+    assert len(raw) == PLAY_READ - 1
+    s.land(SESSION + b'/01.flac')
+    s.play(raw)
+    s.step()
+    assert s.loads == [(LIBRARY, 1)] and s.queued() == [SESSION + b'/01.flac']
+
+
+def test_a_session_is_left_once_something_else_plays(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    first = s.queued()[0]
+    s.step()
+    other = SESSION + b'2/x.flac'  # a folder whose name only starts with the session's
+    s.deques[s.queue][:] = [songs(other)]
+    s.step()
+    s.land(SESSION + b'/02.flac')
+    s.step()
+    assert s.queued() == [other] and s.playing() == first + b'\n'
+
+
+def test_a_library_scan_puts_the_first_song_off_until_its_window_closes(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    s.land(SESSION + b'/01.flac')
+    s.play(b'1 ' + SESSION + b'\n')
+    s.windows.add(b'updatemusic_dialog')  # a scan, whose thread fills the deque a folder's listing does
+    s.step()
+    s.step()
+    assert s.loads == [] and not fw.calls('toolsLoadDirectory')
+    s.windows.clear()
+    s.step()
+    assert len(s.loads) == 1
+
+
+@pytest.mark.parametrize('window', [b'updatemusic_page', b'updatemusic_dialog'])
+def test_a_scan_starting_before_the_first_song_plays_puts_it_off(fw, mcl, songs, window):
+    s = Stream(fw, mcl, songs)
+    s.land(SESSION + b'/01.flac')
+    s.play(b'1 ' + SESSION + b'\n')
+    s.poll()  # its song seen: a timer to play it
+    s.windows.add(window)
+    s.fire()
+    assert s.loads == [] and not fw.calls('toolsLoadDirectory')
+    s.step()
+    assert s.loads == []
+    s.windows.clear()
+    s.step()
+    assert len(s.loads) == 1
+
+
+def test_songs_landing_during_a_scan_join_after_it(fw, mcl, songs):
+    s = started(fw, mcl, songs)
+    s.windows.add(b'updatemusic_dialog')
+    s.land(SESSION + b'/02.flac')
+    s.step()
+    assert len(s.queued()) == 1
+    s.windows.clear()
+    s.step()
+    assert s.queued()[1:] == [SESSION + b'/02.flac']
+
+
+def test_another_apps_play_file_left_in_tmp_never_takes_the_queue_back(fw, mcl, songs):
+    s = Stream(fw, mcl, songs, foo=b'name=Foo\n', bar=b'name=Bar\n')
+    one, two = b'/mnt/mmc/.foo/s/01.flac', b'/mnt/mmc/.bar/s/01.flac'
+    s.land(one, two)
+    s.play(b'1 /mnt/mmc/.foo/s\n', b'foo')
+    s.step()
+    s.play(b'1 /mnt/mmc/.bar/s\n', b'bar')
+    s.step()
+    assert s.queued() == [two] and len(s.loads) == 2
+    s.land(b'/mnt/mmc/.foo/s/02.flac', b'/mnt/mmc/.bar/s/02.flac')
+    s.step()
+    s.step()
+    assert s.queued() == [two, b'/mnt/mmc/.bar/s/02.flac'] and len(s.loads) == 2
+    s.play(b'2 /mnt/mmc/.foo/s\n', b'foo')  # a new session of its own does
+    s.step()
+    assert s.queued() == [one, b'/mnt/mmc/.foo/s/02.flac'] and len(s.loads) == 3
+
+
+def playlist(fw, mcl, songs, *entries):
+    s = Stream(fw, mcl, songs)
+    s.world.files[PLAYLIST] = b'#EXTM3U\n' + b''.join(e + b'\n' for e in entries)
+    return s
+
+
+A, B, C3 = b'/mnt/mmc/.foo/A/1.flac', b'/mnt/mmc/.foo/B/2.flac', b'/mnt/mmc/.foo/A/3.flac'
+
+
+def test_a_playlist_session_queues_its_songs_in_its_order_as_they_land(fw, mcl, songs):
+    s = playlist(fw, mcl, songs, A, B, C3)
+    s.land(A)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    assert s.queued() == [A] and s.loads == [(LIBRARY, 1)]  # what is there, up to the first song that isn't
+    s.step()
+    assert s.queued() == [A] and s.playing() == A + b'\n'
+    s.land(C3, B)
+    s.step()
+    assert s.queued() == [A, B, C3] and len(s.loads) == 1  # its order, not the folders'
+
+
+def test_a_playlist_anywhere_on_the_card_plays_whatever_its_extensions_case(fw, mcl, songs):
+    s = Stream(fw, mcl, songs)
+    listed = b'/mnt/mmc/Playlists/Mix.M3U'  # not in an app's hidden folder: a playlist may be any card file
+    s.world.files[listed] = A + b'\n'
+    s.land(A)
+    s.play(b'1 ' + listed + b'\n')
+    s.step()
+    assert s.loads == [(LIBRARY, 1)] and s.queued() == [A]
+
+
+def test_a_playlist_rewritten_past_its_entries_so_far_adds_the_new_ones(fw, mcl, songs):
+    s = playlist(fw, mcl, songs, A)
+    s.land(A, B)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    s.world.files[PLAYLIST] += B + b'\n'
+    s.world.mtime[PLAYLIST] = 2
+    s.step()
+    assert s.queued() == [A, B]
+
+
+def test_a_long_playlist_lists_a_batch_of_folders_a_pass(fw, mcl, songs):
+    paths = [b'/mnt/mmc/.foo/%02d/x.flac' % i for i in range(M3U_BATCH + 8)]
+    s = playlist(fw, mcl, songs, *paths)
+    s.land(*paths)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    assert s.queued() == paths[:M3U_BATCH] and len(fw.calls('toolsLoadDirectory')) == M3U_BATCH
+    s.step()
+    assert s.queued() == paths and len(s.loads) == 1
+
+
+def test_a_playlist_entry_stock_lists_no_song_of_is_passed_over(fw, mcl, songs):
+    notes = b'/mnt/mmc/.foo/C/notes.txt'
+    s = playlist(fw, mcl, songs, A, notes, B)
+    s.land(A, B)
+    s.world.files[notes] = b''  # on the card, no song in its folder's listing
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    assert s.queued() == [A, B]
+
+
+def test_a_song_missing_from_the_listing_an_earlier_entry_took_is_listed_again(fw, mcl, songs):
+    s = playlist(fw, mcl, songs, A, C3)
+    s.land(A)
+    s.world.files[C3] = b''  # there by its access(), not yet in the listing taken for A
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    assert s.queued() == [A]
+    s.listings[b'/mnt/mmc/.foo/A'].append(C3)
+    s.step()
+    assert s.queued() == [A, C3]
+
+
+@pytest.mark.parametrize('timer', [0, 1])
+def test_a_queue_the_user_plays_before_a_playlists_first_song_ends_its_session(fw, mcl, songs, timer):
+    s = playlist(fw, mcl, songs, A)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    if timer:  # its first song there, its timer set, and the user's play before it fires
+        s.land(A)
+        s.poll()
+        s.loaded.value += 1
+        s.fire()
+    else:
+        s.step()
+        s.loaded.value += 1
+        s.step()
+        s.land(A)
+    s.step()
+    s.step()
+    assert s.loads == [] and sm(fw).state == S_DONE
+
+
+def test_the_users_own_play_of_the_same_song_ends_a_playlist_session(fw, mcl, songs):
+    s = playlist(fw, mcl, songs, A, B)
+    s.land(A)
+    s.play(b'1 ' + PLAYLIST + b'\n')
+    s.step()
+    s.loaded.value += 1  # the same album played from Library: its queue starts with the same song
+    s.land(B)
+    s.step()
+    assert s.queued() == [A] and sm(fw).state == S_DONE
+
+
 def sl(fw):
     return fw.var('addon__sl', Sl)
 
@@ -717,6 +1119,146 @@ def test_a_timer_slept_through_is_let_go(fw):
     assert s.paused() == 0 and sl(fw).at == 0 and sl(fw).owner == 0
 
 
+class Track:
+    """The local player's track, as sleep's "end" sees it: its place in stock's queue (MCL_POS), its elapsed and
+    length (player_playtime_and_length), and auto_nexts, the tracks that ended by themselves (playback.c)."""
+    def __init__(self, fw, mcl, total=200):
+        self.fw, self.mcl, self.sec, self.total = fw, mcl, 0, total
+        mcl.pos = 3
+        fw.mock('player_playtime_and_length', self.times)
+
+    def times(self, sec, total, *_):
+        C.c_int.from_address(sec).value, C.c_int.from_address(total).value = self.sec, self.total
+
+    def at(self, sec, pos=None):
+        """A UI pass with the track at sec, at queue place pos (another track) if given."""
+        self.sec = sec
+        if pos is not None:
+            self.mcl.pos = pos
+        check(self.fw)
+
+    def ends(self):
+        self.fw.var('auto_nexts', C.c_uint).value += 1
+        self.at(0, self.mcl.pos + 1)
+
+
+def test_end_pauses_once_the_track_ends_by_itself(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end\n')
+    assert sl(fw).end == 1 and sl(fw).owner == 1
+    t.at(150)
+    t.at(190)
+    assert s.paused() == 0
+    t.ends()
+    assert s.paused() == 1 and sl(fw).end == 0 and s.world.of('unlink') == [(b'/tmp/q2-foo.sleep',)]
+
+
+@pytest.mark.parametrize('last,paused', [(198, 1), (197, 0)])
+def test_end_takes_the_next_track_from_its_last_two_seconds_as_its_end(fw, mcl, last, paused):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end')
+    t.at(last)
+    t.at(0, pos=4)  # not counted as ended by itself: picked, or the next one's start seen first
+    assert s.paused() == paused and sl(fw).end == 1 - paused
+
+
+def test_end_waits_for_the_end_of_a_track_picked_instead(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end')
+    t.at(50)
+    t.at(5, pos=7)
+    t.at(120)
+    assert s.paused() == 0 and sl(fw).pos == 7
+    t.ends()
+    assert s.paused() == 1
+
+
+def test_end_waits_again_after_a_seek_back(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end')
+    t.at(150)
+    t.at(10)
+    t.at(11)
+    assert s.paused() == 0 and sl(fw).end == 1
+    t.at(190)
+    t.ends()
+    assert s.paused() == 1 and sl(fw).end == 0
+
+
+def test_end_pauses_a_track_starting_over_under_repeat_one(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end')
+    t.at(199)
+    t.at(0)
+    assert s.paused() == 1
+
+
+def test_end_with_no_length_known_takes_any_move_on(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl, total=0)
+    s.read(b'end')
+    t.at(30)
+    t.at(0, pos=4)
+    assert s.paused() == 1
+
+
+def test_between_tracks_end_decides_nothing(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end')
+    t.at(199)
+    t.at(-1, pos=4)
+    assert s.paused() == 0 and sl(fw).pos == 3
+    t.at(0)
+    assert s.paused() == 1
+
+
+def stopped(fw, *passes):
+    """A pass at each (time_now_ms, play status)."""
+    s = Sleep(fw)
+    status = [2]
+    s.read(b'end')
+    fw.mock('mclGetPlayStatus', lambda *_: status[0])
+    for ms, status[0] in passes:
+        s.world.ms = ms
+        check(fw)
+    return s
+
+
+def test_playback_stopped_three_seconds_lets_end_go(fw, mcl):
+    Track(fw, mcl)
+    s = stopped(fw, (1001, 1), (4000, 1))
+    assert sl(fw).end == 1
+    s.world.ms = 4001
+    check(fw)
+    assert sl(fw).end == 0 and s.paused() == 0 and s.world.of('unlink') == [(b'/tmp/q2-foo.sleep',)]
+
+
+def test_a_moment_stopped_between_tracks_keeps_end(fw, mcl):
+    Track(fw, mcl)
+    stopped(fw, (1001, 1), (3001, 2), (3501, 1), (6000, 1))
+    assert sl(fw).end == 1
+
+
+def test_another_player_lets_end_go(fw, mcl):
+    s, t = Sleep(fw), Track(fw, mcl)
+    s.read(b'end')
+    t.at(100)
+    rd = fw.var('radio__rd', Rd)
+    rd.pid, rd.active = 99, 1  # Internet Radio playing
+    t.at(199)
+    t.ends()
+    assert sl(fw).end == 0 and s.paused() == 0
+
+
+@pytest.mark.parametrize('status,radio,end', [(1, 0, 0), (2, 1, 0), (2, 0, 1), (3, 0, 1)])
+def test_end_needs_the_local_player_playing_or_paused(fw, mcl, status, radio, end):
+    s = Sleep(fw)
+    Track(fw, mcl)
+    fw.mock('mclGetPlayStatus', lambda *_: status)
+    fw.var('radio__rd', Rd).active = radio
+    s.read(b'end')
+    assert sl(fw).end == end and sl(fw).owner == end and len(s.world.of('unlink')) == 1 - end
+
+
 def test_a_restart_waits_for_the_loop_to_go(fw):
     world = World(fw, {b'/tmp/q2-foo': b'1'})
     a = ap(fw).a[0]
@@ -772,6 +1314,56 @@ def test_a_stopped_app_is_left_alone(fw):
     assert a.polled == 0
 
 
+def running(fw, state=None):
+    """App foo started by its row and running, its status file state."""
+    world = card(fw, foo=b'name=Foo\n')
+    scan(fw)
+    a = ap(fw).a[0]
+    a.launched, a.launch_at = 1, world.ms
+    world.files[b'/tmp/q2-foo'] = b'1'
+    if state is not None:
+        world.files[b'/tmp/q2-foo.state'] = state
+    return world, a
+
+
+def addon_poll(fw, world, ms=500):
+    world.ms += ms
+    fw.fn('addon_poll', None)()
+
+
+def test_an_app_asking_to_hold_keeps_standby_and_power_off_away(fw):
+    world, a = running(fw, b'addr=192.168.1.2:8080\nhold=1\n')
+    addon_poll(fw, world)
+    assert a.hold == 1 and [c[1][:3] for c in fw.calls('reset_poweroptions_timer')] == [(1, 1, 0)]  # not the screen's
+    world.files[b'/tmp/q2-foo.state'] = b'hold=0\n'
+    addon_poll(fw, world)
+    assert a.hold == 0 and len(fw.calls('reset_poweroptions_timer')) == 1
+
+
+def test_an_app_that_stopped_by_itself_is_let_go_once_its_start_is_over(fw):
+    world, a = running(fw, b'hold=1\n')
+    del world.files[b'/tmp/q2-foo']  # its loop gone, or not there yet
+    addon_poll(fw, world, 10000)
+    assert a.launched == 1
+    addon_poll(fw, world)
+    assert a.launched == 0 and a.hold == 0
+    addon_poll(fw, world)
+    assert a.polled == world.ms - 500  # let go: no more polls
+
+
+def test_an_apps_sleep_timer_pauses_through_the_poll(fw):
+    world, a = running(fw)
+    fw.mock('mclGetPlayStatus', lambda *_: 2)  # playing
+    world.files[b'/tmp/q2-foo.sleep'] = b'until %d\n' % (world.now + 60)
+    addon_poll(fw, world)
+    world.now += 59
+    addon_poll(fw, world)
+    assert not fw.calls('player_play_pause')
+    world.now += 1
+    addon_poll(fw, world)
+    assert len(fw.calls('player_play_pause')) == 1 and b'/tmp/q2-foo.sleep' not in world.files
+
+
 def test_launch_waits_for_the_apps_page(fw):
     world = World(fw)
     a = ap(fw).a[0]
@@ -811,6 +1403,261 @@ def test_the_card_going_away_waits_three_seconds_at_most(fw):
     fw.mock('sleep_ms', lambda ms, *_: setattr(world, 'ms', world.ms + ms))
     fw.fn('addon_card_away', None)()
     assert len(fw.calls('sleep_ms')) == 60
+
+
+KEY_DOWN, KEY_UP, KEY_LONG = O['EVT_KEY_DOWN'], O['EVT_KEY_UP'], O['EVT_KEY_LONG']
+RETURN, CENTRE = O['KEY_RETURN'], 218
+SNAKE_SOCK = b'/tmp/q2-snake.input.sock'
+
+
+def settings(fw, **values):
+    """config.ini as Q2 Pod reads its settings: these keys' values, every other its default."""
+    wanted = {k.encode(): v for k, v in values.items()}
+    def read(path, section, key, out, default, *_):
+        value = wanted.get(C.string_at(key), C.string_at(default))
+        C.memmove(out, value + b'\0', len(value) + 1)
+    fw.mock('toolsReadConfig', read)
+
+
+class CardGame:
+    """Card games as Library's Games runs them: fork, exec and waitpid stubbed, what reaches a game's input
+    socket caught, toasts read, and the UI loop's addon_poll."""
+    PID = 4242
+
+    def __init__(self, fw, **games):
+        self.fw = fw
+        self.world = card(fw, **(games or {'snake': b'name=Snake\ngame=1\n'}))
+        self.sent, self.toasts, self.status, self.exited = [], [], 0, False
+        fw.mock('fw_fork', lambda *_: self.PID)
+        fw.mock('fw_socket', lambda *_: 9)
+        fw.mock('fw_sendto', lambda sock, buf, n, flags, to, *_: self.sent.append((C.string_at(to + 2), C.string_at(buf, n))))
+        fw.mock('fw_waitpid', self.waitpid)
+        fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8)))
+        fw.fn('addon_games', C.c_int)()
+
+    def waitpid(self, pid, status, options, *_):
+        assert pid == self.PID and options == 1  # WNOHANG: the UI loop never waits for it
+        if not self.exited:
+            return 0
+        C.c_int.from_address(status).value = self.status
+        return pid
+
+    def start(self, k=0):
+        return self.fw.fn('addon_game_start', C.c_int, C.c_int)(k)
+
+    def on(self):
+        return self.fw.fn('addon_game_on', C.c_int)()
+
+    def event(self, type, a, b=0):
+        e = block(self.fw, size=0x40)
+        C.c_int.from_address(e).value = type
+        C.c_int.from_address(e + 0x18).value, C.c_int.from_address(e + 0x1c).value = a, b  # EVENT_KEY is EVENT_X
+        return self.fw.fn('addon_game_input', C.c_int, C.c_void_p)(e)
+
+    def key(self, type, code):
+        return self.event(type, code)
+
+    def touch(self, type, x, y):
+        """A touch at the portrait panel's x, y."""
+        return self.event(type, x, y)
+
+    def poll(self, ms=16):
+        addon_poll(self.fw, self.world, ms)
+
+    def kills(self):
+        return [c[0] for c in self.world.of('system')]
+
+
+def test_card_games_are_games_rows_by_name_not_streaming_rows(fw):
+    CardGame(fw, snake=b'name=Snake\ngame=1\n', chess=b'name=chess\ngame=1\n', foo=b'name=Foo\n')
+    name = fw.fn('addon_game_name', C.c_char_p, C.c_int)
+    assert fw.fn('addon_games_last', C.c_int)() == 2 and [name(k) for k in range(-1, 3)] == [None, b'chess', b'Snake', None]
+    assert scan(fw) == 1 and names(fw, 'addon_name') == [None, b'Foo', None]
+    is_game = fw.fn('addon_is_game', C.c_int, C.c_char_p)
+    assert (is_game(b'snake'), is_game(b'chess'), is_game(b'foo'), is_game(b'none')) == (1, 1, 0, 0)
+
+
+def test_a_game_runs_over_the_screen_taking_the_wheels_raw_travel(fw):
+    g = CardGame(fw)
+    travel = fw.var('wheel_travel', C.c_int)
+    travel.value = 25  # the menu's spin before it
+    assert g.on() == 0 and g.start() == 1 and g.on() == g.PID
+    assert fw.var('wheel_raw', C.c_int).value == 1 and travel.value == 0
+    assert g.start() == 0 and len(fw.calls('fw_fork')) == 1  # one at a time
+    g.key(KEY_DOWN, CENTRE)
+    assert g.sent == [(SNAKE_SOCK, b'k d 218')]
+
+
+def test_the_child_runs_the_game_first_for_the_oom_killer_and_with_none_of_demos_files(fw):
+    g = CardGame(fw)
+    fw.mock('fw_fork', lambda *_: 0)
+    fw.mock('fw_open', lambda *_: 5)
+    g.start()
+    calls = fw.calls()
+    order = [n for n, _ in calls]
+    opened, wrote = fw.calls('fw_open')[0][1], fw.calls('fw_write')[0][1]
+    assert C.string_at(opened[0]) == b'/proc/self/oom_score_adj' and wrote[0] == 5 and C.string_at(wrote[1], wrote[2]) == b'1000'
+    execl = order.index('fw_execl')
+    closed = [a[0] for n, a in calls[:execl] if n == 'fw_close']
+    assert closed == [5, *range(3, 1024)]
+    binary = b'/mnt/mmc/.snake/q2-snake'
+    assert [C.string_at(p) if p else p for p in calls[execl][1][:3]] == [binary, binary, 0]
+    assert order[execl + 1] == 'child_exit' and calls[execl + 1][1][0] == 127  # its exec failed
+
+
+def test_a_game_off_the_card_says_so(fw):
+    g = CardGame(fw)
+    del g.world.files[b'/mnt/mmc/.snake/q2-snake']
+    assert g.start() == 0 and g.toasts == [b"It isn't on the card"] and not fw.calls('fw_fork')
+
+
+def test_a_game_the_app_store_is_replacing_waits_for_it(fw):
+    g = CardGame(fw)
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/snake', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app = 1, JOB_INSTALL, 0  # installing app 0, snake
+    assert g.start() == 0 and g.toasts == [b'Wait until the App Store finishes'] and not fw.calls('fw_fork')
+    sh.running = 0
+    assert g.start() == 1
+
+
+def test_a_fork_that_fails_runs_nothing(fw):
+    g = CardGame(fw)
+    fw.mock('fw_fork', lambda *_: -1)
+    assert g.start() == 0 and g.on() == 0 and fw.var('wheel_raw', C.c_int).value == 0
+
+
+@pytest.mark.parametrize('type,code,sent', [
+    (KEY_DOWN, RETURN, b'k d 170'), (KEY_UP, RETURN, b'k u 170'), (KEY_DOWN, CENTRE, b'k d 218'), (KEY_UP, CENTRE, b'k u 218'),
+    (KEY_LONG, CENTRE, None), (KEY_LONG, RETURN, None),
+])
+def test_keys_reach_the_game_by_awtks_codes(fw, type, code, sent):
+    g = CardGame(fw)
+    g.start()
+    assert g.key(type, code) == 1 and g.sent == ([(SNAKE_SOCK, sent)] if sent else [])
+
+
+@pytest.mark.parametrize('type,what', [(0xff, b'd'), (0x100, b'd'), (0x101, b'm'), (0x102, b'm'), (0x103, b'u'), (0x104, b'u'), (0x107, b'u')])
+def test_touches_reach_the_game_in_the_landscape_views_pixels(fw, type, what):
+    g = CardGame(fw)
+    g.start()
+    # the view is the panel turned anticlockwise: the panel's top left (0, 0) is its bottom left (0, 319)
+    assert g.touch(type, 0, 0) == 1 and g.touch(type, 319, 374) == 1 and g.touch(type, 10, 200) == 1
+    assert g.sent == [(SNAKE_SOCK, b't %s %s' % (what, xy)) for xy in (b'0 319', b'374 0', b'200 309')]
+
+
+def test_other_events_are_the_games_but_say_nothing(fw):
+    g = CardGame(fw)
+    g.start()
+    assert g.event(0x105, 1, 2) == 1 and g.event(O['EVT_CLICK'], 1, 2) == 1 and g.sent == []
+
+
+@pytest.mark.parametrize('code', [O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']])
+@pytest.mark.parametrize('type', [KEY_DOWN, KEY_UP, KEY_LONG])
+def test_play_and_the_side_buttons_stay_the_musics(fw, code, type):
+    g = CardGame(fw)
+    g.start()
+    assert g.key(type, code) == 0 and g.sent == []
+
+
+def test_with_no_game_running_input_is_stocks(fw):
+    g = CardGame(fw)
+    running_ = fw.fn('addon_game_input', C.c_int, C.c_void_p)
+    assert g.key(KEY_DOWN, RETURN) == 0 and g.touch(0xff, 1, 1) == 0 and running_(None) == 0 and g.sent == []
+    g.start()
+    assert running_(None) == 1
+
+
+def held(g):
+    """Return held on a running game, from an odd ms (| 1 stamps it as it is), until its TERM: that ms."""
+    g.start()
+    g.world.ms = 1001
+    g.key(KEY_DOWN, RETURN)
+    g.key(KEY_DOWN, RETURN)  # its repeat: not a new press
+    g.poll(699)
+    assert g.kills() == []
+    g.poll(1)
+    assert g.kills() == [b'kill 4242']
+    return g.world.ms
+
+
+def test_return_held_ends_the_game_and_its_long_press_and_release_are_dropped(fw):
+    g = CardGame(fw)
+    held(g)
+    assert g.key(KEY_LONG, RETURN) == 1 and g.key(KEY_UP, RETURN) == 1
+    assert g.sent == [(SNAKE_SOCK, b'k d 170')] * 2  # neither sent: the game was told to end
+    assert g.key(KEY_DOWN, RETURN) == 1 and g.sent[-1] == (SNAKE_SOCK, b'k d 170')  # still running: the next is its
+
+
+def test_the_held_returns_release_after_the_game_has_gone_stays_out_of_stocks_games(fw):
+    g = CardGame(fw)
+    held(g)
+    g.exited = True
+    g.poll()
+    assert g.on() == 0 and g.key(KEY_UP, RETURN) == 1 and g.key(KEY_DOWN, RETURN) == 0
+
+
+def test_a_game_still_there_three_seconds_after_its_term_is_killed(fw):
+    g = CardGame(fw)
+    term = held(g)
+    g.poll(2999)
+    assert g.kills() == [b'kill 4242'] and g.world.ms == term + 2999
+    g.poll(1)
+    assert g.kills() == [b'kill 4242', b'kill -9 4242']
+
+
+def test_the_wheels_travel_reaches_the_game_once_a_pass(fw):
+    g = CardGame(fw)
+    g.start()
+    travel = fw.var('wheel_travel', C.c_int)
+    travel.value = -37
+    g.poll()
+    assert g.sent == [(SNAKE_SOCK, b'w -37')] and travel.value == 0
+    g.poll()
+    assert len(g.sent) == 1
+
+
+def test_a_game_left_idle_two_minutes_is_ended(fw):
+    g = CardGame(fw)
+    g.start()
+    g.poll(119999)
+    g.key(KEY_DOWN, CENTRE)  # input: idle from here
+    g.poll(119999)
+    assert g.kills() == []
+    g.poll(1)
+    assert g.kills() == [b'kill 4242']
+
+
+def test_smart_awake_keeps_an_idle_game(fw):
+    settings(fw, KEEPLIT=b'1')
+    g = CardGame(fw)
+    g.start()
+    g.poll(120000)
+    g.poll(120000)
+    assert g.kills() == [] and g.on() == g.PID
+
+
+@pytest.mark.parametrize('status,toast', [(0, []), (127 << 8, [b"It couldn't start"]), (9, [])])
+def test_a_game_that_has_gone_gives_the_screen_back(fw, status, toast):
+    g = CardGame(fw)
+    g.start()
+    g.exited, g.status = True, status
+    g.poll()
+    assert g.on() == 0 and fw.var('wheel_raw', C.c_int).value == 0 and fw.calls('fw_close')[-1][1][0] == 9
+    assert len(fw.calls('widget_invalidate_force')) == 1 and g.toasts == toast  # its exec failed: the child's 127
+    assert g.key(KEY_DOWN, RETURN) == 0  # input is stock's again
+
+
+def test_the_screen_and_standby_stay_on_while_a_game_runs(fw):
+    g = CardGame(fw)
+    g.start()
+    g.poll()
+    assert [c[1][:3] for c in fw.calls('reset_poweroptions_timer')] == [(1, 1, 1)]
+    g.exited = True
+    g.poll()
+    g.poll()
+    assert len(fw.calls('reset_poweroptions_timer')) == 1
 
 
 def card_id(fw, path):
@@ -1945,6 +2792,114 @@ def test_hostile_replies_through_the_page(fw):
     fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.page, None)
 
 
+def sized(p):
+    """scroll_view_create as stock's: the view as tall as page_list asks (rows_view), each list made counted."""
+    lists = []
+    def create(parent, x, y, w, h, *_):
+        C.c_int.from_address(p.view + W_H).value = h
+        lists.append(h)
+        p.drawn = 0
+        return p.view
+    p.fw.mock('scroll_view_create', create)
+    return lists
+
+
+@pytest.mark.parametrize('first,lists', [(2, 2), (ADDON_ROWS, 1)])
+def test_a_short_first_page_is_drawn_again_with_the_next(fw, first, lists):
+    p = Page(fw)
+    made = sized(p)
+    p.answer(msg=b'pages', cursor=b'c0', rows=rows_of(0, first))
+    assert p.drawn == first + 1  # its rows and Loading…
+    p.answer(rows=rows_of(first, 2))
+    # a short page's list was shrunk to its rows: made again; a full one's rows are added in place of Loading…
+    assert len(made) == lists and p.top.n == first + 2 and p.drawn == (first + 2 if lists == 2 else first + 3)
+    assert len(fw.calls('widget_destroy')) == 2 - lists
+
+
+def key_event(fw, code):
+    e = block(fw, size=0x40)
+    C.c_int.from_address(e + 0x18).value = code  # EVENT_KEY
+    return e
+
+
+def search_box(fw):
+    """A page whose first row is a search, its box open from the title bar's icon, and the rows its level drew."""
+    p = Page(fw)
+    edit = block(fw, size=4096)
+    fw.mock('widget_factory_create_widget', lambda f, kind, *_: edit if C.string_at(kind) == b'edit' else p.view)
+    p.answer(rows=[SEARCH, item(1)])
+    shown = p.drawn
+    fw.fn('addon__find_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert p.pg.edit == edit and p.pg.view is None
+    return p, edit, shown
+
+
+def test_leaving_the_search_box_shows_its_level_again(fw):
+    p, _, shown = search_box(fw)
+    fw.fn('addon__search_left', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fire(p)
+    assert p.pg.view and not p.pg.edit and p.pg.depth == 1 and p.drawn == shown
+
+
+def test_the_search_boxs_blur_after_its_ok_keeps_the_search(fw):
+    p, _, _ = search_box(fw)
+    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, b'abc\0', 4) and 0)
+    fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__search_left', C.c_int, C.c_void_p, C.c_void_p)(None, None)  # the keyboard's close blurs it
+    fire(p)
+    assert p.pg.depth == 2 and p.top.op == b'search' and p.top.args == b'\tabc'
+
+
+def test_return_in_the_search_box_empties_it_and_stays(fw):
+    p, edit, _ = search_box(fw)
+    keyup = fw.fn('addon__keyup', C.c_int, C.c_void_p, C.c_void_p)
+    timers = p.timers
+    assert keyup(None, key_event(fw, CENTRE)) == 0 and p.timers == timers  # stock's
+    assert keyup(None, key_event(fw, RETURN)) == 11 and p.timers == timers + 1  # RET_STOP: its leave, next pass
+    p.back()
+    texts = [C.string_at(a[1]) for _, a in fw.calls('widget_set_text_utf8') if a[0] == edit]
+    assert texts[-1] == b'' and (edit, 0) in [a[:2] for _, a in fw.calls('widget_set_focused')]
+    assert p.backs == 0 and p.pg.depth == 1
+
+
+def test_a_remote_row_opens_the_apps_code_over_its_page(fw):
+    p = Page(fw)
+    p.world.files[b'/tmp/q2-foo.state'] = qr_state()
+    p.answer(rows=[(b'remote', b'', b'Phone', b'', b'', b'')])
+    code = block(fw, size=4096)
+    fw.mock('window_create', lambda *_: code)
+    p.click(0)
+    qp = fw.var('addon__qp', Qp)
+    assert qp.page == code and C.string_at(qp.state) == b'/tmp/q2-foo.state' and C.string_at(qp.hex) == HEX21
+    assert p.pg.page == p.page and p.pg.depth == 1 and p.backs == 0
+
+
+def test_a_page_that_cant_open_leaves_nothing_behind(fw):
+    p = Page(fw, opens=False)
+    fw.mock('window_create', lambda *_: 0)
+    fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert not p.pg.page and not p.pg.lv and not p.pg.f and p.world.of('system') == []  # nor the app started
+    fw.mock('window_create', lambda *_: p.page)
+    fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    assert p.pg.page == p.page and p.top.op == b'menu'
+
+
+@pytest.mark.parametrize('manifest,path,logs', [
+    (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo/a.flac', 0),
+    (b'name=Foo\r\nscrobble=0\r\n', b'/mnt/mmc/.foo/a.flac', 0),  # a Windows editor's line ends
+    (b'name=Foo\nscrobble=1\n', b'/mnt/mmc/.foo/a.flac', 1),
+    (b'name=Foo\n', b'/mnt/mmc/.foo/a.flac', 1),
+    (b'name=Foo\nscrobble=no\n', b'/mnt/mmc/.foo/a.flac', 1),  # as text: only 0 keeps them out
+    (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/Music/a.flac', 1),  # outside any app's folder
+    (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.bar/a.flac', 1),   # an app folder with no manifest
+    (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo', 1),
+])
+def test_an_app_keeps_its_folders_songs_out_of_the_scrobble_log(fw, manifest, path, logs):
+    card(fw, foo=manifest)
+    assert fw.fn('addon_scrobbles', C.c_int, C.c_char_p)(path) == logs
+
+
 def goes(fw, path):
     return fw.fn('addon_goes', C.c_int, C.c_char_p)(path)
 
@@ -2017,14 +2972,18 @@ def test_a_qr_app_shows_its_code_at_the_first_answer(fw):
 
 class Qr:
     def __init__(self, fw, raw):
-        self.fw, self.texts, self.shown = fw, [], {}
+        self.fw, self.texts, self.shown, self.widths = fw, [], {}, {}
         self.world = World(fw, {} if raw is None else {b'/tmp/q2-a.state': raw})
         self.ids = [100]
         def widget(*_):
             self.ids[0] += 8
             return self.ids[0]
+        def view(factory, kind, parent, x, y, w, *_):  # its height is a seventh argument, past a stub's six
+            made = widget()
+            self.widths[made] = w
+            return made
         fw.mock('window_create', lambda *_: 99)
-        fw.mock('widget_factory_create_widget', widget)
+        fw.mock('widget_factory_create_widget', view)
         fw.mock('hscroll_label_create', widget)
         fw.mock('widget_set_text_utf8', lambda w, s, *_: self.texts.append(C.string_at(s)))
         fw.mock('widget_set_visible', lambda w, on, *_: self.shown.__setitem__(w, on))
@@ -2120,6 +3079,129 @@ def test_hostile_status_files(fw):
         q.again(raw)
         if q.code:
             paint(q.qp.qr, canvas)  # a hidden widget isn't painted
+
+
+def test_the_code_is_read_again_only_while_the_screen_is_lit(fw):
+    q = Qr(fw, qr_state(pin=b'111111'))
+    tick = fw.fn('addon__qr_tick', C.c_int, C.c_void_p)
+    q.world.files[b'/tmp/q2-a.state'] = qr_state(pin=b'222222')
+    lit = fw.var('g_backlight_status', C.c_ubyte)
+    lit.value = 0
+    assert tick(None) == 8 and b'222 222' not in q.texts  # RET_REPEAT
+    lit.value = 1
+    assert tick(None) == 8 and b'222 222' in q.texts
+
+
+def test_return_on_the_code_goes_back(fw):
+    q = Qr(fw, qr_state())
+    timers = []
+    fw.mock('timer_add', lambda fn, *_: timers.append(fn) or len(timers))
+    keyup = fw.fn('addon__qr_keyup', C.c_int, C.c_void_p, C.c_void_p)
+    assert keyup(None, key_event(fw, CENTRE)) == 0 and timers == []
+    assert keyup(None, key_event(fw, RETURN)) == 11 and len(timers) == 1  # RET_STOP: its leave, next pass
+    assert not fw.calls('navigator_back')
+    C.CFUNCTYPE(C.c_int, C.c_void_p)(timers[0])(None)
+    assert len(fw.calls('navigator_back')) == 1 and q.qp.leave == 0
+
+
+def test_a_code_page_that_cant_open_keeps_nothing(fw):
+    World(fw)
+    fw.mock('window_create', lambda *_: 0)
+    fw.fn('addon__qr_open', None, C.c_char_p, C.c_char_p)(b'/tmp/q2-a.state', b'Title')
+    qp = fw.var('addon__qp', Qp)
+    assert not qp.page and not qp.hex and not qp.timer
+
+
+@pytest.fixture(scope='module')
+def settings_read(library):
+    """navigation.c's st.settings_read in this build (test_navigation.py's scratch): theme() reads config.ini once."""
+    return host.offsets(library.parent/'navigation.o', 'scratch_t')['settings_read']
+
+
+def boot(fw, settings_read, theme):
+    """theme() as a boot under theme has it: config.ini read again at its next use."""
+    settings(fw, THEME=theme)
+    C.c_int.from_address(C.addressof(fw.var('st', C.c_char)) + settings_read).value = 0
+
+
+def drawn(fw, paint, rounds=True):
+    """What paint(canvas) draws: the rounded plates it asks for, (x, y, w, h, colour), and its fills, (x, y, w, h,
+    the colour set then). A canvas that can't round (rounds False) leaves it to fill square ones."""
+    lcd, canvas = block(fw, size=4096), block(fw, size=4096)
+    C.c_void_p.from_address(canvas + CANVAS_LCD).value = lcd
+    plates, fills, ink = [], [], [0]
+    def rounded(c, r, g, colour, radius, *_):
+        if rounds:
+            plates.append((*C.cast(r, C.POINTER(C.c_int))[:4], C.c_uint.from_address(colour).value))
+        return 0 if rounds else 1
+    fw.mock('canvas_fill_rounded_rect', rounded)
+    fw.mock('canvas_set_fill_color', lambda c, colour, *_: ink.__setitem__(0, colour & 0xffffffff))
+    fw.mock('canvas_fill_rect', lambda c, *box: fills.append((*(C.c_int(v).value for v in box[:4]), ink[0])))  # ints
+    paint(canvas)
+    return plates, fills
+
+
+def paint_of(fw, widget):
+    return lambda canvas: fw.fn('addon_paint', None, C.c_void_p, C.c_void_p)(widget, canvas)
+
+
+def code_in(plate, fills, n=21):
+    """A code whose every module is dark (HEX21's), each row one rectangle, centred in the plate drawn inside a
+    quiet zone of two modules, its modules as big as that leaves room for; their side."""
+    x, y, side, high = plate[:4]
+    m = fills[0][3]
+    left = fills[0][0] - x
+    right = side - left - n * m
+    assert side == high and [f[:4] for f in fills] == [(x + left, y + left + r * m, n * m, m) for r in range(n)]
+    assert abs(left - right) <= 1 and min(left, right) >= 2 * m and (n + 4) * (m + 1) > side
+    return m
+
+
+def test_classics_code_is_smaller_on_a_shadowed_plate_its_name_the_bars(fw, settings_read):
+    looks = []
+    for theme in (b'0', b'1'):  # Minimal, then Classic
+        boot(fw, settings_read, theme)
+        named = len(fw.calls('widget_set_name'))
+        q = Qr(fw, qr_state())
+        plates, fills = drawn(fw, paint_of(fw, q.qp.qr))
+        looks.append(dict(titled=b'_page_title' in [C.string_at(a[1]) for _, a in fw.calls('widget_set_name')[named:]],
+                          plates=plates, module=code_in(plates[-1], fills), view=q.widths[q.qp.qr]))
+        assert b'Title' in q.texts and plates[-1][2] == q.widths[q.qp.qr]  # the plate is the code's whole view
+        fw.fn('addon__qr_closed', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    minimal, classic = looks
+    assert not minimal['titled'] and len(minimal['plates']) == 1
+    assert classic['titled'] and len(classic['plates']) == 2  # its title the bar's; a shadow first, under the plate
+    (sx, sy, sw, sh, shade), (px, py, pw, ph, white) = classic['plates']
+    assert sx < px and sy < py and sx + sw > px + pw and sy + sh > py + ph and shade >> 24 < white >> 24
+    assert classic['view'] < minimal['view'] and classic['module'] < minimal['module']
+
+
+def test_classics_progress_bar_is_its_scrubbers_rows(fw, settings_read):
+    height = fw.fn('addon__progress_h', C.c_int)
+    boot(fw, settings_read, b'0')
+    strip = height()  # Minimal's flat strip
+    boot(fw, settings_read, b'1')  # Classic, whose scrubber is rows
+    gloss = height()
+    Page(fw)
+    fw.mock('widget_get_prop_int', lambda w, name, default, *_: 250 if C.string_at(name) == b'_pml' else default)
+    bars = []
+    for h in (strip, gloss):
+        bar = block(fw, size=4096)
+        C.c_int.from_address(bar + W_W).value, C.c_int.from_address(bar + W_H).value = 300, h
+        bars.append(drawn(fw, paint_of(fw, bar)))
+    rows = fw.fn('paint_rows_bar', None, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int, C.c_int)
+    scrubber = drawn(fw, lambda canvas: rows(canvas, 0, 0, 300, gloss, 300 * 250 // 1000))
+    # Minimal's strip isn't Classic's bar; Classic's is the scrubber's rows, the played quarter of its width over them
+    assert strip != gloss and bars == [([], []), scrubber] and scrubber[1]
+
+
+@pytest.mark.parametrize('theme', [b'0', b'1'])  # Minimal, Classic
+def test_a_canvas_that_cant_round_gets_square_plates(fw, theme):
+    settings(fw, THEME=theme)
+    q = Qr(fw, qr_state())
+    plates, code = drawn(fw, paint_of(fw, q.qp.qr))
+    # each plate filled square where it would have been rounded, in its colour, under the same code
+    assert plates and drawn(fw, paint_of(fw, q.qp.qr), rounds=False) == ([], plates + code)
 
 
 def worker(fw, script, connect=0):
@@ -2482,6 +3564,269 @@ def test_hostile_requests(fw):
             for f in q.files():
                 assert f[:1] in (b'a', b'i') and f[1:].lower().endswith(b'.m3u') and b'/' not in f and len(f) <= 1 + 63 + 4
     assert libup(fw).list
+
+
+class Library:
+    """A card app's library request run by addon_poll's passes: its file in /tmp; the windows open (the window
+    manager's children, the status bar among them); stock's scan dialog, whose own loop polls while the scan
+    runs; the database's playlists, which Playlists' list (p_deque_playlist) holds only once Library → Playlists
+    has loaded it (load_localclass_list 0xf00b), empty before; and stock's Import Playlists, whose listing of
+    LIB_DIR is addon_m3u_dir's, which replaces or creates a playlist named after each file it imports, stopping
+    at a create that fails, and reloads the list."""
+    def __init__(self, fw, *exports, playlists=(), windows=(b'home_page',), **apps):
+        self.fw, self.keep = fw, []
+        self.world = card(fw, **(apps or {'foo': b'name=Foo\n'}))
+        self.world.files[b'/tmp/mmc_add'] = b''  # the card is in
+        self.exports = [e.encode() for e in exports]
+        for name in self.exports:
+            self.world.files[LIB_DIR.encode() + name] = b''
+        scan(fw)
+        self.deques = Deques(fw)
+        self.stored = list(playlists)
+        self.playlists, self.shown = self.deques.new(), self.deques.new()
+        fw.var('fw_ctx_p_deque_playlist', C.c_uint).value = self.playlists
+        fw.var('fw_ctx_p_deque_showlist', C.c_uint).value = self.shown
+        fw.mock('stock_localclass_trampoline', self.load)
+        self.bar = text(b'status_bar')
+        fw.var('fw_ctx_system_bar', C.c_void_p).value = C.addressof(self.bar)
+        self.show(*windows)
+        fw.mock('widget_count_children', lambda *_: len(self.open))
+        fw.mock('widget_get_child', lambda wm, i, *_: C.addressof(self.open[i]))
+        fw.mock('widget_get_prop_str', lambda w, key, default, *_: w)  # a window here is its name
+        self.scans, self.toasts, self.imports, self.scanning = 0, [], [], False
+        self.dialog, self.lingers, self.result, self.refused = True, False, 0, set()
+        fw.mock('navigator_to_with_context', self.navigate)
+        fw.mock('navigator_window_is_exist', lambda name, *_: self.scanning and C.string_at(name) == b'updatemusic_dialog')
+        fw.mock('toolsGetDirectoryM3u8', self.listing)
+        fw.mock('importPlayList', self.import_)
+
+    def record(self, offset, value):
+        chars, r = C.create_string_buffer(value), C.create_string_buffer(0x60)
+        struct.pack_into('<Q', r, offset, C.addressof(chars))
+        self.keep += [chars, r]
+        return C.addressof(r)
+
+    def reload(self):
+        self.deques[self.playlists][:] = [self.record(REC_NAME, name) for name in self.stored]
+
+    def load(self, cls, *_):
+        """Stock's load_localclass_list: Playlists' (0xf00b) reads the database's into p_deque_playlist and
+        shows them."""
+        if cls != 0xf00b:
+            return 0
+        self.reload()
+        self.deques[self.shown][:] = self.deques[self.playlists]
+        return len(self.stored)
+
+    def show(self, *windows):
+        self.open = [self.bar, *(text(w) for w in windows)]
+
+    def navigate(self, name, ctx, *_):
+        name = C.string_at(name)
+        if name == b'dialog/updatemusic_dialog':  # its own loop until the scan is over
+            self.scans += 1
+            self.scanning = self.dialog
+            self.poll()
+            self.poll()
+            self.scanning = self.dialog and self.lingers
+        elif name == b'dialog/msginfo_dialog':  # a toast, whose dialog runs a loop of its own too
+            self.toasts.append(C.string_at(ctx + 8))
+            self.poll()
+
+    def listing(self, folder, dq, *_):
+        assert C.string_at(folder) == LIB_DIR.encode()
+        self.deques[dq][:] = [self.record(REC_PATH, LIB_DIR.encode() + e) for e in self.exports]
+        return len(self.exports)
+
+    def import_(self, *_):
+        listed = self.deques.new()
+        n = self.fw.fn('addon_m3u_dir', C.c_int, C.c_char_p, C.c_void_p)(LIB_DIR.encode(), listed)
+        names = [string_at(r, REC_PATH)[len(LIB_DIR):] for r in self.deques[listed]]
+        assert n == len(names)
+        self.imports.append(names)
+        for name in names:
+            if name in self.refused:  # a failed create stops stock, which returns as if done
+                break
+            self.stored = [s for s in self.stored if s != name[:-4]] + [name[:-4]]  # a same-named one replaced
+        self.reload()
+        return self.result
+
+    def request(self, raw, app=b'foo'):
+        self.world.files[b'/tmp/q2-%s.library' % app] = raw
+
+    def answer(self, app=b'foo'):
+        return self.world.files.get(b'/tmp/q2-%s.library.done' % app)
+
+    def poll(self):
+        addon_poll(self.fw, self.world)
+
+
+def test_an_apps_request_scans_then_imports_what_it_names_and_answers(fw):
+    lib = Library(fw, 'a.m3u', 'b.m3u', 'c.m3u', 'mine.m3u', playlists=[b'c'])
+    lib.request(f'7\nscan\nimport {LIB_DIR}a.m3u\nadd {LIB_DIR}b.m3u\nadd {LIB_DIR}c.m3u\n'.encode())
+    lib.poll()
+    assert lib.scans == 1 and lib.imports == [] and lib.answer() is None
+    lib.poll()
+    # what it named, but not an add whose playlist is there already, nor the user's own export beside them
+    assert lib.imports == [[b'a.m3u', b'b.m3u']] and not libup(fw).only
+    assert lib.answer() == f'7 ok\nexists {LIB_DIR}c.m3u\n'.encode() and lib.toasts == [b'Playlists updated']
+    lib.poll()
+    assert lib.scans == 1 and len(lib.imports) == 1 and libup(fw).state == L_IDLE  # done once
+
+
+def test_playlists_are_loaded_before_the_adds_are_looked_up(fw):
+    lib = Library(fw, 'b.m3u', playlists=[b'b'])  # in the database, but Playlists not opened since the boot
+    assert lib.deques[lib.playlists] == []
+    lib.request(f'7\nadd {LIB_DIR}b.m3u\n'.encode())
+    lib.poll()
+    assert lib.imports == [] and lib.answer() == f'7 ok\nexists {LIB_DIR}b.m3u\n'.encode()
+
+
+@pytest.mark.parametrize('window', [b'localmusic_page', b'unknown_page', b''])
+def test_a_window_that_may_hold_library_records_holds_the_request(fw, window):
+    lib = Library(fw, 'a.m3u', windows=(b'home_page', window, b'playing_page'))
+    lib.request(f'7\nscan\nimport {LIB_DIR}a.m3u\n'.encode())
+    lib.poll()
+    lib.poll()
+    assert lib.scans == 0 and lib.answer() is None and libup(fw).state == L_WAIT
+    lib.show(b'home_page', b'playing_page', b'addon_page', b'qrcode_page', b'equalizer_page')
+    lib.poll()
+    lib.poll()
+    assert lib.scans == 1 and lib.answer() == b'7 ok\n'
+
+
+def test_an_import_waits_for_a_window_too(fw):
+    lib = Library(fw, 'a.m3u', windows=(b'localmusic_page',))
+    lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
+    lib.poll()
+    assert libup(fw).state == L_IMPORT and lib.imports == []
+    lib.show(b'stream_page')
+    lib.poll()
+    assert lib.imports == [[b'a.m3u']]
+
+
+@pytest.mark.parametrize('status,lit,airplay,receiver,holds', [
+    (2, 0, 0, 0, 1),  # the player playing
+    (3, 1, 0, 0, 1),  # paused under a lit screen: the scan's dialog would stop it, losing its place
+    (3, 0, 0, 0, 0),
+    (1, 1, 0, 0, 0),  # stopped
+    (1, 0, 2, 0, 1),  # AirPlay
+    (1, 0, 0, 2, 1),  # the Bluetooth receiver
+])
+def test_what_plays_holds_the_scan(fw, status, lit, airplay, receiver, holds):
+    lib = Library(fw)
+    fw.mock('mclGetPlayStatus', lambda *_: status)
+    fw.mock('airplayGetFlag', lambda *_: airplay)
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    fw.var('bt__recv_pageflag', C.c_ubyte).value = receiver
+    lib.request(b'7\nscan\n')
+    lib.poll()
+    assert lib.scans == 1 - holds and libup(fw).state == (L_WAIT if holds else L_SCAN)
+
+
+def test_a_paused_song_under_a_lit_screen_lets_an_import_run(fw):
+    lib = Library(fw, 'a.m3u')
+    fw.mock('mclGetPlayStatus', lambda *_: 3)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
+    lib.poll()
+    assert lib.imports == [[b'a.m3u']]
+
+
+def test_the_import_waits_for_the_scan_to_be_over(fw):
+    lib = Library(fw, 'a.m3u')
+    lib.lingers = True  # its thread still running once the dialog is gone
+    lib.request(f'7\nscan\nimport {LIB_DIR}a.m3u\n'.encode())
+    lib.poll()
+    lib.poll()
+    assert lib.imports == [] and libup(fw).state == L_SCAN
+    lib.scanning = False
+    lib.poll()
+    assert lib.imports == [[b'a.m3u']] and lib.answer() == b'7 ok\n'
+
+
+def test_a_scan_alone_is_answered_once_it_is_over(fw):
+    lib = Library(fw)
+    lib.request(b'7\nscan\n')
+    lib.poll()
+    lib.poll()
+    assert lib.answer() == b'7 ok\n' and lib.imports == [] and lib.toasts == []
+
+
+def test_a_scan_never_seen_is_an_error_not_an_ok(fw):
+    lib = Library(fw)
+    lib.dialog = False  # its dialog never opened
+    lib.request(b'7\nscan\n')
+    lib.poll()
+    lib.poll()
+    assert lib.scans == 1 and lib.answer() == b"7 error Couldn't start the scan\n"
+
+
+def test_a_playlist_stock_didnt_create_is_the_answer(fw):
+    lib = Library(fw, 'a.m3u', 'big one.m3u')
+    lib.refused.add(b'big one.m3u')  # the 100 playlists' cap, say
+    lib.request(f'7\nimport {LIB_DIR}a.m3u\nimport {LIB_DIR}big one.m3u\n'.encode())
+    lib.poll()
+    assert lib.answer() == b"7 error Couldn't import big one\n" and lib.toasts == [b"Couldn't import big one"]
+
+
+def test_the_card_gone_during_the_import_is_the_answer(fw):
+    lib = Library(fw, 'a.m3u')
+    lib.result = -2
+    lib.request(f'7\nimport {LIB_DIR}a.m3u\n'.encode())
+    lib.poll()
+    assert lib.answer() == b'7 error No memory card\n' and lib.toasts == [b'No memory card']
+
+
+def test_adds_whose_playlists_are_there_import_nothing(fw):
+    lib = Library(fw, 'c.m3u', 'd.m3u', playlists=[b'c', b'd'])
+    lib.request(f'7\nadd {LIB_DIR}c.m3u\nadd {LIB_DIR}d.m3u\n'.encode())
+    lib.poll()
+    assert lib.imports == [] and lib.toasts == []
+    assert lib.answer() == f'7 ok\nexists {LIB_DIR}c.m3u\nexists {LIB_DIR}d.m3u\n'.encode()
+
+
+@pytest.mark.parametrize('there', [b'c.m3u', b'c.m', b'cc', b'', b'd'])
+def test_an_add_is_left_alone_only_for_a_playlist_of_its_whole_name(fw, there):
+    lib = Library(fw, 'c.m3u', playlists=[there])
+    lib.request(f'7\nadd {LIB_DIR}c.m3u\n'.encode())
+    lib.poll()
+    assert lib.imports == [[b'c.m3u']]
+
+
+def test_requests_are_looked_at_every_half_second(fw):
+    lib = Library(fw)
+    poll = fw.fn('addon_poll', None)
+    lib.request(b'7\n')
+    poll()
+    assert lib.answer() == b'7 ok\n'
+    lib.request(b'8\n')
+    lib.world.ms += 499
+    poll()
+    assert lib.answer() == b'7 ok\n'
+    lib.world.ms += 1
+    poll()
+    assert lib.answer() == b'8 ok\n'
+
+
+def test_one_request_at_a_time_and_none_from_a_dialogs_own_loop(fw):
+    lib = Library(fw, 'a.m3u', foo=b'name=Alpha\n', bar=b'name=Beta\n')
+    lib.request(f'7\nscan\nimport {LIB_DIR}a.m3u\n'.encode(), b'foo')
+    lib.request(b'5\n', b'bar')
+    lib.poll()
+    assert lib.scans == 1 and lib.answer(b'bar') is None  # its scan dialog's polls took nothing
+    lib.poll()
+    # foo's answered before its toast, whose own loop polled with no request running: that took none either
+    assert lib.answer(b'foo') == b'7 ok\n' and lib.toasts == [b'Playlists updated'] and lib.answer(b'bar') is None
+    lib.poll()
+    assert lib.answer(b'bar') == b'5 ok\n' and lib.imports == [[b'a.m3u']]
+
+
+def test_stocks_own_import_row_still_gets_the_whole_folder(fw):
+    lib = Library(fw, 'a.m3u', 'mine.m3u')
+    listed = lib.deques.new()
+    assert fw.fn('addon_m3u_dir', C.c_int, C.c_char_p, C.c_void_p)(LIB_DIR.encode(), listed) == 2
+    assert [string_at(r, REC_PATH) for r in lib.deques[listed]] == [f'{LIB_DIR}a.m3u'.encode(), f'{LIB_DIR}mine.m3u'.encode()]
 
 
 def scope(fw):
