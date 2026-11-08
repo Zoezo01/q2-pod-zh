@@ -31,6 +31,21 @@ if libc.mmap(0x400000, 0x800000, 3, 0x100022, -1, 0) != 0x400000:  # read/write,
                             '(a non-PIE python lives there); use one built with -pie, e.g. actions/setup-python\'s or a venv of a PIE build', returncode=4)
 
 
+# Strings at chosen addresses: stock's records hold 4-byte pointers a word apart and P() reads 8 here, so a test puts
+# a field's string where its word is the low half and the next field's the high one, in a page mapped for it. Each
+# file takes its high halves from high_halves, which hands none out twice: no two files' pages meet, in any order.
+# From 0x1001: past AddressSanitizer's shadow (to 0x10007fff7fff), short of its heap (0x500000000000).
+_high = 0x1001
+
+
+def high_halves(n):
+    """n high halves no other caller gets this session, as a range: an index past its end fails."""
+    global _high
+    start, _high = _high, _high + n
+    assert _high <= 0x5000, 'out of high halves'
+    return range(start, _high)
+
+
 @pytest.fixture(scope='session')
 def library(tmp_path_factory):
     if os.environ.get('Q2_FW_LIBRARY'):  # one already built: test/cmut/run.py links each mutant's
