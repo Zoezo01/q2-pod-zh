@@ -78,6 +78,7 @@ def api(fw):
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
            'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr), 'coverflow__build_art': (None, ptr),
+           'coverflow__worker': (ptr, ptr), 'coverflow__strike': (None,), 'coverflow_clean_end': (None,),
            'thumb': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
@@ -1498,6 +1499,46 @@ def test_build_art_holds_both_stock_locks_round_stock_s_call(fw):
     g.build_art(r(j))
     assert [k for k, _ in order] == ['lock', 'lock', 'unlock', 'unlock']
     assert order[0][1] == order[3][1] and order[1][1] == order[2][1] and order[0][1] != order[1][1]
+
+
+BUILDING = '/mnt/mmc/.coverflow/building'
+
+
+def test_the_worker_notes_each_album_before_its_build_and_drops_the_note_after_the_last(fw):
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b'', '/m/b.mp3': b''})
+    builder(fw, card, ff=0)
+    noted = []
+    fw.mock('toolsGetAlbumCover', lambda *_: noted.append(card.files.get(BUILDING)) or 0)
+    jobs = (Job * 2)(Job(b'/m/a.mp3', 0xa, 0), Job(b'/m/b.mp3', 0xb, 0))
+    c = cf(fw)
+    c.jobs, c.total, c.done, c.cancel = C.addressof(jobs), 2, 0, 0
+    assert g.worker(None) is None and c.done == 2
+    assert noted == [struct.pack('<I', 0xa), struct.pack('<I', 0xb)]
+    assert set(card.files) == {'/m/a.mp3', '/m/b.mp3', art(0xa), art(0xb)}  # no note, no temporary
+
+
+def test_strike_marks_the_album_the_last_build_never_finished_and_drops_the_note(fw):
+    g = api(fw)
+    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc)})
+    g.strike()
+    assert card.files == {art(0xabc): b''}
+
+
+def test_strike_leaves_a_cover_that_was_made_and_no_note_marks_nothing(fw):
+    g = api(fw)
+    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc), art(0xabc): b'art'})
+    g.strike()
+    assert card.files == {art(0xabc): b'art'}
+    g.strike()
+    assert card.files == {art(0xabc): b'art'}
+
+
+def test_a_clean_end_drops_the_note(fw):
+    g = api(fw)
+    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc)})
+    g.coverflow_clean_end()
+    assert card.files == {}
 
 
 def png(w, h):

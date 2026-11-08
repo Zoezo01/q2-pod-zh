@@ -461,6 +461,7 @@ int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(voi
     netupdate_busy(void), album_lyrics_busy(void);
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
+void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no album */
 int rockbox_available(void);  /* theme_engine.c: a regular Rockbox binary on the card */
 int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
 #define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */

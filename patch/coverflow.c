@@ -8,6 +8,7 @@
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define ART_SIZE 160
 #define LAST_ALBUM ART_DIR "/album" /* the centre album's key, so a reboot opens on it */
+#define BUILDING ART_DIR "/building" /* the key of the album the worker is on (strike) */
 #define MIN_FREE_MB 16 /* no new cache files below this much free space on the card */
 #define ART_NEAR 3 /* real art only this many covers either side, like PictureFlow's cache */
 /* Home's without a theme's pane (home_pane_paint), at 290px (stock's: 110) */
@@ -401,11 +402,33 @@ static unsigned art_counts[2]; /* crash_note's, every 50th album */
 static void *worker(void *unused) {
     while (cf.done < cf.total && !cf.cancel) {
         crash_note(cf.jobs[cf.done].track, "/tmp/q2-art-file", "/tmp/q2-art.log", 50, art_counts);
+        void *note = fopen(BUILDING, "wb"); /* struck at the next open if this build never ends */
+        if (note) fwrite(&cf.jobs[cf.done].key, sizeof(unsigned), 1, note), fclose(note);
         build_art(&cf.jobs[cf.done]);
         ++cf.done;
     }
+    unlink(BUILDING);
     return 0;
 }
+
+/* The album the last build never finished, BUILDING's key: demo died on it, or hung on it until the
+ * watchdog restarted the Q2, and nothing marked it, so every open would try it again and end the
+ * same way. It takes the "no art" marker (unless its cover is there: a death between the rename and
+ * the next note) until Refresh Cover Flow; q2-crash.log names its track (docs/boot.md). A clean end
+ * mid-build removes the note (coverflow_clean_end), as a power-off is no album's fault. The note
+ * is not synced, unlike cf_trace's lines: a death leaves the kernel to write it (S90play syncs),
+ * and a hang outlasts the writeback interval; a torn one reads short and strikes nothing.
+ * ponytail: the battery running out mid-build strikes an innocent album; Refresh puts it back. */
+static void strike(void) {
+    unsigned key;
+    char path[512];
+    if (BLOB_IO(BUILDING, key, 0) && access(art_path(path, key, ""), 0)) {
+        void *f = fopen(path, "w");
+        if (f) fclose(f);
+    }
+    unlink(BUILDING);
+}
+void coverflow_clean_end(void) { unlink(BUILDING); }
 
 /* A running worker cancelled and joined, and its poll timer stopped; 1 when one ran. Shared with
  * photos.c and books.c. */
@@ -2610,6 +2633,7 @@ static void load_albums(unsigned t0) {
     }
     char path[512];
     if (!cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 0); /* outlives a reboot */
+    strike();
     cf.jobs = calloc(count, sizeof(job_t));
     unsigned char *shared = folders_shared(cf.albums, count);
     for (unsigned i = 0; i < count; ++i) {

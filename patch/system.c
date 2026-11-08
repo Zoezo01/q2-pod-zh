@@ -263,6 +263,7 @@ void ringnav_clean_end(void) {
     wdt_set(0);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
+    coverflow_clean_end();
 }
 /* Standby limit (docs/internals.md#standby-limit): device_standby puts the radios, the card and the
  * DAC down, then toolsIntoStandby suspends to RAM ("mem" to /sys/power/state) and returns once
