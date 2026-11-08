@@ -234,7 +234,12 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
         [ -f $c ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done
-            grep -q ' /mnt/mmc ' /proc/mounts && cp $c /mnt/mmc/q2-crash.log && sync && rm -f $c
+            grep -q ' /mnt/mmc ' /proc/mounts || exit
+            # the card keeps the two before it: q2-crash.log.1, then .2
+            l=/mnt/mmc/q2-crash.log
+            [ -f $l.1 ] && mv -f $l.1 $l.2
+            [ -f $l ] && mv -f $l $l.1
+            cp $c $l && sync && rm -f $c
         ) &
         rb=/mnt/mmc/.rockbox
         rockbox() {{
@@ -269,6 +274,8 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {{
                 echo "== date"; date
                 echo "== demo exit $s"
+                # the OOM killer's own lines from all of dmesg: its task dump can push them out of the tail
+                echo "== oom"; dmesg | grep -E 'invoked oom-killer|Out of memory|Killed process|oom_reaper'; grep '^oom_kill ' /proc/vmstat
                 echo "== dmesg"; dmesg | tail -n 200
                 echo "== meminfo"; cat /proc/meminfo
                 echo "== ps"; ps
