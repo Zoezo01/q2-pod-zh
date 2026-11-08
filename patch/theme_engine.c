@@ -1,5 +1,7 @@
 /* The theme engine: Light Mode's flip, the themes table, the settings it reads, accent(), theme(),
- * scheme() and the accent's tones. navigation.c #includes this where it stood. */
+ * scheme() and the accent's tones. */
+#include "navigation.h"
+
 /* A one-digit setting under section in the stock config.ini, 0 to n - 1, else def (a missing key
  * too): toolsReadConfig(path, section, key, out, default) copies the value, or the default. */
 int config_value(const char *section, const char *key, int n, int def) {
@@ -19,7 +21,7 @@ int rockbox_available(void) {
  * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
  * unless the scheme sets them); any other hue, and the alpha byte, as they are. Either byte order
  * (color_t or 0xRRGGBB): the paper and ink are grey. */
-static int neutral(unsigned c) {
+int neutral(unsigned c) {
     unsigned hi = 0, lo = 255;
     for (int s = 0; s < 24; s += 8) {
         unsigned v = c >> s & 255;
@@ -28,11 +30,11 @@ static int neutral(unsigned c) {
     }
     return hi - lo <= LIGHT_SPREAD;
 }
-static unsigned flip_v(unsigned v, unsigned paper, unsigned ink) {
+unsigned flip_v(unsigned v, unsigned paper, unsigned ink) {
     return paper - v * (paper - ink) / 255;
 }
 static const scheme_t *light_row(void);
-static unsigned flip(unsigned c) {
+unsigned flip(unsigned c) {
     if (!neutral(c)) return c;
     /* greys, so either byte order */
     const scheme_t *S = light_row();
@@ -72,27 +74,11 @@ unsigned mix(unsigned from, unsigned to, int j, int n) {
 /* The Accent, Home, Battery and Theme settings; each theme keeps its own accent
  * (docs/ipod.md#display-settings). */
 static const unsigned accents[][5] = { ACCENTS };
-#define ACCENT_N (int)(sizeof accents / sizeof *accents)
-static const char *const accent_names[] = {
-    "Accent: Graphite",  "Accent: Crimson", "Accent: Tidal", "Accent: Champagne", "Accent: Cobalt",
-    "Accent: Tangerine", "Accent: Plum",    "Accent: Ivory", "Accent: Green"
-};
+_Static_assert(sizeof accents / sizeof *accents == ACCENT_N, "one accent per ACCENTS row");
+const char *const accent_names[] = { "Accent: Graphite",  "Accent: Crimson", "Accent: Tidal",
+                                     "Accent: Champagne", "Accent: Cobalt",  "Accent: Tangerine",
+                                     "Accent: Plum",      "Accent: Ivory",   "Accent: Green" };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
-enum {
-    SETTING_ACCENT,
-    SETTING_HOME,
-    SETTING_BATTERY,
-    SETTING_THEME,
-    SETTING_SHORTCUT,
-    SETTING_ROUNDED,
-    SETTING_LIGHT,
-    SETTING_KEEPLIT,
-    SETTING_NPCENTRED,
-    SETTING_KEYTONEHP,
-    SETTING_SCRUBSINGLE,
-    SETTING_TIMETITLE,
-    SETTING_OWN
-};
 _Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN + THEME_KEYS,
                "one label per Display row");
 #include "themes.inc" /* tools/theme.py, from assets/themes/<id>/theme.xml */
@@ -109,19 +95,6 @@ _Static_assert(__builtin_offsetof(scheme_t, mode) == SCHEME_MODE_OFF, "test/patc
 /* A value of the set theme_boot wrote (st.geom), never the live theme's: V_BAR, ... */
 int geom_val(int v) { return geom_vals[st.geom][v]; }
 int client_h(void) { return 320 - geom_val(V_BAR); }
-/* Stock's Time Zone caption, between rows 0 and 1, sits 20 px down its item and over row 1: Classic
- * gives it the item, the set's row. */
-static void zone_caption(void *item) {
-    if (!classic_pages()) return;
-    void *list = P(item, W_PARENT); /* item is its last child, the caption's the one before */
-    int n = list ? widget_count_children(list) : 0;
-    void *cap = n > 1 ? widget_get_child(list, n - 2) : (void *)0;
-    cap = cap && widget_count_children(cap) ? widget_get_child(cap, 0) : (void *)0;
-    if (cap && !tk_strcmp(widget_get_type(cap), "hscroll_label")) {
-        widget_move_resize(cap, 0, 0, 375, geom_val(V_SET_ROW));
-        theme_font(cap, ROLE_INFO, FONT_ROW);
-    }
-}
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
  * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
  * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
@@ -129,44 +102,42 @@ static void zone_caption(void *item) {
 static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",     "THEME",
                                             "SHORTCUT",  "ROUNDED",   "LIGHT",       "KEEPLIT",
                                             "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
-static const int setting_counts[] = { SETTING_N_ACCENT,
-                                      SETTING_N_HOME,
-                                      SETTING_N_BATTERY,
-                                      THEME_N,
-                                      SETTING_N_SHORTCUT,
-                                      SETTING_N_CORNERS,
-                                      SETTING_N_LIGHT,
-                                      2,
-                                      SETTING_N_NP_LAYOUT,
-                                      2,
-                                      2,
-                                      2 };
-_Static_assert(SETTING_N_ACCENT == ACCENT_N, "the accent option's values are the ACCENTS rows");
-static int *const setting_values[] = { &st.accent,     &st.home,         &st.battery,
-                                       &st.theme,      &st.shortcut,     &st.rounded,
-                                       &st.light,      &st.keep_lit,     &st.np_centred,
-                                       &st.keytone_hp, &st.scrub_single, &st.time_title };
+const int setting_counts[] = { SETTING_N_ACCENT,
+                               SETTING_N_HOME,
+                               SETTING_N_BATTERY,
+                               THEME_N,
+                               SETTING_N_SHORTCUT,
+                               SETTING_N_CORNERS,
+                               SETTING_N_LIGHT,
+                               2,
+                               SETTING_N_NP_LAYOUT,
+                               2,
+                               2,
+                               2 };
+int *const setting_values[] = { &st.accent,     &st.home,       &st.battery,      &st.theme,
+                                &st.shortcut,   &st.rounded,    &st.light,        &st.keep_lit,
+                                &st.np_centred, &st.keytone_hp, &st.scrub_single, &st.time_title };
 /* An option's value and config key: the accent's are the theme's own, an own option's st.own[] and
  * theme_keys[], the rest setting_values'. */
-static int *option_slot(const theme_t *T, int setting) {
+int *option_slot(const theme_t *T, int setting) {
     return setting == SETTING_ACCENT ? T->accent_slot
            : setting >= SETTING_OWN  ? &st.own[setting - SETTING_OWN]
                                      : setting_values[setting];
 }
-static const char *option_key(const theme_t *T, int setting) {
+const char *option_key(const theme_t *T, int setting) {
     return setting == SETTING_ACCENT ? T->accent_key
            : setting >= SETTING_OWN  ? theme_keys[setting - SETTING_OWN].key
                                      : setting_keys[setting];
 }
 /* The option bound to setting, or NULL. */
-static const option_t *option_of(const theme_t *T, int setting) {
+const option_t *option_of(const theme_t *T, int setting) {
     for (int k = 0; k < T->n_opts; ++k)
         if (T->opts[k].setting == setting) return &T->opts[k];
     return (void *)0;
 }
 /* The local time now into buf (struct tm: tm_sec @0, tm_min @4, tm_hour @8), or 0 when the clock
  * cannot be read. */
-static const int *clock_now(int *buf) {
+const int *clock_now(int *buf) {
     long long wall = wall_time();
     long now = clock_back(wall);
     return wall == -1 ? (void *)0 : localtime_r(&now, buf);
@@ -176,7 +147,7 @@ static const int *clock_now(int *buf) {
  * mode into them) and repaints, as setting_click does. */
 #define LIGHT_FROM 7
 #define LIGHT_UNTIL 19
-static int light_day(const int *tm) { return tm && tm[2] >= LIGHT_FROM && tm[2] < LIGHT_UNTIL; }
+int light_day(const int *tm) { return tm && tm[2] >= LIGHT_FROM && tm[2] < LIGHT_UNTIL; }
 /* Night Shift's Auto (nightshift.c) is on while Light Mode's would be dark, 19:00 to 7:00, and
  * off while the clock cannot be read. */
 int clock_night(void) {
@@ -184,8 +155,7 @@ int clock_night(void) {
     const int *tm = clock_now(buf);
     return tm && !light_day(tm);
 }
-static void text_inks(void *w);
-static void light_apply(const int *tm) {
+void light_apply(const int *tm) {
     if (st.light != 2 || light_day(tm) == st.light_day) return;
     st.light_day = !st.light_day;
     np_fill(0);
@@ -227,10 +197,12 @@ __attribute__((noinline)) static void settings_read(void) {
     st.light_day = light_day(clock_now(buf));
     st.settings_read = 1;
 }
-static int accent(void) {
+int accent(void) {
     if (!st.settings_read) settings_read();
     return *themes[st.theme].accent_slot;
 }
+/* Theme t, as the picker and the restart check name it. */
+const theme_t *theme_of(int t) { return &themes[t]; }
 const theme_t *theme(void) {
     accent();
     return &themes[st.theme];
@@ -255,11 +227,9 @@ static const scheme_t *light_row(void) {
     const theme_t *T = &themes[st.theme];
     return &T->light[*T->accent_slot];
 }
-static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
-static inline const unsigned *tones(void) { return tones_of(accent()); }
 /* An option the theme does not declare reads 0, its stored key untouched (ponytail: 0 is every
  * hidden option's value today; a theme hiding Home or Battery needs a value per bit). */
-static int setting(int i) {
+int setting(int i) {
     accent();
     return themes[st.theme].undeclared >> i & 1 ? 0 : *setting_values[i];
 }
@@ -268,13 +238,13 @@ static int theme_own(int k) { return option_of(theme(), SETTING_OWN + k) ? st.ow
 /* Classic's Home in Split (coverflow.c): Library on Home and Row Preview */
 int home_lib_on(void) { return theme_own(OWN_HOMELIB); }
 int row_preview_on(void) { return theme_own(OWN_ROWPREVIEW); }
-static const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
+const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
 _Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* layout");
 /* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
-static int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
+int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
 /* Shortcut with no key is Rockbox while the card has it, else Favorites: asked each time, as the
  * card may mount after the first read. */
-static int shortcut(void) {
+int shortcut(void) {
     accent();
     return st.shortcut < SETTING_N_SHORTCUT ? st.shortcut : rockbox_available() ? 0 : 3;
 }
@@ -307,7 +277,7 @@ const char *ipod_home_shortcut(void) {
  * Books books.c. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
 extern int rockbox_open(void *, void *);
-static int rated_albums(void *, void *);
+int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
     int s = shortcut();
     if (!s) return rockbox_open(ctx, event);
@@ -331,23 +301,12 @@ int home_shortcut_open(void *ctx, void *event) {
 }
 /* Light Mode keeps a coloured accent's tones; a neutral one (Graphite, Ivory) takes its silver red
  * tone for both, which flips dark. Before flip. */
-static unsigned tone_of(const unsigned *a, int tone) {
+unsigned tone_of(const unsigned *a, int tone) {
     return ipod_light() && neutral(a[0]) ? a[TONE_RED] : a[tone];
 }
 unsigned accent_tone(int tone) {
     const scheme_t *S = scheme();
     return tone == TONE_LIGHT && S->flags & SCHEME_CARD ? S->fill : tone_of(S->tones, tone);
-}
-
-/* The height a selected row scrolls in: the surface's, cut at the set's list_end, a row of the
- * client under the bar (W_Y summed up to the window), where the rows below draw on to the glass but
- * a selected one's text would not show. */
-static int sel_height(menu_t *m) {
-    int y = 0, end = geom_val(V_LIST_END);
-    if (!end || m->kind == 3 || m->kind == 4) return m->height;
-    void *wm = window_manager();
-    for (void *p = m->w; p && P(p, W_PARENT) != wm; p = P(p, W_PARENT)) y += I(p, W_Y);
-    return end - y < m->height ? end - y : m->height;
 }
 
 /* A color_t (bytes r, g, b, a) that is stock red blended with a neutral, t * red + k * white per
@@ -359,7 +318,7 @@ static int sel_height(menu_t *m) {
  * glyph, neutral pixels (the glyph itself) map too, so pass it only for an image that holds red.
  * Crimson is the identity. Light Mode (light) puts the red share over paper instead: a tint over
  * black becomes the same tint of tone over the light half's paper, its grey part flipped. */
-static unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
+unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
     int paper = light ? (int)(light_row()->paper & 255) : 0,
         ink = light ? (int)(light_row()->ink & 255) : 0;
     static const int red[3] = { STOCK_RED >> 16, STOCK_RED >> 8 & 255, STOCK_RED & 255 };

@@ -21,7 +21,7 @@ int ringnav_timezone(void) {
 }
 
 /* Past 2038, 28 years back for stock's 32-bit localtime: the same calendar until 2100. */
-static long clock_back(long long wall) {
+long clock_back(long long wall) {
     unsigned back = (unsigned)wall; /* 32-bit: the payload has no 64-bit division */
     while (back > 0x7fffffff) back -= 883612800;
     return (long)back;
@@ -50,7 +50,19 @@ static void tz_now(unsigned char *rows) {
     }
 }
 
-static void zone_caption(void *item);
+/* Stock's Time Zone caption, between rows 0 and 1, sits 20 px down its item and over row 1: Classic
+ * gives it the item, the set's row. */
+static void zone_caption(void *item) {
+    if (!classic_pages()) return;
+    void *list = P(item, W_PARENT); /* item is its last child, the caption's the one before */
+    int n = list ? widget_count_children(list) : 0;
+    void *cap = n > 1 ? widget_get_child(list, n - 2) : (void *)0;
+    cap = cap && widget_count_children(cap) ? widget_get_child(cap, 0) : (void *)0;
+    if (cap && !tk_strcmp(widget_get_type(cap), "hscroll_label")) {
+        widget_move_resize(cap, 0, 0, 375, geom_val(V_SET_ROW));
+        theme_font(cap, ROLE_INFO, FONT_ROW);
+    }
+}
 /* Row i > 0 shows zone rows[i - 1] as "GMT-4 New York", the offset it has now, so a zone on
  * daylight saving reads as its clocks do; stock names, ticks and clicks by the index it is given.
  * Focus-only, a label too long for the row keeps its ellipsis instead of scrolling once as the
@@ -985,7 +997,16 @@ static int view_top(menu_t *m) {
     return m->kind == 2 ? I(m->w, TABLE_TOP) : m->kind == 1 ? I(m->w, SCROLL_Y) : 0;
 }
 
-static int sel_height(menu_t *m);
+/* The height a selected row scrolls in: the surface's, cut at the set's list_end, a row of the
+ * client under the bar (W_Y summed up to the window), where the rows below draw on to the glass but
+ * a selected one's text would not show. */
+static int sel_height(menu_t *m) {
+    int y = 0, end = geom_val(V_LIST_END);
+    if (!end || m->kind == 3 || m->kind == 4) return m->height;
+    void *wm = window_manager();
+    for (void *p = m->w; p && P(p, W_PARENT) != wm; p = P(p, W_PARENT)) y += I(p, W_Y);
+    return end - y < m->height ? end - y : m->height;
+}
 
 /* Largest viewport top that still shows content; the clamp bound for every glide. */
 static int scroll_end(menu_t *m, int height) {
@@ -1337,8 +1358,6 @@ static void pull_begin(void *event) {
     st.pull_y = I(event, EVENT_Y);
     context_now(&st.pull_scope);
 }
-
-#include "theme_engine.c"
 
 /* A pill's end radius on a list row (h tall, its card inset px from the row's left): h / 2, less
  * where the round end would cut across a leading cover's square corner (search results' art, which
@@ -5318,7 +5337,7 @@ void text_ink(void *w, unsigned color, int n) {
     for (int i = 0; i < n; ++i)
         widget_set_prop_int(w, style_key(key, ink_state[i], "text_color"), (int)ink);
 }
-static void text_inks(void *w) {
+void text_inks(void *w) {
     int n = widget_get_prop_int(w, "_final_n", 0);
     if (n) text_ink(w, (unsigned)widget_get_prop_int(w, "_final", 0), n);
     for (int i = widget_count_children(w) - 1; i >= 0; --i) text_inks(widget_get_child(w, i));
@@ -6828,7 +6847,7 @@ void theme_select(int t) {
     image_manager_unload_all(image_manager());
     widget_invalidate_force(window_manager(), (void *)0);
 }
-int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
+int theme_restart(int t) { return geom_with(theme_of(t), -1, 0, 1) != st.geom; }
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
  * first; the running state stays the booted set's theme until then, as theme_boot requires.
@@ -6842,7 +6861,7 @@ void restart_confirm(int setting, int value) {
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
     setting_put(&was, value, option_key(T, setting));
-    if (setting == SETTING_THEME) theme_preset(&themes[value], 0);
+    if (setting == SETTING_THEME) theme_preset(theme_of(value), 0);
     ringnav_reboot();
 }
 /* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
@@ -7001,7 +7020,7 @@ int ringnav_display(void *win, void *ctx) {
             int t = theme_rows[i];
             widget_set_text_utf8(
                 list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
-                themes[t].name);
+                theme_of(t)->name);
         }
         theme_view = view;
         return result;
@@ -9477,7 +9496,7 @@ static int rated_open(void *ctx, void *event) {
 /* Albums: the rated albums as Coverflow (coverflow_rated), by most hearts unless sorted. */
 extern int coverflow_rated(int (*hearts)(void *));
 static int album_hearts(void *r) { return rate_kept(1, album_id(r)); }
-static int rated_albums(void *ctx, void *event) {
+int rated_albums(void *ctx, void *event) {
     if (!coverflow_rated(album_hearts)) toast("No rated albums yet");
     return 0;
 }

@@ -1184,5 +1184,6 @@ def emit(themes, out, redirects={}):
                   (f'.sets = (const unsigned char[]){{{", ".join(map(gname, o["sets"]))}}}, ' if o['sets'] else '.sets = 0, ') + f'.n = {n}, .def = {d} }},'
                   for k, (n, d, o) in theme_keys(themes).items()), '};', '']
     names = [l for l in lines[1:] if l.startswith(('enum {', '#define '))]
-    (out/'themes.h').write_text('\n'.join([lines[0], *names, '']))
+    globals = ['extern ' + l.split(' = ')[0] + ';' for l in lines if l.startswith('const ')]  # theme_engine.c defines them
+    (out/'themes.h').write_text('\n'.join([lines[0], *names, *globals, '']))
     (out/'themes.inc').write_text('\n'.join(l for l in lines if l not in names))

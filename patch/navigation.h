@@ -438,6 +438,9 @@ void row_meta(void *w);
 void *staged_music(int (*query)(void *), void *arg, int *count);
 int usable(void);
 int all_songs(void *music);
+long clock_back(long long wall);
+int rated_albums(void *ctx, void *event);
+void text_inks(void *w);
 
 /* np_bar.c */
 int np_beside(void);
@@ -452,6 +455,22 @@ void scrub_row(void *canvas, unsigned c, int x, int y, int w);
 void np_fill(int scrub);
 
 /* theme_engine.c */
+#define ACCENT_N SETTING_N_ACCENT /* the ACCENTS rows: theme_engine.c's accents[] has as many */
+enum {
+    SETTING_ACCENT,
+    SETTING_HOME,
+    SETTING_BATTERY,
+    SETTING_THEME,
+    SETTING_SHORTCUT,
+    SETTING_ROUNDED,
+    SETTING_LIGHT,
+    SETTING_KEEPLIT,
+    SETTING_NPCENTRED,
+    SETTING_KEYTONEHP,
+    SETTING_SCRUBSINGLE,
+    SETTING_TIMETITLE,
+    SETTING_OWN
+};
 #define INK_LABEL 1
 #define INK_EDIT 15
 #define INK_TAB 10
@@ -461,6 +480,31 @@ enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */
 int geom_val(int v);
 extern const char *const MEDIA[];
 unsigned flip_if(int on, unsigned c);
+int accent(void);
+unsigned accent_map(unsigned c, int preset, int tone);
+const int *clock_now(int *buf);
+unsigned flip(unsigned c);
+unsigned flip_v(unsigned v, unsigned paper, unsigned ink);
+int ipod_home(void);
+const char *ipod_home_shortcut(void);
+void light_apply(const int *tm);
+int light_day(const int *tm);
+int neutral(unsigned c);
+int np_layout(void);
+const char *option_key(const theme_t *T, int setting);
+const option_t *option_of(const theme_t *T, int setting);
+int *option_slot(const theme_t *T, int setting);
+unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light);
+int setting(int i);
+int shortcut(void);
+unsigned tone_of(const unsigned *a, int tone);
+extern const char *const accent_names[];
+extern const char *const np_pages[];
+extern const int setting_counts[];
+extern int *const setting_values[];
+const theme_t *theme_of(int t);
+static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
+static inline const unsigned *tones(void) { return tones_of(accent()); }
 
 /* volume.c */
 void vol_paint(void *top, void *canvas);

@@ -92,11 +92,11 @@ def channels(color):
 @pytest.mark.parametrize('wall, back', [(0, 0), (1700000000, 1700000000), (0x7fffffff, 0x7fffffff),
                                         (0x80000000, 0x80000000 - 883612800)])
 def test_clock_back_leaves_32_bit_times(fw, wall, back):
-    assert fw.fn('navigation__clock_back', C.c_long, C.c_longlong)(wall) == back
+    assert fw.fn('clock_back', C.c_long, C.c_longlong)(wall) == back
 
 
 def test_clock_back_keeps_the_calendar_until_2100(fw):
-    clock_back = fw.fn('navigation__clock_back', C.c_long, C.c_longlong)
+    clock_back = fw.fn('clock_back', C.c_long, C.c_longlong)
     utc, rng = datetime.timezone.utc, random.Random(2038)
     end = int(datetime.datetime(2100, 1, 1, tzinfo=utc).timestamp())
     for wall in [0x80000000, end - 1] + [rng.randrange(0x80000000, end) for _ in range(500)]:
@@ -109,11 +109,11 @@ def test_clock_back_keeps_the_calendar_until_2100(fw):
 @pytest.mark.parametrize('hour, day', [(0, 0), (6, 0), (7, 1), (12, 1), (18, 1), (19, 0), (23, 0)])
 def test_light_day_is_seven_to_nineteen(fw, hour, day):
     tm = (C.c_int * 11)(0, 0, hour)
-    assert fw.fn('navigation__light_day', C.c_int, C.POINTER(C.c_int))(tm) == day
+    assert fw.fn('light_day', C.c_int, C.POINTER(C.c_int))(tm) == day
 
 
 def test_no_clock_is_no_light_day(fw):
-    assert fw.fn('navigation__light_day', C.c_int, C.POINTER(C.c_int))(None) == 0
+    assert fw.fn('light_day', C.c_int, C.POINTER(C.c_int))(None) == 0
 
 
 @pytest.fixture
@@ -157,16 +157,16 @@ def test_time_zones_list_west_to_east_ties_in_their_order(fw):
     (0x102010, 1), (0x102110, 0), (0x201020, 1), (0x211021, 0), (0xff0000, 0), (0x00ff00, 0), (0x0000ff, 0),
 ])
 def test_neutral_is_a_spread_of_16(fw, color, neutral):
-    assert fw.fn('navigation__neutral', C.c_int, C.c_uint)(color) == neutral
+    assert fw.fn('neutral', C.c_int, C.c_uint)(color) == neutral
 
 
 @pytest.mark.parametrize('value, flipped', [(0, PAPER), (255, INK), (128, PAPER - 128 * (PAPER - INK) // 255)])
 def test_flip_v_runs_paper_to_ink(fw, value, flipped):
-    assert fw.fn('navigation__flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)(value, PAPER, INK) == flipped
+    assert fw.fn('flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)(value, PAPER, INK) == flipped
 
 
 def test_flip_v_only_falls(fw):
-    flip_v = fw.fn('navigation__flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)
+    flip_v = fw.fn('flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)
     values = [flip_v(v, PAPER, INK) for v in range(256)]
     assert values == sorted(values, reverse=True) and min(values) == INK and max(values) == PAPER
 
@@ -179,12 +179,12 @@ def test_flip_v_only_falls(fw):
     (0x00123456, 0x00123456),
 ])
 def test_flip(fw, color, flipped):
-    assert fw.fn('navigation__flip', C.c_uint, C.c_uint)(color) == flipped
+    assert fw.fn('flip', C.c_uint, C.c_uint)(color) == flipped
 
 
 def test_flip_is_per_channel_on_a_slightly_coloured_grey(fw):
-    flip_v = fw.fn('navigation__flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)
-    assert fw.fn('navigation__flip', C.c_uint, C.c_uint)(0xff102010) == \
+    flip_v = fw.fn('flip_v', C.c_uint, C.c_uint, C.c_uint, C.c_uint)
+    assert fw.fn('flip', C.c_uint, C.c_uint)(0xff102010) == \
         0xff000000 | flip_v(0x10, PAPER, INK) << 16 | flip_v(0x20, PAPER, INK) << 8 | flip_v(0x10, PAPER, INK)
 
 
@@ -211,7 +211,7 @@ def test_light_auto_follows_the_clock(fw, clock, hour, light):
 
 # The accent's red.
 def red_map(fw):
-    return fw.fn('navigation__red_map', C.c_uint, C.c_uint, C.c_uint, C.c_uint, C.c_int)
+    return fw.fn('red_map', C.c_uint, C.c_uint, C.c_uint, C.c_uint, C.c_int)
 
 
 def close(color, want, slack=3):
