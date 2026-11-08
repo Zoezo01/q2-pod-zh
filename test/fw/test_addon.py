@@ -54,7 +54,7 @@ class Req(C.Structure):
 
 
 class Lv(C.Structure):
-    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow')),
+    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow', 'art')),
                 *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash')),
                 ('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
 
@@ -349,7 +349,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1041,6 +1041,26 @@ def test_a_stop_on_an_error_page_is_its_second_row(fw):
     p.answer(status=b'error')
     p.click(1)
     assert p.backs == 1 and p.ap.a[0].launched == 0
+
+
+def art_path(uri, ctx):
+    h = 2166136261
+    for c in uri + b'\t' + ctx:
+        h = ((h ^ c) * 16777619) & 0xffffffff
+    return b'/tmp/q2-foo.art/%08x.jpg' % h
+
+
+@pytest.mark.parametrize('cover,kind,art', [
+    (None, b'action', 0), (art_path(b'op0', b'x'), b'action', 0), (art_path(b'op1', b''), b'action', 1),
+    (art_path(b'op0', b'c'), b'action', 1), (art_path(b'op0', b'c'), b'progress', 0)])
+def test_a_cover_for_any_row_draws_the_list_with_covers(fw, cover, kind, art):
+    """addon.c art_rows: a row's cover, keyed by its URI, a tab and its context, draws the list with
+    covers; no file, another key, or a progress row in the list keeps the plain rows."""
+    p = Page(fw)
+    if cover:
+        p.world.files[cover] = b''
+    p.answer(rows=[item(0, ctx=b'c'), item(1, kind)])
+    assert p.top.art == art
 
 
 def test_more_is_a_level_of_its_own_at_the_newest_cursor(fw):
