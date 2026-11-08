@@ -548,7 +548,7 @@ static void drop_unknown(void) {
  * (docs/internals.md#coverflow-sort): Album is the stock order;
  * Artist sorts by artist without a leading article, as every library list does (ringnav_sort_key),
  * then year, then album; Year in Playback settings' Year order (year_sql), undated last; Recently Added by the newest song's time_create; Most Played by the
- * album's listens (navigation.c album_plays); Random by playback.c's rand_below, reshuffled whenever
+ * album's listens (library_lists.c album_plays); Random by playback.c's rand_below, reshuffled whenever
  * the list is rebuilt. Ties keep the stock order, and the Unknown row stays last. Ranks come from ALBUM_SQL with another ORDER BY (toolsQueryDbTable without its name sort),
  * matched back to the rows by album_cmp. */
 enum { SORT_ALBUM, SORT_ARTIST, SORT_ADDED, SORT_PLAYED, SORT_RANDOM, SORT_RATING, SORT_YEAR };
@@ -1280,7 +1280,7 @@ static void *list(const char *title, int n) {
     return page_list(cf.page, cf.body, &cf.title, title, n, 48);
 }
 
-/* One row of a page_list (48px, the theme's page_h) or, with a detail (navigation.c's Most Played),
+/* One row of a page_list (48px, the theme's page_h) or, with a detail (library_lists.c's Most Played),
  * a taller one: the caption over the detail in 16px #AAAAAA, stock's s_scrlabel_gray24l grey, in
  * the theme's boxes and fonts. Under a theme's separators an empty detail centres the caption above
  * them, its label kept for whoever writes it. iPod left-aligns them, as every stock list. Returns
@@ -2699,7 +2699,7 @@ static void *in_order(void *tracks, void *album) {
 }
 
 /* A track's tagged title, else its file name without the extension; CUE names stay whole.
- * Shared with navigation.c's Most Played and scrobbler. */
+ * Shared with library_lists.c's Most Played and navigation.c's scrobbler. */
 const char *track_name(char *buf, unsigned size, void *t) {
     const char *title = P(t, REC_TITLE);
     if (title && *title) return title;

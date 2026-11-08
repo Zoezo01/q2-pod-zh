@@ -408,14 +408,9 @@ int media_find(int kind, char *path);
 void prop(void *w, const char *name, int value);
 char *svc_find(char *hide, int i);
 void svc_hidden(char *s);
-int era_menu(void *ctx, void *event);
-int long_songs(void *ctx, void *event);
 int media_click(void *ctx, void *event);
-int most_played(void *ctx, void *event);
 int ratings_menu(void *ctx, void *event);
-int shuffle_menu(void *ctx, void *event);
 int stream_config(void *ctx, void *event);
-int tidal_downloads(void *ctx, void *event);
 void bar_place(void *w, int x, int y, int ww, int h);
 void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h);
 void dark_bar_rows(void *canvas, int y, int w, int h);
@@ -448,6 +443,11 @@ int all_songs(void *music);
 long clock_back(long long wall);
 int rated_albums(void *ctx, void *event);
 void text_inks(void *w);
+unsigned listen_key(void *r) __attribute__((pure));
+int page_closed(void *ctx, void *event);
+void plays_load(void);
+int rt_play(void *ctx, void *event);
+int songs_unsorted(void *music);
 
 /* np_bar.c */
 int np_beside(void);
@@ -538,6 +538,16 @@ void logo_poll(void);
 void standby_poll(void);
 void state_poll(void);
 void wdt_poll(void);
+
+/* library_lists.c */
+int era_menu(void *ctx, void *event);
+int long_songs(void *ctx, void *event);
+void ls_closed(void);
+int most_played(void *ctx, void *event);
+int mp_find(unsigned key);
+int shuffle_menu(void *ctx, void *event);
+int shuffle_play(void *all);
+int tidal_downloads(void *ctx, void *event);
 
 /* classic_pages.c */
 int kb_key(void *w);

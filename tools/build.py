@@ -1157,7 +1157,7 @@ FUNCTIONS = {
  'getMusicByAlbumAndGenre': ('int', 'const char *, const char *, int'),
  'checkFavExist': ('int', 'void *'),
  'getAllFav': ('int', 'void'),
- # Long Songs (navigation.c): a file's length, probed once, as stock's scanner reads tags
+ # Long Songs (library_lists.c): a file's length, probed once, as stock's scanner reads tags
  'taglib_file_new': ('void *', 'const char *, int'),
  'taglib_file_tag': ('void *', 'void *'),
  'toolsCheckItemExist': ('int', 'void *, const char *, int'),
@@ -1184,7 +1184,7 @@ FUNCTIONS = {
  'mclLoadPlayList': ('int', 'void *, int, int'),
  'mcl_shuffle_pick': ('int', 'int'),
  'getAllAlbum': ('int', 'void'),
- # Shuffle Songs (navigation.c): every song, shuffle saved as the play-mode setting does, a random start
+ # Shuffle Songs (library_lists.c): every song, shuffle saved as the play-mode setting does, a random start
  'getAllMusic': ('int', 'int'),
  'music_nagvation_title': ('int', 'int'),  # Library -> Songs' load (navigation.c songs_load)
  'mclGetPlayM3uFlag': ('int', 'void'),  # stock ignores Folder Skip on an M3U (playback.c change_restarts)
@@ -1400,7 +1400,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

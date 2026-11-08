@@ -16,22 +16,22 @@
 { "photos_page", CTX_DYNAMIC, 0 },    /* runtime window (patch/photos.c) */
 { "books_page", CTX_DYNAMIC, 0 },     /* runtime window (patch/books.c) */
 { "games_page", CTX_DYNAMIC, RING }, /* runtime window (patch/games.c) */
-{ "mostplayed_page", CTX_FIXED, 0 }, /* runtime window (patch/navigation.c); fixed: the hold menu */
-{ "shuffle_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
+{ "mostplayed_page", CTX_FIXED, 0 }, /* runtime window (patch/library_lists.c); fixed: the hold menu */
+{ "shuffle_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/library_lists.c) */
 { "playlistedit_page", CTX_DYNAMIC, 0 },
 { "chapters_page", CTX_DYNAMIC, 0 }, /* runtime chapter list */
 { "upnext_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
 { "ratings_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
-{ "era_page", CTX_DYNAMIC, 0 },       /* runtime window (patch/navigation.c) */
-{ "era_albums_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/navigation.c) */
+{ "era_page", CTX_DYNAMIC, 0 },       /* runtime window (patch/library_lists.c) */
+{ "era_albums_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/library_lists.c) */
 { "rated_page", CTX_FIXED, 0 },      /* runtime window (patch/navigation.c); fixed: the hold menu */
-{ "longsongs_page", CTX_FIXED, 0 },  /* runtime window (patch/navigation.c); fixed: the hold menu */
+{ "longsongs_page", CTX_FIXED, 0 },  /* runtime window (patch/library_lists.c); fixed: the hold menu */
 { "radio_page", CTX_DYNAMIC, 0 },     /* runtime window (patch/radio.c) */
 { "spotbrowse_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/spotify.c) */
 { "streamconf_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/navigation.c) */
 { "apps_page", CTX_DYNAMIC, 0 },       /* runtime window (patch/netupdate.c) */
-{ "tidal_downloads", CTX_DYNAMIC, 0 }, /* runtime window (patch/navigation.c) */
-{ "app_songs", CTX_DYNAMIC, 0 },       /* runtime window (patch/navigation.c) */
+{ "tidal_downloads", CTX_DYNAMIC, 0 }, /* runtime window (patch/library_lists.c) */
+{ "app_songs", CTX_DYNAMIC, 0 },       /* runtime window (patch/library_lists.c) */
 { "addon_page", CTX_DYNAMIC, 0 },      /* runtime window (patch/addon.c) */
 { "album_page", CTX_LOCAL, 0 },
 { "albuminfo_page", CTX_LOCAL, RING },

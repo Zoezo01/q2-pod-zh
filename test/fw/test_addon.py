@@ -1327,7 +1327,7 @@ def hostile_row(r):
     kind = r.choice(KINDS)
     uri = noise(r)
     if kind == b'local':
-        uri = b'/mnt/mmc/x/'  # a folder's page; songs_open itself is navigation.c's
+        uri = b'/mnt/mmc/x/'  # a folder's page; songs_open itself is library_lists.c's
     return (kind, uri, noise(r), noise(r), r.choice((b'', noise(r))), r.choice((b'', b'hold', noise(r))))
 
 

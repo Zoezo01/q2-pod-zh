@@ -310,11 +310,11 @@ void library_poll(void); /* addon_library.c: an app's library update request, on
 int spot_escape(const char *s, char *out, unsigned size);
 int spot_reply(char *buf, unsigned len, char **f, int max);
 void spot_shut(int fd);
-/* navigation.c: a card folder's songs played from the card (a card app's local row): a folder
- * opens its list, a file plays its folder from it; album, in track order (by name), else newest
- * first. */
+/* library_lists.c: a card folder's songs played from the card (a card app's local row): a
+ * folder opens its list, a file plays its folder from it; album, in track order (by name), else
+ * newest first. */
 int songs_open(const char *path, const char *title, int album);
-void *app_album_songs(const char *dir); /* navigation.c: a folder's songs by name, for addon.c */
+void *app_album_songs(const char *dir); /* library_lists.c: a folder's songs by name, for addon.c */
 int addon_goto(const char *path, const char *title, int album); /* Go to on a card app's song */
 int addon_goes(const char *path); /* addon.c: Go to on path opens a page */
 int addon_scrobbles(const char *path); /* addon.c: not when path's app says scrobble=0 */
@@ -435,7 +435,7 @@ int title_gone(void *w, void *event); /* ... and looks for its source again at t
 int bar_title_fits(void *label);      /* label's text fits the bar's title box */
 int ipod_light(void);   /* navigation.c: Light Mode */
 unsigned unflip(unsigned v); /* navigation.c: the grey Light Mode's flip turns into v */
-int song_seconds(void *r);   /* navigation.c, its lengths' cache, for Cover Flow's tracks panel */
+int song_seconds(void *r);   /* library_lists.c, its lengths' cache, for Cover Flow's tracks panel */
 int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */

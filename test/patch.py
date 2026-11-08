@@ -16308,7 +16308,7 @@ m=end_sleep(b'until 86460\n'); assert not paused(m.poll(61000)) and not unlinked
 m.playtime=224; m.poll(); m.word(O['MCL_POS'],1); m.playtime=0; assert paused(m.poll())==1; passed()
 
 # Deezer: q2-deezer from the card's .deezer folder. Nothing streams: a press downloads, to Deezer/ on
-# the card, and a song on the card, a local row, plays from it as local music (navigation.c songs_open).
+# the card, and a song on the card, a local row, plays from it as local music (library_lists.c songs_open).
 DZBIN,DZBROWSE,DZSTATE,DZPID='/mnt/mmc/.deezer/q2-deezer','/tmp/q2-deezer.browse.sock','/tmp/q2-deezer.state','/tmp/q2-deezer'
 class DeezerMachine(AppMachine):
     app,manifest='deezer','name=Deezer\nsearch=Search Deezer\nqr=0\n'

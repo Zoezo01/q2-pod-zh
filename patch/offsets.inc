@@ -629,7 +629,7 @@ static inline int arc_out(int r, int y) {
 #define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b' and " LIBRARY_SCOPE_TOKEN
 /* Tags may store a full date (20220510 or 2022-05-10); compare the year before aggregating. */
 #define ALBUM_YEAR "max(case when cast(year as text) glob '[1-9][0-9][0-9][0-9]*' then cast(substr(year,1,4) as integer) else 0 end)"
-/* One row per album, as album_cmp tells them apart (coverflow.c; navigation.c's Era). */
+/* One row per album, as album_cmp tells them apart (coverflow.c; library_lists.c's Era). */
 /* An album group's art track: its lowest disc then track then path, as Coverflow lists it. A bare
  * fileurl would be whichever row SQLite saw last, so an album whose tracks carry different covers
  * showed a random one. Each number is clamped to 0-9999 so its prefix stays four digits (a date as

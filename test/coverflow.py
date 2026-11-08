@@ -520,7 +520,8 @@ int toolsQueryDbTable(const char *db, const char *sql, void *row, int sort) {
     ++queries;
     return (int)d->n;
 }
-/* navigation.c's: Most Played's counts, per stock record here, and the library lists' article. */
+/* library_lists.c's and navigation.c's: Most Played's counts, per stock record here, and the
+ * library lists' article. */
 static unsigned played[64];
 /* playback.c's generator, falling: Random shows the stock order reversed. */
 static unsigned dice = 1000;

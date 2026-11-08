@@ -992,12 +992,12 @@ def test_ple_has_any_text(fw, heap):
 ])
 def test_song_label(fw, heap, name, tidal, label):
     out = heap.string(b'', 64)
-    fw.fn('navigation__song_label', None, C.c_char_p, C.c_int, C.c_void_p, C.c_uint)(name, tidal, out, 64)
+    fw.fn('library_lists__song_label', None, C.c_char_p, C.c_int, C.c_void_p, C.c_uint)(name, tidal, out, 64)
     assert C.string_at(out) == label
 
 
 def test_song_label_any_name_in_any_room(fw, heap):
-    label = fw.fn('navigation__song_label', None, C.c_void_p, C.c_int, C.c_void_p, C.c_uint)
+    label = fw.fn('library_lists__song_label', None, C.c_void_p, C.c_int, C.c_void_p, C.c_uint)
     rng = random.Random(0x50)
     for data in hostile(rng, [b'123-Q Song.flac', b'01 - Title [987].flac', b'[', b' [', b'.', b' ]'], 2500):
         size = rng.randrange(1, 40)
@@ -1289,14 +1289,14 @@ class TdRow(C.Structure):
 
 
 def test_td_newer_sorts_newest_first(fw):
-    newer = fw.fn('navigation__td_newer', C.c_int, C.POINTER(TdRow), C.POINTER(TdRow))
+    newer = fw.fn('library_lists__td_newer', C.c_int, C.POINTER(TdRow), C.POINTER(TdRow))
     a, b = TdRow(5, None), TdRow(9, None)
     assert newer(a, b) == 1 and newer(b, a) == -1 and newer(a, a) == 0
 
 
 def test_td_named_sorts_by_name_and_no_name_first(fw):
     keep = []
-    named = fw.fn('navigation__td_named', C.c_int, C.POINTER(TdRow), C.POINTER(TdRow))
+    named = fw.fn('library_lists__td_named', C.c_int, C.POINTER(TdRow), C.POINTER(TdRow))
     a, b, none = TdRow(0, record(keep, name=b'01')), TdRow(0, record(keep, name=b'02')), TdRow(0, record(keep))
     assert named(a, b) < 0 and named(b, a) > 0 and named(a, a) == 0 and named(none, a) < 0
 
@@ -1310,7 +1310,7 @@ def test_card_songs_newest_first(fw):
         C.c_uint.from_address(info + 64).value = {b'/m/0': 5, b'/m/1': 9}[C.string_at(path)]
         return 0
     fw.mock('fw___xstat', stat)
-    out = fw.fn('navigation__card_songs', C.c_long, C.c_char_p, C.c_int)(b'/m', 0)
+    out = fw.fn('library_lists__card_songs', C.c_long, C.c_char_p, C.c_int)(b'/m', 0)
     assert deques[out] == [rows[1], rows[0]]  # a row that isn't a song is left out
 
 
@@ -1883,7 +1883,7 @@ def test_shuffle_play_takes_a_random_start_and_the_saved_mode(fw, queue, mcl):
     mcl.mode = 3
     seen = []
     fw.mock('navigator_to_with_context', lambda name, context, *_: seen.append(C.string_at(context + 8, 8)) and 0)
-    play = fw.fn('navigation__shuffle_play', C.c_int, C.c_void_p)
+    play = fw.fn('shuffle_play', C.c_int, C.c_void_p)
     assert play(deques.new([1, 2, 3])) == 3
     index, cls = struct.unpack('<2i', seen[0])
     assert 0 <= index < 3 and cls == 0xf001 and [c[1][:2] for c in fw.calls('config_playmode')] == [(2, 1)]
@@ -1891,7 +1891,7 @@ def test_shuffle_play_takes_a_random_start_and_the_saved_mode(fw, queue, mcl):
 
 def test_shuffle_play_of_nothing_does_nothing(fw, queue, mcl):
     deques, _ = queue
-    assert fw.fn('navigation__shuffle_play', C.c_int, C.c_void_p)(deques.new()) == 0 and not fw.calls('config_playmode')
+    assert fw.fn('shuffle_play', C.c_int, C.c_void_p)(deques.new()) == 0 and not fw.calls('config_playmode')
 
 
 # Most Played.
@@ -1910,7 +1910,7 @@ def test_most_played_ranks_by_count_then_recency(fw, st, scratch):
     for slot, (i, n) in enumerate(((1, 2), (3, 9), (0, 2))):  # most recently counted first
         plays[2 * slot], plays[2 * slot + 1] = listen_key(b'/m/%d' % i), n
     idx, score = (C.c_int * 100)(), (C.c_uint * 100)()
-    top = fw.fn('navigation__mp_rank', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(deques.new(songs), idx, score)
+    top = fw.fn('library_lists__mp_rank', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(deques.new(songs), idx, score)
     assert top == 3 and list(idx[:3]) == [3, 1, 0]
 
 
@@ -1922,7 +1922,7 @@ def test_most_played_keeps_the_top_100(fw, st, scratch):
     for i in range(150):
         plays[2 * i], plays[2 * i + 1] = listen_key(b'/m/%d' % i), i + 1
     idx, score = (C.c_int * 100)(), (C.c_uint * 100)()
-    top = fw.fn('navigation__mp_rank', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(deques.new(songs), idx, score)
+    top = fw.fn('library_lists__mp_rank', C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(deques.new(songs), idx, score)
     assert top == 100 and list(idx) == list(range(149, 49, -1))
 
 
@@ -1978,7 +1978,7 @@ def test_a_full_ratings_table_refuses(fw):
 # Era's Shuffle.
 def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
     keep, deques = [], Deques(fw)
-    state = fw.var('navigation__era', Era)
+    state = fw.var('library_lists__era', Era)
     state.v, state.m, state.cap = C.cast(heap.calloc(2, C.sizeof(EraRow)), C.POINTER(EraRow)), 1, 1
     state.v[0].year = 1975
     songs = [record(keep, id_=i) for i in (5, 9, 1, 7, 3)]
@@ -1989,14 +1989,14 @@ def test_era_shuffle_is_the_decades_songs_in_library_order(fw, heap):
             for key in (b'7', b'1', b'9'):
                 call(None, 1, row(key), None)
     fw.mock('sqlite3_exec', run)
-    out = fw.fn('navigation__era_shuffle_songs', C.c_long)()
+    out = fw.fn('library_lists__era_shuffle_songs', C.c_long)()
     assert [struct.unpack_from('<i', C.string_at(r, 8), O['REC_ID'])[0] for r in deques[out]] == [9, 1, 7]
-    assert not fw.var('navigation__era_keys', EraKeys).v
+    assert not fw.var('library_lists__era_keys', EraKeys).v
 
 
 def test_era_shuffle_of_nothing(fw):
     deques = Deques(fw)
-    assert deques[fw.fn('navigation__era_shuffle_songs', C.c_long)()] == []
+    assert deques[fw.fn('library_lists__era_shuffle_songs', C.c_long)()] == []
     assert not fw.calls('sqlite3_exec')
 
 
@@ -2023,35 +2023,35 @@ ROW = (C.c_int, C.c_void_p, C.c_int, C.POINTER(C.c_char_p), C.c_void_p)
 
 @pytest.fixture
 def era(fw, heap):
-    state = fw.var('navigation__era', Era)
+    state = fw.var('library_lists__era', Era)
     state.v = C.cast(heap.calloc(4, C.sizeof(EraRow)), C.POINTER(EraRow))
     state.cap = 3
     return state
 
 
 def test_era_decades_in_order(fw):
-    state = fw.var('navigation__era', Era)
-    add = fw.fn('navigation__era_decade_row', *ROW)
+    state = fw.var('library_lists__era', Era)
+    add = fw.fn('library_lists__era_decade_row', *ROW)
     assert add(None, 2, row(b'1970', b'4'), None) == 0 and add(None, 2, row(b'2000', b'11'), None) == 0
     assert state.n == 2 and list(state.decade[:2]) == [1970, 2000] and list(state.count[:2]) == [4, 11]
 
 
 @pytest.mark.parametrize('n, values', [(1, (b'1970', b'4')), (3, (b'1970', b'4', b'x')), (2, (None, b'4')), (2, (b'1970', None))])
 def test_era_ignores_a_bad_decade_row(fw, n, values):
-    state = fw.var('navigation__era', Era)
-    assert fw.fn('navigation__era_decade_row', *ROW)(None, n, row(*values), None) == 0 and state.n == 0
+    state = fw.var('library_lists__era', Era)
+    assert fw.fn('library_lists__era_decade_row', *ROW)(None, n, row(*values), None) == 0 and state.n == 0
 
 
 def test_era_keeps_at_most_32_decades(fw):
-    state = fw.var('navigation__era', Era)
-    add = fw.fn('navigation__era_decade_row', *ROW)
+    state = fw.var('library_lists__era', Era)
+    add = fw.fn('library_lists__era_decade_row', *ROW)
     for i in range(40):
         add(None, 2, row(b'%d' % (1000 + i), b'1'), None)
     assert state.n == 32 and state.decade[31] == 1031
 
 
 def test_era_album_row_copies_its_strings(fw, era):
-    add = fw.fn('navigation__era_album_row', *ROW)
+    add = fw.fn('library_lists__era_album_row', *ROW)
     album, artist, year, path = text(b'Album'), text(b'Band'), text(b'1975'), text(b'/m/a')
     fields = (C.c_char_p * 4)(C.cast(album, C.c_char_p), C.cast(artist, C.c_char_p), C.cast(year, C.c_char_p), C.cast(path, C.c_char_p))
     assert add(None, 4, fields, None) == 0
@@ -2061,18 +2061,18 @@ def test_era_album_row_copies_its_strings(fw, era):
 
 
 def test_era_album_row_with_no_artist(fw, era):
-    fw.fn('navigation__era_album_row', *ROW)(None, 4, row(b'A', None, b'1975', b'/m'), None)
+    fw.fn('library_lists__era_album_row', *ROW)(None, 4, row(b'A', None, b'1975', b'/m'), None)
     assert C.string_at(era.v[0].artist) == b''
 
 
 @pytest.mark.parametrize('n, values', [(3, (b'A', b'B', b'1')), (4, (None, b'B', b'1', b'/m')), (4, (b'A', b'B', None, b'/m')), (4, (b'A', b'B', b'1', None))])
 def test_era_ignores_a_bad_album_row(fw, era, n, values):
-    assert fw.fn('navigation__era_album_row', *ROW)(None, n, row(*values), None) == 0 and era.m == 0
+    assert fw.fn('library_lists__era_album_row', *ROW)(None, n, row(*values), None) == 0 and era.m == 0
 
 
 def test_era_any_row_text(fw, heap):
-    state = fw.var('navigation__era', Era)
-    decade, album = fw.fn('navigation__era_decade_row', *ROW), fw.fn('navigation__era_album_row', *ROW)
+    state = fw.var('library_lists__era', Era)
+    decade, album = fw.fn('library_lists__era_decade_row', *ROW), fw.fn('library_lists__era_album_row', *ROW)
     rng = random.Random(0xe4a)
     for data in hostile(rng, [b'1975', b'2000', b'-1', b'99999999999', b'12x'], 1500):
         state.v = C.cast(heap.calloc(2, C.sizeof(EraRow)), C.POINTER(EraRow))
@@ -2080,26 +2080,26 @@ def test_era_any_row_text(fw, heap):
         album(None, 4, row(data, data or None, data, data), None)
         decade(None, 2, row(data, data), None)
         assert state.m == 1 and C.string_at(state.v[0].album) == data and state.n == 1
-        fw.fn('navigation__era_free', None)()
+        fw.fn('library_lists__era_free', None)()
 
 
 def test_era_albums_stop_at_the_decades_count(fw, era):
-    add = fw.fn('navigation__era_album_row', *ROW)
+    add = fw.fn('library_lists__era_album_row', *ROW)
     for i in range(6):
         assert add(None, 4, row(b'A', b'B', b'%d' % i, b'/m'), None) == 0
     assert era.m == 3 and era.v[2].year == 2
 
 
 def test_era_free_then_empty(fw, era):
-    add = fw.fn('navigation__era_album_row', *ROW)
+    add = fw.fn('library_lists__era_album_row', *ROW)
     add(None, 4, row(b'A', b'B', b'1', b'/m'), None)
-    fw.fn('navigation__era_free', None)()
+    fw.fn('library_lists__era_free', None)()
     assert not era.v and era.m == 0 and era.cap == 0
-    fw.fn('navigation__era_free', None)()  # nothing left to free
+    fw.fn('library_lists__era_free', None)()  # nothing left to free
 
 
 def test_era_closed(fw, era):
-    closed = fw.fn('navigation__era_closed', C.c_int, C.c_void_p, C.c_void_p)
+    closed = fw.fn('library_lists__era_closed', C.c_int, C.c_void_p, C.c_void_p)
     era.page, era.albums = 0x10, 0x20
     assert closed(0x30, None) == 0 and era.page == 0x10 and era.albums == 0x20 and era.cap == 3
     closed(0x10, None)
@@ -2109,8 +2109,8 @@ def test_era_closed(fw, era):
 
 
 def test_era_keys_grow_and_keep_their_values(fw):
-    keys = fw.var('navigation__era_keys', EraKeys)
-    add = fw.fn('navigation__era_key_row', *ROW)
+    keys = fw.var('library_lists__era_keys', EraKeys)
+    add = fw.fn('library_lists__era_key_row', *ROW)
     for i in range(3000):
         assert add(None, 1, row(b'%d' % i), None) == 0
     assert keys.n == 3000 and keys.cap == 4096 and list(keys.v[:3000]) == list(range(3000))
@@ -2118,19 +2118,19 @@ def test_era_keys_grow_and_keep_their_values(fw):
 
 @pytest.mark.parametrize('n, values', [(0, ()), (2, (b'1', b'2')), (1, (None,))])
 def test_era_keys_ignore_a_bad_row(fw, n, values):
-    keys = fw.var('navigation__era_keys', EraKeys)
-    assert fw.fn('navigation__era_key_row', *ROW)(None, n, row(*values) if values else None, None) == 0 and keys.n == 0
+    keys = fw.var('library_lists__era_keys', EraKeys)
+    assert fw.fn('library_lists__era_key_row', *ROW)(None, n, row(*values) if values else None, None) == 0 and keys.n == 0
 
 
 @pytest.mark.parametrize('a, b, order', [(1, 2, -1), (2, 1, 1), (7, 7, 0), (0xffffffff, 1, 1), (1, 0x80000000, -1)])
 def test_era_key_cmp_is_unsigned(fw, a, b, order):
-    assert fw.fn('navigation__era_key_cmp', C.c_int, C.POINTER(C.c_uint), C.POINTER(C.c_uint))(C.c_uint(a), C.c_uint(b)) == order
+    assert fw.fn('library_lists__era_key_cmp', C.c_int, C.POINTER(C.c_uint), C.POINTER(C.c_uint))(C.c_uint(a), C.c_uint(b)) == order
 
 
 @pytest.mark.parametrize('decade, name', [(1960, b'60s'), (1990, b'90s'), (1900, b'00s'), (2000, b'2000s'), (2010, b'2010s')])
 def test_era_name(fw, decade, name):
     out = C.create_string_buffer(16)
-    assert fw.fn('navigation__era_name', C.c_char_p, C.c_void_p, C.c_int)(out, decade) == name
+    assert fw.fn('library_lists__era_name', C.c_char_p, C.c_void_p, C.c_int)(out, decade) == name
 
 
 # Playlists and SQL rows.
@@ -2415,14 +2415,14 @@ class Ls(C.Structure):
 
 
 def test_ls_cancel_asks_the_poll_to_stop(fw):
-    ls = fw.var('navigation__ls', Ls)
-    assert fw.fn('navigation__ls_cancel', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0 and ls.cancel == 1
+    ls = fw.var('library_lists__ls', Ls)
+    assert fw.fn('library_lists__ls_cancel', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0 and ls.cancel == 1
 
 
 def lengths(fw, data):
     Files(fw, {} if data is None else {'/mnt/data/ringnav-lengths': data})
-    fw.fn('navigation__lengths_read', None)()
-    return fw.var('navigation__ls', Ls), fw.fn('navigation__length_of', C.c_int, C.c_uint)
+    fw.fn('library_lists__lengths_read', None)()
+    return fw.var('library_lists__ls', Ls), fw.fn('library_lists__length_of', C.c_int, C.c_uint)
 
 
 def test_lengths_are_looked_up_sorted(fw):
@@ -2537,9 +2537,9 @@ def test_le32(fw, data, value):
 
 def test_lengths_any_file(fw):
     files = Files(fw)
-    ls = fw.var('navigation__ls', Ls)
-    read = fw.fn('navigation__lengths_read', None)
-    length_of = fw.fn('navigation__length_of', C.c_int, C.c_uint)
+    ls = fw.var('library_lists__ls', Ls)
+    read = fw.fn('library_lists__lengths_read', None)
+    length_of = fw.fn('library_lists__length_of', C.c_int, C.c_uint)
     rng = random.Random(0x1e4)
     for _ in range(800):
         files.files['/mnt/data/ringnav-lengths'] = rng.randbytes(rng.randrange(40))
