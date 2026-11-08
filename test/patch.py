@@ -13767,10 +13767,11 @@ class PhotosMachine(DepthMachine):
     """The card as a tree of {path: [(name, d_type)]}, photo bytes by path, and the cache's files."""
     def __init__(self,tree,data):
         super().__init__()
-        self.tree=tree; self.data=data; self.cache=set(); self.thumbs=[]; self.forks=0; self.bad=set(); self.open_files={}; self.dirs={}
+        self.tree=tree; self.data=data; self.cache=set(); self.thumbs=[]; self.forks=0; self.ff_pid=-1; self.bad=set(); self.open_files={}; self.dirs={}
         for n in ('opendir@GLIBC_2.0','readdir@GLIBC_2.0','closedir@GLIBC_2.0','qsort@GLIBC_2.0','fopen@GLIBC_2.2',
                   'fread@GLIBC_2.0','fseek@GLIBC_2.0','fclose@GLIBC_2.2','access@GLIBC_2.0','rename@GLIBC_2.0','unlink@GLIBC_2.0',
-                  'memcmp@GLIBC_2.0','toolsThumbSpecCover','fork@GLIBC_2.0','pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0'):
+                  'memcmp@GLIBC_2.0','toolsThumbSpecCover','fork@GLIBC_2.0','waitpid@GLIBC_2.0','pthread_mutex_lock@GLIBC_2.0',
+                  'pthread_mutex_unlock@GLIBC_2.0'):
             self.handlers[syms[n]]='p:'+n
         tramp=int(manifest['patch_symbols']['stock_localmusic_trampoline'],16)
         self.handlers[tramp]='stock_localmusic'; self.u.hook_add(UC_HOOK_CODE,self.hook,begin=tramp,end=tramp)  # fast() ran
@@ -13810,7 +13811,8 @@ class PhotosMachine(DepthMachine):
                 if ret: self.cache.add(self.text(b))
             elif name=='rename': self.cache.discard(text); self.cache.add(self.text(b))
             elif name=='unlink': self.cache.discard(text)
-            elif name=='fork': self.forks+=1; ret=-1  # thumb()'s ffmpeg fallback, refused
+            elif name=='fork': self.forks+=1; ret=self.ff_pid  # thumb()'s ffmpeg: refused (-1), or 99 to fail by itself
+            elif name=='waitpid': self.u.mem_write(b,struct.pack('<i',1<<8)); ret=a  # exit 1: the picture's fault
             elif name=='memcmp': ret=0 if bytes(self.u.mem_read(a,c))==bytes(self.u.mem_read(b,c)) else 1
         else: return super().hook(u,address,size,unused)
         self.calls.append((name,a,b,c))
@@ -13850,6 +13852,7 @@ def cache(i,s): return f'/mnt/mmc/.photos/{keys[i]:08x}{s}'
 # then its thumbnail from that copy, and marks the corrupt one bad.
 def border(w): return m.call(address=HOOKS['widget_on_paint_border'][0],args=(w,m.canvas,0,0),gap=0,clear=False,count=50_000_000)
 border(tiles[0]); assert m.bands[-1][:5]==((O['PH_TILE_W']-O['PH_THUMB_W'])//2,(O['PH_TILE_H']-O['PH_THUMB_H'])//2,O['PH_THUMB_W'],O['PH_THUMB_H'],O['PH_GREY'])
+m.ff_pid=99  # ffmpeg runs and fails too: the corrupt photo's marker (a refused or killed one leaves none)
 worker,arg=m.threads[0]; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=20_000_000)==0
 SW,SH,TW,TH=O['PH_SHOT_W'],O['PH_SHOT_H'],O['PH_THUMB_W'],O['PH_THUMB_H']
 assert m.thumbs==[(paths[0],cache(0,'.tmp'),SW,SH),(cache(0,'.jpg'),cache(0,'.tmp'),TW,TH),

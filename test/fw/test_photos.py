@@ -390,14 +390,38 @@ def test_a_photo_marked_bad_is_not_tried_again(fw):
     assert build(fw) == PH_BAD and thumbs.made == []
 
 
+def ffmpeg(fw, status):
+    """ffmpeg starts and ends with status: 1 << 8 its own failure, 9 killed."""
+    fw.mock('fw_fork', lambda *_: 1234)
+
+    def wait(pid, out, *_):
+        C.c_int.from_address(out).value = status
+        return pid
+    fw.mock('fw_waitpid', wait)
+
+
 def test_a_photo_nothing_decodes_gets_the_bad_marker(fw):
     path = f'{ROOT}/a.jpg'
     card = Card(fw, {path: head(1)})
     Thumbs(fw, card, bad={path})
+    ffmpeg(fw, 1 << 8)
     worker_state(fw, [path])
     assert build(fw) == PH_BAD
     assert card.files[cached(path, '.bad')] == b'' and cached(path) not in card.files
     assert fw.calls('fw_fork')  # ffmpeg was the fallback
+
+
+@pytest.mark.parametrize('killed', (1, 0))
+def test_a_photo_whose_ffmpeg_was_killed_or_never_started_gets_no_marker(fw, killed):
+    """ffmpeg's child is the OOM killer's pick when memory is short (#216), and a big picture's only decoder, or its
+    fork is refused: the photo may be fine, so the next open tries it again."""
+    path = f'{ROOT}/a.jpg'
+    card = Card(fw, {path: head(1)})
+    Thumbs(fw, card, bad={path})
+    if killed:
+        ffmpeg(fw, 9)
+    worker_state(fw, [path])
+    assert build(fw) == PH_BAD and fw.calls('fw_fork') and cached(path, '.bad') not in card.files
 
 
 def test_a_photo_gone_mid_build_gets_no_marker(fw):

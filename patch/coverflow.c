@@ -172,8 +172,8 @@ long file_size(const char *path) {
  * *exited: ffmpeg ran to its own exit (no refused fork, no kill), so a failure is the picture's.
  * ponytail: a process per cover; a resident decoder if first builds drag. */
 /* Runs that never reached ffmpeg's own exit, from any thread (counted atomically, so none is
- * lost); build_art compares before and after. */
-static volatile unsigned ff_kills __attribute__((section(".scratch")));
+ * lost); build_art and photos.c compare before and after. */
+volatile unsigned ff_kills __attribute__((section(".scratch")));
 static int ff_run(const char *src, const char *dst, int w, int h, int *exited) {
     char vf[80], tmp[1040];
     tk_snprintf(vf, sizeof(vf), "scale=%d:%d:force_original_aspect_ratio=decrease", w, h);
@@ -206,20 +206,22 @@ static unsigned be16(const unsigned char *p) { return p[0] << 8 | p[1]; }
  * take (#216), read from its header: a PNG over 1024 px either way (its reader, 0x5b66f8, expands
  * the image with png_read_png before its own 1024 px test) or a progressive JPEG over 1024 px
  * (libjpeg keeps a full-size coefficient buffer at any scale). Magic bytes as toolsGetPictureInfo
- * tells them; the JPEG's frame header is looked for in its first 64 segments. */
+ * tells them; the JPEG's frame header is looked for in its first 64 segments.
+ * ponytail: only SOF2, as ffmpeg 4.2 decodes no arithmetic (SOF10) or hierarchical frames; a
+ * progressive cover ffmpeg's -xerror rejects (cut short) no longer falls back to stock. */
 static int big_picture(const char *path) {
     unsigned char b[24];
     void *f = fopen(path, "rb");
     int got = f && fread(b, 1, sizeof b, f) == sizeof b, big = 0;
-    if (got && b[0] == 0x89 && b[1] == 'P') /* IHDR's width and height */
+    if (got && b[0] == 0x89 && b[1] == 'P' && !memcmp(b + 12, "IHDR", 4)) /* its width and height */
         big = be16(b + 16) || be16(b + 18) > 1024 || be16(b + 20) || be16(b + 22) > 1024;
     else if (got && b[0] == 0xff && b[1] == 0xd8)
         for (long at = 2, n = 0; n < 64 && !fseek(f, at, 0) && fread(b, 1, 9, f) == 9 &&
                                  b[0] == 0xff && b[1] != 0xda; /* image data follows */
              ++n, at += 2 + be16(b + 2))
             if (b[1] >> 4 == 0xc && b[1] != 0xc4 && b[1] != 0xc8 && b[1] != 0xcc) {
-                /* a frame header, SOF0 to SOF15: SOF2, 6, 10 and 14 are progressive */
-                big = (b[1] & 3) == 2 && (be16(b + 5) > 1024 || be16(b + 7) > 1024);
+                /* a frame header, SOF0 to SOF15: SOF2 is the Huffman progressive one */
+                big = b[1] == 0xc2 && (be16(b + 5) > 1024 || be16(b + 7) > 1024);
                 break;
             }
     if (f) fclose(f);

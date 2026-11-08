@@ -119,10 +119,12 @@ static int build(int i) {
     cache_path(shot, ph.key[i], ".jpg");
     if (access(shot, 0)) {
         if (!ph.space) return PH_BAD;
+        unsigned kills = ff_kills;
         if (!thumb(ph.path[i], tmp, turn ? PH_SHOT_H : PH_SHOT_W, turn ? PH_SHOT_W : PH_SHOT_H) ||
             rename(tmp, shot)) {
             unlink(tmp);
-            if (access(ph.path[i], 0)) return PH_BAD;
+            /* a killed ffmpeg (memory short; a big picture's only decoder) isn't the photo's fault */
+            if (access(ph.path[i], 0) || kills != ff_kills) return PH_BAD;
             cache_path(shot, ph.key[i], ".bad");
             if ((f = fopen(shot, "w"))) fclose(f);
             return PH_BAD;

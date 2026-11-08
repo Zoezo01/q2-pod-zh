@@ -1368,7 +1368,7 @@ def test_ff_run_a_run_that_reached_ffmpeg_s_own_exit(fw, status, exited):
     got = C.c_int(-1)
     ok = g.ff_run(b'/s', b'/d', 160, 160, r(got))
     assert got.value == exited and ok == (status == 0)
-    assert fw.var('coverflow__ff_kills', C.c_uint).value == (0 if exited else 1)
+    assert fw.var('ff_kills', C.c_uint).value == (0 if exited else 1)
 
 
 def test_ff_run_success_renames_the_picture_into_place(fw):
@@ -1394,7 +1394,7 @@ def test_ff_run_a_refused_fork_counts_as_killed(fw):
     fw.mock('fw_fork', lambda *_: -1)
     got = C.c_int(-1)
     assert g.ff_run(b'/s', b'/d', 160, 160, r(got)) == 0 and got.value == 0
-    assert fw.var('coverflow__ff_kills', C.c_uint).value == 1
+    assert fw.var('ff_kills', C.c_uint).value == 1
 
 
 def test_ff_run_a_signal_mid_wait_waits_again(fw):
@@ -1523,7 +1523,8 @@ def jpeg(sof, w, h, *before):
     (png(4000, 4000), 1), (png(1025, 16), 1), (png(16, 1025), 1), (png(70000, 1), 1), (png(1, 70000), 1),
     (png(1024, 1024), 0), (png(4000, 4000)[:20], 0),
     (jpeg(0xc2, 3000, 3000, APP0, EXIF, DQT, DHT, DAC), 1), (jpeg(0xc2, 1025, 16), 1), (jpeg(0xc2, 16, 1025), 1),
-    (jpeg(0xc6, 2000, 2000), 1), (jpeg(0xca, 2000, 2000), 1), (jpeg(0xce, 2000, 2000), 1),
+    (jpeg(0xc6, 2000, 2000), 0), (jpeg(0xca, 2000, 2000), 0), (jpeg(0xce, 2000, 2000), 0),
+    (png(4000, 4000).replace(b'IHDR', b'CgBI'), 0),
     (jpeg(0xc2, 1024, 1024, APP0), 0), (jpeg(0xc0, 4000, 4000, APP0, EXIF), 0), (jpeg(0xc1, 4000, 4000), 0),
     (jpeg(0xc2, 3000, 3000, *[APP0] * 63), 1), (jpeg(0xc2, 3000, 3000, *[APP0] * 64), 0),
     (b'RIFF\0\0\0\0WEBPVP8 ' + bytes(16), 0)))
@@ -1531,7 +1532,8 @@ def test_thumb_sends_a_picture_stock_would_decode_whole_to_ffmpeg(fw, head, big)
     """Stock's PNG reader expands the whole image before its 1024 px test, and libjpeg holds a progressive JPEG's
     full-size coefficients at any scale, both in demo, the OOM killer's pick (#216): those go to ffmpeg alone, whose
     child the kernel kills first. A baseline JPEG decodes scaled, so it stays with stock, as does what thumb can't
-    size (a cut-short header, the frame header past the 64th segment, another type)."""
+    size (a cut-short header, the frame header past the 64th segment, another type) or ffmpeg can't decode (an
+    arithmetic or hierarchical progressive JPEG)."""
     g = api(fw)
     card = Card(fw, {'/p/a': head, '/d.ff': b'jpg'})
     builder(fw, card, thumb=True, ff=0)
