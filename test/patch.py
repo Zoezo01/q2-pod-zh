@@ -5063,6 +5063,18 @@ m=ClassMachine(rows=1); m.word(m.row(0)+O['REC_TYPE'],4)
 m.word(m.row(0)+O['REC_PATH'],m.string(paths[0]))
 assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf00b,0,0,0),gap=0)==1
 passed()
+# Playlists' rows go to p_deque_playlist, so stock's count can outrun the showlist (empty after boot):
+# the untitled-row pass reads the showlist's own rows only (also library_poll's import, which loads it).
+class PlaylistsMachine(ClassMachine):
+    def hook(self,u,address,size,unused):
+        super().hook(u,address,size,unused)
+        if address==self.tramp: self.returns(18)
+for rows in (0,2):
+    m=PlaylistsMachine(rows=rows)
+    if rows: m.word(m.row(0)+O['REC_NAME'],m.string('a.flac')); m.word(m.row(0)+O['REC_PATH'],m.string('/p/a.flac'))
+    assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf00b,0,0,0),gap=0)==18
+    if rows: assert m.text(m.get(m.row(0)+O['REC_TITLE']))=='a'
+passed()
 # iPod song rows: an untagged song's title is its file name without the extension; a tag stays.
 m=SongsMachine(page='localclass_page',cls=0xf001,rows=2); m.found=[m.song('a.flac'),m.song('Row 1')]
 m.word(m.found[1]+O['REC_TITLE'],m.string('Tagged')); m.word(m.found[0]+O['REC_PATH'],m.string('/p/a.flac'))
