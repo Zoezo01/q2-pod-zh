@@ -467,7 +467,7 @@ static int is_row(void *w) {
 }
 
 /* A widget's own window: the top-level widget it sits in. */
-static void *window_of(void *w) {
+void *window_of(void *w) {
     void *wm = window_manager();
     while (w && P(w, W_PARENT) != wm) w = P(w, W_PARENT);
     return w;
@@ -1431,7 +1431,7 @@ void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s) {
     }
 }
 /* How far a rounded box's row i starts in from its side: a hard corner. */
-static int round_inset(int R, int i, int h) {
+int round_inset(int R, int i, int h) {
     return i < R ? arc_out(R, i) >> 4 : i >= h - R ? arc_out(R, h - 1 - i) >> 4 : 0;
 }
 /* R's corner pixels' coverage out of 255, by radius (tools/art.py CORNERS); a radius outside the
@@ -1448,8 +1448,6 @@ static int corner_row(const rect_t *r, int R, int i) {
 /* Row i of r, its corners rounded by R and antialiased, in a final 0xAARRGGBB: each corner pixel
  * the colour at its coverage of the colour's alpha. Only the ends named are rounded (ROUND_LEFT,
  * ROUND_RIGHT); the other side is square. */
-#define ROUND_LEFT 1
-#define ROUND_RIGHT 2
 static void round_row_ends(void *canvas, const rect_t *r, int R, int i, unsigned c, int ends) {
     const unsigned char *cover = cover_of(R);
     int row = corner_row(r, R, i), n = cover ? 0 : round_inset(R, i, r->h);
@@ -1463,17 +1461,17 @@ static void round_row_ends(void *canvas, const rect_t *r, int R, int i, unsigned
     int l = ends & ROUND_LEFT ? n : 0, rr = ends & ROUND_RIGHT ? n : 0;
     if (r->w > l + rr) scrub_row(canvas, c, r->x + l, r->y + i, r->w - l - rr);
 }
-static void round_row(void *canvas, const rect_t *r, int R, int i, unsigned c) {
+void round_row(void *canvas, const rect_t *r, int R, int i, unsigned c) {
     round_row_ends(canvas, r, R, i, c, ROUND_LEFT | ROUND_RIGHT);
 }
 /* The gradient s over r, one row at a time, its corners rounded by R and antialiased. */
-static void paint_round_rows(void *canvas, const rect_t *r, const stops_t *s, int R) {
+void paint_round_rows(void *canvas, const rect_t *r, const stops_t *s, int R) {
     for (int i = 0; s->n >= 2 && i < r->h; ++i)
         round_row(canvas, r, R, i, 0xff000000u | stops_row(s, i, r->h));
 }
 /* A ring a pixel wide just inside r: what R's corners cover and R - 1's, a pixel in, don't. With
  * either out of the table, hard corners. */
-static void round_ring(void *canvas, const rect_t *r, int R, unsigned c) {
+void round_ring(void *canvas, const rect_t *r, int R, unsigned c) {
     const unsigned char *out = cover_of(R), *in = cover_of(R - 1);
     for (int i = 0; i < r->h; ++i) {
         int row = corner_row(r, R, i);
@@ -1563,7 +1561,6 @@ void draw_centred(void *canvas, const unsigned *s, unsigned n, const void *r, un
 }
 /* A label's shadow, which AWTK hasn't: its text, from under it in a paint hook, in black at alpha,
  * in r, its box moved. Black in either half (Light Mode's text setter flips this back). */
-static unsigned wide_len(const unsigned *s);
 void text_shadow(void *canvas, const char *face, const unsigned *s, const void *r, unsigned px,
                  unsigned alpha) {
     unsigned n = wide_len(s);
@@ -1976,9 +1973,7 @@ unsigned ringnav_hscroll_lull(void *w, int (*lulled)(const void *), unsigned ms)
  * is full-screen (0, 0, 375, 320) and its background clear, so the bar and the page show through.
  */
 #define BAR_ROWS geom_val(V_BAR)
-#define CONFIRM_CELL_PX 23
 enum { FORM_NONE, FORM_PAGE, FORM_TRAY };
-static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h);
 static int dialogs_painted(void) { return theme()->painter[PAINT_CONFIRM] != CONFIRM_STOCK; }
 /* The confirm's form: the tray for the prompt confirm_over asked for, the page for any other. The
  * first confirm painted after the call takes the flag, so a prompt stock opens over it (a held
@@ -1991,12 +1986,12 @@ static int confirm_form(void *win) {
     return st.confirm_verb && win == st.confirm_win ? FORM_TRAY : FORM_PAGE;
 }
 /* An inset shadow from above (0, 2, blur 2): of its alpha a, what a gaussian leaves on each row. */
-static void inset_top(void *canvas, const rect_t *r, int R, unsigned a) {
+void inset_top(void *canvas, const rect_t *r, int R, unsigned a) {
     static const unsigned char part[] = { 239, 177, 79, 17 };
     for (int i = 0; i < 4; ++i) round_row(canvas, r, R, i, (a * part[i] >> 8) << 24);
 }
 /* A box's one-pixel light below it. */
-static void row_below(void *canvas, const rect_t *r, int R, unsigned c) {
+void row_below(void *canvas, const rect_t *r, int R, unsigned c) {
     rect_t down = { r->x, r->y + 1, r->w, r->h };
     round_row(canvas, &down, R, r->h - 1, c);
 }
@@ -2007,17 +2002,15 @@ static const unsigned confirm_light[30] = { 0x7389a5, 0x7b90a9, 0x8094ac, 0x8598
                                             0xb3becd, 0xb5c0ce, 0xb7c1cf, 0xb8c2d0, 0xb9c3d1,
                                             0xbbc4d2, 0xbcc5d3, 0xbec7d4, 0xbfc8d4, 0xbfc8d4,
                                             0xc0c8d5, 0xc0c8d5, 0xbfc8d5, 0xbfc7d4, 0xbec7d4 };
-static const stops_t confirm_dark = { 4,
-                                      { 0, 30, 85, 100 },
-                                      { 0x14171c, 0x1d2127, 0x2a2f36, 0x191c21 } },
-                     confirm_tray = { 8,
-                                      { 0, 8, 20, 34, 44, 49, 92, 100 },
-                                      { 0x6a707a, 0x565c66, 0x464b54, 0x343840, 0x22252c, 0x121419,
-                                        0x111216, 0x1b1f26 } },
-                     confirm_well = { 5,
-                                      { 0, 25, 70, 90, 100 },
-                                      { 0x07090d, 0x0e1015, 0x15181e, 0x1c1f26, 0x0b0d12 } };
-static unsigned wide_len(const unsigned *s) {
+const stops_t confirm_dark = { 4, { 0, 30, 85, 100 }, { 0x14171c, 0x1d2127, 0x2a2f36, 0x191c21 } },
+              confirm_tray = { 8,
+                               { 0, 8, 20, 34, 44, 49, 92, 100 },
+                               { 0x6a707a, 0x565c66, 0x464b54, 0x343840, 0x22252c, 0x121419,
+                                 0x111216, 0x1b1f26 } },
+              confirm_well = { 5,
+                               { 0, 25, 70, 90, 100 },
+                               { 0x07090d, 0x0e1015, 0x15181e, 0x1c1f26, 0x0b0d12 } };
+unsigned wide_len(const unsigned *s) {
     unsigned n = 0;
     while (s && s[n]) ++n;
     return n;
@@ -2163,7 +2156,7 @@ static void confirm_track(void *w, void *canvas, int form) {
 }
 /* The lit cell, in the scheme's selection: its light top row and dark foot row, rounded at the
  * ends named (round_row_ends). */
-static void lit_rows(void *canvas, const rect_t *c, int ends) {
+void lit_rows(void *canvas, const rect_t *c, int ends) {
     for (int i = 0; i < c->h; ++i)
         round_row_ends(canvas, c, 6, i, 0xff000000u | stops_row(&scheme()->sel, i, c->h), ends);
     round_row_ends(canvas, c, 6, 0, 0x73ffffffu, ends);
@@ -2484,7 +2477,6 @@ static void paint_separators(void *w, void *canvas) {
 
 static void edit_paint(void *w, void *canvas);
 
-static int painting_in(void *row);
 /* Minimal's own accent: stock's white radio
  * images (select, unselect: a 26 px ring, a 12 px dot when checked) vanish on the selected row's
  * off-white card, so they are drawn again over it in the card's ink. So does the Wi-Fi, Bluetooth
@@ -2639,10 +2631,7 @@ static void paint_scrollbar(void *canvas, void *bar, int table) {
 }
 
 /* Stock paints children first and calls this with the surface's canvas origin restored. */
-static void slider_scrub(void *w, void *canvas);
 static void quick_scrub(void *w, void *canvas);
-static void search_over(void *w, void *canvas);
-static int search_del(void *w);
 int ringnav_paint(void *w, void *canvas) {
     if (st.pull_page && !pull_live()) pull_cancel();
     int result = search_del(w) ? 0 : stock_paint_trampoline(w, canvas);
@@ -4037,7 +4026,7 @@ static void dark_title(void *t) {
     slider_label(t, 0, dark_title_y(), 375, 25, px, face ? face : "default");
 }
 /* w at x, y on the screen, unless it's there. */
-static void bar_place(void *w, int x, int y, int ww, int h) {
+void bar_place(void *w, int x, int y, int ww, int h) {
     void *p = P(w, W_PARENT);
     x -= I(p, W_X), y -= I(p, W_Y);
     if (I(w, W_X) != x || I(w, W_Y) != y || I(w, W_W) != ww || I(w, W_H) != h)
@@ -4177,7 +4166,7 @@ int ringnav_showface(void *bar) {
     return result;
 }
 
-static void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
+void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
     stock_canvas_set_fill_color(canvas, color);
     canvas_fill_rect(canvas, x, y, w, h);
 }
@@ -5287,24 +5276,12 @@ int ringnav_ab_x(int t) {
  * one; any opener comes through here. */
 extern void *stock_ui_load_trampoline(const char *name, void *parent);
 /* key: STYLE_KEY bytes. */
-#define STYLE_KEY 48
-static const char *style_key(char *key, const char *state, const char *name) {
+const char *style_key(char *key, const char *state, const char *name) {
     tk_snprintf(key, STYLE_KEY, "style:%s:%s", state, name);
     return key;
 }
-/* Classic's slider pages, one shape over stock's four windows: a dark bar (dark_bar_rows),
- * the page image, a band holding the slider between its ends, the caption. Only the painter reads
- * these tables. */
-static const stops_t slider_band = { 8,
-                                     { 0, 8, 22, 38, 49, 50, 92, 100 },
-                                     { 0x6a707a, 0x565c66, 0x464b54, 0x343840, 0x23262d, 0x0e1014,
-                                       0x0b0d11, 0x181b21 } },
-                     slider_track = { 4,
-                                      { 0, 40, 80, 100 },
-                                      { 0x2f4052, 0x42566a, 0x3b4d60, 0x26333f } },
-                     slider_lit = { 3, { 0, 45, 100 }, { 0xf7ffff, 0xeceeef, 0xc6cbcf } };
 /* The slider's value as a part of w px. */
-static int slider_part(void *s, int w) {
+int slider_part(void *s, int w) {
     int min = widget_get_prop_int(s, "min", 0), max = widget_get_prop_int(s, "max", 100);
     return max > min ? w * (widget_get_prop_int(s, "value", 0) - min) / (max - min) : 0;
 }
@@ -5374,7 +5351,7 @@ void slider_label(void *w, int x, int y, int ww, int h, int px, const char *face
 }
 /* The value's label, on the pages that show one, in the face its text has. Shared with crossfade.c.
  */
-static const char *number_face(void *label, int *px) {
+const char *number_face(void *label, int *px) {
     *px = 32;
     const char *face = theme_face(widget_get_text(label), -1, px);
     return face ? face : "default";
@@ -5390,7 +5367,6 @@ static void time_open(void *win);
 static void time_paint(void *w, void *canvas);
 /* Stock's window as it loads, before its init. Every look-up it makes by name still finds its
  * widget: edit_key clicks img_dec and img_add, hidden here. */
-enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
 static const __WCHAR_TYPE__ slider_caption[] = L"Press Centre When Finished";
 /* Crossfade's and Night Shift's Centre stays on the page (crossfade.c): what it does there. */
 void slider_centre_hint(void *page, int night) {
@@ -5461,7 +5437,7 @@ static void slider_open(void *win) {
     widget_on(c, EVT_CLICK, slider_switch_hit, win);
 }
 /* The Off and On tray on its shadow, the recessed track, the lit cell in the scheme's selection. */
-static void slider_switch(void *w, void *canvas, void *sw) {
+void slider_switch(void *w, void *canvas, void *sw) {
     static const unsigned off[] = { 'O', 'f', 'f' }, on[] = { 'O', 'n' };
     rect_t tray = { 125, 28, 125, 44 }, track = { 138, 37, 100, 26 };
     rect_t left = { 138, 37, 50, 26 }, right = { 188, 37, 50, 26 };
@@ -5504,7 +5480,7 @@ unsigned dark_bar_key(const unsigned *t) {
 }
 /* The dark bar's rows and its line, the last of h rows from y: the scheme's dark half in either
  * half, over the bar's own line, with no second one. Final colours. */
-static void dark_bar_rows(void *canvas, int y, int w, int h) {
+void dark_bar_rows(void *canvas, int y, int w, int h) {
     const theme_t *T = theme();
     const scheme_t *S = &T->schemes[*T->accent_slot];
     paint_stops(canvas, 0, y, w, h - 1, &S->bar);
@@ -5553,7 +5529,6 @@ int clock_minutes(void) {
     return tm ? tm[2] * 60 + tm[1] : -1;
 }
 
-#include "classic_pages.c"
 /* USB Storage's page, every theme: the computer's eject (SCSI START STOP UNIT, LoEj) closes the
  * card's LUN in the kernel's f_mass_storage, and its configfs file then reads empty. Once it has
  * read open, empty is the eject: the heading (Classic) or stock's line (scrlabel_info, which
@@ -6184,7 +6159,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
  * (text_color, highlight_text_color) to the red tone, fills and borders to the light tone. The name
  * is only compared for a color that maps. */
 /* Resolve ancestry during painting: rebinding a pooled row never leaves a color override behind. */
-static int painting_in(void *row) {
+int painting_in(void *row) {
     for (void *w = st.paint_w; row && w; w = P(w, W_PARENT)) {
         if (w == row) return 1;
         if (w == st.sel_w) break;
@@ -12761,7 +12736,7 @@ static int replay_wheel(const void *info) {
  * next Return goes back. Stock's search dialogs and the playlist editor's search (search_edit)
  * keep their text. Every other T9 edit of ours (EDIT_NAME, edit_create) is a cancel: emptied
  * first, so the blur's EVT_VALUE_CHANGED reads as no entry and its page backs out of the edit. */
-static int search_key(unsigned key) {
+int search_key(unsigned key) {
     if (key != KEY_RETURN) return 0;
     void *im = input_method(), *edit = im ? P(im, IM_WIDGET) : (void *)0;
     const char *name = edit ? widget_get_prop_str(edit, "name", "") : "";

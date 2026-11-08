@@ -41,7 +41,7 @@ static unsigned flip(unsigned c) {
     for (int s = 0; s < 24; s += 8) out |= flip_v(c >> s & 255, paper, ink) << s;
     return out;
 }
-static unsigned flip_if(int on, unsigned c) { return on ? flip(c) : c; }
+unsigned flip_if(int on, unsigned c) { return on ? flip(c) : c; }
 /* The grey whose flip is v, by the half's paper and ink; v itself when dark. */
 unsigned unflip(unsigned v) {
     if (!ipod_light()) return v;
@@ -185,10 +185,6 @@ int clock_night(void) {
     return tm && !light_day(tm);
 }
 static void text_inks(void *w);
-#define INK_LABEL 1
-#define INK_BUTTON 5
-#define INK_TAB 10
-#define INK_EDIT 15
 static void light_apply(const int *tm) {
     if (st.light != 2 || light_day(tm) == st.light_day) return;
     st.light_day = !st.light_day;

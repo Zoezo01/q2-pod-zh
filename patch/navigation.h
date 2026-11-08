@@ -375,6 +375,11 @@ extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
 
 /* navigation.c */
+enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
+#define ROUND_RIGHT 2
+#define ROUND_LEFT 1
+#define STYLE_KEY 48
+#define CONFIRM_CELL_PX 23
 int clamp_step(int offset, int maximum, int delta);
 void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned put_num(unsigned *s, unsigned v);
@@ -400,6 +405,25 @@ int shuffle_menu(void *ctx, void *event);
 int stream_config(void *ctx, void *event);
 int tidal_downloads(void *ctx, void *event);
 int upload_scrobbles(void *ctx, void *event);
+void bar_place(void *w, int x, int y, int ww, int h);
+void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h);
+void dark_bar_rows(void *canvas, int y, int w, int h);
+void inset_top(void *canvas, const rect_t *r, int R, unsigned a);
+void lit_rows(void *canvas, const rect_t *c, int ends);
+const char *number_face(void *label, int *px);
+int painting_in(void *row);
+void paint_round_rows(void *canvas, const rect_t *r, const stops_t *s, int R);
+int round_inset(int R, int i, int h);
+void round_ring(void *canvas, const rect_t *r, int R, unsigned c);
+void round_row(void *canvas, const rect_t *r, int R, int i, unsigned c);
+void row_below(void *canvas, const rect_t *r, int R, unsigned c);
+int slider_part(void *s, int w);
+void slider_switch(void *w, void *canvas, void *sw);
+const char *style_key(char *key, const char *state, const char *name);
+unsigned wide_len(const unsigned *s);
+void *window_of(void *w);
+extern const stops_t confirm_dark;
+int search_key(unsigned key);
 
 /* np_bar.c */
 int np_beside(void);
@@ -414,12 +438,36 @@ void scrub_row(void *canvas, unsigned c, int x, int y, int w);
 void np_fill(int scrub);
 
 /* theme_engine.c */
+#define INK_LABEL 1
+#define INK_EDIT 15
+#define INK_TAB 10
+#define INK_BUTTON 5
 enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
 enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */
 int geom_val(int v);
 extern const char *const MEDIA[];
+unsigned flip_if(int on, unsigned c);
 
 /* volume.c */
 void vol_paint(void *top, void *canvas);
+
+/* classic_pages.c */
+int kb_key(void *w);
+void kb_open(void *win);
+void kb_paint_key(void *w, void *canvas);
+void msg_open(void *win);
+void msg_paint(void *w, void *canvas);
+void paint_field(void *w, void *canvas, int x, int y, int fw);
+void paint_ramp(void *canvas, int y0, int y1, int top);
+void pl_box_open(void *win);
+void pl_box_paint(void *w, void *canvas);
+void search_open(void *win);
+void search_paint(void *w, void *canvas);
+void search_tabs_paint(void *group, void *canvas);
+void search_x(void *w, void *canvas);
+void slider_paint(void *w, void *canvas);
+int search_del(void *w);
+void search_over(void *w, void *canvas);
+void slider_scrub(void *w, void *canvas);
 
 #endif

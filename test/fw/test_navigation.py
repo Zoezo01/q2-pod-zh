@@ -189,7 +189,7 @@ def test_flip_is_per_channel_on_a_slightly_coloured_grey(fw):
 
 
 def test_flip_if(fw):
-    flip_if = fw.fn('navigation__flip_if', C.c_uint, C.c_int, C.c_uint)
+    flip_if = fw.fn('flip_if', C.c_uint, C.c_int, C.c_uint)
     assert flip_if(0, 0xff000000) == 0xff000000 and flip_if(1, 0xff000000) == 0xff000000 | PAPER * 0x010101
 
 
@@ -2850,13 +2850,13 @@ def test_painting_in_walks_up_from_the_widget_being_painted(fw, st, painting, ro
     st('paint_w', C.c_void_p).value = None if painting is None else at[painting]
     st('sel_w', C.c_void_p).value = None if sel is None else at[sel]
     target = at[row_] if row_ < 3 else 0x1234
-    assert fw.fn('navigation__painting_in', C.c_int, C.c_void_p)(target) == inside and held
+    assert fw.fn('painting_in', C.c_int, C.c_void_p)(target) == inside and held
 
 
 def test_painting_in_nothing(fw, st):
     held, at = widgets(0, 1)
     st('paint_w', C.c_void_p).value = at[0]
-    assert fw.fn('navigation__painting_in', C.c_int, C.c_void_p)(None) == 0 and held
+    assert fw.fn('painting_in', C.c_int, C.c_void_p)(None) == 0 and held
 
 
 def test_selected_ink_is_the_selected_widgets(fw, st):

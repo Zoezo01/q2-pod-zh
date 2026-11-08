@@ -1,5 +1,7 @@
 /* Classic's own pages: the T9 keyboard, Search, the playlist name box, the slider pages and the
- * message screens. navigation.c #includes this where it stood. */
+ * message screens. */
+#include "navigation.h"
+
 /* Classic's T9 keyboard (stock's kb_default_t9, shared with the other themes, so nothing here
  * changes the asset): a ramp down its window, from screen row 60. Keys paint in the background hook
  * in place of stock's fill, and stock's text clears (the style hook). All colours are final. */
@@ -11,16 +13,16 @@ static unsigned kb_ramp(int y) {
     return mix(rgb[k], rgb[k + 1], y - rows[k], rows[k + 1] - rows[k]);
 }
 /* The ramp's screen rows y0 up to y1, where the canvas starts at screen row top. */
-static void paint_ramp(void *canvas, int y0, int y1, int top) {
+void paint_ramp(void *canvas, int y0, int y1, int top) {
     for (int y = y0; y < y1; ++y) bar_rect(canvas, RGBA(kb_ramp(y)), 0, y - top, 375, 1);
 }
 /* A button of the keyboard's: its panel's page's row's. */
-static int kb_key(void *w) {
+int kb_key(void *w) {
     if (!st.kb_win || !w) return 0;
     for (int i = 0; i < 4 && w; ++i) w = P(w, W_PARENT);
     return w == st.kb_win;
 }
-static void kb_paint_key(void *w, void *canvas) {
+void kb_paint_key(void *w, void *canvas) {
     static const stops_t plain = { 5,
                                    { 0, 6, 45, 85, 100 },
                                    { 0xfbfbfb, 0xf4f4f4, 0xeeeef0, 0xe3e4e6, 0xdadbdd } },
@@ -71,7 +73,7 @@ static void paint_field_plain(void *w, void *canvas, int x, int y, int fw) {
     canvas_draw_image(canvas, bitmap, &right, &to_right);
 }
 /* ... with the glass in it. */
-static void paint_field(void *w, void *canvas, int x, int y, int fw) {
+void paint_field(void *w, void *canvas, int x, int y, int fw) {
     paint_field_plain(w, canvas, x, y, fw);
     paint_art(w, canvas, "classic_light_field_glass", x + 10, y + 7);
 }
@@ -118,7 +120,7 @@ static int kb_gone(void *win, void *event) {
     if (st.search_win) search_layout(st.search_win, 0);
     return 0;
 }
-static void kb_open(void *win) {
+void kb_open(void *win) {
     static const char *const state[] = { "normal", "disable", "focused" };
     char key[STYLE_KEY];
     void *cand = widget_lookup(win, "candidates", 1);
@@ -162,7 +164,6 @@ static void field_tips(void *edit, const char *tips, int room) {
     for (unsigned k = 0; fit < 26 && k < sizeof empty / sizeof *empty; ++k)
         widget_set_prop_int(edit, style_key(key, empty[k], "font_size"), fit);
 }
-static int search_key(unsigned key);
 static int t9_gone(void *ctx, void *event) {
     st.t9_page = st.t9_back = (void *)0;
     return 0;
@@ -224,7 +225,7 @@ static int pl_box_due(const void *info) {
     }
     return 0;
 }
-static void pl_box_open(void *win) {
+void pl_box_open(void *win) {
     static const char *const state[] = { "normal", "pressed", "over", "disable", "focused" };
     static const char *const prop_name[] = { "bg_color", "border_color", "round_radius" };
     char key[STYLE_KEY];
@@ -246,7 +247,7 @@ static void pl_box_open(void *win) {
     timer_add(pl_box_due, (void *)0, 0);
 }
 /* The dialog's own paint, under its children; the bar goes after the page, as Search's. */
-static void pl_box_paint(void *w, void *canvas) {
+void pl_box_paint(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD), *bar = *(void *const *)system_bar;
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -263,7 +264,7 @@ static void pl_box_paint(void *w, void *canvas) {
 #define SEARCH_HISTORY_Y 71
 /* The dialog as it loads, before its init: every name stock looks up stays. It covers the bar, so
  * it paints the bar (search_paint); it's at 0, 0, so these boxes are the screen's. */
-static void search_open(void *win) {
+void search_open(void *win) {
     static const char *const tab_state[] = { "normal",
                                              "pressed",
                                              "over",
@@ -342,7 +343,7 @@ static int search_strip_end(void) {
 }
 /* The dialog's own paint, under its children: the dark bar's rows behind the field. The bar goes
  * first: the window manager paints a dialog over it. With the keyboard up there's no bar. */
-static void search_paint(void *w, void *canvas) {
+void search_paint(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD), *bar = *(void *const *)system_bar;
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -375,14 +376,14 @@ int ringnav_search_init(void *win, void *ctx) {
  * (s_btn_delete_navbar). Their styles' opaque black border, unseen on stock's black, turns white in
  * Light Mode, a frame broken at its round corners over the selection: neither paints its border
  * (ringnav_paint). 1 the X, 2 the trash, else 0. */
-static int search_del(void *w) {
+int search_del(void *w) {
     if (!w || !st.search_win || window_of(w) != st.search_win) return 0;
     const char *s = widget_get_prop_str(w, "style", "");
     return !tk_strcmp(s, "s_btn_cancel_navbar") ? 1 : !tk_strcmp(s, "s_btn_delete_navbar") ? 2 : 0;
 }
 /* The X in stock's image's place, the theme's own mark as paint_tick's: 3 px runs, 15 x 13, about a
  * row label's cap height, in the selection's text on the selected row, else the ink. */
-static void search_x(void *w, void *canvas) {
+void search_x(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
     const scheme_t *S = scheme();
@@ -396,7 +397,7 @@ static void search_x(void *w, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* The strip's row below it, over the rows. */
-static void search_over(void *w, void *canvas) {
+void search_over(void *w, void *canvas) {
     if (!w || w != st.search_win || st.kb_win || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     scrub_row(canvas, 0x55000000u, 0, search_strip_end(), 375);
@@ -404,7 +405,7 @@ static void search_over(void *w, void *canvas) {
 }
 /* The tabs, in the group's coordinates: the choice control's track, the lit tab, the labels'
  * shadows under stock's labels. */
-static void search_tabs_paint(void *group, void *canvas) {
+void search_tabs_paint(void *group, void *canvas) {
     static const stops_t light = { 4,
                                    { 0, 35, 70, 100 },
                                    { 0x7b90a9, 0x8597ae, 0x8a9bb1, 0x8e9fb4 } };
@@ -436,8 +437,19 @@ static void search_tabs_paint(void *group, void *canvas) {
     stock_canvas_set_fill_color(canvas, fill);
 }
 
+/* Classic's slider pages, one shape over stock's four windows: a dark bar (dark_bar_rows),
+ * the page image, a band holding the slider between its ends, the caption. Only the painter reads
+ * these tables. */
+static const stops_t slider_band = { 8,
+                                     { 0, 8, 22, 38, 49, 50, 92, 100 },
+                                     { 0x6a707a, 0x565c66, 0x464b54, 0x343840, 0x23262d, 0x0e1014,
+                                       0x0b0d11, 0x181b21 } },
+                     slider_track = { 4,
+                                      { 0, 40, 80, 100 },
+                                      { 0x2f4052, 0x42566a, 0x3b4d60, 0x26333f } },
+                     slider_lit = { 3, { 0, 45, 100 }, { 0xf7ffff, 0xeceeef, 0xc6cbcf } };
 /* The page, in the window's coordinates, under its children. */
-static void slider_paint(void *w, void *canvas) {
+void slider_paint(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD), *s = st.slider_w, *sw = st.slider_sw;
     if (!lcd) return;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
@@ -473,7 +485,7 @@ static void slider_paint(void *w, void *canvas) {
 }
 /* ringnav_paint, after stock's slider: the bar's 8 rows over its own, inset a pixel at each end on
  * the first and last. */
-static void slider_scrub(void *w, void *canvas) {
+void slider_scrub(void *w, void *canvas) {
     if (!w || w != st.slider_w || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     int ww = I(w, W_W), part = slider_part(w, ww);
@@ -563,7 +575,7 @@ static void *msg_count(void *unused) {
 /* Stock's window as it loads, before its init. Every look-up stock makes by name still finds its
  * widget, and btn_no keeps its binding. A cable can open USB's page over the scan's dialog, so each
  * has its own st. */
-static void msg_open(void *win) {
+void msg_open(void *win) {
     static const char *const hide[] = { "img_animation", "label_msg", "label_scanfolder",
                                         "img_usbmode", "scrlabel_info" },
                              *const state[] = { "normal", "pressed", "over", "disable", "focused" };
@@ -607,7 +619,7 @@ static void msg_open(void *win) {
     st.msg_timer = timer_add(msg_poll, (void *)0, 200);
 }
 /* Under the window's children. */
-static void msg_paint(void *w, void *canvas) {
+void msg_paint(void *w, void *canvas) {
     static const unsigned update[] = { 'U', 'p', 'd', 'a', 't', 'e', ' ', 'L',
                                        'i', 'b', 'r', 'a', 'r', 'y', 0 },
                           q2pod[] = { 'Q', '2', ' ', 'P', 'o', 'd', 0 };
