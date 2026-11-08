@@ -453,7 +453,12 @@ void bar_title(void *bar, void *top);
 void slider_fill(void *slider, unsigned color);
 void np_theme(void);
 void paint_scrubber(void *w, void *canvas);
-void scrub_row(void *canvas, unsigned c, int x, int y, int w);
+/* One row of final colour, its alpha the row's. Inline: the round boxes' edges call it a pixel at a
+ * time, and an exported call passes w on the stack. */
+static inline void scrub_row(void *canvas, unsigned c, int x, int y, int w) {
+    stock_canvas_set_fill_color(canvas, (RGBA(c & 0xffffffu) & 0xffffffu) | (c & 0xff000000u));
+    canvas_fill_rect(canvas, x, y, w, 1);
+}
 void np_fill(int scrub);
 
 /* theme_engine.c */

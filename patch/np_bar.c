@@ -239,11 +239,6 @@ void paint_scrubber(void *w, void *canvas) {
     ipod_bar(canvas, 0, (I(w, W_H) - theme()->np_bar) / 2, bw, n > 0 ? bw * v / n : 0, st.scrub);
 }
 
-/* One row of final colour, its alpha the row's. */
-void scrub_row(void *canvas, unsigned c, int x, int y, int w) {
-    stock_canvas_set_fill_color(canvas, (RGBA(c & 0xffffffu) & 0xffffffu) | (c & 0xff000000u));
-    canvas_fill_rect(canvas, x, y, w, 1);
-}
 void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w) {
     const theme_t *T = theme();
     const unsigned (*rows)[NP_ROWS] = T->np_rows + 2 * ipod_light();
