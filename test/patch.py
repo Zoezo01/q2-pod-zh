@@ -7973,11 +7973,12 @@ m=lyric_page(config={'WHEELSENSITIVITY':'100'}); loop(m); hold(m); loop(m,-14); 
 m=lyric_page(); loop(m); loop(m,-56); settle(m); assert y(m)==40
 assert follow(m,0)==40; m.advance(O['SCRUB_MS']+1000); assert settle(m)[-1]==40 and follow(m,0)==40
 assert not did(m,'playing_timer_clear') and not m.starts; passed()
-# Swiped away, the hold goes and the follow jumps (stock's scroll_to) while the page is hidden;
-# back on the page the follow glides.
-m.nodes[m.slide]['value']=0; loop(m); assert raw(m)==0 and follow(m,70)==70
-m.nodes[m.slide]['value']=1; loop(m); assert raw(m)==1 and follow(m,90)==70
-ys=settle(m); assert ys[-1]==90 and ys[0]<90,ys; passed()
+# Swiped away and back, the hold stays: the follow leaves them, hidden or shown.
+m.nodes[m.slide]['value']=0; loop(m); assert raw(m)==0 and follow(m,70)==40
+m.nodes[m.slide]['value']=1; loop(m); assert raw(m)==1 and follow(m,90)==40 and settle(m)[-1]==40; passed()
+# Now Playing gone and opened again, the hold is gone: the follow moves them.
+f,ctx=m.handler(m.win,O['EVT_DESTROY']); step(m,address=f,args=(ctx,m.event,0,0),gap=0)
+scrub_page(m=m); m.nodes[m.win]['children'].append(m.slide); loop(m); follow(m,90); assert settle(m)[-1]==90; passed()
 # Another song starts at the top, on the page or off it, the hold gone: its follow glides to its line.
 for off in (0,1):
     m=lyric_page(); loop(m); loop(m,-56); settle(m); assert follow(m,0)==40
@@ -8001,7 +8002,7 @@ m=lyric_page(); loop(m); a=m.alloc(0x80); m.word(m.lrc+O['VIEW_ANIMATOR'],a); m.
 assert m.get(m.lrc+O['VIEW_ANIMATOR'])==0 and ('widget_animator_destroy',a) in [c[:2] for c in m.calls]; passed()
 # The report: scroll, swipe away, screen off, next song, screen on, swipe back: the new song's top.
 m=lyric_page(); m.handlers[0x529f0c]='stock_lyric_rows'; loop(m); loop(m,-56); settle(m)
-m.nodes[m.slide]['value']=0; loop(m); assert follow(m,20)==20  # off the page: stock's jump
+m.nodes[m.slide]['value']=0; loop(m); assert follow(m,20)==40  # off the page, still held
 m.byte(syms['g_backlight_status'],0); loop(m); m.word(O['MCL_POS'],2); assert loop(m)==0
 m.word(m.lrc+O['SCROLL_Y'],60); assert rows(m)==0  # a stale follow, then the new song's rows
 m.byte(syms['g_backlight_status'],1); loop(m); m.pressed=1; loop(m); m.nodes[m.slide]['value']=1; loop(m)
@@ -8204,11 +8205,13 @@ class KaraokeMachine(LrcMachine):
         kids=[self.node('label',text=t,lrc_time=sec) for sec,t in self.lines]
         for k in kids: self.word(k+O['W_PARENT'],self.lrc); self.word(k+O['W_W'],225); self.word(k+O['W_H'],20)
         self.nodes[self.lrc]['children']=kids; self.word(self.lrc+O['SCROLL_Y'],0)
-    def show(self,playtime=0,lrc=None):  # Now Playing opened: stock's init builds the rows, then ringnav_playing
+    def show(self,playtime=0,lrc=None,bar=False):  # Now Playing opened: stock's init builds the rows, then ringnav_playing
         self.playtime=playtime; self.lrc=lrc or self.node('scroll_view','scroll_lrc')  # lrc: AWTK reusing its memory
         self.word(self.lrc+O['W_W'],375); self.word(self.lrc+O['W_H'],178); self.build()
         self.slide=self.node('slide_view','slide_view',[self.lrc],value=1)
-        self.win=self.top=self.node('window','playing_page',[self.slide]); self.word(self.win+O['W_PARENT'],self.wm)
+        self.slider=bar and self.node('slider','slider_play',max=225,value=playtime)  # bar: the progress bar
+        kids=[self.slide]+[self.slider]*bool(bar)
+        self.win=self.top=self.node('window','playing_page',kids); self.word(self.win+O['W_PARENT'],self.wm)
         assert self.call(address=playing,args=(self.win,7,0,0),gap=0)==0
         self.handlers[sleep_hook+12]='stock_sleep'; self.word(payload_syms['wheel_held'],1)
         return y(self)
@@ -8234,7 +8237,9 @@ m.nodes[m.slide]['value']=0; m.playtime=12; assert loop(m)==SLOT and loop(m,ms=2
 m.nodes[m.slide]['value']=1; loop(m)
 loop(m,-28); loop(m,-28); m.word(payload_syms['wheel_held'],0); assert settle(m)[-1]==3*SLOT  # two ticks take over
 m.word(payload_syms['wheel_held'],1); m.playtime=30; assert settle(m)[-1]==3*SLOT; passed()
-m.nodes[m.slide]['value']=0; assert loop(m,ms=250)==4*SLOT; m.nodes[m.slide]['value']=1; assert settle(m)[-1]==4*SLOT; passed()
+m.nodes[m.slide]['value']=0; assert loop(m,ms=250)==3*SLOT; m.nodes[m.slide]['value']=1; assert settle(m)[-1]==3*SLOT; passed()
+# Now Playing gone and opened again, they follow: the playing line.
+f,ctx=m.handler(m.win,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.show(30); assert settle(m)[-1]==4*SLOT; passed()
 # Dark, the page in front follows at that pace too, by the whole second, reading no clock between.
 m.byte(syms['g_backlight_status'],0); m.playtime=20; assert loop(m)==4*SLOT and loop(m,ms=250)==3*SLOT
 m.byte(syms['g_backlight_status'],1); m.playtime=30; assert settle(m)[-1]==4*SLOT; passed()
@@ -8280,6 +8285,33 @@ m.playtime=30; settle(m); off=SLOT+hs[0]+hs[1]-(178-hs[2])//2; assert y(m)==off;
 def seen(i): top=SLOT+sum(hs[:i])-off; return max(0,min(top+hs[i],178)-max(top,0))
 assert [seen(i) for i in range(5)]==[0,21,135,22,0]
 assert [{x[3]>>24 for x in m.ink(i)} for i in range(5)]==[set(),{255*21*21//(97*97)},{255},{255*22*22//(SLOT*SLOT)},set()]; passed()
+# Let go, the wheel leaves a line in the middle, not a row at the top: two ticks from line 0 go a slot past the
+# nudge, 59 + BUMP_PX, nearer line 1's centre (78; its two rows 97 px) than line 0's or a row top. Held, that
+# line is aimed, LYRIC_DIM, and repaints; following, nothing is (LYRIC_REST).
+SEEK='[00:05.00]One\n[00:09.70]'+'abcdefghi '*3+'abcdefghi\n[00:12.00]Three\n[00:20.00]Four\n'
+def seek_page(status=2,tag=SEEK):
+    m=karaoke([],tags={'LYRICS':tag}); m.load(); m.show(5,bar=True); m.word(PLAY_STATUS,status); settle(m); return m
+def moves(m): return [(c[0],c[1]) for c in m.calls if c[0] in ('player_seek_time','mclSetSeek','mclSetResume')]
+def long_play(m):  # Play/Pause held and let go: whether it was taken, Play/Pause's own presses after it, and the seeks
+    m.t=getattr(m,'t',7000)+1; m.press(m.t); took=m.hold()==11; seen=moves(m); return took,m.release(),seen
+def song_menu(m): return any(p[0]=='dialog/sortselect_dialog' for p in m.opened)
+def tone(m,i): return {x[3]&0xffffff for x in m.ink(i)}
+m=seek_page(); assert y(m)==0 and tone(m,1)=={REST&0xffffff}
+m.calls=[]; loop(m,-28); loop(m,-28); m.word(payload_syms['wheel_held'],0); ys=settle(m)
+assert ys[-1]==78 and m.lyric_row(1) in m.dirty() and tone(m,1)=={DIM&0xffffff}; passed()
+# Held there, Play/Pause plays from that line: a seek to its whole second (9.7 s: 9), as a scrub's, the bar
+# there at once; the lyrics follow again; the press neither plays nor pauses, nor opens the song menu.
+assert long_play(m)==(True,0,[('player_seek_time',9)]) and m.nodes[m.slider]['value']==9
+assert not song_menu(m) and settle(m)[-1]==0 and tone(m,1)=={REST&0xffffff}  # the player (mocked) stays at 5 s
+m.playtime=12; assert settle(m)[-1]==156; passed()
+# Following, a hold restarts the playing line.
+assert long_play(m)==(True,0,[('player_seek_time',12)]); passed()
+# Paused, the seek waits for Play (mclSetSeek, no resume).
+m=seek_page(status=3); loop(m,-28); loop(m,-28); m.word(payload_syms['wheel_held'],0); settle(m); m.calls=[]
+assert long_play(m)==(True,0,[('mclSetSeek',9)]) and not song_menu(m); passed()
+# Unsynced lyrics, or the art page, keep the song menu.
+m=seek_page(tag='plain\nwords\n'); assert long_play(m)==(True,0,[]) and song_menu(m); passed()
+m=seek_page(); m.nodes[m.slide]['value']=0; loop(m); assert long_play(m)==(True,0,[]) and song_menu(m); passed()
 # With no memory for its table the page keeps stock's rows, their text and layout, and paints nothing over them.
 m=karaoke(); m.mock('calloc@GLIBC_2.0'); m.fail_calloc=True; m.show(9)
 assert [m.nodes[r]['text'] for r in m.nodes[m.lrc]['children']]==['One','Two two','Three','Four','Five']
@@ -8333,7 +8365,7 @@ class CentredMachine(KaraokeMachine):
         self.returns(ret,clobber=True)
     def show(self,playtime=0,lrc=None,slide='slide_view'):  # slide: the slide_view's name (another: a page without one); stock's page: the title, the column (its slide_view and dots), the bar
         self.playtime=playtime; self.lrc=self.node('scroll_view','scroll_lrc'); self.build()
-        self.lyric=self.node('view','view_lyric',[self.node('list_view','view_lrc',[self.lrc])])
+        self.lyric=self.node('view','view_lyric',[self.node('list_view','view_lrc',[self.lrc])]); self.word(self.lrc+O['W_PARENT'],self.nodes[self.lyric]['children'][0])
         self.slide=self.node('slide_view',slide,[self.lyric],value=1)
         self.dots=self.node('slide_indicator','slide_indicator1'); self.word(self.dots+O['W_Y'],270)
         self.col=self.node('view','slide_view_view',[self.slide,self.dots]); self.word(self.slide+O['W_PARENT'],self.col)
@@ -8378,10 +8410,41 @@ m.touch('EVT_POINTER_DOWN'); m.touch('EVT_POINTER_ABORT'); m.touch('EVT_POINTER_
 for dx,dy in ((70,0),(0,40),(11,0)):  # a swipe, a drag of the lines, past TAP_PX: the column untouched
     m=centred(); m.tap(dx=dx,dy=dy); assert m.full()[:6]==COLUMN[:5]+(None,),(dx,dy,m.full()); passed()
 m=centred(lines=()); m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()  # no lyrics
-m=centred(centred='0'); assert not m.nodes[m.lyric].get('handlers'); passed()  # the iPod page's own
-# np_layout() picks the lyric touch: the centred page's lyrics take np_lyric_touch on all three, the iPod page's none.
-for on,want in (('1',[(O[k],payload_syms['np_lyric_touch'],0) for k in ('EVT_POINTER_DOWN','EVT_POINTER_UP_BEFORE','EVT_POINTER_ABORT')]),('0',[])):
-    m=centred(centred=on); assert m.nodes[m.lyric].get('handlers',[])==want,(on,m.nodes[m.lyric].get('handlers')); passed()
+# Both layouts' lyrics take np_lyric_touch.
+for on in ('1','0'):
+    m=centred(centred=on); want=[(O[k],payload_syms['np_lyric_touch'],0) for k in ('EVT_POINTER_DOWN','EVT_POINTER_MOVE_BEFORE','EVT_POINTER_UP_BEFORE','EVT_POINTER_ABORT')]
+    assert m.nodes[m.lyric].get('handlers',[])==want,(on,m.nodes[m.lyric].get('handlers')); passed()
+# The iPod page (Centred off): its column, under the 40 px top row and over the bar, takes the whole window, the
+# dots NP_FULL_FOOT above its foot and view_lrc from the top to 20 px above them, both by their self_layout; a tap
+# again, or Return, puts it all back.
+def ipod_full():
+    m=centred(centred='0'); view=m.nodes[m.lyric]['children'][0]
+    for w,box in ((m.col,(0,40,375,192)),(m.slide,(0,0,375,186)),(view,(0,0,375,178))):
+        for k,v in zip(('W_X','W_Y','W_W','W_H'),box): m.word(w+O[k],v)
+    m.word(m.dots+O['W_Y'],182); return m,view
+def where(m,view): return (m.full()[:6],[m.get(m.col+O[k]) for k in ('W_Y','W_H')],m.nodes[m.dots].get('self_layout'),m.nodes[view].get('self_layout'))
+for end in ('tap','return'):
+    m,view=ipod_full(); m.tap()
+    assert where(m,view)==((3,0,375,375,270,'#000000'),[0,290],('0','270','100%','10'),('0','0','100%','-20')),where(m,view)
+    if end=='tap': m.tap()
+    else: assert m.call(O['KEY_RETURN'],gap=50)==11
+    assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%','10'),('0','0','100%','178')),where(m,view); passed()
+# Touch and hold a synced line RATE_HOLD_MS: the song plays from it (the line under the finger, 12 s, not the
+# middle one), and the lift toggles nothing; a drag past TAP_PX, a swipe (the slide_view's abort) or a lift
+# before then seeks nothing; an unsynced line does nothing. The rows (offset 97, the window at y 30): "Three"
+# from 215, so y 160 is on it.
+def press_line(m,y=160,move=0,abort=False,ms=O['RATE_HOLD_MS']):
+    m.calls=[]; m.touch('EVT_POINTER_DOWN',150,y); m.pressed=1; loop(m)
+    if move: m.touch('EVT_POINTER_MOVE_BEFORE',150,y+move)
+    if abort: m.touch('EVT_POINTER_ABORT',150,y)
+    m.advance(ms,clear=False); seeks=moves(m); m.touch('EVT_POINTER_UP_BEFORE',150,y+move); m.pressed=0; loop(m); return seeks
+for on in ('1','0'):
+    m=centred(centred=on); settle(m); assert y(m)==97
+    assert press_line(m)==[('player_seek_time',12)] and m.full()[5]!='#000000' and m.nodes[m.bar]['value']==12; passed()
+    for kw in ({'move':11},{'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
+        m=centred(centred=on); settle(m); assert press_line(m,**kw)==[] and (m.full()[5]=='#000000')==('ms' in kw),kw; passed()
+    m=centred(centred=on); settle(m); assert press_line(m,move=8)==[('player_seek_time',12)]; passed()  # within TAP_PX
+m=centred(lines=((FAR,'x'*15),(FAR,'Two two'),(FAR,'Three'))); settle(m); assert press_line(m)==[] and m.full()[5]!='#000000'; passed()
 # A page without stock's slide_view (a layout of its own) has no column: a tap on its lyrics leaves
 # everything as it was, where np_full read the column off a NULL slide_view (W_PARENT at 0x48).
 m=CentredMachine(); m.lines=[(5,'x'*15),(9,'Two two'),(12,'Three')]; m.show(9,slide='pages')

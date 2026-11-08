@@ -5,7 +5,11 @@
   - Cover Flow: a large PNG or progressive JPEG cover (over 1024 px) no longer risks restarting the Q2 while Cover Flow builds its covers. ffmpeg makes those covers now, and the Photos thumbnails too.
   - Playback: **Play Next** on a long queue, such as Shuffle Songs over a big library, no longer risks restarting the Q2. It used to copy the whole queue to add one song.
   - System: the card keeps the two crash logs before the newest, as `q2-crash.log.1` and `q2-crash.log.2`. A second crash used to replace the first before anyone read the card.
+  - System: when the Q2 freezes and restarts by itself, `q2-crash.log` now says what it was doing when it froze.
   - Display: a boot logo on the card that isn't a 320x375 JPEG shows its message once. It used to repeat the message without end and freeze the Q2 until it restarted, at every power-on.
+  - Now Playing: on the lyrics page with synced lyrics, touch and hold a line to play from it, or turn a line to the middle and hold Play/Pause; hold without turning to start the current line again. The lyrics settle with a line in the middle when you let go of the wheel, and the line there shows a little brighter.
+  - Now Playing: tap the lyrics to show them full screen in every layout, not only Centred Now Playing.
+  - Now Playing: lyrics you scrolled stay where you left them when you swipe to another page and back. They used to jump back to the playing line.
 - **1.7.0**:
   - Cover Flow: under **Theme: Minimal** and **Theme: Modern** the third cover on each side stays when you stop turning, and the covers' reflections are Classic's, longer and clearer. The third covers used to vanish as the row settled.
   - Display: under **Theme: Classic** the battery icon is a little smaller, and with **Light Mode** off its outline is Light Mode's grey, so it shows on the dark bar.

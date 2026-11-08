@@ -767,7 +767,7 @@ def playing_stock(data):
     lrc = named['scroll_lrc'][2]
     check(lrc['self_layout'].startswith('default(x=0,y=0,w=-10,'), 'Unexpected lyrics scroll view')
     lrc['self_layout'] = 'default(x=0,y=0,w=100%,h=100%)'
-    # Full-screen lyrics (navigation.c np_full, NP_COLUMN_*) take the column and its page from stock's place to the
+    # Full-screen lyrics (navigation.c np_full) take the column and its page from stock's place to the
     # window's width: the lyrics end 20 px above the page's foot there too (178 of 198 px), and "No lyrics" stays
     # centred across (at its stock y, so high in full screen).
     view, msg = named['view_lrc'][2], named['label_lyricmsg']
