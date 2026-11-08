@@ -68,7 +68,7 @@ def scratch(library):
 
 @pytest.fixture
 def st(fw, scratch):
-    base = C.addressof(fw.var('navigation__st', C.c_char))
+    base = C.addressof(fw.var('st', C.c_char))
     return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
 
 
@@ -1769,7 +1769,7 @@ class Services:
     def __init__(self, fw, st, scratch, **config):
         self.keep, self.written = [C.create_string_buffer(0x60) for _ in range(2)], []
         struct.pack_into('<Q', self.keep[0], O['W_PARENT'], C.addressof(self.keep[1]))
-        base = C.addressof(fw.var('navigation__st', C.c_char)) + scratch['sc_check']
+        base = C.addressof(fw.var('st', C.c_char)) + scratch['sc_check']
         for i in range(13):
             C.c_void_p.from_address(base + 8 * i).value = C.addressof(self.keep[0])
         self.config = Config(fw, **config)
@@ -1905,7 +1905,7 @@ def listen_key(path, cue=0):
 def test_most_played_ranks_by_count_then_recency(fw, st, scratch):
     keep, deques = [], Deques(fw)
     songs = [record(keep, b'/m/%d' % i) for i in range(5)]
-    plays = (C.c_uint * 1024).from_address(C.addressof(fw.var('navigation__st', C.c_char)) + scratch['plays'])
+    plays = (C.c_uint * 1024).from_address(C.addressof(fw.var('st', C.c_char)) + scratch['plays'])
     st('plays_read', C.c_uint).value = 1
     for slot, (i, n) in enumerate(((1, 2), (3, 9), (0, 2))):  # most recently counted first
         plays[2 * slot], plays[2 * slot + 1] = listen_key(b'/m/%d' % i), n
@@ -1917,7 +1917,7 @@ def test_most_played_ranks_by_count_then_recency(fw, st, scratch):
 def test_most_played_keeps_the_top_100(fw, st, scratch):
     keep, deques = [], Deques(fw)
     songs = [record(keep, b'/m/%d' % i) for i in range(150)]
-    plays = (C.c_uint * 1024).from_address(C.addressof(fw.var('navigation__st', C.c_char)) + scratch['plays'])
+    plays = (C.c_uint * 1024).from_address(C.addressof(fw.var('st', C.c_char)) + scratch['plays'])
     st('plays_read', C.c_uint).value = 1
     for i in range(150):
         plays[2 * i], plays[2 * i + 1] = listen_key(b'/m/%d' % i), i + 1
@@ -2402,7 +2402,7 @@ def test_artist_cf_gone_clears_what_it_held(fw, st):
 
 
 def test_qm_restore_puts_back_what_a_go_to_overwrote(fw, st, scratch):
-    saved = (C.c_ubyte * 912).from_address(C.addressof(fw.var('navigation__st', C.c_char)) + scratch['qm_classinfo'])
+    saved = (C.c_ubyte * 912).from_address(C.addressof(fw.var('st', C.c_char)) + scratch['qm_classinfo'])
     saved[:912] = [i & 255 for i in range(912)]
     assert fw.fn('navigation__qm_restore', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
     assert C.string_at(C.addressof(fw.var('fw_ctx_g_local_classinfo_save', C.c_char)), 912) == bytes(saved)

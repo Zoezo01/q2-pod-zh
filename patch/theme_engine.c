@@ -335,7 +335,6 @@ int home_shortcut_open(void *ctx, void *event) {
                                             : "localmusic/allmusic_page",
                                      (void *)(long)(s == 1 ? 0xf004 : 0xf00a));
 }
-enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */
 /* Light Mode keeps a coloured accent's tones; a neutral one (Graphite, Ivory) takes its silver red
  * tone for both, which flips dark. Before flip. */
 static unsigned tone_of(const unsigned *a, int tone) {

@@ -1372,12 +1372,16 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-mno-abicalls','-fno-pic','-G0','-ffreestanding','-fno-builtin',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
+# navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
+NAVIGATION = ['navigation.c', 'volume.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
     from peq import compile_common
     extra = compile_common(out, out/'stock-demo')  # also writes the libc/libcstl imports navigation.c uses
-    run('clang',*FLAGS,'-I',out,'-c',ROOT/'patch/navigation.c','-o',out/'navigation.o')
+    nav = [out/f'{name[:-2]}.o' for name in NAVIGATION]
+    for name, o in zip(NAVIGATION, nav):
+        run('clang',*FLAGS,'-I',out,'-c',ROOT/'patch'/name,'-o',o)
     asm = ['.set noreorder', '.text']
     resume = {x: address for address, _, x in HOOKS.values() if x}
     for x, address in resume.items():
@@ -1391,7 +1395,7 @@ def compile_payload(out):  # pragma: no mutate block
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
-        out/'navigation.o',out/'trampoline.o',*extra,'-o',out/'patch.elf')
+        *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
     run('llvm-objcopy','-O','binary',out/'patch.elf',out/'patch.bin')
     return symbols(out/'patch.elf')
 

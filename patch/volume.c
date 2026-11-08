@@ -1,5 +1,6 @@
-/* The volume panel: stock's volume dialog, drawn over Now Playing's times or on its own.
- * navigation.c #includes this where it stood. */
+/* The volume panel: stock's volume dialog, drawn over Now Playing's times or on its own. */
+#include "navigation.h"
+
 /* A volume bar's end where the time it replaces sits: the speaker image name (tools/art.py) from x,
  * or ending at x when right, centred on bar's rows. */
 static void vol_end(void *top, void *canvas, const char *name, int x, int right,
@@ -38,7 +39,7 @@ static int vol_poll(const void *info) {
  * rows painter's gloss between two speakers. slider_vol and label_vol are
  * hidden, and slider_vol is moved onto the area drawn, so stock's partial repaints land on it;
  * vol_poll catches the changes those miss. */
-static void vol_paint(void *top, void *canvas) {
+void vol_paint(void *top, void *canvas) {
     void *wm = window_manager(), *lcd = P(canvas, CANVAS_LCD);
     if (!lcd || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return;
     unsigned n = widget_count_children(wm);

@@ -1,6 +1,6 @@
 """Build the firmware's C for this machine, with no stock firmware: its real device code, not stand-ins.
 
-navigation.c and tools/peq.py's UI_SOURCES compile as they do for the Q2, without PEQ_HOST, against the
+tools/build.py's NAVIGATION and tools/peq.py's UI_SOURCES compile as they do for the Q2, without PEQ_HOST, against the
 stock.h and themes.inc tools/build.py writes and a peq_platform.h laid out as tools/peq.py's: each stock
 function a macro calling its address, here a stub's. A stock call or a libc call with effects outside the
 process (system, unlink, fork...) reaches a stub that records the call and returns 0, or what a test's
@@ -27,7 +27,7 @@ import theme as tools_theme  # noqa: E402
 
 PURE = set('memset memcpy memcmp memmove strcmp strncmp strlen strcasecmp strncasecmp strrchr strstr strcasestr strdup '
            'calloc realloc free snprintf __isoc99_sscanf qsort pow cos sin cosf sinf log sqrt atoi strtol'.split())
-SOURCES = [ROOT/'patch'/name for name in ['navigation.c', *tools_peq.UI_SOURCES]]
+SOURCES = [ROOT/'patch'/name for name in [*tools_build.NAVIGATION, *tools_peq.UI_SOURCES]]
 # GCC 14 makes these two errors anyway; the rest is the 64-bit build's noise (pointer <-> int casts of
 # stock's 32-bit addresses) or style the Q2's clang build already checks.
 FLAGS = ['-O0', '-g', '-fno-builtin', '-ffreestanding', '-fPIC', '-fkeep-static-functions', '-fno-omit-frame-pointer',
