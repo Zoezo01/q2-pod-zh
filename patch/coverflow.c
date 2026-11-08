@@ -511,7 +511,7 @@ int album_cmp(void *a, void *b) {
     if (tx && (ax || ay)) return ay != ax ? ay - ax : strcasecmp(x, y);
     return dir_cmp(a, b, 1);
 }
-/* r's album as album_cmp tells it apart, hashed for navigation.c's album ratings: the name and the
+/* r's album as album_cmp tells it apart, hashed for ratings.c's album ratings: the name and the
  * album artist, else the folder (disc folders as one), ASCII case aside but the folder's; the
  * Unknown card is one album. Never 0. */
 static unsigned fnv_lower(unsigned h, const char *s) {
@@ -3157,7 +3157,7 @@ int coverflow_shows_album(void *r) {
     return cf.page && cf.scoped == ALBUM_TRACKS && !album_cmp(deque_at(cf.albums, 0), r);
 }
 
-/* Library Ratings' Albums (navigation.c): the albums hearts gives 1 to 5 hearts, as covers with the
+/* Library Ratings' Albums (ratings.c): the albums hearts gives 1 to 5 hearts, as covers with the
  * rated Sort card alone; 0 when none is. */
 int coverflow_rated(int (*hearts)(void *)) {
     int n;

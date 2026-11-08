@@ -153,7 +153,7 @@ HOOKS = {
     'tidalPlaylistDetailThd': (0x48b3d8, 'ringnav_tidal_playlist', 'tidalplaylist'),
     'tidalAlbumDetailThd': (0x48b59c, 'ringnav_tidal_album', 'tidalalbum'),
     'tidalColTracksThd': (0x4882d4, 'ringnav_tidal_favs', 'tidalfavs'),
-    # Ratings (navigation.c rate_bind): Now Playing's heart, held, opens the picker
+    # Ratings (ratings.c rate_bind): Now Playing's heart, held, opens the picker
     'playing_page_init': (0x52ca88, 'ringnav_playing', 'playing'),
     # The Wi-Fi signal (system.c ringnav_wifi_signal): the driver's rx_signal instead of an ioctl
     # that takes the radio out of power save; the status bar and the network monitor (a bal) poll it
@@ -1400,7 +1400,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

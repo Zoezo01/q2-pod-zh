@@ -384,7 +384,6 @@ extern void *queue_now(unsigned *pos, unsigned *n);
 
 /* navigation.c */
 void pod_settings(void);
-void ratings_copy_due(void);
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
@@ -392,10 +391,13 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 #define ROUND_LEFT 1
 #define STYLE_KEY 48
 #define CONFIRM_CELL_PX 23
+#define MCL(a) (*(volatile int *)(a))
 int clamp_step(int offset, int maximum, int delta);
 void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned put_num(unsigned *s, unsigned v);
 void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow);
+#define PANEL_PAD 8
+#define PANEL_DROP 2
 unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));
 int clock_due(const void *info);
 int bar_repaint(const void *info);
@@ -409,7 +411,6 @@ void prop(void *w, const char *name, int value);
 char *svc_find(char *hide, int i);
 void svc_hidden(char *s);
 int media_click(void *ctx, void *event);
-int ratings_menu(void *ctx, void *event);
 int stream_config(void *ctx, void *event);
 void bar_place(void *w, int x, int y, int ww, int h);
 void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h);
@@ -441,13 +442,15 @@ void *staged_music(int (*query)(void *), void *arg, int *count);
 int usable(void);
 int all_songs(void *music);
 long clock_back(long long wall);
-int rated_albums(void *ctx, void *event);
 void text_inks(void *w);
 unsigned listen_key(void *r) __attribute__((pure));
 int page_closed(void *ctx, void *event);
 void plays_load(void);
-int rt_play(void *ctx, void *event);
 int songs_unsorted(void *music);
+void drop_input(void);
+int pointer_down(void);
+unsigned qm_album_id(void *r);
+char *scrobble_tag(char *o, char *end, const char *s);
 
 /* np_bar.c */
 int np_beside(void);
@@ -548,6 +551,21 @@ int mp_find(unsigned key);
 int shuffle_menu(void *ctx, void *event);
 int shuffle_play(void *all);
 int tidal_downloads(void *ctx, void *event);
+
+/* ratings.c */
+const char *hearts_text(char *s, int n);
+int rate_keep(int album, unsigned key, int n);
+int rate_kept(int album, unsigned key);
+int rate_key(void *top, unsigned key);
+int rate_open(void);
+int rate_saved(int k);
+int rate_show(void *win, int pick, unsigned album);
+void rate_bind(void *win); /* ratings: Now Playing's heart */
+int rated_albums(void *ctx, void *event);
+int ratings_menu(void *ctx, void *event);
+void ratings_copy_due(void);
+void ratings_copy_poll(void);
+int rt_play(void *ctx, void *event);
 
 /* classic_pages.c */
 int kb_key(void *w);

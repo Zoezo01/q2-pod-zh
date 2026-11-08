@@ -21,10 +21,10 @@
 { "playlistedit_page", CTX_DYNAMIC, 0 },
 { "chapters_page", CTX_DYNAMIC, 0 }, /* runtime chapter list */
 { "upnext_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
-{ "ratings_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
+{ "ratings_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/ratings.c) */
 { "era_page", CTX_DYNAMIC, 0 },       /* runtime window (patch/library_lists.c) */
 { "era_albums_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/library_lists.c) */
-{ "rated_page", CTX_FIXED, 0 },      /* runtime window (patch/navigation.c); fixed: the hold menu */
+{ "rated_page", CTX_FIXED, 0 },      /* runtime window (patch/ratings.c); fixed: the hold menu */
 { "longsongs_page", CTX_FIXED, 0 },  /* runtime window (patch/library_lists.c); fixed: the hold menu */
 { "radio_page", CTX_DYNAMIC, 0 },     /* runtime window (patch/radio.c) */
 { "spotbrowse_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/spotify.c) */

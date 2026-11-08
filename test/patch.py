@@ -8776,7 +8776,7 @@ m=CoverflowMachine(); m.open(); m.press(100)
 assert m.call(O['KEY_PLAY'],address=syms['on_wm_keylong_fun'],event_type=O['EVT_KEY_LONG'],gap=0)==11
 m.close(); m.advance(0); assert not any(p[0]=='dialog/sortselect_dialog' for p in m.opened); passed()
 
-# Album favourites and ratings (navigation.c rate_*, coverflow.c album_id): a cover keeps 0-5 hearts of its own in
+# Album favourites and ratings (ratings.c rate_*, coverflow.c album_id): a cover keeps 0-5 hearts of its own in
 # /mnt/data/ringnav-album-ratings by album_id, the low three bits its hearts, 5 its favourite; songs' ratings, My Fav and
 # the queue are untouched. Hold Play/Pause on a cover: Add/Remove from Favourites and Rate album, whose picker is Now
 # Playing's on Coverflow's page: the wheel moves it, Centre or a heart saves, Return leaves it as it was.
@@ -9135,7 +9135,7 @@ assert m.db.execute('PRAGMA temp_store').fetchone()==(1,); passed()
 for failure in ('open','PRAGMA','select'):
     m=EraMachine(SONGS); m.fail=failure; top=m.top; m.open_era()
     assert m.top==top and m.toasts[-1][3]=='Era unavailable' and m.closed_db==1; passed()
-# The ratings' copy on the card (navigation.c rc_*): the tables' hashes named again from the library, a page a poll.
+# The ratings' copy on the card (ratings.c rc_*): the tables' hashes named again from the library, a page a poll.
 RC_FILE='/mnt/mmc/.ratings.tsv'; RC_HEAD='#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n'
 class RatingsCopyMachine(FileMocks,EraMachine):
     def __init__(self,songs,favs=()):
@@ -13406,7 +13406,7 @@ m.press(40); assert m.hold()==11 and m.release()==0 and len(m.toasts)==toasts+1 
 fresh=m.texts()[1::2]; assert fresh[0]==up[1] and 'F' in fresh and 'E' not in fresh and m.selected(m.find('scroll_view'))==0
 m.close(); passed()
 
-# Ratings (navigation.c rate_*): 5 hearts are stock's My Fav, 1-4 kept in /mnt/data/ringnav-ratings by listen_key with
+# Ratings (ratings.c rate_*): 5 hearts are stock's My Fav, 1-4 kept in /mnt/data/ringnav-ratings by listen_key with
 # the hearts in its low three bits. Now Playing's heart: stock's click (0x52b154, bound to img_fav with the window) is
 # swapped for one telling a tap, stock's toggle that leaves nothing kept, from a RATE_HOLD_MS hold, which opens the
 # picker: five of the heart's images on a dark panel, the wheel moving the rating, Centre saving and Return leaving it.

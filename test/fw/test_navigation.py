@@ -901,7 +901,7 @@ def test_scan_quote_any_text_in_any_room(fw, heap):
 
 
 def test_scrobble_tag_any_tag(fw, heap):
-    tag = fw.fn('navigation__scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)
+    tag = fw.fn('scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p)
     rng = random.Random(0x7a9)
     for data in hostile(rng, [b'a\tb', b'plain', b'\n\r\t'], 1500):
         room = rng.randrange(2, 48)
@@ -1009,13 +1009,13 @@ def test_song_label_any_name_in_any_room(fw, heap):
 
 def test_scrobble_tag_keeps_a_line_one_line(fw):
     line = C.create_string_buffer(32)
-    tag = fw.fn('navigation__scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p)
+    tag = fw.fn('scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p)
     end = tag(line, C.addressof(line) + 32, b'a\tb\nc\rd')
     assert line.raw[:8] == b'a b c d\t' and end == C.addressof(line) + 8
 
 
 def test_scrobble_tag_stops_at_end(fw, heap):
-    tag = fw.fn('navigation__scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p)
+    tag = fw.fn('scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p)
     line = heap.string(b'', 9)
     assert tag(line, line + 8, b'x' * 40) == line + 8
     assert C.string_at(line, 8) == b'x' * 7 + b'\t'
@@ -1023,7 +1023,7 @@ def test_scrobble_tag_stops_at_end(fw, heap):
 
 def test_scrobble_tag_of_nothing_is_an_empty_field(fw):
     line = C.create_string_buffer(8)
-    tag = fw.fn('navigation__scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p)
+    tag = fw.fn('scrobble_tag', C.c_void_p, C.c_void_p, C.c_void_p, C.c_char_p)
     assert tag(line, C.addressof(line) + 8, None) == C.addressof(line) + 1 and line.raw[0:1] == b'\t'
 
 
@@ -1930,8 +1930,8 @@ def test_most_played_keeps_the_top_100(fw, st, scratch):
 @pytest.fixture
 def ratings(fw):
     files = Files(fw)
-    keep = fw.fn('navigation__rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)
-    kept = fw.fn('navigation__rate_kept', C.c_int, C.c_int, C.c_uint)
+    keep = fw.fn('rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)
+    kept = fw.fn('rate_kept', C.c_int, C.c_int, C.c_uint)
     return files, keep, kept
 
 
@@ -1965,13 +1965,13 @@ def test_a_rating_not_saved_goes_back(ratings):
 
 def test_a_malformed_slot_reads_as_no_rating(fw):
     Files(fw, {'/mnt/data/ringnav-ratings': struct.pack('<I', 0x100 | 7) + b'\0' * (O['RATE_SLOTS'] * 4 - 4)})
-    assert fw.fn('navigation__rate_kept', C.c_int, C.c_int, C.c_uint)(0, 0x100) == 0
+    assert fw.fn('rate_kept', C.c_int, C.c_int, C.c_uint)(0, 0x100) == 0
 
 
 def test_a_full_ratings_table_refuses(fw):
     slots = O['RATE_SLOTS']
     Files(fw, {'/mnt/data/ringnav-ratings': b''.join(struct.pack('<I', (i + 1) << 3 | 1) for i in range(slots))})
-    keep = fw.fn('navigation__rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)
+    keep = fw.fn('rate_keep', C.c_int, C.c_int, C.c_uint, C.c_int)
     assert keep(0, 0xfffffff8, 2) == 0 and keep(0, 8, 2) == 1
 
 
@@ -2381,7 +2381,7 @@ def test_qm_playlist_gone(fw, st):
 
 
 def test_rate_panel_gone_with_its_window(fw, st):
-    gone = fw.fn('navigation__rate_panel_gone', C.c_int, C.c_void_p, C.c_void_p)
+    gone = fw.fn('ratings__rate_panel_gone', C.c_int, C.c_void_p, C.c_void_p)
     st('rate_on', C.c_void_p).value = 0x10
     gone(0x20, None)
     assert st('rate_on', C.c_void_p).value == 0x10
