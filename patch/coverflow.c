@@ -200,11 +200,42 @@ static int ff_thumb(const char *src, const char *dst, int w, int h) {
     return ff_run(src, dst, w, h, &exited);
 }
 
-/* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg; shared with photos.c */
+static unsigned be16(const unsigned char *p) { return p[0] << 8 | p[1]; }
+
+/* Whether stock's decoder would hold path's whole picture in demo, which the OOM killer would then
+ * take (#216), read from its header: a PNG over 1024 px either way (its reader, 0x5b66f8, expands
+ * the image with png_read_png before its own 1024 px test) or a progressive JPEG over 1024 px
+ * (libjpeg keeps a full-size coefficient buffer at any scale). Magic bytes as toolsGetPictureInfo
+ * tells them; the JPEG's frame header is looked for in its first 64 segments. */
+static int big_picture(const char *path) {
+    unsigned char b[24];
+    void *f = fopen(path, "rb");
+    int got = f && fread(b, 1, sizeof b, f) == sizeof b, big = 0;
+    if (got && b[0] == 0x89 && b[1] == 'P') /* IHDR's width and height */
+        big = be16(b + 16) || be16(b + 18) > 1024 || be16(b + 20) || be16(b + 22) > 1024;
+    else if (got && b[0] == 0xff && b[1] == 0xd8)
+        for (long at = 2, n = 0; n < 64 && !fseek(f, at, 0) && fread(b, 1, 9, f) == 9 &&
+                                 b[0] == 0xff && b[1] != 0xda; /* image data follows */
+             ++n, at += 2 + be16(b + 2))
+            if (b[1] >> 4 == 0xc && b[1] != 0xc4 && b[1] != 0xc8 && b[1] != 0xcc) {
+                /* a frame header, SOF0 to SOF15: SOF2, 6, 10 and 14 are progressive */
+                big = (b[1] & 3) == 2 && (be16(b + 5) > 1024 || be16(b + 7) > 1024);
+                break;
+            }
+    if (f) fclose(f);
+    return big;
+}
+
+/* stock's thumbnailer, under the lock every stock caller holds, else ffmpeg; shared with photos.c.
+ * A picture stock would decode whole in demo goes to ffmpeg alone, whose child the kernel kills
+ * first. */
 int thumb(const char *src, const char *dst, int w, int h) {
-    pthread_mutex_lock((void *)parse_cover_mutex);
-    int ok = toolsThumbSpecCover(src, dst, w, h) == 1;
-    pthread_mutex_unlock((void *)parse_cover_mutex);
+    int ok = 0;
+    if (!big_picture(src)) {
+        pthread_mutex_lock((void *)parse_cover_mutex);
+        ok = toolsThumbSpecCover(src, dst, w, h) == 1;
+        pthread_mutex_unlock((void *)parse_cover_mutex);
+    }
     return ok || (!access(src, 4) && ff_thumb(src, dst, w, h)); /* none for a missing file */
 }
 

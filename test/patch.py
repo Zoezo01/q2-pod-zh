@@ -13769,7 +13769,7 @@ class PhotosMachine(DepthMachine):
         super().__init__()
         self.tree=tree; self.data=data; self.cache=set(); self.thumbs=[]; self.forks=0; self.bad=set(); self.open_files={}; self.dirs={}
         for n in ('opendir@GLIBC_2.0','readdir@GLIBC_2.0','closedir@GLIBC_2.0','qsort@GLIBC_2.0','fopen@GLIBC_2.2',
-                  'fread@GLIBC_2.0','fclose@GLIBC_2.2','access@GLIBC_2.0','rename@GLIBC_2.0','unlink@GLIBC_2.0',
+                  'fread@GLIBC_2.0','fseek@GLIBC_2.0','fclose@GLIBC_2.2','access@GLIBC_2.0','rename@GLIBC_2.0','unlink@GLIBC_2.0',
                   'memcmp@GLIBC_2.0','toolsThumbSpecCover','fork@GLIBC_2.0','pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0'):
             self.handlers[syms[n]]='p:'+n
         tramp=int(manifest['patch_symbols']['stock_localmusic_trampoline'],16)
@@ -13789,7 +13789,7 @@ class PhotosMachine(DepthMachine):
         elif name=='canvas_draw_image':
             self.draws.append(tuple(tuple(signed(self.get(r+4*i)) for i in range(4)) for r in (c,d))); ret=0
         elif name.startswith('p:'):
-            name=name[2:].split('@')[0]; ret=0; text=self.text(a) if name not in ('readdir','closedir','qsort','fread','fclose','memcmp','fork') else ''
+            name=name[2:].split('@')[0]; ret=0; text=self.text(a) if name not in ('readdir','closedir','qsort','fread','fseek','fclose','memcmp','fork') else ''
             if name=='opendir':
                 ret=0 if text not in self.tree else self.alloc(4); self.dirs[ret]=list(self.tree.get(text,[]))
             elif name=='readdir' and self.dirs.get(a):
@@ -13798,9 +13798,11 @@ class PhotosMachine(DepthMachine):
                 ptrs=[self.get(a+4*i) for i in range(b)]
                 for i,p in enumerate(sorted(ptrs,key=self.text)): self.word(a+4*i,p)
             elif name=='fopen':
-                if text in self.data: ret=self.alloc(4); self.open_files[ret]=self.data[text]
+                if text in self.data: ret=self.alloc(4); self.open_files[ret]=[self.data[text],0]  # bytes, position
                 elif text.endswith('.bad'): self.bad.add(text); ret=self.alloc(4)
-            elif name=='fread': chunk=self.open_files.get(d,b'')[:b*c]; self.u.mem_write(a,chunk); ret=len(chunk)//b
+            elif name=='fread':
+                f=self.open_files.get(d,[b'',0]); chunk=f[0][f[1]:f[1]+b*c]; f[1]+=len(chunk); self.u.mem_write(a,chunk); ret=len(chunk)//b
+            elif name=='fseek': assert c==0; self.open_files[a][1]=b  # thumb's header read: SEEK_SET only
             elif name=='access': ret=0 if text in self.cache or text in self.bad or text in self.data else -1
             elif name=='toolsThumbSpecCover':
                 self.thumbs.append((self.text(a),self.text(b),c,d))
@@ -13856,6 +13858,18 @@ assert m.thumbs==[(paths[0],cache(0,'.tmp'),SW,SH),(cache(0,'.jpg'),cache(0,'.tm
                   (paths[3],cache(3,'.tmp'),SW,SH),(cache(3,'.jpg'),cache(3,'.tmp'),TW,TH)],m.thumbs
 assert m.forks==1 and m.bad=={cache(2,'.bad')} and cache(2,'.jpg') not in m.cache
 m.advance(250); assert m.joins==[77]; passed()
+# thumb reads the header first: a PNG over 1024 px, or a progressive JPEG over 1024 px, goes to ffmpeg alone, as
+# stock would decode it whole in demo (#216); a smaller one, or a baseline JPEG of any size, stays with stock.
+def png_head(w,h): return b'\x89PNG\r\n\x1a\n'+struct.pack('>I4sII',13,b'IHDR',w,h)+bytes(9)
+def frame_jpeg(sof,w,h): return b'\xff\xd8'+JFIF+b'\xff'+bytes([sof])+struct.pack('>HBHHB',17,8,h,w,3)+bytes(9)+b'\xff\xda'+bytes(12)
+heads={R+'/a.png':(png_head(4000,4000),1),R+'/b.png':(png_head(1024,1024),0),R+'/c.jpg':(frame_jpeg(0xc2,3000,3000),1),
+       R+'/d.jpg':(frame_jpeg(0xc2,1024,1024),0),R+'/e.jpg':(frame_jpeg(0xc0,4000,4000),0)}
+thumb_m=PhotosMachine({},{p:d for p,(d,_) in heads.items()})
+for p,(_,ff) in heads.items():
+    thumb_m.thumbs=[]; thumb_m.forks=0  # ffmpeg's fork refused, so thumb answers 0
+    assert thumb_m.call(address=ps['thumb'],args=(thumb_m.string(p),thumb_m.string('/tmp/x.jpg'),160,160),gap=0,count=5_000_000)==1-ff,p
+    assert (len(thumb_m.thumbs),thumb_m.forks)==(1-ff,ff),p
+passed()
 # The turned photo's thumbnail is drawn upright, centred in its tile; the bad one stays grey.
 border(tiles[1]); assert m.draws[-1]==((0,0,54,72),((O['PH_TILE_W']-54)//2,(O['PH_TILE_H']-O['PH_THUMB_H'])//2,54,72))
 border(tiles[2]); assert m.bands[-1][4]==O['PH_GREY']
