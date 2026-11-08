@@ -1,15 +1,19 @@
-"""patch/lyrics.c: LRC text into lines and word stamps, and the page's wrap, clock and lit width."""
+"""patch/lyrics.c: LRC text into lines and word stamps, the loader's .lrc and tags into stock's list, and the
+page's rows, wrap, clock, lit width and paint."""
 import ctypes as C
 import random
+import struct
 
 import pytest
 
-from conftest import block, text
+from conftest import O, Deques, Files, block, libc, text
 
 FAR = 0x7fffffff
 TAG_MAX = 65536
 PRIME = 16777619
 SEED = 2166136261
+SLOT, X = O['LYRIC_SLOT'], O['LYRIC_X']
+BOM = b'\xef\xbb\xbf'
 
 
 class Mark(C.Structure):  # lrc_mark, and ly_mark, the same two words
@@ -853,3 +857,615 @@ def test_utf8_or_not(fw, data, ok):
 def test_a_missing_lrc_is_not_utf8(fw):
     File(fw, None)
     assert fw.fn('ringnav_lrc_utf8', C.c_int, C.c_char_p)(b'a.lrc') == 0
+
+
+# The loader: a .lrc stock opened, or the track's tags, into stock's list and the page's next table.
+LRC = '/mnt/mmc/a.lrc'
+LIST, LOCK = 0x5157, O['MCL_LYRIC_LOCK']
+FILE = 0x7a61
+GET, FREE, NEW = O['TAGLIB_PROPERTY_GET'], O['TAGLIB_PROPERTY_FREE'], O['TAGLIB_FILE_NEW']
+
+
+class StockLine(C.Structure):  # a line of stock's lyric list, as lrc_push hands it over
+    _fields_ = [('time', C.c_int), ('text', C.c_char_p)]
+
+
+@pytest.fixture
+def stock_words():
+    """The words of conftest's map the loader reads, stock's lyric list and demo's TagLib GOT entry, put back
+    after: the map outlives a load."""
+    at = [O['MCL_LYRICS'], O['TAGLIB_NEW_GOT']]
+    saved = [C.c_uint.from_address(a).value for a in at]
+    yield
+    for a, value in zip(at, saved):
+        C.c_uint.from_address(a).value = value
+
+
+class Loader:
+    """A track's lyric load around ringnav_lyric, as stock runs it: stock's .lrc loader opens the card's .lrc
+    through ringnav_lrc_open (LYRIC_OPEN) and fills its list with its own reading of it (stock), then the
+    queue's playing record. Stock's list is a deque_clear and _deque_push_back away, on MCL_LYRICS."""
+    def __init__(self, fw, mcl, lrc=None, stock=(), ret=1):
+        self.fw, self.mcl, self.ret, self.stock = fw, mcl, ret, list(stock)
+        self.list, self.events, self.keep = [], [], []
+        self.files = Files(fw, {} if lrc is None else {LRC: lrc})
+        self.deques = Deques(fw)
+        self.queue = self.deques.new()
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = self.queue
+        C.c_uint.from_address(O['MCL_LYRICS']).value = LIST
+        fw.mock('fw_deque_clear', self.clear)
+        fw.mock('fw__deque_push_back', self.push)
+        fw.mock('fw_pthread_mutex_lock', lambda m, *_: self.events.append(('lock', m)))
+        fw.mock('fw_pthread_mutex_unlock', lambda m, *_: self.events.append(('unlock', m)))
+        fw.mock('mclGetLyricSize', lambda *_: len(self.list))
+        fw.mock('stock_lyric_trampoline', self.stock_load)
+        self.open = fw.fn('ringnav_lrc_open', C.c_void_p, C.c_char_p, C.c_char_p)
+        self.load = fw.fn('ringnav_lyric', C.c_int)
+
+    def stock_load(self, *_):
+        self.list = []
+        if LRC in self.files.files:
+            self.open(LRC.encode(), b'r')
+            self.list = list(self.stock)
+        return self.ret if self.list else 0
+
+    def clear(self, q, *_):
+        self.events.append(('clear', q & 0xffffffff))
+        self.list.clear()
+
+    def push(self, q, line, *_):
+        row = StockLine.from_address(line)
+        self.events.append(('push', q & 0xffffffff))
+        self.list.append((row.time, row.text))
+
+    def playing(self, path, kind=8, queue=0xf001, pos=0):
+        """The queue's one song: its record's path and type."""
+        record, chars = C.create_string_buffer(0x60), C.create_string_buffer(path)
+        struct.pack_into('<Q', record, O['REC_PATH'], C.addressof(chars))
+        struct.pack_into('<i', record, O['REC_TYPE'], kind)
+        self.keep += [record, chars]
+        self.deques[self.queue][:] = [C.addressof(record)]
+        self.mcl.pos, self.mcl.type = pos, queue
+
+
+def lines_of(t, codes=False):
+    """A table's lines as (ms, text, [(mark ms, character)]); with codes, each text as its code points."""
+    t = t.contents
+    def text(s):
+        return list(s) if codes else ''.join(map(chr, s))
+    return [(t.line[i].ms, text(t.text[t.line[i].text + k] for k in range(t.line[i].n)),
+             [(t.mark[t.line[i].mark + k].ms, t.mark[t.line[i].mark + k].at) for k in range(t.line[i].marks)])
+            for i in range(t.n)]
+
+
+def test_a_synced_lrc_replaces_stocks_reading_of_it_under_its_lock(fw, mcl, stock_words):
+    raw = BOM + b'[00:02.50]<00:02.50>two <00:03.10>words\n[00:01.00] one \n\n[00:04.00]\n'
+    loader = Loader(fw, mcl, raw, [(2, b'<00:02.50>two <00:03.10>words'), (1, b' one '), (4, b' ')])
+    assert loader.load() == 1
+    assert loader.list == [(1, b'one'), (2, b'two words')]  # time order, whole seconds; no stamps, no blank
+    assert loader.events[:5] == [('lock', LOCK), ('clear', LIST), ('push', LIST), ('push', LIST), ('unlock', LOCK)]
+    assert lines_of(state(fw).next) == [(1000, 'one', []), (2500, 'two words', [(2500, 0), (3100, 4)])]
+    assert not fw.var('lyrics__lrc_file', C.c_void_p).value  # the copy goes with the load
+
+
+def test_an_lrc_with_no_stamp_this_reader_knows_leaves_stocks_reading(fw, mcl, stock_words):
+    stock = [(5, b'line')]
+    loader = Loader(fw, mcl, b'[00:5]line\n', stock)  # one digit of seconds: plain text here
+    assert loader.load() == 1 and loader.list == stock
+    assert not [e for e in loader.events if e[0] in ('clear', 'push')] and not state(fw).next
+
+
+def test_lrc_lyrics_all_blank_leave_stocks_result(fw, mcl, stock_words):
+    stock = [(1, b' '), (2, b'  ')]
+    loader = Loader(fw, mcl, b'[00:01.00]\n[00:02.00]  \n\n', stock)
+    assert loader.load() == 1 and loader.list == stock
+    assert not [e for e in loader.events if e[0] in ('clear', 'push')] and not state(fw).next
+
+
+def test_every_load_sends_its_own_lines_or_none(fw, mcl, stock_words):
+    loader = Loader(fw, mcl, b'[00:01.00]a\n', [(1, b'a')])
+    loader.load()
+    assert lines_of(state(fw).next) == [(1000, 'a', [])]
+    loader.files.files.clear()  # the next track has none
+    assert loader.load() == 0 and not state(fw).next
+
+
+def test_a_copy_left_by_an_earlier_open_is_not_this_loads(fw, mcl, stock_words):
+    loader = Loader(fw, mcl, b'[00:01.00]old\n')
+    loader.open(LRC.encode(), b'r')
+    fw.mock('stock_lyric_trampoline', lambda *_: setattr(loader, 'list', [(9, b'stock')]))  # stock's lines, no open
+    loader.load()
+    assert loader.list == [(9, b'stock')] and not state(fw).next
+
+
+class TagLib:
+    """libtag_c as demo's GOT has it bound: TAGLIB_NEW_GOT holds taglib_file_new's address, and its property
+    calls sit at their offsets from it. The Q2's addresses are 32 bits, so here they are in a low mapping,
+    each a jump into Python. Unbound, the entry holds the stub's own address, as demo's lazy one does."""
+    def __init__(self, fw, tags, bound=True):
+        self.tags, self.calls = tags, []
+        self.keep: list[object] = []
+        self.lib = libc.mmap(None, 0x10000, 7, 0x62, -1, 0)  # read, write, run; MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT
+        assert self.lib and self.lib < 1 << 32
+        for at, kind, fn in ((GET, C.CFUNCTYPE(C.c_void_p, C.c_void_p, C.c_char_p), self.get),
+                             (FREE, C.CFUNCTYPE(None, C.c_void_p), self.free)):
+            callback = kind(fn)
+            self.keep.append(callback)
+            code = b'\x48\xb8' + struct.pack('<Q', C.cast(callback, C.c_void_p).value) + b'\xff\xe0'  # movabs rax; jmp rax
+            C.memmove(self.lib + at, code, len(code))
+        stub = C.cast(fw.lib.taglib_file_new, C.c_void_p).value or 0
+        C.c_uint.from_address(O['TAGLIB_NEW_GOT']).value = (self.lib + NEW if bound else stub) & 0xffffffff
+        fw.mock('taglib_file_new', lambda path, *_: self.calls.append(('new', C.string_at(path))) or FILE)
+        fw.mock('taglib_file_free', lambda f, *_: self.calls.append(('close', f)))
+
+    def get(self, f, name):
+        self.calls.append(('get', f, name.decode()))
+        value = self.tags.get(name.decode())  # a property's values, NULL-terminated; NULL without it
+        if value is None:
+            return None
+        chars = [C.create_string_buffer(s) for s in (value if isinstance(value, list) else [value])]
+        v = (C.c_void_p * (len(chars) + 1))(*map(C.addressof, chars), None)
+        self.keep += [*chars, v]
+        return C.addressof(v)
+
+    def free(self, v):
+        self.calls.append(('free',))
+
+
+@pytest.fixture
+def taglib(fw, stock_words):
+    made = []
+    def make(tags, bound=True):
+        made.append(TagLib(fw, tags, bound))
+        return made[-1]
+    yield make
+    for t in made:
+        libc.munmap(C.c_void_p(t.lib), C.c_size_t(0x10000))
+
+
+def test_a_tracks_lyrics_tag_fills_the_list_when_stock_found_none(fw, mcl, taglib):
+    loader = Loader(fw, mcl)
+    loader.playing(b'/mnt/mmc/a.flac')
+    tags = taglib({'LYRICS': b'[00:02.00]<00:02.00>b\r\n[00:01.00]a\r\n'})
+    assert loader.load() == 1
+    assert loader.list == [(1, b'a'), (2, b'b')] and ('clear', LIST) not in loader.events
+    assert tags.calls == [('new', b'/mnt/mmc/a.flac'), ('get', FILE, 'LYRICS'), ('free',), ('close', FILE)]
+    assert lines_of(state(fw).next) == [(1000, 'a', []), (2000, 'b', [(2000, 0)])]
+
+
+@pytest.mark.parametrize('empty', [b'', []])
+def test_an_empty_lyrics_tag_gives_way_to_unsynced_lyrics(fw, mcl, taglib, empty):
+    loader = Loader(fw, mcl)
+    loader.playing(b'/mnt/mmc/a.flac')
+    tags = taglib({'LYRICS': empty, 'UNSYNCEDLYRICS': b'first\n\nsecond\n'})
+    assert loader.load() == 1
+    assert loader.list == [(FAR, b'first'), (FAR, b'second')]  # at a time no track reaches: the page stays at its top
+    assert [c[2] for c in tags.calls if c[0] == 'get'] == ['LYRICS', 'UNSYNCEDLYRICS']
+    assert tags.calls.count(('free',)) == 2 and tags.calls[-1] == ('close', FILE)
+    assert not state(fw).next  # nothing to time
+
+
+@pytest.mark.parametrize('tags,frees', [({}, 0), ({'LYRICS': b'  \r\n\n'}, 1), ({'UNSYNCEDLYRICS': b'[00:01.00]'}, 1)])
+def test_tags_with_nothing_to_show_keep_stocks_result(fw, mcl, taglib, tags, frees):
+    loader = Loader(fw, mcl)
+    loader.playing(b'/mnt/mmc/a.flac')
+    t = taglib(tags)
+    assert loader.load() == 0 and loader.list == [] and not state(fw).next
+    assert t.calls.count(('free',)) == frees and t.calls[-1] == ('close', FILE)
+
+
+def test_an_unbound_got_entry_reads_no_tags(fw, mcl, taglib):
+    loader = Loader(fw, mcl)
+    loader.playing(b'/mnt/mmc/a.flac')
+    tags = taglib({'LYRICS': b'[00:01.00]a'}, bound=False)
+    assert loader.load() == 0 and loader.list == []
+    assert tags.calls == [('new', b'/mnt/mmc/a.flac'), ('close', FILE)]
+
+
+@pytest.mark.parametrize('queue', [1, 0xf0, 0xf3, 0xf001])
+def test_any_local_queues_song_reads_its_tags(fw, mcl, taglib, queue):
+    loader = Loader(fw, mcl)
+    loader.playing(b'/mnt/mmc/a.flac', queue=queue)
+    taglib({'LYRICS': b'[00:01.00]a'})
+    assert loader.load() == 1 and loader.list == [(1, b'a')]
+
+
+@pytest.mark.parametrize('kind,path,queue,pos', [
+    (8, b'/mnt/mmc/a.flac', 0xf1, 0), (8, b'/mnt/mmc/a.flac', 0xf2, 0),  # an online queue
+    (4, b'/mnt/mmc/dir', 0xf001, 0),                                      # a folder's row
+    (8, b'http://host/a.flac', 0xf001, 0), (8, b'', 0xf001, 0),           # no file on the card
+    (8, b'/mnt/mmc/a.flac', 0xf001, 1),                                    # past the queue's end
+])
+def test_tags_are_read_only_for_the_playing_song_on_the_card(fw, mcl, taglib, kind, path, queue, pos):
+    loader = Loader(fw, mcl)
+    loader.playing(path, kind, queue, pos)
+    tags = taglib({'LYRICS': b'[00:01.00]a'})
+    assert loader.load() == 0 and tags.calls == []
+
+
+def test_no_queue_no_tags(fw, mcl, taglib):
+    loader = Loader(fw, mcl)
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0
+    tags = taglib({'LYRICS': b'[00:01.00]a'})
+    assert loader.load() == 0 and tags.calls == []
+
+
+def test_stocks_own_lyrics_leave_the_tags_unread(fw, mcl, taglib):
+    loader = Loader(fw, mcl, b'[00:01.00]lrc\n', [(1, b'lrc')])
+    loader.playing(b'/mnt/mmc/a.flac')
+    tags = taglib({'LYRICS': b'[00:01.00]tag'})
+    assert loader.load() == 1 and loader.list == [(1, b'lrc')] and tags.calls == []
+
+
+def opus(tags):
+    """An Ogg Opus file: OpusHead, then tags as packet 1 on pages of its own (no CRC: xiph.c reads none)."""
+    pages, seq = [], 0
+    for packet in (b'OpusHead' + bytes([1, 2]) + struct.pack('<HIhB', 312, 48000, 0, 0), tags):
+        lacing = [255] * (len(packet) // 255) + [len(packet) % 255]
+        for at in range(0, len(lacing), 255):
+            part = lacing[at:at + 255]
+            pages.append(b'OggS\0' + bytes([at > 0]) + bytes(8) + struct.pack('<III', 1, seq, 0) + bytes([len(part)]) +
+                         bytes(part) + packet[at * 255:at * 255 + sum(part)])
+            seq += 1
+    return b''.join(pages)
+
+
+@pytest.mark.parametrize('size,read', [(1000, 1), ((4 << 20) + 1, 0)])
+def test_an_ogg_whose_tags_taglib_would_hold_over_and_over_is_left_alone(fw, mcl, taglib, size, read):
+    loader = Loader(fw, mcl)
+    lyric, pad = b'LYRICS=[00:01.00]a', b'P=' + b'v' * size
+    loader.files.files['/mnt/mmc/a.opus'] = opus(b'OpusTags' + struct.pack('<I', 1) + b'v' + struct.pack('<I', 2) +
+                                                 struct.pack('<I', len(lyric)) + lyric + struct.pack('<I', len(pad)) + pad)
+    loader.playing(b'/mnt/mmc/a.opus')
+    tags = taglib({'LYRICS': b'[00:01.00]a'})
+    assert loader.load() == read and bool(tags.calls) == read
+
+
+# The page: stock's rows, their table, layout and paint.
+TEXT = 0xff123456  # the LCD's text colour before a row's paint
+
+
+def rgba(c, a=0xff):
+    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16
+
+
+def widget(w=0, h=0, parent=0):
+    """A stock widget's fields this code reads: its box, its parent and, a scroll view's, its offset."""
+    buf = C.create_string_buffer(0x100)
+    struct.pack_into('<i', buf, O['W_W'], w)
+    struct.pack_into('<i', buf, O['W_H'], h)
+    struct.pack_into('<Q', buf, O['W_PARENT'], parent)
+    return buf
+
+
+def field(at, name, value=None):
+    cell = C.c_int.from_address(at + O[name])
+    if value is not None:
+        cell.value = value
+    return cell.value
+
+
+class Page:
+    """iPod Now Playing's scroll_lrc as stock builds it from its lyric list, a label a line (its text, and its
+    whole seconds as lrc_time), with stock's widget calls over it and a canvas whose system font is advance px
+    a character (10 once rounded). Its layout stacks the rows from the y the layout names, as list_view does."""
+    def __init__(self, fw, lines=(), width=375, view=198, advance=9.6, canvas=True):
+        self.fw, self.advance, self.events, self.layouts, self.measured = fw, advance, [], [], 0
+        self.lrc = widget(width, view)
+        self.at = C.addressof(self.lrc)
+        self.canvas, self.lcd = C.create_string_buffer(0x100), C.create_string_buffer(0x100)
+        struct.pack_into('<Q', self.canvas, O['CANVAS_LCD'], C.addressof(self.lcd))
+        struct.pack_into('<I', self.lcd, O['LCD_TEXT_COLOR'], TEXT)
+        self.base = (0, 100, width, SLOT)  # the clip stock paints a row in
+        self.build(lines)
+        fw.mock('widget_count_children', lambda w, *_: len(self.labels) if w == self.at else 0)
+        fw.mock('widget_get_child', lambda w, i, *_: self.label(i) if w == self.at and 0 <= i < len(self.labels) else 0)
+        fw.mock('widget_get_text', lambda w, *_: C.addressof(self.texts[w]) if w in self.texts else 0)
+        fw.mock('widget_get_prop_int', lambda w, name, default, *_:
+                self.secs.get(w, default) if C.string_at(name) == b'lrc_time' else default)
+        fw.mock('widget_get_canvas', lambda w, *_: C.addressof(self.canvas) if canvas and w == self.at else 0)
+        fw.mock('widget_set_text_utf8', self.set_text)
+        fw.mock('widget_resize', lambda w, width, h, *_: (field(w, 'W_W', width), field(w, 'W_H', h)) and 0)
+        fw.mock('widget_set_children_layout', lambda w, s, *_: self.layouts.append(C.string_at(s).decode()))
+        fw.mock('widget_layout_children', self.lay_out)
+        fw.mock('canvas_measure_text', self.measure)
+        fw.mock('canvas_set_font', lambda c, name, px, *_: self.events.append(('font', px)))
+        fw.mock('canvas_get_clip_rect', lambda c, out, *_: C.memmove(out, struct.pack('<4i', *self.base), 16) and 0)
+        fw.mock('canvas_set_clip_rect', lambda c, r, *_: self.events.append(('clip', struct.unpack('<4i', C.string_at(r, 16)))))
+        fw.mock('canvas_set_text_color', lambda c, color, *_: self.events.append(('color', color & 0xffffffff)))
+        fw.mock('canvas_draw_text', lambda c, s, n, x, y, *_: self.events.append(
+            ('draw', ''.join(chr(min(k, 0x10ffff)) for k in (C.c_uint * n).from_address(s)), C.c_int(x).value, C.c_int(y).value)))
+
+    def build(self, lines):
+        """Stock's rebuild: a fresh label for each (seconds, text) line, None its seconds when it has no lrc_time."""
+        self.labels, self.texts, self.secs = [], {}, {}
+        for sec, s in lines:
+            label = widget(parent=self.at)
+            codes = [ord(c) for c in s] if isinstance(s, str) else list(s)
+            self.labels.append(label)
+            self.texts[C.addressof(label)] = (C.c_uint * (len(codes) + 1))(*codes)
+            if sec is not None:
+                self.secs[C.addressof(label)] = sec
+
+    def label(self, i):
+        return C.addressof(self.labels[i])
+
+    def set_text(self, w, s, *_):
+        if w in self.texts and not C.string_at(s):
+            self.texts[w] = (C.c_uint * 1)()
+
+    def lay_out(self, w, *_):
+        if w == self.at:
+            y = int(self.layouts[-1].split('y=')[1].split(',')[0])
+            for i in range(len(self.labels)):
+                field(self.label(i), 'W_Y', y)
+                y += field(self.label(i), 'W_H')
+
+    def measure(self, c, s, n, *_):
+        self.measured += 1
+        return float(self.advance * n)
+
+    def rows(self):
+        return self.fw.fn('lyrics_rows', C.c_int, C.c_void_p)(self.at)
+
+    def fit(self):
+        return self.fw.fn('lyrics_fit', C.c_int, C.c_void_p)(self.at)
+
+    def line(self, ms, page=1):
+        return self.fw.fn('lyrics_line', C.c_int, C.c_void_p, C.c_int, C.c_int)(self.at, ms, page)
+
+    def paint(self, i, scroll=0):
+        """Row i's paint with the view scrolled to scroll: its inks [(clip, colour, [(text, x, y)])], each a
+        clip and colour it drew under, and the clip and colour it left."""
+        field(self.at, 'SCROLL_Y', scroll)
+        self.events.clear()
+        self.fw.fn('lyrics_paint', None, C.c_void_p, C.c_void_p)(self.label(i), C.addressof(self.canvas))
+        inks = []
+        for event in self.events:
+            if event[0] == 'clip':
+                inks.append([event[1], None, []])
+            elif event[0] == 'color':
+                inks[-1][1] = event[1]
+            elif event[0] == 'draw':
+                inks[-1][2].append(event[1:])
+        restore = tuple(inks.pop()[:2]) if inks else None
+        return [tuple(ink) for ink in inks], restore
+
+
+def test_the_rows_take_the_loaders_table_and_its_word_stamps(fw):
+    made = C.addressof(published(fw, b'[00:01.50]<00:01.50>one <00:02.00>two\n[00:04.00]three\n').contents)
+    page = Page(fw, [(1, 'one two'), (4, 'three')])  # stock's rows: whole seconds, no stamps
+    assert page.rows() == 1
+    ly = state(fw)
+    assert C.addressof(ly.tab.contents) == made and not ly.next
+    assert lines_of(ly.tab)[0] == (1500, 'one two', [(1500, 0), (2000, 4)])
+
+
+def test_a_refresh_keeps_the_table_and_its_layout(fw):
+    made = C.addressof(published(fw, b'[00:01.00]<00:01.00>one <00:02.00>two\n').contents)
+    page = Page(fw, [(1, 'one two')])
+    page.rows()
+    measured = page.measured
+    page.line(1500)
+    page.build([(1, 'one two')])  # stock's refresh rebuilds the labels
+    assert page.rows() == 1
+    assert C.addressof(state(fw).tab.contents) == made and lines_of(state(fw).tab)[0][2]
+    assert page.measured == measured and state(fw).cur == -1  # new rows: the next pass paints the playing line
+
+
+def test_rows_of_another_song_make_their_own_table_and_keep_it(fw):
+    published(fw, b'[00:01.00]<00:01.00>one\n')
+    page = Page(fw, [(2, 'other'), (3, 'song')])
+    assert page.rows() == 1
+    ly = state(fw)
+    assert lines_of(ly.tab) == [(2000, 'other', []), (3000, 'song', [])]
+    assert ly.next  # the loader's, for its own rows
+    measured = page.measured
+    page.build([(2, 'other'), (3, 'song')])
+    assert page.rows() == 1 and page.measured == measured  # a refresh keeps it, laid out
+
+
+def test_unsynced_rows_never_play(fw):
+    page = Page(fw, [(FAR, 'a'), (None, 'b')])
+    assert page.rows() == 1 and [line[0] for line in lines_of(state(fw).tab)] == [FAR, FAR]
+    assert page.line(5000) == -1
+    inks, _ = page.paint(0)
+    assert [ink[1] for ink in inks] == [rgba(O['LYRIC_REST'])]
+
+
+def test_no_rows_no_page(fw):
+    page = Page(fw, [])
+    assert page.rows() == 0 and not page.layouts and not fw.calls('widget_resize')
+    assert fw.fn('lyrics_on', C.c_int, C.c_void_p)(page.at) == 0
+
+
+def test_rows_not_yet_taken_are_not_fit(fw):
+    page = Page(fw, [(1, 'a')])
+    assert page.fit() == 0 and not fw.calls('widget_resize')
+
+
+def test_each_row_is_as_high_as_its_lines_rows_four_at_most(fw):
+    # at 10 px a character, 34 to a row of the page's 375 less LYRIC_X a side: 1, 2, 3, 4 and 6 rows
+    page = Page(fw, [(1, 'a' * k) for k in (10, 40, 70, 110, 200)])
+    assert page.rows() == 1
+    h = [field(page.label(i), 'W_H') for i in range(5)]
+    px = {e[1] for e in page.events if e[0] == 'font'}
+    assert h[0] == SLOT and h[1] - h[0] == h[2] - h[1] == h[3] - h[2] >= max(px) and h[4] == h[3]
+    assert all(field(page.label(i), 'W_W') == 375 for i in range(5))
+    assert all(not page.texts[page.label(i)][0] for i in range(5))  # blank rows: the paint draws the line
+    assert page.layouts == [f'list_view(x=0,y={SLOT},s=0)']
+
+
+def test_the_rows_wrap_again_only_when_the_width_changes(fw):
+    page = Page(fw, [(1, 'a' * 30), (2, 'b')])
+    page.rows()
+    one, measured = field(page.label(0), 'W_H'), page.measured
+    assert page.fit() == 1 and page.measured == measured
+    field(page.at, 'W_W', 225)  # the centred page's column
+    assert page.fit() == 1 and page.measured > measured
+    assert field(page.label(0), 'W_H') > one == field(page.label(1), 'W_H') and field(page.label(0), 'W_W') == 225
+
+
+def test_a_line_the_fit_had_no_canvas_for_is_laid_out_at_its_paint(fw):
+    line = [(1, 'a' * 40)]  # 400 px at 10 px a letter: wider than the page, so on more than one row
+    page = Page(fw, line)
+    page.rows()
+    fitted = [ink[2][0][0] for ink in page.paint(0)[0]]  # its rows as the fit laid them out, with a canvas
+    published(fw, b'[00:01.00]' + b'a' * 40 + b'\n')  # a fresh table for the same line, not laid out
+    page = Page(fw, line, canvas=False)
+    page.rows()
+    assert page.measured == 0 and field(page.label(0), 'W_H') == SLOT
+    painted = [ink[2][0][0] for ink in page.paint(0)[0]]
+    assert page.measured and painted == fitted and len(painted) > 1 and ''.join(painted) == 'a' * 40
+
+
+def lit_page(fw, raw, lines):
+    published(fw, raw)
+    page = Page(fw, lines)
+    page.rows()
+    return page
+
+
+def test_the_playing_line_is_lit_as_far_as_it_is_sung(fw):
+    page = lit_page(fw, b'[00:01.00]<00:01.00>one <00:02.00>two\n[00:04.00]three\n', [(1, 'one two'), (4, 'three')])
+    assert page.line(1500) == 0
+    inks, restore = page.paint(0)
+    by_colour = {colour: (clip, drawn) for clip, colour, drawn in inks}
+    assert len(inks) == 2 and set(by_colour) == {rgba(O['LYRIC_LIT']), rgba(O['LYRIC_DIM'])}
+    (lit, lit_drawn), (dim, dim_drawn) = by_colour[rgba(O['LYRIC_LIT'])], by_colour[rgba(O['LYRIC_DIM'])]
+    edge = X + 20  # halfway from "one" to "two", 4 characters on, halfway between their stamps
+    assert lit[0] == 0 and lit[0] + lit[2] == edge == dim[0] and dim[0] + dim[2] == 375
+    assert lit[1] == dim[1] == page.base[1] and lit[3] == dim[3] == page.base[3]
+    # both inks draw the line alike, so its halves meet: from X, each further pass a pixel right (its weight)
+    xs = [d[1] for d in lit_drawn]
+    assert lit_drawn == dim_drawn and {d[0] for d in lit_drawn} == {'one two'} and len({d[2] for d in lit_drawn}) == 1
+    assert xs[:1] == [X] and xs == list(range(X, X + len(xs)))
+    assert restore == (page.base, TEXT)
+
+
+def test_other_lines_are_at_rest(fw):
+    page = lit_page(fw, b'[00:01.00]<00:01.00>one <00:02.00>two\n[00:04.00]three\n', [(1, 'one two'), (4, 'three')])
+    page.line(1500)
+    inks, _ = page.paint(1)
+    assert [(ink[0][0], ink[0][0] + ink[0][2], ink[1]) for ink in inks] == [(X, 375, rgba(O['LYRIC_REST']))]
+
+
+def test_the_inks_follow_the_canvas_and_stay_in_its_clip(fw):
+    page = lit_page(fw, b'[00:01.00]<00:01.00>one <00:02.00>two\n', [(1, 'one two')])
+    struct.pack_into('<i', page.canvas, O['CANVAS_X'], 80)  # the row's canvas 80 px in, as the centred page's column
+    page.base = (80, 100, 375, SLOT)
+    page.line(1500)
+    inks, _ = page.paint(0)
+    assert len(inks) == 2 and {ink[1]: (ink[0][0], ink[0][0] + ink[0][2]) for ink in inks} == {
+        rgba(O['LYRIC_LIT']): (80, 80 + X + 20), rgba(O['LYRIC_DIM']): (80 + X + 20, 80 + 375)}
+    page.base = (80 + X + 30, 100, 10, SLOT)  # a repaint of a strip of its unsung part: the sung part's ink is clipped away
+    inks, restore = page.paint(0)
+    assert [ink[:2] for ink in inks] == [(page.base, rgba(O['LYRIC_DIM']))] and restore == (page.base, TEXT)
+
+
+def test_a_line_without_word_stamps_lights_whole_and_lines_sharing_its_start_with_it(fw):
+    page = lit_page(fw, b'[00:01.00]a\n[00:01.00]b\n[00:02.00]c\n', [(1, 'a'), (1, 'b'), (2, 'c')])
+    page.line(1000)
+    for i in (0, 1):
+        inks, _ = page.paint(i)
+        assert [(ink[0][0], ink[0][2], ink[1]) for ink in inks] == [(0, 375, rgba(O['LYRIC_LIT']))]
+    top = field(page.label(2), 'W_Y')  # scrolled to its top: in full view
+    assert [ink[1] for ink in page.paint(2, top)[0]] == [rgba(O['LYRIC_REST'])]
+
+
+def test_a_wrapped_line_lights_row_by_row(fw):
+    # two words of 30 letters: a row each; the second from 3 s, sung at 90 ms a letter
+    page = lit_page(fw, b'[00:01.00]<00:01.00>' + b'a' * 30 + b' <00:03.00>' + b'b' * 30 + b'\n', [(1, 'a' * 30 + ' ' + 'b' * 30)])
+    page.line(4000)
+    inks, _ = page.paint(0)
+    assert sorted((ink[0][0], ink[0][0] + ink[0][2], ink[1], ink[2][0][0]) for ink in inks) == sorted([
+        (0, 375, rgba(O['LYRIC_LIT']), 'a' * 30),                       # its first row, sung
+        (X + 300 * 1000 // 2700, 375, rgba(O['LYRIC_DIM']), 'b' * 30),  # 1 s into its second's 2.7 s
+        (0, X + 300 * 1000 // 2700, rgba(O['LYRIC_LIT']), 'b' * 30)])
+    ys, px = sorted({d[2] for ink in inks for d in ink[2]}), max(e[1] for e in page.events if e[0] == 'font')
+    h = field(page.label(0), 'W_H')
+    assert len(ys) == 2 and abs(ys[0] - (h - ys[1] - px)) <= 1  # its rows centred in the row
+
+
+FAINT = 8  # lyrics_paint draws no row fainter
+
+
+def faded(top, h, view):
+    """The alpha of a row h high, top px down the view (above it when less than 0): the square of its share in view."""
+    seen = min(top + h, view) - max(top, 0)
+    return 255 if seen >= h else 255 * seen * seen // (h * h) if seen > 0 else 0
+
+
+CUT = next(s for s in range(1, SLOT + 1) if faded(0, SLOT, s) >= FAINT)  # the least of a row in view still drawn
+
+
+@pytest.mark.parametrize('seen,alpha', [(SLOT, 255), (30, faded(0, SLOT, 30)), (CUT, faded(0, SLOT, CUT)), (CUT - 1, None), (0, None)])
+def test_a_row_the_views_edge_cuts_fades_with_the_square_of_its_share_in_view(fw, seen, alpha):
+    page = lit_page(fw, b'[00:01.00]a\n[00:02.00]b\n', [(1, 'a'), (2, 'b')])
+    page.line(0)
+    view = field(page.at, 'W_H')
+    for scroll in (SLOT + SLOT - seen, SLOT - view + seen):  # its top cut, then its bottom
+        inks, restore = page.paint(0, scroll)
+        if alpha is None:
+            assert inks == [] and restore is None and not page.events
+        else:
+            assert [ink[1] for ink in inks] == [rgba(O['LYRIC_REST'], alpha)]
+
+
+def test_only_the_pages_rows_are_painted(fw):
+    page = lit_page(fw, b'[00:01.00]a\n', [(1, 'a')])
+    paint = fw.fn('lyrics_paint', None, C.c_void_p, C.c_void_p)
+    stray = widget(375, SLOT, page.at)  # its parent's, but none of its rows
+    page.events.clear()
+    paint(C.addressof(stray), C.addressof(page.canvas))
+    paint(None, C.addressof(page.canvas))
+    struct.pack_into('<Q', page.canvas, O['CANVAS_LCD'], 0)  # a canvas with no screen
+    paint(page.label(0), C.addressof(page.canvas))
+    assert not page.events
+
+
+def test_hostile_lyrics_from_the_loader_to_the_paint(fw):
+    page, r = Page(fw), random.Random(9)
+    view = field(page.at, 'W_H')
+    # every cut of the first sample from its first sung letter on keeps that line, at 1 s: those at least reach the page
+    owed = {SAMPLES[0][:k] for k in range(SAMPLES[0].index(b'>one') + 2, len(SAMPLES[0]))}
+    for raw in hostile(9, SAMPLES, 40):
+        t = published(fw, raw)
+        if not t:
+            continue
+        lines, made = lines_of(t, codes=True), C.addressof(t.contents)
+        page.build([(ms // 1000, s) for ms, s, _ in lines])
+        field(page.at, 'W_W', r.choice((120, 225, 375)))
+        assert page.rows() == 1 and C.addressof(state(fw).tab.contents) == made
+        if raw in owed:
+            assert lines[0][0] == 1000
+            owed.discard(raw)
+        for ms in sorted(r.randrange(0, 600000) for _ in range(2)):
+            assert -1 <= page.line(ms) < len(lines)
+            for i in range(min(len(lines), 4)):
+                scroll = r.randrange(-100, 300)
+                alpha = faded(field(page.label(i), 'W_Y') - scroll, field(page.label(i), 'W_H'), view)
+                inks, restore = page.paint(i, scroll)
+                # a row in view enough draws its line, every ink at its alpha; one not, nothing
+                assert bool(inks) == (alpha >= FAINT) and all(color >> 24 == alpha for _, color, _ in inks)
+                for clip, color, drawn in inks:
+                    assert 0 <= clip[0] and clip[0] + clip[2] <= page.base[2] and clip[2] > 0
+                    assert all(len(d[0]) <= len(lines[i][1]) for d in drawn)
+                assert restore == ((page.base, TEXT) if inks else None)
+    assert not owed
+
+
+def test_a_word_timed_lrc_lights_its_page_word_by_word(fw, mcl, stock_words):
+    raw = b'[00:01.00]<00:01.00>one <00:02.00>two\n[00:04.00]three\n'
+    loader = Loader(fw, mcl, raw, [(1, b'<00:01.00>one <00:02.00>two'), (4, b'three')])
+    loader.load()
+    page = Page(fw, [(sec, s.decode()) for sec, s in loader.list])  # stock's rows from its list
+    assert page.rows() == 1
+    edges = []
+    for ms in (1000, 1500, 2000, 2400):
+        assert page.line(ms) == 0
+        edges.append(page.paint(0)[0][0][0][0])  # where the unsung part starts
+    # from "one" at its stamp to "two", 4 characters on, at its; then "two" at 90 ms a letter, 800 ms at least
+    assert edges == [X, X + 20, X + 40, X + 40 + 30 * 400 // 800]
+    page.line(2800)
+    assert [(ink[0][2], ink[1]) for ink in page.paint(0)[0]] == [(375, rgba(O['LYRIC_LIT']))]
