@@ -1,5 +1,9 @@
 /* Cover Flow's thumb: the wheel's travel, a follower the covers ride on, its letters and landings.
- * coverflow.c #includes this where it stood. */
+ */
+#include "coverflow.h"
+
+cf_thumb_t th __attribute__((section(".scratch")));
+
 /* The thumb (docs/internals.md#coverflow-thumb), every UI pass while the covers are open
  * (navigation.c thumb_poll): the wheel's raw travel, 200 units a turn, moves a goal, and the
  * position follows it, critically damped and exact for any step, so its speed stays continuous

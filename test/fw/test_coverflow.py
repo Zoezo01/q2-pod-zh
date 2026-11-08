@@ -65,7 +65,7 @@ def api(fw):
     fns = {'coverflow__bspline_w': (None, u, ptr), 'home_sharpen': (None, ptr, i, i), 'coverflow__home_fit': (None, u, u, ptr, ptr),
            'coverflow__home_render': (None, ptr, i, i, i), 'coverflow__drift_at': (i, i, u), 'coverflow__pan_u': (i,),
            'coverflow__pan_v': (i,), 'coverflow__velocity': (i, u), 'coverflow__sample': (None, i, u),
-           'coverflow__round_stride': (i, i, i), 'coverflow__floor_div': (i, i, i), 'coverflow__covers_live': (i,),
+           'coverflow__round_stride': (i, i, i), 'coverflow__floor_div': (i, i, i), 'covers_live': (i,),
            'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'coverflow__pose': (None, i, ptr),
            'coverflow__project': (i, ptr, i), 'coverflow__unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
            'coverflow__lower': (u, ptr, u, ptr, ptr), 'coverflow__album_in': (i, ptr, u, ptr), 'coverflow__album_index': (i, ptr),
@@ -73,7 +73,7 @@ def api(fw):
            'coverflow__by_album': (i, ptr, ptr), 'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
            'folder_cmp': (i, ptr, ptr), 'coverflow__cover_artist': (C.c_char_p, ptr), 'coverflow__initial': (u, i),
            'coverflow_jump': (i, ptr, i, i, ptr), 'coverflow__bound': (i, i, i, i), 'coverflow__unbound': (i, i, i),
-           'coverflow__release': (None, i), 'coverflow__touch': (i, ptr, ptr), 'coverflow__stride_of': (i, ptr),
+           'coverflow__release': (None, i), 'coverflow__touch': (i, ptr, ptr), 'stride_of': (i, ptr),
            'coverflow__stamp': (u, ptr), 'coverflow__lift': (None, i, u), 'coverflow__sort_saved': (i,),
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
@@ -767,7 +767,7 @@ def test_round_stride_to_the_nearest_whole_cover(fw, off, want):
 
 
 def cf(fw):
-    return fw.var('coverflow__cf', Cf)
+    return fw.var('cf', Cf)
 
 
 @pytest.mark.parametrize('slide, screen, timer, live', ((1, COVERS, 0, 1), (0, COVERS, 0, 0), (1, TRACKS, 0, 0), (1, PREPARING, 0, 0), (1, COVERS, 5, 0)))
