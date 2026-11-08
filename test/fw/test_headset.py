@@ -286,15 +286,23 @@ class Game(C.Structure):
                 ('path', C.c_char * 48)]
 
 
+@pytest.mark.parametrize('how', ['media_key', PLAYPAUSE, PLAYCD, PLAYKEY])
 @pytest.mark.parametrize('audio, toggles', [(1, 0), (0, 1)])
-def test_a_card_game_with_the_sound_keeps_the_headsets_keys_from_stock(fw, audio, toggles):
-    player = Player(fw)
+def test_a_card_game_with_the_sound_keeps_the_headsets_keys_from_stock(fw, how, audio, toggles):
+    """Through media_key, and the headset's AVRCP PLAY, which headset_command sends to media_set_playing."""
+    player = Player(fw, status=PAUSED)
     gm = fw.var('addon__gm', Game)
     gm.pid, gm.audio = 4321, audio
-    fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
+    def press():
+        player.status = PAUSED
+        if how == 'media_key':
+            fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
+        else:
+            command(fw, player, how)
+    press()
     assert player.toggles() == toggles
     gm.pid = 0
-    fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
+    press()
     assert player.toggles() == toggles + 1
 
 

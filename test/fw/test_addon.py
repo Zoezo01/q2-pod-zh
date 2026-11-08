@@ -2120,3 +2120,45 @@ def test_hostile_rules_files(fw):
         sql = predicate(fw)
         assert sql == b'1' or (sql.startswith(b'case ') and sql.endswith(b'else 1 end'))
         hidden(fw, b'/mnt/mmc/A/x')
+
+
+class Game(C.Structure):
+    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
+                ('path', C.c_char * 48)]
+
+
+def shortcut(fw, value):
+    """IPOD SHORTCUT in config.ini, every other key its default; Home's shortcut row's click."""
+    def read(path, section, key, out, default, *_):
+        v = value if C.string_at(key) == b'SHORTCUT' else C.string_at(default)
+        C.memmove(out, v + b'\0', len(v) + 1)
+    fw.mock('toolsReadConfig', read)
+    return fw.fn('home_shortcut_open', C.c_int, C.c_void_p, C.c_void_p)
+
+
+def toasts(fw):
+    out = []
+    fw.mock('navigator_to_with_context', lambda page, info, *_: out.append(C.string_at(info + 8)))  # toast's dialog
+    return out
+
+
+def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
+    card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
+    fw.mock('fw_fork', lambda *_: 77)
+    fw.mock('fw_socket', lambda *_: 9)
+    seen = toasts(fw)
+    assert shortcut(fw, b'10')(None, None) == 0 and seen == []
+    gm = fw.var('addon__gm', Game)
+    assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-groovebox.input.sock')
+    assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
+
+
+def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw):
+    card(fw, other=b'name=Other\ngame=1\n')
+    fw.mock('fw_fork', lambda *_: 77)
+    seen = toasts(fw)
+    assert shortcut(fw, b'10')(None, None) == 0
+    assert seen == [b'Groovebox is not on the card'] and not fw.calls('fw_fork')
+    opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
+    assert opened(b'groovebox') == -1 and not fw.calls('fw_fork')
+    assert opened(b'other') == 1 and fw.calls('fw_fork') and not fw.calls('player_stop')  # a game without the sound

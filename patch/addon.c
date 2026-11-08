@@ -596,12 +596,12 @@ static void poll_one(app_t *a) {
  * Play/Pause and the side buttons stay the music's, as stock has them under the Games page, unless
  * the game's q2app says audio=1: the sound is then the game's (player_stop and dac_take before it
  * starts, as video_start; the output device and, on Bluetooth or USB, the volume as its arguments,
- * as q2video gets them; g_dacoff_time held while it runs), those keys reach it as "k d|u 171", 222
- * and 223, a headset's buttons do nothing (headset.c media_key), and the idle quit below is left to
- * the game, which alone knows whether it is playing. Music stays stopped when it ends, as after a
- * video. The game ends itself (from its Return menu); Return held GAME_HOLD_MS ends it (TERM, and
- * its release is dropped so stock's Games stays), as does GAME_IDLE_MS without input unless Smart
- * Awake is on;
+ * as q2video gets them, and opened as q2video opens them, video.c sound_open; g_dacoff_time held
+ * while it runs), those keys reach it as "k d|u 171", 222 and 223, a headset's buttons do nothing
+ * (headset.c media_key, media_set_playing), and the idle quit below is left to the game, which
+ * alone knows whether it is playing. Music stays stopped when it ends, as after a video. The game
+ * ends itself (from its Return menu); Return held GAME_HOLD_MS ends it (TERM, and its release is
+ * dropped so stock's Games stays), as does GAME_IDLE_MS without input unless Smart Awake is on;
  * one still there GAME_KILL_MS after a TERM is KILLed. demo repaints when it has gone. Stock makes
  * a held key's long press after this hook, so the hold is timed here, from the game's key-down.
  * ponytail: the screen stays on while it runs, as for a video, and the idle quit is what lets it
@@ -644,12 +644,13 @@ int addon_is_game(const char *id) {
 }
 
 /* Home's Shortcut (theme_engine.c home_shortcut_open): the card game with this id started as its
- * Games row would start it; 0 when the card hasn't it. */
+ * Games row would start it (1 running, 0 not, with addon_game_start's toast); -1 when no card game
+ * has the id (no q2app with game=1 in its folder, or no slot left). */
 int addon_game_open(const char *id) {
     int n = addon_games();
     for (int k = 0; k < n; ++k)
         if (!strcmp(ap.a[ap.game[k]].id, id)) return addon_game_start(k);
-    return 0;
+    return -1;
 }
 
 /* Card game k started over the screen: 1 when it runs. */

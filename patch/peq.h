@@ -251,7 +251,7 @@ unsigned fnv(unsigned h, const unsigned char *s);
 void stop_timer(unsigned *timer), rearm(unsigned *timer, int (*fn)(const void *), unsigned ms);
 int return_key(void *event, unsigned *timer, int (*leave)(const void *)); /* a page's keyup: Return */
 int center_press(unsigned *timer, unsigned *at, int (*single)(const void *), int scrubbing);
-int config_value(const char *section, const char *key, int n, int def); /* theme_engine.c: a config.ini digit */
+int config_value(const char *section, const char *key, int n, int def); /* theme_engine.c: a config.ini decimal */
 int image_show(void *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
 void peq_attach(void); /* peq_ui.c */
@@ -310,7 +310,7 @@ void addon_forget(const char *dir), addon_quit(const char *dir);
  * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it */
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
 int addon_game_audio(void); /* a card game with audio=1 runs: the sound and the media keys are its */
-int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id */
+int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id, -1 none */
 const char *addon_game_name(int k);
 int addon_game_input(void *e), addon_is_game(const char *id);
 void ringnav_wdt_long(void); /* system.c: the watchdog's long count for a long pass */

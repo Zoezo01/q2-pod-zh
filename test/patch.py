@@ -377,6 +377,7 @@ class Machine:
             if self.text(b) in self.scope_markers: self.word(c+20,0o100644); ret=0
             elif self.text(b) in ['/mnt/mmc/'+n for n,t in self.card if t==4] or self.text(b) in self.dirs: self.word(c+20,0o40755); ret=0  # a card folder
             elif self.text(b) in self.stats: self.word(c+64,self.stats[self.text(b)]); ret=0  # its mtime: info[16]
+            elif self.text(b)=='/mnt/mmc/.groovebox/q2-groovebox': self.word(c+20,self.groovebox_mode); ret=0 if self.groovebox_mode else -1
             elif self.text(b)!='/mnt/mmc/.rockbox/rockbox': ret=-1  # Tidal Downloads' rows: no such files here
             else: self.word(c+20,self.rockbox_mode); ret=0 if self.rockbox_mode else -1
         elif name=='strlen@GLIBC_2.0': ret=len(self.raw(a))  # bytes: stock strips a path's UTF-8 name byte by byte
@@ -11360,6 +11361,11 @@ sf,sc=m.handler(shortcut_button,O['EVT_CLICK'])
 for label in ('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Rockbox'):
     m.call(address=sf,args=(sc,m.event,0,0),gap=0)
     assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+m.groovebox_mode=0o100755  # Groovebox on the card: the cycle offers it after Audiobooks
+for label in ('Favorites','Shuffle','Rated Albums','Playlists','Artists','Albums','Games','Podcasts','Audiobooks','Groovebox','Rockbox'):
+    m.call(address=sf,args=(sc,m.event,0,0),gap=0)
+    assert m.nodes[named(m,home,'label_rockbox')]['text']==label
+m.groovebox_mode=0
 home_bounds(False); carousel(False)
 writes=click(1); assert [(w[0],m.text(w[2])) for w in writes]==[(1,'HOME')] and texts()[1]=='Home: Full'
 home_bounds(True); carousel(False)
@@ -15806,6 +15812,35 @@ CONFIG['KEEPLIT']='1'; a=AppMachine(); del CONFIG['KEEPLIT']; card_app(a,'fidget
 assert a.call(address=payload_syms['addon_games'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert a.call(address=payload_syms['addon_game_start'],args=(0,0,0,0),gap=0,clear=False,count=5_000_000)==1
 assert not idle(a) and not idle(a) and any(c[0]=='reset_poweroptions_timer' for c in a.calls); passed()
+# A card game with the sound (q2app audio=1): the output is handed over before the fork as for a video (player_stop,
+# the jack readied by dac_take) and the binary gets q2video's arguments: the device, and on Bluetooth or USB the
+# volume (h: the DAC's own); Play/Pause and the side buttons reach it; the DAC stays on and nothing ends it for
+# idling; the Shortcut opens it by id, -1 for an id no card game has.
+g=AppMachine(); card_app(g,'groovebox','name=Groovebox\ngame=1\naudio=1\n'); GB='/mnt/mmc/.groovebox/q2-groovebox'; GS2='/tmp/q2-groovebox.input.sock'
+def gn(name,*args): return g.call(address=payload_syms[name],args=(args+(0,0,0,0))[:4],gap=0,clear=False,count=5_000_000)
+def start(way):
+    g.way=way; g.forked=0; g.execs=[]; g.calls=[]; gn('addon_game_start',0)  # the child
+    return [c[0] for c in g.calls]
+g.word(syms['g_dacoff_time'],0xffffffff); g.byte(syms['g_headset_output'],1); g.byte(syms['g_volume'],42); names=start(0)
+take=[n for n in names if n in ('player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork')]
+assert take==['player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork'] and g.execs[-1]==(GB,GB,'plughw:0,0','',0)
+names=start(1); assert 'player_stop' in names and 'config_outputchannel' not in names and g.execs[-1]==(GB,GB,'plug:bluealsa','42',0)
+g.byte(syms['g_usbvol_mode'],0); g.word(O['USB_MIXER'],0xfffffffe); start(2); assert g.execs[-1]==(GB,GB,'usb','h42',0)
+g.way=0; g.forked=4243; assert gn('addon_game_start',0)==1 and gn('addon_game_on')==4243 and gn('addon_game_audio')==1
+g.handlers[inp+12]='stock_input'
+def gevent(kind,key):
+    g.calls=[]; g.sent=[]; g.word(g.event+O['EVENT_X'],0); g.word(g.event+O['EVENT_Y'],0)
+    g.call(key,address=inp,args=(g.wm,g.event,0,0),event_type=kind,gap=0,clear=False)
+    assert 'stock_input' not in [c[0] for c in g.calls],(kind,key)
+    return [(t[1],t[5]) for t in g.sent]
+assert gevent(O['EVT_KEY_DOWN'],O['KEY_PLAY'])==[('k d 171',GS2)] and gevent(O['EVT_KEY_UP'],O['KEY_PLAY'])==[('k u 171',GS2)]
+assert gevent(O['EVT_KEY_DOWN'],O['KEY_BACK_BTN'])==[('k d 222',GS2)] and gevent(O['EVT_KEY_UP'],O['KEY_FWD_BTN'])==[('k u 223',GS2)]
+assert gevent(O['EVT_KEY_LONG'],O['KEY_PLAY'])==[]  # eaten: no Play-hold action of stock's
+g.word(syms['g_dacoff_time'],5); g.now+=120_001; g.waited=0; assert poll(g)==0 and g.get(syms['g_dacoff_time'])==0
+g.now+=120_001; assert poll(g)==0 and any(c[0]=='reset_poweroptions_timer' for c in g.calls)
+g.waited=4243; poll(g); assert gn('addon_game_on')==0 and gn('addon_game_audio')==0
+g.waited=0; assert signed(gn('addon_game_open',g.string('nothere')))==-1 and gn('addon_game_on')==0
+assert gn('addon_game_open',g.string('groovebox'))==1 and gn('addon_game_on')==4243; passed()
 # Stock's Baidu Netdisk row (a Chinese cloud drive; list_baidu's icon) is gone from Streaming, destroyed; its
 # TIDAL row stays first.
 m=AppMachine(); view=m.node('scroll_view','scroll_view_streamsset')
