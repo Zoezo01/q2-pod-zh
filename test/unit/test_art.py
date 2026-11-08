@@ -39,6 +39,9 @@ QS_NAMES = ('wifi', 'wifiopen', 'bt', 'btopen', 'keylock', 'keylockopen', 'lowga
 def test_classic_draws_its_images_and_the_others_none():
     themes = theme.builtins()
     assert not art.images(themes[0]) and not art.images(themes[2])
+    # the bar's speakers come with a track stated in one half alone
+    for half in ({'np_track': themes[1]['np_track']}, {'light': {'np_track': themes[1]['light']['np_track']}}):
+        assert set(art.images({**themes[0], **half})) == {'minimal_vol_lo', 'minimal_vol_hi'}
     full = art.images(themes[1])
     assert {k: v for k, v in full.items() if '_icon_' not in k} == classic()  # what the other tests draw
     assert set(full) == {f'classic_light_{n}' for n in ('sort_bars', 'icon_note', 'icon_folder', 'icon_stack', 'icon_game', 'icon_wave', 'icon_gear', 'chevron', 'bolt', 'plug', 'note', 'play_l', 'play_d', 'pause_l', 'pause_d', 'vol_lo', 'vol_hi', *(f'spk_{v}_{h}' for v in ('quiet', 'loud') for h in 'ldw'), *(f'drop_{n}{k}' for n in QS_NAMES for k in QS_INKS(n)), 'drop_track', 'drop_knob', 'sun_small', 'sun_big', 'play_w', 'pause_w', 'orb_note', 'orb_usb', 'tray_108', 'tray_165', 'tray_164', 'cell_45', 'cell_60', 'cell_lit_45', 'cell_lit_60', 'tile', 'clock_chrome', 'clock_shadow', 'hint_shadow', 'clock_dark', 'kb_del', 'kb_shift', 'kb_back', 'field_glass', 'field', 'band_shadow', 'panel_shadow', 'rate_shadow', 'tray_shadow', 'confirm_shadow', 'track_inset', 'lit_edge', 'band_top', 'band_foot', 'heart_on_l', 'heart_on_d', 'heart_off_l', 'heart_off_d', 'station')}
