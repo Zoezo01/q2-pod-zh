@@ -309,6 +309,8 @@ void addon_forget(const char *dir), addon_quit(const char *dir);
 /* addon.c's card games (q2app game=1), Games' rows after its own: how many (a scan), one's name,
  * its start over the screen (1 when it runs), whether one runs, and ringnav_input's events for it */
 int addon_games(void), addon_game_start(int k), addon_game_on(void);
+int addon_game_audio(void); /* a card game with audio=1 runs: the sound and the media keys are its */
+int addon_game_open(const char *id); /* Home's Shortcut: the card game with this id */
 const char *addon_game_name(int k);
 int addon_game_input(void *e), addon_is_game(const char *id);
 void ringnav_wdt_long(void); /* system.c: the watchdog's long count for a long pass */
@@ -460,6 +462,8 @@ int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(voi
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 int rockbox_available(void);  /* theme_engine.c: a regular Rockbox binary on the card */
+int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
+#define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */
 int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload page */
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */

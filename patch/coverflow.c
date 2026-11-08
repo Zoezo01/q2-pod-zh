@@ -3827,8 +3827,8 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
-            kind = !tk_strcmp(s, "Games")     ? PANE_GAMES
-                   : !tk_strcmp(s, "Rockbox") ? PANE_ROCKBOX
+            kind = !tk_strcmp(s, "Games")                                 ? PANE_GAMES
+                   : !tk_strcmp(s, "Rockbox") || !tk_strcmp(s, "Groovebox") ? PANE_ROCKBOX
                    : !tk_strcmp(s, "Shuffle") ? PANE_SHUFFLE
                    : !tk_strcmp(s, "Podcasts") || !tk_strcmp(s, "Audiobooks") ? PANE_FOLDER
                                               : PANE_LIBRARY;

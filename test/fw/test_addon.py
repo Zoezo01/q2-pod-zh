@@ -27,7 +27,7 @@ W_W, W_H, CANVAS_LCD = 0x08, 0x0c, 0x38
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56),
-                *((n, C.c_int) for n in ('qr', 'game', 'present', 'launched', 'hold', 'relaunch', 'restart')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'present', 'launched', 'hold', 'relaunch', 'restart')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -286,11 +286,11 @@ def test_scan_finds_apps_by_name(fw):
 
 
 def test_a_manifests_keys_and_defaults(fw):
-    card(fw, one=b'name=N\nsearch=Find it\nqr=1\n', two=b'other=1\n')
+    card(fw, one=b'name=N\nsearch=Find it\nqr=1\ngame=1\naudio=1\n', two=b'other=1\n')
     scan(fw)
     one, two = ap(fw).a[0], ap(fw).a[1]
-    assert (one.name, one.tips, one.qr) == (b'N', b'Find it', 1)
-    assert (two.name, two.tips, two.qr) == (b'two', b'Search', 0)
+    assert (one.name, one.tips, one.qr, one.game, one.audio) == (b'N', b'Find it', 1, 1, 1)
+    assert (two.name, two.tips, two.qr, two.game, two.audio) == (b'two', b'Search', 0, 0, 0)
 
 
 def test_names_are_cut_at_a_whole_character(fw):
@@ -346,7 +346,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 

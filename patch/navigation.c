@@ -3786,7 +3786,9 @@ static void bar_sync(void *bar) {
     } else if (c && st.codec_step >= CODEC_STEPS)
         image_base_set_image(st.bar_bt, BT_GLYPH);
     accent(); /* reads the settings */
-    if (st.home_rockbox != rockbox_available()) coverflow_home_layout();
+    if (st.home_rockbox != rockbox_available() ||
+        (shortcut() == SHORTCUT_GROOVEBOX && st.home_groovebox != groovebox_available()))
+        coverflow_home_layout();
     /* Classic's battery: the set's body, which Percent Inside keeps */
     const theme_t *T = theme();
     /* A relayout puts them back in the row; the bar paints at least once a second. */
@@ -6422,17 +6424,19 @@ static int setting_click(void *ctx, void *event) {
     int *value = option_slot(T, i), was = *value;
     const char *key = option_key(T, i);
     /* Rockbox, Favorites, Shuffle, Rated Albums, Playlists, Artists, Albums, Games, Podcasts,
-     * Audiobooks */
-    static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 8, 1, 9, 0 };
+     * Audiobooks, Groovebox (skipped unless the card has it; Rockbox is always offered) */
+    static const int shortcut_next[] = { 3, 2, 6, 5, 7, 4, 8, 1, 9, SHORTCUT_GROOVEBOX, 0 };
     _Static_assert(sizeof shortcut_next / sizeof *shortcut_next == SETTING_N_SHORTCUT,
                    "one per shortcut");
     /* Graphite, ..., Plum, Green, then Ivory (masks skip it: Modern's to Graphite, Classic's to its
      * own Classic Blue) */
     static const int accent_next[] = { 1, 2, 3, 4, 5, 6, 8, 0, MINIMAL_ACCENT };
     _Static_assert(sizeof accent_next / sizeof *accent_next == ACCENT_N, "one per ACCENTS row");
-    if (i == 4)
+    if (i == 4) {
         *value = shortcut_next[shortcut()];
-    else if (i) {
+        if (*value == SHORTCUT_GROOVEBOX && !groovebox_available())
+            *value = shortcut_next[SHORTCUT_GROOVEBOX];
+    } else if (i) {
         const option_t *o = option_of(T, i);
         unsigned mask = o && o->values ? o->values : ~0u;
         do

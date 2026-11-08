@@ -425,25 +425,40 @@ def test_display_settings(fw, clock, st, values, theme, home, light):
     (b'', 1, b'Rockbox'), (b'', 0, b'Favorites'), (b'0', 0, b'Rockbox'), (b'1', 0, b'Artists'), (b'2', 0, b'Albums'),
     (b'3', 0, b'Favorites'),
     (b'4', 0, b'Rated Albums'), (b'5', 0, b'Shuffle'), (b'6', 0, b'Games'), (b'7', 0, b'Playlists'), (b'8', 0, b'Podcasts'),
-    (b'9', 0, b'Audiobooks'),
+    (b'9', 0, b'Audiobooks'), (b'10', 0, b'Groovebox'), (b'11', 1, b'Rockbox'), (b'11', 0, b'Favorites'), (b'1x', 0, b'Favorites'),
 ])
 def test_shortcut(fw, clock, value, rockbox, name):
     Config(fw, **({'SHORTCUT': value} if value else {}))
     def stat(version, path, info, *_):
         struct.pack_into('<I', (C.c_char * 144).from_address(info), 20, 0o100755)
-        return 0 if rockbox else -1
+        return 0 if rockbox and C.string_at(path) == b'/mnt/mmc/.rockbox/rockbox' else -1
     fw.mock('fw___xstat', stat)
     assert fw.fn('ipod_home_shortcut', C.c_char_p)() == name
 
 
-@pytest.mark.parametrize('result, mode, available', [(0, 0o100755, 1), (0, 0o040755, 0), (-1, 0o100755, 0)])
-def test_rockbox_is_a_file_on_the_card(fw, result, mode, available):
+@pytest.mark.parametrize('value, rockbox, groovebox, shown', [
+    (b'10', 1, 0, 0), (b'10', 0, 1, 1), (b'0', 0, 1, 0), (b'0', 1, 0, 1), (b'3', 0, 0, 1),
+])
+def test_the_shortcut_row_hides_without_its_launcher(fw, clock, value, rockbox, groovebox, shown):
+    Config(fw, SHORTCUT=value)
+    there = {b'/mnt/mmc/.rockbox/rockbox': rockbox, b'/mnt/mmc/.groovebox/q2-groovebox': groovebox}
     def stat(version, path, info, *_):
-        assert version == 3
+        struct.pack_into('<I', (C.c_char * 144).from_address(info), 20, 0o100755)
+        return 0 if there.get(C.string_at(path)) else -1
+    fw.mock('fw___xstat', stat)
+    assert fw.fn('ipod_home_rockbox', C.c_int)() == shown
+
+
+@pytest.mark.parametrize('fn, path', [('rockbox_available', b'/mnt/mmc/.rockbox/rockbox'),
+                                      ('groovebox_available', b'/mnt/mmc/.groovebox/q2-groovebox')])
+@pytest.mark.parametrize('result, mode, available', [(0, 0o100755, 1), (0, 0o040755, 0), (-1, 0o100755, 0)])
+def test_rockbox_is_a_file_on_the_card(fw, fn, path, result, mode, available):
+    def stat(version, p, info, *_):
+        assert version == 3 and C.string_at(p) == path
         C.c_uint.from_address(info + 20).value = mode
         return result
     fw.mock('fw___xstat', stat)
-    assert fw.fn('rockbox_available', C.c_int)() == available
+    assert fw.fn(fn, C.c_int)() == available
 
 
 @pytest.mark.parametrize('flag, mode, choice', [(0, 1, 0), (1, 3, 1), (1, 2, 2), (1, 1, 3)])

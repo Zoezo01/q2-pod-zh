@@ -281,6 +281,23 @@ def top_window(fw, name):
     return page
 
 
+class Game(C.Structure):
+    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
+                ('path', C.c_char * 48)]
+
+
+@pytest.mark.parametrize('audio, toggles', [(1, 0), (0, 1)])
+def test_a_card_game_with_the_sound_keeps_the_headsets_keys_from_stock(fw, audio, toggles):
+    player = Player(fw)
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.audio = 4321, audio
+    fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
+    assert player.toggles() == toggles
+    gm.pid = 0
+    fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
+    assert player.toggles() == toggles + 1
+
+
 def test_a_playing_video_takes_the_keys(fw):
     player = Player(fw)
     fw.var('books__vid', Vid).pid = 4321

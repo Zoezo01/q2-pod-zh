@@ -104,6 +104,7 @@ static int focus(void) {
 int media_focused(void) { return focus() != 0; }
 void media_key(unsigned key) {
     headset_manual();
+    if (addon_game_audio()) return; /* a card game with the sound: stock's player must not retake it */
     int f = focus(); /* a focused Spotify or radio that isn't running leaves them to the owner */
     if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key)))
         return;

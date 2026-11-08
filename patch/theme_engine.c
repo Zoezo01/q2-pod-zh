@@ -2,20 +2,28 @@
  * scheme() and the accent's tones. */
 #include "navigation.h"
 
-/* A one-digit setting under section in the stock config.ini, 0 to n - 1, else def (a missing key
- * too): toolsReadConfig(path, section, key, out, default) copies the value, or the default. */
+/* A setting under section in the stock config.ini, a decimal 0 to n - 1 (write_int_config writes
+ * them so), else def (a missing key too): toolsReadConfig(path, section, key, out, default) copies
+ * the value, or the default. */
 int config_value(const char *section, const char *key, int n, int def) {
-    char s[256] = "", d[2] = { (char)('0' + def), 0 };
+    char s[256] = "", d[12];
+    tk_snprintf(d, sizeof d, "%d", def);
     toolsReadConfig("/mnt/data/config.ini", section, key, s, d);
-    return s[0] >= '0' && s[0] < '0' + n && !s[1] ? s[0] - '0' : def;
+    int v = 0, i = 0;
+    for (; i < 3 && s[i] >= '0' && s[i] <= '9'; ++i) v = v * 10 + s[i] - '0';
+    return i && !s[i] && v < n ? v : def;
 }
 
 #define ROCKBOX_BIN "/mnt/mmc/.rockbox/rockbox"
+#define GROOVEBOX_BIN "/mnt/mmc/.groovebox/q2-groovebox"
 /* glibc 2.28 MIPS o32 stat v3: st_mode at byte 20, as stock's fs stat reads it. */
-int rockbox_available(void) {
+static int bin_available(const char *path) {
     unsigned info[36];
-    return !__xstat(3, ROCKBOX_BIN, info) && (info[5] & 0170000) == 0100000;
+    return !__xstat(3, path, info) && (info[5] & 0170000) == 0100000;
 }
+int rockbox_available(void) { return bin_available(ROCKBOX_BIN); }
+/* The Groovebox card app (a game with the sound, addon.c), Home's Shortcut when it is installed. */
+int groovebox_available(void) { return bin_available(GROOVEBOX_BIN); }
 
 /* Light Mode (docs/ipod.md#light-mode): a neutral colour, its channels within LIGHT_SPREAD, flipped
  * per channel from black to the light half's paper and white to its ink (LIGHT_PAPER and LIGHT_INK
@@ -168,7 +176,6 @@ void light_apply(const int *tm) {
 __attribute__((noinline)) static void settings_read(void) {
     for (int i = 0; i < 4; ++i)
         *setting_values[i] = config_value("IPOD", setting_keys[i], setting_counts[i], 0);
-    _Static_assert(SETTING_N_SHORTCUT <= 10, "config_value reads one digit");
     st.shortcut = config_value("IPOD", "SHORTCUT", SETTING_N_SHORTCUT,
                                SETTING_N_SHORTCUT); /* no key, see shortcut() */
     st.minimal_accent = config_value("IPOD", "MINIMAL_ACCENT", ACCENT_N, MINIMAL_ACCENT);
@@ -258,15 +265,18 @@ int ipod_battery(void) {
     accent();
     return st.battery;
 } /* lockscreen.c's Large clock */
-/* 1 when Home shows its Rockbox row (coverflow_home_layout): the card has Rockbox. */
+/* 1 when Home shows its Shortcut row (coverflow_home_layout): any target but Rockbox and Groovebox,
+ * and those while the card has them. */
 int ipod_home_rockbox(void) {
     st.home_rockbox = rockbox_available();
-    return shortcut() || st.home_rockbox;
+    st.home_groovebox = groovebox_available();
+    int s = shortcut();
+    return s == SHORTCUT_GROOVEBOX ? st.home_groovebox : s || st.home_rockbox;
 }
 const char *ipod_home_shortcut(void) {
-    static const char *const names[] = { "Rockbox",      "Artists",   "Albums", "Favorites",
-                                         "Rated Albums", "Shuffle",   "Games",  "Playlists",
-                                         "Podcasts",     "Audiobooks" };
+    static const char *const names[] = { "Rockbox",      "Artists",    "Albums",   "Favorites",
+                                         "Rated Albums", "Shuffle",    "Games",    "Playlists",
+                                         "Podcasts",     "Audiobooks", "Groovebox" };
     _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
     return names[shortcut()];
 }
@@ -279,6 +289,13 @@ int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
     int s = shortcut();
     if (!s) return rockbox_open(ctx, event);
+    if (s == SHORTCUT_GROOVEBOX) { /* the card game by id, as its Games row starts it */
+        if (groovebox_available())
+            addon_game_open("groovebox");
+        else
+            toast("Groovebox is not on the card");
+        return 0;
+    }
     if (s == 4) return rated_albums(ctx, event);
     if (s == 5) return shuffle_menu(ctx, event);
     if (s == 6) return games_open(ctx, event);
