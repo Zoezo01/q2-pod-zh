@@ -9362,8 +9362,8 @@ static void play_count(void *r, unsigned key) {
 }
 
 /* Scrobbling (docs/internals.md#scrobbling): a Rockbox-style AudioScrobbler 1.1 log at the card's
- * root, for any .scrobbler.log uploader or Upload Scrobbles (scrobble.c). Artist and album are the
- * player's parsed tags when it has parsed this track (now_tag), or with .scrobble.ini's
+ * root, for any .scrobbler.log uploader or Upload Scrobbles (scrobble.c). Artist, album and title
+ * are the player's parsed tags when it has parsed this track (now_tag), or with .scrobble.ini's
  * ALBUM_ARTIST the song's album artist when it has one (parsed too: folder queues' records have
  * none); untagged (artist-less) tracks are skipped, as scrobblers reject them. */
 char *scrobble_tag(char *o, char *end, const char *s) {
@@ -9382,9 +9382,11 @@ static void scrobble(void *r, int total, int heard) {
     if (now < 1600000000) return; /* clock never set: Last.fm would reject the time */
     if (!addon_scrobbles(P(r, REC_PATH))) return; /* its card app's q2app says scrobble=0 */
     char line[800], name[512], *end = line + sizeof line - 48, *o = line; /* 48: the numbers */
+    const char *title = now_tag(r, REC_TITLE);
+    if (!title || !*title || !strcmp(title, "(null)")) title = track_name(name, sizeof name, r);
     o = scrobble_tag(o, end, artist);
     o = scrobble_tag(o, end, now_tag(r, REC_ALBUM));
-    o = scrobble_tag(o, end, track_name(name, sizeof name, r));
+    o = scrobble_tag(o, end, title);
     if (I(r, REC_TRACK) > 0) o += tk_snprintf(o, 12, "%d", I(r, REC_TRACK));
     o += tk_snprintf(o, (unsigned)(line + sizeof line - o), "\t%d\tL\t%u\t\n", total,
                      (unsigned)(now - heard));

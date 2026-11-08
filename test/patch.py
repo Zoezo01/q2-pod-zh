@@ -17266,6 +17266,14 @@ m.poll(0,200); playing(m,1,200,n=110); assert m.files['/mnt/mmc/.scrobbler.log']
 m.u.mem_write(id3+O['ID3_ALBUM']+O['MUSIC_INFO_ALBUM_ARTIST'],b'\0'); m.word(r+O['REC_ALBUM_ARTIST'],m.string('RA'))
 m.poll(0,200); playing(m,1,200,n=110); assert m.files['/mnt/mmc/.scrobbler.log'].decode().split('\n')[6].startswith('RA\t'); passed()
 del m.config['ALBUM_ARTIST']
+# Issue #240: a Folder play's record has no title: the player's parsed one, not the file name; a CUE's is the chapter's.
+m.u.mem_write(id3+O['ID3_ARTIST'],b'X\0'); m.u.mem_write(id3+O['ID3_TITLE'],b'Parsed\0')
+m.poll(0,200); playing(m,1,200,n=110); assert m.files['/mnt/mmc/.scrobbler.log'].decode().split('\n')[-2].startswith('X\tAlbum\tParsed\t7\t200\t'); passed()
+m.word(r+O['REC_TITLE'],m.string('Song')); m.poll(0,200); playing(m,1,200,n=110)  # a row that took its file name as title (ringnav_localclass)
+assert m.files['/mnt/mmc/.scrobbler.log'].decode().split('\n')[-2].startswith('X\tAlbum\tParsed\t7\t200\t'); passed()
+for parsed in (b'\0',b'(null)\0'):  # parsed but untitled: back to the file's
+    m.u.mem_write(id3+O['ID3_TITLE'],parsed); m.poll(0,200); playing(m,1,200,n=110)
+    assert m.files['/mnt/mmc/.scrobbler.log'].decode().split('\n')[-2].startswith('X\tAlbum\tSong\t7\t200\t'),parsed; passed()
 # PERCENT=25: a quarter of the song scrobbles, while the play count still waits for half; 100 needs
 # all but the last 2 s; out of range keeps half or LISTEN_MAX_S.
 def logged(m): return len(m.files.get('/mnt/mmc/.scrobbler.log',b'').split(b'\n'))-4
