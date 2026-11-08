@@ -345,6 +345,8 @@ typedef struct {
 
 extern scratch_t st;
 extern menu_t g_menu; /* the one row list load() fills */
+
+/* Outside NAVIGATION: stock's trampolines (tools/build.py) and the other payload files'. */
 extern const char *track_name(char *buf, unsigned size, void *t);
 extern void *staged(int (*query)(void *), void *arg, int *count);
 extern int spot_media(unsigned key), spot_key(void *top, unsigned key),
