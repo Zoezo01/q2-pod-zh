@@ -42,7 +42,7 @@ def boot_check():
         r = pathlib.Path(tmp)
         def host(hook):
             script = hook.decode().replace(' &\n', '\n')
-            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/proc/vmstat', '/tmp/q2-demo.log',
+            for old in ('/mnt/', '/tmp/mmc_add', ROCKBOX_FLAG, '/usr/bin/q2boot', '/release/bin/demo', '/proc/mounts', '/tmp/q2-demo.log',
                         '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
@@ -77,7 +77,6 @@ def boot_check():
             subprocess.run(['sh', '-c', script], check=True, env=dict(os.environ, PATH=f'{r}/bin:' + os.environ['PATH']))
             return (r/'ran').read_text().split(), target.exists() and target.read_text().strip()
         (r/'proc/mounts').write_text('')
-        vmstat = r/'proc/vmstat'; vmstat.write_text('nr_free_pages 900\noom_kill 0\n')
         rockbox = [str(rb.parent), 'demo']
         assert boot(False, False) == (['demo'], False)          # no Rockbox on the card: Q2 Pod
         assert boot(False, True, 1) == (rockbox, False)         # Rockbox by default; a crash starts Q2 Pod
@@ -139,6 +138,11 @@ def boot_check():
         boot(True, False, status=0)
         assert card() == [fourth, third, second]  # two kept before the newest, the oldest dropped
         boot(True, False, status=0); assert card() == [fourth, third, second]  # nothing new: nothing moves
+        # a full card: the copy fails, so nothing moves and the log stays on /mnt/data for the next boot
+        fifth = crashed(140); exe('bin/cp', 'exit 1')
+        boot(True, False, status=0); assert card() == [fourth, third, second] and crash.read_text() == fifth
+        (r/'bin/cp').unlink(); copy.with_name('q2-crash.log.new').unlink(missing_ok=True)
+        boot(True, False, status=0); assert card() == [fifth, fourth, third] and not crash.exists()
         for f in logs: f.unlink()
         out, cp = logged(139, False)
         assert 'demo exit 139' in out and cp is False
@@ -165,18 +169,19 @@ def boot_check():
             out, cp = logged(137, False)
             assert f'== {last}' not in out and f'== {name}\n' not in out
         # an OOM kill (5.10's wording) whose task dump is longer than the 200-line tail: its own lines, from all of
-        # dmesg (a stand-in on PATH), and /proc/vmstat's count go ahead of the tail
+        # dmesg (a stand-in on PATH) go ahead of the tail
         head = '[  900.100000] demo invoked oom-killer: gfp_mask=0x100cca(GFP_HIGHUSER_MOVABLE), order=0, oom_score_adj=0'
         dump = [f'[  900.2{n:05}] [{300 + n:7}]     0 {300 + n:7}     2000      500    16384        0             0 task{n}' for n in range(250)]
         kill = ('[  900.300000] Out of memory: Killed process 300 (demo) total-vm:150000kB, anon-rss:92000kB, file-rss:1000kB, '
                 'shmem-rss:0kB, UID:0 pgtables:120kB oom_score_adj:0')
+        summary = ('[  900.290000] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=/,mems_allowed=0,'
+                   'global_oom,task_memcg=/,task=demo,pid=300,uid=0')
         reap = '[  900.400000] oom_reaper: reaped process 300 (demo), now anon-rss:0kB, file-rss:0kB, shmem-rss:0kB'
-        (r/'dmesg').write_text('\n'.join([head, *dump, kill, reap]) + '\n'); exe('bin/dmesg', f'cat {r}/dmesg')
-        vmstat.write_text('nr_free_pages 900\noom_kill 1\n')
+        (r/'dmesg').write_text('\n'.join([head, *dump, summary, kill, reap]) + '\n'); exe('bin/dmesg', f'cat {r}/dmesg')
         out, cp = logged(137, False)
         assert '== oom\n' in out
         oom, tail = out.split('== oom\n')[1].split('== dmesg\n')
-        assert oom == f'{head}\n{kill}\n{reap}\noom_kill 1\n' and head not in tail and kill in tail
+        assert oom == f'{head}\n{summary}\n{kill}\n{reap}\n' and head not in tail and kill in tail
         (r/'bin/dmesg').unlink(); (r/'dmesg').unlink()
         # /mnt/data/q2-state (navigation.c state_poll) still there at boot: the last session ended in a forced
         # restart, or the battery. It goes into q2-crash.log, a new one that says so or the crash's, and goes.
