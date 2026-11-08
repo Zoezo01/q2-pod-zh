@@ -6,7 +6,8 @@ import struct
 
 import pytest
 
-from conftest import FNV_PRIME, O, Deques, Files, Rows, claim, fnv1a, in_fork, libc  # noqa: F401
+import host
+from conftest import FNV_PRIME, O, Deques, Files, Rows, claim, fnv1a, high_halves, in_fork, libc  # noqa: F401
 
 MAGIC = 0x5132524e
 HEADER = '<14I'
@@ -1058,7 +1059,7 @@ def test_a_load_ends_advanced_play_and_counts(fw, player):
     assert player.set(0, 3) == 1
     fw.mock('stock_load_trampoline', lambda q, at, kind, *_: 11)
     assert load(player.handle, 0, 2) == 11
-    assert player.s.active == 0 and fw.var('playback_loads', C.c_uint).value == 1 and rows
+    assert player.s.active == 0 and fw.var('playback_loads', C.c_uint).value == 1
 
 
 def test_a_library_load_keeps_a_repeat_or_track_shuffle(fw, player):
@@ -1487,6 +1488,143 @@ def test_guard_reset(fw):
     assert guard(fw) == 0
 
 
+@pytest.fixture
+def wheel(fw):
+    """The wheel outside a fork: the stand-in's bytes at WHEEL_POST go back after the test."""
+    claim(O['WHEEL_POST'])
+    saved = C.string_at(O['WHEEL_POST'], 64)
+    yield Wheel(fw)
+    C.memmove(O['WHEEL_POST'], saved, len(saved))
+
+
+def test_the_screen_lighting_arms_the_guard_again(fw, wheel):
+    fw.var('wheel_guard', C.c_int).value = 1
+    lit = fw.var('g_backlight_status', C.c_ubyte)
+    wheel.touch(100), wheel.touch(190), wheel.touch(28)  # 128 units across the seam: 28 past the guard
+    assert wheel.ticks() == ['prev']
+    lit.value = 1
+    wheel.touch(28)
+    lit.value = 0
+    wheel.touch(56)  # 28 units dark again: a brush, held
+    assert wheel.ticks() == ['prev']
+
+
+def test_a_pockets_rubbing_back_and_forth_never_opens_the_guard(fw, wheel):
+    fw.var('wheel_guard', C.c_int).value = 1
+    out = O['WHEEL_DARK_GUARD'] - 10  # each stroke short of the guard, and 10 back between them
+    x = 10
+    wheel.touch(x)
+    for stroke in [out, -10] * 4 + [out]:  # far past the guard one way in all; the clock still, so only
+        x = (x + stroke - 1) % 200 + 1     # each reversal arms it again
+        wheel.touch(x)
+    assert wheel.ticks() == []
+
+
+# Return's stop (ringnav_queue_event): a second Return while the wheel runs away ends its ticks.
+class Loop:
+    """The UI loop as ringnav_queue_event reaches it: stock's poster in its slot, here a log of (type, key)."""
+    def __init__(self, fw, poster=True):
+        self.events = []
+        self.poster = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(self.posted)
+        self.loop = C.create_string_buffer(0x40)
+        if poster:
+            struct.pack_into('<Q', self.loop, O['LOOP_POST'], C.cast(self.poster, C.c_void_p).value)
+        self.queue = fw.fn('ringnav_queue_event', C.c_int, C.c_void_p, C.c_void_p)
+
+    def posted(self, loop, event):
+        e = (C.c_uint * 8).from_address(event)
+        self.events.append((e[0], e[O['EVENT_KEY'] // 4]))
+        return 0
+
+    def send(self, key=O['KEY_RETURN'], kind=O['EVT_KEY_DOWN']):
+        event = (C.c_uint * 8)()
+        event[0], event[O['EVENT_KEY'] // 4] = kind, key
+        return self.queue(self.loop, event)
+
+
+STOP_TICKS = O['WHEEL_STOP_TICKS']  # the ticks since the first Return a second one needs to stop the wheel
+
+
+def runaway(wheel, loop, ticks=STOP_TICKS, armed=True):
+    """A finger on the ring, Return pressed, then ticks of travel: x rising 28 units a tick."""
+    wheel.touch(20)
+    if armed:
+        loop.send()
+    for i in range(1, ticks + 1):
+        wheel.touch(20 + 28 * i)
+    return 20 + 28 * ticks
+
+
+def test_return_twice_in_a_runaway_stops_its_ticks_until_the_lift(fw, wheel):
+    loop, mute = Loop(fw), fw.var('wheel_mute', C.c_int)
+    x = runaway(wheel, loop)
+    assert wheel.ticks() == ['prev'] * STOP_TICKS and mute.value == 0  # a first Return only does its own job
+    loop.send()
+    assert mute.value == 1 and loop.events == [(O['EVT_KEY_DOWN'], O['KEY_RETURN'])] * 2  # both still reach the UI
+    wheel.touch(x + 28), wheel.touch(x + 56)
+    assert wheel.ticks() == ['prev'] * STOP_TICKS
+    wheel.lift()
+    assert mute.value == 0
+    wheel.touch(100), wheel.touch(128)
+    assert wheel.ticks() == ['prev'] * (STOP_TICKS + 1)
+
+
+def test_a_gap_in_frames_lets_a_stopped_wheel_go(fw, wheel):
+    loop = Loop(fw)
+    x = runaway(wheel, loop)
+    loop.send()
+    wheel.now += O['WHEEL_FRESH_MS']
+    wheel.touch(x + 28)
+    assert fw.var('wheel_mute', C.c_int).value == 0 and wheel.ticks() == ['prev'] * (STOP_TICKS + 1)
+
+
+@pytest.mark.parametrize('case', ['too few ticks', 'late', 'paused turn', 'no finger', 'release', 'another key'])
+def test_returns_in_a_real_turn_stop_nothing(fw, wheel, case):
+    loop = Loop(fw)
+    if case == 'no finger':  # a touch just lifted, its frames still fresh: a Return now finds nothing on the ring
+        wheel.touch(20), wheel.lift()
+        loop.send()
+    x = runaway(wheel, loop, STOP_TICKS - 1 if case == 'too few ticks' else STOP_TICKS, armed=case != 'no finger')
+    if case == 'late':  # still turning, but the first Return was WHEEL_ARM_MS ago: this one is a new first
+        for _ in range(4):
+            wheel.now += O['WHEEL_ARM_MS'] // 4
+            wheel.touch(x)
+        x += 28
+        wheel.touch(x)
+    if case == 'paused turn':  # the finger rests: frames, no ticks
+        wheel.now += O['WHEEL_ESCAPE_TICK_MS']
+        wheel.touch(x)
+    if case == 'release':
+        loop.send(kind=O['EVT_KEY_UP'])  # Return's key-up
+    else:
+        loop.send(O['KEY_NEXT'] if case == 'another key' else O['KEY_RETURN'])
+    ticks = len(wheel.ticks())
+    wheel.touch(x + 28)
+    assert fw.var('wheel_mute', C.c_int).value == 0 and len(wheel.ticks()) == ticks + 1
+
+
+# wheel_raw's values, playback.h's enum { WHEEL_TICKS, WHEEL_RAW, WHEEL_THUMB }: Cover Flow's thumb, a game's travel
+@pytest.mark.parametrize('raw, stops', [(2, 1), (1, 0)], ids=['WHEEL_THUMB', 'WHEEL_RAW'])
+def test_cover_flows_thumb_counts_towards_the_stop_and_a_games_travel_does_not(fw, wheel, raw, stops):
+    loop = Loop(fw)
+    fw.var('wheel_raw', C.c_int).value = raw
+    runaway(wheel, loop)
+    loop.send()
+    assert fw.var('wheel_mute', C.c_int).value == stops and wheel.ticks() == []
+
+
+def test_the_touch_threads_empty_events_are_not_queued(fw):
+    loop = Loop(fw)
+    assert loop.send(0, kind=0) == 0 and loop.events == []
+    assert loop.send(O['KEY_NEXT']) == 0 and loop.events == [(O['EVT_KEY_DOWN'], O['KEY_NEXT'])]
+
+
+def test_no_loop_or_poster_is_stocks_bad_params(fw):
+    assert Loop(fw, poster=False).send() == 0x10  # RET_BAD_PARAMS
+    queue = fw.fn('ringnav_queue_event', C.c_int, C.c_void_p, C.c_void_p)
+    assert queue(None, (C.c_uint * 8)()) == 0x10 and queue(Loop(fw).loop, None) == 0x10
+
+
 # The snapshot.
 def snapshot(data):
     head = struct.unpack_from(HEADER, data)
@@ -1580,7 +1718,7 @@ def test_a_snapshot_holds_the_whole_play_state(saved):
     assert {i for i, v in enumerate(h['seen']) if v} == saved.seen()
     assert h['history'] == saved.history() and h['pending'] == saved.pending()
     assert h['songs'] == [(b'/m/%c/%02d.flac' % (65 + i % 3, i), i, i * 2) for i in range(9)]
-    assert sealed(saved.queue_file()) == saved.queue_file() and rows
+    assert sealed(saved.queue_file()) == saved.queue_file()
 
 
 def test_a_resume_not_yet_playing_keeps_its_second(saved):
@@ -1660,11 +1798,18 @@ def test_a_snapshot_path_is_at_most_1023(saved, path, kept):
     assert (QUEUE_FILE in saved.disk.files) == kept
 
 
+PLAIN = high_halves(3)
+PLAIN_MAPPED = set()
+
+
 def plain_song(saved, path, k):
     """queue_hash walks REC_NAME and REC_PATH, a word apart and each read 8 bytes wide here: a path at an
-    address whose low half is zero leaves both reads good."""
-    at = 0x200000000000 + (k << 32)
-    assert libc.mmap(at, 0x1000, 3, 0x32, -1, 0) == at  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED
+    address whose low half is zero leaves both reads good. Its page, at one of this file's high halves
+    (conftest.high_halves), is mapped once and kept for the session."""
+    at = PLAIN[k] << 32
+    if at not in PLAIN_MAPPED:
+        assert libc.mmap(at, 0x1000, 3, 0x100022, -1, 0) == at  # MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE
+        PLAIN_MAPPED.add(at)
     C.memmove(at, path + b'\0', len(path) + 1)
     record = saved.song(b'')
     struct.pack_into('<Q', (C.c_char * 0x60).from_address(record), O['REC_PATH'], at)
@@ -1672,7 +1817,7 @@ def plain_song(saved, path, k):
 
 
 def plain_queue(saved):
-    rows = saved.load([plain_song(saved, b'/m/%d.flac' % i, i + 1) for i in range(3)], 1)
+    rows = saved.load([plain_song(saved, b'/m/%d.flac' % i, i) for i in range(3)], 1)
     saved.mcl.type = FOLDER
     saved.deques[saved.library][:] = rows
     saved.s.dirty = 1
@@ -2292,3 +2437,323 @@ def test_a_reboot_saves_unless_stopped(fw, kind, status, saved_call):
     else:
         assert fw.fn('ringnav_reboot', C.c_int)() == 9
     assert len(fw.calls('save_memoryplay_info')) == saved_call
+
+
+def test_power_off_saves_the_second_it_is_at(polled):
+    assert not polled.after(1000, sec=14)  # a pass: not yet due
+    polled.fw.mock('stock_savequeue_trampoline', lambda *_: 3)
+    assert polled.fw.fn('ringnav_savequeue', C.c_int)() == 3 and polled.wrote()
+    assert struct.unpack('<4I', polled.disk.files[CHECKPOINT])[3] == 14
+
+
+def snapshot_of(paths, cut=0):
+    """A sealed version 3 snapshot of paths in queue order, the first playing, cut bytes short of its table."""
+    n = len(paths)
+    words = [*range(n), *range(n), 1, *[0] * (n - 1)]
+    table = b''.join(struct.pack('<3I', len(p) + 1, 0, 0) + p + b'\0' for p in paths)
+    body = struct.pack(f'<{len(words)}I', *words) + table[:len(table) - cut]
+    head = struct.pack(HEADER, MAGIC, 3, 56 + len(body), 0, n, 0, 0, 0, ONE_PASS, 0, 0, 0, 0, LIBRARY)
+    return sealed(head + body)
+
+
+def test_a_snapshot_whose_last_entry_is_cut_short_is_refused(saved):
+    paths = [b'/m/' + b'x' * 16, b'/m/' + b'y' * 16]
+    rows = [saved.song(p) for p in paths]
+    saved.deques[saved.library][:] = rows
+    saved.disk.files[QUEUE_FILE] = snapshot_of(paths)
+    assert restore(saved) == 0 and saved.deques[saved.handle] == rows
+    saved.disk.files[QUEUE_FILE] = snapshot_of(paths, cut=12 + 20 - 4)  # 4 bytes of its 12-byte head left
+    assert restore(saved) == -7
+
+
+# A press that would start a track holding its place over (navigation.c resume_held) only asks first.
+@pytest.fixture(scope='module')
+def scratch(library):
+    """navigation.c's scratch_t offsets as this build lays it out."""
+    return host.offsets(library.parent/'navigation.o', 'scratch_t')
+
+
+class Held:
+    """A long track holding its place, sec into an hour, on a library queue of rows; the clock and the toasts."""
+    def __init__(self, fw, mcl, scratch, rows=(), sec=600, total=3600):
+        self.fw, self.mcl, self.rows = fw, mcl, list(rows)
+        base = C.addressof(fw.var('st', C.c_char))
+        self.st = lambda name: C.c_int.from_address(base + scratch[name])
+        self.st('rs_long').value, self.st('rs_total').value = 1, total
+        self.sec, self.now, self.status, self.toasts = sec, 50000, 2, []
+        fw.mock('player_playtime_and_length', lambda sec, total, *_: C.c_int.from_address(sec).__setattr__('value', self.sec))
+        fw.mock('player_playtime', lambda *_: self.sec)
+        fw.mock('mclGetPlayStatus', lambda *_: self.status)
+        fw.mock('time_now_ms', lambda *_: self.now)
+        fw.mock('navigator_to_with_context', self.navigate)
+        mcl.type, mcl.mode = LIBRARY, 3
+        self.change = fw.fn('ringnav_change', C.c_int, C.c_int)
+        self.armed = fw.fn('restart_armed', C.c_int, C.c_int)
+        self.poll = fw.fn('playback_poll', None)
+
+    def navigate(self, name, context, *_):
+        if C.string_at(name) == b'dialog/msginfo_dialog':
+            self.toasts.append(C.string_at(context + 8))
+
+    def changes(self):
+        """The changes that reached stock: Next 1, Previous 0."""
+        return [a[0] for _, a in self.fw.calls('stock_change_trampoline')]
+
+
+@pytest.fixture
+def held(fw, mcl, scratch, player):
+    player.load([player.song(b'/m/book.m4b')], 0)
+    return Held(fw, mcl, scratch)
+
+
+@pytest.fixture
+def press(fw):
+    """PRESS_FILE's word as hciplayer maps it (crossfade.c press_stamp), the clock at 5000 ms."""
+    cell = C.c_int(0)
+    fw.mock('fw_open', lambda *_: 3)
+    fw.mock('fw_write', lambda fd, data, n, *_: n)
+    fw.mock('fw_mmap', lambda *_: C.addressof(cell))
+    fw.mock('fw_clock_gettime', lambda kind, ts, *_: C.memmove(ts, struct.pack('<qq', 5, 0), 16) and 0)
+    return cell
+
+
+def test_a_next_that_would_restart_a_held_place_asks_first(fw, held, press):
+    assert held.change(1) == 0 and held.changes() == [] and press.value == 0  # refused: nothing plays, nothing stamps
+    assert held.armed(1) == 1 and held.armed(0) == 0
+    held.poll(), held.poll()
+    assert len(held.toasts) == 1  # from the UI pass, once
+    held.st('rs_stopped').value = 1
+    held.now += 3000
+    held.change(1)
+    assert held.changes() == [1] and held.st('rs_stopped').value == 0 and press.value == 5001 and held.armed(1) == 0
+
+
+def test_a_late_second_press_asks_again(held):
+    held.change(1)
+    held.now += 3001
+    assert held.change(1) == 0 and held.changes() == [] and held.armed(1) == 1
+
+
+def test_another_key_asks_for_itself(held):
+    held.change(1)
+    held.change(0)  # Previous can't confirm what Next asked
+    assert held.changes() == [] and held.armed(0) == 1 and held.armed(1) == 0
+    held.change(0)
+    assert held.changes() == [0]
+
+
+@pytest.mark.parametrize('sec, kind', [(29, LIBRARY), (3570, LIBRARY), (600, 2), (600, 0xf1)])
+def test_no_place_to_keep_never_asks(held, sec, kind):
+    held.sec, held.mcl.type = sec, kind  # within RESUME_EDGE_S of an end; a DLNA or online queue
+    held.change(1)
+    assert held.changes() == [1] and not held.armed(1)
+
+
+@pytest.mark.parametrize('tracks, kind, mode, skip, m3u, last, key, asks', [
+    (1, LIBRARY, 3, 0, 0, -1, 1, True),   # Repeat All round to itself
+    (2, LIBRARY, 3, 0, 0, -1, 1, False),  # another track to go to
+    (1, LIBRARY, 0, 0, 0, -1, 1, False),  # List Play's Next stops instead
+    (1, LIBRARY, 0, 0, 0, -1, 0, True),
+    (1, FOLDER, 3, 0, 0, -1, 1, True),
+    (1, FOLDER, 3, 1, 0, -1, 1, False),   # Folder Skip leaves for a sibling folder
+    (1, FOLDER, 3, 1, 1, -1, 1, True),    # never an M3U's
+    (1, FOLDER, 2, 1, 0, 0, 0, True),     # Shuffle's Previous goes back to its last position: this track
+    (1, FOLDER, 2, 1, 0, -1, 0, False),
+])
+def test_what_restarts_outside_advanced_play(fw, held, player, tracks, kind, mode, skip, m3u, last, key, asks):
+    player.load([player.song(b'/m/%d.m4b' % i) for i in range(tracks)], 0)
+    held.mcl.type, held.mcl.mode, held.mcl.lastpos = kind, mode, last
+    C.c_ubyte.from_address(O['MCL_JUMPFOLDER']).value = skip
+    fw.mock('mclGetPlayM3uFlag', lambda *_: m3u)
+    held.change(key)
+    went = held.changes() == [key] or bool(fw.calls('mclStop'))  # stock's change, or List Play's stop
+    assert bool(held.armed(key)) == asks and went != asks
+
+
+def test_in_advanced_play_next_asks_when_it_comes_round_to_itself(held, player):
+    assert player.set(1, REPEAT_ALL) == 1
+    held.change(1)
+    assert held.changes() == [] and held.armed(1)
+
+
+def test_in_advanced_play_previous_asks_after_a_repeat(held, player):
+    assert player.set(1, REPEAT_ALL) == 1
+    assert player.run(1) == [0] and player.history() == [0, 0]
+    held.change(0)
+    assert held.changes() == [] and held.armed(0)
+
+
+def test_previous_past_10_s_asks_before_going_back_to_the_start(fw, held, press):
+    seek = fw.fn('ringnav_seek_start', C.c_int)
+    fw.mock('stock_seek_start_trampoline', lambda *_: 7)
+    assert seek() == 1 and not fw.calls('stock_seek_start_trampoline') and press.value == 0  # 1: no further
+    assert seek() == 7 and press.value == 5001
+
+
+@pytest.mark.parametrize('sec, long_track, stamp', [(10, 1, 0), (11, 1, 5001), (600, 0, 5001)])
+def test_previous_that_holds_nothing_goes_to_stock_at_once(fw, held, press, sec, long_track, stamp):
+    held.sec = sec  # 11 s: past stock's 10, but no place kept within RESUME_EDGE_S of the start
+    held.st('rs_long').value = long_track
+    fw.mock('stock_seek_start_trampoline', lambda *_: 0)
+    assert fw.fn('ringnav_seek_start', C.c_int)() == 0 and not held.armed(0)
+    assert press.value == stamp  # under 11 s nothing seeks: the change that follows stamps
+
+
+def test_a_users_seek_stamps_before_stock(fw, mcl, press):
+    mcl.type = LIBRARY
+    fw.mock('stock_seek_time_trampoline', lambda sec, *_: press.value + sec)
+    assert fw.fn('ringnav_seek_time', C.c_int, C.c_int)(30) == 5031
+
+
+# A pick of the file playing, holding its place: the same row starts nothing; another list's goes back to it.
+@pytest.fixture
+def keeps(fw, mcl, scratch, player):
+    keeps = Held(fw, mcl, scratch, player.load([player.song(b'/m/%d.m4b' % i) for i in range(3)], 1))
+    keeps.st('rs_key').value = 0x1234
+    return keeps
+
+
+def player_start(fw):
+    return fw.fn('ringnav_player_start', C.c_int, C.c_void_p, C.c_int, C.c_int, C.c_int)
+
+
+def test_the_playing_rows_pick_from_its_own_list_starts_nothing(fw, keeps, player):
+    assert player_start(fw)(player.handle, 1, LIBRARY, 0) == 1
+    assert not fw.calls('stock_player_start_trampoline') and not fw.calls('navigator_switch_to_with_context')
+    assert keeps.st('rs_go').value == 0
+
+
+@pytest.mark.parametrize('rows, at, kind', [([1, 0, 2], 0, LIBRARY), ([0, 1], 1, LIBRARY), ([0, 1, 2], 1, FOLDER)])
+def test_the_playing_file_from_another_list_goes_back_to_its_place(fw, keeps, player, rows, at, kind):
+    other = player.deques.new([keeps.rows[i] for i in rows])  # another row, another size or another class
+    player_start(fw)(other, at, kind, 0)
+    assert [a[:3] for _, a in fw.calls('stock_player_start_trampoline')] == [(other, at, kind)]
+    assert (keeps.st('rs_go').value, keeps.st('rs_go_key').value) == (600, 0x1234)
+
+
+@pytest.mark.parametrize('case', ['another file', 'another cue track', 'stopped', 'dlna', 'natural', 'grouping', 'no place',
+                                  'past the list'])
+def test_a_pick_that_keeps_nothing_is_stocks(fw, keeps, player, case):
+    at, q = {'another file': 2, 'past the list': 3}.get(case, 1), player.handle
+    if case == 'another cue track':  # one image's tracks: the same file, another start
+        player.deques[player.handle][1] = player.song(b'/m/1.m4b', cue=(60, 120))
+        q = player.deques.new([keeps.rows[0], player.song(b'/m/1.m4b', cue=(0, 60)), keeps.rows[2]])
+    keeps.status = 1 if case == 'stopped' else 2
+    fw.var('press_natural', C.c_int).value = case == 'natural'  # an app's .play
+    player.s.grouping = case == 'grouping'  # Shuffle Albums' own load
+    keeps.st('rs_long').value = case != 'no place'
+    player_start(fw)(q, at, 2 if case == 'dlna' else LIBRARY, 0)
+    assert len(fw.calls('stock_player_start_trampoline')) == 1 and keeps.st('rs_go').value == 0
+
+
+# Calls from stock's own sites, which the C tells by its return address.
+VIEW_QUEUE_RET, UNPLAYABLE_NEXT_RET, LOAD_DIRECTORY_RET, SPEED_RECONNECT_RET = 0x529944, 0x4ea848, 0x5c205c, 0x51339c
+PAGE_PICK_RET, ALBUM_PLAY_RET, ALBUMINFO_PLAY_RET = 0x52cc1c, 0x4a5d6c, 0x4a9c48
+
+
+@pytest.fixture
+def stock_call(fw):
+    """A firmware function as called from one of stock's sites: x86-64 whose call returns to ret, so
+    __builtin_return_address(0) reads ret, as on the Q2. Its bytes go back after the test."""
+    saved = []
+
+    def call(ret, name, restype, *argtypes):
+        start = ret - 16
+        claim(start)
+        saved.append((start, C.string_at(start, 21)))
+        target = C.cast(getattr(fw.lib, name), C.c_void_p).value
+        # sub rsp, 8; mov rax, target; call rax; add rsp, 8; ret: the callee's stack aligned as the ABI's
+        code = bytes.fromhex('4883ec08 48b8') + struct.pack('<Q', target) + bytes.fromhex('ffd0 4883c408 c3')
+        C.memmove(start, code, len(code))
+        return C.CFUNCTYPE(restype, *argtypes)(start)
+    yield call
+    for start, data in reversed(saved):
+        C.memmove(start, data, len(data))
+
+
+def now_playing(fw):
+    return [C.string_at(a[0]) for _, a in fw.calls('navigator_switch_to_with_context')]
+
+
+@pytest.mark.parametrize('ret, status, opens, plays', [
+    (ALBUM_PLAY_RET, 2, True, False), (ALBUMINFO_PLAY_RET, 3, True, True),  # the album pages stay: Now Playing opens
+    (PAGE_PICK_RET, 3, False, True), (PAGE_PICK_RET, 2, False, False),     # Now Playing opens itself
+])
+def test_a_pick_of_the_playing_file_from_a_page_shows_it_playing(fw, keeps, player, stock_call, ret, status, opens, plays):
+    keeps.status = status  # 3 paused: a pick means play this
+    start = stock_call(ret, 'ringnav_player_start', C.c_int, C.c_void_p, C.c_int, C.c_int, C.c_int)
+    assert start(player.handle, 1, LIBRARY, 0) == 1 and not fw.calls('stock_player_start_trampoline')
+    assert now_playing(fw) == ([b'playing_page'] if opens else []) and len(fw.calls('player_play_pause')) == plays
+
+
+@pytest.mark.parametrize('site, at, kept', [
+    ('view queue', 1, True), ('view queue', 2, False),
+    ('elsewhere', 1, False),  # the queue's delete, a DLNA or URL play: stock's start, even on the playing row
+])
+def test_view_queues_row_of_the_playing_track_opens_now_playing(fw, keeps, player, stock_call, site, at, kept):
+    keeps.status = 3
+    if site == 'view queue':
+        start = stock_call(VIEW_QUEUE_RET, 'ringnav_start_queue', C.c_int, C.c_int)
+    else:
+        start = fw.fn('ringnav_start_queue', C.c_int, C.c_int)
+    fw.mock('stock_start_queue_trampoline', lambda *_: 9)
+    assert start(at) == (1 if kept else 9)
+    assert [a[0] for _, a in fw.calls('stock_start_queue_trampoline')] == ([] if kept else [at])
+    assert now_playing(fw) == ([b'playing_page'] if kept else []) and len(fw.calls('player_play_pause')) == kept
+
+
+@pytest.mark.parametrize('eq, chained', [(0, 0), (1, 1)])
+def test_hciplayers_reconnect_reapplies_the_mode_and_keeps_advanced_play(fw, player, stock_call, eq, chained):
+    player.load(player.albums(3))
+    assert player.set(0, 1) == 1
+    fw.var('peq_chained', C.c_int).value = 1
+    fw.var('g_equalizer_flag', C.c_ubyte).value = eq
+    fw.mock('stock_mode_trampoline', lambda mode, *_: 40 + mode)
+    reconnect = stock_call(O['INITCONFIG_MODE_RET'], 'ringnav_mode', C.c_int, C.c_int)
+    assert reconnect(0) == 40 and player.s.active == 1
+    assert fw.var('peq_chained', C.c_int).value == chained  # a new hciplayer has no filter: attached again
+    fw.fn('ringnav_mode', C.c_int, C.c_int)(0)  # the same mode chosen
+    assert player.s.active == 0
+
+
+def test_stocks_skip_past_an_unplayable_file_neither_asks_nor_stamps(fw, held, press, stock_call):
+    skip = stock_call(UNPLAYABLE_NEXT_RET, 'ringnav_change', C.c_int, C.c_int)
+    skip(1)
+    assert held.changes() == [1] and not held.armed(1) and press.value == 0
+    assert fw.var('press_natural', C.c_int).value == 0
+    held.change(1)  # the same Next pressed asks
+    assert held.changes() == [1] and held.armed(1)
+
+
+@pytest.mark.parametrize('folder, listed', [(b'/mnt/mmc/Videos/trips', True), (b'/mnt/mmc/Videos', True),
+                                            (b'/mnt/mmc/Music', False), (b'/mnt/mmc/Videosx', False)])
+def test_folder_view_lists_videos_in_the_videos_folder_only(fw, stock_call, folder, listed):
+    fw.var('fw_ctx_g_folder_path', C.c_char * 1024).value = folder
+    fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
+    formats, ext = C.create_string_buffer(b'.mp3.flac'), C.create_string_buffer(b'.mp4')
+    listing = stock_call(LOAD_DIRECTORY_RET, 'ringnav_audio_extension', C.c_void_p, C.c_void_p, C.c_void_p)
+    assert (listing(formats, ext) == C.addressof(ext)) == listed
+    assert fw.fn('ringnav_audio_extension', C.c_void_p, C.c_void_p, C.c_void_p)(formats, ext) is None  # the scan: never
+
+
+@pytest.mark.parametrize('how', ['reconnect', 'out of range'])
+def test_a_speed_nobody_chose_reapplies_the_folders_saved_one(saved, fw, stock_call, how):
+    saved.load([saved.song(b'/books/a/1.m4b')], 0)
+    speed_files(saved, b'/books/a/', 2)
+    files = dict(saved.disk.files)
+    fw.mock('stock_speed_trampoline', lambda mode, *_: 30 + mode)
+    if how == 'reconnect':
+        assert stock_call(SPEED_RECONNECT_RET, 'ringnav_speed', C.c_int, C.c_int)(1) == 32
+    else:
+        assert fw.fn('ringnav_speed', C.c_int, C.c_int)(4) == 32
+    assert fw.var('g_playspeed_mode', C.c_ubyte).value == 2 and saved.disk.files == files  # nothing saved
+
+
+def test_a_tracks_start_sends_its_folders_speed(saved, fw):
+    saved.load([saved.song(b'/books/a/1.m4b'), saved.song(b'/books/b/1.m4b')], 0)
+    speed_files(saved, b'/books/a/', 3)
+    start = fw.fn('playback_track_speed', None)
+    start()
+    saved.mcl.pos = 1
+    start()
+    assert [a[0] for _, a in fw.calls('stock_speed_trampoline')] == [3, 0]  # the decoder keeps the last otherwise
