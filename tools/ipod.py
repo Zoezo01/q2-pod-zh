@@ -174,7 +174,7 @@ NP_TEXT_X = NP_MARGIN + NP_ART + 12
 # Classic face, NP_IPOD_TIME_PX, beside the bar in NP_IPOD_TIME_W1 boxes ("-9:59" fits: stb scales
 # ascent - descent to the size, status_metrics' model) NP_IPOD_TIME_GAP from it, NP_IPOD_TIME_H high over its NP_BAR_IPOD rows
 # (half a row high of centre when one is odd), the outer edges clear of the glass over those rows. At run time the
-# boxes widen to the track's length (NP_IPOD_TIME_WS, navigation.c ipod_times), the bar narrowing between them.
+# boxes widen to the track's length (NP_IPOD_TIME_WS, np_bar.c ipod_times), the bar narrowing between them.
 NP_IPOD_ART = inc('NP_IPOD_ART')
 NP_IPOD_LIFT = 30
 NP_REFLECT = math.ceil(NP_IPOD_ART * inc('SLANT_REFLECT_PCT') / 100)
@@ -593,7 +593,7 @@ def plain_slider(props, track, fill, bar):
 
 def np_slider(slider, x, cy, w, h):
     """Now Playing's progress bar: an h-high plain track centred on row cy in an NP_TOUCH-high slider,
-    the accent's fill and the Theme's height set at runtime (navigation.c np_fill, np_theme)."""
+    the accent's fill and the Theme's height set at runtime (np_bar.c np_fill, np_theme)."""
     slider[1] = [x, cy - NP_TOUCH // 2, w, NP_TOUCH]
     slider[2] = plain_slider(slider[2], NP_TRACK, NP_FILL, h)
     # No thumb: stock skips the dragger only when border_color is clear, else a touch shows its blue.

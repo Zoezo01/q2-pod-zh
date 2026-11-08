@@ -1256,7 +1256,7 @@ def test_classic_times_fit():
 
 
 def test_classic_time_classes():
-    """The bar between the fitted boxes (navigation.c ipod_bar_x): the boxes' outer edges and the gap kept, centred;
+    """The bar between the fitted boxes (np_bar.c ipod_bar_x): the boxes' outer edges and the gap kept, centred;
     the build's the widest, the under-10:00 class's, so a long track's only narrows it."""
     edge = ipod.inc('NP_IPOD_BAR_X') - ipod.NP_IPOD_TIME_GAP - ipod.NP_IPOD_TIME_WS[0]
     bars = [(edge + w + ipod.NP_IPOD_TIME_GAP, 375 - 2 * (edge + w + ipod.NP_IPOD_TIME_GAP)) for w in ipod.NP_IPOD_TIME_WS]

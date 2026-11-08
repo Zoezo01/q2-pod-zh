@@ -991,7 +991,7 @@ def validate_assets(directory):
             ink = lambda text, px: math.ceil(sum(face['hmtx'][cmap[ord(c)]][0] for c in text) * px / (face['hhea'].ascent - face['hhea'].descent))
             page = {n[2].get('name'): n for n in walk(decode(read('rootfs.squashfs', ui + f'{g.name}_{PLAYING_PAGE}')))}
             # the times beside the bar in "-9:59"'s boxes (the build's class, the widest bar) hold their font's line, their outer
-            # edges and the bar's ends clear of the glass; so in every length class navigation.c ipod_times fits them to: each class's longest times, any digit, the outer
+            # edges and the bar's ends clear of the glass; so in every length class np_bar.c ipod_times fits them to: each class's longest times, any digit, the outer
             # edges where the build put them, the gap kept, the bar between
             for name in ('label_playtime', 'label_ipod_remain'):
                 x, y, w, h = page[name][1]

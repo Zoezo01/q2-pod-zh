@@ -87,7 +87,7 @@
        coverflow.c slant_render), and the progress bar's track over its NP_BAR_IPOD (20) rows: faint 1 px top
        and bottom lines round a near-white inside, the inner stops from 5 to 95 so no row past the first and before the
        last takes an edge's colour; the dark half's Apple's capture darkened, its step at the middle
-       kept; the accent's band fills the played part (navigation.c paint_scrubber). Its rows painter's 31 rows, fixed
+       kept; the accent's band fills the played part (np_bar.c paint_scrubber). Its rows painter's 31 rows, fixed
        colours (#rrggbbaa its own alpha), are the volume panel's away from Now Playing and a card app's progress -->
   <view name="playing">
     <element name="art" square="1"/>

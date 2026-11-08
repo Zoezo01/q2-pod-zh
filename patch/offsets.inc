@@ -142,13 +142,13 @@
 #define CONFIRM_PROMPT_PX 24
 #define NP_TIMES_PX 14 /* Now Playing's times, and the volume text in their place */
 #define NP_ART_RADIUS 12 /* Now Playing's art corners (paint_cover), as stock's play_defaultcover scaled to the art */
-/* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, navigation.c paint_scrubber),
+/* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, np_bar.c paint_scrubber),
  * fitted to Apple's own 320 x 240 capture: the art's far edge SLANT_FAR/256 of its near one (118 of
  * 135 px); its reflection from SLANT_REFLECT_A/256 fading out over SLANT_REFLECT_PCT of the
  * column's height; the progress bar NP_BAR_IPOD high, mirrored under it from
  * SCRUB_REFLECT_A/256 over SCRUB_REFLECT_ROWS; the times beside it NP_IPOD_TIME_PX, the largest
  * whose line fits their NP_IPOD_TIME_H box, NP_IPOD_TIME_GAP from the bar, in
- * boxes fitted to the track (navigation.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59", the build's
+ * boxes fitted to the track (np_bar.c ipod_times): NP_IPOD_TIME_W1 holds "-9:59", the build's
  * layout, NP_IPOD_TIME_W2 "-59:59" and NP_IPOD_TIME_W "-9:59:59" (tools/ipod.py measures them).
  * The boxes' outer edges stay; the bar takes what they leave. */
 #define SLANT_FAR 224
