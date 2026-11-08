@@ -137,7 +137,8 @@ typedef struct {
     unsigned char bump_px;    /* the wheel's bump at a list's end */
     unsigned char painter[PAINTER_N];
     unsigned char chevron_home, chevron_sel, set_text, caps_mark, caps_home, caps_np, icons_mono,
-        icons_badge_muted, icons_addon_mono, np_album_op, np_state_op; /* flags 0/1; *_op 0/255 */
+        icons_badge_muted, icons_addon_mono, icons_badge_ink, art_final, np_album_op,
+        np_state_op;                             /* flags 0/1; *_op 0/255 */
     unsigned char font[ROLE_N], font_px[ROLE_N]; /* FONT_*; px 0: the style's size */
     stops_t batt;       /* BATT_CLASSIC_LIGHT: the level's stops, a hue in both halves */
     stops_t batt_empty; /* BATT_CLASSIC_LIGHT: the rows past the level */

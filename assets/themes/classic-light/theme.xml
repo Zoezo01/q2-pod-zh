@@ -39,7 +39,7 @@
        outline and a gloss green level, a hue in both halves -->
   <view name="list">
     <element name="selection" painter="stops"/>
-    <element name="icons" mono="0" badge_muted="0" addon_mono="0"/>
+    <element name="icons" mono="0" badge_muted="0" addon_mono="0" badge_ink="1"/>
     <element name="row" font="classic-light" title_px="27" meta_px="17" text_end="350" tall_font="classic-light" tall_px="28"/>
     <!-- Songs' rows and Play All's end on these three rows, each row its stop; none on the selected row -->
     <element name="separator" light.stops="#fcfcfc 0, #e2e3e2 50, #f7f7f7 100" dark.stops="#000000 0, #2c2c2c 50, #000000 100"/>
@@ -132,7 +132,7 @@
   <view name="dialog"><element name="confirm" painter="classic-light"/></view>
   <!-- Its own pages: Quick Settings, the slider pages, the rating, T9 and Search, Set Time and Date, the message
        screens, the lock info screen, Cover Flow's flip -->
-  <view name="pages"><element name="own" painter="classic-light"/></view>
+  <view name="pages"><element name="own" painter="classic-light" art_final="1"/></view>
   <!-- Light Mode: On is the look as drawn, Off its dark half, Auto both by the clock -->
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="CLASSIC_LIGHT_ACCENT" default="classic-blue" preset="classic-blue"/>

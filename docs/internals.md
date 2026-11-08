@@ -443,7 +443,9 @@ Minimal (`THEME` 0), Classic (1) and Modern (2) are rows of `themes[]` (`patch/n
 the stored accent.
 
 - `theme_t` holds the painters (`painter[PAINT_SELECTION]`: Minimal's `SEL_CARD`, Classic's `SEL_STOPS` or Modern's `SEL_BAR`), the
-  surface flags (capitals, chevrons, monochrome icons, bold labels, Now Playing opacities), the Home
+  surface flags (capitals, chevrons, monochrome icons, codec badges in the half's ink
+  (`icons_badge_ink`), the theme's own art left final (`art_final`), bold labels, Now Playing
+  opacities), the Home
   and settings geometry, the Now Playing bar heights, `art_square` (art takes Corners: Square,
   `ipod_square_art`), the accent's slot and config key
   (`accent_slot`/`accent_key`: Minimal's `MINIMAL_ACCENT`, Classic's `CLASSIC_LIGHT_ACCENT`, Modern's `ACCENT`), its schemes and its options.

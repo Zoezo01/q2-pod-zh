@@ -6401,10 +6401,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
-    /* The images a BATT_CLASSIC_LIGHT theme generates (tools/art.py) are final, but for Sort's
-     * bars and the volume's speakers: marks on the paper, in the half's ink */
-    if (s && !*s && T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT &&
-        tk_str_start_with(name, "classic_light_") && tk_strcmp(name, "classic_light_sort_bars") &&
+    /* An art_final theme's own images (tools/art.py) are final, but for Sort's bars and the
+     * volume's speakers: marks on the paper, in the half's ink */
+    if (s && !*s && T->art_final && tk_str_start_with(name, "classic_light_") &&
+        tk_strcmp(name, "classic_light_sort_bars") &&
         !tk_str_start_with(name, "classic_light_vol_"))
         s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
@@ -6540,10 +6540,10 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
                     (unsigned char)((p[o[0]] * 299 + p[o[1]] * 587 + p[o[2]] * 114) / 1000);
         bitmap_unlock_buffer(bitmap);
     }
-    /* Under Classic's battery the codec badges in the half's ink (its monochrome marks):
+    /* An icons_badge_ink theme's codec badges (Classic's monochrome marks) in the half's ink:
      * every pixel that colour, alpha kept, final. */
     int mark = -1;
-    if (format < 4 && s && !*s && T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
+    if (format < 4 && s && !*s && T->icons_badge_ink)
         for (unsigned i = 0; i < sizeof codecs / sizeof *codecs; ++i)
             if (!tk_strcmp(name, codecs[i])) mark = (int)sc->ink;
     unsigned char *one = mark >= 0 ? bitmap_lock_buffer_for_write(bitmap) : (void *)0;

@@ -98,6 +98,7 @@ SCHEMA = {k.path: k for k in (
     key('list.icons.mono', 'icons_mono', 'bool'),
     key('list.icons.badge_muted', 'icons_badge_muted', 'bool'),
     key('list.icons.addon_mono', 'icons_addon_mono', 'bool'),
+    key('list.icons.badge_ink', 'icons_badge_ink', 'bool'),  # the codec badges in the half's ink, final
     key('playing.title.font', 'font[ROLE_NP]', 'enum'),
     key('playing.title.font_px', 'font_px[ROLE_NP]', 'int', 64),
     key('playing.info.font', 'font[ROLE_INFO]', 'enum'),  # small text: the QR pages, the Time Zone caption, page notes
@@ -133,6 +134,7 @@ SCHEMA = {k.path: k for k in (
     key('volume.panel.painter', 'painter[PAINT_VOLUME]', 'enum'),
     key('dialog.confirm.painter', 'painter[PAINT_CONFIRM]', 'enum'),
     key('pages.own.painter', 'painter[PAINT_PAGES]', 'enum'),  # the theme's own pages (theme.h classic_pages)
+    key('pages.own.art_final', 'art_final', 'bool'),  # its own art (tools/art.py's <id>_ images) is final
     # the rows painter's pixel rows, top to bottom (final colours): the track, the played part over it; the volume
     # panel away from Now Playing and a card app's progress (paint_rows_bar)
     Key('playing.scrubber.dark_track', 'np_rows[0]', 'rows', 0, 0, (), 'live'),
