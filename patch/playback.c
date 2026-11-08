@@ -1222,6 +1222,17 @@ void playback_insert(unsigned at, unsigned n, int next) {
         for (unsigned i = n; i-- > 0;) pend_front(at + i);
     playback_save();
 }
+/* Reverses the queue's rows [from, to). deque_at points into the deque's own storage and a row owns
+ * its strings (REC_SIZE), so swapping two rows' bytes moves them without stock's copy. */
+static void reverse_rows(void *queue, unsigned from, unsigned to) {
+    char t[REC_SIZE];
+    while (from + 1 < to) {
+        char *a = deque_at(queue, from++), *b = deque_at(queue, --to);
+        memcpy(t, a, REC_SIZE);
+        memcpy(a, b, REC_SIZE);
+        memcpy(b, t, REC_SIZE);
+    }
+}
 /* Play Next or Add: the tracks land at pos+1 (next) or the end, and every queue index moves with
  * them. The stock side (deque, shuffle pool, last pick, previous index, gapless preload) is kept
  * whether or not advanced play is on; the preload closes as mclSetPlayMode @0x5ab29c does, flag -1,
@@ -1229,18 +1240,13 @@ void playback_insert(unsigned at, unsigned n, int next) {
 unsigned playback_queue_insert(void *queue, void *add, int next) {
     unsigned size = deque_size(queue), n = deque_size(add), pos = (unsigned)M(MCL_POS);
     unsigned at = next && pos < size ? pos + 1 : size;
-    if (at == size)
-        for (unsigned i = 0; i < n; ++i) _deque_push_back(queue, deque_at(add, i));
-    else {
-        void *all = _create_deque("stSongInfo");
-        deque_init(all);
-        for (unsigned i = 0; i < size + n; ++i)
-            _deque_push_back(all, i < at       ? deque_at(queue, i)
-                                  : i < at + n ? deque_at(add, i - at)
-                                               : deque_at(queue, i - n));
-        deque_clear(queue);
-        deque_assign(queue, all);
-        deque_destroy(all);
+    for (unsigned i = 0; i < n; ++i) _deque_push_back(queue, deque_at(add, i));
+    /* Play Next turns the new rows, the only copies, from the end to at in place: rebuilding the
+     * deque held a library-wide queue twice, and two copies of 47,283 songs got demo OOM-killed. */
+    if (at < size) {
+        reverse_rows(queue, at, size);
+        reverse_rows(queue, size, size + n);
+        reverse_rows(queue, at, size + n);
     }
     void *pool = P(MCL_POOL, 0);
     for (unsigned i = 0; i < deque_size(pool); ++i) {
