@@ -68,7 +68,7 @@
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
-#define ADDON_CAPS "playlist progress pages library goto sleep game audio"
+#define ADDON_CAPS "playlist progress pages library goto sleep game audio window"
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
@@ -934,7 +934,10 @@ static int req_done(void) {
  * code, local plays from the card (uri: a song, or a folder to list; context "album": in track
  * order), info does nothing; its position, when set, is the op a held Play/Pause sends. progress
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
- * held Play/Pause does nothing.
+ * held Play/Pause does nothing. page (caps word "window") shows the level's own list from the
+ * cursor in its context, in the level's place rather than over it (page_to): uri "prev" slides it
+ * in from the left and selects its last row, any other from the right, selecting its row after the
+ * first (the app's Previous page row).
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
  * and redrawn only when it changed, its selected row kept. One whose message is "pages" and that
  * has a cursor is followed by its next pages (page_next), appended to its list (append) under a
@@ -1061,16 +1064,33 @@ static void page_next(lv_t *l) {
         req_send(app()->browse, l->op, a), l->id = req.id;
 }
 
+/* A page row (Previous page, Next page) is as short as the Stop row (page_row_detail's 48), not a
+ * whole list row: cut is what each one saves, and the rows after a Previous page move up by it. The
+ * app sends one only first or last, so list_h, the height of a list of n rows, looks only there. */
+static int is_page(const lv_t *l, int i) {
+    return i >= 0 && i < l->n && !strcmp(cell(i, 0), "page");
+}
+static int cut(void) { return page_h(64) - page_h(48); }
+static int list_h(const lv_t *l, int n) {
+    return n * page_h(64) - (is_page(l, 0) ? cut() : 0) - (n > 1 && is_page(l, n - 1) ? cut() : 0);
+}
+
 /* Row i of the level's list; i == l->n: the trailing row, Loading… while a page is on its way (a
  * press does nothing), else More…. */
 static void row(lv_t *l, int i) {
+    void *item;
     if (i == l->n) {
-        page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
-        return;
+        item = page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
+    } else if (is_page(l, i)) {
+        item = page_row_detail(pg.view, i, cell(i, 2), 0, clicked);
+    } else {
+        item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
+                                                                    cell(i, 3), clicked);
+        if (!strcmp(cell(i, 0), "progress")) progress_row(item, strtol(cell(i, 5), 0, 10));
     }
-    void *item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
-                                                                     cell(i, 3), clicked);
-    if (!strcmp(cell(i, 0), "progress")) progress_row(item, strtol(cell(i, 5), 0, 10));
+    if (is_page(l, i) || (i && is_page(l, 0))) /* in the list's rows, after a Previous page's 48 */
+        widget_move_resize(item, 0, i * page_h(64) - (i && is_page(l, 0) ? cut() : 0), 375,
+                           I(item, W_H));
 }
 
 static void show(void);
@@ -1094,7 +1114,7 @@ static void append(lv_t *l, int from) {
     }
     widget_destroy(widget_get_child(pg.view, (unsigned)from));
     for (int i = from; i < n; ++i) row(l, i);
-    widget_set_prop_int(pg.view, "virtual_h", n * page_h(64));
+    widget_set_prop_int(pg.view, "virtual_h", list_h(l, n));
     ringnav_select(pg.view, cur, n);
 }
 
@@ -1126,6 +1146,11 @@ static void show(void) {
     } else {
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0), 64);
         for (int i = 0; i < n; ++i) row(l, i);
+        /* each row its own height (a page row is shorter): a list_view's item_height forces its
+         * own on every row, so the selection would be a whole row high */
+        widget_set_prop_int(P(pg.view, W_PARENT), "item_height", 0);
+        widget_set_prop_int(P(pg.view, W_PARENT), "default_item_height", page_h(64));
+        widget_set_prop_int(pg.view, "virtual_h", list_h(l, n));
         page_push(pg.view, pg.moved), pg.moved = 0;
     }
     if (n) ringnav_select(pg.view, l->sel < n ? l->sel : n - 1, n);
@@ -1166,6 +1191,21 @@ static void pop(void) {
     --pg.depth;
     top()->state = K_LOAD;
     pg.moved = -1;
+    show();
+}
+
+/* A page row's press: the top level's list from cursor c, in the level's place, so Back leaves the
+ * list instead of stepping back through its pages; dir: 1 a later page, -1 an earlier one. */
+static void page_to(lv_t *l, const char *c, int dir) {
+    char a[sizeof l->args] = "";
+    tk_snprintf(a, sizeof a, "%.*s", (int)l->base, l->args);
+    if (!put(a, sizeof a, c)) return;
+    req_cancel();
+    drop();
+    memcpy(l->args, a, sizeof a);
+    l->n = 0, l->hash = 0, l->live = 0, l->state = K_LOAD;
+    l->sel = dir > 0 ? 1 : 1 << 20; /* show() clamps it to the last row */
+    pg.moved = (signed char)dir;
     show();
 }
 
@@ -1309,7 +1349,9 @@ static int go(const void *unused) {
         const char *kind = cell(i, 0), *uri = cell(i, 1), *ctx = cell(i, 4);
         if (!strcmp(kind, "list")) { /* with remote and a local folder, opens()'s pages */
             if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), cell(i, 2));
-        } else if (!strcmp(kind, "action"))
+        } else if (!strcmp(kind, "page"))
+            page_to(l, ctx, strcmp(uri, "prev") ? 1 : -1);
+        else if (!strcmp(kind, "action"))
             action(uri, ctx);
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);

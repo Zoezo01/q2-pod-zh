@@ -15,6 +15,7 @@
   - Display: under **Theme: Classic** the play/pause symbol stays by the battery on Home too, as on every other page. It used to move to the left, in place of the "Q2 Pod" title.
   - Library: **Frequent** is gone. **Most Played**, just above it, lists your most played songs.
   - Library: under **Theme: Classic** album covers in Albums and Folder have a small gap between them. They used to touch.
+  - Streaming: a card app can show a long list 200 items at a time, with **Next page** and **Previous page** rows at its ends. Back leaves the list at once, instead of going back through every page, and returning from Now Playing to a long list is quicker.
 - **1.7.1**:
   - App Store: **Check for Updates**, the first row, checks for new releases now, and a message says how many apps can be updated. The page still checks on its own as it opens, and then says so only when an app can be updated. With no list of apps yet, the same row loads it; it was called **App list**.
   - Cover Flow: a large PNG or progressive JPEG cover (over 1024 px) no longer risks restarting the Q2 while Cover Flow builds its covers. ffmpeg makes those covers now, and the Photos thumbnails too.
