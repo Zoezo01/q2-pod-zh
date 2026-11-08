@@ -3102,7 +3102,7 @@ def shelf_check(tmp, lib):
     assert len(sources(''.join(f'me/q2-a{i}\n' for i in range(20)), scratch)) == 16
     assert [a[2] for a in sources('a/q2\nb/q2-tidal\nc/downpic\nd/q2-tidal2\n', scratch)] == ['tidal2']  # never the firmware's folders
     own = {m for f in (ROOT/'patch').glob('*.[ch]')
-           for m in re.findall(r'(?:mmc/|CARD "/)\.([a-z0-9-]+)["/]', f.read_text())} - {'rockbox', 'spotify'}
+           for m in re.findall(r'(?:mmc/|CARD "/)\.([a-z0-9-]+)["/]', f.read_text())} - {'rockbox', 'spotify', 'groovebox'}  # card apps the firmware knows by path
     assert own and not [x for x in own if sources(f'a/q2-{x}\n', scratch)], own  # every card folder of the firmware's
     C.c_int.in_dll(lib, 'shelf_n').value = len(sources((ROOT/'sources.list').read_text()))
     ids = [a.id.decode() for a in apps[:6]]
