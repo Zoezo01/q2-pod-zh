@@ -203,7 +203,6 @@ extern void visualizer_paint(void *w, void *canvas), visualizer_attach(void *win
 extern int visualizer_live(void), games_live(void);
 extern unsigned char now_cover(void *r, const char **file);
 extern void scrobble_append(const char *line, unsigned n);
-extern void *staged(int (*query)(void *), void *arg, int *count);
 extern int staged_into(void *into, int (*query)(void *), void *arg);
 /* Scope music detail loads too: spoken tracks can share all their tags with music. */
 void *staged_music(int (*query)(void *), void *arg, int *count) {
@@ -218,8 +217,6 @@ extern int album_only(void *, void *, int), coverflow_split(void *);
 extern unsigned album_id(void *r);
 extern unsigned album_dir(const char *, int);
 extern volatile unsigned library_gen;
-extern const char *track_name(char *buf, unsigned size, void *t);
-static int ple_key(unsigned key, int phase);
 #define SCROLL_MARGIN 12
 #define HOME_FAST_WINDOW_MS 200
 #define WHEEL_RUN_MS 140
@@ -376,9 +373,7 @@ static void collect(void *w, entries_t *s, int depth) {
 }
 
 /* Widget-owned properties die with the surface; never retain recycled row pointers. */
-#define SEL "_ringnav_index"
 #define TOUCH "_ringnav_touch"
-#define COUNT "_ringnav_count"
 #define SCOPE "_ringnav_scope"
 #define FX "_ringnav_fx"
 
@@ -629,7 +624,7 @@ static void home_step(void *w, int dir, unsigned now, int jump) {
     st.home_dir = dir;
 }
 
-static int usable(void) {
+int usable(void) {
     if (!g_backlight_status || g_lockscreen_pageflag || g_testmode_flag || g_guideflag ||
         g_poweroff_state > 1)
         return 0;
@@ -739,16 +734,6 @@ typedef struct {
     const unsigned *title; /* the first text itself, for the iPod fast-scroll letter */
 } row_id_t;
 
-/* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that
- * isn't a playlist, its list item's action + 1, a playlist row's item, whether the rows pl_rows
- * last showed were select mode's, and the empty list's label. */
-#define PL_MODE "_pl_mode"
-#define PL_ACTION "_pl_action"
-#define PL_ACT "_pl_act"
-#define PL_ROW "_pl_row"
-#define PL_MARKING "_pl_marks"
-#define PL_NONE "_pl_none"
-
 /* The library browsing state both position memory and the queue menu key on. */
 static unsigned local_hash(unsigned h) {
     h = hash_bytes(h, g_class_type, 4);
@@ -838,7 +823,6 @@ static int context_now(unsigned *scope) {
 }
 
 static int index_of(menu_t *m, int id);
-static void reveal(menu_t *m, int id, int immediate);
 
 /* Bounded recency order avoids a timestamp that could wrap during a long session. */
 static int position(menu_t *m) {
@@ -875,7 +859,7 @@ static void select(menu_t *m, int id) {
     prop(m->w, SEL, id);
 }
 
-static int load_rows(menu_t *m, void *w) {
+int load_rows(menu_t *m, void *w) {
     m->w = w;
     m->n = 0;
     m->kind = kind(w);
@@ -1072,7 +1056,7 @@ static void wheel_offset(menu_t *m, int top) {
 
 /* Least viewport move that reveals logical row id with a small reading margin.
  * Remembered-position restoration keeps its glide; wheel steps are immediate. */
-static void reveal(menu_t *m, int id, int immediate) {
+void reveal(menu_t *m, int id, int immediate) {
     int top = view_top(m);
     int y, h;
     if (m->kind == 2) {
@@ -1124,7 +1108,6 @@ void ringnav_select(void *w, int id, int rows) {
  * selection with the visible row nearest the viewport centre (ties go to the earlier row), so a
  * swipe never leaves the highlight pinned to the top edge. An interrupted recall glide is
  * retried once instead: the remembered row must not be silently replaced by a visible one. */
-static int pl_first(menu_t *m, int cur);
 static int reconcile(menu_t *m, int settle) {
     int id = m->kind == 3 ? slide_index(m->w) : widget_get_prop_int(m->w, SEL, -1);
     int cur = index_of(m, id);
@@ -1614,7 +1597,6 @@ static int drill(void *w) {
     return ctx >= 0 && (contexts[ctx].flags & DRILL);
 }
 
-static int geom(int group);
 /* row_into's image, hidden, w's last child (geometry only: no string on the paint path). */
 static int into_mark(void *w) {
     unsigned n = widget_count_children(w);
@@ -5258,7 +5240,7 @@ static const char *ui_redirect(const char *name, char *buf) {
 }
 
 /* The value of group (G_PITCH, G_BODY, ...) in the set theme_boot wrote (st.geom). */
-static int geom(int group) { return boot_values[st.geom][group]; }
+int geom(int group) { return boot_values[st.geom][group]; }
 
 /* An A-B marker's x for point t (stock 0x52a268, from its three calls in the markers' placement:
  * AB_X_CALLS in tools/build.py), on the boot set's bar (the np_bar_x and np_bar_w immediates):
@@ -7304,7 +7286,7 @@ static int two_lines(void *row) {
 /* A row's text after its title, however deep stock nests it (view_artist): the meta role. A theme
  * with its own face there also takes it to stock's secondary grey, the theme's muted (a style's
  * white would read as black ink in Light Mode). */
-static void row_meta(void *w) {
+void row_meta(void *w) {
     const theme_t *T = theme();
     if (tk_strcmp(widget_get_type(w), "hscroll_label")) {
         for (unsigned i = 0;
@@ -7320,7 +7302,6 @@ static void row_meta(void *w) {
 
 /* Only audited ordinary row constructors install this per-instance layouter. Stock still
  * positions every child, skips hidden controls, and owns clone/destruction and text overflow. */
-static void pl_fit(void *button);
 static int compact_row_layout(void *layout, void *row) {
     void *text = (void *)0, *title = (void *)0;
     /* Classic's playlist rows hold their children in their own places: stock's layout has none */
@@ -7827,7 +7808,7 @@ static void *qm_list(void) {
                                       : P(p_deque_showlist, 0);
 }
 
-static void *qm_record(void) {
+void *qm_record(void) {
     if (st.qm_kind == QM_PLAYING) {
         unsigned at, n;
         void *r = queue_now(&at, &n), *q = P(mcl_pdeqplaylist, 0);
@@ -8252,7 +8233,7 @@ int ringnav_badge(const char *path, char *out, int size) {
 static unsigned listen_key(void *r);
 /* A deque's songs by path and CUE start (listen_key), open addressing at most half full: slot j + 1
  * for record j, so a key's first record in deque order is met first. calloc'd, 0 if that fails. */
-static unsigned *rec_index(void *songs, unsigned *mask) {
+unsigned *rec_index(void *songs, unsigned *mask) {
     unsigned n = deque_size(songs), size = 2, *slot;
     while (size < 2 * n) size <<= 1;
     *mask = size - 1;
@@ -8267,7 +8248,7 @@ static unsigned *rec_index(void *songs, unsigned *mask) {
     return slot;
 }
 /* The first of rec_index's songs with r's path and CUE start, else 0. */
-static void *rec_find(void *songs, const unsigned *slot, unsigned mask, void *r) {
+void *rec_find(void *songs, const unsigned *slot, unsigned mask, void *r) {
     const char *path = P(r, REC_PATH);
     for (unsigned h = path ? listen_key(r) : 0; path && slot[h & mask]; ++h) {
         void *s = deque_at(songs, slot[h & mask] - 1);
@@ -8460,7 +8441,7 @@ void toast(const char *text) {
     --st.toasts;
 }
 
-static int all_songs(void *music) {
+int all_songs(void *music) {
     int saved = library_music;
     library_music = music != 0;
     int n = getAllMusic(0);
@@ -10227,7 +10208,44 @@ int ringnav_about(void *win, void *ctx) {
     return result;
 }
 
-#include "playlists.c"
+/* Go to album/artist reuse g_local_classinfo_save, which the pages underneath reload from when
+ * they come back, so it is put back as the page opened here closes. */
+static int qm_restore(void *page, void *event) {
+    memcpy((void *)g_local_classinfo_save, st.qm_classinfo, sizeof st.qm_classinfo);
+    return 0;
+}
+
+/* Now Playing's More rows, for this record: Album info (0x5283b0) fills the album query and opens
+ * playerjumpinfo_page; Artist info opens artistinfo_page with {class, record}. A song played in
+ * Coverflow, or with Artist albums: Coverflow, goes to the album's tracks in Coverflow instead, as
+ * Go to Artist reaches its covers. A card app's song goes to the app's page when it offers one
+ * (addon.c addon_goto). */
+static void qm_goto(void *r, int album) {
+    unsigned char *info = (unsigned char *)g_local_classinfo_save;
+    void *wm = window_manager(), *page = window_manager_get_top_window(wm);
+    /* a card app's song (Qobuz's): the app's own page for its album or artist, when it says so */
+    if (addon_goto(P(r, REC_PATH), P(r, album ? REC_ALBUM : REC_ARTIST), album)) return;
+    if (album && (navigator_window_is_exist("coverflow_page") || ringnav_artist_view()) &&
+        coverflow_goto_album(r))
+        return;
+    memcpy(st.qm_classinfo, info, sizeof st.qm_classinfo);
+    if (album) {
+        info[9] = 0;
+        tk_snprintf((char *)info + 0xd, 0x100, "%s", (const char *)P(r, REC_ALBUM));
+        tk_snprintf((char *)info + 0x10d, 0x100, "%s", (const char *)P(r, REC_ARTIST));
+        *(int *)info = 0xff10;
+        album_open(r);
+        navigator_to("playerjumpinfo_page");
+    } else {
+        struct {
+            int cls;
+            void *r;
+        } context = { (int)st.qm_cls, r };
+        navigator_to_with_context("localmusic/artistinfo_page", &context);
+    }
+    void *top = window_manager_get_top_window(wm);
+    if (top != page) widget_on(top, EVT_WINDOW_CLOSE, qm_restore, top);
+}
 
 /* Deferred so the dialog is never closed under its own click dispatch. */
 static int qm_open(const void *unused);

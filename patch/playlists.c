@@ -1,5 +1,7 @@
 /* Playlists: the editor, New, Delete and More, the hold menu's Add to Playlist picker and Classic's
- * page. navigation.c #includes this where it stood. */
+ * page. */
+#include "navigation.h"
+
 /* Entry IDs are stock's order. Keep our records separate from browsing and the live queue. */
 static struct {
     void *page, *view, *songs, *picker, *edit;
@@ -145,7 +147,7 @@ static void ple_move(int at, int dir) {
         toast("Could not save playlist");
 }
 /* phase: press, release, or native delivery/long press. A repeat never moves twice. */
-static int ple_key(unsigned key, int phase) {
+int ple_key(unsigned key, int phase) {
     if (key != KEY_BACK_BTN && key != KEY_FWD_BTN) return 0;
     unsigned bit = key == KEY_FWD_BTN ? 2 : 1;
     int live = ple.page && window_manager_get_top_window(window_manager()) == ple.page;
@@ -497,54 +499,15 @@ int ringnav_playlistsmore(void *win, void *ctx) {
     return result;
 }
 
-/* Go to album/artist reuse g_local_classinfo_save, which the pages underneath reload from when
- * they come back, so it is put back as the page opened here closes. */
-static int qm_restore(void *page, void *event) {
-    memcpy((void *)g_local_classinfo_save, st.qm_classinfo, sizeof st.qm_classinfo);
-    return 0;
-}
-
-/* Now Playing's More rows, for this record: Album info (0x5283b0) fills the album query and opens
- * playerjumpinfo_page; Artist info opens artistinfo_page with {class, record}. A song played in
- * Coverflow, or with Artist albums: Coverflow, goes to the album's tracks in Coverflow instead, as
- * Go to Artist reaches its covers. A card app's song goes to the app's page when it offers one
- * (addon.c addon_goto). */
-static void qm_goto(void *r, int album) {
-    unsigned char *info = (unsigned char *)g_local_classinfo_save;
-    void *wm = window_manager(), *page = window_manager_get_top_window(wm);
-    /* a card app's song (Qobuz's): the app's own page for its album or artist, when it says so */
-    if (addon_goto(P(r, REC_PATH), P(r, album ? REC_ALBUM : REC_ARTIST), album)) return;
-    if (album && (navigator_window_is_exist("coverflow_page") || ringnav_artist_view()) &&
-        coverflow_goto_album(r))
-        return;
-    memcpy(st.qm_classinfo, info, sizeof st.qm_classinfo);
-    if (album) {
-        info[9] = 0;
-        tk_snprintf((char *)info + 0xd, 0x100, "%s", (const char *)P(r, REC_ALBUM));
-        tk_snprintf((char *)info + 0x10d, 0x100, "%s", (const char *)P(r, REC_ARTIST));
-        *(int *)info = 0xff10;
-        album_open(r);
-        navigator_to("playerjumpinfo_page");
-    } else {
-        struct {
-            int cls;
-            void *r;
-        } context = { (int)st.qm_cls, r };
-        navigator_to_with_context("localmusic/artistinfo_page", &context);
-    }
-    void *top = window_manager_get_top_window(wm);
-    if (top != page) widget_on(top, EVT_WINDOW_CLOSE, qm_restore, top);
-}
-
 /* The row alone selected in the stock batch record, as player_addplayList (0x50d0b8) does. */
-static void qm_select(void) {
+void qm_select(void) {
     batch_init_selectrecord((int)st.qm_rows);
     batch_set_selectitem((int)st.qm_idx);
 }
 
 /* Stock playlist rows use the queue in add mode 2. Guard their final dispatch as well. */
 #define PLAYLIST_PICK ((int (*)(void *, void *))0x4b1d24)
-static int qm_playlist_pick(void *ctx, void *event) {
+int qm_playlist_pick(void *ctx, void *event) {
     char click[0x30];
     if (!qm_record()) {
         toast("Queue unchanged");
@@ -556,7 +519,7 @@ static int qm_playlist_pick(void *ctx, void *event) {
         ctx, geom_val(V_TOOLBAR) ? event : pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
 
-static int qm_playlist_gone(void *ctx, void *event) {
+int qm_playlist_gone(void *ctx, void *event) {
     st.qm_playlist = 0;
     return 0;
 }
@@ -571,7 +534,7 @@ static void *click_bound(void *w, const void *fn) {
 }
 
 static int pl_pick(void *ctx, void *event);
-static void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
+void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
     if (!w || depth == 16) return;
     void *item = click_bound(w, (void *)PLAYLIST_PICK) ?: click_bound(w, (void *)pl_pick);
     if (item) {
@@ -598,7 +561,7 @@ static const unsigned pl_stock[PL_N] = { 0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0,
  * (x 346), where the selected row's chevron (x 317) shows in their place. The text ends clear of
  * whichever shows. */
 #define PL_MARK_X 333 /* the tick's column, the dots' hit */
-static void pl_fit(void *button) {
+void pl_fit(void *button) {
     const theme_t *T = theme();
     int h = I(button, W_H), width = 289;
     for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
@@ -797,7 +760,7 @@ static void pl_rows(void *win) {
 /* With nothing remembered (a first open, or a count changed) Classic's Playlists starts on its
  * first playlist, below New and Edit, as stock's and the iPod's lists of playlists alone do; an
  * empty list on New. */
-static int pl_first(menu_t *m, int cur) {
+int pl_first(menu_t *m, int cur) {
     for (int i = cur; i < m->n && widget_get_prop_int(P(m->at[cur], W_PARENT), PL_ACT, 0); ++i)
         if (widget_get_prop_int(P(m->at[i], W_PARENT), PL_ROW, 0)) return i;
     return cur;

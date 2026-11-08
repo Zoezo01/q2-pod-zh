@@ -3199,7 +3199,7 @@ int coverflow_artist(void *albums) {
     return 1;
 }
 
-/* Go to Album from a Coverflow song (playlists.c's qm_goto) and Era's albums: r's tracks alone, no
+/* Go to Album from a Coverflow song (navigation.c's qm_goto) and Era's albums: r's tracks alone, no
  * covers under them, so Return closes the page; 0 when it has none. */
 int coverflow_goto_album(void *r) {
     void *t = coverflow_album_tracks(r), *one;

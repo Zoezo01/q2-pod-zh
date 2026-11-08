@@ -959,11 +959,11 @@ def test_chapter_file_any_path(fw, heap):
     (None, b'a', 0), (b'Song', b'on', 1), (b'SONG', b'on', 1), (b'song', b'ONG', 1), (b'song', b'x', 0), (b'song', b'', 1), (b'', b'', 1), (b'', b'a', 0),
 ])
 def test_ple_has(fw, text_, query, found):
-    assert fw.fn('navigation__ple_has', C.c_int, C.c_char_p, C.c_char_p)(text_, query) == found
+    assert fw.fn('playlists__ple_has', C.c_int, C.c_char_p, C.c_char_p)(text_, query) == found
 
 
 def test_ple_has_any_text(fw, heap):
-    has = fw.fn('navigation__ple_has', C.c_int, C.c_void_p, C.c_void_p)
+    has = fw.fn('playlists__ple_has', C.c_int, C.c_void_p, C.c_void_p)
     rng = random.Random(0x91e)
     seeds = [b'Song', b'SONG', b'ong', b'\xc3\xa9', b'']
     for data in hostile(rng, seeds + [b'x'], 1500, 24):
@@ -1266,8 +1266,8 @@ def test_rec_index_finds_the_first_of_a_path_and_cue_start(fw, heap):
     none = record(keep)
     songs = deques.new([a, none, b, again, late])
     mask = C.c_uint()
-    slot = fw.fn('navigation__rec_index', C.c_void_p, C.c_void_p, C.POINTER(C.c_uint))(songs, C.byref(mask))
-    find = fw.fn('navigation__rec_find', C.c_void_p, C.c_void_p, C.c_void_p, C.c_uint, C.c_void_p)
+    slot = fw.fn('rec_index', C.c_void_p, C.c_void_p, C.POINTER(C.c_uint))(songs, C.byref(mask))
+    find = fw.fn('rec_find', C.c_void_p, C.c_void_p, C.c_void_p, C.c_uint, C.c_void_p)
     assert mask.value == 15  # at most half full
     assert find(songs, slot, 15, record(keep, b'/a')) == a and find(songs, slot, 15, record(keep, b'/b')) == b
     assert find(songs, slot, 15, record(keep, b'/a', cue=40)) == late
@@ -1279,7 +1279,7 @@ def test_rec_index_finds_the_first_of_a_path_and_cue_start(fw, heap):
 def test_rec_index_of_nothing(fw, heap):
     deques = Deques(fw)
     mask = C.c_uint()
-    slot = fw.fn('navigation__rec_index', C.c_void_p, C.c_void_p, C.POINTER(C.c_uint))(deques.new(), C.byref(mask))
+    slot = fw.fn('rec_index', C.c_void_p, C.c_void_p, C.POINTER(C.c_uint))(deques.new(), C.byref(mask))
     assert mask.value == 1 and C.string_at(slot, 8) == b'\0' * 8
     heap.free(slot)
 
@@ -2173,11 +2173,11 @@ def test_a_row_that_is_no_playlist_is_left(fw, row_, ids):
 
 @pytest.mark.parametrize('n, value, stop', [(1, b'1', 0), (1, b'0', 1), (1, b'2', 1), (0, b'1', 1), (2, b'1', 1), (1, None, 1)])
 def test_ple_changed_wants_exactly_one_row(fw, n, value, stop):
-    assert fw.fn('navigation__ple_changed', *ROW)(None, n, row(value, value), None) == stop
+    assert fw.fn('playlists__ple_changed', *ROW)(None, n, row(value, value), None) == stop
 
 
 def test_ple_number(fw):
-    number = fw.fn('navigation__ple_number', *ROW)
+    number = fw.fn('playlists__ple_number', *ROW)
     out = C.c_int(-1)
     assert number(C.addressof(out), 1, row(b'42'), None) == 0 and out.value == 42
 
@@ -2185,12 +2185,12 @@ def test_ple_number(fw):
 @pytest.mark.parametrize('n, value', [(1, None), (2, b'1'), (0, b'1')])
 def test_ple_number_refuses_a_bad_row(fw, n, value):
     out = C.c_int(-1)
-    assert fw.fn('navigation__ple_number', *ROW)(C.addressof(out), n, row(value, value), None) == 1 and out.value == -1
+    assert fw.fn('playlists__ple_number', *ROW)(C.addressof(out), n, row(value, value), None) == 1 and out.value == -1
 
 
 def test_sql_numbers_any_text(fw):
     used = (C.c_ubyte * 100)()
-    mark, number = fw.fn('navigation__playlist_used', *ROW), fw.fn('navigation__ple_number', *ROW)
+    mark, number = fw.fn('playlists__playlist_used', *ROW), fw.fn('playlists__ple_number', *ROW)
     out, rng = C.c_int(), random.Random(0x11d)
     for data in hostile(rng, [b'0', b'99', b'100', b'-1', b'2147483648', b'4294967296'], 1500):
         assert mark(C.addressof(used), 1, row(data), None) == 0
@@ -2200,7 +2200,7 @@ def test_sql_numbers_any_text(fw):
 
 def test_playlist_used_marks_only_ids_it_has_room_for(fw):
     used = (C.c_ubyte * 102)()
-    mark = fw.fn('navigation__playlist_used', *ROW)
+    mark = fw.fn('playlists__playlist_used', *ROW)
     for value in (b'0', b'99', b'100', b'101', b'-1'):
         assert mark(C.addressof(used), 1, row(value), None) == 0
     assert [i for i in range(102) if used[i]] == [0, 99]
@@ -2208,7 +2208,7 @@ def test_playlist_used_marks_only_ids_it_has_room_for(fw):
 
 @pytest.mark.parametrize('n, value', [(1, None), (2, b'1')])
 def test_playlist_used_stops_at_a_bad_row(fw, n, value):
-    assert fw.fn('navigation__playlist_used', *ROW)(None, n, row(value, value), None) == 1
+    assert fw.fn('playlists__playlist_used', *ROW)(None, n, row(value, value), None) == 1
 
 
 class Sql:
@@ -2295,7 +2295,7 @@ def test_ple_mutate_refuses_before_the_database(fw, dest, a, b):
         struct.pack_into('<i', r, O['REC_ID'], i)
         keep.append(r)
         return r
-    assert fw.fn('navigation__ple_mutate', C.c_int, C.c_int, C.c_void_p, C.c_void_p)(dest, rec(a), rec(b) if b else None) == 0
+    assert fw.fn('playlists__ple_mutate', C.c_int, C.c_int, C.c_void_p, C.c_void_p)(dest, rec(a), rec(b) if b else None) == 0
     assert not fw.calls('sqlite3_open')
 
 
@@ -2376,7 +2376,7 @@ def test_qm_gone_clears_its_own_dialog_only(fw, st):
 
 def test_qm_playlist_gone(fw, st):
     st('qm_playlist', C.c_void_p).value = 0x10
-    assert fw.fn('navigation__qm_playlist_gone', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
+    assert fw.fn('qm_playlist_gone', C.c_int, C.c_void_p, C.c_void_p)(None, None) == 0
     assert not st('qm_playlist', C.c_void_p).value
 
 

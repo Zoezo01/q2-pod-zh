@@ -345,6 +345,8 @@ typedef struct {
 
 extern scratch_t st;
 extern menu_t g_menu; /* the one row list load() fills */
+extern const char *track_name(char *buf, unsigned size, void *t);
+extern void *staged(int (*query)(void *), void *arg, int *count);
 extern int spot_media(unsigned key), spot_key(void *top, unsigned key),
     spot_open(void *ctx, void *event), spot_hold(void *top);
 extern int radio_media(unsigned key), radio_open(void *ctx, void *event);
@@ -375,6 +377,8 @@ extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
 
 /* navigation.c */
+#define COUNT "_ringnav_count"
+#define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */
 #define ROUND_RIGHT 2
 #define ROUND_LEFT 1
@@ -424,6 +428,16 @@ unsigned wide_len(const unsigned *s);
 void *window_of(void *w);
 extern const stops_t confirm_dark;
 int search_key(unsigned key);
+int geom(int group);
+int load_rows(menu_t *m, void *w);
+void *qm_record(void);
+void *rec_find(void *songs, const unsigned *slot, unsigned mask, void *r);
+unsigned *rec_index(void *songs, unsigned *mask);
+void reveal(menu_t *m, int id, int immediate);
+void row_meta(void *w);
+void *staged_music(int (*query)(void *), void *arg, int *count);
+int usable(void);
+int all_songs(void *music);
 
 /* np_bar.c */
 int np_beside(void);
@@ -469,5 +483,23 @@ void slider_paint(void *w, void *canvas);
 int search_del(void *w);
 void search_over(void *w, void *canvas);
 void slider_scrub(void *w, void *canvas);
+
+/* playlists.c */
+/* Classic's Playlists (pl_dress): a page's add mode (ringnav_playlist), the button of a row that
+ * isn't a playlist, its list item's action + 1, a playlist row's item, whether the rows pl_rows
+ * last showed were select mode's, and the empty list's label. */
+#define PL_MODE "_pl_mode"
+#define PL_ACTION "_pl_action"
+#define PL_ACT "_pl_act"
+#define PL_ROW "_pl_row"
+#define PL_MARKING "_pl_marks"
+#define PL_NONE "_pl_none"
+void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *));
+void qm_select(void);
+int qm_playlist_gone(void *ctx, void *event);
+int qm_playlist_pick(void *ctx, void *event);
+int ple_key(unsigned key, int phase);
+int pl_first(menu_t *m, int cur);
+void pl_fit(void *button);
 
 #endif
