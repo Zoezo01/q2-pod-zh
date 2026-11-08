@@ -1896,6 +1896,11 @@ static void *marq_row(void) {
                     : (void *)0;
     return row == st.marq_row ? row : (void *)0;
 }
+/* The row's title was rewritten in place (addon.c relabel): if it is the marquee's, the next paint
+ * re-arms it for the new text's width. */
+void marq_restart(void *row) {
+    if (row == st.marq_row) st.marq_row = (void *)0;
+}
 static int marq_moved(const void *info) {
     (void)info;
     st.marq_timer = 0;

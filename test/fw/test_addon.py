@@ -6,6 +6,7 @@ import struct
 
 import pytest
 
+import host
 from conftest import block, text, Game, O
 
 APPS_MAX = 8
@@ -1252,10 +1253,15 @@ def test_a_list_without_pages_keeps_more(fw):
     assert p.pg.paging == 0 and p.drawn == 3
 
 
-def live(fw, rows):
+SEARCH = (b'search', b'', b'Search', b'', b'', b'')
+
+
+def live(fw, rows, covers=()):
     p = Page(fw)
     fw.mock('window_manager_get_top_window', lambda *_: p.page)
     fw.var('g_backlight_status', C.c_ubyte).value = 1
+    for cover in covers:
+        p.world.files[cover] = jpeg()
     p.answer(msg=b'refresh', rows=rows)
     return p
 
@@ -1333,7 +1339,7 @@ def test_a_refresh_with_the_same_rows_keeps_the_click(fw):
     assert p.req.running and p.request().endswith(b'\top4\n')  # row 4's action
 
 
-def test_a_refresh_with_new_texts_in_the_same_rows_keeps_them_and_the_click(fw):
+def test_a_refresh_with_new_texts_in_the_same_rows_is_not_rebuilt_and_keeps_the_click(fw):
     """The same kinds, uris and contexts, only a title moved: written in place (relabel), not rebuilt."""
     p = live(fw, rows_of(0, 5))
     drawn = len(fw.calls('list_item_create'))
@@ -1345,6 +1351,126 @@ def test_a_refresh_with_new_texts_in_the_same_rows_keeps_them_and_the_click(fw):
     assert len(fw.calls('list_item_create')) == drawn and p.cell(4, 2) == b'Row 4 moved'
     fire(p)
     assert p.req.running and p.request().endswith(b'\top4\n')
+
+
+def row_of(uri, title=b'Row', detail=b'sub', kind=b'action', position=b'', ctx=b''):
+    return (kind, uri, title, detail, ctx, position)
+
+
+@pytest.fixture
+def marq(fw, library):
+    """st.marq_row, the selected row's marquee (navigation.c), as this build lays scratch_t out."""
+    base = C.addressof(fw.var('st', C.c_char))
+    return C.c_void_p.from_address(base + host.offsets(library.parent/'navigation.o', 'scratch_t')['marq_row'])
+
+
+def row_walk(p, rows):
+    """A live level's rows as a real child walk over mocked widgets: each its title and detail labels and, for
+    a progress row, a bar. Returns the rows' items, their children, the texts written and the props set."""
+    fw = p.fw
+    kind_of = {True: block(fw, b'hscroll_label'), False: block(fw, b'view')}
+    items, kids, texts = [], {}, {}
+    for r in rows:
+        item = block(fw, size=16)
+        labels = [block(fw, size=16), block(fw, size=16)]
+        texts[labels[0]], texts[labels[1]] = r[2], r[3]
+        kids[item] = labels + ([block(fw, size=16)] if r[0] == b'progress' else [])
+        items.append(item)
+    kids[p.pg.view] = items
+    bars = {c for item in items for c in kids[item][2:]}
+    written, props = [], []
+    def get_text(w, out, n, *_):
+        C.memmove(out, texts[w] + b'\0', len(texts[w]) + 1)
+    def set_text(w, s, *_):
+        written.append((w, C.string_at(s)))
+        texts[w] = C.string_at(s)
+    def get_int(w, name, default, *_):
+        return 1 if w in bars and C.string_at(name) == b'_pml' else p.sel if C.string_at(name) == b'_ringnav_index' else default
+    fw.mock('widget_count_children', lambda w, *_: len(kids.get(w, ())))
+    fw.mock('widget_get_child', lambda w, i, *_: kids[w][i])
+    fw.mock('widget_get_type', lambda w, *_: kind_of[w in texts])
+    fw.mock('widget_get_text_utf8', get_text)
+    fw.mock('widget_set_text_utf8', set_text)
+    fw.mock('widget_get_prop_int', get_int)
+    fw.mock('widget_set_prop_int', lambda w, name, value, *_: props.append((w, C.string_at(name), value)))
+    return items, kids, written, props
+
+
+def refresh(p, rows, cursor=b''):
+    p.world.ms += 2000
+    p.tick()
+    p.answer(msg=b'refresh', rows=rows, cursor=cursor)
+
+
+def test_a_refresh_writes_only_the_labels_and_bars_that_changed(fw):
+    """addon.c relabel: a changed title or detail is written and starts from its left, the row's rest untouched;
+    a progress row's bar takes the new permille and repaints."""
+    rows = [row_of(b'a', b'Same', b'same'), row_of(b'b', b'Old', b'same'), row_of(b'c', b'Same', b'old'), row_of(b'd', kind=b'progress', position=b'100')]
+    p = live(fw, rows)
+    drawn = len(fw.calls('list_item_create'))
+    items, kids, written, props = row_walk(p, rows)
+    bar = kids[items[3]][2]
+    refresh(p, [rows[0], row_of(b'b', b'New', b'same'), row_of(b'c', b'Same', b'new'), row_of(b'd', kind=b'progress', position=b'420')])
+    assert len(fw.calls('list_item_create')) == drawn
+    assert written == [(kids[items[1]][0], b'New'), (kids[items[2]][1], b'new')]
+    assert [(w, v) for w, name, v in props if name == b'xoffset'] == [(kids[items[1]][0], 0), (kids[items[2]][1], 0)]
+    assert (bar, b'_pml', 420) in props and fw.calls('widget_invalidate_force')[-1][1][0] == bar
+
+
+@pytest.mark.parametrize('selected,moved,cleared', [
+    (1, row_of(b'b', b'New', b'sub'), True),   # the selected row's title
+    (1, row_of(b'b', b'Old', b'new'), False),  # its detail only
+    (0, row_of(b'b', b'New', b'sub'), False),  # another row's title
+])
+def test_a_refresh_restarts_the_selected_row_s_marquee_only_for_its_title(fw, marq, selected, moved, cleared):
+    """A new title on the marquee's row: st.marq_row cleared, so the next paint re-arms it (paint_selection)."""
+    rows = [row_of(b'a', b'Same', b'sub'), row_of(b'b', b'Old', b'sub')]
+    p = live(fw, rows)
+    items, _, _, _ = row_walk(p, rows)
+    marq.value = items[selected]
+    refresh(p, [rows[0], moved])
+    assert (marq.value is None) == cleared
+
+
+@pytest.mark.parametrize('rows,cursor', [
+    (rows_of(0, 2), b''),
+    ([item(0, b'info'), *rows_of(1, 2)], b''),
+    ([(b'action', b'opX', b'Row 0', b'sub', b'', b''), *rows_of(1, 2)], b''),
+    ([item(0, ctx=b'c'), *rows_of(1, 2)], b''),
+    ([(b'action', b'op0', b'Row 0', b'', b'', b''), *rows_of(1, 2)], b''),
+    (rows_of(0, 3), b'c1'),
+    ([SEARCH, *rows_of(0, 3)], b''),
+])
+def test_a_refresh_with_other_rows_is_rebuilt(fw, rows, cursor):
+    """addon.c same_rows: a row's kind, uri or context, a detail going, More… appearing, or a first Search row
+    now taken (take_find) each draw the list again."""
+    p = live(fw, rows_of(0, 3))
+    drawn = len(fw.calls('list_item_create'))
+    refresh(p, rows, cursor)
+    assert len(fw.calls('list_item_create')) > drawn
+
+
+def test_a_refresh_compares_the_rows_after_a_taken_search(fw):
+    """The first Search row is the title bar's icon: the rows compared are the ones under it."""
+    p = live(fw, [SEARCH, *rows_of(0, 2)])
+    assert p.top.find == 1 and p.top.n == 2
+    drawn = len(fw.calls('list_item_create'))
+    refresh(p, [SEARCH, item(0), (b'action', b'op1', b'Row 1 moved', b'sub', b'', b'')])
+    assert p.top.find == 1 and len(fw.calls('list_item_create')) == drawn and p.cell(1, 2) == b'Row 1 moved'
+
+
+def test_a_refresh_in_place_keeps_the_covers_and_a_new_cover_rebuilds(fw):
+    """Written in place, the shown covers stay in the image manager (drop isn't run); one more cover draws the
+    list again."""
+    names = unloads(fw)
+    p = live(fw, rows_of(0, 2), covers=[art_path(b'op0', b'')])
+    drawn = len(fw.calls('list_item_create'))
+    del names[:]
+    refresh(p, [item(0), (b'action', b'op1', b'Row 1 moved', b'sub', b'', b'')])
+    assert p.top.art == 1 and not names and len(fw.calls('list_item_create')) == drawn
+    p.world.files[art_path(b'op1', b'')] = jpeg()
+    refresh(p, [item(0), (b'action', b'op1', b'Row 1 again', b'sub', b'', b'')])
+    assert p.top.art == 2 and len(fw.calls('list_item_create')) > drawn
 
 
 def test_a_search_box_s_redraw_stays_queued_over_a_refresh(fw):
@@ -1372,9 +1498,6 @@ def test_a_held_play_sends_a_rows_hold_op(fw):
     p.sel = 3
     assert hold(p.page) == 0
     assert hold(None) == 0
-
-
-SEARCH = (b'search', b'', b'Search', b'', b'', b'')
 
 
 def edit_box(fw):

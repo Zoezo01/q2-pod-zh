@@ -16007,6 +16007,10 @@ x,w=O['CF_EDGE'],375-2*O['CF_EDGE']
 assert cf_geometry(m,prog_bar(0))==(x,44,w,8),cf_geometry(m,prog_bar(0))
 assert prog_paint(0)==[(0,0,w,8),(0,0,w*470//1000,8)] and not m.rounded and m.bands[0][4]==0xff3a3a3a!=m.bands[1][4],(m.bands,m.rounded)
 assert prog_paint(1)==[(0,0,w,8),(0,0,w,8)] and prog_paint(2)==prog_paint(3)==[(0,0,w,8)] and prog_paint(4)==prog_paint(1) and prog_paint(5)==prog_paint(2) and not m.rounded,(m.bands,m.rounded)
+# A live refresh with the same rows moves the bar and the texts in place, the rows kept.
+PROG2=[('progress','','51%25','122 of 240 songs','','510'),*PROG[1:]]; prog_rows=m.rows()
+m.advance(2000); m.answer('ok','refresh','',PROG2)
+assert m.rows()==prog_rows and m.labels()[:3]==['Downloads','51%','122 of 240 songs'] and prog_paint(0)==[(0,0,w,8),(0,0,w*510//1000,8)],m.labels()
 asked=len(m.threads); m.pick(0); assert len(m.threads)==asked
 m.top=m.page; m.status=m.alloc(0x200); m.nodes[m.find('scroll_view')]['_ringnav_index']=0; m.press(80); assert m.hold()!=11 and len(m.threads)==asked
 m.back(); m.answer('ok','refresh','',SMENU); passed()

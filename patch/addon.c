@@ -975,7 +975,7 @@ enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION, G_FIND };
 typedef struct {
     int state, n, sel, live, retry;
     int nosock, slow;  /* nosock: the error is no socket; slow: the wait's Stop row shown */
-    int art;           /* its rows are drawn with covers (art_row): one of them has one */
+    int art;           /* its rows are drawn with covers (art_row): how many have one, 0 none */
     int find;          /* its first row, a search, is the title bar's search icon (take_find) */
     unsigned since;    /* when it began loading or waiting, 0 once done */
     unsigned base;     /* args' bytes before a More…'s cursor: the list's own */
@@ -1119,14 +1119,14 @@ static void page_next(lv_t *l) {
         req_send(app()->browse, l->op, a), l->id = req.id;
 }
 
-/* Whether the first count rows are drawn with covers: one has one, and none is a progress row,
- * whose bar is page_row_detail's. */
+/* How many of the first count rows have covers, so the list is drawn with them; 0 too with a
+ * progress row among them, whose bar is page_row_detail's. */
 static int art_rows(int count) {
     char url[ART_URL];
     int art = 0;
     for (int i = 0; i < count; ++i) {
         if (!strcmp(cell(i, 0), "progress")) return 0;
-        art = art || art_file(i, url);
+        art += art_file(i, url);
     }
     return art;
 }
@@ -1180,11 +1180,12 @@ static void show(void);
 /* A first row of kind search leaves the list for a search icon at the title bar's right, as
  * Tidal's navbar has (s_img_search), where the theme has a title bar; under one without (the name
  * in the status bar) the row stays, as does a sole row, which would leave an empty list. The row's
- * title and subtitle aren't shown: the box's tips are the app's. Whether it did. */
-static int take_find(lv_t *l) {
-    if (!theme()->page_title_h || l->n < 2 || strcmp(cell(0, 0), "search")) return 0;
-    for (int i = 4; i < 4 + 6 * (l->n - 1); ++i) pg.f[i] = pg.f[i + 6]; /* the rows up one */
-    --l->n;
+ * title and subtitle aren't shown: the box's tips are the app's. Whether it did, from reply f's *n
+ * rows. */
+static int take_find(char **f, int *n) {
+    if (!theme()->page_title_h || *n < 2 || strcmp(f[4], "search")) return 0;
+    for (int i = 4; i < 4 + 6 * (*n - 1); ++i) f[i] = f[i + 6]; /* the rows up one */
+    --*n;
     return 1;
 }
 
@@ -1229,34 +1230,42 @@ static void append(lv_t *l, int from) {
 
 /* A live level's new reply g (n rows) has the shown list's rows: as many, on one page, each of the
  * same kind, uri and context (so a press queued on one still does what it did) and with a detail
- * where it had one, and More… shown or not as before. */
+ * where it had one, More… shown or not as before, and as many covers. The shown reply's kinds, uris
+ * and contexts are the new one's by then, so art_rows' answer is the new one's.
+ * ponytail: covers are counted, not compared, so a cover swapped for another in one reply stays
+ * until the next rebuild; a key per row if apps do that. */
 static int same_rows(const lv_t *l, char **g, int n) {
-    if (!pg.view || n != l->n || pg.pages != 1 || (g[3][0] != 0) != (pg.f[3][0] != 0)) return 0;
+    if (!pg.view || n != l->n || pg.pages != 1 || !g[3][0] != !pg.f[3][0]) return 0;
     for (int i = 0; i < n; ++i) {
         char **r = g + 4 + 6 * i;
         if (strcmp(r[0], cell(i, 0)) || strcmp(r[1], cell(i, 1)) || strcmp(r[4], cell(i, 4)) ||
             !r[3][0] != !cell(i, 3)[0])
             return 0;
     }
-    return 1;
+    return art_rows(n) == l->art;
 }
 
 /* The shown rows' texts and progress bars written from the level's reply in place: a refresh that
  * only moves a percentage leaves the other rows, the selection and a long title's marquee as they
- * are, where a rebuild would start them over. A row's labels are its title then its detail; one is
- * set only when its text changed, read as UTF-8 (its "text" prop is a wide string, which
- * widget_get_prop_str doesn't return). */
+ * are, where a rebuild would start them over. A row's labels are its title then its detail, in
+ * row()'s roles however it was dressed; one is set only when its text changed, read as UTF-8 (its
+ * "text" prop is a wide string, which widget_get_prop_str doesn't return). A changed text starts
+ * from its left, in the face it needs, and the selected row's new title has its marquee again at
+ * the next paint (paint_selection), for its own width; a changed detail leaves the title's alone. */
 static void relabel(const lv_t *l) {
     for (int i = 0; i < l->n; ++i) {
         void *item = widget_get_child(pg.view, (unsigned)i);
         for (unsigned c = 0, k = 2, m = widget_count_children(item); c < m; ++c) {
             void *w = widget_get_child(item, c);
-            if (!tk_strcmp(widget_get_type(w), "hscroll_label") && k <= 3) {
-                if (text_differs(w, cell(i, k))) widget_set_text_utf8(w, cell(i, k));
+            if (!tk_strcmp(widget_get_type(w), "hscroll_label")) {
+                if (text_differs(w, cell(i, k))) {
+                    widget_set_text_utf8(w, cell(i, k));
+                    theme_font(w, k == 2 ? ROLE_TALL : ROLE_META, FONT_ROW);
+                    widget_set_prop_int(w, "xoffset", 0);
+                    if (k == 2) marq_restart(item);
+                }
                 ++k;
-            } else if (widget_get_prop_int(w, "_pml", -1) >= 0) {
-                /* a progress row's bar. shortcut: test/patch.py's harness can't drive a live
-                 * progress row, so this is tried on a Q2 only */
+            } else if (widget_get_prop_int(w, "_pml", -1) >= 0) { /* a progress row's bar */
                 set_pml(w, strtol(cell(i, 5), 0, 10));
                 widget_invalidate_force(w, 0);
             }
@@ -1460,13 +1469,17 @@ static void got(void) {
         l->live = !strcmp(f[2], "refresh");
         pg.again = now + ADDON_LIVE_MS;
         if (l->state != K_READY || hash != l->hash) {
-            int same = l->state == K_READY && l->live && same_rows(l, g, n);
+            int find = take_find(g, &n);
+            int same = l->state == K_READY && l->live && find == l->find && same_rows(l, g, n);
             keep_sel();
-            drop();
+            if (same)
+                free(pg.buf[0]); /* same_rows: its one page, and the covers stay drawn */
+            else
+                drop();
             pg.buf[0] = reply, pg.pages = 1, reply = 0;
             memcpy(pg.f, f, sizeof g); /* pg.f holds ADDON_PAGES replies' rows, g one's */
             l->n = n;
-            l->find = take_find(l);
+            l->find = find;
             l->hash = hash;
             l->state = K_READY;
             /* an app opts in; older ones' lists keep More… */
