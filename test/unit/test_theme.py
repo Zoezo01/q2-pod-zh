@@ -415,9 +415,13 @@ def test_alphas_rejects(alphas, message):
 def test_the_ipod_now_playing_and_its_bar_come_together():
     classic = theme.builtins()[1]
     with pytest.raises(theme.ThemeError, match="np_ipod needs playing.scrubber.stops"):
-        theme.validate({**classic, 'np_track': ()}, 't.xml')
-    with pytest.raises(theme.ThemeError, match="np_ipod needs playing.scrubber.stops"):
-        theme.validate({**theme.builtins()[0], 'np_track': classic['np_track']}, 't.xml')
+        theme.validate({**classic, 'np_track': (), 'light': {**classic['light'], 'np_track': ()}}, 't.xml')
+    for stated in ({'np_track': classic['np_track']}, {'light': {'np_track': classic['light']['np_track']}}):
+        with pytest.raises(theme.ThemeError, match="np_ipod needs playing.scrubber.stops"):
+            theme.validate({**theme.builtins()[0], **stated}, 't.xml')
+    # stated in one half alone: half() flips it for the other
+    for half in ({'np_track': ()}, {'light': {**classic['light'], 'np_track': ()}}):
+        theme.validate({**classic, **half}, 't.xml')
 
 
 def test_a_shadow_past_its_alphas_is_an_error():
@@ -879,6 +883,16 @@ def test_derive_gloss():
         assert [p for p, _ in stops] == [0, 17, 38, 58, 79, 100] and stops[2][1] == f'#{tones[0]:06x}'
     assert all(h[1:3] == h[3:5] == h[5:7] for _, h in theme.derive_gloss(theme.ACCENT_TONES[0]))  # Graphite stays grey
     assert theme.derive_gloss(theme.ACCENT_TONES[4]) != [(p, f'#{c:06x}') for p, c in theme.GLOSS]  # Cobalt is near, not Classic Blue
+
+
+@pytest.mark.parametrize('half', ['dark', 'light'])
+def test_a_band_stated_in_one_half_is_not_derived(half):
+    # a band stated in one half is stated: half() flips it for the other, so derive="gloss" leaves the row alone
+    t = resolved(C.replace('"cobalt"/>', '"cobalt graphite" derive="gloss"/>', 1) + f'<colorScheme name="cobalt" {half}.sel.stops="#08a6e7 0, #0065d6 100"/>')
+    band = ((0, 0x08a6e7), (100, 0x0065d6))
+    dark, light = theme.scheme_half(t['schemes'][4], False), theme.scheme_half(t['schemes'][4], True)
+    assert (dark['sel'], light['sel'], dark['sel_top'], light['sel_top']) == (band, band, 0, 0)
+    assert t['schemes'][0]['sel'] == tuple((p, int(h[1:], 16)) for p, h in theme.derive_gloss(theme.ACCENT_TONES[0]))  # Graphite, derived
 
 
 def test_classic_light_second_line_is_its_grey_at_its_size():

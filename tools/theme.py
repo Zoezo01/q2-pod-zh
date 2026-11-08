@@ -867,7 +867,7 @@ def resolve(root, by_id, seen=()):
             t[field] = v
     if t.get('derive'):  # the gloss in each offered ACCENTS row that states none
         for i, s in enumerate(t['schemes'][:len(ACCENT_NAMES)]):
-            if t['accents'] >> i & 1 and not s['sel']:
+            if t['accents'] >> i & 1 and not s['sel'] and not s['light'].get('sel'):
                 top = ACCENT_TONES[i][0]
                 s['sel'] = tuple((p, int(h[1:], 16)) for p, h in derive_gloss(ACCENT_TONES[i]))
                 # the light rims are the light half's; on black the dark half's band starts on its first stop, its
@@ -931,7 +931,7 @@ def validate(t, name):
         if g.bar_px and t['font_px[ROLE_BAR]'] != g.bar_px:
             err(f"bar.title.font_size {t['font_px[ROLE_BAR]']} is not set {n}'s bar_px {g.bar_px}")
         # the times beside the bar (navigation.c np_beside) are drawn with the iPod bar and its speakers (tools/art.py)
-        if bool(g.np_ipod) != bool(t['np_track']):
+        if bool(g.np_ipod) != bool(t['np_track'] or t['light'].get('np_track')):
             err(f"set {n}'s np_ipod needs playing.scrubber.stops, and they it")
     for o in t['opts']:
         if o.get('setting') != 'SETTING_ACCENT' and not o.get('key') and o['def'] >= 0 and not o.get('values'):

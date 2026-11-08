@@ -817,7 +817,7 @@ def images(t):
         out[f'{prefix}_bolt'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(stroke(shape, 1.6), lambda x, y: (0xffffff, t['bolt_halo_a'] / 255)),
                                                                        (shape, lambda x, y: (t['bolt'], 1))]))
         out[f'{prefix}_plug'] = png(*BOLT_BOX[2:], compose(BOLT_BOX, [(path(PLUG), lambda x, y: (t['bolt'], 1))]))
-    if t['np_track']:  # the iPod's bar on Now Playing: its volume's ends
+    if t['np_track'] or t['light'].get('np_track'):  # the iPod's bar on Now Playing: its volume's ends
         white = lambda x, y: (0xffffff, 1)
         waves = stroke([p for d in WAVES for p in path(d)], 1.5, closed=False)
         out[f'{prefix}_vol_lo'] = png(*SPEAKER_BOX[2:], compose(SPEAKER_BOX, [(path(SPEAKER), white)]))
