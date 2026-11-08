@@ -15939,13 +15939,16 @@ m.row(0); assert not m.threads; m.poll(); assert not m.systems; m.close(); passe
 m=SlskMachine(); m.open(); assert m.systems==['/bin/sh /mnt/mmc/.soulseek/run'] and m.labels()==['Loading…']
 m.worker(); assert m.labels()==['Starting Soulseek…']; m.advance(500)
 m.answer('ok','refresh','',SMENU); assert m.requests[-1]==('menu',) and m.labels()==SLABELS; passed()
-# A live level is asked again every 2 s while on top; the same rows aren't rebuilt, changed ones are,
-# their selected row kept.
+# A live level is asked again every 2 s while on top; the same rows aren't rebuilt, and changed texts in the
+# same rows are written in place (relabel), their selected row kept.
 rows=m.rows(); m.nodes[m.find('scroll_view')]['_ringnav_index']=2; m.advance(2000); m.worker()
 assert len(m.requests)==2 and m.requests[-1]==("menu",) and m.rows()==rows
 changed=[*SMENU[:2],('list','downloads','Downloads','1 downloading','',''),*SMENU[3:]]
 m.advance(2000); m.answer('ok','refresh','',changed)
-assert m.rows()!=rows and m.labels()[6]=='1 downloading' and m.nodes[m.find('scroll_view')]['_ringnav_index']==2,(m.labels(),m.nodes[m.find('scroll_view')].get('_ringnav_index')); passed()
+assert m.rows()==rows and m.labels()[6]=='1 downloading' and m.nodes[m.find('scroll_view')]['_ringnav_index']==2,(m.labels(),m.nodes[m.find('scroll_view')].get('_ringnav_index'))
+# A row losing its detail changes the rows: rebuilt.
+gone=[*SMENU[:2],('list','downloads','Downloads','','',''),*SMENU[3:]]; m.advance(2000); m.answer('ok','refresh','',gone)
+assert m.rows()!=rows and 'None yet' not in m.labels() and '1 downloading' not in m.labels(),m.labels(); passed()
 # A list row opens its level; Back asks for the menu again, the row kept.
 m.pick(2); m.answer('ok','refresh','',[('info','','No downloads yet','Search, then press a file','','')])
 assert m.requests[-1]==('downloads',) and m.labels()==['Downloads','No downloads yet','Search, then press a file']; asked=len(m.threads); m.row(0); assert len(m.threads)==asked

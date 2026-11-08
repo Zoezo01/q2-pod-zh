@@ -936,9 +936,10 @@ static int req_done(void) {
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
  * held Play/Pause does nothing.
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
- * and redrawn only when it changed, its selected row kept. One whose message is "pages" and that
- * has a cursor is followed by its next pages (page_next), appended to its list (append) under a
- * Loading… row; any other keeps More…. */
+ * and redrawn only when it changed, its selected row kept; one with the same rows (same_rows) is
+ * written in place (relabel) instead of rebuilt. One whose message is "pages" and that has a cursor
+ * is followed by its next pages (page_next), appended to its list (append) under a Loading… row;
+ * any other keeps More…. */
 enum { K_LOAD, K_READY, K_ERROR, K_WAIT }; /* K_WAIT: no socket yet, the app starting */
 enum { G_ROW, G_SHOW, G_SEARCH };
 
@@ -1018,10 +1019,15 @@ static int progress_h(void) {
     return theme()->painter[PAINT_SCRUB] == SCRUB_ROWS ? PROGRESS_GLOSS : PROGRESS_H;
 }
 
+/* A progress row's bar's permille, clamped to 0 to 1000 for addon_paint. */
+static void set_pml(void *bar, long permille) {
+    widget_set_prop_int(bar, "_pml", permille < 0 ? 0 : permille > 1000 ? 1000 : (int)permille);
+}
+
 /* A progress row: page_row_detail's item re-dressed, its title and subtitle in the caption's box
  * (the theme's: an empty detail has moved the label), left and right on one line, over a bar
  * centred in the detail's, which addon_paint fills from the left: its _pml prop, permille, clamped
- * to 0 to 1000 here; strtol saturates what overflows, which atoi leaves undefined. */
+ * to 0 to 1000 (set_pml); strtol saturates what overflows, which atoi leaves undefined. */
 static void progress_row(void *item, long permille) {
     const theme_t *T = theme();
     void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
@@ -1037,7 +1043,7 @@ static void progress_row(void *item, long permille) {
     int bh = progress_h();
     void *bar = widget_factory_create_widget(widget_factory(), "view", item, dx, dy + (dh - bh) / 2,
                                              dw, bh);
-    widget_set_prop_int(bar, "_pml", permille < 0 ? 0 : permille > 1000 ? 1000 : (int)permille);
+    set_pml(bar, permille);
 }
 
 /* The shown reply let go, and any page it waits for. */
@@ -1096,6 +1102,43 @@ static void append(lv_t *l, int from) {
     for (int i = from; i < n; ++i) row(l, i);
     widget_set_prop_int(pg.view, "virtual_h", n * page_h(64));
     ringnav_select(pg.view, cur, n);
+}
+
+/* A live level's new reply g (n rows) has the shown list's rows: as many, on one page, each of the
+ * same kind, uri and context (so a press queued on one still does what it did) and with a detail
+ * where it had one, and More… shown or not as before. */
+static int same_rows(const lv_t *l, char **g, int n) {
+    if (!pg.view || n != l->n || pg.pages != 1 || (g[3][0] != 0) != (pg.f[3][0] != 0)) return 0;
+    for (int i = 0; i < n; ++i) {
+        char **r = g + 4 + 6 * i;
+        if (strcmp(r[0], cell(i, 0)) || strcmp(r[1], cell(i, 1)) || strcmp(r[4], cell(i, 4)) ||
+            !r[3][0] != !cell(i, 3)[0])
+            return 0;
+    }
+    return 1;
+}
+
+/* The shown rows' texts and progress bars written from the level's reply in place: a refresh that
+ * only moves a percentage leaves the other rows, the selection and a long title's marquee as they
+ * are, where a rebuild would start them over. A row's labels are its title then its detail; one is
+ * set only when its text changed, read as UTF-8 (its "text" prop is a wide string, which
+ * widget_get_prop_str doesn't return). */
+static void relabel(const lv_t *l) {
+    for (int i = 0; i < l->n; ++i) {
+        void *item = widget_get_child(pg.view, (unsigned)i);
+        for (unsigned c = 0, k = 2, m = widget_count_children(item); c < m; ++c) {
+            void *w = widget_get_child(item, c);
+            if (!tk_strcmp(widget_get_type(w), "hscroll_label") && k <= 3) {
+                if (text_differs(w, cell(i, k))) widget_set_text_utf8(w, cell(i, k));
+                ++k;
+            } else if (widget_get_prop_int(w, "_pml", -1) >= 0) {
+                /* a progress row's bar. shortcut: test/patch.py's harness can't drive a live
+                 * progress row, so this is tried on a Q2 only */
+                set_pml(w, strtol(cell(i, 5), 0, 10));
+                widget_invalidate_force(w, 0);
+            }
+        }
+    }
 }
 
 /* The top level: its rows, or what it waits for. */
@@ -1232,6 +1275,7 @@ static void got(void) {
         l->live = !strcmp(f[2], "refresh");
         pg.again = now + ADDON_LIVE_MS;
         if (l->state != K_READY || hash != l->hash) {
+            int same = l->state == K_READY && l->live && same_rows(l, g, n);
             keep_sel();
             drop();
             pg.buf[0] = reply, pg.pages = 1, reply = 0;
@@ -1241,7 +1285,10 @@ static void got(void) {
             l->state = K_READY;
             /* an app opts in; older ones' lists keep More… */
             if (!strcmp(f[2], "pages") && f[3][0]) page_next(l);
-            show();
+            if (same)
+                relabel(l); /* only texts and bars moved: the rows stay */
+            else
+                show();
         }
         if (pg.code) /* turned on by its row: its address at once, the menu behind it */
             pg.code = 0, qr_open(app()->state, app()->name);
