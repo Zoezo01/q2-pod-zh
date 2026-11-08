@@ -22,7 +22,7 @@ SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BUSY = ra
 NU_IDLE, NU_RUNNING, NU_DONE, NU_LATEST, NU_NET, NU_MISSING, NU_CARD, NU_CANCELLED = range(8)
 JOB_CHECK, JOB_INSTALL, JOB_REMOVE, JOB_ERASE = 1, 2, 3, 4
 ST_INSTALL, ST_UPDATE, ST_INSTALLED = range(3)
-ROW_NONE = SH_MAX
+ROW_CHECK = SH_MAX
 STAGING = '/mnt/mmc/.q2/staging'
 JSON_PATH = b'/tmp/q2-shelf.json'
 SHELF = pathlib.Path(__file__).resolve().parents[1]/'shelf'
@@ -35,8 +35,8 @@ class App(C.Structure):
 
 class Sh(C.Structure):
     _fields_ = [('thread', C.c_ulong), *((n, C.c_int) for n in ('running', 'cancel', 'percent', 'stage', 'result', 'job', 'app', 'armed', 'rows', 'n')),
-                ('map', C.c_int * SH_MAX), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
-                ('page', C.c_void_p), ('row', C.c_void_p * SH_MAX)]
+                ('map', C.c_int * (SH_MAX + 1)), ('manual', C.c_int), ('need', C.c_uint), ('checked', C.c_ulonglong), ('next', App * SH_MAX),
+                ('page', C.c_void_p), ('row', C.c_void_p * (SH_MAX + 1))]
 
 
 class Nu(C.Structure):
@@ -955,15 +955,17 @@ def test_file_mode_is_its_type_bits(fw):
 
 
 class Page:
-    """The Apps page: its rows' text and toasts, with no thread run."""
+    """The Apps page: its rows' text and toasts, with no thread run. Row 0 is Check for Updates."""
     def __init__(self, fw, *lines):
         self.fw, self.text, self.toasts = fw, {}, []
         self.table = apps(fw, *lines)
         self.card = Card(fw)
         self.sh = fw.var('netupdate__sh', Sh)
-        self.wifi = 1
+        self.wifi, self.top, self.now = 1, 77, 3600
         fw.mock('get_wifisignal', lambda *_: self.wifi)
         fw.mock('window_create', lambda *_: 77)
+        fw.mock('window_manager_get_top_window', lambda *_: self.top)
+        fw.mock('fw_clock_gettime', lambda which, ts, *_: C.cast(ts, C.POINTER(C.c_long)).__setitem__(0, self.now))
         fw.mock('widget_get_child', lambda row, i, *_: row)
         fw.mock('list_item_create', lambda view, x, y, *_: 1000 + y)
         fw.mock('widget_set_text_utf8', lambda w, s, *_: self.text.__setitem__(w, C.string_at(s).decode()))
@@ -974,19 +976,29 @@ class Page:
     def label(self, r):
         return self.text[self.sh.row[r]]
 
-    def click(self, r=0):
+    def click(self, r=1):
         self.fw.fn('netupdate__sh_click', C.c_int, C.c_void_p, C.c_void_p)(r, None)
 
+    def checked(self, *latest, manual=0, result=SH_OK):
+        """A check that found these latest tags, one an app, ended: sh_wait's toasts."""
+        self.sh.next = self.table
+        for i, tag in enumerate(latest):
+            self.sh.next[i].latest = tag
+        self.sh.n, self.sh.job, self.sh.manual, self.sh.result = self.fw.var('shelf_n', C.c_int).value, JOB_CHECK, manual, result
+        self.fw.fn('netupdate__sh_wait', C.c_int, C.c_void_p)(None)
+        return self.toasts
 
-def test_rows_say_install(fw):
+
+def test_rows_say_install_under_check_for_updates(fw):
     p = Page(fw, b'me/foo', b'me/bar')
-    assert p.sh.rows == 2 and p.label(0) == 'Install' and p.label(1) == 'Install'
+    assert p.sh.rows == 3 and p.sh.map[0] == ROW_CHECK and p.label(0) == ''
+    assert p.label(1) == 'Install' and p.label(2) == 'Install'
 
 
 def test_a_press_installs_at_once(fw):
     p = Page(fw, b'me/foo')
     p.click()
-    assert p.sh.job == JOB_INSTALL and p.sh.app == 0 and p.sh.running == 1 and p.label(0) == 'Checking…'
+    assert p.sh.job == JOB_INSTALL and p.sh.app == 0 and p.sh.running == 1 and p.label(1) == 'Checking…'
 
 
 def test_a_press_without_wifi_says_so(fw):
@@ -999,7 +1011,7 @@ def test_a_press_without_wifi_says_so(fw):
 def test_rockbox_asks_twice_as_it_becomes_the_default(fw):
     p = Page(fw, b'x/q2-rockbox')
     p.click()
-    assert p.sh.job == 0 and p.label(0).endswith('Press again to install')
+    assert p.sh.job == 0 and p.label(1).endswith('Press again to install')
     p.click()
     assert p.sh.job == JOB_INSTALL
 
@@ -1008,20 +1020,20 @@ def test_an_installed_app_is_removed_on_a_second_press(fw):
     p = Page(fw, b'me/foo')
     p.card.files[b'/mnt/mmc/.q2/apps/foo.tag'] = b'1.0'
     p.click()
-    assert p.sh.armed == 1 and p.label(0) == 'Press again to remove'
+    assert p.sh.armed == 2 and p.label(1) == 'Press again to remove'
     p.click()
     assert p.sh.job == JOB_REMOVE and p.sh.stage == 4
 
 
 def test_a_press_on_the_running_install_cancels_it_until_it_moves(fw):
     p = Page(fw, b'me/foo', b'me/bar')
-    p.click(0)
     p.click(1)
+    p.click(2)
     assert p.toasts == ['Wait for the one in progress'] and p.sh.cancel == 0
-    p.click(0)
-    assert p.sh.cancel == 1 and p.label(0) == 'Cancelling…'
+    p.click(1)
+    assert p.sh.cancel == 1 and p.label(1) == 'Cancelling…'
     p.sh.cancel, p.sh.stage = 0, 3
-    p.click(0)
+    p.click(1)
     assert p.sh.cancel == 0
 
 
@@ -1030,28 +1042,108 @@ def test_download_progress_on_the_row(fw):
     p.click()
     p.sh.stage, p.sh.percent = 1, 42
     fw.fn('netupdate__sh_refresh', None)()
-    assert p.label(0) == 'Downloading 42%'
+    assert p.label(1) == 'Downloading 42%'
 
 
-def test_no_list_shows_one_row_to_load_it(fw):
+def test_with_no_list_check_for_updates_loads_it(fw):
     p = Page(fw)
-    assert p.sh.rows == 1 and p.sh.map[0] == ROW_NONE and p.label(0) == 'Connect to Wi-Fi to load the list'
-    p.click()
-    assert p.sh.job == JOB_CHECK and p.sh.app == 0
+    assert p.sh.rows == 1 and p.sh.map[0] == ROW_CHECK and p.label(0) == 'Connect to Wi-Fi to load the list'
+    p.click(0)
+    assert p.sh.job == JOB_CHECK and p.sh.app == 0 and p.sh.manual == 1 and p.label(0) == 'Checking…'
+
+
+def test_check_for_updates_checks_inside_the_ten_minutes(fw):
+    p = Page(fw, b'me/foo')
+    p.sh.checked = (p.now - 120) * 1000
+    p.click(0)
+    assert p.sh.job == JOB_CHECK and p.sh.manual == 1 and not p.toasts
+
+
+def test_check_for_updates_within_a_minute_says_the_last_count_again(fw):
+    p = Page(fw, b'me/foo')
+    p.card.files[b'/mnt/mmc/.q2/apps/foo.tag'] = b'1.0'
+    p.table[0].latest = b'2.0'
+    p.sh.checked = (p.now - 30) * 1000
+    p.click(0)
+    assert p.sh.job == 0 and p.toasts == ['1 app can be updated']
+    p.table[0].latest = b'1.0'
+    p.click(0)
+    assert p.sh.job == 0 and p.toasts[-1] == 'All apps are up to date'
+
+
+def test_check_for_updates_while_checking_or_busy(fw):
+    p = Page(fw, b'me/foo')
+    p.sh.job = JOB_CHECK
+    p.click(0)
+    assert p.sh.cancel == 0 and p.sh.manual == 1 and not p.toasts  # checking already: its end answers
+    p.sh.job = JOB_INSTALL
+    p.click(0)
+    assert p.toasts == ['Wait for the one in progress']
+    p.sh.job, p.wifi = 0, 0
+    p.click(0)
+    assert p.sh.job == 0 and p.toasts[-1] == 'Connect to Wi-Fi first'
+
+
+def test_a_check_says_how_many_apps_have_a_newer_release(fw):
+    p = Page(fw, b'me/a', b'me/b', b'me/c', b'me/d')
+    for app in b'abc':
+        p.card.files[b'/mnt/mmc/.q2/apps/%c.tag' % app] = b'1.0'
+    p.card.files[b'/mnt/mmc/.d/q2-d'] = b''  # a manual install: Update, not counted
+    assert p.checked(b'2.0', b'2.0', b'2.0') == ['3 apps can be updated']
+    assert p.label(4) == 'Update'
+    p.toasts.clear()
+    assert p.checked(b'2.0', b'1.0', b'1.0') == ['1 app can be updated']
+
+
+def test_none_to_update_is_said_only_after_check_for_updates(fw):
+    p = Page(fw, b'me/foo')
+    assert p.checked() == []
+    assert p.checked(manual=1) == ['All apps are up to date']
+
+
+def test_a_failed_check_is_said_only_after_check_for_updates(fw):
+    p = Page(fw, b'me/foo')
+    assert p.checked(result=SH_BUSY) == []
+    assert p.checked(result=SH_BUSY, manual=1) == ['GitHub is busy, try later']
+    p.toasts.clear()
+    assert p.checked(result=SH_NET, manual=1) == ["Can't reach GitHub"]
+    p.card.files[b'/mnt/mmc/.q2/apps/foo.tag'] = b'1.0'
+    p.toasts.clear()
+    assert p.checked(b'2.0', result=SH_BUSY, manual=1) == ['1 app can be updated']  # what it found first
+
+
+def test_no_toast_when_the_page_is_left_covered_or_the_check_stopped(fw):
+    p = Page(fw, b'me/foo')
+    p.top = 99
+    assert p.checked(manual=1) == []
+    p.top, p.sh.cancel = 77, 1
+    assert p.checked(manual=1) == []
+    p.sh.cancel = 0
+    p.fw.fn('netupdate__sh_closed', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    assert p.checked(manual=1) == []
+
+
+def test_the_next_check_isnt_check_for_updates_unless_pressed_again(fw):
+    p = Page(fw, b'me/foo')
+    p.click(0)
+    p.sh.running = 0
+    assert p.checked(manual=p.sh.manual) == ['All apps are up to date']
+    p.fw.fn('netupdate__sh_start', None, C.c_int, C.c_int)(JOB_CHECK, 0)  # the opening check
+    assert p.sh.manual == 0
 
 
 def test_rockbox_themes_show_only_with_rockbox(fw):
     p = Page(fw, b'x/q2-rockbox', b'x/q2-rockbox-themes')
-    assert p.sh.rows == 1
+    assert p.sh.rows == 2
     p.card.files[b'/mnt/mmc/.rockbox/rockbox'] = b''
     fw.fn('netupdate__sh_rows', None)()
-    assert p.sh.rows == 2
+    assert p.sh.rows == 3
 
 
 def test_a_press_while_checking_stops_the_check(fw):
     p = Page(fw, b'me/foo')
     p.sh.job = JOB_CHECK
-    p.click()
+    p.click(1)
     assert p.sh.cancel == 1 and p.toasts == ['Stopped checking for updates']
 
 
@@ -1098,6 +1190,26 @@ def fw_fopen_list(card):
             card.written[name] = b''
         return f
     return fopen
+
+
+def test_a_check_keeps_why_a_release_failed_but_not_a_missing_one(fw):
+    card = Card(fw)
+    apps(fw, b'me/foo', b'me/bar')
+    sh = fw.var('netupdate__sh', Sh)
+    net = Net(fw, {b'https://raw': (7, 0, None), b'https://api.github.com/repos/me/foo': (0, 404, None),
+                   b'https://api': (0, 403, None)})
+    assert check(fw) == 0 and sh.result == SH_BUSY
+    sh.result = SH_OK
+    net.replies = {b'https://raw': (7, 0, None), b'https://api': (0, 404, None)}
+    assert check(fw) == 1 and sh.result == SH_OK  # no release yet: checked, the minute's gap holds
+
+
+def test_no_list_anywhere_is_a_failed_check(fw):
+    Card(fw)
+    fw.var('shelf_n', C.c_int).value = 0
+    sh = fw.var('netupdate__sh', Sh)
+    Net(fw, {b'https://raw': (7, 0, None)})
+    assert check(fw) == 0 and sh.result == SH_NET and sh.n == 0
 
 
 def test_a_bad_list_never_replaces_the_one_there(fw):
