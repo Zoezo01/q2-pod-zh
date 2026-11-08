@@ -1141,8 +1141,11 @@ static void art_forget(void) {
 }
 
 /* The shown reply let go, and any page it waits for; its covers leave the image manager while
- * pg.f still names their rows, whether or not the files are still there. */
+ * pg.f still names their rows, whether or not the files are still there. The rows painted since
+ * the last tick count too. */
+static void art_window(void);
 static void drop(void) {
+    art_window();
     art_forget();
     while (pg.pages) free(pg.buf[--pg.pages]);
     pg.paging = 0;
@@ -1233,8 +1236,10 @@ static void row(lv_t *l, int i) {
 static void art_window(void) {
     const lv_t *l = top();
     if (!pg.view || !l->art || l->state != K_READY) return;
-    int rh = row_h(l), y = widget_get_prop_int(pg.view, "yoffset", 0), first = y / rh;
-    int last = (y + I(pg.view, W_H) + rh - 1) / rh; /* past the last row in view */
+    int rh = row_h(l), y = widget_get_prop_int(pg.view, "yoffset", 0);
+    if (y < 0) y = 0; /* a drag past the top: stock's rubber band reads to minus the view's height */
+    /* a row either side of the view, which stock paints when it's within 4 px of the edge */
+    int first = y / rh ? y / rh - 1 : 0, last = (y + I(pg.view, W_H) + rh - 1) / rh + 1;
     if (last > l->n) last = l->n;
     if (first > last) first = last;
     int lo = (first + last - ART_KEEP) / 2;

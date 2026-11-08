@@ -1129,15 +1129,15 @@ def test_scrolling_past_the_window_unloads_the_rows_left_behind(fw):
     """addon.c art_window: at most ART_KEEP rows' covers stay decoded around the yoffset; those left behind go,
     those within stay, and a row scrolled back keeps its image's name, to decode again when it paints."""
     p, names, url = scrolled(fw, 50)
-    assert (p.pg.art_lo, p.pg.art_hi) == (0, 5)  # the rows in view, from the draw
+    assert (p.pg.art_lo, p.pg.art_hi) == (0, 6)  # the rows in view and the one past, from the draw
     set_images = len(fw.calls('image_base_set_image'))
     p.y = 30 * 78
     p.tick()
-    assert (p.pg.art_lo, p.pg.art_hi) == (20, 35) and names == [url(k) for k in range(20)]
+    assert (p.pg.art_lo, p.pg.art_hi) == (20, 36) and names == [url(k) for k in range(20)]
     del names[:]
     p.y = 0  # back: rows 24.. of the old range leave, 20 to 23 stay
     p.tick()
-    assert (p.pg.art_lo, p.pg.art_hi) == (0, 24) and names == [url(k) for k in range(24, 35)]
+    assert (p.pg.art_lo, p.pg.art_hi) == (0, 24) and names == [url(k) for k in range(24, 36)]
     assert len(fw.calls('image_base_set_image')) == set_images  # the rows keep their names, nothing rebuilt
 
 
@@ -1146,7 +1146,24 @@ def test_a_fling_past_the_window_leaves_nothing_decoded_behind(fw):
     p, names, url = scrolled(fw, 50)
     p.y = 44 * 78  # 44 rows on, past the old range (0, 5) and past the window it left
     p.tick()
-    assert (p.pg.art_lo, p.pg.art_hi) == (26, 49) and names == [url(k) for k in range(26)]
+    assert (p.pg.art_lo, p.pg.art_hi) == (26, 50) and names == [url(k) for k in range(26)]
+
+
+def test_a_drag_past_the_top_names_no_row_before_the_first(fw):
+    """addon.c art_window: stock's rubber band reads a negative yoffset; art_url of row -1 would read before pg.f."""
+    p, names, url = scrolled(fw, 50)
+    for y in (-100, -390, -1000):
+        p.y = y
+        p.tick()
+        assert (p.pg.art_lo, p.pg.art_hi) == (0, 6) and names == []
+
+
+def test_leaving_within_a_tick_counts_the_rows_painted_since(fw):
+    """addon.c drop: a list left before the next tick lets go of the rows a scroll painted since the last one."""
+    p, names, url = scrolled(fw, 50)
+    p.y = 30 * 78  # no tick before the close
+    fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.pg.page, None)
+    assert sorted(names) == sorted(url(k) for k in range(36)) and (p.pg.art_lo, p.pg.art_hi) == (0, 0)
 
 
 def test_drop_unloads_only_the_range(fw):
@@ -1158,7 +1175,7 @@ def test_drop_unloads_only_the_range(fw):
     p.top.art = 0
     del p.world.files[art_path(b'op0', b'')]
     fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.pg.page, None)
-    assert names == [url(k) for k in range(20, 35)] and (p.pg.art_lo, p.pg.art_hi) == (0, 0)
+    assert names == [url(k) for k in range(20, 36)] and (p.pg.art_lo, p.pg.art_hi) == (0, 0)
 
 
 def test_a_list_under_the_window_never_unloads(fw):

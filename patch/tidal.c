@@ -452,7 +452,7 @@ static int app_track(void *r, const char *id) {
     if (path && *path) { /* mclStartPlayer plays it after this */
         tidal_playurl(1);
         /* it writes its own play command after this returns, with no mclStop: a stream still
-         * inside stock's start (up to 100 ms asleep before it writes, 0x5ad000) must land first */
+         * inside stock's start (100 or 150 ms asleep before it writes, 0x5ad1d4) must land first */
         pthread_mutex_lock(au.start);
         pthread_mutex_unlock(au.start);
         return 1;
