@@ -5644,14 +5644,15 @@ static void np_full(int on) {
     if (!st.np_slide || !on == !st.np_full) return; /* without stock's slide_view: no column */
     void *col = P(st.np_slide, W_PARENT), *dots = widget_lookup(col, "slide_indicator1", 1),
          *view = P(st.np_lrc, W_PARENT);
-    int *was = st.np_was, ipod = np_layout() != NP_CENTRED && dots && view;
+    /* off, the layout it started in: Centred's setting changes only the next Now Playing's */
+    int *was = st.np_was, ipod = on ? np_layout() != NP_CENTRED && dots && view : st.np_full == 2;
     if (on) {
         int now[] = { I(col, W_X), I(col, W_Y),          I(col, W_W),
                       I(col, W_H), widget_index_of(col), I(st.np_slide, W_H) };
         memcpy(was, now, sizeof now);
         if (ipod) was[6] = I(view, W_Y), was[7] = I(view, W_H), was[8] = I(dots, W_Y);
     }
-    st.np_full = on;
+    st.np_full = on ? 1 + ipod : 0;
     widget_restack(col, on ? widget_count_children(st.np_win) : was[4]);
     widget_set_prop_str(col, "style:normal:bg_color", on ? "#000000" : "#00000000");
     int h = I(st.np_win, W_H), foot = on ? h - NP_FULL_FOOT : was[8];
@@ -5681,6 +5682,7 @@ static void lyric_poll(void) {
         st.lyric_song = song;
         lyric_top(lrc);
     }
+    if (st.lyric_held == 2 && mclGetPlayStatus() == 2) st.lyric_held = 0; /* lyric_seek's, played */
     int page = lrc && st.np_slide && widget_get_prop_int(st.np_slide, "value", 0) == 1;
     if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
     int touch = lrc && window_manager_get_top_window(wm) == st.np_win && pointer_down();
@@ -5763,7 +5765,7 @@ static void lyric_poll(void) {
         st.lyric_glide = 0;
     else if (st.lyric_glide)
         lyric_step(lrc);
-    if (lyrics_on(lrc)) lyrics_aim(lrc, st.lyric_held ? lyric_aim(lrc) : -1);
+    if (shown) lyrics_aim(lrc, st.lyric_held ? lyric_aim(lrc) : -1); /* a scan of the rows */
 }
 
 /* A tick on the lyrics page while the track has lyrics, which comes only before lyric_poll takes
@@ -5838,32 +5840,35 @@ static void scrub_start(void) {
     rearm(&st.scrub_timer, scrub_expire, SCRUB_MS);
 }
 
-/* The song plays from synced line i of the lyrics page, a scrub to its start committed at once
- * (scrub_end: paused, it waits for Play), and the lyrics follow again; 0 for an unsynced line, none
- * or no bar. ponytail: the player seeks whole seconds, so it lands up to 999 ms before the line,
- * and the follow may go back a line that started in that second; a millisecond seek would need
- * hciplayer's own. */
-static int lyric_seek(int i) {
-    int ms = st.np_slider ? lyrics_start(st.np_lrc, i) : -1;
-    if (ms < 0) return 0;
+/* The song plays from ms, a synced line's start (lyrics_start) on the lyrics page, a scrub to it
+ * committed at once (scrub_end), and the lyrics follow again; paused, the seek waits for Play, and
+ * so does the follow (lyric_held 2, lyric_poll), so they stay on the line chosen. 0 for an unsynced
+ * line (-1), no bar or a line past the song's end. ponytail: the player seeks whole seconds, so it
+ * lands up to 999 ms before the line, and the follow may go back a line that started in that
+ * second; a millisecond seek would need hciplayer's own. */
+static int lyric_seek(int ms) {
+    int max = st.np_slider ? widget_get_prop_int(st.np_slider, "max", 0) : 0;
+    if (ms < 0 || !st.np_slider || (max > 0 && ms / 1000 > max)) return 0;
     scrub_start();
     st.scrub_to = ms / 1000, st.scrub_moved = 1;
     widget_set_prop_int(st.np_slider, "value", st.scrub_to);
     clock_text(st.np_elapsed, 0, st.scrub_to);
     np_sync(st.np_win);
     scrub_end();
-    st.lyric_held = st.lyric_spun = 0;
+    st.lyric_held = mclGetPlayStatus() == 2 ? 0 : 2, st.lyric_spun = 0;
     return 1;
 }
 
 /* Play/Pause held on the lyrics page in front: the song plays from the line in the middle
- * (lyric_aim) once the wheel or a finger holds them, else the playing line (line 0 before the
- * first), so a hold without scrolling starts it again. */
+ * (lyric_aim) once the wheel or a finger holds them, else the playing line, so a hold without
+ * scrolling starts it again; before the first line, the song's start, once its lyrics are synced.
+ */
 static int lyric_seek_hold(void) {
     void *lrc = st.np_lrc;
     if (!lyrics_shown() || !lyrics_on(lrc)) return 0;
     int line = st.lyric_held ? lyric_aim(lrc) : lyrics_line(lrc, lyrics_now(), 1);
-    return lyric_seek(line > 0 ? line : 0);
+    if (line < 0 && !st.lyric_held) return lyric_seek(lyrics_start(lrc, 0) >= 0 ? 0 : -1);
+    return lyric_seek(lyrics_start(lrc, line));
 }
 
 /* Single Press Scrub (IPOD SCRUBSINGLE)'s single press, DOUBLE_CLICK_MS on: scrub starts. */
@@ -6032,7 +6037,7 @@ static int np_line_hold(const void *info) {
     for (int i = widget_count_children(lrc); i-- > 0;) {
         void *row = widget_get_child(lrc, i);
         if (xy[1] >= I(row, W_Y) && xy[1] < I(row, W_Y) + I(row, W_H)) {
-            lyric_seek(i);
+            lyric_seek(lyrics_start(lrc, i));
             break;
         }
     }
@@ -6070,6 +6075,9 @@ static int np_lyric_touch(void *ctx, void *event) {
 int ringnav_playing(void *win, void *ctx) {
     if (st.np_full)
         np_full(0); /* another Now Playing: the last one's lyrics back in their column */
+    /* and their place: np_gone leaves a page this one replaces alone */
+    st.lyric_held = 0;
+    stop_timer(&st.np_line_timer);
     int result = stock_playing_trampoline(win, ctx);
     if (!win) return result;
     rate_bind(win);

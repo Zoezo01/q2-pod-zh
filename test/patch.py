@@ -7979,6 +7979,9 @@ m.nodes[m.slide]['value']=1; loop(m); assert raw(m)==1 and follow(m,90)==40 and 
 # Now Playing gone and opened again, the hold is gone: the follow moves them.
 f,ctx=m.handler(m.win,O['EVT_DESTROY']); step(m,address=f,args=(ctx,m.event,0,0),gap=0)
 scrub_page(m=m); m.nodes[m.win]['children'].append(m.slide); loop(m); follow(m,90); assert settle(m)[-1]==90; passed()
+# Another Now Playing opened before this one goes (np_gone leaves a page it replaces alone): the hold is gone too.
+m=lyric_page(); loop(m); loop(m,-56); settle(m); assert follow(m,0)==40
+scrub_page(m=m); m.nodes[m.win]['children'].append(m.slide); loop(m); follow(m,90); assert settle(m)[-1]==90; passed()
 # Another song starts at the top, on the page or off it, the hold gone: its follow glides to its line.
 for off in (0,1):
     m=lyric_page(); loop(m); loop(m,-56); settle(m); assert follow(m,0)==40
@@ -8306,9 +8309,17 @@ assert not song_menu(m) and settle(m)[-1]==0 and tone(m,1)=={REST&0xffffff}  # t
 m.playtime=12; assert settle(m)[-1]==156; passed()
 # Following, a hold restarts the playing line.
 assert long_play(m)==(True,0,[('player_seek_time',12)]); passed()
-# Paused, the seek waits for Play (mclSetSeek, no resume).
+# Paused, the seek waits for Play (mclSetSeek, no resume), and so do the lyrics: they stay on that line, aimed,
+# until it plays, then follow.
 m=seek_page(status=3); loop(m,-28); loop(m,-28); m.word(payload_syms['wheel_held'],0); settle(m); m.calls=[]
-assert long_play(m)==(True,0,[('mclSetSeek',9)]) and not song_menu(m); passed()
+assert long_play(m)==(True,0,[('mclSetSeek',9)]) and not song_menu(m)
+assert settle(m)[-1]==78 and tone(m,1)=={DIM&0xffffff}
+m.word(PLAY_STATUS,2); m.playtime=12; assert settle(m)[-1]==156 and tone(m,1)=={REST&0xffffff}; passed()
+# Before the first line (5 s), a hold starts the song again; past the song's end (the bar's max), no line plays:
+# the song menu opens.
+m=seek_page(); m.playtime=2; settle(m); assert long_play(m)==(True,0,[('player_seek_time',0)]); passed()
+m=seek_page(); m.nodes[m.slider]['max']=10; m.playtime=12; settle(m)
+assert long_play(m)==(True,0,[]) and song_menu(m); passed()
 # Unsynced lyrics, or the art page, keep the song menu.
 m=seek_page(tag='plain\nwords\n'); assert long_play(m)==(True,0,[]) and song_menu(m); passed()
 m=seek_page(); m.nodes[m.slide]['value']=0; loop(m); assert long_play(m)==(True,0,[]) and song_menu(m); passed()
@@ -8429,6 +8440,12 @@ for end in ('tap','return'):
     if end=='tap': m.tap()
     else: assert m.call(O['KEY_RETURN'],gap=50)==11
     assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%','10'),('0','0','100%','178')),where(m,view); passed()
+# Centred Now Playing switched on meanwhile (from a window over the page) changes only the next Now Playing:
+# they leave full screen as the iPod layout they came in.
+NPC=m.get(payload_syms['setting_values']+4*re.findall(r'&st\.(\w+)',re.search(r'setting_values\[\] = \{([^}]*)\}',
+          (pathlib.Path(__file__).parent.parent/'patch/navigation.c').read_text()).group(1)).index('np_centred'))
+m,view=ipod_full(); m.tap(); m.word(NPC,1); m.tap(); m.word(NPC,0)
+assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%','10'),('0','0','100%','178')),where(m,view); passed()
 # Touch and hold a synced line RATE_HOLD_MS: the song plays from it (the line under the finger, 12 s, not the
 # middle one), and the lift toggles nothing; a drag past TAP_PX, a swipe (the slide_view's abort) or a lift
 # before then seeks nothing; an unsynced line does nothing. The rows (offset 97, the window at y 30): "Three"
