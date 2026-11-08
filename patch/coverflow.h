@@ -98,8 +98,4 @@ int lettered(void *w);
 int stride_of(void *s);
 void titles(unsigned c);
 
-/* navigation.c */
-int carousel_glide(void *w, int goal, unsigned ms, int easing);
-void coverflow_letter(void *w, unsigned letter, unsigned now);
-
 #endif

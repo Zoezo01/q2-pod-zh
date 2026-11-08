@@ -2,10 +2,6 @@
  * lists, and the card's copy of the ratings. */
 #include "navigation.h"
 
-extern unsigned album_id(void *r);
-extern unsigned album_dir(const char *, int);
-extern volatile unsigned library_gen;
-
 /* Ratings (docs/internals.md#ratings): 0 to 5 hearts a song. 5 is stock's My Fav, so Now Playing's
  * heart, the queue menu's Favourites rows and Loved stay one; 1 to 4 are kept here by listen_key,
  * its low three bits holding the hearts, read once into a table calloc'd on first use. */

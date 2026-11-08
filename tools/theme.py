@@ -1135,7 +1135,7 @@ def emit(themes, out, redirects={}):
         lines += [f'    {{ .setting = {setting(o)}, .def = {o["def"]}, .preset = {o["preset"]}, .keep = {o["keep"]}, '
                   f'.values = 0x{o["values"]:x} }},' for o in t['opts']]
         lines.append('};')
-    lines.append('static const theme_t themes[THEME_N] = {')
+    lines.append('const theme_t themes[THEME_N] = {')
     for t in themes:
         # a final field's halves {dark, light}, flipped between the default accent's light paper and ink
         d = t['schemes'][max(accent_default(t), 0)]

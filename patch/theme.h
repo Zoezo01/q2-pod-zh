@@ -214,5 +214,7 @@ void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s); /*
  * (the volume panel away from Now Playing, a card app's progress). */
 void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w);
 /* 0xRRGGBB to an opaque color_t, whose bytes are r, g, b, a. */
-#define RGBA(c) (0xff000000u | ((c) & 255) << 16 | ((c) & 0xff00) | (c) >> 16)
+static inline unsigned RGBA(unsigned c) {
+    return 0xff000000u | (c & 255) << 16 | (c & 0xff00) | c >> 16;
+}
 #endif

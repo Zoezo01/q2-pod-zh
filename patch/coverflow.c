@@ -583,7 +583,6 @@ static int sort_next(int dir) {
     return i == n ? o[0] : o[(i + (unsigned)dir) % n];
 }
 extern void album_plays(int (*album_of)(void *), unsigned *sum);
-extern unsigned rand_below(unsigned n);
 extern void ringnav_sort_key(char *s);
 #define ARTIST_KEY 96
 

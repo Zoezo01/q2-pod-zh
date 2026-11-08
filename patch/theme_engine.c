@@ -201,8 +201,6 @@ int accent(void) {
     if (!st.settings_read) settings_read();
     return *themes[st.theme].accent_slot;
 }
-/* Theme t, as the picker and the restart check name it. */
-const theme_t *theme_of(int t) { return &themes[t]; }
 const theme_t *theme(void) {
     accent();
     return &themes[st.theme];

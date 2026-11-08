@@ -517,7 +517,6 @@ extern const char *const accent_names[];
 extern const char *const np_pages[];
 extern const int setting_counts[];
 extern int *const setting_values[];
-const theme_t *theme_of(int t);
 static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
 static inline const unsigned *tones(void) { return tones_of(accent()); }
 

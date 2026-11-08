@@ -419,7 +419,6 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
  * Lyrics on Now Playing's ⋯ page saves LRCLIB's lyrics beside every song of the playing song's
  * album, found as that search finds them, on a thread of its own that outlives the page. */
 extern void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
-extern void *coverflow_album_tracks(void *r);
 static const char AL_TITLE[] = "Download Album Lyrics";
 static struct {
     lyr_job job;

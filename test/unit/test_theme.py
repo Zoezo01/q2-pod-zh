@@ -489,7 +489,7 @@ def test_emit(tmp_path):
         '    { .setting = SETTING_TIMETITLE, .def = -1, .preset = 1, .keep = -1, .values = 0x0 },',
         '    { .setting = SETTING_NPCENTRED, .def = -1, .preset = -1, .keep = -1, .values = 0x0 },',
         '};',
-        'static const theme_t themes[THEME_N] = {',
+        'const theme_t themes[THEME_N] = {',
         '    {', *(f'        .{k} = {v},' for k, v in MINIMAL_FIELDS), '    },',
         '};', '']))
 
@@ -500,7 +500,8 @@ def test_emit_both(tmp_path):
     assert [l.split(' = ')[0] for l in text.splitlines() if l.startswith('static const')] == [
         'static const scheme_t minimal_schemes[]', 'static const option_t minimal_opts[]',
         'static const scheme_t modern_schemes[]', 'static const option_t modern_opts[]',
-        'static const theme_t themes[THEME_N]', 'static const volatile short geom_vals[GEOM_N][V_N]']
+        'static const volatile short geom_vals[GEOM_N][V_N]']
+    assert 'extern const theme_t themes[THEME_N];' in (tmp_path/'themes.h').read_text()  # navigation.c's picker
     assert ('    { .tones = accents[7], .flags = 0, .fill = 0x000000, .chevron = 0x000000, .muted = 0x000000, .bar_light = 0x000000, '
             '.sel = {0}, .sel_top = 0x000000, .sel_edge = 0x000000, .sel_tall_edge = 0x000000, .sel_tall_line = 0x000000, .sel_tall_top = 0x000000, .sel_text = 0x000000, .mode = SCHEME_DERIVE, .paper = 0xf4f4f4, '
             '.ink = 0x161616, .bar = {0}, .bar_line = 0x000000, .bar_line2 = 0x000000 },\n    { .tones = accents[8]') in text

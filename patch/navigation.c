@@ -178,7 +178,7 @@ extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverfl
 extern void coverflow_lost_touch(void), coverflow_wheel_land(void);
 extern int coverflow_wheel_live(void), coverflow_wheel_poll(int usable, int gated),
     coverflow_wheel_on(void *w);
-extern void *coverflow_album(void *page), *coverflow_album_tracks(void *r);
+extern void *coverflow_album(void *page);
 extern int coverflow_turning(void);
 extern int coverflow_goto_album(void *r), coverflow_shows_album(void *r);
 extern unsigned coverflow_scope(void *page);
@@ -195,10 +195,10 @@ extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
     photos_open(const char *root), books_paint(void *w, void *canvas), books_open(const char *root),
-    video_poll(void), video_key(unsigned key);
+    video_poll(void);
 extern int books_key(void *top, unsigned key), video_on(void), books_video(const char *path);
 extern void games_paint(void *w, void *canvas);
-extern void spot_poll(void), spot_yield(void), spot_paint(void *w, void *canvas), *spot_art(void);
+extern void spot_poll(void), spot_paint(void *w, void *canvas), *spot_art(void);
 extern void up_next(int (*closed)(void *, void *), int (*keyup)(void *, void *)),
     upnext_closed(void *page);
 extern int un_hold(void *top);
@@ -225,9 +225,6 @@ void *staged_music(int (*query)(void *), void *arg, int *count) {
 }
 
 extern int album_only(void *, void *, int), coverflow_split(void *);
-extern unsigned album_id(void *r);
-extern unsigned album_dir(const char *, int);
-extern volatile unsigned library_gen;
 #define SCROLL_MARGIN 12
 #define HOME_FAST_WINDOW_MS 200
 #define WHEEL_RUN_MS 140
@@ -6560,7 +6557,7 @@ void theme_select(int t) {
     image_manager_unload_all(image_manager());
     widget_invalidate_force(window_manager(), (void *)0);
 }
-int theme_restart(int t) { return geom_with(theme_of(t), -1, 0, 1) != st.geom; }
+int theme_restart(int t) { return geom_with(&themes[t], -1, 0, 1) != st.geom; }
 /* A choice that needs another geometry set: confirmed, the config takes value (a theme its presets
  * too, its own options' among them) and the Q2 restarts into it, ringnav_reboot saving the queue
  * first; the running state stays the booted set's theme until then, as theme_boot requires.
@@ -6574,7 +6571,7 @@ void restart_confirm(int setting, int value) {
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
     setting_put(&was, value, option_key(T, setting));
-    if (setting == SETTING_THEME) theme_preset(theme_of(value), 0);
+    if (setting == SETTING_THEME) theme_preset(&themes[value], 0);
     ringnav_reboot();
 }
 /* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
@@ -6733,7 +6730,7 @@ int ringnav_display(void *win, void *ctx) {
             int t = theme_rows[i];
             widget_set_text_utf8(
                 list_row(view, t == st.theme ? "select" : "unselect", theme_pick, (void *)(long)t),
-                theme_of(t)->name);
+                themes[t].name);
         }
         theme_view = view;
         return result;

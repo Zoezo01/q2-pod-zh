@@ -19,8 +19,6 @@ static struct {
     void *hold_ctx, *hold_win;
     char hold_name[32];
 } sw __attribute__((section(".scratch")));
-extern int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
-    netupdate_busy(void), album_lyrics_busy(void);
 
 /* Stock's own conditions for its switch: the network module up for Wi-Fi (NET_TYPE 2; networkStart
  * and networkStop do nothing otherwise), its first scan taken (wifi_initstatus 0, which Quick

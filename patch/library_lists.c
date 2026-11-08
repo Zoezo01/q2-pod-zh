@@ -2,9 +2,7 @@
  * app's local rows), Era and Long Songs. */
 #include "navigation.h"
 
-extern void *coverflow_album_tracks(void *r);
 extern int coverflow_goto_album(void *r);
-extern volatile unsigned library_gen;
 
 /* Collection Shuffle is Shuffle Songs over the collection. */
 int shuffle_play(void *all) {
