@@ -175,7 +175,7 @@ class Player:
         self.run(0.3)
         e.w32(WAY, way)
     def first_write(self, e):
-        self.looks += e.r32(ps['ao_stayed'])  # writes that would look: the first after a kept PCM, and only it
+        self.looks += e.r32(ps['ao_stayed'])  # writes the flag marks: a kept PCM's first, and only it
         if self.excess is not None and e.r32(ps['ao_stayed']):
             p = e.pcm
             e.clock = p.hw_at + (p.appl + self.excess) * 10**9 // p.rate
@@ -336,7 +336,7 @@ for way, route in ((0, 'cold'), (2, 'preload'), (2, 'cold')):
             run = run + 1 if v == 0 else 0
             hole = max(hole, run)
         assert hole <= want + period(pcm) + rate // 500, (way, first, excess_ms, hole)
-    # Not yet past: nothing moved, one read more than the check at init.
+    # Not yet past: nothing moved.
     p = Player(way)
     p.excess = -200
     (p.cold if route == 'cold' else p.preloaded)('a44.flac', 'b44.flac')
@@ -676,8 +676,6 @@ def stalled(way, stall_s):
         state['done'] = True
         d = os.read(f['h'], n)
         e.u.mem_write(e.a(1), d)
-        for i in range(int(stall_s * 2)):  # the network cache's wait kicks hciplayer's watchdog (0x42b6b0 from 0x4cc7e4)
-            e.pending.append((e.clock + i * 5 * 10**8, lambda e: e.u.mem_write(0xb10e68, b'')))
         e.block_current(e.clock + int(stall_s * 1e9), (len(d), 0), 'read')
         return len(d)
     p.e.hooks['read'] = read
@@ -686,6 +684,7 @@ def stalled(way, stall_s):
     return p.e.pcm, state['done']
 for way in (0, 2):
     clean, _ = stalled(way, 0)
+    assert not clean.forwards and clean.lost == 0, (way, clean.forwards, clean.lost)
     pcm, hit = stalled(way, 3.0)  # without the look on every write: 112057 frames lost behind hw_ptr
     assert hit and pcm.lost == 0 and pcm.forwards, (way, hit, pcm.lost, pcm.forwards)
     assert written(pcm.chunks) == written(clean.chunks), (way, 'a frame lost or moved')
