@@ -36,6 +36,9 @@
  * before it starts, as for a video, it gets the output device (and a soft output's volume) as
  * its arguments, Play/Pause and the side buttons reach it, and the idle quit is its own.
  *
+ * An app's first page may be sections (sec_take): one shows at a time, and a sideways swipe moves
+ * to the next or the previous (swipe).
+ *
  * The card-app features this firmware has are words in /tmp/q2-addon.caps (ADDON_CAPS), written at
  * every Streaming scan. */
 #include "offsets.inc"
@@ -68,7 +71,10 @@
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
-#define ADDON_CAPS "playlist progress pages library goto sleep game audio"
+#define ADDON_CAPS "playlist progress pages library goto sleep game audio sections"
+#define ADDON_SECTIONS 8  /* sections an app's first page may have */
+#define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
+#define SWIPE_PX 60       /* and this far at the lift moves to the next section */
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
@@ -938,9 +944,21 @@ static int req_done(void) {
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
  * and redrawn only when it changed, its selected row kept. One whose message is "pages" and that
  * has a cursor is followed by its next pages (page_next), appended to its list (append) under a
- * Loading… row; any other keeps More…. */
+ * Loading… row; any other keeps More….
+ * The first level's reply whose message is "sections" names the app's sections instead (sec_take):
+ * each list row one, its uri the op that fills it, its title the page's, its context the op's
+ * argument. The page shows one section at a time as its first level, the first to begin with, and
+ * a sideways swipe on it (swipe) opens the next or the previous, its list sliding in from that
+ * side; none past the ends. Only the first level swipes: a level opened from a section is a level
+ * as any other, and Back returns to the section. The wheel never changes section. */
 enum { K_LOAD, K_READY, K_ERROR, K_WAIT }; /* K_WAIT: no socket yet, the app starting */
-enum { G_ROW, G_SHOW, G_SEARCH };
+enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION };
+
+/* A section of an app's first page: the op that fills it, its argument ("\t" and escaped, as a
+ * level's), and its name, the page's title while it shows. */
+typedef struct {
+    char op[16], args[128], title[48];
+} sec_t;
 
 /* A level's page that can't show the app's rows (an error, or a load or start taking SLOW_MS) has a
  * Stop row whenever the app may be running, so a frozen one can always be ended. */
@@ -967,6 +985,11 @@ static struct {
     char *buf[ADDON_PAGES], **f;
     int pages, paging;
     signed char moved; /* the depth's change the next rows or error push in: 1 deeper, -1 back */
+    sec_t *sec;        /* the first page's sections, calloc'd when it has any; nsec of them */
+    signed char nsec, cur; /* cur: the one showing */
+    /* a touch on the page: where it went down, and whether a sideways swipe has taken it (swipe) */
+    int sx, sy;
+    char sdown, sclaim, saborting;
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -1169,6 +1192,44 @@ static void pop(void) {
     show();
 }
 
+/* Section i shown as the first level: its op asked, its list sliding in from dir's side (1 from the
+ * right, as the next; -1 from the left; 0 in place). */
+static void sec_open(int i, int dir) {
+    lv_t *l = &pg.lv[0];
+    const sec_t *s = &pg.sec[i];
+    req_cancel();
+    drop();
+    pg.cur = (signed char)i;
+    memset(l, 0, sizeof *l); /* K_LOAD, its first row selected */
+    tk_snprintf(l->op, sizeof l->op, "%s", s->op);
+    tk_snprintf(l->args, sizeof l->args, "%s", s->args);
+    l->base = strlen(l->args);
+    tk_snprintf(l->title, sizeof l->title, "%s", s->title);
+    pg.moved = (signed char)dir;
+    show();
+}
+
+/* The first level's reply saying "sections": its list rows (n of g's) become the sections, and the
+ * first opens. 0 when it has none to take. */
+static int sec_take(char **g, int n) {
+    if (!pg.sec && !(pg.sec = calloc(ADDON_SECTIONS, sizeof *pg.sec))) return 0;
+    int k = 0;
+    for (int i = 0; i < n && k < ADDON_SECTIONS; ++i) {
+        char **c = g + 4 + 6 * i;
+        if (strcmp(c[0], "list") || !c[1][0]) continue;
+        sec_t *s = &pg.sec[k];
+        tk_snprintf(s->op, sizeof s->op, "%s", c[1]);
+        tk_snprintf(s->title, sizeof s->title, "%s", c[2]);
+        s->args[0] = 0;
+        if (c[4][0] && !put(s->args, sizeof s->args, c[4])) continue; /* too long: left out */
+        ++k;
+    }
+    if (!k) return 0;
+    pg.nsec = (signed char)k;
+    sec_open(0, 0);
+    return 1;
+}
+
 /* The finished request: an action's toast, or the top level's rows. */
 static void got(void) {
     lv_t *l = top();
@@ -1219,6 +1280,9 @@ static void got(void) {
                (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
+    } else if (ok && pg.depth == 1 && !pg.nsec && !strcmp(f[2], "sections") && sec_take(g, n)) {
+        /* sections: the first asked for (sec_open); this reply's rows were their names. Taken once:
+         * a section that answers "sections" too is a plain list, not asked for again and again */
     } else if (!ok) {
         l->state = K_ERROR;
         l->retry = 1;
@@ -1277,6 +1341,53 @@ static int search_left(void *ctx, void *event) {
     return 0;
 }
 
+/* The page's touches (page_at binds them, before its children see them): a sideways swipe on the
+ * first level of an app with sections moves to the next or the previous one, as Pull to search's
+ * pull (navigation.c pull_event): once the move is a swipe's, the rows it pressed are told the
+ * touch is gone, so the lift clicks nothing, and the moves and the lift are kept from the list. Up
+ * and down stay the list's. */
+static int swipe(void *ctx, void *event) {
+    (void)ctx;
+    int type = I(event, EVENT_TYPE);
+    if (type == EVT_POINTER_ABORT) {
+        if (!pg.saborting) pg.sdown = pg.sclaim = 0;
+        return 0;
+    }
+    if (pg.nsec < 2 || pg.depth != 1 || pg.edit) {
+        pg.sdown = pg.sclaim = 0;
+        return 0;
+    }
+    int x = I(event, EVENT_X), y = I(event, EVENT_Y);
+    if (type == EVT_POINTER_DOWN) {
+        pg.sdown = 1, pg.sclaim = 0, pg.sx = x, pg.sy = y;
+        return 0;
+    }
+    if (!pg.sdown) return 0;
+    int dx = x - pg.sx, dy = y - pg.sy, ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    if (type == EVT_POINTER_UP_BEFORE) {
+        int claimed = pg.sclaim;
+        pg.sdown = pg.sclaim = 0;
+        if (!claimed) return 0;
+        if (ax >= SWIPE_PX) later(G_SECTION, dx < 0 ? 1 : -1); /* a swipe to the left: the next */
+        return 11; /* RET_STOP */
+    }
+    if (type != EVT_POINTER_MOVE_BEFORE) return 0;
+    if (!pg.sclaim) {
+        if (ay >= SWIPE_CLAIM_PX && ay >= ax) { /* the list's: it scrolls */
+            pg.sdown = 0;
+            return 0;
+        }
+        if (ax < SWIPE_CLAIM_PX || ax < 2 * ay) return 0;
+        pg.sclaim = 1;
+        unsigned abort_event[12];
+        pg.saborting = 1;
+        pointer_event_init(abort_event, EVT_POINTER_ABORT, pg.page, pg.sx, pg.sy);
+        widget_dispatch_event_to_target_recursive(pg.page, abort_event);
+        pg.saborting = 0;
+    }
+    return 11; /* RET_STOP */
+}
+
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
     (void)unused;
@@ -1286,7 +1397,10 @@ static int go(const void *unused) {
     pg.go = 0;
     if (pg.next == G_SHOW)
         show();
-    else if (pg.next == G_SEARCH) {
+    else if (pg.next == G_SECTION) { /* a swipe: the next or previous section, none past the ends */
+        int to = pg.cur + i;
+        if (pg.depth == 1 && to >= 0 && to < pg.nsec) sec_open(to, i);
+    } else if (pg.next == G_SEARCH) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
@@ -1376,6 +1490,7 @@ static int closed(void *ctx, void *event) {
     drop();
     free(pg.lv);
     free(pg.f);
+    free(pg.sec);
     memset(&pg, 0, sizeof pg);
     return 0;
 }
@@ -1393,6 +1508,10 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     int missing = access(a->bin, 0);
     if (!missing && (!a->launched || access(a->pid, 0))) launch(a), pg.code = qr && a->qr;
     pg.depth = 1;
+    static const unsigned short touches[] = { EVT_POINTER_DOWN, EVT_POINTER_MOVE_BEFORE,
+                                              EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
+    for (unsigned t = 0; t < sizeof touches / sizeof *touches; ++t)
+        widget_on(pg.page, touches[t], swipe, 0);
     lv_t *l = top();
     tk_snprintf(l->op, sizeof l->op, "%s", op);
     tk_snprintf(l->args, sizeof l->args, "%s", args);
