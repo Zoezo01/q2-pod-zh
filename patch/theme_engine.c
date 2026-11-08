@@ -107,7 +107,7 @@ _Static_assert(__builtin_offsetof(theme_t, motion) == THEME_MOTION_OFF && sizeof
 _Static_assert(__builtin_offsetof(scheme_t, mode) == SCHEME_MODE_OFF, "test/patch.py patches it");
 #endif
 /* A value of the set theme_boot wrote (st.geom), never the live theme's: V_BAR, ... */
-static int geom_val(int v) { return geom_vals[st.geom][v]; }
+int geom_val(int v) { return geom_vals[st.geom][v]; }
 int client_h(void) { return 320 - geom_val(V_BAR); }
 /* Stock's Time Zone caption, between rows 0 and 1, sits 20 px down its item and over row 1: Classic
  * gives it the item, the set's row. */
@@ -309,10 +309,9 @@ const char *ipod_home_shortcut(void) {
 /* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
  * Books books.c. */
-enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
-static const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
+const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
 extern int rockbox_open(void *, void *);
-static int rated_albums(void *, void *), shuffle_menu(void *, void *), media_click(void *, void *);
+static int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
     int s = shortcut();
     if (!s) return rockbox_open(ctx, event);

@@ -345,6 +345,32 @@ typedef struct {
 
 extern scratch_t st;
 extern menu_t g_menu; /* the one row list load() fills */
+extern int spot_media(unsigned key), spot_key(void *top, unsigned key),
+    spot_open(void *ctx, void *event), spot_hold(void *top);
+extern int radio_media(unsigned key), radio_open(void *ctx, void *event);
+extern int games_key(void *top, unsigned key), games_open(void *ctx, void *event);
+extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *, void *),
+    stock_output_trampoline(int), stock_write_config_trampoline(int, const char *, const char *),
+    stock_paint_trampoline(void *, void *), stock_dispatch_trampoline(void *, void *),
+    stock_keylong_trampoline(void *, void *), stock_paint_bg_trampoline(void *, void *),
+    stock_showface_trampoline(void *), stock_playing_trampoline(void *, void *),
+    stock_display_trampoline(void *, void *), stock_bigcover_trampoline(void *, void *),
+    stock_localmusic_trampoline(void *, void *), stock_keydown_trampoline(void *, void *),
+    stock_btvol_trampoline(int, int), stock_sleep_trampoline(void *),
+    stock_color_trampoline(void *, void *, const char *, unsigned),
+    stock_image_trampoline(void *, const char *, void *), stock_about_trampoline(void *, void *),
+    stock_folder_trampoline(void *, void *), stock_folder_back_trampoline(void *, void *),
+    stock_folder_top_trampoline(void), stock_folder_click_trampoline(void *, void *),
+    stock_input_trampoline(void *, void *), stock_buzzer_trampoline(int),
+    stock_localclass_trampoline(int), stock_detail_trampoline(int, void *),
+    stock_artist_trampoline(int), stock_power_trampoline(void *, void *),
+    stock_systemset_trampoline(void *, void *), stock_audioset_trampoline(void *, void *),
+    stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
+    stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
+    stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *),
+    stock_hscroll_start_trampoline(void *);
+extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
+    scrobble_flag(const char *key), scrobble_value(const char *key);
 extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
 
@@ -358,6 +384,22 @@ int clock_due(const void *info);
 int bar_repaint(const void *info);
 void clock_text(void *label, int negative, int t);
 void label_font(void *w, int bold);
+void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
+void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx, int w,
+                    int into);
+int media_find(int kind, char *path);
+void prop(void *w, const char *name, int value);
+char *svc_find(char *hide, int i);
+void svc_hidden(char *s);
+int era_menu(void *ctx, void *event);
+int long_songs(void *ctx, void *event);
+int media_click(void *ctx, void *event);
+int most_played(void *ctx, void *event);
+int ratings_menu(void *ctx, void *event);
+int shuffle_menu(void *ctx, void *event);
+int stream_config(void *ctx, void *event);
+int tidal_downloads(void *ctx, void *event);
+int upload_scrobbles(void *ctx, void *event);
 
 /* np_bar.c */
 int np_beside(void);
@@ -372,7 +414,10 @@ void scrub_row(void *canvas, unsigned c, int x, int y, int w);
 void np_fill(int scrub);
 
 /* theme_engine.c */
+enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
 enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */
+int geom_val(int v);
+extern const char *const MEDIA[];
 
 /* volume.c */
 void vol_paint(void *top, void *canvas);

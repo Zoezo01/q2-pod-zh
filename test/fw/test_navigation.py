@@ -660,7 +660,7 @@ def test_card_apps_sit_between_spotify_and_the_rest(fw, st):
 
 
 def test_svc_find(fw, st):
-    find = fw.fn('navigation__svc_find', C.c_char_p, C.c_char_p, C.c_int)
+    find = fw.fn('svc_find', C.c_char_p, C.c_char_p, C.c_int)
     assert find(b'TIDAL,RADIO', 3) == b'RADIO' and find(b'TIDAL,RADIO', 1) is None
     st('svc_n').value = 1
     assert find(b'TIDAL', 2) is None  # an app gone from the card has no key
@@ -1807,7 +1807,7 @@ def test_no_streamhide_key_hides_nothing(fw):
     seen = []
     fw.mock('toolsReadConfig', lambda path, section, key, out, *_: seen.append(C.string_at(out)))  # no key: out kept
     hide = text(b'stale')
-    fw.fn('navigation__svc_hidden', None, C.c_char_p)(hide)
+    fw.fn('svc_hidden', None, C.c_char_p)(hide)
     assert seen == [b''] and hide.value == b''
 
 

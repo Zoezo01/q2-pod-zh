@@ -161,26 +161,6 @@ int ringnav_sorted_query(const char *db, const char *sql, void *row, int sort) {
 int ringnav_content_query(const char *db, const char *sql, void *row, void *arg, int sort) {
     return library_query(1, db, sql, row, arg, sort);
 }
-extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *, void *),
-    stock_output_trampoline(int), stock_write_config_trampoline(int, const char *, const char *),
-    stock_paint_trampoline(void *, void *), stock_dispatch_trampoline(void *, void *),
-    stock_keylong_trampoline(void *, void *), stock_paint_bg_trampoline(void *, void *),
-    stock_showface_trampoline(void *), stock_playing_trampoline(void *, void *),
-    stock_display_trampoline(void *, void *), stock_bigcover_trampoline(void *, void *),
-    stock_localmusic_trampoline(void *, void *), stock_keydown_trampoline(void *, void *),
-    stock_btvol_trampoline(int, int), stock_sleep_trampoline(void *),
-    stock_color_trampoline(void *, void *, const char *, unsigned),
-    stock_image_trampoline(void *, const char *, void *), stock_about_trampoline(void *, void *),
-    stock_folder_trampoline(void *, void *), stock_folder_back_trampoline(void *, void *),
-    stock_folder_top_trampoline(void), stock_folder_click_trampoline(void *, void *),
-    stock_input_trampoline(void *, void *), stock_buzzer_trampoline(int),
-    stock_localclass_trampoline(int), stock_detail_trampoline(int, void *),
-    stock_artist_trampoline(int), stock_power_trampoline(void *, void *),
-    stock_systemset_trampoline(void *, void *), stock_audioset_trampoline(void *, void *),
-    stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
-    stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
-    stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *),
-    stock_hscroll_start_trampoline(void *);
 extern void *coverflow_tracks(void *page);
 extern int coverflow_jump(void *w, int from, int dir, unsigned *letter), coverflow_bounded(void *w),
     coverflow_slide(void *w);
@@ -207,10 +187,7 @@ extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *
     video_poll(void), video_key(unsigned key);
 extern int books_key(void *top, unsigned key), video_on(void), books_video(const char *path);
 extern void games_paint(void *w, void *canvas);
-extern int games_key(void *top, unsigned key), games_open(void *ctx, void *event);
 extern void spot_poll(void), spot_yield(void), spot_paint(void *w, void *canvas), *spot_art(void);
-extern int spot_media(unsigned key), spot_key(void *top, unsigned key),
-    spot_open(void *ctx, void *event), spot_hold(void *top);
 extern void up_next(int (*closed)(void *, void *), int (*keyup)(void *, void *)),
     upnext_closed(void *page);
 extern int un_hold(void *top);
@@ -221,13 +198,10 @@ extern int mono_click(void *ctx, void *event), swap_click(void *ctx, void *event
     mqa_click(void *ctx, void *event);
 extern int xfade_open(void *ctx, void *event), xfade_key(void *top, unsigned key), resume_min(void);
 extern int eq_key(void *top, unsigned key); /* peq_ui.c */
-extern int radio_media(unsigned key), radio_open(void *ctx, void *event);
 extern const char *radio_hold(void *top);
 extern void visualizer_paint(void *w, void *canvas), visualizer_attach(void *win);
 extern int visualizer_live(void), games_live(void);
 extern unsigned char now_cover(void *r, const char **file);
-extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
-    scrobble_flag(const char *key), scrobble_value(const char *key);
 extern void scrobble_append(const char *line, unsigned n);
 extern void *staged(int (*query)(void *), void *arg, int *count);
 extern int staged_into(void *into, int (*query)(void *), void *arg);
@@ -717,7 +691,7 @@ static void *surface(void *target, void **other) {
     return w;
 }
 
-static void prop(void *w, const char *name, int value) {
+void prop(void *w, const char *name, int value) {
     if (widget_get_prop_int(w, name, -1) != value) widget_set_prop_int(w, name, value);
 }
 
@@ -2732,8 +2706,8 @@ static void *list_button(void *view) {
  * (no icon: at x 10, as the Bluetooth page's rows), into adding stock's list_into trailing image
  * with the label narrowed clear of it, as the stock Local Music categories place it. Returns the
  * label. */
-static void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
-                           int w, int into) {
+void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), void *ctx, int w,
+                    int into) {
     /* The Library constructor's live words (tools/ipod.py, theme_boot): lib_body and lib_inset. */
     int compact = !tk_strcmp(widget_get_prop_str(view, "name", ""), "scroll_view_localmusic");
     int h = compact ? *(const volatile unsigned short *)LIBRARY_ROW_BODY : 70;
@@ -8619,7 +8593,7 @@ static int sp_pick(void *ctx, void *event) {
     return 0;
 }
 
-static int shuffle_menu(void *ctx, void *event) {
+int shuffle_menu(void *ctx, void *event) {
     if (st.sp_page || !(st.sp_page = page_open("shuffle_page", page_closed, page_keyup))) return 0;
     void *view = page_list(st.sp_page, st.sp_page, 0, "Shuffle", 3, 48);
     page_row_detail(view, 0, "Shuffle Songs", 0, sp_pick);
@@ -8718,7 +8692,7 @@ static int mp_find(unsigned key) {
  * only when nothing is kept; otherwise the kept tracks are ranked again.
  * ponytail: the first open after boot or a library change still reads every song, and a song first
  * counted from stock's folder browser shows without its artist until then (no library tags). */
-static int most_played(void *ctx, void *event) {
+int most_played(void *ctx, void *event) {
     if (st.mp_page || !(st.mp_page = page_open("mostplayed_page", page_closed, page_keyup)))
         return 0;
     int n, idx[PLAYS_TOP];
@@ -8966,7 +8940,7 @@ static int songs_page(const char *window, const char *dir, const char *title, in
     songs_rows(dir, title, tidal, album);
     return 0;
 }
-static int tidal_downloads(void *ctx, void *event) {
+int tidal_downloads(void *ctx, void *event) {
     (void)ctx, (void)event;
     return songs_page("tidal_downloads", TIDAL_DIR, "Tidal Downloads", 1, 0);
 }
@@ -9050,11 +9024,11 @@ static const char *svc(int i, int label) {
     if (i >= 2 && i < 2 + st.svc_n) return label ? addon_name(i - 2) : addon_id(i - 2);
     return svc_fixed[i < 2 ? i : i - st.svc_n][label];
 }
-static void svc_hidden(char *s) {
+void svc_hidden(char *s) {
     s[0] = 0; /* as root_read: a missing key leaves s alone */
     toolsReadConfig("/mnt/data/config.ini", "Q2POD", "STREAMHIDE", s, "");
 }
-static char *svc_find(char *hide, int i) {
+char *svc_find(char *hide, int i) {
     const char *key = svc(i, 0);
     return key ? csv_find(hide, key) : 0;
 }
@@ -9120,7 +9094,7 @@ static int sc_click(void *ctx, void *event) {
     return 0;
 }
 
-static int stream_config(void *ctx, void *event) {
+int stream_config(void *ctx, void *event) {
     if (st.sc_page || !(st.sc_page = page_open("streamconf_page", page_closed, page_keyup)))
         return 0;
     int n = SVC_FIXED + st.svc_n;
@@ -9553,7 +9527,7 @@ static int rated_albums(void *ctx, void *event) {
 }
 
 /* The songs' best first, then the albums, then the songs' lists to tidy. */
-static int ratings_menu(void *ctx, void *event) {
+int ratings_menu(void *ctx, void *event) {
     if (st.rt_menu || !(st.rt_menu = page_open("ratings_page", page_closed, page_keyup))) return 0;
     void *view = page_list(st.rt_menu, st.rt_menu, 0, "Ratings", 5, 48);
     for (int i = 0; i < 5; i++)
@@ -9759,7 +9733,7 @@ static int era_open_decade(void *ctx, void *event) {
     }
     return 0;
 }
-static int era_menu(void *ctx, void *event) {
+int era_menu(void *ctx, void *event) {
     if (era.page) return 0;
     era.n = 0;
     if (!era_sql("select year/10*10,count(*) from (select " ALBUM_YEAR
@@ -9954,7 +9928,7 @@ int song_seconds(void *r) {
 
 /* Long Songs' row: the files never probed are probed first, with their count and Cancel, which
  * keeps what is done; the page closing does the same. */
-static int long_songs(void *ctx, void *event) {
+int long_songs(void *ctx, void *event) {
     if (st.rt_page || !(st.rt_page = page_open("longsongs_page", page_closed, page_keyup)))
         return 0;
     int n;
@@ -10044,7 +10018,7 @@ static int upload_wait(const void *unused) {
     return 0;
 }
 
-static int upload_scrobbles(void *ctx, void *event) {
+int upload_scrobbles(void *ctx, void *event) {
     int started = get_wifisignal() > 0 ? scrobble_start() : -2;
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);
@@ -10101,7 +10075,7 @@ static void *book_place(void *list, void *r, int *at, int *off) {
 
 /* The card's folder for kind into path (sizeof st.media_root, which a MEDIA name always fits); 0
  * when there is none. */
-static int media_find(int kind, char *path) {
+int media_find(int kind, char *path) {
     void *dir = opendir("/mnt/mmc");
     int found = 0;
     for (struct dirent *e; dir && !found && (e = readdir(dir));)
@@ -10113,7 +10087,7 @@ static int media_find(int kind, char *path) {
 
 /* A Local Music row's, or Home's Shortcut's (Podcasts, Audiobooks): the folder found again, as the
  * card may have changed since; without it, a toast. */
-static int media_click(void *ctx, void *event) {
+int media_click(void *ctx, void *event) {
     int kind = (int)(long)ctx;
     char root[sizeof st.media_root], t[48];
     if (!media_find(kind, root)) {
@@ -10228,8 +10202,6 @@ int ringnav_folder_click(void *ctx, void *event) {
     if (g_folder_layer > layer) folder_push(1);
     return result;
 }
-
-#include "home.c"
 
 /* usbmode_page_init, as a cable to a computer opens USB mode, before stock unmounts the card for
  * USB storage: the card apps, which write to it (downloads, uploads), end first, so nothing of

@@ -1,5 +1,6 @@
-/* Home's Library and Streaming: their pages and the lists Home's Split shows. navigation.c
- * #includes this where it stood. */
+/* Home's Library and Streaming: their pages and the lists Home's Split shows. */
+#include "navigation.h"
+
 /* A list_row titled text; returns its list_item. */
 static void *library_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
                          const char *text) {
