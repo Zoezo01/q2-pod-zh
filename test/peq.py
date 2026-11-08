@@ -2885,6 +2885,19 @@ TIDAL_DL = r'''#include <assert.h>
 #define child_exit _exit
 #define child_oom_first() ((void)0)
 static int thumb(const char *s, const char *d, int w, int h) { return 0; }
+/* card apps' URL queues (app_urls_play, app_track): built here, not run */
+#define REC_NAME 0
+#define REC_PATH 0
+#define REC_TYPE 0
+#define tk_str_start_with(s, p) (!strncmp(s, p, strlen(p)))
+static unsigned char savestartbt, transposition;
+static int networkGetConnectStatus(void) { return 0; }
+static int mclStop(void) { return 0; }
+static void *_create_deque(const char *kind) { return 0; }
+static void deque_init(void *q) {}
+static void _deque_push_back(void *q, void *r) {}
+static void deque_destroy(void *q) {}
+static void play_folder(void *q, int i, int cls) {}
 static long file_size(const char *p) { return -1; }
 static int quality = 27; static void *queue;
 #define tidalStreamingLevelNow (&quality)

@@ -429,7 +429,9 @@ class Machine:
             self.u.mem_write(d,value.encode()+b'\0'); ret=1 if key in self.config else -1
         elif name=='tk_str_end_with': ret=self.text(a).endswith(self.text(b))
         elif name=='tk_str_start_with': ret=self.raw(a).startswith(self.raw(b))  # bytes, as C: a cut UTF-8 tail is no error
-        elif name=='strtol@GLIBC_2.0': t=re.match(r'\s*[-+]?\d+',self.text(a)); ret=max(-2**31,min(2**31-1,int(t[0]))) if t else 0  # saturates, as a 32-bit long's does
+        elif name=='strtol@GLIBC_2.0':  # saturates, as a 32-bit long's does; *endptr past the digits (nptr when none)
+            t=re.match(r'\s*[-+]?\d+',self.text(a)); ret=max(-2**31,min(2**31-1,int(t[0]))) if t else 0
+            if b: self.word(b,a+(len(t[0]) if t else 0))
         elif name=='strstr@GLIBC_2.0': i=self.text(a).find(self.text(b)); ret=a+i if i>=0 else 0
         elif name=='strcasestr@GLIBC_2.2': i=self.raw(a).lower().find(self.raw(b).lower()); ret=a+i if i>=0 else 0
         elif name=='bitmap_get_line_length': ret=self.get(a+8)
@@ -5939,6 +5941,7 @@ class CoverflowMachine(QueueMachine):
         elif name=='navigator_to_with_context':
             if self.text(a)=='playing_page':
                 self.play_names=self.names(self.get(b))
+                self.play_recs=list(self.items(self.get(b)))  # its records, for their fields
                 field=lambda e,k: self.text(self.get(e+O[k])) if self.get(e+O[k]) else ''
                 self.play_tags=[(field(e,'REC_TITLE'),field(e,'REC_ARTIST'),field(e,'REC_ALBUM'),field(e,'REC_ALBUM_ARTIST'),
                                  self.get(e+O['REC_TRACK']),self.get(e+O['REC_DISC'])) for e in self.items(self.get(b))]
@@ -15642,7 +15645,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'urls'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -16676,6 +16679,73 @@ stream_songs('01 - Lunch.flac')
 for _ in range(4): m.poll(); m.advance(0)
 assert len(m.plays)==n+1 and m.play_names==['01 - Lunch.flac'],(len(m.plays),m.play_names)
 assert m.files['/tmp/q2-subsonic.playing']==f'{STREAM}/01 - Lunch.flac\n'.encode(); passed()
+# URL queues ("urls" in the caps; tidal.c app_urls_play): .play naming the app's own /tmp/q2-<id>.urls, a Q2URLS/1
+# queue, plays it at once through stock's Tidal player: stock Tidal records (REC_TYPE 8, +0x38 0xf1), ids
+# app:<gen>:<n>, the title as the name (Unknown for none), artist, album and cover URL when given, and REC_PATH ""
+# for a URL or the card path for a song on the card; played as a Tidal page plays one (0xf1), from start=. A line
+# with no URL is passed over. The session then ends: the queue is stock's.
+URLS='/tmp/q2-deezer.urls'
+m=DeezerMachine(); m.open(); m.files[DZPID]=bytearray(b'4242'); m.plays=[]
+m.files[URLS]=bytearray(('#Q2URLS/1\tstart=1\nhttps://jf/a.flac?ApiKey=k\tOne\tBroadcast\tTender Buttons\thttps://jf/c.jpg\t200\n'
+                         '/mnt/mmc/Music/b.flac\tTwo\n\tNo URL\t\t\t\t9\nhttp://jf/c.mp3\t\t\t\t\t\n').encode())
+m.files['/tmp/q2-deezer.play']=bytearray(f'3200 {URLS}\n'.encode()); m.poll(); m.advance(0)
+assert [p[2:4] for p in m.plays]==[(1,0xf1)] and m.natural==1 and m.get(payload_syms['press_natural'])==0,m.plays
+def field(e,k): v=m.get(e+O[k]); return m.text(v) if v else None
+urecs=m.play_recs
+assert [(field(e,'REC_TIDAL_ID'),field(e,'REC_NAME'),field(e,'REC_TITLE'),field(e,'REC_ARTIST'),field(e,'REC_ALBUM'),
+         field(e,'REC_COVER'),field(e,'REC_PATH')) for e in urecs]==[
+    ('app:1:0','One','One','Broadcast','Tender Buttons','https://jf/c.jpg',''),
+    ('app:1:1','Two','Two',None,None,None,'/mnt/mmc/Music/b.flac'),('app:1:2','Unknown','',None,None,None,'')],urecs
+assert all(m.get(e+O['REC_TYPE'])==8 and m.get(e+0x38)==0xf1 for e in urecs)
+m.poll(); m.advance(0); assert len(m.plays)==1; passed()
+# Only the app's own queue in /tmp: another app's, or one elsewhere, is never read.
+for seq,path in ((3201,'/tmp/q2-subsonic.urls'),(3202,'/tmp/evil.urls')):
+    m.files[path]=m.files[URLS]; m.files['/tmp/q2-deezer.play']=bytearray(f'{seq} {path}\n'.encode()); m.poll(); m.advance(0)
+assert len(m.plays)==1; passed()
+# A track starting (get_tidal_trackurl, ringnav_tidal_track) never takes an app's record to stock's, so Tidal's API
+# and its stream thread never see the id. Offline it gives up as stock does; online the player stops and the URL
+# goes to stock's player (past tidal_start) on a thread of its own, which then pauses a start that was to stay
+# paused and arms Now Playing's online tick (transposition). A later start drops an earlier one still waiting.
+for a,n in ((payload_syms['stock_tidaltrack_trampoline'],'stock_tidaltrack'),(payload_syms['stock_tidal_trampoline'],'stock_tidal')):
+    m.handlers[a]=n; m.u.hook_add(UC_HOOK_CODE,m.hook,begin=a,end=a)
+m.mock('sem_post@GLIBC_2.2'); m.handlers[syms['tidal_playurl']]='tidal_playurl'; NET=syms['networkGetConnectStatus']
+tidal_rec=m.song('Tidal'); m.word(tidal_rec+O['REC_TIDAL_ID'],m.string('12345'))
+m.word(syms['mcl_pdeqplaylist'],m.deque([*urecs,tidal_rec]))
+def track(pos):
+    m.word(O['MCL_POS'],pos); m.threads=[]; m.calls=[]
+    ret=m.call(address=HOOKS['get_tidal_trackurl'][0],args=(0,0,0,0),gap=0,clear=False)
+    return ret,[c[0].split('@')[0] for c in m.calls if c[0] in ('networkGetConnectStatus','one:net','tidal_playurl','mclStop','stock_tidaltrack','sem_post@GLIBC_2.2')]
+m.handlers[NET]='networkGetConnectStatus'  # 0: no link
+assert track(0)==(0,['networkGetConnectStatus']) and not m.threads
+m.handlers[NET]='one:net'; assert track(0)==(1,['one:net','tidal_playurl','mclStop']) and len(m.threads)==1
+start,job=m.threads[0]; assert start==payload_syms['app_start']
+m.byte(syms['savestartbt'],1); m.byte(syms['transposition'],0); m.calls=[]; m.call(address=start,args=(job,0,0,0),gap=0,clear=False)
+assert [m.text(c[1]) for c in m.calls if c[0]=='stock_tidal']==['https://jf/a.flac?ApiKey=k'] and 'mclSetPause' in [c[0] for c in m.calls]
+assert m.u.mem_read(syms['savestartbt'],1)[0]==0 and m.u.mem_read(syms['transposition'],1)[0]==1
+assert track(0)[0]==1; first=m.threads[0]; assert track(2)[0]==1; m.calls=[]
+m.call(address=first[0],args=(first[1],0,0,0),gap=0,clear=False); assert 'stock_tidal' not in [c[0] for c in m.calls]
+m.call(address=m.threads[0][0],args=(m.threads[0][1],0,0,0),gap=0,clear=False)
+assert [m.text(c[1]) for c in m.calls if c[0]=='stock_tidal']==['http://jf/c.mp3']; passed()
+# A song on the card returns at once: mclStartPlayer plays its REC_PATH as a local file.
+assert track(1)==(1,[]) and not m.threads; passed()
+# A Tidal track is stock's, as before.
+assert track(3)==(0,['stock_tidaltrack','sem_post']) and not m.threads; passed()
+# A queue replaced since has no URL for the old ids: the player stays stopped.
+m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/d.flac\tThree\n'); m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)
+assert [p[2:4] for p in m.plays][-1]==(0,0xf1) and field(m.play_recs[0],'REC_TIDAL_ID')=='app:2:0'
+assert track(0)==(1,['one:net','tidal_playurl','mclStop']) and not m.threads; passed()
+# Not a queue (no #Q2URLS/1 first), or no song in it: nothing plays.
+n=len(m.plays)
+for body in (b'https://jf/d.flac\tThree\n',b'#Q2URLS/1\tstart=0\n',b''):
+    m.files[URLS]=bytearray(body); assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==0,body
+assert len(m.plays)==n; passed()
+# tidal_play (mcl_tidalStartPlayer's hook) never caches an app's id; get_onlineid3info's cover request takes an
+# app's REC_COVER as a URL (type 2), a Tidal record's as stock's (4).
+m.calls=[]; m.call(address=payload_syms['tidal_play'],args=(m.string('https://jf/a.flac'),m.string('app:2:0'),0,0),gap=0,clear=False)
+assert [c[0] for c in m.calls if c[0] in ('stock_tidal','opendir','pthread_create')]==['stock_tidal']
+m.handlers[syms['player_set_coverinfo']]='player_set_coverinfo'
+def cover(r): m.calls=[]; m.call(address=payload_syms['app_coverinfo'],args=(m.string('c'),m.string('n'),4,r),gap=0,clear=False); return [c[3] for c in m.calls if c[0]=='player_set_coverinfo']
+assert cover(urecs[0])==[2] and cover(tidal_rec)==[4] and cover(0)==[4]; passed()
 # Library update (addon_library.c library_poll): the app's /tmp/q2-<id>.library, "<seq>" then scan and import lines,
 # runs stock's Update Local Music (its dialog, which stops the player: not while one plays, nor while one is paused
 # with the screen on), then stock's playlist import (which replaces a same-named playlist) for the listed files

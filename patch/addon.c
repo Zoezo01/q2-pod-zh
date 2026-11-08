@@ -18,10 +18,11 @@
  * PIN, which qr_open's page draws. A TERM to the loop's pid asks it to end. An app that plays as
  * well (q2-deezer's Stream mode) names a card folder of songs in /tmp/q2-<id>.play, which
  * stream_poll plays as it fills, or an .m3u of card paths, which it plays in order, waiting for
- * each. It asks for Update Local Music and its playlists' import in /tmp/q2-<id>.library
- * (addon_library.c), the result in .library.done. A list reply whose message is "pages" and that
- * has a cursor is followed by its next pages, appended to the same list (page_next), up to
- * ADDON_PAGES.
+ * each, or its Q2URLS/1 queue of stream URLs, /tmp/q2-<id>.urls, which stock's Tidal player plays
+ * (tidal.c app_urls_play). It asks for Update Local Music and its playlists' import in
+ * /tmp/q2-<id>.library (addon_library.c), the result in .library.done. A list reply whose message
+ * is "pages" and that has a cursor is followed by its next pages, appended to the same list
+ * (page_next), up to ADDON_PAGES.
  *
  * Go to Album and Go to Artist on a song in an app's folder open the app's own page for them when
  * its q2app says goto=1 (addon_goto), and every song an app queues plays with its file's tags
@@ -68,7 +69,7 @@
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
-#define ADDON_CAPS "playlist progress pages library goto sleep game audio"
+#define ADDON_CAPS "playlist progress pages library goto sleep game audio urls"
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
  * last scan; relaunch: stopped for USB storage, to start again; restart: stopped by Retry (its
@@ -202,6 +203,7 @@ static struct {
     unsigned timer;  /* the first song's start, on a timer (a window opens) */
     long seen;       /* the folder's mtime at the last scan that came well after it */
     int m3u;         /* sm.dir is a playlist file */
+    int urls;        /* sm.dir is the app's URL queue (tidal.c app_urls_play) */
     int next;        /* its entries passed so far */
     int more;        /* a batch filled, so the next poll goes on */
     char first[512]; /* the session's first song */
@@ -347,6 +349,19 @@ static int stream_start(const void *unused) {
     return 0;
 }
 
+/* A URL queue's start, on a timer as stream_start's (a window opens); then the session is done:
+ * the queue is stock's, and the app reads nothing back. */
+static int urls_start(const void *unused) {
+    (void)unused;
+    sm.timer = 0;
+    if (sm.state != S_WAIT || scanning()) return 0; /* looked at again after the scan */
+    press_natural = 1;
+    app_urls_play(sm.dir);
+    press_natural = 0;
+    sm.state = S_DONE;
+    return 0;
+}
+
 /* Whether the queue playing is the session's: its first song in its folder; or a playlist's first
  * song, and no queue loaded since its own (a Library play of the same album is the user's). */
 static void *stream_queue(void) {
@@ -376,12 +391,15 @@ static void stream_poll(app_t *a) {
         sm.seen = 0;
         unsigned k = strlen(sm.dir);
         sm.m3u = k > 4 && !strcasecmp(sm.dir + k - 4, ".m3u");
+        char own[40];
+        tk_snprintf(own, sizeof own, "/tmp/q2-%s.urls", a->id);
+        sm.urls = !strcmp(sm.dir, own); /* the app's own alone, in /tmp */
         sm.next = sm.more = 0, sm.first[0] = sm.want[0] = 0;
         sm.loads = playback_loads;
-        /* a playlist on the card, or a hidden folder of it, as the app's own are; whole in raw and
-         * in sm.dir, as a cut path names another */
+        /* a playlist on the card, or a hidden folder of it, as the app's own are, or its URL queue;
+         * whole in raw and in sm.dir, as a cut path names another */
         sm.state = got < sizeof raw - 2 && dir && !dir[1 + k] && !dotdot(sm.dir) &&
-                           tk_str_start_with(sm.dir, sm.m3u ? CARD "/" : CARD "/.")
+                           (sm.urls || tk_str_start_with(sm.dir, sm.m3u ? CARD "/" : CARD "/."))
                        ? S_WAIT
                        : S_DONE;
         stop_timer(&sm.timer);
@@ -391,6 +409,11 @@ static void stream_poll(app_t *a) {
      * scan's thread fills too: none while one runs, the scan dialog's own loop included; and
      * play_folder would open Now Playing over the dialog, so nothing until it closes. */
     int scan = scanning();
+    if (sm.state == S_WAIT && sm.urls) { /* played whole at once, by stock's Tidal player */
+        if (!sm.timer && !scan && !addon_game_audio()) /* not under a card game's soung */
+            sm.timer = timer_add(urls_start, 0, 0);
+        return;
+    }
     if (sm.state == S_WAIT) {
         if (sm.m3u && playback_loads != sm.loads)
             sm.state = S_DONE; /* the user played a queue before its first song came */
