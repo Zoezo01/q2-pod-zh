@@ -194,6 +194,14 @@ def boot_check():
         assert '== last state' in out and out.endswith('== cover flow\nstart albums=0 0 ms\nstaged albums=20000 900 ms\n') and not trace.exists()
         trace.write_text('stale\n'); out, cp = logged(0, False)
         assert out is False and not trace.exists()  # no forced restart: dropped, not reported
+        # the UI loop's stall record (navigation.c stall_write) goes in last, and goes
+        stall, record = r/'mnt/data/q2-stall', 'age 20000 ms\ntoasts 1\nstate D\nwchan wait_on_page_bit_common\n'
+        state.write_text(line); trace.write_text('start albums=0 0 ms\n'); stall.write_text(record); out, cp = logged(0, False)
+        assert out.endswith('== cover flow\nstart albums=0 0 ms\n== stall\n' + record) and not stall.exists() and not trace.exists()
+        state.write_text(line); stall.write_text(record); out, cp = logged(0, False)
+        assert out.endswith(line + '== stall\n' + record) and '== cover flow' not in out and not stall.exists()
+        stall.write_text('stale\n'); out, cp = logged(0, False)
+        assert out is False and not stall.exists()  # no forced restart: dropped, not reported
         for f in (crash, copy): f.unlink(missing_ok=True)
         crash.write_text('== demo exit 137\n'); state.write_text(line); boot(True, False, status=0)
         assert crash.read_text().startswith('== demo exit 137\n== last state\n') and line in crash.read_text() and not state.exists()
