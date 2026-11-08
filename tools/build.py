@@ -522,6 +522,13 @@ DROP_CACHES = ((0x512050, 0x3c1c0051, 0x03e00008), (0x512054, 0x279c4c70, 0x0000
 # (jalr $25) becomes jal to its payload function (tidal.c), which parks the thread: Tidal's wakes once
 # per track URL asked for, Baidu's never.
 STREAM_POLL_CALLS = ((0x47f824, 'ringnav_baidu_poll'), (0x486404, 'ringnav_tidal_poll'))
+# get_onlineid3info's player_set_coverinfo(REC_COVER, REC_NAME, type) for a 0xf1 record: its jalr, the
+# REC_COVER load in its delay slot, and the stub that adds the record ($s1) for tidal.c app_coverinfo
+COVERINFO_CALL = (0x492968, 0x8e240028, 'app_coverinfo_call')
+# Stock routines tidal.c's URL queues call at their addresses (not FUNCTIONS, whose names test/patch.py
+# stands in for everywhere: these run as stock's in its scenarios). Checked against the ELF's symbols.
+APP_URL_CALLS = {'mclGetPlayPos': 0x5ac140, 'mclSetPause': 0x5ab0d4, 'tidal_playurl': 0x5aa264,
+                 'toolsFreeStSongInfo': 0x5c01b8, 'player_set_coverinfo': 0x512b4c}
 # The jalr usleep (lw $t9,-0x59c($gp)) of mclSyncPlayerStatus' 200 ms loop becomes jal ringnav_dark_usleep
 # (its argument set in the delay slot): at least DARK_POLL_US while ringnav_sleep finds the Q2 dark, quiet and
 # the DAC off, else stock's. parse_albumcovertask_thd's 50 ms and player_parsecover_thd's 100 ms waits become
@@ -1348,6 +1355,7 @@ PRIVATE_FUNCTIONS = {
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
+           'savestartbt', 'transposition',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
            'g_keylock_flag', 'g_keylock_mode',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
@@ -1426,7 +1434,7 @@ def compile_payload(out):  # pragma: no mutate block
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
         f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
-        '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
+        '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
         *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
@@ -1638,6 +1646,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     demo = out/'stock-demo'; demo.write_bytes(raw_demo)
     symbol_table = run('readelf', '-Ws', demo)
     syms = symbols(demo, symbol_table)
+    for name, address in APP_URL_CALLS.items():
+        check(syms.get(name) == address, f'{name}: not at {address:#x} in the stock demo')
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
     classic_light, classic_light_ranges = classic_light_font()
@@ -1772,6 +1782,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         patch_word(patched, address, old, new, 'keep the page cache')
     for address, name in STREAM_POLL_CALLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stream threads park while idle')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVERINFO_CALL[0] + 4))[0] == COVERINFO_CALL[1],
+          "online id3: expected the REC_COVER load in the cover call's delay slot")
+    patch_word(patched, COVERINFO_CALL[0], 0x0320f809, jal(ps[COVERINFO_CALL[2]]), "a card app's cover by URL")
     for address, name in DARK_POLLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stock polls idle while dark')
     check(struct.unpack_from('<I', patched, fileoff(patched, LYRIC_SAVE_FMT[0]))[0] == LYRIC_SAVE_FMT[1],
