@@ -1477,6 +1477,208 @@ def test_wifi_signal_any_bytes(fw):
         wifi.signal()
 
 
+STALL, STALL_POLL_MS, STALL_MS, STALL_AGAIN_MS = b'/mnt/data/q2-stall', O['STALL_POLL_MS'], O['STALL_MS'], O['STALL_AGAIN_MS']
+STALL_PC = 0x2ab4c5d0
+STALL_MEMORY = b'MemAvailable:       3400 kB\npgmajfault 1234\nworkingset_refault_file 678\n'
+# the stack's words that could be code (0x400000 up to 0x80000000, word-aligned), as q2remote --prof's line
+# keeps them, after tid, state, pc and an unknown ra
+STALL_STACK = b'812 D %x 0 4a1234 2ab00010\n' % STALL_PC
+
+
+class Stall:
+    """The stall thread's world (navigation.c stall_step): /proc's files as bytes, the UI thread's stack
+    (a real block: the C reads it in place) with stat's startstack `top` bytes above its sp, the record's
+    opens, syncs and bytes, and now_ms's clock. A UI loop pass is wdt_poll; the first arms the watchdog,
+    which starts the thread (only recorded here), so its wakes are stall_step, run by hand."""
+    def __init__(self, fw, st, syscall=None, top=4 * 160 + 4096):
+        self.now, self.fd, self.handles, self.log = 100000, 10, {}, []
+        self.record: bytes | None = None  # the record file's bytes; None, no file
+        self.stack = (C.c_uint * 160)(0x4a1234, 0x10, 0x2ab00010, 0x80001000, 0x4a1235)
+        self.sp = C.addressof(self.stack)
+        # read(5, buf, 1024), then sp and pc
+        self.syscall = b'4003 0x5 0x7fd2a0 0x400 0x0 0x0 0x0 %#x %#x' % (self.sp, STALL_PC) if syscall is None else syscall
+        self.files = {b'/proc/self/stat': b'812 (demo) D 1 812 812 0 -1 4194560 9000 0 1200 0 300 40 0 0 20 0 12 0 900 '
+                                          b'33554432 2100 4294967295 4194304 11534336 %d 0 0\n' % (self.sp + top),
+                      b'/proc/self/wchan': b'wait_on_page_bit_common', b'/proc/self/syscall': self.syscall + b'\n',
+                      b'/proc/meminfo': b'MemTotal:         118000 kB\nMemFree:            2100 kB\nMemAvailable:       3400 kB\n'
+                                        b'Buffers:               0 kB\n',
+                      b'/proc/vmstat': b'nr_free_pages 525\nworkingset_refault_anon 0\nworkingset_refault_file 678\n'
+                                       b'pgfault 99000\npgmajfault_x 1\npgmajfault 1234\n'}
+        fw.mock('fw_clock_gettime', self.clock)
+        fw.mock('fw_open', self.open)
+        fw.mock('fw_read', self.read)
+        fw.mock('fw_write', self.write)
+        fw.mock('fw_fsync', lambda fd, *_: self.log.append(('fsync', len(self.record or b''))))
+        fw.mock('fw_close', lambda fd, *_: self.handles.pop(fd) and 0)
+        fw.mock('fw_unlink', self.unlink)
+        self.step = fw.fn('navigation__stall_step', None)
+        self.pass_ = fw.fn('navigation__wdt_poll', None)
+        self.pass_()
+        thread = fw.calls('fw_pthread_create')
+        assert st('wdt').value == 3 and len(thread) == 1 and thread[0][1][2] == C.cast(fw.lib.navigation__stall_watch, C.c_void_p).value
+
+    def expect(self, age, toasts=0, stack=STALL_STACK):
+        """What the UI thread was doing, as the files say."""
+        return (b'age %d ms\ntoasts %d\nstate D\nwchan wait_on_page_bit_common\nsyscall %s\n' % (age, toasts, self.syscall)
+                + STALL_MEMORY + stack)
+
+    def clock(self, which, ts, *_):
+        t = C.cast(ts, C.POINTER(C.c_long))  # now_ms's struct of two longs
+        t[0], t[1] = self.now // 1000, self.now % 1000 * 1000000
+
+    def open(self, path, flags, *_):
+        path = C.string_at(path)
+        if path == b'/dev/jz_watchdog':
+            return 3
+        if path == STALL:
+            self.log.append(('open', flags))
+            if flags & 0x200 or self.record is None:  # O_TRUNC, or O_CREAT's new file
+                self.record = b''
+        elif path not in self.files:
+            return -1
+        self.fd += 1
+        self.handles[self.fd] = [path, 0]
+        return self.fd
+
+    def read(self, fd, out, size, *_):
+        path, at = self.handles[fd]
+        data = self.files[path][at:at + size]
+        C.memmove(out, data, len(data))
+        self.handles[fd][1] += len(data)
+        return len(data)
+
+    def write(self, fd, data, n, *_):
+        assert self.handles[fd][0] == STALL and self.record is not None
+        self.record += C.string_at(data, n)
+        return n
+
+    def unlink(self, path, *_):
+        self.log.append(('unlink', C.string_at(path)))
+        if C.string_at(path) == STALL:
+            self.record = None
+        return 0
+
+    def wait(self, ms):
+        """The thread's wakes over ms."""
+        for _ in range(ms // STALL_POLL_MS):
+            self.now += STALL_POLL_MS
+            self.step()
+
+    def opens(self):
+        return [e[1] for e in self.log if e[0] == 'open']
+
+
+def test_stall_record_at_20_and_45_s(fw, st):
+    s = Stall(fw, st)
+    s.step()  # the thread's first wake after the pass: the time counts from here
+    s.wait(STALL_MS - STALL_POLL_MS)
+    assert s.record is None
+    s.wait(STALL_POLL_MS)
+    first = s.expect(STALL_MS)
+    assert s.record == first and s.log == [('open', 0x80301), ('fsync', len(first))]  # O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, synced
+    s.wait(STALL_AGAIN_MS - STALL_MS - STALL_POLL_MS)
+    assert s.record == first
+    s.wait(STALL_POLL_MS)
+    both = first + s.expect(STALL_AGAIN_MS)
+    assert s.record == both and s.opens() == [0x80301, 0x80109] and s.log[-1] == ('fsync', len(both))  # appended: O_APPEND
+    s.wait(3 * STALL_POLL_MS)
+    assert s.record == both and len(s.opens()) == 2  # two at most: the watchdog resets at 60 s
+    assert STALL_AGAIN_MS + STALL_POLL_MS < O['WDT_MS']
+
+
+def test_stall_record_counts_toasts_open(fw, st):
+    s = Stall(fw, st)
+    toast = fw.fn('toast', None, C.c_char_p)
+    depth = []
+    def show(name, info, *_):
+        depth.append(st('toasts').value)
+        if len(depth) < 2:
+            toast(b'again')  # a poll in the dialog's loop toasts again
+        else:
+            s.step()
+            s.wait(STALL_MS)  # and that one's loop stalls
+    fw.mock('navigator_to_with_context', show)
+    toast(b'Could not save boot logo')
+    assert depth == [1, 2] and st('toasts').value == 0 and s.record == s.expect(STALL_MS, toasts=2)
+
+
+def test_stall_record_goes_when_the_ui_passes(fw, st):
+    s = Stall(fw, st)
+    s.step()
+    s.wait(STALL_MS)
+    assert s.record == s.expect(STALL_MS)
+    s.pass_()
+    s.step()
+    assert s.record is None and s.log[-1] == ('unlink', STALL)  # a stall that recovered isn't what it's for
+    s.wait(STALL_MS - STALL_POLL_MS)
+    assert s.record is None
+    s.wait(STALL_POLL_MS)
+    assert s.record == s.expect(STALL_MS) and s.opens() == [0x80301, 0x80301]  # the next stall's, afresh
+    s.pass_()
+    s.step()
+    s.log.clear()
+    for _ in range(3):
+        s.pass_()
+        s.step()
+        s.wait(STALL_POLL_MS)
+    assert s.log == []  # no record: nothing to remove
+
+
+@pytest.mark.parametrize('stop', ['standby', 'long pass', 'clean end'])
+def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop):
+    s = Stall(fw, st)
+    s.step()
+    if stop == 'standby':
+        st('pod_read').value = 1  # no config.ini to read
+        fw.mock('stock_standby_trampoline', lambda *_: s.wait(2 * O['WDT_MS']))  # the thread wakes on, around the suspend
+        fw.fn('ringnav_standby', C.c_int)()
+        s.step()  # the wake just after: the time counts from the resume
+    else:
+        fw.fn('ringnav_wdt_long' if stop == 'long pass' else 'ringnav_clean_end', None)()
+        s.wait(2 * O['WDT_MS'])
+    assert s.record is None and s.opens() == []
+    if stop == 'long pass':
+        s.pass_()  # after it, WDT_MS again
+        s.step()
+    if stop != 'clean end':
+        s.wait(STALL_MS)  # a stall from there on is caught
+        assert s.record == s.expect(STALL_MS)
+    else:
+        s.wait(2 * O['WDT_MS'])
+        assert s.record is None
+
+
+@pytest.mark.parametrize('top, stack', [
+    (12, STALL_STACK),                         # the words below the main stack's top only: 3 of them
+    (8, b'812 D %x 0 4a1234\n' % STALL_PC),
+    (0, b''), (-4, b''),                       # an sp at or past the top
+    (0x800000, b''),                           # one 8 MB below it: another thread's stack, not read
+])
+def test_stall_record_reads_only_the_main_stack(fw, st, top, stack):
+    s = Stall(fw, st, top=top)
+    s.step()
+    s.wait(STALL_MS)
+    assert s.record == s.expect(STALL_MS, stack=stack)
+
+
+@pytest.mark.parametrize('case', ['on the cpu', 'no startstack', 'unaligned sp'])
+def test_stall_record_with_no_stack_to_read(fw, st, case):
+    s = Stall(fw, st, syscall=b'running' if case == 'on the cpu' else None)  # registers only for a blocked thread
+    want = s.expect(STALL_MS, stack=b'')
+    if case == 'on the cpu':
+        del s.files[b'/proc/self/wchan']  # a kernel without CONFIG_KALLSYMS
+        want = want.replace(b'wchan wait_on_page_bit_common\n', b'wchan \n')
+    if case == 'no startstack':
+        s.files[b'/proc/self/stat'] = b'812 (a) b) D 1 812\n'  # the state after the last ')'
+    if case == 'unaligned sp':
+        s.syscall = s.syscall.replace(b'%#x' % s.sp, b'%#x' % (s.sp + 2))
+        s.files[b'/proc/self/syscall'] = s.syscall + b'\n'
+        want = s.expect(STALL_MS, stack=b'')
+    s.step()
+    s.wait(STALL_MS)
+    assert s.record == want
+
+
 class Clock:
     def __init__(self, fw, clock):
         self.labels, self.timers, self.time = [], [], (0, 0, 12)

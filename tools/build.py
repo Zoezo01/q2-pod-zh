@@ -228,9 +228,11 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             {{ echo "== last state"; ls -l $m; cat $m; }} >> $c
             # Coverflow's open never finished (coverflow.c cf_trace): the phase it reached
             [ -f /mnt/data/q2-cf-trace ] && {{ echo "== cover flow"; cat /mnt/data/q2-cf-trace; }} >> $c
+            # The UI loop stalled (navigation.c stall_write): what its thread was doing
+            [ -f /mnt/data/q2-stall ] && {{ echo "== stall"; cat /mnt/data/q2-stall; }} >> $c
             rm -f $m
         }}
-        rm -f /mnt/data/q2-cf-trace
+        rm -f /mnt/data/q2-cf-trace /mnt/data/q2-stall
         [ -f $c ] && (
             i=0
             while [ $i -lt 60 ] && ! grep -q ' /mnt/mmc ' /proc/mounts; do usleep 500000; i=$((i+1)); done

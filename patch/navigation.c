@@ -424,6 +424,7 @@ typedef struct {
     int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
     int wdt_long; /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
     int ended;    /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
+    int toasts;   /* toast()'s dialogs open, nested ones too, for the stall record (stall_write) */
     int suspended;  /* inside Standby's suspend (ringnav_standby), for the state record */
     char state[96]; /* the state record last written (state_poll) */
     /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
@@ -10174,7 +10175,9 @@ void toast(const char *text) {
         char text[0x400];
     } info = { 1, 2000, { 0 } };
     for (unsigned i = 0; text[i] && i < sizeof info.text - 1; ++i) info.text[i] = text[i];
+    ++st.toasts; /* its loop runs the UI's polls, which may toast again */
     navigator_to_with_context("dialog/msginfo_dialog", &info);
+    --st.toasts;
 }
 
 static int all_songs(void *music) {
@@ -13899,6 +13902,111 @@ int ringnav_wifi_signal(void) {
 #define WDT_START 0x8004570d /* an int of milliseconds, by pointer */
 #define WDT_STOP 0x2000570e
 #define WDT_FEED 0x2000570f
+/* Stall record (docs/internals.md#watchdog): after the watchdog's reset q2-crash.log says only that
+ * demo did not end. A thread started with the watchdog wakes every STALL_POLL_MS; once the UI loop
+ * has not passed for STALL_MS, and again at STALL_AGAIN_MS, it writes /mnt/data/q2-stall and syncs
+ * it: the time since the pass, toast()'s dialogs open, the UI thread's state, wchan and syscall
+ * line (sp and pc), MemAvailable, pgmajfault and workingset_refault_file, then the stack words from
+ * that sp as a q2remote --prof line (ra 0). The time counts from the thread's first wake after the
+ * pass, so up to STALL_POLL_MS short. The UI loop is demo's main thread, whose stat, wchan and
+ * syscall /proc/self has. A pass removes the record: a stall that recovered is not what it is for.
+ * Standby, a clean end and a long pass (ringnav_wdt_long) write nothing. Only open, read, write,
+ * fsync, close and unlink on its own buffers, and the stack read in place: no stock call, no
+ * allocation, no lock the UI thread takes. S90play puts it in q2-crash.log as "== stall". */
+#define STALL_FILE "/mnt/data/q2-stall"
+#define STALL_WORDS 160 /* q2remote --prof's STACK_WORDS */
+static struct {
+    volatile unsigned passes; /* the UI loop's, counted by wdt_poll */
+    unsigned seen, at;        /* the thread's: passes at its last wake, and since when (now_ms) */
+    int level;                /* records written since that pass */
+    char in[4096], out[2560];
+} stall __attribute__((section(".scratch")));
+static void stall_read(const char *path) { /* the file's start, NUL-terminated, in stall.in */
+    int fd = open(path, 0x80000), n = 0, got; /* O_RDONLY | O_CLOEXEC */
+    while (fd >= 0 && n < (int)sizeof stall.in - 1 &&
+           (got = read(fd, stall.in + n, sizeof stall.in - 1 - n)) > 0)
+        n += got;
+    if (fd >= 0) close(fd);
+    stall.in[n] = 0;
+}
+static const char *stall_find(const char *key) { /* stall.in's line that starts with key */
+    unsigned n = strlen(key);
+    for (const char *s = stall.in; *s; ++s) {
+        if (!strncmp(s, key, n)) return s;
+        while (*s && *s != '\n') ++s;
+        if (!*s) break;
+    }
+    return 0;
+}
+static char *stall_add(char *p, const char *label, const char *s) { /* label and s's first line */
+    char *end = stall.out + sizeof stall.out - 1;
+    if (!s || p >= end) return p;
+    while (*label && p < end) *p++ = *label++;
+    while (*s && *s != '\n' && p < end) *p++ = *s++;
+    *p++ = '\n';
+    return p;
+}
+static void stall_write(unsigned age) {
+    char *p = stall.out, *end = stall.out + sizeof stall.out - 12, state = '?';
+    unsigned long tid = 0, top = 0, sp = 0, pc = 0, d;
+    p += snprintf(p, 64, "age %u ms\ntoasts %d\n", age, st.toasts);
+    stall_read("/proc/self/stat"); /* "pid (comm) S ...": the comm may hold ") " */
+    const char *s = strrchr(stall.in, ')');
+    if (s && s[1] == ' ' && s[2]) state = s[2];
+    for (int field = 2; s && *s; ++s) /* 28, startstack: the main stack's top */
+        if (*s == ' ' && ++field == 28) {
+            for (++s; *s >= '0' && *s <= '9'; ++s) top = top * 10 + *s - '0';
+            break;
+        }
+    for (s = stall.in; *s >= '0' && *s <= '9'; ++s) tid = tid * 10 + *s - '0';
+    p += snprintf(p, 16, "state %c\n", state);
+    stall_read("/proc/self/wchan");
+    p = stall_add(p, "wchan ", stall.in);
+    stall_read("/proc/self/syscall"); /* "nr args sp pc", "-1 sp pc" or "running" */
+    p = stall_add(p, "syscall ", stall.in);
+    for (s = stall.in; (s = strstr(s, "0x"));) {
+        unsigned long v = 0;
+        for (s += 2; (d = *s >= '0' && *s <= '9' ? *s - '0' : (*s | 32) - 'a' + 10) < 16; ++s)
+            v = v << 4 | d;
+        sp = pc, pc = v; /* the last two */
+    }
+    stall_read("/proc/meminfo");
+    p = stall_add(p, "", stall_find("MemAvailable:"));
+    stall_read("/proc/vmstat");
+    p = stall_add(p, "", stall_find("pgmajfault "));
+    p = stall_add(p, "", stall_find("workingset_refault_file "));
+    /* The stack's words that could be code, as --prof's, read in place: from a blocked thread's sp
+     * up to the main stack's top is its own stack, mapped; no other is within 8 MB of that top. */
+    if (sp && !(sp & 3) && sp < top && top - sp < 0x800000 && p + 40 < end) {
+        p += snprintf(p, 40, "%lu %c %lx 0", tid, state, pc);
+        for (unsigned long a = sp; a < sp + 4 * STALL_WORDS && a + 4 <= top && p < end; a += 4) {
+            unsigned w = *(const volatile unsigned *)a;
+            if (w >= 0x400000 && w < 0x80000000 && !(w & 3)) p += snprintf(p, 10, " %x", w);
+        }
+        *p++ = '\n';
+    }
+    /* O_WRONLY | O_CREAT | O_CLOEXEC, and O_APPEND, or O_TRUNC for the first */
+    int fd = open(STALL_FILE, stall.level ? 0x80109 : 0x80301, 0644);
+    if (fd < 0) return;
+    write(fd, stall.out, p - stall.out);
+    fsync(fd);
+    close(fd);
+    ++stall.level;
+}
+static void stall_step(void) {
+    unsigned now = (unsigned)now_ms(), passes = stall.passes;
+    if (passes != stall.seen || st.ended || st.suspended || st.wdt_long) {
+        if (passes != stall.seen && stall.level) unlink(STALL_FILE), stall.level = 0;
+        stall.seen = passes, stall.at = now;
+        return;
+    }
+    unsigned age = now - stall.at;
+    if (stall.level < 2 && age >= (stall.level ? STALL_AGAIN_MS : STALL_MS)) stall_write(age);
+}
+static void *stall_watch(void *arg) {
+    for (;;) usleep(STALL_POLL_MS * 1000), stall_step();
+    return arg;
+}
 static void wdt_set(int on) { /* Standby's suspend and the resume after it; a clean end */
     int ms = WDT_MS;
     if (st.wdt > 0) ioctl(st.wdt, on ? WDT_START : WDT_STOP, &ms);
@@ -13916,6 +14024,7 @@ void ringnav_wdt_long(void) {
 }
 static void wdt_poll(void) {
     if (st.ended || st.wdt < 0) return;
+    ++stall.passes;
     if (st.wdt && st.wdt_long) {
         st.wdt_long = 0;
         wdt_span(WDT_MS);
@@ -13925,6 +14034,8 @@ static void wdt_poll(void) {
     int fd = open(WDT_DEV, 0x80002), ms = WDT_MS; /* O_RDWR, as libhardware2, | O_CLOEXEC (MIPS) */
     st.wdt = fd > 0 && !ioctl(fd, WDT_START, &ms) ? fd : -1;
     if (fd > 0 && st.wdt < 0) close(fd);
+    unsigned long tid;
+    if (st.wdt > 0 && !pthread_create(&tid, 0, stall_watch, 0)) pthread_detach(tid);
 }
 /* The state record (docs/internals.md#watchdog): /mnt/data/q2-state says what the Q2 is doing, one
  * line rewritten and synced whenever it changes: the screen, Standby's suspend, the cable, the
