@@ -15642,7 +15642,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'art'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -15987,6 +15987,39 @@ pn.bands.clear(); pn.call(address=HOOKS['widget_on_paint_border'][0],args=(pbar(
 bw=335; fw=bw*470//1000; rows=[(0,i,bw,1) for i in range(17)]; fills=[(0,i,fw,1) for i in range(17)]
 assert [b[:4] for b in pn.bands if b[2]==bw]==rows and [b[:4] for b in pn.bands if b[2]==fw]==fills
 assert not [b for b in pn.bands if b[4]==0xff3a3a3a]; pn.close(); passed()
+# Covers (addon.c art_rows, art_row): a row's cover is /tmp/q2-<id>.art/<key>.jpg, key the FNV-1a 32 of its URI, a
+# tab and its context, in 8 lowercase hex digits. One cover in a list draws all its rows as stock Tidal's: 78 px
+# high, the 64 px cover (scaled to fit) at the theme's left, the title over the subtitle beside it, a row without
+# a file keeping the room empty and a row that opens a page its chevron. Without a file for any row (another
+# row's key is no match), or with a progress row, the list is as before.
+def art_file(uri,ctx):
+    h=2166136261
+    for c in f'{uri}\t{ctx}'.encode(): h=((h^c)*16777619)&0xffffffff
+    return f'/tmp/q2-soulseek.art/{h:08x}.jpg'
+COVERS=[('list','album','One','An Artist','al-1','playalbum'),('local','/mnt/mmc/.soulseek/Two.flac','Two','','','')]
+def covers(files=(),rows=COVERS,msg='',cursor=''):
+    c=SlskMachine(); c.open(); c.answer('ok','refresh','',SMENU)
+    for f in files: c.files[f]=bytearray()
+    c.pick(2); c.answer('ok',msg,cursor,rows); return c
+def heights(c): return [c.get(r+O['W_H']) for r in c.rows()]
+def cover_images(c): return [k for r in c.rows() for k in c.nodes[r]['children'] if c.nodes[k].get('image','').startswith('file://')]
+for files in ((),(art_file('album','al-2'),)):
+    c=covers(files); assert c.labels()==['Downloads','One','An Artist','Two',''] and heights(c)==[64,64] and not cover_images(c),(c.labels(),heights(c))
+c=covers((art_file('album','al-1'),),[COVERS[0],('progress','','Half','','','500')])
+assert heights(c)==[64,64] and not cover_images(c); passed()
+c=covers((art_file('album','al-1'),)); x=O['CF_EDGE']; tx=x+76
+assert c.labels()==['Downloads','One','An Artist','Two'],c.labels()
+assert c.nodes[c.get(c.find('scroll_view')+O['W_PARENT'])]['item_height']==78 and heights(c)==[78,78] and [c.get(r+O['W_Y']) for r in c.rows()]==[0,78]
+img,title,detail,_=c.nodes[c.rows()[0]]['children']
+assert c.nodes[img]['image']=='file://'+art_file('album','al-1') and c.nodes[img]['draw_type']==4 and box(c,img)==[x,7,64,64],box(c,img)
+assert box(c,title)==[tx,12,316-tx,30] and box(c,detail)==[tx,42,316-tx,24] and chevron(c,0),(box(c,title),box(c,detail))
+two,=c.nodes[c.rows()[1]]['children']; assert box(c,two)==[tx,0,375-x-tx,78],box(c,two); passed()
+# Its later pages (page_next) join it as 78 px rows, the trailing Loading… one too, the rows shown kept.
+more=[(*COVERS,*[('info','',f'Row {i}','','','') for i in range(8)]),[('info','','Last','','','')]]
+c=covers((art_file('album','al-1'),),more[0],'pages','c1'); rows=c.rows()
+assert c.labels()[-1]=='Loading…' and heights(c)==[78]*11,(c.labels()[-2:],heights(c))
+c.answer('ok','pages','',more[1]); assert c.requests[-1]==('downloads','c1') and c.rows()[:10]==rows[:10] and c.labels()[-1]=='Last'
+assert heights(c)==[78]*11 and c.get(c.find('scroll_view')+O['VIEW_CONTENT_H'])==11*78 and len(cover_images(c))==1; passed()
 # Search: the T9 box, its OK opening "search" for the text, escaped.
 m.pick(1); edit=m.find('edit'); assert m.nodes[edit]['tips']=='Search Soulseek'
 m.nodes[edit]['text']='aphex\ttwin'; f,ctx=m.handler(edit,O['EVT_VALUE_CHANGED'])
