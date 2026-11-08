@@ -35,4 +35,4 @@ A helper another file calls for every row or pixel goes in `navigation.h` as `st
 
 ## License
 
-Contributions are under the [GNU GPL v3](LICENSE) (GPL-3.0-only), the project's licence; the kernel-side files in `tools/` are GPL-2.0-or-later. By opening a pull request you license your change under the same terms as the file it changes. Contributions made while the project was MIT remain under [MIT](LICENSE-MIT).
+Contributions are under the [GNU GPL v3](LICENSE) (GPL-3.0-only), the project's licence; the kernel-side files in `tools/` are GPL-2.0-or-later. By opening a pull request you license your change under the same terms as the file it changes. Contributions made while the project was MIT remain under [MIT](https://github.com/DiamondBond/q2-pod/blob/1.7.1/LICENSE).
