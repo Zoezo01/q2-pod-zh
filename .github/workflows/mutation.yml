@@ -1,12 +1,13 @@
-# Mutation tests of tools/; see docs/building.md#mutation-tests. Needs no stock firmware: only
-# synthetic fixtures run here, and survivors.txt holds repo source alone.
+# Mutation tests of tools/ and of patch/*.c; see docs/building.md#mutation-tests. Needs no stock
+# firmware: only synthetic fixtures run here, and the survivors hold repo source alone.
 # - A pull request mutates only the functions it adds or changes, and reports without failing.
 # - Each night mutates only what changed since the last run: mutmut keeps each function's hash and
 #   results in mutants/, cached here, and reruns the mutants of a function whose code changed.
 #   A change to test/unit, test/release.py, the requirements, or a .S, .c or .h file in tools/ starts
 #   the cache afresh.
 # - Sundays, and by hand, mutate everything from scratch: a cached result can't see a change outside
-#   its own function, such as a module's constant or a function it calls.
+#   its own function, such as a module's constant or a function it calls. The C files test/cmut
+#   wires up are mutated then too, each whole, on a runner of its own.
 name: Mutation tests
 
 on:
@@ -89,4 +90,61 @@ jobs:
           path: |
             survivors.txt
             mutmut.log
+          if-no-files-found: ignore
+
+  cmut:
+    # patch/*.c, a file at a time against its own tests, in test/cmut's sandbox (docs/building.md#c).
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '23 3 * * 0'
+    runs-on: ubuntu-24.04
+    # A runner a file: all eight in turn took 38 to 45 minutes on four desktop threads on two cores,
+    # as a runner has, and a runner is slower, so one runner could pass the hour. Alone, the longest
+    # took 7 to 11 minutes (docs/building.md#c).
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each file sandbox.sh wires up, and its floor: a little under its measured score, so the job
+        # catches a collapse, not each survivor.
+        include:
+          - {file: library_scope, floor: 87}
+          - {file: chapters, floor: 90}
+          - {file: mp3_gapless, floor: 68}
+          - {file: lockscreen, floor: 77}
+          - {file: photos, floor: 86}
+          - {file: headset, floor: 92}
+          - {file: radio, floor: 87}
+          - {file: visualizer, floor: 89}
+    env:
+      FILE: ${{ matrix.file }}
+      FLOOR: ${{ matrix.floor }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # test/fw's files run under this Python, mounted read-only in the sandbox: position-independent,
+      # unlike the image's own (docs/building.md#firmware-tests).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt -r test/unit/requirements.txt
+      - run: docker build -t q2-cmut test/cmut
+      - name: Mutate
+        run: |
+          python3 test/cmut/mutate.py "patch/$FILE.c" "cmut/$FILE"
+          CMUT_PYTHON="$pythonLocation" test/cmut/sandbox.sh "patch/$FILE.c" "cmut/$FILE" "cmut/$FILE.jsonl" --workers 4
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: |
+          failed=0
+          mkdir -p survivors
+          printf '### patch/%s.c, floor %s%%\n\n```\n' "$FILE" "$FLOOR" >> "$GITHUB_STEP_SUMMARY"
+          python3 test/cmut/report.py "patch/$FILE.c" "cmut/$FILE" "cmut/$FILE.jsonl" --floor "$FLOOR" \
+            --survivors "survivors/$FILE.txt" | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+          printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          exit $failed
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: c-surviving-mutants-${{ matrix.file }}
+          path: |
+            survivors/
+            cmut/*.jsonl
           if-no-files-found: ignore
