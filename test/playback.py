@@ -1832,6 +1832,10 @@ m.word(O['MCL_MODE'],0); assert m.fade(6)==0  # the last track
 m.word(O['MCL_MODE'],3); assert m.fade(6)==0  # 'ALBUM A' back to 'album a': gapless
 m.word(m.library_rows[6]+O['REC_ALBUM'],m.string('Album C')); assert m.fade(3)==0 and m.fade(6)==7000 and m.fade(0)==7000
 m.word(O['MCL_MODE'],0); assert m.fade(6)==0
+# Play Next moves rows' bytes in place (playback_queue_insert): the next row's address stays, its song changes.
+m=XfadeMachine(); assert m.fade(3)==0  # the image's two CUE tracks
+r=m.library_rows[4]; m.word(r+O['REC_PATH'],m.string('/B/01.flac')); m.word(r+O['REC_ALBUM'],m.string('Album B'))
+assert m.fade(3)==7000
 # A DSD next never fades (the filter can't mix under it): any case of the three extensions. DSD going
 # out is the filter's to pass through, so the policy still fades out of one.
 for name in ('/B/x.dsf','/B/x.DFF','/B/x.iso'):

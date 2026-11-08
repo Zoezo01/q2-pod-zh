@@ -861,7 +861,7 @@ def play_next(fw, player, mcl, size, pos, n):
     return paths(rows[queue]), at, rows
 
 
-@pytest.mark.parametrize('pos', [0, 3, 6])  # the first of 7, the middle, the last
+@pytest.mark.parametrize('pos', [0, 3, 5, 6])  # the first of 7, the middle, the one before the last, the last
 @pytest.mark.parametrize('n', [1, 2, 9])
 def test_play_next_lands_after_the_song_playing(fw, player, mcl, pos, n):
     queue, at, _ = play_next(fw, player, mcl, 7, pos, n)

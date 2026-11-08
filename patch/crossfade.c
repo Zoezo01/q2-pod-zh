@@ -25,7 +25,7 @@
 #define RS_DEFAULT 30
 
 static struct {
-    int read, on, seconds, done, key[6], stops, counted;
+    int read, on, seconds, done, key[8], stops, counted;
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
@@ -493,9 +493,12 @@ void xfade_poll(int next, int shuffled) {
     else if (xf.flag && !xf.counted && access("/tmp/notfile", 0) && access("/tmp/notsupport", 0) &&
              !navigator_window_is_exist("msginfo_dialog"))
         xf.counted = 1, ++xf.stops;
-    int key[6] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
+    /* the rows' paths too: Play Next moves rows' bytes, so a row's address can hold another song */
+    int key[8] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
                    in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
-                   shuffled && next != -1 && pos < n, xf.stops };
+                   shuffled && next != -1 && pos < n, xf.stops,
+                   in ? (int)P(deque_at(q, pos), REC_PATH) : 0,
+                   in ? (int)P(deque_at(q, (unsigned)next), REC_PATH) : 0 };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;
     memcpy(xf.key, key, sizeof key);
     int ms = key[0] && key[1] &&
