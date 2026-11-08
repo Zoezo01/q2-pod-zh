@@ -1174,6 +1174,7 @@ FUNCTIONS = {
  'toolsTrimRight': ('void', 'char *'),
  'toolsHanziToPinyin': ('int', 'const char *, char *'),
  'toolsGetMusicNum': ('int', 'void'),
+ 'toolsGetUserStop': ('int', 'void'),  # toolsStopUpdateMusic's flag: the scan dialog's Back
  'taglib_file_audioproperties': ('void *', 'void *'),
  'taglib_file_free': ('void', 'void *'),
  'deleteMusicFromFav': ('int', 'void *'),

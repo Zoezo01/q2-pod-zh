@@ -8747,6 +8747,53 @@ m.open(); assert not m.queried() and len(m.nodes[m.slide]['children'])==3; m.clo
 for writer in WRITERS:
     m.rescan(writer); m.calls=[]; m.open(); assert m.queried()==1; m.close()
     m.calls=[]; m.open(); assert not m.queried(); m.close(); passed()
+# Update Local Music while the dialog's count reads songtable on its own connection: stock's
+# scanAllMusicFile and toolsInitDatabase run on a real SQLite file. The scan's thread waits for the
+# count, so the drop commits and the scan runs. Back ends the wait, and the drop fails as before.
+class ScanLockMachine(UiLoad,CoverflowMachine):
+    def __init__(self,path):
+        super().__init__(); self.mock('strstr@GLIBC_2.0')
+        self.db=sqlite3.connect(path,isolation_level=None,timeout=0)  # stock sets no busy handler
+        self.handlers.pop(HOOKS['scanAllMusicFile'][0]+12); self.handlers.pop(syms['toolsGetUserStop'])  # stock's own code
+        for n in ('sqlite3_open','sqlite3_exec','sqlite3_close','sqlite3_free','sprintf@GLIBC_2.0','toolsClearDbCount','toolsLoadAllFile','usleep@GLIBC_2.0'):
+            self.handlers[syms[n]]='lock:'+n
+        self.sqls=[]
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('lock:'): return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]; name=name[5:].split('@')[0]; ret=0
+        self.calls.append((name,a,b,c))
+        if name=='sqlite3_open': assert self.text(a)=='/mnt/data/database.db'; self.word(b,123)
+        elif name=='sprintf': v=iter((c,d)); u.mem_write(a,re.sub('%s',lambda _:self.text(next(v)),self.text(b)).encode()+b'\0')
+        elif name=='usleep':  # the count ends meanwhile: its read lock goes, then its thread answers
+            self.reading.close()
+            while self.threads: self.nested(*self.threads.pop(0))
+        elif name=='sqlite3_exec':
+            assert a==123; self.sqls.append(self.text(b)); err=self.get(u.reg_read(UC_MIPS_REG_SP)+16)
+            try:
+                for sql in filter(str.strip,self.text(b).split(';')):  # each statement, as sqlite3_exec runs them
+                    for row in self.db.execute(sql).fetchall():
+                        values=self.alloc(4*len(row))
+                        for i,x in enumerate(row): self.word(values+4*i,self.string(str(x)))
+                        if c: self.nested(c,d,len(row),values,0)
+                if err: self.word(err,0)
+            except sqlite3.OperationalError as e:
+                ret=5 if 'locked' in str(e) else 1  # SQLITE_BUSY
+                if err: self.word(err,self.string(str(e)))
+        self.returns(ret)
+with tempfile.TemporaryDirectory() as directory:
+    path=str(pathlib.Path(directory)/'database.db'); disk=sqlite3.connect(path)
+    disk.execute('create table songtable(id INTEGER PRIMARY KEY AUTOINCREMENT,filename)')
+    disk.executemany('insert into songtable(filename) values(?)',[(f'{i}.flac',) for i in range(1000)]); disk.commit(); disk.close()
+    for back in (1,0):
+        m=classic_light_new(ScanLockMachine,path=path); msg_win(m,'Updating No.0'); assert len(m.threads)==1  # Classic's msg_count, its thread not yet run
+        m.reading=sqlite3.connect(path,timeout=0).execute('select id from songtable'); m.reading.fetchone()  # its read lock
+        m.byte(STOP,back)  # toolsStopUpdateMusic's flag
+        m.call(address=HOOKS['scanAllMusicFile'][0],args=(m.string('/mnt/mmc'),1,0,0),gap=0); m.reading.close()
+        ran=[c[0] for c in m.calls if c[0].startswith('tools') or c[0]=='usleep']
+        assert ran==([] if back else ['usleep','toolsClearDbCount','toolsLoadAllFile']),(ran,m.sqls)
+        assert m.db.execute('select count(*) from songtable').fetchone()[0]==(1000 if back else 0); m.db.close()  # kept, or made again
+passed()
 # Albums without art start the thread behind a progress screen; destroy joins it and drops the poll.
 m=CoverflowMachine(cached=False); page=m.open()
 assert len(m.threads)==1 and m.timers and any((t or '').startswith('Preparing artwork') for t in m.texts()) and 'Cancel' in m.texts()
