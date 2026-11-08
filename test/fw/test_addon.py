@@ -833,6 +833,7 @@ class Page:
     where the pthread would and the page's tick takes it."""
     def __init__(self, fw, manifest=b'name=Foo\n', opens=True):
         self.fw, self.sel, self.y, self.timers, self.drawn, self.toasts, self.backs = fw, 0, 0, 0, 0, [], 0
+        self.aborts: list = []  # sections()' swipe aborts
         self.world = card(fw, foo=manifest)
         self.world.files[b'/tmp/q2-foo'] = b'1'
         self.page, self.view = block(fw, size=4096), block(fw, size=4096)  # widgets' bytes, all zero
@@ -1748,7 +1749,6 @@ def sections(fw, n=3):
     p = Page(fw)
     p.answer(msg=b'sections', rows=[(b'list', b'sec%d' % i, b'S%d' % i, b'', b'', b'') for i in range(n)])
     fw.mock('pointer_event_init', lambda *_: 0)
-    p.aborts = []
     def dispatch(*_):
         p.aborts.append((p.pg.sdown, p.pg.sclaim))
         touch(p, 'EVT_POINTER_ABORT', 0, 0)
