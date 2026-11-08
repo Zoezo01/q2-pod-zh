@@ -153,7 +153,7 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-librespot">Spotify</a></b></td>
-    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi.</td>
+    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>.</td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-deezer">Deezer</a></b></td>
