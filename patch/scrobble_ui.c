@@ -76,13 +76,10 @@ static int upload_wait(const void *unused) {
 }
 
 int upload_scrobbles(void *ctx, void *event) {
-    if (smart_hold(upload_scrobbles, ctx, 0)) return 0; /* once Smart Wi-Fi's link is up */
-    int started = get_wifisignal() > 0 ? scrobble_start() : -2;
+    if (!need_link(upload_scrobbles, ctx)) return 0; /* held for Smart Wi-Fi's link, or none */
+    int started = scrobble_start();
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);
-    toast(started > 0     ? "Uploading scrobbles"
-          : !started      ? "Already uploading"
-          : started == -2 ? "Connect to Wi-Fi first"
-                          : "Upload failed");
+    toast(started > 0 ? "Uploading scrobbles" : !started ? "Already uploading" : "Upload failed");
     return 0;
 }

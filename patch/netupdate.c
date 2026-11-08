@@ -454,10 +454,8 @@ static int online_click(void *ctx, void *event) {
         show("Cancelling…");
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
-    } else if (smart_hold(online_click, ctx, 0)) {
-        /* runs once Smart Wi-Fi's link is up; a press while it waits takes its place */
-    } else if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+    } else if (!need_link(online_click, ctx)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
         nu.cancel = nu.percent = 0;
         nu.state = NU_RUNNING;
@@ -809,10 +807,8 @@ static int sh_click(void *ctx, void *event) {
             sh.armed = r + 1;
         else
             sh_start(JOB_REMOVE, i);
-    } else if (smart_hold(sh_click, ctx, 0)) {
-        /* runs once Smart Wi-Fi's link is up; a press while it waits takes its place */
-    } else if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+    } else if (!need_link(sh_click, ctx)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
         sh_told(1, 0);
     else if (i == ROW_CHECK)

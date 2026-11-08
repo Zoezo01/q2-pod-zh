@@ -206,6 +206,17 @@ int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page) {
     return 1;
 }
 
+/* A press of the payload's that needs the link, fn(ctx, event) itself: 1, it goes on; 0, it waits
+ * for Smart Wi-Fi's link (smart_hold) or, with none coming, "Connect to Wi-Fi first". Held first,
+ * so a second press after the link is up but before the held one runs joins it rather than running
+ * beside it (and cancelling it). */
+int need_link(int (*fn)(void *, void *), void *ctx) {
+    if (smart_hold(fn, ctx, 0)) return 0;
+    if (get_wifisignal() > 0) return 1;
+    toast("Connect to Wi-Fi first");
+    return 0;
+}
+
 /* Stock actions that check the link once (networkGetConnectStatus) and say msg_notnetwork without
  * it, held the same way: Streaming's Tidal row, Network service's Wi-Fi transfer and Now Playing
  * More's online lyrics and cover match. None reads its event, and the rows are found again by name
