@@ -2234,7 +2234,8 @@ def test_an_empty_lengths_file_is_empty(fw):
 
 # Scrobbling.
 class Sa(C.Structure):
-    _fields_ = [('pending', C.c_uint), ('first_at', C.c_uint), ('check_at', C.c_uint), ('running', C.c_int)]
+    _fields_ = [('pending', C.c_uint), ('first_at', C.c_uint), ('check_at', C.c_uint), ('running', C.c_int),
+                ('woke', C.c_int)]
 
 
 MINUTE = 60000

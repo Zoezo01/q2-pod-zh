@@ -324,4 +324,7 @@ int ringnav_tidal_track(void *a, void *b, void *c, void *d) {
     sem_post(stream_gate);
     return r;
 }
+
+/* Smart Wi-Fi (navigation.c smart_needed): a download in progress keeps the radio on. */
+int tidal_busy(void) { return td.busy; }
 #endif

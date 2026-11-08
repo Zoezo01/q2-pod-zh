@@ -718,6 +718,16 @@ static void game_poll(void) {
     gm.seen = time_now_ms(); /* Smart Awake: asked again GAME_IDLE_MS on */
 }
 
+/* Smart Wi-Fi (navigation.c smart_needed): an app started, or restarting after Retry, keeps the radio
+ * on until it stops (by itself, Stop Streaming Services or Rockbox). One stopped for USB storage
+ * counts once it starts again: the cable holds the radio meanwhile, and an app deleted from the
+ * computer, which never starts again, holds nothing. */
+int addon_running(void) {
+    for (int i = 0; i < ap.n; ++i)
+        if (ap.a[i].launched || ap.a[i].restart) return 1;
+    return 0;
+}
+
 void addon_poll(void) {
     game_poll();
     for (int i = 0; i < ap.n; ++i) poll_one(&ap.a[i]);
@@ -1356,6 +1366,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
 int addon_open(void *ctx, void *event) {
     (void)event;
     int k = (int)(long)ctx;
+    if (smart_hold(addon_open, ctx, 0)) return 0; /* the app starts once Smart Wi-Fi's link is up */
     if (k >= 0 && k < ap.shown) page_at(ap.order[k], "menu", "", ap.a[ap.order[k]].name, 1);
     return 0;
 }
