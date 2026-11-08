@@ -18680,7 +18680,9 @@ class LogoMachine(PowerMachine):
         elif name=='waitpid':
             assert a==4242; self.word(b,0); ret=a
             if self.rotated is not None: self.files[LOGO_ROT]=self.rotated
-        elif name=='navigator_to_with_context': self.toasts.append(self.text(b+8))
+        elif name=='navigator_to_with_context':
+            self.toasts.append(self.text(b+8)); assert len(self.toasts)<4,'a toast that keeps toasting'
+            self.nested(sleep_hook,0x1234)  # its dialog's loop
         self.returns(ret,clobber=True)
     def sync(self,mounted=True):  # a poll with the card in or out; returns the threads it started
         self.files['/proc/mounts']=b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n' if mounted else b'none /mnt/data ubifs rw 0 0\n'

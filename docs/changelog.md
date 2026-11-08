@@ -2,6 +2,7 @@
 
 - **1.7.1**:
   - App Store: **Check for Updates**, the first row, checks for new releases now, and a message says how many apps can be updated. The page still checks on its own as it opens, and then says so only when an app can be updated. With no list of apps yet, the same row loads it; it was called **App list**.
+  - Display: a boot logo on the card that isn't a 320x375 JPEG shows its message once. It used to repeat the message without end and freeze the Q2 until it restarted, at every power-on.
 - **1.7.0**:
   - Cover Flow: under **Theme: Minimal** and **Theme: Modern** the third cover on each side stays when you stop turning, and the covers' reflections are Classic's, longer and clearer. The third covers used to vanish as the row settled.
   - Display: under **Theme: Classic** the battery icon is a little smaller, and with **Light Mode** off its outline is Light Mode's grey, so it shows on the dark bar.
