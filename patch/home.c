@@ -85,6 +85,7 @@ int ringnav_localmusic(void *win, void *ctx) {
         } else
             widget_restack(stock[middle[i]], n++);
     widget_restack(library_row(view, "local_frequentplay", most_played, 0, "Most Played", 1), n++);
+    widget_set_visible(stock[L_FREQUENT], 0, 0); /* Most Played is its list, from every listen */
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
     widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
