@@ -10,6 +10,7 @@
   - Card apps: an app can split its first page into sections, such as Home, Albums and Playlists. One shows at a time; swipe left or right on it to move to the next or the previous, and the title shows which one it is, such as Albums 2/3. The wheel still only moves through the list.
   - Streaming: card apps can show a cover beside each row of a list, as Tidal's lists do. An app that doesn't send covers looks as before.
   - Streaming: a card app can show a long list a window at a time, with **Next page** and **Previous page** rows at its ends. Back leaves the list at once, instead of going back through every page, and Back from a deeper level to a long list is quicker.
+  - Streaming: in a card app, a list whose first row is **Search** shows it as a magnifying glass at the right of the title bar, beside the page's name, as Tidal does. Tap it to search. Under **Theme: Classic**, which has no title bar, it stays a row.
 
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
@@ -23,7 +24,6 @@
   - Display: under **Theme: Classic** the play/pause symbol stays by the battery on Home too, as on every other page. It used to move to the left, in place of the "Q2 Pod" title.
   - Library: **Frequent** is gone. **Most Played**, just above it, lists your most played songs.
   - Library: under **Theme: Classic** album covers in Albums and Folder have a small gap between them. They used to touch.
-  - Streaming: in a card app, a list whose first row is **Search** shows it as a magnifying glass at the right of the title bar, beside the page's name, as Tidal does. Tap it to search. Under **Theme: Classic**, which has no title bar, it stays a row.
 - **1.7.1**:
   - App Store: **Check for Updates**, the first row, checks for new releases now, and a message says how many apps can be updated. The page still checks on its own as it opens, and then says so only when an app can be updated. With no list of apps yet, the same row loads it; it was called **App list**.
   - Cover Flow: a large PNG or progressive JPEG cover (over 1024 px) no longer risks restarting the Q2 while Cover Flow builds its covers. ffmpeg makes those covers now, and the Photos thumbnails too.

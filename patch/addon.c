@@ -1173,10 +1173,10 @@ static void show(void);
 
 /* A first row of kind search leaves the list for a search icon at the title bar's right, as
  * Tidal's navbar has (s_img_search), where the theme has a title bar; under one without (the name
- * in the status bar) the row stays. The row's title isn't needed: the box's tips are the app's.
- * Whether it did. */
+ * in the status bar) the row stays, as does a sole row, which would leave an empty list. The row's
+ * title and subtitle aren't shown: the box's tips are the app's. Whether it did. */
 static int take_find(lv_t *l) {
-    if (!theme()->page_title_h || !l->n || strcmp(cell(0, 0), "search")) return 0;
+    if (!theme()->page_title_h || l->n < 2 || strcmp(cell(0, 0), "search")) return 0;
     for (int i = 4; i < 4 + 6 * (l->n - 1); ++i) pg.f[i] = pg.f[i + 6]; /* the rows up one */
     --l->n;
     return 1;
@@ -1184,12 +1184,14 @@ static int take_find(lv_t *l) {
 
 static int find_tapped(void *ctx, void *event);
 
-/* The search icon at the title bar's right, the title narrowed to end before it. */
+/* The search icon at the title bar's right, the title narrowed to end before it and still centred.
+ * ponytail: taps only, so the wheel and buttons don't reach search on such a list; a key bound to
+ * G_FIND if that is ever asked for. */
 #define FIND_X 302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
 static void find_icon(void) {
     void *title = widget_get_child(pg.page, 0);
     int h = I(title, W_H);
-    widget_move_resize(title, I(title, W_X), 0, FIND_X - I(title, W_X), h);
+    widget_move_resize(title, 375 - FIND_X, 0, 2 * FIND_X - 375, h);
     void *icon = image_create(pg.page, FIND_X, 0, 50, h);
     widget_use_style(icon, "s_img_search");
     widget_set_prop_int(icon, "clickable", 1); /* an image sends no click unless it is, as Tidal's img_search */

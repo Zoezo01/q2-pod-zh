@@ -1360,11 +1360,28 @@ def test_a_held_play_sends_a_rows_hold_op(fw):
     assert hold(None) == 0
 
 
+SEARCH = (b'search', b'', b'Search', b'', b'', b'')
+
+
+def edit_box(fw):
+    """edit_create is peq_ui.c's, so its widget is mocked: the address the box gets."""
+    box = C.create_string_buffer(256)
+    fw.mock('widget_factory_create_widget', lambda *_: C.addressof(box))
+    return C.addressof(box)
+
+
+def tap_find(p):
+    """The title bar's icon tapped: the box stands, alone on the page."""
+    box = edit_box(p.fw)
+    p.fw.fn('addon__find_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert p.pg.edit == box and p.pg.view is None
+
+
 def test_the_search_box_opens_a_level_for_its_text(fw):
     p = Page(fw)
-    p.answer(rows=[(b'search', b'', b'Search', b'', b'', b'')])
-    p.click(0)
-    assert p.pg.view is None  # the box alone
+    p.answer(rows=[SEARCH, item(0, b'list')])
+    tap_find(p)
     def typed(w, out, n, *_):
         C.memmove(out, b'a b\0', 4)
     fw.mock('widget_get_text_utf8', typed)
@@ -1375,12 +1392,20 @@ def test_the_search_box_opens_a_level_for_its_text(fw):
 
 def test_an_empty_search_goes_back_to_the_menu(fw):
     p = Page(fw)
-    p.answer(rows=[(b'search', b'', b'Search', b'', b'', b'')])  # a first search row: the title bar's icon
-    fw.fn('addon__find_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
-    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    p.answer(rows=[SEARCH, item(0, b'list')])  # a first search row: the title bar's icon
+    tap_find(p)
     fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     fw.fn('addon__go', C.c_int, C.c_void_p)(None)
     assert p.pg.depth == 1
+
+
+def test_a_sole_search_row_stays_a_row(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH])
+    assert p.top.n == 1 and not p.top.find
+    box = edit_box(fw)
+    p.click(0)
+    assert p.pg.edit == box and p.pg.view is None
 
 
 def test_levels_past_the_depth_forget_the_oldest(fw):

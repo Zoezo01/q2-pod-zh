@@ -16180,7 +16180,7 @@ def find_tap(s,w):
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','c1',[('search','','Search','','','')]+arts(0,49))
 icon=find_icon(s); title=s.nodes[s.page]['children'][0]
 assert icon and len(s.rows())==50 and 'Search' not in s.labels() and s.get(icon+O['W_X'])==302 and s.nodes[icon]['clickable']==1
-assert s.get(title+O['W_X'])+s.get(title+O['W_W'])<=302 and s.get(icon+O['W_H'])==s.get(title+O['W_H'])
+assert s.get(title+O['W_X'])==73 and s.get(title+O['W_W'])==229 and s.get(icon+O['W_H'])==s.get(title+O['W_H'])
 find_tap(s,icon); edit=s.find('edit'); assert edit and not s.find('scroll_view')
 s.answer('ok','pages','c2',arts(1)); assert s.requests[-1]==('downloads','c1') and not s.find('scroll_view')
 s.answer('ok','pages','',arts(2)); assert s.requests[-1]==('downloads','c2') and not s.find('scroll_view')
