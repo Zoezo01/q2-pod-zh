@@ -1226,7 +1226,7 @@ static void row(lv_t *l, int i) {
 /* Stock never lets a row's decoded cover go (nothing calls image_manager_unload_unused), so one a
  * user scrolled past would stay until the list closes: at most ART_KEEP rows' stay decoded around
  * the list's real scroll position (its yoffset, so wheel, touch and fling alike), others unloaded
- * here, from show() and the page's tick; [pg.art_lo, pg.art_hi) names the rows that may be decoded,
+ * here, from show(), drop() and the tick; [pg.art_lo, pg.art_hi) names the rows that may be decoded,
  * first widened to all a move crossed since the last tick, so none is left behind, and the cost is
  * the rows crossing, not the list's length. An image draws by name and keeps no bitmap between
  * paints (internals.md Covers), so a row scrolled back loads again and nothing dangles.
