@@ -1181,7 +1181,7 @@ static int br_closed(void *ctx, void *event) {
     return 0;
 }
 
-/* Streaming's Spotify row (navigation.c ringnav_stream): librespot started if it is not, and the
+/* Streaming's Spotify row (home.c ringnav_stream): librespot started if it is not, and the
  * browser; without librespot on the card, Now Playing says so. */
 int spot_open(void *ctx, void *event) {
     if (access(SPOT_BIN, 0) && !sp.launched) return spot_np(), 0;

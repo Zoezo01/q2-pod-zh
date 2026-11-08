@@ -10,7 +10,7 @@
  *   icon-40.png, icon.png
  *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit;
  *            without them, the shared stream_app.
- * Streaming lists those on the card (navigation.c ringnav_stream). A row starts its app and opens
+ * Streaming lists those on the card (home.c ringnav_stream). A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
  * navigation.c's songs_open). Its status file /tmp/q2-<id>.state says whether to hold standby off
@@ -1352,7 +1352,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     return 1;
 }
 
-/* An app's Streaming row (navigation.c ringnav_stream; ctx: its place by name at the last scan). */
+/* An app's Streaming row (home.c ringnav_stream; ctx: its place by name at the last scan). */
 int addon_open(void *ctx, void *event) {
     (void)event;
     int k = (int)(long)ctx;

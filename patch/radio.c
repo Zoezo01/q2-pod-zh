@@ -771,7 +771,7 @@ static int closed(void *ctx, void *event) {
     return 0;
 }
 
-/* Streaming's Internet Radio row (navigation.c ringnav_stream). */
+/* Streaming's Internet Radio row (home.c ringnav_stream). */
 int radio_open(void *ctx, void *event) {
     if (ui.page || !(ui.page = page_open("radio_page", closed, keyup))) return 0;
     if (access(RADIO_DIR, 0)) mkdir(RADIO_DIR, 0777);

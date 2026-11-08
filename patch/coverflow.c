@@ -4478,7 +4478,7 @@ static void home_fill(void *list, int service) {
 }
 
 /* Home's Library row in Split (a set with home_lib, Library on Home on): its rows slide in as Settings' do, each filled
- * by the page's own constructor (navigation.c library_rows) in Home's rows' shape, and open what
+ * by the page's own constructor (home.c library_rows) in Home's rows' shape, and open what
  * they open from the page. Full and Carousel keep the page. */
 static int home_library(void *ctx, void *event) {
     if (ipod_home() || !home.lib || !home_lib_on()) return on_home_music_onclick(ctx, event);
@@ -4488,7 +4488,7 @@ static int home_library(void *ctx, void *event) {
     return 0;
 }
 
-/* Home's Streaming row, the same way (navigation.c stream_rows). The rebuild frees the rows, and
+/* Home's Streaming row, the same way (home.c stream_rows). The rebuild frees the rows, and
  * home.row is read only under PANE_SERVICE, so that goes first. */
 static int home_streaming(void *ctx, void *event) {
     if (ipod_home() || !home.stream) return on_home_stream_onclick(ctx, event);

@@ -1107,7 +1107,7 @@ FUNCTIONS = {
  'table_client_get_virtual_h': ('int', 'void *'),
  'scroll_view_scroll_delta_to': ('int', 'void *, int, int, int'),
  'widget_destroy_children': ('int', 'void *'),
- 'widget_destroy': ('int', 'void *'),  # Streaming's Baidu Netdisk row (navigation.c ringnav_stream)
+ 'widget_destroy': ('int', 'void *'),  # Streaming's Baidu Netdisk row (home.c ringnav_stream)
  'list_item_create': ('void *', 'void *, int, int, int, int'),
  'hscroll_label_create': ('void *', 'void *, int, int, int, int'),
  'set_hscroll_label_attribute': ('void', 'void *'),
@@ -1119,7 +1119,7 @@ FUNCTIONS = {
  'widget_add_timer': ('unsigned', 'void *, int (*)(const void *), unsigned'),
  'widget_set_text': ('int', 'void *, const unsigned *'),
  'widget_off_by_func': ('int', 'void *, unsigned, void *, void *'),
- 'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (navigation.c library_rows)
+ 'widget_off_by_ctx': ('int', 'void *, void *'),  # Home's Library list (home.c library_rows)
  'on_home_music_onclick': ('int', 'void *, void *'),  # stock's Library card, which Home's Full keeps (coverflow.c home_library)
  'on_home_stream_onclick': ('int', 'void *, void *'),  # stock's Streaming card, the same (coverflow.c home_streaming)
  'window_close': ('int', 'void *'),
