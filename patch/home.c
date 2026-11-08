@@ -1,19 +1,11 @@
 /* Home's Library and Streaming: their pages and the lists Home's Split shows. */
 #include "navigation.h"
 
-/* A list_row titled text; returns its list_item. */
+/* A Library row titled text; into: one that opens another list, with stock's own list_into
+ * trailing image as the stock Local Music categories place it. Returns the row's list_item. */
 static void *library_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
-                         const char *text) {
-    void *label = list_row(view, icon, click, ctx);
-    widget_set_text_utf8(label, text);
-    return P(P(label, W_PARENT), W_PARENT);
-}
-
-/* A library row that opens another list: stock's own list_into trailing image, as the stock Local
- * Music categories place it. Returns the row's list_item. */
-static void *library_into(void *view, const char *icon, int (*click)(void *, void *), void *ctx,
-                          const char *text) {
-    void *label = list_row_core(view, icon, click, ctx, 210, 1);
+                         const char *text, int into) {
+    void *label = list_row_core(view, icon, click, ctx, into ? 210 : 260, into);
     widget_set_text_utf8(label, text);
     return P(P(label, W_PARENT), W_PARENT);
 }
@@ -78,24 +70,24 @@ int ringnav_localmusic(void *win, void *ctx) {
     for (int i = 0; i < L_STOCK; i++) stock[i] = widget_get_child(view, i);
     unsigned n = 0; /* each row moves to n as it comes, so Update Local Music, left, ends last */
     if (library_search())
-        widget_restack(library_into(view, (void *)0, stock_search, 0, "Search"), n++);
-    widget_restack(library_into(view, "local_shuffle", shuffle_menu, 0, "Shuffle"), n++);
+        widget_restack(library_row(view, (void *)0, stock_search, 0, "Search", 1), n++);
+    widget_restack(library_row(view, "local_shuffle", shuffle_menu, 0, "Shuffle", 1), n++);
     static const unsigned char middle[] = { L_ARTISTS,   L_ALBUMS, L_SONGS, L_GENRES,
                                             L_PLAYLISTS, L_FAV,    L_ADDED, L_RECENT };
     for (unsigned i = 0; i < sizeof middle; i++)
         if (middle[i] == L_GENRES) { /* browsing by a tag, as Genre */
             widget_restack(stock[L_GENRES], n++);
-            widget_restack(library_into(view, "local_era", era_menu, 0, "Era"), n++);
+            widget_restack(library_row(view, "local_era", era_menu, 0, "Era", 1), n++);
         } else if (middle[i] == L_FAV) { /* My Fav is Ratings' Loved, its row kept hidden */
-            widget_restack(library_into(view, "local_fav", ratings_menu, 0, "Ratings"), n++);
+            widget_restack(library_row(view, "local_fav", ratings_menu, 0, "Ratings", 1), n++);
             widget_set_visible(stock[L_FAV], 0, 0);
             widget_restack(stock[L_FAV], n++);
         } else
             widget_restack(stock[middle[i]], n++);
-    widget_restack(library_into(view, "local_frequentplay", most_played, 0, "Most Played"), n++);
+    widget_restack(library_row(view, "local_frequentplay", most_played, 0, "Most Played", 1), n++);
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
-    widget_restack(library_into(view, "local_longsongs", long_songs, 0, "Long Songs"), n++);
+    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
     /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder; then iPod's Games.
      */
     static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
@@ -104,11 +96,11 @@ int ringnav_localmusic(void *win, void *ctx) {
     for (int k = 0; k < VIDEOS; k++)
         if (media_find(k + 1, path))
             widget_restack(
-                library_into(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k]), n++);
-    widget_restack(library_into(view, "local_games", games_open, 0, "Games"), n++);
+                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);
+    widget_restack(library_row(view, "local_games", games_open, 0, "Games", 1), n++);
     if (scrobble_ready())
-        widget_restack(library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles"),
-                       n++);
+        widget_restack(
+            library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles", 0), n++);
     library_look(view);
     return result;
 }
@@ -184,14 +176,15 @@ int ringnav_stream(void *win, void *ctx) {
         for (unsigned c = 0, stock = widget_count_children(view); c < stock; ++c)
             if (shows_image(widget_get_child(view, c), "list_tidal"))
                 svc_row(widget_get_child(view, c), 0, hide);
-        svc_row(library_into(view, "stream_spotify", spot_open, 0, "Spotify"), i++, hide);
+        svc_row(library_row(view, "stream_spotify", spot_open, 0, "Spotify", 1), i++, hide);
         for (int k = 0; k < st.svc_n; ++k)
-            svc_row(library_into(view, addon_icon(k), addon_open, (void *)(long)k, addon_name(k)),
+            svc_row(library_row(view, addon_icon(k), addon_open, (void *)(long)k, addon_name(k), 1),
                     i++, hide);
-        svc_row(library_into(view, "list_tidal", tidal_downloads, 0, "Tidal Downloads"), i++, hide);
-        svc_row(library_into(view, "stream_radio", radio_open, 0, "Internet Radio"), i++, hide);
-        svc_row(library_into(view, "stream_airplay", airplay_open, 0, "AirPlay"), i, hide);
-        library_into(view, "stream_config", stream_config, 0, "Configuration");
+        svc_row(library_row(view, "list_tidal", tidal_downloads, 0, "Tidal Downloads", 1), i++,
+                hide);
+        svc_row(library_row(view, "stream_radio", radio_open, 0, "Internet Radio", 1), i++, hide);
+        svc_row(library_row(view, "stream_airplay", airplay_open, 0, "AirPlay", 1), i, hide);
+        library_row(view, "stream_config", stream_config, 0, "Configuration", 1);
     }
     return result;
 }
