@@ -16214,7 +16214,7 @@ assert m.requests[-1]==('stop',) and m.toasts[-1][3]=='File Browser off' and 'na
 # Stop Streaming Services stops it too.
 m.systems=[]; run(m,'addon_stop'); assert m.systems==['kill $(cat /tmp/q2-filebrowser) 2>/dev/null || rm -f /tmp/q2-filebrowser']; passed()
 
-# Go to Album or Go to Artist on a song in a card app's folder (navigation.c qm_goto, addon.c
+# Go to Album or Go to Artist on a song in a card app's folder (playlists.c qm_goto, addon.c
 # addon_goto): with goto=1 in its manifest, its page opens on the song's album or artist, op "goto"
 # (album or artist, then the song's path), titled by the song's tag; More… keeps both, Back leaves
 # the page. Its page open already (the song played from it) is closed first, its late destroy leaving

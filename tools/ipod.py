@@ -929,7 +929,7 @@ def page_rows(g, kind):
     """(pitch, body, artwork inset) of a page kind's rows under g."""
     return {'art': (g.art_pitch, g.art_body, g.art_inset), 'lib': (g.lib_pitch, g.lib_body, g.lib_inset),
             'song': (g.song_pitch, g.song_body, g.text_art_inset),
-            # a set without toolbars gives Playlists two-line rows; navigation.c's pl_dress sizes them
+            # a set without toolbars gives Playlists two-line rows; playlists.c's pl_dress sizes them
             'playlist': (g.pitch, g.body, g.text_art_inset) if g.toolbar else (g.song_pitch, g.song_body, g.text_art_inset)
             }.get(kind, (g.pitch, g.body, g.text_art_inset))
 
@@ -1169,7 +1169,7 @@ def patch_asset(path, data, g=SET0):  # pragma: no mutate block
             check(box == [0, 50, 375, 50], f'{path}: unexpected action bar')
             box[1] = 0
         elif kind == 'list_item':  # playlist editing actions
-            box[1] = (10 if g.toolbar else 0) + ((box[1] - 60) // 78) * pitch  # navigation.c ringnav_playlistsmore
+            box[1] = (10 if g.toolbar else 0) + ((box[1] - 60) // 78) * pitch  # playlists.c ringnav_playlistsmore
         elif props.get('name') == 'view':  # allmusic's stock empty-state panel
             box[1] -= 50
         elif path in NAVBAR_ONLY:  # settings panels and notes keep their size; text ends clear of a top corner

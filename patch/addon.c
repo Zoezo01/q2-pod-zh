@@ -1400,7 +1400,7 @@ int addon_scrobbles(const char *path) {
 }
 
 /* Go to Album (album) or Go to Artist on a song in a card app's folder, /mnt/mmc/.<id>/…
- * (navigation.c qm_goto): when its manifest says goto=1, its page opens at op "goto" ("album" or
+ * (playlists.c qm_goto): when its manifest says goto=1, its page opens at op "goto" ("album" or
  * "artist", then the song's path), the level the app answers with, titled title; Back leaves it
  * for the page under it. Its page already open (the song played from it) is closed first, as
  * Coverflow's scoped page is: one page's state. 1 when it opened. */
