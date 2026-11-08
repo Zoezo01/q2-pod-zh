@@ -1095,7 +1095,8 @@ def motion_fields(t):
 
 
 def emit(themes, out, redirects={}):
-    """out/'themes.inc': the schemes, options and themes[] navigation.c includes, then the boot tables.
+    """out/'themes.inc': the schemes, options and themes[] theme_engine.c includes, then the boot tables;
+    out/'themes.h': their enums and macros, which every file of tools/build.py's NAVIGATION reads.
     redirects: ui name -> bitmask of the sets with their own <set>_<name>.bin."""
     sets = geometry_sets(themes)
     keys = list(theme_keys(themes))
@@ -1182,4 +1183,6 @@ def emit(themes, out, redirects={}):
                   f'.names = (const char *const[]){{{", ".join(map(json.dumps, o["names"]))}}}, ' +
                   (f'.sets = (const unsigned char[]){{{", ".join(map(gname, o["sets"]))}}}, ' if o['sets'] else '.sets = 0, ') + f'.n = {n}, .def = {d} }},'
                   for k, (n, d, o) in theme_keys(themes).items()), '};', '']
-    (out/'themes.inc').write_text('\n'.join(lines))
+    names = [l for l in lines[1:] if l.startswith(('enum {', '#define '))]
+    (out/'themes.h').write_text('\n'.join([lines[0], *names, '']))
+    (out/'themes.inc').write_text('\n'.join(l for l in lines if l not in names))

@@ -7,6 +7,7 @@
 #include "peq.h" /* libc/libcstl imports (deque_*, send) and the shared helpers */
 #include "playback.h"
 #include "stock.h"
+#include "themes.h" /* tools/theme.py: the themes' enums and macros; theme_engine.c has the tables */
 #include "xiph.h"
 #undef select /* navigation.c's UI selection helper; headset.c uses libc select */
 

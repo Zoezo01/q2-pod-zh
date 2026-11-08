@@ -506,7 +506,8 @@ def test_emit_both(tmp_path):
             '.ink = 0x161616, .bar = {0}, .bar_line = 0x000000, .bar_line2 = 0x000000 },\n    { .tones = accents[8]') in text
     assert '    { .setting = SETTING_ACCENT, .def = 0, .preset = 4, .keep = -1, .values = 0x17f },' in text
     assert '        .accent_slot = &st.accent,\n        .accent_key = "ACCENT",\n        .schemes = modern_schemes,' in text
-    assert '    },\n};\nenum { GEOM_IPOD, GEOM_N };\n' in text
+    assert '    },\n};\nconst volatile unsigned short boot_values' in text
+    assert (tmp_path/'themes.h').read_text().startswith('/* tools/theme.py wrote this from assets/themes/<id>/theme.xml; edit those. */\nenum { GEOM_IPOD, GEOM_N };\n')
 
 
 def test_playing_layout_builtins_ipod():
@@ -1129,7 +1130,7 @@ def test_builtins_rejects_a_shared_set_name(tmp_path):
 
 def boot_inc(tmp_path, themes, **kw):
     theme.emit(themes, tmp_path, **kw)
-    return (tmp_path/'themes.inc').read_text()
+    return (tmp_path/'themes.h').read_text() + (tmp_path/'themes.inc').read_text()
 
 
 def test_emit_boot_tables(tmp_path):
@@ -1137,7 +1138,7 @@ def test_emit_boot_tables(tmp_path):
     names = ipod.VALUE_NAMES
     sites = [(int(a, 16), g['value']) for g in ipod.AUDIT['immediates'] if isinstance(g['value'], str) for a, _ in g['sites']]
     assert len(sites) == 90
-    assert inc.index('enum { GEOM_IPOD, GEOM_N };') > inc.index('static const theme_t themes[THEME_N]')
+    assert 'enum { GEOM_IPOD, GEOM_N };' in (tmp_path/'themes.h').read_text() and 'GEOM_N };' not in (tmp_path/'themes.inc').read_text()
     assert 'enum { ' + ', '.join(f'G_{n.upper()}' for n in names) + ', G_N };' in inc
     assert '#define BOOT_SITES 90' in inc and '#define CLIENT_H_MAX 290' in inc
     assert 'const boot_site_t boot_sites[BOOT_SITES] = {' + ', '.join(f'{{{a:#x}, G_{v.upper()}}}' for a, v in sites) + '};' in inc
