@@ -1214,7 +1214,7 @@ FUNCTIONS = {
  'bitmap_destroy': ('int', 'void *'),
  'bitmap_lock_buffer_for_read': ('const unsigned char *', 'void *'),
  'canvas_draw_image': ('int', 'void *, void *, const void *, const void *'),
- 'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (navigation.c search_paint)
+ 'widget_paint': ('int', 'void *, void *'),  # the system bar, under a dialog that covers it (classic_pages.c search_paint)
  # Cover Flow's flip paints the tracks panel to a bitmap as stock's window snapshots do (coverflow.c flip_capture)
  'canvas_offline_create': ('void *', 'unsigned, unsigned, unsigned'),
  'canvas_offline_begin_draw': ('int', 'void *'),

@@ -4,5 +4,5 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-clang-format -i patch/navigation.c patch/theme.h patch/playlists.c patch/home.c patch/volume.c
+clang-format -i patch/navigation.c patch/theme.h patch/playlists.c patch/home.c patch/volume.c patch/classic_pages.c
 prettier --write "*.md" "docs/*.md"

@@ -378,7 +378,7 @@ def test_outlines_a_space_is_an_advance_with_no_polygon():
 
 
 def test_every_literal_corner_radius_is_in_the_table():
-    source = (pathlib.Path(__file__).parents[2] / 'patch/navigation.c').read_text()
+    source = ''.join(p.read_text() for p in sorted((pathlib.Path(__file__).parents[2] / 'patch').glob('*.c')))
     def literal(names):
         return {int(r) for r in re.findall(rf'(?:{names})\([^;]*?,\s*(\d+)(?:,[^;]*?)?\);', source)}
     radii = literal('paint_round_rows|round_row|row_below|inset_top|round_ring')
