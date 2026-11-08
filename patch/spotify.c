@@ -1182,9 +1182,12 @@ static int br_closed(void *ctx, void *event) {
 }
 
 /* Streaming's Spotify row (home.c ringnav_stream): librespot started if it is not, and the
- * browser; without librespot on the card, Now Playing says so. */
+ * browser; without librespot on the card, Now Playing says so. While Smart Wi-Fi brings the radio
+ * back, librespot starts once the link is up (smart_hold), as it never retries a Connect login or
+ * mDNS that failed at its start. */
 int spot_open(void *ctx, void *event) {
     if (access(SPOT_BIN, 0) && !sp.launched) return spot_np(), 0;
+    if (!sp.launched && smart_hold(spot_open, ctx, 0)) return 0;
     spot_launch();
     if (br.page || !(br.lv = calloc(SPOT_DEPTH, sizeof *br.lv))) return 0;
     if (!(br.page = page_open("spotbrowse_page", br_closed, br_keyup))) return free(br.lv), br.lv = 0, 0;
@@ -1211,6 +1214,9 @@ int spot_hold(void *w) {
     request(track ? "enqueue" : "download", a, track ? A_ENQUEUE : A_DOWNLOAD);
     return 1;
 }
+
+/* Smart Wi-Fi (navigation.c smart_needed): a running librespot keeps the radio on. */
+int spot_running(void) { return sp.launched; }
 
 /* iPod's Now Playing corners (navigation.c paint_cover) round the art too. */
 void *spot_art(void) { return ui.art; }

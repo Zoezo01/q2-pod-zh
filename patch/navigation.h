@@ -40,6 +40,7 @@ enum {
     POD_EQ_OUTPUT,  /* EQ per Output: the value and key; its row is Advanced EQ's (peq_ui.c) */
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
+    POD_SMART_WIFI,
     POD_COUNT
 };
 
@@ -142,11 +143,12 @@ typedef struct {
      * and Artists, and the poll: charging is held off at the limit;
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
-     * limit's choice; standby_off: its alarm ended a Standby, so the next pass powers off. */
+     * limit's choice; standby_off: its alarm ended a Standby, so the next pass powers off.
+     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        standby_off, eq_output;
+        standby_off, eq_output, smart_wifi;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -372,13 +374,16 @@ extern int stock_keyup_trampoline(void *, void *), stock_touch_trampoline(void *
     stock_btrows_trampoline(void *, void *), stock_playlist_trampoline(void *),
     stock_stream_trampoline(void *, void *), stock_start_player_trampoline(void),
     stock_standby_trampoline(void), stock_usbmode_trampoline(void *, void *, void *, void *),
-    stock_hscroll_start_trampoline(void *);
+    stock_hscroll_start_trampoline(void *), stock_wifi_page_trampoline(void *, void *),
+    stock_stream_row_trampoline(void *, void *), stock_netservice_row_trampoline(void *, void *),
+    stock_online_match_trampoline(void *);
 extern int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *sent),
     scrobble_flag(const char *key), scrobble_value(const char *key);
 extern const char *now_tag(void *r, int field);
 extern void *queue_now(unsigned *pos, unsigned *n);
 
 /* navigation.c */
+void smart_wake(void); /* Smart Wi-Fi's radio back now, if it had it off */
 #define COUNT "_ringnav_count"
 #define SEL "_ringnav_index"
 enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kind */

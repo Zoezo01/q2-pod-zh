@@ -161,8 +161,10 @@ static void svc_row(void *row, int i, char *hide) {
  * Baidu's app: its row, the one with list_baidu's icon, removed), then Spotify (spotify.c), which
  * opens its browser, the card apps on the card (addon.c: Deezer, Soulseek, File Browser… as System
  * settings' Apps or the user put them there), Tidal Downloads, Internet Radio (radio.c), AirPlay
- * and Configuration. Their buttons have no name, so stock's row click never sees them. */
+ * and Configuration. Their buttons have no name, so stock's row click never sees them. Smart
+ * Wi-Fi's radio comes back first. */
 int ringnav_stream(void *win, void *ctx) {
+    smart_wake();
     int result = stock_stream_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_streamsset", 1) : (void *)0;
     for (int i = view ? (int)widget_count_children(view) : 0; i-- > 0;)

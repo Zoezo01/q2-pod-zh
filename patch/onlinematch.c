@@ -508,7 +508,7 @@ static int al_click(void *ctx, void *event) {
         return 0;
     }
     if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+        if (!smart_hold(al_click, ctx, 0)) toast("Connect to Wi-Fi first");
         return 0;
     }
     void *r = al_playing(), *list = r ? coverflow_album_tracks(r) : 0;
@@ -630,6 +630,9 @@ static void covers(void) {
     cJSON_Delete(json);
     free(body);
 }
+
+/* Smart Wi-Fi (navigation.c smart_needed): Download Album Lyrics running keeps the radio on. */
+int album_lyrics_busy(void) { return al.running; }
 
 /* kugou_obtaincover(keyword), online_coverthd's first source, then com163's and Baidu's: each adds
  * image URLs to stock's list (online_addcoverlist), which the page downloads and shows. ours go first. */

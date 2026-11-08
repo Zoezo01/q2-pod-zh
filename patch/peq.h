@@ -440,6 +440,10 @@ int ipod_square_art(void); /* navigation.c: Classic, and Modern under Square */
 #define SPOT_GREY 0xffaaaaaau
 void radio_search(void);       /* radio.c */
 void toast(const char *text); /* navigation.c */
+/* navigation.c, Smart Wi-Fi: its radio woken, 1 while its link comes up; its radio off; an action
+ * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */
+int smart_wifi_wait(void), smart_wifi_off(void);
+int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page);
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 int rockbox_available(void);  /* navigation.c: a regular Rockbox binary on the card */

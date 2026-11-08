@@ -171,6 +171,15 @@ HOOKS = {
     'list_get_img_pic': (0x501948, 'ringnav_badge', None),
     # Every scrolling label's start: its delay and pace (navigation.c ringnav_hscroll_start)
     'hscroll_label_start': (0x5e867c, 'ringnav_hscroll_start', 'hscroll_start'),
+    # Smart Wi-Fi (navigation.c smart_poll): the Wi-Fi page wakes the radio before it reads g_wififlag
+    'systemset_wifi_page_init': (0x4cda08, 'ringnav_wifi_page', 'wifi_page'),
+    # Smart Wi-Fi (navigation.c smart_hold): stock actions that check the link once, held while the
+    # radio comes back. Streaming's Tidal row (stream_page_init's row click), Network service's rows
+    # (Wi-Fi transfer only) and Now Playing More's Download Cover & Lyrics (its row's case); none has
+    # a symbol.
+    'stream_row': (0x52ee8c, 'ringnav_stream_row', 'stream_row'),
+    'netservice_row': (0x4c6728, 'ringnav_netservice_row', 'netservice_row'),
+    'playermore_online': (0x5281f8, 'ringnav_online_match', 'online_match'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -519,6 +528,10 @@ LYRIC_SAVE_CALL, LYRIC_SAVE_FMT = 0x525484, (0x525480, 0x24c62630)
 # The encoder thread's ts_read call (jalr $t9) becomes jal ringnav_ts_read, which makes the wheel's
 # ticks from the samples (playback.c wheel_sample).
 WHEEL_TS_READ = (0x625b6c, 0x0320f809)
+# Smart Wi-Fi (navigation.c smart_ready): networkStart and networkStop act only when initNetworkModule's
+# type, the unnamed word NET_TYPE (patch/offsets.inc), is 2: lw $v1,-0x40fc($v0) off GOT page 0xa40000;
+# li $v0,2.
+NET_TYPE_READS = ((0x5af2dc, 0x8c43bf04), (0x5af2e0, 0x24020002), (0x5af5e8, 0x8c43bf04), (0x5af5ec, 0x24020002))
 # English labels renamed, as an iPod words them: Now Playing More's queue, which stock calls "Playlists"
 # (player_playlist, used nowhere else); the Library's plural categories; settings rows in title case
 # and plain words; the Lock screen help; and Baidu without its (BETA).
@@ -1293,6 +1306,11 @@ FUNCTIONS = {
  # A card app's library update (addon_library.c): stock's Import Playlists, and its folder listing
  'importPlayList': ('int', 'void'), 'toolsGetDirectoryM3u8': ('int', 'const char *, void *'),
  'mclSetSeek': ('int', 'int'),  # the player's seek in file seconds; it plays on from there, or on Play once paused
+ # Smart Wi-Fi (navigation.c smart_poll): stock's Wi-Fi switch, a toggle of g_wififlag (its callers pass 1,
+ # the background connect), the link and the queue's type
+ 'wifi_switch': ('int', 'int'),
+ 'networkGetConnectStatus': ('int', 'void'),  # 0 no link (networkStop), above 0 connected
+ 'mclGetPlayType': ('int', 'void'),  # the queue's type: 2, 3, 0xf1 and 0xf2 stream (on_wm_timer_networkstatus)
 }
 # Local stock routines in the SHA-256-pinned V1.32 executable.
 PRIVATE_FUNCTIONS = {
@@ -1317,6 +1335,10 @@ PRIVATE_FUNCTIONS = {
     "np_info": 0x52a508,  # Now Playing's info page labels, from the track (NP_INFO_CALL)
     "ab_x": 0x52a268,  # an A-B marker's x, on the boot set's np_bar_x and np_bar_w (AB_X_CALLS)
     "fwupdate_tf": 0x4c2994,  # systemset_fwupdate_page's row 0 click (0x4c2fac): stock's TF card update
+    # Smart Wi-Fi's held stock actions (navigation.c smart_hold)
+    "stream_row": HOOKS['stream_row'][0],  # Streaming's Tidal row: atoi of the button's name
+    "netservice_row": HOOKS['netservice_row'][0],  # Network service's DLNA, AirPlay and Wi-Fi transfer
+    "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
@@ -1330,7 +1352,12 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
-           'g_usbdet_value']  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
+           'g_usbdet_value',  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
+           # Smart Wi-Fi (navigation.c smart_poll): the Wi-Fi switch's state and stock's own gates on
+           # toggling it (wifi_initstatus 0, wifi_connectstatus not 1, connecting), Network service's
+           # AirPlay and DLNA, SyncLink (2: over Wi-Fi) and its session, Wi-Fi transfer and a pending time sync
+           'g_wififlag', 'wifi_initstatus', 'wifi_connectstatus', 'g_airplayflag', 'g_dlnaflag',
+           'g_synclinkflag', 'g_syncLink_status', 'g_wifitransport_flag', 'g_syncnettime_flag']
 # Audited stock browsing state, deque pointers, art locks, the status bar widget
 # (system_bar_init stores it), the playing cover's track path and the playing track's tags as
 # player_get_id3info parsed them; sizes are checked against the ELF.
@@ -1759,6 +1786,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     for address, old, new in LDAC_HQ:
         patch_word(patched, address, old, new, 'LDAC HQ sends 990 kbps')
     patch_word(patched, WHEEL_TS_READ[0], WHEEL_TS_READ[1], jal(ps['ringnav_ts_read']), 'wheel ticks')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GP - 0x7f44))[0] == 0xa40000 and
+          all(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, a))[0] == w for a, w in NET_TYPE_READS),
+          'networkStart/networkStop: unexpected network type gate')
     for address in AUDIO_EXTENSION_CALLS:
         check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, address-8))[0] == 0x8f99f950,
               'audio extension: expected strstr import')

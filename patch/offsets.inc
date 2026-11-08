@@ -459,6 +459,13 @@ static inline int arc_out(int r, int y) {
 #define STANDBY_LIMIT_1 1
 #define STANDBY_LIMIT_2 8
 #define STANDBY_LIMIT_3 24
+/* Smart Wi-Fi (docs/internals.md#smart-wi-fi), checked every SMART_POLL_MS: the radio goes off after
+ * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), and whatever wakes it
+ * waits up to SMART_CONNECT_MS for the link before going on without it. */
+#define SMART_POLL_MS 1000
+#define SMART_IDLE_MS 300000
+#define SMART_CONNECT_MS 15000
+#define NET_TYPE 0xa3bf04 /* no symbol: initNetworkModule's type, 2 Wi-Fi; networkStart and networkStop act only then */
 /* The Wi-Fi signal (ringnav_wifi_signal) is read from the driver again at most every
  * WIFI_SIGNAL_MS; its two pollers each ask about once a second. */
 #define WIFI_SIGNAL_MS 1000

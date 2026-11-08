@@ -119,9 +119,9 @@ static const char STARTERS[] =
     "#EXTINF:-1,NTS 1\nhttps://stream-relay-geo.ntslive.net/stream\n";
 
 /* The player; kept for the life of demo. active: Internet Radio was the last thing played, so the
- * media keys are its, stopped or not. */
+ * media keys are its, stopped or not; wait: its station starts once Smart Wi-Fi's link is up. */
 static struct {
-    int pid, sock, active, at;
+    int pid, sock, active, at, wait;
     unsigned polled, volume; /* volume: g_volume + 1 as q2video last had it */
     list_t list;             /* the list played from, side buttons step through it */
     char state[12], title[256], codec[16], bitrate[16], error[64]; /* error: q2video's ALSA reason */
@@ -150,6 +150,7 @@ static struct {
     void *page, *view, *edit; /* edit: the pull-down's search box */
     unsigned timer, go, leave;
     int level, next, arg, want, az, note, genre, favs, from, rows[6], sel[3];
+    int wifi; /* the fetch waits for Smart Wi-Fi's link */
     list_t pick, list;
     char caption[64];
 } ui __attribute__((section(".scratch")));
@@ -272,6 +273,7 @@ static void send_key(const char *c, unsigned n) {
 
 /* q2video quit, and killed if it does not go within RADIO_QUIT_MS. The media keys stay radio's. */
 static void radio_halt(void) {
+    rd.wait = 0;
     if (!rd.pid) return;
     int status, done;
     unsigned start = time_now_ms();
@@ -304,13 +306,14 @@ static void radio_play(int i) {
     rd.at = (i % n + n) % n;
     radio_halt();
     spot_yield();
-    rd.pid = video_start(url_of(&rd.list, rd.at), 1);
+    /* Smart Wi-Fi bringing the radio back: radio_poll starts the station once the link is up */
+    rd.pid = (rd.wait = smart_wifi_wait()) ? 0 : video_start(url_of(&rd.list, rd.at), 1);
     rd.active = 1;
     rd.volume = headset_gain() + 1u;
     rd.since = 0;
     rd.title[0] = rd.codec[0] = rd.bitrate[0] = rd.error[0] = 0;
     ++rd.serial;
-    tk_snprintf(rd.state, sizeof rd.state, rd.pid ? "connecting" : "error");
+    tk_snprintf(rd.state, sizeof rd.state, rd.pid || rd.wait ? "connecting" : "error");
     list_t none = { 0 };
     m3u_write(RADIO_LAST, &none, -1, &rd.list, rd.at);
 }
@@ -320,8 +323,15 @@ static void radio_play(int i) {
  * DAC kept on, and the volume passed on for Bluetooth's and USB's soft volume. */
 void radio_poll(void) {
     unsigned now = time_now_ms();
-    if (!rd.pid || now - rd.polled < RADIO_POLL_MS) return;
+    if ((!rd.pid && !rd.wait) || now - rd.polled < RADIO_POLL_MS) return;
     rd.polled = now;
+    if (rd.wait) { /* Smart Wi-Fi's link (smart_wifi_wait), or SMART_CONNECT_MS without it */
+        if (smart_wifi_wait()) return;
+        rd.wait = 0;
+        if (!(rd.pid = video_start(url_of(&rd.list, rd.at), 1)))
+            tk_snprintf(rd.state, sizeof rd.state, "error");
+        return;
+    }
     int status, ended = waitpid(rd.pid, &status, 1) != 0;
     char raw[512]; /* behind a '\n', as field() reads */
     if (state_read(RADIO_STATE, raw, sizeof raw)) {
@@ -351,7 +361,7 @@ void radio_poll(void) {
 int radio_media(unsigned key) {
     if (!rd.active || (key != KEY_PLAY && key != KEY_FWD_BTN && key != KEY_BACK_BTN)) return 0;
     headset_manual();
-    if (key == KEY_PLAY && rd.pid)
+    if (key == KEY_PLAY && (rd.pid || rd.wait))
         radio_halt();
     else
         radio_play(rd.at + (key == KEY_FWD_BTN) - (key == KEY_BACK_BTN));
@@ -407,7 +417,7 @@ static void np_refresh(void) {
         list_free(&favs);
     }
     set(np.song, song);
-    if (!rd.pid)
+    if (!rd.pid && !rd.wait)
         tk_snprintf(t, sizeof t,
                     tk_strcmp(rd.state, "error") ? "Stopped"
                     : rd.error[0]                ? "Can't play: %s"
@@ -581,15 +591,26 @@ static void fetch_cancel(void) {
     worker_stop(fx.thread, &fx.running, &fx.cancel, &none);
     free(fx.body);
     fx.body = 0;
+    ui.wifi = 0;
 }
 
-/* RADIO_API path fetched on fx's pthread for level want, A-Z when az, "Loading…" meanwhile. */
+static void fetch_run(void);
+/* RADIO_API path for level want, A-Z when az; while Smart Wi-Fi brings the radio back, "Connecting
+ * to Wi-Fi…" until the tick finds its link up (smart_wifi_wait). */
 static void fetch(const char *path, int want, int az) {
     fetch_cancel();
     ui.want = want;
     ui.az = az;
     ui.sel[want] = 0;
     tk_snprintf(fx.url, sizeof fx.url, RADIO_API "%s", path);
+    if ((ui.wifi = smart_wifi_wait()))
+        note("Connecting to Wi-Fi…");
+    else
+        fetch_run();
+}
+
+/* fx.url fetched on fx's pthread, "Loading…" meanwhile. */
+static void fetch_run(void) {
     fx.n = 0;
     fx.cancel = fx.done = 0;
     fx.code = 0;
@@ -632,8 +653,10 @@ static void *fetch_worker(void *unused) {
     return 0;
 }
 
-/* The page's timer: a finished fetch becomes ui.want's list. */
+/* The page's timer: a fetch waiting for Smart Wi-Fi's link starts, and a finished one becomes
+ * ui.want's list. */
 static int tick(const void *unused) {
+    if (ui.wifi && !smart_wifi_wait()) ui.wifi = 0, fetch_run();
     if (!fx.running || !fx.done) return 8; /* RET_REPEAT */
     pthread_join(fx.thread, 0);
     fx.running = 0;
@@ -711,7 +734,7 @@ static int menu_click(void *ctx, void *event) {
         slurp(RADIO_LAST, buf, &n, sizeof buf);
         list_set(&rd.list, buf, n, 0, 0), rd.at = 0;
     }
-    if (!rd.pid) radio_play(rd.at);
+    if (!rd.pid && !rd.wait) radio_play(rd.at);
     np_open();
     return 0;
 }
@@ -779,13 +802,13 @@ int radio_open(void *ctx, void *event) {
     show(MENU);
     return 0;
 }
-int radio_status(void) { return rd.active ? (rd.pid ? 2 : 3) : 0; }
+int radio_status(void) { return rd.active ? (rd.pid || rd.wait ? 2 : 3) : 0; }
 unsigned radio_session(void) { return rd.serial; }
 void radio_set_playing(int playing) {
     if (!rd.active) return;
     if (!playing)
         radio_halt();
-    else if (!rd.pid)
+    else if (!rd.pid && !rd.wait)
         radio_play(rd.at);
 }
 

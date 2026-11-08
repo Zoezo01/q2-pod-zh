@@ -32,7 +32,7 @@ class List(C.Structure):
 
 
 class Rd(C.Structure):
-    _fields_ = [('pid', C.c_int), ('sock', C.c_int), ('active', C.c_int), ('at', C.c_int), ('polled', C.c_uint),
+    _fields_ = [('pid', C.c_int), ('sock', C.c_int), ('active', C.c_int), ('at', C.c_int), ('wait', C.c_int), ('polled', C.c_uint),
                 ('volume', C.c_uint), ('list', List), ('state', C.c_char * 12), ('title', C.c_char * 256),
                 ('codec', C.c_char * 16), ('bitrate', C.c_char * 16), ('error', C.c_char * 64),
                 ('since', C.c_ulonglong), ('serial', C.c_uint)]
@@ -46,7 +46,7 @@ class Fx(C.Structure):
 class Ui(C.Structure):
     _fields_ = [('page', C.c_void_p), ('view', C.c_void_p), ('edit', C.c_void_p), ('timer', C.c_uint), ('go', C.c_uint),
                 ('leave', C.c_uint), *((k, C.c_int) for k in 'level next arg want az note genre favs from'.split()),
-                ('rows', C.c_int * 6), ('sel', C.c_int * 3), ('pick', List), ('list', List), ('caption', C.c_char * 64)]
+                ('rows', C.c_int * 6), ('sel', C.c_int * 3), ('wifi', C.c_int), ('pick', List), ('list', List), ('caption', C.c_char * 64)]
 
 
 class Np(C.Structure):

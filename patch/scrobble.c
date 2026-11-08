@@ -334,6 +334,10 @@ int scrobble_start(void) {
     return 1;
 }
 
+/* Smart Wi-Fi (navigation.c smart_needed): an upload in progress, the user's or the automatic one,
+ * keeps the radio on. */
+int scrobble_busy(void) { return up.running; }
+
 /* 0 while running or idle; when it ends, 1 or -1 (a batch failed) once, with the scrobbles sent. */
 int scrobble_poll(int *sent) {
     if (!up.running || !up.done) return 0;

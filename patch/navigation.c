@@ -3028,7 +3028,8 @@ int ringnav_quick_settings(void *win, void *ctx) {
  * Power's Volume guard (VOLGUARD, playback.c's wheel_guard; docs/internals.md#volume-guard), and
  * Display's Hold Return (HOLDRETURN, compact_now_playing; docs/ipod.md#hold-return), and Power's
  * Standby limit (STANDBYLIMIT, ringnav_standby; docs/internals.md#standby-limit), and Bluetooth's
- * Control Device Volume (BTVOLLINK, bt_audio_ready; docs/internals.md#headset-controls-and-volume).
+ * Control Device Volume (BTVOLLINK, bt_audio_ready; docs/internals.md#headset-controls-and-volume),
+ * and Power's Smart Wi-Fi (SMARTWIFI, smart_poll; docs/internals.md#smart-wi-fi).
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
@@ -3050,7 +3051,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &st.eq_output,
                                    0,
-                                   0 };
+                                   0,
+                                   &st.smart_wifi };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3069,7 +3071,8 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "EQOUTPUT",
                                         0,
-                                        0 };
+                                        0,
+                                        "SMARTWIFI" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3441,6 +3444,7 @@ static void pod_text(int i) {
         { 0 }, /* EQ per Output: a switch */
         { 0 }, /* Key Tone: a switch */
         { 0 }, /* In-Vehicle Mode: a switch */
+        { 0 }, /* Smart Wi-Fi: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3454,13 +3458,14 @@ static void pod_text(int i) {
             : i == POD_CARMODE ? g_carmode != 0
             : pod_values[i]    ? *pod_values[i]
                                : 0;
-    const char *toggle = i == POD_CHARGE      ? "Charge Limit (" STR(CHARGE_STOP) "%)"
-                         : i == POD_RESUME    ? "Resume on Connect"
-                         : i == POD_VOL_GUARD ? "Volume Guard"
-                         : i == POD_BT_LINK   ? "Control Device Volume"
-                         : i == POD_KEYTONE   ? "Key Tone"
-                         : i == POD_CARMODE   ? "In-Vehicle Mode"
-                                              : 0;
+    const char *toggle = i == POD_CHARGE       ? "Charge Limit (" STR(CHARGE_STOP) "%)"
+                         : i == POD_RESUME     ? "Resume on Connect"
+                         : i == POD_VOL_GUARD  ? "Volume Guard"
+                         : i == POD_BT_LINK    ? "Control Device Volume"
+                         : i == POD_KEYTONE    ? "Key Tone"
+                         : i == POD_CARMODE    ? "In-Vehicle Mode"
+                         : i == POD_SMART_WIFI ? "Smart Wi-Fi"
+                                               : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
     else
@@ -3470,7 +3475,8 @@ static void pod_text(int i) {
     if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
 }
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
- * (power_poll); Artists on the next load of an artist list, as the artist page's switch does;
+ * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
+ * the artist page's switch does;
  * Standby limit at the next Standby; Coverflow Sort and Refresh Coverflow at Coverflow's next open
  * (coverflow.c), Refresh with a toast, as it changes nothing in view. */
 static int pod_click(void *ctx, void *event) {
@@ -3523,11 +3529,12 @@ void pod_rows(void *win, const char *view_name, int first, int n, const char *co
 static void boot_row(void *view);
 int ringnav_powermanager(void *win, void *ctx) {
     static const char *const icons[] = { "usb_chargeswitch", "system_powermanager",
-                                         "system_carmode" };
+                                         "system_carmode", "wifiset_wifi" };
     int result = stock_power_trampoline(win, ctx);
     pod_rows(win, "scroll_view_powermanager", POD_STANDBY, 1,
              icons + 1); /* beside stock's Standby */
     pod_rows(win, "scroll_view_powermanager", POD_CHARGE, 1, icons);
+    pod_rows(win, "scroll_view_powermanager", POD_SMART_WIFI, 1, icons + 3);
     pod_rows(win, "scroll_view_powermanager", POD_CARMODE, 1, icons + 2);
     boot_row(win ? widget_lookup(win, "scroll_view_powermanager", 1) : (void *)0);
     return result;
@@ -9931,6 +9938,256 @@ int long_songs(void *ctx, void *event) {
     return 0;
 }
 
+/* Smart Wi-Fi (docs/internals.md#smart-wi-fi): with Power's row on and the user's Wi-Fi switch on,
+ * the radio goes off once nothing has needed the network for SMART_IDLE_MS, and comes back as soon
+ * as something does. Both go through stock's own switch, wifi_switch, as Quick Settings and the
+ * Wi-Fi page call it: off clears its flags, stops SyncLink's server and runs networkStop
+ * (network_checkstatus then sends ips=1), on runs networkStart's background wifi_connect.sh. Its
+ * last act, the WIFI= write, is dropped for these (smart_config), so config.ini, a reboot and the
+ * user's own switch stay stock's. off: Smart Wi-Fi turned the radio off; quiet: its own toggle
+ * runs; busy_at: the last use; woke_at: its last wake, whose link smart_wifi_wait's callers wait
+ * for; up: the link at the last poll; armed: the row was on then; hold_*: the action held for the
+ * link (smart_hold), its argument, the page it was pressed on and that page's name, and the timer;
+ * held: that action runs now, so it is never held again. */
+static struct {
+    unsigned at, busy_at, woke_at, hold_timer;
+    int off, quiet, armed, up, held;
+    int (*hold_fn)(void *, void *);
+    void *hold_ctx, *hold_win;
+    char hold_name[32];
+} sw __attribute__((section(".scratch")));
+extern int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),
+    netupdate_busy(void), album_lyrics_busy(void);
+
+/* Stock's own conditions for its switch: the network module up for Wi-Fi (NET_TYPE 2; networkStart
+ * and networkStop do nothing otherwise), its first scan taken (wifi_initstatus 0, which Quick
+ * Settings and the Wi-Fi page require) and no connect half done (wifi_connectstatus 1, the Wi-Fi
+ * page's); never in test mode, while powering off or in the first-boot guide, where
+ * on_wm_timer_networkstatus also leaves the network alone. */
+static int smart_ready(void) {
+    return *(volatile int *)NET_TYPE == 2 && !wifi_initstatus && wifi_connectstatus != 1 &&
+           !g_testmode_flag && g_poweroff_state != 2 && (signed char)g_guideflag <= 0;
+}
+
+/* wifi_switch(1) for Smart Wi-Fi: the radio off when g_wififlag is set, else back on. */
+static void smart_switch(unsigned now) {
+    int wake = !g_wififlag;
+    sw.quiet = 1;
+    wifi_switch(1);
+    sw.quiet = 0;
+    sw.off = !g_wififlag;
+    if (wake) sw.woke_at = now | !now; /* never 0; |1 would eat a millisecond when now is even */
+    sw.busy_at = now;
+}
+
+/* Streaming's page and the Wi-Fi page: Smart Wi-Fi's radio back at once. */
+void smart_wake(void) {
+    if (sw.off && smart_ready()) smart_switch(time_now_ms());
+}
+
+/* write_int_config's hook (ringnav_write_config): wifi_switch's last act writes SYSSET WIFI. Smart
+ * Wi-Fi's own toggles skip it (1). Any other is the user's (Quick Settings, the Wi-Fi page, test
+ * mode): Smart Wi-Fi forgets it had the radio off and counts SMART_IDLE_MS from now (0). */
+static int smart_config(const char *section, const char *key) {
+    if (tk_strcmp(section, "SYSSET") || tk_strcmp(key, "WIFI")) return 0;
+    if (sw.quiet) return 1;
+    sw.off = 0;
+    sw.woke_at = 0;
+    sw.busy_at = time_now_ms();
+    return 0;
+}
+
+/* systemset_wifi_page_init: the Wi-Fi page builds its switch from g_wififlag, so the radio comes
+ * back first and the page shows the user's setting. */
+int ringnav_wifi_page(void *win, void *ctx) {
+    smart_wake();
+    return stock_wifi_page_trampoline(win, ctx);
+}
+
+/* A page that uses the network, open anywhere in the window stack: Streaming and its services'
+ * pages (Spotify's, Internet Radio's, a card app's and its QR code, Tidal's but Tidal Downloads),
+ * System settings' Apps, AirPlay's, Network service, SyncLink, the Wi-Fi page, Wi-Fi transfer and
+ * their dialogs, and the online lyrics and cover search. */
+static int net_page_open(void) {
+    static const char *const pages[] = {
+        "stream_page",         "spotify_page",    "spotbrowse_page",  "radio_page",
+        "radionp_page",        "addon_page",      "qrcode_page",      "apps_page",
+        "airplay_page",        "netservice_page", "synclink_page",    "wifi_page",
+        "wifitransport_page",  "editwifi_dialog", "kbwifiadd_dialog", "kbwifipass_dialog",
+        "onlinematching_page", "tidal_"
+    };
+    void *wm = window_manager();
+    for (unsigned i = 0, n = widget_count_children(wm); i < n; ++i) {
+        const char *name = widget_get_prop_str(widget_get_child(wm, i), "name", "");
+        if (!tk_strcmp(name, "tidal_downloads")) continue; /* the card's tracks */
+        for (unsigned k = 0; k < sizeof pages / sizeof *pages; ++k)
+            if (tk_str_start_with(name, pages[k])) return 1;
+    }
+    return 0;
+}
+
+/* Something needs the network: a USB cable in; AirPlay or DLNA on (Network service), SyncLink over
+ * Wi-Fi or a SyncLink session, Wi-Fi transfer; a stock stream queue (Tidal's: the types
+ * on_wm_timer_networkstatus stops once offline, whatever it is doing, as Play must fetch its URL at
+ * once), Spotify's librespot running or waiting to start (it never retries a Connect login or mDNS
+ * that failed), a station playing, a card app running, a scrobble upload, Network Update's download
+ * or an Apps job, Download Album Lyrics, a Tidal download or an action held for the link
+ * (smart_hold); a time sync pending on a link; or a page above. */
+static int smart_needed(void) {
+    unsigned type = (unsigned)mclGetPlayType();
+    return g_usbdet_value || g_airplayflag || g_dlnaflag || g_synclinkflag == 2 ||
+           g_syncLink_status || g_wifitransport_flag || airplayGetFlag() == 2 || type - 2 < 2 ||
+           type - 0xf1 < 2 || spot_running() || radio_status() == 2 || addon_running() ||
+           scrobble_busy() || netupdate_busy() || album_lyrics_busy() || tidal_busy() ||
+           sw.hold_timer || (g_syncnettime_flag && networkGetConnectStatus() > 0) ||
+           net_page_open();
+}
+
+/* power_poll, every SMART_POLL_MS. The row off, or the user's Wi-Fi off: stock's, and a radio Smart
+ * Wi-Fi had off comes back. Otherwise a use or a new link restarts the count, a use wakes the
+ * radio, and SMART_IDLE_MS without one, associated or not, turns it off. */
+static void smart_poll(void) {
+    unsigned now = time_now_ms();
+    if (sw.at && now - sw.at < SMART_POLL_MS) return;
+    sw.at = now | !now;
+    if (sw.woke_at && now - sw.woke_at >= SMART_CONNECT_MS) sw.woke_at = 0;
+    if (!st.smart_wifi || (!g_wififlag && !sw.off)) {
+        sw.armed = 0;
+        smart_wake();
+        return;
+    }
+    int up = networkGetConnectStatus() > 0;
+    if (!sw.armed || (up && !sw.up))
+        sw.busy_at = now; /* turned on, or a new link: time sync first */
+    sw.armed = 1;
+    sw.up = up;
+    if (smart_needed()) {
+        sw.busy_at = now;
+        smart_wake();
+    } else if (!sw.off && now - sw.busy_at >= SMART_IDLE_MS && smart_ready())
+        smart_switch(now);
+}
+
+/* Smart Wi-Fi has the radio off (the user's switch is on). */
+int smart_wifi_off(void) { return sw.off; }
+
+/* Something that needs the link starting (Spotify's launch, a radio list or station, an automatic
+ * scrobble upload): Smart Wi-Fi's radio woken now if it is off, and 1 while that wake's link is not
+ * up yet, SMART_CONNECT_MS at most, so the caller waits for it; then, or with the radio as the user
+ * left it, 0, and the caller goes on as stock's would. */
+int smart_wifi_wait(void) {
+    if (!sw.off && !sw.woke_at) return 0;
+    unsigned now = time_now_ms();
+    sw.busy_at = now;
+    if (sw.off && !sw.woke_at) sw.woke_at = now | !now; /* the wait counts from the ask */
+    if (sw.off && smart_ready()) smart_switch(now);
+    if (now - sw.woke_at < SMART_CONNECT_MS && (sw.off || get_wifisignal() <= 0)) return 1;
+    sw.woke_at = 0;
+    return 0;
+}
+
+/* The page in use: the top window, past stock's self-closing overlays: toasts (msginfo_dialog, ours
+ * or stock's) and the volume (volume_dialog, which a wheel turn opens over a toast). */
+static void *page_in_use(void) {
+    void *wm = window_manager();
+    for (int i = (int)widget_count_children(wm) - 1; i >= 0; --i) {
+        void *w = widget_get_child(wm, i);
+        const char *name = widget_get_prop_str(w, "name", "");
+        if (tk_strcmp(name, "msginfo_dialog") && tk_strcmp(name, "volume_dialog")) return w;
+    }
+    return (void *)0;
+}
+
+static int hold_link(const void *unused) {
+    /* A page closing mid-slide is still the top window (iPod): the next tick looks again. */
+    if (window_manager_is_animating(window_manager())) return 8; /* RET_REPEAT */
+    void *win = sw.hold_win;
+    int held = page_in_use() == win; /* compared first: a closed page is never read */
+    if (held && smart_wifi_wait()) return 8;
+    int (*fn)(void *, void *) = sw.hold_fn;
+    sw.hold_fn = 0;
+    sw.hold_timer = 0;
+    if (held && !tk_strcmp(widget_get_prop_str(win, "name", ""), sw.hold_name)) {
+        sw.held = 1; /* a radio that could not come back fails it now, as without Smart Wi-Fi */
+        fn(sw.hold_ctx, (void *)0);
+        sw.held = 0;
+    }
+    return 0;
+}
+
+/* An action that needs the link, pressed while Smart Wi-Fi brings the radio back (smart_wifi_wait),
+ * on page (any page when 0): 1, "Connecting to Wi-Fi…", and fn(ctx, 0) runs from a 500 ms timer
+ * once the link is up, or SMART_CONNECT_MS on (to fail as it would have), if the page it was
+ * pressed on is still the one in use past toasts and the volume overlay; otherwise it is dropped.
+ * 0: it runs now, as without Smart Wi-Fi: the radio as the user left it, the link up, another page,
+ * or no timer. One waits at a time: a press while one waits takes its place, link or not, so it
+ * never runs beside the held one. fn reads no event. */
+int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page) {
+    void *win = page_in_use();
+    const char *name = win ? widget_get_prop_str(win, "name", "") : "";
+    if (sw.held || !win || (page && tk_strcmp(name, page)) || strlen(name) >= sizeof sw.hold_name)
+        return 0;
+    if (!sw.hold_timer &&
+        (!smart_wifi_wait() || !(sw.hold_timer = timer_add(hold_link, (void *)0, 500))))
+        return 0;
+    sw.hold_fn = fn;
+    sw.hold_ctx = ctx;
+    sw.hold_win = win;
+    tk_snprintf(sw.hold_name, sizeof sw.hold_name, "%s", name);
+    toast("Connecting to Wi-Fi\xe2\x80\xa6");
+    return 1;
+}
+
+/* Stock actions that check the link once (networkGetConnectStatus) and say msg_notnetwork without
+ * it, held the same way: Streaming's Tidal row, Network service's Wi-Fi transfer and Now Playing
+ * More's online lyrics and cover match. None reads its event, and the rows are found again by name
+ * (stock names each row's list_item and button by its index and reads only that name), so nothing
+ * pressed is kept but the page. */
+static int row_of(void *button) {
+    const char *name = widget_get_prop_str(button, "name", "");
+    return name[0] >= '0' && name[0] <= '9' && !name[1] ? name[0] - '0' : -1;
+}
+static void *held_row(void *ctx) {
+    char name[2] = { (char)('0' + (int)(long)ctx), 0 };
+    return widget_lookup(sw.hold_win, name, 1); /* its list_item */
+}
+static int stream_row_again(void *ctx, void *unused) {
+    void *row = held_row(ctx);
+    return row ? stock_stream_row_trampoline(row, (void *)0) : 0;
+}
+static int netservice_row_again(void *ctx, void *unused) {
+    void *row = held_row(ctx);
+    return row ? stock_netservice_row_trampoline(row, (void *)0) : 0;
+}
+static int online_match_again(void *win, void *unused) {
+    return stock_online_match_trampoline(win);
+}
+
+/* Streaming's stock row (stream_page_init binds 0x52ee8c): Tidal (0), a login page with the link
+ * and msg_notnetwork without. */
+int ringnav_stream_row(void *button, void *event) {
+    int row = row_of(button);
+    return row >= 0 && smart_hold(stream_row_again, (void *)(long)row, "stream_page")
+               ? 0
+               : stock_stream_row_trampoline(button, event);
+}
+
+/* Network service's rows (0x4c6728): DLNA (0) and AirPlay (1) switch at once (stock starts their
+ * services once the link is up); Wi-Fi transfer (2) opens its page with the link. */
+int ringnav_netservice_row(void *button, void *event) {
+    return row_of(button) == 2 && smart_hold(netservice_row_again, (void *)2, "netservice_page")
+               ? 0
+               : stock_netservice_row_trampoline(button, event);
+}
+
+/* Now Playing More's Download Cover & Lyrics (0x5281f8, its row's case, given More's window): More
+ * itself is no network page, so the radio wakes only for this press. */
+int ringnav_online_match(void *win) {
+    return win == page_in_use() && smart_hold(online_match_again, win, "playermore_page")
+               ? 0
+               : stock_online_match_trampoline(win);
+}
+
 /* [SCROBBLE] AUTO=1 (docs/internals.md#scrobbling): on Wi-Fi the log goes up by itself, silently,
  * once its oldest unsent listen is SA_MAX_MIN old, SA_STEP_MIN sooner per listen since, at least
  * every SA_MIN_MIN: a listen on its own waits three hours, an afternoon's album goes within the
@@ -9943,14 +10200,15 @@ int long_songs(void *ctx, void *event) {
 #define SA_RETRY_MIN 30
 static struct {
     unsigned pending, first_at, check_at;
-    int running;
+    int running, woke; /* woke: Smart Wi-Fi's radio woken for this upload */
 } sa __attribute__((section(".scratch")));
 unsigned scrobble_auto_ms(unsigned pending) {
     int min = SA_MAX_MIN - SA_STEP_MIN * (int)pending;
     return (unsigned)(min < SA_MIN_MIN ? SA_MIN_MIN : min) * 60000u;
 }
 static void scrobble_listened(void) {
-    if (!sa.pending++) sa.first_at = (unsigned)time_now_ms();
+    if (!sa.pending++)
+        sa.first_at = (unsigned)time_now_ms(), sa.woke = 0; /* a wake for the last batch's */
 }
 /* Due again SA_RETRY_MIN from now, sooner if more listens come. */
 static void sa_retry(unsigned now) {
@@ -9974,7 +10232,17 @@ static void scrobble_auto(void) {
     sa.check_at = now; /* Wi-Fi at most once a minute; the card's settings only on Wi-Fi */
     /* not while a computer has the card. ponytail: one already uploading when the cable goes in
      * still rewrites the log at its end; join it in ringnav_usbmode if that ever bites. */
-    if (get_wifisignal() <= 0 || navigator_window_is_exist("usbmode_page")) return;
+    if (navigator_window_is_exist("usbmode_page")) return;
+    if (get_wifisignal() <= 0) {
+        /* Smart Wi-Fi's radio off: woken for an upload that is on (the card read now), which the
+         * next check sends; a wake that brought no link, or AUTO off, again in SA_RETRY_MIN */
+        if (sa.woke || (smart_wifi_off() && !scrobble_flag("AUTO")))
+            sa.woke = 0, sa_retry(now);
+        else if (smart_wifi_off())
+            sa.woke = smart_wifi_wait();
+        return;
+    }
+    sa.woke = 0;
     int started = scrobble_flag("AUTO") ? scrobble_start() : -1;
     if (started > 0)
         sa.running = 1;
@@ -9994,6 +10262,7 @@ static int upload_wait(const void *unused) {
 }
 
 int upload_scrobbles(void *ctx, void *event) {
+    if (get_wifisignal() <= 0 && smart_hold(upload_scrobbles, ctx, 0)) return 0; /* Smart Wi-Fi */
     int started = get_wifisignal() > 0 ? scrobble_start() : -2;
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);
@@ -11681,6 +11950,7 @@ static void power_poll(void) {
     ratings_copy_poll();
     wdt_poll();
     state_poll();
+    smart_poll();
 }
 
 /* Home's Rockbox row (docs/boot.md#rockbox-from-home), bound by coverflow_home: a click leaves
@@ -11731,8 +12001,10 @@ static int np_animating(void) {
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
 
-/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level. */
+/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level. Smart Wi-Fi's own
+ * toggles of the Wi-Fi switch save nothing (smart_config). */
 int ringnav_write_config(int value, const char *section, const char *key) {
+    if (smart_config(section, key)) return 0;
     if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
         key = "BT_VOLUME";
     return stock_write_config_trampoline(value, section, key);

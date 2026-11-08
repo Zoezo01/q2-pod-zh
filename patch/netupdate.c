@@ -455,7 +455,7 @@ static int online_click(void *ctx, void *event) {
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
     } else if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+        if (!smart_hold(online_click, ctx, 0)) toast("Connect to Wi-Fi first");
     } else {
         nu.cancel = nu.percent = 0;
         nu.state = NU_RUNNING;
@@ -807,9 +807,9 @@ static int sh_click(void *ctx, void *event) {
             sh.armed = r + 1;
         else
             sh_start(JOB_REMOVE, i);
-    } else if (get_wifisignal() <= 0)
-        toast("Connect to Wi-Fi first");
-    else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
+    } else if (get_wifisignal() <= 0) {
+        if (!smart_hold(sh_click, ctx, 0)) toast("Connect to Wi-Fi first");
+    } else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
         sh_told(1, 0);
     else if (i == ROW_CHECK)
         sh_start(JOB_CHECK, 0), sh.manual = 1;
@@ -861,9 +861,15 @@ int shelf_erase(int start) {
     return sh.job == JOB_ERASE;
 }
 
+/* The opening check, held for Smart Wi-Fi's link (smart_hold). */
+static int sh_check(void *ctx, void *event) {
+    if (!sh.job && get_wifisignal() > 0) sh_start(JOB_CHECK, 0), sh_refresh();
+    return 0;
+}
+
 /* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
  * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
- * API requests an hour. */
+ * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
@@ -873,8 +879,15 @@ int shelf_open(void *ctx, void *event) {
         free(list);
     }
     sh_rows();
-    if (!sh.job && get_wifisignal() > 0 && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS))
-        sh_start(JOB_CHECK, 0), sh_refresh();
+    if (!sh.job && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS)) {
+        if (get_wifisignal() > 0)
+            sh_start(JOB_CHECK, 0), sh_refresh();
+        else
+            smart_hold(sh_check, 0, "apps_page"); /* once Smart Wi-Fi's link is up */
+    }
     return 0;
 }
+
+/* Smart Wi-Fi (navigation.c smart_needed): Network Update's download or an Apps job keeps the radio on. */
+int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
 #endif
