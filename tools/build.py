@@ -362,9 +362,14 @@ BT_SILENCE_SITES = ((0x41465c, 0x8e460030, 'j', 'timeout'), (0x414684, 0x0000282
 # platform_init's crash watchdog forks pgrep every 2 s; 10 s is still quick to reboot a dead UI.
 WATCHDOG = 'usr/bin/checkappprocess.sh'
 WATCHDOG_SLEEP = (b'\tsleep 2\n', b'\tsleep 10\n')
-# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) starts off.
+# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) and Standby start off.
 DEFAULT_CONFIG = 'release/assets/default/raw/config.ini'
-COVERMODE = (b'\nCOVERMODE=1\n', b'\nCOVERMODE=0\n')
+DEFAULT_CONFIG_OFF = (b'COVERMODE', b'STANDBYMODE')
+def default_config(config):
+    for key in DEFAULT_CONFIG_OFF:
+        check(config.count(b'\n%s=1\n' % key) == 1, 'Unexpected default config.ini')
+        config = config.replace(b'\n%s=1\n' % key, b'\n%s=0\n' % key)
+    return config
 # toolsSetRtcTime's command, with its padding; -u keeps the RTC in UTC. See docs/internals.md#clock.
 RTC_WRITE = (b'hwclock -w\0\0', b'hwclock -wu\0')
 # network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x37133d): stock turns
@@ -1865,9 +1870,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(s90play.count(LOG_HOOK[0]) == 1, 'Unexpected demo loop')
     check(s90play.count(WHEEL_LOG_HOOK[0]) == 1, 'Unexpected card path')
     (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK).replace(*WHEEL_LOG_HOOK) if dev else s90play)
-    config = cat(DEFAULT_CONFIG)
-    check(config.count(COVERMODE[0]) == 1, 'Unexpected default config.ini')
-    (out/'config.ini').write_bytes(config.replace(*COVERMODE))
+    (out/'config.ini').write_bytes(default_config(cat(DEFAULT_CONFIG)))
     s11logo = cat(S11LOGO)
     check(s11logo.count(LOGO_HOOK[0]) == 1, 'Unexpected S11logo_display_shell')
     (out/'S11logo').write_bytes(s11logo.replace(*LOGO_HOOK))

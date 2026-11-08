@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """JPEG checks; optionally pass the stock ZIP to test packaging with a custom logo and quoted paths too."""
 import io, math, re, sys; sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first: test/build.py must import tools/build.py
-from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, COVERMODE
+from build import jal, j, ICONS, LABELS, relabel, ROOT, STOCK_EQ, TAG, dev_tag, jpeg_size, FONT, TAG_C, patch_m4b_cover, WEB, patch_web, DEFAULT_CONFIG, default_config
 
 logo = (ROOT/'assets/boot-logo.jpg').read_bytes()
 assert jpeg_size(logo) == (320, 375)
@@ -618,7 +618,7 @@ def validate_assets(directory):
                     and c[0] in ('list_view', 'list_item', 'scroll_view', 'table_view', 'table_client', 'view')]
             assert not bad, (rel, bad)
         if rel not in changed:
-            assert new == (original.replace(*COVERMODE) if rel == DEFAULT_CONFIG else original), rel
+            assert new == (default_config(original) if rel == DEFAULT_CONFIG else original), rel
             continue
         assert changed[rel] == dict(original_sha256=sha(original), sha256=sha(new))
         if '/raw/styles/' in rel:
