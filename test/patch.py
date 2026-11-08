@@ -8443,7 +8443,7 @@ for end in ('tap','return'):
 # Centred Now Playing switched on meanwhile (from a window over the page) changes only the next Now Playing:
 # they leave full screen as the iPod layout they came in.
 NPC=m.get(payload_syms['setting_values']+4*re.findall(r'&st\.(\w+)',re.search(r'setting_values\[\] = \{([^}]*)\}',
-          (pathlib.Path(__file__).parent.parent/'patch/navigation.c').read_text()).group(1)).index('np_centred'))
+          (pathlib.Path(__file__).parent.parent/'patch/theme_engine.c').read_text()).group(1)).index('np_centred'))
 m,view=ipod_full(); m.tap(); m.word(NPC,1); m.tap(); m.word(NPC,0)
 assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%','10'),('0','0','100%','178')),where(m,view); passed()
 # Touch and hold a synced line RATE_HOLD_MS: the song plays from it (the line under the finger, 12 s, not the
