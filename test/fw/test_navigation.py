@@ -1624,6 +1624,18 @@ def test_stall_record_goes_when_the_ui_passes(fw, st):
     assert s.log == []  # no record: nothing to remove
 
 
+def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, st):
+    """The UI recovers and Rockbox opens before the thread's next wake: S90play's loop starts demo again with no boot
+    between, so nothing else would remove it, and a later forced restart would report this stall."""
+    s = Stall(fw, st)
+    s.step()
+    s.wait(STALL_MS)
+    assert s.record == s.expect(STALL_MS)
+    s.pass_()
+    fw.fn('ringnav_clean_end', None)()
+    assert s.record is None and ('unlink', STALL) in s.log
+
+
 @pytest.mark.parametrize('stop', ['standby', 'long pass', 'clean end'])
 def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop):
     s = Stall(fw, st)

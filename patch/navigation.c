@@ -13917,31 +13917,29 @@ int ringnav_wifi_signal(void) {
  * allocation, no lock the UI thread takes. S90play puts it in q2-crash.log as "== stall". */
 #define STALL_FILE "/mnt/data/q2-stall"
 #define STALL_WORDS 160 /* q2remote --prof's STACK_WORDS */
+#define STALL_IN 4096   /* a /proc file's start, read; the record's buffers are the thread's own */
 static struct {
     volatile unsigned passes; /* the UI loop's, counted by wdt_poll */
     unsigned seen, at;        /* the thread's: passes at its last wake, and since when (now_ms) */
     int level;                /* records written since that pass */
-    char in[4096], out[2560];
 } stall __attribute__((section(".scratch")));
-static void stall_read(const char *path) { /* the file's start, NUL-terminated, in stall.in */
-    int fd = open(path, 0x80000), n = 0, got; /* O_RDONLY | O_CLOEXEC */
-    while (fd >= 0 && n < (int)sizeof stall.in - 1 &&
-           (got = read(fd, stall.in + n, sizeof stall.in - 1 - n)) > 0)
-        n += got;
+static void stall_read(char *in, const char *path) { /* the file's start, NUL-terminated */
+    int fd = open(path, 0x80000), n = 0, got;        /* O_RDONLY | O_CLOEXEC */
+    while (fd >= 0 && n < STALL_IN - 1 && (got = read(fd, in + n, STALL_IN - 1 - n)) > 0) n += got;
     if (fd >= 0) close(fd);
-    stall.in[n] = 0;
+    in[n] = 0;
 }
-static const char *stall_find(const char *key) { /* stall.in's line that starts with key */
+/* in's line that starts with key */
+static const char *stall_find(const char *in, const char *key) {
     unsigned n = strlen(key);
-    for (const char *s = stall.in; *s; ++s) {
+    for (const char *s = in; *s; ++s) {
         if (!strncmp(s, key, n)) return s;
         while (*s && *s != '\n') ++s;
         if (!*s) break;
     }
     return 0;
 }
-static char *stall_add(char *p, const char *label, const char *s) { /* label and s's first line */
-    char *end = stall.out + sizeof stall.out - 1;
+static char *stall_add(char *p, char *end, const char *label, const char *s) { /* s's first line */
     if (!s || p >= end) return p;
     while (*label && p < end) *p++ = *label++;
     while (*s && *s != '\n' && p < end) *p++ = *s++;
@@ -13949,34 +13947,35 @@ static char *stall_add(char *p, const char *label, const char *s) { /* label and
     return p;
 }
 static void stall_write(unsigned age) {
-    char *p = stall.out, *end = stall.out + sizeof stall.out - 12, state = '?';
+    char in[STALL_IN], out[2560], *p = out, *last = out + sizeof out - 1, *end = last - 11;
+    char state = '?';
     unsigned long tid = 0, top = 0, sp = 0, pc = 0, d;
     p += snprintf(p, 64, "age %u ms\ntoasts %d\n", age, st.toasts);
-    stall_read("/proc/self/stat"); /* "pid (comm) S ...": the comm may hold ") " */
-    const char *s = strrchr(stall.in, ')');
+    stall_read(in, "/proc/self/stat"); /* "pid (comm) S ...": the comm may hold ") " */
+    const char *s = strrchr(in, ')');
     if (s && s[1] == ' ' && s[2]) state = s[2];
     for (int field = 2; s && *s; ++s) /* 28, startstack: the main stack's top */
         if (*s == ' ' && ++field == 28) {
             for (++s; *s >= '0' && *s <= '9'; ++s) top = top * 10 + *s - '0';
             break;
         }
-    for (s = stall.in; *s >= '0' && *s <= '9'; ++s) tid = tid * 10 + *s - '0';
+    for (s = in; *s >= '0' && *s <= '9'; ++s) tid = tid * 10 + *s - '0';
     p += snprintf(p, 16, "state %c\n", state);
-    stall_read("/proc/self/wchan");
-    p = stall_add(p, "wchan ", stall.in);
-    stall_read("/proc/self/syscall"); /* "nr args sp pc", "-1 sp pc" or "running" */
-    p = stall_add(p, "syscall ", stall.in);
-    for (s = stall.in; (s = strstr(s, "0x"));) {
+    stall_read(in, "/proc/self/wchan");
+    p = stall_add(p, last, "wchan ", in);
+    stall_read(in, "/proc/self/syscall"); /* "nr args sp pc", "-1 sp pc" or "running" */
+    p = stall_add(p, last, "syscall ", in);
+    for (s = in; (s = strstr(s, "0x"));) {
         unsigned long v = 0;
         for (s += 2; (d = *s >= '0' && *s <= '9' ? *s - '0' : (*s | 32) - 'a' + 10) < 16; ++s)
             v = v << 4 | d;
         sp = pc, pc = v; /* the last two */
     }
-    stall_read("/proc/meminfo");
-    p = stall_add(p, "", stall_find("MemAvailable:"));
-    stall_read("/proc/vmstat");
-    p = stall_add(p, "", stall_find("pgmajfault "));
-    p = stall_add(p, "", stall_find("workingset_refault_file "));
+    stall_read(in, "/proc/meminfo");
+    p = stall_add(p, last, "", stall_find(in, "MemAvailable:"));
+    stall_read(in, "/proc/vmstat");
+    p = stall_add(p, last, "", stall_find(in, "pgmajfault "));
+    p = stall_add(p, last, "", stall_find(in, "workingset_refault_file "));
     /* The stack's words that could be code, as --prof's, read in place: from a blocked thread's sp
      * up to the main stack's top is its own stack, mapped; no other is within 8 MB of that top. */
     if (sp && !(sp & 3) && sp < top && top - sp < 0x800000 && p + 40 < end) {
@@ -13990,7 +13989,7 @@ static void stall_write(unsigned age) {
     /* O_WRONLY | O_CREAT | O_CLOEXEC, and O_APPEND, or O_TRUNC for the first */
     int fd = open(STALL_FILE, stall.level ? 0x80109 : 0x80301, 0644);
     if (fd < 0) return;
-    write(fd, stall.out, p - stall.out);
+    write(fd, out, p - out);
     fsync(fd);
     close(fd);
     ++stall.level;
@@ -14085,6 +14084,7 @@ void ringnav_clean_end(void) {
     st.ended = 1;
     wdt_set(0);
     unlink(STATE_FILE);
+    unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
 }
 /* Standby limit (docs/internals.md#standby-limit): device_standby puts the radios, the card and the
  * DAC down, then toolsIntoStandby suspends to RAM ("mem" to /sys/power/state) and returns once
