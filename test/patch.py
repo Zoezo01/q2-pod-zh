@@ -310,7 +310,8 @@ class Machine:
         elif name=='widget_on': n.setdefault('handlers',[]).append((b,c,d)); ret=len(n['handlers'])
         elif name=='widget_to_local':
             x,y=signed(self.get(b)),signed(self.get(b+4))
-            while a:
+            while a:  # stock's: each one's own offset (widget_get_offset) too, the first one's included
+                if self.nodes.get(a,{}).get('type')=='scroll_view': x+=signed(self.get(a+O['SCROLL_X'])); y+=signed(self.get(a+O['SCROLL_Y']))
                 x-=signed(self.get(a+O['W_X'])); y-=signed(self.get(a+O['W_Y']))
                 a=self.get(a+O['W_PARENT'])
             self.word(b,x); self.word(b+4,y); ret=0

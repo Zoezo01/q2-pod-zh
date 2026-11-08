@@ -4996,8 +4996,7 @@ static int np_line_hold(const void *info) {
         window_manager_get_top_window(window_manager()) != st.np_win ||
         widget_get_prop_int(st.np_slide, "value", 0) != 1)
         return 0;
-    widget_to_local(lrc, xy);
-    xy[1] += I(lrc, SCROLL_Y); /* its rows' place: the view's own offset is no parent's */
+    widget_to_local(lrc, xy); /* the rows' place: stock adds each view's own offset, lrc's too */
     for (int i = widget_count_children(lrc); i-- > 0;) {
         void *row = widget_get_child(lrc, i);
         if (xy[1] >= I(row, W_Y) && xy[1] < I(row, W_Y) + I(row, W_H)) {
