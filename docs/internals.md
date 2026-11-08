@@ -461,9 +461,9 @@ between tags, the entities `&amp; &lt; &gt; &quot;`, UTF-8, at most 32 KB. `tool
 each theme in this order: the schema defaults, its `extends` base, its own elements, then
 `ROLE_MACROS`, which takes the per-theme numbers (Home rows, the settings top, the progress bar, the
 scheme colours) from `patch/offsets.inc`, so a theme file never names a macro. Any unknown name or
-value stops the build. The tool writes `themes.inc` into the build directory, which navigation.c
-includes after the accent tables, where the hand-written table stood, and `THEME_N` into `stock.h`,
-because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in every theme.
+value stops the build. The tool writes `themes.h` (the enums and macros, which navigation.h includes) and `themes.inc`
+(the tables, which theme_engine.c includes after the accent tables, where the hand-written table
+stood) into the build directory, and `THEME_N` into `stock.h`, because `setting_counts[]` uses it. `edit_paint` stays Minimal's card in every theme.
 
 **Now Playing layout.** `theme_t.np_layout` (`<view name="playing" layout="ipod|centred">`, ipod in
 every built-in) picks the page `ringnav_ui_load` loads for `playing_page`: `np_pages[np_layout()]`,
