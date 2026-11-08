@@ -1,4 +1,4 @@
-"""patch/navigation.c: tag and CUE text, comma lists, Light Mode's colours, Era's and the playlists' rows, config."""
+"""patch/navigation.c and tags.c: tag and CUE text, comma lists, Light Mode's colours, Era's and the playlists' rows, config."""
 import ctypes as C
 import datetime
 import random
@@ -718,7 +718,7 @@ def test_utf8_text_any_bytes_as_python_reads_them(fw, heap):
 
 @pytest.mark.parametrize('c', range(256))
 def test_ascii_letter(fw, c):
-    assert fw.fn('navigation__ascii_letter', C.c_int, C.c_uint)(c) == (65 <= c <= 90 or 97 <= c <= 122)
+    assert fw.fn('tags__ascii_letter', C.c_int, C.c_uint)(c) == (65 <= c <= 90 or 97 <= c <= 122)
 
 
 def gbk_like(data):
@@ -753,11 +753,11 @@ def gbk_like(data):
     (b'1\xb0\xa12', 1),                       # digits aren't letters
 ])
 def test_gbk_text(fw, heap, data, gbk):
-    assert fw.fn('navigation__gbk_text', C.c_int, C.c_void_p)(heap.string(data)) == gbk
+    assert fw.fn('tags__gbk_text', C.c_int, C.c_void_p)(heap.string(data)) == gbk
 
 
 def test_gbk_text_any_bytes(fw, heap):
-    check = fw.fn('navigation__gbk_text', C.c_int, C.c_void_p)
+    check = fw.fn('tags__gbk_text', C.c_int, C.c_void_p)
     for data in hostile(random.Random(0x6b), SEEDS, 3000):
         block = heap.string(data)
         assert check(block) == gbk_like(data)
@@ -837,7 +837,7 @@ def test_cue_text_a_long_field_reads_as_windows_1252(fw, heap):
 
 
 def test_cue_text_any_field_in_its_512(fw, heap):
-    gbk = fw.fn('navigation__gbk_text', C.c_int, C.c_void_p)
+    gbk = fw.fn('tags__gbk_text', C.c_int, C.c_void_p)
     rng = random.Random(0xc5e)
     for data in hostile(rng, SEEDS + [b'\xe9' * 500, b'\x80' * 500, b'a' + b'\xe9' * 255], 2500, 500):
         block = heap.string(data, 512)
@@ -863,7 +863,7 @@ def test_cue_text_gbk_goes_through_stocks_conversion(fw, heap, data):
 # SQL quoting.
 def scan_quote(fw, heap, value, cap, n=0, prefix=b''):
     sql, at = heap.string(prefix, cap), C.c_uint(n)
-    ok = fw.fn('navigation__scan_quote', C.c_int, C.c_void_p, C.c_uint, C.POINTER(C.c_uint), C.c_char_p)(sql, cap, C.byref(at), value)
+    ok = fw.fn('tags__scan_quote', C.c_int, C.c_void_p, C.c_uint, C.POINTER(C.c_uint), C.c_char_p)(sql, cap, C.byref(at), value)
     return ok, at.value, sql
 
 

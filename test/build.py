@@ -155,7 +155,7 @@ def boot_check():
             out, cp = logged(status, False)
             assert f'== demo exit {status}\n' in out and '== dmesg' in out and cp is False and state.exists()
         keep.unlink(); state.unlink()
-        # a library scan's and Coverflow's art build's records (navigation.c crash_note): the file in progress and
+        # a library scan's and Coverflow's art build's records (tags.c crash_note): the file in progress and
         # the last 60 memory lines
         for name, last, every in (('scan', 'last scanned', 500), ('art', 'last art', 50)):
             note_file, note_log = r/f'tmp/q2-{name}-file', r/f'tmp/q2-{name}.log'

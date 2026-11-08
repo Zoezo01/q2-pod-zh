@@ -17721,7 +17721,7 @@ assert t.cover('/mnt/mmc/big.ogg')==1 and not t.stock_covers and t.ffmpeg==1 and
 for path in ('/mnt/mmc/small.ogg','/mnt/mmc/big.opus'):
     assert t.cover(path)==1 and t.stock_covers==[path] and not t.ffmpeg,path
 assert not t.handles; passed()
-# The crash log's scan record (navigation.c crash_note): each tag read names its file in /tmp/q2-scan-file
+# The crash log's scan record (tags.c crash_note): each tag read names its file in /tmp/q2-scan-file
 # before stock reads it, and every 500th appends "<count> <VmRSS kB> <path>" to /tmp/q2-scan.log, which
 # each demo starts afresh and stops past 64 KB.
 class ScanNoteMachine(TagMachine):

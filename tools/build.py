@@ -1162,7 +1162,7 @@ FUNCTIONS = {
  'taglib_file_tag': ('void *', 'void *'),
  'toolsCheckItemExist': ('int', 'void *, const char *, int'),
  'toolsGetMusicInfo': ('int', 'int, char *, const char *'),
- 'toolsFixId3ErrorCode': ('void', 'int, const char *, char *, char *, int'),  # navigation.c ogg_music_info
+ 'toolsFixId3ErrorCode': ('void', 'int, const char *, char *, char *, int'),  # tags.c ogg_music_info
  'toolsUpdateDbTable': ('int', 'const char *, const char *'),
  'toolsTrimRight': ('void', 'char *'),
  'toolsHanziToPinyin': ('int', 'const char *, char *'),
@@ -1400,7 +1400,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

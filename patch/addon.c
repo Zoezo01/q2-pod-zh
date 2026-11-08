@@ -25,7 +25,7 @@
  *
  * Go to Album and Go to Artist on a song in an app's folder open the app's own page for them when
  * its q2app says goto=1 (addon_goto), and every song an app queues plays with its file's tags
- * (navigation.c card_tags).
+ * (tags.c card_tags).
  *
  * An app's /tmp/q2-<id>.sleep asks for a sleep timer: playback pauses at a time, or as the track
  * playing ends (sleep_read, sleep_check).
