@@ -394,7 +394,8 @@ static void stream_poll(app_t *a) {
     if (sm.state == S_WAIT) {
         if (sm.m3u && playback_loads != sm.loads)
             sm.state = S_DONE; /* the user played a queue before its first song came */
-        else if (!sm.timer && !scan && (sm.m3u ? m3u_ready() : stream_newer(sm.dir, "")))
+        else if (!sm.timer && !scan && !addon_game_audio() && /* the game's sound: the song waits */
+                 (sm.m3u ? m3u_ready() : stream_newer(sm.dir, "")))
             sm.timer = timer_add(stream_start, 0, 0);
         return;
     }
@@ -732,6 +733,9 @@ static void game_poll(void) {
     if (!gm.pid) return;
     if (waitpid(gm.pid, &status, 1)) { /* WNOHANG: it has ended */
         close(gm.sock);
+        /* a jack or USB change meanwhile ran stock's player_save_start(1): its start failed
+         * (ringnav_start_player) but its pause stuck on nothing, so Play would do nothing */
+        if (gm.audio && mclGetPlayStatus() == 3) player_stop();
         gm.pid = gm.audio = 0;
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);

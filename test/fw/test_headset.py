@@ -304,7 +304,8 @@ def test_a_card_game_with_the_sound_keeps_the_headsets_keys_from_stock(fw, how, 
 
 @pytest.mark.parametrize('how', ['media_key', PLAYPAUSE, PAUSECD, PAUSE, STOP])
 def test_a_card_game_with_the_sound_lets_a_headset_pause_what_plays(fw, how):
-    """Something else playing (a Spotify a phone resumed): a pause still passes, Play/Pause's too; only a start is kept."""
+    """Something else playing (stock's player stands in for the Spotify a phone resumed, the real case): a pause still
+    passes, Play/Pause's too; only a start is kept."""
     player = Player(fw, status=PLAYING)
     gm = fw.var('addon__gm', Game)
     gm.pid, gm.audio = 4321, 1

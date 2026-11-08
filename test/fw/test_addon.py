@@ -2169,3 +2169,29 @@ def test_a_card_game_that_can_t_fork_says_so(fw):
     seen = toasts(fw)
     assert shortcut(fw, b'10')(None, None) == 0
     assert seen == [b"It couldn't start"] and fw.var('addon__gm', Game).pid == 0 and fw.calls('player_stop')
+
+
+@pytest.mark.parametrize('status, stops', [(3, 1), (1, 0)])
+def test_the_game_with_the_sound_ending_clears_a_pause_stuck_on_nothing(fw, status, stops):
+    """A jack or USB change under the game ran stock's player_save_start(1): the start failed, the pause stuck."""
+    card(fw)
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.audio = 77, 1
+    fw.mock('fw_waitpid', lambda *_: 77)
+    fw.mock('mclGetPlayStatus', lambda *_: status)
+    fw.fn('addon_poll', None)()
+    assert gm.pid == 0 and gm.audio == 0 and len(fw.calls('player_stop')) == stops
+
+
+@pytest.mark.parametrize('audio, timers', [(1, 0), (0, 1)])
+def test_a_card_apps_first_song_waits_while_a_game_has_the_sound(fw, audio, timers):
+    world = World(fw, {b'/tmp/q2-a.play': b'1 /mnt/mmc/.a\n'}, dirs={b'/mnt/mmc/.a': [b'01.flac']}, now=500)
+    world.mtime[b'/mnt/mmc/.a'] = 100
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.audio = 77, audio
+    fw.mock('timer_add', lambda *_: 5)
+    app = block(fw, size=512)  # an app_t, its id first
+    C.memmove(app, b'a\0', 2)
+    fw.fn('addon__stream_poll', None, C.c_void_p)(app)
+    s = sm(fw)
+    assert s.state == S_WAIT and len(fw.calls('timer_add')) == timers and s.timer == (5 if timers else 0)

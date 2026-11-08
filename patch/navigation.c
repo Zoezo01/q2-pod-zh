@@ -8662,9 +8662,9 @@ int ringnav_usbmode(void *a, void *b, void *c, void *d) {
 }
 
 /* mclStartPlayer, every local track's start: a playing librespot or radio station lets the DAC's
- * PCM go first. A track too long for RAM fails as stock's own checks do, with -1; so does any start
- * while a card game has the sound (addon.c): a jack or USB DAC change, a Bluetooth drop, Standby's
- * resume and a card app's stream all come here, and the game keeps its PCM. */
+ * PCM go first. A track too long for RAM fails as stock's own checks do, with -1; so, silently,
+ * does any start while a card game has the sound (addon.c): a jack or USB DAC change and a
+ * Bluetooth drop come here through player_save_start, and the game keeps its PCM. */
 int ringnav_start_player(void) {
     if (addon_game_audio()) return -1;
     if (!playback_start_fits()) return -1;
