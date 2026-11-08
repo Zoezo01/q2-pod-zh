@@ -10168,6 +10168,8 @@ static int qm_apply(void *add, int next) {
     return n != 0;
 }
 
+/* A 2 s modal dialog: its loop runs every ringnav_sleep poll again, so a poll clears or latches
+ * what it toasts first (logo_poll). */
 void toast(const char *text) {
     struct {
         int kind, ms;
