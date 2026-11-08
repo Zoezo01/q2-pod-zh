@@ -4197,11 +4197,10 @@ void coverflow_home_top(void) {
     home_show(home.list, 1);
 }
 
-/* Classic's bar title on Home (navigation.c bar_title_sync): coverflow_home_name on its own list. */
-const char coverflow_home_name[] = "Q2 Pod";
+/* Classic's bar title on Home (navigation.c bar_title_sync). */
 const char *coverflow_home_title(void) {
     void *open = home_open();
-    return !open                 ? coverflow_home_name
+    return !open                 ? "Q2 Pod"
            : open == home.lib    ? "Library"
            : open == home.stream ? "Streaming"
                                  : "Settings";

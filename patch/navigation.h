@@ -177,10 +177,9 @@ typedef struct {
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
      * level, charge and low state. Classic's bar also has a title (bar_title_sync), from the
-     * top window title_win and, when a label holds it, title_lbl (both found once per window), and
-     * a play state of Home's own (home_state), which takes the title's place there (bar_home). */
+     * top window title_win and, when a label holds it, title_lbl (both found once per window). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
-        *bar_title, *home_state, *title_win, *title_lbl,
+        *bar_title, *title_win, *title_lbl,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
     /* The row action's confirm on show (confirm_over): its second cell's verb, and its window */
     const char *confirm_verb;
@@ -241,7 +240,7 @@ typedef struct {
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled, bar_home;
+    int time_title, bar_titled;
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;

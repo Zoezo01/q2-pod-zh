@@ -11088,21 +11088,20 @@ for bt_name,bt_kids,bt_want in (('home_page',[],'Q2 Pod'),('playing_page',[],'No
     btwins[bt_name]=btm.node('window',bt_name,bt_kids); assert bt_titled(btwins[bt_name])==bt_want,bt_name
 assert bt_titled(btm.node('dialog','sortselect_dialog'))=='Shuffle'
 btm.calls=[]; assert bt_titled(btwins['shuffle_page'])=='Shuffle'  # the same title again: not written
-# The play state sits by the battery (img_state); on Home's own list it is img_home_state instead, in the title's
-# place, "Q2 Pod" hidden (Home's Library and Settings are titled pages: coverflow_home_title). Stopped, neither shows.
+# The play state sits by the battery (img_state) on every page, Home's own list too, its title kept. Stopped, it hides.
 psm=classic_light_on(Machine()); psm.handlers.pop(syms['mclGetPlayStatus'],None)
-psttl=psm.node('hscroll_label','label_title'); psst=psm.node('image','img_state',visible=0); pshs=psm.node('image','img_home_state',visible=0)
-psm.word(psst+O['W_W'],18); psbar=classic_light_bar(psm,psm.node('view','view_right',[psst]),pshs,psttl)
+psttl=psm.node('hscroll_label','label_title'); psst=psm.node('image','img_state',visible=0)
+psm.word(psst+O['W_W'],18); psbar=classic_light_bar(psm,psm.node('view','view_right',[psst]),psttl)
 pshome,pssongs=psm.node('window','home_page'),psm.node('window','allmusic_page',[psm.node('view','view_navbar',[psm.node('image','img_return'),psm.node('hscroll_label',text='Songs')],visible=0)])
-def ps_bar(win,status):  # (title, title shown, by the battery, on Home) after two bar paints, each image's name when shown
+def ps_bar(win,status):  # (title, title shown, by the battery) after two bar paints, the image's name when shown
     psm.word(0xa3beac,status); psm.top=win; psm.word(win+O['W_PARENT'],psm.wm)
     for _ in range(2): psm.call(address=HOOKS['widget_on_paint_background'][0],args=(psbar,psm.canvas,0,0),gap=0)
     shown=lambda w: psm.nodes[w].get('visible',1) and psm.nodes[w].get('image')
-    return psm.nodes[psttl].get('text'),psm.nodes[psttl].get('visible',1),shown(psst),shown(pshs)
-assert ps_bar(pshome,0)==('Q2 Pod',1,0,0)
-assert ps_bar(pshome,2)==('Q2 Pod',0,0,'classic_light_play_l') and ps_bar(pshome,3)==('Q2 Pod',0,0,'classic_light_pause_l')
-assert ps_bar(pssongs,2)==('Songs',1,'classic_light_play_l',0) and ps_bar(pssongs,0)==('Songs',1,0,0)
-assert ps_bar(pshome,0)==('Q2 Pod',1,0,0); passed()
+    return psm.nodes[psttl].get('text'),psm.nodes[psttl].get('visible',1),shown(psst)
+assert ps_bar(pshome,0)==('Q2 Pod',1,0)
+assert ps_bar(pshome,2)==('Q2 Pod',1,'classic_light_play_l') and ps_bar(pshome,3)==('Q2 Pod',1,'classic_light_pause_l')
+assert ps_bar(pssongs,2)==('Songs',1,'classic_light_play_l') and ps_bar(pssongs,0)==('Songs',1,0)
+assert ps_bar(pshome,0)==('Q2 Pod',1,0); passed()
 assert not [c for c in btm.calls if c[0]=='widget_set_text_utf8' and c[1]==bttl]
 # The source is found once per top window: painting it again looks nothing up, and a navbar title
 # rewritten under the same window is followed.
@@ -12017,16 +12016,15 @@ assert clock==('','6:14') and show(ttm.node('window','playing_page'))==('Now Pla
 ttm.clock=(18,15); ttm.advance(61000); assert ttm.nodes[ttc]['text']==''  # the clock's minute stays out of it
 assert show(ttm.node('window','bare_page'))==('','6:15')
 assert not any(k.endswith('font_name') for k in ttm.nodes[ttc]); passed()
-# Off, Home keeps its title whether or not the play state covers it (img_home_state): the clock stays out, with no flip
-# as music starts or stops.
+# Off, Home keeps its title whether or not music plays: the clock stays out, with no flip as music starts or stops.
 hm=Machine(); hm.config['TIMETITLE']='0'; classic_light_on(hm); hm.clock_minutes=True; hm.handlers.pop(syms['mclGetPlayStatus'],None)
 htt,hcl=hm.node('hscroll_label','label_title'),hm.node('hscroll_label','label_clock')
-hbar=classic_light_bar(hm,htt,hcl,hm.node('image','img_state',visible=0),hm.node('image','img_home_state',visible=0))
+hbar=classic_light_bar(hm,htt,hcl,hm.node('image','img_state',visible=0))
 hhome=hm.node('window','home_page'); hm.top=hhome; hm.word(hhome+O['W_PARENT'],hm.wm)
 for status in (0,2,0):
     hm.word(0xa3beac,status)
     for _ in range(2): hm.call(address=HOOKS['widget_on_paint_background'][0],args=(hbar,hm.canvas,0,0),gap=0); hm.advance(1)
-    assert (hm.nodes[htt].get('text'),hm.nodes[htt].get('visible',1),hm.nodes[hcl].get('text'))==('Q2 Pod',int(status!=2),''),status
+    assert (hm.nodes[htt].get('text'),hm.nodes[htt].get('visible',1),hm.nodes[hcl].get('text'))==('Q2 Pod',1,''),status
 passed()
 # Off, the title takes the clock's room up to EQ's box (view_right's x plus its own, 222), and its own width back on a page
 # with no title; on, it keeps its own.

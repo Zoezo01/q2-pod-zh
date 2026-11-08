@@ -190,7 +190,6 @@ extern void coverflow_slant(void *w, void *canvas, unsigned paper), coverflow_sl
 extern int coverflow_home_back(void *top), coverflow_home_owns(void *w);
 extern void coverflow_home_top(void);
 extern const char *coverflow_home_title(void);
-extern const char coverflow_home_name[];
 extern void coverflow_home_row(void *surface, void *row, int id, int painting);
 extern void lockscreen_paint(void *w, void *canvas);
 extern void coverflow_paint(void *w, void *canvas), photos_paint(void *w, void *canvas),
@@ -3650,7 +3649,7 @@ int bar_status(void) {
  * label_idle shows when neither it nor label_eq does. Returns whether a state image changed. */
 static int bar_state_sync(void *bar) {
     int changed = 0;
-    if (!st.bar_bt && bar) { /* bar_title_sync passes none: the widgets it found already */
+    if (!st.bar_bt && bar) {
         st.bar_bt = widget_lookup(bar, "img_bt", 1);
         st.bar_wifi = widget_lookup(bar, "img_wifi", 1);
         st.bar_pct = widget_lookup(bar, "label_battery", 1);
@@ -3660,22 +3659,16 @@ static int bar_state_sync(void *bar) {
         st.bar_state = widget_lookup(bar, "img_state", 1);
         st.bar_eq = widget_lookup(bar, "label_eq", 1);
         st.bar_title = widget_lookup(bar, "label_title", 1);
-        st.home_state = widget_lookup(bar, "img_home_state", 1);
     }
     int on = 0;
     if (st.bar_state) {
         int status = bar_status();
         on = status == 2 || status == 3;
-        /* Classic: by the battery, but on Home's own list in the title's place, "Q2 Pod" hidden */
-        void *at = !on ? (void *)0 : st.bar_home && st.home_state ? st.home_state : st.bar_state;
-        for (void *const *w = (void *const[]){ st.bar_state, st.home_state }, *const *e = w + 2;
-             w < e; ++w)
-            if (*w && (*w == at) != !!widget_get_visible(*w)) {
-                widget_set_visible(*w, *w == at, 0);
-                changed = 1;
-            }
-        if (st.home_state && st.bar_title) widget_set_visible(st.bar_title, at != st.home_state, 0);
-        if (at) {
+        if (on != !!widget_get_visible(st.bar_state)) {
+            widget_set_visible(st.bar_state, on, 0);
+            changed = 1;
+        }
+        if (on) {
             /* BATT_CLASSIC_LIGHT's play state is its own art (tools/art.py), by state and half */
             static const char *const classic_light_icon[2][2] = {
                 { "classic_light_play_d", "classic_light_pause_d" },
@@ -3687,8 +3680,8 @@ static int bar_state_sync(void *bar) {
                                    ? classic_light_icon[ipod_light()][status != 2]
                                : status == 2 ? "bar_play"
                                              : "bar_pause";
-            if (tk_strcmp(widget_get_prop_str(at, "image", ""), icon)) {
-                image_base_set_image(at, icon);
+            if (tk_strcmp(widget_get_prop_str(st.bar_state, "image", ""), icon)) {
+                image_base_set_image(st.bar_state, icon);
                 changed = 1;
             }
         }
@@ -5678,13 +5671,6 @@ void bar_title_sync(void *win) {
     static const unsigned none = 0;
     char s[256], now[256]; /* stock writes nothing unless all of it fits */
     const char *t = home_menu(win) ? coverflow_home_title() : (const char *)0;
-    /* Home's own list: the play state moves to the title's place (bar_state_sync), after this paint
-     */
-    if ((t == coverflow_home_name) != st.bar_home) {
-        st.bar_home = t == coverflow_home_name;
-        if (bar_state_sync((void *)0) && !st.bar_timer)
-            st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
-    }
     if (t)
         ;
     else if (win != st.title_win) {

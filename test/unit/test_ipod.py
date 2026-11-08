@@ -828,14 +828,11 @@ def test_classic_light_status_bar_has_a_title_and_no_idle_mark():
 
 # Right of the centred clock, left to right: EQ (it floats; only while nothing plays, navigation.c
 # bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery, the battery body ending where the glass
-# does at its top row. On Home's own list the play state is img_home_state, hidden until the payload shows it,
-# in the title's place at HOME_STATE_X, on the right group's rows, the same art.
+# does at its top row, on every page, Home's own list too: no second play state.
 def test_classic_light_status_bar_battery_and_play_state_right():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     assert [c[2]['name'] for c in n['view_right'][3]] == ['label_eq', 'img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[2:]]
-    home, state = n['img_home_state'], n['img_state']
-    assert home in root[3] and home[1] == [ipod.HOME_STATE_X, n['view_right'][1][1], ipod.STATE_W, state[1][3]]
-    assert home[2] == {**state[2], 'name': 'img_home_state', 'visible': 'false'}
+    assert 'img_home_state' not in n
     assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
     assert 375 - ipod.corner_inset(5) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
