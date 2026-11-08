@@ -4,6 +4,7 @@
   - Power: **Smart Wi-Fi**, in System settings → Power and off by default, turns Wi-Fi off after 5 minutes when nothing uses it, to save battery while you play your own music. It comes back when you open Streaming or the Wi-Fi settings, and anything that needs it, such as Spotify, Internet Radio or Upload Scrobbles, says **Connecting to Wi-Fi…** and waits a few seconds for it.
   - Now Playing: on the lyrics page, touch and hold a line and the song plays from that line. It used to play from a line further down, more lines down the further the lyrics had scrolled.
   - Now Playing: on the lyrics page, the page stays still under a finger held on a line, even if it rolls a little sideways. It used to slide toward the next page. A real swipe still turns the page.
+  - Display: under **Theme: Classic** the volume bar in Quick Settings and on other pages takes your accent colour, as Now Playing's does. Classic Blue keeps its own blue.
   - Display: with **Light Mode** on, the volume no longer draws a thin white line around the edges of the screen.
 - **1.7.1**:
   - App Store: **Check for Updates**, the first row, checks for new releases now, and a message says how many apps can be updated. The page still checks on its own as it opens, and then says so only when an app can be updated. With no list of apps yet, the same row loads it; it was called **App list**.

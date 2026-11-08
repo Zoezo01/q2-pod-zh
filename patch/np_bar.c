@@ -241,13 +241,19 @@ void paint_scrubber(void *w, void *canvas) {
     ipod_bar(canvas, 0, (I(w, W_H) - theme()->np_bar) / 2, bw, n > 0 ? bw * v / n : 0, st.scrub);
 }
 
+/* The rows painter's bar (the volume panel, a card app's progress): the track's rows, then the
+ * fill's, the theme's own scheme's (Classic Blue) or another accent's band, as Now Playing's bar
+ * (ipod_bar). */
 void paint_rows_bar(void *canvas, int x, int y, int w, int h, int fill_w) {
     const theme_t *T = theme();
     const unsigned (*rows)[NP_ROWS] = T->np_rows + 2 * ipod_light();
+    const stops_t *band = T->schemes[accent()].label ? (const stops_t *)0 : &scheme()->sel;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     for (int j = 0; j < h && j < NP_ROWS; ++j) {
         scrub_row(canvas, rows[0][j], x, y + j, w);
-        if (fill_w > 0) scrub_row(canvas, rows[1][j], x, y + j, fill_w < w ? fill_w : w);
+        if (fill_w > 0)
+            scrub_row(canvas, band ? 0xff000000u | stops_row(band, j, h) : rows[1][j], x, y + j,
+                      fill_w < w ? fill_w : w);
     }
     stock_canvas_set_fill_color(canvas, fill);
 }

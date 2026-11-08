@@ -6804,8 +6804,8 @@ def art_size(name): return struct.unpack('>II',(B/f'{name}.png').read_bytes()[16
 def shadows(m): return [(t['text'],t['rect'],t['font'],t['color']) for t in m.letters]
 def slider_paint_calls(m):  # what slider_paint called: from the page's image to the caption's shadow
     names=[c[0] for c in m.calls]; return set(names[names.index('widget_load_image'):len(names)-names[::-1].index('canvas_draw_text_in_rect')])
-def vol_np(light='1',remain=1,theme='1'):
-    SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light),k)]
+def vol_np(light='1',remain=1,theme='1',**config):
+    SETUP[:]=[lambda k:(k.config.update(THEME=theme,LIGHT=light,**config),k)]
     try: q=LoadQueue(queue=3,pos=1)
     finally: SETUP.clear()
     q.handlers[playing+12]='stock_playing'
@@ -6831,6 +6831,13 @@ for over,light in (('statusbar_dialog','1'),('search_dialog','1'),('statusbar_di
     assert [b[:4] for b in barrows if b[2]==243]==[(68,271+i,243,1) for i in range(17)] and [b[:4] for b in barrows if b[2]==97]==[(68,271+i,97,1) for i in range(17)] and not vp.letters and not vp.rounded
     assert [vp.nodes[w]['visible'] for w in (vp.elapsed,vp.remain)]==[1,1] and wbox(vp,vp.sv)==(28,256,319,48)
     assert [d[1][:2] for d in vp.image_draws]==[(20,250),(52,273),(317,273)] and art_at(vp)[0][0]=='classic_light_panel_shadow'; passed()  # the panel's soft shadow first, under its ring
+# ... another accent fills with its band, as Now Playing's bar does (ipod_bar); Classic Blue keeps the rows above.
+for light in ('1','0'):
+    vp=vol_np(light,CLASSIC_LIGHT_ACCENT='3'); vol_closed(vp); other=vp.node('dialog','statusbar_dialog'); vp.word(other+O['W_PARENT'],vp.wm)
+    vp.nodes[vp.wm]['children']=[vp.win,other,vp.dlg]; vp.top=vp.dlg; bare(vp); bg(vp,vp.dlg)
+    _,rest=round_box(vp.bands,27,255,321,50,13); _,barrows=round_box(rest,28,256,319,48,12)
+    fill=[b[4] for b in barrows if b[2]==97]
+    assert len(fill)==17 and fill[0]==color_t(theme_builtins()[1]['schemes'][3]['sel'][0][1]) and len(set(fill))>1,(light,fill); passed()
 # Quick Settings under Classic, the dialog as its asset leaves it and stock's init left it.
 QS_ICONS=('img_wifiswitch','img_btswitch','img_lock','img_gain','img_usbmode','img_po','img_playset','img_sysset')
 QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbdac','drop_po','drop_playset','drop_sysset')
