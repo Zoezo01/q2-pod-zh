@@ -403,7 +403,10 @@ static void *worker(void *unused) {
     while (cf.done < cf.total && !cf.cancel) {
         crash_note(cf.jobs[cf.done].track, "/tmp/q2-art-file", "/tmp/q2-art.log", 50, art_counts);
         void *note = fopen(BUILDING, "wb"); /* struck at the next open if this build never ends */
-        if (note) fwrite(&cf.jobs[cf.done].key, sizeof(unsigned), 1, note), fclose(note);
+        if (note) {
+            fwrite(&cf.jobs[cf.done].key, sizeof(unsigned), 1, note);
+            fflush(note), fsync(fileno(note)), fclose(note); /* synced: see strike */
+        }
         build_art(&cf.jobs[cf.done]);
         ++cf.done;
     }
@@ -416,9 +419,11 @@ static void *worker(void *unused) {
  * same way. It takes the "no art" marker (unless its cover is there: a death between the rename and
  * the next note) until Refresh Cover Flow; q2-crash.log names its track (docs/boot.md). A clean end
  * mid-build removes the note (coverflow_clean_end), as a power-off is no album's fault. The note
- * is not synced, unlike cf_trace's lines: a death leaves the kernel to write it (S90play syncs),
- * and a hang outlasts the writeback interval; a torn one reads short and strikes nothing.
- * ponytail: the battery running out mid-build strikes an innocent album; Refresh puts it back. */
+ * is synced in place, a sync per album, and not through a rename, whose directory write a reset
+ * could lose: a tester's log (2026-11-09) showed the restart it must outlive is the watchdog's,
+ * demo still alive and nothing flushed, with no "last art" line, so the grey disc is what names
+ * the album. A torn note reads short and strikes nothing. ponytail: the battery running out
+ * mid-build strikes an innocent album; Refresh puts it back. */
 static void strike(void) {
     unsigned key;
     char path[512];

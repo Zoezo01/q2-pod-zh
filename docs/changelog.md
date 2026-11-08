@@ -1,8 +1,8 @@
 # Changelog
 
 - **1.7.3**:
-  - Cover Flow: an album whose artwork restarted the Q2 while Cover Flow was preparing artwork is skipped the next time Cover Flow opens, and shows the grey disc, instead of restarting the Q2 again at every open. `q2-crash.log` on the card names the song it was reading. **Refresh Cover Flow** tries it again.
-  - Now Playing: on the lyrics page, a swipe turns the page from the first touch again. In 1.7.2 the guard that kept a held finger's page still took every swipe with it, so a quick swipe did nothing and it took a hold, then a swipe. A finger that rests on a line and rolls up to 20 px still plays from it, the page follows the roll and springs back when the finger lifts, and dragging the lines up or down in full screen keeps them full screen.
+  - Cover Flow: an album whose artwork restarted the Q2 while Cover Flow was preparing artwork is skipped the next time Cover Flow opens and shows the grey disc, so you can tell which album it was, instead of restarting the Q2 again at every open. **Refresh Cover Flow** tries it again.
+  - Now Playing: on the lyrics page, a swipe turns the page from the first touch again. In 1.7.2 the guard that kept a held finger's page still took every swipe with it, so a quick swipe did nothing and it took a hold, then a swipe. Touch and hold to play from a line goes with it: tap the lyrics to fill the screen with them, scroll them as you like, and tap a line to play from it. Return brings the page back, as does a tap off the lines.
 
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
