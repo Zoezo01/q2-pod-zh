@@ -7,12 +7,14 @@ import struct
 
 import pytest
 
+from conftest import O
+
 N, HALO, BARS, W = 1024, 64, 32, 343
 SPECTRUM, SCOPE, METERS, HALO_STYLE = range(4)
 DECAY, HOLD_MS, GRAVITY, FLOOR_DB, VU_REF_DB, LED_DB, FPS = 1.6, 400, 3.0, 60, -14, -1, 25
 RET_REMOVE, RET_REPEAT = 7, 8
-EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK = 0x0c, 0x0e, 0x10c
-W_X, W_Y, W_W, W_PARENT = 0, 4, 8, 0x48
+EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK = O['EVT_DESTROY'], O['EVT_VALUE_CHANGED'], O['EVT_CLICK']
+W_X, W_Y, W_W, W_PARENT = O['W_X'], O['W_Y'], O['W_W'], O['W_PARENT']
 RING, TAP_SIZE = 65536, 24 + 65536 * 8
 NAMES = ['Spectrum', 'Oscilloscope', 'VU Meters', 'Halo']
 
@@ -390,7 +392,10 @@ class Now:
         fw.var('g_backlight_status', C.c_ubyte).value = 1
         fw.var('g_equalizer_flag', C.c_ubyte).value = 1  # the filter is in already: peq_chain leaves it
         if style is not None:
-            fw.mock('toolsReadConfig', lambda path, section, key, out, default, *_: C.memmove(out, style.encode() + b'\0', 2))
+            def config(path, section, key, out, default, *_):  # the style for VIS alone, the rest their defaults
+                value = style.encode() if C.string_at(key) == b'VIS' else C.string_at(default)
+                C.memmove(out, value + b'\0', len(value) + 1)
+            fw.mock('toolsReadConfig', config)
         fw.fn('visualizer_attach', None, C.c_void_p)(self.win)
         self.v = vz(fw)
 

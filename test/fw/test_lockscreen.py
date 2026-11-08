@@ -6,12 +6,12 @@ import struct
 
 import pytest
 
-from conftest import block
+from conftest import O, block
 
 WALLS = [b'q2pod:' + n for n in (b'aurora', b'sunrise', b'graphite', b'tide', b'ember', b'black')]
 AURORA, SUNRISE, GRAPHITE, TIDE, EMBER, BLACK = range(6)
-EVT_DESTROY = 0x0c
-W_W, W_PARENT = 0x08, 0x48
+EVT_DESTROY = O['EVT_DESTROY']
+W_W, W_PARENT = O['W_W'], O['W_PARENT']
 RET_OK, RET_REPEAT = 0, 8
 # Each mesh wallpaper's points' colours (r, g, b): a mesh gradient blends them, nothing outside
 AURORA_RGB = [(0.06, 0.05, 0.22), (0.42, 0.20, 0.82), (0.08, 0.62, 0.70), (0.80, 0.22, 0.58), (0.04, 0.05, 0.16),
@@ -783,9 +783,12 @@ def test_black_s_info_screen_paints_black_and_gives_the_fill_back(fw, clock, pic
     timers(fw)
     win = lock_window(fw, picture, names=INFO, THEME='1')
     fw.mock('widget_get_visible', lambda *_: shown)  # the song's card and the slide hint
+    art = []
+    fw.mock('widget_load_image', lambda w, name, bm, *_: art.append(C.string_at(name)) or 1)  # none drawn
     canvas = Canvas(fw)
     fw.fn('lockscreen_paint', None, C.c_void_p, C.c_void_p)(win['img_screensaver'], canvas.p)
     assert ((0, 26, 375, 294, 0xff000000) in canvas.fills) == bool(black)  # under the bar, whichever half
+    assert (b'classic_light_hint_shadow' in art) == bool(shown)  # the hint's shadow only under a shown hint
     assert struct.unpack_from('<I', canvas.lcd, 0xbc)[0] == 0xff123456
 
 

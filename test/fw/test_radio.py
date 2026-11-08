@@ -5,15 +5,16 @@ import struct
 
 import pytest
 
-from conftest import Files
+from conftest import O, Files
 
 RADIO = '/mnt/mmc/Radio'
 FAVS, LAST, STATE = f'{RADIO}/favourites.m3u', f'{RADIO}/.last', '/tmp/q2radio.state'
 API = 'https://all.api.radio-browser.info'
 QUERY = '?order=votes&reverse=true&limit=100&hidebroken=true'
-KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN, KEY_RETURN = 171, 222, 223, 170
-EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_BLUR, EVT_KEY_UP, EVT_IM_ACTION = 0x0c, 0x0e, 0x10c, 0x10f, 0x114, 0x13a
-EVENT_KEY, W_PARENT = 0x18, 0x48
+KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN, KEY_RETURN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN'], O['KEY_RETURN']
+EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_BLUR, EVT_KEY_UP, EVT_IM_ACTION = (O[k] for k in (
+    'EVT_DESTROY', 'EVT_VALUE_CHANGED', 'EVT_CLICK', 'EVT_BLUR', 'EVT_KEY_UP', 'EVT_IM_ACTION'))
+EVENT_KEY, W_PARENT = O['EVENT_KEY'], O['W_PARENT']
 MENU, PICK, STATIONS = range(3)
 FEATURED = ['Radio Paradise', 'SomaFM Groove Salad', 'BBC World Service', 'KEXP', 'FIP', 'NTS 1']
 MENU_ROWS = ['Now Playing', 'Favourites', 'Featured', 'Top Stations', 'By Country', 'By Genre']
@@ -649,7 +650,7 @@ def test_a_second_open_does_nothing(fw):
     p = page(fw)
     count = len(fw.calls('window_create'))
     fw.fn('radio_open', C.c_int, C.c_void_p, C.c_void_p)(0, 0)
-    assert len(fw.calls('window_create')) == count and p
+    assert len(fw.calls('window_create')) == count  # p's buffers stay alive to here
 
 
 # Search.

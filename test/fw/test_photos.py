@@ -6,16 +6,16 @@ import struct
 
 import pytest
 
-from conftest import FNV_PRIME, Files, block, fnv1a
+from conftest import FNV_PRIME, O, Files, block, fnv1a
 
 ROOT = '/mnt/mmc/Photos'
 CACHE = '/mnt/mmc/.photos'
 PH_BAD = 9
 ALBUMS, GRID, VIEWER = range(3)
-EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_KEY_UP = 0x0c, 0x0e, 0x10c, 0x114
-W_H, W_PARENT = 0xc, 0x48
-SLIDE_INDEX, SLIDE_SPACER, SLIDE_OFFSET, SCROLL_Y = 0x78, 0x84, 0x94, 0x84
-KEY_RETURN, EVENT_KEY = 170, 0x18
+EVT_DESTROY, EVT_VALUE_CHANGED, EVT_CLICK, EVT_KEY_UP = O['EVT_DESTROY'], O['EVT_VALUE_CHANGED'], O['EVT_CLICK'], O['EVT_KEY_UP']
+W_H, W_PARENT = O['W_H'], O['W_PARENT']
+SLIDE_INDEX, SLIDE_SPACER, SLIDE_OFFSET, SCROLL_Y = O['SLIDE_INDEX'], O['SLIDE_SPACER'], O['SLIDE_OFFSET'], O['SCROLL_Y']
+KEY_RETURN, EVENT_KEY = O['KEY_RETURN'], O['EVENT_KEY']
 TILE_W, TILE_H, THUMB_W, THUMB_H, GRID_X = 93, 80, 85, 72, 1
 GREY = 0xff333333
 RGBA_AT = [(0, 1, 2, 3), (3, 2, 1, 0), (2, 1, 0, 3), (1, 2, 3, 0)]  # r, g, b, a's bytes: RGBA, ABGR, BGRA, ARGB
@@ -592,7 +592,8 @@ def test_an_album_is_its_own_photos(fw):
 def test_at_most_photos_max(fw):
     card = Card(fw, files(*[f'{i:03}.jpg' for i in range(505)]))
     page = Page(fw, card)
-    assert page.ph.n == 500 and page.paths() == sorted(set(page.paths()))  # the first 500 the folder lists
+    # the first 500 the folder lists (Card's readdir runs in reverse name order: 504 down to 5), sorted
+    assert page.ph.n == 500 and page.paths() == [f'{ROOT}/{i:03}.jpg' for i in range(5, 505)]
 
 
 def test_no_photos(fw):

@@ -6,9 +6,9 @@ import struct
 
 import pytest
 
-from conftest import claim
+from conftest import O, claim
 
-KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = 171, 222, 223
+KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
 NEXT, PLAYPAUSE, PREV, STOP, PAUSE, PLAYCD, PAUSECD, PLAYKEY = 163, 164, 165, 166, 119, 200, 201, 207
 PLAYING, PAUSED, STOPPED = 2, 3, 1
 PAIRS, LINK_MAC, STOCK_STATUS = 0xa38110, 0xa38168, 0x4f1a50  # pdeq_btpairlist, BTLINKMAC, stock's status callback
@@ -303,25 +303,25 @@ def test_a_video_pauses_and_resumes_by_the_ears(fw):
 @pytest.mark.parametrize('page', ['tidal_album', 'tidal_'])
 def test_tidal_on_top_keeps_the_keys_with_stock_s_player(fw, page):
     player = Player(fw)
-    keep = top_window(fw, page)
+    top_window(fw, page)
     fw.var('books__vid', Vid).pid = 4321
     fw.fn('media_key', None, C.c_uint)(KEY_FWD_BTN)
-    assert len(fw.calls('player_next_music')) == 1 and keep
+    assert len(fw.calls('player_next_music')) == 1
 
 
 @pytest.mark.parametrize('page, focused', [('spotify_page', 1), ('spotbrowse_page', 1), ('radio_page', 1),
                                            ('radionp_page', 1), ('tidal_page', 1), ('playing_page', 0), ('', 0)])
 def test_a_streaming_page_on_top_is_focused(fw, page, focused):
-    keep = top_window(fw, page)
-    assert fw.fn('media_focused', C.c_int)() == focused and keep
+    top_window(fw, page)
+    assert fw.fn('media_focused', C.c_int)() == focused
 
 
 @pytest.mark.parametrize('page', ['spotify_page', 'radio_page'])
 def test_a_focused_page_whose_player_isn_t_running_leaves_the_key_to_stock(fw, page):
     player = Player(fw)
-    keep = top_window(fw, page)
+    top_window(fw, page)
     fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
-    assert player.toggles() == 1 and keep
+    assert player.toggles() == 1
 
 
 def players(fw, video=0, radio=0, spotify=0):
@@ -357,9 +357,9 @@ def test_spotify_playing_takes_the_keys(fw, key, command):
 def test_a_focused_spotify_page_takes_the_keys_from_a_video(fw):
     player = Player(fw)
     players(fw, video=5, spotify=1)
-    keep = top_window(fw, 'spotify_page')
+    top_window(fw, 'spotify_page')
     fw.fn('media_key', None, C.c_uint)(KEY_FWD_BTN)
-    assert sent(fw) == [b'n'] and player.toggles() == 0 and keep
+    assert sent(fw) == [b'n'] and player.toggles() == 0
 
 
 @pytest.mark.parametrize('playing, command', [(0, b's'), (1, b'P')])
