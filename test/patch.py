@@ -8415,22 +8415,28 @@ def centred(lines=((5,'x'*15),(9,'Two two'),(12,'Three')),playtime=9,**kw):
     m=CentredMachine(**kw); m.lines=list(lines); m.show(playtime); return m
 def centre_of(m,i,view):  # the offset that centres line i's row in a view that high (C's division)
     r=m.lyric_row(i); return m.get(r+O['W_Y'])+int((m.get(r+O['W_H'])-view)/2)
+def row_y(m,i):  # the window y of line i's row's middle
+    r=m.lyric_row(i); yy=m.get(r+O['W_Y'])+m.get(r+O['W_H'])//2-y(m); w=m.lrc
+    while w: yy+=m.get(w+O['W_Y']); w=m.get(w+O['W_PARENT'])
+    return yy
+def below(m): return row_y(m,2)+m.get(m.lyric_row(2)+O['W_H'])//2+5  # just under the last line: off the lines
 m=centred(); assert m.full()[1:3]==(80,225) and m.get(m.lyric_row(0)+O['W_H'])==2*38+SLOT-38  # two rows in the column
 assert settle(m)[-1]==centre_of(m,1,178); loop(m,-56); m.word(payload_syms['wheel_held'],0); held=settle(m)[-1]  # the wheel holds them
 m.tap(dx=8,dy=-8); assert m.full()==FULL,m.full()
 assert m.get(m.lyric_row(0)+O['W_H'])==SLOT and settle(m)[-1]==centre_of(m,1,250)!=held; passed()  # one row; the playing line
-m.tap(); assert m.full()==COLUMN and settle(m)[-1]==centre_of(m,1,178); passed()
+m.tap(y=below(m)); assert m.full()==COLUMN and settle(m)[-1]==centre_of(m,1,178); passed()  # off the lines: back
 for end in ('return','abort','page'):
     m=centred(); m.tap(); assert m.full()==FULL,end
     if end=='return': assert m.call(O['KEY_RETURN'],gap=50)==11  # Return stays on the page
-    elif end=='abort': m.touch('EVT_POINTER_ABORT')
+    elif end=='abort': m.touch('EVT_POINTER_DOWN'); m.pressed=1; m.touch('EVT_POINTER_ABORT',175,100); m.pressed=0  # the slide_view's, past the box
     else: m.nodes[m.slide]['value']=2; loop(m)
     assert m.full()==COLUMN,end; passed()
 # Another window over the page leaves them full screen; a swipe the slide_view took (its abort)
 # that comes back to where it began is no tap at the lift.
 m=centred(); m.tap(); m.top=m.node('window','home_page'); loop(m); m.top=m.win; loop(m); assert m.full()==FULL
-m.touch('EVT_POINTER_DOWN'); m.touch('EVT_POINTER_ABORT'); m.touch('EVT_POINTER_UP_BEFORE'); assert m.full()==COLUMN; passed()
-for dx,dy in ((70,0),(0,40),(41,0),(0,11)):  # a swipe, a drag of the lines, past STICKY_PX and TAP_PX: the column untouched
+m.touch('EVT_POINTER_DOWN'); m.pressed=1; m.touch('EVT_POINTER_MOVE_BEFORE',220,100); m.touch('EVT_POINTER_ABORT',220,100)
+m.touch('EVT_POINTER_UP_BEFORE'); m.pressed=0; assert m.full()==COLUMN; passed()
+for dx,dy in ((70,0),(0,40),(41,0),(0,11)):  # a swipe, a drag of the lines, past TAP_PX: the column untouched
     m=centred(); m.tap(dx=dx,dy=dy); assert m.full()[:6]==COLUMN[:5]+(None,),(dx,dy,m.full()); passed()
 m=centred(lines=()); m.tap(); assert m.full()[:6]==COLUMN[:5]+(None,),m.full(); passed()  # no lyrics
 # Both layouts' lyrics take np_lyric_touch.
@@ -8439,7 +8445,7 @@ for on in ('1','0'):
     assert m.nodes[m.lyric].get('handlers',[])==want,(on,m.nodes[m.lyric].get('handlers')); passed()
 # The iPod page (Centred off): its column, under the 40 px top row and over the bar, takes the whole window, the
 # dots NP_FULL_FOOT above its foot and view_lrc from the top to 20 px above them, both by their self_layout; a tap
-# again, or Return, puts it all back.
+# off the lines, or Return, puts it all back.
 def ipod_full():
     m=centred(centred='0'); view=m.nodes[m.lyric]['children'][0]
     for w,box in ((m.col,(0,40,375,192)),(m.slide,(0,0,375,186)),(view,(0,0,375,178))):
@@ -8449,56 +8455,45 @@ def where(m,view): return (m.full()[:6],[m.get(m.col+O[k]) for k in ('W_Y','W_H'
 for end in ('tap','return'):
     m,view=ipod_full(); m.tap()
     assert where(m,view)==((3,0,375,375,270,'#000000'),[0,290],('0','270','100%','10'),('0','0','100%','-20')),where(m,view)
-    if end=='tap': m.tap()
+    if end=='tap': m.tap(y=below(m))
     else: assert m.call(O['KEY_RETURN'],gap=50)==11
     assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%','10'),('0','0','100%','178')),where(m,view); passed()
 # Centred Now Playing switched on meanwhile (from a window over the page) changes only the next Now Playing:
 # they leave full screen as the iPod layout they came in.
 NPC=m.get(payload_syms['setting_values']+4*re.findall(r'&st\.(\w+)',re.search(r'setting_values\[\] = \{([^}]*)\}',
           (pathlib.Path(__file__).parent.parent/'patch/theme_engine.c').read_text()).group(1)).index('np_centred'))
-m,view=ipod_full(); m.tap(); m.word(NPC,1); m.tap(); m.word(NPC,0)
+m,view=ipod_full(); m.tap(); m.word(NPC,1); m.tap(y=below(m)); m.word(NPC,0)
 assert where(m,view)==((1,0,375,375,186,'#00000000'),[40,192],('0','182','100%','10'),('0','0','100%','178')),where(m,view); passed()
-# Touch and hold a synced line RATE_HOLD_MS: the song plays from it (the line under the finger, 12 s, not the
-# middle one), and the lift toggles nothing; a drag past TAP_PX, a swipe (the slide_view's abort) or a lift
-# before then seeks nothing; an unsynced line does nothing. The rows (offset 97, the window at y 30): "Three"
-# from 215, so y 160 is on it.
-def press_line(m,y=160,move=0,abort=False,ms=O['RATE_HOLD_MS'],side=0):
+# A tap in the column goes full screen however long the finger stayed down (no hold any more). Full screen, a tap
+# on a synced line plays from it (the line under the finger: lyric_seek via lyrics_start) and the lyrics stay full
+# screen; off the lines (the blank slot above the first), or on unsynced ones, the column comes back. A touch the
+# slide_view took past 10 px (its abort), a drag of the lines (scroll_lrc's STOP, back as an abort at the move's
+# point) or a lift out of the box is no tap. The rows (offset 97): "Three" from 118 to 177, so y 160 is on it.
+def tap_line(m,y=160,move=0,abort=False,ms=0,side=0):
     m.calls=[]; m.touch('EVT_POINTER_DOWN',150,y); m.pressed=1; loop(m)
-    if move or side: m.moved=m.touch('EVT_POINTER_MOVE_BEFORE',150+side,y+move)
-    if abort: m.touch('EVT_POINTER_ABORT',150+side,y+move)  # the slide_view's, where the finger is
-    m.advance(ms,clear=False); seeks=moves(m); m.touch('EVT_POINTER_UP_BEFORE',150+side,y+move); m.pressed=0; loop(m); return seeks
+    if move or side: m.touch('EVT_POINTER_MOVE_BEFORE',150+side,y+move)
+    if abort: m.touch('EVT_POINTER_ABORT',150+side,y+move)  # the slide_view's or scroll_lrc's, where the finger is
+    if ms: m.advance(ms,clear=False)
+    m.touch('EVT_POINTER_UP_BEFORE',150+side,y+move); m.pressed=0; loop(m); return moves(m)
+def full_on(m): return m.full()[5]=='#000000'
 for on in ('1','0'):
-    m=centred(centred=on); settle(m); assert y(m)==97
-    assert press_line(m)==[('player_seek_time',12)] and m.full()[5]!='#000000' and m.nodes[m.bar]['value']==12; passed()
-    for kw in ({'move':10},{'side':21},{'side':25,'abort':True},{'ms':O['RATE_HOLD_MS']-50}):  # the last a tap
-        m=centred(centred=on); settle(m); assert press_line(m,**kw)==[] and (m.full()[5]=='#000000')==('ms' in kw),kw; passed()
-    m=centred(centred=on); settle(m); assert press_line(m,move=9)==[('player_seek_time',12)]; passed()  # short of TAP_PX
-    # A finger rolling up to STICKY_PX sideways still holds, and the page follows it: its moves pass (never STOP) to the
-    # slide_view behind, and the abort it sends as it takes the touch past AWTK's 10 px leaves the hold running; stock
-    # springs the page back at the lift. Past STICKY_PX it is a swipe's (the side=21 and 25 cases above).
-    m=centred(centred=on); settle(m); assert press_line(m,side=20)==[('player_seek_time',12)] and m.moved==0; passed()
-    m=centred(centred=on); settle(m); assert press_line(m,side=-15,abort=True)==[('player_seek_time',12)] and m.full()[5]!='#000000'; passed()
-    # ... and that abort makes the lift no tap: a quick 15 px flick turns the page (stock, past 100 px/s) and toggles nothing.
-    m=centred(centred=on); settle(m); assert press_line(m,side=15,abort=True,ms=O['RATE_HOLD_MS']-50)==[] and m.full()[5]!='#000000'; passed()
-# Full screen: the slide_view's abort within the box leaves it on (the held line keeps its place), the first move out
-# sideways ends it so the pages slide in their column, and a move out up or down (a drag of the lines) leaves it.
-m=centred(centred='1'); settle(m); m.tap(); assert m.full()==FULL
-m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.calls=[]
-m.touch('EVT_POINTER_MOVE_BEFORE',165,160); m.touch('EVT_POINTER_ABORT',165,160); assert m.full()==FULL
-m.touch('EVT_POINTER_MOVE_BEFORE',175,160); assert m.full()==COLUMN; m.advance(O['RATE_HOLD_MS'],clear=False); assert moves(m)==[]
-m.touch('EVT_POINTER_UP_BEFORE',175,160); m.pressed=0; loop(m); assert m.full()==COLUMN; passed()
-m=centred(centred='1'); settle(m); m.tap(); assert m.full()==FULL
-m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.touch('EVT_POINTER_MOVE_BEFORE',150,175); assert m.full()==FULL
-m.touch('EVT_POINTER_ABORT',150,175); assert m.full()==FULL  # scroll_lrc's STOP comes back to view_lyric as an abort: not a swipe's
-m.touch('EVT_POINTER_UP_BEFORE',150,175); m.pressed=0; loop(m); assert m.full()==FULL; passed()
-# After the hold fired, the box stays: a roll and the slide_view's abort within it leave full screen, and the lift is no tap.
-m=centred(centred='1'); settle(m); m.tap(); settle(m); assert m.full()==FULL
-m.touch('EVT_POINTER_DOWN',150,160); m.pressed=1; loop(m); m.calls=[]; m.advance(O['RATE_HOLD_MS'],clear=False); held=moves(m)
-m.touch('EVT_POINTER_MOVE_BEFORE',165,160); m.touch('EVT_POINTER_ABORT',165,160); assert m.full()==FULL
-m.touch('EVT_POINTER_UP_BEFORE',165,160); m.pressed=0; loop(m); assert m.full()==FULL and held,held; passed()
-# No lyrics: a hold means nothing, so the pages swipe at stock's threshold.
+    m=centred(centred=on); settle(m); assert y(m)==97 and row_y(m,2)==147,row_y(m,2)
+    for kw in ({'side':11,'abort':True},{'move':10,'abort':True},{'move':40},{'side':-25}):  # taken, or out of the box
+        assert tap_line(m,**kw)==[] and not full_on(m),kw
+    assert tap_line(m,ms=O['RATE_HOLD_MS'])==[] and full_on(m); settle(m); passed()  # a long press is a tap: full screen
+    assert tap_line(m,row_y(m,2))==[('player_seek_time',12)] and full_on(m) and m.nodes[m.bar]['value']==12; passed()
+    settle(m); assert tap_line(m,row_y(m,0),side=10,move=9)==[('player_seek_time',5)] and full_on(m); passed()  # a roll in the box
+    settle(m); assert tap_line(m,row_y(m,2),move=10,abort=True)==[] and full_on(m); passed()  # the lines' drag
+    settle(m); assert tap_line(m,row_y(m,2),move=40)==[] and full_on(m); passed()
+    settle(m); assert tap_line(m,row_y(m,2),side=11,abort=True)==[] and not full_on(m); passed()  # the slide_view's swipe
+    m.tap(); settle(m); assert full_on(m)
+    slot=row_y(m,0)-m.get(m.lyric_row(0)+O['W_H']); assert slot>=0,slot  # the blank slot, in view
+    assert tap_line(m,slot)==[] and not full_on(m); passed()  # off the lines: the column back
+# Unsynced lines: full screen as any lyrics, and a tap on one, with nothing to play from, brings the column back.
+m=centred(lines=((FAR,'x'*15),(FAR,'Two two'),(FAR,'Three'))); settle(m); m.tap(); settle(m); assert full_on(m)
+assert tap_line(m,row_y(m,2))==[] and not full_on(m); passed()
+# No lyrics: a tap means nothing, and the pages swipe at stock's threshold.
 m=centred(lines=()); m.touch('EVT_POINTER_DOWN',150,160); assert m.touch('EVT_POINTER_MOVE_BEFORE',161,160)==0; passed()
-m=centred(lines=((FAR,'x'*15),(FAR,'Two two'),(FAR,'Three'))); settle(m); assert press_line(m)==[] and m.full()[5]!='#000000'; passed()
 # A page without stock's slide_view (a layout of its own) has no column: a tap on its lyrics leaves
 # everything as it was, where np_full read the column off a NULL slide_view (W_PARENT at 0x48).
 m=CentredMachine(); m.lines=[(5,'x'*15),(9,'Two two'),(12,'Three')]; m.show(9,slide='pages')
@@ -17035,11 +17030,11 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
                 '/mnt/mmc/.spotify/run':bytearray(b'sh'),'/mnt/mmc/.spotify/librespot':bytearray(b'ELF')})
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install'] and not m.threads; passed()  # no themes without Rockbox; the card apps last
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install']
+assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-assert m.opts[10002]=='https://api.github.com/repos/DiamondBond/q2-fidget/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of ten
+assert m.opts[10002]=='https://api.github.com/repos/DiamondBond/q2-groovebox/releases/latest' and m.opts[10018]=='Q2Pod'  # the last of eleven
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]==BLANK and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
 assert m.toasts[-1][3]=='1 app can be updated'; passed()  # the opening check's end, the page on top
@@ -17060,7 +17055,7 @@ m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install']  # not stopped: checked again
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']  # not stopped: checked again
 m.row(1); assert m.labels()[4]=='Starts at power-on; Boot to changes that. Press again to install' and len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -17074,7 +17069,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install']; passed()  # the rows built again
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(1); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
