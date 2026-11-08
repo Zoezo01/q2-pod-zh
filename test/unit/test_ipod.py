@@ -1302,10 +1302,12 @@ def volume():
 
 
 def test_volume_dialog():
-    # No highlighter, so nothing under the dialog dims; stock's controls hidden from the first paint, the payload draws the volume.
+    # No highlighter, so nothing under the dialog dims; no border, which rings the screen in paper under Light Mode;
+    # stock's controls hidden from the first paint, the payload draws the volume.
     root = volume()
     ipod.volume_dialog(root)
-    assert root[2] == {'name': 'volume_dialog', 'anim_hint': 'popup'}
+    assert root[2] == {'name': 'volume_dialog', 'anim_hint': 'popup',
+                       **{f'style:{s}:border_color': '#00000000' for s in ('normal', 'disable', 'focused')}}
     assert [c[2] for c in root[3]] == [{'name': 'slider_vol', 'value': '30', 'visible': 'false'}, {'name': 'label_vol', 'text': '30', 'visible': 'false'}]
     assert [c[:2] for c in root[3]] == [c[:2] for c in volume()[3]]
 

@@ -904,6 +904,8 @@ def volume_dialog(root):
     check(root[0] == 'dialog' and root[2].get('name') == 'volume_dialog' and
             root[2].get('highlight') == 'default(alpha=200)', 'Unexpected volume dialog')
     del root[2]['highlight']
+    # Clear, as the status bar's: stock's black border rings the screen, paper in Light Mode.
+    root[2].update({f'style:{s}:border_color': '#00000000' for s in ('normal', 'disable', 'focused')})
     # Snapshot paints can precede vol_paint; never expose the stock full-screen controls.
     check([(n[0], n[2].get('name')) for n in root[3]] ==
           [('slider', 'slider_vol'), ('label', 'label_vol')], 'Unexpected volume controls')

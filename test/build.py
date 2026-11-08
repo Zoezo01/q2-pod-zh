@@ -676,8 +676,9 @@ def validate_assets(directory):
                     continue
                 if n[2].get('name') in ('img_add', 'img_dec'):
                     assert n == before[n[2]['name']]  # ranges, touch and wheel controls stay stock
-        if short == VOLUME:  # Hidden before the first paint, including transition snapshots.
+        if short == VOLUME:  # Hidden before the first paint, including transition snapshots; no border, paper in Light Mode.
             plain = decode(original); del plain[2]['highlight']
+            plain[2].update({f'style:{s}:border_color': '#00000000' for s in ('normal', 'disable', 'focused')})
             for child in plain[3]: child[2]['visible'] = 'false'
             assert root == plain
             continue
