@@ -653,7 +653,11 @@ static struct { unsigned at, fill, cap, frame; int rate; } ps; /* at: the next b
  * or USB when the way turns to 0 finds nothing to take for its own. (Not by the PCM's handle: a reopen's snd_pcm_t can
  * land on the old one's address.) A write is at most the ring (get_space), and the cap is never less. */
 long ao_write(void *pcm, const char *data, unsigned long frames) {
-    if (ao_stayed) {
+    /* Every write on the jacks and USB looks, not only a kept PCM's first: a stream that stalls mid-song (Wi-Fi gone
+     * for 20 s) runs the PCM dry the same way, and the music that comes back was written behind hw_ptr and lost until
+     * appl_ptr caught up, heard as jumps ahead. Forwarded, it carries on where it stopped, after the gap. Bluetooth's
+     * plugin stops at its own underrun and stock's play prepares it. One status read a write. */
+    if (ao_stayed || OUTPUT_WAY != 1) {
         unsigned avail = ao_avail(pcm), ring = AO_BUFFERSIZE / AO_BYTES;
         ao_stayed = 0;
         if (avail > ring && avail != ~0u) {

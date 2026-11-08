@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.7.2**:
+  - Playback: a stream that stops for a while, such as when Wi-Fi drops out for 20 seconds, carries on from where it stopped once the data comes back, on the headphone jacks and a USB DAC. It used to skip ahead in chunks to catch up.
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
   - App Store: a game from the App Store can own the sound: music stops and the headphones are its while it runs, Play/Pause and the side buttons reach it, and it stays open as long as it likes. Groovebox is the first.
   - Display: **Shortcut** offers **Groovebox** once the App Store's Groovebox is installed, between Audiobooks and Rockbox; Home's shortcut row opens it, and hides while it isn't on the card.
