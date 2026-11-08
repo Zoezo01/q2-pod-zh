@@ -289,6 +289,7 @@ int blob_io(const char *path, const char *tmp, void *buf, unsigned size, int wri
 int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
 int app_urls_play(const char *path); /* tidal.c: a card app's Q2URLS/1 queue, played */
+int app_lyrics(const char *id, char *out, unsigned size); /* tidal.c: an app track's .lrc path */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
