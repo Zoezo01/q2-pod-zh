@@ -8,7 +8,7 @@ import struct
 import pytest
 
 import host
-from conftest import text
+from conftest import text, Game
 from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork  # noqa: F401
 
 STOCK_RED = O['STOCK_RED']
@@ -2934,10 +2934,6 @@ def test_scan_refresh_keeps_a_row_without_a_path(fw):
     assert not fw.calls('toolsUpdateDbTable')
 
 
-class Game(C.Structure):
-    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
-                ('path', C.c_char * 48)]
-
 
 @pytest.mark.parametrize('resume', [b'0', b'1'])
 def test_a_headsets_link_starts_nothing_over_a_card_game_with_the_sound(fw, resume):
@@ -2951,3 +2947,14 @@ def test_a_headsets_link_starts_nothing_over_a_card_game_with_the_sound(fw, resu
     gm.pid = 0
     start(0)
     assert len(fw.calls('player_save_start')) == 1
+
+
+def test_a_card_game_with_the_sound_fails_every_start_of_stocks_player(fw):
+    """mclStartPlayer's hook: a jack or USB DAC change, a Bluetooth drop, a card app's stream all start here; -1 as a too-long track."""
+    start = fw.fn('ringnav_start_player', C.c_int)
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.audio = 4321, 1
+    assert start() == -1 and not fw.calls('stock_start_player_trampoline')
+    gm.audio = 0  # a game without the sound: stock's start runs
+    start()
+    assert len(fw.calls('stock_start_player_trampoline')) == 1

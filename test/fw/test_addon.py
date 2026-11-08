@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from conftest import block, text
+from conftest import block, text, Game
 
 APPS_MAX = 8
 REPLY_MAX = 64 << 10
@@ -2121,10 +2121,6 @@ def test_hostile_rules_files(fw):
         assert sql == b'1' or (sql.startswith(b'case ') and sql.endswith(b'else 1 end'))
         hidden(fw, b'/mnt/mmc/A/x')
 
-
-class Game(C.Structure):
-    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
-                ('path', C.c_char * 48)]
 
 
 def shortcut(fw, value):

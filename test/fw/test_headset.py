@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from conftest import O, claim
+from conftest import O, claim, Game
 
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
 NEXT, PLAYPAUSE, PREV, STOP, PAUSE, PLAYCD, PAUSECD, PLAYKEY = 163, 164, 165, 166, 119, 200, 201, 207
@@ -281,10 +281,6 @@ def top_window(fw, name):
     return page
 
 
-class Game(C.Structure):
-    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
-                ('path', C.c_char * 48)]
-
 
 @pytest.mark.parametrize('how', ['media_key', PLAYPAUSE, PLAYCD, PLAYKEY])
 @pytest.mark.parametrize('audio, toggles', [(1, 0), (0, 1)])
@@ -304,6 +300,19 @@ def test_a_card_game_with_the_sound_keeps_the_headsets_keys_from_stock(fw, how, 
     gm.pid = 0
     press()
     assert player.toggles() == toggles + 1
+
+
+@pytest.mark.parametrize('how', ['media_key', PLAYPAUSE, PAUSECD, PAUSE, STOP])
+def test_a_card_game_with_the_sound_lets_a_headset_pause_what_plays(fw, how):
+    """Something else playing (a Spotify a phone resumed): a pause still passes, Play/Pause's too; only a start is kept."""
+    player = Player(fw, status=PLAYING)
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.audio = 4321, 1
+    if how == 'media_key':
+        fw.fn('media_key', None, C.c_uint)(KEY_PLAY)
+    else:
+        command(fw, player, how)
+    assert player.toggles() == 1 and player.status == PAUSED
 
 
 def test_a_playing_video_takes_the_keys(fw):

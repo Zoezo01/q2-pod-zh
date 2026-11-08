@@ -248,3 +248,8 @@ class Files:
             return -1
         self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
         return 0
+
+class Game(C.Structure):
+    """addon.c's gm: the running card game."""
+    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
+                ('path', C.c_char * 48)]
