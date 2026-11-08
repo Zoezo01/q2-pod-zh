@@ -344,9 +344,10 @@ unsigned red_map(unsigned c, unsigned tone, unsigned glyph, int light) {
     return out;
 }
 unsigned accent_map(unsigned c, int preset, int tone) {
-    const unsigned *a = tones_of(preset);
+    const theme_t *T = theme(); /* once: this runs per colour */
+    const unsigned *a = T->schemes[preset].tones;
     if (ipod_light())
         return !(c >> 24) || neutral(c) ? ui_ink(c)
                                         : red_map(c, flip(tone_of(a, tone)), 0xffffff, 1);
-    return theme()->schemes[preset].flags & SCHEME_RAW_RED ? c : red_map(c, a[tone], 0xffffff, 0);
+    return T->schemes[preset].flags & SCHEME_RAW_RED ? c : red_map(c, a[tone], 0xffffff, 0);
 }

@@ -390,7 +390,7 @@ int clamp_step(int offset, int maximum, int delta);
 void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned put_num(unsigned *s, unsigned v);
 void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow);
-unsigned stops_row(const stops_t *s, int j, int h);
+unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));
 int clock_due(const void *info);
 int bar_repaint(const void *info);
 void clock_text(void *label, int negative, int t);
@@ -479,13 +479,13 @@ enum {
 #define INK_BUTTON 5
 enum { PODCASTS = 1, AUDIOBOOKS, PHOTOS, BOOKS, VIDEOS };
 enum { TONE_LIGHT = 2, TONE_RED = 3 }; /* columns of ACCENTS */
-int geom_val(int v);
+int geom_val(int v) __attribute__((pure));
 extern const char *const MEDIA[];
-unsigned flip_if(int on, unsigned c);
+unsigned flip_if(int on, unsigned c) __attribute__((pure));
 int accent(void);
 unsigned accent_map(unsigned c, int preset, int tone);
 const int *clock_now(int *buf);
-unsigned flip(unsigned c);
+unsigned flip(unsigned c) __attribute__((pure));
 unsigned flip_v(unsigned v, unsigned paper, unsigned ink);
 int ipod_home(void);
 const char *ipod_home_shortcut(void);

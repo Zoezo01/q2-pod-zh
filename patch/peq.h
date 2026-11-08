@@ -349,7 +349,10 @@ int lyrics_rows(void *lrc), lyrics_fit(void *lrc), lyrics_on(void *lrc), lyrics_
     lyrics_sec(void), lyrics_line(void *lrc, int ms, int page), lyrics_start(void *lrc, int i);
 void lyrics_paint(void *row, void *canvas), lyrics_gone(void), lyrics_aim(void *lrc, int i);
 unsigned accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
-unsigned rgba(unsigned rgb, unsigned alpha), mix(unsigned from, unsigned to, int j, int n);
+unsigned rgba(unsigned rgb, unsigned alpha);
+/* const and pure below: RGBA() names its argument three times, and a call clang cannot see into
+ * would run three times (theme_engine.c and navigation.c define these). */
+unsigned mix(unsigned from, unsigned to, int j, int n) __attribute__((const));
 void caption(void *canvas, const char *s, int x, int y, int w, int h, unsigned px, unsigned color);
 void peq_paint(void *w, void *canvas);
 /* spotify.c's, shared with radio.c */
