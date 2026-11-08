@@ -416,7 +416,6 @@ int ratings_menu(void *ctx, void *event);
 int shuffle_menu(void *ctx, void *event);
 int stream_config(void *ctx, void *event);
 int tidal_downloads(void *ctx, void *event);
-int upload_scrobbles(void *ctx, void *event);
 void bar_place(void *w, int x, int y, int ww, int h);
 void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h);
 void dark_bar_rows(void *canvas, int y, int w, int h);
@@ -518,6 +517,11 @@ extern int *const setting_values[];
 const theme_t *theme_of(int t);
 static inline const unsigned *tones_of(int v) { return theme()->schemes[v].tones; }
 static inline const unsigned *tones(void) { return tones_of(accent()); }
+
+/* scrobble_ui.c */
+void scrobble_listened(void);
+void scrobble_auto(void);
+int upload_scrobbles(void *ctx, void *event);
 
 /* volume.c */
 void vol_paint(void *top, void *canvas);

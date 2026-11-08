@@ -2463,18 +2463,18 @@ def test_scrobble_wait_shrinks_with_listens(fw, pending, minutes):
 @pytest.mark.parametrize('now', [0, 1000, 0xffffff00, 40 * MINUTE])
 @pytest.mark.parametrize('pending', [1, 40])
 def test_a_failed_upload_is_due_again_in_30_minutes(fw, now, pending):
-    sa = fw.var('navigation__sa', Sa)
+    sa = fw.var('scrobble_ui__sa', Sa)
     sa.pending = pending
-    fw.fn('navigation__sa_retry', None, C.c_uint)(now)
+    fw.fn('scrobble_ui__sa_retry', None, C.c_uint)(now)
     wait = fw.fn('scrobble_auto_ms', C.c_uint, C.c_uint)(pending)
     assert ((now + 30 * MINUTE - sa.first_at) & 0xffffffff) == wait
     assert ((now + 30 * MINUTE - 1 - sa.first_at) & 0xffffffff) < wait
 
 
 def test_a_retry_comes_sooner_with_more_listens(fw):
-    sa = fw.var('navigation__sa', Sa)
+    sa = fw.var('scrobble_ui__sa', Sa)
     sa.pending = 1
-    fw.fn('navigation__sa_retry', None, C.c_uint)(1000000000)
+    fw.fn('scrobble_ui__sa_retry', None, C.c_uint)(1000000000)
     sa.pending = 2
     assert (1000000000 + 26 * MINUTE - sa.first_at) & 0xffffffff == fw.fn('scrobble_auto_ms', C.c_uint, C.c_uint)(2)
 
@@ -2484,7 +2484,7 @@ def auto(fw, now, wifi=1, flag=b'', page=0):
     fw.mock('get_wifisignal', lambda *_: wifi)
     fw.mock('navigator_window_is_exist', lambda *_: page)
     Config(fw, AUTO=flag)
-    fw.fn('navigation__scrobble_auto', None)()
+    fw.fn('scrobble_auto', None)()
 
 
 def test_no_listens_no_upload(fw):
@@ -2493,10 +2493,10 @@ def test_no_listens_no_upload(fw):
 
 
 def test_a_listen_waits_three_hours(fw):
-    sa = fw.var('navigation__sa', Sa)
+    sa = fw.var('scrobble_ui__sa', Sa)
     fw.mock('time_now_ms', lambda *_: 5000)
-    fw.fn('navigation__scrobble_listened', None)()
-    fw.fn('navigation__scrobble_listened', None)()
+    fw.fn('scrobble_listened', None)()
+    fw.fn('scrobble_listened', None)()
     assert sa.pending == 2 and sa.first_at == 5000
     auto(fw, 5000 + 172 * MINUTE - 1)
     assert not fw.calls('get_wifisignal')
@@ -2505,7 +2505,7 @@ def test_a_listen_waits_three_hours(fw):
 
 
 def test_no_wifi_checks_once_a_minute(fw):
-    sa = fw.var('navigation__sa', Sa)
+    sa = fw.var('scrobble_ui__sa', Sa)
     sa.pending, sa.first_at = 1, 0
     now = 200 * MINUTE
     auto(fw, now, wifi=0)
@@ -2516,7 +2516,7 @@ def test_no_wifi_checks_once_a_minute(fw):
 
 
 def test_with_auto_off_it_asks_again_in_30_minutes(fw):
-    sa = fw.var('navigation__sa', Sa)
+    sa = fw.var('scrobble_ui__sa', Sa)
     sa.pending, sa.first_at = 1, 0
     now = 200 * MINUTE
     auto(fw, now)
@@ -2524,7 +2524,7 @@ def test_with_auto_off_it_asks_again_in_30_minutes(fw):
 
 
 def test_not_while_a_computer_has_the_card(fw):
-    sa = fw.var('navigation__sa', Sa)
+    sa = fw.var('scrobble_ui__sa', Sa)
     sa.pending, sa.first_at = 1, 0
     auto(fw, 200 * MINUTE, page=1)
     assert sa.first_at == 0 and sa.running == 0

@@ -66,7 +66,7 @@ int scrobble_value(const char *key) {
 
 /* [SCROBBLE] key=1, off unless 1. ALBUM_ARTIST: listens log the album artist in place of the
  * artist, for tags whose artist carries "feat." guests. AUTO: uploads start by themselves
- * (navigation.c's scrobble_auto). */
+ * (scrobble_ui.c's scrobble_auto). */
 int scrobble_flag(const char *key) { return scrobble_value(key) == 1; }
 
 /* The UI thread's listen; the upload's rewrite holds the same lock. */
