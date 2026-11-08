@@ -10,6 +10,7 @@
   - Card apps: an app can split its first page into sections, such as Home, Albums and Playlists. One shows at a time; swipe left or right on it to move to the next or the previous, and the title shows which one it is, such as Albums 2/3. The wheel still only moves through the list.
   - Streaming: card apps can show a cover beside each row of a list, as Tidal's lists do. An app that doesn't send covers looks as before.
 
+  - Streaming: a card app can show a long list 200 items at a time, with **Next page** and **Previous page** rows at its ends. Back leaves the list at once, instead of going back through every page, and returning from Now Playing to a long list is quicker.
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
   - App Store: a game from the App Store can own the sound: music stops and the headphones are its while it runs, Play/Pause and the side buttons reach it, and it stays open as long as it likes. Groovebox is the first.

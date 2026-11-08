@@ -15637,7 +15637,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -16128,6 +16128,26 @@ assert len(s.rows())==501 and s.labels()[-2:]==['More…',''] and s.requests[-1]
 s.pick(500); s.answer('ok','pages','c11',arts(10,30)); assert s.requests[-1]==('downloads','c10')
 s.answer('error','Server down','',[]); assert s.requests[-1]==('downloads','c11') and len(s.rows())==31 and s.labels()[-2:]==['More…','']
 t=len(s.threads); s.advance(2000); assert len(s.threads)==t; passed()
+# Windows (caps word "window", addon.c page_to): a page row shows the level's own list from its context's
+# cursor in the level's place, not as a level over it. Next page selects the row after Previous page,
+# Previous page the list's last row once its pages are in, and Back leaves the list (the menu asked again).
+s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2)
+s.answer('ok','pages','c1',arts(0)); s.answer('ok','','',[*arts(1,49),('page','next','Next page','','c200','')])
+assert len(s.rows())==100 and s.labels()[-2:]==['','Next page'],s.labels()[-2:]  # a page row is one line, as Stop
+# A page row is the Stop row's height (48), not a list row's (64); the list's height counts it so.
+def geo(r): return s.get(r+O['W_Y']),s.get(r+O['W_H'])
+rows=s.rows(); assert geo(rows[98])==(98*64,64) and geo(rows[99])==(99*64,48) and s.get(s.find('scroll_view')+O['VIEW_CONTENT_H'])==99*64+48
+lv=s.get(s.find('scroll_view')+O['W_PARENT']); assert s.nodes[lv]['item_height']==0 and s.nodes[lv]['default_item_height']==64  # rows keep their own
+s.pick(99); assert s.labels()==['Loading…'],s.labels()
+s.answer('ok','pages','c250',[('page','prev','Previous page','','c0',''),*arts(4,49)]); assert s.requests[-1]==('downloads','c200'),s.requests[-1]
+assert s.labels()[:3]==['Downloads','Previous page','Artist 200'] and s.nodes[s.find('scroll_view')]['_ringnav_index']==1,(s.labels()[:4],s.nodes[s.find('scroll_view')]['_ringnav_index'])
+s.answer('ok','','',arts(5,10)); assert s.requests[-1]==('downloads','c250') and len(s.rows())==60
+rows=s.rows(); assert geo(rows[0])==(0,48) and geo(rows[1])==(48,64) and geo(rows[59])==(48+58*64,64),(geo(rows[0]),geo(rows[1]),geo(rows[59]))
+assert s.get(s.find('scroll_view')+O['VIEW_CONTENT_H'])==48+59*64
+s.pick(0); assert s.labels()==['Loading…']
+s.answer('ok','pages','c1',arts(0)); assert s.requests[-1]==('downloads','c0'),s.requests[-1]; s.answer('ok','','',[*arts(1,49),('page','next','Next page','','c200','')])
+assert s.nodes[s.find('scroll_view')]['_ringnav_index']==99,s.nodes[s.find('scroll_view')]['_ringnav_index']
+s.back(); s.answer('ok','refresh','',SMENU); assert s.requests[-1]==('menu',) and s.labels()==SLABELS; passed()
 # A page kept holds its own size, its bytes and their NUL: realloc'd before its fields are cut (the mock moves it
 # and spoils the old block), not the request's 64 KB.
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.resized.clear(); s.answer('ok','pages','c1',arts(0)); s.answer('ok','pages','',arts(1,3))
