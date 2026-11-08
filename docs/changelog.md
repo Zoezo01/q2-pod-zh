@@ -11,6 +11,7 @@
   - Streaming: card apps can show a cover beside each row of a list, as Tidal's lists do. An app that doesn't send covers looks as before.
   - Streaming: a card app can show a long list a window at a time, with **Next page** and **Previous page** rows at its ends. Back leaves the list at once, instead of going back through every page, and Back from a deeper level to a long list is quicker.
   - Streaming: in a card app, a list whose first row is **Search** shows it as a magnifying glass at the right of the title bar, beside the page's name, as Tidal does. Tap it to search. Under **Theme: Classic**, which has no title bar, it stays a row.
+  - Card apps: on an app's live page, such as a sync's progress, a long name keeps scrolling and your selection stays put while the percentage updates. The page used to be redrawn every 2 seconds, which started the name over.
 
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.

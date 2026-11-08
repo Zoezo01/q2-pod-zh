@@ -1333,6 +1333,20 @@ def test_a_refresh_with_the_same_rows_keeps_the_click(fw):
     assert p.req.running and p.request().endswith(b'\top4\n')  # row 4's action
 
 
+def test_a_refresh_with_new_texts_in_the_same_rows_keeps_them_and_the_click(fw):
+    """The same kinds, uris and contexts, only a title moved: written in place (relabel), not rebuilt."""
+    p = live(fw, rows_of(0, 5))
+    drawn = len(fw.calls('list_item_create'))
+    moved = [*rows_of(0, 4), (b'action', b'op4', b'Row 4 moved', b'sub', b'', b'')]
+    p.world.ms += 2000
+    p.tick()
+    p.press(4)
+    p.answer(msg=b'refresh', rows=moved)
+    assert len(fw.calls('list_item_create')) == drawn and p.cell(4, 2) == b'Row 4 moved'
+    fire(p)
+    assert p.req.running and p.request().endswith(b'\top4\n')
+
+
 def test_a_search_box_s_redraw_stays_queued_over_a_refresh(fw):
     p = live(fw, rows_of(0, 5))
     p.world.ms += 2000
