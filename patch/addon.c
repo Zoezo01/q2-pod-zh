@@ -680,7 +680,7 @@ int addon_game_start(int k) {
             execl(a->bin, a->bin, (char *)0);
         child_exit(127);
     }
-    if (pid < 0) return 0;
+    if (pid < 0) return toast("It couldn't start"), 0;
     gm.pid = pid;
     gm.audio = a->audio;
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */

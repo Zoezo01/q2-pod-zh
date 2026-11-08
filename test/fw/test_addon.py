@@ -2153,12 +2153,23 @@ def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
     assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
 
 
-def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw):
-    card(fw, other=b'name=Other\ngame=1\n')
+@pytest.mark.parametrize('folder, said', [({}, b'Groovebox is not on the card'),
+                                          ({'groovebox': b'name=Groovebox\n'}, b"Groovebox can't start from the card")])
+def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw, folder, said):
+    """No .groovebox, or one whose q2app isn't a game's: the binary is there, the row shows, the tap says so."""
+    card(fw, other=b'name=Other\ngame=1\n', **folder)
     fw.mock('fw_fork', lambda *_: 77)
     seen = toasts(fw)
     assert shortcut(fw, b'10')(None, None) == 0
-    assert seen == [b'Groovebox is not on the card'] and not fw.calls('fw_fork')
+    assert seen == [said] and not fw.calls('fw_fork')
     opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
     assert opened(b'groovebox') == -1 and not fw.calls('fw_fork')
     assert opened(b'other') == 1 and fw.calls('fw_fork') and not fw.calls('player_stop')  # a game without the sound
+
+
+def test_a_card_game_that_can_t_fork_says_so(fw):
+    card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
+    fw.mock('fw_fork', lambda *_: -1)
+    seen = toasts(fw)
+    assert shortcut(fw, b'10')(None, None) == 0
+    assert seen == [b"It couldn't start"] and fw.var('addon__gm', Game).pid == 0 and fw.calls('player_stop')

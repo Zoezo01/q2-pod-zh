@@ -80,7 +80,8 @@ static unsigned media_session(void) {
            *(volatile unsigned *)mcl_pdeqplaylist;
 }
 void media_set_playing(int playing) {
-    if (addon_game_audio()) return; /* a card game with the sound: its PCM; media_key too */
+    if (playing && addon_game_audio()) return; /* a card game with the sound: nothing of stock's
+                                                  starts over its PCM; media_key too */
     hs.automatic = 1;
     int owner = media_owner();
     if (owner == 4)

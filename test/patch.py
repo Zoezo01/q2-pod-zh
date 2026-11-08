@@ -15821,6 +15821,7 @@ def gn(name,*args): return g.call(address=payload_syms[name],args=(args+(0,0,0,0
 def start(way):
     g.way=way; g.forked=0; g.execs=[]; g.calls=[]; gn('addon_game_start',0)  # the child
     return [c[0] for c in g.calls]
+assert gn('addon_games')==1 and gn('addon_game_audio')==0  # scanned: the game is listed, none runs
 g.word(syms['g_dacoff_time'],0xffffffff); g.byte(syms['g_headset_output'],1); g.byte(syms['g_volume'],42); names=start(0)
 take=[n for n in names if n in ('player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork')]
 assert take==['player_stop','config_outputchannel','mclSetPcmMode','mclSetMute','device_set_volume','fork'] and g.execs[-1]==(GB,GB,'plughw:0,0','',0)

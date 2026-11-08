@@ -274,11 +274,18 @@ int ipod_home_rockbox(void) {
     return s == SHORTCUT_GROOVEBOX ? st.home_groovebox : s || st.home_rockbox;
 }
 const char *ipod_home_shortcut(void) {
-    static const char *const names[] = { "Rockbox",      "Artists",    "Albums",   "Favorites",
-                                         "Rated Albums", "Shuffle",    "Games",    "Playlists",
-                                         "Podcasts",     "Audiobooks", "Groovebox" };
+    static const char *const names[] = { "Rockbox",
+                                         "Artists",
+                                         "Albums",
+                                         "Favorites",
+                                         "Rated Albums",
+                                         "Shuffle",
+                                         "Games",
+                                         "Playlists",
+                                         "Podcasts",
+                                         "Audiobooks",
+                                         [SHORTCUT_GROOVEBOX] = "Groovebox" };
     _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
-    _Static_assert(SHORTCUT_GROOVEBOX == SETTING_N_SHORTCUT - 1, "Groovebox is the last shortcut");
     return names[shortcut()];
 }
 /* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
@@ -290,8 +297,10 @@ int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
     int s = shortcut();
     if (!s) return rockbox_open(ctx, event);
-    if (s == SHORTCUT_GROOVEBOX) { /* the card game by id, as its Games row starts it */
-        if (addon_game_open("groovebox") < 0) toast("Groovebox is not on the card");
+    if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
+        if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
+            toast(groovebox_available() ? "Groovebox can't start from the card"
+                                        : "Groovebox is not on the card");
         return 0;
     }
     if (s == 4) return rated_albums(ctx, event);

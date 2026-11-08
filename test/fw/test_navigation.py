@@ -2932,3 +2932,22 @@ def test_scan_refresh_keeps_a_row_without_a_path(fw):
     fw.mock('toolsCheckItemExist', lambda *_: 1)
     assert fw.fn('ringnav_scan_refresh', C.c_int, C.c_void_p, C.c_char_p, C.c_int)(C.create_string_buffer(0x60), b'songtable', 0) == 1
     assert not fw.calls('toolsUpdateDbTable')
+
+
+class Game(C.Structure):
+    _fields_ = [*((k, C.c_int) for k in 'pid sock eat audio'.split()), *((k, C.c_uint) for k in 'seen held term'.split()),
+                ('path', C.c_char * 48)]
+
+
+@pytest.mark.parametrize('resume', [b'0', b'1'])
+def test_a_headsets_link_starts_nothing_over_a_card_game_with_the_sound(fw, resume):
+    """checkBluetoothStatus' restart once A2DP is up, Resume on Connect either way; without the game it restarts."""
+    Config(fw, RESUME=resume)
+    fw.mock('mclGetSavePlayStatus', lambda *_: 2)
+    start = fw.fn('ringnav_bt_connect_start', C.c_int, C.c_int)
+    gm = fw.var('addon__gm', Game)
+    gm.pid, gm.audio = 4321, 1
+    assert start(0) == 0 and not fw.calls('player_save_start')
+    gm.pid = 0
+    start(0)
+    assert len(fw.calls('player_save_start')) == 1

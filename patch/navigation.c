@@ -3119,8 +3119,10 @@ void ringnav_read_artistype(void) {
  * BT_CONNECT_START): player_save_stop stopped the local or Tidal queue, and stock restarts it
  * unpaused, so a paused queue plays, and a stopped one starts over whatever owns playback
  * (mclStartPlayer's hook yields Spotify and Internet Radio). Resume on connect off (the default):
- * a queue that was playing goes on, a paused one comes back paused, and nothing else starts. */
+ * a queue that was playing goes on, a paused one comes back paused, and nothing else starts. A
+ * card game with the sound (addon.c) keeps it either way. */
 int ringnav_bt_connect_start(int pause) {
+    if (addon_game_audio()) return 0;
     if (ringnav_bt_resume()) return player_save_start(pause);
     int saved = media_owner() == 1 ? mclGetSavePlayStatus() : 0; /* 2 playing, 3 paused */
     return saved == 2 || saved == 3 ? player_save_start(saved == 3) : 0;
