@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, in_fork, libc  # noqa: F401
+from conftest import FNV_PRIME, O, Deques, Files, Rows, claim, fnv1a, in_fork, libc  # noqa: F401
 
 MAGIC = 0x5132524e
 HEADER = '<14I'
@@ -832,6 +832,10 @@ def queue_insert(fw, player, add, next_):
         player.handle, player.deques.new(add), next_)
 
 
+def paths(records):
+    return [C.string_at(struct.unpack_from('<Q', C.string_at(r, O['REC_SIZE']), O['REC_PATH'])[0]) for r in records]
+
+
 def test_queue_insert_shifts_the_shuffle_pool_and_last_index(fw, player, mcl):
     rows = player.load(player.albums(5), 1)
     mcl.lastpos = 3
@@ -839,9 +843,36 @@ def test_queue_insert_shifts_the_shuffle_pool_and_last_index(fw, player, mcl):
     pool = player.deques.new([C.addressof(held) + 4 * i for i in range(3)])
     C.c_uint64.from_address(O['MCL_POOL']).value = pool
     add = [player.song(b'/m/N/1.flac'), player.song(b'/m/N/2.flac')]
+    want = paths(rows[:2] + add + rows[2:])
     assert fw.fn('playback_queue_insert', C.c_uint, C.c_void_p, C.c_void_p, C.c_int)(player.handle, player.deques.new(add), 1) == 2
-    assert player.deques[player.handle] == rows[:2] + add + rows[2:]
+    assert paths(player.deques[player.handle]) == want
     assert list(held) == [0, 4, 6] and player.deques[pool][3:] == [2, 3] and mcl.lastpos == 5
+
+
+def play_next(fw, player, mcl, size, pos, n):
+    """Play Next of n songs at pos in a queue of size whose rows libcstl holds: the queue's paths after,
+    the index the first lands at and the deques."""
+    rows = Rows(fw)
+    queue = rows.rows([player.song(b'/q/%d' % i) for i in range(size)])
+    C.c_uint64.from_address(O['MCL_POOL']).value = rows.new()
+    mcl.pos, rows.peak = pos, rows.live()
+    add = rows.new([player.song(b'/n/%d' % i) for i in range(n)])
+    at = fw.fn('playback_queue_insert', C.c_uint, C.c_void_p, C.c_void_p, C.c_int)(queue, add, 1)
+    return paths(rows[queue]), at, rows
+
+
+@pytest.mark.parametrize('pos', [0, 3, 6])  # the first of 7, the middle, the last
+@pytest.mark.parametrize('n', [1, 2, 9])
+def test_play_next_lands_after_the_song_playing(fw, player, mcl, pos, n):
+    queue, at, _ = play_next(fw, player, mcl, 7, pos, n)
+    old, new = [b'/q/%d' % i for i in range(7)], [b'/n/%d' % i for i in range(n)]
+    assert at == pos + 1 and queue == old[:pos + 1] + new + old[pos + 1:]
+
+
+def test_play_next_copies_only_the_new_rows(fw, player, mcl):
+    """The queue is never held twice: a library-wide one twice over got demo OOM-killed (staged_into)."""
+    queue, _, rows = play_next(fw, player, mcl, 50, 10, 3)
+    assert len(queue) == 53 and rows.peak == 53 == rows.live()
 
 
 def test_queue_add_goes_to_the_end(fw, player, mcl):

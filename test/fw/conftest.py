@@ -148,6 +148,51 @@ class Deques:
     def __getitem__(self, q):
         return self.lists[q & 0xffffffff]
 
+
+class Rows(Deques):
+    """Deques whose stSongInfo rows are held as libcstl holds them: a push or an assign copies the row
+    into the deque (stock's copy, 0x5b3b1c; here its strings are shared), deque_at points at that copy,
+    and a clear or a destroy frees it. live() counts the rows held, peak the most at once. A deque from
+    new() holds values, as in Deques: the shuffle pool's, or rows the test owns."""
+    def __init__(self, fw):
+        super().__init__(fw)
+        self.held, self.copies, self.peak = set(), {}, 0
+        fw.mock('fw__create_deque', lambda name, *_: self.rows() if C.string_at(name) == b'stSongInfo' else self.new())
+        fw.mock('fw__deque_push_back', lambda q, v, *_: self.push(q, v))
+        fw.mock('fw_deque_clear', lambda q, *_: self.free(q))
+        fw.mock('fw_deque_destroy', lambda q, *_: self.free(q) or self.lists.pop(q & 0xffffffff) and 0)
+
+    def rows(self, records=()):
+        handle = self.new()
+        self.held.add(handle)
+        for r in records:
+            self.push(handle, r)
+        return handle
+
+    def push(self, q, v):
+        if (q & 0xffffffff) in self.held:
+            copy = C.create_string_buffer(C.string_at(v, O['REC_SIZE']), O['REC_SIZE'])
+            v = C.addressof(copy)
+            self.copies[v] = copy
+            self.peak = max(self.peak, self.live())
+        self[q].append(v)
+
+    def free(self, q):
+        if (q & 0xffffffff) in self.held:
+            for v in self[q]:
+                del self.copies[v]
+        self[q].clear()
+
+    def assign(self, q, other):
+        rows = list(self[other])
+        self.free(q)
+        for v in rows:
+            self.push(q, v)
+
+    def live(self):
+        return len(self.copies)
+
+
 class Files:
     """The card's and flash's files as a dict: fopen and all, so blob_io and the snapshot's reader run whole."""
     def __init__(self, fw, files=None):
