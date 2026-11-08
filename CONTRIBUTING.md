@@ -9,7 +9,7 @@ Open an issue with:
 - the **CFW. Version** row from **System settings → About**
 - what you did, what you expected and what happened
 - the output in use (wired, Bluetooth with the codec, or USB), for sound problems
-- `q2-crash.log` from the card's root, if there is one
+- `q2-crash.log` from the card's root, if there is one, and `q2-crash.log.1` and `.2` beside it (the two before it)
 
 Ideas go in a feature request issue or on Discord. Security problems go through [SECURITY.md](SECURITY.md), not an issue.
 
