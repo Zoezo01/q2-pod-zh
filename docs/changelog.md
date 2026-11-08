@@ -1,5 +1,9 @@
 # Changelog
 
+- **1.7.1**:
+  - Now Playing: on the lyrics page with synced lyrics, touch and hold a line to play from it, or turn a line to the middle and hold Play/Pause; hold without turning to start the current line again. The lyrics settle with a line in the middle when you let go of the wheel, and the line there shows a little brighter.
+  - Now Playing: tap the lyrics to show them full screen in every layout, not only Centred Now Playing.
+  - Now Playing: lyrics you scrolled stay where you left them when you swipe to another page and back. They used to jump back to the playing line.
 - **1.7.0**:
   - Cover Flow: under **Theme: Minimal** and **Theme: Modern** the third cover on each side stays when you stop turning, and the covers' reflections are Classic's, longer and clearer. The third covers used to vanish as the row settled.
   - Display: under **Theme: Classic** the battery icon is a little smaller, and with **Light Mode** off its outline is Light Mode's grey, so it shows on the dark bar.

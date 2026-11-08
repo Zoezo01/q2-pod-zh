@@ -461,9 +461,11 @@ typedef struct {
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
     int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* Centred Now Playing's full-screen lyrics (np_full) and where the last touch on them came
-     * down (np_lyric_touch) */
+    /* Now Playing's full-screen lyrics (np_full), where the last touch on them came
+     * down and the timer of its hold on a line (np_lyric_touch) */
     int np_full, np_tap_x, np_tap_y;
+    unsigned np_line_timer;
+    int np_was[9]; /* the column before full screen (np_full) */
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
      * (ringnav_bigcover) */
     void *bc[3];
@@ -4571,7 +4573,7 @@ static void lyric_glide(void *lrc, int to) {
 
 /* The Now Playing timer's follow (LYRIC_FOLLOW in tools/build.py): stock scrolls to the row three
  * lines above the current one, which past the end clamps to it. iPod: lyrics the wheel or a finger
- * moved stay (lyric_held) until the page leaves them or another song starts, and a finger on the
+ * moved stay (lyric_held) until Now Playing goes or another song starts, and a finger on the
  * screen keeps them too; on the page, the follow glides. The lyrics page follows its own playing
  * line (lyric_follow). */
 int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
@@ -5513,8 +5515,8 @@ static int scrub_expire(const void *info) {
 
 /* The lyrics: stock's 250 ms timer scrolls scroll_lrc to the current line whenever it is elsewhere.
  * Once the wheel or a finger moves them they stay (ringnav_lyric_follow), while the timer keeps the
- * bar and the highlight going, until the slide_view leaves the lyrics page or another song starts;
- * back on the page they follow again. A scrub under way ends first. */
+ * bar and the highlight going, until Now Playing goes or another song starts, a swipe to another
+ * page and back included. A scrub under way ends first. */
 static void lyric_hold(void) {
     scrub_end();
     st.lyric_held = 1;
@@ -5539,10 +5541,26 @@ static void lyric_step(void *lrc) {
     scroll_view_set_offset(lrc, I(lrc, SCROLL_X), y + (step ? step : to > y ? 1 : -1));
 }
 
-/* The wheel let go: the glide ends on the row top nearest its target, so no row is cut at the top.
- * The end is one (lyric_pad). */
+/* The lyrics page's line in the middle: the one whose centre (0 at least, as lyric_follow's) is
+ * nearest the offset, or the glide's target while it moves; the first of those as near. */
+static int lyric_aim(void *lrc) {
+    int at = st.lyric_glide ? (st.lyric_to + 8) >> 4 : I(lrc, SCROLL_Y), aim = 0, near = 1 << 30;
+    for (int i = 0, n = widget_count_children(lrc); i < n; ++i) {
+        int c = lyric_centre(lrc, i), d = (c > 0 ? c : 0) - at;
+        if ((d < 0 ? -d : d) < near) near = d < 0 ? -d : d, aim = i;
+    }
+    return aim;
+}
+
+/* The wheel let go: the glide ends on the row top nearest its target, so no row is cut at the top;
+ * on the lyrics page, with a line in the middle (lyric_aim). The end is one (lyric_pad). */
 static void lyric_snap(void *lrc) {
     lyric_pad(lrc);
+    if (lyrics_on(lrc)) {
+        int c = lyric_centre(lrc, lyric_aim(lrc));
+        lyric_glide(lrc, (c > 0 ? c : 0) * 16);
+        return;
+    }
     int at = st.lyric_glide ? st.lyric_to : I(lrc, SCROLL_Y) * 16, to = 0;
     for (int i = 0, n = widget_count_children(lrc); i < n; ++i) {
         int top = I(widget_get_child(lrc, i), W_Y) * 16;
@@ -5558,8 +5576,8 @@ static void lyric_snap(void *lrc) {
  * timeout itself. While a finger stays on the wheel they stay where it put them; let go, they glide
  * to the nearest row top (lyric_snap). A finger that came down on the lyrics and dragged them holds
  * them as the wheel does; stock's scroll animation stops as it lands, so only the finger moves
- * them, and a swipe that brings the page in holds nothing. Leaving the page drops the hold; the
- * next follow, off the page, jumps to the current line. Another song starts at the top, its hold
+ * them, and a swipe that brings the page in holds nothing. A swipe to another page and back keeps
+ * the hold; leaving Now Playing drops it (np_gone). Another song starts at the top, its hold
  * gone. The lyrics page's rows are its lines, a tick's worth a line. */
 #define LYRIC_ROW_PX 20
 
@@ -5612,23 +5630,43 @@ int ringnav_smart_awake(void) {
     return st.keep_lit;
 }
 
-/* Centred Now Playing's full-screen lyrics (np_lyric_touch): the column (stock's slide_view_view,
- * tools/ipod.py PLAYING_STOCK) goes over the page's other widgets, black and the window's width,
- * its slide_view down to the page dots, and the lines wrap at the new width (lyrics_fit), back on
- * the playing line; off, stock's place again, before the progress bar. A page without a slide_view
- * has none of this: nothing changes. */
-#define NP_COLUMN_X 80 /* stock's column: its x and width, and its slide_view's height */
-#define NP_COLUMN_W 225
-#define NP_COLUMN_SLIDE_H 198
+/* Full-screen lyrics (np_lyric_touch): the column (slide_view_view) goes over the page's other
+ * widgets, black and the window's width, its slide_view down to the page dots, and the lines wrap
+ * at the new width (lyrics_fit), back on the playing line; off, its place, index and slide_view's
+ * height before (np_was) again. Centred's column (tools/ipod.py PLAYING_STOCK) keeps its y and
+ * height, its lyrics ending 20 px above its foot. The iPod page's, between the top row and the
+ * bar, takes the whole window: its dots NP_FULL_FOOT above the foot, as Centred's, and its
+ * view_lrc, whose self_layout fixes its place, from the top down to NP_FULL_FOOT above them; off,
+ * both self_layouts are their old place again. A page without a slide_view has none of this. */
+#define NP_FULL_FOOT 20
 static void np_full(int on) {
-    if (!st.np_slide) return; /* a page without stock's slide_view: no column to move */
-    void *col = P(st.np_slide, W_PARENT), *dots = widget_lookup(col, "slide_indicator1", 1);
+    if (!st.np_slide || !on == !st.np_full) return; /* without stock's slide_view: no column */
+    void *col = P(st.np_slide, W_PARENT), *dots = widget_lookup(col, "slide_indicator1", 1),
+         *view = P(st.np_lrc, W_PARENT);
+    int *was = st.np_was, ipod = np_layout() != NP_CENTRED && dots && view;
+    if (on) {
+        int now[] = { I(col, W_X), I(col, W_Y),          I(col, W_W),
+                      I(col, W_H), widget_index_of(col), I(st.np_slide, W_H) };
+        memcpy(was, now, sizeof now);
+        if (ipod) was[6] = I(view, W_Y), was[7] = I(view, W_H), was[8] = I(dots, W_Y);
+    }
     st.np_full = on;
-    widget_restack(col, on ? widget_count_children(st.np_win) : widget_index_of(st.np_slider));
+    widget_restack(col, on ? widget_count_children(st.np_win) : was[4]);
     widget_set_prop_str(col, "style:normal:bg_color", on ? "#000000" : "#00000000");
-    widget_move_resize(col, on ? 0 : NP_COLUMN_X, I(col, W_Y), on ? I(st.np_win, W_W) : NP_COLUMN_W,
-                       I(col, W_H));
-    widget_resize(st.np_slide, I(col, W_W), on && dots ? I(dots, W_Y) : NP_COLUMN_SLIDE_H);
+    int h = I(st.np_win, W_H), foot = on ? h - NP_FULL_FOOT : was[8];
+    if (!on)
+        widget_move_resize(col, was[0], was[1], was[2], was[3]);
+    else
+        widget_move_resize(col, 0, ipod ? 0 : was[1], I(st.np_win, W_W), ipod ? h : was[3]);
+    if (ipod) {
+        char y[12], vy[12], vh[12];
+        tk_snprintf(y, sizeof y, "%d", foot);
+        tk_snprintf(vy, sizeof vy, "%d", on ? 0 : was[6]);
+        tk_snprintf(vh, sizeof vh, "%d", on ? -NP_FULL_FOOT : was[7]);
+        widget_set_self_layout_params(dots, "0", y, "100%", "10");
+        widget_set_self_layout_params(view, "0", vy, "100%", vh);
+    }
+    widget_resize(st.np_slide, I(col, W_W), on && dots ? (ipod ? foot : I(dots, W_Y)) : was[5]);
     widget_layout(col);
     if (lyrics_fit(st.np_lrc)) lyric_pad(st.np_lrc);
     /* the follow takes them; the offset the layout left is no drag of the touch (lyric_poll) */
@@ -5647,7 +5685,6 @@ static void lyric_poll(void) {
     int touch = lrc && window_manager_get_top_window(wm) == st.np_win && pointer_down();
     int shown = page && lyrics_shown(),
         on = shown && widget_count_children(lrc) && mclGetLyricSize() > 0;
-    if (!page) st.lyric_held = 0;
     if (touch && !st.lyric_touch) {
         st.lyric_touch = page ? 1 : 2;
         st.lyric_drag_y = page ? I(lrc, SCROLL_Y) : 0;
@@ -5725,6 +5762,7 @@ static void lyric_poll(void) {
         st.lyric_glide = 0;
     else if (st.lyric_glide)
         lyric_step(lrc);
+    if (lyrics_on(lrc)) lyrics_aim(lrc, st.lyric_held ? lyric_aim(lrc) : -1);
 }
 
 /* A tick on the lyrics page while the track has lyrics, which comes only before lyric_poll takes
@@ -5799,6 +5837,34 @@ static void scrub_start(void) {
     rearm(&st.scrub_timer, scrub_expire, SCRUB_MS);
 }
 
+/* The song plays from synced line i of the lyrics page, a scrub to its start committed at once
+ * (scrub_end: paused, it waits for Play), and the lyrics follow again; 0 for an unsynced line, none
+ * or no bar. ponytail: the player seeks whole seconds, so it lands up to 999 ms before the line,
+ * and the follow may go back a line that started in that second; a millisecond seek would need
+ * hciplayer's own. */
+static int lyric_seek(int i) {
+    int ms = st.np_slider ? lyrics_start(st.np_lrc, i) : -1;
+    if (ms < 0) return 0;
+    scrub_start();
+    st.scrub_to = ms / 1000, st.scrub_moved = 1;
+    widget_set_prop_int(st.np_slider, "value", st.scrub_to);
+    clock_text(st.np_elapsed, 0, st.scrub_to);
+    np_sync(st.np_win);
+    scrub_end();
+    st.lyric_held = st.lyric_spun = 0;
+    return 1;
+}
+
+/* Play/Pause held on the lyrics page in front: the song plays from the line in the middle
+ * (lyric_aim) once the wheel or a finger holds them, else the playing line (line 0 before the
+ * first), so a hold without scrolling starts it again. */
+static int lyric_seek_hold(void) {
+    void *lrc = st.np_lrc;
+    if (!lyrics_shown() || !lyrics_on(lrc)) return 0;
+    int line = st.lyric_held ? lyric_aim(lrc) : lyrics_line(lrc, lyrics_now(), 1);
+    return lyric_seek(line > 0 ? line : 0);
+}
+
 /* Single Press Scrub (IPOD SCRUBSINGLE)'s single press, DOUBLE_CLICK_MS on: scrub starts. */
 static int np_scrub(const void *info) {
     st.np_press = 0;
@@ -5853,7 +5919,8 @@ static int np_gone(void *win, void *event) {
         st.np_pos = st.np_album = st.np_remain = st.np_slider = st.np_elapsed = st.np_cover =
             st.np_slide = st.np_lrc = st.np_title = (void *)0;
         st.scrub_moved = 0; /* the page is going: no seek */
-        st.np_off = st.np_full = 0;
+        st.np_off = st.np_full = st.lyric_held = 0;
+        stop_timer(&st.np_line_timer);
         stop_timer(&st.np_marquee);
         stop_timer(&st.np_remain_timer);
         stop_timer(&st.np_fit_timer);
@@ -5948,11 +6015,35 @@ int stream_ipod(void *art, void *const text[4], void *elapsed, void *remain, voi
     return 1;
 }
 
-/* Centred Now Playing's lyrics page (ringnav_playing): a touch that lifts within TAP_PX of where it
- * came down, so neither a swipe nor a drag of the lines, switches them to full screen and back
- * (np_full), once there are lyrics to show. The slide_view taking the touch for a swipe (its
- * abort) ends full screen at once, so the pages slide in their column. Returns 0: a STOP would
- * keep the slide_view's grab (rate_fav_click). */
+/* A finger held still on the lyrics page RATE_HOLD_MS (np_lyric_touch): the song plays from the
+ * line under it (lyric_seek), an unsynced one or none doing nothing, and its lift is no tap. */
+static int np_line_hold(const void *info) {
+    st.np_line_timer = 0;
+    void *lrc = st.np_lrc;
+    int xy[2] = { st.np_tap_x, st.np_tap_y };
+    st.np_tap_x = 1 << 20;
+    if (!lrc || !st.np_slide || !usable() || !pointer_down() || !lyrics_on(lrc) ||
+        window_manager_get_top_window(window_manager()) != st.np_win ||
+        widget_get_prop_int(st.np_slide, "value", 0) != 1)
+        return 0;
+    widget_to_local(lrc, xy);
+    xy[1] += I(lrc, SCROLL_Y); /* its rows' place: the view's own offset is no parent's */
+    for (int i = widget_count_children(lrc); i-- > 0;) {
+        void *row = widget_get_child(lrc, i);
+        if (xy[1] >= I(row, W_Y) && xy[1] < I(row, W_Y) + I(row, W_H)) {
+            lyric_seek(i);
+            break;
+        }
+    }
+    return 0;
+}
+
+/* Now Playing's lyrics page (ringnav_playing): a touch that stays within TAP_PX of where it came
+ * down, so neither a swipe nor a drag of the lines, plays from the line under it once held
+ * RATE_HOLD_MS (np_line_hold), else at its lift switches them to full screen and back (np_full),
+ * once there are lyrics to show. The slide_view taking the touch for a
+ * swipe (its abort) ends full screen at once, so the pages slide in their column. Returns 0: a STOP
+ * would keep the slide_view's grab (rate_fav_click). */
 #define TAP_PX 10 /* AWTK's drag threshold */
 static int np_lyric_touch(void *ctx, void *event) {
     int type = I(event, EVENT_TYPE), x = I(event, EVENT_X), y = I(event, EVENT_Y);
@@ -5960,12 +6051,15 @@ static int np_lyric_touch(void *ctx, void *event) {
               (unsigned)(y - st.np_tap_y + TAP_PX) <= 2 * TAP_PX;
     if (type == EVT_POINTER_DOWN) {
         st.np_tap_x = x, st.np_tap_y = y;
+        rearm(&st.np_line_timer, np_line_hold, RATE_HOLD_MS);
         return 0;
     }
+    if (type == EVT_POINTER_MOVE_BEFORE && tap) return 0;
+    stop_timer(&st.np_line_timer);
     st.np_tap_x = 1 << 20; /* used or taken for a swipe: a later lift is no tap */
     if (type == EVT_POINTER_ABORT) {
         if (st.np_full) np_full(0);
-    } else if (tap && (st.np_full || lyrics_on(st.np_lrc)))
+    } else if (type == EVT_POINTER_UP_BEFORE && tap && (st.np_full || lyrics_on(st.np_lrc)))
         np_full(!st.np_full);
     return 0;
 }
@@ -5995,9 +6089,9 @@ int ringnav_playing(void *win, void *ctx) {
     st.lyric_song = st.lyric_rows_song = np_track(); /* no song change at the start */
     lyric_init();                                    /* the rows stock's init built */
     void *lyric = widget_lookup(win, "view_lyric", 1);
-    static const unsigned touch[] = { EVT_POINTER_DOWN, EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
-    for (unsigned i = 0; lyric && np_layout() == NP_CENTRED && i < sizeof touch / sizeof *touch;
-         ++i)
+    static const unsigned touch[] = { EVT_POINTER_DOWN, EVT_POINTER_MOVE_BEFORE,
+                                      EVT_POINTER_UP_BEFORE, EVT_POINTER_ABORT };
+    for (unsigned i = 0; lyric && i < sizeof touch / sizeof *touch; ++i)
         widget_on(lyric, touch[i], np_lyric_touch, (void *)0);
     st.np_hash = 0;
     const char *file;
@@ -13551,13 +13645,15 @@ static void quick_poll(void) {
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
  * toasts), on a card app's row its hold op (addon_hold: a Deezer list downloaded whole), in Quick
  * Settings the wheel's brightness/volume switch, on View Queue's shuffle list
- * Play Next (un_hold), the release latched as the queue menu's. */
+ * Play Next (un_hold), on Now Playing's synced lyrics a seek to a line (lyric_seek_hold), the
+ * release latched as the queue menu's. */
 int ringnav_keylong(void *ctx, void *event) {
     if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
-    int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) || un_hold(top);
+    int taken = fav || quick_wheel_toggle(top) || spot_hold(top) || addon_hold(top) ||
+                un_hold(top) || lyric_seek_hold();
     if (!taken && qm_hold()) return STOP;
     /* Stock has no Play/Pause hold, so its release would play or pause: Classic's does nothing. */
     if (taken || (usable() && classic_pages())) {
