@@ -11,6 +11,7 @@ import resource
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -19,9 +20,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 # A mutant can loop forever, growing a list (art's path() with `i = 1` for `i += 1` took 500 MB a second),
 # and fill the machine long before mutmut's timeout. Over 4 GB a process raises MemoryError: killed.
 # mutmut sets MUTANT_UNDER_TEST before any test session; elsewhere ASan's shadow memory is over 4 GB already.
+# A thread reserves its stack in that 4 GB, RLIMIT_STACK's 8 MB: q2remote.find's 64 probe threads took
+# 512 MB, past the cap in mutmut's stats run on CI ("can't start new thread"); at 1 MB they take 64.
 if 'MUTANT_UNDER_TEST' in os.environ:
     _, HARD = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (4 << 30 if HARD == resource.RLIM_INFINITY else min(4 << 30, HARD), HARD))
+    threading.stack_size(1 << 20)
 sys.path.insert(0, str(ROOT))
 # build first: the others import it, or each other in this order, while they load.
 for name in ('build', 'module_elf', 'rotator', 'ipod', 'theme', 'art', 'peq', 'aic', 'flac', 'mcu_park', 'pwm', 'q2remote', 'release'):
