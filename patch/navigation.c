@@ -92,6 +92,7 @@ void ringnav_timezone_row(void *item, int i) {
     }
 }
 static int library_music __attribute__((section(".scratch")));
+static int library_first __attribute__((section(".scratch")));
 static int spoken(const char *path);
 
 /* Failed exec in a forked child must not flush demo's copied stdio or run its exit handlers. */
@@ -135,10 +136,10 @@ static int library_query(int content, const char *db, const char *sql, void *row
         sql = aa;
     }
     const char *from = library_music && sql ? strstr(sql, " from songtable") : 0;
-    if (from) {
-        int n =
-            tk_snprintf(filtered, sizeof filtered, "%.*s from (select * from songtable where %s)%s",
-                        (int)(from - sql), sql, MUSIC_WHERE, from + 15);
+    if (from) { /* library_first: the Unknown row's check, which one song answers */
+        int n = tk_snprintf(filtered, sizeof filtered,
+                            "%.*s from (select * from songtable where %s)%s%s", (int)(from - sql),
+                            sql, MUSIC_WHERE, from + 15, library_first ? " limit 1" : "");
         if (n < 0 || (unsigned)n >= sizeof filtered) return -1;
         sql = filtered;
     }
@@ -8048,7 +8049,9 @@ int ringnav_localclass(int cls) {
         return n;
     }
     if (n > 0 && I(deque_at(list, (unsigned)n - 1), REC_ID) == -1) {
+        library_first = 1; /* a song is enough: its query stops at the first (library_query) */
         class_query((unsigned)cls, deque_at(list, (unsigned)n - 1));
+        library_first = 0;
         int empty = !deque_size(dir);
         deque_clear(dir);
         if (empty) deque_pop_back(list), n--;
