@@ -138,14 +138,18 @@ int smart_wifi_off(void) { return sw.off; }
 /* Something that needs the link starting (Spotify's launch, a radio list or station, an automatic
  * scrobble upload): Smart Wi-Fi's radio woken now if it is off, and 1 while that wake's link is not
  * up yet, SMART_CONNECT_MS at most, so the caller waits for it; then, or with the radio as the user
- * left it, 0, and the caller goes on as stock's would. */
+ * left it, 0, and the caller goes on as stock's would. Up is both the status bar's bars, which the
+ * payload's own actions check (get_wifisignal), and the monitor thread's connect status, which
+ * stock's check (networkGetConnectStatus): each comes from its own poll, about a second apart. */
 int smart_wifi_wait(void) {
     if (!sw.off && !sw.woke_at) return 0;
     unsigned now = time_now_ms();
     sw.busy_at = now;
     if (sw.off && !sw.woke_at) sw.woke_at = now | !now; /* the wait counts from the ask */
     if (sw.off && smart_ready()) smart_switch(now);
-    if (now - sw.woke_at < SMART_CONNECT_MS && (sw.off || get_wifisignal() <= 0)) return 1;
+    if (now - sw.woke_at < SMART_CONNECT_MS &&
+        (sw.off || get_wifisignal() <= 0 || networkGetConnectStatus() <= 0))
+        return 1;
     sw.woke_at = 0;
     return 0;
 }
@@ -211,16 +215,18 @@ static int row_of(void *button) {
     const char *name = widget_get_prop_str(button, "name", "");
     return name[0] >= '0' && name[0] <= '9' && !name[1] ? name[0] - '0' : -1;
 }
-static void *held_row(void *ctx) {
+static void *held_row(void *view, void *ctx) {
     char name[2] = { (char)('0' + (int)(long)ctx), 0 };
-    return widget_lookup(sw.hold_win, name, 1); /* its list_item */
+    return view ? widget_lookup(view, name, 1) : (void *)0; /* its list_item */
 }
 static int stream_row_again(void *ctx, void *unused) {
-    void *row = held_row(ctx);
+    /* in the rows' own view: Home's Library list, beside its Streaming list, names its rows so too
+     */
+    void *row = held_row(widget_lookup(sw.hold_win, "scroll_view_streamsset", 1), ctx);
     return row ? stock_stream_row_trampoline(row, (void *)0) : 0;
 }
 static int netservice_row_again(void *ctx, void *unused) {
-    void *row = held_row(ctx);
+    void *row = held_row(sw.hold_win, ctx);
     return row ? stock_netservice_row_trampoline(row, (void *)0) : 0;
 }
 static int online_match_again(void *win, void *unused) {
@@ -228,10 +234,13 @@ static int online_match_again(void *win, void *unused) {
 }
 
 /* Streaming's stock row (stream_page_init binds 0x52ee8c): Tidal (0), a login page with the link
- * and msg_notnetwork without. */
+ * and msg_notnetwork without; on Streaming's page or Home's Split Streaming list (home.c
+ * stream_rows), both waking the radio. ponytail: on Home it runs while Home is still the page in
+ * use, as Spotify's row does, the Streaming list gone to another of Home's lists or not; drop it
+ * there too if that surprises. */
 int ringnav_stream_row(void *button, void *event) {
     int row = row_of(button);
-    return row >= 0 && smart_hold(stream_row_again, (void *)(long)row, "stream_page")
+    return row >= 0 && smart_hold(stream_row_again, (void *)(long)row, 0)
                ? 0
                : stock_stream_row_trampoline(button, event);
 }

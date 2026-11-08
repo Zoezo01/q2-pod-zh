@@ -18754,7 +18754,7 @@ class SmartMixin:
         self.handlers[HOOKS['write_int_config'][0]+12]='w:write'
         self.mock('remove@GLIBC_2.0','stop_wifisynclink','networkStart','networkStop')
         for n in ('networkGetConnectStatus','get_wifisignal'): self.handlers[syms[n]]='w:'+n
-        self.link=0
+        self.link=0; self.status=None  # status: stock's connect status when not the link's (its own poll)
         self.nodes[self.wm]=dict(type='window_manager',name='',children=[],visible=1,enable=1)
         self.byte(syms['g_wififlag'],1); self.word(O['NET_TYPE'],2)  # the user's Wi-Fi on, the module up
     def hook(self,u,address,size,unused):
@@ -18763,7 +18763,8 @@ class SmartMixin:
         if name=='w:write':  # stock's write past the hook (its trampoline jumps, no t9): recorded as the mock's
             self.calls.append(('write_int_config',*[u.reg_read(r) for r in REGS[:3]])); self.returns(0); return
         self.calls.append((name[2:],0,0,0))
-        self.returns(self.link if name=='w:networkGetConnectStatus' else 3 if self.link else -1,clobber=True)
+        status=self.link if self.status is None else self.status
+        self.returns(status if name=='w:networkGetConnectStatus' else 3 if self.link else -1,clobber=True)
     def windows(self,*names):
         self.nodes[self.wm]['children']=[self.node('window',n) for n in names]
         return self.nodes[self.wm]['children']
@@ -18923,7 +18924,7 @@ def held_machine(page,smart='1',mock=True):
     for n in '012':
         b=m.node('button',n); item=m.node('list_item',n,[b]); items.append(item)
         for w in (item,b): m.word(w+0x10,m.string(n))
-    win=m.node('window',page,[m.node('scroll_view','scroll_view',items)])
+    win=m.node('window',page,[m.node('scroll_view','scroll_view_streamsset' if page=='stream_page' else 'scroll_view',items)])
     m.nodes[m.wm]['children']=[m.node('window','home_page'),win]
     for t in ('stream_row','netservice_row','online_match')*mock:
         a=int(manifest['patch_symbols'][f'stock_{t}_trampoline'],16); m.handlers[a]='stock_'+t
@@ -18953,6 +18954,11 @@ for hook,t,page,row in HELD:
     m,win=held_machine(page); held_press(m,hook,win,row); m.advance(500); m.link=1
     held_press(m,hook,win,row); assert not held_runs(m,t) and len(m.timers)==1
     m.advance(500,clear=False); assert len(held_runs(m,t))==1 and not m.timers,hook; passed()
+    # The bars up before stock's connect status (each its own poll): it waits for both, as stock's
+    # action checks the one and the payload's the other.
+    m,win=held_machine(page); held_press(m,hook,win,row); m.link=1; m.status=0
+    m.advance(500,clear=False); assert not held_runs(m,t) and len(m.timers)==1,hook
+    m.status=None; m.advance(500,clear=False); assert len(held_runs(m,t))==1 and not m.timers,hook; passed()
     # No link SMART_CONNECT_MS on: stock's action anyway (its own msg_notnetwork).
     m,win=held_machine(page); held_press(m,hook,win,row); m.advance(SW_CONNECT-500); assert not held_runs(m,t)
     m.advance(500); assert len(held_runs(m,t))==1 and not m.timers; passed()
@@ -18990,6 +18996,17 @@ for row in '01':
 # A press from a page that is not the one expected (no page in use, say) is stock's at once.
 m,win=held_machine('stream_page'); m.nodes[m.wm]['children']=[]; held_press(m,'stream_row',win,'0')
 assert len(held_runs(m,'stream_row'))==1 and not m.timers; passed()
+# Home's Split Streaming list (home.c stream_rows) has stock's Tidal row too, in Home's window beside
+# its Library list, whose rows stock also names by index: held the same, and stock is given the
+# Streaming list's row.
+m,home=held_machine('home_page')  # the Library list's rows
+b=m.node('button','0'); tidal=m.node('list_item','0',[b])
+for w in (tidal,b): m.word(w+0x10,m.string('0'))
+m.nodes[home]['children'].append(m.node('view','list_view_homestream',[m.node('scroll_view','scroll_view_streamsset',[tidal])]))
+m.nodes[m.wm]['children']=[home]
+assert m.call(address=HOOKS['stream_row'][0],args=(b,m.event,0,0),gap=0)==0
+assert m.toasts[-1][3]==SW_WAIT and not held_runs(m,'stream_row') and len(m.timers)==1
+m.link=1; m.advance(500,clear=False); assert held_runs(m,'stream_row')==[tidal] and not m.timers; passed()
 # Stock's own code after the wait (the trampolines unmocked), given the row's list_item: Streaming's
 # Tidal row opens its login page with the link, and after SMART_CONNECT_MS without one, stock's
 # msg_notnetwork; Network service's Wi-Fi transfer switches to its page.
@@ -19016,6 +19033,40 @@ m=SmartRadio(); m.config['TOKEN']='t'; m.poll(1); m.poll(SW_IDLE); m.windows('lo
 m.call(address=payload_syms['upload_scrobbles'],args=(0,0,0,0),gap=0); m.advance(500); m.link=1
 assert m.call(address=payload_syms['upload_scrobbles'],args=(0,0,0,0),gap=0)==0 and not m.threads and m.toasts[-1][3]==SW_WAIT
 m.advance(500); assert len(m.threads)==1 and [x[3] for x in m.toasts].count('Uploading scrobbles')==1; passed()
+# The same for the other presses that start a job: Network Update's download, an Apps install and
+# Download Album Lyrics each start once, not cancelled by the held press ("Cancelling…").
+m=SmartRadio(); resume=int(manifest['patch_symbols']['stock_fwupdate_trampoline'],16); m.handlers[resume]='stock_fwupdate'
+m.u.hook_add(UC_HOOK_CODE,m.hook,begin=resume,end=resume); m.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
+view=m.node('scroll_view','scroll_view_fwupdate'); m.top=m.node('window','fwupdate_page',[view])
+for i in range(2):
+    row=m.node('list_item'); m.nodes[view]['children'].append(row); assert m.call(address=0x4c3140,args=(row,i,0,0),gap=0)==0
+assert m.call(address=HOOKS['systemset_fwupdate_page_init'][0],args=(m.top,5,0,0),gap=0,count=5_000_000)==0
+online=m.nodes[m.nodes[view]['children'][1]]['children'][0]; label=m.nodes[online]['children'][0]
+m.poll(1); m.poll(SW_IDLE); assert m.flag()==0; m.nodes[m.wm]['children']=[m.top]
+def nu_press():
+    f,ctx=[(f,c) for t,f,c in m.nodes[online]['handlers'] if t==O['EVT_CLICK']][-1]
+    assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
+nu_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
+m.advance(500); m.link=1; nu_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
+m.advance(500,clear=False); assert len(m.threads)==1 and m.nodes[label]['text']=='Checking…'; passed()
+class SmartShelf(SmartMixin,ShelfMachine): pass
+m=SmartShelf({LIST:bytearray((ROOT/'sources.list').read_bytes())}); m.rockbox_mode=0
+m.poll(1); m.poll(SW_IDLE); assert m.flag()==0
+apps_open(m); m.nodes[m.wm]['children']=[m.page]
+deezer=(m.labels().index('Deezer')-1)//2; m.row(deezer); assert m.toasts[-1][3]==SW_WAIT and not m.threads
+m.advance(500); m.link=1; m.row(deezer); assert m.toasts[-1][3]==SW_WAIT and not m.threads
+m.advance(500,clear=False); assert len(m.threads)==1 and m.labels()[2*deezer+2]=='Checking…'; passed()
+class SmartAlbumLyrics(SmartMixin,AlbumLyricsMachine): pass
+m=SmartAlbumLyrics(); button=m.nodes[m.more()[3]]['children'][0]; label=m.nodes[button]['children'][1]
+m.found=[m.song('T1'),m.song('T2')]
+for ms in (1,SW_IDLE):  # power_poll's: its settings, then Smart Wi-Fi's
+    m.now+=ms; m.call(address=payload_syms['pod_settings'],args=(0,0,0,0),gap=0); m.call(address=payload_syms['smart_poll'],args=(0,0,0,0),gap=0)
+assert m.flag()==0; m.nodes[m.wm]['children']=[m.top]
+def al_press():
+    f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
+al_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
+m.advance(500); m.link=1; al_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
+m.advance(500,clear=False); assert len(m.threads)==1 and m.nodes[label]['text']=='Downloading 1 of 2'; passed()
 # A radio that can't come back (stock's own gate shut: the first scan not taken) still runs the press
 # SMART_CONNECT_MS on, unheld, so it fails as without Smart Wi-Fi instead of waiting again.
 m=SmartRadio(); m.config['TOKEN']='t'; m.poll(1); m.poll(SW_IDLE); assert m.flag()==0
