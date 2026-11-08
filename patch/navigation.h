@@ -107,12 +107,9 @@ typedef struct {
     unsigned plays_read, ls_key;
     int ls_sec, ls_heard, ls_done, ls_sent, ls_pct;
     /* Most Played's page and its tracks: the last ranking plus the songs counted since, kept across
-     * opens while the library is at mp_gen (~library_gen once stale). */
-    void *mp_page, *mp_list, *td_page, *td_list;
-    unsigned td_timer;
-    int td_asking; /* Tidal Downloads shows Clear All Downloads' confirmation */
-    unsigned mp_gen;
-    void *sp_page; /* the Library Shuffle menu's page, kept across picks */
+     * opens while the library is at library_lists.c's mp_gen; the hold menu reads them too
+     * (page_tracks). */
+    void *mp_page, *mp_list;
     void *ch_page;
     chapters *ch;
     unsigned ch_timer, ch_track, ch_key;
@@ -126,29 +123,23 @@ typedef struct {
 #define SVC_PROP "ringnav_svc"
     void *sc_check[SVC_MAX]; /* the Configuration page's switch labels, by service */
     int svc_n;               /* the card apps Streaming listed at its last build */
-    /* Ratings: the songs' 1-4 and albums' 1-5 heart tables (calloc'd on first use); Now Playing's
-     * window, its heart and the heart's stock click context, the 1-4 badge, the window the picker
-     * is up on (0 when down), the hearts picked, the heart's hold timer (rate_held once it fired),
-     * and the album rated (album_id, 0 for the playing track); the Ratings menu
-     * and the list it opened, with its tracks. */
-    unsigned *rates, *album_rates;
-    void *rate_win, *rate_fav, *rate_ctx, *rate_badge, *rate_on;
-    int rate_shown; /* the badge's hearts plus 1, 0 for a new badge */
+    /* Ratings (ratings.c keeps the rest): Now Playing's window and the window the picker is up on
+     * (0 when down); the page a Ratings list or Long Songs opened, with its tracks (page_tracks).
+     */
+    void *rate_win, *rate_on;
     int empty_kind; /* the empty Library list empty_toast names and closes */
-    int rate_pick, rate_held;
-    unsigned rate_hold, rate_tick, rate_album;
-    void *rt_menu, *rt_page, *rt_list;
+    void *rt_page, *rt_list;
     int dark; /* 1: the backlight was off at the last UI loop pass; 2: a centre press woke it */
     /* Power's Charge limit (read once from config.ini's Q2POD), the value labels of that row
      * and Artists, and the poll: charging is held off at the limit;
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
-     * limit's choice; standby_off: its alarm ended a Standby, so the next pass powers off.
+     * limit's choice.
      * smart_wifi: Power's Smart Wi-Fi on (smart_poll). */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        standby_off, eq_output, smart_wifi;
+        eq_output, smart_wifi;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -171,17 +162,7 @@ typedef struct {
     unsigned charge_at, last_input;
     unsigned touch_at; /* the last pointer event's time, type and place (stale_heal, stale_note) */
     int touch_type, touch_x, touch_y, stale_notes;
-    int wdt;      /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
-    int wdt_long; /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
-    int ended;    /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
-    int toasts;   /* toast()'s dialogs open, nested ones too, for the stall record (stall_write) */
-    int suspended;  /* inside Standby's suspend (ringnav_standby), for the state record */
-    char state[96]; /* the state record last written (state_poll) */
-    /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
-    unsigned logo_at;
-    int logo_mounted;
-    volatile int logo_busy;
-    const char *volatile logo_err;
+    int toasts; /* toast()'s dialogs open, nested ones too, for the stall record (stall_write) */
     void *pull_page, *pull_surface;
     int pull_x, pull_y, pull_claimed;
     unsigned pull_scope;
@@ -225,29 +206,17 @@ typedef struct {
     unsigned bc_key, bc_box, bc_shape,
         bc_url; /* the track, cover and image bc_fit sized for, the box
                  * it left, the image's w << 16 | h and its track */
-    /* Volume: the dialog vol_paint last drew, its value and the redraw timer */
-    void *vol_dialog;
-    int vol_drawn;
-    unsigned vol_timer;
     /* Classic (classic_pages): the rating panel, the slider page and its slider; the dark
      * bar and the title's place under it; the volume in the time row's place. */
     void *rate_box, *slider_win, *slider_w, *slider_sw;
     const __WCHAR_TYPE__ *slider_hint; /* its caption */
     void *t9_page, *t9_back;           /* t9_box's page and chevron, while its box lives */
-    /* Classic's message screens (msg_open): USB's page; the scan's dialog, stock's label_msg
-     * in it, our line, btn_no, the songs before the scan, the bar's part in px, stock's text as
-     * last read and the poll following it. msg_counting: 1 msg_count runs, 3 + n it has answered
-     * n (-1 failed): one word, so the UI thread can't see the flag before the value. */
-    void *usb_win, *msg_win, *msg_src, *msg_line, *msg_btn;
-    int msg_total, usb_lun; /* usb_lun: USB Storage's card has read open (usb_poll) */
-    volatile int msg_counting;
-    short msg_part;
-    unsigned msg_timer;
-    char msg_seen[128];
+    /* Classic's message screens (msg_open; classic_pages.c keeps the rest): USB's page and the
+     * scan's dialog. usb_lun: USB Storage's card has read open (usb_poll). */
+    void *usb_win, *msg_win;
+    int usb_lun;
     /* Classic's T9 keyboard window, and Search with its tab group (search_open). */
     void *kb_win, *search_win, *search_tabs, *pl_box;
-    unsigned pl_timer;       /* pl_click's pending row, its action the timer's ctx */
-    int search_px;           /* search_edit's size in its disabled state, 0 until set */
     const char *number_face; /* the slider page's value's, as slider_number last set it */
     int title_color;
     short title_x, title_y, title_w;
@@ -272,7 +241,7 @@ typedef struct {
     void *marq_row, *marq_label;
     unsigned marq_timer;
     int marq_id, marq_passes;
-    int time_title, bar_titled, bar_bold, bar_home;
+    int time_title, bar_titled, bar_home;
     /* Scrub: a centre press at np_press_at waits DOUBLE_CLICK_MS in np_press for a second one;
      * scrub_to is the target second, scrub_moved set once the wheel changed it. */
     unsigned np_press, np_press_at, scrub_timer, scrub_track, settle_timer;
@@ -535,18 +504,13 @@ void smart_poll(void);
 
 /* system.c */
 int card_mounted(void);
-void charge_poll(void);
-void logo_poll(void);
-void standby_poll(void);
-void state_poll(void);
-void wdt_poll(void);
+void power_poll(void);
 
 /* library_lists.c */
 int era_menu(void *ctx, void *event);
 int long_songs(void *ctx, void *event);
-void ls_closed(void);
+void mp_counted(void *r, unsigned key, unsigned evicted);
 int most_played(void *ctx, void *event);
-int mp_find(unsigned key);
 int shuffle_menu(void *ctx, void *event);
 int shuffle_play(void *all);
 int tidal_downloads(void *ctx, void *event);
@@ -561,6 +525,7 @@ int rate_saved(int k);
 int rate_show(void *win, int pick, unsigned album);
 void rate_bind(void *win); /* ratings: Now Playing's heart */
 int rated_albums(void *ctx, void *event);
+int rt_closed(void *ctx, void *event);
 int ratings_menu(void *ctx, void *event);
 void ratings_copy_due(void);
 void ratings_copy_poll(void);

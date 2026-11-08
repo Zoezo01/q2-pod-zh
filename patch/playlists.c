@@ -639,11 +639,13 @@ static void *pl_find(void *win, int action) {
                                                                 : (void *)0,
                             pl_stock[action]);
 }
+static unsigned pl_timer
+    __attribute__((section(".scratch"))); /* pl_click's pending row, its action the timer's ctx */
 static int pl_due(const void *info) {
     void *wm = window_manager(), *win = window_manager_get_top_window(wm);
     int action = (int)(long)P(info, TIMER_CTX);
     char click[0x30];
-    st.pl_timer = 0;
+    pl_timer = 0;
     if (!pl_page(win)) return 0;
     void *w = pl_find(win, action);
     if (w) stock_dispatch_trampoline(w, pointer_event_init(click, EVT_CLICK, w, 0, 0));
@@ -654,8 +656,8 @@ static int pl_due(const void *info) {
 /* The latest row clicked in a pass is the one that runs. */
 static int pl_click(void *action, void *event) {
     (void)event;
-    stop_timer(&st.pl_timer);
-    st.pl_timer = timer_add(pl_due, action, 0);
+    stop_timer(&pl_timer);
+    pl_timer = timer_add(pl_due, action, 0);
     return 0;
 }
 /* The row goes to index at, or after the rest when at < 0. */

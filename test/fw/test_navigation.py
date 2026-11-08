@@ -72,6 +72,18 @@ def st(fw, scratch):
     return lambda name, ctype=C.c_int: ctype.from_address(base + scratch[name])
 
 
+@pytest.fixture(scope='module')
+def power_fields(library):
+    """system.c's own state, pw: its field offsets as this build lays it out."""
+    return host.offsets(library.parent/'system.o', 'pw')
+
+
+@pytest.fixture
+def power(fw, power_fields):
+    base = C.addressof(fw.var('system__pw', C.c_char))
+    return lambda name, ctype=C.c_int: ctype.from_address(base + power_fields[name])
+
+
 def stock_stub(address, result, log):
     """x86-64 at a fixed stock address: its first three arguments logged, result returned. Only ever in a fork."""
     claim(address)
@@ -1490,7 +1502,7 @@ class Stall:
     (a real block: the C reads it in place) with stat's startstack `top` bytes above its sp, the record's
     opens, syncs and bytes, and now_ms's clock. A UI loop pass is wdt_poll; the first arms the watchdog,
     which starts the thread (only recorded here), so its wakes are stall_step, run by hand."""
-    def __init__(self, fw, st, syscall=None, top=4 * 160 + 4096):
+    def __init__(self, fw, power, syscall=None, top=4 * 160 + 4096):
         self.now, self.fd, self.handles, self.log = 100000, 10, {}, []
         self.record: bytes | None = None  # the record file's bytes; None, no file
         self.stack = (C.c_uint * 160)(0x4a1234, 0x10, 0x2ab00010, 0x80001000, 0x4a1235)
@@ -1512,10 +1524,10 @@ class Stall:
         fw.mock('fw_close', lambda fd, *_: self.handles.pop(fd) and 0)
         fw.mock('fw_unlink', self.unlink)
         self.step = fw.fn('system__stall_step', None)
-        self.pass_ = fw.fn('wdt_poll', None)
+        self.pass_ = fw.fn('system__wdt_poll', None)
         self.pass_()
         thread = fw.calls('fw_pthread_create')
-        assert st('wdt').value == 3 and len(thread) == 1 and thread[0][1][2] == C.cast(fw.lib.system__stall_watch, C.c_void_p).value
+        assert power('wdt').value == 3 and len(thread) == 1 and thread[0][1][2] == C.cast(fw.lib.system__stall_watch, C.c_void_p).value
 
     def expect(self, age, toasts=0, stack=STALL_STACK):
         """What the UI thread was doing, as the files say."""
@@ -1568,8 +1580,8 @@ class Stall:
         return [e[1] for e in self.log if e[0] == 'open']
 
 
-def test_stall_record_at_20_and_45_s(fw, st):
-    s = Stall(fw, st)
+def test_stall_record_at_20_and_45_s(fw, st, power):
+    s = Stall(fw, power)
     s.step()  # the thread's first wake after the pass: the time counts from here
     s.wait(STALL_MS - STALL_POLL_MS)
     assert s.record is None
@@ -1586,8 +1598,8 @@ def test_stall_record_at_20_and_45_s(fw, st):
     assert STALL_AGAIN_MS + STALL_POLL_MS < O['WDT_MS']
 
 
-def test_stall_record_counts_toasts_open(fw, st):
-    s = Stall(fw, st)
+def test_stall_record_counts_toasts_open(fw, st, power):
+    s = Stall(fw, power)
     toast = fw.fn('toast', None, C.c_char_p)
     depth = []
     def show(name, info, *_):
@@ -1602,8 +1614,8 @@ def test_stall_record_counts_toasts_open(fw, st):
     assert depth == [1, 2] and st('toasts').value == 0 and s.record == s.expect(STALL_MS, toasts=2)
 
 
-def test_stall_record_goes_when_the_ui_passes(fw, st):
-    s = Stall(fw, st)
+def test_stall_record_goes_when_the_ui_passes(fw, st, power):
+    s = Stall(fw, power)
     s.step()
     s.wait(STALL_MS)
     assert s.record == s.expect(STALL_MS)
@@ -1624,10 +1636,10 @@ def test_stall_record_goes_when_the_ui_passes(fw, st):
     assert s.log == []  # no record: nothing to remove
 
 
-def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, st):
+def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, st, power):
     """The UI recovers and Rockbox opens before the thread's next wake: S90play's loop starts demo again with no boot
     between, so nothing else would remove it, and a later forced restart would report this stall."""
-    s = Stall(fw, st)
+    s = Stall(fw, power)
     s.step()
     s.wait(STALL_MS)
     assert s.record == s.expect(STALL_MS)
@@ -1637,8 +1649,8 @@ def test_a_clean_end_removes_a_stall_record_the_thread_hadn_t_yet(fw, st):
 
 
 @pytest.mark.parametrize('stop', ['standby', 'long pass', 'clean end'])
-def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop):
-    s = Stall(fw, st)
+def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop, power):
+    s = Stall(fw, power)
     s.step()
     if stop == 'standby':
         st('pod_read').value = 1  # no config.ini to read
@@ -1666,16 +1678,16 @@ def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop
     (0, b''), (-4, b''),                       # an sp at or past the top
     (0x800000, b''),                           # one 8 MB below it: another thread's stack, not read
 ])
-def test_stall_record_reads_only_the_main_stack(fw, st, top, stack):
-    s = Stall(fw, st, top=top)
+def test_stall_record_reads_only_the_main_stack(fw, st, top, stack, power):
+    s = Stall(fw, power, top=top)
     s.step()
     s.wait(STALL_MS)
     assert s.record == s.expect(STALL_MS, stack=stack)
 
 
 @pytest.mark.parametrize('case', ['on the cpu', 'no startstack', 'unaligned sp'])
-def test_stall_record_with_no_stack_to_read(fw, st, case):
-    s = Stall(fw, st, syscall=b'running' if case == 'on the cpu' else None)  # registers only for a blocked thread
+def test_stall_record_with_no_stack_to_read(fw, st, case, power):
+    s = Stall(fw, power, syscall=b'running' if case == 'on the cpu' else None)  # registers only for a blocked thread
     want = s.expect(STALL_MS, stack=b'')
     if case == 'on the cpu':
         del s.files[b'/proc/self/wchan']  # a kernel without CONFIG_KALLSYMS

@@ -2,6 +2,8 @@
  * progress bar and its fill. */
 #include "navigation.h"
 
+static int bar_bold __attribute__((section(".scratch"))); /* the bar's title set bold (bar_title) */
+
 /* Classic's bar's left end for a track sec long: the times' boxes hold "-9:59" under 10:00,
  * "-59:59" under an hour, else "-9:59:59" (NP_IPOD_TIME_W*, tools/ipod.py measures them), their
  * outer edges and the gap kept; the bar takes the rest, mirrored. */
@@ -154,8 +156,8 @@ void bar_title(void *bar, void *top) {
         if (!st.bar_titled) return;
         st.bar_titled = 0;
         st.clock_key = 0; /* clock_show writes it again */
-        if (st.bar_bold) label_font(label, 0);
-        st.bar_bold = 0;
+        if (bar_bold) label_font(label, 0);
+        bar_bold = 0;
         rearm(&st.clock_timer, clock_due, 0);
         return;
     }
@@ -164,11 +166,11 @@ void bar_title(void *bar, void *top) {
     int changed = !st.bar_titled || !had || *had != *want;
     if (changed) widget_set_text(label, title);
     st.bar_titled = 1;
-    int bold = theme_font(label, ROLE_NP,
-                          st.bar_bold); /* a new Theme can change it under the same title */
-    if ((changed || bold != st.bar_bold) && !st.bar_timer)
+    int bold =
+        theme_font(label, ROLE_NP, bar_bold); /* a new Theme can change it under the same title */
+    if ((changed || bold != bar_bold) && !st.bar_timer)
         st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
-    st.bar_bold = bold;
+    bar_bold = bold;
 }
 
 /* Scrub (docs/internals.md#scrub-ipod) follows stock's own key seek (0x52c754): the page's 250 ms

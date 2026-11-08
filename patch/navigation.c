@@ -8194,23 +8194,9 @@ int page_keyup(void *ctx, void *event) {
     return STOP;
 }
 
+/* The close of navigation.c's own pages: View Queue's (upnext.c), Chapters and Streaming's
+ * Configuration. The other files' pages have their own. */
 int page_closed(void *ctx, void *event) {
-    if (ctx == st.rt_page) {
-        st.rt_page = 0;
-        if (st.rt_list) deque_destroy(st.rt_list);
-        st.rt_list = 0;
-        ls_closed();
-    }
-    if (ctx == st.rt_menu) st.rt_menu = 0;
-    if (ctx == st.mp_page) st.mp_page = 0;
-    if (ctx == st.td_page) {
-        st.td_page = 0;
-        st.td_asking = 0;
-        stop_timer(&st.td_timer);
-        if (st.td_list) deque_destroy(st.td_list);
-        st.td_list = 0;
-    }
-    if (ctx == st.sp_page) st.sp_page = 0;
     upnext_closed(ctx);
     if (ctx == st.ch_page) {
         st.ch_page = 0;
@@ -9378,17 +9364,8 @@ static void play_count(void *r, unsigned key) {
     int i = 0;
     for (int j = 0; j < PLAYS_SLOTS && st.plays[i].key != key; j++)
         if (st.plays[j].key == key || st.plays[j].n <= st.plays[i].n) i = j;
-    /* Most Played's kept tracks take a newly counted song, unless its page shows them (its rows
-     * and song menu match the deque); one that loses its count may have hidden the next best,
-     * which only the whole library knows. */
-    if (st.plays[i].key && st.plays[i].key != key && mp_find(st.plays[i].key) >= 0)
-        st.mp_gen = ~library_gen;
-    else if (st.mp_list && mp_find(key) < 0) {
-        if (!st.mp_page && deque_size(st.mp_list) < 2 * PLAYS_TOP)
-            _deque_push_back(st.mp_list, r);
-        else
-            st.mp_gen = ~library_gen;
-    }
+    unsigned evicted = st.plays[i].key;
+    mp_counted(r, key, evicted != key ? evicted : 0);
     unsigned n = st.plays[i].key == key ? st.plays[i].n + 1 : 1;
     for (; i > 0; i--) st.plays[i] = st.plays[i - 1];
     st.plays[0].key = key;
@@ -9556,17 +9533,6 @@ static void resume_poll(void) {
         st.rs_saved = sec;
         spot_save(sec);
     }
-}
-
-static void power_poll(void) {
-    pod_settings();
-    charge_poll();
-    standby_poll();
-    logo_poll();
-    ratings_copy_poll();
-    wdt_poll();
-    state_poll();
-    smart_poll();
 }
 
 /* Home's Rockbox row (docs/boot.md#rockbox-from-home), bound by coverflow_home: a click leaves

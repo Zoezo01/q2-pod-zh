@@ -2,6 +2,21 @@
  * message screens. */
 #include "navigation.h"
 
+/* Classic's message screens (msg_open; st has their windows): stock's label_msg in the scan's
+ * dialog, our line, btn_no, the songs before the scan, the bar's part in px, stock's text as last
+ * read and the poll following it. msg_counting: 1 msg_count runs, 3 + n it has answered n (-1
+ * failed): one word, so the UI thread can't see the flag before the value. search_px:
+ * search_edit's size in its disabled state, 0 until set. */
+static struct {
+    void *msg_src, *msg_line, *msg_btn;
+    int msg_total;
+    volatile int msg_counting;
+    short msg_part;
+    unsigned msg_timer;
+    char msg_seen[128];
+    int search_px;
+} cp __attribute__((section(".scratch")));
+
 /* Classic's T9 keyboard (stock's kb_default_t9, shared with the other themes, so nothing here
  * changes the asset): a ramp down its window, from screen row 60. Keys paint in the background hook
  * in place of stock's fill, and stock's text clears (the style hook). All colours are final. */
@@ -84,15 +99,15 @@ static void search_hint(void *win) {
     const unsigned *text = edit ? widget_get_text(edit) : (void *)0;
     int px = text && *text ? 26 : st.kb_win ? 14 : 19;
     char key[STYLE_KEY];
-    if (!edit || px == st.search_px) return;
-    st.search_px = px;
+    if (!edit || px == cp.search_px) return;
+    cp.search_px = px;
     widget_set_prop_int(edit, style_key(key, "disable", "font_size"), px);
 }
 /* The search field's box and its children's: over the keyboard with the keyboard up, in the strip
  * with it down, where stock's toolbar hides and only the Return key goes back. The toolbar's return
  * is the chevron's tap. */
 static void search_layout(void *win, int keyboard) {
-    st.search_px = 0; /* search_hint's size follows the field */
+    cp.search_px = 0; /* search_hint's size follows the field */
     void *nav = widget_lookup(win, "view_navbar", 1),
          *item = widget_lookup(win, "list_item_search", 1),
          *edit = widget_lookup(win, "search_edit", 1), *glass = widget_lookup(win, "img_search", 1);
@@ -517,7 +532,7 @@ static const unsigned char msg_track[MSG_BAR_H] = { 0x87, 0x5c, 0x4d, 0x3d, 0x3d
 static int msg_gone(void *win, void *event) {
     if (win == st.usb_win) st.usb_win = (void *)0;
     if (win == st.msg_win) {
-        stop_timer(&st.msg_timer);
+        stop_timer(&cp.msg_timer);
         st.msg_win = (void *)0;
     }
     return 0;
@@ -525,34 +540,34 @@ static int msg_gone(void *win, void *event) {
 /* Follows stock's label_msg, which it writes from the running count in the language's format, one
  * number, and which is hidden here: "312 of 704 songs" and the bar's part, held under its end until
  * the dialog closes. With no total to measure against (the first scan, a scan past it, a folder's
- * scan, or until msg_count answers) the line is stock's text and st.msg_part -1 hides the bar.
+ * scan, or until msg_count answers) the line is stock's text and cp.msg_part -1 hides the bar.
  * Whether anything changed. */
 static int msg_sync(void) {
-    char now[sizeof st.msg_seen], line[48];
+    char now[sizeof cp.msg_seen], line[48];
     *now = 0;
-    int answer = st.msg_counting;
+    int answer = cp.msg_counting;
     if (answer > 1) { /* the total: read stock's text against it */
-        st.msg_total = answer - 3, st.msg_counting = 0, st.msg_seen[0] = 0;
+        cp.msg_total = answer - 3, cp.msg_counting = 0, cp.msg_seen[0] = 0;
     }
-    if (!st.msg_seen[0]) { /* over stock's translation; runs in paints, so only if it differs */
-        widget_get_text_utf8(st.msg_btn, now, sizeof now);
-        if (tk_strcmp(now, "Cancel")) widget_set_text_utf8(st.msg_btn, "Cancel");
+    if (!cp.msg_seen[0]) { /* over stock's translation; runs in paints, so only if it differs */
+        widget_get_text_utf8(cp.msg_btn, now, sizeof now);
+        if (tk_strcmp(now, "Cancel")) widget_set_text_utf8(cp.msg_btn, "Cancel");
         *now = 0;
     }
-    widget_get_text_utf8(st.msg_src, now, sizeof now);
-    if (!tk_strcmp(now, st.msg_seen)) return 0;
-    tk_snprintf(st.msg_seen, sizeof st.msg_seen, "%s", now);
+    widget_get_text_utf8(cp.msg_src, now, sizeof now);
+    if (!tk_strcmp(now, cp.msg_seen)) return 0;
+    tk_snprintf(cp.msg_seen, sizeof cp.msg_seen, "%s", now);
     const char *p = now;
     while (*p && (*p < '0' || *p > '9')) ++p;
-    int count = atoi(p), total = st.msg_total;
-    st.msg_part = -1;
+    int count = atoi(p), total = cp.msg_total;
+    cp.msg_part = -1;
     if (*p && total && count <= total && *(volatile char *)SCAN_WHOLE == 1) {
-        st.msg_part = (short)(MSG_BAR_W * count / total);
-        if (st.msg_part > MSG_BAR_W * 99 / 100) st.msg_part = MSG_BAR_W * 99 / 100;
+        cp.msg_part = (short)(MSG_BAR_W * count / total);
+        if (cp.msg_part > MSG_BAR_W * 99 / 100) cp.msg_part = MSG_BAR_W * 99 / 100;
         tk_snprintf(line, sizeof line, "%d of %d songs", count, total);
-        widget_set_text_utf8(st.msg_line, line);
+        widget_set_text_utf8(cp.msg_line, line);
     } else
-        widget_set_text_utf8(st.msg_line, now);
+        widget_set_text_utf8(cp.msg_line, now);
     return 1;
 }
 /* Stock's hidden label repaints nothing, so this does, at the rate stock writes it. */
@@ -566,7 +581,7 @@ int library_count(const char *sql);
  * 47,000-song library's rows are too many to hold beside the scan. Detached, as nothing may wait
  * for it when the dialog closes; msg_sync takes the answer. */
 static void *msg_count(void *unused) {
-    st.msg_counting = 3 + library_count("select count(*) from songtable");
+    cp.msg_counting = 3 + library_count("select count(*) from songtable");
     return 0;
 }
 #define MSG_HEAD_PX 29
@@ -599,7 +614,7 @@ void msg_open(void *win) {
         if (g_usbmode != 1) widget_set_text_utf8(c, "Eject before disconnecting");
         return;
     }
-    st.msg_win = win, st.msg_src = src, st.msg_btn = btn, st.msg_line = c;
+    st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;
     widget_move_resize(btn, 127, 248, 121, 34);
     for (unsigned i = 0; i < sizeof state / sizeof *state; ++i) {
         widget_set_prop_int(btn, style_key(key, state[i], "bg_color"), 0);
@@ -607,16 +622,16 @@ void msg_open(void *win) {
         widget_set_prop_int(btn, style_key(key, state[i], "font_size"), CONFIRM_CELL_PX);
     }
     text_ink(btn, 0xffffffffu, INK_BUTTON);
-    st.msg_seen[0] = 0, st.msg_part = -1, st.msg_total = 0;
-    if (st.msg_counting != 1) { /* one running answers this dialog too */
+    cp.msg_seen[0] = 0, cp.msg_part = -1, cp.msg_total = 0;
+    if (cp.msg_counting != 1) { /* one running answers this dialog too */
         unsigned long thread;
-        st.msg_counting = 1; /* before it starts: it may answer before create returns */
+        cp.msg_counting = 1; /* before it starts: it may answer before create returns */
         if (pthread_create(&thread, 0, msg_count, 0))
-            st.msg_counting = 0;
+            cp.msg_counting = 0;
         else
             pthread_detach(thread);
     }
-    st.msg_timer = timer_add(msg_poll, (void *)0, 200);
+    cp.msg_timer = timer_add(msg_poll, (void *)0, 200);
 }
 /* Under the window's children. */
 void msg_paint(void *w, void *canvas) {
@@ -642,14 +657,14 @@ void msg_paint(void *w, void *canvas) {
     if (scan) {
         rect_t cancel = { 127, 248, 121, 34 };
         /* the track's corners clip the fill, whose moving end is square */
-        for (int i = 0; st.msg_part >= 0 && i < MSG_BAR_H; ++i) {
+        for (int i = 0; cp.msg_part >= 0 && i < MSG_BAR_H; ++i) {
             int n = round_inset(7, i, MSG_BAR_H), x = MSG_BAR_X + n, y = MSG_BAR_Y + i,
-                end = MSG_BAR_X + MSG_BAR_W - n, to = MSG_BAR_X + st.msg_part;
+                end = MSG_BAR_X + MSG_BAR_W - n, to = MSG_BAR_X + cp.msg_part;
             scrub_row(canvas, (unsigned)msg_track[i] << 24, x, y, end - x);
             if (to > end) to = end;
             if (to > x) bar_rect(canvas, RGBA(stops_row(&msg_fill, i, MSG_BAR_H)), x, y, to - x, 1);
         }
-        if (st.msg_part >= 0)
+        if (cp.msg_part >= 0)
             scrub_row(canvas, 0x14ffffffu, MSG_BAR_X + 7, MSG_BAR_Y + MSG_BAR_H, MSG_BAR_W - 14);
         paint_round_rows(canvas, &cancel, &msg_cancel, 7);
         row_below(canvas, &cancel, 7, 0x26ffffffu);

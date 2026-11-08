@@ -2,13 +2,28 @@
  * the stall and state records, the standby limit and the boot logo. */
 #include "navigation.h"
 
+/* What the polls keep between passes. */
+static struct {
+    int standby_off; /* Standby limit's alarm ended a Standby, so the next pass powers off */
+    int wdt;         /* the hardware watchdog's fd: 0 untried, -1 none or refused (wdt_poll) */
+    int wdt_long;    /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
+    int ended; /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
+    int suspended;  /* inside Standby's suspend (ringnav_standby), for the state record */
+    char state[96]; /* the state record last written (state_poll) */
+    /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
+    unsigned logo_at;
+    int logo_mounted;
+    volatile int logo_busy;
+    const char *volatile logo_err;
+} pw __attribute__((section(".scratch")));
+
 /* Charge limit (docs/internals.md#charge-limit): get_battery_capacity keeps g_power_capacity and
  * g_power_chargestate (1 Charging, 2 Full, the AXP2101's battery status); switch_charge_enable
  * drives the charge enable, as stock's USB mode does with g_usbdac_chargeflag. At CHARGE_STOP
  * charging stops, and again whenever something else (USB mode's exit, AirPlay) turned it back on,
  * until the level falls to CHARGE_RESUME; then, or with the limit off, charging is handed back as
  * stock would have it: USB mode's and AirPlay's own choice while their page is open, else on. */
-void charge_poll(void) {
+static void charge_poll(void) {
     unsigned now = time_now_ms();
     if (st.charge_at && now - st.charge_at < CHARGE_POLL_MS) return;
     st.charge_at =
@@ -159,7 +174,7 @@ static void stall_write(unsigned age) {
 }
 static void stall_step(void) {
     unsigned now = (unsigned)now_ms(), passes = stall.passes;
-    if (passes != stall.seen || st.ended || st.suspended || st.wdt_long) {
+    if (passes != stall.seen || pw.ended || pw.suspended || pw.wdt_long) {
         if (passes != stall.seen && stall.level) unlink(STALL_FILE), stall.level = 0;
         stall.seen = passes, stall.at = now;
         return;
@@ -173,33 +188,33 @@ static void *stall_watch(void *arg) {
 }
 static void wdt_set(int on) { /* Standby's suspend and the resume after it; a clean end */
     int ms = WDT_MS;
-    if (st.wdt > 0) ioctl(st.wdt, on ? WDT_START : WDT_STOP, &ms);
+    if (pw.wdt > 0) ioctl(pw.wdt, on ? WDT_START : WDT_STOP, &ms);
 }
 static void wdt_span(int ms) {
-    ioctl(st.wdt, WDT_STOP, 0);
-    ioctl(st.wdt, WDT_START, &ms);
+    ioctl(pw.wdt, WDT_STOP, 0);
+    ioctl(pw.wdt, WDT_START, &ms);
 }
 /* A known long pass is starting (an import's tag reads, a folder add's loads): WDT_LONG_MS for it,
  * and the next pass, once it has returned, WDT_MS again */
 void ringnav_wdt_long(void) {
-    if (st.ended || st.wdt <= 0 || st.wdt_long) return;
-    st.wdt_long = 1;
+    if (pw.ended || pw.wdt <= 0 || pw.wdt_long) return;
+    pw.wdt_long = 1;
     wdt_span(WDT_LONG_MS);
 }
-void wdt_poll(void) {
-    if (st.ended || st.wdt < 0) return;
+static void wdt_poll(void) {
+    if (pw.ended || pw.wdt < 0) return;
     ++stall.passes;
-    if (st.wdt && st.wdt_long) {
-        st.wdt_long = 0;
+    if (pw.wdt && pw.wdt_long) {
+        pw.wdt_long = 0;
         wdt_span(WDT_MS);
-    } else if (st.wdt)
-        ioctl(st.wdt, WDT_FEED, 0);
-    if (st.wdt) return;
+    } else if (pw.wdt)
+        ioctl(pw.wdt, WDT_FEED, 0);
+    if (pw.wdt) return;
     int fd = open(WDT_DEV, 0x80002), ms = WDT_MS; /* O_RDWR, as libhardware2, | O_CLOEXEC (MIPS) */
-    st.wdt = fd > 0 && !ioctl(fd, WDT_START, &ms) ? fd : -1;
-    if (fd > 0 && st.wdt < 0) close(fd);
+    pw.wdt = fd > 0 && !ioctl(fd, WDT_START, &ms) ? fd : -1;
+    if (fd > 0 && pw.wdt < 0) close(fd);
     unsigned long tid;
-    if (st.wdt > 0 && !pthread_create(&tid, 0, stall_watch, 0)) pthread_detach(tid);
+    if (pw.wdt > 0 && !pthread_create(&tid, 0, stall_watch, 0)) pthread_detach(tid);
 }
 /* The state record (docs/internals.md#watchdog): /mnt/data/q2-state says what the Q2 is doing, one
  * line rewritten and synced whenever it changes: the screen, Standby's suspend, the cable, the
@@ -210,15 +225,15 @@ static char *put(char *p, const char *s) {
     while (*s) *p++ = *s++;
     return p;
 }
-void state_poll(void) {
+static void state_poll(void) {
     static const char *const play[] = { "?", "stopped", "playing", "paused" };
     static const char *const out[] = { "jack", "bluetooth", "usb" };
-    if (st.ended) return;
+    if (pw.ended) return;
     unsigned ps = (unsigned)mclGetPlayStatus(), ow = (unsigned)mclGetOutputWay();
     unsigned pct = (unsigned)I(g_power_capacity, 0), n = 0;
-    char s[sizeof st.state], d[4], *p = s;
+    char s[sizeof pw.state], d[4], *p = s;
     p = put(p, g_backlight_status ? "screen:on" : "screen:off");
-    p = put(p, st.suspended ? " power:suspending" : " power:running");
+    p = put(p, pw.suspended ? " power:suspending" : " power:running");
     p = put(p, g_usbdet_value ? " cable:in" : " cable:out");
     p = put(p, " battery:");
     if (pct > 100) pct = 100;
@@ -231,20 +246,20 @@ void state_poll(void) {
     p = put(p, out[ow < 3 ? ow : 0]);
     p = put(p, "\n");
     *p = 0;
-    if (!tk_strcmp(s, st.state)) return;
+    if (!tk_strcmp(s, pw.state)) return;
     void *f = fopen(STATE_FILE, "w");
     if (!f) return;
     fwrite(s, 1, p - s, f);
     fflush(f);
     fsync(fileno(f));
     fclose(f);
-    memcpy(st.state, s, p - s + 1);
+    memcpy(pw.state, s, p - s + 1);
 }
 /* A clean end: power-off, Restart, a firmware update, Rockbox. Nothing to report at the next boot.
  */
 void ringnav_clean_end(void) {
-    if (st.ended) return;
-    st.ended = 1;
+    if (pw.ended) return;
+    pw.ended = 1;
     wdt_set(0);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
@@ -281,22 +296,22 @@ int ringnav_standby(void) {
     unsigned start = st.standby_limit ? rtc_now() : 0;
     unsigned alarm = start + hours[st.standby_limit] * 3600;
     int armed = start && rtc_alarm(0) && rtc_alarm(alarm);
-    st.suspended = 1;
+    pw.suspended = 1;
     state_poll(); /* the record a resume that never comes leaves behind */
     wdt_set(0);   /* it would count through the suspend */
     int result = stock_standby_trampoline();
     wdt_set(1);
-    st.suspended = 0; /* the next pass records the resume */
+    pw.suspended = 0; /* the next pass records the resume */
     if (armed) {
         unsigned now = rtc_now();
         rtc_alarm(0);
-        st.standby_off = now >= alarm;
+        pw.standby_off = now >= alarm;
     }
     return result;
 }
-void standby_poll(void) {
-    if (!st.standby_off) return;
-    st.standby_off = 0;
+static void standby_poll(void) {
+    if (!pw.standby_off) return;
+    pw.standby_off = 0;
     if (!g_usbdet_value && mclGetPlayStatus() != 2) navigator_to("poweroff_page");
 }
 /* User boot logo (docs/boot.md): the card's LOGO_SRC is kept as LOGO_DST, which the splash shows at
@@ -362,8 +377,8 @@ static void *logo_sync(void *unused) {
             unlink(LOGO_DST ".tmp"), err = "Could not save boot logo";
     }
     free(b), free(old);
-    st.logo_err = err;
-    st.logo_busy = 0;
+    pw.logo_err = err;
+    pw.logo_busy = 0;
     return 0;
 }
 int card_mounted(void) {
@@ -375,25 +390,37 @@ int card_mounted(void) {
     m[n] = 0;
     return strstr(m, " /mnt/mmc ") != 0;
 }
-void logo_poll(void) {
+static void logo_poll(void) {
     unsigned now = time_now_ms();
-    const char *said = st.logo_err;
-    if (said) st.logo_err = 0, toast(said); /* first: a toast's dialog polls here again */
+    const char *said = pw.logo_err;
+    if (said) pw.logo_err = 0, toast(said); /* first: a toast's dialog polls here again */
     /* Mount edges (boot, USB storage's end) come lit; dark it keeps its edge for the first lit
      * poll. */
-    if (!g_backlight_status || st.logo_busy || (st.logo_at && now - st.logo_at < CHARGE_POLL_MS))
+    if (!g_backlight_status || pw.logo_busy || (pw.logo_at && now - pw.logo_at < CHARGE_POLL_MS))
         return;
-    st.logo_at = now | !now;
+    pw.logo_at = now | !now;
     int mounted = card_mounted();
     unsigned long tid;
-    if (mounted && !st.logo_mounted) {
+    if (mounted && !pw.logo_mounted) {
         ratings_copy_due(); /* another card, or the copy gone over USB storage */
-        st.logo_busy = 1;
+        pw.logo_busy = 1;
         if (pthread_create(&tid, 0, logo_sync, 0)) {
-            st.logo_busy = 0; /* the edge is tried again next poll */
+            pw.logo_busy = 0; /* the edge is tried again next poll */
             return;
         }
         pthread_detach(tid);
     }
-    st.logo_mounted = mounted;
+    pw.logo_mounted = mounted;
+}
+
+/* Every UI loop pass (navigation.c's main loop): Power's settings, then each poll. */
+void power_poll(void) {
+    pod_settings();
+    charge_poll();
+    standby_poll();
+    logo_poll();
+    ratings_copy_poll();
+    wdt_poll();
+    state_poll();
+    smart_poll();
 }

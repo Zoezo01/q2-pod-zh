@@ -2,6 +2,17 @@
  * app's local rows), Era and Long Songs. */
 #include "navigation.h"
 
+/* Tidal Downloads' page and songs, its timer, and whether it shows Clear All Downloads'
+ * confirmation; the library generation Most Played's kept tracks are of (~library_gen once stale);
+ * the Library Shuffle menu's page, kept across picks. */
+static struct {
+    void *td_page, *td_list;
+    unsigned td_timer;
+    int td_asking;
+    unsigned mp_gen;
+    void *sp_page;
+} ll __attribute__((section(".scratch")));
+
 extern int coverflow_goto_album(void *r);
 
 /* Collection Shuffle is Shuffle Songs over the collection. */
@@ -53,15 +64,20 @@ static int sp_pick(void *ctx, void *event) {
     return 0;
 }
 
+static int sp_closed(void *ctx, void *event) {
+    ll.sp_page = 0;
+    return 0;
+}
+
 int shuffle_menu(void *ctx, void *event) {
-    if (st.sp_page || !(st.sp_page = page_open("shuffle_page", page_closed, page_keyup))) return 0;
-    void *view = page_list(st.sp_page, st.sp_page, 0, "Shuffle", 3, 48);
+    if (ll.sp_page || !(ll.sp_page = page_open("shuffle_page", sp_closed, page_keyup))) return 0;
+    void *view = page_list(ll.sp_page, ll.sp_page, 0, "Shuffle", 3, 48);
     page_row_detail(view, 0, "Shuffle Songs", 0, sp_pick);
     page_row_detail(view, 1, "Shuffle Albums", 0, sp_pick);
     page_row_detail(view, 2, "Shuffle Folders", 0, sp_pick);
     /* With the title in the bar: centred at the page's foot, its box clear of the glass. */
-    void *note = theme()->page_title_h ? text(st.sp_page, 20, 200, 335, 24)
-                                       : text(st.sp_page, 46, 262, 283, 24);
+    void *note = theme()->page_title_h ? text(ll.sp_page, 20, 200, 335, 24)
+                                       : text(ll.sp_page, 46, 262, 283, 24);
     widget_set_prop_int(note, "style:normal:text_color", (int)0xffaaaaaau);
     widget_set_text_utf8(note, "Albums and folders take a moment to shuffle");
     theme_font(note, ROLE_INFO, FONT_ROW);
@@ -111,10 +127,30 @@ void album_plays(int (*album_of)(void *), unsigned *sum) {
 }
 
 /* Where key is among Most Played's tracks, -1 when not (or none are kept). */
-int mp_find(unsigned key) {
+static int mp_find(unsigned key) {
     for (unsigned i = 0; st.mp_list && i < deque_size(st.mp_list); i++)
         if (listen_key(deque_at(st.mp_list, i)) == key) return (int)i;
     return -1;
+}
+
+/* navigation.c's play_count: r's play counted (key), taking evicted's slot (0 for none). Most
+ * Played's kept tracks take a newly counted song, unless its page shows them (its rows and song
+ * menu match the deque); one that loses its count may have hidden the next best, which only the
+ * whole library knows. */
+void mp_counted(void *r, unsigned key, unsigned evicted) {
+    if (evicted && mp_find(evicted) >= 0)
+        ll.mp_gen = ~library_gen;
+    else if (st.mp_list && mp_find(key) < 0) {
+        if (!st.mp_page && deque_size(st.mp_list) < 2 * PLAYS_TOP)
+            _deque_push_back(st.mp_list, r);
+        else
+            ll.mp_gen = ~library_gen;
+    }
+}
+
+static int mp_closed(void *ctx, void *event) {
+    st.mp_page = 0;
+    return 0;
 }
 
 /* Most Played: a page of the PLAYS_TOP most played songs of the library. The whole library is read
@@ -122,14 +158,13 @@ int mp_find(unsigned key) {
  * ponytail: the first open after boot or a library change still reads every song, and a song first
  * counted from stock's folder browser shows without its artist until then (no library tags). */
 int most_played(void *ctx, void *event) {
-    if (st.mp_page || !(st.mp_page = page_open("mostplayed_page", page_closed, page_keyup)))
-        return 0;
+    if (st.mp_page || !(st.mp_page = page_open("mostplayed_page", mp_closed, page_keyup))) return 0;
     int n, idx[PLAYS_TOP];
     unsigned score[PLAYS_TOP], gen = library_gen;
     void *from = st.mp_list;
-    if (!from || st.mp_gen != gen) {
+    if (!from || ll.mp_gen != gen) {
         from = staged(songs_unsorted, (void *)1, &n);
-        st.mp_gen = gen;
+        ll.mp_gen = gen;
     }
     int top = mp_rank(from, idx, score);
     void *ranked = _create_deque("stSongInfo");
@@ -170,8 +205,8 @@ static int td_named(const void *a, const void *b) {
     return strcmp(x ? x : "", y ? y : "");
 }
 static int td_play(void *ctx, void *event) {
-    void *t = deque_at(st.td_list, (unsigned)(long)ctx);
-    if (t && !access(P(t, REC_PATH), 0)) play_folder(st.td_list, (int)(long)ctx, 0xf001);
+    void *t = deque_at(ll.td_list, (unsigned)(long)ctx);
+    if (t && !access(P(t, REC_PATH), 0)) play_folder(ll.td_list, (int)(long)ctx, 0xf001);
     return 0;
 }
 /* dir's songs, newest first (or, album, by name), a deque the caller destroys. */
@@ -213,22 +248,22 @@ static int td_show(const void *unused);
 /* Clear All Downloads…, then on its confirmation Cancel or Remove (row 2: tidal_clear), each
  * through td_show, from a timer, as a row's click may not rebuild the list it is in. */
 static int td_clear(void *ctx, void *event) {
-    if (st.td_asking && (long)ctx == 2) tidal_clear();
-    st.td_asking = !st.td_asking;
-    rearm(&st.td_timer, td_show, 0);
+    if (ll.td_asking && (long)ctx == 2) tidal_clear();
+    ll.td_asking = !ll.td_asking;
+    rearm(&ll.td_timer, td_show, 0);
     return 0;
 }
 /* The page's songs, read again; Tidal's end with Clear All Downloads…, as Spotify's Storage
  * Management does. Returns the list. */
 static void *songs_rows(const char *dir, const char *title, int tidal, int album) {
-    if (st.td_list) deque_destroy(st.td_list);
-    st.td_list = card_songs(dir, album);
-    int n = (int)deque_size(st.td_list);
+    if (ll.td_list) deque_destroy(ll.td_list);
+    ll.td_list = card_songs(dir, album);
+    int n = (int)deque_size(ll.td_list);
     void *view =
-        page_list_or(st.td_page, st.td_page, title, "No downloads yet", n + (tidal && n), 48);
+        page_list_or(ll.td_page, ll.td_page, title, "No downloads yet", n + (tidal && n), 48);
     char name[256];
     for (int i = 0; i < n; i++) {
-        song_label(P(deque_at(st.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);
+        song_label(P(deque_at(ll.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);
         page_row_detail(view, i, name, 0, td_play);
     }
     if (tidal && n) page_row_detail(view, n, "Clear All Downloads…", 0, td_clear);
@@ -237,32 +272,40 @@ static void *songs_rows(const char *dir, const char *title, int tidal, int album
 /* Clear All Downloads' confirmation in the list's place, as Spotify's Remove Downloads?, on Cancel;
  * or the list again, on its Clear row. */
 static int td_show(const void *unused) {
-    st.td_timer = 0;
-    if (!st.td_page) return 0;
-    unsigned n = deque_size(st.td_list);
-    if (!st.td_asking) {
+    ll.td_timer = 0;
+    if (!ll.td_page) return 0;
+    unsigned n = deque_size(ll.td_list);
+    if (!ll.td_asking) {
         void *view = songs_rows(TIDAL_DIR, "Tidal Downloads", 1, 0);
-        if ((n = deque_size(st.td_list))) ringnav_select(view, (int)n, (int)n + 1);
+        if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n, (int)n + 1);
         return 0;
     }
     char note[32];
     tk_snprintf(note, sizeof note, n == 1 ? "%u track" : "%u tracks", n);
-    void *view = page_list(st.td_page, st.td_page, 0, "Remove Downloads?", 3, 64);
+    void *view = page_list(ll.td_page, ll.td_page, 0, "Remove Downloads?", 3, 64);
     page_row_detail(view, 0, note, "Keeps settings", 0);
     page_row_detail(view, 1, "Cancel", "", td_clear);
     page_row_detail(view, 2, "Remove", "", td_clear);
     ringnav_select(view, 1, 3);
     return 0;
 }
+static int td_closed(void *ctx, void *event) {
+    ll.td_page = 0;
+    ll.td_asking = 0;
+    stop_timer(&ll.td_timer);
+    if (ll.td_list) deque_destroy(ll.td_list);
+    ll.td_list = 0;
+    return 0;
+}
 /* Return on the confirmation is its Cancel. */
 static int td_keyup(void *ctx, void *event) {
-    if (!st.td_asking || I(event, EVENT_KEY) != KEY_RETURN) return page_keyup(ctx, event);
+    if (!ll.td_asking || I(event, EVENT_KEY) != KEY_RETURN) return page_keyup(ctx, event);
     td_clear((void *)1, event);
     return STOP;
 }
 static int songs_page(const char *window, const char *dir, const char *title, int tidal,
                       int album) {
-    if (st.td_page || !(st.td_page = page_open(window, page_closed, tidal ? td_keyup : page_keyup)))
+    if (ll.td_page || !(ll.td_page = page_open(window, td_closed, tidal ? td_keyup : page_keyup)))
         return 0;
     songs_rows(dir, title, tidal, album);
     return 0;
@@ -657,11 +700,14 @@ static void ls_show(void) {
     ls.songs = 0;
 }
 
-/* The page gone: what was probed is kept. */
-void ls_closed(void) {
+/* The page gone: what was probed is kept. Its list is ratings.c's slot, whose rows play it
+ * (rt_play). */
+static int ls_page_closed(void *ctx, void *event) {
+    rt_closed(ctx, event);
     ls_stop();
     if (ls.songs) deque_destroy(ls.songs);
     ls.songs = 0;
+    return 0;
 }
 
 static int ls_done(const void *unused) {
@@ -693,7 +739,7 @@ int song_seconds(void *r) {
 /* Long Songs' row: the files never probed are probed first, with their count and Cancel, which
  * keeps what is done; the page closing does the same. */
 int long_songs(void *ctx, void *event) {
-    if (st.rt_page || !(st.rt_page = page_open("longsongs_page", page_closed, page_keyup)))
+    if (st.rt_page || !(st.rt_page = page_open("longsongs_page", ls_page_closed, page_keyup)))
         return 0;
     int n;
     lengths_read();

@@ -1,6 +1,13 @@
 /* The volume panel: stock's volume dialog, drawn over Now Playing's times or on its own. */
 #include "navigation.h"
 
+/* The dialog vol_paint last drew, its value and the redraw timer. */
+static struct {
+    void *vol_dialog;
+    int vol_drawn;
+    unsigned vol_timer;
+} vd __attribute__((section(".scratch")));
+
 /* A volume bar's end where the time it replaces sits: the speaker image name (tools/art.py) from x,
  * or ending at x when right, centred on bar's rows. */
 static void vol_end(void *top, void *canvas, const char *name, int x, int right,
@@ -17,13 +24,13 @@ static void vol_end(void *top, void *canvas, const char *name, int x, int right,
  * bar would stop following the wheel after a tick or two. */
 static int vol_poll(const void *info) {
     void *top = window_manager_get_top_window(window_manager());
-    void *vol = top && top == st.vol_dialog ? widget_lookup(top, "slider_vol", 1) : (void *)0;
+    void *vol = top && top == vd.vol_dialog ? widget_lookup(top, "slider_vol", 1) : (void *)0;
     if (!vol) {
-        st.vol_timer = 0;
-        st.vol_dialog = (void *)0;
+        vd.vol_timer = 0;
+        vd.vol_dialog = (void *)0;
         return 0; /* RET_OK: removed */
     }
-    if (widget_get_prop_int(vol, "value", 0) != st.vol_drawn)
+    if (widget_get_prop_int(vol, "value", 0) != vd.vol_drawn)
         widget_invalidate_force(top, (void *)0);
     return 8; /* RET_REPEAT */
 }
@@ -78,9 +85,9 @@ void vol_paint(void *top, void *canvas) {
     widget_set_visible(vol, 0, 0);
     if (label) widget_set_visible(label, 0, 0);
     int max = widget_get_prop_int(vol, "max", 100), level = widget_get_prop_int(vol, "value", 0);
-    st.vol_dialog = top;
-    st.vol_drawn = level;
-    if (!st.vol_timer) st.vol_timer = timer_add(vol_poll, (void *)0, VOL_POLL_MS);
+    vd.vol_dialog = top;
+    vd.vol_drawn = level;
+    if (!vd.vol_timer) vd.vol_timer = timer_add(vol_poll, (void *)0, VOL_POLL_MS);
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[12] = { 'V', 'o', 'l', 'u', 'm', 'e', ' ' },
              k = np ? 7 : 0;
     if (gloss) { /* no number */
