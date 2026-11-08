@@ -1050,6 +1050,12 @@ static void stop_scroll(menu_t *m) {
     }
 }
 
+/* View w's scroll animation stopped, for a touch claimed sideways (addon.c swipe, as pull_event).
+ */
+void list_stop_scroll(void *w) {
+    if (load_rows(&g_menu, w)) stop_scroll(&g_menu);
+}
+
 /* Wheel offsets are synchronous; table setters can replace the recycled row pool. Scroll end
  * loads the covers in view, as after a touch scroll. */
 static void wheel_offset(menu_t *m, int top) {

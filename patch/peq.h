@@ -240,7 +240,6 @@ int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
 int text_differs(void *w, const char *s);
 long file_size(const char *path); /* coverflow.c: -1 when it can't be opened */
-#define PICTURE_PNG 1
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
 int visual(void *s, int n, int *c, int *frac);
@@ -404,6 +403,7 @@ void dac_take(void);                          /* books.c */
 int theme_font(void *w, int role, int was);
 #define FONT_ROW -2 /* was: cache the answer in w's own "_font" prop */
 void marq_restart(void *row); /* navigation.c: its title changed, its marquee re-armed */
+void list_stop_scroll(void *w); /* navigation.c: its scroll animation stopped */
 const char *theme_face(const unsigned *s, int n, int *px); /* *px, unless 0: the px to draw it at */
 void bar_title_sync(void *win); /* navigation.c: Classic's bar title names win */
 /* navigation.c: Classic's Spotify and Internet Radio Now Playing, laid out as the local page, 0

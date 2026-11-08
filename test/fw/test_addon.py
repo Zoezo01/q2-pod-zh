@@ -66,7 +66,7 @@ class Pg(C.Structure):
                 ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
-                *((n, C.c_byte) for n in ('sdown', 'sclaim'))]
+                *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int)]
 
 
 class Qp(C.Structure):
@@ -832,7 +832,7 @@ class Page:
     """A card app's page driven as the UI drives it. The worker never runs: answer() puts its reply
     where the pthread would and the page's tick takes it."""
     def __init__(self, fw, manifest=b'name=Foo\n', opens=True):
-        self.fw, self.sel, self.timers, self.drawn, self.toasts, self.backs = fw, 0, 0, 0, [], 0
+        self.fw, self.sel, self.y, self.timers, self.drawn, self.toasts, self.backs = fw, 0, 0, 0, 0, [], 0
         self.world = card(fw, foo=manifest)
         self.world.files[b'/tmp/q2-foo'] = b'1'
         self.page, self.view = block(fw, size=4096), block(fw, size=4096)  # widgets' bytes, all zero
@@ -849,7 +849,8 @@ class Page:
         def toast(path, info, *_):
             self.toasts.append(C.string_at(info + 8))
         def prop(w, name, default, *_):
-            return self.sel if C.string_at(name) == b'_ringnav_index' else default
+            key = C.string_at(name)
+            return self.sel if key == b'_ringnav_index' else self.y if key == b'yoffset' else default
         fw.mock('fw_pthread_create', lambda *_: 0)
         fw.mock('timer_add', timer)
         fw.mock('window_create', lambda *_: self.page)
@@ -1074,7 +1075,7 @@ def test_a_cover_for_any_row_draws_the_list_with_covers(fw, cover, kind, art):
 
 
 @pytest.mark.parametrize('data,art', [
-    (jpeg(128, 128), 1), (jpeg(129, 64), 0), (jpeg(64, 129), 0), (b'', 0), (b'not a picture' * 4, 0)])
+    (jpeg(128, 128), 1), (jpeg(129, 64), 0), (jpeg(64, 129), 0), (jpeg(0, 64), 0), (jpeg(64, 0), 0), (b'', 0), (b'not a picture' * 4, 0)])
 def test_a_cover_over_128_px_or_of_no_known_size_is_none(fw, data, art):
     """addon.c art_file: the header's size decides, read before the list is drawn, not decoded."""
     p = Page(fw)
@@ -1103,6 +1104,7 @@ def test_a_rows_bitmap_is_let_go_before_its_image_and_at_the_level_end(fw):
     the file gone by then or not."""
     p = Page(fw)
     names = unloads(fw)
+    C.c_int.from_address(p.view + W_H).value = 390
     url = b'file://' + art_path(b'op0', b'')
     p.world.files[url[7:]] = jpeg()
     p.answer(rows=[item(0), item(1, b'list')])
@@ -1112,6 +1114,104 @@ def test_a_rows_bitmap_is_let_go_before_its_image_and_at_the_level_end(fw):
     assert names == [url, b'file://' + art_path(b'op1', b'')]
 
 
+def scrolled(fw, count):
+    """A list of count rows with a cover in row 0, 390 px high (five 78 px rows); its unload names; a row's URL."""
+    p = Page(fw)
+    names = unloads(fw)
+    C.c_int.from_address(p.view + W_H).value = 390
+    p.world.files[art_path(b'op0', b'')] = jpeg()
+    p.answer(rows=[item(k) for k in range(count)])
+    del names[:]
+    return p, names, lambda k: b'file://' + art_path(b'op%d' % k, b'')
+
+
+def test_scrolling_past_the_window_unloads_the_rows_left_behind(fw):
+    """addon.c art_window: at most ART_KEEP rows' covers stay decoded around the yoffset; those left behind go,
+    those within stay, and a row scrolled back keeps its image's name, to decode again when it paints."""
+    p, names, url = scrolled(fw, 50)
+    assert (p.pg.art_lo, p.pg.art_hi) == (0, 5)  # the rows in view, from the draw
+    set_images = len(fw.calls('image_base_set_image'))
+    p.y = 30 * 78
+    p.tick()
+    assert (p.pg.art_lo, p.pg.art_hi) == (20, 35) and names == [url(k) for k in range(20)]
+    del names[:]
+    p.y = 0  # back: rows 24.. of the old range leave, 20 to 23 stay
+    p.tick()
+    assert (p.pg.art_lo, p.pg.art_hi) == (0, 24) and names == [url(k) for k in range(24, 35)]
+    assert len(fw.calls('image_base_set_image')) == set_images  # the rows keep their names, nothing rebuilt
+
+
+def test_a_fling_past_the_window_leaves_nothing_decoded_behind(fw):
+    """addon.c art_window: rows crossed in one tick, further than the window, are in the range and unloaded."""
+    p, names, url = scrolled(fw, 50)
+    p.y = 44 * 78  # 44 rows on, past the old range (0, 5) and past the window it left
+    p.tick()
+    assert (p.pg.art_lo, p.pg.art_hi) == (26, 49) and names == [url(k) for k in range(26)]
+
+
+def test_drop_unloads_only_the_range(fw):
+    """addon.c drop: only the rows that may be decoded, with no dependence on art and no file read."""
+    p, names, url = scrolled(fw, 50)
+    p.y = 30 * 78
+    p.tick()
+    del names[:]
+    p.top.art = 0
+    del p.world.files[art_path(b'op0', b'')]
+    fw.fn('addon__closed', C.c_int, C.c_void_p, C.c_void_p)(p.pg.page, None)
+    assert names == [url(k) for k in range(20, 35)] and (p.pg.art_lo, p.pg.art_hi) == (0, 0)
+
+
+def test_a_list_under_the_window_never_unloads(fw):
+    p, names, url = scrolled(fw, 20)
+    for row in (5, 15, 0):
+        p.y = row * 78
+        p.tick()
+    assert not names
+
+
+def test_a_later_pages_progress_row_draws_its_bar_in_a_cover_list(fw):
+    """addon.c row: the art branch is the page's, the progress bar the row's."""
+    p = Page(fw)
+    p.world.files[art_path(b'op0', b'')] = jpeg()
+    p.answer(rows=[item(0)], msg=b'pages', cursor=b'c1')
+    created = []
+    fw.mock('widget_factory_create_widget', lambda *a: created.append(C.string_at(a[1])) or block(fw, size=64))
+    p.answer(rows=[(b'progress', b'u', b't', b's', b'', b'500')], msg=b'ok')
+    assert p.top.art == 1 and created == [b'view']
+
+
+def test_a_more_row_under_a_section_is_named_for_the_section(fw):
+    """addon.c go: the level a section's More… pushes shows the section's plain name, not its position."""
+    p = sections(fw)
+    p.answer(rows=[item(0)], cursor=b'c1')
+    assert p.top.title == b'S0 1/3'
+    p.click(1)
+    assert p.top.title == b'S0' and p.pg.depth == 2
+
+
+@pytest.mark.parametrize('kind,sel', [(b'search', 2), (b'action', 1)])
+def test_a_next_window_selects_the_first_content_row(fw, kind, sel):
+    """addon.c page_to: past Previous page, and past a Search row left as a row (here a sole one), as the reply has."""
+    p = Page(fw)
+    p.answer(rows=[(kind, b'op', b'Row', b'', b'', b'')])
+    fw.fn('addon__page_to', None, C.c_void_p, C.c_char_p, C.c_int)(C.addressof(p.top), b'c', 1)
+    assert p.top.sel == sel
+
+
+def test_a_claimed_swipe_stops_the_lists_fling(fw):
+    """addon.c swipe, as pull_event: the claim stops a scroll still animating the rows it took."""
+    p = sections(fw)
+    p.answer(rows=[item(0)])
+    scroll_view = C.create_string_buffer(b'scroll_view')
+    fw.mock('widget_get_type', lambda *_: C.addressof(scroll_view))
+    C.c_byte.from_address(p.view + O['VIEW_VERTICAL']).value = 1
+    C.c_int.from_address(p.view + W_H).value = 390
+    C.c_void_p.from_address(p.view + O['VIEW_ANIMATOR']).value = block(fw, size=16)
+    touch(p, 'EVT_POINTER_DOWN', 200, 100)
+    touch(p, 'EVT_POINTER_MOVE_BEFORE', 150, 100)
+    assert len(fw.calls('widget_animator_pause')) == 1 and len(fw.calls('widget_animator_destroy')) == 1
+
+
 def test_a_swipe_redecides_covers_for_the_section_it_opens(fw):
     """addon.c sec_open: lv_t.art is the drawn list's, so a section (each calloc'd level) starts without one and
     the outgoing section's covers are let go before the level is replaced."""
@@ -1119,6 +1219,7 @@ def test_a_swipe_redecides_covers_for_the_section_it_opens(fw):
     fw.mock('pointer_event_init', lambda *_: 0)
     fw.mock('widget_dispatch_event_to_target_recursive', lambda *_: 0)
     names = unloads(fw)
+    C.c_int.from_address(p.view + W_H).value = 390
     url = b'file://' + art_path(b'op0', b'')
     p.world.files[url[7:]] = jpeg()
     p.answer(rows=[item(0)])

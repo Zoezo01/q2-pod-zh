@@ -86,6 +86,7 @@
 #define ART_ROW_H 78 /* a row with a cover: stock Tidal's list_view default_item_height */
 #define ART_PX 64    /* its cover, square, centred in the row's height */
 #define ART_MAX 128  /* the most a cover's file may be, either way; larger counts as none */
+#define ART_KEEP 24  /* the rows' covers kept decoded around the list's scroll position */
 #define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
 
 /* An app found on the card, kept for the life of demo in its slot. present: on the card at the
@@ -1028,6 +1029,7 @@ static struct {
     /* a touch on the page: where it went down, and whether a sideways swipe has taken it (swipe) */
     int sx, sy;
     char sdown, sclaim;
+    int art_lo, art_hi; /* the rows whose covers may be decoded, half open (art_window) */
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -1091,7 +1093,8 @@ static void set_pml(void *bar, long permille) {
 static void progress_row(void *item, long permille) {
     const theme_t *T = theme();
     void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
-    int x = I(t, W_X), w = I(t, W_W), y = T->page_cap_y, h = T->page_cap_h;
+    int x = I(t, W_X), w = I(t, W_W), h = T->page_cap_h;
+    int y = T->page_cap_y + (I(item, W_H) - page_h(64)) / 2; /* a cover list's rows are taller */
     int dx = I(s, W_X), dy = I(s, W_Y), dw = I(s, W_W), dh = I(s, W_H);
     widget_move_resize(t, x, y, w * 3 / 5, h);
     widget_use_style(s, "s_scrlabel_white20r"); /* the style drops the detail's size and grey */
@@ -1106,26 +1109,41 @@ static void progress_row(void *item, long permille) {
     set_pml(bar, permille);
 }
 
-/* Row i's cover, its file:// URL written to out (ART_URL bytes); whether the file is there, with a
- * known size of no more than ART_MAX px either way. */
-static int art_file(int i, char *out) {
+/* Row i's cover's file:// URL written to out (ART_URL bytes); no file is touched. */
+static void art_url(int i, char *out) {
     unsigned key = hash_bytes(FNV_SEED, (const unsigned char *)cell(i, 1), strlen(cell(i, 1)));
-    int w = 0, h = 0;
     key = hash_bytes(key, (const unsigned char *)"\t", 1);
     key = hash_bytes(key, (const unsigned char *)cell(i, 4), strlen(cell(i, 4)));
     tk_snprintf(out, ART_URL, "file:///tmp/q2-%s.art/%08x.jpg", app()->id, key);
-    return picture_size(out + 7, &w, &h) && w <= ART_MAX && h <= ART_MAX;
+}
+
+/* Row i's cover, its URL in out (art_url); whether the file is there, with a known size of no more
+ * than ART_MAX px either way. */
+static int art_file(int i, char *out) {
+    int w = 0, h = 0;
+    art_url(i, out);
+    return picture_size(out + 7, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX;
+}
+
+/* Rows from.. to's covers, decoded or not, let go of the image manager. */
+static void art_unload(int from, int to) {
+    char url[ART_URL];
+    for (; from < to; ++from) {
+        art_url(from, url);
+        image_manager_unload_bitmap_by_name(image_manager(), url);
+    }
+}
+
+/* The range (art_window) unloaded and emptied; pg.f still names its rows. */
+static void art_forget(void) {
+    art_unload(pg.art_lo, pg.art_hi);
+    pg.art_lo = pg.art_hi = 0;
 }
 
 /* The shown reply let go, and any page it waits for; its covers leave the image manager while
  * pg.f still names their rows, whether or not the files are still there. */
 static void drop(void) {
-    if (pg.pages && top()->art)
-        for (int i = 0; i < top()->n; ++i) {
-            char url[ART_URL];
-            art_file(i, url);
-            image_manager_unload_bitmap_by_name(image_manager(), url);
-        }
+    art_forget();
     while (pg.pages) free(pg.buf[--pg.pages]);
     pg.paging = 0;
 }
@@ -1163,8 +1181,8 @@ static int row_h(const lv_t *l) { return l->art ? ART_ROW_H : page_h(64); }
  * the theme's left, the theme's label boxes beside it, centred in the taller row, an empty detail
  * centring the caption, and the chevron when it opens a page. The image goes before row_into, whose
  * chevron stays the last child (navigation.c into_mark), and is sized after it. */
-static void art_row(int index, const char *caption, const char *detail, const char *url,
-                    int into) {
+static void *art_row(int index, const char *caption, const char *detail, const char *url,
+                     int into) {
     int x = page_x(), tx = x + ART_PX + 12, w = 375 - x - tx, dy = (ART_ROW_H - page_h(64)) / 2;
     void *item = page_row_detail(pg.view, index, caption, detail, clicked), *img = 0;
     void *t = widget_get_child(item, 0), *s = widget_get_child(item, 1);
@@ -1179,6 +1197,7 @@ static void art_row(int index, const char *caption, const char *detail, const ch
     }
     if (into) row_into(item, ART_ROW_H);
     if (img) widget_move_resize(img, x, (ART_ROW_H - ART_PX) / 2, ART_PX, ART_PX);
+    return item;
 }
 
 /* Row i of the level's list; i == l->n: the trailing row, Loading… while a page is on its way (a
@@ -1191,14 +1210,43 @@ static void row(lv_t *l, int i) {
             page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
         return;
     }
+    void *item;
     if (l->art) {
         char url[ART_URL];
-        art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
-        return;
-    }
-    void *item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
-                                                                     cell(i, 3), clicked);
+        item = art_row(i, cell(i, 2), cell(i, 3), art_file(i, url) ? url : 0, opens(i));
+    } else
+        item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
+                                                                   cell(i, 3), clicked);
     if (!strcmp(cell(i, 0), "progress")) progress_row(item, strtol(cell(i, 5), 0, 10));
+}
+
+/* Stock never lets a row's decoded cover go (nothing calls image_manager_unload_unused), so one a
+ * user scrolled past would stay until the list closes: at most ART_KEEP rows' stay decoded around
+ * the list's real scroll position (its yoffset, so wheel, touch and fling alike), others unloaded
+ * here, from show() and the page's tick; [pg.art_lo, pg.art_hi) names the rows that may be decoded,
+ * first widened to all a move crossed since the last tick, so none is left behind, and the cost is
+ * the rows crossing, not the list's length. An image draws by name and keeps no bitmap between
+ * paints (internals.md Covers), so a row scrolled back loads again and nothing dangles.
+ * ponytail: at most ART_KEEP covers (about 1.5 MB at ART_MAX px) plus what a fling paints in one
+ * 250 ms tick; a cover scrolled back decodes again on the UI thread, a decode thread if a long
+ * fling ever shows its fill-in. */
+static void art_window(void) {
+    const lv_t *l = top();
+    if (!pg.view || !l->art || l->state != K_READY) return;
+    int rh = row_h(l), y = widget_get_prop_int(pg.view, "yoffset", 0), first = y / rh;
+    int last = (y + I(pg.view, W_H) + rh - 1) / rh; /* past the last row in view */
+    if (last > l->n) last = l->n;
+    if (first > last) first = last;
+    int lo = (first + last - ART_KEEP) / 2;
+    if (lo > l->n - ART_KEEP) lo = l->n - ART_KEEP;
+    if (lo < 0) lo = 0;
+    int hi = lo + ART_KEEP < l->n ? lo + ART_KEEP : l->n;
+    int a = pg.art_lo < pg.art_hi && pg.art_lo < first ? pg.art_lo : first;
+    int b = pg.art_lo < pg.art_hi && pg.art_hi > last ? pg.art_hi : last;
+    art_unload(a, b < lo ? b : lo);
+    art_unload(a > hi ? a : hi, b);
+    pg.art_lo = a > lo ? a : lo;
+    pg.art_hi = b < hi ? b : hi;
 }
 
 static void show(void);
@@ -1328,6 +1376,7 @@ static void show(void) {
         /* ponytail: the first page decides, as pages appended later (append) keep this drawing's
          * choice and Back or an action reloads from the first page; a list rebuilt whole with all
          * its pages there (a short first page, the search box closing) counts them */
+        art_forget(); /* the rows are built anew: nothing of theirs decoded yet */
         l->art = art_rows(l->n);
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0),
                             l->art ? ART_ROW_H : 64);
@@ -1336,6 +1385,7 @@ static void show(void) {
         page_push(pg.view, pg.moved), pg.moved = 0;
     }
     if (n) ringnav_select(pg.view, l->state == K_ERROR ? 0 : l->sel < n ? l->sel : n - 1, n);
+    art_window();
 }
 
 /* The selected row kept, from a page showing the level's own rows (not an error or a wait's). */
@@ -1398,11 +1448,13 @@ static void sec_open(int i, int dir) {
 static void page_to(lv_t *l, const char *c, int dir) {
     char a[sizeof l->args] = "";
     if (!cursor_args(l, a, sizeof a, c)) return;
+    /* the first content row: past Previous page, and past a Search row kept as a row */
+    int first = 1 + !strcmp(cell(0, 0), "search");
     req_cancel();
     drop();
     memcpy(l->args, a, sizeof a);
     l->n = 0, l->state = K_LOAD;
-    l->sel = dir > 0 ? 1 : 1 << 20; /* show() clamps it to the last row */
+    l->sel = dir > 0 ? first : 1 << 20; /* show() clamps it to the last row */
     pg.moved = (signed char)dir;
     show();
 }
@@ -1559,11 +1611,7 @@ static int search_left(void *ctx, void *event) {
 static int swipe(void *ctx, void *event) {
     (void)ctx;
     int type = I(event, EVENT_TYPE);
-    if (type == EVT_POINTER_ABORT) {
-        pg.sdown = pg.sclaim = 0;
-        return 0;
-    }
-    if (pg.nsec < 2 || pg.depth != 1 || pg.edit) {
+    if (type == EVT_POINTER_ABORT || pg.nsec < 2 || pg.depth != 1 || pg.edit) {
         pg.sdown = pg.sclaim = 0;
         return 0;
     }
@@ -1592,6 +1640,7 @@ static int swipe(void *ctx, void *event) {
         pointer_event_init(abort_event, EVT_POINTER_ABORT, pg.page, pg.sx, pg.sy);
         widget_dispatch_event_to_target_recursive(pg.page, abort_event);
         pg.sdown = pg.sclaim = 1; /* after: the abort comes back here and clears them */
+        if (pg.view) list_stop_scroll(pg.view); /* as pull_event: a fling under the claim ends */
     }
     return 11; /* RET_STOP */
 }
@@ -1647,7 +1696,8 @@ static int go(const void *unused) {
         }
     } else if (l->state != K_READY) {
     } else if (i == l->n) { /* More…, as a level of its own; Loading… does nothing */
-        if (!pg.paging && cursor_args(l, a, sizeof a, pg.f[3])) push(l->op, a, l->base, l->title);
+        if (!pg.paging && cursor_args(l, a, sizeof a, pg.f[3]))
+            push(l->op, a, l->base, pg.depth == 1 && pg.nsec ? pg.sec[pg.cur].title : l->title);
     } else {
         const char *kind = cell(i, 0), *uri = cell(i, 1), *ctx = cell(i, 4);
         if (!strcmp(kind, "list")) { /* with remote and a local folder, opens()'s pages */
@@ -1681,6 +1731,7 @@ static int tick(const void *unused) {
              (l->state == K_WAIT || (l->state == K_READY && l->live && g_backlight_status &&
                                      window_manager_get_top_window(window_manager()) == pg.page)))
         fetch(l);
+    art_window();
     return 8; /* RET_REPEAT */
 }
 

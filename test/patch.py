@@ -633,6 +633,7 @@ class Machine:
                 size=a*b; p=self.alloc(size+16); self.allocs[p]=size; ret=p
             else:
                 self.allocs.pop(a,None); ret=0
+        elif name=='stock_tidal_load': self.word(payload_syms['playback_loads'],self.get(payload_syms['playback_loads'])+1); ret=0
         elif name.startswith('one:'): ret=1
         else: ret=0
         self.returns(ret,clobber=True)
@@ -16803,7 +16804,7 @@ urecs=m.play_recs
 assert [(field(e,'REC_TIDAL_ID'),field(e,'REC_NAME'),field(e,'REC_TITLE'),field(e,'REC_ARTIST'),field(e,'REC_ALBUM'),
          field(e,'REC_COVER'),field(e,'REC_PATH')) for e in urecs]==[
     ('app:1:0','One','One','Broadcast','Tender Buttons','https://jf/c.jpg',''),
-    ('app:1:1','Two','Two',None,None,None,'/mnt/mmc/Music/b.flac'),('app:1:2','Unknown','',None,None,None,'')],urecs
+    ('app:1:1','Two','Two',None,None,None,'/mnt/mmc/Music/b.flac'),('app:1:2','Unknown','Unknown',None,None,None,'')],urecs
 assert all(m.get(e+O['REC_TYPE'])==8 and m.get(e+0x38)==0xf1 for e in urecs)
 m.poll(); m.advance(0); assert len(m.plays)==1; passed()
 # Only the app's own queue in /tmp: another app's, or one elsewhere, is never read.
@@ -16844,6 +16845,11 @@ assert track(0)[0]==1; job=m.threads[0]; m.word(payload_syms['playback_loads'],m
 m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False); assert 'stock_tidal' not in [c[0] for c in m.calls]
 assert track(0)[0]==1; job=m.threads[0]; assert track(1)[0]==1
 m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False); assert 'stock_tidal' not in [c[0] for c in m.calls]; passed()
+# A queue loaded while the job is inside stock's start: it isn't paused, nor Now Playing's tick armed, over that queue.
+assert track(0)[0]==1; job=m.threads[0]; m.handlers[payload_syms['stock_tidal_trampoline']]='stock_tidal_load'
+m.byte(syms['savestartbt'],1); m.byte(syms['transposition'],0); m.calls=[]; m.call(address=job[0],args=(job[1],0,0,0),gap=0,clear=False)
+assert 'mclSetPause' not in [c[0] for c in m.calls] and m.u.mem_read(syms['savestartbt'],1)[0]==1 and m.u.mem_read(syms['transposition'],1)[0]==0
+m.handlers[payload_syms['stock_tidal_trampoline']]='stock_tidal'; m.byte(syms['savestartbt'],0); passed()
 # A Tidal track is stock's, as before.
 assert track(3)==(0,['stock_tidaltrack','sem_post']) and not m.threads; passed()
 # A queue replaced since has no URL for the old ids: the player stays stopped.

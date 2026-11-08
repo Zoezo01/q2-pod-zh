@@ -385,7 +385,7 @@ int app_urls_play(const char *path) {
         P(rec, REC_TIDAL_ID) = strdup(id);
         P(rec, REC_NAME) = strdup(*fld[1] ? fld[1] : "Unknown"); /* printed with %s: never NULL */
         P(rec, REC_PATH) = strdup(web(fld[0]) ? "" : fld[0]);
-        P(rec, REC_TITLE) = strdup(fld[1]);
+        P(rec, REC_TITLE) = strdup(*fld[1] ? fld[1] : "Unknown");
         if (*fld[2]) P(rec, REC_ARTIST) = strdup(fld[2]);
         if (*fld[3]) P(rec, REC_ALBUM) = strdup(fld[3]);
         if (*fld[4]) P(rec, REC_COVER) = strdup(fld[4]);
@@ -424,7 +424,7 @@ static void *app_start(void *arg) {
     pthread_mutex_lock(au.start);
     if (j->play == au.play && j->loads == playback_loads) {
         stock_tidal_trampoline(j->url);
-        if (j->play == au.play) { /* a later start's the pause and the tick, then */
+        if (j->play == au.play && j->loads == playback_loads) { /* else a later one's or queue's */
             if (savestartbt) savestartbt = 0, mclSetPause();
             transposition = 1;
         }
@@ -451,6 +451,10 @@ static int app_track(void *r, const char *id) {
     const char *path = P(r, REC_PATH);
     if (path && *path) { /* mclStartPlayer plays it after this */
         tidal_playurl(1);
+        /* it writes its own play command after this returns, with no mclStop: a stream still
+         * inside stock's start (up to 100 ms asleep before it writes, 0x5ad000) must land first */
+        pthread_mutex_lock(au.start);
+        pthread_mutex_unlock(au.start);
         return 1;
     }
     int net = networkGetConnectStatus();

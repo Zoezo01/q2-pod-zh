@@ -163,6 +163,8 @@ static int ff_thumb(const char *src, const char *dst, int w, int h) {
 
 static unsigned be16(const unsigned char *p) { return p[0] << 8 | p[1]; }
 
+#define PICTURE_PNG 1
+
 /* path's picture size in *w and *h, read from its header; 0 when it isn't known, else PICTURE_PNG
  * or a JPEG's frame marker (0xc2: progressive). A PNG's size past 16 bits reads as 65536. Magic
  * bytes as toolsGetPictureInfo tells them; the JPEG's frame header is looked for in its first 64

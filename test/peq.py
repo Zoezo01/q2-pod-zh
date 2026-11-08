@@ -2903,6 +2903,8 @@ static long file_size(const char *p) { return -1; }
 static int quality = 27; static void *queue;
 #define tidalStreamingLevelNow (&quality)
 #define mcl_pdeqplaylist (&queue)
+static int play_pos;
+#define MCL_POS (&play_pos)
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];
