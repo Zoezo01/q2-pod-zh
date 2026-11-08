@@ -1,3 +1,7 @@
+## Where code goes
+
+Don't add features to `patch/navigation.c`: give each its own file, as CONTRIBUTING.md's [Where new code goes](CONTRIBUTING.md#where-new-code-goes) says. Add to navigation.c only where the code being changed already lives, and say why.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
