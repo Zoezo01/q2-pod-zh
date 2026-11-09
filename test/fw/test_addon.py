@@ -2567,6 +2567,16 @@ def test_a_row_that_opens(fw, kind, uri, yes):
     assert fw.fn('addon__opens', C.c_int, C.c_int)(0) == yes
 
 
+@pytest.mark.parametrize('uri, listed', [(b'/mnt/mmc/a/', 1), (b'/tmp/', 0), (b'/mnt/mmc/../etc/', 0), (b'mnt/mmc/a/', 0)])
+def test_a_local_row_opens_only_a_card_path(fw, uri, listed):
+    """A folder a server named lists nothing off the card: songs_open (library_lists.c) bounds only the length, so
+    the row's uri is checked here as a playlist's lines are."""
+    p = Page(fw)
+    p.answer(rows=[(b'local', uri, b't', b's', b'', b'')])
+    p.click(0)
+    assert len(fw.calls('toolsLoadDirectory')) == listed
+
+
 def test_sections_are_a_first_replys_list_rows_up_to_eight(fw):
     p = Page(fw)
     rows = [(b'info', b'', b'Note', b'', b'', b''), (b'list', b'', b'No op', b'', b'', b''),

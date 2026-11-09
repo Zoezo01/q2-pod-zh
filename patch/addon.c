@@ -264,6 +264,8 @@ static int dotdot(const char *path) {
         if (!(s = strstr(s, "/"))) return 0;
     }
 }
+/* A path an app or its server names: on the card, with no ".." segment. */
+int card_path(const char *path) { return tk_str_start_with(path, CARD "/") && !dotdot(path); }
 
 /* The playlist's songs from entry sm.next on, in its order, a deque the caller destroys: up to the
  * first one not there yet (sm.want), its folders' listings M3U_BATCH at most (each song's folder
@@ -288,7 +290,7 @@ static void *m3u_songs(void) {
         unsigned k = strlen(line);
         if (k && line[k - 1] == '\r') line[--k] = 0;
         if (!k || line[0] == '#' || entry++ < sm.next) continue;
-        if (!tk_str_start_with(line, CARD "/") || dotdot(line) || k >= sizeof sm.want) {
+        if (!card_path(line) || k >= sizeof sm.want) {
             ++sm.next;
             continue;
         }
@@ -1714,9 +1716,10 @@ static int go(const void *unused) {
             action(uri, ctx);
         else if (!strcmp(kind, "remote"))
             qr_open(app()->state, app()->name);
-        else if (!strcmp(kind, "local")) /* a song, or a folder of them, on the card */
-            songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
-        else if (!strcmp(kind, "search"))
+        else if (!strcmp(kind, "local")) { /* a song, or a folder of them, on the card alone */
+            if (card_path(uri))
+                songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
+        } else if (!strcmp(kind, "search"))
             search_box();
     }
     return 0;
