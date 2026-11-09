@@ -3771,7 +3771,7 @@ static int bar_state_sync(void *bar) {
  * of its own: bar_title names the page in the clock instead. A dialog keeps the page under it
  * (bar_own), as it keeps that page's title. */
 static int state_own_place(void) {
-    if (!st.bar_title) return !st.bar_titled; /* Minimal/Modern: the page's name takes the clock's place */
+    if (!st.bar_title) return 1; /* Minimal/Modern: the word stands by the glyph wherever it plays */
     void *top = window_manager_get_top_window(window_manager());
     if (top && !tk_strcmp(widget_get_type(top), "window"))
         st.bar_own = home_menu(top) ||
