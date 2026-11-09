@@ -7971,8 +7971,9 @@ int ringnav_localclass(int cls) {
     if (n > 0 && cls == CLASS_ALBUMS) n = coverflow_split(list);
     if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) /* My Fav, Frequent, Recent */
         fav_titles(list, n);
-    /* an untagged song's row reads its file name without the extension (track_name) */
-    for (int i = 0; i < n; ++i) {
+    /* an untagged song's row reads its file name without the extension (track_name). Bounded by
+     * list's own size: Playlists (0xf00b) counts p_deque_playlist's rows, not list's. */
+    for (int i = 0, k = (int)deque_size(list); i < n && i < k; ++i) {
         void *r = deque_at(list, (unsigned)i);
         char buf[512], **title = (char **)((char *)r + REC_TITLE), *t;
         if (I(r, REC_TYPE) != 8 || (*title && **title) ||
