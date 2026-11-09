@@ -182,6 +182,8 @@ HOOKS = {
     'stream_row': (0x52ee8c, 'ringnav_stream_row', 'stream_row'),
     'netservice_row': (0x4c6728, 'ringnav_netservice_row', 'netservice_row'),
     'playermore_online': (0x5281f8, 'ringnav_online_match', 'online_match'),
+    # Scan Folders' row click: a tap on a folder with no folders inside ticks it (scan_folders.c)
+    'specfolder_click': (0x52e0ac, 'ringnav_specfolder_click', 'specfolder_click'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -1162,6 +1164,8 @@ FUNCTIONS = {
  'getMusicByAlbumAndSonger': ('int', 'const char *, const char *, int'),
  'getMusicByAlbumAndAlbumSonger': ('int', 'const char *, const char *, int'),
  'toolsLoadDirectory': ('int', 'const char *'),
+ 'toolsCheckTypeDeque': ('int', 'void *, int'),
+ 'get_specfolderurl': ('void', 'int, char *, int'),
  # Queue menu rows (navigation.c): artist/composer/genre queries, My Fav, the batch selection record
  'getMusicBySonger': ('int', 'const char *'),
  'getMusicByAlbumArtist': ('int', 'const char *'),
@@ -1353,6 +1357,7 @@ PRIVATE_FUNCTIONS = {
     "stream_row": HOOKS['stream_row'][0],  # Streaming's Tidal row: atoi of the button's name
     "netservice_row": HOOKS['netservice_row'][0],  # Network service's DLNA, AirPlay and Wi-Fi transfer
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
+    "specfolder_click": HOOKS['specfolder_click'][0],  # Scan Folders' row click
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
            'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
@@ -1415,7 +1420,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""

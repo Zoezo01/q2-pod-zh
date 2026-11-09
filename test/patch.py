@@ -4714,6 +4714,30 @@ m.call(address=syms['mclPrevSong'],args=(0,0,0,0),gap=0); assert m.picks[-1]==0 
 for want in (1,2):
     m.call(address=syms['mclNextSong'],args=(0,0,0,0),gap=0); assert m.mcl('MCL_POS')==want
 passed()
+# Scan Folders' row click (#254): a tap past stock's tick column on a folder with no folders inside moves to x 0, which
+# ticks; one holding folders opens as it was, and a tap already in the column, or off any row, is never listed.
+class SpecFolderMachine(Machine):
+    LISTINGS={'/m/0':(3,1),'/m/1':(5,0),'/m/2':(0,0)}  # url: (toolsLoadDirectory's count, a folder among them)
+    def __init__(self):
+        super().__init__(True); self.listed=[]; self.seen=[]; self.row=self.alloc(0x100)
+        for n in ('table_row_of','get_specfolderurl','toolsLoadDirectory','toolsCheckTypeDeque'): self.handlers[syms[n]]='spec:'+n
+        self.handlers[int(manifest['patch_symbols']['stock_specfolder_click_trampoline'],16)]='spec:stock'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('spec:'): return super().hook(u,address,size,unused)
+        name=name[5:]; a,b,c,d=[u.reg_read(r) for r in REGS]; ret=0
+        if name=='table_row_of': ret=a and self.row
+        elif name=='get_specfolderurl': u.mem_write(b,f'/m/{a}'.encode()+b'\0')
+        elif name=='toolsLoadDirectory': self.listed.append(self.text(a)); ret=self.LISTINGS[self.text(a)][0]
+        elif name=='toolsCheckTypeDeque': assert b==4; ret=self.LISTINGS[self.listed[-1]][1]
+        else: self.seen.append((a,self.get(b+O['EVENT_X'])))
+        self.returns(ret)
+    def tap(self,index,x,on_row=True):
+        ev=self.alloc(0x30); self.word(ev+O['EVENT_X'],x); self.word(ev+O['EVENT_TARGET'],0x1000 if on_row else 0)
+        self.word(self.row+O['ROW_INDEX'],index); self.call(address=HOOKS['specfolder_click'][0],args=(0x77,ev,0,0),gap=0); return self.listed,self.seen[-1]
+for index,x,want,listed in ((0,200,200,['/m/0']),(1,200,0,['/m/1']),(2,81,0,['/m/2']),(1,80,80,[])):
+    m=SpecFolderMachine(); assert m.tap(index,x)==(listed,(0x77,want)),(index,x,m.listed,m.seen)
+m=SpecFolderMachine(); assert m.tap(1,200,on_row=False)==([],(0x77,200)); passed()
 # Update Local Music: the stock scanner, nested folders and all, checks ringnav_scan_room (65,000
 # songs; stock 20,000) before each entry. Only the folder listing, paths and database insert are mocked.
 from build import SCAN_LIMIT

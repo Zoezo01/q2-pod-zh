@@ -1,5 +1,8 @@
 # Changelog
 
+- **1.7.4**:
+  - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
+
 - **1.7.3**:
   - Standby: waking from Standby no longer shows TF card removed and inserted messages.
   - Power: Standby starts off after a fresh install or a factory reset. If you already have it on, it stays on.
