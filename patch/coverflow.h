@@ -55,7 +55,7 @@ extern cf_style_t cfs; /* the active theme's Cover Flow values, copied at page o
 /* The depth renderer's state: the frame, the textures of the covers around the visual position
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 typedef struct {
-    void *frame;                     /* bitmap_t *, CF_VIEW_W x cfs.view_h RGBA8888 */
+    void *frame;                     /* bitmap_t *, CF_VIEW_W x cfs.view_h BGRA8888 */
     unsigned *tex;                   /* fx_reach's texture slots, then the placeholder */
     int album[CF_WIDE];              /* each slot's album + 1; 0 is empty */
     const unsigned *art[CF_WIDE];    /* its texture: the slot's own, or the placeholder */

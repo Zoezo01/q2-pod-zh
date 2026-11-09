@@ -1605,6 +1605,10 @@ static int unproject(const pose_t *p, int dx, int *u, int *h) {
 HOT unsigned shade(unsigned p, unsigned b) {
     return ((p & 0xff00ffu) * b >> 8 & 0xff00ffu) | ((p & 0xff00u) * b >> 8 & 0xff00u);
 }
+/* A texel (RGBA8888, red low) as the screen's BGRA8888, opaque; both ways, but for the alpha. */
+HOT unsigned bgra(unsigned p) { /* R and B from p turned half way round (one rotr) */
+    return 0xff000000u | (p & 0xff00u) | ((p >> 16 | p << 16) & 0xff00ffu);
+}
 
 /* The frame being drawn, nearest cover first: each pixel's alpha byte holds the coverage so far
  * (255 opaque), and a layer only fills what is left, which composites as drawing back to front
@@ -1826,16 +1830,19 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ri
                 int j = slot(frac, k, i);
                 draw_cover(&f, (j - CF_REACH) * CF_ONE - frac, ring[j]);
             }
-    for (int y = 0; y < cfs.view_h;
-         ++y) { /* over black; a count-down loop, which -Oz keeps tight */
+    /* Over black, or Light Mode's paper as the page's black flips to it; then in the screen's
+     * BGRA8888, opaque, as stock copies it (opaque_frame): stock's blends and Night Shift read the
+     * alpha it leaves on the screen. */
+    for (int y = 0; y < cfs.view_h; ++y) {
         unsigned *p = d + y * pitch;
-        if (cf_paper) { /* over Light Mode's paper, as the page's black flips to it */
-            for (int x = 0; x < CF_VIEW_W; ++x) put(p + x, cf_paper, 256);
-            continue;
+        int x = CF_VIEW_W; /* count-down loops, which -Oz keeps tight */
+        if (cf_paper) {
+            do put(p, cf_paper, 256), *p = bgra(*p), ++p;
+            while (--x);
+        } else {
+            do *p = bgra(*p), ++p;
+            while (--x);
         }
-        int x = CF_VIEW_W;
-        do *p++ |= 0xff000000u;
-        while (--x);
     }
 }
 
@@ -1919,9 +1926,11 @@ static void fx_placeholder(void) {
         for (int i = 0; i < CF_TEXELS; ++i) placeholder[i] = 0xff3a3a3au;
     fx.light = ipod_light();
 }
-/* A w x h RGBA8888 bitmap the renderers fill whole, so flagged opaque; 0 when out of memory. */
-static void *opaque_frame(int w, int h) {
-    void *b = bitmap_create_ex(w, h, w * 4, 1 /* RGBA8888 */);
+/* A w x h bitmap of format (1 RGBA8888, or LCD_BGRA8888) the renderers fill whole, so flagged
+ * opaque; 0 when out of memory. Stock's draw_image copies an opaque 1:1 image of the screen's own
+ * format a row at a time (image_copy, 0x6889b8) and blends any other, at 12 times the cost. */
+static void *opaque_frame(int w, int h, int format) {
+    void *b = bitmap_create_ex(w, h, w * 4, format);
     if (b) *(unsigned short *)((char *)b + 0xc) |= 1; /* BITMAP_FLAG_OPAQUE */
     return b;
 }
@@ -1932,7 +1941,7 @@ HOT unsigned tilt_mix(unsigned a, unsigned b, unsigned w) { /* a to b, w of 256 
 
 /* The frame and every texture at once, or neither: the flat covers then stand in. */
 static int fx_open(void) {
-    fx.frame = opaque_frame(CF_VIEW_W, cfs.view_h);
+    fx.frame = opaque_frame(CF_VIEW_W, cfs.view_h, LCD_BGRA8888);
     fx.tex = fx.frame ? calloc((unsigned)FX_SLOTS + 1, CF_TEXELS * 4) : 0;
     if (!fx.tex) {
         fx_close();
@@ -2052,13 +2061,14 @@ int coverflow_flip_eased(int ms) {
     return eased[i] + ((eased[i + 1] - eased[i]) * (at & 4095) >> 12);
 }
 
-/* The frame at e (16.16, the cover's 0 to the panel's CF_ONE) from tex: the side covers (CF_VIEW_W
- * x view_h), the cover, the back. e sets the turn (180 degrees), the parting and, linearly, the
- * quad's size and place. A flat BACK_W wide face seen from FLIP_EYE: the size shrinks x and y but
- * not depth, so u (-1 to 1 across the face, 12 bits) reaches 147 px towards the eye at any size.
- * Each screen column is one texture column, nearest, its slanted ends by row coverage. */
+/* The frame at e (16.16, the cover's 0 to the panel's CF_ONE), BGRA8888 as the screen, from tex:
+ * the side covers (CF_VIEW_W x view_h, the shelf's frame), the cover (a texture), the back. e sets
+ * the turn (180 degrees), the parting and, linearly, the quad's size and place. A flat BACK_W wide
+ * face seen from FLIP_EYE: the size shrinks x and y but not depth, so u (-1 to 1 across the face,
+ * 12 bits) reaches 147 px towards the eye at any size. Each screen column is one texture column,
+ * nearest, its slanted ends by row coverage. */
 void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const tex[3]) {
-    unsigned paper = (ipod_light() ? scheme()->paper : 0) | 0xff000000u;
+    unsigned paper = bgra(ipod_light() ? scheme()->paper : 0);
     int part = FLIP_PART * e >> 16, right = CF_CX + part;
     for (int y = 0; y < FLIP_H; ++y) {
         unsigned *o = d + y * pitch;
@@ -2097,7 +2107,8 @@ void coverflow_flip_render(unsigned *d, int pitch, int e, const unsigned *const 
         unsigned *o = d + y * pitch + x;
         for (; y <= last && y < FLIP_H; ++y, o += pitch) {
             int v = (((y << 8) + 128 - y0) >> 4) * step >> 20; /* texel row */
-            unsigned px = t[(v < 0 ? 0 : v >= th ? th - 1 : v) * tw + col] | 0xff000000u;
+            unsigned px = t[(v < 0 ? 0 : v >= th ? th - 1 : v) * tw + col];
+            px = back ? px | 0xff000000u : bgra(px); /* the back is the screen's already */
             if (y != first && y != last) {
                 *o = px;
                 continue;
@@ -2846,8 +2857,8 @@ static void panel_length(void *label, void *track) {
 
 /* The panel as it stands into fl.back, hidden after: painted by stock on an offline canvas of the
  * screen's size and format, at its screen place, as stock's window snapshots are, so the paint
- * hooks' coordinates hold. The screen's lcd is BGRA8888; the frame's RGBA. No canvas, or a layout
- * not the screen's: the paper, so the turn still runs. */
+ * hooks' coordinates hold. The screen's lcd is BGRA8888, as the frame. No canvas, or a layout not
+ * the screen's: the paper, so the turn still runs. */
 static void flip_capture(void) {
     void *c = canvas_offline_create(CF_VIEW_W, 320, LCD_BGRA8888);
     const unsigned *fb = 0;
@@ -2866,12 +2877,9 @@ static void flip_capture(void) {
             fb = (const unsigned *)P(lcd, LCD_OFFLINE_FB);
         if (fb) fb += (sy + PANEL_Y) * CF_VIEW_W + PANEL_X + I(cf.page, W_X);
     }
-    unsigned *o = fl.back, paper = (ipod_light() ? scheme()->paper : 0) | 0xff000000u;
+    unsigned *o = fl.back, paper = bgra(ipod_light() ? scheme()->paper : 0);
     for (int y = 0; y < BACK_H; ++y)
-        for (int x = 0; x < BACK_W; ++x) {
-            unsigned p = fb ? fb[y * CF_VIEW_W + x] : paper;
-            *o++ = 0xff000000u | (p & 0xff00) | (p & 255) << 16 | (p >> 16 & 255);
-        }
+        for (int x = 0; x < BACK_W; ++x) *o++ = fb ? fb[y * CF_VIEW_W + x] | 0xff000000u : paper;
     if (c) canvas_offline_destroy(c);
     widget_set_visible(fl.panel, 0, 0);
 }
@@ -2904,7 +2912,7 @@ static void flip_drop(void) {
 
 /* A turn's buffers, both or neither. */
 static int flip_alloc(void) {
-    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H);
+    fl.frame = opaque_frame(CF_VIEW_W, FLIP_H, LCD_BGRA8888);
     fl.back = fl.frame ? calloc(BACK_W * BACK_H, 4) : 0;
     if (!fl.back) flip_drop();
     return fl.back != 0;
@@ -3503,7 +3511,7 @@ static int home_tex(const char *url) {
     home_fit(w, h, &fw, &fh);
     int tw = fw * DRIFT_ZOOM_PCT / 100, th = fh * DRIFT_ZOOM_PCT / 100;
     const unsigned char *data = 0;
-    if (!home.frame) home.frame = opaque_frame(HOME_PW, client_h());
+    if (!home.frame) home.frame = opaque_frame(HOME_PW, client_h(), 1);
     if (home.frame && format < 4 && w && h && w <= 8192 && h <= 8192 && tw <= DRIFT_TEXELS / th) {
         free(home.tex);
         home.tex = calloc((unsigned)(th + 3) * (unsigned)(tw + 3), 4);
@@ -3681,7 +3689,7 @@ void coverflow_slant(void *w, void *canvas, unsigned paper) {
             key = hash_bytes(key, data + bh * j / 16 * stride + bw * i / 16 * 4, 4);
     const unsigned *f = slant.frame; /* bitmap_t: width @0, height @4 */
     if (f && (f[0] != (unsigned)side || f[1] != (unsigned)rows)) coverflow_slant_close();
-    if (!slant.frame) slant.frame = opaque_frame(side, rows);
+    if (!slant.frame) slant.frame = opaque_frame(side, rows, 1);
     unsigned *tex = slant.frame && key != slant.key ? calloc((unsigned)(t * t), 4) : 0;
     unsigned *d = tex ? (unsigned *)bitmap_lock_buffer_for_write(slant.frame) : 0;
     if (d) { /* fitted whole and centred on the paper */

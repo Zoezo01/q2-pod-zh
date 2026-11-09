@@ -498,6 +498,11 @@ def texture(j):
     return t
 
 
+def bgra(p):
+    """A texel (RGBA8888, red low) as the frame holds it: the screen's BGRA8888, red at bit 16."""
+    return p & 0xff00ff00 | (p & 255) << 16 | p >> 16 & 255
+
+
 def test_hit_names_the_cover_drawn_there(fw):
     g = api(fw)
     ring = [texture(j) for j in range(7)]
@@ -509,7 +514,7 @@ def test_hit_names_the_cover_drawn_there(fw):
 
         def cover(x, y):
             c = d[y * VIEW_W + x]
-            red, green = c & 255, c >> 8 & 255
+            red, green = c >> 16 & 255, c >> 8 & 255  # BGRA8888
             if red < 8:
                 return None
             return round(((green / red * 240) - 30) / 30)
@@ -539,7 +544,7 @@ def test_the_centre_cover_comes_out_texel_for_texel(fw):
     g.coverflow_render(d, VIEW_W, 0, ring)
     for y in range(12, ART - 12):
         for x in range(ART):
-            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == tex[y * ART + x], (x, y)
+            assert d[(TOP + y) * VIEW_W + CX - 80 + x] == bgra(tex[y * ART + x]), (x, y)
     for t in (tex, d):
         libc.free(C.addressof(t))
 
@@ -554,7 +559,7 @@ def test_the_reflection_mirrors_the_cover_and_fades_out_in_46_px(fw):
     g.coverflow_render(d, VIEW_W, 0, ring)
     bottom = TOP + ART
     for k in range(46):
-        red = d[(bottom + k) * VIEW_W + CX] & 255
+        red = d[(bottom + k) * VIEW_W + CX] >> 16 & 255  # BGRA8888
         mirrored = ART - 1 - k + 60
         assert abs(red - mirrored * 90 / 256 * (1 - (k + .5) / 46)) <= 2, k
     assert all(d[y * VIEW_W + CX] == 0xff000000 for y in range(bottom + 46, VIEW_H))

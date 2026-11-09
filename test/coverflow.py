@@ -387,7 +387,11 @@ int navigator_to_with_context(const char *n, const void *c) {
 /* slide_menu: square items as high as the menu, plus the spacer. */
 int slide_menu_item_width(void *x) { return *(int *)(W(x)->raw + W_H); }
 int slide_menu_set_spacer(void *x, int v) { *(int *)(W(x)->raw + SLIDE_SPACER) = v; return 0; }
-/* The frame bitmap (bitmap_t as above) and the canvas: canvas_draw_image keeps what it drew. */
+/* A BGRA8888 pixel, the screen's, in the textures' order (RGBA8888, red low), and back. */
+static unsigned texel(unsigned p) { return (p & 0xff00ff00u) | (p & 255u) << 16 | (p >> 16 & 255u); }
+/* The frame bitmap (bitmap_t as above) and the canvas: canvas_draw_image keeps what it drew, in the
+   textures' order. */
+static unsigned drawn_format; /* the last frame drawn's: 3, the screen's BGRA8888, is copied */
 static int frames, frame_fail, tex_fail, locks, draws, drawn[4];
 static unsigned shown[CF_VIEW_H * CF_VIEW_W];
 #undef calloc /* the payload's calloc is this shim; the tests' own is libc's */
@@ -424,6 +428,8 @@ int canvas_draw_image(void *c, void *b, const void *src, const void *dst) {
     memcpy(drawn, r, sizeof drawn);
     unsigned fw = ((unsigned *)b)[0] < CF_VIEW_W ? ((unsigned *)b)[0] : CF_VIEW_W, fh = ((unsigned *)b)[1] < CF_VIEW_H ? ((unsigned *)b)[1] : CF_VIEW_H;
     for (unsigned y = 0; y < fh; ++y) memcpy(shown + y * CF_VIEW_W, *(unsigned char **)((char *)b + 0x14) + y * ((unsigned *)b)[2], fw * 4);
+    if ((drawn_format = ((unsigned short *)b)[7]) == 3)
+        for (unsigned i = 0; i < fh * CF_VIEW_W; ++i) shown[i] = texel(shown[i]);
     return 0;
 }
 int stock_home_trampoline(void *win, void *ctx) { return 0; }
@@ -694,6 +700,20 @@ static int tmp_files(void) {
 /* ---- Depth: the renderer on its own, then on the page. ---- */
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 void coverflow_paint(void *, void *);
+/* The renderers draw the screen's BGRA8888 (opaque_frame); the tests hand them and read their frames
+   in the textures' order, RGBA8888 with red low: R and B swapped back in each row the render filled
+   (all opaque; the guards and any row below left). bgra_frames checks the frames as drawn. */
+static void (*const bgra_render)(unsigned *, int, int, const unsigned *const[7]) = coverflow_render;
+static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const ring[7]) {
+    bgra_render(d, pitch, frac, ring);
+    for (unsigned *row = d;; row += pitch) {
+        int x = 0;
+        while (x < CF_VIEW_W && row[x] >> 24 == 255) ++x;
+        if (x < CF_VIEW_W) break;
+        for (x = 0; x < CF_VIEW_W; ++x) row[x] = texel(row[x]);
+    }
+}
+#define coverflow_render texel_render
 #define ONE 65536
 #define PITCH (CF_VIEW_W + 5) /* guard columns, and guard rows below, to catch clipping errors */
 static unsigned frame[(CF_VIEW_H + 3) * PITCH], flat[7][160 * 160], art[160 * 160];
@@ -1003,6 +1023,18 @@ static void pinned(void) {
    covers parting over the same ease. */
 void coverflow_flip_render(unsigned *, int, int, const unsigned *const[3]);
 int coverflow_flip_eased(int);
+/* As texel_render: the side covers (the shelf's frame) and the back go in as the screen's, the frame
+   comes out in the textures' order. */
+static void (*const bgra_flip)(unsigned *, int, int, const unsigned *const[3]) = coverflow_flip_render;
+static void texel_flip(unsigned *d, int pitch, int e, const unsigned *const tex[3]) {
+    static unsigned sides[294 * 375], back[285 * 294];
+    for (int i = 0; i < 294 * 375; ++i) sides[i] = texel(tex[0][i]);
+    for (int i = 0; tex[2] && i < 285 * 294; ++i) back[i] = texel(tex[2][i]);
+    bgra_flip(d, pitch, e, (const unsigned *[3]){ sides, tex[1], tex[2] ? back : 0 });
+    for (int y = 0; y < 294; ++y)
+        for (int x = 0; x < 375; ++x) d[y * pitch + x] = texel(d[y * pitch + x]);
+}
+#define coverflow_flip_render texel_flip
 static void flip_frames(void) {
     static unsigned f[294 * 375], sides[294 * 375], front[160 * 160], back[285 * 294], flatf[160 * 160], flatb[285 * 294];
     const cf_style_t *cs = &shim_themes[1].cf;
@@ -1091,7 +1123,7 @@ static void classic_light_shelf(void) {
     assert(frames == 1 && geo[3] == H && slide_menu_item_width(s) + *(int *)(s->raw + SLIDE_SPACER) == c->stride);
     *(int *)(s->raw + SLIDE_INDEX) = 3; *(int *)(s->raw + SLIDE_OFFSET) = 0;
     coverflow_paint(s, canvas);
-    assert(drawn[2] == CF_VIEW_W && drawn[3] == H);
+    assert(drawn[2] == CF_VIEW_W && drawn[3] == H && drawn_format == 3); /* the screen's, so stock copies it */
 #define F(x, y) f[(y) * PITCH + (x)]
     for (unsigned i = 0; i < sizeof(f) / 4; ++i) f[i] = 0x12345678u;
     coverflow_render(f, PITCH, 0, ring);
@@ -1363,9 +1395,28 @@ static void classic_light_follow(void) {
     assert(T > 0 && fabs(coverflow_follow(.5f)) < 2);
 }
 
+/* The frames as drawn: the screen's BGRA8888, opaque, red at bit 16 (texel_render's, R and B
+   swapped); at rest the centre cover's middle texel, swapped. */
+static void bgra_frames(void) {
+    static unsigned raw[(CF_VIEW_H + 3) * PITCH];
+    const unsigned *ring[7];
+    for (int j = 0; j < 7; ++j) ring[j] = j == 3 ? art : flat[j];
+    for (light = 0; light < 2; ++light) {
+        bgra_render(raw, PITCH, ONE / 5, ring);
+        render(ONE / 5, ring);
+        for (int y = 0; y < CF_VIEW_H; ++y)
+            for (int x = 0; x < CF_VIEW_W; ++x) assert(raw[y * PITCH + x] == texel(px(x, y)) && raw[y * PITCH + x] >> 24 == 255);
+    }
+    light = 0;
+    bgra_render(raw, PITCH, 0, ring);
+    unsigned a = art[80 * 160 + 80];
+    assert(raw[(CF_TOP + 80) * PITCH + CF_CX] == (0xff000000u | (a & 0xff00u) | (a & 255u) << 16 | (a >> 16 & 255u)));
+}
+
 static void depth(void) {
     renderer();
     pinned();
+    bgra_frames();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
        under the drawn covers; the captions sit under the covers, over the reflections' tail. */
     frame_fail = 0;

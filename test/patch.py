@@ -10112,6 +10112,7 @@ counter=m.u.hook_add(UC_HOOK_BLOCK,count_block,begin=BASE,end=SCRATCH-1)
 paint(m); rest_cost=instructions[0]
 assert len(m.draws)==1 and m.draws[0][1]==m.frames[0] and m.draws[0][2]==m.draws[0][3]==(0,0,O['CF_VIEW_W'],O['CF_VIEW_H'])
 assert m.draws[0][4]&1  # BITMAP_FLAG_OPAQUE
+assert struct.unpack('<H',bytes(m.u.mem_read(m.frames[0]+0xe,2)))[0]==O['LCD_BGRA8888']  # the screen's format: stock copies it, not blends
 # The placeholder first (fx_open), then the ring round album 0 of three, nearest first, which repeats as
 # the slide_menu wraps: 0, 1, 2, 0, 1, 2, 0 from -3, each album decoded once.
 assert len(m.loads)==4 and m.loads[0]=='default_album_flow' and all(u.startswith('file://') for u in m.loads[1:]) and m.unloads==3
@@ -10347,6 +10348,7 @@ m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setit
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
 tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
+assert turn_cost<6_100_000,turn_cost  # a frame a quarter turn on, a little over the 6.02 million it measured: a dearer one fails
 # Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
 m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown
@@ -10402,10 +10404,10 @@ class NoCanvas(FlipMachine):
         return super().hook(u,address,size,unused)
 n=classic_light_new(NoCanvas); n.open(); flip_click(n); n.now+=270; last=n.frame(); assert px_at(last,187,150) in (0xff000000,0xffffffff); n.advance(20); assert n.nodes[n.panel()]['visible']; passed()
 # The turn: no timer of its own past 270 ms; the first frame the cover with no reflection, its sides as the shelf drew them;
-# half way the side covers part 12, nothing on the axis; at the end the panel's capture, swapped to the frame's byte order, parted 24.
+# half way the side covers part 12, nothing on the axis; at the end the panel's capture, in the screen's byte order as the frame, parted 24.
 m=flip_open(); covers=m.covers(); assert not m.nodes[m.panel()]['visible']
 f0=m.frame(); m.advance(135); f1=m.frame(); m.now+=135; f2=m.frame(); m.advance(5); assert m.nodes[m.panel()]['visible']
-assert px_at(f2,187,150)==px_at(f2,40,9)==px_at(f2,333,293)==0xff403020  # the panel's, red and blue swapped
+assert px_at(f2,187,150)==px_at(f2,40,9)==px_at(f2,333,293)==0xff203040  # the panel's as captured, opaque: the frame is the screen's BGRA8888
 assert px_at(f0,187,150)!=0xffffffff and px_at(f0,187,32+162)==0xffffffff  # the cover, nothing under it
 assert px_at(f1,187,100)==px_at(f1,186,100)==px_at(f1,187,200)==0xffffffff  # edge on: the paper; each side parted 12
 assert f0!=f1!=f2; passed()
