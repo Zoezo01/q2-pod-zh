@@ -9043,7 +9043,7 @@ assert rk.nodes[rc]['style:normal:font_name']=='classic-light' and rk.nodes[rc][
 hw,hh=art_size('classic_light_heart_on_l'); assert (hw,hh)==(32,30) and (20+(56-hw)//2-8,51+(56-hh)//2-6)==(24,58)  # centred in its box: on the panel where it's approved
 assert rk.nodes[rk.nodes[rp]['children'][0]]['style:normal:text_color']&0xffffffff==color_t(0xffffff)  # the ink, black, the light half's style hook flips
 rk.bands=[]; rk.image_draws=[]; rk.calls=[]; rk.call(address=HOOKS['widget_on_paint_background'][0],args=(rp,rk.canvas,0,0),gap=0)
-ring,rest=round_box(rk.bands,7,5,306,112,13); glossrows,rest=round_box(rest,8,6,304,110,12); assert not rest and glossrows[0]==color_t(0xffffff) and glossrows[-1]==color_t(0x9c9e9c)
+ring,rest=round_box(rk.bands,7,5,306,112,13); flat,rest=round_box(rest,8,6,304,110,12); assert not rest and set(flat)=={color_t(0xffffff)}  # one colour, the gloss's top
 assert set(ring)=={color_t(CL_BAR_LINE['1'])} and all(0<=b[0] and b[0]+b[2]<=320 for b in rk.bands)  # the ring, inside the widget's rect
 assert rk.image_draws[-1][1][:2]==(0,0) and 'classic_light_rate_shadow' in [rk.text(c[2]) for c in rk.calls if c[0]=='widget_load_image']; passed()
 assert rk.caption()=='Unrated'; rk.call(O['KEY_NEXT']); assert rk.caption()=='1 Heart'; rk.call(O['KEY_NEXT']); rk.call(O['KEY_NEXT']); assert rk.caption()=='3 Hearts' and rk.hearts()==['classic_light_heart_on_l']*3+['classic_light_heart_off_l']*2; passed()

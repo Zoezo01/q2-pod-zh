@@ -363,7 +363,7 @@ enum { SLIDER_LIGHT, SLIDER_MAX, SLIDER_BALANCE, SLIDER_BOOT }; /* st.slider_kin
 int clamp_step(int offset, int maximum, int delta);
 void fill_box(void *canvas, rect_t *r, unsigned color, unsigned radius);
 unsigned put_num(unsigned *s, unsigned v);
-void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow);
+void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow, int flat);
 #define PANEL_PAD 8
 #define PANEL_DROP 2
 unsigned stops_row(const stops_t *s, int j, int h) __attribute__((pure));

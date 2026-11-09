@@ -1505,17 +1505,19 @@ void round_ring(void *canvas, const rect_t *r, int R, unsigned c) {
     }
 }
 void paint_art(void *w, void *canvas, const char *name, int x, int y);
-/* Classic's panel (volume, rating) over r: the scheme's bar gloss, LETTER_RADIUS corners, in
- * a 1 px ring of its line, on its soft shadow, an image reaching PANEL_PAD past the shadow's box,
- * which sits PANEL_DROP below the panel (tools/art.py SHADOWS). Restores the fill. */
-void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow) {
+/* Classic's panel (volume, rating) over r: the scheme's bar gloss, or (flat) its top colour alone,
+ * LETTER_RADIUS corners, in a 1 px ring of its line, on its soft shadow, an image reaching
+ * PANEL_PAD past the shadow's box, which sits PANEL_DROP below the panel (tools/art.py SHADOWS).
+ * Restores the fill. */
+void paint_panel(void *w, void *canvas, const rect_t *r, const char *shadow, int flat) {
     const scheme_t *S = scheme();
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     paint_art(w, canvas, shadow, r->x - PANEL_PAD, r->y - PANEL_PAD + PANEL_DROP);
     stops_t ring = { 2, { 0, 100 }, { S->bar_line, S->bar_line } };
     rect_t out = { r->x - 1, r->y - 1, r->w + 2, r->h + 2 };
     paint_round_rows(canvas, &out, &ring, LETTER_RADIUS + 1);
-    paint_round_rows(canvas, r, &S->bar, LETTER_RADIUS);
+    stops_t even = { 2, { 0, 100 }, { S->bar.rgb[0], S->bar.rgb[0] } };
+    paint_round_rows(canvas, r, flat ? &even : &S->bar, LETTER_RADIUS);
     stock_canvas_set_fill_color(canvas, fill);
 }
 /* A theme image at x, y at its size. */
@@ -5712,7 +5714,7 @@ int ringnav_paint_bg(void *w, void *canvas) {
     if (form) confirm_labels(w, canvas);
     if (w && w == st.rate_box)
         paint_panel(w, canvas, &(rect_t){ PANEL_PAD, PANEL_PAD - PANEL_DROP, 304, 110 },
-                    "classic_light_rate_shadow");
+                    "classic_light_rate_shadow", 1);
     paint_separators(w, canvas);
     coverflow_home_clip(w, canvas, 1);
     if (w && w == st.bar_slot) paint_battery(w, canvas);
