@@ -2817,16 +2817,23 @@ static void row_label(void *label, const char *text) {
         widget_set_text_utf8(label, text);
         return;
     }
+    /* The text is "标题：值", the full-width colon — ": " never occurs in the Chinese rows. The
+     * title takes the left column and the value the right one. A text without the colon is a bare
+     * value (an accent's name): it reads 强调色, where upstream's fallback "Accent" would spell
+     * English across the row and leave the whole text in the value's column. */
+    static const char colon[] = "：";
     const char *value = text;
-    while (*value && !(value[0] == ':' && value[1] == ' ')) ++value;
-    char title[40] = "Accent";
-    unsigned n = (unsigned)(value - text);
+    while (*value && !(value[0] == colon[0] && value[1] == colon[1] && value[2] == colon[2]))
+        ++value;
+    char title[40] = "强调色";
     if (*value) {
+        unsigned n = (unsigned)(value - text);
         if (n >= sizeof title) n = sizeof title - 1;
         memcpy(title, text, n);
         title[n] = 0;
+        value += 3; /* the colon's three UTF-8 bytes */
     }
-    list_value(label, title, *value ? value + 2 : text);
+    list_value(label, title, value);
 }
 
 /* item's place in list, comma separated, or 0; an empty item is never in it. Shared with

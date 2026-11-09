@@ -17,8 +17,9 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
 # V was the first 1.7.2 build, whose Now Playing page still named itself 正在播放 on top of the
-# play state's word; W drops that name so the bar reads 正在播放 or 播放暂停 by state alone.
-TAG = 'V' + VERSION.replace('.', '') + 'W'
+# play state's word; W drops that name, X teaches row_label the full-width colon, so the appearance
+# page's rows read their own titles instead of upstream's "Accent" fallback.
+TAG = 'V' + VERSION.replace('.', '') + 'X'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
