@@ -3039,6 +3039,7 @@ static void deque_init(void *q) {}
 static void _deque_push_back(void *q, void *r) {}
 static void deque_destroy(void *q) {}
 static void play_folder(void *q, int i, int cls) {}
+static int card_path(const char *s) { return 1; }
 static long file_size(const char *p) { return -1; }
 static int quality = 27; static void *queue;
 #define tidalStreamingLevelNow (&quality)

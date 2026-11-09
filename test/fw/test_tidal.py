@@ -4,10 +4,12 @@ Streaming Configuration's cap; Clear All against a running download; the stream 
 lists paged whole. tidal_ext, tidal_name, cached and progress alone are test_streaming.py's, whose td mirror this
 shares."""
 import ctypes as C
+import re
 
 import pytest
 
-from conftest import O, Deques, Files, high_halves, libc
+import host
+from conftest import O, Deques, Files, claim, high_halves, libc
 from test_streaming import Td
 
 TIDAL = '/mnt/mmc/.tidal'
@@ -316,6 +318,43 @@ def test_a_thread_that_cant_start_leaves_nothing_waiting_and_the_next_track_star
     assert t.played == [URL] and (t.td.busy, t.td.job) == (0, 0)
     t.play(NEXT, '2')
     assert t.played == [URL, NEXT] and len(t.threads) == 2 and not fw.calls('fw_pthread_detach')
+
+
+class Au(C.Structure):
+    """tidal.c's au: a URL queue's URLs (0 for a card path) and generation."""
+    _fields_ = [('lock', C.c_uint * 16), ('urls', C.POINTER(C.c_char_p)), ('n', C.c_uint), ('gen', C.c_uint),
+                ('play', C.c_uint), ('lyr', C.c_char * 64), ('start', C.c_uint * 16)]
+
+
+def test_a_url_queue_takes_web_urls_and_card_paths_alone(fw):
+    """A server's line reaches stock's player as a URL or as a card path, nothing else (the rule a Stream mode
+    playlist's lines pass in addon.c); a cover is fetched by stock's curl thread, so it is a web URL or none."""
+    lines = [b'https://x/a.flac\tA', b'ftp://x/b.flac\tB', b'/etc/passwd\tC', b'/mnt/mmc/../etc/passwd\tD',
+             b'mnt/mmc/x.flac\tX', b'/mnt/mmc/Music/e.flac\tE\t\t\thttps://x/e.jpg',
+             b'https://x/f.flac\tF\t\t\tfile:///etc/shadow']
+    Files(fw, {'/tmp/q2-a.urls': b'#Q2URLS/1\n' + b'\n'.join(lines) + b'\n'})
+    fw.mock('tk_str_start_with', lambda s, p, *_: C.string_at(s).startswith(C.string_at(p)))
+    deques, covers = Deques(fw), []
+
+    def push(q, rec, *_):
+        cover = C.c_void_p.from_address(rec + O['REC_COVER']).value
+        covers.append(C.string_at(cover) if cover else b'')
+        deques[q].append(rec)
+    fw.mock('fw__deque_push_back', push)
+    # toolsFreeStSongInfo is called at its stock address (tidal.c's own define): a ret there for the test, so each
+    # record's strings stay for the asserts; the byte is put back after, as conftest's map outlives a load
+    free_rec = int(re.findall(r'toolsFreeStSongInfo \(\(void \(\*\)\(void \*\)\)(0x[0-9a-f]+)u\)',
+                              (host.ROOT/'patch/tidal.c').read_text())[0], 16)
+    claim(free_rec)
+    saved = C.string_at(free_rec, 1)
+    C.memmove(free_rec, b'\xc3', 1)
+    try:
+        assert fw.fn('app_urls_play', C.c_int, C.c_char_p)(b'/tmp/q2-a.urls') == 1
+    finally:
+        C.memmove(free_rec, saved, 1)
+    au = fw.var('tidal__au', Au)
+    assert au.n == 3 and [au.urls[i] for i in range(3)] == [b'https://x/a.flac', None, b'https://x/f.flac']
+    assert covers == [b'', b'https://x/e.jpg', b'']
 
 
 def test_a_full_card_streams_without_a_download(fw):
