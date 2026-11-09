@@ -1,13 +1,19 @@
 """patch/netupdate.c: GitHub's redirects and release JSON, sources.list, unzip's listing, and installing,
-removing and checking apps, with the card and the network stubbed."""
+removing and checking apps, with the card and the network stubbed; then System Update's online row and the App
+Store's jobs end to end, a press to the toast, on a card whose busybox runs on its files."""
 import ctypes as C
+import fnmatch
+import io
 import pathlib
 import random
+import re
+import shlex
+import zipfile
 
 import pytest
 
 import host
-from conftest import block
+from conftest import O, block
 
 # stock.h's Q2POD_TAG: tools/build.py's VERSION (host.py builds as a release, not --dev)
 TAG = host.tools_build.VERSION.encode()
@@ -683,18 +689,21 @@ def test_a_failed_unpack_is_a_card_error(fw):
 
 
 class Net:
-    """libcurl: each transfer answered by the first of its URL's replies: (result, code, location), or the body written."""
-    def __init__(self, fw, replies):
-        self.replies, self.urls, self.opts = replies, [], {}
+    """libcurl: each transfer answered by the first of its URL's replies: (result, code, location[, body]). A body goes
+    through the transfer's own write callback in CHUNKS pieces, its progress callback told after each and during(k)
+    run then, as a UI timer might: a short write ends it as curl's CURLE_WRITE_ERROR (23), a progress callback's
+    non-zero as CURLE_ABORTED_BY_CALLBACK (42)."""
+    def __init__(self, fw, replies, during=None):
+        self.replies, self.urls, self.opts, self.during = replies, [], {}, during
         self.location = None
         def setopt(c, opt, value, *_):
             self.opts[opt] = value
         def perform(c, *_):
             url = C.string_at(self.opts[10002])
             self.urls.append(url)
-            self.result, self.code, location = next(v for k, v in self.replies.items() if url.startswith(k))
+            self.result, self.code, location, *body = next(v for k, v in self.replies.items() if url.startswith(k))
             self.location = C.create_string_buffer(location) if location else None
-            return self.result
+            return self.transfer(body[0]) if body and 20011 in self.opts else self.result
         def info(c, what, out, *_):
             if what == 0x200002:
                 C.cast(out, C.POINTER(C.c_long))[0] = self.code
@@ -704,6 +713,23 @@ class Net:
         fw.mock('fw_curl_easy_setopt', setopt)
         fw.mock('fw_curl_easy_perform', perform)
         fw.mock('fw_curl_easy_getinfo', info)
+
+    def transfer(self, body):
+        write = C.CFUNCTYPE(C.c_uint, C.c_void_p, C.c_uint, C.c_uint, C.c_void_p)(self.opts[20011])  # WRITEFUNCTION
+        progress = C.CFUNCTYPE(C.c_int, C.c_void_p, *[C.c_longlong] * 4)(self.opts[20219]) if 20219 in self.opts else None
+        step = max(1, -(-len(body) // CHUNKS))
+        for k, at in enumerate(range(0, len(body), step)):
+            piece = body[at:at + step]
+            if write(C.create_string_buffer(piece, len(piece)), 1, len(piece), self.opts[10001]) != len(piece):
+                return 23
+            if progress and progress(self.opts[10057], len(body), at + len(piece), 0, 0):
+                return 42
+            if self.during:
+                self.during(k)
+        return self.result
+
+
+CHUNKS = 4
 
 
 LATEST = b'https://github.com/owner/repo/releases/latest'
@@ -1267,3 +1293,596 @@ def test_a_hostile_list_on_the_card_opens_the_page_safely(fw):
         fw.mock('window_create', lambda *_: 77)
         fw.mock('get_wifisignal', lambda *_: 0)
         fw.fn('shelf_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+
+
+# End to end: a press to the toast, the card's files after.
+
+EVT_CLICK, EVT_DESTROY = O['EVT_CLICK'], O['EVT_DESTROY']
+RET_REPEAT = 8
+TAR = b'/mnt/mmc/update.tar'
+TAG_URL = b'https://github.com/owner/repo/releases/tag/'
+BODY = bytes(range(256)) * 1024  # 256 KB: CHUNKS pieces of 64 KB, KB-exact so progress reads 25/50/75/100
+SOURCES = b'/mnt/mmc/.q2/sources.list'
+
+
+class Disk(Card):
+    """Card, with what a whole job needs: a file written whole at its fclose, folders that open (the card's root, for
+    its fsync) and list (addon.c's scan), each fsync logged by its file's name, and busybox's commands run on the
+    files: unzip's listing and unpacking of the downloaded zip (fnmatch without FNM_PATHNAME, as busybox's), find
+    and rm -rf. The rest (kill, sync) is only logged."""
+    def __init__(self, fw, files=None):
+        super().__init__(fw, files)
+        self.writing, self.listing, self.unpack_fails = set(), {}, 0
+        self.system = self.shell
+        fw.mock('fw_fopen', self.fopen)
+        fw.mock('fw_fclose', self.fclose)
+        fw.mock('fw_fileno', lambda f, *_: f + 100)
+        fw.mock('fw_fsync', lambda fd, *_: self.log.append(('fsync', self.names[fd - 100])))
+        fw.mock('fw_opendir', self.opendir)
+        fw.mock('fw_readdir', self.readdir)
+
+    def folder(self, name):
+        return any(f.startswith(name + b'/') for f in self.files)
+
+    def fopen(self, path, mode, *_):
+        name, how = C.string_at(path), C.string_at(mode)
+        if b'r' in how and name not in self.files and not self.folder(name):
+            return 0
+        f = len(self.names) + 1
+        self.names[f], self.at[f] = name, 0
+        if b'w' in how:
+            self.written[name] = b''
+            self.writing.add(f)
+        return f
+
+    def fclose(self, f, *_):
+        if f in self.writing:
+            self.writing.discard(f)
+            self.files[self.names[f]] = self.written[self.names[f]]
+        return 0
+
+    def opendir(self, path, *_):
+        base = C.string_at(path) + b'/'
+        names = sorted({f[len(base):].split(b'/')[0] for f in self.files if f.startswith(base)})
+        self.listing[len(self.listing) + 0x3000] = iter([(n, 4 if self.folder(base + n) else 8) for n in names])
+        return len(self.listing) + 0x2fff
+
+    def readdir(self, d, *_):
+        class Dirent(C.Structure):  # host.py's struct dirent
+            _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
+        for name, kind in self.listing[d]:
+            self.entry = Dirent(0, 0, 0, kind, name)
+            return C.addressof(self.entry)
+        return 0
+
+    def shell(self, cmd):
+        line = cmd.decode()
+        if line.startswith('busybox unzip '):
+            return self.unzip(shlex.split(line[len('busybox unzip '):]))
+        found = re.fullmatch(r'cd (\S+) && find (\S+) -type f > (\S+)', line)
+        if found:
+            top, folder, out = (g.encode() for g in found.groups())
+            names = sorted(f[len(top) + 1:] for f in self.files if f.startswith(top + b'/' + folder + b'/'))
+            self.files[out] = b''.join(n + b'\n' for n in names)
+        elif line.startswith('rm -rf '):
+            for path in shlex.split(line[len('rm -rf '):]):
+                for f in [f for f in self.files if f == path.encode() or f.startswith(path.encode() + b'/')]:
+                    del self.files[f]
+        return 0
+
+    def unzip(self, args):
+        out = args[args.index('>') + 1].encode() if '>' in args else None
+        args = args[:args.index('>')] if out else args
+        part = next(a for a in args if a.endswith('.part'))
+        patterns = args[args.index(part) + 1:]
+        want, skip = patterns[:patterns.index('-x')], patterns[patterns.index('-x') + 1:]
+        with zipfile.ZipFile(io.BytesIO(self.files[part.encode()])) as z:
+            entries = [e for e in z.infolist() if any(fnmatch.fnmatchcase(e.filename, p) for p in want)
+                       and not any(fnmatch.fnmatchcase(e.filename, p) for p in skip)]
+            if '-l' in args:
+                self.files[out] = b''.join(row(e.file_size, e.filename) for e in entries)
+                return 0
+            folder = args[args.index('-d') + 1]
+            for e in entries:
+                self.files[f'{folder}/{e.filename}'.encode()] = z.read(e)
+        return self.unpack_fails
+
+    def moves(self, into):
+        return [e[2] for e in self.log if e[0] == 'rename' and e[2].startswith(into)]
+
+    def commands(self):
+        return [e[1] for e in self.log if e[0] == 'system']
+
+
+class UpdateRow:
+    """System Update's page as stock lays it out (stand-in handles), hooked by ringnav_fwupdate: its second row's button
+    and label, what they show, the toasts, the wait timer, the worker and stock's card update."""
+    VIEW, ROW, BUTTON, LABEL = 0x7100, 0x7200, 0x7300, 0x7400
+
+    def __init__(self, fw, wifi=1, children=2, thread=0, win=0x7000):
+        self.fw, self.wifi, self.flashed = fw, wifi, 0
+        self.names, self.text, self.tr, self.handlers, self.toasts, self.timers, self.workers = {}, {}, {}, [], [], [], []
+        tree = {(self.VIEW, 1): self.ROW, (self.ROW, 0): self.BUTTON, (self.BUTTON, 0): self.LABEL}
+        fw.mock('stock_fwupdate_trampoline', lambda *_: 7)
+        fw.mock('widget_lookup', lambda w, name, *_: self.VIEW if C.string_at(name) == b'scroll_view_fwupdate' else 0)
+        fw.mock('widget_count_children', lambda w, *_: children if w == self.VIEW else 0)
+        fw.mock('widget_get_child', lambda w, i, *_: tree.get((w, i), 0))
+        fw.mock('widget_set_name', lambda w, s, *_: self.names.__setitem__(w, C.string_at(s)))
+        fw.mock('widget_on', lambda w, evt, fn, ctx, *_: self.handlers.append((w, evt, fn, ctx)))
+        fw.mock('widget_set_text_utf8', lambda w, s, *_: self.text.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('widget_set_tr_text', lambda w, s, *_: self.tr.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
+        fw.mock('get_wifisignal', lambda *_: self.wifi)
+        fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(fn) or len(self.timers))
+        fw.mock('fw_pthread_create', lambda t, a, fn, arg, *_: thread or self.workers.append(fn) or 0)
+        fw.mock('fwupdate_tf', lambda *_: setattr(self, 'flashed', self.flashed + 1))
+        self.nu = fw.var('netupdate__nu', Nu)
+        self.result = fw.fn('ringnav_fwupdate', C.c_int, C.c_void_p, C.c_void_p)(win, 0x7001)
+
+    def on(self, w, event):
+        return [lambda f=fn, c=ctx: C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(f)(c, None)
+                for ww, evt, fn, ctx in self.handlers if ww == w and evt == event]
+
+    def press(self):
+        click, = self.on(self.BUTTON, EVT_CLICK)
+        assert click() == 0
+
+    def leave(self):
+        gone, = self.on(self.LABEL, EVT_DESTROY)
+        gone()
+
+    def wait(self):
+        """wait_done, as its timer runs it."""
+        return C.CFUNCTYPE(C.c_int, C.c_void_p)(self.timers[-1])(None)
+
+    def run(self):
+        assert C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.workers.pop())(None) is None
+
+    def label(self):
+        return self.text.get(self.LABEL)
+
+
+def test_system_update_s_second_row_becomes_the_online_update(fw):
+    row = UpdateRow(fw)
+    assert row.result == 7 and row.names == {row.BUTTON: b'2'}  # a name stock's own click ignores
+    assert len(row.on(row.BUTTON, EVT_CLICK)) == 1 and len(row.on(row.LABEL, EVT_DESTROY)) == 1 and row.nu.label == row.LABEL
+    assert row.label() is None and not row.workers
+
+
+@pytest.mark.parametrize('children, win', [(1, 0x7000), (3, 0x7000), (2, 0)])
+def test_a_page_laid_out_otherwise_stays_stock_s(fw, children, win):
+    row = UpdateRow(fw, children=children, win=win)
+    assert row.result == 7 and row.names == {} and row.handlers == [] and not row.nu.label
+
+
+def test_a_press_downloads_a_newer_release_and_hands_it_to_stock_s_card_update(fw):
+    card = Disk(fw, {TAR: b'old'})
+    row = UpdateRow(fw)
+    row.press()
+    assert row.nu.state == NU_RUNNING and row.label() == 'Checking…' and row.wait() == RET_REPEAT
+    seen = []
+    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=lambda k: seen.append((row.wait(), row.label())))
+    row.run()
+    assert seen == [(RET_REPEAT, f'Downloading {p}%') for p in (25, 50, 75, 100)]
+    assert {args[:3] for _, args in fw.calls('reset_poweroptions_timer')} == {(1, 1, 0)}  # standby held, not the screen
+    assert card.files[TAR] == BODY and PART not in card.files
+    # the part on the card before it replaces the old tar, then the rename's own entry before stock flashes it
+    assert [e for e in card.log if e[0] in ('rename', 'fsync')] == [('fsync', PART), ('rename', PART, TAR), ('fsync', b'/mnt/mmc')]
+    assert row.wait() == 0 and row.flashed == 1 and row.toasts == [] and row.tr == {row.LABEL: 'update_online'}
+    assert row.nu.state == NU_IDLE
+
+
+def test_a_second_press_cancels_mid_download_and_keeps_the_old_tar(fw):
+    card = Disk(fw, {TAR: b'old'})
+    row = UpdateRow(fw)
+    row.press()
+    seen = []
+
+    def during(k):
+        if k == 1:
+            row.press()
+            seen.append((row.wait(), row.label()))  # the timer says so too, not the percentage
+    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=during)
+    row.run()
+    assert seen == [(RET_REPEAT, 'Cancelling…')] and len(card.written[PART]) < len(BODY)  # ended at the next progress call
+    assert row.wait() == 0 and row.toasts == ['Download cancelled'] and not row.flashed
+    assert card.files[TAR] == b'old' and PART not in card.files
+
+
+def test_leaving_the_page_mid_download_cancels_it(fw):
+    card = Disk(fw, {TAR: b'old'})
+    row = UpdateRow(fw)
+    row.press()
+    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=lambda k: k == 1 and row.leave())
+    row.run()
+    assert row.wait() == 0 and row.toasts == ['Download cancelled'] and row.tr == {} and not row.flashed
+    assert card.files[TAR] == b'old' and PART not in card.files
+
+
+@pytest.mark.parametrize('how', ['press', 'leave'])
+def test_a_cancel_after_the_last_byte_still_keeps_the_old_tar(fw, how):
+    card = Disk(fw, {TAR: b'old'})
+    row = UpdateRow(fw)
+    row.press()
+    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, during=lambda k: k == CHUNKS - 1 and getattr(row, how)())
+    row.run()
+    assert card.written[PART] == BODY  # no progress call left to end it: the transfer itself came whole
+    assert row.wait() == 0 and row.toasts == ['Download cancelled'] and not row.flashed
+    assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+
+
+def test_a_part_the_card_can_t_sync_never_replaces_the_tar(fw):
+    card = Disk(fw, {TAR: b'old'})
+    fw.mock('fw_fsync', lambda fd, *_: -1 if card.names[fd - 100] == PART else 0)
+    row = UpdateRow(fw)
+    row.press()
+    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)})
+    row.run()
+    assert row.wait() == 0 and row.toasts == ["Can't write to the card"] and not row.flashed
+    assert card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+
+
+def test_a_download_finished_off_the_page_waits_for_the_card_update(fw):
+    card = Disk(fw)
+    row = UpdateRow(fw)
+    row.press()
+    Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)})
+    row.run()
+    row.leave()
+    assert row.wait() == 0 and row.toasts == ['Update downloaded: use TF card update'] and not row.flashed
+    assert card.files[TAR] == BODY
+
+
+@pytest.mark.parametrize('replies, said', [
+    ({LATEST: (0, 302, TAG_URL + TAG)}, 'Latest firmware installed'),
+    ({LATEST: (6, 0, None)}, "Can't reach GitHub"),  # CURLE_COULDNT_RESOLVE_HOST
+    ({LATEST: (0, 200, None)}, "Can't reach GitHub"),  # no redirect
+    ({ASSET: (0, 404, None, b'Not Found'), LATEST: (0, 302, TAG_URL + NEWER)}, 'No update for this build'),
+    ({ASSET: (28, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)}, "Can't reach GitHub"),  # timed out
+])
+def test_each_ending_says_why_and_keeps_the_old_tar(fw, replies, said):
+    card = Disk(fw, {TAR: b'old'})
+    row = UpdateRow(fw)
+    row.press()
+    Net(fw, replies)
+    row.run()
+    assert row.wait() == 0 and row.toasts == [said] and not row.flashed and row.tr == {row.LABEL: 'update_online'}
+    assert card.files[TAR] == b'old' and PART not in card.files
+
+
+def test_a_full_card_fails_the_write_and_says_so(fw):
+    card = Disk(fw, {TAR: b'old'})
+    fw.mock('fw_fwrite', lambda *_: 0)
+    fw.mock('fw_ferror', lambda *_: 1)
+    row = UpdateRow(fw)
+    row.press()
+    net = Net(fw, {ASSET: (0, 200, None, BODY), LATEST: (0, 302, TAG_URL + NEWER)})
+    row.run()
+    assert net.urls == [LATEST, ASSET] and row.wait() == 0 and row.toasts == ["Can't write to the card"]
+    assert card.files[TAR] == b'old' and PART not in card.files
+
+
+def test_a_press_without_wifi_or_a_thread_starts_nothing(fw):
+    row = UpdateRow(fw, wifi=0)
+    row.press()
+    assert row.toasts == ['Connect to Wi-Fi first'] and not row.workers and row.nu.state == NU_IDLE
+    row = UpdateRow(fw, thread=11)
+    row.press()
+    assert row.toasts == ["Can't start the download"] and not row.timers and row.nu.state == NU_IDLE
+    row.press()  # idle again: a press tries again
+    assert row.toasts[-1] == "Can't start the download"
+
+
+def test_presses_between_the_end_and_the_join_do_nothing(fw):
+    Disk(fw)
+    row = UpdateRow(fw)
+    row.press()
+    Net(fw, {LATEST: (0, 302, TAG_URL + TAG)})
+    row.run()
+    row.press()
+    assert not row.workers and row.toasts == [] and row.nu.state == NU_LATEST and len(row.timers) == 1
+    assert row.wait() == 0 and row.toasts == ['Latest firmware installed']
+
+
+def test_system_update_opened_mid_download_says_so(fw):
+    fw.var('netupdate__nu', Nu).state = NU_RUNNING
+    row = UpdateRow(fw)
+    assert row.label() == 'Downloading…'
+
+
+# The App Store.
+
+def app_zip(files):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+FOO = {'.foo/q2-foo': b'\x7fELF foo', '.foo/q2app': b'name=Foo\n', '.foo/lib/x.so': b'lib', '.foo/._q2app': b'macOS',
+       'INSTALL.txt': b'read me', '__MACOSX/.foo/._q2-foo': b'macOS'}
+
+
+def store_net(fw, files=FOO, listed=b'me/q2-foo Foo\n', size=None, **replies):
+    """The list, every release's JSON (tag 2.0, its zip of files) and the zip; api= or zip= replace those replies."""
+    data = app_zip(files)
+    return Net(fw, {b'https://raw': (0, 200, None, listed),
+                    b'https://api': replies.get('api', (0, 200, None, github('2.0', ('app.zip', size or len(data))))),
+                    b'https://h/': replies.get('zip', (0, 200, None, data))})
+
+
+class Store:
+    """The App Store opened for real on a Disk, on top while open: each row's detail, the toasts, the wait timer, the
+    worker, the standby holds, the clock (now_ms) and the card's free bytes (statfs). Row 0 is Check for Updates, the
+    list's apps under it."""
+    def __init__(self, fw, card, wifi=1, thread=0, free=1 << 30):
+        self.fw, self.card, self.wifi, self.free, self.seconds = fw, card, wifi, free, 5000
+        self.text, self.toasts, self.timers, self.workers, self.held = {}, [], [], [], []
+        fw.mock('get_wifisignal', lambda *_: self.wifi)
+        fw.mock('window_create', lambda *_: 77)
+        fw.mock('window_manager_get_top_window', lambda *_: 77)
+        fw.mock('widget_get_child', lambda row, i, *_: row)
+        fw.mock('list_item_create', lambda view, x, y, *_: 1000 + y)
+        fw.mock('widget_set_text_utf8', lambda w, s, *_: self.text.__setitem__(w, C.string_at(s).decode()))
+        fw.mock('navigator_to_with_context', lambda path, info, *_: self.toasts.append(C.string_at(info + 8).decode()))
+        fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append(fn) or len(self.timers))
+        fw.mock('fw_pthread_create', lambda t, a, fn, arg, *_: thread or self.workers.append(fn) or 0)
+        fw.mock('reset_poweroptions_timer', lambda *args: self.held.append(args[:3]))
+        fw.mock('fw_clock_gettime', self.clock)
+        fw.mock('fw_statfs', self.statfs)
+        self.sh = fw.var('netupdate__sh', Sh)
+        self.open()
+
+    def clock(self, kind, ts, *_):
+        C.c_long.from_address(ts).value, C.c_long.from_address(ts + 8).value = self.seconds, 0
+
+    def statfs(self, path, buf, *_):
+        words = C.cast(buf, C.POINTER(C.c_uint))
+        words[1], words[7] = 4096, self.free // 4096
+
+    def open(self):
+        self.fw.fn('shelf_open', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+
+    def close(self):
+        self.fw.fn('netupdate__sh_closed', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+
+    def wait(self):
+        """sh_wait, as its timer runs it."""
+        return C.CFUNCTYPE(C.c_int, C.c_void_p)(self.timers[-1])(None)
+
+    def run(self):
+        """The job's worker to its end, then the wait that joins it."""
+        assert C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.workers.pop())(None) is None
+        return self.wait()
+
+    def click(self, r=1):
+        self.fw.fn('netupdate__sh_click', C.c_int, C.c_void_p, C.c_void_p)(r, None)
+
+    def check_label(self):
+        return self.text.get(self.sh.row[0])
+
+    def labels(self):
+        """The apps' rows, under Check for Updates."""
+        assert self.sh.map[0] == ROW_CHECK
+        return [self.text.get(self.sh.row[r]) for r in range(1, self.sh.rows)]
+
+
+def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
+    card = Disk(fw)
+    net = store_net(fw)
+    s = Store(fw, card)
+    assert s.sh.job == JOB_CHECK and s.labels() == [] and s.check_label() == 'Checking…'
+    s.click(0)  # Check for Updates while the list loads: no second check, the one running answers it
+    assert s.toasts == [] and s.sh.cancel == 0 and s.sh.manual == 1 and len(s.workers) == 1
+    assert s.wait() == RET_REPEAT and s.held == []  # a check holds no standby
+    assert s.run() == 0 and s.sh.job == 0 and s.toasts == ['All apps are up to date']  # none installed has a newer one
+    assert s.labels() == ['Install'] and card.files[SOURCES] == b'me/q2-foo Foo\n' and s.sh.next[0].latest == b'2.0'
+    assert s.check_label().strip() == ''  # its detail blank again, the list loaded
+    assert net.urls == [b'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list',
+                        b'https://api.github.com/repos/me/q2-foo/releases/latest']
+    s.close()
+    s.seconds += 600
+    s.open()
+    assert not s.workers and s.sh.job == 0  # checked ten minutes ago: not yet
+    s.close()
+    s.seconds += 1
+    s.open()
+    assert s.sh.job == JOB_CHECK and len(s.workers) == 1
+
+
+def test_a_check_stopped_part_way_is_done_again_at_the_next_open(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw)
+    s = Store(fw, card)
+    s.click()  # an app's row
+    assert s.sh.cancel == 1 and s.toasts == ['Stopped checking for updates']
+    assert s.run() == 0 and net.urls[-1].startswith(b'https://raw')  # the list, then no release
+    assert s.toasts == ['Stopped checking for updates']  # and nothing said at its end
+    s.close()
+    s.seconds += 1
+    s.open()
+    assert s.sh.job == JOB_CHECK
+
+
+@pytest.mark.parametrize('q2app, where', [(b'name=Foo\n', 'Streaming'), (b'name=Foo\ngame=1\n', "Library's Games")])
+def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where):
+    card = Disk(fw)
+    store_net(fw, {**FOO, '.foo/q2app': q2app})
+    s = Store(fw, card)
+    s.run()
+
+    def on_card():  # addon.c's scan writes its /tmp caps file: only the card counts
+        return {k: v for k, v in card.files.items() if k.startswith(b'/mnt/mmc/')}
+    before = on_card()
+    s.click()
+    assert s.sh.job == JOB_INSTALL and s.labels() == ['Checking…']
+    assert s.wait() == RET_REPEAT and s.held == [(1, 1, 0)]  # standby and power-off held through a job
+    assert s.run() == 0 and s.toasts == [f'Foo is ready in {where}'] and s.labels() == ['Installed']
+    placed = {k: v for k, v in card.files.items() if k.startswith(b'/mnt/mmc/.foo/')}
+    assert placed == {b'/mnt/mmc/.foo/q2-foo': b'\x7fELF foo', b'/mnt/mmc/.foo/q2app': q2app, b'/mnt/mmc/.foo/lib/x.so': b'lib'}
+    assert card.files[b'/mnt/mmc/.q2/apps/foo.files'] == b''.join(sorted(k[len(b'/mnt/mmc/'):] + b'\n' for k in placed))
+    assert card.files[b'/mnt/mmc/.q2/apps/foo.tag'] == b'2.0'
+    assert card.moves(b'/mnt/mmc/.foo/')[-1] == b'/mnt/mmc/.foo/q2-foo'  # the binary last
+    assert not [k for k in card.files if b'staging' in k or b'INSTALL' in k or b'MACOSX' in k]
+    s.click()
+    assert s.labels() == ['Press again to remove'] and not s.workers
+    s.click()
+    assert s.labels() == ['Removing…']
+    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and s.labels() == ['Install']
+    assert on_card() == before
+
+
+def test_a_cancel_during_the_release_request_downloads_nothing(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    net = store_net(fw)
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    net.during = lambda k: net.urls[-1].startswith(b'https://api') and k == CHUNKS - 1 and s.click()  # as it ends
+    s.click()
+    assert s.run() == 0 and s.toasts == ['Download cancelled'] and s.labels() == ['Install']
+    assert not [u for u in net.urls if u.startswith(b'https://h/')] and sorted(card.files) == [SOURCES]
+
+
+def test_a_cancel_while_unpacking_installs_nothing(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    store_net(fw)
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    shell, seen = card.shell, []
+
+    def system(cmd):
+        if cmd.startswith(b'busybox unzip -l'):  # the download checked: pressed as the row says so
+            s.wait()
+            seen.append(s.labels())
+            s.click()
+            seen.append(s.labels())
+        return shell(cmd)
+    card.system = system
+    s.click()
+    assert s.run() == 0 and seen == [['Unpacking…'], ['Cancelling…']]
+    assert s.toasts == ['Download cancelled'] and s.labels() == ['Install']
+    assert not card.moves(b'/mnt/mmc/.foo/') and sorted(card.files) == [SOURCES]  # nothing placed, no staging left
+
+
+ROOM = 64 << 20  # left free beyond what a download or an unpack needs
+
+
+@pytest.mark.parametrize('case, said', [
+    (dict(api=(0, 404, None, b'{}')), 'No update for this build'),
+    (dict(api=(0, 403, None, b'{}')), 'GitHub is busy, try later'),
+    (dict(api=(0, 429, None, b'{}')), 'GitHub is busy, try later'),
+    (dict(api=(7, 0, None)), "Can't reach GitHub"),
+    (dict(zip=(0, 404, None, b'Not Found')), 'No update for this build'),
+    (dict(zip=(28, 200, None, b'PK partial')), "Can't reach GitHub"),
+    (dict(files={'INSTALL.txt': b'x', 'other/q2-foo': b'y'}), 'The download is not a usable app'),
+    (dict(files={**FOO, '.foo/../x': b'up'}), 'The download is not a usable app'),
+    (dict(unpack=1), "Can't write to the card"),
+    (dict(free=ROOM, size=1), 'Needs 1 MB more space'),  # no room for the zip
+    (dict(free=ROOM + (1 << 20), files={'.foo/q2-foo': bytes(8 << 20)}), 'Needs 7 MB more space'),  # nor for what it unpacks to
+])
+def test_an_install_that_fails_says_why_and_leaves_the_card_alone(fw, case, said):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    card.unpack_fails = case.get('unpack', 0)
+    store_net(fw, case.get('files', FOO), **{k: v for k, v in case.items() if k in ('api', 'zip', 'size')})
+    s = Store(fw, card, wifi=0, free=case.get('free', 1 << 30))
+    s.wifi = 1
+    s.click()
+    assert s.run() == 0 and s.toasts == [said] and s.labels() == ['Install']
+    assert sorted(card.files) == [SOURCES]
+
+
+def test_rockbox_installs_on_a_second_press_keeping_its_config(fw):
+    card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\n', b'/mnt/mmc/.rockbox/config.cfg': b'mine'})
+    store_net(fw, {'.rockbox/rockbox': b'bin', '.rockbox/config.cfg': b'defaults', '.rockbox/fonts/a.fnt': b'font'})
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    s.click()
+    label, = s.labels()
+    assert label.endswith('Press again to install') and not s.workers
+    s.click()
+    assert s.run() == 0 and s.toasts == ['Rockbox is ready. Find it on Home'] and s.labels() == ['Installed']
+    assert card.files[b'/mnt/mmc/.rockbox/config.cfg'] == b'mine' and card.files[b'/mnt/mmc/.rockbox/rockbox'] == b'bin'
+    assert card.moves(b'/mnt/mmc/.rockbox/') == [b'/mnt/mmc/.rockbox/fonts/a.fnt', b'/mnt/mmc/.rockbox/rockbox']
+
+
+def test_the_themes_come_with_rockbox_and_go_before_it(fw):
+    card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\nx/q2-rockbox-themes Rockbox Themes\n',
+                     b'/mnt/mmc/.rockbox/rockbox': b'bin', b'/mnt/mmc/.rockbox/fonts/a.fnt': b'font',
+                     b'/mnt/mmc/.q2/apps/rockbox.files': b'.rockbox/rockbox\n.rockbox/fonts/a.fnt\n',
+                     b'/mnt/mmc/.q2/apps/rockbox.tag': b'2.0'})
+    store_net(fw, {'.rockbox/wps/a.wps': b'wps', '.rockbox/fonts/a.fnt': b'font'})
+    s = Store(fw, card, wifi=0)
+    assert s.labels() == ['Installed', 'Install']
+    s.wifi = 1
+    s.click(2)
+    assert s.run() == 0 and s.toasts == ["Rockbox Themes are ready in Rockbox's Theme Settings"]
+    assert s.labels() == ['Installed', 'Installed'] and card.files[b'/mnt/mmc/.rockbox/wps/a.wps'] == b'wps'
+    s.click(1)
+    s.click(1)
+    assert s.run() == 0 and s.toasts[-1] == 'Rockbox removed'
+    gone = [e[1] for e in card.log if e[0] == 'unlink']
+    assert gone.index(b'/mnt/mmc/.rockbox/wps/a.wps') < gone.index(b'/mnt/mmc/.rockbox/rockbox')  # the themes first
+    # both apps' files, lists and tags gone: the card holds its list alone
+    assert sorted(k for k in card.files if k.startswith(b'/mnt/mmc/')) == [SOURCES]
+    assert s.labels() == ['Install']  # and the themes' row with Rockbox
+
+
+def test_the_themes_pressed_once_rockbox_left_the_card_ask_for_it(fw):
+    card = Disk(fw, {SOURCES: b'x/q2-rockbox Rockbox\nx/q2-rockbox-themes Rockbox Themes\n', b'/mnt/mmc/.rockbox/rockbox': b'bin'})
+    s = Store(fw, card, wifi=0)
+    assert len(s.labels()) == 2  # Rockbox and its themes
+    del card.files[b'/mnt/mmc/.rockbox/rockbox']
+    s.wifi = 1
+    s.click(2)
+    assert s.toasts == ['Install Rockbox first'] and s.sh.job == 0
+
+
+def test_spotify_installs_with_librespot_stopped_and_its_cache_kept(fw):
+    kill = b'kill -9 $(cat /tmp/q2-librespot)'
+    card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/cache/x': b'mine', b'/mnt/mmc/.spotify/.cache-size': b'2G'})
+    store_net(fw, {'.spotify/librespot': b'bin', '.spotify/run': b'sh', '.spotify/cache/x': b'theirs', '.spotify/.cache-size': b'0'})
+    s = Store(fw, card, wifi=0)
+    s.wifi = 1
+    s.click()
+    assert s.run() == 0 and s.toasts == ['Spotify is ready in Streaming']
+    assert card.files[b'/mnt/mmc/.spotify/cache/x'] == b'mine' and card.files[b'/mnt/mmc/.spotify/.cache-size'] == b'2G'
+    assert card.files[b'/mnt/mmc/.spotify/librespot'] == b'bin'
+    steps = []
+    for e in card.log:
+        if e[0] == 'system' and e[1].startswith(kill):
+            steps.append('stop')
+        elif e[0] == 'system' and e[1].startswith(b'busybox unzip -o'):
+            steps.append('unpack')
+        elif e[0] == 'rename' and e[2].startswith(b'/mnt/mmc/.spotify/') and 'move' not in steps:
+            steps.append('move')
+    # stopped on the UI thread as the job starts, again before .spotify is touched (it may have started since), and
+    # as the job ends, so spotify.c forgets the old one
+    assert steps == ['stop', 'unpack', 'stop', 'move', 'stop']
+
+
+def test_erasing_spotify_s_data_runs_as_a_job(fw):
+    card = Disk(fw, {SOURCES: b'x/q2-librespot Spotify\n', b'/mnt/mmc/.spotify/librespot': b'bin',
+                     b'/mnt/mmc/.spotify/cache/x': b'mine', b'/mnt/mmc/.spotify/.cache-size': b'2G'})
+    s = Store(fw, card, wifi=0)
+    erase = fw.fn('shelf_erase', C.c_int, C.c_int)
+    assert erase(1) == 1 and erase(0) == 1
+    assert s.run() == 0 and s.toasts == ["Spotify's login and cache erased"] and erase(0) == 0
+    assert [k for k in card.files if b'.spotify' in k] == [b'/mnt/mmc/.spotify/librespot']
+    assert ('rmdir', b'/mnt/mmc/.spotify') in card.log  # tried: still holds librespot
+
+
+def test_erase_while_checking_stops_the_check(fw):
+    card = Disk(fw)
+    store_net(fw)
+    s = Store(fw, card)
+    assert fw.fn('shelf_erase', C.c_int, C.c_int)(1) == 0
+    assert s.sh.cancel == 1 and s.toasts == ['Stopped checking for updates'] and s.sh.job == JOB_CHECK
+
+
+def test_a_job_that_can_t_start_says_so_and_the_row_stays(fw):
+    card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
+    s = Store(fw, card, wifi=0, thread=11)
+    s.wifi = 1
+    s.click()
+    assert s.toasts == ["Can't start the download"] and s.sh.job == 0 and not s.sh.running and s.labels() == ['Install']
