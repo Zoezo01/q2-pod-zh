@@ -184,6 +184,8 @@ HOOKS = {
     'playermore_online': (0x5281f8, 'ringnav_online_match', 'online_match'),
     # Scan Folders' row click: a tap on a folder with no folders inside ticks it (scan_folders.c)
     'specfolder_click': (0x52e0ac, 'ringnav_specfolder_click', 'specfolder_click'),
+    # USB DAC (usb_dac.c): under Audio and DAC a host that configured the gadget counts as the PC link
+    'check_usb_status': (0x4e91fc, 'ringnav_usb_status', 'usb_status'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -1167,6 +1169,7 @@ FUNCTIONS = {
  'window_manager_close_window_force': ('int', 'void *, void *'),
  'navigator_to': ('int', 'const char *'),
  'navigator_to_with_context': ('int', 'const char *, const void *'),
+ 'toolsSetpclinkStatus': ('int', 'int'),  # echo %d > the kernel's pc_check: the PC-link gate (usb_dac.c)
  'window_manager_get_input_device_status': ('char *', 'void *'),
  'airplayGetFlag': ('int', 'void'),
  'tk_snprintf': ('int', 'char *, unsigned, const char *, ...'),
@@ -1433,7 +1436,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c', 'usb_dac.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
