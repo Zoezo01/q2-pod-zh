@@ -9,9 +9,12 @@ dist/*
 *.squashfs
 
 __pycache__/
+.mypy_cache/
 mutants/
 q2remote.key
 .build-number
+.coverage
+c-coverage/
 docs/manual/*.pdf
 graphify-out/
 

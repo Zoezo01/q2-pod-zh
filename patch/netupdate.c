@@ -423,27 +423,27 @@ static void show(const char *text) {
 
 static int wait_done(const void *unused) {
     static const char *const said[] = {
-        [NU_LATEST] = "已是最新上游版本", [NU_NET] = "无法连接 GitHub",
-        [NU_MISSING] = "此版本暂无更新", [NU_CARD] = "无法写入存储卡",
-        [NU_CANCELLED] = "已取消下载",
+        [NU_LATEST] = "Latest firmware installed", [NU_NET] = "Can't reach GitHub",
+        [NU_MISSING] = "No update for this build", [NU_CARD] = "Can't write to the card",
+        [NU_CANCELLED] = "Download cancelled",
     };
     char s[32];
     if (nu.state == NU_RUNNING) {
         reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
-        tk_snprintf(s, sizeof s, "正在下载 %d%%", nu.percent);
-        show(nu.cancel ? "正在取消…" : nu.percent ? s : "正在检查…");
+        tk_snprintf(s, sizeof s, "Downloading %d%%", nu.percent);
+        show(nu.cancel ? "Cancelling…" : nu.percent ? s : "Checking…");
         return 8; /* RET_REPEAT */
     }
     pthread_join(nu.thread, 0);
     int state = nu.state;
     nu.state = NU_IDLE;
-    if (nu.label) show("上游英文固件更新");
+    if (nu.label) widget_set_tr_text(nu.label, "update_online");
     if (state != NU_DONE)
         toast(said[state]);
     else if (nu.label)
         fwupdate_tf(); /* stock's TF card update: its battery check and confirm */
     else
-        toast("上游英文固件已下载，请使用 TF 卡升级");
+        toast("Update downloaded: use TF card update");
     return 0;
 }
 
@@ -451,19 +451,19 @@ static int wait_done(const void *unused) {
 static int online_click(void *ctx, void *event) {
     if (nu.state == NU_RUNNING) {
         nu.cancel = 1;
-        show("正在取消…");
+        show("Cancelling…");
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
-    } else if (get_wifisignal() <= 0) {
-        toast("请先连接 Wi-Fi");
+    } else if (!need_link(online_click, ctx)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
         nu.cancel = nu.percent = 0;
         nu.state = NU_RUNNING;
         if (pthread_create(&nu.thread, 0, worker, 0)) {
             nu.state = NU_IDLE;
-            toast("无法开始下载");
+            toast("Can't start the download");
         } else {
-            show("正在检查…");
+            show("Checking…");
             timer_add(wait_done, (void *)0, 500);
         }
     }
@@ -488,32 +488,35 @@ int ringnav_fwupdate(void *win, void *ctx) {
         widget_on(button, EVT_CLICK, online_click, 0);
         nu.label = widget_get_child(button, 0);
         widget_on(nu.label, EVT_DESTROY, label_gone, nu.label);
-        show(nu.state == NU_RUNNING ? "正在下载…" : "上游英文固件更新");
+        if (nu.state == NU_RUNNING) show("Downloading…");
     }
     return result;
 }
 
-/* The Apps page (System settings): a row per app in sources.list, its state as the row's detail.
- * One job at a time on one thread: the page's opening check (the list, then the latest tags), an
- * install, a remove or Spotify's erase (Streaming → Configuration's, shelf_erase). Leaving the page
- * leaves it running; its progress shows when the page opens again. */
+/* The Apps page (System settings): Check for Updates, then a row per app in sources.list, its state
+ * as the row's detail. One job at a time on one thread: a check (the list, then the latest tags) on
+ * opening or from Check for Updates, an install, a remove or Spotify's erase (Streaming →
+ * Configuration's, shelf_erase). Leaving the page leaves it running; its progress shows when the
+ * page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 #define SH_STALE_MS (10 * 60 * 1000ull)
+#define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
-enum { ROW_NONE = SH_MAX }; /* map's row that is no app: no list yet */
+enum { ROW_CHECK = SH_MAX }; /* map's row that is no app: Check for Updates, the first */
 
 static struct {
     unsigned long thread;
     volatile int running, cancel, percent, stage, result; /* cancel, percent: progress()'s pair */
-    int job, app, armed, rows, n, map[SH_MAX];            /* map: a row's app or ROW_NONE */
+    int job, app, armed, rows, n, map[SH_MAX + 1];        /* map: a row's app or ROW_CHECK */
+    int manual;                                           /* the check is Check for Updates' */
     unsigned need;                                        /* SH_SPACE's MB */
     unsigned long long checked;                           /* now_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
-    void *page, *row[SH_MAX];
+    void *page, *row[SH_MAX + 1];
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -561,7 +564,7 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
     return r;
 }
 
-/* The opening check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
+/* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
  * still installed (so it can be removed), else the page's own; then each one's latest release.
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
@@ -582,7 +585,13 @@ static int check(void) {
         m += snprintf(text + m, sizeof text - m, "%s %s\n", sh.next[k].repo, sh.next[k].name);
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
-    for (int k = 0; k < n && !sh.cancel; ++k) ok &= !release(&sh.next[k], tag, url, &size);
+    if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
+    for (int k = 0; k < n && !sh.cancel; ++k) {
+        int r = release(&sh.next[k], tag, url, &size);
+        if (r == SH_MISSING) continue; /* checked: no release yet */
+        ok &= !r;
+        if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
+    }
     return ok;
 }
 
@@ -653,13 +662,20 @@ static void *sh_worker(void *unused) {
     return 0;
 }
 
-/* ST_INSTALLED with a tag file (unless the latest differs), ST_UPDATE for a manual install. */
-static int sh_state(int i) {
+/* With a tag file ST_INSTALLED, or ST_UPDATE when the latest differs; -1 without one. */
+static int sh_tagged(int i) {
     char path[96], tag[40];
     app_file(path, sizeof path, i, ".tag");
     state_read(path, tag, sizeof tag); /* "\n" and the tag */
-    if (tag[1])
-        return *apps[i].latest && strcmp(tag + 1, apps[i].latest) ? ST_UPDATE : ST_INSTALLED;
+    if (!tag[1]) return -1;
+    return *apps[i].latest && strcmp(tag + 1, apps[i].latest) ? ST_UPDATE : ST_INSTALLED;
+}
+
+/* sh_tagged's state, else ST_UPDATE for a manual install. */
+static int sh_state(int i) {
+    char path[96];
+    int s = sh_tagged(i);
+    if (s >= 0) return s;
     if (*apps[i].bin) {
         snprintf(path, sizeof path, CARD "/%s", apps[i].bin);
         if (file_mode(path) == 0100000) return ST_UPDATE;
@@ -668,25 +684,27 @@ static int sh_state(int i) {
 }
 
 static void sh_text(int r) {
-    static const char *const stages[] = { "检查中…", "下载中", "解包中…", "安装中…",
-                                          "移除中…" };
-    static const char *const states[] = { "安装", "更新", "已安装" };
+    static const char *const stages[] = { "Checking…", "Downloading", "Unpacking…", "Installing…",
+                                          "Removing…" };
+    static const char *const states[] = { "Install", "Update", "Installed" };
     int i = sh.map[r], armed = sh.armed == r + 1,
         busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
     char s[40];
     const char *t = s;
-    if (i == ROW_NONE)
-        t = sh.job == JOB_CHECK ? "加载中…" : "请先连接 Wi-Fi 以加载列表";
+    if (i == ROW_CHECK && sh.job == JOB_CHECK)
+        t = "Checking…";
+    else if (i == ROW_CHECK) /* with no list yet, the press loads it */
+        t = !shelf_n ? "Connect to Wi-Fi to load the list" : theme()->sep[0].n ? " " : "";
     else if (busy && sh.cancel)
-        t = "正在取消…";
+        t = "Cancelling…";
     else if (busy && sh.stage == 1 && sh.percent)
-        snprintf(s, sizeof s, "正在下载 %d%%", sh.percent);
+        snprintf(s, sizeof s, "Downloading %d%%", sh.percent);
     else if (busy)
         t = stages[sh.stage];
     else if (armed && sh_state(i) == ST_INSTALLED)
-        t = "再按一次以移除";
+        t = "Press again to remove";
     else if (armed) /* docs/boot.md#rockbox */
-        t = "开机自动启动，可在“默认启动”中更改。再按一次以安装";
+        t = "Starts at power-on; Boot to changes that. Press again to install";
     else
         t = states[sh_state(i)];
     widget_set_text_utf8(widget_get_child(sh.row[r], 1), t);
@@ -697,11 +715,26 @@ static void sh_refresh(void) {
     for (int r = 0; sh.page && r < sh.rows; ++r) sh_text(r);
 }
 
+/* A check's toast: how many rows' apps have a newer release than their tag file's (a manual
+ * install's Update isn't counted: its version is unknown); with none, from Check for Updates
+ * (manual), why it failed or that none have. */
+static void sh_told(int manual, const char *failed) {
+    char s[40];
+    int n = 0;
+    for (int r = 1; r < sh.rows; ++r) n += sh_tagged(sh.map[r]) == ST_UPDATE; /* past ROW_CHECK */
+    if (n)
+        snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
+    else if (manual && failed)
+        toast(failed);
+    else if (manual)
+        toast("All apps are up to date");
+}
+
 static int sh_wait(const void *unused) {
     static const char *const said[] = {
-        [SH_NET] = "无法连接 GitHub",              [SH_CARD] = "无法写入存储卡",
-        [SH_MISSING] = "此版本暂无更新",           [SH_BAD] = "下载内容不是可用的应用",
-        [SH_CANCELLED] = "已取消下载",             [SH_BUSY] = "GitHub 繁忙，请稍后再试",
+        [SH_NET] = "Can't reach GitHub",           [SH_CARD] = "Can't write to the card",
+        [SH_MISSING] = "No update for this build", [SH_BAD] = "The download is not a usable app",
+        [SH_CANCELLED] = "Download cancelled",     [SH_BUSY] = "GitHub is busy, try later",
     };
     char s[64];
     if (sh.running) {
@@ -710,29 +743,32 @@ static int sh_wait(const void *unused) {
         return 8; /* RET_REPEAT */
     }
     pthread_join(sh.thread, 0);
-    int job = sh.job, r = sh.result, i = sh.app;
+    int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
         spot_stop(); /* spotify.c forgets the old one */
     sh_rows();
-    if (job == JOB_INSTALL && r == SH_SPACE)
-        snprintf(s, sizeof s, "还需 %u MB 空间", sh.need), toast(s);
+    if (job == JOB_CHECK && !sh.cancel && sh.page &&
+        window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
+        sh_told(manual, r ? said[r] : 0);
+    else if (job == JOB_INSTALL && r == SH_SPACE)
+        snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
     else if (job == JOB_INSTALL && r)
         toast(said[r]);
     else if (job == JOB_INSTALL && is(i, "rockbox"))
-        toast("Rockbox 已就绪，可在主菜单找到");
+        toast("Rockbox is ready. Find it on Home");
     else if (job == JOB_INSTALL && is(i, "themes"))
-        toast("Rockbox 主题已就绪，可在 Rockbox 的主题设置中选择");
+        toast("Rockbox Themes are ready in Rockbox's Theme Settings");
     else if (job == JOB_INSTALL)
-        snprintf(s, sizeof s, "%s 已就绪，可在%s中找到", apps[i].name,
-                 addon_is_game(apps[i].id) ? "游戏" : "流媒体"),
+        snprintf(s, sizeof s, "%s is ready in %s", apps[i].name,
+                 addon_is_game(apps[i].id) ? "Library's Games" : "Streaming"),
             toast(s);
     else if (job == JOB_REMOVE)
-        snprintf(s, sizeof s, "%s 已移除", apps[i].name), toast(s);
+        snprintf(s, sizeof s, "%s removed", apps[i].name), toast(s);
     else if (job == JOB_ERASE)
-        stream_erased(), toast("Spotify 登录信息与缓存已清除"); /* rows first: toast blocks */
+        stream_erased(), toast("Spotify's login and cache erased"); /* rows first: toast blocks */
     return 0;
 }
 
@@ -740,42 +776,45 @@ static void sh_start(int job, int i) {
     if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
         spot_stop(); /* on this thread: spotify.c's state too */
     if (job == JOB_INSTALL || job == JOB_REMOVE) addon_forget(apps[i].dir);
-    sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = 0, sh.running = 1;
+    sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = sh.manual = 0, sh.running = 1;
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
         sh.job = sh.running = 0;
-        toast("无法开始下载");
+        toast("Can't start the download");
     } else
         timer_add(sh_wait, (void *)0, 500);
 }
 
 /* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
  * power-on default) on a second press of the same row. Pressed again, the running install cancels.
- * With no list yet, the one row loads it. */
+ * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
+ * under SH_RECHECK_MS old: then it says that check's count again. */
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
     sh.armed = 0;
-    if (i == ROW_NONE && sh.job) {
-        /* loading it already */
+    if (i == ROW_CHECK && sh.job == JOB_CHECK) {
+        sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
     } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
         sh.cancel = 1;
-        toast("已停止检查更新");
+        toast("Stopped checking for updates");
     } else if (sh.job) {
         if (sh.job == JOB_INSTALL && sh.app == i && sh.stage < 3)
             sh.cancel = 1; /* not once moving */
         else if (sh.job != JOB_INSTALL || sh.app != i)
-            toast("请等待当前任务完成");
-    } else if (i != ROW_NONE && sh_state(i) == ST_INSTALLED) {
+            toast("Wait for the one in progress");
+    } else if (i != ROW_CHECK && sh_state(i) == ST_INSTALLED) {
         if (!armed)
             sh.armed = r + 1;
         else
             sh_start(JOB_REMOVE, i);
-    } else if (get_wifisignal() <= 0)
-        toast("请先连接 Wi-Fi");
-    else if (i == ROW_NONE)
-        sh_start(JOB_CHECK, 0);
+    } else if (!need_link(sh_click, ctx)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
+    } else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
+        sh_told(1, 0);
+    else if (i == ROW_CHECK)
+        sh_start(JOB_CHECK, 0), sh.manual = 1;
     else if (is(i, "themes") && !rockbox_available())
-        toast("请先安装 Rockbox");
+        toast("Install Rockbox first");
     else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
         sh.armed = r + 1;
     else
@@ -789,20 +828,21 @@ static int sh_closed(void *ctx, void *event) {
     return 0;
 }
 
-/* The rows, in the list's order: Rockbox Themes only with Rockbox on the card, one to load the list
- * while there is none; built again when a job ends changes which. */
+/* The rows: Check for Updates, then the list's apps in its order, Rockbox Themes only with Rockbox
+ * on the card; built again when a job ends changes which. */
 static void sh_rows(void) {
-    int map[SH_MAX] = { 0 }, n = 0;
+    int map[SH_MAX + 1] = { ROW_CHECK }, n = 1;
     for (int i = 0; i < shelf_n; ++i)
         if (!is(i, "themes") || rockbox_available()) map[n++] = i;
-    if (!n) map[n++] = ROW_NONE;
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
-        void *view = page_list(sh.page, sh.page, 0, "应用商店", n, 64);
+        void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
         for (int r = 0; r < n; ++r)
-            sh.row[r] = page_row_detail(view, r, map[r] == ROW_NONE ? "应用列表" : apps[map[r]].name,
-                                        "", sh_click);
+            /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
+            sh.row[r] = page_row_detail(
+                view, r, map[r] == ROW_CHECK ? "Check for Updates" : apps[map[r]].name,
+                theme()->sep[0].n ? " " : "", sh_click);
         sh.rows = n;
     }
     sh_refresh();
@@ -813,17 +853,23 @@ static void sh_rows(void) {
  * stops it, so the next press acts); whether an erase is running. */
 int shelf_erase(int start) {
     if (start && sh.job == JOB_CHECK)
-        sh.cancel = 1, toast("已停止检查更新");
+        sh.cancel = 1, toast("Stopped checking for updates");
     else if (start && sh.job)
-        toast("等当前任务完成");
+        toast("Wait for the one in progress");
     else if (start)
         sh_start(JOB_ERASE, -1);
     return sh.job == JOB_ERASE;
 }
 
+/* The opening check, held for Smart Wi-Fi's link (smart_hold). */
+static int sh_check(void *ctx, void *event) {
+    if (!sh.job && get_wifisignal() > 0) sh_start(JOB_CHECK, 0), sh_refresh();
+    return 0;
+}
+
 /* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
  * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
- * API requests an hour. */
+ * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
@@ -833,8 +879,17 @@ int shelf_open(void *ctx, void *event) {
         free(list);
     }
     sh_rows();
-    if (!sh.job && get_wifisignal() > 0 && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS))
-        sh_start(JOB_CHECK, 0), sh_refresh();
+    if (!sh.job && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS)) {
+        if (get_wifisignal() > 0)
+            sh_start(JOB_CHECK, 0), sh_refresh();
+        else
+            /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and acts on
+             * the list shown, and the next open checks */
+            smart_hold(sh_check, 0, "apps_page");
+    }
     return 0;
 }
+
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the radio on. */
+int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
 #endif

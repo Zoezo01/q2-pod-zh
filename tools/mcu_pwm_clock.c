@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Kernel-side code: licensed GPL-2.0-or-later so it stays compatible with the GPL-2.0-only Linux
+ * kernel it is built against; the rest of Q2 Pod is GPL-3.0-only (LICENSE). */
 /* MCU owns its own balanced PWM clock references, independently of soc_pwm.
  * Only the exact paired MCU image may relinquish them. All mutating entry
  * points serialize wake/publication/park/reset/image writes with this mutex.

@@ -9,7 +9,7 @@
 #define VIS_X 16             /* tools/ipod.py NP_MARGIN */
 #define VIS_W (375 - 2 * VIS_X) /* the widest page's drawing, its buffers' size */
 #define PAGE_W (vz.w - 2 * VIS_X) /* this page's: the slide's width, 375 or the centred page's 225 */
-#define VIS_H 186            /* tools/ipod.py NP_SLIDE_H, the page's height */
+#define VIS_H 186            /* tools/ipod.py NP_SLIDE_H, the page's height, from the lyrics' top */
 #define VIS_ART 88           /* the Halo's centre */
 #define TAU 6.2831853f
 enum { SPECTRUM, SCOPE, METERS, HALO, STYLES };
@@ -423,7 +423,7 @@ static int look(const void *unused) {
  * second. Drawing on the window, clipped to the slide area, not on the page: the slide_view clips the
  * page it was given at run time to a sliver. Painting starts the timer. */
 void visualizer_paint(void *w, void *canvas) {
-    static const char *const names[] = { "频谱", "示波器", "VU 表", "光环" };
+    static const char *const names[] = { "Spectrum", "Oscilloscope", "VU Meters", "Halo" };
     if (!w) return;
     if (w == vz.page) { /* the page paints first, its canvas x 0 only when still */
         vz.page_x = I(canvas, CANVAS_X) - vz.ox;
@@ -509,11 +509,15 @@ void visualizer_attach(void *win) {
     vz.slide = slide;
     vz.cover = widget_lookup(win, "img_cover", 1);
     vz.w = I(slide, W_W) > 0 && I(slide, W_W) <= 375 ? I(slide, W_W) : 375;
-    vz.page = list_item_create(slide, 0, 0, vz.w, VIS_H);
+    /* Classic's slide starts higher, its lyrics down it as far (tools/ipod.py NP_IPOD_LIFT): the
+     * page starts where they do, so it stays where the others have it on screen */
+    void *lrc = widget_lookup(slide, "view_lrc", 1);
+    int top = lrc ? I(lrc, W_Y) : 0;
+    vz.page = list_item_create(slide, 0, top, vz.w, VIS_H);
     widget_use_style(vz.page, "s_listitem_black");
     widget_on(vz.page, EVT_CLICK, next_style, 0);
     /* The art is the window's child, over the slide area's centre, for the same reason as the drawing. */
-    vz.ox = vz.oy = 0;
+    vz.ox = 0, vz.oy = top;
     for (void *p = slide; p && p != win; p = P(p, W_PARENT)) vz.ox += I(p, W_X), vz.oy += I(p, W_Y);
     vz.art = image_create(win, vz.ox + (vz.w - VIS_ART) / 2, vz.oy + (VIS_H - VIS_ART) / 2, VIS_ART, VIS_ART);
     widget_set_sensitive(vz.art, 0);

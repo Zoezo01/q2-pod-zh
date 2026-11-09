@@ -51,8 +51,6 @@ static struct {
     int linked, known, ears, want, paused, owner, automatic, last_key;
     unsigned char address[14];
     int airpods;
-    unsigned refused_at; /* 无耳机不播放: the last refusal, so one press toasts once */
-    volatile int pending; /* the same refusal from a start off the UI thread, toasted by headset_poll */
 } hs __attribute__((section(".scratch")));
 
 void headset_manual(void) {
@@ -61,47 +59,7 @@ void headset_manual(void) {
         hs.recent_owner = 0;
     }
 }
-int media_playing(void);
-/* Nothing listens: neither jack is in, and the output that is selected has nothing at its end. The
- * Q2 has no music speaker (only the MCU's buzzer), so a start here plays into silence. Output way 1
- * only says Bluetooth is the chosen output (config_outputchannel), not that a device is linked: the
- * link list's 3 is a connected device, as headset_bt_autolink reads it. A USB DAC (2) is its own
- * end. */
-static int silent_output(void) {
-    if (g_po_status || g_bal_status) return 0; /* 3.5 mm, 4.4 mm */
-    int way = mclGetOutputWay();
-    if (way >= 2) return 0;
-    if (way == 1) {
-        int status = 0;
-        char item[32];
-        for (int i = getBtLinkSize(); status != 3 && i-- > 0;) getBtLinkItem(i, &status, item);
-        return status != 3;
-    }
-    return 1; /* the headphone DAC alone, with no jack in it */
-}
-/* 无耳机不播放 (Q2POD HEADSETGUARD, on by default): a start with nothing at the output is refused,
- * whether it comes from a pocket press of Play or Next/Previous, or from a row's click in a playlist
- * (headset_guard_start, out of mclStartPlayer). Only starting is refused: a pause still goes through,
- * and so do a link coming up and an AirPods ear report. Silent in a pocket: the toast is for a lit
- * screen, and one refusal at most per press, since one press may pass two gates. */
-int headset_guard_refuse(void) {
-    if (!config_value("Q2POD", "HEADSETGUARD", 2, 1) || !silent_output()) return 0;
-    unsigned now = time_now_ms();
-    if (g_backlight_status && now - hs.refused_at > 800) {
-        hs.refused_at = now;
-        toast("未连接耳机");
-    }
-    return 1;
-}
-/* The same guard for every other start: a row's click in a playlist, a card app's import, a resumed
- * queue. Stock's mclStartPlayer may run off the UI thread, so the toast is left to headset_poll. */
-int headset_guard_start(void) {
-    if (!config_value("Q2POD", "HEADSETGUARD", 2, 1) || !silent_output()) return 0;
-    hs.pending = 1;
-    return 1;
-}
 int ringnav_play_pause(void) {
-    if (!media_playing() && headset_guard_refuse()) return 0;
     headset_manual();
     int status = mclGetPlayStatus();
     if (status == 1) press_stamp(); /* Play from a stop starts a track */
@@ -122,6 +80,8 @@ static unsigned media_session(void) {
            *(volatile unsigned *)mcl_pdeqplaylist;
 }
 void media_set_playing(int playing) {
+    if (playing && addon_game_audio()) return; /* a card game with the sound: nothing of stock's
+                                                  starts over its PCM; media_key too */
     hs.automatic = 1;
     int owner = media_owner();
     if (owner == 4)
@@ -145,13 +105,12 @@ static int focus(void) {
 }
 int media_focused(void) { return focus() != 0; }
 void media_key(unsigned key) {
-    /* The active source's own Play, Next and Previous, refused on the same terms as the local ones
-     * (headset_guard_refuse): with a Bluetooth headset linked the link is the output, so its own
-     * remote still starts and changes playback. */
-    if ((key == KEY_PLAY || key == KEY_FWD_BTN || key == KEY_BACK_BTN) && !media_playing() &&
-        headset_guard_refuse())
-        return;
     headset_manual();
+    if (addon_game_audio()) { /* a card game with the sound: stock's player must not retake it;
+                                 Play/Pause still pauses what plays (a Spotify a phone resumed) */
+        if (key == KEY_PLAY && media_playing()) media_set_playing(0);
+        return;
+    }
     int f = focus(); /* a focused Spotify or radio that isn't running leaves them to the owner */
     if ((f == 1 && spot_media(key)) || (f == 2 && radio_media(key)))
         return;
@@ -419,13 +378,6 @@ void headset_eq_poll(void) {
 }
 void headset_poll(void) {
     unsigned now = time_now_ms();
-    if (hs.pending) { /* a start off the UI thread was refused: one toast, on a lit screen */
-        hs.pending = 0;
-        if (g_backlight_status && now - hs.refused_at > 800) {
-            hs.refused_at = now;
-            toast("未连接耳机");
-        }
-    }
     if (now - hs.checked < 100) return;
     hs.checked = now;
     int on = g_bluetoothflag && bt_linkstatus && !bt__recv_pageflag;

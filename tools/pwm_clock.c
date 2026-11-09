@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Kernel-side code: licensed GPL-2.0-or-later so it stays compatible with the GPL-2.0-only Linux
+ * kernel it is built against; the rest of Q2 Pod is GPL-3.0-only (LICENSE). */
 /* Conservative Linux half of cooperative PWM clock ownership.
  * MCU has independent CCF leases (mcu_pwm_clock.c). Linux DMA pins this half
  * awake for the module lifetime; only ordinary CPU-driven PWM is gated.

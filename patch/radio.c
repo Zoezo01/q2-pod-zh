@@ -119,9 +119,9 @@ static const char STARTERS[] =
     "#EXTINF:-1,NTS 1\nhttps://stream-relay-geo.ntslive.net/stream\n";
 
 /* The player; kept for the life of demo. active: Internet Radio was the last thing played, so the
- * media keys are its, stopped or not. */
+ * media keys are its, stopped or not; wait: its station starts once Smart Wi-Fi's link is up. */
 static struct {
-    int pid, sock, active, at;
+    int pid, sock, active, at, wait;
     unsigned polled, volume; /* volume: g_volume + 1 as q2video last had it */
     list_t list;             /* the list played from, side buttons step through it */
     char state[12], title[256], codec[16], bitrate[16], error[64]; /* error: q2video's ALSA reason */
@@ -144,11 +144,13 @@ enum { MENU, PICK, STATIONS };
 enum { R_PLAYING, R_FAVS, R_FEATURED, R_TOP, R_COUNTRY, R_GENRE, A_PICK, A_SEARCH, A_SHOW };
 
 /* The lists page and the Now Playing page, while open. note: a caption over no rows (loading or a
- * failed fetch) stands in for level's list; want is the level a fetch fills. */
+ * failed fetch) stands in for level's list; want is the level a fetch fills, az whether it sorts it
+ * A-Z. */
 static struct {
     void *page, *view, *edit; /* edit: the pull-down's search box */
     unsigned timer, go, leave;
-    int level, next, arg, want, note, genre, favs, from, rows[6], sel[3];
+    int level, next, arg, want, az, note, genre, favs, from, rows[6], sel[3];
+    int wifi; /* the fetch waits for Smart Wi-Fi's link */
     list_t pick, list;
     char caption[64];
 } ui __attribute__((section(".scratch")));
@@ -156,6 +158,7 @@ static struct {
 static struct {
     void *page, *station, *artist, *song, *info, *elapsed, *heart;
     unsigned timer, leave, seen; /* seen: rd.serial the heart shows */
+    int ipod;                    /* Classic's layout (stream_ipod) */
 } np __attribute__((section(".scratch")));
 
 static void list_free(list_t *l) {
@@ -186,6 +189,27 @@ static void list_copy(list_t *to, const list_t *from) {
 
 static const char *name_of(const list_t *l, int i) { return l->buf + l->name[i]; }
 static const char *url_of(const list_t *l, int i) { return l->buf + l->url[i]; }
+
+extern void ringnav_sort_key(char *s);
+
+/* a before b A-Z, as the library sorts: without a leading article, ASCII case ignored. */
+static int before(const char *a, const char *b) {
+    char x[64], y[64];
+    tk_snprintf(x, sizeof x, "%s", a), tk_snprintf(y, sizeof y, "%s", b);
+    ringnav_sort_key(x), ringnav_sort_key(y);
+    return strcasecmp(x, y) < 0;
+}
+
+/* l A-Z, stable, so equal names keep the directory's vote order. ponytail: insertion sort,
+ * RADIO_MAX (200) rows once per fetch; qsort with precomputed keys if lists grow. */
+static void list_sort(list_t *l) {
+    for (int i = 1; i < l->n; ++i)
+        for (int k = i; k > 0 && before(name_of(l, k), name_of(l, k - 1)); --k) {
+            unsigned n = l->name[k], u = l->url[k];
+            l->name[k] = l->name[k - 1], l->url[k] = l->url[k - 1];
+            l->name[k - 1] = n, l->url[k - 1] = u;
+        }
+}
 
 /* path's bytes appended to buf at *n, below cap, then a newline. */
 static int slurp(const char *path, char *buf, unsigned *n, unsigned cap) {
@@ -249,6 +273,7 @@ static void send_key(const char *c, unsigned n) {
 
 /* q2video quit, and killed if it does not go within RADIO_QUIT_MS. The media keys stay radio's. */
 static void radio_halt(void) {
+    rd.wait = 0;
     if (!rd.pid) return;
     int status, done;
     unsigned start = time_now_ms();
@@ -281,13 +306,16 @@ static void radio_play(int i) {
     rd.at = (i % n + n) % n;
     radio_halt();
     spot_yield();
-    rd.pid = video_start(url_of(&rd.list, rd.at), 1);
+    /* Smart Wi-Fi bringing the radio back: radio_poll starts the station once the link is up, and
+     * the local track stops now, as video_start would stop it */
+    if ((rd.wait = smart_wifi_wait())) player_stop();
+    rd.pid = rd.wait ? 0 : video_start(url_of(&rd.list, rd.at), 1);
     rd.active = 1;
     rd.volume = headset_gain() + 1u;
     rd.since = 0;
     rd.title[0] = rd.codec[0] = rd.bitrate[0] = rd.error[0] = 0;
     ++rd.serial;
-    tk_snprintf(rd.state, sizeof rd.state, rd.pid ? "connecting" : "error");
+    tk_snprintf(rd.state, sizeof rd.state, rd.pid || rd.wait ? "connecting" : "error");
     list_t none = { 0 };
     m3u_write(RADIO_LAST, &none, -1, &rd.list, rd.at);
 }
@@ -297,8 +325,15 @@ static void radio_play(int i) {
  * DAC kept on, and the volume passed on for Bluetooth's and USB's soft volume. */
 void radio_poll(void) {
     unsigned now = time_now_ms();
-    if (!rd.pid || now - rd.polled < RADIO_POLL_MS) return;
+    if ((!rd.pid && !rd.wait) || now - rd.polled < RADIO_POLL_MS) return;
     rd.polled = now;
+    if (rd.wait) { /* Smart Wi-Fi's link (smart_wifi_wait), or SMART_CONNECT_MS without it */
+        if (smart_wifi_wait()) return;
+        rd.wait = 0;
+        if (!(rd.pid = video_start(url_of(&rd.list, rd.at), 1)))
+            tk_snprintf(rd.state, sizeof rd.state, "error");
+        return;
+    }
     int status, ended = waitpid(rd.pid, &status, 1) != 0;
     char raw[512]; /* behind a '\n', as field() reads */
     if (state_read(RADIO_STATE, raw, sizeof raw)) {
@@ -328,7 +363,7 @@ void radio_poll(void) {
 int radio_media(unsigned key) {
     if (!rd.active || (key != KEY_PLAY && key != KEY_FWD_BTN && key != KEY_BACK_BTN)) return 0;
     headset_manual();
-    if (key == KEY_PLAY && rd.pid)
+    if (key == KEY_PLAY && (rd.pid || rd.wait))
         radio_halt();
     else
         radio_play(rd.at + (key == KEY_FWD_BTN) - (key == KEY_BACK_BTN));
@@ -358,9 +393,9 @@ static const char *fav_toggle(const list_t *l, int i) {
     list_free(&favs);
     ++rd.serial;
     if (ok && ui.favs) later(R_FAVS, 0);
-    return !ok         ? "无法保存收藏"
-           : found < 0 ? "已加入收藏"
-                       : "已取消收藏";
+    return !ok         ? "Could not save Favourites"
+           : found < 0 ? "Added to Favourites"
+                       : "Removed from Favourites";
 }
 
 /* The Now Playing page from rd: the station, the StreamTitle as artist - title, the stream, and the
@@ -372,6 +407,8 @@ static void np_refresh(void) {
     memcpy(artist, rd.title, a);
     artist[a] = 0;
     set(np.station, rd.list.n ? name_of(&rd.list, rd.at) : "");
+    if (np.ipod)
+        theme_font(np.station, ROLE_NP, FONT_ROW); /* the local page's title; by its text */
     set(np.artist, artist);
     if (np.seen != rd.serial && rd.list.n) {
         list_t favs = { 0 };
@@ -382,20 +419,23 @@ static void np_refresh(void) {
         list_free(&favs);
     }
     set(np.song, song);
-    if (!rd.pid)
+    if (!rd.pid && !rd.wait)
         tk_snprintf(t, sizeof t,
-                    tk_strcmp(rd.state, "error") ? "已停止"
-                    : rd.error[0]                ? "无法播放：%s"
-                                                 : "无法播放此电台",
+                    tk_strcmp(rd.state, "error") ? "Stopped"
+                    : rd.error[0]                ? "Can't play: %s"
+                                                 : "Can't play this station",
                     rd.error);
     else if (!rd.since)
-        tk_snprintf(t, sizeof t, "连接中…");
+        tk_snprintf(t, sizeof t, "Connecting…");
     else
         tk_snprintf(t, sizeof t, rd.bitrate[0] ? "%s  %s kbps" : "%s", rd.codec, rd.bitrate);
     set(np.info, t);
     t[0] = 0;
-    if (rd.pid && rd.since)
-        toolsTimeItoa(t, (int)((unsigned)(now_ms() - rd.since) / 1000)); /* 32-bit: 49 days */
+    int sec = rd.pid && rd.since ? (int)((unsigned)(now_ms() - rd.since) / 1000) : -1; /* 49 days */
+    if (sec >= 0) toolsTimeItoa(t, sec);
+    /* Classic: boxes for "-59:59" until the hour, then the hours': the running time only grows, so
+     * they never shrink while a stream plays; the next one starts on the minutes' again */
+    if (np.ipod) ipod_times(np.elapsed, 0, 0, sec < 3600 ? 600 : sec);
     set(np.elapsed, t);
 }
 
@@ -427,13 +467,16 @@ static int np_heart(void *ctx, void *event) {
     return 0;
 }
 
-/* Spotify's Now Playing layout, the radio's icon for the art, and local Now Playing's heart. The wheel and Centre stay stock's:
- * the volume, and the screen. */
+/* Spotify's Now Playing layout, the radio's icon for the art, and local Now Playing's heart. The
+ * wheel and Centre stay stock's: the volume, and the screen. Under Classic the local page's
+ * (stream_ipod), as an album: the build's station cover slanted, the station, artist and song in
+ * the title's, artist's and album's rows, the stream in "3 of 12"'s, the running time left of a bar
+ * that is always full, the heart. */
 static void np_open(void) {
     if (np.page || !(np.page = page_open("radionp_page", np_closed, np_keyup))) return;
     void *page = np.page;
-    widget_set_text_utf8(label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY),
-                         "网络电台");
+    void *name = label(page, 16, 12, 200, 16, "s_scrlabel_white20l", 16, SPOT_GREY);
+    widget_set_text_utf8(name, "Internet Radio");
     void *art = image_create(page, SPOT_ART_X, SPOT_ART_Y, SPOT_ART_PX, SPOT_ART_PX);
     image_set_draw_type(art, IMAGE_DRAW_SCALE_DOWN);
     image_base_set_image(art, "stream_radio");
@@ -453,6 +496,12 @@ static void np_open(void) {
     widget_set_prop_str(np.heart, "clickable", "true");
     widget_on(np.heart, EVT_CLICK, np_heart, 0);
     np.seen = ~rd.serial;
+    void *rows[4] = { np.station, np.artist, np.song, np.info };
+    np.ipod = stream_ipod(art, rows, np.elapsed, 0, 0, np.heart);
+    if (np.ipod) {
+        widget_set_visible(name, 0, 0); /* the title bar names the page */
+        image_base_set_image(art, "classic_light_station");
+    }
     np.timer = timer_add(np_tick, 0, 500);
     np_refresh();
 }
@@ -468,7 +517,7 @@ static int searched(void *ctx, void *event) {
     char q[sizeof ui.caption];
     if (widget_get_text_utf8(ui.edit, q, sizeof q) || !q[0]) {
         const unsigned *text = widget_get_text(ui.edit);
-        if (text && text[0]) toast("搜索内容过长");
+        if (text && text[0]) toast("Search is too long");
         return later(A_SHOW, 0), 0;
     }
     snprintf(ui.caption, sizeof ui.caption, "%s", q);
@@ -491,7 +540,7 @@ void radio_search(void) {
     if (ui.view) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     widget_destroy_children(ui.page), ui.view = 0; /* the box alone: the keyboard leaves no room for the rows */
     ui.edit = edit_create(ui.page, "text", 2, 26);
-    widget_set_prop_str(ui.edit, "tips", "搜索电台");
+    t9_box(ui.page, ui.edit, "Search stations");
     widget_on(ui.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(ui.edit, EVT_IM_ACTION, searched, 0);
     widget_on(ui.edit, EVT_BLUR, search_left, 0);
@@ -500,8 +549,8 @@ void radio_search(void) {
 
 /* The page shows level's list, its row last chosen selected. */
 static void show(int level) {
-    static const char *const menu[] = { "正在播放", "收藏", "精选",
-                                        "热门电台", "按国家", "按流派" };
+    static const char *const menu[] = { "Now Playing", "Favourites", "Featured",
+                                        "Top Stations", "By Country", "By Genre" };
     if (ui.view && !ui.note) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     ui.level = level;
     ui.note = 0;
@@ -510,7 +559,7 @@ static void show(int level) {
     if (level == MENU) {
         for (int r = rd.list.n || !access(RADIO_LAST, 0) ? R_PLAYING : R_FAVS; r <= R_GENRE; ++r)
             ui.rows[n++] = r;
-        ui.view = page_list(ui.page, ui.page, 0, "网络电台", n, 48);
+        ui.view = page_list(ui.page, ui.page, 0, "Internet Radio", n, 48);
         for (int i = 0; i < n; ++i) /* Now Playing plays; the rest open lists */
             if (ui.rows[i] == R_PLAYING)
                 page_row_detail(ui.view, i, menu[ui.rows[i]], 0, menu_click);
@@ -519,8 +568,9 @@ static void show(int level) {
     } else {
         const list_t *l = level == PICK ? &ui.pick : &ui.list;
         n = l->n;
-        ui.view = page_list(ui.page, ui.page, 0,
-                            level == PICK ? ui.genre ? "流派" : "国家" : ui.caption, n, 48);
+        const char *caption = level == PICK ? ui.genre ? "Genres" : "Countries" : ui.caption;
+        ui.view = page_list(ui.page, ui.page, 0, caption, n, 48);
+        if (!n && level == STATIONS) page_empty(ui.page, ui.favs ? "Favourites" : "Internet Radio");
         for (int i = 0; i < n; ++i)
             if (level == PICK)
                 page_row_into(ui.view, i, name_of(l, i), pick_click);
@@ -535,7 +585,7 @@ static void note(const char *caption) {
     if (ui.view && !ui.note) ui.sel[ui.level] = widget_get_prop_int(ui.view, "_ringnav_index", 0);
     ui.note = 1;
     ui.view = ui.edit = 0;
-    page_list(ui.page, ui.page, 0, caption, 0, 48);
+    page_list_or(ui.page, ui.page, "Internet Radio", caption, 0, 48);
 }
 
 static void fetch_cancel(void) {
@@ -543,20 +593,32 @@ static void fetch_cancel(void) {
     worker_stop(fx.thread, &fx.running, &fx.cancel, &none);
     free(fx.body);
     fx.body = 0;
+    ui.wifi = 0;
 }
 
-/* RADIO_API path fetched on fx's pthread for level want, "Loading…" meanwhile. */
-static void fetch(const char *path, int want) {
+static void fetch_run(void);
+/* RADIO_API path for level want, A-Z when az; while Smart Wi-Fi brings the radio back, "Connecting
+ * to Wi-Fi…" until the tick finds its link up (smart_wifi_wait). */
+static void fetch(const char *path, int want, int az) {
     fetch_cancel();
     ui.want = want;
+    ui.az = az;
     ui.sel[want] = 0;
     tk_snprintf(fx.url, sizeof fx.url, RADIO_API "%s", path);
+    if ((ui.wifi = smart_wifi_wait()))
+        note("Connecting to Wi-Fi…");
+    else
+        fetch_run();
+}
+
+/* fx.url fetched on fx's pthread, "Loading…" meanwhile. */
+static void fetch_run(void) {
     fx.n = 0;
     fx.cancel = fx.done = 0;
     fx.code = 0;
     fx.running = get_wifisignal() > 0 && (fx.body = calloc(FETCH_MAX, 1)) &&
                  !pthread_create(&fx.thread, 0, fetch_worker, 0);
-    note(fx.running ? "加载中…" : get_wifisignal() > 0 ? "电台目录不可用" : "未连接 Wi-Fi");
+    note(fx.running ? "Loading…" : get_wifisignal() > 0 ? "Directory unavailable" : "No Wi-Fi");
 }
 
 static unsigned fetch_got(const char *data, unsigned size, unsigned n, void *unused) {
@@ -593,20 +655,23 @@ static void *fetch_worker(void *unused) {
     return 0;
 }
 
-/* The page's timer: a finished fetch becomes ui.want's list. */
+/* The page's timer: a fetch waiting for Smart Wi-Fi's link starts, and a finished one becomes
+ * ui.want's list. */
 static int tick(const void *unused) {
+    if (ui.wifi && !smart_wifi_wait()) ui.wifi = 0, fetch_run();
     if (!fx.running || !fx.done) return 8; /* RET_REPEAT */
     pthread_join(fx.thread, 0);
     fx.running = 0;
     if (fx.code == 200 && fx.n) {
         list_t *l = ui.want == PICK ? &ui.pick : &ui.list;
         list_set(l, fx.body, fx.n, ui.want == PICK, !ui.genre);
+        if (ui.az) list_sort(l);
         if (l->n)
             show(ui.want);
         else
-            note("暂无电台");
+            note("No stations");
     } else
-        note(get_wifisignal() > 0 ? "电台目录不可用" : "未连接 Wi-Fi");
+        note(get_wifisignal() > 0 ? "Directory unavailable" : "No Wi-Fi");
     free(fx.body);
     fx.body = 0;
     return 8;
@@ -620,26 +685,26 @@ static int go(const void *unused) {
     if (ui.next == R_FAVS) {
         favs_read(&ui.list, 1);
         tk_snprintf(ui.caption, sizeof ui.caption,
-                    ui.list.n ? "收藏" : "暂无收藏");
+                    ui.list.n ? "Favourites" : "No favourites");
         show(STATIONS);
     } else if (ui.next == R_FEATURED) {
         list_set(&ui.list, STARTERS, sizeof STARTERS - 1, 0, 0);
-        tk_snprintf(ui.caption, sizeof ui.caption, "精选");
+        tk_snprintf(ui.caption, sizeof ui.caption, "Featured");
         show(STATIONS);
     } else if (ui.next == A_SHOW) {
         show(ui.level);
     } else if (ui.next == A_SEARCH) {
         url_escape(ui.caption, key, sizeof key);
         tk_snprintf(path, sizeof path, "/m3u/stations/byname/%s" RADIO_QUERY, key);
-        fetch(path, STATIONS);
+        fetch(path, STATIONS, 0); /* Search and Top Stations stay by votes */
     } else if (ui.next == R_TOP) {
-        tk_snprintf(ui.caption, sizeof ui.caption, "热门电台");
-        fetch("/m3u/stations/topvote/100?hidebroken=true", STATIONS);
+        tk_snprintf(ui.caption, sizeof ui.caption, "Top Stations");
+        fetch("/m3u/stations/topvote/100?hidebroken=true", STATIONS, 0);
     } else if (ui.next != A_PICK) {
         ui.genre = ui.next == R_GENRE;
         fetch(ui.genre ? "/csv/tags?order=stationcount&reverse=true&limit=60"
                        : "/csv/countries?order=stationcount&reverse=true&limit=60",
-              PICK);
+              PICK, 1);
     } else {
         url_escape(url_of(&ui.pick, i), key, sizeof key);
         tk_snprintf(path, sizeof path,
@@ -647,7 +712,7 @@ static int go(const void *unused) {
                              : "/m3u/stations/bycountrycodeexact/%s" RADIO_QUERY,
                     key);
         tk_snprintf(ui.caption, sizeof ui.caption, "%s", name_of(&ui.pick, i));
-        fetch(path, STATIONS);
+        fetch(path, STATIONS, 1);
     }
     return 0;
 }
@@ -671,7 +736,7 @@ static int menu_click(void *ctx, void *event) {
         slurp(RADIO_LAST, buf, &n, sizeof buf);
         list_set(&rd.list, buf, n, 0, 0), rd.at = 0;
     }
-    if (!rd.pid) radio_play(rd.at);
+    if (!rd.pid && !rd.wait) radio_play(rd.at);
     np_open();
     return 0;
 }
@@ -731,7 +796,7 @@ static int closed(void *ctx, void *event) {
     return 0;
 }
 
-/* Streaming's Internet Radio row (navigation.c ringnav_stream). */
+/* Streaming's Internet Radio row (home.c ringnav_stream). */
 int radio_open(void *ctx, void *event) {
     if (ui.page || !(ui.page = page_open("radio_page", closed, keyup))) return 0;
     if (access(RADIO_DIR, 0)) mkdir(RADIO_DIR, 0777);
@@ -739,13 +804,13 @@ int radio_open(void *ctx, void *event) {
     show(MENU);
     return 0;
 }
-int radio_status(void) { return rd.active ? (rd.pid ? 2 : 3) : 0; }
+int radio_status(void) { return rd.active ? (rd.pid || rd.wait ? 2 : 3) : 0; }
 unsigned radio_session(void) { return rd.serial; }
 void radio_set_playing(int playing) {
     if (!rd.active) return;
     if (!playing)
         radio_halt();
-    else if (!rd.pid)
+    else if (!rd.pid && !rd.wait)
         radio_play(rd.at);
 }
 

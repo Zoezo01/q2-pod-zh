@@ -25,7 +25,7 @@
 #define RS_DEFAULT 30
 
 static struct {
-    int read, on, seconds, done, key[6], stops, counted;
+    int read, on, seconds, done, key[8], stops, counted;
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
@@ -49,8 +49,8 @@ static void settings(void) {
 }
 
 static void row_text(void *label) {
-    char t[32] = "交叉淡化：关闭";
-    if (xf.on) tk_snprintf(t, sizeof t, "交叉淡化：%d 秒", xf.seconds);
+    char t[32] = "Crossfade: Off";
+    if (xf.on) tk_snprintf(t, sizeof t, "Crossfade: %d s", xf.seconds);
     widget_set_text_utf8(label, t);
 }
 
@@ -63,7 +63,7 @@ void xfade_row(void *label) {
 
 static void wheel_text(void *label) {
     char t[32];
-    tk_snprintf(t, sizeof t, "滚轮灵敏度：%d%%", wheel_pct());
+    tk_snprintf(t, sizeof t, "Wheel Sensitivity: %d%%", wheel_pct());
     widget_set_text_utf8(label, t);
 }
 
@@ -88,8 +88,8 @@ int resume_min(void) {
 }
 
 static void rs_text(void *label) {
-    char t[32] = "断点续播：关闭";
-    if (resume_min()) tk_snprintf(t, sizeof t, "断点续播：%d 分钟", resume_min());
+    char t[32] = "Resume Songs: Off";
+    if (resume_min()) tk_snprintf(t, sizeof t, "Resume Songs: %d min", resume_min());
     widget_set_text_utf8(label, t);
 }
 
@@ -100,11 +100,11 @@ void resume_row(void *label) {
 }
 
 static void night_text(void *label) {
-    char t[32] = "夜览：关";
+    char t[32] = "Night Shift: Off";
     if (night_on() == 2)
-        tk_snprintf(t, sizeof t, "夜览：自动");
+        tk_snprintf(t, sizeof t, "Night Shift: Auto");
     else if (night_on())
-        tk_snprintf(t, sizeof t, "夜览：%dK", night_kelvin());
+        tk_snprintf(t, sizeof t, "Night Shift: %dK", night_kelvin());
     widget_set_text_utf8(label, t);
 }
 
@@ -201,7 +201,7 @@ void mono_sync(void) {
     if (xf.mono) peq_chain();
 }
 
-static void mono_text(void *label) { list_toggle(label, "单声道音频", mono_on()); }
+static void mono_text(void *label) { list_toggle(label, "Mono Audio", mono_on()); }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
 void mono_row(void *label) {
@@ -216,7 +216,7 @@ int mono_click(void *ctx, void *event) {
     return 0;
 }
 
-static void swap_text(void) { list_toggle(xf.swap_label, "左右声道互换", swap_on()); }
+static void swap_text(void) { list_toggle(xf.swap_label, "Swap L/R", swap_on()); }
 void swap_row(void *label) {
     xf.swap_label = label;
     swap_text();
@@ -293,19 +293,20 @@ static void refresh(int save) {
     if (xf.ctx == 1)
         tk_snprintf(t, sizeof t, "%d%%", wheel_pct());
     else if (xf.ctx == 2)
-        tk_snprintf(t, sizeof t, xf.rs_min ? "%d 分钟" : "关闭", xf.rs_min);
+        tk_snprintf(t, sizeof t, xf.rs_min ? "%d min" : "Off", xf.rs_min);
     else if (xf.ctx == 3) {
         tk_snprintf(t, sizeof t,
-                    night_on() == 2 ? "自动"
+                    night_on() == 2 ? "Auto"
                     : night_on()    ? "%dK"
-                                    : "关闭",
+                                    : "Off",
                     night_kelvin());
         image_base_set_image(xf.sw, night_on() ? "switch_on" : "switch_off");
     } else {
-        tk_snprintf(t, sizeof t, xf.on ? "%d 秒" : "关闭", xf.seconds);
+        tk_snprintf(t, sizeof t, xf.on ? "%d s" : "Off", xf.seconds);
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
     widget_set_text_utf8(xf.label, t);
+    if (switched()) slider_tray_dirty(xf.page);
     if (widget_get_prop_int(xf.slider, "value", 0) != value()) {
         xf.setting = 1; /* its value-changed is no release */
         slider_set_value(xf.slider, value());
@@ -381,6 +382,8 @@ static int gone(void *ctx, void *event) {
     return 0;
 }
 
+int xfade_page(void *top) { return xf.page && top == xf.page; }
+
 /* The row's click: stock's Boot volume page, its handlers swapped for these; ctx 1 for Wheel
  * sensitivity's row, 2 for Resume Songs', 3 for Night Shift's. */
 int xfade_open(void *ctx, void *event) {
@@ -414,14 +417,15 @@ int xfade_open(void *ctx, void *event) {
     widget_on(xf.slider, EVT_VALUE_CHANGING, slid, (void *)1L);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
-    widget_set_text_utf8(title, mode == 3   ? "夜览"
-                                : mode == 2 ? "断点续播"
-                                : wheel     ? "滚轮灵敏度"
-                                            : "交叉淡化");
+    widget_set_text_utf8(title, mode == 3   ? "Night Shift"
+                                : mode == 2 ? "Resume Songs"
+                                : wheel     ? "Wheel Sensitivity"
+                                            : "Crossfade");
     /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);
     widget_set_enable(xf.view, 1);
+    slider_number(xf.label);
     xf.ctx = mode;
     if (!switched()) widget_set_visible(xf.sw, 0, 0);
     slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);
@@ -431,6 +435,7 @@ int xfade_open(void *ctx, void *event) {
                                           : XF_MAX);
     slider_set_step(xf.slider, steps[mode]);
     xf.page = page;
+    if (switched()) slider_centre_hint(page, mode == 3);
     refresh(0);
     return 0;
 }
@@ -488,9 +493,12 @@ void xfade_poll(int next, int shuffled) {
     else if (xf.flag && !xf.counted && access("/tmp/notfile", 0) && access("/tmp/notsupport", 0) &&
              !navigator_window_is_exist("msginfo_dialog"))
         xf.counted = 1, ++xf.stops;
-    int key[6] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
+    /* the rows' paths too: Play Next moves rows' bytes, so a row's address can hold another song */
+    int key[8] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
                    in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
-                   shuffled && next != -1 && pos < n, xf.stops };
+                   shuffled && next != -1 && pos < n, xf.stops,
+                   in ? (int)P(deque_at(q, pos), REC_PATH) : 0,
+                   in ? (int)P(deque_at(q, (unsigned)next), REC_PATH) : 0 };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;
     memcpy(xf.key, key, sizeof key);
     int ms = key[0] && key[1] &&
