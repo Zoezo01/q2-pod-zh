@@ -23,6 +23,7 @@ SCOPE_MAX = 131072
 RULES = b'/mnt/data/q2-library-scope'
 TOKEN = b'/*q2-library-scope*/1'
 K_LOAD, K_READY, K_ERROR, K_WAIT = range(4)
+G_FIND, G_SORT = 4, 5
 REQ_OK, REQ_NOSOCK, REQ_FAIL = range(3)
 S_WAIT, S_PLAY, S_DONE = range(3)
 L_IDLE, L_WAIT, L_SCAN, L_IMPORT = range(4)
@@ -2547,7 +2548,7 @@ def edit_box(fw):
 def tap_find(p):
     """The title bar's icon tapped: the box stands, alone on the page."""
     box = edit_box(p.fw)
-    p.fw.fn('addon__find_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__bar_tapped', C.c_int, C.c_void_p, C.c_void_p)(G_FIND, None)
     p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
     assert p.pg.edit == box and p.pg.view is None
 
@@ -2632,7 +2633,7 @@ def test_a_sort_row_left_as_a_row_is_a_list_row(fw):
 
 
 def tap_sort(p):
-    p.fw.fn('addon__sort_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__bar_tapped', C.c_int, C.c_void_p, C.c_void_p)(G_SORT, None)
     p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
 
 
@@ -2705,7 +2706,7 @@ def test_after_a_refresh_written_in_place_the_sort_icon_opens_the_new_reply_s_ro
     refresh(p, [SEARCH, (b'sort', b'sorts', b'Sort', b'Release Date', b'by2', b''), *rows_of(0, 2)])
     assert p.top.sort == 1 and len(fw.calls('list_item_create')) == drawn  # in place
     tap_sort(p)
-    assert p.pg.depth == 2 and p.top.op == b'sorts' and p.top.args == b'	by2'
+    assert p.pg.depth == 2 and p.top.op == b'sorts' and p.top.args == b'\tby2'
 
 
 def test_levels_past_the_depth_forget_the_oldest(fw):
@@ -3036,7 +3037,7 @@ def search_box(fw):
     fw.mock('widget_factory_create_widget', lambda f, kind, *_: edit if C.string_at(kind) == b'edit' else p.view)
     p.answer(rows=[SEARCH, item(1)])
     shown = p.drawn
-    fw.fn('addon__find_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__bar_tapped', C.c_int, C.c_void_p, C.c_void_p)(G_FIND, None)
     fw.fn('addon__go', C.c_int, C.c_void_p)(None)
     assert p.pg.edit == edit and p.pg.view is None
     return p, edit, shown

@@ -1264,41 +1264,40 @@ static void art_window(void) {
 
 static void show(void);
 
+/* The first of reply f's *n rows out, the rest up one, if it is of this kind and not the sole row. */
+static int take_row(char **f, int *n, const char *kind) {
+    if (*n < 2 || strcmp(f[4], kind)) return 0;
+    for (int i = 4; i < 4 + 6 * (*n - 1); ++i) f[i] = f[i + 6];
+    --*n;
+    return 1;
+}
+
 /* A first row of kind search leaves the list for a search icon at the title bar's right, as
  * Tidal's navbar has (s_img_search), where the theme has a title bar; under one without (the name
  * in the status bar) the row stays, as does a sole row, which would leave an empty list. The row's
  * title and subtitle aren't shown: the box's tips are the app's. Whether it did, from reply f's *n
  * rows. */
-static int take_first(char **f, int *n) {
-    for (int i = 4; i < 4 + 6 * (*n - 1); ++i) f[i] = f[i + 6]; /* the rows up one */
-    --*n;
-    return 1;
-}
-
 static int take_find(char **f, int *n) {
-    if (!theme()->page_title_h || *n < 2 || strcmp(f[4], "search")) return 0;
-    return take_first(f, n);
+    return theme()->page_title_h && take_row(f, n, "search");
 }
 
 /* After a taken search, a first row of kind sort leaves the list too, for a sort icon left of the
  * search icon, its fields kept (pg.sort) for the tap, which opens it as a list row's press does.
  * A sole row stays, as a sole search. Whether it did, from reply f's *n rows. */
 static int take_sort(char **f, int *n) {
-    if (*n < 2 || strcmp(f[4], "sort")) return 0;
-    memcpy(pg.sort, f + 4, sizeof pg.sort);
-    return take_first(f, n);
+    memcpy(pg.sort, f + 4, sizeof pg.sort); /* read only where l->sort says it was taken */
+    return take_row(f, n, "sort");
 }
 
-static int find_tapped(void *ctx, void *event);
-static int sort_tapped(void *ctx, void *event);
+static int bar_tapped(void *ctx, void *event);
 
 /* A 50 px image at x in the title bar, h high from y, in stock style s: clickable (an image sends
- * no click unless it is, as Tidal's img_search), a tap calling tapped. */
-static void bar_icon(int x, int y, int h, const char *s, int (*tapped)(void *, void *)) {
+ * no click unless it is, as Tidal's img_search), a tap queueing code. */
+static void bar_icon(int x, int y, int h, const char *s, int code) {
     void *icon = image_create(pg.page, x, y, 50, h);
     widget_use_style(icon, s);
     widget_set_prop_int(icon, "clickable", 1);
-    widget_on(icon, EVT_CLICK, tapped, 0);
+    widget_on(icon, EVT_CLICK, bar_tapped, (void *)(long)code);
 }
 
 /* The search icon at the title bar's right, and the sort icon left of it when the level has one,
@@ -1323,8 +1322,8 @@ static void find_icon(int sort) {
      * centres it: a 50 px box centred on the title puts both at the same height. Made first: its box
      * overlaps the glass's (302 to 315), and a tap goes to the last child made, so the glass keeps
      * all of its own */
-    if (sort) bar_icon(SORT_X, (h - 50) / 2, 50, "s_img_order_navbar", sort_tapped);
-    bar_icon(FIND_X, 0, h, "s_img_search", find_tapped);
+    if (sort) bar_icon(SORT_X, (h - 50) / 2, 50, "s_img_order_navbar", G_SORT);
+    bar_icon(FIND_X, 0, h, "s_img_search", G_FIND);
 }
 
 /* Rows from.. added to the shown list in place of its trailing row, the rest left as they are;
@@ -1711,17 +1710,11 @@ static void search_box(void) {
     widget_set_focused(pg.edit, 1);
 }
 
-/* The icon's tap, on a timer as a row's: the box replaces the page the icon is in. */
-static int find_tapped(void *ctx, void *event) {
-    (void)ctx, (void)event;
-    later(G_FIND, 0);
-    return 0;
-}
-
-/* The sort icon's tap, on a timer as a row's press: it opens a level. */
-static int sort_tapped(void *ctx, void *event) {
-    (void)ctx, (void)event;
-    later(G_SORT, 0);
+/* A title bar icon's tap, ctx its G_ code, on a timer as a row's: what it opens replaces the page
+ * the icon is in. */
+static int bar_tapped(void *ctx, void *event) {
+    (void)event;
+    later((int)(long)ctx, 0);
     return 0;
 }
 
