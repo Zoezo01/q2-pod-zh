@@ -5066,6 +5066,48 @@ assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf001,0,0,0),gap=0
 assert m.names(m.get(syms['p_deque_showlist']))==['T1','T2'] and m.get(syms['tools_pdeq_directory'])==staging and not m.items(staging)
 assert ('getAllMusic',2,1) in m.calls and ('title',0xf001,['T1','T2']) in m.calls
 assert not [c for c in m.calls if c[0] in ('stock_localclass','deque_assign','deque_init_copy')]; passed()
+# Songs' cover tasks: stock's albumcoverinfo_init at the page's open (0x4aaac8) and both branches of
+# its return (0x4a969c reloads, 0x4a9744 keeps the list) malloc'd each row's name and path for a task
+# that the cover list's copy (0x5b390c) duplicates, and never freed them. With malloc and free
+# counted, and the list's elements copied and destroyed (0x5b31b8) as libcstl does, what stays
+# allocated after each is what the list holds.
+class SongCoversMachine(QueueMachine):
+    def __init__(self):
+        super().__init__(rows=0)
+        self.live=set(); self.result=self.alloc(4)
+        self.handlers.pop(syms['albumcoverinfo_init'])
+        self.word(0xa26cc0-0xabc,0x1000014); self.handlers[0x1000014]='c:malloc'  # lazy-bound, as RolloverMachine's
+        self.handlers[0x1000010]='c:free'; self.handlers[syms['strcpy@GLIBC_2.0']]='c:strcpy'
+        self.mock('pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0','clear_albumcover_task')
+        self.word(syms['pdeq_albumcoverlist'],self.deque([],'stAlbumCoverInfo'))
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,''); a,b=u.reg_read(REGS[0]),u.reg_read(REGS[1])
+        cover=name in ('q:_deque_push_back','q:deque_clear') and self.deqs[a][0]=='stAlbumCoverInfo'
+        if not cover and not name.startswith('c:'): return super().hook(u,address,size,unused)
+        ret=0
+        if name=='c:malloc': ret=self.alloc(a); self.live.add(ret)
+        elif name=='c:free': assert not a or a in self.live, 'freed twice'; self.live.discard(a)
+        elif name=='c:strcpy': u.mem_write(a,self.raw(b)+b'\0'); ret=a
+        elif name=='q:_deque_push_back':
+            e=self.alloc(12); u.mem_write(e,bytes(12)); self.nested(0x5b390c,e,b,self.result); self.items(a).append(e)
+        else:
+            for e in self.items(a): self.nested(0x5b31b8,e,self.result)
+            self.deqs[a][1]=[]
+        self.returns(ret,clobber=True)
+m=SongCoversMachine(); rows=[m.song(f'Row {i}') for i in range(3)]
+for i in (0,2): m.word(rows[i]+O['REC_ALBUM'],m.string(f'Album {i}'))
+m.word(rows[1]+O['REC_ALBUM'],0)  # no name: no copy
+m.word(syms['p_deque_showlist'],m.deque(rows))
+for start,end in ((0x4aaac4,0x4aaad0),(0x4a9694,0x4a96a4),(0x4a973c,0x4a974c)):
+    m.u.reg_write(UC_MIPS_REG_SP,0x7000f000); m.u.reg_write(UC_MIPS_REG_GP,0xa26cc0)
+    m.u.reg_write(UC_MIPS_REG_T9,syms['albumcoverinfo_init'])
+    m.u.emu_start(start,end,count=m.budget); assert m.u.reg_read(UC_MIPS_REG_PC)==end
+    covers=m.items(m.get(syms['pdeq_albumcoverlist']))
+    assert [(m.get(c+4) and m.text(m.get(c+4)),m.text(m.get(c+8))) for c in covers]==[
+        ('Album 0','/p/Row 0'),(0,'/p/Row 1'),('Album 2','/p/Row 2')]
+    held={m.get(c+off) for c in covers for off in (4,8)}-{0}
+    assert m.live==held, (hex(end-8),len(m.live-held),'blocks nothing holds')
+passed()
 # Every Library class and detail load scopes SQL, including empty results and failures, and
 # restores an already-scoped caller. The trampoline supplies stock's displayed copies.
 class ScopedClassMachine(ClassMachine):

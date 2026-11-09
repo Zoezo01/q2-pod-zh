@@ -7597,6 +7597,12 @@ int ringnav_art_name(char *buf, unsigned size, unsigned row, const char *album) 
     void *list = P(p_deque_showlist, 0);
     return snprintf(buf, size, "%s", row < deque_size(list) ? art_key(key, list, row) : album);
 }
+/* albumcoverinfo_init's _deque_push_back of each row's cover task (0x4ed2a4): the list's copy
+ * (0x5b390c) duplicates the task's name and path, which stock malloc'd for it and never freed. */
+void ringnav_cover_push(void *covers, void *task) {
+    _deque_push_back(covers, task);
+    free(P(task, 4)), free(P(task, 8));
+}
 /* A list's albumcoverinfo_init: the art thread hashes each cover task's copy of its row's name
  * (+4, read under aclist_mutex): key renames a row's, or returns 0 to keep it. */
 static int rename_covers(void *list, const char *(*key)(char *, void *, unsigned)) {
