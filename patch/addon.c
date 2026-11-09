@@ -947,8 +947,7 @@ static void req_cancel(void) {
 
 /* op and tail (its arguments: "\t" and escaped each) to the app at path, under a new id; the one
  * before is dropped. When it can't start, req.done is set at once, so the tick reports it. Once
- * the thread runs, done is the worker's alone: one that finished before pthread_create returned
- * had set it, and writing !running here cleared it, so the page stayed on Loading…. */
+ * the thread runs, done is the worker's alone: it may have finished already. */
 static void req_send(const char *path, const char *op, const char *tail) {
     req_cancel();
     ++req.id;
