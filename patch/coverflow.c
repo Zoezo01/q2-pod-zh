@@ -1012,6 +1012,14 @@ int coverflow_jump(void *w, int from, int dir, unsigned *letter) {
     return dir > 0 ? to - from : from - to;
 }
 
+/* Round the ends, for the thumb's letters: the first album of the first letter, or of the last. */
+int coverflow_round(int dir, unsigned *letter) {
+    int to = dir > 0 ? 0 : (int)deque_size(cf.albums) - 1;
+    *letter = initial(to);
+    while (dir < 0 && to > 0 && initial(to - 1) == *letter) --to;
+    return to;
+}
+
 typedef struct {
     void *r;
     const char *artist; /* Artist: the artist's sort key, without its article */

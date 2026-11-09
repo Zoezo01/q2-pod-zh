@@ -2373,6 +2373,13 @@ static void thumb_wheel(void) {
    sensitivity, the letters after the dwell and back, and a long spin's landing. ---- */
 static int initial_of(int i) { char c = names[i][0]; return c >= 'a' && c <= 'z' ? c - 32 : c; }
 static int first_of_letter(int i) { return i >= 0 && (!i || initial_of(i) != initial_of(i - 1)); }
+/* The first album of the letter after (dir 1) or before i's, round the ends. */
+static int next_letter(int i, int n, int dir) {
+    int j = i;
+    do j = (j + dir + n) % n; while (initial_of(j) == initial_of(i));
+    while (dir < 0 && !first_of_letter(j)) --j;
+    return j;
+}
 static int named_album(widget *covers_view, int n) {
     int i = 0;
     while (i < n && strcmp(album_caption(covers_view), names[i])) ++i;
@@ -2422,14 +2429,14 @@ static void thumb_shipped(void) {
     th_pass(0, 17);
 
     /* At jump_at for jump_ms, letters: each names a letter's first album, its letter shown, and no
-       geometry moves at one: the goal goes on by this pass's share and the covers keep moving. On
-       in the album order, one a jump_ticks of travel. */
+       geometry moves at one: the goal goes on by this pass's share and the covers keep moving. Each
+       letter in turn, however far the covers have gone since the last, one a jump_ticks of travel. */
     th_down();
-    int letters0 = letters, t = 0, spread = 0, canvas[16] = { 0 };
+    int letters0 = letters, t = 0, spread = 0, letter_at = 0, canvas[16] = { 0 };
     while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
     assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 300);
     for (int i = 0; i < 30; ++i) {
-        int was = letters, named = named_album(covers_view, n);
+        int was = letters;
         float goal = th[T_GOAL];
         if (i) th_spin(150, 17);
         if (letters == was && i) continue;
@@ -2438,8 +2445,8 @@ static void thumb_shipped(void) {
         int at = named_album(covers_view, n);
         assert(first_of_letter(at) || !letter_shown);
         assert(!letter_shown || letter_shown == (unsigned)initial_of(at));
-        int on = ((at - named) % n + n) % n;
-        assert(!i || (on > 0 && on < n - 2)); /* only ever on, never back against the spin */
+        assert(!i || at == next_letter(letter_at, n, 1));
+        letter_at = at;
         /* a frame decodes two covers at most, nearest first; the poll asks for frames until done */
         int l0 = loads;
         for (int f = 0; f < 10; ++f) {
@@ -2608,6 +2615,19 @@ static void thumb_shipped(void) {
     was = letters;
     th_pass(-6, 17);
     assert(letters == was);
+    th_rest();
+
+    /* Turned back too: the covers leave a letter's first album at once, going that way. Round the
+       start to the last letter. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(-150, 17);
+    letter_at = named_album(covers_view, n);
+    for (int i = 0; i < 12; ++i) {
+        for (was = letters; letters == was;) th_spin(-150, 17);
+        int at = named_album(covers_view, n);
+        assert(at == next_letter(letter_at, n, -1) && first_of_letter(at) && letter_shown == (unsigned)initial_of(at));
+        letter_at = at;
+    }
     th_rest();
 
     close_page();

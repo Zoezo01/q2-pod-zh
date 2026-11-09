@@ -87,17 +87,19 @@ static void th_name(void *s, int album, int n) {
                          (int)th_album(album - (int)th_album(th_aim(), (unsigned)n), (unsigned)n));
 }
 
-/* A letter on, Minimal's jump (coverflow_jump): the spin names the next letter's first album from
- * the one named, so it only ever goes on, or the previous letter's turning back, its letter shown
- * over the covers. A letter has no motion of its own, so slowing goes on from here with nothing
- * to catch up. Past the last letter there's none to name, and the flow goes round. */
+/* A letter on, Minimal's jump (coverflow_jump): the spin names the first album of the letter after
+ * the last one named, or the previous letter's turning back, round the ends as the covers go, its
+ * letter shown over the covers. From the last one named, not where the flow has got to: that passes
+ * over a letter the flow has left since, and every other one turning back, as the flow leaves a
+ * letter's first album at once. A letter has no motion of its own, so slowing goes on from here
+ * with nothing to catch up. ponytail: a letter of fewer albums than the flow's travel since the
+ * last (about three at top_speed) steps the pictures back by that, on a row still moving. */
 static void th_letter(void *s, int n, unsigned now) {
     unsigned letter;
-    int from = (int)th_album(th_aim(), (unsigned)n);
-    int to = from + th.dir * coverflow_jump(s, from, th.dir, &letter);
-    if (!letter) return;
-    th.jump_to = (to % n + n) % n;
-    th_name(s, th.jump_to, n);
+    int to = th.jump_to + th.dir * coverflow_jump(s, th.jump_to, th.dir, &letter);
+    if (!letter) to = coverflow_round(th.dir, &letter);
+    if (to == th.jump_to) return; /* one letter in all: the flow goes round */
+    th_name(s, th.jump_to = to, n);
     coverflow_letter(s, letter, now);
 }
 

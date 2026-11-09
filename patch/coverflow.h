@@ -92,6 +92,7 @@ int cf_round(float x);
 float cf_smooth(float x);
 int coverflow_bounded(void *w);
 int coverflow_jump(void *w, int from, int dir, unsigned *letter);
+int coverflow_round(int dir, unsigned *letter);
 int covers_live(void);
 float ff_decay(float s);
 int lettered(void *w);
