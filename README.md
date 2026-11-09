@@ -38,7 +38,7 @@
   </tr>
   <tr valign="top">
     <td><b>Ratings</b></td>
-    <td>Rate songs and albums from 0 to 5 hearts, then browse Top Rated, Loved and rated albums. A copy stays on the card as <code>.ratings.tsv</code>.</td>
+    <td>Rate songs and albums from 0 to 5 hearts, then browse Top Rated, Loved and rated albums. Five hearts is a favourite. A copy stays on the card as <code>.ratings.tsv</code>.</td>
   </tr>
   <tr valign="top">
     <td><b>Playback</b></td>
