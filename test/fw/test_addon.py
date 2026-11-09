@@ -60,7 +60,7 @@ class Req(C.Structure):
 
 
 class Lv(C.Structure):
-    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow', 'art', 'find')),
+    _fields_ = [*((n, C.c_int) for n in ('state', 'n', 'sel', 'live', 'retry', 'nosock', 'slow', 'art', 'find', 'sort')),
                 *((n, C.c_uint) for n in ('since', 'base', 'id', 'hash')),
                 ('title', C.c_char * 128), ('note', C.c_char * 128), ('op', C.c_char * 16), ('args', C.c_char * 400)]
 
@@ -71,7 +71,8 @@ class Pg(C.Structure):
                 ('term', C.c_char * 64), ('aop', C.c_char * 16), ('lv', C.POINTER(Lv)), ('buf', C.c_void_p * ADDON_PAGES),
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
-                *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int)]
+                *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int),
+                ('sort', C.c_char_p * 6)]
 
 
 class Qp(C.Structure):
@@ -359,7 +360,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -2054,9 +2055,10 @@ def test_a_more_row_under_a_section_is_named_for_the_section(fw):
     assert p.top.title == b'S0' and p.pg.depth == 2
 
 
-@pytest.mark.parametrize('kind,sel', [(b'search', 2), (b'action', 1)])
+@pytest.mark.parametrize('kind,sel', [(b'search', 2), (b'sort', 2), (b'action', 1)])
 def test_a_next_window_selects_the_first_content_row(fw, kind, sel):
-    """addon.c page_to: past Previous page, and past a Search row left as a row (here a sole one), as the reply has."""
+    """addon.c page_to: past Previous page, and past a Search or Sort row left as a row (here a sole one), as the
+    reply has."""
     p = Page(fw)
     p.answer(rows=[(kind, b'op', b'Row', b'', b'', b'')])
     fw.fn('addon__page_to', None, C.c_void_p, C.c_char_p, C.c_int)(C.addressof(p.top), b'c', 1)
@@ -2509,6 +2511,132 @@ def test_a_sole_search_row_stays_a_row(fw):
     box = edit_box(fw)
     p.click(0)
     assert p.pg.edit == box and p.pg.view is None
+
+
+SORT = (b'sort', b'sorts', b'Sort', b'', b'by', b'')
+# stock V1.32's images/xx, 50 px each: the columns with any ink (alpha > 0), as addon.c SORT_X says
+GLASS_INK, SORT_INK = (15, 35), (15, 34)
+
+
+def test_a_sort_row_after_a_taken_search_is_the_title_bar_s_sort_icon(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH, SORT, item(0)])
+    assert p.top.find == 1 and p.top.sort == 1 and p.top.n == 1 and p.cell(0, 1) == b'op0'
+    assert p.pg.sort[0] == b'sort' and p.pg.sort[1] == b'sorts' and p.pg.sort[4] == b'by'
+
+
+@pytest.mark.parametrize('rows,find,n', [
+    ([SORT, item(0)], 0, 2),          # no search before it
+    ([SEARCH, SORT], 1, 1),           # the last row left
+    ([SEARCH, item(0), SORT], 1, 2),  # not the row after the search
+])
+def test_a_sort_row_stays_a_row(fw, rows, find, n):
+    p = Page(fw)
+    p.answer(rows=rows)
+    assert p.top.find == find and not p.top.sort and p.top.n == n
+
+
+def test_a_sort_row_stays_a_row_without_a_title_bar(fw, settings_read):
+    boot(fw, settings_read, b'1')  # Classic: the name is in the status bar
+    p = Page(fw)
+    p.answer(rows=[SEARCH, SORT, item(0)])
+    assert not p.top.find and not p.top.sort and p.top.n == 3 and p.cell(1, 0) == b'sort'
+
+
+def test_under_classic_a_next_window_selects_past_a_search_and_a_sort_row(fw, settings_read):
+    """addon.c page_to: both kept as rows (no title bar), the window's first content row is 3, past them and
+    Previous page."""
+    boot(fw, settings_read, b'1')
+    p = Page(fw)
+    p.answer(rows=[SEARCH, SORT, item(0)])
+    fw.fn('addon__page_to', None, C.c_void_p, C.c_char_p, C.c_int)(C.addressof(p.top), b'c', 1)
+    assert p.top.sel == 3
+
+
+def test_a_sort_row_left_as_a_row_is_a_list_row(fw):
+    """addon.c opens and go: its chevron, and a press opens its uri with its context, titled with its title."""
+    p = Page(fw)
+    p.answer(rows=[SORT, item(0)])
+    assert fw.fn('addon__opens', C.c_int, C.c_int)(0) == 1
+    p.click(0)
+    assert p.pg.depth == 2 and p.top.op == b'sorts' and p.top.args == b'\tby' and p.top.title == b'Sort'
+
+
+def tap_sort(p):
+    p.fw.fn('addon__sort_tapped', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+
+
+def test_the_sort_icon_s_tap_opens_its_row_s_level(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH, SORT, item(0)])
+    tap_sort(p)
+    assert p.pg.depth == 2 and p.top.op == b'sorts' and p.top.args == b'\tby' and p.top.title == b'Sort'
+    p.answer(rows=[item(1)])  # a level without one: a tap does nothing
+    tap_sort(p)
+    assert p.pg.depth == 2
+
+
+def icons(fw, p, rows):
+    """The title bar as find_icon leaves it in a 48 px title: the images' boxes and styles, and the title's box."""
+    C.c_int.from_address(p.view + W_H).value = 48
+    made: list[list] = []
+    moved: dict = {}
+    def image(parent, x, y, w, h, *_):
+        made.append([C.c_int(v).value for v in (x, y, w, h)])
+        return block(fw, size=4096)
+    fw.mock('image_create', image)
+    fw.mock('widget_use_style', lambda w, s, *_: made[-1].append(C.string_at(s)) if made else 0)
+    fw.mock('widget_move_resize', lambda w, x, y, ww, h, *_: moved.__setitem__(w, tuple(C.c_int(v).value for v in (x, y, ww, h))))
+    p.answer(rows=rows)
+    return made, moved[p.view]
+
+
+def test_the_glass_alone_narrows_the_title_to_end_before_it(fw):
+    made, title = icons(fw, Page(fw), [SEARCH, item(0)])
+    # centred on the screen, ending at the glass's box, as before the sort icon
+    assert made == [[302, 0, 50, 48, b's_img_search']] and title == (73, 0, 229, 48)
+
+
+def test_the_sort_icon_is_left_of_the_glass_and_the_title_narrows_before_it(fw):
+    made, title = icons(fw, Page(fw), [SEARCH, SORT, item(0)])
+    # the sort style draws from its box's top left: a 50 px box centred on the title's line, as the glass's centring
+    # the sort made first: its box overlaps the glass's at 302 to 315, and a tap goes to the last made
+    assert made == [[265, -1, 50, 50, b's_img_order_navbar'], [302, 0, 50, 48, b's_img_search']]
+    x, _, w, _ = title
+    assert title == (95, 0, 185, 48) and x + w / 2 == 375 / 2 and x + w == 265 + SORT_INK[0]  # centred, to the sort's ink
+
+
+def test_the_sort_icon_is_midway_between_the_longest_centred_title_and_the_glass(fw):
+    """By their ink (GLASS_INK, SORT_INK), not their boxes: a centred 150 px title ("Newly Added 1/5" at 20 px)
+    ends at 262.5; the sort's ink is 17 px or so after it and 17 px before the glass's."""
+    made, _ = icons(fw, Page(fw), [SEARCH, SORT, item(0)])
+    (sort, *_), (glass, *_) = made
+    title_end = (375 + 150) / 2
+    after_title = sort + SORT_INK[0] - title_end
+    before_glass = glass + GLASS_INK[0] - (sort + SORT_INK[1]) - 1
+    assert abs(after_title - before_glass) <= 1 and before_glass == 17
+    assert 375 - (glass + GLASS_INK[1]) - 1 == 37  # the glass where it was, in line with the chevrons
+
+
+def test_a_refresh_that_takes_or_leaves_the_sort_row_is_rebuilt(fw):
+    p = live(fw, [SEARCH, SORT, *rows_of(0, 2)])
+    assert p.top.sort == 1 and p.top.n == 2
+    drawn = len(fw.calls('list_item_create'))
+    refresh(p, [SEARCH, SORT, item(0), (b'action', b'op1', b'Row 1 moved', b'sub', b'', b'')])
+    assert p.top.sort == 1 and len(fw.calls('list_item_create')) == drawn  # in place
+    refresh(p, [SEARCH, *rows_of(0, 2)])
+    assert not p.top.sort and len(fw.calls('list_item_create')) > drawn
+
+
+def test_after_a_refresh_written_in_place_the_sort_icon_opens_the_new_reply_s_row(fw):
+    """pg.sort points into the shown reply: written in place, that is the new one (the old is freed)."""
+    p = live(fw, [SEARCH, SORT, *rows_of(0, 2)])
+    drawn = len(fw.calls('list_item_create'))
+    refresh(p, [SEARCH, (b'sort', b'sorts', b'Sort', b'Release Date', b'by2', b''), *rows_of(0, 2)])
+    assert p.top.sort == 1 and len(fw.calls('list_item_create')) == drawn  # in place
+    tap_sort(p)
+    assert p.pg.depth == 2 and p.top.op == b'sorts' and p.top.args == b'	by2'
 
 
 def test_levels_past_the_depth_forget_the_oldest(fw):

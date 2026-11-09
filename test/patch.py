@@ -15809,7 +15809,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -16359,7 +16359,7 @@ def find_tap(s,w):
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','c1',[('search','','Search','','','')]+arts(0,49))
 icon=find_icon(s); title=s.nodes[s.page]['children'][0]
 assert icon and len(s.rows())==50 and 'Search' not in s.labels() and s.get(icon+O['W_X'])==302 and s.nodes[icon]['clickable']==1
-assert s.get(title+O['W_X'])==73 and s.get(title+O['W_W'])==229 and s.get(icon+O['W_H'])==s.get(title+O['W_H'])
+assert s.get(title+O['W_X'])==73 and s.get(title+O['W_W'])==229 and s.get(icon+O['W_H'])==s.get(title+O['W_H'])  # centred, to the glass's box
 find_tap(s,icon); edit=s.find('edit'); assert edit and not s.find('scroll_view')
 s.answer('ok','pages','c2',arts(1)); assert s.requests[-1]==('downloads','c1') and not s.find('scroll_view')
 s.answer('ok','pages','',arts(2)); assert s.requests[-1]==('downloads','c2') and not s.find('scroll_view')
@@ -16371,6 +16371,18 @@ s=classic_light_on(classic_light_new(SlskMachine)); s.open(); s.worker(); s.adva
 s.pick(2); s.answer('ok','pages','',[('search','','Search','','','')]+arts(0,3))
 assert not find_icon(s) and len(s.rows())==4 and 'Search' in s.labels(),s.labels()
 s.pick(0); assert s.find('edit') and not s.find('scroll_view'); passed()
+# After a taken Search row, a Sort row is the title bar's sort icon left of the glass (stock Songs' s_img_order_navbar,
+# addon.c take_sort), the title centred in the icons' box; a tap opens it as its row would. Under Classic it is a list row.
+SORTED=[('search','','Search','','',''),('sort','sorts','Sort','','by','')]
+s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','',SORTED+arts(0,3))
+sort=next(w for w in s.nodes[s.page]['children'] if s.nodes[w].get('style')=='s_img_order_navbar'); title=s.nodes[s.page]['children'][0]
+assert find_icon(s) and len(s.rows())==3 and 'Sort' not in s.labels() and s.get(sort+O['W_X'])==265 and s.nodes[sort]['clickable']==1
+assert s.get(title+O['W_X'])==95 and s.get(title+O['W_W'])==185  # centred, to the sort's ink
+find_tap(s,sort); s.answer('ok','','',[]); assert s.requests[-1]==('sorts','by'),s.requests[-1]; passed()  # served on the worker
+s=classic_light_on(classic_light_new(SlskMachine)); s.open(); s.worker(); s.advance(500); s.answer('ok','refresh','',SMENU)
+s.pick(2); s.answer('ok','pages','',SORTED+arts(0,3))
+assert not find_icon(s) and len(s.rows())==5 and 'Sort' in s.labels(),s.labels()
+s.pick(1); s.answer('ok','','',[]); assert s.requests[-1]==('sorts','by'),s.requests[-1]; passed()  # served on the worker
 # An action sent while a page is on its way takes its place: its reply toasted, the level is asked again from its
 # first page (a new list, not appended to the old one) and paged again, its row selected.
 s=SlskMachine(); s.open(); s.answer('ok','refresh','',SMENU); s.pick(2); s.answer('ok','pages','c1',arts(0))

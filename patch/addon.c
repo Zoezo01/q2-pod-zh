@@ -79,7 +79,8 @@
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
-#define ADDON_CAPS "playlist progress pages library goto sleep game audio sections art window urls"
+#define ADDON_CAPS                                                                                 \
+    "playlist progress pages library goto sleep game audio sections art window urls sort"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -978,7 +979,8 @@ static int req_done(void) {
  * into the header's 4 fields and 6 a row; Back asks again for the one below. A row's kind: list
  * opens the level uri (its context the argument), action sends uri with the context and toasts the
  * reply's message, search opens the T9 box (OK opens "search" for the text; a list's first one is
- * the title bar's search icon instead, take_find), remote opens the QR
+ * the title bar's search icon instead, take_find), sort opens as list does (caps word "sort"; one
+ * just after a taken search is the title bar's sort icon instead, take_sort), remote opens the QR
  * code, local plays from the card (uri: a song, or a folder to list; context "album": in track
  * order), info does nothing; its position, when set, is the op a held Play/Pause sends. progress
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
@@ -998,7 +1000,7 @@ static int req_done(void) {
  * side; none past the ends. Only the first level swipes: a level opened from a section is a level
  * as any other, and Back returns to the section. The wheel never changes section. */
 enum { K_LOAD, K_READY, K_ERROR, K_WAIT }; /* K_WAIT: no socket yet, the app starting */
-enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION, G_FIND };
+enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION, G_FIND, G_SORT };
 
 /* A level's page that can't show the app's rows (an error, or a load or start taking SLOW_MS) has a
  * Stop row whenever the app may be running, so a frozen one can always be ended. */
@@ -1007,6 +1009,7 @@ typedef struct {
     int nosock, slow;  /* nosock: the error is no socket; slow: the wait's Stop row shown */
     int art;           /* its rows are drawn with covers (art_row): how many have one, 0 none */
     int find;          /* its first row, a search, is the title bar's search icon (take_find) */
+    int sort;          /* and its next, a sort, the sort icon left of it (take_sort) */
     unsigned since;    /* when it began loading or waiting, 0 once done */
     unsigned base;     /* args' bytes before a More…'s cursor: the list's own */
     unsigned id, hash; /* id: the fetch whose reply this level takes; hash: its rows' bytes */
@@ -1033,6 +1036,7 @@ static struct {
     int sx, sy;
     char sdown, sclaim;
     int art_lo, art_hi; /* the rows whose covers may be decoded, half open (art_window) */
+    char *sort[6];      /* the sort icon's row (take_sort), its fields in the shown reply */
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -1063,11 +1067,11 @@ static void action(const char *op, const char *ctx) {
 
 static int clicked(void *ctx, void *event);
 
-/* Whether row i opens a page (go()): a list, the phone remote's QR page or a folder on the card.
- * Its row has a chevron. */
+/* Whether row i opens a page (go()): a list (a sort row left as a row is one), the phone remote's
+ * QR page or a folder on the card. Its row has a chevron. */
 static int opens(int i) {
     const char *kind = cell(i, 0), *uri = cell(i, 1);
-    return !strcmp(kind, "list") || !strcmp(kind, "remote") ||
+    return !strcmp(kind, "list") || !strcmp(kind, "sort") || !strcmp(kind, "remote") ||
            (!strcmp(kind, "local") && *uri && uri[strlen(uri) - 1] == '/');
 }
 
@@ -1264,27 +1268,62 @@ static void show(void);
  * in the status bar) the row stays, as does a sole row, which would leave an empty list. The row's
  * title and subtitle aren't shown: the box's tips are the app's. Whether it did, from reply f's *n
  * rows. */
-static int take_find(char **f, int *n) {
-    if (!theme()->page_title_h || *n < 2 || strcmp(f[4], "search")) return 0;
+static int take_first(char **f, int *n) {
     for (int i = 4; i < 4 + 6 * (*n - 1); ++i) f[i] = f[i + 6]; /* the rows up one */
     --*n;
     return 1;
 }
 
-static int find_tapped(void *ctx, void *event);
+static int take_find(char **f, int *n) {
+    if (!theme()->page_title_h || *n < 2 || strcmp(f[4], "search")) return 0;
+    return take_first(f, n);
+}
 
-/* The search icon at the title bar's right, the title narrowed to end before it and still centred.
- * ponytail: taps only, so the wheel and buttons don't reach search on such a list; a key bound to
- * G_FIND if that is ever asked for. */
+/* After a taken search, a first row of kind sort leaves the list too, for a sort icon left of the
+ * search icon, its fields kept (pg.sort) for the tap, which opens it as a list row's press does.
+ * A sole row stays, as a sole search. Whether it did, from reply f's *n rows. */
+static int take_sort(char **f, int *n) {
+    if (*n < 2 || strcmp(f[4], "sort")) return 0;
+    memcpy(pg.sort, f + 4, sizeof pg.sort);
+    return take_first(f, n);
+}
+
+static int find_tapped(void *ctx, void *event);
+static int sort_tapped(void *ctx, void *event);
+
+/* A 50 px image at x in the title bar, h high from y, in stock style s: clickable (an image sends
+ * no click unless it is, as Tidal's img_search), a tap calling tapped. */
+static void bar_icon(int x, int y, int h, const char *s, int (*tapped)(void *, void *)) {
+    void *icon = image_create(pg.page, x, y, 50, h);
+    widget_use_style(icon, s);
+    widget_set_prop_int(icon, "clickable", 1);
+    widget_on(icon, EVT_CLICK, tapped, 0);
+}
+
+/* The search icon at the title bar's right, and the sort icon left of it when the level has one,
+ * both in the same place on every such page. The title stays centred on the screen, in a box that
+ * ends where the first icon's ink starts (the glass's box alone, 73 to 302, as before), so a longer
+ * one scrolls clear of them.
+ * ponytail: taps only, so the wheel and buttons don't reach search or sort on such a list; a key
+ * bound to G_FIND or G_SORT if that is ever asked for. */
 #define FIND_X 302 /* the rows' list_into chevron's box (row_into), so the icon lines up with them */
-static void find_icon(void) {
+/* The sort icon's box: midway, by ink, between a centred 150 px title (a section's "Newly Added
+ * 1/5" at 20 px, which ends at 262) and the glass. Stock's 50 px images (V1.32 images/xx, alpha
+ * > 0): navbar_search's ink is columns 15 to 35, so 317 to 337 at FIND_X; song_order's
+ * (s_img_order_navbar, the Sort of stock's Songs page) is columns 15 to 34, so 280 to 299 here:
+ * 17 px after such a title's end and 17 px before the glass. */
+#define SORT_X 265
+#define TITLE_END (SORT_X + 15) /* 280: the sort's ink */
+static void find_icon(int sort) {
     void *title = widget_get_child(pg.page, 0);
-    int h = I(title, W_H);
-    widget_move_resize(title, 375 - FIND_X, 0, 2 * FIND_X - 375, h);
-    void *icon = image_create(pg.page, FIND_X, 0, 50, h);
-    widget_use_style(icon, "s_img_search");
-    widget_set_prop_int(icon, "clickable", 1); /* an image sends no click unless it is, as Tidal's img_search */
-    widget_on(icon, EVT_CLICK, find_tapped, 0);
+    int h = I(title, W_H), end = sort ? TITLE_END : FIND_X;
+    widget_move_resize(title, 375 - end, 0, 2 * end - 375, h); /* centred: 95 to 280, or 73 to 302 */
+    /* stock's sort style draws its image from the box's top left (draw type 0), where the glass's
+     * centres it: a 50 px box centred on the title puts both at the same height. Made first: its box
+     * overlaps the glass's (302 to 315), and a tap goes to the last child made, so the glass keeps
+     * all of its own */
+    if (sort) bar_icon(SORT_X, (h - 50) / 2, 50, "s_img_order_navbar", sort_tapped);
+    bar_icon(FIND_X, 0, h, "s_img_search", find_tapped);
 }
 
 /* Rows from.. added to the shown list in place of its trailing row, the rest left as they are;
@@ -1389,7 +1428,7 @@ static void show(void) {
         pg.view = page_list(pg.page, pg.page, 0, l->title, n = l->n + (pg.f[3][0] != 0),
                             l->art ? ART_ROW_H : 64);
         for (int i = 0; i < n; ++i) row(l, i);
-        if (l->find) find_icon();
+        if (l->find) find_icon(l->sort);
         page_push(pg.view, pg.moved), pg.moved = 0;
     }
     if (n) ringnav_select(pg.view, l->state == K_ERROR ? 0 : l->sel < n ? l->sel : n - 1, n);
@@ -1456,8 +1495,10 @@ static void sec_open(int i, int dir) {
 static void page_to(lv_t *l, const char *c, int dir) {
     char a[sizeof l->args] = "";
     if (!cursor_args(l, a, sizeof a, c)) return;
-    /* the first content row: past Previous page, and past a Search row kept as a row */
-    int first = 1 + !strcmp(cell(0, 0), "search");
+    /* the first content row: past Previous page, and past a Search and a Sort row kept as rows */
+    int first = !strcmp(cell(0, 0), "search");
+    first += first < l->n && !strcmp(cell(first, 0), "sort");
+    ++first;
     req_cancel();
     drop();
     memcpy(l->args, a, sizeof a);
@@ -1555,8 +1596,9 @@ static void got(void) {
         l->live = !strcmp(f[2], "refresh");
         pg.again = now + ADDON_LIVE_MS;
         if (l->state != K_READY || hash != l->hash) {
-            int find = take_find(g, &n);
-            int same = l->state == K_READY && l->live && find == l->find && same_rows(l, g, n);
+            int find = take_find(g, &n), sort = find && take_sort(g, &n);
+            int same = l->state == K_READY && l->live && find == l->find && sort == l->sort &&
+                       same_rows(l, g, n);
             keep_sel();
             if (same)
                 free(pg.buf[0]); /* same_rows: its one page, and the covers stay drawn */
@@ -1566,6 +1608,7 @@ static void got(void) {
             memcpy(pg.f, f, sizeof g); /* pg.f holds ADDON_PAGES replies' rows, g one's */
             l->n = n;
             l->find = find;
+            l->sort = sort;
             l->hash = hash;
             l->state = K_READY;
             /* an app opts in; older ones' lists keep More… */
@@ -1672,6 +1715,20 @@ static int find_tapped(void *ctx, void *event) {
     return 0;
 }
 
+/* The sort icon's tap, on a timer as a row's press: it opens a level. */
+static int sort_tapped(void *ctx, void *event) {
+    (void)ctx, (void)event;
+    later(G_SORT, 0);
+    return 0;
+}
+
+/* A list row's press, or the sort icon's tap: level uri over the top one, its context the
+ * argument, titled title. */
+static void open_list(const char *uri, const char *ctx, const char *title) {
+    char a[sizeof top()->args] = "";
+    if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
+}
+
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
     (void)unused;
@@ -1686,6 +1743,8 @@ static int go(const void *unused) {
         if (pg.depth == 1 && to >= 0 && to < pg.nsec) sec_open(to, i);
     } else if (pg.next == G_FIND) {
         if (l->state == K_READY && l->find) search_box();
+    } else if (pg.next == G_SORT) { /* the sort icon, opening as its row would */
+        if (l->state == K_READY && l->sort) open_list(pg.sort[1], pg.sort[4], pg.sort[2]);
     } else if (pg.next == G_SEARCH) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
@@ -1708,9 +1767,9 @@ static int go(const void *unused) {
             push(l->op, a, l->base, pg.depth == 1 && pg.nsec ? pg.sec[pg.cur].title : l->title);
     } else {
         const char *kind = cell(i, 0), *uri = cell(i, 1), *ctx = cell(i, 4);
-        if (!strcmp(kind, "list")) { /* with remote and a local folder, opens()'s pages */
-            if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), cell(i, 2));
-        } else if (!strcmp(kind, "page"))
+        if (!strcmp(kind, "list") || !strcmp(kind, "sort")) /* with remote and a folder: opens() */
+            open_list(uri, ctx, cell(i, 2));
+        else if (!strcmp(kind, "page"))
             page_to(l, ctx, strcmp(uri, "prev") ? 1 : -1);
         else if (!strcmp(kind, "action"))
             action(uri, ctx);
