@@ -1,7 +1,5 @@
 <h1 align="center">Q2 Pod</h1>
 
-<p align="center">The iPod firmware mod for the Shanling Q2.</p>
-
 <p align="center">
   <img src="assets/screenshots/home-split.png" alt="Home: the menu beside the playing album's cover" width="42%">
   &nbsp;
