@@ -3805,13 +3805,15 @@ static void play_word_create(void *bar) {
     widget_set_name(st.play_word, "label_playword");
     widget_use_style(st.play_word, "s_label_white16c");
     /* Left, in either state: the style's own centre slid the word half a box right of the page
-     * name's ink. The style's white is left alone — Light Mode's style hook turns it dark on the
-     * paper bar, as it does the page name's (text_ink's own flip is for final inks, and doubles
-     * with the hook: the word read white on the light bar, V172Y's own doing). */
+     * name's ink. The ink is written for every state — the bar takes no input, and its children
+     * read the disable state's style, which the one-state writes before kept white (the word read
+     * white on the light bar through V172Y and V172A). text_ink's flip puts the light half's ink
+     * in, and the half's change rewrites it (bar_word_sync's key). */
     for (unsigned i = 0; i < 2; ++i)
         widget_set_prop_str(st.play_word, i ? "style:disable:text_align_h" : "style:normal:text_align_h",
                             "left");
     widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
+    text_ink(st.play_word, 0xffffffffu, 15);
     if (!st.bar_title)
         widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
     widget_set_visible(st.play_word, 0, 0);
@@ -3852,7 +3854,7 @@ static int bar_word_sync(void *bar) {
         /* The face reads the text — the word was created empty, so its first answer kept the
          * classic face, which has no hanzi and painted the word as nothing (#V172Y). */
         theme_font(st.play_word, ROLE_BAR, FONT_ROW);
-        text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
+        text_ink(st.play_word, 0xffffffffu, 15); /* every state: the bar's children read disable's */
     }
     if (was != show) widget_set_visible(st.play_word, show, 0);
     return changed || was != show;
