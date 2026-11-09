@@ -4,6 +4,7 @@
   - Display: **Appearance** has a **Status Bar** row. **Theme** (the default) follows your theme; **Minimal**, **Modern** or **Classic** give the bar that theme's look under any theme, so Classic can have a plain black bar. It applies at once, with no restart.
   - Cover Flow: a fast spin flows. The letters come at about one turn a second instead of two and keep a steady pace however hard you spin, while the covers keep moving through them, so slowing down or turning back carries straight on into single albums. Letting go lands on the letter's first album, and lifting your thumb to re-grip no longer drops the letters.
   - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
+  - View Queue: the song playing has a ▶ before its title.
   - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
   - Now Playing: under **Theme: Classic** the hearts picker has a plain background in Light Mode instead of a gradient.
   - Bluetooth: the buttons of a headset or earbuds whose name is longer than 55 characters now work. The Q2 read the name cut short and so never found their buttons.

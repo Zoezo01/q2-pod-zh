@@ -1710,9 +1710,11 @@ def test_the_playing_rows_red_keeps_its_colour_under_a_repitched_set(fw, st, geo
     ui = Ui(fw)
     playing, other = (ui.add('hscroll_label', ui.window('playlist_page')) for _ in range(2))
     style = fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)
+    playing.text, other.text = 'Song', 'Other'
     style(playing.addr, b's_scrlabel_red20l')
     style(other.addr, b's_scrlabel_white20l')
     assert (playing.props['style'], other.props['style']) == ('s_scrlabel_red20l', 's_scrlabel_white20l')
+    assert (playing.text, other.text) == ('▶ Song', 'Other')
     if geom == 'GEOM_IPOD':
         assert 'style:normal:text_color' not in playing.props
         return

@@ -7133,16 +7133,23 @@ int stock_row_text(void *label, const char *text) {
     return ret;
 }
 
-/* ... whose style stock then picks: the playing row's red, which the build turns white for every
- * theme (ipod.json), keeps its colour under a set that re-pitches the rows; the style hook takes it
- * from there, as any stock red. Inline, as the row's font is, and written on each bind, as the
- * rows are reused. */
+/* ... whose style stock then picks, after the title on each bind: the playing row's red, which the
+ * build turns white for every theme (ipod.json), so a play mark goes before its title. It keeps
+ * its colour under a set that re-pitches the rows; the style hook takes it from there, as any stock
+ * red. Inline, as the row's font is, and written on each bind, as the rows are reused. */
 int stock_row_style(void *label, const char *style) {
-    int ret = widget_use_style(label, style);
-    if (geom_val(V_STOCK_ROW) < SET_STOCK_ROW)
-        widget_set_prop_int(
-            label, "style:normal:text_color",
-            (int)RGBA(tk_strcmp(style, "s_scrlabel_red20l") ? 0xffffff : STOCK_RED));
+    int ret = widget_use_style(label, style), playing = !tk_strcmp(style, "s_scrlabel_red20l");
+    if (playing) {
+        char text[512] = "\xe2\x96\xb6 "; /* U+25B6; stock binds at most this much title */
+        widget_get_text_utf8(label, text + 4, sizeof text - 4);
+        widget_set_text_utf8(label, text);
+    }
+    if (geom_val(V_STOCK_ROW) < SET_STOCK_ROW) {
+        if (playing)
+            theme_font(label, ROLE_TITLE, FONT_ROW); /* the mark's not in Classic's faces */
+        widget_set_prop_int(label, "style:normal:text_color",
+                            (int)RGBA(playing ? STOCK_RED : 0xffffff));
+    }
     return ret;
 }
 
