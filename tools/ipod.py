@@ -126,10 +126,12 @@ BC_ART = max(s for s in range(2, 321, 2) if (375 - s) // 2 >= corner_x((320 - s)
 # Wi-Fi and the battery on the right. The clock is centred on the screen, between the wider
 # group's extent with every icon shown and the same distance from the other edge; CLOCK_MIN leaves
 # room for its widest text, "12:59 PM" (69px at 16px in the pinned stock font). STATUS_PAD keeps the icons
-# that much further in than the corners need, so they don't look cramped against the glass — the play
-# state read as glued to the edge.
-STATUS_PAD = 6
+# that much further in than the corners need, so they don't look cramped against the glass; the play
+# state's side takes four px more (STATUS_LEFT_PAD) — at the corners' own slack the glyph read as glued
+# to the edge, and the battery's side has no room to give (status_bar's room check).
+STATUS_PAD = 2
 STATUS_MARGIN = corner_x(7, 16) + STATUS_PAD
+STATUS_LEFT_PAD = STATUS_MARGIN + 4
 CLOCK_MIN = 105
 CLOCK_TEXT = 70
 # Seven full-width Home rows share one left edge clear of the rounded glass. The payload lays them out
@@ -515,7 +517,7 @@ def status_bar(root, g=SET0):
     left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
     xm = g.bar_right if m else STATUS_MARGIN
-    for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
+    for view, x in ((left, m['inset'] if m else STATUS_LEFT_PAD), (right, xm)):
         layout = view[2]['children_layout']
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
         view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
@@ -549,7 +551,10 @@ def status_bar(root, g=SET0):
                                                        'ellipses': 'true', **face}, []])
         return
     shown = [[n for n in v[3] if n[2]['name'] not in BATT_MODES] for v in (left, right)]
-    extent = max(STATUS_MARGIN + sum(n[1][2] for n in v) + inc('STATUS_GAP') * (len(v) - 1) for v in shown)
+    # The left group starts at its own, padded margin; the clock stays centred on the screen between
+    # the two groups' reaches.
+    extent = max(x + sum(n[1][2] for n in v) + inc('STATUS_GAP') * (len(v) - 1)
+                 for x, v in zip((STATUS_LEFT_PAD, STATUS_MARGIN), shown))
     width = 375 - 2 * extent
     check(width >= CLOCK_MIN and right[1][0] + right[1][2] == 375, f'Status bar clock {width}px, too narrow')
     reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + max(BATT_PCT_W, BATT_H_W, inc('BATT_INSIDE_W') + inc('BATT_NUB_W'))
@@ -558,7 +563,7 @@ def status_bar(root, g=SET0):
         box = widgets[name][1]
         box[0], box[3] = -200, g.bar  # still updated by stock, drawn off-screen
         root[3].append(widgets[name])
-    root[3].append(['label', [STATUS_MARGIN, 0, 28, g.bar], {
+    root[3].append(['label', [STATUS_LEFT_PAD, 0, 28, g.bar], {
         'name': 'label_idle', 'text': 'Q2', 'visible': 'false',
         'style:normal:font_size': '18', 'style:normal:text_color': '#FFFFFF',
         'style:normal:text_align_h': 'left'}, []])

@@ -3788,11 +3788,12 @@ static int state_own_place(void) {
 static void play_word_create(void *bar) {
     if (st.play_word || !st.bar_state) return;
     if (st.bar_title) /* Classic: the glyph is by the battery on the right, so the word stands
-                       * where the page's name would — its box and its baseline, so the bar reads
-                       * as one line whether it shows a name or the state. Its face reads the
-                       * word's text once bar_word_sync writes it (bar_title_sync's own order). */
-        st.play_word = label_create(bar, I(st.bar_title, W_X), I(st.bar_title, W_Y), PLAY_WORD_WIDE,
-                                    I(st.bar_title, W_H));
+                       * where the page's name would — two px in (hscroll_label's own margin) and
+                       * on its baseline, left-aligned, so the bar reads as one line whether it
+                       * shows a name or the state. Its face reads the word's text once
+                       * bar_word_sync writes it (bar_title_sync's own order). */
+        st.play_word = label_create(bar, I(st.bar_title, W_X) + 2, I(st.bar_title, W_Y),
+                                    PLAY_WORD_WIDE, I(st.bar_title, W_H));
     else
         st.play_word = label_create(bar, 0, 0, PLAY_WORD_W, I(bar, W_H));
     if (!st.play_word) { /* the bar refused the child: the left view, which stock's own flow keeps */
@@ -3803,10 +3804,16 @@ static void play_word_create(void *bar) {
     }
     widget_set_name(st.play_word, "label_playword");
     widget_use_style(st.play_word, "s_label_white16c");
+    /* Left, in either state: the style's own centre slid the word half a box right of the page
+     * name's ink. The style's white is left alone — Light Mode's style hook turns it dark on the
+     * paper bar, as it does the page name's (text_ink's own flip is for final inks, and doubles
+     * with the hook: the word read white on the light bar, V172Y's own doing). */
+    for (unsigned i = 0; i < 2; ++i)
+        widget_set_prop_str(st.play_word, i ? "style:disable:text_align_h" : "style:normal:text_align_h",
+                            "left");
     widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
     if (!st.bar_title)
         widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
-    text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
     widget_set_visible(st.play_word, 0, 0);
 }
 

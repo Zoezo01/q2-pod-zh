@@ -19,9 +19,13 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # X fixed the rebuild's misses (the word by state, the full-width colon, the panes' UTF-8, Modern's
 # battery); Y unifies the word across the themes: each bar's own face, ink that flips in Light
 # Mode, where white on the paper bar was invisible. Z finds the word again in Classic (its face
-# read an empty label's answer and kept the hanzi-less Classic face: the word painted nothing) and
-# reads the bar's CJK at the clock's ink height, so the page names stopped looking their own size.
-TAG = 'V' + VERSION.replace('.', '') + 'Z'
+# read an empty label's answer and kept the hanzi-less Classic face: the word painted nothing),
+# reads the bar's CJK at the clock's ink height, and puts the word on the bar itself — where its
+# ink follows the half like the page name's own (text_ink doubled with Light Mode's style hook:
+# white on the light bar), and the glyph's side keeps four px more off the glass (Z's own bare pad
+# slid the left group under the glass corner, losing the glyph and the word on Minimal and Modern).
+# The letters round at Z; A reads newer than Z within the 1.7.2 line.
+TAG = 'V' + VERSION.replace('.', '') + 'A'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
