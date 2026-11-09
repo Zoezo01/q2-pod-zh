@@ -414,7 +414,7 @@ SHIM_H = r"""
 typedef int (*handler)(void *, void *);
 extern volatile unsigned char g_equalizer_flag, g_backlight_status;
 """ + ''.join(f'{r} {n}({a});\n' for n in """
-list_item_create label_create list_view_create scroll_view_create widget_use_style
+list_item_create label_create hscroll_label_create hscroll_label_set_only_focus hscroll_label_set_ellipses list_view_create scroll_view_create widget_use_style
 widget_set_text_utf8 widget_on widget_get_prop_int widget_set_prop_int widget_destroy_children
 widget_resize scroll_view_set_offset widget_invalidate_force timer_add timer_remove
 navigator_back write_int_config widget_factory widget_factory_create_widget widget_set_prop_str
@@ -588,6 +588,9 @@ void *list_item_create(void *p, int x, int y, int ww, int h) { void *r = make(p,
 int shim_row0_y(void) { for (int i = 2; i <= count; ++i) if (w[i].click) return w[i].y; return -1; }
 int shim_rows_bottom(void) { return rows_bottom; }
 void *label_create(void *p, int x, int y, int ww, int h) { void *r = make(p, h); w[(long)r].x = x; return r; }
+void *hscroll_label_create(void *p, int x, int y, int ww, int h) { return label_create(p, x, y, ww, h); }
+int hscroll_label_set_only_focus(void *x, int on) { return 0; }
+int hscroll_label_set_ellipses(void *x, int on) { return 0; }
 /* The theme's rows: a theme with its own pitch has its own text column and, as navigation.c's
  * theme_font, its own font size; the stock pitch's themes write none. */
 static int shim_page_row = 48;

@@ -532,6 +532,21 @@ def test_a_preset_s_name_and_a_picked_preamp_show_as_set(fw):
     assert p.title() == 'Preset loaded; choose Apply to activate'
 
 
+def test_a_long_preset_name_ellipsises_right_aligned_clear_of_its_caption(fw):
+    cut = []
+    fw.mock('hscroll_label_set_ellipses', lambda w, on, *_: cut.append((w, i32(on))))
+    s = state(fw, EQ_PEQ, peq=peak(fw, 3))
+    name = 'LETSHUOER DEFIANT-to-iBASSO Exemplar'
+    p = page(fw, s, {f'{SAVED}/{name}.peq': b'Q2PEQ02\0' + bytes(s.peq)}).advanced()
+    p.click('Presets')
+    p.click(f'{name}.peq')
+    row = [item for t, item in p.rows() if t.startswith('Presets')][0]
+    value = [c for c in p.children(row) if p.text.get(c) == name][0]
+    x, _, w, _ = struct.unpack_from('<4i', p.blocks[value], 0)
+    assert (value, 1) in cut and p.props[(value, 'style:normal:margin_right')] == 0
+    assert x >= 118 + 12 and x + w == 316  # past Classic's 27 px caption; ends where the other values do
+
+
 # The curve.
 
 def grid(canvas):
