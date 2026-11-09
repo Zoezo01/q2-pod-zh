@@ -125,7 +125,7 @@ STATUSBAR = own('STATUSBAR', 'Status Bar', ('Theme', 'Minimal', 'Modern', 'Class
 CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
                      detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
                      lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
-                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=500, jump_ticks=5, jump_at=32, jump_pace=140)
+                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140)
 
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
