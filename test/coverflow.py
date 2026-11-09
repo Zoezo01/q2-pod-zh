@@ -2415,17 +2415,21 @@ static void thumb_shipped(void) {
     top_window = page;
     th_pass(0, 17);
 
-    /* At jump_at for jump_ms, letters: each re-centres the row, at rest, on a letter's first album,
-       its letter shown; on in the album order, one a jump_ticks of travel. */
+    /* At jump_at for jump_ms, letters: each puts the row on a letter's first album, the last jump_in
+       eased in from the side it came from, its letter shown, and settled before the next; on in the
+       album order, one a jump_ticks of travel. */
+    float in = shipped.jump_in / 100.f;
     th_down();
     int letters0 = letters, t = 0, prev = -1, spread = 0, canvas[16] = { 0 };
     while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
     assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 300);
     for (int i = 0; i < 30; ++i) {
         int was = letters;
+        float before = th[T_POS];
         if (i) th_spin(150, 17);
         if (letters == was && i) continue;
-        assert(th[T_POS] == 0 && th[T_GOAL] == 0 && th[T_LEAD] == 0 && th[T_ON]);
+        assert(prev < 0 || fabsf(before) < .02f);
+        assert(th[T_POS] < 0 && th[T_POS] > -in && th[T_GOAL] == 0 && th[T_LEAD] == 0 && th[T_ON]);
         assert(CAPTION(*index) && (*index == 0 || initial_of(*index) != initial_of(*index - 1)));
         assert(letter_shown == (unsigned)initial_of(*index) || (!letter_shown && *index == 0));
         assert(prev < 0 || *index > prev || *index == 0); /* forward, wrapping to the first */
@@ -2441,31 +2445,42 @@ static void thumb_shipped(void) {
     }
     assert(spread);
     assert(letters >= letters0 + 3);
-    /* Once in, letters while the thumb turns on from fast_at: a re-grip (a still moment, then a slow
+    /* However hard the spin, a steady beat: jump_pace apart. */
+    int beat = letters;
+    th_spin(150, 1700);
+    assert(letters - beat >= 1700 / shipped.jump_pace - 2 && letters - beat <= 1700 / shipped.jump_pace);
+    /* Once in, letters while the thumb turns on from jump_out: a re-grip (a still moment, then a slow
        turn) keeps them, no album moving, and the cap's speed again goes on at once, no second dwell. */
-    #define LANDED() (th[T_POS] == 0 && th[T_GOAL] == 0 && CAPTION(*index) && \
+    #define LANDED() (th[T_GOAL] == 0 && fabsf(th[T_POS]) < in && CAPTION(*index) && \
                       (*index == 0 || initial_of(*index) != initial_of(*index - 1)))
     int was = letters;
     th_spin(0, 34);
-    for (int i = 0; i < 8; ++i) th_spin(50, 17), assert(th[T_GOAL] == 0 && th[T_POS] == 0);
+    for (int i = 0; i < 8; ++i) th_spin(50, 17), assert(th[T_GOAL] == 0);
     assert(letters > was);
     was = letters;
-    th_spin(150, 102);
+    th_spin(150, 340);
     assert(letters >= was + 2 && LANDED());
-    /* A moderate turn (40 ticks/s, under half the cap's) reads them: one each jump_ticks, each
-       landed on its letter's first album. */
-    th_spin(40, 102); /* the rate falls to it in rate_down */
+    /* A lift shorter than a letter shows keeps them: the next spin goes on from there, no dwell. */
+    wheel_held = 0;
+    th_spin(0, 170);
+    th_down();
+    was = letters;
+    th_spin(150, 170);
+    assert(letters > was && LANDED());
+    /* A gentle turn (20 ticks/s) reads them: one each jump_ticks, each landed on its letter's first
+       album. */
+    th_spin(20, 102); /* the rate falls to it in rate_down */
     was = letters;
     for (int i = 0; i < 59; ++i) {
         int before = letters;
-        th_spin(40, 17);
+        th_spin(20, 17);
         assert(letters - before <= 1 && (letters == before || LANDED()));
     }
-    assert(letters >= was + 40 / shipped.jump_ticks - 1 && letters <= was + 40 / shipped.jump_ticks + 1);
-    /* Under fast_at: album by album again under the thumb, on from the letter's album, never back. */
-    th_spin(15, 102);
+    assert(letters >= was + 20 / shipped.jump_ticks - 1 && letters <= was + 20 / shipped.jump_ticks + 1);
+    /* Under jump_out: album by album again under the thumb, on from the letter's album, never back. */
+    th_spin(10, 102);
     int jumped = letters, from = *index;
-    th_spin(15, 600);
+    th_spin(10, 600);
     float on = AT() - (float)from;
     on -= (float)n * floorf(on / (float)n + .5f);
     assert(letters == jumped && on > .3f && on < 3);
@@ -2497,8 +2512,8 @@ static void thumb_shipped(void) {
        albums, so the follower's numbers stay small and it lands exactly, on the album named. */
     th_down();
     float went = 0, last = AT(), most = 0;
-    for (int i = 0; i < 7600; ++i) {
-        th_spin(70, 17);
+    for (int i = 0; i < 26000; ++i) {
+        th_spin(30, 17);
         float d = AT() - last;
         went += d - (float)n * floorf(d / (float)n + .5f);
         last = AT();
@@ -2514,18 +2529,53 @@ static void thumb_shipped(void) {
     /* Under jump_at, however long: albums, never letters. */
     th_down();
     int l0 = letters;
-    th_spin(60, 2000);
+    th_spin(28, 2000);
     assert(letters == l0);
     th_rest();
-    /* A re-grip's dip under jump_at, still over fast_at, drains the dwell rather than dropping it:
-       letters come before a dwell started again after the dip would bring them. */
+    /* A re-grip's dip under jump_at takes its own ms off the dwell rather than dropping it: letters
+       come before a dwell started again after the dip would bring them. */
     th_down();
     int tl = 0;
     th_spin(150, 255), tl += 255;
-    th_spin(40, 102), tl += 102;
+    th_spin(25, 204), tl += 204;
     assert(letters == l0);
     while (letters == l0 && tl < 2000) th_spin(150, 17), tl += 17;
-    assert(letters > l0 && tl < 255 + 102 + shipped.jump_ms);
+    assert(letters > l0 && tl < 255 + 204 + shipped.jump_ms);
+    th_rest();
+    /* A lift just short of the dwell starts no letters: the rate's fall after it isn't a spin. */
+    th_down();
+    l0 = letters;
+    th_spin(150, shipped.jump_ms - 34);
+    assert(letters == l0);
+    wheel_held = 0;
+    th_spin(0, 170);
+    assert(letters == l0);
+    th_rest();
+    /* A letter earned before a lift, waiting on its beat, doesn't fire after it: the lift lands on
+       the letter shown. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(150, 68);
+    was = letters, from = *index;
+    wheel_held = 0;
+    th_spin(0, 340);
+    assert(letters == was);
+    th_rest();
+    assert(*index == from);
+    /* A creeping thumb on the quick loop of a page not repainting, a unit in twelve 8 ms passes, is a
+       slow thumb: albums again, under it. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    was = letters;
+    float at = AT();
+    for (int i = 0; i < 40; ++i) {
+        th_pass(-1, 8);
+        for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    }
+    float crept = AT() - at;
+    crept -= (float)n * floorf(crept / (float)n + .5f);
+    assert(letters == was && crept > .5f);
     th_rest();
 
     close_page();

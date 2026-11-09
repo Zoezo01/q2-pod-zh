@@ -3243,7 +3243,7 @@ def test_a_level_slides_in_from_the_side_it_comes_from_where_the_theme_moves_lev
 
 class Th(C.Structure):
     _fields_ = [*((k, C.c_float) for k in 'pos vel goal lead lead_v rate tau ticks seen seen_lead stretch'.split()),
-                *((k, C.c_uint) for k in 'at tick_at edge_at'.split()),
+                *((k, C.c_uint) for k in 'at tick_at edge_at letter_at'.split()),
                 *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump'.split())]
 
 

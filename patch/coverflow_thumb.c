@@ -75,13 +75,17 @@ static void th_rebase(void *s, int q, int n) {
 #define TH_REBASE 64   /* albums: a float's step there is 8e-6 */
 #define TH_FRAME_MS 16 /* a frame at 60 Hz: the shortest pass th_turn's own rate is taken over */
 
-/* A letter on, Minimal's jump (coverflow_jump): the covers at rest on that letter's first album,
- * or the previous letter's turning back, its letter shown over them. */
+/* A letter on, Minimal's jump (coverflow_jump): the covers on that letter's first album, or the
+ * previous letter's turning back, its letter shown over them. They arrive as a step does, the last
+ * jump_in of an album eased in from the side they came from; under half, it faces from the first
+ * frame, and its ring decodes around it. */
 static void th_letter(void *s, int n, unsigned now) {
     unsigned letter;
     int from = (int)th_album(th_aim(), (unsigned)n);
     th_rebase(s, from - I(s, SLIDE_INDEX) + th.dir * coverflow_jump(s, from, th.dir, &letter), n);
-    th.pos = th.goal = th.vel = th.lead = th.lead_v = 0;
+    th.goal = th.lead = th.lead_v = 0;
+    th.pos = -(float)th.dir * cfs.jump_in / 100;
+    th.tau = cfs.track, th.vel = -th.pos / th.tau;
     th.clicked = 0;
     coverflow_letter(s, letter, now);
     widget_invalidate_force(s, 0);
@@ -97,7 +101,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
         float l = th.goal - th.pos, m = cfs.back / 100.f;
         th.goal = th.pos + (l > m ? m : l < -m ? -m : l);
         th.rate = 0;
-        th.jump = 0; /* letters end: the turn back moves the covers */
+        th.jump = th.capped = 0; /* letters end: the turn back moves the covers */
     }
     th.dir = dir;
     /* Wheel Sensitivity scales the travel, 50% as the theme has it */
@@ -187,28 +191,31 @@ int coverflow_wheel_poll(int usable, int gated) {
         th_turn(s, travel, now, n, ms);
         r |= THUMB_TURNED;
     }
-    /* the thumb's rate, ticks/s: quick to fall, so slowing down gives control back at once */
+    /* the thumb's rate, ticks/s: quick to fall, so slowing down gives control back at once. Going
+     * by letters, a lifted thumb leaves it: a re-grip isn't a slow thumb. */
     float inst = th.ticks * 1000 / (float)ms, tc = inst > th.rate ? cfs.rate_up : cfs.rate_down;
-    th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
+    if ((th.finger && th.held) || !th.jump)
+        th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
     th.ticks = 0;
-    /* At jump_at or more for jump_ms the spin goes by letters, where the sort has them: one each
-     * jump_ticks of travel at any rate from fast_at, the first at once, so a moderate turn reads
-     * them. A lift, a turn back (th_turn), the rate under fast_at or no tick for stop_ms ends them:
-     * albums again from the letter's, under the thumb.
-     * ponytail: fast_at is the one floor; a thumb hovering on it may drop to albums on a slow pass.
-     * A leave rate of its own under fast_at if that shows on the wheel. */
+    /* Time at jump_at or more counts towards jump_ms and time under it comes off, so a re-grip
+     * costs only its own ms. Then the spin goes by letters, where the sort has them: one each
+     * jump_ticks of travel, the first at once, and none sooner than jump_pace after the last, a
+     * steady beat however hard the spin, the travel past it going nowhere as it does past
+     * top_speed. Only a turning thumb starts them or moves them on, so a lift lands on the letter
+     * shown. A lift or a still moment keeps them for as long as a letter shows, so a re-grip
+     * goes on from there; a thumb turning under jump_out, a turn back (th_turn) or that long with
+     * no tick ends them: albums again from the letter's, under the thumb.
+     * ponytail: short arcs with a lift each don't reach jump_ms, as on ticks: the rate falls in the
+     * lift and rises again. Carry it over the lift for the count too if arcs show on the wheel. */
     int since = (int)(now - th.tick_at);
-    /* jump_at counts towards jump_ms; a dip under it, still at fast_at (a thumb re-gripping),
-     * drains the count rather than dropping it; a lift or a rate under fast_at drops it. */
-    th.capped = !th.finger || th.rate < cfs.fast_at ? 0
-                : th.rate >= cfs.jump_at            ? th.capped + ms
-                : th.capped > ms                    ? th.capped - ms
-                                                    : 0;
-    if (th.jump && (!th.finger || th.rate < cfs.fast_at || since > cfs.stop_ms))
-        th.jump = 0;
-    else if (!th.jump && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s))
-        th.jump = 1, th.stretch = cfs.jump_ticks;
-    for (; th.jump && th.stretch >= cfs.jump_ticks; th.stretch -= cfs.jump_ticks) {
+    th.capped = th.rate >= cfs.jump_at ? th.capped + ms : th.capped > ms ? th.capped - ms : 0;
+    if (th.jump && (since > LETTER_MS || (travel && th.rate < cfs.jump_out)))
+        th.jump = th.capped = 0;
+    else if (travel && !th.jump && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s))
+        th.jump = 1, th.stretch = cfs.jump_ticks, th.letter_at = now - cfs.jump_pace;
+    if (travel && th.jump && th.stretch >= cfs.jump_ticks &&
+        (int)(now - th.letter_at) >= cfs.jump_pace) {
+        th.stretch = 0, th.letter_at = now;
         th_letter(s, n, now);
         r |= THUMB_CLICK;
     }
@@ -219,7 +226,7 @@ int coverflow_wheel_poll(int usable, int gated) {
     if (th.goal != (float)cf_round(th.goal) &&
         (!th.finger || idle || (since > cfs.stop_ms && left * 100 > cfs.stop_left)))
         th.goal = (float)th_aim(), left = ABS(th.goal - th.pos);
-    float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
+    float f = th.jump ? 0 : cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
     float base = idle || !th.finger ? cfs.snap : cfs.track + (float)(cfs.spin - cfs.track) * f;
     float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(left * 100 / cfs.far_left);
     /* only the thumb raises it, and how far is left only lets it fall: lag raising it would add lag
@@ -235,7 +242,9 @@ int coverflow_wheel_poll(int usable, int gated) {
     /* The facing point is the wheel's target, where the covers will land: off under lead_from, so
      * slow control is exact, and its short follow only smooths a reversal. */
     float l = th.goal - th.pos;
-    float want = l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
+    float want =
+        th.jump ? 0
+                : l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
     th_follow(&th.lead, &th.lead_v, want, cfs.lead_ms, (float)ms);
     if (!want && ABS(th.lead) < 1e-4f && ABS(th.lead_v) < 1e-5f) th.lead = th.lead_v = 0;
     /* Once the wheel's stopped, the facing point's follow, lagging as it shrinks, never passes the

@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.7.4**:
+  - Cover Flow: a fast spin is calmer. The letters come at about one turn a second instead of two and step at a steady pace however hard you spin, the covers ease onto each letter instead of cutting to it, and lifting your thumb to re-grip no longer drops the letters.
   - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
   - Now Playing: under **Theme: Classic** the hearts picker has a plain background in Light Mode instead of a gradient.
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
