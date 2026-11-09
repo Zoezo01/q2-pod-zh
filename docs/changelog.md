@@ -7,6 +7,7 @@
   - View Queue: the song playing has a ▶ before its title.
   - Display: under **Theme: Classic** with **Status Bar** on **Minimal** or **Modern**, the battery lines up with the icons beside it. It sat a little low.
   - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
+  - Network Update: pressing Cancel just as a download finishes, while the card takes its last bytes, now says **Download cancelled** rather than **Can't write to the card**.
   - Now Playing: under **Theme: Classic** the hearts picker has a plain background in Light Mode instead of a gradient.
   - Bluetooth: the buttons of a headset or earbuds whose name is longer than 55 characters now work. The Q2 read the name cut short and so never found their buttons.
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.

@@ -790,6 +790,16 @@ def test_a_cancel_during_the_check_downloads_nothing(fw):
     assert state == NU_CANCELLED and net.urls == [LATEST]
 
 
+def test_a_cancel_while_the_card_takes_the_last_bytes_is_a_cancel(fw):
+    """The press lands during the fsync of the whole part, seconds on a slow card with the label at 100%: the part
+    goes and the old tar stays, as for any cancel, and the word is Download cancelled."""
+    card = Disk(fw, {TAR: b'old'})
+    nu = fw.var('netupdate__nu', Nu)
+    fw.mock('fw_fsync', lambda fd, *_: setattr(nu, 'cancel', 1) or 0)
+    state, _, card = update(fw, card=card)
+    assert state == NU_CANCELLED and card.files[TAR] == b'old' and PART not in card.files and not card.of('rename')
+
+
 def fetch(fw, url=b'https://x', tag_size=64, file=None):
     tag, code = block(fw, size=tag_size), C.c_long(0)
     xfer = (C.c_int * 2)()
