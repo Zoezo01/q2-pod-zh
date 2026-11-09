@@ -1,20 +1,21 @@
 # Changelog
 
-- **1.7.4**:
-  - Display: **Appearance** has a **Status Bar** row. **Theme** (the default) follows your theme; **Minimal**, **Modern** or **Classic** give the bar that theme's look under any theme, so Classic can have a plain black bar. It applies at once, with no restart.
-  - Cover Flow: a fast spin flows. The letters come at about one turn a second instead of two and keep a steady pace however hard you spin, while the covers keep moving through them, so slowing down or turning back carries straight on into single albums. Letting go lands on the letter's first album, and lifting your thumb to re-grip no longer drops the letters.
+- **1.7.5**:
   - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
   - View Queue: the song playing has a ▶ before its title.
   - Display: under **Theme: Classic** with **Status Bar** on **Minimal** or **Modern**, the battery lines up with the icons beside it. It sat a little low.
-  - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
   - Network Update: pressing Cancel just as a download finishes, while the card takes its last bytes, now says **Download cancelled** rather than **Can't write to the card**.
+  - Cover Flow: turning the Q2 off while it prepares artwork no longer marks the album it was about to start as one that restarted the Q2.
+  - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.
+- **1.7.4**:
+  - Display: **Appearance** has a **Status Bar** row. **Theme** (the default) follows your theme; **Minimal**, **Modern** or **Classic** give the bar that theme's look under any theme, so Classic can have a plain black bar. It applies at once, with no restart.
+  - Cover Flow: a fast spin flows. The letters come at about one turn a second instead of two and keep a steady pace however hard you spin, while the covers keep moving through them, so slowing down or turning back carries straight on into single albums. Letting go lands on the letter's first album, and lifting your thumb to re-grip no longer drops the letters.
+  - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
   - Now Playing: under **Theme: Classic** the hearts picker has a plain background in Light Mode instead of a gradient.
   - Bluetooth: the buttons of a headset or earbuds whose name is longer than 55 characters now work. The Q2 read the name cut short and so never found their buttons.
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
-  - Cover Flow: turning the Q2 off while it prepares artwork no longer marks the album it was about to start as one that restarted the Q2.
   - Scrobbling: a line of the scrobble log with a damaged time no longer stops every upload until it is edited out. It is left out, as other unreadable lines are.
   - Playlists: opening Library → Playlists, or a card app importing playlists, soon after a boot no longer restarts the Q2.
-  - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.
   - Library: Albums, Artists, Composers and Genres open faster on a big library where some songs have no album, artist or genre. Each used to read every such song only to decide whether to show Unknown.
   - Streaming: a card app's page, or Spotify's browser, no longer stays on **Loading…** when the reply comes back at once.
   - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists, Folder and the other lists held on to a little each time too.
