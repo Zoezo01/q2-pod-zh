@@ -997,3 +997,13 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     for r, p in enumerate(array(ctypes.c_void_p, 'h_round', rounds)):
         assert (ctypes.string_at(p, r * r) if p else None) == (bytes(art.corner_cover(r)) if r in art.CORNERS else None)
     assert array(ctypes.c_ushort, 'h_bold', bold) == [0x20, 0x7e]
+
+
+def test_build_refuses_a_zip_that_is_not_the_audited_one(tmp_path):
+    """The stock ZIP's SHA-256 is build()'s first gate: it runs before anything is unpacked, so a wrong ZIP
+    stops the build with nothing but the empty --out directory made."""
+    zip_path = tmp_path/'stock.zip'
+    zip_path.write_bytes(b'not the audited ZIP')
+    with pytest.raises(ValueError, match='^Unsupported ZIP: SHA-256 differs from audited original$'):
+        build.build(zip_path, tmp_path/'out', None)
+    assert list((tmp_path/'out').iterdir()) == []
