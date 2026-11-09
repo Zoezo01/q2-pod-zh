@@ -325,7 +325,8 @@ int ringnav_tidal_favs(void *offset) {
  * mclStartPlayer asks get_tidal_trackurl for a 0xf1 record; ringnav_tidal_track answers an app's
  * itself (app_track) with the URL kept here, so Tidal's API and stock's stream thread never see the
  * id. A record whose REC_PATH is a card path plays as a local file: mclStartPlayer does that after
- * the call. The URLs are one queue's (au), by its generation. */
+ * the call. The URLs are one queue's (au), by its generation, and so is its lyrics folder
+ * (app_lyrics). */
 #define AU_MAX (256 << 10) /* the file read this far, as addon.c's M3U_MAX */
 #define AU_SONGS 5000      /* the songs a queue keeps, later lines passed over: records stay small */
 /* A line's URL or card path this long, each } counted as stock's %0x7d, is passed over: stock
@@ -342,6 +343,7 @@ static struct {
     unsigned lock[16];     /* a zeroed pthread mutex, as td.lock */
     char **urls;           /* the queue's URLs, 0 for a card path; n of them */
     unsigned n, gen, play; /* gen: the queue's; play: app_track's count, the latest start's */
+    char lyr[64];          /* the queue's lyrics folder: its path with .lyrics for .urls */
     unsigned start[16];    /* app_start's mutex: one start at a time, as stock's one stream thread */
 } au;
 
@@ -401,12 +403,30 @@ int app_urls_play(const char *path) {
     char **old = au.urls;
     unsigned had = au.n;
     au.urls = urls, au.n = n, au.gen = gen;
+    unsigned k = strlen(path);
+    tk_snprintf(au.lyr, sizeof au.lyr, "%.*s.lyrics", (int)(k > 5 ? k - 5 : k), path);
     pthread_mutex_unlock(au.lock);
     for (unsigned i = 0; old && i < had; ++i) free(old[i]);
     free(old);
     play_folder(q, start >= 0 && (unsigned)start < n ? start : 0, 0xf1); /* playing_page copies it */
     deque_destroy(q);
     return 1;
+}
+
+/* The .lrc a card app leaves for a track of its latest queue (id app:<gen>:<n>), in out:
+ * /tmp/q2-<id>.lyrics/<n>.lrc beside its /tmp/q2-<id>.urls (lyrics.c ringnav_lyric reads it).
+ * Whether it is that queue's. */
+int app_lyrics(const char *id, char *out, unsigned size) {
+    if (!id || !tk_str_start_with(id, "app:")) return 0;
+    char *c;
+    unsigned gen = (unsigned)strtol(id + 4, &c, 10);
+    if (*c != ':') return 0;
+    unsigned n = (unsigned)strtol(c + 1, 0, 10);
+    pthread_mutex_lock(au.lock);
+    int ok = gen == au.gen && au.lyr[0];
+    if (ok) tk_snprintf(out, size, "%s/%u.lrc", au.lyr, n);
+    pthread_mutex_unlock(au.lock);
+    return ok;
 }
 
 /* A track's URL to the player, off the caller's thread as stock's stream thread does it (the player

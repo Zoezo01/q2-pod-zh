@@ -8317,6 +8317,19 @@ m=LrcMachine(files={'/e':'[00:01.00]Hi 🎵\n'.encode(),'/q':'[00:01.00]Café da
                     '/g':'[00:01.00]你好\n'.encode('gb18030'),'/l':'[00:01.00]Café\n'.encode('latin-1')})
 def is_utf8(path): return m.call(address=HOOKS['mclIsUtf8WithoutBOM'][0],args=(m.string(path),0,0,0),gap=0)
 assert [is_utf8(p) for p in ('/e','/q','/k','/a','/g','/l','/none')]==[1,1,1,1,0,0,0]; passed()
+# A card app's streamed track (a 0xf1 queue, id app:<gen>:<n>; tidal.c app_urls_play) reads the .lrc the app left
+# beside its queue (app_lyrics: /tmp/q2-<id>.lyrics/<n>.lrc), synced or plain, for the latest queue only. au:
+# lock[16], urls, n, gen at 72, play, lyr at 80.
+def app_lrc(rec_id,gen=3,body=b'[00:01.00]Hi\n[00:02.50]there\n'):
+    m=LrcMachine(files={'/tmp/q2-jellyfin.lyrics/2.lrc':body}); m.word(O['MCL_TYPE'],0xf1)
+    m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[0]+O['REC_TIDAL_ID'],m.string(rec_id))
+    au=payload_syms['au']; m.word(au+72,gen); m.u.mem_write(au+80,b'/tmp/q2-jellyfin.lyrics\0')
+    return m
+m=app_lrc('app:3:2'); assert m.load()==1 and m.lines==[(1,'Hi'),(2,'there')] and m.k_opened=='/tmp/q2-jellyfin.lyrics/2.lrc',m.lines; passed()
+m=app_lrc('app:3:2',body=b'\xef\xbb\xbfPlain\nwords\n'); assert m.load()==1 and m.lines==[(FAR,'Plain'),(FAR,'words')],m.lines; passed()
+m=app_lrc('app:2:2'); assert m.load()==-1 and not m.lines; passed()  # an older queue's track
+m=app_lrc('app:3:1'); assert m.load()==-1 and not m.lines; passed()  # the app left none for it
+m=app_lrc('12345'); assert m.load()==-1 and not m.lines; passed()  # a Tidal track: none
 
 # The lyrics page (lyrics.c, iPod). Each load sends its lines, milliseconds
 # and word stamps, to the page; stock's rows (its builder mocked: a label a line, its text and lrc_time
