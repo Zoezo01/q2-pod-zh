@@ -3831,15 +3831,6 @@ static int bar_word_sync(void *bar) {
     play_word_create(bar);
     if (!st.play_word) return 0;
     int show = (status == 2 || status == 3) && state_own_place();
-    /* The badge steps aside while the word reads — it would sit between the glyph and the word,
-     * or under it — and comes back when the word doesn't (st.word remembers it was showing). */
-    if (show && st.bar_eq && widget_get_visible(st.bar_eq)) {
-        st.word = 1;
-        widget_set_visible(st.bar_eq, 0, 0);
-    } else if (st.word) {
-        st.word = 0;
-        widget_set_visible(st.bar_eq, 1, 0);
-    }
     if (!st.bar_title) { /* the word keeps the glyph's side whatever the bar's own relayouts do */
         int x = word_x();
         if (I(st.play_word, W_X) != x)
@@ -3849,7 +3840,7 @@ static int bar_word_sync(void *bar) {
     int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0) | (ipod_light() ? 16 : 0);
     int was = widget_get_visible(st.play_word), changed = key != st.word_key;
     if (changed) {
-        st.word_key = key;
+        st.word_key = key, st.word = status;
         widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
         /* The face reads the text — the word was created empty, so its first answer kept the
          * classic face, which has no hanzi and painted the word as nothing (#V172Y). */
