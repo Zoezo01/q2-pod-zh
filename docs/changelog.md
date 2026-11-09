@@ -1,6 +1,8 @@
 # Changelog
 
 - **1.7.6**:
+  - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
+  - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
   - Streaming: in a card app, choosing an option on a page that keeps itself up to date (such as a choice list with **Selected** under the current one) no longer blanks the screen to **Loading…**: the page stays and is redrawn as soon as the app answers.
   - Streaming: in a card app, a list with a **Search** magnifying glass in the title bar can have a sort button beside it, as on the Songs page. Tap it to choose the order. Under **Theme: Classic**, which has no title bar, it stays a row.
 - **1.7.5**:
