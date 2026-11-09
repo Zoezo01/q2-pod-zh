@@ -987,8 +987,9 @@ static int req_done(void) {
  * in from the left and selects its last row, any other from the right, selecting its row after the
  * first (the app's Previous page row).
  * A reply whose message is "refresh" is asked again every ADDON_LIVE_MS while its level is on top,
- * and redrawn only when it changed, its selected row kept; one with the same rows (same_rows) is
- * written in place (relabel) instead of rebuilt. One whose message is "pages" and that has a cursor
+ * and at once after an action on it (the level stays shown, no Loading…), and redrawn only when it
+ * changed, its selected row kept; one with the same rows (same_rows) is written in place (relabel)
+ * instead of rebuilt. One whose message is "pages" and that has a cursor
  * is followed by its next pages (page_next), appended to its list (append) under a Loading… row;
  * any other keeps More….
  * The first level's reply whose message is "sections" names the app's sections instead (sec_take):
@@ -1522,7 +1523,9 @@ static void got(void) {
         if (ok && !strcmp(pg.aop, "stop")) {
             app()->launched = app()->hold = 0;
             navigator_back();
-        } else
+        } else if (ok && l->state == K_READY && l->live)
+            fetch(l); /* a live level stays shown, asked again now: no Loading… page */
+        else
             keep_sel(), l->state = K_LOAD, show(); /* the level as the action left it */
     } else if (l->id != req.id) {
     } else if (pg.paging) { /* a next page appended, or the list ends at More… (rows kept) */

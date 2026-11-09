@@ -2232,6 +2232,54 @@ def live(fw, rows, covers=()):
     return p
 
 
+def test_an_action_on_a_live_level_keeps_it_shown_until_the_new_rows_are_drawn(fw):
+    """A choice page (refresh): no Loading… page between the press and the new rows. Selected moving from one row
+    to another changes which rows have a detail, so the list is drawn again (same_rows), its row kept selected."""
+    rows = [row_of(b'a', b'One', b'Selected', kind=b'action'), row_of(b'b', b'Two', b'', kind=b'action')]
+    p = live(fw, rows)
+    p.sel = 1  # the cursor on the row pressed, as the wheel or a tap leaves it
+    p.click(1)
+    p.answer()  # the action's reply: no message, so no toast
+    assert p.top.state == K_READY and not p.toasts  # still shown: no Loading… page
+    assert p.request().endswith(b'\tmenu\n')  # the level asked again at once, not after ADDON_LIVE_MS
+    drawn = len(fw.calls('list_item_create'))
+    p.answer(msg=b'refresh', rows=[row_of(b'a', b'One', b'', kind=b'action'), row_of(b'b', b'Two', b'Selected', kind=b'action')])
+    assert p.top.state == K_READY and p.cell(1, 3) == b'Selected' and p.cell(0, 3) == b''
+    assert len(fw.calls('list_item_create')) == drawn + 2 and p.top.sel == 1  # drawn again from the reply, not Loading…
+
+
+def test_an_action_on_a_live_level_whose_rows_keep_their_shape_writes_them_in_place(fw):
+    """Only texts changed (each row keeps a detail): written in place, no row drawn again."""
+    rows = [row_of(b'a', b'One', b'Selected', kind=b'action'), row_of(b'b', b'Two', b'-', kind=b'action')]
+    p = live(fw, rows)
+    drawn = len(fw.calls('list_item_create'))
+    p.click(1)
+    p.answer()
+    p.answer(msg=b'refresh', rows=[row_of(b'a', b'One', b'-', kind=b'action'), row_of(b'b', b'Two', b'Selected', kind=b'action')])
+    assert len(fw.calls('list_item_create')) == drawn and p.cell(1, 3) == b'Selected' and p.cell(0, 3) == b'-'
+
+
+def test_a_press_while_a_live_level_is_asked_again_takes_its_place(fw):
+    """The level stays pressable while it is asked again: a second action cancels that request and is sent; its
+    reply is taken as the action's, and the level is asked again after it."""
+    rows = [row_of(b'a', b'One', b'', kind=b'action'), row_of(b'b', b'Two', b'', kind=b'action')]
+    p = live(fw, rows)
+    p.click(0)
+    p.answer()
+    assert p.request().endswith(b'\tmenu\n') and p.pg.act == 0  # the level asked again, not answered yet
+    p.click(1)
+    assert p.request().endswith(b'\tb\n') and p.pg.act == 1  # the second action in its place
+    p.answer(msg=b'Done')
+    assert p.toasts == [b'Done'] and p.request().endswith(b'\tmenu\n') and p.top.state == K_READY
+
+
+def test_an_action_on_a_live_level_that_fails_reloads_it_as_before(fw):
+    p = live(fw, [row_of(b'a', b'One', b'', kind=b'action')])
+    p.click(0)
+    p.answer(status=b'error')
+    assert p.top.state == K_LOAD and p.toasts == [b"Foo didn't answer"]  # as before: asked again from Loading…
+
+
 def test_a_live_level_asks_again_on_its_time(fw):
     p = live(fw, rows_of(0, 1))
     assert p.top.live == 1 and p.pg.again == p.world.ms + 2000
