@@ -218,8 +218,10 @@ static void *fit(void *label) {
 /* LONG: a value of any length (a file's name), in stock's right-aligned ellipsis label (navigation.c's
  * list_value), grey beside the chevron. It stops short of the caption at x 130, past "Presets" in
  * the widest row font, Classic's 27 px (ends at x 118). Stock's label keeps 2 px each side; none on
- * the right ends it where the row's other values do. ponytail: a fixed column, not the caption's
- * measured width, so a theme with a wider row font has to move it. */
+ * the right ends a name that fits where the row's other values do. Stock draws a cut one from the
+ * label's left, so it can end up to a letter short of them, and scrolls it while the row is selected
+ * (only_focus: the marquee's). ponytail: a fixed column, not the caption's measured width, so a theme
+ * with a wider row font has to move it. */
 static void *long_value(void *item, const char *value, int rh) {
     void *label = hscroll_label_create(item, 130, 0, 316 - 130, rh);
     widget_use_style(label, "s_scrlabel_white20r");

@@ -533,8 +533,10 @@ def test_a_preset_s_name_and_a_picked_preamp_show_as_set(fw):
 
 
 def test_a_long_preset_name_ellipsises_right_aligned_clear_of_its_caption(fw):
-    cut = []
+    cut, focus, style = [], [], {}
     fw.mock('hscroll_label_set_ellipses', lambda w, on, *_: cut.append((w, i32(on))))
+    fw.mock('hscroll_label_set_only_focus', lambda w, on, *_: focus.append((w, i32(on))))
+    fw.mock('widget_use_style', lambda w, name, *_: style.__setitem__(w, C.string_at(name).decode()))
     s = state(fw, EQ_PEQ, peq=peak(fw, 3))
     name = 'LETSHUOER DEFIANT-to-iBASSO Exemplar'
     p = page(fw, s, {f'{SAVED}/{name}.peq': b'Q2PEQ02\0' + bytes(s.peq)}).advanced()
@@ -543,8 +545,9 @@ def test_a_long_preset_name_ellipsises_right_aligned_clear_of_its_caption(fw):
     row = [item for t, item in p.rows() if t.startswith('Presets')][0]
     value = [c for c in p.children(row) if p.text.get(c) == name][0]
     x, _, w, _ = struct.unpack_from('<4i', p.blocks[value], 0)
-    assert (value, 1) in cut and p.props[(value, 'style:normal:margin_right')] == 0
-    assert x >= 118 + 12 and x + w == 316  # past Classic's 27 px caption; ends where the other values do
+    assert style[value] == 's_scrlabel_white20r' and p.props[(value, 'style:normal:margin_right')] == 0
+    assert (value, 1) in cut and (value, 1) in focus  # without only_focus stock scrolls it from its first paint
+    assert x > 118 and x + w == 316  # past Classic's 27 px caption; ends where the other values do
 
 
 # The curve.
