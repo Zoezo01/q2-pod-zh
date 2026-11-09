@@ -970,9 +970,6 @@ def favourites(fw, files):
     return p, ui(fw).list.stations()
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: playlist() takes any line starting "file" (any case) and holding an "=" for a '
-                   '.pls FileN= key, so a file:// URL whose name holds an "=" is dropped, though a line with "://" is a '
-                   'station')
 def test_a_file_url_with_an_equals_sign_is_a_station(fw):
     _, stations = favourites(fw, {FAVS: b'#EXTM3U\nfile:///mnt/mmc/Radio/Live=Set.mp3\n'})
     assert stations == [('file:///mnt/mmc/Radio/Live=Set.mp3',) * 2]

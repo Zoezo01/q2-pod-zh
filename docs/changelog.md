@@ -18,6 +18,7 @@
   - Cover Flow: when an album's artwork restarted the Q2 while Cover Flow was preparing artwork, the next Cover Flow open adds that album's file to `q2-crash.log` on the card, under **cover flow skipped**.
   - Streaming: songs a card app streams show the lyrics the app leaves for them on the lyrics page, synced when timed.
   - EQ: on the Advanced tab a long preset name no longer runs into **Presets**. It stays on the right, is cut short with an ellipsis, and scrolls while its row is selected.
+  - Streaming: in **Internet Radio**, a favourite whose address is a `file://` path with an `=` in its name is listed. It was taken for a `.pls` entry and left out.
 
 - **1.7.3**:
   - Standby: waking from Standby no longer shows TF card removed and inserted messages.
