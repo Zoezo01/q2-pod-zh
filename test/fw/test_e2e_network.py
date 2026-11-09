@@ -1241,9 +1241,6 @@ def test_an_installed_app_draws_its_page_and_its_sync_updates_the_library_once_t
     assert [e for e in w.log if e[0] in ('scan', 'import')] == steps * 2 and w.card.files['/tmp/q2-foo.library.done'] == b'8 ok\n'
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: addon.c req_send() sets req.done = !req.running after pthread_create, so a '
-                                       'worker that has already finished has its done cleared and the page stays on '
-                                       'Loading… until it is closed (spotify.c request() has the same order)')
 def test_a_card_app_reply_that_lands_before_pthread_create_returns_is_still_taken(w):
     installed(w)
     Foo(w)
@@ -1490,9 +1487,6 @@ def test_updating_spotify_in_the_app_store_stops_librespot_keeps_its_login_and_s
     assert sp.lib.runs == 3
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: spotify.c request() sets wk.done = !wk.running after pthread_create, so a worker '
-                                       'that has already finished (its reply read, or no socket at once) has its done cleared, '
-                                       'and the browser stays on Loading… until it is closed; addon.c req_send has the same order')
 def test_a_spotify_reply_that_lands_before_pthread_create_returns_is_still_taken(w):
     sp = Spotify(w)
     sp.lib.paired = True

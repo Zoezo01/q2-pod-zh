@@ -10,6 +10,7 @@
   - Scrobbling: a line of the scrobble log with a damaged time no longer stops every upload until it is edited out. It is left out, as other unreadable lines are.
   - Playlists: opening Library → Playlists, or a card app importing playlists, soon after a boot no longer restarts the Q2.
   - Library: Albums, Artists, Composers and Genres open faster on a big library where some songs have no album, artist or genre. Each used to read every such song only to decide whether to show Unknown.
+  - Streaming: a card app's page, or Spotify's browser, no longer stays on **Loading…** when the reply comes back at once.
   - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists, Folder and the other lists held on to a little each time too.
   - Library: **Update Local Music** no longer sometimes skips the update without a word and keeps the old library. That could happen when it started while the songs were still being counted, more often the bigger the library.
   - Library: on a large library, opening an album, **Go to Album**, **Recently Added**, deleting songs and **Scan specified folders** are much faster, and Era's **Play All** no longer risks restarting the Q2 on a decade of many albums. They speed up after the next **Update Local Music** or **Scan specified folders**.

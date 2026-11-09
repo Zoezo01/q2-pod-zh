@@ -710,7 +710,10 @@ static void *worker(void *unused) {
 }
 
 /* op and tail (its arguments: "\t" and escaped each) asked on wk's pthread, for act or (A_FETCH)
- * the top level. The one before is dropped: one request at a time. */
+ * the top level. The one before is dropped: one request at a time. wk.done is set here only when
+ * no thread runs: a worker that finished before pthread_create returned had set it, and writing
+ * !running after the start cleared it, so the browser stayed on Loading… (addon.c's req_send is
+ * the same). */
 static void request(const char *op, const char *tail, int act) {
     fetch_cancel();
     br.act = act;
@@ -729,7 +732,7 @@ static void request(const char *op, const char *tail, int act) {
                 : 0;
     wk.len = n > 0 && n < SPOT_REQ_MAX ? (unsigned)n : 0;
     wk.running = wk.len && !pthread_create(&wk.thread, 0, worker, 0);
-    wk.done = !wk.running; /* the tick reports it */
+    if (!wk.running) wk.done = 1; /* the tick reports it */
 }
 
 static void fetch(level_t *l) {
