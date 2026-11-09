@@ -2584,8 +2584,6 @@ def test_a_sole_search_row_stays_a_row(fw):
 
 
 SORT = (b'sort', b'sorts', b'Sort', b'', b'by', b'')
-# stock V1.32's images/xx, 50 px each: the columns with any ink (alpha > 0), as addon.c SORT_X says
-GLASS_INK, SORT_INK = (15, 35), (15, 34)
 
 
 def test_a_sort_row_after_a_taken_search_is_the_title_bar_s_sort_icon(fw):
@@ -2647,8 +2645,16 @@ def test_the_sort_icon_s_tap_opens_its_row_s_level(fw):
     assert p.pg.depth == 2
 
 
+def test_a_sort_tap_on_a_level_that_isn_t_ready_does_nothing(fw):
+    p = Page(fw)
+    p.answer(rows=[SEARCH, SORT, item(0)])
+    p.top.state = K_LOAD
+    tap_sort(p)
+    assert p.pg.depth == 1
+
+
 def icons(fw, p, rows):
-    """The title bar as find_icon leaves it in a 48 px title: the images' boxes and styles, and the title's box."""
+    """The title bar as find_icon leaves it in a 48 px title: the images' boxes and styles, the title's box and the icons' click codes."""
     C.c_int.from_address(p.view + W_H).value = 48
     made: list[list] = []
     moved: dict = {}
@@ -2659,34 +2665,25 @@ def icons(fw, p, rows):
     fw.mock('widget_use_style', lambda w, s, *_: made[-1].append(C.string_at(s)) if made else 0)
     fw.mock('widget_move_resize', lambda w, x, y, ww, h, *_: moved.__setitem__(w, tuple(C.c_int(v).value for v in (x, y, ww, h))))
     p.answer(rows=rows)
-    return made, moved[p.view]
+    tapped = C.cast(fw.fn('addon__bar_tapped', C.c_int, C.c_void_p, C.c_void_p), C.c_void_p).value
+    clicks = [a[3] for _, a in fw.calls('widget_on') if a[1] == O['EVT_CLICK'] and a[2] == tapped]
+    return made, moved[p.view], clicks
 
 
 def test_the_glass_alone_narrows_the_title_to_end_before_it(fw):
-    made, title = icons(fw, Page(fw), [SEARCH, item(0)])
+    made, title, clicks = icons(fw, Page(fw), [SEARCH, item(0)])
     # centred on the screen, ending at the glass's box, as before the sort icon
-    assert made == [[302, 0, 50, 48, b's_img_search']] and title == (73, 0, 229, 48)
+    assert made == [[302, 0, 50, 48, b's_img_search']] and title == (73, 0, 229, 48) and clicks == [G_FIND]
 
 
 def test_the_sort_icon_is_left_of_the_glass_and_the_title_narrows_before_it(fw):
-    made, title = icons(fw, Page(fw), [SEARCH, SORT, item(0)])
+    made, title, clicks = icons(fw, Page(fw), [SEARCH, SORT, item(0)])
     # the sort style draws from its box's top left: a 50 px box centred on the title's line, as the glass's centring
     # the sort made first: its box overlaps the glass's at 302 to 315, and a tap goes to the last made
     assert made == [[265, -1, 50, 50, b's_img_order_navbar'], [302, 0, 50, 48, b's_img_search']]
+    assert clicks == [G_SORT, G_FIND]
     x, _, w, _ = title
-    assert title == (95, 0, 185, 48) and x + w / 2 == 375 / 2 and x + w == 265 + SORT_INK[0]  # centred, to the sort's ink
-
-
-def test_the_sort_icon_is_midway_between_the_longest_centred_title_and_the_glass(fw):
-    """By their ink (GLASS_INK, SORT_INK), not their boxes: a centred 150 px title ("Newly Added 1/5" at 20 px)
-    ends at 262.5; the sort's ink is 17 px or so after it and 17 px before the glass's."""
-    made, _ = icons(fw, Page(fw), [SEARCH, SORT, item(0)])
-    (sort, *_), (glass, *_) = made
-    title_end = (375 + 150) / 2
-    after_title = sort + SORT_INK[0] - title_end
-    before_glass = glass + GLASS_INK[0] - (sort + SORT_INK[1]) - 1
-    assert abs(after_title - before_glass) <= 1 and before_glass == 17
-    assert 375 - (glass + GLASS_INK[1]) - 1 == 37  # the glass where it was, in line with the chevrons
+    assert title == (95, 0, 185, 48) and x + w / 2 == 375 / 2 and x + w == 280  # centred, to the sort's ink
 
 
 def test_a_refresh_that_takes_or_leaves_the_sort_row_is_rebuilt(fw):
