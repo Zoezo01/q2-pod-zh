@@ -2,6 +2,7 @@
 
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
+  - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
 - **1.7.5**:
   - Library: adding an album to your favourites, or rating it five hearts, now makes its songs favourites too, so they show in **Favorites** and **Loved**. Removing the album, or rating it lower, takes them out. For an album already at five hearts, choose five again under **Rate Album**.
   - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
