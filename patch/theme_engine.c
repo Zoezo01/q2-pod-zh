@@ -4,7 +4,8 @@
 
 /* A setting under section in the stock config.ini, a decimal 0 to n - 1 (write_int_config writes
  * them so), else def (a missing key too): toolsReadConfig(path, section, key, out, default) copies
- * the value, or the default. */
+ * the value, or the default, with no size: out holds a whole config line, 255 bytes (its fgets,
+ * docs/internals.md Folder Root), as every caller's must. */
 int config_value(const char *section, const char *key, int n, int def) {
     char s[256] = "", d[12];
     tk_snprintf(d, sizeof d, "%d", def);

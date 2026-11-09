@@ -1171,6 +1171,19 @@ def test_resume_minutes_are_read_once(fw):
     assert len(fw.calls('toolsReadConfig')) == 1
 
 
+def test_a_config_line_of_255_bytes_fits_every_reader(fw):
+    """toolsReadConfig takes no size and copies a whole line, up to 255 bytes (its fgets): each reader's
+    buffer holds one (a shorter one fails under ASan here), and the value still parses, trailing spaces and
+    all."""
+    def line(digits): return digits + ' ' * (255 - len(digits))
+    config(fw, {'XFADESEC': line('7'), 'RESUMEMIN': line('45')})
+    fw.fn('crossfade__settings', None)()
+    assert xf(fw).seconds == 7
+    assert fw.fn('resume_min', C.c_int)() == 45
+    _, kelvin, _, _ = night(fw, {'NIGHTK': line('3000')})
+    assert kelvin() == 3000
+
+
 def page(fw, ctx, values=None):
     written = config(fw, values)
     fw.mock('window_manager', lambda *_: 0x9000)
