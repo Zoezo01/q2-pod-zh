@@ -378,6 +378,7 @@ static int gone(void *ctx, void *event) {
     if (xf.page != ctx) return 0;
     xf.sliding = 0;
     if (xf.unsaved) refresh(1); /* a release never seen */
+    stop_timer(&xf.press); /* a single press still waiting for its double: it was this page's */
     xf.page = 0, xf.ctx = 0;
     return 0;
 }

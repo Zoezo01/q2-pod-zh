@@ -609,9 +609,6 @@ def test_centre_switches_once_a_double_press_can_no_longer_come(fw):
     assert xf(fw).on == 1 and page.config.written == [('XFADE', 1), ('XFADESEC', 5)]
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: crossfade.c gone() clears xf.page and xf.ctx but not xf.press, the single-press '
-                   'timer center_press armed; when the page closes within DOUBLE_CLICK_MS of one Centre press, single() runs '
-                   'toggle() with xf.ctx 0 and flips and saves Crossfade (XFADE, XFADESEC) instead of Night Shift')
 def test_a_centre_press_on_night_shift_closed_at_once_switches_no_crossfade(fw):
     page = opened(fw, 3, {'XFADE': 0, 'XFADESEC': 5, 'NIGHTSHIFT': 0, 'NIGHTK': 3000})
     centre = Centre(fw)

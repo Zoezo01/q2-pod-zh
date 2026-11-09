@@ -13,6 +13,7 @@
   - Streaming: a card app's page, or Spotify's browser, no longer stays on **Loading…** when the reply comes back at once.
   - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists, Folder and the other lists held on to a little each time too.
   - Library: **Update Local Music** no longer sometimes skips the update without a word and keeps the old library. That could happen when it started while the songs were still being counted, more often the bigger the library.
+  - Settings: a Centre press on Night Shift's page followed at once by Back no longer switches Crossfade on or off instead.
   - Library: on a large library, opening an album, **Go to Album**, **Recently Added**, deleting songs and **Scan specified folders** are much faster, and Era's **Play All** no longer risks restarting the Q2 on a decade of many albums. They speed up after the next **Update Local Music** or **Scan specified folders**.
   - Cover Flow: when an album's artwork restarted the Q2 while Cover Flow was preparing artwork, the next Cover Flow open adds that album's file to `q2-crash.log` on the card, under **cover flow skipped**.
   - Streaming: songs a card app streams show the lyrics the app leaves for them on the lyrics page, synced when timed.
