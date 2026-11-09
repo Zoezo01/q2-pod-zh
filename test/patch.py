@@ -4990,6 +4990,35 @@ for cls,artist,query in ((0xf003,0,'getMusicByAlbum'),(0xf004,0,'getMusicBySonge
 for cls,last,rows in ((0xf004,1,3),(0xff01,-1,3),(0xff10,-1,3),(0xff11,-1,3),(0xf007,-1,3),(0xf004,-1,0)):
     shown,q,_=unknown(cls,0,last=last,rows=rows)
     assert len(shown)==rows and q is None, (cls,last,rows); passed()
+# The check needs one song, not all of them: its query (stock's where tag="", through the Library
+# wrapper, its SQL run here) reads the first at most, and the row stays exactly when a music song
+# lacks the tag. The Queue menu's query on that row still reads every one.
+class FirstMachine(ClassMachine):
+    dbquery=int(manifest['patch_symbols']['stock_dbquery_trampoline'],16)
+    def __init__(self,untagged,**kw):
+        super().__init__(**kw); self.mock('strstr@GLIBC_2.0'); self.read=[]
+        self.db=sqlite3.connect(':memory:'); self.db.execute('create table songtable(id,album,songer,albumsonger,composer,style,fileurl)')
+        self.db.executemany('insert into songtable values(?,?,?,?,?,?,?)',[(1,'A','B','C','D','E','/mnt/mmc/Music/a.flac'),
+            (2,'','','','','','/mnt/mmc/Audiobooks/b.mp3')]+[(3+i,'','','','','',f'/mnt/mmc/Music/{i}.flac') for i in range(untagged)])
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if name.startswith('q:getMusicBy') and not u.reg_read(REGS[0]):
+            tag={'Album':'album','Songer':'songer','AlbumArtist':'albumsonger','Composer':'composer','Genre':'style'}[name[12:]]
+            sql=self.string(f'select * from songtable where {tag}=""')
+            self.returns(self.nested(payload_syms['ringnav_library_query'],self.string('/mnt/data/database.db'),sql,0,0)); return
+        if address!=self.dbquery: return super().hook(u,address,size,unused)
+        rows=self.db.execute(self.text(u.reg_read(REGS[1]))).fetchall(); self.read.append(len(rows))
+        self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',self.song(f'S{r[0]}')) for r in rows]
+        self.returns(len(rows))
+for cls,artist in ((0xf003,0),(0xf004,0),(0xf004,1),(0xf005,0),(0xf006,0)):
+    for untagged in (0,1,2):
+        m=FirstMachine(untagged,page='localclass_page',cls=0xf001,rows=3); m.word(m.row(2)+O['REC_ID'],-1)
+        m.word(syms['artist_type'],artist)
+        assert m.call(address=HOOKS['load_localclass_list'][0],args=(cls,0,0,0),gap=0)==2+(untagged>0)
+        assert m.read==[min(untagged,1)],(cls,artist,untagged,m.read)
+    passed()
+m=FirstMachine(2,page='localclass_page',cls=0xf004); m.word(m.row(0)+O['REC_ID'],-1); m.run(1)
+assert m.read==[2],m.read; passed()
 # An empty class list: its page, once the window manager marks it opened (stage 3, after the open
 # animation), is force-closed from the next loop pass, then the toast says so. Until then it is
 # polled (EMPTY_POLL_MS) until it opens or stops being on top, then the toast alone; a page already left, or
