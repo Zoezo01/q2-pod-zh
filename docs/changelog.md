@@ -2,6 +2,7 @@
 
 - **1.7.4**:
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
+  - Cover Flow: when an album's artwork restarted the Q2 while Cover Flow was preparing artwork, the next Cover Flow open adds that album's file to `q2-crash.log` on the card, under **cover flow skipped**.
 
 - **1.7.3**:
   - Standby: waking from Standby no longer shows TF card removed and inserted messages.

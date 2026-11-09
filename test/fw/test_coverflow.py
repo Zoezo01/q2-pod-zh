@@ -1274,13 +1274,15 @@ class Card:
         fw.mock('fw_access', lambda path, *_: C.string_at(path).decode() not in self.files)
 
     def fopen(self, path, mode, *_):
-        name, write = C.string_at(path).decode(), C.string_at(mode)[:1] == b'w'
-        if not write and name not in self.files:
+        name, kind = C.string_at(path).decode(), C.string_at(mode)[:1]
+        if kind == b'r' and name not in self.files:
             return 0
         handle = 0x1000 + len(self.open)
         self.open[handle] = [name, 0]
-        if write:
+        if kind == b'w':
             self.files[name] = b''
+        elif kind == b'a':
+            self.files.setdefault(name, b'')
         return handle
 
     def fread(self, buf, size, n, f, *_):
@@ -1502,6 +1504,7 @@ def test_build_art_holds_both_stock_locks_round_stock_s_call(fw):
 
 
 BUILDING = '/mnt/mmc/.coverflow/building'
+CRASH_LOG = '/mnt/mmc/q2-crash.log'
 
 
 def test_the_worker_notes_each_album_before_its_build_and_drops_the_note_after_the_last(fw):
@@ -1514,15 +1517,22 @@ def test_the_worker_notes_each_album_before_its_build_and_drops_the_note_after_t
     c = cf(fw)
     c.jobs, c.total, c.done, c.cancel = C.addressof(jobs), 2, 0, 0
     assert g.worker(None) is None and c.done == 2
-    assert noted == [struct.pack('<I', 0xa), struct.pack('<I', 0xb)]
+    assert noted == [struct.pack('<I', 0xa) + b'/m/a.mp3', struct.pack('<I', 0xb) + b'/m/b.mp3']
     assert set(card.files) == {'/m/a.mp3', '/m/b.mp3', art(0xa), art(0xb)}  # no note, no temporary
 
 
 def test_strike_marks_the_album_the_last_build_never_finished_and_drops_the_note(fw):
     g = api(fw)
-    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc)})
+    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc) + b'/m/a.flac', CRASH_LOG: b'== date\n'})
     g.strike()
-    assert card.files == {art(0xabc): b''}
+    assert card.files == {art(0xabc): b'', CRASH_LOG: b'== date\n== cover flow skipped\n/m/a.flac\n'}
+
+
+def test_strike_of_a_note_torn_before_its_key_marks_nothing(fw):
+    g = api(fw)
+    card = Card(fw, {BUILDING: b'\xbc\x0a'})
+    g.strike()
+    assert card.files == {}
 
 
 def test_strike_leaves_a_cover_that_was_made_and_no_note_marks_nothing(fw):

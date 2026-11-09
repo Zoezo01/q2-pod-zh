@@ -8,7 +8,8 @@
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define ART_SIZE 160
 #define LAST_ALBUM ART_DIR "/album" /* the centre album's key, so a reboot opens on it */
-#define BUILDING ART_DIR "/building" /* the key of the album the worker is on (strike) */
+#define BUILDING ART_DIR "/building" /* the key and track of the album the worker is on (strike) */
+#define CRASH_LOG PEQ_ROOT "/mnt/mmc/q2-crash.log"
 #define MIN_FREE_MB 16 /* no new cache files below this much free space on the card */
 #define ART_NEAR 3 /* real art only this many covers either side, like PictureFlow's cache */
 /* Home's without a theme's pane (home_pane_paint), at 290px (stock's: 110) */
@@ -417,6 +418,7 @@ static void *worker(void *unused) {
         void *note = fopen(BUILDING, "wb"); /* struck at the next open if this build never ends */
         if (note) {
             fwrite(&cf.jobs[cf.done].key, sizeof(unsigned), 1, note);
+            fwrite(cf.jobs[cf.done].track, strlen(cf.jobs[cf.done].track), 1, note);
             fflush(note), fsync(fileno(note)), fclose(note); /* synced: see strike */
         }
         build_art(&cf.jobs[cf.done]);
@@ -429,19 +431,27 @@ static void *worker(void *unused) {
 /* The album the last build never finished, BUILDING's key: demo died on it, or hung on it until the
  * watchdog restarted the Q2, and nothing marked it, so every open would try it again and end the
  * same way. It takes the "no art" marker (unless its cover is there: a death between the rename and
- * the next note) until Refresh Cover Flow; q2-crash.log names its track (docs/boot.md). A clean end
- * mid-build removes the note (coverflow_clean_end), as a power-off is no album's fault. The note
- * is synced in place, a sync per album, and not through a rename, whose directory write a reset
- * could lose: a tester's log (2026-11-09) showed the restart it must outlive is the watchdog's,
- * demo still alive and nothing flushed, with no "last art" line, so the grey disc is what names
- * the album. A torn note reads short and strikes nothing. ponytail: the battery running out
- * mid-build strikes an innocent album; Refresh puts it back. */
+ * the next note) until Refresh Cover Flow. A clean end mid-build removes the note
+ * (coverflow_clean_end), as a power-off is no album's fault. The note is synced in place, a sync
+ * per album, and not through a rename, whose directory write a reset could lose: a tester's log
+ * (2026-11-09) showed the restart it must outlive is the watchdog's, demo still alive and nothing
+ * flushed, with no "last art" line, so the note carries the track and the strike appends it to the
+ * card's q2-crash.log, that restart's own by now (the boot hook moved it there). A torn note reads
+ * short and strikes nothing, or names part of a path. ponytail: the battery running out mid-build
+ * strikes an innocent album; Refresh puts it back. */
 static void strike(void) {
-    unsigned key;
-    char path[512];
-    if (BLOB_IO(BUILDING, key, 0) && access(art_path(path, key, ""), 0)) {
-        void *f = fopen(path, "w");
-        if (f) fclose(f);
+    struct {
+        unsigned key;
+        char track[512];
+    } note = {0};
+    char path[512], line[560];
+    void *f = fopen(BUILDING, "rb");
+    unsigned got = f ? fread(&note, 1, sizeof note - 1, f) : 0;
+    if (f) fclose(f);
+    if (got >= sizeof note.key && access(art_path(path, note.key, ""), 0)) {
+        if ((f = fopen(path, "w"))) fclose(f);
+        int n = snprintf(line, sizeof line, "== cover flow skipped\n%s\n", note.track);
+        if ((f = fopen(CRASH_LOG, "a"))) fwrite(line, 1, n, f), fflush(f), fsync(fileno(f)), fclose(f);
     }
     unlink(BUILDING);
 }
