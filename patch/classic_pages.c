@@ -584,6 +584,7 @@ static void *msg_count(void *unused) {
     cp.msg_counting = 3 + library_count("select count(*) from songtable");
     return 0;
 }
+int msg_counting(void) { return cp.msg_counting == 1; } /* coverflow.c's library_counting */
 #define MSG_HEAD_PX 29
 #define MSG_HEAD_H 32 /* holds the font */
 #define MSG_LINE_PX 18

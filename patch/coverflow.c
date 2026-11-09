@@ -34,8 +34,13 @@ static int library_write(int (*stock)(void *, void *), void *a, void *b) {
     ++library_gen;
     return result;
 }
+/* toolsInitDatabase drops songtable and creates it again on the connection the tools* functions
+ * share, which has no busy handler. A count still reading songtable on its own connection made the
+ * drop fail, then the create, and stock skipped the update without a word. So the scan's thread
+ * waits for the counts first (library_counting), outside SQLite; Back ends the wait. */
 int coverflow_scan_all(void *a, void *b) {
     library_scope_scan();
+    while (library_counting() && !toolsGetUserStop()) usleep(100000);
     return library_write(stock_scan_all_trampoline, a, b);
 }
 /* toolsGetFileCreateTime (0x5bddc4) dates a song (time_create, Recently Added's order) by stat's
@@ -3280,7 +3285,7 @@ extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, 
     home_lib_on(void), row_preview_on(void), library_search(void);
 extern void library_rows(void *list), stream_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
-extern int library_count(const char *sql);
+extern int library_count(const char *sql), msg_counting(void);
 extern const char *ipod_home_shortcut(void);
 /* Split's menu width; the art fills the rest. */
 
@@ -4291,3 +4296,8 @@ int coverflow_home(void *win, void *ctx) {
 /* A library scan is running: its thread has started and not finished. Card apps (addon.c) wait for
  * it as Coverflow does, since the scan rewrites the records and directory lists they would read. */
 int library_scanning(void) { return *(volatile int *)SCAN_THREAD && !*(volatile int *)SCAN_DONE; }
+/* A song count reads songtable on its own connection: Home's count_worker or the scan dialog's
+ * msg_count (classic_pages.c). Each flag is set on the UI thread before its thread starts: msg_count's
+ * as the dialog loads, before stock's init starts the scan's thread, and Home starts no count while
+ * a scan runs. So a scan that finds neither can drop the table. */
+int library_counting(void) { return home.counting == 1 || msg_counting(); }
