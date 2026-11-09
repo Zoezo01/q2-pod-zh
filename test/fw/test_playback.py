@@ -1641,6 +1641,29 @@ def test_a_queue_past_the_limit_drops_its_snapshot(saved):
     saved.s.n = 9
 
 
+def plain_snapshot(paths):
+    """A sealed version 4 snapshot of a library queue of these paths, its first playing."""
+    n = len(paths)
+    songs = b''.join(struct.pack('<3I', len(p) + 1, 0, 0) + p + b'\0' for p in paths)
+    body = struct.pack(f'<{3 * n}I', *range(n), *range(n), *[0] * n) + songs
+    return sealed(struct.pack(HEADER, MAGIC, 4, 56 + len(body), 0, n, 0, 0, 0, 2, 0, 0, 0, 0, LIBRARY) + body)
+
+
+@pytest.mark.parametrize('n', [999, 1000])
+def test_a_snapshot_restores_only_at_a_size_the_save_keeps(saved, n):
+    """So a damaged header asks for no more memory than a real snapshot takes."""
+    paths = [b'/m/%04d.flac' % i for i in range(n)]
+    rows = saved.load([saved.song(p) for p in paths])
+    saved.mcl.type = LIBRARY
+    saved.deques[saved.library][:] = rows
+    assert saved.set(0, 1) == 1
+    saved.s.dirty = 1
+    saved.save()
+    kept = QUEUE_FILE in saved.disk.files
+    saved.disk.files[QUEUE_FILE] = plain_snapshot(paths)
+    assert restore(saved) == (0 if kept else -7)
+
+
 def test_a_position_past_the_queue_keeps_the_last_snapshot(saved):
     full_queue(saved)
     saved.s.dirty, saved.disk.files[QUEUE_FILE] = 1, b'old'
