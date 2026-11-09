@@ -144,6 +144,7 @@
   <!-- Battery: the plain icon, chosen with Classic, or Percent Inside, the percent on or off. default is what a stored
        Percent or Icon + Percent reads as; the key itself stays as stored until the row is cycled. -->
   <option setting="battery" values="icon inside" default="inside"/>
+  <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
   <option setting="time_title" preset="on"/>
   <!-- Row Art, Classic's own option: it decides album covers. On shows them in 52 px rows in Albums and the other
        art lists (the classic-light set), Off makes those lists 32 px text (classic-light-text). The Library is text either way.

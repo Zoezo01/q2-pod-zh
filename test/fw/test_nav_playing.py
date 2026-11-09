@@ -622,6 +622,64 @@ def classic_battery(fw, st, ui, light=0, mode=0):
     return bar, Paint(fw, ui, bar)
 
 
+@pytest.mark.parametrize('t, look', [(CLASSIC, 1), (CLASSIC, 2)])
+def test_a_flat_status_bar_under_classic_is_minimals_battery(fw, st, ui, t, look):
+    def drawn(**keys):
+        bar = Bar(fw, ui)
+        return Paint(fw, ui, bar)('88%').rects
+    theme(fw, st, MINIMAL, BATTERY=0)
+    minimal = drawn()
+    theme(fw, st, t, BATTERY=0, STATUSBAR=look)
+    assert drawn() == minimal
+
+
+def test_status_bar_classic_under_minimal_is_classics_battery_at_its_own_size(fw, st, ui):
+    theme(fw, st, MINIMAL, BATTERY=0, STATUSBAR=3)
+    bar = Bar(fw, ui)
+    g, y = SETS[GEOM['Classic']], (SETS[GEOM['Minimal']].bar - 2 - SETS[GEOM['Classic']].batt_h) // 2
+    rows = level_rows(Paint(fw, ui, bar)('50%'), 2, y + 1, g.batt_h - 2)
+    assert sorted(rows) == list(range(y + 1, y + g.batt_h - 1))
+    assert all(runs[0][0] == g.batt_w - 2 for runs in rows.values())  # Classic's width, not Minimal's body
+    assert ui.box(bar.slot)[2] == g.batt_w + 1 + O['BATT_NUB_W']
+
+
+def test_status_bar_classic_keeps_the_digits_the_row_has_room_for(fw, st, ui):
+    theme(fw, st, MINIMAL, BATTERY=2, STATUSBAR=3)
+    bar = Bar(fw, ui)
+    (text, _, (_, px), _, _), = Paint(fw, ui, bar)('100%').texts
+    assert (text, px) == ('100%', O['BATT_PX'])  # the theme's size, which BATT_PCT_W reserves, not Classic's 21
+
+
+@pytest.mark.parametrize('t, look, image', [(CLASSIC, 1, b'bar_play'), (CLASSIC, 2, b'bar_play'), (MINIMAL, 3, b'classic_light_play_d')])
+def test_status_bar_paints_its_look_s_play_state(fw, st, ui, t, look, image):
+    theme(fw, st, t, STATUSBAR=look)
+    bar = Bar(fw, ui)
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+    fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+    assert ui.prop(bar.state, b'image') == image
+
+
+@pytest.mark.parametrize('t, mode', [(CLASSIC, 0), (MODERN, 3)])
+def test_the_battery_s_room_counts_the_row_the_theme_laid_out(fw, st, ui, t, mode):
+    theme(fw, st, t, BATTERY=3, STATUSBAR=1)  # a flat look: only Classic's row has the play state on the right
+    bar = Bar(fw, ui)
+    C.c_int.from_address(bar.state + 8).value = 30
+    ui.shown[bar.bt], ui.shown[bar.wifi] = 1, 1
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+    bar.sync()
+    assert st.batt_mode == mode
+
+
+@pytest.mark.parametrize('t, look, eq', [(CLASSIC, 1, 0), (MINIMAL, 3, 1)])
+def test_what_shares_the_row_is_the_theme_s_whatever_the_status_bar(fw, st, ui, t, look, eq):
+    theme(fw, st, t, STATUSBAR=look)
+    bar = Bar(fw, ui)
+    ui.shown[bar.eq] = 1
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+    fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
+    assert ui.shown[bar.eq] == eq
+
+
 def level_rows(canvas, x, y, ih):
     """The rows from x, y down ih: the widest run of each from x."""
     rows = {}

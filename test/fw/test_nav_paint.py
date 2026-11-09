@@ -412,6 +412,13 @@ def test_classic_s_own_images_are_final(fw, bitmaps, light):
     assert bm.rows() == [[RED_PX, WHITE]]
 
 
+def test_classics_art_stays_final_on_a_status_bar_of_its_look(fw, bitmaps):
+    theme(fw, MINIMAL, LIGHT='1', STATUSBAR='3')
+    bm = bitmaps(fw, [[RED_PX, WHITE]])
+    image_add(fw, b'classic_light_bolt', bm)
+    assert bm.rows() == [[RED_PX, WHITE]]
+
+
 @pytest.mark.parametrize('name', [b'classic_light_sort_bars', b'classic_light_vol_lo'])
 def test_classic_s_marks_on_the_paper_flip_in_light_mode(fw, bitmaps, name):
     theme(fw, CLASSIC, LIGHT='1')
@@ -1782,6 +1789,53 @@ def test_a_dark_page_s_bar_is_the_dark_bar(fw, world, st, scheme):
     paint_bg(fw, bar, canvas)
     rows = canvas.rows(x=0, w=375)
     assert sorted(rows) == list(range(26)) and rows[25] != rgba(scheme('bar_line'))  # the dark half's line
+
+
+LOOKS = {'1': MINIMAL, '2': MODERN, '3': CLASSIC}  # Status Bar's values, the picker's order
+
+
+@pytest.mark.parametrize('number, look', [(t, v) for t in LOOKS.values() for v in LOOKS if LOOKS[v] != t])
+def test_status_bar_paints_the_bar_of_the_theme_it_names(fw, world, number, look):
+    bar = system_bar(fw, world)
+
+    def painted(t, **keys):
+        theme(fw, t, **keys)
+        canvas = Canvas(fw)
+        paint_bg(fw, bar, canvas)
+        assert canvas.fill == 0xff123456
+        return canvas.fills
+    assert painted(number, STATUSBAR=look) == painted(LOOKS[look])
+
+
+def test_status_bar_at_theme_is_the_theme_s_own(fw, world):
+    bar = system_bar(fw, world)
+
+    def painted(**keys):
+        theme(fw, CLASSIC, **keys)
+        canvas = Canvas(fw)
+        paint_bg(fw, bar, canvas)
+        return canvas.fills
+    assert painted(STATUSBAR='0') == painted()
+
+
+def test_status_bar_goes_by_the_light_half_of_the_theme_shown(fw, world, scheme):
+    theme(fw, MINIMAL, LIGHT='1', STATUSBAR='3')  # Classic's gloss on Minimal's Light Mode: its light rows
+    bar = system_bar(fw, world)
+    canvas = Canvas(fw)
+    paint_bg(fw, bar, canvas)
+    rows = canvas.rows(x=0, w=375)
+    assert sorted(rows) == list(range(26)) and luma(rgb_of(rows[0])) > luma(rgb_of(rows[23]))
+
+
+@pytest.mark.parametrize('look', ['1', '2'])
+def test_a_dark_page_under_a_flat_status_bar_is_plain_black(fw, world, st, look):
+    theme(fw, CLASSIC, LIGHT='1', STATUSBAR=look)
+    st('bar_dark', C.c_ubyte).value = 1
+    bar = system_bar(fw, world)
+    canvas = Canvas(fw)
+    paint_bg(fw, bar, canvas)
+    assert canvas.fills[0] == (0, 0, 375, 26, rgba(0))
+    assert canvas.fill == 0xff123456
 
 
 def test_painting_the_bar_keeps_its_clock_and_title_current(fw, world, st):

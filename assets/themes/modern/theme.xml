@@ -8,6 +8,7 @@
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>
   <option setting="battery"/>
+  <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
   <option setting="time_title" preset="off"/>
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="0"/></view>

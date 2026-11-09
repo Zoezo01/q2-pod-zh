@@ -10651,7 +10651,7 @@ for config,preset in (({},0),({**C,K:'1'},1),({**C,K:'2'},2),({**C,K:'3','HOME':
         want=ACCENTS[preset][3 if name.endswith('text_color') else 2]
         assert style_color(m,red,name)[1]==(red if preset==O['CRIMSON'] else color_t(want)),(config,name)
     assert style_color(m,grey)[1]==grey
-    assert len(m.config_reads)==17  # every key, once, on first use
+    assert len(m.config_reads)==18  # every key, once, on first use
     passed()
 # Real paint order, no persistent widget styles: normal, metadata, disabled alpha,
 # recycled text, touch hiding, Home siblings, and every accent.
@@ -10714,7 +10714,7 @@ passed()
 
 m=Machine(); style_color(m,red)
 # config_value passes its default in decimal: SHORTCUT's SETTING_N_SHORTCUT (11) is out of range, so no shortcut
-assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','11'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
+assert m.config_reads==[('/mnt/data/config.ini','IPOD',key,'0') for key in ('ACCENT','HOME','BATTERY','THEME')]+[('/mnt/data/config.ini','IPOD','SHORTCUT','11'),('/mnt/data/config.ini','IPOD','MINIMAL_ACCENT','7'),('/mnt/data/config.ini','IPOD','ROUNDED','0'),('/mnt/data/config.ini','IPOD','LIGHT','0'),('/mnt/data/config.ini','IPOD','KEEPLIT','0'),('/mnt/data/config.ini','IPOD','NPCENTRED','0'),('/mnt/data/config.ini','IPOD','KEYTONEHP','0'),('/mnt/data/config.ini','IPOD','SCRUBSINGLE','0'),('/mnt/data/config.ini','IPOD','TIMETITLE','1')]+[('/mnt/data/config.ini','IPOD',key,v) for key,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]; passed()
 # theme()/scheme(): the active built-in and its scheme, settings read on first use. THEME out of
 # range is Minimal; Classic's stored Ivory and an out-of-range CLASSIC_LIGHT_ACCENT are Classic Blue, on Cobalt's
 # tones; Modern's stored Ivory and an out-of-range ACCENT are Graphite's scheme; a missing MINIMAL_ACCENT is Ivory, the
@@ -10727,16 +10727,16 @@ for config,name,want in (({},'Minimal',7),({'THEME':'1'},'Classic',BLUE),({'THEM
                          ({'THEME':'2','ACCENT':'1'},'Modern',1),({'THEME':'2','ACCENT':'8'},'Modern',8)):
     k=Machine(); k.config=dict(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))==name and len(k.config_reads)==17,config
+    assert k.text(k.get(t))==name and len(k.config_reads)==18,config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     flags=k.u.mem_read(s+4,1)[0]  # scheme_t: tones @0, flags @4
     assert k.get(s)==payload_syms['accents']+20*want and flags==(1 if name=='Minimal' and want==7 else 2 if want==1 else 0),(config,flags)
 passed()
 # A paint before any config read draws a built-in theme, never zeroed scratch.
 k=Machine(); k.config=dict(THEME='1'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==17 and k.bands[0][4]==color_t(0x08a6e7),hex(k.bands[0][4])  # Classic Blue's band's top row: the dark half's, no light rim
+k.paint(kw); assert len(k.config_reads)==18 and k.bands[0][4]==color_t(0x08a6e7),hex(k.bands[0][4])  # Classic Blue's band's top row: the dark half's, no light rim
 k=Machine(); k.config=dict(THEME='2',ACCENT='4'); kw,_=k.page_list(5,extent=1000); assert k.config_reads==[]
-k.paint(kw); assert len(k.config_reads)==17 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
+k.paint(kw); assert len(k.config_reads)==18 and [k.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]
 k=Machine(); k.config={}; kw,_=k.page_list(5,extent=1000); k.paint(kw)
 assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passed()
 # THEME=1 is Classic, on its own CLASSIC_LIGHT_ACCENT, whose stored value outside
@@ -10744,7 +10744,7 @@ assert not k.bands and k.rounded[-1]['color']==color_t(O['MINIMAL_FILL']); passe
 for config,want in (({},4),({'CLASSIC_LIGHT_ACCENT':'2'},2),({'CLASSIC_LIGHT_ACCENT':'7'},4),({'ACCENT':'2'},4)):
     k=classic_light(Machine()); k.config.update(config)
     t=k.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
-    assert k.text(k.get(t))=='Classic' and len(k.config_reads)==17 and [r[2] for r in k.config_reads[13:]]==['CLASSIC_LIGHT_ACCENT','HOMELIB','ROWPREVIEW','ROWART'],config
+    assert k.text(k.get(t))=='Classic' and len(k.config_reads)==18 and [r[2] for r in k.config_reads[13:]]==['STATUSBAR','CLASSIC_LIGHT_ACCENT','HOMELIB','ROWPREVIEW','ROWART'],config
     s=k.call(address=payload_syms['scheme'],args=(0,0,0,0),gap=0)&0xffffffff
     assert k.get(s)==payload_syms['accents']+20*want,config
 passed()
@@ -11107,10 +11107,10 @@ assert m.icons_set==['playset_covermode','playset_covermode','system_update']
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
-kids=m.nodes[view]['children']; light,corners,shortcut,time_title,centred=kids[1],kids[3],kids[5],kids[7],kids[8]
+kids=m.nodes[view]['children']; light,corners,shortcut,status_row,time_title,centred=kids[1],kids[3],kids[5],kids[7],kids[8],kids[9]
 assert row_text(shortcut)=='Shortcut: Rockbox'
-assert kids==[rows[3],light,rows[0],corners,rows[1],shortcut,rows[2],time_title,centred] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Light Mode, Accent, Corners, Home, Battery, Centred Now Playing
-assert m.icons_set==['system_display','system_display','system_display','system_display','switch_off','playset_covermode','playset_covermode','system_powermanager','system_display','switch_on','playset_covermode','switch_off'] and all(m.nodes[r]['type']=='list_item' and m.nodes[r]['style']=='s_listitem_black' for r in rows)
+assert kids==[rows[3],light,rows[0],corners,rows[1],shortcut,rows[2],status_row,time_title,centred] and m.nodes[rows[0]].get('visible',1)==1  # Theme, Light Mode, Accent, Corners, Home, Battery, Centred Now Playing
+assert m.icons_set==['system_display','system_display','system_display','system_display','switch_off','playset_covermode','playset_covermode','system_powermanager','system_display','system_display','switch_on','playset_covermode','switch_off'] and all(m.nodes[r]['type']=='list_item' and m.nodes[r]['style']=='s_listitem_black' for r in rows)
 buttons=[m.nodes[r]['children'][0] for r in rows]; labels=[m.nodes[b]['children'][1] for b in buttons]
 for b,l in zip(buttons,labels):
     icon=m.nodes[b]['children'][0]  # stock's 0x4c19bc icon geometry, which the row layouter maps
@@ -11448,7 +11448,7 @@ def title_value(r):  # (title, value) of a value row, or None
     v=[k['text'] for k in kids if k['name']=='_setting_value']
     return (kids[1]['text'],v[0]) if v else None
 assert [title_value(r) for r in dm.nodes[dv]['children']]==[('Theme','Classic'),('Light Mode','On'),('Accent','Classic Blue'),('Home','Split'),
-                                                           ('Shortcut','Rockbox'),('Battery','Icon'),('Time in Title','On'),('Library on Home','On'),('Row Preview','On'),('Row Art','On')]
+                                                           ('Shortcut','Rockbox'),('Battery','Icon'),('Status Bar','Theme'),('Time in Title','On'),('Library on Home','On'),('Row Preview','On'),('Row Art','On')]
 assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Controls' switches read On/Off as values under Classic.
 dm,dv=classic_light_display(sub=3)
@@ -11579,7 +11579,7 @@ writes=pick_theme(2); assert [(w[0],m.text(w[1]),m.text(w[2])) for w in writes]=
 assert corners_switch()==['switch_off'] and m.nodes[light_label]['text']=='Light Mode: On'
 assert ('image_manager_unload_all',0x1000500) in [c[:2] for c in m.calls] and ('widget_invalidate_force',m.wm) in [c[:2] for c in m.calls]
 kids=m.nodes[view]['children']
-assert kids==[rows[3],light,rows[0],corners,rows[1],shortcut,rows[2],time_title,centred] and m.nodes[rows[0]].get('visible',1)==1
+assert kids==[rows[3],light,rows[0],corners,rows[1],shortcut,rows[2],status_row,time_title,centred] and m.nodes[rows[0]].get('visible',1)==1
 assert texts()==['Accent: Cobalt','Home: Split','Battery: Icon','Theme: Modern']; home_bounds(False,True); passed()
 # Theme, the first row, keeps the selection, and the very next paint is the preset's Cobalt bar.
 m.paint(view); assert m.selected(view)==0 and [m.bands[i][4] for i in (0,1,47)]==[color_t(ACCENTS[4][i]) for i in (4,0,1)]; passed()
@@ -11600,7 +11600,7 @@ writes=pick_theme(0); assert [(w[0],m.text(w[2])) for w in writes]==[(0,'THEME')
 assert texts()[3]=='Theme: Minimal' and corners_switch()==['switch_on'] and m.nodes[light_label]['text']=='Light Mode: Off'
 m.paint(view); assert m.selected(view)==0
 kids=m.nodes[view]['children']
-assert kids==[rows[3],light,rows[0],corners,rows[1],shortcut,rows[2],time_title,centred] and texts()[0]=='Accent: Graphite' and texts()[1]=='Home: Split'
+assert kids==[rows[3],light,rows[0],corners,rows[1],shortcut,rows[2],status_row,time_title,centred] and texts()[0]=='Accent: Graphite' and texts()[1]=='Home: Split'
 home_bounds(False)
 m.paint(view); assert not m.bands and m.rounded[0]['color']==color_t(ACCENTS[0][0]); passed()
 # Light Mode's Auto survives a Theme change; the other preset rows are the user's to change after.
@@ -12077,9 +12077,9 @@ m.paint(view); assert CL_SEL(3) in [b[4] for b in m.bands] and CL_SEL(2) not in 
 m,view,rows=display({'THEME':'1','CLASSIC_LIGHT_ACCENT':'7'})
 assert [row_text(r) for r in m.nodes[view]['children']][:3]==['Theme: Classic','Light Mode: Off','Accent: Classic Blue']
 m,view,rows=display({'THEME':'2','ACCENT':'7'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Modern','Light Mode: Off','Accent: Graphite','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Status Bar: Theme','Time in Title','Centred Now Playing']
 m,view,rows=display({'THEME':'3'})
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title','Centred Now Playing']
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Minimal','Light Mode: Off','Accent: Ivory','Rounded Corners','Home: Split','Shortcut: Rockbox','Battery: Icon','Status Bar: Theme','Time in Title','Centred Now Playing']
 passed()
 # Classic's stops painter: a 52 px selected row is the #94c7de top line, Classic Blue's six stops over the
 # 50 rows below it and the #004184 edge on its last, full width and square, its colours final
@@ -12322,7 +12322,7 @@ for mode,stored,want in ((1,'0',light_row),(2,'1',dark_row)):
 passed()
 # THEME=1: its Appearance is Theme and Classic's own options.
 m,view,rows=display({'THEME':'1'},setup=classic_light)
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Library on Home: On','Row Preview: On','Row Art: On']; passed()
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Status Bar: Theme','Time in Title: On','Library on Home: On','Row Preview: On','Row Art: On']; passed()
 # Classic's Accent is Classic Blue (its own scheme, after the ACCENTS rows) by default and for a stored value
 # Classic does not offer (Ivory, 7) or cannot read (12). The row cycles the 8 accents in Classic's order,
 # then Classic Blue, each band its own gloss: Classic Blue's stops, the others derived from their tones.
@@ -12340,9 +12340,9 @@ passed()
 # the set it boots), drawn and cycled by the generic own-option row: the payload has no Row Art code. Its
 # key is read 15th, after CLASSIC_LIGHT_ACCENT, on unless chosen; Centre writes the next value under the theme's
 # key; the stored value picks the set the first system_bar boots: Off classic-light-text, On (or unreadable) classic-light.
-m,view,rows=display({},setup=classic_light); art=m.nodes[view]['children'][9]
-assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Time in Title: On','Library on Home: On','Row Preview: On','Row Art: On']
-assert m.config_reads[13:17]==[('/mnt/data/config.ini','IPOD',k,v) for k,v in (('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]
+m,view,rows=display({},setup=classic_light); art=m.nodes[view]['children'][10]
+assert [row_text(r) for r in m.nodes[view]['children']]==['Theme: Classic','Light Mode: On','Accent: Classic Blue','Home: Split','Shortcut: Rockbox','Battery: Icon','Status Bar: Theme','Time in Title: On','Library on Home: On','Row Preview: On','Row Art: On']
+assert m.config_reads[13:18]==[('/mnt/data/config.ini','IPOD',k,v) for k,v in (('STATUSBAR','0'),('CLASSIC_LIGHT_ACCENT','9'),('HOMELIB','1'),('ROWPREVIEW','1'),('ROWART','1'))]
 def art_boot(config):  # the names a fresh Classic's first system_bar loaded, with config stored
     k=Machine(); k.config.update(config); return classic_light_boot(k)
 assert art_boot({})==art_boot({'ROWART':'1'})==art_boot({'ROWART':'2'})==['classic-light_system_bar']
@@ -12426,7 +12426,7 @@ assert m.prompts==['Restart to apply?'] and not [c for c in m.calls if c[0]=='wr
 for answer,want in ((0,[]),(10,[(0,'ROWART')])):
     m,view,_=display({},cls=RestartMachine,setup=classic_light); m.answer=answer; m.prompts=[]
     m.handlers[payload_syms['stock_reboot_trampoline']]='stock_reboot'
-    art=m.nodes[view]['children'][9]; f,ctx=m.handler(m.nodes[art]['children'][0],O['EVT_CLICK']); m.calls=[]
+    art=m.nodes[view]['children'][10]; f,ctx=m.handler(m.nodes[art]['children'][0],O['EVT_CLICK']); m.calls=[]
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==['Restart to apply?']
     assert [(c[1],m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==want and row_text(art)=='Row Art: On'
     assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot'][:answer==10]
@@ -12441,7 +12441,7 @@ assert [c[0] for c in m.calls if c[0]=='stock_reboot']==['stock_reboot']
 t=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
 assert m.text(m.get(t))=='Classic'
 # Library on Home and Row Preview are plain choices (no set): on the booted set a click saves Off at once and asks nothing.
-for i,key,label in ((7,'HOMELIB','Library on Home'),(8,'ROWPREVIEW','Row Preview')):
+for i,key,label in ((8,'HOMELIB','Library on Home'),(9,'ROWPREVIEW','Row Preview')):
     m,view,_=display({},cls=RestartMachine,setup=classic_light); classic_light_on(m); m.prompts=[]
     row=m.nodes[view]['children'][i]; f,ctx=m.handler(m.nodes[row]['children'][0],O['EVT_CLICK']); m.calls=[]
     assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.prompts==[] and row_text(row)==label+': Off'

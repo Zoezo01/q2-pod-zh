@@ -537,6 +537,20 @@ def test_library_on_home_toggles_without_a_restart(fw, st, geometry):
     assert not fw.calls('navigator_to_with_context')
 
 
+def test_status_bar_steps_its_looks_and_repaints_the_bar_without_a_restart(fw, st, geometry):
+    names, _ = geometry
+    st('geom').value = names['GEOM_CLASSIC_LIGHT']
+    ui = Ui(fw)
+    page = appearance(fw, ui, THEME=b'1')
+    st('pct_digit').value = 9
+    before = repaints(fw)
+    assert clicks_of(fw, ui, page, 'Status Bar', 4) == [('Minimal', [('STATUSBAR', 1)]), ('Modern', [('STATUSBAR', 2)]),
+                                                        ('Classic', [('STATUSBAR', 3)]), ('Theme', [('STATUSBAR', 0)])]
+    assert not fw.calls('navigator_to_with_context') and st('pct_digit').value == 0  # the digits, measured again
+    after = repaints(fw)
+    assert after[0] == before[0] and after[1] == before[1] + 4  # the bar alone, no art dropped
+
+
 class Prompts:
     """navigator_to_with_context's dialogs: (page, kind, ms, text); answer is what the confirm returns (10 OK)."""
     def __init__(self, fw, answer=0):
@@ -589,10 +603,18 @@ def pick(ui, page, t):
     ui.click(item.children[0])
 
 
+def test_choosing_a_theme_puts_status_bar_back_on_theme(fw, st):
+    ui = Ui(fw)
+    page = appearance(fw, ui, STATUSBAR=b'3')
+    themes_page(fw, ui, page)
+    pick(ui, page, theme_of(MODERN))
+    assert ('STATUSBAR', 0) in writes(fw) and st('own', i=KEYS.index('STATUSBAR')).value == 0
+
+
 def test_picking_modern_applies_its_preset_live(fw, st):
     modern = theme_of(MODERN)
     # Minimal running dark on Full, the clock in the title, its corners already Modern's
-    stored = {'LIGHT': 0, 'ACCENT': 0, 'ROUNDED': preset(modern, 'SETTING_ROUNDED'), 'HOME': 1, 'TIMETITLE': 1}
+    stored = {'LIGHT': 0, 'ACCENT': 0, 'ROUNDED': preset(modern, 'SETTING_ROUNDED'), 'HOME': 1, 'TIMETITLE': 1, 'STATUSBAR': 0}
     ui = Ui(fw)
     page = appearance(fw, ui, **{k: b'%d' % v for k, v in stored.items()})
     under = page.view()

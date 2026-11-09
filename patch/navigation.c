@@ -3708,7 +3708,7 @@ static int bar_state_sync(void *bar) {
             };
             const char *icon = st.bar_dark
                                    ? status == 2 ? "classic_light_play_w" : "classic_light_pause_w"
-                               : theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT
+                               : bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT
                                    ? classic_light_icon[ipod_light()][status != 2]
                                : status == 2 ? "bar_play"
                                              : "bar_pause";
@@ -3830,8 +3830,10 @@ static void bar_sync(void *bar) {
     if (T->bar_wifi_dy && I(st.bar_wifi, W_Y) != T->bar_wifi_dy)
         widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), T->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
-    int classic_light = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
-        body = classic_light ? geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
+    int classic_row = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT, /* the row's layout */
+        classic_light = bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
+        body =
+            classic_light ? bar_geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
         inside = classic_light ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
@@ -3844,9 +3846,9 @@ static void bar_sync(void *bar) {
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
         /* Classic: the play state or EQ shares the group */
-        if (classic_light && st.bar_state && widget_get_visible(st.bar_state))
+        if (classic_row && st.bar_state && widget_get_visible(st.bar_state))
             reach += I(st.bar_state, W_W) + STATUS_GAP;
-        if (classic_light && st.bar_eq && widget_get_visible(st.bar_eq))
+        if (classic_row && st.bar_eq && widget_get_visible(st.bar_eq))
             reach += I(st.bar_eq, W_W) + STATUS_GAP;
         /* Classic's Percent Inside is the icon's own width: the icon would win no room */
         if (reach > BATT_ROOM && !(classic_light && mode == 3)) mode = 0;
@@ -3916,9 +3918,9 @@ void bar_rect(void *canvas, unsigned color, int x, int y, int w, int h) {
  * half a soft edge outside the body and an emboss under it. Final colours, never flipped; the
  * caller restores the fill. Returns the level's width. */
 static int classic_light_battery(void *w, void *canvas, int x, int y, unsigned key) {
-    const theme_t *T = theme();
+    const theme_t *T = bar_theme();
     unsigned bitmap[64]; /* bitmap_t: width @0, height @4 */
-    int L = ipod_light(), bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), nh = BATT_NUB_H,
+    int L = ipod_light(), bw = bar_geom_val(V_BATT_W), bh = bar_geom_val(V_BATT_H), nh = BATT_NUB_H,
         iw = bw - 2, ih = bh - 2, r = x + bw - 1, ny = y + (bh - nh) / 2,
         f = key & 1 ? T->batt_low_w : iw * (int)(key & 2 ? 100 : key >> 3) / 100;
     unsigned line = RGBA(T->batt_line[L]);
@@ -3990,9 +3992,10 @@ static void dark_battery(void *canvas, int x, int y, unsigned key) {
 static void paint_battery(void *w, void *canvas) {
     void *lcd = P(canvas, CANVAS_LCD);
     if (!lcd) return;
-    const theme_t *T = theme();
+    const theme_t *T = bar_theme();
     int classic_light = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
-        px = classic_light && T->font_px[ROLE_BAR] ? T->font_px[ROLE_BAR] : BATT_PX;
+        bar_px = theme()->font_px[ROLE_BAR], /* the row's, as the room bar_sync gave it */
+        px = classic_light && bar_px ? bar_px : BATT_PX;
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR);
     unsigned key = st.batt_key, level = key >> 3, s[4], n = put_num(s, level);
     int inside = st.batt_mode == 3;
@@ -4017,7 +4020,8 @@ static void paint_battery(void *w, void *canvas) {
     }
     if (classic_light) { /* the body centred on the bar's rows above its two lines, its soft edge at
                             0 */
-        int bw = geom_val(V_BATT_W), bh = geom_val(V_BATT_H), y = (geom_val(V_BAR) - 2 - bh) / 2;
+        int bw = bar_geom_val(V_BATT_W), bh = bar_geom_val(V_BATT_H),
+            y = (geom_val(V_BAR) - 2 - bh) / 2;
         int f = classic_light_battery(w, canvas, 1, y, key);
         if (st.batt_mode == 2) {
             int x = 1 + bw + BATT_NUB_W + BATT_GAP;
@@ -5138,10 +5142,15 @@ unsigned dark_bar_key(const unsigned *t) {
                                                   << 1;
 }
 /* The dark bar's rows and its line, the last of h rows from y: the scheme's dark half in either
- * half, over the bar's own line, with no second one. Final colours. */
+ * half, over the bar's own line, with no second one; a flat Status Bar's plain black. Final
+ * colours. */
 void dark_bar_rows(void *canvas, int y, int w, int h) {
-    const theme_t *T = theme();
+    const theme_t *T = bar_theme();
     const scheme_t *S = &T->schemes[*T->accent_slot];
+    if (T->painter[PAINT_BAR] != BAR_GLOSS) {
+        bar_rect(canvas, RGBA(BAR_COLOR), 0, y, w, h);
+        return;
+    }
     paint_stops(canvas, 0, y, w, h - 1, &S->bar);
     bar_rect(canvas, RGBA(S->bar_line), 0, y + h - 1, w, 1);
 }
@@ -5757,8 +5766,8 @@ int ringnav_paint_bg(void *w, void *canvas) {
     }
     if (w == bar && P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        const theme_t *T = theme();
-        const scheme_t *S = scheme();
+        const theme_t *T = bar_theme();
+        const scheme_t *S = bar_scheme();
         if (st.bar_dark) {
             dark_bar_rows(canvas, 0, I(w, W_W), 26);
         } else if (T->painter[PAINT_BAR] ==
@@ -6052,11 +6061,11 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     if (s && !*s && tk_str_start_with(name, "menu_") && tk_strcmp(name, "menu_left") &&
         tk_strcmp(name, "menu_right"))
         s = (void *)0;
-    /* art_final, Classic Light's (tools/theme.py refuses it for another theme): its own images
-     * (tools/art.py) are final, but for Sort's bars and the volume's speakers: marks on the paper,
-     * in the half's ink */
-    if (s && !*s && T->art_final && tk_str_start_with(name, "classic_light_") &&
-        tk_strcmp(name, "classic_light_sort_bars") &&
+    /* art_final, Classic Light's (tools/theme.py refuses it for another theme), and so on its
+     * Status Bar under any theme: its own images (tools/art.py) are final, but for Sort's bars and
+     * the volume's speakers: marks on the paper, in the half's ink */
+    if (s && !*s && (T->art_final || bar_theme()->art_final) &&
+        tk_str_start_with(name, "classic_light_") && tk_strcmp(name, "classic_light_sort_bars") &&
         !tk_str_start_with(name, "classic_light_vol_"))
         s = (void *)0;
     /* Minimal: the codec badges (img_flac, img_mp3, ...: red with the name cut out) take the
@@ -6413,7 +6422,9 @@ static int setting_click(void *ctx, void *event) {
         int buf[11];
         st.light_day = light_day(clock_now(buf));
     }
-    if (i == 2)
+    if (i == SETTING_OWN + OWN_STATUSBAR)
+        st.pct_digit = st.pct_sign = 0; /* the battery's digits, measured again at its size */
+    if (i == 2 || i == SETTING_OWN + OWN_STATUSBAR)
         widget_invalidate_force(*(void *const *)system_bar, (void *)0); /* bar_sync applies it */
     else if (i == 1 || i == 4)
         coverflow_home_layout();
@@ -6518,9 +6529,6 @@ void restart_confirm(int setting, int value) {
     if (setting == SETTING_THEME) theme_preset(&themes[value], 0);
     ringnav_reboot();
 }
-/* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
-static const unsigned char theme_rows[] = { 0, 2, 1 };
-_Static_assert(sizeof theme_rows == THEME_N, "a row per theme");
 static int theme_pick(void *ctx, void *event) {
     int t = (int)(long)ctx;
     accent();
