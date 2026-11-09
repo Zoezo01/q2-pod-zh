@@ -1496,6 +1496,16 @@ def test_build_art_the_image_beside_the_track_is_next(fw):
     assert card.files[art(0xabc)] == b'art'
 
 
+def test_build_art_a_folder_too_long_for_its_cover_s_path_lends_no_file(fw):
+    """Cut at the buffer, the cover's path is a prefix: whatever file that names is not the album's art."""
+    g = api(fw)
+    folder = '/m/' + 'x' * 1011  # with "/cover.jpg" one byte over the 1024-byte path
+    card = Card(fw, {folder + '/a.mp3': b'', folder + '/cover.jp': b'x'})
+    builder(fw, card, thumb=True, ff=0)
+    g.build_art(r(job((folder + '/a.mp3').encode())))
+    assert card.files[art(0xabc)] == b''  # nothing of its own: the marker
+
+
 def test_build_art_a_shared_folder_s_cover_is_not_this_album_s(fw):
     g = api(fw)
     card = Card(fw, {'/m/a.mp3': b'', '/m/cover.jpg': b'x'})

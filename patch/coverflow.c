@@ -288,7 +288,8 @@ static int beside_art(const char *track, const char *dst, int w, int h, int shar
     static const char *const names[] = { "cover.jpg",  "folder.jpg",  "cover.png",
                                           "folder.png", "cover.webp", "folder.webp" };
     for (unsigned i = 0; i < sizeof(names) / sizeof(*names) && !ok && !shared; ++i) {
-        snprintf(src, sizeof(src), "%.*s/%s", folder, track, names[i]);
+        if (snprintf(src, sizeof(src), "%.*s/%s", folder, track, names[i]) >= (int)sizeof src)
+            continue; /* cut: a prefix of the name, another file's at best */
         ok = !access(src, 4) && fit(src, dst, w, h);
     }
     return ok;
