@@ -121,6 +121,14 @@ with tempfile.TemporaryDirectory(prefix="q2-remote-") as td:
             if cache.exists() and cache.read_text(): break
             time.sleep(.05)
         assert cache.read_text() == "0123456789abcdef\n"  # kept at start, before any client
+        # The host build listens on 127.0.0.1 alone (remote.c REMOTE_HOST), so a run on a shared network offers
+        # its shell to nobody else: /proc/net/tcp's LISTEN (0A) row for the port, the address as the kernel
+        # prints it, in native byte order.
+        if pathlib.Path("/proc/net/tcp").exists():
+            loopback = struct.unpack("=I", socket.inet_aton("127.0.0.1"))[0]
+            rows = [l.split() for l in pathlib.Path("/proc/net/tcp").read_text().splitlines()[1:]]
+            bound = [int(r[1].split(":")[0], 16) for r in rows if r[3] == "0A" and int(r[1].split(":")[1], 16) == port]
+            assert bound == [loopback], f"q2remote listens at {[hex(b) for b in bound]}, not on loopback alone"
         os.environ.update(Q2_HOST="127.0.0.1", Q2_KEY="0123456789abcdef")
         assert q.shell("cat", b"\x00binary\xff") == b"\x00binary\xff"
         for _ in range(3): assert q.shell("printf repeated") == b"repeated"
