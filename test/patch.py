@@ -1104,7 +1104,8 @@ def battery_checks():
             ('label_battery','label',(),0,{}),('view_battery','view',(),0,{}),
             ('img_battery','image',(level,),1,dict(image='bar_battery')))}
         b.word(w['img_wifi']+O['W_W'],14); b.word(w['view_battery']+O['W_H'],30)
-        bar=b.node('system_bar','system_bar',[b.node('view','view_right',list(w.values()))])
+        row=b.node('view','view_right',list(w.values())); b.word(row+O['W_H'],30); b.word(w['view_battery']+O['W_PARENT'],row)
+        bar=b.node('system_bar','system_bar',[row])
         w['progress_battery']=level
         b.word(bar+O['W_PARENT'],b.wm); b.word(syms['system_bar'],bar)
         return b,bar,w,lambda x=bar: b.call(address=HOOKS['widget_on_paint_background'][0],args=(x,b.canvas,0,0),gap=0)

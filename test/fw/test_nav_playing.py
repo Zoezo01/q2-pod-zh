@@ -633,6 +633,14 @@ def test_a_flat_status_bar_under_classic_is_minimals_battery(fw, st, ui, t, look
     assert drawn() == minimal
 
 
+@pytest.mark.parametrize('t, row, look', [(MINIMAL, 30, 0), (CLASSIC, 22, 1), (CLASSIC, 22, 2)])
+def test_a_flat_battery_is_centred_on_its_rows_icons(fw, st, ui, t, row, look):
+    theme(fw, st, t, BATTERY=0, STATUSBAR=look)
+    bar = Bar(fw, ui)
+    ui.place(bar.row, 240, 0, 135, row)  # Classic's row (tools/ipod.py) is shorter than the slot bar_sync sizes
+    assert min(r[1] for r in Paint(fw, ui, bar)().rects) == (row + 1 - O['BATT_BODY_H']) // 2
+
+
 def test_status_bar_classic_under_minimal_is_classics_battery_at_its_own_size(fw, st, ui):
     theme(fw, st, MINIMAL, BATTERY=0, STATUSBAR=3)
     bar = Bar(fw, ui)

@@ -4038,8 +4038,10 @@ static void paint_battery(void *w, void *canvas) {
         stock_canvas_set_fill_color(canvas, fill);
         return;
     }
+    /* centred as the row's icons are: Classic's row, under a flat Status Bar, is shorter than w */
     const int bw = inside ? BATT_INSIDE_W : BATT_BODY_W, bh = inside ? BATT_INSIDE_H : BATT_BODY_H,
-              nh = BATT_NUB_H, y = (I(w, W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
+              nh = BATT_NUB_H,
+              y = (I(P(w, W_PARENT), W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
     canvas_set_fill_color(canvas, color);
     if (inside) {
         rect_t body = { 0, y, bw, bh };
