@@ -51,11 +51,11 @@ static int library_write(int (*stock)(void *, void *), void *a, void *b) {
  * So the scan's thread waits for the counts first (library_counting), outside SQLite; Back ends
  * the wait and the scan. */
 static int library_scan(int (*stock)(void *, void *), void *a, void *b, int drops) {
-    library_scope_scan();
     if (drops) {
         while (library_counting() && !toolsGetUserStop()) usleep(100000);
-        if (toolsGetUserStop()) return 1; /* as wait_scan skips a stopped scan: nothing dropped */
+        if (toolsGetUserStop()) return 1; /* as wait_scan skips a stopped scan: nothing changes */
     }
+    library_scope_scan();
     int result = library_write(stock, a, b);
     toolsUpdateDbTable("/mnt/data/database.db",
                        "create index if not exists songtable_album on songtable(album collate nocase);"

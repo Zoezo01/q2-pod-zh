@@ -5017,7 +5017,7 @@ for cls,artist in ((0xf003,0),(0xf004,0),(0xf004,1),(0xf005,0),(0xf006,0)):
         assert m.call(address=HOOKS['load_localclass_list'][0],args=(cls,0,0,0),gap=0)==2+(untagged>0)
         assert m.read==[min(untagged,1)],(cls,artist,untagged,m.read)
     passed()
-m=FirstMachine(2,page='localclass_page',cls=0xf001,rows=3); m.word(m.row(2)+O['REC_ID'],-1)  # the flag ends with its check
+m=FirstMachine(2,page='localclass_page',cls=0xf004,rows=3); m.word(m.row(2)+O['REC_ID'],-1)  # the flag ends with its check
 assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf004,0,0,0),gap=0)==3
 m.word(m.row(0)+O['REC_ID'],-1); m.run(1)
 assert m.read==[1,2],m.read; passed()
