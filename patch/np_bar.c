@@ -141,9 +141,12 @@ void bar_title(void *bar, void *top) {
             if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
             if (t && tk_strcmp(widget_get_type(t), "hscroll_label")) t = (void *)0;
         }
-        /* Now Playing's page names nothing: the bar's play state says playing or paused instead
-         * (navigation.c bar_word_sync). */
-        title = !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page") ? cover_flow
+        /* Now Playing's page names nothing, not even a caption out of its navbar: the bar's play
+         * state says playing or paused instead (navigation.c bar_word_sync). A page name here
+         * would read "正在播放" while paused too, and repeat the word beside the glyph. */
+        const char *page = widget_get_prop_str(top, "name", "");
+        title = tk_str_start_with(page, "playing_page") ? (void *)0
+                : !tk_strcmp(page, "coverflow_page")    ? cover_flow
                 : t ? widget_get_text(t)
                     : (void *)0;
         if (title && !*title) title = (void *)0;

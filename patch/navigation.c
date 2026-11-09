@@ -5715,7 +5715,11 @@ static void *page_caption(void *win) {
  * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
-    if (tk_str_start_with(name, "playing_page")) return "正在播放";
+    /* Now Playing's page has no title of its own: the play state's word takes the room and says
+     * which of the two it is (bar_word_sync). A page name here could only repeat "正在播放", and
+     * would keep saying it while paused. Empty, not NULL: bar_title_sync then writes nothing and
+     * does not go looking for a caption in the page's navbar. */
+    if (tk_str_start_with(name, "playing_page")) return "";
     if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
     if (!tk_strcmp(name, "equalizer_page")) return "均衡器"; /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
