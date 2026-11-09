@@ -87,11 +87,14 @@
        coverflow.c slant_render), and the progress bar's track over its NP_BAR_IPOD (20) rows: faint 1 px top
        and bottom lines round a near-white inside, the inner stops from 5 to 95 so no row past the first and before the
        last takes an edge's colour; the dark half's Apple's capture darkened, its step at the middle
-       kept; the accent's band fills the played part (np_bar.c paint_scrubber). Its rows painter's 31 rows, fixed
+       kept; a column at each end in the last stop's colour (np_bar.c ipod_bar). The played part is the accent's band;
+       under Classic Blue it is fill, an iPod classic's, stated deeper than a photo of one reads (#017de2, #0392e2 low
+       down) because the Q2's panel lifts these blues: #006dd6 photographs as #2290d8. Its rows painter's 31 rows, fixed
        colours (#rrggbbaa its own alpha), are the volume panel's away from Now Playing and a card app's progress -->
   <view name="playing">
     <element name="art" square="1"/>
-    <element name="scrubber" light.stops="#e2e2e2 0, #ffffff 5, #ffffff 14, #ffffff 23, #fafafa 32, #fafafa 41, #f6f6f6 50, #f6f6f6 59, #f6f6f6 68, #f4f4f4 77, #f4f4f4 86, #f4f4f4 95, #cecece 100"
+    <element name="scrubber" fill="#0060e0 0, #0058e0 25, #0058e0 55, #0071e2 80, #0071e2 93, #0060d6 100"
+             light.stops="#e2e2e2 0, #ffffff 5, #ffffff 14, #ffffff 23, #fafafa 32, #fafafa 41, #f6f6f6 50, #f6f6f6 59, #f6f6f6 68, #f4f4f4 77, #f4f4f4 86, #f4f4f4 95, #cecece 100"
              dark.stops="#313131 0, #373737 5, #383838 14, #373737 23, #363636 32, #353535 41, #323232 50, #313131 59, #323232 68, #343434 77, #353535 86, #343434 95, #2b2b2b 100"
              painter="rows"
              light_track="#e7e7e7 #eeeeee #ffffff #fdfdfd #f7f7f7 #f7f7f7 #f3f3f3 #f0f0f0 #ebebeb #e4e4e4 #dedede #dfdfdf #e6e6e6 #ededed #ececec #d1d1d1 #d0d0d0 #fdfdfd #f0f0f0 #efefef #f5f5f5 #f8f8f8 #f4f4f4 #efefef #efefef #efefef #f6f6f6 #f7f7f7 #f7f7f7 #f7f7f7 #f9f9f9"

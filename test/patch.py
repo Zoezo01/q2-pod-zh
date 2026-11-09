@@ -6652,9 +6652,9 @@ for theme,bh,fill in (('0',4,O['MINIMAL_FILL']),('1',O['NP_BAR_IPOD'],ACCENTS[4]
   assert [signed(m.get(sv+O[k])) for k in ('W_X','W_Y','W_W','W_H')]==list(band)
   assert m.nodes[slider]['bar_size']==bh and m.nodes[slider]['style:pressed:round_radius']==bh//2
   fills=[b[:5] for b in m.bands]
-  def ipod_rows(top):  # Classic: the band and the track, a row each, down through the reflection
+  def ipod_rows(top):  # Classic: the band, the track and a column at each end, a row each, down through the reflection
       on=327*40//100; rows=fills[1:]
-      assert not m.rounded and {(b[0],b[2]) for b in rows}=={(24,on),(24+on,327-on)},rows
+      assert not m.rounded and {(b[0],b[2]) for b in rows}=={(24,on),(24+on,327-on),(24,1),(24+326,1)},rows
       assert sorted({b[1] for b in rows})==list(range(top,top+bh+O['SCRUB_REFLECT_ROWS'])),rows
   if theme=='1': assert fills[0]==(*band,color_t(0)),fills; ipod_rows(bar[1])
   else:
@@ -6753,7 +6753,7 @@ dlg=m.node('dialog','volume_dialog',[sv,lv]); m.word(dlg+O['W_PARENT'],m.wm); pu
 m.nodes[m.wm]={'children':[win,dlg]}; m.top=dlg; m.image_size=(8,13); m.bands.clear(); m.image_draws.clear(); m.calls=[]; paint(dlg)
 fills=[b[:5] for b in m.bands]; on=243*40//100
 assert fills[:2]==[(23,TY+30,35,21,color_t(0)),(317,TY+30,35,21,color_t(0))],fills
-assert {(b[0],b[2]) for b in fills[2:]}=={(66,on),(66+on,243-on)},fills  # the bar between the speakers, as wide as the page's
+assert {(b[0],b[2]) for b in fills[2:]}=={(66,on),(66+on,243-on),(66,1),(66+242,1)},fills  # the bar between the speakers, as wide as the page's
 assert [d[0] for _,d in m.image_draws]==[23+35-8,317],m.image_draws; passed()
 m.nodes[m.wm]={'children':[win]}; m.top=win; m.image_size=(50,50)
 m.nodes[slider]['value']=200; m.calls=[]; paint(win); m.advance(0); assert geo(slider)==lay(TW)[slider] and not refit()  # a seek
@@ -6843,6 +6843,17 @@ for light in ('1','0'):
     _,rest=round_box(vp.bands,27,255,321,50,13); _,barrows=round_box(rest,28,256,319,48,12)
     fill=[b[4] for b in barrows if b[2]==97]
     assert len(fill)==17 and fill[0]==color_t(theme_builtins()[1]['schemes'][3]['sel'][0][1]) and len(set(fill))>1,(light,fill); passed()
+# Classic's bar on Now Playing (ipod_bar), each half: Classic Blue's own fill, another accent's band; last, a column at
+# each end in the track's bottom line, the left one over the fill, fading into the paper under the bar.
+classic=theme_builtins()[1]; blue=next(i for i,s in enumerate(classic['schemes']) if s.get('label'))
+for light,track in (('1',classic['light']['np_track']),('0',classic['np_track'])):
+  for accent,fill in ((str(blue),classic['np_fill']),('3',classic['schemes'][3]['sel'])):
+    vp=vol_np(light,CLASSIC_LIGHT_ACCENT=accent); bare(vp); bg(vp,vp.dlg)
+    rows=[b[:5] for b in vp.bands if b[3]==1 and b[2] in (1,97,146)]; ends=rows[52:]; rh=20+O['SCRUB_REFLECT_ROWS']
+    assert [b[2] for b in rows]==[97]*rh+[146]*rh+[1]*2*rh and rows[0][:2]==(66,250),rows
+    assert (rows[0][4],rows[19][4])==(color_t(fill[0][1]),color_t(fill[-1][1])),(light,accent,rows[:20])
+    assert [b[0] for b in ends]==[66]*rh+[308]*rh and {b[4] for b in ends[:20]}=={color_t(track[-1][1])},ends
+    assert [b[4] for b in ends[:rh]]==[b[4] for b in ends[rh:]] and ends[20][4]!=ends[19][4]; passed()
 # Quick Settings under Classic, the dialog as its asset leaves it and stock's init left it.
 QS_ICONS=('img_wifiswitch','img_btswitch','img_lock','img_gain','img_usbmode','img_po','img_playset','img_sysset')
 QS_IMAGES=('drop_wifi','drop_bt','drop_keylock','drop_lowgain','drop_usbdac','drop_po','drop_playset','drop_sysset')
@@ -14729,7 +14740,7 @@ cbar=next(w for w in kids(c,cinfo,'view') if cf_geometry(c,w)==(bx,by,bw,O['NP_B
 assert bw==243 and 375-(bx+bw+GAP+W1)==edge
 c.bands.clear(); c.call(address=HOOKS['widget_on_paint_border'][0],args=(cbar,c.canvas,0,0),gap=0,clear=False)
 on=next(b[2] for b in c.bands if b[0]==0)  # the played share
-assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
+assert 0<on<bw//2 and {(b[0],b[2]) for b in c.bands}=={(0,on),(on,bw-on),(0,1),(bw-1,1)} and sorted({b[1] for b in c.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),c.bands
 # a two-hour track: the hours' boxes, the bar 201; its elapsed time's box repainted where it was and goes
 c.state('playing',position=10000,at=c.now+500,cover=1,track='t2',duration=7200000); c.poll(); c.advance(0)
 assert cf_geometry(c,cbar)==(edge+W+GAP,by,201,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and cf_geometry(c,rows['0:10'])==(edge,by-TO,W,O['NP_IPOD_TIME_H'])
@@ -14952,7 +14963,7 @@ assert cf_geometry(r,relapsed)==(edge,by-TO,W2,O['NP_IPOD_TIME_H']) and r.nodes[
 rbar=r.nodes[rnp]['children'][-1]  # last: over the art's box
 assert r.nodes[rbar]['type']=='view' and cf_geometry(r,rbar)==(bx,by,bw,O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS']) and r.nodes[rbar]['sensitive']==0 and bw==227
 r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)
-assert {(b[0],b[2]) for b in r.bands if b[2]}=={(0,bw)} and sorted({b[1] for b in r.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),r.bands
+assert {(b[0],b[2]) for b in r.bands if b[2]}=={(0,bw),(0,1),(bw-1,1)} and sorted({b[1] for b in r.bands})==list(range(O['NP_BAR_IPOD']+O['SCRUB_REFLECT_ROWS'])),r.bands
 r.destroy(rart); r.bands.clear(); r.call(address=HOOKS['widget_on_paint_border'][0],args=(rbar,r.canvas,0,0),gap=0,clear=False)
 assert not r.bands; r.destroy(rnp); passed()  # its page going (the art's destroy), nothing paints there
 CONFIG.clear()

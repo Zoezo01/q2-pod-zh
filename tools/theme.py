@@ -144,6 +144,7 @@ SCHEMA = {k.path: k for k in (
     key('playing.scrubber.height', 'np_bar', 'int', 375),
     key('playing.scrubber.scrub_height', 'np_scrub', 'int', 375),
     Key('playing.scrubber.stops', 'np_track', 'stops', 0, 0, (), 'live', True),  # Classic's track, final (paint_scrubber); (): stock's bar
+    Key('playing.scrubber.fill', 'np_fill', 'stops', 0, 0, (), 'live'),  # its played part under the theme's own scheme (ipod_bar); (): the scheme's band
     key('playing.art.square', 'art_square', 'bool'),
     key('list.row.font', 'font[ROLE_TITLE]', 'enum'),
     key('list.row.meta_font', 'font[ROLE_META]', 'enum'),

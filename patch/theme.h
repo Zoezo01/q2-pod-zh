@@ -168,6 +168,8 @@ typedef struct {
         set_top, np_bar, np_scrub;
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */
+    stops_t np_fill;     /* ... its played part under the theme's own scheme (Classic Blue), both
+                            halves; n 0: the scheme's band */
     unsigned np_rows[4][NP_ROWS]; /* SCRUB_ROWS: 0xAARRGGBB; dark track, fill, light track, fill */
     unsigned np_info_value[2];    /* the info page's values, final: [0] dark, [1] light */
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:
