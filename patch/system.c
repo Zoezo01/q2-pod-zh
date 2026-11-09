@@ -280,6 +280,34 @@ void ringnav_clean_end(void) {
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
     coverflow_clean_end();
 }
+/* Reboot record (docs/internals.md#bluetooth-boot-reconnect): when its Bluetooth controller never
+ * answers rtk_hciattach, stock's openBluetooth sets bt_rtk_error, checkBluetoothStatus makes that
+ * bt_initstatus BT_ABNORMAL, and on_wm_idle_status, on its next pass, shows "Bluetooth abnormal"
+ * and calls device_reboot (0x4e9d0c and 0x4e9f1c, its only direct callers). A Q2 whose radio
+ * module is dead reboots at every boot, and each was a clean end: nothing on the card said why.
+ * So ringnav_reboot has this leave S90play's q2-crash.log first, as a crash would, whole then
+ * renamed: the date, the reason with the status, the uptime and the caller, dmesg's tail and, when
+ * S90play keeps demo's stderr (/tmp/q2-demo.err), its tail, where rtk_hciattach says what failed.
+ * The next boot moves it to the card. Restart, a factory reset, the power-off page's long press and
+ * a firmware update's countdown reboot through device_reboot on purpose: nothing for them. Through
+ * system(), as S90play's shell writes the log; device_reboot follows with the reboot itself. */
+#define BT_ABNORMAL (-102)
+void reboot_record(void *caller) {
+    int status = I(bt_initstatus, 0);
+    if (status != BT_ABNORMAL) return;
+    char cmd[512];
+    int n = snprintf(
+        cmd, sizeof cmd,
+        "{ echo \"== date\"; date; echo \"== reboot\"; "
+        "echo \"bluetooth abnormal: bt_initstatus %d, "
+        "$(cut -d' ' -f1 /proc/uptime) s after boot, from %p\"; "
+        "echo \"== dmesg\"; dmesg | tail -n 200; "
+        "[ -f /tmp/q2-demo.err ] && { echo \"== stderr\"; tail -n 60 /tmp/q2-demo.err; }; } "
+        "> /mnt/data/q2-crash.log.tmp 2>&1; "
+        "mv /mnt/data/q2-crash.log.tmp /mnt/data/q2-crash.log; sync",
+        status, caller);
+    if (n > 0 && n < (int)sizeof cmd) system(cmd);
+}
 /* Standby limit (docs/internals.md#standby-limit): device_standby puts the radios, the card and the
  * DAC down, then toolsIntoStandby suspends to RAM ("mem" to /sys/power/state) and returns once
  * something resumes it. With a limit, the RTC's wake alarm is set that far ahead first and cleared

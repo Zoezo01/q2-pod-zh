@@ -1,8 +1,10 @@
 """patch/playback.c: the grouped queue's order, Play Next's list, the wheel's ticks and the queue snapshot."""
 import ctypes as C
+import os
 import random
 import re
 import struct
+import subprocess
 
 import pytest
 
@@ -2460,6 +2462,50 @@ def test_a_reboot_saves_unless_stopped(fw, kind, status, saved_call):
     else:
         assert fw.fn('ringnav_reboot', C.c_int)() == 9
     assert len(fw.calls('save_memoryplay_info')) == saved_call
+
+
+def test_a_reboot_for_bluetooth_abnormal_leaves_a_crash_log(fw, tmp_path):
+    """ringnav_reboot (system.c reboot_record): stock's bt_initstatus -102 writes q2-crash.log through the shell, before
+    the clean end; any other status, Restart's, writes nothing. The command then runs here under sh, with stand-ins."""
+    cmds: list[bytes] = []
+    fw.mock('fw_system', lambda cmd, *_: cmds.append(C.string_at(cmd)))
+    fw.mock('stock_reboot_trampoline', lambda *_: 9)
+    status = fw.var('fw_ctx_bt_initstatus', C.c_int)
+    status.value = -102
+    assert fw.fn('ringnav_reboot', C.c_int)() == 9 and len(cmds) == 1
+    names = [c[0] for c in fw.calls()]
+    assert names.index('fw_system') < names.index('fw_unlink')  # the record, then the clean end
+    for value in (0, 1, -1, -101, -103):
+        status.value = value
+        assert fw.fn('ringnav_reboot', C.c_int)() == 9 and len(cmds) == 1
+    cmd = cmds[0].decode()
+    head = ('{ echo "== date"; date; echo "== reboot"; '
+            'echo "bluetooth abnormal: bt_initstatus -102, $(cut -d\' \' -f1 /proc/uptime) s after boot, from 0x')
+    assert cmd.startswith(head)
+    caller, rest = cmd[len(head):].split('"', 1)
+    assert re.fullmatch(r'[0-9a-f]+', caller)
+    assert rest == ('; echo "== dmesg"; dmesg | tail -n 200; '
+                    '[ -f /tmp/q2-demo.err ] && { echo "== stderr"; tail -n 60 /tmp/q2-demo.err; }; } '
+                    '> /mnt/data/q2-crash.log.tmp 2>&1; mv /mnt/data/q2-crash.log.tmp /mnt/data/q2-crash.log; sync')
+    # the command under sh: dmesg a stand-in of 250 lines, the paths moved here
+    bin, err, uptime, log = tmp_path/'bin', tmp_path/'q2-demo.err', tmp_path/'uptime', tmp_path/'q2-crash.log'
+    bin.mkdir()
+    (bin/'dmesg').write_text('#!/bin/sh\nn=0; while [ $n -lt 250 ]; do n=$((n+1)); echo "[ $n.000000] line $n"; done\n')
+    (bin/'dmesg').chmod(0o755)
+    err.write_text(''.join(f'rtk {i}\n' for i in range(70)))
+    uptime.write_text('41.23 80.11\n')
+    shell = cmd.replace('/mnt/data/', f'{tmp_path}/').replace('/tmp/q2-demo.err', str(err)).replace('/proc/uptime', str(uptime))
+    env = dict(os.environ, PATH=f'{bin}:' + os.environ['PATH'])
+    subprocess.run(['sh', '-c', shell], check=True, env=env)
+    out = log.read_text()
+    assert out.startswith('== date\n')
+    assert f'\n== reboot\nbluetooth abnormal: bt_initstatus -102, 41.23 s after boot, from 0x{caller}\n== dmesg\n' in out
+    dmesg, stderr = out.split('== dmesg\n')[1].split('== stderr\n')
+    assert dmesg.splitlines() == [f'[ {n}.000000] line {n}' for n in range(51, 251)]
+    assert stderr == ''.join(f'rtk {i}\n' for i in range(10, 70)) and not (tmp_path/'q2-crash.log.tmp').exists()
+    err.unlink()
+    subprocess.run(['sh', '-c', shell], check=True, env=env)
+    assert '== stderr' not in log.read_text() and log.read_text().endswith('line 250\n')  # no stderr file: no section
 
 
 def test_power_off_saves_the_second_it_is_at(polled):

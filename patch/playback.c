@@ -1735,6 +1735,7 @@ static void reboot_save(void) {
     if (mclGetPlayStatus() != 1) save_memoryplay_info(); /* ringnav_savequeue */
 }
 int ringnav_reboot(void) {
+    reboot_record(__builtin_return_address(0)); /* a Bluetooth abnormal reboot's crash log */
     reboot_save();
     return stock_reboot_trampoline();
 }

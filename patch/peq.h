@@ -28,6 +28,7 @@ static inline void crash_note(const char *path, const char *file, const char *lo
 void child_exit(int status) __attribute__((noreturn));
 void child_oom_first(void); /* between fork and exec: the OOM killer takes this child, not demo (#169) */
 void ringnav_clean_end(void); /* a clean end begins: the watchdog stops, the state record goes (system.c) */
+void reboot_record(void *caller); /* a Bluetooth abnormal reboot's q2-crash.log (system.c) */
 /* The crash log's record of a long job's current file and demo's memory (tags.c) */
 void crash_note(const char *path, const char *file, const char *log, unsigned every, unsigned *n);
 #ifdef canvas_set_fill_color

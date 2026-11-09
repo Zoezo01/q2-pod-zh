@@ -14,6 +14,7 @@
   - Cover Flow: turning the Q2 off while it prepares artwork no longer marks the album it was about to start as one that restarted the Q2.
   - Scrobbling: a line of the scrobble log with a damaged time no longer stops every upload until it is edited out. It is left out, as other unreadable lines are.
   - Playlists: opening Library → Playlists, or a card app importing playlists, soon after a boot no longer restarts the Q2.
+  - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.
   - Library: Albums, Artists, Composers and Genres open faster on a big library where some songs have no album, artist or genre. Each used to read every such song only to decide whether to show Unknown.
   - Streaming: a card app's page, or Spotify's browser, no longer stays on **Loading…** when the reply comes back at once.
   - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists, Folder and the other lists held on to a little each time too.
