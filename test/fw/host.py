@@ -216,6 +216,7 @@ class Fw:
 
     def calls(self, name=None):
         """[(stub name, its six arguments)] in order, or just `name`'s."""
+        assert name is None or name in self.stubs, f'{name} is no stub: a renamed call would pass every negative assert'
         rows = [(r.name.decode(), tuple(r.args)) for r in self.log()]
         return [r for r in rows if name is None or r[0] == name]
 

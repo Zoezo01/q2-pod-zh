@@ -496,9 +496,9 @@ ALBUM_ART = ((0x4a388c, 'ringnav_art_name'), (0x4a421c, 'ringnav_albumcovers'), 
              (0x4ae860, 'ringnav_artist_covers'), (0x4ae968, 'ringnav_artist_covers'),
              (0x4aebc0, 'ringnav_artist_covers'))
 ALBUM_ART_ROW = ((0x4a3890, 0x24c66c04, 0x02603025), (0x4ab808, 0x24c66c04, 0x02403025))
-# albumcoverinfo_init's jalr _deque_push_back of each row's cover task becomes jal ringnav_cover_push, which
-# frees the task's name and path once the list has copied them; see docs/internals.md.
-COVER_PUSH = (0x4ed2a4, 0x0320f809)
+# albumcoverinfo_init's and foldercoverinfo_init's jalr _deque_push_back of each row's cover task becomes jal
+# ringnav_cover_push, which frees the task's name and path once the list has copied them; see docs/internals.md.
+COVER_PUSH = ((0x4ed2a4, 0x4ed298), (0x4ed44c, 0x4ed444))  # the jalr, the lw t9 that loads it
 # Library Artists rows: the row bind's bal to class_icon becomes jal ringnav_class_icon, which hides the head.
 CLASS_ICON = 0x4b0cec
 # Album grids' and Songs' scroll start no longer pauses the cover worker (sw $3,0($2) -> nop); see docs/internals.md.
@@ -1833,9 +1833,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'same-named albums apart in art')
     for row in ALBUM_ART_ROW:
         patch_word(patched, *row, 'same-named albums apart in art')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVER_PUSH[0] - 0xc))[0] == 0x8f99f734,
-          'cover push: expected _deque_push_back import')  # lw t9, -0x8cc(gp)
-    patch_word(patched, *COVER_PUSH, jal(ps['ringnav_cover_push']), "a cover task's name and path freed once copied")
+    for address, load in COVER_PUSH:
+        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, load))[0] == 0x8f99f734,
+              'cover push: expected _deque_push_back import')  # lw t9, -0x8cc(gp)
+        patch_word(patched, address, 0x0320f809, jal(ps['ringnav_cover_push']), "a cover task's name and path freed once copied")
     patch_word(patched, CLASS_ICON, branch(0x04110000, CLASS_ICON, syms['class_icon']),
                jal(ps['ringnav_class_icon']), 'Artists rows without the head picture')
     for word in COVER_PAUSE:

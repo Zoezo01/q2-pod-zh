@@ -729,7 +729,6 @@ def test_without_albums_the_page_opens_on_its_grid_by_name(fw):
     assert page.paths() == [f'{ROOT}/A.png', f'{ROOT}/b.jpg', f'{ROOT}/c.JPEG']
     assert [page.ph.key[i] for i in range(3)] == [key(p) for p in page.paths()]
     assert 'Photos' in page.w.texts.values()
-    assert fw.calls('page_push') == []
 
 
 def test_four_tiles_a_row(fw):

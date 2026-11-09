@@ -155,6 +155,16 @@ static int library_query(int content, const char *db, const char *sql, void *row
         if (n < 0 || (unsigned)n >= sizeof filtered) return -1;
         sql = filtered;
     }
+    /* Time added (ascending) would walk songtable_time_create backwards and reverse one second's
+     * songs (a CUE image's tracks): id keeps stock's order. aa is free: this SQL has no
+     * albumsonger. */
+    const char *asc = sql ? strstr(sql, " ORDER BY time_create asc;") : 0;
+    if (asc) {
+        int n =
+            tk_snprintf(aa, sizeof aa, "%.*s ORDER BY time_create asc, id", (int)(asc - sql), sql);
+        if (n < 0 || (unsigned)n >= sizeof aa) return -1;
+        sql = aa;
+    }
     /* no memory to expand it: the token alone is SQL's 1, the whole library (library_scope.c) */
     char *expanded = sql && strstr(sql, LIBRARY_SCOPE_TOKEN) ? library_scope_query(sql) : 0;
     const char *query = expanded ? expanded : sql;
@@ -7597,8 +7607,9 @@ int ringnav_art_name(char *buf, unsigned size, unsigned row, const char *album) 
     void *list = P(p_deque_showlist, 0);
     return snprintf(buf, size, "%s", row < deque_size(list) ? art_key(key, list, row) : album);
 }
-/* albumcoverinfo_init's _deque_push_back of each row's cover task (0x4ed2a4): the list's copy
- * (0x5b390c) duplicates the task's name and path, which stock malloc'd for it and never freed. */
+/* albumcoverinfo_init's and foldercoverinfo_init's _deque_push_back of each row's cover task
+ * (0x4ed2a4, 0x4ed44c): the list's copy (0x5b390c) duplicates the task's name and path, which stock
+ * malloc'd for it and never freed. */
 void ringnav_cover_push(void *covers, void *task) {
     _deque_push_back(covers, task);
     free(P(task, 4)), free(P(task, 8));
@@ -7875,7 +7886,8 @@ int ringnav_class_icon(void *row, int i) {
     return shown ? class_icon(row, i) : 0;
 }
 
-/* load_localclass_list: stock fills p_deque_showlist and returns its size. getAllAlbum,
+/* load_localclass_list: stock fills p_deque_showlist and returns its size (Playlists and Baidu:
+ * their own deque's). getAllAlbum,
  * getAllArtist (and its album-artist twin), getAllComposer and getAllGenre end with an Unknown row
  * (id -1) whenever the library has songs; it goes when the query its press runs finds none. Stock
  * clears the staging deque before returning, and so does this. Stock never sets g_artist_type,
@@ -7979,7 +7991,8 @@ int ringnav_localclass(int cls) {
     if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) /* My Fav, Frequent, Recent */
         fav_titles(list, n);
     /* an untagged song's row reads its file name without the extension (track_name). Bounded by
-     * list's own size: Playlists (0xf00b) counts p_deque_playlist's rows, not list's. */
+     * list's own size: Playlists (0xf00b) counts p_deque_playlist's rows, Baidu's (0xff26) its own.
+     */
     for (int i = 0, k = (int)deque_size(list); i < n && i < k; ++i) {
         void *r = deque_at(list, (unsigned)i);
         char buf[512], **title = (char **)((char *)r + REC_TITLE), *t;

@@ -54,7 +54,7 @@ const unsigned *widget_get_text(void *);
 int canvas_set_font(void *, const char *, unsigned);
 float canvas_measure_text(void *, const unsigned *, unsigned);
 """ + ''.join(f'{r} {n}({a});\n' for n in """
-canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
+canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable toolsGetUserStop album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
 deque_init _deque_push_back deque_pop_back
 deque_assign deque_destroy deque_size deque_at window_create widget_factory
 widget_factory_create_widget image_create hscroll_label_create set_hscroll_label_attribute
@@ -538,6 +538,8 @@ int ringnav_artist_view(void) { return artist_view; }
 int ringnav_artist_az(void) { return 0; }
 int album_row(void *a, int n, char **v, char **c) { return 0; }
 int toolsUpdateDbTable(const char *db, const char *sql) { return 1; } /* only a drop-flag scan writes */
+int toolsGetUserStop(void) { return 0; }
+int msg_counting(void) { return 0; }
 int toolsQueryDbTable(const char *db, const char *sql, void *row, int sort) {
     assert(!strcmp(db, "/mnt/data/database.db") && !sort && strstr(sql, "group by album COLLATE NOCASE,ifnull(albumsonger"));
     deque *d = shim_dir;

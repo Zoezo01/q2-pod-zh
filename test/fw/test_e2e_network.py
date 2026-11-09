@@ -1176,6 +1176,7 @@ class Library:
         self.deques = Deques(w.fw)
         self.playlists = self.deques.new()
         w.fw.var('fw_ctx_p_deque_playlist', C.c_uint).value = self.playlists
+        w.fw.var('fw_ctx_p_deque_showlist', C.c_uint).value = self.deques.new()  # platform_init's
         w.ui.dialogs['dialog/updatemusic_dialog'] = self.scan
         w.mock('navigator_window_is_exist', lambda name, *_: self.open and s(name) == 'updatemusic_dialog')
         w.mock('toolsGetDirectoryM3u8', self.listing)

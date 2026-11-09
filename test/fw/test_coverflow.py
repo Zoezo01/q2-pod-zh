@@ -1970,6 +1970,14 @@ def test_a_scan_ends_by_indexing_what_stock_looks_up_alone(fw, scan):
         db.executemany('insert into songtable(id, filename, fileurl, album, songer, time_create) values (?, ?, ?, ?, ?, ?)', songs)
     for sql in sent[:6]:
         assert bare.execute(sql).fetchall() == indexed.execute(sql).fetchall(), sql
+    # oldest first would walk the index backwards and reverse one second's songs: the hook adds id, stock's order
+    asc, sent[:] = 'select * from songtable ORDER BY time_create asc;', []
+    for staged in (0, 1):
+        music.value = staged
+        query(b'/mnt/data/database.db', asc.encode(), None, 0)
+    assert len(sent) == 2
+    for sql in sent:
+        assert sql.endswith(' ORDER BY time_create asc, id') and indexed.execute(sql).fetchall() == bare.execute(asc).fetchall(), sql
 
 
 @pytest.mark.parametrize('result, mask, btime, want', ((0, 0x800, 1700000000, 1700000000), (0, 0xfff, 1234, 1234),

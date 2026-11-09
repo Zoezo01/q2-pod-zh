@@ -2275,7 +2275,7 @@ def test_a_move_with_the_page_gone_or_a_row_out_of_range_does_nothing(fw):
     move(None)  # no page
     u.page, u.row = 0x7000, 2
     move(None)  # past the rows
-    assert not fw.calls('page_list') and not fw.calls('widget_destroy_children')
+    assert not fw.calls('widget_destroy_children')
 
 
 def test_a_hold_on_a_row_arms_the_move(fw):

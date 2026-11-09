@@ -5017,8 +5017,10 @@ for cls,artist in ((0xf003,0),(0xf004,0),(0xf004,1),(0xf005,0),(0xf006,0)):
         assert m.call(address=HOOKS['load_localclass_list'][0],args=(cls,0,0,0),gap=0)==2+(untagged>0)
         assert m.read==[min(untagged,1)],(cls,artist,untagged,m.read)
     passed()
-m=FirstMachine(2,page='localclass_page',cls=0xf004); m.word(m.row(0)+O['REC_ID'],-1); m.run(1)
-assert m.read==[2],m.read; passed()
+m=FirstMachine(2,page='localclass_page',cls=0xf001,rows=3); m.word(m.row(2)+O['REC_ID'],-1)  # the flag ends with its check
+assert m.call(address=HOOKS['load_localclass_list'][0],args=(0xf004,0,0,0),gap=0)==3
+m.word(m.row(0)+O['REC_ID'],-1); m.run(1)
+assert m.read==[1,2],m.read; passed()
 # An empty class list: its page, once the window manager marks it opened (stage 3, after the open
 # animation), is force-closed from the next loop pass, then the toast says so. Until then it is
 # polled (EMPTY_POLL_MS) until it opens or stops being on top, then the toast alone; a page already left, or
@@ -5108,6 +5110,13 @@ for start,end in ((0x4aaac4,0x4aaad0),(0x4a9694,0x4a96a4),(0x4a973c,0x4a974c)):
     held={m.get(c+off) for c in covers for off in (4,8)}-{0}
     assert m.live==held, (hex(end-8),len(m.live-held),'blocks nothing holds')
 passed()
+# Folder view's foldercoverinfo_init builds the same task for a folder's or a song's row, at its own push.
+m=SongCoversMachine(); m.handlers.pop(syms['foldercoverinfo_init'],None)
+rows=m.deque([m.song('Sub',kind=4),m.song('Song'),m.song('Skipped',kind=1)])
+m.call(address=syms['foldercoverinfo_init'],args=(rows,0,0,0),gap=0)
+covers=m.items(m.get(syms['pdeq_albumcoverlist']))
+assert [(m.text(m.get(c+4)),m.text(m.get(c+8))) for c in covers]==[('Sub','/p/Sub'),('Song','/p/Song')]
+assert m.live=={m.get(c+off) for c in covers for off in (4,8)},(len(m.live),'blocks nothing holds'); passed()
 # Every Library class and detail load scopes SQL, including empty results and failures, and
 # restores an already-scoped caller. The trampoline supplies stock's displayed copies.
 class ScopedClassMachine(ClassMachine):
@@ -8844,7 +8853,7 @@ for writer in WRITERS:
     m.calls=[]; m.open(); assert not m.queried(); m.close(); passed()
 # Update Local Music while the dialog's count reads songtable on its own connection: stock's
 # scanAllMusicFile and toolsInitDatabase run on a real SQLite file. The scan's thread waits for the
-# count, so the drop commits and the scan runs. Back ends the wait, and the drop fails as before.
+# count, so the drop commits and the scan runs. Back ends the wait and the scan: no drop is tried.
 class ScanLockMachine(UiLoad,CoverflowMachine):
     def __init__(self,path):
         super().__init__(); self.mock('strstr@GLIBC_2.0')
@@ -8886,7 +8895,8 @@ with tempfile.TemporaryDirectory() as directory:
         m.byte(STOP,back)  # toolsStopUpdateMusic's flag
         m.call(address=HOOKS['scanAllMusicFile'][0],args=(m.string('/mnt/mmc'),1,0,0),gap=0); m.reading.close()
         ran=[c[0] for c in m.calls if c[0].startswith('tools') or c[0]=='usleep']
-        assert ran==([] if back else ['usleep','toolsClearDbCount','toolsLoadAllFile']),(ran,m.sqls)
+        assert ran==([] if back else ['usleep','toolsClearDbCount','toolsLoadAllFile','toolsUpdateDbTable']),(ran,m.sqls)
+        assert m.sqls if not back else not m.sqls,m.sqls
         assert m.db.execute('select count(*) from songtable').fetchone()[0]==(1000 if back else 0); m.db.close()  # kept, or made again
 passed()
 # Albums without art start the thread behind a progress screen; destroy joins it and drops the poll.

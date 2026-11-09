@@ -192,18 +192,18 @@ python3 test/cmut/report.py patch/radio.c /tmp/cmut/radio-left /tmp/cmut/radio-l
 - **Killing survivors:** each survivor in the `--survivors` file is `=== <id>.c` and its diff against the file, line numbers in the `@@` header; a killed mutant's `reason` in the results names the first test that failed, or the test a crash was in. `report.py --copy` puts the survivors and their lines of the manifest in a folder of their own, so a new test runs against them alone in a minute or two; `CMUT_TEST` mounts another copy of the test in place of the file's own. Some survivors can't be killed: they change nothing a caller can see, or need a failed allocation or another thread.
 - **Weekly:** `mutation.yml`'s `cmut` job mutates every wired file on Sundays, with mutmut's run from scratch, and by hand from the Actions tab, each file on a runner of its own, side by side. Each uploads its survivors and results as `c-surviving-mutants-<file>`, and fails only when its score falls under its floor in the job, a little under the score below, or its run stops short: it catches a collapse, not each survivor.
 
-| File | Its tests | Mutants | Tested | Caught | Floor | Four threads |
-|---|---|---:|---:|---:|---:|---:|
-| `library_scope.c` | `test/library_scope.py` | 612 | 427 | 89.0% | 87% | 58 s |
-| `chapters.c` | `test/chapters.py` | 1,050 | 773 | 92.2% | 90% | 3 min 58 s |
-| `mp3_gapless.c` | `test/mp3_gapless.py` | 2,069 | 1,106 | 70.8% | 68% | 6 min 44 s |
-| `lockscreen.c` | `test/fw/test_lockscreen.py` | 2,161 | 1,740 | 79.2% | 77% | 4 min 45 s |
-| `photos.c` | `test/fw/test_photos.py` | 1,707 | 1,449 | 88.8% | 86% | 4 min 53 s |
-| `headset.c` | `test/fw/test_headset.py` | 1,701 | 1,429 | 94.0% | 92% | 5 min 30 s |
-| `radio.c` | `test/fw/test_radio.py` | 2,198 | 1,884 | 89.4% | 87% | 5 min 59 s |
-| `visualizer.c` | `test/fw/test_visualizer.py` | 2,160 | 1,910 | 91.1% | 89% | 4 min 46 s |
+| File              | Its tests                    | Mutants | Tested | Caught | Floor | Four threads |
+| ----------------- | ---------------------------- | ------: | -----: | -----: | ----: | -----------: |
+| `library_scope.c` | `test/library_scope.py`      |     612 |    427 |  89.0% |   87% |         58 s |
+| `chapters.c`      | `test/chapters.py`           |   1,050 |    773 |  92.2% |   90% |   3 min 58 s |
+| `mp3_gapless.c`   | `test/mp3_gapless.py`        |   2,069 |  1,106 |  70.8% |   68% |   6 min 44 s |
+| `lockscreen.c`    | `test/fw/test_lockscreen.py` |   2,161 |  1,740 |  79.2% |   77% |   4 min 45 s |
+| `photos.c`        | `test/fw/test_photos.py`     |   1,707 |  1,449 |  88.8% |   86% |   4 min 53 s |
+| `headset.c`       | `test/fw/test_headset.py`    |   1,701 |  1,429 |  94.0% |   92% |   5 min 30 s |
+| `radio.c`         | `test/fw/test_radio.py`      |   2,198 |  1,884 |  89.4% |   87% |   5 min 59 s |
+| `visualizer.c`    | `test/fw/test_visualizer.py` |   2,160 |  1,910 |  91.1% |   89% |   4 min 46 s |
 
-All 15,658 took 38 minutes one file after another, pinned with `CMUT_CPUS` to four threads on two cores of a Ryzen 7 7800X3D desktop, as a 4-vCPU runner's threads are, at a load average under 6, and 45 minutes before `test/fw`'s files had their survivors' tests, at a load average of 10 to 22. A runner's slower cores could take that past an hour, so the job gives each file a runner of its own and 60 minutes, against 7 for the longest here. The results' last lines add up to 7,604 seconds of the container's CPU time (`cpu_seconds`, which load from outside stretches less than the clock's). Runs with the same tests agree on every mutant but one, `photos.c`'s `y <= sh` in a loop that writes one row past its buffer, which crashed once: what lies past the buffer decides it. What `test/fw`'s files leave alive is mostly design constants (colours, coordinates, dither tables, waits) that the tests check by relation rather than by value, and lines with no code of their own, which every test runs against. The host suites check their limits by relation too, so a mutant that moves one consistently lives: `SCOPE_MAX` one lower for both the scan and the reader, or `chapters_poll`'s reads a tick and bytes a read. `mp3_gapless.c`'s checks from the pilot's branch expect a tag frame too small for LAME's extension to be refused, which the parser now reads as a silent frame, so they stay behind and its score is the suite's as it is.
+All 13,658 took 38 minutes one file after another, pinned with `CMUT_CPUS` to four threads on two cores of a Ryzen 7 7800X3D desktop, as a 4-vCPU runner's threads are, at a load average under 6, and 45 minutes before `test/fw`'s files had their survivors' tests, at a load average of 10 to 22. A runner's slower cores could take that past an hour, so the job gives each file a runner of its own and 60 minutes, against 7 for the longest here. The results' last lines add up to 7,604 seconds of the container's CPU time (`cpu_seconds`, which load from outside stretches less than the clock's). Runs with the same tests agree on every mutant but one, `photos.c`'s `y <= sh` in a loop that writes one row past its buffer, which crashed once: what lies past the buffer decides it. What `test/fw`'s files leave alive is mostly design constants (colours, coordinates, dither tables, waits) that the tests check by relation rather than by value, and lines with no code of their own, which every test runs against. The host suites check their limits by relation too, so a mutant that moves one consistently lives: `SCOPE_MAX` one lower for both the scan and the reader, or `chapters_poll`'s reads a tick and bytes a read. `mp3_gapless.c`'s checks from the pilot's branch expect a tag frame too small for LAME's extension to be refused, which the parser now reads as a silent frame, so they stay behind and its score is the suite's as it is.
 
 The order for the rest:
 

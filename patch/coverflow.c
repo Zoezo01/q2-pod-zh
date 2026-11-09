@@ -42,17 +42,20 @@ static int library_write(int (*stock)(void *, void *), void *a, void *b) {
  * as before. A reader on another connection makes the create fail (no busy timeout), until the
  * next scan. time_create is desc: an index keeps equal keys in rowid order, as stock's sort did,
  * so songs of one second (a CUE image's tracks) keep their order newest first (Recently Added,
- * getAllMusic(3)) and reverse oldest first (getAllMusic(4)). ponytail: the album groupings
+ * getAllMusic(3)); oldest first (getAllMusic(4)) library_query adds id for it. ponytail: the album groupings
  * (getAllAlbum, ALBUM_SQL, an artist's albums) walk songtable_album too, a row lookup each in
  * album order: over twice a scan's page reads (docs/internals.md).
  * A full scan (drops): toolsInitDatabase drops songtable and creates it again on the connection
  * the tools* functions share, which has no busy handler. A count still reading songtable on its
  * own connection made the drop fail, then the create, and stock skipped the update without a word.
  * So the scan's thread waits for the counts first (library_counting), outside SQLite; Back ends
- * the wait. */
+ * the wait and the scan. */
 static int library_scan(int (*stock)(void *, void *), void *a, void *b, int drops) {
     library_scope_scan();
-    while (drops && library_counting() && !toolsGetUserStop()) usleep(100000);
+    if (drops) {
+        while (library_counting() && !toolsGetUserStop()) usleep(100000);
+        if (toolsGetUserStop()) return 1; /* as wait_scan skips a stopped scan: nothing dropped */
+    }
     int result = library_write(stock, a, b);
     toolsUpdateDbTable("/mnt/data/database.db",
                        "create index if not exists songtable_album on songtable(album collate nocase);"

@@ -1422,7 +1422,7 @@ def test_the_radios_bar_paints_always_full(fw, ui, now, st):
     st.stream_bar = bar
     canvas = Canvas(fw)
     scrubber(fw, bar, canvas)
-    assert {r[2] for r in canvas.rects if r[3] == 1} == {243, 0}  # the band across, none of the track
+    assert {r[2] for r in canvas.rects if r[3] == 1} == {243, 0, 1}  # the band across, none of the track, its end columns
 
 
 def test_a_theme_without_classics_track_paints_no_bar(fw, ui, mcl, st):
@@ -1696,46 +1696,31 @@ def test_centreds_tap_on_the_lyrics_takes_them_full_screen_and_back(fw, ui, mcl,
     assert tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 108, 95) == [0]
     assert ui.box(lyr.col) == (0, col[1], 375, col[3]) and ui.box(lyr.slide)[2:] == (375, ui.box(lyr.dots)[1])
     assert ui.prop(lyr.col, b'style:normal:bg_color') == b'#000000' and st.np_full == 1
-    lyr.scroll(0)
-    row = ui.box(lyr.rows[1])
-    tap_line(ui, lyr, row[1] + row[3] // 2)  # a synced line: the song plays from it, full screen stays
-    assert lyr.seeks() == [LINES[1][1]] and st.np_full == 1 and ui.box(lyr.col)[::2] == (0, 375)
-    tap_line(ui, lyr, ui.box(lyr.rows[0])[1] // 2)  # the blank slot over the first line: the column back
-    assert ui.box(lyr.col) == col and ui.box(lyr.slide) == slide and st.np_full == 0
+    tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 100, 100)
+    tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)  # any tap: the column back, nothing plays
+    assert lyr.seeks() == [] and ui.box(lyr.col) == col and ui.box(lyr.slide) == slide and st.np_full == 0
     assert ui.prop(lyr.col, b'style:normal:bg_color') == b'#00000000'
     restacks = [a[1] for _, a in fw.calls('widget_restack')]
     assert restacks == [len(ui.kids[lyr.win]), at]  # over all, then its own place again, under the bar
 
 
-@pytest.mark.parametrize('end', ['swipe', 'far', 'drag', 'drag-move', 'abort', 'page', 'reopen'])
+@pytest.mark.parametrize('end', ['far', 'drag', 'abort', 'page', 'reopen'])
 def test_full_screen_lyrics_end_with_a_swipe_or_off_their_page(fw, ui, mcl, st, end):
     theme(fw, st, MINIMAL, NPCENTRED=1)  # Classic has no Centred layout
     lyr = Lyrics(fw, ui, mcl, st, sec=35)
     tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 100, 100)
     tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)
     assert st.np_full == 1
-    move, tap_px = O['EVT_POINTER_MOVE_BEFORE'], NAV['TAP_PX']
+    tap_px = NAV['TAP_PX']
     if end == 'far':  # a lift far off, with no move between, is no tap
         tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 300, 100)
         tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)
         assert st.np_full == 1 and lyr.seeks() == []
         return
-    if end == 'drag':  # scroll_lrc drags the lines from TAP_PX up: its STOP comes back as an abort there
+    if end == 'drag':  # scroll_lrc drags the lines: its STOP comes back as an abort, and any drag ends full screen
         tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 100, 100)
         tap(ui, lyr.lyric, O['EVT_POINTER_ABORT'], 100, 100 - tap_px)
-        tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)  # back where it came down: still no tap
-        assert st.np_full == 1 and lyr.seeks() == []
-        return
-    if end == 'drag-move':  # the lines' drag's first move, TAP_PX up: it passes to scroll_lrc, full screen stays
-        tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 100, 100)
-        assert tap(ui, lyr.lyric, move, 100, 100 - tap_px) == [0] and st.np_full == 1
-        tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)  # back where it came down: still no tap
-        assert st.np_full == 1 and lyr.seeks() == []
-        return
-    if end == 'swipe':  # the first move past TAP_PX sideways is the slide_view's: it passes, and the column is back
-        tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 100, 100)
-        assert tap(ui, lyr.lyric, move, 100 + tap_px + 1, 100) == [0] and st.np_full == 0
-        tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)  # back where it came down: no tap, no full screen
+        tap(ui, lyr.lyric, O['EVT_POINTER_UP_BEFORE'], 100, 100)  # back where it came down: no tap
         assert lyr.seeks() == []
     elif end == 'abort':  # the slide_view's, which takes the touch past TAP_PX sideways
         tap(ui, lyr.lyric, O['EVT_POINTER_DOWN'], 100, 100)
