@@ -8093,7 +8093,7 @@ static void qm_tracks(void *r, void *add) {
 
 /* The row's tracks: the song itself, or what stock would play for the row; an Albums row's own
  * album alone (getMusicByAlbum finds every album of the name), in album order, as Coverflow's. */
-static void *qm_collect(void *r) {
+void *qm_collect(void *r) {
     if (st.qm_kind == QM_COVERALBUM || (st.qm_kind == QM_ALBUM && st.qm_cls == CLASS_ALBUMS))
         return coverflow_album_tracks(r);
     void *add = _create_deque("stSongInfo");
@@ -8763,7 +8763,7 @@ static int qm_run(const void *unused) {
     } else if (aid && a == QA_RATE) {
         rate_show(window_manager_get_top_window(window_manager()), rate_kept(1, aid), aid);
     } else if (aid && (a == QA_FAV || a == QA_UNFAV)) {
-        rate_saved(rate_keep(1, aid, a == QA_FAV ? 5 : 0));
+        if (rate_saved(rate_keep(1, aid, a == QA_FAV ? 5 : 0))) rate_album_favs(r, a == QA_FAV);
     } else if (r && a == QA_RATE) {
         rate_open();
     } else if (r && a >= QA_ADV_SHUFFLE && a <= QA_GROUP) {

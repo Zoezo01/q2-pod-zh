@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.7.5**:
+  - Library: adding an album to your favourites, or rating it five hearts, now makes its songs favourites too, so they show in **Favorites** and **Loved**. Removing the album, or rating it lower, takes them out. For an album already at five hearts, choose five again under **Rate Album**.
   - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
   - View Queue: the song playing has a ▶ before its title.
   - Display: with **Status Bar** on another theme's look, the battery, Bluetooth and Wi-Fi line up as they do under that theme. Under **Theme: Classic**, Minimal's and Modern's battery sat a little low, Wi-Fi a little high and Bluetooth a little low; under Minimal and Modern, Classic's battery sat a little high.

@@ -402,6 +402,7 @@ int search_key(unsigned key);
 int geom(int group);
 int load_rows(menu_t *m, void *w);
 void *qm_record(void);
+void *qm_collect(void *r);
 void *rec_find(void *songs, const unsigned *slot, unsigned mask, void *r);
 unsigned *rec_index(void *songs, unsigned *mask);
 void reveal(menu_t *m, int id, int immediate);
@@ -520,6 +521,7 @@ int rate_kept(int album, unsigned key);
 int rate_key(void *top, unsigned key);
 int rate_open(void);
 int rate_saved(int k);
+void rate_album_favs(void *album, int on);
 int rate_show(void *win, int pick, unsigned album);
 void rate_bind(void *win); /* ratings: Now Playing's heart */
 int rated_albums(void *ctx, void *event);

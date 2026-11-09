@@ -8976,8 +8976,8 @@ assert m.call(O['KEY_PLAY'],address=syms['on_wm_keylong_fun'],event_type=O['EVT_
 m.close(); m.advance(0); assert not any(p[0]=='dialog/sortselect_dialog' for p in m.opened); passed()
 
 # Album favourites and ratings (ratings.c rate_*, coverflow.c album_id): a cover keeps 0-5 hearts of its own in
-# /mnt/data/ringnav-album-ratings by album_id, the low three bits its hearts, 5 its favourite; songs' ratings, My Fav and
-# the queue are untouched. Hold Play/Pause on a cover: Add/Remove from Favourites and Rate album, whose picker is Now
+# /mnt/data/ringnav-album-ratings by album_id, the low three bits its hearts, 5 its favourite and its songs My Fav's; songs'
+# ratings and the queue are untouched. Hold Play/Pause on a cover: Add/Remove from Favourites and Rate album, whose picker is Now
 # Playing's on Coverflow's page: the wheel moves it, Centre or a heart saves, Return leaves it as it was.
 ALBUM_RATES='/mnt/data/ringnav-album-ratings'
 class FileMocks:
@@ -9115,9 +9115,10 @@ assert bare_hold(classic_light_new(QueueMachine,page='sysset_page'))==(11,0) and
 assert bare_hold(classic_light_new(QueueMachine,page='folder_page'),0)==(11,0) and bare_hold(QueueMachine(page='folder_page'),0)==(0,1); passed()  # a row no menu holds, as a playlist file in Folder
 hm=classic_light_new(QueueMachine,page='sysset_page'); hm.byte(syms['g_backlight_status'],0); hm.t=7001; hm.press(hm.t); assert hm.hold()==0; passed()
 # Add, then Remove from Favourites: 5 hearts, then none; the other covers stay unrated.
-assert m.run(3) is None and m.kept()==[(a1&~7)|5] and not song_side_effects(m)
+def fav_calls(m,name): return [c for c in m.calls if c[0]==name]
+assert m.run(3) is None and m.kept()==[(a1&~7)|5] and [c[2] for c in fav_calls(m,'batch_add_file')]==[0xf00a] and not fav_calls(m,'deleteMusicFromFav')
 assert m.menu()[3:5]==['Remove from Favourites','Rate Album  ♥♥♥♥♥']
-assert m.run(3) is None and m.kept()==[] and not song_side_effects(m)
+assert m.run(3) is None and m.kept()==[] and fav_calls(m,'deleteMusicFromFav') and not fav_calls(m,'batch_add_file')
 m.word(m.slide+O['SLIDE_INDEX'],0); assert m.menu()[3:5]==['Add to Favourites','Rate Album']
 m.word(m.slide+O['SLIDE_INDEX'],1); passed()
 # The picker over the covers, on the album's hearts; the wheel moves the rating, never the covers.
@@ -9137,6 +9138,11 @@ for want in range(6):
     rows=m.menu(); assert rows[4]==('Rate Album  '+'♥'*want+'♡'*(5-want) if want else 'Rate Album')
     assert rows[3]==('Remove from Favourites' if want==5 else 'Add to Favourites')
 passed()
+# Five is its favourite by the picker too: its songs in on reaching it, again on saving it again, out on leaving it.
+m.rate(0); m.rate(4); assert not fav_calls(m,'batch_add_file') and not fav_calls(m,'deleteMusicFromFav')
+for want,added,removed in ((5,1,0),(5,1,0),(3,0,1),(2,0,0)):
+    m.rate(want); assert (len(fav_calls(m,'batch_add_file')),bool(fav_calls(m,'deleteMusicFromFav')))==(added,bool(removed)),want
+m.rate(0); passed()
 # A tap on a heart saves that many.
 assert m.run(4) is None; heart=m.nodes[m.panel()]['children'][2]; f,ctx=m.handler(heart,O['EVT_CLICK'])
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.panel() is None and m.kept()==[(a1&~7)|2]; passed()

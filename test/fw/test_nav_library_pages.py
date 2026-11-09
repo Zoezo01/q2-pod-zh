@@ -2481,7 +2481,7 @@ QM_SONG_, QM_FOLDER_, QM_COVERALBUM_, QM_PLAYLIST_ = 1, 4, 6, 8
 
 def collect(fw, ui, st, kind, r, cls=0):
     st('qm_kind').value, st('qm_cls', C.c_uint).value = kind, cls
-    return [field(t, 'path') for t in ui.deques[fw.fn('navigation__qm_collect', C.c_long, C.c_void_p)(r)]]
+    return [field(t, 'path') for t in ui.deques[fw.fn('qm_collect', C.c_long, C.c_void_p)(r)]]
 
 
 def test_a_song_row_s_tracks_are_the_song_but_a_video(fw, ui, song, st):
