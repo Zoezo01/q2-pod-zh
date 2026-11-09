@@ -46,6 +46,10 @@ def boot_check():
                         '/tmp/q2-scan-file', '/tmp/q2-scan.log', '/tmp/q2-art-file', '/tmp/q2-art.log'):
                 script = script.replace(old, f'{r}{old}')
             script = script.replace('usleep 200000\n', ':\n').replace('usleep 500000', ':')
+            # demo's stderr file, and its cap's minute: one pass here while {r}/minute exists
+            script = script.replace('/tmp/q2-demo.err', f'{r}/tmp/q2-demo.err')
+            assert script.count('while sleep 60; do') == 1
+            script = script.replace('while sleep 60; do', f'while [ -f {r}/minute ] && rm -f {r}/minute; do')
         # This script runs under the PC's own sh: the real killall -9 and ifconfig would take down the PC's network,
         # not a Q2's. So they never run here: a log line stands in, and the text must be gone before anything starts.
             assert script.count(WIFI_OFF) == 2  # before Rockbox, and the hand-over's late pass
@@ -62,10 +66,11 @@ def boot_check():
         # demo takes Home's Rockbox row (leaves the flag) as many times as the shortcuts file says
         flag, shortcuts = f'{r}{ROCKBOX_FLAG}', r/'shortcuts'
         # a demo that leaves q2-state (r/keep): it ended without ringnav_clean_end
-        exe('release/bin/demo', f'echo demo >> {r}/ran; echo demo >> {r}/order; n=$(cat {shortcuts}); '
-            f'[ -f {r}/keep ] && echo running > {r}/mnt/data/q2-state; '
-            f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && : > {flag}; '
-            f's=$(head -n1 {r}/code); [ $(wc -l < {r}/code) -gt 1 ] && sed -i 1d {r}/code; exit $s')  # one status per run, the last repeats
+        demo = (f'echo demo >> {r}/ran; echo demo >> {r}/order; n=$(cat {shortcuts}); '
+                f'[ -f {r}/keep ] && echo running > {r}/mnt/data/q2-state; '
+                f'[ "$n" -gt 0 ] && echo $((n - 1)) > {shortcuts} && : > {flag}; '
+                f's=$(head -n1 {r}/code); [ $(wc -l < {r}/code) -gt 1 ] && sed -i 1d {r}/code; exit $s')  # one status per run, the last repeats
+        exe('release/bin/demo', demo)
         rb, target = r/'mnt/mmc/.rockbox/rockbox', r/'mnt/data/boot-target'
         def boot(held, card, code=81, shortcut=0, status=137):
             shortcuts.write_text(f'{shortcut}\n')
@@ -168,6 +173,22 @@ def boot_check():
             note_file.unlink(); note_log.unlink()
             out, cp = logged(137, False)
             assert f'== {last}' not in out and f'== {name}\n' not in out
+        # demo's stderr (build.py BOOT_HOOK): kept in RAM across its runs, its last 60 lines end the crash log; the
+        # once-a-minute cap (one pass here while {r}/minute exists) empties it past 512 KB and leaves a smaller one alone
+        err, minute, noise = r/'tmp/q2-demo.err', r/'minute', ''.join(f'err {i}\n' for i in range(1, 71))
+        exe('release/bin/demo', 'i=0; while [ $i -lt 70 ]; do i=$((i+1)); echo "err $i" >&2; done; ' + demo)
+        err.unlink(missing_ok=True); out, cp = logged(137, False)
+        lines = out.split('== stderr\n')[1].splitlines()
+        assert len(lines) == 60 and lines[0] == 'err 11' and lines[-1] == 'err 70' and err.read_text() == noise
+        out, cp = logged(137, False)
+        assert err.read_text() == noise * 2 and out.split('== stderr\n')[1].splitlines() == lines  # appended across demo's runs
+        err.write_bytes(b'x' * 524289); minute.write_text(''); boot(True, False, status=0)
+        assert not minute.exists() and err.read_text() == noise  # past the cap: emptied before demo ran again
+        err.write_bytes(b'x' * 524288); minute.write_text(''); boot(True, False, status=0)
+        assert not minute.exists() and err.read_bytes() == b'x' * 524288 + noise.encode()  # at the cap: kept
+        exe('release/bin/demo', demo); err.unlink(); out, cp = logged(137, False)
+        assert out.endswith('== stderr\n') and err.read_text() == ''  # the shell makes the file as demo starts: an empty section says so
+        err.unlink()
         # an OOM kill (5.10's wording) whose task dump is longer than the 200-line tail: its own lines, from all of
         # dmesg (a stand-in on PATH) go ahead of the tail
         head = '[  900.100000] demo invoked oom-killer: gfp_mask=0x100cca(GFP_HIGHUSER_MOVABLE), order=0, oom_score_adj=0'

@@ -7,6 +7,7 @@
   - Network Update: pressing Cancel just as a download finishes, while the card takes its last bytes, now says **Download cancelled** rather than **Can't write to the card**.
   - Cover Flow: turning the Q2 off while it prepares artwork no longer marks the album it was about to start as one that restarted the Q2.
   - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.
+  - System: when the Q2 restarts by itself, `q2-crash.log` now ends with the last messages from the player's helpers, such as the Bluetooth and Wi-Fi start-up's, which used to go to a serial port nobody reads.
 - **1.7.4**:
   - Display: **Appearance** has a **Status Bar** row. **Theme** (the default) follows your theme; **Minimal**, **Modern** or **Classic** give the bar that theme's look under any theme, so Classic can have a plain black bar. It applies at once, with no restart.
   - Cover Flow: a fast spin flows. The letters come at about one turn a second instead of two and keep a steady pace however hard you spin, while the covers keep moving through them, so slowing down or turning back carries straight on into single albums. Letting go lands on the letter's first album, and lifting your thumb to re-grip no longer drops the letters.

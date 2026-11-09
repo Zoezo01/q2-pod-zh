@@ -273,8 +273,13 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             done
             rockbox
         fi
+        # demo's stderr (docs/boot.md#rockbox-from-home): stock starts its Bluetooth and Wi-Fi helpers from demo,
+        # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
+        # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash
+        # log. stdout stays on the console as stock's; --dev takes both (LOG_HOOK)
+        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${{n:-0}}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &
         while :; do
-            /release/bin/demo
+            /release/bin/demo 2>>/tmp/q2-demo.err
             s=$?
             [ -e {ROCKBOX_FLAG} ] || break
             rm -f {ROCKBOX_FLAG}
@@ -300,6 +305,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
                 [ -f /tmp/q2-scan.log ] && {{ echo "== scan"; tail -n 60 /tmp/q2-scan.log; }}
                 [ -f /tmp/q2-art-file ] && {{ echo "== last art"; cat /tmp/q2-art-file; }}
                 [ -f /tmp/q2-art.log ] && {{ echo "== art"; tail -n 60 /tmp/q2-art.log; }}
+                [ -f /tmp/q2-demo.err ] && {{ echo "== stderr"; tail -n 60 /tmp/q2-demo.err; }}
                 [ -f /tmp/q2-demo.log ] && {{ echo "== q2-demo.log"; tail -n 200 /tmp/q2-demo.log; }}
             }} > $c.tmp 2>&1; mv $c.tmp $c
             sync
@@ -314,8 +320,10 @@ LOGO, LOGO_LIGHT = 'release/assets/default/raw/images/xx/logo.jpg', 'release/ass
 REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
                b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n/usr/bin/q2remote &\n')
 # --dev only (docs/remote.md#log): demo's console output, and hciplayer's, which inherits it, in RAM, so
-# emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end). In BOOT_HOOK's start path.
-LOG_HOOK = (b'        while :; do\n            /release/bin/demo\n',
+# emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end), in place of the release's stderr
+# file and its cap. In BOOT_HOOK's start path.
+LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
+            b'        while :; do\n            /release/bin/demo 2>>/tmp/q2-demo.err\n',
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
