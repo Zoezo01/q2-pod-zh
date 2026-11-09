@@ -33,6 +33,8 @@ if libc.mmap(0x400000, 0x800000, 3, 0x100022, -1, 0) != 0x400000:  # read/write,
 
 @pytest.fixture(scope='session')
 def library(tmp_path_factory):
+    if os.environ.get('Q2_FW_LIBRARY'):  # one already built: test/cmut/run.py links each mutant's
+        return pathlib.Path(os.environ['Q2_FW_LIBRARY'])
     extra = []
     if os.environ.get('Q2_FW_SANITIZE'):
         extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
