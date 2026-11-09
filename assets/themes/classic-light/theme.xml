@@ -88,12 +88,12 @@
        and bottom lines round a near-white inside, the inner stops from 5 to 95 so no row past the first and before the
        last takes an edge's colour; the dark half's Apple's capture darkened, its step at the middle
        kept; a column at each end in the last stop's colour (np_bar.c ipod_bar). The played part is the accent's band;
-       under Classic Blue it is fill, an iPod classic's, stated deeper than a photo of one reads (#017de2, #0392e2 low
-       down) because the Q2's panel lifts these blues: #006dd6 photographs as #2290d8. Its rows painter's 31 rows, fixed
+       under Classic Blue it is fill: the 14 rows of the bar in Apple's native 320x240 capture (iPod classic User
+       Guide, Now Playing), its two nearly equal rows at 27 made one to fit 13 stops. Its rows painter's 31 rows, fixed
        colours (#rrggbbaa its own alpha), are the volume panel's away from Now Playing and a card app's progress -->
   <view name="playing">
     <element name="art" square="1"/>
-    <element name="scrubber" fill="#0060e0 0, #0058e0 25, #0058e0 55, #0071e2 80, #0071e2 93, #0060d6 100"
+    <element name="scrubber" fill="#7d96d7 0, #86aafe 8, #739df9 15, #6b9bf2 27, #6ca2f8 38, #65a3ff 46, #3c89eb 54, #3698f8 62, #32a2fe 69, #36affe 77, #40b3fc 85, #5bbbfe 92, #5b9ecf 100"
              light.stops="#e2e2e2 0, #ffffff 5, #ffffff 14, #ffffff 23, #fafafa 32, #fafafa 41, #f6f6f6 50, #f6f6f6 59, #f6f6f6 68, #f4f4f4 77, #f4f4f4 86, #f4f4f4 95, #cecece 100"
              dark.stops="#313131 0, #373737 5, #383838 14, #373737 23, #363636 32, #353535 41, #323232 50, #313131 59, #323232 68, #343434 77, #353535 86, #343434 95, #2b2b2b 100"
              painter="rows"

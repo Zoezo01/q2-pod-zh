@@ -14,7 +14,7 @@
   - Card apps: on an app's live page, such as a sync's progress, a long name keeps scrolling and your selection stays put while the percentage updates. The page used to be redrawn every 2 seconds, which started the name over.
   - Streaming: a card app, such as a Jellyfin app, can stream its songs through the player Tidal uses, with their covers, instead of saving each one to the card first. It needs no Tidal account.
   - Library: under **Theme: Classic** album covers in Albums and Folder fill their rows again, as they did before 1.7.2. In 1.7.2 the covers and folder icons in Folder sat too low in their rows.
-  - Now Playing: under **Theme: Classic** the progress bar has a line at its left and right ends, as an iPod classic's does, and **Classic Blue** fills it with an iPod classic's deeper blue.
+  - Now Playing: under **Theme: Classic** the progress bar has a line at its left and right ends, as an iPod classic's does, and **Classic Blue** fills it with an iPod classic's own two-tone blue.
 
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
