@@ -13,6 +13,7 @@
   <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-3D424B?style=flat-square" height="26"></a>
   <a href="https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-3D424B?style=flat-square" height="26"></a>
   <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-3D424B?style=flat-square" height="26"></a>
+  <br>
   <a href="https://www.youtube.com/watch?v=cc581MRAtp0"><img alt="Watch on YouTube" src="https://img.shields.io/badge/YouTube-3D424B?style=flat-square&logo=youtube&logoColor=white" height="26"></a>
   <a href="https://discord.gg/MY3FTNuAdG"><img alt="Join the Discord" src="https://img.shields.io/badge/Discord-3D424B?style=flat-square&logo=discord&logoColor=white" height="26"></a>
 </p>
