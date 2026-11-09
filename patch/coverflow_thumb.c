@@ -14,11 +14,15 @@ static void th_follow(float *x, float *v, float to, float tau, float ms) {
     *v = (b - w * q) * e;
 }
 
+/* Over 4 albums a second: the album named has run ahead of the covers, and a letter's change of
+ * pictures goes by with the motion. */
+static int th_moving(void) { return ABS(th.vel) >= .004f; }
+
 /* Where the wheel has got to, the album the caption names and a stop lands on: ahead of the covers
  * at speed. */
 static int th_aim(void) {
     float s = cfs.aim_snap / 100.f;
-    if (th.vel < .004f && th.vel > -.004f) return cf_round(th.goal);
+    if (!th_moving()) return cf_round(th.goal);
     return th.dir > 0 ? -cf_floor(s - th.goal) : cf_floor(th.goal + s);
 }
 
@@ -75,25 +79,31 @@ static void th_rebase(void *s, int q, int n) {
 #define TH_REBASE 64   /* albums: a float's step there is 8e-6 */
 #define TH_FRAME_MS 16 /* a frame at 60 Hz: the shortest pass th_turn's own rate is taken over */
 
-/* A letter on, Minimal's jump (coverflow_jump): the covers on that letter's first album, or the
- * previous letter's turning back, its letter shown over them. They arrive as a step does, the last
- * jump_in of an album eased in from the side they came from; under half, it faces from the first
- * frame, and its ring decodes around it. */
+/* The album named now this one, by SLIDE_INDEX alone: the pictures change, and the follower, the
+ * row's shape and the speed go on as they were. */
+static void th_name(void *s, int album, int n) {
+    I(s, SLIDE_OFFSET) = 0; /* the pass writes it again from pos */
+    slide_menu_set_value(s,
+                         (int)th_album(album - (int)th_album(th_aim(), (unsigned)n), (unsigned)n));
+}
+
+/* A letter on, Minimal's jump (coverflow_jump): the spin names the next letter's first album from
+ * the one named, so it only ever goes on, or the previous letter's turning back, its letter shown
+ * over the covers. A letter has no motion of its own, so slowing goes on from here with nothing
+ * to catch up. Past the last letter there's none to name, and the flow goes round. */
 static void th_letter(void *s, int n, unsigned now) {
     unsigned letter;
     int from = (int)th_album(th_aim(), (unsigned)n);
-    th_rebase(s, from - I(s, SLIDE_INDEX) + th.dir * coverflow_jump(s, from, th.dir, &letter), n);
-    th.goal = th.lead = th.lead_v = 0;
-    th.pos = -(float)th.dir * cfs.jump_in / 100;
-    th.tau = cfs.track, th.vel = -th.pos / th.tau;
-    th.clicked = 0;
+    int to = from + th.dir * coverflow_jump(s, from, th.dir, &letter);
+    if (!letter) return;
+    th.jump_to = (to % n + n) % n;
+    th_name(s, th.jump_to, n);
     coverflow_letter(s, letter, now);
-    widget_invalidate_force(s, 0);
 }
 
 /* travel raw units: the goal on by a share of an album that grows with the thumb's speed, at most
  * top_speed albums a second; turning back drops what's queued, and the speed with it. Going by
- * letters, the travel counts towards the next one instead. An artist's albums stop at the ends:
+ * letters, the travel counts towards the next one as well. An artist's albums stop at the ends:
  * the first push past one kicks the covers out, and they spring back. */
 static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
     int dir = travel > 0 ? -1 : 1; /* x rises anticlockwise: back */
@@ -119,10 +129,7 @@ static void th_turn(void *s, int travel, unsigned now, int n, int ms) {
     step = step > slow ? step : slow;
     th.ticks += ticks;
     th.tick_at = now;
-    if (th.jump) {
-        th.stretch += ticks;
-        return;
-    }
+    th.stretch += ticks;
     th.goal += (float)dir * ticks * (step < cap ? step : cap);
     if (coverflow_bounded(s)) {
         int i = I(s, SLIDE_INDEX);
@@ -197,36 +204,41 @@ int coverflow_wheel_poll(int usable, int gated) {
     if ((th.finger && th.held) || !th.jump)
         th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
     th.ticks = 0;
-    /* Time at jump_at or more counts towards jump_ms and time under it comes off, so a re-grip
-     * costs only its own ms. Then the spin goes by letters, where the sort has them: one each
-     * jump_ticks of travel, the first at once, and none sooner than jump_pace after the last, a
-     * steady beat however hard the spin, the travel past it going nowhere as it does past
-     * top_speed. Only a turning thumb starts them or moves them on, so a lift lands on the letter
-     * shown. A lift or a still moment keeps them for as long as a letter shows, so a re-grip
-     * goes on from there; a thumb turning under jump_out, a turn back (th_turn) or that long with
-     * no tick ends them: albums again from the letter's, under the thumb.
+    /* Time at jump_at or more counts towards jump_ms, at most that, and time under it comes off, so
+     * a dip costs only its own ms. Then the spin goes by letters, where the sort has them: the
+     * covers flow on as any fast turn's do, and each jump_ticks of travel, the first at once and
+     * none sooner than jump_pace after the last, names the next letter (th_letter), while the
+     * covers are moving, so the pictures never change on a still row. Only a turning thumb starts
+     * them or moves them on. A lift keeps them for as long as a letter shows, so a re-grip goes on
+     * from there; a thumb turning under fast_at, a turn back (th_turn) or that long with no tick
+     * ends them, and the album named carries on under it.
      * ponytail: short arcs with a lift each don't reach jump_ms, as on ticks: the rate falls in the
      * lift and rises again. Carry it over the lift for the count too if arcs show on the wheel. */
     int since = (int)(now - th.tick_at);
-    th.capped = th.rate >= cfs.jump_at ? th.capped + ms : th.capped > ms ? th.capped - ms : 0;
-    if (th.jump && (since > LETTER_MS || (travel && th.rate < cfs.jump_out)))
-        th.jump = th.capped = 0;
+    th.capped = th.rate >= cfs.jump_at
+                    ? (th.capped + ms < cfs.jump_ms ? th.capped + ms : cfs.jump_ms)
+                : th.capped > ms ? th.capped - ms
+                                 : 0;
+    if (th.jump && (since > LETTER_MS || (travel && th.rate < cfs.fast_at)))
+        th.jump = 0;
     else if (travel && !th.jump && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s))
-        th.jump = 1, th.stretch = cfs.jump_ticks, th.letter_at = now - cfs.jump_pace;
-    if (travel && th.jump && th.stretch >= cfs.jump_ticks &&
+        th.jump = 1, th.stretch = cfs.jump_ticks, th.letter_at = now - cfs.jump_pace,
+        th.jump_to = (int)th_album(th_aim(), (unsigned)n);
+    if (travel && th.jump && th_moving() && th.stretch >= cfs.jump_ticks &&
         (int)(now - th.letter_at) >= cfs.jump_pace) {
         th.stretch = 0, th.letter_at = now;
         th_letter(s, n, now);
-        r |= THUMB_CLICK;
     }
     /* Part-way is for a slow thumb that stays: a lift, the hold's timeout or a stop from speed goes
      * to the album named. */
     int idle = since > cfs.hold_ms;
     float left = ABS(th.goal - th.pos);
     if (th.goal != (float)cf_round(th.goal) &&
-        (!th.finger || idle || (since > cfs.stop_ms && left * 100 > cfs.stop_left)))
+        (!th.finger || idle || (since > cfs.stop_ms && left * 100 > cfs.stop_left))) {
         th.goal = (float)th_aim(), left = ABS(th.goal - th.pos);
-    float f = th.jump ? 0 : cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
+        if (th.jump && th_moving()) th_name(s, th.jump_to, n); /* onto its letter's first album */
+    }
+    float f = cf_smooth((th.rate - cfs.fast_at) / (cfs.fast_full - cfs.fast_at));
     float base = idle || !th.finger ? cfs.snap : cfs.track + (float)(cfs.spin - cfs.track) * f;
     float rest = cfs.snap + (float)(cfs.spin - cfs.snap) * cf_smooth(left * 100 / cfs.far_left);
     /* only the thumb raises it, and how far is left only lets it fall: lag raising it would add lag
@@ -242,9 +254,7 @@ int coverflow_wheel_poll(int usable, int gated) {
     /* The facing point is the wheel's target, where the covers will land: off under lead_from, so
      * slow control is exact, and its short follow only smooths a reversal. */
     float l = th.goal - th.pos;
-    float want =
-        th.jump ? 0
-                : l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
+    float want = l * cf_smooth((ABS(l) * 100 - cfs.lead_from) / (cfs.lead_full - cfs.lead_from));
     th_follow(&th.lead, &th.lead_v, want, cfs.lead_ms, (float)ms);
     if (!want && ABS(th.lead) < 1e-4f && ABS(th.lead_v) < 1e-5f) th.lead = th.lead_v = 0;
     /* Once the wheel's stopped, the facing point's follow, lagging as it shrinks, never passes the

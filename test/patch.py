@@ -10257,25 +10257,21 @@ assert len(did(m,'reset_poweroptions_timer'))>=20*3-2 and len(did(m,'buzzeer_swi
 m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
-# At jump_at for jump_ms a spin goes by letters, as Minimal's wheel does: each eases the covers onto the next letter's
-# first album, its letter shown and a click, jump_pace apart. Once in, a turn from jump_out keeps them, one each
-# jump_ticks; slowing under jump_out gives albums back under the thumb, and a lift lands on the album named.
+# At jump_at for jump_ms a spin goes by letters, as Minimal's wheel does: the covers flow on and each names the next
+# letter's first album, its letter shown, jump_pace apart. Once in, a turn from fast_at keeps them, one each
+# jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands on the letter's first album.
 def letter_on(m): return any(v[1]==ps['cf_letter_expire'] for v in m.timers.values())
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
 m=classic_light_new(DepthMachine,albums=9)
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 tp(m); thold(m); tspin(m,300,-30); assert not letter_on(m)  # 318 ticks/s; at the cap, short of jump_ms
-seen=[tindex(m)]; m.calls=[]
-for _ in range(50):
-    tspin(m,17,-30); i=tindex(m)
-    if seen[-1]!=i: seen.append(i); assert toff(m)!=0 and tcaption(m)==FRUIT[i]
-assert letter_on(m) and len(seen)>=4 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i) and did(m,'buzzeer_switch')
-seen=[tindex(m)]
-for _ in range(40):  # 42 ticks/s: a letter a beat, 9 passes or so
-    tspin(m,17,-4); i=tindex(m)
-    if seen[-1]!=i: seen.append(i); assert tcaption(m)==FRUIT[i]
-assert 4<=len(seen)<=6 and all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen[1:] if i)
+seen={tcaption(m)}; m.calls=[]
+for _ in range(50): tspin(m,17,-30); seen.add(tcaption(m))
+assert letter_on(m) and len({c[0] for c in seen})>=4 and did(m,'buzzeer_switch')
+seen={tcaption(m)}
+for _ in range(40): tspin(m,17,-4); seen.add(tcaption(m))  # 42 ticks/s: a letter a beat, 9 passes or so
+assert letter_on(m) and len({c[0] for c in seen})>=2
 tspin(m,100,-1); index=tindex(m); tspin(m,500,-1)  # 11 ticks/s
 assert tindex(m)!=index or toff(m)!=0
 trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)]; passed()
