@@ -2423,6 +2423,12 @@ int main(void) {
     unlink(LOG ".sent"); assert(!symlink("/dev/full", LOG ".sent"));
     assert(run(&sent) == -1 && sent == 1 && !strcmp(slurp(LOG), before));
     unlink(LOG ".sent");
+    /* A time that isn't 1-10 digits (a damaged line) is skipped with the junk, never sent raw into the JSON. */
+    FILE *f = fopen(LOG, "wb");
+    fputs(HEADER "Art \"2\" \\ &=+%\xc3\xa9\tAlb/um\tTitle 2\t2\t202\tL\t1700000002x\t\n"
+                 "Art \"1\" \\ &=+%\xc3\xa9\tAlb/um\tTitle 1\t1\t201\tL\t1700000001\t\n", f);
+    fclose(f);
+    assert(run(&sent) == 1 && sent == 1 && !strcmp(slurp(LOG), HEADER));
     fclose(dump);
     return 0;
 }
@@ -2475,7 +2481,7 @@ def scrobble_check(tmp):
             assert p[f'artist[{j}]'] == artist(i) and p[f'track[{j}]'] == f'Title {i}' and p[f'duration[{j}]'] == str(200 + i)
             assert p.get(f'album[{j}]') == ('Alb/um' if i % 10 else None)
         fm_sizes.append(n)
-    assert lb_sizes == [50, 50, 20, 50, 10, 10, 1, 1] and fm_sizes == [50, 50, 20, 50]
+    assert lb_sizes == [50, 50, 20, 50, 10, 10, 1, 1, 1] and fm_sizes == [50, 50, 20, 50]  # the last 1: the damaged-time log's good listen
     assert [v for _, _, v, _ in requests] == ['1'] * len(requests)
     print('Scrobble upload: config, batching, JSON and form escaping, Last.fm signatures, log rewrite and failures passed.')
 
