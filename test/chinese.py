@@ -48,8 +48,9 @@ def check(directory):
                        ('label_system', '系统设置')]:
         assert labels.get(name) == text, (name, labels.get(name))
 
+    # 1.7.2's confirmation dialog is two icons (img_cancel, img_enter), no text of its own.
     dialog = decode(asset('ui/dialog/confirminfo_dialog.bin'))
-    assert [node[2]['text'] for node in dialog[3]] == ['取消', '确定']
+    assert [n[2].get('name') for n in dialog[3]] == ['img_cancel', 'img_enter']
     payload = (directory / 'patch.bin').read_bytes()
     for label in ('评价', '播放最多', '音量防误触：打开',
                   '随机播放歌曲', '查看队列', '网络电台', '待机时限：关闭',

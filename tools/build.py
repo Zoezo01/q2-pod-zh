@@ -7,6 +7,9 @@ import argparse, hashlib, io, json, pathlib, re, shlex, struct, subprocess, tarf
 from typing import TypeVar
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
+# The update.tar already out of that ZIP: the same audited V1.32 base, pinned by its own SHA-256
+# because a repacked ZIP can never match the vendor one's. Not a release input.
+TAR_SHA = '0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
 VERSION = '1.7.2'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
@@ -1592,9 +1595,14 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         version = dev_tag(dev)
     source = source_sha256()
     raw = zip_path.read_bytes()
-    check(sha(raw) == ZIP_SHA, 'Unsupported ZIP: SHA-256 differs from audited original')
-    with zipfile.ZipFile(io.BytesIO(raw)) as z:
-        tarbytes = z.read('Q2 Firmware V1.32/update.tar')
+    if zip_path.suffix.lower() == '.tar':
+        check(sha(raw) == TAR_SHA, 'Unsupported update.tar: SHA-256 differs from the audited V1.32 one')
+        tarbytes, input_kind, input_sha = raw, 'tar', TAR_SHA
+    else:
+        check(sha(raw) == ZIP_SHA, 'Unsupported ZIP: SHA-256 differs from audited original')
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            tarbytes = z.read('Q2 Firmware V1.32/update.tar')
+        input_kind, input_sha = 'zip', ZIP_SHA
     with tarfile.open(fileobj=io.BytesIO(tarbytes)) as t:
         meta = t.getmembers()
         check([m.name for m in meta] == ['firmware_v20.info','recovery-update',

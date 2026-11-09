@@ -308,9 +308,10 @@ def artist_tabs(root):
 # images (patch/coverflow.c binds them) are the click targets. Stock translates label_* by name and
 # ignores these, so their text is literal (the Shortcut's is set at runtime). Local Music's label is
 # literal too, "Library" in every language: stock would set label_localmusic's text to small_local
-# ("Local Songs"), a key only Home uses.
+# ("Local Songs"), a key only Home uses. The card labels are the Chinese interface's, as the row
+# names of 1.6: 音乐, and the renamed pages follow below.
 HOME_PAGE = 'home_page.bin'
-LIBRARY = {'name': 'label_library', 'text': 'Library'}
+LIBRARY = {'name': 'label_library', 'text': '音乐'}
 
 
 def home_card(menu, at, row, text):
@@ -336,11 +337,11 @@ def home_card(menu, at, row, text):
 # holding stock's own Playback and System setting rows (labelled Playback and System), into the list's place.
 HOME_ROWS = ['playing', 'localmusic', 'coverflow', 'folder', 'rockbox', 'stream', 'settings']
 HOME_SETS = ['playset', 'sysset']
-HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': 'Settings'}
+HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': '设置'}
 # Stock's visitor translates label_localmusic, label_playset and label_sysset by name; renamed, they keep
 # these shorter literals.
-HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback'},
-                'sysset': {'name': 'label_system', 'text': 'System'}}
+HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': '播放设置'},
+                'sysset': {'name': 'label_system', 'text': '系统设置'}}
 
 
 # The theme default list_view is a light rounded card; Home's lists clear it to transparent.

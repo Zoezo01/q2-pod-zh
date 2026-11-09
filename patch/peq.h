@@ -385,6 +385,7 @@ void headset_poll(void), headset_eq_poll(void), headset_manual(void);
 int ringnav_fill_albums(int (*row)(void *, const char *, const char *, const char *), void *ctx);
 void *ringnav_album_tracks(const char *album, int *n);
 int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char *), void *ctx);
+extern const char *const MEDIA[], *const MEDIA_LABELS[]; /* theme_engine.c: the folder's name and the row's */
 void library_fill_tick(void), library_fill_cancel(void);
 int library_fill_active(void), library_fill_start(void);
 void library_fill_text(char *out, unsigned n);
