@@ -445,9 +445,8 @@ BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
 # Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi and the battery. The play state is at the bar's left instead, where the
-# title starts: the two share that run, and the payload shows one or the other (navigation.c state_own_place).
-STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT]
+# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery.
+STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
 CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
 CLASSIC_LIGHT_EQ_W = 25  # Classic's EQ box: its 21 px of ink in the bar's face (test_ipod), narrower than stock's 28 so the group fits at bar_right
@@ -471,10 +470,8 @@ def status_metrics(g, font):
     label_y = cap_top - ((h - g.bar_px) // 2 + round(asc * scale) - cap)
     inset = corner_inset(cap_top) + BAR_PAD
     pad = 2  # the hscroll_label's margin each side
-    # The play state's 18 px box comes first in that run: the glyph shows whenever a player plays, and the
-    # title starts after it, 2 px of its own margin away (state_own_place keeps the word out where a title shows).
     return {'px': g.bar_px, 'cap': cap, 'cap_top': cap_top, 'label_y': label_y, 'inset': inset, 'clock_text': clock_text,
-            'title': [inset - pad + STATE_W + 2, label_y, g.bar_title_w + 2 * pad - STATE_W - 9, h],
+            'title': [inset - pad, label_y, g.bar_title_w + 2 * pad, h],
             'clock': [(375 - CLOCK_MIN) // 2, label_y, CLOCK_MIN, h]}
 
 
@@ -512,10 +509,9 @@ def status_bar(root, g=SET0):
         pct[2].update({f'style:{s}:font_size': str(BATT_PCT_PX), f'style:{s}:text_align_h': 'right'})
     pct[2]['visible'] = 'false'
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
-    # Classic's set (bar_px): the play state then the title on the left in the Classic face, the clock centred,
-    # the icons right of it.
+    # Classic's set (bar_px): the title on the left in the Classic face, the clock centred, the icons right of it.
     m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
-    left[3] = [widgets['img_state']] if m else [widgets[n] for n in STATUS_LEFT]
+    left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
     xm = g.bar_right if m else STATUS_MARGIN
     for view, x in ((left, m['inset'] if m else STATUS_MARGIN), (right, xm)):
@@ -541,7 +537,7 @@ def status_bar(root, g=SET0):
         # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
         eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
         eq[2].update({'floating': 'true', **face})
-        # The play state is at the left, its 18 px box the first in the left view's row.
+        # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, on the battery's middle row (paint_battery's body top plus half its height)
         right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 + g.batt_h // 2)

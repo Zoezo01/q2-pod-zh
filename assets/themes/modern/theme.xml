@@ -1,6 +1,10 @@
 <!-- Theme: Modern (IPOD/THEME 2, docs/ipod.md#display-settings): the accent's bar over Minimal's layout. Its numbers (Home rows, the settings top, the progress bar, the scheme
      colours) come from patch/offsets.inc via tools/theme.py ROLE_MACROS. -->
 <theme format="1" id="modern" name="现代" index="2" extends="minimal">
+  <!-- The bar's battery draws at the set's batt_w x batt_h (navigation.c paint_battery): up from
+     SET0's 16 x 11, so the icon reads beside the 16 px percentage instead of a size under it. -->
+  <geometry name="modern" batt_w="20" batt_h="13"/>
+  <geometry set="modern"/>
   <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum green"/>
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="ACCENT" default="graphite" preset="cobalt"/>

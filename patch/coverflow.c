@@ -3780,15 +3780,11 @@ void home_pane_paint(void *canvas, int x, int y, int w, int h) {
                        y + (note ? T->pane_note_y : T->pane_icon_y), src[2], src[3] };
         canvas_draw_image(canvas, bitmap, src, dst);
     }
-    char t[20];
+    char t[32];
     int len = pane_caption(t, sizeof t);
-    if (len > 0) {
-        unsigned s[20];
-        for (int i = 0; i < len; ++i) s[i] = (unsigned char)t[i];
-        int box[4] = { x, y + T->pane_count_y, T->pane_count_w, 24 }; /* rect_t */
-        draw_centred(canvas, s, (unsigned)len, box, T->pane_count_px,
-                     RGBA(ipod_light() ? 0u : 0xffffffu));
-    }
+    if (len > 0) /* caption() decodes the UTF-8: the Hanzi would paint as its bytes, one each */
+        caption(canvas, t, x, y + T->pane_count_y, T->pane_count_w, 24, T->pane_count_px,
+                RGBA(ipod_light() ? 0u : 0xffffffu));
     stock_canvas_set_fill_color(canvas, fill);
 }
 

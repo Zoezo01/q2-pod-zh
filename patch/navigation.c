@@ -3759,8 +3759,8 @@ static int bar_state_sync(void *bar) {
  * ("12:59 PM") and inks from the middle of it. On screen the two never touch. Classic's bar puts its
  * title after the glyph (tools/ipod.py), so there the word only takes the room a page without a
  * title of its own leaves (state_own_place): Home's list and Now Playing's page. */
-#define PLAY_WORD_W 62
-#define PLAY_WORD_PX 15
+#define PLAY_WORD_W 84
+#define PLAY_WORD_PX 20
 
 /* Whether the bar's left belongs to the play state alone: no page name there to show, so the glyph
  * and its word take that room. Home's list is one ("Q2 Pod" makes way for them while a player
@@ -3781,6 +3781,21 @@ static int state_own_place(void) {
  * when it shows. */
 static void play_word_create(void *bar) {
     if (st.play_word || !st.bar_state) return;
+    if (st.bar_title) { /* Classic: the glyph is by the battery on the right, so the word stands
+                         * where the page's name would — its box, its 20 px face and its baseline,
+                         * so the bar reads as one line of one size whether it shows a name or the
+                         * state. Four hanzi at 20 px are 80 px, ending short of the clock's ink. */
+        st.play_word = label_create(bar, 0, 0, PLAY_WORD_W, I(st.bar_title, W_H));
+        if (!st.play_word) return;
+        widget_set_name(st.play_word, "label_playword");
+        widget_use_style(st.play_word, "s_label_white16c");
+        widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
+        widget_move_resize(st.play_word, I(st.bar_title, W_X), I(st.bar_title, W_Y),
+                           PLAY_WORD_W, I(st.bar_title, W_H));
+        theme_font(st.play_word, ROLE_BAR, FONT_ROW);
+        widget_set_visible(st.play_word, 0, 0);
+        return;
+    }
     void *left = P(st.bar_state, W_PARENT);
     if (!left) return;
     st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
@@ -3915,7 +3930,7 @@ static void bar_sync(void *bar) {
         widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), T->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
     int classic_light = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
-        body = classic_light ? geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
+        body = geom_val(V_BATT_W) + 1, /* its soft edge's column */
         inside = classic_light ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
@@ -4118,7 +4133,7 @@ static void paint_battery(void *w, void *canvas) {
         stock_canvas_set_fill_color(canvas, fill);
         return;
     }
-    const int bw = inside ? BATT_INSIDE_W : BATT_BODY_W, bh = inside ? BATT_INSIDE_H : BATT_BODY_H,
+    const int bw = inside ? BATT_INSIDE_W : geom_val(V_BATT_W), bh = inside ? BATT_INSIDE_H : geom_val(V_BATT_H),
               nh = BATT_NUB_H, y = (I(w, W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
     canvas_set_fill_color(canvas, color);
     if (inside) {
