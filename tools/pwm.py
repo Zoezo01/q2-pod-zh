@@ -75,7 +75,7 @@ def permanent(elf):
     require(removed==1,'Expected one module exit pointer')
     rel['data']=bytearray(b''.join(struct.pack('<II',*r) for r in kept))
 
-def link(elf,source,extra_include=None,sleep=False):
+def link(elf,source,extra_include=None,sleep=False):  # pragma: no mutate block
     with tempfile.TemporaryDirectory(prefix='q2-pwm-') as directory:
         p=pathlib.Path(directory); (p/'stock.ko').write_bytes(elf.pack())
         includes=['-I',str(ROOT)]+(['-DQ2_MCU_SLEEP=1'] if sleep else [])
@@ -92,7 +92,7 @@ def link(elf,source,extra_include=None,sleep=False):
         note[16:36]=bytes(20); note[16:36]=hashlib.sha256(result.pack()).digest()[:20]
         return result.pack()
 
-def patch_pwm(data):
+def patch_pwm(data):  # pragma: no mutate block
     require(hashlib.sha256(data).hexdigest()==PWM_SHA256,'Unsupported or already patched PWM module')
     elf=Elf(data)
     require(len(elf.by_name['.text']['data'])==0x1fa0 and elf.by_name['.bss']['size']==0x7e0,'PWM layout changed')
@@ -122,7 +122,7 @@ def expected_header(image,helper_size):
     lines += [f'{{{start},{end-start},q2_expected_{i}}},' for i,(start,end) in enumerate(ranges)]
     return '\n'.join(lines+['};',''])
 
-def patch_mcu(data,image,helper_size,sleep=False):
+def patch_mcu(data,image,helper_size,sleep=False):  # pragma: no mutate block
     require(hashlib.sha256(data).hexdigest()==MCU_SHA256,'Unsupported or already patched MCU module')
     elf=Elf(data)
     for name in ['mcu_init','mcu_bootup','mcu_reset','mcu_shutdown','mcu_write_data','mcu_ioctl']:
@@ -133,7 +133,7 @@ def patch_mcu(data,image,helper_size,sleep=False):
     info[:]=info.replace(b'depends=utils\0',b'depends=utils,soc_pwm\0')
     return link(elf,'mcu_pwm_clock.c',expected_header(image,helper_size),sleep=sleep)
 
-def patch_bundle(cat,sleep=False):
+def patch_bundle(cat,sleep=False):  # pragma: no mutate block
     import mcu_park
     helper,symbols=mcu_park.compile_helper(sleep=sleep)
     old_image=cat('usr/data/libmcu-bare.bin')
@@ -143,12 +143,12 @@ def patch_bundle(cat,sleep=False):
            'module_driver/soc_mcu.ko':patch_mcu(originals['module_driver/soc_mcu.ko'],image,len(helper),sleep=sleep),
            'usr/data/libmcu-bare.bin':image}
     originals['usr/data/libmcu-bare.bin']=old_image
-    manifest=dict(policy='cooperative-pwm-v1', normal_module_unload=False,
-        mcu=mcu_park.make_manifest(old_image,image,helper,symbols,sleep=sleep),
+    mcu=mcu_park.make_manifest(old_image,image,helper,symbols,sleep=sleep)
+    # Source paths are not part of reproducible build metadata.
+    mcu['assembly']['path']='tools/mcu_park.S'
+    manifest=dict(policy='cooperative-pwm-v1', normal_module_unload=False, mcu=mcu,
         files={path:dict(original_sha256=hashlib.sha256(originals[path]).hexdigest(),
                         sha256=hashlib.sha256(data).hexdigest()) for path,data in files.items()})
-    # Source paths are not part of reproducible build metadata.
-    manifest['mcu']['assembly']['path']='tools/mcu_park.S'
     return files,manifest
 
 if __name__=='__main__':

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/DiamondBond/q2-pod?style=flat-square&label=download&color=3D424B&cacheSeconds=86400" height="26"></a>
+  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/badge/download-latest-3D424B?style=flat-square" height="26"></a>
   <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-B99AC8?style=flat-square" height="26"></a>
   <a href="https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-D77868?style=flat-square" height="26"></a>
   <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-6FA3A0?style=flat-square" height="26"></a>
@@ -26,7 +26,7 @@
   </tr>
   <tr valign="top">
     <td><b>Display</b></td>
-    <td>Minimal and Classic themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, and Smart Awake.</td>
+    <td>Minimal, Modern and Classic themes, accent colours, Light Mode with an Auto schedule, Rounded Corners, Night Shift for the evening, and Smart Awake.</td>
   </tr>
   <tr valign="top">
     <td><b>Wheel</b></td>
@@ -34,7 +34,7 @@
   </tr>
   <tr valign="top">
     <td><b>Library</b></td>
-    <td>Up to 65,000 songs, with search, Era (albums by decade), Most Played, Long Songs and favourites. Playlists with Edit Playlist and M3U import and export. Play Next, Add to Queue and View Queue. An empty <code>database.ignore</code> file <a href="#library">hides a folder</a>.</td>
+    <td>Search, Era (albums by decade), Most Played, Long Songs and favourites. Playlists with Edit Playlist and M3U import and export. Play Next, Add to Queue and View Queue. An empty <code>database.ignore</code> file <a href="#library">hides a folder</a>.</td>
   </tr>
   <tr valign="top">
     <td><b>Ratings</b></td>
@@ -82,7 +82,7 @@
   </tr>
   <tr valign="top">
     <td><b>Battery and buttons</b></td>
-    <td>An optional 80% charge limit, a Standby limit that powers off a Q2 left asleep, and a player that sleeps while paused. Wake by double press and Volume Guard.</td>
+    <td>An optional 80% charge limit, a Standby limit that powers off a Q2 left asleep, Smart Wi-Fi, and a player that sleeps while paused. Wake by double press and Volume Guard.</td>
   </tr>
   <tr valign="top">
     <td><b>Stock fixes</b></td>
@@ -153,7 +153,7 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-librespot">Spotify</a></b></td>
-    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi.</td>
+    <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>.</td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-deezer">Deezer</a></b></td>
@@ -177,7 +177,7 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
-    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
+    <td>Stream concerts from the Internet Archive's Live Music Archive. See its <a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">guide</a>.</td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
@@ -250,7 +250,7 @@ Copy your music to the card over USB-C, then run **Library → Update Local Musi
 <details>
 <summary><h2>License</h2></summary>
 
-[MIT](LICENSE) covers this repository's code and docs. The fonts in `assets/fonts` keep their own licences: Liberation Sans (OFL, shipped cut down and renamed Q2 Pod Sans) and TeX Gyre Heros (GUST Font License, shipped cut down and renamed Q2 Pod Classic Light, see `assets/fonts/README-classic-light.txt`). The Shanling firmware included in release images remains Shanling's. Q2 Pod is an independent project and is not affiliated with Shanling.
+Q2 Pod's code, tools, tests, documentation and artwork are under the [GNU General Public License, version 3](LICENSE) (GPL-3.0-only) from version 1.7.2 on. Releases up to 1.7.1 were made under [MIT](LICENSE-MIT), and contributions made before the change remain available under it, as LICENSE-MIT records. The kernel-side files in `tools/` (`pwm_clock.c`, `pwm_clock.h`, `mcu_pwm_clock.c`, `aic_idle_wait.c`) are GPL-2.0-or-later, so they stay compatible with the kernel they build against. The fonts in `assets/fonts` keep their own licences: Liberation Sans (OFL, shipped cut down and renamed Q2 Pod Sans) and TeX Gyre Heros (GUST Font License, shipped cut down and renamed Q2 Pod Classic Light, see `assets/fonts/README-classic-light.txt`). The Shanling firmware included in release images remains Shanling's. Q2 Pod is an independent project and is not affiliated with Shanling.
 
 </details>
 

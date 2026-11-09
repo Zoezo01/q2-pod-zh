@@ -55,10 +55,12 @@ int chapters_parse(char *raw, chapter *rows) {
                 if (have != 3 || !num || !den || num > 0x7fffffff || den > 0x7fffffff ||
                     start / den > 0x7fffffff / num) return -1;
                 unsigned long long sec = start / den * num + start % den * num / den;
-                if (sec > 0x7fffffff || n == CHAPTER_MAX || (n && sec < (unsigned)rows[n-1].sec)) return -1;
-                rows[n].sec = (int)sec;
-                memcpy(rows[n].title, title, strlen(title) + 1);
-                ++n;
+                if (sec > 0x7fffffff || n == CHAPTER_MAX) return -1;
+                /* Kept in start order: ID3 CHAP frames, for one, may come in any order. */
+                int i = n++;
+                for (; i && sec < (unsigned)rows[i - 1].sec; --i) rows[i] = rows[i - 1];
+                rows[i].sec = (int)sec;
+                memcpy(rows[i].title, title, strlen(title) + 1);
             }
             if (end && !*line) return n;
             active = !strcmp(line, "[CHAPTER]");

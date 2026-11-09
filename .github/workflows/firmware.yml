@@ -1,0 +1,54 @@
+# Every test that needs no stock firmware; see docs/building.md#firmware-tests. The plain runs
+# count the C's coverage through test/coverage/cc and fail under its floor (docs/building.md#coverage).
+name: Firmware tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y gcc-multilib clang lld llvm unzip ffmpeg lame
+          libavcodec-dev libavutil-dev libmad0-dev libssl-dev pkg-config
+      - run: pip install -r requirements.txt -r test/unit/requirements.txt gcovr==8.4
+      - run: mkdir -p "$RUNNER_TEMP/c-coverage" && echo "Q2_COV=$RUNNER_TEMP/c-coverage" >> "$GITHUB_ENV"
+      - name: Firmware tests  # test/unit runs in tests.yml
+        run: PATH="$PWD/test/coverage:$PATH" python3 -m pytest test/fw -q
+      - name: Firmware under AddressSanitizer and UBSan
+        env:
+          Q2_FW_SANITIZE: '1'
+          ASAN_OPTIONS: detect_leaks=0:allocator_may_return_null=1
+        run: LD_PRELOAD="$(cc -print-file-name=libasan.so)" python3 -m pytest test/fw -q
+      - name: Host suites  # build and rotator_build: only their checks that need no ZIP or build
+        run: |
+          export PATH="$PWD/test/coverage:$PATH"
+          for t in library_scope mp3 peq coverflow chapters mp3_gapless remote build rotator_build; do python3 "test/$t.py"; done
+      - name: C coverage  # of the plain runs; navigation.c's UI is mostly test/patch.py's, which needs a stock build
+        if: ${{ !cancelled() }}
+        run: >-
+          mkdir -p c-coverage && gcovr --root . --filter patch/ --gcov-ignore-errors=source_not_found
+          --markdown "$GITHUB_STEP_SUMMARY" --html-details c-coverage/index.html --txt-summary
+          --fail-under-line 40 --fail-under-branch 38 "$Q2_COV"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: c-coverage
+          path: c-coverage/
+          if-no-files-found: ignore

@@ -1,12 +1,20 @@
-# Mutation tests of the tools/ functions changed since 1.2.0; see docs/building.md#mutation-tests.
-# Weekly, or by hand after a substantial change to tools/: the same mutants over unchanged code find
-# nothing new. The unit tests themselves run on every pull request (tests.yml).
-# Needs no stock firmware: only synthetic fixtures run here, and survivors.txt holds repo source alone.
+# Mutation tests of tools/; see docs/building.md#mutation-tests. Needs no stock firmware: only
+# synthetic fixtures run here, and survivors.txt holds repo source alone.
+# - A pull request mutates only the functions it adds or changes, and reports without failing.
+# - Each night mutates only what changed since the last run: mutmut keeps each function's hash and
+#   results in mutants/, cached here, and reruns the mutants of a function whose code changed.
+#   A change to test/unit, test/release.py, the requirements, or a .S, .c or .h file in tools/ starts
+#   the cache afresh.
+# - Sundays, and by hand, mutate everything from scratch: a cached result can't see a change outside
+#   its own function, such as a module's constant or a function it calls.
 name: Mutation tests
 
 on:
+  pull_request:
+    paths: ['tools/**', 'test/unit/**', 'pyproject.toml', 'requirements.txt', '.github/workflows/mutation.yml']
   schedule:
-    - cron: '23 3 * * 0'  # Sundays
+    - cron: '23 3 * * 1-6'  # from the cache
+    - cron: '23 3 * * 0'  # from scratch
   workflow_dispatch:
 
 permissions:
@@ -20,24 +28,65 @@ defaults:
 jobs:
   mutmut:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # From scratch took 75 minutes on four desktop workers (docs/building.md#mutation-tests); a runner is slower.
+    timeout-minutes: 240
+    env:
+      BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0  # targets.py diffs against the 1.2.0 tag
+          fetch-depth: 0  # a pull request's targets.py diffs against its base
+      - name: Cache key
+        id: key
+        # mutmut regenerates the .py files of a restored mutants/ but keeps its old copies of these, which tests read.
+        run: echo "prefix=mutmut-${{ hashFiles('test/unit/*.py', 'test/release.py', 'test/unit/requirements.txt', 'pyproject.toml', 'requirements.txt', 'tools/*.S', 'tools/*.c', 'tools/*.h') }}-" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y clang lld llvm
       - run: pip install -r requirements.txt -r test/unit/requirements.txt
       - run: python3 -m pytest test/unit -q
+      - name: Restore last night's results
+        if: github.event.schedule == '23 3 * * 1-6'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: mutants
+          key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}
+          restore-keys: ${{ steps.key.outputs.prefix }}
       - name: Mutate
-        run: t=$(python3 test/unit/targets.py) && test -n "$t" && mutmut run $t | tail -n 3  # targets.py failing fails here
+        id: mutate
+        run: |
+          if [ -z "$BASE" ]; then
+            # mutmut makes these again: cached stats know no tests for a function added since Sunday,
+            # and copies of files since deleted would linger. Results stay in mutants/*.meta.
+            if [ -d mutants ]; then
+              rm -f mutants/mutmut-stats.json
+              rm -rf mutants/assets mutants/docs mutants/patch mutants/test
+            fi
+            mutmut run 2>&1 | tee mutmut.log | tail -n 3
+          else
+            t=$(python3 test/unit/targets.py --since "$BASE")  # targets.py failing fails here
+            [ -z "$t" ] || mutmut run $t 2>&1 | tee mutmut.log | tail -n 3
+          fi
       - name: Report
-        run: python3 test/unit/report.py --floor 95 --survivors survivors.txt | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          # Under a fresh run's 91.7%: the floor catches a collapse, not each survivor.
+          if [ -z "$BASE" ]; then
+            python3 test/unit/report.py --floor 90 --survivors survivors.txt
+          else
+            python3 test/unit/report.py --since "$BASE" --survivors survivors.txt
+          fi | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Save results for tomorrow
+        if: always() && github.event_name != 'pull_request' && steps.mutate.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: mutants
+          key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: surviving-mutants
-          path: survivors.txt
+          path: |
+            survivors.txt
+            mutmut.log
           if-no-files-found: ignore

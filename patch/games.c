@@ -976,10 +976,7 @@ static void vortex_paint(void *canvas, unsigned tone) {
 
 /* A grey v (0 to 255) that Light Mode's flip (ui_ink) leaves at v: a card is paper-white in either
  * mode, its black suits black. */
-static unsigned unflipped(unsigned v) {
-    if (ipod_light()) v = v < LIGHT_INK ? 255 : (LIGHT_PAPER - v) * 255 / (LIGHT_PAPER - LIGHT_INK);
-    return v * 0x010101u;
-}
+static unsigned unflipped(unsigned v) { return unflip(v) * 0x010101u; }
 
 /* A rounded card: face down in the tone, darker inside a border when nothing covers it, or rank and
  * suit at the top in red or black, its suit large below when nothing covers it. */
@@ -1103,7 +1100,7 @@ int games_open(void *ctx, void *event) {
         return 0;
     }
     void *f = widget_factory();
-    g->h = widget_get_prop_int(page, "h", 290);
+    g->h = widget_get_prop_int(page, "h", client_h());
     /* The sheet first, under the list: hidden, it still took the chooser's taps above it. */
     g->sheet = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);
     g->list = widget_factory_create_widget(f, "view", page, 0, 0, 375, g->h);

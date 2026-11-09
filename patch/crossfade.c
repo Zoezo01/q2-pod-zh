@@ -25,7 +25,7 @@
 #define RS_DEFAULT 30
 
 static struct {
-    int read, on, seconds, done, key[6], stops, counted;
+    int read, on, seconds, done, key[8], stops, counted;
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
@@ -306,6 +306,7 @@ static void refresh(int save) {
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
     widget_set_text_utf8(xf.label, t);
+    if (switched()) slider_tray_dirty(xf.page);
     if (widget_get_prop_int(xf.slider, "value", 0) != value()) {
         xf.setting = 1; /* its value-changed is no release */
         slider_set_value(xf.slider, value());
@@ -381,6 +382,8 @@ static int gone(void *ctx, void *event) {
     return 0;
 }
 
+int xfade_page(void *top) { return xf.page && top == xf.page; }
+
 /* The row's click: stock's Boot volume page, its handlers swapped for these; ctx 1 for Wheel
  * sensitivity's row, 2 for Resume Songs', 3 for Night Shift's. */
 int xfade_open(void *ctx, void *event) {
@@ -422,6 +425,7 @@ int xfade_open(void *ctx, void *event) {
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);
     widget_set_enable(xf.view, 1);
+    slider_number(xf.label);
     xf.ctx = mode;
     if (!switched()) widget_set_visible(xf.sw, 0, 0);
     slider_set_min(xf.slider, mode == 2 ? RS_MIN - 5 : wheel ? 50 : 0);
@@ -431,6 +435,7 @@ int xfade_open(void *ctx, void *event) {
                                           : XF_MAX);
     slider_set_step(xf.slider, steps[mode]);
     xf.page = page;
+    if (switched()) slider_centre_hint(page, mode == 3);
     refresh(0);
     return 0;
 }
@@ -488,9 +493,12 @@ void xfade_poll(int next, int shuffled) {
     else if (xf.flag && !xf.counted && access("/tmp/notfile", 0) && access("/tmp/notsupport", 0) &&
              !navigator_window_is_exist("msginfo_dialog"))
         xf.counted = 1, ++xf.stops;
-    int key[6] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
+    /* the rows' paths too: Play Next moves rows' bytes, so a row's address can hold another song */
+    int key[8] = { xf.on ? xf.seconds : 0, *(volatile unsigned char *)MCL_GAPLESS,
                    in ? (int)deque_at(q, pos) : 0, in ? (int)deque_at(q, (unsigned)next) : 0,
-                   shuffled && next != -1 && pos < n, xf.stops };
+                   shuffled && next != -1 && pos < n, xf.stops,
+                   in ? (int)P(deque_at(q, pos), REC_PATH) : 0,
+                   in ? (int)P(deque_at(q, (unsigned)next), REC_PATH) : 0 };
     if (xf.done && !memcmp(key, xf.key, sizeof key)) return;
     memcpy(xf.key, key, sizeof key);
     int ms = key[0] && key[1] &&

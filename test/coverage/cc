@@ -1,0 +1,7 @@
+#!/bin/sh
+# cc with gcov counters, for the firmware's C coverage (docs/building.md#coverage). First on PATH, it
+# serves every suite that runs cc, unchanged. Their build folders go when they finish, so each
+# compile's notes and counts land in a folder of their own under $Q2_COV, where gcovr reads them.
+set -eu
+d=$(mktemp -d "${Q2_COV:?Q2_COV names the folder for the counts}/cc.XXXXXX")
+exec /usr/bin/cc --coverage -fprofile-update=atomic -dumpdir "$d/" "$@"

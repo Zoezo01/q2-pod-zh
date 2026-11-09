@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compose native-size review sheets; these are layout illustrations, not AWTK captures.
 Usage: python3 test/ui_preview.py [--themes BEFORE,AFTER] BEFORE_BUILD AFTER_BUILD OUTPUT [BEFORE_CF AFTER_CF]
-Each side is drawn in an iPod Theme, classic or minimal (default classic,minimal); one build passed
+Each side is drawn in an iPod Theme, modern or minimal (default modern,minimal); one build passed
 twice compares its two themes. --themes classic-light,classic-light (one build passed twice) composes only the status
 sheet, Classic's bar on each row. Uses the existing ImageMagick dependency and the original firmware's
 native font/assets.
@@ -18,10 +18,10 @@ from ipod import (decode, walk, imagemagick, png_header, HOME_TEXT_X, HOME_LIST_
                   HOME_LABEL_END, HOME_ROW, HOME_TOP, INC, inc, SETTINGS_SLIDERS, CLASSIC_LIGHT_FONT_NAME)
 
 argv = sys.argv[1:]
-themes = ['classic', 'minimal']
+themes = ['modern', 'minimal']
 if argv[:1] == ['--themes']: themes, argv = argv[1].split(','), argv[2:]
 classic_light = themes == ['classic-light', 'classic-light']
-assert len(themes) == 2 and (classic_light or set(themes) <= {'classic', 'minimal'})
+assert len(themes) == 2 and (classic_light or set(themes) <= {'modern', 'minimal'})
 before, after, out = map(pathlib.Path, argv[:3])
 cf_paths = list(map(pathlib.Path, argv[3:]))
 assert len(cf_paths) in (0, 2) and not (classic_light and (cf_paths or before.resolve() != after.resolve()))
@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
         tiles=[]
         for case, title in enumerate(cases):
             for side, (theme, build) in enumerate(zip(themes, (before, after))):
-                old = theme == 'classic'  # Classic draws the pre-1.0.1 look
+                old = theme == 'modern'  # Modern draws the pre-1.0.1 look
                 palette = classic_accents[accent][:3] if old else minimal
                 tint = accent if old else 0  # Minimal's images take Graphite's greys
                 a=['-size','375x320','xc:black']
@@ -121,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                     text(a,'12:59 PM',151,5,74,20,16)
                     text(a,'88%',280,5,40,20,16)
                 if case<3 or case in (10,11):
-                    full=case in (1,2); width=(inc('HOME_CLASSIC_ROW') if old else HOME_LIST_W) if full else inc('HOME_SPLIT_W')
+                    full=case in (1,2); width=(inc('HOME_MODERN_ROW') if old else HOME_LIST_W) if full else inc('HOME_SPLIT_W')
                     labels = ['Now Playing','Library','Cover Flow','Folders','Rockbox','Streaming','Settings']
                     if case==1: labels=['Now Playing','Library - a very long music collection','Cover Flow','音楽フォルダー','Streaming','Settings']
                     if case==2: labels=['Playback','System']
@@ -134,7 +134,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                         if i==selected:
                             if old: selection(a,y,HOME_ROW,375 if full else width,palette)
                             else: a+=['-fill','white','-draw',f'circle {inc("HOME_DOT_X")+3},{y+HOME_ROW//2} {inc("HOME_DOT_X")+6},{y+HOME_ROW//2}']
-                        x0=inc('HOME_CLASSIC_TEXT_X') if old else HOME_TEXT_X
+                        x0=inc('HOME_MODERN_TEXT_X') if old else HOME_TEXT_X
                         label_width=width-x0-(inc('CHEVRON_W')-10 if old else HOME_LABEL_END if full else inc('HOME_SPLIT_LABEL_END'))
                         text(a,value,x0,y,label_width,HOME_ROW,color='#FFFFFF' if old or i==selected else '#AAAAAA')
                         if old and i==selected: image(a,asset(build,'images/xx/list_into.png'),width-inc('CHEVRON_W')+inc('HOME_FULL_CHEVRON_SHIFT' if full else 'HOME_CHEVRON_SHIFT'),y+(HOME_ROW-50)//2,50,50)

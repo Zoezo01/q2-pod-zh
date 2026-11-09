@@ -53,7 +53,8 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
     assert parse(';FFMETADATA1\n[CHAPTER]')[0] == -1
     assert parse(metadata('7', '2/3', '')) == (1, [(4, '')])
     assert parse(metadata().replace('TIMEBASE=1/1000\n', ''))[0] == -1
-    assert parse(metadata() + metadata('0').split('\n', 1)[1])[0] == -1
+    assert parse(metadata() + metadata('0', title='title=first').split('\n', 1)[1]) == (
+        2, [(0, 'first'), (12, 'Café=一;#\\line\nnext')])
     assert parse(';FFMETADATA1\n' + '[CHAPTER]\nTIMEBASE=1/1\nSTART=0\n' * 513)[0] == -1
     def now(): return int(time.monotonic()*1000)
     def finish(c, at=None):
@@ -90,6 +91,18 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
     ff('-i', bare, '-i', meta, '-map_metadata', '1', '-map_chapters', '1', '-c', 'copy', '-movflags', 'disable_chpl', qt)
     got = extract(qt)
     assert got == (0, [(0, 'Café=一;#\\end'), (1, 'Second')]), got
+    assert not (d/'SHOULD_NOT_EXIST').exists()
+    # ID3 CHAP frames, as an MP3 audiobook or podcast carries its chapters.
+    mp3 = d/'book ; $(touch SHOULD_NOT_EXIST) [一].mp3'
+    ff('-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-i', meta, '-t', '4', '-map', '0', '-map_metadata', '1',
+       '-map_chapters', '1', '-c:a', 'libmp3lame', '-id3v2_version', '3', mp3)
+    assert extract(mp3) == (0, [(0, 'Café=一;#\\end'), (1, 'Second')])
+    # FLAC's and Ogg's CHAPTERxxx comments (FFmpeg reads them, but its muxers write none of their own).
+    for name, codec in (('book.flac', 'flac'), ('book.ogg', 'libvorbis')):
+        ff('-f', 'lavfi', '-i', 'anullsrc=r=8000:cl=mono', '-t', '4', '-c:a', codec,
+           '-metadata', 'CHAPTER001=00:00:00.000', '-metadata', 'CHAPTER001NAME=Café=一;#\\end',
+           '-metadata', 'CHAPTER002=00:00:01.250', '-metadata', 'CHAPTER002NAME=Second', d/name)
+        assert extract(d/name) == (0, [(0, 'Café=一;#\\end'), (1, 'Second')]), name
     assert not (d/'SHOULD_NOT_EXIST').exists()
     # Nero chpl only: insert the atom into moov, without a QuickTime text track.
     raw = bare.read_bytes()
@@ -141,4 +154,4 @@ with tempfile.TemporaryDirectory(prefix='q2-chapters-') as tmp:
     assert lib.mp4_fits(str(d/'big.m4b').encode()) == (5000007*28//1024 + 16*1024 <= int(
         [l for l in open('/proc/meminfo') if l.startswith('MemAvailable:')][0].split()[1]))
     assert lib.mp4_fits(str(bare).encode()) and 0 < lib.mp4_index_bytes(str(bare).encode()) < 100*28
-print('Chapters: parser, QuickTime, Nero, literal filenames, empty/error, timeout, cancellation, output cap and MP4 index estimate passed.')
+print('Chapters: parser, QuickTime, Nero, ID3, FLAC and Ogg, literal filenames, empty/error, timeout, cancellation, output cap and MP4 index estimate passed.')

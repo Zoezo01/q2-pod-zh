@@ -454,8 +454,8 @@ static int online_click(void *ctx, void *event) {
         show("Cancelling…");
     } else if (nu.state != NU_IDLE) {
         /* ended, not yet joined by wait_done */
-    } else if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
+    } else if (!need_link(online_click, ctx)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
     } else {
         nu.cancel = nu.percent = 0;
         nu.state = NU_RUNNING;
@@ -493,27 +493,30 @@ int ringnav_fwupdate(void *win, void *ctx) {
     return result;
 }
 
-/* The Apps page (System settings): a row per app in sources.list, its state as the row's detail.
- * One job at a time on one thread: the page's opening check (the list, then the latest tags), an
- * install, a remove or Spotify's erase (Streaming → Configuration's, shelf_erase). Leaving the page
- * leaves it running; its progress shows when the page opens again. */
+/* The Apps page (System settings): Check for Updates, then a row per app in sources.list, its state
+ * as the row's detail. One job at a time on one thread: a check (the list, then the latest tags) on
+ * opening or from Check for Updates, an install, a remove or Spotify's erase (Streaming →
+ * Configuration's, shelf_erase). Leaving the page leaves it running; its progress shows when the
+ * page opens again. */
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
 #define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 #define SH_STALE_MS (10 * 60 * 1000ull)
+#define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
 enum { JOB_CHECK = 1, JOB_INSTALL, JOB_REMOVE, JOB_ERASE };
 enum { ST_INSTALL, ST_UPDATE, ST_INSTALLED };
-enum { ROW_NONE = SH_MAX }; /* map's row that is no app: no list yet */
+enum { ROW_CHECK = SH_MAX }; /* map's row that is no app: Check for Updates, the first */
 
 static struct {
     unsigned long thread;
     volatile int running, cancel, percent, stage, result; /* cancel, percent: progress()'s pair */
-    int job, app, armed, rows, n, map[SH_MAX];            /* map: a row's app or ROW_NONE */
+    int job, app, armed, rows, n, map[SH_MAX + 1];        /* map: a row's app or ROW_CHECK */
+    int manual;                                           /* the check is Check for Updates' */
     unsigned need;                                        /* SH_SPACE's MB */
     unsigned long long checked;                           /* now_ms of the last whole check */
     shelf_app next[SH_MAX]; /* the check's list (n apps), the page's once the check ends */
-    void *page, *row[SH_MAX];
+    void *page, *row[SH_MAX + 1];
 } sh __attribute__((section(".scratch")));
 
 static int is(int i, const char *id) { return i >= 0 && i < shelf_n && !strcmp(apps[i].id, id); }
@@ -561,7 +564,7 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
     return r;
 }
 
-/* The opening check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
+/* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
  * still installed (so it can be removed), else the page's own; then each one's latest release.
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
@@ -582,7 +585,13 @@ static int check(void) {
         m += snprintf(text + m, sizeof text - m, "%s %s\n", sh.next[k].repo, sh.next[k].name);
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
-    for (int k = 0; k < n && !sh.cancel; ++k) ok &= !release(&sh.next[k], tag, url, &size);
+    if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
+    for (int k = 0; k < n && !sh.cancel; ++k) {
+        int r = release(&sh.next[k], tag, url, &size);
+        if (r == SH_MISSING) continue; /* checked: no release yet */
+        ok &= !r;
+        if (!sh.result) sh.result = r; /* SH_NET or SH_BUSY, for sh_told */
+    }
     return ok;
 }
 
@@ -653,13 +662,20 @@ static void *sh_worker(void *unused) {
     return 0;
 }
 
-/* ST_INSTALLED with a tag file (unless the latest differs), ST_UPDATE for a manual install. */
-static int sh_state(int i) {
+/* With a tag file ST_INSTALLED, or ST_UPDATE when the latest differs; -1 without one. */
+static int sh_tagged(int i) {
     char path[96], tag[40];
     app_file(path, sizeof path, i, ".tag");
     state_read(path, tag, sizeof tag); /* "\n" and the tag */
-    if (tag[1])
-        return *apps[i].latest && strcmp(tag + 1, apps[i].latest) ? ST_UPDATE : ST_INSTALLED;
+    if (!tag[1]) return -1;
+    return *apps[i].latest && strcmp(tag + 1, apps[i].latest) ? ST_UPDATE : ST_INSTALLED;
+}
+
+/* sh_tagged's state, else ST_UPDATE for a manual install. */
+static int sh_state(int i) {
+    char path[96];
+    int s = sh_tagged(i);
+    if (s >= 0) return s;
     if (*apps[i].bin) {
         snprintf(path, sizeof path, CARD "/%s", apps[i].bin);
         if (file_mode(path) == 0100000) return ST_UPDATE;
@@ -675,8 +691,10 @@ static void sh_text(int r) {
         busy = (sh.job == JOB_INSTALL || sh.job == JOB_REMOVE) && sh.app == i;
     char s[40];
     const char *t = s;
-    if (i == ROW_NONE)
-        t = sh.job == JOB_CHECK ? "Loading…" : "Connect to Wi-Fi to load the list";
+    if (i == ROW_CHECK && sh.job == JOB_CHECK)
+        t = "Checking…";
+    else if (i == ROW_CHECK) /* with no list yet, the press loads it */
+        t = !shelf_n ? "Connect to Wi-Fi to load the list" : theme()->sep[0].n ? " " : "";
     else if (busy && sh.cancel)
         t = "Cancelling…";
     else if (busy && sh.stage == 1 && sh.percent)
@@ -697,6 +715,21 @@ static void sh_refresh(void) {
     for (int r = 0; sh.page && r < sh.rows; ++r) sh_text(r);
 }
 
+/* A check's toast: how many rows' apps have a newer release than their tag file's (a manual
+ * install's Update isn't counted: its version is unknown); with none, from Check for Updates
+ * (manual), why it failed or that none have. */
+static void sh_told(int manual, const char *failed) {
+    char s[40];
+    int n = 0;
+    for (int r = 1; r < sh.rows; ++r) n += sh_tagged(sh.map[r]) == ST_UPDATE; /* past ROW_CHECK */
+    if (n)
+        snprintf(s, sizeof s, "%d app%s can be updated", n, n == 1 ? "" : "s"), toast(s);
+    else if (manual && failed)
+        toast(failed);
+    else if (manual)
+        toast("All apps are up to date");
+}
+
 static int sh_wait(const void *unused) {
     static const char *const said[] = {
         [SH_NET] = "Can't reach GitHub",           [SH_CARD] = "Can't write to the card",
@@ -710,14 +743,17 @@ static int sh_wait(const void *unused) {
         return 8; /* RET_REPEAT */
     }
     pthread_join(sh.thread, 0);
-    int job = sh.job, r = sh.result, i = sh.app;
+    int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
         spot_stop(); /* spotify.c forgets the old one */
     sh_rows();
-    if (job == JOB_INSTALL && r == SH_SPACE)
+    if (job == JOB_CHECK && !sh.cancel && sh.page &&
+        window_manager_get_top_window(window_manager()) == sh.page) /* not left or covered */
+        sh_told(manual, r ? said[r] : 0);
+    else if (job == JOB_INSTALL && r == SH_SPACE)
         snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
     else if (job == JOB_INSTALL && r)
         toast(said[r]);
@@ -740,7 +776,7 @@ static void sh_start(int job, int i) {
     if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
         spot_stop(); /* on this thread: spotify.c's state too */
     if (job == JOB_INSTALL || job == JOB_REMOVE) addon_forget(apps[i].dir);
-    sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = 0, sh.running = 1;
+    sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = sh.manual = 0, sh.running = 1;
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
         sh.job = sh.running = 0;
@@ -751,12 +787,13 @@ static void sh_start(int job, int i) {
 
 /* Install and Update at once; Installed's Remove and Rockbox's first Install (it becomes the
  * power-on default) on a second press of the same row. Pressed again, the running install cancels.
- * With no list yet, the one row loads it. */
+ * Check for Updates checks now (loading the list, with none yet), unless the last whole check is
+ * under SH_RECHECK_MS old: then it says that check's count again. */
 static int sh_click(void *ctx, void *event) {
     int r = (int)(long)ctx, i = sh.map[r], armed = sh.armed == r + 1;
     sh.armed = 0;
-    if (i == ROW_NONE && sh.job) {
-        /* loading it already */
+    if (i == ROW_CHECK && sh.job == JOB_CHECK) {
+        sh.manual = 1; /* checking already, the opening check maybe: its end answers the press */
     } else if (sh.job == JOB_CHECK) { /* needs no answer: stopped, so the next press acts */
         sh.cancel = 1;
         toast("Stopped checking for updates");
@@ -765,15 +802,17 @@ static int sh_click(void *ctx, void *event) {
             sh.cancel = 1; /* not once moving */
         else if (sh.job != JOB_INSTALL || sh.app != i)
             toast("Wait for the one in progress");
-    } else if (i != ROW_NONE && sh_state(i) == ST_INSTALLED) {
+    } else if (i != ROW_CHECK && sh_state(i) == ST_INSTALLED) {
         if (!armed)
             sh.armed = r + 1;
         else
             sh_start(JOB_REMOVE, i);
-    } else if (get_wifisignal() <= 0)
-        toast("Connect to Wi-Fi first");
-    else if (i == ROW_NONE)
-        sh_start(JOB_CHECK, 0);
+    } else if (!need_link(sh_click, ctx)) {
+        /* held for Smart Wi-Fi's link (a press while it waits takes its place), or none */
+    } else if (i == ROW_CHECK && sh.checked && now_ms() - sh.checked < SH_RECHECK_MS)
+        sh_told(1, 0);
+    else if (i == ROW_CHECK)
+        sh_start(JOB_CHECK, 0), sh.manual = 1;
     else if (is(i, "themes") && !rockbox_available())
         toast("Install Rockbox first");
     else if (is(i, "rockbox") && sh_state(i) == ST_INSTALL && !armed)
@@ -789,20 +828,21 @@ static int sh_closed(void *ctx, void *event) {
     return 0;
 }
 
-/* The rows, in the list's order: Rockbox Themes only with Rockbox on the card, one to load the list
- * while there is none; built again when a job ends changes which. */
+/* The rows: Check for Updates, then the list's apps in its order, Rockbox Themes only with Rockbox
+ * on the card; built again when a job ends changes which. */
 static void sh_rows(void) {
-    int map[SH_MAX] = { 0 }, n = 0;
+    int map[SH_MAX + 1] = { ROW_CHECK }, n = 1;
     for (int i = 0; i < shelf_n; ++i)
         if (!is(i, "themes") || rockbox_available()) map[n++] = i;
-    if (!n) map[n++] = ROW_NONE;
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;
         void *view = page_list(sh.page, sh.page, 0, "App Store", n, 64);
         for (int r = 0; r < n; ++r)
-            sh.row[r] = page_row_detail(view, r, map[r] == ROW_NONE ? "App list" : apps[map[r]].name,
-                                        "", sh_click);
+            /* sh_text writes the detail: a blank one, or a theme would centre the name over it */
+            sh.row[r] = page_row_detail(
+                view, r, map[r] == ROW_CHECK ? "Check for Updates" : apps[map[r]].name,
+                theme()->sep[0].n ? " " : "", sh_click);
         sh.rows = n;
     }
     sh_refresh();
@@ -821,9 +861,15 @@ int shelf_erase(int start) {
     return sh.job == JOB_ERASE;
 }
 
+/* The opening check, held for Smart Wi-Fi's link (smart_hold). */
+static int sh_check(void *ctx, void *event) {
+    if (!sh.job && get_wifisignal() > 0) sh_start(JOB_CHECK, 0), sh_refresh();
+    return 0;
+}
+
 /* System settings' Apps row. The card's last list, until a check fetches the list again: with Wi-Fi
  * when the last whole check is over SH_STALE_MS old (or none), as GitHub allows 60 unauthenticated
- * API requests an hour. */
+ * API requests an hour; while Smart Wi-Fi brings the radio back, once its link is up. */
 int shelf_open(void *ctx, void *event) {
     if (sh.page || !(sh.page = page_open("apps_page", sh_closed, page_keyup))) return 0;
     if (sh.job != JOB_CHECK && !shelf_n) { /* an erase can run from Configuration before it opens */
@@ -833,8 +879,17 @@ int shelf_open(void *ctx, void *event) {
         free(list);
     }
     sh_rows();
-    if (!sh.job && get_wifisignal() > 0 && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS))
-        sh_start(JOB_CHECK, 0), sh_refresh();
+    if (!sh.job && (!sh.checked || now_ms() - sh.checked > SH_STALE_MS)) {
+        if (get_wifisignal() > 0)
+            sh_start(JOB_CHECK, 0), sh_refresh();
+        else
+            /* once Smart Wi-Fi's link is up; a row pressed while it waits takes its place and acts on
+             * the list shown, and the next open checks */
+            smart_hold(sh_check, 0, "apps_page");
+    }
     return 0;
 }
+
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Network Update's download or an Apps job keeps the radio on. */
+int netupdate_busy(void) { return nu.state == NU_RUNNING || sh.job; }
 #endif

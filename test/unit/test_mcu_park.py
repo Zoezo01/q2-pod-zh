@@ -94,7 +94,7 @@ def test_patch_image_refuses_a_wrong_hash():
 def test_patch_image_refuses_a_moved_hook(monkeypatch):
     image = bytearray(stock_image())
     image[m.HOOK_OFFSET + 4] ^= 1
-    monkeypatch.setattr(m, 'STOCK_SHA256', m.sha256(image))
+    monkeypatch.setattr(m, 'STOCK_SHA256', m.sha256(bytes(image)))
     with pytest.raises(ValueError, match='^MCU idle hook instruction mismatch$'):
         m.patch_image(bytes(image), HELPER)
 
@@ -119,7 +119,7 @@ def test_patch_image_helper_may_fill_its_region(stock):
 def test_patch_image_refuses_a_moved_sleep_hook(offset, monkeypatch):
     image = bytearray(stock_image())
     image[offset] ^= 1
-    monkeypatch.setattr(m, 'STOCK_SHA256', m.sha256(image))
+    monkeypatch.setattr(m, 'STOCK_SHA256', m.sha256(bytes(image)))
     assert m.patch_image(bytes(image), HELPER)  # only sleep reads them
     with pytest.raises(ValueError, match='^MCU sleep hook instruction mismatch$'):
         m.patch_image(bytes(image), HELPER, sleep=True, symbols=SLEEP)

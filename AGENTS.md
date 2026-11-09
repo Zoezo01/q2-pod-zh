@@ -1,3 +1,16 @@
+## Where code goes
+
+Don't add features to `patch/navigation.c`: give each its own file, as CONTRIBUTING.md's [Where new code goes](CONTRIBUTING.md#where-new-code-goes) says. Add to navigation.c only where the code being changed already lives, and say why.
+
+## Making a change
+
+- Make the smallest complete change that fixes the problem shown, in the style of the code around it ([CONTRIBUTING.md](CONTRIBUTING.md)). Reuse the helpers already here, and add no abstraction, dependency, refactor or optimisation the change doesn't need.
+- Keep existing behaviour unless the task is to change it.
+- The Q2 is small: large libraries (tens of thousands of songs) and oversized tags have run demo out of memory. Library scans, indexing, Cover Flow and navigation are where that bites, so mind memory and the UI thread there.
+- Card files, tags and network replies can be malformed or huge: check them and fail safely.
+- A fix comes with a focused test that fails without it.
+- Before committing, read the diff for risk, needless complexity and unintended changes. Get an independent review of a complex or risky change.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

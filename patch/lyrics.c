@@ -7,6 +7,7 @@
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h"
+#include "xiph.h"
 
 /* Lyrics from tags: stock reads a local track's lyrics only from a .lrc beside it. Without one,
  * the track's LYRICS tag (else UNSYNCEDLYRICS) fills stock's list. A tag in LRC form, a
@@ -15,10 +16,11 @@
  * a line with several stamps once for each, and lines without one (LRC's "[ar:...]" tags) left out.
  * Plain text fills it a line each, at a time no track reaches, so the page stays at its top as
  * before a .lrc's first stamp. libtag_c's property calls are found from taglib_file_new's address,
- * which that call binds in demo's GOT. ponytail: no SYLT frame, and lines starting in its first
- * LYRIC_TAG_MAX bytes. The lines keep their milliseconds and A2 word stamps ("<mm:ss.xx>" before
- * a word, cut from the text) for iPod's lyrics page (lyrics.c), lose the spaces at their ends, and
- * blank ones go; a .lrc's synced lines replace stock's, read alike. */
+ * which that call binds in demo's GOT. ponytail: no SYLT frame, lines starting in its first
+ * LYRIC_TAG_MAX bytes, and none from an Ogg file whose comment header is over OGG_TAGS_MAX (xiph.h:
+ * TagLib would hold it ~4 times over). The lines keep their milliseconds and A2 word stamps
+ * ("<mm:ss.xx>" before a word, cut from the text) for iPod's lyrics page (lyrics.c), lose the
+ * spaces at their ends, and blank ones go; a .lrc's synced lines replace stock's, read alike. */
 #define LYRIC_TAG_MAX 65536
 extern int stock_lyric_trampoline(void);
 
@@ -197,7 +199,7 @@ int ringnav_lyric(void) {
     unsigned pos = (unsigned)I(MCL_POS, 0);
     if (!(mclGetLyricSize() > 0 || (unsigned)(I(MCL_TYPE, 0) - 0xf1) < 2 || !q ||
           pos >= deque_size(q) || !(r = deque_at(q, pos)) || I(r, REC_TYPE) != 8 ||
-          !P(r, REC_PATH) || *(char *)P(r, REC_PATH) != '/'))
+          !P(r, REC_PATH) || *(char *)P(r, REC_PATH) != '/' || ogg_tags(P(r, REC_PATH), 0)))
         f = taglib_file_new(P(r, REC_PATH), 0);
     if (f) {
         unsigned at = (unsigned)I(TAGLIB_NEW_GOT, 0);
@@ -255,13 +257,14 @@ typedef struct {
 
 /* The rows' table, their scroll view, their count and ly_sum; the position the last pass saw and
  * its line (the first of those starting then, -1 before the first); that line's lit width at its
- * last repaint, at lit_at; and the clock (lyrics_now). next: the loader's latest table, until
+ * last repaint, at lit_at; the line the held page aims at, plus 1 (0: none; lyrics_aim); and the
+ * clock (lyrics_now). next: the loader's latest table, until
  * rows that match it take it. Zero filled, as all the payload's state (patch/link.ld). */
 static struct {
     ly_tab *tab, *next;
     void *lrc;
     unsigned rows, sum;
-    int ms, cur, fill;
+    int ms, cur, fill, aim;
     unsigned lit_at;
     int sec, run, guess, lo, hi, pos;
     int w; /* the width lines wrap at, the rows' less LYRIC_X a side; 0 until rows are laid out */
@@ -329,7 +332,7 @@ static int ly_take(void) {
 
 /* Now Playing went: its rows' memory may hold the next page's, which have none of the page's own.
  */
-void lyrics_gone(void) { ly.lrc = 0, ly.rows = 0, ly.cur = -1; }
+void lyrics_gone(void) { ly.lrc = 0, ly.rows = 0, ly.cur = -1, ly.aim = 0; }
 
 int lyrics_on(void *lrc) {
     return lrc && lrc == ly.lrc && ly.tab && ly.rows &&
@@ -394,7 +397,7 @@ int lyrics_rows(void *lrc) {
         sum = ly_sum(sum, sec >= LRC_FAR / 1000 ? LRC_FAR : sec * 1000, s, k);
         chars += k;
     }
-    ly.lrc = lrc, ly.rows = n, ly.sum = sum, ly.cur = -1;
+    ly.lrc = lrc, ly.rows = n, ly.sum = sum, ly.cur = -1, ly.aim = 0;
     if (n && !ly_take() && !(ly.tab && ly.tab->n == n && ly.tab->sum == sum)) {
         free(ly.tab);
         ly_tab *t = ly.tab = ly_alloc(n, 0, chars);
@@ -575,6 +578,26 @@ int lyrics_line(void *lrc, int ms, int page) {
     return cur;
 }
 
+/* Line i's start, ms; -1 for none, no table or an unsynced line. */
+int lyrics_start(void *lrc, int i) {
+    if (!lyrics_on(lrc) || i < 0 || (unsigned)i >= ly.rows) return -1;
+    int ms = ly.tab->line[i].ms;
+    return ms == LRC_FAR ? -1 : ms;
+}
+
+/* The line in the middle of the page while the wheel or a finger holds the lyrics (navigation.c
+ * lyric_aim), -1 for none: the first of those starting with it, unless it is unsynced, painted
+ * LYRIC_DIM (lyrics_paint); it and the last one repaint. */
+void lyrics_aim(void *lrc, int i) {
+    if (!lyrics_on(lrc)) return;
+    while (i > 0 && ly.tab->line[i - 1].ms == ly.tab->line[i].ms) --i;
+    int aim = lyrics_start(lrc, i) >= 0 ? i + 1 : 0;
+    if (aim == ly.aim) return;
+    if (ly.aim) ly_dirty(lrc, ly.aim - 1);
+    if (aim) ly_dirty(lrc, aim - 1);
+    ly.aim = aim;
+}
+
 /* One row of text clipped to from..to (the row's x) within its own clip (base). */
 static void ly_ink(void *canvas, const int *base, const unsigned *s, unsigned n, int y, int from,
                    int to, unsigned color) {
@@ -588,9 +611,10 @@ static void ly_ink(void *canvas, const int *base, const unsigned *s, unsigned n,
 }
 
 /* ringnav_paint, after stock painted a lyrics row (blank): its line, centred in it, bold
- * (LYRIC_BOLD), LYRIC_LIT as far as it is sung while it plays and LYRIC_DIM past that; any other line
- * LYRIC_REST. A row the page's edge cuts fades with the square of the share of it out of view, so
- * no sliver of a line shows. The text color and clip are restored, the font is not. */
+ * (LYRIC_BOLD), LYRIC_LIT as far as it is sung while it plays and LYRIC_DIM past that; the aimed
+ * line (lyrics_aim) LYRIC_DIM; any other line LYRIC_REST. A row the page's edge cuts fades with the
+ * square of the share of it out of view, so no sliver of a line shows. The text color and clip are
+ * restored, the font is not. */
 void lyrics_paint(void *row, void *canvas) {
     void *lrc = row ? P(row, W_PARENT) : (void *)0;
     int i = -1, base[4];
@@ -606,6 +630,7 @@ void lyrics_paint(void *row, void *canvas) {
     ly_line *l = &ly.tab->line[i];
     if (!l->px) ly_layout(canvas, l);
     int on = ly.cur >= 0 && l->ms == ly.tab->line[ly.cur].ms,
+        aim = ly.aim && l->ms == ly.tab->line[ly.aim - 1].ms,
         lit = on ? ly_lit((unsigned)i, ly.ms) : 0, pitch = LY_PITCH(l->px),
         y = (h - l->rows * pitch) / 2 + (pitch - l->px) / 2, w = I(row, W_W);
     unsigned text = (unsigned)I(P(canvas, CANVAS_LCD), LCD_TEXT_COLOR);
@@ -615,7 +640,8 @@ void lyrics_paint(void *row, void *canvas) {
         const unsigned *s = ly.tab->text + l->text + l->start[r];
         int cut = lit <= 0 ? LYRIC_X : lit >= l->w[r] ? w : LYRIC_X + lit;
         if (cut < w)
-            ly_ink(canvas, base, s, l->len[r], y, cut, w, rgba(on ? LYRIC_DIM : LYRIC_REST, alpha));
+            ly_ink(canvas, base, s, l->len[r], y, cut, w,
+                   rgba(on || aim ? LYRIC_DIM : LYRIC_REST, alpha));
         if (cut > LYRIC_X)
             ly_ink(canvas, base, s, l->len[r], y, 0, cut, rgba(LYRIC_LIT, alpha));
     }

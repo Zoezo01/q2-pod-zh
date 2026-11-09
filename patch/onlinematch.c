@@ -419,7 +419,6 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
  * Lyrics on Now Playing's ⋯ page saves LRCLIB's lyrics beside every song of the playing song's
  * album, found as that search finds them, on a thread of its own that outlives the page. */
 extern void *list_row(void *view, const char *icon, int (*click)(void *, void *), void *ctx);
-extern void *coverflow_album_tracks(void *r);
 static const char AL_TITLE[] = "Download Album Lyrics";
 static struct {
     lyr_job job;
@@ -507,10 +506,7 @@ static int al_click(void *ctx, void *event) {
         if (al.running) al.job.cancel = 1, al_show();
         return 0;
     }
-    if (get_wifisignal() <= 0) {
-        toast("Connect to Wi-Fi first");
-        return 0;
-    }
+    if (!need_link(al_click, ctx)) return 0; /* held for Smart Wi-Fi's link, or none */
     void *r = al_playing(), *list = r ? coverflow_album_tracks(r) : 0;
     unsigned n = list ? deque_size(list) : 0, k = 0;
     lyr_track *t = n ? calloc(n, sizeof *t) : 0;
@@ -557,6 +553,7 @@ static int al_gone(void *ctx, void *event) {
 extern int stock_playermore_trampoline(void *win, void *ctx);
 int ringnav_playermore(void *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
+    if (win) stock_more_speed(win), stock_more_into(win);
     void *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
     unsigned at = 0;
     if (!view || widget_count_children(view) != PLAYMORE_COUNT || !al_playing()) return result;
@@ -629,6 +626,9 @@ static void covers(void) {
     cJSON_Delete(json);
     free(body);
 }
+
+/* Smart Wi-Fi (smart_wifi.c smart_needed): Download Album Lyrics running keeps the radio on. */
+int album_lyrics_busy(void) { return al.running; }
 
 /* kugou_obtaincover(keyword), online_coverthd's first source, then com163's and Baidu's: each adds
  * image URLs to stock's list (online_addcoverlist), which the page downloads and shows. ours go first. */

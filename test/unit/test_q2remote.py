@@ -1,5 +1,6 @@
 """q2remote's commands as they leave for the Q2, with no Q2: a fake shell() or socket answers them."""
 import bisect
+import contextlib
 import hashlib
 import io
 import pathlib
@@ -41,6 +42,9 @@ def shell(monkeypatch):
 
 
 class Sock:
+    address: tuple[str, int] | None = None  # what create_connection was given
+    connect_timeout: float | None = None
+
     def __init__(self, *chunks):
         self.chunks, self.sent, self.timeouts, self.how, self.asked = list(chunks), b'', [], None, []
 
@@ -118,9 +122,12 @@ def test_shell_needs_a_host(monkeypatch):
 
 def test_shell_sink_streams_past_the_ok(connect):
     connect(b'O', b'K\nab', b'cd')
-    sink = io.BytesIO()
-    sink.flushes = 0
-    sink.flush = lambda: setattr(sink, 'flushes', sink.flushes + 1)
+    class Sink(io.BytesIO):
+        flushes = 0
+
+        def flush(self):
+            self.flushes += 1
+    sink = Sink()
     assert q.shell('x', host='h', sink=sink) == b''
     assert sink.getvalue() == b'abcd' and sink.flushes == 2
 
@@ -224,6 +231,12 @@ def test_run_lost_connection(shell, token):
         q.run('x')
 
 
+def test_parse_devices_skips_incomplete_blocks():
+    text = ('N: Name="no handlers"\n\nH: Handlers=event8\n\nN: Name="mouse"\nH: Handlers=mouse0\n \n'
+            'N: Name="hyn_sliderbar"\nH: Handlers=event3\n')
+    assert q.parse_devices(text) == [{'name': 'hyn_sliderbar', 'event': 3, 'handlers': 'event3', 'KEY': 0, 'ABS': 0}]
+
+
 def test_touch_xy_rotates_into_the_panel():
     assert q.touch_xy(0, 0) == (319, 0)
     assert q.touch_xy(374, 319) == (0, 374)
@@ -240,6 +253,16 @@ def events(*triples):
     return b''.join(q.event(*t) for t in triples)
 
 
+def test_event():
+    """struct input_event on the Q2's 32-bit kernel: no timestamp, then u16 type and code and an s32 value."""
+    assert q.event(q.EV_ABS, 0xffff, -1) == bytes(8) + b'\x03\x00\xff\xff\xff\xff\xff\xff'
+    assert q.event(q.EV_KEY, q.BTN_TOUCH, 1) == bytes(8) + b'\x01\x00\x4a\x01\x01\x00\x00\x00'
+
+
+def test_key_events():
+    assert q.key_events(116) == [events((q.EV_KEY, 116, 1), (q.EV_SYN, 0, 0)), events((q.EV_KEY, 116, 0), (q.EV_SYN, 0, 0))]
+
+
 def test_touch_batches():
     press, move, lift = q.touch_batches([(0, 0), (10, 20)])
     assert press == events((q.EV_ABS, q.ABS_X, 319), (q.EV_ABS, q.ABS_Y, 0), (q.EV_ABS, q.ABS_PRESSURE, 1),
@@ -253,6 +276,24 @@ def test_swipe_points():
     assert q.swipe_points(1, 2, 3, 4, 0) == [(1, 2), (3, 4)]
     assert len(q.swipe_points(0, 0, 9, 9, 39)) == 2 and len(q.swipe_points(0, 0, 9, 9, 40)) == 3
     assert len(q.swipe_points(0, 0, 9, 9, 9999)) == 500
+
+
+def test_wheel_positions():
+    assert q.wheel_positions(1) == [90, 79, 69, 58] + [58] * 4
+    assert q.wheel_positions(-1) == [110, 121, 131, 142] + [142] * 4
+    assert q.wheel_positions(3, q.wheel_units('WHEELSENSITIVITY=60\n')) == [90, 80, 70, 59, 49, 39, 29, 18] + [18] * 4
+    # x runs 1..200 round the wheel.
+    assert q.wheel_positions(1, 28, 5) == [195, 184, 174, 163] + [163] * 4
+    assert q.wheel_positions(-1, 28, 190) == [200, 11, 21, 32] + [32] * 4
+
+
+@pytest.mark.parametrize('config,units', [
+    ('WHEELSENSITIVITY=100\n', 14.0), ('A=1\nWHEELSENSITIVITY=200  \nB=2\n', 7.0), ('WHEELSENSITIVITY=70', 20.0),
+    ('WHEELSENSITIVITY=50\n', 28.0), ('', 28.0), ('XWHEELSENSITIVITY=100\n', 28.0), ('WHEELSENSITIVITY=080\n', 28.0),
+    ('WHEELSENSITIVITY=40\n', 28.0), ('WHEELSENSITIVITY=300\n', 28.0), ('WHEELSENSITIVITY=55\n', 28.0),
+])
+def test_wheel_units(config, units):
+    assert q.wheel_units(config) == units
 
 
 def test_event_writer():
@@ -271,6 +312,55 @@ def test_input_path(shell):
     shell(b'')
     with pytest.raises(ValueError, match=r'^no hyn_ts input device; inspect `devices`$'):
         q.input_path('tap')
+
+
+DEVICES = '''I: Bus=0019 Vendor=0001 Product=0001 Version=0100
+N: Name="md-gpio-keys"
+P: Phys=gpio-keys/input0
+H: Handlers=kbd event1
+B: PROP=0
+B: EV=3
+B: KEY=28 0 101080 0 0 0
+
+I: Bus=0018 Vendor=0000 Product=0000 Version=0000
+N: Name="hyn_ts"
+H: Handlers=event2
+B: EV=b
+B: KEY=400 0 0 0 0 0 0 0 0 0 0
+B: ABS=1000003
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="no-evdev"
+H: Handlers=kbd
+B: EV=3
+'''
+
+
+def test_parse_devices():
+    gpio, touch = q.parse_devices(DEVICES)  # no-evdev has no event node to write to
+    assert (gpio['name'], gpio['event'], gpio['handlers'], gpio['ABS']) == ('md-gpio-keys', 1, 'kbd event1', 0)
+    assert (touch['name'], touch['event'], touch['handlers']) == ('hyn_ts', 2, 'event2')
+    assert set(gpio) == set(touch) == {'name', 'event', 'handlers', 'KEY', 'ABS'}
+    # the kernel's unpadded words, most significant first, 32 bits each
+    assert q.bits(gpio['KEY']) == set(q.KEYS.values()) == {103, 108, 116, 163, 165}
+    assert q.bits(touch['KEY']) == {q.BTN_TOUCH} and q.bits(touch['ABS']) == {q.ABS_X, q.ABS_Y, q.ABS_PRESSURE}
+
+
+def test_decode_events():
+    # each field at its limits: unsigned seconds, microseconds, type and code, a signed value
+    edge = struct.pack('<IIHHi', 0xffffffff, 999999, 0xffff, 0x8000, -1)
+    stream = edge + struct.pack('<IIHHi', 5, 7, q.EV_KEY, 116, 1) + q.event(q.EV_SYN, 0, 0)
+    assert q.decode_events(stream) == [(0xffffffff, 999999, 0xffff, 0x8000, -1), (5, 7, q.EV_KEY, 116, 1), (0, 0, q.EV_SYN, 0, 0)]
+    assert q.decode_events(b'') == []
+    for size in (15, 17, len(stream) - 1):
+        with pytest.raises(ValueError, match=r'^truncated input-event stream$'):
+            q.decode_events(stream[:size])
+
+
+def test_devices(shell):
+    fake = shell(b'N: Name="caf\xff"\nH: Handlers=event4\n')
+    assert q.devices() == [{'name': 'caf�', 'event': 4, 'handlers': 'event4', 'KEY': 0, 'ABS': 0}]
+    assert fake.calls[0].cmd == 'cat /proc/bus/input/devices'
 
 
 def test_config(shell):
@@ -354,6 +444,79 @@ def test_wake_last_chance(lit, shell):
     assert q.wake() is True
 
 
+@pytest.fixture
+def panel(monkeypatch):
+    """A 2x3 portrait panel, so a whole frame is a few bytes."""
+    monkeypatch.setattr(q, 'W', 2)
+    monkeypatch.setattr(q, 'H', 3)
+
+
+def bgra(k):
+    """Frame pixel k, counted along the portrait rows: every channel of every pixel its own byte."""
+    return bytes((0x10 + k, 0x20 + k, 0x30 + k, 0x40 + k))
+
+
+def rgba(*pixels):
+    return b''.join(bytes((0x30 + k, 0x20 + k, 0x10 + k, 0x40 + k)) for k in pixels)
+
+
+def fb(w=2, h=3, stride=8, size=None, pixels=None, magic=b'Q2FB\0'):
+    """--shot's output: magic, width, height, stride and size, then rows padded to stride with 0xee."""
+    if pixels is None:
+        pixels = b''.join(b''.join(bgra(y * w + x) for x in range(w)) + b'\xee' * (stride - w * 4) for y in range(h))
+    return magic + struct.pack('<4I', w, h, stride, stride * h if size is None else size) + pixels
+
+
+def png_chunks(png):
+    """A PNG's (tag, body) chunks, each CRC checked."""
+    assert png[:8] == b'\x89PNG\r\n\x1a\n'
+    chunks, at = [], 8
+    while at < len(png):
+        size, = struct.unpack_from('>I', png, at)
+        tag, body = png[at + 4:at + 8], png[at + 8:at + 8 + size]
+        assert struct.unpack_from('>I', png, at + 8 + size) == (zlib.crc32(tag + body),)
+        chunks.append((tag, body))
+        at += 12 + size
+    return chunks
+
+
+@pytest.mark.parametrize('stride', [8, 11])
+def test_framebuffer_png(panel, stride):
+    chunks = png_chunks(q.framebuffer_png(fb(stride=stride)))
+    assert [tag for tag, _ in chunks] == [b'IHDR', b'IDAT', b'IEND'] and chunks[2][1] == b''
+    assert chunks[0][1] == struct.pack('>2I5B', 3, 2, 8, 6, 0, 0, 0)  # 3x2, 8-bit RGBA
+    # Turned counterclockwise, the frame's right column is the picture's top row.
+    assert zlib.decompress(chunks[1][1]) == b'\0' + rgba(1, 3, 5) + b'\0' + rgba(0, 2, 4)
+
+
+def test_framebuffer_png_whole_panel():
+    page = bytearray(q.W * q.H * 4)
+    bottom_left = (q.H - 1) * q.W * 4
+    page[(q.W - 1) * 4:q.W * 4], page[bottom_left:bottom_left + 4] = b'\1\2\3\4', b'\5\6\7\x08'
+    chunks = png_chunks(q.framebuffer_png(fb(q.W, q.H, q.W * 4, pixels=bytes(page))))
+    assert chunks[0][1] == struct.pack('>2I5B', 375, 320, 8, 6, 0, 0, 0)
+    picture = bytearray(320 * (1 + 375 * 4))
+    picture[1:5], picture[-4:] = b'\3\2\1\4', b'\7\6\5\x08'
+    assert zlib.decompress(chunks[1][1]) == picture
+
+
+@pytest.mark.parametrize('data', [b'', fb()[:20], fb(magic=b'Q2FB\1')])
+def test_framebuffer_png_wants_the_helpers_header(panel, data):
+    with pytest.raises(ValueError, match=r'^invalid framebuffer response$'):
+        q.framebuffer_png(data)
+
+
+@pytest.mark.parametrize('data', [
+    fb(3, 2, 12),                   # landscape
+    fb(stride=7, pixels=bytes(21)),  # rows overlap
+    fb(size=25, pixels=bytes(25)),   # not stride * height
+    fb()[:-1], fb() + b'\0', fb()[:21],
+])
+def test_framebuffer_png_refuses_an_inconsistent_frame(panel, data):
+    with pytest.raises(ValueError, match=r'^invalid or truncated framebuffer data$'):
+        q.framebuffer_png(data)
+
+
 def test_frame(shell):
     import gzip
     fake = shell(gzip.compress(b'pixels'))
@@ -363,6 +526,63 @@ def test_frame(shell):
         shell(junk)
         with pytest.raises(ValueError, match=r'^invalid framebuffer response$'):
             q.frame()
+
+
+def png_rgba(data):
+    """A PNG's (width, height, RGBA bytes), read with struct and zlib alone: 8-bit RGBA, not interlaced."""
+    assert data[:8] == b'\x89PNG\r\n\x1a\n'
+    at, chunks = 8, []
+    while at < len(data):
+        n, tag = struct.unpack_from('>I4s', data, at)
+        body = data[at + 8:at + 8 + n]
+        assert struct.unpack_from('>I', data, at + 8 + n)[0] == zlib.crc32(tag + body), tag
+        chunks.append((tag, body))
+        at += 12 + n
+    assert chunks[0][0] == b'IHDR' and chunks[-1] == (b'IEND', b'')
+    w, h, *form = struct.unpack('>IIBBBBB', chunks[0][1])
+    assert form == [8, 6, 0, 0, 0]
+    raw, span = zlib.decompress(b''.join(body for tag, body in chunks if tag == b'IDAT')), 1 + 4 * w
+    assert len(raw) == h * span
+    out, up = bytearray(), bytes(4 * w)
+    for y in range(h):
+        kind, row = raw[y * span], bytearray(raw[y * span + 1:(y + 1) * span])
+        for i in range(4 * w) if kind else ():  # PNG's filters: left (a), up (b) and up-left (c) predict each byte
+            a, b, c = row[i - 4] if i >= 4 else 0, up[i], up[i - 4] if i >= 4 else 0
+            p = a + b - c
+            paeth = a if abs(p - a) <= abs(p - b) and abs(p - a) <= abs(p - c) else b if abs(p - b) <= abs(p - c) else c
+            row[i] = (row[i] + (a, b, (a + b) // 2, paeth)[kind - 1]) & 255
+        out += row
+        up = row
+    return w, h, bytes(out)
+
+
+def test_framebuffer_png_is_the_page_turned_upright():
+    # The panel's page is 320 columns by 375 rows, BGRA, each row padded to its stride; turned counterclockwise,
+    # the screen is 375 by 320 and page column c, row r is screen x r, y 319 - c: where touch_xy puts a tap there.
+    w, h, stride = q.W, q.H, q.W * 4 + 8
+    colour = lambda c, r: (c & 255, r & 255, c >> 8 | r >> 8 << 4, (c + r) & 255)  # B, G, R, A: each pixel its own
+    page = b''.join(b''.join(bytes(colour(c, r)) for c in range(w)) + b'\xee' * 8 for r in range(h))
+    pw, ph, rgba = png_rgba(q.framebuffer_png(b'Q2FB\0' + struct.pack('<IIII', w, h, stride, len(page)) + page))
+    assert (pw, ph) == (375, 320)
+    assert rgba == b''.join(bytes((R, G, B, A)) for y in range(ph) for x in range(pw) for B, G, R, A in (colour(319 - y, x),))
+
+
+@pytest.mark.parametrize('data', [b'', b'Q2FB\0' + bytes(15), b'Q2FX\0' + struct.pack('<IIII', 320, 375, 1280, 480000) + bytes(480000)])
+def test_framebuffer_png_refuses_a_foreign_reply(data):
+    with pytest.raises(ValueError, match=r'^invalid framebuffer response$'):
+        q.framebuffer_png(data)
+
+
+@pytest.mark.parametrize('w, h, stride, size, sent', [
+    (375, 320, 1500, 480000, 480000),  # landscape: not the Q2's panel
+    (320, 375, 1276, 478500, 478500),  # a stride short of a row's pixels
+    (320, 375, 1280, 479999, 479999),  # a size that isn't its rows'
+    (320, 375, 1280, 480000, 479999),  # cut short
+    (320, 375, 1280, 480000, 480001),  # more than it said
+])
+def test_framebuffer_png_refuses_a_bad_page(w, h, stride, size, sent):
+    with pytest.raises(ValueError, match=r'^invalid or truncated framebuffer data$'):
+        q.framebuffer_png(b'Q2FB\0' + struct.pack('<IIII', w, h, stride, size) + bytes(sent))
 
 
 @pytest.fixture
@@ -559,7 +779,7 @@ def probes(monkeypatch):
 
 
 def test_find_given_hosts(probes):
-    answers = {'10.0.0.1': b'ERR\n', '10.0.0.3': b'OK\n'}
+    answers: dict = {'10.0.0.1': b'ERR\n', '10.0.0.3': b'OK\n'}  # each answered host's becomes its Sock
     seen = probes(answers)
     assert q.find(['10.0.0.1', '10.0.0.2', '10.0.0.3']) == ['10.0.0.1']
     assert sorted(seen) == [(f'10.0.0.{i}', q.PORT, 2) for i in (1, 2, 3)]
@@ -866,6 +1086,22 @@ def test_input_swipe_errors(inputs, args, message):
         q.input_action('swipe', args)
 
 
+# playback.c's wheel_apply in sixteenths of a unit, (WHEEL_TICK_UNITS * WHEEL_FINE * 50 + pct / 2) / pct.
+# The exact 28 * 50 / pct put a long `wheel N` 1 to 4 ticks off at 60, 110-130, 150 and 170-190%.
+WHEEL_SIXTEENTHS = {50: 448, 60: 373, 70: 320, 80: 280, 90: 249, 100: 224, 110: 204, 120: 187,
+                    130: 172, 140: 160, 150: 149, 160: 140, 170: 132, 180: 124, 190: 118, 200: 112}
+
+
+@pytest.mark.parametrize('config,sixteenths', [(f'WHEELSENSITIVITY={p}\n', n) for p, n in WHEEL_SIXTEENTHS.items()] + [
+    ('A=1\nWHEELSENSITIVITY=150  \nB=2', 149),
+    # Anything but a canonical ten in 50-200 is 50%, as wheel_pct reads it.
+    ('', 448), ('XWHEELSENSITIVITY=100\n', 448), ('WHEELSENSITIVITY=40\n', 448), ('WHEELSENSITIVITY=210\n', 448),
+    ('WHEELSENSITIVITY=55\n', 448), ('WHEELSENSITIVITY=080\n', 448),
+])
+def test_wheel_units_in_sixteenths(config, sixteenths):
+    assert q.wheel_units(config) == sixteenths / 16
+
+
 def test_input_wheel(inputs):
     q.input_action('wheel', ['1'])
     (cmd, data), = inputs.scripts
@@ -901,6 +1137,12 @@ def test_input_wheel_errors(inputs, args, message):
     with pytest.raises(ValueError, match=message):
         q.input_action('wheel', args)
     assert not inputs.scripts
+
+
+def test_input_unknown_kind_writes_nothing(inputs):
+    with contextlib.suppress(ValueError):  # refused or ignored, but never written to an event node
+        q.input_action('pinch', ['1', '2'])
+    assert not inputs.scripts and not inputs.kinds
 
 
 class Main:

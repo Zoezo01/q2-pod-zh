@@ -8,6 +8,47 @@ pytest_add_cli_args_test_selection = ["test/unit"]
 mutate_only_covered_lines = false
 timeout_multiplier = 10.0
 
+# Coverage of tools/ by test/unit (docs/building.md#coverage), every branch counted.
+[tool.coverage.run]
+source = ["tools"]
+branch = true
+# Python 3.14's default, sys.monitoring, counts a one-line if or def as a branch never taken: CI's 3.12 and a
+# local 3.14 run then disagree.
+core = "ctrace"
+
+[tool.coverage.report]
+# The floor catches a collapse, not each change: it leaves room for a few untested lines (docs/building.md#coverage).
+fail_under = 99.5
+precision = 2
+show_missing = true
+skip_covered = true
+# What mutmut skips too (test/unit/targets.py): mostly functions that hash or link against Shanling's files,
+# left to the suites with a stock ZIP (test/patch.py and the rest in docs/building.md). And the command lines.
+exclude_also = [
+    "# pragma: no mutate block",
+    "if __name__ *== *.__main__.:",
+]
+
 [tool.pytest.ini_options]
-testpaths = ["test/unit"]
+testpaths = ["test/unit", "test/fw"]
+# A passing test's tmp_path goes at once: test/fw's run otherwise leaves gigabytes (docs/building.md).
+tmp_path_retention_policy = "failed"
 timeout = 60
+# A mock that raises inside a ctypes callback is only a warning: make it a failure.
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
+
+# Type check (docs/building.md#type-check): mypy over tools/, test/unit and test/fw.
+[tool.mypy]
+mypy_path = "tools"
+python_version = "3.12"  # CI's setup-python, whatever runs it locally
+# Few functions carry annotations, so check every body. The tests' mocks return list.append's None,
+# and an empty list or dict needs no annotation.
+check_untyped_defs = true
+disable_error_code = ["func-returns-value", "var-annotated"]
+allow_redefinition_new = true  # d = pathlib.Path(d)
+local_partial_types = true  # which allow_redefinition_new needs
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["fontTools.*"]  # ships no type information
+ignore_missing_imports = true

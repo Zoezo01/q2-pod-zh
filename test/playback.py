@@ -1170,6 +1170,11 @@ m.read(100,1); m.x=100; assert not m.read(100+U,1) and ghost(m,100,5); m.drain()
 # Vortex and the lyrics read the raw travel with a thumb held down as long as they like: not ticks.
 m=EncoderMachine(); m.word(ps['wheel_raw'],1); n=m.turn(3000,2,20)
 assert m.get(ps['wheel_travel'])==2*3000 and not m.q and not n; m.word(ps['wheel_raw'],0)
+m=armed(); m.word(ps['wheel_raw'],1); m.x=100; m.turn(STOP*U,1,20); m.press(); assert not m.mute(); m.word(ps['wheel_raw'],0)  # no stop for them
+# Cover Flow's thumb (2) has no ticks either, and a ghost still moves covers: its travel counts for the second
+# Return, a tick's worth a tick. Fewer, and a Return is only a Return. Nothing's queued, reversals count too.
+m=armed(); m.word(ps['wheel_raw'],2); m.turn(STOP*U-1,1,20); m.press(); assert not m.mute()
+m.x=100; m.turn(1,1,20); assert not m.q; m.press(); assert m.mute() and not m.q; m.word(ps['wheel_raw'],0)
 checks+=1
 # A normal build keeps no trace: none of the log's state, and no thread or file for a stop or a drop.
 if not DEV:
@@ -1827,6 +1832,10 @@ m.word(O['MCL_MODE'],0); assert m.fade(6)==0  # the last track
 m.word(O['MCL_MODE'],3); assert m.fade(6)==0  # 'ALBUM A' back to 'album a': gapless
 m.word(m.library_rows[6]+O['REC_ALBUM'],m.string('Album C')); assert m.fade(3)==0 and m.fade(6)==7000 and m.fade(0)==7000
 m.word(O['MCL_MODE'],0); assert m.fade(6)==0
+# Play Next moves rows' bytes in place (playback_queue_insert): the next row's address stays, its song changes.
+m=XfadeMachine(); assert m.fade(3)==0  # the image's two CUE tracks
+r=m.library_rows[4]; m.word(r+O['REC_PATH'],m.string('/B/01.flac')); m.word(r+O['REC_ALBUM'],m.string('Album B'))
+assert m.fade(3)==7000
 # A DSD next never fades (the filter can't mix under it): any case of the three extensions. DSD going
 # out is the filter's to pass through, so the policy still fades out of one.
 for name in ('/B/x.dsf','/B/x.DFF','/B/x.iso'):

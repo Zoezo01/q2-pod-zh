@@ -123,7 +123,7 @@ class Code:
         return struct.pack('<%dI' % len(self.words), *self.words)
 
 
-def patch_module(data):
+def patch_module(data):  # pragma: no mutate block
     require(hashlib.sha256(data).hexdigest() == STOCK_SHA256,
             'Unsupported rotator module: SHA-256 differs from audited stock (or already patched)')
     elf = Elf(data)

@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Kernel-side code: licensed GPL-2.0-or-later so it stays compatible with the GPL-2.0-only Linux
+ * kernel it is built against; the rest of Q2 Pod is GPL-3.0-only (LICENSE). */
 /* ABI shim for the pinned Q2 5.10.21+ modules. No invented kernel structures:
  * sizeof(mutex)=28 comes from both exact modules' named objects/field spacing.
  * Everything else uses opaque clock handles and exported function calls. */

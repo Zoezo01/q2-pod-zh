@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from build import ROOT, REPO, VERSION, TAG, ZIP_SHA, DEMO_SHA, build, check, run, sha, source_sha256
+from build import ROOT, REPO, VERSION, TAG, ZIP_SHA, DEMO_SHA, build, check, need, run, sha, source_sha256
 
 # Network Update (patch/netupdate.c) fetches releases/latest/download/<ASSET>, so the name can't
 # carry the version.
@@ -25,8 +25,7 @@ def notes():
     its bold version heading, then one bullet a sentence, or its nested bullets as written."""
     prefix = f'- **{VERSION}**'  # entries up to V1.0 read **V1.0**, up to V7.6 **V7.6R / V7.6I**
     lines = (ROOT/'docs/changelog.md').read_text().splitlines()
-    i = next((i for i, l in enumerate(lines) if l.startswith(prefix)), None)
-    check(i is not None, f'docs/changelog.md has no {prefix} entry')
+    i = need(next((i for i, l in enumerate(lines) if l.startswith(prefix)), None), f'docs/changelog.md has no {prefix} entry')
     title, text = lines[i][2:].split(':', 1)
     if not text.strip():  # a nested entry: its indented bullets, one level out
         return '\n'.join([title, *(l[2:] for l in itertools.takewhile(lambda l: l.startswith('  '), lines[i+1:]))])
@@ -49,11 +48,11 @@ def validate(directory):
     with tarfile.open(directory/'update.tar') as t:
         check(t.getnames() == ['firmware_v20.info', 'recovery-update', 'recovery-update/xImage',
                                'recovery-update/rootfs.squashfs'], 'Unexpected update members')
-        info = t.extractfile('firmware_v20.info').read().decode().splitlines()
+        info = need(t.extractfile('firmware_v20.info'), 'Unreadable firmware_v20.info').read().decode().splitlines()
         check(info[:2] == ['Shanling Q2', TAG] and len(info) == 4, 'Wrong update identity')
         for line, name, key in zip(info[2:], ['recovery-update/xImage', 'recovery-update/rootfs.squashfs'],
                                   ['kernel_sha256', 'rootfs_sha256']):
-            data = t.extractfile(name).read()
+            data = need(t.extractfile(name), f'Unreadable {name}').read()
             check(line.split() == [hashlib.md5(data).hexdigest(), name] and sha(data) == m[key], 'Update payload mismatch')
     for test, *args in (('peq',), ('build', '--build', directory), ('patch', directory),
                         ('playback', directory), ('m4b', directory), ('ldac', directory),
