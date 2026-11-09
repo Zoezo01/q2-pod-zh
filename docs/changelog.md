@@ -1,5 +1,7 @@
 # Changelog
 
+- **1.7.7**:
+  - Settings: setting the date and time or the sleep timer, a Centre press followed at once by **Next** or **Previous** no longer moves on twice, or presses OK from the last field.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

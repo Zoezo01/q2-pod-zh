@@ -10153,7 +10153,7 @@ static void field_set(void *top, int f) {
 static int field_key(void *top, unsigned key) {
     int n = fields(top);
     if (!n || (key != KEY_FWD_BTN && key != KEY_BACK_BTN)) return 0;
-    cancel_center(); /* a pending Centre would step (or press OK) again */
+    stop_timer(&st.edit_press); /* a pending Centre would step (or press OK) again */
     field_set(top, clamp_step(field_at(top), n - time_form(top), key == KEY_FWD_BTN ? 1 : -1));
     return 1;
 }

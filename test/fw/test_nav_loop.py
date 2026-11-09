@@ -2017,8 +2017,6 @@ def test_the_side_buttons_step_between_fields_and_ok(fw, keys):
     assert not fw.calls('stock_keyup_trampoline')  # not stock's track skip
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: field_key's cancel_center() stops a list row's pending Centre (st.center_timer), "
-                   "not the editor's (st.edit_press), so a Centre pressed just before a side button still steps the field")
 def test_a_side_button_drops_a_pending_centre(fw, keys):
     ui = Ui(fw)
     top = time_window(ui)
@@ -2052,6 +2050,22 @@ def test_the_sleep_timers_two_fields(fw, keys):
     centre(ui, keys)
     centre(ui, keys)
     assert ui.clicks == [(b'btn_enter', EVT_CLICK)]
+
+
+def test_a_side_button_onto_the_sleep_timers_ok_drops_a_pending_centre(fw, keys):
+    ui = Ui(fw)
+    top = time_window(ui, 'sleepshutdown_page')
+    top.find(b'time').add(W(ui, 'view', 'view_sleep'))
+    top.ints[b'_edit_field'] = 1  # the minute, its last field
+    keys(KEY_CENTER)
+    keys(KEY_FWD_BTN, 10)
+    assert field(top) == 2  # OK is next
+    keys.clock.now += O['DOUBLE_CLICK_MS']
+    for timer in ui.due('navigation__edit_single'):
+        ui.fire(timer=timer)
+    assert field(top) == 2 and ui.clicks == []  # the Centre from before the key doesn't press it
+    centre(ui, keys)
+    assert ui.clicks == [(b'btn_enter', EVT_CLICK)]  # a Centre of its own does
 
 
 def no_toolbar(fw, st):
