@@ -159,7 +159,6 @@ void bar_title(void *bar, void *top) {
         if (!st.bar_titled) return;
         st.bar_titled = 0;
         st.clock_key = 0; /* clock_show writes it again */
-        widget_set_prop_int(label, "style:normal:text_align_h", ALIGN_H_CENTER);
         if (bar_bold) label_font(label, 0);
         bar_bold = 0;
         rearm(&st.clock_timer, clock_due, 0);
@@ -168,9 +167,6 @@ void bar_title(void *bar, void *top) {
     const unsigned *had = widget_get_text(label), *want = title;
     while (had && *had && *had == *want) ++had, ++want;
     int changed = !st.bar_titled || !had || *had != *want;
-    if (!st.bar_titled) /* the name reads on from the play state's word at the left, not from the
-                         * middle of the clock's box: centred, it hung too far right of the word */
-        widget_set_prop_int(label, "style:normal:text_align_h", ALIGN_H_LEFT);
     if (changed) widget_set_text(label, title);
     st.bar_titled = 1;
     int bold =

@@ -3753,17 +3753,20 @@ static int bar_state_sync(void *bar) {
  * playing until the glyph was painted again. The state therefore also gets a word beside the glyph
  * ("正在播放", "播放暂停"), written from the same status by bar_word_sync, and the bar repaints
  * through bar_repaint when either moves, from whatever the pause came from. The word takes the room
- * after the glyph, and steps aside while the EQ badge (label_eq) holds it: the bar is 375 px with
- * the clock centred from CLOCK_EDGE on. Four hanzi at PLAY_WORD_PX are 60 px from the glyph's right
- * edge, so the word ends well inside label_clock's box, which is sized for the widest text
- * ("12:59 PM") and inks from the middle of it. On screen the two never touch. Classic's bar puts its
- * title after the glyph (tools/ipod.py), so there the word only takes the room a page without a
- * title of its own leaves (state_own_place): Home's list and Now Playing's page. */
+ * after the glyph, following the EQ badge when it shows: the bar is 375 px with the clock centred
+ * from CLOCK_EDGE on. Four hanzi at PLAY_WORD_PX are 60 px from the glyph's right edge, so the word
+ * ends well inside label_clock's box, which is sized for the widest text ("12:59 PM") and inks from
+ * the middle of it. On screen the two never touch. Classic's bar puts its title after the glyph
+ * (tools/ipod.py), so there the word only takes the room a page without a title of its own leaves
+ * (state_own_place): Home's list and Now Playing's page. */
 #define PLAY_WORD_W 66
 #define PLAY_WORD_PX 16
-/* Classic's bar names its pages in its own 20 px face, and there the word matches it. */
+/* Classic's word takes the page name's own box; theme_font reads its size from the bar's role. */
 #define PLAY_WORD_WIDE 84
-#define PLAY_WORD_WIDE_PX 20
+/* The bar's CJK text steps down to the clock's ink height: default.ttf draws a hanzi 248/256 em
+ * tall but a digit's cap 183/256 (theme_font), so at the same px the hanzi read a third taller
+ * than the stock clock's 20 px digits — the page names looked their own size on the bar. */
+#define BAR_CJK_PX 15
 
 /* Whether the bar's left belongs to the play state alone: no page name there to show, so the glyph
  * and its word take that room. Home's list is one ("Q2 Pod" makes way for them while a player
@@ -3779,56 +3782,82 @@ static int state_own_place(void) {
     return st.bar_own;
 }
 
-/* The word's label, created once as the last child of the glyph's view: that view lays its children
- * out in order (stock's own margin and spacing), so the word follows the glyph, and the EQ badge
- * when it shows. */
+/* The word's label, created once on the bar itself: a view's own flow would clip the word at the
+ * left group's 145 px once the EQ badge's slot sits between it and the glyph, and would move it
+ * under us on a relayout, so the word takes its place from bar_word_sync instead (its x there). */
 static void play_word_create(void *bar) {
     if (st.play_word || !st.bar_state) return;
-    if (st.bar_title) { /* Classic: the glyph is by the battery on the right, so the word stands
-                         * where the page's name would — its box, its 20 px face and its baseline,
-                         * so the bar reads as one line of one size whether it shows a name or the
-                         * state. Four hanzi at 20 px are 80 px, ending short of the clock's ink. */
-        st.play_word = label_create(bar, 0, 0, PLAY_WORD_WIDE, I(st.bar_title, W_H));
+    if (st.bar_title) /* Classic: the glyph is by the battery on the right, so the word stands
+                       * where the page's name would — its box and its baseline, so the bar reads
+                       * as one line whether it shows a name or the state. Its face reads the
+                       * word's text once bar_word_sync writes it (bar_title_sync's own order). */
+        st.play_word = label_create(bar, I(st.bar_title, W_X), I(st.bar_title, W_Y), PLAY_WORD_WIDE,
+                                    I(st.bar_title, W_H));
+    else
+        st.play_word = label_create(bar, 0, 0, PLAY_WORD_W, I(bar, W_H));
+    if (!st.play_word) { /* the bar refused the child: the left view, which stock's own flow keeps */
+        void *left = P(st.bar_state, W_PARENT);
+        if (left)
+            st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
         if (!st.play_word) return;
-        widget_set_name(st.play_word, "label_playword");
-        widget_use_style(st.play_word, "s_label_white16c");
-        widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_WIDE_PX);
-        widget_move_resize(st.play_word, I(st.bar_title, W_X), I(st.bar_title, W_Y),
-                           PLAY_WORD_WIDE, I(st.bar_title, W_H));
-        theme_font(st.play_word, ROLE_BAR, FONT_ROW);
-        text_ink(st.play_word, 0xffffffffu, 1);
-        widget_set_visible(st.play_word, 0, 0);
-        return;
     }
-    void *left = P(st.bar_state, W_PARENT);
-    if (!left) return;
-    st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
-    if (!st.play_word) return;
     widget_set_name(st.play_word, "label_playword");
     widget_use_style(st.play_word, "s_label_white16c");
-    widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
-    text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
     widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
+    if (!st.bar_title)
+        widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
+    text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
     widget_set_visible(st.play_word, 0, 0);
-    widget_layout_children(left);
+}
+
+/* The word's x beside the glyph (Minimal's and Modern's): the left view's own, then the glyph's,
+ * then the EQ badge's when it shows between them, then a gap — on the bar's own coordinates. */
+static int word_x(void) {
+    void *left = P(st.bar_state, W_PARENT);
+    int x = left ? I(left, W_X) + I(st.bar_state, W_X) + I(st.bar_state, W_W) : I(st.bar_state, W_X);
+    if (st.bar_eq && P(st.bar_eq, W_PARENT) == left && widget_get_visible(st.bar_eq)) {
+        int ex = I(left, W_X) + I(st.bar_eq, W_X) + I(st.bar_eq, W_W);
+        if (ex > x) x = ex;
+    }
+    return x + STATUS_GAP;
 }
 
 /* What the word should say, from the same status bar_state_sync applies, and its room: returns
- * whether what the bar shows moved, so bar_sync repaints it along with a moved glyph. */
+ * whether what the bar shows moved, so bar_sync repaints it along with a moved glyph. The visible
+ * flag and the place are written every pass, so stock's own moves of the bar's children come back
+ * before the paint. */
 static int bar_word_sync(void *bar) {
     int status = bar_status();
     play_word_create(bar);
     if (!st.play_word) return 0;
-    int show = (status == 2 || status == 3) && state_own_place() &&
-               !(st.bar_eq && widget_get_visible(st.bar_eq));
+    int show = (status == 2 || status == 3) && state_own_place();
+    /* The badge steps aside while the word reads — it would sit between the glyph and the word,
+     * or under it — and comes back when the word doesn't (st.word remembers it was showing). */
+    if (show && st.bar_eq && widget_get_visible(st.bar_eq)) {
+        st.word = 1;
+        widget_set_visible(st.bar_eq, 0, 0);
+    } else if (st.word) {
+        st.word = 0;
+        widget_set_visible(st.bar_eq, 1, 0);
+    }
+    if (!st.bar_title) { /* the word keeps the glyph's side whatever the bar's own relayouts do */
+        int x = word_x();
+        if (I(st.play_word, W_X) != x)
+            widget_move_resize(st.play_word, x, 0, PLAY_WORD_W, I(st.play_word, W_H));
+    }
     /* What the bar shows: the glyph's state, the word's room (bit 3), the ink's half (bit 4). */
     int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0) | (ipod_light() ? 16 : 0);
-    if (key == st.word_key) return 0;
-    st.word_key = key, st.word = status;
-    widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
-    text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
-    widget_set_visible(st.play_word, show, 0);
-    return 1;
+    int was = widget_get_visible(st.play_word), changed = key != st.word_key;
+    if (changed) {
+        st.word_key = key;
+        widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
+        /* The face reads the text — the word was created empty, so its first answer kept the
+         * classic face, which has no hanzi and painted the word as nothing (#V172Y). */
+        theme_font(st.play_word, ROLE_BAR, FONT_ROW);
+        text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
+    }
+    if (was != show) widget_set_visible(st.play_word, show, 0);
+    return changed || was != show;
 }
 
 /* An invalidate made while another window paints is dropped with that frame's dirty rects, and
@@ -3856,11 +3885,13 @@ static int dark_bar(void *top) {
 }
 /* The real bar's title's row, set for bar_px, so a dark bar's title sits on the same rows. */
 int dark_title_y(void) { return st.bar_title ? I(st.bar_title, W_Y) : 0; }
-/* Their title at the bar's size, in the face its text has (none: the system's). */
+/* Their title at the bar's size, in the face its text has (none: the system's). A CJK title reads
+ * stock's face, a third taller than the clock's digits at the same px: step down, as theme_font's. */
 static void dark_title(void *t) {
     const unsigned *s = widget_get_text(t);
     int px = theme()->font_px[ROLE_BAR];
     const char *face = theme_face(s, (int)wide_len(s), &px);
+    if (!face) px = BAR_CJK_PX;
     slider_label(t, 0, dark_title_y(), 375, 25, px, face ? face : "default");
 }
 /* w at x, y on the screen, unless it's there. */
@@ -4229,6 +4260,10 @@ int theme_font(void *w, int role, int was) {
         face = FONT_DEFAULT; /* CJK */
     else if (fell)
         px = fallback_px(px);
+    /* The bar's CJK fell to stock's face, whose hanzi read a third taller than the clock's digits
+     * at the same px (BAR_CJK_PX): step down to their ink height, as the page names read the
+     * clock's size on the bar. */
+    if (face == FONT_DEFAULT && role == ROLE_BAR && px > BAR_CJK_PX) px = BAR_CJK_PX;
     int answer = face | px << 2, kept = row ? answer | role << 16 : answer;
     if (!w || kept == was) return answer;
     for (unsigned i = 0; i < sizeof names / sizeof *names; ++i) {
@@ -5343,6 +5378,7 @@ void paint_dark_bar(void *w, void *canvas, const unsigned *title, unsigned key) 
     if (title) { /* as the real bar's dark_title */
         int px = theme()->font_px[ROLE_BAR];
         const char *face = theme_face(title, -1, &px);
+        if (!face) px = BAR_CJK_PX; /* stock's face's hanzi: the clock's ink height */
         draw_in_face(canvas, face, title, wide_len(title), &(rect_t){ 0, dark_title_y(), 375, 25 },
                      (unsigned)px, RGBA(flip_if(ipod_light(), 0xffffff)));
     }

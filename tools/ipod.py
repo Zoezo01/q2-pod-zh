@@ -126,8 +126,9 @@ BC_ART = max(s for s in range(2, 321, 2) if (375 - s) // 2 >= corner_x((320 - s)
 # Wi-Fi and the battery on the right. The clock is centred on the screen, between the wider
 # group's extent with every icon shown and the same distance from the other edge; CLOCK_MIN leaves
 # room for its widest text, "12:59 PM" (69px at 16px in the pinned stock font). STATUS_PAD keeps the icons
-# that much further in than the corners need, so they don't look cramped against the glass.
-STATUS_PAD = 2
+# that much further in than the corners need, so they don't look cramped against the glass — the play
+# state read as glued to the edge.
+STATUS_PAD = 6
 STATUS_MARGIN = corner_x(7, 16) + STATUS_PAD
 CLOCK_MIN = 105
 CLOCK_TEXT = 70

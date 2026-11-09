@@ -1025,7 +1025,7 @@ def clock(): return s.nodes[title].get('text')
 def writes(): return [c for c in s.calls if c[0]=='widget_set_text_utf8']
 def reads(): return [c for c in s.calls if c[0] in ('time@GLIBC_2.0','localtime_r')]
 def minute(ms=1000): s.advance(ms)
-s.advance(0); assert clock()=='6:14 PM'; passed()  # the gradient check's paint above started it
+s.advance(0); assert clock()=='6:14 下午'; passed()  # the gradient check's paint above started it
 # Time in Title off: the bar names the page in front (Now Playing, or stock's title in its hidden
 # navbar, a settings page's unnamed first child); a pop-up leaves it; Home, a shown navbar or no title is the clock.
 def title_machine(**config):
@@ -1041,7 +1041,7 @@ def title_machine(**config):
         w=t.node('window','some_page',[t.node('view','view_navbar',kids,visible=shown)]); t.word(w+O['W_PARENT'],t.wm); return w
     return t,label,show,page
 t,label,show,page=title_machine(TIMETITLE='0'); time=show(t.node('window','home_page'))
-assert time=='6:14 PM' and show(page('Albums'))=='Albums' and t.nodes[label].get('style:normal:font_name','default')=='default'
+assert time=='6:14 下午' and show(page('Albums'))=='Albums' and t.nodes[label].get('style:normal:font_name','default')=='default'
 assert show(page('Display',name=''))=='Display' and show(t.node('dialog','volume_dialog'))=='Display' and show(t.node('keyboard','kb_default'))=='Display'
 assert show(t.node('window','coverflow_page'))=='Cover Flow'
 assert show(page('Bootvol',shown=1))==time and show(page('Empty'))=='Empty' and show(page(''))==time and show(page(None))==time; passed()
@@ -1049,15 +1049,15 @@ show(page('Albums')); assert t.wrote; show(t.top); assert not t.wrote; passed() 
 t.clock=(6,15); t.advance(61000); assert t.nodes[label]['text']=='Albums'  # the clock's minute leaves a title alone
 assert show(t.node('window','home_page'))!=time; passed()
 t,label,show,page=title_machine(TIMETITLE='0',THEME='2'); assert show(page('Albums'))=='Albums' and t.nodes[label]['style:normal:font_name']=='bold'
-assert show(page(None))=='6:14 PM' and t.nodes[label]['style:normal:font_name']=='default'; passed()
-t,label,show,page=title_machine(); assert show(page('Albums'))=='6:14 PM'; passed()  # the clock unless chosen
-for h,mi,want in ((0,0,'12:00 AM'),(0,5,'12:05 AM'),(9,7,'9:07 AM'),(11,59,'11:59 AM'),(12,0,'12:00 PM'),
-                  (12,59,'12:59 PM'),(13,0,'1:00 PM'),(23,59,'11:59 PM')):
+assert show(page(None))=='6:14 下午' and t.nodes[label]['style:normal:font_name']=='default'; passed()
+t,label,show,page=title_machine(); assert show(page('Albums'))=='6:14 下午'; passed()  # the clock unless chosen
+for h,mi,want in ((0,0,'12:00 上午'),(0,5,'12:05 上午'),(9,7,'9:07 上午'),(11,59,'11:59 上午'),(12,0,'12:00 下午'),
+                  (12,59,'12:59 下午'),(13,0,'1:00 下午'),(23,59,'11:59 下午')):
     s.clock=(h,mi); minute(); assert clock()==want,(h,mi,clock())
 passed()
 # Repaints read no time and leave the label alone; the next minute rewrites it.
 bg(bar); assert not reads() and not writes(); passed()
-s.clock=(0,0); minute(); assert clock()=='12:00 AM' and len(writes())==1; passed()
+s.clock=(0,0); minute(); assert clock()=='12:00 上午' and len(writes())==1; passed()
 # Stock's 24-hour toggle updates on the pass after the next paint, including leading zeroes.
 s.u.mem_write(syms['g_time24h_flag'], b'\x01')
 bg(bar); s.advance(0); assert clock()=='00:00' and len(writes())==1
@@ -1065,17 +1065,17 @@ bg(bar); s.advance(0); assert not writes()
 for h,mi,want in ((0,5,'00:05'),(9,7,'09:07'),(12,0,'12:00'),(18,14,'18:14'),(23,59,'23:59')):
     s.clock=(h,mi); minute(); assert clock()==want,(h,mi,clock())
 s.u.mem_write(syms['g_time24h_flag'], b'\x00')
-bg(bar); s.advance(0); assert clock()=='11:59 PM' and len(writes())==1
+bg(bar); s.advance(0); assert clock()=='11:59 下午' and len(writes())==1
 bg(bar); s.advance(0); assert not writes(); passed()
 # A failed time or localtime shows --:-- once and tries again a minute later.
 for fail in ('time','localtime'):
     s.clock=fail; minute(); assert clock()=='--:--' and len(writes())==1
     minute(); assert not writes()
-    s.clock=(7,30); minute(60000); assert clock()=='7:30 AM'
+    s.clock=(7,30); minute(60000); assert clock()=='7:30 上午'
 passed()
 # Past 2038 time() wraps; read unsigned and taken 28 years back, localtime keeps the 32-bit range.
-s.wall=(86400+3*883612800,86400+2*883612800); s.clock=(7,31); minute(); assert clock()=='7:31 AM'
-s.wall=(86400,86400); s.clock=(7,30); minute(); assert clock()=='7:30 AM'; passed()
+s.wall=(86400+3*883612800,86400+2*883612800); s.clock=(7,31); minute(); assert clock()=='7:31 上午'
+s.wall=(86400,86400); s.clock=(7,30); minute(); assert clock()=='7:30 上午'; passed()
 # Pages, a dialog on top and pages with their own navbar all keep the clock; their paints read no
 # time and write nothing.
 heading=s.node('hscroll_label',text='System Setting')
@@ -1084,9 +1084,9 @@ pages=[top_level('window',n,[nav] if n=='sysset_page' else []) for n in
        ('sysset_page','home_page','playing_page','coverflow_page','tidal_main_page')]+[top_level('dialog','sortselect_dialog')]
 for pg in pages:
     s.top=pg; bg(pg)
-    assert clock()=='7:30 AM' and not writes() and not reads()
+    assert clock()=='7:30 上午' and not writes() and not reads()
 passed()
-s.clock=(19,31); s.top=pages[-1]; minute(); assert clock()=='7:31 PM' and len(writes())==1; passed()
+s.clock=(19,31); s.top=pages[-1]; minute(); assert clock()=='7:31 下午' and len(writes())==1; passed()
 # The codec badge and the Battery setting (bar_sync, on each bar paint): stock sets img_bt's image
 # each second; a new badge shows CODEC_MS, fades out and BT_GLYPH fades in over CODEC_STEPS steps
 # each way, and BT_GLYPH then replaces the badge stock sets again. The battery shows the icon, the
@@ -7110,7 +7110,7 @@ passed()
 cb,cbbar,_,_,cbclock,*_,cbhome=dark_setup(); cb.clock_minutes=True; cb.top=cbhome; cb.u.mem_write(syms['g_time24h_flag'],b'\0'); bg(cb,cbbar); cb.advance(1); assert cb.nodes[cbclock]['text']=='6:14',cb.nodes[cbclock]['text']; passed()
 # ... a clock written before the bar's title is found is written again, in the same minute.
 ck,ckbar,_,_,ckclock,*_,ckhome=dark_setup(); ck.clock_minutes=True; ck.top=ckhome; ck.u.mem_write(syms['g_time24h_flag'],b'\0'); ck_show=lambda: ck.call(address=payload_syms['clock_due'],args=(0,0,0,0),gap=0)
-ck_show(); assert ck.nodes[ckclock]['text']=='6:14 PM',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
+ck_show(); assert ck.nodes[ckclock]['text']=='6:14 下午',ck.nodes[ckclock]['text']; bg(ck,ckbar); ck_show(); assert ck.nodes[ckclock]['text']=='6:14',ck.nodes[ckclock]['text']; passed()
 # Set Time and Set Date are under it too.
 tdb,tbar,_,ttitle,tclock,*_,thome=dark_setup(); tdb.top=thome; bg(tdb,tbar); assert tdb.nodes[tclock]['visible']==1 and wbox(tdb,ttitle)[0]==20
 tdb.top=tdb.node('window','manualtime_page'); tdb.word(tdb.top+O['W_PARENT'],tdb.wm); bg(tdb,tbar); assert wbox(tdb,ttitle)==(0,-1,375,25) and tdb.nodes[tclock]['visible']==0; passed()

@@ -181,8 +181,8 @@ typedef struct {
      * level, charge and low state. Classic's bar also has a title (bar_title_sync), from the
      * top window title_win and, when a label holds it, title_lbl (both found once per window).
      * label_playword is the bar's "正在播放"/"播放暂停" beside the glyph (bar_word_sync), its own
-     * key word_key and status word, and bar_own says whether the page under the bar has no title
-     * of its own (state_own_place). */
+     * key word_key, and word says the EQ badge was showing when the word hid it, so it comes back;
+     * bar_own says whether the page under the bar has no title of its own (state_own_place). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
         *bar_title, *title_win, *title_lbl, *play_word,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */

@@ -17,10 +17,11 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
 # X fixed the rebuild's misses (the word by state, the full-width colon, the panes' UTF-8, Modern's
-# battery); Y unifies the word across the themes: each bar's own face (20 px Classic, 16 px
-# Minimal/Modern), ink that flips in Light Mode, where white on the paper bar was invisible, and a
-# page's name that reads on from the word instead of the middle of the clock's box.
-TAG = 'V' + VERSION.replace('.', '') + 'Y'
+# battery); Y unifies the word across the themes: each bar's own face, ink that flips in Light
+# Mode, where white on the paper bar was invisible. Z finds the word again in Classic (its face
+# read an empty label's answer and kept the hanzi-less Classic face: the word painted nothing) and
+# reads the bar's CJK at the clock's ink height, so the page names stopped looking their own size.
+TAG = 'V' + VERSION.replace('.', '') + 'Z'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
