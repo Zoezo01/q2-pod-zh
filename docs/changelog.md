@@ -8,6 +8,7 @@
   - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists, Folder and the other lists held on to a little each time too.
   - Library: **Update Local Music** no longer sometimes skips the update without a word and keeps the old library. That could happen when it started while the songs were still being counted, more often the bigger the library.
   - Library: on a large library, opening an album, **Go to Album**, **Recently Added**, deleting songs and **Scan specified folders** are much faster, and Era's **Play All** no longer risks restarting the Q2 on a decade of many albums. They speed up after the next **Update Local Music** or **Scan specified folders**.
+  - Cover Flow: when an album's artwork restarted the Q2 while Cover Flow was preparing artwork, the next Cover Flow open adds that album's file to `q2-crash.log` on the card, under **cover flow skipped**.
 
 - **1.7.3**:
   - Standby: waking from Standby no longer shows TF card removed and inserted messages.
