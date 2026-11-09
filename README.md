@@ -146,46 +146,57 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   <tr valign="top">
     <td width="200"><b><a href="https://github.com/DiamondBond/q2-rockbox">Rockbox</a></b></td>
     <td>The open source jukebox firmware, as a separate player. Once installed, the Q2 starts in Rockbox.</td>
+    <td width="60"></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-rockbox-themes">Rockbox Themes</a></b></td>
     <td>Rockbox themes ported to the Q2's screen.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-librespot">Spotify</a></b></td>
     <td>Needs Premium. Open <b>Streaming → Spotify</b> and, the first time, pick the Q2 in the Spotify app on your phone on the same Wi-Fi. If playback won't start on your account, see <a href="https://github.com/DiamondBond/q2-pod/issues/98">#98</a>.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-deezer">Deezer</a></b></td>
     <td>Browse your Deezer library and Deezer's catalogue. What you pick downloads to the card.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-soulseek">Soulseek</a></b></td>
     <td>Search the Soulseek network and download music straight to the card.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-filebrowser">File Browser</a></b></td>
     <td>Browse the card and upload files from a phone or computer on the same Wi-Fi.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/andsuor/q2-subsonic">Subsonic</a></b></td>
     <td>Sync music from your Subsonic server to the card, or stream it.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/m-d-e-v/q2-podcasts">Podcasts</a></b></td>
     <td>Subscribe to shows and download episodes, with a sleep timer.</td>
+    <td></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
-    <td>Stream concerts from the Internet Archive's Live Music Archive. See its <a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">guide</a>.</td>
+    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
+    <td><a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">Guide</a></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
-    <td>A Tamagotchi-style buddy to poke, in <b>Library → Games</b>. See its <a href="https://github.com/DiamondBond/q2-fidget/raw/main/docs/guide/Buddy-Mini-Guide.pdf">guide</a>.</td>
+    <td>A Tamagotchi-style buddy to poke, in <b>Library → Games</b>.</td>
+    <td><a href="https://github.com/DiamondBond/q2-fidget/raw/main/docs/guide/Buddy-Mini-Guide.pdf">Guide</a></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
-    <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Games</b>. See its <a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">guide</a>.</td>
+    <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Games</b>.</td>
+    <td><a href="https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf">Guide</a></td>
   </tr>
 </table>
 
