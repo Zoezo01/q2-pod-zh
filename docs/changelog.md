@@ -2,9 +2,13 @@
 
 - **1.7.4**:
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
+  - Playlists: opening Library → Playlists, or a card app importing playlists, soon after a boot no longer restarts the Q2.
+  - Library: Albums, Artists and Genres open faster on a big library where some songs have no album, artist or genre. Each used to read every such song only to decide whether to show Unknown.
+  - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists and the other lists held on to a little each time too.
+  - Library: **Update Local Music** no longer sometimes skips the update without a word and keeps the old library. That could happen when it started while the songs were still being counted, more often the bigger the library.
+  - Library: on a large library, opening an album, **Go to Album**, **Recently Added**, deleting songs and **Scan specified folders** are much faster, and Era's **Play All** no longer risks restarting the Q2 on a decade of many albums. They speed up after the next **Update Local Music** or **Scan specified folders**. Songs sorted by **Time added (ascending)** now list songs added in the same second, such as a CUE album's tracks, last first.
 
 - **1.7.3**:
-  - Playlists: opening Library → Playlists, or a card app importing playlists, soon after a boot no longer restarts the Q2.
   - Standby: waking from Standby no longer shows TF card removed and inserted messages.
   - Power: Standby starts off after a fresh install or a factory reset. If you already have it on, it stays on.
   - Scrobbling: a song played from Folder, or from a playlist opened there, scrobbles its title tag. It used to send the file name, track and disc numbers included, in place of the title.
@@ -20,10 +24,6 @@
   - Library: under **Theme: Classic** album covers in Albums and Folder fill their rows again, as they did before 1.7.2. In 1.7.2 the covers and folder icons in Folder sat too low in their rows.
   - Now Playing: under **Theme: Classic** the progress bar has a line at its left and right ends, as an iPod classic's does, and **Classic Blue** fills it with an iPod classic's own two-tone blue.
 
-  - Library: Albums, Artists and Genres open faster on a big library where some songs have no album, artist or genre. Each used to read every such song only to decide whether to show Unknown.
-  - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists and the other lists held on to a little each time too.
-  - Library: **Update Local Music** no longer sometimes skips the update without a word and keeps the old library. That could happen when it started while the songs were still being counted, more often the bigger the library.
-  - Library: on a large library, opening an album, **Go to Album**, **Recently Added**, deleting songs and **Scan specified folders** are much faster, and Era's **Play All** no longer risks restarting the Q2 on a decade of many albums. They speed up after the next **Update Local Music** or **Scan specified folders**. Songs sorted by **Time added (ascending)** now list songs added in the same second, such as a CUE album's tracks, last first.
 - **1.7.2**:
   - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
   - App Store: a game from the App Store can own the sound: music stops and the headphones are its while it runs, Play/Pause and the side buttons reach it, and it stays open as long as it likes. Groovebox is the first.
