@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.7.4**:
+  - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
   - Now Playing: under **Theme: Classic** the hearts picker has a plain background in Light Mode instead of a gradient.
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
   - Scrobbling: a line of the scrobble log with a damaged time no longer stops every upload until it is edited out. It is left out, as other unreadable lines are.

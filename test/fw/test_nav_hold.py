@@ -2053,6 +2053,25 @@ def test_a_hold_in_quick_settings_switches_the_wheel(fw, ui, st):
     assert not fw.calls('stock_keylong_trampoline') and not ui.toasts
 
 
+def test_a_hold_in_quick_settings_names_the_wheel_in_a_band_touches_pass_through(fw, ui):
+    win = ui.window('statusbar_dialog')
+    keylong = fw.fn('ringnav_keylong', C.c_int, C.c_void_p, C.c_void_p)
+    event = C.create_string_buffer(0x40)
+    struct.pack_into('<i', event, EVENT_KEY, KEY_PLAY)
+    created, timers, destroyed = [], [], []
+    real = {'text': []}
+    fw.mock('label_create', lambda parent, x, y, w, h, *_: created.append((parent, C.c_int(y).value, C.c_int(h).value)) or 0x7000 + len(created))
+    fw.mock('widget_set_text_utf8', lambda w, s, *_: real['text'].append(cstr(s)))
+    fw.mock('widget_add_timer', lambda w, fn, ms, *_: timers.append((w, fn, C.c_int(ms).value)) or len(timers))
+    fw.mock('widget_lookup', lambda w, name, deep, *_: 0x7000 + len(created) if created and cstr(name) == 'ringnav_qs_hint' else 0)
+    fw.mock('widget_destroy', lambda w, *_: destroyed.append(w) or 0)
+    keylong(None, event)
+    assert real['text'] == ['Wheel: Volume'] and created == [(win, 226, 28)] and not destroyed and not ui.toasts
+    keylong(None, event)
+    assert real['text'][-1] == 'Wheel: Brightness' and destroyed == [0x7001] and [t[2] for t in timers] == [1500, 1500]
+    assert fw.calls('widget_set_sensitive')[-1][1][:2] == (0x7002, 0)
+
+
 def test_quick_settings_wheel_starts_from_the_saved_choice(fw, ui):
     fw.mock('toolsReadConfig', lambda path, section, key, out, d, *_: C.memmove(out, b'1\0', 2))
     ui.window('statusbar_dialog')

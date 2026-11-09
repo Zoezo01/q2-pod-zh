@@ -1268,6 +1268,22 @@ static int pull_live(void) {
     return scope == st.pull_scope;
 }
 
+/* A white-on-black line across page, floating, that touches and keys pass through; 0 if it can't be
+ * made. */
+static void *band_create(void *page, const char *name, int y, int h) {
+    void *band = label_create(page, 0, y, I(page, W_W), h);
+    if (band) {
+        widget_set_name(band, name);
+        widget_use_style(band, "s_label_white18c");
+        widget_set_enable(band, 0);
+        widget_set_sensitive(band, 0);
+        prop(band, "floating", 1);
+        prop(band, "style:disable:bg_color", (int)0xff000000u);
+        prop(band, "style:disable:text_color", (int)0xffffffffu);
+    }
+    return band;
+}
+
 static int pull_event(void *page, void *event) {
     if (page != st.pull_page) return 0;
     unsigned type = I(event, EVENT_TYPE);
@@ -1307,18 +1323,7 @@ static int pull_event(void *page, void *event) {
         return STOP;
     }
     void *prompt = widget_lookup(page, PULL_PROMPT, 1);
-    if (!prompt) {
-        prompt = label_create(page, 0, 0, I(page, W_W), 44);
-        if (prompt) {
-            widget_set_name(prompt, PULL_PROMPT);
-            widget_use_style(prompt, "s_label_white18c");
-            widget_set_enable(prompt, 0);
-            widget_set_sensitive(prompt, 0);
-            prop(prompt, "floating", 1);
-            prop(prompt, "style:disable:bg_color", (int)0xff000000u);
-            prop(prompt, "style:disable:text_color", (int)0xffffffffu);
-        }
-    }
+    if (!prompt) prompt = band_create(page, PULL_PROMPT, 0, 44);
     if (prompt) {
         widget_set_text_utf8(prompt, ready ? "Release to search" : "Pull to search");
         widget_set_visible(prompt, dy > 0, 0);
@@ -9123,8 +9128,23 @@ static int qm_hold(void) {
 }
 
 /* Quick Settings' wheel: 0 its brightness slider, 1 stock's volume (Q2POD QSVOLUME). A held
- * Play/Pause there switches it (ringnav_keylong). No toast: its msginfo_dialog would cover the
- * pull-down, taking the wheel and Centre for 2 s; the next tick shows the mode. */
+ * Play/Pause there switches it (ringnav_keylong) and says so in a band for QS_HINT_MS, not a toast:
+ * its msginfo_dialog would cover the pull-down, taking the wheel and Centre for 2 s. The band sits
+ * between the second row's first label line and the slider. */
+#define QS_HINT "ringnav_qs_hint"
+#define QS_HINT_MS 1500
+static int quick_hint_end(const void *info) {
+    widget_set_visible(P(info, TIMER_CTX), 0, 0);
+    return 7; /* RET_REMOVE */
+}
+static void quick_hint(void *top, int volume) {
+    void *old = widget_lookup(top, QS_HINT, 1);
+    if (old) widget_destroy(old); /* its timer goes with it: a second hold gets its whole time */
+    void *band = band_create(top, QS_HINT, 226, 28);
+    if (!band) return;
+    widget_set_text_utf8(band, volume ? "Wheel: Volume" : "Wheel: Brightness");
+    widget_add_timer(band, quick_hint_end, QS_HINT_MS);
+}
 static int quick_volume(void) {
     if (!st.qs_wheel) st.qs_wheel = 1 + config_value("Q2POD", "QSVOLUME", 2, 0);
     return st.qs_wheel - 1;
@@ -9135,6 +9155,7 @@ static int quick_wheel_toggle(void *top) {
     int volume = !quick_volume();
     st.qs_wheel = 1 + volume;
     write_int_config(volume, "Q2POD", "QSVOLUME");
+    quick_hint(top, volume);
     return 1;
 }
 /* The window manager's pointer stays "pressed" when a touch's release never reaches it: every tick

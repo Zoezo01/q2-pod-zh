@@ -1455,7 +1455,7 @@ Checks in `test/build.py`: the three files in the image are `patch_web` of stock
 
 Holding Wi-Fi or Bluetooth for `RATE_HOLD_MS` opens `systemset/wifi_page` or `systemset/bluetooth_page`. `ringnav_quick_settings` adds pointer-down handlers to the stock images. Release, movement over 10 pixels, pointer abort, keys, window close, background or destruction cancels the one-shot timer. A successful hold aborts the native press before closing the dialog and suppresses any late click, so it cannot also toggle the radio or open Playback settings. Ordinary taps keep their stock click handlers.
 
-Holding Playback (`img_playset`) the same way opens `playset/equalizer_page`, the path stock's Playback EQ row opens (`0x4b94d0`), after closing the panel. Pulled down over the EQ page, the hold only closes the panel: `peq_ui.c` keeps one page's state, so a second `equalizer_page` over the first would leave the first dead. Quick Settings gets the touch hold only: a held Play/Pause there switches the wheel (`quick_wheel_toggle`).
+Holding Playback (`img_playset`) the same way opens `playset/equalizer_page`, the path stock's Playback EQ row opens (`0x4b94d0`), after closing the panel. Pulled down over the EQ page, the hold only closes the panel: `peq_ui.c` keeps one page's state, so a second `equalizer_page` over the first would leave the first dead. Quick Settings gets the touch hold only: a held Play/Pause there switches the wheel (`quick_wheel_toggle`) and shows which way in a 1.5 s band above the slider (`quick_hint`, a floating label, so the wheel, Centre and touches stay live, where the modal toast would take them).
 
 ## Local playlist editing
 
