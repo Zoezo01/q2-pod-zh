@@ -137,7 +137,7 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
 
 </details>
 
-<details>
+<details open>
 <summary><h2>Apps</h2></summary>
 
 **System settings → App Store** installs, updates and removes these over Wi-Fi:
@@ -164,6 +164,16 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
     <td></td>
   </tr>
   <tr valign="top">
+    <td><b><a href="https://github.com/andsuor/q2-subsonic">Subsonic</a></b></td>
+    <td>Sync music from your Subsonic server to the card, or stream it.</td>
+    <td></td>
+  </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
+    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
+    <td><a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">Guide</a></td>
+  </tr>
+  <tr valign="top">
     <td><b><a href="https://github.com/group-a-study/q2-soulseek">Soulseek</a></b></td>
     <td>Search the Soulseek network and download music straight to the card.</td>
     <td></td>
@@ -174,19 +184,9 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
     <td></td>
   </tr>
   <tr valign="top">
-    <td><b><a href="https://github.com/andsuor/q2-subsonic">Subsonic</a></b></td>
-    <td>Sync music from your Subsonic server to the card, or stream it.</td>
-    <td></td>
-  </tr>
-  <tr valign="top">
     <td><b><a href="https://github.com/m-d-e-v/q2-podcasts">Podcasts</a></b></td>
     <td>Subscribe to shows and download episodes, with a sleep timer.</td>
     <td></td>
-  </tr>
-  <tr valign="top">
-    <td><b><a href="https://github.com/harpmudd/q2-lma">Live Music Archive</a></b></td>
-    <td>Stream concerts from the Internet Archive's Live Music Archive.</td>
-    <td><a href="https://github.com/harpmudd/q2-lma/raw/main/docs/guide/LMA-Mini-Guide.pdf">Guide</a></td>
   </tr>
   <tr valign="top">
     <td><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
