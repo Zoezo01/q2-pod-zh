@@ -1481,15 +1481,16 @@ int image_show(void *img, const char *url, unsigned *size) {
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
 cf_style_t cfs __attribute__((section(".scratch")));
-/* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1 */
+/* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1;
+ * the horizon's row (1/256 px) */
 static int cf_s1 __attribute__((section(".scratch")));
 static int cf_rest16 __attribute__((section(".scratch")));
+static int cf_top256 __attribute__((section(".scratch")));
 #define CF_SWING_T (CF_ONE * 45 / 100)
 #define CF_EYE16 (16 * cfs.eye)
 #define CF_HALF16 (16 * ART_SIZE / 2)
 /* the horizon every cover shares, and a cover h high (1/256 px)'s top row on it */
-#define CF_TOP256(h) (256 * cfs.top + 40960 * cfs.horizon / 100 - (h) * cfs.horizon / 100)
-
+#define CF_TOP256(h) (cf_top256 - (h) * cfs.horizon / 100)
 
 int cf_floor(float x) {
     int i = (int)x;
@@ -1649,6 +1650,7 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
     int v = (((y << 8) + 128 - top) >> 4) * step >> 4, pitch = f->pitch; /* v: 16.16 texel row */
     if (y < 0) v -= y * step, y = 0;
     unsigned *px = d + y * pitch, wash = shade(cf_paper, 256u - (unsigned)bright);
+    int whole = bright >= 256; /* the texel as it is: shade(t, 256) is its colour, and no wash */
     while (y < last) {
         if (y >= solid_top && y < solid_bottom) {
             int skip = solid_bottom - y;
@@ -1657,14 +1659,15 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
         }
         int run = y < solid_top && solid_top < last ? solid_top : last; /* up to the opaque span */
         for (; y < run; ++y, v += step, px += pitch) {
-            int row = v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16;
-            unsigned cov = 256;
-            if (y == first || y == final) {
+            unsigned cov = 256, t;
+            if (y == first || y == final) { /* only the edge rows' centres can fall off the art */
                 int from = y << 8 > clipped_top ? y << 8 : clipped_top,
                     to = (y + 1) << 8 < clipped_bottom ? (y + 1) << 8 : clipped_bottom;
                 cov = (unsigned)(to - from);
-            }
-            put(px, shade(tex[row * ART_SIZE], (unsigned)bright) + wash, cov);
+                t = tex[(v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16) * ART_SIZE];
+            } else
+                t = tex[(v >> 16) * ART_SIZE];
+            put(px, whole ? t : shade(t, (unsigned)bright) + wash, cov); /* put ignores t's alpha */
         }
     }
     /* The reflection starts where the body ends, sharing the row the body only partly covers. */
@@ -1696,6 +1699,20 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright, 
     f->solid_top[col] = (short)s0, f->solid_bottom[col] = (short)s1;
 }
 
+#ifdef PEQ_HOST
+/* test/coverflow.py's column_fuzz: column() alone, on the caller's frame and solid span (solid[0]
+ * its top, solid[1] its bottom, kept), the open page's values, the light half's paper as the
+ * render takes it. */
+void cf_column(unsigned *d, int pitch, short *solid, int col, const unsigned *tex, int h,
+               int bright, int inset) {
+    static shelf_t f;
+    cf_paper = ipod_light() ? scheme()->paper : 0;
+    f.d = d, f.pitch = pitch, f.solid_top[col] = solid[0], f.solid_bottom[col] = solid[1];
+    column(&f, col, tex, h, bright, inset);
+    solid[0] = f.solid_top[col], solid[1] = f.solid_bottom[col];
+}
+#endif
+
 /* The cover t (16.16, signed) turns from the visual position, under what is drawn. */
 static unsigned short cf_inset[ART_SIZE] __attribute__((section(".scratch"))); /* 1/256 texel, symmetric */
 
@@ -1705,6 +1722,7 @@ static void cf_restyle(void) {
     cfs = theme()->cf;
     pose(CF_ONE, &rest);
     cf_s1 = rest.s, cf_rest16 = project(&rest, CF_HALF16);
+    cf_top256 = 256 * cfs.top + 40960 * cfs.horizon / 100;
 }
 /* cf_inset follows the theme's radius, or none under square art. */
 static void cf_corners(void) {

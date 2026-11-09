@@ -33,6 +33,7 @@
   - Volume: with the screen off the wheel changes the volume again, and waking no longer leaves the volume bar stuck over the page, where Return and taps seemed dead.
   - Settings: **Wi-Fi file transfer** under **Network** is now **Wi-Fi File Transfer**, capitalised as the rows around it.
   - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
+  - Cover Flow: frames draw faster, about 50 a second where there were about 32.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

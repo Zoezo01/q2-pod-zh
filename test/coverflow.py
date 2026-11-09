@@ -1413,10 +1413,119 @@ static void bgra_frames(void) {
     assert(raw[(CF_TOP + 80) * PITCH + CF_CX] == (0xff000000u | (a & 0xff00u) | (a & 255u) << 16 | (a >> 16 & 255u)));
 }
 
+/* column() as it was before its fast path (1.7.5): column_fuzz's reference, on a frame and solid
+   span of its own, c and paper as the open page has them. */
+#define ART_SIZE 160
+static unsigned ref_shade(unsigned p, unsigned b) {
+    return ((p & 0xff00ffu) * b >> 8 & 0xff00ffu) | ((p & 0xff00u) * b >> 8 & 0xff00u);
+}
+static void ref_put(unsigned *px, unsigned colour, unsigned cov) {
+    unsigned a = *px >> 24, have = a + (a >> 7), w = cov * (256 - have) >> 8;
+    if (!a && cov == 256) {
+        *px = colour | 0xff000000u;
+        return;
+    }
+    if (!w) return;
+    have += w;
+    *px = ((*px & 0xffffffu) + ref_shade(colour, w)) | (have > 255 ? 255u : have) << 24;
+}
+static void ref_column(const cf_style_t *c, unsigned paper, unsigned *d0, int pitch, short *solid, int col, const unsigned *tex, int h, int bright, int inset) {
+    if (h < 16) return;
+    unsigned *d = d0 + col;
+    int top = 256 * c->top + 40960 * c->horizon / 100 - h * c->horizon / 100, bottom = top + h, step = (ART_SIZE << 20) / (h >> 4);
+    int ins = h * inset / (ART_SIZE * 256), clipped_top = top + ins, clipped_bottom = bottom - ins;
+    int solid_top = solid[0], solid_bottom = solid[1];
+    int y = clipped_top >> 8, end = (clipped_bottom + 255) >> 8, last = end < c->view_h ? end : c->view_h;
+    int first = y, final = end - 1;
+    int v = (((y << 8) + 128 - top) >> 4) * step >> 4;
+    if (y < 0) v -= y * step, y = 0;
+    unsigned *px = d + y * pitch, wash = ref_shade(paper, 256u - (unsigned)bright);
+    while (y < last) {
+        if (y >= solid_top && y < solid_bottom) {
+            int skip = solid_bottom - y;
+            v += skip * step, px += skip * pitch, y = solid_bottom;
+            continue;
+        }
+        int run = y < solid_top && solid_top < last ? solid_top : last;
+        for (; y < run; ++y, v += step, px += pitch) {
+            int row = v < 0 ? 0 : v >> 16 >= ART_SIZE ? ART_SIZE - 1 : v >> 16;
+            unsigned cov = 256;
+            if (y == first || y == final) {
+                int from = y << 8 > clipped_top ? y << 8 : clipped_top, to = (y + 1) << 8 < clipped_bottom ? (y + 1) << 8 : clipped_bottom;
+                cov = (unsigned)(to - from);
+            }
+            ref_put(px, ref_shade(tex[row * ART_SIZE], (unsigned)bright) + wash, cov);
+        }
+    }
+    int reflect = h * c->reflect / ART_SIZE, stop = (bottom + reflect + 255) >> 8;
+    int fade = (256 << 16) / reflect;
+    unsigned dim = (unsigned)bright * c->reflect_top >> 8;
+    wash = ref_shade(paper, 256u - dim);
+    if (stop > c->view_h) stop = c->view_h;
+    for (y = (bottom + ins) >> 8, px = d + y * pitch; y < stop; ++y, px += pitch) {
+        int from = y << 8 > bottom + ins ? y << 8 : bottom + ins, dist = ((from + ((y + 1) << 8)) >> 1) - bottom;
+        if (dist >= reflect) break;
+        if (y < 0 || (y >= solid_top && y < solid_bottom)) continue;
+        int mirrored = dist * step >> 8 >> 16;
+        int row = ART_SIZE - 1 - (mirrored >= ART_SIZE ? ART_SIZE - 1 : mirrored);
+        unsigned cov = (unsigned)(((y + 1) << 8) - from) * (256u - (unsigned)(dist * fade >> 16)) >> 8;
+        ref_put(px, ref_shade(tex[row * ART_SIZE], dim) + wash, cov);
+    }
+    int s0 = (clipped_top + 255) >> 8, s1 = clipped_bottom >> 8;
+    s0 = s0 < 0 ? 0 : s0, s1 = s1 > c->view_h ? c->view_h : s1;
+    if (s1 <= s0) return;
+    if (solid_bottom > solid_top && s0 <= solid_bottom && s1 >= solid_top) {
+        s0 = s0 < solid_top ? s0 : solid_top;
+        s1 = s1 > solid_bottom ? s1 : solid_bottom;
+    } else if (s1 - s0 <= solid_bottom - solid_top)
+        return;
+    solid[0] = (short)s0, solid[1] = (short)s1;
+}
+void cf_column(unsigned *, int, short *, int, const unsigned *, int, int, int);
+/* column() byte for byte its reference, over many random columns in Minimal and Classic, dark and
+   light: any height to three times the rest's, brightness (whole half the time), corner inset,
+   texture column, solid span, and what lies under it (empty, opaque or part covered). */
+static void column_fuzz(void) {
+    enum { ROWS = 300, N = 40000 };
+    static unsigned a[ROWS * PITCH], b[ROWS * PITCH], tex[160 * 160];
+    unsigned r = 12345;
+#define RND() (r = r * 1103515245u + 12345u, r >> 8)
+    for (int i = 0; i < 160 * 160; ++i) tex[i] = RND() << 8 ^ RND();
+    for (classic = 0; classic < 2; ++classic) {
+        open_page();
+        const cf_style_t *c = &theme()->cf;
+        for (light = 0; light < 2; ++light)
+            for (int n = 0; n < N; ++n) {
+                int col = (int)(RND() % CF_VIEW_W), h = (int)(RND() % (3 * 40960)), bright = RND() & 1 ? 256 : (int)(RND() % 256) + 1;
+                int inset = RND() % 3 ? 0 : (int)(RND() % 4000);
+                const unsigned *t = tex + RND() % 160;
+                short sa[2] = { 0, 0 }, sb[2];
+                if (RND() % 3) {
+                    int s0 = (int)(RND() % (c->view_h + 1)), s1 = (int)(RND() % (c->view_h + 1));
+                    sa[0] = (short)(s0 < s1 ? s0 : s1), sa[1] = (short)(s0 < s1 ? s1 : s0);
+                }
+                sb[0] = sa[0], sb[1] = sa[1];
+                for (int y = 0; y < ROWS; ++y) {
+                    unsigned k = RND() % 4, p = RND() << 8 ^ RND();
+                    a[y * PITCH + col] = b[y * PITCH + col] = k == 0 ? 0 : k == 1 ? p | 0xff000000u : p;
+                }
+                ref_column(c, light ? scheme()->paper : 0, a, PITCH, sa, col, t, h, bright, inset);
+                cf_column(b, PITCH, sb, col, t, h, bright, inset);
+                assert(sa[0] == sb[0] && sa[1] == sb[1]);
+                for (int y = 0; y < ROWS; ++y) assert(a[y * PITCH + col] == b[y * PITCH + col]);
+            }
+        close_page();
+    }
+#undef RND
+    classic = 0, light = 0;
+}
+#undef ART_SIZE
+
 static void depth(void) {
     renderer();
     pinned();
     bgra_frames();
+    column_fuzz();
     /* On the page: the slide_menu spans the frame, one album per CF_STRIDE px, with empty children
        under the drawn covers; the captions sit under the covers, over the reflections' tail. */
     frame_fail = 0;
