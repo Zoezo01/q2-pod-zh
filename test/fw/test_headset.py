@@ -1390,9 +1390,6 @@ def test_a_device_name_is_read_to_its_63rd_character(fw):
     assert Kernel(fw, name=name, batches=[[(1, NEXT, 1)]]).run(airpods=0).head == 1
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: EVIOCGNAME(64) reads 63 characters of a name uinput allows 79 of, and '
-                                       'BlueZ keeps " (AVRCP)" at the end of a long one: a headset whose name runs '
-                                       'past 55 characters never has its keys read')
 @pytest.mark.parametrize('length', [64, 79])
 def test_a_device_name_past_63_characters_still_ends_in_avrcp(fw, length):
     """One character past what a 64-byte read holds with its NUL, and uinput's longest (UINPUT_MAX_NAME_SIZE 80, its
