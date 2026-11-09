@@ -5778,6 +5778,7 @@ def laid_out():
 cells=laid_out()
 inset=corner_inset((30-16)//2)
 assert all(h==30 and inset<=x and x+w<=375-inset for x,w,h in cells), (inset,cells)
+assert not any(m.get(c+O['W_Y']) for v in views for c in m.nodes[v]['children'] if m.nodes[c]['visible'])  # at y 0, which a look's rows (bar.icons) count from
 title=named(m,bar,'label_clock'); x,w=m.get(title+O['W_X']),m.get(title+O['W_W'])
 left,right=(cells[len(m.nodes[views[0]]['children'])-1],cells[len(m.nodes[views[0]]['children'])])
 assert left[0]+left[1]<=x and x+w<=right[0] and x+w/2==375/2, (left,right,x,w); passed()
@@ -11319,7 +11320,8 @@ def classic_light_battery_bar(mode,image='bar_battery',text='50%',light='1',stat
         *((('label_eq','label',(),eq,{}),) if eq is not None else ()))}
     bm.word(bw_['img_wifi']+O['W_W'],14); bm.word(bw_['img_state']+O['W_W'],15)
     if eq is not None: bm.word(bw_['label_eq']+O['W_W'],28)
-    bbar=classic_light_bar(bm,bm.node('view','view_right',list(bw_.values())))
+    brow=bm.node('view','view_right',list(bw_.values())); bm.word(brow+O['W_H'],22); bm.word(bw_['view_battery']+O['W_PARENT'],brow)  # Classic's row (tools/ipod.py): the body centres on it
+    bbar=classic_light_bar(bm,brow)
     paint=lambda x=bbar: bm.call(address=HOOKS['widget_on_paint_background'][0],args=(x,bm.canvas,0,0),gap=0)
     paint(); paint(); bm.bands=[]
     cost=[0]; hook=bm.u.hook_add(UC_HOOK_CODE,lambda *a: cost.__setitem__(0,cost[0]+1),begin=BASE,end=SCRATCH-1)

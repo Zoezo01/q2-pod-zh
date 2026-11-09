@@ -264,9 +264,9 @@ int ipod_light(void) {
 /* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
 const unsigned char theme_rows[] = { 0, 2, 1 };
 _Static_assert(sizeof theme_rows == THEME_N, "a row per theme");
-/* Status Bar's look: the theme whose fill, battery and play state the bar paints, Status Bar's
- * value in the picker's order, 0 the theme's own. The row is still the booted set's, so a change
- * needs no restart.
+/* Status Bar's look: the theme whose fill, battery, play state and icon rows (bar.icons) the bar
+ * paints, Status Bar's value in the picker's order, 0 the theme's own. The row is still the booted
+ * set's, so a change needs no restart.
  * ponytail: its height, its widgets' places and its title stay the theme's; a look that moves those
  * needs a geometry set per bar and a restart. */
 const theme_t *bar_theme(void) {

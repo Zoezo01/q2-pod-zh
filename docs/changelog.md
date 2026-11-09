@@ -3,7 +3,7 @@
 - **1.7.5**:
   - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
   - View Queue: the song playing has a ▶ before its title.
-  - Display: under **Theme: Classic** with **Status Bar** on **Minimal** or **Modern**, the battery lines up with the icons beside it. It sat a little low.
+  - Display: with **Status Bar** on another theme's look, the battery, Bluetooth and Wi-Fi line up as they do under that theme. Under **Theme: Classic**, Minimal's and Modern's battery sat a little low, Wi-Fi a little high and Bluetooth a little low; under Minimal and Modern, Classic's battery sat a little high.
   - Network Update: pressing Cancel just as a download finishes, while the card takes its last bytes, now says **Download cancelled** rather than **Can't write to the card**.
   - Cover Flow: turning the Q2 off while it prepares artwork no longer marks the album it was about to start as one that restarted the Q2.
   - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.

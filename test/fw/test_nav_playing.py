@@ -470,14 +470,26 @@ def test_a_new_codec_starts_over_and_the_glyph_alone_ends_the_badge(fw, st, ui):
     assert ui.due('codec_fade') == [] and opacity[-1] == 255
 
 
-@pytest.mark.parametrize('t', [MINIMAL, CLASSIC])
-def test_the_icons_sit_on_the_themes_rows(fw, st, ui, t):
-    theme(fw, st, t)
+def row_h(t):
+    """The height of t's icon row (tools/ipod.py status_bar): Classic's is shorter than its bar."""
+    g = SETS[GEOM[t['name']]]
+    return 2 * ((g.bar - 2 - g.batt_h) // 2 + g.batt_h // 2) if g.bar_px else g.bar
+
+
+# Status Bar's look on every theme's row: Bluetooth and Wi-Fi on the look's rows off the layout's, and its battery
+# centred on the row's height, where the icons are, so each look's group reads as it does under its own theme.
+@pytest.mark.parametrize('t, look', [(t, look) for t in THEMES for look in range(4)],
+                         ids=lambda v: v['name'] if isinstance(v, dict) else ('Theme', 'Minimal', 'Modern', 'Classic')[v])
+def test_a_look_keeps_its_icons_rows_and_its_battery_centred_on_any_row(fw, st, ui, t, look):
+    b = (MINIMAL, MODERN, CLASSIC)[look - 1] if look else t
+    theme(fw, st, t, BATTERY=0, STATUSBAR=look)
     bar = Bar(fw, ui)
+    row = row_h(t)
+    ui.place(bar.row, 240, 0, 135, row)
     bt, wifi = ui.box(bar.bt), ui.box(bar.wifi)
-    bar.sync()
-    assert ui.box(bar.bt) == (bt[0], t['bar_bt_dy'] or bt[1], *bt[2:])
-    assert ui.box(bar.wifi) == (wifi[0], t['bar_wifi_dy'] or wifi[1], *wifi[2:])
+    top = min(r[1] for r in Paint(fw, ui, bar)().rects)  # the dark half: no ink above the body
+    assert ui.box(bar.bt) == (bt[0], b['bar_bt_dy'], *bt[2:]) and ui.box(bar.wifi) == (wifi[0], b['bar_wifi_dy'], *wifi[2:])
+    assert top == (row + 1 - SETS[GEOM[b['name']]].batt_h) // 2
 
 
 @pytest.mark.parametrize('t, digits, status', [(MINIMAL, [], 0), (CLASSIC, ['88', '88'], 0), (CLASSIC, ['88', '88'], 2)])
@@ -619,6 +631,7 @@ def test_no_lcd_paints_nothing(fw, st, ui):
 def classic_battery(fw, st, ui, light=0, mode=0):
     theme(fw, st, CLASSIC, light, BATTERY=mode)
     bar = Bar(fw, ui)
+    ui.place(bar.row, 240, 0, 135, row_h(CLASSIC))  # its body's top is then the middle of the bar's rows above its two lines
     return bar, Paint(fw, ui, bar)
 
 
@@ -633,18 +646,10 @@ def test_a_flat_status_bar_under_classic_is_minimals_battery(fw, st, ui, t, look
     assert drawn() == minimal
 
 
-@pytest.mark.parametrize('t, row, look', [(MINIMAL, 30, 0), (CLASSIC, 22, 1), (CLASSIC, 22, 2)])
-def test_a_flat_battery_is_centred_on_its_rows_icons(fw, st, ui, t, row, look):
-    theme(fw, st, t, BATTERY=0, STATUSBAR=look)
-    bar = Bar(fw, ui)
-    ui.place(bar.row, 240, 0, 135, row)  # Classic's row (tools/ipod.py) is shorter than the slot bar_sync sizes
-    assert min(r[1] for r in Paint(fw, ui, bar)().rects) == (row + 1 - O['BATT_BODY_H']) // 2
-
-
 def test_status_bar_classic_under_minimal_is_classics_battery_at_its_own_size(fw, st, ui):
     theme(fw, st, MINIMAL, BATTERY=0, STATUSBAR=3)
     bar = Bar(fw, ui)
-    g, y = SETS[GEOM['Classic']], (SETS[GEOM['Minimal']].bar - 2 - SETS[GEOM['Classic']].batt_h) // 2
+    g, y = SETS[GEOM['Classic']], (row_h(MINIMAL) + 1 - SETS[GEOM['Classic']].batt_h) // 2
     rows = level_rows(Paint(fw, ui, bar)('50%'), 2, y + 1, g.batt_h - 2)
     assert sorted(rows) == list(range(y + 1, y + g.batt_h - 1))
     assert all(runs[0][0] == g.batt_w - 2 for runs in rows.values())  # Classic's width, not Minimal's body
@@ -654,8 +659,11 @@ def test_status_bar_classic_under_minimal_is_classics_battery_at_its_own_size(fw
 def test_status_bar_classic_keeps_the_digits_the_row_has_room_for(fw, st, ui):
     theme(fw, st, MINIMAL, BATTERY=2, STATUSBAR=3)
     bar = Bar(fw, ui)
-    (text, _, (_, px), _, _), = Paint(fw, ui, bar)('100%').texts
+    canvas = Paint(fw, ui, bar)('100%')
+    (text, _, (_, px), _, _), = canvas.texts
     assert (text, px) == ('100%', O['BATT_PX'])  # the theme's size, which BATT_PCT_W reserves, not Classic's 21
+    # beside them the body rises to the digits' ink, as the flat icon does
+    assert min(r[1] for r in canvas.rects) == (row_h(MINIMAL) + 1 - SETS[GEOM['Classic']].batt_h) // 2 - O['BATT_PCT_DY']
 
 
 @pytest.mark.parametrize('t, look, image', [(CLASSIC, 1, b'bar_play'), (CLASSIC, 2, b'bar_play'), (MINIMAL, 3, b'classic_light_play_d')])

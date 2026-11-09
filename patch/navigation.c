@@ -3822,16 +3822,17 @@ static void bar_sync(void *bar) {
         (shortcut() == SHORTCUT_GROOVEBOX && st.home_groovebox != groovebox_available()))
         coverflow_home_layout();
     /* Classic's battery: the set's body, which Percent Inside keeps */
-    const theme_t *T = theme();
-    /* A relayout puts them back in the row; the bar paints at least once a second. */
-    if (T->bar_bt_dy && I(st.bar_bt, W_Y) != T->bar_bt_dy)
-        widget_move_resize(st.bar_bt, I(st.bar_bt, W_X), T->bar_bt_dy, I(st.bar_bt, W_W),
+    const theme_t *T = theme(), *B = bar_theme();
+    /* The look's rows off the row layout's, y 0 in every set's row. A relayout puts them back
+     * there; the bar paints at least once a second. */
+    if (I(st.bar_bt, W_Y) != B->bar_bt_dy)
+        widget_move_resize(st.bar_bt, I(st.bar_bt, W_X), B->bar_bt_dy, I(st.bar_bt, W_W),
                            I(st.bar_bt, W_H));
-    if (T->bar_wifi_dy && I(st.bar_wifi, W_Y) != T->bar_wifi_dy)
-        widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), T->bar_wifi_dy, I(st.bar_wifi, W_W),
+    if (I(st.bar_wifi, W_Y) != B->bar_wifi_dy)
+        widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), B->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
     int classic_row = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT, /* the row's layout */
-        classic_light = bar_theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
+        classic_light = B->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
         body =
             classic_light ? bar_geom_val(V_BATT_W) + 1 : BATT_BODY_W, /* its soft edge's column */
         inside = classic_light ? body : BATT_INSIDE_W;
@@ -3986,6 +3987,12 @@ static void dark_battery(void *canvas, int x, int y, unsigned key) {
     bar_rect(canvas, RGBA(0xf5f5f5), x + 35, y + 10, 2, 5);
     paint_stops(canvas, x + 11, y + 8, 22 * (int)(key & 2 ? 100 : key >> 3) / 100, 9, &level);
 }
+/* A battery body bh rows high, either look's: its top in the slot w. Centred on the row's height,
+ * as the icons beside it are, not on w's, which is the bar's (Classic's row is shorter than its
+ * bar). Beside the percentage it rises BATT_PCT_DY, to the digits' ink. */
+static int batt_top(void *w, int bh) {
+    return (I(P(w, W_PARENT), W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
+}
 /* Mode 1 is the percentage alone; mode 3 uses a compact solid battery with dark digits; mode 2
  * puts the percentage beside the charge-level icon. Under Classic the battery is
  * classic_light_battery's, its digits in the bar's size. Restore canvas state. */
@@ -4018,10 +4025,9 @@ static void paint_battery(void *w, void *canvas) {
         draw_centred(canvas, s, n, &r, px, color);
         return;
     }
-    if (classic_light) { /* the body centred on the bar's rows above its two lines, its soft edge at
-                            0 */
-        int bw = bar_geom_val(V_BATT_W), bh = bar_geom_val(V_BATT_H),
-            y = (geom_val(V_BAR) - 2 - bh) / 2;
+    if (classic_light) { /* the body's soft edge at 0; on Classic's own row batt_top is the middle
+                            of the bar's rows above its two lines (tools/ipod.py sizes the row) */
+        int bw = bar_geom_val(V_BATT_W), bh = bar_geom_val(V_BATT_H), y = batt_top(w, bh);
         int f = classic_light_battery(w, canvas, 1, y, key);
         if (st.batt_mode == 2) {
             int x = 1 + bw + BATT_NUB_W + BATT_GAP;
@@ -4038,10 +4044,8 @@ static void paint_battery(void *w, void *canvas) {
         stock_canvas_set_fill_color(canvas, fill);
         return;
     }
-    /* centred as the row's icons are: Classic's row, under a flat Status Bar, is shorter than w */
     const int bw = inside ? BATT_INSIDE_W : BATT_BODY_W, bh = inside ? BATT_INSIDE_H : BATT_BODY_H,
-              nh = BATT_NUB_H,
-              y = (I(P(w, W_PARENT), W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
+              nh = BATT_NUB_H, y = batt_top(w, bh);
     canvas_set_fill_color(canvas, color);
     if (inside) {
         rect_t body = { 0, y, bw, bh };
