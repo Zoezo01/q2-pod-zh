@@ -1,19 +1,20 @@
+<h1 align="center">Q2 Pod</h1>
+
+<p align="center">The iPod firmware mod for the Shanling Q2.</p>
+
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=cc581MRAtp0" title="Watch the Q2 Pod video on YouTube">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
-      <img src="assets/banner.png" alt="Q2 Pod: the iPod firmware mod for the Shanling Q2" width="100%">
-    </picture>
-  </a>
+  <img src="assets/screenshots/home-split.png" alt="Home: the menu beside the playing album's cover" width="42%">
+  &nbsp;
+  <img src="assets/screenshots/now-playing.png" alt="Now Playing: the cover beside the title, artist and album, with the progress bar below" width="42%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/badge/download-latest-3D424B?style=flat-square" height="26"></a>
-  <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-B99AC8?style=flat-square" height="26"></a>
-  <a href="https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-D77868?style=flat-square" height="26"></a>
-  <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-6FA3A0?style=flat-square" height="26"></a>
-  <a href="https://www.youtube.com/watch?v=cc581MRAtp0"><img alt="Watch on YouTube" src="https://img.shields.io/badge/YouTube-FF0000?style=flat-square&logo=youtube&logoColor=white" height="26"></a>
-  <a href="https://discord.gg/MY3FTNuAdG"><img alt="Join the Discord" src="https://img.shields.io/badge/Discord-5865F2?style=flat-square&logo=discord&logoColor=white" height="26"></a>
+  <a href="https://github.com/DiamondBond/q2-pod/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/badge/download-3D424B?style=flat-square" height="26"></a>
+  <a href="#install"><img alt="Install" src="https://img.shields.io/badge/install-3D424B?style=flat-square" height="26"></a>
+  <a href="https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-3D424B?style=flat-square" height="26"></a>
+  <a href="docs/changelog.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-3D424B?style=flat-square" height="26"></a>
+  <a href="https://www.youtube.com/watch?v=cc581MRAtp0"><img alt="Watch on YouTube" src="https://img.shields.io/badge/YouTube-3D424B?style=flat-square&logo=youtube&logoColor=white" height="26"></a>
+  <a href="https://discord.gg/MY3FTNuAdG"><img alt="Join the Discord" src="https://img.shields.io/badge/Discord-3D424B?style=flat-square&logo=discord&logoColor=white" height="26"></a>
 </p>
 
 <details>
@@ -92,29 +93,14 @@
 
 </details>
 
-<details>
-<summary><h2>Screenshots</h2></summary>
-
-<p align="center">
-  <img src="assets/screenshots/home-split.png" alt="Home: the menu beside the playing album's cover" width="45%">
-  &nbsp;
-  <img src="assets/screenshots/now-playing.png" alt="Now Playing: the cover beside the title, artist and album, with the progress bar below" width="45%">
-</p>
-
-</details>
-
-<details open>
-<summary><h2>Install</h2></summary>
+## Install
 
 1. **Download** `update.tar` from the [latest release][release].
 2. **Plug the Q2 into your computer** with the USB-C cable. The card shows up as a drive.
 3. **Copy** `update.tar` to the root of the card (not inside a folder), then eject and unplug.
 4. **Update:** open **System settings → System Update → TF card update**. Leave the card in until the Q2 restarts.
 
-</details>
-
-<details open>
-<summary><h2>Controls</h2></summary>
+## Controls
 
 | Control             | Action                                                                      |
 | ------------------- | --------------------------------------------------------------------------- |
@@ -125,20 +111,14 @@
 
 The [user guide][guide] covers every control, EQ, Cover Flow and more tips.
 
-</details>
-
-<details open>
-<summary><h2>Updating</h2></summary>
+## Updating
 
 - **Over Wi-Fi:** **System settings → System Update → Network Update** downloads the newest release to the card's `update.tar`, replacing any that's there, then opens the TF card update's confirmation. Press the row again to cancel the download.
 - **By hand:** repeat the [install steps](#install) with the newest release.
 
 Your settings, ratings and play counts are kept. The updater skips a version that's already installed, so a newer release always goes on.
 
-</details>
-
-<details open>
-<summary><h2>Apps</h2></summary>
+## Apps
 
 **System settings → App Store** installs, updates and removes these over Wi-Fi:
 
@@ -200,8 +180,6 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
   </tr>
 </table>
 
-</details>
-
 <details>
 <summary><h2>Extras</h2></summary>
 
@@ -235,32 +213,23 @@ Copy your music to the card over USB-C, then run **Library → Update Local Musi
 
 </details>
 
-<details open>
-<summary><h2>Restoring stock firmware</h2></summary>
+## Restoring stock firmware
 
 - **Back to Shanling's firmware:** install the [official Shanling firmware](https://en.shanling.com/download/150) the same way.
 - **If the Q2 won't start up:** copy the `recovery-update` folder from [Shanling's recovery package](https://drive.google.com/file/d/1aINQfJu6n0JTQ4hOzzD1uSpSj3TS_NJj/view?usp=drive_link) to the card, then hold **Previous** and power on with **Centre**.
 
-</details>
-
-<details open>
-<summary><h2>Help</h2></summary>
+## Help
 
 - **Question or suggestion?** Join the [Discord](https://discord.gg/MY3FTNuAdG).
 - **Found a bug?** [Open an issue](https://github.com/DiamondBond/q2-pod/issues).
 - **Security problem?** Report it privately, as [SECURITY.md](SECURITY.md) describes.
 
-</details>
-
-<details open>
-<summary><h2>Documentation</h2></summary>
+## Documentation
 
 - **For users:** [User guide][guide] · [Setup](docs/setup.md) · [Changelog](docs/changelog.md) · [Accessibility](ACCESSIBILITY.md)
 - **Library folder markers:** [Hide folders while keeping playlists](docs/discovery.md)
 - **Hardware:** [Replacing the battery](docs/battery.md) · [Teardown photo](docs/teardown.jpg)
 - **For developers:** [Building](docs/building.md) · [Releasing](docs/releasing.md) · [Internals](docs/internals.md) · [Remote control (dev builds)](docs/remote.md) · [Contributing](CONTRIBUTING.md)
-
-</details>
 
 <details>
 <summary><h2>License</h2></summary>
@@ -269,12 +238,9 @@ Q2 Pod's code, tools, tests, documentation and artwork are under the [GNU Genera
 
 </details>
 
-<details open>
-<summary><h2>Support</h2></summary>
+## Support
 
 Q2 Pod is free and built with love in spare time. If it has made your Q2 better and you'd like to give something back, you can [support development on Ko-fi](https://ko-fi.com/diamondbond). Otherwise if you can, please consider donating to a good cause instead ❤️
-
-</details>
 
 [guide]: https://github.com/DiamondBond/q2-pod/releases/latest/download/Q2-Pod-User-Guide.pdf
 [release]: https://github.com/DiamondBond/q2-pod/releases/latest
