@@ -1523,8 +1523,8 @@ static void got(void) {
         if (ok && !strcmp(pg.aop, "stop")) {
             app()->launched = app()->hold = 0;
             navigator_back();
-        } else if (ok && l->state == K_READY && l->live)
-            fetch(l); /* a live level stays shown, asked again now: no Loading… page */
+        } else if (ok && l == top() && l->state == K_READY && l->live)
+            keep_sel(), fetch(l); /* a live level stays shown, asked again now: no Loading… page */
         else
             keep_sel(), l->state = K_LOAD, show(); /* the level as the action left it */
     } else if (l->id != req.id) {

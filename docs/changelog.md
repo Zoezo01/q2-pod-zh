@@ -1,5 +1,7 @@
 # Changelog
 
+- **1.7.6**:
+  - Streaming: in a card app, choosing an option on a page that keeps itself up to date (such as a choice list with **Selected** under the current one) no longer blanks the screen to **Loading…**: the page stays and is redrawn as soon as the app answers.
 - **1.7.5**:
   - Library: adding an album to your favourites, or rating it five hearts, now makes its songs favourites too, so they show in **Favorites** and **Loved**. Removing the album, or rating it lower, takes them out. For an album already at five hearts, choose five again under **Rate Album**.
   - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
@@ -10,7 +12,6 @@
   - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.
   - System: when the Q2 restarts by itself, `q2-crash.log` now ends with the last messages from the player's helpers, such as the Bluetooth and Wi-Fi start-up's, which used to go to a serial port nobody reads.
   - USB: under **USB mode: Audio and DAC**, a Nintendo Switch 2, or any host that connects to the Q2 but never reads its card, now gets the Q2 as a USB DAC. The Q2 used to wait for the host to read the card first, so it stayed a drive the Switch did nothing with. A charger still only charges, and **USB Storage** is as it was.
-  - Streaming: in a card app, choosing an option on a page that keeps itself up to date (such as a choice list with **Selected** under the current one) no longer blanks the screen to **Loading…**: the page stays and is redrawn as soon as the app answers.
 - **1.7.4**:
   - Display: **Appearance** has a **Status Bar** row. **Theme** (the default) follows your theme; **Minimal**, **Modern** or **Classic** give the bar that theme's look under any theme, so Classic can have a plain black bar. It applies at once, with no restart.
   - Cover Flow: a fast spin flows. The letters come at about one turn a second instead of two and keep a steady pace however hard you spin, while the covers keep moving through them, so slowing down or turning back carries straight on into single albums. Letting go lands on the letter's first album, and lifting your thumb to re-grip no longer drops the letters.

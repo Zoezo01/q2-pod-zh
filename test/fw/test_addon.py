@@ -1790,7 +1790,7 @@ def test_an_action_sends_its_context_toasts_and_asks_again(fw):
     p.click(0)
     assert p.request().endswith(b'\top1\ta%25b\n') and p.pg.act == 1
     p.answer(msg=b'Done')
-    assert p.toasts == [b'Done'] and p.request().endswith(b'\tmenu\n')
+    assert p.toasts == [b'Done'] and p.request().endswith(b'\tmenu\n') and p.top.state == K_LOAD
 
 
 def test_an_action_refused_toasts_why(fw):
@@ -2278,6 +2278,27 @@ def test_an_action_on_a_live_level_that_fails_reloads_it_as_before(fw):
     p.click(0)
     p.answer(status=b'error')
     assert p.top.state == K_LOAD and p.toasts == [b"Foo didn't answer"]  # as before: asked again from Loading…
+
+
+def test_a_failed_ask_after_an_action_on_a_live_level_keeps_the_pressed_row(fw):
+    """Its Retry comes back on the row pressed, as the reload after an action does."""
+    p = live(fw, [row_of(b'a', b'One', b'', kind=b'action'), row_of(b'b', b'Two', b'', kind=b'action')])
+    p.sel = 1
+    p.click(1)
+    p.answer()
+    p.answer(status=b'error')
+    assert p.top.state == K_ERROR and p.top.sel == 1
+
+
+def test_a_return_under_an_actions_toast_leaves_the_new_tops_request_alone(fw):
+    """The toast runs the UI's loop, so the level can be popped under it: the level below's request stands."""
+    p = live(fw, [item(1, b'list')])
+    p.click(0)
+    p.answer(msg=b'refresh', rows=[row_of(b'a', b'One', b'', kind=b'action')])
+    p.click(0)
+    fw.mock('navigator_to_with_context', lambda *_: p.back())
+    p.answer(msg=b'Done')
+    assert p.pg.depth == 1 and p.top.id == p.req.id and p.request().endswith(b'\tmenu\n')
 
 
 def test_a_live_level_asks_again_on_its_time(fw):
