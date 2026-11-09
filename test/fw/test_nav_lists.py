@@ -4,7 +4,6 @@ painted over a list (the chevrons, the fast-scroll letter, the art's corners, Mi
 import ctypes as C
 import json
 import math
-import os
 import re
 import sqlite3
 import struct
@@ -13,7 +12,7 @@ from collections import Counter
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, claim, in_fork, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, claim, ui_name
 from test_coverflow import Home  # coverflow.c's home struct
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
@@ -1507,23 +1506,12 @@ def letter(fw, page, canvas):
     return [text for text, _, _ in canvas.boxes]
 
 
-# draw_letter's fill is (LETTER_ALPHA << 24) with 0xd9 an int: shifted past INT_MAX. The Q2's clang wraps it
-# as meant; UBSan stops the process, so under it each test that draws the letter runs in a child (a plain
-# run keeps it here, where coverage counts it: a child leaves by os._exit, its counts unwritten).
-SANITIZED = bool(os.environ.get('Q2_FW_SANITIZE'))
-LETTER_UB = pytest.mark.xfail(SANITIZED, strict=True, reason=(
-    'BUG: navigation.c draw_letter: LETTER_ALPHA << 24 overflows int (undefined; UBSan aborts); 0xd9u is meant'))
-contained = in_fork if SANITIZED else (lambda test: test)
-
-
-@contained
 @pytest.mark.parametrize('title, name, shown', [
-    *(pytest.param(*case, marks=LETTER_UB) for case in (
-        ('beatles', 'allmusic_page', 'B'), ('The Beatles', 'allmusic_page', 'B'), ('An Elephant', 'allmusic_page', 'E'),
-        ('A Tribe', 'allmusic_page', 'T'), ('A', 'allmusic_page', 'A'), ('The ', 'allmusic_page', 'T'),  # no name after it
-        ('Theory', 'allmusic_page', 'T'), ('  zed', 'allmusic_page', 'Z'),
-        ('The Beatles', 'radio_page', 'T'),  # only the Library sorts past "The"
-        ('Éclair', 'allmusic_page', 'É'))),
+    ('beatles', 'allmusic_page', 'B'), ('The Beatles', 'allmusic_page', 'B'), ('An Elephant', 'allmusic_page', 'E'),
+    ('A Tribe', 'allmusic_page', 'T'), ('A', 'allmusic_page', 'A'), ('The ', 'allmusic_page', 'T'),  # no name after it
+    ('Theory', 'allmusic_page', 'T'), ('  zed', 'allmusic_page', 'Z'),
+    ('The Beatles', 'radio_page', 'T'),  # only the Library sorts past "The"
+    ('Éclair', 'allmusic_page', 'É'),
     ('', 'allmusic_page', None), ('   ', 'allmusic_page', None),
 ])
 def test_the_letter_is_the_one_the_selected_row_sorts_under(fw, ui, title, name, shown):
@@ -1532,8 +1520,6 @@ def test_the_letter_is_the_one_the_selected_row_sorts_under(fw, ui, title, name,
     assert letter(fw, page, canvas) == ([shown] if shown else [])
 
 
-@LETTER_UB
-@contained
 def test_the_letter_sits_in_the_middle_of_the_list_and_puts_the_canvas_back(fw, ui):
     page, canvas = spun(fw, ui, titles(200))
     letter(fw, page, canvas)
@@ -2185,8 +2171,6 @@ def test_a_text_shadow_is_its_text_in_black_at_its_alpha(fw):
     assert len(canvas.boxes) == 1
 
 
-@LETTER_UB
-@contained
 def test_without_vgcanvas_the_letters_box_is_square(fw, ui):
     page, canvas = spun(fw, ui, titles(200))
     canvas.declines = 1

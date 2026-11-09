@@ -111,7 +111,8 @@ void vol_paint(void *top, void *canvas) {
         canvas_set_fill_color(canvas, RGBA(0));
         canvas_fill_rect(canvas, area.x, area.y, area.w, area.h);
     } else {
-        fill_box(canvas, &area, (LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
+        /* unsigned, as draw_letter's: 0xd9 << 24 is past INT_MAX */
+        fill_box(canvas, &area, ((unsigned)LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
     }
     /* Pills, like the progress capsule: a non-zero fill is at least round, never a sliver. Over
      * Classic's Now Playing, its own bar. */

@@ -4,7 +4,6 @@ bar title and Quick Settings, with volume.c's volume overlay and classic_pages.c
 and message screens."""
 import collections
 import ctypes as C
-import os
 import re
 import struct
 
@@ -1911,14 +1910,6 @@ def vol_paint(fw, dialog, canvas):
     fw.fn('vol_paint', None, C.c_void_p, C.c_void_p)(dialog, canvas.p)
 
 
-# The panel's colour is (LETTER_ALPHA << 24) | FILL_RGB: 0xd9 << 24 overflows int, and UBSan (Q2_FW_SANITIZE) stops
-# the whole run there. test_the_volume_panel_s_colour_is_defined holds the bug, in a child; the panel's other tests
-# wait for its fix under the sanitizers.
-SANITIZE = bool(os.environ.get('Q2_FW_SANITIZE'))
-PANEL = pytest.mark.skipif(SANITIZE, reason='the panel shifts past int: test_the_volume_panel_s_colour_is_defined')
-
-
-@PANEL
 @pytest.mark.parametrize('level, fill', [(37, 231 * 37 // 100), (100, 231), (1, 10), (0, None)])
 def test_away_from_now_playing_the_volume_is_a_pill_and_its_number_on_a_panel(fw, world, st, level, fill):
     theme(fw, MINIMAL)
@@ -1936,7 +1927,6 @@ def test_away_from_now_playing_the_volume_is_a_pill_and_its_number_on_a_panel(fw
     assert canvas.fill == 0xff123456
 
 
-@PANEL
 def test_the_volume_with_no_range_is_empty(fw, world, st):
     theme(fw, MINIMAL)
     dialog, *_ = volume(fw, world, st, 5, maximum=0)
@@ -2050,10 +2040,6 @@ def test_the_bar_s_paint_with_the_volume_on_top_draws_it(fw, world, st):
     assert collections.Counter(alone.arts) <= collections.Counter(canvas.arts)
 
 
-@pytest.mark.xfail(SANITIZE, strict=True, reason='BUG: vol_paint fills its panel with (LETTER_ALPHA << 24) | FILL_RGB, '
-                   'a signed shift of 0xd9 past int: undefined behaviour, which UBSan stops on (vol_paint in volume.c; '
-                   'draw_letter in navigation.c has the same)')
-@in_fork
 def test_the_volume_panel_s_colour_is_defined(fw, world, st):
     """The panel away from Now Playing: its fill is the fast-scroll letter's, 85% of the dark surface."""
     theme(fw, MODERN)

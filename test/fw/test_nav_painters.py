@@ -8,7 +8,6 @@ by offset, its type, name, props, text and children answered by the stubs; the c
 what was drawn, pixel by pixel, in the colours the C set."""
 import contextlib
 import ctypes as C
-import os
 import random
 import re
 import struct
@@ -17,9 +16,8 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, in_fork, libc, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, libc, ui_name
 
-SANITIZED = bool(os.environ.get('Q2_FW_SANITIZE'))  # conftest's AddressSanitizer and UBSan build
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
 
@@ -1546,13 +1544,9 @@ def cf_letter(fw, st, elapsed, drawn):
     assert [t[0] for t in canvas.texts] == ['M'] * drawn and canvas.restored()
 
 
-@pytest.mark.xfail(SANITIZED, strict=True, reason='BUG: draw_letter fills (LETTER_ALPHA << 24) | FILL_RGB with LETTER_ALPHA '
-                   '0xd9, an int: 0xd9000000 is past INT_MAX, undefined behaviour UBSan stops on (draw_letter in '
-                   'navigation.c; the same in vol_paint in volume.c)')
 @pytest.mark.parametrize('elapsed', [0, O['LETTER_MS'] - 1])
 def test_cover_flows_letter_shows_for_its_time_centred(fw, st, elapsed):
-    # under UBSan the shift aborts the process: a child holds it there
-    (in_fork(cf_letter) if SANITIZED else cf_letter)(fw, st, elapsed, 1)
+    cf_letter(fw, st, elapsed, 1)
 
 
 def test_cover_flows_letter_is_gone_after_its_time(fw, st):

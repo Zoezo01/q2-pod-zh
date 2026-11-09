@@ -1715,7 +1715,8 @@ static void draw_letter(void *canvas, const unsigned *c, rect_t *box) {
     const theme_t *T = theme();
     unsigned raw = st.raw_ink;
     st.raw_ink = T->letter_raw;
-    fill_box(canvas, box, (LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
+    /* unsigned: 0xd9 << 24 is past INT_MAX, undefined for an int; the Q2's clang wrapped it */
+    fill_box(canvas, box, ((unsigned)LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
     draw_centred(canvas, c, 1, box, T->letter_px ? T->letter_px : LETTER_PX, 0xffffffff);
     st.raw_ink = raw;
 }
