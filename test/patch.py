@@ -8234,7 +8234,8 @@ class LyricMachine(QueueMachine):
         elif name=='mclGetLyricSize': ret=len(self.lines)
         elif name=='_deque_push_back' and a==self.get(O['MCL_LYRICS']): self.lines.append((signed(self.get(b)),self.text(self.get(b+4))))
         elif name=='_deque_push_back': return super().hook(u,address,size,unused)
-        elif name=='libc_free': pass
+        elif name=='libc_free':
+            if a and getattr(self,'zero_freed',0): self.u.mem_write(a,b'\0'*len(self.raw(a)))  # a use after free reads nothing
         elif name=='taglib_file_new':
             assert b==0  # Embedded lyrics need tags only.
             self.tag_calls.append(('new',self.text(a))); ret=0x1170000
@@ -8326,6 +8327,7 @@ def app_lrc(rec_id,gen=3,body=b'[00:01.00]Hi\n[00:02.50]there\n'):
     au=payload_syms['au']; m.word(au+72,gen); m.u.mem_write(au+80,b'/tmp/q2-jellyfin.lyrics\0')
     return m
 m=app_lrc('app:3:2'); assert m.load()==1 and m.lines==[(1,'Hi'),(2,'there')] and m.k_opened=='/tmp/q2-jellyfin.lyrics/2.lrc',m.lines; passed()
+m=app_lrc('app:3:2'); m.zero_freed=1; assert m.load()==1; t=m.get(payload_syms['ly']+4); assert t and [m.get(m.get(t+16)+i*4) for i in range(2)]==[72,105]; passed()  # the published table's words, read before the text is freed
 m=app_lrc('app:3:2',body=b'\xef\xbb\xbfPlain\nwords\n'); assert m.load()==1 and m.lines==[(FAR,'Plain'),(FAR,'words')],m.lines; passed()
 m=app_lrc('app:2:2'); assert m.load()==-1 and not m.lines; passed()  # an older queue's track
 m=app_lrc('app:3:1'); assert m.load()==-1 and not m.lines; passed()  # the app left none for it
@@ -17027,6 +17029,7 @@ assert len(m.plays)==n; passed()
 n=len(m.plays); m.files[URLS]=bytearray(('#Q2URLS/1\tstart=1\n'+f'https://jf/{"u"*1024}.flac\tBig\n'+f'/mnt/mmc/{"p"*1024}.flac\tBig\n'
     +f'https://jf/{"}"*300}\tBrace\n'+f'https://jf/{"u"*1012}\tOne\n'+f'/mnt/mmc/{"p"*1014}\tTwo\n').encode())
 assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+assert m.text(payload_syms['au']+80)==URLS[:-5]+'.lyrics'
 assert [p[2:4] for p in m.plays][n:]==[(1,0xf1)] and [field(e,'REC_TITLE') for e in m.play_recs]==['One','Two'],m.play_recs; passed()
 # get_onlineid3info's cover request takes an app's REC_COVER as a URL (type 2), a Tidal record's as stock's (4).
 m.handlers[syms['player_set_coverinfo']]='player_set_coverinfo'

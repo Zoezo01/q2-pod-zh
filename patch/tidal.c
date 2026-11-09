@@ -403,8 +403,7 @@ int app_urls_play(const char *path) {
     char **old = au.urls;
     unsigned had = au.n;
     au.urls = urls, au.n = n, au.gen = gen;
-    unsigned k = strlen(path);
-    tk_snprintf(au.lyr, sizeof au.lyr, "%.*s.lyrics", (int)(k > 5 ? k - 5 : k), path);
+    tk_snprintf(au.lyr, sizeof au.lyr, "%.*s.lyrics", (int)strlen(path) - 5, path);
     pthread_mutex_unlock(au.lock);
     for (unsigned i = 0; old && i < had; ++i) free(old[i]);
     free(old);
@@ -420,10 +419,9 @@ int app_lyrics(const char *id, char *out, unsigned size) {
     if (!id || !tk_str_start_with(id, "app:")) return 0;
     char *c;
     unsigned gen = (unsigned)strtol(id + 4, &c, 10);
-    if (*c != ':') return 0;
     unsigned n = (unsigned)strtol(c + 1, 0, 10);
     pthread_mutex_lock(au.lock);
-    int ok = gen == au.gen && au.lyr[0];
+    int ok = gen == au.gen;
     if (ok) tk_snprintf(out, size, "%s/%u.lrc", au.lyr, n);
     pthread_mutex_unlock(au.lock);
     return ok;

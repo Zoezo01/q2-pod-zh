@@ -40,7 +40,7 @@ static struct {
 /* Q2POD XFADE (0, 1) and XFADESEC (XF_MIN..XF_MAX) in config.ini, read once. */
 static void settings(void) {
     if (xf.read) return;
-    char v[256] = ""; /* a whole config line: toolsReadConfig takes no size (config_value) */
+    char v[256] = "";
     xf.on = config_value("Q2POD", "XFADE", 2, 0);
     toolsReadConfig("/mnt/data/config.ini", "Q2POD", "XFADESEC", v, "0");
     int n = atoi(v);
@@ -76,7 +76,7 @@ void wheel_row(void *label) {
 /* Q2POD RESUMEMIN in config.ini, read once: 0 (Off) or RS_MIN..RS_MAX in fives, else RS_DEFAULT. */
 int resume_min(void) {
     if (!xf.rs_read) {
-        char v[256] = ""; /* a whole config line, as settings() */
+        char v[256] = "";
         toolsReadConfig("/mnt/data/config.ini", "Q2POD", "RESUMEMIN", v, "30");
         int n = atoi(v);
         xf.rs_min = v[0] == '0' && !v[1]                     ? 0

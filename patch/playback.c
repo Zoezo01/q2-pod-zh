@@ -89,7 +89,7 @@ static void wheel_apply(int pct) {
 }
 int wheel_pct(void) {
     if (!wheel_read) {
-        char v[256] = "", canonical[16]; /* v: a whole config line (theme_engine.c config_value) */
+        char v[256] = "", canonical[16];
         toolsReadConfig("/mnt/data/config.ini", "Q2POD", "WHEELSENSITIVITY", v, "");
         int n = atoi(v);
         tk_snprintf(canonical, sizeof canonical, "%d", n);

@@ -1173,8 +1173,7 @@ def test_resume_minutes_are_read_once(fw):
 
 def test_a_config_line_of_255_bytes_fits_every_reader(fw):
     """toolsReadConfig takes no size and copies a whole line, up to 255 bytes (its fgets): each reader's
-    buffer holds one (a shorter one fails under ASan here), and the value still parses, trailing spaces and
-    all."""
+    buffer holds one (a shorter one fails under ASan here)."""
     def line(digits): return digits + ' ' * (255 - len(digits))
     config(fw, {'XFADESEC': line('7'), 'RESUMEMIN': line('45')})
     fw.fn('crossfade__settings', None)()

@@ -1369,13 +1369,6 @@ def test_wheel_sensitivity_config(fw, value, pct):
     assert fw.var('playback__wheel_units', C.c_int).value == (28 * 16 * 50 + pct // 2) // pct
 
 
-def test_a_wheel_sensitivity_line_of_255_bytes_fits(fw):
-    """toolsReadConfig takes no size and copies a whole line, up to 255 bytes (test_misc's config-line test)."""
-    value = b'120' + b' ' * 252
-    fw.mock('toolsReadConfig', lambda path, section, key, out, default, *_: C.memmove(out, value + b'\0', 256) and 0)
-    assert fw.fn('wheel_pct', C.c_int)() == 50  # trailing spaces aren't canonical, so the default; the fit is the point
-
-
 def test_wheel_sensitivity_is_read_once(fw):
     pct = fw.fn('wheel_pct', C.c_int)
     assert pct() == 50 and pct() == 50 and len(fw.calls('toolsReadConfig')) == 1
@@ -1388,7 +1381,7 @@ def test_wheel_sensitivity_any_text(fw):
     read = fw.var('playback__wheel_read', C.c_int)
     pct = fw.fn('wheel_pct', C.c_int)
     for value in names(rng, [b'100', b'200', b'50', b'150', b'040'], 1500):
-        current['v'] = value[:15]
+        current['v'] = value
         read.value = 0
         good = re.fullmatch(rb'[1-9]\d*', current['v']) and 50 <= int(current['v']) <= 200 and int(current['v']) % 10 == 0
         assert pct() == (int(current['v']) if good else 50)
