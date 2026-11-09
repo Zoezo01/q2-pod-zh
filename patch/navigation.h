@@ -192,9 +192,9 @@ typedef struct {
     void *np_win, *np_pos, *np_album, *np_slider, *np_remain, *np_elapsed, *np_cover, *np_title;
     int np_bold;             /* the title's font: theme_font's face | px << 2, -1 not set yet */
     void *np_slide, *np_lrc; /* the art/lyrics/info pages and the lyric lines' scroll_view */
-    /* Now Playing's full-screen lyrics (np_full), where the last touch on them came down and
-     * whether a swipe or a drag took it, so its lift is no tap (np_lyric_touch) */
-    int np_full, np_tap_x, np_tap_y, np_tap_off;
+    /* Now Playing's full-screen lyrics (np_full) and where the last touch on them came down
+     * (np_lyric_touch) */
+    int np_full, np_tap_x, np_tap_y;
     int np_was[9]; /* the column before full screen (np_full) */
     /* The full-screen art's song name, its shade and its window, the fade's step and timer
      * (ringnav_bigcover) */

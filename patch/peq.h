@@ -354,12 +354,11 @@ typedef struct {
  * into the page's (whether it is on, as lyrics_on asks), and lyrics_fit lays them out again at
  * lrc's new width; lyrics_now is the playing position in ms,
  * lyrics_sec its whole second (off the page), lyrics_line the playing line there (-1 before the
- * first), repainting it while page shows; lyrics_start line i's start (ms, -1 unsynced),
- * lyrics_aim marks the line the held page aims at; lyrics_paint draws a row's line. */
+ * first), repainting it while page shows; lyrics_paint draws a row's line. */
 void lyrics_publish(const lrc_line *l, unsigned n, const lrc_mark *m);
 int lyrics_rows(void *lrc), lyrics_fit(void *lrc), lyrics_on(void *lrc), lyrics_now(void),
-    lyrics_sec(void), lyrics_line(void *lrc, int ms, int page), lyrics_start(void *lrc, int i);
-void lyrics_paint(void *row, void *canvas), lyrics_gone(void), lyrics_aim(void *lrc, int i);
+    lyrics_sec(void), lyrics_line(void *lrc, int ms, int page);
+void lyrics_paint(void *row, void *canvas), lyrics_gone(void);
 unsigned accent_tone(int tone); /* iPod: the Accent's ACCENTS column (Minimal's own: MINIMAL_FILL) */
 unsigned rgba(unsigned rgb, unsigned alpha);
 /* const and pure below: each one's result rests on its arguments (and pure's, memory) alone, so

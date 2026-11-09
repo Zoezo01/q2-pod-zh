@@ -32,7 +32,7 @@ class Tab(C.Structure):
 
 class Ly(C.Structure):
     _fields_ = [('tab', C.POINTER(Tab)), ('next', C.POINTER(Tab)), ('lrc', C.c_void_p), ('rows', C.c_uint), ('sum', C.c_uint),
-                ('ms', C.c_int), ('cur', C.c_int), ('fill', C.c_int), ('aim', C.c_int), ('lit_at', C.c_uint), ('sec', C.c_int), ('run', C.c_int),
+                ('ms', C.c_int), ('cur', C.c_int), ('fill', C.c_int), ('lit_at', C.c_uint), ('sec', C.c_int), ('run', C.c_int),
                 ('guess', C.c_int), ('lo', C.c_int), ('hi', C.c_int), ('pos', C.c_int), ('w', C.c_int)]
 
 
@@ -386,9 +386,9 @@ def test_a_table_holds_all_it_was_sized_for(fw, n, marks, chars):
 
 def test_lyrics_gone_forgets_the_rows(fw):
     ly = state(fw)
-    ly.lrc, ly.rows, ly.cur, ly.aim = 1234, 5, 3, 2
+    ly.lrc, ly.rows, ly.cur = 1234, 5, 3
     fw.fn('lyrics_gone', None)()
-    assert not ly.lrc and ly.rows == 0 and ly.cur == -1 and ly.aim == 0
+    assert not ly.lrc and ly.rows == 0 and ly.cur == -1
 
 
 @pytest.mark.parametrize('c,cjk', [

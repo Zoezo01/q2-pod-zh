@@ -618,15 +618,14 @@ hundredths of a second, by a clock of the page's own between the player's whole 
 lyrics page, while the track has lyrics, the wheel scrolls them smoothly, a pixel at a time as it
 turns and as far a turn as a line a tick, instead of changing the volume or scrubbing; a scrub
 under way ends first, as any other end does. While the finger stays on the wheel they stay
-exactly where it put them; let go, they glide until a line sits in the middle. On the page, the follow
+exactly where it put them; let go, they glide to the nearest whole line. On the page, the follow
 to a new line glides too. While they follow, the wheel meets a list end's resistance: travel short of
 `LYRIC_PUSH_DETENTS` (2) ticks within `LYRIC_PUSH_MS` of the last only nudges them `BUMP_PX`, held while the
 finger stays and springing back when it lets go, still following, so a stray touch keeps the follow.
 Lyrics moved by the wheel or a finger stay where they are, while the bar and the
 highlight go on, a swipe to another page and back included, until Now Playing closes or another
-song starts at the top. With synced lyrics, holding Play/Pause plays from the line in the middle
-(the playing line, unmoved), and touching and holding a line plays from it. A tap shows them
-full screen, on either layout. See [internals.md](internals.md#scrub-ipod) and [Word-timed lyrics](internals.md#word-timed-lyrics).
+song starts at the top. A tap shows them full screen, on either layout, and another brings the
+page back. See [internals.md](internals.md#scrub-ipod) and [Word-timed lyrics](internals.md#word-timed-lyrics).
 
 ### Visualizer
 
