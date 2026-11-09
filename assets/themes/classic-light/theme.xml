@@ -1,7 +1,7 @@
 <!-- Theme: Classic (IPOD/THEME 1, docs/ipod.md#display-settings): a light iPod look, with a dark half, on its own
      geometry sets, declared below. Its numbers are this file's, but for what ROLE_MACROS (tools/theme.py) and Minimal supply. Its id, classic-light,
      names its art, sets and face (classic_light_*, classic-light*). -->
-<theme format="1" id="classic-light" name="Classic" index="1" extends="minimal">
+<theme format="1" id="classic-light" name="经典" index="1" extends="minimal">
   <!-- Classic's geometry sets: a 26 px bar over a 294 px window, 32 px rows, nine of them filling it (4 px above and
        below a 24 px line box). The Library is always 32 px text.
        classic-light (Row Art on) has 52 px album rows with the stock art drawn at 48, 2 px above and below, so
@@ -32,7 +32,7 @@
   <!-- Classic Blue: Cobalt's tones and its own band: its 1 px top line, the stops below it, its edge, and a tall
        row's second and last lines. The light lines are the light half's: on black the band starts on its first stop
        and ends on its dark edge. The other accents get this band turned to their own top tone -->
-  <colorScheme name="classic-blue" label="Classic Blue" base="cobalt" light.sel.top="#94c7de" dark.sel.top="#08a6e7"
+  <colorScheme name="classic-blue" label="经典蓝" base="cobalt" light.sel.top="#94c7de" dark.sel.top="#08a6e7"
                sel.stops="#08a6e7 0, #009ade 17, #008ade 38, #007dde 58, #006dd6 79, #0065d6 100"
                sel.edge="#004184" sel.tall_edge="#004aa3" light.sel.tall_line="#688db3" dark.sel.tall_line="#004aa3" light.sel.tall_top="#27ade5" dark.sel.tall_top="#08a6e7"/>
   <colorSchemes accents="classic-blue graphite crimson tidal champagne cobalt tangerine plum green" derive="gloss"/>
@@ -149,11 +149,11 @@
   <!-- Classic's Home in Split, each its own switch, on as chosen, as Classic presets its own: Library on Home slides
        the Library's rows in on Home (off, Library opens its page), Row Preview has the pane follow the highlighted row
        (off, it shows Now Playing's art on every row) -->
-  <option key="HOMELIB" label="Library on Home" default="On" preset="On"><value label="Off"/><value label="On"/></option>
-  <option key="ROWPREVIEW" label="Row Preview" default="On" preset="On"><value label="Off"/><value label="On"/></option>
-  <option key="ROWART" label="Row Art" default="On" preset="On">
-    <value label="Off" set="classic-light-text"/>
-    <value label="On" set="classic-light"/>
+  <option key="HOMELIB" label="主菜单显示资料库" default="开" preset="开"><value label="关"/><value label="开"/></option>
+  <option key="ROWPREVIEW" label="行预览" default="开" preset="开"><value label="关"/><value label="开"/></option>
+  <option key="ROWART" label="行封面" default="开" preset="开">
+    <value label="关" set="classic-light-text"/>
+    <value label="开" set="classic-light"/>
   </option>
   <!-- How things move. A window kind with no ms keeps its asset's hint, or none: pages open as Minimal's do. The selection jumps, with no glide and no bump. Cover Flow's step follows its goal: under easing="follow",
        ms is the follow's time constant, not the run's length. -->

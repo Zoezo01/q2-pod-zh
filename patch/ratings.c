@@ -72,7 +72,7 @@ int rate_keep(int album, unsigned key, int n) {
 
 /* Report only failures from rate_keep. */
 int rate_saved(int k) {
-    if (k <= 0) toast(k ? "Rating not saved" : "Ratings are full");
+    if (k <= 0) toast(k ? "评价未保存" : "评价记录已满");
     return k > 0;
 }
 
@@ -181,7 +181,7 @@ static void *rate_panel(void *win) {
 /* The picker's hearts and caption for rate_pick. */
 static void rate_paint(void) {
     void *panel = rate_panel(st.rate_on);
-    char t[24] = "Unrated";
+    char t[24] = "未评价";
     int gloss = classic_pages();
     for (int i = 0; i < 5; i++) {
         void *heart = widget_get_child(panel, (unsigned)i + 1);
@@ -222,7 +222,7 @@ static void rate_close(int save) {
     if (save && ra.rate_album) { /* the menu's album, still on its page */
         void *a = window_manager_get_top_window(window_manager()) == win ? qm_record() : (void *)0;
         if (!a || qm_album_id(a) != ra.rate_album) {
-            toast("Album changed");
+            toast("专辑已变更");
             return;
         }
         rate_saved(rate_keep(1, ra.rate_album, n));
@@ -392,7 +392,7 @@ static void rate_all(void *songs, unsigned char *h) {
 
 /* Top Rated (4-5 hearts), Loved (5), All Rated (1-5) and Disliked (1): most hearts first, then
  * the library's title order, each row's hearts under its title. */
-static const char *const rt_names[] = { "Top Rated", "Loved", "All Rated", "Disliked" };
+static const char *const rt_names[] = { "最高评价", "最爱歌曲", "全部已评价", "不喜欢" };
 #define RT_ALBUMS 2 /* the Ratings menu's Albums row, after Loved */
 static int rated_open(void *ctx, void *event) {
     static const unsigned char lo[] = { 4, 5, 1, 1 }, hi[] = { 5, 5, 5, 1 };
@@ -423,7 +423,7 @@ static int rated_open(void *ctx, void *event) {
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, rt_play);
     }
     if (!count)
-        page_row_detail(view, 0, "No songs yet", "Hold the heart on Now Playing to rate", 0);
+        page_row_detail(view, 0, "暂无歌曲", "长按“正在播放”中的爱心以评价", 0);
     free(h);
     free(of);
     return 0;
@@ -433,7 +433,7 @@ static int rated_open(void *ctx, void *event) {
 extern int coverflow_rated(int (*hearts)(void *));
 static int album_hearts(void *r) { return rate_kept(1, album_id(r)); }
 int rated_albums(void *ctx, void *event) {
-    if (!coverflow_rated(album_hearts)) toast("No rated albums yet");
+    if (!coverflow_rated(album_hearts)) toast("暂无已评价专辑");
     return 0;
 }
 
@@ -441,9 +441,9 @@ int rated_albums(void *ctx, void *event) {
 int ratings_menu(void *ctx, void *event) {
     if (ra.rt_menu || !(ra.rt_menu = page_open("ratings_page", rt_menu_closed, page_keyup)))
         return 0;
-    void *view = page_list(ra.rt_menu, ra.rt_menu, 0, "Ratings", 5, 48);
+    void *view = page_list(ra.rt_menu, ra.rt_menu, 0, "评价", 5, 48);
     for (int i = 0; i < 5; i++)
-        page_row_into(view, i, i == RT_ALBUMS ? "Albums" : rt_names[i - (i > RT_ALBUMS)],
+        page_row_into(view, i, i == RT_ALBUMS ? "专辑" : rt_names[i - (i > RT_ALBUMS)],
                       i == RT_ALBUMS ? rated_albums : rated_open);
     return 0;
 }

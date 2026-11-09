@@ -1,6 +1,6 @@
 <!-- Theme: Minimal (IPOD/THEME 0, docs/ipod.md#display-settings). Its numbers (Home rows, the settings
      top, the progress bar, the scheme colours) come from patch/offsets.inc via tools/theme.py ROLE_MACROS. -->
-<theme format="1" id="minimal" name="Minimal" index="0">
+<theme format="1" id="minimal" name="简约" index="0">
   <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum ivory green"/>
   <colorScheme name="crimson" raw_red="1"/>  <!-- stock's own reds: the identity -->
   <colorScheme name="ivory" card="1"/>       <!-- the off-white card with dark ink -->

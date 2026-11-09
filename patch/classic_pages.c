@@ -193,7 +193,7 @@ void t9_box(void *page, void *edit, const char *tips) {
     widget_set_prop_str(edit, "tips", tips);
     if (!classic_pages()) return;
     void *title = text(page, 0, 0, 375, 28);
-    widget_set_text_utf8(title, "Search");
+    widget_set_text_utf8(title, "搜索");
     widget_set_name(title, PAGE_TITLE);
     widget_set_visible(title, 0, 0);
     st.t9_back = image_create(page, 30, 0, 40, 30); /* ringnav_touch takes its press */
@@ -219,10 +219,10 @@ static int pl_box_due(const void *info) {
     void *win = st.pl_box, *lists = P(p_deque_playlist, 0);
     if (!win) return 0;
     void *edit = widget_lookup(win, "ssedit", 1), *r = (void *)0;
-    const char *title = "New Playlist", *tips = "Playlist Name";
+    const char *title = "新建播放列表", *tips = "播放列表名称";
     if (!edit) {
         edit = widget_lookup(win, "edit", 1);
-        title = "Rename";
+        title = "重命名";
         if (lists && (unsigned)I(PL_RENAME_ROW, 0) < deque_size(lists))
             r = deque_at(lists, (unsigned)I(PL_RENAME_ROW, 0));
         tips = r ? P(r, REC_TITLE) ?: title : title;
@@ -380,7 +380,7 @@ void search_paint(void *w, void *canvas) {
  * under the theme's dialog. */
 extern int stock_search_init_trampoline(void *win, void *ctx);
 int ringnav_search_init(void *win, void *ctx) {
-    static const __WCHAR_TYPE__ names[4][8] = { L"Songs", L"Artists", L"Albums", L"Genres" };
+    static const __WCHAR_TYPE__ names[4][8] = { L"Songs", L"表演者", L"专辑", L"流派" };
     int result = stock_search_init_trampoline(win, ctx);
     if (win == st.search_win)
         for (unsigned i = 0, n = widget_count_children(st.search_tabs); i < n && i < 4; ++i)
@@ -551,7 +551,7 @@ static int msg_sync(void) {
     }
     if (!cp.msg_seen[0]) { /* over stock's translation; runs in paints, so only if it differs */
         widget_get_text_utf8(cp.msg_btn, now, sizeof now);
-        if (tk_strcmp(now, "Cancel")) widget_set_text_utf8(cp.msg_btn, "Cancel");
+        if (tk_strcmp(now, "取消")) widget_set_text_utf8(cp.msg_btn, "取消");
         *now = 0;
     }
     widget_get_text_utf8(cp.msg_src, now, sizeof now);
@@ -604,14 +604,14 @@ void msg_open(void *win) {
     widget_on(win, EVT_DESTROY, msg_gone, win);
     c = text(win, 16, 0, 343, 24);
     widget_set_name(c, "msg_heading");
-    widget_set_text_utf8(c, scan ? "Updating Local Music" : "Connected");
+    widget_set_text_utf8(c, scan ? "正在更新本地音乐" : "已连接");
     slider_label(c, 16, 0, 343, MSG_HEAD_H, MSG_HEAD_PX, "classic-light");
     c = text(win, 16, 0, 343, 20);
     widget_set_name(c, "msg_line");
     slider_label(c, 16, 0, 343, 20, MSG_LINE_PX, "default");
     if (!scan) {
         st.usb_win = win;
-        if (g_usbmode != 1) widget_set_text_utf8(c, "Eject before disconnecting");
+        if (g_usbmode != 1) widget_set_text_utf8(c, "断开前请先弹出");
         return;
     }
     st.msg_win = win, cp.msg_src = src, cp.msg_btn = btn, cp.msg_line = c;

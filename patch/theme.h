@@ -130,7 +130,7 @@ typedef struct {
     unsigned char easing; /* widget kinds: AWTK easing_type_t */
 } motion_t;
 typedef struct {
-    const char *name;   /* "Minimal": the Theme row's "Theme: %s" */
+    const char *name;   /* "Minimal": the Theme row's "主题：%s" */
     unsigned char geom; /* second: THEME_GEOM_OFF (4) never moves */
     motion_t motion[MOTION_N];
     unsigned short recall_ms; /* a remembered row's glide; 0: shown at once */

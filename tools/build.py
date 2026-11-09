@@ -13,7 +13,7 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
-TAG = 'V' + VERSION.replace('.', '') + 'I'
+TAG = 'V' + VERSION.replace('.', '') + 'V'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
@@ -22,7 +22,7 @@ def dev_tag(number):
     for _ in range(3): n, d = divmod(n, 36); digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[d] + digits
     return 'V' + digits + 'i'
 BASE = 0xb00000
-SCRATCH = 0xbc0000  # 768 KB of payload text below it
+SCRATCH = 0xc00000  # 1 MB of payload text below it
 RING_STEP = 48
 HOOKS = {
     'createPlayListItem': (0x50d32c, 'ringnav_playlist_create', None),
@@ -733,6 +733,17 @@ ENGLISH = {
 ENGLISH_IN = {'testmode/test_key.bin': {'中': 'Centre'}, 'kb_default_t9.bin': {'中': 'abc', '《》': '«»'},
               'dialog/search_dialog.bin': {'专辑': 'Albums', '风格': 'Genres'},
               'systemset/screensaver_about.bin': {}}
+
+# This fork ships the Chinese interface: the stock assets' Chinese text stays as it is, and only an
+# English build would run english_ui over them. The theme sets are derived from those assets, so the
+# same flag keeps their copies Chinese (1.6.6 shipped them English for want of it).
+CHINESE_UI = True
+
+def ui_round_trip(rel, data):
+    """english_ui's first check on its own: the asset is exactly what decode/encode understand."""
+    from ipod import decode, encode
+    root = decode(data)
+    check(encode(root) == data, f'{rel}: UI round trip differs')
 
 def english_ui(rel, data):
     """rel's widgets' Chinese text in English, and the T9 keyboard's Chinese page out of reach."""
@@ -1651,7 +1662,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
             folder, _, base = path.rpartition('/')
             like = f'{folder}/{base.removeprefix(g.name + "_")}'
             rel = like.removeprefix('release/assets/default/raw/ui/')
-            set_pages[path] = (like, english_ui(rel, data) if rel in chinese else data)
+            set_pages[path] = (like, english_ui(rel, data) if rel in chinese and not CHINESE_UI else data)
             redirects[rel.removesuffix('.bin')] = redirects.get(rel.removesuffix('.bin'), 0) | 1 << i
     emit(themes, out, redirects)
     ps = compile_payload(out)
@@ -1990,7 +2001,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                  status_icon(name, original) if name in STATUS_ICONS else quiet_icon(name, original) if name in QUIET_ICONS else settings_icon(name, original)) if kind == 'images' else
                 patch_asset(name, original) if name in patched_ui else original)
         if kind == 'ui' and name in chinese:
-            data = english_ui(name, data)
+            if CHINESE_UI:  # packaged as patch_asset leaves it; see CHINESE_UI
+                ui_round_trip(name, data)
+            else:
+                data = english_ui(name, data)
         target = out/rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)

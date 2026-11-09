@@ -572,8 +572,8 @@ static const char *year_sql(void) {
     return ringnav_year_old() ? SORT_SQL ALBUM_YEAR "=0," ALBUM_YEAR ",album COLLATE NOCASE"
                               : SORT_SQL ALBUM_YEAR "=0," ALBUM_YEAR " desc,album COLLATE NOCASE";
 }
-static const char *const sort_names[] = { "Sort: Album", "Sort: Artist", "Sort: Recently Added",
-                                          "Sort: Most Played", "Sort: Random", "Sort: Rating", "Sort: Year" };
+static const char *const sort_names[] = { "排序：专辑", "排序：表演者", "排序：最近添加",
+                                          "排序：最多播放", "排序：随机", "排序：评价", "排序：年份" };
 /* The order step after cf.sort (dir 1), or cf.sort itself (0), in the page's own orders; an
  * order not among them is the first (Album, or the rated albums' Rating). */
 static int sort_next(int dir) {
@@ -2402,7 +2402,7 @@ void titles(unsigned c) {
     cf.titled = (int)c + 1;
     void *r = c + CARDS < n ? deque_at(cf.albums, c) : (void *)0;
     widget_set_text_utf8(cf.name, r                            ? P(r, REC_ALBUM)
-                                  : cf.scoped == ARTIST_ALBUMS ? "All albums"
+                                  : cf.scoped == ARTIST_ALBUMS ? "全部专辑"
                                                                : sort_names[cf.sort]);
     widget_set_text_utf8(cf.artist, r ? cover_artist(r) : ""); /* NULL leaves the old one */
     if (caption_bold()) {                                      /* by its text */
@@ -2445,7 +2445,7 @@ static void covers(int dir) {
     cf.screen = COVERS;
     if (cf.text_albums) {
         unsigned n = deque_size(cf.albums);
-        void *view = list("Albums", (int)n);
+        void *view = list("专辑", (int)n);
         for (unsigned i = 0; i < n; ++i)
             page_row_into(view, (int)i, P(deque_at(cf.albums, i), REC_ALBUM), pick);
         page_push(view, dir);
@@ -2506,7 +2506,7 @@ static int poll(const void *unused) {
     cf.timer = 0;
     if (cf.done == cf.total) return to_covers(0); /* stop() joins the thread's last steps */
     char progress[64];
-    tk_snprintf(progress, sizeof(progress), "Preparing artwork\xe2\x80\xa6 %d/%d", cf.done,
+    tk_snprintf(progress, sizeof(progress), "正在准备封面… %d/%d", cf.done,
                 cf.total);
     page_retitle(cf.page, cf.title, progress);
     cf.timer = timer_add(poll, 0, 250);
@@ -2600,7 +2600,7 @@ static void load_albums(unsigned t0) {
     if (n <= 0) {
         drop_albums(); /* only a real list is kept */
         cf.screen = COVERS; /* Return goes Home */
-        list("Update Local Music first", 0);
+        list("请先更新本地音乐库", 0);
         return;
     }
     unsigned count = deque_size(cf.albums);
@@ -2633,7 +2633,7 @@ static void load_albums(unsigned t0) {
     if (cf.total && card_space(ART_DIR) && !pthread_create(&cf.thread, 0, worker, 0)) {
         cf.running = 1;
         cf.screen = PREPARING;
-        page_row_detail(list("", 1), 0, "Cancel", 0, cancel_row);
+        page_row_detail(list("", 1), 0, "取消", 0, cancel_row);
         poll(0);
     } else
         to_covers(0);
@@ -2663,7 +2663,7 @@ static int play(void *ctx, void *event) {
     int i = (int)(long)ctx;
     void *t = deque_at(cf.tracks, (unsigned)i);
     if (!t || access(P(t, REC_PATH), 0)) {
-        page_retitle(cf.page, cf.title, "Storage unavailable");
+        page_retitle(cf.page, cf.title, "存储不可用");
         return 0;
     }
     play_folder(cf.tracks, i, 0xff10);
@@ -2858,7 +2858,7 @@ static int flip_open(void *r, int n) {
         panel_length(length, t);
         widget_on(item, EVT_CLICK, play, (void *)(long)i);
     }
-    /* cf.title: where a row's "Storage unavailable" goes */
+    /* cf.title: where a row's "存储不可用" goes */
     cf.title = fl.title = panel_label(fl.panel, 12, 1, 270, 33, album_name(r), 31, 1);
     fl.artist = panel_label(fl.panel, 12, 30, 270, 20, cover_artist(r), 18, 0);
     panel_ink();
@@ -2945,7 +2945,7 @@ static int play_all(const void *unused) {
     if (deque_size(all) && !access(P(deque_at(all, 0), REC_PATH), 0))
         play_folder(all, 0, 0xf001);
     else
-        widget_set_text_utf8(cf.name, "Storage unavailable");
+        widget_set_text_utf8(cf.name, "存储不可用");
     deque_destroy(all);
     return 0;
 }
@@ -2980,7 +2980,7 @@ static int sort_saved(void) {
     return SORT_ALBUM;
 }
 
-/* Display settings' Coverflow Sort: its label ("Sort: Album"), and a press's next order, saved,
+/* Display settings' Coverflow Sort: its label ("排序：专辑"), and a press's next order, saved,
  * which Coverflow takes at its next open (load). */
 const char *coverflow_sort_name(void) { return sort_names[sort_saved()]; }
 void coverflow_sort_step(void) {
@@ -3621,7 +3621,7 @@ static void pane_shadow(void *canvas, int x, int y, int h) {
     }
 }
 
-/* n of what the caption counts, in t: "1 Song", "12 Songs"; 0: unknown, none. */
+/* n of what the caption counts, in t: "1 首", "12 首"; 0: unknown, none. */
 static int pane_count(char *t, unsigned size, unsigned n, const char *one, const char *many) {
     return !n ? 0 : tk_snprintf(t, size, n == 1 ? one : many, n);
 }
@@ -3632,18 +3632,18 @@ static int pane_caption(char *t, unsigned size) {
     switch (home.kind) {
     case PANE_NOW:
         queue_now(&at, &n);
-        return pane_count(t, size, n, "1 Song", "%u Songs");
+        return pane_count(t, size, n, "1 首", "%u 首");
     case PANE_LIBRARY:
     case PANE_SHUFFLE:
-        return pane_count(t, size, (unsigned)home.songs, "1 Song", "%u Songs");
+        return pane_count(t, size, (unsigned)home.songs, "1 首", "%u 首");
     case PANE_COVERFLOW:
-        return pane_count(t, size, (unsigned)home.albums, "1 Album", "%u Albums");
+        return pane_count(t, size, (unsigned)home.albums, "1 张专辑", "%u 张专辑");
     case PANE_GAMES:
-        return pane_count(t, size, (unsigned)home.games, "1 Game", "%u Games");
+        return pane_count(t, size, (unsigned)home.games, "1 个游戏", "%u 个游戏");
     case PANE_STREAM:
-        return pane_count(t, size, (unsigned)home.services, "1 Service", "%u Services");
+        return pane_count(t, size, (unsigned)home.services, "1 项服务", "%u 项服务");
     case PANE_SETTINGS:
-        return home.free_tenths ? tk_snprintf(t, size, "%u.%u GB Free", home.free_tenths / 10,
+        return home.free_tenths ? tk_snprintf(t, size, "可用 %u.%u GB", home.free_tenths / 10,
                                               home.free_tenths % 10)
                                 : 0;
     }
@@ -3827,9 +3827,9 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
-            kind = !tk_strcmp(s, "Games")                                 ? PANE_GAMES
+            kind = !tk_strcmp(s, "游戏")                                 ? PANE_GAMES
                    : !tk_strcmp(s, "Rockbox") || !tk_strcmp(s, "Groovebox") ? PANE_ROCKBOX
-                   : !tk_strcmp(s, "Shuffle") ? PANE_SHUFFLE
+                   : !tk_strcmp(s, "随机播放") ? PANE_SHUFFLE
                    : !tk_strcmp(s, "Podcasts") || !tk_strcmp(s, "Audiobooks") ? PANE_FOLDER
                                               : PANE_LIBRARY;
         }
@@ -4201,9 +4201,9 @@ void coverflow_home_top(void) {
 const char *coverflow_home_title(void) {
     void *open = home_open();
     return !open                 ? "Q2 Pod"
-           : open == home.lib    ? "Library"
-           : open == home.stream ? "Streaming"
-                                 : "Settings";
+           : open == home.lib    ? "音乐"
+           : open == home.stream ? "流媒体"
+                                 : "设置";
 }
 
 /* home_page_init: stock binds the name-matched img_* cards, then the Coverflow card binds here,

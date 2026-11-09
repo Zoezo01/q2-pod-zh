@@ -49,8 +49,8 @@ static void settings(void) {
 }
 
 static void row_text(void *label) {
-    char t[32] = "Crossfade: Off";
-    if (xf.on) tk_snprintf(t, sizeof t, "Crossfade: %d s", xf.seconds);
+    char t[32] = "交叉淡化：关闭";
+    if (xf.on) tk_snprintf(t, sizeof t, "交叉淡化：%d 秒", xf.seconds);
     widget_set_text_utf8(label, t);
 }
 
@@ -63,7 +63,7 @@ void xfade_row(void *label) {
 
 static void wheel_text(void *label) {
     char t[32];
-    tk_snprintf(t, sizeof t, "Wheel Sensitivity: %d%%", wheel_pct());
+    tk_snprintf(t, sizeof t, "滚轮灵敏度：%d%%", wheel_pct());
     widget_set_text_utf8(label, t);
 }
 
@@ -88,8 +88,8 @@ int resume_min(void) {
 }
 
 static void rs_text(void *label) {
-    char t[32] = "Resume Songs: Off";
-    if (resume_min()) tk_snprintf(t, sizeof t, "Resume Songs: %d min", resume_min());
+    char t[32] = "断点续播：关闭";
+    if (resume_min()) tk_snprintf(t, sizeof t, "断点续播：%d 分钟", resume_min());
     widget_set_text_utf8(label, t);
 }
 
@@ -100,11 +100,11 @@ void resume_row(void *label) {
 }
 
 static void night_text(void *label) {
-    char t[32] = "Night Shift: Off";
+    char t[32] = "夜览：关";
     if (night_on() == 2)
-        tk_snprintf(t, sizeof t, "Night Shift: Auto");
+        tk_snprintf(t, sizeof t, "夜览：自动");
     else if (night_on())
-        tk_snprintf(t, sizeof t, "Night Shift: %dK", night_kelvin());
+        tk_snprintf(t, sizeof t, "夜览：%dK", night_kelvin());
     widget_set_text_utf8(label, t);
 }
 
@@ -201,7 +201,7 @@ void mono_sync(void) {
     if (xf.mono) peq_chain();
 }
 
-static void mono_text(void *label) { list_toggle(label, "Mono Audio", mono_on()); }
+static void mono_text(void *label) { list_toggle(label, "单声道音频", mono_on()); }
 
 /* Playback's row (navigation.c ringnav_audioset makes it): the label, kept for mono_click. */
 void mono_row(void *label) {
@@ -216,7 +216,7 @@ int mono_click(void *ctx, void *event) {
     return 0;
 }
 
-static void swap_text(void) { list_toggle(xf.swap_label, "Swap L/R", swap_on()); }
+static void swap_text(void) { list_toggle(xf.swap_label, "左右声道互换", swap_on()); }
 void swap_row(void *label) {
     xf.swap_label = label;
     swap_text();
@@ -293,16 +293,16 @@ static void refresh(int save) {
     if (xf.ctx == 1)
         tk_snprintf(t, sizeof t, "%d%%", wheel_pct());
     else if (xf.ctx == 2)
-        tk_snprintf(t, sizeof t, xf.rs_min ? "%d min" : "Off", xf.rs_min);
+        tk_snprintf(t, sizeof t, xf.rs_min ? "%d 分钟" : "关闭", xf.rs_min);
     else if (xf.ctx == 3) {
         tk_snprintf(t, sizeof t,
-                    night_on() == 2 ? "Auto"
+                    night_on() == 2 ? "自动"
                     : night_on()    ? "%dK"
-                                    : "Off",
+                                    : "关闭",
                     night_kelvin());
         image_base_set_image(xf.sw, night_on() ? "switch_on" : "switch_off");
     } else {
-        tk_snprintf(t, sizeof t, xf.on ? "%d s" : "Off", xf.seconds);
+        tk_snprintf(t, sizeof t, xf.on ? "%d 秒" : "关闭", xf.seconds);
         image_base_set_image(xf.sw, xf.on ? "switch_on" : "switch_off");
     }
     widget_set_text_utf8(xf.label, t);
@@ -417,10 +417,10 @@ int xfade_open(void *ctx, void *event) {
     widget_on(xf.slider, EVT_VALUE_CHANGING, slid, (void *)1L);
     widget_on(xf.slider, EVT_VALUE_CHANGED, slid, 0);
     widget_on(page, EVT_DESTROY, gone, page);
-    widget_set_text_utf8(title, mode == 3   ? "Night Shift"
-                                : mode == 2 ? "Resume Songs"
-                                : wheel     ? "Wheel Sensitivity"
-                                            : "Crossfade");
+    widget_set_text_utf8(title, mode == 3   ? "夜览"
+                                : mode == 2 ? "断点续播"
+                                : wheel     ? "滚轮灵敏度"
+                                            : "交叉淡化");
     /* Stock shows and enables it only while Boot volume's switch is on: disabled, touch misses the
      * slider and +/- (#140). */
     widget_set_visible(xf.view, 1, 0);

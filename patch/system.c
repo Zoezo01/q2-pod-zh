@@ -350,7 +350,7 @@ static unsigned jpeg_size(const unsigned char *b, unsigned n) {
 static void *logo_sync(void *unused) {
     unsigned n = 0, old_n;
     unsigned char *b = 0, *old = 0;
-    const char *err = "Boot logo must be a 320x375 JPEG";
+    const char *err = "开机图须为 320x375 JPEG";
     if (access(LOGO_SRC, 0))
         unlink(LOGO_DST), err = 0;
     else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
@@ -374,7 +374,7 @@ static void *logo_sync(void *unused) {
             blob_io(LOGO_DST, LOGO_DST ".tmp", b, n, 1))
             err = 0; /* the same bytes are not written again each boot */
         else
-            unlink(LOGO_DST ".tmp"), err = "Could not save boot logo";
+            unlink(LOGO_DST ".tmp"), err = "无法保存开机图";
     }
     free(b), free(old);
     pw.logo_err = err;

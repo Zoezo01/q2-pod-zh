@@ -39,7 +39,7 @@ int shuffle_play(void *all) {
 static int shuffle_songs(void *ctx, void *event) {
     int n;
     void *all = staged(songs_unsorted, (void *)1, &n);
-    if (!shuffle_play(all)) toast("Update Local Music first");
+    if (!shuffle_play(all)) toast("请先更新本地音乐库");
     deque_destroy(all);
     return 0;
 }
@@ -48,7 +48,7 @@ static int shuffle_groups(void *ctx, void *event) {
     int n;
     void *all = staged(songs_unsorted, (void *)1, &n);
     if (!playback_groups(all, (int)(long)ctx))
-        toast(deque_size(all) ? "Too many songs to shuffle" : "Update Local Music first");
+        toast(deque_size(all) ? "歌曲过多，无法随机播放" : "请先更新本地音乐库");
     deque_destroy(all);
     return 0;
 }
@@ -71,15 +71,15 @@ static int sp_closed(void *ctx, void *event) {
 
 int shuffle_menu(void *ctx, void *event) {
     if (ll.sp_page || !(ll.sp_page = page_open("shuffle_page", sp_closed, page_keyup))) return 0;
-    void *view = page_list(ll.sp_page, ll.sp_page, 0, "Shuffle", 3, 48);
-    page_row_detail(view, 0, "Shuffle Songs", 0, sp_pick);
-    page_row_detail(view, 1, "Shuffle Albums", 0, sp_pick);
-    page_row_detail(view, 2, "Shuffle Folders", 0, sp_pick);
+    void *view = page_list(ll.sp_page, ll.sp_page, 0, "随机播放", 3, 48);
+    page_row_detail(view, 0, "随机播放歌曲", 0, sp_pick);
+    page_row_detail(view, 1, "随机播放专辑", 0, sp_pick);
+    page_row_detail(view, 2, "随机播放文件夹", 0, sp_pick);
     /* With the title in the bar: centred at the page's foot, its box clear of the glass. */
     void *note = theme()->page_title_h ? text(ll.sp_page, 20, 200, 335, 24)
                                        : text(ll.sp_page, 46, 262, 283, 24);
     widget_set_prop_int(note, "style:normal:text_color", (int)0xffaaaaaau);
-    widget_set_text_utf8(note, "Albums and folders take a moment to shuffle");
+    widget_set_text_utf8(note, "专辑和文件夹随机排序需要片刻");
     theme_font(note, ROLE_INFO, FONT_ROW);
     widget_set_prop_int(note, "style:normal:font_size", 16);
     return 0;
@@ -173,13 +173,13 @@ int most_played(void *ctx, void *event) {
     if (st.mp_list && st.mp_list != from) deque_destroy(st.mp_list);
     deque_destroy(from);
     st.mp_list = ranked;
-    void *view = page_list_or(st.mp_page, st.mp_page, "Most Played", "No plays yet", top, 64);
+    void *view = page_list_or(st.mp_page, st.mp_page, "播放最多", "暂无播放记录", top, 64);
     char name[512], detail[300];
     for (int i = 0; i < top; i++) { /* the artist, if tagged, and the play count, under the title */
         void *t = deque_at(st.mp_list, (unsigned)i);
         const char *artist = P(t, REC_ARTIST);
         unsigned plays = (score[i] - 1) / PLAYS_SLOTS, a = artist && *artist;
-        tk_snprintf(detail, sizeof detail, a ? "%s · %u play%s" : "%s%u play%s", a ? artist : "",
+        tk_snprintf(detail, sizeof detail, a ? "%s · 播放 %u 次" : "%s播放 %u 次", a ? artist : "",
                     plays, plays == 1 ? "" : "s");
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, mp_play);
     }
@@ -260,13 +260,13 @@ static void *songs_rows(const char *dir, const char *title, int tidal, int album
     ll.td_list = card_songs(dir, album);
     int n = (int)deque_size(ll.td_list);
     void *view =
-        page_list_or(ll.td_page, ll.td_page, title, "No downloads yet", n + (tidal && n), 48);
+        page_list_or(ll.td_page, ll.td_page, title, "暂无下载", n + (tidal && n), 48);
     char name[256];
     for (int i = 0; i < n; i++) {
         song_label(P(deque_at(ll.td_list, (unsigned)i), REC_NAME), tidal, name, sizeof name);
         page_row_detail(view, i, name, 0, td_play);
     }
-    if (tidal && n) page_row_detail(view, n, "Clear All Downloads…", 0, td_clear);
+    if (tidal && n) page_row_detail(view, n, "清除全部下载…", 0, td_clear);
     return view;
 }
 /* Clear All Downloads' confirmation in the list's place, as Spotify's Remove Downloads?, on Cancel;
@@ -276,16 +276,16 @@ static int td_show(const void *unused) {
     if (!ll.td_page) return 0;
     unsigned n = deque_size(ll.td_list);
     if (!ll.td_asking) {
-        void *view = songs_rows(TIDAL_DIR, "Tidal Downloads", 1, 0);
+        void *view = songs_rows(TIDAL_DIR, "Tidal 下载", 1, 0);
         if ((n = deque_size(ll.td_list))) ringnav_select(view, (int)n, (int)n + 1);
         return 0;
     }
     char note[32];
     tk_snprintf(note, sizeof note, n == 1 ? "%u track" : "%u tracks", n);
-    void *view = page_list(ll.td_page, ll.td_page, 0, "Remove Downloads?", 3, 64);
-    page_row_detail(view, 0, note, "Keeps settings", 0);
-    page_row_detail(view, 1, "Cancel", "", td_clear);
-    page_row_detail(view, 2, "Remove", "", td_clear);
+    void *view = page_list(ll.td_page, ll.td_page, 0, "移除下载？", 3, 64);
+    page_row_detail(view, 0, note, "保留设置", 0);
+    page_row_detail(view, 1, "取消", "", td_clear);
+    page_row_detail(view, 2, "移除", "", td_clear);
     ringnav_select(view, 1, 3);
     return 0;
 }
@@ -312,7 +312,7 @@ static int songs_page(const char *window, const char *dir, const char *title, in
 }
 int tidal_downloads(void *ctx, void *event) {
     (void)ctx, (void)event;
-    return songs_page("tidal_downloads", TIDAL_DIR, "Tidal Downloads", 1, 0);
+    return songs_page("tidal_downloads", TIDAL_DIR, "Tidal 下载", 1, 0);
 }
 /* A card app's local row (addon.c): a folder ("/" last) lists its songs; a song plays its folder
  * from it, as Tidal Downloads does. album: the folder is an album's, listed and played in track
@@ -338,7 +338,7 @@ int songs_open(const char *path, const char *title, int album) {
     if (at >= 0)
         play_folder(songs, at, 0xf001); /* playing_page copies the queue at once */
     else
-        toast("It isn't on the card any more");
+        toast("卡上已不存在");
     deque_destroy(songs);
     return 0;
 }
@@ -415,7 +415,7 @@ static int era_closed(void *ctx, void *event) {
 }
 /* "60s" to "90s", then "2000s" on. */
 static const char *era_name(char *buf, int decade) {
-    tk_snprintf(buf, 16, decade < 2000 ? "%02ds" : "%ds", decade < 2000 ? decade % 100 : decade);
+    tk_snprintf(buf, 16, decade < 2000 ? "%02d 年代" : "%d 年代", decade < 2000 ? decade % 100 : decade);
     return buf;
 }
 
@@ -503,7 +503,7 @@ static int era_pick(void *ctx, void *event) {
     if (i < 2) {
         void *all = i ? era_shuffle_songs() : era_songs();
         if (!deque_size(all) || access(P(deque_at(all, 0), REC_PATH), 0))
-            toast("Storage unavailable");
+            toast("存储不可用");
         else if (i)
             shuffle_play(all);
         else
@@ -512,7 +512,7 @@ static int era_pick(void *ctx, void *event) {
         return 0;
     }
     void *songs, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs) : 0;
-    if (!r || !coverflow_goto_album(r)) toast("Album not found");
+    if (!r || !coverflow_goto_album(r)) toast("找不到该专辑");
     if ((unsigned)(i - 2) < era.m) deque_destroy(songs);
     return 0;
 }
@@ -530,9 +530,9 @@ static int era_open_decade(void *ctx, void *event) {
     era.cap = era.v ? (unsigned)era.count[k] : 0;
     era_sql(sql, era_album_row, 0);
     void *view = page_list(era.albums, era.albums, 0, era_name(name, from), (int)era.m + 2, 64);
-    tk_snprintf(detail, sizeof detail, era.m == 1 ? "%u album" : "%u albums", era.m);
-    page_row_detail(view, 0, "Play All", detail, era_pick);
-    page_row_detail(view, 1, "Shuffle", "Every song, shuffled", era_pick);
+    tk_snprintf(detail, sizeof detail, "%u 张专辑", era.m);
+    page_row_detail(view, 0, "全部播放", detail, era_pick);
+    page_row_detail(view, 1, "随机播放", "全部歌曲，随机播放", era_pick);
     for (unsigned i = 0; i < era.m; ++i) {
         tk_snprintf(detail, sizeof detail, *era.v[i].artist ? "%s \xe2\x80\xa2 %d" : "%s%d",
                     era.v[i].artist, era.v[i].year);
@@ -547,15 +547,15 @@ int era_menu(void *ctx, void *event) {
                  " year from songtable where " MUSIC_WHERE " and ifnull(album,'')<>''" ALBUM_GROUP
                  ") where year>0 group by 1 order by 1",
                  era_decade_row, 0)) {
-        toast("Era unavailable");
+        toast("年代不可用");
         return 0;
     }
     if (!era.n) {
-        toast("No dated albums yet");
+        toast("暂无带年份的专辑");
         return 0;
     }
     if (!(era.page = page_open("era_page", era_closed, page_keyup))) return 0;
-    void *view = page_list(era.page, era.page, 0, "Era", era.n, 64);
+    void *view = page_list(era.page, era.page, 0, "年代", era.n, 64);
     char name[16], detail[32];
     for (int i = 0; i < era.n; ++i) {
         tk_snprintf(detail, sizeof detail, era.count[i] == 1 ? "%d album" : "%d albums",
@@ -684,7 +684,7 @@ static void ls_show(void) {
     if (n) qsort(v, n, sizeof *v, by_length);
     for (unsigned i = 0; i < n; i++) _deque_push_back(list, deque_at(songs, v[i].key));
     st.rt_list = list;
-    void *view = page_list(st.rt_page, st.rt_page, 0, "Long Songs", n ? (int)n : 1, 64);
+    void *view = page_list(st.rt_page, st.rt_page, 0, "长曲目", n ? (int)n : 1, 64);
     char name[512], detail[300], t[16];
     for (unsigned i = 0; i < n; i++) {
         void *r = deque_at(list, i);
@@ -694,7 +694,7 @@ static void ls_show(void) {
                     artist && *artist ? artist : "", t);
         page_row_detail(view, (int)i, track_name(name, sizeof name, r), detail, rt_play);
     }
-    if (!n) page_row_detail(view, 0, "No songs over 10 minutes", 0, 0);
+    if (!n) page_row_detail(view, 0, "暂无超过十分钟的歌曲", 0, 0);
     free(v);
     deque_destroy(songs);
     ls.songs = 0;
@@ -725,7 +725,7 @@ static int ls_cancel(void *ctx, void *event) {
 static int ls_poll(const void *unused) {
     if (ls.done >= ls.total || ls.cancel) return ls_done(0);
     char t[64];
-    tk_snprintf(t, sizeof t, "Measuring songs\xe2\x80\xa6 %d/%d", ls.done, ls.total);
+    tk_snprintf(t, sizeof t, "正在检测时长… %d/%d", ls.done, ls.total);
     page_retitle(st.rt_page, ls.title, t);
     return 8; /* RET_REPEAT */
 }
@@ -756,12 +756,50 @@ int long_songs(void *ctx, void *event) {
     if (ls.total && !pthread_create(&ls.thread, 0, ls_worker, 0)) {
         ls.running = 1;
         page_row_detail(
-            page_list(st.rt_page, st.rt_page, &ls.title, "Measuring songs\xe2\x80\xa6", 1, 48), 0,
-            "Cancel", 0, ls_cancel);
+            page_list(st.rt_page, st.rt_page, &ls.title, "正在检测时长…", 1, 48), 0,
+            "取消", 0, ls_cancel);
         ls.timer = timer_add(ls_poll, (void *)0, 250);
     } else {
         ls_stop();
         ls_show();
     }
     return 0;
+}
+
+/* The library fill's two doors (onlinematch.c's library_fill_*): stock's albums, each with its
+ * artist and one track's path, and one album's tracks. Both run on the UI thread, which is the only
+ * one that may touch stock's records; the job's worker works on the copies it is handed. */
+static int (*fill_take)(void *, const char *, const char *, const char *);
+static void *fill_take_ctx;
+static int fill_take_row(void *unused, int n, char **v, char **c) {
+    (void)unused, (void)c;
+    if (n != 4 || !v[0] || !v[3] || !fill_take) return 0;
+    return fill_take(fill_take_ctx, v[0], v[1] ? v[1] : "", v[3]);
+}
+int ringnav_fill_albums(int (*row)(void *, const char *, const char *, const char *), void *ctx) {
+    fill_take = row, fill_take_ctx = ctx;
+    int ok = era_sql(ERA_ALBUMS, fill_take_row, 0);
+    fill_take = 0, fill_take_ctx = 0;
+    return ok;
+}
+void *ringnav_album_tracks(const char *album, int *n) {
+    return staged_music(era_by_name, (void *)album, n);
+}
+/* The fill's third pass: the card's songs without an album tag (stock groups them under Unknown
+ * Album, whose folder has no cover to fetch), one row each. A CUE segment is left out as the album
+ * pass leaves its tracks out, and so are audiobooks, podcasts and M4B (MUSIC_WHERE). */
+static int (*fill_song_take)(void *, const char *, const char *, const char *);
+static void *fill_song_ctx;
+static int fill_song_row(void *unused, int n, char **v, char **c) {
+    (void)unused, (void)c;
+    if (n != 3 || !v[2] || !*v[2] || !fill_song_take) return 0;
+    return fill_song_take(fill_song_ctx, v[0] ? v[0] : "", v[1] ? v[1] : "", v[2]);
+}
+int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char *), void *ctx) {
+    fill_song_take = row, fill_song_ctx = ctx;
+    int ok = era_sql("select name,songer,fileurl from songtable where " MUSIC_WHERE
+                     " and ifnull(album,'')='' and ifnull(time,0)=0 and ifnull(time_end,0)=0",
+                     fill_song_row, 0);
+    fill_song_take = 0, fill_song_ctx = 0;
+    return ok;
 }

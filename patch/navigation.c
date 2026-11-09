@@ -1303,7 +1303,7 @@ static int pull_event(void *page, void *event) {
         }
     }
     if (prompt) {
-        widget_set_text_utf8(prompt, ready ? "Release to search" : "Pull to search");
+        widget_set_text_utf8(prompt, ready ? "松开搜索" : "下拉搜索");
         widget_set_visible(prompt, dy > 0, 0);
     }
     return STOP;
@@ -2723,7 +2723,7 @@ static void *list_row_into(void *view, const char *icon, int (*click)(void *, vo
  * peq_ui.c's). */
 void list_toggle(void *label, const char *title, int on) {
     if (theme()->set_text) {
-        list_value(label, title, on ? "On" : "Off");
+        list_value(label, title, on ? "打开" : "关闭");
         return;
     }
     void *button = P(label, W_PARENT);
@@ -2766,7 +2766,7 @@ void list_value(void *label, const char *title, const char *value) {
 #define SWITCH_ROW "_switch_row"
 static void switch_text(void *win, void *label) {
     void *sw = widget_lookup(win, "img_switch", 1);
-    list_toggle(label, widget_lookup(win, "view_sleep", 1) ? "Sleep Timer" : "Lock Screen",
+    list_toggle(label, widget_lookup(win, "view_sleep", 1) ? "睡眠定时" : "锁屏",
                 sw && !tk_strcmp(widget_get_prop_str(sw, "image", ""), "switch_on"));
 }
 static int switch_due(const void *info) {
@@ -2810,7 +2810,7 @@ int ringnav_sleeptimer(void *win, void *ctx) {
     return result;
 }
 
-/* A settings row's "Title: value" text; a set_text theme shows it as list_value, its bare text
+/* A settings row's "标题：值" text; a set_text theme shows it as list_value, its bare text
  * (Accent's name) under Accent. */
 static void row_label(void *label, const char *text) {
     if (!theme()->set_text) {
@@ -2861,7 +2861,7 @@ int csv_toggle(char *list, unsigned size, const char *item) {
 
 /* Stock modes, only with the screen off: 1 locks wheel volume, 2 the buttons, 3 both.
  * KEY_LOCKOUT is the separate, temporary debounce after a button press. */
-static const char *const lock_names[] = { "Off", "Everything", "Buttons only", "Volume only" };
+static const char *const lock_names[] = { "关闭", "全部锁定", "仅按键", "仅音量" };
 static int lock_choice(void) {
     if (g_keylock_flag && (g_keylock_mode < 1 || g_keylock_mode > 3)) {
         g_keylock_mode = 3; /* an unknown mode locks Everything */
@@ -3024,6 +3024,8 @@ int ringnav_quick_settings(void *win, void *ctx) {
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
+/* 无耳机不播放 on: a start with nothing at the output is refused (headset.c). */
+static int headset_guard __attribute__((section(".scratch")));
 #define STR_(x) #x
 #define STR(x) STR_(x)
 static int *const pod_values[] = { &st.charge_limit,
@@ -3043,7 +3045,9 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.eq_output,
                                    0,
                                    0,
-                                   &st.smart_wifi };
+                                   &st.smart_wifi,
+                                   &headset_guard,
+                                   0 };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3063,15 +3067,18 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "EQOUTPUT",
                                         0,
                                         0,
-                                        "SMARTWIFI" };
+                                        "SMARTWIFI",
+                                        "HEADSETGUARD",
+                                        0 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
 void pod_settings(void) {
     if (st.pod_read) return;
     for (unsigned i = 0; i < sizeof pod_keys / sizeof *pod_keys; ++i)
-        if (pod_keys[i]) /* Artist albums defaults to Coverflow */
-            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i), i == POD_ARTIST_CF);
+        if (pod_keys[i]) /* Artist albums defaults to Coverflow; 无耳机不播放 to on */
+            *pod_values[i] = config_value("Q2POD", pod_keys[i], pod_choices(i),
+                                          i == POD_ARTIST_CF || i == POD_HEADSET_GUARD);
     st.pod_read = 1;
 }
 int ringnav_year_old(void) {
@@ -3129,26 +3136,28 @@ int ringnav_bt_connect_start(int pause) {
 }
 static void pod_text(int i) {
     static const char *const names[][4] = {
-        { "Charge Limit: Off", "Charge Limit: " STR(CHARGE_STOP) "%" },
-        { "Wake: Single Press", "Wake: Double Press" },
-        { "Artist View: Grid", "Artist View: Cover Flow", "Artist View: List" },
-        { "Year Order: Newest First", "Year Order: Oldest First" },
-        { "Artists: Artist", "Artists: Album Artist" },
-        { "Resume on Connect: Off", "Resume on Connect: On" },
-        { "Clock: Standard", "Clock: Large" },
-        { "Artist Album Order: Year", "Artist Album Order: A–Z" },
-        { "Volume Guard: Off", "Volume Guard: On" },
-        { "Hold Return: Recent", "Hold Return: Home" },
-        { "Standby Limit: Off", "Standby Limit: " STR(STANDBY_LIMIT_1) " h",
-          "Standby Limit: " STR(STANDBY_LIMIT_2) " h",
-          "Standby Limit: " STR(STANDBY_LIMIT_3) " h" },
+        { "充电上限：关闭", "充电上限：" STR(CHARGE_STOP) "%" },
+        { "唤醒：单击", "唤醒：双击" },
+        { "表演者专辑：网格", "表演者专辑：Cover Flow", "表演者专辑：列表" },
+        { "年份顺序：从新到旧", "年份顺序：从旧到新" },
+        { "表演者分类：曲目表演者", "表演者分类：专辑表演者" },
+        { "连接后续播：关闭", "连接后续播：打开" },
+        { "时钟：标准", "时钟：大字" },
+        { "表演者专辑排序：年份", "表演者专辑排序：名称" },
+        { "音量防误触：关闭", "音量防误触：打开" },
+        { "长按返回：最近页面", "长按返回：主菜单" },
+        { "待机时限：关闭", "待机时限：" STR(STANDBY_LIMIT_1) " 小时",
+          "待机时限：" STR(STANDBY_LIMIT_2) " 小时",
+          "待机时限：" STR(STANDBY_LIMIT_3) " 小时" },
         { 0 }, /* Control Device Volume: a switch */
         { 0 }, /* Coverflow Sort's from coverflow.c */
-        { "Refresh Cover Flow" },
+        { "刷新 Cover Flow" },
         { 0 }, /* EQ per Output: a switch */
         { 0 }, /* Key Tone: a switch */
         { 0 }, /* In-Vehicle Mode: a switch */
         { 0 }, /* Smart Wi-Fi: a switch */
+        { 0 }, /* 无耳机不播放: a switch */
+        { "补全封面与歌词" }, /* an action: the row says how far the job got */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3162,13 +3171,14 @@ static void pod_text(int i) {
             : i == POD_CARMODE ? g_carmode != 0
             : pod_values[i]    ? *pod_values[i]
                                : 0;
-    const char *toggle = i == POD_CHARGE       ? "Charge Limit (" STR(CHARGE_STOP) "%)"
-                         : i == POD_RESUME     ? "Resume on Connect"
-                         : i == POD_VOL_GUARD  ? "Volume Guard"
-                         : i == POD_BT_LINK    ? "Control Device Volume"
-                         : i == POD_KEYTONE    ? "Key Tone"
-                         : i == POD_CARMODE    ? "In-Vehicle Mode"
+    const char *toggle = i == POD_CHARGE       ? "充电上限 (" STR(CHARGE_STOP) "%)"
+                         : i == POD_RESUME     ? "连接后续播"
+                         : i == POD_VOL_GUARD  ? "音量防误触"
+                         : i == POD_BT_LINK    ? "联动设备音量"
+                         : i == POD_KEYTONE    ? "按键音"
+                         : i == POD_CARMODE    ? "车载模式"
                          : i == POD_SMART_WIFI ? "Smart Wi-Fi"
+                         : i == POD_HEADSET_GUARD ? "无耳机不播放"
                                                : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3177,6 +3187,17 @@ static void pod_text(int i) {
     /* Stock's rows, so stock's translations */
     if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
     if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
+}
+/* 补全封面与歌词's press, once Smart Wi-Fi's link is up (need_link may replay it). A second press
+ * while it runs stops it at the next item. */
+static int fill_go(void *ctx, void *unused) {
+    (void)ctx, (void)unused;
+    if (!library_fill_start())
+        toast("卡上没有可补全的歌曲");
+    else
+        toast("开始补全，再按一次可停止");
+    pod_text(POD_LIBRARY_FILL);
+    return 0;
 }
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
@@ -3190,7 +3211,13 @@ static int pod_click(void *ctx, void *event) {
         coverflow_sort_step();
     else if (i == POD_CF_REFRESH) {
         coverflow_refresh_art();
-        toast("Cover Flow rebuilds artwork next time");
+        toast("下次进入时将重建 Cover Flow 封面");
+    } else if (i == POD_LIBRARY_FILL) {
+        if (library_fill_active())
+            library_fill_cancel();
+        else if (need_link(fill_go, ctx))
+            fill_go(0, 0); /* held for Smart Wi-Fi's link, or none */
+        pod_text(i);
     } else if (i == POD_ARTISTS) {
         int v = I(artist_type, 0) != 1;
         I(artist_type, 0) = v;
@@ -3217,6 +3244,12 @@ static int pod_click(void *ctx, void *event) {
             headset_volume_reset(), device_set_volume(g_volume, 0);
     }
     pod_text(i);
+    return 0;
+}
+/* The fill's row is rebuilt with its page: a stale label pointer would write into a dead node. */
+static int fill_gone(void *ctx, void *event) {
+    (void)ctx, (void)event;
+    st.pod_label[POD_LIBRARY_FILL] = 0;
     return 0;
 }
 void pod_rows(void *win, const char *view_name, int first, int n, const char *const *icons) {
@@ -3295,6 +3328,8 @@ static const unsigned char playset_order[] = {
     17 /* MQA */,
     7 /* USB Audio */,
     18 /* Library & Folders */,
+    19 /* 无耳机不播放 */,
+    20 /* 补全封面与歌词 */,
 };
 /* Library & Folders: stock's Folder art and Folder skip (0, 1), then ours as built. */
 static const unsigned char library_order[] = {
@@ -3360,7 +3395,7 @@ static int root_dir(char *path) {
 }
 static void root_text(const char *name) {
     char t[280];
-    tk_snprintf(t, sizeof t, "Folder Root: %s", name[0] ? name : "Card");
+    tk_snprintf(t, sizeof t, "文件夹起点：%s", name[0] ? name : "存储卡");
     widget_set_text_utf8(st.root_label, t);
 }
 /* Centre or tap: the next root, saved; Folder opens there from its next visit. */
@@ -3393,7 +3428,7 @@ int ringnav_audioset(void *win, void *ctx) {
     if (sub) {
         void *nav = widget_lookup(win, "view_navbar", 1),
              *title = nav ? widget_get_child(nav, 0) : (void *)0;
-        if (title) widget_set_text_utf8(title, "Library & Folders");
+        if (title) widget_set_text_utf8(title, "资料库与文件夹");
         pod_rows(win, "scroll_view_playset", POD_YEAR_OLD, 2, icons);
         pod_rows(win, "scroll_view_playset", POD_ARTIST_AZ, 1, icons);
         char name[256];
@@ -3409,7 +3444,14 @@ int ringnav_audioset(void *win, void *ctx) {
     swap_row(list_row(view, "playset_balance", swap_click, 0));
     mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
     widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
-                         "Library & Folders");
+                         "资料库与文件夹");
+    /* Last built, so the rows above keep their child indices; playset_order puts them in place. */
+    static const char *const guard_icon[] = { "system_keylock" },
+                       *const fill_icon[] = { "player_onlinesearch" };
+    pod_rows(win, "scroll_view_playset", POD_HEADSET_GUARD, 1, guard_icon);
+    pod_rows(win, "scroll_view_playset", POD_LIBRARY_FILL, 1, fill_icon);
+    if (st.pod_label[POD_LIBRARY_FILL])
+        widget_on(st.pod_label[POD_LIBRARY_FILL], EVT_DESTROY, fill_gone, 0);
     reorder(view, playset_order, sizeof playset_order);
     return result;
 }
@@ -3609,7 +3651,7 @@ static void clock_show(void) {
         tk_snprintf(s, sizeof s, "%d:%02d", (tm[2] + 11) % 12 + 1, tm[1]);
     else if (ok)
         tk_snprintf(s, sizeof s, "%d:%02d %s", (tm[2] + 11) % 12 + 1, tm[1],
-                    tm[2] < 12 ? "AM" : "PM");
+                    tm[2] < 12 ? "上午" : "下午");
     widget_set_text_utf8(label, s);
 }
 static void clock_zone(void) {
@@ -3699,6 +3741,69 @@ static int bar_state_sync(void *bar) {
     return changed;
 }
 
+/* The glyph alone says which of two bitmaps it is, so a pause nothing on screen asked for — the
+ * 3.5 mm jack pulled (config_po_output's mclSetPause) or a Bluetooth link dropped — would read as
+ * playing until the glyph was painted again. The state therefore also gets a word beside the glyph
+ * ("正在播放", "播放暂停"), written from the same status by bar_word_sync, and the bar repaints
+ * through bar_repaint when either moves, from whatever the pause came from. The word takes the room
+ * after the glyph, and steps aside while the EQ badge (label_eq) holds it: the bar is 375 px with
+ * the clock centred from CLOCK_EDGE on. Four hanzi at PLAY_WORD_PX are 60 px from the glyph's right
+ * edge, so the word ends well inside label_clock's box, which is sized for the widest text
+ * ("12:59 PM") and inks from the middle of it. On screen the two never touch. Classic's bar puts its
+ * title after the glyph (tools/ipod.py), so there the word only takes the room a page without a
+ * title of its own leaves (state_own_place): Home's list and Now Playing's page. */
+#define PLAY_WORD_W 62
+#define PLAY_WORD_PX 15
+
+/* Whether the bar's left belongs to the play state alone: no page name there to show, so the glyph
+ * and its word take that room. Home's list is one ("Q2 Pod" makes way for them while a player
+ * plays) and Now Playing's page the other (bar_title_of names it none). Minimal's bar has no title
+ * of its own: bar_title names the page in the clock instead. A dialog keeps the page under it
+ * (bar_own), as it keeps that page's title. */
+static int state_own_place(void) {
+    if (!st.bar_title) return 1;
+    void *top = window_manager_get_top_window(window_manager());
+    if (top && !tk_strcmp(widget_get_type(top), "window"))
+        st.bar_own = home_menu(top) ||
+                     tk_str_start_with(widget_get_prop_str(top, "name", ""), "playing_page");
+    return st.bar_own;
+}
+
+/* The word's label, created once as the last child of the glyph's view: that view lays its children
+ * out in order (stock's own margin and spacing), so the word follows the glyph, and the EQ badge
+ * when it shows. */
+static void play_word_create(void *bar) {
+    if (st.play_word || !st.bar_state) return;
+    void *left = P(st.bar_state, W_PARENT);
+    if (!left) return;
+    st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
+    if (!st.play_word) return;
+    widget_set_name(st.play_word, "label_playword");
+    widget_use_style(st.play_word, "s_label_white16c");
+    widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
+    widget_set_prop_int(st.play_word, "style:normal:text_color", (int)0xffffffffu);
+    widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
+    widget_set_visible(st.play_word, 0, 0);
+    widget_layout_children(left);
+}
+
+/* What the word should say, from the same status bar_state_sync applies, and its room: returns
+ * whether what the bar shows moved, so bar_sync repaints it along with a moved glyph. */
+static int bar_word_sync(void *bar) {
+    int status = bar_status();
+    play_word_create(bar);
+    if (!st.play_word) return 0;
+    int show = (status == 2 || status == 3) && state_own_place() &&
+               !(st.bar_eq && widget_get_visible(st.bar_eq));
+    /* What the bar shows: the glyph's state, and whether the word has its room (bit 3). */
+    int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
+    if (key == st.word_key) return 0;
+    st.word_key = key, st.word = status;
+    widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
+    widget_set_visible(st.play_word, show, 0);
+    return 1;
+}
+
 /* An invalidate made while another window paints is dropped with that frame's dirty rects, and
  * img_state keeps its dirty flag, so stock's own invalidates skip it until something else repaints
  * the bar: Now Playing, painting every 250 ms, sees a Play/Pause first and left a stale icon
@@ -3772,7 +3877,9 @@ static void bar_dark_sync(void *bar) {
 }
 static void bar_sync(void *bar) {
     bar_dark_sync(bar);
-    if (bar_state_sync(bar) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
+    int glyph = bar_state_sync(bar); /* looks the widgets up first: the word needs img_state */
+    int word = bar_word_sync(bar);
+    if ((glyph || word) && !st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
     if (!st.bar_bt || !st.bar_wifi || !st.bar_pct || !st.bar_slot || !st.bar_icon) return;
     int shown = widget_get_visible(st.bar_bt), c = 0;
     const char *image = shown ? widget_get_prop_str(st.bar_bt, "image", "") : "";
@@ -5078,12 +5185,12 @@ static void time_open(void *win);
 static void time_paint(void *w, void *canvas);
 /* Stock's window as it loads, before its init. Every look-up it makes by name still finds its
  * widget: edit_key clicks img_dec and img_add, hidden here. */
-static const __WCHAR_TYPE__ slider_caption[] = L"Press Centre When Finished";
+static const __WCHAR_TYPE__ slider_caption[] = L"完成后按中键";
 /* Crossfade's and Night Shift's Centre stays on the page (crossfade.c): what it does there. */
 void slider_centre_hint(void *page, int night) {
     void *c = page && page == st.slider_win ? widget_lookup(page, "caption", 1) : (void *)0;
     if (!c) return;
-    st.slider_hint = night ? L"Press Centre to Change Mode" : L"Press Centre to Turn On or Off";
+    st.slider_hint = night ? L"按中键切换模式" : L"按中键打开或关闭";
     widget_set_text(c, (const unsigned *)st.slider_hint);
 }
 static void slider_open(void *win) {
@@ -5260,12 +5367,12 @@ static int usb_poll(const void *info) {
     if (n > 0) st.usb_lun = 1;
     if (n || !st.usb_lun) return 8; /* RET_REPEAT */
     if ((c = widget_lookup(win, "msg_heading", 1))) {
-        widget_set_text_utf8(c, "OK to Disconnect");
+        widget_set_text_utf8(c, "可以断开连接");
         widget_set_text_utf8(widget_lookup(win, "msg_line", 1), "");
     } else if ((c = widget_lookup(win, "scrlabel_info", 1))) {
         void *ok = hscroll_label_create(P(c, W_PARENT), I(c, W_X), I(c, W_Y), I(c, W_W), I(c, W_H));
         widget_use_style(ok, "s_scrlabel_white24c");
-        widget_set_text_utf8(ok, "OK to Disconnect");
+        widget_set_text_utf8(ok, "可以断开连接");
         widget_set_visible(c, 0, 0);
     }
     widget_invalidate_force(win, (void *)0);
@@ -5608,13 +5715,13 @@ static void *page_caption(void *win) {
  * a stock page's (hidden) navbar title, else a payload page's 48 px caption row (page_title). */
 static const char *bar_title_of(void *win, void **label) {
     const char *name = widget_get_prop_str(win, "name", "");
-    if (tk_str_start_with(name, "playing_page")) return "Now Playing";
+    if (tk_str_start_with(name, "playing_page")) return "正在播放";
     if (!tk_strcmp(name, "coverflow_page")) return "Cover Flow";
-    if (!tk_strcmp(name, "equalizer_page")) return "EQ"; /* its 48 px row is the tabs' own label */
+    if (!tk_strcmp(name, "equalizer_page")) return "均衡器"; /* its 48 px row is the tabs' own label */
     if (!tk_strcmp(name, "spotify_page")) return "Spotify"; /* they hide their own name's label */
-    if (!tk_strcmp(name, "radionp_page")) return "Internet Radio";
+    if (!tk_strcmp(name, "radionp_page")) return "网络电台";
     if (!tk_strcmp(name, "usbmode_page")) return "Q2 Pod";
-    if (!tk_strcmp(name, "search_dialog")) return "Search"; /* stock's toolbar has no label */
+    if (!tk_strcmp(name, "search_dialog")) return "搜索"; /* stock's toolbar has no label */
     void *nav = widget_lookup(win, "view_navbar", 1);
     if (nav) {
         for (int i = 0, k = widget_count_children(nav); i < k && !*label; ++i) {
@@ -5674,7 +5781,10 @@ void bar_title_sync(void *win) {
     if (!st.bar_title || !win || win != window_manager_get_top_window(window_manager())) return;
     static const unsigned none = 0;
     char s[256], now[256]; /* stock writes nothing unless all of it fits */
-    const char *t = home_menu(win) ? coverflow_home_title() : (const char *)0;
+    /* Home's "Q2 Pod" makes way while a player plays: the play state's word takes that room
+     * (state_own_place, bar_word_sync). */
+    int playing = bar_status() == 2 || bar_status() == 3;
+    const char *t = home_menu(win) ? (playing ? "" : coverflow_home_title()) : (const char *)0;
     if (t)
         ;
     else if (win != st.title_win) {
@@ -5696,7 +5806,7 @@ void bar_title_sync(void *win) {
     if (!t) {
         *s = 0;
         if (st.title_lbl) widget_get_text_utf8(st.title_lbl, s, sizeof s);
-        t = !tk_strcmp(s, "Channel Balance") ? "Balance" /* English's only */
+        t = !tk_strcmp(s, "Channel Balance") ? "声道平衡" /* English's only */
             : !tk_strcmp(s, "(null)")        ? ""        /* stock's "%s" of a NULL name: no title */
                                              : s;
     }
@@ -6329,12 +6439,12 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
 }
 
 static void setting_text(int i) {
-    static const char *const home[] = { "Home: Split", "Home: Full", "Home: Carousel" },
-                             *const battery[] = { "Battery: Icon", "Battery: Percent",
-                                                  "Battery: Icon + Percent",
-                                                  "Battery: Percent Inside" },
-                             *const light[] = { "Light Mode: Off", "Light Mode: On",
-                                                "Light Mode: Auto" };
+    static const char *const home[] = { "主菜单：分栏", "主菜单：全屏", "主菜单：轮播" },
+                             *const battery[] = { "电池显示：图标", "电池显示：百分比",
+                                                  "电池显示：图标与百分比",
+                                                  "电池显示：图标内百分比" },
+                             *const light[] = { "浅色模式：关", "浅色模式：开",
+                                                "浅色模式：自动" };
     int a = accent();
     const scheme_t *S = scheme();
     const char *const names[] = { S->label ? (const char *)0 : accent_names[a],
@@ -6348,15 +6458,15 @@ static void setting_text(int i) {
                                   (const char *)0 };
     char text[64];
     if (i == 0 && S->label) {
-        tk_snprintf(text, sizeof text, "Accent: %s", S->label);
+        tk_snprintf(text, sizeof text, "强调色：%s", S->label);
         row_label(st.setting_label[0], text);
         return;
     }
     if (i == 3 || i == 4 || i >= SETTING_OWN) {
         if (i == 3)
-            tk_snprintf(text, sizeof text, "Theme: %s", theme()->name);
+            tk_snprintf(text, sizeof text, "主题：%s", theme()->name);
         else if (i == 4)
-            tk_snprintf(text, sizeof text, "Shortcut: %s", ipod_home_shortcut());
+            tk_snprintf(text, sizeof text, "快捷入口：%s", ipod_home_shortcut());
         else {
             const theme_key_t *K = &theme_keys[i - SETTING_OWN];
             if (theme()->set_text) { /* the label and the value's name, unsplit */
@@ -6368,10 +6478,10 @@ static void setting_text(int i) {
         row_label(st.setting_label[i], text);
         return;
     }
-    static const char *const toggles[] = { "Rounded Corners",       0,
-                                           "Smart Awake",           "Centred Now Playing",
-                                           "Click With Headphones", "Single Press Scrub",
-                                           "Time in Title" };
+    static const char *const toggles[] = { "圆角",       0,
+                                           "智能常亮",           "居中正在播放",
+                                           "戴耳机时按键音", "单按拖动",
+                                           "标题栏显示时间" };
     if (i == 5 || i >= 7) {
         list_toggle(st.setting_label[i], toggles[i - 5], *setting_values[i]);
         return;
@@ -6562,7 +6672,7 @@ void restart_confirm(int setting, int value) {
     struct {
         int kind, ms;
         char text[0x400];
-    } prompt = { 1, 0, "Restart to apply?" };
+    } prompt = { 1, 0, "重启以应用？" };
     if (navigator_to_with_context("dialog/confirminfo_dialog", &prompt) != 10) return;
     const theme_t *T = theme();
     int was = *option_slot(T, setting);
@@ -6594,7 +6704,7 @@ static int theme_pick(void *ctx, void *event) {
 /* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
  * ("35.92 MB", "16-bit", "950 kbps", "44.1 kHz"), the folder its Location label, and an unknown
- * value, en_US's first player_unknown ("Unknown Artist"), reads "Unknown". Classic's page has
+ * value, en_US's first player_unknown ("Unknown Artist"), reads "未知". Classic's page has
  * rows (tools/ipod.py np_ipod, #204's): stock's label keeps the name and its <name>_value the
  * value, in the info role's face, the value in the theme's grey (written through the flip, its own
  * inverse on the half's paper and ink), the genre with them, not genre_fill's marquee. */
@@ -6624,7 +6734,7 @@ int ringnav_np_info(void *win) {
         else
             continue;
         while (*v == ' ') ++v;
-        if (!strcmp(v, "Unknown Artist")) v = "Unknown";
+        if (!strcmp(v, "Unknown Artist")) v = "未知";
         const char *unit = *units[i] ? units[i] + 1 : units[i];
         int len = (int)strlen(v), u = (int)strlen(unit);
         int split = u && len > u && !strcmp(v + len - u, unit) && v[len - u - 1] >= '0' &&
@@ -6696,7 +6806,7 @@ static void setting_row(void *view, int i) {
  * in place. ponytail: stock's page opened over itself; its own rows' state is never touched on a
  * sub-page. */
 int ringnav_display(void *win, void *ctx) {
-    static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls", "Theme" },
+    static const char *const titles[] = { 0, "外观", "Cover Flow", "控制", "主题" },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
@@ -6758,17 +6868,17 @@ int ringnav_display(void *win, void *ctx) {
 #define BOOT_TARGET "/mnt/data/boot-target"
 static int boot_rockbox __attribute__((section(".scratch")));
 static void boot_text(void *label) {
-    widget_set_text_utf8(label, boot_rockbox ? "Boot to: Rockbox" : "Boot to: Q2 Pod");
+    widget_set_text_utf8(label, boot_rockbox ? "默认启动：Rockbox" : "默认启动：Q2 Pod");
 }
 static int boot_click(void *label, void *event) {
     if (!rockbox_available()) {
-        toast("Rockbox is not on the card");
+        toast("卡内未安装 Rockbox");
         return 0;
     }
     const char *value = boot_rockbox ? "q2pod" : "rockbox";
     if (!blob_io(BOOT_TARGET, BOOT_TARGET ".tmp", (void *)value, strlen(value), 1)) {
         unlink(BOOT_TARGET ".tmp");
-        toast("Could not save boot choice");
+        toast("无法保存启动选项");
         return 0;
     }
     boot_rockbox = !boot_rockbox;
@@ -6799,10 +6909,10 @@ int ringnav_systemset(void *win, void *ctx) {
     int result = stock_systemset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_sysset", 1) : (void *)0;
     if (view) {
-        widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "App Store");
+        widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "应用商店");
         widget_set_text_utf8(
             list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
-            "Controls");
+            "控制");
         for (unsigned i = 6; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
     }
     reorder(view, sysset_order, sizeof sysset_order);
@@ -7915,7 +8025,7 @@ int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *al
  * (g_class_type), on top, whichever of the two list pages shows it, polled every EMPTY_POLL_MS
  * until it opens or stops being on top. */
 static int empty_toast(const void *unused) {
-    static const char *const none[] = { "No albums", "No artists", "No composers", "No genres" };
+    static const char *const none[] = { "暂无专辑", "暂无表演者", "暂无作曲家", "暂无流派" };
     void *wm = window_manager(), *top = window_manager_get_top_window(wm);
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
     int mine = (!tk_strcmp(name, "album_page") || !tk_strcmp(name, "localclass_page")) &&
@@ -8281,7 +8391,7 @@ static int chapter_poll(const void *unused) {
         chapter *c = &st.ch->rows[i];
         int sec = c->sec - st.ch_cue;
         if (st.ch_end && c->sec >= st.ch_end) break;
-        if (!*c->title) tk_snprintf(c->title, sizeof c->title, "Chapter %d", i + 1);
+        if (!*c->title) tk_snprintf(c->title, sizeof c->title, "第 %d 章", i + 1);
         if (st.ch_cue && sec <= 0) {
             n = 0;
             sec = 0;
@@ -8291,8 +8401,8 @@ static int chapter_poll(const void *unused) {
     }
     st.ch->count = n;
     void *view =
-        page_list_or(st.ch_page, st.ch_page, "Chapters",
-                     st.ch->failed ? "Could not read chapters" : "No embedded chapters", n, 64);
+        page_list_or(st.ch_page, st.ch_page, "章节",
+                     st.ch->failed ? "无法读取章节" : "无内嵌章节", n, 64);
     int sec = 0, total, current = 0;
     player_playtime_and_length(&sec, &total);
     for (int i = 0; i < n; ++i) {
@@ -8308,7 +8418,7 @@ static int chapter_poll(const void *unused) {
 static void chapters_open(void *r) {
     if (st.ch || !chapter_file(r)) return;
     if (!mp4_fits(P(r, REC_PATH))) {
-        toast("Too long to read chapters on the Q2");
+        toast("这本书太长，Q2 无法显示章节");
         return;
     }
     st.ch_track = np_track();
@@ -8316,7 +8426,7 @@ static void chapters_open(void *r) {
     st.ch_end = I(r, REC_CUE_END);
     st.ch = chapters_start(P(r, REC_PATH), time_now_ms());
     if (!st.ch) {
-        toast("Could not read chapters");
+        toast("无法读取章节");
         return;
     }
     st.ch_page = page_open("chapters_page", page_closed, page_keyup);
@@ -8334,7 +8444,7 @@ static void chapters_open(void *r) {
         stop_timer(&st.ch_timer);
         return;
     }
-    page_list(st.ch_page, st.ch_page, 0, "Loading chapters…", 0, 64);
+    page_list(st.ch_page, st.ch_page, 0, "正在加载章节…", 0, 64);
 }
 
 /* Streaming's Configuration (docs/internals.md#streaming-configuration): Tidal's and Spotify's
@@ -8360,12 +8470,12 @@ static void sc_text(int i) {
     static const char *const sizes[] = { "512 MB", "1 GB", "2 GB", "4 GB", "8 GB" };
     char s[40];
     if (i < 2)
-        tk_snprintf(s, sizeof s, "%s Cache: %s", i ? "Spotify" : "Tidal", sizes[stream_cache(i)]);
+        tk_snprintf(s, sizeof s, "%s 缓存：%s", i ? "Spotify" : "Tidal", sizes[stream_cache(i)]);
     widget_set_text_utf8(widget_get_child(st.sc_row[i], 0),
                          i < 2            ? s
-                         : shelf_erase(0) ? "Erasing…"
-                         : st.sc_armed    ? "Press again to erase the login and cache"
-                                          : "Erase Spotify Data");
+                         : shelf_erase(0) ? "正在清除…"
+                         : st.sc_armed    ? "再按一次以清除登录信息与缓存"
+                                          : "清除 Spotify 数据");
 }
 
 /* netupdate.c's erase ended: .cache-size went with it, so Spotify's row reads 2 GB again. */
@@ -8380,8 +8490,8 @@ void stream_erased(void) {
  * app stays hidden whatever its place. Missing, every row shows. Configuration is never hidden. */
 static const char *const svc_fixed[][2] = { { "TIDAL", "TIDAL" },
                                             { "SPOTIFY", "Spotify" },
-                                            { "DOWNLOADS", "Tidal Downloads" },
-                                            { "RADIO", "Internet Radio" },
+                                            { "DOWNLOADS", "Tidal 下载" },
+                                            { "RADIO", "网络电台" },
                                             { "AIRPLAY", "AirPlay" } };
 /* Service i's key (label 0) or row label (1), as Streaming last listed them. */
 static const char *svc(int i, int label) {
@@ -8407,7 +8517,7 @@ static int svc_toggle(int i) {
     /* ROOT_MAX, not sizeof hide: stock's config line (a 257-byte sprintf, a 255-byte fgets) */
     int hidden = csv_toggle(hide, ROOT_MAX, key);
     if (hidden < 0) {
-        toast("Could not save setting");
+        toast("无法保存设置");
         return 0;
     }
     toolsWriteConfig("/mnt/data/config.ini", "Q2POD", "STREAMHIDE", hide);
@@ -8444,16 +8554,16 @@ static int sc_click(void *ctx, void *event) {
         radio_stop();
         addon_stop();
         if (type != 1 && (type & 0xf000) != 0xf000 && mclGetPlayStatus() != 1) player_stop();
-        toast("Streaming stopped");
+        toast("已停止流媒体服务");
         return 0;
     }
-    if (i == 1 && shelf_erase(0)) return toast("Wait for the one in progress"), 0; /* it rm -rfs */
+    if (i == 1 && shelf_erase(0)) return toast("请等待当前任务完成"), 0; /* it rm -rfs */
     char path[48], tmp[52], s[8];
     int n = tk_snprintf(s, sizeof s, "%uM", 512u << (stream_cache(i) + 1) % 5);
     tk_snprintf(path, sizeof path, "%s/.cache-size", sc_dirs[i]);
     tk_snprintf(tmp, sizeof tmp, "%s.tmp", path);
     mkdir(sc_dirs[i], 0755);
-    if (!blob_io(path, tmp, s, (unsigned)n, 1)) toast("Could not save setting");
+    if (!blob_io(path, tmp, s, (unsigned)n, 1)) toast("无法保存设置");
     sc_text(i);
     return 0;
 }
@@ -8462,10 +8572,10 @@ int stream_config(void *ctx, void *event) {
     if (st.sc_page || !(st.sc_page = page_open("streamconf_page", page_closed, page_keyup)))
         return 0;
     int n = SVC_FIXED + st.svc_n;
-    void *view = page_list(st.sc_page, st.sc_page, 0, "Configuration", 5 + n, 48);
+    void *view = page_list(st.sc_page, st.sc_page, 0, "流媒体设置", 5 + n, 48);
     for (int i = 0; i < 3; ++i)
         st.sc_row[i] = page_row_detail(view, i, "", 0, sc_click), sc_text(i);
-    page_row_detail(view, 3, "Stop Streaming Services", 0, sc_click);
+    page_row_detail(view, 3, "停止流媒体服务", 0, sc_click);
     /* a gap before the toggles, clear as the rows (the theme's default list_item fills) */
     int rh = page_h(48);
     widget_use_style(list_item_create(view, 0, 4 * rh, 375, rh), "s_listitem_black");
@@ -8540,7 +8650,7 @@ int media_click(void *ctx, void *event) {
     int kind = (int)(long)ctx;
     char root[sizeof st.media_root], t[48];
     if (!media_find(kind, root)) {
-        tk_snprintf(t, sizeof t, "No %s folder on the card", MEDIA[kind - 1]);
+        tk_snprintf(t, sizeof t, "卡上没有 %s 文件夹", MEDIA_LABELS[kind - 1]);
         toast(t);
     } else if (kind == PHOTOS)
         photos_open(root);
@@ -8668,6 +8778,9 @@ int ringnav_usbmode(void *a, void *b, void *c, void *d) {
 int ringnav_start_player(void) {
     if (addon_game_audio()) return -1;
     if (!playback_start_fits()) return -1;
+    /* 无耳机不播放 covers every start, not just a pocket press: a row's click in a playlist is the
+     * same dead silence, so it fails like a track too long, and the queue keeps its position. */
+    if (headset_guard_start()) return -1;
     headset_manual();
     spot_yield();
     radio_stop();
@@ -8697,7 +8810,7 @@ int ringnav_about(void *win, void *ctx) {
         widget_set_text_utf8(widget_get_child(widget_get_child(widget_get_child(view, 1), 0), 1),
                              STOCK_VERSION);
         void *button = list_button(view);
-        about_label(button, 10, 166, "s_scrlabel_white24l", "CFW. Version");
+        about_label(button, 10, 166, "s_scrlabel_white24l", "自制固件版本");
         about_label(button, 176, 149, "s_scrlabel_white20r", Q2POD_VERSION);
         widget_restack(P(button, W_PARENT), 2);
     }
@@ -8754,7 +8867,7 @@ static int qm_run(const void *unused) {
     int a = st.qm_action, cls = st.qm_kind == QM_COVERFLOW ? 0xf001 : (int)st.qm_cls;
     unsigned aid = r ? qm_album_id(r) : 0; /* an album's own Favourites and Rate */
     if (r && a >= 100) {
-        if (!playback_set(st.qm_choice - 1, a - 100)) toast("Queue unchanged");
+        if (!playback_set(st.qm_choice - 1, a - 100)) toast("队列未更改");
         st.qm_choice = 0;
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
@@ -8778,7 +8891,7 @@ static int qm_run(const void *unused) {
         char click[0x30];
         if (more) stock_dispatch_trampoline(more, pointer_event_init(click, EVT_CLICK, more, 0, 0));
     } else if (r && (a == QA_NEXT_GROUP || a == QA_PREV_GROUP)) {
-        if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("No other group");
+        if (!playback_group_skip(a == QA_NEXT_GROUP)) toast("没有其他分组");
     } else if (aid && a == QA_RATE) {
         rate_show(window_manager_get_top_window(window_manager()), rate_kept(1, aid), aid);
     } else if (aid && (a == QA_FAV || a == QA_UNFAV)) {
@@ -8823,20 +8936,20 @@ static int qm_run(const void *unused) {
             play_folder(songs, at, 0xf001);
             deque_destroy(songs);
         } else
-            toast("Queue unchanged");
+            toast("队列未更改");
     } else if (r && a == QA_FOLDER) {
         st.go_layer = song_folder(r, st.go_folder);
         if (st.go_layer)
             navigator_to("folder_page"); /* its init, ringnav_folder, opens there */
         else
-            toast("Folder not found");
+            toast("找不到文件夹");
         st.go_layer = 0; /* never left for a later Folder visit */
     } else if (r && a >= QA_ALBUM)
         qm_goto(r, a == QA_ALBUM);
     else {
         void *add = r ? qm_collect(r) : (void *)0;
         if (!add || !(a == QA_SHUFFLE ? shuffle_play(add) : qm_apply(add, a == QA_NEXT)))
-            toast("Queue unchanged");
+            toast("队列未更改");
         if (add) deque_destroy(add);
     }
     return 0;
@@ -8920,15 +9033,15 @@ static int qm_open(const void *unused) {
     if (st.qm_choice) {
         /* stock's play modes, its category named as Group by sets it (album or folder) */
         static const char *const shuffle[2][5] = {
-            { "Off", "All Songs", "Songs in Album", "Albums", "Albums and Songs" },
-            { "Off", "All Songs", "Songs in Folder", "Folders", "Folders and Songs" }
+            { "关闭", "全部歌曲", "专辑内歌曲", "专辑", "专辑及歌曲" },
+            { "关闭", "全部歌曲", "文件夹内歌曲", "文件夹", "文件夹及歌曲" }
         };
-        static const char *const repeat[2][6] = { { "Play One Song", "Play One Album", "Play All",
-                                                    "Repeat Song", "Repeat Album", "Repeat All" },
-                                                  { "Play One Song", "Play One Folder", "Play All",
-                                                    "Repeat Song", "Repeat Folder",
-                                                    "Repeat All" } };
-        static const char *const groups[] = { "Album", "Folder" };
+        static const char *const repeat[2][6] = { { "播放单曲", "播放单张专辑", "全部播放",
+                                                    "单曲循环", "专辑循环", "全部循环" },
+                                                  { "播放单曲", "播放单个文件夹", "全部播放",
+                                                    "单曲循环", "文件夹循环",
+                                                    "全部循环" } };
+        static const char *const groups[] = { "专辑", "文件夹" };
         int kind = st.qm_choice - 1,
             count = kind == 0   ? 5
                     : kind == 1 ? 6
@@ -8937,7 +9050,7 @@ static int qm_open(const void *unused) {
         const char *const *names = kind == 0   ? shuffle[folder]
                                    : kind == 1 ? repeat[folder]
                                                : groups;
-        qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : "Group by");
+        qm_title(dialog, kind == 0 ? "随机播放" : kind == 1 ? "重复播放" : "分组方式");
         widget_destroy_children(view);
         int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -9016,25 +9129,25 @@ static int qm_open(const void *unused) {
         if (np_more()) acts[n++] = QA_MORE; /* last: Now Playing's own menu */
     }
     if (st.qm_kind == QM_PLAYLIST) acts[n++] = QA_MORE; /* its dots' page */
-    static const char *const rows[] = { "Play Next",
-                                        "Add to Queue",
-                                        "Shuffle",
-                                        "Add to Favourites",
-                                        "Remove from Favourites",
-                                        "Add to Playlist",
-                                        "Go to Album",
-                                        "Go to Artist",
-                                        "Shuffle",
-                                        "Repeat",
-                                        "Group by",
-                                        "Next Album",
-                                        "Previous Album",
-                                        "Rate",
-                                        "Resume",
-                                        "View Queue",
-                                        "Go to Folder",
-                                        "Chapters",
-                                        "More…" };
+    static const char *const rows[] = { "下一首播放",
+                                        "加入播放队列",
+                                        "随机播放",
+                                        "加入收藏",
+                                        "取消收藏",
+                                        "加入播放列表",
+                                        "前往专辑",
+                                        "前往表演者",
+                                        "随机播放",
+                                        "重复播放",
+                                        "分组方式",
+                                        "下一张专辑",
+                                        "上一张专辑",
+                                        "评价",
+                                        "继续播放",
+                                        "查看队列",
+                                        "前往文件夹",
+                                        "章节",
+                                        "更多…" };
     char rated[32];
     /* stock sortselect row styles */
     int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
@@ -9045,16 +9158,16 @@ static int qm_open(const void *unused) {
         widget_use_style(label, "s_scrlabel_white24l");
         if (acts[i] == QA_RATE) {
             int h = aid ? album_hearts : checkFavExist(r) ? 5 : rate_kept(0, listen_key(r));
-            const char *row = aid ? "Rate Album" : "Rate";
+            const char *row = aid ? "专辑评价" : "评价";
             char hs[16];
             tk_snprintf(rated, sizeof rated, h ? "%s  %s" : "%s", row, hearts_text(hs, h));
         }
         widget_set_text_utf8(label,
                              acts[i] == QA_RATE ? rated
                              : acts[i] == QA_GROUP
-                                 ? (playback_option(2) ? "Group by: Folder" : "Group by: Album")
-                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "Next Folder"
-                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "Previous Folder"
+                                 ? (playback_option(2) ? "分组：文件夹" : "分组：专辑")
+                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "下一个文件夹"
+                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "上一个文件夹"
                                                                               : rows[acts[i] - 1]);
         if (painted) hold_label(item, label);
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);
@@ -9542,7 +9655,7 @@ static void resume_poll(void) {
 int rockbox_open(void *ctx, void *event) {
     void *flag = !rockbox_available() ? (void *)0 : fopen(ROCKBOX_FLAG, "w");
     if (!flag) {
-        toast("Rockbox is not on the card");
+        toast("卡内未安装 Rockbox");
         return 0;
     }
     fclose(flag);
@@ -9756,6 +9869,8 @@ static void thumb_poll(void) {
 int ringnav_sleep(void *loop) {
     stale_heal();
     quick_poll();
+    library_fill_tick();
+    if (library_fill_active() && st.pod_label[POD_LIBRARY_FILL]) pod_text(POD_LIBRARY_FILL);
     headset_poll();
     headset_eq_poll();
     bt_volume_poll();
@@ -10468,7 +10583,7 @@ static void time_paint(void *w, void *canvas) {
         rect_t r = { row->x[i], TIME_CELL_Y, cw, TIME_CELL_H };
         paint_art(w, canvas, cells[!f][f == at], r.x - TIME_CELL_PAD, r.y - TIME_CELL_PAD);
         if (f == TIME_AMPM)
-            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "AM" : "PM");
+            tk_snprintf(b, sizeof b, "%s", hour < 12 ? "上午" : "下午");
         else if (f == 3 && row->n == 3)
             tk_snprintf(b, sizeof b, "%d", hour % 12 ?: 12);
         else

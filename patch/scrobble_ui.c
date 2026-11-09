@@ -70,8 +70,8 @@ static int upload_wait(const void *unused) {
     if (!done) return 8; /* RET_REPEAT */
     if (done > 0) sa.pending = 0;
     char s[48];
-    tk_snprintf(s, sizeof s, done < 0 ? "Upload failed, %d sent" : "Scrobbles sent: %d", sent);
-    toast(done > 0 && !sent ? "Nothing to upload" : s);
+    tk_snprintf(s, sizeof s, done < 0 ? "上传失败，已发送 %d 条" : "已上传 %d 条听歌记录", sent);
+    toast(done > 0 && !sent ? "没有待上传记录" : s);
     return 0;
 }
 
@@ -80,6 +80,6 @@ int upload_scrobbles(void *ctx, void *event) {
     int started = scrobble_start();
     if (!started && sa.running) sa.running = 0, started = 1; /* the automatic one: report it */
     if (started > 0) timer_add(upload_wait, (void *)0, 500);
-    toast(started > 0 ? "Uploading scrobbles" : !started ? "Already uploading" : "Upload failed");
+    toast(started > 0 ? "正在上传听歌记录" : !started ? "正在上传中" : "上传失败");
     return 0;
 }

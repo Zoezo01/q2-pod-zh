@@ -41,6 +41,8 @@ enum {
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
     POD_SMART_WIFI,
+    POD_HEADSET_GUARD, /* 无耳机不播放: headset.c's guard, Q2POD HEADSETGUARD, on by default */
+    POD_LIBRARY_FILL,  /* 补全封面与歌词, an action: onlinematch.c's library_fill_* over the card */
     POD_COUNT
 };
 
@@ -177,14 +179,17 @@ typedef struct {
      * destroyed); the codec badge shown (index + 1 in BT_CODECS, 0 none), its fade step (0 showing,
      * CODEC_STEPS the glyph fading in, 2 * CODEC_STEPS done) and timer; the battery slot's last
      * level, charge and low state. Classic's bar also has a title (bar_title_sync), from the
-     * top window title_win and, when a label holds it, title_lbl (both found once per window). */
+     * top window title_win and, when a label holds it, title_lbl (both found once per window).
+     * label_playword is the bar's "正在播放"/"播放暂停" beside the glyph (bar_word_sync), its own
+     * key word_key and status word, and bar_own says whether the page under the bar has no title
+     * of its own (state_own_place). */
     void *bar_bt, *bar_wifi, *bar_pct, *bar_slot, *bar_icon, *bar_idle, *bar_state, *bar_eq,
-        *bar_title, *title_win, *title_lbl,
+        *bar_title, *title_win, *title_lbl, *play_word,
         *action_view; /* Songs' action bar on title_win, under a set with action_row */
     /* The row action's confirm on show (confirm_over): its second cell's verb, and its window */
     const char *confirm_verb;
     void *confirm_win;
-    int codec, codec_step, batt_mode;
+    int codec, codec_step, batt_mode, word_key, word, bar_own;
     unsigned codec_timer, batt_key, bar_timer;
     int pct_digit, pct_sign; /* BATT_PX advances of '0' and '%', measured on the first paint */
     unsigned letter_timer;   /* the fast-scroll letter shows while this runs */

@@ -123,7 +123,7 @@ int addon_scan(void) {
         field(raw, "name", a->name, sizeof a->name);
         if (!a->name[0]) tk_snprintf(a->name, sizeof a->name, "%s", a->id);
         field(raw, "search", a->tips, sizeof a->tips);
-        if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "Search");
+        if (!a->tips[0]) tk_snprintf(a->tips, sizeof a->tips, "搜索");
         a->qr = number(raw, "qr") == 1;
         a->game = number(raw, "game") == 1;
         a->audio = number(raw, "audio") == 1;
@@ -659,8 +659,8 @@ int addon_game_start(int k) {
     app_t *a = k >= 0 && k < ap.games ? &ap.a[ap.game[k]] : 0;
     if (gm.pid || !a) return 0;
     const char *busy = shelf_busy();
-    if (busy && !strcmp(busy + 1, a->id)) return toast("Wait until the App Store finishes"), 0;
-    if (access(a->bin, 0)) return toast("It isn't on the card"), 0;
+    if (busy && !strcmp(busy + 1, a->id)) return toast("请等应用商店完成"), 0;
+    if (access(a->bin, 0)) return toast("卡上没有它"), 0;
     char vol[5];
     const char *dev = 0;
     if (a->audio) { /* the sound is its: hciplayer off the PCM, the jack readied, as video_play */
@@ -681,7 +681,7 @@ int addon_game_start(int k) {
             execl(a->bin, a->bin, (char *)0);
         child_exit(127);
     }
-    if (pid < 0) return toast("It couldn't start"), 0;
+    if (pid < 0) return toast("无法启动"), 0;
     gm.pid = pid;
     gm.audio = a->audio;
     gm.sock = socket(1, 1, 0); /* AF_UNIX, SOCK_DGRAM (MIPS numbering) */
@@ -739,7 +739,7 @@ static void game_poll(void) {
         gm.pid = gm.audio = 0;
         wheel_raw = 0;
         widget_invalidate_force(window_manager(), 0);
-        if (status == 127 << 8) toast("It couldn't start"); /* the child's execl failed */
+        if (status == 127 << 8) toast("无法启动"); /* the child's execl failed */
         return;
     }
     unsigned now = (unsigned)time_now_ms();
@@ -1010,7 +1010,7 @@ static int stoppable(void) { return app()->launched || app()->restart || !access
 
 static void stop_row(int i) {
     char t[48];
-    tk_snprintf(t, sizeof t, "Stop %s", app()->name);
+    tk_snprintf(t, sizeof t, "停止 %s", app()->name);
     page_row_detail(pg.view, i, t, 0, clicked);
 }
 
@@ -1065,7 +1065,7 @@ static void page_next(lv_t *l) {
  * press does nothing), else More…. */
 static void row(lv_t *l, int i) {
     if (i == l->n) {
-        page_row_detail(pg.view, i, pg.paging ? "Loading…" : "More…", "", clicked);
+        page_row_detail(pg.view, i, pg.paging ? "加载中…" : "更多…", "", clicked);
         return;
     }
     void *item = (opens(i) ? page_row_detail_into : page_row_detail)(pg.view, i, cell(i, 2),
@@ -1110,16 +1110,16 @@ static void show(void) {
     if (l->state == K_LOAD && !((req.running || req.done) && !pg.act && req.id == l->id)) fetch(l);
     if (l->state == K_LOAD || l->state == K_WAIT) {
         char t[48];
-        tk_snprintf(t, sizeof t, "Starting %s…", app()->name);
+        tk_snprintf(t, sizeof t, "正在启动 %s…", app()->name);
         if (!l->since) l->since = time_now_ms() | 1;
         l->slow = (int)(time_now_ms() - l->since) >= SLOW_MS && stoppable(); /* since: now + 1 */
         void *v =
-            page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "Loading…", n = l->slow, 48);
+            page_list(pg.page, pg.page, 0, l->state == K_WAIT ? t : "加载中…", n = l->slow, 48);
         if (n) pg.view = v, stop_row(0);
     } else if (l->state == K_ERROR) {
         pg.view = page_list(pg.page, pg.page, 0, l->note, n = 1 + stoppable(), 48);
         page_row_detail(pg.view, 0,
-                        l->retry ? "Retry" : "Install it again in System settings → App Store", 0,
+                        l->retry ? "重试" : "请前往系统设置 → 应用商店重新安装", 0,
                         clicked);
         if (n > 1) stop_row(1);
         page_push(pg.view, pg.moved), pg.moved = 0;
@@ -1191,7 +1191,7 @@ static void got(void) {
     int ok = n >= 0 && !strcmp(f[1], "ok");
     unsigned now = time_now_ms();
     char why[48];
-    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s isn't running" : "%s didn't answer",
+    tk_snprintf(why, sizeof why, req.fail == REQ_NOSOCK ? "%s 未运行" : "%s 未响应",
                 app()->name);
     pg.act = 0;
     if (act) {
@@ -1290,7 +1290,7 @@ static int go(const void *unused) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
     } else if (l->state == K_ERROR ? i == 1 : l->state != K_READY && l->slow) { /* Stop <name> */
         char t[48];
-        tk_snprintf(t, sizeof t, "%s stopped", app()->name);
+        tk_snprintf(t, sizeof t, "%s 已停止", app()->name);
         app_stop(app(), 0);
         toast(t);
         navigator_back();
@@ -1400,7 +1400,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
     tk_snprintf(l->title, sizeof l->title, "%s", title);
     if (missing) {
         l->state = K_ERROR;
-        tk_snprintf(l->note, sizeof l->note, "%s isn't on the card", a->name);
+        tk_snprintf(l->note, sizeof l->note, "存储卡上没有 %s", a->name);
     }
     pg.timer = timer_add(tick, 0, 250);
     show();
@@ -1527,8 +1527,8 @@ static void qr_refresh(void) {
     widget_set_visible(qp.col, code, 0);
     widget_set_visible(qp.msg, !code, 0);
     if (!code) {
-        set(qp.say, !n ? "Not running" : addr[0] ? "No code yet" : "Connect the Q2 to Wi-Fi");
-        set(qp.sub, !n ? "Open it again" : addr[0] ? "Wait a moment" : "Then come back here");
+        set(qp.say, !n ? "未运行" : addr[0] ? "暂无二维码" : "请将 Q2 连接到 Wi-Fi");
+        set(qp.sub, !n ? "请重新打开" : addr[0] ? "请稍候" : "然后返回此页面");
         return;
     }
     if (strlen(pin) == 6) /* 548 001 */
@@ -1619,17 +1619,17 @@ static void qr_open(const char *state, const char *title) {
                 : widget_factory_create_widget(f, "view", page, QR_COL, 40, w, QR_PX);
     widget_set_text_utf8(
         qr_label(qp.col, x, r[0][0], short_w, r[0][1], "s_scrlabel_white20l", r[0][2], 0xffffffffu),
-        cl ? "Scan with your phone's" : "Scan with your");
+        cl ? "Scan with your phone's" : "使用手机");
     widget_set_text_utf8(
         qr_label(qp.col, x, r[1][0], short_w, r[1][1], "s_scrlabel_white20l", r[1][2], 0xffffffffu),
-        cl ? "camera" : "phone's camera");
+        cl ? "camera" : "相机扫描");
     widget_set_text_utf8(
         qr_label(qp.col, x, r[2][0], short_w, r[2][1], "s_scrlabel_white20l", r[2][2], SPOT_GREY),
-        "or open");
+        "或打开");
     qp.addr = qr_label(qp.col, x, r[3][0], w, r[3][1], "s_scrlabel_white20l", r[3][2], 0xffffffffu);
     widget_set_text_utf8(
         qr_label(qp.col, x, r[4][0], short_w, r[4][1], "s_scrlabel_white20l", r[4][2], SPOT_GREY),
-        "PIN");
+        "配对码");
     qp.pin =
         qr_label(qp.col, x, r[5][0], short_w, r[5][1], "s_scrlabel_white20l", r[5][2], 0xffffffffu);
     qp.note = qr_label(qp.col, cl ? 24 : 0, r[6][0], cl ? 330 : w, r[6][1], "s_scrlabel_white20l",

@@ -380,6 +380,16 @@ void *label(void *parent, int x, int y, int w, int h, const char *style, int px,
 void spot_yield(void), spot_stop(void), radio_stop(void);
 void headset_volume_reset(void);
 void headset_poll(void), headset_eq_poll(void), headset_manual(void);
+/* onlinematch.c's 补全封面与歌词 over the whole card: the library's albums and its albumless
+ * songs, read on the UI thread (library_lists.c) and worked on the job's own. */
+int ringnav_fill_albums(int (*row)(void *, const char *, const char *, const char *), void *ctx);
+void *ringnav_album_tracks(const char *album, int *n);
+int ringnav_fill_songs(int (*row)(void *, const char *, const char *, const char *), void *ctx);
+void library_fill_tick(void), library_fill_cancel(void);
+int library_fill_active(void), library_fill_start(void);
+void library_fill_text(char *out, unsigned n);
+int headset_guard_refuse(void); /* 无耳机不播放: a start with nothing at the output (headset.c) */
+int headset_guard_start(void);  /* the same for a row's click and every other start (mclStartPlayer) */
 int media_owner(void), media_playing(void), media_focused(void);
 void media_set_playing(int playing), media_key(unsigned key);
 void video_key(unsigned key);
@@ -454,7 +464,7 @@ void toast(const char *text); /* navigation.c */
  * held for that link (fn(ctx, 0) once it is up, if page, or any page when 0, is still in use) */
 int smart_wifi_wait(void), smart_wifi_off(void);
 int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page);
-int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "Connect to Wi-Fi first" */
+int need_link(int (*fn)(void *, void *), void *ctx); /* smart_hold, else "请先连接 Wi-Fi" */
 /* the work smart_wifi.c keeps the radio on for: spotify.c's, scrobble.c's, tidal.c's, addon.c's,
  * netupdate.c's and onlinematch.c's */
 int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(void),

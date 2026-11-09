@@ -83,9 +83,9 @@ unsigned mix(unsigned from, unsigned to, int j, int n) {
  * (docs/ipod.md#display-settings). */
 static const unsigned accents[][5] = { ACCENTS };
 _Static_assert(sizeof accents / sizeof *accents == ACCENT_N, "one accent per ACCENTS row");
-const char *const accent_names[] = { "Accent: Graphite",  "Accent: Crimson", "Accent: Tidal",
-                                     "Accent: Champagne", "Accent: Cobalt",  "Accent: Tangerine",
-                                     "Accent: Plum",      "Accent: Ivory",   "Accent: Green" };
+const char *const accent_names[] = { "强调色：石墨",  "强调色：绯红", "强调色：潮汐",
+                                     "强调色：香槟", "强调色：钴蓝",  "强调色：橘橙",
+                                     "强调色：梅紫",      "强调色：象牙白",   "强调色：青绿" };
 _Static_assert(sizeof accent_names / sizeof *accent_names == ACCENT_N, "one name per ACCENTS row");
 _Static_assert(sizeof st.setting_label / sizeof *st.setting_label == SETTING_OWN + THEME_KEYS,
                "one label per Display row");
@@ -275,15 +275,15 @@ int ipod_home_rockbox(void) {
 }
 const char *ipod_home_shortcut(void) {
     static const char *const names[] = { "Rockbox",
-                                         "Artists",
-                                         "Albums",
-                                         "Favorites",
-                                         "Rated Albums",
-                                         "Shuffle",
-                                         "Games",
-                                         "Playlists",
-                                         "Podcasts",
-                                         "Audiobooks",
+                                         "表演者",
+                                         "专辑",
+                                         "收藏",
+                                         "已评价专辑",
+                                         "随机播放",
+                                         "游戏",
+                                         "播放列表",
+                                         "播客",
+                                         "有声读物",
                                          [SHORTCUT_GROOVEBOX] = "Groovebox" };
     _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
     return names[shortcut()];
@@ -291,7 +291,9 @@ const char *ipod_home_shortcut(void) {
 /* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
  * Books books.c. */
+/* MEDIA matches the card's folder names, so it stays English; MEDIA_LABELS is what the row says. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
+const char *const MEDIA_LABELS[] = { "播客", "有声读物", "照片", "图书", "视频" };
 extern int rockbox_open(void *, void *);
 int rated_albums(void *, void *);
 int home_shortcut_open(void *ctx, void *event) {
@@ -299,8 +301,8 @@ int home_shortcut_open(void *ctx, void *event) {
     if (!s) return rockbox_open(ctx, event);
     if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
         if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
-            toast(groovebox_available() ? "Groovebox can't start from the card"
-                                        : "Groovebox is not on the card");
+            toast(groovebox_available() ? "Groovebox 无法从存储卡启动"
+                                        : "存储卡上没有 Groovebox");
         return 0;
     }
     if (s == 4) return rated_albums(ctx, event);

@@ -202,18 +202,18 @@ int smart_hold(int (*fn)(void *, void *), void *ctx, const char *page) {
     sw.hold_ctx = ctx;
     sw.hold_win = win;
     tk_snprintf(sw.hold_name, sizeof sw.hold_name, "%s", name);
-    toast("Connecting to Wi-Fi\xe2\x80\xa6");
+    toast("正在连接 Wi-Fi\xe2\x80\xa6");
     return 1;
 }
 
 /* A press of the payload's that needs the link, fn(ctx, event) itself: 1, it goes on; 0, it waits
- * for Smart Wi-Fi's link (smart_hold) or, with none coming, "Connect to Wi-Fi first". Held first,
+ * for Smart Wi-Fi's link (smart_hold) or, with none coming, "请先连接 Wi-Fi". Held first,
  * so a second press after the link is up but before the held one runs joins it rather than running
  * beside it (and cancelling it). */
 int need_link(int (*fn)(void *, void *), void *ctx) {
     if (smart_hold(fn, ctx, 0)) return 0;
     if (get_wifisignal() > 0) return 1;
-    toast("Connect to Wi-Fi first");
+    toast("请先连接 Wi-Fi");
     return 0;
 }
 

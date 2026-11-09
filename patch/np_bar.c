@@ -106,7 +106,6 @@ int np_sync(void *top) {
  * label's invalidate, so bar_repaint follows; the clock waits for its timer. */
 void bar_title(void *bar, void *top) {
     static const unsigned
-        now_playing[] = { 'N', 'o', 'w', ' ', 'P', 'l', 'a', 'y', 'i', 'n', 'g', 0 },
         cover_flow[] = { 'C', 'o', 'v', 'e', 'r', ' ', 'F', 'l', 'o', 'w', 0 }, none = 0;
     if (st.bar_title) { /* this bar names the page in its own label: off, the clock makes way */
         const unsigned *own = widget_get_text(st.bar_title);
@@ -142,8 +141,9 @@ void bar_title(void *bar, void *top) {
             if (!t && widget_count_children(nav)) t = widget_get_child(nav, 0);
             if (t && tk_strcmp(widget_get_type(t), "hscroll_label")) t = (void *)0;
         }
-        title = top == st.np_win                                                     ? now_playing
-                : !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page") ? cover_flow
+        /* Now Playing's page names nothing: the bar's play state says playing or paused instead
+         * (navigation.c bar_word_sync). */
+        title = !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page") ? cover_flow
                 : t ? widget_get_text(t)
                     : (void *)0;
         if (title && !*title) title = (void *)0;

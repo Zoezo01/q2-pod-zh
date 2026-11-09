@@ -70,25 +70,25 @@ int ringnav_localmusic(void *win, void *ctx) {
     for (int i = 0; i < L_STOCK; i++) stock[i] = widget_get_child(view, i);
     unsigned n = 0; /* each row moves to n as it comes, so Update Local Music, left, ends last */
     if (library_search())
-        widget_restack(library_row(view, (void *)0, stock_search, 0, "Search", 1), n++);
-    widget_restack(library_row(view, "local_shuffle", shuffle_menu, 0, "Shuffle", 1), n++);
+        widget_restack(library_row(view, (void *)0, stock_search, 0, "搜索", 1), n++);
+    widget_restack(library_row(view, "local_shuffle", shuffle_menu, 0, "随机播放", 1), n++);
     static const unsigned char middle[] = { L_ARTISTS,   L_ALBUMS, L_SONGS, L_GENRES,
                                             L_PLAYLISTS, L_FAV,    L_ADDED, L_RECENT };
     for (unsigned i = 0; i < sizeof middle; i++)
         if (middle[i] == L_GENRES) { /* browsing by a tag, as Genre */
             widget_restack(stock[L_GENRES], n++);
-            widget_restack(library_row(view, "local_era", era_menu, 0, "Era", 1), n++);
+            widget_restack(library_row(view, "local_era", era_menu, 0, "年代", 1), n++);
         } else if (middle[i] == L_FAV) { /* My Fav is Ratings' Loved, its row kept hidden */
-            widget_restack(library_row(view, "local_fav", ratings_menu, 0, "Ratings", 1), n++);
+            widget_restack(library_row(view, "local_fav", ratings_menu, 0, "评价", 1), n++);
             widget_set_visible(stock[L_FAV], 0, 0);
             widget_restack(stock[L_FAV], n++);
         } else
             widget_restack(stock[middle[i]], n++);
-    widget_restack(library_row(view, "local_frequentplay", most_played, 0, "Most Played", 1), n++);
+    widget_restack(library_row(view, "local_frequentplay", most_played, 0, "播放最多", 1), n++);
     widget_set_visible(stock[L_FREQUENT], 0, 0); /* Most Played is its list, from every listen */
     widget_restack(stock[L_FREQUENT], n++);
     widget_restack(stock[L_HIRES], n++);
-    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
+    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "长曲目", 1), n++);
     /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder; then iPod's Games.
      */
     static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
@@ -97,11 +97,11 @@ int ringnav_localmusic(void *win, void *ctx) {
     for (int k = 0; k < VIDEOS; k++)
         if (media_find(k + 1, path))
             widget_restack(
-                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);
-    widget_restack(library_row(view, "local_games", games_open, 0, "Games", 1), n++);
+                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA_LABELS[k], 1), n++);
+    widget_restack(library_row(view, "local_games", games_open, 0, "游戏", 1), n++);
     if (scrobble_ready())
         widget_restack(
-            library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles", 0), n++);
+            library_row(view, "local_scrobble", upload_scrobbles, 0, "上传听歌记录", 0), n++);
     library_look(view);
     return result;
 }
@@ -183,11 +183,11 @@ int ringnav_stream(void *win, void *ctx) {
         for (int k = 0; k < st.svc_n; ++k)
             svc_row(library_row(view, addon_icon(k), addon_open, (void *)(long)k, addon_name(k), 1),
                     i++, hide);
-        svc_row(library_row(view, "list_tidal", tidal_downloads, 0, "Tidal Downloads", 1), i++,
+        svc_row(library_row(view, "list_tidal", tidal_downloads, 0, "Tidal 下载", 1), i++,
                 hide);
-        svc_row(library_row(view, "stream_radio", radio_open, 0, "Internet Radio", 1), i++, hide);
+        svc_row(library_row(view, "stream_radio", radio_open, 0, "网络电台", 1), i++, hide);
         svc_row(library_row(view, "stream_airplay", airplay_open, 0, "AirPlay", 1), i, hide);
-        library_row(view, "stream_config", stream_config, 0, "Configuration", 1);
+        library_row(view, "stream_config", stream_config, 0, "流媒体设置", 1);
     }
     return result;
 }
