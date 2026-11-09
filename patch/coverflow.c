@@ -444,6 +444,7 @@ static void *worker(void *unused) {
             fwrite(cf.jobs[cf.done].track, strlen(cf.jobs[cf.done].track), 1, note);
             fflush(note), fsync(fileno(note)), fclose(note); /* synced: see strike */
         }
+        if (cf.cancel) break; /* a clean end since the loop's head: its note goes with the exit */
         build_art(&cf.jobs[cf.done]);
         ++cf.done;
     }
@@ -478,7 +479,13 @@ static void strike(void) {
     }
     unlink(BUILDING);
 }
-void coverflow_clean_end(void) { unlink(BUILDING); }
+/* A clean end (power-off, Restart, an update, Rockbox): the worker stops after the album it is on,
+ * writing no note for the next, which the kill that follows would leave for strike, and this one's
+ * goes. */
+void coverflow_clean_end(void) {
+    cf.cancel = 1;
+    unlink(BUILDING);
+}
 
 /* A running worker cancelled and joined, and its poll timer stopped; 1 when one ran. Shared with
  * photos.c and books.c. */

@@ -1593,6 +1593,24 @@ def test_a_clean_end_drops_the_note(fw):
     assert card.files == {}
 
 
+@pytest.mark.parametrize('during', ['cover', 'note'])
+def test_a_clean_end_mid_build_stops_the_worker_before_the_next_album_s_note(fw, during):
+    """Power-off while album a builds (during its cover read, or as its note is synced): b is never begun, so no
+    note of b's outlives demo to strike it at the next boot, and a's note goes with the worker."""
+    g = api(fw)
+    card = Card(fw, {'/m/a.mp3': b'', '/m/b.mp3': b''})
+    builder(fw, card, ff=0)
+    if during == 'cover':
+        fw.mock('toolsGetAlbumCover', lambda *_: g.coverflow_clean_end() or 0)
+    else:
+        fw.mock('fw_fsync', lambda *_: g.coverflow_clean_end() or 0)
+    jobs = (Job * 2)(Job(b'/m/a.mp3', 0xa, 0), Job(b'/m/b.mp3', 0xb, 0))
+    c = cf(fw)
+    c.jobs, c.total, c.done, c.cancel = C.addressof(jobs), 2, 0, 0
+    assert g.worker(None) is None and c.done == (during == 'cover')
+    assert set(card.files) == {'/m/a.mp3', '/m/b.mp3'} | ({art(0xa)} if during == 'cover' else set())
+
+
 def png(w, h):
     """A PNG's signature and IHDR: all of the file thumb reads."""
     return b'\x89PNG\r\n\x1a\n' + struct.pack('>I4sIIBBBBB', 13, b'IHDR', w, h, 8, 6, 0, 0, 0) + bytes(4)
