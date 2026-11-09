@@ -758,6 +758,17 @@ def test_the_waste_and_a_foundation_give_only_their_top_card(fw):
     assert g.sol_move(r(s), 2, 8) and not s.len[2]
 
 
+def test_a_pile_already_full_takes_no_card(fw):
+    """Only a forged save (the seal is unkeyed) fills a column to SOL_MAX; a move onto it would write past the
+    pile into the next."""
+    g = api(fw)
+    s = Sol()
+    put(s, 7, [0] * 23 + [13 + 5 | UP])  # 24 cards, the 6 of hearts on top
+    put(s, 6, [0 + 4 | UP])  # the 5 of spades, which the 6 takes
+    before = bytes(s)
+    assert not g.sol_move(r(s), 6, 7) and bytes(s) == before
+
+
 def test_a_foundation_takes_one_card_of_a_run(fw):
     g = api(fw)
     s = Sol()
@@ -1231,13 +1242,15 @@ def test_a_solitaire_save_comes_back(fw):
     assert bytes(p.s.sol) == bytes(d)
 
 
-@pytest.mark.parametrize('field, value', (('cur', 13), ('len', 25)))
+@pytest.mark.parametrize('field, value', (('cur', 13), ('len', 25), ('card', 52), ('card', 52 | UP)))
 def test_a_solitaire_save_past_its_limits_is_a_fresh_game(fw, field, value):
     d = full_table(api(fw))
     if field == 'cur':
         d.cur = value
-    else:
+    elif field == 'len':
         d.len[12] = value
+    else:
+        d.card[12][0] = value  # no such card: card_paint would read past the suit table
     p = Page(fw, {SOLITAIRE_FILE: sealed(fw, d, SOL)})
     assert p.s.sol.magic == 0 and p.s.sol.cur == 0 and sum(p.s.sol.len[:PILES]) == 52
 
