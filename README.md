@@ -183,6 +183,10 @@ Your settings, ratings and play counts are kept. The updater skips a version tha
     <td><b><a href="https://github.com/DiamondBond/q2-fidget">Buddy</a></b></td>
     <td>A Tamagotchi-style buddy to poke, in <b>Library → Games</b>.</td>
   </tr>
+  <tr valign="top">
+    <td><b><a href="https://github.com/DiamondBond/q2-groovebox">Groovebox</a></b></td>
+    <td>Sixteen pads, a step sequencer and punch-in effects, in <b>Library → Games</b>.</td>
+  </tr>
 </table>
 
 </details>
