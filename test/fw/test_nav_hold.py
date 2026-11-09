@@ -2070,6 +2070,11 @@ def test_a_hold_in_quick_settings_names_the_wheel_in_a_band_touches_pass_through
     keylong(None, event)
     assert real['text'][-1] == 'Wheel: Brightness' and destroyed == [0x7001] and [t[2] for t in timers] == [1500, 1500]
     assert fw.calls('widget_set_sensitive')[-1][1][:2] == (0x7002, 0)
+    info = C.create_string_buffer(0x40)
+    struct.pack_into('<Q', info, TIMER_CTX, 0x7002)
+    hidden = []
+    fw.mock('widget_set_visible', lambda w, on, *_: hidden.append((w, C.c_int(on).value)) or 0)
+    assert C.cast(timers[-1][1], C.CFUNCTYPE(C.c_int, C.c_void_p))(C.addressof(info)) == 7 and hidden == [(0x7002, 0)]
 
 
 def test_quick_settings_wheel_starts_from_the_saved_choice(fw, ui):

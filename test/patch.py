@@ -8327,7 +8327,7 @@ def app_lrc(rec_id,gen=3,body=b'[00:01.00]Hi\n[00:02.50]there\n'):
     au=payload_syms['au']; m.word(au+72,gen); m.u.mem_write(au+80,b'/tmp/q2-jellyfin.lyrics\0')
     return m
 m=app_lrc('app:3:2'); assert m.load()==1 and m.lines==[(1,'Hi'),(2,'there')] and m.k_opened=='/tmp/q2-jellyfin.lyrics/2.lrc',m.lines; passed()
-m=app_lrc('app:3:2'); m.zero_freed=1; assert m.load()==1; t=m.get(payload_syms['ly']+4); assert t and [m.get(m.get(t+16)+i*4) for i in range(2)]==[72,105]; passed()  # the published table's words, read before the text is freed
+m=app_lrc('app:3:2'); m.zero_freed=1; assert m.load()==1; t=m.get(payload_syms['ly.1']); assert t and [m.get(m.get(t+16)+i*4) for i in range(2)]==[72,105]; passed()  # the published table's words, read before the text is freed
 m=app_lrc('app:3:2',body=b'\xef\xbb\xbfPlain\nwords\n'); assert m.load()==1 and m.lines==[(FAR,'Plain'),(FAR,'words')],m.lines; passed()
 m=app_lrc('app:2:2'); assert m.load()==-1 and not m.lines; passed()  # an older queue's track
 m=app_lrc('app:3:1'); assert m.load()==-1 and not m.lines; passed()  # the app left none for it
