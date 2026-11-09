@@ -8024,8 +8024,9 @@ static void qm_tracks(void *r, void *add) {
     int n;
     if (st.qm_kind == QM_FOLDER) {
         char path[1024];
-        tk_snprintf(path, sizeof(path), "%s/%s", (const char *)g_folder_path,
-                    (const char *)P(r, REC_NAME));
+        if ((unsigned)tk_snprintf(path, sizeof path, "%s/%s", (const char *)g_folder_path,
+                                  (const char *)P(r, REC_NAME)) >= sizeof path)
+            return; /* cut: a prefix is another folder's path, so nothing, as folder_tracks does */
         ringnav_wdt_long();
         folder_tracks(path, add, 0);
         return;
