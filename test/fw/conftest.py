@@ -19,6 +19,18 @@ import host  # noqa: E402
 
 ROOT = host.ROOT
 O = {k: int(v, 0) for k, v in re.findall(r'^#define (\w+) +(0x[0-9a-f]+|\d+)\b', (ROOT/'patch/offsets.inc').read_text(), re.M)}
+# navigation.c's source with navigation.h and the units split out of it (each includes navigation.h), for
+# tests that read a #define or enum the UI's code shares
+NAVIGATION_UNITS = sorted(p.stem for p in (ROOT/'patch').glob('*.c') if '#include "navigation.h"' in p.read_text())
+NAVIGATION_SOURCE = ''.join((ROOT/'patch'/n).read_text() for n in ['navigation.h', *(f'{u}.c' for u in NAVIGATION_UNITS)])
+
+
+def ui_name(lib, name):
+    """The symbol of navigation.c's `name`, wherever the split put it: `name` itself once navigation.h shares it,
+    else `<unit>__<name>`, a static of navigation.c or of a unit split out of it."""
+    return next(s for s in (name, *(f'{u}__{name}' for u in NAVIGATION_UNITS)) if hasattr(lib, s))
+
+
 FNV_SEED, FNV_PRIME = 2166136261, 16777619
 
 # The C uses stock's fixed addresses as they are: zeroed pages here. A non-PIE python (Debian's and
