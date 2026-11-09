@@ -39,7 +39,7 @@ static struct {
 
 static void settings(void) {
     if (ns.read) return;
-    char v[16] = "";
+    char v[256] = ""; /* a whole config line: toolsReadConfig takes no size (config_value) */
     ns.on = config_value("Q2POD", "NIGHTSHIFT", 3, 0);
     ns.dark = clock_night();
     toolsReadConfig("/mnt/data/config.ini", "Q2POD", "NIGHTK", v, "0");
