@@ -103,19 +103,24 @@ def claim(address):
         assert not libc.mprotect(page, 0x2000, 7)
 
 def in_fork(test):
-    """The test in a child: what it writes at stock's code addresses would outlive the test here."""
+    """The test in a child: what it writes at stock's code addresses would outlive the test here. The child
+    closes its firmware (dlclose) before it leaves: gcov writes a library's counts then, and _exit alone would
+    lose the child's, so a forked test counted nothing towards the C's coverage."""
     @functools.wraps(test)
     def run(*args, **kwargs):
         read, write = os.pipe()
         child = os.fork()
         if not child:
+            failure = b''
             try:
                 test(*args, **kwargs)
-                os.write(write, b'')
             except BaseException:
-                os.write(write, traceback.format_exc().encode())
-                os._exit(1)
-            os._exit(0)
+                failure = traceback.format_exc().encode()
+            for fixture in (*args, *kwargs.values()):
+                if isinstance(fixture, host.Fw):
+                    fixture.close()
+            os.write(write, failure)
+            os._exit(1 if failure else 0)
         os.close(write)
         failure = b''
         while chunk := os.read(read, 65536):
