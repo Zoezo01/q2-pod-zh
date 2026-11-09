@@ -3759,8 +3759,11 @@ static int bar_state_sync(void *bar) {
  * ("12:59 PM") and inks from the middle of it. On screen the two never touch. Classic's bar puts its
  * title after the glyph (tools/ipod.py), so there the word only takes the room a page without a
  * title of its own leaves (state_own_place): Home's list and Now Playing's page. */
-#define PLAY_WORD_W 84
-#define PLAY_WORD_PX 20
+#define PLAY_WORD_W 66
+#define PLAY_WORD_PX 16
+/* Classic's bar names its pages in its own 20 px face, and there the word matches it. */
+#define PLAY_WORD_WIDE 84
+#define PLAY_WORD_WIDE_PX 20
 
 /* Whether the bar's left belongs to the play state alone: no page name there to show, so the glyph
  * and its word take that room. Home's list is one ("Q2 Pod" makes way for them while a player
@@ -3768,7 +3771,7 @@ static int bar_state_sync(void *bar) {
  * of its own: bar_title names the page in the clock instead. A dialog keeps the page under it
  * (bar_own), as it keeps that page's title. */
 static int state_own_place(void) {
-    if (!st.bar_title) return 1;
+    if (!st.bar_title) return !st.bar_titled; /* Minimal/Modern: the page's name takes the clock's place */
     void *top = window_manager_get_top_window(window_manager());
     if (top && !tk_strcmp(widget_get_type(top), "window"))
         st.bar_own = home_menu(top) ||
@@ -3785,14 +3788,15 @@ static void play_word_create(void *bar) {
                          * where the page's name would — its box, its 20 px face and its baseline,
                          * so the bar reads as one line of one size whether it shows a name or the
                          * state. Four hanzi at 20 px are 80 px, ending short of the clock's ink. */
-        st.play_word = label_create(bar, 0, 0, PLAY_WORD_W, I(st.bar_title, W_H));
+        st.play_word = label_create(bar, 0, 0, PLAY_WORD_WIDE, I(st.bar_title, W_H));
         if (!st.play_word) return;
         widget_set_name(st.play_word, "label_playword");
         widget_use_style(st.play_word, "s_label_white16c");
-        widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
+        widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_WIDE_PX);
         widget_move_resize(st.play_word, I(st.bar_title, W_X), I(st.bar_title, W_Y),
-                           PLAY_WORD_W, I(st.bar_title, W_H));
+                           PLAY_WORD_WIDE, I(st.bar_title, W_H));
         theme_font(st.play_word, ROLE_BAR, FONT_ROW);
+        text_ink(st.play_word, 0xffffffffu, 1);
         widget_set_visible(st.play_word, 0, 0);
         return;
     }
@@ -3803,7 +3807,7 @@ static void play_word_create(void *bar) {
     widget_set_name(st.play_word, "label_playword");
     widget_use_style(st.play_word, "s_label_white16c");
     widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
-    widget_set_prop_int(st.play_word, "style:normal:text_color", (int)0xffffffffu);
+    text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
     widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
     widget_set_visible(st.play_word, 0, 0);
     widget_layout_children(left);
@@ -3817,11 +3821,12 @@ static int bar_word_sync(void *bar) {
     if (!st.play_word) return 0;
     int show = (status == 2 || status == 3) && state_own_place() &&
                !(st.bar_eq && widget_get_visible(st.bar_eq));
-    /* What the bar shows: the glyph's state, and whether the word has its room (bit 3). */
-    int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0);
+    /* What the bar shows: the glyph's state, the word's room (bit 3), the ink's half (bit 4). */
+    int key = (status == 2 || status == 3 ? status : 0) | (show ? 8 : 0) | (ipod_light() ? 16 : 0);
     if (key == st.word_key) return 0;
     st.word_key = key, st.word = status;
     widget_set_text_utf8(st.play_word, status == 2 ? "正在播放" : status == 3 ? "播放暂停" : "");
+    text_ink(st.play_word, 0xffffffffu, 1); /* white on the dark bar, black in Light Mode */
     widget_set_visible(st.play_word, show, 0);
     return 1;
 }

@@ -16,11 +16,11 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
-# V was the first 1.7.2 build. X fixes what its rebuild had missed: the play state's word reads
-# 正在播放 or 播放暂停 by state alone (the page names nothing), the appearance page's rows split on
-# the full-width colon instead of falling to "Accent", the panes' captions decode their UTF-8, and
-# Modern's battery draws at its own, larger size.
-TAG = 'V' + VERSION.replace('.', '') + 'X'
+# X fixed the rebuild's misses (the word by state, the full-width colon, the panes' UTF-8, Modern's
+# battery); Y unifies the word's rules across the themes: it yields to a page's name everywhere,
+# sizes at each bar's own face (20 px Classic, 16 px Minimal/Modern), and flips its ink in Light
+# Mode, where white on the paper bar was invisible.
+TAG = 'V' + VERSION.replace('.', '') + 'Y'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
