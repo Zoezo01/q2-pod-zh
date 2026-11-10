@@ -71,8 +71,8 @@ def api(fw):
            'coverflow__home_render': (None, ptr, i, i, i), 'coverflow__drift_at': (i, i, u), 'coverflow__pan_u': (i,),
            'coverflow__pan_v': (i,), 'coverflow__velocity': (i, u), 'coverflow__sample': (None, i, u),
            'coverflow__round_stride': (i, i, i), 'coverflow__floor_div': (i, i, i), 'covers_live': (i,),
-           'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'coverflow__pose': (None, i, ptr),
-           'coverflow__project': (i, ptr, i), 'coverflow__unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
+           'coverflow_hit': (i, i, i, i), 'coverflow_render': (None, ptr, i, i, ptr), 'pose': (None, i, ptr),
+           'project': (i, ptr, i), 'unproject': (i, ptr, i, ptr, ptr), 'coverflow__slot': (i, i, i, i),
            'coverflow__lower': (u, ptr, u, ptr, ptr), 'coverflow__album_in': (i, ptr, u, ptr), 'coverflow__album_index': (i, ptr),
            'coverflow__name_cmp': (i, ptr, ptr), 'coverflow__tie': (i, i, ptr, ptr), 'coverflow__by_name': (i, ptr, ptr),
            'coverflow__by_album': (i, ptr, ptr), 'album_cmp': (i, ptr, ptr), 'album_id': (u, ptr), 'album_dir': (u, C.c_char_p, i),
@@ -89,7 +89,7 @@ def api(fw):
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_player_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow__marked_empty': (i, C.c_char_p),
            'now_cover': (C.c_ubyte, ptr, ptr), 'hash_bytes': (u, u, ptr, u), 'fnv': (u, u, C.c_char_p)}
-    fw.fn('coverflow__cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
+    fw.fn('cf_restyle', None)()  # the theme's Cover Flow values, as the page's open copies them
     return SimpleNamespace(**{k.replace('coverflow__', ''): fw.fn(k, v[0], *v[1:]) for k, v in fns.items()})
 
 
@@ -2119,7 +2119,7 @@ def py_key(artist, album):
 
 class Fx(C.Structure):
     _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * 15), ('art', C.c_void_p * 15),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo'.split())]
+                *((k, C.c_int) for k in 'c frac drawn light lead todo mode'.split())]
 
 
 def deque_of(fw, recs):
@@ -2253,6 +2253,17 @@ def style(library):
     return host.offsets(library.parent/'coverflow.o', 'cf_style_t')
 
 
+def test_a_far_cover_s_pose_holds_for_a_wide_spacing(fw, style):
+    """xs and zs as far as the theme's range takes them: a cover 22 out (entry_window's) stays exact, no wrap."""
+    g = api(fw)
+    cfs = C.addressof(fw.var('cfs', C.c_char))
+    x1, z1 = (C.c_short.from_address(cfs + style[f]).value for f in ('x1', 'z1'))
+    for f in ('xs', 'zs'):
+        C.c_short.from_address(cfs + style[f]).value = 799
+    p = pose(g, 22 * ONE)
+    assert (p.xc, p.zc) == (16 * (x1 + 21 * 799), 16 * (z1 + 21 * 799))
+
+
 def test_without_a_third_cover_the_second_fades_out_over_the_next_step(fw, style):
     g = api(fw)
     third = C.c_short.from_address(C.addressof(fw.var('cfs', C.c_char)) + style['third'])
@@ -2279,7 +2290,7 @@ def test_an_artist_s_shelf_shows_no_cover_past_its_ends(fw, scoped):
     deque_of(fw, [Rec() for _ in range(n)])
     c = cf(fw)
     c.albums, c.slide, c.scoped = 0x5000, 0x6000, scoped
-    fw.fn('coverflow__cf_restyle', None)()
+    fw.fn('cf_restyle', None)()
     assert fw.fn('coverflow__fx_open', C.c_int)() == 1
     wide = (C.c_void_p * (2 * CF_WIDE_REACH + 1))()  # the callers' window, ring[0] CF_REACH slots left of its centre
     ring = C.addressof(wide) + (CF_WIDE_REACH - CF_REACH) * C.sizeof(C.c_void_p)
@@ -3290,8 +3301,10 @@ def test_a_level_slides_in_from_the_side_it_comes_from_where_the_theme_moves_lev
 
 class Th(C.Structure):
     _fields_ = [*((k, C.c_float) for k in 'pos vel goal lead lead_v rate tau ticks seen seen_lead stretch'.split()),
-                *((k, C.c_uint) for k in 'at tick_at edge_at letter_at'.split()),
-                *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump jump_to'.split())]
+                *((k, C.c_uint) for k in 'at tick_at edge_at'.split()),
+                *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump lean fold'.split()),
+                ('fold_at', C.c_uint), *((k, C.c_float) for k in 'enter fold_off fold_vel hold_lead hold_run hold_xrun hold_xs'.split()),
+                ('hold_k', C.c_int)]
 
 
 def captions(fw, theme, scoped=0, albums=(('Abbey', 'Beatles'), ('Help', 'Beatles'))):

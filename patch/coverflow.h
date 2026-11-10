@@ -1,7 +1,8 @@
 #ifndef Q2_COVERFLOW_H
 #define Q2_COVERFLOW_H
-/* What coverflow.c shares with coverflow_thumb.c: the page's state, the depth renderer's and the
- * flip's, which the thumb reads, and the thumb's follower, which the renderer reads. */
+/* What coverflow.c shares with coverflow_thumb.c and coverflow_letters.c: the page's state, the
+ * depth renderer's and the flip's, which the thumb reads, the thumb's follower, which the renderer
+ * reads, and the poses and columns the letters draw with. */
 #include "offsets.inc"
 #include "peq.h"
 #ifndef PEQ_HOST
@@ -49,9 +50,35 @@ typedef struct {
 } cf_page_t;
 extern cf_page_t cf;
 
+#define ART_SIZE 160 /* a texture's side, texels */
+#define CF_ONE 65536
+#define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
+#define CF_EYE16 (16 * cfs.eye) /* the eye's distance, 1/16 px */
+#define CF_HALF16 (16 * ART_SIZE / 2)
 #define CF_WIDE_REACH 7 /* CF_REACH under a thumb theme, for the row at speed */
 #define CF_WIDE (2 * CF_WIDE_REACH + 1)
+#define CF_ENTER_SPEED 12 /* the entry into letters' least speed, albums a second */
+#define CF_FOLD_MS 450    /* the fold out of letters onto the letter's first album, ms */
 extern cf_style_t cfs; /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
+/* A right-hand cover t (16.16, >= 0) from the visual position: centre xc and depth zc (1/16 px),
+ * rotation c, s (16.16), brightness (of 256) and the eye it is seen from (1/16 px). Left covers
+ * mirror it. */
+typedef struct {
+    int xc, zc, c, s, bright, eye;
+} pose_t;
+
+/* The frame being drawn, nearest cover first: each pixel's alpha byte holds the coverage so far
+ * (255 opaque), and a layer only fills what is left, which composites as drawing back to front
+ * would. Per column, rows solid_top to solid_bottom are known opaque and skipped outright, so the
+ * hidden parts of side covers cost nothing. */
+typedef struct {
+    unsigned *d;
+    int pitch;
+    short solid_top[CF_VIEW_W], solid_bottom[CF_VIEW_W];
+} shelf_t;
+
+/* fx.mode: the shelf, letters' held row (leaning right or left), the fold, the entry */
+enum { FX_SHELF, FX_HELD, FX_FOLD, FX_HELD_LEFT, FX_ENTRY };
 /* The depth renderer's state: the frame, the textures of the covers around the visual position
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 typedef struct {
@@ -61,6 +88,7 @@ typedef struct {
     const unsigned *art[CF_WIDE];    /* its texture: the slot's own, or the placeholder */
     int c, frac, drawn, light, lead; /* the position and Light Mode the frame holds, once drawn */
     int todo;                        /* a slot still waits for its decode (FX_DECODES) */
+    int mode;                        /* what the frame holds (FX_SHELF ...) */
 } cf_depth_t;
 extern cf_depth_t fx;
 /* Classic's flip to the tracks panel (flip_open): its frame, the panel as painted and the turn. */
@@ -80,23 +108,52 @@ extern cf_flip_t fl;
  * albums from SLIDE_INDEX, its speeds a ms. on: it owns the offset, until it commits. */
 typedef struct {
     float pos, vel, goal, lead, lead_v, rate, tau, ticks, seen, seen_lead, stretch;
-    unsigned at, tick_at, edge_at, letter_at;
-    int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump, jump_to;
+    unsigned at, tick_at, edge_at;
+    int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump;
+    int lean, fold;   /* the way the row leans (1: as right-hand covers; against th.dir as letters
+                         began), kept through the entry, the letters and the fold, 0 from the
+                         landing; folding back out from it */
+    unsigned fold_at; /* the fold's start */
+    float enter;      /* the entry's travel left to letters, in albums; 0 once in */
+    float fold_off, fold_vel; /* where the row was, albums from the letter's first, and its
+                                 speed, albums a ms, as the fold began */
+    float hold_lead, hold_run, hold_xrun, hold_xs; /* going by letters, the row held as the entry
+                              left it (coverflow_hold): its facing point's lead and run (albums),
+                              the shelf's shift and a cover's xc an album as a pose (1/16 px) */
+    int hold_k; /* and the album at the screen's middle, from the row's frac centre (16.16) */
 } cf_thumb_t;
 extern cf_thumb_t th;
 
 /* coverflow.c */
 unsigned album_key(void *r);
+/* the depth renderer, which the letters draw with (coverflow_letters.c) */
+extern const int cf_cos90[17];
+void cf_restyle(void);
+void turn(int a, int other, pose_t *p);
+void pose(int t, pose_t *p);
+int project(const pose_t *p, int u);
+int unproject(const pose_t *p, int dx, int *u, int *h);
+void draw_posed(shelf_t *f, const pose_t *p, int side, const unsigned *tex);
+void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, int bright);
 int cf_floor(float x);
 int cf_round(float x);
 float cf_smooth(float x);
 int coverflow_bounded(void *w);
 int coverflow_jump(void *w, int from, int dir, unsigned *letter);
-int coverflow_round(int dir, unsigned *letter);
+int coverflow_letter_first(int i, unsigned *letter);
+int coverflow_letter_next(void *w, int from, int dir, int n, unsigned *letter);
 int covers_live(void);
 float ff_decay(float s);
 int lettered(void *w);
 int stride_of(void *s);
 void titles(unsigned c);
+
+/* coverflow_letters.c */
+float coverflow_enter_v(void);
+float coverflow_hold(void);
+int coverflow_window(int frac);
+void draw_row(shelf_t *f, int frac, const unsigned *const *ring);
+int fold_t16(void);
+void draw_fold(shelf_t *f, const unsigned *const *ring, int t16, int lean, int off16);
 
 #endif

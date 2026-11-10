@@ -57,6 +57,7 @@ typedef struct {
     unsigned edit_press, edit_at; /* a slider or time editor's pending Centre (edit_key) */
     int center_id, center_ctx, center_rows;
     unsigned cf_letter, cf_letter_at, cf_letter_timer;
+    int cf_letter_held; /* the thumb's letters: shown until it lifts */
     void *cf_letter_surface;
     unsigned last_home;
     int home_dir;

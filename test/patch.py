@@ -10048,7 +10048,8 @@ class DepthMachine(CoverflowMachine):
 
 def host_render(textures,cases,style=None,paper=None,still=False):
     """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases. style: a theme's cf.* values; paper: the light half's.
-    15 textures make the thumb's wide ring.
+    15 textures make the thumb's wide ring; a case's (kind, lean, a, b) then sets the thumb: 1 letters, the row held as an entry from the row at
+    lead a/1000 leaves it, 2 a ms into the fold from that row held at lead b/1000, 3 the entry, lead a/1000 and b/1000 albums to go.
     still: nothing moving, as the page's own frame at rest (the shelf's seven); else moving, as a direct render is."""
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
@@ -10056,7 +10057,7 @@ def host_render(textures,cases,style=None,paper=None,still=False):
     style=style or {**{f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')},'cf.art_persp':100,
                     'cf.thumb':builtins()[0]['cf.thumb']}  # Minimal's, a thumb theme: its shelf draws seven covers a side
     if len(textures)==7:  # the seven round the centre, the wide ring's ends left out
-        textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(f,m<<4) for f,m in cases]
+        textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(c[0],c[1]<<4,*c[2:]) for c in cases]
     cf=', '.join(f'.{f[3:]} = {v}' for f,v in style.items()); rows=style['cf.view_h']
     main=r"""#include "theme.h"
 static theme_t t = { .cf = { %s } };
@@ -10066,6 +10067,10 @@ const theme_t *theme(void) { return &t; }
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
+unsigned time_now_ms(void) { return 0; } /* the fold's clock: fold_at counts back from 0 */
+void cf_thumb_lead(float), cf_thumb_lean(int), cf_thumb_fold(int, unsigned), cf_thumb_enter(int, float, float);
+void cf_thumb_speed(float, float);
+float cf_thumb_hold(int, float, int);
 void cf_shelf_still(int);
 const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
 #define N %d
@@ -10074,9 +10079,14 @@ int main(void) {
     const unsigned *ring[N];
     cf_shelf_still(%d);
     if (fread(tex, 4, N * 160 * 160, stdin) != N * 160 * 160) return 1;
-    int frac, mask;
-    while (scanf("%%d %%d", &frac, &mask) == 2) {
+    int frac, mask, kind, lean, a, b;
+    while (scanf("%%d %%d %%d %%d %%d %%d", &frac, &mask, &kind, &lean, &a, &b) == 6) {
         for (int j = 0; j < N; ++j) ring[j] = mask >> j & 1 ? tex[j] : 0;
+        cf_thumb_enter(0, 0, 0), cf_thumb_lead(-1), cf_thumb_speed(0, 0);
+        if (kind == 1 || kind == 2) cf_thumb_hold(lean, (kind == 1 ? a : b) / 1000.f, 0);
+        if (kind == 1) cf_thumb_lean(lean);
+        if (kind == 2) cf_thumb_fold(lean, -(unsigned)a);
+        if (kind == 3) cf_thumb_enter(lean, a / 1000.f, b / 1000.f);
         coverflow_render(frame, %d, frac, ring + (N - 7) / 2);
         fwrite(frame, 4, sizeof(frame) / 4, stdout);
         fflush(stdout);
@@ -10088,7 +10098,7 @@ int main(void) {
         subprocess.run(['cc','-O1','-DPEQ_HOST','-DPEQ_ROOT=""','-D_GNU_SOURCE',
                         '-ffunction-sections','-fdata-sections','-Wl,--gc-sections','-I',str(ROOT/'patch'),'-include',str(d/'shim.h'),
                         str(d/'coverflow_all.c'),str(d/'main.c'),'-o',str(d/'render')],check=True)
-        feed=b''.join(textures)+''.join(f'{f} {m}\n' for f,m in cases).encode()
+        feed=b''.join(textures)+''.join(' '.join(str(x) for x in (*c,0,0,0,0)[:6])+'\n' for c in cases).encode()
         out=subprocess.run([str(d/'render')],input=feed,capture_output=True,check=True).stdout
     size=4*O['CF_VIEW_W']*rows
     return [out[i*size:(i+1)*size] for i in range(len(cases))]
@@ -10245,6 +10255,9 @@ def toff(m): return signed(m.get(m.slide+O['SLIDE_OFFSET']))
 def tcaption(m): return m.texts()[0]
 CF_FIELDS=[f for l in re.findall(r'^\s*short ([^;]+);',re.search(r'typedef struct \{([^}]*)\} cf_style_t;',(ROOT/'patch/theme.h').read_text())[1],re.M) for f in re.split(r',\s*',l)]
 def no_letters(m): m.u.mem_write(ps['cfs']+2*CF_FIELDS.index('jump_ticks'),b'\0\0')  # the open page's cfs: jump_ticks 0, the cap alone
+CF_DEFINES={k:int(v) for k,v in re.findall(r'^#define (\w+) (\d+)',(ROOT/'patch/coverflow.h').read_text(),re.M)}  # LD_SLOTS, CF_FOLD_MS ...
+TH_AT={f:4*i for i,f in enumerate(f for l in re.findall(r'^\s*\w+ ([^;]+);',re.sub(r'/\*.*?\*/','',re.search(r'typedef struct \{([^}]*)\} cf_thumb_t;',(ROOT/'patch/coverflow.h').read_text())[1],flags=re.S),re.M) for f in re.split(r',\s*',l))}  # every field 4 bytes
+def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 # Raw on the covers, each pass, in every theme; a turn writes the offset itself and no tick or animator is about.
 # The whole wider ring is allocated at the open.
 for theme in ('1','0','2'):
@@ -10314,24 +10327,61 @@ assert len(did(m,'reset_poweroptions_timer'))>=20*3-2 and len(did(m,'buzzeer_swi
 m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
-# At jump_at for jump_ms a spin goes by letters, as Minimal's wheel does: the covers flow on and each names the next
-# letter's first album, its letter shown, jump_pace apart. Once in, a turn from fast_at keeps them, one each
-# jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands on the letter's first album.
+# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does: the first carries the covers on to the next
+# letter's first album, each after slides the row there through the albums between (slide_ms), its letter held (no
+# LETTER_MS timer) and a click at the step; past the last letter, round to the first, and back from the first to the
+# last, as the albums wrap.
+# Once in, any turn keeps them, one each jump_ticks, back or slow; only a lift ends them: the row arrives, then folds
+# back out, a frame each pass, then rests on the album named.
 def letter_on(m): return any(v[1]==ps['cf_letter_expire'] for v in m.timers.values())
+def first(seen): return all(FRUIT[i][0]!=FRUIT[i-1][0] for i in seen if i)
+def tfloat(m,f): return struct.unpack('<f',m.u.mem_read(ps['th']+TH_AT[f],4))[0]
+def ttarget(m): return (tindex(m)+int(tfloat(m,'goal')))%len(FRUIT)  # where the row is going
+def tarrive(m):  # the thumb still, the row there
+    for _ in range(300):
+        if tfloat(m,'pos')==tfloat(m,'goal'): return
+        tp(m)
+    assert False
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
 m=classic_light_new(DepthMachine,albums=9)
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
-tp(m); thold(m); tspin(m,300,-30); assert not letter_on(m)  # 318 ticks/s; at the cap, short of jump_ms
-seen={tcaption(m)}; m.calls=[]
-for _ in range(50): tspin(m,17,-30); seen.add(tcaption(m))
-assert letter_on(m) and len({c[0] for c in seen})>=4 and did(m,'buzzeer_switch')
-seen={tcaption(m)}
-for _ in range(40): tspin(m,17,-4); seen.add(tcaption(m))  # 42 ticks/s: a letter a beat, 9 passes or so
-assert letter_on(m) and len({c[0] for c in seen})>=2
-tspin(m,100,-1); index=tindex(m); tspin(m,500,-1)  # 11 ticks/s
-assert tindex(m)!=index or toff(m)!=0
-trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)]; passed()
+m.word(m.slide+O['SLIDE_INDEX'],1)  # from Avocado: past jump_ms and the entry, round the nine, the first letter is Apple's
+tp(m); thold(m); tspin(m,200,-30); assert not m.get(ps['th']+TH_AT['jump'])  # 318 ticks/s; at the cap, short of jump_ms
+for _ in range(40):
+    if m.get(ps['th']+TH_AT['jump']): break
+    tspin(m,17,-30)
+assert m.get(ps['th']+TH_AT['jump']) and tfloat(m,'enter')>0  # by letters, the entry first
+seen=[ttarget(m)]; m.calls=[]; slid=0
+for _ in range(60):  # the entry: enter_albums at the cap's 20 albums a second; then a letter a pass or so
+    if seen[-1]==8: break
+    tspin(m,17,-30); i=ttarget(m)
+    if seen[-1]!=i: seen.append(i); slid|=toff(m)!=0  # on its way, part through an album
+    n=len(m.draws); tpaint(m); assert len(m.draws)==n+1  # a frame mid-slide
+assert not letter_on(m) and len(seen)>=4 and seen[1:]==sorted(seen[1:]) and seen[-1]==8 and first(seen[1:]) and slid
+assert did(m,'buzzeer_switch'); tarrive(m); assert tindex(m)==8 and toff(m)==0 and tcaption(m)==FRUIT[8]
+for back,to in ((-30,0),(30,8)):  # on past the last: the first letter's first album; back past it: the last's
+    m.calls=[]
+    for _ in range(10):
+        if ttarget(m)==to: break
+        tp(m,back)
+    assert ttarget(m)==to and did(m,'buzzeer_switch') and not letter_on(m)
+    tarrive(m); assert tindex(m)==to and toff(m)==0 and tcaption(m)==FRUIT[to]
+seen=[tindex(m)]
+for _ in range(30):  # 42 ticks/s back, under half the cap's: a letter back each 7 passes or so
+    tspin(m,17,4); i=ttarget(m)
+    if seen[-1]!=i: seen.append(i)
+assert 4<=len(seen)<=6 and seen==sorted(seen,reverse=True) and first(seen)
+tspin(m,100,-2); index=ttarget(m); tspin(m,500,-2)  # 21 ticks/s, under fast_at: letters still
+assert ttarget(m)>index and first([ttarget(m)]) and not letter_on(m)
+tarrive(m); assert tindex(m)==ttarget(m) and toff(m)==0 and tcaption(m)==FRUIT[tindex(m)]
+for _ in range(O['LETTER_MS']//17+2): tp(m)  # the thumb resting, past LETTER_MS: the letter's still drawn
+m.letters=[]; tpaint(m); assert [l['text'] for l in m.letters]==[FRUIT[tindex(m)][0]]
+index=tindex(m); m.word(ps['wheel_held'],0); tp(m); tp(m); tp(m)  # past contact_ms
+for _ in range(17):  # 289 ms of CF_FOLD_MS
+    m.calls=[]; tp(m); assert ('widget_invalidate_force',m.slide) in [c[:2] for c in m.calls] and tindex(m)==index and toff(m)==0
+trest(m); assert tindex(m)==index and toff(m)==0 and tcaption(m)==FRUIT[index]
+m.letters=[]; tpaint(m); assert not m.letters; passed()
 # chord_gate: Centre under a held Return is dropped whole while the wheel's raw, the covers not landed for it.
 def twake(m,kind,key=O['KEY_CENTER'],gap=30):
     inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; n=len(m.calls)
@@ -10351,21 +10401,33 @@ off=toff(m); assert m.call(gap=0)==11 and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 
 trest(m); assert toff(m)==0; passed()
 # The row's cost, in instructions: at a full lead, under a mid-turn frame's. What a frame costs on the device is measured
 # with the --dev gaps; this keeps a change from quietly doubling it.
-def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
 m.word(m.slide+O['SLIDE_ANIMATOR'],1)  # a step's frame, the covers moving (no animator is ever called by a paint)
 tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
 assert turn_cost<6_450_000,turn_cost  # a frame a quarter turn on, the covers moving, a little over the 6.38 million it measured: a dearer one fails
-# The shelf moving (as a direct render is), as MIPS, in Minimal and Classic, on a whole album and a quarter turn on: all of
-# its ring, byte for byte what the host draws, under FRAME_BOUND (the renderer's own instructions), set a little over what
-# it measured: 5.2 to 5.4 million (Minimal), 5.4 (Classic). Still, the page's own frame is the seven, 4.8. Each holds the
-# last pass's R and B swap into the screen's BGRA8888, 4 a pixel, which spares stock's blend of the frame, 36 a pixel that
-# is not counted here (image_blend against image_copy).
-wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND=5_600_000
+# Going by letters, as MIPS, in Minimal and Classic, both leans: the held row, at rest and part through an album as it slides,
+# the fold half-way and the entry half-way (the facing point running) and 85% in (the row going on) draw byte for byte what
+# the host draws. Each is under its FRAME_BOUND (the renderer's own instructions), set a little over what it measured: the
+# held row 4.1 million (Minimal) and 4.0 (Classic), its 11 to 13 covers on the screen no dearer than the rest pose's, the
+# fold 4.2 and 4.0, the entry 4.1 and 3.8 to 4.1; the shelf moving (as a direct render is), on a whole album and a quarter
+# turn on, all of its ring: 5.2 to 5.4 (Minimal), 5.4 (Classic). Still, the page's own frame is the seven, 4.8. Each
+# holds the last pass's R and B swap into the screen's BGRA8888, 4 a pixel, which spares stock's blend of the frame, 36 a
+# pixel that is not counted here (image_blend against image_copy).
+def th_set(m,kind=0,lean=0,a=0,b=0):  # host_render's (kind, lean, a, b)
+    F=('lead','enter','vel','lead_v','pos')
+    def put(**v):
+        for f,x in v.items(): m.u.mem_write(ps['th']+TH_AT[f],struct.pack('<f',x) if f in F else struct.pack('<I',int(x)&0xffffffff))
+    put(vel=0,lead_v=0)
+    if kind in (1,2):  # the row held, as coverflow_hold leaves it from that entry
+        put(pos=0,lean=lean,lead=(a if kind==1 else b)/1000); m.call(address=ps['coverflow_hold'],args=(0,0,0,0),gap=0)
+    put(on=kind>0,jump=kind in (1,3),fold=kind==2,lean=lean,fold_at=m.now-a if kind==2 else 0,lead=a/1000 if kind==3 else 0,enter=b/1000 if kind==3 else 0)
+wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND={0:5_600_000,1:4_300_000,2:4_350_000,3:4_300_000}
 for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.startswith('cf.')}),('Classic',{**cl_style,'cf.radius':0})):
-    cases=[(0,ALL),(16384,ALL)]
+    cases=[(0,ALL),(16384,ALL)]+[c for lean in (1,-1) for c in ((0,ALL,1,lean,-3200*lean),(20000*lean,ALL,1,lean,-3200*lean),(0,ALL,2,lean,CF_DEFINES['CF_FOLD_MS']//2,-3200*lean),
+                                                              (-8192*lean,ALL,3,lean,-2500*lean,style['cf.enter_albums']*500),
+                                                              (-8192*lean,ALL,3,lean,-2500*lean,style['cf.enter_albums']*150))]
     want=host_render(wide,cases,style)
     SETUP[:]=[lambda k:(k.config.update(THEME='0' if name=='Minimal' else '1',LIGHT='0'),k)]
     try: m=DepthMachine()
@@ -10374,11 +10436,11 @@ for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.s
     for k in range(15): m.word(ring+4*k,tex+k*160*160*4)
     n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
     for c,host in zip(cases,want):
-        n[0]=0
+        th_set(m,*c[2:]); n[0]=0
         m.call(address=ps['coverflow_render'],args=(frame,O['CF_VIEW_W'],c[0],ring+16),gap=0,count=50_000_000)
         assert bytes(m.u.mem_read(frame,len(host)))==host,(name,c)
-        assert n[0]<FRAME_BOUND,(name,c,n[0])
-    m.u.hook_del(h); passed()
+        assert n[0]<FRAME_BOUND.get(c[2] if len(c)>2 else 0,1<<30),(name,c,n[0])
+    m.u.hook_del(h); th_set(m); passed()
 # Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
 m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown

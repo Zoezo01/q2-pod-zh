@@ -6,7 +6,6 @@
 
 /* On the card, beside stock's own cover cache (/mnt/mmc/.sldp). */
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
-#define ART_SIZE 160
 #define LAST_ALBUM ART_DIR "/album" /* the centre album's key, so a reboot opens on it */
 #define BUILDING ART_DIR "/building" /* the key and track of the album the worker is on (strike) */
 #define CRASH_LOG PEQ_ROOT "/mnt/mmc/q2-crash.log"
@@ -1020,12 +1019,24 @@ int coverflow_jump(void *w, int from, int dir, unsigned *letter) {
     return dir > 0 ? to - from : from - to;
 }
 
-/* Round the ends, for the thumb's letters: the first album of the first letter, or of the last. */
-int coverflow_round(int dir, unsigned *letter) {
-    int to = dir > 0 ? 0 : (int)deque_size(cf.albums) - 1;
-    *letter = initial(to);
-    while (dir < 0 && to > 0 && initial(to - 1) == *letter) --to;
-    return to;
+/* The first album of album i's letter, or the last letter's from past them, the letter in *letter:
+ * where the thumb's letters land round the seam, the first letter's after the last and the last's
+ * before the first. */
+int coverflow_letter_first(int i, unsigned *letter) {
+    int n = cf.albums ? (int)deque_size(cf.albums) : 0;
+    *letter = 0;
+    if (n < 1) return i;
+    i = i < n ? i : n - 1;
+    unsigned c = *letter = initial(i);
+    while (i > 0 && initial(i - 1) == c) --i;
+    return i;
+}
+
+/* The first album of the letter after album from's (dir 1) or before it (-1), of n, round the seam
+ * as the albums wrap; its letter in *letter. */
+int coverflow_letter_next(void *w, int from, int dir, int n, unsigned *letter) {
+    int to = from + dir * coverflow_jump(w, from, dir, letter);
+    return *letter ? to : coverflow_letter_first(dir > 0 ? 0 : n - 1, letter);
 }
 
 typedef struct {
@@ -1475,8 +1486,6 @@ int image_show(void *img, const char *url, unsigned *size) {
  * of the visual position is projected column by column into one frame bitmap, farthest first, with
  * its reflection, then the frame is drawn over the slide_menu, whose own children stay empty. All
  * integer: 16.16 turns and rotations, geometry in 1/16 px, row spans in 1/256 px. */
-#define CF_ONE 65536
-#define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
 #define CF_RING (2 * CF_REACH + 1)
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
@@ -1487,8 +1496,6 @@ static int cf_s1 __attribute__((section(".scratch")));
 static int cf_rest16 __attribute__((section(".scratch")));
 static int cf_top256 __attribute__((section(".scratch")));
 #define CF_SWING_T (CF_ONE * 45 / 100)
-#define CF_EYE16 (16 * cfs.eye)
-#define CF_HALF16 (16 * ART_SIZE / 2)
 /* the horizon every cover shares, and a cover h high (1/256 px)'s top row on it */
 #define CF_TOP256(h) (cf_top256 - (h) * cfs.horizon / 100)
 
@@ -1508,26 +1515,23 @@ static const int cf_cos[17] = { 65536, 65396, 64975, 64277, 63303, 62058, 60547,
 static const int cf_sin[17] = { 0,     4286,  8554,  12785, 16962, 21066, 25080, 28986, 32768,
                                 36410, 39896, 43211, 46341, 49273, 51993, 54491, 56756 };
 /* the same of 0 to 90 degrees, for a theme's other tilt */
-static const int cf_cos90[17] = { 65536, 65220, 64277, 62714, 60547, 57798, 54491, 50660, 46341,
-                                  41576, 36410, 30893, 25080, 19024, 12785, 6424,  0 };
+const int cf_cos90[17] = { 65536, 65220, 64277, 62714, 60547, 57798, 54491, 50660, 46341,
+                           41576, 36410, 30893, 25080, 19024, 12785, 6424,  0 };
 static const int cf_sin90[17] = { 0,     6424,  12785, 19024, 25080, 30893, 36410, 41576, 46341,
                                   50660, 54491, 57798, 60547, 62714, 64277, 65220, 65536 };
 
-/* A right-hand cover t (16.16, >= 0) from the visual position: centre xc and depth zc (1/16 px),
- * rotation c, s (16.16), brightness (of 256) and the eye it is seen from (1/16 px). Left covers
- * mirror it. */
-typedef struct {
-    int xc, zc, c, s, bright, eye;
-} pose_t;
-
-static void pose(int t, pose_t *p) {
-    int a = t < CF_ONE ? t : CF_ONE, other = cfs.tilt != CF_ANGLE;
-    if (other) a = a * cfs.tilt / 90;
+/* p's c and s at a (16.16) of the way to CF_ANGLE, or of the way to 90 degrees if other. */
+void turn(int a, int other, pose_t *p) {
     const int *cs = other ? cf_cos90 : cf_cos, *sn = other ? cf_sin90 : cf_sin;
     int i = a >> 12, f = a & 4095;
-    p->eye = CF_EYE16;
     p->c = cs[i] + (i < 16 ? (cs[i + 1] - cs[i]) * f >> 12 : 0);
     p->s = sn[i] + (i < 16 ? (sn[i + 1] - sn[i]) * f >> 12 : 0);
+}
+
+void pose(int t, pose_t *p) {
+    int a = t < CF_ONE ? t : CF_ONE, other = cfs.tilt != CF_ANGLE;
+    p->eye = CF_EYE16;
+    turn(other ? a * cfs.tilt / 90 : a, other, p);
     if (t < CF_ONE) {
         /* xc = A t + B t^2: CF_X1 at t = 1, arriving at the stack's CF_XS slope, and quick at
          * first, so the covers turning in and out mid-step keep clear of each other. */
@@ -1556,8 +1560,8 @@ static void pose(int t, pose_t *p) {
         p->bright = 256 - ((256 - cfs.bright1) * t >> 16);
     } else {
         int e = t - CF_ONE;
-        p->xc = 16 * cfs.x1 + (16 * cfs.xs * e >> 16);
-        p->zc = 16 * cfs.z1 + (16 * cfs.zs * e >> 16);
+        p->xc = 16 * cfs.x1 + (cfs.xs * e >> 12);
+        p->zc = 16 * cfs.z1 + (cfs.zs * e >> 12);
         if (e < CF_ONE)
             p->bright = cfs.bright1 - ((cfs.bright1 - cfs.bright2) * e >> 16);
         else if (cfs.third) /* whole from the second on; with no thumb, seven covers, gone half a
@@ -1571,16 +1575,24 @@ static void pose(int t, pose_t *p) {
 }
 
 /* Screen x (1/16 px right of the centre line) of the cover point u (1/16 px from its middle). */
-static int project(const pose_t *p, int u) {
+int project(const pose_t *p, int u) {
     return (p->xc + (u * p->c >> 16)) * p->eye / (p->eye + p->zc - (u * p->s >> 16));
 }
 #ifdef PEQ_HOST
 /* For test/coverflow.py: the follower's state, and a lead (< 0: none) to render at. */
 void cf_thumb(float *out) {
     out[0] = th.pos, out[1] = th.vel, out[2] = th.goal, out[3] = th.lead, out[4] = th.rate;
-    out[5] = (float)th.on;
+    out[5] = (float)th.on, out[6] = (float)th.jump, out[7] = (float)th.lean;
+    out[8] = (float)th.fold, out[9] = th.enter, out[10] = th.fold_off, out[11] = th.fold_vel;
 }
 void cf_thumb_lead(float lead) { th.on = lead >= 0, th.lead = lead >= 0 ? lead : 0; }
+/* For test/coverflow.py: going by letters, the row leaning lean (0: not). */
+void cf_thumb_lean(int lean) { th.on = th.jump = lean != 0, th.lean = lean; }
+/* For test/coverflow.py: folding out of a row leaning lean since at (0: not). */
+void cf_thumb_fold(int lean, unsigned at) {
+    th.on = th.fold = lean != 0, th.jump = 0, th.lean = lean, th.fold_at = at;
+    th.fold_off = th.fold_vel = 0;
+}
 /* For test/coverflow.py: a cover's brightness at rest, t (16.16) albums out. */
 int cf_pose_bright(int t) {
     pose_t p;
@@ -1597,7 +1609,7 @@ int cf_path_x(int t, int u) {
 
 /* The cover point under screen x dx (1/16 px right of the centre line), the inverse of project;
  * 0 when the column misses the cover. *h gets the cover's projected height there (1/256 px). */
-static int unproject(const pose_t *p, int dx, int *u, int *h) {
+int unproject(const pose_t *p, int dx, int *u, int *h) {
     int den = (p->eye * p->c + dx * p->s) >> 16;
     if (den <= 0) return 0;
     *u = (dx * (p->eye + p->zc) - p->eye * p->xc) / den;
@@ -1616,16 +1628,6 @@ HOT unsigned shade(unsigned p, unsigned b) {
 HOT unsigned bgra(unsigned p) { /* R and B from p turned half way round (one rotr) */
     return 0xff000000u | (p & 0xff00u) | ((p >> 16 | p << 16) & 0xff00ffu);
 }
-
-/* The frame being drawn, nearest cover first: each pixel's alpha byte holds the coverage so far
- * (255 opaque), and a layer only fills what is left, which composites as drawing back to front
- * would. Per column, rows solid_top to solid_bottom are known opaque and skipped outright, so the
- * hidden parts of side covers cost nothing. */
-typedef struct {
-    unsigned *d;
-    int pitch;
-    short solid_top[CF_VIEW_W], solid_bottom[CF_VIEW_W];
-} shelf_t;
 
 /* colour (alpha ignored) under what is already at px, covering cov (of 256) of the pixel */
 HOT void put(unsigned *px, unsigned colour, unsigned cov) {
@@ -1723,7 +1725,7 @@ void cf_column(unsigned *d, int pitch, short *solid, int col, const unsigned *te
 static unsigned short cf_inset[ART_SIZE] __attribute__((section(".scratch"))); /* 1/256 texel, symmetric */
 
 /* Copy the theme's Cover Flow values to cfs. */
-static void cf_restyle(void) {
+void cf_restyle(void) {
     pose_t rest;
     cfs = theme()->cf;
     pose(CF_ONE, &rest);
@@ -1756,27 +1758,33 @@ static int cf_art_q(int hn, int hf, int per) {
     return ((hf + (hn - hf) * cfs.art_persp / 100) << 8) / per;
 }
 
+/* A right-hand cover's pose p, mirrored to the left when side < 0. */
+void draw_posed(shelf_t *f, const pose_t *p, int side, const unsigned *tex) {
+    if (p->bright <= 0 || !tex) return;
+    int a = project(p, -CF_HALF16), b = project(p, CF_HALF16);
+    int lo = (16 * CF_CX + (a < b ? a : b)) >> 4, hi = (16 * CF_CX + (a < b ? b : a)) >> 4;
+    /* the edges' depths: far over near is the near edge's height over the far edge's */
+    int dn = p->eye + p->zc - (CF_HALF16 * p->s >> 16), df = dn + 2 * (CF_HALF16 * p->s >> 16);
+    int q = cf_art_q(df, dn, df);
+    for (int v = lo; v <= hi; ++v) { /* v: the column as if the cover were on the right */
+        int col = side > 0 ? v : 2 * CF_CX - 1 - v, u, h;
+        if (col < 0 || col >= CF_VIEW_W || !unproject(p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h))
+            continue;
+        int k = cf_texel(u + CF_HALF16, 2 * CF_HALF16, q);
+        column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k), h, p->bright, cf_inset[k]);
+    }
+}
+
 static void draw_cover(shelf_t *f, int t, const unsigned *tex) {
     pose_t p;
     int side = t < 0 ? -1 : 1;
     pose(t * side, &p);
-    if (p.bright <= 0 || !tex) return;
-    int a = project(&p, -CF_HALF16), b = project(&p, CF_HALF16);
-    int lo = (16 * CF_CX + (a < b ? a : b)) >> 4, hi = (16 * CF_CX + (a < b ? b : a)) >> 4;
-    /* the edges' depths: far over near is the near edge's height over the far edge's */
-    int dn = p.eye + p.zc - (CF_HALF16 * p.s >> 16), df = dn + 2 * (CF_HALF16 * p.s >> 16);
-    int q = cf_art_q(df, dn, df);
-    for (int v = lo; v <= hi; ++v) { /* v: the column as if the cover were on the right */
-        int col = side > 0 ? v : 2 * CF_CX - 1 - v, u, h;
-        if (col < 0 || col >= CF_VIEW_W || !unproject(&p, (2 * v + 1 - 2 * CF_CX) * 8, &u, &h)) continue;
-        int k = cf_texel(u + CF_HALF16, 2 * CF_HALF16, q);
-        column(f, col, tex + (side > 0 ? k : ART_SIZE - 1 - k), h, p.bright, cf_inset[k]);
-    }
+    draw_posed(f, &p, side, tex);
 }
 
 /* A cover whose near and far edges have left its pose, between xl and xr (1/16 px right of the
  * centre line), its height hl to hr (1/256 px) straight across; the shorter edge is the far one. */
-static void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, int bright) {
+void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned *tex, int bright) {
     int lo = (16 * CF_CX + xl) >> 4, hi = (16 * CF_CX + xr) >> 4;
     int left = hr < hl, hf = left ? hr : hl, q = hf > 0 ? cf_art_q(hl + hr - hf, hf, hf) : 256;
     lo = lo < 0 ? 0 : lo, hi = hi >= CF_VIEW_W ? CF_VIEW_W - 1 : hi;
@@ -1788,44 +1796,6 @@ static void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned
         k = left ? ART_SIZE - 1 - k : k;
         column(f, col, tex + k, (int)((float)hl + (float)(hr - hl) * p), bright, cf_inset[k]);
     }
-}
-
-/* The shelf with its facing point lead albums on from frac: each cover's t is its distance from
- * that point, on that side, and the whole shelf slides lead * row_shift px. Past row_from the row
- * forms: shrunk, no receding past row_flat from the focus, only spacing, each cover away from the
- * focus thinner and with less keystone. At lead 0 this is coverflow_render's own path, which
- * draws then. ring[j]: the cover j - CF_REACH from frac's centre, under CF_WIDE, moved on by
- * round(lead) albums, so the window goes round the facing cover (coverflow_paint). Every cover of
- * the window draws at its own brightness, whole, as the moving shelf's do. */
-static void draw_row(shelf_t *f, int frac, const unsigned *const *ring) {
-    float lead = th.lead, ld = lead < 0 ? -lead : lead, at = (float)frac / CF_ONE + lead;
-    int moved = cf_round(lead);
-    float shift = lead * cfs.row_shift;
-    float b = cf_smooth((ld * 100 - cfs.row_from) / (cfs.row_full - cfs.row_from));
-    float sh = 1 - b * cfs.row_shrink / 100, flat = cfs.row_flat / 100.f;
-    int focus = cf_round(at), after = at < (float)focus;
-    for (int k = 0; k < CF_WIDE; ++k)
-        for (int i = 0; i < (k ? 2 : 1); ++i) {
-            int a = (i == 0) == after ? focus - k : focus + k, j = a - moved;
-            float d = (float)a - at, t = d < 0 ? -d : d;
-            if (j < -CF_WIDE_REACH || j > CF_WIDE_REACH || !ring[j + CF_REACH]) continue;
-            float tz = t > flat ? t - (t - flat) * b : t, e = b * cf_smooth(t * 100 / cfs.row_edge);
-            pose_t p;
-            pose((int)(tz * CF_ONE), &p);
-            int near = project(&p, CF_HALF16), inner = project(&p, -CF_HALF16);
-            float hn = ART_SIZE * 256.f * p.eye / (p.eye + p.zc - (CF_HALF16 * p.s >> 16));
-            float hi = ART_SIZE * 256.f * p.eye / (p.eye + p.zc + (CF_HALF16 * p.s >> 16));
-            float out = near + (t - tz) * cfs.row_out * 16;
-            float width = (near - inner) * (1 - e * cfs.row_width / 100);
-            float hf = (hn + (hi - hn) * (1 - e * cfs.row_key / 100)) * sh, right = d >= 0;
-            hn *= sh;
-            float xl = (right ? out - width : -out) + shift * 16;
-            float xr = (right ? out : width - out) + shift * 16;
-            int bright = tz < 2 ? p.bright : cfs.bright2;
-            if (bright > 0)
-                draw_quad(f, (int)(xl * sh), (int)(xr * sh), (int)(right ? hf : hn),
-                          (int)(right ? hn : hf), ring[j + CF_REACH], bright);
-        }
 }
 
 /* Covers decoded either side: more under a thumb theme, whose row shows about 11. */
@@ -1859,7 +1829,9 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *r
     f.d = d, f.pitch = pitch;
     for (int x = 0; x < CF_VIEW_W; ++x) f.solid_top[x] = f.solid_bottom[x] = 0;
     for (int y = 0; y < cfs.view_h; ++y) memset(d + y * pitch, 0, CF_VIEW_W * 4);
-    if (th.on && th.lead)
+    if (th.on && th.fold)
+        draw_fold(&f, ring, fold_t16(), th.lean < 0 ? -1 : 1, (int)(th.fold_off * CF_ONE));
+    else if (th.on && (th.jump || th.lead))
         draw_row(&f, frac, ring);
     else
         for (int k = 0; k <= fx_reach(); ++k)
@@ -2297,12 +2269,18 @@ void coverflow_paint(void *w, void *canvas) {
     if (!w || w != cf.slide || !fx.frame || cf.screen != COVERS ||
         !visual(w, n = (int)widget_count_children(w), &c, &frac))
         return;
-    int lead = (int)(th.lead * CF_ONE), sh = 0;
+    int lead = (int)(th.lead * CF_ONE), sh = 0,
+        mode = !th.on || (!th.fold && !th.jump) ? FX_SHELF
+               : th.fold                        ? FX_FOLD
+               : th.enter > 0                   ? FX_ENTRY
+               : th.lean < 0                    ? FX_HELD_LEFT
+                                                : FX_HELD;
     if (th.on) { /* finer than the offset's whole px */
         int q = cf_round(th.pos);
         frac = (int)((th.pos - (float)q) * CF_ONE);
         c = ((I(w, SLIDE_INDEX) + q) % n + n) % n;
-        sh = cf_round(th.lead); /* draw_row's: the window round the facing cover */
+        /* draw_row's: the window round the covers that show; by letters it goes on with the row */
+        if (mode != FX_FOLD && (mode || th.lead)) sh = coverflow_window(frac);
     }
     const unsigned *wide[CF_WIDE], **ring = wide + CF_WIDE_REACH - CF_REACH;
 #if Q2POD_DEV
@@ -2313,14 +2291,16 @@ void coverflow_paint(void *w, void *canvas) {
     unsigned gap_t1 = (unsigned)time_now_ms();
 #endif
     int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched();
-    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || still != fx_still) {
+    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || mode != fx.mode ||
+        still != fx_still || mode == FX_FOLD ||
+        mode == FX_ENTRY) { /* the fold: the clock, the entry: passes */
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
         cf_still = still;
         coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), frac, ring);
         cf_still = 0;
         bitmap_unlock_buffer(fx.frame);
-        fx.c = c, fx.frac = frac, fx.lead = lead, fx.drawn = 1, fx_still = still;
+        fx.c = c, fx.frac = frac, fx.lead = lead, fx.mode = mode, fx.drawn = 1, fx_still = still;
     }
 #if Q2POD_DEV
     gap_note(w, gap_t0, gap_t1, (unsigned)time_now_ms());

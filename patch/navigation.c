@@ -595,10 +595,18 @@ void coverflow_letter(void *w, unsigned letter, unsigned now) {
     st.cf_letter = letter;
     st.cf_letter_at = now;
     st.cf_letter_surface = w;
+    st.cf_letter_held = 0;
     if (letter)
         rearm(&st.cf_letter_timer, cf_letter_expire, LETTER_MS);
     else
         stop_timer(&st.cf_letter_timer);
+}
+
+/* The thumb's letter over w with no LETTER_MS: its letters last until it lifts, which clears it
+ * (coverflow_letter(w, 0, now)). */
+void coverflow_letter_hold(void *w, unsigned letter) {
+    coverflow_letter(w, 0, 0);
+    st.cf_letter = letter, st.cf_letter_held = 1;
 }
 
 static void home_step(void *w, int dir, unsigned now, int jump) {
@@ -2682,7 +2690,8 @@ int ringnav_paint(void *w, void *canvas) {
     coverflow_paint(w, canvas);
     lockscreen_paint(w, canvas);
     if (w == st.cf_letter_surface && st.cf_letter &&
-        (unsigned)time_now_ms() - st.cf_letter_at < LETTER_MS && P(canvas, CANVAS_LCD)) {
+        (st.cf_letter_held || (unsigned)time_now_ms() - st.cf_letter_at < LETTER_MS) &&
+        P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
         rect_t box = { (I(w, W_W) - LETTER_BOX) / 2, (I(w, W_H) - LETTER_BOX) / 2, LETTER_BOX,
                        LETTER_BOX };
