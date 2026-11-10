@@ -403,20 +403,22 @@ def test_the_slot_is_its_modes_ink_wide_and_the_bars_height(fw, st, ui, mode, wi
     assert (ui.shown[bar.icon], ui.shown[bar.pct], ui.shown[bar.slot]) == (0, 0, 1)  # the slot paints it all
 
 
-def test_the_slot_repaints_only_for_a_new_level_or_charge(fw, st, ui):
+def test_only_a_new_level_or_charge_repaints_the_bar_after_the_frame(fw, st, ui):
     theme(fw, st, BATTERY=2)
     bar = Bar(fw, ui)
-    bar.sync()
-    first = len(ui.invalidated(bar.slot))
-    bar.sync()
-    assert len(ui.invalidated(bar.slot)) == first == 1
-    bar.level('87%')
-    bar.sync()
-    bar.level('87%', b'bar_charge')
-    bar.sync()
-    bar.level('87%', b'bar_lowcharge')
-    bar.sync()
-    assert len(ui.invalidated(bar.slot)) == 4
+    repaints = []
+    def sync(*level):
+        if level:
+            bar.level(*level)
+        bar.sync()  # mid-paint: an invalidate here is lost, so charging's colour reached one digit
+        repaints.append(len(ui.due('bar_repaint')))
+        ui.run_all('bar_repaint')
+    sync()
+    sync()
+    sync('87%')
+    sync('87%', b'bar_charge')
+    sync('87%', b'bar_lowcharge')
+    assert repaints == [1, 0, 1, 1, 1] and ui.invalidated(bar.bar) == [bar.bar] * 4
 
 
 def test_wifi_and_bluetooth_crowd_the_percentage_out_to_the_icon(fw, st, ui):

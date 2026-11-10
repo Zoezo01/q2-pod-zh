@@ -3933,7 +3933,8 @@ static void bar_sync(void *bar) {
         bar_place(st.bar_state, 278 - (I(st.bar_state, W_W) - 10) / 2,
                   7 - (I(st.bar_state, W_H) - 11) / 2, I(st.bar_state, W_W), I(st.bar_state, W_H));
         bar_place(st.bar_slot, 285, 1, 37, 21);
-        if (key != st.batt_key) widget_invalidate_force(st.bar_slot, (void *)0);
+        if (key != st.batt_key && !st.bar_timer)
+            st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
         st.batt_key = key;
         return;
     }
@@ -3949,7 +3950,10 @@ static void bar_sync(void *bar) {
     if (key == st.batt_key && mode == st.batt_mode && !resized) return;
     st.batt_mode = mode;
     st.batt_key = key;
-    widget_invalidate_force(st.bar_slot, (void *)0);
+    /* bar_sync runs mid-paint: an invalidate now is lost, and this frame painted the slot only
+     * where stock dirtied the bar (label_battery's new digit), so charging's colour reached one
+     * digit until a wake. The whole bar again after this frame. */
+    if (!st.bar_timer) st.bar_timer = timer_add(bar_repaint, (void *)0, 0);
 }
 
 /* systembar_showface, each second: stock hides img_state whenever its own player is stopped, so
