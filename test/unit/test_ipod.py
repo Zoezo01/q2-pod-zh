@@ -1551,6 +1551,30 @@ def test_status_icon_is_audited(monkeypatch, magick, name, data):
     assert magick.calls == []
 
 
+def test_pane_icon_draws_a_flat_icon_again_in_its_own_two_colours(monkeypatch):
+    """The disc is the commonest opaque colour and the glyph the one furthest from it, whatever lies between."""
+    listing = (b'       700: (0,0,0,0) #00000000 none\n      1500: (255,86,48,255) #FF5630FF srgba(255,86,48,1)\n'
+               b'        40: (255,120,90,255) #FF785AFF srgba(255,120,90,1)\n        30: (255,86,48,128) #FF563080 srgba(255,86,48,0.5)\n'
+               b'       300: (255,255,255,255) #FFFFFFFF white\n')
+    m = Magick(lambda args, data: listing if 'histogram:info:-' in args else b'png')
+    monkeypatch.setattr(ipod, 'imagemagick', m)
+    assert ipod.pane_icon(b'in', 96) == b'png'
+    (asked, _), (args, data) = m.calls
+    assert asked == ('png:-', '-alpha', 'on', '-depth', '8', '-format', '%c', 'histogram:info:-') and data == b'in'
+    assert args[:11] == ('png:-', '-alpha', 'on', '-background', 'rgb(255,86,48)', '-alpha', 'background',
+                         '-filter', 'Mitchell', '-resize', '1600%')
+    fills = [args[i + 1] for i, a in enumerate(args) if a == '-fill']
+    assert fills == ['rgb(255,86,48)', 'rgb(255,86,48)', 'rgb(255,255,255)']  # the difference's, the disc, the glyph
+    assert args[args.index('-auto-level') + 1:][:2] == ('-threshold', f'{ipod.GLYPH_CUT}%')
+    assert args[-len(ipod.PNG_OUT) - 4:] == ('-filter', 'Lanczos', '-resize', '96x96!', *ipod.PNG_OUT)
+
+
+def test_pane_icon_needs_an_opaque_pixel(monkeypatch):
+    monkeypatch.setattr(ipod, 'imagemagick', Magick(lambda args, data: b'      2704: (0,0,0,0) #00000000 none\n'))
+    with pytest.raises(ValueError, match='^A pane icon needs opaque pixels$'):
+        ipod.pane_icon(b'in', 96)
+
+
 def test_row_icon(magick):
     assert ipod.row_icon(b'in') == b'png' and ipod.row_icon(b'in', 48, sharp=True) == b'png'
     head = ('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize')

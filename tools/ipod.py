@@ -1032,6 +1032,36 @@ def row_icon(data, size=SET_ICON, sharp=False):
                        *(['-unsharp', '0x0.6+0.8+0'] if sharp else []), *PNG_OUT, data=data)
 
 
+def pane_icon(data, size):
+    """A flat 52px row icon (a disc in one colour, a glyph in another) at Home's pane's size, drawn again
+    rather than scaled: a plain resize to nearly twice its size was soft (#303). Its two colours are read from
+    it, the commonest opaque one and the one furthest from that; at 16 times the size each pixel becomes the
+    nearer of the two and the disc's edge its half-covered line, and the shrink to size smooths those edges.
+    ponytail: two colours only, and a line thinner than a source pixel comes out thinner still (GLYPH_CUT is
+    the knob); an icon with a third colour or a gradient needs real art at the pane's size."""
+    import re
+    listing = imagemagick('png:-', '-alpha', 'on', '-depth', '8', '-format', '%c', 'histogram:info:-', data=data).decode()
+    opaque = [(int(n), (int(r), int(g), int(b))) for n, r, g, b in
+              re.findall(r'(\d+): *\( *(\d+), *(\d+), *(\d+), *255\)', listing)]
+    check(opaque, 'A pane icon needs opaque pixels')
+    disc = max(opaque)[1]
+    glyph = max(opaque, key=lambda c: sum((a - b) ** 2 for a, b in zip(c[1], disc)))[1]
+    disc, glyph = ('rgb(%d,%d,%d)' % c for c in (disc, glyph))
+    flat = lambda colour: ['(', '-clone', '0', '-alpha', 'off', '-fill', colour, '-colorize', '100', ')']
+    return imagemagick(
+        'png:-', '-alpha', 'on', '-background', disc, '-alpha', 'background', '-filter', 'Mitchell', '-resize', '1600%',
+        '(', '-clone', '0', '-alpha', 'extract', '-blur', '0x8', '-threshold', '50%', ')',  # 1: the disc's shape
+        '(', '-clone', '0', '-alpha', 'off', *flat(disc), '-compose', 'Difference', '-composite',
+        '-colorspace', 'Gray', '-auto-level', '-threshold', f'{GLYPH_CUT}%', ')',  # 2: where the glyph is
+        *flat(disc), *flat(glyph),  # 3, 4
+        '-delete', '0', '(', '-clone', '2', '-clone', '3', '-clone', '1', '-compose', 'Over', '-composite', ')',
+        '-delete', '1-3', '+swap', '-compose', 'CopyOpacity', '-composite',
+        '-filter', 'Lanczos', '-resize', f'{size}x{size}!', *PNG_OUT, data=data)
+
+
+GLYPH_CUT = 45  # percent of the way from the disc's colour to the glyph's at which a pixel is the glyph's
+
+
 # Each stock placeholder's replacement size: stock's own, but Now Playing's and the full-screen art's at
 # the art they fill (stock's 188 scaled down there on the device, jagged), and the album grids' at
 # album_children's inset cover (110 less TILE_INSET + TILE_CLEARANCE a side), drawn 1:1 by its scale-down.

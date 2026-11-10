@@ -20,6 +20,7 @@
   - Games: a tap during a game no longer opens another one. The hidden list of games still took taps where its rows had been.
   - System: in the **Shut Down?** prompt that holding Centre opens, a Centre press chooses the selected row again. In 1.8.0 BETA only a tap did.
   - Controls: letting go of a held **Return** no longer acts as a second Return. In 1.8.0 BETA the Now Playing it had opened closed again.
+  - Streaming: under **Theme: Classic**, the large icon beside the list (TIDAL, AirPlay, Spotify, Internet Radio, Configuration) is sharp. It was an enlarged copy of the small row icon and looked blurry. A card app's own icon is shown as before.
   - Scrobbling: a listen the card has no room for is no longer half-written to `.scrobbler.log`, where it spoiled the next listen too. A damaged line in the log no longer stops every later **Upload Scrobbles**, and a very large log is uploaded a megabyte at a time instead of being held in memory whole.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
