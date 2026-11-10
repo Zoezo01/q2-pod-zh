@@ -813,10 +813,40 @@ def font_quotes(data):
     font.save(out, reorderTables=False)
     return out.getvalue()
 
+PLAY_MARK = 0x25b6
+
+def play_mark(font):
+    """U+25B6 drawn into font, a face without one: the mark before View Queue's playing title
+    (navigation.c stock_row_style), which a row could otherwise only show in stock's face. A triangle on
+    the middle of the capitals, 78% of their height, its left edge a pixel in at a Classic row's size."""
+    cap = font['OS/2'].sCapHeight
+    x0, x1, y0, y1 = round(cap * .073), round(cap * .773), round(cap * .11), round(cap * .89)
+    name, points = 'uni25B6', [(x0, y0), (x0, y1), (x1, (y0 + y1) // 2)]  # clockwise, as glyf's contours are
+    def drawn(pen, points):
+        pen.moveTo(points[0])
+        for point in points[1:]: pen.lineTo(point)
+        pen.closePath()
+        return pen
+    if 'CFF ' in font:
+        from fontTools.pens.t2CharStringPen import T2CharStringPen
+        cff = font['CFF '].cff
+        top = cff.topDictIndex[0]
+        pen = drawn(T2CharStringPen(x0 + x1 - top.Private.nominalWidthX, None), points[::-1])
+        top.CharStrings.charStringsIndex.append(pen.getCharString(top.Private, cff.GlobalSubrs))
+        top.CharStrings.charStrings[name] = len(top.CharStrings.charStringsIndex) - 1
+        top.charset.append(name)
+        font.setGlyphOrder(top.charset)  # one list, as in a font just read: the subsetter left a copy
+    else:
+        from fontTools.pens.ttGlyphPen import TTGlyphPen
+        font['glyf'][name] = drawn(TTGlyphPen(None), points).glyph()
+    font['hmtx'][name] = (x0 + x1, x0)
+    for table in font['cmap'].tables:
+        if table.isUnicode(): table.cmap[PLAY_MARK] = name
+
 def subset_font(src, family, ranges_macro, notice=None):
-    """src cut to its Latin, Greek, Cyrillic and punctuation, renamed family (its own name is the font's
-    reserved name under OFL and GUST alike): the font's bytes and ranges_macro listing exactly what it
-    keeps. notice, if any, goes in its description (name ID 10)."""
+    """src cut to its Latin, Greek, Cyrillic and punctuation, a play mark added (play_mark), renamed
+    family (its own name is the font's reserved name under OFL and GUST alike): the font's bytes and
+    ranges_macro listing exactly what it keeps. notice, if any, goes in its description (name ID 10)."""
     from fontTools import subset
     from fontTools.ttLib import TTFont
     font = TTFont(src, recalcTimestamp=False)
@@ -829,6 +859,8 @@ def subset_font(src, family, ranges_macro, notice=None):
     sub.populate(unicodes=have)
     sub.subset(font)
     check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
+    play_mark(font)
+    have.append(PLAY_MARK)
     # A subset is a Modified Version: it may not carry the Reserved Font Name (its names; the notices
     # are the licence files FONT_NOTICES ships beside it)
     for rec in font['name'].names:
@@ -865,7 +897,7 @@ def bold_font():
 CLASSIC_LIGHT_TTF = 'release/assets/default/raw/fonts/classic-light.ttf'
 # OFL 2 asks each copy to hold its licence, and the subsets' name tables don't: these ship beside the fonts
 FONT_NOTICES = ('LiberationSans-OFL.txt', 'GUST-FONT-LICENSE.txt', 'README-classic-light.txt')
-CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, and renamed. '
+CLASSIC_LIGHT_NOTICE = ('Modified version of TeX Gyre Heros Bold 2.004: cut to part of its Latin and Greek and its punctuation, its layout features to frac, liga and locl, a play mark added at U+25B6, and renamed. '
                'The original: https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros')
 
 def classic_light_font():
