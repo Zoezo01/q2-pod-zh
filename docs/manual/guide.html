@@ -483,29 +483,29 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     <thead><tr><th>Choose</th><th>What plays</th></tr></thead>
     <tbody>
       <tr><td>Shuffle Songs</td><td>Every song in the library, in one shuffled order. Each song plays once. When all have played, the library is shuffled again and carries on.</td></tr>
-      <tr><td>Shuffle Albums</td><td>Every album, in a shuffled order, each in track order. Each album plays once, then playback stops.</td></tr>
-      <tr><td>Shuffle Folders</td><td>The same, by folder.</td></tr>
+      <tr><td>Shuffle Albums</td><td>Every album, in a shuffled order, each in disc and track order. Each album plays once, then playback stops.</td></tr>
+      <tr><td>Shuffle Folders</td><td>The same by folder, each in path order.</td></tr>
     </tbody>
   </table>
   <ul>
-    <li><b>What’s included:</b> all scanned songs except audiobooks and podcasts.</li>
+    <li><b>What’s included:</b> all scanned songs except audiobooks, podcasts and hidden folders.</li>
     <li><b>Shuffle Albums and Shuffle Folders</b> can take a while to start on a large library.</li>
-    <li><b>Shuffle Songs is one-shot:</b> the next album or song you pick plays in the play mode you had before, unless you chose another mode meanwhile.</li>
-    <li><b>Shuffle</b> in an album, artist, genre or folder’s hold menu shuffles just its songs, the same way as Shuffle Songs.</li>
+    <li><b>Shuffle Songs is one-shot:</b> the next album or song you pick plays in the play mode you had before, unless you chose another mode meanwhile. A restart during it leaves the play mode on Shuffle.</li>
+    <li><b>Shuffle</b> in an album, artist, genre, folder or playlist’s hold menu shuffles just its songs, the same way as Shuffle Songs.</li>
   </ul>
   <p>On <b>Now Playing</b>, hold <b>Play/Pause</b> and choose <b>View Queue</b> to browse the current queue with the wheel.</p>
   <ul>
-    <li><b>While a shuffle is on</b>, View Queue lists the next 500 songs in the order they will play. Open it again later to see further ahead.</li>
+    <li><b>While a shuffle is on</b>, View Queue lists up to 500 of the songs that follow, in the order they will play. Open it again later to see further ahead.</li>
     <li><b>To play a song next</b>, hold <b>Play/Pause</b> on it there. It moves out of its old place in the queue.</li>
   </ul>
   <p>The same menu has <b>Shuffle</b>, <b>Repeat</b> and <b>Group by: Album / Folder</b>. The wheel and touch select an option; the selected option has a check mark. Changes keep the playing track and its position. With <b>Group by: Folder</b>, the options below read Folder for Album.</p>
   <table>
     <thead><tr><th>Shuffle</th><th>How the queue plays</th></tr></thead>
     <tbody>
-      <tr><td>Off</td><td>Albums in the queue’s order, each in track order</td></tr>
+      <tr><td>Off</td><td>Albums in the order they first appear in the queue, each in order</td></tr>
       <tr><td>All Songs</td><td>Every queued song in one shuffled order</td></tr>
       <tr><td>Songs in Album</td><td>Albums in order, the songs of each shuffled</td></tr>
-      <tr><td>Albums</td><td>Albums shuffled, each in track order</td></tr>
+      <tr><td>Albums</td><td>Albums shuffled, each in order</td></tr>
       <tr><td>Albums and Songs</td><td>Albums shuffled, and the songs of each shuffled</td></tr>
     </tbody>
   </table>
@@ -521,15 +521,15 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
     </tbody>
   </table>
   <ul>
-    <li><b>A shuffle plays every song once</b> before any song plays again. Each time round is shuffled afresh.</li>
-    <li><b>Next</b> moves on from a song that would stop or repeat. In <b>Play One Album</b> and <b>Repeat Album</b> it stays in the current album.</li>
+    <li><b>A shuffle plays every song once</b> before any song plays again (every song of the album, in <b>Play One Album</b> and <b>Repeat Album</b>). Each time round is shuffled afresh.</li>
+    <li><b>Next</b> goes to the next song even in <b>Play One Song</b> and <b>Repeat Song</b>. In <b>Play One Album</b> and <b>Repeat Album</b> it stays in the current album.</li>
     <li><b>Previous</b> follows what you actually played, and Next after Previous returns to the song you went back from.</li>
     <li><b>Albums</b> are told apart as Cover Flow does: by album name (ignoring case), then album artist. Songs without an album artist, and untagged songs, use their parent folder. Albums play in disc and track order.</li>
     <li><b>Folders</b> are the folder a song is in, and play in path order.</li>
-    <li><b>Next Album / Previous Album</b> in the hold menu skips the rest of the album, or returns to the start of the album played before. Folder grouping shows <b>Next Folder / Previous Folder</b>. During Shuffle Albums or Shuffle Folders they lead the hold menu.</li>
-    <li><b>Choosing a stock play mode</b> clears these options, except Shuffle during Shuffle Albums or Shuffle Folders, which keeps the albums or folders together.</li>
+    <li><b>Next Album / Previous Album</b> in the hold menu skips the rest of the album, or returns to the start of the album played before. Folder grouping shows <b>Next Folder / Previous Folder</b>. They head the hold menu only while Shuffle is <b>Albums</b> or <b>Albums and Songs</b>, as Shuffle Albums and Shuffle Folders set it.</li>
+    <li><b>Choosing a play mode</b> with Now Playing’s play mode button clears these options, except Shuffle during Shuffle Albums or Shuffle Folders, which keeps the albums or folders together.</li>
   </ul>
-  <p>Your queue, options and history are restored after a restart; missing files are skipped. A queue of more than 999 songs, such as Shuffle Songs over a large library, isn’t kept: choose Shuffle Songs again after a restart. <b>Memory Playback → Location</b> restores elapsed time, <b>Track</b> starts at the beginning (a track that resumes returns to its place), and <b>In-Vehicle Mode</b> plays automatically.</p>
+  <p>Your queue, options and history are restored after a restart; missing files are skipped. A queue of more than 999 songs, such as a shuffle of a large library, doesn’t keep its shuffled order: after a restart, start it again from <b>Library → Shuffle</b>. <b>Memory Playback → Location</b> restores elapsed time, <b>Track</b> starts at the beginning (a track that resumes returns to its place), and <b>In-Vehicle Mode</b> plays automatically.</p>
 
   </div>
   <div class="sec">
