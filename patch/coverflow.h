@@ -80,8 +80,8 @@ extern cf_flip_t fl;
  * albums from SLIDE_INDEX, its speeds a ms. on: it owns the offset, until it commits. */
 typedef struct {
     float pos, vel, goal, lead, lead_v, rate, tau, ticks, seen, seen_lead, stretch;
-    unsigned at, tick_at, edge_at;
-    int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump;
+    unsigned at, tick_at, edge_at, letter_at;
+    int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump, jump_to;
 } cf_thumb_t;
 extern cf_thumb_t th;
 
@@ -92,6 +92,7 @@ int cf_round(float x);
 float cf_smooth(float x);
 int coverflow_bounded(void *w);
 int coverflow_jump(void *w, int from, int dir, unsigned *letter);
+int coverflow_round(int dir, unsigned *letter);
 int covers_live(void);
 float ff_decay(float s);
 int lettered(void *w);

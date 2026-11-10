@@ -1171,6 +1171,18 @@ def test_resume_minutes_are_read_once(fw):
     assert len(fw.calls('toolsReadConfig')) == 1
 
 
+def test_a_config_line_of_255_bytes_fits_every_reader(fw):
+    """toolsReadConfig takes no size and copies a whole line, up to 255 bytes (its fgets): each reader's
+    buffer holds one (a shorter one fails under ASan here)."""
+    def line(digits): return digits + ' ' * (255 - len(digits))
+    config(fw, {'XFADESEC': line('7'), 'RESUMEMIN': line('45')})
+    fw.fn('crossfade__settings', None)()
+    assert xf(fw).seconds == 7
+    assert fw.fn('resume_min', C.c_int)() == 45
+    _, kelvin, _, _ = night(fw, {'NIGHTK': line('3000')})
+    assert kelvin() == 3000
+
+
 def page(fw, ctx, values=None):
     written = config(fw, values)
     fw.mock('window_manager', lambda *_: 0x9000)
@@ -2275,7 +2287,7 @@ def test_a_move_with_the_page_gone_or_a_row_out_of_range_does_nothing(fw):
     move(None)  # no page
     u.page, u.row = 0x7000, 2
     move(None)  # past the rows
-    assert not fw.calls('page_list') and not fw.calls('widget_destroy_children')
+    assert not fw.calls('widget_destroy_children')
 
 
 def test_a_hold_on_a_row_arms_the_move(fw):

@@ -9,6 +9,9 @@ static struct {
     int wdt_long;    /* counting WDT_LONG_MS for a long pass (ringnav_wdt_long) */
     int ended; /* a clean end began: no feed and no state record from here (ringnav_clean_end) */
     int suspended;  /* inside Standby's suspend (ringnav_standby), for the state record */
+    int card_quiet; /* a Standby resumed at card_at: its card toasts are dropped (ringnav_cardmount)
+                     */
+    unsigned card_at;
     char state[96]; /* the state record last written (state_poll) */
     /* the boot logo's poll: last check, card seen mounted, its sync thread, its failure to toast */
     unsigned logo_at;
@@ -16,6 +19,18 @@ static struct {
     volatile int logo_busy;
     const char *volatile logo_err;
 } pw __attribute__((section(".scratch")));
+
+/* Standby unloads the card's driver and waits at most 1.55 s for the mount after reloading it, so
+ * a slower mount reads as the card pulled and put back. Mounting goes on; only the toasts stop.
+ * ponytail: a real swap inside CARD_QUIET_MS shows no toast either. */
+int ringnav_cardmount(void) {
+    int result = stock_cardmount_trampoline();
+    if (pw.card_quiet && (unsigned)time_now_ms() - pw.card_at < CARD_QUIET_MS)
+        *(volatile char *)CARD_TOAST = 0;
+    else
+        pw.card_quiet = 0;
+    return result;
+}
 
 /* Charge limit (docs/internals.md#charge-limit): get_battery_capacity keeps g_power_capacity and
  * g_power_chargestate (1 Charging, 2 Full, the AXP2101's battery status); switch_charge_enable
@@ -263,6 +278,35 @@ void ringnav_clean_end(void) {
     wdt_set(0);
     unlink(STATE_FILE);
     unlink(STALL_FILE); /* one the thread hadn't removed yet: S90play's next demo never would */
+    coverflow_clean_end();
+}
+/* Reboot record (docs/internals.md#bluetooth-boot-reconnect): when its Bluetooth controller never
+ * answers rtk_hciattach, stock's openBluetooth sets bt_rtk_error, checkBluetoothStatus makes that
+ * bt_initstatus BT_ABNORMAL, and on_wm_idle_status, on its next pass, shows "Bluetooth abnormal"
+ * and calls device_reboot (0x4e9d0c and 0x4e9f1c, its only direct callers). A Q2 whose radio
+ * module is dead reboots at every boot, and each was a clean end: nothing on the card said why.
+ * So ringnav_reboot has this leave S90play's q2-crash.log first, as a crash would, whole then
+ * renamed: the date, the reason with the status, the uptime and the caller, dmesg's tail and, when
+ * S90play keeps demo's stderr (/tmp/q2-demo.err), its tail, where rtk_hciattach says what failed.
+ * The next boot moves it to the card. Restart, a factory reset, the power-off page's long press and
+ * a firmware update's countdown reboot through device_reboot on purpose: nothing for them. Through
+ * system(), as S90play's shell writes the log; device_reboot follows with the reboot itself. */
+#define BT_ABNORMAL (-102)
+void reboot_record(void *caller) {
+    int status = I(bt_initstatus, 0);
+    if (status != BT_ABNORMAL) return;
+    char cmd[512];
+    int n = snprintf(
+        cmd, sizeof cmd,
+        "{ echo \"== date\"; date; echo \"== reboot\"; "
+        "echo \"bluetooth abnormal: bt_initstatus %d, "
+        "$(cut -d' ' -f1 /proc/uptime) s after boot, from %p\"; "
+        "echo \"== dmesg\"; dmesg | tail -n 200; "
+        "[ -f /tmp/q2-demo.err ] && { echo \"== stderr\"; tail -n 60 /tmp/q2-demo.err; }; } "
+        "> /mnt/data/q2-crash.log.tmp 2>&1; "
+        "mv /mnt/data/q2-crash.log.tmp /mnt/data/q2-crash.log; sync",
+        status, caller);
+    if (n > 0 && n < (int)sizeof cmd) system(cmd);
 }
 /* Standby limit (docs/internals.md#standby-limit): device_standby puts the radios, the card and the
  * DAC down, then toolsIntoStandby suspends to RAM ("mem" to /sys/power/state) and returns once
@@ -302,6 +346,7 @@ int ringnav_standby(void) {
     int result = stock_standby_trampoline();
     wdt_set(1);
     pw.suspended = 0; /* the next pass records the resume */
+    pw.card_quiet = 1, pw.card_at = (unsigned)time_now_ms();
     if (armed) {
         unsigned now = rtc_now();
         rtc_alarm(0);

@@ -78,7 +78,7 @@ All of it is injected by writing input events to `/dev/input/eventN`, so the fir
 
 ## Log
 
-`--dev` builds start demo with its output, and that of the hciplayer it starts, appended to `/tmp/q2-demo.log` instead of the serial console; release builds are unchanged. The file is in RAM: once a minute it is emptied if it has grown past 4 MB, and it is gone after a reboot. demo's stdout is block-buffered once it goes to a file, so its lines arrive in batches rather than as they are printed; stderr arrives at once.
+`--dev` builds start demo with its output, and that of the hciplayer it starts, appended to `/tmp/q2-demo.log` instead of the serial console; release builds keep its stderr alone, in `/tmp/q2-demo.err`, capped at 512 KB ([boot.md](boot.md#rockbox-from-home)). The file is in RAM: once a minute it is emptied if it has grown past 4 MB, and it is gone after a reboot. demo's stdout is block-buffered once it goes to a file, so its lines arrive in batches rather than as they are printed; stderr arrives at once.
 
 ## Troubleshooting
 

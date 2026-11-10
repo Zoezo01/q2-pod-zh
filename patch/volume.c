@@ -92,7 +92,7 @@ void vol_paint(void *top, void *canvas) {
              k = np ? 7 : 0;
     if (gloss) { /* no number */
         int L = ipod_light(), bx = 68, bw = 243, y = 271;
-        paint_panel(top, canvas, &area, "classic_light_panel_shadow");
+        paint_panel(top, canvas, &area, "classic_light_panel_shadow", 0);
         paint_rows_bar(canvas, bx, y, bw, 17, max > 0 ? bw * clamp_step(0, max, level) / max : 0);
         paint_art(top, canvas, L ? "classic_light_spk_quiet_l" : "classic_light_spk_quiet_d", 52,
                   y + 2);
@@ -111,7 +111,8 @@ void vol_paint(void *top, void *canvas) {
         canvas_set_fill_color(canvas, RGBA(0));
         canvas_fill_rect(canvas, area.x, area.y, area.w, area.h);
     } else {
-        fill_box(canvas, &area, (LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
+        /* unsigned, as draw_letter's: 0xd9 << 24 is past INT_MAX */
+        fill_box(canvas, &area, ((unsigned)LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
     }
     /* Pills, like the progress capsule: a non-zero fill is at least round, never a sliver. Over
      * Classic's Now Playing, its own bar. */

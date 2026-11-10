@@ -19,6 +19,18 @@ import host  # noqa: E402
 
 ROOT = host.ROOT
 O = {k: int(v, 0) for k, v in re.findall(r'^#define (\w+) +(0x[0-9a-f]+|\d+)\b', (ROOT/'patch/offsets.inc').read_text(), re.M)}
+# navigation.c's source with navigation.h and the units split out of it (each includes navigation.h), for
+# tests that read a #define or enum the UI's code shares
+NAVIGATION_UNITS = sorted(p.stem for p in (ROOT/'patch').glob('*.c') if '#include "navigation.h"' in p.read_text())
+NAVIGATION_SOURCE = ''.join((ROOT/'patch'/n).read_text() for n in ['navigation.h', *(f'{u}.c' for u in NAVIGATION_UNITS)])
+
+
+def ui_name(lib, name):
+    """The symbol of navigation.c's `name`, wherever the split put it: `name` itself once navigation.h shares it,
+    else `<unit>__<name>`, a static of navigation.c or of a unit split out of it."""
+    return next(s for s in (name, *(f'{u}__{name}' for u in NAVIGATION_UNITS)) if hasattr(lib, s))
+
+
 FNV_SEED, FNV_PRIME = 2166136261, 16777619
 
 # The C uses stock's fixed addresses as they are: zeroed pages here. A non-PIE python (Debian's and
@@ -31,8 +43,25 @@ if libc.mmap(0x400000, 0x800000, 3, 0x100022, -1, 0) != 0x400000:  # read/write,
                             '(a non-PIE python lives there); use one built with -pie, e.g. actions/setup-python\'s or a venv of a PIE build', returncode=4)
 
 
+# Strings at chosen addresses: stock's records hold 4-byte pointers a word apart and P() reads 8 here, so a test puts
+# a field's string where its word is the low half and the next field's the high one, in a page mapped for it. Each
+# file takes its high halves from high_halves, which hands none out twice: no two files' pages meet, in any order.
+# From 0x1001: past AddressSanitizer's shadow (to 0x10007fff7fff), short of its heap (0x500000000000).
+_high = 0x1001
+
+
+def high_halves(n):
+    """n high halves no other caller gets this session, as a range: an index past its end fails."""
+    global _high
+    start, _high = _high, _high + n
+    assert _high <= 0x5000, 'out of high halves'
+    return range(start, _high)
+
+
 @pytest.fixture(scope='session')
 def library(tmp_path_factory):
+    if os.environ.get('Q2_FW_LIBRARY'):  # one already built: test/cmut/run.py links each mutant's
+        return pathlib.Path(os.environ['Q2_FW_LIBRARY'])
     extra = []
     if os.environ.get('Q2_FW_SANITIZE'):
         extra += ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined', '-fno-sanitize=alignment']
@@ -74,19 +103,24 @@ def claim(address):
         assert not libc.mprotect(page, 0x2000, 7)
 
 def in_fork(test):
-    """The test in a child: what it writes at stock's code addresses would outlive the test here."""
+    """The test in a child: what it writes at stock's code addresses would outlive the test here. The child
+    closes its firmware (dlclose) before it leaves: gcov writes a library's counts then, and _exit alone would
+    lose the child's, so a forked test counted nothing towards the C's coverage."""
     @functools.wraps(test)
     def run(*args, **kwargs):
         read, write = os.pipe()
         child = os.fork()
         if not child:
+            failure = b''
             try:
                 test(*args, **kwargs)
-                os.write(write, b'')
             except BaseException:
-                os.write(write, traceback.format_exc().encode())
-                os._exit(1)
-            os._exit(0)
+                failure = traceback.format_exc().encode()
+            for fixture in (*args, *kwargs.values()):
+                if isinstance(fixture, host.Fw):
+                    fixture.close()
+            os.write(write, failure)
+            os._exit(1 if failure else 0)
         os.close(write)
         failure = b''
         while chunk := os.read(read, 65536):

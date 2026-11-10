@@ -5,9 +5,10 @@ hw_ptr are lost. What is heard is read off the ring's timeline.
 
 With no preload and demo's mark, a next song in the same format keeps the PCM, and any other reopens at what its file
 is: never a tone at the wrong rate or a 24-bit file through a 16-bit PCM. A kept PCM that runs dry before the first
-write moves past hw_ptr (ao_write), on the jack and USB: a short gap, no lost frame.
+write moves past hw_ptr (ao_write), on the jack and USB: a short gap, no lost frame; so does a stream that stalls
+mid-song, which resumes where it stopped.
 Usage: test/hci_ao.py BUILD_DIR [PLAYER]  (PLAYER: another hciplayer, to see old code fail)"""
-import array, math, pathlib, shutil, signal, struct, subprocess, sys
+import array, math, os, pathlib, shutil, signal, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'tools'))  # before test/build.py
 from build import symbols
 from hci_emu import Emu, PCM
@@ -25,8 +26,9 @@ FILES = {'a44.flac': (44100, 2, 's16', 'flac'), 'b44.flac': (44100, 2, 's16', 'f
 FILES.update({'t100.flac': (44100, 2, 's16', 'flac'), 't400.flac': (44100, 2, 's16', 'flac')})
 NOISE = {'n1.flac': ['-c:a', 'flac'], 'n2.flac': ['-c:a', 'flac'], 'n5.flac': ['-c:a', 'flac'], 'n6.flac': ['-c:a', 'flac'],
          'c1.mp3': ['-c:a', 'libmp3lame', '-q:a', '2'], 'c2.mp3': ['-c:a', 'libmp3lame', '-q:a', '2'], 'c1.m4a': ['-c:a', 'aac'], 'c2.m4a': ['-c:a', 'aac'],
-         'c1.opus': ['-c:a', 'libopus'], 'c2.opus': ['-c:a', 'libopus'], 'c1.ogg': ['-c:a', 'libvorbis'], 'c2.ogg': ['-c:a', 'libvorbis']}
-NOISE_SECONDS = {'n1.flac': 1.5, 'n2.flac': 3, 'n5.flac': 5.5, 'n6.flac': 3}
+         'c1.opus': ['-c:a', 'libopus'], 'c2.opus': ['-c:a', 'libopus'], 'c1.ogg': ['-c:a', 'libvorbis'], 'c2.ogg': ['-c:a', 'libvorbis'],
+         'n20.flac': ['-c:a', 'flac']}
+NOISE_SECONDS = {'n1.flac': 1.5, 'n2.flac': 3, 'n5.flac': 5.5, 'n6.flac': 3, 'n20.flac': 20}
 LONG = {'f44.flac': 5.5, 'g44.flac': 3, 'h48.flac': 3, 't100.flac': 0.1, 't400.flac': 0.4}  # Crossfade: its hold opens 2 x fade + 2 s before the end
 
 
@@ -173,7 +175,7 @@ class Player:
         self.run(0.3)
         e.w32(WAY, way)
     def first_write(self, e):
-        self.looks += e.r32(ps['ao_stayed'])  # writes that would look: the first after a kept PCM, and only it
+        self.looks += e.r32(ps['ao_stayed'])  # writes the flag marks: a kept PCM's first, and only it
         if self.excess is not None and e.r32(ps['ao_stayed']):
             p = e.pcm
             e.clock = p.hw_at + (p.appl + self.excess) * 10**9 // p.rate
@@ -334,7 +336,7 @@ for way, route in ((0, 'cold'), (2, 'preload'), (2, 'cold')):
             run = run + 1 if v == 0 else 0
             hole = max(hole, run)
         assert hole <= want + period(pcm) + rate // 500, (way, first, excess_ms, hole)
-    # Not yet past: nothing moved, one read more than the check at init.
+    # Not yet past: nothing moved.
     p = Player(way)
     p.excess = -200
     (p.cold if route == 'cold' else p.preloaded)('a44.flac', 'b44.flac')
@@ -658,4 +660,33 @@ assert uninit_word('z.dsf', 'b44.flac', False) == 1
 assert uninit_word('z.dsf', 'b44.flac', True) == 0
 assert uninit_word('a44.flac', 'b48.flac', False) == 0
 print('The jack, a natural start: DSD on either side and another format wait once before frames; a natural end out of DSD waits with no mark, a press-cut one sets no word; a stay-open adds none.')
+# A stream that stalls mid-song (Wi-Fi gone under a network stream) runs the PCM dry while it keeps RUNNING on
+# silence; the data that comes back is forwarded past hw_ptr (ao_write, every write on the jack and USB), so the song
+# carries on where it stopped: every frame a run without the stall wrote, in order, none lost behind hw_ptr.
+def stalled(way, stall_s):
+    p = Player(way)
+    name, state = 'n20.flac', {'read': 0, 'done': stall_s == 0}  # long enough that half its bytes are read mid-song
+    half = (aud/name).stat().st_size // 2
+    def read(e, f, n):
+        if state['done'] or not f.get('path', b'').decode(errors='replace').endswith(name):
+            return 0
+        if state['read'] + n < half or e.pcm is None or e.pcm.hw_at is None:  # mid-song: the PCM running
+            state['read'] += n
+            return 0
+        state['done'] = True
+        d = os.read(f['h'], n)
+        e.u.mem_write(e.a(1), d)
+        e.block_current(e.clock + int(stall_s * 1e9), (len(d), 0), 'read')
+        return len(d)
+    p.e.hooks['read'] = read
+    p.song(name)
+    assert p.until(p.ended, 30), (way, stall_s)
+    return p.e.pcm, state['done']
+for way in (0, 2):
+    clean, _ = stalled(way, 0)
+    assert not clean.forwards and clean.lost == 0, (way, clean.forwards, clean.lost)
+    pcm, hit = stalled(way, 3.0)  # without the look on every write: 112057 frames lost behind hw_ptr
+    assert hit and pcm.lost == 0 and pcm.forwards, (way, hit, pcm.lost, pcm.forwards)
+    assert written(pcm.chunks) == written(clean.chunks), (way, 'a frame lost or moved')
+print('A stream stalled 3 s mid-song, on the jack and USB: it resumes where it stopped, no frame lost behind hw_ptr.')
 shutil.rmtree(work, ignore_errors=True)

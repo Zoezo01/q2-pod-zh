@@ -781,11 +781,12 @@ for n in (0,1):
             m.options(shuffle,repeat,0)
             assert m.fn('playback_successor',1)==(0 if n and repeat>=3 else -1)
             m.advance_song(); checks+=1
-# Capacity: a scan's 65,000 songs fit QUEUE_LIMIT (65,536); one occurrence past it stays a stock queue.
-# ponytail: the 65,000 side (sorts and snapshot) takes minutes under emulation, so it is run by hand.
+# Capacity: a scan's 65,000 songs fit QUEUE_LIMIT (65,536); one occurrence past it stays a stock queue,
+# refused before rebuild allocates for it.
+# ponytail: the 65,000 side (sorts) takes minutes under emulation, so it is run by hand.
 m=PlaybackMachine(); m.u.mem_map(0x1200000,0x1000000); q=m.get(syms['mcl_pdeqplaylist'])
-m.deqs[q][1]=[m.song('t')]*65537
-assert m.fn('playback_set',0,1)==0 and m.fn('playback_successor',1)==-1; checks+=1
+m.deqs[q][1]=[m.song('t')]*65537; before=m.allocations
+assert m.fn('playback_set',0,1)==0 and m.allocations==before and m.fn('playback_successor',1)==-1; checks+=1
 
 # The wheel's ticks (wheel_sample): one per WHEEL_TICK_UNITS of travel, the rest carried; a reversal
 # starts again; the 200 -> 1 seam wraps; stock is handed the touch-down x, so its own logic sees a

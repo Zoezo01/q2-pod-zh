@@ -345,7 +345,7 @@ def classic_light_font():
 # strings) decide which button, and QS_LIT (stock.h, qs_lit) which are on.
 def circle(cx, cy, r):
     return f'M{cx - r} {cy}A{r} {r} 0 1 1 {cx + r} {cy}A{r} {r} 0 1 1 {cx - r} {cy}Z'
-SPOKES = tuple(tuple((round(r * math.sin(math.radians(a)), 3), round(-r * math.cos(math.radians(a)), 3)) for r in (8, 12)) for a in range(0, 360, 45))
+COG = 'M' + 'L'.join(f'{r * math.sin(math.radians(a + t)):.2f} {-r * math.cos(math.radians(a + t)):.2f}' for a in range(0, 360, 60) for r, t in ((9.5, -18), (13.5, -10.2), (13.5, 10.2), (9.5, 18))) + 'Z'  # six joined teeth: the sliders' sun has eight loose rays
 # A glyph on a -30..30 box, centre at 0: (stroke's width, open paths, closed paths), filled discs (x, y, r), segments 3 wide.
 QS_GLYPHS = {
     'wifi': ((3, ('M-14 -3a20 20 0 0 1 28 0', 'M-8 3a11 11 0 0 1 16 0'), ()), ((0, 9, 2.8),), ()),
@@ -356,7 +356,7 @@ QS_GLYPHS = {
     'usbc': ((2.4, (), ('M-7 -8A7 7 0 0 1 7 -8V8A7 7 0 0 1 -7 8Z',)), (), (((0, -7), (0, 7)),)),
     'usb': ((2.4, ('M0 12V-10', 'M0 6l-7-6V-5', 'M0 2l7-6V-8'), ('M0 -13l-4 5h8Z',)), (), ()),
     'sl': ((2.4, ('M-8 -12V12', 'M0 -12V12', 'M8 -12V12'), ()), ((-8, 3, 3.6), (0, -4, 3.6), (8, 5, 3.6)), ()),
-    'gear': ((2.4, (), (circle(0, 0, 5),)), (), SPOKES),
+    'gear': ((2.4, (), (COG, circle(0, 0, 3.6))), (), ()),
 }
 QS_FONT_PX, QS_LINE, QS_DIM = 15, 17, .45
 QS_INK = {'': 0xffffff, '_l': 0x262626, '_d': 0xe4e6e9}

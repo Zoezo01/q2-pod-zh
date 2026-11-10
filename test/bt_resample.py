@@ -1141,6 +1141,10 @@ setup(44100, S16F, 4, 22048)
 play(0, 40000, 2, 4)
 new = frames_of(100000, 1000, 2, 2)
 u.mem_write(buf, new)
+w(WAY, 1)  # Bluetooth's plugin stops at its own underrun: past the ring, nothing forwarded
+dev.avail, dev.got, dev.status_rc = 22048 + 100, b'', 0
+assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [] and dev.got == new
+w(WAY, 0)
 w(ps['ao_stayed'], 1), w(0xafa1b0, 16 * 4)  # AO_OUTBURST: 16 frames
 dev.avail, dev.got, dev.status_rc = 22048 + 100, b'', -1 & 0xffffffff  # a status that fails forwards nothing
 assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [] and dev.got == new

@@ -209,17 +209,23 @@ static void bar_part(void *canvas, const stops_t *s, int x, int y, int w, int h,
 }
 
 /* Classic's bar (playing.scrubber.stops), an iPod classic's, bw wide and the theme's np_bar high at
- * x, y: the accent's band over the first `on` columns, the track's rows after them, square ends,
- * each mirrored under it. With mark, a scrub's cue on the gloss: a diamond in the ink,
- * NP_SCRUB_MARK each side of its middle row and column, at the fill's end, kept inside the bar. 0
- * when the theme has none. The canvas's fill colour is left as it was. */
+ * x, y: the fill (the theme's own scheme's np_fill, another accent's band) over the first `on`
+ * columns, the track's rows after them, a column at each end in the track's bottom line's colour
+ * whatever the fill reaches, each mirrored under it. With mark, a scrub's cue on the gloss: a
+ * diamond in the ink, NP_SCRUB_MARK each side of its middle row and column, at the fill's end, kept
+ * inside the bar. 0 when the theme has none. The canvas's fill colour is left as it was. */
 int ipod_bar(void *canvas, int x, int y, int bw, int on, int mark) {
     const theme_t *T = theme();
     const stops_t *track = &T->np_track[ipod_light()];
     if (track->n < 2) return 0;
-    unsigned saved = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), paper = scheme()->paper;
-    bar_part(canvas, &scheme()->sel, x, y, on, T->np_bar, paper);
+    unsigned saved = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR), paper = scheme()->paper,
+             line = track->rgb[track->n - 1];
+    const stops_t side = { 2, { 0, 100 }, { line, line } };
+    bar_part(canvas, T->np_fill.n && T->schemes[accent()].label ? &T->np_fill : &scheme()->sel, x,
+             y, on, T->np_bar, paper);
     bar_part(canvas, track, x + on, y, bw - on, T->np_bar, paper);
+    bar_part(canvas, &side, x, y, 1, T->np_bar, paper);
+    bar_part(canvas, &side, x + bw - 1, y, 1, T->np_bar, paper);
     stock_canvas_set_fill_color(canvas, RGBA(scheme()->ink));
     int end = bw - 1 - NP_SCRUB_MARK, cx = on < NP_SCRUB_MARK ? NP_SCRUB_MARK : on,
         cy = y + (T->np_bar - 1) / 2;

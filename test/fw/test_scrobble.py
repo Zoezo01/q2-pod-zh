@@ -1,0 +1,444 @@
+"""scrobble.c (docs/internals.md#scrobbling): the accounts, the UI thread's listens, and an upload from start to
+poll on the device path: the log read in complete lines, ListenBrainz's JSON and Last.fm's signed form through
+demo's libcurl, then the log rewritten under the lock. test/peq.py runs the same upload on a real pthread."""
+import ctypes as C
+import hashlib
+import json
+import urllib.parse
+
+import pytest
+
+LOG, INI, CA = '/mnt/mmc/.scrobbler.log', '/mnt/mmc/.scrobble.ini', '/etc/scrobble-ca.pem'
+HEADER = b'#AUDIOSCROBBLER/1.1\n#TZ/UTC\n#CLIENT/Q2 Pod\n'
+LB_URL, FM_URL = 'https://api.listenbrainz.org/1/submit-listens', 'https://ws.audioscrobbler.com/2.0/'
+BODY_MAX = 192 << 10
+ACCOUNT = {('LISTENBRAINZ', 'TOKEN'): 'tok', ('LASTFM', 'USER'): 'u', ('LASTFM', 'PASSWORD'): 'p&w',
+           ('LASTFM', 'API_KEY'): 'key', ('LASTFM', 'API_SECRET'): 'sec'}
+LB_ONLY = {('LISTENBRAINZ', 'TOKEN'): 'tok'}
+
+libc = C.CDLL(None)
+libc.free.argtypes = [C.c_void_p]
+
+
+def config(fw, values):
+    """/mnt/mmc/.scrobble.ini by (section, key); stock leaves out alone for a key it hasn't."""
+    read = []
+
+    def lookup(path, section, key, out, default, *_):
+        read.append(C.string_at(path).decode())
+        v = values.get((C.string_at(section).decode(), C.string_at(key).decode()))
+        if v is None:
+            return -1
+        C.memmove(out, v.encode() + b'\0', len(v.encode()) + 1)
+        return 1
+    fw.mock('toolsReadConfig', lookup)
+    return read
+
+
+class Card:
+    """The card's files as a dict: read, write and append, each fopen's mode; fail names what fails ('open:path',
+    'write:path', 'sync', 'close', 'rename', 'short' for a read that stops early)."""
+    def __init__(self, fw, files=None):
+        self.files, self.open, self.fail, self.opened = dict(files or {}), {}, set(), []
+        fw.mock('fw_fopen', self.fopen)
+        fw.mock('fw_fread', self.fread)
+        fw.mock('fw_fseek', self.fseek)
+        fw.mock('fw_ftell', lambda f, *_: self.open[f][1])
+        fw.mock('fw_fwrite', self.fwrite)
+        fw.mock('fw_fclose', self.fclose)
+        fw.mock('fw_fileno', lambda f, *_: f)
+        fw.mock('fw_fsync', lambda fd, *_: -1 if 'sync' in self.fail else 0)
+        fw.mock('fw_fflush', lambda f, *_: 0)
+        fw.mock('fw_rename', self.rename)
+        fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
+
+    def fopen(self, path, mode, *_):
+        path, mode = C.string_at(path).decode(), C.string_at(mode).decode()
+        self.opened.append((path, mode))
+        if f'open:{path}' in self.fail or ('r' in mode and path not in self.files):
+            return 0
+        handle = 0x2000 + len(self.opened)
+        start = self.files.get(path, b'') if 'a' in mode else b'' if 'w' in mode else None
+        self.open[handle] = [path, 0, start]
+        return handle
+
+    def fread(self, out, size, count, f, *_):
+        path, at, _ = self.open[f]
+        data = self.files[path][at:at + size * count]
+        if 'short' in self.fail:
+            data = data[:len(data) // 2]
+        C.memmove(out, data, len(data))
+        self.open[f][1] += len(data)
+        return len(data) // size
+
+    def fseek(self, f, offset, whence, *_):
+        state = self.open[f]
+        state[1] = C.c_long(offset).value + {0: 0, 1: state[1], 2: len(self.files[state[0]])}[whence]
+        return 0
+
+    def fwrite(self, data, size, count, f, *_):
+        state = self.open[f]
+        if f'write:{state[0]}' in self.fail:
+            return 0
+        state[2] += C.string_at(data, size * count)
+        return count
+
+    def fclose(self, f, *_):
+        path, _, written = self.open.pop(f)
+        if written is not None:
+            self.files[path] = written
+        return -1 if 'close' in self.fail else 0
+
+    def rename(self, old, new, *_):
+        if 'rename' in self.fail:
+            return -1
+        self.files[C.string_at(new).decode()] = self.files.pop(C.string_at(old).decode())
+        return 0
+
+
+class Net:
+    """demo's libcurl: each request's options, headers and body as sent; the reply handed to the write callback in
+    two chunks, with its HTTP code. reply(url, body) -> (code, text), code None for no connection."""
+    def __init__(self, fw, reply=None):
+        self.requests, self.lists, self.opts = [], {}, {}
+        self.reply = reply or self.ok
+        fw.mock('fw_curl_easy_init', lambda *_: self.opts.clear() or 0x9000)
+        fw.mock('fw_curl_easy_setopt', self.setopt)
+        fw.mock('fw_curl_easy_perform', self.perform)
+        fw.mock('fw_curl_easy_getinfo', lambda c, what, out, *_: C.c_long.from_address(out).__setattr__('value', self.code))
+        fw.mock('fw_curl_slist_append', self.append)
+        self.md5 = {}
+        fw.mock('fw_MD5_Init', lambda ctx, *_: self.md5.__setitem__(ctx, hashlib.md5()))
+        fw.mock('fw_MD5_Update', lambda ctx, data, n, *_: self.md5[ctx].update(C.string_at(data, n)))
+        fw.mock('fw_MD5_Final', lambda out, ctx, *_: C.memmove(out, self.md5.pop(ctx).digest(), 16))
+
+    @staticmethod
+    def ok(url, body):
+        if 'listenbrainz' in url:
+            return 200, '{"status":"ok"}'
+        if 'auth.getMobileSession' in body:
+            return 200, '{"session":{"name":"u","key":"SK123","subscriber":0}}'
+        return 200, '{"scrobbles":{"@attr":{"accepted":1,"ignored":0}}}'
+
+    def append(self, head, s, *_):
+        handle = head or 0x7000 + len(self.lists)
+        self.lists.setdefault(handle, []).append(C.string_at(s).decode())
+        return handle
+
+    def setopt(self, c, opt, value, *_):
+        self.opts[opt] = C.string_at(value).decode('latin1') if opt in (10002, 10015, 10065) else value
+        return 0
+
+    def perform(self, c, *_):
+        url, body = self.opts[10002], self.opts[10015]
+        self.requests.append((url, self.lists.get(self.opts.get(10023), []), body, dict(self.opts)))
+        self.code, text = self.reply(url, body)
+        if self.code is None:
+            return 7  # CURLE_COULDNT_CONNECT
+        write = C.CFUNCTYPE(C.c_uint, C.c_char_p, C.c_uint, C.c_uint, C.c_void_p)(self.opts[20011])
+        data = text.encode()
+        for part in (data[:7], data[7:]):
+            assert write(part, 1, len(part), self.opts[10001]) == len(part)
+        return 0
+
+    def to(self, host):
+        return [r for r in self.requests if host in r[0]]
+
+    def listens(self):
+        """Each ListenBrainz batch's listens: (time, artist, title, album or None)."""
+        out = []
+        for _, _, body, _ in self.to('listenbrainz'):
+            sent = json.loads(body)
+            assert sent['listen_type'] == 'import'
+            out.append([(x['listened_at'], x['track_metadata']['artist_name'], x['track_metadata']['track_name'],
+                         x['track_metadata'].get('release_name')) for x in sent['payload']])
+        return out
+
+    def forms(self):
+        """Each Last.fm call's parameters in the order sent, less api_sig and format, checked against its signature."""
+        out = []
+        for _, headers, body, _ in self.to('audioscrobbler'):
+            assert not headers
+            params = urllib.parse.parse_qsl(body, keep_blank_values=True, strict_parsing=True)
+            *signed, (sig, digest), (fmt, json_) = params
+            assert (sig, fmt, json_) == ('api_sig', 'format', 'json')
+            assert signed == sorted(signed)  # sent in the signature's order
+            assert digest == hashlib.md5((''.join(k + v for k, v in signed) + 'sec').encode()).hexdigest()
+            out.append(dict(signed))
+        return out
+
+
+def line(artist='Art', title='Song', album='Album', length='200', rating='L', time='1700000000'):
+    return f'{artist}\t{album}\t{title}\t1\t{length}\t{rating}\t{time}\t\n'.encode()
+
+
+class Upload:
+    """scrobble_start with its pthread caught, then the thread's worker run whole, then scrobble_poll."""
+    def __init__(self, fw):
+        self.fw, self.threads = fw, []
+        fw.mock('fw_pthread_create', lambda t, attr, fn, arg, *_: self.threads.append(fn) or 0)
+        self.start = fw.fn('scrobble_start', C.c_int)
+        self.poll = fw.fn('scrobble_poll', C.c_int, C.POINTER(C.c_int))
+
+    def run(self):
+        """(start's answer, poll's, the scrobbles sent)."""
+        started = self.start()
+        if started != 1:
+            return started, None, None
+        sent = C.c_int(-1)
+        assert self.poll(C.byref(sent)) == 0  # running
+        C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.threads[-1])(None)
+        result = self.poll(C.byref(sent))
+        assert self.poll(C.byref(C.c_int())) == 0  # told once
+        return started, result, sent.value
+
+
+def upload(fw, log, values=ACCOUNT, reply=None, fail=()):
+    config(fw, values)
+    card = Card(fw, {LOG: log} if log is not None else {})
+    card.fail |= set(fail)
+    net = Net(fw, reply)
+    return Upload(fw).run(), card, net
+
+
+# The accounts and flags.
+
+@pytest.mark.parametrize('values, want', (({}, 0), (LB_ONLY, 1), ({k: v for k, v in ACCOUNT.items() if k[1] != 'API_SECRET'}, 1),
+                                          ({k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'}, 2), (ACCOUNT, 3)))
+def test_ready_is_listenbrainz_s_token_and_last_fm_s_four(fw, values, want):
+    read = config(fw, values)
+    assert fw.fn('scrobble_ready', C.c_int)() == want
+    assert set(read) == {INI}
+
+
+def test_a_key_the_file_lacks_reads_empty_not_what_the_stack_held(fw):
+    config(fw, ACCOUNT)
+    assert fw.fn('scrobble_ready', C.c_int)() == 3
+    config(fw, {})
+    assert fw.fn('scrobble_ready', C.c_int)() == 0
+
+
+@pytest.mark.parametrize('value, flag', (('1', 1), ('0', 0), ('2', 0), (None, 0), ('', 0)))
+def test_a_flag_is_on_only_at_1(fw, value, flag):
+    config(fw, {} if value is None else {('SCROBBLE', 'AUTO'): value})
+    assert fw.fn('scrobble_flag', C.c_int, C.c_char_p)(b'AUTO') == flag
+    assert fw.fn('scrobble_flag', C.c_int, C.c_char_p)(b'ALBUM_ARTIST') == 0  # another key's own
+
+
+def test_percent_is_its_number(fw):
+    config(fw, {('SCROBBLE', 'PERCENT'): '75'})
+    assert fw.fn('scrobble_value', C.c_int, C.c_char_p)(b'PERCENT') == 75
+    assert fw.fn('scrobble_value', C.c_int, C.c_char_p)(b'MISSING') == 0
+
+
+# The UI thread's listens.
+
+def test_a_listen_starts_the_log_with_its_header_once_under_the_lock(fw):
+    card = Card(fw)
+    append = fw.fn('scrobble_append', None, C.c_char_p, C.c_uint)
+    first, second = line(title='One'), line(title='Two')
+    append(first, len(first))
+    append(second, len(second))
+    assert card.files[LOG] == HEADER + first + second
+    names = [n for n, _ in fw.calls() if n in ('fw_pthread_mutex_lock', 'fw_fopen', 'fw_fclose', 'fw_pthread_mutex_unlock')]
+    assert names == ['fw_pthread_mutex_lock', 'fw_fopen', 'fw_fclose', 'fw_pthread_mutex_unlock'] * 2
+    assert {m for p, m in card.opened} == {'ab'}
+
+
+def test_a_listen_the_card_can_t_take_still_lets_go_of_the_lock(fw):
+    card = Card(fw)
+    card.fail.add(f'open:{LOG}')
+    append = fw.fn('scrobble_append', None, C.c_char_p, C.c_uint)
+    append(line(), len(line()))
+    assert LOG not in card.files
+    assert len(fw.calls('fw_pthread_mutex_lock')) == len(fw.calls('fw_pthread_mutex_unlock')) == 1
+
+
+# read_all, which navigation.c shares.
+
+def read_all(fw, path, limit):
+    size = C.c_uint(99)
+    p = fw.fn('read_all', C.c_void_p, C.c_char_p, C.c_uint, C.POINTER(C.c_uint))(path.encode(), limit, C.byref(size))
+    data = C.string_at(p, size.value + 1) if p else None
+    libc.free(p)
+    return data, size.value
+
+
+def test_read_all_is_the_bytes_and_a_nul(fw):
+    Card(fw, {'/f': b'abc', '/empty': b''})
+    assert read_all(fw, '/f', 3) == (b'abc\0', 3)
+    assert read_all(fw, '/empty', 3) == (b'\0', 0)
+
+
+@pytest.mark.parametrize('why', ('missing', 'over', 'short'))
+def test_read_all_of_what_it_can_t_have_whole_is_nothing(fw, why):
+    card = Card(fw, {'/f': b'abcd'})
+    if why == 'short':
+        card.fail.add('short')  # a card error part-way
+    assert read_all(fw, '/g' if why == 'missing' else '/f', 3 if why == 'over' else 9) == (None, 0)
+    assert not card.open  # closed whatever happened
+
+
+# An upload.
+
+def test_no_account_never_starts_and_the_log_stays(fw):
+    (started, _, _), card, net = upload(fw, HEADER + line(), values={})
+    assert started == -1 and not net.requests and card.files[LOG] == HEADER + line()
+    assert not fw.calls('fw_pthread_create')
+
+
+def test_no_log_is_nothing_to_send(fw):
+    (started, result, sent), card, net = upload(fw, None)
+    assert (started, result, sent) == (1, 1, 0) and not net.requests and not card.files
+
+
+def test_both_services_get_each_listen_and_the_log_keeps_only_its_header(fw):
+    log = HEADER + line('A', 'One', 'X', time='1700000001') + line('B', 'Two', '', '0', time='1700000002') + \
+        line('C', 'Skipped', rating='S') + b'junk\n' + b'# a comment\n'
+    (started, result, sent), card, net = upload(fw, log)
+    assert (started, result, sent) == (1, 1, 2)
+    assert net.listens() == [[(1700000001, 'A', 'One', 'X'), (1700000002, 'B', 'Two', None)]]  # no album, no release_name
+    session, scrobble = net.forms()
+    assert session == {'method': 'auth.getMobileSession', 'username': 'u', 'password': 'p&w', 'api_key': 'key'}
+    assert scrobble == {'method': 'track.scrobble', 'sk': 'SK123', 'api_key': 'key', 'artist[0]': 'A', 'track[0]': 'One',
+                        'album[0]': 'X', 'timestamp[0]': '1700000001', 'duration[0]': '200',
+                        'artist[1]': 'B', 'track[1]': 'Two', 'timestamp[1]': '1700000002'}  # no length, no duration
+    assert card.files[LOG] == HEADER
+    assert card.files[LOG + '.sent'] == log[len(HEADER):].replace(b'# a comment\n', b'')  # every line taken but comments
+
+
+def test_requests_carry_credentials_only_over_verified_tls(fw):
+    _, _, net = upload(fw, HEADER + line())
+    (url, headers, _, opts), = net.to('listenbrainz')
+    assert url == LB_URL and headers == ['Authorization: Token tok', 'Content-Type: application/json']
+    assert all(r[0] == FM_URL for r in net.to('audioscrobbler'))
+    for _, _, _, opts in net.requests:
+        assert (opts[64], opts[81], opts[10065]) == (1, 2, CA) and opts[99] == 1  # verify peer and host; no signals
+        assert opts[78] > 0 and opts[13] >= opts[78]  # a connect timeout within the whole one
+    flags = (C.c_uint * 4)()
+    ctx = (C.c_void_p * 33)()
+    ctx[0x100 // 8] = C.addressof(flags)
+    assert C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)(net.requests[0][3][20108])(0x9000, C.addressof(ctx), None) == 0
+    assert flags[3] == 0x200000  # X509_V_FLAG_NO_CHECK_TIME: past 2038 the chain still verifies
+
+
+def test_json_escapes_quotes_backslashes_and_control_bytes(fw):
+    _, _, net = upload(fw, HEADER + line('Say "hi" \\ \x01bye', 'T\x1fe', 'A\x7f'), values=LB_ONLY)
+    assert net.listens() == [[(1700000000, 'Say "hi" \\  bye', 'T e', 'A\x7f')]]
+
+
+def test_the_form_escapes_all_but_the_unreserved(fw):
+    _, _, net = upload(fw, HEADER + line('A&B=C+D%E é/~-_.', 'T'))
+    assert net.forms()[1]['artist[0]'] == 'A&B=C+D%E é/~-_.'
+    body = net.to('audioscrobbler')[1][2]
+    assert 'artist%5B0%5D=A%26B%3DC%2BD%25E%20%C3%A9%2F~-_.&' in body
+
+
+def test_listens_go_in_batches_of_50_with_one_session(fw):
+    log = HEADER + b''.join(line(f'A{i}', time=str(1700000000 + i)) for i in range(51))
+    (_, result, sent), card, net = upload(fw, log)
+    assert result == 1 and sent == 51 and [len(b) for b in net.listens()] == [50, 1]
+    assert [f['method'] for f in net.forms()] == ['auth.getMobileSession', 'track.scrobble', 'track.scrobble']
+    assert [t for b in net.listens() for t, *_ in b] == list(range(1700000000, 1700000051))
+
+
+def test_a_line_still_being_written_stays_in_the_log(fw):
+    partial = b'Art\tAl\tSo'
+    (_, result, sent), card, _ = upload(fw, HEADER + line() + partial)
+    assert result == 1 and sent == 1 and card.files[LOG] == HEADER + partial
+
+
+def test_an_incomplete_last_fm_is_off(fw):
+    values = {**LB_ONLY, ('LASTFM', 'USER'): 'u'}
+    (_, result, sent), _, net = upload(fw, HEADER + line(), values=values)
+    assert result == 1 and sent == 1 and not net.to('audioscrobbler') and len(net.to('listenbrainz')) == 1
+
+
+def test_last_fm_alone_sends_no_json(fw):
+    values = {k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'}
+    (_, result, sent), _, net = upload(fw, HEADER + line(), values=values)
+    assert result == 1 and sent == 1 and not net.to('listenbrainz') and len(net.forms()) == 2
+
+
+def failing(when):
+    def reply(url, body):
+        code, text = Net.ok(url, body)
+        return when(url, body, code, text)
+    return reply
+
+
+@pytest.mark.parametrize('why, reply', (
+    ('a 500', failing(lambda url, body, code, text: (500, text) if 'listenbrainz' in url else (code, text))),
+    ('an error in a 200', failing(lambda url, body, code, text: (200, '{"error":9,"message":"Invalid session key"}')
+                                  if 'track.scrobble' in body else (code, text))),
+    ('no session key', failing(lambda url, body, code, text: (200, '{"session":{}}') if 'getMobile' in body else (code, text))),
+    ('no connection', failing(lambda url, body, code, text: (None, '')))))
+def test_a_batch_a_service_refuses_stays_in_the_log(fw, why, reply):
+    log = HEADER + line()
+    (_, result, sent), card, _ = upload(fw, log, reply=reply)
+    assert (result, sent) == (-1, 0) and card.files[LOG] == log and LOG + '.sent' not in card.files
+
+
+def test_the_second_batch_refused_keeps_it_and_retires_the_first(fw):
+    log = HEADER + b''.join(line(f'A{i}', time=str(1700000000 + i)) for i in range(60))
+    batches = []
+
+    def reply(url, body):
+        if 'listenbrainz' in url:
+            batches.append(body)
+        return (500, '') if len(batches) == 2 and 'listenbrainz' in url else Net.ok(url, body)
+    (_, result, sent), card, _ = upload(fw, log, reply=reply)
+    assert (result, sent) == (-1, 50)
+    assert card.files[LOG] == HEADER + log[len(HEADER):].split(b'\n', 50)[50]
+    assert card.files[LOG + '.sent'].count(b'\n') == 50
+
+
+def test_a_batch_too_big_for_its_body_is_never_sent(fw):
+    big = 'a' * (BODY_MAX // 50)  # each listen's artist: 50 overrun the JSON body
+    log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
+    (_, result, sent), card, net = upload(fw, log, values=LB_ONLY)
+    assert (result, sent) == (-1, 0) and not net.requests and card.files[LOG] == log
+
+
+def test_a_form_too_big_for_its_body_is_never_sent(fw):
+    big = '&' * (BODY_MAX // 50 // 3)  # 3 bytes each escaped: the form overruns where the JSON would not
+    log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
+    values = {k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'}
+    (_, result, sent), card, net = upload(fw, log, values=values)
+    assert (result, sent) == (-1, 0) and [f['method'] for f in net.forms()] == ['auth.getMobileSession']
+    assert card.files[LOG] == log
+
+
+@pytest.mark.parametrize('fail', (f'open:{LOG}.tmp', f'write:{LOG}.tmp', 'sync', 'close', f'open:{LOG}.sent', f'write:{LOG}.sent',
+                                  'rename'))
+def test_a_log_rewrite_that_fails_keeps_the_listens(fw, fail):
+    log = HEADER + line()
+    (_, result, sent), card, _ = upload(fw, log, fail=[fail])
+    assert (result, sent) == (-1, 1) and card.files[LOG] == log  # sent, but kept to send again
+
+
+def test_the_rewrite_holds_the_lock_and_writes_the_new_log_before_sent(fw):
+    log = HEADER + line()
+    upload(fw, log)
+    names = [(n, C.string_at(a[0]).decode() if n == 'fw_fopen' else '') for n, a in fw.calls()
+             if n in ('fw_pthread_mutex_lock', 'fw_pthread_mutex_unlock', 'fw_fopen', 'fw_rename')]
+    assert names[-6:] == [('fw_pthread_mutex_lock', ''), ('fw_fopen', LOG), ('fw_fopen', LOG + '.tmp'), ('fw_fopen', LOG + '.sent'),
+                          ('fw_rename', ''), ('fw_pthread_mutex_unlock', '')]
+    syncs = [n for n, _ in fw.calls() if n in ('fw_fsync', 'fw_rename')]
+    assert syncs == ['fw_fsync', 'fw_fsync', 'fw_rename']  # both files on the card before the old log goes
+
+
+def test_a_second_start_while_one_runs_is_refused(fw):
+    config(fw, ACCOUNT)
+    Card(fw)
+    Net(fw)
+    up = Upload(fw)
+    assert up.start() == 1 and up.start() == 0 and len(up.threads) == 1
+
+
+def test_no_thread_is_no_upload(fw):
+    config(fw, ACCOUNT)
+    Card(fw)
+    fw.mock('fw_pthread_create', lambda *_: 11)  # EAGAIN
+    assert fw.fn('scrobble_start', C.c_int)() == -1
+    assert fw.fn('scrobble_poll', C.c_int, C.POINTER(C.c_int))(C.byref(C.c_int())) == 0  # nothing to report

@@ -11,23 +11,17 @@ ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 # because a repacked ZIP can never match the vendor one's. Not a release input.
 TAR_SHA = '0a910790ef7902b0fe7de7d0f9f26cdac3f2c0909368c6c90778a67ee3b5dab1'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.7.2'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.7.6'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
 # firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
 # X fixed the rebuild's misses (the word by state, the full-width colon, the panes' UTF-8, Modern's
-# battery); Y unifies the word across the themes: each bar's own face, ink that follows the half.
-# Z finds the word again in Classic (its face read an empty label's answer and kept the hanzi-less
-# Classic face: the word painted nothing), reads the bar's CJK at the clock's ink height, and puts
-# the word on the bar itself, left on the page name's baseline. A keeps the glyph off the glass (Z's
-# own bare pad had slid the left group under the glass corner) — and B writes the word's ink for
-# every style state: the bar takes no input and its children read disable's, which the one-state
-# writes kept white (white on the light bar through Y and A).
-# C gives the word the page name's own widget and style (hscroll_label, s_scrlabel_white20l): the
-# style table states its light half, which a plain label's own style never did.
-# The letters round at Z; A reads newer than Z within the 1.7.2 line.
-TAG = 'V' + VERSION.replace('.', '') + 'C'
+# 中文版：上游 1.7.6 起的第一版。1.7.2 线上最后一版是 V172C：状态栏四字终于走对了路子——用页面名
+# 自己的控件和样式（hscroll_label, s_scrlabel_white20l），浅色半区由样式表给出深色，不再自己写颜色。
+# 字母每换一条上游版本线从 A 重新起。
+TAG = 'V' + VERSION.replace('.', '') + 'A'
+
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
@@ -149,6 +143,8 @@ HOOKS = {
     'systemset_powermanager_page_init': (0x4c72d0, 'ringnav_powermanager', 'power'),
     # Standby limit: the suspend to RAM between the RTC wake alarm's set and clear
     'toolsIntoStandby': (0x5be57c, 'ringnav_standby', 'standby'),
+    # Standby's card driver reload: no removed and inserted toasts on the wake
+    'check_cardmount_status': (0x4e9428, 'ringnav_cardmount', 'cardmount'),
     'playset_playset_page_init': (0x4b98d8, 'ringnav_audioset', 'audioset'),
     # Bluetooth's list, rebuilt on every search and link change, gains Resume on connect
     'btmenu_rows': (0x4bee90, 'ringnav_btrows', 'btrows'),
@@ -194,6 +190,10 @@ HOOKS = {
     'stream_row': (0x52ee8c, 'ringnav_stream_row', 'stream_row'),
     'netservice_row': (0x4c6728, 'ringnav_netservice_row', 'netservice_row'),
     'playermore_online': (0x5281f8, 'ringnav_online_match', 'online_match'),
+    # Scan Folders' row click: a tap on a folder with no folders inside ticks it (scan_folders.c)
+    'specfolder_click': (0x52e0ac, 'ringnav_specfolder_click', 'specfolder_click'),
+    # USB DAC (usb_dac.c): under Audio and DAC a host that configured the gadget counts as the PC link
+    'check_usb_status': (0x4e91fc, 'ringnav_usb_status', 'usb_status'),
 }
 # The payload's stock_<name>_trampoline, the hooks' third element, resumes each hook past its 3-word PIC
 # prologue.
@@ -283,8 +283,13 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
             done
             rockbox
         fi
+        # demo's stderr (docs/boot.md#rockbox-from-home): stock starts its Bluetooth and Wi-Fi helpers from demo,
+        # so they inherit it and their reasons for failing land here, in RAM, instead of on the serial console;
+        # emptied once a minute past 512 KB (O_APPEND keeps demo writing at its end), its tail goes in the crash
+        # log. stdout stays on the console as stock's; --dev takes both (LOG_HOOK)
+        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${{n:-0}}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &
         while :; do
-            /release/bin/demo
+            /release/bin/demo 2>>/tmp/q2-demo.err
             s=$?
             [ -e {ROCKBOX_FLAG} ] || break
             rm -f {ROCKBOX_FLAG}
@@ -310,6 +315,7 @@ BOOT_HOOK = (b'    /release/bin/demo &\n', f'''    (
                 [ -f /tmp/q2-scan.log ] && {{ echo "== scan"; tail -n 60 /tmp/q2-scan.log; }}
                 [ -f /tmp/q2-art-file ] && {{ echo "== last art"; cat /tmp/q2-art-file; }}
                 [ -f /tmp/q2-art.log ] && {{ echo "== art"; tail -n 60 /tmp/q2-art.log; }}
+                [ -f /tmp/q2-demo.err ] && {{ echo "== stderr"; tail -n 60 /tmp/q2-demo.err; }}
                 [ -f /tmp/q2-demo.log ] && {{ echo "== q2-demo.log"; tail -n 200 /tmp/q2-demo.log; }}
             }} > $c.tmp 2>&1; mv $c.tmp $c
             sync
@@ -324,8 +330,10 @@ LOGO, LOGO_LIGHT = 'release/assets/default/raw/images/xx/logo.jpg', 'release/ass
 REMOTE_HOOK = (b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n',
                b'/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf\n/usr/bin/q2remote &\n')
 # --dev only (docs/remote.md#log): demo's console output, and hciplayer's, which inherits it, in RAM, so
-# emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end). In BOOT_HOOK's start path.
-LOG_HOOK = (b'        while :; do\n            /release/bin/demo\n',
+# emptied once a minute past 4 MB (O_APPEND keeps demo writing at its end), in place of the release's stderr
+# file and its cap. In BOOT_HOOK's start path.
+LOG_HOOK = (b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.err); [ "${n:-0}" -gt 524288 ] && : >/tmp/q2-demo.err; done) &\n'
+            b'        while :; do\n            /release/bin/demo 2>>/tmp/q2-demo.err\n',
             b'        (while sleep 60; do n=$(wc -c 2>/dev/null </tmp/q2-demo.log); [ "${n:-0}" -gt 4000000 ] && : >/tmp/q2-demo.log; done) &\n'
             b'        while :; do\n            /release/bin/demo >>/tmp/q2-demo.log 2>&1\n')
 # --dev only: the wheel's frame log (playback.c wl_flush) and stale-press notes (navigation.c stale_note) go to the
@@ -374,9 +382,14 @@ BT_SILENCE_SITES = ((0x41465c, 0x8e460030, 'j', 'timeout'), (0x414684, 0x0000282
 # platform_init's crash watchdog forks pgrep every 2 s; 10 s is still quick to reboot a dead UI.
 WATCHDOG = 'usr/bin/checkappprocess.sh'
 WATCHDOG_SLEEP = (b'\tsleep 2\n', b'\tsleep 10\n')
-# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) starts off.
+# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) and Standby start off.
 DEFAULT_CONFIG = 'release/assets/default/raw/config.ini'
-COVERMODE = (b'\nCOVERMODE=1\n', b'\nCOVERMODE=0\n')
+DEFAULT_CONFIG_OFF = (b'COVERMODE', b'STANDBYMODE')
+def default_config(config):
+    for key in DEFAULT_CONFIG_OFF:
+        check(config.count(b'\n%s=1\n' % key) == 1, 'Unexpected default config.ini')
+        config = config.replace(b'\n%s=1\n' % key, b'\n%s=0\n' % key)
+    return config
 # toolsSetRtcTime's command, with its padding; -u keeps the RTC in UTC. See docs/internals.md#clock.
 RTC_WRITE = (b'hwclock -w\0\0', b'hwclock -wu\0')
 # network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x37133d): stock turns
@@ -501,6 +514,9 @@ ALBUM_ART = ((0x4a388c, 'ringnav_art_name'), (0x4a421c, 'ringnav_albumcovers'), 
              (0x4ae860, 'ringnav_artist_covers'), (0x4ae968, 'ringnav_artist_covers'),
              (0x4aebc0, 'ringnav_artist_covers'))
 ALBUM_ART_ROW = ((0x4a3890, 0x24c66c04, 0x02603025), (0x4ab808, 0x24c66c04, 0x02403025))
+# albumcoverinfo_init's and foldercoverinfo_init's jalr _deque_push_back of each row's cover task becomes jal
+# ringnav_cover_push, which frees the task's name and path once the list has copied them; see docs/internals.md.
+COVER_PUSH = ((0x4ed2a4, 0x4ed298), (0x4ed44c, 0x4ed444))  # the jalr, the lw t9 that loads it
 # Library Artists rows: the row bind's bal to class_icon becomes jal ringnav_class_icon, which hides the head.
 CLASS_ICON = 0x4b0cec
 # Album grids' and Songs' scroll start no longer pauses the cover worker (sw $3,0($2) -> nop); see docs/internals.md.
@@ -529,6 +545,13 @@ DROP_CACHES = ((0x512050, 0x3c1c0051, 0x03e00008), (0x512054, 0x279c4c70, 0x0000
 # (jalr $25) becomes jal to its payload function (tidal.c), which parks the thread: Tidal's wakes once
 # per track URL asked for, Baidu's never.
 STREAM_POLL_CALLS = ((0x47f824, 'ringnav_baidu_poll'), (0x486404, 'ringnav_tidal_poll'))
+# get_onlineid3info's player_set_coverinfo(REC_COVER, REC_NAME, type) for a 0xf1 record: its jalr, the
+# REC_COVER load in its delay slot, and the stub that adds the record ($s1) for tidal.c app_coverinfo
+COVERINFO_CALL = (0x492968, 0x8e240028, 'app_coverinfo_call')
+# Stock routines tidal.c's URL queues call at their addresses (not FUNCTIONS, whose names test/patch.py
+# stands in for everywhere: these run as stock's in its scenarios). Checked against the ELF's symbols.
+APP_URL_CALLS = {'mclSetPause': 0x5ab0d4, 'tidal_playurl': 0x5aa264, 'curl_stop_httpget': 0x4fb5f8,
+                 'toolsFreeStSongInfo': 0x5c01b8, 'player_set_coverinfo': 0x512b4c}
 # The jalr usleep (lw $t9,-0x59c($gp)) of mclSyncPlayerStatus' 200 ms loop becomes jal ringnav_dark_usleep
 # (its argument set in the delay slot): at least DARK_POLL_US while ringnav_sleep finds the Q2 dark, quiet and
 # the DAC off, else stock's. parse_albumcovertask_thd's 50 ms and player_parsecover_thd's 100 ms waits become
@@ -1165,6 +1188,7 @@ FUNCTIONS = {
  'window_manager_close_window_force': ('int', 'void *, void *'),
  'navigator_to': ('int', 'const char *'),
  'navigator_to_with_context': ('int', 'const char *, const void *'),
+ 'toolsSetpclinkStatus': ('int', 'int'),  # echo %d > the kernel's pc_check: the PC-link gate (usb_dac.c)
  'window_manager_get_input_device_status': ('char *', 'void *'),
  'airplayGetFlag': ('int', 'void'),
  'tk_snprintf': ('int', 'char *, unsigned, const char *, ...'),
@@ -1173,6 +1197,8 @@ FUNCTIONS = {
  'getMusicByAlbumAndSonger': ('int', 'const char *, const char *, int'),
  'getMusicByAlbumAndAlbumSonger': ('int', 'const char *, const char *, int'),
  'toolsLoadDirectory': ('int', 'const char *'),
+ 'toolsCheckTypeDeque': ('int', 'void *, int'),
+ 'get_specfolderurl': ('void', 'int, char *, int'),
  # Queue menu rows (navigation.c): artist/composer/genre queries, My Fav, the batch selection record
  'getMusicBySonger': ('int', 'const char *'),
  'getMusicByAlbumArtist': ('int', 'const char *'),
@@ -1192,6 +1218,7 @@ FUNCTIONS = {
  'toolsTrimRight': ('void', 'char *'),
  'toolsHanziToPinyin': ('int', 'const char *, char *'),
  'toolsGetMusicNum': ('int', 'void'),
+ 'toolsGetUserStop': ('int', 'void'),  # toolsStopUpdateMusic's flag: the scan dialog's Back
  'taglib_file_audioproperties': ('void *', 'void *'),
  'taglib_file_free': ('void', 'void *'),
  'deleteMusicFromFav': ('int', 'void *'),
@@ -1364,8 +1391,10 @@ PRIVATE_FUNCTIONS = {
     "stream_row": HOOKS['stream_row'][0],  # Streaming's Tidal row: atoi of the button's name
     "netservice_row": HOOKS['netservice_row'][0],  # Network service's DLNA, AirPlay and Wi-Fi transfer
     "playermore_online": HOOKS['playermore_online'][0],  # More's Download Cover & Lyrics: (window)
+    "specfolder_click": HOOKS['specfolder_click'][0],  # Scan Folders' row click
 }
 GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a Tidal list loaded
+           'savestartbt', 'transposition', 'tidalfurlstart',  # a stream to start paused; 1 arms Now Playing's online tick (tidal.c app_start)
            'g_time_zone','g_playspeed_mode', 'g_time24h_flag', 'g_backlight_status', 'g_lockscreen_pageflag', 'g_testmode_flag',
            'g_keylock_flag', 'g_keylock_mode',
            'g_bluetoothflag', 'bt_linkstatus', 'g_guideflag', 'g_poweroff_state', 'g_usblink_status', 'bt__recv_pageflag',
@@ -1402,7 +1431,8 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'g_dropdown_menu_state': 4,  # Quick Settings: 1, 2 while it slides or follows a swipe, 3 open
                 # the lock screen's picture (SYSSET SCREENSAVERPATH) and the picker's list
                 'g_screensaver_picture': 256, 'p_deque_screensaverlist': 4,
-                'bt_connectstatus': 4}  # a link thread runs (1), ended (2), checked (3)
+                'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
+                'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
 PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
@@ -1425,7 +1455,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c', 'usb_dac.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
@@ -1444,7 +1474,7 @@ def compile_payload(out):  # pragma: no mutate block
     run('ld.lld','-m','elf32ltsmip','--gc-sections','-T',ROOT/'patch/link.ld','-e','ringnav',
         *[f'--undefined={name}' for _, name, _ in HOOKS.values()], f'--undefined={GRADIENT_LEAF[2]}', '--undefined=ringnav_lrc_open',
         f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
-        '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir',
+        '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
         '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
         *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
@@ -1661,6 +1691,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     demo = out/'stock-demo'; demo.write_bytes(raw_demo)
     symbol_table = run('readelf', '-Ws', demo)
     syms = symbols(demo, symbol_table)
+    for name, address in APP_URL_CALLS.items():
+        check(syms.get(name) == address, f'{name}: not at {address:#x} in the stock demo')
     syms.update(PRIVATE_FUNCTIONS)
     bold, bold_ranges = bold_font()
     classic_light, classic_light_ranges = classic_light_font()
@@ -1795,6 +1827,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         patch_word(patched, address, old, new, 'keep the page cache')
     for address, name in STREAM_POLL_CALLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stream threads park while idle')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVERINFO_CALL[0] + 4))[0] == COVERINFO_CALL[1],
+          "online id3: expected the REC_COVER load in the cover call's delay slot")
+    patch_word(patched, COVERINFO_CALL[0], 0x0320f809, jal(ps[COVERINFO_CALL[2]]), "a card app's cover by URL")
     for address, name in DARK_POLLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stock polls idle while dark')
     check(struct.unpack_from('<I', patched, fileoff(patched, LYRIC_SAVE_FMT[0]))[0] == LYRIC_SAVE_FMT[1],
@@ -1834,6 +1869,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'same-named albums apart in art')
     for row in ALBUM_ART_ROW:
         patch_word(patched, *row, 'same-named albums apart in art')
+    for address, load in COVER_PUSH:
+        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, load))[0] == 0x8f99f734,
+              'cover push: expected _deque_push_back import')  # lw t9, -0x8cc(gp)
+        patch_word(patched, address, 0x0320f809, jal(ps['ringnav_cover_push']), "a cover task's name and path freed once copied")
     patch_word(patched, CLASS_ICON, branch(0x04110000, CLASS_ICON, syms['class_icon']),
                jal(ps['ringnav_class_icon']), 'Artists rows without the head picture')
     for word in COVER_PAUSE:
@@ -1893,9 +1932,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(s90play.count(LOG_HOOK[0]) == 1, 'Unexpected demo loop')
     check(s90play.count(WHEEL_LOG_HOOK[0]) == 1, 'Unexpected card path')
     (out/'S90play').write_bytes(s90play.replace(*REMOTE_HOOK).replace(*LOG_HOOK).replace(*WHEEL_LOG_HOOK) if dev else s90play)
-    config = cat(DEFAULT_CONFIG)
-    check(config.count(COVERMODE[0]) == 1, 'Unexpected default config.ini')
-    (out/'config.ini').write_bytes(config.replace(*COVERMODE))
+    (out/'config.ini').write_bytes(default_config(cat(DEFAULT_CONFIG)))
     s11logo = cat(S11LOGO)
     check(s11logo.count(LOGO_HOOK[0]) == 1, 'Unexpected S11logo_display_shell')
     (out/'S11logo').write_bytes(s11logo.replace(*LOGO_HOOK))

@@ -1,7 +1,58 @@
 # Changelog
 
+- **1.7.6**:
+  - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
+  - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
+  - Streaming: in a card app, choosing an option on a page that keeps itself up to date (such as a choice list with **Selected** under the current one) no longer blanks the screen to **Loading…**: the page stays and is redrawn as soon as the app answers.
+  - Streaming: in a card app, a list with a **Search** magnifying glass in the title bar can have a sort button beside it, as on the Songs page. Tap it to choose the order. Under **Theme: Classic**, which has no title bar, it stays a row.
+- **1.7.5**:
+  - Library: adding an album to your favourites, or rating it five hearts, now makes its songs favourites too, so they show in **Favorites** and **Loved**. Removing the album, or rating it lower, takes them out. For an album already at five hearts, choose five again under **Rate Album**.
+  - Cover Flow: a fast spin no longer skips letters. Each letter with albums now comes in turn, both ways, and round from the last letter to the first.
+  - View Queue: the song playing has a ▶ before its title.
+  - Display: with **Status Bar** on another theme's look, the battery, Bluetooth and Wi-Fi line up as they do under that theme. Under **Theme: Classic**, Minimal's and Modern's battery sat a little low, Wi-Fi a little high and Bluetooth a little low; under Minimal and Modern, Classic's battery sat a little high.
+  - Network Update: pressing Cancel just as a download finishes, while the card takes its last bytes, now says **Download cancelled** rather than **Can't write to the card**.
+  - Cover Flow: turning the Q2 off while it prepares artwork no longer marks the album it was about to start as one that restarted the Q2.
+  - Bluetooth: when the Q2 shows **Bluetooth abnormal** and restarts by itself, `q2-crash.log` on the card now says so, with the system's and the Bluetooth start-up's last messages, where before there was nothing to attach to a bug report.
+  - System: when the Q2 restarts by itself, `q2-crash.log` now ends with the last messages from the player's helpers, such as the Bluetooth and Wi-Fi start-up's, which used to go to a serial port nobody reads.
+  - USB: under **USB mode: Audio and DAC**, a Nintendo Switch 2, or any host that connects to the Q2 but never reads its card, now gets the Q2 as a USB DAC. The Q2 used to wait for the host to read the card first, so it stayed a drive the Switch did nothing with. A charger still only charges, and **USB Storage** is as it was.
+- **1.7.4**:
+  - Display: **Appearance** has a **Status Bar** row. **Theme** (the default) follows your theme; **Minimal**, **Modern** or **Classic** give the bar that theme's look under any theme, so Classic can have a plain black bar. It applies at once, with no restart.
+  - Cover Flow: a fast spin flows. The letters come at about one turn a second instead of two and keep a steady pace however hard you spin, while the covers keep moving through them, so slowing down or turning back carries straight on into single albums. Letting go lands on the letter's first album, and lifting your thumb to re-grip no longer drops the letters.
+  - Quick Settings: holding Play/Pause there briefly shows **Wheel: Volume** or **Wheel: Brightness**. The wheel keeps working while it shows.
+  - Now Playing: under **Theme: Classic** the hearts picker has a plain background in Light Mode instead of a gradient.
+  - Bluetooth: the buttons of a headset or earbuds whose name is longer than 55 characters now work. The Q2 read the name cut short and so never found their buttons.
+  - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
+  - Scrobbling: a line of the scrobble log with a damaged time no longer stops every upload until it is edited out. It is left out, as other unreadable lines are.
+  - Playlists: opening Library → Playlists, or a card app importing playlists, soon after a boot no longer restarts the Q2.
+  - Library: Albums, Artists, Composers and Genres open faster on a big library where some songs have no album, artist or genre. Each used to read every such song only to decide whether to show Unknown.
+  - Streaming: a card app's page, or Spotify's browser, no longer stays on **Loading…** when the reply comes back at once.
+  - Library: opening **Songs**, or coming back to it, no longer holds on to more memory each time, about 8 MB on a 65,000-song library, which could add up until the Q2 ran out. Albums, Artists, Folder and the other lists held on to a little each time too.
+  - Library: **Update Local Music** no longer sometimes skips the update without a word and keeps the old library. That could happen when it started while the songs were still being counted, more often the bigger the library.
+  - Settings: a Centre press on Night Shift's page followed at once by Back no longer switches Crossfade on or off instead.
+  - Library: on a large library, opening an album, **Go to Album**, **Recently Added**, deleting songs and **Scan specified folders** are much faster, and Era's **Play All** no longer risks restarting the Q2 on a decade of many albums. They speed up after the next **Update Local Music** or **Scan specified folders**.
+  - Cover Flow: when an album's artwork restarted the Q2 while Cover Flow was preparing artwork, the next Cover Flow open adds that album's file to `q2-crash.log` on the card, under **cover flow skipped**.
+  - Streaming: songs a card app streams show the lyrics the app leaves for them on the lyrics page, synced when timed.
+  - EQ: on the Advanced tab a long preset name no longer runs into **Presets**. It stays on the right, is cut short with an ellipsis, and scrolls while its row is selected.
+  - Streaming: in **Internet Radio**, a favourite whose address is a `file://` path with an `=` in its name is listed. It was taken for a `.pls` entry and left out.
+
+- **1.7.3**:
+  - Standby: waking from Standby no longer shows TF card removed and inserted messages.
+  - Power: Standby starts off after a fresh install or a factory reset. If you already have it on, it stays on.
+  - Scrobbling: a song played from Folder, or from a playlist opened there, scrobbles its title tag. It used to send the file name, track and disc numbers included, in place of the title.
+  - Cover Flow: an album whose artwork restarted the Q2 while Cover Flow was preparing artwork is skipped the next time Cover Flow opens and shows the grey disc, so you can tell which album it was, instead of restarting the Q2 again at every open. **Refresh Cover Flow** tries it again.
+  - Now Playing: on the lyrics page, a swipe turns the page from the first touch again. In 1.7.2 the guard that kept a held finger's page still took every swipe with it, so a quick swipe did nothing and it took a hold, then a swipe. Play from a line is gone, both touch and hold and holding Play/Pause: holding Play/Pause on the lyrics page opens the song's options again. Tap the lyrics to fill the screen with them, and tap again or press Return to bring the page back.
+  - Playback: a stream that stops for a while, such as when Wi-Fi drops out for 20 seconds, carries on from where it stopped once the data comes back, on the headphone jacks and a USB DAC. It used to skip ahead in chunks to catch up.
+  - Card apps: an app can split its first page into sections, such as Home, Albums and Playlists. One shows at a time; swipe left or right on it to move to the next or the previous, and the title shows which one it is, such as Albums 2/3. The wheel still only moves through the list.
+  - Streaming: card apps can show a cover beside each row of a list, as Tidal's lists do. An app that doesn't send covers looks as before.
+  - Streaming: a card app can show a long list a window at a time, with **Next page** and **Previous page** rows at its ends. Back leaves the list at once, instead of going back through every page, and Back from a deeper level to a long list is quicker.
+  - Streaming: in a card app, a list whose first row is **Search** shows it as a magnifying glass at the right of the title bar, beside the page's name, as Tidal does. Tap it to search. Under **Theme: Classic**, which has no title bar, it stays a row.
+  - Card apps: on an app's live page, such as a sync's progress, a long name keeps scrolling and your selection stays put while the percentage updates. The page used to be redrawn every 2 seconds, which started the name over.
+  - Streaming: a card app, such as a Jellyfin app, can stream its songs through the player Tidal uses, with their covers, instead of saving each one to the card first. It needs no Tidal account.
+  - Library: under **Theme: Classic** album covers in Albums and Folder fill their rows again, as they did before 1.7.2. In 1.7.2 the covers and folder icons in Folder sat too low in their rows.
+  - Now Playing: under **Theme: Classic** the progress bar has a line at its left and right ends, as an iPod classic's does, and **Classic Blue** fills it with an iPod classic's own two-tone blue.
+
 - **1.7.2**:
-  - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so; LICENSE-MIT keeps those terms for the contributions made under them.
+  - Project: Q2 Pod's code and documentation are now under the GNU General Public License, version 3 (GPL-3.0-only). Releases up to 1.7.1 were MIT and stay so, as do the contributions made under it.
   - App Store: a game from the App Store can own the sound: music stops and the headphones are its while it runs, Play/Pause and the side buttons reach it, and it stays open as long as it likes. Groovebox is the first.
   - Display: **Shortcut** offers **Groovebox** once the App Store's Groovebox is installed, between Audiobooks and Rockbox; Home's shortcut row opens it, and hides while it isn't on the card.
   - Power: **Smart Wi-Fi**, in System settings → Power and off by default, turns Wi-Fi off after 5 minutes when nothing uses it, to save battery while you play your own music. It comes back when you open Streaming or the Wi-Fi settings, and anything that needs it, such as Spotify, Internet Radio or Upload Scrobbles, says **Connecting to Wi-Fi…** and waits a few seconds for it.

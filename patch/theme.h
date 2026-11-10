@@ -95,12 +95,13 @@ typedef struct {
     /* coverflow.shelf, the thumb (docs/internals.md#coverflow-thumb; thumb 0: ticks and the step's
      * animator). Ticks are 200 / ticks_turn raw units at 50% Wheel Sensitivity, twice as many a
      * turn at 100%, and rates count those; far_left, stop_left, back, aim_snap, lead_* and
-     * row_from, _full, _flat, _edge are 1/100 album; others ms, ticks/s, albums/s, px or %. */
+     * row_from, _full, _flat, _edge are 1/100 album; others ms, ticks/s, albums/s, px or
+     * %. */
     short thumb, ticks_turn, ticks_album, fast_at, fast_full, top_speed, track, snap, spin;
     short far_left, detent, hold_ms, stop_ms, stop_left, rate_up, rate_down, back, dead;
     short contact_ms, aim_snap, lead_from, lead_full, lead_ms, row_shift, row_from, row_full;
     short row_shrink, row_flat, row_out, row_edge, row_width, row_key, row_reach;
-    short jump_ms, jump_ticks, jump_at;
+    short jump_ms, jump_ticks, jump_at, jump_pace;
     short name_px, artist_px, text_y, artist_y;
 } cf_style_t;
 typedef struct {
@@ -168,6 +169,8 @@ typedef struct {
         set_top, np_bar, np_scrub;
     stops_t np_track[2]; /* Classic's progress bar's track (paint_scrubber), final: [0] dark, [1]
                             light; n 0: stock's plain bar */
+    stops_t np_fill;     /* ... its played part under the theme's own scheme (Classic Blue), both
+                            halves; n 0: the scheme's band */
     unsigned np_rows[4][NP_ROWS]; /* SCRUB_ROWS: 0xAARRGGBB; dark track, fill, light track, fill */
     unsigned np_info_value[2];    /* the info page's values, final: [0] dark, [1] light */
     /* Split's panel where no cover shows (home_pane_paint), final: [0] dark, [1] light; n 0:
@@ -208,7 +211,11 @@ static inline int classic_pages(void) {
 }
 int theme_geom(const theme_t *T); /* navigation.c: the set T boots with its stored values */
 const scheme_t *scheme(void);     /* theme()'s scheme accent(), in the half Light Mode picks */
-int client_h(void); /* the window under the bar of the set theme_boot wrote (theme_engine.c) */
+extern const unsigned char theme_rows[]; /* the Theme picker's order, by stored THEME */
+const theme_t *bar_theme(void);          /* Status Bar's choice: the theme whose bar is painted */
+const scheme_t *bar_scheme(void);        /* scheme() for bar_theme() */
+int bar_geom_val(int v); /* geom_val for what bar_theme() paints: V_BATT_W, V_BATT_H */
+int client_h(void);      /* the window under the bar of the set theme_boot wrote (theme_engine.c) */
 void paint_stops(void *canvas, int x, int y, int w, int h, const stops_t *s); /* navigation.c */
 /* The rows painter: the track across w, the played part over its first fill_w px; final colours
  * (the volume panel away from Now Playing, a card app's progress). */

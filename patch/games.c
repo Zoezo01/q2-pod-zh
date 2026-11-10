@@ -378,8 +378,9 @@ int sol_move(struct solitaire *s, int from, int to) {
     int n = s->len[from], run = 0;
     if (from == STOCK || from == to || to < FOUND) return 0;
     while (run < n && s->card[from][n - 1 - run] & UP && (run < 1 || from >= TABLEAU)) ++run;
+    /* a pile at SOL_MAX (a forged save's: no deal fills one) takes nothing */
     for (int k = 1; k <= run && (k == 1 || to >= TABLEAU); ++k)
-        if (sol_fits(s, s->card[from][n - k] & ~UP, to)) {
+        if (s->len[to] + k <= SOL_MAX && sol_fits(s, s->card[from][n - k] & ~UP, to)) {
             memcpy(&s->card[to][s->len[to]], &s->card[from][n - k], (unsigned)k);
             s->len[to] = (unsigned char)(s->len[to] + k);
             s->len[from] = (unsigned char)(n - k);
@@ -1124,7 +1125,11 @@ int games_open(void *ctx, void *event) {
         g->sn_best.score = 0;
     int bad = !BLOB_IO(GAMES_SOLITAIRE, g->sol, 0) ||
               !games_ok(&g->sol, sizeof g->sol, SOL_MAGIC) || g->sol.cur >= PILES;
-    for (int p = 0; p < PILES; ++p) bad |= g->sol.len[p] > SOL_MAX;
+    for (int p = 0; p < PILES; ++p) {
+        bad |= g->sol.len[p] > SOL_MAX;
+        /* a card is 0-51, UP or not: card_paint's suit[c / 13] is a 4-entry table */
+        for (int i = 0; !bad && i < g->sol.len[p]; ++i) bad |= (g->sol.card[p][i] & ~UP) >= 52;
+    }
     if (bad) sol_new(&g->sol);
     return 0;
 }

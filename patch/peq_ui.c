@@ -203,7 +203,7 @@ static int action(void *ctx, void *event);
  * the value, if any, in grey against the right edge, or left of stock's list_into chevron on a row
  * that opens a screen or picker (INTO: coverflow.c's row_into). Returns the last label, the
  * value's if any. Rows start under the graph where it heads the list. */
-enum { DIM = 1, INTO = 2, SMALL = 4 };
+enum { DIM = 1, INTO = 2, SMALL = 4, LONG = 8 };
 /* The curve's height in the list: whole rows of the theme's, so whole rows fill it at either
  * end. */
 static int graph_head(void) {
@@ -215,12 +215,30 @@ static void *fit(void *label) {
     widget_set_prop_int(label, "style:normal:font_size", 20);
     return label;
 }
+/* LONG: a value of any length (a file's name), in stock's right-aligned ellipsis label (navigation.c's
+ * list_value), grey beside the chevron. It stops short of the caption at x 130, past "Presets" in
+ * the widest row font, Classic's 27 px (ends at x 118). Stock's label keeps 2 px each side; none on
+ * the right ends a name that fits where the row's other values do. Stock draws a cut one from the
+ * label's left, so it can end up to a letter short of them, and scrolls it while the row is selected
+ * (only_focus: the marquee's). ponytail: a fixed column, not the caption's measured width, so a theme
+ * with a wider row font has to move it. */
+static void *long_value(void *item, const char *value, int rh) {
+    void *label = hscroll_label_create(item, 130, 0, 316 - 130, rh);
+    widget_use_style(label, "s_scrlabel_white20r");
+    widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
+    widget_set_prop_int(label, "style:normal:margin_right", 0);
+    hscroll_label_set_only_focus(label, 1);
+    hscroll_label_set_ellipses(label, 1);
+    widget_set_text_utf8(label, value);
+    theme_font(label, ROLE_TITLE, FONT_ROW);
+    return fit(label);
+}
 static void *row_dim(void *view, int index, const char *text, const char *value, int id, int flags) {
     int rh = page_h(48);
     void *item = list_item_create(view, 0, (ui.graph ? graph_head() : 0) + index * rh, 375, rh),
          *label = 0;
     widget_use_style(item, "s_listitem_black");
-    for (int i = 0; i < 1 + !!value; ++i) {
+    for (int i = 0; i < 1 + (value && !(flags & LONG)); ++i) {
         label = label_create(item, ROW_X, 0, 375 - 2 * ROW_X, rh);
         widget_use_style(label, "s_label_white20l");
         if (i || flags & DIM || id < 0) widget_set_prop_int(label, "style:normal:text_color", (int)CF_GREY);
@@ -229,6 +247,7 @@ static void *row_dim(void *view, int index, const char *text, const char *value,
         theme_font(label, ROLE_TITLE, FONT_ROW); /* by its text */
         if (!i && flags & SMALL) widget_set_prop_int(label, "style:normal:font_size", 16);
     }
+    if (value && flags & LONG) label = long_value(item, value, rh);
     if (flags & INTO) row_into(item, rh);
     widget_on(item, EVT_CLICK, action, (void *)(long)id);
     return label;
@@ -722,7 +741,7 @@ static int render(const void *unused) {
          * theme's row font, its caption wider, 4 at 15. */
         if (on_auto()) widget_set_prop_int(shown, "style:normal:font_size", rh == 48 ? 16 : 15);
         /* the draft's preset */
-        shown = row_dim(view, n++, "预设", ui.name[0] ? ui.name : 0, MENU, INTO);
+        shown = row_dim(view, n++, "预设", ui.name[0] ? ui.name : 0, MENU, INTO | LONG);
         if (ui.name[0]) fit(shown);
         /* 16px band captions leave room for the gain and chevron, even at 20000 Hz on one channel. */
         for (int i = 0; i < PEQ_BANDS && (i < 10 || i <= ui.draft.count); ++i) {

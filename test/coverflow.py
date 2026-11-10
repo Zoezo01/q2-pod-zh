@@ -33,6 +33,8 @@ static unsigned char shim_artist_type[4] __attribute__((unused)); /* Artists: Ar
 #define artist_type shim_artist_type
 #define pthread_mutex_lock shim_lock
 #define pthread_mutex_unlock shim_unlock
+int shim_join(pthread_t, void **);
+#define pthread_join shim_join
 #define statfs shim_statfs
 #define tk_snprintf snprintf
 extern void *shim_queue;
@@ -52,7 +54,7 @@ const unsigned *widget_get_text(void *);
 int canvas_set_font(void *, const char *, unsigned);
 float canvas_measure_text(void *, const unsigned *, unsigned);
 """ + ''.join(f'{r} {n}({a});\n' for n in """
-canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
+canvas_fill_rect getAllAlbum getMusicByAlbum toolsQueryDbTable toolsUpdateDbTable toolsGetUserStop album_row toolsThumbSpecCover toolsGetAlbumCover toolsGetExternCover _create_deque deque_init_copy deque_clear
 deque_init _deque_push_back deque_pop_back
 deque_assign deque_destroy deque_size deque_at window_create widget_factory
 widget_factory_create_widget image_create hscroll_label_create set_hscroll_label_attribute
@@ -84,11 +86,12 @@ TEST = r"""
 #include <stdint.h>
 #undef pthread_mutex_lock /* the stubs below record, then take the real lock */
 #undef pthread_mutex_unlock
+#undef pthread_join /* the payload's joins say so (shim_join); the tests' own are libc's */
 int coverflow_home(void *, void *), coverflow_player_cover(const char *, const char *, int, int);
 const char *track_name(char *, unsigned, void *);
 
 /* Widgets: raw memory first, so the payload's field reads (SLIDE_INDEX) land in it. */
-typedef struct { char raw[0x100]; int parent, visible, numb, kids[512], nkids, bg; char type[32], text[160], image[600];
+typedef struct { char raw[0x100]; int parent, visible, numb, kids[512], nkids, bg, fg; char type[32], text[160], image[600];
                  handler click; void *ctx; } widget;
 static widget w[8192];
 static int nw;
@@ -106,7 +109,8 @@ static void *placed(void *x, int left, int top, int ww, int h) {
     r[0] = left; r[1] = top; r[2] = ww; r[3] = h;
     return x;
 }
-void *window_create(void *p, int x, int y, int ww, int h) { return make(0, "window"); }
+static int window_fail; /* no memory for a page */
+void *window_create(void *p, int x, int y, int ww, int h) { return window_fail ? 0 : make(0, "window"); }
 void *widget_factory(void) { return (void *)1; }
 void *widget_factory_create_widget(void *f, const char *t, void *p, int x, int y, int ww, int h) { return placed(make(p, t), x, y, ww, h); }
 #define CREATE(name, type) void *name(void *p, int x, int y, int ww, int h) { return placed(make(p, type), x, y, ww, h); }
@@ -182,8 +186,15 @@ int widget_animator_prop_set_params(void *a, double f, double t) { return 0; }
 int widget_animator_start(void *a) { return 0; }
 int widget_set_visible(void *x, int v, int r) { W(x)->visible = v; return 0; }
 int widget_get_prop_int(void *x, const char *k, int d) { return d; }
-int widget_set_prop_int(void *x, const char *k, int v) { if (!strcmp(k, "style:normal:bg_color")) W(x)->bg = v; return 0; }
-const char *widget_get_prop_str(void *x, const char *k, const char *d) { return strcmp(k, "image") ? d : W(x)->image; }
+int widget_set_prop_int(void *x, const char *k, int v) {
+    if (!strcmp(k, "style:normal:bg_color")) W(x)->bg = v;
+    if (!strcmp(k, "style:normal:text_color")) W(x)->fg = v;
+    return 0;
+}
+/* widget_set_name writes the type's place, so a window's name reads back from there */
+const char *widget_get_prop_str(void *x, const char *k, const char *d) {
+    return !strcmp(k, "image") ? W(x)->image : !strcmp(k, "name") ? W(x)->type : d;
+}
 static handler touch_fn, changed_fn; /* the covers' touch and the slide_menu's change */
 unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
     if (!x) return 0;
@@ -231,8 +242,10 @@ static unsigned letter_shown;
 static int letters;
 void coverflow_letter(void *x, unsigned letter, unsigned now) { letter_shown = letter, ++letters; }
 int widget_invalidate_force(void *x, void *y) { wm_repaints += x == &wm_repaints; return 0; }
-unsigned widget_count_children(void *x) { return x == &wm_repaints ? 0 : W(x)->nkids; } /* no window stack */
-void *widget_get_child(void *x, unsigned i) { return &w[W(x)->kids[i]]; }
+static void *wm_stack[4]; /* the window manager's windows, bottom first: none unless a test stacks them */
+static int wm_n;
+unsigned widget_count_children(void *x) { return x == &wm_repaints ? (unsigned)wm_n : (unsigned)W(x)->nkids; }
+void *widget_get_child(void *x, unsigned i) { return x == &wm_repaints ? wm_stack[i] : &w[W(x)->kids[i]]; }
 static void *home_art, *home_list; /* iPod Home's art and list; none in the carousel tests */
 void *widget_lookup(void *x, const char *n, int r) {
     return !x ? 0 : !strcmp(n, "img_coverflow") ? x : !strcmp(n, "img_homeart") ? home_art :
@@ -265,12 +278,25 @@ int widget_paint(void *w, void *c) { return 0; }
 int widget_set_prop_str(void *w, const char *k, const char *v) { return 0; }
 int widget_destroy(void *w) { return 0; }
 int canvas_translate(void *c, int x, int y) { return 0; }
-void *canvas_offline_create(unsigned ww, unsigned h, unsigned f) { return 0; }
+/* Stock's off-screen canvas, when offline_ok: the screen's size and BGRA8888 format, its pixels offline[] */
+static int offline_ok;
+static unsigned offline[320 * 375];
+static char offline_lcd[0x200], offline_canvas[0x100];
+void *canvas_offline_create(unsigned ww, unsigned h, unsigned f) {
+    if (!offline_ok) return 0;
+    assert(ww == 375 && h == 320 && f == LCD_BGRA8888);
+    *(void **)(offline_canvas + CANVAS_LCD) = offline_lcd;
+    *(int *)(offline_lcd + LCD_W) = 375, *(int *)(offline_lcd + LCD_H) = 320;
+    *(int *)(offline_lcd + LCD_LINE_LENGTH) = 375 * 4, *(int *)(offline_lcd + LCD_FORMAT) = LCD_BGRA8888;
+    *(void **)(offline_lcd + LCD_OFFLINE_FB) = offline;
+    return offline_canvas;
+}
 int canvas_offline_begin_draw(void *c) { return 0; }
 int canvas_offline_end_draw(void *c) { return 0; }
 int canvas_offline_destroy(void *c) { return 0; }
-int song_seconds(void *r) { return -1; }
-int toolsTimeItoa(char *s, int sec) { return 0; }
+static int track_secs = -1; /* every track's length; -1 unknown */
+int song_seconds(void *r) { return track_secs; }
+int toolsTimeItoa(char *s, int sec) { return sprintf(s, "%d:%02d", sec / 60, sec % 60); }
 unsigned unflip(unsigned v) { return v; }
 unsigned mix(unsigned a, unsigned b, int j, int n) { return a; }
 void bar_title_sync(void *win) {}
@@ -342,9 +368,22 @@ const char *widget_get_type(void *x) { return W(x)->type; }
 int widget_get_visible(void *x) { return W(x)->visible; }
 int tk_strcmp(const char *a, const char *b) { return strcmp(a ? a : "", b ? b : ""); }
 int navigator_back_to_home(void) { return 0; }
-int navigator_back(void) { return 0; }
-int window_manager_close_window_force(void *m, void *x) { return 0; }
-int navigator_to_with_context(const char *n, const void *c) { return 0; }
+static int backs, force_closes;
+static void *force_closed; /* the last window closed unanimated */
+int navigator_back(void) { return ++backs, 0; }
+int window_manager_close_window_force(void *m, void *x) { force_closed = x; return ++force_closes, 0; }
+/* play_folder's: the page, its context and the queue as it stood */
+static char nav_to[32];
+static struct { void *dq; int idx, cls, mode; } nav_ctx;
+static void *nav_queue[64];
+static unsigned nav_n, navs;
+int navigator_to_with_context(const char *n, const void *c) {
+    snprintf(nav_to, sizeof nav_to, "%s", n);
+    memcpy(&nav_ctx, c, sizeof nav_ctx);
+    nav_n = *(const unsigned *)nav_ctx.dq; /* the queue's deque, as below */
+    memcpy(nav_queue, (const char *)nav_ctx.dq + sizeof(unsigned), sizeof nav_queue);
+    return ++navs, 0;
+}
 /* slide_menu: square items as high as the menu, plus the spacer. */
 int slide_menu_item_width(void *x) { return *(int *)(W(x)->raw + W_H); }
 int slide_menu_set_spacer(void *x, int v) { *(int *)(W(x)->raw + SLIDE_SPACER) = v; return 0; }
@@ -353,7 +392,8 @@ static int frames, frame_fail, tex_fail, locks, draws, drawn[4];
 static unsigned shown[CF_VIEW_H * CF_VIEW_W];
 #undef calloc /* the payload's calloc is this shim; the tests' own is libc's */
 void *calloc(size_t, size_t);
-void *shim_calloc(size_t n, size_t size) { return tex_fail && size == 160 * 160 * 4 ? 0 : calloc(n, size); }
+static int calloc_fail; /* no memory at all */
+void *shim_calloc(size_t n, size_t size) { return calloc_fail || (tex_fail && size == 160 * 160 * 4) ? 0 : calloc(n, size); }
 void *bitmap_create_ex(unsigned ww, unsigned h, unsigned line, unsigned format) {
     if (frame_fail) return 0;
     unsigned *b = calloc(1, 0x48);
@@ -366,11 +406,17 @@ int bitmap_destroy(void *b) { free(*(void **)((char *)b + 0x14)); free(b); --fra
 unsigned char *bitmap_lock_buffer_for_write(void *b) { ++locks; return *(unsigned char **)((char *)b + 0x14); }
 int bitmap_unlock_buffer(void *b) { return 0; }
 unsigned bitmap_get_line_length(void *b) { return ((unsigned *)b)[2]; }
+static int moves_ok, moves, moved[2][2][4]; /* moves_ok: a draw elsewhere than its source, src and dst kept */
 int canvas_draw_image(void *c, void *b, const void *src, const void *dst) {
     const int *r = dst, *q = src;
     if (!(((unsigned short *)b)[6] & 1) && (((unsigned *)b)[0] == 100 || ((unsigned *)b)[0] == 96)) {
         assert(!memcmp(q, (int[]){ 0, 0, ((unsigned *)b)[0], ((unsigned *)b)[1] }, 16));
         memcpy(note_drawn, r, sizeof note_drawn);
+        return 0;
+    }
+    if (moves_ok && memcmp(r, q, 16)) {
+        assert(moves < 2 && ((unsigned short *)b)[6] & 1);
+        memcpy(moved[moves][0], q, 16), memcpy(moved[moves++][1], r, 16);
         return 0;
     }
     ++draws;
@@ -492,6 +538,8 @@ int ringnav_artist_view(void) { return artist_view; }
 int ringnav_artist_az(void) { return 0; }
 int album_row(void *a, int n, char **v, char **c) { return 0; }
 int toolsUpdateDbTable(const char *db, const char *sql) { return 1; } /* only a drop-flag scan writes */
+int toolsGetUserStop(void) { return 0; }
+int msg_counting(void) { return 0; }
 int toolsQueryDbTable(const char *db, const char *sql, void *row, int sort) {
     assert(!strcmp(db, "/mnt/data/database.db") && !sort && strstr(sql, "group by album COLLATE NOCASE,ifnull(albumsonger"));
     deque *d = shim_dir;
@@ -581,7 +629,12 @@ unsigned char shim_memory[0x800]; /* g_memory_info, which album_memory fills */
 unsigned char shim_covertype;
 char shim_lastcover[1024], shim_id3[2716];
 static widget *page;
-static void *release(void *unused) { usleep(50000); blocked = 0; return 0; }
+/* A payload join has begun: worker_stop sets the cancel, then joins the art worker. */
+static volatile int joining;
+int shim_join(pthread_t t, void **result) { joining = 1; return pthread_join(t, result); }
+/* The album in hand finishes once the cancel is set, however late the main thread gets to stop(); the caller clears
+   joining before it starts this. */
+static void *release(void *unused) { while (!joining) usleep(1000); blocked = 0; return 0; }
 static void open_page(void) {
     widget home;
     memset(&home, 0, sizeof(home));
@@ -2319,6 +2372,19 @@ static void thumb_wheel(void) {
 /* ---- Classic's thumb on the shipped numbers (theme.xml's coverflow.shelf): the cap at every
    sensitivity, the letters after the dwell and back, and a long spin's landing. ---- */
 static int initial_of(int i) { char c = names[i][0]; return c >= 'a' && c <= 'z' ? c - 32 : c; }
+static int first_of_letter(int i) { return i >= 0 && (!i || initial_of(i) != initial_of(i - 1)); }
+/* The first album of the letter after (dir 1) or before i's, round the ends. */
+static int next_letter(int i, int n, int dir) {
+    int j = i;
+    do j = (j + dir + n) % n; while (initial_of(j) == initial_of(i));
+    while (dir < 0 && !first_of_letter(j)) --j;
+    return j;
+}
+static int named_album(widget *covers_view, int n) {
+    int i = 0;
+    while (i < n && strcmp(album_caption(covers_view), names[i])) ++i;
+    return i < n ? i : -1;
+}
 static void thumb_shipped(void) {
     static const cf_style_t shipped = CF_SHIPPED;
     const cf_style_t fixture = shim_themes[1].cf;
@@ -2362,21 +2428,25 @@ static void thumb_shipped(void) {
     top_window = page;
     th_pass(0, 17);
 
-    /* At jump_at for jump_ms, letters: each re-centres the row, at rest, on a letter's first album,
-       its letter shown; on in the album order, one a jump_ticks of travel. */
+    /* At jump_at for jump_ms, letters: each names a letter's first album, its letter shown, and no
+       geometry moves at one: the goal goes on by this pass's share and the covers keep moving. Each
+       letter in turn, however far the covers have gone since the last, one a jump_ticks of travel. */
     th_down();
-    int letters0 = letters, t = 0, prev = -1, spread = 0, canvas[16] = { 0 };
+    int letters0 = letters, t = 0, spread = 0, letter_at = 0, canvas[16] = { 0 };
     while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
     assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 300);
     for (int i = 0; i < 30; ++i) {
         int was = letters;
+        float goal = th[T_GOAL];
         if (i) th_spin(150, 17);
         if (letters == was && i) continue;
-        assert(th[T_POS] == 0 && th[T_GOAL] == 0 && th[T_LEAD] == 0 && th[T_ON]);
-        assert(CAPTION(*index) && (*index == 0 || initial_of(*index) != initial_of(*index - 1)));
-        assert(letter_shown == (unsigned)initial_of(*index) || (!letter_shown && *index == 0));
-        assert(prev < 0 || *index > prev || *index == 0); /* forward, wrapping to the first */
-        prev = *index;
+        float went = th[T_GOAL] - goal;
+        assert(th[T_ON] && th[T_VEL] > .005f && (!i || fabsf(went) > 32 || (went > 0 && went < .5f)));
+        int at = named_album(covers_view, n);
+        assert(first_of_letter(at) || !letter_shown);
+        assert(!letter_shown || letter_shown == (unsigned)initial_of(at));
+        assert(!i || at == next_letter(letter_at, n, 1));
+        letter_at = at;
         /* a frame decodes two covers at most, nearest first; the poll asks for frames until done */
         int l0 = loads;
         for (int f = 0; f < 10; ++f) {
@@ -2388,46 +2458,52 @@ static void thumb_shipped(void) {
     }
     assert(spread);
     assert(letters >= letters0 + 3);
-    /* Once in, letters while the thumb turns on from fast_at: a re-grip (a still moment, then a slow
-       turn) keeps them, no album moving, and the cap's speed again goes on at once, no second dwell. */
-    #define LANDED() (th[T_POS] == 0 && th[T_GOAL] == 0 && CAPTION(*index) && \
-                      (*index == 0 || initial_of(*index) != initial_of(*index - 1)))
+    /* However hard the spin, a steady beat: jump_pace apart. */
+    int beat = letters;
+    th_spin(150, 1700);
+    assert(letters - beat >= 1700 / shipped.jump_pace - 2 && letters - beat <= 1700 / shipped.jump_pace);
+    /* Once in, letters while the thumb turns on from fast_at: a still moment then a slower turn keep
+       them, and the cap's speed again goes on at once, no second dwell. */
     int was = letters;
     th_spin(0, 34);
-    for (int i = 0; i < 8; ++i) th_spin(50, 17), assert(th[T_GOAL] == 0 && th[T_POS] == 0);
+    th_spin(50, 136);
     assert(letters > was);
     was = letters;
-    th_spin(150, 102);
-    assert(letters >= was + 2 && LANDED());
-    /* A moderate turn (40 ticks/s, under half the cap's) reads them: one each jump_ticks, each
-       landed on its letter's first album. */
-    th_spin(40, 102); /* the rate falls to it in rate_down */
+    th_spin(150, 340);
+    assert(letters >= was + 2);
+    /* A lift shorter than a letter shows keeps them: the next spin goes on from there, no dwell. */
+    wheel_held = 0;
+    th_spin(0, 170);
+    th_down();
     was = letters;
-    for (int i = 0; i < 59; ++i) {
-        int before = letters;
-        th_spin(40, 17);
-        assert(letters - before <= 1 && (letters == before || LANDED()));
-    }
-    assert(letters >= was + 40 / shipped.jump_ticks - 1 && letters <= was + 40 / shipped.jump_ticks + 1);
-    /* Under fast_at: album by album again under the thumb, on from the letter's album, never back. */
-    th_spin(15, 102);
-    int jumped = letters, from = *index;
-    th_spin(15, 600);
-    float on = AT() - (float)from;
+    th_spin(150, 170);
+    assert(letters > was);
+    /* A moderate turn (30 ticks/s) reads them: one each jump_ticks. */
+    th_spin(30, 102); /* the rate falls to it in rate_down */
+    was = letters;
+    th_spin(30, 1003);
+    assert(letters >= was + 30 / shipped.jump_ticks - 2 && letters <= was + 30 / shipped.jump_ticks + 1);
+    /* Under fast_at: album by album again under the thumb, with nothing thrown back. */
+    th_spin(10, 102);
+    int jumped = letters;
+    float on = AT();
+    th_spin(10, 600);
+    on = AT() - on;
     on -= (float)n * floorf(on / (float)n + .5f);
     assert(letters == jumped && on > .3f && on < 3);
     th_rest();
     assert(CAPTION(*index) && !*(int *)(s->raw + SLIDE_OFFSET));
-    /* A lift in letters lands on the letter shown, its first album. */
+    /* A lift in letters lands on the letter shown, its first album, however far the covers had
+       flowed on from it. */
     th_down();
     for (t = 0; letters == jumped && t < 2000; t += 17) th_spin(150, 17);
     for (was = letters; letters == was;) th_spin(150, 17);
-    from = *index;
-    assert(LANDED() && letter_shown == (unsigned)initial_of(from));
+    unsigned shown = letter_shown;
+    th_spin(150, 85);
+    assert(letters == was + 1 && shown);
     th_rest();
-    assert(*index == from && !*(int *)(s->raw + SLIDE_OFFSET));
+    assert(first_of_letter(*index) && (unsigned)initial_of(*index) == shown && !*(int *)(s->raw + SLIDE_OFFSET));
     jumped = letters;
-    #undef LANDED
     /* A pass a ms after the last moves the goal as one a frame long: the same ticks, as far. */
     float by[2];
     for (int k = 0; k < 2; ++k) {
@@ -2444,8 +2520,8 @@ static void thumb_shipped(void) {
        albums, so the follower's numbers stay small and it lands exactly, on the album named. */
     th_down();
     float went = 0, last = AT(), most = 0;
-    for (int i = 0; i < 7600; ++i) {
-        th_spin(70, 17);
+    for (int i = 0; i < 26000; ++i) {
+        th_spin(30, 17);
         float d = AT() - last;
         went += d - (float)n * floorf(d / (float)n + .5f);
         last = AT();
@@ -2461,18 +2537,97 @@ static void thumb_shipped(void) {
     /* Under jump_at, however long: albums, never letters. */
     th_down();
     int l0 = letters;
-    th_spin(60, 2000);
+    th_spin(28, 2000);
     assert(letters == l0);
     th_rest();
-    /* A re-grip's dip under jump_at, still over fast_at, drains the dwell rather than dropping it:
-       letters come before a dwell started again after the dip would bring them. */
+    /* A re-grip's dip under jump_at takes its own ms off the dwell rather than dropping it: letters
+       come before a dwell started again after the dip would bring them. */
     th_down();
     int tl = 0;
     th_spin(150, 255), tl += 255;
-    th_spin(40, 102), tl += 102;
+    th_spin(25, 204), tl += 204;
     assert(letters == l0);
     while (letters == l0 && tl < 2000) th_spin(150, 17), tl += 17;
-    assert(letters > l0 && tl < 255 + 102 + shipped.jump_ms);
+    assert(letters > l0 && tl < 255 + 204 + shipped.jump_ms);
+    th_rest();
+    /* A lift just short of the dwell starts no letters: the rate's fall after it isn't a spin. */
+    th_down();
+    l0 = letters;
+    th_spin(150, shipped.jump_ms - 34);
+    assert(letters == l0);
+    wheel_held = 0;
+    th_spin(0, 170);
+    assert(letters == l0);
+    th_rest();
+    /* A letter earned before a lift, waiting on its beat, doesn't fire after it: the lift lands on
+       the letter shown. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(150, 68);
+    was = letters;
+    unsigned earned = letter_shown;
+    wheel_held = 0;
+    th_spin(0, 340);
+    assert(letters == was);
+    th_rest();
+    assert(first_of_letter(*index) && (unsigned)initial_of(*index) == earned);
+    /* A creeping thumb on the quick loop of a page not repainting, a unit in twelve 8 ms passes, is a
+       slow thumb: albums again, under it. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    was = letters;
+    th_pass(-1, 8);
+    for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    th_pass(-1, 8);
+    for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    float at = AT();
+    for (int i = 0; i < 40; ++i) {
+        th_pass(-1, 8);
+        for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    }
+    float crept = AT() - at;
+    crept -= (float)n * floorf(crept / (float)n + .5f);
+    assert(letters == was && crept > .5f);
+    th_rest();
+    /* A lift with the covers at rest stays where they are: no change of pictures on a still row. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(30, 1207); /* long enough for the lag of the spin to go */
+    for (was = letters; letters == was;) th_spin(30, 17);
+    th_spin(30, 153); /* most of an album on from the letter's */
+    th_spin(0, 238);
+    assert(fabsf(th[T_VEL]) < .004f);
+    int still = ((int)floorf(AT() + .5f) % n + n) % n;
+    th_rest();
+    assert(*index == still);
+    /* Nor does a re-grip onto a still row: the letter it had earned waits for the covers to move. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(40, 1207);
+    for (was = letters; letters == was;) th_spin(40, 17);
+    th_spin(40, 102);
+    wheel_held = 0;
+    th_spin(0, 204);
+    wheel_held = 1;
+    th_spin(0, 51);
+    assert(fabsf(th[T_VEL]) < .004f);
+    was = letters;
+    th_pass(-6, 17);
+    assert(letters == was);
+    th_rest();
+
+    /* Turned back too: the covers leave a letter's first album at once, going that way. Round the
+       start to the last letter. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(-150, 17);
+    letter_at = named_album(covers_view, n);
+    for (int i = 0; i < 12; ++i) {
+        for (was = letters; letters == was;) th_spin(-150, 17);
+        int at = named_album(covers_view, n);
+        assert(at == next_letter(letter_at, n, -1) && first_of_letter(at) && letter_shown == (unsigned)initial_of(at));
+        letter_at = at;
+    }
     th_rest();
 
     close_page();
@@ -2480,6 +2635,270 @@ static void thumb_shipped(void) {
     th_pass(0, 17);
     shim_themes[1].cf = fixture;
     #undef AT
+}
+
+/* ---- Pages: Classic's flip, the scoped pages' cards, Go to Album, the build's Cancel row. ---- */
+extern int coverflow_turning(void), coverflow_rated(int (*)(void *)), coverflow_goto_album(void *), coverflow_shows_album(void *);
+extern void *coverflow_tracks(void *);
+extern void coverflow_by_year(void *);
+static int under(const widget *x, const widget *a) {
+    for (; x->parent; x = &w[x->parent])
+        if (&w[x->parent] == a) return 1;
+    return 0;
+}
+static widget *label_in(widget *v, int k) { /* v's k-th label of its own */
+    for (int i = 0; i < v->nkids; ++i)
+        if (!strcmp(w[v->kids[i]].type, "hscroll_label") && !k--) return &w[v->kids[i]];
+    return 0;
+}
+static widget *panel_of(void) { /* the flip's panel, the page's newest view at its column */
+    for (int i = nw; i > page - w; --i)
+        if (!strcmp(w[i].type, "view") && w[i].parent == page - w && *(int *)w[i].raw == PANEL_X) return &w[i];
+    return 0;
+}
+static widget *row_under(widget *a, int k) { /* the k-th list_item under a */
+    for (int i = (int)(a - w) + 1; i <= nw; ++i)
+        if (!strcmp(w[i].type, "list_item") && under(&w[i], a) && !k--) return &w[i];
+    return 0;
+}
+
+/* Classic's flip (docs/ipod.md#cover-flow): Centre on a cover builds its album's panel, which stock paints off
+   screen as the turn's back, then over 270 ms the cover turns into it, the side covers parting each way; at rest
+   the panel stands over the parted shelf. A track plays the album from it; Return turns back, a key mid-turn
+   does nothing. With no room for a turn's buffers the text list stands in, or Return goes straight back. */
+static void flip_turn(void) {
+    theme_t *t = &shim_themes[1];
+    t->painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT, t->font[ROLE_TITLE] = FONT_CLASSIC_LIGHT;
+    classic = 1, frame_fail = 0, square_art = 1, offline_ok = 1, moves_ok = 1, track_secs = 245;
+    for (int i = 0; i < 320 * 375; ++i) offline[i] = 0xff302010u; /* the panel as stock paints it: BGRA 10 20 30 */
+    open_page();
+    widget *s = slide(), *cv = &w[s->parent];
+    assert(label_in(cv, 1)->fg == (int)CF_GREY_BOLD); /* the artist in Classic's grey, its dark half's */
+    static char lcd[0x200];
+    int canvas[32] = { 0 }, a = 1, H = t->cf.view_h, y = t->cf.top + 80;
+    *(void **)((char *)canvas + CANVAS_LCD) = lcd;
+    *(unsigned *)(lcd + LCD_FILL_COLOR) = 0x12345678;
+    *(const char **)(records[a] + REC_TITLE) = "Opening";
+    *(int *)(s->raw + SLIDE_INDEX) = a, *(int *)(s->raw + SLIDE_OFFSET) = 0;
+    clock_ms = 1000;
+    w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+    int (*to_tracks)(const void *) = timer_fn;
+    timer_fn = 0, to_tracks(0);
+    int (*tick)(const void *) = timer_fn;
+    widget *panel = panel_of(), *row = panel ? row_under(panel, 0) : 0;
+    assert(tick && coverflow_turning() && frames == 2 && panel && !panel->visible && row && !row_under(panel, 1));
+    assert(!s->visible && !label_in(cv, 0)->visible && !label_in(cv, 1)->visible && cv->numb); /* the shelf's surface goes */
+    assert(!strcmp(label_in(panel, 0)->text, names[a]) && !strcmp(label_in(panel, 1)->text, "Artist"));
+    assert(!strcmp(label_in(row, 0)->text, "Opening") && !strcmp(label_in(row, 1)->text, "4:05"));
+    /* The frames: the cover itself at first; half way edge on, the side covers parted (measured against the rest's
+       parting below); at the end the panel as captured. */
+    static unsigned zero[CF_VIEW_W], half[CF_VIEW_W];
+    coverflow_paint(cv, canvas);
+    memcpy(zero, shown + y * CF_VIEW_W, sizeof zero);
+    clock_ms = 1000 + 135;
+    assert(tick(0) == 8);
+    coverflow_paint(cv, canvas);
+    memcpy(half, shown + y * CF_VIEW_W, sizeof half);
+    assert(zero[CF_CX] != 0xff000000u && half[CF_CX] == 0xff000000u && half[CF_CX - 1] == 0xff000000u);
+    clock_ms = 1000 + 270;
+    coverflow_paint(cv, canvas);
+    assert(shown[120 * CF_VIEW_W + CF_CX] == 0xff102030u && shown[120 * CF_VIEW_W + PANEL_X + 5] == 0xff102030u);
+    assert(tick(0) == 0 && !coverflow_turning() && panel->visible && frames == 1); /* the turn's buffers go */
+    /* At rest: the shelf's halves parted, the paper between them and below the shelf, the LCD's fill back. */
+    moves = fills = 0;
+    coverflow_paint(cv, canvas);
+    assert(moves == 2 && fills == 2 && fill_color == 0x12345678);
+    int part = moved[0][0][0];
+    assert(part > 0 && moved[0][1][0] == 0 && moved[0][0][2] == CF_CX - part && moved[0][1][2] == CF_CX - part);
+    /* Half way through the turn (its ease's own middle) the halves had parted half as far, symmetrically. */
+    for (int x = 0; x < 80; ++x)
+        assert(half[x] == zero[x + part / 2] && half[CF_VIEW_W - 1 - x] == zero[CF_VIEW_W - 1 - part / 2 - x]);
+    assert(moved[1][0][0] == CF_CX && moved[1][1][0] == CF_CX + part && moved[1][1][2] == CF_VIEW_W - CF_CX - part);
+    assert(moved[0][0][3] == H && moved[1][1][3] == H && fill[0].x == CF_CX - part && fill[0].w == 2 * part && fill[0].h == H);
+    assert(fill[1].y == H && fill[1].w == CF_VIEW_W && fill[1].y + fill[1].h == 294 && fill[0].color == 0xff000000u);
+    /* The panel's own paint: its sheet the paper and the header's rows, the panel over its rows the header's
+       shadow and a border just outside. */
+    fills = 0;
+    coverflow_paint(&w[panel->kids[0]], canvas);
+    assert(fills > 2 && fill[0].x == 0 && fill[0].y == 0 && fill[0].w == BACK_W && fill[1].h == 1 && fill[fills - 1].y == fills - 2);
+    fills = 0;
+    coverflow_paint(panel, canvas);
+    assert(fills == 12 && fill[8].x == -1 && fill[8].y == -1 && fill[8].w == BACK_W + 2 && fill[11].x == BACK_W);
+    /* Light Mode: the shelf drawn again over the light paper. */
+    int was = locks;
+    light = 1, moves = fills = 0;
+    coverflow_paint(cv, canvas);
+    assert(locks == was + 1 && fill[0].color == 0xffffffffu);
+    light = 0, moves = fills = 0;
+    coverflow_paint(cv, canvas);
+    assert(locks == was + 2 && fill[0].color == 0xff000000u);
+    /* A track plays the album from it, by album (0xff10, resumed by name); with the card gone, the title says so. */
+    navs = 0;
+    row->click(row->ctx, 0);
+    assert(navs == 1 && !strcmp(nav_to, "playing_page") && nav_ctx.dq == coverflow_tracks(page) && !nav_ctx.idx);
+    assert(nav_ctx.cls == 0xff10 && nav_ctx.mode == 2 && nav_n == 1 && nav_queue[0] == records[a]);
+    assert(!shim_memory[0x60d] && !strcmp((char *)shim_memory + 0x611, names[a]));
+    char away[620];
+    snprintf(away, sizeof away, "%.600s.away", paths[a]);
+    rename(paths[a], away);
+    row->click(row->ctx, 0);
+    assert(navs == 1 && !strcmp(label_in(panel, 0)->text, "Storage unavailable"));
+    rename(away, paths[a]);
+    /* Centre while it stands: the panel stays. Return turns back; a key mid-turn does nothing. */
+    w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+    run();
+    assert(panel_of() == panel && !coverflow_turning());
+    key(KEY_RETURN);
+    assert(coverflow_turning() && frames == 2);
+    key(KEY_RETURN);
+    assert(coverflow_turning());
+    clock_ms += 270;
+    assert(tick(0) == 0 && !coverflow_turning() && frames == 1);
+    assert(s->visible && label_in(cv, 0)->visible && cv->visible && !cv->numb && !coverflow_tracks(page));
+    /* No room for the turn: the text list; none for the turn back: straight to the covers. */
+    frame_fail = 1;
+    w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+    run();
+    widget *caption = 0; /* Classic's page title is named for the bar, which reads it */
+    for (int i = nw; !caption && i > page - w; --i)
+        if (!strcmp(w[i].type, PAGE_TITLE)) caption = &w[i];
+    assert(!coverflow_turning() && panel_of() == panel && caption && !strcmp(caption->text, names[a]) && !cv->visible);
+    key(KEY_RETURN);
+    assert(cv->visible);
+    frame_fail = 0;
+    w[s->kids[a]].click(w[s->kids[a]].ctx, 0);
+    to_tracks = timer_fn;
+    timer_fn = 0, to_tracks(0);
+    clock_ms += 270;
+    assert(tick(0) == 0 && panel_of() != panel && panel_of()->visible);
+    frame_fail = 1;
+    key(KEY_RETURN);
+    assert(!coverflow_turning() && cv->visible && s->visible && frames == 1);
+    frame_fail = 0;
+    close_page();
+    assert(!frames);
+    light = 1;
+    open_page();
+    assert(label_in(&w[slide()->parent], 1)->fg == (int)0xffffffffu); /* the light half's: the ink, as the album's */
+    close_page();
+    light = 0;
+    t->painter[PAINT_PAGES] = PAGES_STOCK, t->font[ROLE_TITLE] = 0;
+    classic = 0, square_art = 0, offline_ok = 0, moves_ok = 0, track_secs = -1;
+    *(const char **)(records[a] + REC_TITLE) = 0;
+}
+
+static int no_hearts(void *r) { return 0; }
+static int rated_sort(void) {
+    int v = -1;
+    FILE *f = fopen(PEQ_ROOT "/mnt/data/ringnav-ratedsort", "rb");
+    if (f) assert(fread(&v, sizeof v, 1, f) == 1), fclose(f);
+    return v;
+}
+/* An artist's All albums card plays every album of theirs, in the covers' order, as one library queue; Return closes
+   the artist page under the covers too. The rated albums' Sort card steps their own order, saved apart from the
+   library's, and stays on the card. Go to Album's page is the album's tracks alone. */
+static void scoped_pages(void) {
+    rescan();
+    deque *d = _create_deque(0);
+    d->at[d->n++] = records[6], d->at[d->n++] = records[8];
+    page = &w[nw + 1];
+    assert(coverflow_artist(d));
+    run();
+    widget *s = slide(), *cv = &w[s->parent];
+    assert(s->nkids == 3);
+    navs = 0;
+    w[s->kids[2]].click(w[s->kids[2]].ctx, 0);
+    run();
+    assert(navs == 1 && !strcmp(nav_to, "playing_page") && nav_ctx.cls == 0xf001 && !nav_ctx.idx && nav_ctx.mode == 2);
+    assert(nav_n == 2 && nav_queue[0] == records[6] && nav_queue[1] == records[8]);
+    char away[620];
+    snprintf(away, sizeof away, "%.600s.away", paths[6]);
+    rename(paths[6], away);
+    w[s->kids[2]].click(w[s->kids[2]].ctx, 0);
+    run();
+    assert(navs == 1 && !strcmp(album_caption(cv), "Storage unavailable"));
+    rename(away, paths[6]);
+    widget *artist_page = make(0, "artistinfo_page");
+    wm_stack[0] = artist_page, wm_stack[1] = page, wm_n = 2;
+    backs = force_closes = 0;
+    key(KEY_RETURN);
+    assert(force_closes == 1 && force_closed == artist_page && backs == 1);
+    snprintf(artist_page->type, sizeof artist_page->type, "home_page"); /* not an artist's: it stays */
+    key(KEY_RETURN);
+    assert(force_closes == 1 && backs == 2);
+    wm_n = 0;
+    close_page();
+    assert(!coverflow_rated(no_hearts)); /* nothing rated: no page */
+    page = &w[nw + 1];
+    assert(coverflow_rated(five_hearts));
+    run();
+    s = slide();
+    int n = s->nkids - 1, lib = saved_sort();
+    unlink(PEQ_ROOT "/mnt/data/ringnav-ratedsort");
+    static const char *const steps[] = { "Sort: Album", "Sort: Artist" };
+    for (int k = 0; k < 2; ++k) {
+        w[s->kids[n]].click(w[s->kids[n]].ctx, 0);
+        run();
+        s = slide();
+        assert(rated_sort() == k && saved_sort() == lib && *(int *)(s->raw + SLIDE_INDEX) == n);
+        assert(!strcmp(album_caption(&w[s->parent]), steps[k]));
+    }
+    close_page();
+    page = &w[nw + 1];
+    assert(coverflow_goto_album(records[0]));
+    assert(!strcmp(title(), names[0]) && !slide() && coverflow_shows_album(records[0]) && !coverflow_shows_album(records[1]));
+    backs = 0;
+    key(KEY_RETURN);
+    assert(backs == 1); /* no covers under it: Return closes the page */
+    close_page();
+    assert(!coverflow_shows_album(records[0]));
+    static char gone[0x60];
+    *(const char **)(gone + REC_ALBUM) = "Nowhere", *(const char **)(gone + REC_PATH) = "/x";
+    assert(!coverflow_goto_album(gone)); /* no tracks: nothing opens */
+    window_fail = 1;
+    assert(!coverflow_goto_album(records[0]) && !coverflow_rated(five_hearts)); /* no page to open */
+    window_fail = 0;
+    /* An artist page's albums with no memory to sort them keep their order. */
+    void *mine = _create_deque(0);
+    _deque_push_back(mine, records[5]), _deque_push_back(mine, records[7]);
+    ranked[0] = "C", ranked[1] = 0;
+    calloc_fail = 1;
+    coverflow_by_year(mine);
+    calloc_fail = 0;
+    assert(deque_at(mine, 0) == records[5] && deque_at(mine, 1) == records[7]);
+    coverflow_by_year(mine);
+    assert(deque_at(mine, 0) == records[7] && deque_at(mine, 1) == records[5]);
+    ranked[0] = 0;
+    free(mine);
+}
+
+/* The build's Cancel row, as Return: the album in hand finishes, the rest wait for the next open. */
+static void cancel_build(void) {
+    album("Hold", "cover.jpg"), album("Back", "cover.jpg");
+    rescan();
+    block_at = calls;
+    widget home;
+    memset(&home, 0, sizeof(home));
+    coverflow_home(&home, 0);
+    page = &w[nw + 1];
+    home.click(home.ctx, 0);
+    while (!blocked) usleep(1000);
+    widget *row = row_under(page, 0);
+    assert(!strncmp(title(), "Preparing artwork", 17) && row && !strcmp(label_in(row, 0)->text, "Cancel"));
+    row->click(row->ctx, 0);
+    pthread_t t;
+    joining = 0;
+    pthread_create(&t, 0, release, 0);
+    run();
+    pthread_join(t, 0);
+    assert(size("Hold") == 9 && size("Back") == -1 && !tmp_files() && slide() && slide()->visible);
+    close_page();
+    block_at = -1;
+    open_page();
+    close_page();
+    assert(size("Back") == 9);
+    albums -= 2;
+    rescan();
 }
 
 int main(void) {
@@ -2580,6 +2999,7 @@ int main(void) {
     int e[16] = {0}; e[EVENT_KEY / 4] = KEY_RETURN;
     w[8190].click(0, e);
     pthread_t t;
+    joining = 0;
     pthread_create(&t, 0, release, 0); /* finish the album in hand once the cancel is set */
     run();
     pthread_join(t, 0);
@@ -2642,6 +3062,9 @@ int main(void) {
     audiobooks();
     ffmpeg_art();
     player_cover();
+    flip_turn();
+    scoped_pages();
+    cancel_build();
     /* Home: the player's cover for its type, once the player has parsed the current track
        (g_lastcover_url is its path), else the track album's Coverflow thumbnail, else the
        placeholder; reloaded only when the track or the usable cover changes, and only while Home
@@ -3070,7 +3493,8 @@ def main():
           ' depth renderer (exact centre, clipping, symmetry, reflection, continuity),'
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
-          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art and its one frame\'s key passed.')
+          ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art and its one frame\'s key passed;'
+          ' Classic\'s flip into an album\'s panel and back, the scoped pages\' cards, Go to Album and the Cancel row passed.')
 
 
 if __name__ == '__main__':

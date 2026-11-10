@@ -447,7 +447,7 @@
     ]
   },
   "stock_row_style_calls": {
-    "purpose": "Queue's rows: the playing row's colour under a set that re-pitches them",
+    "purpose": "Queue's rows: the playing row's mark, and its colour under a set that re-pitches them",
     "sites": [
       ["0x5295dc", "0x0320f809"]
     ]

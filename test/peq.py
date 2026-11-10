@@ -414,7 +414,7 @@ SHIM_H = r"""
 typedef int (*handler)(void *, void *);
 extern volatile unsigned char g_equalizer_flag, g_backlight_status;
 """ + ''.join(f'{r} {n}({a});\n' for n in """
-list_item_create label_create list_view_create scroll_view_create widget_use_style
+list_item_create label_create hscroll_label_create hscroll_label_set_only_focus hscroll_label_set_ellipses list_view_create scroll_view_create widget_use_style
 widget_set_text_utf8 widget_on widget_get_prop_int widget_set_prop_int widget_destroy_children
 widget_resize scroll_view_set_offset widget_invalidate_force timer_add timer_remove
 navigator_back write_int_config widget_factory widget_factory_create_widget widget_set_prop_str
@@ -588,6 +588,9 @@ void *list_item_create(void *p, int x, int y, int ww, int h) { void *r = make(p,
 int shim_row0_y(void) { for (int i = 2; i <= count; ++i) if (w[i].click) return w[i].y; return -1; }
 int shim_rows_bottom(void) { return rows_bottom; }
 void *label_create(void *p, int x, int y, int ww, int h) { void *r = make(p, h); w[(long)r].x = x; return r; }
+void *hscroll_label_create(void *p, int x, int y, int ww, int h) { return label_create(p, x, y, ww, h); }
+int hscroll_label_set_only_focus(void *x, int on) { return 0; }
+int hscroll_label_set_ellipses(void *x, int on) { return 0; }
 /* The theme's rows: a theme with its own pitch has its own text column and, as navigation.c's
  * theme_font, its own font size; the stock pitch's themes write none. */
 static int shim_page_row = 48;
@@ -777,7 +780,11 @@ def editor_check(lib, tmp):
     """The editor's promises, driven through its real click and render paths."""
     (tmp/'shim.h').write_text(SHIM_H)
     (tmp/'shim.c').write_text('#include "peq.h"\n' + SHIM)
-    (tmp/'peq_ui_checks.c').write_text('#include "peq_ui.c"\ndouble check_headroom(const peq_preset *p) { return headroom(p); }\n'
+    (tmp/'peq_ui_checks.c').write_text('#include <stdlib.h>\nstatic int calloc_fails;\n'  # the preset list's calloc, refused on demand
+                                       'static void *check_calloc(size_t n, size_t size) { return calloc_fails ? 0 : calloc(n, size); }\n'
+                                       '#define calloc check_calloc\n#include "peq_ui.c"\n#undef calloc\n'
+                                       'void check_calloc_fails(int on) { calloc_fails = on; }\n'
+                                       'double check_headroom(const peq_preset *p) { return headroom(p); }\n'
                                        'int check_view(void) { return (int)(long)ui.view; }\nint check_graph(void) { return (int)(long)ui.graph; }\n')
     ui = compile_host(tmp, 'peq_ui.so', tmp/'peq_ui_checks.c', ROOT/'patch/peq.c', tmp/'shim.c',
                       '-I', ROOT/'patch', '-include', tmp/'shim.h')
@@ -1108,6 +1115,13 @@ def editor_check(lib, tmp):
     # A picker opens centred on the pitch: its list 224 high, 8 rows.
     click('Balance'); assert (ui.shim_selection() * 28 - 98) == ui.shim_offset() > 0
     ui.shim_return(); ui.shim_close(); ui.shim_theme_rows(48); advanced()
+    # No memory for the list's names: said, and no rows to pick a wrong preset from; the next look lists them.
+    ui.check_calloc_fails(1); click('Presets')
+    assert title() == 'Out of memory; cannot list presets' and not ui.shim_click(b'Batch 0000.peq', 2)
+    assert ui.shim_click(b'Stock presets', 2)
+    ui.check_calloc_fails(0); ui.shim_return(); click('Presets')
+    assert title().startswith('Presets 1/') and ui.shim_click(b'Batch 0000.peq', 2)
+    ui.shim_return()
     print('EQ preset pages: all 8,850 imports, sorting, page boundaries, navigation, save/replace, load and deletion passed.')
     eq3_editor_check(lib, ui, tmp)
 
@@ -1473,6 +1487,7 @@ PLAYER = r"""
 #include <assert.h>
 #include "peq.h"
 int mp3_toc(const unsigned char *h, unsigned n, double t, double *frac, double *length);
+unsigned id3_txxx(const unsigned char *f, unsigned n, char *out, unsigned cap);
 int peq_open(af_instance *af);
 
 char *peq_mpctx; /* the player's MPContext pointer; null: no codec to check */
@@ -1855,8 +1870,125 @@ static void carry_check(void) {
     assert(!unlink(PEQ_ACTIVE));
 }
 
+/* The tap before demo has made its file: looked for on the first block, then once a second of audio
+ * has played since; the block that starts past that second finds it and writes what plays. */
+static void tap_wait_check(void) {
+    static float buf[1000];
+    af_instance af;
+    unlink(VIS_FILE);
+    memset(&af, 0, sizeof af);
+    assert(peq_open(&af) == 1);
+    af_data in = {0, 0, 44100, 1, 0x1d, 4};
+    assert(negotiate(&af, &in) == 1);
+    af_data d = {buf, sizeof buf, 44100, 1, 0x1d, 4};
+    assert(af.play(&af, &d) == &d); /* the first look: no file */
+    vis_tap *t = tap_view();         /* demo makes it now */
+    unsigned since = 0;              /* frames played since that look */
+    for (; since < 44100; since += 1000)
+        assert(af.play(&af, &d) == &d && !t->seq); /* not looked for again within the second */
+    for (int i = 0; i < 1000; ++i) buf[i] = (float)i / 1000;
+    assert(af.play(&af, &d) == &d && t->seq == 1000 && t->rate == 44100);
+    for (int i = 0; i < 1000; ++i) assert(t->ring[i][0] == buf[i] && t->ring[i][1] == buf[i]); /* mono: both sides */
+    af.uninit(&af);
+}
+
+/* Mid-mix (the next track under the held tail): demo's stop drops what is left, as does another track
+ * more than XF_STALE_NS after the last mixed block, while the mixing track's own pause only waits. A
+ * track cut short hands the rest to the next, which plays it at its own rate: 96 kHz reads the 48 kHz
+ * tail half a frame a frame, and the fade goes on from the same share of its second. */
+static unsigned hold_tail(af_instance *a) { /* a 10 s track at 48 kHz holds its last second; its frames out */
+    static float buf[2 * 1024];
+    unsigned n = 0, out = 0;
+    track(a, 48000);
+    while (n < 10 * 48000) out += block(a, buf, 1024, &n, 1, 48000);
+    a->uninit(a);
+    assert(n - out == 48000);
+    return out;
+}
+static void alone(const float *buf, unsigned k, unsigned m) { /* the track's own block, no tail under it */
+    for (unsigned i = 0; i < k; ++i) assert(buf[2 * i] == (float)(m - k + i) && buf[2 * i + 1] == 0);
+}
+static void midmix_check(void) {
+    static float buf[2 * 1024];
+    af_instance a, b, c;
+    unsigned m, k, out, mixed;
+    unlink(PEQ_ACTIVE); /* bypass: exact samples */
+    xfade_view(1000);
+    peq_length = 10;
+    hold_tail(&a);
+    track(&b, 48000);
+    for (m = 0; m < 10 * 1024;) assert(block(&b, buf, 1024, &m, 0, 48000) == 1024 && buf[2 * 1023 + 1] > 0.9f);
+    xfade_view(1000 | 1 << XF_STOPS); /* a stop since the tail was held */
+    k = block(&b, buf, 1024, &m, 0, 48000);
+    assert(k == 1024);
+    alone(buf, k, m);
+    b.uninit(&b);
+
+    xfade_view(1000);
+    hold_tail(&a);
+    track(&b, 48000);
+    for (m = 0; m < 10 * 1024;) block(&b, buf, 1024, &m, 0, 48000);
+    clock_skew += 4; /* the mixing track paused */
+    k = block(&b, buf, 1024, &m, 0, 48000);
+    assert(k == 1024 && fabsf(buf[1] - cosf((10240 + 0.5f) / 48000 * 1.5707963f)) < 1e-5f);
+    b.uninit(&b);
+    clock_skew += 4; /* the next track as long after */
+    track(&c, 48000);
+    m = 0;
+    k = block(&c, buf, 1024, &m, 0, 48000);
+    assert(k == 1024);
+    alone(buf, k, m);
+    c.uninit(&c);
+    clock_skew = 0;
+
+    out = hold_tail(&a);
+    track(&b, 48000);
+    for (m = 0; m < 10 * 1024;) block(&b, buf, 1024, &m, 0, 48000); /* 10240 of the tail's 48000 */
+    b.uninit(&b);
+    track(&c, 96000);
+    for (m = mixed = 0; m < 2 * 96000;) {
+        unsigned start = m;
+        k = block(&c, buf, 1024, &m, 0, 96000);
+        assert(k == 1024);
+        for (unsigned i = 0; i < k; ++i, ++mixed)
+            if (mixed < 2 * (48000 - 10240)) {
+                float p = (2 * 10240 + mixed + 0.5f) / 96000 * 1.5707963f;
+                assert(fabsf(buf[2 * i + 1] - cosf(p)) < 1e-5f);
+                assert(fabsf(buf[2 * i] - ((start + i) * sinf(p) + (out + 10240 + mixed * 0.5f) * cosf(p))) < 0.5f);
+            } else
+                assert(buf[2 * i] == (float)(start + i) && buf[2 * i + 1] == 0);
+    }
+    c.uninit(&c);
+    xfade_view(0);
+    peq_length = 10, peq_pts = -1;
+}
+
+/* An ID3v2 TXXX body as "description\0value" in ASCII: Latin-1 and UTF-8 a byte a character, UTF-16 by
+ * its BOM, either order, or big-endian (2), BOMs dropped; past ASCII a '?'. Never past cap - 1
+ * characters and the NUL; an empty body, an unknown encoding or no room gives nothing. */
+static void txxx(const char *body, unsigned n, unsigned cap, const char *want, unsigned k) {
+    char out[64];
+    memset(out, 'x', sizeof out);
+    assert(id3_txxx((const unsigned char *)body, n, out, cap) == k && !memcmp(out, want, k + 1));
+}
+static void txxx_check(void) {
+    char out[4] = "xyz";
+    txxx("\0RG\0-6.5 dB", 11, 64, "RG\0-6.5 dB", 10);
+    txxx("\0Caf\xe9", 5, 64, "Caf?", 4);
+    txxx("\x03" "Caf\xc3\xa9", 6, 64, "Caf??", 5);
+    txxx("\x01" "\xff\xfe" "R\0" "G\0" "\0\0" "\xff\xfe" "-\0" "3\0", 15, 64, "RG\0-3", 5);
+    txxx("\x01" "\xfe\xff" "\0R" "\0G" "\0\0" "\xfe\xff" "\0-" "\0" "3", 15, 64, "RG\0-3", 5);
+    txxx("\x02" "\0R" "\0G" "\0\0" "\0-" "\0" "3", 11, 64, "RG\0-3", 5);
+    txxx("\x02" "\x20\xac" "\0A", 5, 64, "?A", 2); /* the euro sign */
+    txxx("\x02" "\0A" "\0", 4, 64, "A", 1);         /* half a character at the end */
+    txxx("\0ABCDEF", 7, 4, "ABC", 3);
+    assert(!id3_txxx((const unsigned char *)"\0AB", 0, out, 4) && !id3_txxx((const unsigned char *)"\x04" "AB", 3, out, 4));
+    assert(!id3_txxx((const unsigned char *)"\0AB", 3, out, 0) && !strcmp(out, "xyz"));
+}
+
 int main(void) {
     af_instance af;
+    tap_wait_check();
     tap_view();
     /* A failed open is cleaned up by af_create calling uninit on the partial state. */
     for (int n = 0; n < 2; ++n) {
@@ -2027,6 +2159,7 @@ int main(void) {
     af.uninit(&af);
     assert(!af.data && !af.setup);
     crossfade_check();
+    midmix_check();
     mono_check();
     carry_check();
 
@@ -2053,6 +2186,7 @@ int main(void) {
     h[1] = 0xf3; h[2] = 0x90;                             /* MPEG-2, 22.05 kHz: side info 17, 576 a frame */
     memmove(h + 21, h + 36, 120);
     assert(mp3_toc(h, sizeof h, 0, &frac, &length) && fabs(length - frames * 576.0 / 22050) < 1e-9);
+    txxx_check();
     return 0;
 }
 """
@@ -2069,7 +2203,7 @@ def player_check(tmp):
                     '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-I', str(ROOT/'patch'),
                     *map(str, sources), '-Wl,--wrap=clock_gettime', '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    print('PEQ player: negotiation, pass-through, the visualizer tap, live updates, track changes, carried filter memory, cleanup, crossfade, mono and the Xing seek table passed.')
+    print('PEQ player: negotiation, pass-through, the visualizer tap and its wait, live updates, track changes, carried filter memory, cleanup, crossfade and its mid-mix stop, wait and rate change, mono, the Xing seek table and TXXX bodies passed.')
 
 def visualizer_check(tmp):
     """The visualizer's analysis (patch/visualizer.c vis_bands): a sine lands in its band at full scale."""
@@ -2292,6 +2426,12 @@ int main(void) {
     unlink(LOG ".sent"); assert(!symlink("/dev/full", LOG ".sent"));
     assert(run(&sent) == -1 && sent == 1 && !strcmp(slurp(LOG), before));
     unlink(LOG ".sent");
+    /* A time that isn't 1-10 digits (a damaged line) is skipped with the junk, never sent raw into the JSON. */
+    FILE *f = fopen(LOG, "wb");
+    fputs(HEADER "Art \"2\" \\ &=+%\xc3\xa9\tAlb/um\tTitle 2\t2\t202\tL\t1700000002x\t\n"
+                 "Art \"1\" \\ &=+%\xc3\xa9\tAlb/um\tTitle 1\t1\t201\tL\t1700000001\t\n", f);
+    fclose(f);
+    assert(run(&sent) == 1 && sent == 1 && !strcmp(slurp(LOG), HEADER));
     fclose(dump);
     return 0;
 }
@@ -2344,7 +2484,7 @@ def scrobble_check(tmp):
             assert p[f'artist[{j}]'] == artist(i) and p[f'track[{j}]'] == f'Title {i}' and p[f'duration[{j}]'] == str(200 + i)
             assert p.get(f'album[{j}]') == ('Alb/um' if i % 10 else None)
         fm_sizes.append(n)
-    assert lb_sizes == [50, 50, 20, 50, 10, 10, 1, 1] and fm_sizes == [50, 50, 20, 50]
+    assert lb_sizes == [50, 50, 20, 50, 10, 10, 1, 1, 1] and fm_sizes == [50, 50, 20, 50]  # the last 1: the damaged-time log's good listen
     assert [v for _, _, v, _ in requests] == ['1'] * len(requests)
     print('Scrobble upload: config, batching, JSON and form escaping, Last.fm signatures, log rewrite and failures passed.')
 
@@ -2885,10 +3025,27 @@ TIDAL_DL = r'''#include <assert.h>
 #define child_exit _exit
 #define child_oom_first() ((void)0)
 static int thumb(const char *s, const char *d, int w, int h) { return 0; }
+/* card apps' URL queues (app_urls_play, app_track): built here, not run */
+#define REC_NAME 0
+#define REC_PATH 0
+#define REC_TYPE 0
+#define tk_str_start_with(s, p) (!strncmp(s, p, strlen(p)))
+static unsigned char savestartbt, transposition, tidalfurlstart;
+static unsigned playback_loads;
+static int networkGetConnectStatus(void) { return 0; }
+static int mclStop(void) { return 0; }
+static void *_create_deque(const char *kind) { return 0; }
+static void deque_init(void *q) {}
+static void _deque_push_back(void *q, void *r) {}
+static void deque_destroy(void *q) {}
+static void play_folder(void *q, int i, int cls) {}
+static int card_path(const char *s) { return 1; }
 static long file_size(const char *p) { return -1; }
 static int quality = 27; static void *queue;
 #define tidalStreamingLevelNow (&quality)
 #define mcl_pdeqplaylist (&queue)
+static int play_pos;
+#define MCL_POS (&play_pos)
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];

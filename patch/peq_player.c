@@ -491,7 +491,7 @@ static int ao_playing(void) {
 #define AO_BYTES (*(volatile unsigned *)0xb11598u)
 static volatile int ao_natural, ao_draining; /* ao_natural: the way a natural end was on, plus 1 */
 static int ao_wait;   /* the reopen under way is a natural one, by ao_init's branch or a DSD end in ao_uninit: dac_ioctl waits for the line */
-static int ao_stayed; /* a natural change kept the PCM open: ao_write looks at the first write */
+static int ao_stayed; /* a natural change kept the PCM open: ao_write looks at every write off Bluetooth; this marks a kept PCM's first */
 static int ao_pcm[3]; /* what the open PCM is: reinit_audio_chain overwrites ao_data with the request before init */
 static int dac_word(int pressed);
 /* Frames free, hw_ptr past appl_ptr making it more than the ring. Not stock's get_space, which caps MQA's below it.
@@ -653,7 +653,13 @@ static struct { unsigned at, fill, cap, frame; int rate; } ps; /* at: the next b
  * or USB when the way turns to 0 finds nothing to take for its own. (Not by the PCM's handle: a reopen's snd_pcm_t can
  * land on the old one's address.) A write is at most the ring (get_space), and the cap is never less. */
 long ao_write(void *pcm, const char *data, unsigned long frames) {
-    if (ao_stayed) {
+    /* Every write on the jacks and USB looks, not only a kept PCM's first: a stream that stalls mid-song (Wi-Fi gone
+     * for 20 s) runs the PCM dry the same way, and the music that comes back was written behind hw_ptr and lost until
+     * appl_ptr caught up, heard as jumps ahead. Forwarded, it carries on where it stopped, after the gap. Bluetooth's
+     * plugin stops at its own underrun and stock's play prepares it. One status read a write.
+     * ponytail: no threshold, so any underrun on the jacks or USB takes the forward: a short one costs one period of
+     * silence (1378 frames, about 31 ms at 44.1 kHz) and skips nothing. */
+    if (ao_stayed || OUTPUT_WAY != 1) {
         unsigned avail = ao_avail(pcm), ring = AO_BUFFERSIZE / AO_BYTES;
         ao_stayed = 0;
         if (avail > ring && avail != ~0u) {

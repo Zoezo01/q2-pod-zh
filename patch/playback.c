@@ -89,7 +89,7 @@ static void wheel_apply(int pct) {
 }
 int wheel_pct(void) {
     if (!wheel_read) {
-        char v[16] = "", canonical[16];
+        char v[256] = "", canonical[16];
         toolsReadConfig("/mnt/data/config.ini", "Q2POD", "WHEELSENSITIVITY", v, "");
         int n = atoi(v);
         tk_snprintf(canonical, sizeof canonical, "%d", n);
@@ -544,12 +544,16 @@ static unsigned rec_id(unsigned i) {
 static int rebuild(int keep) {
     s.next_valid = 0;
     unsigned n = queue() ? deque_size(queue()) : 0;
+    if (n > QUEUE_LIMIT) { /* before the tables below take 36 B a song */
+        playback_clear();
+        return 0;
+    }
     unsigned *oldseen = s.seen, *oldhistory = s.history;
     unsigned oldn = s.n, oldhn = s.hn;
     entry *order = calloc(n + 1, sizeof *order), *cycle = calloc(n + 1, sizeof *cycle);
     unsigned *groups = calloc(n + 1, sizeof *groups), *seen = calloc(n + 1, sizeof *seen),
              *hist = calloc(HISTORY_LIMIT, sizeof *hist), *id = calloc(n + 1, sizeof *id);
-    if (!order || !cycle || !groups || !seen || !hist || !id || n > QUEUE_LIMIT) {
+    if (!order || !cycle || !groups || !seen || !hist || !id) {
         free(order);
         free(cycle);
         free(groups);
@@ -1452,8 +1456,10 @@ int ringnav_memory(void *out) {
         h.npend = head[12];
         h.type = head[13];
     }
+    /* No more songs than playback_save writes: a damaged header asks for no more memory than a
+     * real snapshot takes (about 1 MB). */
     ok = ok && (h.type == 1 || (h.type & 0xf000) == 0xf000) && h.type <= 0xffff && h.n &&
-         h.n <= QUEUE_LIMIT && h.pos < h.n && h.cursor < h.n && h.hn <= HISTORY_LIMIT &&
+         h.n <= SAVE_LIMIT && h.pos < h.n && h.cursor < h.n && h.hn <= HISTORY_LIMIT &&
          (h.version == 2 ? run <= h.n && run_end <= h.n && (!run || run <= run_end)
                          : h.npend <= PEND_LIMIT) &&
          h.shuffle < 5 && h.repeat < 6 && h.folder < 2 && h.elapsed <= 0x7fffffff &&
@@ -1736,6 +1742,7 @@ static void reboot_save(void) {
     if (mclGetPlayStatus() != 1) save_memoryplay_info(); /* ringnav_savequeue */
 }
 int ringnav_reboot(void) {
+    reboot_record(__builtin_return_address(0)); /* a Bluetooth abnormal reboot's crash log */
     reboot_save();
     return stock_reboot_trampoline();
 }

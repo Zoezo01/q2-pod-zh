@@ -261,6 +261,27 @@ int ipod_light(void) {
     int v = accent();
     return light_on(&themes[st.theme], v);
 }
+/* The Theme picker's rows, by stored THEME: Minimal, Modern, Classic. */
+const unsigned char theme_rows[] = { 0, 2, 1 };
+_Static_assert(sizeof theme_rows == THEME_N, "a row per theme");
+/* Status Bar's look: the theme whose fill, battery, play state and icon rows (bar.icons) the bar
+ * paints, Status Bar's value in the picker's order, 0 the theme's own. The row is still the booted
+ * set's, so a change needs no restart.
+ * ponytail: its height, its widgets' places and its title stay the theme's; a look that moves those
+ * needs a geometry set per bar and a restart. */
+const theme_t *bar_theme(void) {
+    int v = theme_own(OWN_STATUSBAR);
+    return v ? &themes[theme_rows[v - 1]] : theme();
+}
+/* Its row for its own stored accent, in the half this theme's Light Mode picks. */
+const scheme_t *bar_scheme(void) {
+    const theme_t *B = bar_theme();
+    return &(ipod_light() ? B->light : B->schemes)[*B->accent_slot];
+}
+int bar_geom_val(int v) {
+    const theme_t *B = bar_theme();
+    return B == theme() ? geom_val(v) : geom_vals[theme_geom(B)][v];
+}
 int ipod_battery(void) {
     accent();
     return st.battery;

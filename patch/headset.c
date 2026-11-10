@@ -203,14 +203,16 @@ static int wait_either(int a, int b) {
     return (a >= 0 && set[a / 32] >> (a % 32) & 1) | (b >= 0 && set[b / 32] >> (b % 32) & 1) << 1;
 }
 static int avrcp_open(void) {
-    char path[32], name[64];
+    char path[32], name[80]; /* uinput's longest name, its NUL included (UINPUT_MAX_NAME_SIZE) */
     for (int i = 0; i < 32; ++i) {
         snprintf(path, sizeof path, "/dev/input/event%d", i);
         int fd = open(path, 0x80080); /* O_RDONLY | O_NONBLOCK | O_CLOEXEC, MIPS */
         if (fd < 0) continue;
         memset(name, 0, sizeof name);
-        int got = ioctl(fd, 0x40404506u, name);
-        name[63] = 0;
+        /* EVIOCGNAME(sizeof name): BlueZ keeps " (AVRCP)" at the end of a long name, which a
+         * 64-byte read cut off, so a headset named past 55 characters never had its keys read */
+        int got = ioctl(fd, 0x40504506u, name);
+        name[sizeof name - 1] = 0;
         if (got > 0 && strstr(name, "(AVRCP)")) return fd;
         close(fd);
     }

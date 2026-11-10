@@ -403,11 +403,14 @@ static void *worker(void *unused) {
     int err = !f, state = NU_CARD;
     if (f) {
         err = fetch(NU_REPO "/download/" NU_ASSET, f, 0, 0, &code, &nu.cancel);
-        state = nu.cancel ? NU_CANCELLED : err ? (ferror(f) ? NU_CARD : NU_NET) : code != 200 ? NU_MISSING : NU_CARD;
+        state = err ? (ferror(f) ? NU_CARD : NU_NET) : code != 200 ? NU_MISSING : NU_CARD;
         err = err || code != 200 || fflush(f) || fsync(fileno(f)) || ferror(f);
         err = fclose(f) || err;
     }
-    if (!err && !nu.cancel && !rename(NU_FILE ".part", NU_FILE)) { /* a late cancel still cancels */
+    /* Read once, after the close: a press while the card took the last bytes (the fsync of the whole
+     * part, seconds on a slow card, the label at 100%) is a cancel too, not "Can't write". */
+    if (nu.cancel) state = NU_CANCELLED;
+    if (!err && state != NU_CANCELLED && !rename(NU_FILE ".part", NU_FILE)) { /* a late cancel still cancels */
         void *dir = fopen("/mnt/mmc", "r"); /* the rename's directory entry, before stock flashes */
         if (dir) fsync(fileno(dir)), fclose(dir);
         state = NU_DONE;

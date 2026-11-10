@@ -542,7 +542,8 @@ def status_bar(root, g=SET0):
         eq[2].update({'floating': 'true', **face})
         # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
-        # Stock's 16 px icon canvases, centred, on the battery's middle row (paint_battery's body top plus half its height)
+        # Stock's 16 px icon canvases, centred, on the battery's middle row: the body's top, centred on the rows above the
+        # bar's two lines, plus half its height. paint_battery centres the body on this row's height (batt_top).
         right[1][3] = 2 * ((g.bar - 2 - g.batt_h) // 2 + g.batt_h // 2)
         left[1][3] = widgets['img_state'][1][3] = right[1][3]  # the state's 22 px art, its ink centred on the caps
         # The payload writes the top window's title (bar_title) and the local time (ringnav_paint_bg).

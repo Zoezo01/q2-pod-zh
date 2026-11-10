@@ -39,7 +39,7 @@ class KernelMachine(Machine):
             assert b==0x80080
             self.attempts.append((self.now,self.text(a)))
             ret=11 if self.now>=12000 and self.text(a)=='/dev/input/event5' else -1
-        elif name=='ioctl': assert b==0x40404506; self.u.mem_write(c,b'AirPods Pro (AVRCP)\0'); ret=19
+        elif name=='ioctl': assert b==0x40504506; self.u.mem_write(c,b'AirPods Pro (AVRCP)\0'); ret=19
         elif name=='select':  # fd_sets as words; the ready ones kept, as the kernel does
             self.now+=200
             if c: ret=1  # nonblocking connect completes

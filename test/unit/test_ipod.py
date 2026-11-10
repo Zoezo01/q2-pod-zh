@@ -1017,12 +1017,12 @@ def test_set_assets_set0_is_empty(fake_assets):
 
 
 def test_classic_light_sets():
-    # Classic: a 26 px bar, 32 px text rows, 52 px art rows with 48 px art, 2 px clear above and below (Row Art
-    # off: 32, no art), and text pages without artwork.
+    # Classic: a 26 px bar, 32 px text rows, 52 px art rows with the art 1:1 (Row Art off: 32, no art),
+    # and text pages without artwork.
     n, t = CLASSIC_LIGHT, CLASSIC_LIGHT_TEXT
-    assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 32, 32, 52, 52, 48, 2, 0, 0)
+    assert (n.bar, n.pitch, n.body, n.art_pitch, n.art_body, n.art, n.art_inset, n.text_art, n.text_art_inset) == (26, 32, 32, 52, 52, 52, 0, 0, 0)
     assert (n.song_pitch, n.song_body, n.song_title24_y, n.song_meta_y) == (52, 52, 1, 29) == (t.song_pitch, t.song_body, t.song_title24_y, t.song_meta_y)
-    assert dataclasses.replace(t, name='classic-light', art=48, art_inset=2, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29, stream_row=52) == n
+    assert dataclasses.replace(t, name='classic-light', art=52, art_pitch=52, art_body=52, art_title24_y=1, art_meta_y=29, stream_row=52) == n
     assert (n.title24_y, n.title_y, n.meta_y, n.count_y, n.art_title24_y, n.art_meta_y, t.art_title24_y, t.art_meta_y) == (4, 6, 8, 8, 1, 29, 4, 8)
     assert (n.set_row, n.set_top, n.set_rows, n.set_icon) == (32, 0, 9, 0) == (t.set_row, t.set_top, t.set_rows, t.set_icon)
     assert ipod.immediate_values(n)['scroll'] == 262

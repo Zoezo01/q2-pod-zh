@@ -459,6 +459,10 @@ static inline int arc_out(int r, int y) {
 #define STANDBY_LIMIT_1 1
 #define STANDBY_LIMIT_2 8
 #define STANDBY_LIMIT_3 24
+/* check_cardmount_status's request for on_wm_timer_dialog's TF card toast, and how long after a
+ * Standby resume ringnav_cardmount drops it (docs/internals.md#standby-limit). */
+#define CARD_TOAST 0xa37c97
+#define CARD_QUIET_MS 15000
 /* Smart Wi-Fi (docs/internals.md#smart-wi-fi), checked every SMART_POLL_MS: the radio goes off after
  * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), and whatever wakes it
  * waits up to SMART_CONNECT_MS for the link before going on without it. */

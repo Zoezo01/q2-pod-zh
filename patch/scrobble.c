@@ -121,15 +121,27 @@ static void put(buf_t *b, const char *s, int mode) {
     }
 }
 
+/* A line's time: 1 to 10 digits (a 32-bit time_t's), not all zero. The field goes raw into the
+ * ListenBrainz JSON and Last.fm's form, so a damaged one (a byte of junk after the digits, which
+ * atoi alone passed) would spoil the whole batch; such a line is skipped with the other junk. */
+static int epoch(const char *s) {
+    int nonzero = 0, n = 0;
+    for (; *s; ++s, ++n) {
+        if (*s < '0' || *s > '9') return 0;
+        nonzero |= *s != '0';
+    }
+    return nonzero && n <= 10;
+}
+
 /* One Rockbox line: artist, album, title, track, length, rating, time, MusicBrainz ID. Only
- * listened (L) lines with an artist, a title and a time are scrobbled. */
+ * listened (L) lines with an artist, a title and a time of digits (epoch) are scrobbled. */
 static int parse(char *line, entry_t *e) {
     char *f[8] = { line };
     int n = 1;
     for (char *s = line; *s && n < 8; s++)
         if (*s == '\t') *s = 0, f[n++] = s + 1;
     e->artist = f[0], e->album = f[1], e->title = f[2], e->length = f[4], e->time = f[6];
-    return n >= 7 && *f[0] && *f[2] && f[5][0] == 'L' && atoi(f[6]) > 0;
+    return n >= 7 && *f[0] && *f[2] && f[5][0] == 'L' && epoch(f[6]);
 }
 
 static unsigned got(const char *data, unsigned size, unsigned n, void *ctx) {

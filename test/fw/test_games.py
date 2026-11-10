@@ -1,11 +1,15 @@
 """games.c on its device path: Sudoku's rules, Vortex's physics, Klondike's legality, Snake, keys and saves."""
 import ctypes as C
+import itertools
 import math
 import mmap
 import random
+import re
 from types import SimpleNamespace
 
 import pytest
+
+from conftest import O
 
 SEED = 2166136261
 SUD, BEST, SOL, SNK = 0x31445553, 0x31585456, 0x314c4f53, 0x314b4e53
@@ -754,6 +758,17 @@ def test_the_waste_and_a_foundation_give_only_their_top_card(fw):
     assert g.sol_move(r(s), 2, 8) and not s.len[2]
 
 
+def test_a_pile_already_full_takes_no_card(fw):
+    """Only a forged save (the seal is unkeyed) fills a column to SOL_MAX; a move onto it would write past the
+    pile into the next."""
+    g = api(fw)
+    s = Sol()
+    put(s, 7, [0] * 23 + [13 + 5 | UP])  # 24 cards, the 6 of hearts on top
+    put(s, 6, [0 + 4 | UP])  # the 5 of spades, which the 6 takes
+    before = bytes(s)
+    assert not g.sol_move(r(s), 6, 7) and bytes(s) == before
+
+
 def test_a_foundation_takes_one_card_of_a_run(fw):
     g = api(fw)
     s = Sol()
@@ -1007,6 +1022,15 @@ def test_snake_eating_the_last_free_cell_fills_the_board(fw):
     assert g.snake_step(r(s)) == -1
 
 
+def test_snake_may_follow_its_tail_but_dies_on_the_rest_of_its_body(fw):
+    g = api(fw)
+    s = snake(g, [0, 1, 21, 20], d=0)  # a 2 x 2 loop, the head under the tail: the tail leaves as the head comes
+    assert g.snake_step(r(s)) == 0 and body(s) == [1, 21, 20, 0] and s.state == RUNNING
+    s = snake(g, [2, 1, 0, 20, 21], d=0)  # five long, the head turning up into the cell behind its neck
+    assert g.snake_step(r(s)) == -1 and s.state == OVER and body(s) == [2, 1, 0, 20, 21]
+    assert g.snake_step(r(s)) == -1  # and stays dead
+
+
 def test_snake_on_the_last_rows_and_columns(fw):
     g = api(fw)
     for head, d, dies in ((19, 1, True), (19, 0, True), (0, 3, True), (0, 0, True), (399, 2, True), (399, 1, True),
@@ -1112,6 +1136,8 @@ class Page:
         fw.var('g_backlight_status', C.c_ubyte).value = 1
         self.view = C.create_string_buffer(0x400)  # ringnav_select reads the list's fields
         fw.mock('scroll_view_create', lambda *_: C.addressof(self.view))
+        widgets = itertools.count(0x7300)  # the sheet, then the chooser's list, each open
+        fw.mock('widget_factory_create_widget', lambda *_: next(widgets))
         fw.mock('list_item_create', lambda *_: 0x7100)
         fw.mock('widget_get_child', lambda *_: 0x7200)
         fw.mock('fw_fflush', lambda *_: 0)
@@ -1216,13 +1242,15 @@ def test_a_solitaire_save_comes_back(fw):
     assert bytes(p.s.sol) == bytes(d)
 
 
-@pytest.mark.parametrize('field, value', (('cur', 13), ('len', 25)))
+@pytest.mark.parametrize('field, value', (('cur', 13), ('len', 25), ('card', 52), ('card', 52 | UP)))
 def test_a_solitaire_save_past_its_limits_is_a_fresh_game(fw, field, value):
     d = full_table(api(fw))
     if field == 'cur':
         d.cur = value
-    else:
+    elif field == 'len':
         d.len[12] = value
+    else:
+        d.card[12][0] = value  # no such card: card_paint would read past the suit table
     p = Page(fw, {SOLITAIRE_FILE: sealed(fw, d, SOL)})
     assert p.s.sol.magic == 0 and p.s.sol.cur == 0 and sum(p.s.sol.len[:PILES]) == 52
 
@@ -1800,3 +1828,675 @@ def test_a_screen_left_with_keyup_in_the_chooser_goes_back(fw):
     p.go(SUDOKU)
     p.g.leave(None)
     assert p.s.target == CHOOSER
+
+
+# The chooser's rows and Return, as the page's own handlers take them.
+
+EVT_CLICK, EVT_KEY_UP, EVENT_KEY, RET_STOP = O['EVT_CLICK'], O['EVT_KEY_UP'], O['EVENT_KEY'], 11  # return_key's
+
+
+def run(fn):
+    """A timer's function, run as the next loop pass would."""
+    return C.CFUNCTYPE(C.c_int, C.c_void_p)(fn)(None)
+
+
+def handlers(fw, event, widget=None):
+    """The (function, context) pairs widget_on gave event, in order (on widget, if given)."""
+    return [(a[2], a[3]) for _, a in fw.calls('widget_on') if a[1] == event and widget in (None, a[0])]
+
+
+def press(handler, event=None):
+    fn, ctx = handler
+    return C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, event)
+
+
+class Dirent(C.Structure):  # test/fw/host.py's
+    _fields_ = [('ino', C.c_uint), ('off', C.c_uint), ('reclen', C.c_ushort), ('d_type', C.c_ubyte), ('d_name', C.c_char * 256)]
+
+
+def card_apps(fw, apps):
+    """The card's folders, one .<id> a card app with its q2app as given ({id: text}), and a music folder: the
+    files for Card."""
+    listing = [Dirent(d_name=b'.' + k.encode()) for k in apps] + [Dirent(d_name=b'Music')]
+    at = [0]
+
+    def readdir(d, *_):
+        at[0] += 1
+        return C.addressof(listing[at[0] - 1]) if at[0] <= len(listing) else 0
+    fw.mock('fw_opendir', lambda path, *_: 0x6000 if C.string_at(path) == b'/mnt/mmc' else 0)
+    fw.mock('fw_readdir', readdir)
+    return {f'/mnt/mmc/.{k}/q2app': v for k, v in apps.items()}
+
+
+def test_the_chooser_lists_its_games_then_the_card_s_by_name_and_each_row_opens_its_own(fw):
+    files = card_apps(fw, {'zork': b'name=Zork\ngame=1\n', 'tunes': b'name=Tunes\n', 'blocks': b'name=Blocks\ngame=1\n'})
+    texts = []
+    fw.mock('widget_set_text_utf8', lambda w, s, *_: texts.append(C.string_at(s).decode()))
+    p = Page(fw, files)
+    assert texts[-6:] == ['Sudoku', 'Vortex', 'Solitaire', 'Snake', 'Blocks', 'Zork']  # Tunes isn't a game
+    rows = handlers(fw, EVT_CLICK)
+    assert len(rows) == 6
+    fw.mock('fw_fork', lambda *_: 4242)
+    toasts, tried = heard(fw), []
+    fw.mock('fw_access', lambda path, *_: tried.append(C.string_at(path)) or len(tried) == 1)  # Blocks' isn't there
+    press(rows[4])  # Blocks, the card's first by name
+    assert tried == [b'/mnt/mmc/.blocks/q2-blocks'] and not fw.fn('addon_game_on', C.c_int)() and len(toasts) == 1
+    press(rows[5])  # Zork, its second, over the whole screen
+    assert fw.fn('addon_game_on', C.c_int)() == 4242 and tried[-1] == b'/mnt/mmc/.zork/q2-zork'
+    assert p.s.screen == CHOOSER and not p.timers
+    for row, game in zip(rows, (SUDOKU, VORTEX, SOLITAIRE, SNAKE)):
+        press(row)  # from the next loop pass
+        assert p.s.screen == CHOOSER and p.s.target == game and p.timers[-1][1] == 0
+    press(rows[1])
+    run(p.timers[-1][0])
+    assert p.s.screen == VORTEX and p.g.games_live()
+
+
+def test_return_in_the_chooser_goes_back_to_the_library_from_the_next_pass(fw):
+    p = Page(fw)
+    keyup, = handlers(fw, EVT_KEY_UP, PAGE)
+    event = C.create_string_buffer(0x40)
+    C.c_int.from_buffer(event, EVENT_KEY).value = NEXT
+    assert press(keyup, event) == 0 and not p.timers  # any other key is stock's
+    C.c_int.from_buffer(event, EVENT_KEY).value = RETURN
+    assert press(keyup, event) == RET_STOP and not fw.calls('navigator_back')
+    run(p.timers[-1][0])
+    assert fw.calls('navigator_back')
+
+
+def test_sudoku_return_goes_back_to_the_chooser_and_saves(fw):
+    p = Page(fw)
+    p.go(SUDOKU)
+    was, cells = p.s.sud.cur, bytes(p.s.sud.cell)
+    p.key(NEXT, RETURN)
+    assert p.s.target == CHOOSER and p.s.screen == SUDOKU
+    run(p.timers[-1][0])
+    assert p.s.screen == CHOOSER
+    saved = Sudoku.from_buffer_copy(p.card.files[SUDOKU_FILE])  # the moved cursor, and only that, changed
+    assert saved.cur == (was + 1) % 81 and p.g.games_ok(r(saved), C.sizeof(saved), SUD)
+    assert bytes(saved.cell) == cells
+
+
+def test_a_record_that_can_t_be_written_says_so_and_still_shows(fw):
+    p = Page(fw)
+    toasts = heard(fw)
+    p.go(VORTEX)
+    p.s.vx.score = 50
+    p.card.fail = True
+    fw.fn('games__game_over', None)()
+    assert toasts == [b"Couldn't save"] and p.s.record and p.s.best.score == 50
+
+
+# The sheet. games_paint draws on a canvas whose every call is recorded with the colour it reached stock in.
+
+CANVAS_LCD, LCD_FILL = O['CANVAS_LCD'], O['LCD_FILL_COLOR']
+
+
+def rgba(c, a=255):
+    """0xRRGGBB at alpha a as stock's colour word, bytes r, g, b, a (peq_ui.c's rgba)."""
+    return a << 24 | (c & 255) << 16 | c & 0xff00 | c >> 16 & 255
+
+
+def rgb(color):
+    return color & 255, color >> 8 & 255, color >> 16 & 255
+
+
+def alpha(color):
+    return color >> 24
+
+
+def dark(color):
+    return max(rgb(color)) < 0x40
+
+
+def light(color):
+    return min(rgb(color)) > 0xc0
+
+
+def red(color):
+    cr, cg, cb = rgb(color)
+    return cr > 0x80 and cr > 2 * cg and cr > 2 * cb
+
+
+def grey(color):
+    return len(set(rgb(color))) == 1
+
+
+def darker(a, b):
+    """a is b shaded down: no channel brighter, and not the same."""
+    return all(x <= y for x, y in zip(rgb(a), rgb(b))) and sum(rgb(a)) < sum(rgb(b))
+
+
+def ink(fw, color):
+    return fw.fn('ui_ink', C.c_uint, C.c_uint)(color)
+
+
+def tone(fw, k=2):
+    """accent_tone(k) as it reaches stock, through Light Mode's ink."""
+    return ink(fw, rgba(fw.fn('accent_tone', C.c_uint, C.c_int)(k)))
+
+
+class Op(SimpleNamespace):
+    """One call: kind 'fill' (a rectangle), 'round' (a rounded box), 'frame' (a rounded outline's stroke), 'text',
+    'arc' (a vgcanvas stroke), 'dot' (a vgcanvas fill) or 'cap' (the line cap set), its colour and rect."""
+
+
+class Canvas:
+    """The sheet's canvas and its LCD (whose fill colour stock's setter writes). rounds=False: it declines to round,
+    as stock does without a vgcanvas; vg=0: no vgcanvas at all."""
+    def __init__(self, fw, vg=0x7a00, rounds=True, fill=0xff123456):
+        self.raw, self.lcd = C.create_string_buffer(0x100), C.create_string_buffer(0x200)
+        C.c_void_p.from_buffer(self.raw, CANVAS_LCD).value = C.addressof(self.lcd)
+        self.p, self.ops, self.fill, self.ink, self.px, self.stroke, self.paint = C.addressof(self.raw), [], fill, 0, 0, 0, 0
+        declined = 0 if rounds else 1
+
+        def rect(p):
+            return tuple((C.c_int * 4).from_address(p))
+
+        def word(p):
+            return C.c_uint.from_address(p).value
+
+        def add(kind, color, box=None, **kw):
+            self.ops.append(Op(kind=kind, color=color & 0xffffffff, rect=box, **kw))
+        fw.mock('canvas_set_fill_color', lambda c, v, *_: setattr(self, 'fill', v & 0xffffffff))
+        fw.mock('canvas_fill_rect', lambda c, *box: add('fill', self.fill, tuple(C.c_int(v).value for v in box[:4])))
+        fw.mock('canvas_fill_rounded_rect', lambda c, box, g, v, *_: add('round', word(v), rect(box)) or declined)
+        fw.mock('canvas_stroke_rounded_rect', lambda c, box, g, v, *_: add('frame', word(v), rect(box)) or declined)
+        fw.mock('canvas_set_font', lambda c, face, px, *_: setattr(self, 'px', px))
+        fw.mock('canvas_set_text_color', lambda c, v, *_: setattr(self, 'ink', v))
+        fw.mock('canvas_draw_text_in_rect', lambda c, s, n, box, *_: add(
+            'text', self.ink, rect(box), text=''.join(map(chr, (C.c_uint * n).from_address(s))), px=self.px))
+        fw.mock('canvas_get_vgcanvas', lambda *_: vg)
+        fw.mock('vgcanvas_set_stroke_color', lambda g, v, *_: setattr(self, 'stroke', v))
+        fw.mock('vgcanvas_stroke', lambda *_: add('arc', self.stroke))
+        fw.mock('vgcanvas_set_fill_color', lambda g, v, *_: setattr(self, 'paint', v))
+        fw.mock('vgcanvas_fill', lambda *_: add('dot', self.paint))
+        fw.mock('vgcanvas_set_line_cap', lambda g, s, *_: add('cap', 0, text=C.string_at(s).decode()))
+
+    @property
+    def fill(self):
+        return C.c_uint.from_buffer(self.lcd, LCD_FILL).value
+
+    @fill.setter
+    def fill(self, value):
+        C.c_uint.from_buffer(self.lcd, LCD_FILL).value = value
+
+
+def paint(p, canvas=None):
+    canvas = canvas or Canvas(p.fw)
+    p.fw.fn('games_paint', None, C.c_void_p, C.c_void_p)(p.s.sheet, canvas.p)
+    return canvas.ops
+
+
+def texts(ops):
+    return [o.text for o in ops if o.kind == 'text']
+
+
+def bounds(ops):
+    x, y = min(o.rect[0] for o in ops), min(o.rect[1] for o in ops)
+    return x, y, max(o.rect[0] + o.rect[2] for o in ops) - x, max(o.rect[1] + o.rect[3] for o in ops) - y
+
+
+def encloses(outer, inner):
+    return outer[0] <= inner[0] and outer[1] <= inner[1] and outer[0] + outer[2] >= inner[0] + inner[2] and \
+        outer[1] + outer[3] >= inner[1] + inner[3]
+
+
+def banner(ops):
+    """A banner's lines as (text, colour), [] for none: the last thing drawn, texts over a box framed by its own
+    outline (Snake's board is one too, under the rest)."""
+    for k in range(len(ops) - 2, -1, -1):
+        if ops[k].kind == 'round' and ops[k + 1].kind == 'frame' and ops[k + 1].rect == ops[k].rect:
+            rest = ops[k + 2:]
+            return [(o.text, o.color) for o in rest if o.kind == 'text'] if {o.kind for o in rest} <= {'frame', 'text'} else []
+    return []
+
+
+def test_games_paint_draws_only_a_game_on_its_own_sheet_and_puts_the_fill_back(fw):
+    p = Page(fw)
+    games_paint = fw.fn('games_paint', None, C.c_void_p, C.c_void_p)
+    canvas = Canvas(fw)
+    games_paint(p.s.sheet, canvas.p)  # the chooser is stock's list
+    p.go(SUDOKU)
+    for w in (p.s.list, p.s.page, 0):
+        games_paint(w, canvas.p)
+    no_lcd = Canvas(fw)
+    C.c_void_p.from_buffer(no_lcd.raw, CANVAS_LCD).value = None
+    games_paint(p.s.sheet, no_lcd.p)
+    assert canvas.ops == no_lcd.ops == []
+    canvas = Canvas(fw, fill=0xff102030)
+    ops = paint(p, canvas)
+    assert {o.color for o in ops if o.kind == 'fill'} - {0xff102030} and canvas.fill == 0xff102030
+    sheet = p.s.sheet
+    p.close()
+    after = Canvas(fw)
+    games_paint(sheet, after.p)  # the same sheet, the page gone
+    assert after.ops == []
+
+
+# Sudoku's board.
+
+def sudoku(ops):
+    """The board as painted: its rect, a cell's pitch, each cell's background, digit (text, colour) and marks over
+    it, then what follows the grid's lines (the cursor's frame, then any banner)."""
+    board = ops[0].rect
+    pitch, k = board[2] // 9, 1
+    cells = [SimpleNamespace(bg=None, digit=None, marks=[]) for _ in range(81)]
+    while ops[k].kind != 'fill' or max(ops[k].rect[2:]) <= pitch:
+        x, y = ops[k].rect[:2]
+        cell = cells[(y - board[1]) // pitch * 9 + (x - board[0]) // pitch]
+        if ops[k].kind == 'text':
+            cell.digit = ops[k].text, ops[k].color
+        elif cell.bg is None:
+            cell.bg = ops[k].color
+        else:
+            cell.marks.append(ops[k])
+        k += 1
+    while k < len(ops) and ops[k].kind == 'fill' and max(ops[k].rect[2:]) > pitch:
+        k += 1
+    return SimpleNamespace(board=board, pitch=pitch, cells=cells, after=ops[k:])
+
+
+def cell_rect(b, i):
+    return b.board[0] + i % 9 * b.pitch, b.board[1] + i // 9 * b.pitch, b.pitch, b.pitch
+
+
+def grid(p, cells, cur):
+    s = p.s
+    s.sud.cell[:] = [0] * 81
+    for i, v in cells.items():
+        s.sud.cell[i] = v
+    s.sud.cur = cur
+    return s
+
+
+def test_sudoku_paint_clues_on_grey_entries_in_the_tone_and_the_cursor_s_digit_dark_on_the_tone(fw):
+    p = Page(fw)
+    p.go(SUDOKU)
+    grid(p, {0: 16 | 5, 10: 16 | 3, 40: 5, 80: 7}, cur=40)  # no digit repeats
+    b = sudoku(paint(p))
+    lit, clue, entry, blank = b.cells[0], b.cells[10], b.cells[80], b.cells[1]
+    assert b.cells[40].bg == lit.bg == tone(fw)  # every cell holding the cursor's digit, a clue too
+    assert b.cells[40].digit[0] == lit.digit[0] == '5' and dark(b.cells[40].digit[1]) and dark(lit.digit[1])
+    assert clue.digit[0] == '3' and grey(clue.bg) and darker(blank.bg, clue.bg) and light(clue.digit[1])
+    assert entry.digit == ('7', tone(fw)) and entry.bg == blank.bg
+    assert blank.digit is None and sum(c.digit is not None for c in b.cells) == 4
+    assert not any(c.marks for c in b.cells)
+    assert bounds(b.after[:4]) == cell_rect(b, 40) and {o.color for o in b.after[:4]} == {tone(fw, 3)}
+    assert b.after[4:] == []  # no banner
+
+
+def test_sudoku_paint_a_repeated_digit_is_red_and_underlined(fw):
+    p = Page(fw)
+    p.go(SUDOKU)
+    grid(p, {3: 4, 5: 4, 57: 16 | 4, 7: 6}, cur=80)  # 3 and 5 share a row and a box, 57 is in 3's column
+    b = sudoku(paint(p))
+    bad = [b.cells[i] for i in (3, 5, 57)]
+    assert all(c.digit[0] == '4' and red(c.digit[1]) for c in bad) and len({c.digit[1] for c in bad}) == 1
+    for i in (3, 5, 57):
+        (mark,), cell = b.cells[i].marks, cell_rect(b, i)
+        assert mark.color == b.cells[i].digit[1] and mark.rect[2] > 3 * mark.rect[3]  # a line in its colour
+        assert encloses(cell, mark.rect) and mark.rect[1] > cell[1] + b.pitch // 2  # under the digit
+    assert b.cells[7].digit == ('6', tone(fw)) and not b.cells[7].marks
+    assert b.cells[3].bg == b.cells[80].bg  # nothing lit: the cursor's cell is blank
+
+
+def test_sudoku_paint_a_digit_being_picked_lights_its_like_and_is_red_only_once_written(fw):
+    p = Page(fw)
+    p.go(SUDOKU)
+    grid(p, {0: 4}, cur=2)
+    p.key(CENTER, NEXT, NEXT, NEXT, NEXT)  # picking 4 for cell 2, in cell 0's row
+    b = sudoku(paint(p))
+    assert b.cells[2].digit[0] == '4' and b.cells[2].bg == b.cells[0].bg == tone(fw)
+    assert dark(b.cells[0].digit[1]) and not b.cells[0].marks and not b.cells[2].marks
+    picking = b.after[:4]
+    assert bounds(picking) == cell_rect(b, 2) and light(picking[0].color) and picking[0].color != tone(fw, 3)
+    p.key(CENTER)
+    b = sudoku(paint(p))
+    assert all(b.cells[i].digit[0] == '4' and red(b.cells[i].digit[1]) and b.cells[i].marks for i in (0, 2))
+    assert bounds(b.after[:4]) == cell_rect(b, 2) and {o.color for o in b.after[:4]} == {tone(fw, 3)}
+
+
+def test_sudoku_paint_asks_over_the_board_and_says_when_it_is_solved(fw):
+    p = Page(fw)
+    p.go(SUDOKU)
+    s = p.s
+    s.sud.cell[blank(s)] = 1
+    assert banner(paint(p)) == []
+    p.key(PLAY)
+    (ask, white), (keys, _) = banner(paint(p))
+    assert ask == 'New game?' and 'Centre' in keys and 'Return' in keys and light(white)
+    p.key(RETURN)
+    assert banner(paint(p)) == []
+    s.sud.cell[:] = SOLVED
+    (said, color), _ = banner(paint(p))
+    assert said == 'Solved!' and color == tone(fw)
+
+
+def test_a_canvas_that_won_t_round_gets_square_boxes_and_frames_in_their_place(fw):
+    p = Page(fw)
+    p.go(SUDOKU)
+    p.s.sud.cell[blank(p.s)] = 1
+    p.key(PLAY)
+    ops = paint(p, Canvas(fw, rounds=False))
+    k = next(i for i, o in enumerate(ops) if o.kind == 'round')
+    box, square, stroke, *bars = ops[k:k + 7]
+    assert square.kind == 'fill' and (square.rect, square.color) == (box.rect, box.color)
+    assert stroke.kind == 'frame' and all(b.kind == 'fill' and b.color == stroke.color for b in bars)
+    assert bounds(bars) == stroke.rect == box.rect
+    thick, = {min(b.rect[2:]) for b in bars}  # four bars of one thin line along the edges, two across, two down
+    assert 0 < 8 * thick < min(box.rect[2:]) and sorted(max(b.rect[2:]) for b in bars) == sorted(box.rect[2:] * 2)
+    assert texts(ops[k + 7:]) == [t for t, _ in banner(paint(p))]  # the same two lines over it
+
+
+# Vortex.
+
+def arcs(ops):
+    """The vgcanvas's strokes before the line cap turns round (the track, the bricks, a flash) and after (the paddle)."""
+    cap = next(i for i, o in enumerate(ops) if o.kind == 'cap')
+    return [o.color for o in ops[:cap] if o.kind == 'arc'], [o.color for o in ops[cap:] if o.kind == 'arc']
+
+
+def test_vortex_paint_one_arc_a_brick_the_rings_darkening_outwards_from_the_tone(fw):
+    p = Page(fw)
+    p.go(VORTEX)
+    s = p.s
+    s.vx.brick[0], s.vx.brick[1], s.vx.brick[2] = 0x0001, 0x0300, 0x7000
+    ops = paint(p)
+    (track, *bricks), paddle = arcs(ops)
+    assert len(bricks) == 6 and bricks[0] == tone(fw) and bricks[1] == bricks[2] and bricks[3] == bricks[4] == bricks[5]
+    assert darker(bricks[1], bricks[0]) and darker(bricks[3], bricks[1])
+    assert len(paddle) == 1 and light(paddle[0]) and alpha(paddle[0]) == 255 and darker(track, paddle[0]) and grey(track)
+    assert [o.text for o in ops if o.kind == 'cap'] == ['round']
+
+
+def test_vortex_paint_waiting_to_launch_is_a_ball_and_the_lives_and_a_hint_to_press_centre(fw):
+    p = Page(fw)
+    p.go(VORTEX)
+    ops = paint(p)
+    ball, *lives = [o.color for o in ops if o.kind == 'dot']  # no trail
+    assert light(ball) and len(lives) == 3 and len(set(lives)) == 1 and grey(lives[0]) and darker(lives[0], ball)
+    assert 'Centre' in texts(ops)
+    p.key(CENTER)
+    assert 'Centre' not in texts(paint(p))
+
+
+def test_vortex_paint_the_ball_trails_its_last_frames_in_the_tone_fading_behind_it(fw):
+    p = Page(fw)
+    p.go(VORTEX)
+    s = p.s
+    s.vx.lives = 2
+    p.key(CENTER)
+    for _ in range(6):
+        p.now += 17
+        p.g.frame(None)
+    dots = [o.color for o in paint(p) if o.kind == 'dot']
+    trail, ball, lives = dots[:4], dots[4], dots[5:]
+    assert {rgb(c) for c in trail} == {rgb(tone(fw))} and light(ball) and alpha(ball) == 255
+    fades = [alpha(c) for c in trail]  # drawn from the oldest
+    assert fades == sorted(set(fades)) and fades[-1] < 255 and len(lives) == 2
+
+
+def test_vortex_paint_a_broken_brick_flashes_white_and_fades_out_linearly(fw):
+    p = Page(fw)
+    p.go(VORTEX)
+    s = p.s
+    s.vx.state = RUNNING
+    s.vx.x, s.vx.y = at(5 * 64 + 32, 39)
+    s.vx.vx, s.vx.vy = at(5 * 64 + 32, 2)
+    p.now += 17
+    p.g.frame(None)
+    broke = p.now
+
+    def flash(ms):
+        p.now = broke + ms
+        before, _ = arcs(paint(p))
+        bricks = sum(bin(b).count('1') for b in s.vx.brick)
+        assert len(before) - 1 - bricks in (0, 1)
+        return before[-1] if len(before) == 2 + bricks else None
+    first = flash(0)
+    before, (paddle,) = arcs(paint(p))
+    assert before[-1] == first and first not in before[1:-1]  # not a brick's colour
+    assert light(first) and rgb(first) == rgb(paddle) and alpha(first) == 255 and s.vx.brick[0] == 0xffff & ~(1 << 5)
+    seen = {ms: flash(ms) for ms in range(0, 1000, 10)}
+    gone = min(ms for ms, c in seen.items() if c is None)
+    gone = next(ms for ms in range(gone - 9, gone + 1) if flash(ms) is None)  # the first ms without it
+    assert 0 < gone < 1000 and all((c is None) == (ms >= gone) for ms, c in seen.items())  # once gone, it stays gone
+    fades = [alpha(c) for ms, c in sorted(seen.items()) if c is not None]
+    assert fades == sorted(fades, reverse=True) and len(set(fades)) == len(fades)
+    assert all(abs(alpha(c) - 255 * (gone - ms) / gone) <= 1 for ms, c in seen.items() if c is not None)  # linear
+    p.key(PLAY)
+    assert flash(0) is None  # paused: no flash
+
+
+def test_vortex_paint_the_hud_shows_the_score_the_best_and_the_level_counted_from_1(fw):
+    p = Page(fw)
+    p.go(VORTEX)
+    s = p.s
+    s.vx.score, s.best.score, s.vx.level = 1230, 4560, 2
+    numbers = sorted(int(n) for t in texts(paint(p)) for n in re.findall(r'\d+', t))
+    assert numbers == [3, 1230, 4560]
+
+
+def test_vortex_paint_without_a_vgcanvas_still_shows_the_hud(fw):
+    p = Page(fw)
+    p.go(VORTEX)
+    ops = paint(p, Canvas(fw, vg=0))
+    assert not [o for o in ops if o.kind in ('arc', 'dot', 'cap')] and len(texts(ops)) == 4
+    assert not fw.calls('vgcanvas_save') and not fw.calls('vgcanvas_begin_path')
+
+
+def end(p, screen, score):
+    """Ends the game by its own rules through the frame timer: Vortex's last life lost, Snake into a wall."""
+    s = p.s
+    if screen == VORTEX:
+        s.vx.state, s.vx.lives, s.vx.score, s.vx.pa = RUNNING, 1, score, 512
+        s.vx.x, s.vx.vx, s.vx.y, s.vx.vy = (MISS << 16) - 1, 2, 0, 0
+    else:
+        s.sn.body[(s.sn.tail + s.sn.len - 1) % 400], s.sn.dir, s.sn.score = 219, 1, score
+    p.now += 200
+    assert p.g.frame(None) == 0 and not p.s.frame
+
+
+@pytest.mark.parametrize('screen', (VORTEX, SNAKE))
+def test_arcade_paint_return_s_menu_shows_the_choice_in_the_tone(fw, screen):
+    p = Page(fw)
+    p.go(screen)
+    p.key(RETURN)
+    (a, ca), (b, cb) = banner(paint(p))
+    assert (a, b) == ('Continue', 'Quit') and ca == tone(fw) and cb != ca and grey(cb)
+    p.key(NEXT)
+    assert [c for _, c in banner(paint(p))] == [cb, ca]
+
+
+@pytest.mark.parametrize('screen', (VORTEX, SNAKE))
+def test_arcade_paint_pause_and_the_game_over_banners(fw, screen):
+    p = Page(fw)
+    p.go(screen)
+    assert banner(paint(p)) == []
+    p.key(PLAY)
+    assert banner(paint(p))[0][0] == 'Paused'
+    p.key(PLAY)
+    assert banner(paint(p)) == []
+    end(p, screen, 40)
+    assert banner(paint(p))[0][0] == 'New best!'  # it raised Best
+    p.key(CENTER)
+    end(p, screen, 0)
+    assert banner(paint(p))[0][0] == 'Game over'
+
+
+# Snake.
+
+def snake_ops(ops):
+    """The board's box, then the body's boxes from the tail; the apple's dots."""
+    hud = next(i for i, o in enumerate(ops) if o.kind == 'text')
+    boxes = [o for o in ops[:hud] if o.kind == 'round']
+    return boxes[0], boxes[1:], [o.color for o in ops[:hud] if o.kind == 'dot']
+
+
+def test_snake_paint_the_body_cell_by_cell_in_the_tone_the_head_brighter_and_a_red_apple(fw):
+    p = Page(fw)
+    p.go(SNAKE)
+    s = p.s
+    board, cells, apple = snake_ops(paint(p))
+    assert len(cells) == s.sn.len == 3 and all(encloses(board.rect, c.rect) for c in cells)
+    *body_, head = cells
+    assert all(c.color == tone(fw) for c in body_) and darker(tone(fw), head.color)
+    pitch = cells[1].rect[0] - cells[0].rect[0]
+    assert pitch > cells[0].rect[2] and cells[2].rect[0] - cells[1].rect[0] == pitch  # heading right, a cell apart
+    assert {c.rect[1] for c in cells} == {cells[0].rect[1]} and len(apple) == 1 and red(apple[0])
+    s.sn.food = 0  # out of the way
+    p.now += 160
+    p.g.frame(None)
+    _, moved, _ = snake_ops(paint(p))
+    assert [c.rect[0] for c in moved] == [c.rect[0] + pitch for c in cells]
+
+
+def test_snake_paint_the_score_and_best_and_no_apple_after_a_crash(fw):
+    p = Page(fw)
+    p.go(SNAKE)
+    p.s.sn_best.score = 12
+    end(p, SNAKE, 7)
+    ops = paint(p)
+    _, _, apple = snake_ops(ops)
+    assert apple == [] and sorted(int(n) for t in texts(ops) for n in re.findall(r'\d+', t)) == [7, 12]
+
+
+# Solitaire.
+
+def inset(box, d):
+    return box[0] + d, box[1] + d, box[2] - 2 * d, box[3] - 2 * d
+
+
+def solitaire(ops):
+    """The cards painted in order, each its rect, face colour, texts and whether its back shows the inner box; and the
+    outlines (an empty pile's, the cursor's, a held run's), each by its outer stroke."""
+    cards, outlines, k = [], [], 0
+    while k < len(ops):
+        o = ops[k]
+        if o.kind == 'round' and k + 1 < len(ops) and ops[k + 1].kind == 'round' and ops[k + 1].rect == inset(o.rect, 1):
+            card = SimpleNamespace(rect=o.rect, face=ops[k + 1].color, texts=[], inner=False)
+            k += 2
+            while k < len(ops) and (ops[k].kind == 'text' or (ops[k].kind == 'round' and ops[k].rect == inset(card.rect, 4))):
+                if ops[k].kind == 'text':
+                    card.texts.append(ops[k])
+                else:
+                    card.inner = True
+                k += 1
+            cards.append(card)
+            continue
+        if o.kind == 'frame' and not (outlines and o.rect == inset(outlines[-1].rect, 1)):
+            outlines.append(o)
+        k += 1
+    return cards, outlines
+
+
+def deal_table(s):
+    game_table(s)
+    put(s.sol, STOCK, [5, 6, 7])
+    put(s.sol, WASTE, [13 + 9 | UP])  # 10 of hearts
+    put(s.sol, FOUND, [0 | UP])  # Ace of spades
+    put(s.sol, TABLEAU, [39 + 2, 26 + 11 | UP, 39 + 10 | UP])  # a back, Queen of diamonds, Jack of clubs
+
+
+def test_solitaire_paint_the_top_row_shows_each_pile_s_top_card_and_a_column_all_of_it(fw):
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    deal_table(p.s)
+    cards, outlines = solitaire(paint(p))
+    assert [c.texts[0].text if c.texts else None for c in cards] == [None, '10♥', 'A♠', None, 'Q♦', 'J♣']
+    stock, ten, ace, back, queen, jack = cards
+    assert stock.inner and not back.inner and stock.face == back.face and not light(back.face)  # covered: no border
+    assert all(light(c.face) for c in (ten, ace, queen, jack))
+    assert [len(c.texts) for c in (ten, ace, queen, jack)] == [2, 2, 1, 2]  # the suit large only when uncovered
+    assert [t.text for t in jack.texts] == ['J♣', '♣'] and jack.texts[1].px > jack.texts[0].px
+    assert ten.texts[0].color == queen.texts[0].color and red(ten.texts[0].color)  # hearts and diamonds
+    assert ace.texts[0].color == jack.texts[0].color and dark(ace.texts[0].color)  # spades and clubs
+    top, column = {c.rect[1] for c in (stock, ten, ace)}, [c.rect for c in (back, queen, jack)]
+    assert len(top) == 1 and all(r[1] > max(top) + r[3] for r in column) and len({r[0] for r in column}) == 1
+    empty = [o for o in outlines if o.color != tone(fw)]
+    assert len(empty) == 9 and all(o.rect[2:] == stock.rect[2:] for o in empty)  # 3 foundations, 6 columns
+    assert sorted(o.rect[1] for o in empty) == [stock.rect[1]] * 3 + [back.rect[1]] * 6
+
+
+def test_solitaire_paint_a_deep_column_closes_its_fan_up_the_outer_ones_shorter(fw):
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    s = p.s
+    game_table(s)
+    deep = [39 + k for k in range(6)] + [(0 if k % 2 else 13) + 12 - k | UP for k in range(13)]  # 6 down, 13 up
+    put(s.sol, TABLEAU, deep)  # the outer column on the left
+    put(s.sol, TABLEAU + 3, deep)  # the middle one
+    put(s.sol, TABLEAU + 5, [26, 26 + 3 | UP, 39 + 2 | UP])
+    cards, _ = solitaire(paint(p))
+    columns = {}
+    for c in cards:
+        columns.setdefault(c.rect[0], []).append(c.rect)
+    outer, inner, short = (columns[x] for x in sorted(columns))
+    steps = {name: [b[1] - a[1] for a, b in zip(col, col[1:])] for name, col in (('o', outer), ('i', inner), ('s', short))}
+    assert len(outer) == len(inner) == 19 and steps['o'][:6] == steps['i'][:6] == [steps['s'][0]] * 6  # backs as ever
+    assert steps['s'][1] > steps['i'][6] > steps['o'][6] > 0 and len(set(steps['i'][6:])) == 1 == len(set(steps['o'][6:]))
+    bottom = {name: col[-1][1] + col[-1][3] for name, col in (('o', outer), ('i', inner))}
+    assert bottom['o'] < bottom['i'] <= s.h and bottom['i'] > s.h - steps['i'][6]  # filled to the sheet's foot
+
+
+def test_solitaire_paint_the_cursor_frames_its_top_card_and_a_held_run_is_framed_in_the_tone(fw):
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    s = p.s
+    deal_table(s)
+    s.sol.cur = TABLEAU
+    cards, outlines = solitaire(paint(p))
+    back, queen, jack = cards[3:]
+    cursor, = [o for o in outlines if o.color == tone(fw)]
+    assert encloses(cursor.rect, jack.rect) and not encloses(cursor.rect, queen.rect)
+    p.key(CENTER)  # the face-up run picked up
+    cards, outlines = solitaire(paint(p))
+    held, = [o for o in outlines if o.color == tone(fw)]
+    white, = [o for o in outlines if light(o.color) and o.color != tone(fw)]
+    assert encloses(held.rect, queen.rect) and encloses(held.rect, jack.rect) and not encloses(held.rect, back.rect)
+    assert encloses(white.rect, jack.rect) and not encloses(white.rect, queen.rect)
+    p.key(NEXT)  # carried to the next column, empty
+    cards, outlines = solitaire(paint(p))
+    held, = [o for o in outlines if o.color == tone(fw)]
+    white, = [o for o in outlines if light(o.color) and o.color != tone(fw)]
+    assert encloses(held.rect, queen.rect) and white.rect[0] >= held.rect[0] + held.rect[2]  # the next column's
+
+
+def test_solitaire_paint_asks_before_a_new_deal_and_says_when_it_is_won(fw):
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    s = p.s
+    p.key(PLAY)
+    assert banner(paint(p))[0][0] == 'New game?'
+    p.key(RETURN)
+    assert banner(paint(p)) == []
+    game_table(s)
+    for f in range(FOUND, TABLEAU):
+        put(s.sol, f, [(f - FOUND) * 13 + k | UP for k in range(13)])
+    (said, color), _ = banner(paint(p))
+    assert said == 'You win!' and color == tone(fw)
+
+
+def config(fw, **values):
+    """config.ini: a key's value, or the default."""
+    values = {k.encode(): v for k, v in values.items()}
+
+    def read(path, section, key, out, default, *_):
+        value = values.get(C.string_at(key), C.string_at(default))
+        C.memmove(out, value + b'\0', len(value) + 1)
+    fw.mock('toolsReadConfig', read)
+
+
+@pytest.mark.parametrize('mode', (b'0', b'1'))
+def test_solitaire_paint_a_card_is_paper_white_with_black_suits_in_either_mode(fw, mode):
+    config(fw, LIGHT=mode)
+    p = Page(fw)
+    p.go(SOLITAIRE)
+    deal_table(p.s)
+    cards, outlines = solitaire(paint(p))
+    assert all(light(c.face) for c in cards if c.texts)
+    assert dark(cards[2].texts[0].color) and dark(cards[5].texts[0].color) and red(cards[1].texts[0].color)
+    slot = next(o for o in outlines if o.rect[2:] == cards[0].rect[2:]).color  # an empty pile's: flipped as any other
+
+    assert (max(rgb(slot)) > 0x80) == (mode == b'1')

@@ -9,8 +9,8 @@
 static struct {
     unsigned *rates, *album_rates;
     void *rate_fav, *rate_ctx, *rate_badge;
-    int rate_shown; /* the badge's hearts plus 1, 0 for a new badge */
-    int rate_pick, rate_held;
+    int rate_shown;                     /* the badge's hearts plus 1, 0 for a new badge */
+    int rate_pick, rate_was, rate_held; /* the hearts picked, those the picker opened on */
     unsigned rate_hold, rate_tick, rate_album;
     void *rt_menu;
 } ra __attribute__((section(".scratch")));
@@ -20,7 +20,7 @@ static struct {
  * its low three bits holding the hearts, read once into a table calloc'd on first use. */
 #define RATINGS_FILE "/mnt/data/ringnav-ratings"
 /* Albums keep 1 to 5 hearts apart from their songs, by coverflow.c's album_id: 5 is the album's
- * favourite, there being no stock one. */
+ * favourite, there being no stock one, and puts its songs in My Fav (rate_album_favs). */
 #define ALBUM_RATINGS_FILE "/mnt/data/ringnav-album-ratings"
 /* Now Playing's heart click (playing_page_init binds it to img_fav with the window): stock's My
  * Fav toggled for the playing track (manage_myfav), and the heart's image with it. */
@@ -74,6 +74,22 @@ int rate_keep(int album, unsigned key, int n) {
 int rate_saved(int k) {
     if (k <= 0) toast(k ? "评价未保存" : "评价记录已满");
     return k > 0;
+}
+
+/* Five hearts is a favourite, so an album's are its songs' too: the queue menu's album's tracks
+ * into My Fav through batch-select's Add (0xf00a skips those already in it), or out.
+ * ponytail: taking an album out takes every song; nothing records which were favourites first. */
+void rate_album_favs(void *album, int on) {
+    void *t = qm_collect(album);
+    unsigned n = deque_size(t);
+    if (on && n) {
+        batch_init_selectrecord((int)n);
+        for (unsigned i = 0; i < n; i++) batch_set_selectitem((int)i);
+        batch_add_file(0xf001, 0xf00a, t, P(p_vector_select_record, 0), 0);
+    }
+    for (unsigned i = 0; !on && i < n; i++) deleteMusicFromFav(deque_at(t, i));
+    deque_destroy(t);
+    ratings_copy_due();
 }
 
 /* The playing local track (the queue menu's types), or 0. */
@@ -225,7 +241,8 @@ static void rate_close(int save) {
             toast("专辑已变更");
             return;
         }
-        rate_saved(rate_keep(1, ra.rate_album, n));
+        if (rate_saved(rate_keep(1, ra.rate_album, n)) && (n == 5 || ra.rate_was == 5))
+            rate_album_favs(a, n == 5);
         return;
     }
     void *r = save ? rate_track() : (void *)0;
@@ -252,7 +269,7 @@ static int rate_out(void *ctx, void *event) {
 int rate_show(void *win, int pick, unsigned album) {
     if (!win || st.rate_on) return 0;
     st.rate_on = win;
-    ra.rate_pick = pick;
+    ra.rate_pick = ra.rate_was = pick;
     ra.rate_album = album;
     rate_paint();
     void *panel = rate_panel(win);

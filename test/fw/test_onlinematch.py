@@ -3,12 +3,13 @@ Download Album Lyrics' job, and the cover searches' replies."""
 import ctypes as C
 import json
 import random
+import struct
 import unicodedata
 import urllib.parse
 
 import pytest
 
-from conftest import block
+from conftest import O, Deques, Files, block, high_halves, libc
 
 LRC_CANCELLED, LRC_CARD, LRC_OFFLINE, LRC_BUSY, LRC_NONE, LRC_SAVED = -4, -3, -2, -1, 0, 1
 LJ_DONE, LJ_OFFLINE, LJ_CARD, LJ_CANCELLED = range(4)
@@ -410,6 +411,57 @@ def test_cancelled_during_the_pause_stops_at_once(fw):
 def test_an_empty_album_is_done(fw):
     Card(fw)
     assert album(fw, Card(fw), [], [])[0] == LJ_DONE
+
+
+def test_a_track_with_lyrics_beside_it_is_left_as_it_is(fw):
+    card = Card(fw, b'/a/1.flac', b'/a/1.lrc', b'/a/2.flac', b'/a/2.LRC', b'/a/3.flac')
+    state, job, asked = album(fw, card, [b'/a/1.flac', b'/a/2.flac', b'/a/3.flac'], [LRC_SAVED])
+    assert (state, job.had, job.saved, job.done) == (LJ_DONE, 2, 1, 3) and [a[0] for a in asked] == [b'3.flac']
+
+
+def test_a_file_gone_since_the_scan_is_passed_over_uncounted(fw):
+    card = Card(fw, b'/a/2.flac')
+    state, job, asked = album(fw, card, [b'/a/1.flac', b'/a/2.flac'], [LRC_NONE])
+    assert (state, job.done, job.none, job.failed, job.had) == (LJ_DONE, 2, 1, 0, 0) and [a[0] for a in asked] == [b'2.flac']
+
+
+def test_two_tracks_unanswered_in_a_row_end_the_job(fw):
+    paths = [b'/a/1.flac', b'/a/2.flac', b'/a/3.flac']
+    card = Card(fw, *paths)
+    state, job, asked = album(fw, card, paths, [LRC_OFFLINE, LRC_OFFLINE])
+    assert (state, job.failed, len(asked)) == (LJ_OFFLINE, 2, 2)
+    assert card.log == [('unlink', b'/a/1.lrc.part'), ('unlink', b'/a/2.lrc.part')]
+    assert not fw.calls('fw_usleep')  # nothing answered yet: likely offline, so no retry
+
+
+def test_once_lrclib_has_answered_a_failed_request_is_retried_once(fw):
+    paths = [b'/a/%d.flac' % i for i in range(1, 5)]
+    card = Card(fw, *paths)
+    state, job, asked = album(fw, card, paths, [LRC_OFFLINE, LRC_NONE, LRC_OFFLINE, LRC_OFFLINE, LRC_SAVED])
+    assert (state, job.failed, job.none, job.saved) == (LJ_DONE, 2, 1, 1)  # an answer between ends a run
+    assert [a[0] for a in asked] == [b'1.flac', b'2.flac', b'3.flac', b'3.flac', b'4.flac']
+    assert [c[1][0] for c in fw.calls('fw_usleep')] == [100000] * 20  # one 2 s pause, cancellable each 100 ms
+
+
+def test_tracks_still_busy_count_as_unanswered(fw):
+    paths = [b'/a/1.flac', b'/a/2.flac', b'/a/3.flac']
+    card = Card(fw, *paths)
+    state, job, asked = album(fw, card, paths, [LRC_BUSY] * 6)
+    assert (state, job.failed, len(asked)) == (LJ_OFFLINE, 2, 6)  # three requests each
+
+
+def test_a_saved_track_between_unanswered_ones_starts_the_run_again(fw):
+    paths = [b'/a/1.flac', b'/a/2.flac', b'/a/3.flac']
+    card = Card(fw, *paths)
+    state, job, asked = album(fw, card, paths, [LRC_OFFLINE, LRC_SAVED, LRC_OFFLINE, LRC_OFFLINE])
+    assert (state, job.failed, job.saved) == (LJ_DONE, 2, 1)
+    assert [a[0] for a in asked] == [b'1.flac', b'2.flac', b'3.flac', b'3.flac']  # answered once: the third retried
+
+
+def test_a_card_that_cant_be_written_ends_the_job(fw):
+    card = Card(fw, b'/a/1.flac', b'/a/2.flac')
+    state, job, asked = album(fw, card, [b'/a/1.flac', b'/a/2.flac'], [LRC_CARD])
+    assert (state, len(asked)) == (LJ_CARD, 1) and card.log == [('unlink', b'/a/1.lrc.part')]
 
 
 def note(fw, n, **fields):
@@ -814,3 +866,424 @@ def test_a_copy_that_fails_leaves_no_part_file(fw):
         copy = Copy(fw, b'x', **kind)
         assert copy.fn(b'/tmp/t', b'/a/1.lrc') == 0
         assert copy.card.log == [('unlink', b'/a/1.lrc.part')], kind
+
+
+def test_our_covers_go_before_stocks_kugou_search(fw):
+    art = json.dumps({'results': [{'artworkUrl100': 'https://i/100x100.jpg'}]}).encode()
+    net = Net(fw, {'https://musicbrainz': groups(ID % 1), 'https://coverartarchive': b'', ITUNES: art})
+    redirects(net, fw)
+    covers, seen = Covers(fw, album=b'Al', artist=b'Ar'), []
+    fw.mock('stock_kugoucover_trampoline', lambda keyword, *_: seen.append((C.string_at(keyword), list(covers.added))))
+    fw.fn('ringnav_cover_search', None, C.c_char_p)(b'Ti&Ar')
+    assert seen == [(b'Ti&Ar', ['https://archive.org/x.jpg', 'https://i/600x600.jpg'])]
+
+
+# Stock's records, its queue and library, and the card, for the lyrics save and Download Album Lyrics.
+BOM = b'\xef\xbb\xbf'
+THREAD = 0x7e57
+FMT = b'cp -rf %s "/mnt/mmc/.downpic/%s"'  # stock's accept command (docs/internals.md#lyrics-search)
+
+
+class Records:
+    """Stock's song records as the Q2 lays them out, a word a field. P() reads a pointer field 8 bytes wide
+    here, its word and the next one above it: so every word holds a number of its own, and a field's string
+    goes where its word and the next make an address, in a mapping of its own: the words are this file's high
+    halves (conftest.high_halves), each under 0x5000, so a string sits well inside the 64 KB at its next word."""
+    HIGHS = high_halves(0x100)
+
+    def __init__(self):
+        self.words, self.maps, self.keep = iter(self.HIGHS), [], []
+
+    def fresh(self):
+        return next(self.words)
+
+    def song(self, path, album=b'', title=b'', artist=b'', name=None, album_artist=None, kind=8, disc=0, track=0, cue=(0, 0)):
+        record, words = C.create_string_buffer(0x60), {}
+        fields = [('REC_NAME', path.rsplit(b'/', 1)[-1] if name is None else name), ('REC_PATH', path),
+                  ('REC_TITLE', title), ('REC_ALBUM', album), ('REC_ARTIST', artist)]
+        fields += [('REC_ALBUM_ARTIST', album_artist)] if album_artist is not None else []
+        for field, value in fields:
+            low, high = words.setdefault(O[field], self.fresh()), words.setdefault(O[field] + 4, self.fresh())
+            assert libc.mmap(high << 32, 0x10000, 3, 0x100022, -1, 0) == high << 32  # MAP_FIXED_NOREPLACE
+            self.maps.append(high << 32)
+            C.memmove((high << 32) + low, value + b'\0', len(value) + 1)
+        for offset, word in words.items():
+            struct.pack_into('<I', record, offset, word)
+        for field, number in (('REC_TYPE', kind), ('REC_DISC', disc), ('REC_TRACK', track), ('REC_CUE_START', cue[0]), ('REC_CUE_END', cue[1])):
+            struct.pack_into('<i', record, O[field], number)
+        assert all(C.c_char_p.from_address(C.addressof(record) + O[f]).value == v for f, v in fields)  # as P() reads them
+        self.keep.append(record)
+        return C.addressof(record)
+
+    def close(self):
+        for at in self.maps:
+            libc.munmap(C.c_void_p(at), C.c_size_t(0x10000))
+
+
+@pytest.fixture
+def records():
+    made = Records()
+    yield made
+    made.close()
+
+
+class Queue:
+    """Stock's play queue (mcl_pdeqplaylist at MCL_POS, of MCL_TYPE) and its library's getMusicByAlbum, which
+    fills the deque staged() put in tools_pdeq_directory with the rows of albums of that name."""
+    def __init__(self, fw, mcl, rows=(), pos=0, kind=0xf001):
+        self.fw, self.deques, self.albums = fw, Deques(fw), {}
+        fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = self.deques.new(rows)
+        mcl.pos, mcl.type = pos, kind
+        fw.mock('getMusicByAlbum', self.album)
+
+    def album(self, name, *_):
+        rows = self.albums.get(C.string_at(name), [])
+        self.deques[self.fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value][:] = rows
+        return len(rows)
+
+
+class Disk(Files):
+    """The card as conftest's Files, with fputs and access: what LRCLIB's lyrics and the album job write."""
+    def __init__(self, fw, files=None):
+        super().__init__(fw, files)
+        fw.mock('fw_fputs', lambda s, f, *_: self.open[f].__setitem__(2, self.open[f][2] + C.string_at(s)))
+        fw.mock('fw_access', lambda path, mode, *_: 0 if C.string_at(path).decode() in self.files else -1)
+
+
+def save(fw, name, tmp=b'/tmp/oslyric_1'):
+    """ringnav_lyric_save as stock's accept calls it: the command it leaves, and its length."""
+    cmd = block(fw, size=0x400)
+    n = fw.fn('ringnav_lyric_save', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p, C.c_char_p)(cmd, 0x400, FMT, tmp, name)
+    return n, C.string_at(cmd).decode()
+
+
+def stocks(name, tmp='/tmp/oslyric_1'):
+    command = f'cp -rf {tmp} "/mnt/mmc/.downpic/{name}"'
+    return len(command), command
+
+
+def test_an_accepted_match_goes_beside_the_playing_song_and_its_hiding_copy_goes(fw, mcl, records):
+    Queue(fw, mcl, [records.song(b'/m/X/song.flac'), records.song(b'/m/Y/song.mp3')], pos=1)  # both make song.lrc
+    disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})
+    assert save(fw, b'song.lrc') == (1, ':')  # system() runs nothing
+    assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/m/Y/song.lrc': b'lyrics'}
+
+
+def test_an_accepted_match_for_another_queued_song_goes_beside_it(fw, mcl, records):
+    Queue(fw, mcl, [records.song(b'/m/a.flac'), records.song(b'/m/b.flac'), records.song(b'/m/c.flac')], pos=0)
+    disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics'})
+    assert save(fw, b'c.lrc') == (1, ':') and disk.files['/m/c.lrc'] == b'lyrics'
+
+
+@pytest.mark.parametrize('song,kind', [
+    (dict(path=b'/m/song.flac', cue=(30, 0)), 0xf001), (dict(path=b'/m/song.flac', cue=(0, 90)), 0xf001),  # a CUE track
+    (dict(path=b'/m/song.flac'), 0xf1), (dict(path=b'/m/song.flac'), 0xf2),                                # an online queue
+    (dict(path=b'http://h/song.flac'), 0xf001), (dict(path=b'/m/song.flac', kind=4), 0xf001),              # no file
+    (dict(path=b'/m/other.flac'), 0xf001),                                                                  # not queued
+])
+def test_stock_saves_what_isnt_a_queued_song_of_its_own(fw, mcl, records, song, kind):
+    Queue(fw, mcl, [records.song(**song)], kind=kind)
+    disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})
+    assert save(fw, b'song.lrc') == stocks('song.lrc')
+    assert disk.files == {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'}
+
+
+def test_a_copy_that_fails_leaves_it_to_stock(fw, mcl, records):
+    Queue(fw, mcl, [records.song(b'/m/song.flac')])
+    disk = Disk(fw, {'/mnt/mmc/.downpic/song.lrc': b'stock'})  # no lyrics file to copy
+    assert save(fw, b'song.lrc') == stocks('song.lrc') and disk.files == {'/mnt/mmc/.downpic/song.lrc': b'stock'}
+
+
+def test_an_accepted_lrclib_match_is_what_the_next_load_shows(fw, mcl, records):
+    Queue(fw, mcl, [records.song(b'/m/Y/song.flac', title=b'Song', artist=b'Band')])
+    disk = Disk(fw, {'/mnt/mmc/.downpic/song.lrc': b'stock'})
+    Net(fw, {LRCLIB: results('[00:01.00] Lyrics : Someone\n[00:02.50] la la\n[00:04.00] la\n')})
+    fw.mock('online_getkeyword_info', keyinfo(b'Song', b'', b'Band'))
+    assert fw.fn('ringnav_lyric_search', C.c_int, C.c_char_p, C.c_char_p)(b'Song&Band', b'/tmp/oslyric_1') == 1
+    assert save(fw, b'song.lrc') == (1, ':') and '/mnt/mmc/.downpic/song.lrc' not in disk.files
+    assert fw.fn('ringnav_lrc_utf8', C.c_int, C.c_char_p)(b'/m/Y/song.lrc') == 1  # stock's probe: no GB18030 conversion
+    # stock's reload: its .lrc parser opens the file through LYRIC_OPEN, then ours replaces its lines
+    lines = []
+    fw.mock('fw_deque_clear', lambda *_: lines.clear())
+    fw.mock('fw__deque_push_back', lambda q, line, *_: lines.append((C.c_int.from_address(line).value,
+                                                                     C.c_char_p.from_address(line + 8).value)))
+    fw.mock('mclGetLyricSize', lambda *_: 2)
+    reopen = fw.fn('ringnav_lrc_open', C.c_void_p, C.c_char_p, C.c_char_p)
+    fw.mock('stock_lyric_trampoline', lambda *_: reopen(b'/m/Y/song.lrc', b'r') and 1)
+    assert fw.fn('ringnav_lyric', C.c_int)() == 1
+    assert lines == [(2, b'la la'), (4, b'la')]
+
+
+@pytest.fixture
+def more_rows():
+    """Stock's PLAYMORE_ROWS, each ⋯ row's kind by position (docs/internals.md#album-lyrics), in conftest's
+    map: put back after."""
+    at, size = O['PLAYMORE_ROWS'], 4 * O['PLAYMORE_COUNT']
+    saved = C.string_at(at, size)
+    C.memmove(at, struct.pack('<8i', 2, 3, 4, 5, 6, 7, 0, 1), size)
+    yield
+    C.memmove(at, saved, size)
+
+
+def widget(parent=None, h=0):
+    w = C.create_string_buffer(0x100)
+    struct.pack_into('<Q', w, O['W_PARENT'], C.addressof(parent) if parent is not None else 0)
+    struct.pack_into('<i', w, O['W_H'], h)
+    return w
+
+
+class More:
+    """Now Playing's ⋯ page as stock's init leaves it, scroll_view_more and its rows, and the item, button
+    and label list_row makes for ours: the label's text, the restack and each handler are kept."""
+    def __init__(self, fw, rows=8, view=True):
+        self.fw, self.texts, self.on, self.restacked = fw, [], {}, []
+        self.win, self.view = widget(), widget()
+        self.item = widget(self.view)
+        self.button = widget(self.item)
+        self.label = widget(self.button, 70)
+        a = C.addressof
+        fw.mock('stock_playermore_trampoline', lambda *_: 0x55)
+        fw.mock('widget_lookup', lambda w, name, *_:
+                a(self.view) if view and w == a(self.win) and C.string_at(name) == b'scroll_view_more' else 0)
+        fw.mock('widget_count_children', lambda w, *_: rows if w == a(self.view) else 0)
+        fw.mock('list_item_create', lambda *_: a(self.item))
+        fw.mock('button_create', lambda *_: a(self.button))
+        fw.mock('hscroll_label_create', lambda *_: a(self.label))
+        fw.mock('widget_on', lambda w, event, fn, ctx, *_: self.on.__setitem__((w, event), (fn, ctx)))
+        fw.mock('widget_set_text_utf8', lambda w, s, *_: self.texts.append(C.string_at(s).decode()) if w == a(self.label) else 0)
+        fw.mock('widget_restack', lambda w, at, *_: self.restacked.append((w, at)))
+
+    def open(self, win=True):
+        return self.fw.fn('ringnav_playermore', C.c_int, C.c_void_p, C.c_void_p)(C.addressof(self.win) if win else None, None)
+
+    def handler(self, w, event):
+        fn, ctx = self.on[(C.addressof(w), event)]
+        return C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, None)
+
+    def click(self):
+        return self.handler(self.button, O['EVT_CLICK'])
+
+
+class Run:
+    """The job's thread, timer and toasts: pthread_create keeps the worker, which runs when the test says or
+    at pthread_join, which waits for it; timer_add keeps the row's timer; a toast is stock's msginfo dialog."""
+    def __init__(self, fw, wifi=3, starts=True):
+        self.fw, self.toasts, self.timers, self.start, self.ran = fw, [], [], None, False
+        self.al = fw.var('onlinematch__al', Al)
+        fw.mock('get_wifisignal', lambda *_: wifi)
+        fw.mock('fw_pthread_create', self.create if starts else lambda *_: 11)  # EAGAIN
+        fw.mock('fw_pthread_join', lambda thread, *_: self.run())
+        fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append((fn, ms)) or 1)
+        fw.mock('navigator_to_with_context', self.navigate)
+
+    def create(self, thread, attr, start, arg, *_):
+        C.c_ulong.from_address(thread).value = THREAD
+        self.start, self.ran = start, False
+
+    def run(self):
+        if self.start and not self.ran:
+            self.ran = True
+            C.CFUNCTYPE(C.c_void_p, C.c_void_p)(self.start)(None)
+
+    def navigate(self, name, info, *_):
+        if C.string_at(name) == b'dialog/msginfo_dialog':
+            self.toasts.append(C.string_at(info + 8).decode())  # after its kind and time
+
+    def tick(self):
+        return C.CFUNCTYPE(C.c_int, C.c_void_p)(self.timers[-1][0])(None)
+
+
+def titles_of(url):
+    return urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['track_name'][0]
+
+
+def titles(net):
+    """The titles LRCLIB was asked for, in order."""
+    return [titles_of(u) for u in net.urls]
+
+
+def greatest_hits(fw, mcl, records, *extra):
+    """The playing song's album as stock's library holds it: its songs out of order, a CUE track of its folder,
+    another album of its name; the card holds them and stock's .downpic copies of two's lyrics."""
+    album = dict(album=b'Greatest Hits', artist=b'A')
+    two = records.song(b'/m/A/GH/02 Two.flac', title=b'Two', disc=1, track=2, **album)
+    rows = [records.song(b'/m/B/GH/01 Else.flac', title=b'Else', album=b'Greatest Hits', artist=b'B'),
+            records.song(b'/m/A/GH/CD2/01 Three.flac', title=b'Three', disc=2, track=1, **album),
+            records.song(b'/m/A/GH/live.flac', title=b'Live', disc=1, track=9, cue=(10, 20), **album),
+            two, records.song(b'/m/A/GH/01 One.flac', title=b'One', disc=1, track=1, **album), *extra]
+    queue = Queue(fw, mcl, [two])
+    queue.albums[b'Greatest Hits'] = rows
+    return Disk(fw, {'/m/A/GH/01 One.flac': b'', '/m/A/GH/02 Two.flac': b'', '/m/A/GH/CD2/01 Three.flac': b'',
+                     '/m/A/GH/live.flac': b'', '/m/B/GH/01 Else.flac': b'',
+                     '/mnt/mmc/.downpic/01 One.lrc': b'stock', '/mnt/mmc/.downpic/02 Two.lrc': b'stock'})
+
+
+def lrclib_answers(fw, **found):
+    """LRCLIB with synced lyrics for the titles found names, and none for any other."""
+    return Net(fw, {LRCLIB: (lambda url: results(found[titles_of(url)]) if titles_of(url) in found else b'[]',)})
+
+
+def summed(fw, job, state=LJ_DONE, **counts):
+    """The job ended in state with these counts (any not named 0) and said so once: album_note's toast for them, in
+    al_finish's 96 bytes."""
+    j = job.al.job
+    assert (j.state, j.saved, j.none, j.had, j.failed) == (state, *(counts.get(k, 0) for k in ('saved', 'none', 'had', 'failed')))
+    assert job.toasts == [note(fw, 96, state=state, **counts)]
+
+
+def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, more_rows):
+    disk = greatest_hits(fw, mcl, records)
+    net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] Mix : X\n[00:02.00] three\n')
+    job, more = Run(fw), More(fw)
+    assert more.open() == 0x55  # stock's
+    assert len(more.texts) == 1 and more.restacked == [(C.addressof(more.item), 3)]  # its title, under the third row
+    assert more.click() == 0 and job.timers[0][1] == 500
+    assert (job.al.job.done, job.al.job.total) == (0, 3) and more.texts[-1] != more.texts[0]  # its progress instead
+    assert len(fw.calls('fw_deque_destroy')) == 2  # the library's rows and the album's list, copied: both go
+    assert job.tick() == 8 and fw.calls('reset_poweroptions_timer')[-1][1][:3] == (1, 1, 0)  # standby held off
+    job.run()
+    assert job.tick() == 0 and more.texts[-1] == more.texts[0]  # its title again
+    summed(fw, job, saved=2, none=1)
+    assert titles(net) == ['One', 'Two', 'Three']  # its own songs in disc and track order, the CUE track left out
+    assert {urllib.parse.parse_qs(urllib.parse.urlsplit(u).query)['artist_name'][0] for u in net.urls} == {'A'}
+    assert disk.files['/m/A/GH/01 One.lrc'] == BOM + b'[00:01.00] one\n'
+    assert disk.files['/m/A/GH/CD2/01 Three.lrc'] == BOM + b'[00:02.00] three\n'
+    assert '/m/A/GH/02 Two.lrc' not in disk.files and not [p for p in disk.files if p.endswith('.part')]
+    assert '/mnt/mmc/.downpic/01 One.lrc' not in disk.files and disk.files['/mnt/mmc/.downpic/02 Two.lrc'] == b'stock'
+    assert not job.al.thread and not job.al.tracks
+
+
+def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    net = lrclib_answers(fw)
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    progress = more.texts[-1]
+    more.click()
+    assert job.al.job.cancel == 1 and more.texts[-1] not in (more.texts[0], progress)  # it says it is cancelling
+    job.run()
+    assert job.tick() == 0 and not net.urls
+    summed(fw, job, LJ_CANCELLED)
+
+
+def test_a_press_after_the_job_ended_leaves_it_to_the_timer(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    lrclib_answers(fw)
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    job.run()
+    more.click()
+    assert len(fw.calls('fw_pthread_create')) == 1 and not job.al.job.cancel
+    assert job.tick() == 0
+    summed(fw, job, none=3)
+
+
+def test_a_second_job_counts_afresh(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    lrclib_answers(fw, One='[00:01.00] one\n')
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    job.run()
+    job.tick()
+    more.click()
+    j = job.al.job
+    assert (j.done, j.total, j.saved, j.none, j.had, j.failed) == (0, 3, 0, 0, 0, 0) and more.texts[-1] != more.texts[0]
+    job.run()
+    job.tick()
+    assert (j.saved, j.none, j.had) == (0, 2, 1)  # One's lyrics, saved the first time, beside it now
+    assert job.toasts == [note(fw, 96, state=LJ_DONE, saved=1, none=2), note(fw, 96, state=LJ_DONE, none=2, had=1)]
+
+
+def test_usb_storage_stops_the_job_quietly(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    net = lrclib_answers(fw)
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    fw.fn('album_lyrics_stop', None)()
+    assert [c[1][0] for c in fw.calls('fw_pthread_join')] == [THREAD] and not net.urls  # cancelled before it asked
+    assert not job.al.thread and not job.al.tracks and more.texts[-1] == more.texts[0]  # its title again
+    assert job.tick() == 0 and job.toasts == []
+
+
+def test_the_page_gone_the_job_runs_on_and_still_says_how_it_went(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    lrclib_answers(fw, One='[00:01.00] one\n')
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    shown = len(more.texts)
+    assert more.handler(more.label, O['EVT_DESTROY']) == 0 and not job.al.label
+    job.run()
+    assert job.tick() == 0 and len(more.texts) == shown
+    summed(fw, job, saved=1, none=2)
+
+
+def test_no_wifi_no_job(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    job, more = Run(fw, wifi=0), More(fw)
+    more.open()
+    more.click()
+    assert len(job.toasts) == 1 and not fw.calls('getMusicByAlbum') and not fw.calls('fw_pthread_create')
+
+
+def test_a_thread_that_wont_start_says_so(fw, mcl, records, more_rows):
+    greatest_hits(fw, mcl, records)
+    job, more = Run(fw, starts=False), More(fw)
+    more.open()
+    more.click()
+    assert len(job.toasts) == 1 and fw.calls('fw_pthread_create') and not job.timers
+    assert (job.al.thread, job.al.tracks, job.al.running) == (0, None, 0) and len(more.texts) == 1  # still its title
+
+
+def test_only_the_albums_songs_files_on_the_card_are_fetched(fw, mcl, records, more_rows):
+    band = dict(album=b'Hits', album_artist=b'Band')  # one album by its album artist, whatever the folder
+    playing = records.song(b'/m/1.flac', title=b'One', **band)
+    queue = Queue(fw, mcl, [playing])
+    queue.albums[b'Hits'] = [playing, records.song(b'/m/dir', kind=4, **band), records.song(b'http://h/2.flac', title=b'Two', **band),
+                             records.song(b'/' + b'a' * 0x1ff, title=b'Long', **band), records.song(b'/m/3.flac', title=b'Cue', cue=(0, 9), **band),
+                             records.song(b'/m/3.flac', title=b'Last', cue=(9, 0), **band)]  # a sheet's last track ends with its file
+    Disk(fw, {'/m/1.flac': b''})
+    net = lrclib_answers(fw)
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    job.run()
+    assert job.al.job.total == 1 and titles(net) == ['One']
+
+
+def test_a_cue_album_has_no_songs_of_its_own(fw, mcl, records, more_rows):
+    cue = dict(album=b'Live', path=b'/m/live.flac')
+    playing = records.song(title=b'One', cue=(0, 300), **cue)
+    Queue(fw, mcl, [playing]).albums[b'Live'] = [playing, records.song(title=b'Two', cue=(300, 600), **cue)]
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    assert len(job.toasts) == 1 and not job.start and fw.calls('getMusicByAlbum')
+
+
+def test_a_song_without_a_title_is_not_found_unasked(fw, mcl, records, more_rows):
+    disk = greatest_hits(fw, mcl, records, records.song(b'/m/A/GH/03.flac', album=b'Greatest Hits', artist=b'A', disc=1, track=3))
+    disk.files['/m/A/GH/03.flac'] = b''
+    net = lrclib_answers(fw)
+    job, more = Run(fw), More(fw)
+    more.open()
+    more.click()
+    job.run()
+    job.tick()
+    assert titles(net) == ['One', 'Two', 'Three']
+    summed(fw, job, none=4)
+
+
+@pytest.mark.parametrize('case', ['no window', 'no view', 'not stock rows', 'online', 'no album', 'not a song', 'no search row'])
+def test_the_row_only_for_a_playing_song_on_the_card_under_stocks_rows(fw, mcl, records, more_rows, case):
+    song = records.song(b'/m/a.flac', album=b'' if case == 'no album' else b'Al', kind=4 if case == 'not a song' else 8)
+    Queue(fw, mcl, [song], kind=0xf2 if case == 'online' else 0xf001)
+    if case == 'no search row':
+        C.memmove(O['PLAYMORE_ROWS'], struct.pack('<8i', 0, 1, 2, 3, 5, 6, 7, 8), 32)
+    more = More(fw, rows=7 if case == 'not stock rows' else 8, view=case != 'no view')
+    assert more.open(win=case != 'no window') == 0x55
+    assert not fw.calls('list_item_create') and not more.texts and not more.on

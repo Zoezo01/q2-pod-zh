@@ -197,6 +197,9 @@ int main(int argc,char **argv) {
     int s=socket(AF_INET,SOCK_STREAM,0), one=1;
     if (s<0) return 1;
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=(PORT&255)<<8|PORT>>8};
+#ifdef REMOTE_HOST
+    a.sin_addr.s_addr=htonl(INADDR_LOOPBACK); /* the test's shell: not on the LAN */
+#endif
     if (setsockopt(s,SOL_SOCKET,SO_REUSEADDR,&one,sizeof one) || bind(s,(void*)&a,sizeof a) || listen(s,4)) { close(s); return 1; }
     signal(SIGCHLD,SIG_IGN);
     /* Keep the key from boot: the card mounts around now, and with a USB cable in demo soon
