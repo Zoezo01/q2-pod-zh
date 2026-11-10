@@ -690,17 +690,13 @@ def test_a_second_sync_with_nothing_new_sets_no_image(fw):
 
 @pytest.mark.parametrize('light', [0, 1])
 @pytest.mark.parametrize('status', [2, 3])
-def test_classic_draws_its_own_state_by_half_and_gives_eq_the_room_when_idle(fw, light, status):
+def test_classic_draws_its_own_state_by_half(fw, light, status):
     theme(fw, CLASSIC, LIGHT=str(light).encode())
     bar = Bar(fw, status)
     bar.sync()
     state = 'play' if status == 2 else 'pause'
     assert bar.w['img_state'].props['image'] == f'classic_light_{state}_{"dl"[light]}'
-    assert not bar.w['label_eq'].visible  # room for one: the play state
-    bar.status = 0
-    bar.w['label_eq'].visible = 1
-    bar.sync()
-    assert not bar.w['img_state'].visible and bar.w['label_eq'].visible and not bar.w['label_idle'].visible
+    assert bar.w['label_eq'].visible  # stock's, left alone: Classic's bar keeps it off-screen (tools/ipod.py)
 
 
 @pytest.mark.parametrize('status', [2, 3])

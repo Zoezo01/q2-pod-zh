@@ -1709,7 +1709,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
                       QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
-                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
+                      STATUS_ICONS, status_icon, row_icon, pane_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
                       set_assets)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
     check(contexts, 'No navigation contexts audited')
@@ -2051,9 +2051,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     pane = max(t['pane_svc_px'] for t in builtin_themes())  # Home's pane on Streaming's list, 1:1 (coverflow.c pane_service)
     for n in ('spotify', 'radio', 'app', 'airplay', 'config'):
         like, data = icons[f'stream_{n}.png']
-        icons[f'classic_light_stream_{n}.png'] = (like, row_icon(data, pane))
+        icons[f'classic_light_stream_{n}.png'] = (like, pane_icon(data, pane))
         icons[f'stream_{n}.png'] = (like, row_icon(data, sharp=True))
-    icons['classic_light_list_tidal.png'] = ('list_tidal.png', row_icon(cat(xx+'list_tidal.png'), pane))
+    icons['classic_light_list_tidal.png'] = ('list_tidal.png', pane_icon(cat(xx+'list_tidal.png'), pane))
     icons['default_album_home.png'] = ('default_album_big.png', art)
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}

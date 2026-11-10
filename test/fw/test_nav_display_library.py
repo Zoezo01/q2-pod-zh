@@ -2011,23 +2011,15 @@ class Hold:
         return C.c_ubyte.from_address(LATCH).value
 
 
-def test_hold_return_opens_now_playing_over_the_page_and_drops_the_latch(fw, st, stand_in):
+def test_hold_return_opens_now_playing_over_the_page_and_leaves_the_latch_to_swallow_its_release(fw, st, stand_in):
     ui = Ui(fw)
     ui.window('home_page')
     songs = ui.window('localmusic_page')
     hold = Hold(fw, ui, stand_in)
     assert hold() == ['home_page', 'localmusic_page', 'playing_page']
     assert hold.opened == [('playing_page', (0, 0, 0xff, 2))]  # stock's car-mode context: the queue as it is
-    assert st('np_origin', C.c_void_p).value == songs.addr and hold.latch() == 0
-
-
-def test_a_switch_that_did_not_land_leaves_the_latch(fw, st, stand_in):
-    ui = Ui(fw)
-    ui.window('home_page')
-    hold = Hold(fw, ui, stand_in)
-    hold.lands = False
-    hold()
-    assert hold.latch() == 1
+    assert st('np_origin', C.c_void_p).value == songs.addr
+    assert hold.latch() == 1  # stock's filter swallows the hold's release; cleared, it went back from Now Playing
 
 
 def test_hold_return_on_now_playing_goes_back_to_the_page_it_opened_over(fw, st, stand_in):

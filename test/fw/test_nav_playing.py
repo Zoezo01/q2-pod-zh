@@ -499,9 +499,9 @@ def test_a_crowded_row_turns_percent_inside_to_the_icon_but_classics_is_the_icon
     bar = Bar(fw, ui)
     ui.place(bar.wifi, 30, 6, 60, 18)
     ui.shown[bar.wifi] = ui.shown[bar.eq] = 1
-    fw.mock('mclGetPlayStatus', lambda *_: status)  # Classic's group: the play state while playing, else EQ
+    fw.mock('mclGetPlayStatus', lambda *_: status)  # Classic's group: the play state while playing
     canvas = Paint(fw, ui, bar)()
-    assert ui.shown[bar.state] == (status == 2) and ui.shown[bar.eq] == (t is MINIMAL or status != 2)
+    assert ui.shown[bar.state] == (status == 2) and ui.shown[bar.eq] == 1  # EQ is stock's to show
     assert [x[0] for x in canvas.texts] == digits  # Classic's twice: dark on the level, white past it
     g = SETS[GEOM[t['name']]]
     assert slot_width(ui, bar) == (g.batt_w + 1 if t is CLASSIC else BODY_W) + NUB_W
@@ -687,14 +687,15 @@ def test_the_battery_s_room_counts_the_row_the_theme_laid_out(fw, st, ui, t, mod
     assert st.batt_mode == mode
 
 
-@pytest.mark.parametrize('t, look, eq', [(CLASSIC, 1, 0), (MINIMAL, 3, 1)])
-def test_what_shares_the_row_is_the_theme_s_whatever_the_status_bar(fw, st, ui, t, look, eq):
+# EQ is stock's to show or hide: a bar without it keeps the label off-screen (tools/ipod.py), whatever the look.
+@pytest.mark.parametrize('t, look', [(CLASSIC, 1), (MINIMAL, 3)])
+def test_the_payload_leaves_eq_as_stock_set_it_whatever_the_status_bar(fw, st, ui, t, look):
     theme(fw, st, t, STATUSBAR=look)
     bar = Bar(fw, ui)
     ui.shown[bar.eq] = 1
     fw.mock('mclGetPlayStatus', lambda *_: 2)
     fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
-    assert ui.shown[bar.eq] == eq
+    assert ui.shown[bar.eq] == 1
 
 
 def level_rows(canvas, x, y, ih):
@@ -880,13 +881,12 @@ def test_showface_shows_the_play_state_and_answers_as_stock(fw, st, ui, status, 
     assert ui.shown[bar.idle] == (not shown)  # neither state nor EQ: the idle label
 
 
-def test_classics_play_state_takes_eqs_place_in_its_own_art(fw, st, ui):
+def test_classics_play_state_is_its_own_art(fw, st, ui):
     theme(fw, st, CLASSIC, light=1)
     bar = Bar(fw, ui)
-    ui.shown[bar.eq] = 1
     fw.mock('mclGetPlayStatus', lambda *_: 2)
     fw.fn('ringnav_showface', C.c_int, C.c_void_p)(bar.bar)
-    assert ui.prop(bar.state, b'image') == b'classic_light_play_l' and ui.shown[bar.eq] == 0
+    assert ui.prop(bar.state, b'image') == b'classic_light_play_l'
 
 
 # Time in Title off: the bar's centre names the page in front.

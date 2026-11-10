@@ -842,32 +842,25 @@ def test_classic_light_status_bar_has_a_title_and_no_idle_mark():
     assert n['view_left'][3] == [] and n['view_left'][2]['children_layout'].endswith(f'xm={m["inset"]},s={ipod.inc("STATUS_GAP")})')
 
 
-# Right of the centred clock, left to right: EQ (it floats; only while nothing plays, navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery, the battery body ending where the glass
-# does at its top row, on every page, Home's own list too: no second play state.
+# Right of the centred clock, left to right: Bluetooth, Wi-Fi, the play state and the battery, the battery body
+# ending where the glass does at its top row, on every page, Home's own list too: no second play state. No EQ.
 def test_classic_light_status_bar_battery_and_play_state_right():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
-    assert [c[2]['name'] for c in n['view_right'][3]] == ['label_eq', 'img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[2:]]
+    assert [c[2]['name'] for c in n['view_right'][3]] == ['img_bt', 'img_wifi', 'img_state', *ipod.STATUS_RIGHT[2:], 'label_eq']
     assert 'img_home_state' not in n
     assert n['view_right'][2]['children_layout'].endswith(f'xm=60,s={ipod.inc("STATUS_GAP")})')  # the nub ends at x 314
     assert 375 - ipod.corner_inset(5) - 1 - (314 - ipod.inc('BATT_NUB_W')) == ipod.BAR_PAD  # the body's top-right pixel, row 5, clear of the glass; the nub's rows lower still
     assert [c[2]['name'] for c in root[3] if c[1][0] == -200] == ipod.STATUS_HIDDEN  # only these parked
 
 
-# EQ floats inside the room the battery's reach counts, not left of img_bt's 43 px canvas (whose ink is its last
-# BT_REACH px), where the layout would put it: past the clock's text. In the bar's face, on its text line.
-def test_classic_light_status_bar_eq_in_the_room():
+# Classic shows no EQ: its label, which stock still shows each second, floats above the bar, out of the row's
+# layout, at the column the right group's room starts on, where the title's reach ends (np_bar.c bar_title).
+def test_classic_light_status_bar_shows_no_eq():
     root = bar(); ipod.status_bar(root, g=CLASSIC_LIGHT); n = named(root)
     m, eq = ipod.status_metrics(CLASSIC_LIGHT, ipod.CLASSIC_LIGHT_FONT_SRC), n['label_eq']
-    x, gap = n['view_right'][1][0] + eq[1][0], ipod.inc('STATUS_GAP')
-    edge = 315  # the group's right edge: the nub ends at x 314
-    assert eq[2]['floating'] == 'true' and eq[1][1:] == [m['title'][1], ipod.CLASSIC_LIGHT_EQ_W, m['title'][3]]
+    x = n['view_right'][1][0] + eq[1][0]
+    assert eq[2]['floating'] == 'true' and eq[1][1] + eq[1][3] < 0
     assert x == 222 and x >= 375 / 2 + m['clock_text'] / 2 + ipod.CLASSIC_LIGHT_CLOCK_GAP  # the widest clock, CLASSIC_LIGHT_CLOCK_GAP clear
-    assert classic_light_text_w('EQ') <= ipod.CLASSIC_LIGHT_EQ_W  # the bar's face fits its box
-    # 2 px short of Bluetooth's ink: the battery with its soft edge and nub, Wi-Fi, BT_REACH
-    assert x + ipod.CLASSIC_LIGHT_EQ_W + 2 <= edge - (1 + CLASSIC_LIGHT.batt_w + ipod.inc('BATT_NUB_W')) - gap - n['img_wifi'][1][2] - gap - ipod.BT_REACH
-    assert {eq[2][f'style:{s}:{k}'] for s in ('normal', 'disable', 'focused') for k in ('font_size', 'font_name')} \
-        == {str(CLASSIC_LIGHT.bar_px), ipod.CLASSIC_LIGHT_FONT_NAME}
 
 
 # Where the row layout puts the icons: right-aligned from the group's margin, the slot 29 (its soft edge, the body,
@@ -892,13 +885,12 @@ def test_classic_light_status_bar_icons_on_their_columns():
     assert full['img_bt'][1] - ipod.BT_REACH == 232  # Bluetooth's ink
     bare = lay('img_bt', 'img_wifi', 'view_battery')
     assert bare['img_wifi'] == (268, 282) and bare['img_bt'][1] - ipod.BT_REACH == 254
-    assert n['label_eq'][1][0] + view[1][0] + 28 < 254  # EQ, widest with a 12-hour clock: 222 to 250
 
 
 def test_classic_light_status_bar_battery_must_fit():
-    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 88 of 93
+    ipod.status_bar(bar(), g=CLASSIC_LIGHT)  # 61 of 93
     with pytest.raises(ValueError, match=r'^Status bar battery needs 94px of 93px$'):
-        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 6))
+        ipod.status_bar(bar(), g=dataclasses.replace(CLASSIC_LIGHT, batt_w=CLASSIC_LIGHT.batt_w + 33))
 
 
 def test_playing_page_follows_the_bar():
@@ -1549,6 +1541,30 @@ def test_status_icon_is_audited(monkeypatch, magick, name, data):
     with pytest.raises(ValueError, match=f'^{name}: unaudited status icon$'):
         ipod.status_icon(name, data)
     assert magick.calls == []
+
+
+def test_pane_icon_draws_a_flat_icon_again_in_its_own_two_colours(monkeypatch):
+    """The disc is the commonest opaque colour and the glyph the one furthest from it, whatever lies between."""
+    listing = (b'       700: (0,0,0,0) #00000000 none\n      1500: (255,86,48,255) #FF5630FF srgba(255,86,48,1)\n'
+               b'        40: (255,120,90,255) #FF785AFF srgba(255,120,90,1)\n        30: (255,86,48,128) #FF563080 srgba(255,86,48,0.5)\n'
+               b'       300: (255,255,255,255) #FFFFFFFF white\n')
+    m = Magick(lambda args, data: listing if 'histogram:info:-' in args else b'png')
+    monkeypatch.setattr(ipod, 'imagemagick', m)
+    assert ipod.pane_icon(b'in', 96) == b'png'
+    (asked, _), (args, data) = m.calls
+    assert asked == ('png:-', '-alpha', 'on', '-depth', '8', '-format', '%c', 'histogram:info:-') and data == b'in'
+    assert args[:11] == ('png:-', '-alpha', 'on', '-background', 'rgb(255,86,48)', '-alpha', 'background',
+                         '-filter', 'Mitchell', '-resize', '1600%')
+    fills = [args[i + 1] for i, a in enumerate(args) if a == '-fill']
+    assert fills == ['rgb(255,86,48)', 'rgb(255,86,48)', 'rgb(255,255,255)']  # the difference's, the disc, the glyph
+    assert args[args.index('-auto-level') + 1:][:2] == ('-threshold', f'{ipod.GLYPH_CUT}%')
+    assert args[-len(ipod.PNG_OUT) - 4:] == ('-filter', 'Lanczos', '-resize', '96x96!', *ipod.PNG_OUT)
+
+
+def test_pane_icon_needs_an_opaque_pixel(monkeypatch):
+    monkeypatch.setattr(ipod, 'imagemagick', Magick(lambda args, data: b'      2704: (0,0,0,0) #00000000 none\n'))
+    with pytest.raises(ValueError, match='^A pane icon needs opaque pixels$'):
+        ipod.pane_icon(b'in', 96)
 
 
 def test_row_icon(magick):

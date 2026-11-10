@@ -449,12 +449,10 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
-# Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery.
-STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
+# Classic's right group, left to right: Bluetooth, Wi-Fi, the play state and the battery. It shows no EQ.
+STATUS_RIGHT_CLASSIC_LIGHT = [*STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
-CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
-CLASSIC_LIGHT_EQ_W = 25  # Classic's EQ box: its 21 px of ink in the bar's face (test_ipod), narrower than stock's 28 so the group fits at bar_right
+CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's right group's room, from the widest clock
 CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
 CLASSIC_LIGHT_FONT_NAME = pathlib.Path(CLASSIC_LIGHT_TTF).stem
 
@@ -524,9 +522,8 @@ def status_bar(root, g=SET0):
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
         view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
     room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + (CLASSIC_LIGHT_CLOCK_GAP if m else CLOCK_GAP)))
-    if m:  # every icon, the battery with the column of soft edge left of it, and EQ 2 px short of Bluetooth's ink
-        gap, eq[1][2] = inc('STATUS_GAP'), CLASSIC_LIGHT_EQ_W
-        reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
+    if m:  # every icon, and the battery with the column of soft edge left of it
+        reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W')
         check(reach <= room, f'Status bar battery needs {reach}px of {room}px')
         # bar_sync's gate reads BATT_ROOM, the built-in bar's, past this room: a theme on this bar offers only the modes
         # the gate exempts (test_theme)
@@ -536,12 +533,11 @@ def status_bar(root, g=SET0):
             root[3].append(widgets[name])
         face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
                 for k, v in (('font_size', str(g.bar_px)), ('font_name', CLASSIC_LIGHT_FONT_NAME))}
-        # EQ floats at the room's left edge, not left of img_bt's whole canvas, whose last BT_REACH px alone hold ink:
-        # there it would reach the clock's text.
-        # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs
-        # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
-        eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
-        eq[2].update({'floating': 'true', **face})
+        # Classic shows no EQ: stock still updates it, drawn above the bar, floating at the room's left edge, where
+        # bar_title reads how far the title may reach (np_bar.c).
+        eq[1][:2] = [375 - xm - room - right[1][0], -200]
+        eq[2]['floating'] = 'true'
+        right[3].append(eq)
         # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, on the battery's middle row: the body's top, centred on the rows above the
@@ -1030,6 +1026,36 @@ def row_icon(data, size=SET_ICON, sharp=False):
     plain filter, test/build.py compares their colours)."""
     return imagemagick('png:-', '-alpha', 'on', '-filter', 'Lanczos', '-resize', f'{size}x{size}!',
                        *(['-unsharp', '0x0.6+0.8+0'] if sharp else []), *PNG_OUT, data=data)
+
+
+def pane_icon(data, size):
+    """A flat 52px row icon (a disc in one colour, a glyph in another) at Home's pane's size, drawn again
+    rather than scaled: a plain resize to nearly twice its size was soft (#303). Its two colours are read from
+    it, the commonest opaque one and the one furthest from that; at 16 times the size each pixel becomes the
+    nearer of the two and the disc's edge its half-covered line, and the shrink to size smooths those edges.
+    ponytail: two colours only, and a line thinner than a source pixel comes out thinner still (GLYPH_CUT is
+    the knob); an icon with a third colour or a gradient needs real art at the pane's size."""
+    import re
+    listing = imagemagick('png:-', '-alpha', 'on', '-depth', '8', '-format', '%c', 'histogram:info:-', data=data).decode()
+    opaque = [(int(n), (int(r), int(g), int(b))) for n, r, g, b in
+              re.findall(r'(\d+): *\( *(\d+), *(\d+), *(\d+), *255\)', listing)]
+    check(opaque, 'A pane icon needs opaque pixels')
+    disc = max(opaque)[1]
+    glyph = max(opaque, key=lambda c: sum((a - b) ** 2 for a, b in zip(c[1], disc)))[1]
+    disc, glyph = ('rgb(%d,%d,%d)' % c for c in (disc, glyph))
+    flat = lambda colour: ['(', '-clone', '0', '-alpha', 'off', '-fill', colour, '-colorize', '100', ')']
+    return imagemagick(
+        'png:-', '-alpha', 'on', '-background', disc, '-alpha', 'background', '-filter', 'Mitchell', '-resize', '1600%',
+        '(', '-clone', '0', '-alpha', 'extract', '-blur', '0x8', '-threshold', '50%', ')',  # 1: the disc's shape
+        '(', '-clone', '0', '-alpha', 'off', *flat(disc), '-compose', 'Difference', '-composite',
+        '-colorspace', 'Gray', '-auto-level', '-threshold', f'{GLYPH_CUT}%', ')',  # 2: where the glyph is
+        *flat(disc), *flat(glyph),  # 3, 4
+        '-delete', '0', '(', '-clone', '2', '-clone', '3', '-clone', '1', '-compose', 'Over', '-composite', ')',
+        '-delete', '1-3', '+swap', '-compose', 'CopyOpacity', '-composite',
+        '-filter', 'Lanczos', '-resize', f'{size}x{size}!', *PNG_OUT, data=data)
+
+
+GLYPH_CUT = 45  # percent of the way from the disc's colour to the glyph's at which a pixel is the glyph's
 
 
 # Each stock placeholder's replacement size: stock's own, but Now Playing's and the full-screen art's at

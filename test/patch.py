@@ -3369,10 +3369,11 @@ for existing in (False,True):
             long_return(m)
             assert m.nodes[m.top]['name']=='playing_page'
             assert not any(c[0]=='player_start' for c in m.calls)
-            # The switch dropped the hold-release latch: the hold's release is ignored
-            # and the first short Return goes back instead of being swallowed.
+            # The switch leaves the hold-release latch armed: stock's filter swallows the hold's
+            # release, which V1.34 delivers, and the first short Return goes back.
+            assert m.u.mem_read(O['RETURN_RELEASE_LATCH'],1)==b'\1'
+            assert m.call(170,gap=0)==11 and m.nodes[m.top]['name']=='playing_page'
             assert m.u.mem_read(O['RETURN_RELEASE_LATCH'],1)==b'\0'
-            assert m.call(170,gap=0)==0 and m.nodes[m.top]['name']=='playing_page'
             m.call(170,address=0x53d760,args=(m.top,m.event,0,0),gap=0)
             assert m.top==browse, (existing,visit,[m.nodes[p]['name'] for p in m.order])
             m.paint(w,gap=0); assert (m.selected(w),m.get(w+O['SCROLL_Y']))==(selected,offset)
@@ -11409,11 +11410,12 @@ for lt,past in (('1',0xffffff),('0',0xffffff)):
         assert [(l['text'],l['rect'],l['color'],l['clip']) for l in bm.letters]==want,(lt,batt_img,batt_text,bm.letters)
         assert bm.clip not in [w[3] for w in want]
 passed()
-# Classic's right group holds EQ or the play state, not both: a shown play state hides EQ, EQ alone
-# stays. Either way Percent Inside, the width of the icon, keeps its digits beside Wi-Fi, a wide codec badge or not.
-for status,eq,eq_on in ((0,0,0),(2,0,0),(0,1,1),(2,1,0)):
+# Classic's bar shows no EQ (its label is off-screen: tools/ipod.py), so the payload leaves the label as stock set it
+# and it takes none of the group's room. Percent Inside, the width of the icon, keeps its digits beside Wi-Fi, a wide
+# codec badge or not.
+for status,eq in ((0,0),(2,0),(0,1),(2,1)):
     bm,bw_,bands=classic_light_battery_bar(3,status=status,eq=eq,wifi=1)
-    assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq_on),(status,eq)
+    assert (bm.nodes[bw_['img_state']]['visible'],bm.nodes[bw_['label_eq']]['visible'])==(int(status==2),eq),(status,eq)
     assert bm.get(bw_['view_battery']+O['W_W'])==29 and [l['text'] for l in bm.letters]==['50']*2,(status,eq)
 passed()
 # Classic's play state is its own art (tools/art.py), by state and half, in place of stock's glyph; the image hook leaves
