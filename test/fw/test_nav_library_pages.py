@@ -2060,13 +2060,12 @@ def about(ui, rows):
 
 
 def about_rows(ui, view):
-    """Each row's (title, value), and the thanks last."""
-    *rows, thanks = ui.kids[view]
-    assert ui.text[ui.kids[thanks][0]] == 'about_more'
-    return [tuple(ui.text[label] for label in ui.kids[ui.kids[item][0]]) for item in rows]
+    """Each row's (title, value); the thanks, where it still stands, as its key alone."""
+    firsts = [ui.kids[item][0] for item in ui.kids[view]]
+    return [tuple(ui.text[label] for label in ui.kids.get(first, ())) or (ui.text[first],) for first in firsts]
 
 
-def test_about_shows_stock_s_version_and_the_payload_s_after_it(fw, ui):
+def test_about_shows_stock_s_version_and_the_payload_s_after_it_without_stock_s_thanks(fw, ui):
     win, view = about(ui, ABOUT)
     fw.mock('stock_about_trampoline', lambda *_: 5)
     assert fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None) == 5
@@ -2078,7 +2077,7 @@ def test_about_shows_stock_s_version_and_the_payload_s_after_it(fw, ui):
 def test_an_about_page_that_is_not_stock_s_is_left(fw, ui):
     win, view = about(ui, ABOUT[:6])
     fw.fn('ringnav_about', C.c_int, C.c_void_p, C.c_void_p)(win, None)
-    assert about_rows(ui, view) == ABOUT[:6]
+    assert about_rows(ui, view) == [*ABOUT[:6], ('about_more',)]
 
 
 def test_usb_mode_ends_the_card_s_apps_before_stock_unmounts_it(fw):

@@ -17297,7 +17297,7 @@ windows(m,*SAFE); m.files[LIB]=bytearray(f'700\nimport {EXP}/Mix.m3u\n'.encode()
 # About: FW. Version shows the stock firmware's version again, not the updater tag in demo's
 # literal, and a CFW. Version row follows it. Stock's own row builder (0x4c0cb4) builds Model and FW.
 # Version, so the added row is checked against the real stock widgets, geometry and styles. A page of another
-# count of rows (V1.32's seven) is left as stock built it.
+# count of rows (V1.32's seven) is left as stock built it. Stock's thanks, V1.34's eighth child, is dropped.
 m=ShuffleMachine(); m.handlers[int(manifest['patch_symbols']['stock_about_trampoline'],16)]='stock_about'
 m.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
 def tree(w):
@@ -17310,7 +17310,7 @@ for i in range(8):  # stock's seven rows and its thanks, the eighth child
     if i<2: assert m.call(address=0x4c0cb4,args=(row,i,0,0),gap=0)==0
 rows=list(m.nodes[view]['children'])
 assert m.call(address=HOOKS['systemset_about_page_init'][0],args=(m.top,5,0,0),gap=0)==0 and m.calls[0][:3]==('stock_about',m.top,5)
-kids=m.nodes[view]['children']; assert kids[:2]==rows[:2] and kids[3:]==rows[2:]
+kids=m.nodes[view]['children']; assert kids[:2]==rows[:2] and kids[3:]==rows[2:7]
 fw=m.nodes[m.nodes[rows[1]]['children'][0]]['children'][1]; assert m.nodes[fw]['text']=='V1.34'
 item=kids[2]; button=m.nodes[item]['children'][0]; title,value=m.nodes[button]['children']
 # Stock's row, title and value widgets alike.
