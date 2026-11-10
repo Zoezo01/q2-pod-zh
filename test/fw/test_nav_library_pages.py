@@ -2734,7 +2734,7 @@ def test_moving_a_playlist_song_swaps_two_rows(fw, song):
     db = Playlists(fw, {201: (3, b'/m/a.flac', 0, 0), 202: (3, b'/m/b.flac', 0, 0), 300: (4, b'/m/c.flac', 0, 0)})
     assert mutate(fw, 3, entry(song, 201, b'/m/a.flac'), entry(song, 202, b'/m/b.flac')) == 1
     assert db.rows == {201: (3, b'/m/b.flac', 0, 0), 202: (3, b'/m/a.flac', 0, 0), 300: (4, b'/m/c.flac', 0, 0)}
-    assert db.log[0] == 'begin immediate' and db.log[-2:] == ['commit', 'close']
+    assert db.log[:2] == ['PRAGMA busy_timeout=500', 'begin immediate'] and db.log[-2:] == ['commit', 'close']
 
 
 def test_removing_a_playlist_song_deletes_its_row(fw, song):

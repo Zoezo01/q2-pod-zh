@@ -546,7 +546,7 @@ class Table:
                 self.saved = dict(self.rows)
             elif s == 'rollback':
                 self.rows = self.saved
-            elif s == 'commit':
+            elif s in ('commit', 'PRAGMA busy_timeout=500'):  # pl_db's wait for a reader
                 pass
             elif m := re.fullmatch(r'select id,fileurl,time,time_end from playlist where cd_num=(-?\d+) and id in \((-?\d+),(-?\d+)\)', s):
                 dest, a, b = map(int, m.groups())

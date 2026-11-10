@@ -49,6 +49,13 @@ typedef struct {
 } cf_page_t;
 extern cf_page_t cf;
 
+/* On the card, beside stock's own cover cache (/mnt/mmc/.sldp); playlist_art.c's files too. */
+#define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
+#define PL_BUILDING ART_DIR "/pl-building" /* playlist_art.c's art_note */
+#define ART_SIZE 160
+#ifndef ART_FFMPEG
+#define ART_FFMPEG "/usr/bin/ffmpeg"
+#endif
 #define CF_WIDE_REACH 7 /* CF_REACH under a thumb theme, for the row at speed */
 #define CF_WIDE (2 * CF_WIDE_REACH + 1)
 extern cf_style_t cfs; /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
@@ -87,6 +94,15 @@ extern cf_thumb_t th;
 
 /* coverflow.c */
 unsigned album_key(void *r);
+unsigned tags_key(const char *artist, const char *album);
+unsigned album_ident(const char *album, const char *album_artist, const char *path);
+char *art_path(char *out, unsigned key, const char *suffix);
+int album_art(const char *track, const char *dst, int shared);
+void art_note(const char *note, unsigned key, const char *track);
+void art_strike(const char *note);
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
+int thread_lower(void);
+int ff_thumb(const char *src, const char *dst, int w, int h);
 int cf_floor(float x);
 int cf_round(float x);
 float cf_smooth(float x);

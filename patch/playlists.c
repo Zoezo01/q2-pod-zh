@@ -1,6 +1,7 @@
 /* Playlists: the editor, New, Delete and More, the hold menu's Add to Playlist picker and Classic's
  * page. */
 #include "navigation.h"
+#include "playlist_art.h"
 
 /* Entry IDs are stock's order. Keep our records separate from browsing and the live queue. */
 static struct {
@@ -38,6 +39,21 @@ static int ple_number(void *ctx, int n, char **v, char **names) {
     return 0;
 }
 
+/* The database for a write that waits out a reader, playlist_art.c's worker reading the table,
+ * instead of failing with SQLITE_BUSY; nonzero when it won't open. */
+static int pl_db(void **db) {
+    return sqlite3_open("/mnt/data/database.db", db) ||
+           sqlite3_exec(*db, "PRAGMA busy_timeout=500", 0, 0, 0);
+}
+/* Stock's shared connection, opened lazily and again after any error (0x5c8aa0's jalr
+ * sqlite3_open, tools/build.py): the same wait, so Import, Add to Playlist and Rename don't fail
+ * (stock's writers drop songs silently) while the art worker reads. */
+int stock_db_open(const char *path, void **db) {
+    int bad = sqlite3_open(path, db);
+    if (!bad) sqlite3_exec(*db, "PRAGMA busy_timeout=500", 0, 0, 0);
+    return bad;
+}
+
 /* Revalidate under the write lock; the temporary ID is above every occupied ID. */
 static int ple_mutate(int dest, void *a, void *b) {
     void *db = 0;
@@ -47,7 +63,7 @@ static int ple_mutate(int dest, void *a, void *b) {
     if (dest < 0 || dest >= 100 || !a || I(a, REC_ID) <= 100 ||
         (b && (I(b, REC_ID) <= 100 || I(a, REC_ID) == I(b, REC_ID))))
         return 0;
-    if (sqlite3_open("/mnt/data/database.db", &db)) goto done;
+    if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
     tk_snprintf(sql, sizeof sql,
                 "select id,fileurl,time,time_end from playlist where cd_num=%d and id in (%d,%d)",
@@ -369,7 +385,7 @@ int ringnav_playlist_create(void *list, const char *name) {
     unsigned char used[100] = { 0 };
     char title[64], quoted[127], sql[512];
     int result = -1, id = 0;
-    if (!list || sqlite3_open("/mnt/data/database.db", &db)) goto done;
+    if (!list || pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
     if (sqlite3_exec(db, "select id from playlist where id <= 100", playlist_used, used, 0))
         goto rollback;
@@ -432,7 +448,7 @@ int ringnav_playlist_delete(void *win, void *event) {
     } prompt = { 1, 0, "Delete Playlist?" };
     if (confirm_over(&prompt, "Delete") != 10) return 0;
     char sql[256];
-    if (sqlite3_open("/mnt/data/database.db", &db)) goto done;
+    if (pl_db(&db)) goto done;
     if (sqlite3_exec(db, "begin immediate", 0, 0, 0)) goto done;
     tk_snprintf(sql, sizeof sql,
                 "delete from playlist where id=%d;select changes();"
@@ -564,11 +580,16 @@ static const unsigned pl_stock[PL_N] = { 0x4b46b4, 0x4b45b4, 0x4b44e4, 0x4b5cf0,
 /* A row's place on the list's two heights: name over second line in the page rows' boxes, which
  * hold their fonts; the dots or a mark at the right edge, centred on the picker's tick's column
  * (x 346), where the selected row's chevron (x 317) shows in their place. The text ends clear of
- * whichever shows. */
+ * whichever shows. With Row Art its art leads, in an album row's column, the text after it. */
 #define PL_MARK_X 333 /* the tick's column, the dots' hit */
 void pl_fit(void *button) {
     const theme_t *T = theme();
-    int h = I(button, W_H), width = 289;
+    void *art = widget_lookup(button, PL_ART, 0);
+    int h = I(button, W_H), width = 289, x = T->page_x;
+    if (art && widget_get_visible(art)) {
+        widget_move_resize(art, T->art_x, (h - geom(G_ART)) / 2, geom(G_ART), geom(G_ART));
+        x = T->art_text_x - 2; /* hscroll_label's margin */
+    }
     for (unsigned i = 0, n = widget_count_children(button); i < n; ++i) {
         void *c = widget_get_child(button, i);
         const char *name = widget_get_prop_str(c, "name", "");
@@ -584,17 +605,21 @@ void pl_fit(void *button) {
     }
     void *info = widget_lookup(button, "view_info", 0);
     if (!info || widget_count_children(info) < 2) return;
-    widget_move_resize(info, T->page_x, 0, width, h);
+    width -= x - T->page_x;
+    widget_move_resize(info, x, 0, width, h);
     widget_move_resize(widget_get_child(info, 0), 0, T->page_cap_y, width, T->page_cap_h);
     widget_move_resize(widget_get_child(info, 1), 0, T->page_det_y, width, T->page_det_h);
 }
 
-/* Stock's row, as the list's other two-line rows: its art goes, its count reads "N Songs". */
+/* Stock's row, as the list's other two-line rows: its art stays under Row Art (not in the
+ * picker), its count reads "N Songs". */
+static void *pl_art_image(void *button);
 static void pl_row(void *item) {
     const theme_t *T = theme();
     char count[32];
     void *button = widget_get_child(item, 0), *info = widget_lookup(button, "view_info", 0);
-    int h = T->page_detail;
+    void *art = pl_art_image(button);
+    int h = T->page_detail, add = widget_get_prop_int(window_of(item), PL_MODE, 0);
     if (!info || widget_count_children(info) < 2) return;
     widget_set_name(item, PAGE_TALL);
     widget_set_prop_int(item, PL_ROW, 1);
@@ -606,7 +631,9 @@ static void pl_row(void *item) {
         if (tk_str_start_with(name, "img_more")) {
             /* emptied under the theme: paint_radio draws the dots; a picker has none */
             image_base_set_image(c, "unselect");
-            if (widget_get_prop_int(window_of(item), PL_MODE, 0)) widget_set_visible(c, 0, 0);
+            if (add) widget_set_visible(c, 0, 0);
+        } else if (c == art) {
+            widget_set_visible(c, geom(G_ART) && !add, 0);
         } else if (c != info && !tk_str_start_with(name, "img_choice"))
             widget_set_visible(c, 0, 0);
     }
@@ -653,6 +680,9 @@ static int pl_due(const void *info) {
     pl_timer = 0;
     if (!pl_page(win)) return 0;
     void *w = pl_find(win, action);
+    /* Import writes every song of every list it reads: the art's build steps aside (its reads
+     * would make each insert wait), and the rebuild that follows asks again */
+    if (w && action == PL_IMPORT) playlist_art_stop();
     if (w) stock_dispatch_trampoline(w, pointer_event_init(click, EVT_CLICK, w, 0, 0));
     /* a dialog's up, or gone: its close rebuilds the rows */
     if (window_manager_get_top_window(wm) == win) pl_rows(win); /* pl_page(win) above */
@@ -799,10 +829,72 @@ static int pl_keyup(void *win, void *event) {
     }
     return PLAYLIST_KEYUP(win, event);
 }
-/* Stock leaves its mode set for a page gone in it (held Return, to Home). */
+/* Each playlist row's art (playlist_art.c): stock's 52 px image, its placeholder till the art's
+ * file is made, then that file by name. The page whose rows hear of each one made: */
+static void *pl_art_page __attribute__((section(".scratch")));
+/* A row's art image: stock's unnamed one, named once found by its placeholder. */
+static void *pl_art_image(void *button) {
+    void *art = widget_lookup(button, PL_ART, 0);
+    for (unsigned i = 0, n = widget_count_children(button); !art && i < n; ++i) {
+        void *c = widget_get_child(button, i);
+        if (!tk_strcmp(widget_get_prop_str(c, "image", ""), "playlist_default"))
+            widget_set_name(art = c, PL_ART);
+    }
+    return art;
+}
+/* The row's index in p_deque_playlist: stock names its button by it (our action rows and its
+ * tile row by none, -1: AWTK gives an unnamed widget's name as NULL, not the default). */
+static int pl_at(void *button) {
+    const char *name = widget_get_prop_str(button, "name", "");
+    return name && *name >= '0' && *name <= '9' ? atoi(name) : -1;
+}
+/* The row's playlist */
+static void *pl_record(void *button) {
+    void *lists = P(p_deque_playlist, 0);
+    int at = pl_at(button);
+    return lists && at >= 0 && at < (int)deque_size(lists) ? deque_at(lists, (unsigned)at) : 0;
+}
+/* A shown row's art, when its file is made; else its build is queued. The songs are read again
+ * once, by the worker, at the list's first ask: none when no row shows art. */
+static void pl_art_row(void *button, int *asked) {
+    char url[600];
+    void *art = pl_art_image(button), *r = art && widget_get_visible(art) ? pl_record(button) : 0;
+    if (!r) return;
+    if (!*asked) playlist_art_refresh();
+    *asked = 1;
+    if (playlist_art(I(r, REC_DISC), P(r, REC_TITLE), 1, url, sizeof url))
+        image_base_set_image(art, url);
+}
+/* One playlist's art made: its rows alone ask again, as an ask may queue a failed one anew. */
+static void pl_art_ready(int cd_num) {
+    void *view = pl_art_page ? widget_lookup(pl_art_page, "scroll_view", 1) : 0;
+    int asked = 1;
+    for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
+        void *item = widget_get_child(view, i), *r;
+        void *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;
+        if (button && pl_art_image(button) && (r = pl_record(button)) && I(r, REC_DISC) == cd_num)
+            pl_art_row(button, &asked);
+    }
+}
+static void pl_arts(void *win) {
+    void *view = widget_lookup(win, "scroll_view", 1);
+    int asked = 0;
+    pl_art_page = win;
+    playlist_art_ready = pl_art_ready;
+    for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
+        void *item = widget_get_child(view, i);
+        if (widget_count_children(item)) pl_art_row(widget_get_child(item, 0), &asked);
+    }
+}
+
+/* Stock leaves its mode set for a page gone in it (held Return, to Home); its art's builds stop. */
 static int pl_gone(void *win, void *event) {
     (void)event;
     if (widget_get_prop_int(win, PL_MARKING, 0)) g_navbar_status = 0;
+    if (win == pl_art_page) {
+        playlist_art_stop();
+        pl_art_page = 0;
+    }
     return 0;
 }
 static void pl_dress(void *win, int first) {
@@ -844,9 +936,10 @@ static void pl_dress(void *win, int first) {
     }
 }
 
-/* After stock rebuilds its rows: the guarded Now Playing picker's rebind, Classic's rows. Stock's
- * add mode is one global, left by any picker that closes, which it reads as this page comes back:
- * each page keeps the one it opened with. */
+/* After stock rebuilds its rows: the guarded Now Playing picker's rebind, Classic's rows, and
+ * under Row Art (Classic's alone) the rows' art, not the Add to Playlist picker's, a list as it
+ * was. Stock's add mode is one global, left by any picker that closes, which it reads as this page
+ * comes back: each page keeps the one it opened with. */
 int ringnav_playlist(void *win) {
     int mode = widget_get_prop_int(win, PL_MODE, -1), first = mode < 0;
     if (first)
@@ -855,6 +948,8 @@ int ringnav_playlist(void *win) {
         I(PLAYLIST_ADD_MODE, 0) = mode;
     int result = stock_playlist_trampoline(win);
     if (win == st.qm_playlist) qm_playlist_bind(win, 0, qm_playlist_pick);
-    if (!geom_val(V_TOOLBAR)) pl_dress(win, first);
+    if (geom_val(V_TOOLBAR)) return result; /* Minimal, Modern: stock's rows, no art built */
+    pl_dress(win, first);
+    if (geom(G_ART) && !widget_get_prop_int(win, PL_MODE, 0)) pl_arts(win);
     return result;
 }

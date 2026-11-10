@@ -2225,6 +2225,29 @@ def test_a_playlist_goes_with_its_songs(fw):
     assert len(fw.calls('navigator_back')) == 1 and fw.var('g_delete_flag', C.c_ubyte).value == 1
 
 
+BUSY = b'PRAGMA busy_timeout=500'  # playlists.c's pl_db: a write waits out one playlist_art read
+
+
+def test_each_playlist_writer_waits_for_a_reader_before_its_write(fw):
+    """Create and Delete set a busy timeout on their connection before the write, so a commit that
+    meets the art worker's read waits for it instead of failing with SQLITE_BUSY."""
+    sql, _ = playlist_delete(fw)
+    assert sql.log[:2] == [BUSY, b'begin immediate']
+    made, sql = create(fw, b'Mine', (0, 1, 3))
+    assert made == 2 and sql.log[:2] == [BUSY, b'begin immediate']
+
+
+@pytest.mark.parametrize('opened', [0, 14])
+def test_stock_s_connection_waits_for_a_reader_once_open(fw, opened):
+    """tools/build.py's hook in stock's lazy open (0x5c8ae0): the pragma on the connection it opened, none
+    when the open failed, and the open's result back to stock."""
+    sql = Sql(fw)
+    fw.mock('sqlite3_open', lambda path, db, *_: C.c_void_p.from_address(db).__setattr__('value', 0xdb) or opened)
+    db = C.c_void_p()
+    assert fw.fn('stock_db_open', C.c_int, C.c_char_p, C.c_void_p)(b'/mnt/data/database.db', C.byref(db)) == opened
+    assert sql.log == ([] if opened else [BUSY]) and [c[1][0] for c in fw.calls('sqlite3_exec')] == ([] if opened else [0xdb])
+
+
 def test_a_cancelled_delete_changes_nothing(fw):
     sql, seen = playlist_delete(fw, confirm=0)
     assert not sql.log and seen == [b'dialog/confirminfo_dialog']

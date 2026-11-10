@@ -458,10 +458,13 @@ it, aligned with those (see [internals.md](internals.md#drawing)), only on the `
 only the highlighted row's, white, on Home and every list, so it moves with the selection band
 (`chevron_sel`: stock's own are emptied); on Now Playing's More, only on rows that open a
 screen, not A-B Repeat, Speed or Delete, and on a playlist's More, on Rename and Edit Playlist, not
-Delete Playlist; Minimal's Home has none. Under Classic, Playlists is a list of two-line rows with no
-toolbar: New Playlist… and Edit Playlists… head it, Edit Playlists is stock's select mode with Select
-All, Import, Export, Delete and Done as rows, and Return leaves that mode ([internals.md](internals.md#classics-playlists)). Tiles narrower
-than half the list (Minimal's playlist Import/Export) get none. Those two tiles, built by stock at run time,
+Delete Playlist; Minimal's Home has none. Under Classic, Playlists is a list of two-line rows, each
+with its art (the playlist's own picture or four of its albums,
+[internals.md](internals.md#playlist-art)) at the row's start under Row Art, as an album's row, and
+none with it off, with no toolbar: New Playlist… and Edit Playlists… head it, Edit Playlists is
+stock's select mode with Select All, Import, Export, Delete and Done as rows, and Return leaves that
+mode ([internals.md](internals.md#classics-playlists)). Tiles narrower than half the list (Minimal's
+playlist Import/Export) get none. Those two tiles, built by stock at run time,
 have no icon: the build gives the icon no width and stretches the label across the tile in stock's
 centred `s_scrlabel_white24c` (`tools/ipod.py`). The artist page's Albums tab drills but has no
 stock chevron or payload row layouter, so it has none.
@@ -736,7 +739,8 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
 - Cover Flow: "Artist View: Cover Flow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
   Cover Flow ends with an All albums card, see
   [internals.md](internals.md#artist-albums-in-coverflow)), "Cover Flow Sort: Album" and "Refresh
-  Cover Flow" (`system_update`).
+  Cover Flow" (`system_update`; it empties `.coverflow/`, the playlists' art with the albums', which
+  builds again).
 - Controls: Wheel Sensitivity, which opens its slider page; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
   centre press starts the scrub and a double press turns the screen off (Scrub, above); "Key Tone"; "Click With Headphones" (`IPOD KEYTONEHP`), shown while Key Tone is on ([Key Tone](internals.md#key-tone)); Buttons Lock, which opens stock's page; "Wake: Single Press"; and "Volume Guard".
