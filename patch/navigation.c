@@ -355,7 +355,7 @@ static int ramp(void *top, void *surface, unsigned scope, int ctx, int dir, unsi
     return spin < first ? 1 : 2 + (spin - first) / more;
 }
 
-/* A tap target has an EVT_CLICK handler. V1.32 widget emitter @0x60; emitter_on_with_tag items are
+/* A tap target has an EVT_CLICK handler. V1.34 widget emitter @0x60; emitter_on_with_tag items are
  * {ctx, id, type @8, handler, tag, working @0x14, pending_remove @0x15, next @0x20}. */
 static int clickable(void *w) {
     void *emitter = P(w, W_EMITTER);
@@ -455,7 +455,7 @@ void drop_input(void) {
 }
 
 /* Home and Coverflow step their slide_menu with one retargeted animator (home_step): stock
- * scroll_to (0x5f3400) starts a new animator per call and orphans the running one, so fast
+ * scroll_to (0x605d30) starts a new animator per call and orphans the running one, so fast
  * ticks leave several fighting over the offset and committing the index twice. */
 static int carousel_page(void *top) {
     const char *name = top ? widget_get_prop_str(top, "name", "") : "";
@@ -1885,7 +1885,7 @@ static void paint_caps(void *w, void *canvas) {
  * selection settles, through stock's scroller with every label's holds and pace
  * (ringnav_hscroll_start); every other row keeps its ellipsis. Only a title stock would scroll on
  * focus alone (only_focus; no row is focused): stock's timer stops such a label on its first tick
- * unless it is focused (0x5e897c), so only_focus is off while this one runs. It loops, so each pass
+ * unless it is focused (0x5fb2ac), so only_focus is off while this one runs. It loops, so each pass
  * ends on its lull (ringnav_hscroll_lull), which counts it and stops it after the last, or once the
  * row isn't the selected one on a lit, usable screen: a dark screen or a covered page costs at most
  * the rest of one pass. A row is its widget and its id, as a table's pool can hold the selection in
@@ -1941,7 +1941,7 @@ static int marq_moved(const void *info) {
         return 0;
     }
     void *label = row_scroller(row, 2);
-    /* stock's two margins (2 px each by default, 0x5e8428) count towards its ellipsis */
+    /* stock's two margins (2 px each by default, 0x5fad58) count towards its ellipsis */
     int over = label ? I(label, HSCROLL_TEXT_W) + 4 - I(label, W_W) : 0;
     if (over <= 0 || !B(label, HSCROLL_ONLY_FOCUS)) return 0; /* until it moves */
     B(label, HSCROLL_LOOP) = 1;
@@ -2717,7 +2717,7 @@ static void *list_button(void *view) {
     return button;
 }
 
-/* A stock settings-style row (0x4c19bc): a list_button with a 52px icon and a 24px label at x 72
+/* A stock settings-style row (0x4c69d4): a list_button with a 52px icon and a 24px label at x 72
  * (no icon: at x 10, as the Bluetooth page's rows), into adding stock's list_into trailing image
  * with the label narrowed clear of it, as the stock Local Music categories place it. Returns the
  * label. */
@@ -2729,7 +2729,7 @@ void *list_row_core(void *view, const char *icon, int (*click)(void *, void *), 
     void *button = list_button(view);
     if (compact) widget_resize(button, 335, h);
     if (click) widget_on(button, EVT_CLICK, click, ctx);
-    if (icon) { /* centred, as stock's rows (0x524978) */
+    if (icon) { /* centred, as stock's rows (0x53539c) */
         void *image = image_create(
             button, compact ? *(const volatile unsigned short *)LIBRARY_ROW_ICON_X : 10, 0,
             SET_STOCK_ICON, h);
@@ -2972,7 +2972,7 @@ static int quick_long(const void *unused) {
     if (page == 3 && navigator_window_is_exist("equalizer_page")) return 0;
     navigator_to(page == 1   ? "systemset/wifi_page"
                  : page == 2 ? "systemset/bluetooth_page"
-                             : "playset/equalizer_page"); /* as Playback's EQ row (0x4b94d0) */
+                             : "playset/equalizer_page"); /* as Playback's EQ row (0x4bcfe4) */
     return 0;
 }
 static void quick_press(void *icon) {
@@ -3077,7 +3077,9 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.eq_output,
                                    0,
                                    0,
-                                   &st.smart_wifi };
+                                   &st.smart_wifi,
+                                   0,
+                                   0 };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3097,7 +3099,9 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "EQOUTPUT",
                                         0,
                                         0,
-                                        "SMARTWIFI" };
+                                        "SMARTWIFI",
+                                        0,
+                                        0 };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3183,6 +3187,8 @@ static void pod_text(int i) {
         { 0 }, /* Key Tone: a switch */
         { 0 }, /* In-Vehicle Mode: a switch */
         { 0 }, /* Smart Wi-Fi: a switch */
+        { 0 }, /* Enlarged Album Art: a switch */
+        { 0 }, /* Folder Album Cover: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3191,19 +3197,23 @@ static void pod_text(int i) {
         widget_set_text_utf8(st.pod_label[i], sort);
         return;
     }
-    int v = i == POD_ARTISTS   ? I(artist_type, 0) == 1
-            : i == POD_KEYTONE ? g_keytone_flag != 0
-            : i == POD_CARMODE ? g_carmode != 0
-            : pod_values[i]    ? *pod_values[i]
-                               : 0;
-    const char *toggle = i == POD_CHARGE       ? "Charge Limit (" STR(CHARGE_STOP) "%)"
-                         : i == POD_RESUME     ? "Resume on Connect"
-                         : i == POD_VOL_GUARD  ? "Volume Guard"
-                         : i == POD_BT_LINK    ? "Control Device Volume"
-                         : i == POD_KEYTONE    ? "Key Tone"
-                         : i == POD_CARMODE    ? "In-Vehicle Mode"
-                         : i == POD_SMART_WIFI ? "Smart Wi-Fi"
-                                               : 0;
+    int v = i == POD_ARTISTS       ? I(artist_type, 0) == 1
+            : i == POD_KEYTONE     ? g_keytone_flag != 0
+            : i == POD_CARMODE     ? g_carmode != 0
+            : i == POD_COVERMODE   ? g_bigcovermode == 1
+            : i == POD_FOLDERCOVER ? g_foldercover_flag != 0
+            : pod_values[i]        ? *pod_values[i]
+                                   : 0;
+    const char *toggle = i == POD_CHARGE        ? "Charge Limit (" STR(CHARGE_STOP) "%)"
+                         : i == POD_RESUME      ? "Resume on Connect"
+                         : i == POD_VOL_GUARD   ? "Volume Guard"
+                         : i == POD_BT_LINK     ? "Control Device Volume"
+                         : i == POD_KEYTONE     ? "Key Tone"
+                         : i == POD_CARMODE     ? "In-Vehicle Mode"
+                         : i == POD_SMART_WIFI  ? "Smart Wi-Fi"
+                         : i == POD_COVERMODE   ? "Enlarged Album Art"
+                         : i == POD_FOLDERCOVER ? "Folder Album Cover"
+                                                : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
     else
@@ -3211,6 +3221,8 @@ static void pod_text(int i) {
     /* Stock's rows, so stock's translations */
     if (i == POD_KEYTONE) widget_set_tr_text(st.pod_label[i], "system_keytone");
     if (i == POD_CARMODE) widget_set_tr_text(st.pod_label[i], "system_carmode");
+    if (i == POD_COVERMODE) widget_set_tr_text(st.pod_label[i], "playset_covermode");
+    if (i == POD_FOLDERCOVER) widget_set_tr_text(st.pod_label[i], "playset_foldercover");
 }
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
@@ -3239,7 +3251,13 @@ static int pod_click(void *ctx, void *event) {
     } else if (i == POD_CARMODE) {
         g_carmode = !g_carmode;
         write_int_config(g_carmode, "SYSSET", "CARMODE");
-        g_carmode_state = 0; /* as stock's row (0x4cc2b0) */
+        g_carmode_state = 0;         /* as stock's row (0x4d38fc) */
+    } else if (i == POD_COVERMODE) { /* these two as stock's rows (0x4c05e4) */
+        g_bigcovermode = g_bigcovermode != 1;
+        write_int_config(g_bigcovermode, "PLAYSET", "COVERMODE");
+    } else if (i == POD_FOLDERCOVER) {
+        g_foldercover_flag = !g_foldercover_flag;
+        write_int_config(g_foldercover_flag, "PLAYSET", "FOLDERCOVER");
     } else {
         int *value = pod_values[i];
         *value = (*value + 1) % pod_choices(i);
@@ -3297,9 +3315,9 @@ int ringnav_btrows(void *win, void *ctx) {
     }
     return result;
 }
-/* A settings list's rows, stock's (ids 0.. in its table order, each button named by its id, which
- * its click looks up, so order is free) and then ours, restacked into order; any other count is
- * left as built. */
+/* A settings list's rows, stock's (in its table's order, each button named by its place there,
+ * which its click looks up, so order is free) and then ours, restacked into order; any other count
+ * is left as built. */
 static void reorder(void *view, const unsigned char *order, unsigned n) {
     void *rows[32];
     if (!view || n > sizeof rows / sizeof *rows || widget_count_children(view) != n) return;
@@ -3308,51 +3326,56 @@ static void reorder(void *view, const unsigned char *order, unsigned n) {
 }
 
 /* Everyday listening, what plays next, level, channels, then specialist output controls; the ring
- * puts Library & Folders one detent from the top. Stock's ids 0-12, then ours as built. */
+ * puts Library & Folders one detent from the top. Stock's rows 0-10 (ringnav_audioset drops its
+ * Volume and Album Display and Folder skip), then ours as built. */
 static const unsigned char playset_order[] = {
     3 /* Play Mode */,
     2 /* EQ */,
-    9 /* Gapless */,
-    13 /* Crossfade */,
-    8 /* Memory play */,
-    14 /* Resume Songs */,
+    7 /* Gapless */,
+    11 /* Crossfade */,
+    6 /* Memory play */,
+    12 /* Resume Songs */,
+    8 /* Headphones required */,
     0 /* Gain */,
-    10 /* ReplayGain */,
-    4 /* Max Volume */,
-    5 /* Default Vol */,
-    11 /* Balance */,
-    15 /* Mono Audio */,
-    16 /* Swap L/R */,
-    12 /* Enlarged art */,
+    9 /* ReplayGain */,
+    17 /* Max Volume */,
+    18 /* Default Vol */,
+    10 /* Balance */,
+    13 /* Mono Audio */,
+    14 /* Swap L/R */,
+    19 /* Enlarged art */,
     1 /* Filters */,
-    6 /* DSD Output */,
-    17 /* MQA */,
-    7 /* USB Audio */,
-    18 /* Library & Folders */,
+    4 /* DSD Output */,
+    15 /* MQA */,
+    5 /* USB Audio */,
+    16 /* Library & Folders */,
 };
-/* Library & Folders: stock's Folder art and Folder skip (0, 1), then ours as built. */
+/* Library & Folders: stock's Folder skip (0), then ours as built. */
 static const unsigned char library_order[] = {
-    3 /* Artists */,     4 /* Artist album order */, 2 /* Year order */,
-    5 /* Folder Root */, 1 /* Folder skip */,        0 /* Folder art */,
+    2 /* Artists */,     3 /* Artist album order */, 1 /* Year order */,
+    4 /* Folder Root */, 0 /* Folder skip */,        5 /* Folder art */,
 };
 /* Connections, personalisation and daily controls, then device maintenance; About stays last.
- * In-Vehicle, Key tone and Buttons lock stay hidden, stock's page left whole: Power and Controls
- * have their rows now (pod_click, keylock_open). */
+ * Stock's Wheel Function, In-Vehicle, General and System stay hidden, its page left whole: the
+ * wheel is Q2 Pod's (tools/build.py WHEEL_MODE), Power and Controls have In-Vehicle's, Key tone's
+ * and Buttons lock's rows (pod_click, keylock_open), and the rows stock moved to System are here,
+ * as they were (ringnav_systemset). */
 static const unsigned char sysset_order[] = {
     1 /* Wireless */,
     2 /* Network */,
     3 /* Display */,
-    13 /* Controls */,
+    10 /* Controls */,
     4 /* Power */,
-    5 /* Date and time */,
+    11 /* Date and time */,
     0 /* Language */,
-    12 /* App Store */,
-    9 /* Update */,
-    10 /* Reset */,
+    9 /* App Store */,
+    12 /* Update */,
+    13 /* Reset */,
+    5 /* Wheel Function, hidden */,
     6 /* In-Vehicle, hidden */,
-    7 /* Key tone, hidden */,
-    8 /* Buttons lock, hidden */,
-    11 /* About */,
+    7 /* General, hidden */,
+    8 /* System, hidden */,
+    14 /* About */,
 };
 
 /* Folder Root (Q2POD FOLDERROOT): the card's top-level folder Home's Folder opens in, "" the card
@@ -3407,9 +3430,17 @@ static int root_click(void *ctx, void *event) {
     return 0;
 }
 
+/* A row that opens the stock page ctx names, as stock's own rows do. */
+static int to_page(void *ctx, void *event) {
+    navigator_to((const char *)ctx);
+    return 0;
+}
 /* Playback's Library & Folders opens stock's page again (as Display's sub-pages do) with only the
- * library rows: stock's two kept, its others dropped. The main page drops those two instead. Each
- * page builds only its own rows, so a row's kept label is its page's. */
+ * library rows: stock's Folder skip (12) kept, its others dropped. The main page drops it instead,
+ * and stock's Volume and Album Display (11): that page's four rows are here as they were, Max
+ * Volume, Default Volume and Enlarged Album Art on Playback and Folder Album Cover on Library &
+ * Folders, opening stock's pages and flipping stock's switches (pod_click). Each page builds only
+ * its own rows, so a row's kept label is its page's. */
 static int playset_sub __attribute__((section(".scratch")));
 static int library_open(void *ctx, void *event) {
     playset_sub = 1;
@@ -3418,12 +3449,13 @@ static int library_open(void *ctx, void *event) {
     return 0;
 }
 int ringnav_audioset(void *win, void *ctx) {
-    static const char *const icons[] = { "playset_covermode", "playset_folderjump" };
+    static const char *const icons[] = { "playset_covermode", "playset_folderjump" },
+                             *const cover_icons[] = { "playset_covermode", "playset_foldercover" };
     int sub = playset_sub, result = stock_audioset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_playset", 1) : (void *)0;
     if (!view) return result;
     for (int i = (int)widget_count_children(view); i-- > 0;)
-        if ((i == 13 || i == 14) != sub) widget_destroy(widget_get_child(view, (unsigned)i));
+        if (sub ? i != 12 : i >= 11) widget_destroy(widget_get_child(view, (unsigned)i));
     if (sub) {
         void *nav = widget_lookup(win, "view_navbar", 1),
              *title = nav ? widget_get_child(nav, 0) : (void *)0;
@@ -3434,6 +3466,7 @@ int ringnav_audioset(void *win, void *ctx) {
         root_read(name);
         st.root_label = list_row(view, "playset_folderjump", root_click, 0);
         root_text(name);
+        pod_rows(win, "scroll_view_playset", POD_FOLDERCOVER, 1, cover_icons + 1);
         reorder(view, library_order, sizeof library_order);
         return result;
     }
@@ -3444,6 +3477,13 @@ int ringnav_audioset(void *win, void *ctx) {
     mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
     widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
                          "Library & Folders");
+    widget_set_tr_text(
+        list_row_into(view, "playset_maxvol", to_page, (void *)"playset/maxvol_page"),
+        "playset_maxvol");
+    widget_set_tr_text(
+        list_row_into(view, "playset_bootvol", to_page, (void *)"playset/bootvol_page"),
+        "playset_bootvol");
+    pod_rows(win, "scroll_view_playset", POD_COVERMODE, 1, cover_icons);
     reorder(view, playset_order, sizeof playset_order);
     return result;
 }
@@ -3483,10 +3523,10 @@ static void keep_selected(void *target) {
     widget_invalidate_force(w, (void *)0);
 }
 
-/* scroll_lrc's rows are 20 px, or 25 a line when wrapped (0x52a0c8), and its 178 px are no whole
+/* scroll_lrc's rows are 20 px, or 25 a line when wrapped (0x53b578), and its 178 px are no whole
  * number of them, so the view's end (content height - view height), where stock's follow and the
  * wheel stop, cut the top row. The content grows to the first row top at or past that end plus the
- * view: under a row of blank space below the last. A relayout (scroll_view's, 0x5f17a8) puts the
+ * view: under a row of blank space below the last. A relayout (scroll_view's, 0x6040d8) puts the
  * height back and clamps the offset; the next follow, tick or glide step pads it again. ponytail:
  * the wheel and a drag stop anywhere, so a row can be cut at the top until the page follows. iPod's
  * lyrics page (lyrics.c) ends with its last line in the middle. */
@@ -3562,7 +3602,7 @@ int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
     return scroll_view_scroll_to(lrc, x, y, ms);
 }
 
-/* The page's refresh rebuilds scroll_lrc's rows (0x529f0c, LYRIC_ROWS in tools/build.py) whenever
+/* The page's refresh rebuilds scroll_lrc's rows (0x53b3bc, LYRIC_ROWS in tools/build.py) whenever
  * g_forcerefresh_flag is set, as Play/Pause (playpause_quick_click) and the page's return to the
  * front do, and the rebuild ends at offset 0: the lyrics flicked to the top until the next follow.
  * The offset stays; the follow moves it if the line did. iPod: rows for another song than the last
@@ -3570,7 +3610,7 @@ int ringnav_lyric_follow(void *lrc, int x, int y, int ms) {
  * become the lyrics page's (lyrics_rows). */
 int ringnav_lyric_rows(void *win) {
     void *lrc = widget_lookup(win, "scroll_lrc", 1);
-    int y = lrc ? I(lrc, SCROLL_Y) : 0, ret = ((int (*)(void *))0x529f0c)(win);
+    int y = lrc ? I(lrc, SCROLL_Y) : 0, ret = ((int (*)(void *))0x53b3bc)(win);
     if (lrc && lrc == st.np_lrc && lyrics_rows(lrc)) lyric_pad(lrc);
     unsigned song = lrc && lrc == st.np_lrc ? np_track() : st.lyric_rows_song;
     if (song != st.lyric_rows_song) {
@@ -4599,7 +4639,7 @@ static int np_gone(void *win, void *event) {
 
 /* Now Playing's art (either page) follows the player's cover. Stock reloads img_cover only on
  * one-shot flags its 250 ms timer finds set: a song change, a forced refresh, the cover thread's
- * finish. Enlarged Art's timer clears all three while it is open (0x520064), so a change it took
+ * finish. Enlarged Art's timer clears all three while it is open (0x52d854), so a change it took
  * left the page on the last track's art. Each lit pass, the playing track and the player's file it
  * can use (once g_lastcover_url is this track's: 1 embedded, 2 folder image, 4 downloaded, 3 none:
  * stock's placeholder) are compared with the last; a change reloads the art as stock does, the
@@ -4702,14 +4742,15 @@ static int np_lyric_touch(void *ctx, void *event) {
 }
 
 /* playing_page_init: stock builds the page and starts its 250 ms timer, then the iPod labels bind.
- */
+ * Headphones required with none to play to: stock toasts, closes the window it was given and
+ * returns STOP before it builds anything (0x53e16c), so nothing binds. */
 int ringnav_playing(void *win, void *ctx) {
     if (st.np_full)
         np_full(0); /* another Now Playing: the last one's lyrics back in their column */
     /* and their place: np_gone leaves a page this one replaces alone */
     st.lyric_held = 0;
     int result = stock_playing_trampoline(win, ctx);
-    if (!win) return result;
+    if (!win || result == STOP) return result;
     rate_bind(win);
     /* np_gone leaves a replaced page's state alone: its Genre line is that page's. */
     stop_timer(&st.genre_timer);
@@ -4807,7 +4848,7 @@ static int bc_repaint(const void *info) {
  * and song name on its foot. Checked as the window paints; the image is decoded for its shape only
  * when the track, stock's cover of it or the image changes, and the box is sized again when that
  * shape or the box (a layout back to the square) changes. Stock names the player's one file per
- * kind by g_playcover_type (0x51fdcc), so one counts only once it is the type's and g_lastcover_url
+ * kind by g_playcover_type (0x52d5bc), so one counts only once it is the type's and g_lastcover_url
  * is this track's, as Home's art; until then the art keeps the shape of g_lastcover_url's cover, or
  * the square once that changes. The file is decoded past the image manager's cached copy, which may
  * be the last track's. Stock's default_bigcover placeholder is the square. */
@@ -4933,7 +4974,7 @@ static const char *ui_redirect(const char *name, char *buf) {
 /* The value of group (G_PITCH, G_BODY, ...) in the set theme_boot wrote (st.geom). */
 int geom(int group) { return boot_values[st.geom][group]; }
 
-/* An A-B marker's x for point t (stock 0x52a268, from its three calls in the markers' placement:
+/* An A-B marker's x for point t (stock 0x53b718, from its three calls in the markers' placement:
  * AB_X_CALLS in tools/build.py), on the boot set's bar (the np_bar_x and np_bar_w immediates):
  * Classic's bar fitted to the track (ipod_times) takes it along, at the same share of it. 0, no
  * point to mark, stays. */
@@ -5605,7 +5646,7 @@ int title_gone(void *w, void *event) {
 }
 
 /* Songs' action bar as a plain row (a set's action_row, its view tools/ipod.py sizes). Stock
- * rebuilds its children on each refresh (0x4a7e54): the label first, then Play All's image and
+ * rebuilds its children on each refresh (0x4a9de8): the label first, then Play All's image and
  * maybe Sort's, each bound as it is made. They stay as hit areas: the label at the list's text x in
  * the row's face and size, Play All's image over the row's left without its icon, Sort's three bars
  * (tools/art.py) over the right. Their first child's height says they are done. */
@@ -6557,7 +6598,7 @@ static int theme_pick(void *ctx, void *event) {
     return 0;
 }
 
-/* Now Playing's info page: stock (0x52a508, from its one call, NP_INFO_CALL in tools/build.py)
+/* Now Playing's info page: stock (0x53b9b8, from its one call, NP_INFO_CALL in tools/build.py)
  * writes "Label:value" lines and the folder alone. Each line gets ": ", a number its unit's space
  * ("35.92 MB", "16-bit", "950 kbps", "44.1 kHz"), the folder its Location label, and an unknown
  * value, en_US's first player_unknown ("Unknown Artist"), reads "Unknown". Classic's page has
@@ -6651,16 +6692,17 @@ static void setting_row(void *view, int i) {
     setting_text(i);
 }
 
-/* systemset_display_page_init: stock builds its three rows (0x4c19bc: a s_listitem_black list_item
- * holding a 335x70 s_btn_listitem button with a 52px icon, a 24px label at x 72 and list_into);
- * Smart Awake and Night Shift (the brightness icon, opening its slider page, crossfade.c) join
- * them, then Appearance and Coverflow, each opening stock's page again (display_open) with its
- * stock rows dropped and its own instead: Theme, Light Mode, Accent, Corners, Home, Shortcut,
- * Battery, Time in Title, Centred Now Playing; Artist View, Coverflow Sort and Refresh Coverflow.
- * Controls is System settings' row (ringnav_systemset) on the same page: the wheel, the buttons and
- * what the buttons do. The value rows show it in the label and have no chevron, since they change
- * in place. ponytail: stock's page opened over itself; its own rows' state is never touched on a
- * sub-page. */
+/* systemset_display_page_init: stock builds its four rows (0x4c69d4: a s_listitem_black list_item
+ * holding a 335x70 s_btn_listitem button with a 52px icon, a 24px label at x 72 and list_into).
+ * Its fourth, Show Navigation Bar, goes: the themes own the bar and each list's box, so stock's
+ * switch is held on (tools/build.py NAV_SHOWN). Smart Awake and Night Shift (the brightness icon,
+ * opening its slider page, crossfade.c) join them, then Appearance and Coverflow, each opening
+ * stock's page again (display_open) with its stock rows dropped and its own instead: Theme, Light
+ * Mode, Accent, Corners, Home, Shortcut, Battery, Time in Title, Centred Now Playing; Artist View,
+ * Coverflow Sort and Refresh Coverflow. Controls is System settings' row (ringnav_systemset) on the
+ * same page: the wheel, the buttons and what the buttons do. The value rows show it in the label
+ * and have no chevron, since they change in place. ponytail: stock's page opened over itself; its
+ * own rows' state is never touched on a sub-page. */
 int ringnav_display(void *win, void *ctx) {
     static const char *const titles[] = { 0, "Appearance", "Cover Flow", "Controls", "Theme" },
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
@@ -6675,6 +6717,7 @@ int ringnav_display(void *win, void *ctx) {
     void *view = win ? widget_lookup(win, "scroll_view_display", 1) : (void *)0;
     if (!view) return result;
     if (!sub) {
+        widget_destroy(widget_get_child(view, 3)); /* Show Navigation Bar */
         setting_row(view, 7);
         night_row(list_row_into(view, "display_backlight", xfade_open, (void *)3));
         for (int i = DISPLAY_APPEARANCE; i <= DISPLAY_COVERFLOW; ++i)
@@ -6765,11 +6808,19 @@ int ringnav_systemset(void *win, void *ctx) {
     int result = stock_systemset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_sysset", 1) : (void *)0;
     if (view) {
+        /* Stock's System page's rows and Date & Time, which V1.34 took off this list */
+        static const char *const moved[][2] = { { "system_time", "systemset/datetime_page" },
+                                                { "system_update", "systemset/fwupdate_page" },
+                                                { "system_reset", "systemset/reset_page" },
+                                                { "system_about", "systemset/about_page" } };
         widget_set_text_utf8(list_row_into(view, "system_update", shelf_open, 0), "App Store");
         widget_set_text_utf8(
             list_row_into(view, "playset_folderjump", display_open, (void *)DISPLAY_CONTROLS),
             "Controls");
-        for (unsigned i = 6; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
+        for (unsigned i = 0; i < 4; ++i)
+            widget_set_tr_text(list_row_into(view, moved[i][0], to_page, (void *)moved[i][1]),
+                               moved[i][0]);
+        for (unsigned i = 5; i <= 8; ++i) widget_set_visible(widget_get_child(view, i), 0, 0);
     }
     reorder(view, sysset_order, sizeof sysset_order);
     return result;
@@ -7150,7 +7201,7 @@ int stock_row_text(void *label, const char *text) {
  * hook takes it from there, as any stock red. Inline, as the row's font is, and written on each
  * bind, as the rows are reused. */
 int stock_row_style(void *label, const char *style) {
-    int ret = widget_use_style(label, style), playing = !tk_strcmp(style, "s_scrlabel_red20l");
+    int ret = widget_use_style(label, style), playing = !tk_strcmp(style, "s_scrlabel_red24l");
     if (playing) {
         char text[512] = "\xe2\x96\xb6 "; /* U+25B6; stock binds at most this much title */
         widget_get_text_utf8(label, text + 4, sizeof text - 4);
@@ -7563,7 +7614,7 @@ static int qm_gone(void *dialog, void *event) {
 }
 
 /* An album, artist/composer/genre or folder row: the query stock would run for it, as
- * batch_add_file (0x4f4be8) expands each class. Artist 0xf004/0xff01 rows name the artist at +0x18,
+ * batch_add_file (0x4ff174) expands each class. Artist 0xf004/0xff01 rows name the artist at +0x18,
  * composer 0xf005/0xff02 at +0x20, genre 0xf006/0xff03 at +0x1c; classinfo +0xa.. flags Unknown. */
 static const unsigned char qm_by[] = { REC_ARTIST, 0x20, 0x1c };
 static int class_query(unsigned cls, void *r) {
@@ -7633,14 +7684,14 @@ static const char *art_key(char *buf, void *list, unsigned i) {
                  path ? path : "");
     return buf;
 }
-/* The Albums row renderer's snprintf(buf, 0x100, "%s", album) (0x4a388c), a2 the row. */
+/* The Albums row renderer's snprintf(buf, 0x100, "%s", album) (0x4a52f0), a2 the row. */
 int ringnav_art_name(char *buf, unsigned size, unsigned row, const char *album) {
     char key[256];
     void *list = P(p_deque_showlist, 0);
     return snprintf(buf, size, "%s", row < deque_size(list) ? art_key(key, list, row) : album);
 }
 /* albumcoverinfo_init's and foldercoverinfo_init's _deque_push_back of each row's cover task
- * (0x4ed2a4, 0x4ed44c): the list's copy (0x5b390c) duplicates the task's name and path, which stock
+ * (0x4f77f4, 0x4f799c): the list's copy (0x5c610c) duplicates the task's name and path, which stock
  * malloc'd for it and never freed. */
 void ringnav_cover_push(void *covers, void *task) {
     _deque_push_back(covers, task);
@@ -7792,7 +7843,7 @@ static void artist_bar(void) {
     void *top = window_manager_get_top_window(window_manager()),
          *nav = top ? widget_lookup(top, "view_navbar", 0) : 0,
          *tab = top ? widget_lookup(top, "tab_control", 0) : 0,
-         *pages = tab ? widget_lookup(tab, "pages", 0) : 0, *album;
+         *pages = tab ? widget_lookup(tab, "pages_artistinfo", 0) : 0, *album;
     char h[12], y[12];
     pod_settings();
     if (st.artist_cf || !nav || !pages || widget_get_visible(nav) ||
@@ -7866,7 +7917,7 @@ static const char *artist_key(char *buf, void *list, unsigned i) {
                ? st.art_keys[i]
                : 0;
 }
-/* The artist page's albums renderer's snprintf of the name (0x4ab804), a2 the row. */
+/* The artist page's albums renderer's snprintf of the name (0x4adaec), a2 the row. */
 int ringnav_artist_art_name(char *buf, unsigned size, unsigned row, const char *album) {
     const char *k = artist_key(0, P(p_deque_showlist, 0), row);
     return snprintf(buf, size, "%s", k ? k : album);
@@ -7875,7 +7926,7 @@ int ringnav_artist_art_name(char *buf, unsigned size, unsigned row, const char *
 int ringnav_artist_covers(void *list) {
     return st.art_keys ? rename_covers(list, artist_key) : albumcoverinfo_init(list);
 }
-/* The album page's big cover, snprintf of classinfo +0xd (0x4a72a4): its Albums row's cover task
+/* The album page's big cover, snprintf of classinfo +0xd (0x4a9078): its Albums row's cover task
  * name, as the thread hashed it, when that is this album's key. */
 int ringnav_art_header(char *buf, unsigned size, const char *fmt, const char *album) {
     void *covers = P(pdeq_albumcoverlist, 0);
@@ -8619,7 +8670,7 @@ int ringnav_folder_back(void *yoffset, void *index) {
     return result;
 }
 
-/* folder_page's row click (stock's, 0x521bc4: the tapped or Centre-pressed row's index into
+/* folder_page's row click (stock's, 0x532104: the tapped or Centre-pressed row's index into
  * p_deque_showlist, then folder_enter, whose 8, a file, it queues as songs): a video plays as from
  * Library's Videos row (books_video). Select mode (g_navbar_status) and everything else is stock's.
  */
@@ -8659,12 +8710,14 @@ int ringnav_start_player(void) {
     return stock_start_player_trampoline();
 }
 
-/* systemset_about_page_init: stock's seven rows (0x4bc274), each a s_listitem_black list_item
- * holding a 335x70 s_btn_listitem button, a 166px s_scrlabel_white24l title at x 10 and a 149px
- * s_scrlabel_white20r value at x 176, both focus-only scrolling with ellipses. FW. Version (row 1)
- * reads demo's version literal, which carries the updater tag (tools/build.py TAG), so it
- * shows the stock firmware's again; a CFW. Version row in the same widgets follows it. Its button
- * has no name, so stock's row click (atoi of the name, 0x4bc774) ignores it. */
+/* systemset_about_page_init: stock's seven rows (0x4c0cb4) and its thanks (about_more, a 100 px
+ * list_item of wrapped text, the eighth child, dropped here: stock builds it and never reads it
+ * again), each row a s_listitem_black list_item holding a 335x70 s_btn_listitem button, a 166px
+ * s_scrlabel_white24l title at x 10 and a 149px s_scrlabel_white20r value at x 176, both focus-only
+ * scrolling with ellipses. FW. Version (row 1) reads demo's version literal, which carries the
+ * updater tag (tools/build.py TAG), so it shows the stock firmware's again; a CFW. Version row in
+ * the same widgets follows it. Its button has no name, so stock's row click (atoi of the name,
+ * 0x4c11c8) ignores it. */
 static void about_label(void *button, int x, int w, const char *style, const char *text) {
     void *label = hscroll_label_create(button, x, 0, w, 70);
     widget_use_style(label, style);
@@ -8677,7 +8730,8 @@ static void about_label(void *button, int x, int w, const char *style, const cha
 int ringnav_about(void *win, void *ctx) {
     int result = stock_about_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_about", 1) : (void *)0;
-    if (view && widget_count_children(view) == 7) {
+    if (view && widget_count_children(view) == 8) {
+        widget_destroy(widget_get_child(view, 7)); /* stock's thanks */
         widget_set_text_utf8(widget_get_child(widget_get_child(widget_get_child(view, 1), 0), 1),
                              STOCK_VERSION);
         void *button = list_button(view);
@@ -8695,7 +8749,7 @@ static int qm_restore(void *page, void *event) {
     return 0;
 }
 
-/* Now Playing's More rows, for this record: Album info (0x5283b0) fills the album query and opens
+/* Now Playing's More rows, for this record: Album info (0x5394dc) fills the album query and opens
  * playerjumpinfo_page; Artist info opens artistinfo_page with {class, record}. A song played in
  * Coverflow, or with Artist albums: Coverflow, goes to the album's tracks in Coverflow instead, as
  * Go to Artist reaches its covers. A card app's song goes to the app's page when it offers one
@@ -8780,7 +8834,7 @@ static int qm_run(const void *unused) {
         deleteMusicFromFav(r);
         ratings_copy_due();
         if (cls == 0xf00a)
-            g_delete_flag = 1;          /* My Fav reloads, as Now Playing's heart (0x52b2e8) */
+            g_delete_flag = 1;          /* My Fav reloads, as Now Playing's heart (0x53c800) */
     } else if (r && a == QA_PLAYLIST) { /* the playlist page's add mode adds the selected row */
         qm_select();
         navigator_to_with_context(
@@ -9190,8 +9244,8 @@ static int quick_wheel_toggle(void *top) {
  * way, now closed); this is the backstop for any other. A press with no pointer event reaching the
  * window manager (ringnav_input) within STALE_TOUCH_MS gets an abort, so a pressed row drops its
  * press and cannot click, then the release stock never got, at the touch's last place: only that
- * path clears the flag (input_device_status_on_input_event, 0x69ff64). A finger resting that long
- * is lifted too; its real lift then finds the flag clear and does nothing (0x69fe30). ponytail:
+ * path clears the flag (input_device_status_on_input_event, 0x6b2fb4). A finger resting that long
+ * is lifted too; its real lift then finds the flag clear and does nothing (0x6b2e80). ponytail:
  * STALE_TOUCH_MS is a guess, and that the flag is what window_manager_get_pointer_pressed reads
  * (vtable +0x44) and that widgets drop a press on the abort are AWTK's source, not traced in demo;
  * the time stamped here holds a wrong guess to one try per STALE_TOUCH_MS.
@@ -9236,8 +9290,8 @@ static void stale_heal(void) {
  * swipe queued behind a track start, goes to the page under it: the dialog stays on top off screen
  * with that page sent to the background, Now Playing's timer stopped (#189). With no touch down
  * and no slide running, the next UI pass hands it the release through ringnav_dispatch: stock's
- * handler (0x4a08bc, bound at dialog_statusbar_dialog_init) ignores the event's place and at states
- * 1 and 2 with timer_idex -1 always adds its slide timer (0x4a099c), which always ends, so one pass
+ * handler (0x4a1eec, bound at dialog_statusbar_dialog_init) ignores the event's place and at states
+ * 1 and 2 with timer_idex -1 always adds its slide timer (0x4a1fcc), which always ends, so one pass
  * does it. */
 static int quick_stuck(void *top) {
     return usable() && top &&
@@ -9283,7 +9337,7 @@ static const int hold_info[][2] = { { KEY_PLAY, KEY_HOLD_MS }, { KEY_RETURN, KEY
 const int *ringnav_hold_info(void *ids, int key) {
     for (unsigned i = 0; i < sizeof hold_info / sizeof *hold_info; i++)
         if (hold_info[i][0] == key) return hold_info[i];
-    return ((const int *(*)(void *, int))0x6a027c)(
+    return ((const int *(*)(void *, int))0x6b32ec)(
         ids, key); /* input_device_status_find_key_long_press_info */
 }
 unsigned ringnav_hold_timer(int (*fn)(const void *), void *ids, unsigned ms, int key) {
@@ -9687,7 +9741,7 @@ static void bt_volume_poll(void) {
     if (v > limit) v = limit;
     btvol.last = cur;
     g_volume = (unsigned char)v;
-    *(volatile signed char *)0xa38c41u = (signed char)v; /* stock responseSetVolume's level */
+    *(volatile signed char *)0xa4c5a5u = (signed char)v; /* stock responseSetVolume's level */
     device_set_volume(v, 1);
     write_int_config(v, "PLAYSET", "VOLUME");
     void *top = vol_top();
@@ -10043,7 +10097,7 @@ int ringnav_wm_paint(void *wm) {
     return paint ? paint(wm) : away ? 0 : 0x10; /* RET_BAD_PARAMS, as stock */
 }
 
-/* buzzeer_switch (0x4f3cc8), every Key Tone click, stock's and ringnav()'s: the MCU's buzzer
+/* buzzeer_switch (0x4fe228), every Key Tone click, stock's and ringnav()'s: the MCU's buzzer
  * (system("cmd_mcu write_str buzzer") when g_keytone_flag is set). Silent while headphones (either
  * jack) or a Bluetooth or USB output listen, since the buzzer is the device's own speaker;
  * hciplayer holds their PCM, so the click has no other way out. Playback alone leaves it clicking.
@@ -10654,7 +10708,7 @@ int ringnav(void *ctx, void *event) {
     if (key == KEY_CENTER || key == KEY_RETURN) st.held = 0; /* a button ends a held turn */
     void *front = window_manager_get_top_window(window_manager());
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
-    /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49a478), for its 2 s of
+    /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49b7d8), for its 2 s of
      * the 3 s: the same key goes on. ponytail: the toast stays up its time; another key is still
      * stopped. */
     if ((key == KEY_BACK_BTN || key == KEY_FWD_BTN) && restart_armed(key == KEY_FWD_BTN) && front &&
@@ -10681,9 +10735,9 @@ int ringnav(void *ctx, void *event) {
             return STOP;
         }
         /* The library scan's dialog, once its scan has ended: stock's Return and Cancel only stop
-         * a scan (0x4a0fc4) and do nothing until its timer (0x4a1560) has counted SCAN_DONE to 3
+         * a scan (0x4a25f4) and do nothing until its timer (0x4a2bb4) has counted SCAN_DONE to 3
          * and slept 1 s, ~1.4 s, then close it itself; so a press there seemed lost. The dialog's
-         * init clears SCAN_DONE (0x4a1798). dialog_quit is safe twice, so the timer's own close
+         * init clears SCAN_DONE (0x4a2dec). dialog_quit is safe twice, so the timer's own close
          * after ours does nothing. */
         if (top && *(volatile int *)SCAN_DONE &&
             !tk_strcmp(widget_get_prop_str(top, "name", ""), "updatemusic_dialog")) {
@@ -10884,7 +10938,7 @@ int ringnav(void *ctx, void *event) {
     } else if (g_menu.n) {
         int id = widget_get_prop_int(w, SEL, -1);
         /* No letter over an album's songs: stock shows them in these two pages alone, in disc and
-         * track order (comparator 0x4fb880). Tested here, as at paint the top may already be the
+         * track order (comparator 0x506220). Tested here, as at paint the top may already be the
          * page a Return brings back. */
         const char *page = widget_get_prop_str(top, "name", "");
         if (step > 1 && tk_strcmp(page, "albuminfo_page") && tk_strcmp(page, "playerjumpinfo_page"))

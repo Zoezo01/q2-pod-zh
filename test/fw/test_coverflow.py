@@ -2482,7 +2482,7 @@ class Ui:
 class Homes:
     """A Home window as the asset lays it out: the art, the main list's rows, the Settings, Library and Streaming lists
     (hidden, two rows each: a button with its label and icon), and Carousel's slide_menu and arrows."""
-    ROWS = ('img_playing', 'img_library', 'img_coverflow', 'img_folder', 'img_rockbox', 'img_services', 'img_settings')
+    ROWS = ('img_playing', 'img_library', 'img_cover_flow', 'img_folder', 'img_rockbox', 'img_services', 'img_settings')
 
     def __init__(self, ui, carousel=False, rockbox=False):
         self.ui = ui
@@ -2509,7 +2509,7 @@ class Homes:
         if carousel:
             self.carousel = [ui.make(self.win, 'slide_menu', name='slide_menu'), ui.make(self.win, 'image', name='img_left'),
                              ui.make(self.win, 'image', name='img_right')]
-            for name in ('img_coverflow', 'img_rockbox', 'label_rockbox'):
+            for name in ('img_cover_flow', 'img_rockbox', 'label_rockbox'):
                 ui.make(self.carousel[0], 'image', name=name)
             for w in self.carousel:
                 ui[w].visible = 0
@@ -2537,12 +2537,12 @@ def test_home_binds_its_cards_and_lists_and_asks_the_pane_s_counts_after_boot(fw
     assert (home.win, home.art, home.list, home.sets, home.lib, home.stream) == (h.win, h.art, h.main, h.sets, h.lib, h.stream)
     assert list(home.carousel) == h.carousel
     assert not any(ui[w].sensitive for w in (h.art, h.sets, h.lib, h.stream))  # taps find the shown list's rows
-    want = {'img_coverflow': ('coverflow__coverflow_open', 0), 'img_rockbox': ('home_shortcut_open', 0),
+    want = {'img_cover_flow': ('coverflow__coverflow_open', 0), 'img_rockbox': ('home_shortcut_open', 0),
             'img_settings': ('coverflow__home_settings', 0), 'img_library': ('coverflow__home_library', h.win),
             'img_services': ('coverflow__home_streaming', h.win)}
     for row, (fn, ctx) in want.items():
         assert ui.handlers(h.rows[row]) == [(address(fw, fn), ctx)], row
-    on_card = [ui.handlers(ui.lookup(h.carousel[0], n)) for n in ('img_coverflow', 'img_rockbox')]
+    on_card = [ui.handlers(ui.lookup(h.carousel[0], n)) for n in ('img_cover_flow', 'img_rockbox')]
     assert on_card == [[(address(fw, 'coverflow__coverflow_open'), 0)], [(address(fw, 'home_shortcut_open'), 0)]]
     assert ui.handlers(h.win, EVT_WINDOW_FOREGROUND) == [(address(fw, 'coverflow__home_foreground'), 0)]
     assert ui.timer(address(fw, 'coverflow__home_counts'))[1] > 0  # not in boot's first paints: later
@@ -2721,7 +2721,7 @@ def pane_rect(fw, h):
     return h.win, (SPLIT_W, 0, HOME_PW, fw.fn('client_h', C.c_int)())
 
 
-@pytest.mark.parametrize('name, kind', (('img_library', PANE_LIBRARY), ('img_coverflow', PANE_COVERFLOW), ('img_folder', PANE_FOLDER),
+@pytest.mark.parametrize('name, kind', (('img_library', PANE_LIBRARY), ('img_cover_flow', PANE_COVERFLOW), ('img_folder', PANE_FOLDER),
                                         ('img_services', PANE_STREAM), ('img_stream', PANE_STREAM), ('img_settings', PANE_SETTINGS),
                                         ('img_unknown', PANE_LIBRARY)))
 def test_the_pane_follows_the_highlighted_row(fw, name, kind):
@@ -2745,7 +2745,7 @@ def test_the_shortcut_row_shows_what_its_shortcut_opens(fw, shortcut, kind):
 def test_a_paint_s_row_change_shows_in_the_next_frame(fw):
     _, ui, h, home = home_open(fw)
     ui.dirty.clear()
-    assert home_row(fw, h.view, h.rows['img_coverflow'], painting=1) == PANE_COVERFLOW
+    assert home_row(fw, h.view, h.rows['img_cover_flow'], painting=1) == PANE_COVERFLOW
     assert not ui.dirty  # a paint can't invalidate: AWTK drops it with the frame
     i, ms = ui.timer(address(fw, 'coverflow__pane_after'))
     assert ms == 0 and home.pane_timer == i

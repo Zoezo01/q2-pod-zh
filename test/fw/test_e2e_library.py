@@ -469,7 +469,7 @@ class Q2:
         return 0
 
     def make_album(self, ctx, n, v, c):
-        """getAllAlbum's row (stock's album_row, 0x4fc324): id, album, songer and the art track's path."""
+        """getAllAlbum's row (stock's album_row, 0x506cc4): id, album, songer and the art track's path."""
         r = self.memory.record(kind=4, id_=int(v[0]), album=(v[1] or b'').decode(), artist=(v[2] or b'').decode(),
                                path=(v[3] or b'').decode())
         self.deques[self.directory()].append(r)

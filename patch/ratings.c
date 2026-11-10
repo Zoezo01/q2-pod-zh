@@ -24,7 +24,7 @@ static struct {
 #define ALBUM_RATINGS_FILE "/mnt/data/ringnav-album-ratings"
 /* Now Playing's heart click (playing_page_init binds it to img_fav with the window): stock's My
  * Fav toggled for the playing track (manage_myfav), and the heart's image with it. */
-#define FAV_CLICK ((int (*)(void *, void *))0x52b154)
+#define FAV_CLICK ((int (*)(void *, void *))0x53c66c)
 
 /* The songs' table, or with album the albums'. */
 static int rate_io(int album, int write) {

@@ -38,14 +38,14 @@ def home_row(i, row, label):
     h, x = ipod.HOME_ROW, ipod.HOME_TEXT_X
     return ['view', [0, i * h, 375, h], {'name': 'btn_' + row}, [
         ['hscroll_label', [x, 0, 375 - x - ipod.HOME_LABEL_END, h], {**LABEL, **label}, []],
-        ['image', [0, 0, 375, h], {'name': 'img_' + row, 'clickable': 'true'}, []]]]
+        ['image', [0, 0, 375, h], {'name': label['name'].replace('label_', 'img_') if row == 'coverflow' else 'img_' + row, 'clickable': 'true'}, []]]]
 
 
 def test_home_list():
     h = ipod.HOME_ROW
     rows = [home_row(0, 'playing', {'name': 'label_playing'}),
             home_row(1, 'localmusic', {'name': 'label_library', 'text': 'Library'}),
-            home_row(2, 'coverflow', {'name': 'label_coverflow', 'text': 'Cover Flow'})]
+            home_row(2, 'coverflow', {'name': 'label_cover_flow', 'text': 'Cover Flow'})]
     scroll = ['scroll_view', [0, 0, 375, 3 * h],
               {'name': 'scroll_view_home', 'self_layout': 'default(x=0,y=0,w=100%,h=100%)', 'yslidable': 'true'}, rows]
     assert ipod.home_list('home', ['playing', 'localmusic', 'coverflow'], ipod.SET0, {'visible': 'false'}) == [

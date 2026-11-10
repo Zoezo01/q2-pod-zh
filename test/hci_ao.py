@@ -16,7 +16,7 @@ from hci_emu import Emu, PCM
 build = pathlib.Path(sys.argv[1]).resolve()
 player = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else build/'peq'/'hciplayer'
 work, root, aud = build/'hci_ao', build/'hci_ao'/'root', build/'hci_ao'/'aud'
-AUTH, WAY = 0x43084c, 0xb10e54
+AUTH, WAY = 0x430114, 0xb11e54
 ps = symbols(build/'peq'/'peq.elf')
 TONE, SECONDS = 660, 1.5
 FILES = {'a44.flac': (44100, 2, 's16', 'flac'), 'b44.flac': (44100, 2, 's16', 'flac'), 'b48.flac': (48000, 2, 's16', 'flac'),
@@ -416,7 +416,7 @@ for way in 1, 2:
     assert len(p.e.streams) == 1, (way, len(p.e.streams))
 print('Bluetooth and USB: a write keeps nothing beside the ring, a kept PCM too, and an unpause is stock\'s.')
 # A track under the exit hold, then a natural reopen: one wait, the drain whole, and none at all for a track of 300 ms or more.
-HOLD_AFTER = 0x4226dc  # past exit_hold's jal and its delay slot
+HOLD_AFTER = 0x42273c  # past exit_hold's jal and its delay slot
 def short_then_reopen(short):
     p = Player()
     enter, left = [], []
@@ -649,8 +649,8 @@ assert wait == 0 and pcms == 2, (wait, pcms)
 def uninit_word(first, second, pressed):
     p = Player()
     words = []
-    if pressed: p.e.watch_fn(ps['ao_uninit'], lambda e: e.w32(0xb10e6c, 1))
-    p.e.watch_fn(0x43868c, lambda e: words.append(e.r32(ps['ao_wait'])))
+    if pressed: p.e.watch_fn(ps['ao_uninit'], lambda e: e.w32(0xb11e6c, 1))
+    p.e.watch_fn(0x437f4c, lambda e: words.append(e.r32(ps['ao_wait'])))
     p.song(first)
     p.run(0.2)
     p.gapless(second)

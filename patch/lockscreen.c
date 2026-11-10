@@ -331,7 +331,7 @@ static void info_screen(void *win, void *img, int id) {
         info_label(pct, 226, 0, 48, 26, 13, "default", "right");
         widget_set_visible(pct, ipod_battery() != 0, 0);
     }
-    /* hidden, not emptied: stock's battery timer (0x52d474) writes its image again */
+    /* hidden, not emptied: stock's battery timer (0x53ea14) writes its image again */
     if (batt) widget_set_visible(batt, 0, 0);
     if (bar) widget_set_visible(bar, 0, 0);
     if (card) { /* its box holds the tray's ring and the row under it, so a hidden card takes them
@@ -420,7 +420,7 @@ int lockscreen_init(void *win, void *ctx) {
     return result;
 }
 
-/* The lock window's cover (stock 0x52d844, from the window's timer once a new track's cover is
+/* The lock window's cover (stock 0x53ede4, from the window's timer once a new track's cover is
  * parsed, and from its init): stock sets img_playcover to the same file name and never invalidates
  * it, so the old art stayed until something else repainted over it. */
 int lockscreen_cover(void *win) {
@@ -430,7 +430,7 @@ int lockscreen_cover(void *win) {
     return result;
 }
 
-/* The Lock screen page's list (stock 0x4c9134), rebuilt whole when its switch turns: Time show and
+/* The Lock screen page's list (stock 0x4cfd40), rebuilt whole when its switch turns: Time show and
  * About, then the picture grid with the switch on. Clock (navigation.c's POD_LOCKCLOCK) follows
  * Time show, 78 high as stock's rows, and the built-ins' thumbnails are found for lockscreen_paint. */
 int lockscreen_rows(void *win) {

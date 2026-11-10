@@ -65,7 +65,7 @@ void ffmpeg_argv(const char **a, char *ss, int at, const char *file, int audio) 
     if (!audio) a[17] = 0;
 }
 
-/* hciplayer's Bluetooth soft volume (its mixer_setvolume, 0x428744) for demo's volume v, 0-100,
+/* hciplayer's Bluetooth soft volume (its mixer_setvolume, 0x4287a4) for demo's volume v, 0-100,
  * in 1/65536: 0.002 v under 50, then 0.1 + 0.018 (v - 50), 1 at 100. */
 int bt_gain(int v) {
     v = v < 0 ? 0 : v > 100 ? 100 : v;

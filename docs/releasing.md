@@ -4,7 +4,7 @@ To prepare a release, bump `VERSION` in `tools/build.py` and add a `- **<version
 installed for these commands:
 
 ```sh
-python3 tools/release.py package 'Q2 Firmware V1.32.zip' --out /tmp/q2-release
+python3 tools/release.py package 'Q2 Firmware V1.34.zip' --out /tmp/q2-release
 python3 test/release.py
 # Create or update the release with both validated update tars and verify remote bytes.
 python3 tools/release.py upload /tmp/q2-release

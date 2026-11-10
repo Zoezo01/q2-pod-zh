@@ -1,26 +1,26 @@
 {
   "assets": {
     "dialog/addplaylist_dialog.bin": "c4ff5019863a904019b872f8baea64d3cefc9c1b520972803419507cbaa03905",
-    "folder_page.bin": "7ea6d0e191ed15e42a46a3b1e4898c91b175b216615cf3d4f656dd3aa1407bcb",
-    "localmusic_page.bin": "beada69a80011fef5068dcaf5d741355f57d0df936fca497f65f51bcba60b7a4",
+    "folder_page.bin": "f17a8e6d1d60b6802a5cdb969b759d728153bc0636bc284d0b97e1626977db46",
+    "localmusic_page.bin": "0fd1b05acc0be0db1912552aa766408bde8d4ac9d5e1a437ad5dc70b7258047a",
     "localmusic/album_page.bin": "b0a6420c81b19fd78706dcb1e1db09b365c5c9b817bf615ebc535197bce41ab1",
-    "localmusic/albuminfo_page.bin": "2e4c8f8112a0efd8c7a0c44bca3a20d822506eb76094bb5abb2f41fc26a6d416",
-    "localmusic/allmusic_page.bin": "1c05f4d017c27c3e140d568e963b43c64891309f730f304b93d0e4fc5d86f782",
-    "localmusic/artistinfo_page.bin": "a5e9a8f104d8e8aeeec4640faf0e160fa7483011700632eaade64afff8bb3198",
+    "localmusic/albuminfo_page.bin": "31ad14625bf60d438b93a391ec8f433a91452403f50f76ced183ee01609fca5e",
+    "localmusic/allmusic_page.bin": "d42fbfd1dbdd05f1cc19941054d6dfe2995706093b264b20d8b7e69a6095e147",
+    "localmusic/artistinfo_page.bin": "5c30c3a6dc3d3b6350563be3fdc12cb5791764ad47e05ff83738bb7cac09f351",
     "localmusic/localclass_page.bin": "41572b285d5c6a447ae340d8827cacc02eac0359d5d4bd07cbf518e5463a10a1",
     "localmusic/playlist_page.bin": "68efc8a91545f4c79b649cf177912332c6c493ed2b258d3b759f9bf14e44b962",
     "localmusic/playlistsmore_page.bin": "60948d54736bbe913305b960ee3b8c88dd135f4327e7a8c37e526740cec66d9f",
-    "home_page.bin": "c0e056388681952b31b7e4b3e13fc65f143807a5c6ff6c45060dbbe5ae9e5241",
-    "system_bar.bin": "37a66b86847eae4f26ce748cb7d0b621d49e9e173e0526342058e3901389d9b1",
-    "playing_page.bin": "f39a5d333ae68028b6af1448f363deb28a3a417d3c085e4151322e022a9b2e4c",
+    "home_page.bin": "a634649281eacf120a3e8a92eb7eef74957dc61b6c1eb8220701421956f63a91",
+    "system_bar.bin": "8f1e2788c4ae17cc4615149c7f3537153ee225cdb8a476d6b57954dfc6c8d9f8",
+    "playing_page.bin": "af3b86c049076e81a61b369262c066ab9a82de67bc1057f165c5330f963203ea",
     "dialog/statusbar_dialog.bin": "54b59c005201fe5b9efbebb5b359d45527552942fbeb7f55f2270872136dcd47",
-    "dialog/confirminfo_dialog.bin": "cceac1b202d46c7cdd11205b66ac9332fc349e07797e636b39ee471348545b73",
+    "dialog/confirminfo_dialog.bin": "22e6c9e0bccb2c7f8bd03d728daed224f81cb6b88980ae295356a3774ecb0685",
     "dialog/volume_dialog.bin": "ee8f94ff6e39a288017527da088ecfaa180e84a0da590129da647a99e6a18a01",
     "bigcover_page.bin": "36d2def0530caff99db04ad19153de076711592d13467aadfecc74acede6187e"
   },
   "navbar_only": {
     "audiosetting_page.bin": "fa8581c656da81d0b32430fea7963f46bd53e582acddbe8346fa74a42df25555",
-    "stream_page.bin": "29225655cf5fcbf4a59b224f62f28583c80bf0da992cde7615a85e9a90a33f5a",
+    "stream_page.bin": "488553090db1c755b8f0fdee5415723857fde6bb40cd4c16154f2ec602d059fe",
     "systemset/about_page.bin": "b4c8d2a0c386ec0887ff388cfe0ce7e62330326444cb1ff1352b043ee741c373",
     "systemset/autotime_page.bin": "58cc51c23b38ae5d2f450436b487eb028fdb5a8d1adf5791b98487888de47e5a",
     "systemset/backlight_page.bin": "fe9bcb8642f41241ae10a2c6ce789540d83aa6228a0d820039340fe03a1db771",
@@ -33,13 +33,13 @@
     "systemset/keylock_page.bin": "c592fa9f7e521b23b69222f317b000d555893caf39b8fe60e6f04a9cd49cb473",
     "systemset/language_page.bin": "e5d47651b9a8755c3e2a62f35c489608e55341cebd98883a6074b138fd0ee095",
     "systemset/lighttime_page.bin": "f43d0e586a7be9d8b71177b1a08c0952f5f7c7fe903f9369b1c43b36fef2bdd5",
-    "systemset/manualtime_page.bin": "88182131bc9396b2552314f421a999c3b812b833725ca7c11b8298506cced512",
+    "systemset/manualtime_page.bin": "494085c07286bddd2fa7444df6a4d545832bd41a4a54545eac57d2f8d5cad624",
     "systemset/netservice_page.bin": "b71dbca2736744f41aedc19eadc99ee39c7ed397c6e7ecf6625fabfeff7209bf",
     "systemset/powermanager_page.bin": "b5b239337d4cfaedeb411acb2656f2763bb2aabbd33f3e76859c6535865cbf78",
     "systemset/reset_page.bin": "e75b83286fa12a31f3fb7888e0f2ce55703357a06342d0508339be910fb048f5",
     "systemset/screensaver_about.bin": "6ebc67b6407a49ac8a7f50c207a99c46726ba873b6f3e2b05fe8c4f95233fb6e",
     "systemset/screensaver_page.bin": "2beb2a2be18a510eb7df46ee8e71e291e37bac49fa9bbc66f01ab69837ba03d9",
-    "systemset/sleepshutdown_page.bin": "69745c2bd47bd4266c260fccdfe1caf3310b92fcfb24332dfeb0ee9d3746a947",
+    "systemset/sleepshutdown_page.bin": "513b512155bc76c3101e56691454d64e31a5511779ce6e3ae9dc4f7b920a973c",
     "systemset/standby_page.bin": "4b742684b54d4c3d7450f43ebe1a5c7f60aad18b95030c9c0a750f60f56fc78c",
     "systemset/synclink_page.bin": "43548f5bb3d0bb7588c75fd18f131e5a6800d16a859879bb0a8e629a9af8ec02",
     "systemset/sysset_page.bin": "f4dba120dcafd36769ab79260ebc866d4bccade7639db2cdbff452ff698b6b66",
@@ -57,440 +57,511 @@
     "playset/usbvol_page.bin": "21f4ee2dd2ca9fcd0be904f852ff7051a8015183fca2d1c0741ddf76a43a70ce"
   },
   "slide_only": {
-    "playset/equalizer_page.bin": "37c084eb1ab9642af62d9e73550a6ec1d2e90410b192f81bfa878af2e5c93fbf"
+    "playset/equalizer_page.bin": "f3220f2aeecb94d0039c061fb276cf9f66decc465d7f2b28a7bdf25d178831a7"
   },
   "stock_rows": {
-    "playerjumpinfo_page.bin": "4d04b527102c6aa7f468d03517db078cbb8af2688eb7fc58634858cf29fa0343",
-    "playermore_page.bin": "13f334e2523a6631f75eef8a2afcf7fed9ec58c16dda0d609e27ddeb8e119627",
+    "playerjumpinfo_page.bin": "d6237ace4dc9d76db2e60412a74af55c90078e3ec60cf8dd714ea55e2602ea29",
+    "playermore_page.bin": "7ad8388048ad75f6099c1b4e52060644f85b62530ec53b63076368c4523afd56",
     "playerqueue_page.bin": "6584b0ee1416a57983cd59cb908eb8355e767f53776ceba5dfbdf241ecbcc934",
     "specfolder_page.bin": "b3c0480b44c7ecf2b9ba320f814455d5041c6bcd304ee6768a2beff3705309c4",
-    "updatemusic_page.bin": "5d869aa310227cc07087f88f86b43423176a09f06f449b5e62942ae7802b298c"
+    "updatemusic_page.bin": "9efdef422d78412d078cb32b3ccdc0bc3d6551867d1cb4a877735395fce24da4"
   },
   "immediates": [
     {
       "value": "pitch",
       "purpose": "row creation, reset or artwork offset divisor",
       "sites": [
-        ["0x4a6fa8", "0x2402004e"],
-        ["0x4ad8e4", "0x2410004e"],
-        ["0x4addd0", "0x2402004e"],
-        ["0x4b2ec0", "0x2402004e"],
-        ["0x4b2f0c", "0x2402004e"],
-        ["0x4b0f88", "0x2402004e"]
+        ["0x4a8d7c", "0x2402004e"],
+        ["0x4b0b60", "0x2410004e"],
+        ["0x4afa44", "0x2402004e"],
+        ["0x4b55dc", "0x2402004e"],
+        ["0x4b5628", "0x2402004e"],
+        ["0x4b3a98", "0x2402004e"]
       ]
     },
     {
       "value": "art_pitch",
       "purpose": "row creation, reset or artwork offset divisor",
       "sites": [
-        ["0x4a2c5c", "0x2402004e"],
-        ["0x4a2c60", "0x2406004e"],
-        ["0x4a2f24", "0x2404004e"],
-        ["0x4a44c8", "0x2410004e"],
-        ["0x4a4b9c", "0x2402004e"],
-        ["0x5217d4", "0x2405004e"],
-        ["0x521a84", "0x2403004e"],
-        ["0x5228f8", "0x2410004e"],
-        ["0x5230c8", "0x2402004e"]
+        ["0x4a45c8", "0x2402004e"],
+        ["0x4a45cc", "0x2406004e"],
+        ["0x4a5ea8", "0x2410004e"],
+        ["0x4a69f8", "0x2402004e"],
+        ["0x531cf0", "0x2405004e"],
+        ["0x531ff8", "0x2403004e"],
+        ["0x532f78", "0x2410004e"],
+        ["0x533944", "0x2402004e"]
       ]
     },
     {
       "value": "pitch",
       "purpose": "local class artwork offset divisor (stock disagrees with its 78px rows)",
       "sites": [
-        ["0x4b0608", "0x24100078"]
+        ["0x4b2a60", "0x24100078"]
       ]
     },
     {
       "value": "body",
       "purpose": "row background, hit target and full-height children",
       "sites": [
-        ["0x4a62d0", "0x24020046"],
-        ["0x4addec", "0x24120046"],
-        ["0x4adfe4", "0x24020046"],
-        ["0x4b2880", "0x24130046"],
-        ["0x4b2a44", "0x24170046"],
-        ["0x4b2f2c", "0x24130046"],
-        ["0x4b0fc0", "0x24110046"]
+        ["0x4a7fa4", "0x24020046"],
+        ["0x4afa60", "0x24130046"],
+        ["0x4afc6c", "0x24020046"],
+        ["0x4b4f14", "0x24130046"],
+        ["0x4b50ec", "0x24170046"],
+        ["0x4b5648", "0x24120046"],
+        ["0x4b3ad0", "0x24110046"]
       ]
     },
     {
       "value": "art_body",
       "purpose": "row background, hit target and full-height children",
       "sites": [
-        ["0x4a4bb8", "0x24150046"],
-        ["0x5223ec", "0x24060046"],
-        ["0x523100", "0x24110046"]
+        ["0x4a6a14", "0x24150046"],
+        ["0x532a08", "0x24060046"],
+        ["0x53397c", "0x24110046"]
       ]
     },
     {
       "value": "body",
       "purpose": "text/icon container inside row; stock child layout stretches to parent",
       "sites": [
-        ["0x4a63fc", "0x24020078"],
-        ["0x4a6530", "0x24020078"],
-        ["0x4ae288", "0x24020078"]
+        ["0x4a80e8", "0x24020078"],
+        ["0x4a8244", "0x24020078"],
+        ["0x4aff10", "0x24020078"]
       ]
     },
     {
       "value": "art_body",
       "purpose": "text/icon container inside row; stock child layout stretches to parent",
       "sites": [
-        ["0x4a4d50", "0x24020078"]
+        ["0x4a6bc0", "0x24020078"]
       ]
     },
     {
       "value": "art",
       "purpose": "stock 52px artwork drawn 1:1 in the inset row widget",
       "sites": [
-        ["0x4a4c70", "0x24070032"]
+        ["0x4a6ae0", "0x24070032"]
       ]
     },
     {
       "value": "text_art",
       "purpose": "text pages' stock 50px artwork (Songs, an artist's songs, Artists): 52 drawn 1:1, 0 hides it",
       "sites": [
-        ["0x4aa42c", "0x24070032"],
-        ["0x4adfec", "0x24070032"],
-        ["0x4b1058", "0x24070032"]
+        ["0x4ac6a4", "0x24070032"],
+        ["0x4afc74", "0x24070032"],
+        ["0x4b3b7c", "0x24070032"]
       ]
     },
     {
       "value": "art_inset",
       "purpose": "artwork and playing overlay at the 8px top/left inset",
       "sites": [
-        ["0x4a4ce4", "0x24060009"],
-        ["0x5231c4", "0x24060009"],
-        ["0x523234", "0x24060009"]
+        ["0x4a6b54", "0x24060009"],
+        ["0x533a54", "0x24060009"],
+        ["0x533ac4", "0x24060009"]
       ]
     },
     {
       "value": "lib_body",
       "purpose": "the Library's row height (its constructor; navigation.c list_row_core reads it live)",
       "sites": [
-        ["0x524820", "0x24140046"]
+        ["0x535230", "0x24140046"]
       ]
     },
     {
       "value": "lib_inset",
       "purpose": "the Library's row icon x (its constructor; navigation.c list_row_core reads it live)",
       "sites": [
-        ["0x524944", "0x2405000a"]
+        ["0x535368", "0x2405000a"]
       ]
     },
     {
       "value": "text_art_inset",
       "purpose": "text pages' playing overlay at the 8px top inset",
       "sites": [
-        ["0x4aa4a4", "0x24060009"],
-        ["0x4ae05c", "0x24060009"]
+        ["0x4ac71c", "0x24060009"],
+        ["0x4afce4", "0x24060009"]
       ]
     },
     {
       "value": 0,
       "purpose": "folder artwork on the row layout's 8px left margin",
       "sites": [
-        ["0x5231cc", "0x24050004"]
+        ["0x533a5c", "0x24050004"]
       ]
     },
     {
       "value": "title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a6580", "0x2406000e"]
+        ["0x4a8278", "0x2406000e"]
       ]
     },
     {
       "value": "art_title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a4d9c", "0x2406000e"]
+        ["0x4a6c0c", "0x2406000e"]
       ]
     },
     {
       "value": "title_y",
       "purpose": "title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4ae314", "0x2406000b"],
-        ["0x4b2bd4", "0x2406000b"]
+        ["0x4aff9c", "0x2406000b"],
+        ["0x4b527c", "0x2406000b"]
       ]
     },
     {
       "value": "meta_y",
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a661c", "0x24060028"],
-        ["0x4ae38c", "0x24060028"]
+        ["0x4a8314", "0x24060028"],
+        ["0x4b0014", "0x24060028"]
       ]
     },
     {
       "value": "art_meta_y",
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a4e04", "0x24060028"]
+        ["0x4a6c74", "0x24060028"]
       ]
     },
     {
       "value": "count_y",
       "purpose": "playlist count position in the 68px body",
       "sites": [
-        ["0x4b2c38", "0x24060029"]
+        ["0x4b52e0", "0x24060029"]
       ]
     },
     {
       "value": "song_pitch",
       "purpose": "Songs: row creation and the page's row divisor, its own so a set can make them taller than the text rows",
       "sites": [
-        ["0x4a9ad8", "0x2410004e"],
-        ["0x4aa35c", "0x2402004e"]
+        ["0x4abb6c", "0x2410004e"],
+        ["0x4ac5c0", "0x2402004e"]
       ]
     },
     {
       "value": "song_body",
       "purpose": "Songs: row background and its text container",
       "sites": [
-        ["0x4aa388", "0x24120046"],
-        ["0x4aa510", "0x24020078"]
+        ["0x4ac5ec", "0x24120046"],
+        ["0x4ac788", "0x24020078"]
       ]
     },
     {
       "value": "song_title24_y",
       "purpose": "Songs: 24px title position in the body, font unchanged",
       "sites": [
-        ["0x4aa55c", "0x2406000e"]
+        ["0x4ac7d4", "0x2406000e"]
       ]
     },
     {
       "value": "song_meta_y",
       "purpose": "Songs: 16px metadata position in the body, font unchanged",
       "sites": [
-        ["0x4aa5ac", "0x24060028"]
+        ["0x4ac824", "0x24060028"]
       ]
     },
     {
       "value": "scroll",
       "purpose": "all songs recreated scrollbar spans the relocated list",
       "sites": [
-        ["0x4a8cd8", "0x240200be"]
+        ["0x4aaa28", "0x240200be"]
       ]
     },
     {
       "value": "np_bar_w",
       "purpose": "Now Playing A-B markers span the iPod progress bar (x = start + t * width / length)",
       "sites": [
-        ["0x52a318", "0x24020122"]
+        ["0x53b7c8", "0x24020122"]
       ]
     },
     {
       "value": "np_bar_x",
       "purpose": "Now Playing A-B markers start at the iPod progress bar's left end",
       "sites": [
-        ["0x52a330", "0x24420032"]
+        ["0x53b7e0", "0x24420032"]
       ]
     },
     {
       "value": "stock_row",
       "purpose": "stock's own table rows (Go to, Queue, special folders): creation, Go to's scroll divisor, special folders' row height",
       "sites": [
-        ["0x527904", "0x2410004e"],
-        ["0x527ac0", "0x2402004e"],
-        ["0x529a98", "0x2402004e"],
-        ["0x52de7c", "0x2405004e"],
-        ["0x52e6d0", "0x2402004e"]
+        ["0x538740", "0x2410004e"],
+        ["0x538a84", "0x2402004e"],
+        ["0x53ae3c", "0x2402004e"],
+        ["0x53f41c", "0x2405004e"],
+        ["0x53ff64", "0x2402004e"]
       ]
     },
     {
       "value": "stock_body",
       "purpose": "stock's own table rows: the button and its full-height children",
       "sites": [
-        ["0x527af8", "0x24030046"],
-        ["0x527b5c", "0x24030046"],
-        ["0x529ac4", "0x241e0046"],
-        ["0x52e6fc", "0x24110046"]
+        ["0x538abc", "0x24030046"],
+        ["0x538b34", "0x24030046"],
+        ["0x53ae68", "0x241e0046"],
+        ["0x53ff90", "0x24110046"]
       ]
     },
     {
       "value": "stock_title_y",
       "purpose": "Go to's title y in its row",
       "sites": [
-        ["0x527c10", "0x2406000b"]
+        ["0x538be8", "0x2406000b"]
       ]
     },
     {
       "value": "stock_title_h",
       "purpose": "Go to's title box, which holds the row's font",
       "sites": [
-        ["0x527c04", "0x24020014"]
+        ["0x538bdc", "0x24020014"]
       ]
     },
     {
       "value": "search_row",
       "purpose": "Search's rows: creation (Genres' rows take the list's default height)",
       "sites": [
-        ["0x49c110", "0x2402004e"],
-        ["0x49d470", "0x2402004e"],
-        ["0x49df34", "0x2402004e"]
+        ["0x49d484", "0x2402004e"],
+        ["0x49e7f8", "0x2402004e"],
+        ["0x49f3b8", "0x2402004e"]
       ]
     },
     {
       "value": "search_body",
       "purpose": "Search's rows: the button and its full-height children",
       "sites": [
-        ["0x49c148", "0x24020046"],
-        ["0x49d4a8", "0x24020046"],
-        ["0x49df70", "0x24020046"],
-        ["0x49e2fc", "0x24020046"],
-        ["0x49ba74", "0x24020046"],
-        ["0x49bb60", "0x24020046"],
-        ["0x49c2bc", "0x24020046"],
-        ["0x49d620", "0x24020046"],
-        ["0x49dd5c", "0x24020046"]
+        ["0x49d4bc", "0x24020046"],
+        ["0x49e830", "0x24020046"],
+        ["0x49f3f4", "0x24020046"],
+        ["0x49f794", "0x24020046"],
+        ["0x49cde8", "0x24020046"],
+        ["0x49ced4", "0x24020046"],
+        ["0x49d644", "0x24020046"],
+        ["0x49e9bc", "0x24020046"],
+        ["0x49f1e0", "0x24020046"]
       ]
     },
     {
       "value": "search_art",
       "purpose": "Search's rows: the artwork's width; 0 makes two lines of text, as Songs'",
       "sites": [
-        ["0x49ba7c", "0x24070032"]
+        ["0x49cdf0", "0x24070032"]
       ]
     },
     {
       "value": "search_title_y",
       "purpose": "Search's Songs rows: the title's y",
       "sites": [
-        ["0x49c30c", "0x2406000b"]
+        ["0x49d694", "0x2406000b"]
       ]
     },
     {
       "value": "search_title24_y",
       "purpose": "Search's Albums rows: the title's y",
       "sites": [
-        ["0x49d670", "0x2406000e"]
+        ["0x49ea0c", "0x2406000e"]
       ]
     },
     {
       "value": "search_title_h",
       "purpose": "Search's rows: the title's box, which holds the row's font",
       "sites": [
-        ["0x49c300", "0x24020018"],
-        ["0x49d664", "0x24020018"]
+        ["0x49d688", "0x24020018"],
+        ["0x49ea00", "0x24020018"]
       ]
     },
     {
       "value": "search_meta_y",
       "purpose": "Search's rows: the second line's y",
       "sites": [
-        ["0x49c3cc", "0x24060029"],
-        ["0x49d6f0", "0x24060029"]
+        ["0x49d754", "0x24060029"],
+        ["0x49ea8c", "0x24060029"]
       ]
     },
     {
       "value": "search_meta_h",
       "purpose": "Search's rows: the second line's box, which holds the row's font",
       "sites": [
-        ["0x49c3c0", "0x24020010"],
-        ["0x49d6e4", "0x24020010"]
+        ["0x49d748", "0x24020010"],
+        ["0x49ea80", "0x24020010"]
       ]
     },
     {
       "value": 225,
       "purpose": "toolbar switch pages: the title spans to the switch",
       "sites": [
-        ["0x4b4b58", "0x2407006e"],
-        ["0x4ca0a8", "0x2407006e"],
-        ["0x4c96c8", "0x2407006e"]
+        ["0x4b7914", "0x2407006e"],
+        ["0x4d11e0", "0x2407006e"],
+        ["0x4d03e8", "0x2407006e"]
       ]
     },
     {
       "value": 305,
       "purpose": "toolbar switch pages: the switch takes the right-hand slot",
       "sites": [
-        ["0x4b4c3c", "0x240500bd"],
-        ["0x4ca184", "0x240500bd"],
-        ["0x4c97a4", "0x240500bd"]
+        ["0x4b79f8", "0x240500bd"],
+        ["0x4d12bc", "0x240500bd"],
+        ["0x4d04bc", "0x240500bd"]
       ]
     },
     {
       "value": 0,
       "purpose": "toolbar switch pages: no Home or Now Playing button (the keys go there)",
       "sites": [
-        ["0x4b4cc4", "0x24070032"],
-        ["0x4b4d30", "0x24070032"],
-        ["0x4ca210", "0x24070032"],
-        ["0x4ca27c", "0x24070032"],
-        ["0x4c982c", "0x24070032"],
-        ["0x4c9898", "0x24070032"]
+        ["0x4b7a80", "0x24070032"],
+        ["0x4b7aec", "0x24070032"],
+        ["0x4d1348", "0x24070032"],
+        ["0x4d13b4", "0x24070032"],
+        ["0x4d0544", "0x24070032"],
+        ["0x4d05b0", "0x24070032"]
+      ]
+    },
+    {
+      "value": 0,
+      "purpose": "the Library's and Streaming's stock rows take the list's default_item_height, as ours do (V1.32 passed 0, V1.34 passes 78)",
+      "sites": [
+        ["0x5351fc", "0x2402004e"],
+        ["0x540fb4", "0x2402004e"]
       ]
     }
   ],
   "row_layout_calls": {
     "purpose": "fit ordinary row titles and their containers on every native relayout",
     "sites": [
-      ["0x52315c", "0x0320f809"],
-      ["0x4aa3f0", "0x0320f809"],
-      ["0x4b101c", "0x0320f809"],
-      ["0x4a4c34", "0x0320f809"],
-      ["0x4a6394", "0x0320f809"],
-      ["0x4adea4", "0x0320f809"],
-      ["0x4b2944", "0x0320f809"]
+      ["0x5339ec", "0x0320f809"],
+      ["0x4ac668", "0x0320f809"],
+      ["0x4b3b40", "0x0320f809"],
+      ["0x4a6aa4", "0x0320f809"],
+      ["0x4a807c", "0x0320f809"],
+      ["0x4afb2c", "0x0320f809"],
+      ["0x4b4fec", "0x0320f809"]
     ]
   },
   "stock_row_layout_calls": {
     "purpose": "stock's own table rows fit their title on a relayout under a set that re-pitches them",
     "sites": [
-      ["0x527b54", "0x0320f809"],
-      ["0x52e764", "0x0320f809"],
-      ["0x49c1e4", "0x0320f809"],
-      ["0x49d544", "0x0320f809"],
-      ["0x49e004", "0x0320f809"],
-      ["0x49e394", "0x0320f809"]
+      ["0x538b2c", "0x0320f809"],
+      ["0x54000c", "0x0320f809"],
+      ["0x49d56c", "0x0320f809"],
+      ["0x49e8e0", "0x0320f809"],
+      ["0x49f49c", "0x0320f809"],
+      ["0x49f840", "0x0320f809"]
     ]
   },
   "stock_row_style_calls": {
     "purpose": "Queue's rows: the playing row's mark, and its colour under a set that re-pitches them",
     "sites": [
-      ["0x5295dc", "0x0320f809"]
+      ["0x53abec", "0x0320f809"]
     ]
   },
   "stock_row_text_calls": {
     "purpose": "stock's own table rows: the title's face follows its text, bound with no relayout",
     "sites": [
-      ["0x5273cc", "0x0320f809"],
-      ["0x529578", "0x0320f809"],
-      ["0x52e36c", "0x0320f809"]
+      ["0x538208", "0x0320f809"],
+      ["0x53ab88", "0x0320f809"],
+      ["0x53fa08", "0x0320f809"]
+    ]
+  },
+  "navbar_resize_calls": {
+    "purpose": "a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing",
+    "sites": [
+      ["0x49799c", "0x8f99acc0"],
+      ["0x4a4514", "0x8f99acc0"],
+      ["0x4a855c", "0x8f99acc0"],
+      ["0x4a85f4", "0x8f99acc0"],
+      ["0x4a9e58", "0x8f99acc0"],
+      ["0x4aa948", "0x8f99acc0"],
+      ["0x4aa978", "0x8f99acc0"],
+      ["0x4af908", "0x8f99acc0"],
+      ["0x4af930", "0x8f99ac5c"],
+      ["0x4b1ce4", "0x8f99acc0"],
+      ["0x4b54c0", "0x8f99acc0"],
+      ["0x4b83dc", "0x8f99acc0"],
+      ["0x4bab84", "0x8f99acc0"],
+      ["0x4bc18c", "0x8f99acc0"],
+      ["0x4bcc8c", "0x8f99acc0"],
+      ["0x4bd4ec", "0x8f99acc0"],
+      ["0x4bdfa8", "0x8f99acc0"],
+      ["0x4bf2a8", "0x8f99acc0"],
+      ["0x4bfb14", "0x8f99acc0"],
+      ["0x4c0040", "0x8f99acc0"],
+      ["0x4c1650", "0x8f99acc0"],
+      ["0x4c1cf0", "0x8f99acc0"],
+      ["0x4c3dd4", "0x8f99acc0"],
+      ["0x4c5af0", "0x8f99acc0"],
+      ["0x4c6060", "0x8f99acc0"],
+      ["0x4c7348", "0x8f99acc0"],
+      ["0x4c8ae0", "0x8f99acc0"],
+      ["0x4c8e48", "0x8f99acc0"],
+      ["0x4c9cfc", "0x8f99acc0"],
+      ["0x4ca6b8", "0x8f99acc0"],
+      ["0x4cb9ec", "0x8f99acc0"],
+      ["0x4cd724", "0x8f99acc0"],
+      ["0x4ce0e4", "0x8f99acc0"],
+      ["0x4ced28", "0x8f99acc0"],
+      ["0x4cfe00", "0x8f99acc0"],
+      ["0x4d1a40", "0x8f99acc0"],
+      ["0x4d30ac", "0x8f99acc0"],
+      ["0x4d3300", "0x8f99acc0"],
+      ["0x4d4270", "0x8f99acc0"],
+      ["0x4d5244", "0x8f99acc0"],
+      ["0x4d58d4", "0x8f99acc0"],
+      ["0x4d7430", "0x8f99acc0"],
+      ["0x4e0c08", "0x8f99acc0"],
+      ["0x4e0c50", "0x8f99acc0"],
+      ["0x4e38ac", "0x8f99acc0"],
+      ["0x4e688c", "0x8f99acc0"],
+      ["0x4e7910", "0x8f99acc0"],
+      ["0x4eb9d0", "0x8f99acc0"],
+      ["0x4ed2e8", "0x8f99acc0"],
+      ["0x4edba8", "0x8f99acc0"],
+      ["0x4ee474", "0x8f99acc0"],
+      ["0x4effdc", "0x8f99acc0"],
+      ["0x531c50", "0x8f99acc0"],
+      ["0x535170", "0x8f99acc0"],
+      ["0x5377f8", "0x8f99acc0"],
+      ["0x539d30", "0x8f99acc0"],
+      ["0x53b048", "0x8f99acc0"],
+      ["0x540f28", "0x8f99acc0"],
+      ["0x541ff4", "0x8f99acc0"]
     ]
   },
   "private_prologues": {
-    "bitmap_create_ex": "3f001c3cfc729c2721e09903",
-    "bitmap_destroy": "3f001c3c4c779c2721e09903",
-    "bitmap_lock_buffer_for_read": "3f001c3cc06c9c2721e09903",
-    "bitmap_lock_buffer_for_write": "3f001c3c486c9c2721e09903",
-    "bitmap_unlock_buffer": "3f001c3cd06b9c2721e09903",
-    "bitmap_get_line_length": "3f001c3c04729c2721e09903",
-    "canvas_draw_image": "3f001c3c6c1a9c2721e09903",
-    "slide_menu_set_spacer": "43001c3ce0189c2721e09903",
-    "widget_to_local": "3d001c3c0cc39c2721e09903",
-    "stock_search": "50001c3cfc2a9c2721e09903",
-    "mcl_open_preload": "48001c3c78e39c2721e09903",
-    "mcl_shuffle_pick": "48001c3ca0eb9c2721e09903"
+    "bitmap_create_ex": "3f001c3c0c7b9c2721e09903",
+    "bitmap_destroy": "3f001c3c5c7f9c2721e09903",
+    "bitmap_lock_buffer_for_read": "3f001c3cd0749c2721e09903",
+    "bitmap_lock_buffer_for_write": "3f001c3c58749c2721e09903",
+    "bitmap_unlock_buffer": "3f001c3ce0739c2721e09903",
+    "bitmap_get_line_length": "3f001c3c147a9c2721e09903",
+    "canvas_draw_image": "3f001c3c7c229c2721e09903",
+    "slide_menu_set_spacer": "43001c3cd0279c2721e09903",
+    "widget_to_local": "3d001c3c1ccb9c2721e09903",
+    "stock_search": "50001c3c1c579c2721e09903",
+    "mcl_open_preload": "48001c3c78f79c2721e09903",
+    "mcl_shuffle_pick": "48001c3ca0ff9c2721e09903"
   },
   "event_abi_words": {
-    "0x645758": "0400828c",
-    "0x523e6c": "12010524",
-    "0x523e80": "15010524",
-    "0x523eb8": "14010524",
-    "0x523ed4": "02010524",
-    "0x523ef0": "00010524",
-    "0x523f28": "ff000524",
-    "0x663170": "00010224",
-    "0x6635b0": "02010224",
-    "0x663840": "04010224",
-    "0x5cb3e4": "07010224",
-    "0x66245c": "0c000524",
-    "0x64031c": "180011ae",
-    "0x640328": "1c0002ae",
-    "0x65e138": "1000428e",
-    "0x4e8d10": "1f008228"
+    "0x658768": "0400828c",
+    "0x534a74": "12010524",
+    "0x534a88": "15010524",
+    "0x534ac0": "14010524",
+    "0x534adc": "02010524",
+    "0x534af8": "00010524",
+    "0x534b30": "ff000524",
+    "0x676180": "00010224",
+    "0x676608": "02010224",
+    "0x676898": "04010224",
+    "0x5ddd14": "07010224",
+    "0x67546c": "0c000524",
+    "0x65332c": "180011ae",
+    "0x653338": "1c0002ae",
+    "0x671148": "1000428e",
+    "0x4f2958": "1f008228"
   },
   "settings_icons": {
     "bt_adjvol.png": "e10a70cf0d916f3512a1eb334e78b00b4524299b838a559fb3454f3d77253118",
@@ -512,6 +583,7 @@
     "playset_gapless.png": "346521137d320cdd5ae3e2ea40878a77440086b2eb95b57547b25ea2993026d0",
     "playset_maxvol.png": "fdf0c7fd9e667cfb6b5deb6aaad879ffd6b975aeed2b68ff588bf8ca4a9554dc",
     "playset_memplay.png": "e4f565326ba92bdffa5ae732f26efa6437f863a36c46243f440a1c71a17f8a82",
+    "playset_noplay.png": "1f2cab3923dc8874fa598e3963b12ba3ff5dbcb54fe295caa926a6762da0306f",
     "playset_playmode.png": "0135d5b6dd5bbdc47f0f25223e2ac4abe7501f72c553d1f201347343271efc33",
     "playset_replaygain.png": "b1032f5c366538eaea1c12d67fdade963aeb600d00185948d6825b6abdffbc17",
     "playset_usbaudiovol.png": "84216537f2e9b69203dc60b352f4fda3f2fec94812a948abdd9d89abed8ccda4",
@@ -535,10 +607,16 @@
   },
   "styles": {
     "default.bin": {
-      "sha256": "3605aa963897e5686c9ca9fd89431992fe22ab326dbced846361f57a4d004f67",
+      "sha256": "880d6eeb1a79b32b22b265cd8f0e296589657e1abbdf36f515c56a1128198b48",
       "edits": [
+        ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "333333ff", 1, "pressed"],
         ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "00000000", 4],
-        ["button", "s_btn_listitem", "bg_color", "3d1920ff", "333333ff", 1],
+        ["button", "s_btn_listitem", "border_color", "ffffffff", "00000000", 1],
+        ["button", "s_btn_listblack", "border_color", "ffffffff", "00000000", 1],
+        ["tab_button", "s_tabbtn_style", "border_color", "ffffffff", "00000000", 2],
+        ["list_item", "s_listitem_style", "bg_color", "3d1920ff", "2b2b2bff", 1],
+        ["hscroll_label", "s_scrlabel_red24l", "font_size", "18000000", "14000000", 1, "disable"],
+        ["hscroll_label", "s_scrlabel_red24l", "font_size", "18000000", "14000000", 1, "focused"],
         ["button", "s_btn_listitem", "round_radius", "0e000000", "00000000", 5],
         ["button", "s_btn_forwardspeed", "bg_color", "2b2b2bff", "00000000", 5],
         ["button", "s_btn_forwardspeed", "round_radius", "23000000", "00000000", 5],

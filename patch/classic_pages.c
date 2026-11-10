@@ -350,7 +350,7 @@ void search_open(void *win) {
     search_layout(win, 0);
 }
 /* Stock shows the tabs (tab_control, the group's parent) with results, else the history or its
- * tip (0x49bba4, 0x49d9a8). The strip, the field's and the tabs' with results, ends at 108; with
+ * tip (0x49cf18, 0x49ee2c). The strip, the field's and the tabs' with results, ends at 108; with
  * the history, the field's alone, SEARCH_HISTORY_Y, as far under the field as it starts above. */
 static int search_strip_end(void) {
     return st.search_tabs && widget_get_visible(P(st.search_tabs, W_PARENT)) ? 108
@@ -375,7 +375,7 @@ void search_paint(void *w, void *canvas) {
     }
     stock_canvas_set_fill_color(canvas, fill);
 }
-/* Stock's init names the tabs from its translations (its widget_foreach's visitor, 0x49aef8:
+/* Stock's init names the tabs from its translations (its widget_foreach's visitor, 0x49c26c:
  * search_track, songer, album, genre), which other pages' words share; the bin's words go back on
  * under the theme's dialog. */
 extern int stock_search_init_trampoline(void *win, void *ctx);

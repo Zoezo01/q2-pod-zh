@@ -83,7 +83,9 @@ done:
     return ok;
 }
 
-static int ple_query(void *ctx) { return getMusicByPlayList(ple.dest); }
+/* The stored order (stock V1.34's Time added, V1.32's only one), not getMusicByPlayList's: a move
+ * swaps two neighbours' ids, which means nothing in a list sorted by name. */
+static int ple_query(void *ctx) { return sort_playlist_addtime(ple.dest); }
 static void ple_reload(void) {
     int n;
     void *songs = staged(ple_query, 0, &n);
@@ -499,14 +501,14 @@ int ringnav_playlistsmore(void *win, void *ctx) {
     return result;
 }
 
-/* The row alone selected in the stock batch record, as player_addplayList (0x50d0b8) does. */
+/* The row alone selected in the stock batch record, as player_addplayList (0x517b78) does. */
 void qm_select(void) {
     batch_init_selectrecord((int)st.qm_rows);
     batch_set_selectitem((int)st.qm_idx);
 }
 
 /* Stock playlist rows use the queue in add mode 2. Guard their final dispatch as well. */
-#define PLAYLIST_PICK ((int (*)(void *, void *))0x4b1d24)
+#define PLAYLIST_PICK ((int (*)(void *, void *))0x4b4850)
 int qm_playlist_pick(void *ctx, void *event) {
     char click[0x30];
     if (!qm_record()) {
@@ -552,9 +554,10 @@ void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
  * click those hidden widgets, so its mode, marks, dialogs and reload stay its own. Stock's own
  * handlers, which the rows' dispatch looks up: */
 enum { PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE, PL_N };
-static const unsigned pl_stock[PL_N] = { 0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0,
-                                         0x4b2528, 0x4b23c0, 0x4b1ad0 };
-#define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4b1310)
+static const unsigned pl_stock[PL_N] = { 0x4b46b4, 0x4b45b4, 0x4b44e4, 0x4b5cf0,
+                                         0x4b5b48, 0x4b59e0, 0x4b45fc };
+/* on_common_keyup: the page's own static key-up until stock V1.34, which binds the shared one */
+#define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4f21b8)
 
 /* A row's place on the list's two heights: name over second line in the page rows' boxes, which
  * hold their fonts; the dots or a mark at the right edge, centred on the picker's tick's column
@@ -773,7 +776,7 @@ static int pl_marked(void *win, void *event) {
     if (g_navbar_status == 1) pl_rows(win);
     return 0;
 }
-/* Stock's row click opens More from x 286 outside select mode (0x4b1d90, 0x4b1e70): a picker has
+/* Stock's row click opens More from x 286 outside select mode (0x4b48b8, 0x4b4998): a picker has
  * no More, so a tap anywhere picks; in the list the dots' column at the edge (PL_MARK_X on) stays
  * More, and a tap left of it, the chevron's column (from x 317) too, opens the playlist. The band's
  * row draws its chevron and no dots, so it opens to the edge; its More is the hold's. A pick or an
@@ -832,7 +835,7 @@ static void pl_dress(void *win, int first) {
         pl_action(view, "Done", PL_DONE, 0, -1);
     }
     pl_rows(win);
-    if (first && !add) { /* stock binds it with ctx win (0x4b3304) */
+    if (first && !add) { /* stock binds it with ctx win (0x4b5efc) */
         widget_off_by_func(win, EVT_KEY_UP, (void *)PLAYLIST_KEYUP, win);
         widget_on(win, EVT_KEY_UP, pl_keyup, win);
         widget_on(win, EVT_DESTROY, pl_gone, win);

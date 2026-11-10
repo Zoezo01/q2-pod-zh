@@ -12,7 +12,7 @@ import array, math, pathlib, shutil, struct, subprocess, sys, tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from hci_emu import Emu as HciEmu
 
-AUTH = 0x43084c  # the player's licence check
+AUTH = 0x430114  # the player's licence check
 
 
 class Emu(HciEmu):

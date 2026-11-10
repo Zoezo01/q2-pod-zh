@@ -47,7 +47,7 @@ void NAME(void **output, s32 **input, int channels, int length, int shift) \
     }                                                                    \
 }
 
-OUTPUT(flac_output_s16i, u16, 0, 0x005b7e80u)
-OUTPUT(flac_output_s32i, u32, 0, 0x005b8d18u)
-OUTPUT(flac_output_s16p, u16, 1, 0x005b8ba0u)
-OUTPUT(flac_output_s32p, u32, 1, 0x005ba83cu)
+OUTPUT(flac_output_s16i, u16, 0, 0x5b83a0u)
+OUTPUT(flac_output_s32i, u32, 0, 0x5b9238u)
+OUTPUT(flac_output_s16p, u16, 1, 0x5b90c0u)
+OUTPUT(flac_output_s32p, u32, 1, 0x5bad5cu)

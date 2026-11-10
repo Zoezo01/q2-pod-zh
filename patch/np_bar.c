@@ -173,7 +173,7 @@ void bar_title(void *bar, void *top) {
     bar_bold = bold;
 }
 
-/* Scrub (docs/internals.md#scrub-ipod) follows stock's own key seek (0x52c754): the page's 250 ms
+/* Scrub (docs/internals.md#scrub-ipod) follows stock's own key seek (0x53dcb8): the page's 250 ms
  * timer stops, the slider and label_playtime preview the target, player_seek_time commits it once
  * on exit in track seconds (it adds a CUE track's start), and the timer restarts. */
 /* The accent's light tone (Minimal's own accent: MINIMAL_FILL) fills the progress bar in every

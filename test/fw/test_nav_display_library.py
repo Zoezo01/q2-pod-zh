@@ -137,6 +137,7 @@ class Ui:
         fw.mock('widget_use_style', lambda w, s, *_: self.at[w].props.__setitem__('style', C.string_at(s).decode()) if w else None)
         fw.mock('image_base_set_image', lambda w, s, *_: self.at[w].props.__setitem__('image', C.string_at(s)) if w else None)
         fw.mock('widget_destroy_children', lambda w, *_: self.at[w].children.clear())
+        fw.mock('widget_destroy', lambda w, *_: self.at[w].parent.children.remove(self.at[w]) if w else None)
         fw.mock('widget_on', lambda w, evt, fn, ctx, *_: self.handlers.append((w, evt, fn, ctx)) or len(self.handlers))
         fw.mock('widget_restack', self.restack)
         fw.mock('widget_to_local', self.to_local)
@@ -254,8 +255,8 @@ def event(kind, key=0, x=None, y=None):
 # The Display settings.
 
 class Display:
-    """Settings' Display page as stock opens it: navigator_to builds the window and its three stock rows
-    (stock_display_trampoline) and runs ringnav_display, as systemset_display_page_init does; display_open's
+    """Settings' Display page as stock opens it: navigator_to builds the window and its four stock rows, Show
+    Navigation Bar last (stock_display_trampoline), and runs ringnav_display, as systemset_display_page_init does; display_open's
     sub-pages open the same way, over it."""
     def __init__(self, fw, ui):
         self.fw, self.ui, self.pages = fw, ui, []
@@ -265,7 +266,7 @@ class Display:
 
     def stock(self, win):
         view = self.ui.at[win].find('scroll_view_display')
-        for i in range(3):
+        for i in range(4):
             self.ui.add('list_item', view).name = f'stock_{i}'
         return 0
 
@@ -298,7 +299,8 @@ def test_display_adds_smart_awake_night_shift_and_its_two_pages_among_stocks_row
     ui = Ui(fw)
     page = display(fw, ui)
     view = page.view()
-    # stock's first two, then Smart Awake and Night Shift, stock's third, then Appearance and Cover Flow
+    # stock's first two, then Smart Awake and Night Shift, stock's third, then Appearance and Cover Flow; its fourth, Show
+    # Navigation Bar, is not offered
     assert titles(view) == ['stock_0', 'stock_1', 'Smart Awake', 'Night Shift', 'stock_2', 'Appearance', 'Cover Flow']
     # Night Shift and the two pages open a page, so they carry the chevron; Smart Awake changes in place
     into = [any(c.props.get('image') == b'list_into' for c in item.children[0].children) for item in view.children if not item.name]
@@ -690,23 +692,31 @@ def test_cover_flow_page_holds_artist_view_sort_and_refresh(fw):
 
 
 class Settings:
-    """Settings' System page: its stock rows (ids 0-11, About last) and what ringnav_systemset adds."""
+    """Settings' System page: its stock rows (0-8: Language, Wireless, Network, Display, Power, Wheel Function, In-Vehicle,
+    General, System) and what ringnav_systemset adds."""
     def __init__(self, fw, ui, keytone=0):
         self.win = ui.window('systemset_page')
         self.view = ui.add('scroll_view', self.win, name='scroll_view_sysset')
-        for i in range(12):
+        for i in range(9):
             ui.add('list_item', self.view, name=f'stock_{i}')
         fw.var('g_keytone_flag', C.c_ubyte).value = keytone
         fw.fn('ringnav_systemset', C.c_int, C.c_void_p, C.c_void_p)(self.win.addr, None)
 
 
-def test_system_settings_adds_app_store_and_controls_and_hides_three(fw):
+def test_system_settings_adds_its_rows_and_hides_four(fw):
     ui = Ui(fw)
     Config(fw)
     page = Settings(fw, ui)
-    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'stock_5', 'stock_0', 'App Store',
-                                 'stock_9', 'stock_10', 'stock_6', 'stock_7', 'stock_8', 'stock_11']
-    assert [item.name for item in page.view.children if not item.visible] == ['stock_6', 'stock_7', 'stock_8']
+    assert titles(page.view) == ['stock_1', 'stock_2', 'stock_3', 'Controls', 'stock_4', 'system_time', 'stock_0', 'App Store',
+                                 'system_update', 'system_reset', 'stock_5', 'stock_6', 'stock_7', 'stock_8', 'system_about']
+    # stock's Wheel Function, In-Vehicle, General and System
+    assert [item.name for item in page.view.children if not item.visible] == ['stock_5', 'stock_6', 'stock_7', 'stock_8']
+    # the rows stock moved to its System page open stock's pages from here
+    opened = []
+    fw.mock('navigator_to', lambda name, *_: opened.append(C.string_at(name).decode()))
+    for key in ('system_time', 'system_update', 'system_reset', 'system_about'):
+        ui.click(button_of(page.view, key))
+    assert opened == ['systemset/datetime_page', 'systemset/fwupdate_page', 'systemset/reset_page', 'systemset/about_page']
 
 
 @pytest.mark.parametrize('keytone', [0, 1])
@@ -1711,9 +1721,9 @@ def test_the_playing_rows_red_keeps_its_colour_under_a_repitched_set(fw, st, geo
     playing, other = (ui.add('hscroll_label', ui.window('playlist_page')) for _ in range(2))
     style = fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)
     playing.text, other.text = 'Song', 'Other'
-    style(playing.addr, b's_scrlabel_red20l')
-    style(other.addr, b's_scrlabel_white20l')
-    assert (playing.props['style'], other.props['style']) == ('s_scrlabel_red20l', 's_scrlabel_white20l')
+    style(playing.addr, b's_scrlabel_red24l')
+    style(other.addr, b's_scrlabel_white24l')
+    assert (playing.props['style'], other.props['style']) == ('s_scrlabel_red24l', 's_scrlabel_white24l')
     assert (playing.text, other.text) == ('▶ Song', 'Other')
     if geom == 'GEOM_IPOD':
         assert 'style:normal:text_color' not in playing.props
@@ -1723,7 +1733,7 @@ def test_the_playing_rows_red_keeps_its_colour_under_a_repitched_set(fw, st, geo
     assert playing.props[colour] == C.c_int(0xff000000 | (red & 255) << 16 | red & 0xff00 | red >> 16).value
     # every bind writes its colour: another row's is set too, not the red, and a reused row loses the red
     assert colour in other.props and other.props[colour] != playing.props[colour]
-    style(playing.addr, b's_scrlabel_white20l')
+    style(playing.addr, b's_scrlabel_white24l')
     assert playing.props[colour] == other.props[colour]
 
 
@@ -2816,7 +2826,7 @@ class ArtistPage:
         self.nav = ui.add('view', self.win, (0, 0, 375, 40), 'view_navbar')
         self.nav.visible = nav_shown
         self.tab = ui.add('tab_control', self.win, (0, 0, 375, 290), 'tab_control')
-        self.pages = ui.add('pages', self.tab, (0, 50, 375, 240), 'pages')
+        self.pages = ui.add('pages', self.tab, (0, 50, 375, 240), 'pages_artistinfo')
         self.grid = ui.add('list_view', self.pages, (0, 0, 375, 240), 'list_view_album')
 
 

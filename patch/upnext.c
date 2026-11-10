@@ -19,7 +19,8 @@ static struct {
 
 /* View Queue while a shuffle is on (Up Next): the tracks after the playing one in the order they
  * play, which a shuffle's order differs from the queue's that stock's playerqueue_page lists. A row
- * plays its track as stock's does (player_start_queue), and the page closes, as its snapshot is
+ * plays its track as stock's does (player_start_queue, unless Headphones required forbids it), and
+ * the page closes, as its snapshot is
  * then stale. ponytail: a snapshot taken on open (and again on a hold's move, un_move), capped at
  * UP_NEXT_ROWS; the page does not follow the playing track, and a queue replaced while it is open
  * (a folder play's next folder) leaves a row's tap naming another track; a hold checks. */
@@ -27,7 +28,8 @@ static int un_play(void *ctx, void *event) {
     void *q = P(mcl_pdeqplaylist, 0);
     unsigned at = un.idx[(long)ctx];
     int keeps = q && playback_keeps(q, (int)at);
-    if (!keeps && q && at < deque_size(q)) press_stamp(), player_start_queue((int)at);
+    if (!keeps && q && at < deque_size(q) && !check_forbid_play_no_headset(0))
+        press_stamp(), player_start_queue((int)at);
     navigator_back();
     if (keeps) playback_np();
     return 0;

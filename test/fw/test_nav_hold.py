@@ -25,9 +25,9 @@ REC_TYPE, REC_TRACK, REC_DISC, REC_CUE_START, REC_CUE_END = (O[k] for k in ('REC
 TIMER_CTX, INPUT_KEYS, INPUT_KEY_SIZE, INPUT_KEY_TIME = O['TIMER_CTX'], O['INPUT_KEYS'], O['INPUT_KEY_SIZE'], O['INPUT_KEY_TIME']
 PLAYLIST_ADD_MODE, G_ALLSELECT_FLAG = O['PLAYLIST_ADD_MODE'], O['G_ALLSELECT_FLAG']
 STOP = 11
-PLAYLIST_PICK, PLAYLIST_KEYUP = 0x4b1d24, 0x4b1310  # playlists.c's stock handlers
+PLAYLIST_PICK, PLAYLIST_KEYUP = 0x4b4850, 0x4f21b8  # playlists.c's stock handlers
 PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE = range(7)
-PL_STOCK = [0x4b1b88, 0x4b1a88, 0x4b19b8, 0x4b26d0, 0x4b2528, 0x4b23c0, 0x4b1ad0]  # pl_stock[]: stock's own handlers
+PL_STOCK = [0x4b46b4, 0x4b45b4, 0x4b44e4, 0x4b5cf0, 0x4b5b48, 0x4b59e0, 0x4b45fc]  # pl_stock[]: stock's own handlers
 PL_MARK_X = 333
 SETS = host.tools_theme.geometry_sets(host.tools_theme.builtins())
 THEMES = host.tools_theme.builtins()
@@ -505,6 +505,7 @@ class Table:
         self.rows, self.log, self.fail, self.saved = {}, [], (), {}
         self.library = [recs(path=p, title=t, id_=i + 1) for i, (p, t) in enumerate(titles.items())]
         fw.mock('getMusicByPlayList', self.playlist)
+        fw.mock('sort_playlist_addtime', self.playlist)  # the editor's read
         fw.mock('getAllMusic', lambda *_: self.fill(self.library))
         fw.mock('checkPlayListExist', lambda r, dest, *_: (C.c_int(dest).value, field(r, REC_PATH)) in self.rows.values())
         fw.mock('batch_add_file', self.add)

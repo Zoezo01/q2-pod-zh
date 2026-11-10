@@ -94,7 +94,7 @@ class Node:
         return C.c_ubyte.from_address(self.addr + offset)
 
     def clickable(self, ctx=0):
-        """An EVT_CLICK on its emitter (V1.32: emitter @0x60, its first item, type @8, next @0x20)."""
+        """An EVT_CLICK on its emitter (V1.34: emitter @0x60, its first item, type @8, next @0x20)."""
         item = C.create_string_buffer(0x28)
         struct.pack_into('<Q', item, 0, ctx)
         struct.pack_into('<i', item, O['EMIT_TYPE'], EVT_CLICK)
@@ -1761,7 +1761,8 @@ def test_device_volume_off_gives_stock_its_gain_back_at_once(fw, way, sent):
     assert [c[1][:2] for c in fw.calls('device_set_volume')] == [(37, 0)] * sent
 
 
-def playset(fw, ui, view, stock_rows=15):
+def playset(fw, ui, view, stock_rows=13):
+    """Stock's Playback rows, s0-s12: s8 Headphones required, s11 Volume and Album Display, s12 Folder skip."""
     def build(*_):
         for i in range(stock_rows):
             item = ui.add('list_item', view, (0, 0, 375, 70), f's{i}')
@@ -1780,14 +1781,41 @@ def test_playback_orders_its_rows_and_ends_on_library_and_folders(fw):
     fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     rows = view.children
     ids = [r.name for r in rows]
-    assert len(rows) == 19 and 's13' not in ids and 's14' not in ids  # Folder art and skip: Library & Folders'
+    # stock's Volume and Album Display is not offered; Folder skip is Library & Folders'
+    assert len(rows) == 20 and 's11' not in ids and 's12' not in ids
     at = {r.name or icon(r): k for k, r in enumerate(rows)}
     assert rows[-1] is row(ui, view, 'Library & Folders') and 'list_into' in [c.props.get('image') for c in rows[-1].walk()]
     assert (at['s3'], at['s2']) == (0, 1)  # Play Mode, then EQ
-    assert at['playset_gapless'] == at['s9'] + 1 and at['playset_memplay'] == at['s8'] + 1  # Crossfade, Resume Songs
+    assert at['playset_gapless'] == at['s7'] + 1 and at['playset_memplay'] == at['s6'] + 1  # Crossfade, Resume Songs
+    assert at['s8'] == at['playset_memplay'] + 1  # Headphones required, after Resume Songs
     balance = [k for k, r in enumerate(rows) if icon(r) == 'playset_balance']
-    assert balance == [at['s11'] + 1, at['s11'] + 2]  # Mono Audio and Swap L/R
-    assert at['playset_dsdoutput'] == at['s6'] + 1 and at['s7'] == 17  # MQA by DSD, USB Audio last but one
+    assert balance == [at['s10'] + 1, at['s10'] + 2]  # Mono Audio and Swap L/R
+    assert at['playset_dsdoutput'] == at['s4'] + 1 and at['s5'] == 18  # MQA by DSD, USB Audio last but one
+    # that page's rows, where V1.32 had them: the two volumes before Balance, Enlarged Album Art after Swap L/R
+    assert [at['playset_maxvol'], at['playset_bootvol'], at['s10']] == list(range(at['s9'] + 1, at['s9'] + 4))
+    assert at['playset_covermode'] == balance[1] + 1
+
+
+def test_playback_s_volume_rows_open_stock_s_pages_and_enlarged_art_is_stock_s_switch(fw):
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playset_page', 'scroll_view_playset')
+    playset(fw, ui, view)
+    g(fw, 'g_bigcovermode', 0)
+    fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    ours = {icon(r): r for r in view.children if not r.name}
+    opened = []
+    fw.mock('navigator_to', lambda name, *_: opened.append(C.string_at(name).decode()))
+    for key in ('playset_maxvol', 'playset_bootvol'):
+        assert 'list_into' in [c.props.get('image') for c in ours[key].walk()]
+        click(ui, ours[key])
+    assert opened == ['playset/maxvol_page', 'playset/bootvol_page']
+    art = ours['playset_covermode']
+    assert switch(art) == 'switch_off' and ui.text(label_of(art)) == 'Enlarged Album Art'
+    # stock's rows, stock's translations
+    assert [C.string_at(c[1][1]) for c in fw.calls('widget_set_tr_text')] == [b'playset_maxvol', b'playset_bootvol', b'playset_covermode']
+    click(ui, art)
+    assert switch(art) == 'switch_on' and g(fw, 'g_bigcovermode') == 1 and settings.written == [('COVERMODE', 1)]
+    click(ui, art)
+    assert switch(art) == 'switch_off' and g(fw, 'g_bigcovermode') == 0 and settings.written[-1] == ('COVERMODE', 0)
 
 
 def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
@@ -1812,16 +1840,21 @@ def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
     opener = row(ui, view, 'Library & Folders')
     click(ui, opener)
     assert sub['name'] == b'playset/playset_page' and sub['title'] == ui.text(label_of(opener))  # titled as its row
-    ours, kept = sub['rows'][:4], sub['rows'][4:]
-    assert [r.name for r in kept] == ['s14', 's13']  # stock's Folder skip and Folder art, last
-    for r in ours:
+    ours = sub['rows'][:4]
+    skip, art = sub['rows'][4:]
+    # stock's Folder skip, then Folder Album Cover (a row of stock's Volume and Album Display), last
+    assert skip.name == 's12' and icon(art) == 'playset_foldercover' and ui.text(label_of(art)) == 'Folder Album Cover'
+    assert C.string_at(fw.calls('widget_set_tr_text')[-1][1][1]) == b'playset_foldercover'  # stock's row, stock's translation
+    was = g(fw, 'g_foldercover_flag')
+    for r in ours + [art]:
         click(ui, r)
-    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Folder Root
-    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT']
+    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Folder Root, Folder Album Cover
+    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT', 'FOLDERCOVER']
+    assert g(fw, 'g_foldercover_flag') == (not was) and switch(art) == ('switch_off' if was else 'switch_on')
     again = ui.add('scroll_view', ui.window('playset_page'), (0, 26, 375, 294), 'scroll_view_playset')
     playset(fw, ui, again)
     audioset(ui.top.addr, None)
-    assert len(again.children) == 19  # the next open is the main page again
+    assert len(again.children) == 20  # the next open is the main page again
 
 
 def test_artists_toggles_stocks_artist_type(fw):
@@ -2574,7 +2607,7 @@ def test_off_the_lyrics_page_the_follow_scrolls(fw, st):
     assert st('lyric_glide').value == 0 and fw.calls('scroll_view_scroll_to')
 
 
-LYRIC_ROWS = 0x529f0c  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
+LYRIC_ROWS = 0x53b3bc  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
 
 
 def rows_rebuilt(fw, win, result=0):

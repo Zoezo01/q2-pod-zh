@@ -2336,6 +2336,17 @@ def test_a_row_plays_its_track_only_while_the_queue_holds_it(fw, at, size, plays
     assert fw.calls('navigator_back')
 
 
+def test_a_row_starts_nothing_while_headphones_are_required_and_absent(fw):
+    """As stock's queue row: its check (it toasts) comes before the start."""
+    u = un(fw)
+    u.idx[3] = 7
+    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0x5000
+    fw.mock('fw_deque_size', lambda *_: 8)
+    fw.mock('check_forbid_play_no_headset', lambda *_: 1)
+    fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(3, None)
+    assert not fw.calls('player_start_queue') and fw.calls('navigator_back')
+
+
 def test_a_row_with_no_queue_only_closes(fw):
     un(fw).idx[0] = 1
     fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(0, None)

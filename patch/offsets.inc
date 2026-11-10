@@ -1,4 +1,4 @@
-/* Stock V1.32 layout and ABI constants shared by patch/navigation.c and test/patch.py.
+/* Stock V1.34 layout and ABI constants shared by patch/navigation.c and test/patch.py.
  * The test harness parses this file, so a field change cannot leave the mocks behind.
  * Fields marked "same slot" are class-specific views of one offset. */
 #define I(p, o) (*(int *)((char *)(p) + (o)))
@@ -10,17 +10,17 @@
 #define W_H 0x0c
 #define W_FOCUS 0x24            /* stock focused flag byte (tests) */
 #define W_PARENT 0x48
-#define IM_WIDGET 0x04 /* input_method_t's editing target, input_method_request @0x645758 */
+#define IM_WIDGET 0x04 /* input_method_t's editing target, input_method_request @0x658768 */
 #define IM_KEYBOARD                                                                                \
-    0x0c /* the default input method's open keyboard window, 0 once it closes (@0x68bbec) */
+    0x0c /* the default input method's open keyboard window, 0 once it closes (@0x69ec3c) */
 #define W_EMITTER 0x60
-#define W_ASTYLE 0x64 /* widget_update_style reads it at 0x65e230; 0x74 is the vtable */
+#define W_ASTYLE 0x64 /* widget_update_style reads it at 0x671240; 0x74 is the vtable */
 #define ALIGN_H_LEFT 2 /* stock's align_h_t, in a style's text_align_h */
 #define W_CHILDREN_LAYOUT 0x68
 #define CHILDREN_LAYOUT_VTABLE 0x10
 #define DEFAULT_LAYOUT_X_MARGIN 0x18
 #define DEFAULT_LAYOUT_SPACING 0x1a
-#define DEFAULT_LAYOUT_VTABLE 0x926b20
+#define DEFAULT_LAYOUT_VTABLE 0x93a0b4
 #define EMIT_TYPE 0x08
 #define EMIT_PENDING_REMOVE 0x15
 #define EMIT_NEXT 0x20
@@ -43,49 +43,49 @@
 #define EVENT_KEY 0x18
 #define EVENT_TIME 0x08 /* low word of the uint64 time_now_ms stamp */
 #define EVENT_TARGET 0x10
-#define EVENT_X 0x18           /* pointer_event_init @0x640298 */
+#define EVENT_X 0x18           /* pointer_event_init @0x6532a8 */
 #define EVENT_Y 0x1c
 #define EVT_POINTER_FIRST 0xff /* the pointer events the wm dispatches: down 0xff, move 0x101, up 0x103 */
-#define EVT_POINTER_DOWN 0x100 /* wm registers on_wm_tsdown_before_fun for this type @0x523ef0 */
-#define EVT_POINTER_MOVE_BEFORE 0x102 /* wm move-before forwards this type to the down hook @0x523ed4 */
+#define EVT_POINTER_DOWN 0x100 /* wm registers on_wm_tsdown_before_fun for this type @0x534af8 */
+#define EVT_POINTER_MOVE_BEFORE 0x102 /* wm move-before forwards this type to the down hook @0x534adc */
 #define EVT_POINTER_UP_BEFORE 0x104
 #define EVT_POINTER_ABORT 0x107
 #define EVT_DESTROY 0x0c
-#define EVT_KEY_DOWN 0x110        /* widget_on_keydown @0x6627c4 (0x111 is its long press) */
-#define EVT_KEY_DOWN_BEFORE 0x112 /* wm keydown-before dispatch @0x523e6c */
-#define EVT_KEY_UP 0x114          /* wm keyup dispatch @0x523eb8 */
-#define EVT_KEY_UP_BEFORE 0x115   /* wm keyup-before dispatch @0x523e80 */
+#define EVT_KEY_DOWN 0x110        /* widget_on_keydown @0x6757d4 (0x111 is its long press) */
+#define EVT_KEY_DOWN_BEFORE 0x112 /* wm keydown-before dispatch @0x534a74 */
+#define EVT_KEY_UP 0x114          /* wm keyup dispatch @0x534ac0 */
+#define EVT_KEY_UP_BEFORE 0x115   /* wm keyup-before dispatch @0x534a88 */
 #define EVT_WINDOW_BACKGROUND 0x12a
 #define EVT_WINDOW_FOREGROUND 0x12b
 #define EVT_WINDOW_CLOSE 0x12c
 #define PULL_SEARCH_PX 48       /* device tuning: release distance from the initial touch */
 #define PULL_CLAIM_PX 8
-#define QUICK_EDGE_PX 31        /* stock on_wm_tsmove_fun @0x4e8d10 */
+#define QUICK_EDGE_PX 31        /* stock on_wm_tsmove_fun @0x4f2958 */
 #define EVT_CLICK 0x10c
-#define EVT_FOCUS 0x10e /* widget_set_focused_internal @0x65fdf4 */
-#define EVT_BLUR 0x10f  /* widget_set_focused_internal @0x65fe40 */
-#define EVT_IM_ACTION 0x13a /* the keyboard's OK, input_method_dispatch_action @0x645e20 */
-#define EVT_SCROLL 0x14e /* stock scroll_view on_scroll @0x5efa40; table setter emits this too */
-#define EVT_SCROLL_END 0x14f /* stock lists queue their visible covers on this (album page registers @0x4a43d0) */
-#define VIEW_ON_SCROLL 0x100 /* scroll_view callback installed by list_view, called by touch @0x5efa5c */
+#define EVT_FOCUS 0x10e /* widget_set_focused_internal @0x672e04 */
+#define EVT_BLUR 0x10f  /* widget_set_focused_internal @0x672e50 */
+#define EVT_IM_ACTION 0x13a /* the keyboard's OK, input_method_dispatch_action @0x658e30 */
+#define EVT_SCROLL 0x14e /* stock scroll_view on_scroll @0x602370; table setter emits this too */
+#define EVT_SCROLL_END 0x14f /* stock lists queue their visible covers on this (album page registers @0x4a5db0) */
+#define VIEW_ON_SCROLL 0x100 /* scroll_view callback installed by list_view, called by touch @0x60238c */
 #define CANVAS_X 0x00
 #define CANVAS_Y 0x04
 #define CANVAS_LCD 0x38
 #define LCD_FILL_COLOR 0xbc
 #define LCD_STROKE_COLOR 0xc0
-#define LCD_TEXT_COLOR 0xb8     /* lcd_set_text_color @0x6474c4 */
-/* Night Shift (nightshift.c): the screen's lcd_mem, BGRA8888 (lcd_mem create @0x6922c0) */
-#define LCD_END_FRAME 0x7c   /* lcd_end_frame @0x647958 calls it */
+#define LCD_TEXT_COLOR 0xb8     /* lcd_set_text_color @0x65a4d4 */
+/* Night Shift (nightshift.c): the screen's lcd_mem, BGRA8888 (lcd_mem create @0x6a5310) */
+#define LCD_END_FRAME 0x7c   /* lcd_end_frame @0x65a968 calls it */
 #define LCD_W 0xb0
 #define LCD_H 0xb4
-#define LCD_DRAW_MODE 0xcc   /* lcd_begin_frame @0x6472a8 */
+#define LCD_DRAW_MODE 0xcc   /* lcd_begin_frame @0x65a2b8 */
 #define LCD_DRAW_NORMAL 0    /* 1 a window animation's */
 #define LCD_DIRTY 0xf8       /* the frame's rect, x y w h; lcd_begin_frame sets it */
 #define LCD_OFFLINE_FB 0x110 /* the buffer drawn into */
 #define LCD_LINE_LENGTH 0x124
 #define LCD_FORMAT 0x128
 #define LCD_BGRA8888 3
-#define CANVAS_ALIGN_V 0x30     /* canvas_set_text_align @0x63419c; middle = 1 */
+#define CANVAS_ALIGN_V 0x30     /* canvas_set_text_align @0x6471ac; middle = 1 */
 #define CANVAS_ALIGN_H 0x34     /* center = 1 */
 #define FILL_RGB 0x2b2b2b /* the stock dark surface, under the letter and volume overlays */
 /* iPod accents, in the order of the Accent setting (IPOD/ACCENT in config.ini; 0 is the default):
@@ -130,7 +130,7 @@
  * by bitmap_get_bpp_of_format; per format, the byte offsets of r, g, b and a. */
 #define BITMAP_RGBA_AT { { 0, 1, 2, 3 }, { 3, 2, 1, 0 }, { 2, 1, 0, 3 }, { 1, 2, 3, 0 } }
 #define BITMAP_PREMULTI 16 /* AWTK's BITMAP_FLAG_PREMULTI_ALPHA in bitmap_t's u16 flags @0xc */
-#define STYLE_COLOR_GRADIENT_RET 0x649ff0 /* style_get_color's bal style_get_gradient (0x649fe8) returns here */
+#define STYLE_COLOR_GRADIENT_RET 0x65d000 /* style_get_color's bal style_get_gradient (0x65cff8) returns here */
 #define STOCK_RED 0xff1448
 #define RED_TOLERANCE 8 /* per channel, 0-255: how far a color may sit from a red/neutral blend */
 /* iPod black status chrome, in every theme; TRACK_COLOR is Now Playing's progress track. */
@@ -232,11 +232,11 @@ static inline int arc_out(int r, int y) {
 /* iPod: the full-screen art (stock's bigcover_page) shows the song name BC_MS, then it and its shade
  * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
-#define QS_SWIPE_STOCK 295 /* stock's handler (0x4a0cc0): Quick Settings' swipe up starts from here down, */
+#define QS_SWIPE_STOCK 295 /* stock's handler (0x4a22f0): Quick Settings' swipe up starts from here down, */
 #define QS_SWIPE_Y 250     /* and Classic Light's from here, its slider above stock's line */
-/* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x52bffc) counts it down while a
+/* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x53d514) counts it down while a
  * song plays there and opens bigcover_page at 0, then sets it back to BC_IDLE_FULL (10 s). */
-#define BC_IDLE 0x99f660
+#define BC_IDLE 0x9b2d50
 #define BC_IDLE_FULL 40
 #define BC_TITLE_PAD 12 /* the song name's inset from the art's sides */
 /* The screen glass's rounded corners and how far content keeps clear of them (tools/ipod.py). */
@@ -260,8 +260,8 @@ static inline int arc_out(int r, int y) {
 /* Modern's Now Playing progress bar is an NP_BAR_CLASSIC capsule (Minimal's NP_BAR_MINIMAL line, Classic's NP_BAR_IPOD). Minimal's settings icons are grey and list_into
  * MINIMAL_CHEVRON under every accent; its own accent (MINIMAL_ACCENT) fills with MINIMAL_FILL. */
 #define HOME_SPLIT_W 187
-#define LOCALMUSIC_BG 0x524090 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
-#define STREAM_BG 0x52ec40 /* Streaming's, the same */
+#define LOCALMUSIC_BG 0x534c90 /* the Library page's EVT_WINDOW_BACKGROUND: stops its play gif's timer */
+#define STREAM_BG 0x540a40 /* Streaming's, the same */
 /* Split's cover pans (docs/ipod.md#home): zoomed DRIFT_ZOOM_PCT, each axis a linear ping-pong of
  * its own period across the zoom's margin (about 1.5 px/s on a square cover, as iPod.js's), drawn
  * at sub-pixel positions every DRIFT_TICK_MS, a step at most DRIFT_MAX_STEP_MS. A cover whose zoomed
@@ -312,7 +312,7 @@ static inline int arc_out(int r, int y) {
 #define TILE_CLEARANCE 4 /* artwork and labels sit this far inside the card */
 #define EDIT_OK_PX 18 /* the date, time and sleep timer pages' OK label, on that card */
 /* Minimal's Now Playing album is NP_CAPS_PX capitals, NP_CAPS_INSET in from its label's edge as
- * stock hscroll_label insets the title and artist (margin_left, default 2, 0x5e8378). */
+ * stock hscroll_label insets the title and artist (margin_left, default 2, 0x5faca8). */
 #define NP_CAPS_PX 15
 #define NP_CAPS_INSET 2
 #define PAGE_SLIDE_MS 120
@@ -331,13 +331,13 @@ static inline int arc_out(int r, int y) {
 #define MARQUEE_HOLD_MS 1500
 #define MARQUEE_PASSES 3        /* the selected row's title: navigation.c marq_moved */
 #define HSCROLL_ONLY_FOCUS 0x78 /* hscroll_label_t, a char: hscroll_label_set_only_focus */
-#define HSCROLL_LOOP 0x7a       /* a char: a pass ends on its lull and starts again (0x5e8a20) */
-#define HSCROLL_YOYO 0x7b       /* a char: it scrolls back instead of snapping (0x5e8a44) */
+#define HSCROLL_LOOP 0x7a       /* a char: a pass ends on its lull and starts again (0x5fb350) */
+#define HSCROLL_YOYO 0x7b       /* a char: it scrolls back instead of snapping (0x5fb374) */
 #define HSCROLL_DELAY 0x88      /* ms its start waits before the first step (hscroll_label_start) */
-#define HSCROLL_SPEED 0x8c      /* a float, px per ms; 0 runs a pass in its duration (0x5e8564) */
+#define HSCROLL_SPEED 0x8c      /* a float, px per ms; 0 runs a pass in its duration (0x5fae94) */
 #define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
 #define HSCROLL_TIMER 0xa4      /* its running timer's id; 0 stopped (stock paints the ellipsis) */
-/* Every pass's fastest pace, 0.05f px per ms: stock Now Playing's title and artist (0x52b8d4); its
+/* Every pass's fastest pace, 0.05f px per ms: stock Now Playing's title and artist (0x53cdec); its
  * set_hscroll_label_attribute sets 0.1, some pages 0.2. As float bits, which order as their values
  * for any positive float. */
 #define HSCROLL_PACE 0x3d4ccccd
@@ -395,11 +395,11 @@ static inline int arc_out(int r, int y) {
 #define SET_STOCK_TRAIL 276   /* the usual trailing image x in the stock button */
 #define SET_RIGHT_SIDE 150    /* stock children starting here keep to the right edge */
 #define LIST_DEFAULT_ITEM_HEIGHT 0x7c  /* list_view default_item_height */
-#define LIST_VIEW_LAYOUT 0x5e9eb4      /* children_layouter_list_view's layout */
-#define LIST_VIEW_LAYOUT_SLOT 0x926930 /* its vtable slot (vtable 0x926928 + 8) */
-#define LIBRARY_ROW_BODY 0x524820      /* localmusic_page_init's row body immediate (ipod.json) */
-#define LIBRARY_ROW_ICON_X 0x524944    /* its icon x (art_inset) */
-#define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x9272c0 */
+#define LIST_VIEW_LAYOUT 0x5fc7e4      /* children_layouter_list_view's layout */
+#define LIST_VIEW_LAYOUT_SLOT 0x939ec4 /* its vtable slot (vtable 0x939ebc + 8) */
+#define LIBRARY_ROW_BODY 0x535230      /* localmusic_page_init's row body immediate (ipod.json) */
+#define LIBRARY_ROW_ICON_X 0x535368    /* its icon x (art_inset) */
+#define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x93a854 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
 #define IMAGE_DRAW_FILL 8              /* "fill", the same table: stretched to the box */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a
@@ -462,7 +462,7 @@ static inline int arc_out(int r, int y) {
 #define STANDBY_LIMIT_3 24
 /* check_cardmount_status's request for on_wm_timer_dialog's TF card toast, and how long after a
  * Standby resume ringnav_cardmount drops it (docs/internals.md#standby-limit). */
-#define CARD_TOAST 0xa37c97
+#define CARD_TOAST 0xa4b5f7
 #define CARD_QUIET_MS 15000
 /* Smart Wi-Fi (docs/internals.md#smart-wi-fi), checked every SMART_POLL_MS: the radio goes off after
  * SMART_IDLE_MS with nothing needing the network (a new link counts as a use), and whatever wakes it
@@ -470,7 +470,7 @@ static inline int arc_out(int r, int y) {
 #define SMART_POLL_MS 1000
 #define SMART_IDLE_MS 300000
 #define SMART_CONNECT_MS 15000
-#define NET_TYPE 0xa3bf04 /* no symbol: initNetworkModule's type, 2 Wi-Fi; networkStart and networkStop act only then */
+#define NET_TYPE 0xa4fac4 /* no symbol: initNetworkModule's type, 2 Wi-Fi; networkStart and networkStop act only then */
 /* The Wi-Fi signal (ringnav_wifi_signal) is read from the driver again at most every
  * WIFI_SIGNAL_MS; its two pollers each ask about once a second. */
 #define WIFI_SIGNAL_MS 1000
@@ -513,10 +513,10 @@ static inline int arc_out(int r, int y) {
 #define KEY_PREV 172
 #define KEY_NEXT 173
 #define KEY_PLAY 171
-#define KEY_RETURN 170 /* on_common_keyup @0x4e8124 */
+#define KEY_RETURN 170 /* on_common_keyup @0x4f21b8 */
 #define KEY_BACK_BTN 222 /* the previous and next buttons: on_wm_keyup_fun, prev_quick_click */
 #define KEY_FWD_BTN 223
-#define KEY_LOCKOUT 0xa37c89 /* stock: a centre key sets 8, on_wm_timer_setup_state counts it down per 100 ms */
+#define KEY_LOCKOUT 0xa4b5e8 /* stock: a centre key sets 8, on_wm_timer_setup_state counts it down per 100 ms */
 /* Stock drops wheel ticks while KEY_LOCKOUT is set, 800 ms after Centre, so a press that brushes
  * the wheel cannot scroll; only its first LOCKOUT_KEEP x 100 ms are kept (ringnav). */
 #define LOCKOUT_KEEP 2
@@ -530,7 +530,7 @@ static inline int arc_out(int r, int y) {
  * a turn), 200 a turn, and stock's poster encoderknob_thread_run+0x150, which dispatches the
  * thread info's key event. */
 #define WHEEL_TICK_UNITS 28
-#define WHEEL_POST 0x6257f0
+#define WHEEL_POST 0x638170
 #define WHEEL_INFO_EVENT 0x20 /* event type: 0x110 key down, 0x114 key up */
 #define WHEEL_INFO_KEY 0x38   /* the event's key (EVENT_KEY) */
 /* The poster's target is the info's main loop, whose input queue (stock event_queue_t: u16 r, w,
@@ -550,7 +550,7 @@ static inline int arc_out(int r, int y) {
 #define STALE_TOUCH_MS 5000
 /* An empty Library list's page (navigation.c empty_toast) closes once the window manager marks it
  * opened ("stage" WINDOW_STAGE_OPENED, after the open animation): polled every EMPTY_POLL_MS.
- * The close path reads the same property @0x689c68 (3 or 5, suspended). */
+ * The close path reads the same property @0x69ccb8 (3 or 5, suspended). */
 #define WINDOW_STAGE_OPENED 3
 #define EMPTY_POLL_MS 50
 /* With the screen off (the wheel is the volume), WHEEL_DARK_GUARD units of one touch's travel one
@@ -566,11 +566,11 @@ static inline int arc_out(int r, int y) {
 #define WHEEL_ARM_MS 2000
 #define WHEEL_ESCAPE_TICK_MS 300
 #define WHEEL_STOP_TICKS 3
-#define BOOT_KEY_GUARD 0xa37c8a /* no symbol: set after a Standby resume, on_wm_keyup_fun drops the next centre release */
-#define RETURN_RELEASE_LATCH 0xa37c8b /* stock long Return arms it; the key-up filter consumes it */
+#define BOOT_KEY_GUARD 0xa4b5e9 /* no symbol: set after a Standby resume, on_wm_keyup_fun drops the next centre release */
+#define RETURN_RELEASE_LATCH 0xa4b5ea /* stock long Return arms it; the key-up filter consumes it */
 
-/* slide_menu_scroll_to @0x5f3400 and completion @0x5f3654; animator
- * start @0x665ab0, time_elapse @0x6660d4, scroll_set_params @0x682124. */
+/* slide_menu_scroll_to @0x605d30 and completion @0x605f84; animator
+ * start @0x678b00, time_elapse @0x679124, scroll_set_params @0x695174. */
 #define SLIDE_SPACER 0x84
 #define SLIDE_OFFSET 0x94
 #define SLIDE_ANIMATOR 0xc8
@@ -579,13 +579,13 @@ static inline int arc_out(int r, int y) {
 #define ANIM_DURATION 0x20
 #define ANIM_X_TO 0x60
 #define SLIDE_EASING 8          /* stock scroll_to easing */
-#define ANIM_EASING 0x38 /* widget_animator_init (0x665eb4) stores easing_get(type) here */
+#define ANIM_EASING 0x38 /* widget_animator_init (0x678f04) stores easing_get(type) here */
 #define EASE_CUBIC_OUT 5 /* AWTK easing_type_t: starts at 3x the mean speed, then decelerates */
 #define EASE_FOLLOW 24 /* past AWTK's 24: coverflow.c's follow, never handed to easing_get */
 #define EVT_ANIM_END 0x125
 
 /* Play/Pause hold queue menu (docs/internals.md). AWTK input_device_status lives at
- * wm+0x98 (window_manager_get_input_device_status @0x66e734): 16 key records of 0x18 bytes from
+ * wm+0x98 (window_manager_get_input_device_status @0x681784): 16 key records of 0x18 bytes from
  * +0x30, each {key, long fired, u64 press time @8, aborted @0x10}. */
 #define EVT_KEY_LONG 0x111
 #define INPUT_KEYS 0x30
@@ -594,23 +594,23 @@ static inline int arc_out(int r, int y) {
 #define INPUT_KEY_TIME 0x08
 /* stSongInfo rows of p_deque_showlist and the mcl queue. */
 #define REC_ID 0x00             /* -1/-2: unknown album/artist */
-#define REC_TIDAL_ID 0x04       /* a Tidal queue row's song id (get_tidal_trackurl 0x48323c) */
+#define REC_TIDAL_ID 0x04       /* a Tidal queue row's song id (get_tidal_trackurl 0x483f4c) */
 #define REC_NAME 0x08           /* the file name; REC_TITLE is the tag's, empty when untagged */
 #define REC_PATH 0x0c
 #define REC_TITLE 0x10
 #define REC_ALBUM 0x14
 #define REC_ARTIST 0x18
 #define REC_ALBUM_ARTIST 0x24   /* albumsonger; empty or null in folder-queue records */
-#define REC_COVER 0x28          /* an online row's cover, a Tidal row's a jpg in /tmp/tidal (player_get_id3info 0x5149d8) */
+#define REC_COVER 0x28          /* an online row's cover, a Tidal row's a jpg in /tmp/tidal (player_get_id3info 0x51f4d0) */
 #define REC_TYPE 0x34           /* 8 song, 4 directory */
 #define REC_TRACK 0x3c          /* the tag's track and disc numbers, 0 when untagged */
 #define REC_DISC 0x40
 #define REC_CUE_START 0x48      /* a CUE track's start and end seconds, 0 otherwise */
 #define REC_CUE_END 0x4c
-/* A row's size, as platformTypeRegister registers stSongInfo (0x5b4150). Its copy (0x5b3b1c) gives
+/* A row's size, as platformTypeRegister registers stSongInfo (0x5c6950). Its copy (0x5c631c) gives
  * each of the 11 strings at 0x04-0x2c its own buffer, so a row owns them and nothing points into it. */
 #define REC_SIZE 0x58
-/* g_play_id3_info, as player_get_id3info (0x5146bc) parses the playing file: its path, then tags. */
+/* g_play_id3_info, as player_get_id3info (0x51f1b4) parses the playing file: its path, then tags. */
 #define ID3_ALBUM 0x404
 #define ID3_ARTIST 0x504
 #define ID3_TITLE 0x684
@@ -619,16 +619,16 @@ static inline int arc_out(int r, int y) {
 #define CLASS_ALBUMS 0xf003     /* all albums: rows open getMusicByAlbum (load_localclass_list 0xff10) */
 /* localmusic/playlist_page's add mode (g_play_info + 0x7894): non-zero while it is Add to Playlist;
  * 0 when browsing the Playlists list, whose rows' trailing dots open playlistsmore_page. */
-#define PLAYLIST_ADD_MODE 0xa27894
-#define PL_RENAME_ROW 0xa278a0 /* the playlist row playlistsmore_page_init saved (0x4b3980) */
+#define PLAYLIST_ADD_MODE 0xa3b1c4
+#define PL_RENAME_ROW 0xa3b1d0 /* the playlist row playlistsmore_page_init saved (0x4b6558) */
 /* The artist page's navbar title (g_play_info + 0x7680, 512 bytes): localmusic_artistinfo_page_init
  * copies g_local_classinfo_save + 0x10d into it, which load_artistinfo_list wrote as "%s" of the
- * record's REC_ARTIST: "(null)" for an artist with no name. Each tab's navbar build (0x4aad10)
+ * record's REC_ARTIST: "(null)" for an artist with no name. Each tab's navbar build (0x4acfc0)
  * reads it after load_localartist_list. */
-#define ARTIST_TITLE 0xa27680
-/* g_allselect_flag: playlist_page's Select All (0x4b1b88) toggles on it; a row's mark sets it to
- * whether every row is now marked (0x4b1e38). */
-#define G_ALLSELECT_FLAG 0xa38ac0
+#define ARTIST_TITLE 0xa3afa4
+/* g_allselect_flag: playlist_page's Select All (0x4b46b4) toggles on it; a row's mark sets it to
+ * whether every row is now marked (0x4b4960). */
+#define G_ALLSELECT_FLAG 0xa4c420
 /* Marked folders stay indexed for playlists; the wrappers expand this before grouping. */
 #include "library_scope.h"
 #define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b' and " LIBRARY_SCOPE_TOKEN
@@ -645,65 +645,65 @@ static inline int arc_out(int r, int y) {
 #define ALBUM_GROUP " group by album COLLATE NOCASE," \
     "ifnull(albumsonger,'') COLLATE NOCASE,case ifnull(albumsonger,'') when '' then rtrim(fileurl,replace(fileurl,'/','')) end"
 #define CLASS_ARTIST_ALBUMS 0xff01 /* an artist's albums (load_localclass_list 0xff11) */
-#define ALBUMINFO_ROW 0xa27200  /* the albums row localmusic_albuminfo_page_init opened (0x4a7ab4) */
-/* Static mcl queue state (mclLoadPlayList @0x5aa8d4, mclNextSong @0x5adbbc). */
-#define MCL_POOL 0xa3bdb0       /* deque_t * of int: unplayed shuffle indices */
-/* The playing track's lyrics (mclGetLyricSize @0x5aac20): a deque_t * of stLyricInfo { int time;
+#define ALBUMINFO_ROW 0xa3aae0  /* the albums row localmusic_albuminfo_page_init opened (0x4a9a7c) */
+/* Static mcl queue state (mclLoadPlayList @0x5bcd38, mclNextSong @0x5c03ac). */
+#define MCL_POOL 0xa4f978       /* deque_t * of int: unplayed shuffle indices */
+/* The playing track's lyrics (mclGetLyricSize @0x5bd084): a deque_t * of stLyricInfo { int time;
  * char *text; }, whose copy duplicates the text, and the mutex every reader and the loader hold. */
-#define MCL_LYRICS 0xa3bdac
-#define MCL_LYRIC_LOCK 0xa3bdb8
+#define MCL_LYRICS 0xa4f974
+#define MCL_LYRIC_LOCK 0xa4f980
 /* demo's GOT entry for taglib_file_new, libtag_c's own address once a call has bound it, and the
  * pinned libtag_c.so.2.0.1's (build.py TAG_C_SHA) offsets of it and the property calls demo lacks. */
-#define TAGLIB_NEW_GOT 0xa2662c
+#define TAGLIB_NEW_GOT 0xa39f04
 #define TAGLIB_FILE_NEW 0x98e0
 #define TAGLIB_PROPERTY_GET 0xb4dc
 #define TAGLIB_PROPERTY_FREE 0xb700
-/* Now Playing's ⋯ page (playermore_page_init @0x528c14): its 8 rows' kinds by position, which the
- * row click (0x528a70) reads at the button name's atoi, and Download Cover & Lyrics' kind
- * (get_playmore_showinfo @0x501208: player_onlinesearch). Kinds 2 to 6 open a screen (Queue, Add to
+/* Now Playing's ⋯ page (playermore_page_init @0x539c70): its 8 rows' kinds by position, which the
+ * row click (0x539acc) reads at the button name's atoi, and Download Cover & Lyrics' kind
+ * (get_playmore_showinfo @0x50bc78: player_onlinesearch). Kinds 2 to 6 open a screen (Queue, Add to
  * Playlist, Download Cover & Lyrics, Album and Artist info); 0 A-B Repeat, 1 Speed and 7 Delete's
  * confirm don't. */
-#define PLAYMORE_ROWS 0x7728a0
+#define PLAYMORE_ROWS 0x7864e0
 #define PLAYMORE_COUNT 8
 #define PLAYMORE_SEARCH 4
 #define PLAYMORE_INTO_FIRST 2
 #define PLAYMORE_INTO_LAST 6
-#define MCL_LASTPOS 0xa3be90    /* shuffle "previous" index, -1 none */
-#define MCL_PREPOS 0xa3be94
-#define MCL_PRELOAD 0xa3be98    /* 1 preloaded, 0 none, -1 closed for this track */
-#define MCL_TYPE 0xa3bea0       /* queue classType: 1 folder, 0xfxxx local */
-#define MCL_POS 0xa3bea4
-#define MCL_MODE 0xa3bea8       /* 0 order, 1 repeat one, 2 shuffle, 3 repeat all */
-#define MCL_JUMPFOLDER 0xa3be53 /* byte: Folder Skip, read only for class 1 queues */
-#define MCL_GAPLESS 0xa3be54    /* byte: stock's Gapless setting (mclGetGaplessMode); mclAutoChange preloads only with it */
-#define MCL_FD 0xa3beb4         /* player socket, -1 none */
-#define INITCONFIG_MODE_RET 0x513420 /* player_initconfig's mclSetPlayMode call (jalr 0x513418) returns here */
-/* mclUsbAudioSetVol (0x5ac574): the USB DAC's volume control, -1 before the first set, -2 when it
- * has none and hciplayer's soft volume (mcl-softvolflag) applies instead (0x5a8498 opens hw:1). */
-#define USB_MIXER 0xa3be6c
+#define MCL_LASTPOS 0xa4fa58    /* shuffle "previous" index, -1 none */
+#define MCL_PREPOS 0xa4fa5c
+#define MCL_PRELOAD 0xa4fa60    /* 1 preloaded, 0 none, -1 closed for this track */
+#define MCL_TYPE 0xa4fa68       /* queue classType: 1 folder, 0xfxxx local */
+#define MCL_POS 0xa4fa6c
+#define MCL_MODE 0xa4fa70       /* 0 order, 1 repeat one, 2 shuffle, 3 repeat all */
+#define MCL_JUMPFOLDER 0xa4fa1b /* byte: Folder Skip, read only for class 1 queues */
+#define MCL_GAPLESS 0xa4fa1c    /* byte: stock's Gapless setting (mclGetGaplessMode); mclAutoChange preloads only with it */
+#define MCL_FD 0xa4fa7c         /* player socket, -1 none */
+#define INITCONFIG_MODE_RET 0x51dee0 /* player_initconfig's mclSetPlayMode call (jalr 0x51ded8) returns here */
+/* mclUsbAudioSetVol (0x5be9d4): the USB DAC's volume control, -1 before the first set, -2 when it
+ * has none and hciplayer's soft volume (mcl-softvolflag) applies instead (0x5ba8b8 opens hw:1). */
+#define USB_MIXER 0xa4fa34
 /* Stock sortselect_dialog callbacks the menu replaces: both set g_sort_changeflag, which makes
  * allmusic reload and scroll to the top on return. */
-#define SORTSELECT_KEYUP 0x49f3e0
-#define SORTSELECT_CLOSE 0x49f3c0
+#define SORTSELECT_KEYUP 0x4a0bd4
+#define SORTSELECT_CLOSE 0x4a0890
 
 /* Coverflow (docs/internals.md). slide_menu dispatches EVT_VALUE_CHANGED after its
- * index moves (0x5f320c). The stock scan thread handle (dialog_updatemusic_dialog_init) and its
+ * index moves (0x605b3c). The stock scan thread handle (dialog_updatemusic_dialog_init) and its
  * done flag (wait_scan sets it) have no symbols: a scan runs while the handle is set and the
  * flag is clear. */
 #define EVT_VALUE_CHANGED 0x0e
 #define EVT_VALUE_CHANGING 0x0f
-/* playset_bootvol_page_init (0x4b4a80) binds these, each with the window as context; Crossfade
+/* playset_bootvol_page_init (0x4b7838) binds these, each with the window as context; Crossfade
  * re-dresses the page (crossfade.c) and unbinds them first. */
-#define BOOTVOL_SWITCH 0x4b44d8   /* on_bootvol_switch_onclick: img_bootswitch's click */
-#define BOOTVOL_DEC 0x4b4624      /* img_dec's click */
-#define BOOTVOL_ADD 0x4b45a8      /* img_add's click */
-#define BOOTVOL_CHANGING 0x4b48f4 /* slider_bootvol's EVT_VALUE_CHANGING */
-#define BOOTVOL_CHANGED 0x4b4300  /* slider_bootvol's EVT_VALUE_CHANGED */
-#define SCAN_THREAD 0xa271d8
+#define BOOTVOL_SWITCH 0x4b71b8   /* on_bootvol_switch_onclick: img_bootswitch's click */
+#define BOOTVOL_DEC 0x4b7304      /* img_dec's click */
+#define BOOTVOL_ADD 0x4b7288      /* img_add's click */
+#define BOOTVOL_CHANGING 0x4b75d4 /* slider_bootvol's EVT_VALUE_CHANGING */
+#define BOOTVOL_CHANGED 0x4b6fe0  /* slider_bootvol's EVT_VALUE_CHANGED */
+#define SCAN_THREAD 0xa3aab8
 /* byte, 1 for the whole library's scan, 0 for a folder's (the same init): our reading of stock's
  * code, not checked on a device */
-#define SCAN_WHOLE 0xa271d0
-#define SCAN_DONE 0xa271d4
+#define SCAN_WHOLE 0xa3aab0
+#define SCAN_DONE 0xa3aab4
 /* Coverflow text: every label, captions included, sits CF_EDGE from the sides, where the lowest
  * track row's text clears the bottom corners. Album names and artists scroll
  * within that. Under the covers (CF_TEXT_Y), the album name is CF_NAME_PX white and the artist
@@ -780,7 +780,7 @@ static inline int arc_out(int r, int y) {
 #define PEQ_PLOT_BOTTOM 78
 /* iPod visualizer (patch/visualizer.c, docs/ipod.md#visualizer), Now Playing's fourth page. The
  * page shows the audio VIS_LATENCY_MS behind what hciplayer last handed the filter: its ao_alsa asks
- * for a 500 ms buffer in 16 periods (0x438a2c: buffer_time 500000 us) and refills it a period at a
+ * for a 500 ms buffer in 16 periods (0x4382ec: buffer_time 500000 us) and refills it a period at a
  * time, so a block waits about 500 ms less half a period to a period; Bluetooth adds its own, so this
  * stays the knob for sync. VIS_FPS frames a second; spectrum bars
  * fall VIS_DECAY of full scale a second, their caps hold VIS_HOLD_MS then fall at VIS_GRAVITY full

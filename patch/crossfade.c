@@ -145,7 +145,7 @@ static int press_word(void) {
 void press_stamp(void) {
     if (!press_natural && press_word()) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
 }
-/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5ad1bc, 0x5ad1d4). A natural start
+/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5bf634, 0x5bf64c). A natural start
  * skips both, so the old track is heard to its end, and leaves an even mark for ao_init, whose reopen mutes
  * after the drain, or which keeps the PCM open. Only ringnav_next(1) sets press_natural to 2: anything else,
  * or no word to leave the mark in, keeps stock's. */
@@ -232,7 +232,9 @@ int swap_click(void *ctx, void *event) {
 /* MQA (Q2POD MQA, read once, default off). hciplayer's start-of-track probe decodes about 2 s of a
  * FLAC or PCM track before it plays (docs/internals.md#mqa-detection), long enough to break a
  * gapless change. Off sends stock's {mcl-mqadecodemode\2}, which skips the probe, so MQA plays
- * undecoded; On sends 0, hciplayer's default. Send on accept before stock publishes the socket:
+ * undecoded; On sends 0, hciplayer's default. ponytail: stock V1.34's hciplayer stores the mode and
+ * never probes, so the row changes nothing there; kept for a stock player that probes again, and
+ * to go with mqa_sync, mqa_accept and MQA_GATE if the final V1.34 never does. Send on accept before stock publishes the socket:
  * its first connection does not request player_initconfig. A toggle applies at the next audio init. */
 static int mqa_on(void) {
     if (!xf.mqa_read) xf.mqa = config_value("Q2POD", "MQA", 2, 0), xf.mqa_read = 1;
@@ -473,7 +475,7 @@ int xfade_key(void *top, unsigned key) {
  * (XF_COLD_NS). Each stop moves the count beside the fade, so no tail outlives a stop: status 1 and
  * no file error. An error's status is no stop: stock's dialog timer takes the file away and shows
  * its modal toast, passes running under it, before it plays the next (on_wm_timer_dialog,
- * 0x4ea784). A stop during a toast isn't counted. */
+ * 0x4f4b48). A stop during a toast isn't counted. */
 static int fades_into(void *r) {
     const char *p = P(r, REC_PATH), *e = p ? strrchr(p, '.') : 0;
     unsigned st[36];

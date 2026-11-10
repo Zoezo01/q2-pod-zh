@@ -142,7 +142,7 @@ int lrc_fold(char *out, unsigned n, const char *s) {
  * the .lrc beside the song, so a copy there hides ours (docs/internals.md#lyrics-search). */
 #define DOWNPIC "/mnt/mmc/.downpic/"
 
-/* stock's name there for a song's file name (modifystringtolrcsuffix @0x511df8): its last '.' on
+/* stock's name there for a song's file name (modifystringtolrcsuffix @0x51c8b8): its last '.' on
  * made ".lrc", as it is without one; 0 if it does not fit in n. */
 int lrc_name(char *out, unsigned n, const char *name) {
     const char *dot = strrchr(name, '.');
@@ -399,7 +399,7 @@ static int lrc_copy(const char *tmp, const char *lrc) {
     return 0;
 }
 
-/* Download Cover & Lyrics' accept (0x524f20) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
+/* Download Cover & Lyrics' accept (0x535c14) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
  * for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here: the lyrics (tmp) go beside the
  * song instead, as <path less extension>.lrc, as Download Album Lyrics saves them, and a .downpic copy
  * that would hide them goes; cmd becomes ":", which system() runs as nothing, and stock reloads the
@@ -547,7 +547,7 @@ static int al_gone(void *ctx, void *event) {
 }
 
 /* playermore_page_init: stock's PLAYMORE_COUNT rows (PLAYMORE_ROWS' kinds by position), then ours
- * under Download Cover & Lyrics, in stock's row widgets and 20 px label, and unnamed, so stock's
+ * under Download Cover & Lyrics, in stock's row widgets and 24 px label, and unnamed, so stock's
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
  * without stock's rows is left as it built it. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
@@ -560,7 +560,7 @@ int ringnav_playermore(void *win, void *ctx) {
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
-    widget_use_style(label, "s_scrlabel_white20l");
+    widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
     widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1);
     widget_on(label, EVT_DESTROY, al_gone, label);

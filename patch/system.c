@@ -32,7 +32,7 @@ int ringnav_cardmount(void) {
     return result;
 }
 
-/* Stock's dialog_modal queues its dialog's close (0x63ec6c) on an idle holding the bare pointer
+/* Stock's dialog_modal queues its dialog's close (0x651c7c) on an idle holding the bare pointer
  * (build.py DIALOG_CLOSE), and a dialog freed before that idle ran was read from freed memory
  * (docs/internals.md#modal-dialog-close). The close goes ahead only while the dialog is still one
  * of the window manager's windows: widget_destroy takes a window out of there before freeing it.
@@ -297,7 +297,7 @@ void ringnav_clean_end(void) {
 /* Reboot record (docs/internals.md#bluetooth-boot-reconnect): when its Bluetooth controller never
  * answers rtk_hciattach, stock's openBluetooth sets bt_rtk_error, checkBluetoothStatus makes that
  * bt_initstatus BT_ABNORMAL, and on_wm_idle_status, on its next pass, shows "Bluetooth abnormal"
- * and calls device_reboot (0x4e9d0c and 0x4e9f1c, its only direct callers). A Q2 whose radio
+ * and calls device_reboot (0x4f40b8 and 0x4f42cc, its only direct callers). A Q2 whose radio
  * module is dead reboots at every boot, and each was a clean end: nothing on the card said why.
  * So ringnav_reboot has this leave S90play's q2-crash.log first, as a crash would, whole then
  * renamed: the date, the reason with the status, the uptime and the caller, dmesg's tail and, when

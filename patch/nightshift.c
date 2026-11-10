@@ -6,7 +6,7 @@
  * (night_clock). While it is on, the screen's lcd end_frame is night_end: before stock shows a
  * frame, the pixels drawn in it, those whose alpha is not NS_DONE, are warmed and given NS_DONE.
  * Stock's fills and blends write alpha 0xff over an opaque pixel (>= 0xf5; fill_bgra8888_rect
- * @0x6cbf24), so a pixel drawn again is warmed once more and one left alone is never warmed twice.
+ * @0x6def94), so a pixel drawn again is warmed once more and one left alone is never warmed twice.
  * ponytail: a fill or image pixel whose own alpha is exactly NS_DONE (stock's clear path and
  * image_copy keep it) stays unwarmed; no payload colour has it. Off puts stock's end_frame back, so
  * nothing runs per frame; the lcd is found again on the next paint after On. The setting is read at

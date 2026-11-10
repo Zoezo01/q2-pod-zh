@@ -185,7 +185,7 @@ class Deques:
 
 class Rows(Deques):
     """Deques whose stSongInfo rows are held as libcstl holds them: a push or an assign copies the row
-    into the deque (stock's copy, 0x5b3b1c; here its strings are shared), deque_at points at that copy,
+    into the deque (stock's copy, 0x5c631c; here its strings are shared), deque_at points at that copy,
     and a clear or a destroy frees it. live() counts the rows held, peak the most at once. A deque from
     new() holds values, as in Deques: the shuffle pool's, or rows the test owns."""
     def __init__(self, fw):
