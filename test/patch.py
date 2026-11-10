@@ -17482,7 +17482,8 @@ class ResumeMachine(QueueMachine):
         self.files={} if files is None else files; self.open={}; self.play=(0,0); self.seeks=[]; self.opens=self.renames=0
         self.handlers[sleep_hook+12]='stock_sleep'
         for n in ('fopen@GLIBC_2.2','fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0',
-                  'access@GLIBC_2.0','time@GLIBC_2.0','player_playtime_and_length'): self.handlers[syms[n]]='r:'+n
+                  'access@GLIBC_2.0','time@GLIBC_2.0','player_playtime_and_length',
+                  'fseek@GLIBC_2.0','ftell@GLIBC_2.0','fflush@GLIBC_2.0'): self.handlers[syms[n]]='r:'+n  # scrobble_append's checks
         self.handlers[payload_syms['stock_seek_time_trampoline']]='r:player_seek_time'
         self.epoch=1700000000
         self.mock('tk_snprintf','strstr@GLIBC_2.0')
@@ -17500,6 +17501,8 @@ class ResumeMachine(QueueMachine):
         elif name=='fread':
             f=self.open[d]; data=f[3][f[2]:f[2]+b*c]; f[2]+=len(data); self.u.mem_write(a,data); ret=len(data)//b
         elif name=='fwrite': self.open[d][3]+=bytes(self.u.mem_read(a,b*c)); ret=c
+        elif name=='fseek': f=self.open[a]; f[2]=signed(b)+(0,f[2],len(f[3]))[c]
+        elif name=='ftell': ret=self.open[a][2]
         elif name=='fclose':
             path,mode,_,data=self.open.pop(a)
             if mode in ('wb','ab'): self.files[path]=data

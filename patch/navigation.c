@@ -222,7 +222,7 @@ extern const char *radio_hold(void *top);
 extern void visualizer_paint(void *w, void *canvas), visualizer_attach(void *win);
 extern int visualizer_live(void), games_live(void);
 extern unsigned char now_cover(void *r, const char **file);
-extern void scrobble_append(const char *line, unsigned n);
+extern int scrobble_append(const char *line, unsigned n);
 extern int staged_into(void *into, int (*query)(void *), void *arg);
 /* Scope music detail loads too: spoken tracks can share all their tags with music. */
 void *staged_music(int (*query)(void *), void *arg, int *count) {

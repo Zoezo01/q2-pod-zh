@@ -1376,6 +1376,13 @@ class Card(Files):
             self.open[handle][2] = self.files.get(cstr(path), b'')
         return handle
 
+    def fseek(self, f, offset, whence, *_):
+        state = self.open[f]
+        if whence == 2 and state[2] is not None:  # an append's end is what it holds, a new file's too
+            state[1] = C.c_int(offset).value + len(state[2])
+            return 0
+        return super().fseek(f, offset, whence)
+
 
 class Hold:
     """A Play/Pause hold from ringnav_keylong to the menu's rows: Play held in stock's input status, the hold's
