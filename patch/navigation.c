@@ -1721,6 +1721,21 @@ static void draw_letter(void *canvas, const unsigned *c, rect_t *box) {
     st.raw_ink = raw;
 }
 
+/* A page whose list is in an order of its own, where a row's first letter says nothing of how far
+ * a spin has got: an album's songs (disc and track, comparator 0x506220), Up Next (play order),
+ * Chapters (the file's). In Library's song list the class decides (internals.md, fast-scroll
+ * letter): Recent, Frequent and Recently Added (0xf007-0xf009), Songs under Time added (getAllMusic
+ * 3 and 4) and a playlist's songs (0xff13) in their own order. */
+static int own_order(const char *page) {
+    if (!tk_strcmp(page, "allmusic_page")) {
+        int cls = I(g_class_type, 0), sort = I(g_sort_flag, 0);
+        return (cls >= 0xf007 && cls <= 0xf009) || cls == 0xff13 ||
+               (cls == 0xf001 && (sort == 3 || sort == 4));
+    }
+    return !tk_strcmp(page, "albuminfo_page") || !tk_strcmp(page, "playerjumpinfo_page") ||
+           !tk_strcmp(page, "upnext_page") || !tk_strcmp(page, "chapters_page");
+}
+
 /* iPod fast scroll: while the wheel ramp moves more than one row per step, the selected row's
  * first character sits in a dark translucent square over the list until LETTER_MS after the last
  * such step. A virtual table resolves the logical row in its recycled pool; an offscreen or
@@ -1733,8 +1748,8 @@ static void paint_letter(void *w, void *canvas) {
         /* nor Library's categories beside Home's pane */
         !tk_strcmp(widget_get_prop_str(w, "name", ""), "scroll_view_localmusic") ||
         /* nor an album's tracks in Cover Flow, which are in album order (disc and track).
-         * The Library's album songs never arm it (the wheel handler, by page).
-         * ponytail: other lists in an order of their own keep it */
+         * A page whose list is in an order of its own never arms it (the wheel handler, own_order).
+         * ponytail: the lists own_order doesn't know keep it (internals.md) */
         coverflow_tracks(window_of(w)))
         return;
     int i = index_of(&g_menu, widget_get_prop_int(w, SEL, -1));
@@ -10945,11 +10960,9 @@ int ringnav(void *ctx, void *event) {
             slide_menu_scroll_to_prev(w);
     } else if (g_menu.n) {
         int id = widget_get_prop_int(w, SEL, -1);
-        /* No letter over an album's songs: stock shows them in these two pages alone, in disc and
-         * track order (comparator 0x506220). Tested here, as at paint the top may already be the
-         * page a Return brings back. */
-        const char *page = widget_get_prop_str(top, "name", "");
-        if (step > 1 && tk_strcmp(page, "albuminfo_page") && tk_strcmp(page, "playerjumpinfo_page"))
+        /* No letter over a list in an order of its own. Tested here, as at paint the top may
+         * already be the page a Return brings back. */
+        if (step > 1 && !own_order(widget_get_prop_str(top, "name", "")))
             rearm(&st.letter_timer, letter_expire, LETTER_MS);
         int next = clamp_step(id < 0 ? (cur >= 0 ? g_menu.id[cur] : 0) : id, g_menu.rows - 1,
                               id < 0 ? 0 : dir * step);

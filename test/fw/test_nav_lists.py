@@ -1620,6 +1620,24 @@ def test_a_name_ordered_library_list_keeps_its_letter(fw, ui, name, cls):
     assert letter(fw, page, canvas) == ['S']
 
 
+@pytest.mark.parametrize('name, cls, sort, shown', [
+    ('upnext_page', 0xf001, 0, False),  # View Queue while a shuffle is on: the play order
+    ('chapters_page', 0xf001, 0, False),  # the file's
+    ('allmusic_page', 0xf009, 0, False),  # Recently Added: newest first
+    ('allmusic_page', 0xf007, 0, False),  # Recent: last played first
+    ('allmusic_page', 0xff13, 0, False),  # a playlist's songs: its own order
+    ('allmusic_page', 0xf001, 3, False), ('allmusic_page', 0xf001, 4, False),  # Songs by Time added, either way
+    ('allmusic_page', 0xf001, 0, True), ('allmusic_page', 0xf001, 1, True),  # Songs A to Z, and by file name
+    ('allmusic_page', 0xf002, 3, True),  # Hi-Res is by name whatever Songs' Sort is
+    ('folder_page', 0xf009, 3, True),  # Folder after Recently Added: the class and Sort are the song list's alone
+])
+def test_the_other_lists_in_an_order_of_their_own_show_no_letter(fw, ui, name, cls, sort, shown):
+    fw.var('fw_ctx_g_class_type', C.c_int).value = cls
+    fw.var('fw_ctx_g_sort_flag', C.c_int).value = sort
+    page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == (['S'] if shown else [])
+
+
 # The iPod `>` on rows that open another list.
 def chevrons(fw, page, canvas):
     fw.fn('navigation__paint_chevrons', None, C.c_void_p, C.c_void_p)(page.view.at, canvas.at)
