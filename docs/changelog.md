@@ -5,7 +5,7 @@
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
   - Settings: on **Set date and time** and the **Sleep Timer**, a Centre press followed at once by **Next** or **Previous** no longer acts as well. It used to move on a field after the button and, after **Next** near the last field, set the clock or the timer before you meant to.
   - Cover Flow: the large letter that shows while you spin quickly through a list no longer appears over an album's tracks, which are in track order, not alphabetical. It showed only on an album of more than 16 tracks.
-  - Videos: the picture no longer runs ahead of the sound when a video starts or after a seek. It used to skip a few frames, then stand still until the sound caught up. Over Bluetooth a seek may still do it.
+  - Videos: the picture no longer runs ahead of the sound when a video starts or after a seek. It used to skip a few frames, then stand still until the sound caught up.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

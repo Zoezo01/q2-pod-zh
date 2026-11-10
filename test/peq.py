@@ -2886,6 +2886,7 @@ def audio_writer_check(tmp):
 #define snd_pcm_writei mock_write
 #define snd_pcm_recover mock_recover
 #define snd_pcm_delay mock_delay
+#define snd_pcm_avail mock_avail
 #define usleep mock_sleep
 #include "video.c"
 #undef main
@@ -2918,6 +2919,7 @@ int mock_recover(void *pcm, int err, int silent) {
     return err==-19 ? err : 0;
 }
 int mock_delay(void *pcm, long *delay) { *delay=mode==3 ? 100 : 0; return 0; }
+long mock_avail(void *pcm) { return 0; } /* au.buffer 0: nothing held in the ring */
 const char *snd_strerror(int err) { return "mock error"; }
 int mock_sleep(unsigned n) { CHECK(n==1000); ++sleeps; return 0; }
 int main(void) {

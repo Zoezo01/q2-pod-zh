@@ -71,7 +71,7 @@ class FixInfo(C.Structure):
 class Au(C.Structure):
     """video.c's au: the sound thread's state, shared with the main loop."""
     _fields_ = [('pcm', C.c_void_p), ('fd', C.c_int), ('gain', C.c_int), ('paused', C.c_int), ('done', C.c_int),
-                ('played', C.c_long), ('error', C.c_char * 64), ('video', C.c_int)]
+                ('played', C.c_long), ('error', C.c_char * 64), ('video', C.c_int), ('buffer', C.c_ulong)]
 
 
 class PollFd(C.Structure):
@@ -398,6 +398,7 @@ class Q2:
         self.write_answers: list[int] = []
         self.delay = self.delay_error = 0
         self.filling = False  # ALSA before it starts: all that was written still in its buffer, the delay
+        self.buffer = self.avail = 0  # ALSA's ring and its free part, frames: by default nothing held in it
         self.strings: dict[int, int] = {}
         self.dac: list[tuple] = []
         self.real_writer = False  # the sound thread's body runs, whole, when it is started; else its model
@@ -421,7 +422,8 @@ class Q2:
                  'snd_pcm_open': self.pcm_open, 'snd_pcm_set_params': self.pcm_params, 'snd_pcm_close': self.pcm('close'),
                  'snd_pcm_drop': self.pcm('drop'), 'snd_pcm_prepare': self.pcm('prepare'),
                  'snd_pcm_drain': self.pcm('drain'), 'snd_pcm_writei': self.writei, 'snd_pcm_recover': self.recover,
-                 'snd_pcm_delay': self.pcm_delay, 'snd_strerror': self.strerror}
+                 'snd_pcm_delay': self.pcm_delay, 'snd_pcm_avail': lambda *_: self.avail,
+                 'snd_pcm_get_params': self.pcm_get_params, 'snd_strerror': self.strerror}
         for name, fn in mocks.items():
             video.mock(f'fw_{name}', fn)
 
@@ -922,6 +924,10 @@ class Q2:
         C.c_long.from_address(out).value = len(self.written) // 2 if self.filling else self.delay
         return 0
 
+    def pcm_get_params(self, pcm, buffer, period, *_):
+        C.c_ulong.from_address(buffer).value = self.buffer
+        return 0
+
     def strerror(self, err, *_):
         if i32(err) not in self.strings:
             text = C.create_string_buffer(STRERROR.get(-i32(err), b'Unknown error'))
@@ -1393,6 +1399,7 @@ def test_bluealsa_busy_at_its_params_is_waited_out_the_jack_is_not(q2, device, o
 
 @pytest.mark.parametrize('mode', ['video', 'radio', 'sink'])
 def test_the_pcm_is_s16_interleaved_stereo_at_the_sound_s_rate(q2, mode):
+    q2.buffer = 9600
     if mode == 'video':
         play(q2)
     elif mode == 'radio':
@@ -1405,6 +1412,7 @@ def test_the_pcm_is_s16_interleaved_stereo_at_the_sound_s_rate(q2, mode):
     sound = [o for r in q2.runs for n, o in outputs(r.argv) if o.get('-f') == 's16le']
     rate = int(sound[0]['-ar']) if mode != 'sink' else 44100  # ffmpeg's -ar, or librespot's 44.1 kHz
     assert params == (S16_LE, RW_INTERLEAVED, 2, rate, 1) and all(o['-ac'] == '2' for o in sound)
+    assert q2.au.buffer == 9600  # the ring the writer floors its delay at
 
 
 # Internet Radio
@@ -1589,12 +1597,15 @@ def test_a_video_s_failed_write_is_dropped_and_its_sound_read_on(q2):
     assert q2.written == sound[1024:] and not q2.au.error and q2.au.done
 
 
-@pytest.mark.parametrize('delay, error, heard', [
-    (300, 0, 1536 - 300), (0, 0, 1536), (0, -EPIPE, 1536), (-64, 0, 1536),
-    (2000, 0, 0),  # more than was written (Bluetooth adds the link's own delay): nothing heard yet
+@pytest.mark.parametrize('delay, error, avail, heard', [
+    (300, 0, 9600, 1536 - 300), (0, 0, 9600, 1536), (0, -EPIPE, 9600, 1536), (-64, 0, 9600, 1536),
+    (2000, 0, 9600, 0),  # more than was written (Bluetooth adds the link's own delay): nothing heard yet
+    (300, 0, 9600 - 1536, 0),  # after a seek's drop bluealsa answers the link alone; the ring still holds it all
+    (300, 0, 9600 - 1000, 1536 - 1000), (300, 0, -EPIPE, 1536 - 300),  # the ring past the delay; an XRUN: the delay
 ])
-def test_played_is_what_was_written_less_what_alsa_still_holds(q2, delay, error, heard):
-    q2.delay, q2.delay_error = delay, error
+def test_played_is_what_was_written_less_what_alsa_still_holds(q2, delay, error, avail, heard):
+    q2.delay, q2.delay_error, q2.avail = delay, error, avail
+    q2.au.buffer = 9600
     writer(q2, pcm(1536).tobytes())
     assert q2.au.played == heard
 

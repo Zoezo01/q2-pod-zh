@@ -162,7 +162,8 @@ int snd_pcm_open(void **, const char *, int, int), snd_pcm_close(void *), snd_pc
 int snd_pcm_set_params(void *, int, int, unsigned, unsigned, int, unsigned), snd_pcm_prepare(void *);
 int snd_pcm_recover(void *, int, int), snd_pcm_delay(void *, long *), snd_pcm_drain(void *);
 const char *snd_strerror(int);
-long snd_pcm_writei(void *, const void *, unsigned long);
+long snd_pcm_writei(void *, const void *, unsigned long), snd_pcm_avail(void *);
+int snd_pcm_get_params(void *, unsigned long *, unsigned long *);
 
 #define O_RDWR 2
 #define O_WRONLY 1
@@ -188,6 +189,7 @@ static struct {
     volatile long played;  /* frames heard since this ffmpeg started */
     char error[64];        /* why sound_open found no device, or the writer stopped, for RADIO_STATE */
     int video;             /* a failed write is dropped: the picture needs ffmpeg's sound read on */
+    unsigned long buffer;  /* ALSA's ring, frames (sound_open) */
 } au;
 
 static void *writer(void *unused) {
@@ -241,10 +243,12 @@ static void *writer(void *unused) {
             written += r;
             recovered = 0;
         }
+        long avail = snd_pcm_avail(au.pcm), ring = avail >= 0 ? (long)au.buffer - avail : 0;
         if (snd_pcm_delay(au.pcm, &delay) || delay < 0) delay = 0; /* no answer: it ran dry */
         /* nothing heard while ALSA still holds all that was written (its first fill; Bluetooth adds
-         * the link's own delay): counting it would run the picture ahead at each start and seek.
-         * ponytail: after a seek Bluetooth answers only the link's delay: that fill still counts */
+         * the link's own delay), nor what its ring still holds: after a seek's drop bluealsa
+         * answers the link's delay alone */
+        if (delay < ring) delay = ring;
         au.played = delay < written ? written - delay : 0;
     }
     return au.done = 1, (void *)0; /* played stays behind the buffer, as the picture's clock wants */
@@ -321,6 +325,8 @@ static int sound_open(const char *dev, const char *vol, unsigned rate) {
         if (au.pcm && err)
             snd_pcm_close(au.pcm), au.pcm = 0,
                 snprintf(au.error, sizeof au.error, "params: %s", snd_strerror(err));
+        unsigned long period;
+        if (au.pcm) snd_pcm_get_params(au.pcm, &au.buffer, &period);
         if (au.pcm && jack && (dac = open(DAC, O_RDWR | O_CLOEXEC)) >= 0)
             ioctl(dac, DAC_PCM, &off), ioctl(dac, DAC_MUTE, &off);
     }
