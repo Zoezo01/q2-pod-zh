@@ -156,6 +156,7 @@ class Ui:
         m('widget_get_text', lambda w, *_: C.addressof(self.texts[w]) if w in self.texts else 0)
         m('widget_set_text', lambda w, s, *_: self.set_text(w, read_wide(s)))
         m('widget_set_text_utf8', lambda w, s, *_: self.set_text(w, C.string_at(s).decode()))
+        m('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, s := (self.text(w) or '').encode()[:n - 1] + b'\0', len(s)) and 0)
         m('widget_get_visible', lambda w, *_: self.shown.get(w, 1))
         m('widget_set_visible', lambda w, v, *_: self.shown.__setitem__(w, int(bool(v))))
         m('widget_move_resize', lambda w, x, y, ww, h, *_: self.place(w, x, y, ww, h))
@@ -983,8 +984,7 @@ def label_font(ui, w):
     return ui.prop(w, b'style:normal:font_name'), ui.prop(w, b'style:normal:font_size')
 
 
-@pytest.mark.parametrize('text, face', [(LATIN, b'classic-light'), (CYRILLIC, b'bold'), (CJK, b'default'),
-                                        ('\u25b6 ' + LATIN, b'classic-light'), ('\u25b6 ' + CYRILLIC, b'bold')])  # View Queue's playing row
+@pytest.mark.parametrize('text, face', [(LATIN, b'classic-light'), (CYRILLIC, b'bold'), (CJK, b'default')])
 def test_classics_title_face_falls_back_by_the_text(fw, st, ui, ranges, text, face):
     assert first_face(ranges, text) == face  # the text is where the cmaps say, or the test proves nothing
     theme(fw, st, CLASSIC)
@@ -1043,6 +1043,27 @@ def test_a_pooled_rows_labels_find_their_face_again_for_the_text_stock_bound(fw,
     assert fw.fn('ringnav_table_load', C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(0x55, 3, row) == 7
     assert bound == [(0x55, 3, row)]
     assert label_font(ui, title)[0] == b'default' and ui.prop(plain, b'style:normal:font_name') is None
+
+
+@pytest.mark.parametrize('text', [LATIN, CYRILLIC, CJK])
+def test_the_playing_rows_mark_keeps_its_titles_face_under_classic(fw, st, ui, ranges, text):
+    """View Queue's playing row, bound as stock's on_load_data binds it: title, style, then the faces again."""
+    theme(fw, st, CLASSIC)
+    table = ui.widget(ui.wm, 'table')
+    row = ui.widget(table, 'row')
+    title = ui.widget(row, 'title', text='')
+    def load(ctx, index, w):
+        fw.fn('stock_row_text', C.c_int, C.c_void_p, C.c_char_p)(title, text.encode())
+        fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)(title, b's_scrlabel_red20l')
+        return 7
+    stock = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(load)
+    C.c_void_p.from_address(table + O['TABLE_LOAD_DATA']).value = C.cast(stock, C.c_void_p).value
+    assert fw.fn('ringnav_table_load', C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(0x55, 3, row) == 7
+    plain = ui.widget(ui.wm, 'label', text=text)  # the same title without the mark
+    fw.fn('theme_font', C.c_int, C.c_void_p, C.c_int, C.c_int)(plain, ROLE_TITLE, FONT_ROW)
+    face, px = label_font(ui, title)
+    assert ui.text(title).startswith('▶ ') and (face, px) == label_font(ui, plain)
+    assert face == first_face(ranges, text) and (px < TITLE_PX if face == b'bold' else px == TITLE_PX)
 
 
 # Now Playing (ringnav_playing): the iPod labels bound, the bar and its fill, the times, scrub.
