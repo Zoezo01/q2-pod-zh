@@ -1571,6 +1571,25 @@ def test_coverflows_album_tracks_show_no_letter(fw, ui):
     assert letter(fw, page, canvas) == ['S']  # the same spin with no album open keeps its letter
 
 
+@pytest.mark.parametrize('name, cls', [('albuminfo_page', 0xff10), ('albuminfo_page', 0xff11),
+                                       ('playerjumpinfo_page', 0xff10)])
+def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls):
+    fw.var('fw_ctx_g_class_type', C.c_int).value = cls
+    page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == []  # in disc and track order, not A to Z
+
+
+@pytest.mark.parametrize('name, cls', [
+    ('album_page', O['CLASS_ALBUMS']),  # the Albums list a Return brings back
+    ('artistinfo_page', 0xff11),  # Go to Artist from an album, one of its albums opened, Return: stock reloads nothing
+])
+def test_a_name_ordered_library_list_keeps_its_letter(fw, ui, name, cls):
+    fw.var('fw_ctx_g_class_type', C.c_int).value = cls
+    C.c_int.from_buffer(fw.var('fw_ctx_g_local_classinfo_save', C.c_ubyte * 912)).value = cls
+    page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == ['S']
+
+
 # The iPod `>` on rows that open another list.
 def chevrons(fw, page, canvas):
     fw.fn('navigation__paint_chevrons', None, C.c_void_p, C.c_void_p)(page.view.at, canvas.at)

@@ -1733,7 +1733,8 @@ static void paint_letter(void *w, void *canvas) {
         /* nor Library's categories beside Home's pane */
         !tk_strcmp(widget_get_prop_str(w, "name", ""), "scroll_view_localmusic") ||
         /* nor an album's tracks in Cover Flow, which are in album order (disc and track).
-         * ponytail: other lists in an order of their own keep it, the Library's album songs too */
+         * The Library's album songs never arm it (the wheel handler, by page).
+         * ponytail: other lists in an order of their own keep it */
         coverflow_tracks(window_of(w)))
         return;
     int i = index_of(&g_menu, widget_get_prop_int(w, SEL, -1));
@@ -10883,7 +10884,12 @@ int ringnav(void *ctx, void *event) {
             slide_menu_scroll_to_prev(w);
     } else if (g_menu.n) {
         int id = widget_get_prop_int(w, SEL, -1);
-        if (step > 1) rearm(&st.letter_timer, letter_expire, LETTER_MS);
+        /* No letter over an album's songs: stock shows them in these two pages alone, in disc and
+         * track order (comparator 0x4fb880). Tested here, as at paint the top may already be the
+         * page a Return brings back. */
+        const char *page = widget_get_prop_str(top, "name", "");
+        if (step > 1 && tk_strcmp(page, "albuminfo_page") && tk_strcmp(page, "playerjumpinfo_page"))
+            rearm(&st.letter_timer, letter_expire, LETTER_MS);
         int next = clamp_step(id < 0 ? (cur >= 0 ? g_menu.id[cur] : 0) : id, g_menu.rows - 1,
                               id < 0 ? 0 : dir * step);
         if (next == 0 || next == g_menu.rows - 1) drop_wheel();
