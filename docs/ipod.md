@@ -485,7 +485,7 @@ once a step moves more than one row, from 300 ms of continuous spin
 at once on a slow tick, a touch or the end of the list. Latin letters show in
 capitals; leading spaces are skipped, as is a leading "The", "A" or "An" in library lists
 ([internals.md](internals.md#sorting)), and any other character shows as it is. Home, Library's categories (on its page or beside Home's pane), settings menus
-(`CTX_FIXED` windows, which are not alphabetical) and other short lists never show it. Values are in `patch/offsets.inc` (`LETTER_*`); see
+(`CTX_FIXED` windows, which are not alphabetical) and other short lists never show it, and nor does an album's track list in Cover Flow, which is in album order (disc and track). Values are in `patch/offsets.inc` (`LETTER_*`); see
 [internals.md](internals.md#drawing).
 
 ## Now Playing

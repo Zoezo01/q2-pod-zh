@@ -1731,7 +1731,9 @@ static void paint_letter(void *w, void *canvas) {
         st.touch_mode || !P(canvas, CANVAS_LCD) || !load_rows(&g_menu, w) ||
         (g_menu.ctx >= 0 && contexts[g_menu.ctx].kind == CTX_FIXED) || /* menus: not alphabetical */
         /* nor Library's categories beside Home's pane */
-        !tk_strcmp(widget_get_prop_str(w, "name", ""), "scroll_view_localmusic"))
+        !tk_strcmp(widget_get_prop_str(w, "name", ""), "scroll_view_localmusic") ||
+        /* nor an album's tracks in Cover Flow, which are in album order (disc and track) */
+        coverflow_tracks(window_of(w)))
         return;
     int i = index_of(&g_menu, widget_get_prop_int(w, SEL, -1));
     const unsigned *s = i < 0 ? (void *)0 : row_id(g_menu.at[i]).title;
