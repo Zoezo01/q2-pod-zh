@@ -3789,31 +3789,26 @@ static void play_word_create(void *bar) {
     if (st.play_word || !st.bar_state) return;
     if (st.bar_title) /* Classic: the glyph is by the battery on the right, so the word stands
                        * where the page's name would — two px in (hscroll_label's own margin) and
-                       * on its baseline, left-aligned, so the bar reads as one line whether it
-                       * shows a name or the state. Its face reads the word's text once
-                       * bar_word_sync writes it (bar_title_sync's own order). */
-        st.play_word = label_create(bar, I(st.bar_title, W_X) + 2, I(st.bar_title, W_Y),
-                                    PLAY_WORD_WIDE, I(st.bar_title, W_H));
+                       * on its baseline, so the bar reads as one line whether it shows a name or
+                       * the state. */
+        st.play_word = hscroll_label_create(bar, I(st.bar_title, W_X) + 2, I(st.bar_title, W_Y),
+                                            PLAY_WORD_WIDE, I(st.bar_title, W_H));
     else
-        st.play_word = label_create(bar, 0, 0, PLAY_WORD_W, I(bar, W_H));
+        st.play_word = hscroll_label_create(bar, 0, 0, PLAY_WORD_W, I(bar, W_H));
     if (!st.play_word) { /* the bar refused the child: the left view, which stock's own flow keeps */
         void *left = P(st.bar_state, W_PARENT);
         if (left)
-            st.play_word = label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
+            st.play_word = hscroll_label_create(left, 0, 0, PLAY_WORD_W, I(bar, W_H));
         if (!st.play_word) return;
     }
     widget_set_name(st.play_word, "label_playword");
-    widget_use_style(st.play_word, "s_label_white16c");
-    /* Left, in either state: the style's own centre slid the word half a box right of the page
-     * name's ink. The ink is written for every state — the bar takes no input, and its children
-     * read the disable state's style, which the one-state writes before kept white (the word read
-     * white on the light bar through V172Y and V172A). text_ink's flip puts the light half's ink
-     * in, and the half's change rewrites it (bar_word_sync's key). */
-    for (unsigned i = 0; i < 2; ++i)
-        widget_set_prop_str(st.play_word, i ? "style:disable:text_align_h" : "style:normal:text_align_h",
-                            "left");
+    /* The page name's own widget and style (bar_title_sync's label_title): its white is the half
+     * the style table states, so Light Mode turns it dark the way it does the page name's. A
+     * plain label with the word's own style stayed white in either half — the style table has no
+     * light value for it — and written inks fought the bar's own styling (V172Y..V172B). */
+    widget_use_style(st.play_word, "s_scrlabel_white20l");
+    widget_set_prop_str(st.play_word, "style:normal:text_align_h", "left");
     widget_set_prop_int(st.play_word, "style:normal:bg_color", 0); /* the bar's own fill shows */
-    text_ink(st.play_word, 0xffffffffu, 15);
     if (!st.bar_title)
         widget_set_prop_int(st.play_word, "style:normal:font_size", PLAY_WORD_PX);
     widget_set_visible(st.play_word, 0, 0);
@@ -3854,7 +3849,6 @@ static int bar_word_sync(void *bar) {
         /* The face reads the text — the word was created empty, so its first answer kept the
          * classic face, which has no hanzi and painted the word as nothing (#V172Y). */
         theme_font(st.play_word, ROLE_BAR, FONT_ROW);
-        text_ink(st.play_word, 0xffffffffu, 15); /* every state: the bar's children read disable's */
     }
     if (was != show) widget_set_visible(st.play_word, show, 0);
     return changed || was != show;
@@ -3966,7 +3960,8 @@ static void bar_sync(void *bar) {
         widget_move_resize(st.bar_wifi, I(st.bar_wifi, W_X), T->bar_wifi_dy, I(st.bar_wifi, W_W),
                            I(st.bar_wifi, W_H));
     int classic_light = T->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT,
-        body = geom_val(V_BATT_W) + 1, /* its soft edge's column */
+        body = (geom_val(V_BATT_W) ?: BATT_BODY_W) + 1, /* its soft edge's column; a theme without
+                                                           batt_w keeps the built-in body */
         inside = classic_light ? body : BATT_INSIDE_W;
     int mode = st.battery;
     if (mode) {
@@ -4169,7 +4164,8 @@ static void paint_battery(void *w, void *canvas) {
         stock_canvas_set_fill_color(canvas, fill);
         return;
     }
-    const int bw = inside ? BATT_INSIDE_W : geom_val(V_BATT_W), bh = inside ? BATT_INSIDE_H : geom_val(V_BATT_H),
+    const int bw = inside ? BATT_INSIDE_W : geom_val(V_BATT_W) ?: BATT_BODY_W,
+          bh = inside ? BATT_INSIDE_H : geom_val(V_BATT_H) ?: BATT_BODY_H,
               nh = BATT_NUB_H, y = (I(w, W_H) + 1 - bh) / 2 - BATT_PCT_DY * (st.batt_mode == 2);
     canvas_set_fill_color(canvas, color);
     if (inside) {

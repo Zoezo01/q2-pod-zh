@@ -24,8 +24,10 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # own bare pad had slid the left group under the glass corner) — and B writes the word's ink for
 # every style state: the bar takes no input and its children read disable's, which the one-state
 # writes kept white (white on the light bar through Y and A).
+# C gives the word the page name's own widget and style (hscroll_label, s_scrlabel_white20l): the
+# style table states its light half, which a plain label's own style never did.
 # The letters round at Z; A reads newer than Z within the 1.7.2 line.
-TAG = 'V' + VERSION.replace('.', '') + 'B'
+TAG = 'V' + VERSION.replace('.', '') + 'C'
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
