@@ -13,6 +13,7 @@ import pytest
 
 import build
 import ipod
+import theme
 
 
 def image(size=0x400000, base=0x400000, null=False):
@@ -444,13 +445,40 @@ def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
     assert xs[0] == xs[1] and ys[1] == (ys[0] + ys[2]) // 2  # an upright edge on the left, its point level with the middle
     assert abs(ys[0] + ys[2] - cap) <= 1  # on the capitals' middle
     assert abs((ys[2] - ys[0]) / cap - .78) < .005 and abs((xs[2] - xs[0]) / cap - .70) < .005
-    # a Classic row's title is 27 px, bold standing in at 83% of that (navigation.c fallback_px): the
-    # upright edge lies on a pixel's, so it is drawn sharp
-    pixel = (font['hhea'].ascent - font['hhea'].descent) / {'bold_font': 22, 'classic_light_font': 27}[face]
+    # at a Classic row's title px, bold standing in at FACE_FALLBACK_PCT of it (navigation.c fallback_px),
+    # the upright edge lies on a pixel's, so it is drawn sharp
+    px = next(t for t in theme.builtins() if t['id'] == 'classic-light')['font_px[ROLE_TITLE]']
+    pct = re.search(r'#define FACE_FALLBACK_PCT (\d+)', (build.ROOT/'patch/navigation.c').read_text())
+    assert pct
+    pixel = (font['hhea'].ascent - font['hhea'].descent) / (px if face == 'classic_light_font' else (px * int(pct[1]) + 50) // 100)
     assert abs(xs[0] / pixel - 1) < .02
     advance, bearing = font['hmtx'][name]
     assert bearing == xs[0] and advance == xs[2] + bearing  # as much room after it as before
+    area = sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]))
+    if 'CFF ' in font:  # the charstring's own width is the advance; outer contours run counter-clockwise
+        charstring = font['CFF '].cff.topDictIndex[0].CharStrings[name]
+        charstring.draw(RecordingPen())
+        assert charstring.width == advance and area > 0
+    else:  # and clockwise in glyf
+        assert area < 0
     assert font['maxp'].numGlyphs == len(font.getGlyphOrder()) and font.getGlyphOrder()[-1] == name
+
+
+@pytest.mark.parametrize('face, src', [('bold_font', 'LiberationSans-Bold.ttf'), ('classic_light_font', 'texgyreheros-bold.otf')])
+def test_the_faces_keep_every_other_glyph_as_drawn(face, src):
+    """assets/fonts/README-classic-light.txt: no outline or metric of the original's is changed; the
+    mark is the one glyph added, at the end."""
+    from fontTools.pens.recordingPen import DecomposingRecordingPen
+    from fontTools.ttLib import TTFont
+    font, source = TTFont(io.BytesIO(getattr(build, face)()[0])), TTFont(build.ROOT/'assets/fonts'/src)
+    def drawn(font, name):  # components decomposed: the subset drops post's names, so a component's is uniXXXX
+        glyphs = font.getGlyphSet()
+        pen = DecomposingRecordingPen(glyphs)
+        glyphs[name].draw(pen)
+        return pen.value, font['hmtx'][name]
+    cmap, was = font.getBestCmap(), source.getBestCmap()
+    assert all(drawn(font, cmap[u]) == drawn(source, was[u]) for u in cmap if u != build.PLAY_MARK)
+    assert font.getGlyphOrder()[-1] == cmap[build.PLAY_MARK]
 
 
 HEART = [(50, -10), (1250, -10), (1250, 1490), (50, 1490)]

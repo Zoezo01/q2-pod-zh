@@ -835,7 +835,6 @@ def play_mark(font):
         top.CharStrings.charStringsIndex.append(pen.getCharString(top.Private, cff.GlobalSubrs))
         top.CharStrings.charStrings[name] = len(top.CharStrings.charStringsIndex) - 1
         top.charset.append(name)
-        font.setGlyphOrder(top.charset)  # one list, as in a font just read: the subsetter left a copy
     else:
         from fontTools.pens.ttGlyphPen import TTGlyphPen
         font['glyf'][name] = drawn(TTGlyphPen(None), points).glyph()
@@ -844,23 +843,24 @@ def play_mark(font):
         if table.isUnicode(): table.cmap[PLAY_MARK] = name
 
 def subset_font(src, family, ranges_macro, notice=None):
-    """src cut to its Latin, Greek, Cyrillic and punctuation, a play mark added (play_mark), renamed
-    family (its own name is the font's reserved name under OFL and GUST alike): the font's bytes and
-    ranges_macro listing exactly what it keeps. notice, if any, goes in its description (name ID 10)."""
+    """src given a play mark (play_mark), then cut to its Latin, Greek, Cyrillic, punctuation and that
+    mark, renamed family (its own name is the font's reserved name under OFL and GUST alike): the font's
+    bytes and ranges_macro listing exactly what it keeps. notice, if any, goes in its description (name
+    ID 10)."""
     from fontTools import subset
     from fontTools.ttLib import TTFont
     font = TTFont(src, recalcTimestamp=False)
     old = font['name'].getDebugName(1)
     label = ranges_macro.split('_')[0].title()
     have = sorted(u for u in font.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    play_mark(font)
+    have.append(PLAY_MARK)
     options = subset.Options()
     if notice: options.name_IDs.append(7)  # the trademark notice, as its licence asks
     sub = subset.Subsetter(options)
     sub.populate(unicodes=have)
     sub.subset(font)
     check(sorted(font.getBestCmap()) == have, f'{label} font subset lost characters')
-    play_mark(font)
-    have.append(PLAY_MARK)
     # A subset is a Modified Version: it may not carry the Reserved Font Name (its names; the notices
     # are the licence files FONT_NOTICES ships beside it)
     for rec in font['name'].names:
@@ -885,7 +885,7 @@ def subset_font(src, family, ranges_macro, notice=None):
     return out.getvalue(), f'#define {ranges_macro} {{' + ','.join(f'0x{u:x}' for r in runs for u in r) + '}'
 
 # The bold face (navigation.c theme_font; Modern's Now Playing title, Classic's fallback where its own lacks a character): Liberation Sans Bold (OFL, assets/fonts), cut to its Latin,
-# Greek, Cyrillic and punctuation. BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
+# Greek, Cyrillic and punctuation, with a play mark (play_mark). BOLD_RANGES, from the same cmap, lists exactly what it keeps, so a
 # label holding anything else (CJK, say) keeps the stock font.
 BOLD_TTF = 'release/assets/default/raw/fonts/bold.ttf'
 
