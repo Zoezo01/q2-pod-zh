@@ -15795,8 +15795,8 @@ class AppMachine(BrowseMachine):
 m=AppMachine(); card_app(m,'filebrowser','name=File Browser\nqr=1\n'); card_app(m,'deezer','name=Deezer\n')
 card_app(m,'gone','name=Gone\n'); m.files.pop('/mnt/mmc/.gone/q2-gone'); card_app(m,'Bad_Id','name=Bad\n')
 m.tree['/mnt/mmc']+=[('.spotify',4),('Music',4)]; m.files['/mnt/mmc/.spotify/librespot']=bytearray()
-# Its own icon when it ships one: the rows' 40 px, else the 52 px one.
-for f in ('/mnt/mmc/.deezer/icon.png','/mnt/mmc/.deezer/icon-40.png','/mnt/mmc/.soulseek/icon.png'): m.files[f]=bytearray()
+# Its own icon when it ships one: the rows' 40 px, else the 52 px one (addon_scan reads each one's size).
+for f in ('/mnt/mmc/.deezer/icon.png','/mnt/mmc/.deezer/icon-40.png','/mnt/mmc/.soulseek/icon.png'): m.files[f]=bytearray(png_head(40,40))
 rows=stream_rows(m)
 assert list(rows)==['Spotify','Deezer','File Browser','Soulseek','Tidal Downloads','Internet Radio','AirPlay','Configuration'],list(rows)
 icons={'Deezer':'file:///mnt/mmc/.deezer/icon-40.png',
@@ -15838,7 +15838,7 @@ def stream_shows(m):  # what the pane shows: the bitmap's name, its source and s
     art=named(m,m.top,'img_homeart'); m.letters=[]; m.calls=[]; m.draws=[]; m.image_loads=[]
     m.call(address=payload_syms['coverflow_home_clip'],args=(art,m.canvas,0,0),gap=0)
     return m.image_loads,[d[2:4] for d in m.draws],[l['text'] for l in m.letters]
-m=split_stream(); card_app(m,'deezer','name=A long name for a card app here\n'); m.files['/mnt/mmc/.deezer/icon.png']=bytearray()
+m=split_stream(); card_app(m,'deezer','name=A long name for a card app here\n'); m.files['/mnt/mmc/.deezer/icon.png']=bytearray(png_head(52,52))
 lst,sets,slist=[named(m,m.top,n) for n in ('list_view_home','list_view_homeset','list_view_homestream')]; sview=named(m,m.top,'scroll_view_streamsset'); art=named(m,m.top,'img_homeart')
 assert not m.nodes[slist]['visible'] and m.nodes[slist]['sensitive']==0
 ltitle=m.node('hscroll_label','label_title'); lbar=classic_light_bar(m,ltitle)
