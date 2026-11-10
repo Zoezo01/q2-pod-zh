@@ -34,7 +34,7 @@
   - Settings: **Wi-Fi file transfer** under **Network** is now **Wi-Fi File Transfer**, capitalised as the rows around it.
   - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
   - Cover Flow: once a fast spin goes by letters, the letters last until you lift your thumb, then the covers fold out onto that letter's first album. Letters used to end as soon as you slowed down or turned back. In the Year sort a fast spin goes by years the same way.
-  - Cover Flow: the cover coming in at the screen's edge is drawn whole as the covers move.
+  - Cover Flow: the cover coming in at the screen's edge is drawn whole as the covers move, and covers load while going by letters without slowing the frames. To do that, Cover Flow keeps a small copy of each cover beside its cache, made about ten a second while it sits idle: about 26 KB each, but at least one of the card's clusters, so up to 128 KB each on a card formatted with large clusters.
   - Cover Flow: frames draw faster, about 50 a second where there were about 32.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.

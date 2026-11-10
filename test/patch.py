@@ -10003,20 +10003,21 @@ passed()
 # Coverflow depth (docs/internals.md#coverflow-depth): the payload's renderer, run as MIPS, draws
 # byte for byte what the host build of the same source draws (test/coverflow.py checks that
 # one's geometry); on the page it spans the frame, draws through the stock canvas and hit-tests taps.
-BIG=0x2000000
+BIG,BIG_SIZE=0x2000000,0x3000000  # the frames, the thumb's 6.8 MB texture pool and Home's large covers
 def cover_pixels(seed,n=160*160):
     return b''.join(struct.pack('<I',0xff000000|((i*2654435761+seed*40503)>>7)&0xffffff) for i in range(n))
 class DepthMachine(CoverflowMachine):
     budget=50_000_000  # decoding and rendering run in the payload, at native emulator speed (fast)
     def __init__(self,**kw):
         super().__init__(**kw)
-        self.u.mem_map(BIG,0x1800000); self.big=BIG
+        self.u.mem_map(BIG,BIG_SIZE); self.big=BIG
         self.frames=[]; self.destroyed=[]; self.draws=[]; self.loads=[]; self.unloads=0; self.pixels={}
         self.art_size=(160,160)  # the covers' decoded size; the placeholder is always 160 square
         self.art_sizes={}  # by URL ending, sizes other than art_size
+        self.handlers[syms['sem_post@GLIBC_2.2']]='loader_wake'  # the loader's thread can't run here: its body, at each wake-up
         self.fast()
     def big_alloc(self,n):
-        a=self.big; self.big+=(n+15)&~15; assert self.big<=BIG+0x1800000; return a
+        a=self.big; self.big+=(n+15)&~15; assert self.big<=BIG+BIG_SIZE; return a
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         a,b,c,d=[u.reg_read(r) for r in REGS]
@@ -10026,6 +10027,10 @@ class DepthMachine(CoverflowMachine):
             self.word(ret,a); self.word(ret+4,b); self.word(ret+8,c); self.u.mem_write(ret+0xc,struct.pack('<HH',0,d)); self.word(ret+0x14,data)
             self.frames.append(ret)
         elif name=='bitmap_destroy': self.destroyed.append(a); ret=0
+        elif name=='loader_wake':
+            self.wakes=getattr(self,'wakes',0)+1
+            while self.nested(payload_syms['ld_step']): pass
+            ret=0
         elif name=='bitmap_lock_buffer_for_read': ret=self.get(a+0x14)
         elif name=='widget_load_image':
             url=self.text(b); self.loads.append(url) if a==self.top else None  # Coverflow's, not iPod Home's
@@ -10046,10 +10051,12 @@ class DepthMachine(CoverflowMachine):
         self.calls.append((name,a,b,c))
         self.returns(ret,clobber=True)
 
-def host_render(textures,cases,style=None,paper=None,still=False):
+def host_render(textures,cases,style=None,paper=None,windows=False,still=False):
     """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases. style: a theme's cf.* values; paper: the light half's.
     15 textures make the thumb's wide ring; a case's (kind, lean, a, b) then sets the thumb: 1 letters, the row held as an entry from the row at
-    lead a/1000 leaves it, 2 a ms into the fold from that row held at lead b/1000, 3 the entry, lead a/1000 and b/1000 albums to go.
+    lead a/1000 leaves it, 2 a ms into the fold from that row held at lead b/1000, 3 the entry, lead a/1000 and b/1000 albums to go, 4 letters
+    with the row held as the case's next five numbers have it (hold_lead, hold_run, hold_xrun, hold_xs, hold_k).
+    windows: also each case's window middle from the album at the middle (cf_frame_window), as a second list.
     still: nothing moving, as the page's own frame at rest (the shelf's seven); else moving, as a direct render is."""
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
@@ -10069,8 +10076,9 @@ int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
 unsigned time_now_ms(void) { return 0; } /* the fold's clock: fold_at counts back from 0 */
 void cf_thumb_lead(float), cf_thumb_lean(int), cf_thumb_fold(int, unsigned), cf_thumb_enter(int, float, float);
-void cf_thumb_speed(float, float);
+void cf_thumb_speed(float, float), cf_thumb_held(float, float, float, float, int);
 float cf_thumb_hold(int, float, int);
+int cf_frame_window(int);
 void cf_shelf_still(int);
 const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
 #define N %d
@@ -10082,13 +10090,18 @@ int main(void) {
     int frac, mask, kind, lean, a, b;
     while (scanf("%%d %%d %%d %%d %%d %%d", &frac, &mask, &kind, &lean, &a, &b) == 6) {
         for (int j = 0; j < N; ++j) ring[j] = mask >> j & 1 ? tex[j] : 0;
+        float h[4];
+        int k;
+        if (kind == 4 && scanf("%%f %%f %%f %%f %%d", h, h + 1, h + 2, h + 3, &k) != 5) return 1;
         cf_thumb_enter(0, 0, 0), cf_thumb_lead(-1), cf_thumb_speed(0, 0);
         if (kind == 1 || kind == 2) cf_thumb_hold(lean, (kind == 1 ? a : b) / 1000.f, 0);
-        if (kind == 1) cf_thumb_lean(lean);
+        if (kind == 4) cf_thumb_held(h[0], h[1], h[2], h[3], k);
+        if (kind == 1 || kind == 4) cf_thumb_lean(lean);
         if (kind == 2) cf_thumb_fold(lean, -(unsigned)a);
         if (kind == 3) cf_thumb_enter(lean, a / 1000.f, b / 1000.f);
         coverflow_render(frame, %d, frac, ring + (N - 7) / 2);
         fwrite(frame, 4, sizeof(frame) / 4, stdout);
+        fprintf(stderr, "window %%d\n", cf_frame_window(frac));
         fflush(stdout);
     }
     return 0;
@@ -10098,10 +10111,11 @@ int main(void) {
         subprocess.run(['cc','-O1','-DPEQ_HOST','-DPEQ_ROOT=""','-D_GNU_SOURCE',
                         '-ffunction-sections','-fdata-sections','-Wl,--gc-sections','-I',str(ROOT/'patch'),'-include',str(d/'shim.h'),
                         str(d/'coverflow_all.c'),str(d/'main.c'),'-o',str(d/'render')],check=True)
-        feed=b''.join(textures)+''.join(' '.join(str(x) for x in (*c,0,0,0,0)[:6])+'\n' for c in cases).encode()
-        out=subprocess.run([str(d/'render')],input=feed,capture_output=True,check=True).stdout
+        feed=b''.join(textures)+''.join(' '.join('%.9g'%x if isinstance(x,float) else str(x) for x in (*c,0,0,0,0)[:max(6,len(c))])+'\n' for c in cases).encode()
+        run=subprocess.run([str(d/'render')],input=feed,capture_output=True,check=True); out=run.stdout
     size=4*O['CF_VIEW_W']*rows
-    return [out[i*size:(i+1)*size] for i in range(len(cases))]
+    frames=[out[i*size:(i+1)*size] for i in range(len(cases))]
+    return (frames,[int(l.split()[1]) for l in run.stderr.decode().splitlines() if l.startswith('window ')]) if windows else frames
 
 ps=payload_syms
 textures=[cover_pixels(100+j) for j in range(7)]
@@ -10259,14 +10273,14 @@ CF_DEFINES={k:int(v) for k,v in re.findall(r'^#define (\w+) (\d+)',(ROOT/'patch/
 TH_AT={f:4*i for i,f in enumerate(f for l in re.findall(r'^\s*\w+ ([^;]+);',re.sub(r'/\*.*?\*/','',re.search(r'typedef struct \{([^}]*)\} cf_thumb_t;',(ROOT/'patch/coverflow.h').read_text())[1],flags=re.S),re.M) for f in re.split(r',\s*',l))}  # every field 4 bytes
 def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 # Raw on the covers, each pass, in every theme; a turn writes the offset itself and no tick or animator is about.
-# The whole wider ring is allocated at the open.
+# The shelf's texture pool is allocated at the open: going by letters adds the rest (below).
 for theme in ('1','0','2'):
     SETUP[:]=[lambda k:(k.config.update(THEME=theme),k)]
     try: m=DepthMachine(albums=9)
     finally: SETUP.clear()
     m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
     tp(m); assert traw(m)==2 and not m.slides,theme
-    assert (15+1)*160*160*4 in m.live.values(),theme
+    assert (15+2)*160*160*4 in m.live.values(),theme  # CF_WIDE, the placeholder, the half copies' slot
     thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel']),theme
     trest(m); assert toff(m)==0,theme; passed()
 # wheel_raw never stays set: each way off the covers gives the wheel back at the next pass, the travel gone, the
@@ -10463,6 +10477,74 @@ for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.s
         assert bytes(m.u.mem_read(frame,len(host)))==host,(name,c)
         assert n[0]<FRAME_BOUND.get(c[2] if len(c)>2 else 0,1<<30),(name,c,n[0])
     m.u.hook_del(h); th_set(m); passed()
+# Going by letters, as MIPS, the held row from half copies: each album's <key>.jpg.half read whole (80 x 80 texels, raw)
+# by the loader (its thread's body run at each wake-up, as the emulator runs no threads), LD_SLOTS a paint, nearest the
+# middle of the window of the letter gone to first, spread two by two into its texture, mid-slide the frame byte for byte
+# the host's from the same copies and the same held row (its window's middle, round the nine albums, one of the nine); one
+# cut short is none, its own art decoding instead.
+# The release build carries no dev-only code (the gap log's).
+class HalfMachine(FileMocks,DepthMachine):
+    def __init__(self,**kw): super().__init__(**kw); self.file_mocks('h:'); self.opened=[]; self.cut=False
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('h:'): return super().hook(u,address,size,unused)
+        name=name[2:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; self.calls.append((name,a,b,c))
+        if name=='fopen' and self.text(a).endswith('.jpg.half') and self.text(b)=='rb':  # each album's own copy
+            path=self.text(a); self.opened.append(path)
+            self.files.setdefault(path,cover_pixels(300+len(self.files),80*80)[:100 if self.cut else None])
+        self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
+def spread(h):  # a half copy's texels, each two by two
+    rows=[b''.join(h[4*(y*80+x):4*(y*80+x)+4]*2 for x in range(80)) for y in range(80)]
+    return b''.join(r+r for r in rows)
+assert ('gaps' in payload_syms)==bool(manifest['dev'])  # the gap log
+PAINT_BOUND=5_100_000
+for cut in (False,True):
+    m=classic_light_new(HalfMachine,albums=9); m.cut=cut
+    n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)  # before any code runs
+    for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
+    m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
+    tp(m); thold(m); tspin(m,200,-30)
+    for _ in range(80):  # into letters (enter_albums at the cap's speed), the row on its way to the letter
+        if m.get(ps['th']+TH_AT['jump']) and tfloat(m,'enter')<=0 and tfloat(m,'pos')!=tfloat(m,'goal'): break
+        tspin(m,17,-30)
+    pos=tfloat(m,'pos'); assert tfloat(m,'goal')!=pos and tfloat(m,'enter')<=0
+    m.opened=[]; m.loads=[]; tpaint(m); assert len(m.opened)==min(CF_DEFINES['LD_SLOTS'],9) and m.wakes==1
+    LETTERS_HEAP=((64-15)*160*160*4,CF_DEFINES['LD_SLOTS']*80*80*4)  # FX_POOL's slots past the shelf's, the loader's stage
+    assert all(b in m.live.values() for b in LETTERS_HEAP)
+    tpaint(m)
+    if cut:  # each copy cut short: every album's own art, decoded
+        assert len(m.opened)==9 and len(m.loads)==9; passed(); continue
+    assert len(m.opened)==9 and not m.loads  # nine albums round the ring, all from their copies, no decode
+    q=math.floor(pos+.5); frac=int(struct.unpack('<f',struct.pack('<f',pos-q))[0]*65536); c=(tindex(m)+q)%9
+    lean=signed(m.get(ps['th']+TH_AT['lean']))
+    held=(*(tfloat(m,f) for f in ('hold_lead','hold_run','hold_xrun','hold_xs')),signed(m.get(ps['th']+TH_AT['hold_k'])))
+    case=(frac,ALL,4,lean,0,0,*held); style={**cl_style,'cf.radius':0}
+    sh,sh0=host_render([cover_pixels(0)]*15,[case,(0,*case[1:])],style,windows=True)[1]  # the window's middle, the host's from the same held row, and at its letter
+    g=(tindex(m)+math.floor(tfloat(m,'goal')+.5)+sh0)%9  # the middle of the window of the letter gone to
+    near=[0]+[o for d in range(1,5) for o in (d,-d)]  # fx_window's order: nearest that window's middle first
+    tex={(g+o)%9:spread(m.files[p]) for o,p in zip(near,m.opened)}
+    host=host_render([tex[(c+sh+k-7)%9] for k in range(15)],[case],style,paper=0xffffff)[0]  # Light
+    assert m.draws[-1][5]==host,(frac,lean,sh)
+    # One whole paint going by letters, a pass on, the row still sliding (its window found twice, the loads all made, the
+    # render over Light's paper, the big letter): under PAINT_BOUND, set a little over the 5.0 million it measured, the
+    # swap into the screen's BGRA8888 with the paper.
+    tp(m); assert tfloat(m,'pos')!=tfloat(m,'goal'); draws=len(m.draws); n[0]=0
+    tpaint(m); m.u.hook_del(h); assert len(m.draws)==draws+1 and n[0]<PAINT_BOUND,n[0]
+    trest(m); tpaint(m); assert not any(b in m.live.values() for b in LETTERS_HEAP); passed()  # landed: both freed
+
+# The loader's thread lowers itself first (ld_lower, its first call): nice 19 through setpriority (o32 4097) on its own tid
+# (gettid, 4222), its reads in the idle I/O class (ioprio_set, 4314, IOPRIO_WHO_PROCESS), best effort's lowest level when
+# the kernel refuses idle; it returns what took (1: nice 19, plus the class << 1).
+for refused in (False,True):
+    m=Machine(); sc=[]
+    def syscall(u,intno,unused,sc=sc,refused=refused):
+        n,a,b,c=(u.reg_read(r) for r in (UC_MIPS_REG_V0,*REGS[:3])); sc.append((n,a,b,c)); bad=n==4314 and c==3<<13 and refused
+        u.reg_write(UC_MIPS_REG_A3,int(bad)); u.reg_write(UC_MIPS_REG_V0,1 if bad else 321 if n==4222 else 0)
+    m.u.hook_add(UC_HOOK_INTR,syscall)
+    took=m.call(address=payload_syms['ld_lower'],args=(0,0,0,0),gap=0)
+    assert [x[0] for x in sc[:1]]==[4222] and sc[1:]==[(4097,0,321,19),(4314,1,321,3<<13)]+([(4314,1,321,2<<13|7)] if refused else []),sc
+    assert took==1|(2 if refused else 3)<<1,took; passed()
+
 # Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
 m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown

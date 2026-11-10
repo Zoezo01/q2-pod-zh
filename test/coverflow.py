@@ -15,8 +15,8 @@ from peq import LIBC
 
 PROTOTYPES = {**FUNCTIONS, **LIBC}  # the stock calls the host shims stand in for
 
-# coverflow.c, coverflow_thumb.c and coverflow_letters.c as one unit, so the shim's stubs are defined once
-CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n'
+# coverflow.c, coverflow_thumb.c, coverflow_letters.c and coverflow_loader.c as one unit, so the shim's stubs are defined once
+CF_SOURCES = '#include "coverflow.c"\n#include "coverflow_thumb.c"\n#include "coverflow_letters.c"\n#include "coverflow_loader.c"\n'
 SHIM_H = r"""
 extern char system_bar[];
 #include <dirent.h>
@@ -75,6 +75,32 @@ canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_o
 int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
 #define calloc shim_calloc
+#include <stdio.h>
+extern void shim_read(size_t) __attribute__((weak)); /* the tests' clock: half copies take half_ms */
+static inline size_t shim_fread(void *p, size_t s, size_t n, FILE *f) {
+    if (shim_read) shim_read(s * n);
+    return (fread)(p, s, n, f);
+}
+#define fread(p, s, n, f) shim_fread(p, s, n, f)
+#include <semaphore.h>
+#include <string.h>
+/* The tests' loader: run on a thread of its own, or step by step at each wake-up (shim_wake), and
+   a half copy's install takes half_ms on the fake clock (shim_install). */
+extern int shim_thread(pthread_t *, void *(*)(void *), void *) __attribute__((weak));
+extern int shim_wake(sem_t *) __attribute__((weak));
+extern void shim_install(void) __attribute__((weak));
+static inline int shim_create(pthread_t *t, const pthread_attr_t *a, void *(*f)(void *), void *x) {
+    return shim_thread ? shim_thread(t, f, x) : (pthread_create)(t, a, f, x);
+}
+static inline int shim_post(sem_t *s) { return shim_wake ? shim_wake(s) : (sem_post)(s); }
+/* ponytail: any 25.6 KB memcpy counts as a half copy's install; none other in coverflow.c yet */
+__attribute__((weak, noinline)) void *shim_memcpy(void *d, const void *s, size_t n) {
+    if (shim_install && n == 80 * 80 * 4) shim_install();
+    return (memcpy)(d, s, n);
+}
+#define pthread_create(t, a, f, x) shim_create(t, a, f, x)
+#define sem_post(s) shim_post(s)
+#define memcpy(d, s, n) shim_memcpy(d, s, n)
 """
 
 TEST = r"""
@@ -88,6 +114,9 @@ TEST = r"""
 #undef pthread_mutex_lock /* the stubs below record, then take the real lock */
 #undef pthread_mutex_unlock
 #undef pthread_join /* the payload's joins say so (shim_join); the tests' own are libc's */
+#undef pthread_create
+#undef sem_post
+#undef memcpy
 int coverflow_home(void *, void *), coverflow_player_cover(const char *, const char *, int, int);
 const char *track_name(char *, unsigned, void *);
 
@@ -142,6 +171,8 @@ static void pattern(unsigned char *px, unsigned seed) {
             px[4 * (y * 160 + x) + 3] = 255;
         }
 }
+static unsigned clock_ms; /* the fake clock, time_now_ms's */
+static int decode_ms; /* a cache file's decode, on that clock */
 static int note_loads, note_drawn[4], note_fail; /* the pane image: a theme image, translucent */
 static char pane_image[32];
 int widget_load_image(void *x, const char *url, void *b) {
@@ -156,6 +187,7 @@ int widget_load_image(void *x, const char *url, void *b) {
     int themed = theme_placeholder && strncmp(url, "file://", 7);
     int failed = cover_fail || (!themed && (strncmp(url, "file://", 7) || stat(url + 7, &s) || !s.st_size));
     loads += !failed && !themed;
+    if (!failed && !themed) clock_ms += decode_ms;
     if (!failed) {
         unsigned *bm = b, seed = 0;
         for (const char *c = strrchr(url, '/') ? strrchr(url, '/') : url; *c; ++c) seed = seed * 31 + (unsigned char)*c; /* the key, not the scratch path */
@@ -399,8 +431,54 @@ static int frames, frame_fail, tex_fail, locks, draws, drawn[4];
 static unsigned shown[CF_VIEW_H * CF_VIEW_W];
 #undef calloc /* the payload's calloc is this shim; the tests' own is libc's */
 void *calloc(size_t, size_t);
-static int calloc_fail; /* no memory at all */
-void *shim_calloc(size_t n, size_t size) { return calloc_fail || (tex_fail && size == 160 * 160 * 4) ? 0 : calloc(n, size); }
+static int calloc_fail, more_fail, more_asks; /* no memory at all; none for fx.more's slots alone */
+void *shim_calloc(size_t n, size_t size) {
+    int more = size == 160 * 160 * 4 && n == 64 - 15; /* fx_window's: FX_POOL past a thumb theme's fx_base */
+    more_asks += more;
+    return calloc_fail || (tex_fail && size == 160 * 160 * 4) || (more_fail && more) ? 0 : calloc(n, size);
+}
+static int half_ms; /* a half copy's read, on the fake clock */
+static int card_us; /* a half copy's read, slept by the loader on a real thread (card()) */
+static void card(int us) { __atomic_store_n(&card_us, us, __ATOMIC_SEQ_CST); }
+void shim_read(size_t bytes) {
+    int us = __atomic_load_n(&card_us, __ATOMIC_SEQ_CST);
+    if (bytes != 80 * 80 * 4) return;
+    if (us) usleep(us);
+    else clock_ms += half_ms;
+}
+/* The payload's o32 syscalls (cf_syscall), logged: gettid answers 4242; idle_fails refuses the idle
+   I/O class. sys_main: one came from the tests' own thread. */
+static int sys_log[16][4], sys_n, sys_main, idle_fails;
+static pthread_t main_thread;
+int cf_syscall(int nr, int a, int b, int c) {
+    int *l = sys_log[sys_n++ & 15];
+    sys_main |= pthread_equal(pthread_self(), main_thread);
+    l[0] = nr, l[1] = a, l[2] = b, l[3] = c;
+    return nr == 4222 ? 4242 : nr == 4314 && c == 3 << 13 && idle_fails ? -1 : 0;
+}
+#define SYS_IS(i, nr, a, b, c) (sys_log[i][0] == (nr) && sys_log[i][1] == (a) && sys_log[i][2] == (b) && sys_log[i][3] == (c))
+/* The loader: by default each wake-up reads every copy asked for, its reads off the UI thread's
+   clock, as on a thread of its own on a card at once; ld_hold leaves them asked for (cf_ld_step
+   reads one); ld_threads runs it on a real thread, card_us each read. */
+static int ld_threads, ld_hold, ld_live, ld_started;
+void *(*cf_loader(void))(void *);
+int cf_ld_step(void), cf_ld(int a);
+static void *(*ld_body)(void *);
+static void *idle_body(void *x) { return x; }
+static void *loader_body(void *x) { __atomic_fetch_add(&ld_live, 1, __ATOMIC_SEQ_CST); ld_body(x); __atomic_fetch_sub(&ld_live, 1, __ATOMIC_SEQ_CST); return 0; }
+int shim_thread(pthread_t *t, void *(*f)(void *), void *x) {
+    if (f == cf_loader()) ++ld_started, ld_body = f, f = ld_threads ? loader_body : idle_body;
+    return pthread_create(t, 0, f, x);
+}
+int shim_wake(sem_t *s) {
+    if (ld_threads) return sem_post(s);
+    unsigned c = clock_ms;
+    while (!ld_hold && cf_ld_step()) {
+    }
+    clock_ms = c;
+    return 0;
+}
+void shim_install(void) { clock_ms += half_ms; }
 void *bitmap_create_ex(unsigned ww, unsigned h, unsigned line, unsigned format) {
     if (frame_fail) return 0;
     unsigned *b = calloc(1, 0x48);
@@ -641,9 +719,10 @@ int toolsGetExternCover(const char *src, const char *dst, int ww, int h) {
     assert(ww == 320 && h == 320 && !held[0] && !held[1]);
     return extern_found ? write_art(dst, "extern") : 0;
 }
-static unsigned free_blocks = 1 << 20;
+static unsigned free_blocks = 1 << 20, statfs_calls;
 int shim_statfs(const char *p, void *out) {
     assert(!strcmp(p, PEQ_ROOT "/mnt/mmc/.coverflow"));
+    ++statfs_calls;
     unsigned *s = out;
     s[1] = 4096; s[7] = free_blocks; /* MIPS o32 statfs: f_bsize, f_bavail */
     return 0;
@@ -3438,13 +3517,16 @@ static void thumb_shipped(void) {
         assert(FIRST(TARGET()) && letter_shown == (unsigned)initial_of(TARGET()) && letter_held);
         assert(prev < 0 || TARGET() > prev); /* forward, to the last letter */
         prev = TARGET();
-        /* a frame decodes two covers at most, nearest first; the poll asks for frames until done */
+        /* a frame's loads end within FX_BUDGET_MS, a decode 6 ms as on the device: one, a second
+           would run past it; the poll asks for frames until done */
         int l0 = loads;
+        decode_ms = 6;
         for (int f = 0; f < 10; ++f) {
             int l1 = loads;
             coverflow_paint(s, canvas);
-            assert(loads - l1 <= 2);
+            assert(loads - l1 <= 1);
         }
+        decode_ms = 0;
         spread += loads - l0 > 2;
     }
     assert(spread);
@@ -4827,6 +4909,603 @@ static void by_years(int old) {
     classic = 0, square_art = 0, top_window = 0;
 }
 
+/* ---- Half copies for letters (docs/internals.md#coverflow-depth): made once from a decoded cover,
+   or by idle passes at rest from the cache, beside its file, whole or not at all; read with no decode
+   and spread two by two. Going by letters each frame loads while it has spent under FX_LETTERS_MS:
+   first the covers on the screen, then those ahead of the row towards the letter it goes
+   to, that letter's, then the next and the previous letters', each window as far from its letter's
+   first album as the screen's is from the album at the middle, and full art over the screen's half
+   copies once the row is there. Four letters of 40 albums make the windows apart. ---- */
+int cf_fx_has(int a), cf_fx_letters(void);
+unsigned cf_album_key(int a), album_key(void *r);
+void coverflow_halves(void);
+int coverflow_letter_next(void *w, int from, int dir, int n, unsigned *letter);
+static void cache_file(unsigned key, const char *suffix, char *path) {
+    snprintf(path, 600, PEQ_ROOT "/mnt/mmc/.coverflow/%08x.jpg%s", key, suffix);
+}
+static long size_of(const char *path) { struct stat st; return stat(path, &st) ? -1 : (long)st.st_size; }
+static int halves(int remove) { /* the half copies on the card; removed, if asked */
+    int k = 0;
+    DIR *d = opendir(PEQ_ROOT "/mnt/mmc/.coverflow");
+    for (struct dirent *e; d && (e = readdir(d));) {
+        size_t l = strlen(e->d_name);
+        if (l < 5 || strcmp(e->d_name + l - 5, ".half")) continue;
+        char path[600];
+        snprintf(path, sizeof path, PEQ_ROOT "/mnt/mmc/.coverflow/%s", e->d_name);
+        if (remove) unlink(path);
+        ++k;
+    }
+    if (d) closedir(d);
+    return k;
+}
+static void cover_tex(int a, unsigned *tex) { /* album a's cover as decode() makes it of the shim's */
+    static unsigned char px[160 * 160 * 4];
+    char path[600];
+    unsigned seed = 0;
+    cache_file(cf_album_key(a), "", path);
+    for (const char *c = strrchr(path, '/'); *c; ++c) seed = seed * 31 + (unsigned char)*c;
+    pattern(px, seed % 1000);
+    for (int i = 0; i < 160 * 160; ++i) tex[i] = 0xff000000u | px[4 * i] | px[4 * i + 1] << 8 | px[4 * i + 2] << 16;
+}
+static int read_half(int a, unsigned *half) { /* album a's half copy, 80 x 80 */
+    char path[600];
+    cache_file(cf_album_key(a), ".half", path);
+    FILE *f = fopen(path, "rb");
+    int ok = f && fread(half, 4, 80 * 80, f) == 80 * 80;
+    if (f) fclose(f);
+    return ok;
+}
+static void half_art(void) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    static unsigned tex[160 * 160], half[80 * 80], wide[15][160 * 160], f[300 * PITCH];
+    const cf_style_t fixture = shim_themes[1].cf;
+    char path[600], name[8];
+    shim_themes[1].cf = shipped;
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0, light = 0, decode_ms = 0;
+    for (int g = 0; g < 4; ++g)
+        for (int i = 0; i < 40; ++i) snprintf(name, sizeof name, "%c%02d", "QRUV"[g], i), album(name, 0);
+    mkdir(PEQ_ROOT "/mnt/mmc/.coverflow", 0755);
+    for (int i = 0; i < albums; ++i) { /* every album cached: no build */
+        cache_file(album_key(records[i]), "", path);
+        FILE *fp = fopen(path, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+    }
+    rescan();
+    halves(1);
+    open_page();
+    while (saved_sort() != 0) press_sort();
+    close_page();
+    open_page();
+    widget *s = slide();
+    int n = s->nkids, *index = (int *)(s->raw + SLIDE_INDEX), canvas[16] = { 0 };
+    top_window = page;
+    assert(n == albums);
+    /* At rest the shelf's seven decode at once and no half copy is written in a frame: the idle
+       passes make them, each texel the rounded mean of four, once: a copy there already is kept as
+       it is. Done, an idle pass returns before it asks the card for its space. */
+    coverflow_paint(s, canvas);
+    assert(!halves(0));
+    for (int i = 0; i < 80 * 80; ++i) half[i] = 0xff000000u | i;
+    cache_file(cf_album_key(*index), ".half", path);
+    FILE *fp = fopen(path, "wb");
+    fwrite(half, 4, 80 * 80, fp); /* another copy in its place */
+    fclose(fp);
+    for (int i = 0; i < 20 * albums && halves(0) < albums; ++i) th_pass(0, 17);
+    assert(halves(0) == albums && !tmp_files());
+    static unsigned kept[80 * 80];
+    assert(read_half(*index, kept) && !memcmp(kept, half, sizeof half));
+    for (int d = -3; d <= 3; ++d) {
+        int a = ((*index + d) % n + n) % n;
+        cache_file(cf_album_key(a), ".half", path);
+        assert(size_of(path) == 80 * 80 * 4 && read_half(a, half));
+        if (!d) continue;
+        cover_tex(a, tex);
+        for (int y = 0; y < 80; ++y)
+            for (int x = 0; x < 80; ++x)
+                for (int k = 0; k < 32; k += 8) {
+                    const unsigned *p = tex + 2 * y * 160 + 2 * x;
+                    unsigned sum = (p[0] >> k & 255) + (p[1] >> k & 255) + (p[160] >> k & 255) + (p[161] >> k & 255);
+                    assert((half[y * 80 + x] >> k & 255) == (sum + 2) / 4);
+                }
+    }
+    unsigned asked = statfs_calls;
+    for (int i = 0; i < 5; ++i) th_pass(0, 17);
+    assert(statfs_calls == asked);
+    halves(1);
+    /* Idle passes at rest make the missing ones, at most one a pass and one each HALF_GAP_MS; closing
+       stops them, the next open goes on, from the first album, till every album has one. */
+    close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    int made = halves(0), passes = 0;
+    for (; passes < 40; ++passes) {
+        th_pass(0, 17);
+        assert(halves(0) - made <= 1);
+        made = halves(0);
+    }
+    assert(made >= 40 * 17 / HALF_GAP_MS && made <= 40 * 17 / HALF_GAP_MS + 1 && made < albums);
+    /* none while a thumb rests on the wheel, and no decode with the card short of MIN_FREE_MB */
+    wheel_held = 1;
+    for (int i = 0; i < 5; ++i) th_pass(0, 17);
+    assert(halves(0) == made);
+    wheel_held = 0, free_blocks = 4000;
+    int decoded = loads;
+    for (int i = 0; i < 5; ++i) th_pass(0, 17);
+    assert(halves(0) == made && loads == decoded);
+    free_blocks = 1 << 20;
+    th_pass(0, 17);
+    assert(halves(0) == made + 1);
+    made = halves(0);
+    close_page(), top_window = 0;
+    for (int i = 0; i < 10; ++i) th_pass(0, 17);
+    assert(halves(0) == made);
+    open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    for (int i = 0; i < 20 * albums && halves(0) < albums; ++i) th_pass(0, 17);
+    assert(halves(0) == albums && !tmp_files());
+    /* Every album with its copy, a decode 9 ms: into letters on a held spin from early in Q, the
+       entry reads a copy or two a frame and decodes nothing, and the first letter's frame, the
+       entry's row going on, has its covers; a lift mid-slide folds decoding nothing; landed, the
+       screen's covers sharpen one a frame, the landing cover first. */
+    {
+        static int was[256];
+        int to = -1, entered = 0;
+        close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+        for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a;
+        assert(!strcmp(names[*index], "Q04"));
+        th_pass(0, 17);
+        for (int i = 0; i < 20; ++i) coverflow_paint(s, canvas);
+        decode_ms = 9, half_ms = 1;
+        th_down();
+        for (int pass = 0, folded = 0; pass < 400 && (th[T_ON] || !folded); ++pass) {
+            for (int a = 0; a < n; ++a) was[a] = cf_fx_has(a);
+            int l0 = loads, read = 0;
+            if (th[T_JUMP] && th[T_ENTER] <= 0 && wheel_held && th[T_POS] != th[T_GOAL] && to < 0)
+                wheel_held = 0, to = TARGET(); /* lifted on the way to the first letter */
+            if (wheel_held) th_spin(150, 17); else th_pass(0, 17);
+            int entering = th[T_JUMP] && th[T_ENTER] > 0;
+            folded |= th[T_FOLD] != 0;
+            coverflow_paint(s, canvas);
+            for (int a = 0; a < n; ++a) read += cf_fx_has(a) == 1 && was[a] != 1;
+            if (entering) assert(loads == l0 && read <= 2);
+            if (th[T_JUMP] && !entering && !entered++) { /* the first letter's frame: each cover it draws */
+                int q = (int)floorf(th[T_POS] + .5f), out[64][6], k = cf_frame_quads((int)((th[T_POS] - q) * ONE), out);
+                assert(names[*index][0] == 'R' && k);
+                for (int i = 0; i < k; ++i) assert(!quad_cols(out[i]) || was[((*index + q + out[i][0]) % n + n) % n]);
+            }
+            if (th[T_FOLD]) assert(loads == l0);
+        }
+        assert(to >= 0 && *index == to);
+        for (int f = 0, l0 = loads; f < 15; ++f, l0 = loads) {
+            coverflow_paint(s, canvas);
+            assert(loads - l0 <= 1 && (f || cf_fx_has(to) == 2));
+        }
+        for (int a = 0; a < n; ++a)
+            if (abs((((a - to) % n) + n + n / 2) % n - n / 2) <= 3) assert(cf_fx_has(a) == 2);
+        decode_ms = half_ms = 0;
+        th_rest();
+        shim_themes[1].cf = shipped;
+    }
+    /* A copy cut short is none: the cover's own art loads in its place. */
+    halves(1);
+    close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    th_pass(0, 17);
+    #define WINDOW(a, c) (abs(((((a) - (c)) % n) + n + n / 2) % n - n / 2) <= 7) /* round the ring */
+    #define TO_LETTER(l) do { \
+        for (int t_ = 0; t_ < 500 && (TARGET() == *index || names[TARGET()][0] != (l)); ++t_) th_step(1); \
+        th_arrive(); } while (0)
+    th_down();
+    for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17);
+    TO_LETTER('Q');
+    int q0 = *index, sh = cf_frame_window(0); /* the window's middle from the letter's first */
+    assert(names[q0][0] == 'Q' && FIRST(q0));
+    /* Held at a letter: the screen's covers in full art; the next and previous letters' windows
+       loaded ahead, so a step finds the letter it goes to there. */
+    for (int i = 0; i < 100; ++i) coverflow_paint(s, canvas);
+    unsigned letter;
+    int next = coverflow_letter_next(s, q0, 1, n, &letter), prev = coverflow_letter_next(s, q0, -1, n, &letter);
+    for (int a = 0; a < n; ++a) {
+        if (WINDOW(a, q0 + sh)) assert(cf_fx_has(a) == 2);
+        if (WINDOW(a, next + sh) || WINDOW(a, prev + sh)) assert(cf_fx_has(a));
+    }
+    halves(1); /* from here, until the idle passes make them again, every load a decode */
+    th_step(1);
+    int to = TARGET();
+    assert(to == next && names[to][0] == 'R');
+    for (int a = 0; a < n; ++a)
+        if (WINDOW(a, to + sh)) assert(cf_fx_has(a));
+    th_step(1); /* on to U before the row is at R: U's window not loaded yet */
+    to = TARGET();
+    assert(names[to][0] == 'U' && FIRST(to));
+    /* The order, one decode a frame (9 ms, over FX_BUDGET_MS) and the row held where it is: U's,
+       nearest first, where the row will stop; the screen's, nearest first; ahead towards U; the
+       next letter's (V); the previous one's (R, loaded). */
+    decode_ms = 9;
+    float pos = th[T_POS];
+    int c = *index + (int)floorf(pos + .5f);
+    c = (c + cf_frame_window((int)((pos - floorf(pos + .5f)) * ONE))) % n; /* the screen's window */
+    int nx = coverflow_letter_next(s, to, 1, n, &letter) + sh, pv = coverflow_letter_next(s, to, -1, n, &letter) + sh;
+    to += sh;
+    #define AHEAD(a) ((((a) - c) % n + n) % n >= 8 && (((a) - c) % n + n) % n <= 22 && \
+                      (((a) - c) % n + n) % n < ((to - c) % n + n) % n - 7)
+    #define CAT(a) (WINDOW(a, to) ? 0 : WINDOW(a, c) ? 1 : AHEAD(a) ? 2 : WINDOW(a, nx) ? 3 : WINDOW(a, pv) ? 4 : -1)
+    static int had[256];
+    for (int a = 0; a < n; ++a) had[a] = cf_fx_has(a);
+    int last_cat = 0, last_d = 0, frames = 0, loaded = 0;
+    for (; frames < 80; ++frames) {
+        int l0 = loads, got = -1;
+        coverflow_paint(s, canvas);
+        assert(loads - l0 <= 1);
+        for (int a = 0; a < n; ++a)
+            if (!had[a] && cf_fx_has(a)) assert(got < 0), got = a, had[a] = 1;
+        if (got < 0) break;
+        ++loaded;
+        int cat = CAT(got), d = ((got - c) % n + n) % n;
+        d = cat == 1 ? abs((d + n / 2) % n - n / 2) : d;
+        if (cat == 0) d = abs((((got - to) % n) + n + n / 2) % n - n / 2); /* to: its window's middle */
+        assert(cat >= last_cat && (cat != last_cat || cat > 2 || d >= last_d));
+        last_cat = cat, last_d = d;
+    }
+    assert(loaded >= 14 + 15 + 15 && last_cat >= 3); /* ahead, U's and V's at least */
+    for (int a = 0; a < n; ++a)
+        if (CAT(a) >= 0 && CAT(a) <= 3) assert(cf_fx_has(a));
+    assert(th[T_POS] == pos);
+    /* Going by letters a frame's loads stop at FX_LETTERS_MS, or at FX_SLACK_MS in a frame
+       FX_LATE_MS or more after the last: at 3 ms a decode, one (the first always starts), and late
+       three (0, 3 and 6 ms in; a fourth would end at 12), the pool emptied each time. */
+    decode_ms = 3;
+    th_step(1);
+    int l0 = loads;
+    for (int late = 0; late < 2; ++late) {
+        light = 1, coverflow_paint(s, canvas), light = 0;
+        l0 = loads, clock_ms += late ? FX_LATE_MS : 0;
+        coverflow_paint(s, canvas);
+        assert(loads - l0 == (late ? 3 : 1));
+    }
+    /* With the idle passes' half copies: all a frame wants, the loader's LD_SLOTS a frame, no
+       decode; the held row drawn from them is drawn as from the copies spread two by two. */
+    wheel_held = 0;
+    for (int i = 0; i < 200 && th[T_ON]; ++i) th_pass(0, 17);
+    close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    for (int i = 0; i < 20 * albums && halves(0) < albums; ++i) th_pass(0, 17);
+    assert(halves(0) == albums);
+    th_down();
+    for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17);
+    TO_LETTER('Q');
+    for (int i = 0; i < 100; ++i) coverflow_paint(s, canvas);
+    th_step(1);
+    to = TARGET();
+    decode_ms = 9;
+    light = 1, coverflow_paint(s, canvas), light = 0; /* the pool emptied */
+    l0 = loads;
+    int q = (int)floorf(th[T_POS] + .5f), qf = (int)((th[T_POS] - (float)q) * ONE);
+    c = (*index + q) % n;
+    int w0 = c + cf_frame_window(qf), waited = 0, got = 0; /* the window's middle */
+    while (waited < 10 && got < n) {
+        coverflow_paint(s, canvas), ++waited, got = 0;
+        for (int a = 0; a < n; ++a) got += !(WINDOW(a, w0) || WINDOW(a, to + sh)) || cf_fx_has(a) == 1;
+    }
+    assert(loads == l0 && got == n && waited >= (30 + LD_SLOTS - 1) / LD_SLOTS);
+    const unsigned *ring[15];
+    for (int k = 0; k < 15; ++k) {
+        assert(read_half(((w0 + k - 7) % n + n) % n, half));
+        for (int y = 0; y < 160; ++y)
+            for (int x = 0; x < 160; ++x) wide[k][y * 160 + x] = half[y / 2 * 80 + x / 2];
+        ring[k] = wide[k];
+    }
+    coverflow_render(f, PITCH, qf, ring + 4);
+    for (int y = 0; y < CF_VIEW_H; ++y) assert(!memcmp(f + y * PITCH, shown + y * CF_VIEW_W, CF_VIEW_W * 4)); /* shown's rows */
+    /* a copy cut short: that album's own art instead, decoded */
+    cache_file(cf_album_key(c), ".half", path);
+    truncate(path, 100);
+    light = 1, coverflow_paint(s, canvas), light = 0;
+    l0 = loads;
+    decode_ms = 0;
+    coverflow_paint(s, canvas);
+    assert(cf_fx_has(c) == 2 && loads > l0);
+    /* There, the screen's covers turn to full art, three a frame at 3 ms, before the fold shows them. */
+    decode_ms = 3;
+    th_arrive();
+    for (int i = 0; i < 20; ++i) {
+        l0 = loads;
+        coverflow_paint(s, canvas);
+        assert(loads - l0 <= 3);
+    }
+    for (int a = 0; a < n; ++a)
+        if (WINDOW(a, *index + sh)) assert(cf_fx_has(a) == 2);
+    decode_ms = 0;
+    th_rest();
+    /* The entry's budget is FX_ENTER_MS: with no copies, one decode a frame at 3 ms a decode, two at
+       1 ms (0 and 1 ms in; a third would end at 3), the pool emptied each time, from early in Q
+       (every album with art). */
+    halves(1);
+    close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a;
+    th_pass(0, 17);
+    th_down();
+    for (int t = 0; !(th[T_JUMP] && th[T_ENTER] > 0) && t < 2000; t += 17) th_spin(150, 17);
+    assert(th[T_JUMP] && th[T_ENTER] > 0);
+    for (int b = 0; b < 2; ++b) {
+        decode_ms = b ? 1 : 3;
+        light = 1, coverflow_paint(s, canvas), light = 0;
+        l0 = loads;
+        coverflow_paint(s, canvas);
+        assert(loads - l0 == b + 1);
+    }
+    decode_ms = 0;
+    wheel_held = 0;
+    for (int i = 0; i < 200 && th[T_ON]; ++i) th_pass(0, 17);
+    th_rest();
+    #undef WINDOW
+    #undef TO_LETTER
+    #undef AHEAD
+    #undef CAT
+    close_page();
+    top_window = 0;
+    th_pass(0, 17);
+    /* Refresh Coverflow empties the cache, the half copies with it. */
+    coverflow_refresh_art();
+    assert(!halves(0));
+    shim_themes[1].cf = fixture;
+    classic = 0, square_art = 0;
+}
+
+/* ---- The loader: going by letters the half copies are read on a thread of its own, the nearest
+   first, at most LD_SLOTS in hand; the UI thread only spreads one that is there into its texture,
+   within FX_LETTERS_MS, and never waits on the card. A copy read for a page since closed is
+   dropped; closing the page stops the thread after the read in hand,
+   and nothing runs while the page is closed. Runs on half_art's library. ---- */
+static double wall_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
+}
+#define FILL_FRAMES 2 /* the frames after a letter step with a cover drawn waiting, at most */
+static void loader_test(void) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    const cf_style_t fixture = shim_themes[1].cf;
+    char path[600];
+    int n = albums, canvas[16] = { 0 }, *index;
+    widget *s;
+    shim_themes[1].cf = shipped;
+    int slots = LD_SLOTS, win = 15; /* all it holds; the window of the letter gone to, asked for first */
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0, light = 0, decode_ms = 0, half_ms = 0;
+    for (int i = 0; i < n; ++i) { /* every album cached again (half_art ended on Refresh) */
+        cache_file(album_key(records[i]), "", path);
+        FILE *fp = fopen(path, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+    }
+    #define OPEN() (open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page)
+    #define SHUT() (wheel_held = 0, close_page(), top_window = 0, th_pass(0, 17))
+    #define INTO_LETTERS() do { \
+        for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a; \
+        th_pass(0, 17), th_down(); \
+        for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17); \
+        assert(th[T_JUMP] && th[T_ENTER] <= 0); } while (0)
+    #define MIDDLE() ((*index + (int)floorf(th[T_POS] + .5f) + \
+                       cf_frame_window((int)((th[T_POS] - floorf(th[T_POS] + .5f)) * ONE))) % n)
+    #define GOAL() ((TARGET() + cf_frame_window(0) + n) % n) /* the window of the letter gone to */
+    OPEN();
+    for (int i = 0; i < 20 * n && halves(0) < n; ++i) th_pass(0, 17);
+    assert(halves(0) == n);
+    /* At rest no loader: it starts at the first copy asked for. */
+    int started = ld_started;
+    for (int i = 0; i < 20; ++i) coverflow_paint(s, canvas);
+    assert(ld_started == started && !cf_ld(-1));
+    /* Its order is fx_window's, the window of the letter gone to first, nearest its middle first,
+       and it holds LD_SLOTS at most, however many frames ask. */
+    INTO_LETTERS();
+    ld_hold = 1;
+    light = 1, coverflow_paint(s, canvas), light = 0; /* the pool emptied */
+    assert(ld_started == started + 1);
+    for (int i = 0; i < 50; ++i) coverflow_paint(s, canvas), assert(cf_ld(-1) == slots);
+    #define NEAR(m) (((c + ((m) & 1 ? ((m) + 1) / 2 : -(m) / 2)) % n + n) % n)
+    int c = GOAL();
+    for (int m = 0; m < win; ++m) assert(cf_fx_has(NEAR(m)) == 0 && cf_ld(NEAR(m)) == 1);
+    ++*index; /* the row an album on: the same requests asked for in another order, one swapped */
+    coverflow_paint(s, canvas);
+    c = GOAL();
+    assert(cf_ld(-1) == slots);
+    for (int m = 0; m < win; ++m)
+        assert(cf_fx_has(NEAR(m)) == 0 && cf_ld(NEAR(m)) == 1 && cf_ld_step() && cf_ld(NEAR(m)) == 3);
+    for (int m = win; m < slots; ++m) assert(cf_ld_step());
+    assert(!cf_ld_step());
+    /* Copies read and not yet taken give up their place to a cover wanted first: a step on, the
+       window of the letter gone to is all loaded or in hand in that frame, what was not read yet
+       asked for in the places of copies dropped. */
+    ld_hold = 1, light = 1, coverflow_paint(s, canvas), light = 0, coverflow_paint(s, canvas);
+    while (cf_ld_step()) {
+    }
+    assert(cf_ld(-1) == slots && cf_ld(NEAR(0)) == 3);
+    th_step(1);
+    coverflow_paint(s, canvas);
+    c = GOAL();
+    int asked = 0;
+    for (int m = 0; m < win; ++m) {
+        assert(cf_fx_has(NEAR(m)) || cf_ld(NEAR(m)) == 1 || cf_ld(NEAR(m)) == 3);
+        asked += cf_ld(NEAR(m)) == 1;
+    }
+    assert(asked); /* every slot held a copy: asking took one */
+    ld_hold = 0;
+    SHUT();
+    for (int i = 0; i < n; ++i) {
+        cache_file(album_key(records[i]), "", path);
+        FILE *fp = fopen(path, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+    }
+    OPEN();
+    for (int i = 0; i < 20 * n && halves(0) < n; ++i) th_pass(0, 17);
+    assert(halves(0) == n);
+    /* The install budget: at 1 ms a copy spread, as many a frame as FX_LETTERS_MS has ms, or as
+       FX_SLACK_MS has in a frame two refreshes (FX_LATE_MS) after the last; the frame's ms go on
+       the spreads alone, the reads being the loader's. */
+    INTO_LETTERS();
+    th_arrive(), th_step(1);
+    for (int late = 0; late < 2; ++late) {
+        int most = late ? FX_SLACK_MS : FX_LETTERS_MS;
+        ld_hold = 1, light = 1, coverflow_paint(s, canvas), light = 0, coverflow_paint(s, canvas);
+        ld_hold = 0, half_ms = 0; /* the pool emptied, slots asked for and read, the clock still */
+        while (cf_ld_step()) {
+        }
+        half_ms = 1;
+        static int was[256];
+        int got = 0, l0 = loads;
+        for (int a = 0; a < n; ++a) was[a] = cf_fx_has(a);
+        clock_ms += late ? FX_LATE_MS : 0;
+        unsigned t0 = clock_ms;
+        coverflow_paint(s, canvas);
+        for (int a = 0; a < n; ++a) got += cf_fx_has(a) == 1 && was[a] != 1;
+        assert(got == most && loads == l0 && clock_ms - t0 == (unsigned)most);
+    }
+    half_ms = 0;
+    SHUT();
+    /* On a thread of its own, a card that takes 20 ms a copy: no frame waits for one, and the
+       covers come in, the window on the screen first. */
+    ld_threads = 1, card(20000), main_thread = pthread_self(), sys_n = 0;
+    OPEN();
+    INTO_LETTERS();
+    double worst = 0;
+    int shown = 0;
+    c = MIDDLE();
+    for (int f = 0; f < 120; ++f) {
+        double t = wall_ms();
+        coverflow_paint(s, canvas);
+        t = wall_ms() - t, worst = t > worst ? t : worst;
+        usleep(17000);
+        shown = 0;
+        for (int d = -7; d <= 7; ++d) shown += cf_fx_has(((c + d) % n + n) % n) == 1;
+        if (shown == 15) break;
+    }
+    assert(shown == 15 && worst < 15 && ld_live == 1);
+    /* The loader lowered itself first, from its own thread: nice 19 (setpriority, o32 4097, its
+       tid from gettid, 4222) and the idle I/O class (ioprio_set, 4314). */
+    assert(sys_n == 3 && !sys_main && sys_log[0][0] == 4222 && SYS_IS(1, 4097, 0, 4242, 19) &&
+           SYS_IS(2, 4314, 1, 4242, 3 << 13));
+    /* Landed, letters' extra slots, the loader's stage and its thread go, the covers kept in the
+       slots left; the next spin by letters has them again. */
+    assert(cf_fx_letters() == 7);
+    wheel_held = 0;
+    for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
+    for (int i = 0; i < 200 && cf_fx_letters(); ++i) coverflow_paint(s, canvas), usleep(1000);
+    assert(!cf_fx_letters() && ld_live == 0);
+    for (int d = -7; d <= 7; ++d) assert(cf_fx_has(((*index + d) % n + n) % n));
+    started = ld_started;
+    INTO_LETTERS();
+    for (int f = 0; f < 120 && cf_fx_letters() != 7; ++f) coverflow_paint(s, canvas), usleep(17000);
+    assert(cf_fx_letters() == 7 && ld_live == 1 && ld_started == started + 1);
+    /* Closing stops it after the read in hand (a slow one here, the first: the middle of the
+       window of the letter gone to), joined: nothing runs while the page is closed, and the next
+       open starts it again only going by letters. */
+    #define READING(a) do { \
+        for (int i_ = 0; i_ < 2000 && cf_ld(a) != 2; ++i_) usleep(1000); \
+        assert(cf_ld(a) == 2); } while (0)
+    card(200000);
+    light = 1, coverflow_paint(s, canvas), light = 0;
+    READING(GOAL()); /* the first read under way */
+    double t = wall_ms();
+    SHUT();
+    t = wall_ms() - t;
+    assert(ld_live == 0 && t >= 100);
+    card(20000);
+    started = ld_started;
+    OPEN();
+    for (int i = 0; i < 20; ++i) coverflow_paint(s, canvas);
+    assert(ld_live == 0 && ld_started == started);
+    /* The idle I/O class refused this time: best effort's lowest level (2 << 13 | 7) instead. */
+    idle_fails = 1, sys_n = 0;
+    INTO_LETTERS();
+    card(100000);
+    light = 1, coverflow_paint(s, canvas), light = 0;
+    c = GOAL();
+    READING(c);
+    assert(sys_n == 4 && SYS_IS(2, 4314, 1, 4242, 3 << 13) && SYS_IS(3, 4314, 1, 4242, 2 << 13 | 7));
+    /* A window over the covers, that read still in hand: the landing frees the letters' slots, the
+       stage and the thread, the read joined, with no Cover Flow frame after it. */
+    top_window = 0;
+    th_pass(0, 17);
+    assert(!th[T_ON] && !cf_fx_letters() && ld_live == 0);
+    top_window = page;
+    SHUT();
+    assert(ld_live == 0);
+    ld_threads = 0, card(0), idle_fails = 0;
+    /* A spin by letters on a card of 3 ms a read, the frames 33 ms apart (two refreshes, as on the
+       device), a spread 1 ms: two letters a frame apart, then the thumb still. While a cover of
+       the window drawn or of the window of the letter gone to lacks art, it is asked for, and the
+       covers drawn all have art within FILL_FRAMES frames of the last step. */
+    for (int i = 0; i < n; ++i) {
+        cache_file(album_key(records[i]), "", path);
+        FILE *fp = fopen(path, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+    }
+    OPEN();
+    for (int i = 0; i < 20 * n && halves(0) < n; ++i) th_pass(0, 17);
+    assert(halves(0) == n);
+    INTO_LETTERS();
+    ld_hold = 1, light = 1, coverflow_paint(s, canvas), light = 0; /* the pool emptied */
+    assert(cf_ld(-1) == LD_SLOTS); /* all it holds in hand */
+    ld_hold = 0;
+    th_arrive();
+    for (int i = 0; i < 100; ++i) coverflow_paint(s, canvas);
+    int last = -1, grey = 0;
+    ld_hold = 1, half_ms = 1;
+    for (int f = 0; f < 60; ++f) {
+        for (int r = 0; r < 11; ++r) cf_ld_step(); /* the loader's 33 ms */
+        if (f < 4 && !(f & 1))
+            th_step(1), th_pass(0, 16);
+        else
+            th_pass(0, 33);
+        coverflow_paint(s, canvas);
+        int miss = 0;
+        c = MIDDLE();
+        for (int d = -7; d <= 7; ++d) {
+            int a = ((c + d) % n + n) % n, b = ((GOAL() + d) % n + n) % n;
+            miss += !cf_fx_has(a);
+            assert((cf_fx_has(a) || cf_ld(a) > 0) && (cf_fx_has(b) || cf_ld(b) > 0));
+        }
+        if (miss) last = f, grey += miss;
+        if (f > 2 && !miss && th[T_POS] == th[T_GOAL]) break;
+    }
+    last = last > 2 ? last - 2 : 0; /* the frames after the last step (frame 2) */
+    fprintf(stderr, "loader: covers drawn all had art %d frames after the last letter step, %d covers grey in all\n",
+            last, grey);
+    assert(last <= FILL_FRAMES);
+    ld_hold = 0, half_ms = 0;
+    SHUT();
+    /* No memory for fx.more's slots: going by letters loads the window on the screen alone, in
+       the pool's own slots, and every frame draws, mid-slide between letters too, where the screen
+       shows covers outside the window of the letter gone to; landed, the pool is as it was. */
+    more_fail = 1;
+    OPEN();
+    INTO_LETTERS();
+    more_asks = 0;
+    for (int f = 0; f < 40; ++f) {
+        int d0 = draws;
+        if (f < 20 && !(f & 3)) th_step(1);
+        th_pass(0, 17);
+        light = 1, coverflow_paint(s, canvas), light = 0;
+        assert(draws == d0 + 1 && !(cf_fx_letters() & 9)); /* no fx.more, no slot past the pool */
+    }
+    assert(more_asks <= 1); /* refused once, not asked again every frame */
+    c = MIDDLE();
+    for (int d = -7; d <= 7; ++d) assert(cf_fx_has(((c + d) % n + n) % n));
+    wheel_held = 0;
+    for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
+    for (int i = 0; i < 200 && cf_fx_letters(); ++i) coverflow_paint(s, canvas), usleep(1000);
+    assert(!cf_fx_letters());
+    more_fail = 0;
+    SHUT();
+    #undef READING
+    #undef OPEN
+    #undef SHUT
+    #undef INTO_LETTERS
+    #undef MIDDLE
+    #undef GOAL
+    #undef NEAR
+    shim_themes[1].cf = fixture;
+    classic = 0, square_art = 0;
+}
+
 int main(void) {
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
@@ -5307,6 +5986,8 @@ int main(void) {
     clear_cover = 0;
 
     embedded_first();
+    half_art();
+    loader_test();
     return 0;
 }
 """
@@ -5361,8 +6042,8 @@ def main():
     cf_style.append('-DCF_SHIPPED2={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in builtins()[2].items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DPINNED_FRAMES=0x055534d4u')
     # The built-in numbers the checks use, as coverflow.h and coverflow.c have them
-    cf_style += [f'-D{k}={v}' for k, v in re.findall(r'^#define (CF_FOLD_MS|CF_ENTER_SPEED|FOLD_FROM|FOLD_TO|ENTER_RUN) (\d+)',
-                                                 ''.join((ROOT/'patch'/f).read_text() for f in ('coverflow.h', 'coverflow.c', 'coverflow_letters.c')), re.M)]
+    cf_style += [f'-D{k}={v}' for k, v in re.findall(r'^#define (CF_FOLD_MS|CF_ENTER_SPEED|FOLD_FROM|FOLD_TO|ENTER_RUN|LD_SLOTS|FX_ENTER_MS|FX_LETTERS_MS|FX_SLACK_MS|FX_LATE_MS|HALF_GAP_MS) (\d+)',
+                                                 ''.join((ROOT/'patch'/f).read_text() for f in ('coverflow.h', 'coverflow.c', 'coverflow_letters.c', 'coverflow_loader.c')), re.M)]
     def accepts(t):
         try:
             validate(t, 't.xml')

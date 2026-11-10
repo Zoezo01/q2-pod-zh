@@ -634,7 +634,7 @@ def rgba(w, h, colour):
 
 def decoded(fw, unload=1):
     out = exact(C.c_uint, ART * ART)
-    ok = fw.fn('coverflow__decode', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'x', out, unload)
+    ok = fw.fn('cf_decode', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'x', out, unload)
     return ok, out
 
 
@@ -2117,9 +2117,21 @@ def py_key(artist, album):
     return h
 
 
+FX_POOL = int(host.tools_build.need(re.search(r'^#define FX_POOL (\d+)', (ROOT/'patch/coverflow.h').read_text(), re.M), 'No FX_POOL')[1])
+LD_SLOTS = int(host.tools_build.need(re.search(r'^#define LD_SLOTS (\d+)', (ROOT/'patch/coverflow.h').read_text(), re.M), 'No LD_SLOTS')[1])
+
+
+class Ld(C.Structure):
+    _fields_ = [('key', C.c_uint), *((k, C.c_int) for k in 'album rank state ok'.split())]
+
+
 class Fx(C.Structure):
-    _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * 15), ('art', C.c_void_p * 15),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo mode'.split())]
+    _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * FX_POOL), ('art', C.c_void_p * FX_POOL),
+                ('half', C.c_ubyte * FX_POOL),
+                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves'.split()),
+                ('half_at', C.c_uint), ('half_ms', C.c_int), ('full_ms', C.c_int),
+                ('ld', Ld * LD_SLOTS), ('stage', C.c_void_p), ('gate', C.c_uint * 8), ('loader', C.c_ulong),
+                ('ld_on', C.c_int), ('ld_stop', C.c_int), ('paint_at', C.c_uint), ('more', C.c_void_p), ('no_more', C.c_int)]
 
 
 def deque_of(fw, recs):

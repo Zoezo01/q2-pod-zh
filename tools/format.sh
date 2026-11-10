@@ -6,5 +6,5 @@ cd "$(dirname "$0")/.."
 
 # tools/build.py's NAVIGATION, so a file split out is formatted once it builds
 nav=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import build; print(" ".join("patch/" + f for f in build.NAVIGATION))')
-clang-format -i $nav patch/navigation.h patch/theme.h patch/coverflow.h patch/coverflow_thumb.c patch/coverflow_letters.c
+clang-format -i $nav patch/navigation.h patch/theme.h patch/coverflow.h patch/coverflow_thumb.c patch/coverflow_loader.c patch/coverflow_letters.c
 prettier --write "*.md" "docs/*.md"

@@ -41,6 +41,7 @@ static void th_commit(int q) {
 
 /* The covers on the album named, at once: Centre, or nothing to show a landing on. */
 void coverflow_wheel_land(void) {
+    fx_unletter(); /* landed, painted or not: the letters' slots, stage and loader go */
     if (th.jump) coverflow_letter(cf.slide, 0, 0); /* the held letter goes with its letters */
     if (th.on && cf.slide) th_commit(th_shown());
     th.jump = th.lean = th.fold = 0;
@@ -236,7 +237,7 @@ int coverflow_wheel_poll(int usable, int gated) {
         coverflow_wheel_land();
         return 0;
     }
-    if (fx.todo) widget_invalidate_force(s, 0); /* covers still to decode, FX_DECODES a frame */
+    if (fx.todo) widget_invalidate_force(s, 0); /* covers still to load, a frame's budget each */
     unsigned now = (unsigned)time_now_ms();
     int ms = (int)(now - th.at), travel = raw ? __sync_lock_test_and_set(&wheel_travel, 0) : 0;
     if (gated) travel = 0;
@@ -290,7 +291,10 @@ int coverflow_wheel_poll(int usable, int gated) {
     th.dead += travel;
     travel = th.dead > cfs.dead ? th.dead - cfs.dead : th.dead < -cfs.dead ? th.dead + cfs.dead : 0;
     th.dead -= travel;
-    if (!th.on && !travel) return 0;
+    if (!th.on && !travel) { /* at rest, no thumb on the wheel: an idle pass makes a half copy */
+        if (raw && !held && !fx.todo && !P(s, SLIDE_ANIMATOR)) coverflow_halves();
+        return 0;
+    }
     if (!th.on) th_grab(s, now);
     int n = (int)widget_count_children(s), r = THUMB_MOVED | entered;
     if (travel) {

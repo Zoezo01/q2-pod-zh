@@ -1,8 +1,9 @@
 #ifndef Q2_COVERFLOW_H
 #define Q2_COVERFLOW_H
-/* What coverflow.c shares with coverflow_thumb.c and coverflow_letters.c: the page's state, the
- * depth renderer's and the flip's, which the thumb reads, the thumb's follower, which the renderer
- * reads, and the poses and columns the letters draw with. */
+/* What coverflow.c shares with coverflow_thumb.c, coverflow_letters.c and coverflow_loader.c: the
+ * page's state, the depth renderer's and the flip's, which the thumb reads, the thumb's follower,
+ * which the renderer reads, the poses and columns the letters draw with, and the texture pool the
+ * loader fills. */
 #include "offsets.inc"
 #include "peq.h"
 #ifndef PEQ_HOST
@@ -50,13 +51,20 @@ typedef struct {
 } cf_page_t;
 extern cf_page_t cf;
 
+/* On the card, beside stock's own cover cache (/mnt/mmc/.sldp). */
+#define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define ART_SIZE 160 /* a texture's side, texels */
+#define CF_TEXELS (ART_SIZE * ART_SIZE)
 #define CF_ONE 65536
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
 #define CF_EYE16 (16 * cfs.eye) /* the eye's distance, 1/16 px */
 #define CF_HALF16 (16 * ART_SIZE / 2)
 #define CF_WIDE_REACH 7 /* CF_REACH under a thumb theme, for the row at speed */
 #define CF_WIDE (2 * CF_WIDE_REACH + 1)
+/* textures going by letters: the covers on the screen and the ones ahead of the row, the letter's
+ * and the letters' either side of it (fx_window); 100 KB each */
+#define FX_POOL 64
+#define LD_SLOTS 32       /* the half copies the loader holds at most; 25.6 KB each */
 #define CF_ENTER_SPEED 12 /* the entry into letters' least speed, albums a second */
 #define CF_FOLD_MS 450    /* the fold out of letters onto the letter's first album, ms */
 extern cf_style_t cfs; /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
@@ -83,12 +91,32 @@ enum { FX_SHELF, FX_HELD, FX_FOLD, FX_HELD_LEFT, FX_ENTRY };
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 typedef struct {
     void *frame;                     /* bitmap_t *, CF_VIEW_W x cfs.view_h BGRA8888 */
-    unsigned *tex;                   /* fx_reach's texture slots, then the placeholder */
-    int album[CF_WIDE];              /* each slot's album + 1; 0 is empty */
-    const unsigned *art[CF_WIDE];    /* its texture: the slot's own, or the placeholder */
+    unsigned *tex;                   /* fx_base()'s slots, the placeholder, half copies' scratch */
+    int album[FX_POOL];              /* each slot's album + 1; 0 is empty */
+    const unsigned *art[FX_POOL];    /* its texture: the slot's own, or the placeholder */
+    unsigned char half[FX_POOL];     /* it holds the album's half copy (half_read) */
     int c, frac, drawn, light, lead; /* the position and Light Mode the frame holds, once drawn */
-    int todo;                        /* a slot still waits for its decode (FX_DECODES) */
+    int todo;                        /* a cover wanted still waits for its load (FX_BUDGET_MS) */
     int mode;                        /* what the frame holds (FX_SHELF ...) */
+    int letters_at, next, prev; /* the album + 1 the letters' windows are of, and those letters */
+    int halves;                 /* coverflow_halves' next album */
+    unsigned half_at;           /* and when it last made a copy, ms (HALF_GAP_MS) */
+    int half_ms, full_ms;       /* the last load's ms, a half copy wanted or not */
+    /* The loader: a thread that reads the half copies fx_window asks for into stage, ld[s]'s
+     * at stage + s * HALF_TEXELS. state (LD_*) hands each request over, atomically; the rest of
+     * a request is the UI thread's while it is LD_FREE, ok the loader's while LD_READ. */
+    struct {
+        unsigned key;
+        int album, rank, state, ok;
+    } ld[LD_SLOTS];
+    unsigned *stage;
+    unsigned gate[8];     /* a zeroed sem_t, posted when there are requests */
+    unsigned long loader; /* the thread */
+    int ld_on, ld_stop;   /* ld_on: 1 running, 0 not asked yet, -1 could not start (the UI thread
+                           * then reads the half copies) */
+    unsigned paint_at;    /* fx_window's last frame, ms */
+    unsigned *more; /* going by letters, FX_POOL's slots past the shelf's; freed as they end */
+    int no_more;    /* their calloc failed: not asked again until letters end */
 } cf_depth_t;
 extern cf_depth_t fx;
 /* Classic's flip to the tracks panel (flip_open): its frame, the panel as painted and the turn. */
@@ -126,6 +154,17 @@ extern cf_thumb_t th;
 
 /* coverflow.c */
 unsigned album_key(void *r);
+char *art_path(char *out, unsigned key, const char *suffix);
+int cf_decode(const char *url, unsigned *out, int unload);
+/* the texture pool (fx_window): the shelf's slots, then the placeholder, then a slot half copies
+ * are made in */
+int fx_base(void);
+#define FX_PLACEHOLDER (fx.tex + fx_base() * CF_TEXELS)
+#define FX_SCRATCH (FX_PLACEHOLDER + CF_TEXELS)
+unsigned *fx_buf(int i);
+int fx_slot(int album);
+void fx_fill(int i, int a, int half);
+void fx_unletter(void);
 /* the depth renderer, which the letters draw with (coverflow_letters.c) */
 extern const int cf_cos90[17];
 void cf_restyle(void);
@@ -155,5 +194,16 @@ int coverflow_window(int frac);
 void draw_row(shelf_t *f, int frac, const unsigned *const *ring);
 int fold_t16(void);
 void draw_fold(shelf_t *f, const unsigned *const *ring, int t16, int lean, int off16);
+
+/* coverflow_loader.c: half copies, and the loader that reads them (its requests' LD_* states) */
+enum { LD_FREE, LD_WANT, LD_READ, LD_READY };
+int half_read(unsigned key, unsigned *tex);
+int ld_state(int s);
+int ld_find(int album);
+int ld_drop(int s);
+void ld_ask(const int *want, int k);
+void ld_take(int s, int i, int a);
+void ld_quit(void);
+void coverflow_halves(void);
 
 #endif

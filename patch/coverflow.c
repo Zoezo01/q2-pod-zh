@@ -4,8 +4,6 @@
  * pthread that touches only files, the two stock art locks and the volatile counters below. */
 #include "coverflow.h"
 
-/* On the card, beside stock's own cover cache (/mnt/mmc/.sldp). */
-#define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
 #define LAST_ALBUM ART_DIR "/album" /* the centre album's key, so a reboot opens on it */
 #define BUILDING ART_DIR "/building" /* the key and track of the album the worker is on (strike) */
 #define CRASH_LOG PEQ_ROOT "/mnt/mmc/q2-crash.log"
@@ -127,7 +125,7 @@ unsigned coverflow_scope(void *page) {
 }
 
 /* ART_DIR/<key>.jpg<suffix>; out holds at least 512 bytes. */
-static char *art_path(char *out, unsigned key, const char *suffix) {
+char *art_path(char *out, unsigned key, const char *suffix) {
     tk_snprintf(out, 512, ART_DIR "/%08x.jpg%s", key, suffix);
     return out;
 }
@@ -1517,7 +1515,6 @@ int image_show(void *img, const char *url, unsigned *size) {
  * its reflection, then the frame is drawn over the slide_menu, whose own children stay empty. All
  * integer: 16.16 turns and rotations, geometry in 1/16 px, row spans in 1/256 px. */
 #define CF_RING (2 * CF_REACH + 1)
-#define CF_TEXELS (ART_SIZE * ART_SIZE)
 /* the active theme's Cover Flow values, copied at page open (cf_restyle) */
 cf_style_t cfs __attribute__((section(".scratch")));
 /* with them, cf_restyle's: a side cover's sine, and its near edge's screen x (1/16 px), at t = 1;
@@ -1906,16 +1903,21 @@ int coverflow_hit(int frac, int x, int y) {
     return CF_MISS;
 }
 
-#define FX_SLOTS (2 * fx_reach() + 1)
+/* The texture pool: fx_reach's either side (fx_base), then the placeholder, then a slot half copies
+ * are made in; going by letters, up to FX_POOL with fx.more's. */
+int fx_base(void) { return 2 * fx_reach() + 1; }
+static int fx_slots(void) { return fx.more ? FX_POOL : fx_base(); }
 cf_depth_t fx __attribute__((section(".scratch")));
-
+unsigned *fx_buf(int i) { /* slot i's texture */
+    return i < fx_base() ? fx.tex + i * CF_TEXELS : fx.more + (i - fx_base()) * CF_TEXELS;
+}
 
 /* A decoded image copied into a texture: fitted whole and centred, nearest sampled to ART_SIZE,
  * over black, so a non-square cover shows uncropped between black bars, as Now Playing shows it.
  * Only 32-bit formats (BITMAP_RGBA_AT); stock decodes covers to RGBA8888 with straight alpha,
  * composited over the page (black or Light Mode's paper). The image manager's copy is only read,
  * and a cover's load is dropped again at once, as stock does. */
-static int decode(const char *url, unsigned *out, int unload) {
+int cf_decode(const char *url, unsigned *out, int unload) {
     static const unsigned char at[4][4] = BITMAP_RGBA_AT;
     unsigned bitmap[64]; /* bitmap_t */
     if (widget_load_image(cf.page, url, bitmap)) return 0;
@@ -1953,14 +1955,16 @@ static int decode(const char *url, unsigned *out, int unload) {
 }
 
 static void fx_close(void) {
+    ld_quit();
     if (fx.frame) bitmap_destroy(fx.frame);
     free(fx.tex);
+    free(fx.more);
     memset(&fx, 0, sizeof(fx));
 }
 
 static void fx_placeholder(void) {
-    unsigned *placeholder = fx.tex + FX_SLOTS * CF_TEXELS;
-    if (!decode(PLACEHOLDER, placeholder, 0)) /* a theme image: the manager keeps it */
+    unsigned *placeholder = FX_PLACEHOLDER;
+    if (!cf_decode(PLACEHOLDER, placeholder, 0)) /* a theme image: the manager keeps it */
         for (int i = 0; i < CF_TEXELS; ++i) placeholder[i] = 0xff3a3a3au;
     fx.light = ipod_light();
 }
@@ -1977,10 +1981,11 @@ HOT unsigned tilt_mix(unsigned a, unsigned b, unsigned w) { /* a to b, w of 256 
     return shade(a, 256 - w) + shade(b, w);
 }
 
-/* The frame and every texture at once, or neither: the flat covers then stand in. */
+/* The frame and every texture at once, or neither: the flat covers then stand in. Under a thumb
+ * theme 17 slots, 1.7 MB. */
 static int fx_open(void) {
     fx.frame = opaque_frame(CF_VIEW_W, cfs.view_h, LCD_BGRA8888);
-    fx.tex = fx.frame ? calloc((unsigned)FX_SLOTS + 1, CF_TEXELS * 4) : 0;
+    fx.tex = fx.frame ? calloc((unsigned)fx_base() + 2, CF_TEXELS * 4) : 0;
     if (!fx.tex) {
         fx_close();
         return 0;
@@ -1989,49 +1994,173 @@ static int fx_open(void) {
     return 1;
 }
 
-/* Album a's cached art in buf, else the placeholder (no art, or a card). */
-static const unsigned *fx_load(int a, unsigned *buf) {
+/* Album a's art into pool slot i: its half copy when half will do and it has one, else its cache
+ * file decoded, else the placeholder (no art, or a card). */
+void fx_fill(int i, int a, int half) {
+    unsigned *buf = fx_buf(i);
     char url[600] = "file://";
-    if ((unsigned)a < deque_size(cf.albums)) {
-        art_path(url + 7, album_key(deque_at(cf.albums, (unsigned)a)), "");
-        if (art_exists(url) && decode(url, buf, 1)) return buf;
-    }
-    return fx.tex + FX_SLOTS * CF_TEXELS;
+    fx.art[i] = FX_PLACEHOLDER, fx.half[i] = 0;
+    if ((unsigned)a >= deque_size(cf.albums)) return;
+    unsigned key = album_key(deque_at(cf.albums, (unsigned)a));
+    art_path(url + 7, key, "");
+    if (half && half_read(key, buf))
+        fx.art[i] = buf, fx.half[i] = 1;
+    else if (art_exists(url) && cf_decode(url, buf, 1))
+        fx.art[i] = buf;
 }
 
-/* The FX_SLOTS covers around album c of n stay decoded, others are dropped as movement crosses
- * albums; ring gets each ring slot's texture: ring[j] the cover j - CF_REACH from the centre, so a
- * thumb theme's goes either side of the seven (the callers' wide). A small library repeats albums
- * round the ring, as the slide_menu wraps. Nearest the centre first; while the thumb holds the
- * covers, FX_DECODES a frame, and at rest the seven a shelf shows at once: the rest show the
- * placeholder until a later frame (fx.todo) decodes them. ponytail: still on the UI thread, two a
- * frame; a decoder thread if a letter's re-centring shows its fill-in. */
-#define FX_DECODES 2
+/* want's k albums + 1 and album a (of n, round the ring) if it isn't one, while the pool has room;
+ * fx_around: the window r either side of album c, nearest first. */
+static int fx_want(int *want, int k, int a, int n) {
+    a = (a % n + n) % n + 1;
+    for (int i = 0; i < k; ++i)
+        if (want[i] == a) return k;
+    if (k < fx_slots()) want[k++] = a;
+    return k;
+}
+static int fx_around(int *want, int k, int c, int n, int r) {
+    for (int m = 0; m <= 2 * r; ++m) k = fx_want(want, k, c + (m & 1 ? (m + 1) / 2 : -m / 2), n);
+    return k;
+}
+/* album + 1's pool slot, or a free one taken for it; -1 with none free */
+int fx_slot(int album) {
+    int i = 0, free = -1;
+    for (; i < fx_slots() && fx.album[i] != album; ++i)
+        if (!fx.album[i] && free < 0) free = i;
+    if (i < fx_slots()) return i;
+    if (free >= 0) fx.album[free] = album, fx.art[free] = 0, fx.half[free] = 0;
+    return free;
+}
+
+/* A frame's loads stop at FX_BUDGET_MS, FX_ENTER_MS in the entry and FX_LETTERS_MS going by
+ * letters, or FX_SLACK_MS in a frame FX_LATE_MS or more after the last
+ * (docs/internals.md#coverflow-thumb). */
+#define FX_BUDGET_MS 8
+#define FX_ENTER_MS 2   /* the entry's budget */
+#define FX_LETTERS_MS 1 /* going by letters' */
+#define FX_SLACK_MS 10  /* a late frame's going by letters */
+#define FX_LATE_MS 30   /* two refreshes of 16.7 ms, less some jitter */
+/* Letters over (any landing, painted or not, or a touch): the covers kept in fx.more's slots move
+ * to the free ones before it (the shelf's want no more than fx_base), fx.more goes, and the loader
+ * with it, joined after the read in hand (one half copy's fread, about 4 ms). */
+void fx_unletter(void) {
+    if (!fx.more && !fx.no_more && !fx.ld_on) return;
+    for (int i = fx_base(), j = 0; fx.more && i < FX_POOL; ++i) {
+        if (!fx.album[i]) continue;
+        while (j < fx_base() && fx.album[j]) ++j;
+        if (j < fx_base()) {
+            fx.album[j] = fx.album[i], fx.half[j] = fx.half[i], fx.art[j] = fx.art[i];
+            if (fx.art[i] == fx_buf(i)) fx.art[j] = memcpy(fx_buf(j), fx_buf(i), CF_TEXELS * 4);
+        }
+        fx.album[i] = 0;
+    }
+    free(fx.more);
+    fx.more = 0, fx.no_more = 0;
+    ld_quit();
+}
+/* album a within r albums of album c, round the ring of n */
+static int fx_near(int a, int c, int n, int r) {
+    int d = ((a - c) % n + n) % n;
+    return d <= r || n - d <= r;
+}
+/* The covers wanted around album c of n stay loaded, others are dropped as movement crosses albums;
+ * ring gets each ring slot's texture: ring[j] the cover j - CF_REACH from the centre, so a thumb
+ * theme's goes either side of the seven (the callers' wide). A small library repeats albums round
+ * the ring, as the slide_menu wraps. Wanted: the window on the screen and, going by letters, the
+ * window of the letter gone to, the albums ahead towards it and the letters' either side; half
+ * copies from the loader (ld_ask) going by letters, the rest decoded, within a frame's budget, the
+ * order and the rules in docs/internals.md#coverflow-thumb. A cover not loaded shows the
+ * placeholder until a later frame (fx.todo) loads it. */
 static void fx_window(int c, int n, const unsigned **ring) {
-    int want[CF_WIDE], r = fx_reach(), slots = FX_SLOTS, budget = FX_DECODES;
-    for (int j = 0; j < slots; ++j) want[j] = ((c + j - r) % n + n) % n + 1;
-    for (int i = 0; i < slots; ++i) {
+    int want[FX_POOL], r = fx_reach(), k = 0, at = 0, sh = 0, to = 0;
+    unsigned t0 = (unsigned)time_now_ms();
+    int lean = th.on && th.jump && th.enter <= 0, late = (int)(t0 - fx.paint_at) >= FX_LATE_MS;
+    int half = th.on && (th.jump || th.fold), full = !th.on || (lean && th.pos == th.goal), any = 0;
+    fx.paint_at = t0;
+    /* With no room for the letters' windows, the screen's alone, which always fits. */
+    if (half && !fx.more && !fx.no_more)
+        fx.no_more = !(fx.more = calloc((unsigned)(FX_POOL - fx_base()), CF_TEXELS * 4));
+    if (half && !fx.more) lean = 0;
+    if (lean) { /* each letter's window sh on from its first album, as it is with the row there */
+        at = I(cf.slide, SLIDE_INDEX), sh = coverflow_window(0), to = at + cf_round(th.goal);
+        k = fx_around(want, 0, to + sh, n, r);
+    }
+    k = fx_around(want, k, c, n, r);
+    if (lean) {
+        int go = cf_round(th.goal) - cf_round(th.pos), dir = go < 0 ? -1 : 1;
+        for (int d = r + 1; d < ABS(go) - r && d <= r + CF_WIDE; ++d)
+            k = fx_want(want, k, c + dir * d, n);
+        to = (to % n + n) % n;
+        if (fx.letters_at != to + 1) {
+            unsigned letter;
+            fx.letters_at = to + 1;
+            fx.next = coverflow_letter_next(cf.slide, to, 1, n, &letter);
+            fx.prev = coverflow_letter_next(cf.slide, to, -1, n, &letter);
+        }
+        k = fx_around(want, fx_around(want, k, fx.next + sh, n, r), fx.prev + sh, n, r);
+    }
+    for (int i = 0; i < fx_slots(); ++i) {
         int keep = 0;
-        for (int j = 0; j < slots; ++j) keep |= fx.album[i] == want[j];
+        for (int j = 0; j < k; ++j) keep |= fx.album[i] == want[j];
         if (!keep) fx.album[i] = 0;
     }
+    int budget = !lean  ? th.on && th.jump ? FX_ENTER_MS : FX_BUDGET_MS
+                 : late ? FX_SLACK_MS
+                        : FX_LETTERS_MS;
     fx.todo = 0;
-    for (int k = 0; k < slots; ++k) {
-        int d = (k + 1) / 2, j = k & 1 ? r + d : r - d, i = 0;
-        while (i < slots && fx.album[i] != want[j]) ++i;
-        if (i == slots) { /* at most slots albums are wanted, so a slot is free */
-            for (i = 0; fx.album[i]; ++i) {}
-            fx.album[i] = want[j];
-            fx.art[i] = 0;
+    if (half || fx.ld_on > 0) ld_ask(want, half ? k : 0);
+    if (!half) fx_unletter();
+    for (int up = 0; up < 2; ++up)
+        for (int m = 0; m < k; ++m) {
+            int i = fx_slot(want[m]), h = half && !up,
+                s = h && fx.ld_on > 0 ? ld_find(want[m]) : -1;
+            int near = fx_near(want[m] - 1, c, n, r);
+            if (up ? !(near && full && fx.half[i]) : fx.art[i] != 0) continue;
+            if (h && fx.ld_on > 0 && (s < 0 || ld_state(s) != LD_READY)) { /* still on the card */
+                fx.todo = 1;
+                continue;
+            }
+            unsigned t = (unsigned)time_now_ms();
+            int spent = (int)(t - t0) + (h ? fx.half_ms : fx.full_ms);
+            if ((!th.on && !up && m <= 2 * CF_REACH) || !any || spent <= budget) {
+                if (s >= 0)
+                    ld_take(s, i, want[m] - 1);
+                else
+                    fx_fill(i, want[m] - 1, h);
+                if (fx.art[i] != FX_PLACEHOLDER) /* a copy wanted and none there: a decode's */
+                    *(h ? &fx.half_ms : &fx.full_ms) = (int)((unsigned)time_now_ms() - t);
+                any = 1;
+                if (near) fx.drawn = 0;
+            } else {
+                fx.todo = 1;
+            }
         }
-        if (!fx.art[i] && ((!th.on && d <= CF_REACH) || budget-- > 0)) {
-            fx.art[i] = fx_load(want[j] - 1, fx.tex + i * CF_TEXELS);
-            fx.drawn = 0;
-        }
-        fx.todo |= !fx.art[i];
-        ring[j + CF_REACH - r] = fx.art[i] ? fx.art[i] : fx.tex + FX_SLOTS * CF_TEXELS;
+    for (int j = -r; j <= r; ++j) {
+        int i = fx_slot(((c + j) % n + n) % n + 1);
+        ring[j + CF_REACH] = i >= 0 && fx.art[i] ? fx.art[i] : FX_PLACEHOLDER;
     }
 }
+
+#ifdef PEQ_HOST
+/* For test/coverflow.py: album a's art in the pool: 0 none, 1 its half copy, 2 its own, 3 the
+ * placeholder. */
+int cf_fx_has(int a) {
+    for (int i = 0; i < fx_slots(); ++i)
+        if (fx.album[i] == a + 1 && fx.art[i])
+            return fx.art[i] == FX_PLACEHOLDER ? 3 : fx.half[i] ? 1 : 2;
+    return 0;
+}
+unsigned cf_album_key(int a) { return album_key(deque_at(cf.albums, (unsigned)a)); }
+/* What letters hold: 1 fx.more, 2 the loader's stage, 4 its thread; 8 a slot past the pool's end
+ * kept, or art in none of its own texture, the placeholder or nothing. */
+int cf_fx_letters(void) {
+    int bad = 0;
+    for (int i = 0; i < FX_POOL; ++i)
+        bad |= fx.album[i] && (i >= fx_slots() || (fx.art[i] && fx.art[i] != FX_PLACEHOLDER &&
+                                                   fx.art[i] != fx_buf(i)));
+    return (fx.more != 0) | (fx.stage != 0) << 1 | (fx.ld_on > 0) << 2 | bad << 3;
+}
+#endif
 
 static int floor_div(int a, int b) { /* floor division, b > 0 */
     return a / b - (a % b < 0);

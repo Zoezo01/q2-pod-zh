@@ -453,6 +453,10 @@ float cf_thumb_hold(int lean, float lead, int frac) {
     th.lead = th.pos = 0;
     return x;
 }
+/* For test/patch.py: the row held as given, the MIPS build's own */
+void cf_thumb_held(float lead, float run, float xrun, float xs, int k) {
+    th.hold_lead = lead, th.hold_run = run, th.hold_xrun = xrun, th.hold_xs = xs, th.hold_k = k;
+}
 /* For test/coverflow.py: the covers of the frame at frac as drawn now (the row at speed, the entry
  * or the held row), each its album from frac's centre, xl, xr, hl, hr, bright; their count. */
 int cf_frame_quads(int frac, int (*out)[6]) {
