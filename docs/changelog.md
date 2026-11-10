@@ -33,7 +33,7 @@
   - Volume: with the screen off the wheel changes the volume again, and waking no longer leaves the volume bar stuck over the page, where Return and taps seemed dead.
   - Settings: **Wi-Fi file transfer** under **Network** is now **Wi-Fi File Transfer**, capitalised as the rows around it.
   - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
-  - Cover Flow: once a fast spin goes by letters, the letters last until you lift your thumb, then the covers fold out onto that letter's first album. Letters used to end as soon as you slowed down or turned back.
+  - Cover Flow: once a fast spin goes by letters, the letters last until you lift your thumb, then the covers fold out onto that letter's first album. Letters used to end as soon as you slowed down or turned back. In the Year sort a fast spin goes by years the same way.
   - Cover Flow: the cover coming in at the screen's edge is drawn whole as the covers move.
   - Cover Flow: frames draw faster, about 50 a second where there were about 32.
 - **1.7.6**:

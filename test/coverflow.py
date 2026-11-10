@@ -539,13 +539,26 @@ int getMusicByAlbum(const char *a) {
    grouping allows. */
 static const char *ranked[16], *rank_sql;
 static char rank_rows[16][0x60];
+static int rank_year[16]; /* the Year query's year column, each ranked row's (split_row's REC_YEAR) */
 /* navigation.c's Year order: newest first (0) or oldest. */
 static int year_old;
 int ringnav_year_old(void) { return year_old; }
 static int artist_view;
 int ringnav_artist_view(void) { return artist_view; }
 int ringnav_artist_az(void) { return 0; }
-int album_row(void *a, int n, char **v, char **c) { return 0; }
+/* Stock's row maker for a ranking query (split_row's first four columns): the album named by v[1]
+   as a row of its own, added to the staged deque. */
+static int rank_n;
+int album_row(void *a, int n, char **v, char **c) {
+    assert(n == 4 && rank_n < 16);
+    char *r = rank_rows[rank_n++];
+    memset(r, 0, 0x60);
+    for (int j = 0; j < albums; ++j)
+        if (!strcasecmp(names[j], v[1])) memcpy(r, records[j], 0x60);
+    *(const char **)(r + REC_ALBUM) = v[1]; /* ranked[]'s, which outlives the row */
+    ((deque *)shim_dir)->at[((deque *)shim_dir)->n++] = r;
+    return 0;
+}
 int toolsUpdateDbTable(const char *db, const char *sql) { return 1; } /* only a drop-flag scan writes */
 int toolsGetUserStop(void) { return 0; }
 int msg_counting(void) { return 0; }
@@ -567,12 +580,15 @@ int toolsQueryDbTable(const char *db, const char *sql, void *row, int sort) {
     }
     assert(strstr(sql, "time_create") || strstr(sql, "year"));
     rank_sql = sql;
+    /* each row's columns as text, as SQLite hands them: id, album, songer, the art track,
+       albumsonger, and YEAR_SQL's year */
+    int cols = strstr(sql, "else 0 end) from") ? 6 : 5;
+    rank_n = 0;
     for (int i = 0; ranked[i]; ++i) {
-        memset(rank_rows[i], 0, 0x60);
-        for (int j = 0; j < albums; ++j)
-            if (!strcasecmp(names[j], ranked[i])) memcpy(rank_rows[i], records[j], 0x60);
-        *(const char **)(rank_rows[i] + REC_ALBUM) = ranked[i];
-        d->at[d->n++] = rank_rows[i];
+        char id[12], year[12];
+        snprintf(id, sizeof id, "%d", i + 1), snprintf(year, sizeof year, "%d", rank_year[i]);
+        char *v[6] = { id, (char *)ranked[i], "Artist", "/music/x/01.flac", 0, year };
+        ((int (*)(void *, int, char **, char **))row)(0, cols, v, 0);
     }
     ++queries;
     return (int)d->n;
@@ -1702,11 +1718,17 @@ static void sorting(void) {
     assert(coverflow_jump(slide(), 1, 1, &letter) == 7 && letter == 'B');
     assert(coverflow_jump(slide(), 8, -1, &letter) == 8 && letter == 'A');
     /* Year: the query's order (newest first, undated last), the rest after. */
-    ranked[0] = "New", ranked[1] = "a", ranked[2] = 0;
+    ranked[0] = "New", ranked[1] = "a", ranked[2] = "Cover", ranked[3] = 0;
+    rank_year[0] = 2001, rank_year[1] = 1994, rank_year[2] = 70000; /* past 9999: undated */
     press_sort();
     assert(saved_sort() == 6);
     order_is((const char *const[]){ "New", "A", "Cover", "Folder", "Embedded", "None", "B", "C", "Tight", 0 });
-    assert(coverflow_jump(slide(), 0, 1, &letter) == 1 && !letter);
+    /* its groups are years, the query's year column; the albums it missed are undated, last */
+    assert(coverflow_jump(slide(), 0, 1, &letter) == 1 && letter == (CF_YEAR | 1994));
+    assert(coverflow_jump(slide(), 1, 1, &letter) == 1 && letter == CF_YEAR);
+    assert(coverflow_jump(slide(), 2, -1, &letter) == 1 && letter == (CF_YEAR | 1994));
+    assert(coverflow_jump(slide(), 2, 1, &letter) == albums - 2 && !letter);
+    rank_year[0] = rank_year[1] = rank_year[2] = 0;
     assert(strstr(rank_sql, "else 0 end) desc"));
     /* Year order: Oldest first: the next open ranks again, ascending (the query's order still). */
     close_page();
@@ -4732,6 +4754,79 @@ static void short_letters(void) {
     shim_themes[1].cf = fixture;
 }
 
+/* Year goes by years as Album and Artist go by letters, in the Year order either way: the same spin
+   enters them, each step lands on the first album of the next year that has albums, its year held
+   (CF_YEAR), the undated last as CF_YEAR alone, then round to the first year and back; a lift folds
+   onto the year's first album. The query ranks the dated and B (undated); the albums it missed come after. */
+static void by_years(int old) {
+    static const char *const order[2][10] = {
+        { "New", "A", "C", "Tight", "Cover", "B", "Folder", "Embedded", "None", 0 },
+        { "Cover", "C", "Tight", "New", "A", "B", "Folder", "Embedded", "None", 0 },
+    };
+    static const int year[2][9] = { { 2001, 2001, 1994, 1994, 1987 }, { 1987, 1994, 1994, 2001, 2001 } };
+    static const int firsts[2][4] = { { 0, 2, 4, 5 }, { 0, 1, 3, 5 } }; /* each year's first album */
+    static const cf_style_t shipped = CF_SHIPPED;
+    const cf_style_t fixture = shim_themes[1].cf;
+    year_old = old;
+    for (int i = 0; i < 6; ++i) ranked[i] = order[old][i], rank_year[i] = year[old][i];
+    ranked[6] = 0;
+    open_page();
+    while (saved_sort() != 6) press_sort();
+    order_is(order[old]);
+    close_page();
+    shim_themes[1].cf = shipped;
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
+    open_page();
+    widget *s = slide(), *covers_view = &w[s->parent];
+    int *index = (int *)(s->raw + SLIDE_INDEX), *offset = (int *)(s->raw + SLIDE_OFFSET), n = s->nkids;
+    #define NAMED(a) (!strcmp(album_caption(covers_view), order[old][a]))
+    #define TO_YEAR(a) (letter_held && letter_shown == (CF_YEAR | (unsigned)year[old][a]) && \
+                        (!(a) || year[old][(a) - 1] != year[old][a]))
+    #define AT_YEAR(a) (NAMED(a) && TO_YEAR(a))
+    top_window = page;
+    th_pass(0, 17);
+    th_down();
+    int t = 0, was = letters, prev = -1;
+    while (letters == was && t < 2000) th_spin(150, 17), t += 17;
+    /* the rate rising to jump_at, the entry at CF_ENTER_SPEED or more */
+    assert(th[T_JUMP] && t <= shipped.jump_ms + 100 + shipped.enter_albums * 1000 / CF_ENTER_SPEED);
+    for (int i = 0; i < 60 && TARGET() != firsts[old][3]; ++i, th_spin(150, 17)) /* on: later years, then the undated */
+        if (TARGET() != prev) assert(TARGET() > prev && TO_YEAR(TARGET())), prev = TARGET();
+    th_arrive();
+    assert(*index == firsts[old][3] && AT_YEAR(*index) && letter_shown == CF_YEAR && !*offset);
+    int r = 0;
+    prev = *index;
+    for (t = 0; TARGET() == prev && t < 1000; t += 17) r |= th_pass(-30, 17); /* on past the undated: the first year */
+    assert(TARGET() == 0 && r & 4 && TO_YEAR(0));
+    th_arrive();
+    assert(*index == 0 && AT_YEAR(0));
+    for (r = 0, t = 0; !TARGET() && t < 1000; t += 17) r |= th_pass(30, 17); /* and back round: the undated */
+    th_arrive();
+    assert(*index == firsts[old][3] && r & 4 && AT_YEAR(*index));
+    prev = *index;
+    for (int k = 2; k >= 0; --k) { /* back: each year before, to the first */
+        for (t = 0; TARGET() == prev && t < 2000; t += 17) th_spin(-150, 17);
+        th_arrive();
+        assert(*index == firsts[old][k] && AT_YEAR(*index) && !*offset);
+        prev = *index;
+    }
+    for (t = 0; !TARGET() && t < 1000; t += 17) th_spin(150, 17); /* on a year, then the lift */
+    int at = TARGET();
+    assert(at > 0 && TO_YEAR(at));
+    wheel_held = 0;
+    for (int i = 0; i < 100 && th[T_JUMP]; ++i) th_pass(0, 17); /* the row arrives, then folds */
+    assert(th[T_FOLD] && !letter_held && !letter_shown && *index == at);
+    th_rest();
+    assert(*index == at && !*offset && NAMED(at) && !th[T_FOLD] && !th[T_JUMP]);
+    #undef NAMED
+    #undef TO_YEAR
+    #undef AT_YEAR
+    close_page();
+    memset(rank_year, 0, sizeof rank_year), ranked[0] = 0, year_old = 0;
+    shim_themes[1].cf = fixture;
+    classic = 0, square_art = 0, top_window = 0;
+}
+
 int main(void) {
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
@@ -4902,6 +4997,11 @@ int main(void) {
     flip_frames();
     sorting();
     unlettered_sorts();
+    by_years(0);
+    by_years(1);
+    open_page();
+    while (saved_sort() != 0) press_sort();
+    close_page();
     artist_only();
     unknown_card();
     same_name();

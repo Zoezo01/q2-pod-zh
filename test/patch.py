@@ -10382,6 +10382,28 @@ for _ in range(17):  # 289 ms of CF_FOLD_MS
     m.calls=[]; tp(m); assert ('widget_invalidate_force',m.slide) in [c[:2] for c in m.calls] and tindex(m)==index and toff(m)==0
 trest(m); assert tindex(m)==index and toff(m)==0 and tcaption(m)==FRUIT[index]
 m.letters=[]; tpaint(m); assert not m.letters; passed()
+# The Year sort's years (CF_YEAR, 1<<31) are held as letters are: the digits in a box as tall as the letter's, as wide as
+# they need with the letter's padding, centred; undated, an en dash in the letter's own square.
+# Classic's letter is LETTER_PX; a theme with its own letter px (here Classic's set to 44) pads and sizes the year by it.
+def theme_offset(field):  # offsetof(theme_t, field) as the payload's own compiler lays it out for MIPS o32
+    import subprocess
+    src=f'#include <stddef.h>\n#include "theme.h"\nint x = offsetof(theme_t, {field});\n'
+    ir=subprocess.run(['clang','--target=mipsel-linux-gnu','-mabi=32','-ffreestanding','-I',str(ROOT/'patch'),'-x','c','-','-S','-emit-llvm','-o','-'],
+                      input=src,capture_output=True,text=True,check=True).stdout
+    return int(re.search(r'^@x = .*global i32 (\d+)',ir,re.M)[1])
+LPX=theme_offset('letter_px'); T=m.call(address=payload_syms['theme'],args=(0,0,0,0),gap=0)&0xffffffff
+assert struct.unpack('<h',m.u.mem_read(T+LPX,2))[0]==O['LETTER_PX'] and m.get(T+theme_offset('letter_raw'))&0xff==1  # Classic's
+m.char_px=30.0; LB=O['LETTER_BOX']; sw,sh=(signed(m.get(m.slide+O[k])) for k in ('W_W','W_H'))
+for px in (O['LETTER_PX'],44):
+    m.u.mem_write(T+LPX,struct.pack('<h',px))
+    for key,text in ((1<<31|1994,'1994'),(1<<31,'\u2013')):
+        m.call(address=ps['coverflow_letter_hold'],args=(m.slide,key,0,0),gap=0); m.letters=[]; m.rounded=[]; tpaint(m)
+        assert [l['text'] for l in m.letters]==[text] and m.letters[0]['font'][1]==px,m.letters
+        bw=max(LB,int(m.char_px*len(text))+LB-px); box=((sw-bw)//2,(sh-LB)//2,bw,LB)
+        assert m.letters[0]['rect']==box and (bw>LB)==(len(text)==4),(px,m.letters)
+        assert [r['rect'] for r in m.rounded if r['kind']=='fill' and r['color']==O['LETTER_ALPHA']<<24|O['FILL_RGB']]==[box]
+m.u.mem_write(T+LPX,struct.pack('<h',O['LETTER_PX']))
+m.call(address=ps['coverflow_letter'],args=(m.slide,0,0,0),gap=0); m.letters=[]; tpaint(m); assert not m.letters; passed()
 # chord_gate: Centre under a held Return is dropped whole while the wheel's raw, the covers not landed for it.
 def twake(m,kind,key=O['KEY_CENTER'],gap=30):
     inp=HOOKS['window_manager_dispatch_input_event'][0]; m.handlers[inp+12]='stock_input'; n=len(m.calls)

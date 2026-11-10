@@ -1716,15 +1716,15 @@ static int letter_expire(const void *info) {
     return 0;
 }
 
-/* The fast-scroll letter's box and character, on the theme's own scale; a letter_raw theme's
- * colours are final in both halves. */
-static void draw_letter(void *canvas, const unsigned *c, rect_t *box) {
+/* The fast-scroll letter's box and its n characters, on the theme's own scale; a letter_raw
+ * theme's colours are final in both halves. */
+static void draw_letter(void *canvas, const unsigned *c, unsigned n, rect_t *box) {
     const theme_t *T = theme();
     unsigned raw = st.raw_ink;
     st.raw_ink = T->letter_raw;
     /* unsigned: 0xd9 << 24 is past INT_MAX, undefined for an int; the Q2's clang wrapped it */
     fill_box(canvas, box, ((unsigned)LETTER_ALPHA << 24) | FILL_RGB, LETTER_RADIUS);
-    draw_centred(canvas, c, 1, box, T->letter_px ? T->letter_px : LETTER_PX, 0xffffffff);
+    draw_centred(canvas, c, n, box, T->letter_px ? T->letter_px : LETTER_PX, 0xffffffff);
     st.raw_ink = raw;
 }
 
@@ -1777,9 +1777,28 @@ static void paint_letter(void *w, void *canvas) {
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     rect_t box = { (I(w, W_W) - LETTER_BOX) / 2, (g_menu.height - LETTER_BOX) / 2, LETTER_BOX,
                    LETTER_BOX };
-    draw_letter(canvas, &c, &box);
+    draw_letter(canvas, &c, 1, &box);
     stock_canvas_set_fill_color(canvas, fill);
     canvas_set_clip_rect(canvas, &old);
+}
+
+/* Cover Flow's big letter centred over w, or the Year sort's year (CF_YEAR): its four digits in a
+ * box as tall as the letter's and as wide as they need with the letter's padding, an en dash in
+ * the letter's square when undated. */
+static void cf_label(void *w, void *canvas) {
+    unsigned c = st.cf_letter, y = c & ~CF_YEAR, s[4] = { c & CF_YEAR ? 0x2013 : c }, n = 1;
+    int bw = LETTER_BOX;
+    if (c & CF_YEAR && y) {
+        for (int k = 3; k >= 0; --k, y /= 10) s[k] = '0' + y % 10;
+        n = 4;
+        const theme_t *T = theme();
+        int px = T->letter_px ? T->letter_px : LETTER_PX;
+        canvas_set_font(canvas, theme_face(s, (int)n, &px), (unsigned)px);
+        int need = (int)canvas_measure_text(canvas, s, n) + LETTER_BOX - px;
+        bw = need > bw ? need : bw;
+    }
+    rect_t box = { (I(w, W_W) - bw) / 2, (I(w, W_H) - LETTER_BOX) / 2, bw, LETTER_BOX };
+    draw_letter(canvas, s, n, &box);
 }
 
 /* An art_square theme (Classic, which has no Corners; Modern under Square): an iPod's square art on
@@ -2693,9 +2712,7 @@ int ringnav_paint(void *w, void *canvas) {
         (st.cf_letter_held || (unsigned)time_now_ms() - st.cf_letter_at < LETTER_MS) &&
         P(canvas, CANVAS_LCD)) {
         unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-        rect_t box = { (I(w, W_W) - LETTER_BOX) / 2, (I(w, W_H) - LETTER_BOX) / 2, LETTER_BOX,
-                       LETTER_BOX };
-        draw_letter(canvas, &st.cf_letter, &box);
+        cf_label(w, canvas);
         stock_canvas_set_fill_color(canvas, fill);
     }
     edit_paint(w, canvas);

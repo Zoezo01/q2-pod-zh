@@ -525,10 +525,15 @@ static void drop(void) {
     cf.tracks = 0;
 }
 
+/* The Year sort's years, 0 undated, album by album as years_of (the library's sorted() list) has
+ * them. */
+static unsigned short *years;
+static void *years_of;
 static void drop_albums(void) {
     if (cf.albums && cf.albums != cf.stock) deque_destroy(cf.albums);
     if (cf.stock) deque_destroy(cf.stock);
     cf.albums = cf.stock = 0;
+    free(years), years = 0, years_of = 0; /* they go with their list */
 }
 
 /* A stock library query run into the caller's deque, the staging pointer on it so it leaves no trace.
@@ -647,10 +652,15 @@ static const unsigned char all_sorts[] = { SORT_ALBUM, SORT_ARTIST, SORT_YEAR,
     MUSIC_WHERE ALBUM_GROUP
 #define SORT_SQL ALBUM_SQL " order by "
 extern int ringnav_year_old(void);
-/* Albums by year, Playback settings' Year order (navigation.c): newest or oldest first, undated last. */
+/* ALBUM_SQL with each album's year after (split_row's REC_YEAR), by year, undated last. */
+#define YEAR_SQL                                                                                   \
+    "select id,album,songer," ALBUM_TRACK ",albumsonger," ALBUM_YEAR " from songtable" ALBUM_GROUP \
+    " order by " ALBUM_YEAR "=0," ALBUM_YEAR
+/* Albums by year, Playback settings' Year order (navigation.c): newest or oldest first, undated
+ * last. */
 static const char *year_sql(void) {
-    return ringnav_year_old() ? SORT_SQL ALBUM_YEAR "=0," ALBUM_YEAR ",album COLLATE NOCASE"
-                              : SORT_SQL ALBUM_YEAR "=0," ALBUM_YEAR " desc,album COLLATE NOCASE";
+    return ringnav_year_old() ? YEAR_SQL ",album COLLATE NOCASE"
+                              : YEAR_SQL " desc,album COLLATE NOCASE";
 }
 static const char *const sort_names[] = { "Sort: Album", "Sort: Artist", "Sort: Recently Added",
                                           "Sort: Most Played", "Sort: Random", "Sort: Rating", "Sort: Year" };
@@ -994,9 +1004,17 @@ static unsigned initial(int i) {
     return c;
 }
 
-/* Letters mean something on w: the whole library's covers, sorted by album or artist. */
+/* Album i's group: its initial, or in Year its year, CF_YEAR alone when undated. */
+static unsigned group(int i) {
+    if (cf.sort != SORT_YEAR) return initial(i);
+    return CF_YEAR | (years && cf.albums == years_of ? years[i] : 0u);
+}
+
+/* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
+ * year. */
 int lettered(void *w) {
-    return w && w == cf.slide && cf.screen == COVERS && cf.sort <= SORT_ARTIST && !cf.scoped;
+    return w && w == cf.slide && cf.screen == COVERS &&
+           (cf.sort <= SORT_ARTIST || cf.sort == SORT_YEAR) && !cf.scoped;
 }
 
 /* Utility cards and wrap edges remain individual stops. Reverse lands at a group's start. */
@@ -1004,16 +1022,16 @@ int coverflow_jump(void *w, int from, int dir, unsigned *letter) {
     int n = cf.albums ? (int)deque_size(cf.albums) : 0;
     *letter = 0;
     if (!lettered(w) || from < 0 || from >= n) return 1;
-    unsigned c = initial(from);
+    unsigned c = group(from);
     int to = from + dir;
     if (dir > 0) {
-        while (to < n && initial(to) == c) ++to;
-        if (to < n) *letter = initial(to);
+        while (to < n && group(to) == c) ++to;
+        if (to < n) *letter = group(to);
     } else {
-        while (to >= 0 && initial(to) == c) --to;
+        while (to >= 0 && group(to) == c) --to;
         if (to < 0) return from + 1; /* the last album, across the wrap */
-        c = initial(to);
-        while (to > 0 && initial(to - 1) == c) --to;
+        c = group(to);
+        while (to > 0 && group(to - 1) == c) --to;
         *letter = c;
     }
     return dir > 0 ? to - from : from - to;
@@ -1027,8 +1045,8 @@ int coverflow_letter_first(int i, unsigned *letter) {
     *letter = 0;
     if (n < 1) return i;
     i = i < n ? i : n - 1;
-    unsigned c = *letter = initial(i);
-    while (i > 0 && initial(i - 1) == c) --i;
+    unsigned c = *letter = group(i);
+    while (i > 0 && group(i - 1) == c) --i;
     return i;
 }
 
@@ -1044,6 +1062,7 @@ typedef struct {
     const char *artist; /* Artist: the artist's sort key, without its article */
     unsigned rank;
     int idx;
+    unsigned short year; /* Year: the query's, 0 undated or unranked */
 } order_t;
 
 static const char *album_name(void *r) {
@@ -1095,13 +1114,16 @@ static int album_in(row_t *v, unsigned m, void *r) {
 static row_t *stock_rows;
 static unsigned stock_n;
 static int album_index(void *r) { return album_in(stock_rows, stock_n, r); }
-/* album_row on the first four columns, then the fifth, the album artist, on the row it added; the
- * stSongInfo copy (0x5c631c) duplicates +0x24 as it does the other strings. */
+/* album_row on the first four columns, then the fifth, the album artist, on the row it added, and
+ * YEAR_SQL's sixth, the year; the stSongInfo copy (0x5c631c) duplicates +0x24 as it does the other
+ * strings. */
 static int split_row(void *a, int n, char **v, char **c) {
     void *dir = P(tools_pdeq_directory, 0);
     unsigned k = deque_size(dir);
-    album_row(a, n - 1, v, c);
-    if (deque_size(dir) > k && v[4]) P(deque_at(dir, k), REC_ALBUM_ARTIST) = strdup(v[4]);
+    album_row(a, 4, v, c);
+    if (deque_size(dir) <= k) return 0;
+    if (v[4]) P(deque_at(dir, k), REC_ALBUM_ARTIST) = strdup(v[4]);
+    if (n > 5) I(deque_at(dir, k), REC_YEAR) = v[5] ? atoi(v[5]) : 0;
     return 0;
 }
 static int rank_query(void *sql) { return toolsQueryDbTable("/mnt/data/database.db", sql, split_row, 0); }
@@ -1186,7 +1208,9 @@ static void rank_by(order_t *v, const char *sql) {
     void *rows = staged(rank_query, (void *)sql, &n);
     for (unsigned j = 0; j < deque_size(rows); ++j) {
         int i = album_index(deque_at(rows, j));
-        if (i >= 0 && v[i].rank == ~0u) v[i].rank = j;
+        int y = I(deque_at(rows, j), REC_YEAR);
+        if (i >= 0 && v[i].rank == ~0u) /* a year past 1-9999 is no year: undated */
+            v[i].rank = j, v[i].year = y > 0 && y < 10000 ? (unsigned short)y : 0;
     }
     deque_destroy(rows);
 }
@@ -1244,6 +1268,12 @@ static void *sorted(void) {
     void *out = _create_deque("stSongInfo");
     deque_init(out);
     for (unsigned i = 0; i < n; ++i) _deque_push_back(out, v[i].r);
+    if (!cf.scoped && cf.sort == SORT_YEAR) {
+        free(years);
+        years_of = out;
+        years = calloc(n + 1, sizeof *years); /* out of memory, all undated: one group */
+        for (unsigned i = 0; years && i < n; ++i) years[i] = v[i].year;
+    }
     free(v), free(sum), free(keys), free(stock_rows), stock_rows = 0;
     return out;
 }
