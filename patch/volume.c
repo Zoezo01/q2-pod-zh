@@ -1,9 +1,9 @@
 /* The volume panel: stock's volume dialog, drawn over Now Playing's times or on its own. */
 #include "navigation.h"
 
-/* The dialog vol_paint last drew, its value and the redraw timer. */
+/* The dialog vol_paint last drew, its value and the redraw timer; the page dots it hid. */
 static struct {
-    void *vol_dialog;
+    void *vol_dialog, *vol_dots;
     int vol_drawn;
     unsigned vol_timer;
 } vd __attribute__((section(".scratch")));
@@ -19,6 +19,17 @@ static void vol_end(void *top, void *canvas, const char *name, int x, int right,
     canvas_draw_image(canvas, bitmap, &src, &dst);
 }
 
+/* Classic's page dots back where the volume's number was (vol_paint), if their window still holds
+ * them. */
+static void dots_back(void) {
+    void *dots = st.np_win ? widget_lookup(st.np_win, "slide_indicator1", 1) : (void *)0;
+    if (dots && dots == vd.vol_dots) {
+        widget_set_visible(dots, 1, 0);
+        widget_invalidate_force(st.np_win, (void *)0);
+    }
+    vd.vol_dots = (void *)0;
+}
+
 /* Every VOL_POLL_MS while the dialog vol_paint drew is still on top: a changed volume repaints it
  * whole. Stock's own invalidation of the hidden slider does not reliably reach the screen, so the
  * bar would stop following the wheel after a tick or two. */
@@ -28,6 +39,7 @@ static int vol_poll(const void *info) {
     if (!vol) {
         vd.vol_timer = 0;
         vd.vol_dialog = (void *)0;
+        dots_back();
         return 0; /* RET_OK: removed */
     }
     if (widget_get_prop_int(vol, "value", 0) != vd.vol_drawn)
@@ -40,12 +52,12 @@ static int vol_poll(const void *info) {
  * dimming highlight removed at build time, tools/ipod.py), it opens on the wheel's volume and
  * sets its slider_vol. Over Now Playing, as on an iPod classic, the band from the progress bar to
  * the times turns black with a white bar over the track and "Volume N"; with Classic's times beside
- * its bar, the bar shows the volume between the iPod's speakers in the times' place (vol_end), no
- * number. Over any other window (Quick Settings included) a VOL_PANEL_* rounded panel in the
- * fast-scroll letter's style holds a pill bar and the number alone; Classic's, VOL_CL_X in, the
- * rows painter's gloss between two speakers. slider_vol and label_vol are
- * hidden, and slider_vol is moved onto the area drawn, so stock's partial repaints land on it;
- * vol_poll catches the changes those miss. */
+ * its bar, the bar shows the volume between the iPod's speakers in the times' place (vol_end) and
+ * "N%" takes the page dots' place until vol_poll finds the dialog gone. Over any other window
+ * (Quick Settings included) a VOL_PANEL_* rounded panel in the fast-scroll letter's style holds a
+ * pill bar and the number alone; Classic's, VOL_CL_X in, the rows painter's gloss between two
+ * speakers. slider_vol and label_vol are hidden, and slider_vol is moved onto the area drawn, so
+ * stock's partial repaints land on it; vol_poll catches the changes those miss. */
 void vol_paint(void *top, void *canvas) {
     void *wm = window_manager(), *lcd = P(canvas, CANVAS_LCD);
     if (!lcd || tk_strcmp(widget_get_prop_str(top, "name", ""), "volume_dialog")) return;
@@ -88,6 +100,7 @@ void vol_paint(void *top, void *canvas) {
     vd.vol_dialog = top;
     vd.vol_drawn = level;
     if (!vd.vol_timer) vd.vol_timer = timer_add(vol_poll, (void *)0, VOL_POLL_MS);
+    if (!beside) dots_back();
     unsigned fill = (unsigned)I(lcd, LCD_FILL_COLOR), s[12] = { 'V', 'o', 'l', 'u', 'm', 'e', ' ' },
              k = np ? 7 : 0;
     if (gloss) { /* no number */
@@ -126,6 +139,22 @@ void vol_paint(void *top, void *canvas) {
     if (beside) {
         vol_end(top, canvas, "classic_light_vol_lo", lo.x + lo.w, 1, &bar);
         vol_end(top, canvas, "classic_light_vol_hi", hi.x, 0, &bar);
+        /* The volume as a percentage where the page dots are: they are hidden, not papered over,
+         * since the art's reflection runs under them, and vol_poll (the restore's only way back, so
+         * not without it) repaints the page without them: a paint's own invalidate is lost. */
+        void *dots = widget_lookup(st.np_win, "slide_indicator1", 1);
+        if (!dots || !vd.vol_timer) return;
+        if (dots != vd.vol_dots) {
+            if (!widget_get_visible(dots)) return; /* another's hiding (none today) stays its */
+            widget_set_visible(vd.vol_dots = dots, 0, 0);
+            vd.vol_drawn = -1;
+            return;
+        }
+        int dy = I(st.np_win, W_Y) - I(top, W_Y) + I(P(dots, W_PARENT), W_Y);
+        rect_t pct = { 0, dy + I(dots, W_Y) + I(dots, W_H) / 2 - 8, I(st.np_win, W_W), 16 };
+        k = put_num(s, max > 0 ? (unsigned)(100 * clamp_step(0, max, level) / max) : 0);
+        s[k++] = '%';
+        draw_centred(canvas, s, k, &pct, NP_TIMES_PX, RGBA(flip_if(ipod_light(), 0xffffff)));
         return;
     }
     k += put_num(s + k, (unsigned)clamp_step(0, 999, level));
