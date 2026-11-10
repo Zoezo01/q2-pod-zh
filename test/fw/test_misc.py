@@ -550,6 +550,99 @@ def test_what_is_no_zip_is_no_book(fw, data):
     assert convert(fw, data)[0] == 0
 
 
+CD_MAX, ITEM_MAX = 2 << 20, 8 << 20  # books.c's
+ONE = [('a.xhtml', 'a.xhtml', 'One')]
+
+
+def end_record(data):
+    return data.rindex(b'PK\x05\x06')
+
+
+def central(data, name):
+    """name's central-directory record's offset: the records walked from the first."""
+    i = data.index(b'PK\x01\x02')
+    while True:
+        n, x, c = struct.unpack_from('<HHH', data, i + 28)
+        if data[i + 46:i + 46 + n] == name:
+            return i
+        i += 46 + n + x + c
+
+
+def patch(data, at, raw):
+    return data[:at] + raw + data[at + len(raw):]
+
+
+def padded_cd(size):
+    """A one-chapter book whose central directory is exactly size bytes: empty entries p00, p01... carry record comments."""
+    data = epub('c.opf', ONE)
+    need = size - struct.unpack_from('<I', data, end_record(data) + 12)[0]
+    n = -(-need // (46 + 3 + 0xffff))  # a record: 46 bytes, a 3-byte name, a comment of at most 64 KB
+    pad, extra = divmod(need - 49 * n, n)
+    buf = io.BytesIO(data)
+    with zipfile.ZipFile(buf, 'a') as z:
+        for i in range(n):
+            info = zipfile.ZipInfo(f'p{i:02}')
+            info.comment = b'x' * (pad + (i < extra))
+            z.writestr(info, b'')
+    data = buf.getvalue()
+    assert struct.unpack_from('<I', data, end_record(data) + 12)[0] == size
+    return data
+
+
+def big_container(size, noise=False):
+    """A one-chapter book whose container.xml, deflated, is exactly size bytes: padded past its rootfile with spaces,
+    or with random bytes, which deflate can't shrink, so the packed size is a little over size."""
+    with zipfile.ZipFile(io.BytesIO(epub('c.opf', ONE))) as book:
+        files = {name: book.read(name) for name in book.namelist()}
+    pad = size - len(files['META-INF/container.xml'])
+    files['META-INF/container.xml'] += random.Random(4).randbytes(pad) if noise else b' ' * pad
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as z:
+        item = z.getinfo('META-INF/container.xml')
+    assert item.file_size == size and (item.compress_size > ITEM_MAX) == noise
+    return buf.getvalue()
+
+
+def test_a_central_directory_of_2_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, padded_cd(CD_MAX)) == (1, b'One')
+    assert convert(fw, padded_cd(CD_MAX + 1))[0] == 0
+
+
+def test_an_entry_of_8_mb_is_read_and_one_byte_more_refused(fw):
+    assert convert(fw, big_container(ITEM_MAX)) == (1, b'One')
+    assert convert(fw, big_container(ITEM_MAX + 1))[0] == 0  # its size over, packed far under
+
+
+def test_an_entry_packed_over_8_mb_is_refused(fw):
+    """Its size is exactly ITEM_MAX: the packed size alone is over."""
+    assert convert(fw, big_container(ITEM_MAX, noise=True))[0] == 0
+
+
+def test_an_encrypted_entry_is_refused(fw):
+    data = epub('c.opf', ONE)
+    at = central(data, b'META-INF/container.xml') + 8
+    assert convert(fw, data)[0] == 1
+    assert convert(fw, patch(data, at, bytes([data[at] | 1])))[0] == 0  # the flags' bit 0
+
+
+def test_zip64_sizes_are_refused(fw):
+    """ZIP64 marks a size it moved to an extra field 0xffffffff, which ITEM_MAX refuses: zip_read has no ZIP64 check of
+    its own."""
+    data = epub('c.opf', ONE)
+    assert convert(fw, patch(data, central(data, b'META-INF/container.xml') + 20, b'\xff' * 8))[0] == 0
+
+
+def test_a_zip64_directory_offset_is_refused(fw):
+    """The common ZIP64 end record: the directory's offset 0xffffffff, its small size kept. CD_MAX passes it, and so does
+    the offset check, cd + size wrapping in 32 bits. What refuses the book is the read: here the seek goes past the
+    end and the read gets nothing; on the Q2, whose long is 32 bits, the seek to -1 fails first."""
+    data = epub('c.opf', ONE)
+    assert convert(fw, patch(data, end_record(data) + 16, b'\xff' * 4))[0] == 0
+
+
 def test_no_container_or_no_full_path_is_no_book(fw):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w') as z:
