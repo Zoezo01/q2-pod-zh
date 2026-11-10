@@ -9,7 +9,7 @@
  *   q2-<id>  the app;
  *   icon-40.png, icon.png
  *            its Streaming row's icon, 40 px (SET_ICON), drawn 1:1, else 52 px, scaled to fit;
- *            without them, the shared stream_app.
+ *            one over ART_MAX px either way counts as none; without them, the shared stream_app.
  * Streaming lists those on the card (home.c ringnav_stream). A row starts its app and opens
  * addon_page, a list the app draws over Q2SPOT/1 (docs/librespot.md) on /tmp/q2-<id>.browse.sock:
  * each row's kind says what a press does (a local row plays a song or folder from the card,
@@ -86,7 +86,7 @@
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
 #define ART_ROW_H 78 /* a row with a cover: stock Tidal's list_view default_item_height */
 #define ART_PX 64    /* its cover, square, centred in the row's height */
-#define ART_MAX 128  /* the most a cover's file may be, either way; larger counts as none */
+#define ART_MAX 128  /* the most a cover's or an icon's file may be, either way; larger is none */
 #define ART_KEEP 24  /* the rows' covers kept decoded around the list's scroll position */
 #define ART_URL (APP_ID + 32) /* art_file's file:// URL, its NUL included */
 
