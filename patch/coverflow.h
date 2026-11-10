@@ -209,5 +209,34 @@ void ld_ask(const int *want, int k);
 void ld_take(int s, int i, int a);
 void ld_quit(void);
 void coverflow_halves(void);
+#if Q2POD_DEV
+/* --dev builds only: the loading's counts for the gap log (gap_note) since its last frame, by
+ * LDC_NAMES; the loader keeps the reads' (atomic), the UI thread the rest. A step is a letter's;
+ * fill the ms from the last step till the window drawn had all its art, plus 1 (0: none); ms the
+ * loader's read ms; prio what its lowering took (ld_lower). */
+enum {
+    LDC_GREY,
+    LDC_ASKED,
+    LDC_READ,
+    LDC_FAIL,
+    LDC_INST,
+    LDC_LATE,
+    LDC_STALE,
+    LDC_UNREAD,
+    LDC_QUEUE,
+    LDC_STEP,
+    LDC_MISSED,
+    LDC_N
+};
+#define LDC_NAMES "grey\0asked\0read\0fail\0inst\0late\0stale\0unread\0queue\0step\0missed\0"
+typedef struct {
+    unsigned n[LDC_N], step_at, ms;
+    int filling, fill, prio;
+} cf_ldc_t;
+extern cf_ldc_t ldc;
+#define LDC(...) __VA_ARGS__
+#else
+#define LDC(...)
+#endif
 
 #endif

@@ -2097,6 +2097,8 @@ static void fx_window(int c, int n, const unsigned **ring) {
         if (fx.letters_at != to + 1) {
             unsigned letter;
             fx.letters_at = to + 1;
+            LDC(++ldc.n[LDC_STEP], ldc.n[LDC_MISSED] += ldc.filling, ldc.step_at = t0);
+            LDC(ldc.filling = 1);
             fx.next = coverflow_letter_next(cf.slide, to, 1, n, &letter);
             fx.prev = coverflow_letter_next(cf.slide, to, -1, n, &letter);
         }
@@ -2138,12 +2140,18 @@ static void fx_window(int c, int n, const unsigned **ring) {
                 if (near) fx.drawn = 0;
             } else {
                 fx.todo = 1;
+                LDC(ldc.n[LDC_LATE] += s >= 0); /* a copy read, refused */
             }
         }
     for (int j = -r; j <= r; ++j) {
         int i = fx_slot(((c + j) % n + n) % n + 1);
         ring[j + CF_REACH] = i >= 0 && fx.art[i] ? fx.art[i] : FX_PLACEHOLDER;
+        LDC(ldc.n[LDC_GREY] += i < 0 || !fx.art[i]);
     }
+#if Q2POD_DEV
+    if (ldc.filling && !ldc.n[LDC_GREY])
+        ldc.fill = (int)((unsigned)time_now_ms() - ldc.step_at) + 1, ldc.filling = 0;
+#endif
 }
 
 #ifdef PEQ_HOST
@@ -2389,32 +2397,90 @@ static int flip_paint(void *w, void *canvas) {
  * exists. */
 #define GAP_FRAMES 128
 #define GAP_MAX_BYTES 262144
+#define GAP_SECS 16 /* a run's seconds counted apart; later ones go in the last */
+#define GAP_LINE 200
 static struct {
-    unsigned n, last;
+    unsigned n, last, at; /* at: the run's first frame */
     struct {
-        unsigned short gap, decode, render;
-        short offset;
+        unsigned short gap, decode, render, loader;
+        short offset, fill;
+        unsigned char ldc[LDC_N];
     } row[GAP_FRAMES];
+    struct { /* the run's counts in all, its queue's least and most, its steps' fills */
+        unsigned sum[LDC_N], qmin, qmax, fills, fill_sum, fill_max;
+        struct {
+            unsigned short frames, ldc[LDC_N];
+        } sec[GAP_SECS];
+    } run;
 } gaps __attribute__((section(".scratch")));
+/* " name=value" for each of LDC_NAMES into s at o, of q's values (one for queue, mean over d) */
+static int gap_counts(char *s, int o, const unsigned *q, unsigned d) {
+    const char *name = LDC_NAMES;
+    for (int j = 0; j < LDC_N; name += strlen(name) + 1, ++j)
+        o += tk_snprintf(s + o, GAP_LINE - o, " %s=%u", name, j == LDC_QUEUE ? q[j] / d : q[j]);
+    return o;
+}
 static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
-    unsigned i = gaps.n++ % GAP_FRAMES;
+    unsigned i = gaps.n++ % GAP_FRAMES, q[LDC_N];
+    if (gaps.n == 1) { /* a run's first frame */
+        memset(&gaps.run, 0, sizeof gaps.run);
+        gaps.run.qmin = ~0u, gaps.at = t0;
+    }
     gaps.row[i].gap = (unsigned short)(t0 - gaps.last);
     gaps.row[i].decode = (unsigned short)(t1 - t0);
     gaps.row[i].render = (unsigned short)(t2 - t1);
+    gaps.row[i].loader = (unsigned short)__atomic_exchange_n(&ldc.ms, 0, __ATOMIC_RELAXED);
     gaps.row[i].offset = (short)I(w, SLIDE_OFFSET);
+    gaps.row[i].fill = (short)(ldc.fill - 1);
+    unsigned sec = (t0 - gaps.at) / 1000;
+    sec = sec < GAP_SECS ? sec : GAP_SECS - 1;
+    ++gaps.run.sec[sec].frames;
+    for (int j = 0; j < LDC_N; ++j) {
+        unsigned v = __atomic_exchange_n(&ldc.n[j], 0, __ATOMIC_RELAXED);
+        gaps.row[i].ldc[j] = (unsigned char)(v < 255 ? v : 255);
+        gaps.run.sum[j] += v, gaps.run.sec[sec].ldc[j] += (unsigned short)v;
+    }
+    unsigned queue = gaps.row[i].ldc[LDC_QUEUE];
+    if (queue < gaps.run.qmin) gaps.run.qmin = queue;
+    if (queue > gaps.run.qmax) gaps.run.qmax = queue;
+    if (ldc.fill) {
+        unsigned ms = (unsigned)ldc.fill - 1;
+        ++gaps.run.fills, gaps.run.fill_sum += ms;
+        if (ms > gaps.run.fill_max) gaps.run.fill_max = ms;
+    }
+    ldc.fill = 0;
     gaps.last = t0;
     if (P(w, SLIDE_ANIMATOR) || th.on) return;
-    void *on = gaps.n > 1 ? fopen("/tmp/q2-cf-gaps.on", "rb") : 0;
-    void *f = on ? fopen("/tmp/q2-cf-gaps.log", "ab") : 0;
+    void *on = gaps.n > 1 ? fopen(PEQ_ROOT "/tmp/q2-cf-gaps.on", "rb") : 0;
+    void *f = on ? fopen(PEQ_ROOT "/tmp/q2-cf-gaps.log", "ab") : 0;
     if (on) fclose(on);
     if (f && !fseek(f, 0, 2) && ftell(f) < GAP_MAX_BYTES) {
-        char s[64];
-        tk_snprintf(s, sizeof s, "== run at %u ms: %u frames\n", t0, gaps.n);
+        char s[GAP_LINE];
+        int prio = __atomic_load_n(&ldc.prio, __ATOMIC_RELAXED); /* 0 till the loader starts */
+        tk_snprintf(s, sizeof s, "== run at %u ms: %u frames, loader nice=%d io=%d\n", t0, gaps.n,
+                    prio & 1 ? 19 : 0, prio >> 1);
         fputs(s, f);
+        int o = gap_counts(s, tk_snprintf(s, sizeof s, "== all:"), gaps.run.sum, gaps.n);
+        tk_snprintf(s + o, sizeof s - o,
+                    " queue_min=%u queue_max=%u fills=%u fill_mean=%u fill_max=%u\n", gaps.run.qmin,
+                    gaps.run.qmax, gaps.run.fills,
+                    gaps.run.fills ? gaps.run.fill_sum / gaps.run.fills : 0, gaps.run.fill_max);
+        fputs(s, f);
+        for (unsigned k = 0; k < GAP_SECS && k <= (t0 - gaps.at) / 1000; ++k) {
+            for (int j = 0; j < LDC_N; ++j) q[j] = gaps.run.sec[k].ldc[j];
+            o = tk_snprintf(s, sizeof s, "== second %u: frames=%u", k, gaps.run.sec[k].frames);
+            o = gap_counts(s, o, q, gaps.run.sec[k].frames ? gaps.run.sec[k].frames : 1);
+            tk_snprintf(s + o, sizeof s - o, "\n");
+            fputs(s, f);
+        }
         for (i = gaps.n > GAP_FRAMES ? gaps.n - GAP_FRAMES : 0; i < gaps.n; ++i) {
             unsigned k = i % GAP_FRAMES;
-            tk_snprintf(s, sizeof s, "gap=%u decode=%u render=%u offset=%d\n", gaps.row[k].gap,
-                        gaps.row[k].decode, gaps.row[k].render, gaps.row[k].offset);
+            for (int j = 0; j < LDC_N; ++j) q[j] = gaps.row[k].ldc[j];
+            o = tk_snprintf(s, sizeof s, "gap=%u decode=%u render=%u offset=%d loader=%u",
+                            gaps.row[k].gap, gaps.row[k].decode, gaps.row[k].render,
+                            gaps.row[k].offset, gaps.row[k].loader);
+            o = gap_counts(s, o, q, 1);
+            tk_snprintf(s + o, sizeof s - o, " fill=%d\n", gaps.row[k].fill);
             fputs(s, f);
         }
     }

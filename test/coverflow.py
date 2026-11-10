@@ -5753,6 +5753,73 @@ static void loader_test(void) {
     classic = 0, square_art = 0;
 }
 
+#if Q2POD_DEV
+/* ---- --dev builds: the gap log's loading counts. Going by letters, frame by frame, what the
+   harness sees (the window drawn waiting for art, copies asked for, read, put in, refused for the
+   budget, dropped unread, in hand; the letter steps, one missed, the ms till one's window filled)
+   goes to gap_tallies, which main() compares with /tmp/q2-cf-gaps.log's rows. ---- */
+static void gap_log(void) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    static int was_has[256], was_ld[256];
+    const cf_style_t fixture = shim_themes[1].cf;
+    char path[600];
+    int n = albums, canvas[16] = { 0 }, *index;
+    widget *s;
+    shim_themes[1].cf = shipped;
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0, light = 0, decode_ms = 0, half_ms = 1;
+    for (int i = 0; i < n; ++i) {
+        cache_file(album_key(records[i]), "", path);
+        FILE *fp = fopen(path, "w");
+        fputs("jpg", fp);
+        fclose(fp);
+    }
+    open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    for (int i = 0; i < 3 * n && halves(0) < n; ++i) th_pass(0, 17);
+    coverflow_paint(s, canvas); /* at rest: the run before ends */
+    mkdir(PEQ_ROOT "/tmp", 0755);
+    unlink(PEQ_ROOT "/tmp/q2-cf-gaps.log");
+    fclose(fopen(PEQ_ROOT "/tmp/q2-cf-gaps.on", "w"));
+    FILE *out = fopen(PEQ_ROOT "/tmp/gap_tallies", "w");
+    for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a;
+    th_pass(0, 17), th_down();
+    for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17);
+    th_arrive();
+    ld_hold = 1;
+    unsigned step_at = clock_ms;
+    int filling = 1;
+    for (int f = 0; f < 14; ++f) {
+        int read = 0, grey = 0, asked = 0, inst = 0, late = 0, unread = 0, step = !f, fill = -1;
+        for (int r = 0; r < (f % 4 + 2) * (f >= 6 ? 8 : 1); ++r) read += cf_ld_step();
+        if (f == 6) th_step(1), step = 1;
+        for (int a = 0; a < n; ++a) was_has[a] = cf_fx_has(a), was_ld[a] = cf_ld(a);
+        th_pass(0, 17);
+        unsigned t0 = clock_ms;
+        coverflow_paint(s, canvas);
+        for (int a = 0; a < n; ++a) {
+            int now = cf_ld(a), took = cf_fx_has(a) && !was_has[a]; /* full art may follow at once */
+            asked += now == 1 && was_ld[a] < 0, inst += took;
+            late += was_ld[a] == 3 && now == 3, unread += was_ld[a] == 3 && now < 0 && !took;
+        }
+        int c = (*index + (int)floorf(th[T_POS] + .5f) +
+                 cf_frame_window((int)((th[T_POS] - floorf(th[T_POS] + .5f)) * ONE))) % n;
+        for (int d = -7; d <= 7; ++d) grey += !cf_fx_has(((c + d) % n + n) % n);
+        if (step) filling = 1, step_at = t0;
+        if (filling && !grey) fill = (int)(clock_ms - step_at), filling = 0;
+        fprintf(out, "grey=%d asked=%d read=%d fail=0 inst=%d late=%d stale=0 unread=%d queue=%d step=%d missed=%d fill=%d\n",
+                grey, asked, read, inst, late, unread, cf_ld(-1) + inst, step, f == 6, fill);
+    }
+    fclose(out);
+    ld_hold = 0, half_ms = 0;
+    wheel_held = 0;
+    for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
+    coverflow_paint(s, canvas); /* the run ends: the log written */
+    unlink(PEQ_ROOT "/tmp/q2-cf-gaps.on");
+    close_page(), top_window = 0, th_pass(0, 17);
+    shim_themes[1].cf = fixture;
+    classic = 0, square_art = 0;
+}
+#endif
+
 /* fx.no_more lasts till letters end: letters refused fx.more's slots don't ask again (loader_test),
    the next letters ask once again, and with the memory back they get them. */
 static void no_more_reset(void) {
@@ -6265,6 +6332,9 @@ int main(void) {
     embedded_first();
     half_art();
     loader_test();
+#if Q2POD_DEV
+    gap_log();
+#endif
     no_more_reset();
     return 0;
 }
@@ -6277,6 +6347,29 @@ FFMPEG_STUB = r"""#!/bin/sh
 for a; do [ "$prev" = -i ] && src=$a; prev=$a; done
 case $src in *.webp|*/Ffok/*) printf ffmpeg > "$a";; */Fkill/*) kill -9 $$;; *) exit 1;; esac
 """
+
+
+def gap_log(d):
+    """The --dev gap log's first run against what the harness saw frame by frame (gap_tallies), and its
+    totals and seconds against its rows."""
+    log = (d/'q2-cf-gaps.log').read_text().split('\n== run at ')[0].splitlines()
+    pairs = lambda line: dict(x.split('=', 1) for x in line.split() if '=' in x)
+    rows = [pairs(l) for l in log if l.startswith('gap=')]
+    want = [pairs(l) for l in (d/'gap_tallies').read_text().splitlines()]
+    assert log[0].startswith('== run at ') and f'{len(rows)} frames, loader nice=' in log[0], log[0]
+    for i, w in enumerate(want):
+        assert {k: rows[i][k] for k in w} == w, (i, rows[i], w)
+    names = 'grey asked read fail inst late stale unread queue step missed'.split()
+    total = pairs(log[1].removeprefix('== all:'))
+    for k in names:
+        rs = sum(int(r[k]) for r in rows)
+        assert int(total[k]) == (rs // len(rows) if k == 'queue' else rs), (k, total[k], rs)
+    queue = [int(r['queue']) for r in rows]
+    fills = [int(r['fill']) for r in rows if r['fill'] != '-1']
+    assert (int(total['queue_min']), int(total['queue_max']), int(total['fills']), int(total['fill_max'])) == (min(queue), max(queue), len(fills), max(fills, default=0))
+    seconds = [pairs(l.split(':', 1)[1]) for l in log if l.startswith('== second ')]
+    assert sum(int(s['frames']) for s in seconds) == len(rows) and sum(int(s['inst']) for s in seconds) == int(total['inst'])
+    assert any(int(w['late']) for w in want) and any(int(w['unread']) for w in want) and fills, 'gap_log is vacuous'
 
 
 def main():
@@ -6390,7 +6483,9 @@ def main():
         (tmp/'test.c').write_text(TEST)
         (tmp/'ffmpeg').write_text(FFMPEG_STUB)
         (tmp/'ffmpeg').chmod(0o755)
-        builds = {'coverflow_test': ()}  # each build's own flags; its card is <name>-root
+        # Built twice, side by side: as a release build, and as a --dev one (Q2POD_DEV, the gap log's
+        # counts), each with a card of its own.
+        builds = {'coverflow_test': (), 'coverflow_dev': ('-DQ2POD_DEV=1',)}  # each build's own flags; its card is <name>-root
         def cc(name, src):  # each source on its own, so they compile at once
             return subprocess.Popen(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/{name}-root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-result', '-Wno-unused-parameter', '-Wno-unused-function',
@@ -6409,7 +6504,10 @@ def main():
         if a.captures:  # capture the reflection intensity
             (tmp/'frames').mkdir()
             env['CF_CAPTURES'] = str(tmp/'frames')
+        dev = subprocess.Popen([str(tmp/'coverflow_dev')], env={**env, 'CF_CAPTURES': ''} if a.captures else env)
         subprocess.run([str(binary)], check=True, env=env)
+        assert dev.wait() == 0, 'the --dev host tests failed'
+        gap_log(tmp/'coverflow_dev-root/tmp')
         if a.captures:
             a.captures.mkdir(parents=True, exist_ok=True)
             from ipod import inc, imagemagick

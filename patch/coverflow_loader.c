@@ -59,6 +59,9 @@ static void half_make(unsigned key, const unsigned *tex) {
     if (!ok || rename(tmp, path)) unlink(tmp);
 }
 
+#if Q2POD_DEV
+cf_ldc_t ldc __attribute__((section(".scratch")));
+#endif
 /* The loader (docs/internals.md#coverflow-depth): the half copies fx_window wants read on a thread
  * of its own, at the lowest priority, so the UI thread never waits on the card; it only copies one
  * that is there into its texture. A request goes LD_FREE to LD_WANT (the UI thread), LD_READ and
@@ -91,6 +94,7 @@ __attribute__((noinline)) int ld_lower(void) {
         io = 3;
     else if (!cf_syscall(SYS_IOPRIO_SET, 1, tid, IOPRIO(2, 7)))
         io = 2;
+    LDC(__atomic_store_n(&ldc.prio, nice | io << 1, __ATOMIC_RELAXED));
     return nice | io << 1;
 }
 int ld_state(int s) { return __atomic_load_n(&fx.ld[s].state, __ATOMIC_ACQUIRE); }
@@ -110,7 +114,14 @@ __attribute__((noinline)) static int ld_step(void) {
         want = LD_WANT; /* the UI thread may have taken it back meanwhile */
     } while (!__atomic_compare_exchange_n(&fx.ld[s].state, &want, LD_READ, 0, __ATOMIC_ACQUIRE,
                                           __ATOMIC_RELAXED));
+#if Q2POD_DEV
+    unsigned t = (unsigned)time_now_ms();
+#endif
     fx.ld[s].ok = half_load(fx.ld[s].key, fx.stage + s * HALF_TEXELS);
+#if Q2POD_DEV
+    __atomic_fetch_add(&ldc.ms, (unsigned)time_now_ms() - t, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&ldc.n[fx.ld[s].ok ? LDC_READ : LDC_FAIL], 1, __ATOMIC_RELAXED);
+#endif
     __atomic_store_n(&fx.ld[s].state, LD_READY, __ATOMIC_RELEASE);
     return 1;
 }
@@ -137,6 +148,7 @@ int ld_drop(int s) {
         return 1;
     if (w != LD_READY) return 0; /* free, or being read */
     __atomic_store_n(&fx.ld[s].state, LD_FREE, __ATOMIC_RELAXED);
+    LDC(++ldc.n[LDC_UNREAD]);
     return 1;
 }
 
@@ -177,12 +189,15 @@ void ld_ask(const int *want, int k) {
             __atomic_store_n(&fx.ld[s].rank, m, __ATOMIC_RELAXED);
             __atomic_store_n(&fx.ld[s].state, LD_WANT, __ATOMIC_RELEASE);
             asked = 1;
+            LDC(++ldc.n[LDC_ASKED]);
         } else
             __atomic_store_n(&fx.ld[s].rank, m, __ATOMIC_RELAXED);
         seen |= 1u << s;
     }
-    for (int s = 0; s < LD_SLOTS; ++s)
+    for (int s = 0; s < LD_SLOTS; ++s) {
         if (!(seen >> s & 1)) ld_drop(s);
+        LDC(ldc.n[LDC_QUEUE] += ld_state(s) != LD_FREE);
+    }
     if (asked) sem_post((void *)fx.gate);
 }
 
@@ -194,12 +209,14 @@ void ld_take(int s, int i, int a) {
     unsigned key = album_key(deque_at(cf.albums, (unsigned)a));
     if (fx.ld[s].key != key) {
         fx.todo = 1; /* asked for again */
+        LDC(++ldc.n[LDC_STALE]);
     } else if (!fx.ld[s].ok)
         fx_fill(i, a, 0);
     else {
         memcpy(buf + CF_TEXELS - HALF_TEXELS, fx.stage + s * HALF_TEXELS, HALF_TEXELS * 4);
         half_spread(buf);
         fx.art[i] = buf, fx.half[i] = 1;
+        LDC(++ldc.n[LDC_INST]);
     }
     __atomic_store_n(&fx.ld[s].state, LD_FREE, __ATOMIC_RELAXED);
 }
