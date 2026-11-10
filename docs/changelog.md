@@ -1,6 +1,13 @@
 # Changelog
 
-- **1.7.7**:
+- **1.8.0**:
+  - System: Q2 Pod now runs on Shanling's stock firmware V1.34 instead of V1.32, with its newer kernel, drivers and player.
+  - Playback: **Headphones Required**, new in stock V1.34, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.
+  - Playlists: a playlist's songs can be sorted by name, with stock V1.34's **Sort**. The order they were added in stays the default, and **Edit Playlist** always shows that order.
+  - Library: the album view (list or grid) and the order of **Songs** are now kept after a restart.
+  - USB: **USB mode: Audio and DAC** is now stock V1.34's own, which also takes a host that never reads the card, such as a Nintendo Switch 2.
+  - MQA: stock V1.34's player no longer decodes MQA, so MQA files play as ordinary FLAC whatever **MQA** is set to.
+  - Settings: stock V1.34's **Wheel Function**, **Show Navigation Bar**, Album Wall, Spectrum and VU aren't offered: Q2 Pod's wheel, themes and Cover Flow already do those jobs. About no longer shows stock V1.34's thanks text.
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
   - Settings: on **Set date and time** and the **Sleep Timer**, a Centre press followed at once by **Next** or **Previous** no longer acts as well. It used to move on a field after the button and, after **Next** near the last field, set the clock or the timer before you meant to.
