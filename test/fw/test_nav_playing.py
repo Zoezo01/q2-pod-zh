@@ -983,7 +983,8 @@ def label_font(ui, w):
     return ui.prop(w, b'style:normal:font_name'), ui.prop(w, b'style:normal:font_size')
 
 
-@pytest.mark.parametrize('text, face', [(LATIN, b'classic-light'), (CYRILLIC, b'bold'), (CJK, b'default')])
+@pytest.mark.parametrize('text, face', [(LATIN, b'classic-light'), (CYRILLIC, b'bold'), (CJK, b'default'),
+                                        ('\u25b6 ' + LATIN, b'classic-light'), ('\u25b6 ' + CYRILLIC, b'bold')])  # View Queue's playing row
 def test_classics_title_face_falls_back_by_the_text(fw, st, ui, ranges, text, face):
     assert first_face(ranges, text) == face  # the text is where the cmaps say, or the test proves nothing
     theme(fw, st, CLASSIC)

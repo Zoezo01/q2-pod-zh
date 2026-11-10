@@ -365,7 +365,7 @@ def test_bold_font():
     font_bytes, ranges = build.bold_font()
     font = TTFont(io.BytesIO(font_bytes))
     source = TTFont(build.ROOT/'assets/fonts/LiberationSans-Bold.ttf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0x2013 in have and 0x4e2d not in have
     for rec in font['name'].names:
         if rec.nameID in (1, 3, 4, 6, 16, 17, 18, 21, 22):
@@ -408,7 +408,7 @@ def test_classic_light_font():
     from fontTools.ttLib import TTFont
     font_bytes, ranges = build.classic_light_font()
     font, source = TTFont(io.BytesIO(font_bytes)), TTFont(build.ROOT/'assets/fonts/texgyreheros-bold.otf')
-    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200)
+    have = sorted(u for u in source.getBestCmap() if 0x20 <= u < 0x530 or 0x2000 <= u < 0x2200) + [build.PLAY_MARK]
     assert sorted(font.getBestCmap()) == have and 0x41 in have and 0xe9 in have
     names = {rec.nameID: str(rec) for rec in font['name'].names}
     assert names[1].replace(' ', '').startswith('Q2PodClassicLight') and names[6].startswith('Q2PodClassicLight')  # the Windows record is TeXGyreHeros, unspaced
@@ -418,11 +418,39 @@ def test_classic_light_font():
     assert names[0] == str(source['name'].getName(0, 3, 1, 0x409))
     assert names[7] == str(source['name'].getName(7, 3, 1, 0x409))
     assert 'Modified version of TeX Gyre Heros Bold' in names[10] and 'gust.org.pl' in names[10]  # LPPL 6(a), 6(b), 6(d)2
+    assert 'U+25B6' in names[10] and 'U+25B6' in (build.ROOT/'assets/fonts/README-classic-light.txt').read_text()  # 6(b): every change
     assert (build.ROOT/'assets/fonts/README-classic-light.txt').exists() and (build.ROOT/'assets/fonts/GUST-FONT-LICENSE.txt').exists()
     if 'CFF ' in font:
         assert 'TeXGyre' not in str(font['CFF '].cff.fontNames) + font['CFF '].cff.topDictIndex[0].FullName + font['CFF '].cff.topDictIndex[0].FamilyName
     assert re.fullmatch(r'#define CLASSIC_LIGHT_RANGES \{0x20,0x7e,[0-9a-fx,]+\}', ranges)
     assert 'CFF ' in font and 'glyf' not in font  # the chosen outline form
+
+
+@pytest.mark.parametrize('face', ['bold_font', 'classic_light_font'])
+def test_both_faces_are_given_a_play_mark_on_the_middle_of_their_capitals(face):
+    """View Queue's mark (navigation.c stock_row_style): neither source has U+25B6, and a title holding
+    a character its face lacks leaves that face."""
+    from fontTools.pens.recordingPen import RecordingPen
+    from fontTools.ttLib import TTFont
+    font_bytes, ranges = getattr(build, face)()
+    font = TTFont(io.BytesIO(font_bytes))
+    assert ranges.endswith(',0x25b6,0x25b6}')
+    name, cap = font.getBestCmap()[build.PLAY_MARK], font['OS/2'].sCapHeight
+    pen = RecordingPen()
+    font.getGlyphSet()[name].draw(pen)
+    points = [args[0] for op, args in pen.value if op in ('moveTo', 'lineTo')]
+    assert [op for op, _ in pen.value] == ['moveTo', 'lineTo', 'lineTo', 'closePath']  # a triangle
+    xs, ys = sorted(x for x, _ in points), sorted(y for _, y in points)
+    assert xs[0] == xs[1] and ys[1] == (ys[0] + ys[2]) // 2  # an upright edge on the left, its point level with the middle
+    assert abs(ys[0] + ys[2] - cap) <= 1  # on the capitals' middle
+    assert abs((ys[2] - ys[0]) / cap - .78) < .005 and abs((xs[2] - xs[0]) / cap - .70) < .005
+    # a Classic row's title is 27 px, bold standing in at 83% of that (navigation.c fallback_px): the
+    # upright edge lies on a pixel's, so it is drawn sharp
+    pixel = (font['hhea'].ascent - font['hhea'].descent) / {'bold_font': 22, 'classic_light_font': 27}[face]
+    assert abs(xs[0] / pixel - 1) < .02
+    advance, bearing = font['hmtx'][name]
+    assert bearing == xs[0] and advance == xs[2] + bearing  # as much room after it as before
+    assert font['maxp'].numGlyphs == len(font.getGlyphOrder()) and font.getGlyphOrder()[-1] == name
 
 
 HEART = [(50, -10), (1250, -10), (1250, 1490), (50, 1490)]

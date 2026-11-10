@@ -6,13 +6,15 @@ fonts/classic-light.ttf in a Q2 Pod firmware image is a Modified Version of TeX 
 
 - cut to what it has of U+0020-U+052F and U+2000-U+21FF: part of its Latin and Greek and its punctuation;
 - its layout features cut to frac, liga and locl;
+- one glyph added at U+25B6, a play mark: a triangle tools/build.py draws (play_mark), which is not
+  from TeX Gyre Heros;
 - renamed Q2 Pod Classic Light, in the name table and the CFF names, as GUST asks of derived fonts. Its
   copyright and trademark notices (name IDs 0 and 7) are kept, and its description (name ID 10)
   says it is modified and where the original is.
 
-No outline or metric is changed. texgyreheros-bold.otf in this folder is the unmodified original.
-The Q2 Pod project maintains this version: the authors of TeX Gyre Heros and GUST do not support it,
-and questions about it go to Q2 Pod, not to them.
+No outline or metric of the original's is changed. texgyreheros-bold.otf in this folder is the
+unmodified original. The Q2 Pod project maintains this version: the authors of TeX Gyre Heros and
+GUST do not support it, and questions about it go to Q2 Pod, not to them.
 
 The original, with the whole TeX Gyre Heros family and its manifest:
 https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros
