@@ -1725,11 +1725,12 @@ static void draw_letter(void *canvas, const unsigned *c, rect_t *box) {
  * a spin has got: an album's songs (disc and track, comparator 0x506220), Up Next (play order),
  * Chapters (the file's). In Library's song list the class decides (internals.md, fast-scroll
  * letter): Recent, Frequent and Recently Added (0xf007-0xf009), Songs under Time added (getAllMusic
- * 3 and 4) and a playlist's songs (0xff13) in their own order. */
+ * 3 and 4) and a playlist's songs (0xff13) under its Sort's Time added (g_playlistsort_flag not 0,
+ * getMusicByPlayList 0x50b4f8) are in their own order. */
 static int own_order(const char *page) {
     if (!tk_strcmp(page, "allmusic_page")) {
         int cls = I(g_class_type, 0), sort = I(g_sort_flag, 0);
-        return (cls >= 0xf007 && cls <= 0xf009) || cls == 0xff13 ||
+        return (cls >= 0xf007 && cls <= 0xf009) || (cls == 0xff13 && I(g_playlistsort_flag, 0)) ||
                (cls == 0xf001 && (sort == 3 || sort == 4));
     }
     return !tk_strcmp(page, "albuminfo_page") || !tk_strcmp(page, "playerjumpinfo_page") ||

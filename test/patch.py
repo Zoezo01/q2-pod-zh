@@ -5894,11 +5894,14 @@ m.nodes[w]['name']=''; m.paint(w,gap=0); assert m.letters; passed()  # the same 
 # Nor over a page whose list is in an order of its own (own_order, where the wheel arms the letter): Up Next, Chapters,
 # and Library's song list by the class it shows and Songs' Sort. That list in name order, and another page left with
 # the song list's class and Sort, keep the letter.
+# A playlist's Sort is its own flag (0 by name, 1 Time added), read in sort's place for 0xff13.
 for name,cls,sort,shown in (('upnext_page',0xf001,0,False),('chapters_page',0xf001,0,False),('allmusic_page',0xf009,0,False),
-                            ('allmusic_page',0xf007,0,False),('allmusic_page',0xff13,0,False),('allmusic_page',0xf001,3,False),
-                            ('allmusic_page',0xf001,4,False),('allmusic_page',0xf001,1,True),('allmusic_page',0xf002,3,True),
+                            ('allmusic_page',0xf008,0,False),('allmusic_page',0xf007,0,False),('allmusic_page',0xf006,0,True),
+                            ('allmusic_page',0xf00a,0,True),('allmusic_page',0xff13,1,False),('allmusic_page',0xff13,0,True),
+                            ('allmusic_page',0xf001,3,False),('allmusic_page',0xf001,4,False),('allmusic_page',0xf001,1,True),
+                            ('allmusic_page',0xf001,2,True),('allmusic_page',0xf001,5,True),('allmusic_page',0xf002,3,True),
                             ('localclass_page',0xf009,3,True)):
-    m=Machine(); m.word(syms['g_class_type'],cls); m.word(syms['g_sort_flag'],sort)
+    m=Machine(); m.word(syms['g_class_type'],cls); m.word(syms['g_playlistsort_flag' if cls==0xff13 else 'g_sort_flag'],sort)
     w,es=m.page_list(40,extent=40*48,name=name)
     for e in es: m.nodes[e]['text']='row'
     m.paint(w,gap=0)
