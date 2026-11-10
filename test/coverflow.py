@@ -432,9 +432,11 @@ static unsigned shown[CF_VIEW_H * CF_VIEW_W];
 #undef calloc /* the payload's calloc is this shim; the tests' own is libc's */
 void *calloc(size_t, size_t);
 static int calloc_fail, more_fail, more_asks; /* no memory at all; none for fx.more's slots alone */
+static int tex_slots; /* fx_open's last textures: fx_base's, the placeholder and any scratch */
 void *shim_calloc(size_t n, size_t size) {
     int more = size == 160 * 160 * 4 && n == 64 - 15; /* fx_window's: FX_POOL past a thumb theme's fx_base */
     more_asks += more;
+    if (size == 160 * 160 * 4 && !more) tex_slots = (int)n;
     return calloc_fail || (tex_fail && size == 160 * 160 * 4) || (more_fail && more) ? 0 : calloc(n, size);
 }
 static int half_ms; /* a half copy's read, on the fake clock */
@@ -621,6 +623,9 @@ static int rank_year[16]; /* the Year query's year column, each ranked row's (sp
 /* navigation.c's Year order: newest first (0) or oldest. */
 static int year_old;
 int ringnav_year_old(void) { return year_old; }
+/* navigation.c's Big Library Mode: letters, years and half copies; main turns it on for their tests */
+static int big_library;
+int ringnav_big_library(void) { return big_library; }
 static int artist_view;
 int ringnav_artist_view(void) { return artist_view; }
 int ringnav_artist_az(void) { return 0; }
@@ -3640,7 +3645,230 @@ static void thumb_shipped(void) {
     #undef AT
 }
 
-/* ---- Pages: Classic's flip, the scoped pages' cards, Go to Album, the build's Cancel row. ---- */
+/* ---- Big Library Mode off: 1.7.6's letters, as 1.7.6's own tests had them (Classic's shipped
+   numbers): after the dwell the covers flow on and each letter is named on the moving row,
+   jump_pace apart, shown for LETTER_MS; slowing, turning back or a lift ends them. No held row, no
+   entry or fold, no letters' slots or loader. ---- */
+int cf_fx_letters(void);
+static int first_of_letter(int i) { return i >= 0 && (!i || initial_of(i) != initial_of(i - 1)); }
+/* The first album of the letter after (dir 1) or before i's, round the ends. */
+static int next_letter(int i, int n, int dir) {
+    int j = i;
+    do j = (j + dir + n) % n; while (initial_of(j) == initial_of(i));
+    while (dir < 0 && !first_of_letter(j)) --j;
+    return j;
+}
+static int named_album(widget *covers_view, int n) {
+    int i = 0;
+    while (i < n && strcmp(album_caption(covers_view), names[i])) ++i;
+    return i < n ? i : -1;
+}
+static void letters_176(void) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    const cf_style_t fixture = shim_themes[1].cf;
+    shim_themes[1].cf = shipped;
+    big_library = 0;
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
+    open_page();
+    widget *s = slide(), *covers_view = &w[s->parent];
+    int n = s->nkids, *index = (int *)(s->raw + SLIDE_INDEX);
+    top_window = page;
+    th_pass(0, 17);
+    #define AT() ((float)*index + th[T_GOAL]) /* the goal in albums, wherever SLIDE_INDEX is */
+    /* none of Big Library Mode's: no held row, entry or fold, no letters' slots or loader */
+    #define PLAIN() (!th[T_JUMP] && !th[T_LEAN] && !th[T_ENTER] && !th[T_FOLD] && !letter_held && !cf_fx_letters())
+
+    /* At jump_at for jump_ms, letters: each names a letter's first album, its letter shown, and no
+       geometry moves at one: the goal goes on by this pass's share and the covers keep moving. Each
+       letter in turn, however far the covers have gone since the last, one a jump_ticks of travel. */
+    th_down();
+    int letters0 = letters, t = 0, spread = 0, letter_at = 0, canvas[16] = { 0 }, twos = 0, rounded = 0;
+    while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
+    assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 300);
+    for (int i = 0; i < 30; ++i) {
+        int was = letters;
+        float goal = th[T_GOAL];
+        if (i) th_spin(150, 17);
+        if (letters == was && i) continue;
+        float went = th[T_GOAL] - goal;
+        assert(th[T_ON] && th[T_VEL] > .005f && (!i || fabsf(went) > 32 || (went > 0 && went < .5f)));
+        int at = named_album(covers_view, n);
+        assert(first_of_letter(at) || !letter_shown);
+        assert(!letter_shown || letter_shown == (unsigned)initial_of(at));
+        assert(!i || at == next_letter(letter_at, n, 1));
+        letter_at = at;
+        /* 1.7.6's loads: FX_DECODES (two) a frame, whatever a decode takes (6 ms here, as on the
+           device); the poll asks for frames until done */
+        int l0 = loads;
+        decode_ms = 6;
+        for (int f = 0; f < 10; ++f) {
+            int l1 = loads;
+            coverflow_paint(s, canvas);
+            assert(loads - l1 <= 2 && PLAIN());
+            twos += loads - l1 == 2;
+        }
+        decode_ms = 0;
+        /* and 1.7.6's window round the facing cover, as the row at speed draws it */
+        assert(!th[T_LEAD] || cf_frame_window(0) == (int)floorf(th[T_LEAD] + .5f));
+        rounded += th[T_LEAD] != 0;
+        spread += loads - l0 > 2;
+    }
+    assert(spread && twos && rounded);
+    assert(letters >= letters0 + 3);
+    /* However hard the spin, a steady beat: jump_pace apart. */
+    int beat = letters;
+    th_spin(150, 1700);
+    assert(letters - beat >= 1700 / shipped.jump_pace - 2 && letters - beat <= 1700 / shipped.jump_pace);
+    /* Once in, letters while the thumb turns on from fast_at: a still moment then a slower turn keep
+       them, and the cap's speed again goes on at once, no second dwell. */
+    int was = letters;
+    th_spin(0, 34);
+    th_spin(50, 136);
+    assert(letters > was);
+    was = letters;
+    th_spin(150, 340);
+    assert(letters >= was + 2);
+    /* A lift shorter than a letter shows keeps them: the next spin goes on from there, no dwell. */
+    wheel_held = 0;
+    th_spin(0, 170);
+    th_down();
+    was = letters;
+    th_spin(150, 170);
+    assert(letters > was);
+    /* A moderate turn (30 ticks/s) reads them: one each jump_ticks. */
+    th_spin(30, 102); /* the rate falls to it in rate_down */
+    was = letters;
+    th_spin(30, 1003);
+    assert(letters >= was + 30 / shipped.jump_ticks - 2 && letters <= was + 30 / shipped.jump_ticks + 1);
+    /* Under fast_at: album by album again under the thumb, with nothing thrown back. */
+    th_spin(10, 102);
+    int jumped = letters;
+    float on = AT();
+    th_spin(10, 600);
+    on = AT() - on;
+    on -= (float)n * floorf(on / (float)n + .5f);
+    assert(letters == jumped && on > .3f && on < 3 && PLAIN());
+    th_rest();
+    assert(CAPTION(*index) && !*(int *)(s->raw + SLIDE_OFFSET));
+    /* A lift in letters lands on the letter shown, its first album, however far the covers had
+       flowed on from it. */
+    th_down();
+    for (t = 0; letters == jumped && t < 2000; t += 17) th_spin(150, 17);
+    for (was = letters; letters == was;) th_spin(150, 17);
+    unsigned shown = letter_shown;
+    th_spin(150, 85);
+    assert(letters == was + 1 && shown);
+    th_rest();
+    assert(first_of_letter(*index) && (unsigned)initial_of(*index) == shown && !*(int *)(s->raw + SLIDE_OFFSET));
+    assert(PLAIN());
+
+    /* Under jump_at, however long: albums, never letters. */
+    th_down();
+    int l0 = letters;
+    th_spin(28, 2000);
+    assert(letters == l0);
+    th_rest();
+    /* A re-grip's dip under jump_at takes its own ms off the dwell rather than dropping it: letters
+       come before a dwell started again after the dip would bring them. */
+    th_down();
+    int tl = 0;
+    th_spin(150, 255), tl += 255;
+    th_spin(25, 204), tl += 204;
+    assert(letters == l0);
+    while (letters == l0 && tl < 2000) th_spin(150, 17), tl += 17;
+    assert(letters > l0 && tl < 255 + 204 + shipped.jump_ms);
+    th_rest();
+    /* A lift just short of the dwell starts no letters: the rate's fall after it isn't a spin. */
+    th_down();
+    l0 = letters;
+    th_spin(150, shipped.jump_ms - 34);
+    assert(letters == l0);
+    wheel_held = 0;
+    th_spin(0, 170);
+    assert(letters == l0);
+    th_rest();
+    /* A letter earned before a lift, waiting on its beat, doesn't fire after it: the lift lands on
+       the letter shown. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(150, 68);
+    was = letters;
+    unsigned earned = letter_shown;
+    wheel_held = 0;
+    th_spin(0, 340);
+    assert(letters == was);
+    th_rest();
+    assert(first_of_letter(*index) && (unsigned)initial_of(*index) == earned);
+    /* A creeping thumb on the quick loop of a page not repainting, a unit in twelve 8 ms passes, is a
+       slow thumb: albums again, under it. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    was = letters;
+    th_pass(-1, 8);
+    for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    th_pass(-1, 8);
+    for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    float at = AT();
+    for (int i = 0; i < 40; ++i) {
+        th_pass(-1, 8);
+        for (int k = 0; k < 11; ++k) th_pass(0, 8);
+    }
+    float crept = AT() - at;
+    crept -= (float)n * floorf(crept / (float)n + .5f);
+    assert(letters == was && crept > .5f);
+    th_rest();
+    /* A lift with the covers at rest stays where they are: no change of pictures on a still row. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(30, 1207); /* long enough for the lag of the spin to go */
+    for (was = letters; letters == was;) th_spin(30, 17);
+    th_spin(30, 153); /* most of an album on from the letter's */
+    th_spin(0, 238);
+    assert(fabsf(th[T_VEL]) < .004f);
+    int still = ((int)floorf(AT() + .5f) % n + n) % n;
+    th_rest();
+    assert(*index == still);
+    /* Nor does a re-grip onto a still row: the letter it had earned waits for the covers to move. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(150, 17);
+    th_spin(40, 1207);
+    for (was = letters; letters == was;) th_spin(40, 17);
+    th_spin(40, 102);
+    wheel_held = 0;
+    th_spin(0, 204);
+    wheel_held = 1;
+    th_spin(0, 51);
+    assert(fabsf(th[T_VEL]) < .004f);
+    was = letters;
+    th_pass(-6, 17);
+    assert(letters == was);
+    th_rest();
+
+    /* Turned back too: the covers leave a letter's first album at once, going that way. Round the
+       start to the last letter. */
+    th_down();
+    for (was = letters; letters == was;) th_spin(-150, 17);
+    letter_at = named_album(covers_view, n);
+    for (int i = 0; i < 12; ++i) {
+        for (was = letters; letters == was;) th_spin(-150, 17);
+        int at = named_album(covers_view, n);
+        assert(at == next_letter(letter_at, n, -1) && first_of_letter(at) && letter_shown == (unsigned)initial_of(at));
+        letter_at = at;
+    }
+    th_rest();
+    assert(PLAIN());
+
+    close_page();
+    top_window = 0;
+    th_pass(0, 17);
+    shim_themes[1].cf = fixture;
+    big_library = 1;
+    #undef PLAIN
+    #undef AT
+}
+
+/* ---- Pages, the scoped pages' cards, Go to Album, the build's Cancel row. ---- */
 extern int coverflow_turning(void), coverflow_rated(int (*)(void *)), coverflow_goto_album(void *), coverflow_shows_album(void *);
 extern void *coverflow_tracks(void *);
 extern void coverflow_by_year(void *);
@@ -4747,6 +4975,11 @@ static void unlettered_sorts(void) {
     classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
     open_page();
     assert(saved_sort() == 0);
+    big_library = 0; /* Big Library Mode off: Year at the cap, far past jump_ms, stays albums (Album: letters_176) */
+    while (saved_sort() != 6) press_sort();
+    at_cap(0);
+    while (saved_sort() != 0) press_sort();
+    big_library = 1;
     at_cap(1);
     static const int sorts[] = { 2 /* Recently Added */, 3 /* Most Played */, 4 /* Random */ };
     for (unsigned i = 0; i < sizeof sorts / sizeof *sorts; ++i) {
@@ -4985,7 +5218,21 @@ static void half_art(void) {
        passes make them, each texel the rounded mean of four, once: a copy there already is kept as
        it is. Done, an idle pass returns before it asks the card for its space. */
     coverflow_paint(s, canvas);
+    assert(!halves(0) && tex_slots == 17); /* fx_base's 15, the placeholder and the scratch */
+    big_library = 0; /* Big Library Mode off: the idle passes make none */
+    for (int i = 0; i < 3 * albums; ++i) th_pass(0, 17);
     assert(!halves(0));
+    /* Opened with it off: 1.7.6's 16 slots, no scratch, so none either once it is turned on, until
+       the page opens again. */
+    close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    coverflow_paint(s, canvas);
+    assert(tex_slots == 16);
+    big_library = 1;
+    for (int i = 0; i < 3 * albums; ++i) th_pass(0, 17), coverflow_paint(s, canvas);
+    assert(!halves(0));
+    close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    coverflow_paint(s, canvas);
+    assert(tex_slots == 17);
     for (int i = 0; i < 80 * 80; ++i) half[i] = 0xff000000u | i;
     cache_file(cf_album_key(*index), ".half", path);
     FILE *fp = fopen(path, "wb");
@@ -5506,7 +5753,36 @@ static void loader_test(void) {
     classic = 0, square_art = 0;
 }
 
+/* fx.no_more lasts till letters end: letters refused fx.more's slots don't ask again (loader_test),
+   the next letters ask once again, and with the memory back they get them. */
+static void no_more_reset(void) {
+    static const cf_style_t shipped = CF_SHIPPED;
+    const cf_style_t fixture = shim_themes[1].cf;
+    int n = albums, canvas[16] = { 0 }, *index;
+    widget *s;
+    shim_themes[1].cf = shipped;
+    classic = 1, frame_fail = 0, square_art = 1, pressed = 0, light = 0, decode_ms = 0, half_ms = 0;
+    open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    for (int k = 0; k < 3; ++k) {
+        more_fail = k < 2, more_asks = 0;
+        for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a;
+        th_pass(0, 17), th_down();
+        for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17);
+        for (int f = 0; f < 4; ++f) th_pass(0, 17), coverflow_paint(s, canvas);
+        assert(more_asks == 1 && (cf_fx_letters() & 1) == (k == 2));
+        wheel_held = 0;
+        for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
+        for (int i = 0; i < 200 && cf_fx_letters(); ++i) coverflow_paint(s, canvas);
+        assert(!cf_fx_letters());
+    }
+    more_fail = 0;
+    close_page(), top_window = 0, th_pass(0, 17);
+    shim_themes[1].cf = fixture;
+    classic = 0, square_art = 0;
+}
+
 int main(void) {
+    big_library = 1; /* every test of letters, years and half copies; off: unlettered_sorts, half_art */
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
     *(const char **)(track + REC_NAME) = "01 - File.flac";
@@ -5659,6 +5935,7 @@ int main(void) {
     rest_pinned();
     thumb_wheel();
     thumb_shipped();
+    letters_176();
     thumb_letters_held();
     letters_slide();
     lift_handoff();
@@ -5988,6 +6265,7 @@ int main(void) {
     embedded_first();
     half_art();
     loader_test();
+    no_more_reset();
     return 0;
 }
 """

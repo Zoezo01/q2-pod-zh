@@ -3097,7 +3097,8 @@ int ringnav_quick_settings(void *win, void *ctx) {
  * Display's Hold Return (HOLDRETURN, compact_now_playing; docs/ipod.md#hold-return), and Power's
  * Standby limit (STANDBYLIMIT, ringnav_standby; docs/internals.md#standby-limit), and Bluetooth's
  * Control Device Volume (BTVOLLINK, bt_audio_ready; docs/internals.md#headset-controls-and-volume),
- * and Power's Smart Wi-Fi (SMARTWIFI, smart_poll; docs/internals.md#smart-wi-fi).
+ * and Power's Smart Wi-Fi (SMARTWIFI, smart_poll; docs/internals.md#smart-wi-fi), and Display's
+ * Big Library Mode (BIGLIBRARY, Cover Flow's letters; docs/internals.md#coverflow-thumb).
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
@@ -3122,7 +3123,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    0,
                                    &st.smart_wifi,
                                    0,
-                                   0 };
+                                   0,
+                                   &st.big_library };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3144,7 +3146,8 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         0,
                                         "SMARTWIFI",
                                         0,
-                                        0 };
+                                        0,
+                                        "BIGLIBRARY" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
 /* a row's choices: Artist albums three, Standby limit four, every other row off and on */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
@@ -3170,6 +3173,12 @@ int ringnav_artist_view(void) {
 int ringnav_lock_clock(void) {
     pod_settings();
     return st.lock_clock;
+}
+/* Big Library Mode: Cover Flow's letters and their half copies (coverflow_thumb.c, lettered,
+ * coverflow_halves); off unless the key is 1. */
+int ringnav_big_library(void) {
+    pod_settings();
+    return st.big_library;
 }
 int ringnav_eq_output(void) {
     pod_settings();
@@ -3232,6 +3241,7 @@ static void pod_text(int i) {
         { 0 }, /* Smart Wi-Fi: a switch */
         { 0 }, /* Enlarged Album Art: a switch */
         { 0 }, /* Folder Album Cover: a switch */
+        { 0 }, /* Big Library Mode: a switch */
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -3256,6 +3266,7 @@ static void pod_text(int i) {
                          : i == POD_SMART_WIFI  ? "Smart Wi-Fi"
                          : i == POD_COVERMODE   ? "Enlarged Album Art"
                          : i == POD_FOLDERCOVER ? "Folder Album Cover"
+                         : i == POD_BIG_LIB     ? "Big Library Mode"
                                                 : 0;
     if (toggle)
         list_toggle(st.pod_label[i], toggle, v);
@@ -3269,9 +3280,9 @@ static void pod_text(int i) {
 }
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
- * the artist page's switch does;
- * Standby limit at the next Standby; Coverflow Sort and Refresh Coverflow at Coverflow's next open
- * (coverflow.c), Refresh with a toast, as it changes nothing in view. */
+ * the artist page's switch does; Big Library Mode's letters at the next spin, its half copies at
+ * Cover Flow's next open; Standby limit at the next Standby; Coverflow Sort and Refresh Coverflow
+ * at Coverflow's next open (coverflow.c), Refresh with a toast, as it changes nothing in view. */
 static int pod_click(void *ctx, void *event) {
     int i = (int)(long)ctx;
     pod_settings();
@@ -6746,7 +6757,7 @@ int ringnav_display(void *win, void *ctx) {
                              *const sub_icons[] = { 0, "system_display", "playset_covermode",
                                                     "playset_folderjump" };
     static const char *const cf_icons[] = { "playset_covermode", "playset_covermode",
-                                            "system_update" };
+                                            "system_update", "playset_covermode" };
     static const char *const hold_icon[] = { "playset_folderjump" },
                              *const tone_icon[] = { "system_keytone" },
                              *const lock_icon[] = { "system_keylock" };
@@ -6781,6 +6792,7 @@ int ringnav_display(void *win, void *ctx) {
     if (sub == DISPLAY_COVERFLOW) {
         pod_rows(win, "scroll_view_display", POD_ARTIST_CF, 1, cf_icons);
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
+        pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
         return result;
     }
     if (sub == DISPLAY_APPEARANCE) {

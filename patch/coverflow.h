@@ -91,7 +91,7 @@ enum { FX_SHELF, FX_HELD, FX_FOLD, FX_HELD_LEFT, FX_ENTRY };
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 typedef struct {
     void *frame;                     /* bitmap_t *, CF_VIEW_W x cfs.view_h BGRA8888 */
-    unsigned *tex;                   /* fx_base()'s slots, the placeholder, half copies' scratch */
+    unsigned *tex;                   /* fx_base()'s slots, the placeholder, FX_SCRATCH if scratch */
     int album[FX_POOL];              /* each slot's album + 1; 0 is empty */
     const unsigned *art[FX_POOL];    /* its texture: the slot's own, or the placeholder */
     unsigned char half[FX_POOL];     /* it holds the album's half copy (half_read) */
@@ -100,6 +100,7 @@ typedef struct {
     int mode;                        /* what the frame holds (FX_SHELF ...) */
     int letters_at, next, prev; /* the album + 1 the letters' windows are of, and those letters */
     int halves;                 /* coverflow_halves' next album */
+    int scratch;                /* tex has FX_SCRATCH: Big Library Mode was on at the open */
     unsigned half_at;           /* and when it last made a copy, ms (HALF_GAP_MS) */
     int half_ms, full_ms;       /* the last load's ms, a half copy wanted or not */
     /* The loader: a thread that reads the half copies fx_window asks for into stage, ld[s]'s
@@ -136,8 +137,11 @@ extern cf_flip_t fl;
  * albums from SLIDE_INDEX, its speeds a ms. on: it owns the offset, until it commits. */
 typedef struct {
     float pos, vel, goal, lead, lead_v, rate, tau, ticks, seen, seen_lead, stretch;
-    unsigned at, tick_at, edge_at;
+    unsigned at, tick_at, edge_at, letter_at;
     int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump;
+    /* Big Library Mode off: 1.7.6's letters (th_beat), each named on the moving row from the last
+     * one named (jump_to), jump_pace apart (letter_at) */
+    int beat, jump_to;
     int lean, fold;   /* the way the row leans (1: as right-hand covers; against th.dir as letters
                          began), kept through the entry, the letters and the fold, 0 from the
                          landing; folding back out from it */

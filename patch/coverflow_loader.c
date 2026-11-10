@@ -207,16 +207,17 @@ void ld_take(int s, int i, int a) {
 /* At rest under a thumb theme (coverflow_wheel_poll's idle passes): the half copies the cache still
  * lacks, made one a pass from the cover, no sooner than HALF_GAP_MS after the last (a decode is 6
  * to 9 ms of the UI thread), HALF_LOOK albums looked at a pass at most, none with the card short of
- * MIN_FREE_MB; from the first album each time the page opens, done at the last. The only place
- * they are written: never in a frame. */
+ * MIN_FREE_MB, and none outside Big Library Mode (nor, turned on with the page open, until it opens
+ * again: off has no scratch slot); from the first album each time the page opens, done at the last.
+ * The only place they are written: never in a frame. */
 #define HALF_LOOK 32
 #define HALF_GAP_MS 100
 void coverflow_halves(void) {
     int n = cf.albums && fx.tex ? (int)deque_size(cf.albums) : 0;
     unsigned now = (unsigned)time_now_ms();
     char url[600] = "file://", path[512];
-    if (fx.halves >= n || (fx.half_at && (int)(now - fx.half_at) < HALF_GAP_MS) ||
-        !card_space(ART_DIR))
+    if (fx.halves >= n || !fx.scratch || !ringnav_big_library() ||
+        (fx.half_at && (int)(now - fx.half_at) < HALF_GAP_MS) || !card_space(ART_DIR))
         return;
     for (int look = 0; fx.halves < n && look < HALF_LOOK; ++look) {
         unsigned key = album_key(deque_at(cf.albums, (unsigned)fx.halves++));

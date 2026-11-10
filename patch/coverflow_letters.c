@@ -157,12 +157,17 @@ static int entry_window(const entry_t *n) {
     while ((n->focus - a) * dir > 0 && !entry_shows(n, a)) a += dir;
     return a + dir * CF_WIDE_REACH;
 }
+/* The row's window: entry_window's into letters, held, and at speed in Big Library Mode; at speed
+ * with it off, 1.7.6's, round the facing cover */
+static int row_window(const entry_t *n) {
+    return th.jump || ringnav_big_library() ? entry_window(n) : cf_round(n->lead);
+}
 
 /* The entry's covers, nearest the facing point first as the row at speed draws them, into q, with
  * each one's album from frac's centre in album and the window's middle in *centre; their count. */
 static int entry_quads(const entry_t *n, int *centre, cf_quad_t *q, int *album) {
     int k = 0;
-    *centre = entry_window(n);
+    *centre = row_window(n);
     for (int d = 0; d < 2 * CF_WIDE; ++d)
         for (int i = 0; i < (d ? 2 : 1); ++i) {
             int a = (i == 0) == n->after ? n->focus - d : n->focus + d;
@@ -203,7 +208,7 @@ static void row_at(entry_t *n, int frac) {
 int coverflow_window(int frac) {
     entry_t n;
     row_at(&n, frac);
-    return entry_window(&n);
+    return row_window(&n);
 }
 
 /* The row's covers, nearest the facing point first: all of its window. ring[j]: the cover
@@ -490,11 +495,8 @@ void cf_frame_quad(int frac, int a, int *out) {
 /* For test/coverflow.py: the window's middle, from the album at the screen's middle, of the frame
  * at frac as drawn now (coverflow_paint's). */
 int cf_frame_window(int frac) {
-    entry_t e;
     cf_restyle();
-    if (!th.on || th.fold || (!th.jump && !th.lead)) return 0;
-    row_at(&e, frac);
-    return entry_window(&e);
+    return !th.on || th.fold || (!th.jump && !th.lead) ? 0 : coverflow_window(frac);
 }
 /* For test/coverflow.py: the fold's cover o, placed, and its brightness; its paint order, and
  * each one's quad (unless out is 0). */

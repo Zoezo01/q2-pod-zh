@@ -15,6 +15,7 @@ import host
 from conftest import NAVIGATION_SOURCE, O, Deques, claim, ui_name
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
 from test_nav_display_library import Ple  # playlists.c's editor state
+from test_navigation import Config
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
 KEY_NEXT, KEY_PREV, KEY_CENTER = O['KEY_NEXT'], O['KEY_PREV'], O['KEY_CENTER']
@@ -1585,7 +1586,10 @@ def test_homes_library_pane_shows_no_letter(fw, ui):
     assert letter(fw, page, canvas) == []
 
 
-def test_coverflows_album_tracks_show_no_letter(fw, ui):
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Big Library Mode off or on: Cover Flow's own letters change, not this one
+def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
+    Config(fw, BIGLIBRARY=big)
+    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
     page = Page(ui, titles(200), name='coverflow_page')
     album = [Rec('Abbey Road', artist='The Beatles')]  # the open album: its key is the track list's scope
     deque_of(fw, album)
@@ -1600,9 +1604,12 @@ def test_coverflows_album_tracks_show_no_letter(fw, ui):
     assert letter(fw, page, canvas) == ['S']  # the same spin with no album open keeps its letter
 
 
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Big Library Mode off or on
 @pytest.mark.parametrize('name, cls', [('albuminfo_page', 0xff10), ('albuminfo_page', 0xff11),
                                        ('playerjumpinfo_page', 0xff10)])
-def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls):
+def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls, big):
+    Config(fw, BIGLIBRARY=big)
+    assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
     fw.var('fw_ctx_g_class_type', C.c_int).value = cls
     page, canvas = spun(fw, ui, titles(200), name)
     assert letter(fw, page, canvas) == []  # in disc and track order, not A to Z

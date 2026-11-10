@@ -1009,10 +1009,11 @@ static unsigned group(int i) {
 }
 
 /* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
- * year. */
+ * year, in Big Library Mode. */
 int lettered(void *w) {
     return w && w == cf.slide && cf.screen == COVERS &&
-           (cf.sort <= SORT_ARTIST || cf.sort == SORT_YEAR) && !cf.scoped;
+           (cf.sort <= SORT_ARTIST || (cf.sort == SORT_YEAR && ringnav_big_library())) &&
+           !cf.scoped;
 }
 
 /* Utility cards and wrap edges remain individual stops. Reverse lands at a group's start. */
@@ -1982,10 +1983,11 @@ HOT unsigned tilt_mix(unsigned a, unsigned b, unsigned w) { /* a to b, w of 256 
 }
 
 /* The frame and every texture at once, or neither: the flat covers then stand in. Under a thumb
- * theme 17 slots, 1.7 MB. */
+ * theme 16 slots, 1.6 MB, and in Big Library Mode (on at the open) the half copies' scratch. */
 static int fx_open(void) {
     fx.frame = opaque_frame(CF_VIEW_W, cfs.view_h, LCD_BGRA8888);
-    fx.tex = fx.frame ? calloc((unsigned)fx_base() + 2, CF_TEXELS * 4) : 0;
+    fx.scratch = ringnav_big_library();
+    fx.tex = fx.frame ? calloc((unsigned)(fx_base() + 1 + fx.scratch), CF_TEXELS * 4) : 0;
     if (!fx.tex) {
         fx_close();
         return 0;
@@ -2032,9 +2034,10 @@ int fx_slot(int album) {
     return free;
 }
 
-/* A frame's loads stop at FX_BUDGET_MS, FX_ENTER_MS in the entry and FX_LETTERS_MS going by
- * letters, or FX_SLACK_MS in a frame FX_LATE_MS or more after the last
- * (docs/internals.md#coverflow-thumb). */
+/* In Big Library Mode a frame's loads stop at FX_BUDGET_MS, FX_ENTER_MS in the entry and
+ * FX_LETTERS_MS going by letters, or FX_SLACK_MS in a frame FX_LATE_MS or more after the last
+ * (docs/internals.md#coverflow-thumb); off, 1.7.6's FX_DECODES a frame. */
+#define FX_DECODES 2
 #define FX_BUDGET_MS 8
 #define FX_ENTER_MS 2   /* the entry's budget */
 #define FX_LETTERS_MS 1 /* going by letters' */
@@ -2107,6 +2110,7 @@ static void fx_window(int c, int n, const unsigned **ring) {
     int budget = !lean  ? th.on && th.jump ? FX_ENTER_MS : FX_BUDGET_MS
                  : late ? FX_SLACK_MS
                         : FX_LETTERS_MS;
+    int big = ringnav_big_library(), decodes = FX_DECODES;
     fx.todo = 0;
     if (half || fx.ld_on > 0) ld_ask(want, half ? k : 0);
     if (!half) fx_unletter();
@@ -2122,7 +2126,8 @@ static void fx_window(int c, int n, const unsigned **ring) {
             }
             unsigned t = (unsigned)time_now_ms();
             int spent = (int)(t - t0) + (h ? fx.half_ms : fx.full_ms);
-            if ((!th.on && !up && m <= 2 * CF_REACH) || !any || spent <= budget) {
+            if ((!th.on && !up && m <= 2 * CF_REACH) ||
+                (big ? !any || spent <= budget : decodes-- > 0)) {
                 if (s >= 0)
                     ld_take(s, i, want[m] - 1);
                 else

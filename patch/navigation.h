@@ -44,6 +44,7 @@ enum {
     POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
                       its rows do */
     POD_FOLDERCOVER,
+    POD_BIG_LIB, /* Display's Big Library Mode: Cover Flow's letters (ringnav_big_library) */
     POD_COUNT
 };
 
@@ -139,11 +140,12 @@ typedef struct {
      * last_input times the screen-on idle. year_old: Year order, oldest first. resume:
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
      * limit's choice.
-     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). */
+     * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Big Library Mode
+     * on. */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi;
+        eq_output, smart_wifi, big_library;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */

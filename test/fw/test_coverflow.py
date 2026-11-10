@@ -2128,7 +2128,7 @@ class Ld(C.Structure):
 class Fx(C.Structure):
     _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * FX_POOL), ('art', C.c_void_p * FX_POOL),
                 ('half', C.c_ubyte * FX_POOL),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves'.split()),
+                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves scratch'.split()),
                 ('half_at', C.c_uint), ('half_ms', C.c_int), ('full_ms', C.c_int),
                 ('ld', Ld * LD_SLOTS), ('stage', C.c_void_p), ('gate', C.c_uint * 8), ('loader', C.c_ulong),
                 ('ld_on', C.c_int), ('ld_stop', C.c_int), ('paint_at', C.c_uint), ('more', C.c_void_p), ('no_more', C.c_int)]
@@ -3313,8 +3313,8 @@ def test_a_level_slides_in_from_the_side_it_comes_from_where_the_theme_moves_lev
 
 class Th(C.Structure):
     _fields_ = [*((k, C.c_float) for k in 'pos vel goal lead lead_v rate tau ticks seen seen_lead stretch'.split()),
-                *((k, C.c_uint) for k in 'at tick_at edge_at'.split()),
-                *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump lean fold'.split()),
+                *((k, C.c_uint) for k in 'at tick_at edge_at letter_at'.split()),
+                *((k, C.c_int) for k in 'raw on finger held dir dead early clicked bounced capped jump beat jump_to lean fold'.split()),
                 ('fold_at', C.c_uint), *((k, C.c_float) for k in 'enter fold_off fold_vel hold_lead hold_run hold_xrun hold_xs'.split()),
                 ('hold_k', C.c_int)]
 

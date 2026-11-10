@@ -31,6 +31,15 @@ def ui_name(lib, name):
     return next(s for s in (name, *(f'{u}__{name}' for u in NAVIGATION_UNITS)) if hasattr(lib, s))
 
 
+def c_enum(first):
+    """navigation.h's enum that starts with `first` (NAVIGATION_SOURCE holds it), by name: each its place, as
+    none sets a value."""
+    source = re.sub(r'/\*.*?\*/', '', NAVIGATION_SOURCE, flags=re.S)
+    body = host.tools_build.need(re.search(rf'enum \{{\s*({first}\b[^}}]*)\}}', source), f'No enum {first}')[1]
+    assert '=' not in body
+    return {name.strip(): k for k, name in enumerate(body.split(',')) if name.strip()}
+
+
 FNV_SEED, FNV_PRIME = 2166136261, 16777619
 
 # The C uses stock's fixed addresses as they are: zeroed pages here. A non-PIE python (Debian's and

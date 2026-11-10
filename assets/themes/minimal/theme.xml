@@ -29,10 +29,11 @@
   </view>
   <!-- Cover Flow's shelf takes CF_* (ROLE_MACROS); the thumb is every theme's, Classic's and Modern's by extends:
        the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel.
-       jump_ms at jump_at ticks/s or more, a spin goes by letters, one each jump_ticks of travel (0: never), until the
-       thumb lifts: the row comes in over enter_albums, slides from letter to letter (slide_ms) and folds out once
-       within fold_near of the letter. row_reach and jump_pace are no longer read; they stay so a theme that states
-       them still builds. -->
+       jump_ms at jump_at ticks/s or more, a spin goes by letters, one each jump_ticks of travel (0: never). With Big
+       Library Mode off they are named on the moving row, jump_pace apart, until the thumb slows or turns back; on,
+       they last until the thumb lifts: the row comes in over enter_albums, slides from letter to letter (slide_ms)
+       and folds out once within fold_near of the letter. row_reach is no longer read; it stays so a theme that
+       states it still builds. -->
   <view name="coverflow">
     <element name="shelf" thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30"
              snap="25" spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120"

@@ -10075,6 +10075,7 @@ void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
 unsigned time_now_ms(void) { return 0; } /* the fold's clock: fold_at counts back from 0 */
+int ringnav_big_library(void) { return 0; } /* the MIPS machines' own: Big Library Mode off */
 void cf_thumb_lead(float), cf_thumb_lean(int), cf_thumb_fold(int, unsigned), cf_thumb_enter(int, float, float);
 void cf_thumb_speed(float, float), cf_thumb_held(float, float, float, float, int);
 float cf_thumb_hold(int, float, int);
@@ -10280,7 +10281,7 @@ for theme in ('1','0','2'):
     finally: SETUP.clear()
     m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
     tp(m); assert traw(m)==2 and not m.slides,theme
-    assert (15+2)*160*160*4 in m.live.values(),theme  # CF_WIDE, the placeholder, the half copies' slot
+    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder: Big Library Mode off, no half copies' slot
     thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel']),theme
     trest(m); assert toff(m)==0,theme; passed()
 # wheel_raw never stays set: each way off the covers gives the wheel back at the next pass, the travel gone, the
@@ -10341,7 +10342,11 @@ assert len(did(m,'reset_poweroptions_timer'))>=20*3-2 and len(did(m,'buzzeer_swi
 m.calls=[]
 for _ in range(10): tp(m)
 assert not did(m,'reset_poweroptions_timer') and not did(m,'buzzeer_switch'); passed()
-# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does: the first carries the covers on to the next
+# At the cap for jump_ms a spin goes by letters, as Minimal's wheel does. Big Library Mode off, 1.7.6's: the covers
+# flow on and each names the next letter's first album, its letter shown, jump_pace apart. Once in, a turn from
+# fast_at keeps them, one each jump_ticks; slowing under fast_at gives albums back under the thumb, and a lift lands
+# on the letter's first album. None of the held row, its entry or fold, nor the letters' slots or stage.
+# In Big Library Mode: the first carries the covers on to the next
 # letter's first album, each after slides the row there through the albums between (slide_ms), its letter held (no
 # LETTER_MS timer) and a click at the step; past the last letter, round to the first, and back from the first to the
 # last, as the albums wrap.
@@ -10357,11 +10362,26 @@ def tarrive(m):  # the thumb still, the row there
         tp(m)
     assert False
 FRUIT=('Apple','Avocado','Banana','Blueberry','Cherry','Date','Elder','Fig','Grape')
-m=classic_light_new(DepthMachine,albums=9)
+def plain(m): return not m.get(ps['th']+TH_AT['jump']) and not m.get(ps['th']+TH_AT['fold']) and (64-15)*160*160*4 not in m.live.values()
+m=classic_light_new(DepthMachine,albums=9)  # Big Library Mode off
+for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
+m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
+tp(m); thold(m); tspin(m,300,-30); assert not letter_on(m)  # 318 ticks/s; at the cap, short of jump_ms
+seen={tcaption(m)}; m.calls=[]
+for _ in range(50): tspin(m,17,-30); seen.add(tcaption(m)); tpaint(m); assert plain(m)
+assert letter_on(m) and len({c[0] for c in seen})>=4 and did(m,'buzzeer_switch')
+seen={tcaption(m)}
+for _ in range(40): tspin(m,17,-4); seen.add(tcaption(m))  # 42 ticks/s: a letter a beat, 9 passes or so
+assert letter_on(m) and len({c[0] for c in seen})>=2 and plain(m)
+tspin(m,100,-1); index=tindex(m); tspin(m,500,-1)  # 11 ticks/s
+assert tindex(m)!=index or toff(m)!=0
+trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)] and plain(m); passed()
+m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Big Library Mode
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 m.word(m.slide+O['SLIDE_INDEX'],1)  # from Avocado: past jump_ms and the entry, round the nine, the first letter is Apple's
-tp(m); thold(m); tspin(m,200,-30); assert not m.get(ps['th']+TH_AT['jump'])  # 318 ticks/s; at the cap, short of jump_ms
+tp(m); assert (15+2)*160*160*4 in m.live.values()  # opened on: the half copies' slot as well
+thold(m); tspin(m,200,-30); assert not m.get(ps['th']+TH_AT['jump'])  # 318 ticks/s; at the cap, short of jump_ms
 for _ in range(40):
     if m.get(ps['th']+TH_AT['jump']): break
     tspin(m,17,-30)
@@ -10499,7 +10519,7 @@ def spread(h):  # a half copy's texels, each two by two
 assert ('gaps' in payload_syms)==bool(manifest['dev'])  # the gap log
 PAINT_BOUND=5_100_000
 for cut in (False,True):
-    m=classic_light_new(HalfMachine,albums=9); m.cut=cut
+    m=classic_light_new(HalfMachine,albums=9); m.cut=cut; m.config['BIGLIBRARY']='1'
     n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)  # before any code runs
     for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
     m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
@@ -11346,10 +11366,10 @@ keep_lit=kids[2]
 assert m.icons_set==['system_display','switch_off','display_backlight','list_into','system_display','list_into','playset_covermode','list_into']
 f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
-# Cover Flow: Artist View, Cover Flow Sort, Refresh Cover Flow; Controls, System's row: the wheel, the
-# buttons and what they do.
-cfv=display_page(m,2); cf,cf_sort,cf_refresh=m.nodes[cfv]['children']
-assert m.icons_set==['playset_covermode','playset_covermode','system_update']
+# Cover Flow: Artist View, Cover Flow Sort, Refresh Cover Flow, Big Library Mode; Controls, System's row: the
+# wheel, the buttons and what they do.
+cfv=display_page(m,2); cf,cf_sort,cf_refresh,cf_big=m.nodes[cfv]['children']
+assert m.icons_set==['playset_covermode','playset_covermode','system_update','playset_covermode','switch_off']
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
@@ -18087,6 +18107,18 @@ assert icons==['system_display','playset_folderjump','playset_covermode','system
 guard=lambda: m.get(payload_syms['wheel_guard'])
 assert guard()==0 and click(7)==[(1,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==1
 assert click(7)==[(0,'Q2POD','VOLGUARD')] and texts()[7]=='Volume Guard' and guard()==0; passed()
+# Big Library Mode (Display, Cover Flow's page, its last row): off by default; the row saves BIGLIBRARY, and Cover
+# Flow reads it at once (ringnav_big_library: letters, years and half copies); a stored value other than 1 is off.
+bm,brows,btexts,bicons,bclick=settings_page('display','scroll_view_display',stock_rows=3,sub=2)
+assert btexts()[-1]=='Big Library Mode' and bicons[-1]=='playset_covermode',(btexts(),bicons)
+big=lambda bm: bm.call(address=payload_syms['ringnav_big_library'],args=(0,0,0,0),gap=0)
+k=len(brows)-1
+assert big(bm)==0 and bclick(k)==[(1,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Big Library Mode' and big(bm)==1
+assert bclick(k)==[(0,'Q2POD','BIGLIBRARY')] and btexts()[k]=='Big Library Mode' and big(bm)==0; passed()
+for v,on in (('1',1),('2',0),('0',0)):
+    bm,*_=settings_page('display','scroll_view_display',{'BIGLIBRARY':v},stock_rows=3,sub=2)
+    assert big(bm)==on,v
+passed()
 # Buttons Lock opens stock's page, as its row on System did. Key Tone, System's stock row before
 # (0x4cc2dc): its byte and key; Click With Headphones shows while it is on, and saves IPOD KEYTONEHP.
 assert click(5)==[] and m.opened[-1]==('systemset/keylock_page',None)
