@@ -405,8 +405,8 @@ def test_a_side_cover_s_pose_by_its_distance(fw):
     p = pose(g, 2 * ONE)
     assert (p.xc, p.zc, p.bright) == (16 * (112 + 48), 16 * (90 + 20), 128)
     assert pose(g, 3 * ONE).bright == 128  # the third out stays (CF_THIRD)
-    assert pose(g, 13 * ONE // 4).bright == 64 and pose(g, 7 * ONE // 2).bright == 0  # gone half a step on
-    assert pose(g, 4 * ONE).bright == 0
+    # and every one past it, drawn whole for as long as any of it shows (a thumb theme's wide ring)
+    assert pose(g, 13 * ONE // 4).bright == pose(g, 7 * ONE // 2).bright == pose(g, 15 * ONE // 2).bright == 128
 
 
 def test_a_cover_s_pose_is_continuous_and_keeps_turning_in_step(fw):
@@ -448,11 +448,23 @@ def test_the_ring_slot_nearest_first_and_the_side_being_left_farther(fw):
     assert (g.slot(-100, 1, 0), g.slot(-100, 1, 1)) == (2, 4)
 
 
+class Ring:
+    """The seven covers round the centre, ring[j] the cover j - 3, in a thumb theme's wide ring of
+    fifteen (its shelf draws seven a side), the ends left out: .at is what coverflow_render takes."""
+    def __init__(self, *covers):
+        self.wide = (C.c_void_p * 15)(*([None] * 4 + list(covers)))
+        self.at = C.c_void_p(C.addressof(self.wide) + 4 * C.sizeof(C.c_void_p))
+
+    def __setitem__(self, j, cover):
+        self.wide[j + 4] = cover
+
+
 def corner_inset(fw):
     """coverflow_render fills cf_inset once."""
     g = api(fw)
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    g.coverflow_render(d, VIEW_W, 0, (C.c_void_p * 7)())
+    ring = Ring()  # kept alive: coverflow_render reads its array
+    g.coverflow_render(d, VIEW_W, 0, ring.at)
     libc.free(C.addressof(d))
     return g
 
@@ -507,7 +519,8 @@ def test_hit_names_the_cover_drawn_there(fw):
     g = api(fw)
     ring = [texture(j) for j in range(7)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    pointers = (C.c_void_p * 7)(*[C.addressof(t) for t in ring])
+    wide = Ring(*[C.addressof(t) for t in ring])
+    pointers = wide.at
     checked = 0
     for frac in (0, 8000, 16000, 32767, -8000, -32768):
         g.coverflow_render(d, VIEW_W, frac, pointers)
@@ -539,9 +552,9 @@ def test_the_centre_cover_comes_out_texel_for_texel(fw):
     tex = exact(C.c_uint, ART * ART)
     tex[:] = [0xff000000 | x | y << 8 | 0x55 << 16 for y in range(ART) for x in range(ART)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    ring = (C.c_void_p * 7)()
+    ring = Ring()
     ring[3] = C.addressof(tex)
-    g.coverflow_render(d, VIEW_W, 0, ring)
+    g.coverflow_render(d, VIEW_W, 0, ring.at)
     for y in range(12, ART - 12):
         for x in range(ART):
             assert d[(TOP + y) * VIEW_W + CX - 80 + x] == bgra(tex[y * ART + x]), (x, y)
@@ -554,9 +567,9 @@ def test_the_reflection_mirrors_the_cover_and_fades_out_in_46_px(fw):
     tex = exact(C.c_uint, ART * ART)
     tex[:] = [0xff000000 | (y + 60) for y in range(ART) for x in range(ART)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    ring = (C.c_void_p * 7)()
+    ring = Ring()
     ring[3] = C.addressof(tex)
-    g.coverflow_render(d, VIEW_W, 0, ring)
+    g.coverflow_render(d, VIEW_W, 0, ring.at)
     bottom = TOP + ART
     for k in range(46):
         red = d[(bottom + k) * VIEW_W + CX] >> 16 & 255  # BGRA8888
@@ -571,7 +584,8 @@ def test_every_pixel_of_a_frame_is_opaque_and_stays_in_the_frame(fw):
     g = api(fw)
     ring = [texture(j) for j in range(7)]
     d = exact(C.c_uint, VIEW_W * VIEW_H)
-    pointers = (C.c_void_p * 7)(*[C.addressof(t) for t in ring])
+    wide = Ring(*[C.addressof(t) for t in ring])
+    pointers = wide.at
     for frac in range(-32768, 32768, 7001):
         g.coverflow_render(d, VIEW_W, frac, pointers)
         assert all(x >> 24 == 255 for x in d)
@@ -586,11 +600,11 @@ def test_covers_mirror_when_the_frame_does(fw):
     flip = exact(C.c_uint, ART * ART)
     flip[:] = [0xff000000 | (ART - 1 - x + 40) | (y + 40) << 8 for y in range(ART) for x in range(ART)]
     a, b = exact(C.c_uint, VIEW_W * VIEW_H), exact(C.c_uint, VIEW_W * VIEW_H)
-    ring = (C.c_void_p * 7)()
+    ring = Ring()
     ring[2] = C.addressof(tex)
-    g.coverflow_render(a, VIEW_W, 0, ring)
+    g.coverflow_render(a, VIEW_W, 0, ring.at)
     ring[2], ring[4] = None, C.addressof(flip)
-    g.coverflow_render(b, VIEW_W, 0, ring)
+    g.coverflow_render(b, VIEW_W, 0, ring.at)
     for y in range(0, VIEW_H, 11):
         for x in range(0, 2 * CX):
             assert a[y * VIEW_W + x] == b[y * VIEW_W + 2 * CX - 1 - x], (x, y)

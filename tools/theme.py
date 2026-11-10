@@ -39,7 +39,8 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            **dict.fromkeys(('playing.title.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
-# coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb)
+# coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb); row_reach is no longer read,
+# and stays so a theme that states it still builds
 CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 'fast_full': 1000, 'top_speed': 100, 'track': 1000,
             'snap': 1000, 'spin': 1000, 'far_left': 2000, 'detent': 100, 'hold_ms': 30000, 'stop_ms': 1000, 'stop_left': 500,
             'rate_up': 1000, 'rate_down': 1000, 'back': 500, 'dead': 20, 'contact_ms': 200, 'aim_snap': 100, 'lead_from': 500,
@@ -977,7 +978,7 @@ def validate(t, name):
     if t['cf.eye'] + t['cf.eye_turn'] > 2046:  # unproject's 1/16 px eye times a 16.16 cosine stays in 32 bits
         err(f"coverflow.shelf: eye + eye_turn = {t['cf.eye'] + t['cf.eye_turn']} exceeds 2046")
     if t['cf.thumb']:  # coverflow_wheel_poll and draw_row divide by these
-        for a in ('ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'):
+        for a in ('ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge'):
             if not t[f'cf.{a}']:
                 err(f'coverflow.shelf: thumb needs {a}')
         for lo, hi in (('fast_at', 'fast_full'), ('fast_at', 'jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')):

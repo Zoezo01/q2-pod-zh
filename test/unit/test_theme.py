@@ -589,7 +589,7 @@ def test_coverflow_thumb_is_every_themes():  # the page's numbers, all retunable
         assert {a: t[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB, t['id']
 
 
-@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'])
+@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge'])
 def test_coverflow_thumb_needs_its_divisors(field):
     c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
     with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: thumb needs {field}'):

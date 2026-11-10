@@ -10046,12 +10046,17 @@ class DepthMachine(CoverflowMachine):
         self.calls.append((name,a,b,c))
         self.returns(ret,clobber=True)
 
-def host_render(textures,cases,style=None,paper=None):
-    """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases. style: a theme's cf.* values; paper: the light half's."""
+def host_render(textures,cases,style=None,paper=None,still=False):
+    """The same renderer source built for the host: frames for (frac, mask of drawn slots) cases. style: a theme's cf.* values; paper: the light half's.
+    15 textures make the thumb's wide ring.
+    still: nothing moving, as the page's own frame at rest (the shelf's seven); else moving, as a direct render is."""
     import subprocess, tempfile
     from coverflow import CF_SOURCES, SHIM_H
-    from theme import ROLE_MACROS
-    style=style or {**{f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')},'cf.art_persp':100}
+    from theme import ROLE_MACROS, builtins
+    style=style or {**{f:O[m] for f,m in ROLE_MACROS['minimal'].items() if f.startswith('cf.')},'cf.art_persp':100,
+                    'cf.thumb':builtins()[0]['cf.thumb']}  # Minimal's, a thumb theme: its shelf draws seven covers a side
+    if len(textures)==7:  # the seven round the centre, the wide ring's ends left out
+        textures=[textures[0]]*4+list(textures)+[textures[0]]*4; cases=[(f,m<<4) for f,m in cases]
     cf=', '.join(f'.{f[3:]} = {v}' for f,v in style.items()); rows=style['cf.view_h']
     main=r"""#include "theme.h"
 static theme_t t = { .cf = { %s } };
@@ -10061,20 +10066,23 @@ const theme_t *theme(void) { return &t; }
 void coverflow_render(unsigned *, int, int, const unsigned *const[7]);
 int ipod_light(void) { return %d; }
 int ipod_square_art(void) { return 0; }
+void cf_shelf_still(int);
 const scheme_t *scheme(void) { static scheme_t s = { .paper = %d }; return &s; }
-static unsigned tex[7][160 * 160], frame[%d * %d];
+#define N %d
+static unsigned tex[N][160 * 160], frame[%d * %d];
 int main(void) {
-    const unsigned *ring[7];
-    if (fread(tex, 4, 7 * 160 * 160, stdin) != 7 * 160 * 160) return 1;
+    const unsigned *ring[N];
+    cf_shelf_still(%d);
+    if (fread(tex, 4, N * 160 * 160, stdin) != N * 160 * 160) return 1;
     int frac, mask;
     while (scanf("%%d %%d", &frac, &mask) == 2) {
-        for (int j = 0; j < 7; ++j) ring[j] = mask >> j & 1 ? tex[j] : 0;
-        coverflow_render(frame, %d, frac, ring);
+        for (int j = 0; j < N; ++j) ring[j] = mask >> j & 1 ? tex[j] : 0;
+        coverflow_render(frame, %d, frac, ring + (N - 7) / 2);
         fwrite(frame, 4, sizeof(frame) / 4, stdout);
         fflush(stdout);
     }
     return 0;
-}""" % (cf,paper is not None,paper or 0,rows,O['CF_VIEW_W'],O['CF_VIEW_W'])
+}""" % (cf,paper is not None,paper or 0,len(textures),rows,O['CF_VIEW_W'],int(still),O['CF_VIEW_W'])
     with tempfile.TemporaryDirectory(prefix='q2-render-') as d:
         d=pathlib.Path(d); (d/'shim.h').write_text(SHIM_H); (d/'main.c').write_text(main); (d/'coverflow_all.c').write_text(CF_SOURCES)
         subprocess.run(['cc','-O1','-DPEQ_HOST','-DPEQ_ROOT=""','-D_GNU_SOURCE',
@@ -10090,7 +10098,7 @@ textures=[cover_pixels(100+j) for j in range(7)]
 cases=[(0,127),(16384,127),(-16384,127),(32767,127),(-32768,127),(5000,0b0111110),(0,0)]
 want=host_render(textures,cases)
 m=DepthMachine(); tex=m.big_alloc(7*160*160*4); m.u.mem_write(tex,b''.join(textures))
-ring=m.big_alloc(28); frame=m.big_alloc(4*O['CF_VIEW_W']*O['CF_VIEW_H'])
+ring=m.big_alloc(60)+16; frame=m.big_alloc(4*O['CF_VIEW_W']*O['CF_VIEW_H'])  # a thumb theme's ring reaches 4 more each way
 for (frac,mask),host in zip(cases,want):
     for k in range(7): m.word(ring+4*k,tex+k*160*160*4 if mask>>k&1 else 0)
     m.call(address=ps['coverflow_render'],args=(frame,O['CF_VIEW_W'],frac,ring),gap=0,count=50_000_000)
@@ -10117,8 +10125,8 @@ assert struct.unpack('<H',bytes(m.u.mem_read(m.frames[0]+0xe,2)))[0]==O['LCD_BGR
 # the slide_menu wraps: 0, 1, 2, 0, 1, 2, 0 from -3, each album decoded once.
 assert len(m.loads)==4 and m.loads[0]=='default_album_flow' and all(u.startswith('file://') for u in m.loads[1:]) and m.unloads==3
 tex_of={u:bytes(m.u.mem_read(m.pixels[u],160*160*4)) for u in m.pixels}
-ring_tex=[tex_of[m.loads[1+i%3]] for i in range(7)]
-assert host_render(ring_tex,[(0,127)])[0]==m.draws[0][5]; passed()
+ring_tex=[tex_of[m.loads[1+(i+2)%3]] for i in range(15)]  # its wide ring: album i - 7
+assert host_render(ring_tex,[(0,(1<<15)-1)],still=True)[0]==m.draws[0][5]; passed()
 # Classic's shelf on the page, both halves: its own frame height, its stride kept, drawn 1:1 from
 # the payload as the host renders it, on the scheme's paper; Classic's own frame stays as it was.
 from theme import builtins as theme_builtins
@@ -10133,12 +10141,12 @@ for light,paper in (('0',0),('1',0xff)):
     paint(c); assert c.draws[0][2]==c.draws[0][3]==(0,0,O['CF_VIEW_W'],cl_style['cf.view_h'])
     frame_bytes=c.draws[0][5]; assert frame_bytes[0:3]==bytes([paper])*3
     c_tex={u:bytes(c.u.mem_read(c.pixels[u],160*160*4)) for u in c.pixels}  # its ring of 15 loads nearest first: album 0, 1, 2
-    assert host_render([c_tex[c.loads[1+i%3]] for i in range(7)],[(0,127)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None)[0]==frame_bytes  # square art
+    assert host_render([c_tex[c.loads[1+(i+2)%3]] for i in range(15)],[(0,(1<<15)-1)],{**cl_style,'cf.radius':0},paper=0xffffff if light=='1' else None,still=True)[0]==frame_bytes  # square art
     passed()
 # ... and mid-step, along coverflow.shelf.swing's path: the payload's arithmetic, the host's frames.
 cases=[(16384,127),(-16384,127),(26214,127),(32767,127),(-32768,127)]
 want=host_render(textures,cases,{**cl_style,'cf.radius':0},paper=0xffffff)
-tex=c.big_alloc(7*160*160*4); c.u.mem_write(tex,b''.join(textures)); ring=c.big_alloc(28); frame=c.big_alloc(4*O['CF_VIEW_W']*cl_style['cf.view_h'])
+tex=c.big_alloc(7*160*160*4); c.u.mem_write(tex,b''.join(textures)); ring=c.big_alloc(60)+16; frame=c.big_alloc(4*O['CF_VIEW_W']*cl_style['cf.view_h'])
 for k in range(7): c.word(ring+4*k,tex+k*160*160*4)
 for (frac,_),host in zip(cases,want):
     c.call(address=ps['coverflow_render'],args=(frame,O['CF_VIEW_W'],frac,ring),gap=0,count=50_000_000)
@@ -10157,8 +10165,8 @@ for size in ((200,100),(60,150)):
     n=DepthMachine(); n.art_size=size; n.open(); paint(n)
     tex={u:fitted(bytes(n.u.mem_read(n.pixels[u],size[0]*size[1]*4)),*size) for u in n.loads[1:]}
     tex['default_album_flow']=bytes(n.u.mem_read(n.pixels['default_album_flow'],160*160*4))
-    ring_tex=[tex[n.loads[1+i%3]] for i in range(7)]
-    assert host_render(ring_tex,[(0,127)])[0]==n.draws[0][5],size; passed()
+    ring_tex=[tex[n.loads[1+(i+2)%3]] for i in range(15)]
+    assert host_render(ring_tex,[(0,(1<<15)-1)],still=True)[0]==n.draws[0][5],size; passed()
 # A repaint in place draws again without rendering; a quarter turn renders from the live offset.
 instructions[0]=0; paint(m); assert len(m.draws)==2 and instructions[0]<rest_cost//20
 m.word(s+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); instructions[0]=0; paint(m); turn_cost=instructions[0]
@@ -10346,9 +10354,31 @@ trest(m); assert toff(m)==0; passed()
 def tpaint(m): m.call(address=HOOKS['widget_on_paint_border'][0],args=(m.slide,m.canvas,0,0),gap=0,clear=False,count=50_000_000,debounce=True)
 m=thumb_page(); n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
 tp(m); tpaint(m); assert m.draws; m.word(m.slide+O['SLIDE_OFFSET'],-O['CF_STRIDE']//4); n[0]=0
-tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
+m.word(m.slide+O['SLIDE_ANIMATOR'],1)  # a step's frame, the covers moving (no animator is ever called by a paint)
+tpaint(m); turn_cost=n[0]; m.word(m.slide+O['SLIDE_ANIMATOR'],0); m.word(m.slide+O['SLIDE_OFFSET'],0); thold(m); no_letters(m); tspin(m,600,-110); assert struct.unpack('<f',m.u.mem_read(ps['th']+12,4))[0]>4  # a full lead
 n[0]=0; draws=len(m.draws); tpaint(m); row_cost=n[0]; m.u.hook_del(h); assert len(m.draws)==draws+1 and turn_cost>1000000 and row_cost<turn_cost; passed()
-assert turn_cost<5_500_000,turn_cost  # a frame a quarter turn on, a little over the 5.46 million it measured: a dearer one fails
+assert turn_cost<6_450_000,turn_cost  # a frame a quarter turn on, the covers moving, a little over the 6.38 million it measured: a dearer one fails
+# The shelf moving (as a direct render is), as MIPS, in Minimal and Classic, on a whole album and a quarter turn on: all of
+# its ring, byte for byte what the host draws, under FRAME_BOUND (the renderer's own instructions), set a little over what
+# it measured: 5.2 to 5.4 million (Minimal), 5.4 (Classic). Still, the page's own frame is the seven, 4.8. Each holds the
+# last pass's R and B swap into the screen's BGRA8888, 4 a pixel, which spares stock's blend of the frame, 36 a pixel that
+# is not counted here (image_blend against image_copy).
+wide=[cover_pixels(200+j) for j in range(15)]; ALL=(1<<15)-1; FRAME_BOUND=5_600_000
+for name,style in (('Minimal',{k:v for k,v in theme_builtins()[0].items() if k.startswith('cf.')}),('Classic',{**cl_style,'cf.radius':0})):
+    cases=[(0,ALL),(16384,ALL)]
+    want=host_render(wide,cases,style)
+    SETUP[:]=[lambda k:(k.config.update(THEME='0' if name=='Minimal' else '1',LIGHT='0'),k)]
+    try: m=DepthMachine()
+    finally: SETUP.clear()
+    tex=m.big_alloc(15*160*160*4); m.u.mem_write(tex,b''.join(wide)); ring=m.big_alloc(60); frame=m.big_alloc(4*O['CF_VIEW_W']*style['cf.view_h'])
+    for k in range(15): m.word(ring+4*k,tex+k*160*160*4)
+    n=[0]; h=m.u.hook_add(UC_HOOK_BLOCK,lambda u,a,size,x: n.__setitem__(0,n[0]+size//4),begin=BASE,end=SCRATCH-1)
+    for c,host in zip(cases,want):
+        n[0]=0
+        m.call(address=ps['coverflow_render'],args=(frame,O['CF_VIEW_W'],c[0],ring+16),gap=0,count=50_000_000)
+        assert bytes(m.u.mem_read(frame,len(host)))==host,(name,c)
+        assert n[0]<FRAME_BOUND,(name,c,n[0])
+    m.u.hook_del(h); passed()
 # Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
 m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
 assert m.confirm()==11 and toff(m)==0 and tcaption(m)==shown

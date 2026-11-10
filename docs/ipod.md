@@ -362,8 +362,9 @@ accent's red tone (`DROPDOWN_SUN`).
 ## Cover Flow
 
 The covers are drawn with depth ([internals](internals.md#coverflow-depth)): the
-selected cover at its native 160 pixels, three angled neighbours a side, the third at the frame's edge as the moving row
-leaves it, and Classic's reflection (46 pixels from 35% of the cover's brightness), all in the top 220 pixels of the page
+selected cover at its native 160 pixels, three angled neighbours a side and, while they move, the ones coming in at the
+frame's edge, drawn whole from their first pixel, and Classic's reflection (46 pixels from 35% of the cover's
+brightness), all in the top 220 pixels of the page
 (Classic: 242, `coverflow.shelf.view_h`), the reflections' tail under the caption. The album name sits under the covers (`CF_TEXT_Y`) in 24-pixel white,
 the artist under that in 20-pixel grey (`#AAAAAA`, stock secondary text), and both, like the
 track list's title and rows and the progress and empty messages, keep 36 pixels (`CF_EDGE`) from

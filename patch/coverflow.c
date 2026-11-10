@@ -1560,11 +1560,11 @@ static void pose(int t, pose_t *p) {
         p->zc = 16 * cfs.z1 + (16 * cfs.zs * e >> 16);
         if (e < CF_ONE)
             p->bright = cfs.bright1 - ((cfs.bright1 - cfs.bright2) * e >> 16);
-        else if (cfs.third) /* whole to the third, gone half a step on: the ring's reach ends there
-                             */
-            p->bright = e < 2 * CF_ONE       ? cfs.bright2
-                        : e < 5 * CF_ONE / 2 ? cfs.bright2 * (5 * CF_ONE / 2 - e) >> 15
-                                             : 0;
+        else if (cfs.third) /* whole from the second on; with no thumb, seven covers, gone half a
+                             * step past the third, where the ring's reach ends */
+            p->bright = cfs.thumb || e < 2 * CF_ONE ? cfs.bright2
+                        : e < 5 * CF_ONE / 2        ? cfs.bright2 * (5 * CF_ONE / 2 - e) >> 15
+                                                    : 0;
         else
             p->bright = e < 2 * CF_ONE ? cfs.bright2 * (2 * CF_ONE - e) >> 16 : 0;
     }
@@ -1581,6 +1581,12 @@ void cf_thumb(float *out) {
     out[5] = (float)th.on;
 }
 void cf_thumb_lead(float lead) { th.on = lead >= 0, th.lead = lead >= 0 ? lead : 0; }
+/* For test/coverflow.py: a cover's brightness at rest, t (16.16) albums out. */
+int cf_pose_bright(int t) {
+    pose_t p;
+    pose(t, &p);
+    return p.bright;
+}
 /* For test/coverflow.py: an edge's path, finer than a frame's pixels. */
 int cf_path_x(int t, int u) {
     pose_t p;
@@ -1789,11 +1795,12 @@ static void draw_quad(shelf_t *f, int xl, int xr, int hl, int hr, const unsigned
  * forms: shrunk, no receding past row_flat from the focus, only spacing, each cover away from the
  * focus thinner and with less keystone. At lead 0 this is coverflow_render's own path, which
  * draws then. ring[j]: the cover j - CF_REACH from frac's centre, under CF_WIDE, moved on by
- * round(lead) albums, so the window goes round the facing cover (coverflow_paint). */
+ * round(lead) albums, so the window goes round the facing cover (coverflow_paint). Every cover of
+ * the window draws at its own brightness, whole, as the moving shelf's do. */
 static void draw_row(shelf_t *f, int frac, const unsigned *const *ring) {
     float lead = th.lead, ld = lead < 0 ? -lead : lead, at = (float)frac / CF_ONE + lead;
     int moved = cf_round(lead);
-    float shift = lead * cfs.row_shift, lim = 3.5f + (shift < 0 ? -shift : shift) / cfs.row_reach;
+    float shift = lead * cfs.row_shift;
     float b = cf_smooth((ld * 100 - cfs.row_from) / (cfs.row_full - cfs.row_from));
     float sh = 1 - b * cfs.row_shrink / 100, flat = cfs.row_flat / 100.f;
     int focus = cf_round(at), after = at < (float)focus;
@@ -1801,7 +1808,7 @@ static void draw_row(shelf_t *f, int frac, const unsigned *const *ring) {
         for (int i = 0; i < (k ? 2 : 1); ++i) {
             int a = (i == 0) == after ? focus - k : focus + k, j = a - moved;
             float d = (float)a - at, t = d < 0 ? -d : d;
-            if (j < -CF_WIDE_REACH || j > CF_WIDE_REACH || t > lim || !ring[j + CF_REACH]) continue;
+            if (j < -CF_WIDE_REACH || j > CF_WIDE_REACH || !ring[j + CF_REACH]) continue;
             float tz = t > flat ? t - (t - flat) * b : t, e = b * cf_smooth(t * 100 / cfs.row_edge);
             pose_t p;
             pose((int)(tz * CF_ONE), &p);
@@ -1814,14 +1821,25 @@ static void draw_row(shelf_t *f, int frac, const unsigned *const *ring) {
             hn *= sh;
             float xl = (right ? out - width : -out) + shift * 16;
             float xr = (right ? out : width - out) + shift * 16;
-            float fade = (lim - t) * 2;
             int bright = tz < 2 ? p.bright : cfs.bright2;
-            if (fade < 1) bright = (int)((float)bright * fade);
             if (bright > 0)
                 draw_quad(f, (int)(xl * sh), (int)(xr * sh), (int)(right ? hf : hn),
                           (int)(right ? hn : hf), ring[j + CF_REACH], bright);
         }
 }
+
+/* Covers decoded either side: more under a thumb theme, whose row shows about 11. */
+static int fx_reach(void) { return cfs.thumb ? CF_WIDE_REACH : CF_REACH; }
+
+/* Whether the shelf draws its cover t (16.16) out. Still (nothing moving: cf_still, set only for
+ * coverflow_paint's and flip_sides' own renders), the seven it always has. Moving, all of the
+ * ring, fx_reach each side: the cover coming in at either edge is whole from its first pixel, its
+ * reflection too, and the ring's ends add nothing to the frame. */
+static int cf_still, fx_still; /* fx_still: the frame's, drawn */
+#ifdef PEQ_HOST
+void cf_shelf_still(int still) { cf_still = still; }
+#endif
+static int shelf_draws(int t) { return !cf_still || ABS(t) <= CF_REACH * CF_ONE; }
 
 /* The ring slot of the k-th nearest pair's nearer (i 0) or farther (i 1) cover at frac: the side
  * the position is moving away from is farther. */
@@ -1830,9 +1848,10 @@ static int slot(int frac, int k, int i) {
 }
 
 /* The shelf at frac (16.16, -CF_ONE/2 to under CF_ONE/2) past its centre cover: ring[j] is the
- * texture of the cover j - CF_REACH from the centre, or 0 to leave it out. Nearest first; nearer
- * covers and their reflections overlap farther ones. */
-void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ring[CF_RING]) {
+ * texture of the cover j - CF_REACH from the centre, or 0 to leave it out, j from CF_REACH -
+ * fx_reach to CF_REACH + fx_reach. Nearest first; nearer covers and their reflections overlap
+ * farther ones. */
+void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const *ring) {
     if (!cfs.eye) cf_restyle(); /* once, for callers which render without opening the page */
     cf_corners();
     cf_paper = ipod_light() ? scheme()->paper : 0;
@@ -1843,10 +1862,10 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ri
     if (th.on && th.lead)
         draw_row(&f, frac, ring);
     else
-        for (int k = 0; k <= CF_REACH; ++k)
+        for (int k = 0; k <= fx_reach(); ++k)
             for (int i = 0; i < (k ? 2 : 1); ++i) {
-                int j = slot(frac, k, i);
-                draw_cover(&f, (j - CF_REACH) * CF_ONE - frac, ring[j]);
+                int j = slot(frac, k, i), t = (j - CF_REACH) * CF_ONE - frac;
+                if (shelf_draws(t)) draw_cover(&f, t, ring[j]);
             }
     /* Over black, or Light Mode's paper as the page's black flips to it; then in the screen's
      * BGRA8888, opaque, as stock copies it (opaque_frame): stock's blends and Night Shift read the
@@ -1867,10 +1886,11 @@ void coverflow_render(unsigned *d, int pitch, int frac, const unsigned *const ri
 #define CF_MISS 99
 
 /* The ring offset of the frontmost cover body (not its reflection) drawn at frame pixel x, y at
- * frac, or CF_MISS; nearest first, in the drawing order, rounded corners (iPod) left out. A cover
- * fading out at the edge, under a quarter bright, is no target. */
+ * frac, or CF_MISS; nearest first, in the drawing order, rounded corners (iPod) left out, and only
+ * the covers the frame on the screen draws (a still one, at rest, the seven). With no thumb, a
+ * cover fading out at the edge, under a quarter bright, is no target. */
 int coverflow_hit(int frac, int x, int y) {
-    for (int k = 0; k <= CF_REACH; ++k)
+    for (int k = 0; k <= (fx_still ? CF_REACH : fx_reach()); ++k)
         for (int i = 0; i < (k ? 2 : 1); ++i) {
             int j = slot(frac, k, i), t = (j - CF_REACH) * CF_ONE - frac, side = t < 0 ? -1 : 1;
             int v = side > 0 ? x : 2 * CF_CX - 1 - x, u, h;
@@ -1884,8 +1904,6 @@ int coverflow_hit(int frac, int x, int y) {
     return CF_MISS;
 }
 
-/* Covers decoded either side: more under a thumb theme, whose row shows about 11. */
-static int fx_reach(void) { return cfs.thumb ? CF_WIDE_REACH : CF_REACH; }
 #define FX_SLOTS (2 * fx_reach() + 1)
 cf_depth_t fx __attribute__((section(".scratch")));
 
@@ -2145,10 +2163,12 @@ static void flip_sides(void) {
     fl.front = ring[CF_REACH];
     ring[CF_REACH] = 0;
     unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
+    cf_still = 1; /* the flip turns a cover at rest */
     if (d) {
         coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), 0, ring);
         bitmap_unlock_buffer(fx.frame);
     }
+    cf_still = 0;
     fx.drawn = 0;
     fl.light = ipod_light();
 }
@@ -2266,6 +2286,8 @@ static void gap_note(void *w, unsigned t0, unsigned t1, unsigned t2) {
     gaps.n = 0;
 }
 #endif
+static int touched(void);
+
 /* ringnav_paint (the border hook, after stock painted the slide_menu's empty children) calls this
  * for every widget: over Coverflow's slide_menu it draws the frame, rendered again only when the
  * position or a texture has changed. */
@@ -2290,12 +2312,15 @@ void coverflow_paint(void *w, void *canvas) {
 #if Q2POD_DEV
     unsigned gap_t1 = (unsigned)time_now_ms();
 #endif
-    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead) {
+    int still = !th.on && !P(w, SLIDE_ANIMATOR) && !touched();
+    if (!fx.drawn || c != fx.c || frac != fx.frac || lead != fx.lead || still != fx_still) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         if (!d) return;
+        cf_still = still;
         coverflow_render(d, (int)(bitmap_get_line_length(fx.frame) / 4), frac, ring);
+        cf_still = 0;
         bitmap_unlock_buffer(fx.frame);
-        fx.c = c, fx.frac = frac, fx.lead = lead, fx.drawn = 1;
+        fx.c = c, fx.frac = frac, fx.lead = lead, fx.drawn = 1, fx_still = still;
     }
 #if Q2POD_DEV
     gap_note(w, gap_t0, gap_t1, (unsigned)time_now_ms());
@@ -2359,6 +2384,9 @@ static struct {
     int sx[CF_SAMPLES];
     unsigned st[CF_SAMPLES];
 } tc __attribute__((section(".scratch")));
+
+/* A finger on the covers: they move with it, or are held where it caught them */
+static int touched(void) { return tc.down; }
 
 int stride_of(void *s) { return slide_menu_item_width(s) + I(s, SLIDE_SPACER); }
 static int round_stride(int off, int stride) { return floor_div(2 * off + stride, 2 * stride) * stride; }
@@ -2424,7 +2452,10 @@ static void release(int v) {
     if (flick && v > 0 && goal < -floor_div(-live, stride) * stride) goal = -floor_div(-live, stride) * stride;
     if (flick && v < 0 && goal > floor_div(live, stride) * stride) goal = floor_div(live, stride) * stride;
     goal = bound(goal, stride, 0);
-    if (goal == live && !live && !P(s, SLIDE_ANIMATOR)) return; /* at rest already */
+    if (goal == live && !live && !P(s, SLIDE_ANIMATOR)) { /* at rest already: the still frame */
+        widget_invalidate_force(s, 0);
+        return;
+    }
     int d = ABS(goal - live), a = ABS(vo), ahead = (goal > live && v > 0) || (goal < live && v < 0);
     unsigned ms = ahead ? (unsigned)(3000 * d / a) : CF_SETTLE_MS; /* cubic out: 3 d / v */
     carousel_glide(s, goal, ms < CF_SETTLE_MS ? CF_SETTLE_MS : ms > CF_GLIDE_MAX ? CF_GLIDE_MAX : ms,

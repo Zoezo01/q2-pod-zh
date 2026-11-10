@@ -241,7 +241,8 @@ int carousel_glide(void *x, int goal, unsigned ms, int easing) {
 static unsigned letter_shown;
 static int letters;
 void coverflow_letter(void *x, unsigned letter, unsigned now) { letter_shown = letter, ++letters; }
-int widget_invalidate_force(void *x, void *y) { wm_repaints += x == &wm_repaints; return 0; }
+static void *invalidated; /* the last widget invalidated */
+int widget_invalidate_force(void *x, void *y) { wm_repaints += x == &wm_repaints; invalidated = x; return 0; }
 static void *wm_stack[4]; /* the window manager's windows, bottom first: none unless a test stacks them */
 static int wm_n;
 unsigned widget_count_children(void *x) { return x == &wm_repaints ? (unsigned)wm_n : (unsigned)W(x)->nkids; }
@@ -718,6 +719,12 @@ static void texel_render(unsigned *d, int pitch, int frac, const unsigned *const
 #define PITCH (CF_VIEW_W + 5) /* guard columns, and guard rows below, to catch clipping errors */
 static unsigned frame[(CF_VIEW_H + 3) * PITCH], flat[7][160 * 160], art[160 * 160];
 static const unsigned colours[7] = { 0xff0000ffu, 0xff00ff00u, 0xffff0000u, 0xff00ffffu, 0xffffff00u, 0xffff00ffu, 0xff0080ffu };
+/* A thumb theme's ring, wide's fifteen (cover j - 7 at wide[j]): the seven flat colours round and
+   round, as a small library repeats; the seven's ring. */
+static const unsigned **flat_ring(const unsigned **wide) {
+    for (int j = 0; j < 15; ++j) wide[j] = flat[(j + 3) % 7];
+    return wide + 4;
+}
 static void render(int frac, const unsigned *const ring[7]) {
     for (unsigned i = 0; i < sizeof(frame) / 4; ++i) frame[i] = 0x12345678u;
     coverflow_render(frame, PITCH, frac, ring);
@@ -949,6 +956,15 @@ static void touches(widget *s, widget *covers_view) {
     touch_at(EVT_POINTER_UP_BEFORE, 200 - 20 - CF_DRAG_PX / 3, 100, 200);
     assert(glides == 5 && glide_goal == 0);
     glide_end(s); assert(*(int *)(raw + SLIDE_INDEX) == 4);
+    /* A drag back to where it began lifts at rest: no glide, and the still frame is asked for (the
+       moving one drew the edges' covers). */
+    touch_at(EVT_POINTER_DOWN, 200, 100, 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20, 100, 20);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 50, 100, 40); assert(offset(s) != 0);
+    touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20, 100, 60); assert(offset(s) == 0);
+    invalidated = 0;
+    touch_at(EVT_POINTER_UP_BEFORE, 200 - 20, 100, 60 + CF_STILL_MS + 40);
+    assert(glides == 5 && invalidated == s);
     /* A slow flick still moves on at least to the next cover, never back against itself. */
     touch_at(EVT_POINTER_DOWN, 200, 100, 0);
     touch_at(EVT_POINTER_MOVE_BEFORE, 200 - 20, 100, 100);
@@ -1113,8 +1129,7 @@ static void flip_frames(void) {
 static void classic_light_shelf(void) {
     static unsigned f[300 * PITCH], g[300 * PITCH];
     const cf_style_t *c = &shim_themes[1].cf;
-    const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    const unsigned *wide[15], **ring = flat_ring(wide);
     classic = 1, frame_fail = 0, square_art = 1;
     open_page();
     widget *s = slide();
@@ -1179,8 +1194,8 @@ static void classic_light_shelf(void) {
     assert(coverflow_hit(0, 2 * CF_CX - 1 - 373, hz) == -3);
     /* Mid-turn every step changes only a little, including at the fourth cover's edge of reach and
        where the centre changes hands. */
-    const unsigned *next[7];
-    for (int j = 0; j < 7; ++j) next[j] = ring[(j + 1) % 7];
+    const unsigned *next_wide[15], **next = next_wide + 4;
+    for (int j = -4; j <= 10; ++j) next[j] = ring[j + 1 <= 10 ? j + 1 : j - 6];
     int worst = 0;
     for (int fr = -ONE / 2; fr + ONE / 256 < ONE / 2; fr += ONE / 256) {
         coverflow_render(f, PITCH, fr, ring);
@@ -1246,8 +1261,7 @@ static int cf_step_jerk(int moving_in, int u, int first) { /* from frame first *
 static void classic_light_step(void) {
     static unsigned f[300 * PITCH], off[300 * PITCH];
     cf_style_t *c = &shim_themes[1].cf;
-    const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    const unsigned *wide[15], **ring = flat_ring(wide);
     int H = c->view_h, hz = c->top + 160 * c->horizon / 100, rest, rows, reach, tallest;
     assert(c->swing == 1 && c->lift == 20);
     classic = 1, frame_fail = 0, square_art = 1;
@@ -1286,8 +1300,7 @@ static void classic_light_step(void) {
 static void classic_light_eye(void) {
     static unsigned f[300 * PITCH], off[300 * PITCH];
     cf_style_t *c = &shim_themes[1].cf;
-    const unsigned *ring[7];
-    for (int j = 0; j < 7; ++j) ring[j] = flat[j];
+    const unsigned *wide[15], **ring = flat_ring(wide);
     enum { NEAR = 16 * 80, FAR = -NEAR };
     assert(c->eye_turn == 150);
     classic = 1, frame_fail = 0, square_art = 1;
@@ -1325,7 +1338,7 @@ static void classic_light_eye(void) {
                 int j = coverflow_hit(frac, x, y), same = 1;
                 for (int d = 0; d < 4; ++d) same &= coverflow_hit(frac, x + (d & 1 ? d - 2 : 0), y + (d & 1 ? 0 : d - 1)) == j;
                 if (!same || j == 99) continue;
-                assert(slot_of(f[y * PITCH + x]) == j + 3);
+                assert(slot_of(f[y * PITCH + x]) == (j + 10) % 7); /* the ring's colours go round */
                 ++hits;
             }
     }
@@ -2291,6 +2304,9 @@ static void thumb_wheel(void) {
     assert(wheel_raw == 2);
     from = *index;
     for (int j = 0; j <= 3; ++j) assert(coverflow_hit(0, CF_CX + (j ? 121 + 33 * (j - 1) - 3 : 0), mid) == j);
+    int still[16] = { 0 };
+    coverflow_paint(s, still);
+    assert(coverflow_hit(0, 374, mid) == 99); /* the fourth's sliver, only drawn moving: no tap at rest */
     touch_at(EVT_POINTER_DOWN, side, mid, 3000); touch_at(EVT_POINTER_UP_BEFORE, side, mid, 3080);
     assert(glides == g + 1 && glide_goal == -shim_themes[1].cf.stride);
     glide_end(s);
@@ -2355,7 +2371,7 @@ static void thumb_wheel(void) {
     /* One mapping of the art across a cover, at rest and in the row: with each texel's column in its
        low byte and its cover in the next, a tiny lead puts the same texel in each column, give or take
        one or two. Alone, cover 1's near half is about 1.22 times as wide as its far half (art_persp),
-       where the plane's own would be 2.76; the outlines at rest stay the bytes they were. */
+       where the plane's own would be 2.76; mid-step frames pinned (still ones: rest_pinned). */
     {
         static unsigned idx[15][160 * 160];
         const unsigned *iring[15], *one[15] = { 0 };
@@ -2386,7 +2402,7 @@ static void thumb_wheel(void) {
             R(f, frac);
             for (unsigned i = 0; i < sizeof f / 4; ++i) hash = (hash ^ f[i]) * 16777619u;
         }
-        assert(hash == 0xe9548ed4u);
+        assert(hash == 0x40597fadu);
     }
     int spans = 0, prev = -1, rows = shim_themes[1].cf.top + 90;
     cf_thumb_lead(5);
@@ -2527,6 +2543,126 @@ static void thumb_wheel(void) {
     shim_themes[0].cf = shim_themes[2].cf = ticks;
     classic = 0;
     pressed = 1, frame_fail = 0, square_art = 0;
+}
+
+/* ---- At rest, nothing moving (a whole album at the middle), each built-in theme's frame is the bytes
+   it has always been, dark and light, square and rounded art: only frames while the covers move draw
+   the cover coming in at the edge. ---- */
+void cf_shelf_still(int still);
+static void rest_pinned(void) {
+    static const cf_style_t shipped[3] = { CF_SHIPPED0, CF_SHIPPED, CF_SHIPPED2 };
+    static const unsigned pinned[3] = { 0xf879f642u, 0xa87fc212u, 0xf879f642u };
+    static unsigned f[300 * PITCH], art[15][160 * 160];
+    const cf_style_t fixture = shim_themes[1].cf;
+    for (int i = 0; i < 15; ++i)
+        for (int k = 0; k < 160 * 160; ++k) art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+    const unsigned *ring[15];
+    for (int j = 0; j < 15; ++j) ring[j] = art[j];
+    classic = 1;
+    cf_shelf_still(1); /* nothing moving, as coverflow_paint has it */
+    for (int ti = 0; ti < 3; ++ti) {
+        shim_themes[1].cf = shipped[ti];
+        open_page();
+        unsigned hash = 2166136261u;
+        for (light = 0; light < 2; ++light)
+            for (square_art = 0; square_art < 2; ++square_art) {
+                for (unsigned i = 0; i < sizeof f / 4; ++i) f[i] = 0;
+                coverflow_render(f, PITCH, 0, ring + 4);
+                for (int i = 0; i < shipped[ti].view_h * PITCH; ++i) hash = (hash ^ f[i]) * 16777619u;
+            }
+        if (hash != pinned[ti]) fprintf(stderr, "rest_pinned: theme %d 0x%08xu\n", ti, hash);
+        assert(hash == pinned[ti]);
+        if (ti == 1) { /* the page: a glide's frame on a whole album is a moving one (Classic's fourth
+                          sliver drawn), and once it stops the still frame is drawn again */
+            static unsigned before[CF_VIEW_H * CF_VIEW_W];
+            static int fake_anim[64];
+            int canvas[16] = { 0 };
+            widget *sl = slide();
+            frame_fail = 0, top_window = page, square_art = 1;
+            for (int i = 0; i < 30; ++i) coverflow_paint(sl, canvas); /* every texture loaded */
+            memcpy(before, shown, sizeof shown);
+            *(void **)(sl->raw + SLIDE_ANIMATOR) = fake_anim;
+            coverflow_paint(sl, canvas);
+            assert(memcmp(before, shown, sizeof shown));
+            *(void **)(sl->raw + SLIDE_ANIMATOR) = 0;
+            coverflow_paint(sl, canvas);
+            assert(!memcmp(before, shown, sizeof shown));
+            top_window = 0, square_art = 0;
+            cf_shelf_still(1); /* the page's own render leaves it moving */
+        }
+        close_page();
+    }
+    light = 0, square_art = 0, classic = 0;
+    cf_shelf_still(0);
+    shim_themes[1].cf = fixture;
+}
+
+/* ---- A cover comes onto the screen already drawn: in each built-in theme, the shelf moving, a tenth
+   to nine tenths (odd) of a touch glide's or a step's album either way, every cover from the second
+   out is at bright2 (no fading at the screen's edge), both edges' covers are whole, each side shows as
+   many covers in their bodies (reflections out of the frame, reflect_top 0; rounded corners) as the
+   other, give or take the one the geometry adds; and it draws its whole ring (shelf_draws): every
+   cover any of which is on the screen changes the frame. ---- */
+int cf_pose_bright(int t);
+static unsigned edge_art[64][160 * 160];
+/* The frame at frac with the window's middle at album mid, each album its own art, less album gone */
+static void edge_frame(unsigned *f, int frac, int mid, int gone) {
+    const unsigned *ring[15];
+    for (int j = -7; j <= 7; ++j) ring[j + 7] = mid + j == gone ? 0 : edge_art[((mid + j) % 64 + 64) % 64];
+    coverflow_render(f, PITCH, frac, ring + 4);
+}
+/* Cover a's span (from frac's centre) as draw_cover places it at rest: its xl and xr (1/16 px) in q */
+static void shelf_quad(int frac, int a, int *q) {
+    int t = a * ONE - frac, side = t < 0 ? -1 : 1, near = cf_path_x(t * side, 1280), inner = cf_path_x(t * side, -1280);
+    q[1] = side > 0 ? inner : -near, q[2] = side > 0 ? near : -inner;
+}
+static void edge_drawn(void) {
+    static unsigned f[300 * PITCH], g[300 * PITCH];
+    static const cf_style_t shipped[3] = { CF_SHIPPED0, CF_SHIPPED, CF_SHIPPED2 };
+    const cf_style_t fixture = shim_themes[1].cf;
+    for (int i = 0; i < 64; ++i)
+        for (int k = 0; k < 160 * 160; ++k) edge_art[i][k] = 0xff000000u | ((unsigned)(i * 160 * 160 + k) * 2654435761u >> 8 & 0xffffff);
+    classic = 1;
+    for (int ti = 0; ti < 3; ++ti) {
+        shim_themes[1].cf = shipped[ti];
+        open_page(); /* cf_restyle's */
+        const cf_style_t *cs = &shim_themes[1].cf;
+        for (int t = 2 * ONE; t <= 15 * ONE / 2; t += ONE / 16) assert(cf_pose_bright(t) == cs->bright2);
+        shim_themes[1].cf.reflect_top = 0, square_art = 0;
+        cf_thumb_lead(-1);
+        for (int dir = -1; dir <= 1; dir += 2)
+            for (int s = 1; s <= 9; s += 2) {
+                float p = (float)(dir * s) / 10;
+                int at = (int)floorf(p + .5f), frac = (int)((p - (float)at) * ONE), side[2] = { 0, 0 };
+                edge_frame(f, frac, at, 1 << 30);
+                int q[15][6];
+                for (int a = at - 7; a <= at + 7; ++a) shelf_quad(frac, a - at, q[a - at + 7]);
+                for (int a = at - 7; a <= at + 7; ++a) {
+                    int shows, bare = 0; /* its columns on the screen that no nearer cover's quad reaches */
+                    edge_frame(g, frac, at, a);
+                    side[(float)a > p] += shows = memcmp(f, g, cs->view_h * PITCH * sizeof *g) != 0;
+                    for (int x = 0, m; x < CF_VIEW_W; ++x) {
+                        int in = (m = (2 * x + 1 - 2 * CF_CX) * 8) >= q[a - at + 7][1] && m < q[a - at + 7][2];
+                        for (int b = at - 7; in && b <= at + 7; ++b)
+                            in = b == a || fabsf(b - p) > fabsf(a - p) || m < q[b - at + 7][1] || m >= q[b - at + 7][2];
+                        bare += in;
+                    }
+                    if (bare && !shows) {
+                        fprintf(stderr, "edge_drawn: theme %d dir %d at %d/10: album %d not drawn, %d columns bare\n", ti, dir, s, a, bare);
+                        assert(0);
+                    }
+                }
+                if (abs(side[0] - side[1]) > 1 || side[0] < 3 || side[1] < 3) {
+                    fprintf(stderr, "edge_drawn: theme %d dir %d at %d/10: %d covers show left, %d right\n", ti, dir, s, side[0], side[1]);
+                    assert(0);
+                }
+            }
+        shim_themes[1].cf = shipped[ti], square_art = 1;
+        edge_frame(f, 0, 0, 1 << 30); /* cf_corners' table square again (the flip's frames draw with it) */
+        close_page();
+    }
+    shim_themes[1].cf = fixture;
+    classic = 0, square_art = 0;
 }
 
 /* ---- Classic's thumb on the shipped numbers (theme.xml's coverflow.shelf): the cap at every
@@ -3211,8 +3347,10 @@ int main(void) {
     classic_light_step();
     classic_light_eye();
     classic_light_follow();
+    rest_pinned();
     thumb_wheel();
     thumb_shipped();
+    edge_drawn();
     flip_frames();
     sorting();
     artist_only();
@@ -3571,6 +3709,7 @@ def main():
     cf_style.append('-DCF_STYLE1={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in fixture.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in classic_light.items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DCF_SHIPPED0={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in builtins()[0].items() if f.startswith('cf.')) + ' }')
+    cf_style.append('-DCF_SHIPPED2={ ' + ', '.join(f'.{f[3:]} = {v}' for f, v in builtins()[2].items() if f.startswith('cf.')) + ' }')
     cf_style.append('-DPINNED_FRAMES=0x055534d4u')
     source = ((ROOT/'patch/offsets.inc').read_text() + (ROOT/'patch/coverflow.c').read_text()).replace('\\\n', '')
     def macro(name):
@@ -3632,11 +3771,16 @@ def main():
         (tmp/'test.c').write_text(TEST)
         (tmp/'ffmpeg').write_text(FFMPEG_STUB)
         (tmp/'ffmpeg').chmod(0o755)
-        binary = tmp/'coverflow_test'
-        subprocess.run(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/root"',
+        builds = {'coverflow_test': ()}  # each build's own flags; its card is <name>-root
+        def cc(name, src):  # each source on its own, so they compile at once
+            return subprocess.Popen(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/{name}-root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-result', '-Wno-unused-parameter', '-Wno-unused-function',
-                        *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), str(tmp/'coverflow_all.c'),
-                        str(tmp/'test.c'), '-lm', '-o', str(binary)], check=True)
+                        *builds[name], *cf_style, '-I', str(ROOT/'patch'), '-include', str(tmp/'shim.h'), '-c', str(tmp/src), '-o', str(tmp/f'{name}-{src}.o')])
+        objects = [cc(name, src) for name in builds for src in ('coverflow_all.c', 'test.c')]
+        assert all(o.wait() == 0 for o in objects), 'the host tests did not build'
+        for name in builds:
+            subprocess.run(['cc', '-m32', '-pthread', str(tmp/f'{name}-coverflow_all.c.o'), str(tmp/f'{name}-test.c.o'), '-lm', '-o', str(tmp/name)], check=True)
+        binary = tmp/'coverflow_test'
         env = dict(os.environ)
         if a.captures:  # capture the reflection intensity
             (tmp/'frames').mkdir()

@@ -31,7 +31,8 @@
        the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel.
        jump_ms at jump_at ticks/s or more (32: a steady turn a second at 50% Wheel Sensitivity clears it; time under it comes off the count),
        a spin goes by letters, the covers flowing on as any fast turn's, one letter each jump_ticks of travel (jump_ticks 0:
-       never) and jump_pace ms apart at least, until a turn back, the rate under fast_at or no tick while a letter shows. -->
+       never) and jump_pace ms apart at least, until a turn back, the rate under fast_at or no tick while a letter shows. row_reach is
+       no longer read; it stays so a theme that states it still builds. -->
   <view name="coverflow">
     <element name="shelf" thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30"
              snap="25" spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120"
