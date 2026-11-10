@@ -17483,7 +17483,7 @@ class ResumeMachine(QueueMachine):
         self.handlers[sleep_hook+12]='stock_sleep'
         for n in ('fopen@GLIBC_2.2','fread@GLIBC_2.0','fwrite@GLIBC_2.0','fclose@GLIBC_2.2','rename@GLIBC_2.0',
                   'access@GLIBC_2.0','time@GLIBC_2.0','player_playtime_and_length',
-                  'fseek@GLIBC_2.0','ftell@GLIBC_2.0','fflush@GLIBC_2.0'): self.handlers[syms[n]]='r:'+n  # scrobble_append's checks
+                  'fseek@GLIBC_2.0','ftell@GLIBC_2.0'): self.handlers[syms[n]]='r:'+n  # scrobble_append's checks
         self.handlers[payload_syms['stock_seek_time_trampoline']]='r:player_seek_time'
         self.epoch=1700000000
         self.mock('tk_snprintf','strstr@GLIBC_2.0')

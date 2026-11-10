@@ -10,9 +10,11 @@
 #define INI_FILE PEQ_ROOT "/mnt/mmc/.scrobble.ini"
 #define CA_FILE PEQ_ROOT "/etc/scrobble-ca.pem" /* supplied by the firmware, no card setup */
 #define BATCH 50                                  /* Last.fm's limit; ListenBrainz takes 100 */
-#define LINE_BYTES 800                            /* navigation.c's line; a longer one is junk */
-#define BODY_MAX (192 << 10)                      /* 50 lines of LINE_BYTES, URL-encoded */
-#define LOG_HEAD (1 << 20) /* an upload's share of the log: its whole lines; the rest waits */
+/* Rockbox's lastfm_scrobbler on this card: tags from its 2168-byte id3 buffer, a title from the
+ * file name, the numbers */
+#define LINE_BYTES 2560
+#define BODY_MAX (384 << 10) /* 50 lines of LINE_BYTES, URL-encoded, and the names */
+#define LOG_HEAD (1 << 20) /* a window of the log: its whole lines; the rest waits for the next */
 #define LB_URL "https://api.listenbrainz.org/1/submit-listens"
 #define FM_URL "https://ws.audioscrobbler.com/2.0/"
 
@@ -80,12 +82,13 @@ int scrobble_append(const char *line, unsigned n) {
     void *f = fopen(LOG_FILE, "ab");
     long at = f && !fseek(f, 0, 2) ? ftell(f) : -1;
     int ok = at >= 0 && (!fresh || fwrite(header, sizeof header - 1, 1, f) == 1) &&
-             fwrite(line, n, 1, f) == 1 && !fflush(f);
+             fwrite(line, n, 1, f) == 1;
     if (f && fclose(f)) ok = 0;
     if (!ok && fresh)
         unlink(LOG_FILE); /* a headerless log would stay so */
     else if (!ok && at >= 0 && (f = fopen(LOG_FILE, "r+b"))) {
-        if (ftruncate(fileno(f), at)) {} /* nothing more to try: the next listen will */
+        /* ponytail: a failed cut leaves the torn line, which the next listen joins */
+        if (ftruncate(fileno(f), at)) {}
         fclose(f);
     }
     pthread_mutex_unlock(up.lock);
@@ -325,34 +328,44 @@ static void *worker(void *unused) {
     reply_t r;
     entry_t e[BATCH];
     char sk[64] = "";
-    unsigned size, done = 0;
-    int lb = !!up.cfg[LB_TOKEN][0], fm = !!up.cfg[FM_USER][0], ok = 1, sent = 0;
-    pthread_mutex_lock(up.lock);
-    char *log = read_head(LOG_FILE, LOG_HEAD, &size);
-    pthread_mutex_unlock(up.lock);
+    unsigned size;
+    int lb = !!up.cfg[LB_TOKEN][0], fm = !!up.cfg[FM_USER][0], sent = 0;
     buf_t b = { calloc(1, BODY_MAX), 0, BODY_MAX };
-    ok = b.p != 0;
-    for (unsigned at = 0; ok && log;) {
-        int n = 0;
-        while (n < BATCH && at < size) { /* complete lines only */
-            unsigned j = at;
-            while (j < size && log[j] != '\n') j++;
-            if (j == size) break;
-            log[j] = 0;
-            if (log[at] != '#' && parse(log + at, &e[n])) n++;
-            at = j + 1;
+    int ok = b.p != 0;
+    /* A window at a time, each retired before the next is read, until one comes back short. A full
+     * window always retires something (whole lines, or the junk), so the passes end. ponytail: each
+     * pass rewrites the rest of the log under the lock, so card writes grow with the square of the
+     * backlog (a 3 MB log writes about 3 MB extra, 10 MB about 45 MB); carrying an offset across
+     * windows and rewriting once would remove it. */
+    for (int more = 1; ok && more;) {
+        unsigned done = 0;
+        pthread_mutex_lock(up.lock);
+        char *log = read_head(LOG_FILE, LOG_HEAD, &size);
+        pthread_mutex_unlock(up.lock);
+        for (unsigned at = 0; ok && log;) {
+            int n = 0;
+            while (n < BATCH && at < size) { /* complete lines only */
+                unsigned j = at;
+                while (j < size && log[j] != '\n') j++;
+                if (j == size) break;
+                log[j] = 0;
+                if (log[at] != '#' && parse(log + at, &e[n])) n++;
+                at = j + 1;
+            }
+            /* a cut line waits; in a full window, one longer than any real line is junk */
+            if (!n) {
+                done = size == LOG_HEAD && size - at > LINE_BYTES ? size : at;
+                break;
+            }
+            ok = (!fm || *sk || session(sk, &b, &r)) && (!lb || listenbrainz(e, n, &b, &r)) &&
+                 (!fm || scrobble_lastfm(e, n, sk, &b, &r));
+            if (ok) done = at, sent += n;
         }
-        if (!n) { /* a cut line waits; in a full window, one longer than any real line is junk */
-            done = size == LOG_HEAD && size - at > LINE_BYTES ? size : at;
-            break;
-        }
-        ok = (!fm || *sk || session(sk, &b, &r)) && (!lb || listenbrainz(e, n, &b, &r)) &&
-             (!fm || scrobble_lastfm(e, n, sk, &b, &r));
-        if (ok) done = at, sent += n;
+        free(log);
+        more = size == LOG_HEAD && done;
+        if (done && !retire(done)) ok = 0;
     }
-    if (done && !retire(done)) ok = 0;
     free(b.p);
-    free(log);
     up.sent = sent;
     up.ok = ok;
     up.done = 1;

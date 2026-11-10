@@ -9396,8 +9396,7 @@ static void scrobble(void *r, int total, int heard) {
     if (I(r, REC_TRACK) > 0) o += tk_snprintf(o, 12, "%d", I(r, REC_TRACK));
     o += tk_snprintf(o, (unsigned)(line + sizeof line - o), "\t%d\tL\t%u\t\n", total,
                      (unsigned)(now - heard));
-    scrobble_append(line, (unsigned)(o - line));
-    scrobble_listened();
+    if (scrobble_append(line, (unsigned)(o - line))) scrobble_listened();
 }
 
 /* The polled track's place at sec, its file's seconds. A CUE track becomes the book's place only

@@ -2271,7 +2271,9 @@ void check_styles(void) {
 
 SCROBBLE = r"""
 #include <assert.h>
+#include <signal.h>
 #include <stdarg.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include "peq.h"
 int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *), scrobble_flag(const char *);
@@ -2432,6 +2434,17 @@ int main(void) {
                  "Art \"1\" \\ &=+%\xc3\xa9\tAlb/um\tTitle 1\t1\t201\tL\t1700000001\t\n", f);
     fclose(f);
     assert(run(&sent) == 1 && sent == 1 && !strcmp(slurp(LOG), HEADER));
+    /* A full card on real stdio (a file size limit just past the log): fclose reports the write that
+     * stopped short, and the log is cut back to what it was, or is gone when the listen started it. */
+    struct rlimit was, full;
+    assert(!getrlimit(RLIMIT_FSIZE, &was));
+    full = was, full.rlim_cur = sizeof HEADER + 9;
+    signal(SIGXFSZ, SIG_IGN);
+    const char *listen = "Full\tB\tCard\t\t100\tL\t1700009999\t\n";
+    assert(!setrlimit(RLIMIT_FSIZE, &full) && !scrobble_append(listen, (unsigned)strlen(listen)) && !strcmp(slurp(LOG), HEADER));
+    unlink(LOG);
+    assert(!scrobble_append(listen, (unsigned)strlen(listen)) && access(LOG, 0));
+    assert(!setrlimit(RLIMIT_FSIZE, &was) && scrobble_append(listen, (unsigned)strlen(listen)) && !strcmp(slurp(LOG), HEADER "Full\tB\tCard\t\t100\tL\t1700009999\t\n"));
     fclose(dump);
     return 0;
 }
