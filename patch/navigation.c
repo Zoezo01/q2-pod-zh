@@ -1732,7 +1732,8 @@ static void paint_letter(void *w, void *canvas) {
         (g_menu.ctx >= 0 && contexts[g_menu.ctx].kind == CTX_FIXED) || /* menus: not alphabetical */
         /* nor Library's categories beside Home's pane */
         !tk_strcmp(widget_get_prop_str(w, "name", ""), "scroll_view_localmusic") ||
-        /* nor an album's tracks in Cover Flow, which are in album order (disc and track) */
+        /* nor an album's tracks in Cover Flow, which are in album order (disc and track).
+         * ponytail: other lists in an order of their own keep it, the Library's album songs too */
         coverflow_tracks(window_of(w)))
         return;
     int i = index_of(&g_menu, widget_get_prop_int(w, SEL, -1));
