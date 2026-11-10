@@ -449,12 +449,10 @@ STATUS_HIDDEN = ['img_vol', 'label_vol', 'img_synclink']
 BATT_MODES = STATUS_RIGHT[2:4]
 BATT_PCT_W, BATT_PCT_PX, BATT_ROOM, BT_REACH = (inc(n) for n in ('BATT_PCT_W', 'BATT_PCT_PX', 'BATT_ROOM', 'BT_REACH'))
 BATT_H_W = inc('BATT_BODY_W') + inc('BATT_NUB_W') + inc('BATT_GAP') + BATT_PCT_W  # the payload's battery with its nub
-# Classic's right group, left to right: EQ while it is on and nothing plays (never with the play state: navigation.c
-# bar_state_sync), Bluetooth, Wi-Fi, the play state and the battery.
-STATUS_RIGHT_CLASSIC_LIGHT = ['label_eq', *STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
+# Classic's right group, left to right: Bluetooth, Wi-Fi, the play state and the battery. It shows no EQ.
+STATUS_RIGHT_CLASSIC_LIGHT = [*STATUS_RIGHT[:2], 'img_state', *STATUS_RIGHT[2:]]
 CLOCK_GAP = 4
-CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's EQ, when the widest clock shows with it
-CLASSIC_LIGHT_EQ_W = 25  # Classic's EQ box: its 21 px of ink in the bar's face (test_ipod), narrower than stock's 28 so the group fits at bar_right
+CLASSIC_LIGHT_CLOCK_GAP = 2  # Classic's right group's room, from the widest clock
 CLASSIC_LIGHT_FONT_SRC = ROOT/'assets/fonts/texgyreheros-bold.otf'  # the Classic face's source, subset to CLASSIC_LIGHT_TTF
 CLASSIC_LIGHT_FONT_NAME = pathlib.Path(CLASSIC_LIGHT_TTF).stem
 
@@ -524,9 +522,8 @@ def status_bar(root, g=SET0):
         check('xm=50,s=5)' in layout, 'Unexpected status bar layout')
         view[2]['children_layout'] = layout.replace('xm=50,s=5', f'xm={x},s={inc("STATUS_GAP")}')
     room = int(375 - xm - (375 / 2 + (m['clock_text'] if m else CLOCK_TEXT) / 2 + (CLASSIC_LIGHT_CLOCK_GAP if m else CLOCK_GAP)))
-    if m:  # every icon, the battery with the column of soft edge left of it, and EQ 2 px short of Bluetooth's ink
-        gap, eq[1][2] = inc('STATUS_GAP'), CLASSIC_LIGHT_EQ_W
-        reach = BT_REACH + 2 * gap + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W') + 2 + eq[1][2]
+    if m:  # every icon, and the battery with the column of soft edge left of it
+        reach = BT_REACH + 2 * inc('STATUS_GAP') + widgets['img_wifi'][1][2] + 1 + g.batt_w + inc('BATT_NUB_W')
         check(reach <= room, f'Status bar battery needs {reach}px of {room}px')
         # bar_sync's gate reads BATT_ROOM, the built-in bar's, past this room: a theme on this bar offers only the modes
         # the gate exempts (test_theme)
@@ -536,12 +533,11 @@ def status_bar(root, g=SET0):
             root[3].append(widgets[name])
         face = {f'style:{s}:{k}': v for s in ('normal', 'disable', 'focused')
                 for k, v in (('font_size', str(g.bar_px)), ('font_name', CLASSIC_LIGHT_FONT_NAME))}
-        # EQ floats at the room's left edge, not left of img_bt's whole canvas, whose last BT_REACH px alone hold ink:
-        # there it would reach the clock's text.
-        # ponytail: it stays here with Bluetooth or Wi-Fi off, and a codec badge's ink can reach it; a badge needs
-        # a track, and a track hides EQ. Move it with the group if a stopped player ever shows a badge.
-        eq[1][:] = [375 - xm - room - right[1][0], m['title'][1], eq[1][2], m['title'][3]]
-        eq[2].update({'floating': 'true', **face})
+        # Classic shows no EQ: stock still updates it, drawn above the bar, floating at the room's left edge, where
+        # bar_title reads how far the title may reach (np_bar.c).
+        eq[1][:2] = [375 - xm - room - right[1][0], -200]
+        eq[2]['floating'] = 'true'
+        right[3].append(eq)
         # The play state is in the row, between Wi-Fi and the battery, and the row closes up without it.
         widgets['img_state'][1][2] = STATE_W
         # Stock's 16 px icon canvases, centred, on the battery's middle row: the body's top, centred on the rows above the

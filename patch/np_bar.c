@@ -119,8 +119,8 @@ void bar_title(void *bar, void *top) {
             widget_set_text(clock, &none);
         else
             rearm(&st.clock_timer, clock_due, 0); /* clock_show writes it again */
-        /* the title takes the clock's room while it makes way, up to EQ's box, where the right
-         * group's room starts (tools/ipod.py) */
+        /* the title takes the clock's room while it makes way, up to EQ's box, parked where the
+         * right group's room starts (tools/ipod.py) */
         static int title_w;
         if (!title_w) title_w = I(st.bar_title, W_W);
         void *eq = st.bar_eq ? P(st.bar_eq, W_PARENT) : (void *)0;

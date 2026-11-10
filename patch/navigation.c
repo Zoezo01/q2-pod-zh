@@ -3762,11 +3762,6 @@ static int bar_state_sync(void *bar) {
             }
         }
     }
-    /* Classic's right group has room for EQ or the play state, not both: EQ while nothing plays (a
-     * codec badge, which needs a track, would reach it: tools/ipod.py). */
-    if (st.bar_eq && st.bar_state && (on || st.bar_dark) &&
-        theme()->painter[PAINT_BATTERY] == BATT_CLASSIC_LIGHT)
-        widget_set_visible(st.bar_eq, 0, 0);
     if (st.bar_idle && st.bar_state && st.bar_eq)
         widget_set_visible(st.bar_idle,
                            !widget_get_visible(st.bar_state) && !widget_get_visible(st.bar_eq), 0);
@@ -3890,11 +3885,9 @@ static void bar_sync(void *bar) {
             reach +=
                 STATUS_GAP +
                 (st.codec && st.codec_step < CODEC_STEPS ? codec_reach[st.codec - 1] : BT_REACH);
-        /* Classic: the play state or EQ shares the group */
+        /* Classic: the play state shares the group */
         if (classic_row && st.bar_state && widget_get_visible(st.bar_state))
             reach += I(st.bar_state, W_W) + STATUS_GAP;
-        if (classic_row && st.bar_eq && widget_get_visible(st.bar_eq))
-            reach += I(st.bar_eq, W_W) + STATUS_GAP;
         /* Classic's Percent Inside is the icon's own width: the icon would win no room */
         if (reach > BATT_ROOM && !(classic_light && mode == 3)) mode = 0;
     }
