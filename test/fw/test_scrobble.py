@@ -439,10 +439,10 @@ def test_a_batch_fits_its_json_body_and_a_line_too_big_for_it_is_retired_unsent(
     assert card.files[LOG] == HEADER and card.files[LOG + '.sent'].count(b'\n') == 50  # gone, not blocking
 
 
-@pytest.mark.parametrize('big, sent', (('&' * at_most(2560), 50),  # 3 bytes each escaped, at the 2560-byte cap
-                                       ('&' * (BODY_MAX // 50 // 3), 0)))  # over the cap: the form would overrun
-def test_a_batch_fits_its_form_and_a_line_too_big_for_it_is_retired_unsent(fw, big, sent):
-    log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
+@pytest.mark.parametrize('one, sent', ((line('&' * 2547, album='&', title='&', length='1', time='1'), 50),  # all sent fields escaped, at the cap
+                                       (line('&' * (BODY_MAX // 50 // 3)), 0)))  # over the cap: the form would overrun
+def test_a_batch_fits_its_form_and_a_line_too_big_for_it_is_retired_unsent(fw, one, sent):
+    log = HEADER + one * 50
     values = {k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'}
     (_, result, got), card, net = upload(fw, log, values=values)
     assert (result, got) == (1, sent)
@@ -508,7 +508,7 @@ def test_a_full_window_s_cut_line_over_2560_bytes_is_junk(fw, tail, sent):
 def test_a_log_rewrite_that_fails_keeps_the_listens(fw, fail):
     log = HEADER + line() + b'Art\tAl'  # a line still being written, for the copy-through
     (_, result, sent), card, _ = upload(fw, log, fail=[fail])
-    assert (result, sent) == (-1, 1) and card.files[LOG] == log  # sent, but kept to send again
+    assert (result, sent) == (-1, 1) and card.files[LOG] == log and LOG + '.tmp' not in card.files  # sent, but kept to send again
 
 
 def test_the_rewrite_holds_the_lock_and_writes_the_new_log_before_sent(fw):

@@ -319,6 +319,7 @@ static int retire(unsigned done) {
         if (fclose(sent)) ok = 0;
     }
     if (ok) ok = !rename(LOG_FILE ".tmp", LOG_FILE);
+    if (!ok) unlink(LOG_FILE ".tmp"); /* a full card gets its room back */
     free(p);
     pthread_mutex_unlock(up.lock);
     return ok;
