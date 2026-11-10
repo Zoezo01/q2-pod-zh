@@ -76,6 +76,7 @@
 #define QR_PX 186        /* the code's white plate: 5 px modules up to a 33-module code */
 #define QR_COL 214       /* the text beside it */
 #define QR_LIGHT_PX 166  /* Classic's plate: 5 px modules up to 29, 4 up to 37 */
+#define QR_RAW 1536      /* an app's whole status file (poll_one, qr_refresh) */
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
@@ -623,8 +624,8 @@ static void poll_one(app_t *a) {
             a->relaunch = 0, launch(a);
         return;
     }
-    char raw[64 + 16];
-    state_read(a->state, raw, sizeof raw); /* addr= and hold= sort before the long qr= */
+    char raw[QR_RAW]; /* the whole file: hold= may come after the long qr= */
+    state_read(a->state, raw, sizeof raw);
     a->hold = number(raw, "hold") == 1;
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
     stream_poll(a);
@@ -1940,7 +1941,6 @@ int addon_hold(void *w) {
 /* The QR code page (qrcode_page): an app's status file's qr (qrsize rows of hex, the leftmost
  * module the high bit), drawn on a white plate, beside its address (addr), PIN (pin) and note,
  * read again every second. Without an address (no Wi-Fi) or a file (not running), it says so. */
-#define QR_RAW 1536
 #define QR_HEX 640
 static struct {
     void *page, *qr, *col, *msg, *addr, *pin, *note, *say, *sub;
