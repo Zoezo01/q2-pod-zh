@@ -3369,10 +3369,11 @@ for existing in (False,True):
             long_return(m)
             assert m.nodes[m.top]['name']=='playing_page'
             assert not any(c[0]=='player_start' for c in m.calls)
-            # The switch dropped the hold-release latch: the hold's release is ignored
-            # and the first short Return goes back instead of being swallowed.
+            # The switch leaves the hold-release latch armed: stock's filter swallows the hold's
+            # release, which V1.34 delivers, and the first short Return goes back.
+            assert m.u.mem_read(O['RETURN_RELEASE_LATCH'],1)==b'\1'
+            assert m.call(170,gap=0)==11 and m.nodes[m.top]['name']=='playing_page'
             assert m.u.mem_read(O['RETURN_RELEASE_LATCH'],1)==b'\0'
-            assert m.call(170,gap=0)==0 and m.nodes[m.top]['name']=='playing_page'
             m.call(170,address=0x53d760,args=(m.top,m.event,0,0),gap=0)
             assert m.top==browse, (existing,visit,[m.nodes[p]['name'] for p in m.order])
             m.paint(w,gap=0); assert (m.selected(w),m.get(w+O['SCROLL_Y']))==(selected,offset)

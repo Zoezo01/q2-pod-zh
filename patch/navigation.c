@@ -7416,10 +7416,10 @@ void ringnav_boot(const char *page, const int *ctx) {
  * Elsewhere it opens Now Playing over the page, remembered as np_origin; on Now Playing it goes
  * back to that page while it lies right under it, else Home. With Hold Return: Home it goes Home
  * from any page but Home itself, where it still opens Now Playing.
- * ponytail: going Home leaves the latch to the stock release filter, as stock's own Home call
- * here did, relying on the hold's key-up reaching it once the windows close; clearing it would
- * let that release act on Home. A release that never arrives leaves it for chord_gate's next
- * press to clear. */
+ * ponytail: every way leaves the latch to the stock release filter, as stock's own Home call here
+ * did: the hold's key-up, where it reaches the filter, is swallowed there; clearing it let that
+ * release act on Home, and on V1.34 go straight back from the Now Playing it had opened (#303). A
+ * release that never arrives leaves it for chord_gate's next press to clear. */
 int compact_now_playing(void) {
     pull_cancel();
     drop_input();
@@ -7454,12 +7454,6 @@ int compact_now_playing(void) {
             static const int context[4] = { 0, 0, 0xff, 2 };
             st.np_origin = top;
             navigator_switch_to_with_context("playing_page", context, 0);
-            /* The window switch stops the hold's key-up from reaching the stock release
-             * filter, so the latch it armed would otherwise swallow the next Return. Drop it
-             * once the switch really landed, so the first short Return goes back. */
-            void *now = window_manager_get_top_window(wm);
-            if (now && !tk_strcmp(widget_get_prop_str(now, "name", ""), "playing_page"))
-                *(volatile unsigned char *)RETURN_RELEASE_LATCH = 0;
         }
     }
     return 0;

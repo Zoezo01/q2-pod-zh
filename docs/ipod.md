@@ -409,10 +409,10 @@ the shared screen/navigation restrictions, and then, on Now Playing, goes back
 (`navigator_back`) when the page it opened over (`np_origin`) lies right under it, or
 calls the stock Home destination otherwise; anywhere else it remembers the page and calls the stock switch
 function with `playing_page` and `{0, 0, 0xff, 2}`. The `0xff` context skips
-player_start, so playback is not restarted. The switch keeps the hold's key-up
-from reaching the stock release filter, which would leave the latch that filter
-shares armed and swallow the next Return, so the payload clears that latch once
-the switch has landed. The hold's release therefore leaves the unit on Now
+player_start, so playback is not restarted. The latch stays armed, as on the way
+Home: the stock release filter swallows the hold's key-up where it arrives, and
+`chord_gate` clears a latch whose release never arrived on Return's next press
+([internals.md](internals.md#hold-return)). The hold's release therefore leaves the unit on Now
 Playing and the first short Return reaches the stock Back path, with position
 memory restoring the browsing page and its selection. No short-Return callback or
 other long-key destination changes.
