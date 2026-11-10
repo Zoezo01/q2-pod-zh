@@ -56,6 +56,7 @@ Each of these left a wrong value in place on the V1.34 rebase, and only a test o
 - **A literal given to the wrong binary.** `demo` and `hciplayer` both have code at the same values, and a literal in prose with only weak evidence can be carried with the other binary's map. `docs/rebasing/weaksweep.py` lists the candidates; write the binary's name just before such a literal (`hciplayer's 0x42d9bc`), which decides between binaries that have only weak evidence for it.
 - **A function's tail** can be lost when its start changed although the offsets inside it did not. `map.lookup` says "code changed"; the old offset in the new function is the first place to look.
 - **A short run of identical words in two functions** can carry an address into the wrong one. Step 4 is the guard.
+- **A dated statement that names the stock version.** `apply` renames the version wherever it stands, so an audit dated before the new release came out as an audit of it. Read the lines `apply` changed that hold a date, and put the version the work was done on back.
 
 Beyond addresses, read the UI pages a build makes against the last build's (decode both with `tools/ipod.py` and diff): stock moves boxes and renames styles in assets, and a theme that leaves a widget alone inherits the move.
 

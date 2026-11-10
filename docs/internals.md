@@ -188,7 +188,7 @@ Display's Home: Carousel (`IPOD/HOME=2`) shows stock's carousel in place of Home
 
 ## Coverflow
 
-Coverflow (`patch/coverflow.c`) follows Rockbox PictureFlow: albums and tracks come from the stock library queries, never from tags, and the payload owns only a thumbnail cache. Audit (V1.34, 2026-09-28); every entry point is exported, and the builder pins the executable through the stock ZIP's SHA-256:
+Coverflow (`patch/coverflow.c`) follows Rockbox PictureFlow: albums and tracks come from the stock library queries, never from tags, and the payload owns only a thumbnail cache. Audit (V1.32, 2026-09-28; the addresses are V1.34's, carried by `tools/rebase.py`); every entry point is exported, and the builder pins the executable through the stock ZIP's SHA-256:
 
 | Stock entry                                       | Address                 | Size      | Prologue                                                |
 | ------------------------------------------------- | ----------------------- | --------- | ------------------------------------------------------- |
