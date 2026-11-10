@@ -540,9 +540,19 @@ def rewrite(text, lits, verdict, maps):
     """text with its stock addresses (lits as judge's verdict has them) and the stock words beside them
     carried from the old build to the new: (new text, notes), notes being (line, literal, what happened)
     for everything not simply carried."""
-    edits, notes = [], []
+    notes = []
+    # A (file offset, size) pair that is a section of an old build is that section of the new, whatever
+    # address the offset looks like: PDR in tools/build.py.
+    pairs = {}
+    for n, (one, two) in enumerate(zip(lits, lits[1:])):
+        for mp in maps.values():
+            for name, (_, off, size, _) in mp.a.sec.items():
+                if off and size and one.kind == two.kind == 'hex' and (one.value, two.value) == (off, size) and one.line == two.line and name in mp.b.sec:
+                    pairs[n], pairs[n + 1] = mp.b.sec[name][1:3]
+    edits = [(lits[n].start, lits[n].end, f'0x{v:0{lits[n].digits}x}') for n, v in pairs.items()]
     evident = []  # (binary, address, line)
     for n, (binary, how) in sorted(verdict.items()):
+        if n in pairs: continue
         lit = lits[n]
         if binary == '?':
             notes.append((lit.line + 1, f'{lit.value:#x}', f'ambiguous: {how} in more than one binary')); continue
@@ -554,9 +564,13 @@ def rewrite(text, lits, verdict, maps):
             if why == 'near': notes.append((lit.line + 1, f'{lit.value:#x}', f'{binary}: carried to {y:#x} by its neighbours\' shift, a guess'))
     # A word literal is the stock word at, or up to 5 words either side of, the nearest evident address that holds it.
     for n, lit in enumerate(lits):
-        if n in verdict or (lit.kind == 'hex' and lit.digits != 8): continue
-        words = (lit.value,) if lit.kind == 'hex' else lit.value
+        if n in verdict or n in pairs or (lit.kind == 'hex' and lit.digits != 8): continue
+        words: tuple[int, ...] = (lit.value,) if lit.kind == 'hex' else lit.value
         best = None
+        if len(words) == 3 and words[0] >> 16 == 0x3c1c and words[1] >> 16 == 0x279c:  # a PIC prologue says where it is: how far the GOT is
+            for binary, mp in maps.items():
+                x = mp.a.gp - ((words[0] & 0xffff) << 16) - s16(words[1] & 0xffff)
+                if all(mp.a.u32(x + 4 * k) == w for k, w in enumerate(words)): best = ((-1, 0), binary, x)
         for binary, x, line in evident:
             elf = maps[binary].a
             for d in range(-20, 24, 4):
@@ -743,18 +757,6 @@ def pins(text, old, new, hashes):
         text = re.sub(rf'(?<![0-9A-Za-z.]){re.escape(old.version)}(?![0-9])', new.version, text)
     return text, notes
 
-def sections(text, a, b):
-    """text with each (file offset, size) pair of literals that is a section of the old build as that
-    section of the new: PDR in tools/build.py."""
-    lits = [l for l in literals(text) if l.kind == 'hex']
-    edits = []
-    for one, two in zip(lits, lits[1:]):
-        for name, (_, off, size, _) in a.sec.items():
-            if off and size and (one.value, two.value) == (off, size) and one.line == two.line and name in b.sec:
-                edits += [(one.start, one.end, f'0x{b.sec[name][1]:0{one.digits}x}'), (two.start, two.end, f'0x{b.sec[name][2]:0{two.digits}x}')]
-    for start, end, new in sorted(set(edits), reverse=True): text = text[:start] + new + text[end:]
-    return text
-
 def read_tree():  # pragma: no mutate block
     return {rel: (ROOT/rel).read_text() for rel in tracked()}
 
@@ -774,7 +776,6 @@ def apply(old, new, write=True, out=sys.stdout):  # pragma: no mutate block
             lits, verdict = judged[rel]
             now, notes = rewrite(text, lits, verdict, maps)
             now, more = pins(now, old, new, hashes)
-            now = sections(now, maps['demo'].a, maps['demo'].b)
             notes += more
         for line, literal, what in sorted(notes): print(f'{rel}:{line}: {literal} {what}', file=out)
         failed += len(notes)

@@ -1119,18 +1119,53 @@ def test_pins():
     assert rebase.pins('V1.32 V1x32 V1y32', dotted, new, ({}, {})) == ('V1.32 V1.34 V1y32', [])
 
 
-def test_sections(old, new):
+def test_rewrite_carries_a_section_by_its_file_offset_and_size(old, new, mp):
     a, b = old.elf, new.elf
     assert (a.sec['.rodata'][1:3], b.sec['.rodata'][1:3]) == ((0x20c, 0x50), (0x218, 0x50))
     assert (a.sec['.got'][1:3], b.sec['.got'][1:3]) == ((0x284, 0x1c), (0x290, 0x20)) and b.sec['.text'][1:3] == (0xe4, 0xe0)
     text = ('RODATA = (0x0000020c, 0x00050)\nSPLIT = 0x0000020c,\n  0x00050\nSWAPPED = (0x00050, 0x0000020c)\nOTHER = (0x0000020c, 0x00054)\n'
             'GOT = 0x00284 0x0001c, TEXT = [0x000e4, 0x00000d4]\nEMPTY = 0x00000 0x00000\n"0c020000" 0x00050\n')
-    assert rebase.sections(text, a, a) == text
-    assert rebase.sections(text, a, b) == (
-        'RODATA = (0x00000218, 0x00050)\nSPLIT = 0x0000020c,\n  0x00050\nSWAPPED = (0x00050, 0x0000020c)\nOTHER = (0x0000020c, 0x00054)\n'
-        'GOT = 0x00290 0x00020, TEXT = [0x000e4, 0x00000e0]\nEMPTY = 0x00000 0x00000\n"0c020000" 0x00050\n')
-    less = types.SimpleNamespace(sec={n: v for n, v in b.sec.items() if n != '.rodata'})
-    assert rebase.sections(text, a, less).startswith('RODATA = (0x0000020c, 0x00050)\n') and 'GOT = 0x00290 0x00020' in rebase.sections(text, a, less)
+    lits = rebase.literals(text)
+    assert rebase.rewrite(text, lits, {}, {'demo': rebase.Map(a, a)}) == (text, [])
+    now = ('RODATA = (0x00000218, 0x00050)\nSPLIT = 0x0000020c,\n  0x00050\nSWAPPED = (0x00050, 0x0000020c)\nOTHER = (0x0000020c, 0x00054)\n'
+           'GOT = 0x00290 0x00020, TEXT = [0x000e4, 0x00000e0]\nEMPTY = 0x00000 0x00000\n"0c020000" 0x00050\n')
+    assert rebase.rewrite(text, lits, {}, {'demo': mp}) == (now, [])
+    # an offset judged an address, or a size that is also a stock word by an address, is still the section's
+    got, text_size = (next(n for n, lit in enumerate(lits) if lit.value == v) for v in (0x284, 0xd4))
+    assert rebase.rewrite(text, lits, {got: ('demo', 'word')}, {'demo': mp}) == (now, [])
+    held = types.SimpleNamespace(a=types.SimpleNamespace(sec={'.text': (0x401000, 0x24843010, 0xd4, 1)}), b=types.SimpleNamespace(sec={'.text': (0, 0x24843210, 0xe0, 1)}))
+    pair = 'A = 0x40106c, 0x24843010, 0x000000d4, B = 0x401048\n'  # the word at A moved, but here it is another binary's offset
+    lits = rebase.literals(pair)
+    assert rebase.rewrite(pair, lits, {0: ('demo', 'word'), 1: ('demo', 'start'), 3: ('demo', 'start')}, {'demo': mp, 'other': held}) == (
+        'A = 0x40105c, 0x24843210, 0x000000e0, B = 0x401080\n', [])
+    less = types.SimpleNamespace(a=a, b=types.SimpleNamespace(sec={n: v for n, v in b.sec.items() if n != '.rodata'}))
+    lits = rebase.literals(text)
+    out = rebase.rewrite(text, lits, {}, {'demo': less})[0]
+    assert out.startswith('RODATA = (0x0000020c, 0x00050)\n') and 'GOT = 0x00290 0x00020' in out
+
+
+def test_rewrite_places_a_pic_prologue_by_the_distance_it_holds():
+    """lui $gp / addiu $gp, $gp / addu $gp, $gp, $t9 is how far the GOT is from the function: such a literal
+    needs no address beside it."""
+    def build(gp, at, first=0x3c1c0000, second=0x279c0000):  # a binary with one function, at `at`
+        d = gp - at
+        words = [first | (d + 0x8000) >> 16, second | d & 0xffff, 0x0399e021]
+        return types.SimpleNamespace(gp=gp, sec={}, where=hex, u32=lambda a: words[(a - at) // 4] if a in (at, at + 4, at + 8) else None), words
+    le = lambda words: struct.pack(f'<{len(words)}I', *words).hex()
+    def run(a, wa, b, words=None):
+        mp = types.SimpleNamespace(a=a, b=b, word=lambda x: (b.u32(x - 0x401230 + 0x40f5f8), 'moved'))
+        nowhere = types.SimpleNamespace(a=types.SimpleNamespace(gp=a.gp + 0x10000, sec={}, u32=lambda a: None), b=None)
+        text = f'"entry": "{le(words or wa)}"\n'
+        return rebase.rewrite(text, rebase.literals(text), {}, {'hciplayer': nowhere, 'demo': mp})[0]
+    b, wb = build(0x49a000, 0x40f5f8)
+    for gp in (0x48f000, 0x48a000):  # 0x8ddd0 from the function, a negative low half; 0x88dd0, a positive one
+        a, wa = build(gp, 0x401230)
+        assert run(a, wa, b) == f'"entry": "{le(wb)}"\n'
+        assert run(a, wa, b, wa[:2]) == f'"entry": "{le(wa[:2])}"\n'                       # two words are no prologue
+        assert run(a, wa, b, [*wa[:2], 0]) == f'"entry": "{le([*wa[:2], 0])}"\n'           # nor are three the binary does not have there
+    for first, second in ((0x3c020000, 0x279c0000), (0x3c1c0000, 0x24420000)):                # lui $v0, or addiu $v0, $v0: no GOT's distance
+        a, wa = build(0x48f000, 0x401230, first, second)
+        assert run(a, wa, b) == f'"entry": "{le(wa)}"\n'
 
 
 def test_refs(old):
