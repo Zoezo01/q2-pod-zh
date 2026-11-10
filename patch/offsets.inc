@@ -342,6 +342,7 @@ static inline int arc_out(int r, int y) {
  * for any positive float. */
 #define HSCROLL_PACE 0x3d4ccccd
 #define TIMER_CTX 0x20          /* timer_info_t.ctx: stock's hscroll lull reads its label there */
+#define IDLE_CTX 0x20           /* idle_info_t.ctx: dialog_modal's close reads its dialog there */
 /* iPod Now Playing's lyrics (lyrics.c, docs/ipod.md#lyrics): a line of one row is LYRIC_SLOT high,
  * its text and the gap to the next, a longer one more; the first after a blank LYRIC_SLOT
  * (tools/ipod.py's list layout) so it can sit in the middle as the playing line does; text LYRIC_X

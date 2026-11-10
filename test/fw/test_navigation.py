@@ -1685,6 +1685,27 @@ def test_a_standby_wake_drops_the_card_toasts(fw, st, power):
     assert toast.value == 1  # the window is over
 
 
+def test_a_modal_dialogs_close_skips_a_dialog_already_freed(fw):
+    """dialog_modal's close (DIALOG_CLOSE) closes its dialog while the window manager still holds it,
+    and touches nothing once it is gone: stock's close read a freed dialog's parent (q2-crash.log)."""
+    wm, dialog, page = 0x1000, 0x2000, 0x3000
+    windows, queued = [page, dialog], []
+    fw.mock('window_manager', lambda *_: wm)
+    fw.mock('widget_count_children', lambda w, *_: len(windows) if w == wm else 0)
+    fw.mock('widget_get_child', lambda w, i, *_: windows[i])
+    fw.mock('idle_add', lambda f, ctx, *_: queued.append((f, ctx)) or 1)
+    close = fw.fn('system__dialog_close', C.c_int, C.c_void_p)
+    fw.fn('ringnav_dialog_close', C.c_int, C.c_void_p, C.c_void_p)(0x63ec6c, dialog)
+    assert queued == [(C.cast(close, C.c_void_p).value, dialog)]
+    idle = (C.c_char * 0x28)()
+    C.c_void_p.from_buffer(idle, O['IDLE_CTX']).value = dialog
+    close(C.addressof(idle))
+    assert [args[0] for _, args in fw.calls('window_close')] == [dialog]
+    windows.remove(dialog)  # widget_destroy takes it out of the window manager before freeing it
+    close(C.addressof(idle))
+    assert len(fw.calls('window_close')) == 1
+
+
 @pytest.mark.parametrize('stop', ['standby', 'long pass', 'clean end'])
 def test_no_stall_record_while_the_watchdog_is_stopped_or_stretched(fw, st, stop, power):
     s = Stall(fw, power)

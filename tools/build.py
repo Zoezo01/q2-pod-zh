@@ -487,6 +487,10 @@ GENRE_COPY = (0x5c62dc, 0x0320f809)
 # The CUE sheet parser (the unnamed function after toolsFreeStSongInfo) ran each field through the same
 # toolsIconvConvert(field, "utf-8", "gbk"); its seven bal become jal ringnav_cue_text.
 CUE_TEXT = (0x5c06d0, 0x5c0794, 0x5c084c, 0x5c0908, 0x5c0bc8, 0x5c0f84, 0x5c130c)
+# dialog_modal (0x63f1ac) ends by queueing its dialog's close (0x63ec6c) with idle_add(close, dialog): a
+# bare pointer, so a dialog freed before that idle ran was read from freed memory. Its bal (the close in
+# its delay slot) becomes jal ringnav_dialog_close (system.c), which closes only a dialog still open.
+DIALOG_CLOSE = 0x63f304
 # The library scan's folder walk (the unnamed recursive function toolsLoadAllFile runs, 0x5c3b64) skips
 # ".", "..", .LOST.DIR, lost+found and the like by name; its first strcmp (jalr, with "." in its delay
 # slot) becomes jal ringnav_scan_dir, which skips every hidden folder, as Folder view's list does: a card
@@ -1167,6 +1171,7 @@ FUNCTIONS = {
  'time_now_ms': ('unsigned', 'void'),
  'sleep_ms': ('int', 'unsigned'),
  'timer_add': ('unsigned', 'int (*)(const void *), void *, unsigned'),
+ 'idle_add': ('unsigned', 'int (*)(const void *), void *'),
  'timer_remove': ('int', 'unsigned'),
  'tk_strcmp': ('int', 'const char *, const char *'),
  'slide_menu_scroll_to_next': ('int', 'void *'),
@@ -1825,6 +1830,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     for address in CUE_TEXT:
         patch_word(patched, address, branch(0x04110000, address, syms['toolsIconvConvert']),
                    jal(ps['ringnav_cue_text']), 'CUE text read as UTF-8, GBK or Windows-1252')
+    patch_word(patched, DIALOG_CLOSE, branch(0x04110000, DIALOG_CLOSE, syms['idle_add']),
+               jal(ps['ringnav_dialog_close']), "a modal dialog's close skips one already gone")
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SCAN_DIRS[0] + 4))[0] == 0x24a55110,
           'library scan: expected the "." exclusion')
     patch_word(patched, *SCAN_DIRS, jal(ps['ringnav_scan_dir']), 'the library scan skips hidden folders')

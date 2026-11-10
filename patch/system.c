@@ -32,6 +32,20 @@ int ringnav_cardmount(void) {
     return result;
 }
 
+/* Stock's dialog_modal queues its dialog's close (0x63ec6c) on an idle holding the bare pointer
+ * (build.py DIALOG_CLOSE), and a dialog freed before that idle ran was read from freed memory
+ * (docs/internals.md#modal-dialog-close). The close goes ahead only while the dialog is still one
+ * of the window manager's windows: widget_destroy takes a window out of there before freeing it.
+ * ponytail: a window opened at a freed dialog's address before the idle runs is closed in its
+ * place; also ask that it is a quit dialog if that shows. */
+static int dialog_close(const void *idle) {
+    void *wm = window_manager(), *dialog = P(idle, IDLE_CTX);
+    for (unsigned i = widget_count_children(wm); i--;)
+        if (widget_get_child(wm, i) == dialog) return window_close(dialog);
+    return 0;
+}
+int ringnav_dialog_close(void *close, void *dialog) { return (int)idle_add(dialog_close, dialog); }
+
 /* Charge limit (docs/internals.md#charge-limit): get_battery_capacity keeps g_power_capacity and
  * g_power_chargestate (1 Charging, 2 Full, the AXP2101's battery status); switch_charge_enable
  * drives the charge enable, as stock's USB mode does with g_usbdac_chargeflag. At CHARGE_STOP
