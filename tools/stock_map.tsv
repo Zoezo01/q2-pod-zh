@@ -2,41 +2,130 @@
 binary	address	size	name	what
 demo	0x4870ac	0xa54	tidal_stream_url_thread	Tidal stream-URL thread: waits for the track flag, fetches playbackinfo for the song id, decodes the manifest, starts the player
 demo	0x499558	0x4c	checkfw_update_from_mmc	Starts the firmware update from /mnt/mmc/update.tar and stores its result in the check-firmware state.
+demo	0x49b600	0x8c	msginfo_dialog_on_foreground	Window-to-foreground handler: if no timer id is stored under timer_idex (or it is -1), quits the dialog.
+demo	0x49b68c	0x38	msginfo_dialog_on_timer	One-shot timer of the msginfo dialog: calls dialog_quit on the dialog and returns 7 (remove).
+demo	0x49b6c4	0xdc	msginfo_dialog_timer_stop	Removes the dialog's timer if one is stored and resets timer_idex to -1.
+demo	0x49b7a0	0x38	msginfo_dialog_on_background	Stops the dialog's timer.
 demo	0x49b7d8	0xa0	msginfo_dialog_on_keyup	Swallows keys 0xab, 0xde and 0xdf; on Return (0xaa) runs a helper and quits the message dialog with 0xb.
+demo	0x49b878	0x6c	msginfo_dialog_on_pointer_up	On pointer up with the event y field above 0x32, stops the timer and quits the dialog with code 0xb.
+demo	0x49c240	0x2c	search_scroll_on_scroll	Pauses the cover task (state 2) while a result list scrolls, so covers are not loaded mid-scroll.
 demo	0x49c26c	0x45c	search_dialog_widget_init_visit	Per-widget visitor run by the search dialog's init: names tabs, binds Return and tab clicks, sets the edit tip, makes list labels
+demo	0x49c6c8	0x60	search_track_highlight_playing	Looks up scroll_view_track and walks its rows so the playing track is restyled.
+demo	0x49c728	0xec	search_dialog_on_timer	500 ms timer: re-highlights the track list on the autochange/forcerefresh flags, and on cover-finished walks the current tab list (track or album) to fill covers; keeps repeating.
+demo	0x49c814	0x120	search_tabs_clear_others	Destroys the rows (widget_destroy_children) of the scroll_view_track/artist/album/genre lists of every tab except the selected one.
 demo	0x49c934	0xe4	search_load_results	Runs the name search for the current tab kind on the typed text and copies the hits into the search show list.
+demo	0x49ca18	0x188	search_genre_row_on_click	Genre result row click: parses the row index from the item name and opens localmusic/albuminfo_page with a genre context (0xff09) built from the search list entry.
+demo	0x49cba0	0x110	search_album_row_on_click	Album result row click: parses the index, copies the search list into the show list, opens localmusic/albuminfo_page.
+demo	0x49ccb0	0x128	search_artist_row_on_click	Artist result row click: parses the index, picks the artist from the search list and opens localmusic/artistinfo_page.
 demo	0x49cdd8	0xec	search_row_image_create	Creates a 50x70 image in a search row and sets the default song, artist, album or genre art by kind
 demo	0x49cec4	0x54	list_into_icon_create	Creates a 50x70 image child of a parent and sets it to the list_into image.
 demo	0x49cf18	0x17c	search_dialog_show_tip	Toggles the search dialog between history/tip view and the result tabs, filling the search edit text
+demo	0x49d094	0x254	search_track_row_on_click	Track result row click: parses the index, checks the file exists (msg_notfile dialog if not), loads the song list and opens playing_page.
 demo	0x49d2e8	0x5fc	search_fill_track_tab	Rebuilds the search dialog's track result list: one row with art, title and artist per result
+demo	0x49d8e4	0x7c	search_track_tab_on_click	Track tab click: sets the tab to 0; if a gate byte is set, clears the other tabs and fills the track tab.
+demo	0x49d960	0x324	search_playing_row_style_visit	widget_foreach visitor on result rows: styles labeltrack/labelartist red when file_is_playing, white otherwise.
+demo	0x49dc84	0x7c	search_list_item_on_click	Click on the list_item_search widget: flips a flag byte and calls edit_set_focus on search_edit with 1 or 0.
+demo	0x49dd00	0xdc	search_dialog_on_background	Stops the dialog's 500 ms timer (reads timer_idex, removes the timer, stores -1).
+demo	0x49dddc	0xc8	search_timer_start	Starts the dialog's 500 ms timer (0x49c728) if none is stored and keeps its id in the timer_idex prop.
+demo	0x49dea4	0x650	search_row_cover_fill_visit	Visitor over result rows: for rows in the nine-row window from the first visible one, builds the cover or image path and sets it.
+demo	0x49e4f4	0x170	search_scroll_on_scroll_end	On scroll end: computes the first visible row (offset / 78) of the current tab's list and restarts the cover task for it.
 demo	0x49e664	0x508	search_fill_album_tab	Rebuilds the search dialog's album result list: one row with cover and album name per result
+demo	0x49eb6c	0x80	search_album_tab_on_click	Album tab click: sets the tab to 2; if a gate byte is set, clears the other tabs and fills the album tab.
+demo	0x49ebec	0xe8	search_dialog_on_keyup	Key-up handler: ignored with the backlight off; Return runs on_return_onclick, wheel keys are swallowed or passed by wheel mode, Centre dispatches a click to the focused widget.
 demo	0x49ecd4	0x47c	search_fill_history_tab	Reads the saved search history file and builds the history rows in the search dialog
+demo	0x49f150	0x80	search_history_clear_on_click	Clear-history button: zeroes the in-memory history, deletes /mnt/data/musichistory and refills the history tab.
 demo	0x49f1d0	0xa4	search_row_name_label_create	Creates the scrolling name label of a search result row and sets its text
 demo	0x49f274	0x320	search_fill_artist_tab	Rebuilds the search dialog's artist result list: one row with image and name per result
+demo	0x49f594	0x80	search_artist_tab_on_click	Artist tab click: sets the tab to 1; if a gate byte is set, clears the other tabs and fills the artist tab.
 demo	0x49f614	0x328	search_fill_genre_tab	Rebuilds the search dialog's genre result list: one row with image and name per result
+demo	0x49f93c	0x80	search_genre_tab_on_click	Genre tab click: sets the tab to 4; if a gate byte is set, clears the other tabs (index 3) and fills the genre tab.
+demo	0x49f9bc	0xb8	search_dialog_on_foreground	Window-to-foreground handler: refills the current tab (track with the playing highlight, artist, album or genre), then starts the 500 ms timer.
+demo	0x49fa74	0x80	search_history_save	Writes the 2560-byte search history table to /mnt/data/musichistory.
+demo	0x49faf4	0x20c	search_history_row_on_click	History row click: a pointer x below 285 reads label_record_N, closes the kb_default_t26 keyboard and reruns the text as a track search; otherwise deletes entry N, saves the file and refills.
+demo	0x49fd00	0x280	search_run_query	Takes the search_edit text, moves it to the top of the 10-entry history (dedup), saves the history, shows the tip and fills the track tab.
+demo	0x49ff80	0x84	search_edit_on_action	Input-method action (OK) handler of search_edit: runs the query (0x49fd00) when a check on the edit passes.
 demo	0x4a0890	0x20	sortselect_dialog_close	Sets the sort-changed flag and closes the sort-select menu.
 demo	0x4a08b0	0x238	sortselect_dialog_row_on_click	Sort dialog row click: stores and saves the row's choice (a playlist's, class 0xff13, in g_playlistsort_flag; otherwise the list's sort from sortPlaylistMenu's neighbour table) and moves the tick.
+demo	0x4a0ae8	0xec	sortselect_dialog_bind_widget	widget_foreach visitor: binds a click on img_return to sortselect_dialog_close, and gives scrlabel_title the title_sort text and the s_scrlabel_white24l style.
 demo	0x4a0bd4	0x58	sortselect_dialog_on_keyup	On Return (0xaa) closes the sort-select menu through sortselect_dialog_close and returns 0xb; other keys return 0.
 demo	0x4a17a0	0xac	quick_lock	Quick settings' lock tile click: locks the keys.
 demo	0x4a1eec	0xe0	statusbar_dialog_on_pointer_up	Pointer-release handler of the quick settings dropdown: in drop states 1 or 2 with no timer yet, adds the slide timer
 demo	0x4a1fcc	0x16c	statusbar_dialog_slide_timer	Timer of the quick settings dropdown: moves the dialog 80 px per tick to open or close it, then ends
 demo	0x4a22f0	0xc8	statusbar_dialog_on_pointer_move	Pointer-move handler of the quick settings dropdown: sets slide direction and drags the dialog with the finger
+demo	0x4a25c0	0x34	updatemusic_dialog_on_close	Window event handler that calls toolsStopUpdateMusic.
 demo	0x4a25f4	0x58	updatemusic_dialog_on_stop	Return and Cancel handler of the library-scan dialog: stops the scan while the done counter is under 3, else quits the dialog.
+demo	0x4a264c	0xdc	updatemusic_dialog_timer_stop_on_background	Removes the dialog timer stored under timer_idex and resets the id.
+demo	0x4a2728	0x274	updatemusic_dialog_refresh	Refreshes the dialog: sets label_msg (scan_updating or scan_updatefinish) and label_scanfolder, with the music count, and notifies the scan state.
+demo	0x4a299c	0xc8	updatemusic_dialog_timer_start	Starts the dialog 200 ms refresh timer (updatemusic_dialog_on_timer) if no id is stored under timer_idex.
+demo	0x4a2a64	0x38	updatemusic_dialog_timer_start_on_foreground	Window event handler that calls the timer-start helper.
+demo	0x4a2a9c	0x74	updatemusic_dialog_on_keyup	Key-up handler: with the backlight on, Return or Centre stops the scan; wheel keys are swallowed.
+demo	0x4a2b10	0xa4	updatemusic_dialog_bind_widget	widget_foreach visitor: for the widget named btn_no, sets its translated text to msg_no and binds a click to updatemusic_dialog_on_stop.
 demo	0x4a2bb4	0xf8	updatemusic_dialog_on_timer	Timer of the folder-scan dialog: refreshes progress, and after the scan counter passes 2 stops the animation and quits
+demo	0x4a2f78	0xdc	volume_dialog_timer_stop	Removes the dialog's auto-close timer stored under widget property timer_idex and resets the stored id to -1.
+demo	0x4a3054	0x38	volume_dialog_timer_stop_on_background	Dialog window event handler that just calls the timer-stop helper.
+demo	0x4a308c	0x144	volume_dialog_label_follow_slider	Moves label_vol beside the slider handle and prints the current g_volume into it.
+demo	0x4a31d0	0x78	volume_dialog_slider_sync	Looks up slider_vol and sets its value to the current volume.
+demo	0x4a3248	0x84	volume_dialog_on_timer	100 ms timer: counts ticks, clears the volume-setting flag and resyncs the slider, closes the window at 31 ticks (about 3 s), returns 8 (repeat) or 7 (remove).
+demo	0x4a32cc	0xd0	volume_dialog_timer_start	Starts the auto-close timer if none is stored under timer_idex, saving its id.
+demo	0x4a339c	0x38	volume_dialog_timer_start_on_foreground	Dialog window event handler that calls the timer-start helper.
+demo	0x4a33d4	0xbc	volume_dialog_timer_restart	Restarts the idle count: if the timer is running only zeroes its tick byte, otherwise stops any stale id and starts the timer.
+demo	0x4a3490	0x108	volume_dialog_slider_on_changing	Slider value changing: reads the slider value, clamps to the max volume, stores g_volume, applies and saves it, resyncs the slider and restarts the idle timer.
+demo	0x4a3598	0xf0	volume_dialog_bind_widget	widget_foreach visitor: binds slider_vol events (0x11f label follow, 0xf change) and disables label_vol.
 demo	0x4a3688	0x14c	volume_dialog_on_keyup	Key-up handler of the volume dialog: wheel ticks step the volume (limit 100, max volume) and save it, Return closes
 demo	0x4a3910	0x2c	localmusic_album_cover_pause	Album page scroll handler: sets the album-cover worker's task state to 2 (paused) if it is not already.
+demo	0x4a393c	0xfc	localmusic_album_focus_first_visible	Wheel with nothing focused: finds the table's first visible row from yoffset (row 160 grid, 78 list) and focuses it.
+demo	0x4a3a38	0x10c	localmusic_album_focus_row_visitor	widget_foreach visitor: sets the focus state on the row (or grid cell) whose index matches the one passed in.
+demo	0x4a3b44	0xc0	localmusic_album_focused_index	Returns the album index of the focused row or grid cell (row*3 + cell digit in grid mode), or -1 if none.
+demo	0x4a3c04	0xdc	localmusic_album_page_on_background	Album page background handler: removes the page timer stored in the timer_idex prop and resets it to -1.
+demo	0x4a3ce0	0x62c	localmusic_album_navbar_build	Rebuilds the album page navbar: back, home, now-playing gif, list/grid switch, and the multi-select buttons (all, add, fav, delete, cancel), binding their clicks.
+demo	0x4a430c	0x54	localmusic_album_table_refresh	Looks up 'table_client' in the page and calls table_client_reload on it.
+demo	0x4a4360	0xa0	localmusic_album_navbar_allchoice_on_click	Toggles select-all: flips g_allselect_flag, updates the batch selection and the all-choice image, reloads the table.
+demo	0x4a4400	0x84	localmusic_album_on_timer	500 ms page timer: when the autochange, force-refresh or cover-finished flag is set, clears them, reloads the table and refreshes the navbar play gif.
 demo	0x4a4484	0x3e0	localmusic_album_table_reload	Rebuilds the album table: clears rows, row height 78 (list) or 160 (3-wide grid), binds row callbacks, sets row count, starts cover task.
+demo	0x4a4864	0x19c	localmusic_album_covermode_on_click	Navbar click: flips list/grid mode, changes the switch button style, resets the cached focus and yoffset, reloads the table and clamps the scroll.
+demo	0x4a4a00	0x170	localmusic_album_cell3_on_click	Grid cell 3 click (album index row*3+2): in multi-select toggles the tick, otherwise opens the album.
+demo	0x4a4b70	0x170	localmusic_album_cell2_on_click	Grid cell 2 click (album index row*3+1): in multi-select toggles the tick, otherwise opens the album.
+demo	0x4a4ce0	0x16c	localmusic_album_cell1_on_click	Grid cell 1 click (album index row*3): in multi-select toggles the tick, otherwise opens the album.
+demo	0x4a4e4c	0x164	localmusic_album_list_row_on_click	List-mode row click (album index = row): in multi-select toggles the tick, otherwise opens the album.
+demo	0x4a4fb0	0xcc	localmusic_album_row_set_tick	Shows the mulselect/unselect tick image of a row cell by whether its album is in the batch selection, only in multi-select mode.
+demo	0x4a507c	0x1e0	localmusic_album_row_set_text	Fills a row cell's name and artist labels from the show-list entry: name falls back to another field when empty, artist to player_unknown; 24 px name and 16 px artist styles.
 demo	0x4a525c	0x2ac	localmusic_album_set_row_cover	Sets one album row's cover image: md5 of the album name, picks .sldp small or large jpg if cached, else the default album image.
+demo	0x4a5508	0x184	localmusic_album_row_set_playing	Shows or hides a row cell's playing gif and background if that album is playing.
+demo	0x4a568c	0x468	localmusic_album_on_load_data	Table on_load_data: for each row up to the list size, fills tick, text, playing mark and cover of its cell(s).
+demo	0x4a5af4	0xc8	localmusic_album_start_timer	If the page has no live 'timer_idex' timer, adds a 500 ms widget timer (4a4400) and stores its id.
 demo	0x4a5bbc	0x17c	localmusic_album_page_on_return	Album page return handler: reloads or keeps the list, refreshes row count and cover tasks, then re-requests covers.
 demo	0x4a5d38	0xb4	localmusic_album_page_hook_scroll_events	On a widget whose name starts with t, registers handlers for events 0x14e and 0x14f (scroll end).
 demo	0x4a5dec	0x134	localmusic_album_on_scroll_end	Album table scroll-end: frees images when memory is low, and if the first visible row changed, restarts the cover task from there.
+demo	0x4a5f20	0x1a0	localmusic_album_wheel_step	Grid-mode wheel step: moves focus to the next or previous album (wraps), scrolls to keep its 160 px grid row visible, records it and runs the scroll-end handler.
+demo	0x4a60c0	0x21c	localmusic_album_page_on_keyup	Album page key-up: ignored while g_backlight_status is 0; Return goes back (on_return_onclick); wheel moves focus; Centre opens the focused album. Wheel and Centre ignored when g_wheelmode is 1.
+demo	0x4a62dc	0xc0	localmusic_album_first_visible_row_visitor	widget_foreach visitor for focus_first_visible: among visible rows it keeps the smallest row index at or after floor(yoffset/row height) in the out slot.
+demo	0x4a639c	0x88	localmusic_album_add_failed_msg	Opens dialog/msginfo_dialog for 2 s with the msg_addfailed text.
+demo	0x4a6424	0x74	localmusic_album_navbar_add_on_click	Navbar Add click: with albums selected opens localmusic/playlist_page, otherwise shows the add-failed message.
+demo	0x4a6498	0x1dc	localmusic_album_navbar_delete_on_click	Navbar Delete click: confirms with a dialog, deletes selected albums and shows a result message.
+demo	0x4a6674	0xe4	localmusic_album_navbar_addfav_on_click	Navbar Add to favourites click: adds selected albums (event 0xf00a) and shows a message, or the add-failed message when none.
+demo	0x4a6758	0x9c	localmusic_album_navbar_multisel_on_click	Navbar multi-select click: enters select mode (navbar_status 1), rebuilds the navbar and reloads the table.
+demo	0x4a67f4	0x7c	localmusic_album_navbar_cancel_on_click	Navbar Cancel click: leaves multi-select mode, clears selection, rebuilds the navbar and reloads the table.
+demo	0x4a6870	0xd4	localmusic_album_on_create_row	Table on_create_row: binds the click handlers by child name (btn_table_row in list mode; btn_tablerow1..3 in grid mode).
 demo	0x4a6944	0xbbc	localmusic_album_on_prepare_row	Builds the album table's row widgets: list rows (365x78, cover, name, artist) or grid rows of three 110x160 cover cells.
+demo	0x4a7668	0xdc	localmusic_albuminfo_page_on_background	Album page background handler: removes the page timer stored in the timer_idex prop and resets it to -1.
+demo	0x4a7744	0x60	localmusic_albuminfo_refresh_playing	Looks up scroll_view on the album page and runs the playing-colour visitor (4a77a4) over its rows.
+demo	0x4a77a4	0x33c	localmusic_albuminfo_row_playing_style	Visitor on an album song row's labeltrack/labelartist: picks the red style when file_is_playing, else white (24 or 16 px), and applies it if it changed.
+demo	0x4a7ae0	0x98	localmusic_albuminfo_select_all_on_click	All-choice button of the album navbar: toggles the all-select flag and every row's select box in scroll_view.
 demo	0x4a7b78	0x41c	localmusic_albuminfo_song_row_on_click	Click on an album song row: in multi-select mode toggles the tick, otherwise loads the list and starts that track
 demo	0x4a7f94	0x550	localmusic_albuminfo_song_row_create	Builds one song row of the album page: button, selection image, title and artist labels, playing colour, click binding
 demo	0x4a84e4	0x8e8	localmusic_albuminfo_view_build	Rebuilds the album page: navbar (back, home, play all, multi-select, now-playing gif) and the song rows
+demo	0x4a8dcc	0xc8	localmusic_albuminfo_timer_start	Adds the 500 ms album page timer once, storing its id in the timer_idex prop.
+demo	0x4a8e94	0x160	localmusic_albuminfo_page_on_foreground	Album page foreground (0x12b): clears select flags, reloads the song list, rebuilds the view (restoring scroll offset after a delete or class change), refreshes play gif and colours, restarts timer.
 demo	0x4a8ff4	0x248	localmusic_albuminfo_load_cover	Loads the album page's big cover from the .sldp cache by md5 of the album, falling back to default_album_big
+demo	0x4a923c	0x98	localmusic_albuminfo_on_timer	500 ms album page timer: when flags are set, clears them and refreshes the playing colours, and reloads the big cover when asked.
+demo	0x4a92d4	0x88	localmusic_albuminfo_add_failed_toast	Shows the msg_addfailed message through dialog/msginfo_dialog (2000 ms).
+demo	0x4a935c	0x74	localmusic_albuminfo_add_to_playlist_on_click	Add button of the album navbar: opens localmusic/playlist_page with g_class_type ORed with 0x10000, or the add-failed toast when nothing is selected.
+demo	0x4a93d0	0x178	localmusic_albuminfo_delete_on_click	Delete button of the album navbar: confirm dialog (msg_delsong), deletes the selected songs and toasts success or failure.
+demo	0x4a9548	0xe4	localmusic_albuminfo_addfav_on_click	Add-to-favourites button of the album navbar: adds the selection and toasts msg_addfavsuccess, or the add-failed toast when nothing is selected.
 demo	0x4a962c	0x19c	localmusic_albuminfo_play_all	Album page play: loads the album's song list from the show list, starts the first playable track or shows a not-found message
 demo	0x4a97c8	0x4c	localmusic_album_play_gate	New in V1.34. Album page Play: returns without playing when check_forbid_play_no_headset(0) refuses, else runs localmusic_albuminfo_play_all.
+demo	0x4a9814	0xd4	localmusic_albuminfo_multiselect_on_click	Multi-select button of the album navbar: enters select mode, inits the select record, shows scroll_view's select boxes, reloads the class list, rebuilds the view.
+demo	0x4a98e8	0xcc	localmusic_albuminfo_cancel_on_click	Cancel button of the album navbar: leaves select mode, clears the record, hides select boxes, reloads the list, rebuilds the view and playing colours.
 demo	0x4a9b70	0x2c	localmusic_albuminfo_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is.
 demo	0x4a9de8	0x890	localmusic_songs_navbar_build	Rebuilds the Songs page's navbar and action bar children: label, play-all and order images, back, home, multi-select
 demo	0x4aa74c	0x54	localmusic_songs_sort_on_click	Songs page's order image click: opens dialog/sortselect_dialog for the page's class (0xf001, and a playlist's 0xff13 since V1.34).
@@ -48,26 +137,74 @@ demo	0x4abae8	0xf4	localmusic_songs_scroll_load_covers	Frees image memory when l
 demo	0x4abeb0	0x19c	localmusic_songs_play_all	Plays the first song of the show list: loads the list, starts the player, or shows a not-found message.
 demo	0x4ac530	0x440	localmusic_songs_row_pool_create	Creates the Songs table's native row pool: list items with image, name and artist labels
 demo	0x4acdd0	0x2c	localmusic_artistinfo_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is.
+demo	0x4acdfc	0x1c4	localmusic_artistinfo_bind_widget	widget_foreach visitor of the artist page: by name sets btn_track/btn_album text, focus and click (tab switch), and hooks scroll events 0x14e/0x14f on the scroll views.
 demo	0x4acfc0	0x5b4	localmusic_tab_navbar_build	Rebuilds a Local Music tab's navbar (back, home, multi-select, now-playing gif) for the artist and similar pages
+demo	0x4ad574	0x424	localmusic_artistinfo_track_set_row_cover	Visitor over the artist Tracks tab rows: for rows in the visible window builds the cover's md5 path from the song record, checks the cache and sets the row image or default.
 demo	0x4ad998	0x318	localmusic_artistinfo_albums_on_scroll_end	Artist albums list handler: finds visible rows from the scroll position and builds each row's cover name and path for the cover queue.
+demo	0x4adcb0	0x368	localmusic_tab_delete_on_click	Delete button of a Local Music tab navbar: confirm dialog (msg_delalbum/msg_delsong), deletes the selection, toasts success, failure or unsupported.
+demo	0x4ae018	0x154	localmusic_tab_addfav_on_click	Add-to-favourites button of a Local Music tab navbar: adds the selected albums or songs and toasts msg_addfavsuccess, or msg_addfailed when nothing is selected.
+demo	0x4ae16c	0x200	localmusic_artistinfo_album_on_click	Click on an artist-page album tile: in multi-select toggles the tile's img_choice mark (mulselect/unselect), otherwise opens localmusic/albuminfo_page for that album.
 demo	0x4ae36c	0x77c	localmusic_artistinfo_albums_fill	Fills the artist page Albums tab: a three-tile grid of album covers, names and playing marks per row.
 demo	0x4aeae8	0x84	localmusic_artistinfo_albums_tab_on_click	Runs the artist page's Albums tab click: sets the view flag and calls the tab helper.
+demo	0x4aeb6c	0xb4	localmusic_artistinfo_save_focus_name	If the focused widget's name starts with track_ or album_, copies that name into a global buffer (tk_snprintf) so the focus can be restored.
+demo	0x4aec20	0x50	localmusic_artistinfo_page_free_song_info	Artist page handler bound to event 0x12c: frees the song info with toolsFreeStSongInfo and clears the g_songerinfo_flag.
+demo	0x4aec70	0xdc	localmusic_artistinfo_page_on_background	Artist page background handler: removes the page timer stored in the timer_idex prop and resets it to -1.
+demo	0x4aed4c	0x4fc	localmusic_artistinfo_tracks_row_playing	Visitor over artist Tracks rows: names labeltrack/labelartist red when the row's song is playing else white, sets img_pic, and shows the playing gif.
+demo	0x4af248	0x21c	localmusic_artistinfo_albums_row_playing	Visitor over artist Albums tiles: when playing and the album is current, shows the imggifbg/playing_gif_big tile and plays the gif, else hides it.
 demo	0x4af464	0x414	localmusic_artistinfo_track_on_click	Click handler for an artist-page track row: looks up the song and plays it (or marks it in select mode).
 demo	0x4af878	0xa7c	localmusic_artistinfo_songs_fill	Fills the artist page Songs tab: one row per track with number, title, artist, playing gif and select mark.
+demo	0x4b02f4	0x80	localmusic_artistinfo_tracks_tab_on_click	Artist page's btn_track click: sets the tab flag to 0 (Tracks), resets state and calls localmusic_artistinfo_songs_fill.
 demo	0x4b0374	0xc8	localmusic_artistinfo_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop.
-demo	0x4b066c	0x3b8	localmusic_artistinfo_page_on_foreground	Artist page handler bound by its page init: clears multi-select, reloads the artist list only if the class changed, refreshes tabs.
+demo	0x4b043c	0xc8	localmusic_artistinfo_refresh_covers	For the current artist tab looks up scroll_view_album or scroll_view_track and runs the cover visitor (albums_on_scroll_end or 4ad574) over its rows.
+demo	0x4b0504	0xc8	localmusic_artistinfo_refresh_playing	For the current artist tab runs the playing-mark visitor (4af248 for albums, 4aed4c for tracks) over scroll_view_album or scroll_view_track.
+demo	0x4b05cc	0xa0	localmusic_artistinfo_on_timer	500 ms artist page timer: when the playing-mark or cover flags are set, clears them and refreshes the playing marks and the covers.
+demo	0x4b066c	0x3b8	localmusic_artistinfo_page_on_foreground	Artist page handler bound by its page init: clears multi-select, reloads the artist list only after a delete or a class change, refreshes tabs.
 demo	0x4b0a24	0x1a8	localmusic_artistinfo_cover_on_timer	Timer tick: frees images on low memory, then asks the cover worker for the rows now in view when the scroll offset changed.
+demo	0x4b0bcc	0xe0	localmusic_tab_multiselect_on_click	Multi-select button (s_img_mulsel) of a tab navbar: turns multi-select on, shows the scroll view's select boxes and rebuilds the navbar.
+demo	0x4b0cac	0xe0	localmusic_tab_cancel_on_click	Cancel button (s_btn_cancel_navbar) of a tab navbar: leaves multi-select, hides the select boxes, rebuilds the navbar and refreshes covers.
+demo	0x4b0d8c	0x88	localmusic_artistinfo_add_failed_toast	Shows the msg_addfailed message through dialog/msginfo_dialog (2000 ms).
+demo	0x4b0e14	0x80	localmusic_tab_add_to_playlist_on_click	Add button of a tab navbar: with a selection opens localmusic/playlist_page with 0x1f001 (Tracks tab) or 0x1ff01 (Albums tab); with nothing selected shows the msg_addfailed toast.
+demo	0x4b0e94	0xbc	localmusic_tab_select_all_on_click	All-choice button of a tab navbar: toggles the all-select flag and every row's select box in scroll_view_album or scroll_view_track.
+demo	0x4b0f50	0x16c	localmusic_artistinfo_page_on_keyup	Artist page key-up (0x114): ignored while backlight status is 0; Return goes back; wheel moves focus and refreshes covers; Centre clicks the focused widget. Wheel and Centre ignored in wheel mode.
+demo	0x4b1320	0x2c	localmusic_localclass_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is; bound to the class table's scroll (0x14e) so covers wait while scrolling.
+demo	0x4b134c	0x58	localmusic_localclass_focused_row_index	Returns the row index (field +0x78 of the table row) of the window's focused widget, or -1 when nothing is focused or it is not in a row.
+demo	0x4b13a4	0xdc	localmusic_localclass_page_on_background	Page handler for window to background: removes the page timer whose id is in the timer_idex prop and resets the prop to -1.
+demo	0x4b1480	0x688	localmusic_localclass_navbar_build	Rebuilds the class page navbar: title, return, artist/album switch (Artists only), edit, home, back-to-playing; in select mode select-all, add, favourite, delete and cancel.
+demo	0x4b1b08	0x178	localmusic_localclass_artistswitch_on_click	Click on btn_artistswitch: flips artist_type (artist or album artist), swaps the button style, sets a refresh flag and toasts which mode is on.
 demo	0x4b1c80	0x1cc	localmusic_localclass_table_init	Sets up the class list's table (table_view, table_client: rows, the create, prepare and load callbacks) and starts its covers.
+demo	0x4b1e4c	0x50	localmusic_localclass_row_prepare	Table prepare callback: binds the row click handler (0x10c) on the new row widget.
+demo	0x4b1e9c	0x3cc	localmusic_localclass_row_on_click	Row click: in select mode toggles the row mark; else Artists opens artistinfo_page, class 0xf006 allmusic_page, others load the songs and open playing_page (msg_notfile if missing).
 demo	0x4b2268	0x364	class_icon	Sets a category row's picture: the head for Artists, a genre icon, else the .downpic art.
+demo	0x4b25cc	0xf8	localmusic_localclass_row_name_bind	Row bind helper for classes 0xf004/0xf006: sets the scrlabel_name text from the current deque item, its scroll speed and the white 24 px style.
+demo	0x4b26c4	0x250	localmusic_localclass_row_track_bind	Row bind helper for the other classes: sets labeltrackname and labeltrackartist, red style when file_is_playing, player_unknown text when the artist is empty.
+demo	0x4b2914	0xc8	localmusic_localclass_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4b2ed8.
 demo	0x4b29dc	0xf4	localmusic_localclass_page_on_scroll	Works out the first visible row from the scroll offset (divisor 0x78) and queues covers when it changes.
+demo	0x4b2ad0	0x1e0	localmusic_localclass_page_on_keyup	Key-up handler: Return goes back; wheel keys move the focus within table_client (first visible row if none) and queue covers; Centre clicks the focused row.
+demo	0x4b2cb0	0x104	localmusic_localclass_restore_yoffset	Scrolls table_client to the stored yoffset prop (clamped to the maximum) and re-focuses the remembered row (index*0x4e) when it is in view.
+demo	0x4b2db4	0xa8	localmusic_localclass_table_reload	Remembers the focused row's index, reloads table_client and restores its scroll offset and focus.
+demo	0x4b2e5c	0x7c	localmusic_localclass_select_all_on_click	Click on the select-all image: toggles g_allselect_flag, sets the all-choice image, marks or clears every item and reloads the table.
+demo	0x4b2ed8	0x84	localmusic_localclass_page_on_timer	The page's 500 ms timer: when a refresh, auto-change or cover-finish flag is set, clears them, reloads the table and refreshes the navbar play gif; keeps repeating.
+demo	0x4b2f5c	0x22c	localmusic_localclass_page_on_foreground	Page handler for window to foreground: clears select mode, reloads the class list and table (or just restores the scroll), rebuilds the navbar, shows the play gif, starts the timer.
+demo	0x4b3188	0x88	localmusic_localclass_add_failed_dialog	Shows the msg_addfailed message through msginfo_dialog (2 s).
+demo	0x4b3210	0x74	localmusic_localclass_add_playlist_on_click	Add button: opens localmusic/playlist_page for the marked items (class|0x10000), or shows the add-failed message when the selection record is empty.
+demo	0x4b3284	0x250	localmusic_localclass_delete_on_click	Delete button: if items are marked, confirms with a class-specific message (Artists, class 0xf006, songs), deletes them and toasts the result; with none marked toasts a failure text.
+demo	0x4b34d4	0xe4	localmusic_localclass_addfav_on_click	Favourite button: adds the marked items to class 0xf00a and toasts msg_addfavsuccess, or shows the add-failed message when none are marked.
+demo	0x4b35b8	0x9c	localmusic_localclass_edit_on_click	Edit button: enters select mode (g_navbar_status 1), clears the all-select flag, rebuilds the navbar and reloads the table.
+demo	0x4b3654	0x7c	localmusic_localclass_cancel_on_click	Cancel button: leaves select mode, clears the all-select flag and the selection record, rebuilds the navbar and reloads the table.
 demo	0x4b36d0	0x33c	localmusic_localclass_row_bind	Binds one Artists/Composers/Genres row: select mark, class icon, name and playing gif for the current deque item.
 demo	0x4b3a0c	0x2a0	localmusic_localclass_row_build	Builds a batch of empty Artists/Composers/Genres rows: select image, icon, name label and playing gif.
+demo	0x4b3e40	0xdc	localmusic_playlist_page_on_background	Page handler for window to background: removes the page timer recorded in the timer_idex prop and resets it to -1.
 demo	0x4b3f1c	0x5c8	localmusic_playlist_navbar_build	Rebuilds the Playlists navbar: return, add, edit, home and back-to-playing, or select-all, delete and done in select mode.
 demo	0x4b44e4	0xd0	localmusic_playlist_edit_on_click	Edit button: enters multi-select mode, rebuilds the navbar and shows the row select boxes.
 demo	0x4b45b4	0x48	localmusic_playlist_add_on_click	Add button: opens the add-playlist dialog unless the add state is already set.
 demo	0x4b45fc	0xb8	localmusic_playlist_done_on_click	Done button: leaves multi-select, clears selections, hides the select boxes and rebuilds the navbar.
 demo	0x4b46b4	0xac	localmusic_playlist_select_all_on_click	Select All button: toggles the all-select flag, the all-choice image and every row's select box.
+demo	0x4b4760	0x68	localmusic_playlist_add_selected	Adds the marked songs to the chosen playlist (batch_add_file, class 0xf00b) and sets g_addplaylist_state to 2; started from the playlist row click, not called directly.
+demo	0x4b47c8	0x88	localmusic_playlist_wait_show	Shows or hides the image_wait widget and plays or pauses its animation.
 demo	0x4b4850	0x3bc	localmusic_playlist_row_on_click	Click on a playlist row: plays or opens it, toggles its mark in select mode, or runs the picker flow.
+demo	0x4b4c0c	0x154	localmusic_playlist_page_on_timer	The page's 500 ms timer: below state 1 it clears refresh flags and refreshes the play gif; at state 2 it toasts the add-success message, hides the wait image and ends the job.
+demo	0x4b4d60	0xc8	localmusic_playlist_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4b4c0c.
+demo	0x4b4e28	0xd0	localmusic_playlist_bind_widget	widget_foreach visitor: binds a 0x10c click handler to the child named img_return, and applies a style to the child named scrlabel_title.
 demo	0x4b4ef8	0x55c	localmusic_playlist_row_build	Builds Playlists rows: cover, name, track count line and the More dots, one per deque item.
 demo	0x4b5454	0x470	playlist_rebuild	Rebuilds the Playlists page's rows: import, export, then one per playlist; run by its init and its reload.
 demo	0x4b58c4	0x11c	localmusic_playlist_page_reload	Page handler: resets select flags, rebuilds the playlist rows and restores the scroll offset.
@@ -79,9 +216,17 @@ demo	0x4b6fe0	0x48	playset_bootvol_on_value_changed	Saves the boot volume to PLA
 demo	0x4b7288	0x7c	playset_bootvol_add_on_click	Raises the boot volume by one up to 100, saves it and refreshes the page.
 demo	0x4b7304	0x7c	playset_bootvol_dec_on_click	Lowers the boot volume by one down to 0, saves it and refreshes the page.
 demo	0x4b75d4	0x74	playset_bootvol_on_value_changing	Takes the slider value while it drags, if at most 100, and refreshes the page.
+demo	0x4bcd40	0xdc	playset_playset_page_on_background	Page handler for window to background: removes the page timer kept in the timer_idex prop.
+demo	0x4bce1c	0x58	playset_playset_page_on_timer	500 ms page timer: when the force-refresh or auto-change flag is set, clears both and refreshes the navbar play gif.
 demo	0x4bce74	0x414	playset_playset_row_on_click	Playback settings row click: switches on the row index to open a sub-page or toggle gapless, cover mode, folder cover or folder jump.
+demo	0x4bd288	0xc8	playset_playset_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4bce1c.
+demo	0x4bd350	0x50	playset_playset_page_on_foreground	Page handler for window to foreground: refreshes the navbar play gif, then starts the page timer.
 demo	0x4bdf3c	0x2f8	playset_preseteq_rows	Fills the EQ preset page's image%d and label%d rows with the preset names, the chosen one red, and sizes list_view for the navigation bar.
+demo	0x4bfea0	0xdc	playset_volcover_page_on_background	Page handler for window to background: removes the page timer kept in the timer_idex prop.
+demo	0x4bff7c	0x58	playset_volcover_page_on_timer	500 ms page timer: when the force-refresh or auto-change flag is set, clears both and refreshes the navbar play gif.
 demo	0x4bffd4	0x4f8	playset_volcover_rows	New in V1.34. Builds Volume and Album Display's four rows (ids 4, 5, 13, 14: Max Volume, Default Volume, Enlarged Album Art, Folder Album Cover).
+demo	0x4c04cc	0xc8	playset_volcover_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4bff7c.
+demo	0x4c0594	0x50	playset_volcover_page_on_foreground	Page handler for window to foreground: refreshes the navbar play gif, then starts the page timer.
 demo	0x4c05e4	0x218	playset_volcover_item_on_click	New in V1.34. Volume and Album Display row click: opens maxvol_page or bootvol_page, or flips g_bigcovermode / g_foldercover_flag and saves PLAYSET COVERMODE / FOLDERCOVER.
 demo	0x4c0cb4	0x3fc	systemset_about_row_build	Builds one About page row (Model, Firmware and the others) with title and value label and binds its click.
 demo	0x4c11c8	0x98	systemset_about_row_on_click	About row click: on row 6 rebuilds the serial-number QR image and opens the showsn dialog.
@@ -91,9 +236,17 @@ demo	0x4c20b4	0x1c4	systemset_timezone_row_on_click	Row click: row 0 toggles aut
 demo	0x4c349c	0x38c	btmenu_device_row_build	Builds a paired Bluetooth device row: icon, name and connecting/connected/paired state.
 demo	0x4c3828	0x3d8	btmenu_setting_row_build	Builds one Bluetooth page head row by index: switch, local name, quality line or search.
 demo	0x4c3d38	0x33c	btmenu_rows	Rebuilds the Bluetooth page's list: the setting rows, then the paired and the found devices.
+demo	0x4c4074	0x64	btmenu_page_on_foreground	Page handler for window to foreground: rebuilds the list with btmenu_rows, refreshes the navbar play gif, then starts the 200 ms page timer 4c32ac.
+demo	0x4c40d8	0x10c	btmenu_setting_row_on_click	Bluetooth head row click by row index: 0 switches Bluetooth and rebuilds, 2 btquality_page, 3 btadjustvol_page, 4 starts a search; while bt_initstatus is non-zero calls a busy helper.
 demo	0x4c41e4	0x36c	btmenu_item_on_click	Click on a Bluetooth device row: checks link state, finds the device by row index and connects or reports an error toast.
+demo	0x4c4550	0x1b8	btmenu_page_on_timer	Bluetooth page 200 ms timer: clears refresh flags, rebuilds the list when asked, and counts down the search-icon animation, updating the icon; keeps repeating.
 demo	0x4c5fbc	0x408	systemset_datetime_row_build	Builds the Date and Time rows (auto sync, manual, 24 hour) with their switch images.
+demo	0x4c68a0	0xdc	systemset_display_page_on_background	Page handler for window to background: removes the page timer kept in the timer_idex prop.
+demo	0x4c697c	0x58	systemset_display_page_on_timer	500 ms page timer: when the force-refresh or auto-change flag is set, clears both and refreshes the navbar play gif.
 demo	0x4c69d4	0x378	systemset_display_row_build	Builds one Display settings row: icon, label and arrow.
+demo	0x4c6d4c	0xc8	systemset_display_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4c697c.
+demo	0x4c6e14	0x50	systemset_display_page_on_foreground	Page handler for window to foreground: refreshes the navbar play gif, then starts the page timer.
+demo	0x4c6e64	0x144	systemset_display_row_on_click	Display row click by row name: 0 backlight_page, 1 lighttime_page, 2 screensaver_page, 3 flips g_navhide_flag, saves SYSSET NAVHIDE, swaps img_navhideswitch and returns to Home.
 demo	0x4c7cf4	0x2b0	fwupdate_tf	System Update's TF card row: starts stock's update from the card.
 demo	0x4c830c	0x7c	systemset_fwupdate_row_on_click	System Update row click: atoi of the row name, 0 starts the TF card update, 1 the Shanling server update.
 demo	0x4c84a0	0x270	systemset_fwupdate_row_build	Builds one System Update row, its button named by the row index.
@@ -102,10 +255,21 @@ demo	0x4c9234	0x134	systemset_general_item_on_click	New in V1.34. General row cl
 demo	0x4c9c18	0x280	keylock_rows	Rebuilds the Key lock page's rows in scroll_view_keylock.
 demo	0x4ca614	0x3c0	systemset_language_row_build	Builds one language row with its select image.
 demo	0x4cd09c	0x198	netservice_row	Network service's row click: DLNA, AirPlay or Wi-Fi transfer by the row.
+demo	0x4cf448	0x3ac	screensaver_picture_row_build	Builds one row of up to three 110x94 thumbnails (image_%d, file://path, index 0 the default icon), each clickable with an img_choice%d mark set to mulselect for the saved picture.
+demo	0x4cf7f4	0x1f8	screensaver_picture_on_click	Click on a lock-screen thumbnail: takes the index from its widget name, marks that picture mulselect and the rest unselect, and saves SCREENSAVERPATH to config.ini.
+demo	0x4cf9ec	0x58	screensaver_page_on_timer	500 ms page timer: when the force-refresh or auto-change flag is set, clears both and refreshes the navbar play gif for the timer's widget; keeps repeating.
+demo	0x4cfa44	0xdc	screensaver_page_on_background	Page handler for window to background: removes the page timer kept in the timer_idex prop and resets the prop to -1.
+demo	0x4cfb20	0xc8	screensaver_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4cf9ec.
+demo	0x4cfbe8	0x50	screensaver_page_on_foreground	Page handler for window to foreground: refreshes the navbar play gif, then starts the page timer.
+demo	0x4cfc38	0x108	screensaver_row_on_click	Lock screen row click by row name: 0 flips g_screensaver_timeshow, saves SSAVERTIMESHOW and swaps the imgtime_switch image; 1 opens systemset/screensaver_about.
 demo	0x4cfd40	0x458	screensaver_rows	Rebuilds the Lock screen page's rows and its picture grid.
 demo	0x4d195c	0x3cc	systemset_standby_rows	Builds the standby page's rows (scroll_view_standby, list_view_standby) and its deep-standby text.
+demo	0x4d3160	0xdc	systemset_sysset_page_on_background	Page handler for window to background: removes the page timer kept in the timer_idex prop.
+demo	0x4d323c	0x58	systemset_sysset_page_on_timer	500 ms page timer: when the force-refresh or auto-change flag is set, clears both and refreshes the navbar play gif.
 demo	0x4d3294	0x4ec	systemset_sysset_row_build	Builds one System settings row, with switch images for car mode and key tone.
 demo	0x4d3780	0x19c	systemset_sysset_item_on_click	Click on a System settings row: indexes the row and jumps through a 13-entry table to that row's action.
+demo	0x4d3960	0xc8	systemset_sysset_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop; callback 4d323c.
+demo	0x4d3a28	0x60	systemset_sysset_page_on_foreground	Page handler for window to foreground: shows the play gif, sets the wheel-mode focus keys, starts the page timer.
 demo	0x4d406c	0xb8	systemset_system_item_on_click	New in V1.34. System row click: opens systemset/fwupdate_page, reset_page or about_page by the row's name.
 demo	0x4d5830	0x82c	wifimenu_rows_build	Rebuilds the Wi-Fi page list: switch row, scan results with signal icons, add network.
 demo	0x4d9a14	0x14c	testmode_test_key_play_wav	Test-key page action: in output mode 4 stops playback and closes the page, else loads /mnt/mmc and plays test1.wav.
@@ -124,8 +288,36 @@ demo	0x506220	0x24	song_track_order_less	Comparator: sets the output to 1 when t
 demo	0x506258	0x370	db_song_row_callback	SQLite row callback: builds a song record from a row and pushes it onto the result deque.
 demo	0x5065c8	0x16c	db_albumartist_row_callback	SQLite row callback for GetAllAlbumArtist: pushes a record of the album-artist name (id from column 0) onto the result deque.
 demo	0x506cc4	0x22c	album_row	getAllAlbum's sqlite3_exec callback: id, album, artist and file to a record on the deque.
+demo	0x52d4d0	0xec	bigcover_page_on_pointer_up	Pointer-up handler of the Enlarged Art page: removes the page timer kept in timer_idex, then closes the window.
 demo	0x52d5bc	0x1ec	bigcover_page_set_cover	Picks the cover file (coverpic, externpic, tidal or default) by cover type and sets it on img_bigcover.
+demo	0x52d7a8	0xac	bigcover_page_set_title	Sets the title label (scrlabel_title) to g_song_name, or a default line when empty, and restarts its horizontal scroll at the configured speed.
 demo	0x52d854	0x88	bigcover_page_on_timer	Enlarged Art timer: when any of three cover-finish flags is set, clears them all and runs the finish path.
+demo	0x52e690	0x138	coverflow_current_index	Album index at the centre of the Cover Flow view, from the slide_menu value and xoffset over the item width, wrapped to the album count.
+demo	0x52e7c8	0x1dc	coverflow_labels_update	Sets scrlabel1_name and scrlabel2_name to the centred album's title and artist, falling back to the 'Unknown' text.
+demo	0x52e9a4	0xe4	coverflow_view_on_pointer_move	Drag handler of the Cover Flow view: while a press is held it feeds the velocity tracker and sets xoffset from the finger travel.
+demo	0x52ea88	0x90	coverflow_open_album	Opens an album from the Cover Flow: records the centred index and navigates to localmusic/albuminfo_page with it as context.
+demo	0x52eb18	0x30c	coverflow_view_on_pointer_up	Pointer release of the Cover Flow view: a short touch opens the album, otherwise it flings, snapping to the nearest cover with a scroll animator.
+demo	0x52ee24	0x40	coverflow_centre_open_album	Callback the Centre key hands to power_keyup_pending_custom: sets a flag, then opens the centred album.
+demo	0x52ee64	0x110	coverflow_view_on_pointer_down	Pointer press on the Cover Flow view: records the start position and offset, cancels a running scroll animator and resets the velocity tracker.
+demo	0x52ef74	0xdc	coverflow_snap_guard_timer_stop	Removes the view's timer stored in the 'snap_guard_idex' property and resets that property to -1.
+demo	0x52f050	0x88	coverflow_slots_reset	Clears the seven cover slot records (ids -1, flags 0) and the 3D renderer's slots.
+demo	0x52f0d8	0x228	coverflow_page_on_background	Window-to-background handler of the Cover Flow page: stops both timers, destroys the scroll animator, clears state, deinits the 3D renderer and re-records the centred album.
+demo	0x52f300	0x98	coverflow_cover_request	Asks local_albumcover_task to prepare six covers starting two before the given album index, clamped to the cover list size.
+demo	0x52f398	0x154	coverflow_timers_start	Adds the view's two timers if absent: a 500 ms cover refresh timer ('timer_idex') and a 30 ms snap guard timer ('snap_guard_idex').
+demo	0x52f4ec	0x138	coverflow_bind_widget	widget_foreach visitor: for the child named view_coverflow stores it and binds its pointer, paint and refresh handlers.
+demo	0x52f624	0x10c	coverflow_letter_hint_update	Shows or clears the Cover Flow's fast-scroll letter hint by a time_now_ms deadline, invalidating the view when it changes.
+demo	0x52f730	0x8c	coverflow_snap_guard_on_timer	30 ms timer: redraws the view while it has an xoffset and no animator runs, then updates the letter hint.
+demo	0x52f7bc	0x188	coverflow_scroll_on_animation_end	End of the snap scroll animator: converts the leftover xoffset into a whole-cover value change, clears the animator state.
+demo	0x52f944	0x4f4	coverflow_page_on_keyup	Key handler of the Cover Flow page: Return goes back, wheel keys move one cover, Centre opens the album via power_keyup_pending_custom.
+demo	0x52fe38	0x16c	coverflow_cover_path	Builds the cached cover file path for an album from the md5 of its key and returns 1 when the file is readable.
+demo	0x52ffa4	0x134	coverflow_slot_load_cover	Loads the bitmap for one slot from the cached cover (or a placeholder) and hands it to coverflow3d_set_slot.
+demo	0x5300d8	0x198	coverflow_cover_refresh_on_timer	500 ms timer: loads covers for slots still without art, invalidates the view if any arrived, requests covers around the centre.
+demo	0x530270	0x2f0	coverflow_slots_scroll	Aligns the seven slots with the centred album: rotates them by the shift, refills the rest, and requests covers.
+demo	0x530560	0x3e4	coverflow_view_paint	Handler of the Cover Flow view bound with event 0x11e: syncs slots, renders the 3D covers on the canvas carried by the event and draws the big first-letter box over them.
+demo	0x530944	0x1c8	coverflow_view_sync	Reads the slide position, updates slots, the title and artist labels and the letter hint, then redraws.
+demo	0x530b0c	0x48	coverflow_view_on_value_changed	Handler for the view's value-changed event: when the widget exists it runs coverflow_view_sync.
+demo	0x530b54	0x204	coverflow_view_build	Builds the view: stores it, inits the 3D renderer, creates one cf_ph placeholder per album, restores the position and syncs.
+demo	0x530d58	0x154	coverflow_page_on_foreground	Window-to-foreground handler: loads the album list, requests covers, builds the view, restores the position and starts the timers.
 demo	0x531bec	0x23c	folder_refresh	Rebuilds folder_page's navbar and table from the show list; run by its init and on going up.
 demo	0x531e28	0x28c	folder_page_go_up	Folder page back action: steps up a folder and refreshes, or closes the page at the top, clearing .downpic fd_ covers.
 demo	0x532104	0x498	folder_click	folder_page's row click: enters a folder, or queues the folder and plays the file.
@@ -138,17 +330,35 @@ demo	0x534c90	0xdc	localmusic_page_on_background	Library page background handler
 demo	0x534dc4	0x38	stock_search	Library's Search click: opens dialog/search_dialog.
 demo	0x534dfc	0x110	localmusic_row_on_click	Shared Library row click: atoi of the button name selects the page to open.
 demo	0x535c14	0x5f8	onlinematching_save_cover_lyric	Accept of Download Cover and Lyrics: copies the chosen cover and lyric into /mnt/mmc/.downpic and sets the cover info.
+demo	0x537400	0x2c	playerjumpinfo_covers_pause	Sets the album cover task state to 2 (paused) if it is not already.
+demo	0x53742c	0xdc	playerjumpinfo_timer_stop_on_background	Removes the page timer stored under timer_idex and resets the id.
+demo	0x537508	0x19c	playerjumpinfo_navbar_build	Rebuilds the nav bar under view_navbar: scrolling title label and a clickable return image calling on_return_onclick, or hides the bar when the navhide flag is set.
+demo	0x5376a4	0x54	playerjumpinfo_table_reload	Looks up music_table_client and reloads its table rows.
+demo	0x5376f8	0x70	playerjumpinfo_on_timer	Timer tick: if the autochange, forced-refresh or album-cover-finished flag is set, clears them and reloads the table; keeps repeating.
 demo	0x537768	0x1f8	playerjumpinfo_table_init	Sets up playerjumpinfo_page's table (music_table_client, table_view, its scroll bar and row callbacks) and starts its covers.
+demo	0x537960	0x50	playerjumpinfo_table_on_create_row	Table create-row callback: binds a click (0x10c) on the new row to the track click handler.
 demo	0x5379b0	0x374	playerjumpinfo_track_on_click	Track row click of the album info page: toggles multi-select or loads the song list and opens playing_page.
+demo	0x537d24	0x334	playerjumpinfo_row_load_cover	Sets a row's img_icon to the track's cover from /mnt/mmc/.downpic or .sldp (md5 keyed), or unloads it.
 demo	0x538058	0x36c	songlist_row_on_load_data	Fills a song list row: name and artist labels, cover image, red style when the song is playing.
+demo	0x5383c4	0xc8	playerjumpinfo_timer_start	Starts the page timer (playerjumpinfo_on_timer) if none is stored under timer_idex.
+demo	0x53848c	0x17c	playerjumpinfo_on_foreground	Window-to-foreground handler: clears two flags; if the playing record is unchanged, redraws navbar and reloads the table, else rebuilds the table keeping the scroll offset; then restarts the timer.
+demo	0x538608	0xb4	playerjumpinfo_bind_widget	widget_foreach visitor: for the widget named music_table_client, binds event 0x14e (scroll) to the cover pause handler and 0x14f (scroll end) to a second handler.
 demo	0x5386bc	0xf4	music_table_scroll_covers	Music table scroll handler: frees cached images when memory is low and loads covers for the row at yoffset.
-demo	0x5389f8	0x3a8	onlinematching_table_on_create_row	Table create-row callback: builds rows of a 365x78 container with a 335x70 child and sub-images up to the requested count.
+demo	0x5387b0	0x188	playerjumpinfo_on_keyup	Key-up handler: ignored with the backlight off; Return goes back, wheel keys move row focus and scroll covers, Centre queues a click on the focused widget.
+demo	0x538938	0xc0	playerjumpinfo_table_on_load_data	Table load-data callback: for a row index below the song count, fills the row with its cover and the song list row data.
+demo	0x5389f8	0x3a8	playerjumpinfo_table_on_prepare_row	The jump-to page's table prepare-row callback: builds rows of a 365x78 container with a 335x70 child and sub-images up to the requested count.
+demo	0x538ed0	0x15c	playermore_bind_widget	widget_foreach visitor of the More page: img_return click to on_return_onclick, scrlabel_title text title_more, list_view_more key-up to on_common_keyup, view_navbar hidden by navhide.
+demo	0x53902c	0x224	playermore_playspeed_icons_update	Updates the four img_forward_0..3 icons from g_playspeed_mode (0..3).
+demo	0x539250	0xd4	playermore_add_to_playlist	Adds the current item to a playlist; on error -5 shows msg_addfailed in msginfo_dialog, otherwise closes More and opens localmusic/playlist_page.
 demo	0x539324	0x19c	playermore_online	More's Download Cover and Lyrics row: opens the online matching page for the playing track.
 demo	0x5394c0	0x14c	playermore_album_info_on_click	Now Playing More row Album info: opens playerjumpinfo_page for the playing record, or shows msg_notalbuminfo.
+demo	0x53960c	0x15c	playermore_artist_info	Opens the artist info page for the playing track after closing open artistinfo/albuminfo pages and setting the songerinfo flag; shows msg_notsongerinfo when the track lacks the flag.
+demo	0x539768	0x1c8	playermore_delete_song	Hides the row, confirms in dialog/confirminfo_dialog, then calls delete_playqueue_file with 0 or 1 by the answer and shows msg_delsongsuccess; shows msg_delsongfailed on a bad play position.
+demo	0x539930	0x19c	playermore_playspeed_on_click	Click on one of the img_forward_0..3 buttons: sets g_playspeed_mode from the button name, debounced 1 s, saves PLAYSPEED, updates icons and restarts player save state.
 demo	0x539acc	0x1a4	playermore_row_on_click	Row click of Now Playing's More page: atoi of the button name picks the action from the kinds table.
 demo	0x53a8ec	0x168	playerqueue_row_on_click	Queue row click: starts the tapped row through player_start_queue.
 demo	0x53aac4	0x248	playerqueue_row_on_load_data	Fills a Now Playing queue row: name label, with the playing row styled red.
-demo	0x53adb0	0x1b0	playerqueue_table_on_create_row	Table create-row callback: builds queue rows (365x78 container, 335x70 and 315x70 children) up to the requested count.
+demo	0x53adb0	0x1b0	playerqueue_table_on_prepare_row	Table prepare-row callback: builds queue rows (365x78 container, 335x70 and 315x70 children) up to the requested count.
 demo	0x53b210	0x30	playing_page_on_keylong	Now Playing's long-press handler (event 0x111): sets a flag byte when the key is 222 or 223, then returns 0.
 demo	0x53b260	0x48	playing_page_vu_on_click	New in V1.34. Now Playing's VU button: navigator_to("vu_page").
 demo	0x53b2a8	0x48	playing_page_spectrum_on_click	New in V1.34. Now Playing's spectrum button: navigator_to("spectrum_page").
@@ -170,17 +380,32 @@ demo	0x53ea14	0x3d0	saverscreen_battery_timer	Lock screen refresh: updates the b
 demo	0x53ede4	0x1c0	saver_cover	Sets the lock screen's img_playcover from the playing track.
 demo	0x53efa4	0x16c	saverscreen_page_on_timer	Screensaver page timer tick: counts a delay down, redraws the saver page and cover, then returns repeat.
 demo	0x53f3d4	0xf4	specfolder_table_setup	Sets up specfolder_table_client: row height, prepare/load/create-row callbacks, row count from get_specfoldersize.
+demo	0x53f4c8	0x50	specfolder_row_bind_click	Hook installed by specfolder_table_setup for new rows: binds the row's btn_table_row click (0x10c) to specfolder_click.
+demo	0x53f518	0x58	specfolder_focused_row_index	Returns the row index of the focused widget in the window, or -1.
+demo	0x53f570	0x104	specfolder_position_push	Pushes the focused row index onto a growing stack (realloc) when a folder is entered, so Back can restore the cursor.
 demo	0x53f674	0x30c	specfolder_click	Scan Folders' row click: opens the folder, or ticks it.
 demo	0x53f980	0xec	specfolder_row_load_name	Fills a specfolder row's scrolling label with the folder name from get_specfoldername, 1500 ms scroll delay.
-demo	0x53fed4	0x2a8	specfolder_table_on_create_row	Creates the rows of the special-folder table with a 78 px row height, child images and labels.
+demo	0x53fa6c	0x1f8	specfolder_back_on_click	Back action of Scan Folders: leaves the folder, rebuilds the table, restores scroll and focus from the popped row, or leaves the page at the top. Bound to a click; the key handler calls it too.
+demo	0x53fc64	0x110	specfolder_bind_widget	widget_foreach visitor binding btn_startscan, btn_cancel and navigation_btn_allchoice clicks by name.
+demo	0x53fd74	0x160	specfolder_table_on_load_data	Table load-data hook: sets a row's tick image from batch_get_selectitem, shows its icon and fills the folder name.
+demo	0x53fed4	0x2a8	specfolder_table_on_prepare_row	Table prepare-row callback: creates the rows of the special-folder table with a 78 px row height, child images and labels.
+demo	0x540320	0x1c8	specfolder_startscan_on_click	Start Scan: with a folder ticked, stops the player, gathers the ticked folder URLs and opens dialog/updatemusic_dialog; with none, shows msg_notspecdir.
+demo	0x5406d0	0x34	spectrum_page_on_close	Resets the player's extra play-info mode to 0 when the spectrum page is left.
+demo	0x540704	0x9c	spectrum_view_update	Reads 12 spectrum values with mclGetSpectrum and pushes them into the spectrum_view widget.
+demo	0x5407a0	0x38	spectrum_on_timer	50 ms timer of the spectrum page; runs spectrum_view_update and keeps itself.
+demo	0x5407d8	0x90	spectrum_bind_widget	widget_foreach visitor binding img_return's click to on_return_onclick.
+demo	0x540868	0x7c	spectrum_on_keyup	Key-up of the spectrum page: Return goes back, Centre goes back when power_keyup_detect allows; only with the backlight on.
 demo	0x540a40	0xdc	stream_page_on_background	Streaming page background handler: removes the page's timer stored in timer_idex.
 demo	0x540c8c	0x150	stream_row	Streaming's row click: atoi of the button's name picks the service.
 demo	0x541d20	0x318	updatemusic_page_bind_widget	Update Local Music page's per-widget visitor: sets the three rows' texts and clicks (scan_automatic, scan_now, scan_spec) and sizes list_view.
 demo	0x542a54	0x124	usbmode_page_on_timer	USB mode page timer: shows the USB face, tracks link and mode changes, updates the DAC rate display.
+demo	0x5ba1e8	0x5c	mcl_reply_clear	Empties the hciplayer reply deque under its mutex.
+demo	0x5ba244	0x64	mcl_start_hciplayer	Starts the hciplayer process through toolsSystemd with the command 'nice -n -5 hciplayer -ao alsa &'.
 demo	0x5ba2a8	0x298	mcl_reply_take_by_key	Finds a hciplayer reply by key in the reply deque under its mutex, removes it and returns a copy of its text, or 0.
 demo	0x5ba540	0x378	mcl_shuffle_pick	Picks the next or previous song in Shuffle from the shuffled deque, refilling it when it runs out.
 demo	0x5ba8b8	0x1f0	mcl_usb_audio_find_volume_ctls	Opens an ALSA hctl and records the numids of elements named Playback Volume.
 demo	0x5baaa8	0x1f8	mcl_request_player_status	Sends {player-status\request} to hciplayer and polls up to 10 times for the reply, returning the state parsed.
+demo	0x5baca0	0xc8	mcl_advance_index	Moves the playlist index to the next song; at the end it wraps to 0, or in one mode calls a stored callback with the last song's data.
 demo	0x5bad68	0x2d4	mcl_open_preload	Sends hciplayer {set-gapless} with the next URL so it preloads the track.
 demo	0x5bb03c	0x138	mcl_preload	mclAutoChange's gapless step: finds the next track and has mcl_open_preload send it.
 demo	0x5bbb38	0xb4c	mcl_parse_lrc_file	Parses a .lrc file into the lyric deque, converting UTF-16 or GB18030 with iconv and keeping per-line times.
@@ -238,12 +463,50 @@ demo	0x69405c	0xe4	image_loader_stb_load	Image loader entry: decodes an image vi
 demo	0x694f80	0x120	widget_animator_scroll_update	Animator update: sets xoffset and yoffset props to from plus (to minus from) times progress when each differs.
 demo	0x69846c	0x50	window_manager_default_clear_refs	Clears the window manager references (+0x4c, +0x50, +0x58) that point at the given window.
 demo	0x699224	0xec	window_manager_default_get_prev_window	Scans children downward from the second from top for a normal, dialog, popup or non-always-on-top overlay window.
+demo	0x69b090	0xbc	window_manager_default_update_highlighter	Re-snapshots the previous window into the dialog highlighter's image when a highlighter exists.
+demo	0x69b14c	0x2a0	window_manager_default_on_event	Widget on_event of the window manager: orientation change (0x143, answered with 0x144) resizes lcd, native window and layout; theme change (0x148) reloads; 0x12e aborts pressed keys.
+demo	0x69b3ec	0x138	window_manager_default_on_native_window_event	Slot of the window manager vtable (0x9b3cec) taking native window events: the first kind refreshes size and layout, two call input_device_status pointer enter/leave, one aborts keys and mouse.
+demo	0x69b524	0x64	window_manager_default_on_locale_changed	Refreshes the window manager (0x698d50) and the highlighter, returns bad params for a NULL manager.
+demo	0x69b588	0x88	window_manager_default_snap_prev_window_drop_highlighter	Snaps the previous window; on success destroys the wm dialog highlighter (+0x300) through 0x6989dc and clears the pointer.
 demo	0x69b610	0x340	window_manager_default_create_animator	Creates the open or close window animator from anim_hint; returns 2 when none applies.
 demo	0x69b950	0x15c	window_manager_default_open_window_idle	Idle callback finishing a window open: dispatches window events 0x128 to 0x12a and animates; returns remove.
+demo	0x69baac	0x108	window_manager_default_open_window	Vtable slot 0 of the window manager: restacks the new window on top, listens for its foreground event, creates the open animator, dispatches background (0x12a) and foreground (0x12b) window events.
+demo	0x69bc38	0x2c8	window_manager_default_finish_animation	Ends a running window animation: destroys the animator, clears the animation flags, dispatches the new window events, snaps again and performs a pending close.
+demo	0x69bf00	0x138	window_manager_default_close_window_force	Vtable slot (0x9b3ce0) force close: finishes any animation, tells the previous window it is foreground, clears refs, dispatches window close (0x12c) and removes the window.
+demo	0x69c038	0xbfc	window_manager_default_paint	Per frame paint: drives the window animator (begin_frame, update, end_frame) and paints windows, else the normal paint.
 demo	0x69cc34	0x3a4	window_manager_default_close_window	The window manager's close (a table entry): reads the window's "stage" property, cancels a pending open idle (not_opened_but_close_window_idle_id) and dispatches the window events.
+demo	0x69cfd8	0x280	window_manager_default_paint_normal	Normal paint of the window manager: finds the lowest full-screen window from the top, draws the dialog highlighter, paints windows from there up, then the system bar. Name is ours.
 demo	0x69e15c	0x22c	main_loop_simple_step	One step of the simple main loop: receives events, dispatches input, timers and idles, and paints.
 demo	0x69ebe8	0xd4	input_method_default_on_win_close	Keyboard window close callback: clears the input method window and frees the context.
+demo	0x6a49f4	0xf8	lcd_mem_create_with_three_fbs	Creates an lcd_mem through the shared create helper, stores two extra frame buffers at +0x114 and +0x118 and registers them with the dirty rects: the three-buffer twin of the double-fb creators.
+demo	0x6a4aec	0x70	lcd_mem_get_height	Returns the lcd height: the stored +0xb4, or +0xb0 when the system rotation is 90 or 270 degrees.
+demo	0x6a4b5c	0x70	lcd_mem_get_width	Returns the lcd width: the stored +0xb0, or +0xb4 when the system rotation is 90 or 270 degrees.
+demo	0x6a4bcc	0x24	lcd_mem_get_dirty_rects	Tail-calls lcd_fb_dirty_rects_get_dirty_rects_by_fb with the lcd's dirty-rects block and its current fb.
+demo	0x6a4bf0	0x80	lcd_mem_get_line_length	Returns the line length in bytes: the stored +0x124 or physical width times bytes per pixel, whichever is larger.
+demo	0x6a4c70	0xc8	lcd_mem_resize	Stores the new width and height and the line length, clips the vgcanvas if any, reinitialises dirty rects.
+demo	0x6a4d38	0xd0	lcd_mem_end_frame	Ends the vgcanvas frame, then swaps (if swappable) or flushes and syncs, and resets the dirty rects of the fb.
+demo	0x6a4e08	0x118	lcd_mem_get_vgcanvas	Creates the vgcanvas over the lcd buffer on first use (full-size clip) or re-initialises it, and returns it.
+demo	0x6a4f20	0x11c	lcd_mem_get_point_color	Reads one 32-bit pixel at (x, y), rotating the point for the system orientation, and returns its color.
+demo	0x6a503c	0x1bc	lcd_mem_draw_image_matrix	Draws an image through the vgcanvas under a clip and a matrix (set_transform or transform), then restores.
+demo	0x6a51f8	0xec	lcd_mem_begin_frame	Slot 0 of the lcd table: stores the frame dirty rect (the whole screen when NULL) in the dirty-rect block and forwards it to the vgcanvas, if any.
+demo	0x6a52e4	0x2c	lcd_mem_set_online_fb	Stores the online frame buffer pointer at +0x110 and registers it with the dirty rects; returns bad params for NULL lcd.
 demo	0x6a5310	0x328	lcd_mem_init_impl	Shared lcd_mem setup for a 32-bit format: dirty rects, optional buffer alloc, and the lcd method pointers.
+demo	0x6a5638	0x1bc	lcd_mem_create	Allocates the 0x160-byte lcd_mem with tk_calloc and runs lcd_mem_init_impl.
+demo	0x6a57f4	0x1f0	lcd_mem_draw_points	Draws a list of points in the stroke color with the stroke alpha, rotating each point for the orientation.
+demo	0x6a59e4	0x58c	lcd_mem_draw_glyph	Alpha-blends an 8-bit glyph bitmap into the 32-bit lcd buffer in the text color, with orientation handling.
+demo	0x6a5f70	0x23c	lcd_mem_draw_vline	Draws a vertical line of h pixels in the stroke color, with alpha blending, stepping by the line length (or by 4 when rotated).
+demo	0x6a61ac	0xb0	lcd_mem_get_dirty_rect	Returns the fb's first dirty rect, or the whole screen when there is none.
+demo	0x6a625c	0xc8	lcd_mem_init_drawing_fb	Fills a bitmap_t with the lcd's physical size, format, line length and attaches the current fb to it, for the image_* calls.
+demo	0x6a6324	0x380	lcd_mem_draw_image	Draws an image with copy, blend, rotate-copy or rotate-blend according to size match, alpha and system orientation.
+demo	0x6a66a4	0xf0	lcd_mem_set_orientation	Handles an orientation change: swaps width and height when needed and re-inits the dirty rects, or resizes when rotation is not system-level.
+demo	0x6a6794	0xd8	lcd_mem_destroy	Deinits dirty rects, destroys the vgcanvas, frees the owned buffer, destroys both graphic buffers, clears and frees the lcd.
+demo	0x6a686c	0x194	lcd_mem_clear_rect	Clears a rect (rotated for the orientation) with the fill color and alpha through image_clear.
+demo	0x6a6a00	0x194	lcd_mem_fill_rect_with_color	Shared body of fill_rect and draw_hline: rotates the rect for the orientation, then image_fill with the given colour whose alpha is scaled by the global alpha. Name is ours, not an AWTK claim.
+demo	0x6a6b94	0x40	lcd_mem_fill_rect	Fills a rect in the fill color (+0xbc) by calling the shared fill body.
+demo	0x6a6bd4	0x40	lcd_mem_draw_hline	Draws a horizontal line in the stroke color (+0xc0) as a one-pixel-high fill.
+demo	0x6a6c14	0x3a4	lcd_mem_sync	Copies the dirty rects of the online fb to the second fb (rotating when needed), calling a hook before.
+demo	0x6b2a90	0x18	tk_free_destroy_thunk	Tail-call thunk to tk_free, handed to darray_init as an element destroy callback when the input device status is set up.
+demo	0x6b2aa8	0x1d0	input_device_status_shift_key	Maps a key code to its shifted form: digit/punctuation table pairs when the flag is set, else upper/lower case by shift and caps state.
 demo	0x6b2c78	0x674	input_device_status_handle_event	Dispatches an input event (key, pointer, wheel, gesture) to the target widget, with long press and double click.
 demo	0x6b3384	0x248	input_device_status_on_long_press_timer	Timer tick that scans pressed keys and fires long-press for those held past the threshold.
 demo	0x729c20	0x30c	utf16_to_utf8_convert	Converts a UTF-16 buffer to UTF-8, logging on a partial sequence, bad input or too-small output.
