@@ -3,7 +3,7 @@
 - **1.7.7**:
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
-  - Settings: setting the date and time or the sleep timer, a Centre press followed at once by **Next** or **Previous** no longer moves on twice, or presses OK from the last field.
+  - Settings: on **Set date and time** and the **Sleep Timer**, a Centre press followed at once by **Next** or **Previous** no longer acts as well. It used to move on a field after the button, and near the last field that set the clock or the timer before you meant to.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
