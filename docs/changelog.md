@@ -16,6 +16,7 @@
   - Streaming: a card app's icon larger than 128 pixels is no longer shown: its row shows the app's other icon, or the shared app icon. A very large icon could run the Q2 out of memory.
   - Card apps: an app's request to keep the Q2 awake (`hold=1` in its status file) now counts wherever the app writes it, such as after its QR code. It used to count only near the top of the file, where the App Store's apps put it.
   - System: fixed a restart seconds after waking from Standby with music playing. An on-screen message was closed a second time after it had already gone.
+  - Games: a tap during a game no longer opens another one. The hidden list of games still took taps where its rows had been.
   - Scrobbling: a listen the card has no room for is no longer half-written to `.scrobbler.log`, where it spoiled the next listen too. A damaged line in the log no longer stops every later **Upload Scrobbles**, and a very large log is uploaded a megabyte at a time instead of being held in memory whole.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
