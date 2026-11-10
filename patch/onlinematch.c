@@ -547,7 +547,7 @@ static int al_gone(void *ctx, void *event) {
 }
 
 /* playermore_page_init: stock's PLAYMORE_COUNT rows (PLAYMORE_ROWS' kinds by position), then ours
- * under Download Cover & Lyrics, in stock's row widgets and 20 px label, and unnamed, so stock's
+ * under Download Cover & Lyrics, in stock's row widgets and 24 px label, and unnamed, so stock's
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
  * without stock's rows is left as it built it. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
@@ -560,7 +560,7 @@ int ringnav_playermore(void *win, void *ctx) {
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
-    widget_use_style(label, "s_scrlabel_white20l");
+    widget_use_style(label, "s_scrlabel_white24l");
     widget_resize(label, 253, I(label, W_H));
     widget_restack(P(P(label, W_PARENT), W_PARENT), at + 1);
     widget_on(label, EVT_DESTROY, al_gone, label);

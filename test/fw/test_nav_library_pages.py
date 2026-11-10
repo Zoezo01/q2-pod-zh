@@ -2047,6 +2047,7 @@ ABOUT = [('Model', 'Q2'), ('FW. Version', 'V100I'), ('Serial', '1'), ('Storage',
 
 
 def about(ui, rows):
+    """Stock's About page: its rows, then its thanks, a 100 px item of text."""
     win = ui.new('window_create', 0, 0, 0, 0, 0)
     view = ui.new('scroll_view_create', win, 0, 0, 375, 320)
     ui.name[view] = 'scroll_view_about'
@@ -2054,11 +2055,15 @@ def about(ui, rows):
         button = ui.new('button_create', ui.new('list_item_create', view, 0, 0, 375, 70), 20, 0, 335, 70)
         for x, text in ((10, title), (176, value)):
             ui.text[ui.new('hscroll_label_create', button, x, 0, 149, 70)] = text
+    ui.text[ui.new('hscroll_label_create', ui.new('list_item_create', view, 0, 0, 375, 100), 20, 10, 335, 100)] = 'about_more'
     return win, view
 
 
 def about_rows(ui, view):
-    return [tuple(ui.text[label] for label in ui.kids[ui.kids[item][0]]) for item in ui.kids[view]]
+    """Each row's (title, value), and the thanks last."""
+    *rows, thanks = ui.kids[view]
+    assert ui.text[ui.kids[thanks][0]] == 'about_more'
+    return [tuple(ui.text[label] for label in ui.kids[ui.kids[item][0]]) for item in rows]
 
 
 def test_about_shows_stock_s_version_and_the_payload_s_after_it(fw, ui):
@@ -2597,7 +2602,8 @@ def test_add_songs_search_with_no_picker_matches_nothing(fw, ui):
 def test_a_playlist_read_again_keeps_the_selection_in_it(fw, ui, song, selected, size, kept):
     rows = [song(b'/m/%d.flac' % i) for i in range(size)]
     asked = []
-    fw.mock('getMusicByPlayList', lambda n, *_: asked.append(n) or ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
+    # the stored order, whatever stock's Sort shows the playlist in
+    fw.mock('sort_playlist_addtime', lambda n, *_: asked.append(n) or ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
             .extend(rows) or 0)
     ple = fw.var('playlists__ple', Ple)
     old = ui.deques.new([1])

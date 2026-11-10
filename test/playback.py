@@ -897,7 +897,7 @@ class EncoderMachine(PlaybackMachine):
         self.sp=self.alloc(0x4000)+0x3000; self.info=self.sp+0x20
         loop,self.qw=self.alloc(0x60),self.alloc(8)
         self.word(self.info+O['WHEEL_INFO_LOOP'],loop); self.word(loop+O['LOOP_QUEUE'],self.qw); self.word(self.sp+0x2c,1); self.word(self.sp+0x18,self.GP)
-        self.handlers[O['WHEEL_POST']]='enc:post'; self.handlers[self.get(self.GP-0xa84)]='enc:read'
+        self.handlers[O['WHEEL_POST']]='enc:post'; self.handlers[self.get(self.GP-0x9cc)]='enc:read'
         # the path a button takes, ringnav_queue_event, posting through the loop's own poster
         self.loop=self.alloc(0x60); self.word(self.loop+O['LOOP_POST'],0x1000020); self.handlers[0x1000020]='enc:loop'; self.loop_posts=[]
         self.handlers[ps['stock_input_trampoline']]='stock_input'
@@ -1506,7 +1506,7 @@ checks+=2
 # A list pick of the playing file, from each caller's own words into player_start. No caller reads its result: the same
 # row of the same list starts nothing, what the page does after depends on who called. A short song keeps stock's restart.
 class PickMachine(ChangeMachine):
-    PAGE=(0x53e1ac,0x53e1cc); ALBUM=(0x4a5d54,0x4a5aac); INFO=(0x4abf98,0x4abfb0); SYNC=(0x526288,0x51b73c); SYNC2=(0x526478,0x51b90c); ROW=(0x53aa2c,0x53aa38)
+    PAGE=(0x53e1ac,0x53e1cc); ALBUM=(0x4a9714,0x4a972c); INFO=(0x4abf98,0x4abfb0); SYNC=(0x526288,0x5262a0); SYNC2=(0x526478,0x526490); ROW=(0x53aa2c,0x53aa38)
     def __init__(self,status=2,cls=1):
         super().__init__(); self.install([('x','/a/x','A',0,0,0,0),('1','/a/1','A',0,1,0,0)],1); self.held=1; self.word(O['MCL_TYPE'],cls); self.word(O['MCL_MODE'],0); self.byte(O['MCL_JUMPFOLDER'],0)
         for n in ('player_start','player_start_queue','player_play_pause','navigator_back'): self.handlers.pop(syms[n],None)
@@ -1522,15 +1522,15 @@ class PickMachine(ChangeMachine):
         return self.deque(rows)
     def hook(self,u,address,size,unused):
         if address==self.enter_at:
-            self.keep=[u.reg_read(r) for r in (UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2)]
-            for r,v in zip((UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2),self.regs): u.reg_write(r,v)
+            self.keep=[u.reg_read(r) for r in self.SAVED]
+            for r,v in zip(self.SAVED,self.regs): u.reg_write(r,v)
         if address==self.stops_at or (address==0x53e1d4 and self.stops_at==0x53e1cc):  # the page's 0xff skips the call
-            for r,v in zip((UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2),self.keep): u.reg_write(r,v)
+            for r,v in zip(self.SAVED,self.keep): u.reg_write(r,v)
             return u.reg_write(UC_MIPS_REG_PC,0x1000000)
         if self.handlers.get(address)=='pick:np':
             self.np.append((self.text(u.reg_read(REGS[0])),self.get(u.reg_read(REGS[1])+8))); self.seen.append('np'); return self.returns(0,clobber=True)
         return super().hook(u,address,size,unused)
-    enter_at=stops_at=None
+    enter_at=stops_at=None; SAVED=(UC_MIPS_REG_S0,UC_MIPS_REG_S1,UC_MIPS_REG_S2,UC_MIPS_REG_S3)
     def at_site(self,site,q=None,at=1,cls=1):
         self.enter_at,self.stops_at=site; del self.seen[:]; del self.np[:]; self.now+=600; self.word(ps['restart_ask'],0); queue=self.get(syms['mcl_pdeqplaylist'])
         q=q or self.same; self.word(self.cell,cls)
@@ -1538,7 +1538,7 @@ class PickMachine(ChangeMachine):
             for i,v in enumerate((q,at,cls,2)): self.word(self.ctx+4*i,v)
             self.regs=(0,self.ctx,0); args=(0,0,cls,0)
         elif site in (self.ALBUM,self.INFO): self.regs=(q,at,self.cell); args=(0,0,0,0)
-        elif site in (self.SYNC,self.SYNC2): self.regs=(q,at,cls); args=(0,0,0,0)
+        elif site in (self.SYNC,self.SYNC2): self.regs=(q,at,cls,cls); args=(0,0,0,0)  # the class in $s2 at the first site, $s3 at the second
         else: self.regs=(0,at,0); args=(0,0,0,0)
         self.u.reg_write(UC_MIPS_REG_GP,0xa3a4e0); self.call(address=site[0],args=args,gap=0)
         assert not self.get(ps['restart_ask']) and self.get(syms['mcl_pdeqplaylist'])==queue
@@ -2012,7 +2012,7 @@ m=guarded(); m.held=0; asks(m,'player_change_music',1); assert m.at()==5001; m.h
 m=guarded(); m.handlers.pop(syms['player_next_music'],None); m.u.reg_write(UC_MIPS_REG_GP,0xa3a4e0)
 m.call(address=0x4f4e50,args=(0,0,0,0),gap=0); assert m.stock==['xf:change'] and m.nothing() and not m.get(ps['restart_ask'])
 print('Press: Next, Previous, a list pick and a user\'s seek stamp; a natural change forgets, stamps nothing and makes no file')
-# What mclStartPlayer does on the jack from the idle player, its own code run from the way's test to the send (0x5bf620-0x5ad1e4).
+# What mclStartPlayer does on the jack from the idle player, its own code run from the way's test to the send (0x5bf620-0x5bf65c).
 class StartMachine(PressMachine):
     def __init__(self):
         super().__init__(); self.quiet=[]
@@ -2023,8 +2023,8 @@ class StartMachine(PressMachine):
         return super().hook(u,address,size,unused)
     def site(self):
         self.quiet=[]; sp=self.u.reg_read(UC_MIPS_REG_SP)-0x100
-        self.word(sp+0x20,0xa3a4e0); self.u.reg_write(UC_MIPS_REG_SP,sp); self.u.reg_write(UC_MIPS_REG_GP,0xa3a4e0); self.u.reg_write(UC_MIPS_REG_FP,0xa40000)
-        self.u.emu_start(0x5bf620,0x5ad1e4,count=200000); self.u.reg_write(UC_MIPS_REG_SP,sp+0x100)
+        self.word(sp+0x20,0xa3a4e0); self.u.reg_write(UC_MIPS_REG_SP,sp); self.u.reg_write(UC_MIPS_REG_GP,0xa3a4e0); self.u.reg_write(UC_MIPS_REG_S7,0xa50000)
+        self.u.emu_start(0x5bf620,0x5bf65c,count=200000); self.u.reg_write(UC_MIPS_REG_SP,sp+0x100)
         return self.quiet
 STOCK=[('mute',1),('usleep',100000)]
 m=StartMachine(); assert m.get(0x5bf634)==jal(ps['start_mute']) and m.get(0x5bf64c)==jal(ps['start_sleep'])

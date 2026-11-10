@@ -47,17 +47,18 @@ EQ_RATE_GATES = ((0x42cf20, 0x8c42ae30, 0),            # mpctx: the three loads 
                  (0x42cf24, 0x8c42002c, 0),            # no sh_audio (docs/internals.md#music-info-between-songs)
                  (0x42cf28, 0x8c42003c, 0),            # sh_audio's rate
                  (0x42cf30, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
-                 (0x42f708, 0x1440002a, 0x1000003b))   # bnez $v0 to the insert -> b
+                 (0x42f708, 0x1440002a, 0x1000002a))   # bnez $v0 to the insert -> b
 # The MQA side chain (docs/internals.md#mqa-detection): fill_audio_out_buffers runs every probed stream
 # through the MQA decoder while isMQA (0xb11c5c) > 0 but plays its output only when isMQA == 2, so the gate
 # becomes isMQA == 2 (address, stock word, patched word).
 # Stock V1.34 (a beta) took the start-of-track probe out of reinit_audio_chain: nothing stores isMQA but 0 and nothing
 # makes the decoder, so this gate is never passed there and the long probe V1.32 needed has no place to go. The gate
 # stays, for a stock build that probes again.
+MQA_LOAD = 0x8c421c5c  # stock's lw $v0, <isMQA's low half>($v0), which moves up two words
 MQA_GATE = ((0x42f34c, 0x34620044, 0x3c0200b1),   # ori $v0, $v1, 0x44    -> lui $v0, 0xb1
-            (0x42f350, 0x005d1021, 0x8c421c5c),   # addu $v0, $v0, $sp    -> lw $v0, 0x1c5c($v0)
+            (0x42f350, 0x005d1021, MQA_LOAD),     # addu $v0, $v0, $sp    -> lw $v0, 0x1c5c($v0)
             (0x42f354, 0x8c420000, 0x2442fffe),   # lw $v0, 0($v0)        -> addiu $v0, $v0, -2
-            (0x42f358, 0x8c421c5c, 0),            # lw $v0, 0x1c5c($v0)   -> nop
+            (0x42f358, MQA_LOAD, 0),              # lw $v0, 0x1c5c($v0)   -> nop
             (0x42f35c, 0x18400009, 0x14400009))   # blez $v0, 0x42f384    -> bnez $v0, 0x42f384
 # ao_alsa's init (0x438248) asks for a 500 ms buffer (0x4382fc) but cuts it to 100 ms on output way 2, a USB
 # DAC: two branch delay slots store 100000 us and become nops, so USB keeps 500 ms.
@@ -72,13 +73,13 @@ DAC_RELEASE = ((0x438a70, 0x0c2b7108, 'dac_ioctl'),   # end of init: jal ioctl
                (0x43ad0c, 0x0c2b6ea0, 'ao_write'))    # play: jal snd_pcm_writei; every write off Bluetooth looks for a dry PCM; an unpause writes these frames again
 # The DSF, DFF and ISO checks' failure exits store the global stop: on the preload thread they don't (peq_player.c,
 # docs/internals.md#a-bad-file-next): (address, stock word, hook). The delay slot's lui stays, unused.
-PROBE_STOP = ((0x47b6fc, 0xac641e74, 'probe_stop_dsf'),  # sw $a0, 0xe74($v1)
+PROBE_STOP = ((0x47b6fc, 0xac641e74, 'probe_stop_dsf'),  # sw $a0, 0x1e74($v1)
               (0x47a684, 0xac641e74, 'probe_stop_dff'),
               (0x478990, 0xac641e74, 'probe_stop_iso'))
 # The rest that can run on the thread: a base from a hook in place of the first lui, the second lui gone. The fill's own.
 STOP_SITES = ((0x4788c0, 0x3c0200b1, 'stop_iso'), (0x47ff04, 0x3c0200b1, 'stop_aac'), (0x482424, 0x3c0200b1, 'stop_asf'))
 STOP_NOPS = ((0x4788d0, 0x3c0200b1, 0), (0x47ff10, 0x3c0200b1, 0), (0x482430, 0x3c0200b1, 0))
-STOP_FILL = (0x46bf04, 0xac431e74, 'stop_fill')  # sw $v1, 0xe74($v0)
+STOP_FILL = (0x46bf04, 0xac431e74, 'stop_fill')  # sw $v1, 0x1e74($v0)
 # The header's length ends a track only when it's an MP3's Xing or Info frame count: stock's EOF once the position passed
 # it by 1 s, on a file (docs/internals.md#forced-eof). Every other length was an estimate, and cut real audio.
 FORCED_EOF = (0x42331c, 0xac850014, 'forced_eof')  # sw $a1, 0x14($a0)
@@ -86,10 +87,10 @@ FORCED_EOF = (0x42331c, 0xac850014, 'forced_eof')  # sw $a1, 0x14($a0)
 EXIT_HOLD = (0x422734, 0x3c040089, 'exit_hold')  # lui $a0, 0x89
 # A preload the song outran doesn't publish its stale context (peq_player.c, docs/internals.md#a-preload-too-late):
 # the thread's store of 2, the three failure stores of -1, moved to the failure exit, and the cold path's clear.
-PRELOAD_PUBLISH = (0x42bb78, 0xac441de8, 'preload_publish')  # sw $a0, 0xde8($v0)
+PRELOAD_PUBLISH = (0x42bb78, 0xac441de8, 'preload_publish')  # sw $a0, 0x1de8($v0)
 PRELOAD_FAILED = (0x42bc04, 0x00001025, 'preload_failed')    # move $v0, $zero
-PRELOAD_FAIL_STORES = ((0x42bbe0, 0xac431de8, 0), (0x42bc4c, 0xac431de8, 0), (0x42bc74, 0xac431de8, 0))  # sw $v1, 0xde8($v0)
-COLD_CLEAR = (0x421a9c, 0xac601de8, 'cold_clear')            # sw $zero, 0xde8($v1)
+PRELOAD_FAIL_STORES = ((0x42bbe0, 0xac431de8, 0), (0x42bc4c, 0xac431de8, 0), (0x42bc74, 0xac431de8, 0))  # sw $v1, 0x1de8($v0)
+COLD_CLEAR = (0x421a9c, 0xac601de8, 'cold_clear')            # sw $zero, 0x1de8($v1)
 # mcl-closegapless and the direct stop while the thread runs: 1 becomes 3, so what it was opening isn't played.
 PRELOAD_CLOSE = ((0x42c2c4, 0x24030002, 'preload_close'), (0x42c9f4, 0x24030002, 'preload_stop'))  # li $v1, 2
 # A FLAC seek keeps the file's end (peq_player.c, docs/internals.md#a-flac-seek-near-the-end): the decoder's seek

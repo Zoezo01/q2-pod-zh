@@ -372,9 +372,9 @@ BT_SILENCE_SITES = ((0x41465c, 0x8e460030, 'j', 'timeout'), (0x414684, 0x0000282
 # platform_init's crash watchdog forks pgrep every 2 s; 10 s is still quick to reboot a dead UI.
 WATCHDOG = 'usr/bin/checkappprocess.sh'
 WATCHDOG_SLEEP = (b'\tsleep 2\n', b'\tsleep 10\n')
-# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) and Standby start off.
+# The config a reset copies to /mnt/data: Enlarged Album Art (10 s wait) and Standby start off. So does stock's Wheel Function: Q2 Pod runs stock in Volume Mode whatever the key holds (WHEEL_MODE), and a Q2 reset here and returned to stock gets Menu Mode, the default stock's changelog names and a missing key gives (the shipped file says 1).
 DEFAULT_CONFIG = 'release/assets/default/raw/config.ini'
-DEFAULT_CONFIG_OFF = (b'COVERMODE', b'STANDBYMODE')
+DEFAULT_CONFIG_OFF = (b'COVERMODE', b'STANDBYMODE', b'WHEELMODE')
 def default_config(config):
     for key in DEFAULT_CONFIG_OFF:
         check(config.count(b'\n%s=1\n' % key) == 1, 'Unexpected default config.ini')
@@ -382,7 +382,7 @@ def default_config(config):
     return config
 # toolsSetRtcTime's command, with its padding; -u keeps the RTC in UTC. See docs/internals.md#clock.
 RTC_WRITE = (b'hwclock -w\0\0', b'hwclock -wu\0')
-# network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x37133d): stock turns
+# network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x384d2d): stock turns
 # the radio's power save (LPS) off for the whole connection; 2 restores the driver's own default,
 # PS_MODE_MAX. See docs/internals.md#battery.
 WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
@@ -403,7 +403,7 @@ TABLE_LOAD_CALL = 0x5dca2c
 # Folder row names are text, not printf formats ("99% Invisible" crashes stock's formatter).
 # tk_strncpy writes its terminator at n, so reserve the last byte of the 512-byte buffer.
 FOLDER_NAME = ((0x5329a0, 0x24050200, 0x240601ff),  # a2 = 511
-               (0x5329ac, 0x8f99a7c4, 0x8f99b200),  # tk_snprintf -> tk_strncpy
+               (0x5329ac, 0x8f99a7c4, 0x8f99b028),  # tk_snprintf -> tk_strncpy
                (0x5329b4, 0x8e260008, 0x8e250008))  # a1 = record->name
 # mclNextSong's shuffle pick; the payload calls the stock pick, then applies a pending Play next.
 SHUFFLE_CALL = (0x5c05e0, 0x0411e7d7)  # bal mcl_shuffle_pick; its delay slot (a0=1) stays
@@ -419,6 +419,18 @@ HOLD_KEYS = ((0x6b30f8, 0x8f99b220, 0x02603825, None), (0x6b3108, 0x0320f809, No
 # device_standby's bal awake_screen after the resume from Standby becomes li $v0, 1: the screen stays dark,
 # so the resuming key acts as it does dark (Play plays, centre wakes).
 STANDBY_WAKE = (0x5022e4, 0x0411ff26, 0x24020001)
+# config_init reads SYSSET NAVHIDE and WHEELMODE, V1.34's Show Navigation Bar and Wheel Function, into g_navhide_flag and
+# g_wheelmode. Q2 Pod's themes own the bar and every list's box, and its wheel is built on stock's Volume Mode (1): NAVHIDE's
+# sb stores $zero (the bar shown) and WHEELMODE's movz $v0, $zero, $v1 becomes li $v0, 1, whatever the keys hold. Neither
+# key is written, and stock's two rows are not offered (navigation.c ringnav_display, ringnav_systemset).
+NAV_SHOWN = (0x50498c, 0xa0620000, 0xa0600000)
+WHEEL_MODE = (0x5049d4, 0x0003100a, 0x24020001)
+# V1.34's home_page_init binds a key-up of its own on Home (0x534764: Return opens Now Playing and stops there; its wheel and
+# Centre act only outside Volume Mode). Home's keys are ringnav's and on_wm_keyup_fun's, as they were: the widget_on call goes.
+HOME_KEYUP = (0x534918, 0x0320f809, 0)
+# V1.34's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
+# Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
+KEYLOCK_LIT = (0x4f2558, 0x10400010, 0x10000010)
 # on_wm_idle_status, stock's idle callback (every UI pass), calls player_mainscheduling (jalr $t9), whose
 # mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
 # The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
@@ -524,15 +536,22 @@ ARTIST_COVER_ROW = ((0x4b0adc, 0x244400ff, 0x240400a0),   # addiu $4,$2,0xff -> 
                     (0x4b0af0, 0x00042203, 0x00002012))   # sra $4,$4,8 -> mflo $4
 # switchBtPriority sends LDAC quality 0x16 (SQ, 660 kbps) for both HQ (row 0) and Standard (row 1).
 # The dispatch keeps 0x15 + row in its free 0x14($sp) slot, so HQ sends 0x15 (990 kbps); see docs/internals.md.
+LDAC_TABLE = 0x244228a0  # stock's addiu $2,$2,<its jump table's low half>, which the lw that replaces it keeps
 LDAC_HQ = ((0x4fa88c, 0x00042080, 0x00041880),   # sll $3,$4,2
-           (0x4fa890, 0x244228a0, 0x00431021),   # addu $2,$2,$3
-           (0x4fa894, 0x00442021, 0x8c42f030),   # lw $2,-0xfd0($2)
+           (0x4fa890, LDAC_TABLE, 0x00431021),   # addu $2,$2,$3
+           (0x4fa894, 0x00442021, 0x8c420000 | LDAC_TABLE & 0xffff),   # lw $2,<the table's low half>($2)
            (0x4fa898, 0x8c820000, 0x24840015),   # addiu $4,$4,0x15
            (0x4fa8a4, 0x00000000, 0xafa40014),   # sw $4,0x14($sp), jr's delay slot
            (0x4fa8b0, 0x24040016, 0x8fa40014))   # lw $4,0x14($sp), was li $4,0x16
 # check_mem_thd (platform_init's detached thread) returns NULL on entry: it never opens drop_caches,
 # writes 3 to it or wakes each second. lui/addiu $gp -> jr $ra; move $v0,$zero.
 DROP_CACHES = ((0x51cb10, 0x3c1c0052, 0x03e00008), (0x51cb14, 0x279cd9d0, 0x00001025))
+# Stock V1.34's main loop starts a thread of its own on /dev/input/event4, BlueZ's AVRCP keys, and posts Play and Pause
+# alike as the Play button, Next and Previous as the skip buttons. patch/headset.c's worker reads that device already,
+# and tells Play from Pause, holds a connecting headset's Play for Resume on Connect and sends the keys to the player
+# that has the sound, so each press would act twice. btinput_thread_run returns NULL on entry, as DROP_CACHES' thread
+# does, which its caller (0x635250) takes as no such device: the thread never starts.
+BT_INPUT = ((0x638dc0, 0x3c1c0040, 0x03e00008), (0x638dc4, 0x279c1720, 0x00001025))
 # Two threads started at boot polled a start flag with usleep(10000) for the life of the player: Baidu
 # Pan's (baidu_pthread_playurl) and Tidal's URL worker (after tidalGetFavoritesIdsThd). Each poll call
 # (jalr $25) becomes jal to its payload function (tidal.c), which parks the thread: Tidal's wakes once
@@ -545,7 +564,7 @@ COVERINFO_CALL = (0x493678, 0x8e240028, 'app_coverinfo_call')
 # stands in for everywhere: these run as stock's in its scenarios). Checked against the ELF's symbols.
 APP_URL_CALLS = {'mclSetPause': 0x5bd534, 'tidal_playurl': 0x5bc684, 'curl_stop_httpget': 0x505f98,
                  'toolsFreeStSongInfo': 0x5d2ae0, 'player_set_coverinfo': 0x51d60c}
-# The jalr usleep (lw $t9,-0x59c($gp)) of mclSyncPlayerStatus' 200 ms loop becomes jal ringnav_dark_usleep
+# The jalr usleep (lw $t9,-0x4e4($gp)) of mclSyncPlayerStatus' 200 ms loop becomes jal ringnav_dark_usleep
 # (its argument set in the delay slot): at least DARK_POLL_US while ringnav_sleep finds the Q2 dark, quiet and
 # the DAC off, else stock's. parse_albumcovertask_thd's 50 ms and player_parsecover_thd's 100 ms waits become
 # jal ringnav_dark_cover_usleep: at least DARK_POLL_US whenever the screen is off, playing or not.
@@ -575,6 +594,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('playset_covermode', 'Enlarged album art(10s wait)', 'Enlarged Album Art'),
     ('playset_filter', 'Digital filters', 'Digital Filters'),
     ('playset_memplay', 'Memory playback', 'Memory Playback'),
+    ('playset_noplay', 'Headphones required for playback', 'Headphones Required'),
     ('replaygain_track', 'Audio', 'Song'),
     ('small_playset', 'Playback Setting', 'Playback'), ('small_sysset', 'System Setting', 'System'),
     ('system_wifiset', 'Wireless Setting', 'Wireless'), ('system_display', 'Display setting', 'Display'),
@@ -1077,6 +1097,7 @@ FUNCTIONS = {
  'sqlite3_close': ('int', 'void *'),
  'sqlite3_exec': ('int', 'void *, const char *, int (*)(void *, int, char **, char **), void *, char **'),
  'getMusicByPlayList': ('int', 'int'),
+ 'sort_playlist_addtime': ('int', 'int'),
  'checkPlayListExist': ('int', 'void *, int'),
  'toolsSetTimeZone': ('int', 'const char *'),
  'widget_on': ('unsigned', 'void *, unsigned, int (*)(void *, void *), void *'),
@@ -1311,6 +1332,8 @@ FUNCTIONS = {
  'player_playtime_and_length': ('int', 'int *, int *'),  # elapsed, total: track seconds; -1 none
  'player_start': ('int', 'void *, int, int, int'),
  'buzzeer_switch': ('int', 'int'),  # the stock key click; it reads g_keytone_flag
+ # Headphones required (g_block_withoutphone_flag) with no output: toasts (0) and returns 1, as before each stock start
+ 'check_forbid_play_no_headset': ('int', 'int'),
  'on_wm_keyup_fun': ('int', 'void *, void *'),  # stock key-up: np_single replays a centre release
  'get_wifisignal': ('int', 'void'),  # the status bar's Wi-Fi bars, 1-4; -1 when not connected
  'fwupdate_tf': ('int', 'void'),  # System Update's TF card update: battery check, confirm, flash
@@ -1418,6 +1441,7 @@ GLOBALS = ['tidal_albuminfo_thread_run', 'tidal_collection_thread_run',  # 2: a 
            'g_usbvol_mode',  # USB DAC volume: 0 fixed, else the volume (config_usbvolmode, device_set_volume)
            'g_usbdac_chargeflag',  # USB mode's charge choice, which switch_charge_enable gets there
            'g_memory_play', 'g_carmode', 'g_carmode_state',  # In-Vehicle Mode (pod_click)
+           'g_bigcovermode', 'g_foldercover_flag',  # Enlarged Album Art (1 on) and Folder Album Cover (pod_click)
            'g_headset_output',  # the output config_outputchannel sets: 0, 1 the jacks, 2 Bluetooth
            'g_usbmode',  # USB mode: 1 Audio and DAC, else USB Storage (usbmode_page_init)
            'g_usbdet_value',  # 1 while a USB cable is in (USB mode's scan prompt outlives it)
@@ -1458,6 +1482,14 @@ STOCK_EQ = ['release/assets/default/raw/ui/playset/preseteq_page.bin'] + [
     f'release/assets/default/raw/images/xx/{n}.png' for n in
     ['eq_bg', 'eq_off', 'eq_sidebg', 'eqbox'] + [f'eq_{p}{s}' for p in
     ('blues', 'classical', 'custon', 'dance', 'jazz', 'metal', 'pop', 'rock', 'scene') for s in ('', '_select')]]
+# Stock V1.34's Album Wall, spectrum and VU pages, and the images only they and the buttons that open them show.
+# Q2 Pod offers none: tools/ipod.py takes their Home card and their two Now Playing buttons out of the assets, and
+# only those widgets' click handlers name the pages (on_home_coverflow_onclick, and Now Playing's two in
+# tools/stock_map.tsv, playing_page_vu_on_click and playing_page_spectrum_on_click), so nothing can load them.
+STOCK_PAGES = [f'release/assets/default/raw/ui/{n}_page.bin' for n in ('coverflow', 'spectrum', 'vu')] + [
+    f'release/assets/default/raw/images/xx/{n}.png' for n in
+    ['default_album_coverflow', 'play_spectrum', 'play_spectrumdown', 'play_vu', 'play_vudown', 'spectrum_back', 'spectrum_bar',
+     *(f'spectrum_point{i}' for i in range(12)), 'vu_back', 'vu_dot', 'vu_left', 'vu_right']]
 # Superseded library versions (the unversioned and soname links already resolve to the newer ones)
 # and on-device debugging tools; nothing in the rootfs names them.
 OBSOLETE = ['usr/lib/libdbus-1.so.3.19.8', *(f'usr/lib/lib{n}-2.0.so.0.5400.3' for n in
@@ -1686,8 +1718,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         if not found: continue
         rel = found.group(1)
         data = cat('release/assets/default/raw/ui/'+rel+'.bin')
-        if CJK.search(data.decode('utf-8', 'replace')) and 'release/assets/default/raw/ui/'+rel+'.bin' not in STOCK_EQ:
-            chinese.add(rel + '.bin')  # the stock EQ pages go
+        if CJK.search(data.decode('utf-8', 'replace')) and 'release/assets/default/raw/ui/'+rel+'.bin' not in STOCK_EQ + STOCK_PAGES:
+            chinese.add(rel + '.bin')  # the stock EQ pages go, and the pages not offered
         i = data.find(b'name\x00')
         name = data[i+5:data.find(b'\x00', i+5)].decode('utf-8', 'replace') if i >= 0 else ''
         windows.add(name or rel.split('/')[-1])
@@ -1781,6 +1813,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *HOLD_RETURN, jal(ps['compact_now_playing']),
                'long Return destination after stock input gates')
     patch_word(patched, *STANDBY_WAKE, 'Standby resume stays dark')
+    patch_word(patched, *NAV_SHOWN, "stock's navigation bar stays shown")
+    patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")
+    patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
+    patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
     patch_word(patched, *MAINSCHEDULING_CALL, jal(ps['ringnav_mainscheduling']), 'player scheduling paced')
     patch_word(patched, *START_MUTE_CALL, jal(ps['start_mute']), 'natural start: no mute before the end')
     patch_word(patched, *START_SLEEP_CALL, jal(ps['start_sleep']), 'natural start: no sleep before the end')
@@ -1836,6 +1872,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, scan + 4, limit, count, 'scan up to 65,000 songs')
     for address, old, new in DROP_CACHES:
         patch_word(patched, address, old, new, 'keep the page cache')
+    for address, old, new in BT_INPUT:
+        patch_word(patched, address, old, new, "a headset's keys are read once, by the headset worker")
     for address, name in STREAM_POLL_CALLS:
         patch_word(patched, address, 0x0320f809, jal(ps[name]), 'stream threads park while idle')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, COVERINFO_CALL[0] + 4))[0] == COVERINFO_CALL[1],
@@ -2044,7 +2082,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         p = p[:at]+entry+p[at:]
         added.append([path, b'R', *stock.groups()])
     removed = []
-    for path in STOCK_EQ + OBSOLETE:
+    for path in STOCK_EQ + STOCK_PAGES + OBSOLETE:
         line = need(re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M), f'Missing stock inode {path}')
         removed.append(line.group().split()[:6])
         p = p[:line.start()]+p[line.end():]

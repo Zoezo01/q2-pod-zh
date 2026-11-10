@@ -413,7 +413,7 @@ int rs_open(af_instance *af) {
 /* Bluetooth and a USB DAC across a gapless change (docs/internals.md#usb-output-buffer). ao_alsa's init
  * (0x438248, the descriptor's slot 0x88fc7c) keeps the PCM open when the file's rate, channels and format equal
  * what the last call asked, but it saves the negotiated rate and format as that (0x438c78, 0x438c0c). The player
- * asks Bluetooth for 48 kHz whatever the file (0x42efcc) and bluealsa's ioplug offers the transport's one rate
+ * asks Bluetooth for 48 kHz whatever the file (0x42ecc0) and bluealsa's ioplug offers the transport's one rate
  * (LDAC 96 kHz; 48 kHz for AAC and SBC, so those matched), and it runs a USB DAC whose top rate is 48 kHz at
  * 48 kHz for any file (0x43925c), so at any other answer every change drained or lost the buffer, closed and
  * reopened the PCM. The same request asks for what it got last time instead: the compare matches and ao_data
@@ -477,7 +477,7 @@ static int ao_playing(void) {
  * stamp would close that.
  * mcl-orderstop's close on the command thread during the drain races it as it races stock's own
  * drain. ponytail: a USB stream hung during this drain runs to the kernel's 10 s, past the heartbeat's 6 ticks
- * (0x42d95c), and hciplayer exits; stock's 0x438028 has the same exposure. A close always stays under stock's mute, and the PCM only stops unmuted once drained. */
+ * (0x42d9bc), and hciplayer exits; stock's 0x438028 has the same exposure. A close always stays under stock's mute, and the PCM only stops unmuted once drained. */
 #define NEXT_FLAG (*(volatile int *)0xb11e6cu)
 #define STOP_FLAG (*(volatile int *)0xb11e70u)
 #define DSD_FILE (*(volatile int *)0xb11e5cu)
@@ -975,7 +975,7 @@ __asm__(".set push\n.set noreorder\n.set noat\n.globl forced_eof\nforced_eof:\na
 #endif
 
 /* Stopped, the main thread's idle loop (0x42d9f4) polled the play flag (PLAY_FLAG) with usleep(10000), and
- * paused, MPlayer's loop (0x42fff0) checked for a command and slept usec_sleep(20000): 100 or 50 wakeups a
+ * paused, MPlayer's loop (0x42f8b8) checked for a command and slept usec_sleep(20000): 100 or 50 wakeups a
  * second, more than everything else on a dark, idle Q2 together. IDLE_WAIT and PAUSE_WAIT make both sleeps
  * futex waits: the stopped loop's on the flag, the paused loop's on cmd_gen. Every command reaches the player
  * through the command thread's handler (0x42be80), which CMD_DONE wraps: when the handler changed the flag
@@ -984,7 +984,7 @@ __asm__(".set push\n.set noreorder\n.set noat\n.globl forced_eof\nforced_eof:\na
  * wakes that. demo's status queries, several a second, change none and wake nothing. A cmd_gen that moved
  * since the last wait (a command handled while the loop checked) returns at once. Both loops still run
  * their bodies after a wait, so the command thread's heartbeat (0xb11e68) is set again within WAIT_S: that
- * thread clears it each second and exits hciplayer after 6 checks find it clear (0x42d95c).
+ * thread clears it each second and exits hciplayer after 6 checks find it clear (0x42d9bc).
  * docs/internals.md#battery. ponytail: anything else the loops watch waits for WAIT_S. */
 #ifndef PEQ_HOST
 #define PLAY_FLAG 0xb11e34u
@@ -1012,7 +1012,7 @@ int hci_pause_wait(unsigned us) {
     return 0;
 }
 /* What the two loops read that a command sets: the play flag (first: hci_command wakes the stopped loop on
- * it), the next and stop flags; then the context's state. The context (MPCTX) is always the static 0xaf9e38. */
+ * it), the next and stop flags; then the context's state. The context (MPCTX) is always the static 0xafae38. */
 static const unsigned cmd_words[] = { PLAY_FLAG, 0xb11e6c, 0xb11e70 };
 #define CMD_WORDS (sizeof cmd_words / sizeof *cmd_words)
 static void cmd_state(int *v) {
@@ -1053,7 +1053,7 @@ __asm__(".globl hci_id\nhci_id:\nmove $v0, $a0\nsyscall\njr $ra\nnop\n");
 static const int probe_stopped = 1;
 void *probe_stop_c(unsigned ra) {
     if (hci_id(4222) != hci_id(4020)) /* gettid != getpid: not the main thread */
-        return ra == PROBE_LOOP_RA ? (char *)&probe_stopped - 0xe70 : 0;
+        return ra == PROBE_LOOP_RA ? (char *)&probe_stopped - 0x1e70 : 0;
     *(volatile int *)0xb11e74u = 2;
     *(volatile int *)0xb11e70u = 1;
     return 0;
@@ -1076,8 +1076,8 @@ __asm__(".set push\n.set noreorder\n"
 static int stop_sink[2];
 char *stop_base(unsigned ra, void **saved18) {
     if (hci_id(4222) == hci_id(4020)) return (char *)0xb10000u;
-    if (ra == PROBE_LOOP_RA || ra == PROBE_OPEN_RA) *saved18 = (char *)&probe_stopped - 0xe70;
-    return (char *)stop_sink - 0xe70;
+    if (ra == PROBE_LOOP_RA || ra == PROBE_OPEN_RA) *saved18 = (char *)&probe_stopped - 0x1e70;
+    return (char *)stop_sink - 0x1e70;
 }
 /* ra, s2: the slots of the return address and $18 the probe loop's call saved, from this function's $sp. */
 #define STOP_SITE(name, ra, s2) \
@@ -1089,7 +1089,7 @@ __asm__(".set push\n.set noreorder\n"
         STOP_SITE("stop_asf", 0xb0 + 0x2c, 0xb0 + 0x28)
         /* From 0x46bf04 by j, $v1 2, epilogue done but for the $sp in the jr's delay slot. */
         ".globl stop_fill\nstop_fill:\nli $v0, 4222\nsyscall\nmove $t0, $v0\nli $v0, 4020\nsyscall\nbne $v0, $t0, 1f\nnop\n"
-        "lui $v0, 0xb1\nli $t0, 2\nsw $t0, 0xe74($v0)\nli $t0, 1\nsw $t0, 0xe70($v0)\n"
+        "lui $v0, 0xb1\nli $t0, 2\nsw $t0, 0x1e74($v0)\nli $t0, 1\nsw $t0, 0x1e70($v0)\n"
         "1:\nmove $v0, $zero\njr $ra\naddiu $sp, $sp, 0x50\n.set pop\n");
 
 /* demo learns of a track's end only from the newest player-status it reads (0x5baaa8, 0x5ba2a8): one value, cleared by
@@ -1153,20 +1153,20 @@ int preload_failed(void) {
 __asm__(".set push\n.set noreorder\n.set noat\n"
         /* From 0x42bb78: $v0 0xb10000, $v1 the thread's 0xb26d90, $a0 2, its saved registers restored. */
         ".globl preload_publish\npreload_publish:\nli $a2, 1\n"
-        "1:\nll $a1, 0xde8($v0)\nbne $a1, $a2, 2f\nmove $a1, $a0\nsc $a1, 0xde8($v0)\nbeqz $a1, 1b\nnop\n"
+        "1:\nll $a1, 0x1de8($v0)\nbne $a1, $a2, 2f\nmove $a1, $a0\nsc $a1, 0x1de8($v0)\nbeqz $a1, 1b\nnop\n"
         "j 0x42bb7c\nnop\n"
         "2:\njal preload_stale\nnop\nlw $ra, 0x65c($sp)\njr $ra\naddiu $sp, $sp, 0x660\n"
         /* From 0x421a9c, in the main loop, between stock's uses of $v0 and $v1: touches only $t8, $t9. */
         ".globl cold_clear\ncold_clear:\n"
-        "1:\nll $t8, 0xde8($v1)\naddiu $t8, $t8, -1\nins $t8, $zero, 1, 1\nli $t9, 3\nmovn $t9, $zero, $t8\n"
-        "sc $t9, 0xde8($v1)\nbeqz $t9, 1b\nnop\njr $ra\nnop\n"
+        "1:\nll $t8, 0x1de8($v1)\naddiu $t8, $t8, -1\nins $t8, $zero, 1, 1\nli $t9, 3\nmovn $t9, $zero, $t8\n"
+        "sc $t9, 0x1de8($v1)\nbeqz $t9, 1b\nnop\njr $ra\nnop\n"
         /* mcl-closegapless and the direct stop, from the stock li $v1, 2 before their read of the word ($v0 0xb10000):
          * a running thread is stale now, so 1 becomes 3. $a0 is the value stock's next instruction tests, not 2 for a 1. */
         ".globl preload_close\npreload_close:\nli $v1, 2\n"
-        "1:\nll $a0, 0xde8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0xde8($v0)\nbeqz $at, 1b\nnop\n"
+        "1:\nll $a0, 0x1de8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0x1de8($v0)\nbeqz $at, 1b\nnop\n"
         "2:\nj 0x42c2cc\nnop\n"
         ".globl preload_stop\npreload_stop:\nli $v1, 2\n"
-        "1:\nll $a0, 0xde8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0xde8($v0)\nbeqz $at, 1b\nnop\n"
+        "1:\nll $a0, 0x1de8($v0)\nli $at, 1\nbne $a0, $at, 2f\nli $at, 3\nsc $at, 0x1de8($v0)\nbeqz $at, 1b\nnop\n"
         "2:\nj 0x42c9fc\nnop\n.set pop\n");
 
 /* A FLAC seek (demux_audio 0x48cf2c) ends with a gate in the decoder (0x5b6fcc): a frame whose time is before the

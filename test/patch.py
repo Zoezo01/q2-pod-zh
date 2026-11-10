@@ -3592,7 +3592,7 @@ for patched in (True, False):
     arg=m.alloc(8); m.word(arg+4,m.alloc(0x40))
     assert m.call(address=syms['localmusic_artistinfo_page_init'],args=(m.node('window','artistinfo_page'),arg,0,0))==0
     names=[c[0] for c in m.calls if c[0] in ('songs_view','albums_view','load_localartist_list','query_run')]
-    tab=m.get(m.get(0xa3a4e0-0x5810)+0x7678)
+    tab=m.get(m.get(0xa3a4e0-0x5810)-0x5064)
     if patched:
         assert names==['query_run','load_localartist_list','query_run','albums_view'] and tab==1, names
         assert [c[1] for c in m.calls if c[0]=='load_localartist_list']==[1]
@@ -3928,7 +3928,7 @@ class PlaylistMachine(PlayingPlaylistMachine):
         # Stock's private playlist add-mode global, loaded through its GOT.
         data=(B/'stock-demo').read_bytes()
         from build import fileoff, GP
-        self.mode=struct.unpack_from('<I',data,fileoff(data,GP-0x5810))[0]+0x7894
+        self.mode=struct.unpack_from('<I',data,fileoff(data,GP-0x5810))[0]-0x4e3c
         assert self.mode==O['PLAYLIST_ADD_MODE']
         self.word(self.mode,mode)
         self.view=self.node('scroll_view','scroll_view')
@@ -4002,11 +4002,11 @@ class ClassicPlaylistMachine(PlaylistMachine):
                   'getFormatString','gif_image_create','widget_add_timer','widget_set_tr_text','image_animation_play','image_animation_pause','navigator_to_with_context')
         self.nav=self.node('view','view_navbar',visible=0); self.nodes[self.nav]['enable']=0; self.word(self.nav+O['W_PARENT'],self.top)
         self.nodes[self.top]['children'].insert(0,self.nav)
-        # Stock's page init binds Return as widget_on(win, EVT_KEY_UP, 0x4f21b8, win) at 0x4b5efc; the bytes and the
-        # GOT entries it loads ($25 widget_on, $6 0x4b0000) pin this fixture's ctx to what the device runs.
-        gp=0x4b5e84+0x573a24
-        assert [self.get(0x4b5efc+4*i) for i in range(8)]==[0x24050114,0x8fbc0010,0x02003825,0x02002025,0x8f86af08,0x8f99a7bc,0x0320f809,0x24c61310]
-        assert self.get(gp-0x5840)==syms['widget_on'] and self.get(gp-0x513c)==0x4b0000
+        # Stock's page init binds Return as widget_on(win, EVT_KEY_UP, on_common_keyup, win) at 0x4b5efc; the bytes and the
+        # GOT entries it loads ($25 widget_on, $6 on_common_keyup) pin this fixture's ctx to what the device runs.
+        gp=0x4b5e84+0x58465c
+        assert [self.get(0x4b5efc+4*i) for i in range(7)]==[0x24050114,0x8fbc0010,0x02003825,0x8f99a7bc,0x8f86a7e0,0x0320f809,0x02002025]
+        assert self.get(gp-0x5844)==syms['widget_on'] and self.get(gp-0x5820)==syms['on_common_keyup']==0x4f21b8
         self.nodes[self.top].setdefault('handlers',[]).append((O['EVT_KEY_UP'],0x4f21b8,self.top))
         self.word(syms['g_class_type'],0xf00b)
         self.marks=[]; self.answer=10; self.confirms=[]; self.exports=[]; self.deletes=[]; self.dialogs=[]; self.mores=[]
@@ -5079,7 +5079,7 @@ class SongCoversMachine(QueueMachine):
         super().__init__(rows=0)
         self.live=set(); self.result=self.alloc(4)
         self.handlers.pop(syms['albumcoverinfo_init'])
-        self.word(0xa3a4e0-0xabc,0x1000014); self.handlers[0x1000014]='c:malloc'  # lazy-bound, as RolloverMachine's
+        self.word(0xa3a4e0-0xa04,0x1000014); self.handlers[0x1000014]='c:malloc'  # lazy-bound, as RolloverMachine's
         self.handlers[0x1000010]='c:free'; self.handlers[syms['strcpy@GLIBC_2.0']]='c:strcpy'
         self.mock('pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0','clear_albumcover_task')
         self.word(syms['pdeq_albumcoverlist'],self.deque([],'stAlbumCoverInfo'))
@@ -5498,7 +5498,7 @@ for on,tab,page,up in ((0,1,'artistinfo_page',0),(0,0,'artistinfo_page',0),(1,1,
                        (2,1,'artistinfo_page',0),(0,1,'localclass_page',0),(0,1,'artistinfo_page',1)):
     m=ArtistCoverflow(page='localclass_page',cls=0xff01,rows=1); m.handed=[]; m.found=[]
     m.config['ARTISTCF']=str(on); m.artist_page(page)
-    album=m.node('list_view','list_view_album'); pages=m.node('pages','pages',[album])
+    album=m.node('list_view','list_view_album'); pages=m.node('pages','pages_artistinfo',[album])
     bar=m.node('tab_control','tab_control',[pages]); nav=m.node('view','view_navbar',visible=up)
     m.nodes[nav]['enable']=up; m.nodes[m.top]['children']+=[nav,bar]
     geo=lambda w:[m.get(w+O[o]) for o in ('W_X','W_Y','W_W','W_H')]
@@ -5631,7 +5631,7 @@ assert m.names(m.get(syms['p_deque_showlist']))==['Row 0'] and ('stock_localclas
 
 # Coverflow (docs/internals.md): the Home card, the runtime coverflow_page over a stock slide_menu,
 # the tracks query and handoff. The art thread itself runs on the host (test/coverflow.py).
-from ipod import HOME_TEXT_X, HOME_LIST_W, HOME_PAGE, HOME_ROW, HOME_ROWS, HOME_TOP, decode
+from ipod import HOME_TEXT_X, HOME_LIST_W, HOME_OURS, HOME_PAGE, HOME_ROW, HOME_ROWS, HOME_TOP, decode
 cards=[c[2]['name'] for c in decode((B/'ui'/HOME_PAGE).read_bytes())[3][1][3][0][3]]  # list_view_home's scroll_view's rows
 assert len(cards)==7 and cards[2]=='btn_coverflow', cards
 home_hook=HOOKS['home_page_init']
@@ -5665,7 +5665,7 @@ def home_list(m):
     """iPod Home as built (ui/home_page.bin) on top: its scroll view and the rows' tap images. Stock
     binds every image but Coverflow's, which the payload binds."""
     m.top=asset_tree(m,HOME_PAGE)
-    imgs=[named(m,m.top,'img_'+r) for r in HOME_ROWS]
+    imgs=[named(m,m.top,'img_'+HOME_OURS.get(r,r)) for r in HOME_ROWS]
     for img in imgs[:2]+imgs[3:]: click_target(m,img)
     return named(m,m.top,'scroll_view_home'),imgs
 
@@ -6147,7 +6147,7 @@ class PlaylistEditMachine(CoverflowMachine):
         self.db.executemany('insert into playlist values(?,?,?,?,?,?)',[(101+i,0,'/p/'+x,0,0,x) for i,x in enumerate('ABC'[:count])])
         self.db.execute("insert into playlist values(200,1,'/p/other',0,0,'Other')")
         self.fail=''; self.sql=[]; self.closed_db=0
-        for n in ('sqlite3_open','sqlite3_close','sqlite3_exec','getMusicByPlayList','getAllMusic','checkPlayListExist','batch_add_file','navigator_back','_create_vector','vector_init','_vector_push_back'):
+        for n in ('sqlite3_open','sqlite3_close','sqlite3_exec','sort_playlist_addtime','getAllMusic','checkPlayListExist','batch_add_file','navigator_back','_create_vector','vector_init','_vector_push_back'):
             self.handlers[syms[n]]='edit:'+n
         self.handlers[int(manifest['patch_symbols']['stock_playlistsmore_trampoline'],16)]='edit:more'
         r=self.song('Mix',4); self.word(r+O['REC_TITLE'],self.string('Mix')); self.word(r+O['REC_DISC'],0)
@@ -6185,7 +6185,7 @@ class PlaylistEditMachine(CoverflowMachine):
         elif name=='vector_init': pass
         elif name=='getAllMusic':
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',r) for r in self.found]; ret=len(self.found)
-        elif name=='getMusicByPlayList':
+        elif name=='sort_playlist_addtime':
             rows=self.db.execute('select * from playlist where id>100 and cd_num=? order by id',(a,)).fetchall()
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.record(row) for row in rows]; ret=len(rows)
         elif name=='checkPlayListExist':
@@ -8216,7 +8216,7 @@ from build import GP
 got=next(int(l.split()[0],16) for l in subprocess.run(['readelf','-AW',B/'stock-demo'],capture_output=True,text=True).stdout.splitlines() if l.endswith(' taglib_file_new'))
 lib=symbols(B/'libtag_c.so.2.0.1')
 assert got==O['TAGLIB_NEW_GOT'] and [lib[n] for n in ('taglib_file_new','taglib_property_get','taglib_property_free')]==[O['TAGLIB_FILE_NEW'],O['TAGLIB_PROPERTY_GET'],O['TAGLIB_PROPERTY_FREE']]
-m=Machine(); assert m.get(GP-0x7f44)==0xa40000 and m.get(0x5bd0c4)==0x8c44f974 and m.get(0x5bd0b0)==0x2624f980; passed()  # -0x4254, -0x4248
+m=Machine(); assert m.get(GP-0x7f44)==0xa50000 and m.get(0x5bd0c4)==0x8c44f974 and m.get(0x5bd0b0)==0x2624f980; passed()  # -0x68c, -0x680
 TAGLIB=0x1180000  # libtag_c's load address here
 class LyricMachine(QueueMachine):
     def __init__(self,tags,lrc=(),cls=0xf001,kind=8,bound=True):
@@ -8651,7 +8651,7 @@ button=m.nodes[row]['children'][0]; icon,label=m.nodes[button]['children']
 assert m.nodes[button]['style']=='s_btn_listitem' and not m.nodes[button].get('name')
 assert [m.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,70]
 assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k in ('W_X','W_W','W_H')]==[10,52,70]
-assert m.nodes[label]['style']=='s_scrlabel_white20l' and m.nodes[label]['text']=='Download Album Lyrics'
+assert m.nodes[label]['style']=='s_scrlabel_white24l' and m.nodes[label]['text']=='Download Album Lyrics'
 assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
 m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==8; passed()  # an online queue
 for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no album tag, no path
@@ -9618,7 +9618,7 @@ class RolloverMachine(CoverflowMachine):
         self.handlers[0x5d52e4]='r:directory'; self.handlers[0x5d55b4]='r:directory'
         self.handlers[0x5bf274]='r:decoder_start'
         # Lazy-bound malloc, as used by stock player_refresh_playqueue.
-        self.word(0xa3a4e0-0xabc,0x1000014); self.handlers[0x1000014]='r:malloc'
+        self.word(0xa3a4e0-0xa04,0x1000014); self.handlers[0x1000014]='r:malloc'
         for name in ('strcpy@GLIBC_2.0','strncmp@GLIBC_2.0','strstr@GLIBC_2.0','strchr@GLIBC_2.0',
                      'toolsGetMusicInfo','toolsGetFileSize','toolsGetAlbumCover','toolsGetExternCover',
                      'access@GLIBC_2.0','remove@GLIBC_2.0','usleep@GLIBC_2.0','fork@GLIBC_2.0'):
@@ -9775,7 +9775,7 @@ assert struct.unpack_from('<I',demo,fileoff(demo,TAG_TEXT[0]))[0]==jal(payload_s
 class TagTextMachine(Machine):
     def __init__(self):
         super().__init__()
-        self.word(0xa3a4e0-0xabc,0x1000014); self.handlers[0x1000014]='t:malloc'  # lazy-bound, as RolloverMachine's
+        self.word(0xa3a4e0-0xa04,0x1000014); self.handlers[0x1000014]='t:malloc'  # lazy-bound, as RolloverMachine's
         self.word(0xa39c64,0x1000010); self.handlers[0x1000010]='t:free'
         self.handlers[syms['strcpy@GLIBC_2.0']]='t:strcpy'; self.handlers[syms['toolsIconvConvert']]='t:iconv'
         self.handlers[syms['strcmp@GLIBC_2.0']]='t:strcmp'  # on bytes: GBK isn't UTF-8
@@ -11716,8 +11716,11 @@ def settings(builder,default=SET['ROW'],sub=0,boot=None):
         m.handlers[tramp['display']]='stock_display'; m.nodes[view]['name']='scroll_view_display'; m.word(payload_syms['display_sub'],sub)
         assert m.call(address=HOOKS['systemset_display_page_init'][0],args=(m.top,5,0,0),gap=0)==0
     else:
-        m.call(address=builder,args=(m.top,0,0,0),gap=0)  # learn the name it looks up
-        m.nodes[view]['name']=m.text(next(c for c in m.calls if c[0]=='widget_lookup')[2])
+        for unused in range(2):  # learn the names it looks up, its scroll view's and its list view's: it stops at the first one missing
+            m.call(address=builder,args=(m.top,0,0,0),gap=0)
+            for c in m.calls:
+                if c[0]=='widget_lookup': m.nodes[view if m.text(c[2]).startswith('scroll_view') else lst]['name']=m.text(c[2])
+            m.calls.clear()
         assert m.call(address=builder,args=(m.top,0,0,0),gap=0)==0
     return m,view
 def lay(m,view): return m.call(address=m.get(O['LIST_VIEW_LAYOUT_SLOT']),args=(0x1234,view,0,0),gap=0)
@@ -11870,8 +11873,8 @@ passed()
 assert struct.unpack_from('<I',demo,fileoff(demo,0x53abec))[0]==0x0c000000|payload_syms['stock_row_style']>>2
 for boot,classic in ((classic_light_on,True),(lambda k:k.config.update(THEME='0'),False)):
     m=Machine(); boot(m); q=box(m,'hscroll_label','scrlabel_name',10,0,315,28); use=lambda n: m.call(address=payload_syms['stock_row_style'],args=(q,m.string(n),0,0),gap=0)
-    use('s_scrlabel_red20l'); on=m.nodes[q].get('style:normal:text_color'); use('s_scrlabel_white20l'); off=m.nodes[q].get('style:normal:text_color')
-    assert m.nodes[q]['style']=='s_scrlabel_white20l'
+    use('s_scrlabel_red24l'); on=m.nodes[q].get('style:normal:text_color'); use('s_scrlabel_white24l'); off=m.nodes[q].get('style:normal:text_color')
+    assert m.nodes[q]['style']=='s_scrlabel_white24l'
     assert (on&0xffffffff,off&0xffffffff)==(color_t(O['STOCK_RED']),0xffffffff) if classic else (on,off)==(None,None)
 passed()
 # Quick Settings' swipe up, Classic: stock's handler starts it only from y 295 down, so a touch from y 250 on that's gone 10 px up counts as from there, the slider's or not, until the
@@ -11999,7 +12002,7 @@ assert not m.nodes[lead]['visible'] and m.nodes[trail]['visible'] and geometry(m
 assert geometry(m,title)[0]==geometry(m,detail)[0]==SET['TEXT_X'],(geometry(m,title),SET['TEXT_X']); passed()
 for classic in (0,2):  # Minimal's and Modern's; Classic's below (classic_light_boot)
     CONFIG['THEME']=str(classic)
-    for builder in (0x4ca614, 0x4c5fbc, 0x4d3294, 0x4d5830, 'display'):  # language, BT quality, System settings, Wi-Fi, Display
+    for builder in (0x4ca614, 0x4c5fbc, 0x4d3294, 0x4d5830, 'display'):  # language, Date and Time, System settings, Wi-Fi, Display
         m,view=settings(builder); items=[i for i in m.nodes[view]['children'] if m.nodes[i]['visible']]
         before=tree(m,view); assert lay(m,view)==0 and m.layouts==1
         assert m.get(m.get(view+O['W_PARENT'])+O['W_Y'])==(0 if classic else SET['TOP'])
@@ -13205,7 +13208,7 @@ def home_carousel():
     assert not m.nodes[named(m,m.top,'img_homeart')]['visible']
     slide=named(m,m.top,'slide_menu')
     for row in ('coverflow','rockbox'):
-        assert m.handler(named(m,slide,'img_'+row),O['EVT_CLICK'])[0]==m.handler(named(m,m.top,'img_'+row),O['EVT_CLICK'])[0]
+        assert m.handler(named(m,slide,'img_'+HOME_OURS.get(row,row)),O['EVT_CLICK'])[0]==m.handler(named(m,m.top,'img_'+HOME_OURS.get(row,row)),O['EVT_CLICK'])[0]
     assert m.nodes[named(m,slide,'label_rockbox')]['text']==m.nodes[named(m,m.top,'label_rockbox')]['text']=='Shuffle'
     m.calls=[]; m.call(O['KEY_RETURN']); m.call(O['KEY_RETURN']); assert not destinations(m); passed()
     # A card centred (its SEL written), then a page sliding over Home: Home's snapshot shows the card
@@ -17293,7 +17296,8 @@ windows(m,*SAFE); m.files[LIB]=bytearray(f'700\nimport {EXP}/Mix.m3u\n'.encode()
 
 # About: FW. Version shows the stock firmware's version again, not the updater tag in demo's
 # literal, and a CFW. Version row follows it. Stock's own row builder (0x4c0cb4) builds Model and FW.
-# Version, so the added row is checked against the real stock widgets, geometry and styles.
+# Version, so the added row is checked against the real stock widgets, geometry and styles. A page of another
+# count of rows (V1.32's seven) is left as stock built it.
 m=ShuffleMachine(); m.handlers[int(manifest['patch_symbols']['stock_about_trampoline'],16)]='stock_about'
 m.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
 def tree(w):
@@ -17301,7 +17305,7 @@ def tree(w):
     return (n['type'],[m.get(w+O[k]) for k in ('W_X','W_Y','W_W','W_H')],n.get('style'),
             n.get('hscroll_label_set_only_focus'),n.get('hscroll_label_set_ellipses'),[tree(c) for c in n['children']])
 view=m.node('scroll_view','scroll_view_about'); m.top=m.node('window','about_page',[view])
-for i in range(7):
+for i in range(8):  # stock's seven rows and its thanks, the eighth child
     row=m.node('list_item'); m.nodes[view]['children'].append(row)
     if i<2: assert m.call(address=0x4c0cb4,args=(row,i,0,0),gap=0)==0
 rows=list(m.nodes[view]['children'])
@@ -17314,11 +17318,12 @@ want=tree(m.nodes[rows[1]]['children'][0])
 assert m.nodes[item]['style']=='s_listitem_black' and tree(button)==want
 assert m.nodes[title]['text']=='CFW. Version' and m.nodes[value]['text']==f"{VERSION} Pod{f" dev {manifest['dev']}" if manifest['dev'] else ''}"
 assert not m.nodes[button].get('handlers') and not m.nodes[button].get('name'); passed()
+m.nodes[view]['children']=rows[:7]; assert m.call(address=HOOKS['systemset_about_page_init'][0],args=(m.top,5,0,0),gap=0)==0 and m.nodes[view]['children']==rows[:7]; passed()
 # Under Classic the CFW. Version row's title takes the Classic font (about_label), its value a second line's: stock's regular.
 am=classic_light_new(ShuffleMachine); am.handlers[int(manifest['patch_symbols']['stock_about_trampoline'],16)]='stock_about'
 am.mock('strcpy@GLIBC_2.0','widget_set_tr_text')
 aview=am.node('scroll_view','scroll_view_about'); am.top=am.node('window','about_page',[aview])
-for i in range(7):
+for i in range(8):
     arow=am.node('list_item'); am.nodes[aview]['children'].append(arow)
     if i<2: assert am.call(address=0x4c0cb4,args=(arow,i,0,0),gap=0)==0
 assert am.call(address=HOOKS['systemset_about_page_init'][0],args=(am.top,5,0,0),gap=0)==0
@@ -18002,6 +18007,38 @@ m.byte(syms['g_backlight_status'],0)
 m.byte(O['BOOT_KEY_GUARD'],1); assert not wake(DOWN,gap=1000) and not wake(UP,gap=50) and m.u.mem_read(O['BOOT_KEY_GUARD'],1)==b'\0'
 assert wake(DOWN,gap=100) and m.u.mem_read(O['BOOT_KEY_GUARD'],1)==b'\0' and wake(UP,gap=50)
 assert click(6)==[(0,'Q2POD','WAKEDOUBLE')]; passed()
+# Stock V1.34's Show Navigation Bar and Wheel Function stay where Q2 Pod's themes and wheel need them (build.py
+# NAV_SHOWN, WHEEL_MODE): config_init's own code, from its NAVHIDE read to past its WHEELMODE store, leaves the bar
+# shown and Volume Mode whatever the keys hold, missing included (stock reads a missing WHEELMODE as 0). Neither is written.
+for held in ({},{'WHEELMODE':'0','NAVHIDE':'1'},{'WHEELMODE':'1','NAVHIDE':'0'},{'WHEELMODE':'7','NAVHIDE':'7'}):
+    for patched in (True,False):
+        c=Machine(patched); c.config.update(held); before=dict(c.config); c.byte(syms['g_navhide_flag'],1); c.byte(syms['g_wheelmode'],0)
+        for r,v in ((UC_MIPS_REG_SP,0x7000f000),(UC_MIPS_REG_S0,c.alloc(0x100)),(UC_MIPS_REG_S1,0x780000),(UC_MIPS_REG_S4,0x780000),(UC_MIPS_REG_S2,c.string('0'))):
+            c.u.reg_write(r,v)
+        c.word(0x7000f000+0x18,GP); c.u.emu_start(0x50492c,0x5049f0,count=100000)
+        assert c.u.reg_read(UC_MIPS_REG_PC)==0x5049f0 and [r[:3] for r in c.config_reads]==[('/mnt/data/config.ini','SYSSET',k) for k in ('NAVHIDE','WHEELMODE')]
+        stock=tuple(int(v) if v in ('0','1') else 0 for v in (held.get('NAVHIDE','0'),held.get('WHEELMODE','0')))
+        assert (c.u.mem_read(syms['g_navhide_flag'],1)[0],c.u.mem_read(syms['g_wheelmode'],1)[0])==((0,1) if patched else stock),(held,patched)
+        assert c.config==before
+passed()
+# Buttons lock acts only with the screen off, as on V1.32 (build.py KEYLOCK_LIT): stock V1.34's on_wm_keyup_before_fun
+# applies it on the lit lock window too, where Q2 Pod's wheel and keys already have their own rules. Its own test, from
+# the backlight's byte, with Next under lock mode 1: locked, it leaves by the STOP exit; else it goes on to 0x4f259c.
+def lock_applies(patched,lit,window,on=1):
+    c=Machine(patched)
+    for name,v in (('g_backlight_status',lit),('g_lockscreen_pageflag',window),('g_keylock_flag',on),('g_keylock_mode',1)): c.byte(syms[name],v)
+    for r,v in ((UC_MIPS_REG_SP,0x7000f000),(UC_MIPS_REG_GP,GP),(UC_MIPS_REG_V0,syms['g_backlight_status']),(UC_MIPS_REG_V1,0xac)): c.u.reg_write(r,v)
+    c.u.emu_start(0x4f2544,0x4f259c,count=12)
+    return c.u.reg_read(UC_MIPS_REG_PC)!=0x4f259c
+assert [lock_applies(True,*s) for s in ((0,0),(0,1),(1,0),(1,1))]==[True,True,False,False] and not lock_applies(True,0,0,on=0)
+assert [lock_applies(False,*s) for s in ((0,0),(0,1),(1,0),(1,1))]==[True,True,False,True]; passed()
+# A headset's keys are read once (build.py BT_INPUT): stock V1.34's own reader of BlueZ's AVRCP device, which would post
+# each press as a button beside headset.c's worker, opens nothing and starts no thread; stock's does both.
+for patched in (True,False):
+    b=Machine(patched); b.mock('tk_thread_create','tk_thread_start','tk_strdup','close@GLIBC_2.0'); b.mock('tk_calloc','tk_free',prefix='alloc:')
+    started=b.call(address=syms['btinput_thread_run'],args=(b.string('/dev/input/event4'),0x1234,0,0),gap=0)
+    assert [c[0] for c in b.calls if c[0] in ('open@GLIBC_2.0','tk_thread_create')]==([] if patched else ['open@GLIBC_2.0','tk_thread_create']) and (not started or not patched)
+passed()
 # SyncLink (#113): Eddict Player's keys, which stock posts with main_loop_post_key_event, reach
 # stock's lock filters dark with the Buttons lock off; the same keys from the buttons stay locked.
 post=HOOKS['main_loop_post_key_event'][0]
@@ -18053,15 +18090,24 @@ assert texts()[6:]==['Wake: Double Press','Volume Guard']
 assert m.get(payload_syms['wheel_guard'])==1; passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'STANDBYLIMIT':'4'})
 assert texts()[0]=='Standby Limit: Off'; passed()  # out of range: Off
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
-assert len(rows)==6 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_folderjump']
-assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','Library & Folders']
-# Library & Folders: its row opens stock's page again as the sub-page, stock's two rows kept, ours built.
-assert click(-1)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,sub=1)
-assert len(rows)==4 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_folderjump']
-assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Folder Root: Card']
-assert [(m.entries+rows).index(c) for c in m.nodes[m.settings_view]['children']]==[16,17,15,18,14,13]
+# Playback: stock V1.34's thirteen rows less its last two (Volume and Album Display, whose page's rows are here, and
+# Folder skip, Library & Folders'), then ours; stock's Max Volume and Default Volume pages open from their rows, and
+# Enlarged Album Art flips stock's own byte and key.
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
+assert len(rows)==9 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_folderjump','playset_maxvol','playset_bootvol','playset_covermode']
+assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','Library & Folders','playset_maxvol','playset_bootvol','playset_covermode']
+assert len(m.nodes[m.settings_view]['children'])==20 and not set(m.entries[11:])&set(m.nodes[m.settings_view]['children'])
+assert [click(6),m.opened[-1],click(7),m.opened[-1]]==[[],('playset/maxvol_page',None),[],('playset/bootvol_page',None)]
+m.byte(syms['g_bigcovermode'],0); assert click(8)==[(1,'PLAYSET','COVERMODE')] and m.u.mem_read(syms['g_bigcovermode'],1)==b'\1' and switch_image(m,rows[8])=='switch_on'
+assert click(8)==[(0,'PLAYSET','COVERMODE')] and m.u.mem_read(syms['g_bigcovermode'],1)==b'\0' and switch_image(m,rows[8])=='switch_off'
+# Library & Folders: its row opens stock's page again as the sub-page, stock's Folder skip kept, ours built.
+assert click(5)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13,sub=1)
+assert len(rows)==5 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_folderjump','playset_foldercover']
+assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Folder Root: Card','playset_foldercover']
+assert [(m.entries+rows).index(c) for c in m.nodes[m.settings_view]['children']]==[14,15,13,16,12,17]
+m.byte(syms['g_foldercover_flag'],0); assert click(4)==[(1,'PLAYSET','FOLDERCOVER')] and m.u.mem_read(syms['g_foldercover_flag'],1)==b'\1' and switch_image(m,rows[4])=='switch_on'
+assert click(4)==[(0,'PLAYSET','FOLDERCOVER')] and switch_image(m,rows[4])=='switch_off'
 assert click(2)==[(1,'Q2POD','ARTISTAZ')] and texts()[2]=='Artist Album Order: A–Z'
 assert click(2)==[(0,'Q2POD','ARTISTAZ')] and texts()[2]=='Artist Album Order: Year'
 assert click(0)==[(1,'Q2POD','YEAROLD')] and texts()[0]=='Year Order: Oldest First'
@@ -18243,7 +18289,7 @@ assert list(m.u.mem_read(marks,len(recs)))==old
 assert m.call(address=payload_syms['folders_shared'],args=(m.deque([]),0,0,0),gap=0); passed()  # no albums: no marks, not a failure
 # Boot reads it too (ringnav_bootmode), so Audio settings shows it before any Library page has opened.
 for config,text in (({},'Artists: Album Artist'),({'ARTISTTYPE':'0'},'Artists: Artist')):
-    shown=settings_page('audioset','scroll_view_playset',config,stock_rows=15,boot=True,sub=1)[2]
+    shown=settings_page('audioset','scroll_view_playset',config,stock_rows=13,boot=True,sub=1)[2]
     assert shown()[1]==text,config
 passed()
 # Mono Audio (crossfade.c mono_click): saved as Q2POD MONO, the row's text following, and the int
@@ -18256,7 +18302,7 @@ class MonoMachine(QueueMachine):
         name=self.handlers.get(address,'')
         if not name.startswith('mono:'): return super().hook(u,address,size,unused)
         self.calls.append((name,)); self.returns(self.flag if name=='mono:mmap' else 3 if name=='mono:open' else 4 if name=='mono:write' else 0)
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,cls=MonoMachine)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13,cls=MonoMachine)
 assert not [c for c in m.calls if c[0]=='mono:open']
 assert click(2)==[(1,'Q2POD','MONO')] and texts()[2]=='Mono Audio' and m.get(m.flag)==1
 assert click(2)==[(0,'Q2POD','MONO')] and texts()[2]=='Mono Audio' and m.get(m.flag)==0 and switch_image(m,rows[2])=='switch_off'
@@ -18267,7 +18313,7 @@ class FailedMapMachine(MonoMachine):
         if self.handlers.get(address)=='mono:mmap':
             self.calls.append(('mono:mmap',)); self.returns(0xffffffff); return
         return super().hook(u,address,size,unused)
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,cls=FailedMapMachine)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13,cls=FailedMapMachine)
 assert click(2)==[(1,'Q2POD','MONO')]
 assert 'mono:mmap' in [c[0] for c in m.calls] and 'mono:rename' not in [c[0] for c in m.calls]
 passed()
@@ -18277,7 +18323,7 @@ class MonoStoppedMachine(MonoMachine):
     def __init__(self):
         super().__init__(); self.word(syms['g_equalizer_flag'],0); self.handlers.pop(syms['mclGetPlayStatus'],None)
         self.word(PLAY_STATUS,1); self.handlers[payload_syms['peq_attach']]='mono:peq_attach'
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,cls=MonoStoppedMachine)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13,cls=MonoStoppedMachine)
 assert click(2)==[(1,'Q2POD','MONO')] and not [c for c in m.calls if c[0]=='mono:peq_attach']
 m.word(PLAY_STATUS,2)
 m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
@@ -18287,35 +18333,35 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,9,15,8,16,0,10,4,5,11,17,18,12,1,6,19,7,20]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,7,13,6,14,8,0,9,19,20,10,15,16,21,1,4,17,5,18]; passed()
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
-for i in (0,1,5):
+for i in (0,1,5,6,7):
     button=m.nodes[rows[i]]['children'][0]
     assert m.nodes[m.nodes[button]['children'][-1]]['image']=='list_into'
 passed()
 # Swap L/R uses its own persistent flag, immediately below Mono Audio.
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,cls=MonoMachine)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13,cls=MonoMachine)
 assert texts()[3]=='Swap L/R'
 assert click(3)==[(1,'Q2POD','SWAPLR')] and texts()[3]=='Swap L/R' and m.get(m.flag)==1
 assert click(3)==[(0,'Q2POD','SWAPLR')] and texts()[3]=='Swap L/R' and m.get(m.flag)==0
-m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'SWAPLR':'1'},stock_rows=15)
+m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'SWAPLR':'1'},stock_rows=13)
 assert texts()[3]=='Swap L/R'; passed()
 # MQA (crossfade.c mqa_click): off by default, saved as Q2POD MQA, and sent to a connected hciplayer
 # at once: 2 skips its start-of-track probe, 0 is its default. No player socket, nothing sent.
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 assert texts()[4]=='MQA' and icons[4]=='playset_dsdoutput'
 m.word(O['MCL_FD'],9)
 assert click(4)==[(1,'Q2POD','MQA')] and texts()[4]=='MQA' and m.sent[-1]==(9,b'{mcl-mqadecodemode\\0}',21,0)
 assert click(4)==[(0,'Q2POD','MQA')] and texts()[4]=='MQA' and m.sent[-1]==(9,b'{mcl-mqadecodemode\\2}',21,0)
 m.word(O['MCL_FD'],-1); sent=len(m.sent)
 assert click(4)==[(1,'Q2POD','MQA')] and len(m.sent)==sent
-m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'MQA':'1'},stock_rows=15)
+m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'MQA':'1'},stock_rows=13)
 assert texts()[4]=='MQA'; passed()
 # Folder Root (#49): the row cycles the card's top-level folders, case aside, then the card, saving Q2POD
 # FOLDERROOT each time. Not offered: files, dot-folders, names with an edge space or over 200 bytes (a
 # config.ini line can't keep them). A saved folder gone moves on to the next name after it.
 card=[('Zeta',4),('.Trash',4),('Música ñ',4),('alpha',4),('notes.txt',8),(' Edge',4),('B'*200,4),('C'*201,4),('Unknown',0)]
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',{'FOLDERROOT':'Deleted'},stock_rows=15,sub=1,cls=lambda:RootMachine(card=card))
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',{'FOLDERROOT':'Deleted'},stock_rows=13,sub=1,cls=lambda:RootMachine(card=card))
 assert texts()[3]=='Folder Root: Deleted'
 saved=[]
 for _ in range(6):
@@ -18325,13 +18371,13 @@ assert [v for v,_ in saved]==['Música ñ','Unknown','Zeta','','alpha','B'*200]
 assert [t for _,t in saved]==['Folder Root: '+(v or 'Card') for v,_ in saved]; passed()
 # Crossfade (crossfade.c): the row shows the saved length while on; an unreadable one is the default.
 for config,text in (({'XFADE':'1','XFADESEC':'7'},'Crossfade: 7 s'),({'XFADE':'1','XFADESEC':'15'},'Crossfade: 15 s'),({'XFADE':'1','XFADESEC':'16'},'Crossfade: 5 s'),({'XFADESEC':'7'},'Crossfade: Off')):
-    m,rows,texts,*_=settings_page('audioset','scroll_view_playset',config,stock_rows=15)
+    m,rows,texts,*_=settings_page('audioset','scroll_view_playset',config,stock_rows=13)
     assert texts()[0]==text and m.nodes[m.nodes[m.nodes[rows[0]]['children'][0]]['children'][1]].get('name')=='label_xfade'
 passed()
 # Resume Songs (crossfade.c resume_min): the row shows Q2POD RESUMEMIN, 30 min unless 0 or a five in 20-120.
 for config,text in (({},'30 min'),({'RESUMEMIN':'0'},'Off'),({'RESUMEMIN':'120'},'120 min'),({'RESUMEMIN':'125'},'30 min'),
                     ({'RESUMEMIN':'22'},'30 min'),({'RESUMEMIN':'15'},'30 min'),({'RESUMEMIN':'x'},'30 min')):
-    m,rows,texts,*_=settings_page('audioset','scroll_view_playset',config,stock_rows=15)
+    m,rows,texts,*_=settings_page('audioset','scroll_view_playset',config,stock_rows=13)
     assert texts()[1]=='Resume Songs: '+text and m.nodes[m.nodes[m.nodes[rows[1]]['children'][0]]['children'][1]].get('name')=='label_resumemin',config
 passed()
 # Wheel sensitivity (playback.c wheel_pct, test/playback.py's travel): Display → Controls' last row in both
@@ -18388,7 +18434,7 @@ assert texts()[0]=='Wheel Sensitivity: 200%' and m.nodes[m.switch]['visible']==0
 assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1; passed()
 # Resume Songs' row opens the same page: no switch, Off below 20, then 20-120 min in fives, live and
 # saved (a drag at its release); Centre goes back.
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(1)==[] and m.nodes[m.top]['name']=='bootvol_page' and m.nodes[m.title]['text']=='Resume Songs'
 assert m.nodes[m.switch]['visible']==0 and m.nodes[m.vol]['text']=='30 min'
@@ -18403,14 +18449,14 @@ assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(120,*R)] and turn()==[]
 m.nodes[m.slider]['value']=15; assert press(m.slider,O['EVT_VALUE_CHANGED'])==[(0,*R)] and texts()[1]=='Resume Songs: Off'
 assert m.confirm()==11 and [c[0] for c in m.calls].count('navigator_back')==1
 # A page closed mid-drag saves the dragged value once, as it closes.
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(1)==[]
 m.nodes[m.slider]['value']=53; assert press(m.slider,O['EVT_VALUE_CHANGING'])==[] and texts()[1]=='Resume Songs: 55 min'
 assert press(m.top,O['EVT_DESTROY'])==[(55,*R)] and texts()[1]=='Resume Songs: 55 min'; passed()
 # Crossfade's row opens it with its switch: Off or XF_MIN..XF_MAX s. A drag saves both keys at its
 # release; the switch, +/- and the wheel save each change.
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
+m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
 m.stack=[m.top]; m.nodes[m.wm]=dict(type='window_manager',name='',children=m.stack,visible=1)
 assert click(0)==[] and m.nodes[m.title]['text']=='Crossfade' and m.nodes[m.vol]['text']=='Off'
 X=lambda on,sec: [(on,'Q2POD','XFADE'),(sec,'Q2POD','XFADESEC')]
@@ -19694,21 +19740,26 @@ m,button,label=boot_row(); view=m.nodes[m.top]['children'][0]; view=m.nodes[view
 m.paint(view)
 for _ in range(6): m.call()
 assert m.confirm()==11 and m.dispatched()[0][1]==button; passed()
-# System settings: Controls added and three stock rows hidden, which the wheel skips; Boot to is Power's now.
+# System settings: stock V1.34's nine rows, its Wheel Function, In-Vehicle, General and System hidden, which the wheel
+# skips; App Store and Controls added, and the four rows stock moved to its System page, opening stock's pages, so the
+# list reads as it did. Boot to is Power's now.
 for mode in (0o100755,0):
     m=BootMachine({}); m.rockbox_mode=mode; m.restack=True
     m.handlers[int(manifest['patch_symbols']['stock_systemset_trampoline'],16)]='stock_systemset'
-    entries=[m.entry(0) for _ in range(12)]
+    entries=[m.entry(0) for _ in range(9)]
     view=m.node('scroll_view','scroll_view_sysset',entries.copy())
     m.top=m.node('window','sysset_page',[m.node('list_view','list_view_sysset',[view])])
     assert m.call(address=HOOKS['systemset_sysset_page_init'][0],args=(m.top,5,0,0),gap=0)==0
-    kids=m.nodes[view]['children']; assert len(kids)==14
-    assert kids[:3]+kids[4:7]+kids[8:]==[entries[i] for i in (1,2,3,4,5,0,9,10,6,7,8,11)]
-    assert [m.nodes[entries[i]]['visible'] for i in (6,7,8)]==[0,0,0]
-    apps,controls=(m.nodes[kids[i]]['children'][0] for i in (7,3))
+    kids=m.nodes[view]['children']; assert len(kids)==15
+    assert [kids.index(e) for e in entries]==[6,0,1,2,4,10,11,12,13]  # Language after Date and Time; the hidden four before About
+    assert [m.nodes[e]['visible'] for e in entries]==[1,1,1,1,1,0,0,0,0]
+    controls,date,apps,update,reset,about=(m.nodes[kids[i]]['children'][0] for i in (3,5,7,8,9,14))
     assert m.nodes[m.nodes[apps]['children'][1]]['text']=='App Store' and m.handler(apps,O['EVT_CLICK'])[0]==payload_syms['shelf_open']
     assert m.nodes[m.nodes[controls]['children'][1]]['text']=='Controls'
     f,ctx=m.handler(controls,O['EVT_CLICK']); assert f==payload_syms['display_open'] and ctx==3
+    for b,key,page in ((date,'system_time','systemset/datetime_page'),(update,'system_update','systemset/fwupdate_page'),(reset,'system_reset','systemset/reset_page'),(about,'system_about','systemset/about_page')):
+        f,ctx=m.handler(b,O['EVT_CLICK']); assert m.nodes[m.nodes[b]['children'][1]]['text']==key and m.nodes[m.nodes[b]['children'][0]]['image']==key
+        m.calls=[]; assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==(page,None),key
     passed()
 print('Boot settings: conditional row/order, restart, card removal and failed atomic writes passed.')
 

@@ -10,8 +10,8 @@
  * Direct heartbeat access audit of the pinned binary:
  *   set 1, under the same mutex: 0x42b6ac, 0x42b734, 0x42da40,
  *                               0x42f04c, 0x42f910;
- *   snapshot then clear, under that mutex: 0x42b68c/0x42b6f0 and
- *                                         0x42d844/0x42d8a8.
+ *   snapshot then clear, under that mutex: 0x42b6ec/0x42b6f0 and
+ *                                         0x42d8a4/0x42d8a8.
  * The latter consumer runs at >=1000 ms intervals (0x42d840) and exits after
  * six empty observations (0x42d9d0). This byte carries liveness, not PCM or a
  * sample count. The stop words have independent, unguarded stock writers.

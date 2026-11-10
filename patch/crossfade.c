@@ -232,7 +232,9 @@ int swap_click(void *ctx, void *event) {
 /* MQA (Q2POD MQA, read once, default off). hciplayer's start-of-track probe decodes about 2 s of a
  * FLAC or PCM track before it plays (docs/internals.md#mqa-detection), long enough to break a
  * gapless change. Off sends stock's {mcl-mqadecodemode\2}, which skips the probe, so MQA plays
- * undecoded; On sends 0, hciplayer's default. Send on accept before stock publishes the socket:
+ * undecoded; On sends 0, hciplayer's default. ponytail: stock V1.34's hciplayer stores the mode and
+ * never probes, so the row changes nothing there; kept for a stock player that probes again, and
+ * to go with mqa_sync, mqa_accept and MQA_GATE if the final V1.34 never does. Send on accept before stock publishes the socket:
  * its first connection does not request player_initconfig. A toggle applies at the next audio init. */
 static int mqa_on(void) {
     if (!xf.mqa_read) xf.mqa = config_value("Q2POD", "MQA", 2, 0), xf.mqa_read = 1;

@@ -399,7 +399,7 @@ static inline int arc_out(int r, int y) {
 #define LIST_VIEW_LAYOUT_SLOT 0x939ec4 /* its vtable slot (vtable 0x939ebc + 8) */
 #define LIBRARY_ROW_BODY 0x535230      /* localmusic_page_init's row body immediate (ipod.json) */
 #define LIBRARY_ROW_ICON_X 0x535368    /* its icon x (art_inset) */
-#define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x9272c0 */
+#define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x93a854 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
 #define IMAGE_DRAW_FILL 8              /* "fill", the same table: stretched to the box */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a

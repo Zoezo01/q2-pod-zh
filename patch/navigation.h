@@ -41,6 +41,9 @@ enum {
     POD_KEYTONE, /* Key Tone and In-Vehicle Mode: stock's bytes and SYSSET keys, as its rows did */
     POD_CARMODE,
     POD_SMART_WIFI,
+    POD_COVERMODE, /* Enlarged Album Art and Folder Album Cover: stock's bytes and PLAYSET keys, as
+                      its rows do */
+    POD_FOLDERCOVER,
     POD_COUNT
 };
 

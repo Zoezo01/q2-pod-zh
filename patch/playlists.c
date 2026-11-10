@@ -83,7 +83,9 @@ done:
     return ok;
 }
 
-static int ple_query(void *ctx) { return getMusicByPlayList(ple.dest); }
+/* The stored order (stock V1.34's Time added, V1.32's only one), not getMusicByPlayList's: a move
+ * swaps two neighbours' ids, which means nothing in a list sorted by name. */
+static int ple_query(void *ctx) { return sort_playlist_addtime(ple.dest); }
 static void ple_reload(void) {
     int n;
     void *songs = staged(ple_query, 0, &n);

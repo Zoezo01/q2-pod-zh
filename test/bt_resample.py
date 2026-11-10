@@ -240,7 +240,7 @@ def stub(u, address, size, _): u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_RE
 u.hook_add(UC_HOOK_CODE, stub, begin=0x445e7c, end=0x445e7c)  # mp_msg
 u.hook_add(UC_HOOK_CODE, stub, begin=0x42bd58, end=0x42bd58)  # Bluetooth's volume after a resume
 ctx, frame = alloc(0x100), alloc(0x400)
-w(MPCTX, ctx), w(frame + 0x180, 0xb10000), w(CAN_PAUSE, 1), w(PCM, 0x1000)
+w(MPCTX, ctx), w(frame + 0x180, 0xb20000), w(CAN_PAUSE, 1), w(PCM, 0x1000)
 def state(way=0, flag=1, fd=5, paused=False, offset=0.0):
     w(WAY, way), w(FLAG, flag), w(FD, fd), w(ctx + 4, 2 if paused else 1)
     u.mem_write(OFFSET, struct.pack('<d', offset))
@@ -374,15 +374,15 @@ def output(way, gapless=1, fd=0):
 def ask(rate, fmt=S16LE, entry=None, channels=2):
     """A request through the slot (or stock's init); what it called, and ao_data's rate after."""
     alsa.clear()
-    w(AO_DATA, rate, channels, fmt)  # as reinit_audio_chain does before init (0x42e8f0, 0x42eaa0)
+    w(AO_DATA, rate, channels, fmt)  # as reinit_audio_chain does before init (0x42e8f0, 0x42e9a8)
     assert call(entry or ps['ao_init'], rate, channels, fmt, 0) == 1 and r(PCM) == 0x5000
     return [*alsa], r(AO_DATA)
 REOPEN = ['snd_pcm_drain', 'snd_pcm_close', 'snd_pcm_open']
 def opens(calls): return [c[0] for c in calls if c[0] in REOPEN]
 
-# What the player asks on way 1: the store at 0x42efcc, reached from the way check, is 48 kHz for any file.
+# What the player asks on way 1: the store at 0x42ecc0, reached from the way check, is 48 kHz for any file.
 w(WAY, BT), w(AO_DATA, 44100)
-site(0x42ea60, 0x42ed88, S3=0xb00000)
+site(0x42e968, 0x42e9ac, S3=0xb00000)
 assert r(AO_DATA) == 48000
 # The transport's rate is what comes back, and is what the chain then resamples to, with the PCM kept open.
 for rate in (44100, 48000, 96000):

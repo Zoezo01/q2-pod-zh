@@ -505,6 +505,7 @@ class Table:
         self.rows, self.log, self.fail, self.saved = {}, [], (), {}
         self.library = [recs(path=p, title=t, id_=i + 1) for i, (p, t) in enumerate(titles.items())]
         fw.mock('getMusicByPlayList', self.playlist)
+        fw.mock('sort_playlist_addtime', self.playlist)  # the editor's read
         fw.mock('getAllMusic', lambda *_: self.fill(self.library))
         fw.mock('checkPlayListExist', lambda r, dest, *_: (C.c_int(dest).value, field(r, REC_PATH)) in self.rows.values())
         fw.mock('batch_add_file', self.add)

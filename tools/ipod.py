@@ -1277,7 +1277,7 @@ def patch_code(data, symbols):
     # Lookup song handlers loop until Now Playing is on top; animated Back cannot finish
     # until they return. Close each named page synchronously with stock navigator_close.
     for address, name_slot in ((0x4a7f24, 0x468), (0x4af808, 0x468), (0x537cac, 0x420)):
-        word(address, 0x8f99af00, 0x8f99a8f8, 'lookup unwind uses navigator_close')
+        word(address, 0x8f99af00, 0x8f99a914, 'lookup unwind uses navigator_close')
         word(address + 4, 0x0320f809, 0x0320f809, 'lookup close call')
         word(address + 8, 0, 0x8fa40000 | name_slot, 'lookup close receives the top window name')
 
@@ -1295,13 +1295,18 @@ def patch_code(data, symbols):
         for address, instruction in AUDIT[name]['sites']:
             word(int(address, 16), int(instruction, 16), jal(symbols[call]), AUDIT[name]['purpose'])
     word(0x532a2c, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter')
+    # Show Navigation Bar: each page moves its list for the switch, to the box its asset has anyway while the bar shows. The
+    # lists keep the boxes their assets give them, ours included: each call's GOT load takes stock's dummy_destroy (0x72b82c,
+    # which returns 0) instead of widget_move_resize or widget_resize.
+    for address, instruction in AUDIT['navbar_resize_calls']['sites']:
+        word(int(address, 16), int(instruction, 16), 0x8f99e9f4, AUDIT['navbar_resize_calls']['purpose'])
     # Playlist page's Import/Export tiles: no icon (0 wide), the label spans the 164px tile in
     # stock's centred s_scrlabel_white24c (0x77c430) instead of 91px after the icon.
     for icon, style in ((0x4b56d0, 0x4b5758), (0x4b57e8, 0x4b5874)):
         word(icon, 0x24070032, 0x24070000, 'playlist tile icon width 0')
         word(icon + 0x54, 0x2407005b, 0x240700a4, 'playlist tile label spans the tile')
         word(icon + 0x60, 0x2405003f, 0x24050000, 'playlist tile label at the tile edge')
-        word(style, 0x2505be04, 0x25059220, 'playlist tile label centred')
+        word(style, 0x2505be04, 0x2505c430, 'playlist tile label centred')
     # iPod settings rows: the list_view layouter's layout slot (data, vtable 0x939ebc + 8).
     word(inc('LIST_VIEW_LAYOUT_SLOT'), inc('LIST_VIEW_LAYOUT'), symbols['ipod_list_layout'],
          'settings lists stack SET_ROW rows and map their children')

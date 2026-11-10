@@ -1054,7 +1054,7 @@ def test_the_playing_rows_mark_keeps_its_titles_face_under_classic(fw, st, ui, r
     title = ui.widget(row, 'title', text='')
     def load(ctx, index, w):
         fw.fn('stock_row_text', C.c_int, C.c_void_p, C.c_char_p)(title, text.encode())
-        fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)(title, b's_scrlabel_red20l')
+        fw.fn('stock_row_style', C.c_int, C.c_void_p, C.c_char_p)(title, b's_scrlabel_red24l')
         return 7
     stock = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint, C.c_void_p)(load)
     C.c_void_p.from_address(table + O['TABLE_LOAD_DATA']).value = C.cast(stock, C.c_void_p).value
@@ -1188,6 +1188,15 @@ def test_no_window_binds_nothing(fw, ui, mcl, st):
     theme(fw, st, CLASSIC)
     Now(fw, ui, mcl, st, opened=False)
     assert fw.fn('ringnav_playing', C.c_int, C.c_void_p, C.c_void_p)(None, 0) == 41
+    assert st.np_win == 0 and ui.handlers == []
+
+
+def test_a_page_stock_refused_binds_nothing(fw, ui, mcl, st):
+    """Headphones required with none to play to: stock toasts, closes the window it was given and returns STOP (11)."""
+    theme(fw, st, CLASSIC)
+    now = Now(fw, ui, mcl, st, opened=False)
+    fw.mock('stock_playing_trampoline', lambda w, ctx, *_: 11)
+    assert now.open() == 11
     assert st.np_win == 0 and ui.handlers == []
 
 
