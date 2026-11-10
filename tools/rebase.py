@@ -21,8 +21,8 @@ BINARIES = {'demo': 'release/bin/demo', 'hciplayer': 'usr/bin/hciplayer', 'bluea
 # Our names for stock's unnamed functions and data: binary, address, size, name, what it does.
 STOCK_MAP = ROOT/'tools/stock_map.tsv'
 SCANNED = ('patch', 'tools', 'test', 'docs')
-# Never rewritten: history, and what is not ours to renumber.
-SKIPPED = ('docs/changelog.md',)
+# Never rewritten: history, and this tool's tests, whose addresses are a toy program's.
+SKIPPED = ('docs/changelog.md', 'test/unit/test_rebase.py')
 
 def check(condition, message):
     if not condition: raise ValueError(message)
@@ -37,8 +37,8 @@ def decisive(counter):
 
 class Elf:
     """A stock MIPS32 little-endian executable: sections, .text words, exported and imported names, and the
-    stock map's names for it, rows of (address, size, name)."""
-    def __init__(self, data, names=()):
+    stock map's names for it once named() has them."""
+    def __init__(self, data):
         d = self.d = data
         check(d[:6] == b'\x7fELF\x01\x01' and struct.unpack_from('<H', d, 18)[0] == 8, 'Not a 32-bit little-endian MIPS ELF')
         shoff, = struct.unpack_from('<I', d, 32)
@@ -57,9 +57,7 @@ class Elf:
         # name: (address, size, FUNC or OBJECT), the defined ones
         self.syms = {n: (s[1], s[2], 'OBJECT' if s[3] & 15 == 1 else 'FUNC')
                      for n, s in zip(self.dynnames, dynsym) if s[5] and s[3] & 15 in (1, 2)}
-        for address, size, name in names:
-            self.syms[name] = (address, size, 'FUNC' if self.text <= address < self.end else 'OBJECT')
-        self.starts = sorted((a, n) for n, (a, _, _) in self.syms.items())
+        self.named(())
         # A global GOT slot holds the dynamic symbol of its place: the address of the slot to its name.
         dyn = dict(struct.unpack_from('<II', d, self.sec['.dynamic'][1] + o) for o in range(0, self.sec['.dynamic'][2], 8))
         local, first = dyn.get(0x7000000a, 0), dyn.get(0x70000013, len(dynsym))
@@ -77,6 +75,11 @@ class Elf:
             hi, lo = struct.unpack_from('<II', d, off + o)
             if hi >> 16 == 0x3c0f and lo >> 16 == 0x8df9 and ((hi & 0xffff) << 16) + s16(lo & 0xffff) in slots:
                 self.imports[addr + o] = slots[((hi & 0xffff) << 16) + s16(lo & 0xffff)]
+    def named(self, rows):
+        """Add the stock map's names, rows of (address, size, name)."""
+        for address, size, name in rows:
+            self.syms[name] = (address, size, 'FUNC' if self.text <= address < self.end else 'OBJECT')
+        self.starts = sorted((a, n) for n, (a, _, _) in self.syms.items())
     def cstr_at(self, o): return self.d[o:self.d.index(b'\0', o)].decode('utf-8', 'replace')
     def off(self, a):
         for addr, off, size in self.loads:
@@ -98,12 +101,16 @@ class Elf:
         if a == s: return n
         return f'{n}+{a - s:#x}' if a - s < self.syms[n][1] else f'{n}+{a - s:#x}(past)'
 
+def low(op):
+    """Whether an opcode's immediate may be an address's low half: addiu, ori, a load or a store."""
+    return op in (9, 0x0d) or op >= 0x20
+
 def heavy(w):
     """w with any operand that may carry an address masked: what two builds' words are aligned on."""
     op = w >> 26
     if op in (2, 3): return w & 0xfc000000
     if op == 0x0f: return w & 0xffff0000
-    if op in (9, 0x0d) or 0x20 <= op <= 0x3f:
+    if low(op):
         return w if (w >> 21) & 31 in (0, 29, 30) else w & 0xffff0000  # off $zero, $sp and $fp it is a constant or a frame slot
     if op in (1, 4, 5, 6, 7, 20, 21, 22, 23): return w & 0xffff0000  # a branch or bal to a neighbour moves with it
     return w
@@ -182,9 +189,10 @@ def track(ea, eb, m):
             f = wa & 63
             if f in (8, 9) and rs in st and st[rs][0] != 'hi': calls[st[rs][1]][st[rs][2]] += 1  # jr: a tail call
             if f == 9: clobber = i + 2
-            if f not in (8, 9, 0x18, 0x19, 0x1a, 0x1b): st.pop(rd, None)
+            st.pop(rd, None)  # $zero for a jr, a mult or a div
             if wa != wb: changes.append((pa, pb, wa, wb))
-        elif op == 0x0f: st[rt] = ('hi', (wa & 0xffff) << 16, (wb & 0xffff) << 16)
+        elif op == 0x0f:
+            if rt != 28: st[rt] = ('hi', (wa & 0xffff) << 16, (wb & 0xffff) << 16)  # into $gp it is how far the GOT is from the function, no address
         elif op in (1, 4, 5, 6, 7, 20, 21, 22, 23):
             ti, tj = i + 1 + ia, j + 1 + ib
             ta, tb = ea.text + 4 * ti, eb.text + 4 * tj
@@ -193,7 +201,7 @@ def track(ea, eb, m):
             elif op == 4 and rs == 0 and rt == 0 and 0 <= ti < len(m) and abs(ia) > 64 and 25 in st:  # b: a PIC tail call
                 calls[ta][tb] += 1; callsites[pa] = (ta, tb)
             elif wa != wb and not (0 <= ti < len(m) and m[ti] == tj): changes.append((pa, pb, wa, wb))
-        elif op in (9, 0x0d) or 0x20 <= op <= 0x3f:
+        elif low(op):
             load = 0x20 <= op <= 0x26
             if rs == 28 and op == 0x23:
                 ga, gb = ea.gp + ia, eb.gp + ib
@@ -201,6 +209,7 @@ def track(ea, eb, m):
                 if ea.got.get(ga) != eb.got.get(gb): changes.append((pa, pb, wa, wb))  # another symbol's slot
                 if va is None or vb is None: st.pop(rt, None)
                 else: st[rt] = ('got', va, vb)
+            elif rs == rt == 28: pass  # the low half of that
             elif rs in st:
                 _, ha, hb = st[rs]
                 a = ha + (wa & 0xffff if op == 0x0d else ia); b = hb + (wb & 0xffff if op == 0x0d else ib)
@@ -240,7 +249,7 @@ def view(elf):
     tables = set()
     for name in ('.data.rel.ro', '.data', '.got', '.init_array', '.ctors', '.dtors'):
         _, off, size, typ = elf.sec.get(name, (0, 0, 0, 8))
-        if typ != 8: tables |= set(struct.unpack_from(f'<{size // 4}I', elf.d, off))
+        if typ != 8: tables |= {w for w in struct.unpack_from(f'<{size // 4}I', elf.d, off) if w & 0xffff}  # not the GOT's pages
     starts = {x for x in (*calls, *votes, *tables) if elf.text <= x < elf.end and not x & 3} | {s[0] for s in elf.syms.values() if s[2] == 'FUNC'}
     return View(elf, starts, [x for x in votes if not elf.text <= x < elf.end])
 
@@ -261,8 +270,10 @@ class Map:
             self.moved += n
             if not n: break
         self.back = {j: i for i, j in enumerate(self.m) if j >= 0}
-        self.starts = {x: decisive(c) for x, c in self.calls.items() if decisive(c) is not None}
+        # where a function went whose first word changed: by the code that forms its address, by its callers, by its symbol
+        self.starts = {x: decisive(c) for x, c in (*self.votes.items(), *self.calls.items()) if decisive(c) is not None}
         self.starts.update((a.syms[n][0], b.syms[n][0]) for n in a.syms.keys() & b.syms.keys() if a.syms[n][2] == b.syms[n][2] == 'FUNC')
+        self.starts_back = {y: x for x, y in self.starts.items()}
         self.rdata = {decisive(c): x for x, c in self.votes.items() if decisive(c) is not None}
         self.known = sorted(x for x, c in self.votes.items() if decisive(c) is not None)
         deltas = collections.Counter((y - x) & 0xffff for x, c in self.votes.items() for y in c)
@@ -270,9 +281,7 @@ class Map:
         # A word that changed, and not because an address moved: an immediate that moved by a section's shift is
         # the low half of an address whose high half the walk lost; a low half is explained by its address's vote;
         # a call by its target's.
-        self.unexplained = {c[0] for c in self.changes
-                            if not ((c[2] ^ c[3]) >> 16 == 0 and ((c[3] - c[2]) & 0xffff) in deltas
-                                    and (c[2] >> 26 in (9, 0x0d) or 0x20 <= c[2] >> 26 <= 0x3f))}
+        self.unexplained = {c[0] for c in self.changes if not (((c[3] - c[2]) & 0xffff) in deltas and low(c[2] >> 26))}
         self.unexplained |= {pc for pc, (x, y) in self.sites.items() if decisive(self.votes[x]) != y}
         self.unexplained |= {pc for pc, (x, y) in self.callsites.items() if self.lookup(x)[0] != y}
     def bounds(self):
@@ -360,7 +369,7 @@ class Map:
         """The old address of new address y, or None."""
         if self.b.text <= y < self.b.end:
             i = self.back.get((y - self.b.text) // 4)
-            return None if i is None else self.a.text + 4 * i + (y & 3)
+            return self.starts_back.get(y) if i is None else self.a.text + 4 * i + (y & 3)
         return self.a.gp if y == self.b.gp else self.rdata.get(y)
     def word(self, x):
         """(the new build's word for the old one at x, how): same; moved, differing only as addresses moved;
@@ -590,17 +599,21 @@ def stale(texts, maps, views_old, views_new):
             and (how in STRONG or maps[b].lookup(lits[rel][n].value)[0] is None or n not in loose[rel][1])]
 
 def read_stock_map(text):
-    """The stock map's rows: {binary: [(address, size, name)]} and the whole rows, in file order."""
-    rows = [line.split('\t') for line in text.splitlines()[1:] if line.strip()]
+    """The stock map: the stock version its addresses are of, which its first line names, then
+    {binary: [(address, size, name)]} and the rows whole, in file order, from under the line of column names."""
+    lines = text.splitlines()
+    version = re.findall(r'V\d+(?:\.\d+)+', lines[0])
+    check(version, 'stock map: the first line names no stock version')
+    rows = [line.split('\t') for line in lines[2:] if line.strip()]
     for row in rows: check(len(row) == 5, f'stock map: {row!r} is not binary, address, size, name, what')
     names = collections.defaultdict(list)
     for binary, address, size, name, _ in rows: names[binary].append((int(address, 16), int(size, 16), name))
-    return names, rows
+    return version[0], names, rows
 
 def carry_stock_map(text, maps):
     """The stock map with each row at its new address and size, and notes on the rows not carried or changed."""
-    _, rows = read_stock_map(text)
-    out, notes = [text.splitlines()[0]], []
+    _, _, rows = read_stock_map(text)
+    out, notes = text.splitlines()[:2], []
     for binary, address, size, name, what in rows:
         mp = maps[binary]
         x, z = int(address, 16), int(size, 16)
@@ -689,9 +702,20 @@ class Stock:
         return out
 
 def open_maps(old, new):  # pragma: no mutate block
-    """{binary: Map} for two opened ZIPs, with the stock map's names on the old side."""
-    names = read_stock_map(STOCK_MAP.read_text())[0] if STOCK_MAP.exists() else {}
-    return {b: Map(Elf(old.cat(path), names.get(b, ())), Elf(new.cat(path))) for b, path in BINARIES.items()}
+    """{binary: Map} for two opened ZIPs, each side with the stock map's names: the side the map's first line
+    names has them as written, the other where the Map puts them."""
+    version, names, _ = read_stock_map(STOCK_MAP.read_text()) if STOCK_MAP.exists() else (None, {}, [])
+    maps = {}
+    for binary, path in BINARIES.items():
+        mp = maps[binary] = Map(Elf(old.cat(path)), Elf(new.cat(path)))
+        rows = names.get(binary, [])
+        if version == new.version != old.version:
+            mp.b.named(rows)
+            mp.a.named([(mp.old(y), size, name) for y, size, name in rows if mp.old(y) is not None])
+        else:
+            mp.a.named(rows)
+            mp.b.named([(mp.lookup(x)[0], size, name) for x, size, name in rows if mp.lookup(x)[0] is not None])
+    return maps
 
 def tracked():  # pragma: no mutate block
     """The files this tool reads and rewrites: git's, under SCANNED, that are text."""
@@ -745,7 +769,7 @@ def apply(old, new, write=True, out=sys.stdout):  # pragma: no mutate block
     for rel, text in texts.items():
         if rel == stock_map:
             now, notes = carry_stock_map(text, maps)
-            notes = [(0, name, what) for name, what in notes]
+            now, notes = pins(now, old, new, hashes)[0], [(0, name, what) for name, what in notes]
         else:
             lits, verdict = judged[rel]
             now, notes = rewrite(text, lits, verdict, maps)
@@ -765,8 +789,9 @@ def check_tree(old, new, out=sys.stdout):  # pragma: no mutate block
     maps = open_maps(old, new)
     texts = read_tree()
     stock_map = str(STOCK_MAP.relative_to(ROOT))
-    names = read_stock_map(texts.pop(stock_map))[0] if stock_map in texts else {}
+    version, names, _ = read_stock_map(texts.pop(stock_map)) if stock_map in texts else (new.version, {}, [])
     count = 0
+    if version != new.version: print(f'{stock_map}: its addresses are {version}\'s', file=out); count += 1
     for rel, line, literal, binary, how in stale(texts, maps, {b: view(mp.a) for b, mp in maps.items()}, {b: view(mp.b) for b, mp in maps.items()}):
         print(f'{rel}:{line}: {literal} is {binary}\'s in {old.version} ({how}: {maps[binary].a.where(int(literal, 16))})', file=out)
         count += 1
@@ -889,7 +914,7 @@ def report(old, new, out=sys.stdout):  # pragma: no mutate block
         for name, what in notes: p(f'  {name}: {what}')
 
 def refs(elf, what, out=sys.stdout):
-    """Print where elf's code forms the address what, calls it, or loads a string holding what (text)."""
+    """Print where elf's code forms the address what, loads it from the GOT, calls it, or loads a string holding what (text)."""
     votes, calls, sites, callsites, _ = track(elf, elf, list(range(len(elf.words))))
     if isinstance(what, str):
         rodata, off, size, _ = elf.sec['.rodata']
@@ -898,11 +923,13 @@ def refs(elf, what, out=sys.stdout):
         for m in re.finditer(re.escape(what.encode()), blob):
             start = blob.rfind(b'\0', 0, m.start()) + 1
             targets[rodata + start] = blob[start:blob.index(b'\0', start)].decode('utf-8', 'replace')
-    else: targets = {what: elf.where(what)}
-    for pc, (x, _) in sorted({**sites, **callsites}.items()):
+    else: targets = {what: elf.imports.get(what) or elf.where(what)}
+    loads = {elf.text + 4 * i: (elf.u32(elf.gp + s16(w & 0xffff)), 0) for i, w in enumerate(elf.words)
+             if w >> 21 == 0x47c and elf.gp + s16(w & 0xffff) in elf.got}  # lw off($gp), of a symbol's slot
+    for pc, (x, _) in sorted({**loads, **sites, **callsites}.items()):
         if x in targets: print(f'{pc:#x}  {elf.where(pc)}  ->  {x:#x} {targets[x]!r}', file=out)
     for x in sorted(targets):
-        if x not in votes and x not in calls: print(f'{x:#x} {targets[x]!r}: no code names it', file=out)
+        if x not in votes and x not in calls and all(x != y for y, _ in loads.values()): print(f'{x:#x} {targets[x]!r}: no code names it', file=out)
 
 def main(argv=None):  # pragma: no mutate block
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -916,7 +943,8 @@ def main(argv=None):  # pragma: no mutate block
             check(ROOT not in pathlib.Path(work).resolve().parents, 'Extract outside the repo')
             if a.command == 'refs':
                 check(len(a.args) >= 3 and a.args[1] in BINARIES, 'refs ZIP BINARY WHAT...')
-                elf = Elf(Stock(a.args[0], work).cat(BINARIES[a.args[1]]), read_stock_map(STOCK_MAP.read_text())[0].get(a.args[1], ()) if STOCK_MAP.exists() else ())
+                elf = Elf(Stock(a.args[0], work).cat(BINARIES[a.args[1]]))
+                if STOCK_MAP.exists(): elf.named(read_stock_map(STOCK_MAP.read_text())[1].get(a.args[1], ()))
                 for what in a.args[2:]: refs(elf, int(what, 16) if re.fullmatch('0x[0-9a-fA-F]+', what) else what)
                 return 0
             check(len(a.args) == 2, f'{a.command} OLD.zip NEW.zip')
