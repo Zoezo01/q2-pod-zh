@@ -20,6 +20,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BINARIES = {'demo': 'release/bin/demo', 'hciplayer': 'usr/bin/hciplayer', 'bluealsa': 'usr/bin/bluealsa'}
 # Our names for stock's unnamed functions and data: binary, address, size, name, what it does.
 STOCK_MAP = ROOT/'tools/stock_map.tsv'
+# How to find each patch site again, in the same columns: binary, address, 4, the function it is in, where in it and
+# what uses it. docs/rebasing/sitenotes.py writes it; apply carries it, and a row it cannot carry is what to look for.
+STOCK_SITES = ROOT/'tools/stock_sites.tsv'
+TABLES = tuple(str(p.relative_to(ROOT)) for p in (STOCK_MAP, STOCK_SITES))
 SCANNED = ('patch', 'tools', 'test', 'docs')
 # Never rewritten: history, and this tool's tests, whose addresses are a toy program's.
 SKIPPED = ('docs/changelog.md', 'test/unit/test_rebase.py')
@@ -238,7 +242,7 @@ class View:
         return self.sorted[i] if i >= 0 else self.elf.text
     def data(self, a):
         """Whether a is data the code or a symbol names."""
-        if a in self.refs or a == self.elf.gp or a in self.elf.imports: return True
+        if a in self.refs or a == self.elf.gp or a in self.elf.imports or a in self.elf.got: return True
         i = bisect.bisect_right(self.objects, (a, 1 << 32)) - 1
         return i >= 0 and self.objects[i][0] <= a < sum(self.objects[i])
 
@@ -322,6 +326,9 @@ class Map:
         if x in a.imports:
             stubs = [y for y, n in b.imports.items() if n == a.imports[x]]
             return (stubs[0], 'import') if stubs else (None, 'import gone')
+        if x in a.got:  # a symbol's GOT slot, which a gp-relative load reads and no operand forms: the slot of its name
+            slots = [y for y, n in b.got.items() if n == a.got[x]]
+            return (slots[0], 'slot') if slots else (None, 'slot gone')
         c = self.votes.get(x)
         if c:
             if decisive(c) is not None: return decisive(c), 'ref'
@@ -383,7 +390,7 @@ class Map:
         return wb, 'changed' if x in self.unexplained else 'moved'
 
 Lit = collections.namedtuple('Lit', 'start end value digits line kind')
-HEX = re.compile(r'(?<![0-9A-Za-z_])0[xX]([0-9a-fA-F]{5,8})(?![0-9A-Za-z_])')
+HEX = re.compile(r'(?<![0-9A-Za-z_])0[xX]([0-9a-fA-F]{5,8})(?=(?:[uU][lL]{0,2}|[lL]{1,2}[uU]?)?(?![0-9A-Za-z_]))')  # C's integer suffix is not the literal's
 LE = re.compile(r'(?<=["\'])(?:[0-9a-f]{8}){1,3}(?=["\'])')  # instruction words as their bytes, in a quoted string
 NAME = re.compile(r'[A-Za-z_]\w{2,}')
 LOW, HIGH = 0x400000, 0x1000000  # where the stock executables load
@@ -765,11 +772,10 @@ def apply(old, new, write=True, out=sys.stdout):  # pragma: no mutate block
     maps = open_maps(old, new)
     hashes = (old.hashes(), new.hashes())
     texts = read_tree()
-    stock_map = str(STOCK_MAP.relative_to(ROOT))
-    judged = judge_tree({rel: text for rel, text in texts.items() if rel != stock_map}, {b: view(mp.a) for b, mp in maps.items()})
+    judged = judge_tree({rel: text for rel, text in texts.items() if rel not in TABLES}, {b: view(mp.a) for b, mp in maps.items()})
     failed = changed = 0
     for rel, text in texts.items():
-        if rel == stock_map:
+        if rel in TABLES:
             now, notes = carry_stock_map(text, maps)
             now, notes = pins(now, old, new, hashes)[0], [(0, name, what) for name, what in notes]
         else:
@@ -789,18 +795,19 @@ def check_tree(old, new, out=sys.stdout):  # pragma: no mutate block
     """Print each literal still on the old layout; returns how many."""
     maps = open_maps(old, new)
     texts = read_tree()
-    stock_map = str(STOCK_MAP.relative_to(ROOT))
-    version, names, _ = read_stock_map(texts.pop(stock_map)) if stock_map in texts else (new.version, {}, [])
+    tables = {rel: read_stock_map(texts.pop(rel)) for rel in TABLES if rel in texts}
     count = 0
-    if version != new.version: print(f'{stock_map}: its addresses are {version}\'s', file=out); count += 1
+    for rel, (version, _, _) in tables.items():
+        if version != new.version: print(f'{rel}: its addresses are {version}\'s', file=out); count += 1
     for rel, line, literal, binary, how in stale(texts, maps, {b: view(mp.a) for b, mp in maps.items()}, {b: view(mp.b) for b, mp in maps.items()}):
         print(f'{rel}:{line}: {literal} is {binary}\'s in {old.version} ({how}: {maps[binary].a.where(int(literal, 16))})', file=out)
         count += 1
-    for binary, rows in names.items():
-        elf = maps[binary].b
-        for x, size, name in rows:
-            if elf.section(x) is None or (elf.text <= x < elf.end and x & 3):
-                print(f'{stock_map}: {name} at {x:#x} is not in {new.version}\'s {binary}', file=out); count += 1
+    for rel, (_, names, _) in tables.items():
+        for binary, rows in names.items():
+            elf = maps[binary].b
+            for x, size, name in rows:
+                if elf.section(x) is None or (elf.text <= x < elf.end and x & 3):
+                    print(f'{rel}: {name} at {x:#x} is not in {new.version}\'s {binary}', file=out); count += 1
     print(f'{count} stock addresses left on {old.version}\'s layout' if count else f'No stock address left on {old.version}\'s layout', file=out)
     return count
 
@@ -856,8 +863,7 @@ def report(old, new, out=sys.stdout):  # pragma: no mutate block
         if what in differ or what not in fa: p(f'~ {what}: {", ".join(sorted(set(rels)))}')
     maps = open_maps(old, new)
     views = {b: view(mp.a) for b, mp in maps.items()}
-    texts = read_tree()
-    texts.pop(str(STOCK_MAP.relative_to(ROOT)), None)
+    texts = {rel: text for rel, text in read_tree().items() if rel not in TABLES}
     ours = collections.defaultdict(lambda: collections.defaultdict(set))  # binary: address: files
     tally, bare, weak = collections.Counter(), [], []
     for rel, (lits, verdict) in judge_tree(texts, views).items():
@@ -913,6 +919,10 @@ def report(old, new, out=sys.stdout):  # pragma: no mutate block
         _, notes = carry_stock_map(STOCK_MAP.read_text(), maps)
         p(f'\n## Stock map: {len(notes)} named functions changed or not carried')
         for name, what in notes: p(f'  {name}: {what}')
+    if STOCK_SITES.exists():
+        lost = [row for row in read_stock_map(STOCK_SITES.read_text())[2] if maps[row[0]].lookup(int(row[1], 16))[0] is None]
+        p(f'\n## Patch sites to find by hand: {len(lost)} (binary, address, the function it was in, where in it and what uses it)')
+        for row in lost: p('  ' + '  '.join((row[0], row[1], *row[3:])))
 
 def refs(elf, what, out=sys.stdout):
     """Print where elf's code forms the address what, loads it from the GOT, calls it, or loads a string holding what (text)."""

@@ -468,6 +468,7 @@ def test_view(old):
     assert v.data(s['hello']) and v.data(old.gp) and v.data(0x402000) and v.data(0x402120)
     assert v.data(0x406010) and v.data(0x406013) and not v.data(0x406014) and not v.data(0x40600f)
     assert not v.data(s['hello'] + 4) and not v.data(0x403040)
+    assert v.data(0x405014) and v.data(0x40501c) and not v.data(0x405010)   # a symbol's GOT slot, not a page's
     assert rebase.View(old.elf, [], []).function(old.TEXT + 8) == old.TEXT
     blob = bytearray(old.blob)
     struct.pack_into('<I', blob, old.elf.sec['.data'][1] + 12, s['alpha'] + 8)   # a pointer into a function: a start too
@@ -551,7 +552,8 @@ def test_map_carries_data(old, new, mp):
     assert mp.data(s['g_flag'] + 2) == (t['g_flag'] + 2, 'sym')
     assert mp.data(s['hello'] + 16) == (t['hello'] + 16, 'ref')
     assert mp.data(0x403014) == (0x403114, 'string')                     # the tail of a string no code names
-    assert mp.data(0x405008) == (None, 'unreferenced')                   # a GOT slot: nothing names it, and its neighbours changed
+    assert mp.data(0x405008) == (None, 'unreferenced')                   # a GOT page's slot: nothing names it, and its neighbours changed
+    assert mp.data(0x405014) == (0x405418, 'slot') and mp.data(0x405018) == (0x40541c, 'slot')   # a symbol's slot goes with its name
     assert mp.data(0x403044) == (0x403144, 'content')                    # a word of a table, its pointer carried
     assert mp.data(0x404008) == (0x404108, 'content') and mp.data(0x404000 + 0x24) == (0x404124, 'near')
     assert mp.data(0x404004) == (0x404104, 'near')                       # too near its section's start for the words around it
@@ -575,7 +577,7 @@ def test_map_data_edge_cases(old):
     blob = Toy(shift=0x100).blob.replace(b'second string', b'second strinG')
     assert rebase.Map(old.elf, rebase.Elf(blob)).data(0x403014) == (0x403114, 'near')                     # there no more
     gone = rebase.Map(old.elf, rebase.Elf(Toy().blob.replace(b'printf\0', b'prinTf\0')))
-    assert gone.data(0x402000) == (None, 'import gone')
+    assert gone.data(0x402000) == (None, 'import gone') and gone.data(0x405018) == (None, 'slot gone') and gone.data(0x405014) == (0x405014, 'slot')
     blob = bytearray(old.blob)
     struct.pack_into('<I', blob, old.elf.sec['.text'][1] + old.s['one'] + 8 - old.TEXT, lw(V1, lo(old.s['counter']) + 4, V0))
     torn = rebase.Map(old.elf, rebase.Elf(bytes(blob)))
@@ -680,6 +682,9 @@ def test_literals():
     assert [text[l.start:l.end] for l in lits] == ['0x4a1234', '0X0040abcd', '0400828c', '24020001afbf001c', '0xABCDE']
     assert rebase.literals('"00112233445566778899aabb" "0011223344556677889900112233445566"')[0].value == (0x33221100, 0x77665544, 0xbbaa9988)
     assert len(rebase.literals('"0011223344556677889900112233445566"')) == 0
+    # C's integer suffixes end a literal and are no part of it; anything else after the digits makes it no literal
+    text = '0x4a1234u 0x4a1235UL 0x4a1236ull 0x4a1237l 0x4a1238LLU 0x4a1239lu 0x4a123aux 0x4a123bulll 0x4a123cuu 0x4a123dlul 0x4a123eu_'
+    assert [text[l.start:l.end] for l in rebase.literals(text)] == ['0x4a1234', '0x4a1235', '0x4a1236', '0x4a1237', '0x4a1238', '0x4a1239']
     A = rebase.address
     L = lambda value, digits, kind='hex': rebase.Lit(0, 0, value, digits, 0, kind)
     assert A(L(0x400000, 6)) and A(L(0xffffff, 6)) and A(L(0x4a1234, 7))
