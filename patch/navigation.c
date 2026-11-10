@@ -1723,10 +1723,11 @@ static void draw_letter(void *canvas, const unsigned *c, rect_t *box) {
 
 /* A page whose list is in an order of its own, where a row's first letter says nothing of how far
  * a spin has got: an album's songs (disc and track, comparator 0x506220), Up Next (play order),
- * Chapters (the file's). In Library's song list the class decides (internals.md, fast-scroll
- * letter): Recent, Frequent and Recently Added (0xf007-0xf009), Songs under Time added (getAllMusic
- * 3 and 4) and a playlist's songs (0xff13) under its Sort's Time added (g_playlistsort_flag not 0,
- * getMusicByPlayList 0x50b4f8) are in their own order. */
+ * Chapters (the file's), Edit Playlist's songs as added (ple_listing; its Add Songs picker is A to
+ * Z). In Library's song list the class decides (internals.md, fast-scroll letter): Recent, Frequent
+ * and Recently Added (0xf007-0xf009), Songs under Time added (getAllMusic 3 and 4) and a playlist's
+ * songs (0xff13) under its Sort's Time added (g_playlistsort_flag not 0, getMusicByPlayList
+ * 0x50b4f8) are in their own order. */
 static int own_order(const char *page) {
     if (!tk_strcmp(page, "allmusic_page")) {
         int cls = I(g_class_type, 0), sort = I(g_sort_flag, 0);
