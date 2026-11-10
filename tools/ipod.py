@@ -893,7 +893,7 @@ def confirm_dialog(root):
     # is the lists' own bar or card. Stock looks both up by name and binds the same callbacks.
     for i, n in enumerate(root[3]):
         n[0], n[1] = 'button', [0, CONFIRM_TOP + i * CONFIRM_ROW, 375, CONFIRM_ROW]
-        n[2] = {'name': n[2]['name'], 'text': ('Cancel', 'OK')[i], 'focusable': 'false',
+        n[2] = {'name': n[2]['name'], 'text': ('取消', '确定')[i], 'focusable': 'false',
                 'style:normal:font_size': '20', 'style:normal:text_align_h': 'center'}
         # Every state, or AWTK's button/default shows its blue border (1px) and fill; a tap gets
         # the lists' pressed grey, the wheel the selection.

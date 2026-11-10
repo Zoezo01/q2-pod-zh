@@ -21,7 +21,9 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # 自己的控件和样式（hscroll_label, s_scrlabel_white20l），浅色半区由样式表给出深色，不再自己写颜色。
 # 字母每换一条上游版本线从 A 重新起。B 把播放/暂停图标抬 1 px：它的 16 px 画布在 30 px 行里居中，
 # 中心落在 15，而这一行的文字墨迹中心在 14.4，看着就像图标低了一像素（原版固件对电池用的同一手）。
-TAG = 'V' + VERSION.replace('.', '') + 'B'
+# C 把确认框的两行按钮改成「取消 / 确定」——那两行文字是生成时写死的英文，不在翻译表里，所以每个确认
+# 弹窗（升级、删除、关机…）都露着 Cancel 和 OK。
+TAG = 'V' + VERSION.replace('.', '') + 'C'
 
 
 def dev_tag(number):
