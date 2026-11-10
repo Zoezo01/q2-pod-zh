@@ -53,8 +53,8 @@ static struct {
     char tags[3][TIDAL_TAG], cover[128];
 } td __attribute__((section(".scratch")));
 
-/* mcl_tidalStartPlayer's only caller, the stream-URL thread (0x486d88), keeps its own copy of the
- * song id it fetched in $s2 from 0x48647c until it frees it after the call, so a skip that has
+/* mcl_tidalStartPlayer's only caller, the stream-URL thread (0x487a98), keeps its own copy of the
+ * song id it fetched in $s2 from 0x48718c until it frees it after the call, so a skip that has
  * already rewritten tidalsongid can't file one track's stream under another's id. */
 __asm__(".globl tidal_start\ntidal_start:\nmove $a1, $s2\nj tidal_play\n");
 
@@ -320,7 +320,7 @@ int ringnav_tidal_favs(void *offset) {
 /* Card apps' URL queues (docs/internals.md#card-apps, "urls" in addon.c's caps). The app names a
  * Q2URLS/1 file in its .play: "#Q2URLS/1\tstart=<i>", then a line a song,
  * "url-or-card-path\ttitle\tartist\talbum\tcover-url\tseconds". app_urls_play builds stock Tidal
- * records from it as load_titaltracks_ex (0x48596c) does (REC_TYPE 8, +0x38 0xf1), each
+ * records from it as load_titaltracks_ex (0x48667c) does (REC_TYPE 8, +0x38 0xf1), each
  * REC_TIDAL_ID "app:<gen>:<n>", and plays them as a Tidal page does (play_folder 0xf1).
  * mclStartPlayer asks get_tidal_trackurl for a 0xf1 record; ringnav_tidal_track answers an app's
  * itself (app_track) with the URL kept here, so Tidal's API and stock's stream thread never see the
@@ -334,11 +334,11 @@ int ringnav_tidal_favs(void *offset) {
  * the } in place, unbounded. */
 #define AU_PATH 1024
 /* stock's, at build.py APP_URL_CALLS (checked against the demo's symbols) */
-#define mclSetPause ((int (*)(void))0x5ab0d4u)
-#define tidal_playurl ((int (*)(int))0x5aa264u)
-#define toolsFreeStSongInfo ((void (*)(void *))0x5c01b8u)
-#define curl_stop_httpget ((int (*)(void))0x4fb5f8u)
-#define player_set_coverinfo ((int (*)(const char *, const char *, int))0x512b4cu)
+#define mclSetPause ((int (*)(void))0x5bd534u)
+#define tidal_playurl ((int (*)(int))0x5bc684u)
+#define toolsFreeStSongInfo ((void (*)(void *))0x5d2ae0u)
+#define curl_stop_httpget ((int (*)(void))0x505f98u)
+#define player_set_coverinfo ((int (*)(const char *, const char *, int))0x51d60cu)
 static struct {
     unsigned lock[16];     /* a zeroed pthread mutex, as td.lock */
     char **urls;           /* the queue's URLs, 0 for a card path; n of them */
@@ -431,7 +431,7 @@ int app_lyrics(const char *id, char *out, unsigned size) {
 
 /* A track's URL to the player, off the caller's thread as stock's stream thread does it (the player
  * waits there), one at a time as that thread's are; a later start, or a queue loaded since, drops
- * one still waiting. Then what the stream thread does after mcl_tidalStartPlayer (0x486d88): a
+ * one still waiting. Then what the stream thread does after mcl_tidalStartPlayer (0x487a98): a
  * start that was to stay paused pauses, and transposition arms Now Playing's tick
  * (get_onlineid3info, auto-advance). The trampoline is stock's own, past tidal_start's hook. */
 typedef struct {
@@ -454,10 +454,10 @@ static void *app_start(void *arg) {
     return 0;
 }
 
-/* get_tidal_trackurl for an app's record r (id "app:<gen>:<n>"): as stock does around it (0x4831b4,
- * 0x483258), offline gives up, and the player stops before the URL. A queue replaced since (gen) has
+/* get_tidal_trackurl for an app's record r (id "app:<gen>:<n>"): as stock does around it (0x483ec4,
+ * 0x483f68), offline gives up, and the player stops before the URL. A queue replaced since (gen) has
  * no URL: the player stays stopped. Any start here drops an earlier URL still waiting and, as stock
- * (0x4831bc), a Tidal fetch in flight, which would start over this one. A card file arms
+ * (0x483ecc), a Tidal fetch in flight, which would start over this one. A card file arms
  * mclAutoChange's flag itself (-0x426c > 0, which the stream thread's transposition sets for a URL,
  * so a queue of card files advances): only the idle tick reads it, on the thread that runs nearly
  * every start, so it can't pass a start before stock has it running. ponytail: a start on another
@@ -472,7 +472,7 @@ static int app_track(void *r, const char *id) {
     if (path && *path) { /* mclStartPlayer plays it after this */
         tidal_playurl(1);
         /* it writes its own play command after this returns, with no mclStop: a stream still
-         * inside stock's start (100 or 150 ms asleep before it writes, 0x5ad1d4) must land first */
+         * inside stock's start (100 or 150 ms asleep before it writes, 0x5bf64c) must land first */
         pthread_mutex_lock(au.start);
         pthread_mutex_unlock(au.start);
         return 1;
@@ -509,7 +509,7 @@ __asm__(".globl app_coverinfo_call\napp_coverinfo_call:\nmove $a3, $s1\nj app_co
 
 extern int stock_tidaltrack_trampoline(void *a, void *b, void *c, void *d);
 /* get_tidal_trackurl: any Tidal track asked for (a queue restored at power-on, a pick in Now
- * Playing) wakes the stream thread, after stock has set its flag (0x483278); a card app's is
+ * Playing) wakes the stream thread, after stock has set its flag (0x483f88); a card app's is
  * answered here (app_track) and never reaches stock's. */
 int ringnav_tidal_track(void *a, void *b, void *c, void *d) {
     void *q = P(mcl_pdeqplaylist, 0);

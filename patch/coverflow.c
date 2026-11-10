@@ -65,7 +65,7 @@ static int library_scan(int (*stock)(void *, void *), void *a, void *b, int drop
     return result;
 }
 int coverflow_scan_all(void *a, void *b) { return library_scan(stock_scan_all_trampoline, a, b, 1); }
-/* toolsGetFileCreateTime (0x5bddc4) dates a song (time_create, Recently Added's order) by stat's
+/* toolsGetFileCreateTime (0x5d0624) dates a song (time_create, Recently Added's order) by stat's
  * st_ctime, on FAT32 the directory entry's creation time, but by st_atime on exFAT cards, where
  * stat has no creation time; every read moves that, so a full update dated the whole library to
  * its own day (#170, #188). statx reports the creation stamp exFAT keeps (stock's kernel has the
@@ -215,7 +215,7 @@ int picture_size(const char *path, int *w, int *h) {
 }
 
 /* Whether stock's decoder would hold path's whole picture in demo, which the OOM killer would then
- * take (#216): a PNG over 1024 px either way (its reader, 0x5b66f8, expands the image with
+ * take (#216): a PNG over 1024 px either way (its reader, 0x5c8ef8, expands the image with
  * png_read_png before its own 1024 px test) or a progressive JPEG over 1024 px (libjpeg keeps a
  * full-size coefficient buffer at any scale).
  * ponytail: only SOF2, as ffmpeg 4.2 decodes no arithmetic (SOF10) or hierarchical frames; a
@@ -1085,7 +1085,7 @@ static row_t *stock_rows;
 static unsigned stock_n;
 static int album_index(void *r) { return album_in(stock_rows, stock_n, r); }
 /* album_row on the first four columns, then the fifth, the album artist, on the row it added; the
- * stSongInfo copy (0x5b3b1c) duplicates +0x24 as it does the other strings. */
+ * stSongInfo copy (0x5c631c) duplicates +0x24 as it does the other strings. */
 static int split_row(void *a, int n, char **v, char **c) {
     void *dir = P(tools_pdeq_directory, 0);
     unsigned k = deque_size(dir);

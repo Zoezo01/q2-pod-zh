@@ -247,7 +247,7 @@ static void wl_note_tick(unsigned now, unsigned before) {
 
 /* main_loop_queue_event (tools/build.py QUEUE_LEAF): the one way into the UI loop's queue, for every
  * input thread, SyncLink's keys and idle requests alike; full, it drops its oldest event. The touch
- * thread (tslib_run, 0x622d70) posts an event of type 0 for every sample with no pressure while it
+ * thread (tslib_run, 0x6356f0) posts an event of type 0 for every sample with no pressure while it
  * holds no finger down, which the loop hands the window manager as EVT_NONE. Twenty of them would
  * evict a queued release, and the wheel and Centre were dead until a tap (inferred; q2-wheel.log
  * showed thread=0, last=move). They mean nothing, so they are not queued; everything else goes to
@@ -288,7 +288,7 @@ void wheel_sample(int *s, int ret, char *info) {
     if (ret <= 0) return;
     wl_note_frame(s); /* x as it came, before anything judges it */
     if (!s[2]) { /* lifted */
-        /* Stock's lift path (0x625b88) ticks on an x away from its touch-down x, 0 once it has seen
+        /* Stock's lift path (0x638508) ticks on an x away from its touch-down x, 0 once it has seen
          * this touch's lift, per sample and past wheel_post's guard: it only ever sees that x. */
         s[0] = wh_anchor;
         wh_anchor = 0;
@@ -405,7 +405,7 @@ int ringnav_speed(int mode) {
     folder_speed saved = { { 0 }, 0 };
     char path[80], tmp[84];
     /* player_initconfig re-applies speed when hciplayer reconnects after a disconnect; not a user edit. */
-    if (__builtin_return_address(0) == (void *)0x51339c || (unsigned)mode >= 4) {
+    if (__builtin_return_address(0) == (void *)0x51de5c || (unsigned)mode >= 4) {
         playback_speed_start();
         return stock_speed_trampoline(g_playspeed_mode);
     }
@@ -936,7 +936,7 @@ int ringnav_mode(int mode) {
     int initconfig = __builtin_return_address(0) == (void *)INITCONFIG_MODE_RET;
     if (initconfig) {
         /* A new hciplayer has no filter: peq_chain attaches again. With the EQ on, player_initconfig's
-         * own set_equalizer_value (0x5133b8, before this call) has put it in already. */
+         * own set_equalizer_value (0x51de78, before this call) has put it in already. */
         if (!g_equalizer_flag) peq_chained = 0;
     }
     if (s.restoring || initconfig) return stock_mode_trampoline(mode);
@@ -1077,9 +1077,9 @@ static int change_music(int next) {
     *skip = was;
     return result;
 }
-/* on_wm_timer_dialog's skip past a file it can't play (jalr player_next_music, 0x4ea840, which tail-branches
+/* on_wm_timer_dialog's skip past a file it can't play (jalr player_next_music, 0x4f4c04, which tail-branches
  * here with ra restored) is the only Next nobody pressed; its Folder Skip load stamps nothing either. */
-#define UNPLAYABLE_NEXT_RET 0x4ea848
+#define UNPLAYABLE_NEXT_RET 0x4f4c0c
 int ringnav_change(int next) {
     press_natural = __builtin_return_address(0) == (void *)UNPLAYABLE_NEXT_RET;
     int result = change_music(next);
@@ -1120,8 +1120,8 @@ void playback_np(void) {
     if (mclGetPlayStatus() == 3) player_play_pause();
 }
 /* Picks of the playing file reach player_start from each of these; none reads its result. */
-#define PAGE_PICK_RET 0x52cc1c  /* playing_page_init, which opens Now Playing itself */
-#define ALBUM_PLAY_RET 0x4a5d6c /* the album page's play (0x4a5c6c), which stays on its page */
+#define PAGE_PICK_RET 0x53e1cc  /* playing_page_init, which opens Now Playing itself */
+#define ALBUM_PLAY_RET 0x4a5aac /* the album page's play (0x4a97c8), which stays on its page */
 #define ALBUMINFO_PLAY_RET 0x4a9c48
 /* The same row of the same list: nothing starts. SyncLink's (0x51b73c, 0x51b90c), off the UI thread, stays
  * silent, the track playing on. From another list stock loads it, and the poll goes back to the place. Not a
@@ -1239,7 +1239,7 @@ static void reverse_rows(void *queue, unsigned from, unsigned to) {
 }
 /* Play Next or Add: the tracks land at pos+1 (next) or the end, and every queue index moves with
  * them. The stock side (deque, shuffle pool, last pick, previous index, gapless preload) is kept
- * whether or not advanced play is on; the preload closes as mclSetPlayMode @0x5ab29c does, flag -1,
+ * whether or not advanced play is on; the preload closes as mclSetPlayMode @0x5bd6fc does, flag -1,
  * then advanced play's own state follows. Returns the index the first track lands at. */
 unsigned playback_queue_insert(void *queue, void *add, int next) {
     unsigned size = deque_size(queue), n = deque_size(add), pos = (unsigned)M(MCL_POS);
@@ -1638,7 +1638,7 @@ int playback_resumed(void *r) {
     return pending && s.resume_elapsed && (unsigned)M(MCL_POS) == s.resume_pos &&
            fnv(FNV_SEED, P(r, REC_PATH)) == s.resume_key;
 }
-/* Stock Shuffle's next, drawn ahead so Crossfade can ask about the file. Stock's pick (0x5a8120) takes
+/* Stock Shuffle's next, drawn ahead so Crossfade can ask about the file. Stock's pick (0x5ba540) takes
  * the current index out of the pool and sets the position to a random one left there, which stays
  * until it is current: so ringnav_shuffle overrides the position with this draw, a uniform one of the
  * same set. Neither touches the pool. The two records say the queue under it hasn't changed.
@@ -1748,7 +1748,7 @@ int ringnav_checkfw(void *win, void *ctx) {
  * Keep every existing format; TagLib's FileRef already dispatches M4B to MP4. Folder view's
  * listing (toolsLoadDirectory) in the card's Videos folder also takes videos, which a row click
  * hands to books_video; the library scan never does, and no queue keeps them (no_videos). */
-#define LOAD_DIRECTORY_RET 0x5c205c /* toolsLoadDirectory's (build.py AUDIO_EXTENSION_CALLS) */
+#define LOAD_DIRECTORY_RET 0x5d4984 /* toolsLoadDirectory's (build.py AUDIO_EXTENSION_CALLS) */
 extern int folder_videos(void);
 char *ringnav_audio_extension(const char *formats, const char *ext) {
     if (!strcasecmp(ext, ".m4b") || (__builtin_return_address(0) == (void *)LOAD_DIRECTORY_RET &&

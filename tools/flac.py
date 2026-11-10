@@ -1,4 +1,4 @@
-"""Opt-in, checked FLAC experiments for the pinned V1.32 player only."""
+"""Opt-in, checked FLAC experiments for the pinned V1.34 player only."""
 
 EXPERIMENTS = ('sync', 'lpc', 'output')
 EXPORTS = {
@@ -6,19 +6,19 @@ EXPORTS = {
     'lpc': ('flac_lpc32', 'flac_lpc64'),
     'output': ('flac_output_s16i', 'flac_output_s32i', 'flac_output_s16p', 'flac_output_s32p'),
 }
-SYNC_CALLS = (0x5b64a4, 0x5b6558, 0x5b6740, 0x5b67a0, 0x5b6810)
+SYNC_CALLS = (0x5b69c4, 0x5b6a78, 0x5b6c60, 0x5b6cc0, 0x5b6d30)
 # (export, lui address/stock word, addiu address/stock word). Preserve the
 # original function entries, which remain callable fallbacks.
 POINTERS = {
     'lpc': (
-        ('flac_lpc32', 0x40a17c, 0x3c02005c, 0x40a184, 0x2442a9bc),
-        ('flac_lpc64', 0x40a18c, 0x3c02005c, 0x40a190, 0x2442ab3c),
+        ('flac_lpc32', 0x40a1dc, 0x3c02005c, 0x40a1e4, 0x2442aedc),
+        ('flac_lpc64', 0x40a1ec, 0x3c02005c, 0x40a1f0, 0x2442b05c),
     ),
     'output': (
-        ('flac_output_s16i', 0x40a254, 0x3c02005b, 0x40a258, 0x24427e80),
-        ('flac_output_s32i', 0x40a1ec, 0x3c02005c, 0x40a1f0, 0x24428d18),
-        ('flac_output_s16p', 0x40a288, 0x3c02005c, 0x40a28c, 0x24428ba0),
-        ('flac_output_s32p', 0x40a220, 0x3c02005c, 0x40a224, 0x2442a83c),
+        ('flac_output_s16i', 0x40a2b4, 0x3c02005c, 0x40a2b8, 0x244283a0),
+        ('flac_output_s32i', 0x40a24c, 0x3c02005c, 0x40a250, 0x24429238),
+        ('flac_output_s16p', 0x40a2e8, 0x3c02005c, 0x40a2ec, 0x244290c0),
+        ('flac_output_s32p', 0x40a280, 0x3c02005c, 0x40a284, 0x2442ad5c),
     ),
 }
 
@@ -35,7 +35,7 @@ def patch_words(experiments, symbols):
     words = []
     for name in selection(experiments):
         if name == 'sync':
-            words.extend((a, 0x0c10adac, jal(symbols['flac_sync_check'])) for a in SYNC_CALLS)
+            words.extend((a, 0x0c10adc4, jal(symbols['flac_sync_check'])) for a in SYNC_CALLS)
         else:
             for symbol, hi, old_hi, lo, old_lo in POINTERS[name]:
                 target = symbols[symbol]

@@ -21,11 +21,11 @@ from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, 
     UC_MIPS_REG_S0, UC_MIPS_REG_S1, UC_MIPS_REG_S2, UC_MIPS_REG_S3,
     UC_MIPS_REG_S4, UC_MIPS_REG_S5, UC_MIPS_REG_S6, UC_MIPS_REG_S7, UC_MIPS_REG_FP)
 
-STOCK_SHA = '9c3f8c6d01f1ba62392622f6098b06a36b3e4f022a5468eaca6a5803e74f8e11'
-CHECK, CONSUME, RESIDUAL = 0x42b6b0, 0x42b66c, 0x5b6334
-LOCK, UNLOCK, MUTEX = 0xadb580, 0xadb3f0, 0xb10db4
-HEARTBEAT, STOP, FATAL = 0xb10e68, 0xb10e6c, 0xb10e70
-CALLS = (0x5b64a4, 0x5b6558, 0x5b6740, 0x5b67a0, 0x5b6810)
+STOCK_SHA = 'f02ccc4579f0447ee5472dbfa13aab1929704ab154b4e6192e26a7082c780a3e'
+CHECK, CONSUME, RESIDUAL = 0x42b710, 0x42b6cc, 0x5b6854
+LOCK, UNLOCK, MUTEX = 0xadbdd0, 0xadbc40, 0xb11db4
+HEARTBEAT, STOP, FATAL = 0xb11e68, 0xb11e6c, 0xb11e70
+CALLS = (0x5b69c4, 0x5b6a78, 0x5b6c60, 0x5b6cc0, 0x5b6d30)
 STACK, DATA, RETURN = 0x10000000, 0x11000000, 0x12000000
 SAVED = (UC_MIPS_REG_S0, UC_MIPS_REG_S1, UC_MIPS_REG_S2, UC_MIPS_REG_S3,
          UC_MIPS_REG_S4, UC_MIPS_REG_S5, UC_MIPS_REG_S6, UC_MIPS_REG_S7, UC_MIPS_REG_FP)
@@ -103,7 +103,7 @@ class Machine:
         if patched:
             word = 0x0c000000 | ((self.target >> 2) & 0x03ffffff)
             for site in CALLS:
-                assert at(stock, site, 4) == struct.pack('<I', 0x0c10adac)
+                assert at(stock, site, 4) == struct.pack('<I', 0x0c10adc4)
                 self.uc.mem_write(site, struct.pack('<I', word))
         self.uc.hook_add(UC_HOOK_CODE, self.code)
         self.uc.hook_add(UC_HOOK_MEM_READ, self.read)
@@ -293,7 +293,7 @@ def main():
 
     # Specifically pause a consumer between its byte read and clear. A fast check
     # may finish while that consumer owns the mutex: it publishes no new data.
-    for paused_at in (0x42b690, 0x42b694):
+    for paused_at in (0x42b6f0, 0x42b6f4):
         reader.reset(1)
         def pause(m, address):
             if address == paused_at:
@@ -310,10 +310,10 @@ def main():
             assert not reader.held and reader.uc.reg_read(UC_MIPS_REG_V0) == 1
             if m is not None:
                 m.byte(HEARTBEAT, reader.byte(HEARTBEAT))
-        if paused_at == 0x42b694:  # cleared, but not unlocked: slow path waits.
+        if paused_at == 0x42b6f4:  # cleared, but not unlocked: slow path waits.
             patched.on_lock = finish_reader
         assert patched.call(patched.target) == 0
-        if paused_at == 0x42b690:
+        if paused_at == 0x42b6f0:
             assert patched.locks == 0
             finish_reader()
             assert reader.byte(HEARTBEAT) == 0

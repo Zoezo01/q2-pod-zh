@@ -279,9 +279,9 @@ def encode(root):
 # stock string table already has these keys. The Albums tab and page start active (see ARTIST_ALBUMS).
 ARTIST_PAGE = 'localmusic/artistinfo_page.bin'
 ARTIST_TABS = {'btn_track': ('单曲', 'local_allsongs'), 'btn_album': ('专辑', 'album')}
-# Stock init builds the Songs view (0x4adcbc); call the stock Albums tab click handler (0x4ac7ec)
+# Stock init builds the Songs view (0x4af878); call the stock Albums tab click handler (0x4aeae8)
 # instead, which sets the tab state, queries the artist's albums and builds them. Songs stays a tap away.
-ARTIST_ALBUMS = [(0x4aebd0, 0x2739dcbc, 0x2739c7ec), (0x4aebd4, 0x0411fc39, 0x0411f705)]
+ARTIST_ALBUMS = [(0x4b12bc, 0x2739f878, 0x2739c7ec), (0x4b12c0, 0x0411f96d, 0x0411f705)]
 
 
 def artist_tabs(root):
@@ -329,7 +329,7 @@ def home_card(menu, at, row, text):
 
 # Home becomes a list of the stock cards' names, in stock order with Coverflow third,
 # Rockbox before Streaming and one Settings row for Playback and System settings.
-# home_page_init (0x523c84) looks up no widget: its widget_foreach visitor (0x5239b4) binds img_*
+# home_page_init (0x53485c) looks up no widget: its widget_foreach visitor (0x534440) binds img_*
 # clicks and translates label_* by name, and only img_left/img_right reach the slide_menu. Each row's transparent image covers the row, on top of its label, so it takes the
 # tap and is the row's click target for the wheel. The payload binds Coverflow, Rockbox (shown
 # only while the card has it) and Settings, which slides list_view_homeset, hidden until then and
@@ -364,7 +364,7 @@ def home_list(name, rows, g, extra=None, view_name=None):
         views.append(['view', [0, i * g.home_row, HOME_LIST_W, g.home_row], {'name': 'btn_' + row}, [
             ['hscroll_label', [HOME_TEXT_X, 0, HOME_LIST_W - HOME_TEXT_X - HOME_LABEL_END, g.home_row], label, []],
             ['image', [0, 0, HOME_LIST_W, g.home_row], {'name': g.home_lib and HOME_LISTED.get(row) or 'img_' + row, 'clickable': 'true'}, []]]])
-    # The list_view's layout (0x5ea3a4) makes its scroll view vertical only for a mobile scroll bar,
+    # The list_view's layout (0x5fccd4) makes its scroll view vertical only for a mobile scroll bar,
     # which Home has none of, and scroll_view_create leaves it off; the payload navigates only
     # vertical scroll views.
     h = g.home_row * len(views) or 320 - g.bar
@@ -423,7 +423,7 @@ def patch_style(data, audit):
     return bytes(out)
 
 
-# systembar_showface (0x52f610) finds every widget by name, recursively from the bar,
+# systembar_showface (0x5414e0) finds every widget by name, recursively from the bar,
 # and each second re-shows the volume, EQ, BT, synclink and Wi-Fi widgets and resets their text and
 # images, but never their geometry. So widgets iPod hides move off-screen instead of going invisible.
 # The volume number stays hidden: stock already opens dialog/volume_dialog on every wheel change.
@@ -823,7 +823,7 @@ def bigcover_page(root):
 # two-line QS_LABEL_H area in the stock 16px style, top-aligned so single- and two-line labels start
 # on one line, QS_LABEL_GAP under its icon and QS_ROW_GAP above the next row. Brightness becomes a
 # slim QS_BAR track in a QS_TOUCH-high slider (tap or drag anywhere on it, as stock) between the
-# stock dim and bright suns, which keep their images. dialog_statusbar_dialog_init (0x4a0d88)
+# stock dim and bright suns, which keep their images. dialog_statusbar_dialog_init (0x4a23b8)
 # finds these widgets by name and never moves or resizes them.
 QUICK_SETTINGS = 'dialog/statusbar_dialog.bin'
 QS_TOP, QS_ICON, QS_LABEL_GAP, QS_LABEL_H, QS_ROW_GAP, QS_LABEL_W = 20, 60, 6, 40, 12, 80
@@ -1244,8 +1244,8 @@ def patch_code(data, symbols):
 
     # Lookup song handlers loop until Now Playing is on top; animated Back cannot finish
     # until they return. Close each named page synchronously with stock navigator_close.
-    for address, name_slot in ((0x4a6250, 0x468), (0x4ad458, 0x468), (0x526e70, 0x420)):
-        word(address, 0x8f99aeb0, 0x8f99a8f8, 'lookup unwind uses navigator_close')
+    for address, name_slot in ((0x4a7f24, 0x468), (0x4af808, 0x468), (0x537cac, 0x420)):
+        word(address, 0x8f99af00, 0x8f99a8f8, 'lookup unwind uses navigator_close')
         word(address + 4, 0x0320f809, 0x0320f809, 'lookup close call')
         word(address + 8, 0, 0x8fa40000 | name_slot, 'lookup close receives the top window name')
 
@@ -1262,24 +1262,24 @@ def patch_code(data, symbols):
     for name, call in (('stock_row_layout_calls', 'stock_set_row_layout'), ('stock_row_text_calls', 'stock_row_text'), ('stock_row_style_calls', 'stock_row_style')):
         for address, instruction in AUDIT[name]['sites']:
             word(int(address, 16), int(instruction, 16), jal(symbols[call]), AUDIT[name]['purpose'])
-    word(0x522410, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter')
+    word(0x532a2c, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter')
     # Playlist page's Import/Export tiles: no icon (0 wide), the label spans the 164px tile in
-    # stock's centred s_scrlabel_white24c (0x769220) instead of 91px after the icon.
-    for icon, style in ((0x4b2fa0, 0x4b3028), (0x4b30a4, 0x4b3130)):
+    # stock's centred s_scrlabel_white24c (0x77c430) instead of 91px after the icon.
+    for icon, style in ((0x4b56d0, 0x4b5758), (0x4b57e8, 0x4b5874)):
         word(icon, 0x24070032, 0x24070000, 'playlist tile icon width 0')
         word(icon + 0x54, 0x2407005b, 0x240700a4, 'playlist tile label spans the tile')
         word(icon + 0x60, 0x2405003f, 0x24050000, 'playlist tile label at the tile edge')
-        word(style, 0x25058c04, 0x25059220, 'playlist tile label centred')
-    # iPod settings rows: the list_view layouter's layout slot (data, vtable 0x926928 + 8).
+        word(style, 0x2505be04, 0x25059220, 'playlist tile label centred')
+    # iPod settings rows: the list_view layouter's layout slot (data, vtable 0x939ebc + 8).
     word(inc('LIST_VIEW_LAYOUT_SLOT'), inc('LIST_VIEW_LAYOUT'), symbols['ipod_list_layout'],
          'settings lists stack SET_ROW rows and map their children')
     # toolsTimeItoa's formats, as an iPod writes times: 0:02 and 1:02:03, not 00:02 and 01:02:03.
-    for address, old, new in ((0x7778a0, 0x64323025, 0x253a6425), (0x7778a4, 0x3230253a, 0x3a643230),
-                              (0x7778a8, 0x30253a64, 0x64323025), (0x7778ac, 0x00006432, 0),
-                              (0x7778b0, 0x64323025, 0x253a6425), (0x7778b4, 0x3230253a, 0x00643230),
-                              (0x7778b8, 0x00000064, 0)):
+    for address, old, new in ((0x78b5f0, 0x64323025, 0x253a6425), (0x78b5f4, 0x3230253a, 0x3a643230),
+                              (0x78b5f8, 0x30253a64, 0x64323025), (0x78b5fc, 0x00006432, 0),
+                              (0x78b600, 0x64323025, 0x253a6425), (0x78b604, 0x3230253a, 0x00643230),
+                              (0x78b608, 0x00000064, 0)):
         word(address, old, new, 'times without a leading zero')
     # home_page_init's memory-play resume opens Now Playing; outside car mode it runs the page's player_start alone.
-    word(0x523de0, 0x0320f809, jal(symbols['ringnav_boot']),
+    word(0x5349e8, 0x0320f809, jal(symbols['ringnav_boot']),
          'boot resume restores the queue paused and stays on Home')
     return changes

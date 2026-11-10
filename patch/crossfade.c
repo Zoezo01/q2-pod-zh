@@ -145,7 +145,7 @@ static int press_word(void) {
 void press_stamp(void) {
     if (!press_natural && press_word()) *xf.press_file = (int)now_ms() | 1; /* odd: never 0 */
 }
-/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5ad1bc, 0x5ad1d4). A natural start
+/* mclStartPlayer's wired mute and sleep on a start from the idle player (0x5bf634, 0x5bf64c). A natural start
  * skips both, so the old track is heard to its end, and leaves an even mark for ao_init, whose reopen mutes
  * after the drain, or which keeps the PCM open. Only ringnav_next(1) sets press_natural to 2: anything else,
  * or no word to leave the mark in, keeps stock's. */
@@ -473,7 +473,7 @@ int xfade_key(void *top, unsigned key) {
  * (XF_COLD_NS). Each stop moves the count beside the fade, so no tail outlives a stop: status 1 and
  * no file error. An error's status is no stop: stock's dialog timer takes the file away and shows
  * its modal toast, passes running under it, before it plays the next (on_wm_timer_dialog,
- * 0x4ea784). A stop during a toast isn't counted. */
+ * 0x4f4b48). A stop during a toast isn't counted. */
 static int fades_into(void *r) {
     const char *p = P(r, REC_PATH), *e = p ? strrchr(p, '.') : 0;
     unsigned st[36];

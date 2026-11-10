@@ -18,8 +18,8 @@ raw = (out/'hciplayer').read_bytes()
 ps = symbols(out/'peq.elf')
 assert struct.unpack_from('<I', raw, fileoff(raw, EQ_OPEN_SLOT))[0] == ps['peq_open']
 DONE, STUBS, HEAP, STACK = 0x2000000, 0x2800000, 0x3000000, 0x40f0000
-WRITTEN_PTS, LENGTH, MPCTX = 0x44641c, 0xb10e84, 0xaf9e30  # peq_player.c decoded(), LENGTH, MPCTX
-NEXT_FLAG = 0xb10e6c  # up at a skip's uninit, not at a file's end
+WRITTEN_PTS, LENGTH, MPCTX = 0x44619c, 0xb11e84, 0xafae30  # peq_player.c decoded(), LENGTH, MPCTX
+NEXT_FLAG = 0xb11e6c  # up at a skip's uninit, not at a file's end
 
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 u.ctl_set_cpu_model(UC_CPU_MIPS32_24KF)

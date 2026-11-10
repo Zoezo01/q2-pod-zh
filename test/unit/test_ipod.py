@@ -985,8 +985,8 @@ def test_geometry_has_every_value_name():
     assert set(ipod.VALUE_NAMES) - {'scroll', 'np_bar_x', 'np_bar_w'} <= {f.name for f in dataclasses.fields(ipod.Geometry)}
 
 
-TEXT_SITES = {'0x4b0f88': 'pitch', '0x4b0608': 'pitch', '0x4b0fc0': 'body', '0x4b1058': 'text_art',
-              '0x4aa42c': 'text_art', '0x4adfec': 'text_art', '0x4aa4a4': 'text_art_inset', '0x4ae05c': 'text_art_inset'}
+TEXT_SITES = {'0x4b3a98': 'pitch', '0x4b2a60': 'pitch', '0x4b3ad0': 'body', '0x4b3b7c': 'text_art',
+              '0x4ac6a4': 'text_art', '0x4afc74': 'text_art', '0x4ac71c': 'text_art_inset', '0x4afce4': 'text_art_inset'}
 
 
 def test_localclass_sites_are_text():
@@ -1202,27 +1202,27 @@ IMMEDIATES = ipod.immediate_values(ipod.SET0) | {name: SET0_WORDS[name if name i
 
 def code_patches():
     """(address, stock word, patched word, purpose) for each word patch_code changes, in its order."""
-    lookups = [(at + 4 * i, old, new, why) for at, slot in ((0x4a6250, 0x468), (0x4ad458, 0x468), (0x526e70, 0x420))
-               for i, (old, new, why) in enumerate(((0x8f99aeb0, 0x8f99a8f8, 'lookup unwind uses navigator_close'),
+    lookups = [(at + 4 * i, old, new, why) for at, slot in ((0x4a7f24, 0x468), (0x4af808, 0x468), (0x537cac, 0x420))
+               for i, (old, new, why) in enumerate(((0x8f99af00, 0x8f99a8f8, 'lookup unwind uses navigator_close'),
                                                     (0x0320f809, 0x0320f809, 'lookup close call'),
                                                     (0, 0x8fa40000 | slot, 'lookup close receives the top window name')))]
     immediates = [(int(at, 16), int(old, 16), int(old, 16) & 0xffff0000 | (IMMEDIATES[v] if isinstance(v := group['value'], str) else v),
                    group['purpose']) for group in ipod.AUDIT['immediates'] for at, old in group['sites']]
     rows = ipod.AUDIT['row_layout_calls']
-    tiles = [site for icon, style in ((0x4b2fa0, 0x4b3028), (0x4b30a4, 0x4b3130)) for site in (
+    tiles = [site for icon, style in ((0x4b56d0, 0x4b5758), (0x4b57e8, 0x4b5874)) for site in (
         (icon, 0x24070032, 0x24070000, 'playlist tile icon width 0'),
         (icon + 0x54, 0x2407005b, 0x240700a4, 'playlist tile label spans the tile'),
         (icon + 0x60, 0x2405003f, 0x24050000, 'playlist tile label at the tile edge'),
-        (style, 0x25058c04, 0x25059220, 'playlist tile label centred'))]
+        (style, 0x2505be04, 0x25059220, 'playlist tile label centred'))]
     # toolsTimeItoa's two formats, back to back
     times = zip(struct.unpack('<7I', b'%02d:%02d:%02d\0\0%02d:%02d\0\0\0'), struct.unpack('<7I', b'%d:%02d:%02d\0\0\0\0%d:%02d\0\0\0\0\0'))
     return [*lookups, *immediates, *[(int(at, 16), int(old, 16), 0x0c102800, rows['purpose']) for at, old in rows['sites']],
             *[(int(at, 16), int(old, 16), jal, ipod.AUDIT[name]['purpose']) for name, jal in (('stock_row_layout_calls', 0x0c103400), ('stock_row_text_calls', 0x0c103800),
                                                                                          ('stock_row_style_calls', 0x0c103c00)) for at, old in ipod.AUDIT[name]['sites']],
-            (0x522410, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter'), *tiles,
+            (0x532a2c, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter'), *tiles,
             (ipod.inc('LIST_VIEW_LAYOUT_SLOT'), ipod.inc('LIST_VIEW_LAYOUT'), 0x40b000, 'settings lists stack SET_ROW rows and map their children'),
-            *[(0x7778a0 + 4 * i, old, new, 'times without a leading zero') for i, (old, new) in enumerate(times)],
-            (0x523de0, 0x0320f809, 0x0c103000, 'boot resume restores the queue paused and stays on Home')]
+            *[(0x78b5f0 + 4 * i, old, new, 'times without a leading zero') for i, (old, new) in enumerate(times)],
+            (0x5349e8, 0x0320f809, 0x0c103000, 'boot resume restores the queue paused and stays on Home')]
 
 
 def test_patch_code():
@@ -1626,9 +1626,9 @@ def test_branch_out_of_range(target):
 
 
 def test_artist_albums_branch():
-    # The artist page's init: stock's bal builds the Songs view (0x4adcbc); the patch's calls the Albums tab handler (0x4ac7ec).
+    # The artist page's init: stock's bal builds the Songs view (0x4af878); the patch's calls the Albums tab handler (0x4aeae8).
     at, stock, patched = ipod.ARTIST_ALBUMS[1]
-    assert (stock, patched) == (ipod.branch(0x04110000, at, 0x4adcbc), ipod.branch(0x04110000, at, 0x4ac7ec))
+    assert (stock, patched) == (ipod.branch(0x04110000, at, 0x4af878), ipod.branch(0x04110000, at, 0x4aeae8))
 
 
 def program(*words, base=0x400000):

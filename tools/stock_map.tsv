@@ -1,329 +1,329 @@
-# Our names for the stock functions Q2 Pod touches that Shanling leaves unnamed, at stock V1.32's addresses. docs/rebasing.md
+# Our names for the stock functions Q2 Pod touches that Shanling leaves unnamed, at stock V1.34's addresses. docs/rebasing.md
 binary	address	size	name	what
-demo	0x48639c	0xa54	tidal_stream_url_thread	Tidal stream-URL thread: waits for the track flag, fetches playbackinfo for the song id, decodes the manifest, starts the player
-demo	0x4982b8	0x4c	checkfw_update_from_mmc	Starts the firmware update from /mnt/mmc/update.tar and stores its result in the check-firmware state.
-demo	0x49a478	0x84	msginfo_dialog_on_keyup	Swallows keys 0xab, 0xde and 0xdf; on Return (0xaa) runs a helper and quits the message dialog with 0xb.
-demo	0x49aef8	0x45c	search_dialog_widget_init_visit	Per-widget visitor run by the search dialog's init: names tabs, binds Return and tab clicks, sets the edit tip, makes list labels
-demo	0x49b5c0	0xe4	search_load_results	Runs the name search for the current tab kind on the typed text and copies the hits into the search show list.
-demo	0x49ba64	0xec	search_row_image_create	Creates a 50x70 image in a search row and sets the default song, artist, album or genre art by kind
-demo	0x49bb50	0x54	list_into_icon_create	Creates a 50x70 image child of a parent and sets it to the list_into image.
-demo	0x49bba4	0x17c	search_dialog_show_tip	Toggles the search dialog between history/tip view and the result tabs, filling the search edit text
-demo	0x49bf74	0x5e8	search_fill_track_tab	Rebuilds the search dialog's track result list: one row with art, title and artist per result
-demo	0x49d2dc	0x4f4	search_fill_album_tab	Rebuilds the search dialog's album result list: one row with cover and album name per result
-demo	0x49d850	0x47c	search_fill_history_tab	Reads the saved search history file and builds the history rows in the search dialog
-demo	0x49dd4c	0xa4	search_row_name_label_create	Creates the scrolling name label of a search result row and sets its text
-demo	0x49ddf0	0x30c	search_fill_artist_tab	Rebuilds the search dialog's artist result list: one row with image and name per result
-demo	0x49e17c	0x314	search_fill_genre_tab	Rebuilds the search dialog's genre result list: one row with image and name per result
-demo	0x49f3c0	0x20	sortselect_dialog_close	Sets the sort-changed flag and closes the sort-select menu.
-demo	0x49f3e0	0x50	sortselect_dialog_on_keyup	On Return (0xaa) closes the sort-select menu through sortselect_dialog_close and returns 0xb; other keys return 0.
-demo	0x4a0170	0xac	quick_lock	Quick settings' lock tile click: locks the keys.
-demo	0x4a08bc	0xe0	statusbar_dialog_on_pointer_up	Pointer-release handler of the quick settings dropdown: in drop states 1 or 2 with no timer yet, adds the slide timer
-demo	0x4a099c	0x16c	statusbar_dialog_slide_timer	Timer of the quick settings dropdown: moves the dialog 80 px per tick to open or close it, then ends
-demo	0x4a0cc0	0xc8	statusbar_dialog_on_pointer_move	Pointer-move handler of the quick settings dropdown: sets slide direction and drags the dialog with the finger
-demo	0x4a0fc4	0x58	updatemusic_dialog_on_stop	Return and Cancel handler of the library-scan dialog: stops the scan while the done counter is under 3, else quits the dialog.
-demo	0x4a1560	0xf8	updatemusic_dialog_on_timer	Timer of the folder-scan dialog: refreshes progress, and after the scan counter passes 2 stops the animation and quits
-demo	0x4a2038	0x138	volume_dialog_on_keyup	Key-up handler of the volume dialog: wheel ticks step the volume (limit 100, max volume) and save it, Return closes
-demo	0x4a22b0	0x2c	localmusic_album_cover_pause	Album page scroll handler: sets the album-cover worker's task state to 2 (paused) if it is not already.
-demo	0x4a2b70	0x270	localmusic_album_table_reload	Rebuilds the album table: clears rows, row height 78 (list) or 160 (3-wide grid), binds row callbacks, sets row count, starts cover task.
-demo	0x4a37f8	0x2ac	localmusic_album_set_row_cover	Sets one album row's cover image: md5 of the album name, picks .sldp small or large jpg if cached, else the default album image.
-demo	0x4a4158	0x200	localmusic_album_page_on_return	Album page return handler: reloads or keeps the list, refreshes row count and cover tasks, then re-requests covers.
-demo	0x4a4358	0xb4	localmusic_album_page_hook_scroll_events	On a widget whose name starts with t, registers handlers for events 0x14e and 0x14f (scroll end).
-demo	0x4a440c	0x134	localmusic_album_on_scroll_end	Album table scroll-end: frees images when memory is low, and if the first visible row changed, restarts the cover task from there.
-demo	0x4a4ae8	0xb6c	localmusic_album_on_prepare_row	Builds the album table's row widgets: list rows (365x78, cover, name, artist) or grid rows of three 110x160 cover cells.
-demo	0x4a5c6c	0x1a0	localmusic_albuminfo_play_all	Album page play: loads the album's song list from the show list, starts the first playable track or shows a not-found message
-demo	0x4a5ea4	0x41c	localmusic_albuminfo_song_row_on_click	Click on an album song row: in multi-select mode toggles the tick, otherwise loads the list and starts that track
-demo	0x4a62c0	0x528	localmusic_albuminfo_song_row_create	Builds one song row of the album page: button, selection image, title and artist labels, playing colour, click binding
-demo	0x4a67e8	0x810	localmusic_albuminfo_view_build	Rebuilds the album page: navbar (back, home, play all, multi-select, now-playing gif) and the song rows
-demo	0x4a7220	0x248	localmusic_albuminfo_load_cover	Loads the album page's big cover from the .sldp cache by md5 of the album, falling back to default_album_big
-demo	0x4a7b90	0x2c	localmusic_albuminfo_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is.
-demo	0x4a7e54	0x818	localmusic_songs_navbar_build	Rebuilds the Songs page's navbar and action bar children: label, play-all and order images, back, home, multi-select
-demo	0x4a8838	0x2c0	localmusic_songs_row_on_click	Click on a Songs table row: in multi-select mode toggles the tick, otherwise loads the list and starts that song
-demo	0x4a8af8	0x2b8	localmusic_songs_table_init	Sets up the Songs page's table view: create/prepare/load callbacks, row count, scrollbar, navbar and empty hint
-demo	0x4a90e4	0x36c	localmusic_songs_row_bind	Fills one Songs row from its record: title, artist ('Unknown Artist' when empty), art, playing colours
-demo	0x4a95a0	0x210	localmusic_allmusic_page_on_return	Songs page return handler: reloads the list (0x4a969c) or keeps it (0x4a9744), then rebuilds cover tasks.
-demo	0x4a9a54	0xf4	localmusic_songs_scroll_load_covers	Frees image memory when low, and when the scroll offset moves to a new row (offset/78) starts the cover task for the visible rows
-demo	0x4a9b48	0x19c	localmusic_songs_play_all	Plays the first song of the show list: loads the list, starts the player, or shows a not-found message.
-demo	0x4aa2cc	0x42c	localmusic_songs_row_pool_create	Creates the Songs table's native row pool: list items with image, name and artist labels
-demo	0x4aab40	0x2c	localmusic_artistinfo_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is.
-demo	0x4aad10	0x57c	localmusic_tab_navbar_build	Rebuilds a Local Music tab's navbar (back, home, multi-select, now-playing gif) for the artist and similar pages
-demo	0x4ab6b0	0x318	localmusic_artistinfo_albums_on_scroll_end	Artist albums list handler: finds visible rows from the scroll position and builds each row's cover name and path for the cover queue.
-demo	0x4ac084	0x768	localmusic_artistinfo_albums_fill	Fills the artist page Albums tab: a three-tile grid of album covers, names and playing marks per row.
-demo	0x4ac7ec	0x84	localmusic_artistinfo_albums_tab_on_click	Runs the artist page's Albums tab click: sets the view flag and calls the tab helper.
-demo	0x4ad0b4	0x414	localmusic_artistinfo_track_on_click	Click handler for an artist-page track row: looks up the song and plays it (or marks it in select mode).
-demo	0x4ad4c8	0xc8	localmusic_artistinfo_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop.
+demo	0x4870ac	0xa54	tidal_stream_url_thread	Tidal stream-URL thread: waits for the track flag, fetches playbackinfo for the song id, decodes the manifest, starts the player
+demo	0x499558	0x4c	checkfw_update_from_mmc	Starts the firmware update from /mnt/mmc/update.tar and stores its result in the check-firmware state.
+demo	0x49b7d8	0xa0	msginfo_dialog_on_keyup	Swallows keys 0xab, 0xde and 0xdf; on Return (0xaa) runs a helper and quits the message dialog with 0xb.
+demo	0x49c26c	0x45c	search_dialog_widget_init_visit	Per-widget visitor run by the search dialog's init: names tabs, binds Return and tab clicks, sets the edit tip, makes list labels
+demo	0x49c934	0xe4	search_load_results	Runs the name search for the current tab kind on the typed text and copies the hits into the search show list.
+demo	0x49cdd8	0xec	search_row_image_create	Creates a 50x70 image in a search row and sets the default song, artist, album or genre art by kind
+demo	0x49cec4	0x54	list_into_icon_create	Creates a 50x70 image child of a parent and sets it to the list_into image.
+demo	0x49cf18	0x17c	search_dialog_show_tip	Toggles the search dialog between history/tip view and the result tabs, filling the search edit text
+demo	0x49d2e8	0x5fc	search_fill_track_tab	Rebuilds the search dialog's track result list: one row with art, title and artist per result
+demo	0x49e664	0x508	search_fill_album_tab	Rebuilds the search dialog's album result list: one row with cover and album name per result
+demo	0x49ecd4	0x47c	search_fill_history_tab	Reads the saved search history file and builds the history rows in the search dialog
+demo	0x49f1d0	0xa4	search_row_name_label_create	Creates the scrolling name label of a search result row and sets its text
+demo	0x49f274	0x320	search_fill_artist_tab	Rebuilds the search dialog's artist result list: one row with image and name per result
+demo	0x49f614	0x328	search_fill_genre_tab	Rebuilds the search dialog's genre result list: one row with image and name per result
+demo	0x4a0890	0x20	sortselect_dialog_close	Sets the sort-changed flag and closes the sort-select menu.
+demo	0x4a0bd4	0x50	sortselect_dialog_on_keyup	On Return (0xaa) closes the sort-select menu through sortselect_dialog_close and returns 0xb; other keys return 0.
+demo	0x4a17a0	0xac	quick_lock	Quick settings' lock tile click: locks the keys.
+demo	0x4a1eec	0xe0	statusbar_dialog_on_pointer_up	Pointer-release handler of the quick settings dropdown: in drop states 1 or 2 with no timer yet, adds the slide timer
+demo	0x4a1fcc	0x16c	statusbar_dialog_slide_timer	Timer of the quick settings dropdown: moves the dialog 80 px per tick to open or close it, then ends
+demo	0x4a22f0	0xc8	statusbar_dialog_on_pointer_move	Pointer-move handler of the quick settings dropdown: sets slide direction and drags the dialog with the finger
+demo	0x4a25f4	0x58	updatemusic_dialog_on_stop	Return and Cancel handler of the library-scan dialog: stops the scan while the done counter is under 3, else quits the dialog.
+demo	0x4a2bb4	0xf8	updatemusic_dialog_on_timer	Timer of the folder-scan dialog: refreshes progress, and after the scan counter passes 2 stops the animation and quits
+demo	0x4a3688	0x144	volume_dialog_on_keyup	Key-up handler of the volume dialog: wheel ticks step the volume (limit 100, max volume) and save it, Return closes
+demo	0x4a3910	0x2c	localmusic_album_cover_pause	Album page scroll handler: sets the album-cover worker's task state to 2 (paused) if it is not already.
+demo	0x4a4484	0x3e0	localmusic_album_table_reload	Rebuilds the album table: clears rows, row height 78 (list) or 160 (3-wide grid), binds row callbacks, sets row count, starts cover task.
+demo	0x4a525c	0x2ac	localmusic_album_set_row_cover	Sets one album row's cover image: md5 of the album name, picks .sldp small or large jpg if cached, else the default album image.
+demo	0x4a5bbc	0x17c	localmusic_album_page_on_return	Album page return handler: reloads or keeps the list, refreshes row count and cover tasks, then re-requests covers.
+demo	0x4a5d38	0xb4	localmusic_album_page_hook_scroll_events	On a widget whose name starts with t, registers handlers for events 0x14e and 0x14f (scroll end).
+demo	0x4a5dec	0x134	localmusic_album_on_scroll_end	Album table scroll-end: frees images when memory is low, and if the first visible row changed, restarts the cover task from there.
+demo	0x4a6944	0xbbc	localmusic_album_on_prepare_row	Builds the album table's row widgets: list rows (365x78, cover, name, artist) or grid rows of three 110x160 cover cells.
+demo	0x4a97c8	0x1a0	localmusic_albuminfo_play_all	Album page play: loads the album's song list from the show list, starts the first playable track or shows a not-found message
+demo	0x4a7b78	0x41c	localmusic_albuminfo_song_row_on_click	Click on an album song row: in multi-select mode toggles the tick, otherwise loads the list and starts that track
+demo	0x4a7f94	0x550	localmusic_albuminfo_song_row_create	Builds one song row of the album page: button, selection image, title and artist labels, playing colour, click binding
+demo	0x4a84e4	0x8e8	localmusic_albuminfo_view_build	Rebuilds the album page: navbar (back, home, play all, multi-select, now-playing gif) and the song rows
+demo	0x4a8ff4	0x248	localmusic_albuminfo_load_cover	Loads the album page's big cover from the .sldp cache by md5 of the album, falling back to default_album_big
+demo	0x4a9b70	0x2c	localmusic_albuminfo_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is.
+demo	0x4a9de8	0x818	localmusic_songs_navbar_build	Rebuilds the Songs page's navbar and action bar children: label, play-all and order images, back, home, multi-select
+demo	0x4aab84	0x2c0	localmusic_songs_row_on_click	Click on a Songs table row: in multi-select mode toggles the tick, otherwise loads the list and starts that song
+demo	0x4aa7f4	0x310	localmusic_songs_table_init	Sets up the Songs page's table view: create/prepare/load callbacks, row count, scrollbar, navbar and empty hint
+demo	0x4ab178	0x36c	localmusic_songs_row_bind	Fills one Songs row from its record: title, artist ('Unknown Artist' when empty), art, playing colours
+demo	0x4ab634	0x210	localmusic_allmusic_page_on_return	Songs page return handler: reloads the list (0x4a969c) or keeps it (0x4a9744), then rebuilds cover tasks.
+demo	0x4abae8	0xf4	localmusic_songs_scroll_load_covers	Frees image memory when low, and when the scroll offset moves to a new row (offset/78) starts the cover task for the visible rows
+demo	0x4abeb0	0x19c	localmusic_songs_play_all	Plays the first song of the show list: loads the list, starts the player, or shows a not-found message.
+demo	0x4ac530	0x440	localmusic_songs_row_pool_create	Creates the Songs table's native row pool: list items with image, name and artist labels
+demo	0x4acdd0	0x2c	localmusic_artistinfo_cover_pause	Sets the album cover worker task state to 2 (paused) unless it already is.
+demo	0x4acfc0	0x5b4	localmusic_tab_navbar_build	Rebuilds a Local Music tab's navbar (back, home, multi-select, now-playing gif) for the artist and similar pages
+demo	0x4ad998	0x318	localmusic_artistinfo_albums_on_scroll_end	Artist albums list handler: finds visible rows from the scroll position and builds each row's cover name and path for the cover queue.
+demo	0x4ae36c	0x77c	localmusic_artistinfo_albums_fill	Fills the artist page Albums tab: a three-tile grid of album covers, names and playing marks per row.
+demo	0x4aeae8	0x138	localmusic_artistinfo_albums_tab_on_click	Runs the artist page's Albums tab click: sets the view flag and calls the tab helper.
+demo	0x4af464	0x414	localmusic_artistinfo_track_on_click	Click handler for an artist-page track row: looks up the song and plays it (or marks it in select mode).
+demo	0x4b0374	0xc8	localmusic_artistinfo_timer_start	Adds the 500 ms page timer once, storing its id in the timer_idex prop.
 demo	0x4ad7c0	0x178	localmusic_artistinfo_cover_on_timer	Timer tick: frees images on low memory, then asks the cover worker for the rows now in view when the scroll offset changed.
-demo	0x4adcbc	0x9b0	localmusic_artistinfo_songs_fill	Fills the artist page Songs tab: one row per track with number, title, artist, playing gif and select mark.
-demo	0x4ae6ec	0x2e4	localmusic_artistinfo_page_on_foreground	Artist page handler bound by its page init: clears multi-select, reloads the artist list only if the class changed, refreshes tabs.
-demo	0x4afc14	0x364	class_icon	Sets a category row's picture: the head for Artists, a genre icon, else the .downpic art.
-demo	0x4b0584	0xf4	localmusic_localclass_page_on_scroll	Works out the first visible row from the scroll offset (divisor 0x78) and queues covers when it changes.
-demo	0x4b0bc0	0x33c	localmusic_localclass_row_bind	Binds one Artists/Composers/Genres row: select mark, class icon, name and playing gif for the current deque item.
-demo	0x4b0efc	0x28c	localmusic_localclass_row_build	Builds a batch of empty Artists/Composers/Genres rows: select image, icon, name label and playing gif.
+demo	0x4af878	0xa7c	localmusic_artistinfo_songs_fill	Fills the artist page Songs tab: one row per track with number, title, artist, playing gif and select mark.
+demo	0x4b066c	0x2e4	localmusic_artistinfo_page_on_foreground	Artist page handler bound by its page init: clears multi-select, reloads the artist list only if the class changed, refreshes tabs.
+demo	0x4b2268	0x364	class_icon	Sets a category row's picture: the head for Artists, a genre icon, else the .downpic art.
+demo	0x4b29dc	0xf4	localmusic_localclass_page_on_scroll	Works out the first visible row from the scroll offset (divisor 0x78) and queues covers when it changes.
+demo	0x4b36d0	0x33c	localmusic_localclass_row_bind	Binds one Artists/Composers/Genres row: select mark, class icon, name and playing gif for the current deque item.
+demo	0x4b3a0c	0x2a0	localmusic_localclass_row_build	Builds a batch of empty Artists/Composers/Genres rows: select image, icon, name label and playing gif.
 demo	0x4b1310	0x4c	localmusic_playlist_on_return_keyup	Playlists page key-up handler: Return (0xaa) runs on_return_onclick and returns 0xb; other keys pass.
-demo	0x4b1438	0x580	localmusic_playlist_navbar_build	Rebuilds the Playlists navbar: return, add, edit, home and back-to-playing, or select-all, delete and done in select mode.
-demo	0x4b19b8	0xd0	localmusic_playlist_edit_on_click	Edit button: enters multi-select mode, rebuilds the navbar and shows the row select boxes.
-demo	0x4b1a88	0x48	localmusic_playlist_add_on_click	Add button: opens the add-playlist dialog unless the add state is already set.
-demo	0x4b1ad0	0xb8	localmusic_playlist_done_on_click	Done button: leaves multi-select, clears selections, hides the select boxes and rebuilds the navbar.
-demo	0x4b1b88	0xac	localmusic_playlist_select_all_on_click	Select All button: toggles the all-select flag, the all-choice image and every row's select box.
-demo	0x4b1d24	0x3b0	localmusic_playlist_row_on_click	Click on a playlist row: plays or opens it, toggles its mark in select mode, or runs the picker flow.
-demo	0x4b23c0	0x168	localmusic_playlist_delete_on_click	Delete button: confirms with a dialog, deletes the selected playlists and toasts success or failure.
-demo	0x4b2528	0x1a8	localmusic_playlist_export_on_click	Export button: confirms, exports the playlists and toasts a result message.
-demo	0x4b26d0	0x194	localmusic_playlist_import_on_click	Import button: confirms, imports playlists, sets a reload flag and toasts a result message.
-demo	0x4b2864	0x548	localmusic_playlist_row_build	Builds Playlists rows: cover, name, track count line and the More dots, one per deque item.
-demo	0x4b2dac	0x3d4	playlist_rebuild	Rebuilds the Playlists page's rows: import, export, then one per playlist; run by its init and its reload.
-demo	0x4b3180	0x11c	localmusic_playlist_page_reload	Page handler: resets select flags, rebuilds the playlist rows and restores the scroll offset.
-demo	0x4b35cc	0x210	playlist_delete_click	Remove from Playlist: confirms, deletes the song from the playlist and closes the page.
-demo	0x4b4300	0x48	playset_bootvol_on_value_changed	Saves the boot volume to PLAYSET BOOTVOLUME when the slider value has changed.
-demo	0x4b45a8	0x7c	playset_bootvol_add_on_click	Raises the boot volume by one up to 100, saves it and refreshes the page.
-demo	0x4b4624	0x7c	playset_bootvol_dec_on_click	Lowers the boot volume by one down to 0, saves it and refreshes the page.
-demo	0x4b48f4	0x74	playset_bootvol_on_value_changing	Takes the slider value while it drags, if at most 100, and refreshes the page.
-demo	0x4b9364	0x45c	playset_playset_row_on_click	Playback settings row click: switches on the row index to open a sub-page or toggle gapless, cover mode, folder cover or folder jump.
-demo	0x4bc274	0x3e8	systemset_about_row_build	Builds one About page row (Model, Firmware and the others) with title and value label and binds its click.
-demo	0x4bc774	0x98	systemset_about_row_on_click	About row click: on row 6 rebuilds the serial-number QR image and opens the showsn dialog.
-demo	0x4bcd1c	0x304	timezone_row	Builds row i of the automatic time page: the switch at 0, a time zone with its tick after it.
-demo	0x4bd020	0x218	systemset_timezone_list_build	Rebuilds the auto-time page list: the auto-sync row, then a caption and one timezone row per zone when auto sync is on.
-demo	0x4bd350	0x1c4	systemset_timezone_row_on_click	Row click: row 0 toggles auto time sync, any other row picks that timezone, updates the marks and saves it.
-demo	0x4be61c	0x378	btmenu_device_row_build	Builds a paired Bluetooth device row: icon, name and connecting/connected/paired state.
-demo	0x4be994	0x3c4	btmenu_setting_row_build	Builds one Bluetooth page head row by index: switch, local name, quality line or search.
-demo	0x4bee90	0x2d4	btmenu_rows	Rebuilds the Bluetooth page's list: the setting rows, then the paired and the found devices.
-demo	0x4bf2d4	0x36c	btmenu_item_on_click	Click on a Bluetooth device row: checks link state, finds the device by row index and connects or reports an error toast.
-demo	0x4c0f6c	0x38c	systemset_datetime_row_build	Builds the Date and Time rows (auto sync, manual, 24 hour) with their switch images.
-demo	0x4c19bc	0x2a8	systemset_display_row_build	Builds one Display settings row: icon, label and arrow.
-demo	0x4c2994	0x2b0	fwupdate_tf	System Update's TF card row: starts stock's update from the card.
-demo	0x4c2fac	0x7c	systemset_fwupdate_row_on_click	System Update row click: atoi of the row name, 0 starts the TF card update, 1 the Shanling server update.
-demo	0x4c3140	0x25c	systemset_fwupdate_row_build	Builds one System Update row, its button named by the row index.
-demo	0x4c3cb4	0x100	keylock_rows	Rebuilds the Key lock page's rows in scroll_view_keylock.
-demo	0x4c43e4	0x344	systemset_language_row_build	Builds one language row with its select image.
-demo	0x4c6728	0x198	netservice_row	Network service's row click: DLNA, AirPlay or Wi-Fi transfer by the row.
-demo	0x4c9134	0x3e0	screensaver_rows	Rebuilds the Lock screen page's rows and its picture grid.
-demo	0x4cbcc4	0x470	systemset_sysset_row_build	Builds one System settings row, with switch images for car mode and key tone.
-demo	0x4cc134	0x19c	systemset_sysset_item_on_click	Click on a System settings row: indexes the row and jumps through a 13-entry table to that row's action.
-demo	0x4ccc70	0x768	wifimenu_rows_build	Rebuilds the Wi-Fi page list: switch row, scan results with signal icons, add network.
-demo	0x4d0c54	0x14c	testmode_test_key_play_wav	Test-key page action: in output mode 4 stops playback and closes the page, else loads /mnt/mmc and plays test1.wav.
-demo	0x4d16b4	0x290	btrecv_info_labels_update	Fills label_title and label_artist from the Bluetooth receive info and lyric buffer, with the play time.
-demo	0x4ead50	0x1a08	navigator_create_page_by_name	Opens the named window and dispatches by page-name string to the matching page or dialog init.
-demo	0x4ef600	0x88	btctl_prompt_callback	Bluetooth prompt callback: on prompt 5 stores the formatted text in the prompt info and returns 1; others return 0.
-demo	0x4f1a50	0x200	openbluetooth_device_status_cb	Bluetooth device-status callback registered by openBluetooth: events 3 to 9 update the link list and set the link-ready flag.
-demo	0x4f2068	0x344	bluetooth_link_thread	Link thread started by bluetoothLink: pairs, connects or disconnects the last listed device, polling its status for up to 15 s.
-demo	0x4fb880	0x24	song_track_order_less	Comparator: sets the output to 1 when the first song sorts before the second by disc, then track number.
-demo	0x4fb8b8	0x370	db_song_row_callback	SQLite row callback: builds a song record from a row and pushes it onto the result deque.
-demo	0x4fbc28	0x16c	db_albumartist_row_callback	SQLite row callback for GetAllAlbumArtist: pushes a record of the album-artist name (id from column 0) onto the result deque.
-demo	0x4fc324	0x22c	album_row	getAllAlbum's sqlite3_exec callback: id, album, artist and file to a record on the deque.
-demo	0x51fdcc	0x1ec	bigcover_page_set_cover	Picks the cover file (coverpic, externpic, tidal or default) by cover type and sets it on img_bigcover.
-demo	0x520064	0x88	bigcover_page_on_timer	Enlarged Art timer: when any of three cover-finish flags is set, clears them all and runs the finish path.
-demo	0x52176c	0x178	folder_refresh	Rebuilds folder_page's navbar and table from the show list; run by its init and on going up.
-demo	0x5218e4	0x240	folder_page_go_up	Folder page back action: steps up a folder and refreshes, or closes the page at the top, clearing .downpic fd_ covers.
-demo	0x521bc4	0x3ac	folder_click	folder_page's row click: enters a folder, or queues the folder and plays the file.
-demo	0x522304	0x16c	folder_row_set_name	Sets a folder row's name label and style, red when the file or folder is playing.
-demo	0x522858	0x110	folder_table_scroll_covers	Folder table scroll handler: frees cached images when memory is low and loads covers for the row at yoffset.
-demo	0x523038	0x2f8	folder_row_pool_init	Folder page's native row-pool constructor, laying out each row's widgets; called by folder_refresh.
-demo	0x5239b4	0x2d0	home_page_bind_widget	widget_foreach visitor of home_page_init: binds img_* clicks and translates label_* by widget name.
-demo	0x524090	0xdc	localmusic_page_on_background	Library page background handler: removes the play gif's timer stored in timer_idex.
-demo	0x5241c4	0x38	stock_search	Library's Search click: opens dialog/search_dialog.
-demo	0x5241fc	0x110	localmusic_row_on_click	Shared Library row click: atoi of the button name selects the page to open.
-demo	0x524f20	0x5f8	onlinematching_save_cover_lyric	Accept of Download Cover and Lyrics: copies the chosen cover and lyric into /mnt/mmc/.downpic and sets the cover info.
-demo	0x526b74	0x374	playerjumpinfo_track_on_click	Track row click of the album info page: toggles multi-select or loads the song list and opens playing_page.
-demo	0x52721c	0x36c	songlist_row_on_load_data	Fills a song list row: name and artist labels, cover image, red style when the song is playing.
-demo	0x527880	0xf4	music_table_scroll_covers	Music table scroll handler: frees cached images when memory is low and loads covers for the row at yoffset.
-demo	0x527a34	0x394	onlinematching_table_on_create_row	Table create-row callback: builds rows of a 365x78 container with a 335x70 child and sub-images up to the requested count.
-demo	0x5281f8	0x19c	playermore_online	More's Download Cover and Lyrics row: opens the online matching page for the playing track.
-demo	0x528394	0x14c	playermore_album_info_on_click	Now Playing More row Album info: opens playerjumpinfo_page for the playing record, or shows msg_notalbuminfo.
-demo	0x528a70	0x1a4	playermore_row_on_click	Row click of Now Playing's More page: atoi of the button name picks the action from the kinds table.
-demo	0x5294b4	0x248	playerqueue_row_on_load_data	Fills a Now Playing queue row: name label, with the playing row styled red.
-demo	0x529858	0x110	playerqueue_row_on_click	Queue row click: starts the tapped row through player_start_queue.
-demo	0x529a0c	0x19c	playerqueue_table_on_create_row	Table create-row callback: builds queue rows (365x78 container, 335x70 and 315x70 children) up to the requested count.
-demo	0x529df0	0x30	playing_page_on_wheel_key	Sets a flag byte when the event key is 222 or 223, then returns 0.
-demo	0x529f0c	0x35c	playing_page_lyrics_rebuild_rows	Rebuilds scroll_lrc's lyric row labels with their lrc_time properties.
-demo	0x52a268	0xcc	ab_x	An A-B marker's x on Now Playing's bar for a time.
-demo	0x52a334	0x1d4	playing_page_update_ab_markers	Shows and positions Now Playing's A-B repeat markers.
-demo	0x52a508	0x964	np_info	Fills Now Playing's info page labels from the playing track.
-demo	0x52ae6c	0x268	playing_page_bind_widget	widget_foreach visitor of playing_page_init: binds handlers by widget name (img_* and others).
-demo	0x52b154	0x1d0	playing_page_fav_on_click	Click of img_fav on Now Playing: toggles My Fav or Tidal fav, swaps the heart image, or shows not-supported.
-demo	0x52b6f4	0x908	playing_page_update	Now Playing's periodic page update: labels, slider, times, heart, lyrics and info page.
-demo	0x52bffc	0x118	playing_page_on_timer	Now Playing's 250 ms timer callback: runs the page update and counts down the Enlarged Art countdown.
-demo	0x52c1dc	0x6c	playing_page_resume_timer	Handler registered by playing_page_init: sets a state flag, refreshes the page, resets the 40-tick countdown and restarts the timer.
-demo	0x52c248	0x11c	playing_page_on_keyup_seek	Now Playing's key-up handler: Return calls on_return_onclick, keys 222/223 end a seek via slider_play and restart the timer.
-demo	0x52c364	0x298	playing_page_commit_seek	Applies a seek or an A-B repeat point: seeks the player, sets the repeat point and shows a toast for the result.
-demo	0x52c5fc	0x38	playing_page_on_progress_release	Does nothing unless the seek state is 2, then calls the seek commit function.
-demo	0x52c754	0x1fc	playing_page_on_keydown_seek	Now Playing's key-down handler: keys 222/223 step the slider_play position by 5 s and update label_playtime.
-demo	0x52c950	0x138	playing_page_on_progress_drag	On a progress drag updates the time text from the slider value and sets the seek state to 2, clearing the timer.
-demo	0x52d474	0x3d0	saverscreen_battery_timer	Lock screen refresh: updates the battery label, icon and bar, the track info and the clock on the saver screen.
-demo	0x52d844	0x1c0	saver_cover	Sets the lock screen's img_playcover from the playing track.
-demo	0x52da04	0x16c	saverscreen_page_on_timer	Screensaver page timer tick: counts a delay down, redraws the saver page and cover, then returns repeat.
-demo	0x52de34	0xf4	specfolder_table_setup	Sets up specfolder_table_client: row height, prepare/load/create-row callbacks, row count from get_specfoldersize.
-demo	0x52e0ac	0x238	specfolder_click	Scan Folders' row click: opens the folder, or ticks it.
-demo	0x52e2e4	0xec	specfolder_row_load_name	Fills a specfolder row's scrolling label with the folder name from get_specfoldername, 1500 ms scroll delay.
-demo	0x52e640	0x294	specfolder_table_on_create_row	Creates the rows of the special-folder table with a 78 px row height, child images and labels.
-demo	0x52ec40	0xdc	stream_page_on_background	Streaming page background handler: removes the page's timer stored in timer_idex.
-demo	0x52ee8c	0x150	stream_row	Streaming's row click: atoi of the button's name picks the service.
-demo	0x530abc	0x218	usbmode_page_on_timer	USB mode page timer: shows the USB face, tracks link and mode changes, updates the DAC rate display.
-demo	0x5a7e88	0x298	mcl_reply_take_by_key	Finds a hciplayer reply by key in the reply deque under its mutex, removes it and returns a copy of its text, or 0.
-demo	0x5a8120	0x378	mcl_shuffle_pick	Picks the next or previous song in Shuffle from the shuffled deque, refilling it when it runs out.
-demo	0x5a8498	0x1f0	mcl_usb_audio_find_volume_ctls	Opens an ALSA hctl and records the numids of elements named Playback Volume.
-demo	0x5a8688	0x1f8	mcl_request_player_status	Sends {player-status\request} to hciplayer and polls up to 10 times for the reply, returning the state parsed.
-demo	0x5a8948	0x2d4	mcl_open_preload	Sends hciplayer {set-gapless} with the next URL so it preloads the track.
-demo	0x5a8c1c	0x138	mcl_preload	mclAutoChange's gapless step: finds the next track and has mcl_open_preload send it.
-demo	0x5a9718	0xb4c	mcl_parse_lrc_file	Parses a .lrc file into the lyric deque, converting UTF-16 or GB18030 with iconv and keeping per-line times.
-demo	0x5ab554	0xa4	mcl_send_mqa_decode_mode	Sends {mcl-mqadecodemode\N} to hciplayer; nothing calls it.
-demo	0x5ace14	0x42c	mcl_send_play_url	Shared player start: mutes and waits for wired DACs, sends set-songurl or set-nexturl to hciplayer.
-demo	0x5b31b8	0x88	albumcover_task_destroy	Destroy function of the 12-byte album cover task type: frees its two strings and zeroes it.
-demo	0x5b390c	0x124	albumcover_task_copy	Copy function for a 12-byte album cover task: frees old name and path, duplicates the source's strings, copies flags.
-demo	0x5b3b1c	0x484	stsonginfo_copy	Copy function for an stSongInfo row: frees old string fields and duplicates the source's strings and numbers.
-demo	0x5b5a30	0x10c	tools_fix_kana_combining_marks	Merges UTF-8 combining voiced/semi-voiced marks (E3 82 99/9A) into the preceding kana and removes the mark.
-demo	0x5b66f8	0x3ac	png_load_file	Reads a PNG file with libpng into row pixels; rejects images over 1024 px and unsupported color types.
-demo	0x5b9d40	0x918	library_name_cmp_pinyin	Name comparator for sorted library lists that converts names to pinyin; used when the flag at 0xa3bf4d is clear.
-demo	0x5ba658	0x884	library_name_cmp	Name comparator for sorted library lists used when the flag at 0xa3bf4d is set; trims both names before comparing.
-demo	0x5c02f4	0x1264	tools_parse_cue_file	Parses a .cue sheet (FILE, TRACK, TITLE, PERFORMER, INDEX 01, REM) into song entries, converting encodings with iconv.
-demo	0x5c29bc	0x40	tools_directory_count	Reloads the directory list with toolsLoadDirectory, then returns the size of the directory deque.
-demo	0x5c2c8c	0x6c	tools_directory_walk	Recursively walks a directory deque, descending into subdirectories and building each path.
-demo	0x5c38c8	0xb7c	tools_scan_folder_list	Library scan folder walk: lists a folder, skips system dirs, handles .cue files, queues songs.
-demo	0x5c73e4	0x7e0	tools_insert_song_to_db	Reads a song tags and inserts it into the song table inside a BEGIN/COMMIT transaction.
-demo	0x5c9efc	0x278	table_client_load_rows	Sets each virtual table row index, shows and moves it, and calls the page on_load_data callback.
-demo	0x5caeac	0x580	table_view_on_event	table_view event handler: switch over pointer and key events, ensures children on window open.
-demo	0x5e8334	0x9c	hscroll_label_inner_width	Text area width of a scrolling label: the cached width if set, else its width less margin_left and margin_right.
-demo	0x5e83d0	0xc8	hscroll_label_text_edge_x	Returns the label's scroll offset plus its left or right text edge, using the margin_left and margin_right styles.
-demo	0x5e8828	0x70	hscroll_label_on_delay_timer	Delay timer callback: clears the label's waiting flag, starts scrolling and removes the timer.
-demo	0x5e8914	0x1e4	hscroll_label_on_timer_tick	Scroll timer tick: stops an unfocused only_focus label, steps the scroll, restarts after the lull.
-demo	0x5e8af8	0x74	hscroll_label_defaults	Resets a scrolling label timing and scroll state fields to their defaults (lull 3000, delay 5000).
-demo	0x5e8e6c	0x52c	hscroll_label_on_paint_self	Paint of an hscroll label: clips and draws the text at the scroll offset.
-demo	0x5e9eb4	0xb8c	children_layouter_list_view_layout	Lays out a list_view rows in its scroll view, sizing each row and setting virtual size and scroll bar.
-demo	0x5eb6f0	0x160	list_item_paint_children	Paints a row visible children, culling those outside the canvas clip rect.
-demo	0x5ec070	0xc4	list_view_on_scroll	Scroll callback set by list_view: moves the scroll bar value and shows a mobile scroll bar.
-demo	0x5efa40	0x5c	scroll_view_on_scroll	Calls the scroll_view scroll callback, then dispatches event 0x14e.
-demo	0x5f17a8	0x2a0	scroll_view_on_layout_children	Lays out a scroll_view children, sets virtual size from their extents and clamps the offset.
-demo	0x5f1cb4	0x49c	scroll_view_set_prop	Sets a scroll_view property by name (virtual_w, xslidable, xoffset, snap_to_page, slide_limit_ratio and others).
-demo	0x5f3040	0x5c	slide_menu_item_width	A slide_menu's item width from its min_scale and height.
-demo	0x5f320c	0xe8	slide_menu_change_value	Changes slide_menu value: fires the will-change event, stores the value, updates children, fires the changed event.
-demo	0x5f3400	0x114	slide_menu_scroll_to	Starts a scroll animator moving a slide_menu to a new offset, finishing in slide_menu_on_scroll_done.
-demo	0x5f3654	0xc8	slide_menu_on_scroll_done	A slide_menu's scroll animator end: fixes the index and sets the value.
-demo	0x5ff788	0x350	text_selector_on_event	text_selector event handler: pointer down, move and up with velocity tracking and grab, plus window-open case.
-demo	0x600818	0x164	text_selector_sync_selected_with_yoffset	Callback that wraps the text_selector yoffset, derives the selected option index from it and applies it.
-demo	0x60f560	0x80	edit_on_idle	Idle callback: selects all of an edit text and puts the cursor at 0 when a flag is set.
-demo	0x6140bc	0x1d8	edit_set_text_from_value	Converts a value to a wide string, clamps its length, sets it as the edit text and moves the cursor.
-demo	0x614ddc	0x328	image_on_paint_self	Paints an image widget: loads the bitmap and draws it, using vgcanvas transform for icon draw type.
-demo	0x6167c0	0x1bc	label_get_prop	Label property getter: answers a property name by its first letter and returns the value, or not found.
-demo	0x618c30	0x300	progress_bar_on_paint_self	Progress bar paint: fills background and foreground rects with round_radius and bg_image styles.
-demo	0x61a934	0x40c	slider_on_event	Slider event handler: casts the widget and handles pointer and key events.
-demo	0x61b1dc	0x2e8	slider_on_paint_self	Slider paint: draws the track and knob, filling the knob in border_color.
-demo	0x6257f0	0x8c	slidebar_post_event	Posts a wheel tick: formats slidebar[name], sends it to the callback and clears the slot.
-demo	0x6258e0	0x4d4	slidebar_run	Wheel and touch thread body: opens tslib, reads samples in a loop and turns them into 172/173 key events.
-demo	0x628838	0x8c4	children_layouter_default_layout	Default children layouter: lays out children by layout_w, layout_h, x_attr and y_attr in rows and columns.
-demo	0x63ec6c	0x2c	dialog_close_window	Event callback: closes the window of the event target parent; returns bad params when there is no target.
-demo	0x644900	0x2b0	image_manager_load_bitmap	Looks up an image in the cache, else loads it from assets or the loader into a bitmap and adds it.
-demo	0x65f688	0x68	widget_dispatch_keydown	Keydown helper: runs widget_dispatch, then the vtable on_keydown, and returns 0 when it returns 3.
-demo	0x66b8e0	0x1f8	window_base_move_focus_on_key	Key handler for 35-keys mode: Return toggles moving_focus_mode, arrow keys move focus.
-demo	0x68100c	0xe4	image_loader_stb_load	Image loader entry: decodes an image via stb_load_image into a bitmap using its pixel format.
-demo	0x681f30	0x120	widget_animator_scroll_update	Animator update: sets xoffset and yoffset props to from plus (to minus from) times progress when each differs.
-demo	0x68541c	0x50	window_manager_default_clear_refs	Clears the window manager references (+0x4c, +0x50, +0x58) that point at the given window.
-demo	0x6861d4	0xec	window_manager_default_get_prev_window	Scans children downward from the second from top for a normal, dialog, popup or non-always-on-top overlay window.
-demo	0x6885c0	0x340	window_manager_default_create_animator	Creates the open or close window animator from anim_hint; returns 2 when none applies.
-demo	0x688900	0x15c	window_manager_default_open_window_idle	Idle callback finishing a window open: dispatches window events 0x128 to 0x12a and animates; returns remove.
-demo	0x68b10c	0x22c	main_loop_simple_step	One step of the simple main loop: receives events, dispatches input, timers and idles, and paints.
-demo	0x68bb98	0xd4	input_method_default_on_win_close	Keyboard window close callback: clears the input method window and frees the context.
-demo	0x6922c0	0x328	lcd_mem_init_impl	Shared lcd_mem setup for a 32-bit format: dirty rects, optional buffer alloc, and the lcd method pointers.
-demo	0x69fc28	0x654	input_device_status_handle_event	Dispatches an input event (key, pointer, wheel, gesture) to the target widget, with long press and double click.
-demo	0x6a0314	0x248	input_device_status_on_long_press_timer	Timer tick that scans pressed keys and fires long-press for those held past the threshold.
-demo	0x716bb0	0x30c	utf16_to_utf8_convert	Converts a UTF-16 buffer to UTF-8, logging on a partial sequence, bad input or too-small output.
-hciplayer	0x40a17c	0x140	ff_flacdsp_init	Fills FFmpeg's FLAC DSP context: decorrelate functions by sample format (S16/S32/S16P/S32P), then the LPC and LPC-encode pointers
-hciplayer	0x41e2d0	0x54	swr_free	libswresample's swr_free: closes the context, frees its resampler state, then frees it and nulls the caller's pointer
-hciplayer	0x4208b8	0x3130	mplayer_main	MPlayer's main: config, input and RTC timer setup, Shanling's author check and socket, then the per-file open/demux/play loop
-hciplayer	0x428260	0x370	replaygain_filter_setup	Applies ReplayGain: track (mode 1) or album gain sets or adds the replaygain filter; off or no gain removes it
-hciplayer	0x428744	0x304	mixer_setvolume	Sets the soft volume (left, right) on the audio mixer, adding or deleting the volume and format filters in the chain.
-hciplayer	0x4291ac	0xd0	equalizer_set_gains	Finds or adds the equalizer filter and sends it the global band-gain table for each of its eight channels
-hciplayer	0x42a134	0x84	written_audio_pts	MPlayer written_audio_pts: decoder pts minus undecoded buffer, filter delay and AO-pending bytes
-hciplayer	0x42a1b8	0x100	libmpdemux_was_interrupted	After a failed open: sets eof 1 if unset, takes one pending input command, runs listed ones, marks state and frees it
-hciplayer	0x42a2b8	0x22c	exit_sighandler	Signal handler: prints the crash signal, a backtrace and the process maps, writes MPLAYER_QUIT and exits
-hciplayer	0x42a9ac	0xf8	preload_free_context	Under the preload mutex frees the gapless preload demuxer, stream and sh_audio context and clears its globals.
-hciplayer	0x42b010	0x1ec	mplayer_seek	MPlayer's seek(): resets audio, seeks the demuxer, clears pts state, then unmutes the DAC if hciplayer muted it
-hciplayer	0x42b628	0x44	heartbeat_set_flag	Sets the heartbeat byte to 1 under its mutex and returns 0.
-hciplayer	0x42b66c	0x44	heartbeat_consume_flag	Reads the heartbeat byte under its mutex, clears it and returns the old value.
-hciplayer	0x42b6b0	0x60	heartbeat_set_check_cancel	Sets the heartbeat byte and returns whether the stop word 0xb10e70 or 0xb10e6c is 1; called by the FLAC residual decoder.
-hciplayer	0x42b710	0x28	player_is_paused	Returns true when mpctx exists and its state word at +4 equals 2.
-hciplayer	0x42b738	0x20	seek_to_sec_pending	Returns whether a start offset (MPlayer's seek_to_sec double) is set and not yet applied
-hciplayer	0x42b8d0	0x380	gapless_preload_thread	Gapless preload thread: opens the next URL's stream, demuxer and audio codec ahead and publishes them under the preload mutex
-hciplayer	0x42bcf8	0x30	mixer_setvolume_packed	Unpacks a 16 bit left/right volume word and calls mixer_setvolume on the player mixer.
-hciplayer	0x42be20	0x17b4	mcl_command_handler	Parses one {...} command string from demo on the command thread and acts on it or replies (media-info etc.)
-hciplayer	0x42d5d4	0x3c0	sock_play_thread	Command thread: connects to /tmp/sock_play, hands each received message to the command handler, exits the process after six idle seconds
-hciplayer	0x42d994	0x1d4	player_idle_wait	Idle loop: polls the play flag every 10 ms (setting the heartbeat), clears stop flags, applies pending settings, returns the URL copy
-hciplayer	0x42e0a8	0x280	uninit_player	Logs "*** uninit(0x%X)" and tears down the player parts selected by the mask.
+demo	0x4b3f1c	0x5c8	localmusic_playlist_navbar_build	Rebuilds the Playlists navbar: return, add, edit, home and back-to-playing, or select-all, delete and done in select mode.
+demo	0x4b44e4	0xd0	localmusic_playlist_edit_on_click	Edit button: enters multi-select mode, rebuilds the navbar and shows the row select boxes.
+demo	0x4b45b4	0x48	localmusic_playlist_add_on_click	Add button: opens the add-playlist dialog unless the add state is already set.
+demo	0x4b45fc	0xb8	localmusic_playlist_done_on_click	Done button: leaves multi-select, clears selections, hides the select boxes and rebuilds the navbar.
+demo	0x4b46b4	0xac	localmusic_playlist_select_all_on_click	Select All button: toggles the all-select flag, the all-choice image and every row's select box.
+demo	0x4b4850	0x3bc	localmusic_playlist_row_on_click	Click on a playlist row: plays or opens it, toggles its mark in select mode, or runs the picker flow.
+demo	0x4b59e0	0x168	localmusic_playlist_delete_on_click	Delete button: confirms with a dialog, deletes the selected playlists and toasts success or failure.
+demo	0x4b5b48	0x1a8	localmusic_playlist_export_on_click	Export button: confirms, exports the playlists and toasts a result message.
+demo	0x4b5cf0	0x194	localmusic_playlist_import_on_click	Import button: confirms, imports playlists, sets a reload flag and toasts a result message.
+demo	0x4b4ef8	0x55c	localmusic_playlist_row_build	Builds Playlists rows: cover, name, track count line and the More dots, one per deque item.
+demo	0x4b5454	0x3d4	playlist_rebuild	Rebuilds the Playlists page's rows: import, export, then one per playlist; run by its init and its reload.
+demo	0x4b58c4	0x11c	localmusic_playlist_page_reload	Page handler: resets select flags, rebuilds the playlist rows and restores the scroll offset.
+demo	0x4b6198	0x210	playlist_delete_click	Remove from Playlist: confirms, deletes the song from the playlist and closes the page.
+demo	0x4b6fe0	0x48	playset_bootvol_on_value_changed	Saves the boot volume to PLAYSET BOOTVOLUME when the slider value has changed.
+demo	0x4b7288	0x7c	playset_bootvol_add_on_click	Raises the boot volume by one up to 100, saves it and refreshes the page.
+demo	0x4b7304	0x7c	playset_bootvol_dec_on_click	Lowers the boot volume by one down to 0, saves it and refreshes the page.
+demo	0x4b75d4	0x74	playset_bootvol_on_value_changing	Takes the slider value while it drags, if at most 100, and refreshes the page.
+demo	0x4bce74	0x408	playset_playset_row_on_click	Playback settings row click: switches on the row index to open a sub-page or toggle gapless, cover mode, folder cover or folder jump.
+demo	0x4c0cb4	0x3fc	systemset_about_row_build	Builds one About page row (Model, Firmware and the others) with title and value label and binds its click.
+demo	0x4c11c8	0x98	systemset_about_row_on_click	About row click: on row 6 rebuilds the serial-number QR image and opens the showsn dialog.
+demo	0x4c18ec	0x318	timezone_row	Builds row i of the automatic time page: the switch at 0, a time zone with its tick after it.
+demo	0x4c1c04	0x218	systemset_timezone_list_build	Rebuilds the auto-time page list: the auto-sync row, then a caption and one timezone row per zone when auto sync is on.
+demo	0x4c20b4	0x1c4	systemset_timezone_row_on_click	Row click: row 0 toggles auto time sync, any other row picks that timezone, updates the marks and saves it.
+demo	0x4c349c	0x38c	btmenu_device_row_build	Builds a paired Bluetooth device row: icon, name and connecting/connected/paired state.
+demo	0x4c3828	0x3d8	btmenu_setting_row_build	Builds one Bluetooth page head row by index: switch, local name, quality line or search.
+demo	0x4c3d38	0x33c	btmenu_rows	Rebuilds the Bluetooth page's list: the setting rows, then the paired and the found devices.
+demo	0x4c41e4	0x36c	btmenu_item_on_click	Click on a Bluetooth device row: checks link state, finds the device by row index and connects or reports an error toast.
+demo	0x4c5fbc	0x408	systemset_datetime_row_build	Builds the Date and Time rows (auto sync, manual, 24 hour) with their switch images.
+demo	0x4c69d4	0x2a8	systemset_display_row_build	Builds one Display settings row: icon, label and arrow.
+demo	0x4c7cf4	0x2b0	fwupdate_tf	System Update's TF card row: starts stock's update from the card.
+demo	0x4c830c	0x7c	systemset_fwupdate_row_on_click	System Update row click: atoi of the row name, 0 starts the TF card update, 1 the Shanling server update.
+demo	0x4c84a0	0x270	systemset_fwupdate_row_build	Builds one System Update row, its button named by the row index.
+demo	0x4c9c18	0x100	keylock_rows	Rebuilds the Key lock page's rows in scroll_view_keylock.
+demo	0x4ca614	0x3c0	systemset_language_row_build	Builds one language row with its select image.
+demo	0x4cd09c	0x198	netservice_row	Network service's row click: DLNA, AirPlay or Wi-Fi transfer by the row.
+demo	0x4cfd40	0x458	screensaver_rows	Rebuilds the Lock screen page's rows and its picture grid.
+demo	0x4d3294	0x4ec	systemset_sysset_row_build	Builds one System settings row, with switch images for car mode and key tone.
+demo	0x4d3780	0x19c	systemset_sysset_item_on_click	Click on a System settings row: indexes the row and jumps through a 13-entry table to that row's action.
+demo	0x4d5830	0x82c	wifimenu_rows_build	Rebuilds the Wi-Fi page list: switch row, scan results with signal icons, add network.
+demo	0x4d9a14	0x14c	testmode_test_key_play_wav	Test-key page action: in output mode 4 stops playback and closes the page, else loads /mnt/mmc and plays test1.wav.
+demo	0x4da474	0x290	btrecv_info_labels_update	Fills label_title and label_artist from the Bluetooth receive info and lyric buffer, with the play time.
+demo	0x4f5120	0x1b48	navigator_create_page_by_name	Opens the named window and dispatches by page-name string to the matching page or dialog init.
+demo	0x4f9b50	0x88	btctl_prompt_callback	Bluetooth prompt callback: on prompt 5 stores the formatted text in the prompt info and returns 1; others return 0.
+demo	0x4fbfb0	0x200	openbluetooth_device_status_cb	Bluetooth device-status callback registered by openBluetooth: events 3 to 9 update the link list and set the link-ready flag.
+demo	0x4fc5c8	0x344	bluetooth_link_thread	Link thread started by bluetoothLink: pairs, connects or disconnects the last listed device, polling its status for up to 15 s.
+demo	0x506220	0x24	song_track_order_less	Comparator: sets the output to 1 when the first song sorts before the second by disc, then track number.
+demo	0x506258	0x370	db_song_row_callback	SQLite row callback: builds a song record from a row and pushes it onto the result deque.
+demo	0x5065c8	0x16c	db_albumartist_row_callback	SQLite row callback for GetAllAlbumArtist: pushes a record of the album-artist name (id from column 0) onto the result deque.
+demo	0x506cc4	0x22c	album_row	getAllAlbum's sqlite3_exec callback: id, album, artist and file to a record on the deque.
+demo	0x52d5bc	0x1ec	bigcover_page_set_cover	Picks the cover file (coverpic, externpic, tidal or default) by cover type and sets it on img_bigcover.
+demo	0x52d854	0x88	bigcover_page_on_timer	Enlarged Art timer: when any of three cover-finish flags is set, clears them all and runs the finish path.
+demo	0x531bec	0x23c	folder_refresh	Rebuilds folder_page's navbar and table from the show list; run by its init and on going up.
+demo	0x531e28	0x240	folder_page_go_up	Folder page back action: steps up a folder and refreshes, or closes the page at the top, clearing .downpic fd_ covers.
+demo	0x532104	0x3ac	folder_click	folder_page's row click: enters a folder, or queues the folder and plays the file.
+demo	0x532920	0x16c	folder_row_set_name	Sets a folder row's name label and style, red when the file or folder is playing.
+demo	0x532ed8	0x128	folder_table_scroll_covers	Folder table scroll handler: frees cached images when memory is low and loads covers for the row at yoffset.
+demo	0x5338b4	0x30c	folder_row_pool_init	Folder page's native row-pool constructor, laying out each row's widgets; called by folder_refresh.
+demo	0x534440	0x2fc	home_page_bind_widget	widget_foreach visitor of home_page_init: binds img_* clicks and translates label_* by widget name.
+demo	0x534c90	0xdc	localmusic_page_on_background	Library page background handler: removes the play gif's timer stored in timer_idex.
+demo	0x534dc4	0x38	stock_search	Library's Search click: opens dialog/search_dialog.
+demo	0x534dfc	0x110	localmusic_row_on_click	Shared Library row click: atoi of the button name selects the page to open.
+demo	0x535c14	0x5f8	onlinematching_save_cover_lyric	Accept of Download Cover and Lyrics: copies the chosen cover and lyric into /mnt/mmc/.downpic and sets the cover info.
+demo	0x5379b0	0x374	playerjumpinfo_track_on_click	Track row click of the album info page: toggles multi-select or loads the song list and opens playing_page.
+demo	0x538058	0x36c	songlist_row_on_load_data	Fills a song list row: name and artist labels, cover image, red style when the song is playing.
+demo	0x5386bc	0xf4	music_table_scroll_covers	Music table scroll handler: frees cached images when memory is low and loads covers for the row at yoffset.
+demo	0x5389f8	0x3a8	onlinematching_table_on_create_row	Table create-row callback: builds rows of a 365x78 container with a 335x70 child and sub-images up to the requested count.
+demo	0x539324	0x19c	playermore_online	More's Download Cover and Lyrics row: opens the online matching page for the playing track.
+demo	0x5394c0	0x14c	playermore_album_info_on_click	Now Playing More row Album info: opens playerjumpinfo_page for the playing record, or shows msg_notalbuminfo.
+demo	0x539acc	0x1a4	playermore_row_on_click	Row click of Now Playing's More page: atoi of the button name picks the action from the kinds table.
+demo	0x53aac4	0x248	playerqueue_row_on_load_data	Fills a Now Playing queue row: name label, with the playing row styled red.
+demo	0x53a8ec	0x110	playerqueue_row_on_click	Queue row click: starts the tapped row through player_start_queue.
+demo	0x53adb0	0x1b0	playerqueue_table_on_create_row	Table create-row callback: builds queue rows (365x78 container, 335x70 and 315x70 children) up to the requested count.
+demo	0x53b210	0x30	playing_page_on_wheel_key	Sets a flag byte when the event key is 222 or 223, then returns 0.
+demo	0x53b3bc	0x35c	playing_page_lyrics_rebuild_rows	Rebuilds scroll_lrc's lyric row labels with their lrc_time properties.
+demo	0x53b718	0xcc	ab_x	An A-B marker's x on Now Playing's bar for a time.
+demo	0x53b7e4	0x1d4	playing_page_update_ab_markers	Shows and positions Now Playing's A-B repeat markers.
+demo	0x53b9b8	0x964	np_info	Fills Now Playing's info page labels from the playing track.
+demo	0x53c31c	0x2d0	playing_page_bind_widget	widget_foreach visitor of playing_page_init: binds handlers by widget name (img_* and others).
+demo	0x53c66c	0x1d0	playing_page_fav_on_click	Click of img_fav on Now Playing: toggles My Fav or Tidal fav, swaps the heart image, or shows not-supported.
+demo	0x53cc0c	0x908	playing_page_update	Now Playing's periodic page update: labels, slider, times, heart, lyrics and info page.
+demo	0x53d514	0x118	playing_page_on_timer	Now Playing's 250 ms timer callback: runs the page update and counts down the Enlarged Art countdown.
+demo	0x53d6f4	0x6c	playing_page_resume_timer	Handler registered by playing_page_init: sets a state flag, refreshes the page, resets the 40-tick countdown and restarts the timer.
+demo	0x53d760	0x150	playing_page_on_keyup_seek	Now Playing's key-up handler: Return calls on_return_onclick, keys 222/223 end a seek via slider_play and restart the timer.
+demo	0x53d8b0	0x2b0	playing_page_commit_seek	Applies a seek or an A-B repeat point: seeks the player, sets the repeat point and shows a toast for the result.
+demo	0x53db60	0x38	playing_page_on_progress_release	Does nothing unless the seek state is 2, then calls the seek commit function.
+demo	0x53dcb8	0x1fc	playing_page_on_keydown_seek	Now Playing's key-down handler: keys 222/223 step the slider_play position by 5 s and update label_playtime.
+demo	0x53deb4	0x138	playing_page_on_progress_drag	On a progress drag updates the time text from the slider value and sets the seek state to 2, clearing the timer.
+demo	0x53ea14	0x3d0	saverscreen_battery_timer	Lock screen refresh: updates the battery label, icon and bar, the track info and the clock on the saver screen.
+demo	0x53ede4	0x1c0	saver_cover	Sets the lock screen's img_playcover from the playing track.
+demo	0x53efa4	0x16c	saverscreen_page_on_timer	Screensaver page timer tick: counts a delay down, redraws the saver page and cover, then returns repeat.
+demo	0x53f3d4	0xf4	specfolder_table_setup	Sets up specfolder_table_client: row height, prepare/load/create-row callbacks, row count from get_specfoldersize.
+demo	0x53f674	0x238	specfolder_click	Scan Folders' row click: opens the folder, or ticks it.
+demo	0x53f980	0xec	specfolder_row_load_name	Fills a specfolder row's scrolling label with the folder name from get_specfoldername, 1500 ms scroll delay.
+demo	0x53fed4	0x294	specfolder_table_on_create_row	Creates the rows of the special-folder table with a 78 px row height, child images and labels.
+demo	0x540a40	0xdc	stream_page_on_background	Streaming page background handler: removes the page's timer stored in timer_idex.
+demo	0x540c8c	0x150	stream_row	Streaming's row click: atoi of the button's name picks the service.
+demo	0x542a54	0x218	usbmode_page_on_timer	USB mode page timer: shows the USB face, tracks link and mode changes, updates the DAC rate display.
+demo	0x5ba2a8	0x298	mcl_reply_take_by_key	Finds a hciplayer reply by key in the reply deque under its mutex, removes it and returns a copy of its text, or 0.
+demo	0x5ba540	0x378	mcl_shuffle_pick	Picks the next or previous song in Shuffle from the shuffled deque, refilling it when it runs out.
+demo	0x5ba8b8	0x1f0	mcl_usb_audio_find_volume_ctls	Opens an ALSA hctl and records the numids of elements named Playback Volume.
+demo	0x5baaa8	0x1f8	mcl_request_player_status	Sends {player-status\request} to hciplayer and polls up to 10 times for the reply, returning the state parsed.
+demo	0x5bad68	0x2d4	mcl_open_preload	Sends hciplayer {set-gapless} with the next URL so it preloads the track.
+demo	0x5bb03c	0x138	mcl_preload	mclAutoChange's gapless step: finds the next track and has mcl_open_preload send it.
+demo	0x5bbb38	0xb4c	mcl_parse_lrc_file	Parses a .lrc file into the lyric deque, converting UTF-16 or GB18030 with iconv and keeping per-line times.
+demo	0x5bd9b4	0xa4	mcl_send_mqa_decode_mode	Sends {mcl-mqadecodemode\N} to hciplayer; nothing calls it.
+demo	0x5bf274	0x444	mcl_send_play_url	Shared player start: mutes and waits for wired DACs, sends set-songurl or set-nexturl to hciplayer.
+demo	0x5c59b8	0x88	albumcover_task_destroy	Destroy function of the 12-byte album cover task type: frees its two strings and zeroes it.
+demo	0x5c610c	0x124	albumcover_task_copy	Copy function for a 12-byte album cover task: frees old name and path, duplicates the source's strings, copies flags.
+demo	0x5c631c	0x484	stsonginfo_copy	Copy function for an stSongInfo row: frees old string fields and duplicates the source's strings and numbers.
+demo	0x5c8230	0x10c	tools_fix_kana_combining_marks	Merges UTF-8 combining voiced/semi-voiced marks (E3 82 99/9A) into the preceding kana and removes the mark.
+demo	0x5c8ef8	0x3ac	png_load_file	Reads a PNG file with libpng into row pixels; rejects images over 1024 px and unsupported color types.
+demo	0x5cc540	0x918	library_name_cmp_pinyin	Name comparator for sorted library lists that converts names to pinyin; used when the flag at 0xa3bf4d is clear.
+demo	0x5cce58	0x884	library_name_cmp	Name comparator for sorted library lists used when the flag at 0xa3bf4d is set; trims both names before comparing.
+demo	0x5d2c1c	0x1264	tools_parse_cue_file	Parses a .cue sheet (FILE, TRACK, TITLE, PERFORMER, INDEX 01, REM) into song entries, converting encodings with iconv.
+demo	0x5d52e4	0x40	tools_directory_count	Reloads the directory list with toolsLoadDirectory, then returns the size of the directory deque.
+demo	0x5d55b4	0x6c	tools_directory_walk	Recursively walks a directory deque, descending into subdirectories and building each path.
+demo	0x5d61f0	0xb7c	tools_scan_folder_list	Library scan folder walk: lists a folder, skips system dirs, handles .cue files, queues songs.
+demo	0x5d9d0c	0x7e0	tools_insert_song_to_db	Reads a song tags and inserts it into the song table inside a BEGIN/COMMIT transaction.
+demo	0x5dc82c	0x278	table_client_load_rows	Sets each virtual table row index, shows and moves it, and calls the page on_load_data callback.
+demo	0x5dd7dc	0x580	table_view_on_event	table_view event handler: switch over pointer and key events, ensures children on window open.
+demo	0x5fac64	0x9c	hscroll_label_inner_width	Text area width of a scrolling label: the cached width if set, else its width less margin_left and margin_right.
+demo	0x5fad00	0xc8	hscroll_label_text_edge_x	Returns the label's scroll offset plus its left or right text edge, using the margin_left and margin_right styles.
+demo	0x5fb158	0x70	hscroll_label_on_delay_timer	Delay timer callback: clears the label's waiting flag, starts scrolling and removes the timer.
+demo	0x5fb244	0x1e4	hscroll_label_on_timer_tick	Scroll timer tick: stops an unfocused only_focus label, steps the scroll, restarts after the lull.
+demo	0x5fb428	0x74	hscroll_label_defaults	Resets a scrolling label timing and scroll state fields to their defaults (lull 3000, delay 5000).
+demo	0x5fb79c	0x52c	hscroll_label_on_paint_self	Paint of an hscroll label: clips and draws the text at the scroll offset.
+demo	0x5fc7e4	0xb8c	children_layouter_list_view_layout	Lays out a list_view rows in its scroll view, sizing each row and setting virtual size and scroll bar.
+demo	0x5fe020	0x160	list_item_paint_children	Paints a row visible children, culling those outside the canvas clip rect.
+demo	0x5fe9a0	0xc4	list_view_on_scroll	Scroll callback set by list_view: moves the scroll bar value and shows a mobile scroll bar.
+demo	0x602370	0x5c	scroll_view_on_scroll	Calls the scroll_view scroll callback, then dispatches event 0x14e.
+demo	0x6040d8	0x2a0	scroll_view_on_layout_children	Lays out a scroll_view children, sets virtual size from their extents and clamps the offset.
+demo	0x6045e4	0x49c	scroll_view_set_prop	Sets a scroll_view property by name (virtual_w, xslidable, xoffset, snap_to_page, slide_limit_ratio and others).
+demo	0x605970	0x5c	slide_menu_item_width	A slide_menu's item width from its min_scale and height.
+demo	0x605b3c	0xe8	slide_menu_change_value	Changes slide_menu value: fires the will-change event, stores the value, updates children, fires the changed event.
+demo	0x605d30	0x114	slide_menu_scroll_to	Starts a scroll animator moving a slide_menu to a new offset, finishing in slide_menu_on_scroll_done.
+demo	0x605f84	0xc8	slide_menu_on_scroll_done	A slide_menu's scroll animator end: fixes the index and sets the value.
+demo	0x6120b8	0x350	text_selector_on_event	text_selector event handler: pointer down, move and up with velocity tracking and grab, plus window-open case.
+demo	0x613148	0x164	text_selector_sync_selected_with_yoffset	Callback that wraps the text_selector yoffset, derives the selected option index from it and applies it.
+demo	0x621e90	0x80	edit_on_idle	Idle callback: selects all of an edit text and puts the cursor at 0 when a flag is set.
+demo	0x6269ec	0x1d8	edit_set_text_from_value	Converts a value to a wide string, clamps its length, sets it as the edit text and moves the cursor.
+demo	0x62770c	0x328	image_on_paint_self	Paints an image widget: loads the bitmap and draws it, using vgcanvas transform for icon draw type.
+demo	0x6290f0	0x1bc	label_get_prop	Label property getter: answers a property name by its first letter and returns the value, or not found.
+demo	0x62b560	0x300	progress_bar_on_paint_self	Progress bar paint: fills background and foreground rects with round_radius and bg_image styles.
+demo	0x62d264	0x420	slider_on_event	Slider event handler: casts the widget and handles pointer and key events.
+demo	0x62db20	0x2e8	slider_on_paint_self	Slider paint: draws the track and knob, filling the knob in border_color.
+demo	0x638170	0x8c	slidebar_post_event	Posts a wheel tick: formats slidebar[name], sends it to the callback and clears the slot.
+demo	0x638260	0x4d4	slidebar_run	Wheel and touch thread body: opens tslib, reads samples in a loop and turns them into 172/173 key events.
+demo	0x63b848	0x8c4	children_layouter_default_layout	Default children layouter: lays out children by layout_w, layout_h, x_attr and y_attr in rows and columns.
+demo	0x651c7c	0x2c	dialog_close_window	Event callback: closes the window of the event target parent; returns bad params when there is no target.
+demo	0x657910	0x2b0	image_manager_load_bitmap	Looks up an image in the cache, else loads it from assets or the loader into a bitmap and adds it.
+demo	0x672698	0x68	widget_dispatch_keydown	Keydown helper: runs widget_dispatch, then the vtable on_keydown, and returns 0 when it returns 3.
+demo	0x67e930	0x1f8	window_base_move_focus_on_key	Key handler for 35-keys mode: Return toggles moving_focus_mode, arrow keys move focus.
+demo	0x69405c	0xe4	image_loader_stb_load	Image loader entry: decodes an image via stb_load_image into a bitmap using its pixel format.
+demo	0x694f80	0x120	widget_animator_scroll_update	Animator update: sets xoffset and yoffset props to from plus (to minus from) times progress when each differs.
+demo	0x69846c	0x50	window_manager_default_clear_refs	Clears the window manager references (+0x4c, +0x50, +0x58) that point at the given window.
+demo	0x699224	0xec	window_manager_default_get_prev_window	Scans children downward from the second from top for a normal, dialog, popup or non-always-on-top overlay window.
+demo	0x69b610	0x340	window_manager_default_create_animator	Creates the open or close window animator from anim_hint; returns 2 when none applies.
+demo	0x69b950	0x15c	window_manager_default_open_window_idle	Idle callback finishing a window open: dispatches window events 0x128 to 0x12a and animates; returns remove.
+demo	0x69e15c	0x22c	main_loop_simple_step	One step of the simple main loop: receives events, dispatches input, timers and idles, and paints.
+demo	0x69ebe8	0xd4	input_method_default_on_win_close	Keyboard window close callback: clears the input method window and frees the context.
+demo	0x6a5310	0x328	lcd_mem_init_impl	Shared lcd_mem setup for a 32-bit format: dirty rects, optional buffer alloc, and the lcd method pointers.
+demo	0x6b2c78	0x674	input_device_status_handle_event	Dispatches an input event (key, pointer, wheel, gesture) to the target widget, with long press and double click.
+demo	0x6b3384	0x248	input_device_status_on_long_press_timer	Timer tick that scans pressed keys and fires long-press for those held past the threshold.
+demo	0x729c20	0x30c	utf16_to_utf8_convert	Converts a UTF-16 buffer to UTF-8, logging on a partial sequence, bad input or too-small output.
+hciplayer	0x40a1dc	0x140	ff_flacdsp_init	Fills FFmpeg's FLAC DSP context: decorrelate functions by sample format (S16/S32/S16P/S32P), then the LPC and LPC-encode pointers
+hciplayer	0x41e330	0x54	swr_free	libswresample's swr_free: closes the context, frees its resampler state, then frees it and nulls the caller's pointer
+hciplayer	0x420918	0x3130	mplayer_main	MPlayer's main: config, input and RTC timer setup, Shanling's author check and socket, then the per-file open/demux/play loop
+hciplayer	0x4282c0	0x370	replaygain_filter_setup	Applies ReplayGain: track (mode 1) or album gain sets or adds the replaygain filter; off or no gain removes it
+hciplayer	0x4287a4	0x304	mixer_setvolume	Sets the soft volume (left, right) on the audio mixer, adding or deleting the volume and format filters in the chain.
+hciplayer	0x42920c	0xd0	equalizer_set_gains	Finds or adds the equalizer filter and sends it the global band-gain table for each of its eight channels
+hciplayer	0x42a194	0x84	written_audio_pts	MPlayer written_audio_pts: decoder pts minus undecoded buffer, filter delay and AO-pending bytes
+hciplayer	0x42a218	0x100	libmpdemux_was_interrupted	After a failed open: sets eof 1 if unset, takes one pending input command, runs listed ones, marks state and frees it
+hciplayer	0x42a318	0x22c	exit_sighandler	Signal handler: prints the crash signal, a backtrace and the process maps, writes MPLAYER_QUIT and exits
+hciplayer	0x42aa0c	0xf8	preload_free_context	Under the preload mutex frees the gapless preload demuxer, stream and sh_audio context and clears its globals.
+hciplayer	0x42b070	0x1ec	mplayer_seek	MPlayer's seek(): resets audio, seeks the demuxer, clears pts state, then unmutes the DAC if hciplayer muted it
+hciplayer	0x42b688	0x44	heartbeat_set_flag	Sets the heartbeat byte to 1 under its mutex and returns 0.
+hciplayer	0x42b6cc	0x44	heartbeat_consume_flag	Reads the heartbeat byte under its mutex, clears it and returns the old value.
+hciplayer	0x42b710	0x60	heartbeat_set_check_cancel	Sets the heartbeat byte and returns whether the stop word 0xb10e70 or 0xb10e6c is 1; called by the FLAC residual decoder.
+hciplayer	0x42b770	0x28	player_is_paused	Returns true when mpctx exists and its state word at +4 equals 2.
+hciplayer	0x42b798	0x20	seek_to_sec_pending	Returns whether a start offset (MPlayer's seek_to_sec double) is set and not yet applied
+hciplayer	0x42b930	0x380	gapless_preload_thread	Gapless preload thread: opens the next URL's stream, demuxer and audio codec ahead and publishes them under the preload mutex
+hciplayer	0x42bd58	0x30	mixer_setvolume_packed	Unpacks a 16 bit left/right volume word and calls mixer_setvolume on the player mixer.
+hciplayer	0x42be80	0x17b4	mcl_command_handler	Parses one {...} command string from demo on the command thread and acts on it or replies (media-info etc.)
+hciplayer	0x42d634	0x3c0	sock_play_thread	Command thread: connects to /tmp/sock_play, hands each received message to the command handler, exits the process after six idle seconds
+hciplayer	0x42d9f4	0x1d4	player_idle_wait	Idle loop: polls the play flag every 10 ms (setting the heartbeat), clears stop flags, applies pending settings, returns the URL copy
+hciplayer	0x42e108	0x280	uninit_player	Logs "*** uninit(0x%X)" and tears down the player parts selected by the mask.
 hciplayer	0x42e5dc	0x154	mqa_probe	Checks a FLAC/PCM stream is stereo 16/24 bit at 44.1-192 kHz, opens the MQA library on a first chunk and reports if it is MQA
-hciplayer	0x42e834	0xbc0	reinit_audio_chain	MPlayer's reinit_audio_chain: inits the audio codec, filter chain and audio output, plus MQA decoder probe
-hciplayer	0x42f3f4	0xb1c	fill_audio_out_buffers	MPlayer fill_audio_out_buffers: decodes, filters (MQA renderer for MQA streams) and plays audio while the AO has space
-hciplayer	0x42ff10	0x524	pause_loop	MPlayer's pause_loop: pauses the AO, reports paused, waits for a command (20 ms polls) and resumes
-hciplayer	0x43084c	0x21c	auth_check_mtd5_licence	Licence check: reads 64 bytes of /dev/mtd5 via mtd_debug, encodes part with a fixed key and compares hex; 0 if it matches
-hciplayer	0x438154	0x8	ao_alsa_get_delay	Returns 0 as the output delay.
-hciplayer	0x43815c	0x1c8	ao_alsa_get_space	ao_alsa get_space: free bytes from snd_pcm_status avail, capped at the buffer; MQA 24 bit counts 6 bytes a frame
-hciplayer	0x438564	0x128	ao_alsa_pause	Pauses or drops the PCM, muting the DAC on the jacks, with error messages for each.
-hciplayer	0x43868c	0x160	ao_alsa_uninit	ao_alsa's uninit: frees the DSD buffer, mutes the DAC, drains unless immediate, closes the PCM
-hciplayer	0x4387ec	0x19c	ao_alsa_audio_resume	ao_alsa's audio_resume: resumes a suspended PCM or unpauses it, else prepares and refills
-hciplayer	0x438988	0x1278	ao_alsa_init	ao_alsa's init: parses device/block suboptions, opens and configures the ALSA PCM (500 ms buffer, 16 periods)
-hciplayer	0x439c00	0x16c	ao_alsa_reset	Drops the PCM, then prepares it or closes and reopens it on the USB way.
+hciplayer	0x42e740	0x7b0	reinit_audio_chain	MPlayer's reinit_audio_chain: inits the audio codec, filter chain and audio output, plus MQA decoder probe
+hciplayer	0x42eef0	0x8e8	fill_audio_out_buffers	MPlayer fill_audio_out_buffers: decodes, filters (MQA renderer for MQA streams) and plays audio while the AO has space
+hciplayer	0x42f7d8	0x524	pause_loop	MPlayer's pause_loop: pauses the AO, reports paused, waits for a command (20 ms polls) and resumes
+hciplayer	0x430114	0x21c	auth_check_mtd5_licence	Licence check: reads 64 bytes of /dev/mtd5 via mtd_debug, encodes part with a fixed key and compares hex; 0 if it matches
+hciplayer	0x437a14	0x8	ao_alsa_get_delay	Returns 0 as the output delay.
+hciplayer	0x437a1c	0x1c8	ao_alsa_get_space	ao_alsa get_space: free bytes from snd_pcm_status avail, capped at the buffer; MQA 24 bit counts 6 bytes a frame
+hciplayer	0x437e24	0x128	ao_alsa_pause	Pauses or drops the PCM, muting the DAC on the jacks, with error messages for each.
+hciplayer	0x437f4c	0x160	ao_alsa_uninit	ao_alsa's uninit: frees the DSD buffer, mutes the DAC, drains unless immediate, closes the PCM
+hciplayer	0x4380ac	0x19c	ao_alsa_audio_resume	ao_alsa's audio_resume: resumes a suspended PCM or unpauses it, else prepares and refills
+hciplayer	0x438248	0x1278	ao_alsa_init	ao_alsa's init: parses device/block suboptions, opens and configures the ALSA PCM (500 ms buffer, 16 periods)
+hciplayer	0x4394c0	0x16c	ao_alsa_reset	Drops the PCM, then prepares it or closes and reopens it on the USB way.
 hciplayer	0x43aef0	0x2e0	ao_alsa_play	ao_alsa's play: optional DSD/DoP buffering, then snd_pcm_writei with retry, returns bytes written
-hciplayer	0x43b1d0	0xb0	mcl_orderstop_pcm_close	Closes the PCM, draining first unless on the USB way; the close mcl-orderstop reaches.
-hciplayer	0x43b280	0x5c	hci_dac_mute	Sets hciplayer's DAC mute state through the codec ioctl and records it in 0xb11584 (jacks only)
-hciplayer	0x4460fc	0x2c	mp_msg	Log message sink: calls the real printer unless the level is -1.
-hciplayer	0x44641c	0xd4	calc_a_pts	MPlayer dec_audio calc_a_pts: sh_audio pts plus decoded bytes, or demuxer pts plus bytes read; NOPTS without a stream
-hciplayer	0x44c1c4	0x5c8	af_reinit	Reinitialises the audio filter chain, inserting format and dummy filters as needed.
-hciplayer	0x44d098	0x2b8	af_add	Inserts a named filter right after the leading format filter, then reinitialises the chain.
-hciplayer	0x44d350	0x58	af_play	MPlayer's af_play: passes a data block through each filter of the audio filter chain in turn
-hciplayer	0x451c14	0x170	af_format_play_float_s16	af_format play_float_s16: resizes the local buffer and converts float samples to S16 with lrintf and saturation
-hciplayer	0x451d84	0xea4	af_format_play	af_format's generic play: converts a block between sample formats (endian, sign, mu/A-law, int/float, bps) into the local buffer
-hciplayer	0x45bcbc	0x6b4	af_volume_play	af_volume play: scales S16 or float samples by the per-channel levels, with a fast path when all levels match
-hciplayer	0x469e90	0x180	scarletbook_close	Frees a SACD scarletbook handle: both loaded track sets and each table pointer.
-hciplayer	0x46a010	0x1194	scarletbook_open	Reads and validates the SACD master TOC and text, building the scarletbook handle.
-hciplayer	0x46bd18	0x44	scarletbook_output_destroy	Frees a SACD output handle and its first owned buffer; returns -1 for NULL
-hciplayer	0x46bf5c	0x26c	sacd_iso_fill	SACD ISO reader: reads the next track blocks for a stream, up to 1000 retries, flags unsupported on exhaustion
-hciplayer	0x478444	0xa00	demux_sacd_iso_open	SACD ISO demuxer check/open: opens the disc image, reads the TOC and sets up track streams
-hciplayer	0x47a1ac	0x121c	demux_dsdiff_open	DFF (DSDIFF) demuxer check/open: reads the chunk properties and sets up the DSD audio stream
-hciplayer	0x47b8f0	0x7cc	demux_dsf_check	Vendor DSF check: reads the DSD/fmt/data chunks, validates DSD rates and block size, fills a priv; failure stores global stop 2
-hciplayer	0x47eb40	0xa8	uninit_audio	Tears down the audio decoder and filters, logging the uninit.
-hciplayer	0x47f090	0x3b4	init_best_audio_codec	Tries the codec list and families in turn for an audio stream, handling hwac3/hwmpa, and logs the selected codec or failure.
-hciplayer	0x47f444	0x1a8	init_audio_filters	Builds the audio filter chain between the decoder format and the output format, logging both formats.
-hciplayer	0x47f68c	0x43c	filter_n_bytes	dec_audio.c static: decodes enough input and runs it through the audio filter chain, growing the filtered buffer when needed
-hciplayer	0x47fbf0	0x7f0	aac_scan_adts_duration	Vendor ADTS scan: counts frames for frames*1024/rate, records frame offsets; a .aac with no sync in 1 MB stores the global stop
-hciplayer	0x480ed0	0x185c	read_asf_header	Parses an ASF header: streams, DRM notice, content description tags, file properties, data chunk start
-hciplayer	0x484c0c	0x110	demux_read_data	Copies up to len bytes of a demuxer stream into mem (or skips them when mem is NULL), refilling via ds_fill_buffer
-hciplayer	0x4855b4	0x6a8	demux_open_stream	Probes demuxer types in order on a stream, logging the detected format and trying fuzzy guesses; calls itself.
-hciplayer	0x485ea8	0x148	ds_get_next_pts	Returns the next packet timestamp of a demuxer stream, filling ahead and giving up on too many buffered packets.
-hciplayer	0x4868ac	0x24c	demux_seek	Seeks a demuxer: frees queued packets, tries a stream time seek then the demuxer's seek, resyncs and resets audio.
-hciplayer	0x48b7e4	0x38	demux_close_audio	demux_audio close: frees the demuxer private data and clears the vendor FLAC seek-target global
-hciplayer	0x48b81c	0x150	flac_seek_probe_frame_time	Reads the next demuxer packet, finds a FLAC frame sync and decodes its header to return that frame's start time in seconds.
-hciplayer	0x48c184	0x1028	demux_audio_fill_buffer	demux_audio fill: reads the next packet for MP3/WAV/FLAC and queues it, with the vendor post-seek frame sizing
-hciplayer	0x48d1ac	0x11dc	demux_audio_seek	demux_audio seek: MP3 byte estimate, FLAC probe-and-step search for the target frame
-hciplayer	0x48e6b0	0x5cc	id3v2_read_replaygain	Vendor ID3v2 walker: collects TXXX frames from up to 2 KB of tag into a dictionary, hands it to ff_replaygain_export, frees it
-hciplayer	0x48ec7c	0x43e8	demux_audio_open	demux_audio open: detects MP3/WAV/FLAC, parses headers and ID3/Xing/FLAC metadata, sets up the audio stream
-hciplayer	0x4a2d5c	0x6b4	mp3_scan_frames_build_seek_table	Vendor MP3 walk after an Xing/VBRI header: recounts every frame and fills the early-frame offset table
-hciplayer	0x4a4ed0	0x580	open_stream_full	Opens a URL by finding the stream type whose protocol matches, opening it with its options and following redirects.
-hciplayer	0x4a5d6c	0xf8	new_memory_stream	Creates a memory stream object holding a copy of a buffer, sized for the data.
-hciplayer	0x4ac2c0	0x9c	af_lavcresample_open	af_lavcresample.c static open: allocates the filter state and sets the control, play and uninit hooks
-hciplayer	0x4ac35c	0x1d8	af_lavcresample_play	lavcresample play: resizes its output buffer and converts one block through libswresample.
-hciplayer	0x4ac534	0x74	af_lavcresample_uninit	Frees the lavcresample filter instance and its resampler state.
-hciplayer	0x4ac5a8	0x440	af_lavcresample_control	Control callback of lavcresample: parses the rate:filter:... command line and handles format and rate changes.
-hciplayer	0x4acbb8	0x550	ad_ffmpeg_decode_audio	ad_ffmpeg.c static decode_audio: decodes packets through libavcodec until minlen bytes are out.
-hciplayer	0x4ae664	0x450	lavf_check_file	Probes a stream for libavformat, honouring a forced format, and logs LAVF_check results.
-hciplayer	0x4af024	0x84	lavf_check_preferred_file	Runs lavf_check_file, then claims the stream as LAVF_PREFERRED when the found format is on the preferred list.
-hciplayer	0x4b23a0	0x124	ad_libmad_read_frame	ad_libmad.c static read_frame: tops up the MAD buffer from demux_read_data and decodes one frame, resyncing on errors
-hciplayer	0x4cc6b4	0x7fc	cache_stream_fill_buffer	Refills the stream buffer from the cache process, or calls stream_fill_buffer when there is no cache; vendor wait for fill.
-hciplayer	0x4ee1a0	0x480	dsf_read_header	FFmpeg DSF demuxer header read: checks format version and id, channel type, bit order, sets up the DSD stream and block_align
-hciplayer	0x506af4	0x1c1c	iff_read_header	FFmpeg iff.c: reads an IFF/8SVX/DSDIFF header and its chunks into stream parameters and metadata.
-hciplayer	0x515744	0x1ec	mov_read_keys	Reads the mov keys atom and records metadata key names.
-hciplayer	0x51667c	0x1514	mov_read_trak	FFmpeg mov.c trak atom reader, with mov_build_index inlined: builds the sample index and frees the per-track tables
-hciplayer	0x52f3ac	0x518	ogg_packet	FFmpeg oggdec.c static ogg_packet: assembles the next packet from the current page, finding codecs and handling headers.
-hciplayer	0x538764	0x138	ff_replaygain_export	Reads the four REPLAYGAIN tags from metadata and stores gains and peaks in a vendor global.
-hciplayer	0x5a8298	0x1da8	fft2048	FFmpeg float split-radix FFT of 2048 points, with the smaller transforms inlined
-hciplayer	0x5ace10	0x31c8	fft8192	FFmpeg float split-radix FFT of 8192 points: fft4096 call, inlined halves, final pass over offsets 4096/6144
-hciplayer	0x5b59b0	0x8c0	flac_parse	FFmpeg flac_parser.c: finds FLAC frame headers in the buffer, scores them and splits out frames.
-hciplayer	0x5b6334	0x570	decode_residuals	FFmpeg flacdec.c: decodes a subframe's Rice-coded residuals partition by partition
-hciplayer	0x5b6950	0x1524	flac_decode_frame	Decodes one FLAC packet, skipping header packets and failing on a bad frame header.
-hciplayer	0x5b7e80	0x6c	flac_decorrelate_indep_c_16	Interleaves independent int32 channels into 16-bit samples with a shift.
-hciplayer	0x5b8ba0	0x68	flac_decorrelate_indep_c_16p	Copies independent int32 channels into planar 16-bit samples with a shift.
-hciplayer	0x5b8d18	0x70	flac_decorrelate_indep_c_32	Writes independent FLAC channels as interleaved 32-bit samples, shifted left by the wasted-bits amount.
-hciplayer	0x5ba83c	0x64	flac_decorrelate_indep_c_32p	Writes independent FLAC channels to planar 32-bit output, each sample shifted left by the output shift.
-hciplayer	0x5ba9bc	0x180	flac_lpc_16_c	FLAC LPC restore with a 32-bit accumulator, two samples per pass; adds the prediction to the residual in place.
-hciplayer	0x5bab3c	0xa8	flac_lpc_32_c	FLAC LPC restore with a 64-bit accumulator; adds the prediction to the residual in place.
-hciplayer	0x5f5c28	0x2b4	ff_thread_get_buffer	Gets a frame buffer for a frame-threaded decoder, enforcing the before-finish_setup rule and waiting on the main thread if needed.
-hciplayer	0x6ea744	0x300	av_dict_set	Sets or replaces a key/value pair in an AVDictionary, honouring the DONT_STRDUP, DONT_OVERWRITE and APPEND flags.
-hciplayer	0x6f0f4c	0x8c	av_log	FFmpeg logging entry: adjusts the level by the context class offset and calls the installed log callback.
-hciplayer	0x6f4118	0x2c	av_freep	FFmpeg av_freep: frees the pointer stored at the address and sets it to NULL
-hciplayer	0x72d9f0	0x1978	parse_codec_cfg	MPlayer codecs.conf parser: with no file uses the built-in codec tables, else reads and parses the given config file.
-hciplayer	0x72f9fc	0x3c	mqa_decode_chunk	Thin wrapper called per audio chunk that runs the MQA library decoder and restores one saved output word.
-hciplayer	0x730354	0x3c	mqa_detect_step	MQA detector entry: picks a routine by the width pair at +0x1000/+0x1004 (equal, or 24 in 32), else returns 3.
+hciplayer	0x43af54	0xb0	mcl_orderstop_pcm_close	Closes the PCM, draining first unless on the USB way; the close mcl-orderstop reaches.
+hciplayer	0x43b004	0x5c	hci_dac_mute	Sets hciplayer's DAC mute state through the codec ioctl and records it in 0xb11584 (jacks only)
+hciplayer	0x445e7c	0x2c	mp_msg	Log message sink: calls the real printer unless the level is -1.
+hciplayer	0x44619c	0xd4	calc_a_pts	MPlayer dec_audio calc_a_pts: sh_audio pts plus decoded bytes, or demuxer pts plus bytes read; NOPTS without a stream
+hciplayer	0x44bf44	0x5c8	af_reinit	Reinitialises the audio filter chain, inserting format and dummy filters as needed.
+hciplayer	0x44ce18	0x2b8	af_add	Inserts a named filter right after the leading format filter, then reinitialises the chain.
+hciplayer	0x44d0d0	0x58	af_play	MPlayer's af_play: passes a data block through each filter of the audio filter chain in turn
+hciplayer	0x451994	0x170	af_format_play_float_s16	af_format play_float_s16: resizes the local buffer and converts float samples to S16 with lrintf and saturation
+hciplayer	0x451b04	0xea4	af_format_play	af_format's generic play: converts a block between sample formats (endian, sign, mu/A-law, int/float, bps) into the local buffer
+hciplayer	0x45ba3c	0x6b4	af_volume_play	af_volume play: scales S16 or float samples by the per-channel levels, with a fast path when all levels match
+hciplayer	0x469c10	0x180	scarletbook_close	Frees a SACD scarletbook handle: both loaded track sets and each table pointer.
+hciplayer	0x469d90	0x1194	scarletbook_open	Reads and validates the SACD master TOC and text, building the scarletbook handle.
+hciplayer	0x46ba98	0x44	scarletbook_output_destroy	Frees a SACD output handle and its first owned buffer; returns -1 for NULL
+hciplayer	0x46bcdc	0x26c	sacd_iso_fill	SACD ISO reader: reads the next track blocks for a stream, up to 1000 retries, flags unsupported on exhaustion
+hciplayer	0x4781c4	0xa00	demux_sacd_iso_open	SACD ISO demuxer check/open: opens the disc image, reads the TOC and sets up track streams
+hciplayer	0x479f2c	0x121c	demux_dsdiff_open	DFF (DSDIFF) demuxer check/open: reads the chunk properties and sets up the DSD audio stream
+hciplayer	0x47b670	0x7cc	demux_dsf_check	Vendor DSF check: reads the DSD/fmt/data chunks, validates DSD rates and block size, fills a priv; failure stores global stop 2
+hciplayer	0x47e8c0	0xa8	uninit_audio	Tears down the audio decoder and filters, logging the uninit.
+hciplayer	0x47ee10	0x3b4	init_best_audio_codec	Tries the codec list and families in turn for an audio stream, handling hwac3/hwmpa, and logs the selected codec or failure.
+hciplayer	0x47f1c4	0x1a8	init_audio_filters	Builds the audio filter chain between the decoder format and the output format, logging both formats.
+hciplayer	0x47f40c	0x43c	filter_n_bytes	dec_audio.c static: decodes enough input and runs it through the audio filter chain, growing the filtered buffer when needed
+hciplayer	0x47f970	0x7f0	aac_scan_adts_duration	Vendor ADTS scan: counts frames for frames*1024/rate, records frame offsets; a .aac with no sync in 1 MB stores the global stop
+hciplayer	0x480c50	0x185c	read_asf_header	Parses an ASF header: streams, DRM notice, content description tags, file properties, data chunk start
+hciplayer	0x48498c	0x110	demux_read_data	Copies up to len bytes of a demuxer stream into mem (or skips them when mem is NULL), refilling via ds_fill_buffer
+hciplayer	0x485334	0x6a8	demux_open_stream	Probes demuxer types in order on a stream, logging the detected format and trying fuzzy guesses; calls itself.
+hciplayer	0x485c28	0x148	ds_get_next_pts	Returns the next packet timestamp of a demuxer stream, filling ahead and giving up on too many buffered packets.
+hciplayer	0x48662c	0x24c	demux_seek	Seeks a demuxer: frees queued packets, tries a stream time seek then the demuxer's seek, resyncs and resets audio.
+hciplayer	0x48b564	0x38	demux_close_audio	demux_audio close: frees the demuxer private data and clears the vendor FLAC seek-target global
+hciplayer	0x48b59c	0x150	flac_seek_probe_frame_time	Reads the next demuxer packet, finds a FLAC frame sync and decodes its header to return that frame's start time in seconds.
+hciplayer	0x48bf04	0x1028	demux_audio_fill_buffer	demux_audio fill: reads the next packet for MP3/WAV/FLAC and queues it, with the vendor post-seek frame sizing
+hciplayer	0x48cf2c	0x11dc	demux_audio_seek	demux_audio seek: MP3 byte estimate, FLAC probe-and-step search for the target frame
+hciplayer	0x48e430	0x5cc	id3v2_read_replaygain	Vendor ID3v2 walker: collects TXXX frames from up to 2 KB of tag into a dictionary, hands it to ff_replaygain_export, frees it
+hciplayer	0x48e9fc	0x43e8	demux_audio_open	demux_audio open: detects MP3/WAV/FLAC, parses headers and ID3/Xing/FLAC metadata, sets up the audio stream
+hciplayer	0x4a2adc	0x6b4	mp3_scan_frames_build_seek_table	Vendor MP3 walk after an Xing/VBRI header: recounts every frame and fills the early-frame offset table
+hciplayer	0x4a4c50	0x540	open_stream_full	Opens a URL by finding the stream type whose protocol matches, opening it with its options and following redirects.
+hciplayer	0x4a5aac	0xf8	new_memory_stream	Creates a memory stream object holding a copy of a buffer, sized for the data.
+hciplayer	0x4ac7e0	0x9c	af_lavcresample_open	af_lavcresample.c static open: allocates the filter state and sets the control, play and uninit hooks
+hciplayer	0x4ac87c	0x1d8	af_lavcresample_play	lavcresample play: resizes its output buffer and converts one block through libswresample.
+hciplayer	0x4aca54	0x74	af_lavcresample_uninit	Frees the lavcresample filter instance and its resampler state.
+hciplayer	0x4acac8	0x440	af_lavcresample_control	Control callback of lavcresample: parses the rate:filter:... command line and handles format and rate changes.
+hciplayer	0x4ad0d8	0x550	ad_ffmpeg_decode_audio	ad_ffmpeg.c static decode_audio: decodes packets through libavcodec until minlen bytes are out.
+hciplayer	0x4aeb84	0x450	lavf_check_file	Probes a stream for libavformat, honouring a forced format, and logs LAVF_check results.
+hciplayer	0x4af544	0x84	lavf_check_preferred_file	Runs lavf_check_file, then claims the stream as LAVF_PREFERRED when the found format is on the preferred list.
+hciplayer	0x4b28c0	0x124	ad_libmad_read_frame	ad_libmad.c static read_frame: tops up the MAD buffer from demux_read_data and decodes one frame, resyncing on errors
+hciplayer	0x4ccbd4	0x7fc	cache_stream_fill_buffer	Refills the stream buffer from the cache process, or calls stream_fill_buffer when there is no cache; vendor wait for fill.
+hciplayer	0x4ee6c0	0x480	dsf_read_header	FFmpeg DSF demuxer header read: checks format version and id, channel type, bit order, sets up the DSD stream and block_align
+hciplayer	0x507014	0x1c1c	iff_read_header	FFmpeg iff.c: reads an IFF/8SVX/DSDIFF header and its chunks into stream parameters and metadata.
+hciplayer	0x515c64	0x1ec	mov_read_keys	Reads the mov keys atom and records metadata key names.
+hciplayer	0x516b9c	0x1514	mov_read_trak	FFmpeg mov.c trak atom reader, with mov_build_index inlined: builds the sample index and frees the per-track tables
+hciplayer	0x52f8cc	0x518	ogg_packet	FFmpeg oggdec.c static ogg_packet: assembles the next packet from the current page, finding codecs and handling headers.
+hciplayer	0x538c84	0x138	ff_replaygain_export	Reads the four REPLAYGAIN tags from metadata and stores gains and peaks in a vendor global.
+hciplayer	0x5a87b8	0x1da8	fft2048	FFmpeg float split-radix FFT of 2048 points, with the smaller transforms inlined
+hciplayer	0x5ad330	0x31c8	fft8192	FFmpeg float split-radix FFT of 8192 points: fft4096 call, inlined halves, final pass over offsets 4096/6144
+hciplayer	0x5b5ed0	0x8c0	flac_parse	FFmpeg flac_parser.c: finds FLAC frame headers in the buffer, scores them and splits out frames.
+hciplayer	0x5b6854	0x570	decode_residuals	FFmpeg flacdec.c: decodes a subframe's Rice-coded residuals partition by partition
+hciplayer	0x5b6e70	0x1524	flac_decode_frame	Decodes one FLAC packet, skipping header packets and failing on a bad frame header.
+hciplayer	0x5b83a0	0x6c	flac_decorrelate_indep_c_16	Interleaves independent int32 channels into 16-bit samples with a shift.
+hciplayer	0x5b90c0	0x68	flac_decorrelate_indep_c_16p	Copies independent int32 channels into planar 16-bit samples with a shift.
+hciplayer	0x5b9238	0x70	flac_decorrelate_indep_c_32	Writes independent FLAC channels as interleaved 32-bit samples, shifted left by the wasted-bits amount.
+hciplayer	0x5bad5c	0x64	flac_decorrelate_indep_c_32p	Writes independent FLAC channels to planar 32-bit output, each sample shifted left by the output shift.
+hciplayer	0x5baedc	0x180	flac_lpc_16_c	FLAC LPC restore with a 32-bit accumulator, two samples per pass; adds the prediction to the residual in place.
+hciplayer	0x5bb05c	0xa8	flac_lpc_32_c	FLAC LPC restore with a 64-bit accumulator; adds the prediction to the residual in place.
+hciplayer	0x5f6148	0x2b4	ff_thread_get_buffer	Gets a frame buffer for a frame-threaded decoder, enforcing the before-finish_setup rule and waiting on the main thread if needed.
+hciplayer	0x6eac64	0x300	av_dict_set	Sets or replaces a key/value pair in an AVDictionary, honouring the DONT_STRDUP, DONT_OVERWRITE and APPEND flags.
+hciplayer	0x6f146c	0x8c	av_log	FFmpeg logging entry: adjusts the level by the context class offset and calls the installed log callback.
+hciplayer	0x6f4638	0x2c	av_freep	FFmpeg av_freep: frees the pointer stored at the address and sets it to NULL
+hciplayer	0x72df10	0x1978	parse_codec_cfg	MPlayer codecs.conf parser: with no file uses the built-in codec tables, else reads and parses the given config file.
+hciplayer	0x72ff1c	0x3c	mqa_decode_chunk	Thin wrapper called per audio chunk that runs the MQA library decoder and restores one saved output word.
+hciplayer	0x730874	0x3c	mqa_detect_step	MQA detector entry: picks a routine by the width pair at +0x1000/+0x1004 (equal, or 24 in 32), else returns 3.

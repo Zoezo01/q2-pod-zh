@@ -524,7 +524,7 @@ int widget_set_focused(void *x, int v) {
     if ((long)x == edit_widget && focused != v) {
         focused = v;
         input_method_request(input_method(), v ? x : 0);
-        if (v && !select_none) selected[0] = 0, selected[1] = strlen(w[edit_widget].text); /* stock's idle, 0x60f560 */
+        if (v && !select_none) selected[0] = 0, selected[1] = strlen(w[edit_widget].text); /* stock's idle, 0x621e90 */
         if (v) snprintf(at_focus, sizeof at_focus, "%s", w[edit_widget].text);
         if (v && w[edit_widget].focus) w[edit_widget].focus(0, 0);
     }

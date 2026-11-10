@@ -108,7 +108,7 @@ def libc(u, address, size, _):
         if dev.errors: result = dev.errors.pop(0)
         else:
             frames = min(frames, dev.most)
-            dev.got += bytes(u.mem_read(a(1), frames * r(0xb11598))); dev.appl += frames; result = frames
+            dev.got += bytes(u.mem_read(a(1), frames * r(0xb22530))); dev.appl += frames; result = frames
             dev.calls += 1
             if dev.before is None: dev.before = [*dac_log]
     elif real: result = 0  # anything else stock's init calls
@@ -184,10 +184,10 @@ for rate, output_rate in ((96000, 48000), (44100, 48000), (44100, 96000), (48000
 # stock's init as a DAC: it keeps the PCM open when the request equals the saved triple (the last
 # request, its rate and format as negotiated), else opens and negotiates, and ao_data holds the result.
 assert struct.unpack_from('<I', raw, fileoff(raw, AO_INIT_SLOT))[0] == ps['ao_init']
-WAY, PCM, AO_DATA, S16, S24 = 0xb10e54, 0xb115a8, 0xafa1a0, 0x88, 0x90
+WAY, PCM, AO_DATA, S16, S24 = 0xb11e54, 0xb22540, 0xafb1a0, 0x88, 0x90
 dac, seen, saved = {}, [], [None]
 def stock_init(u, address, size, _):
-    asked = (a(0), a(1), a(2))  # ao_data is the request already: reinit_audio_chain writes it (0x42e9e4)
+    asked = (a(0), a(1), a(2))  # ao_data is the request already: reinit_audio_chain writes it (0x42e8f0)
     seen.append(asked)
     if not (r(PCM) and asked == saved[0]):
         saved[0] = (dac['rate'](asked[0]), asked[1], dac['fmt'](asked[2]))
@@ -234,11 +234,11 @@ print('USB DAC init: an album on a 48 kHz DAC opens the PCM once; other requests
 # The wired outputs' start (patch/peq_player.c dac_*), through stock's own sites around the patched calls.
 for address, _, name in DAC_RELEASE:
     assert struct.unpack_from('<I', raw, fileoff(raw, address))[0] == jal(ps[name])
-FLAG, FD, CAN_PAUSE, MPCTX, OFFSET = 0xb11584, 0xb1158c, 0xb11594, 0xaf9e30, 0xaf9b78
+FLAG, FD, CAN_PAUSE, MPCTX, OFFSET = 0xb12514, 0xb22524, 0xb2252c, 0xafae30, 0xafab78
 UNMUTE = ('ioctl', 5, 0xc0044d1f, 0)
 def stub(u, address, size, _): u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
-u.hook_add(UC_HOOK_CODE, stub, begin=0x4460fc, end=0x4460fc)  # mp_msg
-u.hook_add(UC_HOOK_CODE, stub, begin=0x42bcf8, end=0x42bcf8)  # Bluetooth's volume after a resume
+u.hook_add(UC_HOOK_CODE, stub, begin=0x445e7c, end=0x445e7c)  # mp_msg
+u.hook_add(UC_HOOK_CODE, stub, begin=0x42bd58, end=0x42bd58)  # Bluetooth's volume after a resume
 ctx, frame = alloc(0x100), alloc(0x400)
 w(MPCTX, ctx), w(frame + 0x180, 0xb10000), w(CAN_PAUSE, 1), w(PCM, 0x1000)
 def state(way=0, flag=1, fd=5, paused=False, offset=0.0):
@@ -251,9 +251,9 @@ def site(start, until, **regs):
     u.reg_write(UC_MIPS_REG_SP, STACK), u.reg_write(UC_MIPS_REG_RA, DONE)
     u.emu_start(start, until, count=100_000)
     return [*dac_log], r(FLAG)
-def init_end(): return site(0x438d78, 0x438d94, S4=0xb10000, FP=frame)
-def seek(): return site(0x42b0d4, 0x42b128, V0=0xb10000, S0=ctx, S1=0xb10000, S2=0xb10000)
-def resume(): return site(0x4387ec, DONE)
+def init_end(): return site(0x438638, 0x438654, S4=0xb10000, FP=frame)
+def seek(): return site(0x42b134, 0x42b188, V0=0xb10000, S0=ctx, S1=0xb10000, S2=0xb10000)
+def resume(): return site(0x4380ac, DONE)
 def wrapper(name, *args):
     dac_log.clear(), call(ps[name], *args)
     return [*dac_log], r(FLAG)
@@ -344,8 +344,8 @@ print('Wired start: a press waits once before audio flows; a natural change, Blu
 # rate (snd_pcm_ioplug_set_param_minmax(HW_RATE, sampling, sampling)) and resampling is off, so set_rate_near
 # lands on it; plug converts the format. A call's name and arguments go in `alsa` in order.
 u.hook_del(init_hook)
-SET_RATE_NEAR, S16LE, GAPLESS, DSD_FILE, STOP, NEXT = 'snd_pcm_hw_params_set_rate_near', 9, 0xb10e58, 0xb10e5c, 0xb10e70, 0xb10e6c
-TRIPLE, BT = (0xafa168, 0xafa16c, 0xafa164), 1
+SET_RATE_NEAR, S16LE, GAPLESS, DSD_FILE, STOP, NEXT = 'snd_pcm_hw_params_set_rate_near', 9, 0xb11e58, 0xb11e5c, 0xb11e70, 0xb11e6c
+TRIPLE, BT = (0xafb168, 0xafb16c, 0xafb164), 1
 alsa, pcm_state, pcm_seen, queries = [], [2], [2], []  # the ioplug's real state, and what snd_pcm_state last showed
 transport = [48000]
 def set_rate_near():
@@ -374,7 +374,7 @@ def output(way, gapless=1, fd=0):
 def ask(rate, fmt=S16LE, entry=None, channels=2):
     """A request through the slot (or stock's init); what it called, and ao_data's rate after."""
     alsa.clear()
-    w(AO_DATA, rate, channels, fmt)  # as reinit_audio_chain does before init (0x42e9e4, 0x42eaa0)
+    w(AO_DATA, rate, channels, fmt)  # as reinit_audio_chain does before init (0x42e8f0, 0x42eaa0)
     assert call(entry or ps['ao_init'], rate, channels, fmt, 0) == 1 and r(PCM) == 0x5000
     return [*alsa], r(AO_DATA)
 REOPEN = ['snd_pcm_drain', 'snd_pcm_close', 'snd_pcm_open']
@@ -414,13 +414,13 @@ for t in TRIPLE: w(t, 0xffffffff)
 transport[0] = 48000
 assert opens(ask(48000)[0]) == REOPEN and r(AO_DATA) == 48000
 assert ask(48000) == ([], 48000)
-# A transport gone under the open PCM: stock's reset only prepares it (way 1 at 0x439c00, past the slot), so
+# A transport gone under the open PCM: stock's reset only prepares it (way 1 at 0x4394c0, past the slot), so
 # the next change negotiates anew, as stock's reopen did. The states are set by hand: the plugin isn't run. XRUN is
 # a link lost during an underrun (or a next track later than the buffer), reached only through snd_pcm_status.
 for state in (8, 4, 6, 1):  # DISCONNECTED, XRUN, PAUSED, SETUP
     output(BT); transport[0] = 96000
     ask(48000); ask(48000)
-    alsa.clear(); call(0x439c00)
+    alsa.clear(); call(0x4394c0)
     assert not opens(alsa)
     pcm_state[0], transport[0] = state, 48000
     assert opens(ask(48000)[0]) == REOPEN and r(AO_DATA) == 48000, state
@@ -432,7 +432,7 @@ for state in (3, 2):
     ask(48000); ask(48000)
     pcm_state[0] = state; queries.clear()
     assert ask(48000) == ([], 96000) and queries == ['status', 'state'], state
-# From Bluetooth to a USB DAC, its PCM left open by mcl-orderstop (way 1 skips the close, 0x42ce78), the triple -1
+# From Bluetooth to a USB DAC, its PCM left open by mcl-orderstop (way 1 skips the close, 0x42ced8), the triple -1
 # or kept: the pair stays Bluetooth's. A reopen at what the file asks, as stock.
 for reset in (True, False):
     output(BT); transport[0] = 96000
@@ -479,11 +479,11 @@ clock[0] += 4 * 10**9
 assert play(instance(44100, 96000, ps['rs_open']), pcm[8 * 4096:]) == fresh  # and 44.1 again starts fresh
 print('Bluetooth rate change on a kept-open PCM: right pitch at 44.1, 48 and 88.2 kHz to 96 kHz; 44.1 to 96 to 44.1 starts fresh.')
 
-# The old track's end. Stock's uninit_player (0x42e0a8), the descriptor's slot and stock's init around ao_*, in
+# The old track's end. Stock's uninit_player (0x42e108), the descriptor's slot and stock's init around ao_*, in
 # order of the calls that matter, with a drain that takes the buffer's rest once and then fails as libasound's
 # state check does (mask 0x7c in snd_pcm_drain, at 0x3ff94): a PCM in SETUP gets -EBADFD at once.
 assert struct.unpack_from('<I', raw, fileoff(raw, AO_UNINIT_SLOT))[0] == ps['ao_uninit']
-EBADFD, PLAY_FLAG, PRELOADED, INITED, TAIL_MS = -77, 0xb10e34, 0xb10df8, 0xb10e8c, 500
+EBADFD, PLAY_FLAG, PRELOADED, INITED, TAIL_MS = -77, 0xb11e34, 0xb11df8, 0xb11e8c, 500
 DRAIN, CLOSE, OPEN, MUTE, UNMUTE, WAIT = 'snd_pcm_drain', 'snd_pcm_close', 'snd_pcm_open', ('dac', 1), ('dac', 0), 'wait'
 DROP = 'snd_pcm_drop'
 # libasound is modelled: the first drain takes the buffer's rest and leaves SETUP, a later one gets -EBADFD. during[0],
@@ -520,9 +520,9 @@ real.update({DRAIN: drain, DROP: drop, OPEN: pcm_open, 'ioctl': dac_call, 'uslee
 def order(): return [c if c[0] == 'dac' else c[0] for c in alsa if c[0] in (DRAIN, DROP, CLOSE, OPEN, 'dac', WAIT)]
 w(ctx + 0x74, 0), w(ctx + 4, 1), w(MPCTX, ctx), w(OFFSET, 0), w(OFFSET + 4, 0)
 def end(eof, inited=2):
-    """A file's end: uninit_player as the main loop calls it (0x421804)."""
-    w(ctx + 8, 0x88f758), w(ctx + 0x14, eof), w(INITED, inited)  # uninit_player clears the descriptor
-    alsa.clear(); call(0x42e0a8, 0xff7a)
+    """A file's end: uninit_player as the main loop calls it (0x421864)."""
+    w(ctx + 8, 0x88fc74), w(ctx + 0x14, eof), w(INITED, inited)  # uninit_player clears the descriptor
+    alsa.clear(); call(0x42e108, 0xff7a)
     return order()
 def begin(way, rate=44100, fmt=S16LE, gapless=1, answer=None):
     output(way, gapless, 5 if not way else 0); transport[0] = answer or (96000 if way == BT else None)
@@ -532,7 +532,7 @@ def nxt(rate=44100, fmt=S16LE, channels=2, entry=None):
     wall[0] = 0
     ask(rate, fmt, entry, channels)
     return order()
-def file_end_section(): site(0x4224a4, 0x4224b4, S0=0xb10000)  # 0x422694: with no preload the triple goes
+def file_end_section(): site(0x422504, 0x422514, S0=0xb10000)  # 0x4226f4: with no preload the triple goes
 press[0] = None  # nobody pressed: PRESS_FILE's wait stays out of everything below
 JACK = [MUTE, DRAIN, CLOSE, OPEN, UNMUTE]  # stock's order: the old audio's end goes unheard
 UNCLASSED = [DRAIN, *JACK]  # demo may have muted, so stock's timing after the drain
@@ -559,7 +559,7 @@ for rate in (44100, 48000):
     begin(0)
     w(NEXT, 1); w(PRELOADED, 0); file_end_section()
     assert end(4) == []
-    w(NEXT, 0)  # the idle loop clears it (0x42da10)
+    w(NEXT, 0)  # the idle loop clears it (0x42da70)
     assert nxt(rate) == JACK, rate
 # A skip that lands after the loop's natural eof, before uninit, and one after uninit but before init.
 begin(0); w(NEXT, 1); end(1); w(NEXT, 0)
@@ -569,7 +569,7 @@ command = [lambda: None]
 def handler(u, address, size, _):
     if command[0] is None: return  # stock's own handler runs
     command[0](); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
-u.hook_add(UC_HOOK_CODE, handler, begin=0x42be20, end=0x42be20)
+u.hook_add(UC_HOOK_CODE, handler, begin=0x42be80, end=0x42be80)
 def call_on_command_stack(fn, buf=0):
     """Its own stack: during a drain the main thread's frames are live below STACK."""
     u.reg_write(UC_MIPS_REG_A0, buf), u.reg_write(UC_MIPS_REG_SP, STACK - 0x80000), u.reg_write(UC_MIPS_REG_RA, DONE)
@@ -584,7 +584,7 @@ def nxt_pressed(flag, **kw):
     got = nxt(**kw)
     assert during[0] is None, 'no drain to land in'
     return got
-for flag in (NEXT, STOP):  # the idle loop clears either (0x42da10, 0x42da18), so only hci_command's disarm remains
+for flag in (NEXT, STOP):  # the idle loop clears either (0x42da70, 0x42da78), so only hci_command's disarm remains
     begin(0); end(1); pressed(flag); w(flag, 0)
     assert nxt(48000) == JACK, hex(flag)
 # A flag up as init looks: the disarm raced the arm (the uninit slot read the flags just before), so nothing drains.
@@ -608,14 +608,14 @@ for flag in (NEXT, STOP, PLAY_FLAG):
     got = nxt_pressed(flag, rate=48000)
     assert got == [DRAIN, DROP, CLOSE, OPEN] and wall[0] == 0, (hex(flag), got)
     w(flag, 0)
-# The same through stock's own handler (0x42be20), for the commands demo sends: its string parsing answered here.
+# The same through stock's own handler (0x42be80), for the commands demo sends: its string parsing answered here.
 def strchr():
     at = cstr(a(0)).find(bytes([a(1) & 255]))
     return a(0) + at if at >= 0 else 0
 def strncpy(): u.mem_write(a(0), cstr(a(1))[:a(2)].ljust(a(2), b'\0'))
 def strcpy(): u.mem_write(a(0), cstr(a(1)) + b'\0')
 real.update({'strchr': strchr, 'strncpy': strncpy, 'strcpy': strcpy})
-w(0xb10bdc, alloc(0x800))  # the song record the url goes in (0x42bc7c)
+w(0xb11be4, alloc(0x800))  # the song record the url goes in (0x42bc7c)
 def stock_command(text):
     buf = alloc(len(text) + 1); u.mem_write(buf, text.encode() + b'\0')
     command[0] = None
@@ -630,17 +630,17 @@ for text, flag in ((STOP_CMD, STOP), (NEXT_CMD, NEXT), (SONG_CMD, PLAY_FLAG)):
     assert nxt(48000) == SILENCED, text
     w(PLAY_FLAG, 0), w(STOP, 0), w(NEXT, 0)
     begin(2); end(1)
-    during[0] = lambda: (stock_command(text), w(GAPLESS, 1))  # its fields set the Gapless word (0x42d300); off, USB waits 350 ms (0x439580)
+    during[0] = lambda: (stock_command(text), w(GAPLESS, 1))  # its fields set the Gapless word (0x42d300); off, USB waits 350 ms (0x438e40)
     assert nxt(48000) == [DRAIN, DROP, CLOSE, OPEN] and wall[0] == 0, text
     w(PLAY_FLAG, 0), w(STOP, 0), w(NEXT, 0)
 # And before init: stock's skip or stop disarms, stock's set-songurl (the cold route's own) doesn't.
 for text, want in ((STOP_CMD, JACK), (NEXT_CMD, JACK), (SONG_CMD, HEARD)):  # the triple kept here, as a preload's
     begin(0); end(1); stock_command(text)
-    w(PLAY_FLAG, 0), w(STOP, 0), w(NEXT, 0)  # the idle loop clears all three (0x42d9fc)
+    w(PLAY_FLAG, 0), w(STOP, 0), w(NEXT, 0)  # the idle loop clears all three (0x42da5c)
     assert nxt(48000) == want, text
 # mcl-orderstop's close, then a press, during the drain on USB: no drop of a closed PCM.
 begin(2); end(1)
-during[0] = lambda: (call_on_command_stack(0x43b1d0), pressed(NEXT))
+during[0] = lambda: (call_on_command_stack(0x43af54), pressed(NEXT))
 assert DROP not in nxt(48000)
 w(NEXT, 0)
 # The main thread stays out of stock's close while the other thread is on the PCM (2: being cut).
@@ -682,9 +682,9 @@ assert nxt(48000) == JACK
 begin(0)
 assert end(0) == []
 assert nxt(48000) == JACK
-# mcl-orderstop closed the PCM after a natural end (0x43b1d0, an unplayable file's dialog, then another song): nothing to drain.
+# mcl-orderstop closed the PCM after a natural end (0x43af54, an unplayable file's dialog, then another song): nothing to drain.
 for way, stock in ((0, [MUTE, OPEN, UNMUTE]), (2, [OPEN])):
-    begin(way); end(1); call(0x43b1d0)
+    begin(way); end(1); call(0x43af54)
     assert r(PCM) == 0 and nxt(48000) == stock, way
 # An arm on Bluetooth doesn't drain another way's PCM: LDAC ends, the USB DAC arrives.
 begin(BT); ask(48000); end(1)
@@ -720,7 +720,7 @@ for way, want in ((0, HEARD), (2, [DRAIN, CLOSE, OPEN])):
     status, real['snd_pcm_status'] = real['snd_pcm_status'], lambda: -1 & 0xffffffff  # says nothing: reopen, whatever the stack held
     assert nxt() == want, way
     real['snd_pcm_status'] = status
-# Bluetooth's underrun stops its plugin and stock's play prepares (0x43b038): a full answer there changes nothing.
+# Bluetooth's underrun stops its plugin and stock's play prepares (0x43adf8): a full answer there changes nothing.
 begin(BT); ask(48000); end(1); avail[0] = BUFFER
 assert ask(48000)[0] == []
 avail[0] = 0
@@ -742,12 +742,12 @@ for rate in (44100, 192000):
     assert nxt(rate) == HEARD and r(FLAG) == 0, rate
     cold(rate); avail[0] = BUFFER - 1
     assert nxt(rate) == [], rate
-    # MQA's get_space is capped below the ring (0x438210): the count is read directly.
+    # MQA's get_space is capped below the ring (0x437ad0): the count is read directly.
     cold(rate); avail[0] = BUFFER
-    w(0xb10c54, 2), w(0xb10b6c, 0x18), w(0xb11598, 8), w(0xafa1b4, BUFFER * 8)  # 32 bits: stock's get_space answers 3/4 of the ring
-    assert call(0x43815c) < r(0xafa1b4)
+    w(0xb11c5c, 2), w(0xb11b74, 0x18), w(0xb22530, 8), w(0xafb1b4, BUFFER * 8)  # 32 bits: stock's get_space answers 3/4 of the ring
+    assert call(0x437a1c) < r(0xafb1b4)
     assert nxt(rate) == HEARD and r(FLAG) == 0, rate
-    w(0xb10c54, 0), w(0xb10b6c, 0)
+    w(0xb11c5c, 0), w(0xb11b74, 0)
     avail[0] = 0
     # A PCM not running (a pause's, a suspend's) isn't kept.
     cold(rate); pcm_state[0] = 6
@@ -787,7 +787,7 @@ w(NEXT, 0)
 cold(44100); pressed(NEXT); w(NEXT, 0)
 got = nxt(); assert got == [*JACK, WAIT], got
 got = nxt(); assert got == [], got
-# Bluetooth and USB: demo's mute is way 0's only (0x5ad1b0 tests its output way), so no mark is looked for and the same
+# Bluetooth and USB: demo's mute is way 0's only (0x5bf628 tests its output way), so no mark is looked for and the same
 # format stays open with any word or none. A press's stamp, too: it hears the buffer's rest first (the limit in
 # docs/internals.md). LDAC's answer and AAC's and SBC's 48 kHz both meet the compare; neither way waits for a line.
 REOPEN = [DRAIN, CLOSE, OPEN]
@@ -800,7 +800,7 @@ for way, rate, answer in ((2, 44100, None), (2, 192000, None), (BT, 48000, 96000
         assert ask(rate)[0] == [] and wall[0] == 0 and r(FLAG) == 0, (way, rate, word)
         assert r(TRIPLE[1]) == 2 and r(TRIPLE[0]) != 0xffffffff, (way, rate, word)
     press[0] = None
-    # Gapless off, a bit depth or channels: a reopen; ao_wait never reaches them. USB's one sleep with Gapless off is stock's own (0x439580).
+    # Gapless off, a bit depth or channels: a reopen; ao_wait never reaches them. USB's one sleep with Gapless off is stock's own (0x438e40).
     cold(rate, gapless=0, way=way, answer=answer)
     got = nxt(rate); assert got == (REOPEN if way == BT else [*REOPEN, WAIT]), (way, rate, got)
     for change_to in ({'fmt': 0x19}, {'channels': 1}):
@@ -836,9 +836,9 @@ for answer, limit in ((48000, 9600), (96000, 19200)):
     assert nxt(48000) == REOPEN, answer
     avail[0] = 0
 # MQA's get_space isn't in the ring's units: it reopens. A status that fails reads as full, and the state decides.
-cold(48000, way=BT); w(0xb10c54, 2), w(0xb10b6c, 0x18)
+cold(48000, way=BT); w(0xb11c5c, 2), w(0xb11b74, 0x18)
 got = nxt(48000)
-w(0xb10c54, 0), w(0xb10b6c, 0)
+w(0xb11c5c, 0), w(0xb11b74, 0)
 assert got == REOPEN, got
 cold(48000, way=BT)
 status, real['snd_pcm_status'] = real['snd_pcm_status'], lambda: -1 & 0xffffffff
@@ -881,10 +881,10 @@ assert nxt(48000) == [CLOSE, OPEN]
 # Bluetooth: stock drains unmuted itself, so no second one.
 begin(BT); end(1)
 assert nxt(48000, fmt=0x19) == [DRAIN, CLOSE, OPEN]
-# mcl-orderstop's close (0x43b1d0) is stock's: the jack drains unmuted, USB closes.
+# mcl-orderstop's close (0x43af54) is stock's: the jack drains unmuted, USB closes.
 for way, want in ((0, [DRAIN, CLOSE]), (2, [CLOSE])):
     begin(way)
-    alsa.clear(); call(0x43b1d0)
+    alsa.clear(); call(0x43af54)
     assert order() == want, way
 print('Old track\'s end: a natural change that reopens is heard to its end, then mutes around the close and open and waits for the line; one at the same format that demo left unmuted stays open; dry reopens; a press during it silences; a skip, a stop, DSD and a preloaded same-format change call as stock.')
 
@@ -892,7 +892,7 @@ real.clear()  # the stubs above answer from here on
 UNMUTE = ('ioctl', 5, 0xc0044d1f, 0)  # the real ioctl again, not the section above's marker
 # An unpause: every write after the first is kept as it went, and a resume writes the frames again, in order, from the
 # fade's start to the newest, into a dropped and prepared PCM, after the unmute's wait and never by snd_pcm_pause.
-PAUSED, SEEK, AO_BUF, FRAME, S16F, S32F = 6, 0xb10c38, AO_DATA + 0x14, 0xb11598, 0x9, 0x19
+PAUSED, SEEK, AO_BUF, FRAME, S16F, S32F = 6, 0xb11c40, AO_DATA + 0x14, 0xb22530, 0x9, 0x19
 buf = alloc(1 << 20)
 def frames_of(start, n, width, nch=2):
     """Frames that name themselves: left is the counter, the rest its negative."""
@@ -1145,7 +1145,7 @@ w(WAY, 1)  # Bluetooth's plugin stops at its own underrun: past the ring, nothin
 dev.avail, dev.got, dev.status_rc = 22048 + 100, b'', 0
 assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [] and dev.got == new
 w(WAY, 0)
-w(ps['ao_stayed'], 1), w(0xafa1b0, 16 * 4)  # AO_OUTBURST: 16 frames
+w(ps['ao_stayed'], 1), w(0xafb1b0, 16 * 4)  # AO_OUTBURST: 16 frames
 dev.avail, dev.got, dev.status_rc = 22048 + 100, b'', -1 & 0xffffffff  # a status that fails forwards nothing
 assert call(ps['ao_write'], PCM_H, buf, 1000) == 1000 and forwards == [] and dev.got == new
 w(ps['ao_stayed'], 1)

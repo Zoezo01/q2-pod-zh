@@ -50,7 +50,7 @@ def verify(stock, out, baseline=None):
             off = fileoff(raw, address)
             old = struct.unpack_from('<I', raw, off)[0]
             assert struct.unpack_from('<I', new, off)[0] == expected.get(address, old)
-        for address in (0x42b6b0, 0x5ba9bc, 0x5bab3c, 0x5b7e80, 0x5b8d18, 0x5b8ba0, 0x5ba83c):
+        for address in (0x42b710, 0x5baedc, 0x5bb05c, 0x5b83a0, 0x5b9238, 0x5b90c0, 0x5bad5c):
             off = fileoff(raw, address)
             assert new[off:off+32] == raw[off:off+32], 'stock fallback changed'
         if not selected and baseline:

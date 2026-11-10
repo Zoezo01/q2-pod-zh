@@ -20,7 +20,7 @@ for line in subprocess.check_output(['readelf', '-rW', path], text=True).splitli
     s = line.split()
     if len(s) >= 5 and s[2] == 'R_MIPS_JUMP_SLOT': slots[int(s[0], 16)] = s[4].split('@')[0]
 plt = {IMPORTS + 4*i: name for i, name in enumerate(slots.values())}
-PENDING, UNKNOWN = 0xafc790, -0x80000000
+PENDING, UNKNOWN = 0xafd790, -0x80000000
 for site in ID3_CALLS:
     assert struct.unpack_from('<I', raw, site-0x400000)[0] == jal(id3_gain), hex(site)
 
@@ -103,8 +103,8 @@ def run(data, entry):
             return v & 0xffffffff
         raise AssertionError('unmodelled import ' + name)
     def hook(u, addr, size, _):
-        if addr == 0x4cc6b4: r = fill()        # stream_fill_buffer
-        elif addr == 0x4460fc: r = 0           # mp_msg
+        if addr == 0x4ccbd4: r = fill()        # stream_fill_buffer
+        elif addr == 0x445e7c: r = 0           # mp_msg
         elif addr in plt: r = libc(plt[addr])
         else: return
         u.reg_write(UC_MIPS_REG_V0, r & 0xffffffff)

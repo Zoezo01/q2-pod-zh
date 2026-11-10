@@ -6,7 +6,7 @@
 extern int stock_pause_trampoline(void);
 extern int ringnav_bt_resume(void);
 /* Stock drops an unlisted device's Connected (3) while a link thread waits; adopt it when the wait
- * is for BTLINKMAC (0xa38168), its Connect running (5); checkBluetoothStatus then judges it last.
+ * is for BTLINKMAC (0xa4bac8), its Connect running (5); checkBluetoothStatus then judges it last.
  * ponytail: the target's Connect still runs; powered on within its page timeout, both may link. */
 static void headset_bt_status(int event, char *address, char *name, void *data) {
     char target[32] = { 0 };
@@ -14,13 +14,13 @@ static void headset_bt_status(int event, char *address, char *name, void *data) 
     if (event == 3 && *(const volatile int *)bt_connectstatus == 1 && !getBtLinkStatus(address) &&
         checkPairDev(address)) {
         getBtLinkItem(getBtLinkSize() - 1, &status, target);
-        if (status == 5 && !strcmp(target, (const char *)0xa38168)) {
+        if (status == 5 && !strcmp(target, (const char *)0xa4bac8)) {
             addBtLinkItem(address, 3);
             updateBtLinkStatus(4, target);
             return;
         }
     }
-    ((void (*)(int, char *, char *, void *))0x4f1a50)(event, address, name, data);
+    ((void (*)(int, char *, char *, void *))0x4fbfb0)(event, address, name, data);
 }
 void headset_status_register(void) { btctl_device_status_callback(headset_bt_status, 0); }
 /* The connected (3) link, its MAC in mac[32]. */
@@ -37,7 +37,7 @@ int headset_bt_autolink(char *address) {
 /* The control thread can discover a boot reconnect before openBluetooth powers the radio. */
 int headset_bt_init(void *thread) {
     initBluetoothParam(); /* Lists must exist before callbacks; the later reset would erase links. */
-    btctl_set_prompt_callback((void *)0x4ef600, 0);
+    btctl_set_prompt_callback((void *)0x4f9b50, 0);
     headset_status_register();
     btctl_set_a2dp_callback((void *)btrecvA2dpFunc, (void *)0x01020304);
     return btctl_create_daemon_thread(thread);
@@ -262,7 +262,7 @@ static void headset_start(void) {
     int n = getBtLinkSize(), status = 0;
     if (n > 0) getBtLinkItem(n - 1, &status, mac);
     hs.airpods = 0;
-    void *pairs = *(void *volatile *)0xa38110; /* stock pdeq_btpairlist */
+    void *pairs = *(void *volatile *)0xa4ba70; /* stock pdeq_btpairlist */
     for (unsigned i = 0; pairs && i < deque_size(pairs) && i < 64; ++i) {
         const char *p = deque_at(pairs, i);
         if (p && !strcmp(p + 4, mac) && strstr(p + 0x24, "AirPods")) hs.airpods = 1;

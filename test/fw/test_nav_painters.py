@@ -94,7 +94,7 @@ class Node:
         return C.c_ubyte.from_address(self.addr + offset)
 
     def clickable(self, ctx=0):
-        """An EVT_CLICK on its emitter (V1.32: emitter @0x60, its first item, type @8, next @0x20)."""
+        """An EVT_CLICK on its emitter (V1.34: emitter @0x60, its first item, type @8, next @0x20)."""
         item = C.create_string_buffer(0x28)
         struct.pack_into('<Q', item, 0, ctx)
         struct.pack_into('<i', item, O['EMIT_TYPE'], EVT_CLICK)
@@ -2574,7 +2574,7 @@ def test_off_the_lyrics_page_the_follow_scrolls(fw, st):
     assert st('lyric_glide').value == 0 and fw.calls('scroll_view_scroll_to')
 
 
-LYRIC_ROWS = 0x529f0c  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
+LYRIC_ROWS = 0x53b3bc  # stock's rebuild of scroll_lrc's rows, which ringnav_lyric_rows calls
 
 
 def rows_rebuilt(fw, win, result=0):

@@ -3,7 +3,7 @@
 
 #define UDC_STATE "/sys/class/udc/13500000.otg/state" /* the X2000's OTG port (otg@0x13500000) */
 
-/* check_usb_status (0x4e91fc), once a second from the idle loop (on_wm_idle_status). A cable in
+/* check_usb_status (0x4f3574), once a second from the idle loop (on_wm_idle_status). A cable in
  * (g_usbdet_value 1) starts the card's storage gadget (storage_config.sh, g_usblink_status 1). The
  * vendor kernel's f_mass_storage sets its pc_check parameter when the host sends the drive a SCSI
  * command, and only that (toolsGetpclinkStatus) takes stock to status 2, where on_wm_timer_dialog

@@ -13,7 +13,7 @@ from test_radio import Rd  # test_radio.py keeps the mirror
 KEY_PLAY, KEY_BACK_BTN, KEY_FWD_BTN = O['KEY_PLAY'], O['KEY_BACK_BTN'], O['KEY_FWD_BTN']
 NEXT, PLAYPAUSE, PREV, STOP, PAUSE, PLAYCD, PAUSECD, PLAYKEY = 163, 164, 165, 166, 119, 200, 201, 207
 PLAYING, PAUSED, STOPPED = 2, 3, 1
-PAIRS, LINK_MAC, STOCK_STATUS = 0xa38110, 0xa38168, 0x4f1a50  # pdeq_btpairlist, BTLINKMAC, stock's status callback
+PAIRS, LINK_MAC, STOCK_STATUS = 0xa4ba70, 0xa4bac8, 0x4fbfb0  # pdeq_btpairlist, BTLINKMAC, stock's status callback
 
 
 class Hs(C.Structure):
