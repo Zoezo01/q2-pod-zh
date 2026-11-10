@@ -347,7 +347,7 @@ with tempfile.TemporaryDirectory(prefix='q2-ui-preview-') as tmp:
                     return imagemagick(glyph,'-format','%@','info:',data=b'').decode().strip()
                 if not classic_light:
                     label('12:59 PM',16,142,0,90,30)
-                    image(a,asset(after,'images/xx/bar_play.png'),STATUS_MARGIN,7,12,16)
+                    image(a,asset(after,'images/xx/bar_play.png'),STATUS_MARGIN,6,12,16)  # ipod.py: y_offset -1 off the row's centre
                 effective=0 if state=='codec' else 3 if classic_light and mode in (1,2) else mode  # Classic's values: they read as Percent Inside
                 if classic_light:  # navigation.c classic_light_battery: the set's body, the light half's outline, paper and level
                     gap,nub=inc('STATUS_GAP'),inc('BATT_NUB_W'); bw,bh=CLASSIC_LIGHT.batt_w,CLASSIC_LIGHT.batt_h; nh=inc('BATT_NUB_H')

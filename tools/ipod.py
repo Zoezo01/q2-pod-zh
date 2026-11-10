@@ -514,6 +514,13 @@ def status_bar(root, g=SET0):
     widgets['view_battery'] = ['view', [0, 0, BATT_H_W, 0], {'name': 'view_battery', 'visible': 'false'}, []]
     # Classic's set (bar_px): the title on the left in the Classic face, the clock centred, the icons right of it.
     m = g.bar_px and status_metrics(g, CLASSIC_LIGHT_FONT_SRC)
+    if not m:  # Minimal's and Modern's play state sits in the left group's 30 px row, its 16 px art
+        # centred in it: y 7 to 23, its middle at 15, while the row's text inks lower — a 16 px
+        # clock's digits from 9.5 to 19.4, the state's own hanzi with them — so the triangle read as
+        # a pixel low against the word and the clock. Stock nudged its battery for the same reason
+        # (style y_offset -1 on img_battery): the state gets the same shove, in every state it takes.
+        for s in ('normal', 'disable', 'pressed', 'selected', 'focused'):
+            widgets['img_state'][2][f'style:{s}:y_offset'] = '-1'
     left[3] = [] if m else [widgets[n] for n in STATUS_LEFT]
     right[3] = [widgets[n] for n in (STATUS_RIGHT_CLASSIC_LIGHT if m else STATUS_RIGHT)]
     xm = g.bar_right if m else STATUS_MARGIN

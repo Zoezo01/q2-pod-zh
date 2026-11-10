@@ -19,8 +19,9 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # X fixed the rebuild's misses (the word by state, the full-width colon, the panes' UTF-8, Modern's
 # 中文版：上游 1.7.6 起的第一版。1.7.2 线上最后一版是 V172C：状态栏四字终于走对了路子——用页面名
 # 自己的控件和样式（hscroll_label, s_scrlabel_white20l），浅色半区由样式表给出深色，不再自己写颜色。
-# 字母每换一条上游版本线从 A 重新起。
-TAG = 'V' + VERSION.replace('.', '') + 'A'
+# 字母每换一条上游版本线从 A 重新起。B 把播放/暂停图标抬 1 px：它的 16 px 画布在 30 px 行里居中，
+# 中心落在 15，而这一行的文字墨迹中心在 14.4，看着就像图标低了一像素（原版固件对电池用的同一手）。
+TAG = 'V' + VERSION.replace('.', '') + 'B'
 
 
 def dev_tag(number):
