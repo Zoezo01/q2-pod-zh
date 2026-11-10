@@ -8,6 +8,7 @@
   - USB: **USB mode: Audio and DAC** is now stock V1.34's own, which also takes a host that never reads the card, such as a Nintendo Switch 2.
   - MQA: stock V1.34's player no longer decodes MQA, so MQA files play as ordinary FLAC whatever **MQA** is set to.
   - Settings: stock V1.34's **Wheel Function**, **Show Navigation Bar**, Album Wall, Spectrum and VU aren't offered: Q2 Pod's wheel, themes and Cover Flow already do those jobs. About no longer shows stock V1.34's thanks text.
+  - View Queue: while a shuffle is on it lists the next 500 songs. It used to stop at 100.
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
   - Settings: on **Set date and time** and the **Sleep Timer**, a Centre press followed at once by **Next** or **Previous** no longer acts as well. It used to move on a field after the button and, after **Next** near the last field, set the clock or the timer before you meant to.

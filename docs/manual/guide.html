@@ -478,26 +478,58 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   </div>
   <div class="sec">
   <h2 id="shuffle">Shuffle, repeat and grouping</h2>
-  <p>On <b>Now Playing</b>, hold <b>Play/Pause</b> and choose <b>View Queue</b> to browse the current queue with the wheel. The same menu has <b>Shuffle</b>, <b>Repeat</b> and <b>Group by: Album / Folder</b>. The wheel and touch select an option; the selected option has a check mark. Changes keep the playing track and its position. While a shuffle is on, View Queue lists the tracks that follow in the order they will play. There, hold <b>Play/Pause</b> on a song to play it next. It moves out of its old place in the queue.</p>
+  <p><b>Library → Shuffle</b> starts a shuffle of the whole library:</p>
+  <table>
+    <thead><tr><th>Choose</th><th>What plays</th></tr></thead>
+    <tbody>
+      <tr><td>Shuffle Songs</td><td>Every song in the library, in one shuffled order. Each song plays once. When all have played, the library is shuffled again and carries on.</td></tr>
+      <tr><td>Shuffle Albums</td><td>Every album, in a shuffled order, each in track order. Each album plays once, then playback stops.</td></tr>
+      <tr><td>Shuffle Folders</td><td>The same, by folder.</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>What’s included:</b> all scanned songs except audiobooks and podcasts.</li>
+    <li><b>Shuffle Albums and Shuffle Folders</b> can take a while to start on a large library.</li>
+    <li><b>Shuffle Songs is one-shot:</b> the next album or song you pick plays in the play mode you had before, unless you chose another mode meanwhile.</li>
+    <li><b>Shuffle</b> in an album, artist, genre or folder’s hold menu shuffles just its songs, the same way as Shuffle Songs.</li>
+  </ul>
+  <p>On <b>Now Playing</b>, hold <b>Play/Pause</b> and choose <b>View Queue</b> to browse the current queue with the wheel.</p>
+  <ul>
+    <li><b>While a shuffle is on</b>, View Queue lists the next 500 songs in the order they will play. Open it again later to see further ahead.</li>
+    <li><b>To play a song next</b>, hold <b>Play/Pause</b> on it there. It moves out of its old place in the queue.</li>
+  </ul>
+  <p>The same menu has <b>Shuffle</b>, <b>Repeat</b> and <b>Group by: Album / Folder</b>. The wheel and touch select an option; the selected option has a check mark. Changes keep the playing track and its position. With <b>Group by: Folder</b>, the options below read Folder for Album.</p>
   <table>
     <thead><tr><th>Shuffle</th><th>How the queue plays</th></tr></thead>
     <tbody>
-      <tr><td>Off</td><td>Groups in their first appearance order, tracks in group order</td></tr>
-      <tr><td>All</td><td>Every queued song in random order</td></tr>
-      <tr><td>Songs</td><td>Groups in order, songs shuffled within each group</td></tr>
-      <tr><td>Categories</td><td>Groups shuffled, songs in group order</td></tr>
-      <tr><td>Songs/Categories</td><td>Groups and their songs shuffled</td></tr>
+      <tr><td>Off</td><td>Albums in the queue’s order, each in track order</td></tr>
+      <tr><td>All Songs</td><td>Every queued song in one shuffled order</td></tr>
+      <tr><td>Songs in Album</td><td>Albums in order, the songs of each shuffled</td></tr>
+      <tr><td>Albums</td><td>Albums shuffled, each in track order</td></tr>
+      <tr><td>Albums and Songs</td><td>Albums shuffled, and the songs of each shuffled</td></tr>
     </tbody>
   </table>
-  <p><b>Play Single Song</b>, <b>Play Category</b> and <b>Play All Categories</b> stop after that song, group or queue. <b>Repeat Song</b>, <b>Repeat Category</b> and <b>Repeat All Categories</b> loop that scope, with a fresh shuffle cycle. Each shuffle cycle visits every song once. Next skips a single-song stop or repeat; category modes stay in the current category. Previous follows what you actually played, and Next after Previous returns to the song you went back from.</p>
+  <table>
+    <thead><tr><th>Repeat</th><th>What happens at the end</th></tr></thead>
+    <tbody>
+      <tr><td>Play One Song</td><td>Stops after the song</td></tr>
+      <tr><td>Play One Album</td><td>Stops after the album</td></tr>
+      <tr><td>Play All</td><td>Stops after the queue</td></tr>
+      <tr><td>Repeat Song</td><td>Plays the song again</td></tr>
+      <tr><td>Repeat Album</td><td>Plays the album again</td></tr>
+      <tr><td>Repeat All</td><td>Plays the queue again</td></tr>
+    </tbody>
+  </table>
   <ul>
-    <li><b>Album groups</b> tell albums apart as Cover Flow does: by album name (ignoring case), then album artist. Songs without an album artist, and untagged songs, use their parent folder. Albums play in disc and track order.</li>
-    <li><b>Folder groups</b> use the folder a song is in and play in path order.</li>
-    <li><b>Library → Shuffle → Shuffle Albums / Shuffle Folders</b> loads all scanned songs except audiobooks and shuffles those groups, which can take a while on a large library. Shuffle in an album, artist, genre or folder’s hold menu still shuffles every song it collects. <b>Shuffle Songs</b> and those Shuffles play in one shuffled order with Repeat All, so <b>View Queue</b> shows what comes next. Shuffle Songs is one-shot: the next album or song you pick plays in the play mode you had before, unless you chose another mode meanwhile.</li>
-    <li><b>Next Album / Previous Album</b> in the hold menu skips the rest of the group, or returns to the start of the previously played group. Folder grouping shows <b>Next Folder / Previous Folder</b>.</li>
-    <li>Choosing a stock play mode clears these options, except Shuffle during Shuffle Albums or Folders, which keeps the groups. In those modes, <b>Next Album / Previous Album</b> (or folder) lead the hold menu.</li>
+    <li><b>A shuffle plays every song once</b> before any song plays again. Each time round is shuffled afresh.</li>
+    <li><b>Next</b> moves on from a song that would stop or repeat. In <b>Play One Album</b> and <b>Repeat Album</b> it stays in the current album.</li>
+    <li><b>Previous</b> follows what you actually played, and Next after Previous returns to the song you went back from.</li>
+    <li><b>Albums</b> are told apart as Cover Flow does: by album name (ignoring case), then album artist. Songs without an album artist, and untagged songs, use their parent folder. Albums play in disc and track order.</li>
+    <li><b>Folders</b> are the folder a song is in, and play in path order.</li>
+    <li><b>Next Album / Previous Album</b> in the hold menu skips the rest of the album, or returns to the start of the album played before. Folder grouping shows <b>Next Folder / Previous Folder</b>. During Shuffle Albums or Shuffle Folders they lead the hold menu.</li>
+    <li><b>Choosing a stock play mode</b> clears these options, except Shuffle during Shuffle Albums or Shuffle Folders, which keeps the albums or folders together.</li>
   </ul>
-  <p>Your queue, options and history are restored after a restart; missing files are skipped. <b>Memory Playback → Location</b> restores elapsed time, <b>Track</b> starts at the beginning (a track that resumes returns to its place), and <b>In-Vehicle Mode</b> plays automatically.</p>
+  <p>Your queue, options and history are restored after a restart; missing files are skipped. A queue of more than 999 songs, such as Shuffle Songs over a large library, isn’t kept: choose Shuffle Songs again after a restart. <b>Memory Playback → Location</b> restores elapsed time, <b>Track</b> starts at the beginning (a track that resumes returns to its place), and <b>In-Vehicle Mode</b> plays automatically.</p>
 
   </div>
   <div class="sec">

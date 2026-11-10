@@ -2311,7 +2311,7 @@ def test_a_touch_on_the_buttons_takes_the_nearest(fw, x, focus):
 # Up Next
 
 class Un(C.Structure):
-    _fields_ = [('page', C.c_void_p), ('idx', C.c_uint * 100), ('view', C.c_void_p), ('n', C.c_uint), ('hash', C.c_uint), ('row', C.c_uint)]
+    _fields_ = [('page', C.c_void_p), ('idx', C.c_uint * 500), ('view', C.c_void_p), ('n', C.c_uint), ('hash', C.c_uint), ('row', C.c_uint)]
 
 
 def un(fw):

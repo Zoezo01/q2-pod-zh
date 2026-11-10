@@ -6,7 +6,9 @@
 #include "playback.h"
 #include "stock.h"
 
-#define UP_NEXT_ROWS 100                                   /* Up Next's snapshot cap */
+/* Up Next's snapshot cap. ponytail: ringnav navigates at most MAX_ENTRIES (512) rows; a
+ * table_client page for more */
+#define UP_NEXT_ROWS 500
 #define SEL "_ringnav_index"                               /* navigation.c's */
 unsigned queue_hash(void *q);                              /* navigation.c */
 const char *track_name(char *buf, unsigned size, void *t); /* coverflow.c */
