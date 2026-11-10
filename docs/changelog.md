@@ -7,7 +7,7 @@
   - Cover Flow and Library: the large letter that shows while you spin quickly through a list no longer appears over an album's tracks, which are in track order, not alphabetical. It showed only on an album of more than 16 tracks.
   - Videos: the picture no longer runs ahead of the sound when a video starts or after a seek. It used to skip a few frames, then stand still until the sound caught up.
   - Streaming: a card app's icon larger than 128 pixels is no longer shown: its row shows the app's other icon, or the shared app icon. A very large icon could run the Q2 out of memory.
-  - Streaming: a card app that asks to keep the Q2 awake, for example while files are moving, now always does. The request was missed when the app wrote it after its QR code, so the Q2 could go to standby or power off mid-transfer.
+  - Card apps: an app's request to keep the Q2 awake (`hold=1` in its status file) now counts wherever the app writes it, such as after its QR code. It used to count only near the top of the file, where the App Store's apps put it.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

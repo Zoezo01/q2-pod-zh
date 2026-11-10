@@ -76,7 +76,7 @@
 #define QR_PX 186        /* the code's white plate: 5 px modules up to a 33-module code */
 #define QR_COL 214       /* the text beside it */
 #define QR_LIGHT_PX 166  /* Classic's plate: 5 px modules up to 29, 4 up to 37 */
-#define QR_RAW 1536      /* an app's whole status file (poll_one, qr_refresh) */
+#define QR_RAW 1536      /* an app's status file as far as it is read (poll_one, qr_refresh) */
 #define CARD "/mnt/mmc"
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
@@ -627,7 +627,10 @@ static void poll_one(app_t *a) {
             a->relaunch = 0, launch(a);
         return;
     }
-    char raw[QR_RAW]; /* the whole file: hold= may come after the long qr= */
+    /* hold= may come anywhere, after the long qr= too. ponytail: only the first QR_RAW - 2 bytes
+     * (1,534) are read, so a hold= further on reads as 0; the largest code the QR page draws
+     * (49 modules, QR_HEX) takes about 640. A longer file needs a larger buffer here. */
+    char raw[QR_RAW];
     state_read(a->state, raw, sizeof raw);
     a->hold = number(raw, "hold") == 1;
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
