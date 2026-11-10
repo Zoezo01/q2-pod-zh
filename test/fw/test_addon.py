@@ -3257,6 +3257,16 @@ def test_a_code_longer_than_its_buffer_is_cut_and_never_shown(fw):
     assert not q.code and len(C.string_at(q.qp.hex)) < QR_HEX
 
 
+@pytest.mark.parametrize('state', [
+    qr_state(size=49, code=b'f' * (13 * 49)).replace(b'hold=1\n', b'') + b'hold=1\n',  # after the longest qr=
+    b'note=' + b'n' * 120 + b'\nhold=1\n',                                              # after a long note=
+])
+def test_hold_anywhere_in_the_status_file_holds(fw, state):
+    world, a = running(fw, state)
+    addon_poll(fw, world)
+    assert a.hold == 1 and [c[1][:3] for c in fw.calls('reset_poweroptions_timer')] == [(1, 1, 0)]
+
+
 def test_the_same_file_again_writes_nothing(fw):
     q = Qr(fw, qr_state())
     count = len(q.texts)
