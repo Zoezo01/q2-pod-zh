@@ -568,6 +568,7 @@ void qm_select(void);
 int qm_playlist_gone(void *ctx, void *event);
 int qm_playlist_pick(void *ctx, void *event);
 int ple_key(unsigned key, int phase);
+int ple_listing(void);
 int pl_first(menu_t *m, int cur);
 void pl_fit(void *button);
 

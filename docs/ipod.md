@@ -489,9 +489,9 @@ capitals; leading spaces are skipped, as is a leading "The", "A" or "An" in libr
 [internals.md](internals.md#drawing).
 
 Nor do the other lists that are in an order of their own, where a row's letter would say nothing of
-how far the spin has got: a playlist's songs in the order they were added (Sort: Time added),
-Recent, Frequent and Recently Added, Songs sorted by Time added, View Queue while a shuffle is on
-(Up Next) and Chapters.
+how far the spin has got: a playlist's songs in the order they were added (Sort: Time added), a
+playlist's songs in Edit Playlist, Recent, Frequent and Recently Added, Songs sorted by Time added,
+View Queue while a shuffle is on (Up Next) and Chapters.
 
 ## Now Playing
 

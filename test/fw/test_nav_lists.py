@@ -14,6 +14,7 @@ import pytest
 import host
 from conftest import NAVIGATION_SOURCE, O, Deques, claim, ui_name
 from test_coverflow import COVERS, TRACKS, Home, Rec, cf, deque_of  # coverflow.c's home struct, its page and an album
+from test_nav_display_library import Ple  # playlists.c's editor state
 
 W_PARENT, W_EMITTER = O['W_PARENT'], O['W_EMITTER']
 KEY_NEXT, KEY_PREV, KEY_CENTER = O['KEY_NEXT'], O['KEY_PREV'], O['KEY_CENTER']
@@ -1640,6 +1641,14 @@ def test_the_other_lists_in_an_order_of_their_own_show_no_letter(fw, ui, name, c
     # a playlist's Sort is its own flag (0 by name, 1 Time added); the others read Songs'
     fw.var('fw_ctx_g_playlistsort_flag' if cls == 0xff13 else 'fw_ctx_g_sort_flag', C.c_int).value = sort
     page, canvas = spun(fw, ui, titles(200), name)
+    assert letter(fw, page, canvas) == (['S'] if shown else [])
+
+
+@pytest.mark.parametrize('mode, shown', [(0, False), (1, True)])  # its songs as added; the Add Songs picker, A to Z
+def test_edit_playlists_songs_show_no_letter_but_its_picker_does(fw, ui, mode, shown):
+    ple = fw.var('playlists__ple', Ple)
+    ple.page, ple.mode = 1, mode
+    page, canvas = spun(fw, ui, titles(200), 'playlistedit_page')
     assert letter(fw, page, canvas) == (['S'] if shown else [])
 
 

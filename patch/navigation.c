@@ -1734,7 +1734,8 @@ static int own_order(const char *page) {
                (cls == 0xf001 && (sort == 3 || sort == 4));
     }
     return !tk_strcmp(page, "albuminfo_page") || !tk_strcmp(page, "playerjumpinfo_page") ||
-           !tk_strcmp(page, "upnext_page") || !tk_strcmp(page, "chapters_page");
+           !tk_strcmp(page, "upnext_page") || !tk_strcmp(page, "chapters_page") ||
+           (!tk_strcmp(page, "playlistedit_page") && ple_listing());
 }
 
 /* iPod fast scroll: while the wheel ramp moves more than one row per step, the selected row's

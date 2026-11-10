@@ -5907,6 +5907,14 @@ for name,cls,sort,shown in (('upnext_page',0xf001,0,False),('chapters_page',0xf0
     m.paint(w,gap=0)
     for _ in range(4): m.call(gap=100)
     m.paint(w,gap=0); assert bool(m.letters)==shown,(name,hex(cls),sort); passed()
+# Nor over Edit Playlist's songs (ple.mode 0, in the order they were added); its Add Songs picker (mode 1) is A to Z.
+for mode,shown in ((0,False),(1,True)):
+    m=Machine(); m.word(payload_syms['ple'],1); m.word(payload_syms['ple']+28,mode)  # ple.page, ple.mode
+    w,es=m.page_list(40,extent=40*48,name='playlistedit_page')
+    for e in es: m.nodes[e]['text']='row'
+    m.paint(w,gap=0)
+    for _ in range(4): m.call(gap=100)
+    m.paint(w,gap=0); assert bool(m.letters)==shown,mode; passed()
 # Never at one row per detent, nor on a list of at most SHORT_LIST_MAX (16) rows.
 for n,gap in ((40,141),(16,100)):
     m,w,rs,es=letter_machine(False,n)
