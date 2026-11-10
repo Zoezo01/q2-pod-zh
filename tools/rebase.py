@@ -935,8 +935,12 @@ def refs(elf, what, out=sys.stdout):
             start = blob.rfind(b'\0', 0, m.start()) + 1
             targets[rodata + start] = blob[start:blob.index(b'\0', start)].decode('utf-8', 'replace')
     else: targets = {what: elf.imports.get(what) or elf.where(what)}
+    got, _, size, _ = elf.sec['.got']
+    # lw off($gp): of any slot for an address, as demo calls its own functions through local ones; of a symbol's slot
+    # for a text, whose page sits in a local slot that is no use of the text
+    held = elf.got if isinstance(what, str) else range(got, got + size)
     loads = {elf.text + 4 * i: (elf.u32(elf.gp + s16(w & 0xffff)), 0) for i, w in enumerate(elf.words)
-             if w >> 21 == 0x47c and elf.gp + s16(w & 0xffff) in elf.got}  # lw off($gp), of a symbol's slot
+             if w >> 21 == 0x47c and elf.gp + s16(w & 0xffff) in held}
     for pc, (x, _) in sorted({**loads, **sites, **callsites}.items()):
         if x in targets: print(f'{pc:#x}  {elf.where(pc)}  ->  {x:#x} {targets[x]!r}', file=out)
     for x in sorted(targets):

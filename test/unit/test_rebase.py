@@ -1189,6 +1189,7 @@ def test_refs(old):
     assert said(s['printf'], named) == ["0x401020  alpha+0x20  ->  0x402000 'printf'"]                                            # its GOT slot loaded
     assert said(s['g_flag'], named) == ["0x40102c  alpha+0x2c  ->  0x406010 'g_flag'", "0x401030  alpha+0x30  ->  0x406010 'g_flag'"]
     assert said('hello', named) == ["0x40101c  alpha+0x1c  ->  0x403000 'hello, world'"]             # not the load of its page from the GOT
+    assert said(s['alpha'], named) == ["0x401008  alpha+0x8  ->  0x401000 'alpha'", "0x4010ac  beta+0x1c  ->  0x401000 'alpha'"]  # an address in a local slot: its loads
     assert said('string', named) == ["0x40106c  two+0x8  ->  0x403010 'second string'"]
     assert said('o', named) == ["0x40101c  alpha+0x1c  ->  0x403000 'hello, world'", "0x40106c  two+0x8  ->  0x403010 'second string'"]
     assert said(0x403014, named) == ["0x403014 'gamma+0x1f58(past)': no code names it"] and said('nothing like it', named) == []

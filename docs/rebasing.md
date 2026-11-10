@@ -28,9 +28,20 @@ Two tracked tables go with it, both carried by `apply`:
 4. Read every site that sits in a function Shanling changed against the new code, passing check or not. A word can match while its meaning moved: a row index, a table's length, a register that now holds something else, a count of children.
 5. Run the sweeps below for what the tool cannot see.
 6. Decide each new stock option by the rule in use: shown where our Settings order puts it, unless it conflicts with a Q2 Pod system; then held in RAM at the value that behaves as before, its row not offered, its key never written.
-7. Run every suite in [building.md](building.md#tests). The fixtures stand in for stock, so a stock list that gained a row needs its fixture to gain one too.
-8. `check` must report nothing. Add the new functions that hold our sites to the stock map, then run `sitenotes.py` so the notes describe the new build, and `sitenotes.py --check` to confirm it.
-9. Bring `docs/internals.md` up to what stock does now.
+7. Check which of our patches stock made unnecessary. A fix of ours inside a function Shanling changed may now be stock's own: read the new function, and where it does the job, drop the hook with its test and its docs in a commit of its own.
+8. Run every suite in [building.md](building.md#tests). The fixtures stand in for stock, so a stock list that gained a row needs its fixture to gain one too.
+9. `check` must report nothing. Add the new functions that hold our sites to the stock map, then run `sitenotes.py` so the notes describe the new build, and `sitenotes.py --check` to confirm it.
+10. Bring `docs/internals.md` up to what stock does now.
+
+## Finding a site again
+
+Start from the site's row in `tools/stock_sites.tsv`, which names the function and what the site is in it. `refs` then finds that in the new build:
+
+- **From a string to the function that uses it:** `refs NEW.zip demo scroll_view_playset` lists each load of a string holding the text, with the function it is in. Widget and page names, config keys and log lines all work.
+- **From a callee to its call sites:** `refs NEW.zip demo 0x4f2adc` lists every call of the function at that address, direct or through its GOT slot, and every place its address is formed (a handler being bound). A row that says "the 2nd of 3 calls to" a function is the second of these inside its own function.
+- **From a page's init to its row and click handlers:** the init is the function that loads the page's widget names. The handlers are the addresses it passes to `widget_on` and `widget_foreach`, which the decompiler's export lists in the function's header; `refs` on a handler's address leads back to the init that binds it.
+
+A function that kept its name in the stock map is found by the name: `report` and `refs` print it, and `apply` moves its row.
 
 ## What the tool cannot see
 
@@ -67,8 +78,14 @@ analyzeHeadless PROJ demo -process demo -noanalysis -scriptPath docs/rebasing -p
 
 ## What V1.32 to V1.34 taught
 
+- What moved: every GOT offset (imports by one constant, the rest unevenly), the low halves of `hciplayer`'s `.bss` (`0x1000` up), the order of static functions, and the page inits with the row builders and click handlers after them, which is where the new options went.
+- What stayed: `bluealsa`, the shared libraries `demo` and `hciplayer` link and the kernel modules the experimental flags patch were byte for byte the same, 99.8% of `hciplayer`'s code and 98.8% of `demo`'s aligned, and an exported function that only moved kept every word once its address operands were masked.
 - Static functions change order between builds: align by callers and by address-forming code, never by position.
 - The `$gp` set-up is not an address, and GOT pages are not function starts.
 - Stock regroups its settings lists. A hook that counts stock's rows fails safe (it leaves the page as built) only if the count is checked first.
 - A new stock option can duplicate a Q2 Pod system outright: V1.34 read a headset's keys on a thread of its own, and each press would have acted twice.
 - `mutmut` ties a test to a function only when the function runs in that test, set-up included. Cached results in `mutants/` survive a test change: delete the folder for a fresh score.
+
+## Writing hooks that survive
+
+GOT offsets move in every build, so an expected word of the form `lw reg, off($gp)` changes where the code did not; `apply` rewrites such a word itself and leaves to the build's checks only the words that really changed. A mid-function word patch still has to be found again whenever its function is rewritten. When a site has to be re-derived anyway, and an entry hook on an exported function or a call site named by its callee would do the same job at equal cost, prefer that, and say so in the site's note. Sites that still map are left as they are.
