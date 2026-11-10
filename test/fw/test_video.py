@@ -925,6 +925,7 @@ class Q2:
         return 0
 
     def pcm_get_params(self, pcm, buffer, period, *_):
+        self.pcm_log.append(('get_params', self.now))
         C.c_ulong.from_address(buffer).value = self.buffer
         return 0
 
@@ -1384,6 +1385,7 @@ def test_the_pcm_is_tried_again_while_its_last_user_lets_go(q2, device, busy, op
     else:  # given up at its last try before the limit: the headphone DAC's 2 s (docs/internals.md), Bluetooth's and USB's 5
         assert tries[-1] < (2000 if device == JACK else 5000) <= tries[-1] + step
         assert q2.au.error == b'open: Device or resource busy' and not q2.threads
+        assert not q2.events('get_params')  # no PCM to ask: libasound would fault on a null one
 
 
 @pytest.mark.parametrize('device, opens', [(BT, True), (JACK, False)])
@@ -1395,6 +1397,7 @@ def test_bluealsa_busy_at_its_params_is_waited_out_the_jack_is_not(q2, device, o
         assert len({b - a for a, b in zip(tries, tries[1:])}) == 1 and tries[-2] < 1500 <= tries[-1]  # once it is free
     else:
         assert tries == [0] and q2.au.error == b'params: Device or resource busy' and q2.events('close') == ['close']
+        assert not q2.events('get_params')  # closed: none left to ask
 
 
 @pytest.mark.parametrize('mode', ['video', 'radio', 'sink'])

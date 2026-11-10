@@ -1577,6 +1577,8 @@ def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls):
     fw.var('fw_ctx_g_class_type', C.c_int).value = cls
     page, canvas = spun(fw, ui, titles(200), name)
     assert letter(fw, page, canvas) == []  # in disc and track order, not A to Z
+    Page(ui, titles(200), name='album_page')  # Return: the page behind is the top while the songs slide out
+    assert letter(fw, page, canvas) == []
 
 
 @pytest.mark.parametrize('name, cls', [
