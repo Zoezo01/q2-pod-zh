@@ -72,7 +72,7 @@
       "purpose": "row creation, reset or artwork offset divisor",
       "sites": [
         ["0x4a8d7c", "0x2402004e"],
-        ["0x4ad8e4", "0x2410004e"],
+        ["0x4b0b60", "0x2410004e"],
         ["0x4afa44", "0x2402004e"],
         ["0x4b55dc", "0x2402004e"],
         ["0x4b5628", "0x2402004e"],
@@ -85,11 +85,10 @@
       "sites": [
         ["0x4a45c8", "0x2402004e"],
         ["0x4a45cc", "0x2406004e"],
-        ["0x4a2f24", "0x2404004e"],
         ["0x4a5ea8", "0x2410004e"],
         ["0x4a69f8", "0x2402004e"],
         ["0x531cf0", "0x2405004e"],
-        ["0x521a84", "0x2403004e"],
+        ["0x531ff8", "0x2403004e"],
         ["0x532f78", "0x2410004e"],
         ["0x533944", "0x2402004e"]
       ]
@@ -106,11 +105,11 @@
       "purpose": "row background, hit target and full-height children",
       "sites": [
         ["0x4a7fa4", "0x24020046"],
-        ["0x4addec", "0x24120046"],
+        ["0x4afa60", "0x24130046"],
         ["0x4afc6c", "0x24020046"],
         ["0x4b4f14", "0x24130046"],
         ["0x4b50ec", "0x24170046"],
-        ["0x4b2f2c", "0x24130046"],
+        ["0x4b5648", "0x24120046"],
         ["0x4b3ad0", "0x24110046"]
       ]
     },
@@ -128,7 +127,7 @@
       "purpose": "text/icon container inside row; stock child layout stretches to parent",
       "sites": [
         ["0x4a80e8", "0x24020078"],
-        ["0x4a6530", "0x24020078"],
+        ["0x4a8244", "0x24020078"],
         ["0x4aff10", "0x24020078"]
       ]
     },
@@ -197,7 +196,7 @@
       "value": "title24_y",
       "purpose": "24px title position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a6580", "0x2406000e"]
+        ["0x4a8278", "0x2406000e"]
       ]
     },
     {
@@ -219,7 +218,7 @@
       "value": "meta_y",
       "purpose": "16px metadata position in the 68px body, font unchanged",
       "sites": [
-        ["0x4a661c", "0x24060028"],
+        ["0x4a8314", "0x24060028"],
         ["0x4b0014", "0x24060028"]
       ]
     },
@@ -398,7 +397,7 @@
       "sites": [
         ["0x4b7914", "0x2407006e"],
         ["0x4d11e0", "0x2407006e"],
-        ["0x4c96c8", "0x2407006e"]
+        ["0x4d03e8", "0x2407006e"]
       ]
     },
     {
@@ -537,8 +536,13 @@
     "default.bin": {
       "sha256": "880d6eeb1a79b32b22b265cd8f0e296589657e1abbdf36f515c56a1128198b48",
       "edits": [
+        ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "333333ff", 1, "pressed"],
         ["button", "s_btn_listitem", "bg_color", "2b2b2bff", "00000000", 4],
-        ["button", "s_btn_listitem", "bg_color", "3d1920ff", "333333ff", 1],
+        ["button", "s_btn_listitem", "border_color", "ffffffff", "00000000", 1],
+        ["button", "s_btn_listblack", "border_color", "ffffffff", "00000000", 1],
+        ["list_item", "s_listitem_style", "bg_color", "3d1920ff", "2b2b2bff", 1],
+        ["hscroll_label", "s_scrlabel_red24l", "font_size", "18000000", "14000000", 1, "disable"],
+        ["hscroll_label", "s_scrlabel_red24l", "font_size", "18000000", "14000000", 1, "focused"],
         ["button", "s_btn_listitem", "round_radius", "0e000000", "00000000", 5],
         ["button", "s_btn_forwardspeed", "bg_color", "2b2b2bff", "00000000", 5],
         ["button", "s_btn_forwardspeed", "round_radius", "23000000", "00000000", 5],

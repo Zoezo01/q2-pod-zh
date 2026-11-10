@@ -39,7 +39,7 @@ SAVED = (
 def compile_payload(out):
     obj, elf = out / 'flac-lpc.o', out / 'flac-lpc.elf'
     run('clang', *FLAGS, '-c', ROOT / 'patch/flac_lpc.c', '-o', obj)
-    run('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0xe10000',
+    run('ld.lld', '-m', 'elf32ltsmip', '-Ttext=0xe20000',
         '--entry=flac_lpc32', obj, '-o', elf)
     return elf
 

@@ -248,7 +248,7 @@ unsigned widget_count_children(void *x) { return x == &wm_repaints ? (unsigned)w
 void *widget_get_child(void *x, unsigned i) { return x == &wm_repaints ? wm_stack[i] : &w[W(x)->kids[i]]; }
 static void *home_art, *home_list; /* iPod Home's art and list; none in the carousel tests */
 void *widget_lookup(void *x, const char *n, int r) {
-    return !x ? 0 : !strcmp(n, "img_coverflow") ? x : !strcmp(n, "img_homeart") ? home_art :
+    return !x ? 0 : !strcmp(n, "img_cover_flow") ? x : !strcmp(n, "img_homeart") ? home_art :
            !strcmp(n, "list_view_home") ? home_list : 0;
 }
 static int home_mode, classic, light; /* home_mode: HOME, 0 Split, 1 Full, 2 Carousel */

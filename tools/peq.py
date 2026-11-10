@@ -5,7 +5,7 @@ from build import ROOT, FLAGS, GP, FUNCTIONS, GLOBALS, PRIVATE_FUNCTIONS, append
 from ipod import patch_word
 
 PLAYER_SHA = 'f02ccc4579f0447ee5472dbfa13aab1929704ab154b4e6192e26a7082c780a3e'
-PLAYER_BASE = 0xe10000  # stock final LOAD ends at 0xe03b58
+PLAYER_BASE = 0xe20000  # stock final LOAD ends at 0xe14af8
 # demux_audio_open's branch to the whole-file frame walk for Xing/VBRI MP3s; see docs/internals.md.
 VBR_SCAN = 0x48f8bc
 # MPlayer's pause loop sleeps usec_sleep(20000) between command checks: 50 wakes a second for as long as the
@@ -30,8 +30,9 @@ MP3_ALLOC, MP3_FILTER, MP3_CLOSE = 0x48f910, 0x47f660, 0x8a0388
 MP3_READ, DEMUX_READ = 0x4b29ac, 0x48498c
 # The audio demuxer's fill slot.
 MP3_FILL, DEMUX_FILL = 0x8a0380, 0x48bf04
-# The equalizer filter's descriptor (pinned) and its open slot, which becomes peq_open.
-EQ_DESC, EQ_OPEN_SLOT = 0x8943d8, 0x8943ec
+# The equalizer filter's descriptor (pinned: its strings, its flags and its open, af_equalizer's), and its open slot,
+# which becomes peq_open.
+EQ_DESC, EQ_OPEN_SLOT, EQ_OPEN = 0x8943d8, 0x8943ec, 0x44fea4
 # lavcresample's descriptor open slot (af_info at 0x8a4c60; stock open 0x4ac7e0), which becomes rs_open: the
 # resampler Bluetooth's 48 kHz output appends keeps its state across a gapless change (docs/internals.md).
 RS_OPEN_SLOT, RS_OPEN = 0x8a4c74, 0x4ac7e0
@@ -50,18 +51,14 @@ EQ_RATE_GATES = ((0x42cf20, 0x8c42ae30, 0),            # mpctx: the three loads 
 # The MQA side chain (docs/internals.md#mqa-detection): fill_audio_out_buffers runs every probed stream
 # through the MQA decoder while isMQA (0xb11c5c) > 0 but plays its output only when isMQA == 2, so the gate
 # becomes isMQA == 2 (address, stock word, patched word).
-MQA_GATE = ((0x42f34c, 0x34620044, 0x3c0200b1),   # ori $v0, $v1, 0x40    -> lui $v0, 0xb1
-            (0x42f350, 0x005d1021, 0x8c421c5c),   # addu $v0, $v0, $sp    -> lw $v0, 0xc54($v0)
+# Stock V1.34 (a beta) took the start-of-track probe out of reinit_audio_chain: nothing stores isMQA but 0 and nothing
+# makes the decoder, so this gate is never passed there and the long probe V1.32 needed has no place to go. The gate
+# stays, for a stock build that probes again.
+MQA_GATE = ((0x42f34c, 0x34620044, 0x3c0200b1),   # ori $v0, $v1, 0x44    -> lui $v0, 0xb1
+            (0x42f350, 0x005d1021, 0x8c421c5c),   # addu $v0, $v0, $sp    -> lw $v0, 0x1c5c($v0)
             (0x42f354, 0x8c420000, 0x2442fffe),   # lw $v0, 0($v0)        -> addiu $v0, $v0, -2
-            (0x42f358, 0x8c421c5c, 0),            # lw $v0, 0xc54($v0)    -> nop
-            (0x42f35c, 0x1840000a, 0x1440000a))   # blez $v0, 0x42f8ec    -> bnez $v0, 0x42f8ec
-# So MQA is found by the start-of-track probe alone. The detector gives up after 96000 frames, so the probe
-# reads 0x300000 >> (codec ^ 15) bytes instead of 0xc00 (0x20000 on output way 2): FLAC (13, decoded to 8-byte
-# frames at 24 bit) 0xc0000, past 96000 frames for every eligible format; PCM (11) 0x30000, ad_pcm's a_buffer
-# (0x30800) holding no more. $t3 is the codec type here and $v1 is dead.
-MQA_PROBE = ((0x42eaf4, 0x3c020002, 0x3c020030),  # lui $v0, 0x2           -> lui $v0, 0x30
-             (0x42eaf8, 0x38630002, 0x3963000f),  # xori $v1, $v1, 2       -> xori $v1, $t3, 15
-             (0x42eafc, 0x00e3100b, 0x00621006))  # movn $v0, $a3, $v1     -> srlv $v0, $v0, $v1
+            (0x42f358, 0x8c421c5c, 0),            # lw $v0, 0x1c5c($v0)   -> nop
+            (0x42f35c, 0x18400009, 0x14400009))   # blez $v0, 0x42f384    -> bnez $v0, 0x42f384
 # ao_alsa's init (0x438248) asks for a 500 ms buffer (0x4382fc) but cuts it to 100 ms on output way 2, a USB
 # DAC: two branch delay slots store 100000 us and become nops, so USB keeps 500 ms.
 # ponytail: where hciplayer scales a USB DAC's volume itself, a change now lags up to 500 ms, not 100 ms.
@@ -277,11 +274,14 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     out.mkdir(exist_ok=True)
     binary = out/'stock-hciplayer'
     binary.write_bytes(raw)
-    check(raw[fileoff(raw, EQ_DESC):fileoff(raw, EQ_DESC)+24].hex() ==
-          'ac3d8900cc6388003c3b890098c988000100000024014500', 'EQ descriptor mismatch')
+    def cstr(address):
+        return raw[fileoff(raw, address):raw.index(b'\0', fileoff(raw, address))]
+    *texts, flags, eq_open = struct.unpack_from('<6I', raw, fileoff(raw, EQ_DESC))
+    check(([cstr(t) for t in texts], flags, eq_open) == ([b'Equalizer audio filter', b'equalizer', b'Anders', b''], 1, EQ_OPEN),
+          'EQ descriptor mismatch')
     objects = compile_common(out, binary, True, flac_experiments=flac_experiments)
     script = out/'link.ld'
-    script.write_text('SECTIONS { . = 0xe10000; .text : { *(.text*) } .rodata : { *(.rodata*) } '
+    script.write_text(f'SECTIONS {{ . = {PLAYER_BASE:#x}; .text : {{ *(.text*) }} .rodata : {{ *(.rodata*) }} '
                       '.data : { *(.data*) *(.sdata*) } .bss : { *(.bss*) *(.sbss*) } '
                       '__end = .; /DISCARD/ : { *(.comment) *(.note*) *(.pdr) *(.mdebug*) '
                       '*(.MIPS.abiflags) *(.reginfo) } }')
@@ -304,7 +304,7 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     patch_word(data, *IDLE_WAIT, jal(ps['hci_idle_wait']), 'idle loop waits on the play flag')
     for address, stock, patched in EQ_RATE_GATES:
         patch_word(data, address, stock, patched, 'Equalizer rate gate')
-    for address, stock, patched in (*MQA_GATE, *MQA_PROBE):
+    for address, stock, patched in MQA_GATE:
         patch_word(data, address, stock, patched, 'MQA side chain')
     for address, stock, patched in USB_BUFFER:
         patch_word(data, address, stock, patched, 'USB DAC buffer')

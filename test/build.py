@@ -301,7 +301,7 @@ def validate_assets(directory):
     labels = [zones[start+i*32:start+(i+1)*32].split(b'\0')[0] for i in range(1+len(TIMEZONES))]
     assert labels == [b'timedate_auto'] + [label.encode() for label, _ in TIMEZONES]
     assert demo[start:start+28*64] == zones[start:start+28*64]
-    for address in (0x4c1a18, 0x4bd090, 0x4c2234, 0x504d1c):
+    for address in (0x4c1a18, 0x4c1d18, 0x4c2234, 0x504d1c):
         off = fileoff(stock, address)
         assert demo[off:off+4] == zones[off:off+4]
     assert manifest['version'].encode()+b'\0' in demo
@@ -514,10 +514,10 @@ def validate_assets(directory):
     # stores, moved to its exit, and the cold path's clear of the same word; the forced EOF's store, now a hook;
     # the stores of the stop on the thread's other paths, the close handlers, the preload's open;
     # the FLAC seek's gate exit, no-sync scan and near-the-end steps.
-    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, MQA_PROBE, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, MP3_FILL, USB_BUFFER, DAC_RELEASE, PROBE_STOP, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, PRELOAD_FAIL_STORES, COLD_CLEAR, FORCED_EOF, STOP_SITES, STOP_NOPS, STOP_FILL, PRELOAD_CLOSE, FLAC_GATE, SEEK_NOSYNC, SEEK_WORDS, FLAC_META_EOF, MEDIA_INFO_NULL
+    from peq import VBR_SCAN, EQ_RATE_GATES, ID3_CALLS, MQA_GATE, PAUSE_WAIT, CMD_DONE, IDLE_WAIT, MP3_ALLOC, MP3_FILTER, MP3_CLOSE, MP3_READ, MP3_FILL, USB_BUFFER, DAC_RELEASE, PROBE_STOP, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, PRELOAD_FAIL_STORES, COLD_CLEAR, FORCED_EOF, STOP_SITES, STOP_NOPS, STOP_FILL, PRELOAD_CLOSE, FLAC_GATE, SEEK_NOSYNC, SEEK_WORDS, FLAC_META_EOF, MEDIA_INFO_NULL
     old, new = read('stock.squashfs', 'usr/bin/hciplayer'), read('rootfs.squashfs', 'usr/bin/hciplayer')
     off = fileoff(old, VBR_SCAN)
-    words = (*EQ_RATE_GATES, *MQA_GATE, *MQA_PROBE, *USB_BUFFER, *PRELOAD_FAIL_STORES, *STOP_NOPS, *SEEK_WORDS, *FLAC_META_EOF, *MEDIA_INFO_NULL)
+    words = (*EQ_RATE_GATES, *MQA_GATE, *USB_BUFFER, *PRELOAD_FAIL_STORES, *STOP_NOPS, *SEEK_WORDS, *FLAC_META_EOF, *MEDIA_INFO_NULL)
     gates = [fileoff(old, a) for a in (*(a for a, _, _ in (*words, *DAC_RELEASE, *PROBE_STOP, *STOP_SITES, STOP_FILL, *PRELOAD_CLOSE, FORCED_EOF, EXIT_HOLD, PRELOAD_PUBLISH, PRELOAD_FAILED, COLD_CLEAR, FLAC_GATE, SEEK_NOSYNC)), *ID3_CALLS, MP3_ALLOC, MP3_FILTER, MP3_READ,
                                        IDLE_WAIT[0], PAUSE_WAIT[0], CMD_DONE[0])]
     # The FLAC fast paths (tools/flac.py, on by default) patch hciplayer's sync calls and LPC/output pointers.

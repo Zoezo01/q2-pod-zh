@@ -497,16 +497,15 @@ SCAN_DIRS = (0x5d6534, 0x0320f809)
 # toolsLoadAllFile stops a scan at 20,000 songs: lw $2,count; slti $2,$2,0x4e20 before each entry. 65,000
 # overflows slti's signed immediate, so the lw becomes jal ringnav_scan_room and the slti loads the count
 # into a0 in its delay slot; the bnez after it, and its delay slot's stop-flag load, stay.
-SCAN_LIMIT = (0x5c977c, 0x8fc2c354, 0x28424e20, 0x8fc4c354)  # lw $2/$4, -0x3cac($fp)
+SCAN_LIMIT = (0x5dc0a4, 0x8fc2ff14, 0x28424e20, 0x8fc4ff14)  # lw $2/$4, -0xec($fp)
 # Library Albums' cover cache names (navigation.c art_key): the row renderer's snprintf of the name,
 # with a2 the row (addiu a2,"%s" becomes move a2,s3), the Albums page's albumcoverinfo_init calls
 # and the album page's big cover snprintf become jal to the payload; so do an artist page's albums
 # renderer (its row in s2) and albumcoverinfo_init calls on tab entry, return and init.
-ALBUM_ART = ((0x4a52f0, 'ringnav_art_name'), (0x4a421c, 'ringnav_albumcovers'), (0x4a42c0, 'ringnav_albumcovers'),
+ALBUM_ART = ((0x4a52f0, 'ringnav_art_name'), (0x4a5c34, 'ringnav_albumcovers'), (0x4a5c9c, 'ringnav_albumcovers'),
              (0x4a75c4, 'ringnav_albumcovers'), (0x4a9078, 'ringnav_art_header'),
              (0x4adaec, 'ringnav_artist_art_name'), (0x4aeb3c, 'ringnav_artist_covers'),
-             (0x4b07f0, 'ringnav_artist_covers'), (0x4ae968, 'ringnav_artist_covers'),
-             (0x4b12ac, 'ringnav_artist_covers'))
+             (0x4b07f0, 'ringnav_artist_covers'), (0x4b12ac, 'ringnav_artist_covers'))
 ALBUM_ART_ROW = ((0x4a52f4, 0x24c6a8c4, 0x02603025), (0x4adaf0, 0x24c6a8c4, 0x02403025))
 # albumcoverinfo_init's and foldercoverinfo_init's jalr _deque_push_back of each row's cover task becomes jal
 # ringnav_cover_push, which frees the task's name and path once the list has copied them; see docs/internals.md.
@@ -519,10 +518,10 @@ COVER_PAUSE = ((0x4acdf0, 0xac430000, 0), (0x4a3930, 0xac430000, 0), (0x4a9b90, 
 # (tidal.c tidal_pages) run them once per page and set the page's flag after the last.
 TIDAL_PAGE_DONE = ((0x48c28c, 0xa0430000, 0), (0x48c41c, 0xa0430000, 0), (0x489144, 0xa0430000, 0))
 # An artist's albums scroll end divides yoffset by its 160 px rows, not 256; see docs/internals.md.
-ARTIST_COVER_ROW = ((0x4ad878, 0x244400ff, 0x240400a0),   # addiu $4,$2,0xff -> li $4,160
-                    (0x4ad880, 0x28430000, 0x0044001a),   # slti $3,$2,0 -> div $zero,$2,$4
-                    (0x4ad884, 0x0043200a, 0),            # movz $4,$2,$3 -> nop
-                    (0x4ad88c, 0x00042203, 0x00002012))   # sra $4,$4,8 -> mflo $4
+ARTIST_COVER_ROW = ((0x4b0adc, 0x244400ff, 0x240400a0),   # addiu $4,$2,0xff -> li $4,160
+                    (0x4b0ae4, 0x28430000, 0x0044001a),   # slti $3,$2,0 -> div $zero,$2,$4
+                    (0x4b0ae8, 0x0043200a, 0),            # movz $4,$2,$3 -> nop
+                    (0x4b0af0, 0x00042203, 0x00002012))   # sra $4,$4,8 -> mflo $4
 # switchBtPriority sends LDAC quality 0x16 (SQ, 660 kbps) for both HQ (row 0) and Standard (row 1).
 # The dispatch keeps 0x15 + row in its free 0x14($sp) slot, so HQ sends 0x15 (990 kbps); see docs/internals.md.
 LDAC_HQ = ((0x4fa88c, 0x00042080, 0x00041880),   # sll $3,$4,2
@@ -560,7 +559,7 @@ LYRIC_SAVE_CALL, LYRIC_SAVE_FMT = 0x536178, (0x536174, 0x24c66260)
 # ticks from the samples (playback.c wheel_sample).
 WHEEL_TS_READ = (0x6384ec, 0x0320f809)
 # Smart Wi-Fi (smart_wifi.c smart_ready): networkStart and networkStop act only when initNetworkModule's
-# type, the unnamed word NET_TYPE (patch/offsets.inc), is 2: lw $v1,-0x40fc($v0) off GOT page 0xa40000;
+# type, the unnamed word NET_TYPE (patch/offsets.inc), is 2: lw $v1,-0x53c($v0) off GOT page 0xa50000;
 # li $v0,2.
 NET_TYPE_READS = ((0x5c1adc, 0x8c43fac4), (0x5c1ae0, 0x24020002), (0x5c1de8, 0x8c43fac4), (0x5c1dec, 0x24020002))
 # English labels renamed, as an iPod words them: Now Playing More's queue, which stock calls "Playlists"
@@ -1062,7 +1061,7 @@ def patch_timezones(demo):
     demo[start:start+len(original)] = b''.join(label.ljust(32, b'\0') for label in labels).ljust(len(original), b'\0')
     for address, old, new in (
         (0x4c1a18, 0x00102980, 0x00102940),  # label stride: 64 -> 32
-        (0x4bd090, 0x2402001c, 0x24020000 | len(labels)),
+        (0x4c1d18, 0x2402001c, 0x24020000 | len(labels)),
         (0x4c2234, 0x2402001c, 0x24020000 | (len(labels)-1)),
         (0x504d1c, 0x2c43001b, 0x2c430000 | (len(labels)-1)),  # boot accepts saved additions
     ):
@@ -1759,7 +1758,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
           'Tidal URL thread: unexpected song id register')
     # ringnav_mode leaves advanced play on for player_initconfig's call, which returns to INITCONFIG_MODE_RET.
     ret = inc('INITCONFIG_MODE_RET')
-    check(struct.unpack_from('<II', patched, fileoff(patched, ret - 12)) == (0x8f99b77c, 0x0320f809),
+    check(struct.unpack_from('<II', patched, fileoff(patched, ret - 12)) == (0x8f99b800, 0x0320f809),  # 0x51ded4: lw $t9, mclSetPlayMode's slot
           'player_initconfig: unexpected mclSetPlayMode call')
     patch_word(patched, 0x503fb8, 0x0411e963, jal(ps['ringnav_bootmode']),
                'config_init preserves the saved queue when applying the boot play mode')
@@ -1863,7 +1862,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     for address, old, new in LDAC_HQ:
         patch_word(patched, address, old, new, 'LDAC HQ sends 990 kbps')
     patch_word(patched, WHEEL_TS_READ[0], WHEEL_TS_READ[1], jal(ps['ringnav_ts_read']), 'wheel ticks')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GP - 0x7f44))[0] == 0xa40000 and
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GP - 0x7f44))[0] == 0xa50000 and
           all(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, a))[0] == w for a, w in NET_TYPE_READS),
           'networkStart/networkStop: unexpected network type gate')
     for address in AUDIO_EXTENSION_CALLS:
@@ -2020,6 +2019,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     icons['default_album_flow.png'] = ('default_album_big.png', sized_art(art, 160))
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
+    changed_assets = {}
     from art import images as theme_images
     drawn = {xx+n+'.png': (xx+'list_tidal.png', d) for t in builtin_themes() for n, d in theme_images(t).items()}
     for path, (like, data) in {**{xx+n: (xx+l, d) for n, (l, d) in icons.items()}, **pages, **drawn,
@@ -2034,6 +2034,10 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         stock = need(inode(p, like.encode()), f'Missing stock inode for {path}')
         name = path.rsplit('/', 1)[-1]
         if path not in (HELPER, BOOT, REMOTE): (out/name).write_bytes(data)  # package the hashed bytes, as the logo
+        if inode(p, path.encode()):  # stock has a file of that name (V1.34's own menu_coverflow*.png): ours takes its inode
+            changed_assets[path] = dict(original_sha256=sha(cat(path)), sha256=sha(data))
+            p = swap_inode(p, path.encode(), out/name)
+            continue
         path = path.encode()
         entry = path+b' F '+b' '.join(stock.groups())+b' cat '+shlex.quote(str(out/name)).encode()+b'\n'
         at = p.index(b'# START OF DATA')  # definitions precede the embedded data
@@ -2044,7 +2048,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
         line = need(re.search(rb'^'+re.escape(path.encode())+rb' R .+\n', p, re.M), f'Missing stock inode {path}')
         removed.append(line.group().split()[:6])
         p = p[:line.start()]+p[line.end():]
-    changed_assets = {}
     for path, fix, name in ((TAG_C, patch_m4b_cover, 'libtag_c.so.2.0.1'), (FONT, font_quotes, 'default.ttf'),
                             *((p, lambda d, p=p: patch_web(p, d), p.rsplit('/', 1)[-1]) for p in WEB)):
         original = cat(path)

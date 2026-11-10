@@ -4002,12 +4002,12 @@ class ClassicPlaylistMachine(PlaylistMachine):
                   'getFormatString','gif_image_create','widget_add_timer','widget_set_tr_text','image_animation_play','image_animation_pause','navigator_to_with_context')
         self.nav=self.node('view','view_navbar',visible=0); self.nodes[self.nav]['enable']=0; self.word(self.nav+O['W_PARENT'],self.top)
         self.nodes[self.top]['children'].insert(0,self.nav)
-        # Stock's page init binds Return as widget_on(win, EVT_KEY_UP, 0x4b1310, win) at 0x4b5efc; the bytes and the
+        # Stock's page init binds Return as widget_on(win, EVT_KEY_UP, 0x4f21b8, win) at 0x4b5efc; the bytes and the
         # GOT entries it loads ($25 widget_on, $6 0x4b0000) pin this fixture's ctx to what the device runs.
         gp=0x4b5e84+0x573a24
         assert [self.get(0x4b5efc+4*i) for i in range(8)]==[0x24050114,0x8fbc0010,0x02003825,0x02002025,0x8f86af08,0x8f99a7bc,0x0320f809,0x24c61310]
         assert self.get(gp-0x5840)==syms['widget_on'] and self.get(gp-0x513c)==0x4b0000
-        self.nodes[self.top].setdefault('handlers',[]).append((O['EVT_KEY_UP'],0x4b1310,self.top))
+        self.nodes[self.top].setdefault('handlers',[]).append((O['EVT_KEY_UP'],0x4f21b8,self.top))
         self.word(syms['g_class_type'],0xf00b)
         self.marks=[]; self.answer=10; self.confirms=[]; self.exports=[]; self.deletes=[]; self.dialogs=[]; self.mores=[]
         self.on_click=lambda w,e:[self.nested(f,ctx,e,0,0) for t,f,ctx in list(self.nodes[w].get('handlers',())) if t==O['EVT_CLICK']]
@@ -4120,7 +4120,7 @@ assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='
 button=m.row_button('List 0'); choice=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_choice'))
 info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
 assert m.nodes[choice]['visible']==1 and m.get(choice+O['W_X'])==333 and m.get(info+O['W_X'])==20 and m.get(info+O['W_W'])==309
-f,ctx=m.handler(m.top,O['EVT_KEY_UP']); assert f!=0x4b1310
+f,ctx=m.handler(m.top,O['EVT_KEY_UP']); assert f!=0x4f21b8
 ev=m.alloc(0x40); m.word(ev,O['EVT_KEY_UP']); m.word(ev+O['EVENT_KEY'],O['KEY_RETURN'])
 assert m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False)==11; m.advance(0,clear=False)
 assert m.navbar()==0 and m.top in m.stack and m.rows()==[NEW,EDIT]+LISTS and m.bar()=='Playlists' and m.selected(m.view)==2
@@ -5441,7 +5441,7 @@ for path,artist,want in (('/p/x','Artist','Album\x1fBaroness'),('/z/x','STP','Al
     # left these unhooked, so the worker wrote the old cache name the renderer never read.
     m.mock('pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0')
     m.cover_flags=0x101  # an old job completes between stock init and key renaming
-    for site in (0x4aeb3c,0x4b07f0,0x4ae968,0x4b12ac):
+    for site in (0x4aeb3c,0x4b07f0,0x4b12ac):
         m.u.reg_write(UC_MIPS_REG_SP,0x7000f000)
         m.u.reg_write(UC_MIPS_REG_V0,syms['p_deque_showlist'])
         m.u.reg_write(UC_MIPS_REG_T9,syms['albumcoverinfo_init'])
@@ -5620,7 +5620,7 @@ m.word(syms['pdeq_albumcoverlist'],m.deque(covers))
 view=m.node('scroll_view','scroll_view_album',yoffset=800); win=m.node('window','artistinfo_page',[view])
 m.word(0xa3af9c,1); m.word(0xa3afa0,0)  # the Albums tab; its last requested first row
 for tick in range(2):  # the second, at the same offset, requests nothing and leaves the worker running
-    m.pending.clear(); m.call(address=0x4ad7c0,args=(win,0,0,0),gap=0)
+    m.pending.clear(); m.call(address=0x4b0a24,args=(win,0,0,0),gap=0)
     assert [row for row,kind,size in m.pending]==([] if tick else list(range(15,24))), m.pending
     assert m.get(0xa3afa0)==15 and m.get(syms['albumcover_taskstate'])==1
 passed()
@@ -13119,7 +13119,7 @@ def pane_home(**config):
     for name in HOME_ROWS_PANE: click_target(m,named(m,m.top,name))
     assert m.call(address=HOOKS['home_page_init'][0],args=(m.top,0,0,0),gap=0)==0
     return m
-HOME_ROWS_PANE=('img_playing','img_library','img_folder','img_rockbox','img_services','img_settings','img_coverflow')
+HOME_ROWS_PANE=('img_playing','img_library','img_folder','img_rockbox','img_services','img_settings','img_cover_flow')
 def pane_shows(m):
     art=named(m,m.top,'img_homeart'); m.letters=[]; m.calls=[]; m.image_draws=[]
     m.call(address=payload_syms['coverflow_home_clip'],args=(art,m.canvas,0,0),gap=0)
@@ -15822,7 +15822,7 @@ def split_stream(mode='0',rowart='1',light=None):
     m.top=asset_tree(m,'../classic-light_'+HOME_PAGE); m.rockbox_mode=0o100755
     m.mock('on_home_stream_onclick','widget_off_by_ctx','widget_animator_prop_create','widget_animator_prop_set_params','widget_animator_start','widget_layout')
     m.handlers[O['STREAM_BG']]='stream_bg'
-    for name in ('img_playing','img_library','img_folder','img_rockbox','img_services','img_settings','img_coverflow'): click_target(m,named(m,m.top,name))
+    for name in ('img_playing','img_library','img_folder','img_rockbox','img_services','img_settings','img_cover_flow'): click_target(m,named(m,m.top,name))
     assert m.call(address=HOOKS['home_page_init'][0],args=(m.top,0,0,0),gap=0)==0
     return m
 def stock_tidal(m,view):  # stock's constructor destroys the view's rows and makes this one (0x540c8c's: button 335 x 70 at x 20)

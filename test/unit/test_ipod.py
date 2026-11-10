@@ -70,8 +70,8 @@ def test_home_card():
     card = m[3][2]
     assert card[2]['name'] == 'btn_coverflow'
     image, label = card[3]
-    assert image[2] == {'name': 'img_coverflow', 'style:normal:bg_image': 'menu_coverflow', 'style:focused:bg_image': 'menu_coverflowdown', 'draw': 'menu_music'}
-    assert label[2] == {'name': 'label_coverflow', 'text': 'Cover Flow'}
+    assert image[2] == {'name': 'img_cover_flow', 'style:normal:bg_image': 'menu_coverflow', 'style:focused:bg_image': 'menu_coverflowdown', 'draw': 'menu_music'}
+    assert label[2] == {'name': 'label_cover_flow', 'text': 'Cover Flow'}  # not stock's img_coverflow and label_coverflow, which it binds and translates
     assert m[3][1] == local_card() and len(m[3]) == 7
 
 
@@ -84,7 +84,9 @@ def test_home_card_wants_the_local_music_card(image, label):
 
 
 def home():
-    return w('home', menu(), w('img_left', kind='image'), w('img_right', kind='image'))
+    m = menu()
+    m[3].insert(2, w('btn_coverflow', w('img_coverflow', kind='image'), w('label_coverflow', kind='label', text='Album Wall')))  # stock V1.34's own card
+    return w('home', m, w('img_left', kind='image'), w('img_right', kind='image'))
 
 
 def test_ipod_home():
@@ -102,7 +104,8 @@ def test_ipod_home():
                                                    'btn_stream', 'btn_playset', 'btn_sysset']
     assert carousel[3][2][3][1][2]['text'] == 'Cover Flow' and carousel[3][4][3][1][2]['text'] == 'Rockbox'
     assert carousel[3][1][3][1][2] == {'name': 'label_library', 'text': 'Library'}
-    assert carousel[3][2][3][1][2]['name'] == 'label_coverflow'
+    assert carousel[3][2][3][1][2]['name'] == 'label_cover_flow' and carousel[3][2][3][0][2]['draw'] == 'menu_music'  # ours, cloned; stock's card is gone
+    assert [n[2]['name'] for n in rows[2][3]] == ['label_cover_flow', 'img_cover_flow'] and carousel[3][2][3][0][2]['name'] == 'img_cover_flow'
     for n in root[3][3:]:
         assert n[2]['visible'] == 'false' and n[2]['sensitive'] == 'false'
 
@@ -277,9 +280,9 @@ def test_plain_slider_is_used_by_np_slider():
 
 
 def playing():
-    buttons = w('view_buttons', w('img_return', at=[1, 2, 3, 4]),
+    buttons = w('view_buttons', w('img_return', at=[1, 2, 3, 4], self_layout='default(x=1,y=2,w=3,h=4)'), w('img_spectrum', kind='image'),
                 w('img_fav', kind='image', image='fav', x_offset='1', **{'style:normal:text_align_h': 'left', 'keep': 'yes'}),
-                w('img_more', kind='image', image='more', y_offset='1'),
+                w('img_more', kind='image', image='more', y_offset='1', self_layout='default(x=9,y=9,w=9,h=9)'), w('img_vu', kind='image'),
                 w('img_playmode', kind='image', y_offset='1'))
     title = w('scrlabel_title', kind='hscroll_label', at=[9, 9, 9, 9], **{'style:normal:font_size': '24', 'style:disable:font_size': '24'})
     artist = w('scrlabel_artist', kind='hscroll_label', **{'style:normal:font_size': '20', 'style:normal:text_color': '#123456',
@@ -491,12 +494,15 @@ def stock_page():
     root = w('playing_page',
              w('slide_view_view', w('slide_view', w('view_lrc', self_layout='default(x=0,y=0,w=100%,h=178)'),
                                     w('label_lyricmsg', at=[0, 73, 225, 28]), w('scroll_lrc', self_layout='default(x=0,y=0,w=-10,h=-20)'),
-                                    at=[0, 0, 225, 198]), at=[80, 0, 225, 290]),
+                                    at=[0, 0, 225, 198])),
              w('scrlabel_title'), w('scrlabel_artist'),
              w('img_cover', at=[18, 0, 188, 188]), w('img_playstate', at=[52, 34, 120, 120]),
-             w('img_fav', at=[2, 129, 86, 73], draw_type='center'),
-             w('img_playmode', at=[0, 129, 86, 73], draw_type='default', x_offset='12', y_offset='3', other='kept'),
-             w('slider_play', kind='slider', at=[50, 208, 290, 82], **slider))
+             w('view_buttons', w('img_return', self_layout='default(x=5,y=-5,w=90,h=60)'), w('img_spectrum'), w('img_fav', draw_type='center'),
+               w('img_more', self_layout='default(x=285,y=-5,w=90,h=60)'), w('img_vu'), w('img_playmode', at=[285, 135, 90, 60], draw_type='center', other='kept')),
+             w('label_playtime'), w('label_playlen'), w('img_repeata'), w('img_repeatb'), w('image_wait'),
+             w('slider_play', kind='slider', **slider))
+    for name, (stock, _) in ipod.PLAYING_STOCK_BOXES.items():  # as stock V1.34 lays them out
+        named(root)[name][1] = list(stock)
     return root
 
 
@@ -518,6 +524,11 @@ def test_playing_stock(audited):
     assert n['img_playmode'][1] == [375 - 2 - 86, 129, 86, 73]
     assert n['img_playmode'][2] == {'name': 'img_playmode', 'draw_type': 'center', 'other': 'kept'}
     assert n['img_fav'][1] == [2, 132, 86, 73]
+    assert [c[2]['name'] for c in n['view_buttons'][3]] == ['img_return', 'img_fav', 'img_more', 'img_playmode']  # no spectrum, no VU
+    assert all('self_layout' not in n[name][2] for name in ('img_return', 'img_more'))
+    assert {name: n[name][1] for name in ipod.PLAYING_STOCK_BOXES if name not in ('img_fav', 'slider_play')} == {
+        'img_return': [3, 0, 85, 60], 'img_more': [295, 0, 70, 60], 'label_playtime': [52, 266, 48, 14], 'label_playlen': [288, 266, 48, 14],
+        'slide_view_view': [80, 0, 225, 290], 'img_repeata': [50, 250, 3, 10], 'img_repeatb': [50, 250, 3, 10], 'image_wait': [165, 70, 54, 54]}
     assert n['slider_play'][1] == [50, 208 + 41 + 6 - ipod.NP_TOUCH // 2, 290, ipod.NP_TOUCH]
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])
 
@@ -532,17 +543,20 @@ def test_playing_stock_is_audited(audited):
     ('playing_page', 'name', 'x', 'Unexpected stock Now Playing'),
     ('slide_view', 'width', 224, 'Unexpected stock Now Playing'),
     ('scroll_lrc', 'self_layout', 'default(x=1,y=0,w=-10,h=-20)', 'Unexpected lyrics scroll view'),
-    ('slide_view_view', 'width', 224, 'Unexpected stock lyrics page'),
+    ('slide_view_view', 'width', 224, 'Unexpected stock slide_view_view'),
+    ('view_buttons', 'children', 1, 'Unexpected Now Playing buttons'),
+    ('view_buttons', 'children', 4, 'Unexpected Now Playing buttons'),
+    *((name, 'geometry', [box[0] + 1, *box[1:]], f'Unexpected stock {name}') for name, (box, _) in ipod.PLAYING_STOCK_BOXES.items()),
     ('slide_view', 'geometry', [0, 0, 225, 199], 'Unexpected stock lyrics page'),
     ('view_lrc', 'self_layout', 'x', 'Unexpected stock lyrics page'),
     ('label_lyricmsg', 'geometry', [0, 74, 225, 28], 'Unexpected stock lyrics page'),
     ('label_lyricmsg', 'self_layout', 'x', 'Unexpected stock lyrics page'),
     ('img_cover', 'geometry', [18, 1, 188, 188], 'Unexpected stock cover'),
     ('img_playstate', 'geometry', [52, 35, 120, 120], 'Unexpected stock cover'),
-    ('img_fav', 'geometry', [2, 130, 86, 73], 'Unexpected stock heart or play mode'),
     ('img_fav', 'draw_type', 'x', 'Unexpected stock heart or play mode'),
     ('img_playmode', 'draw_type', 'x', 'Unexpected stock heart or play mode'),
-    ('slider_play', 'geometry', [50, 209, 290, 82], 'Unexpected stock progress bar'),
+    ('img_playmode', 'style:normal:x_offset', '12', 'Unexpected stock heart or play mode'),
+    ('img_playmode', 'style:normal:y_offset', '0', 'Unexpected stock heart or play mode'),
     ('slider_play', 'style:normal:y_offset', '7', 'Unexpected stock progress bar'),
 ])
 def test_playing_stock_wants_the_stock_page(audited, name, index, value, message):
@@ -552,6 +566,8 @@ def test_playing_stock_wants_the_stock_page(audited, name, index, value, message
         node[1][2] = value
     elif index == 'geometry':
         node[1] = value
+    elif index == 'children':
+        del node[3][value]
     else:
         node[2][index] = value
     with pytest.raises(ValueError, match=f'^{message}$'):
@@ -963,7 +979,7 @@ SPLIT = ('pitch', 'body', 'title24_y', 'title_y', 'meta_y', 'count_y')
 
 def test_immediates_every_site_once():
     sites = [a for g in ipod.AUDIT['immediates'] for a, _ in g['sites']]
-    assert len(sites) == 103 and len(set(sites)) == 103
+    assert len(sites) == 102 and len(set(sites)) == 102
 
 
 def test_immediate_values_set0_are_the_baked_values():
@@ -1228,7 +1244,7 @@ def code_patches():
 def test_patch_code():
     patches = code_patches()
     assert len({at for at, *_ in patches}) == len(patches)
-    data = elf(0x530000)
+    data = elf(0x540000)
     for at, old, _, _ in patches:
         struct.pack_into('<I', data, at - 0x3ff000, old)
     assert ipod.patch_code(data, dict(SYMBOLS)) == [{'address': hex(at), 'original': hex(old), 'patched': hex(new), 'purpose': why}
@@ -1378,6 +1394,18 @@ def test_patch_style():
     assert ipod.patch_style(list_styles(), style_audit(CLEAR_ROWS)) == list_styles(normal=CLEAR, focused=CLEAR)
     pressed = ('button', 's_btn_listitem', 'bg_color', '3d1920ff', '333333ff', 1)
     assert ipod.patch_style(list_styles(), style_audit(CLEAR_ROWS, pressed)) == list_styles(CLEAR, PRESSED, CLEAR)
+
+
+def test_patch_style_takes_one_state_and_then_the_rest():
+    # stock V1.34's rows: every state grey. An edit that names a state changes that one; the next sees what is left.
+    def audit(*edits): return {'sha256': ipod.sha(list_styles(pressed=GREY)), 'edits': [list(e) for e in edits]}
+    one = ('button', 's_btn_listitem', 'bg_color', '2b2b2bff', '333333ff', 1, 'pressed')
+    assert ipod.patch_style(list_styles(pressed=GREY), audit(one)) == list_styles(pressed=PRESSED)
+    assert ipod.patch_style(list_styles(pressed=GREY), audit(one, CLEAR_ROWS)) == list_styles(CLEAR, PRESSED, CLEAR)
+    with pytest.raises(ValueError, match='^s_btn_listitem.bg_color: expected 1 states with 2b2b2bff, found 0$'):
+        ipod.patch_style(list_styles(pressed=GREY), audit(one[:6] + ('over',)))
+    with pytest.raises(ValueError, match='^s_btn_listitem.bg_color: expected 2 states with 2b2b2bff, found 3$'):
+        ipod.patch_style(list_styles(pressed=GREY), audit(CLEAR_ROWS))
 
 
 @pytest.mark.parametrize('edit,message', [

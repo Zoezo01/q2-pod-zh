@@ -245,7 +245,6 @@ hciplayer	0x42be80	0x17b4	mcl_command_handler	Parses one {...} command string fr
 hciplayer	0x42d634	0x3c0	sock_play_thread	Command thread: connects to /tmp/sock_play, hands each received message to the command handler, exits the process after six idle seconds
 hciplayer	0x42d9f4	0x1d4	player_idle_wait	Idle loop: polls the play flag every 10 ms (setting the heartbeat), clears stop flags, applies pending settings, returns the URL copy
 hciplayer	0x42e108	0x280	uninit_player	Logs "*** uninit(0x%X)" and tears down the player parts selected by the mask.
-hciplayer	0x42e5dc	0x154	mqa_probe	Checks a FLAC/PCM stream is stereo 16/24 bit at 44.1-192 kHz, opens the MQA library on a first chunk and reports if it is MQA
 hciplayer	0x42e740	0x7b0	reinit_audio_chain	MPlayer's reinit_audio_chain: inits the audio codec, filter chain and audio output, plus MQA decoder probe
 hciplayer	0x42eef0	0x8e8	fill_audio_out_buffers	MPlayer fill_audio_out_buffers: decodes, filters (MQA renderer for MQA streams) and plays audio while the AO has space
 hciplayer	0x42f7d8	0x524	pause_loop	MPlayer's pause_loop: pauses the AO, reports paused, waits for a command (20 ms polls) and resumes

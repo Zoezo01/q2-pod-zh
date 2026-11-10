@@ -68,7 +68,7 @@ def compile_payload(out):
              '-fno-asynchronous-unwind-tables', '-Oz', '-Wall', '-Wextra', '-Werror']
     obj, linked = out / 'flac_sync.o', out / 'flac_sync.elf'
     linker = out / 'flac_sync.ld'
-    linker.write_text('SECTIONS { . = 0xe10000; .text : { *(.text*) } '
+    linker.write_text('SECTIONS { . = 0xe20000; .text : { *(.text*) } '
                       '.rodata : { *(.rodata*) } .data : { *(.data*) *(.sdata*) } '
                       '.bss : { *(.bss*) *(.sbss*) } /DISCARD/ : { *(.comment) '
                       '*(.note*) *(.pdr) *(.mdebug*) *(.MIPS.abiflags) *(.reginfo) } }\n')

@@ -193,7 +193,7 @@ def zones():
     start = build.fileoff(demo, 0x77ea30)
     labels = [b'timedate_auto', *[f'stock{i}'.encode() for i in range(26)], b'timezone_gmt+12']
     demo[start:start + 28 * 64] = b''.join(l.ljust(64, b'\0') for l in labels)
-    for address, old in ((0x4c1a18, 0x00102980), (0x4bd090, 0x2402001c), (0x4c2234, 0x2402001c), (0x504d1c, 0x2c43001b)):
+    for address, old in ((0x4c1a18, 0x00102980), (0x4c1d18, 0x2402001c), (0x4c2234, 0x2402001c), (0x504d1c, 0x2c43001b)):
         struct.pack_into('<I', demo, build.fileoff(demo, address), old)
     return demo, start
 
@@ -206,7 +206,7 @@ def test_patch_timezones():
     assert rows == [b'timedate_auto', *[z[0].encode() for z in build.TIMEZONES]]
     assert table[32 * (len(build.TIMEZONES) + 1):] == bytes(len(table) - 32 * (len(build.TIMEZONES) + 1))
     count = len(build.TIMEZONES) + 1
-    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4c1a18, 0x4bd090, 0x4c2234, 0x504d1c)] == [
+    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4c1a18, 0x4c1d18, 0x4c2234, 0x504d1c)] == [
         0x00102940, 0x24020000 | count, 0x24020000 | (count - 1), 0x2c430000 | (count - 1)]
     assert len(demo) == len(zones()[0])
 
@@ -241,7 +241,7 @@ def test_patch_timezones_counts_are_fields_of_the_word(monkeypatch):
     demo, _ = zones()
     monkeypatch.setattr(build, 'TIMEZONES', build.TIMEZONES[:2])
     build.patch_timezones(demo)
-    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4bd090, 0x4c2234, 0x504d1c)] == [0x24020003, 0x24020002, 0x2c430002]
+    assert [struct.unpack_from('<I', demo, build.fileoff(demo, a))[0] for a in (0x4c1d18, 0x4c2234, 0x504d1c)] == [0x24020003, 0x24020002, 0x2c430002]
 
 
 def test_patch_timezones_label_must_fit(monkeypatch):
@@ -258,7 +258,7 @@ def test_patch_timezones_longest_label_fits(monkeypatch):
     assert demo[start + 32:start + 63] == b'x' * 31 and demo[start + 63] == 0
 
 
-@pytest.mark.parametrize('address', [0x4c1a18, 0x4bd090, 0x4c2234, 0x504d1c])
+@pytest.mark.parametrize('address', [0x4c1a18, 0x4c1d18, 0x4c2234, 0x504d1c])
 def test_patch_timezones_wants_stock_code(address):
     demo, _ = zones()
     struct.pack_into('<I', demo, build.fileoff(demo, address), 0)

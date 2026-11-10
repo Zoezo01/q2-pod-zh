@@ -3908,7 +3908,7 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
         home.row_label = child_of_type(row, "hscroll_label");
     } else {
         static const char *const names[] = { "img_playing",   "img_library",  0,
-                                             "img_coverflow", "img_folder",   0,
+                                             "img_cover_flow", "img_folder",   0,
                                              "img_rockbox",   "img_services", "img_settings" };
         for (unsigned i = 0; i < sizeof names / sizeof *names; ++i)
             if (names[i] && !tk_strcmp(name, names[i])) kind = (int)i;
@@ -4300,7 +4300,7 @@ const char *coverflow_home_title(void) {
  * on its image as stock does, whatever stock returned. */
 int coverflow_home(void *win, void *ctx) {
     int result = stock_home_trampoline(win, ctx);
-    widget_on(widget_lookup(win, "img_coverflow", 1), EVT_CLICK, coverflow_open, 0);
+    widget_on(widget_lookup(win, "img_cover_flow", 1), EVT_CLICK, coverflow_open, 0);
     widget_on(widget_lookup(win, "img_rockbox", 1), EVT_CLICK, home_shortcut_open, 0);
     widget_on(widget_lookup(win, "img_settings", 1), EVT_CLICK, home_settings, 0);
     home.win = win;
@@ -4327,7 +4327,7 @@ int coverflow_home(void *win, void *ctx) {
     static const char *const carousel[] = { "slide_menu", "img_left", "img_right" };
     for (int i = 0; i < 3; ++i) home.carousel[i] = widget_lookup(win, carousel[i], 1);
     /* The carousel's own Coverflow and Shortcut cards; the lists' come first in the window. */
-    widget_on(widget_lookup(home.carousel[0], "img_coverflow", 1), EVT_CLICK, coverflow_open, 0);
+    widget_on(widget_lookup(home.carousel[0], "img_cover_flow", 1), EVT_CLICK, coverflow_open, 0);
     widget_on(widget_lookup(home.carousel[0], "img_rockbox", 1), EVT_CLICK, home_shortcut_open, 0);
     coverflow_home_layout();
     if (theme()->pane_icon_x) {

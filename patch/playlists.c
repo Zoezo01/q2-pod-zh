@@ -554,7 +554,8 @@ void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
 enum { PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE, PL_N };
 static const unsigned pl_stock[PL_N] = { 0x4b46b4, 0x4b45b4, 0x4b44e4, 0x4b5cf0,
                                          0x4b5b48, 0x4b59e0, 0x4b45fc };
-#define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4b1310)
+/* on_common_keyup: the page's own static key-up until stock V1.34, which binds the shared one */
+#define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4f21b8)
 
 /* A row's place on the list's two heights: name over second line in the page rows' boxes, which
  * hold their fonts; the dots or a mark at the right edge, centred on the picker's tick's column
@@ -773,7 +774,7 @@ static int pl_marked(void *win, void *event) {
     if (g_navbar_status == 1) pl_rows(win);
     return 0;
 }
-/* Stock's row click opens More from x 286 outside select mode (0x4b1d90, 0x4b4998): a picker has
+/* Stock's row click opens More from x 286 outside select mode (0x4b48b8, 0x4b4998): a picker has
  * no More, so a tap anywhere picks; in the list the dots' column at the edge (PL_MARK_X on) stays
  * More, and a tap left of it, the chevron's column (from x 317) too, opens the playlist. The band's
  * row draws its chevron and no dots, so it opens to the edge; its More is the hold's. A pick or an
