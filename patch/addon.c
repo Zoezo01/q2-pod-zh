@@ -149,12 +149,15 @@ int addon_scan(void) {
         a->audio = number(raw, "audio") == 1;
         a->present = !access(a->bin, 0);
         /* the row's size first, the other scaled to fit (navigation.c set_child), else stream_app
-         */
+         * (one over ART_MAX px either way, or whose size can't be read, counts as none: demo
+         * decodes it whole) */
         static const char *const icons[2] = { "icon-40.png", "icon.png" };
         tk_snprintf(a->icon, sizeof a->icon, "stream_app");
         for (int i = 1; i >= 0; --i) {
+            int w = 0, h = 0;
             tk_snprintf(path, sizeof path, CARD "/%s/%s", e->d_name, icons[i]);
-            if (!access(path, 0)) tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
+            if (picture_size(path, &w, &h) && w && h && w <= ART_MAX && h <= ART_MAX)
+                tk_snprintf(a->icon, sizeof a->icon, "file://%s", path);
         }
     }
     if (d) closedir(d);

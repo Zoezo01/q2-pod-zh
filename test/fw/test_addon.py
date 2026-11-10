@@ -280,8 +280,13 @@ def card(fw, **apps):
         names.append(b'.' + name.encode())
         files[f'/mnt/mmc/.{name}/q2app'.encode()] = manifest
         files[f'/mnt/mmc/.{name}/q2-{name}'.encode()] = b'ELF'
-        files.update({f'/mnt/mmc/.{name}/{e}'.encode(): b'' for e in extra})
+        files.update({f'/mnt/mmc/.{name}/{e}'.encode(): png() if e.endswith('.png') else b'' for e in extra})
     return World(fw, files, {b'/mnt/mmc': names})
+
+
+def png(w=40, h=40):
+    """A PNG's signature and IHDR: all that picture_size reads."""
+    return b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', w, h) + b'\x08\x06\0\0\0'
 
 
 def scan(fw):
@@ -343,6 +348,22 @@ def test_the_longest_ids_icon_fits(fw):
     card(fw, **{i: (b'x=1\n', ['icon-40.png'])})
     scan(fw)
     assert ap(fw).a[0].icon == f'file:///mnt/mmc/.{i}/icon-40.png'.encode()
+
+
+@pytest.mark.parametrize('w,h,shown', [(40, 40, 1), (128, 128, 1), (129, 40, 0), (40, 129, 0), (4000, 4000, 0), (0, 0, 0)])
+def test_an_icon_over_art_max_is_the_shared_one(fw, w, h, shown):
+    world = card(fw, a=(b'x=1\n', ['icon-40.png']))
+    world.files[b'/mnt/mmc/.a/icon-40.png'] = png(w, h)
+    scan(fw)
+    assert ap(fw).a[0].icon == (b'file:///mnt/mmc/.a/icon-40.png' if shown else b'stream_app')
+
+
+def test_a_too_big_row_icon_falls_back_to_the_other_then_the_shared_one(fw):
+    world = card(fw, a=(b'x=1\n', ['icon-40.png', 'icon.png']), b=(b'x=1\n', ['icon.png']))
+    world.files[b'/mnt/mmc/.a/icon-40.png'] = png(4000, 4000)
+    world.files[b'/mnt/mmc/.b/icon.png'] = b'not a picture'
+    scan(fw)
+    assert [ap(fw).a[i].icon for i in range(2)] == [b'file:///mnt/mmc/.a/icon.png', b'stream_app']
 
 
 def test_a_slot_keeps_its_app_across_scans_and_an_app_gone_goes_from_the_list(fw):
