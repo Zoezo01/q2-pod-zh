@@ -2,13 +2,13 @@
      colours) come from patch/offsets.inc via tools/theme.py ROLE_MACROS. -->
 <theme format="1" id="modern" name="Modern" index="2" extends="minimal">
   <colorSchemes accents="graphite crimson tidal champagne cobalt tangerine plum green"/>
+  <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
   <option setting="light" preset="on" keep="auto"/>
   <option setting="accent" key="ACCENT" default="graphite" preset="cobalt"/>
   <option setting="corners" preset="square"/>
   <option setting="home" preset="split"/>
   <option setting="shortcut"/>
   <option setting="battery"/>
-  <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
   <option setting="time_title" preset="off"/>
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="0"/></view>

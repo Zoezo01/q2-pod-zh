@@ -2,6 +2,7 @@
 
 - **1.7.7**:
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
+  - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
