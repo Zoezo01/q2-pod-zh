@@ -2275,7 +2275,7 @@ SCROBBLE = r"""
 #include <sys/stat.h>
 #include "peq.h"
 int scrobble_ready(void), scrobble_start(void), scrobble_poll(int *), scrobble_flag(const char *);
-void scrobble_append(const char *, unsigned);
+int scrobble_append(const char *, unsigned);
 
 static const char *cfg[7]; /* TOKEN, USER, PASSWORD, API_KEY, API_SECRET, ALBUM_ARTIST, AUTO */
 int toolsReadConfig(const char *path, const char *section, const char *key, char *out, const char *def) {

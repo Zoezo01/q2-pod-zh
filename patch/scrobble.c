@@ -10,7 +10,9 @@
 #define INI_FILE PEQ_ROOT "/mnt/mmc/.scrobble.ini"
 #define CA_FILE PEQ_ROOT "/etc/scrobble-ca.pem" /* supplied by the firmware, no card setup */
 #define BATCH 50                                  /* Last.fm's limit; ListenBrainz takes 100 */
-#define BODY_MAX (192 << 10)                      /* 50 lines of at most 800 bytes, URL-encoded */
+#define LINE_BYTES 800                            /* navigation.c's line; a longer one is junk */
+#define BODY_MAX (192 << 10)                      /* 50 lines of LINE_BYTES, URL-encoded */
+#define LOG_HEAD (1 << 20) /* an upload's share of the log: its whole lines; the rest waits */
 #define LB_URL "https://api.listenbrainz.org/1/submit-listens"
 #define FM_URL "https://ws.audioscrobbler.com/2.0/"
 
@@ -69,17 +71,25 @@ int scrobble_value(const char *key) {
  * (scrobble_ui.c's scrobble_auto). */
 int scrobble_flag(const char *key) { return scrobble_value(key) == 1; }
 
-/* The UI thread's listen; the upload's rewrite holds the same lock. */
-void scrobble_append(const char *line, unsigned n) {
+/* The UI thread's listen; the upload's rewrite holds the same lock. 0 when the card didn't take
+ * it whole: the log is cut back to what it was (or removed, if this was its start), so no torn
+ * line joins the next listen. Cut after the close, which may still write the buffer's rest. */
+int scrobble_append(const char *line, unsigned n) {
     pthread_mutex_lock(up.lock);
     int fresh = access(LOG_FILE, 0) != 0;
     void *f = fopen(LOG_FILE, "ab");
-    if (f) {
-        if (fresh) fwrite(header, sizeof header - 1, 1, f);
-        fwrite(line, n, 1, f);
+    long at = f && !fseek(f, 0, 2) ? ftell(f) : -1;
+    int ok = at >= 0 && (!fresh || fwrite(header, sizeof header - 1, 1, f) == 1) &&
+             fwrite(line, n, 1, f) == 1 && !fflush(f);
+    if (f && fclose(f)) ok = 0;
+    if (!ok && fresh)
+        unlink(LOG_FILE); /* a headerless log would stay so */
+    else if (!ok && at >= 0 && (f = fopen(LOG_FILE, "r+b"))) {
+        if (ftruncate(fileno(f), at)) {} /* nothing more to try: the next listen will */
         fclose(f);
     }
     pthread_mutex_unlock(up.lock);
+    return ok;
 }
 
 /* path's bytes in a calloc'd buffer of *size + 1 (NUL-terminated), or 0 and *size 0 when it can't
@@ -95,6 +105,17 @@ void *read_all(const char *path, unsigned max, unsigned *size) {
     }
     if (f) fclose(f);
     *size = p ? (unsigned)n : 0;
+    return p;
+}
+
+/* path's first bytes, at most max, as read_all's (a file longer than max is no failure). */
+static char *read_head(const char *path, unsigned max, unsigned *size) {
+    void *f = fopen(path, "rb");
+    long n = f && !fseek(f, 0, 2) ? ftell(f) : -1;
+    unsigned want = (unsigned long)n > max ? max : (unsigned)n;
+    char *p = n >= 0 && !fseek(f, 0, 0) ? calloc(1, want + 1) : 0;
+    *size = p ? (unsigned)fread(p, 1, want, f) : 0;
+    if (f) fclose(f);
     return p;
 }
 
@@ -138,6 +159,7 @@ static int epoch(const char *s) {
 static int parse(char *line, entry_t *e) {
     char *f[8] = { line };
     int n = 1;
+    if (strlen(line) > LINE_BYTES) return 0; /* would overrun BODY_MAX, and block every upload */
     for (char *s = line; *s && n < 8; s++)
         if (*s == '\t') *s = 0, f[n++] = s + 1;
     e->artist = f[0], e->album = f[1], e->title = f[2], e->length = f[4], e->time = f[6];
@@ -267,19 +289,22 @@ static int scrobble_lastfm(const entry_t *e, int n, const char *sk, buf_t *b, re
 
 /* Moves the first done bytes' scrobbles to .sent and keeps the rest under the header. The log is
  * only appended to meanwhile, so those bytes are the ones uploaded. The new log is written first, so
- * a full card fails before .sent gains anything; .sent is synced before the rename drops them. */
+ * a full card fails before .sent gains anything; .sent is synced before the rename drops them. Only
+ * the done bytes are held: the rest is copied through. */
 static int retire(unsigned done) {
     pthread_mutex_lock(up.lock);
-    unsigned size;
-    char *p = read_all(LOG_FILE, ~0u, &size);
-    void *f = p && size >= done ? fopen(LOG_FILE ".tmp", "wb") : 0;
+    char *p = calloc(1, done + 1), chunk[4096];
+    void *in = p ? fopen(LOG_FILE, "rb") : 0;
+    void *f = in && fread(p, 1, done, in) == done ? fopen(LOG_FILE ".tmp", "wb") : 0;
     int ok = f != 0;
     if (f) {
-        ok = fwrite(header, sizeof header - 1, 1, f) == 1 &&
-                 (size == done || fwrite(p + done, size - done, 1, f) == 1);
-        if (fflush(f) || fsync(fileno(f))) ok = 0;
+        ok = fwrite(header, sizeof header - 1, 1, f) == 1;
+        for (unsigned k; ok && (k = (unsigned)fread(chunk, 1, sizeof chunk, in));)
+            ok = fwrite(chunk, k, 1, f) == 1;
+        if (ferror(in) || fflush(f) || fsync(fileno(f))) ok = 0;
         if (fclose(f)) ok = 0;
     }
+    if (in) fclose(in);
     void *sent = ok ? fopen(LOG_FILE ".sent", "ab") : 0;
     ok = sent != 0;
     for (unsigned i = 0, j; ok && i < done; i = j) {
@@ -303,7 +328,7 @@ static void *worker(void *unused) {
     unsigned size, done = 0;
     int lb = !!up.cfg[LB_TOKEN][0], fm = !!up.cfg[FM_USER][0], ok = 1, sent = 0;
     pthread_mutex_lock(up.lock);
-    char *log = read_all(LOG_FILE, ~0u, &size);
+    char *log = read_head(LOG_FILE, LOG_HEAD, &size);
     pthread_mutex_unlock(up.lock);
     buf_t b = { calloc(1, BODY_MAX), 0, BODY_MAX };
     ok = b.p != 0;
@@ -317,8 +342,8 @@ static void *worker(void *unused) {
             if (log[at] != '#' && parse(log + at, &e[n])) n++;
             at = j + 1;
         }
-        if (!n) {
-            done = at;
+        if (!n) { /* a cut line waits; in a full window, one longer than any real line is junk */
+            done = size == LOG_HEAD && size - at > LINE_BYTES ? size : at;
             break;
         }
         ok = (!fm || *sk || session(sk, &b, &r)) && (!lb || listenbrainz(e, n, &b, &r)) &&

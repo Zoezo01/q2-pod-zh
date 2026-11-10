@@ -37,7 +37,7 @@ def config(fw, values):
 
 class Card:
     """The card's files as a dict: read, write and append, each fopen's mode; fail names what fails ('open:path',
-    'write:path', 'sync', 'close', 'rename', 'short' for a read that stops early)."""
+    'write:path', 'flush', 'sync', 'close', 'rename', 'short' for a read that stops early)."""
     def __init__(self, fw, files=None):
         self.files, self.open, self.fail, self.opened = dict(files or {}), {}, set(), []
         fw.mock('fw_fopen', self.fopen)
@@ -48,8 +48,11 @@ class Card:
         fw.mock('fw_fclose', self.fclose)
         fw.mock('fw_fileno', lambda f, *_: f)
         fw.mock('fw_fsync', lambda fd, *_: -1 if 'sync' in self.fail else 0)
-        fw.mock('fw_fflush', lambda f, *_: 0)
+        fw.mock('fw_fflush', lambda f, *_: -1 if 'flush' in self.fail else 0)
+        fw.mock('fw_ferror', lambda f, *_: 0)
+        fw.mock('fw_ftruncate', self.ftruncate)
         fw.mock('fw_rename', self.rename)
+        fw.mock('fw_unlink', lambda path, *_: self.files.pop(C.string_at(path).decode(), None) and 0)
         fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
 
     def fopen(self, path, mode, *_):
@@ -73,7 +76,13 @@ class Card:
 
     def fseek(self, f, offset, whence, *_):
         state = self.open[f]
-        state[1] = C.c_long(offset).value + {0: 0, 1: state[1], 2: len(self.files[state[0]])}[whence]
+        end = len(self.files[state[0]] if state[2] is None else state[2])  # an append's file may be new
+        state[1] = C.c_long(offset).value + {0: 0, 1: state[1], 2: end}[whence]
+        return 0
+
+    def ftruncate(self, fd, size, *_):
+        path = self.open[fd][0]
+        self.files[path] = self.files[path][:size]
         return 0
 
     def fwrite(self, data, size, count, f, *_):
@@ -235,7 +244,7 @@ def test_percent_is_its_number(fw):
 
 def test_a_listen_starts_the_log_with_its_header_once_under_the_lock(fw):
     card = Card(fw)
-    append = fw.fn('scrobble_append', None, C.c_char_p, C.c_uint)
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
     first, second = line(title='One'), line(title='Two')
     append(first, len(first))
     append(second, len(second))
@@ -248,10 +257,32 @@ def test_a_listen_starts_the_log_with_its_header_once_under_the_lock(fw):
 def test_a_listen_the_card_can_t_take_still_lets_go_of_the_lock(fw):
     card = Card(fw)
     card.fail.add(f'open:{LOG}')
-    append = fw.fn('scrobble_append', None, C.c_char_p, C.c_uint)
-    append(line(), len(line()))
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
+    assert append(line(), len(line())) == 0
     assert LOG not in card.files
     assert len(fw.calls('fw_pthread_mutex_lock')) == len(fw.calls('fw_pthread_mutex_unlock')) == 1
+
+
+@pytest.mark.parametrize('fail', (f'write:{LOG}', 'flush', 'close'))
+def test_a_listen_the_card_takes_only_part_of_leaves_the_log_as_it_was(fw, fail):
+    first, second = line(title='One'), line(title='Two')
+    card = Card(fw, {LOG: HEADER + first})
+    card.fail.add(fail)
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
+    assert append(second, len(second)) == 0
+    assert card.files[LOG] == HEADER + first  # no torn line for the next listen to join
+    card.fail.clear()
+    assert append(second, len(second)) == 1 and card.files[LOG] == HEADER + first + second
+    assert len(fw.calls('fw_pthread_mutex_lock')) == len(fw.calls('fw_pthread_mutex_unlock')) == 2
+
+
+def test_a_first_listen_the_card_can_t_take_leaves_no_log(fw):
+    card = Card(fw)
+    card.fail.add('flush')
+    append = fw.fn('scrobble_append', C.c_int, C.c_char_p, C.c_uint)
+    assert append(line(), len(line())) == 0 and LOG not in card.files  # a headerless log would stay so
+    card.fail.clear()
+    assert append(line(), len(line())) == 1 and card.files[LOG] == HEADER + line()
 
 
 # read_all, which navigation.c shares.
@@ -393,20 +424,56 @@ def test_the_second_batch_refused_keeps_it_and_retires_the_first(fw):
     assert card.files[LOG + '.sent'].count(b'\n') == 50
 
 
-def test_a_batch_too_big_for_its_body_is_never_sent(fw):
-    big = 'a' * (BODY_MAX // 50)  # each listen's artist: 50 overrun the JSON body
+def at_most(size):
+    """The artist's length that makes line()'s line size bytes, its newline aside."""
+    return size - len(line('')) + 1
+
+
+@pytest.mark.parametrize('big, sent', (('"' * at_most(800), 50),  # 2 bytes each escaped, at the 800-byte cap
+                                       ('a' * (BODY_MAX // 50), 0)))  # 50 would overrun the JSON body
+def test_a_batch_fits_its_json_body_and_a_line_too_big_for_it_is_retired_unsent(fw, big, sent):
     log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
-    (_, result, sent), card, net = upload(fw, log, values=LB_ONLY)
-    assert (result, sent) == (-1, 0) and not net.requests and card.files[LOG] == log
+    (_, result, got), card, net = upload(fw, log, values=LB_ONLY)
+    assert (result, got) == (1, sent) and len(net.requests) == (1 if sent else 0)
+    assert card.files[LOG] == HEADER and card.files[LOG + '.sent'].count(b'\n') == 50  # gone, not blocking
 
 
-def test_a_form_too_big_for_its_body_is_never_sent(fw):
-    big = '&' * (BODY_MAX // 50 // 3)  # 3 bytes each escaped: the form overruns where the JSON would not
+@pytest.mark.parametrize('big, sent', (('&' * at_most(800), 50),  # 3 bytes each escaped, at the 800-byte cap
+                                       ('&' * (BODY_MAX // 50 // 3), 0)))  # the form overruns where the JSON would not
+def test_a_batch_fits_its_form_and_a_line_too_big_for_it_is_retired_unsent(fw, big, sent):
     log = HEADER + b''.join(line(big, time=str(1700000000 + i)) for i in range(50))
     values = {k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM'}
-    (_, result, sent), card, net = upload(fw, log, values=values)
-    assert (result, sent) == (-1, 0) and [f['method'] for f in net.forms()] == ['auth.getMobileSession']
-    assert card.files[LOG] == log
+    (_, result, got), card, net = upload(fw, log, values=values)
+    assert (result, got) == (1, sent)
+    assert [f['method'] for f in net.forms()] == (['auth.getMobileSession', 'track.scrobble'] if sent else [])
+    assert card.files[LOG] == HEADER and card.files[LOG + '.sent'].count(b'\n') == 50
+
+
+@pytest.mark.parametrize('size, sent', ((800, 2), (801, 1)))
+def test_a_line_over_800_bytes_is_retired_unsent(fw, size, sent):
+    long = line('a' * at_most(size))
+    log = HEADER + long + line(time='1700000001')
+    (_, result, got), card, net = upload(fw, log, values=LB_ONLY)
+    assert len(long) == size + 1 and (result, got) == (1, sent) and [len(b) for b in net.listens()] == [sent]
+    assert card.files[LOG] == HEADER and long in card.files[LOG + '.sent']
+
+
+def test_an_upload_takes_the_log_s_first_megabyte_and_keeps_the_rest(fw):
+    one = line(time='1700000000')
+    n = (1 << 20) // len(one) + 10  # past LOG_HEAD
+    log = HEADER + one * n
+    (_, result, sent), card, _ = upload(fw, log, values=LB_ONLY)
+    whole = ((1 << 20) - len(HEADER)) // len(one)  # the whole lines within it
+    assert result == 1 and sent == whole
+    assert card.files[LOG] == HEADER + one * (n - whole)  # the tail copied through, the line cut at 1 MB included
+
+
+def test_a_megabyte_with_no_newline_is_dropped_as_junk(fw):
+    log = HEADER + b'x' * (1 << 20) + b'\n' + line()
+    (_, result, sent), card, _ = upload(fw, log, values=LB_ONLY)
+    assert result == 1 and sent == 0 and card.files[LOG] == HEADER + log[1 << 20:]
+    (_, result, sent), card, _ = upload(fw, card.files[LOG], values=LB_ONLY)
+    assert (result, sent) == (1, 1) and card.files[LOG] == HEADER  # the junk's rest skipped, line() sent
 
 
 @pytest.mark.parametrize('fail', (f'open:{LOG}.tmp', f'write:{LOG}.tmp', 'sync', 'close', f'open:{LOG}.sent', f'write:{LOG}.sent',
