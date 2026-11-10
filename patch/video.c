@@ -34,7 +34,7 @@
 #define MONO_FILE "/tmp/q2mono" /* peq.h's: an int, 1 for Mono Audio */
 #define RADIO_STATE "/tmp/q2radio.state" /* key=value lines, as spotify.c reads librespot's */
 #define RADIO_TRIES 5                       /* starts in a row without sound, then state=error */
-#define RADIO_SILENT_MS 20000 /* a start without a sound written: the output is stuck, give up */
+#define RADIO_SILENT_MS 20000 /* a start without a sound heard: the output is stuck, give up */
 #define FFMPEG "/usr/bin/ffmpeg"
 #define DAC "/dev/shanling_dac"
 #define DAC_PCM 0xc0044d1bu  /* hciplayer sets it to 0 for each PCM track: undoes a DSD one */
@@ -241,8 +241,11 @@ static void *writer(void *unused) {
             written += r;
             recovered = 0;
         }
-        au.played = !snd_pcm_delay(au.pcm, &delay) && delay > 0 && delay < written ? written - delay
-                                                                                 : written;
+        if (snd_pcm_delay(au.pcm, &delay) || delay < 0) delay = 0; /* no answer: it ran dry */
+        /* nothing heard while ALSA still holds all that was written (its first fill; Bluetooth adds
+         * the link's own delay): counting it would run the picture ahead at each start and seek.
+         * ponytail: after a seek Bluetooth answers only the link's delay: that fill still counts */
+        au.played = delay < written ? written - delay : 0;
     }
     return au.done = 1, (void *)0; /* played stays behind the buffer, as the picture's clock wants */
 }

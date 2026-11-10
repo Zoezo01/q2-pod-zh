@@ -1589,17 +1589,16 @@ def test_a_video_s_failed_write_is_dropped_and_its_sound_read_on(q2):
     assert q2.written == sound[1024:] and not q2.au.error and q2.au.done
 
 
-@pytest.mark.parametrize('delay, error, heard', [(300, 0, 1536 - 300), (0, 0, 1536), (0, -EPIPE, 1536)])
+@pytest.mark.parametrize('delay, error, heard', [
+    (300, 0, 1536 - 300), (0, 0, 1536), (0, -EPIPE, 1536), (-64, 0, 1536),
+    (2000, 0, 0),  # more than was written (Bluetooth adds the link's own delay): nothing heard yet
+])
 def test_played_is_what_was_written_less_what_alsa_still_holds(q2, delay, error, heard):
     q2.delay, q2.delay_error = delay, error
     writer(q2, pcm(1536).tobytes())
     assert q2.au.played == heard
 
 
-@pytest.mark.xfail(strict=True, reason='BUG: while ALSA still holds all that was written (its first fill, the delay equal '
-                   'to what was written) the writer counts all of it as heard, not written less the delay '
-                   '(docs/internals.md; "played stays behind the buffer"), so at each start and seek the picture clock '
-                   'can run up to the 200 ms buffer ahead and drop the frames due in it as late')
 def test_nothing_is_heard_while_alsa_still_holds_all_that_was_written(q2):
     q2.filling = True
     writer(q2, pcm(1536).tobytes())
