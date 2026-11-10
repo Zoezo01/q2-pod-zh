@@ -771,6 +771,34 @@ def test_a_held_power_key_leaves_only_its_shutdown_prompt_the_wheel(fw, ui):
     assert win.props[SEL] == 1
 
 
+@pytest.mark.parametrize('flag', ['g_power_longkey', 'g_ingore_bootkey_flag', 'guard'])
+def test_the_release_that_ends_the_hold_leaves_the_shutdown_prompt_its_centre(fw, ui, flag):
+    """V1.34's confirm keeps every Centre release from on_wm_keyup_fun, which cleared the hold's flags."""
+    def flags():
+        return (fw.var('g_power_longkey', C.c_ubyte).value, fw.var('g_ingore_bootkey_flag', C.c_ubyte).value,
+                C.string_at(O['BOOT_KEY_GUARD'], 1)[0])
+
+    def hold():
+        if flag == 'guard':
+            C.memset(O['BOOT_KEY_GUARD'], 1, 1)
+        else:
+            fw.var(flag, C.c_ubyte).value = 1
+
+    fw.var('g_poweroff_state', C.c_ubyte).value = 1
+    hold()
+    Page(ui, titles(10))
+    key(fw, ui, KEY_CENTER)
+    assert any(flags())  # under any other window the release reaches stock, which clears them
+    _, buttons = dialog(ui)
+    clicks = Clicks(fw)
+    key(fw, ui, KEY_CENTER, ui.now + SLOW)  # the hold's own release: no click
+    assert flags() == (0, 0, 0) and not ui.due('confirm_center')
+    key(fw, ui, KEY_NEXT, ui.now + SLOW)
+    key(fw, ui, KEY_CENTER, ui.now + SLOW)
+    ui.fire(ui.due('confirm_center')[0])
+    assert clicks.seen == [(buttons[1].at, EVT_CLICK)]
+
+
 @pytest.mark.parametrize('cable, moves', [(1, False), (0, True)])
 def test_usb_modes_scan_prompt_takes_the_wheel_once_the_cable_is_out(fw, ui, cable, moves):
     fw.var('g_usblink_status', C.c_ubyte).value = 2

@@ -10818,6 +10818,14 @@ int ringnav(void *ctx, void *event) {
     /* Match the stock power-key release exclusions, including release after long press. */
     if (key == KEY_CENTER &&
         (g_power_longkey || g_ingore_bootkey_flag || *(volatile unsigned char *)BOOT_KEY_GUARD)) {
+        /* V1.34's confirm takes every Centre release itself (0x499bac), so the one that ends the
+         * hold that opened Shut Down? never reaches on_wm_keyup_fun, which cleared these: cleared
+         * here, or each later Centre in the prompt is dropped as that release (#303). */
+        void *held = window_manager_get_top_window(window_manager());
+        if (held && !tk_strcmp(widget_get_prop_str(held, "name", ""), "confirminfo_dialog")) {
+            g_power_longkey = g_ingore_bootkey_flag = 0;
+            *(volatile unsigned char *)BOOT_KEY_GUARD = 0;
+        }
         cancel_center();
         return result;
     }
