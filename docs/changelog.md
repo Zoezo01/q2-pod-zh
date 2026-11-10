@@ -34,6 +34,7 @@
   - Settings: **Wi-Fi file transfer** under **Network** is now **Wi-Fi File Transfer**, capitalised as the rows around it.
   - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
   - Library: in Classic with Row Art on, a playlist shows art on its row, as an album does: its own picture, `name.jpg` or `name.png` in `_explaylist_data` on the card, else four of its albums' covers.
+  - Cover Flow: Display → Cover Flow's **Playlist View**, List by default, set to Cover Flow opens Playlists as covers of the playlists' art, in every theme, with Centre to open a playlist and the hold's **New Playlist** and, under Classic, **Edit Playlists…**. Under Classic, Centre turns a playlist's cover over to its songs; a playlist of more than 200 songs opens its list instead, as in Minimal and Modern.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

@@ -684,8 +684,8 @@ static int pl_due(const void *info) {
      * would make each insert wait), and the rebuild that follows asks again */
     if (w && action == PL_IMPORT) playlist_art_stop();
     if (w) stock_dispatch_trampoline(w, pointer_event_init(click, EVT_CLICK, w, 0, 0));
-    /* a dialog's up, or gone: its close rebuilds the rows */
-    if (window_manager_get_top_window(wm) == win) pl_rows(win); /* pl_page(win) above */
+    /* a dialog's up, or gone: its close rebuilds the rows (Classic's: a toolbar's page has none) */
+    if (window_manager_get_top_window(wm) == win && !geom_val(V_TOOLBAR)) pl_rows(win);
     return 0;
 }
 /* The latest row clicked in a pass is the one that runs. */
@@ -854,6 +854,14 @@ static void *pl_record(void *button) {
     int at = pl_at(button);
     return lists && at >= 0 && at < (int)deque_size(lists) ? deque_at(lists, (unsigned)at) : 0;
 }
+/* Playlist cd_num's index in the live list (p_deque_playlist), its size when it is gone: the list
+ * may have been read again since Cover Flow copied it. */
+unsigned playlist_index(int cd_num) {
+    void *lists = P(p_deque_playlist, 0);
+    unsigned at = 0, n = lists ? deque_size(lists) : 0;
+    while (at < n && I(deque_at(lists, at), REC_DISC) != cd_num) ++at;
+    return at;
+}
 /* A shown row's art, when its file is made; else its build is queued. The songs are read again
  * once, by the worker, at the list's first ask: none when no row shows art. */
 static void pl_art_row(void *button, int *asked) {
@@ -876,7 +884,8 @@ static void pl_art_ready(int cd_num) {
             pl_art_row(button, &asked);
     }
 }
-static void pl_arts(void *win) {
+/* 1 when a row asked, the songs' read asked for */
+static int pl_arts(void *win) {
     void *view = widget_lookup(win, "scroll_view", 1);
     int asked = 0;
     pl_art_page = win;
@@ -885,11 +894,55 @@ static void pl_arts(void *win) {
         void *item = widget_get_child(view, i);
         if (widget_count_children(item)) pl_art_row(widget_get_child(item, 0), &asked);
     }
+    return asked;
+}
+
+/* Display's Playlist View: Cover Flow: the page, opened unseen, gets the playlists' covers over it
+ * on the next pass (coverflow_playlists), then shows under them for their Return (navigation.c's
+ * Artist View, cf_veil). The page pending them: */
+static void *pl_cf_win __attribute__((section(".scratch")));
+static unsigned pl_cf_timer __attribute__((section(".scratch")));
+static int pl_cf_open(const void *unused) {
+    void *win = pl_cf_win;
+    pl_cf_timer = 0;
+    pl_cf_win = 0;
+    if (win == window_manager_get_top_window(window_manager()))
+        coverflow_playlists(P(p_deque_playlist, 0));
+    if (win) cf_veil(win, 0);
+    return 0;
+}
+/* Cover Flow's Centre on playlist cd_num, under Minimal and Modern: its row's open, a tap at x 0,
+ * on this page under the covers, its list opening over them. Its rows are the list as the page was
+ * built: a playlist made since has none, and the covers close for the page, which builds them
+ * again as it comes to the front. */
+void playlist_open(void *win, int cd_num) {
+    void *view = widget_lookup(win, "scroll_view", 1);
+    int at = (int)playlist_index(cd_num);
+    char click[0x30];
+    for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
+        void *item = widget_get_child(view, i);
+        void *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;
+        if (button && pl_at(button) == at) {
+            stock_dispatch_trampoline(button, pointer_event_init(click, EVT_CLICK, button, 0, 0));
+            return;
+        }
+    }
+    coverflow_playlists_close();
+}
+
+/* A playlist cover's hold: New Playlist (edit 0) or Edit Playlists… (Classic's alone: its select
+ * mode) on this page, the covers closed over it. New is the toolbar's or Classic's row's target. */
+void playlists_edit(int edit) {
+    if (coverflow_playlists_close()) pl_click((void *)(long)(edit ? PL_EDIT : PL_NEW), 0);
 }
 
 /* Stock leaves its mode set for a page gone in it (held Return, to Home); its art's builds stop. */
 static int pl_gone(void *win, void *event) {
     (void)event;
+    if (win == pl_cf_win) {
+        stop_timer(&pl_cf_timer);
+        pl_cf_win = 0;
+    }
     if (widget_get_prop_int(win, PL_MARKING, 0)) g_navbar_status = 0;
     if (win == pl_art_page) {
         playlist_art_stop();
@@ -936,10 +989,10 @@ static void pl_dress(void *win, int first) {
     }
 }
 
-/* After stock rebuilds its rows: the guarded Now Playing picker's rebind, Classic's rows, and
- * under Row Art (Classic's alone) the rows' art, not the Add to Playlist picker's, a list as it
- * was. Stock's add mode is one global, left by any picker that closes, which it reads as this page
- * comes back: each page keeps the one it opened with. */
+/* After stock rebuilds its rows: the guarded Now Playing picker's rebind, Classic's rows, under
+ * Row Art (Classic's alone) the rows' art, not the Add to Playlist picker's, a list as it was, and
+ * Playlist View's covers. Stock's add mode is one global, left by any picker that closes, which it
+ * reads as this page comes back: each page keeps the one it opened with. */
 int ringnav_playlist(void *win) {
     int mode = widget_get_prop_int(win, PL_MODE, -1), first = mode < 0;
     if (first)
@@ -948,8 +1001,24 @@ int ringnav_playlist(void *win) {
         I(PLAYLIST_ADD_MODE, 0) = mode;
     int result = stock_playlist_trampoline(win);
     if (win == st.qm_playlist) qm_playlist_bind(win, 0, qm_playlist_pick);
-    if (geom_val(V_TOOLBAR)) return result; /* Minimal, Modern: stock's rows, no art built */
-    pl_dress(win, first);
-    if (geom(G_ART) && !widget_get_prop_int(win, PL_MODE, 0)) pl_arts(win);
+    void *lists = P(p_deque_playlist, 0);
+    int list = !widget_get_prop_int(win, PL_MODE, 0), toolbar = geom_val(V_TOOLBAR), read = 0;
+    /* Playlist View: Cover Flow, once, as the page opens (from Library, Home's list or its
+     * shortcut): coming back to it shows the list; with no playlists the list, New Playlist its way
+     * on. The covers are the playlists' art, so they build it in every theme, Row Art or not. */
+    int covers = first && list && lists && deque_size(lists) && ringnav_playlist_coverflow();
+    if (toolbar && !covers) return result; /* Minimal, Modern: stock's rows, no art built */
+    if (toolbar) { /* the rows stay stock's; the covers' builds stop with the page */
+        widget_on(win, EVT_DESTROY, pl_gone, win);
+        pl_art_page = win, playlist_art_ready = 0;
+    } else {
+        pl_dress(win, first);
+        if (list && (covers || geom(G_ART))) read = pl_arts(win);
+    }
+    if (!covers) return result;
+    if (!read) playlist_art_refresh(); /* the covers' counts and art: the songs read, once */
+    cf_veil(win, 1);
+    pl_cf_win = win;
+    rearm(&pl_cf_timer, pl_cf_open, 0);
     return result;
 }

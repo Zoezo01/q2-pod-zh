@@ -1119,6 +1119,7 @@ FUNCTIONS = {
  'sqlite3_exec': ('int', 'void *, const char *, int (*)(void *, int, char **, char **), void *, char **'),
  'getMusicByPlayList': ('int', 'int'),
  'sort_playlist_addtime': ('int', 'int'),
+ 'getAllPlayList': ('int', 'void'),  # every playlist's header, into tools_pdeq_directory (coverflow.c's playlists)
  'checkPlayListExist': ('int', 'void *, int'),
  'toolsSetTimeZone': ('int', 'const char *'),
  'widget_on': ('unsigned', 'void *, unsigned, int (*)(void *, void *), void *'),

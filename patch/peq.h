@@ -469,6 +469,15 @@ int spot_running(void), scrobble_busy(void), tidal_busy(void), addon_running(voi
 const char *coverflow_sort_name(void); /* coverflow.c */
 void coverflow_sort_step(void), coverflow_refresh_art(void);
 void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no album */
+/* Playlists as Cover Flow: coverflow.c's covers of lists (p_deque_playlist), 0 when it has none,
+ * its centred playlist (a cover's hold) and its close of the covers; playlists.c's open of playlist
+ * cd_num from its row on the Playlists page win under them, its index in the live list, and New
+ * Playlist (edit 0) or Edit Playlists… (1) on that page. */
+int coverflow_playlists(void *lists);
+void *coverflow_playlist(void *page), *coverflow_playlists_close(void);
+void playlist_open(void *win, int cd_num);
+unsigned playlist_index(int cd_num);
+void playlists_edit(int edit);
 int rockbox_available(void);  /* theme_engine.c: a regular Rockbox binary on the card */
 int groovebox_available(void); /* theme_engine.c: the Groovebox card app's binary on the card */
 #define SHORTCUT_GROOVEBOX 10  /* IPOD SHORTCUT's Groovebox, after the ten stock-era values */

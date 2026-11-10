@@ -682,13 +682,14 @@ def test_a_new_theme_moves_a_cached_settings_list_to_its_top(fw, st, geometry):
     assert cached.box[1] == tops[MODERN] and other.box[1] == tops[MINIMAL]
 
 
-def test_cover_flow_page_holds_artist_view_sort_and_refresh(fw):
+def test_cover_flow_page_holds_artist_view_playlists_sort_and_refresh(fw):
     ui = Ui(fw)
     page = display(fw, ui)
     ui.click(button_of(page.view(), 'Cover Flow'))
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
-    assert len(found) == 3 and found[0] == 'Artist View' and found[1].startswith('Cover Flow ') and found[2] == 'Refresh Cover Flow'
+    assert len(found) == 4 and found[:2] == ['Artist View', 'Playlist View'] and found[2].startswith('Cover Flow ')
+    assert found[3] == 'Refresh Cover Flow'
 
 
 class Settings:

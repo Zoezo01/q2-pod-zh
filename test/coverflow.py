@@ -72,7 +72,7 @@ canvas_draw_image slide_menu_set_spacer window_manager window_manager_get_top_wi
 widget_to_local widget_animator_pause window_manager_get_pointer_pressed image_manager image_manager_unload_bitmap_by_name image_manager_unload_all
 on_home_music_onclick on_home_stream_onclick widget_layout widget_destroy widget_paint canvas_translate widget_set_prop_str
 canvas_offline_create canvas_offline_begin_draw canvas_offline_end_draw canvas_offline_destroy toolsTimeItoa
-sqlite3_open sqlite3_exec sqlite3_close
+sqlite3_open sqlite3_exec sqlite3_close getMusicByPlayList getAllPlayList
 """.split() for r, a in [PROTOTYPES[n]]) + r"""
 int stock_canvas_set_fill_color(void *, unsigned);
 void *shim_calloc(size_t, size_t);
@@ -94,7 +94,7 @@ int coverflow_home(void *, void *), coverflow_player_cover(const char *, const c
 const char *track_name(char *, unsigned, void *);
 
 /* Widgets: raw memory first, so the payload's field reads (SLIDE_INDEX) land in it. */
-typedef struct { char raw[0x100]; int parent, visible, numb, kids[512], nkids, bg, fg; char type[32], text[160], image[600];
+typedef struct { char raw[0x100]; int parent, visible, numb, kids[512], nkids, bg, fg, right; char type[32], text[160], image[600];
                  handler click; void *ctx; } widget;
 static widget w[8192];
 static int nw;
@@ -182,7 +182,7 @@ int slide_menu_set_value(void *x, int value) { *(int *)(W(x)->raw + SLIDE_INDEX)
 int widget_set_name(void *x, const char *s) { snprintf(W(x)->type, 32, "%s", s); return 0; }
 void page_empty(void *body, const char *name) { (void)body; (void)name; } /* navigation.c: page_list_or only */
 int widget_use_style(void *x, const char *s) { return 0; }
-int widget_set_text_utf8(void *x, const char *s) { snprintf(W(x)->text, 160, "%s", s); return 0; }
+int widget_set_text_utf8(void *x, const char *s) { if (s) snprintf(W(x)->text, 160, "%s", s); return 0; } /* stock: NULL keeps the text */
 int widget_restack(void *x, unsigned i) { return 0; }
 void *widget_animator_prop_create(void *x, unsigned d, unsigned l, int e, const char *p) { return 0; }
 int widget_animator_prop_set_params(void *a, double f, double t) { return 0; }
@@ -199,10 +199,12 @@ const char *widget_get_prop_str(void *x, const char *k, const char *d) {
     return !strcmp(k, "image") ? W(x)->image : !strcmp(k, "name") ? W(x)->type : d;
 }
 static handler touch_fn, changed_fn; /* the covers' touch and the slide_menu's change */
+static handler foreground_fn; /* the page's, as a window over it closes */
 unsigned widget_on(void *x, unsigned type, handler f, void *ctx) {
     if (!x) return 0;
     if (type >= EVT_POINTER_DOWN && type <= EVT_POINTER_ABORT) touch_fn = f;
     if (type == EVT_VALUE_CHANGED) changed_fn = f;
+    if (type == EVT_WINDOW_FOREGROUND) foreground_fn = f;
     if (type == EVT_CLICK || type == EVT_KEY_UP || type == EVT_DESTROY) {
         widget *h = type == EVT_CLICK ? W(x) : &w[0] + (type == EVT_KEY_UP ? 8190 : 8191); /* page handlers */
         h->click = f; h->ctx = ctx;
@@ -278,7 +280,10 @@ int on_home_music_onclick(void *ctx, void *e) { return 0; }
 int on_home_stream_onclick(void *ctx, void *e) { return 0; }
 int widget_layout(void *w) { return 0; }
 int widget_paint(void *w, void *c) { return 0; }
-int widget_set_prop_str(void *w, const char *k, const char *v) { return 0; }
+int widget_set_prop_str(void *x, const char *k, const char *v) {
+    if (!strcmp(k, "style:normal:text_align_h")) W(x)->right = !strcmp(v, "right");
+    return 0;
+}
 int widget_destroy(void *w) { return 0; }
 int canvas_translate(void *c, int x, int y) { return 0; }
 /* Stock's off-screen canvas, when offline_ok: the screen's size and BGRA8888 format, its pixels offline[] */
@@ -371,7 +376,7 @@ const char *widget_get_type(void *x) { return W(x)->type; }
 int widget_get_visible(void *x) { return W(x)->visible; }
 int tk_strcmp(const char *a, const char *b) { return strcmp(a ? a : "", b ? b : ""); }
 int navigator_back_to_home(void) { return 0; }
-static int backs, force_closes;
+static int backs, force_closes, played_cls = -1, played_idx = -1;
 static void *force_closed; /* the last window closed unanimated */
 int navigator_back(void) { return ++backs, 0; }
 static int usb_page; /* USB Storage's page open */
@@ -385,6 +390,7 @@ static unsigned nav_n, navs;
 int navigator_to_with_context(const char *n, const void *c) {
     snprintf(nav_to, sizeof nav_to, "%s", n);
     memcpy(&nav_ctx, c, sizeof nav_ctx);
+    if (!strcmp(n, "playing_page")) played_idx = nav_ctx.idx, played_cls = nav_ctx.cls;
     nav_n = *(const unsigned *)nav_ctx.dq; /* the queue's deque, as below */
     memcpy(nav_queue, (const char *)nav_ctx.dq + sizeof(unsigned), sizeof nav_queue);
     return ++navs, 0;
@@ -450,7 +456,7 @@ void rearm(unsigned *t, int (*f)(const void *), unsigned ms) { stop_timer(t); *t
 static void run(void) { while (timer_fn) { int (*f)(const void *) = timer_fn; timer_fn = 0; usleep(1000); f(0); } }
 
 /* libcstl: a deque of record pointers; the query stubs fill the staging deque. */
-typedef struct { unsigned n; void *at[64]; } deque;
+typedef struct { unsigned n; void *at[1024]; } deque; /* a playlist of 300 songs fits */
 void *shim_dir;
 void *_create_deque(const char *t) { return calloc(1, sizeof(deque)); }
 void deque_init_copy(void *d, const void *s) { *(deque *)d = *(const deque *)s; }
@@ -3629,6 +3635,370 @@ static void playlist_art_refresh_cf(void) {
     embedded_fails = fails;
 }
 
+/* ---- Playlists as Cover Flow (coverflow_playlists, which playlists.c opens over the veiled
+   Playlists page): the playlists as covers, no cards, their art playlist_art.c's. ---- */
+int coverflow_playlists(void *lists), lettered(void *w);
+void *coverflow_album(void *page), *coverflow_tracks(void *page), *coverflow_playlist(void *page);
+void *coverflow_playlists_close(void);
+unsigned coverflow_scope(void *page);
+static void *list_win;
+static int list_cd = -1;
+void playlist_open(void *win, int cd_num) { list_win = win, list_cd = cd_num; } /* playlists.c's */
+static int pl_staged; /* each getMusicByPlayList */
+int getMusicByPlayList(int cd) { /* a playlist's songs: 40's are records 0 and 1, 41's record 2, 42's 3 to 9 */
+    deque *d = shim_dir;
+    d->n = 0, ++pl_staged;
+    if (messy) { /* the messy library's cd 3: 300 songs (cd 1's 20,000 would overflow the deque) */
+        for (int i = 0; cd == 3 && i < 300; ++i) d->at[d->n++] = records[i % albums];
+        return (int)d->n;
+    }
+    for (int i = cd == 41 ? 2 : cd == 42 ? 3 : 0; i < (cd == 40 ? 2 : cd == 41 ? 3 : cd == 42 ? 10 : 0); ++i) d->at[d->n++] = records[i];
+    return (int)d->n;
+}
+static const char *second_caption(widget *covers_view) { /* the second label: the album's artist */
+    for (int i = 0, k = 0; i < covers_view->nkids; ++i)
+        if (!strcmp(w[covers_view->kids[i]].type, "hscroll_label") && k++) return w[covers_view->kids[i]].text;
+    return "";
+}
+static unsigned saved_key(void) { /* the album key kept on the card to reopen on */
+    unsigned key = 0;
+    FILE *f = fopen(PEQ_ROOT "/mnt/mmc/.coverflow/album", "rb");
+    if (f) assert(fread(&key, sizeof key, 1, f) == 1), fclose(f);
+    return key;
+}
+/* Classic's Centre on a playlist turns it over: the header its name and its song count; each song
+   two lines of a 45 px row, its title over its artist in grey, its length at the right; five rows
+   show where an album's seven do. A pick plays the songs as a song list. */
+static widget *kid(widget *x, const char *type) {
+    for (int i = 0; i < x->nkids; ++i)
+        if (!strcmp(w[x->kids[i]].type, type)) return &w[x->kids[i]];
+    return 0;
+}
+static int *box(widget *x) { return (int *)x->raw; } /* W_X, W_Y, W_W, W_H */
+static void flip_playlist(void) {
+    static char list[0x60];
+    const char *kept[7][2];
+    int painter = shim_themes[1].painter[PAINT_PAGES];
+    assert(albums >= 10);
+    for (int i = 0; i < 7; ++i) {
+        char **t = (char **)(records[3 + i] + REC_TITLE), **a = (char **)(records[3 + i] + REC_ARTIST);
+        kept[i][0] = *t, kept[i][1] = *a;
+        *t = names[3 + i], *a = i == 1 ? "Other" : "Artist";
+    }
+    memset(list, 0, sizeof list);
+    *(int *)(list + REC_ID) = *(int *)(list + REC_DISC) = 42;
+    *(const char **)(list + REC_TITLE) = "Mixed";
+    deque *d = _create_deque(0);
+    d->at[d->n++] = list;
+    shim_themes[1].painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT;
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    top_window = page;
+    w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+    run();
+    widget *panel = 0;
+    for (int i = 0; i < page->nkids; ++i)
+        if (box(&w[page->kids[i]])[2] == 294) panel = &w[page->kids[i]];
+    assert(panel && deque_size(coverflow_tracks(page)) == 7);
+    const char *head[2] = { 0, 0 };
+    for (int i = 0, k = 0; i < panel->nkids; ++i)
+        if (!strcmp(w[panel->kids[i]].type, "hscroll_label") && k < 2) head[k++] = w[panel->kids[i]].text;
+    assert(head[0] && !strcmp(head[0], "Mixed") && head[1] && !strcmp(head[1], "7 songs"));
+    widget *lv = kid(panel, "list_view"), *view = kid(lv, "scroll_view");
+    assert(box(lv)[1] == 57 && box(lv)[3] == 228 && box(lv)[3] / 45 == 5 && view->nkids == 7);
+    for (int i = 0; i < 7; ++i) {
+        widget *row = &w[view->kids[i]];
+        assert(box(row)[1] == i * 45 && box(row)[3] == 45 && row->nkids == 3);
+        widget *t = &w[row->kids[0]], *a = &w[row->kids[1]], *len = &w[row->kids[2]];
+        assert(!strcmp(t->text, names[3 + i]) && !strcmp(a->text, i == 1 ? "Other" : "Artist"));
+        assert(box(t)[1] + box(t)[3] <= box(a)[1] + 1 && box(a)[1] + box(a)[3] <= 45 && box(t)[0] == box(a)[0]);
+        assert((unsigned)a->fg == 0xffaaaaaau && (unsigned)len->fg == 0xffaaaaaau && !t->fg);
+        assert(len->right && box(len)[0] + box(len)[2] == 282 && box(len)[3] == 45 && box(t)[0] + box(t)[2] < box(len)[0]);
+    }
+    played_cls = -1;
+    w[view->kids[3]].click(w[view->kids[3]].ctx, 0);
+    assert(played_cls == 0xf001 && played_idx == 3);
+    close_page();
+    /* an empty playlist turns over too: its name over "0 songs", no rows */
+    *(int *)(list + REC_ID) = *(int *)(list + REC_DISC) = 43;
+    *(const char **)(list + REC_TITLE) = "Empty";
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    top_window = page;
+    w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+    run();
+    panel = 0;
+    for (int i = 0; i < page->nkids; ++i)
+        if (box(&w[page->kids[i]])[2] == 294) panel = &w[page->kids[i]];
+    assert(panel && coverflow_tracks(page) && !deque_size(coverflow_tracks(page)));
+    head[0] = head[1] = 0;
+    for (int i = 0, k = 0; i < panel->nkids; ++i)
+        if (!strcmp(w[panel->kids[i]].type, "hscroll_label") && k < 2) head[k++] = w[panel->kids[i]].text;
+    assert(head[0] && !strcmp(head[0], "Empty") && head[1] && !strcmp(head[1], "0 songs"));
+    assert(!kid(kid(panel, "list_view"), "scroll_view")->nkids);
+    close_page();
+    top_window = 0;
+    free(d);
+    shim_themes[1].painter[PAINT_PAGES] = painter;
+    for (int i = 0; i < 7; ++i)
+        *(const char **)(records[3 + i] + REC_TITLE) = kept[i][0], *(const char **)(records[3 + i] + REC_ARTIST) = kept[i][1];
+}
+/* Classic's turned panel builds every row at once (about 3 KB each): a playlist over PANEL_ROWS
+   (200) opens in stock's list on the Playlists page under the covers instead, as Minimal's Centre
+   does: by its count in the table, with no songs loaded, or, the table not read yet (count 0), by the
+   songs it loaded. */
+static void flip_big_playlist(void) {
+    static char list[2][0x60];
+    int painter = shim_themes[1].painter[PAINT_PAGES];
+    deque *d = _create_deque(0);
+    for (int i = 0; i < 2; ++i) {
+        memset(list[i], 0, 0x60);
+        *(int *)(list[i] + REC_ID) = *(int *)(list[i] + REC_DISC) = i ? 3 : 1;
+        *(const char **)(list[i] + REC_TITLE) = i ? "Gone" : "Mix";
+        d->at[d->n++] = list[i];
+    }
+    messy_on();
+    assert(!playlist_songs(1) && !playlist_songs(3)); /* the table not read yet */
+    shim_themes[1].painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT;
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    widget *under = make(0, "playlist_page");
+    wm_stack[0] = under, wm_stack[1] = page, wm_n = 2, top_window = page;
+    for (int pass = 0; pass < 2; ++pass) {
+        int cd = pass ? 1 : 3, staged_before = pl_staged;
+        list_win = 0, list_cd = -1;
+        slide_menu_set_value(slide(), pass ? 0 : 1);
+        changed_fn(0, 0);
+        w[slide()->kids[pass ? 0 : 1]].click(w[slide()->kids[pass ? 0 : 1]].ctx, 0);
+        run();
+        int panels = 0;
+        for (int i = 0; i < page->nkids; ++i) panels += box(&w[page->kids[i]])[2] == 294;
+        assert(list_win == under && list_cd == cd && !panels && !coverflow_tracks(page) && slide()->visible);
+        assert(pl_staged == staged_before + !pass); /* the backstop loaded them; the count needs none */
+        if (pass) continue;
+        playlist_art_stop(); /* the covers' builds: the shim's one timer slot lost their poll to the Centre's */
+        pl_refresh();
+        assert(playlist_songs(1) == 20000 && playlist_songs(3) == 300);
+    }
+    playlist_art_stop();
+    close_page();
+    wm_n = 0, top_window = 0, messy = 0;
+    free(d);
+    shim_themes[1].painter[PAINT_PAGES] = painter;
+}
+static int rows_heard; /* the rows' own playlist_art_ready, under the covers' */
+static void rows_hear(int cd_num) { rows_heard = cd_num; }
+static void playlist_covers(void) {
+    static char lists[2][0x60];
+    static const cf_style_t shipped = CF_SHIPPED;
+    const cf_style_t fixture = shim_themes[1].cf;
+    char url[600];
+    unsigned kept = saved_key(), was[5] = { classic, frame_fail, square_art, pressed, embedded_fails };
+    embedded_fails = 0; /* the playlists' songs' art is their embedded art */
+    pl_n = 0;
+    pl_song(40, 2001, "PL CF A"), pl_song(40, 2002, "PL CF A"), pl_song(41, 2003, "PL CF B");
+    deque *d = _create_deque(0);
+    for (int i = 0; i < 2; ++i) {
+        memset(lists[i], 0, 0x60);
+        *(int *)(lists[i] + REC_ID) = *(int *)(lists[i] + REC_DISC) = 40 + i;
+        *(const char **)(lists[i] + REC_TITLE) = i ? "List 1" : "List 0";
+        d->at[d->n++] = lists[i];
+    }
+    /* Flat: two covers, no card; the name over its count; placeholders while the art builds, then
+       the art, the page still open. */
+    classic = 0, frame_fail = 1, square_art = 1, pressed = 0;
+    page = &w[nw + 1];
+    playlist_art_refresh(); /* playlists.c's, as it opens them: the worker reads the songs */
+    playlist_art_ready = rows_hear, rows_heard = 0; /* the rows under them hear too */
+    assert(coverflow_playlists(d) && d->n == 2); /* the caller's list stays the caller's */
+    widget *s = slide(), *view = &w[s->parent];
+    assert(s && s->nkids == 2 && !lettered(s));
+    assert(!strcmp(album_caption(view), "List 0") && !strcmp(second_caption(view), "0 songs")); /* not read yet */
+    assert(!strcmp(w[s->kids[0]].image, PLACEHOLDER) && !strcmp(w[s->kids[1]].image, PLACEHOLDER) && timer_fn);
+    run();
+    assert(!strcmp(second_caption(view), "2 songs")); /* the read landed: the count named again */
+    assert(rows_heard == 41);
+    for (int i = 0; i < 2; ++i)
+        assert(playlist_art(40 + i, "", 0, url, sizeof url) && !strcmp(w[s->kids[i]].image, url) && !strstr(url, "_s.jpg"));
+    slide_menu_set_value(s, 1);
+    changed_fn(0, 0);
+    assert(!strcmp(album_caption(view), "List 1") && !strcmp(second_caption(view), "1 song"));
+    /* a playlist with no name: an empty caption, not the one before */
+    *(const char **)(lists[0] + REC_TITLE) = 0;
+    slide_menu_set_value(s, 0);
+    changed_fn(0, 0);
+    assert(!strcmp(album_caption(view), "") && !strcmp(second_caption(view), "2 songs"));
+    *(const char **)(lists[0] + REC_TITLE) = "List 0";
+    slide_menu_set_value(s, 1);
+    changed_fn(0, 0);
+    /* No album hold or rating on a playlist; its hold is the playlist's, the record at the centre. */
+    assert(!coverflow_album(page) && !coverflow_playlist(0));
+    assert(coverflow_playlist(page) && *(int *)((char *)coverflow_playlist(page) + REC_DISC) == 41);
+    /* Minimal's Centre: the playlist opens from its row on the page under the covers, by its
+       cd_num, and the covers stay, for Return from its list to come back to. */
+    widget *under = make(0, "playlist_page");
+    wm_stack[0] = under, wm_stack[1] = page, wm_n = 2, force_closes = 0;
+    w[s->kids[1]].click(w[s->kids[1]].ctx, 0);
+    run();
+    assert(!force_closes && list_win == under && list_cd == 41);
+    assert(slide() == s && s->visible && !strcmp(album_caption(view), "List 1"));
+    /* The hold's New Playlist and Edit Playlists…: the covers close, unanimated, for the Playlists
+       page under them; with no covers up, nothing. */
+    force_closes = 0;
+    assert(coverflow_playlists_close() == under && force_closes == 1 && force_closed == page);
+    close_page();
+    assert(playlist_art_ready == rows_hear); /* handed back to the rows */
+    assert(!coverflow_playlists_close() && force_closes == 1 && !coverflow_playlist(page));
+    /* Classic's Centre, with no room to turn: the songs as a list, under the name; a pick plays
+       them as a song list (0xf001), never an album's resume; no position memory. */
+    shim_themes[0].painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT;
+    page = &w[nw + 1];
+    wm_stack[1] = page;
+    assert(coverflow_playlists(d));
+    w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+    run();
+    void *tracks = coverflow_tracks(page);
+    assert(!strcmp(title(), "List 0") && deque_size(tracks) == 2 && deque_at(tracks, 1) == records[1]);
+    assert(!coverflow_scope(page));
+    memset(shim_memory, 0x5a, sizeof shim_memory);
+    widget *row = 0;
+    for (int i = (int)(page - w); i <= nw; ++i)
+        if (!strcmp(w[i].type, "list_item") && w[i].click) row = row ? row : &w[i];
+    row->click(row->ctx, 0);
+    assert(played_cls == 0xf001 && shim_memory[0x611] == 0x5a);
+    key(KEY_RETURN); /* the songs back to the covers */
+    assert(slide() && slide()->visible);
+    /* Return on the covers: the Playlists page under them closes first, then the covers. */
+    force_closes = 0, backs = 0;
+    key(KEY_RETURN);
+    assert(force_closes == 1 && force_closed == under && backs == 1);
+    close_page();
+    shim_themes[0].painter[PAINT_PAGES] = PAGES_STOCK;
+    wm_n = 0;
+    /* Depth: a cover whose art is still building shows the placeholder, and its art once made,
+       decoded then, the page still open; a fast spin goes by covers, never letters. */
+    pl_song(41, 2004, "PL CF C"); /* 41's songs changed: its art is built again */
+    pl_refresh();
+    classic = 1, frame_fail = 0;
+    shim_themes[1].cf = shipped;
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    s = slide();
+    top_window = page;
+    int canvas[16] = { 0 }, before = loads;
+    coverflow_paint(s, canvas);
+    assert(loads == before + 1 && timer_fn); /* 40's art; 41's the placeholder */
+    run();
+    coverflow_paint(s, canvas);
+    assert(loads == before + 2); /* 41's, as it was made */
+    th_pass(0, 17);
+    int letters0 = letters;
+    th_down();
+    for (int t = 0; t < 2500; t += 17) th_spin(150, 17);
+    assert(letters == letters0);
+    th_rest();
+    close_page();
+    top_window = 0;
+    th_pass(0, 17);
+    shim_themes[1].cf = fixture;
+    flip_playlist();
+    flip_big_playlist();
+    assert(saved_key() == kept); /* a playlist is never the album Cover Flow reopens on */
+    free(d);
+    playlist_art_ready = 0;
+    classic = was[0], frame_fail = was[1], square_art = was[2], pressed = was[3], embedded_fails = was[4];
+}
+
+/* More's Rename or Delete over the covers (stock's list, getAllPlayList, read again as they come
+   back to the front): a deleted playlist's cover goes, a renamed one's caption follows, and the
+   centre stays on its playlist; with none left the covers close, for the list under them. Nothing
+   changed: the covers stay as they are. */
+static char *pl_heads[4];
+static int pl_nheads;
+int getAllPlayList(void) {
+    deque *d = shim_dir;
+    d->n = 0;
+    for (int i = 0; i < pl_nheads; ++i) d->at[d->n++] = pl_heads[i];
+    return pl_nheads;
+}
+static void playlist_covers_back(void) {
+    static char lists[3][0x60], renamed[0x60], made[0x60];
+    unsigned was[2] = { classic, frame_fail };
+    deque *d = _create_deque(0);
+    for (int i = 0; i < 3; ++i) {
+        memset(lists[i], 0, 0x60);
+        *(int *)(lists[i] + REC_ID) = *(int *)(lists[i] + REC_DISC) = 50 + i;
+        *(const char **)(lists[i] + REC_TITLE) = i == 0 ? "Back 0" : i == 1 ? "Back 1" : "Back 2";
+        d->at[d->n++] = pl_heads[i] = lists[i];
+    }
+    pl_nheads = 3;
+    classic = 0, frame_fail = 1;
+    page = &w[nw + 1];
+    foreground_fn = 0;
+    assert(coverflow_playlists(d) && foreground_fn);
+    widget *s = slide(), *view = &w[s->parent];
+    slide_menu_set_value(s, 1);
+    changed_fn(0, 0);
+    foreground_fn(page, 0);
+    run();
+    assert(slide() == s && s->nkids == 3 && !strcmp(album_caption(view), "Back 1"));
+    /* A song added to Back 1 from its list (Edit Playlist, Add to Playlist): its count follows as
+       the covers come back, the art's worker reading the songs again. */
+    assert(strcmp(second_caption(view), "1 song"));
+    pl_song(51, 2101, "PL Back");
+    playlist_art_stop(); /* the shim's one timer slot lost the running worker's poll */
+    foreground_fn(page, 0);
+    run();
+    assert(slide() == s && playlist_songs(51) == 1 && !strcmp(second_caption(view), "1 song"));
+    /* A failed read of the headers keeps the covers. */
+    pl_nheads = -1, force_closes = 0;
+    foreground_fn(page, 0);
+    run();
+    assert(!force_closes && slide() == s && s->nkids == 3 && !strcmp(album_caption(view), "Back 1"));
+    /* Classic's songs (a list here: no room to turn): the covers read again as they come back from
+       them, not before; a playlist made from a song's hold there gets its cover. */
+    int painter = shim_themes[0].painter[PAINT_PAGES];
+    shim_themes[0].painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT;
+    w[s->kids[1]].click(w[s->kids[1]].ctx, 0);
+    run();
+    assert(!strcmp(title(), "Back 1"));
+    memset(made, 0, 0x60);
+    *(int *)(made + REC_ID) = *(int *)(made + REC_DISC) = 53;
+    *(const char **)(made + REC_TITLE) = "Made";
+    pl_heads[3] = made, pl_nheads = 4;
+    foreground_fn(page, 0); /* back from the picker, over the songs */
+    run();
+    assert(slide() == s && s->nkids == 3);
+    key(KEY_RETURN);
+    s = slide(), view = &w[s->parent];
+    assert(s->nkids == 4 && !strcmp(album_caption(view), "Back 1"));
+    shim_themes[0].painter[PAINT_PAGES] = painter;
+    memcpy(renamed, lists[1], 0x60);
+    *(const char **)(renamed + REC_TITLE) = "Renamed";
+    pl_heads[0] = renamed, pl_heads[1] = lists[2], pl_nheads = 2; /* Back 0 deleted, Back 1 renamed */
+    foreground_fn(page, 0);
+    run();
+    s = slide(), view = &w[s->parent];
+    assert(s->nkids == 2 && *(int *)(s->raw + SLIDE_INDEX) == 0 && !strcmp(album_caption(view), "Renamed"));
+    assert(*(int *)((char *)coverflow_playlist(page) + REC_DISC) == 51);
+    pl_heads[0] = lists[2], pl_nheads = 1; /* the centre's own deleted: the cover at its place */
+    foreground_fn(page, 0);
+    run();
+    s = slide(), view = &w[s->parent];
+    assert(s->nkids == 1 && !strcmp(album_caption(view), "Back 2"));
+    widget *under = make(0, "playlist_page");
+    wm_stack[0] = under, wm_stack[1] = page, wm_n = 2, force_closes = 0;
+    pl_nheads = 0;
+    foreground_fn(page, 0);
+    run();
+    assert(force_closes == 1 && force_closed == page);
+    close_page();
+    wm_n = 0;
+    free(d);
+    playlist_art_ready = 0;
+    classic = was[0], frame_fail = was[1];
+}
+
 int main(void) {
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
@@ -3797,6 +4167,8 @@ int main(void) {
     playlist_art_crash();
     playlist_art_kills();
     playlist_art_gone();
+    playlist_covers();
+    playlist_covers_back();
     playlist_art_messy();
     /* Home: the player's cover for its type, once the player has parsed the current track
        (g_lastcover_url is its path), else the track album's Coverflow thumbnail, else the
@@ -4232,7 +4604,7 @@ def main():
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
           ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art and its one frame\'s key passed;'
-          ' playlist art (own picture, 2x2, bad picture, songs changed mid-build, card full or gone) passed;'
+          ' playlist art (own picture, 2x2, bad picture, songs changed mid-build, card full or gone) passed; playlists as covers (captions, art filling in, no letters, Centre, the Classic turn-over, Return) passed;'
           ' Classic\'s flip into an album\'s panel and back, the scoped pages\' cards, Go to Album and the Cancel row passed.')
 
 

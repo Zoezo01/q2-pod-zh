@@ -377,6 +377,8 @@ Under Classic (`classic_pages()`), Centre on a cover turns it over: the album's 
 
 The panel is 294 × 285 on paper, framed by a flat 1-pixel border just outside it, `#B4B9C0` in light and `#333333` in dark, the same on all four sides. Its 57-row header doesn't scroll: fill rows `#6d8db2` to `#8bacd0` at alpha `0xf0`, darker on top, the album in the theme's 22-pixel face, the artist in stock's regular 16 pixels at alpha `0xc0`, both white in either half, and a soft shadow over rows 55 to 62 falling on the rows. Rows are the theme's 32 pixels and 294 wide in a list from row 57, seven showing and 4 pixels of the eighth, none of its text: the title in the theme's 18-pixel face, the length right-aligned to 282 in stock's regular 16 pixels, `muted`, m:ss. A length is blank until [Long Songs](internals.md#long-songs) has measured its file; the panel reads that cache each time it opens. The bar says Cover Flow; there is no caption row. Its bottom corners sit under the glass by design; no text crosses it. With no depth (no memory for the shelf's frame or the turn's), with no covers under the tracks (Go to Album), or under Minimal, Centre opens the text list as before ([internals](internals.md#coverflow-depth)).
 
+**Playlists as covers.** Display → Cover Flow's **Playlist View: Cover Flow** (`Q2POD PLAYLISTCF`, List by default) opens the Playlists list ([internals.md](internals.md#playlist-art)) as covers, from every entry (Library, Home's list, the shortcut): the page opens veiled, and on the next pass the covers open over it, the playlists in the list's order. Return closes both and goes back to where Playlists was opened. With no playlists, or in the Add to Playlist picker, the list shows. A cover is the playlist's art at 160 pixels (a placeholder until it is made), in every theme and whatever Row Art says: the covers are the view; the caption is its name over "N songs" (or "1 song"), in the album's two lines. There are no letters, no Sort cards and no remembered position. Centre opens the playlist. Under Classic the cover turns over to the panel: its header is the name over its song count, and its rows are 45 pixels, five showing, each the title in bold over the artist in `#AAAAAA`, with the length right-aligned across both lines. Minimal and Modern open the playlist's own list over the covers, as a tap on its row does, and Return comes back to them. A song plays as from the list. Edits made from the covers show as they come back to them: after More…'s Rename or Delete a deleted playlist's cover goes and a renamed one shows its new name, a new playlist gets a cover, and a playlist whose songs changed shows its new count and art. Hold Play/Pause on a cover gives Play Next, Add to Queue, Shuffle and More… as on the list's row, then **New Playlist**, which closes the covers for stock's New over the Playlists page, and, under Classic, **Edit Playlists…**, which closes them for its select mode (Minimal and Modern edit from the page's toolbar).
+
 ## Rounded corners
 
 The panel's glass rounds its corners and hides what is drawn under them. `CORNER_R` in
@@ -738,9 +740,10 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   Before, the window opened and closed a pass later, flashing over the lyrics every 10 s (#153).
 - Cover Flow: "Artist View: Cover Flow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
   Cover Flow ends with an All albums card, see
-  [internals.md](internals.md#artist-albums-in-coverflow)), "Cover Flow Sort: Album" and "Refresh
-  Cover Flow" (`system_update`; it empties `.coverflow/`, the playlists' art with the albums', which
-  builds again).
+  [internals.md](internals.md#artist-albums-in-coverflow)), "Playlist View: List"
+  (`Q2POD PLAYLISTCF`, List (default) or Cover Flow; [Playlists as covers](#cover-flow)), "Cover Flow
+  Sort: Album" and "Refresh Cover Flow" (`system_update`; it empties `.coverflow/`, the playlists'
+  art with the albums', which builds again).
 - Controls: Wheel Sensitivity, which opens its slider page; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
   centre press starts the scrub and a double press turns the screen off (Scrub, above); "Key Tone"; "Click With Headphones" (`IPOD KEYTONEHP`), shown while Key Tone is on ([Key Tone](internals.md#key-tone)); Buttons Lock, which opens stock's page; "Wake: Single Press"; and "Volume Guard".

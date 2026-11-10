@@ -376,7 +376,7 @@ static void pl_note(const pl_job_t *j) {
 }
 
 /* The worker's read of every playlist's songs in place of the UI's table; each playlist it changed
- * (new, gone, or its hash or count another) is told, as its rows ask again. */
+ * (new, gone, or its hash or count another) is told, as its rows and cover ask again. */
 static void pl_take(pl_lists_t *t) {
     int changed[2 * PL_LISTS], k = 0;
     for (int i = 0; i < t->n; ++i) {
