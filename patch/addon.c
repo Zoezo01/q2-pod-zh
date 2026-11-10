@@ -2075,10 +2075,10 @@ static void qr_open(const char *state, const char *title) {
                 : widget_factory_create_widget(f, "view", page, QR_COL, 40, w, QR_PX);
     widget_set_text_utf8(
         qr_label(qp.col, x, r[0][0], short_w, r[0][1], "s_scrlabel_white20l", r[0][2], 0xffffffffu),
-        cl ? "Scan with your phone's" : "使用手机");
+        "用手机");
     widget_set_text_utf8(
         qr_label(qp.col, x, r[1][0], short_w, r[1][1], "s_scrlabel_white20l", r[1][2], 0xffffffffu),
-        cl ? "camera" : "相机扫描");
+        "相机扫描");
     widget_set_text_utf8(
         qr_label(qp.col, x, r[2][0], short_w, r[2][1], "s_scrlabel_white20l", r[2][2], SPOT_GREY),
         "或打开");

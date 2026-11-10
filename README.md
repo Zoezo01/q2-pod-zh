@@ -4,17 +4,17 @@
 
 这不是山灵官方固件，也不是上游的官方中文版，是自己用的一个分支：在上游的固件补丁之上做中文界面，另外加了三个自己需要的功能。
 
-![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V172W-3D424B?style=flat-square)
+![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-V176C-3D424B?style=flat-square)
 ![语言](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-D77868?style=flat-square)
-![许可](https://img.shields.io/badge/license-MIT-B99AC8?style=flat-square)
+![许可](https://img.shields.io/badge/license-GPL--3.0-B99AC8?style=flat-square)
 
-**直接刷机：[下载 `update.tar`](https://github.com/Zoezo01/q2-pod-zh/releases/latest)**（见 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases)，附 SHA256 与刷机说明）
+**直接刷机：[下载 `update.tar`](https://github.com/Zoezo01/q2-pod-zh/releases/latest)**（见 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases)，附 SHA256 与刷机说明）｜[更新日志](docs/changelog-zh.md)
 
 ## 参考了哪两个项目
 
 | 项目 | 是什么 | 本分支用了什么 |
 |---|---|---|
-| [**DiamondBond/q2-pod**](https://github.com/DiamondBond/q2-pod) | 固件补丁本体（MIT）：不重编固件，而是往山灵官方 V1.32 二进制里挂钩子，在 `0xb00000` 载荷区跑自己的 C 代码，换来 iPod classic 界面、Coverflow、PEQ、Spotify、Rockbox 等。 | **全部功能与绝大部分代码**。上游每发一版，本分支就把对应 tag 以一次 merge 提交并入，上游历史完整保留在 git log 里。 |
+| [**DiamondBond/q2-pod**](https://github.com/DiamondBond/q2-pod) | 固件补丁本体（1.7.2 起 GPL-3.0，之前是 MIT）：不重编固件，而是往山灵官方 V1.32 二进制里挂钩子，在 `0xb00000` 载荷区跑自己的 C 代码，换来 iPod classic 界面、Coverflow、PEQ、Spotify、Rockbox 等。 | **全部功能与绝大部分代码**。上游每发一版，本分支就把对应 tag 以一次 merge 提交并入，上游历史完整保留在 git log 里。 |
 | [**Ericwyn/q2-pod**](https://github.com/Ericwyn/q2-pod) | 同一项目的**简体中文汉化**分支（当前版本基于V1.4.8制作）。 | **汉化的底子**：术语表、翻译风格、`caption()` 支持 UTF-8 码点的做法都来自这里，译法也基本沿用它的用词。 |
 
 ## 相对上游改了什么
@@ -41,9 +41,9 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 `tools/build.py` 也能直接吃山灵官方的 `update.tar`，不必先解出那个 ZIP。这类输入走另一条 pinned SHA-256 校验，`manifest.json` 里记 `input_kind: "tar"`；`tools/release.py` 不认这种包，免得被当成正式发布物。
 
-### 3. 版本标记 `V172W`
+### 3. 版本标记 `V176C`
 
-上游英文版叫 `V172I`，这个分支叫 `V172W`。前半截 `172` 是上游版本 1.7.2，末位字母是中文版的发布序号——顺次往下排 `C`、`D`、`E`…，遇到 `I` 跳过去，那是英文版占的号。（1.6.x 起上游只构建一个版本，所以 `VERSIONS` 表没了。）
+上游英文版叫 `V176I`，这个分支叫 `V176C`。前半截 `176` 是上游版本 1.7.6，末位字母是中文版在自己这条版本线上的发布序号：每换一条上游版本线（1.6.6 → 1.7.2 → 1.7.6）字母从 `A` 重新起，同一条线上顺次往下排，遇到 `I` 跳过去，那是英文版占的号。（1.6.x 起上游只构建一个版本，所以 `VERSIONS` 表没了。）
 
 为什么非要多一个字母：固件升级（`update_firmware`，0x4f8440）判断"是不是最新"，只看包里的标记和设备上已装的标记**一模一样**，不比较版本高低。标记跟英文版错开，一台刷过英文 1.6.2 的机器才能直接升到中文版；以后重新构建，把字母往后挪一位就能再刷一次。
 
@@ -98,7 +98,7 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 上游的载荷（`patch/*.c` 编译结果）装在 `0xb00000`，紧跟着 `0xb80000` 是状态区，所以代码只能用 512 KB。1.6.3 编译出来是 523,800 B——离 524,288 的硬上限只剩 488 字节，再合并一版必然撞线（`tools/build.py` 里 `check(len(payload) < SCRATCH-BASE)` 会直接抛异常，包都出不来）。现在 1.7.2 是 706,536 B，同样不在这条线上。
 
-扩容的依据是先实测、后动手：`/proc/self/maps` 显示载荷止于 `0xb97000`，下一个映射在 `0x68da0000`（字体文件），中间 1.48 GiB 一个字节都没被占，heap 在载荷下方、动态库都在 `0x75c00000` 以上。所以把状态区从 `0xb80000` 挪到 `0xc00000`，代码窗口变成 1 MiB。1.7.2 用掉 706,536 B，余约 334 KB。
+扩容的依据是先实测、后动手：`/proc/self/maps` 显示载荷止于 `0xb97000`，下一个映射在 `0x68da0000`（字体文件），中间 1.48 GiB 一个字节都没被占，heap 在载荷下方、动态库都在 `0x75c00000` 以上。所以把状态区从 `0xb80000` 挪到 `0xc00000`，代码窗口变成 1 MiB。1.7.6 用掉 720,888 B，余约 328 KB。
 
 改动只有两行常量，其余校验（`__scratch_start`、`__scratch_end <= SCRATCH + 0x20000`）自动跟着新基址走：
 
@@ -109,10 +109,10 @@ CHINESE_UI = True   # 资产按 patch_asset 的结果原样打包，只保留解
 
 ### 差异一览
 
-| 项 | 上游 1.7.2 | 本分支 |
+| 项 | 上游 1.7.6 | 本分支 |
 |---|---|---|
 | 界面语言 | 英文 | 简体中文（`CHINESE_UI = True`） |
-| 版本标记 | `V172I` | `V172W` |
+| 版本标记 | `V176I` | `V176C` |
 | 无耳机时开始播放 | 照常播，只是没人听得见 | 按键、切歌、列表点歌都拒绝，可在播放设置关掉 |
 | 状态栏播放状态 | 只有图标 | 图标 +「正在播放」/「播放暂停」 |
 | 补全封面与歌词 | 一次一首，封面上手挑 | 播放设置里一键扫全卡 |
@@ -161,7 +161,7 @@ uv pip install -r requirements.txt
 .venv/bin/python tools/build.py /path/update.tar --out build-cn
 ```
 
-`--out` 目录必须不存在。产出一份约 51.3 MiB 的 `update.tar`，标记 `V172W`，载荷大小看构建日志（上限 1 MB）。加 `--dev` 会得到递增的开发标记（`V001c`…），附带一个需要密钥的远程调试服务。
+`--out` 目录必须不存在。产出一份约 51.3 MiB 的 `update.tar`，标记 `V176C`，载荷大小看构建日志（上限 1 MB）。加 `--dev` 会得到递增的开发标记（`V001c`…），附带一个需要密钥的远程调试服务。
 
 ## 测试
 
@@ -178,7 +178,7 @@ uv pip install -r requirements.txt
 
 把 [Releases](https://github.com/Zoezo01/q2-pod-zh/releases) 里的 `update.tar`（或你自己编译出来的那个）放在 TF 卡根目录，通过系统设置的 TF 卡升级安装；刷机期间不要断电拔卡。文件名必须就叫 `update.tar`，不要解压、不要改名。
 
-- 本版标记 `V172W`，和官方 `V1.32`、上游英文 `V172I`、上一版中文 `V172V` 都不一样，可以互相刷。
+- 本版标记 `V176C`，和官方 `V1.32`、上游英文 `V176I`、上一版中文 `V176B` 都不一样，可以互相刷。
 - 同一个标记只能刷一次：设备已在本版时再刷同样的包会被拒绝。重刷请换 `--dev` 或用新版本标记。
 - 回滚用山灵官方 V1.32 固件。注意别把官方原包当成自建包——官方包约 54 MB、`firmware_v20.info` 第二行是 `V1.32`，自建包约 51 MB。
 - 网络更新（应用商店）下载的仍是 DiamondBond 的**英文**固件，所以更新行标题写成「上游英文固件更新」。装了会失去汉化，要保留中文请用 TF 卡刷本分支的包。
@@ -203,8 +203,8 @@ uv pip install -r requirements.txt
 
 ## 许可与致谢
 
-- [DiamondBond/q2-pod](https://github.com/DiamondBond/q2-pod)：MIT，`LICENSE` 原样保留，Copyright (c) 2026 Diamond Bond。这个项目的钩子框架、偏移表、测试体系全部是他们的工作，本仓库只是在此基础上做中文与两个自用功能。
+- [DiamondBond/q2-pod](https://github.com/DiamondBond/q2-pod)：1.7.2 起 GPL-3.0（之前的版本是 MIT），`LICENSE` 原样保留，Copyright (c) 2026 Diamond Bond。这个项目的钩子框架、偏移表、测试体系全部是他们的工作，本仓库只是在此基础上做中文与两个自用功能。
 - [Ericwyn/q2-pod](https://github.com/Ericwyn/q2-pod)：简体中文汉化，感谢把术语和翻译风格先趟了一遍。
-- 本分支的改动同样以 MIT 发布。
+- 本分支的改动同样以 GPL-3.0 发布。
 
-文档：[汉化范围与构建细节](docs/chinese-local.md) · [上游更新日志](docs/changelog.md) · [内部机制](docs/internals.md) · [English version (upstream)](README.en.md)
+文档：[更新日志（中文）](docs/changelog-zh.md) · [汉化范围与构建细节](docs/chinese-local.md) · [上游更新日志](docs/changelog.md) · [内部机制](docs/internals.md) · [English version (upstream)](README.en.md)

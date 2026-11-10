@@ -12,7 +12,7 @@
   <option setting="battery"/>
   <!-- The bar's look alone, in every theme: Theme follows the theme, the rest paint that theme's fill, battery and play
        icon in this theme's row. The row itself is the set's, so it needs no restart. Choosing a theme goes back to Theme. -->
-  <option key="STATUSBAR" label="Status Bar" default="Theme" preset="Theme"><value label="Theme"/><value label="Minimal"/><value label="Modern"/><value label="Classic"/></option>
+  <option key="STATUSBAR" label="状态栏外观" default="跟随主题" preset="跟随主题"><value label="跟随主题"/><value label="简约"/><value label="现代"/><value label="经典"/></option>
   <option setting="time_title" preset="on"/>
   <option setting="np_layout"/>
   <view name="bar"><element name="title" caps="1"/></view>

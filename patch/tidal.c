@@ -387,9 +387,9 @@ int app_urls_play(const char *path) {
         tk_snprintf(id, sizeof id, "app:%u:%u", gen, n);
         unsigned rec[0x58 / 4] = { 0 }; /* stSongInfo: _deque_push_back copies it */
         P(rec, REC_TIDAL_ID) = strdup(id);
-        P(rec, REC_NAME) = strdup(*fld[1] ? fld[1] : "Unknown"); /* printed with %s: never NULL */
+        P(rec, REC_NAME) = strdup(*fld[1] ? fld[1] : "未知"); /* printed with %s: never NULL */
         P(rec, REC_PATH) = strdup(web(fld[0]) ? "" : fld[0]);
-        P(rec, REC_TITLE) = strdup(*fld[1] ? fld[1] : "Unknown");
+        P(rec, REC_TITLE) = strdup(*fld[1] ? fld[1] : "未知");
         if (*fld[2]) P(rec, REC_ARTIST) = strdup(fld[2]);
         if (*fld[3]) P(rec, REC_ALBUM) = strdup(fld[3]);
         if (web(fld[4])) P(rec, REC_COVER) = strdup(fld[4]); /* stock's cover thread curls it */

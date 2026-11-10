@@ -9340,7 +9340,7 @@ static void quick_hint(void *top, int volume) {
     if (old) widget_destroy(old); /* its timer goes with it: a second hold gets its whole time */
     void *band = band_create(top, QS_HINT, 226, 28);
     if (!band) return;
-    widget_set_text_utf8(band, volume ? "Wheel: Volume" : "Wheel: Brightness");
+    widget_set_text_utf8(band, volume ? "滚轮：音量" : "滚轮：亮度");
     widget_add_timer(band, quick_hint_end, QS_HINT_MS);
 }
 static int quick_volume(void) {
