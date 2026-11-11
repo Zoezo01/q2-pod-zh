@@ -26,15 +26,16 @@ def notes():
     prefix = f'- **{VERSION}**'  # entries up to V1.0 read **V1.0**, up to V7.6 **V7.6R / V7.6I**
     lines = (ROOT/'docs/changelog.md').read_text().splitlines()
     i = need(next((i for i, l in enumerate(lines) if l.startswith(prefix)), None), f'docs/changelog.md has no {prefix} entry')
+    check(not any(l.startswith('- **') for l in lines[:i]), f"{VERSION} is not docs/changelog.md's newest entry")
     title, text = lines[i][2:].split(':', 1)
     if not text.strip():  # a nested entry: its indented bullets, one level out
         return '\n'.join([title, *(l[2:] for l in itertools.takewhile(lambda l: l.startswith('  '), lines[i+1:]))])
     return '\n'.join([title, *('- '+s for s in re.split(r'(?<=[.!?]) +(?=[A-Z*"]|iPod)', text.strip()))])
 
 
-def release_body(out, record):
-    """The version heading and its bullets plus the SHA-256 block used by previous releases."""
-    return '\n'.join([notes(), '', 'SHA-256:', f'- {ASSET} ({TAG}): `{record["assets"][ASSET]}`']) + '\n'
+def release_body(text, assets):
+    """The version heading and its bullets (notes()) plus the SHA-256 block used by previous releases."""
+    return '\n'.join([text, '', 'SHA-256:', f'- {ASSET} ({TAG}): `{assets[ASSET]}`']) + '\n'
 
 
 def validate(directory):
@@ -67,6 +68,7 @@ def validate(directory):
 def package(stock, out):
     check(version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     check(not out.exists(), 'Release output must be a fresh directory')
+    text = notes()  # its changelog entry is the newest, before anything is built
     check(not run('git', '-C', ROOT, 'status', '--porcelain', '--', 'patch', 'tools', 'assets', 'docs', 'test', 'requirements.txt').strip(),
           'Commit the build inputs before packaging')
     out.mkdir(parents=True)
@@ -83,10 +85,10 @@ def package(stock, out):
     subprocess.run([sys.executable, str(ROOT/'docs/manual/build.py'), str(out/GUIDE)], check=True)
     check(source == source_sha256() and revision == run('git', '-C', ROOT, 'rev-parse', 'HEAD').strip(),
           'Source changed during release build')
-    record = dict(tag=VERSION, revision=revision, source_sha256=source, assets=checksums,
-                  guide_sha256=sha((out/GUIDE).read_bytes()))
     (out/'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in checksums.items()))
-    (out/'release-notes.md').write_text(release_body(out, record))
+    (out/'release-notes.md').write_text(release_body(text, checksums))
+    record = dict(tag=VERSION, revision=revision, source_sha256=source, assets=checksums,
+                  guide_sha256=sha((out/GUIDE).read_bytes()), notes_sha256=sha((out/'release-notes.md').read_bytes()))
     (out/'release.json').write_text(json.dumps(record, indent=2)+'\n')
     print(f'Validated and reproducible: {out}')
 
@@ -101,9 +103,10 @@ def upload(out, publish=False):
     check(sha(data) == record['assets'][ASSET] and data == (out/'build/update.tar').read_bytes(),
           'Release update mismatch')
     check(sha((out/GUIDE).read_bytes()) == record['guide_sha256'], 'User guide mismatch')
+    # The notes packaged from the changelog then, which the source hash doesn't cover.
+    check(sha((out/'release-notes.md').read_bytes()) == record['notes_sha256'], 'Release notes mismatch')
     sums = f'{record["assets"][ASSET]}  {ASSET}\n'
     check((out/'SHA256SUMS').read_text() == sums, 'Release checksums mismatch')
-    (out/'release-notes.md').write_text(release_body(out, record))
     gh = ['gh', '--repo', REPO, 'release']
     # Listing distinguishes an absent tag from an authentication/network failure.
     releases = json.loads(run(*gh, 'list', '--limit', '1000', '--json', 'tagName,isDraft'))
