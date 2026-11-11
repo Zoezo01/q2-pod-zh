@@ -332,7 +332,7 @@ def test_upload_checks_what_landed(repo, monkeypatch, name):
     (dict(assets={release.ASSET: 'x', 'extra.zip': 'y'}), '^The release is update.tar alone$'),
     (dict(assets={release.ASSET: 'x'}), '^Release update mismatch$'),
     (dict(guide_sha256='x'), '^User guide mismatch$'),
-    (dict(notes_sha256='x'), '^Release notes mismatch$'),
+    (dict(notes_sha256='x'), '^Release notes mismatch, '),
 ])
 def test_upload_checks_the_record_first(repo, monkeypatch, change, message):
     out = packaged(repo)
@@ -340,6 +340,17 @@ def test_upload_checks_the_record_first(repo, monkeypatch, change, message):
     (out/'release.json').write_text(json.dumps({**record, **change}))
     gh = Gh(monkeypatch, out)
     with pytest.raises(ValueError, match=message):
+        release.upload(out)
+    assert not gh.calls
+
+
+def test_upload_of_a_record_without_notes_hash_says_to_package_again(repo, monkeypatch):
+    out = packaged(repo)
+    record = json.loads((out/'release.json').read_text())
+    del record['notes_sha256']
+    (out/'release.json').write_text(json.dumps(record))
+    gh = Gh(monkeypatch, out)
+    with pytest.raises(ValueError, match='package again'):
         release.upload(out)
     assert not gh.calls
 

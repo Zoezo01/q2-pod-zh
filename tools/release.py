@@ -104,7 +104,8 @@ def upload(out, publish=False):
           'Release update mismatch')
     check(sha((out/GUIDE).read_bytes()) == record['guide_sha256'], 'User guide mismatch')
     # The notes packaged from the changelog then, which the source hash doesn't cover.
-    check(sha((out/'release-notes.md').read_bytes()) == record['notes_sha256'], 'Release notes mismatch')
+    check(sha((out/'release-notes.md').read_bytes()) == record.get('notes_sha256'),
+          'Release notes mismatch, or release.json is from an older package: package again')
     sums = f'{record["assets"][ASSET]}  {ASSET}\n'
     check((out/'SHA256SUMS').read_text() == sums, 'Release checksums mismatch')
     gh = ['gh', '--repo', REPO, 'release']

@@ -16,7 +16,7 @@ Packaging also rebuilds the user guide from `docs/manual/guide.html` (needs Chro
 
 Packaging requires a fresh output directory, builds the update twice, runs the shared MIPS
 suite and asset checks on the first build, and compares the two builds' update.tar bytes. It writes
-update.tar, the manifest, SHA256SUMS, release notes and source revision/hash. A single direct build is never a release input. Upload sends the release notes as packaged, re-checks them, the packaged bytes and the source hash
+update.tar, the manifest, SHA256SUMS, release notes and source revision/hash. A single direct build is never a release input. Upload sends the release notes as packaged (to fix them afterwards, use `gh release edit --notes-file`), re-checks them, the packaged bytes and the source hash
 and refuses stale, missing or changed artifacts and published releases. An upload/download
 failure leaves the release unpublished; rerun upload to repair the draft. Packaging uses no
 GitHub credentials or network.
