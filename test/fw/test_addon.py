@@ -10,7 +10,7 @@ import pytest
 import host
 from conftest import O, Deques, Game, block, high_halves, libc, text
 from test_coverflow import png  # an icon's header
-from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
+from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_CARD, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 
 APPS_MAX = 8
@@ -1360,7 +1360,7 @@ def test_an_app_asking_to_hold_keeps_standby_and_power_off_away(fw):
     assert a.hold == 0 and len(fw.calls('reset_poweroptions_timer')) == 1
 
 
-@pytest.mark.parametrize('job, result, kept', [(JOB_INSTALL, SH_NET, 1), (JOB_INSTALL, SH_CANCELLED, 1), (JOB_INSTALL, SH_OK, 0), (JOB_REMOVE, SH_OK, 0)])
+@pytest.mark.parametrize('job, result, kept', [(JOB_INSTALL, SH_NET, 1), (JOB_INSTALL, SH_CANCELLED, 1), (JOB_INSTALL, SH_OK, 0), (JOB_REMOVE, SH_OK, 0), (JOB_REMOVE, SH_CARD, 1)])
 def test_the_app_store_forgets_a_running_app_only_once_its_job_replaced_it(fw, job, result, kept):
     # an update that fails or is cancelled leaves the app running: still tracked, its hold still honoured
     world, a = running(fw, b'hold=1\n')
@@ -1371,10 +1371,12 @@ def test_the_app_store_forgets_a_running_app_only_once_its_job_replaced_it(fw, j
     fw.fn('netupdate__sh_start', None, C.c_int, C.c_int)(job, 0)
     addon_poll(fw, world)
     assert a.launched == 1 and a.hold == 1  # the app runs on until the job stops it
+    a.relaunch = 1  # a remove cut off by USB storage: to start again once the card is back
     sh = fw.var('netupdate__sh', Sh)
     sh.running, sh.result = 0, result
     assert fw.fn('netupdate__sh_wait', C.c_int, C.c_void_p)(None) == 0
-    assert (a.launched, a.hold) == (kept, kept)
+    assert (a.launched, a.hold, a.relaunch) == (kept, kept, kept)
+    a.relaunch = 0
     holds = len(fw.calls('reset_poweroptions_timer'))
     addon_poll(fw, world)
     assert len(fw.calls('reset_poweroptions_timer')) == holds + kept

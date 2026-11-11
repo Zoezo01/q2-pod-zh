@@ -756,8 +756,9 @@ static int sh_wait(const void *unused) {
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
-    /* its files replaced or gone: a failed or cancelled update's app runs on, still tracked */
-    if (job == JOB_REMOVE || (job == JOB_INSTALL && r == SH_OK)) addon_forget(apps[i].dir);
+    /* its files replaced or gone: an update that failed or was cancelled leaves its app running, still tracked,
+     * and a remove cut off by USB storage leaves it marked to start again with the card */
+    if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL)) addon_forget(apps[i].dir);
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
