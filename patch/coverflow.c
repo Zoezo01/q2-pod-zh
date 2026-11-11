@@ -1228,6 +1228,7 @@ int coverflow_split(void *list) {
  * untagged r keeps every untagged song the card lists (spoken and scoped-out ones left out, as
  * MUSIC_WHERE, which stock's getMusicByAlbum(NULL) skips at resume), and r: the Unknown Album card
  * is one album, whatever its folders. navigation.c's album pages and playback.c's stock resume. */
+/* ponytail: keeps the list's (stock's) order, not the card's album_before order; sort here if Next/Previous after a restart shows it. */
 int album_only(void *list, void *r, int at) {
     void *out = _create_deque("stSongInfo");
     const char *name = P(r, REC_ALBUM);
