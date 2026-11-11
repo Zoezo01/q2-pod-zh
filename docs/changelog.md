@@ -33,6 +33,7 @@
   - Volume: with the screen off the wheel changes the volume again, and waking no longer leaves the volume bar stuck over the page, where Return and taps seemed dead.
   - Settings: **Wi-Fi file transfer** under **Network** is now **Wi-Fi File Transfer**, capitalised as the rows around it.
   - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
+  - App Store: removing an app takes everything it saved, its sign-in too, even from an app that is still saving as it closes, and USB storage waits as long for such an app before taking the card. Such an app used to be able to write its sign-in back after the remove, or still be writing when the card went; and a remove cut off by USB storage said the app was removed when it was not.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

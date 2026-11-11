@@ -72,7 +72,8 @@ class Card:
     it) has room, which writes take and unlinks give back. Everything that changes a file is logged."""
     def __init__(self, w, room=4 << 30):
         self.w, self.room, self.log = w, room, w.log
-        self.files, self.dirs, self.mtime, self.reads = {}, {'/', '/mnt', '/mnt/mmc', '/tmp', '/etc'}, {}, {}
+        self.files, self.dirs, self.mtime, self.reads = {}, {'/', '/mnt', '/mnt/mmc', '/tmp', '/etc', '/proc'}, {}, {}
+        self.files['/proc/mounts'] = b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n'  # the card is in (card_mounted)
         self.handles, self.lists, self.listed, self.next = {}, {}, {}, 0x3000
         for name in ('fopen', 'fread', 'fwrite', 'fputs', 'fseek', 'ftell', 'fclose', 'fflush', 'ferror', 'fileno', 'fsync', 'rename',
                      'unlink', 'mkdir', 'rmdir', 'access', '__xstat', 'statfs', 'opendir', 'readdir', 'closedir'):

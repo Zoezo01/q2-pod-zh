@@ -505,7 +505,6 @@ int smart_config(const char *section, const char *key);
 void smart_poll(void);
 
 /* system.c */
-int card_mounted(void);
 void power_poll(void);
 
 /* library_lists.c */
