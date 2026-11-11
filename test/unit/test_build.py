@@ -182,6 +182,35 @@ def test_append_payload_wants_one_final_null_slot(rows):
         build.append_payload(program(*rows), b'', 0x500000, 0, 'x')
 
 
+@pytest.mark.parametrize('size,refused', [(build.SCRATCH - build.BASE - 1, False), (build.SCRATCH - build.BASE, False),
+                                          (build.SCRATCH - build.BASE + 1, True)])
+def test_check_layout_payload_may_reach_its_scratch_page(size, refused):
+    # The payload occupies [BASE, BASE+size): ending exactly at SCRATCH is accepted, one byte more refused
+    ps = {'__scratch_start': build.SCRATCH, '__scratch_end': build.SCRATCH}
+    if refused:
+        with pytest.raises(ValueError, match='^Payload overlaps its scratch page$'):
+            build.check_layout(bytes(size), ps)
+    else:
+        build.check_layout(bytes(size), ps)
+
+
+@pytest.mark.parametrize('end,refused', [(build.SCRATCH + 0x20000, False), (build.SCRATCH + 0x20001, True)])
+def test_check_layout_scratch_state_may_fill_128_kb(end, refused):
+    # Scratch state of exactly 128 KB is accepted, one byte more refused
+    ps = {'__scratch_start': build.SCRATCH, '__scratch_end': end}
+    if refused:
+        with pytest.raises(ValueError, match='^Scratch state exceeds its 128 KB$'):
+            build.check_layout(b'', ps)
+    else:
+        build.check_layout(b'', ps)
+
+
+def test_check_layout_wants_the_scratch_state_at_its_page():
+    # A link that put the scratch state anywhere but SCRATCH is refused
+    with pytest.raises(ValueError, match='^Scratch state moved$'):
+        build.check_layout(b'', {'__scratch_start': build.SCRATCH + 4, '__scratch_end': build.SCRATCH + 4})
+
+
 @pytest.mark.parametrize('label,minutes', [('GMT+0 London', 0), ('GMT-3:30 St. John\'s', -210), ('GMT+12:45 Chatham', 765),
                                            ('GMT-12 Baker Island', -720), ('GMT+5:30 Kolkata', 330)])
 def test_timezone_offset(label, minutes):
