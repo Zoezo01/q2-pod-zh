@@ -10792,7 +10792,8 @@ static void edit_paint(void *w, void *canvas) {
 static int replay_wheel(const void *info);
 int ringnav(void *ctx, void *event);
 /* A wheel tick the page cannot take yet: counted, its event kept for replay. Replay's own tick,
- * held again, always counts back in (replay_wheel takes it off). */
+ * held again, always counts back in (replay_wheel takes it off); live events never equal
+ * st.held_event, so the cap still holds at intake. */
 static int hold_wheel(void *ctx, void *event, int dir) {
     unsigned now = (unsigned)time_now_ms();
     if (!st.held) st.held_at = now;
