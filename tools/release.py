@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from build import ROOT, REPO, VERSION, TAG, ZIP_SHA, DEMO_SHA, build, check, need, run, sha, source_sha256
+from build import ROOT, REPO, VERSION, BETA, TAG, ZIP_SHA, DEMO_SHA, build, check, need, run, sha, source_sha256
 
 # Network Update (patch/netupdate.c) fetches releases/latest/download/<ASSET>, so the name can't
 # carry the version.
@@ -91,6 +91,7 @@ def package(stock, out):
 
 
 def upload(out, publish=False):
+    check(not (publish and BETA), 'A beta is a pre-release: set BETA = 0 in tools/build.py to publish')
     record = json.loads((out/'release.json').read_text())
     check(record['tag'] == VERSION and record['source_sha256'] == source_sha256(), 'Wrong release source/tag')
     check(set(record['assets']) == {ASSET}, f'The release is {ASSET} alone')

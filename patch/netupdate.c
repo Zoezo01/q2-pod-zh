@@ -388,7 +388,9 @@ static void *worker(void *unused) {
         return 0;
     }
     /* Tags are single-digit x.y.z, so strcmp orders them: nothing older than this build, which
-     * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag. */
+     * stock's updater would flash. Q2POD_TAG is empty in --dev builds, which take any tag.
+     * ponytail: a beta (BETA in tools/build.py) refuses its own version's release too, so its testers
+     * install that from the card; take an equal tag under a beta if they shouldn't have to. */
     if (*Q2POD_TAG && strcmp(tag, Q2POD_TAG) <= 0) {
         nu.state = NU_LATEST;
         return 0;

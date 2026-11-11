@@ -250,11 +250,21 @@ def test_upload_draft(repo, monkeypatch, capsys):
 
 
 def test_upload_publish(repo, monkeypatch, capsys):
+    monkeypatch.setattr(release, 'BETA', 0)
     out = packaged(repo)
     gh = Gh(monkeypatch, out)
     release.upload(out, publish=True)
     assert gh.calls[-1] == ('gh', '--repo', release.REPO, 'release', 'edit', release.VERSION, '--draft=false')
     assert capsys.readouterr().out.startswith('Published: https://github.com/')
+
+
+def test_upload_never_publishes_a_beta(repo, monkeypatch):
+    monkeypatch.setattr(release, 'BETA', 2)
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out)
+    with pytest.raises(ValueError, match='^A beta is a pre-release'):
+        release.upload(out, publish=True)
+    assert not gh.calls
 
 
 def test_upload_updates_a_draft(repo, monkeypatch):
@@ -274,6 +284,7 @@ def test_upload_never_overwrites_a_published_release(repo, monkeypatch):
 
 @pytest.mark.parametrize('name', [release.ASSET, release.GUIDE])
 def test_upload_checks_what_landed(repo, monkeypatch, name):
+    monkeypatch.setattr(release, 'BETA', 0)
     out = packaged(repo)
     gh = Gh(monkeypatch, out, corrupt=name)
     with pytest.raises(ValueError, match=f'^Remote asset mismatch: {name}$'):

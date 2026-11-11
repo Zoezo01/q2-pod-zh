@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 for name in [*assets, release.GUIDE]:
                     (target/name).write_bytes((out/name).read_bytes() if failure != 'corrupt' else b'bad')
             return ''
-        with patch('release.run', side_effect=gh):
+        with patch('release.run', side_effect=gh), patch('release.BETA', 0):  # a beta never publishes
             try:
                 release.upload(out, True)
             except (ValueError, subprocess.CalledProcessError):
