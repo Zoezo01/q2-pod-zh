@@ -20375,8 +20375,8 @@ for bad in (jpg(375,375),jpg(320,375,n=1),jpg(320,375,sof=0xc2),jpg(320,375,bits
             b'\xff\xd8\xff\xda\x00\x02',jpg(320,375)[:12],b'not a jpeg',b''):
     m=LogoMachine({LOGO_SRC:bad,LOGO_DST:b'old'}); m.sync()
     assert m.files[LOGO_DST]==b'old' and m.toasts==[LOGO_BAD] and not m.execs,bad[:16]
-    assert m.renames==1 and len(m.files[LOGO_SEEN])==8 and LOGO_SEEN+'.tmp' not in m.files,bad[:16]; passed()  # only its record saved
-    m.sync(False); m.sync(); assert m.toasts==[LOGO_BAD] and m.renames==1,bad[:16]; passed()  # remounted, the same file: not told again
+    assert not m.renames and LOGO_SEEN not in m.files,bad[:16]; passed()  # the emulator's stat fails: nothing recorded
+    m.sync(False); m.sync(); assert m.toasts==[LOGO_BAD]*2,bad[:16]; passed()  # so a remount reports it again
 m=LogoMachine({LOGO_SRC:jpg(375,320)}); m.child=True; m.sync()
 assert m.exits==[127] and LOGO_DST not in m.files and m.execs==[['/usr/bin/ffmpeg','/usr/bin/ffmpeg','-nostdin','-v','quiet','-i',LOGO_SRC,'-vf','transpose=1','-pix_fmt',
                   'yuvj444p','-q:v','2','-f','mjpeg','-y',LOGO_ROT]],m.execs; passed()

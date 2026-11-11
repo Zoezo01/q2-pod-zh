@@ -524,6 +524,17 @@ def test_an_invalid_card_logo_says_so_once_and_boot_goes_on(fw, power):
     assert power_on(fw, power, clock) == [LOGO_BAD] and power_on(fw, power, clock) == []
 
 
+# a stat that fails (the card pulled) records nothing: the file is reported at each power-on, never filed as {0, 0}
+def test_a_failed_stat_records_nothing(fw, power):
+    clock = Clock(fw)
+    card = Card(fw, {LOGO_SRC: jpeg(640, 480)})
+    Mounts(fw, card)
+    fw.mock('fw___xstat', lambda *_: -1)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    assert [power_on(fw, power, clock) for _ in range(2)] == [[LOGO_BAD]] * 2
+    assert '/mnt/data/boot-logo.bad' not in card.files
+
+
 # a good logo or none at a power-on between forgets the refused file: the same bad file put back is reported again
 @pytest.mark.parametrize('between', [jpeg(320, 375), None], ids=['good', 'none'])
 def test_a_good_logo_or_none_between_lets_the_bad_one_be_reported_again(fw, power, between):

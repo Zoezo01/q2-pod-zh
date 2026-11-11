@@ -438,15 +438,18 @@ static void *logo_sync(void *unused) {
             unlink(LOGO_DST ".tmp"), err = "Could not save boot logo";
     }
     free(b), free(old);
-    if (err == logo_refused) { /* LOGO_SEEN names the file last refused */
-        unsigned st[36] = { 0 }, seen[2], key[2];
-        __xstat(3, LOGO_SRC, st);
+    unsigned st[36], seen[2], key[2];
+    if (err == logo_refused &&
+        !__xstat(3, LOGO_SRC, st)) { /* LOGO_SEEN names the file last refused */
+        /* ponytail: the key is size + mtime (2 s on FAT), so another bad file of the same size and
+         * time stays silent; the record is written before the toast shows, so a power cut or a
+         * missed 2 s toast leaves the file recorded as told. A failed stat records nothing. */
         key[0] = st[12], key[1] = st[16]; /* size, mtime */
         if (BLOB_IO(LOGO_SEEN, seen, 0) && !memcmp(seen, key, sizeof key))
             err = 0; /* said at an earlier mount: once a file, not each power-on */
         else
             BLOB_IO(LOGO_SEEN, key, 1);
-    } else
+    } else if (err != logo_refused)
         unlink(LOGO_SEEN); /* a good logo, or none: the same bad file put back is told again */
     pw.logo_err = err;
     pw.logo_busy = 0;

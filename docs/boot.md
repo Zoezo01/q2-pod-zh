@@ -68,7 +68,7 @@ Put your logo on the microSD card as `/Q2Pod/boot/boot-logo.jpg`. While Q2 Pod i
 - **Size: 320x375, stored turned 90° clockwise as the stock splash is, or upright at 375x320**, which Q2 Pod turns itself with the Q2's own `ffmpeg`.
 - **Format: 8-bit, three-component baseline JPEG, at most 512 KB** ([Making a logo that works](#making-a-logo-that-works)).
 - A file that doesn't qualify shows "Boot logo must be a 320x375 JPEG", and one that can't be saved "Could not save boot logo"; either way the current logo stays. `logo_poll` clears the failure before its toast: the toast's dialog runs the UI loop, which polls again, so a failure still set would toast inside each toast until the watchdog restarted the Q2, at every boot.
-- A refused file is reported once, not at each power-on or mount: `logo_sync` keeps its size and modification time in `/mnt/data/boot-logo.bad` and says nothing while the card's file still matches. A file saved again (a new size or time) is reported again, and a good logo or no file removes the record, so the same bad file put back later is too.
+- A refused file is reported once, not at each power-on or mount. A changed file, or a good logo or none in between, is reported again. To see it again, remove the file for one mount or save it again.
 - Removing the file from the card deletes `/mnt/data/boot-logo.jpg` at the next mount while Q2 Pod is running; the following power-on shows the built-in splash.
 
 ### In a build
