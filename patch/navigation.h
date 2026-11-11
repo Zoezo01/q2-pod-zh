@@ -283,6 +283,7 @@ typedef struct {
     void *setting_label[12 + THEME_KEYS]; /* SETTING_OWN + THEME_KEYS */
     unsigned tone_key;  /* the wheel key whose press ringnav_keydown silenced, 0 when none */
     unsigned tick_drop; /* tick_gate: the wheel keys whose press it dropped, bits */
+    unsigned tick_at;   /* tick_gate: the last tick it passed, | 1 (ringnav_sleep's dark turn) */
     int greeted;        /* the first reachable list got its boot repaint */
     /* Queue menu: the hold's AWTK press time marks its release; the target is a track/list row
      * checked by count, record and browsing-state hashes; qm_cls is the class its list holds;

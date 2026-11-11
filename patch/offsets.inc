@@ -432,6 +432,10 @@ static inline int arc_out(int r, int y) {
  * second, so a Q2 left dark without Standby stops waking the CPU for nothing. The first key waits
  * at most that; Wake's second press is timed at the screen-off pace. */
 #define DARK_IDLE_SLEEP_MS 250
+/* A wheel turn with the screen off: for DARK_TURN_MS after a tick the turn idles neither, so its
+ * ticks are dispatched as they come, as lit, not a pass's worth at once (#303). A calibration
+ * knob: a turn slower than a tick in this long waits out a dark pass for each. */
+#define DARK_TURN_MS 500
 /* Bluetooth absolute volume is read back this often with the screen off and no volume limit to
  * hold, or after the headset refused it (bt_volume_poll); 400 ms otherwise. A headset's own volume
  * keys show on the Q2 that late. */
