@@ -20319,6 +20319,7 @@ m.link=1; m.poll(); assert [c[0] for c in m.calls].count('fork')==1; passed()
 # splash's /mnt/data copy; the poll toasts its failure. The thread is run here once the poll starts it.
 LOGO_SRC,LOGO_DST,LOGO_ROT='/mnt/mmc/Q2Pod/boot/boot-logo.jpg','/mnt/data/boot-logo.jpg','/tmp/boot-logo.jpg'
 LOGO_BAD,LOGO_FAIL='Boot logo must be a 320x375 JPEG','Could not save boot logo'
+LOGO_SEEN='/mnt/data/boot-logo.bad'  # the refused card file's size and mtime: told once
 def jpg(w,h,sof=0xc0,bits=8,n=3,pad=0):  # an APP0 behind a fill byte, then the frame header
     return b'\xff\xd8\xff\xff\xe0\x00\x04ab'+bytes([0xff,sof])+struct.pack('>HBHHB',8+3*n,bits,h,w,n)+bytes(3*n)+b'\xff\xd9'+bytes(pad)
 class LogoMachine(PowerMachine):
@@ -20373,7 +20374,9 @@ m=LogoMachine(); assert m.sync()==1 and LOGO_DST not in m.files and not m.toasts
 for bad in (jpg(375,375),jpg(320,375,n=1),jpg(320,375,sof=0xc2),jpg(320,375,bits=12),jpg(320,375,pad=512*1024),jpg(0,375),
             b'\xff\xd8\xff\xda\x00\x02',jpg(320,375)[:12],b'not a jpeg',b''):
     m=LogoMachine({LOGO_SRC:bad,LOGO_DST:b'old'}); m.sync()
-    assert m.files[LOGO_DST]==b'old' and not m.renames and m.toasts==[LOGO_BAD] and not m.execs,bad[:16]; passed()
+    assert m.files[LOGO_DST]==b'old' and m.toasts==[LOGO_BAD] and not m.execs,bad[:16]
+    assert m.renames==1 and len(m.files[LOGO_SEEN])==8 and LOGO_SEEN+'.tmp' not in m.files,bad[:16]; passed()  # only its record saved
+    m.sync(False); m.sync(); assert m.toasts==[LOGO_BAD] and m.renames==1,bad[:16]; passed()  # remounted, the same file: not told again
 m=LogoMachine({LOGO_SRC:jpg(375,320)}); m.child=True; m.sync()
 assert m.exits==[127] and LOGO_DST not in m.files and m.execs==[['/usr/bin/ffmpeg','/usr/bin/ffmpeg','-nostdin','-v','quiet','-i',LOGO_SRC,'-vf','transpose=1','-pix_fmt',
                   'yuvj444p','-q:v','2','-f','mjpeg','-y',LOGO_ROT]],m.execs; passed()

@@ -24,13 +24,14 @@
   - Controls: letting go of a held **Return** no longer acts as a second Return. In 1.8.0 BETA the Now Playing it had opened closed again.
   - Controls: holding **Play/Pause** for a menu no longer plays or pauses the song as you let go. In 1.8.0 BETA it did.
   - Status bar: under **Theme: Classic** the bar no longer shows **EQ** beside the battery.
-  - Lists: turning the wheel back while a page is still opening, or just after while it catches up, now cancels the whole turn made before it, It used to cancel only one step, so the page still scrolled on by the rest. Also, a list that loaded late got one step too few at the 8-step limit.
+  - Lists: turning the wheel back while a page is still opening, or just after while it catches up, now cancels the whole turn made before it. It used to cancel only one step, so the page still scrolled on by the rest. Also, a list that loaded late got one step too few at the 8-step limit.
   - Status bar: plugging in or unplugging the charger turns the whole battery percentage green or back to white. Only its last digit used to change, until the screen was turned off and on.
   - Streaming: under **Theme: Classic**, the large icon beside the list (TIDAL, AirPlay, Spotify, Internet Radio, Configuration) is sharp. It was an enlarged copy of the small row icon and looked blurry. A card app's own icon is shown as before.
   - Scrobbling: a listen the card has no room for is no longer half-written to `.scrobbler.log`, where it spoiled the next listen too. A damaged line in the log no longer stops every later **Upload Scrobbles**, and a very large log is uploaded a megabyte at a time instead of being held in memory whole.
   - Now Playing: **Artist info** on the ⋯ page no longer crashes the Q2 on Return when the song was played from an artist's page. The artist and album pages underneath now close first, so Return goes back to Now Playing.
   - Now Playing: holding a finger on the visualizer no longer makes it stutter. It used to redraw only about once a second until the finger lifted, and Halo lost its artwork.
   - Library: in **Era**, a decade, **Play All**, **Shuffle** or an album whose songs can't be read shows "Era unavailable", as the list of decades does. It used to open the decade with no albums in it, or say "Storage unavailable" or "Album not found".
+  - Display: a boot logo on the card that isn't a 320x375 JPEG shows **Boot logo must be a 320x375 JPEG** once, until the file is changed. It used to show the message again at every power-on.
   - Ratings: letting go of the heart after holding it no longer picks a rating by itself. The picker opened under the finger and the release chose the heart there: five hearts on the stock Now Playing, one on the centred one.
   - Ratings: in the picker, tapping the rating a song or album already has takes it away.
   - Volume: with the screen off the wheel changes the volume again, and waking no longer leaves the volume bar stuck over the page, where Return and taps seemed dead.
