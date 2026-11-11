@@ -2643,6 +2643,18 @@ def test_ticks_queued_into_a_sliding_now_playing_are_volume(fw, stock_bytes, st,
     assert len(fw.calls('write_int_config')) == (want != volume)
 
 
+@pytest.mark.parametrize('front, y, want', [('confirminfo_dialog', 5, O['QS_PULL_Y']), ('confirminfo_dialog', 200, 200),
+                                            ('home_page', 5, 5)])
+def test_a_touch_on_a_prompt_starts_below_the_pull_downs_band(fw, stock_bytes, front, y, want):
+    """Quick Settings over Shut Down?, then Return, left the prompt up with dead buttons (#303)."""
+    ui = Ui(fw)
+    ui.window(front)
+    keys = Input(fw, stock_bytes, ui)
+    start = C.c_int.from_address(C.addressof(fw.var('fw_ctx_g_pressdown_y', C.c_char)))
+    fw.mock('stock_input_trampoline', lambda wm, e, *_: setattr(start, 'value', C.c_int.from_address(e + O['EVENT_Y']).value) or 7)
+    assert keys(O['EVT_POINTER_FIRST'], 0, y=y) == 7 and start.value == want
+
+
 @pytest.mark.parametrize('lit', [0, 1])
 def test_a_tick_before_the_volume_dialog_takes_keys_steps_it_and_opens_no_other(fw, keys, lit):
     """The dialog is in front from navigator_to on, the window manager's key target only from its open event (#303)."""

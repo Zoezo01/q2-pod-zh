@@ -10180,6 +10180,20 @@ int ringnav_input(void *wm, void *e) {
         vol_step(key);
         return 0;
     }
+    /* No Quick Settings over a prompt. Stock's pull-down (on_wm_tsmove_fun) stays out of its own
+     * Add and Delete prompts by their flags, but not out of Shut Down? (g_poweroff_state 1, it
+     * tests for 2) or a prompt of ours. Return there was stock's, and took the windows away under
+     * the prompt's modal loop: Shut Down? came back with dead buttons, g_poweroff_state still 1,
+     * until a restart (#303). A touch that lands with a prompt in front starts below the pull's
+     * band, whatever stock recorded for it. */
+    if (type == EVT_POINTER_FIRST) {
+        int ret = stock_input_trampoline(wm, e);
+        void *front = window_manager_get_top_window(wm);
+        if (front && !tk_strcmp(widget_get_prop_str(front, "name", ""), "confirminfo_dialog") &&
+            I(g_pressdown_y, 0) < QS_PULL_Y)
+            I(g_pressdown_y, 0) = QS_PULL_Y;
+        return ret;
+    }
     if ((type != EVT_KEY_DOWN && type != EVT_KEY_UP) || !remote_key(e))
         return stock_input_trampoline(wm, e);
     /* Buttons lock is the buttons': stock's dark lock filters would drop SyncLink's keys (#113) */
