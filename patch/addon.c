@@ -1846,8 +1846,10 @@ static int closed(void *ctx, void *event) {
 
 /* Slot k's page, its first level op (args: "\t" and escaped each) titled title: the app started if
  * it isn't (its QR code shown at the first answer when qr); gone from the card, the page says so.
- * 1 when it opened. */
+ * 1 when it opened or said why not. */
 static int page_at(int k, const char *op, const char *args, const char *title, int qr) {
+    const char *busy = shelf_moving(); /* its folder deleted, or an update moved in */
+    if (busy && !strcmp(busy + 1, ap.a[k].id)) return toast("Wait until the App Store finishes"), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
         !(pg.page = page_open("addon_page", closed, keyup)))
