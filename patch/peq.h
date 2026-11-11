@@ -256,6 +256,7 @@ int center_press(unsigned *timer, unsigned *at, int (*single)(const void *), int
 int config_value(const char *section, const char *key, int n, int def); /* theme_engine.c: a config.ini decimal */
 int image_show(void *img, const char *url, unsigned *size);
 int album_cmp(void *a, void *b);
+int spoken(const char *path); /* navigation.c: under Podcasts or Audiobooks, or an M4B */
 void peq_attach(void); /* peq_ui.c */
 /* EQ per Output (docs/internals.md#eq-per-output): peq_ui.c swaps the EQ when the output named key
  * ("3.5mm", "4.4mm", "usb", a Bluetooth MAC) takes over; forgetting whose it is ends the following. */

@@ -434,6 +434,7 @@ int stock_scan_all_trampoline(void *a, void *b) { return stock_write(); }
 int stock_scan_folder_trampoline(void *a, void *b) { return stock_write(); }
 int stock_delete_song_trampoline(void *a, void *b) { return stock_write(); }
 void library_scope_scan(void) {} /* the marker walk: test/library_scope.py */
+int library_scope_hidden(const char *path) { (void)path; return 0; } /* no markers here */
 int coverflow_scan_all(void *, void *);
 static void rescan(void) { coverflow_scan_all(0, 0); } /* the library changed, as only a scan changes it */
 
@@ -482,7 +483,8 @@ static void album(const char *name, const char *art) {
 /* Stock groups albums by name alone, and appends an "Unknown Album" row (id -1) whenever any album
    exists; unknown_songs is what its press, getMusicByAlbum(NULL), finds. */
 static int unknown_row, unknown_songs;
-static char unknown_record[0x60], untagged_song[0x60];
+static char unknown_record[0x60], untagged_song[0x60], untagged_more[0x60];
+static int untagged_two; /* getMusicByAlbum(NULL) finds untagged_more too */
 int getAllAlbum(void) {
     deque *d = shim_dir;
     ++queries;
@@ -512,6 +514,7 @@ static int spoken_path(const char *path) {
            !strncasecmp(path, "/mnt/mmc/podcasts/", 18) ||
            (strlen(path) >= 4 && !strcasecmp(path + strlen(path) - 4, ".m4b"));
 }
+int spoken(const char *path) { return path && spoken_path(path); } /* navigation.c's */
 static int unknown_queries;
 int getMusicByAlbum(const char *a) {
     deque *d = shim_dir;
@@ -519,6 +522,7 @@ int getMusicByAlbum(const char *a) {
     if (!a) {
         ++unknown_queries;
         if (unknown_songs) d->at[d->n++] = untagged_song;
+        if (untagged_two) d->at[d->n++] = untagged_more;
     } else
         for (int i = 0; i < albums; ++i)
             if (!strcasecmp(names[i], a) && (!music_only || !spoken_path(paths[i]))) d->at[d->n++] = records[i]; /* each album's one song: its record */
@@ -2901,6 +2905,78 @@ static void cancel_build(void) {
     rescan();
 }
 
+/* ---- A track's play and its resume after a reboot. ---- */
+extern int album_only(void *, void *, int);
+static int open_card(const char *name) { /* the card whose tracks list is titled name, left open */
+    widget *s = slide();
+    for (int i = 0; s && i < s->nkids; ++i) {
+        w[s->kids[i]].click(w[s->kids[i]].ctx, 0);
+        run();
+        if (!strcmp(title(), name)) return 1;
+        key(KEY_RETURN);
+    }
+    return 0;
+}
+static widget *track_row(int k) { /* the newest row under the page that plays track k */
+    for (int i = nw; i > page - w; --i)
+        if (!strcmp(w[i].type, "list_item") && under(&w[i], page) && w[i].click && w[i].ctx == (void *)(long)k) return &w[i];
+    return 0;
+}
+/* Stock's resume after a reboot (memeory_startplayer, then playback.c's stock_memory): getMusicByAlbum of the saved
+   name, or of NULL with the Unknown flag, the saved track found by its path, then album_only to its album. */
+static deque *resumed(const char *path, int *at) {
+    getMusicByAlbum(shim_memory[0x60d] ? 0 : (const char *)shim_memory + 0x611);
+    deque *d = calloc(1, sizeof *d);
+    *d = *(deque *)shim_dir;
+    int k = -1;
+    for (unsigned i = 0; i < d->n; ++i)
+        if (!strcmp(*(char **)((char *)d->at[i] + REC_PATH), path)) k = (int)i;
+    assert(k >= 0);
+    *at = album_only(d, d->at[k], k);
+    return d;
+}
+static int has(const deque *d, const void *r) {
+    for (unsigned i = 0; i < d->n; ++i)
+        if (d->at[i] == r) return 1;
+    return 0;
+}
+/* The Unknown Album card (x.flac and y.flac, untagged, in two folders) resumes whole, at the song
+   that was playing. */
+static void unknown_resume(void) {
+    char *loose[2] = { untagged_song, untagged_more };
+    static char where[2][600];
+    for (int i = 0; i < 2; ++i) {
+        char d[500];
+        snprintf(d, sizeof d, PEQ_ROOT "/music/Loose %c", 'A' + i);
+        mkdir(d, 0755);
+        snprintf(where[i], 600, "%s/%c.flac", d, 'x' + i);
+        fclose(fopen(where[i], "w"));
+        memset(loose[i], 0, 0x60);
+        *(int *)(loose[i] + REC_ID) = 60 + i;
+        *(char **)(loose[i] + REC_PATH) = where[i];
+    }
+    unknown_row = unknown_songs = untagged_two = 1;
+    rescan();
+    open_page();
+    assert(open_card("Unknown Album"));
+    deque *t = coverflow_tracks(page);
+    assert(t->n == 2 && t->at[0] == untagged_song && t->at[1] == untagged_more);
+    memset(shim_memory, 0, sizeof shim_memory);
+    widget *row = track_row(1);
+    assert(row);
+    row->click(row->ctx, 0);
+    assert(shim_memory[0x60d] == 1 && nav_ctx.cls == 0xff10 && nav_ctx.idx == 1);
+    key(KEY_RETURN);
+    close_page();
+    int at;
+    deque *q = resumed(where[1], &at);
+    assert(q->n == 2 && has(q, untagged_song) && has(q, untagged_more) && q->at[at] == untagged_more);
+    free(q);
+    unknown_row = unknown_songs = untagged_two = 0;
+    memset(untagged_song, 0, 0x60), memset(untagged_more, 0, 0x60);
+    rescan();
+}
+
 int main(void) {
     /* Titles come from tags, unchanged; missing tags retain filename/CUE fallbacks. */
     char track[0x60] = {0}, name[512];
@@ -3065,6 +3141,7 @@ int main(void) {
     flip_turn();
     scoped_pages();
     cancel_build();
+    unknown_resume();
     /* Home: the player's cover for its type, once the player has parsed the current track
        (g_lastcover_url is its path), else the track album's Coverflow thumbnail, else the
        placeholder; reloaded only when the track or the usable cover changes, and only while Home
@@ -3494,7 +3571,7 @@ def main():
           ' its texture window, centre click, small libraries and flat fallback passed;'
           ' Sort by artist, year, recently added, most played and random, kept across opens, passed; an artist\'s albums alone passed;'
           ' Home art sources, fit, clip, cache and Split/Full layout in every theme, and Classic\'s pane, passed; Classic\'s slanted art and its one frame\'s key passed;'
-          ' Classic\'s flip into an album\'s panel and back, the scoped pages\' cards, Go to Album and the Cancel row passed.')
+          ' Classic\'s flip into an album\'s panel and back, the scoped pages\' cards, Go to Album, the Cancel row and the Unknown Album card\'s resume after a reboot passed.')
 
 
 if __name__ == '__main__':

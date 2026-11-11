@@ -93,7 +93,6 @@ void ringnav_timezone_row(void *item, int i) {
 }
 static int library_music __attribute__((section(".scratch")));
 static int library_first __attribute__((section(".scratch")));
-static int spoken(const char *path);
 
 /* Failed exec in a forked child must not flush demo's copied stdio or run its exit handlers. */
 __asm__(".globl child_exit\nchild_exit:\nli $v0, 4001\nsyscall\n");
@@ -8535,8 +8534,8 @@ int folder_videos(void) {
     return tk_str_start_with(p, "/mnt/mmc/") && media_kind(p + 9) == VIDEOS;
 }
 
-/* A track in Podcasts or Audiobooks: always resumed, never counted or scrobbled. */
-static int spoken(const char *path) {
+/* A track in Podcasts or Audiobooks: always resumed, never counted or scrobbled. Shared (peq.h). */
+int spoken(const char *path) {
     const char *ext = path ? strrchr(path, '.') : 0;
     return (ext && !strcasecmp(ext, ".m4b")) ||
            (path && tk_str_start_with(path, "/mnt/mmc/") && media_kind(path + 9) - 1u < AUDIOBOOKS);
