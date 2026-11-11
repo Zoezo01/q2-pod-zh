@@ -18695,7 +18695,7 @@ passed()
 # opens Now Playing, where Home's keys are ringnav's. The word that goes is a `jalr $25`, which tens of thousands of
 # stock's calls are, so the build's check can't tell this call from another. home_page_init's own code, from the
 # event's load to the call's delay slot, which loads the handler: stock binds EVT_KEY_UP to it here (one of the page's
-# two binds; the other, at 0x534ac4, is the window manager's dispatch); patched, the same handler is loaded and nothing
+# two binds; the other, at 0x534ac0, is the window manager's dispatch); patched, the same handler is loaded and nothing
 # is bound. The window starts at the call's argument setup (HOME_KEYUP[0]-0x18): re-derive it if the site moves. Its
 # Return is on_home_playing_onclick.
 from build import HOME_KEYUP

@@ -882,7 +882,7 @@ void addon_card_away(void) {
  * one, asked to end and waited for on the Apps page's worker, so its files are closed before they
  * move (up to QUIT_MS: an app still saving on its TERM after 3 s, a login, would write it back
  * into a folder just removed); then, once they moved or went, forgotten on the UI thread, so its row starts the new one
- * (or none). An update that failed or was cancelled before that leaves it running and tracked. */
+ * (or none). An update that failed or was cancelled before it stopped the app leaves it running and tracked. */
 void addon_forget(const char *dir) {
     for (int i = 0; dir && dir[0] == '.' && i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, dir + 1))

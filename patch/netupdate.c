@@ -662,13 +662,13 @@ static void *sh_worker(void *unused) {
     else {
         if (sh.job == JOB_ERASE)
             system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size"), rmdir(SPOT_DIR);
-        else if (is(i, "rockbox") && t >= 0)
-            shelf_remove(t); /* no themes without Rockbox */
-        if (sh.job == JOB_REMOVE) {
+        else {
             addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
-            if (card_mounted())
+            /* ponytail: read once; USB storage taking the card during the unlinks still says removed */
+            if (card_mounted()) {
+                if (is(i, "rockbox") && t >= 0) shelf_remove(t); /* no themes without Rockbox */
                 shelf_remove(i);
-            else
+            } else
                 sh.result = SH_CARD; /* the bare mount point: nothing removed */
         }
         system("sync");
@@ -760,7 +760,7 @@ static int sh_wait(const void *unused) {
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
-    /* its files replaced or gone: an update that failed or was cancelled leaves its app running, still tracked,
+    /* its files replaced or gone: an update that failed or was cancelled before it stopped its app leaves it running, still tracked,
      * and a remove cut off by USB storage leaves it marked to start again with the card */
     if (r == SH_OK && (job == JOB_REMOVE || job == JOB_INSTALL)) addon_forget(apps[i].dir);
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
