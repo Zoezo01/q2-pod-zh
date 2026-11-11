@@ -428,24 +428,24 @@ static void *era_record(unsigned i, void **songs, int *n) {
         if (!strcmp(P(deque_at(*songs, k), REC_PATH), era.v[i].path)) return deque_at(*songs, k);
     return 0;
 }
-/* Every album's tracks, in the page's order, each in album order; 0 if a query failed.
+/* Every album's tracks, in the page's order, each in album order; an album whose query failed is
+ * skipped, and 0 if every album's did.
  * ponytail: two queries an album, as Coverflow's All albums; one decade query split back into
  * albums if a large decade drags. */
 static void *era_songs(void) {
     void *all = _create_deque("stSongInfo");
     deque_init(all);
+    unsigned failed = 0;
     for (unsigned i = 0; i < era.m; ++i) {
         int n;
         void *songs, *r = era_record(i, &songs, &n);
-        if (n < 0) {
-            deque_destroy(songs), deque_destroy(all);
-            return 0;
-        }
-        void *t = r ? coverflow_album_tracks(r) : 0;
+        failed += n < 0;
+        void *t = r && n >= 0 ? coverflow_album_tracks(r) : 0;
         for (unsigned j = 0; t && j < deque_size(t); ++j) _deque_push_back(all, deque_at(t, j));
         if (t) deque_destroy(t);
         deque_destroy(songs);
     }
+    if (era.m && failed == era.m) return deque_destroy(all), (void *)0;
     return all;
 }
 /* Shuffle's songs: one query for the decade's files, then the library filtered by them; its
@@ -482,12 +482,13 @@ static void *era_shuffle_songs(void) { /* 0 if the query failed */
         "(g.d is null or rtrim(s.fileurl,replace(s.fileurl,'/',''))=g.d)",
         "select distinct s.id", ALBUM_YEAR, MUSIC_WHERE, ALBUM_GROUP, from, from + 9);
     era_keys.n = 0;
-    void *out = era.m && !era_sql(sql, era_key_row, 0) ? 0 : _create_deque("stSongInfo");
-    if (out) deque_init(out);
+    void *out = 0;
+    if (!era.m || era_sql(sql, era_key_row, 0)) out = _create_deque("stSongInfo"), deque_init(out);
     if (out && era_keys.n) {
         qsort(era_keys.v, era_keys.n, sizeof *era_keys.v, era_key_cmp);
         void *all = staged(songs_unsorted, (void *)1, &n);
-        for (unsigned i = 0; i < deque_size(all); ++i) {
+        if (n < 0) deque_destroy(out), out = 0; /* the library load failed */
+        for (unsigned i = 0; out && i < deque_size(all); ++i) {
             unsigned key = (unsigned)I(deque_at(all, i), REC_ID), lo = 0, hi = era_keys.n;
             while (lo < hi) /* the first key not below this one */
                 if (era_keys.v[(lo + hi) / 2] < key)
@@ -523,7 +524,10 @@ static int era_pick(void *ctx, void *event) {
     }
     int n = 0;
     void *songs, *r = (unsigned)(i - 2) < era.m ? era_record((unsigned)(i - 2), &songs, &n) : 0;
-    if (!r || !coverflow_goto_album(r)) toast(n < 0 ? "Era unavailable" : "Album not found");
+    if (n < 0) /* partial rows then an error: not an album to open */
+        toast("Era unavailable");
+    else if (!r || !coverflow_goto_album(r))
+        toast("Album not found");
     if ((unsigned)(i - 2) < era.m) deque_destroy(songs);
     return 0;
 }

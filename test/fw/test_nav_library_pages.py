@@ -2257,8 +2257,45 @@ def test_a_failing_song_query_says_era_unavailable(fw, ui, row):
     run = db.run
     fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'select distinct s.id' in C.string_at(sql) else run(d, sql, *a))
     fw.mock('getMusicByAlbum', lambda *_: -1)  # stock's count when its query fails (toolsQueryDbTable: no database, or sqlite3_exec fails)
-    fw.mock('fw_access', lambda *_: 0)
     ui.click(page, row)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
+# Shuffle's key query worked but loading the library failed: still 'Era unavailable', not 'Storage unavailable'
+def test_shuffle_with_the_library_failing_says_era_unavailable(fw, ui, mcl):
+    fw.mock('getAllMusic', lambda *_: -1)
+    db, page = era_decade(fw, ui)
+    db.albums = [(b'9',)]
+    ui.click(page, 1)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
+# an album row whose query returned rows and then failed does not open
+def test_an_album_row_with_a_partial_failing_query_says_era_unavailable(fw, ui, song):
+    albums = Albums(fw, ui, song)
+    db, page = era_decade(fw, ui)
+    load = albums.load
+    fw.mock('getMusicByAlbum', lambda name, *_: [load(name), -1][1])
+    ui.click(page, 2)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
+# Play All skips an album whose query failed and plays the rest; it says so only when every album failed
+def test_play_all_skips_a_failed_album(fw, ui, song):
+    albums = Albums(fw, ui, song)
+    db, page = era_decade(fw, ui)
+    load = albums.load
+    fw.mock('getMusicByAlbum', lambda name, *_: -1 if C.string_at(name) == b'Grey' else load(name))
+    ui.click(page, 0)
+    (queue, at, cls), = ui.played
+    assert [field(r, 'title') for r in queue] == [b'B1', b'B2', b'R1'] and not ui.toasts
+
+
+def test_play_all_with_every_album_failing_says_era_unavailable(fw, ui, song):
+    Albums(fw, ui, song)
+    db, page = era_decade(fw, ui)
+    fw.mock('getMusicByAlbum', lambda *_: -1)
+    ui.click(page, 0)
     assert ui.toasts == ['Era unavailable'] and not ui.played
 
 
@@ -2270,8 +2307,9 @@ class Albums:
             b'Grey': [song(b'/m/grey/1.flac', b'G1', album=b'Grey')],
             b'Red': [song(b'/m/red/1.flac', b'R1', album=b'Red'), song(b'/m/other/red.flac', b'Other Red', album=b'Red')],
         }
-        fw.mock('getMusicByAlbum', lambda name, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
-                .extend(self.songs.get(C.string_at(name), [])) or 0)
+        self.load = lambda name: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value] \
+            .extend(self.songs.get(C.string_at(name), [])) or 0
+        fw.mock('getMusicByAlbum', lambda name, *_: self.load(name))
         fw.mock('fw_access', lambda p, *_: -1 if C.string_at(p) in gone else 0)
 
 
