@@ -1545,6 +1545,12 @@ def compile_payload(out):  # pragma: no mutate block
     run('llvm-objcopy','-O','binary',out/'patch.elf',out/'patch.bin')
     return symbols(out/'patch.elf')
 
+def check_layout(payload, ps):
+    """The payload at BASE ends by SCRATCH, and its scratch state starts there and fills at most 128 KB."""
+    check(len(payload) <= SCRATCH-BASE, 'Payload overlaps its scratch page')
+    check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
+    check(ps['__scratch_end'] <= SCRATCH + 0x20000, 'Scratch state exceeds its 128 KB')
+
 def compile_helper(out, cat, src, name, rels):
     """Link patch/{src}.c and start.c as name against the stock rootfs's libraries rels."""
     libs = []
@@ -1777,9 +1783,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     emit(themes, out, redirects)
     ps = compile_payload(out)
     payload = (out/'patch.bin').read_bytes()
-    check(len(payload) < SCRATCH-BASE, 'Payload overlaps its scratch page')
-    check(ps['__scratch_start'] == SCRATCH, 'Scratch state moved')
-    check(ps['__scratch_end'] <= SCRATCH + 0x20000, 'Scratch state exceeds its 128 KB')
+    check_layout(payload, ps)
     patched = bytearray(raw_demo)
     patch_timezones(patched)
     def jump(off, name): patched[off:off+8] = struct.pack('<II', j(ps[name]), 0)
