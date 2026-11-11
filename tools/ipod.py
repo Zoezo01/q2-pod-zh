@@ -1130,7 +1130,7 @@ def branch(op, at, target):
 
 def patch_word(data, address, old, new, purpose, changes=None):
     off = fileoff(data, address)
-    check(struct.unpack_from('<I', data, off)[0] == old, f'{address:#x}: unexpected instruction')
+    check(struct.unpack_from('<I', data, off)[0] == old, f'{address:#x}: unexpected instruction ({purpose})')
     struct.pack_into('<I', data, off, new)
     if changes is not None:
         changes.append(dict(address=hex(address), original=hex(old), patched=hex(new), purpose=purpose))

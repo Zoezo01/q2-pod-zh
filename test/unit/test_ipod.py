@@ -1695,7 +1695,8 @@ def test_patch_word():
 
 
 def test_patch_word_wants_the_stock_instruction():
+    # the message names what the word patches, not its address alone, so a stock rebase that moved it is easy to place
     data, changes = program(0x0320f809, 0x0411fc39), []
-    with pytest.raises(ValueError, match='^0x400004: unexpected instruction$'):
-        ipod.patch_word(data, 0x400004, 0x0320f809, 0, 'x', changes)
+    with pytest.raises(ValueError, match=r'^0x400004: unexpected instruction \(LDAC HQ sends 990 kbps\)$'):
+        ipod.patch_word(data, 0x400004, 0x0320f809, 0, 'LDAC HQ sends 990 kbps', changes)
     assert data == program(0x0320f809, 0x0411fc39) and changes == []
