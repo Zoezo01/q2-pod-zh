@@ -10648,12 +10648,12 @@ static void edit_paint(void *w, void *canvas) {
 
 static int replay_wheel(const void *info);
 int ringnav(void *ctx, void *event);
-/* A wheel tick the page cannot take yet: counted (a reversal cancels), its event kept for replay.
- */
+/* A wheel tick the page cannot take yet: counted, its event kept for replay. Replay's own tick,
+ * held again, always counts back in (replay_wheel takes it off). */
 static int hold_wheel(void *ctx, void *event, int dir) {
     unsigned now = (unsigned)time_now_ms();
     if (!st.held) st.held_at = now;
-    if (st.held * dir < HOLD_MAX) st.held += dir;
+    if (st.held * dir < HOLD_MAX || event == st.held_event) st.held += dir;
     st.held_ctx = ctx;
     if (event != st.held_event) memcpy(st.held_event, event, sizeof st.held_event);
     if (!st.held_timer) st.held_timer = timer_add(replay_wheel, 0, HOLD_POLL_MS);
@@ -10712,6 +10712,13 @@ int ringnav(void *ctx, void *event) {
         *(volatile signed char *)KEY_LOCKOUT <= 8 - LOCKOUT_KEEP)
         *(volatile unsigned char *)KEY_LOCKOUT = 0;
     if (key == KEY_CENTER || key == KEY_RETURN) st.held = 0; /* a button ends a held turn */
+    /* A tick the other way ends it too and is dropped with it, before or during its replay;
+     * replay's own ticks go the held way. */
+    if (st.held * (key == KEY_NEXT ? 1 : key == KEY_PREV ? -1 : 0) < 0) {
+        st.held = 0;
+        drop_input();
+        return STOP;
+    }
     void *front = window_manager_get_top_window(window_manager());
     if (usable() && field_key(front, key)) return STOP; /* before stock's track skip */
     /* The restart toast's msginfo_dialog stops Previous and Next itself (0x49b7d8), for its 2 s of
