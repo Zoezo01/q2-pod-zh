@@ -151,10 +151,16 @@ void vol_paint(void *top, void *canvas) {
             return;
         }
         int dy = I(st.np_win, W_Y) - I(top, W_Y) + I(P(dots, W_PARENT), W_Y);
-        rect_t pct = { 0, dy + I(dots, W_Y) + I(dots, W_H) / 2 - 8, I(st.np_win, W_W), 16 };
+        rect_t pct = { 0, dy + I(dots, W_Y) + I(dots, W_H) / 2 - VOL_PCT_PX / 2 - 2,
+                       I(st.np_win, W_W), VOL_PCT_PX + 4 },
+               clip;
         k = put_num(s, max > 0 ? (unsigned)(100 * clamp_step(0, max, level) / max) : 0);
         s[k++] = '%';
-        draw_centred(canvas, s, k, &pct, NP_TIMES_PX, RGBA(flip_if(ipod_light(), 0xffffff)));
+        draw_centred(canvas, s, k, &pct, VOL_PCT_PX, RGBA(flip_if(ipod_light(), 0xffffff)));
+        /* A repaint of the bar's rows alone (stock's, or the page's of its times) leaves the old
+         * number above them: vol_poll then repaints it whole, so the number follows the bar. */
+        canvas_get_clip_rect(canvas, &clip);
+        if (clip.y > pct.y || clip.y + clip.h < pct.y + pct.h) vd.vol_drawn = -1;
         return;
     }
     k += put_num(s + k, (unsigned)clamp_step(0, 999, level));
