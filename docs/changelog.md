@@ -46,6 +46,7 @@
   - Quick Settings: holding **Return** while Quick Settings is open closes it first, then does the hold's usual job on the page underneath. It used to open Now Playing over Quick Settings, where Quick Settings could not be pulled down again until you went back.
   - Cover Flow: a song from the **Unknown Album** card (songs with no album tag) now resumes after a restart with the card's other songs around it, when the restart rebuilds the queue from stock's resume (in practice a queue of more than 999 songs). It used to come back with only the songs in its own folder.
   - App Store: removing an app takes everything it saved, its sign-in too, even from an app that is still saving as it closes. Such an app used to be able to write its sign-in back after the remove; and a remove cut off by USB storage said the app was removed when it was not.
+  - App Store: a card app whose update fails or is cancelled before it starts installing keeps working: its stream songs still join the queue, its sleep timer still counts and its request to keep the Q2 awake still holds. It used to be forgotten the moment the update started, so after **Can't reach GitHub** the app ran on unnoticed until it was opened again.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

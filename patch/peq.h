@@ -308,8 +308,8 @@ void tidal_clear(void);
  * slot's index stays its app's), addon_name, addon_id and addon_icon (an image name: file://… or the
  * shared stream_app) are one's while it is on the card (else 0), addon_open
  * its Streaming row's click (ctx: the slot). addon_forget and addon_quit: the Apps page replaces or
- * removes the files of the app in folder dir (".<id>"): forgotten on the UI thread, then asked to
- * end and waited for on the Apps page's worker. */
+ * removes the files of the app in folder dir (".<id>"): asked to end and waited for on the Apps
+ * page's worker, then, once replaced or removed, forgotten on the UI thread. */
 #define APPS_MAX 8 /* card apps on the card at once */
 int addon_scan(void), addon_open(void *ctx, void *event), addon_hold(void *top);
 int addon_games_last(void); /* the card's games as the last addon_scan found them */

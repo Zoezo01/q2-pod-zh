@@ -10,7 +10,7 @@ import pytest
 import host
 from conftest import O, Deques, Game, block, high_halves, libc, text
 from test_coverflow import png  # an icon's header
-from test_netupdate import JOB_INSTALL, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
+from test_netupdate import JOB_INSTALL, JOB_REMOVE, SH_CANCELLED, SH_NET, SH_OK, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 
 APPS_MAX = 8
@@ -1358,6 +1358,26 @@ def test_an_app_asking_to_hold_keeps_standby_and_power_off_away(fw):
     world.files[b'/tmp/q2-foo.state'] = b'hold=0\n'
     addon_poll(fw, world)
     assert a.hold == 0 and len(fw.calls('reset_poweroptions_timer')) == 1
+
+
+@pytest.mark.parametrize('job, result, kept', [(JOB_INSTALL, SH_NET, 1), (JOB_INSTALL, SH_CANCELLED, 1), (JOB_INSTALL, SH_OK, 0), (JOB_REMOVE, SH_OK, 0)])
+def test_the_app_store_forgets_a_running_app_only_once_its_job_replaced_it(fw, job, result, kept):
+    # an update that fails or is cancelled leaves the app running: still tracked, its hold still honoured
+    world, a = running(fw, b'hold=1\n')
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    fw.mock('fw_pthread_create', lambda *_: 0)  # the worker not run: its end set below
+    fw.mock('timer_add', lambda *_: 1)
+    fw.fn('netupdate__sh_start', None, C.c_int, C.c_int)(job, 0)
+    addon_poll(fw, world)
+    assert a.launched == 1 and a.hold == 1  # the app runs on until the job stops it
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.result = 0, result
+    assert fw.fn('netupdate__sh_wait', C.c_int, C.c_void_p)(None) == 0
+    assert (a.launched, a.hold) == (kept, kept)
+    holds = len(fw.calls('reset_poweroptions_timer'))
+    addon_poll(fw, world)
+    assert len(fw.calls('reset_poweroptions_timer')) == holds + kept
 
 
 def test_an_app_that_stopped_by_itself_is_let_go_once_its_start_is_over(fw):
