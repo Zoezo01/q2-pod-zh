@@ -479,6 +479,7 @@ void coverflow_clean_end(void); /* coverflow.c: a clean end mid-build strikes no
  * cd_num from its row on the Playlists page win under them, its index in the live list, and New
  * Playlist (edit 0) or Edit Playlists… (1) on that page. */
 int coverflow_playlists(void *lists);
+int coverflow_playlist_queue(void); /* the queue a playlist's cover played, no load since */
 void *coverflow_playlist(void *page), *coverflow_playlists_close(void);
 void playlist_open(void *win, int cd_num);
 unsigned playlist_index(int cd_num);

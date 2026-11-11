@@ -8092,8 +8092,9 @@ static void fav_titles(void *list, int n) {
     free(slot);
     if (songs) deque_destroy(songs);
 }
-/* Playlists bypass songtable; filter their displayed copies, never their stored rows. */
-static int music_records(void *list, int discovery) {
+/* Playlists bypass songtable; filter their displayed copies, never their stored rows (Cover
+ * Flow's turned playlist too). */
+int music_records(void *list, int discovery) {
     void *music = _create_deque("stSongInfo");
     deque_init(music);
     for (unsigned i = 0; i < deque_size(list); ++i) {

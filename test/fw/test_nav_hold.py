@@ -1121,6 +1121,22 @@ def test_each_page_keeps_the_add_mode_it_opened_with(classic, ui):
     assert C.c_int.from_address(PLAYLIST_ADD_MODE).value == 1 and p.shown()[0] == ('New Playlist…',)
 
 
+@pytest.mark.parametrize('left', [1, 2])
+def test_a_covers_centre_opens_its_playlist_whatever_mode_a_picker_left(classic, ui, fw, left):
+    """Cover Flow's Centre (playlist_open) runs stock's row click, which reads its one add mode global: an Add to
+    Playlist picker over the covers leaves it at 1 (a song's hold) or 2 (Now Playing's), which would add to the
+    playlist; the page's own mode, the list's 0, goes back first."""
+    p = classic()
+    p.ring(p.win)
+    for i in range(3):
+        ui.nodes[p.playlist(i)].name = str(i)  # stock names a row by its place in the live list
+    C.c_int.from_address(PLAYLIST_ADD_MODE).value = left
+    clicks = []
+    fw.mock('stock_dispatch_trampoline', lambda w, e, *_: clicks.append((w, C.c_int.from_address(PLAYLIST_ADD_MODE).value)) or 0)
+    fw.fn('playlist_open', None, C.c_void_p, C.c_int)(p.win, 2)  # Road Trip's cd_num
+    assert clicks == [(p.playlist(1), 0)]
+
+
 def test_a_row_click_runs_stocks_handler_next_pass(classic, ui):
     p = classic()
     p.ring(p.win)

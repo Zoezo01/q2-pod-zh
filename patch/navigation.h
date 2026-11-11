@@ -405,8 +405,9 @@ void slider_switch(void *w, void *canvas, void *sw);
 const char *style_key(char *key, const char *state, const char *name);
 unsigned wide_len(const unsigned *s);
 void *window_of(void *w);
-void cf_veil(void *win, int on);      /* win unseen (1) or seen again under Coverflow */
-int ringnav_playlist_coverflow(void); /* Display's Playlist View is Cover Flow */
+void cf_veil(void *win, int on);              /* win unseen (1) or seen again under Coverflow */
+int ringnav_playlist_coverflow(void);         /* Display's Playlist View is Cover Flow */
+int music_records(void *list, int discovery); /* list's songs less spoken (0) or hidden (1) ones */
 extern const stops_t confirm_dark;
 int search_key(unsigned key);
 int geom(int group);

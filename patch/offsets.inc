@@ -668,6 +668,7 @@ static inline int arc_out(int r, int y) {
 #define PLAYMORE_ROWS 0x7864e0
 #define PLAYMORE_COUNT 8
 #define PLAYMORE_SEARCH 4
+#define PLAYMORE_DELETE 7
 #define PLAYMORE_INTO_FIRST 2
 #define PLAYMORE_INTO_LAST 6
 #define MCL_LASTPOS 0xa4fa58    /* shuffle "previous" index, -1 none */

@@ -2240,9 +2240,11 @@ int visual(void *s, int n, int *c, int *frac) { /* shared with photos.c */
     return stride;
 }
 
-/* An artist's albums stop at both ends (home_step bounces there): a ring of one or two albums
- * would otherwise repeat round the shelf. */
-int coverflow_bounded(void *w) { return w && w == cf.slide && cf.scoped == ARTIST_ALBUMS; }
+/* An artist's albums and the playlists stop at both ends (home_step bounces there): a ring of one
+ * or two would otherwise repeat round the shelf. */
+int coverflow_bounded(void *w) {
+    return w && w == cf.slide && (cf.scoped == ARTIST_ALBUMS || cf.scoped == PLAYLISTS);
+}
 int coverflow_slide(void *w) { return w && w == cf.slide; }
 
 static int retitle(const void *unused);
@@ -3024,6 +3026,7 @@ void play_folder(void *dq, int idx, int cls) {
     navigator_to_with_context("playing_page", &context);
 }
 
+static unsigned cover_load __attribute__((section(".scratch"))); /* playback_loads at its play */
 static int play(void *ctx, void *event) {
     int i = (int)(long)ctx;
     void *t = deque_at(cf.tracks, (unsigned)i);
@@ -3034,8 +3037,14 @@ static int play(void *ctx, void *event) {
     /* a playlist's songs play as a song list: 0xff10 would resume the first song's album, and its
      * own list's 0xff13 needs stock's playlist set (docs/internals.md, Cover Flow scope) */
     play_folder(cf.tracks, i, cf.scoped == PLAYLISTS ? 0xf001 : 0xff10);
+    if (cf.scoped == PLAYLISTS) cover_load = playback_loads; /* its load, play_folder's */
     return 0;
 }
+/* The queue is a playlist's songs played from its cover, no queue loaded since: Now Playing's More
+ * drops Delete (onlinematch.c), whose 0xf001 delete takes the song out of the library, not the
+ * playlist. ponytail: RAM only, so after a restart the resumed queue's Delete shows and removes
+ * from the library, as any song list's; a flag in the queue's snapshot would keep the mark. */
+int coverflow_playlist_queue(void) { return cover_load && cover_load == playback_loads; }
 
 /* Album order: disc, then track, then path, so an untagged album keeps its file-name order and a
  * CUE image's tracks (one path) their start times. */
@@ -3272,6 +3281,7 @@ static void flip_done(void) {
 }
 
 static int playlist_query(void *r) { return getMusicByPlayList(I(r, REC_DISC)); }
+extern int music_records(void *list, int discovery); /* navigation.c: spoken tracks left out */
 static void *page_under(void);
 /* ponytail: Classic's panel builds every row at once (about 3 KB each), so a longer playlist opens
  * in stock's list; a recycled pool of rows would lift it. At most 512, navigation's MAX_ENTRIES,
@@ -3282,24 +3292,28 @@ static int to_tracks(const void *unused) {
     int n;
     char name[512];
     void *r = deque_at(cf.albums, (unsigned)cf.album), *under;
-    if (cf.scoped == PLAYLISTS &&
-        (!classic_pages() || playlist_songs(I(r, REC_DISC)) > PANEL_ROWS)) {
-        /* Minimal's and Modern's Centre opens the playlist's own list over the covers, as its row
-         * on the Playlists page under them does: Return comes back to them, as from an album's */
-        if ((under = page_under())) playlist_open(under, I(r, REC_DISC));
-        return 0;
-    }
-    if (!cf.scoped) {
-        cf.saved_album = album_key(r);
-        BLOB_IO(LAST_ALBUM, cf.saved_album, 1); /* a power-off on the tracks keeps it too */
-    }
-    if (cf.tracks) deque_destroy(cf.tracks);
-    cf.tracks = cf.scoped == PLAYLISTS ? staged(playlist_query, r, &n) : coverflow_album_tracks(r);
-    n = (int)deque_size(cf.tracks);
-    if (cf.scoped == PLAYLISTS && n > PANEL_ROWS) { /* its count not read yet: stock's list too */
-        deque_destroy(cf.tracks), cf.tracks = 0;
-        if ((under = page_under())) playlist_open(under, I(r, REC_DISC));
-        return 0;
+    if (cf.tracks) deque_destroy(cf.tracks), cf.tracks = 0;
+    if (cf.scoped == PLAYLISTS) {
+        /* Classic's turn: the songs as the playlist's own list shows them, spoken ones left out.
+         * Minimal's and Modern's Centre, or a longer playlist (by its count, or, not read yet, by
+         * the songs loaded), opens the playlist's own list over the covers, as its row on the
+         * Playlists page under them does: Return comes back to them, as from an album's */
+        if (classic_pages() && playlist_songs(I(r, REC_DISC)) <= PANEL_ROWS) {
+            cf.tracks = staged(playlist_query, r, &n);
+            n = music_records(cf.tracks, 0);
+        }
+        if (!cf.tracks || n > PANEL_ROWS) {
+            if (cf.tracks) deque_destroy(cf.tracks), cf.tracks = 0;
+            if ((under = page_under())) playlist_open(under, I(r, REC_DISC));
+            return 0;
+        }
+    } else {
+        if (!cf.scoped) {
+            cf.saved_album = album_key(r);
+            BLOB_IO(LAST_ALBUM, cf.saved_album, 1); /* a power-off on the tracks keeps it too */
+        }
+        cf.tracks = coverflow_album_tracks(r);
+        n = (int)deque_size(cf.tracks);
     }
     cf.screen = TRACKS;
     if (flip_open(r, n)) return 0;
@@ -3450,10 +3464,8 @@ static int keyup(void *ctx, void *event) {
 }
 
 /* A playlist's art made, or its songs read again: its covers decode again and the captions name
- * its count again (the rows under them hear too). */
-static void (*rows_ready)(int cd_num);
+ * its count again. The rows under them, hidden, ask again as the page comes back to the front. */
 static void playlist_ready(int cd_num) {
-    if (rows_ready) rows_ready(cd_num);
     if (!cf.slide || cf.scoped != PLAYLISTS) return;
     cf.titled = 0; /* the next frame, or changed below, names the centre's count again */
     for (int i = 0; i < fx_slots(); ++i) {
@@ -3482,8 +3494,7 @@ static int closed(void *ctx, void *event) {
     } else if (cf.scoped)
         deque_destroy(cf.albums);
     if (cf.scoped) cf.albums = cf.all_albums;
-    if (cf.scoped == PLAYLISTS && playlist_art_ready == playlist_ready)
-        playlist_art_ready = rows_ready;
+    if (cf.scoped == PLAYLISTS && playlist_art_ready == playlist_ready) playlist_art_ready = 0;
     cf.scoped = 0;
     cf.text_albums = 0;
     return 0;
@@ -3605,7 +3616,7 @@ int coverflow_rated(int (*hearts)(void *)) {
 static int all_playlists(void *unused) { return getAllPlayList(); }
 static int playlists_again(const void *unused) {
     pl_again = 0;
-    if (cf.scoped != PLAYLISTS || cf.screen != COVERS || !cf.slide) return 0;
+    if (cf.scoped != PLAYLISTS || cf.screen != COVERS || !cf.slide || cf.timer) return 0;
     int n;
     void *now = staged(all_playlists, 0, &n), *was = centred(cf.page, 1);
     unsigned k = deque_size(now), c = (unsigned)I(cf.slide, SLIDE_INDEX),
@@ -3627,7 +3638,14 @@ static int playlists_again(const void *unused) {
         cf.albums = now;
         load();
     }
-    if (cf.scoped == PLAYLISTS) playlist_art_refresh(); /* still up */
+    if (cf.scoped != PLAYLISTS) return 0; /* closed */
+    /* covers left on the placeholder by a stop of the art's builds under them (USB Storage,
+     * Refresh Cover Flow) ask again: a build, or the known none from playlist_art's table */
+    for (int i = 0; fx.tex && i < fx_slots(); ++i)
+        if (fx.art[i] == FX_PLACEHOLDER) fx.art[i] = 0, fx.drawn = 0;
+    if (!fx.frame) changed(0, 0); /* the flat covers' images, by name */
+    widget_invalidate_force(cf.page, 0);
+    playlist_art_refresh();
     return 0;
 }
 static int playlists_front(void *ctx, void *event) {
@@ -3651,7 +3669,6 @@ int coverflow_playlists(void *lists) {
     cf.scoped = PLAYLISTS;
     cf.album = 0;
     widget_on(cf.page, EVT_WINDOW_FOREGROUND, playlists_front, 0);
-    if (playlist_art_ready != playlist_ready) rows_ready = playlist_art_ready;
     playlist_art_ready = playlist_ready;
     load(); /* the songs' hashes and counts: playlists.c asked for them as the list was built */
     return 1;

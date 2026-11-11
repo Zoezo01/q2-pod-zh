@@ -1131,6 +1131,19 @@ def summed(fw, job, state=LJ_DONE, **counts):
     assert job.toasts == [note(fw, 96, state=state, **counts)]
 
 
+@pytest.mark.parametrize('since', [0, 1])
+def test_more_has_no_delete_for_a_playlists_song_played_from_its_cover(fw, more_rows, since):
+    """A playlist's song played from its cover is a song list (0xf001), whose Delete takes it out of the library:
+    Delete's row (kind 7, sixth) is hidden while that queue is the last loaded, and shows once another loads."""
+    more, rows, hidden = More(fw), [widget() for _ in range(8)], []
+    fw.mock('widget_get_child', lambda w, i, *_: C.addressof(rows[i]) if w == C.addressof(more.view) else 0)
+    fw.mock('widget_set_visible', lambda w, on, *_: None if on else hidden.append(w))
+    fw.var('playback_loads', C.c_uint).value = 7 + since
+    fw.var('coverflow__cover_load', C.c_uint).value = 7  # coverflow.c's play, after its load
+    more.open()
+    assert hidden == ([] if since else [C.addressof(rows[5])])
+
+
 def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, more_rows):
     disk = greatest_hits(fw, mcl, records)
     net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] Mix : X\n[00:02.00] three\n')

@@ -549,14 +549,19 @@ static int al_gone(void *ctx, void *event) {
 /* playermore_page_init: stock's PLAYMORE_COUNT rows (PLAYMORE_ROWS' kinds by position), then ours
  * under Download Cover & Lyrics, in stock's row widgets and 24 px label, and unnamed, so stock's
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
- * without stock's rows is left as it built it. */
+ * without stock's rows is left as it built it. Delete is hidden for a playlist's song played from
+ * its cover (coverflow_playlist_queue): there it would delete from the library. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
 int ringnav_playermore(void *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
     if (win) stock_more_speed(win), stock_more_into(win);
     void *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
     unsigned at = 0;
-    if (!view || widget_count_children(view) != PLAYMORE_COUNT || !al_playing()) return result;
+    if (!view || widget_count_children(view) != PLAYMORE_COUNT) return result;
+    for (unsigned i = 0; i < PLAYMORE_COUNT && coverflow_playlist_queue(); ++i)
+        if (((const int *)PLAYMORE_ROWS)[i] == PLAYMORE_DELETE)
+            widget_set_visible(widget_get_child(view, i), 0, 0);
+    if (!al_playing()) return result;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
     if (at == PLAYMORE_COUNT) return result;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);

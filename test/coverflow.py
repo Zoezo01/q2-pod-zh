@@ -413,6 +413,7 @@ int widget_get_visible(void *x) { return W(x)->visible; }
 int tk_strcmp(const char *a, const char *b) { return strcmp(a ? a : "", b ? b : ""); }
 int navigator_back_to_home(void) { return 0; }
 static int backs, force_closes, played_cls = -1, played_idx = -1;
+unsigned playback_loads; /* playback.c's: ringnav_load's count of queue loads */
 static void *force_closed; /* the last window closed unanimated */
 int navigator_back(void) { return ++backs, 0; }
 static int usb_page; /* USB Storage's page open */
@@ -426,7 +427,7 @@ static unsigned nav_n, navs;
 int navigator_to_with_context(const char *n, const void *c) {
     snprintf(nav_to, sizeof nav_to, "%s", n);
     memcpy(&nav_ctx, c, sizeof nav_ctx);
-    if (!strcmp(n, "playing_page")) played_idx = nav_ctx.idx, played_cls = nav_ctx.cls;
+    if (!strcmp(n, "playing_page")) played_idx = nav_ctx.idx, played_cls = nav_ctx.cls, ++playback_loads; /* stock's load */
     nav_n = *(const unsigned *)nav_ctx.dq; /* the queue's deque, as below */
     memcpy(nav_queue, (const char *)nav_ctx.dq + sizeof(unsigned), sizeof nav_queue);
     return ++navs, 0;
@@ -614,6 +615,16 @@ static int spoken_path(const char *path) {
     return !strncasecmp(path, "/mnt/mmc/audiobooks/", 20) ||
            !strncasecmp(path, "/mnt/mmc/podcasts/", 18) ||
            (strlen(path) >= 4 && !strcasecmp(path + strlen(path) - 4, ".m4b"));
+}
+/* navigation.c's: a playlist's displayed copy, its spoken songs left out */
+int music_records(void *list, int discovery) {
+    deque *d = list;
+    unsigned k = 0;
+    for (unsigned i = 0; i < d->n; ++i) {
+        const char *path = *(const char **)((char *)d->at[i] + REC_PATH);
+        if (discovery || !path || !spoken_path(path)) d->at[k++] = d->at[i];
+    }
+    return (int)(d->n = k);
 }
 static int unknown_queries;
 int getMusicByAlbum(const char *a) {
@@ -6667,7 +6678,7 @@ static void playlist_art_refresh_cf(void) {
 
 /* ---- Playlists as Cover Flow (coverflow_playlists, which playlists.c opens over the veiled
    Playlists page): the playlists as covers, no cards, their art playlist_art.c's. ---- */
-int coverflow_playlists(void *lists), lettered(void *w);
+int coverflow_playlists(void *lists), lettered(void *w), coverflow_bounded(void *w), coverflow_playlist_queue(void);
 void *coverflow_album(void *page), *coverflow_tracks(void *page), *coverflow_playlist(void *page);
 void *coverflow_playlists_close(void);
 unsigned coverflow_scope(void *page);
@@ -6723,6 +6734,7 @@ static void flip_playlist(void) {
     shim_themes[1].painter[PAINT_PAGES] = PAGES_CLASSIC_LIGHT;
     page = &w[nw + 1];
     assert(coverflow_playlists(d));
+    assert(coverflow_bounded(slide())); /* one playlist: one cover, not seven of it */
     top_window = page;
     w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
     run();
@@ -6746,9 +6758,34 @@ static void flip_playlist(void) {
         assert(len->right && box(len)[0] + box(len)[2] == 282 && box(len)[3] == 45 && box(t)[0] + box(t)[2] < box(len)[0]);
     }
     played_cls = -1;
+    ++playback_loads; /* a queue loaded since the covers' plays above */
+    assert(!coverflow_playlist_queue());
     w[view->kids[3]].click(w[view->kids[3]].ctx, 0);
     assert(played_cls == 0xf001 && played_idx == 3);
+    /* its queue keeps Now Playing's More from offering Delete (the library's) until another loads */
+    assert(coverflow_playlist_queue());
+    ++playback_loads; /* any other queue started: stock's load (ringnav_load) counts it */
+    assert(!coverflow_playlist_queue());
     close_page();
+    /* a podcast in it is left out of the turned panel and its count, as its own list leaves it out */
+    const char **path = (const char **)(records[4] + REC_PATH), *was_path = *path;
+    *path = "/mnt/mmc/Podcasts/Show/ep.mp3";
+    page = &w[nw + 1];
+    assert(coverflow_playlists(d));
+    top_window = page;
+    w[slide()->kids[0]].click(w[slide()->kids[0]].ctx, 0);
+    run();
+    panel = 0;
+    for (int i = 0; i < page->nkids; ++i)
+        if (box(&w[page->kids[i]])[2] == 294) panel = &w[page->kids[i]];
+    assert(panel && deque_size(coverflow_tracks(page)) == 6);
+    for (unsigned i = 0; i < 6; ++i) assert(deque_at(coverflow_tracks(page), i) != records[4]);
+    const char *six = 0;
+    for (int i = 0, k = 0; i < panel->nkids; ++i)
+        if (!strcmp(w[panel->kids[i]].type, "hscroll_label") && k++ == 1) six = w[panel->kids[i]].text;
+    assert(six && !strcmp(six, "6 songs"));
+    close_page();
+    *path = was_path;
     /* an empty playlist turns over too: its name over "0 songs", no rows */
     *(int *)(list + REC_ID) = *(int *)(list + REC_DISC) = 43;
     *(const char **)(list + REC_TITLE) = "Empty";
@@ -6839,15 +6876,15 @@ static void playlist_covers(void) {
     classic = 0, frame_fail = 1, square_art = 1, pressed = 0;
     page = &w[nw + 1];
     playlist_art_refresh(); /* playlists.c's, as it opens them: the worker reads the songs */
-    playlist_art_ready = rows_hear, rows_heard = 0; /* the rows under them hear too */
+    playlist_art_ready = rows_hear, rows_heard = 0; /* the rows', which the covers take over */
     assert(coverflow_playlists(d) && d->n == 2); /* the caller's list stays the caller's */
     widget *s = slide(), *view = &w[s->parent];
-    assert(s && s->nkids == 2 && !lettered(s));
+    assert(s && s->nkids == 2 && !lettered(s) && coverflow_bounded(s)); /* two covers, not A B A B A */
     assert(!strcmp(album_caption(view), "List 0") && !strcmp(second_caption(view), "0 songs")); /* not read yet */
     assert(!strcmp(w[s->kids[0]].image, PLACEHOLDER) && !strcmp(w[s->kids[1]].image, PLACEHOLDER) && timer_fn);
     run();
     assert(!strcmp(second_caption(view), "2 songs")); /* the read landed: the count named again */
-    assert(rows_heard == 41);
+    assert(!rows_heard); /* the hidden rows ask again as their page comes to the front */
     for (int i = 0; i < 2; ++i)
         assert(playlist_art(40 + i, "", 0, url, sizeof url) && !strcmp(w[s->kids[i]].image, url) && !strstr(url, "_s.jpg"));
     slide_menu_set_value(s, 1);
@@ -6877,7 +6914,7 @@ static void playlist_covers(void) {
     force_closes = 0;
     assert(coverflow_playlists_close() == under && force_closes == 1 && force_closed == page);
     close_page();
-    assert(playlist_art_ready == rows_hear); /* handed back to the rows */
+    assert(!playlist_art_ready); /* the rows take it again as their page is rebuilt */
     assert(!coverflow_playlists_close() && force_closes == 1 && !coverflow_playlist(page));
     /* Classic's Centre, with no room to turn: the songs as a list, under the name; a pick plays
        them as a song list (0xf001), never an album's resume; no position memory. */
@@ -6918,6 +6955,15 @@ static void playlist_covers(void) {
     int canvas[16] = { 0 }, before = loads;
     coverflow_paint(s, canvas);
     assert(loads == before + 1 && timer_fn); /* 40's art; 41's the placeholder */
+    /* the builds stopped under the covers (USB Storage, Refresh Cover Flow): 41 stays on the
+       placeholder, then is asked again as the covers come back to the front */
+    playlist_art_stop();
+    run();
+    coverflow_paint(s, canvas);
+    assert(loads == before + 1 && !timer_fn);
+    foreground_fn(page, 0);
+    run();
+    coverflow_paint(s, canvas);
     run();
     coverflow_paint(s, canvas);
     assert(loads == before + 2); /* 41's, as it was made */
@@ -6985,6 +7031,20 @@ static void playlist_covers_back(void) {
     foreground_fn(page, 0);
     run();
     assert(!force_closes && slide() == s && s->nkids == 3 && !strcmp(album_caption(view), "Back 1"));
+    pl_nheads = 3;
+    /* A Centre queued as the covers come back after an edit (Back 2 deleted) wins, on its own
+       playlist; the covers are read again on its way back. */
+    widget *list_page = make(0, "playlist_page");
+    wm_stack[0] = list_page, wm_stack[1] = page, wm_n = 2;
+    list_win = 0, list_cd = -1, pl_nheads = 2;
+    w[s->kids[1]].click(w[s->kids[1]].ctx, 0);
+    int (*centre)(const void *) = timer_fn;
+    foreground_fn(page, 0); /* the shim's one timer slot: the read's timer runs first */
+    run();
+    assert(slide() == s && s->nkids == 3);
+    centre(0);
+    assert(list_win == list_page && list_cd == 51);
+    pl_nheads = 3, wm_n = 0;
     /* Classic's songs (a list here: no room to turn): the covers read again as they come back from
        them, not before; a playlist made from a song's hold there gets its cover. */
     int painter = shim_themes[0].painter[PAINT_PAGES];

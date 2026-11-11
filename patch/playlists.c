@@ -912,14 +912,20 @@ static int pl_cf_open(const void *unused) {
     if (win) cf_veil(win, 0);
     return 0;
 }
-/* Cover Flow's Centre on playlist cd_num, under Minimal and Modern: its row's open, a tap at x 0,
- * on this page under the covers, its list opening over them. Its rows are the list as the page was
- * built: a playlist made since has none, and the covers close for the page, which builds them
- * again as it comes to the front. */
+/* Cover Flow's Centre on playlist cd_num, under Minimal and Modern (and Classic's longer ones):
+ * its row's open, a tap at x 0, on this page under the covers, its list opening over them. Stock's
+ * click reads its one add mode global, which an Add to Playlist picker over the covers leaves at 1
+ * or 2 (it would add to the playlist, not open it): this page's own goes back first, as
+ * ringnav_playlist does. Stock finds the row by its place in the live list, in name order, read
+ * again by any Playlists page since (the picker's too), and this page's rows are the list as it
+ * was built: a playlist whose place is past them (one added since sorts in by name and pushes the
+ * last ones past) has no row, and the covers close for the page, which builds its rows again as
+ * it comes to the front. */
 void playlist_open(void *win, int cd_num) {
     void *view = widget_lookup(win, "scroll_view", 1);
     int at = (int)playlist_index(cd_num);
     char click[0x30];
+    I(PLAYLIST_ADD_MODE, 0) = widget_get_prop_int(win, PL_MODE, 0);
     for (unsigned i = 0, n = view ? widget_count_children(view) : 0; i < n; ++i) {
         void *item = widget_get_child(view, i);
         void *button = widget_count_children(item) ? widget_get_child(item, 0) : 0;

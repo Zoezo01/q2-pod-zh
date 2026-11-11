@@ -4413,8 +4413,16 @@ assert tapped==[('navigator_to_with_context','localmusic/allmusic_page')] and pi
 m=pl_cf(ClassicPlaylistMachine,count=3,on='0'); m.rebuild(); page=pl_under(m); m.calls.clear()
 m.call(address=payload_syms['playlist_open'],args=(page,10,0,0),gap=0,clear=False); m.advance(0,clear=False)
 assert opens(m)==tapped and picked(m)==10 and m.top==m.stack[-1] and m.nodes[m.top]['name']=='coverflow_page',(opens(m),tapped); passed()
-# ... a playlist made since the page was built (a song's Add to Playlist, under the covers) has no row there: the covers
-# close, for the page to build its rows again as it comes to the front.
+# ... with stock's add mode left at 1 (a song's Add to Playlist picker over the covers) or 2 (Now Playing's, left with
+# Return), still the open: the page's own mode, 0, goes back before stock's click reads it, which would add instead.
+for left in (1,2):
+    m=pl_cf(ClassicPlaylistMachine,count=3,on='0'); m.rebuild(); page=pl_under(m); m.calls.clear(); m.word(m.mode,left)
+    m.call(address=payload_syms['playlist_open'],args=(page,10,0,0),gap=0,clear=False); m.advance(0,clear=False)
+    assert opens(m)==tapped and picked(m)==10 and m.get(m.mode)==0,(left,opens(m),picked(m)); passed()
+# ... stock finds the row by the playlist's place in the live list, in name order, and the page's rows are the list as it
+# was built: one past them (a playlist added since sorts in, a song's Add to Playlist → New under the covers, and pushes
+# the last ones past) has no row there, and the covers close, for the page to build its rows again as it comes to the
+# front. Appended last, the new one is that one.
 class PlShut(ClassicPlaylistMachine):
     shut=0
     def hook(self,u,address,size,unused):
@@ -4424,6 +4432,14 @@ m=pl_cf(PlShut,count=3,on='0'); m.rebuild(); page=pl_under(m); m.calls.clear()
 made=m.song('Made',4); m.word(made+O['REC_TITLE'],m.string('Made')); m.word(made+O['REC_DISC'],13)
 m.word(syms['p_deque_playlist'],m.deque(m.items(m.get(syms['p_deque_playlist']))+[made]))
 m.call(address=payload_syms['playlist_open'],args=(page,13,0,0),gap=0,clear=False); m.advance(0,clear=False)
+assert m.shut==1 and not opens(m),(m.shut,opens(m)); passed()
+# ... sorted in first, the new one opens from the first row, and the last of the old ones, now past the rows, closes them.
+m=pl_cf(PlShut,count=3,on='0'); m.rebuild(); page=m.top; m.top=m.node('window','coverflow_page'); m.stack.append(m.top)
+made=m.song('Made',4); m.word(made+O['REC_TITLE'],m.string('Made')); m.word(made+O['REC_DISC'],13)
+m.word(syms['p_deque_playlist'],m.deque([made]+m.items(m.get(syms['p_deque_playlist']))))
+m.calls.clear(); m.call(address=payload_syms['playlist_open'],args=(page,13,0,0),gap=0,clear=False); m.advance(0,clear=False)
+assert m.shut==0 and opens(m)==tapped and picked(m)==13,(m.shut,opens(m),picked(m))
+m.calls.clear(); m.call(address=payload_syms['playlist_open'],args=(page,12,0,0),gap=0,clear=False); m.advance(0,clear=False)
 assert m.shut==1 and not opens(m),(m.shut,opens(m)); passed()
 
 # Back from an opened playlist keeps its row: opening one writes the browsing state the other lists' memory hashes.
