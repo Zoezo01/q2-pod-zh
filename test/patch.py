@@ -18694,8 +18694,10 @@ passed()
 # Home binds no key-up of its own (build.py HOME_KEYUP): stock V1.34's home_page_init gives the page one, whose Return
 # opens Now Playing, where Home's keys are ringnav's. The word that goes is a `jalr $25`, which tens of thousands of
 # stock's calls are, so the build's check can't tell this call from another. home_page_init's own code, from the
-# event's load to the call's delay slot, which loads the handler: stock binds EVT_KEY_UP to it, once; patched, the
-# same handler is loaded and nothing is bound. Its Return is on_home_playing_onclick.
+# event's load to the call's delay slot, which loads the handler: stock binds EVT_KEY_UP to it here (one of the page's
+# two binds; the other, at 0x534ac4, is the window manager's dispatch); patched, the same handler is loaded and nothing
+# is bound. The window starts at the call's argument setup (HOME_KEYUP[0]-0x18): re-derive it if the site moves. Its
+# Return is on_home_playing_onclick.
 from build import HOME_KEYUP
 def home_keyup(patched):
     c=Machine(patched); home=c.node('window','home_page')
@@ -20765,7 +20767,8 @@ for patched in (True,False):
 passed()
 # Q2 Pod's two starts of its own, with stock's gate run: each asks with 0 and starts nothing it refuses. Play/Pause
 # when not playing (ringnav_play_pause, the hook on stock's player_play_pause, whose body is the toggle here; a pause
-# always goes through), the side buttons' and a headset's skip (media_key, playing or not).
+# always goes through), the side buttons' and a headset's skip (media_key, playing or not). The toggle answers at +12,
+# past the 3-word PIC prologue the hook's trampoline skips (build.py), so ringnav_play_pause and the real gate run.
 def hp_keys(key,playing=False,**state):
     m=hp_on(HeadsetMachine(),**state); toggle=syms['player_play_pause']; del m.handlers[toggle]; m.handlers[toggle+12]='hs:local_toggle'
     m.playing=playing; m.fn('media_key',O[key]); return m.actions,sum(x[0]=='navigator_to_with_context' for x in m.calls)
