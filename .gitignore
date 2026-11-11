@@ -12,7 +12,7 @@ __pycache__/
 .mypy_cache/
 mutants/
 q2remote.key
-.build-number
+.build-number*
 .coverage
 c-coverage/
 docs/manual/*.pdf
