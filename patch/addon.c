@@ -1848,8 +1848,13 @@ static int closed(void *ctx, void *event) {
  * it isn't (its QR code shown at the first answer when qr); gone from the card, the page says so.
  * 1 when it opened or said why not. */
 static int page_at(int k, const char *op, const char *args, const char *title, int qr) {
-    const char *busy = shelf_moving(); /* its folder deleted, or an update moved in */
-    if (busy && !strcmp(busy + 1, ap.a[k].id)) return toast("Wait until the App Store finishes"), 1;
+    const char *busy = shelf_busy(); /* a job on this app's folder */
+    app_t *b = &ap.a[k];
+    /* A page is refused when the folder is being deleted or moved into, and while an update
+     * downloads for an app that is not running: launch() would be refused too, a dead page. */
+    if (busy && !strcmp(busy + 1, b->id) &&
+        (shelf_moving() || !b->launched || access(b->pid, 0)))
+        return toast("Wait until the App Store finishes"), 1;
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
         !(pg.page = page_open("addon_page", closed, keyup)))

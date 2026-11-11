@@ -3130,13 +3130,15 @@ def test_a_page_that_cant_open_leaves_nothing_behind(fw):
     assert p.pg.page == p.page and p.top.op == b'menu'
 
 
-@pytest.mark.parametrize('job,stage,opens', [
-    (JOB_REMOVE, 4, False),   # its folder being deleted
-    (JOB_INSTALL, 3, False),  # an update's files being moved into place
-    (JOB_INSTALL, 1, True),   # an update's download: the old app still runs, its page works
+@pytest.mark.parametrize('job,stage,running,opens', [
+    (JOB_REMOVE, 4, True, False),   # its folder being deleted
+    (JOB_INSTALL, 3, True, False),  # an update's files being moved into place
+    (JOB_INSTALL, 1, False, False),  # a download for a stopped app: launch() would be refused, a dead page
+    (JOB_INSTALL, 1, True, True),   # a download: the old app still runs, its page works
 ])
-def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, opens):
+def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, running, opens):
     p = Page(fw, opens=False)
+    ap(fw).a[0].launched = int(running)
     table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
     fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
     sh = fw.var('netupdate__sh', Sh)
