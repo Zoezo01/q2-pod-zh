@@ -3799,6 +3799,16 @@ for callback,button,pages in (
             assert m.closed==(list(reversed(pages))+['playing_page'] if unwind else [])
             passed()
 
+# Now Playing More's Artist info (stock's 0x53960c, build.py MORE_ARTIST_CLOSE, #303) closes the artist page and the
+# album page the song was played from before it opens the artist's: stock asked for both by name and closed them by
+# their asset paths, which no window is named, so a second artist page shared the first's record and each close freed it.
+m=LookupMachine(['home_page','localclass_page','artistinfo_page','albuminfo_page','playing_page','playermore_page'],lookup=False)
+m.byte(syms['g_play_id3_info']+0x504,1); m.word(O['MCL_POS'],1)  # the playing track names an artist
+assert m.call(address=0x53960c,args=(m.top,m.event,0,0),gap=0)==0
+assert m.closed==['playermore_page','artistinfo_page','albuminfo_page'] and m.backs==0
+assert m.opened==[('localmusic/artistinfo_page',0xf001,m.items(m.get(syms['mcl_pdeqplaylist']))[1])]
+assert m.u.mem_read(syms['g_songerinfo_flag'],1)==b'\1'; passed()
+
 # Folder view's row click (ringnav_folder_click over stock's 0x532104): a video file goes to books_video,
 # as Library's Videos row plays it, and stock never queues it as a song; a song row, a video books_video
 # refuses and any row in select mode stay stock's (folder_enter's 8, then the queue and Now Playing).

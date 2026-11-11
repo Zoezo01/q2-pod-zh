@@ -434,6 +434,14 @@ HOME_KEYUP = (0x534918, 0x0320f809, 0)
 # V1.34's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
 # Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
 KEYLOCK_LIT = (0x4f2558, 0x10400010, 0x10000010)
+# Now Playing More's Artist info (0x53960c) asks navigator_window_is_exist for "artistinfo_page" and "albuminfo_page", then
+# closes "localmusic/artistinfo_page" and "localmusic/albuminfo_page", the names it opens them by: navigator_close finds a
+# window by its own name (widget_child, a strcmp), which has no folder, so neither ever closed and a second artist page
+# opened over the first. The artist page's record is one global its close frees (0x4aec20), so the older page's close freed
+# the newer's strings, and the newer's freed them again (#303). Each close takes the name its check asked for, the addiu's
+# immediate (docs/internals.md#queue-menu). ponytail: only this handler opens an artist page over another (qm_goto's rows are
+# left out while one is open); a new opener must close the old page first, or the page's init wants the guard.
+MORE_ARTIST_CLOSE = ((0x5396e4, 0x2624c798, 0x26246404), (0x539710, 0x2484c77c, 0x248497dc))
 # on_wm_idle_status, stock's idle callback (every UI pass), calls player_mainscheduling (jalr $t9), whose
 # mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
 # The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
@@ -1821,6 +1829,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
+    for site in MORE_ARTIST_CLOSE:
+        patch_word(patched, *site, "Artist info closes the artist and album pages it found")
     patch_word(patched, *MAINSCHEDULING_CALL, jal(ps['ringnav_mainscheduling']), 'player scheduling paced')
     patch_word(patched, *START_MUTE_CALL, jal(ps['start_mute']), 'natural start: no mute before the end')
     patch_word(patched, *START_SLEEP_CALL, jal(ps['start_sleep']), 'natural start: no sleep before the end')
