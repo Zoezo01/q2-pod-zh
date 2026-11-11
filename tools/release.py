@@ -21,7 +21,7 @@ GUIDE = 'Q2-Pod-User-Guide.pdf'
 
 
 def notes():
-    """This version's entry from docs/changelog.md, so a release edits only VERSION and the changelog:
+    """This version's entry from docs/changelog.md, so a release edits only VERSION (BETA for a pre-release) and the changelog:
     its bold version heading, then one bullet a sentence, or its nested bullets as written."""
     prefix = f'- **{VERSION}**'  # entries up to V1.0 read **V1.0**, up to V7.6 **V7.6R / V7.6I**
     lines = (ROOT/'docs/changelog.md').read_text().splitlines()

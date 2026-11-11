@@ -9,11 +9,14 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '6d3e5952d0a71e55f247bdbfcab0353ed21c5e64df9d46c081f27b600bb0109a'
 DEMO_SHA = '1aee4394c3b3daafc562f0553cbbae78d55c6e76feb1d60f3c228e6e31e0e70a'
 VERSION = '1.8.0'  # major.minor.patch, single digits, shown as is (About and release tag)
+BETA = 2  # a pre-release's beta number (1-9), 0 for the release itself
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
-# differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
-# firmware version and a CFW. Version row with VERSION and the edition instead (ringnav_about).
-TAG = 'V' + VERSION.replace('.', '') + 'I'
+# differ from the installed one, so it packs the digits: 1.0.1 is V101I. A beta ends in its number
+# instead, so each installs over the last: 1.8.0 beta 2 is V1802 (beta 1 shipped as V180I, which
+# therefore refuses the final 1.8.0). About shows the stock firmware version and a CFW. Version row
+# with VERSION and the edition instead (ringnav_about).
+TAG = 'V' + VERSION.replace('.', '') + (str(BETA) if BETA else 'I')
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
@@ -1651,7 +1654,7 @@ def stock_header(context, ranges, themes, dev=0, repo=REPO):
     header.append(f'#define SETTINGS_ICON_NAMES "{names}"')
     header.append(f'#define ROCKBOX_FLAG "{ROCKBOX_FLAG}"')  # Home's Rockbox row, for S90play
     # About: the stock firmware's version on its own row, and this build's on the CFW. Version row.
-    header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else ""}"',
+    header += [f'#define STOCK_VERSION "{STOCK_VERSION}"', f'#define Q2POD_VERSION "{VERSION} Pod{f" dev {dev}" if dev else f" beta {BETA}" if BETA else ""}"',
                f'#define Q2POD_TAG "{"" if dev else VERSION}"',  # netupdate.c: the release tag, none when --dev
                f'#define Q2POD_DEV {1 if dev else 0}',  # navigation.c stale_note
                f'#define Q2POD_REPO "{repo}"',  # netupdate.c: the repo whose latest release it fetches

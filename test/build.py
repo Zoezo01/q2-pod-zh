@@ -32,6 +32,7 @@ tags = [dev_tag(n) for n in range(1, 36**3)]
 assert tags[:2] == ['V001i', 'V002i'] and tags[35] == 'V010i' and tags[-1] == 'VZZZi'
 assert len(set(tags)) == len(tags) and all(len(t) == 5 for t in tags) and TAG not in tags
 assert dev_tag(36**3) == 'V001i'
+assert re.fullmatch(r'V\d{3}[1-9I]', TAG), TAG  # a release's V180I, a beta's V1802
 print('Dev build tag checks passed.')
 
 def boot_check():
