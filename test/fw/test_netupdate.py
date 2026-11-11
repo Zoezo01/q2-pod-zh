@@ -1313,6 +1313,7 @@ TAR = b'/mnt/mmc/update.tar'
 TAG_URL = b'https://github.com/owner/repo/releases/tag/'
 BODY = bytes(range(256)) * 1024  # 256 KB: CHUNKS pieces of 64 KB, KB-exact so progress reads 25/50/75/100
 SOURCES = b'/mnt/mmc/.q2/sources.list'
+MOUNTS = b'/proc/mounts'
 
 
 class Disk(Card):
@@ -1624,8 +1625,8 @@ def store_net(fw, files=FOO, listed=b'me/q2-foo Foo\n', size=None, **replies):
 
 class Store:
     """The App Store opened for real on a Disk, on top while open: each row's detail, the toasts, the wait timer, the
-    worker, the standby holds, the clock (now_ms) and the card's free bytes (statfs). Row 0 is Check for Updates, the
-    list's apps under it."""
+    worker, the standby holds, the clock (now_ms), the card's free bytes (statfs) and the card mounted (/proc/mounts,
+    card_mounted). Row 0 is Check for Updates, the list's apps under it."""
     def __init__(self, fw, card, wifi=1, thread=0, free=1 << 30):
         self.fw, self.card, self.wifi, self.free, self.seconds = fw, card, wifi, free, 5000
         self.text, self.toasts, self.timers, self.workers, self.held = {}, [], [], [], []
@@ -1641,6 +1642,7 @@ class Store:
         fw.mock('reset_poweroptions_timer', lambda *args: self.held.append(args[:3]))
         fw.mock('fw_clock_gettime', self.clock)
         fw.mock('fw_statfs', self.statfs)
+        card.files[MOUNTS] = b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n'
         self.sh = fw.var('netupdate__sh', Sh)
         self.open()
 
@@ -1743,6 +1745,69 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     assert on_card() == before
 
 
+# A remove leaves no login behind, even from an app that saves it on its TERM, after USB storage's 3 s wait too.
+@pytest.mark.parametrize('save_ms', [1000, 3500])
+def test_a_remove_leaves_nothing_an_app_saves_on_its_way_out(fw, save_ms):
+    card = Disk(fw)
+    store_net(fw)
+    s = Store(fw, card)
+    s.run()
+    s.click()
+    assert s.run() == 0 and s.toasts == ['Foo is ready in Streaming']
+    card.files[b'/tmp/q2-foo'] = b'4321'  # its loop's pid: running
+    now, term = [s.seconds * 1000], []
+
+    def app_saves():  # its TERM handler: the login written back, then the app and its loop gone
+        if term and now[0] - term[0] >= save_ms and b'/tmp/q2-foo' in card.files:
+            card.files[b'/mnt/mmc/.foo/login'] = b'token'
+            del card.files[b'/tmp/q2-foo']
+
+    def clock(kind, ts, *_):
+        C.c_long.from_address(ts).value, C.c_long.from_address(ts + 8).value = now[0] // 1000, now[0] % 1000 * 1000000
+
+    def usleep(us, *_):
+        now[0] += us // 1000
+        app_saves()
+
+    def system(cmd):
+        if cmd.startswith(b'kill $(cat /tmp/q2-foo)'):
+            term.append(now[0])
+        return card.shell(cmd)
+    card.system = system
+    fw.mock('fw_clock_gettime', clock)
+    fw.mock('fw_usleep', usleep)
+    s.click()
+    s.click()
+    assert s.labels() == ['Removing…']
+    assert s.run() == 0 and s.toasts[-1] == 'Foo removed' and term
+    now[0] = term[0] + 60000  # the app's own time runs on after the remove
+    app_saves()
+    assert not [k for k in card.files if k.startswith(b'/mnt/mmc/.foo')]
+
+
+# USB storage started during a remove's wait for the app: the card is gone, so nothing is removed and it says so, not
+# "Foo removed" with the app still there to start again once the card is back.
+def test_a_remove_cut_off_by_usb_storage_says_the_card_was_not_written(fw):
+    card = Disk(fw)
+    store_net(fw)
+    s = Store(fw, card)
+    s.run()
+    s.click()
+    assert s.run() == 0 and s.toasts == ['Foo is ready in Streaming']
+    card.files[b'/tmp/q2-foo'] = b'4321'  # its loop's pid: running
+    installed = {k for k in card.files if k.startswith(b'/mnt/mmc/')}
+    card.log.clear()
+
+    def usleep(*_):  # during the wait: USB storage takes the card, and the app ends
+        card.files[MOUNTS] = b'/dev/root / squashfs ro 0 0\n'
+        card.files.pop(b'/tmp/q2-foo', None)
+    fw.mock('fw_usleep', usleep)
+    s.click()
+    s.click()
+    assert s.run() == 0 and s.toasts[-1] == "Can't write to the card" and s.labels() == ['Installed']
+    assert installed <= set(card.files) and not card.of('unlink') and not card.of('rmdir')
+
+
 def test_a_cancel_during_the_release_request_downloads_nothing(fw):
     card = Disk(fw, {SOURCES: b'me/q2-foo Foo\n'})
     net = store_net(fw)
@@ -1751,7 +1816,7 @@ def test_a_cancel_during_the_release_request_downloads_nothing(fw):
     net.during = lambda k: net.urls[-1].startswith(b'https://api') and k == CHUNKS - 1 and s.click()  # as it ends
     s.click()
     assert s.run() == 0 and s.toasts == ['Download cancelled'] and s.labels() == ['Install']
-    assert not [u for u in net.urls if u.startswith(b'https://h/')] and sorted(card.files) == [SOURCES]
+    assert not [u for u in net.urls if u.startswith(b'https://h/')] and sorted(card.files) == [SOURCES, MOUNTS]
 
 
 def test_a_cancel_while_unpacking_installs_nothing(fw):
@@ -1772,7 +1837,7 @@ def test_a_cancel_while_unpacking_installs_nothing(fw):
     s.click()
     assert s.run() == 0 and seen == [['Unpacking…'], ['Cancelling…']]
     assert s.toasts == ['Download cancelled'] and s.labels() == ['Install']
-    assert not card.moves(b'/mnt/mmc/.foo/') and sorted(card.files) == [SOURCES]  # nothing placed, no staging left
+    assert not card.moves(b'/mnt/mmc/.foo/') and sorted(card.files) == [SOURCES, MOUNTS]  # nothing placed, no staging left
 
 
 ROOM = 64 << 20  # left free beyond what a download or an unpack needs
@@ -1799,7 +1864,7 @@ def test_an_install_that_fails_says_why_and_leaves_the_card_alone(fw, case, said
     s.wifi = 1
     s.click()
     assert s.run() == 0 and s.toasts == [said] and s.labels() == ['Install']
-    assert sorted(card.files) == [SOURCES]
+    assert sorted(card.files) == [SOURCES, MOUNTS]
 
 
 def test_rockbox_installs_on_a_second_press_keeping_its_config(fw):

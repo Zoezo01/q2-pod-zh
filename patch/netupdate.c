@@ -299,8 +299,8 @@ void shelf_remove(int i) {
     }
     free(list);
     for (int j = 0; j < shelf_n; ++j) free(other[j]);
-    /* dir is shelf_sources' checked ".<id>". ponytail: addon_quit waits AWAY_MS (3 s), so an app
-     * still saving on its TERM past that can write files back; wait on its pid file if one does. */
+    /* dir is shelf_sources' checked ".<id>". ponytail: addon_quit waits QUIT_MS (20 s), so an app
+     * still saving on its TERM past that can write files back. */
     if (!special_id(apps[i].id)) {
         snprintf(path, sizeof path, "rm -rf '" CARD "/%s'", apps[i].dir);
         system(path);
@@ -660,7 +660,13 @@ static void *sh_worker(void *unused) {
             system("rm -rf " SPOT_DIR "/cache " SPOT_DIR "/.cache-size"), rmdir(SPOT_DIR);
         else if (is(i, "rockbox") && t >= 0)
             shelf_remove(t); /* no themes without Rockbox */
-        if (sh.job == JOB_REMOVE) addon_quit(apps[i].dir), shelf_remove(i);
+        if (sh.job == JOB_REMOVE) {
+            addon_quit(apps[i].dir); /* USB storage may take the card meanwhile */
+            if (card_mounted())
+                shelf_remove(i);
+            else
+                sh.result = SH_CARD; /* the bare mount point: nothing removed */
+        }
         system("sync");
     }
     sh.running = 0;
@@ -760,7 +766,7 @@ static int sh_wait(const void *unused) {
         sh_told(manual, r ? said[r] : 0);
     else if (job == JOB_INSTALL && r == SH_SPACE)
         snprintf(s, sizeof s, "Needs %u MB more space", sh.need), toast(s);
-    else if (job == JOB_INSTALL && r)
+    else if ((job == JOB_INSTALL || job == JOB_REMOVE) && r)
         toast(said[r]);
     else if (job == JOB_INSTALL && is(i, "rockbox"))
         toast("Rockbox is ready. Find it on Home");
