@@ -2643,6 +2643,31 @@ def test_ticks_queued_into_a_sliding_now_playing_are_volume(fw, stock_bytes, st,
     assert len(fw.calls('write_int_config')) == (want != volume)
 
 
+@pytest.mark.parametrize('lit', [0, 1])
+def test_a_tick_before_the_volume_dialog_takes_keys_steps_it_and_opens_no_other(fw, keys, lit):
+    """The dialog is in front from navigator_to on, the window manager's key target only from its open event (#303)."""
+    ui = Ui(fw)
+    ui.window('home_page')
+    vol = ui.window('volume_dialog')
+    slider = vol.add(W(ui, 'slider', 'slider_vol', value=31))
+    fw.var('g_volume', C.c_ubyte).value, fw.var('g_maxvolume', C.c_ubyte).value = 31, 100
+    fw.var('g_backlight_status', C.c_ubyte).value = lit
+    target = C.c_void_p.from_address(ui.wm.p + O['W_KEY_TARGET'])
+    assert keys(KEY_PREV) == STOP and keys(KEY_PREV, 20) == STOP and keys(KEY_NEXT, 20) == STOP  # one dark pass's ticks
+    assert fw.var('g_volume', C.c_ubyte).value == 30 == slider.ints[b'value']
+    assert [c[1][:2] for c in fw.calls('device_set_volume')] == [(30, 1), (29, 1), (30, 1)]
+    target.value = vol.p  # opened: the ticks are the dialog's own
+    assert keys(KEY_PREV, 20) != STOP and fw.var('g_volume', C.c_ubyte).value == 30
+
+
+def test_a_locked_wheels_tick_before_the_volume_dialog_takes_keys_stays_stocks(fw, keys):
+    ui = Ui(fw)
+    ui.window('volume_dialog')
+    fw.var('g_volume', C.c_ubyte).value = 31
+    fw.mock('stock_keyup_trampoline', lambda *_: STOP)  # stock's dark lock filter stops it
+    assert keys(KEY_NEXT) == STOP and fw.var('g_volume', C.c_ubyte).value == 31 and not fw.calls('device_set_volume')
+
+
 def test_a_settled_now_playing_gets_its_ticks(fw, stock_bytes):
     np = Np(fw, stock_bytes, 30, 100)
     np.ui.animating = 0

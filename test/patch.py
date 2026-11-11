@@ -733,7 +733,7 @@ class Machine:
         return ret
     def page(self,name='sysset_page',t='scroll_view'):
         child=self.node(t)
-        self.top=self.node('window',name,[child])
+        self.top=self.node('window',name,[child]); self.word(self.wm+O['W_KEY_TARGET'],self.top)  # opened: its keys' target
         if t=='slide_menu':
             self.word(child+O['SLIDE_INDEX'],0)
             self.nodes[child]['children']=[self.entry(child) for _ in range(7)]
@@ -873,6 +873,15 @@ for t,off in [('scroll_view',O['SCROLL_Y']),('table_client',O['TABLE_TOP'])]:
 
 for name in ['playing_page','volume_dialog','saverscreen_page','usbmode_page','unknown_page']:
     m=Machine(); m.page(name); assert m.call()==0 and not m.moved(); passed()
+# A volume dialog in front that is not yet the window manager's key target (its open event comes on the pass's idle): the
+# tick would pass it and open another dialog over it (#303). The filter steps the volume and the dialog's slider and stops
+# the key, at the limit too; dark as lit.
+for lit in (1,0):
+    m=Machine(); m.mock('device_set_volume','write_int_config'); slider=m.node('slider','slider_vol')
+    m.top=m.node('dialog','volume_dialog',[slider])
+    for name,v in (('g_backlight_status',lit),('g_volume',30),('g_maxvolume',31)): m.byte(syms[name],v)
+    assert [m.call(O['KEY_NEXT']) for _ in range(3)]==[11]*3 and m.u.mem_read(syms['g_volume'],1)[0]==31 and m.nodes[slider]['value']==31
+    assert m.call(O['KEY_PREV'])==11 and m.u.mem_read(syms['g_volume'],1)[0]==30 and m.nodes[slider]['value']==30; passed()
 GATES=[('g_backlight_status',0),('g_lockscreen_pageflag',1),('g_testmode_flag',1),
        ('g_guideflag',1),('g_poweroff_state',2),('g_usblink_status',2)]
 for flag,value in GATES:
@@ -8187,7 +8196,7 @@ del CONFIG['SCRUBSINGLE']
 # the dialog, so the wheel scrubs; without Single Press Scrub a single press still turns the screen off.
 def vol_up(m):
     m.dlg=m.node('dialog','volume_dialog'); m.word(m.dlg+O['W_PARENT'],m.wm)
-    m.nodes[m.wm]={'children':[m.win,m.dlg]}; m.stack=[m.win,m.dlg]; m.top=m.dlg
+    m.nodes[m.wm]={'children':[m.win,m.dlg]}; m.stack=[m.win,m.dlg]; m.top=m.dlg; m.word(m.wm+O['W_KEY_TARGET'],m.dlg)
 for one in (1,0):
     if one: CONFIG['SCRUBSINGLE']='1'
     m=scrub_page(); vol_up(m)

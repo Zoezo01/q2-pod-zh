@@ -10135,6 +10135,18 @@ static int tick_gate(void *e) {
     if (Q2POD_DEV && !muted) wheel_gate_note();
     return 1;
 }
+/* A wheel tick's step of the volume, as stock's dialog makes it (volume_dialog_on_keyup): within 0
+ * and the volume limit, set and saved. */
+static void vol_step(unsigned key) {
+    int value = g_volume + (key == KEY_NEXT ? 1 : -1);
+    if (value < 0) value = 0;
+    if (value > g_maxvolume) value = g_maxvolume;
+    if (value > 100) value = 100;
+    if (value == g_volume) return;
+    g_volume = value;
+    device_set_volume(value, 1);
+    write_int_config(value, "PLAYSET", "VOLUME");
+}
 int ringnav_input(void *wm, void *e) {
     if (e && tick_gate(e)) return 0;
     if (e && (chord_gate(e) || wake_gate(e))) return 0;
@@ -10165,15 +10177,7 @@ int ringnav_input(void *wm, void *e) {
         drop_input();
         st.held = 0; /* Queued list ticks never become volume ticks. */
         reset_poweroptions_timer(1, 1, 1);
-        int value = g_volume + (key == KEY_NEXT ? 1 : -1);
-        if (value < 0) value = 0;
-        if (value > g_maxvolume) value = g_maxvolume;
-        if (value > 100) value = 100;
-        if (value != g_volume) {
-            g_volume = value;
-            device_set_volume(value, 1);
-            write_int_config(value, "PLAYSET", "VOLUME");
-        }
+        vol_step(key);
         return 0;
     }
     if ((type != EVT_KEY_DOWN && type != EVT_KEY_UP) || !remote_key(e))
@@ -10861,6 +10865,19 @@ int ringnav(void *ctx, void *event) {
         /* Keep the home interval independent of rejected list navigation. */
         if (key == KEY_CENTER || !usable()) drop_spin();
         return result;
+    }
+    /* A volume dialog just opened is the window in front but not yet the window manager's key
+     * target: that comes with its open event, on the pass's idle or after its animation. A tick
+     * dispatched before then went past it to on_wm_keyup_fun, which opened one more dialog over
+     * it; a dark pass takes several ticks, so a dark turn left a stack, each dialog closing 3 s
+     * after the last and showing the volume it opened at (#303). The tick steps the volume here,
+     * and the dialog's slider with it. */
+    void *vol = key == KEY_PREV || key == KEY_NEXT ? vol_top() : (void *)0;
+    if (vol && P(window_manager(), W_KEY_TARGET) != vol) {
+        vol_step(key);
+        void *slider = widget_lookup(vol, "slider_vol", 1);
+        if (slider) widget_set_prop_int(slider, "value", g_volume);
+        return STOP;
     }
     if (key == KEY_RETURN && st.scrub) { /* ends the scrub without leaving the page */
         np_cancel();

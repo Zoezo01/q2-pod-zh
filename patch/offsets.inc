@@ -10,6 +10,8 @@
 #define W_H 0x0c
 #define W_FOCUS 0x24            /* stock focused flag byte (tests) */
 #define W_PARENT 0x48
+#define W_KEY_TARGET 0x58 /* the child its keys go to (widget_on_keyup @0x675b70): a window manager's is the
+                             window in front, from its open event on (0x681260, 0x67f640) */
 #define IM_WIDGET 0x04 /* input_method_t's editing target, input_method_request @0x658768 */
 #define IM_KEYBOARD                                                                                \
     0x0c /* the default input method's open keyboard window, 0 once it closes (@0x69ec3c) */
