@@ -275,13 +275,23 @@ def test_jpeg_size_agrees_with_the_builders_check(fw):
 
 
 class Card(Files):
-    """The card and flash as files, access() too; ffmpeg as a child that writes rot (or fails)."""
+    """The card and flash as files, access() and stat() too (o32: size word 12, mtime word 16); ffmpeg as a child
+    that writes rot (or fails)."""
     def __init__(self, fw, files=None):
         super().__init__(fw, files)
-        self.rot, self.status, self.pid = None, 0, 4321
+        self.rot, self.status, self.pid, self.mtime = None, 0, 4321, {}
         fw.mock('fw_access', lambda path, *_: 0 if C.string_at(path).decode() in self.files else -1)
+        fw.mock('fw___xstat', self.stat)
         fw.mock('fw_fork', lambda *_: self.pid)
         fw.mock('fw_waitpid', self.wait)
+
+    def stat(self, version, path, info, *_):
+        path = C.string_at(path).decode()
+        if path not in self.files:
+            return -1
+        words = (C.c_uint * 36).from_address(info)
+        words[12], words[16] = len(self.files[path]), self.mtime.get(path, 1)
+        return 0
 
     def wait(self, pid, status, *_):
         if self.rot is not None:
@@ -472,6 +482,64 @@ def test_the_syncs_failure_is_toasted_once(fw, power):
     clock.now += 1
     logo_poll(fw)
     assert seen == [C.string_at(err)] and not power('logo_err', C.c_void_p).value
+
+
+LOGO_BAD = 'Boot logo must be a 320x375 JPEG'
+
+
+def power_on(fw, power, clock):
+    """A power-on's polls, lit with the card mounted: what was toasted. A toast's dialog runs the UI loop, which polls
+    again inside it, so a message still set would toast inside its own toast: three levels are run, not for ever."""
+    for field in ('logo_at', 'logo_mounted'):
+        power(field).value = 0  # a fresh boot's state (.scratch starts zeroed)
+    seen, depth = [], [0]
+    def toast(name, info, *_):
+        seen.append(C.string_at(info + 8).decode())
+        if depth[0] < 3:
+            depth[0] += 1
+            clock.now += O['CHARGE_POLL_MS']
+            logo_poll(fw)
+            depth[0] -= 1
+        return 0
+    fw.mock('navigator_to_with_context', toast)
+    for _ in range(4):
+        clock.now += O['CHARGE_POLL_MS']
+        logo_poll(fw)
+    return seen
+
+
+# an invalid card logo: its message once, boot goes on (a detached thread), the old logo kept; each later power-on
+# with the same file says nothing, and a changed file is reported again
+def test_an_invalid_card_logo_says_so_once_and_boot_goes_on(fw, power):
+    clock = Clock(fw)
+    old = jpeg(320, 375, tag=b'old')
+    card = Card(fw, {LOGO_SRC: jpeg(640, 480), LOGO_DST: old})
+    mounts = Mounts(fw, card)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    for boot in range(3):
+        assert power_on(fw, power, clock) == ([LOGO_BAD] if boot == 0 else []), boot  # once, not each power-on
+        assert card.files[LOGO_DST] == old and power('logo_busy').value == 0 and not power('logo_err', C.c_void_p).value
+    assert len(mounts.started) == 3 and len(fw.calls('fw_pthread_detach')) == 3  # one sync a power-on, detached
+    card.mtime[LOGO_SRC] = 2  # saved again: another file
+    assert power_on(fw, power, clock) == [LOGO_BAD] and power_on(fw, power, clock) == []
+
+
+# a good logo or none at a power-on between forgets the refused file: the same bad file put back is reported again
+@pytest.mark.parametrize('between', [jpeg(320, 375), None], ids=['good', 'none'])
+def test_a_good_logo_or_none_between_lets_the_bad_one_be_reported_again(fw, power, between):
+    clock = Clock(fw)
+    bad = jpeg(640, 480)
+    card = Card(fw, {LOGO_SRC: bad})
+    Mounts(fw, card)
+    fw.var('g_backlight_status', C.c_ubyte).value = 1
+    assert power_on(fw, power, clock) == [LOGO_BAD]
+    if between is None:
+        del card.files[LOGO_SRC]
+    else:
+        card.files[LOGO_SRC] = between
+    assert power_on(fw, power, clock) == []
+    card.files[LOGO_SRC] = bad
+    assert power_on(fw, power, clock) == [LOGO_BAD]
 
 
 @pytest.mark.parametrize('mounts, mounted', [(b'/dev/mmcblk0p1 /mnt/mmc vfat rw 0 0\n', 1), (b'/dev/sda1 /mnt/mmc2 vfat rw 0 0\n', 0),

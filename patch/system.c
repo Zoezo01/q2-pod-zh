@@ -382,6 +382,8 @@ static void standby_poll(void) {
 #define LOGO_DST "/mnt/data/boot-logo.jpg"
 #define LOGO_ROT "/tmp/boot-logo.jpg"
 #define LOGO_MAX (512 * 1024)
+#define LOGO_SEEN "/mnt/data/boot-logo.bad" /* the refused card file: size, mtime */
+static const char logo_refused[] = "Boot logo must be a 320x375 JPEG";
 /* tools/build.py's jpeg_size: w << 16 | h of a baseline 8-bit three-component JPEG, the only kind
  * stock display_logo draws right; 0 for anything else. */
 static unsigned jpeg_size(const unsigned char *b, unsigned n) {
@@ -409,7 +411,7 @@ static unsigned jpeg_size(const unsigned char *b, unsigned n) {
 static void *logo_sync(void *unused) {
     unsigned n = 0, old_n;
     unsigned char *b = 0, *old = 0;
-    const char *err = "Boot logo must be a 320x375 JPEG";
+    const char *err = logo_refused;
     if (access(LOGO_SRC, 0))
         unlink(LOGO_DST), err = 0;
     else if ((b = read_all(LOGO_SRC, LOGO_MAX, &n)) && jpeg_size(b, n) == (375u << 16 | 320)) {
@@ -436,6 +438,16 @@ static void *logo_sync(void *unused) {
             unlink(LOGO_DST ".tmp"), err = "Could not save boot logo";
     }
     free(b), free(old);
+    if (err == logo_refused) { /* LOGO_SEEN names the file last refused */
+        unsigned st[36] = { 0 }, seen[2], key[2];
+        __xstat(3, LOGO_SRC, st);
+        key[0] = st[12], key[1] = st[16]; /* size, mtime */
+        if (BLOB_IO(LOGO_SEEN, seen, 0) && !memcmp(seen, key, sizeof key))
+            err = 0; /* said at an earlier mount: once a file, not each power-on */
+        else
+            BLOB_IO(LOGO_SEEN, key, 1);
+    } else
+        unlink(LOGO_SEEN); /* a good logo, or none: the same bad file put back is told again */
     pw.logo_err = err;
     pw.logo_busy = 0;
     return 0;

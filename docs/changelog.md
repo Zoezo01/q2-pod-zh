@@ -28,6 +28,7 @@
   - Scrobbling: a listen the card has no room for is no longer half-written to `.scrobbler.log`, where it spoiled the next listen too. A damaged line in the log no longer stops every later **Upload Scrobbles**, and a very large log is uploaded a megabyte at a time instead of being held in memory whole.
   - Now Playing: **Artist info** on the ⋯ page no longer crashes the Q2 on Return when the song was played from an artist's page. The artist and album pages underneath now close first, so Return goes back to Now Playing.
   - Now Playing: holding a finger on the visualizer no longer makes it stutter. It used to redraw only about once a second until the finger lifted, and Halo lost its artwork.
+  - Display: a boot logo on the card that isn't a 320x375 JPEG shows **Boot logo must be a 320x375 JPEG** once, until the file is changed. It used to show the message again at every power-on.
   - Ratings: letting go of the heart after holding it no longer picks a rating by itself. The picker opened under the finger and the release chose the heart there: five hearts on the stock Now Playing, one on the centred one.
   - Ratings: in the picker, tapping the rating a song or album already has takes it away.
   - Volume: with the screen off the wheel changes the volume again, and waking no longer leaves the volume bar stuck over the page, where Return and taps seemed dead.
