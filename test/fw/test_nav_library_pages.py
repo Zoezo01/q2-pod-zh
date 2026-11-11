@@ -2237,6 +2237,31 @@ def test_a_decade_closes_and_opens_again(fw, ui):
     assert len(ui.rows(ui.top())) == 5
 
 
+# a decade whose albums query fails says 'Era unavailable', as the decade list does, rather than opening an empty page
+def test_a_failing_decade_query_says_era_unavailable(fw, ui):
+    db = EraDb(fw, decades=[(b'1990', b'3')], albums=ERA_ALBUMS)
+    call(fw, 'era_menu')
+    era, run = ui.top(), db.run
+    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'having release_year' in C.string_at(sql) else run(d, sql, *a))
+    ui.click(era, 0)
+    assert ui.toasts == ['Era unavailable'] and ui.windows == [era]
+    fw.mock('sqlite3_exec', run)  # the next try opens it
+    ui.click(era, 0)
+    assert len(ui.rows(ui.top())) == 5
+
+
+# a failing query behind Play All, Shuffle or an album says 'Era unavailable' too, not that the card or album is gone
+@pytest.mark.parametrize('row', [0, 1, 2])
+def test_a_failing_song_query_says_era_unavailable(fw, ui, row):
+    db, page = era_decade(fw, ui)
+    run = db.run
+    fw.mock('sqlite3_exec', lambda d, sql, *a: 1 if b'select distinct s.id' in C.string_at(sql) else run(d, sql, *a))
+    fw.mock('getMusicByAlbum', lambda *_: -1)  # stock's count when its query fails (toolsQueryDbTable: no database, or sqlite3_exec fails)
+    fw.mock('fw_access', lambda *_: 0)
+    ui.click(page, row)
+    assert ui.toasts == ['Era unavailable'] and not ui.played
+
+
 class Albums:
     """getMusicByAlbum: every song of that album name, in no order, and the card's access to them."""
     def __init__(self, fw, ui, song, gone=()):
