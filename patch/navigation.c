@@ -7480,6 +7480,10 @@ void ringnav_boot(const char *page, const int *ctx) {
  * Elsewhere it opens Now Playing over the page, remembered as np_origin; on Now Playing it goes
  * back to that page while it lies right under it, else Home. With Hold Return: Home it goes Home
  * from any page but Home itself, where it still opens Now Playing.
+ * Over Quick Settings the hold closes it, as Return does (ringnav), and acts on the page under it
+ * once it has gone (quick_poll): Now Playing opened over the dialog left it open underneath, and
+ * stock's pull-down starts none while one is (g_dropdown_menu_state), so Now Playing had no Quick
+ * Settings until Return had gone back to the one left open and closed it (#303).
  * ponytail: every way leaves the latch to the stock release filter, as stock's own Home call here
  * did: the hold's key-up, where it reaches the filter, is swallowed there; clearing it let that
  * release act on Home, and on V1.34 go straight back from the Now Playing it had opened (#303). A
@@ -7492,6 +7496,10 @@ int compact_now_playing(void) {
     fx_cancel();
     if (usable() && top && !window_manager_is_animating(wm)) {
         const char *name = widget_get_prop_str(top, "name", "");
+        if (!tk_strcmp(name, "statusbar_dialog")) {
+            if (!dialog_quit(top, 0)) st.qs_hold = (unsigned)time_now_ms(); /* not one refused */
+            return 0;
+        }
         pod_settings();
         /* Classic's hold leaves a list open on Home for Home's main list */
         int classic = classic_pages();
@@ -9401,10 +9409,18 @@ static int quick_stuck(void *top) {
            widget_get_prop_int(top, "timer_idex", -1) == -1;
 }
 static void quick_poll(void) {
-    void *top = window_manager_get_top_window(window_manager());
+    void *wm = window_manager(), *top = window_manager_get_top_window(wm);
     unsigned up[12];
     if (quick_stuck(top))
         ringnav_dispatch(top, pointer_event_init(up, EVT_POINTER_UP_BEFORE - 1, top, 0, 0));
+    /* Return's hold over Quick Settings (compact_now_playing), once the dialog has gone: its own
+     * idle closes it, a pass or two on. One still up QS_HOLD_MS later was no hold's to wait for. */
+    if (st.qs_hold && (unsigned)time_now_ms() - st.qs_hold >= QS_HOLD_MS) st.qs_hold = 0;
+    if (st.qs_hold && top && !window_manager_is_animating(wm) &&
+        tk_strcmp(widget_get_prop_str(top, "name", ""), "statusbar_dialog")) {
+        st.qs_hold = 0;
+        compact_now_playing();
+    }
 }
 /* Stock long-key callback: everything except a taken Play/Pause hold runs the stock body. On an
  * Internet Radio station it is the favourite toggle, on a Spotify track Add to Queue (its reply
@@ -10859,7 +10875,8 @@ int ringnav(void *ctx, void *event) {
     if (key == KEY_CENTER && coverflow_turning() && !g_power_longkey) return STOP;
     /* Return or Centre closes quick settings, as its swipe up does (dialog_quit); stock leaves
      * Return to its Home button and Centre to turning the screen off. A held Return's release
-     * goes to the stock filter, which consumes its latch (a hold may go Home from here). */
+     * goes to the stock filter, which consumes its latch (the hold closed it itself,
+     * compact_now_playing). */
     if ((key == KEY_CENTER ||
          (key == KEY_RETURN && !*(volatile unsigned char *)RETURN_RELEASE_LATCH)) &&
         usable()) {

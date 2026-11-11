@@ -290,6 +290,7 @@ typedef struct {
      * qm_forced is a shuffle Play next. */
     unsigned long long qm_press;
     int qs_wheel;     /* Quick Settings' wheel, 1 + Q2POD QSVOLUME once read (quick_volume) */
+    unsigned qs_hold; /* Return's hold closed Quick Settings then, 0 once acted on (quick_poll) */
     unsigned qm_timer, qm_cls, qm_idx, qm_rows, qm_hash, qm_browse, qm_forced, qm_forced_hash;
     int qm_kind, qm_action, qm_choice;
     char qm_name[96]; /* a playlist cover's name, the covers' own: the live list may be older */

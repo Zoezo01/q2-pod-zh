@@ -1707,12 +1707,26 @@ for page in ('folder_page', 'playing_page', 'sysset_page', 'home_page'):
     assert long_return(m) == 0 and [c[0] for c in m.calls if c[0] in ('navigator_back', 'navigator_back_to_home', 'navigator_switch_to_with_context')] == [want], page
     if page != 'home_page': assert m.call(170, gap=0) == 11 and m.call(170, gap=0) == 0, page
 passed()
-# over quick settings, the release goes to that latch, not to closing it
-m = long_machine(); m.mock('dialog_quit'); m.config['HOLDRETURN'] = '1'
-m.top = m.node('dialog', 'statusbar_dialog')
-assert long_return(m) == 0 and [c[0] for c in destinations(m)] == ['navigator_back_to_home']
-assert m.call(170, gap=0) == 11 and not [c for c in m.calls if c[0] == 'dialog_quit']
-assert m.call(170, gap=0) == 11 and [c[1:3] for c in m.calls if c[0] == 'dialog_quit'] == [(m.top, 0)]
+# Over quick settings the hold closes it, as Return does, and acts on the page under it once the dialog
+# has gone (quick_poll, every pass): Now Playing opened over it left it open underneath, and stock's
+# pull-down starts none while one is. The release goes to that latch, not to closing it; a hold whose
+# dialog is still up QS_HOLD_MS later is forgotten.
+def quits(m): return [c[1:3] for c in m.calls if c[0] == 'dialog_quit']
+for hold_home, want in (('0', 'navigator_switch_to_with_context'), ('1', 'navigator_back_to_home')):
+    m = long_machine(); m.mock('dialog_quit'); m.config['HOLDRETURN'] = hold_home
+    m.page('folder_page'); page = m.top; quick = m.top = m.node('dialog', 'statusbar_dialog')
+    assert long_return(m) == 0 and not destinations(m) and quits(m) == [(quick, 0)], hold_home
+    assert m.call(170, gap=0) == 11 and not quits(m)
+    ui_pass(m); assert not destinations(m) and not quits(m)  # still up: its own idle closes it
+    m.top = page; m.animating = 1; ui_pass(m, 20); assert not destinations(m)  # its close still moving
+    m.animating = 0; ui_pass(m, 20); assert [c[0] for c in destinations(m)] == [want], hold_home
+    ui_pass(m, 20); assert not destinations(m)  # once
+m = long_machine(); m.mock('dialog_quit'); m.page('folder_page'); page = m.top; m.top = m.node('dialog', 'statusbar_dialog')
+assert long_return(m) == 0 and len(quits(m)) == 1
+ui_pass(m, O['QS_HOLD_MS']); m.top = page; ui_pass(m, 20); assert not destinations(m)
+# a short Return there closes it
+m = long_machine(); m.mock('dialog_quit'); m.top = m.node('dialog', 'statusbar_dialog')
+assert m.call(170, gap=0) == 11 and quits(m) == [(m.top, 0)]
 passed()
 # Return or Centre (Cancel) on the scan's dialog: stock's own while the scan runs (it stops it), closes it at once after.
 for done, key in ((0, 170), (1, 170), (0, O['KEY_CENTER']), (1, O['KEY_CENTER'])):

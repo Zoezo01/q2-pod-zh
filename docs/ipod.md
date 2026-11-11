@@ -420,6 +420,17 @@ Playing and the first short Return reaches the stock Back path, with position
 memory restoring the browsing page and its selection. No short-Return callback or
 other long-key destination changes.
 
+Over Quick Settings (`statusbar_dialog` in front) the hold closes it, as a short Return does
+(`dialog_quit`), and, unless the quit was refused, stamps `st.qs_hold`; `quick_poll`, every UI loop pass, runs the hold again once
+the dialog has gone and no window moves, so it acts on the page under it, whichever the destination.
+The dialog is modal and its own idle closes it a pass or two after the quit, so the hold waits
+rather than navigating under its loop; one still up `QS_HOLD_MS` (1 s) later is forgotten. Opened
+over the dialog, Now Playing left it open underneath, and stock's pull-down
+(`on_wm_tsmove_fun`) starts none while `g_dropdown_menu_state` is not 0, which only the dialog's
+close (`0x4a1db0`, on `EVT_WINDOW_CLOSE`) makes it: Now Playing had no Quick Settings until Return
+had gone back to the one left open and closed it (#303). Inferred from the handlers; the emulator
+mocks the window manager.
+
 **System settings → Controls → Hold Return** (`Q2POD HOLDRETURN`) picks the
 destination: Recent (0, the default) is the behaviour above; Home (1) calls the stock Home
 destination from any page but Home, Now Playing included, and clears `np_origin`. On Home the hold

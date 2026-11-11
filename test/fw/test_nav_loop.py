@@ -2453,6 +2453,55 @@ def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes)
     assert buzzer.clicks() == [1]
 
 
+class QuickHold:
+    """Return's hold (compact_now_playing) with Quick Settings pulled down over the loop's page."""
+    def __init__(self, fw, loop):
+        self.fw, self.loop, self.opened = fw, loop, []
+        Config(fw)
+        self.quick = loop.ui.window('statusbar_dialog', 'dialog')
+        fw.mock('navigator_switch_to_with_context', lambda name, *_: self.opened.append(C.string_at(name)) and 0)
+        assert fw.fn('compact_now_playing', C.c_int)() == 0
+        assert [c[1][0] for c in fw.calls('dialog_quit')] == [self.quick.p] and self.opened == []
+
+    def close(self):
+        self.loop.ui.top = self.loop.page  # the dialog's own idle closed it
+
+
+def test_a_held_return_over_quick_settings_closes_it_then_acts_on_the_page_under(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes)
+    hold = QuickHold(fw, loop)
+    loop()  # the same millisecond, the dialog still up
+    assert hold.opened == []
+    hold.close()
+    loop.ui.animating = 1
+    loop(20)
+    assert hold.opened == []  # its close still sliding
+    loop.ui.animating = 0
+    loop(20)
+    assert hold.opened == [b'playing_page'] and st('np_origin', C.c_void_p).value == loop.page.p
+    loop(20)
+    assert hold.opened == [b'playing_page'] and len(fw.calls('dialog_quit')) == 1
+
+
+def test_a_quit_that_quick_settings_refuses_is_no_hold_to_wait_for(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes)
+    Config(fw)
+    loop.ui.window('statusbar_dialog', 'dialog')
+    fw.mock('dialog_quit', lambda *_: 0x10)  # RET_BAD_PARAMS: already quit, or not open yet
+    assert fw.fn('compact_now_playing', C.c_int)() == 0 and not st('qs_hold', C.c_uint).value
+
+
+def test_a_hold_whose_quick_settings_stayed_up_is_forgotten(fw, stock_bytes, st):
+    loop = Loop(fw, stock_bytes)
+    hold = QuickHold(fw, loop)
+    loop(O['QS_HOLD_MS'] - 1)
+    assert st('qs_hold', C.c_uint).value  # still waited for
+    loop(1)
+    hold.close()
+    loop(1)
+    assert hold.opened == [] and not st('qs_hold', C.c_uint).value
+
+
 def test_the_first_lit_pass_repaints_the_whole_screen_once(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes, lit=False)
     loop()

@@ -236,6 +236,7 @@ static inline int arc_out(int r, int y) {
  * fade out in BC_STEPS steps, BC_STEP_MS apart. The art takes the cover's shape (bc_fit). */
 #define BC_MS 3000
 #define QS_PULL_Y 31 /* stock's pull-down (on_wm_tsmove_fun, 0x4f287c) takes a touch that began above here */
+#define QS_HOLD_MS 1000 /* Return's hold over Quick Settings acts once it has closed, within this (quick_poll) */
 #define QS_SWIPE_STOCK 295 /* stock's handler (0x4a22f0): Quick Settings' swipe up starts from here down, */
 #define QS_SWIPE_Y 250     /* and Classic Light's from here, its slider above stock's line */
 /* No symbol: Enlarged Album Art's countdown. Now Playing's timer (0x53d514) counts it down while a
