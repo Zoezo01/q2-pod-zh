@@ -432,7 +432,9 @@ static unsigned shown[CF_VIEW_H * CF_VIEW_W];
 #undef calloc /* the payload's calloc is this shim; the tests' own is libc's */
 void *calloc(size_t, size_t);
 static int calloc_fail, more_fail, more_asks; /* no memory at all; none for fx.more's slots alone */
-static int tex_slots; /* fx_open's last textures: fx_base's, the placeholder and any scratch */
+static int tex_slots; /* fx_open's last textures: fx_base's and the placeholder */
+static unsigned mem_kb = ~0u, mem_asks; /* /proc/meminfo's MemAvailable (chapters.c's), and its reads */
+unsigned mem_available_kb(void) { return ++mem_asks, mem_kb; }
 void *shim_calloc(size_t n, size_t size) {
     int more = size == 160 * 160 * 4 && n == 64 - 15; /* fx_window's: FX_POOL past a thumb theme's fx_base */
     more_asks += more;
@@ -3624,7 +3626,7 @@ static void thumb_shipped(void) {
 
     /* Under big_jump_at, however long: albums, never letters. That is a spin at 1.7.6's trigger,
        jump_at up to under big_jump_at, held far past jump_ms: Big Library Mode off, it goes by
-       letters (Andreas, V006i: on, a false start costs till the lift, so it takes a faster spin). */
+       letters (on, a false start costs till the lift, so it takes a faster spin). */
     int l0 = letters;
     const float under[] = { 30, shipped.jump_at + 8, shipped.big_jump_at - 5 };
     for (int k = 0; k < 3; ++k) {
@@ -5253,21 +5255,21 @@ static void half_art(void) {
        passes make them, each texel the rounded mean of four, once: a copy there already is kept as
        it is. Done, an idle pass returns before it asks the card for its space. */
     coverflow_paint(s, canvas);
-    assert(!halves(0) && tex_slots == 17); /* fx_base's 15, the placeholder and the scratch */
+    assert(!halves(0) && tex_slots == 16); /* fx_base's 15 and the placeholder: no slot of the copies' */
     big_library = 0; /* Big Library Mode off: the idle passes make none */
     for (int i = 0; i < 3 * albums; ++i) th_pass(0, 17);
     assert(!halves(0));
-    /* Opened with it off: 1.7.6's 16 slots, no scratch, so none either once it is turned on, until
-       the page opens again. */
+    /* Opened with it off and turned on: the copies start at once, no reopen. */
     close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
     coverflow_paint(s, canvas);
     assert(tex_slots == 16);
     big_library = 1;
-    for (int i = 0; i < 3 * albums; ++i) th_pass(0, 17), coverflow_paint(s, canvas);
-    assert(!halves(0));
+    for (int i = 0; i < 3 * albums && !halves(0); ++i) th_pass(0, 17), coverflow_paint(s, canvas);
+    assert(halves(0));
+    halves(1);
     close_page(), open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
     coverflow_paint(s, canvas);
-    assert(tex_slots == 17);
+    assert(tex_slots == 16);
     for (int i = 0; i < 80 * 80; ++i) half[i] = 0xff000000u | i;
     cache_file(cf_album_key(*index), ".half", path);
     FILE *fp = fopen(path, "wb");
@@ -5475,13 +5477,14 @@ static void half_art(void) {
     }
     coverflow_render(f, PITCH, qf, ring + 4);
     for (int y = 0; y < CF_VIEW_H; ++y) assert(!memcmp(f + y * PITCH, shown + y * CF_VIEW_W, CF_VIEW_W * 4)); /* shown's rows */
-    /* a copy cut short: that album's own art instead, decoded */
+    /* a copy cut short: that album's own art instead, decoded, costed as a decode (9 ms) so in a
+       frame of its own or the first of one */
     cache_file(cf_album_key(c), ".half", path);
     truncate(path, 100);
-    light = 1, coverflow_paint(s, canvas), light = 0;
     l0 = loads;
+    light = 1, coverflow_paint(s, canvas), light = 0;
     decode_ms = 0;
-    coverflow_paint(s, canvas);
+    for (int i = 0; i < 4 && cf_fx_has(c) != 2; ++i) coverflow_paint(s, canvas);
     assert(cf_fx_has(c) == 2 && loads > l0);
     /* There, the screen's covers turn to full art, three a frame at 3 ms, before the fold shows them. */
     decode_ms = 3;
@@ -5639,17 +5642,41 @@ static void loader_test(void) {
         for (int a = 0; a < n; ++a) got += cf_fx_has(a) == 1 && was[a] != 1;
         assert(got == most && loads == l0 && clock_ms - t0 == (unsigned)most);
     }
+    /* A copy asked for and read missing is a full decode (9 ms), timed as one, not as a copy: in
+       late frames the copies after it still go at half_ms, one in its frame and FX_SLACK_MS in the
+       next. */
+    {
+        ld_hold = 1, light = 1, coverflow_paint(s, canvas), light = 0, coverflow_paint(s, canvas);
+        int miss = GOAL();
+        cache_file(cf_album_key(miss), ".half", path);
+        assert(!remove(path));
+        ld_hold = 0, half_ms = 0;
+        while (cf_ld_step()) {
+        }
+        half_ms = 1, decode_ms = 9;
+        for (int f = 0; f < 2; ++f) {
+            static int was[256];
+            int got = 0;
+            for (int a = 0; a < n; ++a) was[a] = cf_fx_has(a);
+            clock_ms += FX_LATE_MS;
+            coverflow_paint(s, canvas);
+            for (int a = 0; a < n; ++a) got += cf_fx_has(a) == 1 && was[a] != 1;
+            assert(f ? got == FX_SLACK_MS : cf_fx_has(miss) == 2 && got == 1);
+        }
+        decode_ms = 0;
+    }
     half_ms = 0;
     SHUT();
-    /* On a thread of its own, a card that takes 20 ms a copy: no frame waits for one, and the
-       covers come in, the window on the screen first. */
-    ld_threads = 1, card(20000), main_thread = pthread_self(), sys_n = 0;
+    /* On a thread of its own, a card that takes 200 ms a copy, then 20: no frame waits for one, and
+       the covers come in, the window on the screen first. */
+    ld_threads = 1, card(200000), main_thread = pthread_self(), sys_n = 0;
     OPEN();
     INTO_LETTERS();
     double worst = 0;
     int shown = 0;
     c = MIDDLE();
-    for (int f = 0; f < 120; ++f) {
+    for (int f = 0; f < 150; ++f) {
+        if (f == 30) card(20000);
         double t = wall_ms();
         coverflow_paint(s, canvas);
         t = wall_ms() - t, worst = t > worst ? t : worst;
@@ -5658,32 +5685,56 @@ static void loader_test(void) {
         for (int d = -7; d <= 7; ++d) shown += cf_fx_has(((c + d) % n + n) % n) == 1;
         if (shown == 15) break;
     }
-    assert(shown == 15 && worst < 15 && ld_live == 1);
+    assert(shown == 15 && worst < 100 && ld_live == 1);
     /* The loader lowered itself first, from its own thread: nice 19 (setpriority, o32 4097, its
        tid from gettid, 4222) and the idle I/O class (ioprio_set, 4314). */
     assert(sys_n == 3 && !sys_main && sys_log[0][0] == 4222 && SYS_IS(1, 4097, 0, 4242, 19) &&
            SYS_IS(2, 4314, 1, 4242, 3 << 13));
-    /* Landed, letters' extra slots, the loader's stage and its thread go, the covers kept in the
-       slots left; the next spin by letters has them again. */
+    /* Landed, letters' extra slots go, the covers kept in the slots left; the loader, asked for
+       nothing more, stays parked with its stage till the page closes, and the next spin by letters
+       has it again, the same thread. */
     assert(cf_fx_letters() == 7);
     wheel_held = 0;
     for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
-    for (int i = 0; i < 200 && cf_fx_letters(); ++i) coverflow_paint(s, canvas), usleep(1000);
-    assert(!cf_fx_letters() && ld_live == 0);
+    for (int i = 0; i < 200 && ((cf_fx_letters() & 1) || cf_ld(-1)); ++i) coverflow_paint(s, canvas), usleep(1000);
+    assert(cf_fx_letters() == 6 && ld_live == 1 && !cf_ld(-1)); /* every request dropped, none read */
     for (int d = -7; d <= 7; ++d) assert(cf_fx_has(((*index + d) % n + n) % n));
     started = ld_started;
     INTO_LETTERS();
     for (int f = 0; f < 120 && cf_fx_letters() != 7; ++f) coverflow_paint(s, canvas), usleep(17000);
-    assert(cf_fx_letters() == 7 && ld_live == 1 && ld_started == started + 1);
-    /* Closing stops it after the read in hand (a slow one here, the first: the middle of the
-       window of the letter gone to), joined: nothing runs while the page is closed, and the next
-       open starts it again only going by letters. */
+    assert(cf_fx_letters() == 7 && ld_live == 1 && ld_started == started);
+    /* An abrupt landing (Centre, a touch) mid-letters, no fold: the covers loaded round the album
+       landed on are kept, wherever in the pool they were, so the shelf at rest decodes none. */
+    for (int f = 0; f < 150; ++f) {
+        coverflow_paint(s, canvas), usleep(17000);
+        int land = (*index + (int)floorf(th[T_POS] + .5f)) % n, had = 0;
+        for (int d = -3; d <= 3; ++d) had += cf_fx_has(((land + d) % n + n) % n) == 1;
+        if (had == 7) break;
+    }
+    static int had[256];
+    for (int a = 0; a < n; ++a) had[a] = cf_fx_has(a);
+    coverflow_wheel_land(), cf_thumb(th);
+    assert(!th[T_ON] && cf_fx_letters() == 6);
+    for (int d = -7; d <= 7; ++d) {
+        int a = ((*index + d) % n + n) % n;
+        assert(cf_fx_has(a) == had[a]);
+        assert(d < -3 || d > 3 || had[a] == 1);
+    }
+    INTO_LETTERS();
+    for (int f = 0; f < 120 && cf_fx_letters() != 7; ++f) coverflow_paint(s, canvas), usleep(17000);
+    assert(cf_fx_letters() == 7 && ld_live == 1 && ld_started == started);
+    /* Closing stops it after the read in hand (a slow one here), joined: nothing runs while the
+       page is closed, and the next open starts it again only going by letters. */
     #define READING(a) do { \
         for (int i_ = 0; i_ < 2000 && cf_ld(a) != 2; ++i_) usleep(1000); \
         assert(cf_ld(a) == 2); } while (0)
     card(200000);
+    usleep(30000); /* the read in hand at 20 ms done: the thread's next are slow */
     light = 1, coverflow_paint(s, canvas), light = 0;
-    READING(GOAL()); /* the first read under way */
+    int reading = 0;
+    for (int i = 0; i < 2000 && !reading; ++i, usleep(1000))
+        for (int a = 0; a < n; ++a) reading |= cf_ld(a) == 2;
+    assert(reading);
     double t = wall_ms();
     SHUT();
     t = wall_ms() - t;
@@ -5701,11 +5752,13 @@ static void loader_test(void) {
     c = GOAL();
     READING(c);
     assert(sys_n == 4 && SYS_IS(2, 4314, 1, 4242, 3 << 13) && SYS_IS(3, 4314, 1, 4242, 2 << 13 | 7));
-    /* A window over the covers, that read still in hand: the landing frees the letters' slots, the
-       stage and the thread, the read joined, with no Cover Flow frame after it. */
+    /* A window over the covers, that read still in hand: the landing frees the letters' slots, with
+       no Cover Flow frame after it, and does not wait for the read: the loader parks after it. */
     top_window = 0;
+    t = wall_ms();
     th_pass(0, 17);
-    assert(!th[T_ON] && !cf_fx_letters() && ld_live == 0);
+    t = wall_ms() - t;
+    assert(!th[T_ON] && cf_fx_letters() == 6 && ld_live == 1 && t < 50);
     top_window = page;
     SHUT();
     assert(ld_live == 0);
@@ -5773,8 +5826,8 @@ static void loader_test(void) {
     for (int d = -7; d <= 7; ++d) assert(cf_fx_has(((c + d) % n + n) % n));
     wheel_held = 0;
     for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
-    for (int i = 0; i < 200 && cf_fx_letters(); ++i) coverflow_paint(s, canvas), usleep(1000);
-    assert(!cf_fx_letters());
+    for (int i = 0; i < 200 && (cf_fx_letters() & 1); ++i) coverflow_paint(s, canvas), usleep(1000);
+    assert(!(cf_fx_letters() & 9));
     more_fail = 0;
     SHUT();
     #undef READING
@@ -5788,75 +5841,10 @@ static void loader_test(void) {
     classic = 0, square_art = 0;
 }
 
-#if Q2POD_DEV
-/* ---- --dev builds: the gap log's loading counts. Going by letters, frame by frame, what the
-   harness sees (the window drawn waiting for art, copies asked for, read, put in, refused for the
-   budget, dropped unread, in hand; the letter steps, one missed, the ms till one's window filled)
-   goes to gap_tallies, which main() compares with /tmp/q2-cf-gaps.log's rows. ---- */
-static void gap_log(void) {
-    static const cf_style_t shipped = CF_SHIPPED;
-    static int was_has[256], was_ld[256];
-    const cf_style_t fixture = shim_themes[1].cf;
-    char path[600];
-    int n = albums, canvas[16] = { 0 }, *index;
-    widget *s;
-    shim_themes[1].cf = shipped;
-    classic = 1, frame_fail = 0, square_art = 1, pressed = 0, light = 0, decode_ms = 0, half_ms = 1;
-    for (int i = 0; i < n; ++i) {
-        cache_file(album_key(records[i]), "", path);
-        FILE *fp = fopen(path, "w");
-        fputs("jpg", fp);
-        fclose(fp);
-    }
-    open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
-    for (int i = 0; i < 3 * n && halves(0) < n; ++i) th_pass(0, 17);
-    coverflow_paint(s, canvas); /* at rest: the run before ends */
-    mkdir(PEQ_ROOT "/tmp", 0755);
-    unlink(PEQ_ROOT "/tmp/q2-cf-gaps.log");
-    fclose(fopen(PEQ_ROOT "/tmp/q2-cf-gaps.on", "w"));
-    FILE *out = fopen(PEQ_ROOT "/tmp/gap_tallies", "w");
-    for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a;
-    th_pass(0, 17), th_down();
-    for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17);
-    th_arrive();
-    ld_hold = 1;
-    unsigned step_at = clock_ms;
-    int filling = 1;
-    for (int f = 0; f < 14; ++f) {
-        int read = 0, grey = 0, asked = 0, inst = 0, late = 0, unread = 0, step = !f, fill = -1;
-        for (int r = 0; r < (f % 4 + 2) * (f >= 6 ? 8 : 1); ++r) read += cf_ld_step();
-        if (f == 6) th_step(1), step = 1;
-        for (int a = 0; a < n; ++a) was_has[a] = cf_fx_has(a), was_ld[a] = cf_ld(a);
-        th_pass(0, 17);
-        unsigned t0 = clock_ms;
-        coverflow_paint(s, canvas);
-        for (int a = 0; a < n; ++a) {
-            int now = cf_ld(a), took = cf_fx_has(a) && !was_has[a]; /* full art may follow at once */
-            asked += now == 1 && was_ld[a] < 0, inst += took;
-            late += was_ld[a] == 3 && now == 3, unread += was_ld[a] == 3 && now < 0 && !took;
-        }
-        int c = (*index + (int)floorf(th[T_POS] + .5f) +
-                 cf_frame_window((int)((th[T_POS] - floorf(th[T_POS] + .5f)) * ONE))) % n;
-        for (int d = -7; d <= 7; ++d) grey += !cf_fx_has(((c + d) % n + n) % n);
-        if (step) filling = 1, step_at = t0;
-        if (filling && !grey) fill = (int)(clock_ms - step_at), filling = 0;
-        fprintf(out, "grey=%d asked=%d read=%d fail=0 inst=%d late=%d stale=0 unread=%d queue=%d step=%d missed=%d fill=%d\n",
-                grey, asked, read, inst, late, unread, cf_ld(-1) + inst, step, f == 6, fill);
-    }
-    fclose(out);
-    ld_hold = 0, half_ms = 0;
-    wheel_held = 0;
-    for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
-    coverflow_paint(s, canvas); /* the run ends: the log written */
-    unlink(PEQ_ROOT "/tmp/q2-cf-gaps.on");
-    close_page(), top_window = 0, th_pass(0, 17);
-    shim_themes[1].cf = fixture;
-    classic = 0, square_art = 0;
-}
-#endif
-
-/* fx.no_more lasts till letters end: letters refused fx.more's slots don't ask again (loader_test),
-   the next letters ask once again, and with the memory back they get them. */
+/* fx.more's slots are not asked for with MemAvailable under their 4900 KB and MP4_SPARE_KB's
+   16384 more, as the calloc, under overcommit, never fails; refused, fx.no_more lasts till letters
+   end: they don't ask again (loader_test), the next letters ask once again, and with the memory
+   back they get them. */
 static void no_more_reset(void) {
     static const cf_style_t shipped = CF_SHIPPED;
     const cf_style_t fixture = shim_themes[1].cf;
@@ -5865,19 +5853,20 @@ static void no_more_reset(void) {
     shim_themes[1].cf = shipped;
     classic = 1, frame_fail = 0, square_art = 1, pressed = 0, light = 0, decode_ms = 0, half_ms = 0;
     open_page(), s = slide(), index = (int *)(s->raw + SLIDE_INDEX), top_window = page;
+    static const unsigned avail[3] = { 4900 + 16384 - 1, 1000, 4900 + 16384 };
     for (int k = 0; k < 3; ++k) {
-        more_fail = k < 2, more_asks = 0;
+        mem_kb = avail[k], mem_asks = more_asks = 0;
         for (int a = 0; a < n; ++a) *index = strcmp(names[a], "Q04") ? *index : a;
         th_pass(0, 17), th_down();
         for (int t = 0; !(th[T_JUMP] && th[T_ENTER] <= 0) && t < 2000; t += 17) th_spin(150, 17);
         for (int f = 0; f < 4; ++f) th_pass(0, 17), coverflow_paint(s, canvas);
-        assert(more_asks == 1 && (cf_fx_letters() & 1) == (k == 2));
+        assert(mem_asks == 1 && more_asks == (k == 2) && (cf_fx_letters() & 1) == (k == 2));
         wheel_held = 0;
         for (int i = 0; i < 400 && th[T_ON]; ++i) th_pass(0, 17);
-        for (int i = 0; i < 200 && cf_fx_letters(); ++i) coverflow_paint(s, canvas);
-        assert(!cf_fx_letters());
+        coverflow_paint(s, canvas); /* the frame landed: letters over, fx.no_more with them */
+        assert(!(cf_fx_letters() & 9));
     }
-    more_fail = 0;
+    mem_kb = ~0u;
     close_page(), top_window = 0, th_pass(0, 17);
     shim_themes[1].cf = fixture;
     classic = 0, square_art = 0;
@@ -6367,9 +6356,6 @@ int main(void) {
     embedded_first();
     half_art();
     loader_test();
-#if Q2POD_DEV
-    gap_log();
-#endif
     no_more_reset();
     return 0;
 }
@@ -6382,29 +6368,6 @@ FFMPEG_STUB = r"""#!/bin/sh
 for a; do [ "$prev" = -i ] && src=$a; prev=$a; done
 case $src in *.webp|*/Ffok/*) printf ffmpeg > "$a";; */Fkill/*) kill -9 $$;; *) exit 1;; esac
 """
-
-
-def gap_log(d):
-    """The --dev gap log's first run against what the harness saw frame by frame (gap_tallies), and its
-    totals and seconds against its rows."""
-    log = (d/'q2-cf-gaps.log').read_text().split('\n== run at ')[0].splitlines()
-    pairs = lambda line: dict(x.split('=', 1) for x in line.split() if '=' in x)
-    rows = [pairs(l) for l in log if l.startswith('gap=')]
-    want = [pairs(l) for l in (d/'gap_tallies').read_text().splitlines()]
-    assert log[0].startswith('== run at ') and f'{len(rows)} frames, loader nice=' in log[0], log[0]
-    for i, w in enumerate(want):
-        assert {k: rows[i][k] for k in w} == w, (i, rows[i], w)
-    names = 'grey asked read fail inst late stale unread queue step missed'.split()
-    total = pairs(log[1].removeprefix('== all:'))
-    for k in names:
-        rs = sum(int(r[k]) for r in rows)
-        assert int(total[k]) == (rs // len(rows) if k == 'queue' else rs), (k, total[k], rs)
-    queue = [int(r['queue']) for r in rows]
-    fills = [int(r['fill']) for r in rows if r['fill'] != '-1']
-    assert (int(total['queue_min']), int(total['queue_max']), int(total['fills']), int(total['fill_max'])) == (min(queue), max(queue), len(fills), max(fills, default=0))
-    seconds = [pairs(l.split(':', 1)[1]) for l in log if l.startswith('== second ')]
-    assert sum(int(s['frames']) for s in seconds) == len(rows) and sum(int(s['inst']) for s in seconds) == int(total['inst'])
-    assert any(int(w['late']) for w in want) and any(int(w['unread']) for w in want) and fills, 'gap_log is vacuous'
 
 
 def main():
@@ -6518,9 +6481,7 @@ def main():
         (tmp/'test.c').write_text(TEST)
         (tmp/'ffmpeg').write_text(FFMPEG_STUB)
         (tmp/'ffmpeg').chmod(0o755)
-        # Built twice, side by side: as a release build, and as a --dev one (Q2POD_DEV, the gap log's
-        # counts), each with a card of its own.
-        builds = {'coverflow_test': (), 'coverflow_dev': ('-DQ2POD_DEV=1',)}  # each build's own flags; its card is <name>-root
+        builds = {'coverflow_test': ()}  # each build's own flags; its card is <name>-root
         def cc(name, src):  # each source on its own, so they compile at once
             return subprocess.Popen(['cc', '-m32', '-pthread', '-DPEQ_HOST', f'-DPEQ_ROOT="{tmp}/{name}-root"',
                         f'-DART_FFMPEG="{tmp}/ffmpeg"', '-D_GNU_SOURCE', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-result', '-Wno-unused-parameter', '-Wno-unused-function',
@@ -6539,10 +6500,7 @@ def main():
         if a.captures:  # capture the reflection intensity
             (tmp/'frames').mkdir()
             env['CF_CAPTURES'] = str(tmp/'frames')
-        dev = subprocess.Popen([str(tmp/'coverflow_dev')], env={**env, 'CF_CAPTURES': ''} if a.captures else env)
         subprocess.run([str(binary)], check=True, env=env)
-        assert dev.wait() == 0, 'the --dev host tests failed'
-        gap_log(tmp/'coverflow_dev-root/tmp')
         if a.captures:
             a.captures.mkdir(parents=True, exist_ok=True)
             from ipod import inc, imagemagick

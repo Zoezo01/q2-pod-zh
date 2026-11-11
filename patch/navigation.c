@@ -3281,8 +3281,9 @@ static void pod_text(int i) {
 /* Centre or tap toggles and saves. Charge limit takes effect on the next UI loop pass
  * (power_poll), Smart Wi-Fi within SMART_POLL_MS; Artists on the next load of an artist list, as
  * the artist page's switch does; Big Library Mode's letters at the next spin, its half copies at
- * Cover Flow's next open; Standby limit at the next Standby; Coverflow Sort and Refresh Coverflow
- * at Coverflow's next open (coverflow.c), Refresh with a toast, as it changes nothing in view. */
+ * Cover Flow's next idle pass; Standby limit at the next Standby; Coverflow Sort and Refresh
+ * Coverflow at Coverflow's next open (coverflow.c), Refresh with a toast, as it changes nothing in
+ * view. */
 static int pod_click(void *ctx, void *event) {
     int i = (int)(long)ctx;
     pod_settings();

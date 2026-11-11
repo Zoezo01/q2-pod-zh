@@ -45,7 +45,9 @@ static void th_commit(int q) {
 
 /* The covers on the album named, at once: Centre, or nothing to show a landing on. */
 void coverflow_wheel_land(void) {
-    fx_unletter(); /* landed, painted or not: the letters' slots, stage and loader go */
+    unsigned n = cf.albums ? deque_size(cf.albums) : 0;
+    /* landed, painted or not: the letters' slots go, the landing album's window kept */
+    fx_unletter(cf.slide ? (int)th_album(th.on ? th_shown() : 0, n) : 0);
     if (th.jump) coverflow_letter(cf.slide, 0, 0); /* the held letter goes with its letters */
     if (th.on && cf.slide) th_commit(th_shown());
     th.jump = th.lean = th.fold = 0;

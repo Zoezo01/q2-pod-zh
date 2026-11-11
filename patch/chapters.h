@@ -22,4 +22,5 @@ void chapters_cancel(chapters *c); /* poll until reaped, then free */
 #define MP4_EOVERFLOW 79 /* MIPS; a 64-bit host opens any size */
 unsigned long long mp4_index_bytes(const char *path); /* 0 not an MP4, ~0 too large to open */
 int mp4_fits(const char *path); /* the index fits MemAvailable, less MP4_SPARE_KB */
+unsigned mem_available_kb(void); /* /proc/meminfo's MemAvailable, ~0 with none */
 #endif

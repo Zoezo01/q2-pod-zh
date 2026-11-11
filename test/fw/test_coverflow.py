@@ -2128,7 +2128,7 @@ class Ld(C.Structure):
 class Fx(C.Structure):
     _fields_ = [('frame', C.c_void_p), ('tex', C.c_void_p), ('album', C.c_int * FX_POOL), ('art', C.c_void_p * FX_POOL),
                 ('half', C.c_ubyte * FX_POOL),
-                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves scratch'.split()),
+                *((k, C.c_int) for k in 'c frac drawn light lead todo mode letters_at next prev halves'.split()),
                 ('half_at', C.c_uint), ('half_ms', C.c_int), ('full_ms', C.c_int),
                 ('ld', Ld * LD_SLOTS), ('stage', C.c_void_p), ('gate', C.c_uint * 8), ('loader', C.c_ulong),
                 ('ld_on', C.c_int), ('ld_stop', C.c_int), ('paint_at', C.c_uint), ('more', C.c_void_p), ('no_more', C.c_int)]

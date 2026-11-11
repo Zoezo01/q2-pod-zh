@@ -9,6 +9,7 @@
 #ifndef PEQ_HOST
 #include "stock.h"
 #endif
+#include "chapters.h"
 #include "library_scope.h"
 #include "playback.h"
 #include "xiph.h"
@@ -91,7 +92,7 @@ enum { FX_SHELF, FX_HELD, FX_FOLD, FX_HELD_LEFT, FX_ENTRY };
  * and the placeholder's. No frame: the flat fallback (stock images on the slide_menu). */
 typedef struct {
     void *frame;                     /* bitmap_t *, CF_VIEW_W x cfs.view_h BGRA8888 */
-    unsigned *tex;                   /* fx_base()'s slots, the placeholder, FX_SCRATCH if scratch */
+    unsigned *tex;                   /* fx_base()'s slots, then the placeholder */
     int album[FX_POOL];              /* each slot's album + 1; 0 is empty */
     const unsigned *art[FX_POOL];    /* its texture: the slot's own, or the placeholder */
     unsigned char half[FX_POOL];     /* it holds the album's half copy (half_read) */
@@ -100,7 +101,6 @@ typedef struct {
     int mode;                        /* what the frame holds (FX_SHELF ...) */
     int letters_at, next, prev; /* the album + 1 the letters' windows are of, and those letters */
     int halves;                 /* coverflow_halves' next album */
-    int scratch;                /* tex has FX_SCRATCH: Big Library Mode was on at the open */
     unsigned half_at;           /* and when it last made a copy, ms (HALF_GAP_MS) */
     int half_ms, full_ms;       /* the last load's ms, a half copy wanted or not */
     /* The loader: a thread that reads the half copies fx_window asks for into stage, ld[s]'s
@@ -160,15 +160,13 @@ extern cf_thumb_t th;
 unsigned album_key(void *r);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload);
-/* the texture pool (fx_window): the shelf's slots, then the placeholder, then a slot half copies
- * are made in */
+/* the texture pool (fx_window): the shelf's slots, then the placeholder */
 int fx_base(void);
 #define FX_PLACEHOLDER (fx.tex + fx_base() * CF_TEXELS)
-#define FX_SCRATCH (FX_PLACEHOLDER + CF_TEXELS)
 unsigned *fx_buf(int i);
 int fx_slot(int album);
 void fx_fill(int i, int a, int half);
-void fx_unletter(void);
+void fx_unletter(int c);
 /* the depth renderer, which the letters draw with (coverflow_letters.c) */
 extern const int cf_cos90[17];
 void cf_restyle(void);
@@ -209,34 +207,5 @@ void ld_ask(const int *want, int k);
 void ld_take(int s, int i, int a);
 void ld_quit(void);
 void coverflow_halves(void);
-#if Q2POD_DEV
-/* --dev builds only: the loading's counts for the gap log (gap_note) since its last frame, by
- * LDC_NAMES; the loader keeps the reads' (atomic), the UI thread the rest. A step is a letter's;
- * fill the ms from the last step till the window drawn had all its art, plus 1 (0: none); ms the
- * loader's read ms; prio what its lowering took (ld_lower). */
-enum {
-    LDC_GREY,
-    LDC_ASKED,
-    LDC_READ,
-    LDC_FAIL,
-    LDC_INST,
-    LDC_LATE,
-    LDC_STALE,
-    LDC_UNREAD,
-    LDC_QUEUE,
-    LDC_STEP,
-    LDC_MISSED,
-    LDC_N
-};
-#define LDC_NAMES "grey\0asked\0read\0fail\0inst\0late\0stale\0unread\0queue\0step\0missed\0"
-typedef struct {
-    unsigned n[LDC_N], step_at, ms;
-    int filling, fill, prio;
-} cf_ldc_t;
-extern cf_ldc_t ldc;
-#define LDC(...) __VA_ARGS__
-#else
-#define LDC(...)
-#endif
 
 #endif

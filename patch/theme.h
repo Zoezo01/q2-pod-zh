@@ -96,13 +96,12 @@ typedef struct {
      * animator). Ticks are 200 / ticks_turn raw units at 50% Wheel Sensitivity, twice as many a
      * turn at 100%, and rates count those; far_left, stop_left, back, aim_snap, lead_*, row_from,
      * _full, _flat, _edge and fold_near are 1/100 album; enter_albums albums; others ms, ticks/s,
-     * albums/s, px or %. row_reach is no longer read, and jump_at, jump_ms and jump_pace only with
-     * Big Library Mode off (1.7.6's letters; on, big_jump_at and big_jump_ms); a theme may still
-     * state row_reach. */
+     * albums/s, px or %. jump_at, jump_ms and jump_pace are read only with Big Library Mode off
+     * (1.7.6's letters; on, big_jump_at and big_jump_ms). */
     short thumb, ticks_turn, ticks_album, fast_at, fast_full, top_speed, track, snap, spin;
     short far_left, detent, hold_ms, stop_ms, stop_left, rate_up, rate_down, back, dead;
     short contact_ms, aim_snap, lead_from, lead_full, lead_ms, row_shift, row_from, row_full;
-    short row_shrink, row_flat, row_out, row_edge, row_width, row_key, row_reach;
+    short row_shrink, row_flat, row_out, row_edge, row_width, row_key;
     short jump_ms, jump_ticks, jump_at, jump_pace, big_jump_at, big_jump_ms, enter_albums, slide_ms;
     short fold_near;
     short name_px, artist_px, text_y, artist_y;

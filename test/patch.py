@@ -10538,7 +10538,7 @@ class HalfMachine(FileMocks,DepthMachine):
 def spread(h):  # a half copy's texels, each two by two
     rows=[b''.join(h[4*(y*80+x):4*(y*80+x)+4]*2 for x in range(80)) for y in range(80)]
     return b''.join(r+r for r in rows)
-assert ('gaps' in payload_syms)==('ldc' in payload_syms)==bool(manifest['dev'])  # the gap log and its loading counts
+assert ('gaps' in payload_syms)==bool(manifest['dev'])  # the gap log
 PAINT_BOUND=5_100_000
 for cut in (False,True):
     m=classic_light_new(HalfMachine,albums=9); m.cut=cut; m.config['BIGLIBRARY']='1'

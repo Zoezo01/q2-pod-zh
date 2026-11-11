@@ -40,14 +40,13 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
 # coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb); fold_near past 50 would
-# let the fold start with the caption still on the album before the letter's; row_reach is no longer read,
-# and stays so a theme that states it still builds; jump_at, jump_ms and jump_pace are only Big Library Mode off's
+# let the fold start with the caption still on the album before the letter's; jump_at, jump_ms and jump_pace are only Big Library Mode off's
 # (1.7.6's letters), big_jump_at and big_jump_ms its own
 CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 'fast_full': 1000, 'top_speed': 100, 'track': 1000,
             'snap': 1000, 'spin': 1000, 'far_left': 2000, 'detent': 100, 'hold_ms': 30000, 'stop_ms': 1000, 'stop_left': 500,
             'rate_up': 1000, 'rate_down': 1000, 'back': 500, 'dead': 20, 'contact_ms': 200, 'aim_snap': 100, 'lead_from': 500,
             'lead_full': 1000, 'lead_ms': 1000, 'row_shift': 200, 'row_from': 1000, 'row_full': 2000, 'row_shrink': 50, 'row_flat': 800,
-            'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100, 'row_reach': 100,
+            'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100,
             'jump_ms': 5000, 'jump_ticks': 200, 'jump_at': 1000, 'jump_pace': 2000, 'big_jump_at': 1000, 'big_jump_ms': 5000,
             'enter_albums': 12, 'slide_ms': 1000, 'fold_near': 50}
 CF_WIDE = 2 * int(need(re.search(r'#define CF_WIDE_REACH (\d+)', (ROOT/'patch/coverflow.h').read_text()),
