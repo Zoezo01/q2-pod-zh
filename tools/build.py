@@ -9,7 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '6d3e5952d0a71e55f247bdbfcab0353ed21c5e64df9d46c081f27b600bb0109a'
 DEMO_SHA = '1aee4394c3b3daafc562f0553cbbae78d55c6e76feb1d60f3c228e6e31e0e70a'
 VERSION = '1.8.0'  # major.minor.patch, single digits, shown as is (About and release tag)
-BETA = 3  # a pre-release's beta number (1-9), 0 for the release itself
+BETA = 4  # a pre-release's beta number (1-9), 0 for the release itself
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits and the beta number: 1.8.0 beta 2 is V1802,
