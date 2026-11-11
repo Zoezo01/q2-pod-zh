@@ -22,6 +22,7 @@
   - Games: a tap during a game no longer opens another one. The hidden list of games still took taps where its rows had been.
   - System: in the **Shut Down?** prompt that holding Centre opens, a Centre press chooses the selected row again. In 1.8.0 BETA only a tap did.
   - Controls: letting go of a held **Return** no longer acts as a second Return. In 1.8.0 BETA the Now Playing it had opened closed again.
+  - Controls: holding **Play/Pause** for a menu no longer plays or pauses the song as you let go. In 1.8.0 BETA it did.
   - Status bar: under **Theme: Classic** the bar no longer shows **EQ** beside the battery.
   - Status bar: plugging in or unplugging the charger turns the whole battery percentage green or back to white. Only its last digit used to change, until the screen was turned off and on.
   - Streaming: under **Theme: Classic**, the large icon beside the list (TIDAL, AirPlay, Spotify, Internet Radio, Configuration) is sharp. It was an enlarged copy of the small row icon and looked blurry. A card app's own icon is shown as before.

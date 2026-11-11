@@ -419,6 +419,13 @@ HOLD_RETURN = (0x4f27fc, 0x0411117c)
 # to those two keys (patch/navigation.c, docs/internals.md#queue-menu).
 HOLD_KEYS = ((0x6b30f8, 0x8f99b220, 0x02603825, None), (0x6b3108, 0x0320f809, None, 'ringnav_hold_timer'),
              (0x6b3458, 0x0411ffa4, None, 'ringnav_hold_info'))
+# V1.34's input_device_status takes a key-down for a press it has ended (should_abort: the window in front changed
+# under it) as a new press: it clears the key's record and times it again, where V1.32's kept the record and dropped the
+# key until its release. The Q2's buttons repeat their down while held, so a hold that opened a window came back to life
+# in it: its release was delivered there (Play/Pause played or paused under its own menu, #303) and the hold fired again
+# once the new time had run. The branch past the clearing is taken always, as V1.32's code
+# (docs/internals.md#queue-menu).
+KEY_ABORTED = (0x6b309c, 0x10400011, 0x10000011)
 # device_standby's bal awake_screen after the resume from Standby becomes li $v0, 1: the screen stays dark,
 # so the resuming key acts as it does dark (Play plays, centre wakes).
 STANDBY_WAKE = (0x5022e4, 0x0411ff26, 0x24020001)
@@ -1833,6 +1840,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
                'shuffle honours Play next')
     patch_word(patched, *HOLD_RETURN, jal(ps['compact_now_playing']),
                'long Return destination after stock input gates')
+    patch_word(patched, *KEY_ABORTED, 'A press the window changed under stays ended until its release')
     patch_word(patched, *STANDBY_WAKE, 'Standby resume stays dark')
     patch_word(patched, *NAV_SHOWN, "stock's navigation bar stays shown")
     patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")

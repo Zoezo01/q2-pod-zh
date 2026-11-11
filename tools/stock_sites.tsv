@@ -405,6 +405,7 @@ demo	0x69ccb8	0x4	window_manager_default_close_window	`lw $5, GOT[a page]` (1st 
 demo	0x69ec3c	0x4	input_method_default_on_win_close	`sw $zero, 0xc($16)`, the delay slot of the only call to sub_69ea7c; patch/offsets.inc IM_KEYBOARD
 demo	0x6b2e80	0x4	input_device_status_handle_event	`beqz $2, -79 words` (3rd of 9 such), before 3rd of 4 calls to system_info; patch/navigation.c STALE_NOTES
 demo	0x6b2fb4	0x4	input_device_status_handle_event	`sb $zero, 0xc($17)` (2nd of 2 such), after "double clicked"; patch/navigation.c STALE_NOTES
+demo	0x6b309c	0x4	input_device_status_handle_event	`beqz $2, +18 words` (6th of 9 such), before 1st of 2 calls to memset, after "double clicked"; tools/build.py KEY_ABORTED
 demo	0x6b30f8	0x4	input_device_status_handle_event	the load of $25 for the only call to timer_add, after "double clicked"; tools/build.py HOLD_KEYS
 demo	0x6b3108	0x4	input_device_status_handle_event	the only call to timer_add, after "double clicked"; tools/build.py HOLD_KEYS
 demo	0x6b3458	0x4	input_device_status_on_long_press_timer	the only call to input_device_status_find_key_long_press_info; tools/build.py HOLD_KEYS

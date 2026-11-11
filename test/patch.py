@@ -3401,7 +3401,7 @@ for existing in (False,True):
             assert m.nodes[m.top]['name']=='playing_page'
             assert not any(c[0]=='player_start' for c in m.calls)
             # The switch leaves the hold-release latch armed: stock's filter swallows the hold's
-            # release, which V1.34 delivers, and the first short Return goes back.
+            # release where it is delivered (let go before the page's open event), and the first short Return goes back.
             assert m.u.mem_read(O['RETURN_RELEASE_LATCH'],1)==b'\1'
             assert m.call(170,gap=0)==11 and m.nodes[m.top]['name']=='playing_page'
             assert m.u.mem_read(O['RETURN_RELEASE_LATCH'],1)==b'\0'
@@ -18712,6 +18712,26 @@ def vol_steps(patched,lit):
     return ret,c.u.mem_read(syms['g_volume'],1)[0],[x[0] for x in c.calls if x[0] in ('device_set_volume','write_int_config')]
 for lit in (0,1): assert vol_steps(True,lit)==(0xb,11,['device_set_volume','write_int_config']),lit
 assert vol_steps(False,1)==(0xb,11,['device_set_volume','write_int_config']) and vol_steps(False,0)==(0,10,[]); passed()
+# A press the window in front changed under stays ended until its release, as on V1.32 (build.py KEY_ABORTED, #303).
+# Stock's own input_device_status, a held Play/Pause: its press, its hold, the window change (the abort a window's open
+# event makes), the button's next repeat, time for another hold, its release. Stock V1.34 takes the repeat as a new press:
+# a key-down with a new time, a second hold, and the release delivered, which played or paused under the hold's menu.
+# Patched, the window gets none of the three and the record is free again at the release; with no window change a
+# repeat and the release go through, on either.
+def held_key(patched,changed=True):
+    c=Machine(patched); c.mock('widget_on_keydown','widget_on_keyup'); c.mock('log_get_log_level',prefix='one:')
+    c.handlers[syms['widget_get_window_manager']]='window_manager'; c.handlers.pop(syms['key_event_init'],None)
+    ids=c.alloc(0x200); record=ids+O['INPUT_KEYS']
+    sent=lambda: [x[0] for x in c.calls if x[0] in ('widget_on_keydown','widget_on_keyup')]
+    def key(kind,gap): c.call(O['KEY_PLAY'],address=syms['input_device_status_on_input_event'],args=(ids,c.wm,c.event,0),event_type=kind,gap=gap); return sent()
+    def wait(ms): c.advance(ms); return sent()  # its long-press timer runs, stock's 1000 ms or KEY_HOLD_MS
+    out=[key(O['EVT_KEY_DOWN'],0),wait(1000)]; pressed=c.get(record+O['INPUT_KEY_TIME'])
+    if changed: c.call(address=syms['input_device_status_abort_all_pressed_keys'],args=(ids,0,0,0),gap=0)
+    return out+[key(O['EVT_KEY_DOWN'],250),c.get(record+O['INPUT_KEY_TIME'])-pressed,wait(2000),key(O['EVT_KEY_UP'],0),c.get(record)]
+down,up=['widget_on_keydown'],['widget_on_keyup']
+assert held_key(True)==[down,down,[],0,[],[],0] and held_key(False)==[down,down,down,1250,down,up,0]
+for patched in (True,False): assert held_key(patched,changed=False)==[down,down,down,0,[],up,0],patched
+passed()
 # A headset's keys are read once (build.py BT_INPUT): stock V1.34's own reader of BlueZ's AVRCP device, which would post
 # each press as a button beside headset.c's worker, opens nothing and starts no thread; stock's does both.
 for patched in (True,False):
