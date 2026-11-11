@@ -21,11 +21,12 @@
 #define PL_PAGE 1024
 #define PL_HASHES "select id,cd_num,fileurl from playlist where id>%u order by id limit 1024"
 #define PL_SONGS                                                                                   \
-    "select id,fileurl,album,songer,albumsonger from playlist where id>%u and cd_num=%d order by " \
-    "id limit 1024"
-/* the user's own picture, decoded by ffmpeg, at most this many pixels (a 12 MP phone photo); a
- * bigger one, or one whose size its header doesn't tell, shows the 2x2 */
-#define PL_PICTURE_PX 12000000
+    "select id,fileurl,album,songer,albumsonger,cd_num from playlist where id>%u order by id "     \
+    "limit 1024"
+/* the user's own picture, decoded by ffmpeg, at most this many pixels: 12 MP as phones' 12 MP
+ * photos are (a Pixel's 4080 x 3072, an iPhone's 4032 x 3024 within it), so they show; a bigger
+ * one, or one whose size its header doesn't tell, shows the 2x2 */
+#define PL_PICTURE_PX (4080 * 3072)
 /* Each cover filled to 80x80 and cut square, so none is squashed; hstack and vstack, as ffmpeg 4.2
  * has no xstack. */
 #define PL_FILL(i, o) "[" #i "]scale=80:80:force_original_aspect_ratio=increase,crop=80:80[" #o "];"
@@ -42,6 +43,8 @@ typedef struct {
     unsigned n;
     pl_album_t *albums;
     unsigned songs;
+    int cd_num; /* the playlist read: song_row drops every other row (no cd_num in the SQL, whose
+                 * limit would then count only its rows and scan the table under one lock) */
 } pl_songs_t;
 typedef struct {
     char *name;
@@ -77,7 +80,7 @@ static struct {
 static int song_row(void *ctx, int n, char **v, char **c) {
     pl_songs_t *s = ctx;
     if (pl.cancel) return 1; /* a join waits: the read stops, read 0, nothing named or marked */
-    if (n < 2) return 0;
+    if (n < 6 || !v[5] || atoi(v[5]) != s->cd_num) return 0; /* another playlist's, or none */
     ++s->songs;
     s->hash = fnv(s->hash, (const unsigned char *)v[1]);
     if (!s->collect || n < 5 || !v[1] || s->n == PL_ALBUMS) return 0;
@@ -129,15 +132,14 @@ static int page_row(void *ctx, int n, char **v, char **c) {
  * way: the device's libsqlite3 is THREADSAFE=1); 0 when a page fails or a join waits. Between pages
  * it holds no lock, so a writer commits there; one committing meanwhile (its PENDING lock refuses
  * the next page) fails the read, which steps aside: the next rebuild reads again. */
-static int query(const char *sql, int cd_num, int (*row)(void *, int, char **, char **),
-                 void *ctx) {
+static int query(const char *sql, int (*row)(void *, int, char **, char **), void *ctx) {
     char page[sizeof PL_SONGS + 32];
     void *db = 0;
     pl_page_t p = { row, ctx, 100, PL_PAGE };
     int bad = sqlite3_open("/mnt/data/database.db", &db) ||
               sqlite3_exec(db, "PRAGMA cache_size=64", 0, 0, 0); /* era_sql's: a heap of KBs */
     while (!bad && p.rows == PL_PAGE) {
-        tk_snprintf(page, sizeof page, sql, p.last, cd_num);
+        tk_snprintf(page, sizeof page, sql, p.last);
         p.rows = 0;
         bad = pl.cancel || sqlite3_exec(db, page, page_row, &p, 0);
     }
@@ -145,17 +147,17 @@ static int query(const char *sql, int cd_num, int (*row)(void *, int, char **, c
     return !bad;
 }
 
-/* cd_num's songs through song_row.
+/* s->cd_num's songs through song_row.
  * ponytail: each job reads the table again for its own cd_num (no index), so a first build of N
  * playlists reads it N + 1 times; collecting each playlist's first PL_ALBUMS albums in the
  * refresh's one pass would make it one. */
-static int songs(int cd_num, pl_songs_t *s) { return query(PL_SONGS, cd_num, song_row, s); }
+static int songs(pl_songs_t *s) { return query(PL_SONGS, song_row, s); }
 
 /* The worker's: every playlist's songs hash, in one read, published whole for the poll (one not
  * taken yet is replaced); a failed read publishes none, so the UI keeps the table it has. */
 static void pl_lists(void) {
     pl_lists_t *t = calloc(1, sizeof *t);
-    if (t && (t->at = calloc(PL_LISTS, sizeof *t->at)) && query(PL_HASHES, 0, list_row, t))
+    if (t && (t->at = calloc(PL_LISTS, sizeof *t->at)) && query(PL_HASHES, list_row, t))
         t = __atomic_exchange_n(&pl.fresh, t, __ATOMIC_ACQ_REL);
     if (t) free(t->at), free(t);
 }
@@ -321,8 +323,8 @@ static int pl_build(pl_job_t *j) {
             return 0; /* stopped, gone, or ffmpeg killed */
         mark(at);
     }
-    pl_songs_t s = { FNV_SEED, 1, 0, 0, 0 };
-    int read = !pl.cancel && songs(j->cd_num, &s);
+    pl_songs_t s = { FNV_SEED, 1, 0, 0, 0, j->cd_num };
+    int read = !pl.cancel && songs(&s);
     int made = read && file_size(named(path, stem(at, "pl", j->cd_num, s.hash), ".jpg")) < 0 &&
                four(&s, at, kills);
     j->hash = s.hash, j->songs = s.songs, j->read = read;

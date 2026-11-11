@@ -38,15 +38,17 @@ static int library_write(int (*stock)(void *, void *), void *a, void *b) {
  * refresh) and Recently Added each read the whole table. Update Local Music drops the table, and
  * its indexes with it, so a scan ends by adding them: on its own thread and stock's shared handle,
  * while the library still reads as scanning. A library no scan has run on since has none and reads
- * as before. A reader on another connection makes the create fail (no busy timeout), until the
- * next scan. time_create is desc: an index keeps equal keys in rowid order, as stock's sort did,
+ * as before. A reader on another connection makes the create fail (after the 500 ms the shared
+ * connection waits since playlist art, stock_db_open), until the next scan. time_create is desc:
+ * an index keeps equal keys in rowid order, as stock's sort did,
  * so songs of one second (a CUE image's tracks) keep their order newest first (Recently Added,
  * getAllMusic(3)); oldest first (getAllMusic(4)) library_query adds id for it. ponytail: the album groupings
  * (getAllAlbum, ALBUM_SQL, an artist's albums) walk songtable_album too, a row lookup each in
  * album order: over twice a scan's page reads (docs/internals.md).
  * A full scan (drops): toolsInitDatabase drops songtable and creates it again on the connection
- * the tools* functions share, which has no busy handler. A count still reading songtable on its
- * own connection made the drop fail, then the create, and stock skipped the update without a word.
+ * the tools* functions share, which waits only 500 ms for a reader (stock_db_open). A count
+ * still reading songtable on its own connection made the drop fail, then the create, and stock
+ * skipped the update without a word.
  * So the scan's thread waits for the counts first (library_counting), outside SQLite; Back ends
  * the wait and the scan. */
 static int library_scan(int (*stock)(void *, void *), void *a, void *b, int drops) {

@@ -493,11 +493,11 @@ int ratings_menu(void *ctx, void *event) {
 
 /* The card's copy of the ratings (docs/internals.md#ratings): the tables hold only hashes, so a
  * pass reads the paths and tags back from the library, a page of rows each quiet poll on this
- * thread (demo has no busy timeout, so a worker's read lock could make stock's own My Fav writes
- * fail), and writes the card once at the end, only if the file would change; the longest copy so
- * far is kept as .1, the one way back from a lost table. ponytail: every row against every rated
- * one, as the Ratings lists do; a rating whose song or album has left the library has no name to
- * write, and stays out until it is back. */
+ * thread (stock's shared connection waits only 500 ms for a reader, so a worker's longer read lock
+ * could still make stock's own My Fav writes fail), and writes the card once at the end, only if
+ * the file would change; the longest copy so far is kept as .1, the one way back from a lost table.
+ * ponytail: every row against every rated one, as the Ratings lists do; a rating whose song or
+ * album has left the library has no name to write, and stays out until it is back. */
 #define RC_FILE "/mnt/mmc/.ratings.tsv"
 #define RC_HEADER "#song\thearts\tpath\tcue_start\n#album\thearts\tname\talbum_artist\tfolder\n"
 #define RC_PAGE 64

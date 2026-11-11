@@ -17,17 +17,19 @@ from conftest import O, Deques
 
 class Songs(C.Structure):
     _fields_ = [('hash', C.c_uint), ('collect', C.c_int), ('n', C.c_uint), ('albums', C.c_void_p),
-                ('songs', C.c_uint)]
+                ('songs', C.c_uint), ('cd_num', C.c_int)]
 
 
 ROW = C.POINTER(C.c_char_p)
 
 
-def songs(fw, rows, collect=0):
-    """rows (id, fileurl[, album, songer, albumsonger]) through the query's row callback, in order."""
+def songs(fw, rows, collect=0, cd=3):
+    """rows (id, fileurl[, album, songer, albumsonger]) of playlist cd through the query's row callback,
+    in order, each padded to PL_SONGS' six columns (its cd_num last)."""
     row = fw.fn('playlist_art__song_row', C.c_int, C.c_void_p, C.c_int, ROW, ROW)
-    s = Songs(2166136261, collect, 0, None, 0)
+    s = Songs(2166136261, collect, 0, None, 0, cd)
     for r in rows:
+        r = (*r, *[''] * (5 - len(r)), str(cd))
         v = (C.c_char_p * len(r))(*(x.encode() if isinstance(x, str) else x for x in r))
         assert row(C.byref(s), len(r), v, None) == 0
     return s
@@ -125,12 +127,14 @@ def test_a_cancel_stops_the_read(fw):
     """A join waiting on Return: the worker's read stops at the next row, nothing named or marked."""
     row = fw.fn('playlist_art__song_row', C.c_int, C.c_void_p, C.c_int, ROW, ROW)
     pl = fw.var('playlist_art__pl', Pl)
-    s = Songs(2166136261, 1, 0, None, 0)
-    v = (C.c_char_p * 5)(b'101', b'/a.flac', b'A', b'X', b'')
+    s = Songs(2166136261, 1, 0, None, 0, 3)
+    v = (C.c_char_p * 6)(b'101', b'/a.flac', b'A', b'X', b'', b'3')
     pl.cancel = 1
-    assert row(C.byref(s), 5, v, None) == 1 and s.songs == 0
+    assert row(C.byref(s), 6, v, None) == 1 and s.songs == 0
     pl.cancel = 0
-    assert row(C.byref(s), 5, v, None) == 0 and s.songs == 1 and s.n == 1
+    assert row(C.byref(s), 6, v, None) == 0 and s.songs == 1 and s.n == 1
+    other = (C.c_char_p * 6)(b'102', b'/b.flac', b'B', b'Y', b'', b'4')
+    assert row(C.byref(s), 6, other, None) == 0 and s.songs == 1  # another playlist's row: dropped
 
 
 SOURCE = (pathlib.Path(__file__).parents[2] / 'patch/playlist_art.c').read_text()
@@ -207,8 +211,8 @@ def refresh(fw):
     """The worker's refresh (query with PL_HASHES through list_row): its result and table."""
     at = (ListHash * 128)()
     t = Lists(C.addressof(at), 0)
-    query = fw.fn('playlist_art__query', C.c_int, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p)
-    ok = query(PL_HASHES.encode(), 0, C.cast(fw.lib.playlist_art__list_row, C.c_void_p), C.byref(t))
+    query = fw.fn('playlist_art__query', C.c_int, C.c_char_p, C.c_void_p, C.c_void_p)
+    ok = query(PL_HASHES.encode(), C.cast(fw.lib.playlist_art__list_row, C.c_void_p), C.byref(t))
     return ok, t, at
 
 
@@ -298,9 +302,23 @@ def test_ids_far_apart_cost_no_empty_pages(fw, tmp_path):
     assert ok == 1 and t.n == 2 and [(at[i].cd_num, at[i].songs) for i in range(2)] == [(3, 2), (4, 1)]
     assert [q for q in sqls if q.startswith(b'select')] == [(PL_HASHES % 100).encode()]
     del sqls[:]
-    s = Songs(2166136261, 1, 0, None, 0)
-    assert fw.fn('playlist_art__songs', C.c_int, C.c_int, C.c_void_p)(3, C.byref(s)) == 1 and s.songs == 2
+    s = Songs(2166136261, 1, 0, None, 0, 3)
+    assert fw.fn('playlist_art__songs', C.c_int, C.c_void_p)(C.byref(s)) == 1 and s.songs == 2
     assert len([q for q in sqls if q.startswith(b'select')]) == 1
+
+
+def test_a_playlist_s_own_read_pages_every_row(fw, messy):
+    """songs(): cd_num is filtered in song_row, not in the SQL, so each statement covers PL_PAGE rows of the
+    table (a limit over cd_num's rows alone, with no index, would scan to the table's end under one lock,
+    and a cancel would wait it out), and the hash and count are its own rows' still."""
+    _, sqls = real_sqlite(fw, messy[0])
+    s = Songs(2166136261, 1, 0, None, 0, 3)
+    assert fw.fn('playlist_art__songs', C.c_int, C.c_void_p)(C.byref(s)) == 1
+    selects = [q for q in sqls if q.startswith(b'select')]
+    rows = sum(map(len, messy[1].values()))
+    assert len(selects) == rows // PL_PAGE + 1 and not any(b'cd_num=' in q for q in selects)
+    mine = songs(fw, messy[1][3])
+    assert (s.hash, s.songs, s.cd_num) == (mine.hash, mine.songs, 3) and s.songs == len(messy[1][3])
 
 
 def test_a_row_whose_art_is_gone_shows_the_placeholder(fw):

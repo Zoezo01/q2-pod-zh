@@ -123,7 +123,8 @@ typedef struct {
                            * then reads the half copies) */
     unsigned paint_at;    /* fx_window's last frame, ms */
     unsigned *more; /* going by letters, FX_POOL's slots past the shelf's; freed as they end */
-    int no_more;    /* their calloc failed: not asked again until letters end */
+    int no_more;    /* refused (MemAvailable short) or their calloc failed: not asked again until
+                       letters end */
 } cf_depth_t;
 extern cf_depth_t fx;
 /* Classic's flip to the tracks panel (flip_open): its frame, the panel as painted and the turn. */

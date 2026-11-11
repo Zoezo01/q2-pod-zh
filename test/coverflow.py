@@ -5942,7 +5942,7 @@ int sqlite3_close(void *db) { return 0; }
    cover.jpg; cd 0 (Q2 Pod's first playlist) and cd 4 to 100 300 songs each; 50 junk rows (cd_num NULL, -1, 999; fileurl NULL or empty).
    Their ids shuffled across the playlists: id 101 + k is row messy_at[k]. */
 enum { MESSY_ROWS = 20000 + 5000 + 300 + 98 * 300 + 50, MESSY_LIVE = 20 };
-static int messy, messy_at[MESSY_ROWS], messy_ui_execs, messy_reads0; /* reads: cd 0's own */
+static int messy, messy_at[MESSY_ROWS], messy_ui_execs, messy_reads; /* reads: a playlist's own */
 static int messy_cd(int r, int *null) { /* row r's cd_num; *null: none */
     static const int junk[5] = { 0, -1, 999, 5, 5 };
     *null = r >= MESSY_ROWS - 50 && (r - (MESSY_ROWS - 50)) % 5 == 0;
@@ -5984,27 +5984,25 @@ static void messy_on(void) {
     }
     messy = 1;
 }
-/* the messy table's first 1024 rows past id lo through row: every playlist's (id, cd_num, fileurl)
-   when cd < 0, else cd's (id, fileurl, album, songer, albumsonger); the rows given */
-static int messy_exec(int cd, unsigned lo, int (*row)(void *, int, char **, char **), void *ctx, int *rows) {
-    char cds[16], id[16], *v[5];
+/* the messy table's first 1024 rows past id lo through row, every playlist's: (id, cd_num, fileurl)
+   for the refresh, else (id, fileurl, album, songer, albumsonger, cd_num); the rows given */
+static int messy_exec(int songs, unsigned lo, int (*row)(void *, int, char **, char **), void *ctx, int *rows) {
+    char cds[16], id[16], *v[6];
     if (pthread_equal(pthread_self(), pl_ui)) ++messy_ui_execs;
-    messy_reads0 += cd == 0;
+    messy_reads += songs && lo == 100;
     for (int k = (int)lo - 100, null; k < MESSY_ROWS && *rows < 1024; ++k) {
         int c = messy_cd(messy_at[k], &null);
-        if (cd >= 0 && (null || c != cd)) continue;
         snprintf(cds, sizeof cds, "%d", c), snprintf(id, sizeof id, "%d", 101 + k);
         messy_row(messy_at[k], v);
-        v[0] = id, ++*rows;
-        char *three[3] = { id, null ? 0 : cds, v[1] };
-        if (cd < 0 ? row(ctx, 3, three, 0) : row(ctx, 5, v, 0)) return 4; /* SQLITE_ABORT */
+        v[0] = id, v[5] = null ? 0 : cds, ++*rows;
+        char *three[3] = { id, v[5], v[1] };
+        if (songs ? row(ctx, 6, v, 0) : row(ctx, 3, three, 0)) return 4; /* SQLITE_ABORT */
     }
     return 0;
 }
 /* The most rows a statement gave (the reads go in pages of rows, a statement each). */
 static int pl_page_most;
 static int pl_exec(void *db, const char *sql, int (*row)(void *, int, char **, char **), void *ctx, int *rows) {
-    int cd = -1;
     unsigned lo;
     char want[200], id[16];
     if (sscanf(sql, "select id,cd_num,fileurl from playlist where id>%u", &lo) == 1) {
@@ -6012,7 +6010,7 @@ static int pl_exec(void *db, const char *sql, int (*row)(void *, int, char **, c
         assert(!strcmp(sql, want) && lo >= 100);
         if (pl_busy) return 5; /* SQLITE_BUSY: stock writes the database */
         pl_scans += lo == 100;
-        if (messy) return messy_exec(-1, lo, row, ctx, rows);
+        if (messy) return messy_exec(0, lo, row, ctx, rows);
         for (int last = (int)lo, next; *rows < 1024; last = pl_rows[next].id) { /* every playlist's songs, in id order */
             next = -1;
             for (int i = 0; i < pl_n; ++i)
@@ -6026,16 +6024,18 @@ static int pl_exec(void *db, const char *sql, int (*row)(void *, int, char **, c
         }
         return 0;
     }
-    assert(sscanf(sql, "select id,fileurl,album,songer,albumsonger from playlist where id>%u and cd_num=%d", &lo, &cd) == 2);
-    snprintf(want, sizeof want, "select id,fileurl,album,songer,albumsonger from playlist where id>%u and cd_num=%d order by id limit 1024", lo, cd);
+    /* a playlist's own read: every playlist's rows, a page at a time, song_row keeping its own */
+    assert(sscanf(sql, "select id,fileurl,album,songer,albumsonger,cd_num from playlist where id>%u", &lo) == 1);
+    snprintf(want, sizeof want, "select id,fileurl,album,songer,albumsonger,cd_num from playlist where id>%u order by id limit 1024", lo);
     assert(!strcmp(sql, want) && lo >= 100);
-    if (messy) return messy_exec(cd, lo, row, ctx, rows);
+    if (messy) return messy_exec(1, lo, row, ctx, rows);
     for (int i = 0; i < pl_n && *rows < 1024; ++i) { /* kept in id order */
-        if (pl_rows[i].cd != cd || pl_rows[i].id <= (int)lo) continue;
-        snprintf(id, sizeof id, "%d", pl_rows[i].id);
-        char *v[5] = { id, (char *)pl_rows[i].url, (char *)pl_rows[i].album, (char *)pl_rows[i].artist, (char *)pl_rows[i].aa };
+        if (pl_rows[i].id <= (int)lo) continue;
+        char cds[16];
+        snprintf(id, sizeof id, "%d", pl_rows[i].id), snprintf(cds, sizeof cds, "%d", pl_rows[i].cd);
+        char *v[6] = { id, (char *)pl_rows[i].url, (char *)pl_rows[i].album, (char *)pl_rows[i].artist, (char *)pl_rows[i].aa, cds };
         ++*rows;
-        if (row(ctx, 5, v, 0)) return 4; /* SQLITE_ABORT */
+        if (row(ctx, 6, v, 0)) return 4; /* SQLITE_ABORT */
     }
     return 0;
 }
@@ -6446,8 +6446,8 @@ static int pl_files(const char *kind, int cd, int *empty) {
     if (d) closedir(d);
     return n;
 }
-/* The user's own picture is decoded up to 12 MP (PL_PICTURE_PX) by its header: 4000 x 3000 runs
-   ffmpeg, 4001 x 3000 is marked at once with no run and its 2x2 shows. One ffmpeg won't decode is
+/* The user's own picture is decoded up to 12 MP (PL_PICTURE_PX) by its header: 4080 x 3072 (a Pixel's
+   12 MP photo) runs ffmpeg, 4081 x 3072 is marked at once with no run and its 2x2 shows. One ffmpeg won't decode is
    marked too; one whose ffmpeg is killed (Big.png: memory short just then) is tried again at the
    next ask, never marked. */
 static void playlist_art_kills(void) {
@@ -6459,7 +6459,7 @@ static void playlist_art_kills(void) {
     pl_song(121, 2102, "PL A"), pl_song(122, 2103, "PL A"), pl_song(123, 2104, "PL A");
     pl_refresh();
     static const struct { int cd, w, h, decodes, runs, shown; const char *name; } cap[] = {
-        { 121, 4000, 3000, 1, 1, 1, "Edge" }, { 122, 4001, 3000, 1, 0, 0, "Over" }, { 123, 3000, 4000, 0, 1, 0, "Junk" } };
+        { 121, 4080, 3072, 1, 1, 1, "Edge" }, { 122, 4081, 3072, 1, 0, 0, "Over" }, { 123, 3000, 4000, 0, 1, 0, "Junk" } };
     for (int i = 0; i < 3; ++i) {
         snprintf(path, sizeof path, PEQ_ROOT "/mnt/mmc/_explaylist_data/%s.jpg", cap[i].name);
         pl_picture(path, cap[i].w, cap[i].h, cap[i].decodes);
@@ -6592,12 +6592,12 @@ static void playlist_art_messy(void) {
     assert(!pl_ui_opens && !messy_ui_execs && !tmp_files() && access(PL_NOTE, 0));
     /* The page shown again: every row asks, the art there now answers at once, nothing built again. */
     runs = ff_runs(), fopens = ui_fopens;
-    int reads0 = messy_reads0;
+    int reads = messy_reads;
     playlist_art_refresh();
     for (int cd = 0; cd <= 100; ++cd) playlist_art(cd, messy_name(cd, name), 1, url, sizeof url);
     assert(ui_fopens - fopens <= 2 * 101);
     run();
-    assert(messy_reads0 == reads0 && playlist_songs(0) == 300); /* cd 0 kept by the refresh: no build */
+    assert(messy_reads == reads && playlist_songs(0) == 300); /* cd 0 kept by the refresh: no build */
     assert(ff_runs() == runs && runs_of("Big.png") == big0);
     assert(!pl_ui_opens && !messy_ui_execs && !tmp_files());
     /* Return mid-build waits for the cover in hand at most: none after it, nothing named or marked. */
