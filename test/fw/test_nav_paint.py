@@ -1055,6 +1055,8 @@ class Canvas:
         fw.mock('canvas_measure_text', lambda c, s, n, *_: 10.0 * n)  # 10 px a character
         fw.mock('widget_load_image', self.load)
         fw.mock('canvas_draw_image', lambda c, bm, src, dst, *_: self.arts.append((self.loaded.get(bm), rect(dst))))
+        self.clip = (0, 0, 375, 480)  # the whole screen
+        fw.mock('canvas_get_clip_rect', lambda c, r, *_: C.memmove(r, struct.pack('<4i', *self.clip), 16) and 0)
 
     @property
     def fill(self):
@@ -2066,9 +2068,19 @@ def test_over_classic_s_now_playing_the_volume_s_percentage_takes_the_page_dots_
     assert world.fire(1) == RET_REPEAT and world.invalid == [(dialog, None)]
     canvas = Canvas(fw)
     vol_paint(fw, dialog, canvas)
-    assert [(t, r, f[1]) for t, r, _, f in canvas.texts] == [('25%', (0, 8 + 182 + 5 - 8, 375, 16), O['NP_TIMES_PX'])]
+    px = O['VOL_PCT_PX']
+    assert px > O['NP_TIMES_PX']  # larger than the times it sits above
+    assert [(t, r, f[1]) for t, r, _, f in canvas.texts] == [('25%', (0, 8 + 182 + 5 - px // 2 - 2, 375, px + 4), px)]
     world.invalid.clear()
     assert world.fire(1) == RET_REPEAT and world.invalid == [] and not world[dots].visible
+    world.set(vol, 'value', 40)  # a repaint of the bar's rows alone draws the bar at 50%, the number clipped away
+    canvas = Canvas(fw)
+    canvas.clip = (0, 240, 375, 30)
+    vol_paint(fw, dialog, canvas)
+    assert world.fire(1) == RET_REPEAT and world.invalid == [(dialog, None)]  # so the poll repaints it whole
+    vol_paint(fw, dialog, Canvas(fw))
+    world.invalid.clear()
+    assert world.fire(1) == RET_REPEAT and world.invalid == []
     world.window('home_page')  # the dialog gone: the dots are back and their page repainted
     assert world.fire(1) == RET_OK and world[dots].visible and world.invalid == [(page, None)]
     assert vd('vol_dots', C.c_void_p).value is None

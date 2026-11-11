@@ -141,6 +141,7 @@
 #define CONFIRM_TOP 208
 #define CONFIRM_PROMPT_PX 24
 #define NP_TIMES_PX 14 /* Now Playing's times, and the volume text in their place */
+#define VOL_PCT_PX 20 /* Classic's volume percentage, in the page dots' place */
 #define NP_ART_RADIUS 12 /* Now Playing's art corners (paint_cover), as stock's play_defaultcover scaled to the art */
 /* Classic's Now Playing, an iPod classic's (coverflow.c slant_render, np_bar.c paint_scrubber),
  * fitted to Apple's own 320 x 240 capture: the art's far edge SLANT_FAR/256 of its near one (118 of
