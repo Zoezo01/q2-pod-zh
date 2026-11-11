@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from build import ROOT, REPO, VERSION, BETA, TAG, ZIP_SHA, DEMO_SHA, build, check, need, run, sha, source_sha256
+from build import ROOT, REPO, VERSION, BETA, TAG, ZIP_SHA, DEMO_SHA, build, check, need, run, sha, source_sha256, version_ok
 
 # Network Update (patch/netupdate.c) fetches releases/latest/download/<ASSET>, so the name can't
 # carry the version.
@@ -65,6 +65,7 @@ def validate(directory):
 
 
 def package(stock, out):
+    check(version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     check(not out.exists(), 'Release output must be a fresh directory')
     check(not run('git', '-C', ROOT, 'status', '--porcelain', '--', 'patch', 'tools', 'assets', 'docs', 'test', 'requirements.txt').strip(),
           'Commit the build inputs before packaging')

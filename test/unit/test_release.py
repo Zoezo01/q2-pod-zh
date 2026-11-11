@@ -177,6 +177,15 @@ def test_package_wants_a_fresh_directory(repo, monkeypatch, tmp_path):
     assert not p.calls
 
 
+def test_package_wants_three_single_digits(repo, monkeypatch, tmp_path):
+    # refused before the output folder is made, so a rerun with a fixed VERSION finds it fresh
+    p = Packaging(monkeypatch)
+    monkeypatch.setattr(release, 'VERSION', '1.76')
+    with pytest.raises(ValueError, match='^VERSION must be three single digits'):
+        release.package(pathlib.Path('stock.zip'), tmp_path/'out')
+    assert not (tmp_path/'out').exists() and not p.calls
+
+
 def test_package_wants_committed_inputs(repo, monkeypatch, tmp_path):
     p = Packaging(monkeypatch, status=' M tools/build.py\n')
     with pytest.raises(ValueError, match='^Commit the build inputs before packaging$'):
