@@ -993,8 +993,9 @@ def dev_build():
     every worktree of this checkout shares, so a second worktree's first build is not the first's V001i.
     Each file is replaced whole; an empty or unreadable one (a power loss mid-write) counts as 0."""
     counters = [ROOT/'.build-number']
-    try: counters.append(ROOT/run('git', '-C', ROOT, 'rev-parse', '--git-common-dir').strip()/'build-number')
-    except (OSError, subprocess.CalledProcessError): pass  # a source archive: the checkout's own counter
+    if (ROOT/'.git').exists():  # not an enclosing repo's, for a source archive unpacked inside one
+      try: counters.append(ROOT/run('git', '-C', ROOT, 'rev-parse', '--git-common-dir').strip()/'build-number')
+      except (OSError, subprocess.CalledProcessError): pass
     def read(counter):
         try: return int(counter.read_text())
         except (OSError, ValueError): return 0

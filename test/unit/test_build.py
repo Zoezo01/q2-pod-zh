@@ -55,6 +55,7 @@ def test_dev_build_counts_across_worktrees(tmp_path, monkeypatch):
     tags = []
     for checkout in ('a', 'b', 'a'):
         (tmp_path/checkout).mkdir(exist_ok=True)
+        (tmp_path/checkout/'.git').write_text('gitdir: elsewhere\n')  # a worktree's .git is a file
         monkeypatch.setattr(build, 'ROOT', tmp_path/checkout)
         tags.append(build.dev_tag(build.dev_build()))
     assert tags == ['V001i', 'V002i', 'V003i']
@@ -68,6 +69,13 @@ def test_dev_build_after_an_empty_counter(tmp_path, monkeypatch):
     monkeypatch.setattr(build, 'ROOT', tmp_path)
     monkeypatch.setattr(build, 'run', refuse_git)  # a source archive: not a git checkout
     assert build.dev_build() == 1 and (tmp_path/'.build-number').read_text() == '1\n'
+
+
+def test_dev_build_ignores_an_enclosing_repository(tmp_path, monkeypatch):
+    # A source archive unpacked inside another repo has no .git of its own: git must not be asked.
+    monkeypatch.setattr(build, 'ROOT', tmp_path)
+    monkeypatch.setattr(build, 'run', lambda *args: pytest.fail('asked git'))
+    assert build.dev_build() == 1 and not (tmp_path/'.git').exists()
 
 
 def test_jumps():
