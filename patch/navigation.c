@@ -9858,15 +9858,16 @@ static void bt_volume_poll(void) {
  * keeps its own bookkeeping. A dark wheel turn keeps stock's pace, DARK_TURN_MS on from each tick
  * (tick_gate): an idling pass dispatched every tick it had slept through at once, so a dark turn
  * clicked in bursts and stepped the volume in jumps (#303). ponytail: a turn's first ticks still
- * wait out one idle and arrive together, to one click (tone_dark); ending the idle on a key needs a
- * wait stock has no import for (no pipe; sem_timedwait is wall-clock, a clock set back hangs the
- * pass). The first pass with it back on repaints every window once, so nothing drawn while dark,
- * or only partly, stays on screen until the next input; after a centre press woke it, it also
- * restarts Wake's window for a dropped press (woke_at). With the screen on, a pass idles
- * IDLE_SLEEP_MS once input and window animations have been still for IDLE_MS, except while Now
- * Playing animates or the volume row's push runs (it leaves 5.3 s after the last key). */
+ * wait out one idle and arrive together, to one click (tone_dark). Ending the idle on a key
+ * instead is select() on a datagram socket that ringnav_queue_event sends to, a send on every
+ * input thread; build it if the first tick's wait ever shows. The first pass with it back on
+ * repaints every window once, so nothing drawn while dark, or only partly, stays on screen until
+ * the next input; after a centre press woke it, it also restarts Wake's window for a dropped press
+ * (woke_at). With the screen on, a pass idles IDLE_SLEEP_MS once input and window animations have
+ * been still for IDLE_MS, except while Now Playing animates or the volume row's push runs (it
+ * leaves 5.3 s after the last key). */
 static volatile int dark_quiet; /* read by ringnav_dark_usleep on stock's threads */
-static int tone_dark;           /* a click sounded this pass, the screen off (ringnav_buzzer) */
+static int tone_dark;           /* this pass clicked with the screen off (ringnav_buzzer) */
 int ringnav_dark_usleep(unsigned us) {
     return usleep(dark_quiet && us < DARK_POLL_US ? DARK_POLL_US : us);
 }
@@ -9914,7 +9915,6 @@ static void thumb_poll(void) {
 }
 
 int ringnav_sleep(void *loop) {
-    tone_dark = 0;
     stale_heal();
     quick_poll();
     headset_poll();
@@ -9943,7 +9943,7 @@ int ringnav_sleep(void *loop) {
                     airplayGetFlag() != 2 && (signed char)bt__recv_pageflag != 2 &&
                     time_now_ms() - st.wake_at >= WAKE_MS;
         dark_quiet = quiet;
-        if (!st.tick_at || (unsigned)time_now_ms() - st.tick_at >= DARK_TURN_MS)
+        if ((unsigned)time_now_ms() - st.tick_at >= DARK_TURN_MS)
             sleep_ms(quiet ? DARK_IDLE_SLEEP_MS : SCREEN_OFF_SLEEP_MS);
     } else if (st.dark) {
         dark_quiet = 0;
@@ -9956,6 +9956,7 @@ int ringnav_sleep(void *loop) {
                !window_manager_is_animating(window_manager()) && !np_animating() &&
                !coverflow_turning())
         sleep_ms(IDLE_SLEEP_MS);
+    tone_dark = 0; /* after the polls: a click of theirs is this pass's too */
     return stock_sleep_trampoline(loop);
 }
 
@@ -10138,7 +10139,7 @@ static int tick_gate(void *e) {
     unsigned now = (unsigned)time_now_ms();
     if (!muted && (int)(now - wheel_frame_at) < WHEEL_FRESH_MS) {
         st.tick_drop &= ~bit;
-        st.tick_at = now | 1; /* never 0 */
+        st.tick_at = now;
         return 0;
     }
     st.tick_drop |= bit;
@@ -10234,9 +10235,7 @@ int ringnav_wm_paint(void *wm) {
  * Key Tone off is still silent.
  * The command waits out the buzzer and the MCU's park (tools/mcu_pwm_clock.c), so it runs on a
  * worker, not the UI thread; a click while one sounds is dropped, as the buzzer is busy anyway.
- * With the screen off a pass clicks once (tone_dark, which ringnav_sleep clears): the ticks a dark
- * idle slept through are dispatched together, and the first, loading the volume dialog, outlasts
- * its own click, so the second clicked 16 ms behind it (#303).
+ * With the screen off a pass clicks once (tone_dark; ringnav_sleep).
  */
 static volatile int tone_busy;
 static void *tone_worker(void *on) {
@@ -10250,11 +10249,12 @@ int ringnav_buzzer(int on) {
         return 0;
     unsigned long tid;
     tone_busy = 1;
-    tone_dark = !g_backlight_status;
-    if (pthread_create(&tid, 0, tone_worker, (void *)(long)on))
+    if (pthread_create(&tid, 0, tone_worker, (void *)(long)on)) {
         tone_busy = 0;
-    else
+    } else {
         pthread_detach(tid);
+        tone_dark = !g_backlight_status;
+    }
     return 0;
 }
 

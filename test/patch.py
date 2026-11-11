@@ -1632,6 +1632,11 @@ def long_return(m):
 def destinations(m):
     return [c for c in m.calls if c[0] in ('navigator_back_to_home', 'navigator_switch_to_with_context')]
 
+def ui_pass(m, gap=0):
+    """One UI loop pass (ringnav_sleep), gap ms on; stock's own sleep is stubbed."""
+    m.handlers[HOOKS['main_loop_sleep_default'][0] + 12] = 'stock_sleep'
+    assert m.call(address=HOOKS['main_loop_sleep_default'][0], args=(0x1234, 0, 0, 0), gap=gap) == 0
+
 for page in ('home_page', 'folder_page', 'playing_page', 'sysset_page'):
     m = long_machine(); m.page(page)
     # No playback data is initialized: the switch must work with an empty queue as well.
@@ -13433,8 +13438,15 @@ for flags in (dict(g_backlight_status=0),dict(g_backlight_status=0,g_keylock_fla
     m,w,es=long_list(8,audible(Machine()))
     for flag,value in flags.items(): m.byte(syms[flag],value)
     locked='g_keylock_flag' in flags
-    assert [tick(m),tick(m,CENTER)]==stock((NEXT,CENTER),**flags)==[0 if locked else 1,1],flags
+    first=tick(m); ui_pass(m)  # each key its own pass, as its 1000 ms gap makes it: dark, a pass clicks once
+    assert [first,tick(m,CENTER)]==stock((NEXT,CENTER),**flags)==[0 if locked else 1,1],flags
     assert m.selected(w)==0; passed()
+# Screen off, the ticks one idle slept through are dispatched in one pass and click once (tone_dark); the
+# next pass clicks again. Lit, each clicks, as stock.
+for lit,want in ((0,[1,0,1]),(1,[1,1,1])):
+    m,w,es=long_list(8,audible(Machine())); m.byte(syms['g_backlight_status'],lit)
+    got=[tick(m),tick(m)]; ui_pass(m); assert got+[tick(m)]==want,lit
+passed()
 # Between a press and its release the page may change. List to volume: the silenced press is
 # spent, the volume step is stock's, and the next press there clicks. Volume to list: stock
 # already clicked, so the row change adds none.
@@ -19754,6 +19766,13 @@ m.call(address=inp,args=(m.wm,m.event,0,0),gap=0); assert m.pass_(1)[1]==[]; pas
 m=PowerMachine(); m.handlers[inp+12]='stock_input'; m.animating=1; m.pass_(1); m.pass_(O['IDLE_MS']); m.animating=0; assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]
 m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0); assert m.pass_(1)[1]==[O['IDLE_SLEEP_MS']]
 m.word(payload_syms['wheel_frame_at'],m.now); m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0); assert m.pass_(1)[1]==[]; passed()
+# A dark wheel turn keeps stock's pace: no idle for DARK_TURN_MS after a tick tick_gate passes, the same
+# millisecond included; a tick it drops (no ring frame) leaves the dark idle.
+m=PowerMachine(); m.handlers[inp+12]='stock_input'; m.byte(syms['g_backlight_status'],0); assert m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']]
+m.word(payload_syms['wheel_frame_at'],(m.now-O['WHEEL_FRESH_MS'])&0xffffffff)  # no finger behind this one
+m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0,clear=False); assert m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']]
+m.word(payload_syms['wheel_frame_at'],m.now); m.call(address=inp,args=(m.wm,m.event,0,0),event_type=O['EVT_KEY_DOWN'],gap=0,clear=False)
+assert m.pass_(0)[1]==[] and m.pass_(O['DARK_TURN_MS']-1)[1]==[] and m.pass_(1)[1]==[O['SCREEN_OFF_SLEEP_MS']]; passed()
 # Now Playing keeps stock's pace only while its visualizer repaints; idle, it idles like any page.
 class Live(PowerMachine):
     def hook(self,u,address,size,unused):

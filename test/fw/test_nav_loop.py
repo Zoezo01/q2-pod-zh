@@ -2429,15 +2429,10 @@ def test_dark_but_busy_the_loop_idles_short(fw, stock_bytes, st, why):
 
 def test_a_dark_wheel_turn_keeps_stocks_pace(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes, lit=False)
-    st('tick_at', C.c_uint).value = loop.clock.now | 1  # tick_gate's stamp, a ms on
-    assert loop(O['DARK_TURN_MS']) == [] and loop.dark_quiet() == 1
+    st('tick_at', C.c_uint).value = loop.clock.now  # tick_gate's stamp, this very millisecond
+    assert loop() == [] and loop.dark_quiet() == 1
+    assert loop(O['DARK_TURN_MS'] - 1) == []
     assert loop(1) == [O['DARK_IDLE_SLEEP_MS']]
-
-
-def test_a_clock_near_zero_is_no_dark_turn(fw, stock_bytes, st):
-    loop = Loop(fw, stock_bytes, lit=False)
-    loop.clock.now = O['DARK_TURN_MS'] - 1
-    assert loop() == [O['SCREEN_OFF_SLEEP_MS']]  # it idles; short, as Wake's window is timed from zero too
 
 
 def test_dark_a_pass_clicks_once(fw, stock_bytes):
@@ -2447,6 +2442,15 @@ def test_dark_a_pass_clicks_once(fw, stock_bytes):
     loop()
     buzzer.click(1)
     assert buzzer.clicks() == [1, 1]
+
+
+def test_a_dark_click_that_cant_start_leaves_the_pass_its_click(fw, stock_bytes):
+    Loop(fw, stock_bytes, lit=False)
+    buzzer = Buzzer(fw, 'fail', lit=False)
+    buzzer.click(1)
+    buzzer.mode = 'run'
+    buzzer.click(1)
+    assert buzzer.clicks() == [1]
 
 
 def test_the_first_lit_pass_repaints_the_whole_screen_once(fw, stock_bytes, st):
@@ -2554,7 +2558,7 @@ def test_a_wheel_tick_needs_a_finger_on_the_ring(fw, stock_bytes, st, age, passe
     keys(DOWN, KEY_NEXT), keys(UP, KEY_NEXT, 20)
     assert keys.stock == ([(DOWN, KEY_NEXT), (UP, KEY_NEXT)] if passes else [])
     assert (st('last_input', C.c_uint).value == keys.clock.now) == passes  # a dropped tick doesn't time the idle
-    assert (st('tick_at', C.c_uint).value == keys.clock.now - 20 | 1) == passes  # nor a dark turn's pace
+    assert (st('tick_at', C.c_uint).value == keys.clock.now - 20) == passes  # nor a dark turn's pace
 
 
 def test_a_dropped_ticks_release_goes_with_it_even_once_a_finger_is_back(fw, stock_bytes):
