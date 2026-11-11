@@ -6,7 +6,7 @@
   - Playlists: a playlist's songs can be sorted by name, with stock V1.34's **Sort**. The order they were added in stays the default, and **Edit Playlist** always shows that order.
   - Library: the album view (list or grid) and the order of **Songs** are now kept after a restart.
   - USB: **USB mode: Audio and DAC** is now stock V1.34's own, which also takes a host that never reads the card, such as a Nintendo Switch 2.
-  - MQA: stock V1.34's player no longer decodes MQA, so MQA files play as ordinary FLAC whatever **MQA** is set to.
+  - Playback: the **MQA** setting is gone. Stock V1.34's player no longer decodes MQA, so the setting did nothing; MQA files play as ordinary FLAC.
   - Settings: stock V1.34's **Wheel Function**, **Show Navigation Bar**, Album Wall, Spectrum and VU aren't offered: Q2 Pod's wheel, themes and Cover Flow already do those jobs. About no longer shows stock V1.34's thanks text.
   - View Queue: while a shuffle is on it lists the next 500 songs. It used to stop at 100.
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
@@ -26,6 +26,9 @@
   - Status bar: plugging in or unplugging the charger turns the whole battery percentage green or back to white. Only its last digit used to change, until the screen was turned off and on.
   - Streaming: under **Theme: Classic**, the large icon beside the list (TIDAL, AirPlay, Spotify, Internet Radio, Configuration) is sharp. It was an enlarged copy of the small row icon and looked blurry. A card app's own icon is shown as before.
   - Scrobbling: a listen the card has no room for is no longer half-written to `.scrobbler.log`, where it spoiled the next listen too. A damaged line in the log no longer stops every later **Upload Scrobbles**, and a very large log is uploaded a megabyte at a time instead of being held in memory whole.
+  - Now Playing: **Artist info** on the ⋯ page no longer crashes the Q2 on Return when the song was played from an artist's page. The artist and album pages underneath now close first, so Return goes back to Now Playing.
+  - Now Playing: holding a finger on the visualizer no longer makes it stutter. It used to redraw only about once a second until the finger lifted, and Halo lost its artwork.
+  - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
