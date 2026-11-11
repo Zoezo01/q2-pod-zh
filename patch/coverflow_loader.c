@@ -207,7 +207,7 @@ void ld_take(int s, int i, int a) {
 /* At rest under a thumb theme (coverflow_wheel_poll's idle passes): the half copies the cache still
  * lacks, made one a pass from the cover, no sooner than HALF_GAP_MS after the last (a decode is 6
  * to 9 ms of the UI thread), HALF_LOOK albums looked at a pass at most, none with the card short of
- * MIN_FREE_MB, and none outside Big Library Mode; from the first album each time the page opens,
+ * MIN_FREE_MB, and none outside Large Library Mode; from the first album each time the page opens,
  * done at the last. Each is decoded into a texture's worth of heap of its own, freed once written.
  * The only place they are written: never in a frame. */
 #define HALF_LOOK 32

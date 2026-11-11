@@ -393,7 +393,7 @@ def test_pod_settings_defaults(fw):
     assert fw.fn('ringnav_artist_view', C.c_int)() == 1  # Artist albums defaults to Coverflow
     assert [fw.fn(name, C.c_int)() for name in ('ringnav_year_old', 'ringnav_artist_az',
                                                 'ringnav_lock_clock', 'ringnav_bt_resume',
-                                                'ringnav_big_library')] == [0] * 5  # Big Library Mode off
+                                                'ringnav_big_library')] == [0] * 5  # Large Library Mode off
 
 
 def test_pod_settings_read_their_keys_once(fw):

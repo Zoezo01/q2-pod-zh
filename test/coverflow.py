@@ -625,7 +625,7 @@ static int rank_year[16]; /* the Year query's year column, each ranked row's (sp
 /* navigation.c's Year order: newest first (0) or oldest. */
 static int year_old;
 int ringnav_year_old(void) { return year_old; }
-/* navigation.c's Big Library Mode: letters, years and half copies; main turns it on for their tests */
+/* navigation.c's Large Library Mode: letters, years and half copies; main turns it on for their tests */
 static int big_library;
 int ringnav_big_library(void) { return big_library; }
 static int artist_view;
@@ -3625,7 +3625,7 @@ static void thumb_shipped(void) {
     cf_frame_window(0);
 
     /* Under big_jump_at, however long: albums, never letters. That is a spin at 1.7.6's trigger,
-       jump_at up to under big_jump_at, held far past jump_ms: Big Library Mode off, it goes by
+       jump_at up to under big_jump_at, held far past jump_ms: Large Library Mode off, it goes by
        letters (on, a false start costs till the lift, so it takes a faster spin). */
     int l0 = letters;
     const float under[] = { 30, shipped.jump_at + 8, shipped.big_jump_at - 5 };
@@ -3682,7 +3682,7 @@ static void thumb_shipped(void) {
     #undef AT
 }
 
-/* ---- Big Library Mode off: 1.7.6's letters, as 1.7.6's own tests had them (Classic's shipped
+/* ---- Large Library Mode off: 1.7.6's letters, as 1.7.6's own tests had them (Classic's shipped
    numbers): after the dwell the covers flow on and each letter is named on the moving row,
    jump_pace apart, shown for LETTER_MS; slowing, turning back or a lift ends them. No held row, no
    entry or fold, no letters' slots or loader. ---- */
@@ -3712,7 +3712,7 @@ static void letters_176(void) {
     top_window = page;
     th_pass(0, 17);
     #define AT() ((float)*index + th[T_GOAL]) /* the goal in albums, wherever SLIDE_INDEX is */
-    /* none of Big Library Mode's: no held row, entry or fold, no letters' slots or loader */
+    /* none of Large Library Mode's: no held row, entry or fold, no letters' slots or loader */
     #define PLAIN() (!th[T_JUMP] && !th[T_LEAN] && !th[T_ENTER] && !th[T_FOLD] && !letter_held && !cf_fx_letters())
 
     /* At jump_at for jump_ms, letters: each names a letter's first album, its letter shown, and no
@@ -5012,7 +5012,7 @@ static void unlettered_sorts(void) {
     classic = 1, frame_fail = 0, square_art = 1, pressed = 0;
     open_page();
     assert(saved_sort() == 0);
-    big_library = 0; /* Big Library Mode off: Year at the cap, far past jump_ms, stays albums (Album: letters_176) */
+    big_library = 0; /* Large Library Mode off: Year at the cap, far past jump_ms, stays albums (Album: letters_176) */
     while (saved_sort() != 6) press_sort();
     at_cap(0);
     while (saved_sort() != 0) press_sort();
@@ -5256,7 +5256,7 @@ static void half_art(void) {
        it is. Done, an idle pass returns before it asks the card for its space. */
     coverflow_paint(s, canvas);
     assert(!halves(0) && tex_slots == 16); /* fx_base's 15 and the placeholder: no slot of the copies' */
-    big_library = 0; /* Big Library Mode off: the idle passes make none */
+    big_library = 0; /* Large Library Mode off: the idle passes make none */
     for (int i = 0; i < 3 * albums; ++i) th_pass(0, 17);
     assert(!halves(0));
     /* Opened with it off and turned on: the copies start at once, no reopen. */

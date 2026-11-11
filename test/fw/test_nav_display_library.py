@@ -689,7 +689,7 @@ def test_cover_flow_page_holds_artist_view_sort_refresh_and_big_library_mode(fw)
     assert page.title() == 'Cover Flow'
     found = titles(page.view())
     assert len(found) == 4 and found[0] == 'Artist View' and found[1].startswith('Cover Flow ') and found[2] == 'Refresh Cover Flow'
-    assert found[3] == 'Big Library Mode'
+    assert found[3] == 'Large Library Mode'
 
 
 class Settings:

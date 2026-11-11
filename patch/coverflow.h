@@ -139,7 +139,7 @@ typedef struct {
     float pos, vel, goal, lead, lead_v, rate, tau, ticks, seen, seen_lead, stretch;
     unsigned at, tick_at, edge_at, letter_at;
     int raw, on, finger, held, dir, dead, early, clicked, bounced, capped, jump;
-    /* Big Library Mode off: 1.7.6's letters (th_beat), each named on the moving row from the last
+    /* Large Library Mode off: 1.7.6's letters (th_beat), each named on the moving row from the last
      * one named (jump_to), jump_pace apart (letter_at) */
     int beat, jump_to;
     int lean, fold;   /* the way the row leans (1: as right-hand covers; against th.dir as letters

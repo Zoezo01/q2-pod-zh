@@ -1009,7 +1009,7 @@ static unsigned group(int i) {
 }
 
 /* Letters mean something on w: the whole library's covers, sorted by album or artist; years, by
- * year, in Big Library Mode. */
+ * year, with Large Library Mode on. */
 int lettered(void *w) {
     return w && w == cf.slide && cf.screen == COVERS &&
            (cf.sort <= SORT_ARTIST || (cf.sort == SORT_YEAR && ringnav_big_library())) &&
@@ -2033,7 +2033,7 @@ int fx_slot(int album) {
     return free;
 }
 
-/* In Big Library Mode a frame's loads stop at FX_BUDGET_MS, FX_ENTER_MS in the entry and
+/* With Large Library Mode on a frame's loads stop at FX_BUDGET_MS, FX_ENTER_MS in the entry and
  * FX_LETTERS_MS going by letters, or FX_SLACK_MS in a frame FX_LATE_MS or more after the last
  * (docs/internals.md#coverflow-thumb); off, 1.7.6's FX_DECODES a frame. */
 #define FX_DECODES 2

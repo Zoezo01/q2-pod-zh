@@ -157,8 +157,8 @@ static int entry_window(const entry_t *n) {
     while ((n->focus - a) * dir > 0 && !entry_shows(n, a)) a += dir;
     return a + dir * CF_WIDE_REACH;
 }
-/* The row's window: entry_window's into letters, held, and at speed in Big Library Mode; at speed
- * with it off, 1.7.6's, round the facing cover */
+/* The row's window: entry_window's into letters, held, and at speed with Large Library Mode on; at
+ * speed with it off, 1.7.6's, round the facing cover */
 static int row_window(const entry_t *n) {
     return th.jump || ringnav_big_library() ? entry_window(n) : cf_round(n->lead);
 }

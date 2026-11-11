@@ -1586,7 +1586,7 @@ def test_homes_library_pane_shows_no_letter(fw, ui):
     assert letter(fw, page, canvas) == []
 
 
-@pytest.mark.parametrize('big', [b'0', b'1'])  # Big Library Mode off or on: Cover Flow's own letters change, not this one
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Large Library Mode off or on: Cover Flow's own letters change, not this one
 def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
     Config(fw, BIGLIBRARY=big)
     assert fw.fn('ringnav_big_library', C.c_int)() == int(big)
@@ -1604,7 +1604,7 @@ def test_coverflows_album_tracks_show_no_letter(fw, ui, big):
     assert letter(fw, page, canvas) == ['S']  # the same spin with no album open keeps its letter
 
 
-@pytest.mark.parametrize('big', [b'0', b'1'])  # Big Library Mode off or on
+@pytest.mark.parametrize('big', [b'0', b'1'])  # Large Library Mode off or on
 @pytest.mark.parametrize('name, cls', [('albuminfo_page', 0xff10), ('albuminfo_page', 0xff11),
                                        ('playerjumpinfo_page', 0xff10)])
 def test_an_albums_songs_in_the_library_show_no_letter(fw, ui, name, cls, big):
