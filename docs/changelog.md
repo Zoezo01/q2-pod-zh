@@ -38,6 +38,8 @@
   - Cover Flow: frames draw faster, about 50 a second where there were about 32.
   - Library: in Classic with Row Art on, a playlist shows art on its row, as an album does: its own picture, `name.jpg` or `name.png` in `_explaylist_data` on the card, up to 12 megapixels, else the covers of the first four albums with art in the order its songs were added.
   - Cover Flow: Display → Cover Flow's **Playlist View**, List by default, set to Cover Flow opens Playlists as covers of the playlists' art, in every theme, with Centre to open a playlist and the hold's **New Playlist** and, under Classic, **Edit Playlists…**. Under Classic, Centre turns a playlist's cover over to its songs; a playlist of more than 200 songs opens its list instead, as in Minimal and Modern. A song played from a cover has no **Delete** in Now Playing's More, where it would delete the song from the library rather than the playlist.
+  - Volume: turning the volume with the screen off no longer leaves a wrong number on the volume bar after waking. In 1.8.0 BETA 2 the bar jumped back, 3 seconds after the last turn, to the volume from before the turn, while the sound stayed where the wheel left it.
+  - System: Quick Settings can no longer be pulled down over the **Shut Down?** prompt or any other prompt. Return there used to leave the prompt on screen with buttons that did nothing, and only Now Playing worked until a restart.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
