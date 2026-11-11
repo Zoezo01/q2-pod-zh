@@ -876,8 +876,9 @@ void addon_card_away(void) {
 }
 
 /* The Apps page (netupdate.c) replaces or removes the files in dir (".<id>"): the app there, if
- * one, forgotten on the UI thread, so its row starts the new one (or none); then, on the Apps
- * page's worker, asked to end and waited for, so its files are closed before they move. */
+ * one, asked to end and waited for on the Apps page's worker, so its files are closed before they
+ * move; then, once they moved or went, forgotten on the UI thread, so its row starts the new one
+ * (or none). An update that failed or was cancelled before that leaves it running and tracked. */
 void addon_forget(const char *dir) {
     for (int i = 0; dir && dir[0] == '.' && i < ap.n; ++i)
         if (!strcmp(ap.a[i].id, dir + 1))

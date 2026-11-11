@@ -750,6 +750,8 @@ static int sh_wait(const void *unused) {
     pthread_join(sh.thread, 0);
     int job = sh.job, r = sh.result, i = sh.app, manual = sh.manual;
     sh.job = 0;
+    /* its files replaced or gone: a failed or cancelled update's app runs on, still tracked */
+    if (job == JOB_REMOVE || (job == JOB_INSTALL && r == SH_OK)) addon_forget(apps[i].dir);
     if (job == JOB_CHECK) /* the rows built again: the list may have changed */
         memcpy(apps, sh.next, sizeof apps), shelf_n = sh.n, sh.rows = -1;
     if (job == JOB_ERASE || (job != JOB_CHECK && is(i, "spotify")))
@@ -780,7 +782,6 @@ static int sh_wait(const void *unused) {
 static void sh_start(int job, int i) {
     if (job == JOB_ERASE || (is(i, "spotify") && job != JOB_CHECK))
         spot_stop(); /* on this thread: spotify.c's state too */
-    if (job == JOB_INSTALL || job == JOB_REMOVE) addon_forget(apps[i].dir);
     sh.job = job, sh.app = i, sh.cancel = sh.percent = sh.result = sh.manual = 0, sh.running = 1;
     sh.stage = job == JOB_REMOVE ? 4 : 0;
     if (pthread_create(&sh.thread, 0, sh_worker, 0)) {
