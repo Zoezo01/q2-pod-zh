@@ -2259,6 +2259,23 @@ def test_album_only_keeps_the_album_s_tracks_in_order_and_where_the_track_went(f
     assert len(q.lists) == 2
 
 
+def test_album_only_keeps_the_unknown_album_card_s_songs_and_the_resumed_one(fw):
+    """Stock's resume finds every untagged song (getMusicByAlbum(NULL), without MUSIC_WHERE): the card's are kept,
+    spoken and scoped-out ones are not, unless one is what was playing."""
+    Files(fw, {'/mnt/data/q2-library-scope': b'0/mnt/mmc/Hidden\n'})
+    fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
+    q = Deques(fw)
+    recs = [Rec(path='/mnt/mmc/Loose A/x.flac'), Rec(path='/mnt/mmc/Podcasts/Show/1.mp3'),
+            Rec(path='/mnt/mmc/Hidden/h.flac'), Rec(path='/mnt/mmc/Loose B/y.flac'), Rec(path='/mnt/mmc/Loose/b.m4b'),
+            Rec(path='/mnt/mmc/audiobooks/Book/1.mp3'), Rec('A', '/mnt/mmc/A/1.flac')]
+    only = fw.fn('album_only', C.c_int, C.c_void_p, C.c_void_p, C.c_int)
+    listed = q.new([r.p for r in recs])
+    assert only(listed, recs[3].p, 3) == 1 and q[listed] == [recs[0].p, recs[3].p]
+    for i, kept in ((1, [0, 1, 3]), (2, [0, 2, 3]), (4, [0, 3, 4])):  # what was playing stays, whatever the card shows
+        listed = q.new([r.p for r in recs])
+        assert only(listed, recs[i].p, i) == kept.index(i) and q[listed] == [recs[k].p for k in kept]
+
+
 @pytest.fixture(scope='module')
 def style(library):
     """cf_style_t's field offsets in this build."""

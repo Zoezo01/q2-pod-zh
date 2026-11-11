@@ -1224,17 +1224,24 @@ int coverflow_split(void *list) {
     deque_destroy(out);
     return (int)deque_size(list);
 }
-/* list down to r's album (album_cmp), in order and in place, unless none is; then at's index.
- * navigation.c's album pages and playback.c's stock resume. */
+/* list down to r's album (album_cmp), in order and in place, unless none is; then at's index. An
+ * untagged r keeps every untagged song the card lists (spoken and scoped-out ones left out, as
+ * MUSIC_WHERE, which stock's getMusicByAlbum(NULL) skips at resume), and r: the Unknown Album card
+ * is one album, whatever its folders. navigation.c's album pages and playback.c's stock resume. */
 int album_only(void *list, void *r, int at) {
     void *out = _create_deque("stSongInfo");
-    int k = at;
+    const char *name = P(r, REC_ALBUM);
+    int k = at, unknown = !name || !*name;
     deque_init(out);
-    for (unsigned i = 0; i < deque_size(list); ++i)
-        if (!album_cmp(deque_at(list, i), r)) {
+    for (unsigned i = 0; i < deque_size(list); ++i) {
+        void *x = deque_at(list, i);
+        const char *a = P(x, REC_ALBUM), *path = P(x, REC_PATH);
+        if (unknown ? x == r || ((!a || !*a) && !spoken(path) && !library_scope_hidden(path))
+                    : !album_cmp(x, r)) {
             if ((int)i == at) k = (int)deque_size(out);
-            _deque_push_back(out, deque_at(list, i));
+            _deque_push_back(out, x);
         }
+    }
     if (deque_size(out)) deque_clear(list), deque_assign(list, out);
     deque_destroy(out);
     return k;
