@@ -18756,6 +18756,48 @@ for patched in (True,False):
     started=b.call(address=syms['btinput_thread_run'],args=(b.string('/dev/input/event4'),0x1234,0,0),gap=0)
     assert [c[0] for c in b.calls if c[0] in ('open@GLIBC_2.0','tk_thread_create')]==([] if patched else ['open@GLIBC_2.0','tk_thread_create']) and (not started or not patched)
 passed()
+# What stock's own key-up handlers do with a key ringnav lets through, on the pages and dialogs Q2 Pod keeps: stop it,
+# or pass it on to on_wm_keyup_fun (stock's volume, screen off and track keys), and the stock function that acts on it.
+# V1.34 changed two things here, in functions that hold no patch site: the toast and the confirm stop the wheel and
+# Centre themselves (how the Shut Down prompt lost its Centre, #303), and with the screen off a handler passes every
+# key on untouched, as the volume dialog's did before VOL_DARK (above). Each runs alone, lit then dark, with
+# g_wheelmode as WHEEL_MODE holds it; whatever it calls answers 0 (no widget, nothing playing) and is named if stock
+# exports it, widget lookups aside. Q2 Pod patches none of these, so stock's own answer the same.
+def keyups(patched,handler):
+    """{key: (lit, dark)} for each key handler doesn't pass untouched both ways: the functions it calls, then stop if it stops the key."""
+    c=Machine(patched); c.handlers.clear(); end=handler+4; names={a:n for n,a in syms.items()}
+    while c.get(end)>>16!=0x3c1c: end+=4  # the next function's PIC prologue (lui $gp)
+    c.byte(syms['g_wheelmode'],1)
+    def stub(u,address,size,_):
+        if not handler<=address<end: c.calls.append(names.get(address)); c.returns(0)
+    c.u.hook_add(UC_HOOK_CODE,stub); out={}
+    for key in (O['KEY_RETURN'],O['KEY_PLAY'],O['KEY_PREV'],O['KEY_NEXT'],O['KEY_CENTER'],O['KEY_BACK_BTN'],O['KEY_FWD_BTN']):
+        row=[]
+        for lit in (1,0):
+            c.byte(syms['g_backlight_status'],lit); ret=c.call(key,address=handler,args=(c.alloc(0x100),c.event,0,0),gap=0)
+            assert ret in (0,0xb),(hex(handler),key,ret)
+            row.append(' '.join([n for n in c.calls if n not in (None,'widget_lookup','widget_focused_widget_in_window')]+['stop']*(ret==0xb)))
+        if any(row): out[key]=tuple(row)
+    return out
+def stock_keyups():
+    ret,play,prev,nxt,centre,rew,fwd=(O['KEY_'+k] for k in ('RETURN','PLAY','PREV','NEXT','CENTER','BACK_BTN','FWD_BTN'))
+    stop=('stop',''); wheel={prev:stop,nxt:stop,centre:stop}; every={**wheel,ret:stop,play:stop,rew:stop,fwd:stop}
+    for want,handlers in (
+            # Return goes back by on_return_onclick: on_common_keyup (most pages), allmusic_page, album_page, artistinfo_page,
+            # localclass_page, playerqueue_page, playerjumpinfo_page, playing_page and search_dialog
+            ({ret:('on_return_onclick stop','')},(syms['on_common_keyup'],0x4abbdc,0x4a60c0,0x4b0f50,0x4b2ad0,0x53a670,0x5387b0,0x53d760,0x49ebec)),
+            # ... or by a function of the window's own: folder_page, specfolder_page and sortselect_dialog
+            ({ret:stop},(0x533000,syms['on_specfolder_keyup'],0x4a0bd4)),
+            # confirminfo_dialog: Return quits it and goes on; the wheel and Centre end here
+            ({**wheel,ret:('dialog_quit','')},(0x499bac,)),
+            # msginfo_dialog, the toast: as the confirm, and Play/Pause and the side buttons end here too
+            ({**every,ret:('dialog_quit','')},(0x49b7d8,)),
+            # updatemusic_dialog, the library scan's: Return, the wheel and Centre
+            ({**wheel,ret:stop},(0x4a2a9c,)),
+            # checkfw_dialog, the update's: every key
+            (every,(0x499538,))):
+        for handler in handlers: assert keyups(True,handler)==keyups(False,handler)==want,hex(handler)
+stock_keyups(); passed()
 # SyncLink (#113): Eddict Player's keys, which stock posts with main_loop_post_key_event, reach
 # stock's lock filters dark with the Buttons lock off; the same keys from the buttons stay locked.
 post=HOOKS['main_loop_post_key_event'][0]
