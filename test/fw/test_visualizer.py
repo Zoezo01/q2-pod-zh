@@ -1500,12 +1500,13 @@ def test_the_timer_ends_once_the_page_doesn_t_show(fw):
     assert tick(now) == RET_REMOVE and now.v.timer == 0 and fw.fn('visualizer_live', C.c_int)() == 0
 
 
-def test_a_finger_down_holds_the_repaints(fw):
-    now, _ = ticking(fw)
+def test_a_finger_held_on_the_page_holds_no_repaint(fw):
+    """#303: under a resting finger the page drew only when the bar's second repainted it."""
+    now, tap = ticking(fw)
     now.pressed = 1
     count = now.invalidated()
-    tick(now)
-    assert now.invalidated() == count
+    tick(now, sound=tap)
+    assert now.invalidated() == count + 1
 
 
 def test_at_rest_one_repaint_puts_the_track_s_name_up_then_none(fw):
@@ -1519,14 +1520,10 @@ def test_at_rest_one_repaint_puts_the_track_s_name_up_then_none(fw):
     assert fw.fn('visualizer_live', C.c_int)() == 0
 
 
-def test_at_rest_a_finger_down_holds_the_track_s_name_back(fw):
-    """A drag starting: nothing repaints under it, the track's name included, until it ends."""
+def test_at_rest_a_finger_held_on_the_page_still_gets_the_track_s_name(fw):
     now, _ = ticking(fw, playing=False)
     now.v.heard = now.v.named = 0
     now.pressed, count = 1, now.invalidated()
-    tick(now)
-    assert now.v.quiet == 0 and now.invalidated() == count
-    now.pressed = 0
     tick(now)
     assert now.v.quiet == 1 and now.invalidated() == count + 1
 
@@ -1613,15 +1610,13 @@ def test_ticks_show_the_audio_from_its_first_frame_and_its_fall_after(fw):
     assert 0 < now.v.vu[0] < up
 
 
-@pytest.mark.parametrize('hold', ['finger', 'slide'])
-def test_a_finger_down_or_a_slide_holds_the_repaints_while_playing(fw, hold):
+def test_a_slide_holds_the_repaints_while_playing_and_a_held_finger_does_not(fw):
     now, tap = ticking(fw, style='3')
     tick(now, sound=tap)
     assert now.visible[now.v.art] == 1
-    if hold == 'finger':
-        now.pressed = 1
-    else:
-        now.animating = 1
+    now.pressed, count = 1, now.invalidated()
+    assert tick(now, sound=tap) == RET_REPEAT and now.invalidated() == count + 1 and now.visible[now.v.art] == 1
+    now.animating = 1
     count = now.invalidated()
     assert tick(now, sound=tap) == RET_REPEAT and now.invalidated() == count and now.visible[now.v.art] == 0
 
