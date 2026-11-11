@@ -1416,28 +1416,13 @@ def test_the_card_going_away_stops_apps_and_marks_them_to_start_again(fw):
     assert len(world.of('system')) == 1 and len(fw.calls('sleep_ms')) == 1
 
 
-def test_the_card_going_away_waits_twenty_seconds_at_most(fw):
+def test_the_card_going_away_waits_three_seconds_at_most(fw):
     world = World(fw, {b'/tmp/q2-a': b'1'})
     a = ap(fw)
     a.n, a.a[0].pid = 1, b'/tmp/q2-a'
     fw.mock('sleep_ms', lambda ms, *_: setattr(world, 'ms', world.ms + ms))
     fw.fn('addon_card_away', None)()
-    assert len(fw.calls('sleep_ms')) == 400  # QUIT_MS, as a remove's
-
-
-# An app still saving on its TERM after 3 s (a login) has done so before the card goes, as before a remove.
-def test_the_card_going_away_waits_for_an_app_saving_on_its_way_out(fw):
-    world = World(fw, {b'/tmp/q2-a': b'1'})
-    a = ap(fw)
-    a.n, a.a[0].pid = 1, b'/tmp/q2-a'
-
-    def sleep(ms, *_):
-        world.ms += ms
-        if world.ms - 1000 >= 3500:  # saved, then the app and its loop gone
-            world.files.pop(b'/tmp/q2-a', None)
-    fw.mock('sleep_ms', sleep)
-    fw.fn('addon_card_away', None)()
-    assert b'/tmp/q2-a' not in world.files and world.ms == 4500
+    assert len(fw.calls('sleep_ms')) == 60
 
 
 KEY_DOWN, KEY_UP, KEY_LONG = O['EVT_KEY_DOWN'], O['EVT_KEY_UP'], O['EVT_KEY_LONG']

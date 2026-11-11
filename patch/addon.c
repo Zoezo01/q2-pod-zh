@@ -69,9 +69,10 @@
 #define ADDON_PAGES 10
 #define REPLY_MAX (64 << 10) /* Q2SPOT/1's limits */
 #define REQ_MAX (8 << 10)
+#define AWAY_MS 3000     /* USB storage waits at most this long for an app to let the card go */
 #define SLOW_MS 3000     /* a page loading or starting this long offers to stop the app */
 #define RESTART_MS 20000 /* Retry's restart starts the app by then, its old loop gone or not */
-#define QUIT_MS 20000    /* USB storage and the Apps page wait at most this long for an app to end */
+#define QUIT_MS 20000    /* the Apps page's worker waits at most this long for an app to end */
 #define APP_ID 16        /* an id's bytes, its NUL included */
 #define QR_PX 186        /* the code's white plate: 5 px modules up to a 33-module code */
 #define QR_COL 214       /* the text beside it */
@@ -191,7 +192,7 @@ int addon_is_icon(const char *name) {
     return 0;
 }
 
-/* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends QUIT_MS on it.
+/* A pid file whose loop is gone (crashed, or killed) is removed, so no wait spends its limit on it.
  * ponytail: trusts the pid in the file; a loop that died without removing it, its pid since reused,
  * would TERM that process. A flock in run would close this. */
 static void stop_cmd(const char *pid, char *cmd, unsigned n) {
@@ -855,10 +856,11 @@ void addon_stop(void) {
 }
 
 /* usbmode_page_init's hook (navigation.c), before stock unmounts the card for USB storage: every
- * app asked to end at once, then up to QUIT_MS in all for their loops to be gone (each removes its
- * pid file once the app has exited), so nothing of them holds the card, nor saves to it after (a
- * login on its TERM); each starts again after (addon_poll). On the UI thread, under the watchdog's
- * WDT_MS; addon_quit is the Apps page's worker's. */
+ * app asked to end at once, then up to AWAY_MS in all for their loops to be gone (each removes its
+ * pid file once the app has exited), so nothing of them holds the card; each starts again after
+ * (addon_poll). On the UI thread, so it must stay short; addon_quit is the Apps page's worker's.
+ * ponytail: an app still saving on its TERM after AWAY_MS can write to the card as USB takes it;
+ * the real fix defers stock's USB-mode call until the apps are gone, without sleeping. */
 void addon_card_away(void) {
     char cmd[96];
     int left = 0;
@@ -869,7 +871,7 @@ void addon_card_away(void) {
         a->launched = a->hold = a->restart = 0;
         a->relaunch = running;
     }
-    for (unsigned start = time_now_ms(); left && time_now_ms() - start < QUIT_MS;) {
+    for (unsigned start = time_now_ms(); left && time_now_ms() - start < AWAY_MS;) {
         sleep_ms(50);
         left = 0;
         for (int i = 0; i < ap.n; ++i) left |= !access(ap.a[i].pid, 0);

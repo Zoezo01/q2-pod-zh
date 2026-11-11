@@ -1745,7 +1745,7 @@ def test_an_app_installs_into_place_and_removes_without_a_trace(fw, q2app, where
     assert on_card() == before
 
 
-# A remove leaves no login behind, even from an app that saves it on its TERM, after USB storage's 3 s wait too.
+# A remove leaves no login behind, even from an app that saves it on its TERM, after 3 s too.
 @pytest.mark.parametrize('save_ms', [1000, 3500])
 def test_a_remove_leaves_nothing_an_app_saves_on_its_way_out(fw, save_ms):
     card = Disk(fw)
