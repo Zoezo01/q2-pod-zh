@@ -45,6 +45,7 @@ enum {
                       its rows do */
     POD_FOLDERCOVER,
     POD_BIG_LIB, /* Display's Large Library Mode: Cover Flow's letters (ringnav_big_library) */
+    POD_PL_CF,   /* Display's Playlist View: List or Cover Flow, as Artist View */
     POD_COUNT
 };
 
@@ -141,11 +142,11 @@ typedef struct {
      * Bluetooth's Resume on connect on. hold_home: Hold Return goes Home. standby_limit: Standby
      * limit's choice.
      * smart_wifi: Power's Smart Wi-Fi on (smart_poll). big_library: Display's Large Library Mode
-     * on. */
+     * on. playlist_cf: Playlists open as Cover Flow. */
     int pod_read, charge_limit, wake_double, wake_pass, wake_eat,
         wake_down, /* 1: the held Centre press passes; 2: it is dropped */
         charge_held, artist_cf, year_old, resume, lock_clock, artist_az, hold_home, standby_limit,
-        eq_output, smart_wifi, big_library;
+        eq_output, smart_wifi, big_library, playlist_cf;
     void *pod_label[POD_COUNT];
     void *art_cf_win, *art_cf_list; /* the artist page given its Coverflow, the albums pending */
     void *art_cf_veil;              /* the artist page unseen until they show, and its anim_hint */
@@ -290,6 +291,7 @@ typedef struct {
     int qs_wheel; /* Quick Settings' wheel, 1 + Q2POD QSVOLUME once read (quick_volume) */
     unsigned qm_timer, qm_cls, qm_idx, qm_rows, qm_hash, qm_browse, qm_forced, qm_forced_hash;
     int qm_kind, qm_action, qm_choice;
+    char qm_name[96]; /* a playlist cover's name, the covers' own: the live list may be older */
     void *qm_dialog, *qm_queue, *qm_playlist;
     unsigned qm_queue_hash;
     unsigned char qm_classinfo[912]; /* g_local_classinfo_save before a Go to */
@@ -403,6 +405,8 @@ void slider_switch(void *w, void *canvas, void *sw);
 const char *style_key(char *key, const char *state, const char *name);
 unsigned wide_len(const unsigned *s);
 void *window_of(void *w);
+void cf_veil(void *win, int on);      /* win unseen (1) or seen again under Coverflow */
+int ringnav_playlist_coverflow(void); /* Display's Playlist View is Cover Flow */
 extern const stops_t confirm_dark;
 int search_key(unsigned key);
 int geom(int group);

@@ -4356,6 +4356,76 @@ for cls in (PlaylistMachine,ClassicPlaylistMachine):
     if cls is ClassicPlaylistMachine: m.nav=m.nodes[home]['children'][0]
     kids=m.rebuild(); assert m.get(m.mode)==0 and len(kids)==shown; passed()
 
+# Playlist View: Cover Flow (Display, PLAYLISTCF): the page opens unseen (opacity 0, no slide) and its playlists go to
+# Cover Flow on the next pass (coverflow_playlists, test/coverflow.py), the page shown under them for their Return; once
+# per page, so coming back to it shows the list. Library's row, Home's list and shortcut 7 all open it through this
+# rebuild. Off, the Add to Playlist picker, no playlists, or the page gone or covered first: the list, as before. Every
+# theme, Row Art or not: the covers are the playlists' art.
+PL_HINT='htranslate(duration=200)'
+def pl_cf(base,count=2,mode=0,on='1',theme=None,**kw):
+    class M(base):
+        def hook(self,u,address,size,unused):
+            if address!=payload_syms['coverflow_playlists']: return super().hook(u,address,size,unused)
+            self.handed.append(self.names(u.reg_read(REGS[0]))); self.returns(1)
+    if theme: CONFIG.update(THEME=theme)
+    try: m=M(count,mode,**kw)
+    finally: CONFIG.pop('THEME',None)
+    m.handlers[syms['widget_set_prop_str']]='widget_set_prop_str'; m.handed=[]; m.config['PLAYLISTCF']=on
+    if base is PlaylistMachine: pl_art_lists(m,count)
+    m.nodes[m.top]['anim_hint']=PL_HINT; m.byte(m.top+0x34,0xff)
+    return m
+pl_veiled=lambda m: m.u.mem_read(m.top+0x34,1)[0]==0 and m.nodes[m.top]['anim_hint']==''
+pl_shown=lambda m: m.u.mem_read(m.top+0x34,1)[0]==0xff and m.nodes[m.top]['anim_hint']==PL_HINT
+for base,theme,kw in ((PlaylistMachine,None,{}),(PlaylistMachine,'2',{}),(ClassicPlaylistMachine,None,{}),(ClassicPlaylistMachine,None,{'rowart':'1'})):
+    m=pl_cf(base,theme=theme,**kw); m.rebuild()
+    assert pl_veiled(m) and not m.handed and m.refreshes==1; m.advance(0,clear=False)  # one read of the songs, rows and covers
+    assert bool(m.asks)==bool(kw),(base,theme,m.asks)  # the rows' art under Row Art alone
+    assert m.handed==[['List 0','List 1']] and pl_shown(m),(base,theme)
+    m.rebuild(); m.advance(0,clear=False); assert len(m.handed)==1 and pl_shown(m); passed()  # back on the page: the list
+for base in (PlaylistMachine,ClassicPlaylistMachine):
+    for count,mode,on in ((2,0,'0'),(2,1,'1'),(2,2,'1'),(0,0,'1')):
+        m=pl_cf(base,count,mode,on); m.rebuild(); m.advance(0,clear=False)
+        assert not m.handed and pl_shown(m),(base,count,mode,on); passed()
+m=pl_cf(PlaylistMachine); m.rebuild()
+f,ctx=m.handler(m.top,O['EVT_DESTROY']); m.call(address=f,args=(ctx,0,0,0),gap=0,clear=False)
+m.advance(0,clear=False); assert not m.handed and m.stops==1; passed()  # Minimal's page: the covers' builds stop too
+# ... or another window over it by the next pass: no covers, the page shown under it.
+m=pl_cf(PlaylistMachine); m.rebuild(); page=m.top; m.top=m.node('window','other_page'); m.stack.append(m.top)
+m.advance(0,clear=False); m.top=page; assert not m.handed and pl_shown(m); passed()
+# Centre on a playlist under Minimal and Modern (coverflow.c): a click at x 0 on its row on the Playlists page under
+# the covers, which stay; its list opens over them, so Return comes back to them, as from an album. The row is found
+# by the playlist's cd_num: the list may have been read again, reordered, since the covers copied it.
+def pl_under(m):  # the covers over the page, reordered after they opened; the page
+    lists=m.items(m.get(syms['p_deque_playlist'])); m.word(syms['p_deque_playlist'],m.deque(lists[::-1])); m.rebuild()
+    page=m.top; m.top=m.node('window','coverflow_page'); m.stack.append(m.top)
+    return page
+for base in (PlaylistMachine,ClassicPlaylistMachine):
+    m=pl_cf(base,count=3,on='0'); m.rebuild(); page=pl_under(m); m.clicks=[]; xs=[]
+    m.on_click=lambda w,e,f=m.on_click: (xs.append(m.get(e+O['EVENT_X'])),f and f(w,e))
+    m.call(address=payload_syms['playlist_open'],args=(page,10,0,0),gap=0,clear=False)  # List 0, now the third row
+    assert [m.nodes[c]['name'] for c in m.clicks]==['2'] and xs==[0],(base,m.clicks); passed()
+# ... stock's own row click, run from under the covers, opens the playlist as a tap on the page itself does.
+opens=lambda m: [(c[0],m.text(c[1])) for c in m.calls if c[0]=='navigator_to_with_context']
+picked=lambda m: m.get(syms['g_local_classinfo_save']+4)  # the cd_num of the playlist stock opens
+m=pl_cf(ClassicPlaylistMachine,count=3,on='0'); m.rebuild(); pl_under(m); m.top=m.stack[-2]; m.stack.pop()
+m.calls.clear(); m.tap(m.row_button('List 0')); tapped=opens(m)
+assert tapped==[('navigator_to_with_context','localmusic/allmusic_page')] and picked(m)==10,(tapped,picked(m))
+m=pl_cf(ClassicPlaylistMachine,count=3,on='0'); m.rebuild(); page=pl_under(m); m.calls.clear()
+m.call(address=payload_syms['playlist_open'],args=(page,10,0,0),gap=0,clear=False); m.advance(0,clear=False)
+assert opens(m)==tapped and picked(m)==10 and m.top==m.stack[-1] and m.nodes[m.top]['name']=='coverflow_page',(opens(m),tapped); passed()
+# ... a playlist made since the page was built (a song's Add to Playlist, under the covers) has no row there: the covers
+# close, for the page to build its rows again as it comes to the front.
+class PlShut(ClassicPlaylistMachine):
+    shut=0
+    def hook(self,u,address,size,unused):
+        if address!=payload_syms['coverflow_playlists_close']: return super().hook(u,address,size,unused)
+        self.shut+=1; self.returns(0)
+m=pl_cf(PlShut,count=3,on='0'); m.rebuild(); page=pl_under(m); m.calls.clear()
+made=m.song('Made',4); m.word(made+O['REC_TITLE'],m.string('Made')); m.word(made+O['REC_DISC'],13)
+m.word(syms['p_deque_playlist'],m.deque(m.items(m.get(syms['p_deque_playlist']))+[made]))
+m.call(address=payload_syms['playlist_open'],args=(page,13,0,0),gap=0,clear=False); m.advance(0,clear=False)
+assert m.shut==1 and not opens(m),(m.shut,opens(m)); passed()
+
 # Back from an opened playlist keeps its row: opening one writes the browsing state the other lists' memory hashes.
 for cls in (PlaylistMachine,ClassicPlaylistMachine):
     m=cls(3,0); kids=m.rebuild(); m.paint(m.view)
@@ -9088,6 +9158,117 @@ m=CoverflowMachine(); m.open(); m.press(100)
 assert m.call(O['KEY_PLAY'],address=syms['on_wm_keylong_fun'],event_type=O['EVT_KEY_LONG'],gap=0)==11
 m.close(); m.advance(0); assert not any(p[0]=='dialog/sortselect_dialog' for p in m.opened); passed()
 
+# Hold Play/Pause on a playlist's cover (navigation.c qm_hold): the list's own menu (playlist_hold), New Playlist and,
+# under Classic, Edit Playlists… last (a toolbar's page edits from its toolbar). The playlist is found in the live list by its cd_num, as New, Rename and Delete
+# read that list again under the covers after they copied it: More… opens the More page at its index there, and a
+# playlist gone from it holds nothing.
+PL_COVER_MENU=['Play Next','Add to Queue','Shuffle','More…','New Playlist','Edit Playlists…']
+class PlaylistCoverMachine(CoverflowMachine):
+    def __init__(self):
+        super().__init__()
+        self.handlers[syms['navigator_to_with_context']]='q:navigator_to_with_context'  # the More page's index
+        for n in ('playlist_art','playlist_art_refresh','playlist_art_stop','playlist_songs','playlists_edit'):
+            if n in payload_syms: self.handlers[payload_syms[n]]='pl:'+n
+        self.handlers[syms['getAllPlayList']]='pl:getAllPlayList'  # stock's headers, as the page reads them
+        self.edits=[]; self.lists=[self.song(f'List {i}',4) for i in range(3)]; self.heads=self.lists
+        for i,r in enumerate(self.lists): self.word(r+O['REC_TITLE'],self.string(f'List {i}')); self.word(r+O['REC_DISC'],10+i)
+        self.word(syms['p_deque_playlist'],self.deque(self.lists))
+        self.under=self.node('window','playlist_page'); self.stack=[self.under]; self.top=self.under
+        self.nodes[self.wm]={'children':self.stack}
+        assert self.call(address=payload_syms['coverflow_playlists'],args=(self.get(syms['p_deque_playlist']),0,0,0),gap=0)==1
+        self.page=self.top; self.slide=self.find('slide_menu')
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('pl:'): return super().hook(u,address,size,unused)
+        if name=='pl:playlists_edit': self.edits.append(u.reg_read(REGS[0]))
+        if name=='pl:getAllPlayList':
+            self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',r) for r in self.heads]
+            return self.returns(len(self.heads))
+        self.returns(0)
+for theme in (None,'1','2'):
+    if theme: CONFIG.update(THEME=theme)
+    try: m=PlaylistCoverMachine()
+    finally: CONFIG.pop('THEME',None)
+    if theme=='1': classic_light_boot(m)  # its set, as the first load picks it
+    m.word(m.slide+O['SLIDE_INDEX'],1); m.press(100); assert m.hold()==11 and m.release()==0
+    want=PL_COVER_MENU if theme=='1' else PL_COVER_MENU[:-1]
+    assert m.labels()==want and m.nodes[m.title]['text']=='List 1',(theme,m.labels()); passed()
+m=PlaylistCoverMachine(); m.word(syms['p_deque_playlist'],m.deque(m.lists[::-1]))  # read again, reordered
+m.press(100); assert m.hold()==11 and m.nodes[m.title]['text']=='List 0'
+m.pick(3); m.advance(0); assert m.opened[-1]==('localmusic/playlistsmore_page',2); passed()
+for row in (0,1):  # its songs, by cd_num 10's query
+    m=PlaylistCoverMachine(); m.word(syms['p_deque_playlist'],m.deque(m.lists[::-1]))
+    assert m.run(row) is None and m.query[:2]==('getMusicByPlayList',10) and len(m.names())==5; passed()
+# ... each runs once the menu's dialog is destroyed (its close may still be animating, the dialog on top, and the
+# Playlists page's own click acts only on the top page), and from the pass after: the covers never close inside the
+# dialog's destroy.
+class ClosingCoverMachine(PlaylistCoverMachine):  # window_close animates: the dialog stays on top until destroyed
+    def hook(self,u,address,size,unused):
+        if address!=syms['window_close']: return super().hook(u,address,size,unused)
+        self.closing.append(u.reg_read(REGS[0])); self.returns(0,clobber=True)
+def destroyed(m,w):  # w gone from the stack, then its destroy handlers, in order
+    if w in m.stack: m.stack.remove(w); m.top=m.stack[-1]
+    for t,f,ctx in list(m.nodes[w].get('handlers',())):
+        if t==O['EVT_DESTROY']: m.call(address=f,args=(ctx,m.event,0,0),gap=0,clear=False)
+for row,edit,theme in ((4,0,None),(5,1,'1')):
+    if theme: CONFIG.update(THEME=theme)
+    try: m=ClosingCoverMachine()
+    finally: CONFIG.pop('THEME',None)
+    if theme: classic_light_boot(m)
+    m.closing=[]; m.press(100); assert m.hold()==11 and m.release()==0; dlg=m.top
+    m.pick(row); m.advance(0,clear=False); m.advance(0,clear=False)
+    assert m.closing==[dlg] and m.top==dlg and not m.edits,(m.closing,m.edits)
+    destroyed(m,dlg); assert not m.edits; m.advance(0,clear=False)
+    assert m.edits==[edit] and [o[0] for o in m.opened]==['dialog/sortselect_dialog'],(m.edits,m.opened); passed()
+m=PlaylistCoverMachine(); m.word(syms['p_deque_playlist'],m.deque(m.lists[1:]))  # List 0 deleted under the covers
+m.press(100); assert m.hold()!=11 and not any(p[0]=='dialog/sortselect_dialog' for p in m.opened); passed()
+# More's Rename or Delete over the covers: as the covers come back to the front the playlists are read again
+# (getAllPlayList, the page under them keeping its list), a deleted one's cover gone, the centre on its playlist; nothing
+# changed, the covers stay; none left, the covers close for the list.
+def pl_front(m):
+    f,ctx=m.handler(m.page,O['EVT_WINDOW_FOREGROUND']); m.call(address=f,args=(ctx,m.event,0,0),gap=0); m.advance(0)
+    return m.find('slide_menu')
+cover_cd=lambda m: m.get(m.call(address=payload_syms['coverflow_playlist'],args=(m.page,0,0,0),gap=0)+O['REC_DISC'])
+m=PlaylistCoverMachine(); m.word(m.slide+O['SLIDE_INDEX'],1); m.advance(0)
+assert pl_front(m)==m.slide and len(m.nodes[m.slide]['children'])==3; passed()
+m.heads=m.lists[1:]; s=pl_front(m)  # List 0 deleted
+assert len(m.nodes[s]['children'])==2 and m.get(s+O['SLIDE_INDEX'])==0 and cover_cd(m)==11,(m.get(s+O['SLIDE_INDEX'])); passed()
+m.heads=[]; closes=sum(c[0]=='window_manager_close_window_force' for c in m.calls); pl_front(m)
+assert sum(c[0]=='window_manager_close_window_force' for c in m.calls)==closes+1; passed()
+# A Rename under the covers: the covers show the new name and so does the hold's title, from the cover's own record, the
+# live list (p_deque_playlist) keeping the old name until the page is on top; More… still goes by its index there.
+m=PlaylistCoverMachine(); m.word(m.slide+O['SLIDE_INDEX'],1); m.advance(0)
+new_one=m.song('Renamed',4); m.word(new_one+O['REC_TITLE'],m.string('Renamed')); m.word(new_one+O['REC_DISC'],11)
+m.heads=[m.lists[0],new_one,m.lists[2]]; pl_front(m); assert cover_cd(m)==11
+m.press(100); assert m.hold()==11 and m.release()==0 and m.nodes[m.title]['text']=='Renamed',m.nodes[m.title]['text']
+m.pick(3); m.advance(0); assert m.opened[-1]==('localmusic/playlistsmore_page',1); passed()
+# New Playlist and Edit Playlists… (playlists.c playlists_edit): the covers close (coverflow_playlists_close) and New
+# runs as the page's own: Classic's row's target, Minimal's toolbar button, stock's dialog either way. Edit Playlists…
+# (Classic's alone) is stock's select mode, Import in it. With no covers up, nothing.
+def pl_edit(edit,classic=True,covers=True,theme=None):
+    class M(ClassicPlaylistMachine):
+        def hook(self,u,address,size,unused):
+            if address!=payload_syms['coverflow_playlists_close']: return super().hook(u,address,size,unused)
+            self.shut+=1; page=0
+            if self.covers in self.stack: self.stack.remove(self.covers); self.top=page=self.stack[-1]
+            self.returns(page)
+    if theme: CONFIG.update(THEME=theme)
+    try: m=M(classic=classic)
+    finally: CONFIG.pop('THEME',None)
+    m.rebuild(); m.paint(m.view); m.shut=0; m.page=m.top; m.covers=m.node('window','coverflow_page')
+    if covers: m.stack.append(m.covers); m.top=m.covers
+    m.before=m.bar(); m.calls.clear()
+    m.call(address=payload_syms['playlists_edit'],args=(edit,0,0,0),gap=0,clear=False); m.advance(0,clear=False); m.stack_rows()
+    return m
+for classic in (True,False):
+    m=pl_edit(0,classic); assert m.shut==1 and m.top==m.page and m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0
+    assert m.bar()==m.before or classic,(m.bar(),m.before); passed()  # Minimal's toolbar keeps its own words
+m=pl_edit(1); assert m.shut==1 and m.top==m.page and m.navbar()==1 and not m.dialogs
+assert m.rows()==['Select All']+LISTS+['Import Playlists','Done'] and m.bar()=='Edit Playlists'; passed()
+m=pl_edit(0,classic=False,theme='2'); assert m.shut==1 and m.top==m.page and m.dialogs==['dialog/addplaylist_dialog'] and m.navbar()==0 and m.bar()==m.before; passed()
+for edit in (0,1):
+    m=pl_edit(edit,covers=False); assert m.shut==1 and m.top==m.page and not m.dialogs and m.navbar()==0; passed()
+
 # Album favourites and ratings (ratings.c rate_*, coverflow.c album_id): a cover keeps 0-5 hearts of its own in
 # /mnt/data/ringnav-album-ratings by album_id, the low three bits its hearts, 5 its favourite and its songs My Fav's; songs'
 # ratings and the queue are untouched. Hold Play/Pause on a cover: Add/Remove from Favourites and Rate album, whose picker is Now
@@ -11512,10 +11693,10 @@ keep_lit=kids[2]
 assert m.icons_set==['system_display','switch_off','display_backlight','list_into','system_display','list_into','playset_covermode','list_into']
 f,ctx=m.handler(m.nodes[kids[5]]['children'][0],O['EVT_CLICK']); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.opened[-1]==('systemset/display_page',None) and m.get(payload_syms['display_sub'])==0; passed()
-# Cover Flow: Artist View, Cover Flow Sort, Refresh Cover Flow, Large Library Mode; Controls, System's row: the
-# wheel, the buttons and what they do.
-cfv=display_page(m,2); cf,cf_sort,cf_refresh,cf_big=m.nodes[cfv]['children']
-assert m.icons_set==['playset_covermode','playset_covermode','system_update','playset_covermode','switch_off']
+# Cover Flow: Artist View, Playlist View, Cover Flow Sort, Refresh Cover Flow, Large Library Mode; Controls, System's
+# row: the wheel, the buttons and what they do.
+cfv=display_page(m,2); cf,cf_pl,cf_sort,cf_refresh,cf_big=m.nodes[cfv]['children']
+assert m.icons_set==['playset_covermode']*3+['system_update','playset_covermode','switch_off'],m.icons_set
 ctl=display_page(m,3); wheel,hold,scrub_one,tone,hp,lock,wake,guard=m.nodes[ctl]['children']
 assert [row_text(r) for r in (hold,scrub_one)]==['Hold Return: Recent','Single Press Scrub']; passed()
 view=display_page(m,1); rows=setting_rows(m,view)
@@ -11867,6 +12048,12 @@ assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Controls' switches read On/Off as values under Classic.
 dm,dv=classic_light_display(sub=3)
 assert ('Single Press Scrub','Off') in [title_value(r) for r in dm.nodes[dv]['children']]; passed()
+# ... and Cover Flow's Playlist View, a choice row worded in full as Artist View is, not a switch.
+pl_row_text=lambda r: dm.nodes[dm.nodes[dm.nodes[r]['children'][0]]['children'][1]]['text']
+for stored,word in (('0','List'),('1','Cover Flow')):
+    dm,dv=classic_light_display({'PLAYLISTCF':stored},sub=2)
+    assert [pl_row_text(r) for r in dm.nodes[dv]['children'][:2]]==['Artist View: Cover Flow','Playlist View: '+word],stored
+    assert not {'switch_on','switch_off'} & set(dm.icons_set); passed()
 # Radio rows: select draws the ink tick (13x8, an original drawing) centred in its image;
 # unselect draws nothing; stock's ring images are empty under Classic.
 rm=classic_light_on(Machine()); rimg=rm.node('image','img_sel',image='select'); rm.word(rimg+O['W_W'],50); rm.word(rimg+O['W_H'],28)
@@ -11888,6 +12075,13 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[cf_label]['
 assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(2,'Q2POD','ARTISTCF')]
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.nodes[cf_label]['text']=='Artist View: Grid'
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.nodes[cf_label]['text']=='Artist View: Cover Flow'; passed()
+# Playlist View (Q2POD PLAYLISTCF), a value row beside Artist View: List, then Cover Flow; no key is List.
+pl_label=m.nodes[m.nodes[cf_pl]['children'][0]]['children'][1]; assert m.nodes[pl_label]['text']=='Playlist View: List'
+f,ctx=m.handler(m.nodes[cf_pl]['children'][0],O['EVT_CLICK']); m.calls=[]
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0 and m.nodes[pl_label]['text']=='Playlist View: Cover Flow'
+assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(1,'Q2POD','PLAYLISTCF')]
+m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.nodes[pl_label]['text']=='Playlist View: List'
+assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config'][-1]==(0,'Q2POD','PLAYLISTCF'); passed()
 # Cover Flow Sort and Refresh Cover Flow (coverflow.c), the library Coverflow's Sort and Refresh cards
 # before: no saved order is Album; Refresh empties the art cache for the next open, and stock's Library covers
 # with AWTK's cached bitmaps, with a toast.

@@ -3099,7 +3099,8 @@ int ringnav_quick_settings(void *win, void *ctx) {
  * Standby limit (STANDBYLIMIT, ringnav_standby; docs/internals.md#standby-limit), and Bluetooth's
  * Control Device Volume (BTVOLLINK, bt_audio_ready; docs/internals.md#headset-controls-and-volume),
  * and Power's Smart Wi-Fi (SMARTWIFI, smart_poll; docs/internals.md#smart-wi-fi), and Display's
- * Large Library Mode (BIGLIBRARY, Cover Flow's letters; docs/internals.md#coverflow-thumb).
+ * Large Library Mode (BIGLIBRARY, Cover Flow's letters; docs/internals.md#coverflow-thumb) and
+ * Playlist View (PLAYLISTCF).
  */
 /* Bluetooth's Control Device Volume on: the Q2's volume is the device's own (bt_audio_ready). */
 static int bt_vol_link __attribute__((section(".scratch")));
@@ -3125,7 +3126,8 @@ static int *const pod_values[] = { &st.charge_limit,
                                    &st.smart_wifi,
                                    0,
                                    0,
-                                   &st.big_library };
+                                   &st.big_library,
+                                   &st.playlist_cf };
 _Static_assert(POD_LOCKCLOCK == 6, "lockscreen.c passes pod_rows 6");
 _Static_assert(sizeof pod_values / sizeof *pod_values == POD_COUNT, "a pod_values per row");
 static const char *const pod_keys[] = { "CHARGELIMIT",
@@ -3148,9 +3150,10 @@ static const char *const pod_keys[] = { "CHARGELIMIT",
                                         "SMARTWIFI",
                                         0,
                                         0,
-                                        "BIGLIBRARY" };
+                                        "BIGLIBRARY",
+                                        "PLAYLISTCF" };
 _Static_assert(sizeof pod_keys / sizeof *pod_keys == POD_COUNT, "a pod_keys entry per row");
-/* a row's choices: Artist albums three, Standby limit four, every other row off and on */
+/* a row's choices: Artist albums three, Standby limit four, every other row two */
 static int pod_choices(unsigned i) { return i == POD_ARTIST_CF ? 3 : i == POD_STANDBY ? 4 : 2; }
 void pod_settings(void) {
     if (st.pod_read) return;
@@ -3170,6 +3173,10 @@ int ringnav_artist_az(void) {
 int ringnav_artist_view(void) {
     pod_settings();
     return st.artist_cf;
+}
+int ringnav_playlist_coverflow(void) {
+    pod_settings();
+    return st.playlist_cf;
 }
 int ringnav_lock_clock(void) {
     pod_settings();
@@ -3243,6 +3250,7 @@ static void pod_text(int i) {
         { 0 }, /* Enlarged Album Art: a switch */
         { 0 }, /* Folder Album Cover: a switch */
         { 0 }, /* Large Library Mode: a switch */
+        { "Playlist View: List", "Playlist View: Cover Flow" },
     };
     _Static_assert(sizeof names / sizeof *names == POD_COUNT, "a names entry per row");
     if (i == POD_CF_SORT) {
@@ -6796,6 +6804,7 @@ int ringnav_display(void *win, void *ctx) {
     }
     if (sub == DISPLAY_COVERFLOW) {
         pod_rows(win, "scroll_view_display", POD_ARTIST_CF, 1, cf_icons);
+        pod_rows(win, "scroll_view_display", POD_PL_CF, 1, cf_icons);
         pod_rows(win, "scroll_view_display", POD_CF_SORT, 2, cf_icons + 1);
         pod_rows(win, "scroll_view_display", POD_BIG_LIB, 1, cf_icons + 3);
         return result;
@@ -7546,7 +7555,9 @@ enum {
     QA_QUEUE,
     QA_FOLDER,
     QA_CHAPTERS,
-    QA_MORE
+    QA_MORE,
+    QA_NEW_PLAYLIST,
+    QA_EDIT_PLAYLISTS
 };
 
 static char *play_key(void) {
@@ -7861,10 +7872,10 @@ static int artist_cf_gone(void *win, void *event) {
     if (win == st.art_cf_veil) st.art_cf_veil = (void *)0;
     return 0;
 }
-/* The artist page Coverflow is about to cover opens unseen and without its slide, so the Artists
- * list cuts straight to the covers, as Home's Coverflow card does; once they are up it is shown
- * again under them, its slide back for its own Return. */
-static void artist_cf_veil(void *win, int on) {
+/* The page Coverflow is about to cover (an artist's, or Playlists from playlists.c) opens unseen
+ * and without its slide, so the list cuts straight to the covers, as Home's Coverflow card does;
+ * once they are up it is shown again under them, its slide back for its own Return. */
+void cf_veil(void *win, int on) {
     if (on) {
         tk_snprintf(st.art_cf_hint, sizeof st.art_cf_hint, "%s",
                     widget_get_prop_str(win, "anim_hint", ""));
@@ -7882,7 +7893,7 @@ static int artist_cf_open(const void *unused) {
         st.art_cf_win = top;
     else
         deque_destroy(all);
-    if (veiled) artist_cf_veil(veiled, 0);
+    if (veiled) cf_veil(veiled, 0);
     return 0;
 }
 /* Artist albums: Grid gives the artist page its stock toolbar back, for its multi-select
@@ -7945,7 +7956,7 @@ static int artist_list(int tab) {
         !tk_strcmp(widget_get_prop_str(top, "name", ""), "artistinfo_page")) {
         st.art_cf_list = mine, mine = 0;
         st.art_cf_veil = top;
-        artist_cf_veil(top, 1);
+        cf_veil(top, 1);
         widget_on(top, EVT_DESTROY, artist_cf_gone, top);
         rearm(&st.art_cf_timer, artist_cf_open, 0);
     }
@@ -8835,9 +8846,24 @@ static void qm_goto(void *r, int album) {
 /* Deferred so the dialog is never closed under its own click dispatch. */
 static int qm_open(const void *unused);
 
+/* New Playlist (edit 0) and Edit Playlists… run once the dialog is destroyed, so the Playlists page
+ * is on top however its close animates (playlists.c's click acts on the top page only), and from
+ * the pass after, so the covers never close inside the dialog's destroy. */
+static int qm_edit_run(const void *info) {
+    playlists_edit((int)(long)P(info, TIMER_CTX));
+    return 0;
+}
+static int qm_edit_due(void *edit, void *event) {
+    timer_add(qm_edit_run, edit, 0);
+    return 0;
+}
+
 static int qm_run(const void *unused) {
     st.qm_timer = 0;
     if (!st.qm_dialog) return 0;
+    if (st.qm_action == QA_NEW_PLAYLIST || st.qm_action == QA_EDIT_PLAYLISTS)
+        widget_on(st.qm_dialog, EVT_DESTROY, qm_edit_due,
+                  (void *)(long)(st.qm_action == QA_EDIT_PLAYLISTS));
     qm_close();
     void *r = qm_record();
     int a = st.qm_action, cls = st.qm_kind == QM_COVERFLOW ? 0xf001 : (int)st.qm_cls;
@@ -8862,6 +8888,8 @@ static int qm_run(const void *unused) {
             navigator_to("playerqueue_page");
     } else if (a == QA_MORE && st.qm_kind == QM_PLAYLIST) {
         if (r) navigator_to_with_context("localmusic/playlistsmore_page", (void *)(long)st.qm_idx);
+    } else if (a == QA_NEW_PLAYLIST || a == QA_EDIT_PLAYLISTS) {
+        /* the page's own, not the playlist's: qm_edit_due */
     } else if (a == QA_MORE) {
         void *more = np_more(); /* clicked as a tap would, so stock's own handler opens it */
         char click[0x30];
@@ -9058,6 +9086,7 @@ static int qm_open(const void *unused) {
                         : tag && *tag            ? tag
                         : song                   ? track_name(name, sizeof name, r)
                                                  : P(r, REC_NAME);
+    if (st.qm_kind == QM_PLAYLIST && *st.qm_name) title = st.qm_name;
     qm_title(dialog, title ? title : "");
     widget_destroy_children(view);
     /* Songs favourite, as stock's heart, and go to their album and artist; collections shuffle.
@@ -9105,6 +9134,12 @@ static int qm_open(const void *unused) {
         if (np_more()) acts[n++] = QA_MORE; /* last: Now Playing's own menu */
     }
     if (st.qm_kind == QM_PLAYLIST) acts[n++] = QA_MORE; /* its dots' page */
+    /* the list's own rows, which its covers hide: Edit Playlists… is Classic's select mode; a
+     * toolbar's page edits from its toolbar */
+    if (st.qm_kind == QM_PLAYLIST && coverflow_playlist(page)) {
+        acts[n++] = QA_NEW_PLAYLIST;
+        if (!geom_val(V_TOOLBAR)) acts[n++] = QA_EDIT_PLAYLISTS;
+    }
     static const char *const rows[] = { "Play Next",
                                         "Add to Queue",
                                         "Shuffle",
@@ -9123,7 +9158,9 @@ static int qm_open(const void *unused) {
                                         "View Queue",
                                         "Go to Folder",
                                         "Chapters",
-                                        "More…" };
+                                        "More…",
+                                        "New Playlist",
+                                        "Edit Playlists…" };
     char rated[32];
     /* stock sortselect row styles */
     int painted = dialogs_painted(), pitch = painted ? theme()->page_row : QM_ROW;
@@ -9152,6 +9189,25 @@ static int qm_open(const void *unused) {
     if (painted) hold_open(dialog, n);
     st.qm_dialog = dialog;
     return 0;
+}
+
+/* A playlist's hold, from its row or its cover: the list's own menu, at its index in the live list
+ * (p_deque_playlist), which its More page takes. A cover's title is the name the covers show: the
+ * live list keeps a renamed one's old name until its page is on top again. */
+static int qm_list_hold(unsigned at, char *key, void *cover) {
+    void *lists = P(p_deque_playlist, 0);
+    void *r = lists && at < deque_size(lists) ? deque_at(lists, at) : 0;
+    if (!key || !r || !(st.qm_timer = timer_add(qm_open, (void *)0, 0))) return 0;
+    st.qm_kind = QM_PLAYLIST;
+    const char *name = cover ? P(cover, REC_TITLE) : 0;
+    tk_snprintf(st.qm_name, sizeof st.qm_name, "%s", name ? name : "");
+    st.qm_cls = 0xf001; /* its songs load as a song list, as Shuffle's (play_folder) */
+    st.qm_idx = at;
+    st.qm_rows = deque_size(lists);
+    st.qm_hash = rec_hash(r);
+    st.qm_press = *(unsigned long long *)(key + INPUT_KEY_TIME);
+    drop_input();
+    return 1;
 }
 
 /* The hold: the same gates and row as a centre press, over the stock showlist or Coverflow's
@@ -9191,8 +9247,10 @@ static int qm_hold(void) {
         return 1;
     }
     int kind = contexts[context_id(name)].kind;
-    void *album = coverflow_album(top);
+    void *album = coverflow_album(top), *cover = coverflow_playlist(top);
     char *key = play_key();
+    if (cover)
+        return qm_list_hold(playlist_index(I(cover, REC_DISC)), key, cover); /* by its cd_num */
     if (album) {
         if (!key || !(st.qm_timer = timer_add(qm_open, (void *)0, 0))) return 0;
         st.qm_kind = QM_COVERALBUM;
@@ -9216,18 +9274,9 @@ static int qm_hold(void) {
     if (!tk_strcmp(name, "playlist_page") && widget_get_prop_int(top, PL_MODE, 0)) return 0;
     if (!tk_strcmp(name, "playlist_page")) {
         /* The row's index counts Import and Export; its dots' name carries the playlist's. */
-        void *more = more_image(g_menu.at[cur]), *lists = P(p_deque_playlist, 0);
-        unsigned at = (unsigned)atoi(more ? widget_get_prop_str(more, "name", "") + 8 : "-1");
-        void *r = lists && at < deque_size(lists) ? deque_at(lists, at) : 0;
-        if (!key || !r || !(st.qm_timer = timer_add(qm_open, (void *)0, 0))) return 0;
-        st.qm_kind = QM_PLAYLIST;
-        st.qm_cls = 0xf001; /* its songs load as a song list, as Shuffle's (play_folder) */
-        st.qm_idx = at;
-        st.qm_rows = deque_size(lists);
-        st.qm_hash = rec_hash(r);
-        st.qm_press = *(unsigned long long *)((char *)key + INPUT_KEY_TIME);
-        drop_input();
-        return 1;
+        void *more = more_image(g_menu.at[cur]);
+        return qm_list_hold((unsigned)atoi(more ? widget_get_prop_str(more, "name", "") + 8 : "-1"),
+                            key, 0);
     }
     if (!coverflow) list = P(p_deque_showlist, 0);
     if (!list || deque_size(list) != (unsigned)g_menu.rows) return 0;

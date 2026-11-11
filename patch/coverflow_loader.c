@@ -210,9 +210,10 @@ void ld_take(int s, int i, int a) {
  * lacks, made one a pass from the cover, no sooner than HALF_GAP_MS after the last (a decode is 6
  * to 9 ms of the UI thread), HALF_LOOK albums looked at a pass at most, none with the card's free
  * space under the larger of HALF_KEEP_MB and HALF_KEEP_PCT of its size (they stop short of filling
- * it and stay until Refresh Cover Flow), and none outside Large Library Mode; from the first album
- * each time the page opens, done at the last. Each is decoded into a texture's worth of heap of its
- * own, freed once written. The only place they are written: never in a frame. */
+ * it and stay until Refresh Cover Flow), and none outside Large Library Mode or for playlists; from
+ * the first album each time the page opens, done at the last. Each is decoded into a texture's
+ * worth of heap of its own, freed once written. The only place they are written: never in a frame.
+ */
 #define HALF_LOOK 32
 #define HALF_GAP_MS 100
 #define HALF_KEEP_MB 512
@@ -221,7 +222,7 @@ void coverflow_halves(void) {
     int n = cf.albums && fx.tex ? (int)deque_size(cf.albums) : 0;
     unsigned now = (unsigned)time_now_ms();
     char url[600] = "file://", path[512];
-    if (fx.halves >= n || !ringnav_big_library() ||
+    if (fx.halves >= n || !ringnav_big_library() || cf.scoped == PLAYLISTS ||
         (fx.half_at && (int)(now - fx.half_at) < HALF_GAP_MS) ||
         !card_room(ART_DIR, HALF_KEEP_MB, HALF_KEEP_PCT))
         return;
