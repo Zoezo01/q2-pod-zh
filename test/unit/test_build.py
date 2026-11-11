@@ -1092,3 +1092,20 @@ def test_build_refuses_a_zip_that_is_not_the_audited_one(tmp_path):
     zip_path.write_bytes(b'not the audited ZIP')
     with pytest.raises(ValueError, match='^Unsupported ZIP: SHA-256 differs from audited original$'):
         build.build(zip_path, tmp_path/'out', None)
+
+
+@pytest.mark.parametrize('version,beta', [('1.7.10', 0), ('1.7', 0), ('1.7.6.0', 0), ('10.7.6', 0), ('17.6', 0), ('1.76', 0),
+                                          ('1.x.6', 0), ('1-7-6', 0), ('1.8.0', 10), ('1.8.0', -1)])
+def test_build_refuses_a_version_not_of_three_single_digits(tmp_path, monkeypatch, version, beta):
+    # 17.6 and 1.76 pack to a 5-character tag too, so the tag's length alone let them through; refused before the ZIP is read
+    monkeypatch.setattr(build, 'VERSION', version)
+    monkeypatch.setattr(build, 'BETA', beta)
+    with pytest.raises(ValueError, match='^VERSION must be three single digits'):
+        build.build(tmp_path/'no such.zip', tmp_path/'out', None)
+    assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('version,beta,ok', [('1.8.0', 0, True), ('1.8.0', 2, True), ('0.0.1', 9, True), ('9.9.9', 0, True),
+                                             ('17.6', 0, False), ('1.8.0', 10, False)])
+def test_version_ok(version, beta, ok):
+    assert build.version_ok(version, beta) == ok

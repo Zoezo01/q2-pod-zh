@@ -18,6 +18,10 @@ REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-r
 # the edition instead (ringnav_about).
 TAG = 'V' + VERSION.replace('.', '') + str(BETA)
 
+def version_ok(version, beta):
+    """VERSION is three single digits and BETA one, as TAG packs them; 17.6 or 1.76 would give a 5-character tag too."""
+    return bool(re.fullmatch(r'[0-9]\.[0-9]\.[0-9]', version)) and beta in range(10)
+
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a
     tag, and none equals a release's, and the updater takes each."""
@@ -1707,6 +1711,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(not rotator_lazy_clock or dev, '--rotator-lazy-clock requires --dev')
     check(not pwm_idle_clock or dev, '--pwm-idle-clock requires --dev')
     check(not mcu_idle_sleep or (dev and pwm_idle_clock), '--mcu-idle-sleep requires --dev --pwm-idle-clock')
+    check(dev or version_ok(VERSION, BETA), f'VERSION must be three single digits (x.y.z) and BETA 0-9: {VERSION}, {BETA}')
     version = TAG
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
     out.mkdir(parents=True, exist_ok=True)
@@ -1988,8 +1993,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # 0x502a00, check_otginfo 0x502f28), so it carries the build tag and stock V1.34 can be flashed back.
     # About's FW. Version row reads it too (0x4c0f80); ringnav_about shows STOCK_VERSION there instead.
     check(patched.count(b'V1.34\0') == 1, 'Version literal is not unique')
-    check(len(version) + 1 == len(b'V1.34\0'),
-          'VERSION must be three single digits (x.y.z): the 5-character tag would shift every later file offset')
     patched = patched.replace(b'V1.34\0', version.encode()+b'\0')
     patched = patched.replace(*RTC_WRITE)
     check(patched.count(WIFI_LPS[0]) == 1, 'Unexpected Wi-Fi power save command')
