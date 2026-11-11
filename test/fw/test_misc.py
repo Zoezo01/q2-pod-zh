@@ -1206,8 +1206,8 @@ def test_play_flips_the_pause_at_once(fw):
 
 class Xf(C.Structure):
     _fields_ = [*((k, C.c_int) for k in 'read on seconds done'.split()), ('key', C.c_int * 8),
-                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap mqa_read mqa'.split()),
-                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mqa_label mono_label page sw view slider dec add label'.split()),
+                *((k, C.c_int) for k in 'stops counted ctx sliding unsaved setting rs_read rs_min mono_read mono swap_read swap'.split()),
+                *((k, C.c_void_p) for k in 'flag mono_flag swap_flag press_file mute_file swap_label mono_label page sw view slider dec add label'.split()),
                 ('press', C.c_uint), ('press_at', C.c_uint)]
 
 

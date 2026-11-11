@@ -18133,14 +18133,14 @@ assert texts()[0]=='Standby Limit: Off'; passed()  # out of range: Off
 # Folder skip, Library & Folders'), then ours; stock's Max Volume and Default Volume pages open from their rows, and
 # Enlarged Album Art flips stock's own byte and key.
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
-assert len(rows)==9 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_folderjump','playset_maxvol','playset_bootvol','playset_covermode']
-assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','Library & Folders','playset_maxvol','playset_bootvol','playset_covermode']
-assert len(m.nodes[m.settings_view]['children'])==20 and not set(m.entries[11:])&set(m.nodes[m.settings_view]['children'])
-assert [click(6),m.opened[-1],click(7),m.opened[-1]]==[[],('playset/maxvol_page',None),[],('playset/bootvol_page',None)]
-m.byte(syms['g_bigcovermode'],0); assert click(8)==[(1,'PLAYSET','COVERMODE')] and m.u.mem_read(syms['g_bigcovermode'],1)==b'\1' and switch_image(m,rows[8])=='switch_on'
-assert click(8)==[(0,'PLAYSET','COVERMODE')] and m.u.mem_read(syms['g_bigcovermode'],1)==b'\0' and switch_image(m,rows[8])=='switch_off'
+assert len(rows)==8 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_folderjump','playset_maxvol','playset_bootvol','playset_covermode']
+assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','Library & Folders','playset_maxvol','playset_bootvol','playset_covermode']
+assert len(m.nodes[m.settings_view]['children'])==19 and not set(m.entries[11:])&set(m.nodes[m.settings_view]['children'])
+assert [click(5),m.opened[-1],click(6),m.opened[-1]]==[[],('playset/maxvol_page',None),[],('playset/bootvol_page',None)]
+m.byte(syms['g_bigcovermode'],0); assert click(7)==[(1,'PLAYSET','COVERMODE')] and m.u.mem_read(syms['g_bigcovermode'],1)==b'\1' and switch_image(m,rows[7])=='switch_on'
+assert click(7)==[(0,'PLAYSET','COVERMODE')] and m.u.mem_read(syms['g_bigcovermode'],1)==b'\0' and switch_image(m,rows[7])=='switch_off'
 # Library & Folders: its row opens stock's page again as the sub-page, stock's Folder skip kept, ours built.
-assert click(5)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
+assert click(4)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13,sub=1)
 assert len(rows)==5 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_folderjump','playset_foldercover']
 assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Folder Root: Card','playset_foldercover']
@@ -18372,9 +18372,9 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,7,13,6,14,8,0,9,19,20,10,15,16,21,1,4,17,5,18]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,7,13,6,14,8,0,9,18,19,10,15,16,20,1,4,5,17]; passed()
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
-for i in (0,1,5,6,7):
+for i in (0,1,4,5,6):
     button=m.nodes[rows[i]]['children'][0]
     assert m.nodes[m.nodes[button]['children'][-1]]['image']=='list_into'
 passed()
@@ -18385,17 +18385,6 @@ assert click(3)==[(1,'Q2POD','SWAPLR')] and texts()[3]=='Swap L/R' and m.get(m.f
 assert click(3)==[(0,'Q2POD','SWAPLR')] and texts()[3]=='Swap L/R' and m.get(m.flag)==0
 m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'SWAPLR':'1'},stock_rows=13)
 assert texts()[3]=='Swap L/R'; passed()
-# MQA (crossfade.c mqa_click): off by default, saved as Q2POD MQA, and sent to a connected hciplayer
-# at once: 2 skips its start-of-track probe, 0 is its default. No player socket, nothing sent.
-m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=13)
-assert texts()[4]=='MQA' and icons[4]=='playset_dsdoutput'
-m.word(O['MCL_FD'],9)
-assert click(4)==[(1,'Q2POD','MQA')] and texts()[4]=='MQA' and m.sent[-1]==(9,b'{mcl-mqadecodemode\\0}',21,0)
-assert click(4)==[(0,'Q2POD','MQA')] and texts()[4]=='MQA' and m.sent[-1]==(9,b'{mcl-mqadecodemode\\2}',21,0)
-m.word(O['MCL_FD'],-1); sent=len(m.sent)
-assert click(4)==[(1,'Q2POD','MQA')] and len(m.sent)==sent
-m,rows,texts,*_=settings_page('audioset','scroll_view_playset',{'MQA':'1'},stock_rows=13)
-assert texts()[4]=='MQA'; passed()
 # Folder Root (#49): the row cycles the card's top-level folders, case aside, then the card, saving Q2POD
 # FOLDERROOT each time. Not offered: files, dot-folders, names with an edge space or over 200 bytes (a
 # config.ini line can't keep them). A saved folder gone moves on to the next name after it.

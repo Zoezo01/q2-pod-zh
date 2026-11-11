@@ -7,7 +7,7 @@
  * same way, the length a music track needs to keep its place (navigation.c resume_poll). Display's
  * Night Shift row opens it as well (xf.ctx 3): the switch and Centre cycle Off, On and Auto, as
  * Light Mode's row does, and the slider runs NS_COOL to NS_WARM, warmer to the right, a NS_STEP a
- * tick (nightshift.c). Mono Audio's and MQA's rows live here too (mono_sync, mqa_sync). */
+ * tick (nightshift.c). Mono Audio's row lives here too (mono_sync). */
 #include "offsets.inc"
 #include "peq.h"
 #include "playback.h"
@@ -29,9 +29,9 @@ static struct {
     int ctx; /* the page's: 0 Crossfade, 1 Wheel sensitivity, 2 Resume Songs, 3 Night Shift */
     int sliding, unsaved, setting; /* a finger on the slider; a value it moved; refresh's own set */
     int rs_read, rs_min;
-    int mono_read, mono, swap_read, swap, mqa_read, mqa;
+    int mono_read, mono, swap_read, swap;
     volatile int *flag, *mono_flag, *swap_flag, *press_file, *mute_file;
-    void *swap_label, *mqa_label;
+    void *swap_label;
     void *mono_label; /* the Mono Audio row's, while Playback is open */
     void *page, *sw, *view, *slider, *dec, *add, *label;
     unsigned press, press_at;
@@ -226,39 +226,6 @@ int swap_click(void *ctx, void *event) {
     write_int_config(xf.swap, "Q2POD", "SWAPLR");
     mono_sync();
     swap_text();
-    return 0;
-}
-
-/* MQA (Q2POD MQA, read once, default off). hciplayer's start-of-track probe decodes about 2 s of a
- * FLAC or PCM track before it plays (docs/internals.md#mqa-detection), long enough to break a
- * gapless change. Off sends stock's {mcl-mqadecodemode\2}, which skips the probe, so MQA plays
- * undecoded; On sends 0, hciplayer's default. ponytail: stock V1.34's hciplayer stores the mode and
- * never probes, so the row changes nothing there; kept for a stock player that probes again, and
- * to go with mqa_sync, mqa_accept and MQA_GATE if the final V1.34 never does. Send on accept before stock publishes the socket:
- * its first connection does not request player_initconfig. A toggle applies at the next audio init. */
-static int mqa_on(void) {
-    if (!xf.mqa_read) xf.mqa = config_value("Q2POD", "MQA", 2, 0), xf.mqa_read = 1;
-    return xf.mqa;
-}
-static void mqa_sync(int fd) {
-    static const char on[] = "{mcl-mqadecodemode\\0}", off[] = "{mcl-mqadecodemode\\2}";
-    if (fd > 0) send(fd, mqa_on() ? on : off, sizeof on - 1, 0); /* -1: no player; stock never publishes 0 */
-}
-int mqa_accept(int fd, void *addr, unsigned *len) {
-    int player = accept(fd, addr, len);
-    mqa_sync(player);
-    return player;
-}
-static void mqa_text(void) { list_toggle(xf.mqa_label, "MQA", mqa_on()); }
-void mqa_row(void *label) {
-    xf.mqa_label = label;
-    mqa_text();
-}
-int mqa_click(void *ctx, void *event) {
-    xf.mqa = !mqa_on();
-    write_int_config(xf.mqa, "Q2POD", "MQA");
-    mqa_sync(*(volatile int *)MCL_FD);
-    mqa_text();
     return 0;
 }
 

@@ -691,63 +691,11 @@ for folder in (0,1):
         r.call(address=0x51de34,args=(0,0,0,0),gap=0) # player_initconfig
         assert '/mnt/data/ringnav-queue' in r.files and r.sequence()==want
         assert r.get(ps['peq_chained'])==0 # a new hciplayer has no filter: peq_chain attaches again
-        # MQA is already sent at accept; this reconnect configuration does not send it again.
-        mqa=lambda: [x[1] for x in r.sent if x[1].startswith(b'{mcl-mqa')]
-        assert not mqa()
-        # A real mode choice still clears the snapshot after startup, and sends no MQA mode.
-        r.sent=[]
+        # A real mode choice still clears the snapshot after startup.
         r.call(address=syms['config_playmode'],args=(mode,0,0,0),gap=0)
-        assert not mqa()
         # Stock Shuffle (2) keeps Shuffle Albums/Folders; every other mode ends them.
         assert ('/mnt/data/ringnav-queue' in r.files) == (mode == 2)
         checks+=1
-
-# The first connection never sets stock's reconfiguration flag, so player_initconfig does not run
-# then. Apply the saved MQA mode inside the real accept loop, before the descriptor becomes visible
-# to playback.
-class MqaConnectMachine(PlaybackMachine):
-    def __init__(self):
-        super().__init__()
-        self.handlers[syms['accept@GLIBC_2.0']]='mqa:accept'
-        self.handlers[syms['usleep@GLIBC_2.0']]='mqa:sleep'
-        self.handlers[ps['list_toggle']]='mqa:label' # the row's switch: no settings page here
-        self.word(O['MCL_FD']+4,7) # stock's listening socket
-    def hook(self,u,address,size,unused):
-        name=self.handlers.get(address,'')
-        if name=='mqa:accept':
-            assert u.reg_read(UC_MIPS_REG_A0)==7
-            assert self.get(u.reg_read(UC_MIPS_REG_A2))==110
-            self.returns(self.accepted,clobber=True)
-        elif name=='mqa:sleep': u.emu_stop()
-        elif name=='mqa:label': self.returns(0,clobber=True)
-        else:
-            if name=='q:send@GLIBC_2.0': assert self.get(O['MCL_FD'])==0xffffffff; self.unpublished+=1
-            super().hook(u,address,size,unused)
-    def connect(self,fd):
-        self.accepted=fd; self.sent=[]; self.unpublished=0
-        self.word(O['MCL_FD'],-1)
-        self.u.reg_write(UC_MIPS_REG_SP,0x7000f000)
-        self.u.reg_write(UC_MIPS_REG_T9,syms['mclWaitAccept'])
-        self.u.emu_start(syms['mclWaitAccept'],0x1000000,count=self.budget)
-        assert self.u.reg_read(UC_MIPS_REG_PC)==syms['usleep@GLIBC_2.0']
-        assert self.get(O['MCL_FD'])==(fd if fd>0 else 0xffffffff)
-        assert self.unpublished==len(self.sent) # every send saw the socket still unpublished
-
-on,off=b'{mcl-mqadecodemode\\0}',b'{mcl-mqadecodemode\\2}'
-for saved in (None,'0','1'):
-    m=MqaConnectMachine()
-    if saved is not None: m.config['MQA']=saved
-    want=on if saved=='1' else off
-    for fd in (-1,0,9,9,11): # failure, stock-rejected zero, boot, reused fd, new fd
-        m.connect(fd)
-        assert m.sent==([(fd,want,len(want),0)] if fd>0 else [])
-        checks+=1
-    # A toggle while no player is connected sends nothing; the next connection gets the new mode.
-    m.word(O['MCL_FD'],-1); m.sent=[]
-    assert m.fn('mqa_click')==0 and not m.sent
-    assert [(c[1],m.text(c[2]),m.text(c[3])) for c in m.calls if c[0]=='write_int_config']==[(0 if saved=='1' else 1,'Q2POD','MQA')]
-    m.connect(9); assert m.sent==[(9,off if saved=='1' else on,21,0)]
-    checks+=1
 
 # Previous then Next returns to the track Previous left instead of skipping it.
 m=PlaybackMachine(); m.options(2,5,0); m.advance_song(0); m.advance_song(0)

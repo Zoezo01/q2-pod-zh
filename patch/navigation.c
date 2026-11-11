@@ -213,9 +213,8 @@ extern void up_next(int (*keyup)(void *, void *));
 extern int un_hold(void *top);
 extern void radio_poll(void);
 extern void xfade_row(void *label), wheel_row(void *label), resume_row(void *label),
-    mono_row(void *label), swap_row(void *label), mqa_row(void *label), night_row(void *label);
-extern int mono_click(void *ctx, void *event), swap_click(void *ctx, void *event),
-    mqa_click(void *ctx, void *event);
+    mono_row(void *label), swap_row(void *label), night_row(void *label);
+extern int mono_click(void *ctx, void *event), swap_click(void *ctx, void *event);
 extern int xfade_open(void *ctx, void *event), xfade_key(void *top, unsigned key), resume_min(void);
 extern int eq_key(void *top, unsigned key); /* peq_ui.c */
 extern const char *radio_hold(void *top);
@@ -3356,17 +3355,16 @@ static const unsigned char playset_order[] = {
     8 /* Headphones required */,
     0 /* Gain */,
     9 /* ReplayGain */,
-    17 /* Max Volume */,
-    18 /* Default Vol */,
+    16 /* Max Volume */,
+    17 /* Default Vol */,
     10 /* Balance */,
     13 /* Mono Audio */,
     14 /* Swap L/R */,
-    19 /* Enlarged art */,
+    18 /* Enlarged art */,
     1 /* Filters */,
     4 /* DSD Output */,
-    15 /* MQA */,
     5 /* USB Audio */,
-    16 /* Library & Folders */,
+    15 /* Library & Folders */,
 };
 /* Library & Folders: stock's Folder skip (0), then ours as built. */
 static const unsigned char library_order[] = {
@@ -3492,7 +3490,6 @@ int ringnav_audioset(void *win, void *ctx) {
     resume_row(list_row_into(view, "playset_memplay", xfade_open, (void *)2)); /* crossfade.c */
     mono_row(list_row(view, "playset_balance", mono_click, 0));
     swap_row(list_row(view, "playset_balance", swap_click, 0));
-    mqa_row(list_row(view, "playset_dsdoutput", mqa_click, 0)); /* crossfade.c */
     widget_set_text_utf8(list_row_into(view, "playset_folderjump", library_open, 0),
                          "Library & Folders");
     widget_set_tr_text(

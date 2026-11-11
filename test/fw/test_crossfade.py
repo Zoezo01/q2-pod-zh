@@ -1,7 +1,6 @@
 """patch/crossfade.c: what the next track change asks of hciplayer's fade (xfade_poll, from playback_poll),
-Crossfade's page and the pages and rows that share it, and the words demo leaves the player: Swap L/R, MQA
-and the wired start's stamps. What each should do is docs/internals.md's (Crossfade, MQA detection, Wired
-start) and the code's comments."""
+Crossfade's page and the pages and rows that share it, and the words demo leaves the player: Swap L/R and
+the wired start's stamps. What each should do is docs/internals.md's (Crossfade, Wired start) and the code's comments."""
 import ctypes as C
 import struct
 
@@ -639,7 +638,7 @@ def test_a_press_after_an_overdue_first_switches_at_once(fw):
     assert page.key(CENTER) == 0 and xf(fw).on == 1
 
 
-# Swap L/R and MQA's rows.
+# Swap L/R's row.
 class Row:
     """A settings row's label in its button, its switch (or, for a set_text theme, its value) found: what it shows."""
     def __init__(self, fw, maker):
@@ -664,41 +663,6 @@ def test_swap_click_saves_and_tells_the_player(fw):
     assert config.written == [('SWAPLR', 1)] and shared[SWAP] == 1 and row.state() != off
     click(None, None)
     assert config.written[-1] == ('SWAPLR', 0) and shared[SWAP] == 0 and row.state() == off and len(shared.made) == 1
-
-
-MQA_ON, MQA_OFF = b'{mcl-mqadecodemode\\0}', b'{mcl-mqadecodemode\\2}'  # hciplayer's default, and the probe skipped
-
-
-def sends(fw):
-    return [(a[0], C.string_at(a[1], a[2])) for _, a in fw.calls('fw_send')]
-
-
-def test_mqa_click_saves_and_sends_the_player_its_mode(fw, mcl):
-    config = Config(fw)
-    mcl.fd = 5
-    row = Row(fw, 'mqa_row')
-    off = row.state()
-    click = fw.fn('mqa_click', C.c_int, C.c_void_p, C.c_void_p)
-    click(None, None)
-    assert config.written == [('MQA', 1)] and sends(fw) == [(5, MQA_ON)] and row.state() != off
-    click(None, None)
-    assert config.written[-1] == ('MQA', 0) and sends(fw)[-1] == (5, MQA_OFF) and row.state() == off
-
-
-def test_mqa_click_with_no_player_sends_nothing(fw, mcl):
-    Config(fw)
-    mcl.fd = -1
-    Row(fw, 'mqa_row')
-    fw.fn('mqa_click', C.c_int, C.c_void_p, C.c_void_p)(None, None)
-    assert not fw.calls('fw_send')
-
-
-@pytest.mark.parametrize('saved, fd, sent', [(None, 6, MQA_OFF), ('1', 6, MQA_ON), ('0', 0, None), ('1', -1, None)])
-def test_each_new_player_hears_the_saved_mode_before_stock_has_it(fw, saved, fd, sent):
-    Config(fw, {} if saved is None else {'MQA': saved})
-    fw.mock('fw_accept', lambda *_: fd)
-    assert fw.fn('mqa_accept', C.c_int, C.c_int, C.c_void_p, C.c_void_p)(3, None, None) == fd
-    assert sends(fw) == ([] if sent is None else [(fd, sent)])
 
 
 # The wired start: a press stamps PRESS_FILE odd; a natural start skips stock's mute and sleep and leaves an

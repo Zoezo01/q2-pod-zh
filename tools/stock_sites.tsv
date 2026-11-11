@@ -329,7 +329,6 @@ demo	0x540f28	0x4	stream_page_init	the load of $25 for the only call to widget_m
 demo	0x540fb4	0x4	stream_page_init	`addiu $2, $zero, 0x4e`, before the only call to list_item_create, after "s_btn_listitem"; patch/ipod.json immediates toolbar switch pages: no Home or Now Playing button (the keys go there) (the Library's and Streaming's stock rows take the list's default_item_height, as ours do (V1.32 passed 0, V1.34 passes 78))
 demo	0x541780	0x4	systembar_showface	`lw $2, GOT[a page]` (2nd of 16 such), before 4th of 7 calls to widget_set_visible, after "bar_vol0"; patch/peq_ui.c peq_stock_eq
 demo	0x541ff4	0x4	updatemusic_page_bind_widget	the load of $25 for the only call to widget_move_resize, after "list_view"; patch/ipod.json navbar_resize_calls (a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing)
-demo	0x5ba1c0	0x4	mclWaitAccept	the only call to accept; tools/build.py build
 demo	0x5bb9ac	0x4	mclSyncPlayerStatus	2nd of 2 calls to usleep, after "no-playing-status"; tools/build.py DARK_POLLS
 demo	0x5bc074	0x4	mcl_parse_lrc_file	the load of $25 for 2nd of 2 calls to fopen, after "cp "%s" %s"; tools/build.py LYRIC_OPEN, tools/build.py build
 demo	0x5bc07c	0x4	mcl_parse_lrc_file	2nd of 2 calls to fopen, after "cp "%s" %s"; tools/build.py LYRIC_OPEN
@@ -457,12 +456,6 @@ hciplayer	0x42da5c	0x4	player_idle_wait	`sw $zero, 0x1e34($17)` (1st of 2 such);
 hciplayer	0x42da70	0x4	player_idle_wait	`sw $zero, 0x1e6c($5)`, before the only call to memset; patch/peq_player.c uninit
 hciplayer	0x42ecc0	0x4	reinit_audio_chain	`ori $3, $zero, 0xbb80`, after "init_audio_codec"; patch/peq_player.c OUTPUT_WAY
 hciplayer	0x42f04c	0x4	fill_audio_out_buffers	`sb $2, 0x1e68($23)`, before the only call to pthread_mutex_unlock, after "play_audio"; patch/flac_sync.c flac_sync_check
-hciplayer	0x42f34c	0x4	fill_audio_out_buffers	`ori $2, $3, 0x44` (3rd of 3 such), after "oss"; tools/peq.py MQA_GATE
-hciplayer	0x42f350	0x4	fill_audio_out_buffers	`addu $2, $2, $sp` (6th of 8 such), after "oss"; tools/peq.py MQA_GATE
-hciplayer	0x42f354	0x4	fill_audio_out_buffers	`lw $2, 0x0($2)` (3rd of 12 such), after "oss"; tools/peq.py MQA_GATE
-hciplayer	0x42f358	0x4	fill_audio_out_buffers	`lw $2, 0x1c5c($2)` (4th of 12 such), after "oss"; tools/peq.py MQA_GATE
-hciplayer	0x42f35c	0x4	fill_audio_out_buffers	`blez $2, +10 words`, after "oss"; tools/peq.py MQA_GATE
-hciplayer	0x42f384	0x4	fill_audio_out_buffers	`lw $2, 0x8($4)` (2nd of 3 such), before 2nd of 5 calls to a pointer, after "oss"; tools/peq.py MQA_GATE
 hciplayer	0x42f708	0x4	fill_audio_out_buffers	`bnez $2, +43 words` (7th of 8 such), after "oss"; tools/peq.py EQ_RATE_GATES
 hciplayer	0x42f8b8	0x4	pause_loop	`addiu $5, $zero, 0x1` (1st of 5 such), before 1st of 4 calls to sub_432594; patch/peq_player.c forced_eof_c
 hciplayer	0x42f910	0x4	pause_loop	`sb $5, 0x1e68($2)`, before the only call to pthread_mutex_unlock; patch/flac_sync.c flac_sync_check

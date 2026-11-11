@@ -48,18 +48,6 @@ EQ_RATE_GATES = ((0x42cf20, 0x8c42ae30, 0),            # mpctx: the three loads 
                  (0x42cf28, 0x8c42003c, 0),            # sh_audio's rate
                  (0x42cf30, 0x10400098, 0),            # beqz $v0 to "setequalizer off" -> nop
                  (0x42f708, 0x1440002a, 0x1000002a))   # bnez $v0 to the insert -> b
-# The MQA side chain (docs/internals.md#mqa-detection): fill_audio_out_buffers runs every probed stream
-# through the MQA decoder while isMQA (0xb11c5c) > 0 but plays its output only when isMQA == 2, so the gate
-# becomes isMQA == 2 (address, stock word, patched word).
-# Stock V1.34 (a beta) took the start-of-track probe out of reinit_audio_chain: nothing stores isMQA but 0 and nothing
-# makes the decoder, so this gate is never passed there and the long probe V1.32 needed has no place to go. The gate
-# stays, for a stock build that probes again.
-MQA_LOAD = 0x8c421c5c  # stock's lw $v0, <isMQA's low half>($v0), which moves up two words
-MQA_GATE = ((0x42f34c, 0x34620044, 0x3c0200b1),   # ori $v0, $v1, 0x44    -> lui $v0, 0xb1
-            (0x42f350, 0x005d1021, MQA_LOAD),     # addu $v0, $v0, $sp    -> lw $v0, 0x1c5c($v0)
-            (0x42f354, 0x8c420000, 0x2442fffe),   # lw $v0, 0($v0)        -> addiu $v0, $v0, -2
-            (0x42f358, MQA_LOAD, 0),              # lw $v0, 0x1c5c($v0)   -> nop
-            (0x42f35c, 0x18400009, 0x14400009))   # blez $v0, 0x42f384    -> bnez $v0, 0x42f384
 # ao_alsa's init (0x438248) asks for a 500 ms buffer (0x4382fc) but cuts it to 100 ms on output way 2, a USB
 # DAC: two branch delay slots store 100000 us and become nops, so USB keeps 500 ms.
 # ponytail: where hciplayer scales a USB DAC's volume itself, a change now lags up to 500 ms, not 100 ms.
@@ -148,7 +136,6 @@ LIBC = {
     'deque_assign': ('void', 'void *, const void *'), 'deque_clear': ('void', 'void *'),
     'deque_pop_back': ('void', 'void *'),
     'deque_destroy': ('void', 'void *'), 'send': ('int', 'int, const void *, unsigned, int'),
-    'accept': ('int', 'int, void *, unsigned *'),  # MQA's saved mode before publishing the player socket
     # Coverflow's art thread (coverflow.c)
     'pthread_create': ('int', 'unsigned long *, const void *, void *(*)(void *), void *'),
     'pthread_join': ('int', 'unsigned long, void **'), 'pthread_self': ('unsigned long', 'void'), 'pthread_detach': ('int', 'unsigned long'), 'pthread_mutex_lock': ('int', 'void *'),
@@ -305,8 +292,6 @@ def patch_player(raw, out, flac_experiments=()):  # pragma: no mutate block
     patch_word(data, *IDLE_WAIT, jal(ps['hci_idle_wait']), 'idle loop waits on the play flag')
     for address, stock, patched in EQ_RATE_GATES:
         patch_word(data, address, stock, patched, 'Equalizer rate gate')
-    for address, stock, patched in MQA_GATE:
-        patch_word(data, address, stock, patched, 'MQA side chain')
     for address, stock, patched in USB_BUFFER:
         patch_word(data, address, stock, patched, 'USB DAC buffer')
     for address, stock, name in DAC_RELEASE:

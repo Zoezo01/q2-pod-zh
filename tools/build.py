@@ -1534,7 +1534,7 @@ def compile_payload(out):  # pragma: no mutate block
         f'--undefined={WM_PAINT_LEAF[2]}', f'--undefined={QUEUE_LEAF[2]}', '--undefined=ringnav_audio_extension', '--undefined=start_mute', '--undefined=start_sleep', '--undefined=ringnav_genre_copy', '--undefined=ringnav_lyric_save', '--undefined=ringnav_bootmode', '--undefined=lockscreen_access','--undefined=ringnav_ts_read',
         '--undefined=ringnav_baidu_poll', '--undefined=ringnav_tidal_poll', '--undefined=addon_m3u_dir', f'--undefined={COVERINFO_CALL[2]}',
         '--undefined=coverflow_player_cover', '--undefined=coverflow_grid_cover', '--undefined=coverflow_album_cover', '--undefined=coverflow_folder_cover', '--undefined=headset_bt_init',
-        '--undefined=headset_status_register', '--undefined=headset_bt_autolink', '--undefined=mqa_accept',
+        '--undefined=headset_status_register', '--undefined=headset_bt_autolink',
         *nav,out/'trampoline.o',*extra,'-o',out/'patch.elf')
     run('llvm-objcopy','-O','binary',out/'patch.elf',out/'patch.bin')
     return symbols(out/'patch.elf')
@@ -1806,8 +1806,6 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
           'player_initconfig: unexpected mclSetPlayMode call')
     patch_word(patched, 0x503fb8, 0x0411e963, jal(ps['ringnav_bootmode']),
                'config_init preserves the saved queue when applying the boot play mode')
-    patch_word(patched, 0x5ba1c0, 0x0320f809, jal(ps['mqa_accept']),
-               'saved MQA mode on every player connection, including boot')
     patch_word(patched, 0x504b54, 0x0320f809, jal(ps['lockscreen_access']),
                'startup accepts built-in wallpapers')
     patch_word(patched, 0x505554, 0x0320f809, jal(ps['lockscreen_access']),
