@@ -726,12 +726,12 @@ int toolsGetExternCover(const char *src, const char *dst, int ww, int h) {
     assert(ww == 320 && h == 320 && !held[0] && !held[1]);
     return extern_found ? write_art(dst, "extern") : 0;
 }
-static unsigned free_blocks = 1 << 20, statfs_calls;
+static unsigned free_blocks = 1 << 20, card_blocks = 1 << 21, statfs_calls; /* 4 GB free of 8 GB */
 int shim_statfs(const char *p, void *out) {
     assert(!strcmp(p, PEQ_ROOT "/mnt/mmc/.coverflow"));
     ++statfs_calls;
     unsigned *s = out;
-    s[1] = 4096; s[7] = free_blocks; /* MIPS o32 statfs: f_bsize, f_bavail */
+    s[1] = 4096, s[3] = card_blocks, s[7] = free_blocks; /* MIPS o32 statfs: f_bsize, f_blocks, f_bavail */
     return 0;
 }
 
@@ -5319,6 +5319,18 @@ static void half_art(void) {
     th_pass(0, 17);
     assert(halves(0) == made + 1);
     made = halves(0);
+    /* the copies leave the larger of 512 MB and 5% of the card free: 512 MB on an 8 GB card, 5% on
+       a 64 GB one, to the block */
+    unsigned edge[][2] = { { 1 << 21, 131072 }, { 1 << 24, 838861 } };
+    for (int e = 0; e < 2; ++e) {
+        card_blocks = edge[e][0], free_blocks = edge[e][1] - 1;
+        for (int i = 0; i < 7; ++i) th_pass(0, 17);
+        assert(halves(0) == made);
+        free_blocks = edge[e][1];
+        th_pass(0, 17);
+        assert(halves(0) == ++made);
+    }
+    card_blocks = 1 << 21, free_blocks = 1 << 20;
     close_page(), top_window = 0;
     for (int i = 0; i < 10; ++i) th_pass(0, 17);
     assert(halves(0) == made);

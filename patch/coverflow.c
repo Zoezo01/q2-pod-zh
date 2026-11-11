@@ -498,12 +498,16 @@ int worker_stop(unsigned long thread, int *running, volatile int *cancel, unsign
     return ran;
 }
 
-/* Whether dir's file system has MIN_FREE_MB free (statfs, MIPS o32 layout: f_bsize is word 1,
- * f_bavail word 7); shared with photos.c. */
-int card_space(const char *dir) {
+/* Whether dir's file system has mb MB free and pct percent of its size free (statfs, MIPS o32
+ * layout: f_bsize is word 1, f_blocks word 3, f_bavail word 7). */
+int card_room(const char *dir, unsigned mb, unsigned pct) {
     unsigned fs[32] = { 0 };
-    return !statfs(dir, fs) && (unsigned long long)fs[7] * fs[1] >= (unsigned long long)MIN_FREE_MB << 20;
+    if (statfs(dir, fs)) return 0;
+    unsigned long long room = (unsigned long long)fs[7] * fs[1];
+    return room >= (unsigned long long)mb << 20 && room * 100 >= (unsigned long long)fs[3] * fs[1] * pct;
 }
+/* Whether dir's file system has MIN_FREE_MB free; shared with photos.c. */
+int card_space(const char *dir) { return card_room(dir, MIN_FREE_MB, 0); }
 
 /* Cancel stops after the current album; finished thumbnails stay, so the next open resumes. */
 static void stop(void) {
