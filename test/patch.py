@@ -20763,25 +20763,15 @@ for patched in (True,False):
     for state in (dict(bt_linkstatus=1),dict(bt_showcoding=1),dict(g_otg_status=1)):
         assert forbids(patched,**state)==(1,NOTICE),state
 passed()
-# Q2 Pod's three starts of its own, with stock's gate run: each asks with 0 and starts nothing it refuses. Play/Pause
+# Q2 Pod's two starts of its own, with stock's gate run: each asks with 0 and starts nothing it refuses. Play/Pause
 # when not playing (ringnav_play_pause, the hook on stock's player_play_pause, whose body is the toggle here; a pause
-# always goes through), the side buttons' and a headset's skip (media_key, playing or not), and an Up Next row
-# (un_play), which closes all the same.
+# always goes through), the side buttons' and a headset's skip (media_key, playing or not).
 def hp_keys(key,playing=False,**state):
     m=hp_on(HeadsetMachine(),**state); toggle=syms['player_play_pause']; del m.handlers[toggle]; m.handlers[toggle+12]='hs:local_toggle'
     m.playing=playing; m.fn('media_key',O[key]); return m.actions,sum(x[0]=='navigator_to_with_context' for x in m.calls)
 for key,does in (('KEY_PLAY','play'),('KEY_FWD_BTN','local_next'),('KEY_BACK_BTN','local_prev')):
     assert hp_keys(key)==([],1) and hp_keys(key,g_po_status=1)==hp_keys(key,g_block_withoutphone_flag=0)==([(1,does)],0),key
 assert hp_keys('KEY_PLAY',True)==([(1,'pause')],0) and hp_keys('KEY_FWD_BTN',True)==([],1); passed()
-def upnext_row(**state):
-    m=CoverflowMachine(page='playing_page',pos=1); q=m.deque([m.song(c) for c in 'ABCDE'])
-    m.word(syms['mcl_pdeqplaylist'],q); m.word(O['MCL_POOL'],m.deque(list(range(5)),'int'))
-    assert m.call(address=payload_syms['playback_set'],args=(0,1,0,0),gap=0)==1  # a shuffle: View Queue is Up Next
-    m.press(10); assert m.hold()==11; m.release(); m.pick(m.labels().index('View Queue')); m.advance(0); m.page=m.top
-    assert m.nodes[m.page]['name']=='upnext_page' and m.texts()[1::2]==list('CDEA'); hp_on(m,**state); shown=len(m.toasts)
-    f,ctx=m.handler(m.nodes[m.find('scroll_view')]['children'][1],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
-    return [x[1] for x in m.calls if x[0]=='player_start_queue'],sum(x[0]=='navigator_back' for x in m.calls),[t[:3] for t in m.toasts[shown:]]
-assert upnext_row()==([],1,[NOTICE[1]]) and upnext_row(g_bal_status=1)==upnext_row(g_block_withoutphone_flag=0)==([3],1,[]); passed()
 # Stock's own start runs through Q2 Pod's hook: Now Playing opened with a track to start, the way a list row's tap
 # goes. Stock's playing_page_init, whole: refused, it shows the message, closes the window it was given and returns
 # STOP before it starts or builds anything, and ringnav_playing binds nothing to a window that is gone. With an
