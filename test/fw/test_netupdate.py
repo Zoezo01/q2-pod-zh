@@ -446,6 +446,13 @@ def test_the_folder_a_job_is_replacing(fw):
         assert busy() is None
     sh.job, sh.running = JOB_INSTALL, 0
     assert busy() is None
+    moving = fw.fn('shelf_moving', C.c_char_p)  # once its files move: a remove's whole run, an install's stage 3
+    for job, stage, folder in ((JOB_INSTALL, 1, None), (JOB_INSTALL, 2, None), (JOB_INSTALL, 3, b'.bar'),
+                               (JOB_REMOVE, 4, b'.bar'), (JOB_CHECK, 4, None), (JOB_ERASE, 4, None)):
+        sh.running, sh.job, sh.stage = 1, job, stage
+        assert moving() == folder
+    sh.running = 0
+    assert moving() is None
 
 
 def test_closing_the_page_forgets_its_rows_only(fw):

@@ -537,6 +537,10 @@ const char *shelf_busy(void) {
     return sh.running && sh.job != JOB_CHECK && sh.job != JOB_ERASE ? apps[sh.app].dir : 0;
 }
 
+/* The folder a remove is deleting or an install moving into place (stage 3 on), else 0: addon.c
+ * opens no page there. */
+const char *shelf_moving(void) { return sh.stage >= 3 ? shelf_busy() : 0; }
+
 /* glibc 2.28 MIPS o32 stat v3: st_mode at byte 20; 0 when path is missing. */
 static unsigned file_mode(const char *path) {
     unsigned info[36];

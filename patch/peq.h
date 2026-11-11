@@ -476,6 +476,7 @@ int page_keyup(void *ctx, void *event); /* navigation.c: Return leaves a payload
 int ringnav_localclass(int cls);        /* navigation.c: load_localclass_list's hook */
 int shelf_open(void *ctx, void *event); /* netupdate.c: System settings' Apps page */
 const char *shelf_busy(void);           /* netupdate.c: the app folder a job replaces */
+const char *shelf_moving(void);         /* netupdate.c: the app folder deleted or moved into */
 int shelf_erase(int start);             /* netupdate.c: Spotify's erase, started or running */
 void stream_erased(void);               /* navigation.c: Configuration follows a finished erase */
 void album_lyrics_stop(void);           /* onlinematch.c: Download Album Lyrics before USB storage */

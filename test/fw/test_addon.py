@@ -10,7 +10,7 @@ import pytest
 import host
 from conftest import O, Deques, Game, block, high_halves, libc, text
 from test_coverflow import png  # an icon's header
-from test_netupdate import JOB_INSTALL, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
+from test_netupdate import JOB_INSTALL, JOB_REMOVE, Sh  # test_netupdate.py keeps netupdate.c's App Store mirror
 from test_radio import Rd  # test_radio.py keeps the mirror
 
 APPS_MAX = 8
@@ -3108,6 +3108,25 @@ def test_a_page_that_cant_open_leaves_nothing_behind(fw):
     assert p.pg.page == p.page and p.top.op == b'menu'
 
 
+@pytest.mark.parametrize('job,stage,opens', [
+    (JOB_REMOVE, 4, False),   # its folder being deleted
+    (JOB_INSTALL, 3, False),  # an update's files being moved into place
+    (JOB_INSTALL, 1, True),   # an update's download: the old app still runs, its page works
+])
+def test_a_page_the_app_store_is_replacing_waits_for_it(fw, job, stage, opens):
+    p = Page(fw, opens=False)
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, job, 0, stage
+    fw.fn('addon_open', C.c_int, C.c_void_p, C.c_void_p)(0, None)
+    if opens:
+        assert p.pg.page == p.page and p.top.op == b'menu' and p.toasts == []
+    else:
+        assert not p.pg.page and not p.pg.lv and p.toasts == [b'Wait until the App Store finishes']
+    assert p.world.of('system') == []  # the app isn't started in its folder either way
+
+
 @pytest.mark.parametrize('manifest,path,logs', [
     (b'name=Foo\nscrobble=0\n', b'/mnt/mmc/.foo/a.flac', 0),
     (b'name=Foo\r\nscrobble=0\r\n', b'/mnt/mmc/.foo/a.flac', 0),  # a Windows editor's line ends
@@ -3151,6 +3170,17 @@ def test_go_to_opens_the_apps_page_at_the_song(fw):
     p = Page(fw, b'name=Foo\ngoto=1\n', opens=False)
     assert goto(fw, b'/mnt/mmc/.foo/a%b.flac') == 1
     assert p.top.op == b'goto' and p.top.args == b'\talbum\t/mnt/mmc/.foo/a%25b.flac' and p.top.title == b'T' and p.top.base == 31
+
+
+def test_go_to_during_the_apps_remove_waits_and_stock_s_go_to_doesnt_run(fw):
+    # Go to on a song of an app the App Store is removing toasts and returns 1, so stock's own Go to doesn't run
+    p = Page(fw, b'name=Foo\ngoto=1\n', opens=False)
+    table = C.addressof(C.c_char.in_dll(fw.lib, 'shelf_apps'))
+    fw.var('shelf_n', C.c_int).value = fw.fn('shelf_sources', C.c_int, C.c_char_p, C.c_void_p, C.c_int)(b'me/foo', table, 1)
+    sh = fw.var('netupdate__sh', Sh)
+    sh.running, sh.job, sh.app, sh.stage = 1, JOB_REMOVE, 0, 4
+    assert goto(fw, b'/mnt/mmc/.foo/a.flac') == 1
+    assert not p.pg.page and p.toasts == [b'Wait until the App Store finishes']
 
 
 def test_go_to_artist_with_no_title_is_titled_by_the_app(fw):
