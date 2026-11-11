@@ -610,6 +610,7 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('small_playset', 'Playback Setting', 'Playback'), ('small_sysset', 'System Setting', 'System'),
     ('system_wifiset', 'Wireless Setting', 'Wireless'), ('system_display', 'Display setting', 'Display'),
     ('system_netservice', 'Network Service', 'Network'), ('system_time', 'Date and time', 'Date & Time'),
+    ('netservice_wifitrans', 'Wi-Fi file transfer', 'Wi-Fi File Transfer'),
     ('system_keylock', 'Buttons lock', 'Buttons Lock'), ('system_keytone', 'Key tone', 'Key Tone'),
     ('system_carmode', 'In-Vehicle mode', 'In-Vehicle Mode'), ('system_reset', 'Reset settings', 'Reset Settings'),
     ('reset_initset', 'Reset only settings', 'Reset Settings Only'),
