@@ -18543,7 +18543,7 @@ assert press(m.switch)==[(2,*N)] and press(m.switch)==[(0,*N)]
 assert turn()==[(1,*N),(4900,*K)] and texts()[1]=='Night Shift: 4900K'; passed()  # a move turns it on
 # The tint (nightshift.c night_end, stock lcd_end_frame calling it): on, as boot read it, the first
 # normal frame's paint gives the screen's lcd night_end, reading no setting. Each frame warms the
-# pixels drawn in its rect (alpha not 0xfe): red kept, green and blue scaled, alpha 0xfe; one
+# pixels drawn in its rect (alpha not 0xf7): red kept, green and blue scaled, alpha 0xf7; one
 # already warmed, and any outside the rect, stay. Rows not w pixels long, a layout stock's lcd never
 # has, are left as drawn. Off gives stock's end_frame back.
 def tint_machine(config,w=8,h=4,row=None,mode=0,fmt=3,clock=None):  # clock: the mock's at boot
@@ -18555,14 +18555,14 @@ def tint_machine(config,w=8,h=4,row=None,mode=0,fmt=3,clock=None):  # clock: the
                   (0xf8,2),(0xfc,1),(0x100,3),(0x104,2)):
         m.word(m.lcd+off,v)
     for i in range(w*h): m.word(fb+4*i,0xff000000|i*0x070503)
-    m.word(fb+4*(1*w+3),0xfe123456)  # in the rect, warmed already
+    m.word(fb+4*(1*w+3),0xf7123456)  # in the rect, warmed already
     return m,fb,end
 def tint_frame(m):
     m.calls=[]; m.call(address=syms['lcd_end_frame'],args=(m.lcd,0,0,0),gap=0)
     return [c[1] for c in m.calls if c[0]=='widget_invalidate_force']  # stock's end_frame ran, with the lcd
 def warmed(c,k=3400):
     i=(k-2000)//100; g,b=[137,142,146,151,155,159,163,167,170,174,177,180,184,187,190,193,195,198,201,203,206,208,211,213,215,218,220,222,224,226,228][i],[14,27,39,50,61,70,79,87,95,103,110,117,123,129,135,141,146,151,157,161,166,171,175,179,183,187,191,195,199,202,206][i]
-    return 0xfe000000|c&0xff0000|((c>>8&255)*g+127)//255<<8|((c&255)*b+127)//255
+    return 0xf7000000|c&0xff0000|((c>>8&255)*g+127)//255<<8|((c&255)*b+127)//255
 def pixels(m,fb,n): return [m.get(fb+4*i) for i in range(n)]
 m,fb,end=tint_machine({'NIGHTSHIFT':'1'}); before=pixels(m,fb,32)
 assert ('Q2POD','NIGHTSHIFT') in [r[1:3] for r in m.config_reads]; reads=len(m.config_reads)
@@ -18572,6 +18572,19 @@ inside={y*8+x for y in (1,2) for x in (2,3,4)}-{1*8+3}
 assert pixels(m,fb,32)==[warmed(c) if i in inside else c for i,c in enumerate(before)]
 once=pixels(m,fb,32); assert tint_frame(m)==[m.lcd] and pixels(m,fb,32)==once  # nothing warmed twice
 m.word(fb+4*(2*8+2),0xff808080); assert tint_frame(m)==[m.lcd] and m.get(fb+4*(2*8+2))==warmed(0xff808080); passed()  # drawn again
+# Stock's own image pixel (0x6c7fc0 from an RGBA image, 0x6c4be0 a BGRA one: dst, src, alpha, premultiplied) drawn
+# over a warmed row, a source pixel of each alpha: every one stock touches comes out warmed, once. It copies a
+# source above 0xf8 alpha and all, so the mark is below that: at 0xfe the icons' rims (alpha 0xfe) stayed bright.
+for pixel in (0x6c7fc0,0x6c4be0):
+    m,fb,end=tint_machine({'NIGHTSHIFT':'1'},w=256,h=1)
+    for off,v in ((0xf8,0),(0xfc,0),(0x100,256),(0x104,1)): m.word(m.lcd+off,v)
+    m.call(address=payload_syms['night_paint'],args=(m.canvas,0,0,0),gap=0); tint_frame(m); under=pixels(m,fb,256)
+    src=m.alloc(4)
+    for a in range(256): m.word(src,a<<24|0x30a0ff); m.call(address=pixel,args=(fb+4*a,src,0xff,0),gap=0)
+    drawn=pixels(m,fb,256); assert drawn[0]==under[0] and all(d!=u for d,u in zip(drawn[1:],under[1:]))
+    tint_frame(m); assert pixels(m,fb,256)==drawn[:1]+[warmed(c) for c in drawn[1:]],pixel
+    once=pixels(m,fb,256); tint_frame(m); assert pixels(m,fb,256)==once
+passed()
 m.calls=[]; m.call(address=payload_syms['night_set'],args=(0,3400,0,0),gap=0)
 assert m.get(m.lcd+0x7c)==end and [c[1:3] for c in m.calls if c[0]=='widget_invalidate_force']==[(m.wm,0)]
 m.call(address=payload_syms['night_paint'],args=(m.canvas,0,0,0),gap=0)

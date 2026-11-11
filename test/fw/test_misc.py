@@ -165,7 +165,7 @@ def test_each_temperature_is_helland_s_black_body_fit(fw):
         green, blue = helland(k)
         assert abs((c >> 8 & 255) - green) <= 1, k
         assert abs((c & 255) - blue) <= 1, k
-        assert c >> 16 == 0xfeff, k  # red stays
+        assert c >> 16 == 0xf7ff, k  # red stays
 
 
 def test_cooler_keeps_more_of_green_and_blue(fw):
@@ -183,7 +183,7 @@ def test_each_channel_scales_rounded_and_red_is_kept(fw):
     out = warm(fw, lcd, 2000)
     gs, bs = 137, 14  # NS_WARM's
     for before, after in zip([0xff102030, 0xff000000, 0x00808080, 0x7fffffff], out):
-        assert after >> 24 == 0xfe and after >> 16 & 255 == before >> 16 & 255
+        assert after >> 24 == 0xf7 and after >> 16 & 255 == before >> 16 & 255
         assert after >> 8 & 255 == ((before >> 8 & 255) * gs + 127) // 255
         assert after & 255 == ((before & 255) * bs + 127) // 255
 
@@ -249,7 +249,7 @@ def test_night_end_warms_then_runs_stock_s(fw):
     s = ns(fw)
     s.end, s.kelvin = C.cast(stock, C.c_void_p).value, 3000
     assert fw.fn('nightshift__night_end', C.c_int, C.c_void_p)(lcd.p) == 42
-    assert seen == [(lcd.p, 0xfe)]
+    assert seen == [(lcd.p, 0xf7)]
 
 
 @pytest.mark.parametrize('on, dark, want', ((0, 0, 0), (0, 1, 0), (1, 0, 1), (1, 1, 1), (2, 0, 0), (2, 1, 1)))

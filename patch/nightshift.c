@@ -5,17 +5,23 @@
  * clock_night), and off while the clock cannot be read; clock_show applies it each minute
  * (night_clock). While it is on, the screen's lcd end_frame is night_end: before stock shows a
  * frame, the pixels drawn in it, those whose alpha is not NS_DONE, are warmed and given NS_DONE.
- * Stock's fills and blends write alpha 0xff over an opaque pixel (>= 0xf5; fill_bgra8888_rect
- * @0x6def94), so a pixel drawn again is warmed once more and one left alone is never warmed twice.
- * ponytail: a fill or image pixel whose own alpha is exactly NS_DONE (stock's clear path and
- * image_copy keep it) stays unwarmed; no payload colour has it. Off puts stock's end_frame back, so
- * nothing runs per frame; the lcd is found again on the next paint after On. The setting is read at
- * boot (playback.c ringnav_bootmode), so a paint reads none. */
+ * NS_DONE is an alpha stock's lcd never copies from a colour or an image: its fills and image and
+ * glyph blends copy a source pixel, alpha and all, only above 0xf8, and blend any fainter one over
+ * an opaque pixel (>= 0xf5) to alpha 0xff (fill_bgra8888_rect @0x6def94, the image pixel @0x6c7fc0
+ * and @0x6c4be0, the glyph's @0x6a56d4), so a pixel drawn again is warmed once more and one left
+ * alone is never warmed twice. It was 0xfe, which the round icons' rims have, left as bright specks.
+ * ponytail: vgcanvas keeps a coverage above 0xf4 as the alpha (agge pixel_blend @0x73ab94) and
+ * clear_rect its colour's, so an edge pixel or a cleared colour at exactly NS_DONE stays unwarmed,
+ * and vgcanvas blending over a pixel not drawn again leaves the mix unwarmed; 0xf7 is the rarest
+ * of 0xf5-0xf8 in the shipped art and no payload colour has it. A shadow of the frame would close
+ * it, at 480 KB and a compare a pixel. Off puts stock's end_frame back, so nothing runs per frame;
+ * the lcd is found again on the next paint after On. The setting is read at boot (playback.c
+ * ringnav_bootmode), so a paint reads none. */
 #include "offsets.inc"
 #include "peq.h"
 #include "stock.h"
 
-#define NS_DONE 0xfeu
+#define NS_DONE 0xf7u
 
 /* Green and blue's scale, of 255, from NS_WARM to NS_COOL by NS_STEP: Tanner Helland's fit to the
  * black-body colours, where red stays 255 below 6600K. */
