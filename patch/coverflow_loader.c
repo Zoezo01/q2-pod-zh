@@ -80,14 +80,16 @@ __attribute__((weak)) int cf_syscall(int nr, int a, int b, int c) { return -1; }
 #define SYS_IOPRIO_SET 4314
 #define IOPRIO(class, level) ((class) << 13 | (level)) /* idle 3, best effort 2 */
 
-/* The calling thread, the loader, below the UI and the player: nice 19, its reads in the idle I/O
- * class if the kernel takes it, else in best effort's lowest level. Returns what took: 1 for nice
- * 19, plus the class << 1. Not static, so the compiler keeps the return the loader ignores:
- * test/patch.py runs it. */
-__attribute__((noinline)) int ld_lower(void) {
+/* The calling thread below the UI and the player: nice 19, its reads in the idle I/O class if idle
+ * and the kernel takes it, else in best effort's lowest level; the processes it forks (ffmpeg)
+ * inherit both. The loader asks for idle; playlist_art.c's worker doesn't, as it takes stock's art
+ * locks, which the UI thread waits on, and an idle-class holder gets the disk only when no one else
+ * wants it. Returns what took: 1 for nice 19, plus the class << 1. Not static, so the compiler
+ * keeps the return the loader ignores: test/patch.py runs it. */
+__attribute__((noinline)) int thread_lower(int idle) {
     int tid = cf_syscall(SYS_GETTID, 0, 0, 0), io = 0;
     int nice = !cf_syscall(SYS_SETPRIORITY, 0 /* PRIO_PROCESS */, tid, 19);
-    if (!cf_syscall(SYS_IOPRIO_SET, 1 /* IOPRIO_WHO_PROCESS */, tid, IOPRIO(3, 0)))
+    if (idle && !cf_syscall(SYS_IOPRIO_SET, 1 /* IOPRIO_WHO_PROCESS */, tid, IOPRIO(3, 0)))
         io = 3;
     else if (!cf_syscall(SYS_IOPRIO_SET, 1, tid, IOPRIO(2, 7)))
         io = 2;
@@ -116,7 +118,7 @@ __attribute__((noinline)) static int ld_step(void) {
 }
 
 static void *loader(void *unused) {
-    ld_lower();
+    thread_lower(1);
     while (!__atomic_load_n(&fx.ld_stop, __ATOMIC_ACQUIRE))
         if (!ld_step()) sem_wait((void *)fx.gate);
     return 0;

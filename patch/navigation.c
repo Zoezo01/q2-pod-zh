@@ -1,5 +1,6 @@
 /* Logical menu selection is independent of native touch focus. Stock code owns gestures. */
 #include "navigation.h"
+#include "playlist_art.h"
 extern int stock_sorted_query_trampoline(const char *, const char *, void *, int);
 extern int stock_seek_time_trampoline(int);
 extern int stock_dbquery_trampoline(const char *, const char *, void *, int),
@@ -6133,11 +6134,14 @@ int ringnav_image_add(void *manager, const char *name, void *bitmap) {
     const scheme_t *sc = scheme(); /* scheme preset (accent()) in the half Light Mode picks */
     unsigned char *data = (void *)0;
     /* Before the manager copies bitmap_t: cached flags must agree with the new alpha. These
-     * paths are stock's album/artist thumbnails and Folder view's (.downpic/fd*, its cover
-     * thread's); playing covers are rounded after scaling. */
+     * paths are stock's album/artist thumbnails, Folder view's (.downpic/fd*, its cover
+     * thread's) and a playlist's row art (playlist_art.c, pl_ and plc_, the _s.jpg ones: Cover
+     * Flow insets its covers' own corners); playing covers are rounded after scaling. */
     if (format < 4 && name && !ipod_square_art() &&
         (tk_str_start_with(name, "file:///mnt/mmc/.sldp/") ||
-         tk_str_start_with(name, "file:///mnt/mmc/.downpic/fd"))) {
+         tk_str_start_with(name, "file:///mnt/mmc/.downpic/fd") ||
+         (tk_str_start_with(name, "file:///mnt/mmc/.coverflow/pl") &&
+          tk_str_end_with(name, "_s.jpg")))) {
         int w = I(bitmap, 0), h = I(bitmap, 4), stride = bitmap_get_line_length(bitmap);
         if (w > 0 && h > 0 && w <= 4096 && h <= 4096 && stride >= w * 4) {
             unsigned char *px = bitmap_lock_buffer_for_write(bitmap);
@@ -8734,10 +8738,12 @@ int ringnav_folder_click(void *ctx, void *event) {
 
 /* usbmode_page_init, as a cable to a computer opens USB mode, before stock unmounts the card for
  * USB storage: the card apps, which write to it (downloads, uploads), end first, so nothing of
- * theirs keeps it busy (they run from /tmp: addon.c), as does Download Album Lyrics' job. */
+ * theirs keeps it busy (they run from /tmp: addon.c), as do Download Album Lyrics' job and
+ * playlist art's worker. */
 int ringnav_usbmode(void *a, void *b, void *c, void *d) {
     addon_card_away();
     album_lyrics_stop();
+    playlist_art_stop();
     return stock_usbmode_trampoline(a, b, c, d);
 }
 

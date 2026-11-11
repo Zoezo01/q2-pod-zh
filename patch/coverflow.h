@@ -52,14 +52,18 @@ typedef struct {
 } cf_page_t;
 extern cf_page_t cf;
 
-/* On the card, beside stock's own cover cache (/mnt/mmc/.sldp). */
+/* On the card, beside stock's own cover cache (/mnt/mmc/.sldp); playlist_art.c's files too. */
 #define ART_DIR PEQ_ROOT "/mnt/mmc/.coverflow"
-#define ART_SIZE 160 /* a texture's side, texels */
+#define PL_BUILDING ART_DIR "/pl-building" /* playlist_art.c's art_note */
+#define ART_SIZE 160                       /* a texture's side, texels */
 #define CF_TEXELS (ART_SIZE * ART_SIZE)
 #define CF_ONE 65536
 #define CF_REACH 3 /* ring slots either side of the centre that can show (fading in) or preload */
 #define CF_EYE16 (16 * cfs.eye) /* the eye's distance, 1/16 px */
 #define CF_HALF16 (16 * ART_SIZE / 2)
+#ifndef ART_FFMPEG
+#define ART_FFMPEG "/usr/bin/ffmpeg"
+#endif
 #define CF_WIDE_REACH 7 /* CF_REACH under a thumb theme, for the row at speed */
 #define CF_WIDE (2 * CF_WIDE_REACH + 1)
 /* textures going by letters: the covers on the screen and the ones ahead of the row, the letter's
@@ -158,6 +162,14 @@ extern cf_thumb_t th;
 
 /* coverflow.c */
 unsigned album_key(void *r);
+unsigned tags_key(const char *artist, const char *album);
+unsigned album_ident(const char *album, const char *album_artist, const char *path);
+int album_art(const char *track, const char *dst, int shared);
+void art_note(const char *note, unsigned key, const char *track);
+void art_strike(const char *note);
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited);
+int thread_lower(int idle); /* coverflow_loader.c */
+int ff_thumb(const char *src, const char *dst, int w, int h);
 char *art_path(char *out, unsigned key, const char *suffix);
 int cf_decode(const char *url, unsigned *out, int unload);
 /* the texture pool (fx_window): the shelf's slots, then the placeholder */

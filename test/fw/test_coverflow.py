@@ -83,7 +83,7 @@ def api(fw):
            'coverflow_sort_name': (C.c_char_p,), 'coverflow_sort_step': (None,), 'coverflow__sort_next': (i, i),
            'blob_io': (i, C.c_char_p, C.c_char_p, ptr, u, i), 'file_size': (C.c_long, C.c_char_p),
            'coverflow__ff_run': (i, C.c_char_p, C.c_char_p, i, i, ptr), 'coverflow__build_art': (None, ptr),
-           'coverflow__worker': (ptr, ptr), 'coverflow__strike': (None,), 'coverflow_clean_end': (None,),
+           'coverflow__worker': (ptr, ptr), 'art_strike': (None, C.c_char_p), 'coverflow_clean_end': (None,),
            'thumb': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow__grid_cover': (i, C.c_char_p, C.c_char_p, i, i, i), 'coverflow_album_cover': (i, C.c_char_p, C.c_char_p, i, i),
            'coverflow_grid_cover': (i, C.c_char_p, C.c_char_p, i, i), 'coverflow_folder_cover': (i, C.c_char_p, C.c_char_p, i, i),
@@ -1595,29 +1595,29 @@ def test_the_worker_notes_each_album_before_its_build_and_drops_the_note_after_t
 def test_strike_marks_the_album_the_last_build_never_finished_and_drops_the_note(fw):
     g = api(fw)
     card = Card(fw, {BUILDING: struct.pack('<I', 0xabc) + b'/m/a.flac', CRASH_LOG: b'== date\n'})
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {art(0xabc): b'', CRASH_LOG: b'== date\n== cover flow skipped\n/m/a.flac\n'}
 
 
 def test_strike_of_a_note_torn_before_its_key_marks_nothing(fw):
     g = api(fw)
     card = Card(fw, {BUILDING: b'\xbc\x0a'})
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {}
 
 
 def test_strike_leaves_a_cover_that_was_made_and_no_note_marks_nothing(fw):
     g = api(fw)
     card = Card(fw, {BUILDING: struct.pack('<I', 0xabc), art(0xabc): b'art'})
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {art(0xabc): b'art'}
-    g.strike()
+    g.art_strike(BUILDING.encode())
     assert card.files == {art(0xabc): b'art'}
 
 
 def test_a_clean_end_drops_the_note(fw):
     g = api(fw)
-    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc)})
+    card = Card(fw, {BUILDING: struct.pack('<I', 0xabc), BUILDING.replace('building', 'pl-building'): struct.pack('<I', 0xdef)})
     g.coverflow_clean_end()
     assert card.files == {}
 

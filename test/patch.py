@@ -3945,6 +3945,10 @@ class PlaylistMachine(PlayingPlaylistMachine):
         self.mode=struct.unpack_from('<I',data,fileoff(data,GP-0x5810))[0]-0x4e3c
         assert self.mode==O['PLAYLIST_ADD_MODE']
         self.word(self.mode,mode)
+        # playlist_art.c (test/coverflow.py tests it): art ready for the playlists (cd_num) in self.art, each ask kept
+        self.art={}; self.asks=[]; self.refreshes=self.stops=0
+        for n in ('playlist_art','playlist_art_refresh','playlist_art_stop'):
+            if n in payload_syms: self.handlers[payload_syms[n]]='pl:'+n
         self.view=self.node('scroll_view','scroll_view')
         self.top=self.node('window','playlist_page',[self.view])
         self.word(self.view+O['W_PARENT'],self.top); self.word(self.top+O['W_PARENT'],self.wm)
@@ -3956,6 +3960,15 @@ class PlaylistMachine(PlayingPlaylistMachine):
         return kids
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,''); a,b,c,d=[u.reg_read(r) for r in REGS]
+        if name.startswith('pl:'):
+            ret=0
+            if name=='pl:playlist_art':
+                self.asks.append((a,self.text(b),c)); url=self.art.get(a)
+                assert self.get(u.reg_read(UC_MIPS_REG_SP)+16)>len(url or '')
+                if url: self.u.mem_write(d,url.encode()+b'\0'); ret=1
+            elif name=='pl:playlist_art_refresh': self.refreshes+=1
+            else: self.stops+=1
+            self.returns(ret); return
         if name=='picker_dialog' and self.text(a)!='dialog/addplaylist_dialog':
             self.handlers[address]='q:navigator_to'
             super().hook(u,address,size,unused)
@@ -4003,11 +4016,11 @@ for stale in (False,True):
 # its handlers run for real; each hidden widget's click runs its real handlers, nested, as stock's dispatch.
 class ClassicPlaylistMachine(PlaylistMachine):
     REBUILD_DONE=0x4b58c4
-    def __init__(self,count=3,mode=0):
-        SETUP[:]=[classic_light]
+    def __init__(self,count=3,mode=0,rowart='0',classic=True):  # classic=False: Minimal's page, its toolbar's own
+        if classic: SETUP[:]=[lambda k: classic_light(k).config.update(ROWART=rowart)]  # stored before the first load picks the set
         try: super().__init__(count,mode)
         finally: SETUP.clear()
-        classic_light_boot(self,'1')
+        if classic: classic_light_boot(self,rowart)
         self.handlers.pop(self.STOCK_PICK); self.handlers.pop(0x4b3f1c)
         self.handlers[syms['widget_restack']]='picker_restack'
         self.mock('batch_get_selectitem','batch_set_selectitem','batch_init_selectrecord','batch_clear_selectrecord','batch_empty_selectrecord',
@@ -4029,7 +4042,7 @@ class ClassicPlaylistMachine(PlaylistMachine):
         self.word(syms['tools_pdeq_directory'],self.deque([self.song(c) for c in 'ABC']))  # a playlist's songs, as stock's query leaves them
     def lists(self,*names):
         records=[self.song(n) for n in names]
-        for r,n in zip(records,names): self.word(r+O['REC_TITLE'],self.string(n))
+        for i,(r,n) in enumerate(zip(records,names)): self.word(r+O['REC_TITLE'],self.string(n)); self.word(r+O['REC_DISC'],10+i)  # cd_num
         self.word(syms['p_deque_playlist'],self.deque(records))
     def rebuild(self):
         assert self.call(address=0x4b5454,args=(self.top,0,0,0),gap=0,clear=False)==0
@@ -4269,6 +4282,64 @@ assert m.get(m.get(button+O['W_CHILDREN_LAYOUT'])+O['CHILDREN_LAYOUT_VTABLE'])!=
 native_row_layout(m,button)
 assert (m.get(info+O['W_X']),m.get(info+O['W_W']),m.get(more+O['W_X']),m.get(more+O['W_W']))==(20,289,321,50)
 assert signed(m.get(title+O['W_Y']))==-1 and m.get(second+O['W_Y'])==28; passed()
+
+# Each playlist row's art (playlist_art.c), under Row Art alone (Classic's): stock's 52 px image takes the playlist's
+# small art by name once its file is made, stock's placeholder till then. The songs are read once a rebuild; a build
+# finished asks again for its playlist's rows alone (an ask can queue a failed one anew); the page closed stops the
+# builds and the rows hear no more.
+PL_ART=lambda cd: f'file:///mnt/mmc/.coverflow/pl_{cd}_0000abcd_s.jpg'
+def pl_art_lists(m,n):  # List i at cd_num 10+i, as ClassicPlaylistMachine.lists
+    records=[m.song(f'List {i}') for i in range(n)]
+    for i,r in enumerate(records): m.word(r+O['REC_TITLE'],m.string(f'List {i}')); m.word(r+O['REC_DISC'],10+i)
+    m.word(syms['p_deque_playlist'],m.deque(records))
+def pl_art_of(m,button): return next(k for k in m.nodes[button]['children'] if m.nodes[k]['type']=='image' and not (m.nodes[k].get('name') or '').startswith('img_'))
+def pl_ready(m,cd): m.call(address=m.get(payload_syms['playlist_art_ready']),args=(cd,0,0,0),gap=0,clear=False)
+m=ClassicPlaylistMachine(rowart='1'); m.art={11:PL_ART(11)}; m.rebuild()
+buttons=[m.row_button(name) for name in LISTS]
+assert [m.nodes[pl_art_of(m,b)]['image'] for b in buttons]==['playlist_default',PL_ART(11),'playlist_default']
+assert m.refreshes==1 and m.asks==[(10,'List 0',1),(11,'List 1',1),(12,'List 2',1)]
+m.asks=[]; m.art[12]=PL_ART(12); pl_ready(m,12)
+assert m.asks==[(12,'List 2',1)] and m.nodes[pl_art_of(m,buttons[2])]['image']==PL_ART(12) and m.refreshes==1
+m.asks=[]; pl_ready(m,99); assert not m.asks  # a playlist no longer listed
+# ... the image cache dropped (Light Mode, Corners, Theme: image_manager_unload_all): the rows hold names, not bitmaps, so
+# stock's image paint loads each again by name; a rebuild names them again.
+assert not [c for c in m.calls if c[0] in ('widget_load_image','image_manager_unload_all','image_manager_unload_bitmap_by_name')]
+m.rebuild(); assert [m.nodes[pl_art_of(m,m.row_button(name))]['image'] for name in LISTS]==['playlist_default',PL_ART(11),PL_ART(12)]
+f,ctx=m.handler(m.top,O['EVT_DESTROY']); m.call(address=f,args=(ctx,0,0,0),gap=0,clear=False)
+assert m.stops==1; m.asks=[]; pl_ready(m,12); assert not m.asks; passed()
+# ... Import, which writes every song it reads, stops the builds before stock's import runs; its rebuild asks again.
+m=ClassicPlaylistMachine(rowart='1'); m.rebuild(); m.tap(m.row_button(EDIT)); m.stack_rows(); stops=m.stops
+m.tap(m.row_button('Import Playlists')); assert m.stops==stops+1 and any(c[0]=='importPlayList' for c in m.calls); passed()
+# Minimal and Modern, which have no Row Art, keep 1.7.6's rows: stock's placeholder, nothing asked, read or stopped;
+# and the Add to Playlist picker shares the page and stays as it is.
+for theme,mode in (('0',0),('2',0),('0',1),('0',2)):
+    CONFIG.update(THEME=theme); m=PlaylistMachine(0,mode); CONFIG.clear(); pl_art_lists(m,3); m.art={11:PL_ART(11)}; kids=m.rebuild()
+    assert [m.nodes[pl_art_of(m,m.nodes[r]['children'][0])]['image'] for r in kids[-3:]]==['playlist_default']*3
+    assert not m.asks and not m.refreshes and not [h for h in m.nodes[m.top].get('handlers',()) if h[0]==O['EVT_DESTROY']]; passed()
+# Classic with Row Art on: a playlist's row is an album row, its art at x 22 and 52 px, the text from 80 to the dots'
+# column; the dots, and select mode's marks, where they were.
+m=ClassicPlaylistMachine(rowart='1'); m.art={11:PL_ART(11)}; m.rebuild()
+assert m.rows()==[NEW,EDIT]+LISTS and m.asks==[(10,'List 0',1),(11,'List 1',1),(12,'List 2',1)]
+for name,image in zip(LISTS,('playlist_default',PL_ART(11),'playlist_default')):
+    button=m.row_button(name); art=pl_art_of(m,button); info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
+    more=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_more'))
+    assert m.nodes[art]['visible'] and m.nodes[art]['image']==image and [m.get(art+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[22,0,52,52]
+    assert (m.get(info+O['W_X']),m.get(info+O['W_W']),m.get(more+O['W_X']),m.nodes[more]['visible'])==(80,229,321,1)
+m.art[12]=PL_ART(12); pl_ready(m,12); assert m.nodes[pl_art_of(m,m.row_button('List 2'))]['image']==PL_ART(12)
+native_row_layout(m,m.row_button('List 1')); info=next(k for k in m.nodes[m.row_button('List 1')]['children'] if m.nodes[k]['name']=='view_info')
+assert (m.get(info+O['W_X']),m.get(info+O['W_W']))==(80,229)
+m.tap(m.row_button(EDIT)); m.stack_rows(); button=m.row_button('List 0'); art=pl_art_of(m,button)
+choice=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name'].startswith('img_choice'))
+info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
+assert m.nodes[art]['visible'] and m.get(art+O['W_X'])==22 and m.get(choice+O['W_X'])==333 and (m.get(info+O['W_X']),m.get(info+O['W_W']))==(80,249); passed()
+# ... the picker keeps its text rows; with Row Art off, the rows are as they were (the tests above), their art hidden
+# and none built for them.
+for mode,rowart in ((1,'1'),(0,'0')):
+    m=ClassicPlaylistMachine(3,mode,rowart); m.art={11:PL_ART(11)}; m.rebuild()
+    for name in LISTS:
+        button=m.row_button(name); info=next(k for k in m.nodes[button]['children'] if m.nodes[k]['name']=='view_info')
+        assert not m.nodes[pl_art_of(m,button)]['visible'] and (m.get(info+O['W_X']),m.get(info+O['W_W']))==(20,289)
+    assert not m.asks and not m.refreshes; passed()
 
 # Stock's add mode is one global, left by a picker however it closes: a page coming back rebuilds as what it opened as.
 for cls in (PlaylistMachine,ClassicPlaylistMachine):
@@ -10574,18 +10645,60 @@ for cut in (False,True):
     tpaint(m); m.u.hook_del(h); assert len(m.draws)==draws+1 and n[0]<PAINT_BOUND,n[0]
     trest(m); tpaint(m); assert not any(b in m.live.values() for b in LETTERS_HEAP); passed()  # landed: both freed
 
-# The loader's thread lowers itself first (ld_lower, its first call): nice 19 through setpriority (o32 4097) on its own tid
-# (gettid, 4222), its reads in the idle I/O class (ioprio_set, 4314, IOPRIO_WHO_PROCESS), best effort's lowest level when
-# the kernel refuses idle; it returns what took (1: nice 19, plus the class << 1).
-for refused in (False,True):
+# A thread lowers itself (thread_lower(idle)): nice 19 through setpriority (o32 4097) on its own tid (gettid, 4222), and its
+# reads, with idle (the loader, its first call), in the idle I/O class (ioprio_set, 4314, IOPRIO_WHO_PROCESS), best
+# effort's lowest level when the kernel refuses idle; without (playlist art's worker, which holds stock's art locks) in
+# best effort's lowest level alone. It returns what took (1: nice 19, plus the class << 1). Playlist art's worker does so
+# first, once, so its reads and the ffmpeg runs it forks (which inherit both) stay below the player and the UI.
+lower=payload_syms['thread_lower']
+for address,idle,refused in ((lower,1,False),(lower,1,True),(lower,0,False),(lower,0,True),(payload_syms['pl_worker'],0,False)):
     m=Machine(); sc=[]
-    def syscall(u,intno,unused,sc=sc,refused=refused):
-        n,a,b,c=(u.reg_read(r) for r in (UC_MIPS_REG_V0,*REGS[:3])); sc.append((n,a,b,c)); bad=n==4314 and c==3<<13 and refused
+    def syscall(u,intno,unused,sc=sc,refused=refused,idle=idle):
+        n,a,b,c=(u.reg_read(r) for r in (UC_MIPS_REG_V0,*REGS[:3])); sc.append((n,a,b,c)); bad=n==4314 and refused and (c==3<<13 or not idle)
         u.reg_write(UC_MIPS_REG_A3,int(bad)); u.reg_write(UC_MIPS_REG_V0,1 if bad else 321 if n==4222 else 0)
     m.u.hook_add(UC_HOOK_INTR,syscall)
-    took=m.call(address=payload_syms['ld_lower'],args=(0,0,0,0),gap=0)
-    assert [x[0] for x in sc[:1]]==[4222] and sc[1:]==[(4097,0,321,19),(4314,1,321,3<<13)]+([(4314,1,321,2<<13|7)] if refused else []),sc
-    assert took==1|(2 if refused else 3)<<1,took; passed()
+    took=m.call(address=address,args=(idle,0,0,0),gap=0)
+    tries=[(4314,1,321,3<<13)]*idle+[(4314,1,321,2<<13|7)]*(not idle or refused)
+    assert [x[0] for x in sc[:1]]==[4222] and sc[1:2+len(tries)]==[(4097,0,321,19)]+tries,sc
+    if address==lower: assert took==1|(0 if refused and not idle else 2 if refused or not idle else 3)<<1,took
+    passed()
+
+# Playlist art's SQLite stays off the UI thread: a rebuild's refresh only asks the worker (a thread, no sqlite3_open or
+# _exec here), and an ask before its first read lands answers none and opens nothing. USB Storage joins that worker
+# before stock's page takes the card, and none starts again while its page is there. Stock's lazy open of its shared connection (0x5c8aa0) calls stock_db_open from
+# 0x5c8ae0, which sets the busy timeout on the connection it opened, so stock's writers wait out the worker's read.
+class PlArtMachine(Machine):
+    def __init__(self):
+        super().__init__(); self.sql=[]; self.threads=0; self.order=[]; self.usb=0
+        self.mock('mkdir@GLIBC_2.0')
+        for n in ('sqlite3_open','sqlite3_exec','sqlite3_close','pthread_join@GLIBC_2.0','pthread_create@GLIBC_2.2','navigator_window_is_exist'): self.handlers[syms[n]]='pa:'+n
+        self.handlers[int(manifest['patch_symbols']['stock_usbmode_trampoline'],16)]='pa:usb'
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('pa:'): return super().hook(u,address,size,unused)
+        a,b,c,d=[u.reg_read(r) for r in REGS]; name=name[3:]
+        if name=='sqlite3_open': self.sql.append(('open',self.text(a))); self.word(b,0xdb)
+        elif name=='sqlite3_exec': self.sql.append(('exec',a,self.text(b)))
+        elif name.startswith('pthread_create'): self.threads+=1; self.word(a,0x77)
+        elif name.startswith('pthread_join'): self.order.append(('join',a))
+        elif name=='usb': self.order.append(('stock',self.get(payload_syms['pl']+20)))  # pl.running
+        elif name=='navigator_window_is_exist': assert self.text(a)=='usbmode_page'; self.returns(self.usb); return
+        self.returns(0)
+m=PlArtMachine(); url=m.alloc(600)
+m.call(address=payload_syms['playlist_art_refresh'],args=(0,0,0,0),gap=0)
+assert m.call(address=payload_syms['playlist_art'],args=(3,m.string('Mix'),1,url),stack=(600,),gap=0)==0
+assert not m.sql and m.threads==1 and m.get(payload_syms['pl']+20)==1; passed()
+m.call(address=HOOKS['usbmode_page_init'][0],args=(0,0,0,0),gap=0)
+assert m.order==[('join',0x77),('stock',0)],m.order
+m.usb=1; m.call(address=payload_syms['playlist_art_refresh'],args=(0,0,0,0),gap=0)
+assert m.call(address=payload_syms['playlist_art'],args=(3,m.string('Mix'),1,url),stack=(600,),gap=0)==0
+assert m.threads==1 and m.get(payload_syms['pl']+20)==0; passed()
+from build import fileoff, STOCK_DB_OPEN
+demo=(B/'demo').read_bytes(); assert STOCK_DB_OPEN[0]==0x5c8ae0
+assert struct.unpack_from('<I',demo,fileoff(demo,0x5c8ae0))[0]==jal(payload_syms['stock_db_open'])
+m=PlArtMachine(); m.u.reg_write(UC_MIPS_REG_GP,0xa3a4e0)
+assert m.call(address=0x5c8aa0,args=(m.string('/mnt/data/database.db'),0,0,0),gap=0)==1
+assert m.sql==[('open','/mnt/data/database.db'),('exec',0xdb,'PRAGMA busy_timeout=500')],m.sql; passed()
 
 # Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
 m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
@@ -11138,13 +11251,14 @@ for config,name,fmt in (({'CLASSIC_LIGHT_ACCENT':'1','THEME':'1'},'switch_on',3)
                         ({'ACCENT':'1','THEME':'2'},'switch_on',3),({'THEME':'2','ACCENT':'4'},'menu_coverflowdown',3)):  # Home: Carousel's cards
     assert image(config,name,fmt)==[stock,stock],(config,name,fmt); passed()
 
-# Classic, and Modern under Square: thumbnails keep their square corners.
+# Classic, and Modern under Square: thumbnails keep their square corners, a playlist's art too.
 for t in ('1','2'):
+  for name in ('file:///mnt/mmc/.sldp/album0.jpg','file:///mnt/mmc/.coverflow/pl_3_0000abcd_s.jpg'):
     CONFIG.update(THEME=t); m=Machine(); CONFIG.clear(); m.handlers[tramp['image']]='stock_image'
     w,h,stride=60,52,248; bm=m.alloc(0x60); data=m.alloc(stride*h); m.word(bm,w); m.word(bm+4,h); m.word(bm+8,stride)
     m.u.mem_write(bm+0xc,struct.pack('<HH',3,1)); m.word(bm+0x14,data); source=(bytes([47,47,47,255])*w+b'\xee'*8)*h; m.u.mem_write(data,source)
-    m.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,m.string('file:///mnt/mmc/.sldp/album0.jpg'),bm,0),gap=0)
-    assert bytes(m.u.mem_read(data,stride*h))==source,t; passed()
+    m.call(address=HOOKS['image_manager_add'][0],args=(0x1000500,m.string(name),bm,0),gap=0)
+    assert bytes(m.u.mem_read(data,stride*h))==source,(t,name); passed()
 # There the disc placeholders are squared too: a transparent corner takes the top edge's grey, a half
 # covered pixel blends onto it, the rest and the row padding stay; Minimal and Modern under Round keep
 # the rounded disc, and another image under square art is untouched.
@@ -11165,9 +11279,15 @@ for config,name,square in (({'THEME':'1'},'play_defaultcover',1),({'THEME':'2'},
         assert m.get(bm+0xc)&1,(config,name)
     assert out==bytes(want),(config,name,fmt,out.hex()); passed()
 # Artwork is rounded before caching, including the cached opacity flag. Straight RGB and row
-# padding survive; every byte order and an already transparent source corner are supported.
+# padding survive; every byte order and an already transparent source corner are supported. A playlist's row art (its
+# 2x2 or its own picture, in Cover Flow's cache, the 52 px _s.jpg) is rounded as an album's; Cover Flow's own covers,
+# a playlist's 160 px one among them, are not: Cover Flow insets their corners itself.
+ROUNDED_ART=('file:///mnt/mmc/.sldp/','file:///mnt/mmc/.coverflow/pl')
 for name in ('file:///mnt/mmc/.sldp/album0.jpg', 'file:///tmp/coverpic.jpg',
-             'file:///tmp/externpic.jpg', 'file:///tmp/album_tidal.jpg', 'file:///mnt/mmc/photo.jpg'):
+             'file:///tmp/externpic.jpg', 'file:///tmp/album_tidal.jpg', 'file:///mnt/mmc/photo.jpg',
+             'file:///mnt/mmc/.coverflow/pl_3_0000abcd_s.jpg', 'file:///mnt/mmc/.coverflow/plc_3_0000abcd_s.jpg',
+             'file:///mnt/mmc/.coverflow/pl_3_0000abcd.jpg', 'file:///mnt/mmc/.coverflow/plc_3_0000abcd.jpg',
+             'file:///mnt/mmc/.coverflow/0000abcd.jpg'):
     for fmt in range(1,5):
         m=Machine(); m.handlers[tramp['image']]='stock_image'
         w,h,stride=60,52,248; bm=m.alloc(0x60); data=m.alloc(stride*h)
@@ -11180,10 +11300,10 @@ for name in ('file:///mnt/mmc/.sldp/album0.jpg', 'file:///tmp/coverpic.jpg',
         args=(0x1000500,m.string(name),bm,0)
         m.call(address=HOOKS['image_manager_add'][0],args=args,gap=0)
         rounded=bytes(m.u.mem_read(data,stride*h))
-        if not name.startswith('file:///mnt/mmc/.sldp/'):
-            assert rounded==source and m.get(bm+0xc)&1
+        if not name.startswith(ROUNDED_ART) or ('/.coverflow/' in name and not name.endswith('_s.jpg')):
+            assert rounded==source and m.get(bm+0xc)&1,name
         else:
-            assert not m.get(bm+0xc)&1 and m.get(bm+0xc)&2
+            assert not m.get(bm+0xc)&1 and m.get(bm+0xc)&2,name
             assert all(rounded[y*stride+4*x+alpha]==0 for x,y in ((0,0),(w-1,0),(0,h-1),(w-1,h-1)))
             assert rounded[4*(w//2)+alpha]==rounded[(h//2)*stride+alpha]==255
             assert all(rounded[i]==value for i,value in enumerate(source) if i%stride>=w*4 or i%4!=alpha)

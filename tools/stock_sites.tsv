@@ -342,6 +342,8 @@ demo	0x5c1ae0	0x4	networkStart	`addiu $2, $zero, 0x2`, before the only call to t
 demo	0x5c1de8	0x4	networkStop	`lw $3, -0x53c($2)`, before the only call to pthread_mutex_lock; tools/build.py NET_TYPE_READS
 demo	0x5c1dec	0x4	networkStop	`addiu $2, $zero, 0x2`, before the only call to pthread_mutex_lock; tools/build.py NET_TYPE_READS
 demo	0x5c6950	0x4	platformTypeRegister	`addiu $4, $zero, 0x58`, after "stPlayCommandInfo"; patch/offsets.inc REC_SIZE
+demo	0x5c8ac8	0x4	tools_db_open	the load of $25 for the only call to sqlite3_open; tools/build.py STOCK_DB_OPEN, tools/build.py build
+demo	0x5c8ae0	0x4	tools_db_open	the only call to sqlite3_open; tools/build.py STOCK_DB_OPEN
 demo	0x5cc638	0x4	library_name_cmp_pinyin	1st of 2 calls to toolsTrimLeft; tools/build.py SORT_TRIMS
 demo	0x5cc6a4	0x4	library_name_cmp_pinyin	2nd of 2 calls to toolsTrimLeft; tools/build.py SORT_TRIMS
 demo	0x5ccf50	0x4	library_name_cmp	1st of 2 calls to toolsTrimLeft; tools/build.py SORT_TRIMS

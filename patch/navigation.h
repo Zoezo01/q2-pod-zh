@@ -566,6 +566,7 @@ void slider_scrub(void *w, void *canvas);
 #define PL_ROW "_pl_row"
 #define PL_MARKING "_pl_marks"
 #define PL_NONE "_pl_none"
+#define PL_ART "_pl_art"
 void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *));
 void qm_select(void);
 int qm_playlist_gone(void *ctx, void *event);

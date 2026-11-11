@@ -3,9 +3,10 @@
  * queries, and the only thing Coverflow owns is a thumbnail cache, built on a modal screen by one
  * pthread that touches only files, the two stock art locks and the volatile counters below. */
 #include "coverflow.h"
+#include "playlist_art.h"
 
 #define LAST_ALBUM ART_DIR "/album" /* the centre album's key, so a reboot opens on it */
-#define BUILDING ART_DIR "/building" /* the key and track of the album the worker is on (strike) */
+#define BUILDING ART_DIR "/building" /* the key and track of the album the worker is on */
 #define CRASH_LOG PEQ_ROOT "/mnt/mmc/q2-crash.log"
 #define MIN_FREE_MB 16 /* no new cache files below this much free space on the card */
 #define ART_NEAR 3 /* real art only this many covers either side, like PictureFlow's cache */
@@ -105,7 +106,7 @@ unsigned fnv(unsigned h, const unsigned char *s) {
     return h * 16777619u; /* a separator, so "ab"+"c" and "a"+"bc" differ */
 }
 
-static unsigned tags_key(const char *artist, const char *album) {
+unsigned tags_key(const char *artist, const char *album) {
     return fnv(fnv(FNV_SEED, (const unsigned char *)artist), (const unsigned char *)album);
 }
 
@@ -133,16 +134,30 @@ char *art_path(char *out, unsigned key, const char *suffix) {
  * it stays a failure, and the placeholder would stay until a reboot. url is "file://" + the path. */
 static int art_exists(const char *url) { return !access(url + 7, 0); }
 
-#ifndef ART_FFMPEG
-#define ART_FFMPEG "/usr/bin/ffmpeg"
-#endif
-
 /* path's size, -1 when it can't be opened */
 long file_size(const char *path) {
     void *f = fopen(path, "rb");
     long size = f && !fseek(f, 0, 2) ? ftell(f) : -1;
     if (f) fclose(f);
     return size;
+}
+
+/* Runs that never reached ffmpeg's own exit, from any thread (counted atomically, so none is
+ * lost); build_art and photos.c compare before and after. */
+volatile unsigned ff_kills __attribute__((section(".scratch")));
+/* The wait for ffmpeg's child pid, writing tmp, which is renamed onto dst on success; shared with
+ * playlist_art.c's 2x2. */
+int ff_wait(int pid, const char *tmp, const char *dst, int *exited) {
+    int status = -1;
+    while (pid > 0 && waitpid(pid, &status, 0) < 0 &&
+           *__errno_location() == 4) { /* EINTR: reap it */
+    }
+    /* WIFEXITED, less execl's failure (127: out of memory, as ffmpeg is stock's); never for -1 */
+    *exited = !(status & 0x7f) && ((status >> 8) & 0xff) != 127;
+    if (!*exited) __atomic_fetch_add(&ff_kills, 1, __ATOMIC_RELAXED);
+    if (!status && file_size(tmp) > 0 && !rename(tmp, dst)) return 1;
+    unlink(tmp);
+    return 0;
 }
 
 /* Stock ffmpeg's first picture of src (an image, or an audio file's embedded one) fitted into w x h
@@ -153,31 +168,22 @@ long file_size(const char *path) {
  * -xerror stops at a picture's first decode error rather than demuxing the rest of the file.
  * *exited: ffmpeg ran to its own exit (no refused fork, no kill), so a failure is the picture's.
  * ponytail: a process per cover; a resident decoder if first builds drag. */
-/* Runs that never reached ffmpeg's own exit, from any thread (counted atomically, so none is
- * lost); build_art and photos.c compare before and after. */
-volatile unsigned ff_kills __attribute__((section(".scratch")));
 static int ff_run(const char *src, const char *dst, int w, int h, int *exited) {
     char vf[80], tmp[1040];
     tk_snprintf(vf, sizeof(vf), "scale=%d:%d:force_original_aspect_ratio=decrease", w, h);
     tk_snprintf(tmp, sizeof(tmp), "%s.ff", dst);
-    int status = -1, pid = fork();
+    int pid = fork();
     if (!pid) {
         child_oom_first(); /* its one picture can need tens of MB (#169) */
         execl(ART_FFMPEG, ART_FFMPEG, "-nostdin", "-v", "quiet", "-xerror", "-i", src, "-frames:v", "1",
               "-vf", vf, "-pix_fmt", "yuvj420p", "-q:v", "3", "-f", "mjpeg", "-y", tmp, (char *)0);
         child_exit(127);
     }
-    while (pid > 0 && waitpid(pid, &status, 0) < 0 && *__errno_location() == 4) { /* EINTR: reap it */
-    }
-    /* WIFEXITED, less execl's own failure (127: out of memory, as ffmpeg is stock's); never for -1 */
-    *exited = !(status & 0x7f) && ((status >> 8) & 0xff) != 127;
-    if (!*exited) __atomic_fetch_add(&ff_kills, 1, __ATOMIC_RELAXED);
-    if (!status && file_size(tmp) > 0 && !rename(tmp, dst)) return 1;
-    unlink(tmp);
-    return 0;
+    return ff_wait(pid, tmp, dst, exited);
 }
 
-static int ff_thumb(const char *src, const char *dst, int w, int h) {
+/* shared with playlist_art.c, for a playlist's own picture, which stock's decoder never sees */
+int ff_thumb(const char *src, const char *dst, int w, int h) {
     int exited;
     return ff_run(src, dst, w, h, &exited);
 }
@@ -401,28 +407,32 @@ int coverflow_folder_cover(const char *track, const char *dst, int w, int h) {
     return f->dir[0] = 0, 1;
 }
 
-/* One album: embedded art, then beside_art, then ffmpeg's read of the embedded art, last as it
- * costs a process for every album without art; written to .tmp and renamed. An empty file marks
- * "no art", so the placeholder shows and the album is not retried until Refresh Coverflow; a run
- * ffmpeg did not finish leaves none. ponytail: an album whose ffmpeg is killed every time costs
- * one kill per open. */
-static void build_art(const job_t *j) {
-    char dst[512], tmp[512];
-    if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
-    art_path(dst, j->key, "");
-    art_path(tmp, j->key, ".tmp");
+/* A track's album art at dst, ART_SIZE: embedded art, then beside_art, then ffmpeg's read of the
+ * embedded art, last as it costs a process for every album without art; shared with
+ * playlist_art.c. */
+int album_art(const char *track, const char *dst, int shared) {
     /* toolsGetAlbumCover goes through the shared /tmp/.tmp_picture, which stock guards with
      * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both. Stock never
      * nests them, so this order cannot deadlock. */
     pthread_mutex_lock((void *)parse_cover_mutex);
     pthread_mutex_lock((void *)g_playcover_mutex);
-    int ok = toolsGetAlbumCover(j->track, tmp, ART_SIZE, ART_SIZE) == 1;
+    int ok = toolsGetAlbumCover(track, dst, ART_SIZE, ART_SIZE) == 1;
     pthread_mutex_unlock((void *)g_playcover_mutex);
     pthread_mutex_unlock((void *)parse_cover_mutex);
+    return ok || beside_art(track, dst, ART_SIZE, ART_SIZE, shared, thumb) ||
+           ff_thumb(track, dst, ART_SIZE, ART_SIZE);
+}
+
+/* One album's art, written to .tmp and renamed. An empty file marks "no art", so the placeholder
+ * shows and the album is not retried until Refresh Coverflow; a run ffmpeg did not finish leaves
+ * none. ponytail: an album whose ffmpeg is killed every time costs one kill per open. */
+static void build_art(const job_t *j) {
+    char dst[512], tmp[512];
+    if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
+    art_path(dst, j->key, "");
+    art_path(tmp, j->key, ".tmp");
     unsigned kills = ff_kills;
-    ok = ok || beside_art(j->track, tmp, ART_SIZE, ART_SIZE, j->shared, thumb) ||
-         ff_thumb(j->track, tmp, ART_SIZE, ART_SIZE);
-    if (ok && !rename(tmp, dst)) return;
+    if (album_art(j->track, tmp, j->shared) && !rename(tmp, dst)) return;
     unlink(tmp);
     /* No marker when an ffmpeg run meanwhile never reached its own exit (a refused fork, or killed:
      * the kernel takes it first when memory runs out, #169; another thread's run counts too, a
@@ -432,16 +442,22 @@ static void build_art(const job_t *j) {
     if (f) fclose(f);
 }
 
+/* note: the key and track of the album a worker is on, struck at its next start if this build
+ * never ends; synced, see art_strike. Shared with playlist_art.c. */
+void art_note(const char *note, unsigned key, const char *track) {
+    void *f = fopen(note, "wb");
+    if (f) {
+        fwrite(&key, sizeof key, 1, f);
+        fwrite(track, strlen(track), 1, f);
+        fflush(f), fsync(fileno(f)), fclose(f);
+    }
+}
+
 static unsigned art_counts[2]; /* crash_note's, every 50th album */
 static void *worker(void *unused) {
     while (cf.done < cf.total && !cf.cancel) {
         crash_note(cf.jobs[cf.done].track, "/tmp/q2-art-file", "/tmp/q2-art.log", 50, art_counts);
-        void *note = fopen(BUILDING, "wb"); /* struck at the next open if this build never ends */
-        if (note) {
-            fwrite(&cf.jobs[cf.done].key, sizeof(unsigned), 1, note);
-            fwrite(cf.jobs[cf.done].track, strlen(cf.jobs[cf.done].track), 1, note);
-            fflush(note), fsync(fileno(note)), fclose(note); /* synced: see strike */
-        }
+        art_note(BUILDING, cf.jobs[cf.done].key, cf.jobs[cf.done].track);
         if (cf.cancel) break; /* a clean end since the loop's head: its note goes with the exit */
         build_art(&cf.jobs[cf.done]);
         ++cf.done;
@@ -450,24 +466,24 @@ static void *worker(void *unused) {
     return 0;
 }
 
-/* The album the last build never finished, BUILDING's key: demo died on it, or hung on it until the
- * watchdog restarted the Q2, and nothing marked it, so every open would try it again and end the
- * same way. It takes the "no art" marker (unless its cover is there: a death between the rename and
- * the next note) until Refresh Cover Flow. A clean end mid-build removes the note
- * (coverflow_clean_end), as a power-off is no album's fault. The note is synced in place, a sync
- * per album, and not through a rename, whose directory write a reset could lose: a tester's log
- * (2026-11-09) showed the restart it must outlive is the watchdog's, demo still alive and nothing
- * flushed, with no "last art" line, so the note carries the track and the strike appends it to the
- * card's q2-crash.log, that restart's own by now (the boot hook moved it there). A torn note reads
- * short and strikes nothing, or names part of a path. ponytail: the battery running out mid-build
- * strikes an innocent album; Refresh puts it back. */
-static void strike(void) {
+/* The album the last build never finished, the key in file (BUILDING, or playlist_art.c's
+ * PL_BUILDING): demo died on it, or hung on it until the watchdog restarted the Q2, and nothing
+ * marked it, so every open would try it again and end the same way. It takes the "no art" marker
+ * (unless its cover is there: a death between the rename and the next note) until Refresh Cover
+ * Flow. A clean end mid-build removes the note (coverflow_clean_end), as a power-off is no album's
+ * fault. The note is synced in place, a sync per album, and not through a rename, whose directory
+ * write a reset could lose: a tester's log (2026-11-09) showed the restart it must outlive is the
+ * watchdog's, demo still alive and nothing flushed, with no "last art" line, so the note carries
+ * the track and the strike appends it to the card's q2-crash.log, that restart's own by now (the
+ * boot hook moved it there). A torn note reads short and strikes nothing, or names part of a path.
+ * ponytail: the battery running out mid-build strikes an innocent album; Refresh puts it back. */
+void art_strike(const char *file) {
     struct {
         unsigned key;
         char track[512];
     } note = {0};
     char path[512], line[560];
-    void *f = fopen(BUILDING, "rb");
+    void *f = fopen(file, "rb");
     unsigned got = f ? fread(&note, 1, sizeof note - 1, f) : 0;
     if (f) fclose(f);
     if (got >= sizeof note.key && access(art_path(path, note.key, ""), 0)) {
@@ -475,14 +491,15 @@ static void strike(void) {
         int n = snprintf(line, sizeof line, "== cover flow skipped\n%s\n", note.track);
         if ((f = fopen(CRASH_LOG, "a"))) fwrite(line, 1, n, f), fflush(f), fsync(fileno(f)), fclose(f);
     }
-    unlink(BUILDING);
+    unlink(file);
 }
 /* A clean end (power-off, Restart, an update, Rockbox): the worker stops after the album it is on,
- * writing no note for the next, which the kill that follows would leave for strike, and this one's
- * goes. */
+ * writing no note for the next, which the kill that follows would leave for art_strike, and this
+ * one's goes; playlist_art.c's worker too. */
 void coverflow_clean_end(void) {
     cf.cancel = 1;
     unlink(BUILDING);
+    playlist_art_clean_end();
 }
 
 /* A running worker cancelled and joined, and its poll timer stopped; 1 when one ran. Shared with
@@ -609,13 +626,18 @@ static unsigned fnv_lower(unsigned h, const char *s) {
     }
     return h * 16777619u;
 }
-unsigned album_id(void *r) {
-    const char *x = P(r, REC_ALBUM), *y = P(r, REC_ALBUM_ARTIST), *p = P(r, REC_PATH) ? P(r, REC_PATH) : "";
+/* The same from the album, album artist and path alone; shared with playlist_art.c. */
+unsigned album_ident(const char *x, const char *y, const char *p) {
     unsigned h = fnv_lower(FNV_SEED, x);
-    if (I(r, REC_ID) == -1) h = fnv(FNV_SEED, (const unsigned char *)"?");
-    else h = x && *x && y && *y ? fnv_lower(h, y)
-                                : hash_bytes(h, (const unsigned char *)p, album_dir(p, 1)) * 16777619u;
+    p = p ? p : "";
+    h = x && *x && y && *y ? fnv_lower(h, y)
+                           : hash_bytes(h, (const unsigned char *)p, album_dir(p, 1)) * 16777619u;
     return h | !h;
+}
+unsigned album_id(void *r) {
+    unsigned unknown = fnv(FNV_SEED, (const unsigned char *)"?");
+    if (I(r, REC_ID) == -1) return unknown | !unknown;
+    return album_ident(P(r, REC_ALBUM), P(r, REC_ALBUM_ARTIST), P(r, REC_PATH));
 }
 
 /* getAllAlbum ends with an "Unknown Album" row (id -1) whenever any album exists, even when every
@@ -2920,7 +2942,7 @@ static void load_albums(unsigned t0) {
     }
     char path[512];
     if (!cf.saved_album) BLOB_IO(LAST_ALBUM, cf.saved_album, 0); /* outlives a reboot */
-    strike();
+    art_strike(BUILDING);
     cf.jobs = calloc(count, sizeof(job_t));
     unsigned char *shared = folders_shared(cf.albums, count);
     for (unsigned i = 0; i < count; ++i) {
@@ -3266,6 +3288,9 @@ static int play_all(const void *unused) {
  * again too. */
 void coverflow_refresh_art(void) {
     static const char *const dirs[] = { ART_DIR, PEQ_ROOT "/mnt/mmc/.sldp" };
+    /* Playlists open under Settings: its build stopped first, or a 2x2 whose cover goes here would
+     * fail and mark the playlist as having none */
+    playlist_art_stop();
     for (unsigned i = 0; i < 2; ++i) {
         void *dir = opendir(dirs[i]);
         for (struct dirent *e; dir && (e = readdir(dir));) {

@@ -467,6 +467,10 @@ BT_AUTOLINK = (0x4fbd5c, 0x0411fd04)
 # player_parsecover_thd's jalr toolsGetExternCover (lw $t9 at 0x51dacc; Now Playing's folder art, after its
 # embedded art failed) becomes jal coverflow_player_cover, which gives ffmpeg what stock's decoder refuses.
 PLAYER_COVER = (0x51dadc, 0x0320f809)
+# Stock's shared database connection is opened lazily by 0x5c8aa0, and again after any exec error closes it: its
+# jalr sqlite3_open (lw $t9 = GOT[-0x550] at 0x5c8ac8, in the branch's delay slot; a1 = the handle in the jalr's)
+# becomes jal stock_db_open, which sets a busy timeout on it, so stock's writers wait out playlist art's reader.
+STOCK_DB_OPEN = (0x5c8ae0, 0x0320f809)
 # player_get_id3info's jalr strcpy of the parsed path (lw $t9 at 0x51f3d8), which every fresh parse reaches
 # before Now Playing's lines, becomes jal ringnav_id3_path: a CUE track without sheet tags takes its file's.
 ID3_PATH = (0x51f3e0, 0x0320f809)
@@ -1844,6 +1848,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51dacc))[0] == 0x8f99b764,
           'player cover: expected toolsGetExternCover import')
     patch_word(patched, *PLAYER_COVER, jal(ps['coverflow_player_cover']), 'Now Playing art through ffmpeg')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5c8ac8))[0] == 0x8f99fab0,
+          "stock's database open: unexpected GOT load")
+    patch_word(patched, *STOCK_DB_OPEN, jal(ps['stock_db_open']), "stock's database waits out a reader")
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51f3d8))[0] == 0x8f99f674,
           'id3 path: expected strcpy import')
     patch_word(patched, *ID3_PATH, jal(ps['ringnav_id3_path']), "a CUE track's file tags")

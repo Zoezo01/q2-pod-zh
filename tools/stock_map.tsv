@@ -415,6 +415,7 @@ demo	0x5c59b8	0x88	albumcover_task_destroy	Destroy function of the 12-byte album
 demo	0x5c610c	0x124	albumcover_task_copy	Copy function for a 12-byte album cover task: frees old name and path, duplicates the source's strings, copies flags.
 demo	0x5c631c	0x484	stsonginfo_copy	Copy function for an stSongInfo row: frees old string fields and duplicates the source's strings and numbers.
 demo	0x5c8230	0x10c	tools_fix_kana_combining_marks	Merges UTF-8 combining voiced/semi-voiced marks (E3 82 99/9A) into the preceding kana and removes the mark.
+demo	0x5c8aa0	0x58	tools_db_open	Opens stock's shared database connection on first use, and again once an error has closed it: sqlite3_open of its caller's path into the handle at 0xa4fb04; every toolsInitDatabase, toolsQueryDbTable and other tools*Db* call runs it first.
 demo	0x5c8ef8	0x3ac	png_load_file	Reads a PNG file with libpng into row pixels; rejects images over 1024 px and unsupported color types.
 demo	0x5cc540	0x918	library_name_cmp_pinyin	Name comparator for sorted library lists that converts names to pinyin; used when the flag at 0xa3bf4d is clear.
 demo	0x5cce58	0x884	library_name_cmp	Name comparator for sorted library lists used when the flag at 0xa3bf4d is set; trims both names before comparing.

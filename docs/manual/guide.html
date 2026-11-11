@@ -404,12 +404,12 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
       <tr><td><code>EQ/</code></td><td>AutoEQ / Equalizer APO presets to import</td><td>You</td></tr>
       <tr><td><code>Radio/</code></td><td>Internet Radio favourites, <code>.m3u</code> and <code>.pls</code></td><td>Both</td></tr>
       <tr><td><code>lockscreenimage/</code></td><td>Up to 5 lock screen images</td><td>You</td></tr>
-      <tr><td><code>_explaylist_data/</code></td><td>M3U playlists to import</td><td>Both</td></tr>
+      <tr><td><code>_explaylist_data/</code></td><td>M3U playlists to import, and a playlist’s own picture, <code>name.jpg</code> or <code>name.png</code> (<a href="#playlists">Playlists</a>)</td><td>Both</td></tr>
       <tr><td><code>database.ignore</code>, <code>database.unignore</code></td><td>Empty marker files: hide a folder from the Library’s lists after Update Local Music, or let a subfolder back in (<a href="#addmusic">Adding music</a>)</td><td>You</td></tr>
       <tr><td><code>.scrobble.ini</code></td><td>Scrobble accounts; adds <b>Upload Scrobbles</b></td><td>You</td></tr>
       <tr><td><code>.scrobbler.log</code></td><td>Every listen, Rockbox format; for Upload Scrobbles or any uploader</td><td>Q2 Pod</td></tr>
       <tr><td><code>.scrobbler.log.sent</code></td><td>Listens already uploaded</td><td>Q2 Pod</td></tr>
-      <tr><td><code>.coverflow/</code></td><td>Cover Flow artwork cache</td><td>Q2 Pod</td></tr>
+      <tr><td><code>.coverflow/</code></td><td>Cover Flow artwork cache, and the playlists’ art</td><td>Q2 Pod</td></tr>
       <tr><td><code>.photos/</code></td><td>Photo thumbnails and screen-size copies</td><td>Q2 Pod</td></tr>
       <tr><td><code>.books/</code></td><td>EPUBs converted to text</td><td>Q2 Pod</td></tr>
       <tr><td><code>.sldp/</code></td><td>Stock’s own cover cache</td><td>Stock</td></tr>
@@ -441,6 +441,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre), .task, h2, h3 { break-af
   <div class="sec">
   <h2 id="playlists">Playlists and Long Songs</h2>
   <p>In <b>Library → Playlists</b>, <b>New Playlist</b> creates a local playlist. A playlist’s <b>More</b> menu (its three dots, or hold <b>Play/Pause</b> on it and choose <b>More…</b>) has <b>Rename</b>, <b>Delete Playlist</b> and <b>Edit Playlist</b>.</p>
+  <p><b>Playlist art:</b> in Classic with <b>Row Art</b> on, every playlist shows a picture on its row. It is your own picture if the card’s <code>_explaylist_data</code> folder holds a <code>.jpg</code> or <code>.png</code> file named as the playlist (<code>Road Trip.jpg</code> for “Road Trip”; characters a card’s file name can’t hold, <code>\ / : * ? " &lt; &gt; |</code>, are written <code>_</code>). Without one, it is four of the playlist’s albums that have artwork, picked once and kept until the playlist’s songs change; with fewer than four such albums their covers repeat, and with none the row keeps its placeholder. The pictures are made one playlist at a time while the list is open, so they fill in after the list appears, and are kept in <code>.coverflow/</code>. A new or changed picture file shows the next time the list opens; <b>Refresh Cover Flow</b> makes them all again. When you add a song to a playlist, the list you pick from shows no pictures.</p>
   <p class="task">In Classic, <b>New Playlist…</b> and <b>Edit Playlists…</b> head the list; the list opens on its first playlist, or the one you last chose. <b>Edit Playlists…</b> marks playlists:</p>
   <table>
     <thead><tr><th>To</th><th>Do this</th></tr></thead>
