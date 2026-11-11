@@ -1,6 +1,6 @@
 # Standard release procedure
 
-To prepare a release, bump `VERSION` in `tools/build.py` and add a `- **<version>**` entry to the top of `docs/changelog.md`, then commit both, since packaging refuses uncommitted build inputs. Packaging turns that entry into the release notes (the bold version heading, then one bullet a sentence) and fails without it. Keep the proprietary stock ZIP local. Use the Python environment with `requirements.txt`
+To prepare a release, bump `VERSION` in `tools/build.py` and add a `- **<version>**` entry to the top of `docs/changelog.md`, then commit both, since packaging refuses uncommitted build inputs. Packaging turns that entry into the release notes (the bold version heading, then one bullet a sentence) and fails without it, or when it isn't the newest entry. Keep the proprietary stock ZIP local. Use the Python environment with `requirements.txt`
 installed for these commands:
 
 ```sh
@@ -16,7 +16,7 @@ Packaging also rebuilds the user guide from `docs/manual/guide.html` (needs Chro
 
 Packaging requires a fresh output directory, builds the update twice, runs the shared MIPS
 suite and asset checks on the first build, and compares the two builds' update.tar bytes. It writes
-update.tar, the manifest, SHA256SUMS, release notes and source revision/hash. A single direct build is never a release input. Upload re-checks the packaged bytes and source hash
+update.tar, the manifest, SHA256SUMS, release notes and source revision/hash. A single direct build is never a release input. Upload sends the release notes as packaged, re-checks them, the packaged bytes and the source hash
 and refuses stale, missing or changed artifacts and published releases. An upload/download
 failure leaves the release unpublished; rerun upload to repair the draft. Packaging uses no
 GitHub credentials or network.

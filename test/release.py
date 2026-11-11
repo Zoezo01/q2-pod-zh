@@ -50,10 +50,10 @@ with tempfile.TemporaryDirectory() as tmp:
     (out/release.ASSET).write_bytes(b'pod')
     assets = {release.ASSET: release.sha(b'pod')}
     (out/release.GUIDE).write_bytes(b'%PDF')
+    (out/'release-notes.md').write_text(release.release_body(release.notes(), assets))
     record = dict(tag=release.VERSION, revision='revision', source_sha256=release.source_sha256(), assets=assets,
-                  guide_sha256=release.sha(b'%PDF'))
+                  guide_sha256=release.sha(b'%PDF'), notes_sha256=release.sha((out/'release-notes.md').read_bytes()))
     (out/'release.json').write_text(json.dumps(record))
-    (out/'release-notes.md').write_text(release.release_body(out, record))
     # The heading, then bullets, for this version only.
     body = (out/'release-notes.md').read_text()
     assert body.startswith(f'**{release.VERSION}**\n- One.\n- iPod: two.\n\nSHA-256:\n- update.tar ({release.TAG}): ')

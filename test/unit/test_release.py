@@ -162,11 +162,12 @@ def test_package(repo, monkeypatch, tmp_path, capsys):
     assert (out/release.ASSET).read_bytes() == b'tar'
     assert p.scripts == [([release.sys.executable, str(repo/'docs/manual/build.py'), str(out/release.GUIDE)], True)]
     assert (out/'SHA256SUMS').read_text() == f'{sha(b"tar")}  update.tar\n'
+    notes = f'**{release.VERSION}**\n- One.\n\nSHA-256:\n- update.tar ({release.TAG}): `{sha(b"tar")}`\n'
+    assert (out/'release-notes.md').read_text() == notes
     record = json.loads((out/'release.json').read_text())
     assert record == dict(tag=release.VERSION, revision='rev', source_sha256='source', assets={'update.tar': sha(b'tar')},
-                          guide_sha256=sha(b'%PDF'))
+                          guide_sha256=sha(b'%PDF'), notes_sha256=sha(notes.encode()))
     assert (out/'release.json').read_text().endswith('}\n') and '\n  "tag"' in (out/'release.json').read_text()
-    assert (out/'release-notes.md').read_text() == release.release_body(out, record)
     assert capsys.readouterr().out == f'Validated and reproducible: {out}\n'
 
 
@@ -180,6 +181,15 @@ def test_package_wants_a_fresh_directory(repo, monkeypatch, tmp_path):
 def test_package_wants_committed_inputs(repo, monkeypatch, tmp_path):
     p = Packaging(monkeypatch, status=' M tools/build.py\n')
     with pytest.raises(ValueError, match='^Commit the build inputs before packaging$'):
+        release.package(pathlib.Path('stock.zip'), tmp_path/'out')
+    assert not (tmp_path/'out').exists() and not p.builds
+
+
+def test_package_wants_the_newest_changelog_entry(repo, monkeypatch, tmp_path):
+    # A VERSION behind docs/changelog.md's newest entry is refused before anything is built or written.
+    (repo/'docs/changelog.md').write_text(f'# Changelog\n\n- **9.9.9**: Newer.\n- **{release.VERSION}**: One.\n')
+    p = Packaging(monkeypatch)
+    with pytest.raises(ValueError, match='^' + re.escape(f"{release.VERSION} is not docs/changelog.md's newest entry") + '$'):
         release.package(pathlib.Path('stock.zip'), tmp_path/'out')
     assert not (tmp_path/'out').exists() and not p.builds
 
@@ -212,8 +222,10 @@ def packaged(root):
     (out/release.ASSET).write_bytes(b'pod')
     (out/release.GUIDE).write_bytes(b'%PDF')
     (out/'SHA256SUMS').write_text(f'{sha(b"pod")}  {release.ASSET}\n')
+    (out/'release-notes.md').write_bytes(b'notes\n')
     (out/'release.json').write_text(json.dumps(dict(tag=release.VERSION, revision='rev', source_sha256='source',
-                                                    assets={release.ASSET: sha(b'pod')}, guide_sha256=sha(b'%PDF'))))
+                                                    assets={release.ASSET: sha(b'pod')}, guide_sha256=sha(b'%PDF'),
+                                                    notes_sha256=sha(b'notes\n'))))
     return out
 
 
@@ -244,9 +256,22 @@ def test_upload_draft(repo, monkeypatch, capsys):
                            '--notes-file', out/'release-notes.md')
     assert gh.calls[2] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
     assert gh.calls[3][:6] == (*prefix, 'download', release.VERSION) and gh.calls[3][6] == '--dir' and len(gh.calls) == 4
-    record = json.loads((out/'release.json').read_text())
-    assert (out/'release-notes.md').read_text() == release.release_body(out, record)
+    assert (out/'release-notes.md').read_bytes() == b'notes\n'  # sent as packaged
     assert capsys.readouterr().out == f'Verified draft: https://github.com/{release.REPO}/releases/tag/{release.VERSION}\n'
+
+
+def test_upload_sends_the_packaged_notes(repo, monkeypatch, tmp_path):
+    # The notes are the changelog's at packaging: a newer entry, or an edit, before upload changes nothing sent.
+    Packaging(monkeypatch)
+    out = tmp_path/'out'
+    release.package(pathlib.Path('stock.zip'), out)
+    body = (out/'release-notes.md').read_text()
+    (repo/'docs/changelog.md').write_text(f'- **9.9.9**: Newer.\n- **{release.VERSION}**: Edited.\n')
+    monkeypatch.setattr(release, 'source_sha256', lambda: 'source')
+    gh = Gh(monkeypatch, out)
+    release.upload(out)
+    assert gh.calls[1][-2:] == ('--notes-file', out/'release-notes.md')
+    assert (out/'release-notes.md').read_text() == body and '- One.' in body
 
 
 def test_upload_publish(repo, monkeypatch, capsys):
@@ -298,6 +323,7 @@ def test_upload_checks_what_landed(repo, monkeypatch, name):
     (dict(assets={release.ASSET: 'x', 'extra.zip': 'y'}), '^The release is update.tar alone$'),
     (dict(assets={release.ASSET: 'x'}), '^Release update mismatch$'),
     (dict(guide_sha256='x'), '^User guide mismatch$'),
+    (dict(notes_sha256='x'), '^Release notes mismatch$'),
 ])
 def test_upload_checks_the_record_first(repo, monkeypatch, change, message):
     out = packaged(repo)
@@ -342,5 +368,5 @@ def test_notes_needs_this_versions_entry(repo):
 
 
 def test_release_body(repo):
-    assert release.release_body(pathlib.Path('.'), {'assets': {release.ASSET: 'abc'}}) == (
+    assert release.release_body(release.notes(), {release.ASSET: 'abc'}) == (
         f'**{release.VERSION}**\n- One.\n\nSHA-256:\n- update.tar ({release.TAG}): `abc`\n')
