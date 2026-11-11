@@ -18664,6 +18664,22 @@ for held in ({},{'WHEELMODE':'0','NAVHIDE':'1'},{'WHEELMODE':'1','NAVHIDE':'0'},
         assert (c.u.mem_read(syms['g_navhide_flag'],1)[0],c.u.mem_read(syms['g_wheelmode'],1)[0])==((0,1) if patched else stock),(held,patched)
         assert c.config==before
 passed()
+# Home binds no key-up of its own (build.py HOME_KEYUP): stock V1.34's home_page_init gives the page one, whose Return
+# opens Now Playing, where Home's keys are ringnav's. The word that goes is a `jalr $25`, which tens of thousands of
+# stock's calls are, so the build's check can't tell this call from another. home_page_init's own code, from the
+# event's load to the call's delay slot, which loads the handler: stock binds EVT_KEY_UP to it, once; patched, the
+# same handler is loaded and nothing is bound. Its Return is on_home_playing_onclick.
+from build import HOME_KEYUP
+def home_keyup(patched):
+    c=Machine(patched); home=c.node('window','home_page')
+    for r,v in ((UC_MIPS_REG_SP,0x7000f000),(UC_MIPS_REG_S0,home)): c.u.reg_write(r,v)
+    c.word(0x7000f000+0x10,GP); c.u.emu_start(HOME_KEYUP[0]-0x18,HOME_KEYUP[0]+8,count=20)
+    return [x[2:] for x in c.calls if x[:2]==('widget_on',home)],c.u.reg_read(UC_MIPS_REG_A2)  # a mocked call clobbers $a2
+def home_return(handler):
+    c=Machine(False); c.mock('on_home_playing_onclick')
+    return c.call(O['KEY_RETURN'],address=handler,args=(c.node('window','home_page'),c.event,0,0),gap=0),[x[0] for x in c.calls]
+assert home_keyup(True)[0]==[] and home_keyup(False)[0]==[(O['EVT_KEY_UP'],home_keyup(True)[1])]
+assert home_return(home_keyup(True)[1])==(0xb,['on_home_playing_onclick']); passed()
 # Buttons lock acts only with the screen off, as on V1.32 (build.py KEYLOCK_LIT): stock V1.34's on_wm_keyup_before_fun
 # applies it on the lit lock window too, where Q2 Pod's wheel and keys already have their own rules. Its own test, from
 # the backlight's byte, with Next under lock mode 1: locked, it leaves by the STOP exit; else it goes on to 0x4f259c.
