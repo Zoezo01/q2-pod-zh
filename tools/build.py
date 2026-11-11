@@ -973,6 +973,21 @@ def source_sha256():
         h.update(path.read_bytes())
     return h.hexdigest()
 
+def dev_build():
+    """The next --dev build number, past the untracked .build-number's and the one in the git directory
+    every worktree of this checkout shares, so a second worktree's first build is not the first's V001i.
+    Each file is replaced whole; an empty or unreadable one (a power loss mid-write) counts as 0."""
+    counters = [ROOT/'.build-number']
+    try: counters.append(ROOT/run('git', '-C', ROOT, 'rev-parse', '--git-common-dir').strip()/'build-number')
+    except (OSError, subprocess.CalledProcessError): pass  # a source archive: the checkout's own counter
+    def read(counter):
+        try: return int(counter.read_text())
+        except (OSError, ValueError): return 0
+    number = max(map(read, counters)) + 1
+    for counter in counters:
+        temp = counter.with_name(counter.name + '.tmp'); temp.write_text(f'{number}\n'); temp.replace(counter)
+    return number
+
 def j(addr): return 0x08000000 | addr >> 2  # MIPS j
 def jal(addr): return 0x0c000000 | addr >> 2  # MIPS jal
 def check(condition, message):
@@ -1693,10 +1708,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9._-]+', repo), f'{repo}: not a GitHub owner/name')  # a C string
     out.mkdir(parents=True, exist_ok=True)
     check(not (out/'update.tar').exists(), 'Output already exists; use a fresh --out directory')
-    if dev:  # the next number in the untracked .build-number
-        counter = ROOT/'.build-number'
-        dev = int(counter.read_text()) + 1 if counter.exists() else 1
-        counter.write_text(f'{dev}\n')
+    if dev:
+        dev = dev_build()
         version = dev_tag(dev)
     source = source_sha256()
     raw = zip_path.read_bytes()
@@ -2180,7 +2193,7 @@ if __name__ == '__main__':
     ap.add_argument('--logo',type=pathlib.Path,default=ROOT/'assets/boot-logo.jpg',
                     help='320x375 JPEG boot splash (default: assets/boot-logo.jpg)')
     ap.add_argument('--dev', action='store_true',
-                    help='development build: tag from the next .build-number (V001i, V002i...); never a release input')
+                    help='development build: tag from the next build number (V001i, V002i...); never a release input')
     ap.add_argument('--mcu-idle-sleep', action='store_true',
                     help='experimental: sleep parked MCU with explicit IRQ wake (requires --dev --pwm-idle-clock)')
     ap.add_argument('--flac-experiments', default='sync,lpc,output', metavar='sync,lpc,output',

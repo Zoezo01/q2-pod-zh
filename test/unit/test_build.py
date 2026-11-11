@@ -43,6 +43,33 @@ def test_dev_tag(number, tag):
     assert build.dev_tag(number) == tag
 
 
+def refuse_git(*args):
+    raise subprocess.CalledProcessError(128, args)
+
+
+def test_dev_build_counts_across_worktrees(tmp_path, monkeypatch):
+    # Two worktrees of one repository share the counter, so the second's first --dev build has a new tag.
+    (tmp_path/'repo.git').mkdir()
+    calls = []
+    monkeypatch.setattr(build, 'run', lambda *args: calls.append(args) or '../repo.git\n')  # relative, as a plain checkout's git answers
+    tags = []
+    for checkout in ('a', 'b', 'a'):
+        (tmp_path/checkout).mkdir(exist_ok=True)
+        monkeypatch.setattr(build, 'ROOT', tmp_path/checkout)
+        tags.append(build.dev_tag(build.dev_build()))
+    assert tags == ['V001i', 'V002i', 'V003i']
+    assert calls[1] == ('git', '-C', tmp_path/'b', 'rev-parse', '--git-common-dir')
+    assert (tmp_path/'repo.git/build-number').read_text() == '3\n'
+
+
+def test_dev_build_after_an_empty_counter(tmp_path, monkeypatch):
+    # A counter emptied by a power loss mid-write counts as 0, not a crash on int('').
+    (tmp_path/'.build-number').write_text('')
+    monkeypatch.setattr(build, 'ROOT', tmp_path)
+    monkeypatch.setattr(build, 'run', refuse_git)  # a source archive: not a git checkout
+    assert build.dev_build() == 1 and (tmp_path/'.build-number').read_text() == '1\n'
+
+
 def test_jumps():
     assert build.j(0x450000) == 0x08114000 and build.jal(0x450000) == 0x0c114000
     assert build.j(0x7) == 0x08000001 and build.jal(0x7) == 0x0c000001
