@@ -10,8 +10,6 @@ int playlist_art(int cd_num, const char *name, int small, char *url, int size);
 void playlist_art_refresh(void);
 /* cd_num's songs, as the last refresh, or a build since, counted them. */
 unsigned playlist_songs(int cd_num);
-/* From the build's own timer: calls playlist_art_ready for each playlist whose art was made. */
-void playlist_art_poll(void);
 /* The build stopped and joined, its queue dropped (a page closed, the card gone). */
 void playlist_art_stop(void);
 /* A clean end (power-off, Restart): the build stops before its next cover, its note gone. */

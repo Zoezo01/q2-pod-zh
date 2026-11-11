@@ -12,17 +12,20 @@
 #define PL_JOBS 128  /* queued between two idle moments; playlists are ids 0 to 100 */
 #define PL_TRIES 16  /* covers built for one 2x2 at most */
 #define PL_LISTS 128 /* playlists hashed; they are ids 0 to 100 */
-/* ponytail: the 2x2 picks from a playlist's first 64 albums by id, which bounds the dedup, the heap
- * and the pick; a reservoir sample if variety matters */
+/* ponytail: the 2x2 picks from a playlist's first 64 albums by id, which bounds the dedup and the
+ * heap; a playlist whose first 64 albums have no art shows none */
 #define PL_ALBUMS 64
-/* The reads go PL_PAGE ids at a time (a rowid range: no sort, no index), a statement each, so
- * SQLite's shared lock is held for one page and a writer waits for one at most. */
+/* The reads go PL_PAGE rows at a time from the last id read (rowid order: no sort, no index), a
+ * statement each, so SQLite's shared lock is held for one page and a writer waits for one at most.
+ * Each statement's first column is the id. */
 #define PL_PAGE 1024
-#define PL_TOP "select max(id) from playlist"
-#define PL_HASHES "select cd_num,id,fileurl from playlist where id>%u and id<=%u order by id"
+#define PL_HASHES "select id,cd_num,fileurl from playlist where id>%u order by id limit 1024"
 #define PL_SONGS                                                                                   \
-    "select id,fileurl,album,songer,albumsonger from playlist where id>%u and id<=%u and "         \
-    "cd_num=%d order by id"
+    "select id,fileurl,album,songer,albumsonger from playlist where id>%u and cd_num=%d order by " \
+    "id limit 1024"
+/* the user's own picture, decoded by ffmpeg, at most this many pixels (a 12 MP phone photo); a
+ * bigger one, or one whose size its header doesn't tell, shows the 2x2 */
+#define PL_PICTURE_PX 12000000
 /* Each cover filled to 80x80 and cut square, so none is squashed; hstack and vstack, as ffmpeg 4.2
  * has no xstack. */
 #define PL_FILL(i, o) "[" #i "]scale=80:80:force_original_aspect_ratio=increase,crop=80:80[" #o "];"
@@ -89,15 +92,15 @@ static int song_row(void *ctx, int n, char **v, char **c) {
     return 0;
 }
 
-/* A song of every playlist's, in id order (a rowid scan, no sort), so each playlist's own songs
- * come in the order song_row reads them: its hash, a playlist each, the last one's entry tried
- * first. */
+/* A song of every playlist's (id, cd_num, fileurl), in id order (a rowid scan, no sort), so each
+ * playlist's own songs come in the order song_row reads them: its hash, a playlist each, the last
+ * one's entry tried first. */
 static int list_row(void *ctx, int n, char **v, char **c) {
     pl_lists_t *t = ctx;
     static int last;
     if (pl.cancel) return 1; /* a join waits: the read fails, nothing published */
-    if (n < 3 || !v[0]) return 0;
-    int cd = atoi(v[0]);
+    if (n < 3 || !v[1]) return 0;
+    int cd = atoi(v[1]);
     if (cd < 0 || cd > 100) return 0; /* junk (-1, 999): no playlist's, and no slot */
     int i = last < t->n && t->at[last].cd_num == cd ? last : 0;
     while (i < t->n && t->at[i].cd_num != cd) ++i;
@@ -110,9 +113,17 @@ static int list_row(void *ctx, int n, char **v, char **c) {
     return 0;
 }
 
-static int top_row(void *ctx, int n, char **v, char **c) {
-    *(unsigned *)ctx = n && v[0] && atoi(v[0]) > 0 ? (unsigned)atoi(v[0]) : 0;
-    return 0;
+/* A page's row: its id (the first column) kept for the next page, then row's. */
+typedef struct {
+    int (*row)(void *, int, char **, char **);
+    void *ctx;
+    unsigned last, rows;
+} pl_page_t;
+static int page_row(void *ctx, int n, char **v, char **c) {
+    pl_page_t *p = ctx;
+    ++p->rows;
+    if (n && v[0]) p->last = (unsigned)atoi(v[0]);
+    return p->row(p->ctx, n, v, c);
 }
 /* sql (PL_HASHES, PL_SONGS) through row, a page at a time, on a connection of its own (era_sql's
  * way: the device's libsqlite3 is THREADSAFE=1); 0 when a page fails or a join waits. Between pages
@@ -122,19 +133,22 @@ static int query(const char *sql, int cd_num, int (*row)(void *, int, char **, c
                  void *ctx) {
     char page[sizeof PL_SONGS + 32];
     void *db = 0;
-    unsigned top = 0;
+    pl_page_t p = { row, ctx, 100, PL_PAGE };
     int bad = sqlite3_open("/mnt/data/database.db", &db) ||
-              sqlite3_exec(db, "PRAGMA cache_size=64", 0, 0, 0) || /* era_sql's: a heap of KBs */
-              sqlite3_exec(db, PL_TOP, top_row, &top, 0);
-    for (unsigned at = 100; !bad && at < top; at += PL_PAGE) {
-        tk_snprintf(page, sizeof page, sql, at, at + PL_PAGE, cd_num);
-        bad = pl.cancel || sqlite3_exec(db, page, row, ctx, 0);
+              sqlite3_exec(db, "PRAGMA cache_size=64", 0, 0, 0); /* era_sql's: a heap of KBs */
+    while (!bad && p.rows == PL_PAGE) {
+        tk_snprintf(page, sizeof page, sql, p.last, cd_num);
+        p.rows = 0;
+        bad = pl.cancel || sqlite3_exec(db, page, page_row, &p, 0);
     }
     if (db) sqlite3_close(db);
     return !bad;
 }
 
-/* cd_num's songs through song_row */
+/* cd_num's songs through song_row.
+ * ponytail: each job reads the table again for its own cd_num (no index), so a first build of N
+ * playlists reads it N + 1 times; collecting each playlist's first PL_ALBUMS albums in the
+ * refresh's one pass would make it one. */
 static int songs(int cd_num, pl_songs_t *s) { return query(PL_SONGS, cd_num, song_row, s); }
 
 /* The worker's: every playlist's songs hash, in one read, published whole for the poll (one not
@@ -195,22 +209,6 @@ static char *named(char *out, const char *at, const char *suffix) {
     return out;
 }
 
-/* The order albums are tried in: known art first, then not yet built, then known to have none
- * (rank 0, 1, 2), each shuffled by seed, so the same songs always give the same four. */
-static void pick_order(unsigned seed, const unsigned char *rank, unsigned n, unsigned *order) {
-    for (unsigned i = 0; i < n; ++i) order[i] = i;
-    for (unsigned i = n; i > 1; --i) {
-        seed = seed * 1664525u + 1013904223u;
-        unsigned j = (seed >> 8) % i, t = order[i - 1];
-        order[i - 1] = order[j], order[j] = t;
-    }
-    for (unsigned i = 1; i < n; ++i) /* stable, so the shuffle stays within a rank */
-        for (unsigned j = i; j && rank[order[j - 1]] > rank[order[j]]; --j) {
-            unsigned t = order[j];
-            order[j] = order[j - 1], order[j - 1] = t;
-        }
-}
-
 /* The 2x2's cell i (left to right, top to bottom) of k covers: a b / b a, a b / c a, a b / c d. */
 static unsigned quad(unsigned k, unsigned i) {
     static const unsigned char cells[4][4] = {
@@ -255,29 +253,30 @@ static int tile(char (*cover)[540], unsigned k, const char *at) {
     return ff_wait(pid, ff, tmp, &exited);
 }
 
-/* The 2x2 of s's albums, named at: each album's Cover Flow art when built, else its song's art
- * found as Cover Flow's build finds it (as Now Playing does, its folder's cover.jpg taken even
- * when other albums share the folder). None with art, or a 2x2 that failed: marked, unless the
- * card went or an ffmpeg was killed. Albums Cover Flow found none for (they come last) are not
- * tried: each could cost an ffmpeg. ponytail: PL_TRIES builds, so a big playlist without art costs
- * a bounded wait; a shared folder's cover.jpg Cover Flow refused is not looked for. */
+/* The 2x2 of s's albums, named at: the first four with art in song id order, so songs added after
+ * them leave the picture as it is; each album's Cover Flow art when built, else its song's art
+ * found as Cover Flow's build finds it (as Now Playing does, its folder's cover.jpg taken even when
+ * other albums share the folder). None with art, or a 2x2 that failed: marked, unless the card went
+ * or an ffmpeg was killed. Albums Cover Flow found none for are not tried: each could cost an
+ * ffmpeg. ponytail: PL_TRIES builds, so a big playlist without art costs a bounded wait; a shared
+ * folder's cover.jpg Cover Flow refused is not looked for. */
+/* ponytail: an album Cover Flow hasn't built is decoded in demo (album_art, toolsGetAlbumCover
+ * under stock's art locks), so a bad embedded cover can take demo down, once per album (the note
+ * and strike). Building those with ffmpeg alone (ff_thumb, then beside_art(..., ff_thumb)) would
+ * keep them out of demo, let the worker hold no stock lock, and delete PL_BUILDING, the shared note
+ * and strike, the album_art split and playlist_art_clean_end, for one or two processes per such
+ * album. */
 static int four(pl_songs_t *s, const char *at, unsigned kills) {
     char cover[4][540];
-    unsigned char *rank = calloc(s->n + 1, 1);
-    unsigned *order = calloc(s->n + 1, sizeof *order), k = 0, tries = 0, temp = 0;
-    for (unsigned i = 0; rank && i < s->n && !pl.cancel; ++i) {
-        long n = file_size(art_path(cover[0], s->albums[i].key, ""));
-        rank[i] = n > 0 ? 0 : n < 0 ? 1 : 2;
-    }
-    if (rank && order && !pl.cancel) pick_order(s->hash, rank, s->n, order);
-    for (unsigned i = 0; rank && order && i < s->n && k < 4 && !pl.cancel; ++i) {
-        const pl_album_t *a = &s->albums[order[i]];
-        if (!rank[order[i]]) {
-            art_path(cover[k++], a->key, "");
+    unsigned k = 0, tries = 0, temp = 0;
+    for (unsigned i = 0; i < s->n && k < 4 && !pl.cancel; ++i) {
+        const pl_album_t *a = &s->albums[i];
+        long n = file_size(art_path(cover[k], a->key, ""));
+        if (n > 0) {
+            ++k;
             continue;
         }
-        if (rank[order[i]] == 2) break;  /* Cover Flow found none: not tried */
-        if (access(a->url, 0)) continue; /* gone: no ffmpeg, no try */
+        if (!n || access(a->url, 0)) continue; /* Cover Flow found none; gone: no ffmpeg, no try */
         if (tries++ == PL_TRIES) break;
         tk_snprintf(cover[k], 540, "%s_%u.tmp.jpg", at, k);
         art_note(PL_BUILDING, a->key, a->url); /* an album that kills demo is struck, not retried */
@@ -290,38 +289,36 @@ static int four(pl_songs_t *s, const char *at, unsigned kills) {
     }
     /* stopped (the page closed, a join waits): nothing named, no marker */
     int made = k && !pl.cancel && tile(cover, k, at) && publish(at);
-    if (!made && !pl.cancel && rank && order && kills == ff_kills && !access(ART_DIR, 0)) mark(at);
+    if (!made && !pl.cancel && kills == ff_kills && !access(ART_DIR, 0)) mark(at);
     for (unsigned i = 0; i < 4; ++i)
         if (temp & 1u << i) unlink(cover[i]);
-    free(rank), free(order);
     return made;
 }
 
-static unsigned pl_killed[PL_LISTS]; /* the worker's: per playlist, the picture last killed */
-
-/* One playlist's art; 1 when a file was made. Its picture first; one that won't decode, or whose
- * ffmpeg is killed twice this boot, is marked and its 2x2 shown until the picture changes. The 2x2
- * is named by the songs this read, so songs changed meanwhile never show it: their own hash names a
- * file still to build. */
+/* One playlist's art; 1 when a file was made. Its picture first; one over PL_PICTURE_PX, of a size
+ * its header doesn't tell, or that won't decode, is marked and its 2x2 shown until the picture
+ * changes; one whose ffmpeg is killed (memory short just then) is tried again at the next ask. The
+ * 2x2 is named by the songs this read, so songs changed meanwhile never show it: their own hash
+ * names a file still to build. */
 static int pl_build(pl_job_t *j) {
     char src[600], at[512], path[540];
     if (access(ART_DIR, 0) || !card_space(ART_DIR)) return 0;
     unsigned kills = ff_kills, pic = picture(j->name, src);
     long n = pic ? file_size(named(path, stem(at, "plc", j->cd_num, pic), ".jpg")) : 0;
     if (n > 0) return 0;
-    if (n < 0) {
+    int w = 0, h = 0;
+    if (n < 0 && (!picture_size(src, &w, &h) || !w || !h || (long long)w * h > PL_PICTURE_PX)) {
+        if (access(src, 4)) return 0; /* gone meanwhile */
+        mark(at);
+    } else if (n < 0) {
         /* by ffmpeg alone: any file the user drops there, which stock's decoder in demo could die
-         * on at every open; a child killed is counted below */
+         * on at every open */
         if (ff_thumb(src, named(path, at, ".tmp.jpg"), ART_SIZE, ART_SIZE) && !pl.cancel &&
             publish(at))
             return 1;
         unlink(path);
-        if (pl.cancel || access(src, 4) || access(ART_DIR, 0)) return 0; /* stopped, or gone */
-        if (kills != ff_kills) { /* ffmpeg killed: memory short just then, or the picture's size */
-            unsigned *killed = &pl_killed[j->cd_num & (PL_LISTS - 1)];
-            if (*killed != pic) return *killed = pic, 0; /* once: tried again at the next ask */
-            kills = ff_kills;                            /* twice: marked, its 2x2 from here */
-        }
+        if (pl.cancel || access(src, 4) || access(ART_DIR, 0) || kills != ff_kills)
+            return 0; /* stopped, gone, or ffmpeg killed */
         mark(at);
     }
     pl_songs_t s = { FNV_SEED, 1, 0, 0, 0 };
@@ -398,7 +395,7 @@ static void pl_take(pl_lists_t *t) {
 
 /* The worker joined once it found nothing left to do; a read asked or jobs queued as it ended
  * start another. */
-void playlist_art_poll(void) {
+static void playlist_art_poll(void) {
     if (pl.running && __atomic_load_n(&pl.idle, __ATOMIC_ACQUIRE)) {
         pthread_join(pl.thread, 0);
         pl.running = 0;
@@ -426,6 +423,7 @@ void playlist_art_refresh(void) {
 
 static int pl_tick(const void *unused) {
     pl.timer = 0;
+    if (pl.running) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off: not mid-build */
     playlist_art_poll();
     if (pl.running && !pl.timer) pl.timer = timer_add(pl_tick, 0, 250);
     return 0; /* RET_REMOVE */

@@ -1,5 +1,5 @@
 """playlist_art.c's pure parts: the songs' hash that names a playlist's art, a playlist name as a FAT
-file name, and the stable pick of the 2x2's four albums."""
+file name and the 2x2's cells; its reads of the table on real SQLite; a playlist row's art."""
 import ctypes as C
 import ctypes.util
 import pathlib
@@ -8,8 +8,11 @@ import sqlite3
 
 import pytest
 
+import struct
+
 import host
 import messy_playlists
+from conftest import O, Deques
 
 
 class Songs(C.Structure):
@@ -64,20 +67,6 @@ def test_fat_name(fw):
     assert out.value == b'Roa'
 
 
-def test_pick_is_stable_and_prefers_art(fw):
-    pick = fw.fn('playlist_art__pick_order', None, C.c_uint, C.c_char_p, C.c_uint, C.POINTER(C.c_uint))
-    rank = bytes([1, 0, 2, 1, 0, 0, 1, 2, 0, 1])
-    def order(seed):
-        out = (C.c_uint * len(rank))()
-        pick(seed, rank, len(rank), out)
-        return list(out)
-    first = order(0x1234abcd)
-    assert first == order(0x1234abcd)
-    assert sorted(first) == list(range(len(rank)))
-    assert [rank[i] for i in first] == sorted(rank)  # known art, then unbuilt, then known none
-    assert any(order(seed) != first for seed in (1, 2, 3))
-
-
 def test_quad(fw):
     quad = fw.fn('playlist_art__quad', C.c_uint, C.c_uint, C.c_uint)
     cells = {k: [quad(k, i) for i in range(4)] for k in (1, 2, 3, 4)}
@@ -93,21 +82,21 @@ class ListHash(C.Structure):
 
 
 def test_one_pass_hashes_each_playlist_as_its_own_query(fw):
-    """playlist_art_refresh's rows (cd_num, id, fileurl), every playlist in cd_num then id order, give
-    each playlist the hash its own query (song_row) gives, which names its art, and its count, Cover
-    Flow's caption."""
+    """playlist_art_refresh's rows (id, cd_num, fileurl), every playlist's in rowid order, give each
+    playlist the hash its own query (song_row) gives, which names its art, and its count, Cover Flow's
+    caption."""
     row = fw.fn('playlist_art__list_row', C.c_int, C.c_void_p, C.c_int, ROW, ROW)
-    rows = [('3', '101', '/a.flac'), ('3', '104', '/b.flac'), ('5', '102', '/c.flac'), ('9', '103', '/a.flac')]
+    rows = [('101', '3', '/a.flac'), ('102', '5', '/c.flac'), ('103', '9', '/a.flac'), ('104', '3', '/b.flac')]
     at = (ListHash * 128)()
     t = Lists(C.addressof(at), 0)
     for r in rows:
         assert row(C.byref(t), 3, (C.c_char_p * 3)(*(x.encode() for x in r)), None) == 0
     assert t.n == 3
     for i, cd in enumerate(('3', '5', '9')):
-        mine = [r[1:] for r in rows if r[0] == cd]
+        mine = [(r[0], r[2]) for r in rows if r[1] == cd]
         assert at[i].cd_num == int(cd) and at[i].hash == songs(fw, mine).hash and at[i].songs == len(mine)
     t.n = 128  # full: a further playlist's rows are left out, not hashed into the last one's
-    assert row(C.byref(t), 3, (C.c_char_p * 3)(b'11', b'105', b'/d.flac'), None) == 0
+    assert row(C.byref(t), 3, (C.c_char_p * 3)(b'105', b'11', b'/d.flac'), None) == 0
     assert t.n == 128 and at[127].cd_num == 0 and at[127].hash == 0 and at[127].songs == 0
 
 
@@ -149,19 +138,20 @@ PL_HASHES = host.tools_build.need(re.search(r'#define PL_HASHES (".*")', SOURCE)
 PL_PAGE = int(host.tools_build.need(re.search(r'#define PL_PAGE (\d+)', SOURCE), 'No PL_PAGE')[1])
 
 
-def test_the_refresh_reads_a_page_of_ids_in_rowid_order_with_no_sort():
-    """PL_HASHES on stock's schema (no index on cd_num): a rowid range, no TEMP B-TREE, so no sort and no
-    spill of a big table to /tmp (tmpfs, the Q2's RAM), and a page reads PL_PAGE ids, not the table."""
+def test_the_refresh_reads_a_page_of_rows_in_rowid_order_with_no_sort():
+    """PL_HASHES on stock's schema (no index on cd_num): rows past the last id read, no TEMP B-TREE, so no
+    sort and no spill of a big table to /tmp (tmpfs, the Q2's RAM), and a page reads PL_PAGE rows, not
+    the table."""
     db = sqlite3.connect(':memory:')
     db.execute(messy_playlists.DDL)
-    plan = ' '.join(str(r[-1]) for r in db.execute('explain query plan ' + PL_HASHES % (100, 100 + PL_PAGE)))
-    assert 'TEMP B-TREE' not in plan and 'INTEGER PRIMARY KEY (rowid>? AND rowid<?)' in plan and 'order by id' in PL_HASHES
+    plan = ' '.join(str(r[-1]) for r in db.execute('explain query plan ' + PL_HASHES % 100))
+    assert 'TEMP B-TREE' not in plan and 'INTEGER PRIMARY KEY (rowid>?)' in plan and f'order by id limit {PL_PAGE}' in PL_HASHES
 
 
 def all_rows(by_cd):
-    """Every song row as PL_HASHES gives it: (cd_num, id, fileurl) in id order."""
-    rows = [(cd, r[0], r[1]) for cd, songs in by_cd.items() for r in songs]
-    return sorted(rows, key=lambda r: int(r[1]))
+    """Every song row as PL_HASHES gives it: (id, cd_num, fileurl) in id order."""
+    rows = [(r[0], cd, r[1]) for cd, songs in by_cd.items() for r in songs]
+    return sorted(rows, key=lambda r: int(r[0]))
 
 
 def text(x):
@@ -175,8 +165,8 @@ def test_one_pass_in_id_order_hashes_each_messy_playlist_as_its_own_query(fw, me
     by_cd = messy[1]
     at = (ListHash * 128)()
     t = Lists(C.addressof(at), 0)
-    for cd, id_, url in all_rows(by_cd):
-        v = (C.c_char_p * 3)(None if cd is None else str(cd).encode(), id_.encode(), text(url))
+    for id_, cd, url in all_rows(by_cd):
+        v = (C.c_char_p * 3)(id_.encode(), None if cd is None else str(cd).encode(), text(url))
         assert row(C.byref(t), 3, v, None) == 0
     assert t.n == 101  # the 101 playlists alone, cd 0 among them
     got = {at[i].cd_num: (at[i].hash, at[i].songs) for i in range(t.n)}
@@ -187,10 +177,10 @@ def test_one_pass_in_id_order_hashes_each_messy_playlist_as_its_own_query(fw, me
         mine = songs(fw, [r[:2] for r in songs_])
         assert got[cd] == (mine.hash, len(songs_)), cd
     t.n = 128  # full: those it has go on counting
-    v = (C.c_char_p * 3)(b'4', b'99999', b'/x.flac')
+    v = (C.c_char_p * 3)(b'99999', b'4', b'/x.flac')
     before = got[4][1]
     assert row(C.byref(t), 3, v, None) == 0 and next(at[i].songs for i in range(101) if at[i].cd_num == 4) == before + 1
-    assert row(C.byref(t), 3, (C.c_char_p * 3)(b'777', b'99998', b'/y.flac'), None) == 0  # no playlist's
+    assert row(C.byref(t), 3, (C.c_char_p * 3)(b'99998', b'777', b'/y.flac'), None) == 0  # no playlist's
     assert all(at[i].cd_num != 777 for i in range(128))
 
 
@@ -237,7 +227,7 @@ def test_the_refresh_s_sqlite_heap_stays_small(fw, messy):
 
 
 def test_a_writer_commits_between_two_pages_of_a_read(fw, messy, tmp_path):
-    """The read holds SQLite's shared lock for one page of PL_PAGE ids, a statement each, and none between:
+    """The read holds SQLite's shared lock for one page of PL_PAGE rows, a statement each, and none between:
     a writer that won't wait at all (stock's Import, say) commits before every page, and the read still
     hashes every playlist as a read of the table alone does."""
     path = tmp_path / 'database.db'
@@ -246,16 +236,17 @@ def test_a_writer_commits_between_two_pages_of_a_read(fw, messy, tmp_path):
     writer.execute('create table w(x)')
     pages = []
     def write(sql):
-        if sql.startswith(b'select cd_num'):
-            m = re.search(rb'id>(\d+) and id<=(\d+)', sql)
-            assert m, sql
-            lo, hi = map(int, m.groups())
-            assert hi - lo == PL_PAGE
+        if sql.startswith(b'select id,cd_num'):
+            m = re.search(rb'id>(\d+) order by id limit (\d+)$', sql)
+            assert m and int(m[2]) == PL_PAGE, sql
+            lo = int(m[1])
+            assert not pages or lo > pages[-1]
             pages.append(lo)
             writer.execute('insert into w values (?)', (lo,))  # sqlite3.OperationalError: locked, if the read held on
     real_sqlite(fw, path, write)
     ok, t, at = refresh(fw)
-    assert ok == 1 and len(pages) > 50 and writer.execute('select count(*) from w').fetchone()[0] == len(pages)
+    rows = sum(map(len, messy[1].values()))
+    assert ok == 1 and len(pages) == rows // PL_PAGE + 1 and writer.execute('select count(*) from w').fetchone()[0] == len(pages)
     real_sqlite(fw, messy[0])
     alone, u, at2 = refresh(fw)
     assert alone == 1 and t.n == u.n == 101
@@ -290,3 +281,42 @@ def test_a_playlist_of_huge_tags_keeps_a_small_heap(fw, messy):
     grown = libc.mallinfo2().uordblks - before
     assert s.n == 64 and s.songs == 5000 and grown < 128 << 10, grown
     print(f'cd 2 (500 albums, 4 KB tags, 800-byte urls): {s.n} albums kept, heap +{grown // 1024} KB')
+
+
+def test_ids_far_apart_cost_no_empty_pages(fw, tmp_path):
+    """Stock's import gives new songs max(id)+1, so ids grow with every sync: rows read from the last id, a
+    page of rows a statement, cost one statement however far apart their ids are, and a playlist's own
+    read pages the same way."""
+    path = tmp_path / 'database.db'
+    db = sqlite3.connect(path)
+    db.execute(messy_playlists.DDL)
+    db.executemany('insert into playlist (id, cd_num, fileurl) values (?, ?, ?)',
+                   [(101, 3, '/a.flac'), (2_000_000, 3, '/b.flac'), (9_000_000, 4, '/c.flac')])
+    db.commit()
+    _, sqls = real_sqlite(fw, path)
+    ok, t, at = refresh(fw)
+    assert ok == 1 and t.n == 2 and [(at[i].cd_num, at[i].songs) for i in range(2)] == [(3, 2), (4, 1)]
+    assert [q for q in sqls if q.startswith(b'select')] == [(PL_HASHES % 100).encode()]
+    del sqls[:]
+    s = Songs(2166136261, 1, 0, None, 0)
+    assert fw.fn('playlist_art__songs', C.c_int, C.c_int, C.c_void_p)(3, C.byref(s)) == 1 and s.songs == 2
+    assert len([q for q in sqls if q.startswith(b'select')]) == 1
+
+
+def test_a_row_whose_art_is_gone_shows_the_placeholder(fw):
+    """A playlist emptied, or left with albums without art: its row's re-ask finds no art (playlist_art 0)
+    and its image goes back to stock's placeholder, never left on the old 2x2."""
+    art, name = 0x5a, C.create_string_buffer(b'0')
+    title, rec = C.create_string_buffer(b'Mix'), C.create_string_buffer(0x60)
+    struct.pack_into('<i', rec, O['REC_DISC'], 3)
+    struct.pack_into('<Q', rec, O['REC_TITLE'], C.addressof(title))
+    fw.var('fw_ctx_p_deque_playlist', C.c_uint).value = Deques(fw).new([C.addressof(rec)])
+    fw.mock('widget_lookup', lambda w, n, *_: art)
+    fw.mock('widget_get_visible', lambda w, *_: 1)
+    fw.mock('widget_get_prop_str', lambda w, n, *_: C.addressof(name))
+    fw.mock('fw___xstat', lambda *_: -1)  # no picture of its own
+    shown = []
+    fw.mock('image_base_set_image', lambda w, image, *_: shown.append((w, C.string_at(image))))
+    asked = C.c_int(1)
+    fw.fn('playlists__pl_art_row', None, C.c_void_p, C.c_void_p)(0x77, C.byref(asked))
+    assert shown == [(art, b'playlist_default')]

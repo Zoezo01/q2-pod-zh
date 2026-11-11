@@ -39,20 +39,20 @@ static int ple_number(void *ctx, int n, char **v, char **names) {
     return 0;
 }
 
-/* The database for a write that waits out a reader, playlist_art.c's worker reading the table,
- * instead of failing with SQLITE_BUSY; nonzero when it won't open. */
-static int pl_db(void **db) {
-    return sqlite3_open("/mnt/data/database.db", db) ||
-           sqlite3_exec(*db, "PRAGMA busy_timeout=500", 0, 0, 0);
-}
 /* Stock's shared connection, opened lazily and again after any error (0x5c8aa0's jalr
- * sqlite3_open, tools/build.py): the same wait, so Import, Add to Playlist and Rename don't fail
- * (stock's writers drop songs silently) while the art worker reads. */
+ * sqlite3_open, tools/build.py), and ours (pl_db): the same wait, so Import, Add to Playlist and
+ * Rename don't fail (stock's writers drop songs silently) while the art worker reads.
+ * ponytail: a stock write that meets Home's or the update dialog's count (a read of the whole
+ * songtable) now holds the UI up to 500 ms per statement before it fails as before; a shorter
+ * timeout is the knob if that shows. */
 int stock_db_open(const char *path, void **db) {
     int bad = sqlite3_open(path, db);
     if (!bad) sqlite3_exec(*db, "PRAGMA busy_timeout=500", 0, 0, 0);
     return bad;
 }
+/* The database for a write that waits out a reader, playlist_art.c's worker reading the table,
+ * instead of failing with SQLITE_BUSY; nonzero when it won't open. */
+static int pl_db(void **db) { return stock_db_open("/mnt/data/database.db", db); }
 
 /* Revalidate under the write lock; the temporary ID is above every occupied ID. */
 static int ple_mutate(int dest, void *a, void *b) {
@@ -862,8 +862,9 @@ static void pl_art_row(void *button, int *asked) {
     if (!r) return;
     if (!*asked) playlist_art_refresh();
     *asked = 1;
-    if (playlist_art(I(r, REC_DISC), P(r, REC_TITLE), 1, url, sizeof url))
-        image_base_set_image(art, url);
+    image_base_set_image(art, playlist_art(I(r, REC_DISC), P(r, REC_TITLE), 1, url, sizeof url)
+                                  ? url
+                                  : "playlist_default"); /* none, or not made yet: never the last */
 }
 /* One playlist's art made: its rows alone ask again, as an ask may queue a failed one anew. */
 static void pl_art_ready(int cd_num) {

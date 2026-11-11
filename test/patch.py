@@ -4301,6 +4301,10 @@ assert m.refreshes==1 and m.asks==[(10,'List 0',1),(11,'List 1',1),(12,'List 2',
 m.asks=[]; m.art[12]=PL_ART(12); pl_ready(m,12)
 assert m.asks==[(12,'List 2',1)] and m.nodes[pl_art_of(m,buttons[2])]['image']==PL_ART(12) and m.refreshes==1
 m.asks=[]; pl_ready(m,99); assert not m.asks  # a playlist no longer listed
+# ... a playlist emptied, or left with albums without art: its re-ask finds none, and its row shows the placeholder, not
+# the old 2x2.
+del m.art[12]; pl_ready(m,12); assert m.nodes[pl_art_of(m,buttons[2])]['image']=='playlist_default'
+m.art[12]=PL_ART(12); pl_ready(m,12); assert m.nodes[pl_art_of(m,buttons[2])]['image']==PL_ART(12)
 # ... the image cache dropped (Light Mode, Corners, Theme: image_manager_unload_all): the rows hold names, not bitmaps, so
 # stock's image paint loads each again by name; a rebuild names them again.
 assert not [c for c in m.calls if c[0] in ('widget_load_image','image_manager_unload_all','image_manager_unload_bitmap_by_name')]

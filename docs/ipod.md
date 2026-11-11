@@ -460,7 +460,8 @@ only the highlighted row's, white, on Home and every list, so it moves with the 
 (`chevron_sel`: stock's own are emptied); on Now Playing's More, only on rows that open a
 screen, not A-B Repeat, Speed or Delete, and on a playlist's More, on Rename and Edit Playlist, not
 Delete Playlist; Minimal's Home has none. Under Classic, Playlists is a list of two-line rows, each
-with its art (the playlist's own picture or four of its albums,
+with its art (the playlist's own picture, up to 12 megapixels, or the first four of its albums with
+art in the order its songs were added,
 [internals.md](internals.md#playlist-art)) at the row's start under Row Art, as an album's row, and
 none with it off, with no toolbar: New Playlist… and Edit Playlists… head it, Edit Playlists is
 stock's select mode with Select All, Import, Export, Delete and Done as rows, and Return leaves that
