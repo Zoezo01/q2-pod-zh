@@ -7,7 +7,7 @@ from functools import cmp_to_key
 from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
 from unicorn.mips_const import *
 sys.path.insert(0, sys.path[0] + '/../tools')  # tools/ first
-from build import jal, j, segments, load_elf, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, dev_tag
+from build import jal, j, segments, load_elf, symbols, BASE, SCRATCH, HOOKS, WM_PAINT_LEAF, FUNCTIONS, GLOBALS, CONTEXT_DATA, ROOT, source_sha256, sha, PRIVATE_FUNCTIONS, TAG, VERSION, BETA, dev_tag
 B=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'build')
 payload_syms=symbols(B/'patch.elf')
 manifest=json.loads((B/'manifest.json').read_text())
@@ -1108,7 +1108,10 @@ def battery_checks():
         bar=b.node('system_bar','system_bar',[row])
         w['progress_battery']=level
         b.word(bar+O['W_PARENT'],b.wm); b.word(syms['system_bar'],bar)
-        return b,bar,w,lambda x=bar: b.call(address=HOOKS['widget_on_paint_background'][0],args=(x,b.canvas,0,0),gap=0)
+        def paint(x=bar):  # a frame, then the bar_repaint it may arm (timer 0: right after the frame)
+            b.call(address=HOOKS['widget_on_paint_background'][0],args=(x,b.canvas,0,0),gap=0)
+            b.advance(0,clear=False)
+        return b,bar,w,paint
     def shown(b,w): return [n for n in ('img_battery','label_battery','view_battery') if b.nodes[w[n]]['visible']]
     def alpha(b,w): return b.get(w['img_bt']+0x34)&255
     b,bar,w,paint=battery_bar(1); paint()
@@ -1132,7 +1135,7 @@ def battery_checks():
     b.nodes[w['img_bt']]['visible']=1; paint(); assert len(b.timers)==1; passed()
     # Icon + Percent: the outline, nub and level in one colour, canvas state restored; charging
     # is a full BATT_CHARGE_RGB icon, low the accent's red tone; the slot repaints only when one
-    # of them changes.
+    # of them changes (bar_repaint).
     b,bar,w,paint=battery_bar(2); b.nodes[w['img_bt']]['visible']=0
     lcd=lambda: (b.lcd_colors(),b.get(b.lcd+O['LCD_TEXT_COLOR']),b.get(b.canvas+O['CANVAS_ALIGN_V']),b.get(b.canvas+O['CANVAS_ALIGN_H']))
     b.nodes[w['label_battery']]['text']='50%'
@@ -1145,8 +1148,8 @@ def battery_checks():
         # the level is label_battery's text: stock zeroes progress_battery while charging
         b.nodes[w['img_battery']]['image']=image; b.nodes[w['label_battery']]['text']=f'{value}%'
         b.nodes[w['progress_battery']]['value']=0 if image=='bar_charge' else value
-        b.calls=[]; paint(); assert ('widget_invalidate_force',w['view_battery']) in [c[:2] for c in b.calls]
-        b.calls=[]; paint(); assert ('widget_invalidate_force',w['view_battery']) not in [c[:2] for c in b.calls]
+        b.calls=[]; paint(); assert ('widget_invalidate_force',bar) in [c[:2] for c in b.calls]  # the whole bar, after the frame
+        b.calls=[]; paint(); assert ('widget_invalidate_force',bar) not in [c[:2] for c in b.calls]
         pct=10*len(text)+10 if measured else O['BATT_PCT_W']
         assert b.get(w['view_battery']+O['W_W'])==bw+O['BATT_NUB_W']+O['BATT_GAP']+pct
         bands,letters=slot(); measured=True
@@ -1198,7 +1201,7 @@ def battery_checks():
     for _ in range(O['CODEC_STEPS']): b.advance(O['CODEC_STEP_MS'])
     b.calls=[]; paint()
     assert b.get(w['view_battery']+O['W_W'])>O['BATT_BODY_W']+O['BATT_NUB_W']+O['BATT_GAP']
-    assert ('widget_invalidate_force',w['view_battery']) in [c[:2] for c in b.calls]
+    assert ('widget_invalidate_force',bar) in [c[:2] for c in b.calls]
     for invalid in ('4','9','-1','33','bad',''):
         b,bar,w,paint=battery_bar(invalid); paint()
         assert b.get(w['view_battery']+O['W_W'])==O['BATT_BODY_W']+O['BATT_NUB_W']
@@ -5837,8 +5840,8 @@ assert ('stock_showface',bar) in [c[:2] for c in m.calls] and m.nodes[state]['vi
 passed()
 for mode in (1,2,3,0,1,2,3,0):
     m.call(address=payload_syms['setting_click'],args=(2,m.event,0,0),gap=0)
-    m.calls=[]; paint_live_bar()
-    assert ('widget_invalidate_force',slot) in [c[:2] for c in m.calls]
+    m.calls=[]; paint_live_bar(); m.advance(0,clear=False)
+    assert ('widget_invalidate_force',bar) in [c[:2] for c in m.calls]  # the whole bar, after the frame
     if mode != 1:
         assert m.nodes[slot]['visible']
         assert m.get(slot+O['W_W'])==(O['BATT_INSIDE_W'] if mode==3 else O['BATT_BODY_W'])+O['BATT_NUB_W']+(O['BATT_GAP']+O['BATT_PCT_W'] if mode==2 else 0)
@@ -17342,7 +17345,7 @@ item=kids[2]; button=m.nodes[item]['children'][0]; title,value=m.nodes[button]['
 # Stock's row, title and value widgets alike.
 want=tree(m.nodes[rows[1]]['children'][0])
 assert m.nodes[item]['style']=='s_listitem_black' and tree(button)==want
-assert m.nodes[title]['text']=='CFW. Version' and m.nodes[value]['text']==f"{VERSION} Pod{f" dev {manifest['dev']}" if manifest['dev'] else ''}"
+assert m.nodes[title]['text']=='CFW. Version' and m.nodes[value]['text']==f"{VERSION} Pod{f" dev {manifest['dev']}" if manifest['dev'] else f' beta {BETA}' if BETA else ''}"
 assert not m.nodes[button].get('handlers') and not m.nodes[button].get('name'); passed()
 m.nodes[view]['children']=rows[:7]; assert m.call(address=HOOKS['systemset_about_page_init'][0],args=(m.top,5,0,0),gap=0)==0 and m.nodes[view]['children']==rows[:7]; passed()
 # Under Classic the CFW. Version row's title takes the Classic font (about_label), its value a second line's: stock's regular.
