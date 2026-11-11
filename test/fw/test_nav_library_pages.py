@@ -961,6 +961,11 @@ class Heart:
         self.ui.handler(self.heart, EVT_POINTER_DOWN)()
         return self.ui.fire('rate_long')
 
+    def tap(self, w):
+        """A press and its release on a heart of the picker, or outside it."""
+        self.ui.handler(w, EVT_POINTER_DOWN)()
+        return self.ui.handler(w, EVT_CLICK)()
+
     def key(self, key, top=None):
         return self.fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)(top or self.win, key)
 
@@ -1077,8 +1082,34 @@ def test_a_tap_on_a_heart_keeps_that_many(fw, ui, song, mcl):
     heart = Heart(fw, ui, song, mcl, kept=1)
     heart.hold()
     hearts_ = ui.kids[heart.panel()][1:]
-    assert ui.handler(hearts_[1], EVT_CLICK)() == STOP
+    assert heart.tap(hearts_[1]) == STOP
     assert heart.kept() == 2 and heart.picker() is None and heart.badge() == '2'
+
+
+def test_the_release_of_the_hold_that_opened_the_picker_picks_nothing(fw, ui, song, mcl):
+    """#303: the picker opens under the held finger, whose release chose the heart there."""
+    clock = [5001]  # odd: the stamp is the time | 1
+    fw.mock('time_now_ms', lambda *_: clock[0])
+    heart = Heart(fw, ui, song, mcl, kept=1)
+    heart.hold()
+    hearts_ = ui.kids[heart.panel()][1:]
+    assert ui.handler(hearts_[4], EVT_CLICK)() == STOP  # no press came down on it
+    assert heart.kept() == 1 and heart.picker() == ('1 of 5', hearts(1))
+    clock[0] += 399  # the same finger settling
+    assert heart.tap(hearts_[4]) == STOP and heart.kept() == 1 and heart.picker() == ('1 of 5', hearts(1))
+    clock[0] += 1
+    assert heart.tap(hearts_[3]) == STOP and heart.kept() == 4 and heart.picker() is None
+    heart.hold()
+    clock[0] += 400
+    heart.tap(hearts_[2])
+    assert ui.handler(hearts_[1], EVT_CLICK)() == STOP and heart.kept() == 3  # one press, one tap
+
+
+def test_a_tap_on_the_rating_it_has_takes_it_away(fw, ui, song, mcl):
+    heart = Heart(fw, ui, song, mcl, kept=3)
+    heart.hold()
+    assert heart.tap(ui.kids[heart.panel()][3]) == STOP
+    assert heart.kept() == 0 and heart.picker() is None and heart.badge() is None
 
 
 def test_the_picker_is_made_once_per_window(fw, ui, song, mcl):
@@ -1102,7 +1133,8 @@ def test_classic_s_picker_counts_hearts_and_a_tap_outside_leaves_it(fw, ui, song
     assert heart.picker() == ('2 Hearts', hearts(2, on, off))
     out = ui.lookup(heart.win, 'rate_out', 0)
     assert out not in ui.hidden and out not in ui.dull  # a tap outside the panel reaches it
-    assert ui.handler(out, EVT_CLICK)() == STOP
+    assert ui.handler(out, EVT_CLICK)() == STOP and heart.picker() is not None  # the opening hold's release
+    assert heart.tap(out) == STOP
     assert heart.picker() is None and heart.kept() == 1 and out in ui.hidden and out in ui.dull
 
 

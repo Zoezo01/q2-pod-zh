@@ -9115,7 +9115,8 @@ rk=classic_light_new(AlbumRateMachine); rk.mock('strstr@GLIBC_2.0'); rk.open(); 
 kids=rk.nodes[rk.page]['children']; out=next(w for w in kids if rk.nodes[w].get('name')=='rate_out')
 assert kids.index(out)<kids.index(rk.panel()) and wbox(rk,out)==(0,0,rk.get(rk.page+O['W_W']),rk.get(rk.page+O['W_H'])) and rk.nodes[out]['clickable']=='true' and rk.nodes[out].get('visible',1)
 assert rate_poll(rk)==O['BC_IDLE_FULL']
-f,ctx=rk.handler(out,O['EVT_CLICK']); assert rk.call(address=f,args=(ctx,rk.event,0,0),gap=0)==11
+f,ctx=rk.handler(out,O['EVT_CLICK']); assert rk.call(address=f,args=(ctx,rk.event,0,0),gap=0)==11 and rk.panel()  # no press came down on it: no tap (#303)
+d,dctx=rk.handler(out,O['EVT_POINTER_DOWN']); rk.call(address=d,args=(dctx,rk.event,0,0),gap=0); assert rk.call(address=f,args=(ctx,rk.event,0,0),gap=0)==11
 assert rk.panel() is None and not rk.nodes[out]['visible'] and rk.kept()==[] and rate_poll(rk)==5
 assert rk.run(4) is None and rk.panel() and rk.nodes[out]['visible'] and rk.call(O['KEY_RETURN'])==11 and rk.panel() is None and not rk.nodes[out]['visible']; passed()
 rm=AlbumRateMachine(); rm.open(); rm.word(rm.slide+O['SLIDE_INDEX'],1); assert rm.run(4) is None and rm.panel()
@@ -9183,6 +9184,7 @@ for want,added,removed in ((5,1,0),(5,1,0),(3,0,1),(2,0,0)):
 m.rate(0); passed()
 # A tap on a heart saves that many.
 assert m.run(4) is None; heart=m.nodes[m.panel()]['children'][2]; f,ctx=m.handler(heart,O['EVT_CLICK'])
+d,dctx=m.handler(heart,O['EVT_POINTER_DOWN']); m.call(address=d,args=(dctx,m.event,0,0),gap=0)  # its press, then its click
 m.call(address=f,args=(ctx,m.event,0,0),gap=0); assert m.panel() is None and m.kept()==[(a1&~7)|2]; passed()
 # Kept across boots, apart from the songs' table.
 m2=AlbumRateMachine(files={ALBUM_RATES:m.files[ALBUM_RATES]}); m2.open(); m2.word(m2.slide+O['SLIDE_INDEX'],1)
@@ -13748,7 +13750,12 @@ for _ in range(4): m.call(O['KEY_PREV'])
 assert m.caption()=='Unrated' and m.hearts()==['play_unfav']*5
 m.call(O['KEY_CENTER']); assert m.kept()==[] and m.badge() is None and m.favs==set()
 m.heart(); p=m.panel(); assert m.nodes[p]['sensitive']==1; heart=[h for h in m.nodes[p]['children'] if m.nodes[h]['type']=='image'][2]
-f,ctx=m.handler(heart,O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+# The hold's own release lands on the picker, which opened under the finger: with no press on a heart, or one within
+# RATE_SETTLE_MS of the opening, it picks nothing (#303). A press after that and its click are the tap.
+f,ctx=m.handler(heart,O['EVT_CLICK']); d,dctx=m.handler(heart,O['EVT_POINTER_DOWN'])
+assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==11 and m.panel()==p and m.kept()==[]
+m.call(address=d,args=(dctx,m.event,0,0),gap=0); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==11 and m.panel()==p and m.kept()==[]
+m.now+=400; m.call(address=d,args=(dctx,m.event,0,0),gap=0); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.panel() is None and m.nodes[p]['sensitive']==0 and m.kept()==[(key_of('B')&~7)|3] and m.badge()=='3'
 assert m.tap()==0 and m.favs=={'B'} and m.kept()==[] and m.badge() is None; passed()
 # A tap or a saved rating makes the card's copy due, 5 s on; a picker left unsaved doesn't.
