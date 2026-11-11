@@ -12,11 +12,11 @@ VERSION = '1.8.0'  # major.minor.patch, single digits, shown as is (About and re
 BETA = 2  # a pre-release's beta number (1-9), 0 for the release itself
 REPO = 'DiamondBond/q2-pod'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
-# differ from the installed one, so it packs the digits: 1.0.1 is V101I. A beta ends in its number
-# instead, so each installs over the last: 1.8.0 beta 2 is V1802 (beta 1 shipped as V180I, which
-# therefore refuses the final 1.8.0). About shows the stock firmware version and a CFW. Version row
-# with VERSION and the edition instead (ringnav_about).
-TAG = 'V' + VERSION.replace('.', '') + (str(BETA) if BETA else 'I')
+# differ from the installed one, so it packs the digits and the beta number: 1.8.0 beta 2 is V1802,
+# 1.8.0 itself V1800, so each installs over the betas before it. Releases up to 1.8.0 BETA ended in I
+# (1.0.1 was V101I). About shows the stock firmware version and a CFW. Version row with VERSION and
+# the edition instead (ringnav_about).
+TAG = 'V' + VERSION.replace('.', '') + str(BETA)
 
 def dev_tag(number):
     """--dev build number's tag: V, three base-36 digits and i (V00Ai), so no two test builds share a

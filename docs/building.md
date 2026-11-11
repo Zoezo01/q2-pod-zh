@@ -48,9 +48,9 @@ On by default: `--flac-experiments sync,lpc,output` (all three). Pass a subset t
 
 ### Versioning
 
-The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x502a00`; the online check `check_otginfo`, `0x502f28`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) packed as `V<xyz>I`. For example, 1.0.0 is `V100I`. The mod installs over stock and over any other build, and stock V1.34 installs back over it.
+The updater refuses only a firmware whose version literal is identical to the installed one (`update_firmware`, `0x502a00`; the online check `check_otginfo`, `0x502f28`). So each build carries a 5-character tag, `VERSION` (`x.y.z`, single digits) and `BETA` (a pre-release's beta number, 0 for the release) packed as `V<xyz><beta>`. For example, 1.8.0 beta 2 is `V1802` and 1.8.0 is `V1800`, so each beta and then the release installs over the one before. Releases up to 1.8.0 BETA were packed as `V<xyz>I` (1.0.0 was `V100I`). The mod installs over stock and over any other build, and stock V1.34 installs back over it.
 
-About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
+About's **FW. Version** row reads the same literal, so it shows the stock firmware's version (`STOCK_VERSION`, from the stock `firmware_v20.info`). A **CFW. Version** row below it shows `<version> Pod`, plus ` beta N` in a beta, or ` dev N` in `--dev` builds. Release tags use the plain version (`1.0.0`); releases up to 1.0 were `V`-prefixed. Each release carries `update.tar`.
 
 `--dev` numbers each test build from the untracked `.build-number` and tags it `V` plus that number in three base-36 digits, then `i` (`V001i`, `V002i` … `VZZZi`). No two test builds share a tag, and none equals a release's, so the updater installs each test build over the last and the release over any of them. `--dev` applies to that build only: the release procedure never passes it, and the manifest records the build number as `dev` (`false` otherwise).
 

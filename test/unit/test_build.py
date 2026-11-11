@@ -977,7 +977,6 @@ def test_patch_m4b_cover_names_itself_in_a_mapping_error(monkeypatch):
         build.patch_m4b_cover(bytes(raw))
 
 
-ABOUT_VERSION = f'{build.VERSION} Pod' + (f' beta {build.BETA}' if build.BETA else '')  # a release build's
 RANGES = ['#define BOLD_RANGES {0x20,0x7e}', '#define CLASSIC_LIGHT_RANGES {0x20,0x7e,0x2013,0x2014}']
 
 
@@ -987,9 +986,11 @@ def stock_h(dev=0, repo=build.REPO):
     return build.stock_header(context, RANGES, builtins(), dev, repo)
 
 
-@pytest.mark.parametrize('dev,repo,version,tag,flag', [(0, build.REPO, ABOUT_VERSION, build.VERSION, '0'),
-                                                       (7, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
-def test_stock_header_versions(dev, repo, version, tag, flag):
+@pytest.mark.parametrize('dev,beta,repo,version,tag,flag', [(0, 0, build.REPO, f'{build.VERSION} Pod', build.VERSION, '0'),
+                                                            (0, 2, build.REPO, f'{build.VERSION} Pod beta 2', build.VERSION, '0'),
+                                                            (7, 2, 'someone/q2-fork', f'{build.VERSION} Pod dev 7', '', '1')])
+def test_stock_header_versions(dev, beta, repo, version, tag, flag, monkeypatch):
+    monkeypatch.setattr(build, 'BETA', beta)
     header = stock_h(dev, repo)
     lines = header.splitlines()
     assert header.endswith('\n') and all(line.startswith('#define ') for line in lines)
@@ -1003,8 +1004,9 @@ def test_stock_header_versions(dev, repo, version, tag, flag):
 
 
 @pytest.mark.skipif(not shutil.which('clang'), reason='no clang')
-def test_stock_header_is_c(tmp_path):
+def test_stock_header_is_c(tmp_path, monkeypatch):
     """stock.h as the payload's C reads it: built into a host library whose data ctypes reads back."""
+    monkeypatch.setattr(build, 'BETA', 0)
     import art
     import ipod
     import theme
@@ -1033,7 +1035,7 @@ const unsigned long h_sizes[] = {{sizeof h_zones / sizeof *h_zones, sizeof h_cit
     zones, cities, order, icons, lit, rounds, bold = array(ctypes.c_ulong, 'h_sizes', 7)
     assert array(ctypes.c_int, 'h_ints', 4) == [build.RING_STEP, len(themes), len(theme.theme_keys(themes)), 0]
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_strings', 6)] == [
-        build.ROCKBOX_FLAG, 'V1.34', ABOUT_VERSION, build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
+        build.ROCKBOX_FLAG, 'V1.34', f'{build.VERSION} Pod', build.VERSION, build.REPO, f'Q2Pod/{build.VERSION} (https://github.com/DiamondBond/q2-pod)']
     assert [s.decode() for s in array(ctypes.c_char_p, 'h_zones', zones)] == [zone for _, zone in build.TIMEZONES]
     # each row's city, its label after the offset
     cities = [s.decode() for s in array(ctypes.c_char_p, 'h_cities', cities)]
