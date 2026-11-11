@@ -364,22 +364,24 @@ int coverflow_wheel_poll(int usable, int gated) {
     if (!th.beat || (th.finger && th.held))
         th.rate += (inst - th.rate) * (1 - ff_decay((float)ms / tc));
     th.ticks = 0;
-    /* At jump_at or more for jump_ms the spin goes by letters, where the sort has them: one each
-     * jump_ticks of travel at any rate and either way, the first once the row is in (above), the
-     * row leaning against the way the spin went, as the covers the facing point left behind do.
+    /* At big_jump_at or more for big_jump_ms the spin goes by letters, where the sort has them: one
+     * each jump_ticks of travel at any rate and either way, the first once the row is in (above),
+     * the row leaning against the way the spin went, as the covers the facing point left behind do.
      * Only a lift ends them (above): slowing, resting on the wheel or turning back is reading
-     * them. That is Big Library Mode's; off, 1.7.6's (th_beat). */
+     * them, so a false start costs more than 1.7.6's and takes a faster spin of its own. That is
+     * Big Library Mode's; off, 1.7.6's (th_beat), at jump_at for jump_ms. */
     int since = (int)(now - th.tick_at), big = ringnav_big_library();
-    /* jump_at counts towards jump_ms; a dip under it, still at fast_at (a thumb re-gripping),
-     * drains the count rather than dropping it; a lift or a rate under fast_at drops it. */
+    /* big_jump_at counts towards big_jump_ms; a dip under it, still at fast_at (a thumb
+     * re-gripping), drains the count rather than dropping it; a lift or under fast_at drops it. */
     if (big)
         th.capped = !th.finger || th.rate < cfs.fast_at ? 0
-                    : th.rate >= cfs.jump_at            ? th.capped + ms
+                    : th.rate >= cfs.big_jump_at        ? th.capped + ms
                     : th.capped > ms                    ? th.capped - ms
                                                         : 0;
     else
         th_beat(s, n, travel, now, ms, since);
-    if (big && !th.jump && th.capped && th.capped >= cfs.jump_ms && cfs.jump_ticks && lettered(s)) {
+    if (big && !th.jump && th.capped && th.capped >= cfs.big_jump_ms && cfs.jump_ticks &&
+        lettered(s)) {
         th.jump = 1, th.lean = -th.dir, th.stretch = 0;
         th.enter = (float)cfs.enter_albums;
     }

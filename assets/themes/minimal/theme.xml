@@ -29,17 +29,17 @@
   </view>
   <!-- Cover Flow's shelf takes CF_* (ROLE_MACROS); the thumb is every theme's, Classic's and Modern's by extends:
        the wheel holds the covers (docs/internals.md#coverflow-thumb); these are its numbers, to retune on the wheel.
-       jump_ms at jump_at ticks/s or more, a spin goes by letters, one each jump_ticks of travel (0: never). With Big
-       Library Mode off they are named on the moving row, jump_pace apart, until the thumb slows or turns back; on,
-       they last until the thumb lifts: the row comes in over enter_albums, slides from letter to letter (slide_ms)
-       and folds out once within fold_near of the letter. row_reach is no longer read; it stays so a theme that
-       states it still builds. -->
+       A spin goes by letters, one each jump_ticks of travel (0: never). With Big Library Mode off, after jump_ms at
+       jump_at ticks/s or more, they are named on the moving row, jump_pace apart, until the thumb slows or turns
+       back; on, after big_jump_ms at big_jump_at, a faster spin as a false start costs more, they last until the
+       thumb lifts: the row comes in over enter_albums, slides from letter to letter (slide_ms) and folds out once
+       within fold_near of the letter. row_reach is no longer read; it stays so a theme that states it still builds. -->
   <view name="coverflow">
     <element name="shelf" thumb="1" ticks_turn="36" ticks_album="7" fast_at="23" fast_full="90" top_speed="20" track="30"
              snap="25" spin="130" far_left="250" detent="80" hold_ms="5000" stop_ms="60" stop_left="60" rate_up="120"
              rate_down="50" back="50" dead="1" contact_ms="40" aim_snap="30" lead_from="25" lead_full="100" lead_ms="45"
              row_shift="20" row_from="100" row_full="300" row_shrink="8" row_flat="200" row_out="33" row_edge="160"
              row_width="60" row_key="72" row_reach="22" jump_ms="700" jump_ticks="5" jump_at="32" jump_pace="140"
-             enter_albums="8" slide_ms="160" fold_near="50"/>
+             big_jump_at="75" big_jump_ms="240" enter_albums="8" slide_ms="160" fold_near="50"/>
   </view>
 </theme>

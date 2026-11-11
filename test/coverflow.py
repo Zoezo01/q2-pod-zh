@@ -3485,9 +3485,9 @@ static void thumb_shipped(void) {
         th_rest();
     }
     test_wheel_pct = 50;
-    /* jump_ms 0: letters at jump_at at once, and never from a slow turn */
+    /* big_jump_ms 0: letters at big_jump_at at once, and never from a slow turn */
     close_page();
-    shim_themes[1].cf = shipped, shim_themes[1].cf.jump_ms = 0;
+    shim_themes[1].cf = shipped, shim_themes[1].cf.big_jump_ms = 0;
     open_page();
     top_window = page;
     th_pass(0, 17);
@@ -3504,14 +3504,15 @@ static void thumb_shipped(void) {
     top_window = page;
     th_pass(0, 17);
 
-    /* At jump_at for jump_ms, letters: the first carries the row on to its letter's first album, each
-       after sends it there, its letter shown; on in the album order, one a jump_ticks of travel. */
+    /* At big_jump_at for big_jump_ms, letters: the first carries the row on to its letter's first
+       album, each after sends it there, its letter shown; on in the album order, one a jump_ticks of
+       travel. */
     th_down();
     int letters0 = letters, t = 0, prev = -1, spread = 0, canvas[16] = { 0 }, tail = albums - 1;
     while (tail && initial_of(tail - 1) == initial_of(tail)) --tail; /* the last letter's first album */
     while (letters == letters0 && t < 2000) th_spin(150, 17), t += 17;
-    /* the rate rising to jump_at, the entry at CF_ENTER_SPEED or more */
-    assert(t >= shipped.jump_ms && t <= shipped.jump_ms + 100 + shipped.enter_albums * 1000 / CF_ENTER_SPEED);
+    /* the rate rising to big_jump_at, the entry at CF_ENTER_SPEED or more */
+    assert(t >= shipped.big_jump_ms && t <= shipped.big_jump_ms + 100 + shipped.enter_albums * 1000 / CF_ENTER_SPEED);
     for (int i = 0; i < 30 && prev != tail; ++i) {
         int was = letters;
         if (i) th_spin(150, 17);
@@ -3621,21 +3622,55 @@ static void thumb_shipped(void) {
     shim_themes[1].cf = shipped;
     cf_frame_window(0);
 
-    /* Under jump_at, however long: albums, never letters. */
-    th_down();
+    /* Under big_jump_at, however long: albums, never letters. That is a spin at 1.7.6's trigger,
+       jump_at up to under big_jump_at, held far past jump_ms: Big Library Mode off, it goes by
+       letters (Andreas, V006i: on, a false start costs till the lift, so it takes a faster spin). */
     int l0 = letters;
-    th_spin(30, 2000);
-    assert(letters == l0);
-    th_rest();
-    /* A re-grip's dip under jump_at, still over fast_at, drains the dwell rather than dropping it:
-       letters come before a dwell started again after the dip would bring them. */
+    const float under[] = { 30, shipped.jump_at + 8, shipped.big_jump_at - 5 };
+    for (int k = 0; k < 3; ++k) {
+        th_down();
+        th_spin(under[k], 2000);
+        assert(letters == l0 && !th[T_JUMP]);
+        th_rest();
+    }
+    close_page();
+    big_library = 0;
+    open_page();
+    s = slide(), index = (int *)(s->raw + SLIDE_INDEX);
+    top_window = page;
+    th_pass(0, 17);
+    for (int k = 1; k < 3; ++k) {
+        th_down();
+        th_spin(under[k], shipped.jump_ms + 600);
+        assert(letters > l0 && !th[T_JUMP]);
+        th_rest();
+        l0 = letters;
+    }
+    close_page();
+    big_library = 1;
+    open_page();
+    s = slide(), index = (int *)(s->raw + SLIDE_INDEX);
+    top_window = page;
+    th_pass(0, 17);
+    /* At big_jump_at, letters after big_jump_ms, not a pass sooner nor much later. */
     th_down();
-    int tl = 0;
-    th_spin(150, 255), tl += 255;
-    th_spin(28, 340), tl += 340; /* the rate falls under jump_at in about 170 ms */
+    int tl = 0, at = -1;
+    while (!th[T_JUMP] && tl < 2000) {
+        th_spin(150, 17), tl += 17;
+        if (at < 0 && th[T_RATE] >= shipped.big_jump_at) at = tl;
+    }
+    assert(th[T_JUMP] && at > 0 && tl - at >= shipped.big_jump_ms - 17 && tl - at <= shipped.big_jump_ms + 17);
+    th_rest();
+    /* A re-grip's dip under big_jump_at, still over fast_at, drains the dwell rather than dropping
+       it: letters come before a dwell started again after the dip would bring them. */
+    l0 = letters;
+    th_down();
+    tl = 0;
+    th_spin(150, 204), tl += 204;
+    th_spin(28, 102), tl += 102; /* the rate falls under big_jump_at in about 50 ms */
     assert(letters == l0 && !th[T_JUMP]);
     while (!th[T_JUMP] && tl < 2000) th_spin(150, 17), tl += 17; /* letters begun: the entry */
-    assert(th[T_JUMP] && tl < 255 + 340 + shipped.jump_ms);
+    assert(th[T_JUMP] && tl < 204 + 102 + shipped.big_jump_ms);
     th_rest();
 
     close_page();
@@ -5103,8 +5138,8 @@ static void by_years(int old) {
     th_down();
     int t = 0, was = letters, prev = -1;
     while (letters == was && t < 2000) th_spin(150, 17), t += 17;
-    /* the rate rising to jump_at, the entry at CF_ENTER_SPEED or more */
-    assert(th[T_JUMP] && t <= shipped.jump_ms + 100 + shipped.enter_albums * 1000 / CF_ENTER_SPEED);
+    /* the rate rising to big_jump_at, the entry at CF_ENTER_SPEED or more */
+    assert(th[T_JUMP] && t <= shipped.big_jump_ms + 100 + shipped.enter_albums * 1000 / CF_ENTER_SPEED);
     for (int i = 0; i < 60 && TARGET() != firsts[old][3]; ++i, th_spin(150, 17)) /* on: later years, then the undated */
         if (TARGET() != prev) assert(TARGET() > prev && TO_YEAR(TARGET())), prev = TARGET();
     th_arrive();

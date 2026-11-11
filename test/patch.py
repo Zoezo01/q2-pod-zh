@@ -10379,9 +10379,9 @@ trest(m); assert toff(m)==0 and tcaption(m)==FRUIT[tindex(m)] and plain(m); pass
 m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Big Library Mode
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
-m.word(m.slide+O['SLIDE_INDEX'],1)  # from Avocado: past jump_ms and the entry, round the nine, the first letter is Apple's
+m.word(m.slide+O['SLIDE_INDEX'],5)  # from Date: past big_jump_ms and the entry, round the nine to an early letter
 tp(m); assert (15+2)*160*160*4 in m.live.values()  # opened on: the half copies' slot as well
-thold(m); tspin(m,200,-30); assert not m.get(ps['th']+TH_AT['jump'])  # 318 ticks/s; at the cap, short of jump_ms
+thold(m); tspin(m,200,-30); assert not m.get(ps['th']+TH_AT['jump'])  # 318 ticks/s; at the cap, short of big_jump_ms
 for _ in range(40):
     if m.get(ps['th']+TH_AT['jump']): break
     tspin(m,17,-30)
@@ -10416,6 +10416,28 @@ for _ in range(17):  # 289 ms of CF_FOLD_MS
     m.calls=[]; tp(m); assert ('widget_invalidate_force',m.slide) in [c[:2] for c in m.calls] and tindex(m)==index and toff(m)==0
 trest(m); assert tindex(m)==index and toff(m)==0 and tcaption(m)==FRUIT[index]
 m.letters=[]; tpaint(m); assert not m.letters; passed()
+# Big Library Mode's letters last till the lift, so they start at a faster spin of their own: big_jump_at for big_jump_ms,
+# where off keeps 1.7.6's jump_at for jump_ms. 42 and 64 ticks/s, held past jump_ms, stay albums with it on and go by
+# letters off; on, letters start big_jump_ms after the rate reaches big_jump_at.
+def fruit_page(big):
+    m=classic_light_new(DepthMachine,albums=9)
+    if big: m.config['BIGLIBRARY']='1'
+    for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
+    m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1; tp(m); return m
+def cfs(m,f): return struct.unpack('<h',m.u.mem_read(ps['cfs']+2*CF_FIELDS.index(f),2))[0]
+for big in (1,0):
+    for units in (-4,-6):
+        m=fruit_page(big); rate=-units*36/200/.017  # ticks/s
+        assert (cfs(m,'jump_at'),cfs(m,'jump_ms'),cfs(m,'big_jump_at'),cfs(m,'big_jump_ms'))==(32,700,75,240)
+        assert cfs(m,'jump_at')<rate<cfs(m,'big_jump_at')
+        thold(m); tspin(m,cfs(m,'jump_ms')+600,units)
+        assert (not m.get(ps['th']+TH_AT['jump']) and not letter_on(m)) if big else letter_on(m)
+        trest(m); passed()
+m=fruit_page(1); thold(m); t=0; at=None
+while not m.get(ps['th']+TH_AT['jump']) and t<2000:
+    tp(m,-30); t+=17  # 318 ticks/s
+    if at is None and tfloat(m,'rate')>=cfs(m,'big_jump_at'): at=t
+assert at is not None and cfs(m,'big_jump_ms')-17<=t-at<=cfs(m,'big_jump_ms')+17; passed()
 # The Year sort's years (CF_YEAR, 1<<31) are held as letters are: the digits in a box as tall as the letter's, as wide as
 # they need with the letter's padding, centred; undated, an en dash in the letter's own square.
 # Classic's letter is LETTER_PX; a theme with its own letter px (here Classic's set to 44) pads and sizes the year by it.

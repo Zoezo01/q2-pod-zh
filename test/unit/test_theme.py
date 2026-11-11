@@ -126,7 +126,7 @@ CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_ful
                      detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
                      lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
                      row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140,
-                     enter_albums=8, slide_ms=160, fold_near=50)
+                     big_jump_at=75, big_jump_ms=240, enter_albums=8, slide_ms=160, fold_near=50)
 
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
@@ -556,7 +556,7 @@ def with_role(monkeypatch, **cf):
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
     ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
     ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101),
-    ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001),
+    ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001), ('big_jump_at', 1001), ('big_jump_ms', 5001),
     ('enter_albums', 13), ('slide_ms', 1001), ('fold_near', 51)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
     if field in theme.CF_THUMB:  # Minimal's theme.xml states the thumb, not offsets.inc
@@ -600,7 +600,7 @@ def test_coverflow_thumb_needs_its_divisors(field):
         theme.validate({**c, f'cf.{field}': 0}, 't.xml')
 
 
-@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
+@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('fast_at', 'big_jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
 def test_coverflow_thumb_ranges_run_upward(lo, hi):
     c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
     with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: {hi} {c[f"cf.{lo}"]} must pass {lo} {c[f"cf.{lo}"]}'):
