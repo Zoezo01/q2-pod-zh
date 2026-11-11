@@ -43,6 +43,7 @@ demo	0x49f840	0x4	search_fill_genre_tab	the only call to widget_set_children_lay
 demo	0x4a2058	0x4	statusbar_dialog_slide_timer	1st of 2 calls to dialog_quit; tools/build.py FUNCTIONS
 demo	0x4a2dec	0x4	dialog_updatemusic_dialog_init	`sw $zero, -0x554c($2)`, the delay slot of the only call to toolsClearDbCount; patch/navigation.c ringnav
 demo	0x4a3694	0x4	volume_dialog_on_keyup	`addiu $sp, $sp, -0x28`; patch/books.c video_key
+demo	0x4a36b4	0x4	volume_dialog_on_keyup	`beqz $2, +70 words`, after the load of g_backlight_status; tools/build.py VOL_DARK
 demo	0x4a3930	0x4	localmusic_album_cover_pause	`sw $3, 0x0($2), forming albumcover_taskstate`; tools/build.py COVER_PAUSE
 demo	0x4a4514	0x4	localmusic_album_table_reload	the load of $25 for the only call to widget_move_resize, after "table_view"; patch/ipod.json navbar_resize_calls (a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing)
 demo	0x4a45c8	0x4	localmusic_album_table_reload	`addiu $2, $zero, 0x4e`, before the only call to widget_set_prop_int, after "yoffset"; patch/ipod.json immediates art_pitch (row creation, reset or artwork offset divisor)

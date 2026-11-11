@@ -18078,6 +18078,17 @@ def lock_applies(patched,lit,window,on=1):
     return c.u.reg_read(UC_MIPS_REG_PC)!=0x4f259c
 assert [lock_applies(True,*s) for s in ((0,0),(0,1),(1,0),(1,1))]==[True,True,False,False] and not lock_applies(True,0,0,on=0)
 assert [lock_applies(False,*s) for s in ((0,0),(0,1),(1,0),(1,1))]==[True,True,False,True]; passed()
+# The volume dialog steps the volume with the screen off, as on V1.32 (build.py VOL_DARK, #303): stock V1.34's
+# volume_dialog_on_keyup returns 0 dark, so the tick went on to on_wm_keyup_fun, which opened one more volume dialog over
+# the last and changed nothing. Stock's own handler, a wheel tick up at 10: patched it stores 11, sets and saves it and
+# stops the key (RET_STOP) dark as lit; stock's does so only lit.
+def vol_steps(patched,lit):
+    c=Machine(patched); c.mock('device_set_volume','write_int_config','widget_get_prop','value_uint32','timer_count','widget_remove_timer','value_set_uint32','widget_set_prop','widget_add_timer')
+    for name,v in (('g_backlight_status',lit),('g_volume',10),('g_maxvolume',100)): c.byte(syms[name],v)
+    ret=c.call(O['KEY_NEXT'],address=0x4a3688,args=(c.node('dialog','volume_dialog'),c.event,0,0),gap=0)
+    return ret,c.u.mem_read(syms['g_volume'],1)[0],[x[0] for x in c.calls if x[0] in ('device_set_volume','write_int_config')]
+for lit in (0,1): assert vol_steps(True,lit)==(0xb,11,['device_set_volume','write_int_config']),lit
+assert vol_steps(False,1)==(0xb,11,['device_set_volume','write_int_config']) and vol_steps(False,0)==(0,10,[]); passed()
 # A headset's keys are read once (build.py BT_INPUT): stock V1.34's own reader of BlueZ's AVRCP device, which would post
 # each press as a button beside headset.c's worker, opens nothing and starts no thread; stock's does both.
 for patched in (True,False):

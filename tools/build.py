@@ -434,6 +434,11 @@ HOME_KEYUP = (0x534918, 0x0320f809, 0)
 # V1.34's on_wm_keyup_before_fun applies Buttons lock on the lit lock window too (beqz g_lockscreen_pageflag past the lock).
 # Buttons lock stays the dark screen's (navigation.c lock_names), as V1.32's: the branch is taken always.
 KEYLOCK_LIT = (0x4f2558, 0x10400010, 0x10000010)
+# V1.34's volume_dialog_on_keyup leaves at once with the screen off (beqz g_backlight_status), so a dark wheel tick over the
+# volume dialog falls through to on_wm_keyup_fun, which opens "dialog/volume_dialog" again: navigator_to looks an open window
+# up by that path, never its name "volume_dialog", so every tick stacked one more dialog and none changed the volume. Each
+# closes on its own 3 s only once on top, so the lit screen sat under them (#303). The dialog steps dark as V1.32's: no branch.
+VOL_DARK = (0x4a36b4, 0x10400045, 0)
 # Now Playing More's Artist info (0x53960c) asks navigator_window_is_exist for "artistinfo_page" and "albuminfo_page", then
 # closes "localmusic/artistinfo_page" and "localmusic/albuminfo_page", the names it opens them by: navigator_close finds a
 # window by its own name (widget_child, a strcmp), which has no folder, so neither ever closed and a second artist page
@@ -1828,6 +1833,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, *WHEEL_MODE, "stock's wheel stays in Volume Mode")
     patch_word(patched, *HOME_KEYUP, 'Home binds no key-up of its own')
     patch_word(patched, *KEYLOCK_LIT, 'Buttons lock acts only with the screen off')
+    patch_word(patched, *VOL_DARK, 'The volume dialog steps with the screen off')
     for site in MORE_ARTIST_CLOSE:
         patch_word(patched, *site, "Artist info closes the artist and album pages it found")
     patch_word(patched, *MAINSCHEDULING_CALL, jal(ps['ringnav_mainscheduling']), 'player scheduling paced')
