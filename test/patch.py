@@ -10287,6 +10287,7 @@ class DepthMachine(CoverflowMachine):
         self.art_size=(160,160)  # the covers' decoded size; the placeholder is always 160 square
         self.art_sizes={}  # by URL ending, sizes other than art_size
         self.handlers[syms['sem_post@GLIBC_2.2']]='loader_wake'  # the loader's thread can't run here: its body, at each wake-up
+        self.mock('strstr@GLIBC_2.0')  # mem_available_kb's, before the letters' pool: no /proc/meminfo here, so no estimate
         self.fast()
     def big_alloc(self,n):
         a=self.big; self.big+=(n+15)&~15; assert self.big<=BIG+BIG_SIZE; return a
@@ -10553,7 +10554,7 @@ for theme in ('1','0','2'):
     finally: SETUP.clear()
     m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
     tp(m); assert traw(m)==2 and not m.slides,theme
-    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder: Large Library Mode off, no half copies' slot
+    assert (15+1)*160*160*4 in m.live.values(),theme  # CF_WIDE and the placeholder, whatever Large Library Mode says
     thold(m); tp(m,-30); assert toff(m)<0 and not m.slides and m.get(m.slide+O['SLIDE_ANIMATOR'])==0 and not m.get(ps['wheel_travel']),theme
     trest(m); assert toff(m)==0,theme; passed()
 # wheel_raw never stays set: each way off the covers gives the wheel back at the next pass, the travel gone, the
@@ -10652,7 +10653,7 @@ m=classic_light_new(DepthMachine,albums=9); m.config['BIGLIBRARY']='1'  # Large 
 for r,name in zip(m.albums,FRUIT): m.word(r+O['REC_ALBUM'],m.string(name))
 m.open(); m.handlers[sleep_hook+12]='stock_sleep'; m.fresh=1
 m.word(m.slide+O['SLIDE_INDEX'],5)  # from Date: past big_jump_ms and the entry, round the nine to an early letter
-tp(m); assert (15+2)*160*160*4 in m.live.values()  # opened on: the half copies' slot as well
+tp(m); assert (15+1)*160*160*4 in m.live.values()  # opened on: no slot held for the half copies, made in a buffer of their own
 thold(m); tspin(m,200,-30); assert not m.get(ps['th']+TH_AT['jump'])  # 318 ticks/s; at the cap, short of big_jump_ms
 for _ in range(40):
     if m.get(ps['th']+TH_AT['jump']): break
@@ -10844,7 +10845,8 @@ for cut in (False,True):
     # swap into the screen's BGRA8888 with the paper.
     tp(m); assert tfloat(m,'pos')!=tfloat(m,'goal'); draws=len(m.draws); n[0]=0
     tpaint(m); m.u.hook_del(h); assert len(m.draws)==draws+1 and n[0]<PAINT_BOUND,n[0]
-    trest(m); tpaint(m); assert not any(b in m.live.values() for b in LETTERS_HEAP); passed()  # landed: both freed
+    trest(m); tpaint(m); assert LETTERS_HEAP[0] not in m.live.values() and LETTERS_HEAP[1] in m.live.values()  # landed: the slots freed, the stage kept
+    m.close(); assert not any(b in m.live.values() for b in LETTERS_HEAP); passed()  # the page closed: the stage too
 
 # A thread lowers itself (thread_lower(idle)): nice 19 through setpriority (o32 4097) on its own tid (gettid, 4222), and its
 # reads, with idle (the loader, its first call), in the idle I/O class (ioprio_set, 4314, IOPRIO_WHO_PROCESS), best
