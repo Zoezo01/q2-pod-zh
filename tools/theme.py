@@ -39,13 +39,19 @@ CHOICES = {'list.selection.painter': {'card': 'SEL_CARD', 'stops': 'SEL_STOPS', 
            **dict.fromkeys(('playing.title.font', 'playing.info.font', 'home.rows.font', 'list.row.font', 'list.row.meta_font', 'list.row.tall_font', 'bar.title.font'), FONTS),
            'playing.layout': {'ipod': 'NP_IPOD', 'centred': 'NP_CENTRED'},
            'scheme.mode': {'derive': 'SCHEME_DERIVE', 'light': 'SCHEME_LIGHT', 'dark': 'SCHEME_DARK'}}
-# coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb)
+# coverflow.shelf's thumb: each value's top (docs/internals.md#coverflow-thumb); fold_near past 50 would
+# let the fold start with the caption still on the album before the letter's; row_reach is no longer read,
+# and stays so a theme that states it still builds; jump_at, jump_ms and jump_pace are only Big Library Mode off's
+# (1.7.6's letters), big_jump_at and big_jump_ms its own
 CF_THUMB = {'thumb': 1, 'ticks_turn': 200, 'ticks_album': 200, 'fast_at': 1000, 'fast_full': 1000, 'top_speed': 100, 'track': 1000,
             'snap': 1000, 'spin': 1000, 'far_left': 2000, 'detent': 100, 'hold_ms': 30000, 'stop_ms': 1000, 'stop_left': 500,
             'rate_up': 1000, 'rate_down': 1000, 'back': 500, 'dead': 20, 'contact_ms': 200, 'aim_snap': 100, 'lead_from': 500,
             'lead_full': 1000, 'lead_ms': 1000, 'row_shift': 200, 'row_from': 1000, 'row_full': 2000, 'row_shrink': 50, 'row_flat': 800,
             'row_out': 100, 'row_edge': 800, 'row_width': 100, 'row_key': 100, 'row_reach': 100,
-            'jump_ms': 5000, 'jump_ticks': 200, 'jump_at': 1000, 'jump_pace': 2000}
+            'jump_ms': 5000, 'jump_ticks': 200, 'jump_at': 1000, 'jump_pace': 2000, 'big_jump_at': 1000, 'big_jump_ms': 5000,
+            'enter_albums': 12, 'slide_ms': 1000, 'fold_near': 50}
+CF_WIDE = 2 * int(need(re.search(r'#define CF_WIDE_REACH (\d+)', (ROOT/'patch/coverflow.h').read_text()),
+                       'Missing CF_WIDE_REACH')[1]) + 1  # the row's window
 # AWTK's easing_type_t, in enum order: a value's index is its number
 EASINGS = ('linear', 'quadratic_in', 'quadratic_out', 'quadratic_inout', 'cubic_in', 'cubic_out', 'sin_in', 'sin_out', 'sin_inout',
            'pow_in', 'pow_out', 'pow_inout', 'circular_in', 'circular_out', 'circular_inout', 'elastic_in', 'elastic_out', 'elastic_inout',
@@ -976,13 +982,24 @@ def validate(t, name):
             err(f"coverflow.shelf: swing's near edge rests {rest:.0f} px out, past 2048")
     if t['cf.eye'] + t['cf.eye_turn'] > 2046:  # unproject's 1/16 px eye times a 16.16 cosine stays in 32 bits
         err(f"coverflow.shelf: eye + eye_turn = {t['cf.eye'] + t['cf.eye_turn']} exceeds 2046")
-    if t['cf.thumb']:  # coverflow_wheel_poll and draw_row divide by these
-        for a in ('ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'):
+    if t['cf.thumb']:  # coverflow_wheel_poll, draw_row and the entry divide by these
+        for a in ('ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge',
+                  'enter_albums', 'slide_ms'):
             if not t[f'cf.{a}']:
                 err(f'coverflow.shelf: thumb needs {a}')
-        for lo, hi in (('fast_at', 'fast_full'), ('fast_at', 'jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')):
+        for lo, hi in (('fast_at', 'fast_full'), ('fast_at', 'jump_at'), ('fast_at', 'big_jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')):
             if t[f'cf.{hi}'] <= t[f'cf.{lo}']:
                 err(f'coverflow.shelf: {hi} {t[f"cf.{hi}"]} must pass {lo} {t[f"cf.{lo}"]}')
+        # The held row's covers on the screen, which entry_window's CF_WIDE must all draw: formed
+        # and shrunk, row_out px apart, each the side pose()'s at row_flat (1 album at least: a
+        # nearer one is mid-turn) narrowed by row_width
+        sh, f, a = 1 - t['cf.row_shrink'] / 100, max(t['cf.row_flat'] / 100, 1), math.radians(t['cf.tilt'])
+        x, z, eye = t['cf.x1'] + t['cf.xs'] * (f - 1), t['cf.z1'] + t['cf.zs'] * (f - 1), t['cf.eye']
+        edge = [(x + u * math.cos(a)) * eye / (eye + z - u * math.sin(a)) for u in (80, -80)]  # project()'s
+        w = (edge[0] - edge[1]) * (1 - t['cf.row_width'] / 100) * sh
+        n = math.ceil((O['CF_VIEW_W'] + w) / (t['cf.row_out'] * sh)) if t['cf.row_out'] else math.inf
+        if n > CF_WIDE:
+            err(f"coverflow.shelf: row_out {t['cf.row_out']} puts {n} covers of the held row on the screen, past CF_WIDE {CF_WIDE}")
     for k in (*MOTION_WINDOW, *MOTION_WIDGET):
         if not k.startswith('coverflow_step') and EASINGS[t[f'motion.{k}.easing']] == 'follow':
             err(f'motion.{k}.easing: follow is only for coverflow_step and coverflow_step_fast')

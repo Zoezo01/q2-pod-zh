@@ -125,7 +125,8 @@ STATUSBAR = own('STATUSBAR', 'Status Bar', ('Theme', 'Minimal', 'Modern', 'Class
 CLASSIC_THUMB = dict(thumb=1, ticks_turn=36, ticks_album=7, fast_at=23, fast_full=90, top_speed=20, track=30, snap=25, spin=130, far_left=250,
                      detent=80, hold_ms=5000, stop_ms=60, stop_left=60, rate_up=120, rate_down=50, back=50, dead=1, contact_ms=40, aim_snap=30,
                      lead_from=25, lead_full=100, lead_ms=45, row_shift=20, row_from=100, row_full=300, row_shrink=8, row_flat=200, row_out=33,
-                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140)
+                     row_edge=160, row_width=60, row_key=72, row_reach=22, jump_ms=700, jump_ticks=5, jump_at=32, jump_pace=140,
+                     big_jump_at=75, big_jump_ms=240, enter_albums=8, slide_ms=160, fold_near=50)
 
 
 CF_TODAY = {'cf.top': 13, 'cf.x1': 112, 'cf.xs': 48, 'cf.z1': 90, 'cf.zs': 20, 'cf.eye': 300, 'cf.bright1': 192,
@@ -555,7 +556,8 @@ def with_role(monkeypatch, **cf):
     ('bright2', 0), ('text_y', 209), ('name_px', 33), ('artist_px', 29), ('radius', 84), ('stride', 0),
     ('tilt', 29), ('tilt', 91), ('horizon', 0), ('horizon', 100), ('third', 2), ('swing', 2), ('lift', 41), ('eye_turn', 401), ('view_h', 209), ('view_h', 295),
     ('thumb', 2), ('detent', 101), ('hold_ms', 30001), ('dead', 21), ('row_width', 101), ('art_persp', 101),
-    ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001)])
+    ('jump_ms', 5001), ('jump_ticks', 201), ('jump_at', 1001), ('jump_pace', 2001), ('big_jump_at', 1001), ('big_jump_ms', 5001),
+    ('enter_albums', 13), ('slide_ms', 1001), ('fold_near', 51)])
 def test_coverflow_range_rejects(monkeypatch, field, value):
     if field in theme.CF_THUMB:  # Minimal's theme.xml states the thumb, not offsets.inc
         with pytest.raises(theme.ThemeError, match=rf'coverflow\.shelf\.{field}: {value} outside'):
@@ -569,7 +571,8 @@ def test_coverflow_range_rejects(monkeypatch, field, value):
 @pytest.mark.parametrize('field,value,message', [
     ('cf.top', 15, 'top \\+ 160 \\+ reflect = 221 exceeds 220'), ('cf.reflect', 48, 'top \\+ 160 \\+ reflect = 221 exceeds 220'),
     ('cf.view_h', 291, 'view_h 291 exceeds the client height 290'),
-    ('cf.bright2', 193, 'bright2 193 exceeds bright1 192'), ('cf.text_y', 231, 'text_y \\+ 60 = 291 exceeds the client height 290')])
+    ('cf.bright2', 193, 'bright2 193 exceeds bright1 192'), ('cf.text_y', 231, 'text_y \\+ 60 = 291 exceeds the client height 290'),
+    ('cf.row_out', 29, 'row_out 29 puts 16 covers of the held row on the screen, past CF_WIDE 15')])
 def test_coverflow_cross_rejects(field, value, message):
     with pytest.raises(theme.ThemeError, match=message):
         theme.validate({**theme.builtins()[0], field: value}, 't.xml')
@@ -589,14 +592,15 @@ def test_coverflow_thumb_is_every_themes():  # the page's numbers, all retunable
         assert {a: t[f'cf.{a}'] for a in CLASSIC_THUMB} == CLASSIC_THUMB, t['id']
 
 
-@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge', 'row_reach'])
+@pytest.mark.parametrize('field', ['ticks_turn', 'ticks_album', 'track', 'snap', 'spin', 'far_left', 'rate_up', 'rate_down', 'lead_ms', 'row_edge',
+                                   'enter_albums', 'slide_ms'])
 def test_coverflow_thumb_needs_its_divisors(field):
     c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
     with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: thumb needs {field}'):
         theme.validate({**c, f'cf.{field}': 0}, 't.xml')
 
 
-@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
+@pytest.mark.parametrize('lo,hi', [('fast_at', 'fast_full'), ('fast_at', 'big_jump_at'), ('lead_from', 'lead_full'), ('row_from', 'row_full')])
 def test_coverflow_thumb_ranges_run_upward(lo, hi):
     c = next(t for t in theme.builtins() if t['id'] == 'classic-light')
     with pytest.raises(theme.ThemeError, match=f'coverflow.shelf: {hi} {c[f"cf.{lo}"]} must pass {lo} {c[f"cf.{lo}"]}'):
@@ -607,11 +611,11 @@ def test_coverflow_thumb_ranges_run_upward(lo, hi):
 def test_coverflow_shelf_near_edge_clears_the_eye():
     with pytest.raises(theme.ThemeError, match="eye \\+ z1 = 69 doesn't clear 80 sin\\(tilt\\) = 69\\.3$"):
         theme.validate({**theme.builtins()[0], 'cf.eye': 39, 'cf.z1': 30}, 't.xml')
-    theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30}, 't.xml')
+    theme.validate({**theme.builtins()[0], 'cf.eye': 40, 'cf.z1': 30, 'cf.thumb': 0}, 't.xml')  # no held row to fit
 
 
 def test_coverflow_swing_near_edge_clears_the_eye_mid_step():
-    tight = {**theme.builtins()[0], 'cf.eye': 41, 'cf.z1': 0, 'cf.tilt': 30}  # rest clears by 1, mid-step it doesn't
+    tight = {**theme.builtins()[0], 'cf.eye': 41, 'cf.z1': 0, 'cf.tilt': 30, 'cf.thumb': 0}  # rest clears by 1, mid-step it doesn't; no held row to fit
     theme.validate(tight, 't.xml')
     with pytest.raises(theme.ThemeError, match="lift / 4 = -39\\.0$"):
         theme.validate({**tight, 'cf.swing': 1}, 't.xml')

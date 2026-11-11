@@ -607,6 +607,7 @@ static inline int arc_out(int r, int y) {
 #define REC_DISC 0x40
 #define REC_CUE_START 0x48      /* a CUE track's start and end seconds, 0 otherwise */
 #define REC_CUE_END 0x4c
+#define REC_YEAR REC_CUE_END /* a Year ranking row's year (coverflow.c), matched, never played */
 /* A row's size, as platformTypeRegister registers stSongInfo (0x5c6950). Its copy (0x5c631c) gives
  * each of the 11 strings at 0x04-0x2c its own buffer, so a row owns them and nothing points into it. */
 #define REC_SIZE 0x58

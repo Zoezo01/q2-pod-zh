@@ -362,8 +362,9 @@ accent's red tone (`DROPDOWN_SUN`).
 ## Cover Flow
 
 The covers are drawn with depth ([internals](internals.md#coverflow-depth)): the
-selected cover at its native 160 pixels, three angled neighbours a side, the third at the frame's edge as the moving row
-leaves it, and Classic's reflection (46 pixels from 35% of the cover's brightness), all in the top 220 pixels of the page
+selected cover at its native 160 pixels, three angled neighbours a side and, while they move, the ones coming in at the
+frame's edge, drawn whole from their first pixel, and Classic's reflection (46 pixels from 35% of the cover's
+brightness), all in the top 220 pixels of the page
 (Classic: 242, `coverflow.shelf.view_h`), the reflections' tail under the caption. The album name sits under the covers (`CF_TEXT_Y`) in 24-pixel white,
 the artist under that in 20-pixel grey (`#AAAAAA`, stock secondary text), and both, like the
 track list's title and rows and the progress and empty messages, keep 36 pixels (`CF_EDGE`) from
@@ -371,7 +372,7 @@ each side, where the lowest visible track row's text clears the bottom corners. 
 scroll within that. A card (an artist's All albums, the rated albums' Sort) uses the album line.
 Values are `CF_*` in `patch/offsets.inc`.
 
-In every theme the wheel holds the covers directly ([internals](internals.md#coverflow-thumb)): turned slowly, about 70 degrees moves one album at the default Wheel Sensitivity (50%; half that at 100%) and a cover stays part-way while your thumb does; let go, it settles on the nearest. Turned faster they speed up smoothly to at most 20 albums a second, the side covers forming a narrower row that slides along as the caption goes on ahead, and a stop lands on the album the caption names. Turned at about a turn a second (at 50%) for 0.7 s, sorted by album or artist, they go by letters, and a thumb re-gripping on the way only costs its own moment: the big letter shows and the covers keep flowing through the alphabet. The letters keep a steady beat, about six a second however hard you spin, and a gentler turn steps through them more slowly. Slowing down or turning back carries straight on album by album from where you are. Letting go lands on the letter's first album, and picking the spin back up while the letter still shows goes on by letters. The numbers are `coverflow.shelf`'s.
+In every theme the wheel holds the covers directly ([internals](internals.md#coverflow-thumb)): turned slowly, about 70 degrees moves one album at the default Wheel Sensitivity (50%; half that at 100%) and a cover stays part-way while your thumb does; let go, it settles on the nearest. Turned faster they speed up smoothly to at most 20 albums a second, the side covers forming a narrower row that slides along as the caption goes on ahead, and a stop lands on the album the caption names. Turned at about a turn a second (at 50%) for 0.7 s, sorted by album or artist, they go by letters (with Big Library Mode on, at about two turns a second for a quarter of a second), and a thumb re-gripping on the way doesn't start the wait again. Sorted by recently added, most played or at random, and on an artist's or the rated albums, they never do. With Big Library Mode off (Display → Cover Flow; off unless you turn it on) the letters are as they were: the big letter shows and the covers keep flowing through the alphabet, about six letters a second however hard you spin, and a gentler turn steps through them more slowly. Slowing down or turning back carries straight on album by album from where you are. Letting go lands on the letter's first album, and picking the spin back up while the letter still shows goes on by letters. With Big Library Mode on, sorted by year they go by years too, newest or oldest first as Playback settings' Year Order has them, each year shown big ("1994") and the albums with no year last, shown as "–", and letters and years go like this. Going in, you overtake the cover facing you: it leaves the screen the way you were turning as the first letter shows big, and the row carries your speed on into that letter's first album. Each further letter is about one tick of turn, at any speed and either way: the big letter changes at once and the row slides to that letter's first album, faster the farther it is, the caption naming each album it passes. Letters last until your thumb lifts: slowing down or resting your thumb keeps them, and turning back steps back a letter. Past the last letter it goes round to the first, and back, as the albums do. Lifting lets the row reach the letter's first album, then the covers fold out onto it in about half a second, none passing through another; turning meanwhile doesn't steer it. Centre, Return, a touch or the screen going dark land on the caption's album at once. To go by letters smoothly Big Library Mode keeps a half-size copy of each cover beside its cache (about 26 MB for 1000 albums, or up to 128 MB on a card formatted with 128 KB clusters), made while it sits idle, about ten a second, which Refresh Coverflow removes with the rest. The numbers are `coverflow.shelf`'s.
 
 Under Classic (`classic_pages()`), Centre on a cover turns it over: the album's query and its panel come first, so a slow album waits at the cover, and then over 270 ms, eased `.42, 0, .58, 1`, the cover turns 180 degrees about the vertical axis on the centre line, right edge toward the viewer, growing from its 160 × 160 place to the panel at (40, 35), while the side covers and their reflections part 24 pixels each way. The caption goes on the first frame and the turning cover has no reflection. Return runs the same frames backwards, from the panel as it then stands. A key during the turn waits or does nothing: the wheel's ticks land after it, a Centre or Return is dropped. The covers stay insensitive behind the panel, parted.
 
@@ -735,8 +736,10 @@ NPCENTRED`, off; `playset_covermode`): `ringnav_ui_load`, hooked on every window
   Before, the window opened and closed a pass later, flashing over the lyrics every 10 s (#153).
 - Cover Flow: "Artist View: Cover Flow" (`Q2POD ARTISTCF`, the default; Grid and List, same icon;
   Cover Flow ends with an All albums card, see
-  [internals.md](internals.md#artist-albums-in-coverflow)), "Cover Flow Sort: Album" and "Refresh
-  Cover Flow" (`system_update`).
+  [internals.md](internals.md#artist-albums-in-coverflow)), "Cover Flow Sort: Album", "Refresh
+  Cover Flow" (`system_update`) and a "Big Library Mode" switch (`Q2POD BIGLIBRARY`, off;
+  `playset_covermode`): letters held until the lift and years on a fast spin, and the half
+  copies they read.
 - Controls: Wheel Sensitivity, which opens its slider page; "Hold Return: Recent"
   (`Q2POD HOLDRETURN`, [Hold Return](#hold-return), `playset_folderjump`); a "Single Press Scrub" switch (`IPOD SCRUBSINGLE`, off; `np_key`): on Now Playing a single
   centre press starts the scrub and a double press turns the screen off (Scrub, above); "Key Tone"; "Click With Headphones" (`IPOD KEYTONEHP`), shown while Key Tone is on ([Key Tone](internals.md#key-tone)); Buttons Lock, which opens stock's page; "Wake: Single Press"; and "Volume Guard".
@@ -881,7 +884,7 @@ black border is cleared so it does not flip to a paper line; Minimal's bar is pa
 photos, wallpapers and videos are never changed.
 
 ponytail: a non-square or transparent cover in Cover Flow keeps black bars and a black background
-inside its square (`decode`).
+inside its square (`cf_decode`).
 
 ## Games
 

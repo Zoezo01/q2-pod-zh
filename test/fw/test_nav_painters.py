@@ -16,7 +16,7 @@ import typing
 import pytest
 
 import host
-from conftest import NAVIGATION_SOURCE, O, Deques, Files, claim, high_halves, libc, ui_name
+from conftest import NAVIGATION_SOURCE, O, c_enum, Deques, Files, claim, high_halves, libc, ui_name
 
 STRINGS = dict(re.findall(r'^#define (\w+) "([^"]*)"', (host.ROOT/'patch/offsets.inc').read_text(), re.M))
 LIST_INTO_WHITE, BT_GLYPH = STRINGS['LIST_INTO_WHITE'], STRINGS['BT_GLYPH']
@@ -48,15 +48,6 @@ def wide(s):
 def bright(c):
     """A colour's channels summed, in either byte order: which of two is the darker."""
     return sum(c >> s & 255 for s in (0, 8, 16))
-
-
-def c_enum(first):
-    """navigation.h's enum that starts with `first` (NAVIGATION_SOURCE holds it), by name: each its place, as
-    none sets a value."""
-    source = re.sub(r'/\*.*?\*/', '', NAVIGATION_SOURCE, flags=re.S)
-    body = host.tools_build.need(re.search(rf'enum \{{\s*({first}\b[^}}]*)\}}', source), f'No enum {first}')[1]
-    assert '=' not in body
-    return {name.strip(): k for k, name in enumerate(body.split(',')) if name.strip()}
 
 
 POD = c_enum('POD_CHARGE')  # pod_rows' rows
