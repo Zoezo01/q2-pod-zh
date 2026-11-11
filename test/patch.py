@@ -20657,6 +20657,61 @@ for owner,page,want in ((2,'spotbrowse_page',[(2,O['KEY_PLAY'])]),(1,'spotify_pa
                         (3,'radionp_page',[(3,O['KEY_PLAY'])]),(2,'tidal_downloads',[(1,'pause')]),(2,'home_page',[(2,O['KEY_PLAY'])])):
     m=HeadsetMachine(owner); m.top=m.node('window',page,[])
     m.fn('media_key',O['KEY_PLAY']); assert m.actions==want,(page,m.actions); passed()
+# Headphones Required (docs/internals.md): stock V1.34's switch lets nothing start with no output connected, and Q2 Pod's
+# own starts ask stock's check_forbid_play_no_headset, as stock's do. Everywhere else this suite and test/fw answer for
+# that function; from here to Resume on connect stock's own code answers. First the gate alone, on both builds: it
+# refuses only with the switch on, outside test mode, and no output, which is a Bluetooth link with its codec up, a
+# USB DAC (g_otg_status 2, not 1) or either jack plugged. Refusing, it opens stock's 2 s message when asked with 0, as
+# Q2 Pod asks, and calls notifyPrompt when asked with 1.
+GATE=syms['check_forbid_play_no_headset']
+def hp_on(m,**state):
+    """m with stock's gate run, not answered, and the switch on; state's bytes are an output, test mode or the switch off."""
+    del m.handlers[GATE]; m.byte(syms['g_block_withoutphone_flag'],1)
+    for name,v in state.items(): (m.word if name=='bt_showcoding' else m.byte)(syms[name],v)
+    return m
+def forbids(patched,ask=0,**state):
+    c=hp_on(Machine(patched),**state); c.mock('notifyPrompt'); ret=c.call(address=GATE,args=(ask,0,0,0),gap=0)
+    return ret,[(c.text(x[1]),c.get(x[2]),c.get(x[2]+4)) if x[0]=='navigator_to_with_context' else x[0] for x in c.calls if x[0]!='memset']
+NOTICE=['getFormatString',('dialog/msginfo_dialog',1,2000)]
+for patched in (True,False):
+    assert forbids(patched)==(1,NOTICE) and forbids(patched,1)==(1,['getFormatString','notifyPrompt'])
+    for state in (dict(g_block_withoutphone_flag=0),dict(g_testmode_flag=1),dict(bt_linkstatus=1,bt_showcoding=1),
+                  dict(g_otg_status=2),dict(g_po_status=1),dict(g_bal_status=1)):
+        assert forbids(patched,**state)==(0,[]),state
+    for state in (dict(bt_linkstatus=1),dict(bt_showcoding=1),dict(g_otg_status=1)):
+        assert forbids(patched,**state)==(1,NOTICE),state
+passed()
+# Q2 Pod's three starts of its own, with stock's gate run: each asks with 0 and starts nothing it refuses. Play/Pause
+# when not playing (ringnav_play_pause, the hook on stock's player_play_pause, whose body is the toggle here; a pause
+# always goes through), the side buttons' and a headset's skip (media_key, playing or not), and an Up Next row
+# (un_play), which closes all the same.
+def hp_keys(key,playing=False,**state):
+    m=hp_on(HeadsetMachine(),**state); toggle=syms['player_play_pause']; del m.handlers[toggle]; m.handlers[toggle+12]='hs:local_toggle'
+    m.playing=playing; m.fn('media_key',O[key]); return m.actions,sum(x[0]=='navigator_to_with_context' for x in m.calls)
+for key,does in (('KEY_PLAY','play'),('KEY_FWD_BTN','local_next'),('KEY_BACK_BTN','local_prev')):
+    assert hp_keys(key)==([],1) and hp_keys(key,g_po_status=1)==hp_keys(key,g_block_withoutphone_flag=0)==([(1,does)],0),key
+assert hp_keys('KEY_PLAY',True)==([(1,'pause')],0) and hp_keys('KEY_FWD_BTN',True)==([],1); passed()
+def upnext_row(**state):
+    m=CoverflowMachine(page='playing_page',pos=1); q=m.deque([m.song(c) for c in 'ABCDE'])
+    m.word(syms['mcl_pdeqplaylist'],q); m.word(O['MCL_POOL'],m.deque(list(range(5)),'int'))
+    assert m.call(address=payload_syms['playback_set'],args=(0,1,0,0),gap=0)==1  # a shuffle: View Queue is Up Next
+    m.press(10); assert m.hold()==11; m.release(); m.pick(m.labels().index('View Queue')); m.advance(0); m.page=m.top
+    assert m.nodes[m.page]['name']=='upnext_page' and m.texts()[1::2]==list('CDEA'); hp_on(m,**state); shown=len(m.toasts)
+    f,ctx=m.handler(m.nodes[m.find('scroll_view')]['children'][1],O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0)==0
+    return [x[1] for x in m.calls if x[0]=='player_start_queue'],sum(x[0]=='navigator_back' for x in m.calls),[t[:3] for t in m.toasts[shown:]]
+assert upnext_row()==([],1,[NOTICE[1]]) and upnext_row(g_bal_status=1)==upnext_row(g_block_withoutphone_flag=0)==([3],1,[]); passed()
+# Stock's own start runs through Q2 Pod's hook: Now Playing opened with a track to start, the way a list row's tap
+# goes. Stock's playing_page_init, whole: refused, it shows the message, closes the window it was given and returns
+# STOP before it starts or builds anything, and ringnav_playing binds nothing to a window that is gone. With an
+# output the track starts and the labels bind, as they do opened with nothing to start (0xff), which asks nothing.
+def np_opens(start=1,**state):
+    m=hp_on(QueueMachine(queue=3,pos=1),**state); win=m.node('window','playing_page'); m.word(win+O['W_PARENT'],m.wm)
+    m.stack.append(win); m.top=win; ctx=m.alloc(16)
+    for i,v in enumerate((m.get(syms['mcl_pdeqplaylist']),0,start,0)): m.word(ctx+4*i,v)
+    ret=m.call(address=HOOKS['playing_page_init'][0],args=(win,ctx,0,0),gap=0)
+    return ret,[x[0] for x in m.calls if x[0] in ('player_start','window_close')],any(x[0]=='widget_lookup' for x in m.calls),len(m.toasts)
+assert np_opens()==(11,['window_close'],False,1) and np_opens(0xff)==(0,[],True,0)
+assert np_opens(g_po_status=1)==np_opens(g_block_withoutphone_flag=0)==(0,['player_start'],True,0); passed()
 # Resume on connect (docs/internals.md#resume-on-connect), local music and Spotify. Off (default): a
 # headset's PLAY within CONNECT_HOLD_MS (5 s) of the link starts nothing, a later one plays. On: it plays.
 for owner in (1,2):
