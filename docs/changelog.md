@@ -30,6 +30,7 @@
   - Now Playing: holding a finger on the visualizer no longer makes it stutter. It used to redraw only about once a second until the finger lifted, and Halo lost its artwork.
   - Ratings: letting go of the heart after holding it no longer picks a rating by itself. The picker opened under the finger and the release chose the heart there: five hearts on the stock Now Playing, one on the centred one.
   - Ratings: in the picker, tapping the rating a song or album already has takes it away.
+  - Volume: with the screen off the wheel changes the volume again, and waking no longer leaves the volume bar stuck over the page, where Return and taps seemed dead.
   - Settings: **Wi-Fi file transfer** under **Network** is now **Wi-Fi File Transfer**, capitalised as the rows around it.
   - Night Shift: icons no longer show bright dots around their edges that the tint had missed.
 - **1.7.6**:
