@@ -1584,15 +1584,49 @@ def test_a_tick_while_a_page_slides_is_held_and_replayed(fw, keys):
     assert ui.fire(timer=timers[0]) == 0 and sv.ints[SEL] == 2 and not ui.due('navigation__replay_wheel')
 
 
-def test_a_reversal_cancels_held_ticks(fw, keys):
+def test_a_reversal_drops_the_held_ticks(fw, keys, st):
     ui = Ui(fw)
-    sv = list_page(ui)
+    sv = list_page(ui, rows=40)
     select(fw, sv, 2)
     ui.animating = 1
-    keys(KEY_NEXT), keys(KEY_PREV, 10)
+    for _ in range(O['HOLD_MAX']):
+        keys(KEY_NEXT, 5)
+    keys(KEY_PREV, 5)  # one tick back drops them all, not one of them, and is dropped itself
+    assert st('held').value == 0
     ui.animating = 0
-    ui.fire('navigation__replay_wheel')
+    keys.clock.now += 50
+    while ui.due('navigation__replay_wheel'):
+        ui.fire('navigation__replay_wheel')
     assert sv.ints[SEL] == 2
+
+
+def test_a_reversal_after_the_slide_drops_the_ticks_still_replaying(fw, keys):
+    ui = Ui(fw)
+    sv = list_page(ui, rows=40)
+    select(fw, sv, 5)
+    ui.animating = 1
+    for _ in range(3):
+        keys(KEY_NEXT, 5)
+    ui.animating = 0
+    keys(KEY_PREV, 5)  # the page is ready, its replay not yet run: the tick back drops the turn
+    keys.clock.now += 50
+    while ui.due('navigation__replay_wheel'):
+        ui.fire('navigation__replay_wheel')
+    assert sv.ints[SEL] == 5
+
+
+def test_hold_max_ticks_all_play_into_a_list_that_loads_late(fw, keys, st):
+    ui = Ui(fw)
+    ui.window('sysset_page')  # its list not built yet
+    for _ in range(O['HOLD_MAX']):
+        keys(KEY_NEXT, 5)
+    ui.fire('navigation__replay_wheel')  # a poll before the list is built holds its tick again
+    assert st('held').value == O['HOLD_MAX']
+    sv = list_page(ui, rows=40)
+    select(fw, sv, 0)
+    while ui.due('navigation__replay_wheel'):
+        ui.fire('navigation__replay_wheel')
+    assert sv.ints[SEL] == O['HOLD_MAX']
 
 
 def test_held_ticks_too_old_are_dropped(fw, keys):

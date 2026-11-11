@@ -24,6 +24,7 @@
   - Controls: letting go of a held **Return** no longer acts as a second Return. In 1.8.0 BETA the Now Playing it had opened closed again.
   - Controls: holding **Play/Pause** for a menu no longer plays or pauses the song as you let go. In 1.8.0 BETA it did.
   - Status bar: under **Theme: Classic** the bar no longer shows **EQ** beside the battery.
+  - Lists: turning the wheel back while a page is still opening, or just after while it catches up, now cancels the whole turn made before it, and every step of a fast turn reaches a list that loads late. It used to cancel only one step, so the page still scrolled on by the rest, and a list that loaded late got one step too few.
   - Status bar: plugging in or unplugging the charger turns the whole battery percentage green or back to white. Only its last digit used to change, until the screen was turned off and on.
   - Streaming: under **Theme: Classic**, the large icon beside the list (TIDAL, AirPlay, Spotify, Internet Radio, Configuration) is sharp. It was an enlarged copy of the small row icon and looked blurry. A card app's own icon is shown as before.
   - Scrobbling: a listen the card has no room for is no longer half-written to `.scrobbler.log`, where it spoiled the next listen too. A damaged line in the log no longer stops every later **Upload Scrobbles**, and a very large log is uploaded a megabyte at a time instead of being held in memory whole.
