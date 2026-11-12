@@ -10,9 +10,10 @@ import struct
 import pytest
 
 import host
-from conftest import FNV_PRIME, O, Deques, Files, claim, fnv1a, high_halves, in_fork, libc, ui_name
+from conftest import FNV_PRIME, O, Deques, Files, claim, favdir_card, fnv1a, high_halves, in_fork, libc, ui_name
 from conftest import Rows as HeldRows  # Rows here is Folder view's list
 from test_navigation import Sa  # test_navigation.py keeps the mirror
+from test_tidal import HEARTS, urls_play
 
 KEY_RETURN, KEY_CENTER, KEY_PREV, KEY_NEXT, KEY_PLAY = (O[k] for k in ('KEY_RETURN', 'KEY_CENTER', 'KEY_PREV', 'KEY_NEXT', 'KEY_PLAY'))
 EVT_CLICK, EVT_DESTROY, EVT_KEY_UP, EVT_POINTER_DOWN, EVT_POINTER_ABORT = (
@@ -914,9 +915,10 @@ class Heart:
     track, rated or not; rate_bind as playing_page_init runs it."""
     CTX = 0x5eed
 
-    def __init__(self, fw, ui, song, mcl, kept=0, fav=False, bind=True, handler=FAV_CLICK, removing=0, table=None):
+    def __init__(self, fw, ui, song, mcl, kept=0, fav=False, bind=True, handler=FAV_CLICK, removing=0, table=None,
+                 path=b'/m/now.flac'):
         self.fw, self.ui = fw, ui
-        self.track = song(b'/m/now.flac', b'Now')
+        self.track = song(path, b'Now')
         queue = ui.deques.new([self.track])
         fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = queue
         mcl.type, mcl.pos = LIBRARY, 0
@@ -1208,6 +1210,65 @@ def test_a_tap_is_stock_s_toggle_and_forgets_the_kept_hearts(fw, ui, song, mcl):
     ui.handler(heart.heart, EVT_CLICK)(C.addressof(event))
     assert list(log[:2]) == [Heart.CTX, C.addressof(event)]
     assert heart.kept() == 0 and heart.copy_due() and heart.badge() is None
+
+
+@in_fork
+def test_the_heart_on_a_card_app_s_streamed_song_is_the_app_s(fw, ui, song, mcl):
+    """A song of an app's URL queue whose line named an item (tidal.c app_fav): the press goes to the app's
+    fav.log and the heart flips at once in stock's Tidal images, stock's click (Tidal's API) never run."""
+    heart = Heart(fw, ui, song, mcl)
+    log = (C.c_long * 3)()
+    stock_stub(FAV_CLICK, 0, log)
+    assert urls_play(fw, heart.files, HEARTS) == 1
+    tidal_id = C.create_string_buffer(b'app:1:0')  # its line said a favourite
+    C.c_void_p.from_address(heart.track + O['REC_TIDAL_ID']).value = C.addressof(tidal_id)
+    mcl.type = 0xf1
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0 and ui.image[heart.heart] == 'tidal_fav_rm'
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0 and ui.image[heart.heart] == 'tidal_fav_add'
+    assert heart.files.files['/mnt/mmc/.a/fav.log'] == b'\nitem\t0\tid-a\n\nitem\t1\tid-a\n'
+    assert not log[0] and not ui.toasts
+
+
+@in_fork
+def test_an_app_s_streamed_song_without_an_item_has_no_heart(fw, ui, song, mcl):
+    """Its line named no item: the press says so and never reaches stock's click, which would call Tidal."""
+    heart = Heart(fw, ui, song, mcl)
+    log = (C.c_long * 3)()
+    stock_stub(FAV_CLICK, 0, log)
+    urls_play(fw, heart.files, HEARTS)
+    tidal_id = C.create_string_buffer(b'app:1:2')
+    C.c_void_p.from_address(heart.track + O['REC_TIDAL_ID']).value = C.addressof(tidal_id)
+    mcl.type = 0xf1
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0
+    assert not log[0] and ui.toasts == ['This app has no favourites'] and ui.image[heart.heart] == 'play_unfav'
+    assert '/mnt/mmc/.a/fav.log' not in heart.files.files
+
+
+@in_fork
+def test_a_streamed_song_s_press_the_card_wont_take_says_so(fw, ui, song, mcl):
+    heart = Heart(fw, ui, song, mcl)
+    urls_play(fw, heart.files, HEARTS)
+    tidal_id = C.create_string_buffer(b'app:1:1')
+    C.c_void_p.from_address(heart.track + O['REC_TIDAL_ID']).value = C.addressof(tidal_id)
+    mcl.type = 0xf1
+    fw.mock('fw_fopen', lambda *_: 0)
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0
+    assert ui.image[heart.heart] == 'play_unfav' and ui.toasts == ['Favourite not saved']
+
+
+@in_fork
+@pytest.mark.parametrize('fav, told', [(True, b'1'), (False, b'0')])
+def test_the_heart_on_a_song_an_app_synced_is_stock_s_and_told_to_the_app(fw, ui, song, mcl, fav, told):
+    """A song in a card app's favdir (q2-jellyfin's Jellyfin): stock's My Fav toggle as ever, then the
+    favourite as it now is goes to the app's fav.log."""
+    path = b'/mnt/mmc/Jellyfin/A/now.flac'
+    heart = Heart(fw, ui, song, mcl, path=path)
+    log = (C.c_long * 3)()
+    stock_stub(FAV_CLICK, 0, log)
+    favdir_card(fw, heart.files.files)
+    heart.fav = fav  # stock's toggle has made it so
+    assert ui.handler(heart.heart, EVT_CLICK)() == 0 and log[0] == Heart.CTX
+    assert heart.files.files['/mnt/mmc/.jf/fav.log'] == b'\npath\t' + told + b'\t' + path + b'\n'
 
 
 def test_a_full_ratings_table_says_so(fw, ui, song, mcl):
@@ -2609,6 +2670,34 @@ def test_a_playlist_row_s_tracks_leave_out_spoken_ones(fw, ui, song, st):
     fw.mock('tk_str_start_with', lambda s, prefix, *_: C.string_at(s).startswith(C.string_at(prefix)))
     playlist = song(kind=4, disc=7)  # a playlist row: its cd_num
     assert collect(fw, ui, st, QM_PLAYLIST_, playlist) == [b'/mnt/mmc/Music/a.flac', b'/mnt/mmc/Music/b.flac'] and asked == [7]
+
+
+def album_songs(fw, ui, song, st):
+    """A row whose tracks are two songs in a card app's favdir (a playlist row's, the simplest to give): its files."""
+    rows = [song(b'/mnt/mmc/Jellyfin/A/1.flac'), song(b'/mnt/mmc/Jellyfin/A/2.flac')]
+    fw.mock('getMusicByPlayList', lambda n, *_: ui.deques[fw.var('fw_ctx_tools_pdeq_directory', C.c_uint).value]
+            .extend(rows) or 0)
+    files = Files(fw)
+    favdir_card(fw, files.files)
+    st('qm_kind').value = QM_PLAYLIST_
+    return files
+
+
+@pytest.mark.parametrize('on', [1, 0])
+def test_an_album_s_favourite_is_told_for_each_of_its_songs(fw, ui, song, st, on):
+    files = album_songs(fw, ui, song, st)
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), on)
+    assert files.files['/mnt/mmc/.jf/fav.log'] == b''.join(b'\npath\t%d\t/mnt/mmc/Jellyfin/A/%d.flac\n' % (on, i)
+                                                         for i in (1, 2))
+
+
+def test_an_album_s_favourite_stops_telling_at_the_first_refusal(fw, ui, song, st):
+    files = album_songs(fw, ui, song, st)
+    tried = []
+    fw.mock('fw_fopen', lambda path, mode, *_: tried.append(C.string_at(path)) or 0 if C.string_at(path).endswith(b'fav.log')
+            else files.fopen(path, mode))
+    fw.fn('rate_album_favs', None, C.c_void_p, C.c_int)(song(kind=4, disc=7), 1)
+    assert tried == [b'/mnt/mmc/.jf/fav.log'] and ui.toasts == ['Favourite not sent to the app']
 
 
 def test_a_cover_s_tracks_are_its_album_in_order(fw, ui, song, st):

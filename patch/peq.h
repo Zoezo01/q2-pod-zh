@@ -299,6 +299,8 @@ int clip_within(void *canvas, int *old, int *clip, int x, int y, int w, int h);
 void play_folder(void *dq, int idx, int cls);
 int app_urls_play(const char *path); /* tidal.c: a card app's Q2URLS/1 queue, played */
 int app_lyrics(const char *id, char *out, unsigned size); /* tidal.c: an app track's .lrc path */
+int app_fav(void); /* tidal.c: Now Playing's heart on an app's streamed song, -1 not one */
+void app_fav_load(void); /* tidal.c: a queue loading clears an app song's heart */
 int directory(void *path); /* playback.c: toolsLoadDirectory, for staged */
 #define TIDAL_DIR "/mnt/mmc/.tidal" /* tidal.c's cache, Tidal Downloads' list */
 void tidal_clear(void);
@@ -341,6 +343,11 @@ void *app_album_songs(const char *dir); /* library_lists.c: a folder's songs by 
 int addon_goto(const char *path, const char *title, int album); /* Go to on a card app's song */
 int addon_goes(const char *path); /* addon.c: Go to on path opens a page */
 int addon_scrobbles(const char *path); /* addon.c: not when path's app says scrobble=0 */
+/* addon.c: a heart's press, appended to the app's fav.log for it to send (docs/librespot.md);
+ * addon_fav_path's for a song in a card folder an app's q2app names as favdir, else nothing to do.
+ * 0 when the card didn't take it. */
+int addon_fav(const char *id, const char *kind, const char *key, int on);
+int addon_fav_path(const char *path, int on);
 extern unsigned auto_nexts; /* playback.c ringnav_next: tracks that ended by themselves */
 int stream_cache(int spotify); /* navigation.c: Streaming's Configuration, a cap of 512 << it MB */
 void album_memory(void *r);

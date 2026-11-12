@@ -535,6 +535,7 @@ int rate_key(void *top, unsigned key);
 int rate_open(void);
 int rate_saved(int k);
 void rate_album_favs(void *album, int on);
+int fav_told(void *r, int on); /* ratings: a My Fav change told to the song's card app */
 int rate_show(void *win, int pick, unsigned album);
 void rate_bind(void *win); /* ratings: Now Playing's heart */
 int rated_albums(void *ctx, void *event);

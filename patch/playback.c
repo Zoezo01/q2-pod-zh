@@ -887,6 +887,7 @@ static void *no_videos(void *q, int *at) {
 }
 int ringnav_load(void *q, int at, int type) {
     ++playback_loads;
+    app_fav_load(); /* tidal.c: an app song's heart isn't the new queue's */
     if (s.restoring == 2) type = M(MCL_TYPE);
     close_preload();
     /* After Shuffle Songs, before stock loads; ringnav_mode's playback_clear ends its shuffle. */

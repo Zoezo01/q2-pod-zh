@@ -3045,7 +3045,7 @@ static int thumb(const char *s, const char *d, int w, int h) { return 0; }
 #define REC_PATH 0
 #define REC_TYPE 0
 #define tk_str_start_with(s, p) (!strncmp(s, p, strlen(p)))
-static unsigned char savestartbt, transposition, tidalfurlstart;
+static unsigned char savestartbt, transposition, tidalfurlstart, isFav_playing;
 static unsigned playback_loads;
 static int networkGetConnectStatus(void) { return 0; }
 static int mclStop(void) { return 0; }
@@ -3061,6 +3061,9 @@ static int quality = 27; static void *queue;
 #define mcl_pdeqplaylist (&queue)
 static int play_pos;
 #define MCL_POS (&play_pos)
+static int play_type;
+#define MCL_TYPE (&play_type)
+static int addon_fav(const char *id, const char *kind, const char *key, int on) { return 0; }
 static _Atomic int status = 1, gate, performing, performs, ended;
 static _Atomic unsigned long long clk = 1000;
 static char last[64];

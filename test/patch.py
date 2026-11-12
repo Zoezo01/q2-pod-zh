@@ -16566,7 +16566,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'fav'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -17809,6 +17809,16 @@ assert [p[2:4] for p in m.plays][n:]==[(1,0xf1)] and [field(e,'REC_TITLE') for e
 m.handlers[syms['player_set_coverinfo']]='player_set_coverinfo'
 def cover(r): m.calls=[]; m.call(address=payload_syms['app_coverinfo'],args=(m.string('c'),m.string('n'),4,r),gap=0,clear=False); return [c[3] for c in m.calls if c[0]=='player_set_coverinfo']
 assert cover(urecs[0])==[2] and cover(tidal_rec)==[4] and cover(0)==[4]; passed()
+# A line's item and heart (its 7th and 8th fields; tidal.c app_fav): the song's start sets stock's isFav_playing, which
+# Now Playing's update (0x53d178) draws for a 0xf1 track; a song whose line named no item has none (0). Stock sets
+# the flag only when a Tidal page checks its favourites, so a queue loading clears an app song's (app_fav_load).
+m.files[URLS]=bytearray(b'#Q2URLS/1\nhttps://jf/e.flac\tFive\t\t\t\t\tid-e\t1\nhttps://jf/f.flac\tSix\n')
+assert m.call(address=payload_syms['app_urls_play'],args=(m.string(URLS),0,0,0),gap=0)==1
+m.word(syms['mcl_pdeqplaylist'],m.deque(m.play_recs)); m.byte(syms['isFav_playing'],0)
+assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
+assert track(1)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==0
+assert track(0)[0]==1 and m.u.mem_read(syms['isFav_playing'],1)[0]==1
+m.call(address=payload_syms['app_fav_load'],args=(0,0,0,0),gap=0); assert m.u.mem_read(syms['isFav_playing'],1)[0]==0; passed()
 # Library update (addon_library.c library_poll): the app's /tmp/q2-<id>.library, "<seq>" then scan and import lines,
 # runs stock's Update Local Music (its dialog, which stops the player: not while one plays, nor while one is paused
 # with the screen on), then stock's playlist import (which replaces a same-named playlist) for the listed files
