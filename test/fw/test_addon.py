@@ -36,7 +36,7 @@ LIBRARY = 0xf001  # stock's library class, which a local queue plays under
 class App(C.Structure):
     _fields_ = [('id', C.c_char * 16), ('name', C.c_char * 32), ('tips', C.c_char * 32), ('bin', C.c_char * 48), ('run', C.c_char * 48),
                 ('pid', C.c_char * 32), ('state', C.c_char * 40), ('browse', C.c_char * 48), ('icon', C.c_char * 56),
-                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'present', 'launched', 'hold', 'relaunch', 'restart')),
+                *((n, C.c_int) for n in ('qr', 'game', 'audio', 'present', 'launched', 'hold', 'relaunch', 'restart', 'nostop')),
                 *((n, C.c_uint) for n in ('polled', 'launch_at', 'restart_at', 'play'))]
 
 
@@ -307,6 +307,19 @@ def test_a_manifests_keys_and_defaults(fw):
     one, two = ap(fw).a[0], ap(fw).a[1]
     assert (one.name, one.tips, one.qr, one.game, one.audio) == (b'N', b'Find it', 1, 1, 1)
     assert (two.name, two.tips, two.qr, two.game, two.audio) == (b'two', b'Search', 0, 0, 0)
+    assert (one.nostop, two.nostop) == (0, 0)
+
+
+@pytest.mark.parametrize('manifest,nostop', [
+    (b'name=N\nstop=0\n', 1),
+    (b'name=N\r\nstop=0\r\n', 1),  # a Windows editor's line ends
+    (b'name=N\nstop=1\n', 0),
+    (b'name=N\nstop=no\n', 0),  # as text: only 0 drops the Stop row
+])
+def test_a_manifest_can_drop_the_stop_row(fw, manifest, nostop):
+    card(fw, one=manifest)
+    scan(fw)
+    assert ap(fw).a[0].nostop == nostop
 
 
 def test_names_are_cut_at_a_whole_character(fw):
@@ -1937,6 +1950,45 @@ def test_a_stop_on_an_error_page_is_its_second_row(fw):
     p.answer(status=b'error')
     p.click(1)
     assert p.backs == 1 and p.ap.a[0].launched == 0
+
+
+NOSTOP = b'name=Foo\nstop=0\n'
+
+
+def test_stop_0_keeps_a_slow_load_to_its_loading_page(fw):
+    p = Page(fw, NOSTOP)
+    p.world.ms += 3001
+    p.tick()
+    assert p.top.slow == 0 and p.drawn == 0 and p.top.state == K_LOAD
+
+
+def test_stop_0_ends_an_error_page_in_cancel_which_leaves_the_page_the_app_running(fw):
+    p = Page(fw, NOSTOP)
+    texts: list = []
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: texts.append(C.string_at(t)))
+    p.answer(status=b'error', msg=b'Nope')
+    assert p.top.state == K_ERROR and p.drawn == 2
+    assert texts[-2:] == [b'Retry', b'Cancel'] and b'Stop Foo' not in texts
+    p.click(1)
+    assert p.backs == 1 and p.ap.a[0].launched == 1 and p.toasts == []
+    assert not [c for c in p.world.of('system') if c[0].startswith(b'kill')]
+
+
+def test_cancel_on_a_deeper_levels_error_goes_back_to_the_level_below(fw):
+    p = Page(fw, NOSTOP)
+    p.answer(rows=[item(1, b'list')])
+    p.click(0)
+    p.answer(status=b'error')
+    p.click(1)
+    assert p.pg.depth == 1 and p.backs == 0 and p.request().endswith(b'\tmenu\n')
+
+
+def test_stop_0_still_offers_cancel_on_an_app_that_isnt_running(fw):
+    p = Page(fw, NOSTOP)
+    p.ap.a[0].launched = 0
+    del p.world.files[b'/tmp/q2-foo']
+    p.answer(status=b'error')
+    assert p.drawn == 2
 
 
 def art_path(uri, ctx):
