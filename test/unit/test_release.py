@@ -256,15 +256,17 @@ def packaged(root):
 
 
 class Gh:
-    def __init__(self, monkeypatch, out, releases='[]', corrupt=None):
+    def __init__(self, monkeypatch, out, releases='[]', corrupt=None, tag=''):
         self.calls, self.out = [], out
-        self.releases, self.corrupt = releases, corrupt
+        self.releases, self.corrupt, self.tag = releases, corrupt, tag
         monkeypatch.setattr(release, 'run', self)
 
     def __call__(self, *args):
         self.calls.append(args)
         if args[3:5] == ('release', 'list') or args[4:5] == ('list',):
             return self.releases
+        if args[:2] == ('git', 'ls-remote'):
+            return self.tag
         if 'download' in args:
             target = pathlib.Path(args[-1])
             for name in (release.ASSET, release.GUIDE):
@@ -278,10 +280,12 @@ def test_upload_draft(repo, monkeypatch, capsys):
     release.upload(out)
     prefix = ('gh', '--repo', release.REPO, 'release')
     assert gh.calls[0] == (*prefix, 'list', '--limit', '1000', '--json', 'tagName,isDraft')
-    assert gh.calls[1] == (*prefix, 'create', release.VERSION, '--draft', '--target', 'rev', '--title', release.VERSION,
+    assert gh.calls[1] == ('git', 'ls-remote', f'https://github.com/{release.REPO}.git', f'refs/tags/{release.VERSION}',
+                           f'refs/tags/{release.VERSION}^{{}}')
+    assert gh.calls[2] == (*prefix, 'create', release.VERSION, '--draft', '--target', 'rev', '--title', release.VERSION,
                            '--notes-file', out/'release-notes.md')
-    assert gh.calls[2] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
-    assert gh.calls[3][:6] == (*prefix, 'download', release.VERSION) and gh.calls[3][6] == '--dir' and len(gh.calls) == 4
+    assert gh.calls[3] == (*prefix, 'upload', release.VERSION, out/release.ASSET, out/release.GUIDE, '--clobber')
+    assert gh.calls[4][:6] == (*prefix, 'download', release.VERSION) and gh.calls[4][6] == '--dir' and len(gh.calls) == 5
     assert (out/'release-notes.md').read_bytes() == b'notes\n'  # sent as packaged
     assert capsys.readouterr().out == f'Verified draft: https://github.com/{release.REPO}/releases/tag/{release.VERSION}\n'
 
@@ -296,7 +300,7 @@ def test_upload_sends_the_packaged_notes(repo, monkeypatch, tmp_path):
     monkeypatch.setattr(release, 'source_sha256', lambda: 'source')
     gh = Gh(monkeypatch, out)
     release.upload(out)
-    assert gh.calls[1][-2:] == ('--notes-file', out/'release-notes.md')
+    assert gh.calls[2][-2:] == ('--notes-file', out/'release-notes.md')
     assert (out/'release-notes.md').read_text() == body and '- One.' in body
 
 
@@ -322,7 +326,25 @@ def test_upload_updates_a_draft(repo, monkeypatch):
     out = packaged(repo)
     gh = Gh(monkeypatch, out, json.dumps([{'tagName': 'old', 'isDraft': False}, {'tagName': release.VERSION, 'isDraft': True}]))
     release.upload(out)
-    assert gh.calls[1][4] == 'edit'
+    assert gh.calls[2][4] == 'edit'
+
+
+@pytest.mark.parametrize('tag', ['rev\trefs/tags/{v}\n', 'object\trefs/tags/{v}\nrev\trefs/tags/{v}^{{}}\n'])
+def test_upload_takes_a_tag_on_its_own_commit(repo, monkeypatch, tag):
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out, tag=tag.format(v=release.VERSION))
+    release.upload(out)
+    assert gh.calls[2][4] == 'create'
+
+
+@pytest.mark.parametrize('tag', ['beta\trefs/tags/{v}\n', 'rev\trefs/tags/{v}\nbeta\trefs/tags/{v}^{{}}\n'])
+def test_upload_refuses_a_tag_left_on_another_commit(repo, monkeypatch, tag):
+    # GitHub would keep the tag, a deleted pre-release's, and ignore --target
+    out = packaged(repo)
+    gh = Gh(monkeypatch, out, tag=tag.format(v=release.VERSION))
+    with pytest.raises(ValueError, match=f'^Tag {release.VERSION} is on another commit: gh release delete'):
+        release.upload(out)
+    assert len(gh.calls) == 2
 
 
 def test_upload_never_overwrites_a_published_release(repo, monkeypatch):

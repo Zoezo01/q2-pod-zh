@@ -125,6 +125,11 @@ def upload(out, publish=False):
     existing = next((r for r in releases if r['tagName'] == VERSION), None)
     if existing:
         check(existing['isDraft'], 'Refusing to overwrite a published release')
+    # GitHub leaves an existing tag where it is and ignores --target, so a tag a deleted pre-release left behind
+    # would put this release on that commit. The last line is an annotated tag's commit.
+    tag = run('git', 'ls-remote', f'https://github.com/{REPO}.git', f'refs/tags/{VERSION}', f'refs/tags/{VERSION}^{{}}').split()
+    check(not tag or tag[-2] == record['revision'],
+          f'Tag {VERSION} is on another commit: gh release delete {VERSION} --cleanup-tag, or delete the tag')
     run(*gh, 'edit' if existing else 'create', VERSION, '--draft', '--target', record['revision'], '--title', VERSION,
         '--notes-file', out/'release-notes.md')
     files = [ASSET, GUIDE]

@@ -22,3 +22,20 @@ update.tar, the manifest, SHA256SUMS, release notes and source revision/hash. A 
 and refuses stale, missing or changed artifacts and published releases. An upload/download
 failure leaves the release unpublished; rerun upload to repair the draft. Packaging uses no
 GitHub credentials or network.
+
+## Betas, and the release after them
+
+A beta keeps the release's `VERSION` and so its tag. `upload --publish` refuses one (`BETA` is not 0), so a beta goes out by hand, and the flag matters: without `--prerelease` it becomes Latest, which Network Update offers to everyone.
+
+```sh
+python3 tools/release.py upload /tmp/q2-release
+gh release edit 1.8.0 --draft=false --prerelease
+```
+
+Before the next beta, or the release itself, delete the published one together with its tag:
+
+```sh
+gh release delete 1.8.0 --yes --cleanup-tag
+```
+
+GitHub's web page deletes the release and leaves the tag, and GitHub then keeps that tag on the beta's commit whatever `--target` says. Upload refuses a tag that is on another commit than the packaged one, so a tag left behind stops it there. For the release itself set `BETA = 0`, package into a fresh directory and `upload --publish`.
