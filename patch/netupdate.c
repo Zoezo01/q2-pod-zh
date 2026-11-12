@@ -28,9 +28,9 @@ enum { SH_OK, SH_NET, SH_SPACE, SH_CARD, SH_MISSING, SH_BAD, SH_CANCELLED, SH_BU
 /* repo: its GitHub owner/name; id: the repo's name less "q2-", for the card folder .<id>, the tag
  * and file list; keep: unzip -x patterns an update never writes (the user's); bin: the app's
  * binary, present without a tag file meaning a manual install, and moved after every other file:
- * power-on runs Rockbox's. */
+ * power-on runs Rockbox's. dropped: gone from the list but installed, so it can only be removed. */
 typedef struct {
-    char name[32], id[16], repo[80], dir[17], bin[40], latest[32];
+    char name[32], id[16], repo[80], dir[17], bin[40], latest[32], dropped;
     const char *keep;
 } shelf_app;
 shelf_app shelf_apps[SH_MAX];
@@ -69,15 +69,17 @@ static int only(const char *s, unsigned n, int kind) {
     return n > 0;
 }
 
-/* sources.list's lines, "owner/repo [Name]" ("#" a comment), into out: at most max, each owner,
- * repo and id checked (they go into URLs and shell commands; the id as addon.c's, 1 to 15 of
- * a-z0-9-), a bad or repeated id's line skipped. The count. */
+/* sources.list's lines, "owner/repo [Name]" ("#" a comment, "-" before it a dropped app), into
+ * out: at most max, each owner, repo and id checked (they go into URLs and shell commands; the id
+ * as addon.c's, 1 to 15 of a-z0-9-), a bad or repeated id's line skipped. The count. */
 int shelf_sources(const char *text, shelf_app *out, int max) {
     int n = 0;
     for (const char *p = text, *e; p && *p && n < max; p = *e ? e + 1 : e) {
         e = strstr(p, "\n");
         e = e ? e : p + strlen(p);
         while (p < e && (*p == ' ' || *p == '\t')) ++p;
+        int dropped = p < e && *p == '-';
+        p += dropped;
         const char *end = e, *slash = p, *sp = p;
         while (end > p && (unsigned char)end[-1] <= ' ') --end; /* "\r" too */
         while (sp < end && *sp != ' ' && *sp != '\t') ++sp;
@@ -91,7 +93,7 @@ int shelf_sources(const char *text, shelf_app *out, int max) {
             continue;
         int bad = 0;
         for (const char *c = name; c < end; ++c) bad |= (unsigned char)*c < ' ' || *c == 127;
-        shelf_app a = { 0 };
+        shelf_app a = { .dropped = (char)dropped };
         memcpy(a.repo, p, owner + 1 + rn);
         snprintf(a.name, sizeof a.name, "%.*s", (int)(nn ? nn : rn), nn ? name : repo);
         const char *id = rn > 3 && !memcmp(repo, "q2-", 3) ? repo + 3 : repo;
@@ -574,7 +576,9 @@ static int release(shelf_app *a, char *tag, char *url, unsigned *size) {
 }
 
 /* A check: the list fetched into sh.next, kept as SH_LIST with any app it dropped that is
- * still installed (so it can be removed), else the page's own; then each one's latest release.
+ * still installed (so it can be removed), else the page's own; then each listed one's latest
+ * release. A dropped app's is never asked, nor installed: dropping it is what stops a taken-over
+ * repo's releases reaching a Q2 (GHSA-8wpr-pmqx-538x).
  * Whether every release was checked: a list that failed is fetched again with the next check. */
 static int check(void) {
     char path[96], tag[32], url[256], text[SH_MAX * 120];
@@ -588,14 +592,17 @@ static int check(void) {
         int listed = 0;
         for (int k = 0; k < n; ++k) listed |= !strcmp(sh.next[k].id, apps[i].id);
         app_file(path, sizeof path, i, ".tag");
-        if (!listed && file_mode(path)) sh.next[n++] = apps[i];
+        if (!listed && file_mode(path))
+            sh.next[n] = apps[i], sh.next[n].dropped = 1, *sh.next[n++].latest = 0;
     }
     for (int k = 0; fresh && k < n; ++k)
-        m += snprintf(text + m, sizeof text - m, "%s %s\n", sh.next[k].repo, sh.next[k].name);
+        m += snprintf(text + m, sizeof text - m, "%s%s %s\n", sh.next[k].dropped ? "-" : "",
+                      sh.next[k].repo, sh.next[k].name);
     if (fresh) mkdir(SH_DIR, 0755), blob_io(SH_LIST, SH_LIST ".tmp", text, m, 1);
     sh.n = n;
     if (!n) sh.result = SH_NET, ok = 0; /* no list at all: said, and the next press fetches it */
     for (int k = 0; k < n && !sh.cancel; ++k) {
+        if (sh.next[k].dropped) continue;
         int r = release(&sh.next[k], tag, url, &size);
         if (r == SH_MISSING) continue; /* checked: no release yet */
         ok &= !r;
@@ -621,7 +628,7 @@ static int install(int i) {
     char tag[32], url[256], part[96], path[96];
     unsigned size = 0, total = 0;
     long code = 0;
-    int r = release(&apps[i], tag, url, &size);
+    int r = apps[i].dropped ? SH_MISSING : release(&apps[i], tag, url, &size);
     if (sh.cancel) return SH_CANCELLED;
     if (r) return r;
     system("rm -rf " STAGING); /* an interrupted install's, too */
@@ -846,11 +853,12 @@ static int sh_closed(void *ctx, void *event) {
 }
 
 /* The rows: Check for Updates, then the list's apps in its order, Rockbox Themes only with Rockbox
- * on the card; built again when a job ends changes which. */
+ * on the card and a dropped app only while installed; built again when a job ends changes which. */
 static void sh_rows(void) {
     int map[SH_MAX + 1] = { ROW_CHECK }, n = 1;
     for (int i = 0; i < shelf_n; ++i)
-        if (!is(i, "themes") || rockbox_available()) map[n++] = i;
+        if ((!is(i, "themes") || rockbox_available()) && (!apps[i].dropped || sh_tagged(i) >= 0))
+            map[n++] = i;
     if (sh.page && (n != sh.rows || memcmp(map, sh.map, sizeof map))) {
         memcpy(sh.map, map, sizeof map);
         sh.rows = 0;

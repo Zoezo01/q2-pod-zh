@@ -36,7 +36,7 @@ SHELF = pathlib.Path(__file__).resolve().parents[1]/'shelf'
 
 class App(C.Structure):
     _fields_ = [('name', C.c_char * 32), ('id', C.c_char * 16), ('repo', C.c_char * 80), ('dir', C.c_char * 17),
-                ('bin', C.c_char * 40), ('latest', C.c_char * 32), ('keep', C.c_char_p)]
+                ('bin', C.c_char * 40), ('latest', C.c_char * 32), ('dropped', C.c_char), ('keep', C.c_char_p)]
 
 
 class Sh(C.Structure):
@@ -1274,6 +1274,38 @@ def test_an_app_dropped_from_the_list_but_installed_stays_removable(fw):
     sh = fw.var('netupdate__sh', Sh)
     check(fw)
     assert [sh.next[i].id for i in range(sh.n)] == [b'new', b'old']
+
+
+def test_a_dropped_app_gets_no_release_and_stays_dropped_on_the_card(fw):
+    """Dropping an app from the list is what stops a taken-over repo's releases (GHSA-8wpr-pmqx-538x): its release is
+    never asked, an earlier check's tag is let go, and the card's list marks it "-" so a later offline page knows."""
+    card = Card(fw, {b'/mnt/mmc/.q2/apps/old.tag': b'1'})
+    table = apps(fw, b'me/old')
+    table[0].latest = b'2.0'
+    net = Net(fw, {b'https://raw': (0, 200, None), b'https://api': (0, 200, None)})
+    fw.mock('fw_fopen', fw_fopen_list(card))
+    card.files[JSON_PATH] = b'me/new\n'
+    sh = fw.var('netupdate__sh', Sh)
+    check(fw)
+    assert sh.next[1].dropped == b'\x01' and sh.next[1].latest == b''
+    assert not [u for u in net.urls if b'repos/me/old' in u]
+    assert card.written[b'/mnt/mmc/.q2/sources.list.tmp'] == b'me/new new\n-me/old old\n'
+    reloaded = apps(fw, b'me/new new', b'-me/old old')
+    assert [(a.id, a.dropped) for a in reloaded[:2]] == [(b'new', b'\x00'), (b'old', b'\x01')]
+    net.urls.clear()
+    assert check(fw) == 1 and not [u for u in net.urls if b'repos/me/old' in u]  # the list failed, the mark held
+
+
+def test_a_dropped_app_never_installs_and_shows_only_while_installed(fw):
+    card = installing(fw)
+    net = Net(fw, {b'https://api': (0, 200, None), b'https://h': (0, 200, None)})
+    apps(fw, b'-me/foo')
+    assert fw.fn('netupdate__install', C.c_int, C.c_int)(0) == SH_MISSING and not net.urls
+    p = Page(fw, b'me/bar', b'-me/foo')
+    assert p.sh.rows == 2  # Check for Updates and bar: foo isn't installed
+    p.card.files[b'/mnt/mmc/.q2/apps/foo.tag'] = b'1.0'
+    fw.fn('netupdate__sh_rows', None)()
+    assert p.sh.rows == 3 and p.label(2) == 'Installed'
 
 
 def test_a_full_list_keeps_the_cards_list_inside_its_buffer(fw):
