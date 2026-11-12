@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.8.0**:
+  - USB DAC: with charging Off, battery charging is inhibited before connection and through enumeration, instead of waiting for the DAC screen. USB Storage and explicit charging opt-in still allow charging.
   - System: Q2 Pod now runs on Shanling's stock firmware V1.36 instead of V1.32, with its newer kernel, drivers and player.
   - Playback: **Headphones Required**, new in stock V1.36, is under **Resume Songs**. On, nothing starts playing until headphones, Bluetooth or a USB DAC is connected, and the queue isn't restored at start-up. Off by default.
   - Playlists: a playlist's songs can be sorted by name, with stock V1.36's **Sort**. The order they were added in stays the default, and **Edit Playlist** always shows that order.
