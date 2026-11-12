@@ -399,6 +399,12 @@ static int lrc_copy(const char *tmp, const char *lrc) {
     return 0;
 }
 
+/* .downpic/<name> in out, 1 if it fits n; 0 too for a name with a '/', which no file name has, as
+ * it could reach out of .downpic. */
+static int downpic(char *out, unsigned n, const char *name) {
+    return !strrchr(name, '/') && snprintf(out, n, DOWNPIC "%s", name) < (int)n;
+}
+
 /* Download Cover & Lyrics' accept (0x535f24) builds cp -rf /tmp/oslyric_N "/mnt/mmc/.downpic/<name>"
  * for system() with snprintf, whose call (LYRIC_SAVE_CALL) jumps here: the lyrics (tmp) go beside the
  * song instead, as <path less extension>.lrc, as Download Album Lyrics saves them, and a .downpic copy
@@ -411,8 +417,7 @@ static int lrc_copy(const char *tmp, const char *lrc) {
 int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, const char *name) {
     char lrc[0x200 + 8], shadow[sizeof lrc]; /* as long as lrc_copy's .part takes */
     void *r = lrc_song(name);
-    int named = !strrchr(name, '/') &&
-                snprintf(shadow, sizeof shadow, DOWNPIC "%s", name) < (int)sizeof shadow;
+    int named = downpic(shadow, sizeof shadow, name);
     (void)fmt;
     if (r && lrc_path(lrc, sizeof lrc, P(r, REC_PATH), ".lrc") && lrc_copy(tmp, lrc)) {
         if (named) unlink(shadow);
@@ -428,9 +433,17 @@ int ringnav_lyric_save(char *cmd, unsigned n, const char *fmt, const char *tmp, 
 int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name) {
     char shadow[sizeof DOWNPIC + 0x200];
     (void)fmt;
-    if (!strrchr(name, '/') &&
-        snprintf(shadow, sizeof shadow, DOWNPIC "%s", name) < (int)sizeof shadow)
-        unlink(shadow);
+    if (downpic(shadow, sizeof shadow, name)) unlink(shadow);
+    return snprintf(cmd, n, ":");
+}
+
+/* Now Playing's cover thread shows the cover picked here, .downpic/<file name>.jpg, by snprintfing
+ * cp -f "<it>" '/tmp/externpic.jpg' for system(): the shell expanded a $ or backtick in the file name,
+ * as root, and a name with a $ never showed its pick. That snprintf (COVER_PICK_CALL) jumps here: the
+ * file is copied here and cmd is ":". */
+int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from, const char *to) {
+    (void)fmt;
+    lrc_copy(from, to);
     return snprintf(cmd, n, ":");
 }
 

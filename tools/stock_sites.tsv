@@ -241,6 +241,8 @@ demo	0x4faa80	0x4	switchBtPriority	`addiu $4, $zero, 0x16`, before 1st of 4 call
 demo	0x4fbf2c	0x4	autoLinkBluetooth	the only call to checkPairDev; tools/build.py BT_AUTOLINK
 demo	0x4fdcbc	0x4	checkBluetoothStatus	1st of 3 calls to player_save_start, after "[%s]"; tools/build.py BT_CONNECT_START
 demo	0x4fe1e4	0x4	config_bt_init	the only call to initBluetoothParam; tools/build.py BT_PARAMS
+demo	0x5000f0	0x4	remove_file	the only call to snprintf, after "sync"; tools/build.py FOLDER_RM_CALL, FOLDER_RM_FMT
+demo	0x5000f4	0x4	remove_file	`addiu $6, $6, 0x2ff8, forming "rm -rf "%s""`, the delay slot of the only call to snprintf, after "sync"; tools/build.py FOLDER_RM_CALL, FOLDER_RM_FMT
 demo	0x5024b4	0x4	device_standby	the only call to awake_screen, after "rmmod soc_msc"; tools/build.py STANDBY_WAKE
 demo	0x502bd0	0x4	update_firmware	`addiu $5, $5, -0x1300, forming "V1.36"`, the delay slot of 2nd of 2 calls to strcmp, after "Shanling Q2"; tools/build.py build
 demo	0x5030f8	0x4	check_otginfo	`addiu $5, $5, -0x1300, forming "V1.36"`, the delay slot of the only call to strcmp, after "http://openwin.shanling.com:9000/IOtaServer/otaserver?para0=ShanlingQ2_pro&para1=ShanlingQ2_ota"; tools/build.py build
@@ -253,6 +255,8 @@ demo	0x505724	0x4	get_screensaver_image	the only call to access, after "screensa
 demo	0x518768	0x4	importPlayList	the only call to toolsGetDirectoryM3u8, after "stSongInfo"; tools/build.py M3U_DIR_CALL
 demo	0x51cd04	0x4	check_mem_thd	`addiu $gp, $gp, -0x2220`; tools/build.py DROP_CACHES
 demo	0x51d248	0x4	platform_init	the only call to btctl_create_daemon_thread, after "int"; tools/build.py BT_INIT
+demo	0x51db14	0x4	player_parsecover_thd	2nd of 3 calls to snprintf, after "/mnt/mmc/.downpic/%s.jpg"; tools/build.py COVER_PICK_CALL, COVER_PICK_FMT
+demo	0x51db18	0x4	player_parsecover_thd	`addiu $6, $6, 0x2974, forming "cp -f "%s" '%s'"`, the delay slot of 2nd of 3 calls to snprintf, after "/mnt/mmc/.downpic/%s.jpg"; tools/build.py COVER_PICK_CALL, COVER_PICK_FMT
 demo	0x51dc5c	0x4	player_parsecover_thd	the only call to usleep, after "/tmp/airplaypic.png"; tools/build.py DARK_POLLS
 demo	0x51dcbc	0x4	player_parsecover_thd	the load of $25 for the only call to toolsGetExternCover, after "/tmp/airplaypic.png"; tools/build.py PLAYER_COVER, tools/build.py build
 demo	0x51dccc	0x4	player_parsecover_thd	the only call to toolsGetExternCover, after "/tmp/airplaypic.png"; tools/build.py PLAYER_COVER
@@ -296,7 +300,8 @@ demo	0x535540	0x4	localmusic_page_init	`addiu $20, $zero, 0x46`, before 1st of 8
 demo	0x535678	0x4	localmusic_page_init	`addiu $5, $zero, 0xa`, before 1st of 5 calls to image_create, after "s_btn_listitem"; patch/ipod.json immediates lib_inset (the Library's row icon x (its constructor; navigation.c list_row_core reads it live)), patch/offsets.inc LIBRARY_ROW_ICON_X
 demo	0x5356ac	0x4	localmusic_page_init	the load of $25 for 1st of 3 calls to image_set_draw_type, after "s_btn_listitem"; patch/navigation.c list_row_core
 demo	0x536484	0x4	onlinematching_save_cover_lyric	`addiu $6, $6, 0x67f0, forming "cp -rf %s "/mnt/mmc/.downpic/%s""` (6th of 7 such), before 6th of 7 calls to snprintf, after "/tmp/mmc_add"; tools/build.py LYRIC_SAVE_CALL, LYRIC_SAVE_FMT
-demo	0x536510	0x4	onlinematching_save_cover_lyric	`addiu $6, $6, 0x6814, forming "rm -rf "/mnt/mmc/.downpic/%s""` (7th of 7 such), the delay slot of 7th of 7 calls to snprintf, after "/tmp/mmc_add"; tools/build.py LYRIC_DROP_CALL, LYRIC_DROP_FMT
+demo	0x53650c	0x4	onlinematching_save_cover_lyric	7th of 7 calls to snprintf, after "/tmp/mmc_add"; tools/build.py LYRIC_DROP_CALL, LYRIC_DROP_FMT
+demo	0x536510	0x4	onlinematching_save_cover_lyric	`addiu $6, $6, 0x6814, forming "rm -rf "/mnt/mmc/.downpic/%s""`, the delay slot of 7th of 7 calls to snprintf, after "/tmp/mmc_add"; tools/build.py LYRIC_DROP_CALL, LYRIC_DROP_FMT
 demo	0x537b08	0x4	playerjumpinfo_table_init	the load of $25 for the only call to widget_move_resize, after "table_view"; patch/ipod.json navbar_resize_calls (a page's list keeps its asset's box: stock's resize for its navigation bar switch does nothing)
 demo	0x537fbc	0x4	playerjumpinfo_track_on_click	the load of $25 for the only call to navigator_back, after "playing_page"; tools/ipod.py patch_code
 demo	0x538510	0x4	songlist_row_on_load_data	1st of 2 calls to widget_set_text_utf8, after "s_scrlabel_red16l"; patch/ipod.json stock_row_text_calls (stock's own table rows: the title's face follows its text, bound with no relayout)

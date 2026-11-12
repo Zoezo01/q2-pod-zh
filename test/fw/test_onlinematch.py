@@ -970,6 +970,16 @@ def test_no_lyrics_chosen_unlinks_the_downpic_copy_and_leaves_the_shell_nothing(
     assert disk.files == kept
 
 
+def test_now_playing_copies_a_picked_cover_and_leaves_the_shell_nothing(fw):
+    """ringnav_cover_copy as player_parsecover_thd calls it: cp -f "<.downpic>/<file name>.jpg" '<to>' never reaches system()."""
+    src = '/mnt/mmc/.downpic/A$AP `id` $(touch p).flac.jpg'
+    disk = Disk(fw, {src: b'jpeg'})
+    copy = fw.fn('ringnav_cover_copy', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p, C.c_char_p)
+    cmd = block(fw, size=0x600)
+    assert copy(cmd, 0x600, b'cp -f "%s" \'%s\'', src.encode(), b'/tmp/externpic.jpg') == 1 and C.string_at(cmd) == b':'
+    assert disk.files == {src: b'jpeg', '/tmp/externpic.jpg': b'jpeg'}
+
+
 def test_an_accepted_match_goes_beside_the_playing_song_and_its_hiding_copy_goes(fw, mcl, records):
     Queue(fw, mcl, [records.song(b'/m/X/song.flac'), records.song(b'/m/Y/song.mp3')], pos=1)  # both make song.lrc
     disk = Disk(fw, {'/tmp/oslyric_1': b'lyrics', '/mnt/mmc/.downpic/song.lrc': b'stock'})

@@ -5,9 +5,11 @@ import io
 import math
 import random
 import struct
+import subprocess
 import zipfile
 
 import pytest
+from conftest import block
 from test_books import stored  # test_books.py keeps the stored-block maker
 
 CENTER, PREV, NEXT, PLAY, RETURN, BACK_BTN, FWD_BTN = 218, 172, 173, 171, 170, 222, 223
@@ -2414,3 +2416,18 @@ def test_a_hold_that_can_t_arm_its_timer_is_stock_s(fw):
     u.page, u.row = 0x7000, 9
     fw.mock('widget_get_prop_int', lambda *_: 4)
     assert fw.fn('un_hold', C.c_int, C.c_void_p)(0x7000) == 0 and u.row == 9
+
+
+def test_a_folder_s_delete_removes_that_folder_alone_whatever_its_name(fw, tmp_path):
+    """ringnav_folder_rm as remove_file calls it, its command run by /bin/sh: $, backticks and ' stay the name's."""
+    rm = fw.fn('ringnav_folder_rm', C.c_int, C.c_void_p, C.c_uint, C.c_char_p, C.c_char_p)
+    for name in ('$NOT', "Guns N' Roses", 'x$(touch p)`touch q`'):
+        (tmp_path/'Music'/name/'CD1').mkdir(parents=True)
+        (tmp_path/'Music'/'kept').mkdir(exist_ok=True)
+        cmd = block(fw, size=0x61b)
+        rm(cmd, 0x61b, b'rm -rf "%s"', str(tmp_path/'Music'/name).encode())
+        subprocess.run(['sh', '-c', C.string_at(cmd).decode()], cwd=tmp_path, check=True)
+        assert sorted(p.name for p in tmp_path.rglob('*')) == ['Music', 'kept']
+    cmd = block(fw, size=25)  # exactly the command and its NUL
+    assert rm(cmd, 25, b'', b"/mnt/mmc/a'b") == 24 and C.string_at(cmd) == b"rm -rf '/mnt/mmc/a'\\''b'"
+    assert rm(cmd, 24, b'', b"/mnt/mmc/a'b") == 1 and C.string_at(cmd) == b':'  # a byte short: removes nothing
