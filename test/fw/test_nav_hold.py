@@ -1093,7 +1093,7 @@ def test_classic_playlists_hide_stocks_tiles_and_bind_their_own_keys(classic, ui
     p.ring(p.win)
     assert not ui.nodes[ui.kids(p.view)[0]].visible  # Import and Export's tiles: the rows click them
     assert ui.handlers(p.win, EVT_KEY_UP) == [ui.fn('pl_keyup')] and ui.fn('pl_gone') in ui.handlers(p.win, EVT_DESTROY)
-    assert all(ui.handlers(p.playlist(i), EVT_CLICK) == [ui.fn('pl_pick'), ui.fn('pl_marked')] for i in range(3))
+    assert all(ui.handlers(p.playlist(i), EVT_CLICK) == [ui.fn('pl_pick')] for i in range(3))  # one: AWTK runs the newest first
 
 
 def test_an_empty_list_says_so_and_offers_import(classic, ui):
@@ -1185,25 +1185,33 @@ def test_edit_playlists_shows_select_modes_rows(classic, ui, fw):
     assert ui.nodes[p.view].props['_ringnav_index'] == 1  # Select All's first playlist
 
 
+def recount(p, ui):
+    """A playlist row's click: stock's pick (a stub: the marks are p.marked), then the rows count them."""
+    stock_handler(PLAYLIST_PICK, 0)
+    ui.click(p.playlist(0), 0)
+
+
+@in_fork
 def test_marks_offer_export_and_delete_with_their_count(classic, ui, fw):
     p = classic()
     p.ring(p.win)
     select_mode(p, ui, fw)
     p.marked |= {0, 2}
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown()[-3:] == [('Export 2 Playlists',), ('Delete 2 Playlists…',), ('Done',)]
     assert p.title() == '2 Selected'
     p.marked = {1}
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown()[-3:] == [('Export 1 Playlist',), ('Delete 1 Playlist…',), ('Done',)] and p.title() == '1 Selected'
 
 
+@in_fork
 def test_select_all_reads_deselect_all_once_all_are(classic, ui, fw):
     p = classic()
     p.ring(p.win)
     select_mode(p, ui, fw)
     C.c_ubyte.from_address(G_ALLSELECT_FLAG).value = 1
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown()[0] == ('Deselect All',)
 
 
@@ -1217,12 +1225,13 @@ def test_done_leaves_select_mode_for_the_list_on_edit(classic, ui, fw):
     assert p.title() == 'Playlists'
 
 
+@in_fork
 def test_a_mark_outside_select_mode_changes_nothing(classic, ui, fw):
     p = classic()
     p.ring(p.win)
     rows = p.shown()
     p.marked = {0}
-    fw.fn('playlists__pl_marked', C.c_int, C.c_void_p, C.c_void_p)(p.win, None)
+    recount(p, ui)
     assert p.shown() == rows
 
 

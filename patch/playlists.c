@@ -802,12 +802,6 @@ int pl_first(menu_t *m, int cur) {
         if (widget_get_prop_int(P(m->at[i], W_PARENT), PL_ROW, 0)) return i;
     return cur;
 }
-/* The second handler of a playlist row, after stock's marked it. */
-static int pl_marked(void *win, void *event) {
-    (void)event;
-    if (g_navbar_status == 1) pl_rows(win);
-    return 0;
-}
 /* Stock's row click opens More from x 286 outside select mode (0x4b48b8, 0x4b4998): a picker has
  * no More, so a tap anywhere picks; in the list the dots' column at the edge (PL_MARK_X on) stays
  * More, and a tap left of it, the chevron's column (from x 317) too, opens the playlist. The band's
@@ -815,10 +809,17 @@ static int pl_marked(void *win, void *event) {
  * open is a fresh click at x 0. */
 static int pl_pick(void *ctx, void *event) {
     char click[0x30];
+    void *win = window_of(ctx);
     int lit = st.sel_accent && (ctx == st.sel_accent || P(ctx, W_PARENT) == st.sel_accent);
-    if (!widget_get_prop_int(window_of(ctx), PL_MODE, 0) &&
-        (g_navbar_status == 1 || (!lit && I(event, EVENT_X) >= PL_MARK_X)))
-        return PLAYLIST_PICK(ctx, event);
+    int list = !widget_get_prop_int(win, PL_MODE, 0);
+    /* select mode: stock marks the row, then the rows count the marks. Here, not in a handler of
+     * its own: AWTK runs a widget's newest handler first, which counted before the mark. */
+    if (list && g_navbar_status == 1) {
+        int result = PLAYLIST_PICK(ctx, event);
+        pl_rows(win);
+        return result;
+    }
+    if (list && !lit && I(event, EVENT_X) >= PL_MARK_X) return PLAYLIST_PICK(ctx, event);
     return PLAYLIST_PICK(ctx, pointer_event_init(click, EVT_CLICK, ctx, 0, 0));
 }
 /* Return in select mode is Done, not the page; without Done's target it is stock's. */
@@ -961,10 +962,9 @@ static void pl_dress(void *win, int first) {
     void *view = widget_lookup(win, "scroll_view", 1);
     int add = widget_get_prop_int(win, PL_MODE, 0);
     if (!view) return;
-    /* the rows' click goes through pl_pick first (qm's guarded picker keeps its own), then select
-     * mode's second handler, pl_marked: both are appended, and to stock's fresh rows, as
-     * ringnav_playlist dresses only after stock's rebuild, whose row button has PLAYLIST_PICK
-     * alone, so the rebind leaves pl_pick its one handler and pl_marked goes on after it */
+    /* the rows' click goes through pl_pick (qm's guarded picker keeps its own), its one handler:
+     * ringnav_playlist dresses only after stock's rebuild, whose row button has PLAYLIST_PICK alone
+     */
     if (win != st.qm_playlist) qm_playlist_bind(win, 0, pl_pick);
     for (unsigned i = 0, n = widget_count_children(view); i < n; ++i) {
         void *item = widget_get_child(view, i);
@@ -973,7 +973,6 @@ static void pl_dress(void *win, int first) {
             continue;
         }
         pl_row(item);
-        if (!add) widget_on(widget_get_child(item, 0), EVT_CLICK, pl_marked, win);
     }
     /* New and Edit head the list, after the hidden tile row (a picker has none); Select All, select
      * mode's first row, sits with them, as the two modes never show both */

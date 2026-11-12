@@ -4103,7 +4103,8 @@ class ClassicPlaylistMachine(PlaylistMachine):
         self.nodes[self.top].setdefault('handlers',[]).append((O['EVT_KEY_UP'],0x4f21b8,self.top))
         self.word(syms['g_class_type'],0xf00b)
         self.marks=[]; self.answer=10; self.confirms=[]; self.exports=[]; self.deletes=[]; self.dialogs=[]; self.mores=[]
-        self.on_click=lambda w,e:[self.nested(f,ctx,e,0,0) for t,f,ctx in list(self.nodes[w].get('handlers',())) if t==O['EVT_CLICK']]
+        # AWTK's emitter_on puts a handler first, and emitter_dispatch runs from the first: the newest runs first
+        self.on_click=lambda w,e:[self.nested(f,ctx,e,0,0) for t,f,ctx in reversed(list(self.nodes[w].get('handlers',()))) if t==O['EVT_CLICK']]
         self.stack=[self.node('window','localmusic_page'),self.top]; self.lists(*[f'List {i}' for i in range(count)])
         self.word(syms['tools_pdeq_directory'],self.deque([self.song(c) for c in 'ABC']))  # a playlist's songs, as stock's query leaves them
     def lists(self,*names):
@@ -4226,6 +4227,10 @@ cpm_wheel(m,O['KEY_NEXT']); assert m.selected(m.view)==2
 cpm_centre(m); assert m.marks==[0,1,0] and m.bar()=='1 Selected' and m.selected(m.view)==2
 assert m.rows()==['Select All']+LISTS+['Import Playlists','Export 1 Playlist','Delete 1 Playlist…','Done']
 m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected' and m.rows()[-3:-1]==['Export 2 Playlists','Delete 2 Playlists…']
+# ... and a mark taken back takes its rows with it: none marked, no Export or Delete (the count ran before the mark).
+m.tap(m.row_button('List 0')); m.tap(m.row_button('List 1')); assert m.marks==[0,0,0] and m.bar()=='Edit Playlists'
+assert m.rows()[-2:]==['Import Playlists','Done']
+m.tap(m.row_button('List 1')); m.tap(m.row_button('List 0')); assert m.marks==[1,1,0] and m.bar()=='2 Selected'
 m.tap(m.row_button('Select All')); assert m.marks==[1,1,1] and m.bar()=='3 Selected' and m.rows()[-2]=='Delete 3 Playlists…'
 # ... and then reads Deselect All, which clears them: stock's toggle on g_allselect_flag.
 assert m.rows()[0]=='Deselect All' and m.u.mem_read(O['G_ALLSELECT_FLAG'],1)==b'\1'
@@ -4282,9 +4287,10 @@ ev=m.alloc(0x30); m.word(ev,O['EVT_CLICK']); m.word(ev+O['EVENT_X'],300)
 m.mock('tk_thread_create','tk_thread_start','widget_set_enable')
 m.call(address=f,args=(ctx,ev,0,0),gap=0,clear=False); assert not m.mores and any(c[0]=='tk_thread_create' for c in m.calls); passed()
 
-# A playlist row's click runs pl_pick, then pl_marked: every dress is on stock's fresh rows, PLAYLIST_PICK their one.
+# A playlist row's click runs pl_pick alone, which counts the marks after stock's: every dress is on stock's fresh rows,
+# PLAYLIST_PICK their one.
 m=ClassicPlaylistMachine(); m.rebuild(); m.rebuild()
-for t in LISTS: assert [f for e,f,c in m.nodes[m.row_button(t)]['handlers'] if e==O['EVT_CLICK']]==[payload_syms['pl_pick'],payload_syms['pl_marked']]
+for t in LISTS: assert [f for e,f,c in m.nodes[m.row_button(t)]['handlers'] if e==O['EVT_CLICK']]==[payload_syms['pl_pick']]
 passed()
 # A row's More: in the normal list a tap on the dots is stock's, and the hold finds the row by them; a row of ours has no
 # menu, so its hold does nothing under Classic (never Play/Pause).
