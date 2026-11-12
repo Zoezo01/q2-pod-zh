@@ -561,7 +561,15 @@ song change (`g_autochange_flag`), a forced refresh (`g_forcerefresh_flag`) or t
 finish (`g_playcover_finishflag`). Enlarged Art's timer (`0x52dac0`) clears all three while
 `bigcover_page` is open, so a change it took left the page on the last track's art. The payload
 keys the playing track and the cover it can use, once `g_lastcover_url` is this track's path:
-`/tmp/coverpic.jpg` (type 1), `/tmp/externpic.jpg` (2, 4) or stock's placeholder (3, none). When
+`/tmp/coverpic.jpg` (type 1), `/tmp/externpic.jpg` (2, 4) or stock's placeholder (3, none), with
+that file's size and modification time (`now_cover_written`, a `stat` of tmpfs). A card app's URL
+queue needs that: its songs have no path and a cover by URL leaves `g_lastcover_url` empty, so the
+key was the same for every song and the first one's art stayed. Stock's own request can't tell
+them apart: the cover thread clears it before the download, and a cover asked for while the last
+one downloads lands after that one, both as type 2. Each write has its own time, as the thread
+waits 100 ms between covers. Home's art and Enlarged Art's shape take the file into their keys
+too, so a paint between the song change and the next download, still on the last song's file,
+isn't the last. When
 that key changes, it reloads the art the way stock does, dropping AWTK's cached bitmap of the name
 first, since the player writes every track's cover to the same file. While the cover is still
 being parsed, and for Tidal, it leaves stock's image. ponytail: one more decode per track change while the page is up, beside

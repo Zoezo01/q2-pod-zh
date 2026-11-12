@@ -9,7 +9,7 @@ import pytest
 
 import host
 import art as tools_art  # tools/, on the path host.py set: the art's own sizes
-from conftest import NAVIGATION_SOURCE, O, Deques, ui_name
+from conftest import NAVIGATION_SOURCE, O, Deques, Externpic, ask_cover, in_fork, ui_name
 
 THEMES = host.tools_theme.builtins()
 SETS = host.tools_theme.geometry_sets(THEMES)
@@ -1468,6 +1468,64 @@ def test_the_art_reloads_when_the_players_cover_changes(fw, ui, now, st):
     assert ui.prop(now.cover, b'image') == b'play_defaultcover'  # dark: the next lit pass
 
 
+# A card app's URL queue: every song's REC_PATH is "" and a cover by URL leaves g_lastcover_url "", so the type and the
+# track's path are the same for every song; only the file stock's cover thread wrote (its size and time) tells their
+# art apart. The thread clears its request before it downloads, and a cover asked for mid-download lands after it.
+@in_fork
+def test_each_cover_a_url_queue_downloads_reloads_the_art_dark_or_lit(fw, ui, now, st):
+    poll = fw.fn('navigation__np_art_poll', None)
+    def unloads():
+        return len(fw.calls('image_manager_unload_bitmap_by_name'))
+    for path in now.paths:
+        path.value = b''
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = b''
+    kind, lit, pic = fw.var('g_playcover_type', C.c_ubyte), fw.var('g_backlight_status', C.c_ubyte), Externpic(fw)
+    def downloaded(size=20000):
+        pic.write(size)
+        kind.value = 2
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 1 and ui.prop(now.cover, b'image') == b'file:///tmp/externpic.jpg'
+    pic.write(8000)  # read mid-write: part of the file there
+    poll()
+    assert unloads() == 2
+    pic.grow(20000)  # the rest, in the same tick: only the size tells
+    poll()
+    poll()
+    assert unloads() == 3 and st.np_art == fw.fn('navigation__np_art', C.c_uint, C.c_void_p)(C.byref(C.c_char_p()))
+    lit.value = 0
+    now.mcl.pos = 3  # the next song while the screen is dark: no pass sees its cover asked for
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 3
+    lit.value = 1
+    poll()
+    assert unloads() == 4  # its own art at the first lit pass
+    poll()
+    now.mcl.pos = 4  # lit, and no pass while its cover downloads
+    poll()
+    assert unloads() == 4  # the last song's file still: nothing new to show yet
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 5
+    now.mcl.pos = 5  # a quick skip: asked while song 4's cover still downloads, which lands first (as large, the
+    # same second: only the nanoseconds tell)
+    ask_cover(fw)
+    downloaded()
+    poll()
+    assert unloads() == 6
+    kind.value = 0  # the thread takes song 5's request; no pass sees it
+    downloaded(31000)
+    poll()
+    assert unloads() == 7
+    now.mcl.pos = 12  # stopped past the queue's end: no track, nothing read from one
+    poll()
+    assert unloads() == 7
+
+
 # Classic's progress bar (ipod_bar, paint_scrubber) and the rows painter (paint_rows_bar).
 def scrubber(fw, w, canvas):
     fw.fn('paint_scrubber', None, C.c_void_p, C.c_void_p)(w, canvas.p)
@@ -2053,6 +2111,34 @@ def test_the_players_file_waits_until_it_is_this_tracks_cover(fw, ui, mcl, st):
     fw.var('g_playcover_type', C.c_ubyte).value = 1
     x, y, w, h = big.fit()
     assert big.canvas.loaded == [b'file:///tmp/coverpic.jpg'] and w > h
+
+
+# A card app's URL queue (np_art's test): a paint between the song change and its cover's request decodes the last
+# song's file, still in place; the next song's file, written after, is decoded once it is in.
+@in_fork
+def test_a_url_queues_next_cover_is_fitted_once_it_is_in(fw, ui, mcl, st):
+    theme(fw, st, CLASSIC)
+    ext = b'file:///tmp/externpic.jpg'
+    sizes = {ext: (400, 200)}
+    big = Big(fw, ui, mcl, st, image=ext, sizes=sizes)
+    for path in big.now.paths:
+        path.value = b''
+    fw.var('fw_ctx_g_lastcover_url', C.c_char * 1024).value = b''
+    kind, pic = fw.var('g_playcover_type', C.c_ubyte), Externpic(fw)
+    ask_cover(fw)
+    pic.write()
+    kind.value = 2
+    x, y, w, h = big.fit()
+    assert w > h
+    mcl.pos = 3
+    x, y, w, h = big.fit()
+    assert w > h and len(big.canvas.loaded) == 2  # the last song's file, the next one's not asked for yet
+    ask_cover(fw)
+    sizes[ext] = (200, 400)
+    pic.write()
+    kind.value = 2
+    x, y, w, h = big.fit()
+    assert h > w and len(big.canvas.loaded) == 3
 
 
 # The geometry sets' boot (theme_boot): tools/ipod.py bakes SET0 into stock's row immediates; another set

@@ -60,6 +60,7 @@
   - App Store: an app taken off the App Store's list gets no more updates. It still shows while it's installed, so it can be removed.
   - Streaming: **Erase Spotify Data** now deletes the Spotify add-on's logs too. `.spotify/spot.log` names your Spotify account and every song you played, and it used to stay on the card after the erase.
   - Scrobbling: Last.fm no longer needs your password on the card. `tools/lastfm_key.py`, run once on a computer, replaces the `PASSWORD` line in `.scrobble.ini` with a `SESSION_KEY`, which can't sign in to last.fm, and which Last.fm's settings can withdraw. A file with a password works as before.
+  - Card apps: a song an app streams by URL, such as from Jellyfin, shows its own album art in Now Playing, Enlarged Art and Home. Playing a playlist or an artist that holds several albums used to keep the first song's art for every song after it.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.
