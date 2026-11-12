@@ -845,7 +845,7 @@ class EncoderMachine(PlaybackMachine):
         self.sp=self.alloc(0x4000)+0x3000; self.info=self.sp+0x20
         loop,self.qw=self.alloc(0x60),self.alloc(8)
         self.word(self.info+O['WHEEL_INFO_LOOP'],loop); self.word(loop+O['LOOP_QUEUE'],self.qw); self.word(self.sp+0x2c,1); self.word(self.sp+0x18,self.GP)
-        self.handlers[O['WHEEL_POST']]='enc:post'; self.handlers[self.get(self.GP-0x9cc)]='enc:read'
+        self.handlers[O['WHEEL_POST']]='enc:post'; self.handlers[self.get(0xa3a120)]='enc:read'  # ts_read's GOT slot
         # the path a button takes, ringnav_queue_event, posting through the loop's own poster
         self.loop=self.alloc(0x60); self.word(self.loop+O['LOOP_POST'],0x1000020); self.handlers[0x1000020]='enc:loop'; self.loop_posts=[]
         self.handlers[ps['stock_input_trampoline']]='stock_input'

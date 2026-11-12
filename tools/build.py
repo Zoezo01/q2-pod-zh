@@ -389,7 +389,7 @@ def default_config(config):
     return config
 # toolsSetRtcTime's command, with its padding; -u keeps the RTC in UTC. See docs/internals.md#clock.
 RTC_WRITE = (b'hwclock -w\0\0', b'hwclock -wu\0')
-# network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x384d2d): stock turns
+# network_checkstatus's command once Wi-Fi connects (its digit at file offset 0x3852bd): stock turns
 # the radio's power save (LPS) off for the whole connection; 2 restores the driver's own default,
 # PS_MODE_MAX. See docs/internals.md#battery.
 WIFI_LPS = (b'rtwpriv wlan0 pm_set lps=0\0', b'rtwpriv wlan0 pm_set lps=2\0')
@@ -410,7 +410,7 @@ TABLE_LOAD_CALL = 0x5dcdac
 # Folder row names are text, not printf formats ("99% Invisible" crashes stock's formatter).
 # tk_strncpy writes its terminator at n, so reserve the last byte of the 512-byte buffer.
 FOLDER_NAME = ((0x532cb0, 0x24050200, 0x240601ff),  # a2 = 511
-               (0x532cbc, 0x8f99a7c4, 0x8f99b028),  # tk_snprintf -> tk_strncpy
+               (0x532cbc, 0x8f99a7c4, 0x8f99b034),  # tk_snprintf -> tk_strncpy
                (0x532cc4, 0x8e260008, 0x8e250008))  # a1 = record->name
 # mclNextSong's shuffle pick; the payload calls the stock pick, then applies a pending Play next.
 SHUFFLE_CALL = (0x5c0870, 0x0411e7d7)  # bal mcl_shuffle_pick; its delay slot (a0=1) stays
@@ -457,7 +457,8 @@ VOL_DARK = (0x4a36b4, 0x10400045, 0)
 # the newer's strings, and the newer's freed them again (#303). Each close takes the name its check asked for, the addiu's
 # immediate (docs/internals.md#queue-menu). ponytail: only this handler opens an artist page over another (qm_goto's rows are
 # left out while one is open); a new opener must close the old page first, or the page's init wants the guard.
-MORE_ARTIST_CLOSE = ((0x5399d4, 0x2624ccf8, 0x26246404), (0x539a00, 0x2484ccdc, 0x24849d3c))
+# The names' addresses ("artistinfo_page", "albuminfo_page") give the words their low halves, so a rebase carries them.
+MORE_ARTIST_CLOSE = ((0x5399d4, 0x2624ccf8, 0x26240000 | 0x786994 & 0xffff), (0x539a00, 0x2484ccdc, 0x24840000 | 0x779d3c & 0xffff))
 # on_wm_idle_status, stock's idle callback (every UI pass), calls player_mainscheduling (jalr $t9), whose
 # mclAutoChange asks hciplayer for its status and waits for the answer: 40 to 125 round trips a second.
 # The call goes through ringnav_mainscheduling (navigation.c), which paces it (docs/internals.md#battery).
@@ -479,8 +480,9 @@ BT_AUTOLINK = (0x4fbf2c, 0x0411fd04)
 # embedded art failed) becomes jal coverflow_player_cover, which gives ffmpeg what stock's decoder refuses.
 PLAYER_COVER = (0x51dccc, 0x0320f809)
 # Stock's shared database connection is opened lazily by 0x5c8d30, and again after any exec error closes it: its
-# jalr sqlite3_open (lw $t9 = GOT[-0x550] at 0x5c8ac8, in the branch's delay slot; a1 = the handle in the jalr's)
-# becomes jal stock_db_open, which sets a busy timeout on it, so stock's writers wait out playlist art's reader.
+# jalr sqlite3_open (lw $t9 = GOT[-0x544] at 0x5c8d60; a1 = the handle in the jalr's delay slot) becomes jal
+# stock_db_open, which sets a busy timeout on it, so stock's writers wait out playlist art's reader. Stock's own
+# PRAGMA auto_vacuum on the new connection (since V1.36) runs after it as before.
 STOCK_DB_OPEN = (0x5c8d64, 0x0320f809)
 # player_get_id3info's jalr strcpy of the parsed path (lw $t9 at 0x51f5c8), which every fresh parse reaches
 # before Now Playing's lines, becomes jal ringnav_id3_path: a CUE track without sheet tags takes its file's.
@@ -492,10 +494,25 @@ LYRIC_FOLLOW = (0x53d6e4, 0x0320f809)
 # 0x5fb954): jal ringnav_hscroll_lull, which holds the end MARQUEE_HOLD_MS and snaps the label back to its
 # start when the lull ends, so the start's delay (ringnav_hscroll_start) holds there instead of at the end.
 HSCROLL_LULL = (0x5fb958, 0x0320f809)
-# A pass of a label that doesn't loop ends at once, its timer removed (bnez loop at 0x5fb358 falls through), so
+# A pass of a label that doesn't loop ends at once, its timer removed (bnez loop at 0x5fb870 falls through), so
 # stock paints its start with the ellipsis the moment it reaches its end. The branch goes to the lull for
-# every label (b 0x5fb3f0): ringnav_hscroll_lull holds the end, and its end stops a single pass there.
-HSCROLL_ONCE = (0x5fb358, 0x14400025, 0x10000025)
+# every label (b 0x5fb930): ringnav_hscroll_lull holds the end, and its end stops a single pass there.
+HSCROLL_ONCE = (0x5fb870, 0x1440002f, 0x1000002f)
+# Since V1.36 set_hscroll_label_attribute gives a label a loop_interval_distance of its own width (widget_set_prop_int,
+# its jalr): the text runs off the label and comes back in after that gap, without an end to hold. Q2 Pod's labels hold
+# at the start and the end and snap back (ringnav_hscroll_start, ringnav_hscroll_lull), so the call goes and the
+# distance stays at its default, -1, with which hscroll_label's range, timer and paint are V1.34's.
+HSCROLL_GAP = (0x4f1f4c, 0x0320f809, 0)
+# The same function sets only_parent_focus in Menu Mode alone, and V1.36's Albums rows call it where V1.34's set a
+# focus flag outright: the list row's artist line (only_focus) and each grid cell's title (only_parent_focus). With
+# neither, those four labels would scroll by themselves as the page paints. Their calls (jalr, the lw $t9 before each)
+# become jal ringnav_album_label, which sets the flag after stock's call (navigation.c).
+ALBUM_LABELS = (0x4a6cb8, 0x4a6f9c, 0x4a71e4, 0x4a742c)
+# V1.36 puts the focus back on the row that had it once the album page or Playlists has loaded its rows again, for
+# Menu Mode: widget_set_focused, which scrolls the list to that row, on a row it judges in view by stock's 78 px
+# pitch. Q2 Pod's selection is ringnav's and its rows are a theme's pitch, so neither page finds a focused row: the
+# album page's beqz past the look is taken always, and Playlists' bnez to it never.
+FOCUS_RESTORE = ((0x4a8ee4, 0x1040000c, 0x1000000c), (0x4b5948, 0x14400061, 0))
 # The page refresh's bal to the lyric row builder (0x53b67c, which ends at offset 0) becomes jal
 # ringnav_lyric_rows, which keeps the offset: Play/Pause no longer flicks the lyrics to the top.
 LYRIC_ROWS = (0x53d10c, 0x0411f95b)
@@ -537,10 +554,10 @@ DIALOG_CLOSE = 0x652874
 # slot) becomes jal ringnav_scan_dir, which skips every hidden folder, as Folder view's list does: a card
 # app's own (q2-deezer's stream cache) never joins the Library.
 SCAN_DIRS = (0x5d6864, 0x0320f809)
-# toolsLoadAllFile stops a scan at 20,000 songs: lw $2,count; slti $2,$2,0x4e20 before each entry. 65,000
-# overflows slti's signed immediate, so the lw becomes jal ringnav_scan_room and the slti loads the count
-# into a0 in its delay slot; the bnez after it, and its delay slot's stop-flag load, stay.
-SCAN_LIMIT = (0x5dc0a4, 0x8fc2ff14, 0x28424e20, 0x8fc4ff14)  # lw $2/$4, -0xec($fp)
+# Stock V1.36 scans without a limit of its own (V1.34 stopped at 20,000 songs) until /mnt/data is full. Q2 Pod's
+# is 65,000: toolsLoadAllFile's bal to stock's insert (tools_insert_song_to_db, a0 the entry, a1 the table) becomes jal
+# ringnav_scan_insert, which at 65,000 songs stops the scan as Back does instead (tags.c).
+SCAN_LIMIT = (0x5dc504, 0x0411f6dd)
 # Library Albums' cover cache names (navigation.c art_key): the row renderer's snprintf of the name,
 # with a2 the row (addiu a2,"%s" becomes move a2,s3), the Albums page's albumcoverinfo_init calls
 # and the album page's big cover snprintf become jal to the payload; so do an artist page's albums
@@ -1259,6 +1276,7 @@ FUNCTIONS = {
  'hscroll_label_create': ('void *', 'void *, int, int, int, int'),
  'set_hscroll_label_attribute': ('void', 'void *'),
  'hscroll_label_set_only_focus': ('int', 'void *, int'),
+ 'hscroll_label_set_only_parent_focus': ('int', 'void *, int'),
  'hscroll_label_set_ellipses': ('int', 'void *, int'),
  'hscroll_label_set_xoffset': ('int', 'void *, int'),
  'hscroll_label_start': ('int', 'void *'),
@@ -1304,6 +1322,8 @@ FUNCTIONS = {
  'toolsHanziToPinyin': ('int', 'const char *, char *'),
  'toolsGetMusicNum': ('int', 'void'),
  'toolsGetUserStop': ('int', 'void'),  # toolsStopUpdateMusic's flag: the scan dialog's Back
+ 'toolsStopUpdateMusic': ('void', 'void'),
+ 'tools_insert_song_to_db': ('int', 'void *, const char *'),
  'taglib_file_audioproperties': ('void *', 'void *'),
  'taglib_file_free': ('void', 'void *'),
  'deleteMusicFromFav': ('int', 'void *'),
@@ -1466,6 +1486,7 @@ PRIVATE_FUNCTIONS = {
     "btmenu_rows": HOOKS['btmenu_rows'][0],  # systemset_bluetooth_page's list: rows, paired, found
     "mcl_shuffle_pick": 0x5ba7d0,
     "album_row": 0x506e94,  # getAllAlbum's sqlite3_exec callback: id, album, songer, fileurl to a record
+    "tools_insert_song_to_db": 0x5da07c,  # toolsLoadAllFile's insert of one scanned file (a CUE's tracks too)
     "folder_refresh": 0x531efc,  # folder_page's navbar and table from p_deque_showlist (its init, back)
     "class_icon": 0x4b2268,  # a category row's picture: the head for Artists, a genre icon, else .downpic
     "screensaver_rows": HOOKS['screensaver_rows'][0],  # the Lock screen page's rows and picture grid
@@ -1763,7 +1784,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # property of the UI asset, not the asset path, so check the stock rootfs assets directly:
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
-                      QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
+                      QUIET_ICONS, quiet_icon, imagemagick, patch_code, CLOSE_LOAD, DUMMY_LOAD, patch_style, patch_word, branch, settings_icon,
                       STATUS_ICONS, status_icon, row_icon, pane_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
                       set_assets)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
@@ -1881,7 +1902,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51dcbc))[0] == 0x8f99b770,
           'player cover: expected toolsGetExternCover import')
     patch_word(patched, *PLAYER_COVER, jal(ps['coverflow_player_cover']), 'Now Playing art through ffmpeg')
-    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5c8ac8))[0] == 0x8f99fab0,
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5c8d60))[0] == 0x8f99fabc,
           "stock's database open: unexpected GOT load")
     patch_word(patched, *STOCK_DB_OPEN, jal(ps['stock_db_open']), "stock's database waits out a reader")
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x51f5c8))[0] == 0x8f99f680,
@@ -1894,6 +1915,15 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
           'hscroll lull: expected widget_add_timer import')
     patch_word(patched, *HSCROLL_LULL, jal(ps['ringnav_hscroll_lull']), 'a scrolling label holds at its start')
     patch_word(patched, *HSCROLL_ONCE, 'a single pass holds its end')
+    check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, HSCROLL_GAP[0] - 4))[0] == 0x8f99aebc,
+          'hscroll gap: expected widget_set_prop_int')
+    patch_word(patched, *HSCROLL_GAP, 'a scrolling label ends its pass at its end')
+    for address in ALBUM_LABELS:
+        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, address - 4))[0] == 0x8f99ac00,
+              'album labels: expected set_hscroll_label_attribute')
+        patch_word(patched, address, 0x0320f809, jal(ps['ringnav_album_label']), "Albums' artist line and grid titles stay still")
+    for word in FOCUS_RESTORE:
+        patch_word(patched, *word, "stock's focus stays off a reloaded page's rows")
     patch_word(patched, *LYRIC_ROWS, jal(ps['ringnav_lyric_rows']), 'lyrics keep their place on a refresh')
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, 0x5bc304))[0] == 0x8f99f5ac,
           'lyric file: expected fopen import')
@@ -1926,9 +1956,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, SCAN_DIRS[0] + 4))[0] == 0x24a59870,
           'library scan: expected the "." exclusion')
     patch_word(patched, *SCAN_DIRS, jal(ps['ringnav_scan_dir']), 'the library scan skips hidden folders')
-    scan, load, limit, count = SCAN_LIMIT
-    patch_word(patched, scan, load, jal(ps['ringnav_scan_room']), 'scan up to 65,000 songs')
-    patch_word(patched, scan + 4, limit, count, 'scan up to 65,000 songs')
+    patch_word(patched, *SCAN_LIMIT, jal(ps['ringnav_scan_insert']), 'scan up to 65,000 songs')
     for address, old, new in DROP_CACHES:
         patch_word(patched, address, old, new, 'keep the page cache')
     for address, old, new in BT_INPUT:
@@ -1951,6 +1979,11 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     patch_word(patched, TABLE_LOAD_CALL, 0x0320f809, jal(ps['ringnav_table_load']), "a bound table row's faces")
     for word in FOLDER_NAME:
         patch_word(patched, *word, 'folder names are literal text')
+    # The GOT loads Q2 Pod writes (FOLDER_NAME's, and tools/ipod.py's two): no stock word beside one names its slot, and
+    # V1.36 moved two of the three to other functions' slots. Each slot holds its function, or the build stops.
+    for load, name in ((FOLDER_NAME[1][2], 'tk_strncpy'), (CLOSE_LOAD, 'navigator_close'), (DUMMY_LOAD, 'dummy_destroy')):
+        check(struct.unpack_from('<I', raw_demo, fileoff(raw_demo, GP + ((load & 0xffff) ^ 0x8000) - 0x8000))[0] == syms[name],
+              f"{name}: the GOT load written for it names another slot")
     patch_word(patched, NP_INFO_CALL, branch(0x04110000, NP_INFO_CALL, PRIVATE_FUNCTIONS['np_info']),
                jal(ps['ringnav_np_info']), "Now Playing's info lines")
     for site in AB_X_CALLS:

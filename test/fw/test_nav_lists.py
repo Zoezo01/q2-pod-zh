@@ -1839,6 +1839,16 @@ def test_a_title_that_fits_or_scrolls_anyway_is_left_alone(fw, ui, st, text_w, o
     assert not fw.calls('hscroll_label_start')
 
 
+def test_albums_artist_line_and_grid_titles_take_stock_s_attributes_then_a_focus_flag(fw):
+    """tools/build.py ALBUM_LABELS: stock's helper first, then the flag V1.34's rows set outright, so the
+    label waits for a focus its parent never has under ringnav."""
+    label = C.create_string_buffer(0x100)
+    fw.fn('ringnav_album_label', None, C.c_void_p)(label)
+    here = C.addressof(label)
+    assert [(n, a[:2] if n.endswith('focus') else a[:1]) for n, a in fw.calls() if 'hscroll' in n] == [
+        ('set_hscroll_label_attribute', (here,)), ('hscroll_label_set_only_parent_focus', (here, 1))]
+
+
 def test_the_marquee_stops_once_the_selection_moves_on(fw, ui, st):
     marquee = Marquee(fw, ui, st, 400)
     marquee.moved(None)

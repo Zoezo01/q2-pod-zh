@@ -3665,7 +3665,7 @@ for patched in (True, False):
     arg=m.alloc(8); m.word(arg+4,m.alloc(0x40))
     assert m.call(address=syms['localmusic_artistinfo_page_init'],args=(m.node('window','artistinfo_page'),arg,0,0))==0
     names=[c[0] for c in m.calls if c[0] in ('songs_view','albums_view','load_localartist_list','query_run')]
-    tab=m.get(m.get(0xa3aae0-0x5810)-0x5064)
+    tab=m.get(0xa3b5ac)  # the artist page's tab, which the Albums tab's handler sets (0x4aeb60)
     if patched:
         assert names==['query_run','load_localartist_list','query_run','albums_view'] and tab==1, names
         assert [c[1] for c in m.calls if c[0]=='load_localartist_list']==[1]
@@ -4011,7 +4011,7 @@ class PlaylistMachine(PlayingPlaylistMachine):
         # Stock's private playlist add-mode global, loaded through its GOT.
         data=(B/'stock-demo').read_bytes()
         from build import fileoff, GP
-        self.mode=struct.unpack_from('<I',data,fileoff(data,GP-0x5810))[0]-0x4e3c
+        self.mode=struct.unpack_from('<I',data,fileoff(data,GP-0x5810))[0]-0x482c
         assert self.mode==O['PLAYLIST_ADD_MODE']
         self.word(self.mode,mode)
         # playlist_art.c (test/coverflow.py tests it): art ready for the playlists (cd_num) in self.art, each ask kept
@@ -4100,7 +4100,7 @@ class ClassicPlaylistMachine(PlaylistMachine):
         self.nodes[self.top]['children'].insert(0,self.nav)
         # Stock's page init binds Return as widget_on(win, EVT_KEY_UP, on_common_keyup, win) at 0x4b6024; the bytes and the
         # GOT entries it loads ($25 widget_on, $6 on_common_keyup) pin this fixture's ctx to what the device runs.
-        gp=0x4b5fac+0x58465c
+        gp=0x4b5fac+0x584b34
         assert [self.get(0x4b6024+4*i) for i in range(7)]==[0x24050114,0x8fbc0010,0x02003825,0x8f99a7bc,0x8f86a7e0,0x0320f809,0x02002025]
         assert self.get(gp-0x5844)==syms['widget_on'] and self.get(gp-0x5820)==syms['on_common_keyup']==0x4f2394
         self.nodes[self.top].setdefault('handlers',[]).append((O['EVT_KEY_UP'],0x4f2394,self.top))
@@ -4989,16 +4989,17 @@ class SpecFolderMachine(Machine):
 for index,x,want,listed in ((0,200,200,['/m/0']),(1,200,0,['/m/1']),(2,81,0,['/m/2']),(1,80,80,[])):
     m=SpecFolderMachine(); assert m.tap(index,x)==(listed,(0x77,want)),(index,x,m.listed,m.seen)
 m=SpecFolderMachine(); assert m.tap(1,200,on_row=False)==([],(0x77,200)); passed()
-# Update Local Music: the stock scanner, nested folders and all, checks ringnav_scan_room (65,000
-# songs; stock 20,000) before each entry. Only the folder listing, paths and database insert are mocked.
+# Update Local Music: the stock scanner, nested folders and all, adds each song through ringnav_scan_insert, which
+# stops the scan at 65,000 songs (stock V1.36 has no limit). Only the folder listing, paths and database insert are mocked.
 from build import SCAN_LIMIT
-assert struct.unpack_from('<2I',demo,fileoff(demo,SCAN_LIMIT[0]))==(jal(payload_syms['ringnav_scan_room']),SCAN_LIMIT[3])
+assert struct.unpack_from('<I',demo,fileoff(demo,SCAN_LIMIT[0]))[0]==jal(payload_syms['ringnav_scan_insert'])
 SONGS,STOP,LISTING=0xa50524,0xa50528,0xa50118  # toolsGetMusicNum's count, toolsStopUpdateMusic's flag, the listing deque
 class ScanMachine(Machine):
     def __init__(self,tree,songs,patched=True,stop_at=None):
         super().__init__(patched); self.tree=tree; self.added=[]; self.stop_at=stop_at
         for n in ('toolsSetScanFolderPath','toolsCheckItemExist','deque_size','deque_at','sprintf@GLIBC_2.0'): self.handlers[syms[n]]='scan:'+n
         self.handlers[0x5d6520]='scan:list'; self.handlers[0x5da07c]='scan:insert'  # private: lists a folder, adds a song
+        for n in ('toolsGetMusicNum','toolsStopUpdateMusic'): self.handlers.pop(syms[n],None)  # stock's own run: ringnav_scan_insert's count and stop
         self.word(SONGS,songs); self.word(LISTING,self.alloc(0x20))
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
@@ -5021,14 +5022,14 @@ def scan(songs,tree={'/m':['a']},**kw):
     """(return, songs added, stop flag, count): 1 finished, 0 stopped."""
     m=ScanMachine(tree,songs,**kw)
     return m.call(address=syms['toolsLoadAllFile'],args=(m.string('/m'),0,0,0),gap=0),m.added,m.u.mem_read(STOP,1)[0],m.get(SONGS)
-for patched,limit in ((True,65000),(False,20000)):
+for patched,limit in ((True,65000),(False,None)):
     for songs in (19999,20000,32767,32768,64999,65000,65001):
-        more=songs<limit
+        more=limit is None or songs<limit
         assert scan(songs,patched=patched)==(more,['/m/a']*more,1-more,songs+more),(patched,songs); passed()
 nested={'/m':['a','sub','b'],'/m/sub':['c','d']}
 assert scan(0,nested)==(1,['/m/a','/m/sub/c','/m/sub/d','/m/b'],0,4); passed()
 assert scan(64998,nested)==(0,['/m/a','/m/sub/c'],1,65000); passed()  # the limit inside a subfolder ends the scan
-assert scan(0,nested,stop_at=2)==(0,['/m/a','/m/sub/c'],1,2); passed()  # the bnez delay slot's stop flag
+assert scan(0,nested,stop_at=2)==(0,['/m/a','/m/sub/c'],1,2); passed()  # stock's look at the stop flag before each entry
 assert scan(0,{'/m':['a','b','c']},stop_at=1)==(0,['/m/a'],1,1); passed()
 # A folder rescan refreshes existing tags in place, including quoted paths/tags and CUE rows.
 # Run the actual recursive scanner and refresh wrapper against SQLite; full scans still add songs.
@@ -5329,7 +5330,7 @@ class SongCoversMachine(QueueMachine):
         super().__init__(rows=0)
         self.live=set(); self.result=self.alloc(4)
         self.handlers.pop(syms['albumcoverinfo_init'])
-        self.word(0xa3aae0-0xa04,0x1000014); self.handlers[0x1000014]='c:malloc'  # lazy-bound, as RolloverMachine's
+        self.word(0xa3a0e8,0x1000014); self.handlers[0x1000014]='c:malloc'  # lazy-bound, as RolloverMachine's
         self.handlers[0x1000010]='c:free'; self.handlers[syms['strcpy@GLIBC_2.0']]='c:strcpy'
         self.mock('pthread_mutex_lock@GLIBC_2.0','pthread_mutex_unlock@GLIBC_2.0','clear_albumcover_task')
         self.word(syms['pdeq_albumcoverlist'],self.deque([],'stAlbumCoverInfo'))
@@ -6241,6 +6242,37 @@ for yoyo in (0,1):
     m.advance(100); m.call(address=syms['hscroll_label_start'],args=(t,),gap=0)
     runs=timeline(m,t,hold+scroll+hold+100); runs[0][1]+=100; pass_ok(runs)
     assert runs[3:]==[['rest',200]] and not m.timers and m.get(t+0x90)==0,runs; passed()
+# Stock's label attributes (set_hscroll_label_attribute, run from the image): its speed, lull and ellipsis. Since V1.36 it
+# also gives the label a loop_interval_distance of its width, with which a pass has no end to hold: HSCROLL_GAP drops that
+# call, stock makes it. In Menu Mode alone it sets only_parent_focus, and WHEEL_MODE keeps stock out of Menu Mode.
+from build import HSCROLL_GAP, ALBUM_LABELS, FOCUS_RESTORE
+for patched in (True,False):
+    m=Machine(patched); m.handlers.pop(syms['set_hscroll_label_attribute'],None)
+    m.mock('hscroll_label_set_speed','hscroll_label_set_lull','hscroll_label_set_ellipses','widget_set_prop_int','hscroll_label_set_only_parent_focus')
+    t=m.node('hscroll_label'); m.word(t+O['W_W'],200)
+    for mode in (1,0):
+        m.calls=[]; m.byte(syms['g_wheelmode'],mode); m.call(address=syms['set_hscroll_label_attribute'],args=(t,0,0,0),gap=0)
+        want=[('hscroll_label_set_speed',t,O['HSCROLL_PACE']),('hscroll_label_set_lull',t,2000),('hscroll_label_set_ellipses',t,1)]
+        gap=[c for c in m.calls if c[0]=='widget_set_prop_int']
+        assert [c[:3] for c in m.calls if c[0]!='widget_set_prop_int']==want+[('hscroll_label_set_only_parent_focus',t,1)]*(not mode),(patched,mode,m.calls)
+        assert [(m.text(c[2]),c[3]) for c in gap]==[('loop_interval_distance',200)]*(not patched),(patched,gap)
+passed()
+# Albums' artist line and grid titles keep a focus flag in Volume Mode too (ALBUM_LABELS; test/fw has the hook's two calls).
+assert all(struct.unpack_from('<I',demo,fileoff(demo,a))[0]==jal(payload_syms['ringnav_album_label']) for a in ALBUM_LABELS); passed()
+# Stock's focus doesn't come back to a reloaded page's row (FOCUS_RESTORE): with a focused widget in $v0, V1.36's album page and
+# Playlists go on to read its name; patched, both go on as with none, their row index -1.
+def falls(m,start,stops):
+    sp=m.alloc(0x100); m.word(sp+0x10,0xa3aae0); reached=[]
+    for r,v in ((UC_MIPS_REG_SP,sp),(UC_MIPS_REG_GP,0xa3aae0),(UC_MIPS_REG_V0,m.alloc(0x40)),(UC_MIPS_REG_S0,7)): m.u.reg_write(r,v)
+    def stop(u,address,size,unused):
+        if address in stops: reached.append(address); u.emu_stop()
+    hook=m.u.hook_add(UC_HOOK_CODE,stop); m.u.emu_start(start,0x1000000,count=40); m.u.hook_del(hook)
+    return reached[0],signed(m.u.reg_read(UC_MIPS_REG_S0))
+for patched in (True,False):
+    m=Machine(patched)
+    assert falls(m,FOCUS_RESTORE[1][0],(0x4b5954,0x4b5ad0))==((0x4b5954,-1) if patched else (0x4b5ad0,7)),patched
+    assert falls(m,FOCUS_RESTORE[0][0],(0x4a8eec,0x4a8f18))[0]==(0x4a8f18 if patched else 0x4a8eec),patched
+passed()
 # The selected row's long title scrolls as soon as the selection settles, MARQUEE_PASSES of those
 # passes, then rests on its start; it stops as the selection moves or the screen darkens; a title
 # that fits or stock scrolls by itself is left alone; in a table's pool, a new row in the same
@@ -6618,16 +6650,18 @@ class PlaylistLifecycleMachine(PlaylistEditMachine):
     def delete(self):
         return self.call(address=HOOKS['playlist_delete_click'][0],args=(self.more,0,0,0),gap=0)
     def reload_pending(self):
-        # Run stock's parent-show gate with the playlist category unchanged after More closes.
+        # Run stock's parent-show gate with the playlist category unchanged after More closes. Since V1.36 the page loads
+        # its list again whatever the gate says (the jalr at 0x4b59ac); the gate's own branch only clears the flag.
         self.word(syms['g_class_type'],0xf00b); self.u.reg_write(UC_MIPS_REG_GP,0xa3aae0)
         reached=[]
         def stop(u,address,size,unused):
-            if address in (0x4b5960,0x4b59c8): reached.append(address); u.emu_stop()
+            if address in (0x4b59a0,0x4b59ac): reached.append(address)
+            if address==0x4b59ac: u.emu_stop()
         hook=self.u.hook_add(UC_HOOK_CODE,stop)
-        self.u.emu_start(0x4b5940,0x1000000,count=100)
+        self.u.emu_start(0x4b5974,0x1000000,count=100)
         self.u.hook_del(hook)
-        assert len(reached)==1
-        return reached[0]==0x4b5960
+        assert reached[-1]==0x4b59ac
+        return reached[0]==0x4b59a0
 
 m=PlaylistLifecycleMachine(); assert m.create("O'Brien")==6
 assert m.db.execute('select id,filename,name,cd_num from playlist where id=6').fetchone()==(6,"O'Brien","O'Brien",6)
@@ -10005,7 +10039,7 @@ class RolloverMachine(CoverflowMachine):
         self.handlers[0x5d5614]='r:directory'; self.handlers[0x5d58e4]='r:directory'
         self.handlers[0x5bf504]='r:decoder_start'
         # Lazy-bound malloc, as used by stock player_refresh_playqueue.
-        self.word(0xa3aae0-0xa04,0x1000014); self.handlers[0x1000014]='r:malloc'
+        self.word(0xa3a0e8,0x1000014); self.handlers[0x1000014]='r:malloc'
         for name in ('strcpy@GLIBC_2.0','strncmp@GLIBC_2.0','strstr@GLIBC_2.0','strchr@GLIBC_2.0',
                      'toolsGetMusicInfo','toolsGetFileSize','toolsGetAlbumCover','toolsGetExternCover',
                      'access@GLIBC_2.0','remove@GLIBC_2.0','usleep@GLIBC_2.0','fork@GLIBC_2.0'):
@@ -10162,7 +10196,7 @@ assert struct.unpack_from('<I',demo,fileoff(demo,TAG_TEXT[0]))[0]==jal(payload_s
 class TagTextMachine(Machine):
     def __init__(self):
         super().__init__()
-        self.word(0xa3aae0-0xa04,0x1000014); self.handlers[0x1000014]='t:malloc'  # lazy-bound, as RolloverMachine's
+        self.word(0xa3a0e8,0x1000014); self.handlers[0x1000014]='t:malloc'  # lazy-bound, as RolloverMachine's
         self.word(0xa3a270,0x1000010); self.handlers[0x1000010]='t:free'
         self.handlers[syms['strcpy@GLIBC_2.0']]='t:strcpy'; self.handlers[syms['toolsIconvConvert']]='t:iconv'
         self.handlers[syms['strcmp@GLIBC_2.0']]='t:strcmp'  # on bytes: GBK isn't UTF-8
@@ -10976,7 +11010,8 @@ demo=(B/'demo').read_bytes(); assert STOCK_DB_OPEN[0]==0x5c8d64
 assert struct.unpack_from('<I',demo,fileoff(demo,0x5c8d64))[0]==jal(payload_syms['stock_db_open'])
 m=PlArtMachine(); m.u.reg_write(UC_MIPS_REG_GP,0xa3aae0)
 assert m.call(address=0x5c8d30,args=(m.string('/mnt/data/database.db'),0,0,0),gap=0)==1
-assert m.sql==[('open','/mnt/data/database.db'),('exec',0xdb,'PRAGMA busy_timeout=500')],m.sql; passed()
+# stock's own pragma (since V1.36) on the connection it has just opened, after the hook's
+assert m.sql==[('open','/mnt/data/database.db'),('exec',0xdb,'PRAGMA busy_timeout=500'),('exec',0xdb,'PRAGMA auto_vacuum=INCREMENTAL;')],m.sql; passed()
 
 # Centre opens the album the caption names, at once, however far ahead of the covers that is (letters off).
 m=thumb_page(); tp(m); thold(m); no_letters(m); tspin(m,600,-110); shown=tcaption(m); assert toff(m)!=0
@@ -11699,12 +11734,12 @@ for config in ({},{'ACCENT':'2'}):
     # A card app's Streaming icon (addon.c, by its path on the card) greys as stream_spotify does,
     # its white glyph white and alpha kept; Classic keeps it, and the app's other images stay.
     for name in ('file:///mnt/mmc/.deezer/icon-40.png','file:///mnt/mmc/.deezer/icon.png'):
-        got=rgba(config,name,[(0xa23eff,255),(0xffffff,255),(0x2800ff,128)])
+        got=rgba(config,name,[(0xa238ff,255),(0xffffff,255),(0x2800ff,128)])
         assert all(c>>16 == (c>>8&255) == (c&255) for c,a in got) and got[1]==(0xffffff,255),(name,got)
         assert [a for c,a in got]==[255,255,128] and got[0]!=got[2]
-        assert rgba({**config,'THEME':'1'},name,[(0xa23eff,255)])==[(0xa23eff,255)]
+        assert rgba({**config,'THEME':'1'},name,[(0xa238ff,255)])==[(0xa238ff,255)]
     for name in ('file:///mnt/mmc/.deezer/cover.png','file:///mnt/mmc/Music/icon.png','file:///mnt/mmc/.deezer/icon.png.jpg'):
-        assert rgba(config,name,[(0xa23eff,255)])==[(0xa23eff,255)],name
+        assert rgba(config,name,[(0xa238ff,255)])==[(0xa238ff,255)],name
     for name in ('local_album','local_shuffle','list_tidal','small_stream','player_playlist'):
         assert rgba(config,name,px)==[(ink,255),(0xbcbcbc,255),(0xffffff,255),(ink,128),(0xffffff,0)],name
         grey=[(0x777777,255),(0xffffff,255),(0xbcbcbc,128),(0xffffff,0)]
@@ -18535,7 +18570,7 @@ assert len(rows)==5 and icons==['system_powermanager','usb_chargeswitch','wifise
 assert texts()==['Standby Limit: Off','Charge Limit (80%)','Smart Wi-Fi','system_carmode','Boot to: Rockbox']
 assert click(1)==[(1,'Q2POD','CHARGELIMIT')] and texts()[1]==f"Charge Limit ({O['CHARGE_STOP']}%)"
 assert click(1)==[(0,'Q2POD','CHARGELIMIT')] and texts()==['Standby Limit: Off','Charge Limit (80%)','Smart Wi-Fi','system_carmode','Boot to: Rockbox']; passed()
-# In-Vehicle Mode, System's stock row before (0x4d388c): its byte, its key, and the state byte cleared.
+# In-Vehicle Mode, System's stock row before (0x4d34c0): its byte, its key, and the state byte cleared.
 m.byte(syms['g_carmode_state'],1)
 assert click(3)==[(1,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\1' and m.u.mem_read(syms['g_carmode_state'],1)==b'\0' and switch_image(m,rows[3])=='switch_on'
 assert click(3)==[(0,'SYSSET','CARMODE')] and m.u.mem_read(syms['g_carmode'],1)==b'\0' and switch_image(m,rows[3])=='switch_off'; passed()
@@ -18811,9 +18846,11 @@ for patched in (True,False):
 passed()
 # What stock's own key-up handlers do with a key ringnav lets through, on the pages and dialogs Q2 Pod keeps: stop it,
 # or pass it on to on_wm_keyup_fun (stock's volume, screen off and track keys), and the stock function that acts on it.
-# V1.36 changed two things here, in functions that hold no patch site: the toast and the confirm stop the wheel and
+# V1.34 changed two things here, in functions that hold no patch site: the toast and the confirm stop the wheel and
 # Centre themselves (how the Shut Down prompt lost its Centre, #303), and with the screen off a handler passes every
-# key on untouched, as the volume dialog's did before VOL_DARK (above). Each runs alone, lit then dark, with
+# key on untouched, as the volume dialog's did before VOL_DARK (above). V1.36 changed a third: Now Playing's handler
+# takes Centre, for a screen-off of its own 350 ms on (ringnav takes Centre there first: internals.md, Scrub). Each
+# runs alone, lit then dark, with
 # g_wheelmode as WHEEL_MODE holds it; whatever it calls answers 0 (no widget, nothing playing) and is named if stock
 # exports it, widget lookups aside. Q2 Pod patches none of these, so stock's own answer the same.
 def keyups(patched,handler):
@@ -18837,8 +18874,10 @@ def stock_keyups():
     stop=('stop',''); wheel={prev:stop,nxt:stop,centre:stop}; every={**wheel,ret:stop,play:stop,rew:stop,fwd:stop}
     for want,handlers in (
             # Return goes back by on_return_onclick: on_common_keyup (most pages), allmusic_page, album_page, artistinfo_page,
-            # localclass_page, playerqueue_page, playerjumpinfo_page, playing_page and search_dialog
-            ({ret:('on_return_onclick stop','')},(syms['on_common_keyup'],0x4abc34,0x4a608c,0x4b0f50,0x4b2ab8,0x53a930,0x538a88,0x53da5c,0x49eb70)),
+            # localclass_page, playerqueue_page, playerjumpinfo_page and search_dialog
+            ({ret:('on_return_onclick stop','')},(syms['on_common_keyup'],0x4abc34,0x4a608c,0x4b0f50,0x4b2ab8,0x53a930,0x538a88,0x49eb70)),
+            # playing_page: Return as those, and since V1.36 Centre ends here: the screen goes off 350 ms on, or at once on a second
+            ({ret:('on_return_onclick stop',''),centre:('power_keyup_detect power_keyup_pending_custom stop','')},(0x53da5c,)),
             # ... or by a function of the window's own: folder_page, specfolder_page and sortselect_dialog
             ({ret:stop},(0x533310,syms['on_specfolder_keyup'],0x4a0b54)),
             # confirminfo_dialog: Return quits it and goes on; the wheel and Centre end here

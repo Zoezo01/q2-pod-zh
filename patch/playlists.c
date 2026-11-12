@@ -574,7 +574,7 @@ void qm_playlist_bind(void *w, int depth, int (*pick)(void *, void *)) {
 enum { PL_SELECT_ALL, PL_NEW, PL_EDIT, PL_IMPORT, PL_EXPORT, PL_DELETE, PL_DONE, PL_N };
 static const unsigned pl_stock[PL_N] = { 0x4b46a4, 0x4b45a4, 0x4b44d4, 0x4b5e18,
                                          0x4b5c70, 0x4b5b08, 0x4b45ec };
-/* on_common_keyup: the page's own static key-up until stock V1.36, which binds the shared one */
+/* on_common_keyup: the page's own static key-up until stock V1.34, which binds the shared one */
 #define PLAYLIST_KEYUP ((int (*)(void *, void *))0x4f2394)
 
 /* A row's place on the list's two heights: name over second line in the page rows' boxes, which

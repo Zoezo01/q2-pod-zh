@@ -957,9 +957,14 @@ def test_the_scan_any_folder_name(fw, heap):
         heap.free(name)
 
 
-@pytest.mark.parametrize('songs', [0, 64999])
-def test_the_scan_goes_on_below_65000(fw, songs):
-    assert fw.fn('ringnav_scan_room', C.c_int, C.c_int)(songs) == 1
+@pytest.mark.parametrize('songs, added', [(0, 1), (64999, 1), (65000, 0), (65001, 0)])
+def test_the_scan_adds_songs_below_65000_and_stops_there(fw, songs, added):
+    """Stock's insert below the limit; at it, stock's own stop (the scan dialog's Back) and no insert."""
+    fw.mock('toolsGetMusicNum', lambda *_: songs)
+    fw.mock('tools_insert_song_to_db', lambda *_: 7)
+    row = C.create_string_buffer(0x60)
+    assert fw.fn('ringnav_scan_insert', C.c_int, C.c_void_p, C.c_char_p)(row, b'songtable') == 7 * added
+    assert len(fw.calls('tools_insert_song_to_db')) == added and len(fw.calls('toolsStopUpdateMusic')) == 1 - added
 
 
 @pytest.mark.parametrize('path, cue, m4b', [

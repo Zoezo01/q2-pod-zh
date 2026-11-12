@@ -848,7 +848,7 @@ static void commit(unsigned next) {
  * the order carries on after it and it neither plays again later in the pass nor drops the tracks
  * it jumped; an ordered queue's in place, so the tracks after it follow. A pick inside a pending
  * Play Next takes only its entry off the list, the rest stay pending. */
-#define VIEW_QUEUE_RET 0x53aa38 /* View Queue's row, past its bounds checks */
+#define VIEW_QUEUE_RET 0x53acf8 /* playerqueue_row_on_click: View Queue's row, past its checks */
 int ringnav_start_queue(int at) {
     unsigned x = (unsigned)at;
     follow_queue();
@@ -1122,7 +1122,7 @@ void playback_np(void) {
 /* Picks of the playing file reach player_start from each of these; none reads its result. */
 #define PAGE_PICK_RET 0x53e514  /* playing_page_init, which opens Now Playing itself */
 #define ALBUM_PLAY_RET 0x4a97c0 /* the album page's play (0x4a96c0), which stays on its page */
-#define ALBUMINFO_PLAY_RET 0x4abfb0
+#define ALBUMINFO_PLAY_RET 0x4ac008 /* a song list's Play All (localmusic_songs_play_all) */
 /* The same row of the same list: nothing starts. SyncLink's (0x5264c4, 0x5266b4), off the UI thread, stays
  * silent, the track playing on. From another list stock loads it, and the poll goes back to the place. Not a
  * press: an app's .play (press_natural), Shuffle Albums' load, DLNA and online. */

@@ -281,7 +281,10 @@ ARTIST_PAGE = 'localmusic/artistinfo_page.bin'
 ARTIST_TABS = {'btn_track': ('单曲', 'local_allsongs'), 'btn_album': ('专辑', 'album')}
 # Stock init builds the Songs view (0x4af8ac); call the stock Albums tab click handler (0x4aeb1c)
 # instead, which sets the tab state, queries the artist's albums and builds them. Songs stays a tap away.
-ARTIST_ALBUMS = [(0x4b12bc, 0x2739f8ac, 0x2739eae8), (0x4b12c0, 0x0411f97a, 0x0411f609)]
+# The handler's address makes both patched words (the low half $t9 takes, the bal's distance), so a rebase carries them.
+ARTIST_ALBUMS_TAB = 0x4aeb1c
+ARTIST_ALBUMS = [(0x4b12bc, 0x2739f8ac, 0x27390000 | ARTIST_ALBUMS_TAB & 0xffff),
+                 (0x4b12c0, 0x0411f97a, 0x04110000 | (ARTIST_ALBUMS_TAB - 0x4b12c0 - 4 >> 2) & 0xffff)]
 
 
 def artist_tabs(root):
@@ -341,7 +344,7 @@ HOME_LITERAL = {'coverflow': 'Cover Flow', 'rockbox': 'Rockbox', 'settings': 'Se
 # these shorter literals.
 HOME_RENAMED = {'localmusic': LIBRARY, 'playset': {'name': 'label_playback', 'text': 'Playback'},
                 'sysset': {'name': 'label_system', 'text': 'System'}}
-# Since stock V1.36 the visitor knows img_coverflow and label_coverflow too: its own Album Wall card's, which it
+# Since stock V1.34 the visitor knows img_coverflow and label_coverflow too: its own Album Wall card's, which it
 # binds to that page and names so. Cover Flow's image and label are named apart, so stock binds and names neither.
 HOME_OURS = {'coverflow': 'cover_flow'}
 
@@ -808,7 +811,7 @@ def playing_stock(data):
     named['img_cover'][1] = [22, 8, 180, 180]
     named['img_playstate'][1] = [52, 38, 120, 120]
     # The play mode mirrors the heart: its box, flipped to the right edge, the icon centred in it as the heart's is
-    # (stock's own since V1.36).
+    # (stock's own since V1.34).
     fav, mode = named['img_fav'], named['img_playmode']
     check(fav[2]['draw_type'] == 'center' and mode[2]['draw_type'] == 'center' and
           not [k for k in mode[2] if k.endswith(('x_offset', 'y_offset'))], 'Unexpected stock heart or play mode')
@@ -1296,6 +1299,11 @@ def set_assets(cat, g):
     return out
 
 
+# The GOT loads patch_code writes, of stock's navigator_close and dummy_destroy. No stock word beside one names its slot,
+# and a slot moves with each stock build: tools/build.py checks that each still holds its function.
+CLOSE_LOAD, DUMMY_LOAD = 0x8f99a914, 0x8f99ea00
+
+
 def patch_code(data, symbols):
     changes = []
     word = functools.partial(patch_word, data, changes=changes)
@@ -1303,7 +1311,7 @@ def patch_code(data, symbols):
     # Lookup song handlers loop until Now Playing is on top; animated Back cannot finish
     # until they return. Close each named page synchronously with stock navigator_close.
     for address, name_slot in ((0x4a7ed4, 0x468), (0x4af83c, 0x468), (0x537fbc, 0x420)):
-        word(address, 0x8f99af04, 0x8f99a914, 'lookup unwind uses navigator_close')
+        word(address, 0x8f99af04, CLOSE_LOAD, 'lookup unwind uses navigator_close')
         word(address + 4, 0x0320f809, 0x0320f809, 'lookup close call')
         word(address + 8, 0, 0x8fa40000 | name_slot, 'lookup close receives the top window name')
 
@@ -1325,14 +1333,14 @@ def patch_code(data, symbols):
     # lists keep the boxes their assets give them, ours included: each call's GOT load takes stock's dummy_destroy (0x72bd8c,
     # which returns 0) instead of widget_move_resize or widget_resize.
     for address, instruction in AUDIT['navbar_resize_calls']['sites']:
-        word(int(address, 16), int(instruction, 16), 0x8f99e9f4, AUDIT['navbar_resize_calls']['purpose'])
+        word(int(address, 16), int(instruction, 16), DUMMY_LOAD, AUDIT['navbar_resize_calls']['purpose'])
     # Playlist page's Import/Export tiles: no icon (0 wide), the label spans the 164px tile in
     # stock's centred s_scrlabel_white24c (0x77c990) instead of 91px after the icon.
     for icon, style in ((0x4b56c0, 0x4b5748), (0x4b57e8, 0x4b5874)):
         word(icon, 0x24070032, 0x24070000, 'playlist tile icon width 0')
         word(icon + 0x54, 0x2407005b, 0x240700a4, 'playlist tile label spans the tile')
         word(icon + 0x60, 0x2405003f, 0x24050000, 'playlist tile label at the tile edge')
-        word(style, 0x2505c434, 0x2505c430, 'playlist tile label centred')
+        word(style, 0x2505c434, 0x25050000 | 0x77c990 & 0xffff, 'playlist tile label centred')
     # iPod settings rows: the list_view layouter's layout slot (data, vtable 0x93a4bc + 8).
     word(inc('LIST_VIEW_LAYOUT_SLOT'), inc('LIST_VIEW_LAYOUT'), symbols['ipod_list_layout'],
          'settings lists stack SET_ROW rows and map their children')

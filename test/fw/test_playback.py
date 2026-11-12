@@ -2716,8 +2716,8 @@ def test_a_pick_that_keeps_nothing_is_stocks(fw, keeps, player, case):
 
 
 # Calls from stock's own sites, which the C tells by its return address.
-VIEW_QUEUE_RET, UNPLAYABLE_NEXT_RET, LOAD_DIRECTORY_RET, SPEED_RECONNECT_RET = 0x53aa38, 0x4f4ddc, 0x5d4cb4, 0x51e04c
-PAGE_PICK_RET, ALBUM_PLAY_RET, ALBUMINFO_PLAY_RET = 0x53e514, 0x4a97c0, 0x4abfb0
+VIEW_QUEUE_RET, UNPLAYABLE_NEXT_RET, LOAD_DIRECTORY_RET, SPEED_RECONNECT_RET = 0x53acf8, 0x4f4ddc, 0x5d4cb4, 0x51e04c
+PAGE_PICK_RET, ALBUM_PLAY_RET, ALBUMINFO_PLAY_RET = 0x53e514, 0x4a97c0, 0x4ac008
 
 
 @pytest.fixture

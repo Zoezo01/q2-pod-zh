@@ -2009,6 +2009,14 @@ int ringnav_hscroll_start(void *w) {
     if (!speed || speed > HSCROLL_PACE) I(w, HSCROLL_SPEED) = HSCROLL_PACE;
     return stock_hscroll_start_trampoline(w);
 }
+/* Stock's Albums rows since V1.36 (ALBUM_LABELS in tools/build.py): the list row's artist line and
+ * a grid cell's title take stock's attributes here, then the focus flag V1.34 gave them, which
+ * stock now sets in Menu Mode alone. No row's parent has the focus under ringnav, so they stay
+ * still. */
+void ringnav_album_label(void *label) {
+    set_hscroll_label_attribute(label);
+    hscroll_label_set_only_parent_focus(label, 1);
+}
 /* The end-of-pass widget_add_timer comes here (HSCROLL_LULL in tools/build.py): the lull holds the
  * end MARQUEE_HOLD_MS, then puts the start back before stock's callback restarts the label, so its
  * delay holds there. A looping yoyo label scrolls back from its end, which that delay holds: its
@@ -2294,8 +2302,8 @@ static void hold_paint(void *w, void *canvas, int over) {
 }
 /* The toast (msginfo_dialog) and the update's dialog: stock's full-screen dialog, clear, under a
  * box sized to its lines, whichever half. The serial's QR takes the box's colour on its own rect.
- * V1.36's plain toast (kind 1) is one word-wrapping label, sized here to its wrapped lines; V1.32's
- * and its kinds 2 and 4 are hscroll_labels, a line each.
+ * Since V1.34 the plain toast (kind 1) is one word-wrapping label, sized here to its wrapped lines;
+ * V1.32's and its kinds 2 and 4 are hscroll_labels, a line each.
  */
 #define TOAST_RGBA 0xee2b2b2bu
 #define TOAST_LABEL_W 331
@@ -3319,7 +3327,7 @@ static int pod_click(void *ctx, void *event) {
     } else if (i == POD_CARMODE) {
         g_carmode = !g_carmode;
         write_int_config(g_carmode, "SYSSET", "CARMODE");
-        g_carmode_state = 0;         /* as stock's row (0x4d38fc) */
+        g_carmode_state = 0;         /* as stock's row (0x4d3530) */
     } else if (i == POD_COVERMODE) { /* these two as stock's rows (0x4c0714) */
         g_bigcovermode = g_bigcovermode != 1;
         write_int_config(g_bigcovermode, "PLAYSET", "COVERMODE");
@@ -5550,7 +5558,7 @@ static void quick_page(void *win, void *canvas) {
  * the window's coordinates less the slider's. */
 static void quick_scrub(void *w, void *canvas) {
     static const stops_t track = { 2, { 0, 100 }, { 0x0a0a0a, 0x3a3c40 } };
-    static const stops_t blue = { 3, { 0, 50, 100 }, { 0x8ccaf8, 0x2f85df, 0x165fc0 } };
+    static const stops_t blue = { 3, { 0, 50, 100 }, { 0x8cc4f8, 0x2f85df, 0x165fc0 } };
     if (!classic_pages() || !quick_slider(w) || !P(canvas, CANVAS_LCD)) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
     void *view = P(w, W_PARENT);
@@ -6876,7 +6884,7 @@ int ringnav_systemset(void *win, void *ctx) {
     int result = stock_systemset_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_sysset", 1) : (void *)0;
     if (view) {
-        /* Stock's System page's rows and Date & Time, which V1.36 took off this list */
+        /* Stock's System page's rows and Date & Time, which V1.34 took off this list */
         static const char *const moved[][2] = { { "system_time", "systemset/datetime_page" },
                                                 { "system_update", "systemset/fwupdate_page" },
                                                 { "system_reset", "systemset/reset_page" },
@@ -7491,8 +7499,8 @@ void ringnav_boot(const char *page, const int *ctx) {
  * cancels it.
  * ponytail: every way leaves the latch to the stock release filter, as stock's own Home call here
  * did: the hold's key-up, where it reaches the filter, is swallowed there; clearing it let that
- * release act on Home, and on V1.36 go straight back from the Now Playing it had opened (#303). A
- * release that never arrives leaves it for chord_gate's next press to clear. */
+ * release act on Home, and since V1.34 go straight back from the Now Playing it had opened (#303).
+ * A release that never arrives leaves it for chord_gate's next press to clear. */
 int compact_now_playing(void) {
     pull_cancel();
     drop_input();
@@ -9507,15 +9515,6 @@ void ringnav_sort_key(char *s) {
         for (char *d = s; (*d = d[n]); ++d) {}
 }
 
-/* Replaces toolsLoadAllFile's 20,000-song check (SCAN_LIMIT): the scan goes on while it holds.
- * A leaf: the scanner reuses its gp after the call without reloading it. */
-int ringnav_scan_room(int songs) {
-    int folder;
-    /* This fixed call site keeps toolsLoadAllFile's third argument (folder scan) in $s5. */
-    __asm__("move %0,$21" : "=r"(folder));
-    return songs < 65000 || folder; /* at capacity, scan_refresh skips new rows but refreshes old */
-}
-
 /* Moves key's place to the front of the ring at sec, or forgets it near either end. */
 static void spot_keep(unsigned key, int sec, int total) {
     int i = 0, keep = sec >= RESUME_EDGE_S && sec < total - RESUME_EDGE_S;
@@ -10907,9 +10906,9 @@ int ringnav(void *ctx, void *event) {
         }
         /* The library scan's dialog, once its scan has ended: stock's Return and Cancel only stop
          * a scan (0x4a2574) and do nothing until its timer (0x4a2bac) has counted SCAN_DONE to 3
-         * and slept 1 s, ~1.4 s, then close it itself; so a press there seemed lost. The dialog's
-         * init clears SCAN_DONE (0x4a2de4). dialog_quit is safe twice, so the timer's own close
-         * after ours does nothing. */
+         * and slept 2 s (1 s until V1.34), ~2.4 s, then close it itself; so a press there seemed
+         * lost. The dialog's init clears SCAN_DONE (0x4a2de4). dialog_quit is safe twice, so the
+         * timer's own close after ours does nothing. */
         if (top && *(volatile int *)SCAN_DONE &&
             !tk_strcmp(widget_get_prop_str(top, "name", ""), "updatemusic_dialog")) {
             dialog_quit(top, 0);

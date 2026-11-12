@@ -315,9 +315,9 @@ def validate_assets(directory):
     # The RTC is written in UTC: the one hwclock -w literal gains -u in its own padding.
     assert demo.index(RTC_WRITE[1]) == stock.index(RTC_WRITE[0])
     # Wi-Fi keeps its power save: network_checkstatus's lps=0 becomes lps=2, the one byte at file
-    # offset 0x384d2d, and networkGetWifiSignal jumps to the payload, which reads rx_signal instead.
-    assert demo.index(WIFI_LPS[1]) == stock.index(WIFI_LPS[0]) == 0x384d2d - 25 and WIFI_LPS[0] not in demo
-    assert [i for i in range(0x384d00, 0x384d60) if demo[i] != stock[i]] == [0x384d2d] and demo[0x384d2d:0x384d2e] == b'2'
+    # offset 0x3852bd, and networkGetWifiSignal jumps to the payload, which reads rx_signal instead.
+    assert demo.index(WIFI_LPS[1]) == stock.index(WIFI_LPS[0]) == 0x3852bd - 25 and WIFI_LPS[0] not in demo
+    assert [i for i in range(0x385290, 0x3852f0) if demo[i] != stock[i]] == [0x3852bd] and demo[0x3852bd:0x3852be] == b'2'
     off = fileoff(stock, HOOKS['networkGetWifiSignal'][0])
     assert demo[off:off+8] == j(symbols(directory/'patch.elf')['ringnav_wifi_signal']).to_bytes(4, 'little') + bytes(4)
     # The lock window's 12-hour clock reads hour:minutes (H:mm), in stock HH:TT's slot after its 24-hour hh:mm.
@@ -340,7 +340,7 @@ def validate_assets(directory):
         assert entry['address'] == hex(address)
         assert struct.unpack_from('<I', stock, off)[0] == int(entry['original'], 16)
         assert struct.unpack_from('<I', demo, off)[0] == int(entry['replacement'], 16)
-        assert stock[off-8:off-4] == struct.pack('<I', 0x8f99fa08)
+        assert stock[off-8:off-4] == struct.pack('<I', 0x8f99fa14)
     changed = manifest['changed_assets']
     xx = 'release/assets/default/raw/images/xx/'
     STOCK_NAMED_ICONS = ('menu_coverflow.png', 'menu_coverflowdown.png')

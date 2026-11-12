@@ -68,7 +68,7 @@
 #define EVT_BLUR 0x10f  /* widget_set_focused_internal @0x6733b0 */
 #define EVT_IM_ACTION 0x13a /* the keyboard's OK, input_method_dispatch_action @0x659390 */
 #define EVT_SCROLL 0x14e /* stock scroll_view on_scroll @0x6028d0; table setter emits this too */
-#define EVT_SCROLL_END 0x14f /* stock lists queue their visible covers on this (album page registers @0x4a5db0) */
+#define EVT_SCROLL_END 0x14f /* stock lists queue their visible covers on this (demo's album page registers @0x4a5d7c) */
 #define VIEW_ON_SCROLL 0x100 /* scroll_view callback installed by list_view, called by touch @0x6028ec */
 #define CANVAS_X 0x00
 #define CANVAS_Y 0x04
@@ -336,15 +336,15 @@ static inline int arc_out(int r, int y) {
 #define MARQUEE_HOLD_MS 1500
 #define MARQUEE_PASSES 3        /* the selected row's title: navigation.c marq_moved */
 #define HSCROLL_ONLY_FOCUS 0x78 /* hscroll_label_t, a char: hscroll_label_set_only_focus */
-#define HSCROLL_LOOP 0x7a       /* a char: a pass ends on its lull and starts again (0x5fb350) */
+#define HSCROLL_LOOP 0x7a       /* a char: a pass ends on its lull and starts again (0x5fb86c) */
 #define HSCROLL_YOYO 0x7b       /* a char: it scrolls back instead of snapping (0x5fb888) */
 #define HSCROLL_DELAY 0x88      /* ms its start waits before the first step (hscroll_label_start) */
 #define HSCROLL_SPEED 0x8c      /* a float, px per ms; 0 runs a pass in its duration (0x5fb394) */
 #define HSCROLL_TEXT_W 0x94     /* its measured text width: hscroll_label_get_range */
 #define HSCROLL_TIMER 0xa4      /* its running timer's id; 0 stopped (stock paints the ellipsis) */
 /* Every pass's fastest pace, 0.05f px per ms: stock Now Playing's title and artist (0x53d0e8); its
- * set_hscroll_label_attribute sets 0.1, some pages 0.2. As float bits, which order as their values
- * for any positive float. */
+ * set_hscroll_label_attribute sets the same since V1.36 (0.1 before), some pages 0.2. As float bits,
+ * which order as their values for any positive float. */
 #define HSCROLL_PACE 0x3d4ccccd
 #define TIMER_CTX 0x20          /* timer_info_t.ctx: stock's hscroll lull reads its label there */
 #define IDLE_CTX 0x20           /* idle_info_t.ctx: dialog_modal's close reads its dialog there */
@@ -404,7 +404,7 @@ static inline int arc_out(int r, int y) {
 #define LIST_VIEW_LAYOUT_SLOT 0x93a4c4 /* its vtable slot (vtable 0x93a4bc + 8) */
 #define LIBRARY_ROW_BODY 0x535540      /* localmusic_page_init's row body immediate (ipod.json) */
 #define LIBRARY_ROW_ICON_X 0x535678    /* its icon x (art_inset) */
-#define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x93a854 */
+#define IMAGE_DRAW_SCALE_DOWN 5        /* "scale_down" in the stock draw type table @0x93ae54 */
 #define IMAGE_DRAW_CENTER 1            /* "center", the same table */
 #define IMAGE_DRAW_FILL 8              /* "fill", the same table: stretched to the box */
 /* iPod fast-scroll letter: the selected row's first character in white, LETTER_PX high, on a

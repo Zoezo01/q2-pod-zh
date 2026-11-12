@@ -1211,7 +1211,7 @@ IMMEDIATES = ipod.immediate_values(ipod.SET0) | {name: SET0_WORDS[name if name i
 def code_patches():
     """(address, stock word, patched word, purpose) for each word patch_code changes, in its order."""
     lookups = [(at + 4 * i, old, new, why) for at, slot in ((0x4a7ed4, 0x468), (0x4af83c, 0x468), (0x537fbc, 0x420))
-               for i, (old, new, why) in enumerate(((0x8f99af04, 0x8f99a914, 'lookup unwind uses navigator_close'),
+               for i, (old, new, why) in enumerate(((0x8f99af04, ipod.CLOSE_LOAD, 'lookup unwind uses navigator_close'),
                                                     (0x0320f809, 0x0320f809, 'lookup close call'),
                                                     (0, 0x8fa40000 | slot, 'lookup close receives the top window name')))]
     immediates = [(int(at, 16), int(old, 16), int(old, 16) & 0xffff0000 | (IMMEDIATES[v] if isinstance(v := group['value'], str) else v),
@@ -1221,14 +1221,14 @@ def code_patches():
         (icon, 0x24070032, 0x24070000, 'playlist tile icon width 0'),
         (icon + 0x54, 0x2407005b, 0x240700a4, 'playlist tile label spans the tile'),
         (icon + 0x60, 0x2405003f, 0x24050000, 'playlist tile label at the tile edge'),
-        (style, 0x2505c434, 0x2505c430, 'playlist tile label centred'))]
+        (style, 0x2505c434, 0x2505c990, 'playlist tile label centred'))]
     # toolsTimeItoa's two formats, back to back
     times = zip(struct.unpack('<7I', b'%02d:%02d:%02d\0\0%02d:%02d\0\0\0'), struct.unpack('<7I', b'%d:%02d:%02d\0\0\0\0%d:%02d\0\0\0\0\0'))
     return [*lookups, *immediates, *[(int(at, 16), int(old, 16), 0x0c102800, rows['purpose']) for at, old in rows['sites']],
             *[(int(at, 16), int(old, 16), jal, ipod.AUDIT[name]['purpose']) for name, jal in (('stock_row_layout_calls', 0x0c103400), ('stock_row_text_calls', 0x0c103800),
                                                                                          ('stock_row_style_calls', 0x0c103c00)) for at, old in ipod.AUDIT[name]['sites']],
             (0x532d3c, 0x0320f809, 0, 'folder rebind retains the width owned by its row layouter'),
-            *[(int(at, 16), int(old, 16), 0x8f99e9f4, ipod.AUDIT['navbar_resize_calls']['purpose']) for at, old in ipod.AUDIT['navbar_resize_calls']['sites']], *tiles,
+            *[(int(at, 16), int(old, 16), ipod.DUMMY_LOAD, ipod.AUDIT['navbar_resize_calls']['purpose']) for at, old in ipod.AUDIT['navbar_resize_calls']['sites']], *tiles,
             (ipod.inc('LIST_VIEW_LAYOUT_SLOT'), ipod.inc('LIST_VIEW_LAYOUT'), 0x40b000, 'settings lists stack SET_ROW rows and map their children'),
             *[(0x78bba0 + 4 * i, old, new, 'times without a leading zero') for i, (old, new) in enumerate(times)],
             (0x534cf8, 0x0320f809, 0x0c103000, 'boot resume restores the queue paused and stays on Home')]
