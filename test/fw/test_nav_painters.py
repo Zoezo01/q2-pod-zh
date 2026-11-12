@@ -1244,6 +1244,21 @@ def test_a_line_too_long_scrolls_in_its_label_never_a_wider_box(fw, st):
     assert w == labels[0].box[2] and abs(2 * x + w - 375) <= 1
 
 
+def test_v134s_wrapping_label_gets_the_box_its_wrapped_lines_need(fw, st):
+    """V1.34's plain toast is one word-wrapping label: AWTK sizes it, the box follows its height."""
+    ui = classic(fw, st)
+    win = ui.window('msginfo_dialog', kind='dialog')
+    label = ui.add('label', win, (10, 100, 355, 120))
+    ui.set_text(label, 'Rockbox Themes are ready in Rockbox\'s Theme Settings')
+    fw.mock('label_resize_to_content', lambda w, lo, hi, lo_h, hi_h, *_: ui.nodes[w].move(*ui.nodes[w].box[:2], hi, 3 * lo_h))
+    canvas = Canvas(fw)
+    paint_bg(fw, win, canvas)
+    (x, y, w, h), _, _ = canvas.boxes[0]
+    lx, ly, lw, lh = label.box
+    assert lw == w and lh == 3 * 24 and y < ly and ly + lh < y + h  # three lines inside the box
+    assert label.props['style:normal:text_align_h'] == 'center' and label.props['_final_n']
+
+
 def test_a_toast_moves_its_lines_once(fw, st):
     win, labels, canvas = toast(fw, st, ['Done'])
     moves = len(fw.calls('widget_move_resize'))

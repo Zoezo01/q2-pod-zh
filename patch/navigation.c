@@ -2294,6 +2294,8 @@ static void hold_paint(void *w, void *canvas, int over) {
 }
 /* The toast (msginfo_dialog) and the update's dialog: stock's full-screen dialog, clear, under a
  * box sized to its lines, whichever half. The serial's QR takes the box's colour on its own rect.
+ * V1.34's plain toast (kind 1) is one word-wrapping label, sized here to its wrapped lines; V1.32's
+ * and its kinds 2 and 4 are hscroll_labels, a line each.
  */
 #define TOAST_RGBA 0xee2b2b2bu
 #define TOAST_LABEL_W 331
@@ -2312,27 +2314,30 @@ static void toast_paint(void *w, void *canvas) {
         if (qr) widget_set_prop_int(w, "style:normal:round_radius", 12);
     }
     if (qr || !P(canvas, CANVAS_LCD)) return;
-    int lines = 0, widest = 0;
+    int high = 0, widest = 0;
     for (unsigned i = 0, n = widget_count_children(w); i < n; ++i) {
         void *c = widget_get_child(w, i);
-        if (tk_strcmp(widget_get_type(c), "hscroll_label")) continue;
+        int wrap = !tk_strcmp(widget_get_type(c), "label");
+        if (!wrap && tk_strcmp(widget_get_type(c), "hscroll_label")) continue;
         if (I(c, W_W) != TOAST_LABEL_W) {
-            widget_move_resize(c, 22, 145 + TOAST_LINE * lines, TOAST_LABEL_W, TOAST_LINE);
+            widget_move_resize(c, 22, 145 + high, TOAST_LABEL_W, TOAST_LINE);
             face_label(c, TOAST_PX);
             text_ink(c, 0xffffffffu, INK_LABEL);
+            if (wrap) /* stock's 120 px: five lines */
+                label_resize_to_content(c, TOAST_LABEL_W, TOAST_LABEL_W, TOAST_LINE, 120);
         }
         const unsigned *s = widget_get_text(c);
         int px = TOAST_PX, chars = (int)wide_len(s);
         canvas_set_font(canvas, theme_face(s, chars, &px), px);
         int text = (int)(canvas_measure_text(canvas, s, chars) + 0.5f);
         if (text > widest) widest = text;
-        ++lines;
+        high += I(c, W_H);
     }
-    if (!lines) return;
+    if (!high) return;
     unsigned fill = (unsigned)I(P(canvas, CANVAS_LCD), LCD_FILL_COLOR);
-    /* a line too long scrolls inside its label: never a box wider than that */
+    /* a line too long scrolls or wraps inside its label: never a box wider than that */
     int bw = widest + 44 < TOAST_LABEL_W ? widest + 44 : TOAST_LABEL_W;
-    rect_t box = { (375 - bw) / 2, 138, bw, TOAST_LINE * lines + 15 };
+    rect_t box = { (375 - bw) / 2, 138, bw, high + 15 };
     fill_box(canvas, &box, flip_if(light, TOAST_RGBA), 12);
     stock_canvas_set_fill_color(canvas, fill);
 }

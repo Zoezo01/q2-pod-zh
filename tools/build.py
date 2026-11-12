@@ -1165,6 +1165,7 @@ FUNCTIONS = {
  'widget_to_local': ('int', 'void *, void *'),
  'widget_dispatch_event_to_target_recursive': ('int', 'void *, void *'),
  'label_create': ('void *', 'void *, int, int, int, int'),
+ 'label_resize_to_content': ('int', 'void *, unsigned, unsigned, unsigned, unsigned'),  # Classic's toast (navigation.c toast_paint)
  'stock_search': ('int', 'void *, void *'),
  'widget_set_children_layout': ('int', 'void *, const char *'),
  'widget_get_canvas': ('void *', 'void *'),  # the lyrics page measures its lines (lyrics.c)
