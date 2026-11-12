@@ -431,6 +431,12 @@ close (`0x4a1db0`, on `EVT_WINDOW_CLOSE`) makes it: Now Playing had no Quick Set
 had gone back to the one left open and closed it (#303). Inferred from the handlers; the emulator
 mocks the window manager.
 
+Over a prompt (`confirminfo_dialog` in front: Shut Down?, and Q2 Pod's own) the hold cancels it
+with `dialog_quit(top, 4)`, the prompt's own Return (`0x499bec`). `usable` is true there, so the
+hold used to open Now Playing under the prompt's modal loop, and the prompt came back over it: a
+second Shut Down? (#303). That it was the same prompt back, not a new one, is inferred from a
+tester's video and stock's handlers; the emulator mocks the window manager.
+
 **System settings → Controls → Hold Return** (`Q2POD HOLDRETURN`) picks the
 destination: Recent (0, the default) is the behaviour above; Home (1) calls the stock Home
 destination from any page but Home, Now Playing included, and clears `np_origin`. On Home the hold

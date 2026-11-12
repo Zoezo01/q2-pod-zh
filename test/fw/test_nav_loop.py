@@ -2604,6 +2604,18 @@ def test_a_quit_that_quick_settings_refuses_is_no_hold_to_wait_for(fw, stock_byt
     assert fw.fn('compact_now_playing', C.c_int)() == 0 and not st('qs_hold', C.c_uint).value
 
 
+def test_a_held_return_over_shut_down_cancels_it_and_opens_nothing(fw, stock_bytes):
+    loop = Loop(fw, stock_bytes)
+    Config(fw)
+    fw.var('g_poweroff_state', C.c_ubyte).value = 1
+    prompt = loop.ui.window('confirminfo_dialog', 'dialog')
+    opened = []
+    fw.mock('navigator_switch_to_with_context', lambda name, *_: opened.append(C.string_at(name)) and 0)
+    fw.mock('navigator_back_to_home', lambda *_: opened.append(b'home') and 0)
+    assert fw.fn('compact_now_playing', C.c_int)() == 0
+    assert [c[1][:2] for c in fw.calls('dialog_quit')] == [(prompt.p, 4)] and opened == []
+
+
 def test_a_hold_whose_quick_settings_stayed_up_is_forgotten(fw, stock_bytes, st):
     loop = Loop(fw, stock_bytes)
     hold = QuickHold(fw, loop)

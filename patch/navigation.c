@@ -7482,7 +7482,8 @@ void ringnav_boot(const char *page, const int *ctx) {
  * Over Quick Settings the hold closes it, as Return does (ringnav), and acts on the page under it
  * once it has gone (quick_poll): Now Playing opened over the dialog left it open underneath, and
  * stock's pull-down starts none while one is (g_dropdown_menu_state), so Now Playing had no Quick
- * Settings until Return had gone back to the one left open and closed it (#303).
+ * Settings until Return had gone back to the one left open and closed it (#303). Over a prompt it
+ * cancels it.
  * ponytail: every way leaves the latch to the stock release filter, as stock's own Home call here
  * did: the hold's key-up, where it reaches the filter, is swallowed there; clearing it let that
  * release act on Home, and on V1.34 go straight back from the Now Playing it had opened (#303). A
@@ -7497,6 +7498,13 @@ int compact_now_playing(void) {
         const char *name = widget_get_prop_str(top, "name", "");
         if (!tk_strcmp(name, "statusbar_dialog")) {
             if (!dialog_quit(top, 0)) st.qs_hold = (unsigned)time_now_ms(); /* not one refused */
+            return 0;
+        }
+        /* A prompt (Shut Down? and ours) is usable, but Now Playing opened under its modal loop
+         * and the prompt came back over it: a second Shut Down? (#303). The hold cancels it, as
+         * the prompt's own Return does (dialog_quit 4, 0x499bec). */
+        if (!tk_strcmp(name, "confirminfo_dialog")) {
+            dialog_quit(top, 4);
             return 0;
         }
         pod_settings();
