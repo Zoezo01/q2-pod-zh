@@ -58,7 +58,7 @@ class Sl(C.Structure):
 
 class Req(C.Structure):
     _fields_ = [('thread', C.c_ulong), ('running', C.c_int), ('fail', C.c_int), ('cancel', C.c_int), ('done', C.c_int), ('id', C.c_uint),
-                ('n', C.c_uint), ('len', C.c_uint), ('buf', C.c_void_p), ('path', C.c_void_p)]
+                ('n', C.c_uint), ('len', C.c_uint), ('buf', C.c_void_p), ('path', C.c_void_p), ('field', C.c_int)]
 
 
 class Lv(C.Structure):
@@ -74,7 +74,7 @@ class Pg(C.Structure):
                 ('f', C.POINTER(C.c_char_p)), ('pages', C.c_int), ('paging', C.c_int), ('moved', C.c_byte),
                 ('sec', C.c_void_p), ('nsec', C.c_byte), ('cur', C.c_byte), ('sx', C.c_int), ('sy', C.c_int),
                 *((n, C.c_byte) for n in ('sdown', 'sclaim')), ('art_lo', C.c_int), ('art_hi', C.c_int),
-                ('sort', C.c_char_p * 6)]
+                ('sort', C.c_char_p * 6), ('field', C.c_int)]
 
 
 class Qp(C.Structure):
@@ -392,7 +392,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort field\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1736,6 +1736,7 @@ class Page:
     def __init__(self, fw, manifest=b'name=Foo\n', opens=True):
         self.fw, self.sel, self.y, self.timers, self.drawn, self.toasts, self.backs = fw, 0, 0, 0, 0, [], 0
         self.aborts: list = []  # sections()' swipe aborts
+        self.tips: list = []  # field()'s box hints
         self.world = card(fw, foo=manifest)
         self.world.files[b'/tmp/q2-foo'] = b'1'
         self.page, self.view = block(fw, size=4096), block(fw, size=4096)  # widgets' bytes, all zero
@@ -2664,6 +2665,125 @@ def test_an_empty_search_goes_back_to_the_menu(fw):
     fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
     fw.fn('addon__go', C.c_int, C.c_void_p)(None)
     assert p.pg.depth == 1
+
+
+SECRET = b's3cr%t'
+USER = (b'field', b'user', b'Username:', b'alice', b'', b'')
+PASSWORD = (b'field', b'login', b'Password:', b'***', b'pw', b'')
+
+
+def field(p, i, typed=SECRET):
+    # A field row pressed, its box's hint its title (read as it is set: edit_create's names are its stack's), and
+    # typed's OK.
+    box, p.tips = edit_box(p.fw), []
+    p.fw.mock('widget_set_prop_str', lambda w, k, v, *_: C.string_at(k) == b'tips' and p.tips.append(C.string_at(v)))
+    p.click(i)
+    assert p.pg.edit == box and p.pg.field == i + 1
+    p.fw.mock('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, typed[:n - 1] + b'\0', min(len(typed), n - 1) + 1) and 0)
+    p.fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    p.fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+
+
+def test_a_field_row_sends_its_text_and_takes_the_reply_in_the_levels_place(fw):
+    p = Page(fw)
+    texts: list = []  # read as they are set: a caption points into a reply let go since
+    fw.mock('widget_set_text_utf8', lambda w, t, *_: texts.append(C.string_at(t)))
+    p.answer(rows=[item(0, b'info'), USER, PASSWORD])
+    p.sel = 2
+    field(p, 2)
+    assert p.tips == [b'Password:']
+    assert p.request().endswith(b'\tlogin\tpw\ts3cr%25t\n') and p.pg.act == 0
+    assert p.pg.depth == 1 and p.top.op == b'menu' and p.top.args == b'' and p.top.title == b'Foo'
+    assert p.top.state == K_LOAD and p.top.id == p.req.id and p.top.sel == 2
+    assert p.pg.term == b'' and p.pg.field == 0
+    p.answer(rows=[item(0, b'info'), USER, (b'field', b'login', b'Password:', b'*****', b'pw', b'')])
+    assert p.top.state == K_READY and p.top.n == 3 and p.cell(2, 3) == b'*****' and p.pg.depth == 1
+    assert b'Username:' in texts and not [t for t in texts if SECRET in t]  # nothing on screen holds it
+
+
+def test_a_field_text_of_63_bytes_is_sent_whole(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    field(p, 0, b'a' * 63)
+    assert p.request().endswith(b'\tuser\t' + b'a' * 63 + b'\n')
+
+
+def test_a_field_text_too_long_to_send_whole_is_dropped_and_says_so(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    calls = len(fw.calls('fw_pthread_create'))
+    field(p, 0, b'a' * 64)
+    assert len(fw.calls('fw_pthread_create')) == calls and p.toasts == [b'Too long']
+    assert p.pg.term == b'' and p.top.state == K_READY and p.pg.field == 0
+
+
+def test_a_field_sent_while_the_app_restarts_is_its_levels_error_and_retry_asks_the_level(fw):
+    p = Page(fw, NOSTOP)
+    p.answer(rows=[USER, PASSWORD])
+    field(p, 1)
+    p.ap.a[0].restart = 1
+    p.answer(fail=REQ_NOSOCK, raw=b'')
+    assert p.top.state == K_ERROR and p.top.note == b"Foo isn't running" and p.drawn == 2
+    p.click(0)
+    assert SECRET not in p.request() and p.request().endswith(b'\tmenu\n')
+
+
+def test_a_level_asked_while_the_app_restarts_still_waits(fw):
+    p = Page(fw)
+    p.ap.a[0].restart = 1
+    p.answer(fail=REQ_NOSOCK, raw=b'')
+    assert p.top.state == K_WAIT
+
+
+def test_a_request_with_no_worker_is_wiped_before_it_is_let_go(fw):
+    p = Page(fw)
+    fw.mock('fw_pthread_create', lambda *_: 11)  # EAGAIN: no worker
+    fw.fn('addon__req_send', None, C.c_char_p, C.c_char_p, C.c_char_p)(b'/s', b'login', b'\ts3cret')
+    assert p.req.done == 1 and p.req.running == 0 and C.string_at(p.req.buf, 64) == b'\0' * 64
+
+
+def test_a_field_row_with_no_context_sends_the_text_alone(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    field(p, 0, b'alice')
+    assert p.request().endswith(b'\tuser\talice\n')
+
+
+def test_a_fields_failure_is_its_levels_error_and_retry_never_sends_the_text_again(fw):
+    p = Page(fw, NOSTOP)
+    p.answer(rows=[USER, PASSWORD])
+    field(p, 1)
+    p.answer(status=b'refused', msg=b'Wrong password')
+    assert p.top.state == K_ERROR and p.top.note == b'Wrong password' and p.top.title == b'Foo'
+    p.click(0)
+    assert p.request().endswith(b'\tmenu\n') and SECRET not in p.request()
+
+
+def test_an_empty_fields_box_sends_nothing(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    calls = len(fw.calls('fw_pthread_create'))
+    field(p, 0, b'')
+    assert len(fw.calls('fw_pthread_create')) == calls and p.top.state == K_READY
+
+
+def test_a_field_whose_row_changed_under_the_box_sends_nothing(fw):
+    p = Page(fw)
+    p.answer(rows=[USER])
+    box = edit_box(fw)
+    p.click(0)
+    p.fw.fn('addon__fetch', None, C.POINTER(Lv))(p.pg.lv)
+    p.answer(rows=[item(0)])  # a reply landed while the box was open
+    calls = len(fw.calls('fw_pthread_create'))
+    fw.mock('widget_get_text_utf8', lambda w, out, n, *_: C.memmove(out, b'x\0', 2) and 0)
+    fw.fn('addon__searched', C.c_int, C.c_void_p, C.c_void_p)(None, None)
+    fw.fn('addon__go', C.c_int, C.c_void_p)(None)
+    assert len(fw.calls('fw_pthread_create')) == calls and p.pg.term == b''
+
+
+def test_the_worker_keeps_none_of_a_requests_bytes_past_its_reply(fw):
+    req = worker(fw, [b'Q2SPOT/1\n1\tok\n'])
+    assert C.string_at(req.buf, 17) == b'Q2SPOT/1\n1\tok\n\0\0\0'
 
 
 def test_a_sole_search_row_stays_a_row(fw):

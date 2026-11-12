@@ -83,7 +83,7 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort"
+    "playlist progress pages library goto sleep game audio sections art window urls sort field"
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -913,6 +913,7 @@ static struct {
     unsigned id, n, len; /* id: the latest request's, never reused */
     char *buf;
     const char *path; /* the app's browse socket */
+    int field;        /* it sends a field row's text (field_sent): no answer is an error, not a wait */
 } req __attribute__((section(".scratch")));
 enum { REQ_OK, REQ_NOSOCK, REQ_FAIL };
 
@@ -951,7 +952,9 @@ static void *worker(void *unused) {
         }
     }
     if (fd >= 0) close(fd);
-    if (req.n <= REPLY_MAX) req.buf[req.n] = 0; /* past the reply, the request's bytes */
+    /* the request's bytes past the reply: none kept, a field row's text being one (field_sent) */
+    if (req.n < req.len) memset(req.buf + req.n, 0, req.len - req.n);
+    if (req.n <= REPLY_MAX) req.buf[req.n] = 0;
     req.done = 1;
     return 0;
 }
@@ -979,7 +982,10 @@ static void req_send(const char *path, const char *op, const char *tail) {
                 ? tk_snprintf(req.buf, REQ_MAX, "Q2SPOT/1\n%u\t%s%s\n", req.id, op, tail)
                 : 0;
     req.len = n > 0 && n < REQ_MAX ? (unsigned)n : 0;
+    req.field = 0;
     req.running = req.len && !pthread_create(&req.thread, 0, worker, 0);
+    /* no worker to clear what it held (a field's text): cleared here, a cut one's REQ_MAX too */
+    if (!req.running && req.buf) memset(req.buf, 0, REQ_MAX);
     if (!req.running) req.done = 1;
 }
 
@@ -999,7 +1005,9 @@ static int req_done(void) {
  * the title bar's search icon instead, take_find), sort opens as list does (caps word "sort"; one
  * just after a taken search is the title bar's sort icon instead, take_sort), remote opens the QR
  * code, local plays from the card (uri: a song, or a folder to list; context "album": in track
- * order), info does nothing; its position, when set, is the op a held Play/Pause sends. progress
+ * order), field opens the T9 box too, whose text goes to its uri, after its context, the reply
+ * taking the level's place with no level pushed and nothing titled with the text (field_sent),
+ * info does nothing; its position, when set, is the op a held Play/Pause sends. progress
  * (progress_row) draws a bar of its position, permille, under its title and subtitle; a press or a
  * held Play/Pause does nothing. page (caps word "window") shows the level's own list from the
  * cursor in its context, in the level's place rather than over it (page_to): uri "prev" slides it
@@ -1018,7 +1026,7 @@ static int req_done(void) {
  * side; none past the ends. Only the first level swipes: a level opened from a section is a level
  * as any other, and Back returns to the section. The wheel never changes section. */
 enum { K_LOAD, K_READY, K_ERROR, K_WAIT }; /* K_WAIT: no socket yet, the app starting */
-enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION, G_FIND, G_SORT };
+enum { G_ROW, G_SHOW, G_SEARCH, G_SECTION, G_FIND, G_SORT, G_FIELD };
 
 /* A level's page that can't show the app's rows (an error, or a load or start taking SLOW_MS) has a
  * Stop row whenever the app may be running, so a frozen one can always be ended; unless its q2app
@@ -1056,6 +1064,7 @@ static struct {
     char sdown, sclaim;
     int art_lo, art_hi; /* the rows whose covers may be decoded, half open (art_window) */
     char *sort[6];      /* the sort icon's row (take_sort), its fields in the shown reply */
+    int field;          /* the box open is field row field - 1's; 0, a search's */
 } pg __attribute__((section(".scratch")));
 
 static void qr_open(const char *state, const char *title);
@@ -1603,7 +1612,7 @@ static void got(void) {
             if (!strcmp(g[2], "pages") && g[3][0] && pg.pages < ADDON_PAGES) page_next(l);
         }
         append(l, from);
-    } else if (req.fail == REQ_NOSOCK &&
+    } else if (req.fail == REQ_NOSOCK && !req.field && /* a field's text: its error, never resent */
                (app()->restart || now - app()->launch_at < ADDON_START_MS)) {
         if (l->state != K_WAIT && l->state != K_READY) l->state = K_WAIT, show();
         pg.again = now + 500;
@@ -1666,10 +1675,17 @@ static int clicked(void *ctx, void *event) {
     return 0;
 }
 
+/* The box's text: a search's cut to pg.term; a field's that doesn't fit whole (it fills a buffer a
+ * byte larger) is let go, cleared, and nothing is sent. */
 static int searched(void *ctx, void *event) {
+    char t[sizeof pg.term + 1] = "";
     (void)ctx, (void)event;
-    if (widget_get_text_utf8(pg.edit, pg.term, sizeof pg.term)) pg.term[0] = 0;
-    later(pg.term[0] ? G_SEARCH : G_SHOW, 0);
+    if (widget_get_text_utf8(pg.edit, t, sizeof t)) t[0] = 0;
+    if (pg.field && strlen(t) >= sizeof pg.term) /* none of it goes: the box closes, the level stays */
+        memset(t, 0, sizeof t), pg.field = 0, toast("Too long");
+    tk_snprintf(pg.term, sizeof pg.term, "%s", t);
+    memset(t, 0, sizeof t);
+    later(!pg.term[0] ? G_SHOW : pg.field ? G_FIELD : G_SEARCH, 0);
     return 0;
 }
 
@@ -1723,12 +1739,14 @@ static int swipe(void *ctx, void *event) {
     return 11; /* RET_STOP */
 }
 
-/* peq_ui.c's T9 edit over the title, its keyboard open: a Search row's press, or its icon's tap. */
-static void search_box(void) {
+/* peq_ui.c's T9 edit over the title, its keyboard open: a Search row's press, or its icon's tap
+ * (field 0); or field row field - 1's press, its title the box's hint. */
+static void search_box(int field) {
     keep_sel();
+    pg.field = field;
     widget_destroy_children(pg.page), pg.view = 0; /* the box alone, as Spotify's */
     pg.edit = edit_create(pg.page, "text", 2, 26);
-    t9_box(pg.page, pg.edit, app()->tips);
+    t9_box(pg.page, pg.edit, field ? cell(field - 1, 2) : app()->tips);
     widget_on(pg.edit, EVT_VALUE_CHANGED, searched, 0);
     widget_on(pg.edit, EVT_IM_ACTION, searched, 0);
     widget_on(pg.edit, EVT_BLUR, search_left, 0);
@@ -1750,6 +1768,31 @@ static void open_list(const char *uri, const char *ctx, const char *title) {
     if (!ctx[0] || put(a, sizeof a, ctx)) push(uri, a, strlen(a), title);
 }
 
+/* A field row's text, typed in its box: sent to the row's uri after its context, and the reply
+ * taken as the level's own (got), in its place: no level pushed, nothing titled with the text, the
+ * level's Loading… page meanwhile and its selected row kept. A failure is the level's error page,
+ * whose Retry asks for the level's own op, so the text is never sent again. The text is cleared
+ * once it is in the request, which the worker clears once it is sent: a password goes to no title,
+ * log or cache. A row no longer a field (a reply landed under the box) sends nothing. */
+static void field_sent(lv_t *l) {
+    char a[sizeof l->args] = "";
+    int i = pg.field - 1;
+    pg.field = 0;
+    if (l->state == K_READY && i >= 0 && i < l->n && !strcmp(cell(i, 0), "field") &&
+        cell(i, 1)[0] && (!cell(i, 4)[0] || put(a, sizeof a, cell(i, 4))) &&
+        put(a, sizeof a, pg.term)) {
+        req_send(app()->browse, cell(i, 1), a);
+        req.field = 1;
+        pg.act = 0;
+        l->id = req.id;
+        drop(); /* after: the uri was the shown reply's */
+        l->n = 0, l->state = K_LOAD;
+    }
+    memset(pg.term, 0, sizeof pg.term);
+    memset(a, 0, sizeof a);
+    show();
+}
+
 /* A row's choice, on a timer: a row's click may not rebuild the list it is in. */
 static int go(const void *unused) {
     (void)unused;
@@ -1763,12 +1806,14 @@ static int go(const void *unused) {
         int to = pg.cur + i;
         if (pg.depth == 1 && to >= 0 && to < pg.nsec) sec_open(to, i);
     } else if (pg.next == G_FIND) {
-        if (l->state == K_READY && l->find) search_box();
+        if (l->state == K_READY && l->find) search_box(0);
     } else if (pg.next == G_SORT) { /* the sort icon, opening as its row would */
         if (l->state == K_READY && l->sort) open_list(pg.sort[1], pg.sort[4], pg.sort[2]);
     } else if (pg.next == G_SEARCH) {
         if (put(a, sizeof a, pg.term)) push("search", a, strlen(a), pg.term);
-    } else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
+    } else if (pg.next == G_FIELD)
+        field_sent(l);
+    else if (l->state == K_ERROR && i == 1 && app()->nostop) { /* Cancel, as Return */
         if (pg.depth > 1)
             pop();
         else
@@ -1805,7 +1850,9 @@ static int go(const void *unused) {
             if (card_path(uri))
                 songs_open(uri, cell(i, 2), !strcmp(ctx, "album"));
         } else if (!strcmp(kind, "search"))
-            search_box();
+            search_box(0);
+        else if (!strcmp(kind, "field"))
+            search_box(i + 1);
     }
     return 0;
 }
