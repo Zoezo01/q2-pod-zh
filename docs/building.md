@@ -84,8 +84,8 @@ python3 test/aic_build.py STOCKFS BUILD    # notifier development guard, ABI, de
 python3 test/remote.py                     # q2remote protocol, auth, event and framebuffer checks
 python3 test/rotator.py STOCK_MODULE        # actual MIPS rotator clock ownership and failure paths
 python3 test/rotator_build.py [BUILD...]    # dev-only guard (no build needed); given builds, packed/default module isolation
-python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks
-python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios
+python3 test/playback.py /tmp/q2-build     # grouped traversal, snapshots and the wheel's ticks (cc)
+python3 test/patch.py /tmp/q2-build        # the patched MIPS payload, wheel and UI scenarios (cc)
 python3 test/chapters.py                   # embedded chapter parsing, both MP4 formats and async extraction
 python3 test/m4b.py /tmp/q2-build          # native TagLib M4B/MP4 metadata dispatch
 python3 test/id3.py /tmp/q2-build          # the built player's MP3 ReplayGain on ID3v2.3/2.4 tags
@@ -97,7 +97,7 @@ python3 test/hci_natural.py /tmp/q2-build   # natural changes in the real player
 python3 test/player_seam.py /tmp/q2-build   # AAC, Opus and Vorbis gapless trims in the real player, each format's seam and each wrong tag against stock (ffmpeg, unsquashfs)
 python3 test/mp3_gapless_player.py /tmp/q2-build  # built MIPS gapless hooks, preload isolation, seeks and cleanup
 python3 test/ldac.py /tmp/q2-build         # shipped LDAC intermediate rates and native adaptive controller
-python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O
+python3 test/headset_io.py /tmp/q2-build   # real MIPS headset worker with simulated kernel I/O (cc)
 python3 test/bluealsa.py /tmp/q2-build     # the patched bluealsa's DROP paths against stock's, delayed encoder signal
 python3 test/alsa.py BUILD QEMU_MIPSEL     # ALSA startup lock regression (see internals.md)
 python3 test/ui_preview.py BEFORE AFTER OUT_DIR  # not a test: side-by-side iPod layout review sheets of two builds (or one build's two themes; --themes, ImageMagick)
@@ -106,6 +106,7 @@ python3 -m pytest test/fw --basetemp ~/.cache/q2-pytest/fw  # the firmware's C o
 ```
 
 - **MIPS suite:** `test/patch.py` executes the actual patched payload and the stock key and touch filters under Unicorn. UI services are mocked; the one other mocked boundary is the `system()` call that Key Tone uses to click the speaker. Case coverage lives in `test/patch.py`. Run the payload, headset worker, metadata dispatch and packaging checks for both Stock and iPod builds.
+- **Where a machine's hook runs:** `Machine.hook` (the mocks, and what a test's subclass adds) is Python, so Unicorn does not call it at every instruction: a small C filter, compiled as the suite starts (`cc`), calls it at each symbol's address, at each address a mock is set at and anywhere in the mocks' own region (`0x1000000` up). A hook that tests any other address itself (a place inside a stock function) names it first with `watch(address)`, or is never called there. `test/playback.py` and `test/headset_io.py` run the same machine.
 - **Draw-call trace:** `Q2_TRACE=FILE python3 test/patch.py BUILD` also writes every draw and widget-property call, each hook's return and each passed case to FILE, by value: payload addresses appear as symbol names (or `P`), stack ones as `S`. Two builds that draw the same give byte-identical files, so `cmp` checks a refactor that should change nothing on screen.
 - **Known gap:** the stock rounded vgcanvas branch can't run end to end under Unicorn 2.1.4. Stock is built `-mfp64`, and Unicorn's MIPS32 FPU only implements `FR=0`, so its 64-bit conversions trap. The test runs the branch up to that instruction and asserts the calls before it.
 - **Reproducibility:** two fresh builds must produce identical `update.tar` files. Packaging verifies MD5 entries, unchanged kernel and rootfs metadata, and a rootfs no larger than stock.
@@ -207,7 +208,7 @@ All 13,658 took 38 minutes one file after another, pinned with `CMUT_CPUS` to fo
 
 The order for the rest:
 
-1. The rest of `test/fw`'s files, by size: `navigation.c` and `playback.c` among them. `test/patch.py` takes about 6 minutes a run and needs a stock build, so it can't run per mutant in public CI.
+1. The rest of `test/fw`'s files, by size: `navigation.c` and `playback.c` among them. `test/patch.py` takes about 3.5 minutes a run and needs a stock build, so it can't run per mutant in public CI.
 2. `coverflow.c` and the `peq*` files, through `test/coverflow.py` and `test/peq.py`, which need the 32-bit libraries.
 
 ## Coverage
