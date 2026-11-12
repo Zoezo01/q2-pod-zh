@@ -25,4 +25,4 @@ for rel in files:
             sa, sb = slot(A, w), slot(B, w)
             mark = 'UNCHANGED-LINE' if line in oldset else 'IN-MAIN-TOO' if m.group(0).lower() in oldtext else 'new-value'
             if sa != sb or sb is None:
-                print(f'{rel}:{i}: {m.group(0)} {mark}  V1.32 slot={sa}  V1.36 slot={sb}')
+                print(f'{rel}:{i}: {m.group(0)} {mark}  old slot={sa}  new slot={sb}')
