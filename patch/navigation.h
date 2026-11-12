@@ -440,6 +440,7 @@ int np_fit_due(const void *info);
 int np_sync(void *top);
 void bar_title(void *bar, void *top);
 void slider_fill(void *slider, unsigned color);
+void slider_knobless(void *slider);
 void np_theme(void);
 void paint_scrubber(void *w, void *canvas);
 /* One row of final colour, its alpha the row's. Inline: the round boxes' edges call it a pixel at a

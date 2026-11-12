@@ -173,26 +173,32 @@ void bar_title(void *bar, void *top) {
     bar_bold = bold;
 }
 
+/* No knob in any state on a plain slider (tools/ipod.py plain_slider): Now Playing's, Quick
+ * Settings' brightness and the settings slider pages'. The asset's style name has no theme entry,
+ * and stock then reads what the inline style leaves out from its default slider style (0x6b48cc),
+ * whose icon is the knob: rounded_n, rounded_o focused or over, rounded_p pressed. With one, stock
+ * draws it, sizes the dragger to it and fills and seeks short of the ends by half of it. An icon
+ * that's no string reads as none (value_str). An empty one in the asset would too, as on stock's
+ * own brightness bar, but stock then looks the image up at every paint. */
+void slider_knobless(void *slider) {
+    static const char *const knob[] = { "style:normal:icon", "style:pressed:icon",
+                                        "style:over:icon", "style:focused:icon",
+                                        "style:disable:icon" };
+    for (unsigned i = 0; i < sizeof knob / sizeof *knob; ++i)
+        widget_set_prop_int(slider, knob[i], 0);
+}
+
 /* Scrub (docs/internals.md#scrub-ipod) follows stock's own key seek (0x53e000): the page's 250 ms
  * timer stops, the slider and label_playtime preview the target, player_seek_time commits it once
  * on exit in track seconds (it adds a CUE track's start), and the timer restarts. */
 /* The accent's light tone (Minimal's own accent: MINIMAL_FILL) fills the progress bar in every
- * state a touch passes through; a white fill (Minimal: a thicker line) marks the scrub.
- * And no knob in any: the asset's style name has no theme entry (tools/ipod.py plain_slider), and
- * stock then reads what the inline style leaves out from its default slider style (0x6b48cc),
- * whose icon is the knob: rounded_n, rounded_o focused or over, rounded_p pressed. With one, stock
- * draws it, sizes the dragger to it and fills and seeks short of the ends by half of it. An icon
- * that's no string reads as none (value_str), as on Classic's slider pages. */
+ * state a touch passes through; a white fill (Minimal: a thicker line) marks the scrub. */
 void slider_fill(void *slider, unsigned color) {
     static const char *const fill[] = { "style:normal:fg_color", "style:pressed:fg_color",
                                         "style:over:fg_color", "style:focused:fg_color" };
-    static const char *const knob[] = { "style:normal:icon", "style:pressed:icon",
-                                        "style:over:icon", "style:focused:icon",
-                                        "style:disable:icon" };
     for (unsigned i = 0; i < sizeof fill / sizeof *fill; ++i)
         widget_set_prop_int(slider, fill[i], (int)color);
-    for (unsigned i = 0; i < sizeof knob / sizeof *knob; ++i)
-        widget_set_prop_int(slider, knob[i], 0);
+    slider_knobless(slider);
 }
 void np_fill(int scrub) {
     if (!st.np_slider) return;

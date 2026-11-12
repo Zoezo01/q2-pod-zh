@@ -841,7 +841,7 @@ Graphite, Crimson, Tidal, Champagne, Cobalt, Tangerine, Plum and Green, each a g
 the accent's colour; Ivory is Minimal's only. Modern's (`ACCENT`, 1.6.5's Classic's key) skips
 Ivory too, and choosing Modern starts it on Cobalt. Now Playing's bar has no thumb:
 stock draws its dragger (a box and knob, the stock theme's blue) unless `border_color` is clear
-and the style has no `icon`, so `playing_page` clears the first in every state and `slider_fill`
+and the style has no `icon`, so `playing_page` clears the first in every state and `slider_knobless`
 the second, which stock's default slider style would otherwise supply. 1.3.9 first painted it white, which drew the box at rest.
 
 #### Modern

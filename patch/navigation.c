@@ -5173,6 +5173,8 @@ static void slider_open(void *win) {
     for (; !s && kind < sizeof sliders / sizeof *sliders; ++kind)
         s = widget_lookup(win, sliders[kind], 1);
     if (!s) return;
+    slider_knobless(s); /* in every theme: the page's slider is a plain one */
+    if (!classic_pages()) return;
     --kind;
     for (unsigned i = 0; i < sizeof hide / sizeof *hide; ++i)
         if ((c = widget_lookup(win, hide[i], 1))) widget_set_visible(c, 0, 0);
@@ -5180,12 +5182,10 @@ static void slider_open(void *win) {
     widget_move_resize(P(s, W_PARENT), 0, 0, 375, 294);
     widget_move_resize(s, 81, maxvol ? 111 : 117, 204,
                        70); /* its bar's rows 31..38 of a wide touch */
-    /* stock's slider fills its knob in this colour, then draws the theme's icon (rounded_n) on it,
-     * and has no knob with neither: an icon that's no string reads as none (value_str) */
-    for (unsigned i = 0; i < sizeof states / sizeof *states; ++i) {
+    /* stock's slider fills its knob in this colour, then draws the theme's icon on it, and has no
+     * knob with neither (slider_knobless) */
+    for (unsigned i = 0; i < sizeof states / sizeof *states; ++i)
         widget_set_prop_int(s, style_key(key, states[i], "border_color"), 0);
-        widget_set_prop_int(s, style_key(key, states[i], "icon"), 0);
-    }
     st.slider_win = win;
     st.slider_w = s;
     st.slider_kind = (unsigned char)kind;
@@ -5368,9 +5368,9 @@ void *ringnav_ui_load(const char *name, void *parent) {
         (!tk_strcmp(widget_get_prop_str(root, "name", ""), "showsn_dialog") ||
          !tk_strcmp(widget_get_prop_str(root, "name", ""), "checkfw_dialog")))
         widget_set_prop_str(root, "highlight", "");
+    if (root && slider_page(root)) slider_open(root); /* every theme's: no knob; Classic's page */
     if (root && classic_pages()) {
         const char *loaded = widget_get_prop_str(root, "name", "");
-        if (slider_page(root)) slider_open(root);
         msg_open(root);
         if (!tk_strcmp(loaded, "search_dialog")) search_open(root);
         if (!tk_strcmp(loaded, "kb_default_t9")) kb_open(root);

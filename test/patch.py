@@ -7464,6 +7464,11 @@ bk.bands=[]; bk.call(address=HOOKS['widget_on_paint_border'][0],args=(bsl,bk.can
 assert [b[:4] for b in slider[:8]]==[(1,31,202,1),*[(0,31+i,204,1) for i in range(1,7)],(1,38,202,1)]
 assert slider[0][4]==color_t(0x2f4052) and slider[7][4]==color_t(0x26333f) and slider[8][:4]==(1,31,66,1) and slider[8][4]==color_t(0xf7ffff) and slider[15][4]==color_t(0xc6cbcf)
 assert slider[9][2]==68 and bk.nodes[bsl_view]['visible']==1; passed()
+# Minimal's and Modern's page stays stock's, where the load leaves it, but its slider is a plain one too: no knob.
+for th in ('0','2'):
+    pm=LoadPlain(); pm.config.update(THEME=th); pwin,psl,*_=slider_win(pm,'backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),min=1,max=10,value=4)
+    assert all(pm.nodes[psl][f'style:{s}:icon']==0 for s in ('normal','pressed','over','disable','focused'))
+    assert wbox(pm,psl)==(31,60,313,70) and 'style:normal:border_color' not in pm.nodes[psl]; passed()
 bd,bdwin,*_=slider_new('backlight_page','slider_backlight','view_backlight','label_backlight',('img_left','img_right'),light='0',min=1,max=10,value=4); bare(bd); bg(bd,bdwin); assert shadows(bd)==[CAPTION] and page_fill(bd,0,0x1c1c1c); passed()  # black in the dark half too
 # ... paints from what it recorded: no string compare or widget look-up on its way.
 bare(bk); bg(bk,bwin); assert not {'widget_lookup','tk_strcmp'}&slider_paint_calls(bk); passed()

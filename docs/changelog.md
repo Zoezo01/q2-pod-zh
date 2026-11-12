@@ -9,7 +9,7 @@
   - USB: **USB mode: Audio and DAC** is now stock V1.36's own, which also takes a host that never reads the card, such as a Nintendo Switch 2.
   - Playback: the **MQA** setting is gone. Stock V1.36's player no longer decodes MQA, so the setting did nothing; MQA files play as ordinary FLAC.
   - Settings: stock V1.36's **Wheel Function**, **Show Navigation Bar**, Album Wall, Spectrum and VU aren't offered: Q2 Pod's wheel, themes and Cover Flow already do those jobs. About no longer shows stock V1.36's thanks text.
-  - Now Playing: stock's round seek knob no longer shows on the progress bar, and a tap seeks to exactly where it lands. The same for Quick Settings' brightness bar.
+  - Now Playing: stock's round seek knob no longer shows on the progress bar, and a tap seeks to exactly where it lands. The same for Quick Settings' brightness bar and, under Minimal and Modern, the Brightness, Balance, Max Volume and Default Volume pages.
   - View Queue: while a shuffle is on it lists the next 500 songs. It used to stop at 100.
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
