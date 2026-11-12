@@ -55,6 +55,7 @@
   - Photos and Cover Flow: a JPEG whose size can't be read from its start is now made small by a separate process, as a large progressive JPEG is. A picture made for it could run the Q2 out of memory every time it was shown.
   - Books: an EPUB stops after 64 MB of text, and its contents files may be 1 MB at most. A book made for it could fill the card, or run the Q2 out of memory every time it was opened.
   - App Store: an app taken off the App Store's list gets no more updates. It still shows while it's installed, so it can be removed.
+  - Scrobbling: Last.fm no longer needs your password on the card. `tools/lastfm_key.py`, run once on a computer, replaces the `PASSWORD` line in `.scrobble.ini` with a `SESSION_KEY`, which can scrobble but can't sign in to last.fm, and which Last.fm's settings can withdraw. A file with a password works as before.
 - **1.7.6**:
   - Cover Flow: a fast spin starts going by letters after 0.7 s instead of 0.5 s, as it did before 1.6.9, so a brisk turn through a few albums stays album by album.
   - Quick Settings: under **Theme: Classic** the System Settings button shows a gear. It used to look like the brightness sun.

@@ -545,6 +545,10 @@ PASSWORD=ExamplePassword123
 API_KEY=0123456789abcdef0123456789abcdef
 API_SECRET=fedcba9876543210fedcba9876543210</pre>
   <p>Use your Last.fm username and password. Get your own API key and shared secret from last.fm/api/account/create (any application name works).</p>
+  <p><b>Optional: keep your password off the card.</b> With the card in a computer that has Python, download <a href="https://github.com/DiamondBond/q2-pod/blob/main/tools/lastfm_key.py"><code>lastfm_key.py</code></a> and run it on the file (on Windows, <code>py</code> in place of <code>python3</code>):</p>
+  <pre>python3 lastfm_key.py /path/to/card/.scrobble.ini</pre>
+  <p>It signs in to Last.fm once from the computer and replaces the <code>PASSWORD</code> line with a <code>SESSION_KEY</code> line, which the Q2 uses from then on. If you leave the <code>PASSWORD</code> line out, it asks for the password instead, so the card never holds it. Nobody can sign in to last.fm or change your password with the key. A password the card has already held isn’t wiped from the card’s free space, where recovery tools may still find it: change it on last.fm if that matters to you.</p>
+  <div class="note"><p><span class="label">The key is still sensitive:</span> until you revoke it, anyone who has it can scrobble to your account and make other changes to your Last.fm profile. If the card or the Q2 is lost, sign in to last.fm, open <b>Settings → Applications</b> and revoke the application the API key belongs to. The key stops working.</p></div>
   </div>
   <div class="sub">
   <h3>ListenBrainz</h3>

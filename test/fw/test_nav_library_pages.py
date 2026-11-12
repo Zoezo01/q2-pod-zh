@@ -793,7 +793,7 @@ def test_song_seconds_from_the_cache(fw, song):
 # Upload Scrobbles.
 class Up(C.Structure):
     _fields_ = [('lock', C.c_uint * 16), ('thread', C.c_ulong), ('running', C.c_int), ('done', C.c_int), ('ok', C.c_int),
-                ('sent', C.c_int), ('cfg', (C.c_char * 256) * 5)]
+                ('sent', C.c_int), ('cfg', (C.c_char * 256) * 6)]
 
 
 class Scrobbler:

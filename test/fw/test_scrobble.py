@@ -374,6 +374,50 @@ def test_listens_go_in_batches_of_50_with_one_session(fw):
     assert [t for b in net.listens() for t, *_ in b] == list(range(1700000000, 1700000051))
 
 
+# A session key in the file (tools/lastfm_key.py puts it where the password was).
+
+KEYED = {('LASTFM', 'USER'): 'u', ('LASTFM', 'SESSION_KEY'): 'SK9', ('LASTFM', 'API_KEY'): 'key',
+         ('LASTFM', 'API_SECRET'): 'sec'}
+
+
+@pytest.mark.parametrize('values, want', (
+        (KEYED, 2), ({k: v for k, v in KEYED.items() if k[1] != 'USER'}, 2),  # the key needs no user
+        ({**ACCOUNT, **KEYED}, 3),
+        ({k: v for k, v in KEYED.items() if k[1] != 'API_KEY'}, 0),  # but both of the API pair, which sign each call
+        ({k: v for k, v in KEYED.items() if k[1] != 'API_SECRET'}, 0),
+        ({k: v for k, v in ACCOUNT.items() if k[0] == 'LASTFM' and k[1] != 'PASSWORD'}, 0)))  # neither: as before
+def test_last_fm_is_ready_with_a_session_key_in_the_password_s_place(fw, values, want):
+    config(fw, values)
+    assert fw.fn('scrobble_ready', C.c_int)() == want
+
+
+def test_a_session_key_in_the_file_sends_the_batches_and_asks_for_no_session(fw):
+    log = HEADER + b''.join(line(f'A{i}', time=str(1700000000 + i)) for i in range(51))
+    (_, result, sent), card, net = upload(fw, log, KEYED)
+    forms = net.forms()  # each call's signature checked too
+    assert result == 1 and sent == 51 and card.files[LOG] == HEADER
+    assert [f['method'] for f in forms] == ['track.scrobble', 'track.scrobble'] and all(f['sk'] == 'SK9' for f in forms)
+    assert not any('username' in f or 'password' in f for f in forms)
+
+
+def test_a_session_key_beside_a_password_is_the_one_used_and_the_password_stays_unsent(fw):
+    (_, result, sent), _, net = upload(fw, HEADER + line(), {**ACCOUNT, **KEYED})
+    assert result == 1 and sent == 1 and [f['method'] for f in net.forms()] == ['track.scrobble']
+    assert not any('p%26w' in body for _, _, body, _ in net.requests)
+
+
+def test_a_session_key_last_fm_refuses_fails_the_upload_and_the_password_is_not_tried_instead(fw):
+    """A key the user revoked in Last.fm's settings (its error 9): the listens wait in the log, as after any refusal."""
+    def revoked(url, body):
+        if 'listenbrainz' in url:
+            return 200, '{"status":"ok"}'
+        return 403, '{"error":9,"message":"Invalid session key - Please re-authenticate"}'
+    log = HEADER + line()
+    (_, result, sent), card, net = upload(fw, log, {**ACCOUNT, **KEYED}, reply=revoked)
+    assert result == -1 and sent == 0 and card.files[LOG] == log
+    assert [f['method'] for f in net.forms()] == ['track.scrobble']
+
+
 def test_a_line_still_being_written_stays_in_the_log(fw):
     partial = b'Art\tAl\tSo'
     (_, result, sent), card, _ = upload(fw, HEADER + line() + partial)
