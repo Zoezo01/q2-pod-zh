@@ -434,6 +434,16 @@ int ringnav_lyric_drop(char *cmd, unsigned n, const char *fmt, const char *name)
     return snprintf(cmd, n, ":");
 }
 
+/* Now Playing's cover thread shows the cover picked here, .downpic/<file name>.jpg, by snprintfing
+ * cp -f "<it>" '/tmp/externpic.jpg' for system(): the shell expanded a $ or backtick in the file name,
+ * as root, and a name with a $ never showed its pick. That snprintf (COVER_PICK_CALL) jumps here: the
+ * file is copied here and cmd is ":". */
+int ringnav_cover_copy(char *cmd, unsigned n, const char *fmt, const char *from, const char *to) {
+    (void)fmt;
+    lrc_copy(from, to);
+    return snprintf(cmd, n, ":");
+}
+
 /* Download Album Lyrics (docs/internals.md#album-lyrics): a row under stock's Download Cover &
  * Lyrics on Now Playing's ⋯ page saves LRCLIB's lyrics beside every song of the playing song's
  * album, found as that search finds them, on a thread of its own that outlives the page. */

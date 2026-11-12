@@ -16099,6 +16099,16 @@ m=lyric_save(); assert lyric_drop(m,'01 Yellow.lrc')==':' and m.unlinked==['/mnt
 m=lyric_save(); assert lyric_drop(m,'x$(touch p)`id`".lrc')==':' and m.unlinked==['/mnt/mmc/.downpic/x$(touch p)`id`".lrc']; passed()
 m=lyric_save(); assert lyric_drop(m,'../../x.lrc')==':' and lyric_drop(m,'y'*0x201)==':' and not m.unlinked  # a '/', or too long
 assert lyric_drop(m,'y'*0x200)==':' and m.unlinked==['/mnt/mmc/.downpic/'+'y'*0x200]; passed()  # the longest that fits
+# Now Playing's cover thread showing that pick (ringnav_cover_copy, at COVER_PICK_CALL): stock's snprintf of
+# cp -f "/mnt/mmc/.downpic/<file name>.jpg" '/tmp/externpic.jpg' for system() becomes the copy, through .part.
+from build import COVER_PICK_CALL
+def cover_copy(m,src):
+    cmd=m.alloc(0x600); m.call(address=payload_syms['ringnav_cover_copy'],args=(cmd,0x600,0x782974,m.string(src)),stack=(m.string('/tmp/externpic.jpg'),),gap=0)
+    return m.text(cmd)
+assert m.text(0x782974)=='cp -f "%s" \'%s\'' and m.get(COVER_PICK_CALL)==jal(payload_syms['ringnav_cover_copy'])
+src='/mnt/mmc/.downpic/x$(touch p)`id`.flac.jpg'
+m=LyricSaveMachine({src:LRC}); assert cover_copy(m,src)==':' and m.files=={src:LRC,'/tmp/externpic.jpg':LRC}; passed()
+m=LyricSaveMachine({}); assert cover_copy(m,src)==':' and not m.files; passed()  # gone since stock's access()
 
 # Spotify's browser (patch/spotify.c, docs/librespot.md's Q2SPOT/1): the row opens spotbrowse_page,
 # each level a request on the fork's --browse-socket, sent and read on a pthread.
